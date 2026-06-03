@@ -1,0 +1,13 @@
+{
+  "itemGroup.living_item": "Example Mod Tab",
+  "block.living_item.example_block": "Example Block",
+  "item.living_item.example_item": "Example Item",
+
+  "living_item.configuration.title": "Living Item Configs",
+  "living_item.configuration.section.living_item.common.toml": "Living Item Configs",
+  "living_item.configuration.section.living_item.common.toml.title": "Living Item Configs",
+  "living_item.configuration.items": "Item List",
+  "living_item.configuration.logDirtBlock": "Log Dirt Block",
+  "living_item.configuration.magicNumberIntroduction": "Magic Number Text",
+  "living_item.configuration.magicNumber": "Magic Number"
+}

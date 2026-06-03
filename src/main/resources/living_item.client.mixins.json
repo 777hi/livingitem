@@ -1,0 +1,16 @@
+{
+  "required": true,
+  "package": "com.qiqi.li.client.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "AbstractContainerScreenMixin",
+    "InventoryScreenMixin",
+    "SpriteIconButtonMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "overwrites": {
+    "requireAnnotations": true
+  }
+}
