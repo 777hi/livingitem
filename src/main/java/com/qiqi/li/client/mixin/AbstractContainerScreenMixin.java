@@ -64,8 +64,8 @@ public class AbstractContainerScreenMixin extends Screen {
 
         List<LivingButton> existingLivingButtons = new ArrayList<>();
         for (GuiEventListener widget : this.children()) {
-            if (widget instanceof LivingButton sortButton) {
-                existingLivingButtons.add(sortButton);
+            if (widget instanceof LivingButton livingButton) {
+                existingLivingButtons.add(livingButton);
             }
         }
 

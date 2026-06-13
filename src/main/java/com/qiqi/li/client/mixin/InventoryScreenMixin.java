@@ -20,7 +20,7 @@ public abstract class InventoryScreenMixin extends EffectRenderingInventoryScree
             method = "containerTick",
             at = @At("HEAD")
     )
-    private void sort_it_out$callContainerTick(CallbackInfo ci) {
+    private void living_item$callContainerTick(CallbackInfo ci) {
         // Mojang does not call super.
         super.containerTick();
     }
