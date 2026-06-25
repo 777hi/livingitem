@@ -1,5 +1,6 @@
 package com.qiqi.li;
 
+import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 
 import net.minecraft.server.level.ServerLevel;
@@ -11,6 +12,7 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.Container;
+import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.CreativeModeTab;
@@ -20,6 +22,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.ChestBlockEntity;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.material.MapColor;
 import net.minecraft.world.level.chunk.LevelChunk;
@@ -35,6 +38,8 @@ import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
+
+import java.util.IdentityHashMap;
 import com.qiqi.li.network.LivingTagPacket;
 import com.qiqi.li.living.LivingItemManager;
 import com.qiqi.li.living.LivingFurnaceFunction;
@@ -110,16 +115,13 @@ public class LivingItem {
     
     private void processLevelContainers(ServerLevel level) {
         var cachedChunks = ContainerChunkCache.getInstance().getCachedChunks(level.dimension());
-        
+        IdentityHashMap<Container, Boolean> processedContainers = new IdentityHashMap<>();
+
         for (var cPos : cachedChunks) {
             if (!level.hasChunk(cPos.x, cPos.z)) continue;
-            
             LevelChunk chunk = level.getChunk(cPos.x, cPos.z);
-            for (var be : chunk.getBlockEntities().values()) {
-                if (be instanceof Container container) {
-                    ContainerLivingItemHandler.processContainer(container, level);
-                }
-            }
+            ContainerLivingItemHandler.processBlockEntities(
+                    chunk.getBlockEntities().values(), level, processedContainers);
         }
     }
 

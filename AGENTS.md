@@ -28,6 +28,17 @@
 1. 活按钮的功能。
 2. 活熔炉的功能。
 
+
+living/
+├── ContainerChunkCache.java       // 事件驱动的区块缓存
+├── ContainerContext.java          // 容器操作抽象接口
+├── ContainerLivingItemHandler.java // 处理入口（用官方 ChestBlock API）
+├── LivingItemFunction.java        // 活物品功能接口
+├── LivingItemManager.java         // 活物品管理 + 通用工具方法
+├── LivingFurnaceFunction.java     // 活熔炉实现（进度存物品 NBT）
+└── SimpleContainerContext.java    // 简单容器上下文
+
+
 以下功能暂时不实现，以后再说。
 
 不只是熔炉，其他物品也可以活化，实现其他功能。比如炼药台、工作台等。
