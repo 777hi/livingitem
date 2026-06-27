@@ -9,5 +9,11 @@
   "living_item.configuration.items": "Item List",
   "living_item.configuration.logDirtBlock": "Log Dirt Block",
   "living_item.configuration.magicNumberIntroduction": "Magic Number Text",
-  "living_item.configuration.magicNumber": "Magic Number"
+  "living_item.configuration.magicNumber": "Magic Number",
+
+  "tooltip.livingitem.title": "--- Living Item ---",
+  "tooltip.livingitem.furnace.status": "§aLiving Furnace§r",
+  "tooltip.livingitem.furnace.burn": "  §7Fuel: §c%s§7s§r",
+  "tooltip.livingitem.furnace.cook": "  §7Smelting: §a%d%%§7 (§c%s§7/§a%s§7s)§r",
+  "tooltip.livingitem.furnace.cook_wait": "  §7Smelting: §7initializing (§c%s§7s)§r"
 }

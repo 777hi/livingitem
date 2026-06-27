@@ -5,38 +5,74 @@
 注意，被活化的物品是被指针拿着的物品，而不是在物品栏里的物品。
 
 活物品和普通物品的区别是，活物品可以在箱子或背包的物品栏里实现需要放置在世界中的功能，
-而普通物品就只是物品无法在物品栏里实现任何功能了。
+当然了，最本质的区别就是nbt不一样。活物品会将实现功能需要的数据保存在nbt里。
 
 比如说一个熔炉，用指针拿起熔炉点击活按钮，熔炉就会活化，称为活熔炉，可以在物品栏里实现熔炼功能。
 并且会将周围的物品栏当作活熔炉的输入和输出端。比如在活熔炉的左边的格子放生铁矿，下边的格子放煤炭。
 活熔炉就会自动消耗煤炭熔炼生铁矿，将结果放到右边的格子。
-
-活物品本身只保留living nbt数据，其他数据保存在对应的容器nbt里。比如箱子的nbt里会保存活物品的位置。
 
 活物品会自动的执行它的功能，只要是含有活物品的被加载的容器（比如箱子、背包等），
 其内部满足条件的活物品会按照其功能自动运行。
 
 本质上所有的活物品功能都是对物品栏的操作，比如某个格子里的物品减少了、某个格子里的物品增加了、
 某个格子里的物品变成了另一种物品等、某个格子里的物品被移动到了其他格子。
+所以活物品的功能基本上都是对物品栏的操作。
 
 补充一个活物品的功能。物品栏里的物品是能够堆叠的，活物品也是物品，所以活物品也可以堆叠。
 而堆叠的活物品有相应的功能的变化。
 比如活熔炉，堆叠后，可以同时熔炼的物品就会增加。
 
+
+
+# 项目结构
+
+com.qiqi.li/
+├── LivingItem.java              ← Mod 主类：注册、服务端 tick 入口
+├── LivingItemClient.java        ← 客户端入口：配置界面
+├── Config.java                  ← 配置文件
+│
+├── living/                      ← 核心逻辑层
+│   ├── LivingItemManager.java   ← 数据组件注册 + 活物品功能管理
+│   ├── LivingFunctionData.java  ← 不可变数据容器（TooltipProvider）
+│   ├── LivingItemFunction.java  ← 功能接口（tick + tooltip）
+│   ├── LivingFurnaceFunction.java ← 活熔炉功能实现
+│   ├── ContainerContext.java    ← 容器上下文接口
+│   ├── SimpleContainerContext.java ← 容器上下文实现（含同步逻辑）
+│   ├── ContainerLivingItemHandler.java ← 容器遍历 + 活物品 tick 调度
+│   ├── ContainerChunkCache.java ← 容器区块缓存（性能优化）
+│
+├── network/                     ← 网络通信层
+│   └── LivingTagPacket.java     ← 活物品标签切换包
+│
+└── client/                      ← 客户端表现层
+    ├── LivingItemTooltip.java   ← 客户端 tooltip 渲染
+    ├── gui/
+    │   └── LivingButton.java    ← 活物品切换按钮
+    ├── mixin/
+    │   ├── AbstractContainerScreenMixin.java ← 容器界面按钮注入
+    │   ├── InventoryScreenMixin.java         ← 修复 Mojang bug
+    │   └── SpriteIconButtonMixin.java        ← 按钮 sprite 可变化
+    └── mixinsupport/
+    └── MutableSpriteSpriteIconButton.java ← sprite 切换接口
+
+
 # 目前已实现的功能:
 
 1. 活按钮的功能。
 2. 活熔炉的功能。
+3. 活物品信息栏数据显示，比如活熔炉的进度、活漏斗的状态等。数据从活物品的nbt里获取。
 
+# 待实现功能:
 
-living/
-├── ContainerChunkCache.java       // 事件驱动的区块缓存
-├── ContainerContext.java          // 容器操作抽象接口
-├── ContainerLivingItemHandler.java // 处理入口（用官方 ChestBlock API）
-├── LivingItemFunction.java        // 活物品功能接口
-├── LivingItemManager.java         // 活物品管理 + 通用工具方法
-├── LivingFurnaceFunction.java     // 活熔炉实现（进度存物品 NBT）
-└── SimpleContainerContext.java    // 简单容器上下文
+1.暂无
+
+# bug:
+
+1. 物品栏里的活熔炉数量越多，熔炼速度越快，不是指堆叠的数量，而是指物品栏里有多少个格子的活熔炉。
+2. 比如说一个物品栏里如果有两个格子里是活熔炉，那么熔炼速度会比只有一个格子的活熔炉快。
+3. 而如果三个格子都是活熔炉，那么熔炼速度会比两个格子的活熔炉快。
+4. 和同一个格子里堆叠的数量无关。
+
 
 
 以下功能暂时不实现，以后再说。
