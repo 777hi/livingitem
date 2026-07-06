@@ -13,7 +13,9 @@
 
   "tooltip.livingitem.title": "--- 活物品 ---",
   "tooltip.livingitem.furnace.status": "§a活熔炉§r",
-  "tooltip.livingitem.furnace.burn": "  §7燃料：§c%s§7秒§r",
-  "tooltip.livingitem.furnace.cook": "  §7熔炼：§a%d%%§7（§c%s§7/§a%s§7秒）§r",
-  "tooltip.livingitem.furnace.cook_wait": "  §7熔炼：§7初始化中（§c%s§7秒）§r"
+  "tooltip.livingitem.progress": "  §7进度: §a%d%%§7 (§e%.1fs§7/§a%.1fs§7)§r",
+  "tooltip.livingitem.progress_wait": "  §7进度: §7初始化中 (§e%.1fs§7)§r",
+  "tooltip.livingitem.fuel_burn": "  §7燃烧时间: §c%.1f秒§r",
+  "tooltip.livingitem.transform.ready": "  §7状态: §a就绪§r",
+  "tooltip.livingitem.transform.processing": "  §7状态: §e处理中...§r"
 }

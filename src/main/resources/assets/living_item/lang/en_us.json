@@ -13,7 +13,9 @@
 
   "tooltip.livingitem.title": "--- Living Item ---",
   "tooltip.livingitem.furnace.status": "§aLiving Furnace§r",
-  "tooltip.livingitem.furnace.burn": "  §7Fuel: §c%s§7s§r",
-  "tooltip.livingitem.furnace.cook": "  §7Smelting: §a%d%%§7 (§c%s§7/§a%s§7s)§r",
-  "tooltip.livingitem.furnace.cook_wait": "  §7Smelting: §7initializing (§c%s§7s)§r"
+  "tooltip.livingitem.progress": "  §7Progress: §a%d%%§7 (§e%.1fs§7/§a%.1fs§7)§r",
+  "tooltip.livingitem.progress_wait": "  §7Progress: §7Initializing (§e%.1fs§7)§r",
+  "tooltip.livingitem.fuel_burn": "  §7Burn Time: §c%.1fs§r",
+  "tooltip.livingitem.transform.ready": "  §7Status: §aReady§r",
+  "tooltip.livingitem.transform.processing": "  §7Status: §eProcessing...§r"
 }

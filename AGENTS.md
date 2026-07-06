@@ -1,90 +1,200 @@
-本项目是一个我的世界1.21.1版本的neoforge模组。
+# Living Item Template (活物品模板)
 
-本模组需要设计一个按钮，称之为“活按钮（Living Button）”。
-在游戏里打开箱子后会出现此按钮。指针拿着物品点击该按钮，可以将该物品活化，称之为活物品。
-注意，被活化的物品是被指针拿着的物品，而不是在物品栏里的物品。
+**Minecraft 1.21.1 + NeoForge**
 
-活物品和普通物品的区别是，活物品可以在箱子或背包的物品栏里实现需要放置在世界中的功能，
-当然了，最本质的区别就是nbt不一样。活物品会将实现功能需要的数据保存在nbt里。
+## 📖 项目概述
 
-比如说一个熔炉，用指针拿起熔炉点击活按钮，熔炉就会活化，称为活熔炉，可以在物品栏里实现熔炼功能。
-并且会将周围的物品栏当作活熔炉的输入和输出端。比如在活熔炉的左边的格子放生铁矿，下边的格子放煤炭。
-活熔炉就会自动消耗煤炭熔炼生铁矿，将结果放到右边的格子。
+将世界中的方块功能（熔炉、漏斗等）**活化到物品层面**。活物品在容器（箱子、背包等）内自动运行，状态通过NBT持久化。
 
-活物品会自动的执行它的功能，只要是含有活物品的被加载的容器（比如箱子、背包等），
-其内部满足条件的活物品会按照其功能自动运行。
+### 核心特性
 
-本质上所有的活物品功能都是对物品栏的操作，比如某个格子里的物品减少了、某个格子里的物品增加了、
-某个格子里的物品变成了另一种物品等、某个格子里的物品被移动到了其他格子。
-所以活物品的功能基本上都是对物品栏的操作。
+- **活按钮UI**: 点击可将手持物品转化为活物品
+- **容器内自动执行**: 含活物品的被加载容器会自动tick
+- **相对寻址**: 活物品自动识别周围槽位作为输入/输出/燃料端
+- **状态持久化**: 所有运行数据保存在物品NBT中
+- **跨容器迁移**: 移动活物品时保留完整状态（如燃烧时间）
 
-补充一个活物品的功能。物品栏里的物品是能够堆叠的，活物品也是物品，所以活物品也可以堆叠。
-而堆叠的活物品有相应的功能的变化。
-比如活熔炉，堆叠后，可以同时熔炼的物品就会增加。
+---
 
+## 🏗️ 架构设计
 
+### 中间层框架
 
-# 项目结构
+```
+LivingFunctionConfig (配置声明)
+       ↓
+FunctionExecutor (编排调度)
+       ↓
+┌─────────────────────────────┐
+│  ProgressComponent          │ ← 进度管理
+│  FuelConsumeComponent       │ ← 燃料消耗  
+│  ItemTransformComponent      │ ← 物品转化
+└─────────────────────────────┘
+       ↓
+ContainerContext → SimpleContainerContext (容器操作)
+```
 
-com.qiqi.li/
-├── LivingItem.java              ← Mod 主类：注册、服务端 tick 入口
-├── LivingItemClient.java        ← 客户端入口：配置界面
-├── Config.java                  ← 配置文件
-│
-├── living/                      ← 核心逻辑层
-│   ├── LivingItemManager.java   ← 数据组件注册 + 活物品功能管理
-│   ├── LivingFunctionData.java  ← 不可变数据容器（TooltipProvider）
-│   ├── LivingItemFunction.java  ← 功能接口（tick + tooltip）
-│   ├── LivingFurnaceFunction.java ← 活熔炉功能实现
-│   ├── ContainerContext.java    ← 容器上下文接口
-│   ├── SimpleContainerContext.java ← 容器上下文实现（含同步逻辑）
-│   ├── ContainerLivingItemHandler.java ← 容器遍历 + 活物品 tick 调度
-│   ├── ContainerChunkCache.java ← 容器区块缓存（性能优化）
-│
-├── network/                     ← 网络通信层
-│   └── LivingTagPacket.java     ← 活物品标签切换包
-│
-└── client/                      ← 客户端表现层
-    ├── LivingItemTooltip.java   ← 客户端 tooltip 渲染
-    ├── gui/
-    │   └── LivingButton.java    ← 活物品切换按钮
-    ├── mixin/
-    │   ├── AbstractContainerScreenMixin.java ← 容器界面按钮注入
-    │   ├── InventoryScreenMixin.java         ← 修复 Mojang bug
-    │   └── SpriteIconButtonMixin.java        ← 按钮 sprite 可变化
-    └── mixinsupport/
-    └── MutableSpriteSpriteIconButton.java ← sprite 切换接口
+### 关键组件
 
+| 层级 | 文件 | 职责 |
+|------|------|------|
+| **核心层** | `LivingItemManager` | DataComponent注册、数据读写枢纽 |
+| | `LivingFunctionData` | NBT数据容器、Tooltip显示 |
+| | `LivingItemFunction` | 功能接口定义 |
+| **中间层** | `FunctionExecutor` | 组件编排核心（单例） |
+| | `SlotResolver` | 槽位解析（支持边界检查） |
+| | `ComponentContext` | 组件执行上下文 |
+| **组件层** | `ProgressComponent` | 进度计时与暂停逻辑 |
+| | `FuelConsumeComponent` | 燃料消耗与可用性检查 |
+| | `ItemTransformComponent` | 配方匹配与物品转化 |
+| **容器层** | `ContainerContext` | 容器操作抽象接口 |
+| | `SimpleContainerContext` | 具体实现（带异常保护） |
+| | `ContainerLivingItemHandler` | 容器扫描与分组调度 |
 
-# 目前已实现的功能:
+---
 
-1. 活按钮的功能。
-2. 活熔炉的功能。
-3. 活物品信息栏数据显示，比如活熔炉的进度、活漏斗的状态等。数据从活物品的nbt里获取。
+## ✅ 已完成功能
 
-# 待实现功能:
+### 基础设施
+- [x] 活按钮UI与物品活化机制
+- [x] DataComponent数据持久化系统
+- [x] 容器自动扫描与tick分发
+- [x] 多活物品并行处理（无冲突）
+- [x] 物品栏信息栏数据显示（进度、状态等）
 
-1.暂无
+### 活熔炉功能
+- [x] 自动识别输入(左)/燃料(下)/输出(右)槽位
+- [x] 配方匹配与物品转化
+- [x] 燃料消耗与燃烧时间管理
+- [x] 无效条件时暂停并回退进度
+- [x] 非燃料物品不触发消耗
+- [x] **跨容器状态保持**（移动后保留burnTime）
+- [x] **环境自适应**（如漏斗中无燃料槽时使用储备时间）
+- [x] 多实例加速（不同槽位的活熔炉独立工作）
 
-# bug:
+### 容器兼容性
+- [x] 标准矩形容器（27格箱子、54格大箱）
+- [x] 线性容器（5格漏斗）✨ *已验证工作正常*
+- [x] 边界检查与异常安全（防崩溃）
+- [x] 槽位越界保护（ArrayIndexOutOfBoundsException修复）
+- [x] 容器销毁时的竞态条件处理
 
-1. 物品栏里的活熔炉数量越多，熔炼速度越快，不是指堆叠的数量，而是指物品栏里有多少个格子的活熔炉。
-2. 比如说一个物品栏里如果有两个格子里是活熔炉，那么熔炼速度会比只有一个格子的活熔炉快。
-3. 而如果三个格子都是活熔炉，那么熔炼速度会比两个格子的活熔炉快。
-4. 和同一个格子里堆叠的数量无关。
+### 性能与稳定性
+- [x] 槽位冲突检测（多活物品不重复操作同槽位）
+- [x] 条件门控（无有效输入/燃料时不增长进度）
+- [x] 预计算缓存架构（ContainerCacheManager）
+- [x] 混合解析器（HybridContainerResolver - 5层优先级链）
+- [x] 运行时验证器（RuntimeContainerValidator - 可选）
 
+---
 
+## 🚧 开发进展
 
-以下功能暂时不实现，以后再说。
+### 当前版本: v0.2-alpha
 
-不只是熔炉，其他物品也可以活化，实现其他功能。比如炼药台、工作台等。
+**最近更新** (2026-07-06):
+- ✅ 修复容器销毁时崩溃问题（4层防御体系）
+- ✅ 实现完整的容器兼容性方案（5种策略）
+- ✅ 验证跨容器状态保持特性（漏斗测试通过）
 
-以及更进一步的功能。比如将大世界里的作物种植也在物品栏里实现。
-首先活化一个泥土和锄头，指针拿起活锄头点击活泥土将其变为活耕地，再活化一个小麦种子。
-指针拿起活小麦种子右键活耕地，就会自动种植小麦。此时活小麦种子就会消耗一个。并且图标也会变为作物的图标。
-对了，在活耕地旁边还需要有活水桶，否则小麦就不会生长。就像在大世界里，小麦需要周围有水才能生长一样。
+### 待办事项
 
-以及漏斗的功能。活漏斗可以实现在物品栏里的物流功能。比如将活漏斗左边格子的物品自动传输到右边的格子。
-或者将活漏斗上边格子的物品自动传输到下边的格子。又或者将右边格子的物品拐个弯传输到上边的格子。
-但以上功能需要让活漏斗有许多状态，不同的状态对应于不同的传输行为。
-所以还需要有一种方式，可以让活物品斗在物品栏里实现状态切换。
+#### 高优先级
+- [ ] UI视觉反馈（储备燃料 vs 外部燃料的差异化显示）
+- [ ] Tooltip增强（显示工作模式、预计剩余时间）
+- [ ] 音效差异化（不同状态的音效变化）
+
+#### 中优先级  
+- [ ] 容器生命周期监听（破坏前主动清理）
+- [ ] 调试命令 `/livingitem info`
+- [ ] 成就系统集成
+
+#### 低优先级 / 未来规划
+- [ ] 更多活物品类型（活药锅、活工作台、活耕地等）
+- [ ] 活物品状态切换机制（如漏斗传输方向切换）
+- [ ] 第三方模组适配器API开放
+- [ ] JSON配置文件支持（用户自定义容器规则）
+
+---
+
+## 🔧 技术栈
+
+- **Java 21** + **NeoForge 21.1.x**
+- **Minecraft 1.21.1**
+- 构建工具: Gradle 9.2.1
+- 数据持久化: Minecraft DataComponent API + NBT
+- 容器访问: NeoForge Container接口
+
+---
+
+## 📂 核心文件索引
+
+```
+src/main/java/com/qiqi/li/living/
+├── core/
+│   ├── FunctionExecutor.java          # ⭐ 编排核心
+│   ├── SlotResolver.java               # 槽位解析
+│   ├── Direction2D.java                # 方向枚举
+│   ├── ContainerCacheManager.java       # 缓存管理
+│   ├── HybridContainerResolver.java    # 混合解析器
+│   ├── RuntimeContainerValidator.java  # 运行时验证
+│   └── components/
+│       ├── ProgressComponent.java      # 进度组件
+│       ├── FuelConsumeComponent.java   # 燃料组件
+│       └── ItemTransformComponent.java # 转化组件
+├── adapters/                           # 特殊容器适配器
+│   ├── ContainerAdapter.java           # 适配器接口
+│   ├── HopperAdapter.java             # 漏斗适配器
+│   └── AdapterRegistry.java           # 注册中心
+├── config/
+│   └── ContainerCompatibilityConfig.java  # 兼容性配置
+├── LivingItemManager.java              # 核心管理器
+├── LivingFurnaceFunction.java         # 活熔炉实现
+├── SimpleContainerContext.java        # 容器上下文
+└── ContainerLivingItemHandler.java    # 容器处理器
+```
+
+---
+
+## 🎯 设计原则
+
+1. **能力组件化**: 功能拆分为可复用的原子组件
+2. **配置驱动执行**: 通过声明式配置组合功能
+3. **状态完全持久化**: 所有数据存储在NBT，跟随物品迁移
+4. **防御性编程**: 多层边界检查，优雅降级不崩溃
+5. **开放扩展**: 支持第三方容器适配器和自定义活物品
+
+---
+
+## 💡 已知限制
+
+- 当前仅支持**相对寻址**（上下左右），暂不支持自定义槽位映射
+- 大型容器（>256格）可能需要特殊处理
+- AE2/RS等虚拟存储网络尚未支持
+- 暂无GUI配置工具（需代码注册新活物品类型）
+
+---
+
+## 📚 相关文档
+
+- [容器兼容性完整指南](./CONTAINER_COMPATIBILITY_GUIDE.md) - 5种兼容方案的详细说明
+- [开发日志](./docs/) - （待创建）
+
+---
+
+## 🤝 贡献指南
+
+### 开发规范
+- 新活物品类型: 实现 `LivingItemFunction` 接口 + 创建对应的 `LivingFunctionConfig`
+- 新容器支持: 实现 `ContainerAdapter` 接口或添加 `ContainerRule` 配置
+- 新组件: 继承基础组件接口并在 `FunctionExecutor` 中注册
+
+### 代码风格
+- 使用中文注释（与项目语言一致）
+- 遵循现有命名约定（Config/Component/Context后缀）
+- 异常处理必须使用try-catch包装容器操作
+
+---
+
+*最后更新: 2026-07-06*  
+*状态: Alpha测试阶段 - 核心功能已完成，正在完善用户体验*

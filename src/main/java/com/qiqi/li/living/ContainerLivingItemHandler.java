@@ -2,7 +2,9 @@ package com.qiqi.li.living;
 
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.Container;
@@ -15,6 +17,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.ChestType;
 import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
+import com.qiqi.li.living.core.FunctionExecutor;
 
 /**
  * 活物品容器处理器 —— 负责遍历容器中的物品并执行活物品 tick。
@@ -112,20 +115,44 @@ public class ContainerLivingItemHandler {
     }
 
     /**
-     * 遍历容器中所有物品，对活物品执行已注册功能的 tick 逻辑。
+     * 遍历容器中所有物品，按功能分组后统一调用 tick。
+     *
+     * 两阶段设计：
+     * 1. 扫描阶段：遍历容器中所有物品，将活物品按功能类型分组收集
+     * 2. 执行阶段：对每种功能只调用一次 tick，传入该容器中所有拥有此功能的活物品列表
+     *
+     * 为什么按功能分组调用而非逐个调用：
+     * 如果逐个调用 tick，每个活物品独立推进自己的状态，
+     * 导致总速度随活物品数量线性增长（N 个活熔炉 = N 倍速度）。
+     * 按功能分组后，由功能实现自行决定如何分配处理
+     * （如活熔炉每 tick 只处理一个），从根本上避免速度翻倍。
      *
      * @param context 容器上下文
      * @param level 世界
      */
     public static void processContext(ContainerContext context, Level level) {
+        FunctionExecutor.INSTANCE.resetOccupiedSlots();
+
+        int containerSize = context.getSize();
+        if (containerSize <= 0) {
+            return;
+        }
+
+        Map<LivingItemFunction, List<LivingItemFunction.SlotEntry>> grouped = new LinkedHashMap<>();
+
         for (int i = 0; i < context.getSize(); i++) {
             ItemStack stack = context.getItem(i);
             if (LivingItemManager.isLivingItem(stack)) {
                 var functions = LivingItemManager.getApplicableFunctions(stack);
                 for (var function : functions) {
-                    function.tick(stack, i, context, level);
+                    grouped.computeIfAbsent(function, k -> new ArrayList<>())
+                            .add(new LivingItemFunction.SlotEntry(i, stack));
                 }
             }
+        }
+
+        for (var entry : grouped.entrySet()) {
+            entry.getKey().tick(entry.getValue(), context, level);
         }
     }
 

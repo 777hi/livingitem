@@ -109,17 +109,34 @@ public class SimpleContainerContext implements ContainerContext {
 
     @Override
     public int getSize() {
-        return container.getContainerSize();
+        try {
+            return container.getContainerSize();
+        } catch (Exception e) {
+            return 0;
+        }
     }
 
     @Override
     public ItemStack getItem(int logicalSlot) {
-        return container.getItem(logicalSlot);
+        try {
+            if (logicalSlot < 0 || logicalSlot >= container.getContainerSize()) {
+                return ItemStack.EMPTY;
+            }
+            return container.getItem(logicalSlot);
+        } catch (Exception e) {
+            return ItemStack.EMPTY;
+        }
     }
 
     @Override
     public void setItem(int logicalSlot, ItemStack stack) {
-        container.setItem(logicalSlot, stack);
+        try {
+            if (logicalSlot < 0 || logicalSlot >= container.getContainerSize()) {
+                return;
+            }
+            container.setItem(logicalSlot, stack);
+        } catch (Exception e) {
+        }
     }
 
     @Override

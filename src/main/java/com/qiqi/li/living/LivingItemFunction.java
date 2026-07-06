@@ -1,5 +1,6 @@
 package com.qiqi.li.living;
 
+import java.util.List;
 import java.util.function.Consumer;
 import net.minecraft.network.chat.Component;
 import net.minecraft.nbt.CompoundTag;
@@ -14,8 +15,19 @@ import net.minecraft.world.level.Level;
  *
  * 一个 ItemStack 可以拥有多个活物品功能（例如，一个活熔炉同时也可以是活漏斗），
  * 但通常每个物品只应用一个主功能。
+ *
+ * tick 调用模型：
+ *   每个容器每 tick 对每种功能只调用一次 {@link #tick}，
+ *   传入该容器中所有拥有此功能的活物品列表。
+ *   由功能实现自行决定如何处理（如活熔炉每 tick 只处理一个），
+ *   避免多个同类活物品并行导致速度翻倍。
  */
 public interface LivingItemFunction {
+
+    /**
+     * 活物品在容器中的槽位条目，包含槽位索引和物品引用。
+     */
+    record SlotEntry(int slotIndex, ItemStack stack) {}
 
     /**
      * 判断该功能是否适用于指定的物品。
@@ -28,24 +40,23 @@ public interface LivingItemFunction {
 
     /**
      * 每 tick 调用一次，执行该功能的逻辑。
+     *
+     * 调用模型：每个容器每 tick 对每种功能只调用一次，
+     * 传入该容器中所有拥有此功能的活物品列表。
+     * 由功能实现自行决定如何分配处理（如活熔炉每 tick 只处理一个），
+     * 避免多个同类活物品并行导致速度翻倍。
+     *
      * 仅在服务器端调用（已通过 {@code !level.isClientSide} 过滤）。
      *
-     * @param stack 活物品本身
-     * @param slotIndex 活物品在容器中的槽位索引
+     * @param entries 该容器中拥有此功能的所有活物品条目
      * @param context 容器上下文，用于访问其他槽位、获取槽位数据等
      * @param level 当前世界
      */
-    void tick(ItemStack stack, int slotIndex, ContainerContext context, Level level);
+    void tick(List<SlotEntry> entries, ContainerContext context, Level level);
 
     /**
      * 向 Tooltip 添加该功能的状态信息。
      * 采用 Minecraft 标准的 {@link TooltipProvider} 风格签名。
-     *
-     * 与旧签名相比的变化：
-     * - 不再传入 ItemStack：数据从 functionData 参数直接获取，避免重新从组件中读取
-     * - 不再传入 Level：通过 TooltipContext.registries() 可以访问注册表
-     * - 使用 Consumer<Component> 替代 List<Component>：与 TooltipProvider 接口保持一致
-     * - 增加 TooltipFlag：支持根据详细程度显示不同内容
      *
      * @param functionData 该功能对应的运行时数据（如活熔炉的燃烧时间、烹饪进度）
      * @param context 物品 tooltip 上下文，包含 registryAccess 等信息
