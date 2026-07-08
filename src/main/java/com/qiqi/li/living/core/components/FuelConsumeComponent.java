@@ -6,6 +6,7 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.RecipeType;
 import net.neoforged.neoforge.common.extensions.IItemExtension;
+import com.qiqi.li.living.LivingItemManager;
 import com.qiqi.li.living.core.ComponentConfig;
 import com.qiqi.li.living.core.ComponentContext;
 import com.qiqi.li.living.core.ComponentState;
@@ -35,7 +36,7 @@ public class FuelConsumeComponent implements ILivingComponent {
             ItemStack fuelStack = ctx.containerCtx().getItem(ctx.fuelSlot());
             int fuelValue = getFuelValue(fuelStack, recipeType);
 
-            if (fuelValue > 0) {
+            if (fuelValue > 0 && !LivingItemManager.isLivingItem(fuelStack)) {
                 fuelStack.shrink(1);
                 ctx.containerCtx().setItem(ctx.fuelSlot(), fuelStack.copy());
                 burnTime = fuelValue;
@@ -78,7 +79,7 @@ public class FuelConsumeComponent implements ILivingComponent {
         ItemStack fuelStack = ctx.containerCtx().getItem(ctx.fuelSlot());
         int fuelValue = getFuelValue(fuelStack, recipeType);
 
-        return fuelValue > 0;
+        return fuelValue > 0 && !LivingItemManager.isLivingItem(fuelStack);
     }
 
     private int getFuelValue(ItemStack stack, RecipeType<?> recipeType) {

@@ -7,6 +7,7 @@ import net.minecraft.world.item.crafting.Recipe;
 import net.minecraft.world.item.crafting.RecipeType;
 import net.minecraft.world.item.crafting.SingleRecipeInput;
 import net.minecraft.world.level.Level;
+import com.qiqi.li.living.LivingItemManager;
 import com.qiqi.li.living.core.ComponentConfig;
 import com.qiqi.li.living.core.ComponentContext;
 import com.qiqi.li.living.core.ComponentState;
@@ -48,6 +49,7 @@ public class ItemTransformComponent implements ILivingComponent {
         if (!ctx.hasValidInput() || !ctx.hasValidOutput()) return false;
 
         ItemStack inputStack = ctx.containerCtx().getItem(ctx.inputSlot());
+        if (LivingItemManager.isLivingItem(inputStack)) return false;
         SingleRecipeInput recipeInput = new SingleRecipeInput(inputStack);
 
         var recipeHolderOpt = ctx.level().getRecipeManager()
@@ -113,7 +115,7 @@ public class ItemTransformComponent implements ILivingComponent {
         RecipeType<?> recipeType = RecipeType.SMELTING;
         ItemStack inputStack = ctx.containerCtx().getItem(ctx.inputSlot());
 
-        if (inputStack.isEmpty()) {
+        if (inputStack.isEmpty() || LivingItemManager.isLivingItem(inputStack)) {
             return false;
         }
 

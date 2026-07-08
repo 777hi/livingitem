@@ -1,41 +1,39 @@
 package com.qiqi.li.living.core;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import javax.annotation.Nullable;
 import com.qiqi.li.living.core.components.ILivingComponent;
 
 public class LivingFunctionConfig {
 
-    private Direction2D inputDirection = Direction2D.LEFT;
-    private Direction2D fuelDirection = Direction2D.DOWN;
-    private Direction2D outputDirection = Direction2D.RIGHT;
     private final List<ComponentEntry> components = new ArrayList<>();
+    private final Map<Class<? extends ILivingComponent>, ILivingComponent> configuredInstances = new HashMap<>();
     private boolean enableStackMultiplier = true;
     private String functionId = "unknown";
 
     public record ComponentEntry(
         Class<? extends ILivingComponent> componentClass,
-        ComponentConfig config
+        ComponentConfig config,
+        @Nullable ILivingComponent preconfiguredInstance
     ) {}
 
-    public LivingFunctionConfig withInput(Direction2D dir) {
-        this.inputDirection = dir;
-        return this;
-    }
-
-    public LivingFunctionConfig withFuel(Direction2D dir) {
-        this.fuelDirection = dir;
-        return this;
-    }
-
-    public LivingFunctionConfig withOutput(Direction2D dir) {
-        this.outputDirection = dir;
-        return this;
-    }
-
     public LivingFunctionConfig addComponent(Class<? extends ILivingComponent> clazz, ComponentConfig config) {
-        components.add(new ComponentEntry(clazz, config));
+        components.add(new ComponentEntry(clazz, config, null));
         return this;
+    }
+
+    public LivingFunctionConfig addComponent(ILivingComponent instance) {
+        components.add(new ComponentEntry(instance.getClass(), ComponentConfig.empty(), instance));
+        configuredInstances.put(instance.getClass(), instance);
+        return this;
+    }
+
+    @Nullable
+    public ILivingComponent getConfiguredInstance(Class<? extends ILivingComponent> clazz) {
+        return configuredInstances.get(clazz);
     }
 
     public LivingFunctionConfig withStackMultiplier(boolean enabled) {
@@ -48,9 +46,6 @@ public class LivingFunctionConfig {
         return this;
     }
 
-    public Direction2D getInputDirection() { return inputDirection; }
-    public Direction2D getFuelDirection() { return fuelDirection; }
-    public Direction2D getOutputDirection() { return outputDirection; }
     public List<ComponentEntry> getComponents() { return components; }
     public boolean isStackMultiplierEnabled() { return enableStackMultiplier; }
     public String getFunctionId() { return functionId; }

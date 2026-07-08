@@ -6,11 +6,11 @@ import java.util.Map;
 import java.util.Set;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.crafting.RecipeType;
 import net.minecraft.world.level.Level;
 import com.qiqi.li.living.ContainerContext;
 import com.qiqi.li.living.LivingItemManager;
 import com.qiqi.li.living.core.components.*;
+import com.qiqi.li.living.core.model.Pos2D;
 
 public final class FunctionExecutor {
 
@@ -30,18 +30,28 @@ public final class FunctionExecutor {
             return;
         }
 
-        int inputSlot = SlotResolver.resolve(slot, config.getInputDirection(), containerSize);
-        int fuelSlot = SlotResolver.resolve(slot, config.getFuelDirection(), containerSize);
-        int outputSlot = SlotResolver.resolve(slot, config.getOutputDirection(), containerSize);
+        Map<String, ComponentState> states = loadOrCreateStates(stack, config);
 
-        ComponentContext ctx = new ComponentContext(context, inputSlot, fuelSlot, outputSlot, level);
+        int inputSlot = -1, fuelSlot = -1, outputSlot = -1;
+
+        DirectionModeComponent dirComp = findComponent(config, DirectionModeComponent.class);
+        if (dirComp != null) {
+            ComponentState dirState = states.get(DirectionModeComponent.ID);
+            Pos2D inputDir = dirComp.getDirection(dirState, "input");
+            Pos2D fuelDir = dirComp.getDirection(dirState, "fuel");
+            Pos2D outputDir = dirComp.getDirection(dirState, "output");
+
+            inputSlot = SlotResolver.resolve(slot, inputDir, containerSize);
+            fuelSlot = SlotResolver.resolve(slot, fuelDir, containerSize);
+            outputSlot = SlotResolver.resolve(slot, outputDir, containerSize);
+        }
+
+        ComponentContext ctx = new ComponentContext(context, inputSlot, fuelSlot, outputSlot, level, states);
 
         String slotKey = context.getStableKey(inputSlot, "global_occupancy");
         if (inputSlot != -1 && occupiedSlotsThisTick.contains(slotKey)) {
             return;
         }
-
-        Map<String, ComponentState> states = loadOrCreateStates(stack, config);
 
         FuelConsumeComponent fuelComp = findComponent(config, FuelConsumeComponent.class);
         ItemTransformComponent transformComp = findComponent(config, ItemTransformComponent.class);
@@ -71,7 +81,7 @@ public final class FunctionExecutor {
         }
 
         for (LivingFunctionConfig.ComponentEntry entry : config.getComponents()) {
-            ILivingComponent component = getComponent(entry.componentClass());
+            ILivingComponent component = resolveComponent(config, entry);
             ComponentState state = states.get(component.getComponentId());
 
             if (!canProgress) {
@@ -112,10 +122,23 @@ public final class FunctionExecutor {
         });
     }
 
+    public ILivingComponent resolveComponent(LivingFunctionConfig config, LivingFunctionConfig.ComponentEntry entry) {
+        if (entry.preconfiguredInstance() != null) {
+            return entry.preconfiguredInstance();
+        }
+
+        ILivingComponent configured = config.getConfiguredInstance(entry.componentClass());
+        if (configured != null) {
+            return configured;
+        }
+
+        return getComponent(entry.componentClass());
+    }
+
     @SuppressWarnings("unchecked")
     public <T extends ILivingComponent> T findComponent(LivingFunctionConfig config, Class<T> type) {
         for (var entry : config.getComponents()) {
-            ILivingComponent comp = getComponent(entry.componentClass());
+            ILivingComponent comp = resolveComponent(config, entry);
             if (type.isInstance(comp)) {
                 return (T) comp;
             }
@@ -129,7 +152,7 @@ public final class FunctionExecutor {
         CompoundTag functionTag = LivingItemManager.getFunctionData(stack, config.getFunctionId());
 
         for (var entry : config.getComponents()) {
-            ILivingComponent component = getComponent(entry.componentClass());
+            ILivingComponent component = resolveComponent(config, entry);
             String compId = component.getComponentId();
 
             if (functionTag.contains(compId)) {
@@ -166,7 +189,7 @@ public final class FunctionExecutor {
         ComponentConfig transformConfig = null;
 
         for (var entry : config.getComponents()) {
-            ILivingComponent comp = getComponent(entry.componentClass());
+            ILivingComponent comp = resolveComponent(config, entry);
             if (comp instanceof ProgressComponent) progressConfig = entry.config();
             else if (comp instanceof ItemTransformComponent) transformConfig = entry.config();
         }

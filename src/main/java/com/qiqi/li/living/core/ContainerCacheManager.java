@@ -6,6 +6,7 @@ import net.minecraft.world.Container;
 import net.minecraft.world.item.ItemStack;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.qiqi.li.living.core.components.DirectionModeComponent;
 
 import javax.annotation.Nullable;
 import java.lang.ref.WeakReference;
@@ -132,11 +133,27 @@ public final class ContainerCacheManager {
     private ContainerSlotMapping computeMapping(Container container, int size, LivingFunctionConfig config) {
         Int2ObjectMap<int[]> slotMappings = new Int2ObjectOpenHashMap<>();
 
+        DirectionModeComponent dirComp = null;
+        com.qiqi.li.living.core.components.ILivingComponent rawComp = config.getConfiguredInstance(DirectionModeComponent.class);
+        if (rawComp instanceof DirectionModeComponent dmc) {
+            dirComp = dmc;
+        }
+        if (dirComp == null) {
+            dirComp = (DirectionModeComponent) FunctionExecutor.INSTANCE.getComponent(DirectionModeComponent.class);
+        }
+
         for (int hostSlot = 0; hostSlot < size; hostSlot++) {
             try {
-                int inputSlot = SlotResolver.resolve(hostSlot, config.getInputDirection(), size);
-                int fuelSlot = SlotResolver.resolve(hostSlot, config.getFuelDirection(), size);
-                int outputSlot = SlotResolver.resolve(hostSlot, config.getOutputDirection(), size);
+                com.qiqi.li.living.core.model.Pos2D inputDir = dirComp != null && dirComp.getMode() == DirectionModeComponent.DirectionMode.SLOTS
+                    ? dirComp.getDirection(null, "input") : com.qiqi.li.living.core.model.Pos2D.LEFT;
+                com.qiqi.li.living.core.model.Pos2D fuelDir = dirComp != null && dirComp.getMode() == DirectionModeComponent.DirectionMode.SLOTS
+                    ? dirComp.getDirection(null, "fuel") : com.qiqi.li.living.core.model.Pos2D.DOWN;
+                com.qiqi.li.living.core.model.Pos2D outputDir = dirComp != null && dirComp.getMode() == DirectionModeComponent.DirectionMode.SLOTS
+                    ? dirComp.getDirection(null, "output") : com.qiqi.li.living.core.model.Pos2D.RIGHT;
+
+                int inputSlot = SlotResolver.resolve(hostSlot, inputDir, size);
+                int fuelSlot = SlotResolver.resolve(hostSlot, fuelDir, size);
+                int outputSlot = SlotResolver.resolve(hostSlot, outputDir, size);
 
                 if (inputSlot != -1 && fuelSlot != -1 && outputSlot != -1) {
                     boolean allValid = validateSlots(container, inputSlot, fuelSlot, outputSlot);

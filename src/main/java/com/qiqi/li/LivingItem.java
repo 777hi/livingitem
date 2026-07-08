@@ -38,8 +38,10 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
 import java.util.IdentityHashMap;
 import com.qiqi.li.network.LivingTagPacket;
+import com.qiqi.li.network.HopperDirectionPacket;
 import com.qiqi.li.living.LivingItemManager;
 import com.qiqi.li.living.LivingFurnaceFunction;
+import com.qiqi.li.living.LivingHopperFunction;
 import com.qiqi.li.living.ContainerLivingItemHandler;
 import com.qiqi.li.living.ContainerChunkCache;
 import net.neoforged.neoforge.registries.DeferredBlock;
@@ -113,6 +115,9 @@ public class LivingItem {
 
         LivingItemManager.registerFunction(new LivingFurnaceFunction());
         LOGGER.info("已注册活熔炉功能");
+
+        LivingItemManager.registerFunction(new LivingHopperFunction());
+        LOGGER.info("已注册活漏斗功能（支持WASD方向设置）");
     }
 
     /**
@@ -170,6 +175,7 @@ public class LivingItem {
     private void onRegisterPayloadHandler(RegisterPayloadHandlersEvent event) {
         PayloadRegistrar registrar = event.registrar(LivingTagPacket.ID.getNamespace()).versioned("1.0.0");
         registrar.playToServer(LivingTagPacket.TYPE, LivingTagPacket.STREAM_CODEC, LivingTagPacket::handle);
+        registrar.playToServer(HopperDirectionPacket.TYPE, HopperDirectionPacket.STREAM_CODEC, HopperDirectionPacket::handle);
     }
 
     private void addCreative(BuildCreativeModeTabContentsEvent event) {

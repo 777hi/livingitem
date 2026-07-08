@@ -1,6 +1,6 @@
 package com.qiqi.li.living.core.adapters;
 
-import com.qiqi.li.living.core.Direction2D;
+import com.qiqi.li.living.core.model.Pos2D;
 import net.minecraft.world.Container;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -9,14 +9,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.ServiceLoader;
 
-/**
- * 容器适配器注册中心
- * 
- * 管理所有可用的容器适配器，支持：
- * - 内置适配器（原版容器）
- * - 模组提供的适配器（通过ServiceLoader自动发现）
- * - 运行时动态注册（API方式）
- */
 public final class AdapterRegistry {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(AdapterRegistry.class);
@@ -34,31 +26,16 @@ public final class AdapterRegistry {
         discoverExternalAdapters();
     }
 
-    /**
-     * 注册内置的原版容器适配器
-     */
     private void registerBuiltInAdapters() {
         adapters.add(HopperAdapter.INSTANCE);
-        
-        // 可以添加更多原版容器适配器：
-        // adapters.add(DropperAdapter.INSTANCE);
-        // adapters.add(DispenserAdapter.INSTANCE);
-        
         LOGGER.info("Registered {} built-in container adapters", adapters.size());
     }
 
-    /**
-     * 通过ServiceLoader机制发现外部模组提供的适配器
-     * 
-     * 模组只需：
-     * 1. 创建实现 ContainerAdapter 的类
-     * 2. 在 META-INF/services/com.qiqi.li.living.core.adapters.ContainerAdapter 文件中注册
-     */
     private void discoverExternalAdapters() {
         try {
-            ServiceLoader<ContainerAdapter> loader = 
+            ServiceLoader<ContainerAdapter> loader =
                 ServiceLoader.load(ContainerAdapter.class, AdapterRegistry.class.getClassLoader());
-            
+
             int count = 0;
             for (ContainerAdapter adapter : loader) {
                 if (!adapters.contains(adapter)) {
@@ -67,7 +44,7 @@ public final class AdapterRegistry {
                     LOGGER.info("Discovered external adapter: {}", adapter.getClass().getName());
                 }
             }
-            
+
             if (count > 0) {
                 LOGGER.info("Loaded {} external container adapters", count);
             }
@@ -76,9 +53,6 @@ public final class AdapterRegistry {
         }
     }
 
-    /**
-     * 手动注册适配器（供其他模组在运行时调用）
-     */
     public void register(ContainerAdapter adapter) {
         if (adapter != null && !adapters.contains(adapter)) {
             adapters.add(adapter);
@@ -86,11 +60,6 @@ public final class AdapterRegistry {
         }
     }
 
-    /**
-     * 为指定容器查找合适的适配器
-     * 
-     * @return 第一个支持该容器的适配器，如果没有则返回null
-     */
     @Nullable
     public ContainerAdapter findAdapter(Container container) {
         for (ContainerAdapter adapter : adapters) {
@@ -99,33 +68,27 @@ public final class AdapterRegistry {
                     return adapter;
                 }
             } catch (Exception e) {
-                LOGGER.debug("Adapter {} threw exception when checking support", 
+                LOGGER.debug("Adapter {} threw exception when checking support",
                            adapter.getClass().getSimpleName(), e);
             }
         }
-        return null;  // 使用默认的标准网格布局处理
+        return null;
     }
 
-    /**
-     * 使用适配器解析槽位（带降级策略）
-     * 
-     * 如果找到专用适配器就使用它，否则回退到标准SlotResolver
-     */
-    public int resolveWithAdapter(Container container, int hostSlot, Direction2D direction) {
+    public int resolveWithAdapter(Container container, int hostSlot, Pos2D direction) {
         ContainerAdapter adapter = findAdapter(container);
-        
+
         if (adapter != null) {
             try {
                 int result = adapter.resolveSlot(container, hostSlot, direction);
                 if (result != -1) {
-                    return result;  // 适配器成功解析
+                    return result;
                 }
             } catch (Exception e) {
                 LOGGER.warn("Adapter failed to resolve slot", e);
             }
         }
-        
-        // 降级到标准逻辑
+
         int size = safeGetSize(container);
         return com.qiqi.li.living.core.SlotResolver.resolve(hostSlot, direction, size);
     }
@@ -138,9 +101,6 @@ public final class AdapterRegistry {
         }
     }
 
-    /**
-     * 获取所有已注册的适配器信息（用于调试）
-     */
     public List<String> getAdapterInfo() {
         List<String> info = new ArrayList<>();
         for (ContainerAdapter adapter : adapters) {

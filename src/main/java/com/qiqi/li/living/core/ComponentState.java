@@ -56,6 +56,18 @@ public class ComponentState {
         data.put(key, list);
     }
 
+    public CompoundTag getCompound(String key) {
+        return data.getCompound(key);
+    }
+
+    public void putCompound(String key, CompoundTag tag) {
+        data.put(key, tag);
+    }
+
+    public boolean contains(String key) {
+        return data.contains(key);
+    }
+
     public boolean hasKey(String key) {
         return data.contains(key);
     }

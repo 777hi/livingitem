@@ -11,32 +11,49 @@ import net.minecraft.world.item.component.TooltipProvider;
 import com.mojang.serialization.Codec;
 
 /**
- * 活物品功能数据容器。
- * 持有所有活物品功能的运行时数据（如活熔炉的燃烧时间、烹饪进度等）。
- * 内部使用 CompoundTag 存储，以 functionId（如 "living_furnace"）为 key。
+ * 活物品功能数据 —— 底层NBT存储层（纯数据容器）。
  *
- * 实现 {@link TooltipProvider} 接口后，当该组件被注册为 DataComponent 时，
- * 可以直接通过组件的 addToTooltip 方法向 tooltip 添加信息，
- * 避免在 ItemTooltipEvent 中手动遍历每个 function。
+ * 职责：
+ * - 数据持久化：连接 DataComponent 系统与 NBT 存储
+ * - 网络同步：支持服务端到客户端的数据传输
+ * - 状态管理：提供功能数据的读写接口
  *
- * 数据结构示例（NBT）:
- * <pre>
+ * 设计原则：
+ * ✅ **透明性**：不参与任何业务逻辑（tooltip渲染、tick执行、用户交互）
+ * ✅ **不可变性**：符合 DataComponent 规范，修改操作返回新实例
+ * ✅ **轻量级**：仅作为 CompoundTag 包装器，无额外开销
+ *
+ * 架构定位：
+ * ┌─────────────────────────┐
+ * │   LivingFurnaceFunction │ ← 业务逻辑层（tooltip、tick）
+ * │   LivingHopperFunction  │
+ * └──────────┬──────────────┘
+ *            │ 读取/写入
+ *            ▼
+ * ┌─────────────────────────┐
+ * │   FunctionExecutor      │ ← 协调层（组件调度）
+ * └──────────┬──────────────┘
+ *            │ 存取数据
+ *            ▼
+ * ┌─────────────────────────┐
+ * │   LivingFunctionData    │ ← 本类（纯数据存储）
+ * │   (CompoundTag wrapper) │
+ * └─────────────────────────┘
+ *
+ * 数据格式示例：
  * {
  *   "living_furnace": {
- *     "burn_time": 200,
- *     "cook_time": 50,
- *     "cook_time_total": 200
- *   },
- *   "living_hopper": { ... }
+ *     "progress": { ... },      // ComponentState
+ *     "fuel_consume": { ... }   // ComponentState
+ *   }
  * }
- * </pre>
  */
 public class LivingFunctionData implements TooltipProvider {
 
-    /** 空数据实例，用于避免空指针判断 */
+    /** 空数据单例 */
     public static final LivingFunctionData EMPTY = new LivingFunctionData(new CompoundTag());
 
-    /** 核心数据存储 —— 一个 CompoundTag，以 functionId 为 key */
+    /** 内部 NBT 数据 */
     private final CompoundTag data;
 
     /**
@@ -155,28 +172,19 @@ public class LivingFunctionData implements TooltipProvider {
     }
 
     /**
-     * 向 Tooltip 添加活物品信息。
-     * 此方法由 {@link TooltipProvider} 接口定义，Minecraft 通过
-     * ItemStack.addToTooltip(component, ...) 来调用它。
+     * TooltipProvider 接口实现 —— 空实现。
      *
-     * 实现逻辑：遍历所有已注册的活物品功能，检查数据中是否有对应功能的数据。
-     * 如果有，则调用该功能的 addToTooltip 方法将其信息添加到 tooltip。
+     * 设计决策：tooltip渲染已完全委托给各活物品功能自行处理
+     * （参见 {@link com.qiqi.li.client.LivingItemTooltip}）
      *
-     * @param context 物品 tooltip 上下文（包含 registryAccess、level 等信息）
-     * @param tooltipAdder 向 tooltip 中添加一行内容的 Consumer
-     * @param flag tooltip 显示标志（是否详细模式、是否创造模式等）
+     * 保留此空方法的原因：
+     * - Minecraft DataComponent 系统要求实现 TooltipProvider 接口
+     * - 避免编译错误或运行时异常
+     * - 保持 API 兼容性
      */
     @Override
     public void addToTooltip(Item.TooltipContext context, Consumer<Component> tooltipAdder, TooltipFlag flag) {
-        // 遍历 LivingItemManager 中已注册的所有活物品功能
-        for (LivingItemFunction function : LivingItemManager.getAllFunctions()) {
-            // 获取该功能对应的数据
-            CompoundTag functionData = getFunctionData(function.getFunctionId());
-            // 如果有数据，调用该功能的 tooltip 渲染方法
-            if (!functionData.isEmpty()) {
-                function.addToTooltip(functionData, context, tooltipAdder, flag);
-            }
-        }
+        // 空实现 - tooltip渲染由 LivingItemTooltip + 各 LivingItemFunction 处理
     }
 
     /**
