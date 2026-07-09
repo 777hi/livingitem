@@ -46,6 +46,7 @@ public class ContainerChunkCache {
 
     private ContainerChunkCache() {}
 
+    /** 获取单例实例 */
     public static ContainerChunkCache getInstance() {
         return INSTANCE;
     }

@@ -6,10 +6,23 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.qiqi.li.living.core.model.Pos2D;
 
+/**
+ * 运行时容器验证器 —— 验证槽位解析结果的安全性和正确性。
+ *
+ * 在槽位解析完成后进行额外的安全检查，确保：
+ * 1. 容器完整性：容器对象可用且方法可调用
+ * 2. 槽位有效性：解析出的槽位索引在合法范围内
+ * 3. 访问安全性：槽位可安全读写（不会抛出异常）
+ * 4. 无冲突：输入/燃料/输出槽位不重叠
+ *
+ * 默认不启用（影响性能），可通过 HybridContainerResolver.setRuntimeValidation(true) 开启。
+ * 主要用于调试和排查非标准容器的兼容性问题。
+ */
 public final class RuntimeContainerValidator {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(RuntimeContainerValidator.class);
 
+    /** 单例实例 */
     public static final RuntimeContainerValidator INSTANCE = new RuntimeContainerValidator();
 
     private long validationCount = 0;
@@ -17,6 +30,16 @@ public final class RuntimeContainerValidator {
 
     private RuntimeContainerValidator() {}
 
+    /**
+     * 解析并验证指定方向的槽位。
+     *
+     * @param container 目标容器
+     * @param hostSlot 活物品所在槽位
+     * @param inputDir 输入方向
+     * @param fuelDir 燃料方向
+     * @param outputDir 输出方向
+     * @return 验证结果（包含状态、槽位数组、失败原因等）
+     */
     public ValidationResult resolveAndValidate(
         Container container,
         int hostSlot,
@@ -69,6 +92,7 @@ public final class RuntimeContainerValidator {
         }
     }
 
+    /** 验证容器对象完整性（方法是否可调用） */
     private boolean validateContainerIntegrity(Container container) {
         if (container == null) return false;
 
@@ -83,6 +107,7 @@ public final class RuntimeContainerValidator {
         }
     }
 
+    /** 安全获取容器大小（带异常保护和合理性检查） */
     private int safeGetContainerSize(Container container) {
         try {
             int size = container.getContainerSize();
@@ -99,10 +124,12 @@ public final class RuntimeContainerValidator {
         }
     }
 
+    /** 检查槽位索引是否在合法范围内 */
     private boolean isValidSlot(int slot, int containerSize) {
         return slot >= 0 && slot < containerSize;
     }
 
+    /** 解析方向并验证槽位可访问性 */
     private int resolveWithValidation(Container container, int baseSlot, Pos2D direction, int containerSize) {
         if (direction == Pos2D.NONE) return -1;
 
@@ -132,6 +159,7 @@ public final class RuntimeContainerValidator {
         return resolvedSlot;
     }
 
+    /** 检查槽位之间是否有冲突（同一槽位被多个角色使用） */
     private boolean hasConflicts(int... slots) {
         for (int i = 0; i < slots.length; i++) {
             for (int j = i + 1; j < slots.length; j++) {
@@ -143,6 +171,7 @@ public final class RuntimeContainerValidator {
         return false;
     }
 
+    /** 测试槽位的读写安全性 */
     private boolean testAccessSafety(Container container, int... slots) {
         for (int slot : slots) {
             try {
@@ -156,10 +185,12 @@ public final class RuntimeContainerValidator {
         return true;
     }
 
+    /** 获取验证统计信息 */
     public ValidationStats getStats() {
         return new ValidationStats(validationCount, failureCount);
     }
 
+    /** 验证统计记录 */
     public record ValidationStats(long totalValidations, long failures) {
         public double successRate() {
             return totalValidations > 0 ?
@@ -167,7 +198,17 @@ public final class RuntimeContainerValidator {
         }
     }
 
+    /**
+     * 验证结果 —— 封装槽位验证的输出。
+     *
+     * 状态类型：
+     * - SUCCESS：所有槽位有效且无冲突
+     * - PARTIAL_FAILURE：部分槽位无效
+     * - FAILURE：验证失败
+     * - EXCEPTION：验证过程中发生异常
+     */
     public static class ValidationResult {
+        /** 验证状态 */
         enum Status {
             SUCCESS,
             PARTIAL_FAILURE,

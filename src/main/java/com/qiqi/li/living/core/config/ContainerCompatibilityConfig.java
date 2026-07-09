@@ -7,8 +7,31 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 
+/**
+ * 容器兼容性配置 —— 为不同容器类型定义槽位解析规则。
+ *
+ * 职责：
+ * 1. 注册每种容器类型的解析规则（ContainerRule）
+ * 2. 根据容器 ID 查找对应的规则
+ * 3. 为 HybridContainerResolver 的配置解析策略提供数据源
+ *
+ * 内置规则：
+ * - minecraft:chest（27 格箱子）：标准 9 列矩形，越界无效
+ * - minecraft:double_chest（54 格大箱子）：标准 9 列矩形，越界环绕
+ * - minecraft:hopper（5 格漏斗）：线性布局，仅中间 3 格可宿主
+ * - ironchests:iron_chest（45 格铁箱）：标准 9 列矩形
+ *
+ * 扩展方式：
+ * - 通过 register() 方法注册自定义规则
+ * - 通过 loadFromJson() 从 JSON 文件加载（预留接口）
+ *
+ * 规则匹配流程：
+ *   HybridContainerResolver → identifyContainer() → ResourceLocation
+ *   → findRule() → ContainerRule → applyDirectionRule()
+ */
 public final class ContainerCompatibilityConfig {
 
+    /** 容器规则注册表（容器 ID → 规则） */
     private static final Map<ResourceLocation, ContainerRule> RULES = new HashMap<>();
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ContainerCompatibilityConfig.class);
@@ -19,6 +42,7 @@ public final class ContainerCompatibilityConfig {
 
     private ContainerCompatibilityConfig() {}
 
+    /** 初始化内置的容器兼容性规则 */
     private static void initializeDefaultRules() {
         try {
             register(ResourceLocation.fromNamespaceAndPath("minecraft", "chest"), ContainerRule.builder()
@@ -76,21 +100,26 @@ public final class ContainerCompatibilityConfig {
         }
     }
 
+    /** 注册容器规则 */
     public static void register(ResourceLocation containerId, ContainerRule rule) {
         RULES.put(containerId, rule);
     }
 
+    /** 根据容器 ID 查找规则 */
     public static Optional<ContainerRule> findRule(ResourceLocation containerId) {
         return Optional.ofNullable(RULES.get(containerId));
     }
 
+    /** 获取所有已注册规则（不可变视图） */
     public static Set<Map.Entry<ResourceLocation, ContainerRule>> getAllRules() {
         return Collections.unmodifiableSet(RULES.entrySet());
     }
 
+    /** 从 JSON 文件加载规则（预留接口） */
     public static void loadFromJson(String jsonPath) {
     }
 
+    /** 生成整数范围列表 */
     private static List<Integer> range(int start, int end) {
         List<Integer> list = new ArrayList<>();
         for (int i = start; i <= end; i++) {
@@ -99,13 +128,26 @@ public final class ContainerCompatibilityConfig {
         return list;
     }
 
+    /** 容器布局类型 */
     public enum ContainerLayoutType {
+        /** 标准 9 列矩形 */
         RECTANGULAR_STANDARD,
+        /** 自定义列宽矩形 */
         RECTANGULAR_CUSTOM,
+        /** 线性布局（单行） */
         LINEAR,
+        /** 不规则布局 */
         IRREGULAR
     }
 
+    /**
+     * 边界行为 —— 当槽位索引超出容器范围时的处理方式。
+     *
+     * INVALIDATE: 返回 -1（无效槽位，默认行为）
+     * WRAP: 环绕到容器另一端（如大箱子左右环绕）
+     * CLAMP: 钳制到最近的有效边界
+     * SKIP: 跳过此方向
+     */
     public enum EdgeBehavior {
         INVALIDATE,
         WRAP,
@@ -113,6 +155,17 @@ public final class ContainerCompatibilityConfig {
         SKIP
     }
 
+    /**
+     * 容器规则 —— 定义特定容器类型的槽位解析规则。
+     *
+     * @param containerSize 容器大小
+     * @param layoutType 布局类型
+     * @param validHostSlots 可以作为活物品宿主的槽位列表
+     * @param directionMappings 方向到偏移量的映射（如 LEFT→-1, DOWN→+9）
+     * @param edgeBehavior 边界行为
+     * @param crossBlockEntitySupport 是否支持跨方块实体（如大箱子）
+     * @param description 规则描述
+     */
     public record ContainerRule(
         int containerSize,
         ContainerLayoutType layoutType,
@@ -122,19 +175,23 @@ public final class ContainerCompatibilityConfig {
         boolean crossBlockEntitySupport,
         String description
     ) {
+        /** 创建规则构建器 */
         public static Builder builder() {
             return new Builder();
         }
 
+        /** 检查指定槽位是否可以作为活物品宿主 */
         public boolean isValidHostSlot(int slot) {
             return validHostSlots.contains(slot);
         }
 
+        /** 获取指定方向的偏移量（无映射返回 0） */
         public int getDirectionOffset(Pos2D direction) {
             return directionMappings.getOrDefault(direction, 0);
         }
     }
 
+    /** 容器规则构建器（支持链式调用） */
     public static class Builder {
         private int containerSize = 0;
         private ContainerLayoutType layoutType = ContainerLayoutType.RECTANGULAR_STANDARD;
@@ -179,6 +236,7 @@ public final class ContainerCompatibilityConfig {
             return this;
         }
 
+        /** 构建规则（校验必填字段） */
         public ContainerRule build() {
             if (containerSize <= 0) {
                 throw new IllegalStateException("Container size must be positive");

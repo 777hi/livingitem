@@ -8,6 +8,10 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
+import com.qiqi.li.living.core.ComponentState;
+import com.qiqi.li.living.core.FunctionExecutor;
+import com.qiqi.li.living.core.LivingFunctionConfig;
+import com.qiqi.li.living.core.components.ILivingComponent;
 
 /**
  * 活物品功能接口。
@@ -73,4 +77,37 @@ public interface LivingItemFunction {
      * @return 功能的唯一 ID 字符串
      */
     String getFunctionId();
+
+    /**
+     * 追加所有组件的 Tooltip 信息（通用实现）。
+     *
+     * 遍历配置中的所有组件，从 functionData 中读取对应的状态，
+     * 调用每个组件的 appendTooltip() 方法渲染状态信息。
+     *
+     * 此方法消除了 LivingHopperFunction 和 LivingFurnaceFunction 中的重复 Tooltip 逻辑。
+     * 实现类只需在 addToTooltip() 中调用此方法即可：
+     * <pre>
+     * tooltipAdder.accept(Component.translatable("tooltip.livingitem.xxx.status"));
+     * appendComponentTooltips(functionData, tooltipAdder, CONFIG);
+     * </pre>
+     *
+     * @param functionData 从物品 NBT 读取的功能数据
+     * @param tooltipAdder Tooltip 追加器
+     * @param config 功能配置（包含组件列表）
+     */
+    default void appendComponentTooltips(CompoundTag functionData,
+                                          Consumer<Component> tooltipAdder,
+                                          LivingFunctionConfig config) {
+        if (functionData == null || functionData.isEmpty()) return;
+
+        for (var componentEntry : config.getComponents()) {
+            ILivingComponent component = FunctionExecutor.INSTANCE.resolveComponent(config, componentEntry);
+            String compId = component.getComponentId();
+
+            if (functionData.contains(compId)) {
+                ComponentState state = ComponentState.fromNBT(functionData.getCompound(compId));
+                component.appendTooltip(state, tooltipAdder);
+            }
+        }
+    }
 }

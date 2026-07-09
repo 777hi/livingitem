@@ -10,29 +10,72 @@ import com.qiqi.li.living.LivingItemManager;
 import com.qiqi.li.living.core.ComponentConfig;
 import com.qiqi.li.living.core.ComponentContext;
 import com.qiqi.li.living.core.ComponentState;
-import com.qiqi.li.living.core.model.Pos2D;
-import com.qiqi.li.living.core.model.SlotMapping;
-import com.qiqi.li.living.core.SlotResolver;
 
+/**
+ * 物品传输组件 —— 实现活漏斗的核心传输逻辑。
+ *
+ * 职责：
+ * 1. 从 ComponentContext 获取已解析的源/目标槽位索引
+ *    （由 DirectionModeComponent.resolveSlots() 预先解析）
+ * 2. 从源槽位取出物品，放入目标槽位
+ * 3. 管理传输冷却时间，避免每 tick 都执行传输
+ *
+ * 工作流程：
+ *   tick() → 检查冷却 → executeTransfer() → 更新冷却时间
+ *
+ * 冷却机制：
+ *   - 默认冷却 8 ticks（约 0.4 秒）
+ *   - 堆叠物品时冷却缩短：cooldown = baseCooldown / stackSize
+ *     例如：1 个漏斗 = 8 ticks，8 个漏斗 = 1 tick
+ *   - 这使得堆叠活漏斗可以加速传输，但不会无限快
+ *
+ * 活物品隔离：
+ *   传输前检查源槽位物品是否为活物品（LivingItemManager.isLivingItem），
+ *   如果是活物品则跳过传输。这确保活物品不会被其他活漏斗当作普通物品移动。
+ *
+ * 配置参数（通过 ComponentConfig）：
+ *   - base_cooldown: int, 基础冷却 ticks（默认 8）
+ *   - max_transfer_per_tick: int, 每次传输最大数量（默认 64）
+ *
+ * 使用示例（活漏斗配置）：
+ * <pre>
+ * new LivingFunctionConfig()
+ *     .addComponent(new DirectionModeComponent())  // 方向配置
+ *     .addComponent(new ItemTransferComponent());  // 传输逻辑
+ * </pre>
+ */
 public class ItemTransferComponent implements ILivingComponent {
 
     private static final Logger LOGGER = LogUtils.getLogger();
 
+    /** 组件 ID，用于在 ComponentState 和 NBT 中标识此组件 */
     public static final String ID = "item_transfer";
 
+    /** NBT 键名：剩余冷却 ticks */
     private static final String KEY_COOLDOWN = "transfer_cooldown";
 
+    /** 默认基础冷却：8 ticks（约 0.4 秒） */
     private static final int DEFAULT_COOLDOWN = 8;
+
+    /** 默认每次最大传输数量：64（一整组） */
     private static final int DEFAULT_MAX_TRANSFER = 64;
 
     @Override
     public String getComponentId() { return ID; }
 
+    /**
+     * 每 tick 执行一次：检查冷却并尝试传输。
+     *
+     * 执行流程：
+     * 1. 从 ComponentState 读取当前冷却值
+     * 2. 如果冷却 > 0，递减冷却值并返回
+     * 3. 如果冷却 == 0，调用 executeTransfer() 尝试传输
+     * 4. 传输成功后，根据活漏斗堆叠数计算新的冷却时间
+     */
     @Override
     public void tick(ComponentContext ctx, int hostSlot, ItemStack hostStack,
                      ComponentState state, ComponentConfig config) {
 
-        SlotMapping mapping = getCurrentMapping(ctx);
         int baseCooldown = config.get("base_cooldown", Integer.class, DEFAULT_COOLDOWN);
         int maxTransfer = config.get("max_transfer_per_tick", Integer.class, DEFAULT_MAX_TRANSFER);
 
@@ -44,7 +87,7 @@ public class ItemTransferComponent implements ILivingComponent {
             return;
         }
 
-        boolean success = executeTransfer(ctx, hostSlot, mapping, hostStack.getCount(), maxTransfer);
+        boolean success = executeTransfer(ctx, hostStack.getCount(), maxTransfer);
 
         if (success) {
             int actualCooldown = calculateCooldown(baseCooldown, hostStack.getCount());
@@ -59,6 +102,12 @@ public class ItemTransferComponent implements ILivingComponent {
         return state;
     }
 
+    /**
+     * 追加 Tooltip 信息：显示当前冷却状态。
+     *
+     * 如果正在冷却中，显示"冷却中: X ticks"（灰色文字）。
+     * 如果冷却完毕，不显示额外信息（由 DirectionModeComponent 显示方向信息）。
+     */
     @Override
     public void appendTooltip(ComponentState state, Consumer<Component> tooltipAdder) {
         int cooldown = state.getInt(KEY_COOLDOWN, 0);
@@ -69,17 +118,31 @@ public class ItemTransferComponent implements ILivingComponent {
         }
     }
 
-    private boolean executeTransfer(ComponentContext ctx, int hostSlot,
-                                   SlotMapping mapping, int stackSize, int maxTransfer) {
+    /**
+     * 执行实际的物品传输操作。
+     *
+     * 传输规则：
+     * 1. 从 ComponentContext 获取已解析的 sourceSlot 和 targetSlot
+     *    （由 DirectionModeComponent.resolveSlots() 预先解析）
+     * 2. 检查源槽位是否有物品、是否为活物品（活物品跳过）
+     * 3. 检查目标槽位状态：
+     *    - 空槽位：直接放入物品
+     *    - 有相同物品且未满：追加到现有堆叠
+     *    - 有不同物品或已满：无法传输
+     * 4. 传输数量受限于：源物品数量、活漏斗堆叠数、maxTransfer 配置
+     *
+     * @param ctx 组件上下文（包含容器引用和已解析的槽位索引）
+     * @param stackSize 活漏斗的堆叠数量（影响单次传输量）
+     * @param maxTransfer 配置的最大传输数量
+     * @return 是否成功传输了物品
+     */
+    private boolean executeTransfer(ComponentContext ctx, int stackSize, int maxTransfer) {
 
         ContainerContext containerCtx = ctx.containerCtx();
         int containerSize = containerCtx.getSize();
 
-        Pos2D sourceOffset = mapping.sourceOffset();
-        Pos2D targetOffset = mapping.targetOffset();
-
-        int sourceSlot = SlotResolver.resolve(hostSlot, sourceOffset, containerSize);
-        int targetSlot = SlotResolver.resolve(hostSlot, targetOffset, containerSize);
+        int sourceSlot = ctx.sourceSlot();
+        int targetSlot = ctx.targetSlot();
 
         if (sourceSlot < 0 || targetSlot < 0 || sourceSlot >= containerSize || targetSlot >= containerSize) {
             return false;
@@ -132,30 +195,24 @@ public class ItemTransferComponent implements ILivingComponent {
         return false;
     }
 
+    /**
+     * 根据活漏斗堆叠数计算实际冷却时间。
+     *
+     * 算法：cooldown = baseCooldown / stackSize（最小为 1）
+     *
+     * 设计意图：
+     * - 单个活漏斗：正常速度（8 ticks）
+     * - 多个活漏斗堆叠：速度加快（8/stackSize ticks）
+     * - 防止无限加速：最小冷却 1 tick（20 次/秒）
+     *
+     * @param baseCooldown 基础冷却时间（来自配置）
+     * @param stackSize 活漏斗堆叠数量
+     * @return 实际冷却时间（ticks），最小为 1
+     */
     private int calculateCooldown(int baseCooldown, int stackSize) {
         if (stackSize <= 1) {
             return baseCooldown;
         }
         return Math.max(1, baseCooldown / stackSize);
     }
-
-    private SlotMapping getCurrentMapping(ComponentContext ctx) {
-        ComponentState dirState = ctx.getComponentState(DirectionModeComponent.ID);
-        if (dirState == null) {
-            LOGGER.debug("DirectionModeComponent状态为空，使用默认映射");
-            return SlotMapping.UP_TO_DOWN;
-        }
-
-        DirectionModeComponent dirComp = new DirectionModeComponent();
-        SlotMapping mapping = dirComp.getCurrentMapping(dirState);
-
-        if (mapping == null) {
-            LOGGER.debug("无法解析槽位映射，使用默认值");
-            return SlotMapping.UP_TO_DOWN;
-        }
-
-//        LOGGER.debug("使用动态槽位映射: {}", mapping.displayName());
-        return mapping;
-    }
-
 }

@@ -14,20 +14,48 @@ import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
 
+/**
+ * 混合容器解析器 —— 多策略槽位解析器，支持多种容器类型。
+ *
+ * 解析策略优先级（从高到低）：
+ * 1. 缓存解析：从 ContainerCacheManager 获取已缓存的映射
+ * 2. 配置解析：从 ContainerCompatibilityConfig 查找容器规则
+ * 3. 适配器解析：从 AdapterRegistry 查找容器适配器
+ * 4. 标准解析：使用 SlotResolver 的 9 列网格布局解析
+ *
+ * 每种策略独立尝试，第一种成功即返回。
+ * 如果启用运行时验证（enableRuntimeValidation），
+ * 标准解析的结果还会通过 RuntimeContainerValidator 进行额外校验。
+ *
+ * 适用场景：
+ * - 标准容器（箱子、背包）：使用标准 9 列网格解析
+ * - 非标准容器（漏斗、特殊模组容器）：使用适配器或配置规则
+ * - 性能优化：缓存解析避免重复计算
+ */
 public final class HybridContainerResolver {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(HybridContainerResolver.class);
 
+    /** 单例实例 */
     public static final HybridContainerResolver INSTANCE = new HybridContainerResolver();
 
     private final ContainerCacheManager cacheManager = ContainerCacheManager.getInstance();
     private final AdapterRegistry adapterRegistry = AdapterRegistry.getInstance();
     private final RuntimeContainerValidator runtimeValidator = RuntimeContainerValidator.INSTANCE;
 
+    /** 是否启用运行时验证（默认关闭，影响性能） */
     private boolean enableRuntimeValidation = false;
 
     private HybridContainerResolver() {}
 
+    /**
+     * 解析活物品的输入/燃料/输出槽位。
+     *
+     * @param container 目标容器
+     * @param hostSlot 活物品所在槽位
+     * @param config 活物品功能配置
+     * @return 解析结果（包含槽位数组和来源信息）
+     */
     public ResolveResult resolve(
         Container container,
         int hostSlot,
@@ -86,6 +114,7 @@ public final class HybridContainerResolver {
         return ResolveResult.invalid("All resolution methods failed");
     }
 
+    /** 尝试从缓存获取槽位映射 */
     @Nullable
     private ContainerCacheManager.ContainerSlotMapping tryCacheResolve(
         Container container, LivingFunctionConfig config, int hostSlot
@@ -98,6 +127,7 @@ public final class HybridContainerResolver {
         }
     }
 
+    /** 尝试通过配置规则解析槽位 */
     private ResolveResult tryConfigResolve(
         Container container, int hostSlot, LivingFunctionConfig config,
         DirectionModeComponent dirComp
@@ -140,6 +170,7 @@ public final class HybridContainerResolver {
         return ResolveResult.invalid("No applicable config rule");
     }
 
+    /** 尝试通过适配器解析槽位 */
     private ResolveResult tryAdapterResolve(
         Container container, int hostSlot, LivingFunctionConfig config,
         DirectionModeComponent dirComp
@@ -174,6 +205,7 @@ public final class HybridContainerResolver {
         return ResolveResult.invalid("No suitable adapter found");
     }
 
+    /** 尝试通过标准 9 列网格解析槽位 */
     private ResolveResult tryStandardResolve(
         Container container, int hostSlot, LivingFunctionConfig config,
         DirectionModeComponent dirComp
@@ -206,6 +238,7 @@ public final class HybridContainerResolver {
         return ResolveResult.invalid("Standard resolution failed");
     }
 
+    /** 运行时验证：检查解析出的槽位是否可安全访问 */
     private boolean runtimeValidate(Container container, int[] slots) {
         try {
             var result = runtimeValidator.resolveAndValidate(
@@ -218,6 +251,7 @@ public final class HybridContainerResolver {
         }
     }
 
+    /** 通过类名识别容器类型 */
     @Nullable
     private ResourceLocation identifyContainer(Container container) {
         String className = container.getClass().getSimpleName();
@@ -235,6 +269,7 @@ public final class HybridContainerResolver {
         return null;
     }
 
+    /** 根据配置规则的方向偏移计算目标槽位 */
     private int applyDirectionRule(ContainerCompatibilityConfig.ContainerRule rule,
                                    int baseSlot, Pos2D direction, int containerSize) {
         int offset = rule.getDirectionOffset(direction);
@@ -261,6 +296,7 @@ public final class HybridContainerResolver {
         return result;
     }
 
+    /** 安全获取容器大小（带异常保护） */
     private int safeGetSize(Container container) {
         try {
             return container.getContainerSize();
@@ -269,12 +305,23 @@ public final class HybridContainerResolver {
         }
     }
 
+    /** 设置是否启用运行时验证 */
     public void setRuntimeValidation(boolean enabled) {
         this.enableRuntimeValidation = enabled;
         LOGGER.info("Runtime validation {}", enabled ? "ENABLED" : "DISABLED");
     }
 
+    /**
+     * 解析结果 —— 封装槽位解析的输出。
+     *
+     * 包含：
+     * - valid：解析是否成功
+     * - slots：解析出的槽位数组 [inputSlot, fuelSlot, outputSlot]
+     * - source：解析来源（CACHE/CONFIG/ADAPTER/STANDARD/INVALID）
+     * - reason：失败原因
+     */
     public static class ResolveResult {
+        /** 解析来源 */
         enum Source { CACHE, CONFIG, ADAPTER, STANDARD, INVALID }
 
         private final boolean valid;

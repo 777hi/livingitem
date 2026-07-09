@@ -8,14 +8,44 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.qiqi.li.living.LivingHopperFunction;
 import com.qiqi.li.living.LivingItemManager;
-import com.qiqi.li.living.core.ComponentState;
-import com.qiqi.li.living.core.components.DirectionModeComponent;
 import com.qiqi.li.living.core.model.SlotMapping;
 
+/**
+ * 服务端网络包处理器 —— 处理客户端发送的活物品配置请求。
+ *
+ * 职责：
+ * 1. 验证请求的合法性（玩家状态、物品类型、活物品标识）
+ * 2. 委托 LivingHopperFunction 更新活漏斗的传输方向 NBT 数据
+ * 3. 同步更新后的数据到客户端
+ *
+ * 安全验证流程：
+ *   1. 解析网络包中的 SlotMapping 数据
+ *   2. 验证玩家光标上是否持有活漏斗（containerMenu.getCarried()）
+ *   3. 验证光标物品是否为活物品
+ *   4. 调用 LivingHopperFunction.updateTransferMapping() 更新方向
+ *   5. 通过 ClientboundContainerSetSlotPacket(-1, -1) 同步光标物品到客户端
+ *
+ * 为什么使用 containerId = -1：
+ *   -1 表示光标物品（carried），这是 Minecraft 官方协议中
+ *   同步光标物品的标准方式。客户端收到后会更新
+ *   containerMenu.getCarried() 的数据。
+ */
 public class ServerPacketHandler {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ServerPacketHandler.class);
 
+    /**
+     * 处理活漏斗方向配置请求。
+     *
+     * 验证流程：
+     * 1. 解析 SlotMapping 数据
+     * 2. 验证光标物品是否为活漏斗
+     * 3. 委托 LivingHopperFunction.updateTransferMapping() 更新 NBT
+     * 4. 同步光标物品到客户端
+     *
+     * @param player 发送请求的服务端玩家
+     * @param payload 客户端发送的包数据
+     */
     public static void handleHopperDirection(ServerPlayer player, HopperDirectionPacket payload) {
         if (player == null || player.containerMenu == null) return;
 
@@ -38,26 +68,11 @@ public class ServerPacketHandler {
             return;
         }
 
-        CompoundTag functionTag = LivingItemManager.getFunctionData(carried, LivingHopperFunction.ID);
-
-        ComponentState dirState;
-        if (functionTag.contains(DirectionModeComponent.ID)) {
-            dirState = ComponentState.fromNBT(functionTag.getCompound(DirectionModeComponent.ID));
-        } else {
-            DirectionModeComponent tempComp = new DirectionModeComponent();
-            dirState = tempComp.createDefaultState();
-        }
-
-        DirectionModeComponent dirComp = new DirectionModeComponent();
-        boolean success = dirComp.updateMapping(dirState, newMapping);
-
+        boolean success = LivingHopperFunction.updateTransferMapping(carried, newMapping);
         if (!success) {
             LOGGER.warn("Failed to update mapping for player {}", player.getName().getString());
             return;
         }
-
-        functionTag.put(DirectionModeComponent.ID, dirState.toNBT());
-        LivingItemManager.setFunctionData(carried, LivingHopperFunction.ID, functionTag);
 
         int stateId = player.containerMenu.incrementStateId();
         player.connection.send(new ClientboundContainerSetSlotPacket(

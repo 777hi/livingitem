@@ -1,7 +1,9 @@
 package com.qiqi.li.living;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket;
 import net.minecraft.server.level.ServerPlayer;
@@ -42,6 +44,9 @@ public class SimpleContainerContext implements ContainerContext {
     private final String containerKey;
     private final List<BlockPos> associatedBlockPositions;
     private final List<BlockEntity> associatedBlockEntities;
+
+    /** 本 tick 的已占用槽位集合（跨 Function 共享） */
+    private final Set<String> occupiedSlots = new HashSet<>();
 
     public SimpleContainerContext(Container container) {
         this(container, new ArrayList<>(), new ArrayList<>());
@@ -147,6 +152,11 @@ public class SimpleContainerContext implements ContainerContext {
     @Override
     public String getStableKey(int logicalSlot, String functionId) {
         return containerKey + "_slot_" + logicalSlot + "_func_" + functionId;
+    }
+
+    @Override
+    public Set<String> getOccupiedSlots() {
+        return occupiedSlots;
     }
 
     /**

@@ -3,7 +3,6 @@ package com.qiqi.li.client;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
-import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.item.ItemStack;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,13 +19,51 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import com.qiqi.li.LivingItem;
 import com.qiqi.li.network.HopperDirectionPacket;
 
+/**
+ * 活物品客户端输入处理器 —— 处理 WASD 键入配置活漏斗传输方向。
+ *
+ * 功能概述：
+ * 在容器 GUI 中，将活漏斗拿起悬停在活按钮上方时，
+ * 通过 WASD 键入来改变活漏斗的传输方向。
+ *
+ * 输入规则：
+ * - W = 上方（UP）
+ * - A = 左方（LEFT）
+ * - S = 下方（DOWN）
+ * - D = 右方（RIGHT）
+ * - 需要输入 2 个键：第 1 个 = 源方向，第 2 个 = 目标方向
+ * - 示例："WD" = 上传下，"AD" = 左传右
+ *
+ * 前置条件（全部满足才处理输入）：
+ * 1. 当前屏幕是容器 GUI（AbstractContainerScreen）
+ * 2. 鼠标悬停在活按钮（LivingButton）上
+ * 3. 光标上持有活漏斗
+ * 4. 输入的字符是有效的 WASD 键
+ *
+ * 输入会话机制（InputSession）：
+ * - 每次输入创建一个会话，最多接受 2 个键
+ * - 超时时间 2 秒，超时后会话自动失效
+ * - 2 个键输入完成后立即处理并发送网络包
+ *
+ * 通信流程：
+ *   WASD 键入 → onCharTyped() → InputSession 收集
+ * → processInput() → 解析方向 → sendDirectionPacket()
+ * → HopperDirectionPacket → 服务端 ServerPacketHandler
+ */
 @EventBusSubscriber(modid = LivingItem.MOD_ID, value = net.neoforged.api.distmarker.Dist.CLIENT)
 public class LivingItemInputHandler {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(LivingItemInputHandler.class);
 
+    /** 当前活跃的输入会话 */
     private static InputSession currentSession = null;
 
+    /**
+     * 监听字符输入事件。
+     *
+     * 检查前置条件后，将有效的 WASD 键加入当前输入会话。
+     * 会话完成后（2 个键），解析方向并发送网络包。
+     */
     @SubscribeEvent
     public static void onCharTyped(ScreenEvent.CharacterTyped.Pre event) {
         Minecraft mc = Minecraft.getInstance();
@@ -63,6 +100,7 @@ public class LivingItemInputHandler {
         }
     }
 
+    /** 检查鼠标是否悬停在活按钮上 */
     private static boolean isLivingButtonHovered() {
         Minecraft mc = Minecraft.getInstance();
         if (mc.screen == null) return false;
@@ -75,6 +113,11 @@ public class LivingItemInputHandler {
         return false;
     }
 
+    /**
+     * 监听世界 tick 事件，检查输入会话是否超时。
+     *
+     * 超时后会话自动失效，用户需要重新开始输入。
+     */
     @SubscribeEvent
     public static void onLevelTick(net.neoforged.neoforge.event.tick.LevelTickEvent.Post event) {
         if (!(event.getLevel() instanceof net.minecraft.client.multiplayer.ClientLevel)) return;
@@ -84,18 +127,25 @@ public class LivingItemInputHandler {
         }
     }
 
+    /**
+     * 处理完整的输入序列。
+     *
+     * 1. 通过 LivingHopperFunction.readDirectionState() 读取当前方向状态
+     * 2. 通过 DirectionModeComponent 解析输入
+     * 3. 获取解析后的 SlotMapping
+     * 4. 发送网络包到服务端
+     *
+     * @param rawInput 原始输入字符串（如 "WD"、"AD"）
+     * @param hopperStack 光标上的活漏斗 ItemStack
+     */
     private static void processInput(String rawInput, ItemStack hopperStack) {
-        DirectionModeComponent dirComp = new DirectionModeComponent();
-
-        ComponentState dirState;
-        CompoundTag functionTag = LivingItemManager.getFunctionData(hopperStack, LivingHopperFunction.ID);
-
-        if (functionTag.contains(DirectionModeComponent.ID)) {
-            dirState = ComponentState.fromNBT(functionTag.getCompound(DirectionModeComponent.ID));
-        } else {
-            dirState = dirComp.createDefaultState();
+        ComponentState dirState = LivingHopperFunction.readDirectionState(hopperStack);
+        if (dirState == null) {
+            LOGGER.debug("Failed to read direction state from hopper");
+            return;
         }
 
+        DirectionModeComponent dirComp = new DirectionModeComponent();
         boolean success = dirComp.updateFromInput(dirState, rawInput);
         if (!success) {
             LOGGER.debug("Failed to parse input: {}", rawInput);
@@ -113,39 +163,60 @@ public class LivingItemInputHandler {
         LOGGER.debug("Updated hopper direction: {} -> {}", rawInput, mapping.displayName());
     }
 
+    /** 发送方向配置网络包到服务端 */
     private static void sendDirectionPacket(SlotMapping mapping) {
         PacketDistributor.sendToServer(new HopperDirectionPacket(mapping.toNBT()));
     }
 
+    /** 检查物品是否为活漏斗 */
     private static boolean isHopperItem(ItemStack stack) {
         return stack.is(net.minecraft.world.item.Items.HOPPER) &&
                LivingItemManager.isLivingItem(stack);
     }
 
+    /**
+     * 输入会话 —— 管理一次 WASD 键入的生命周期。
+     *
+     * 生命周期：
+     * 1. 创建会话（用户按下第一个有效键）
+     * 2. 收集键入（最多 2 个键）
+     * 3. 完成或超时
+     *
+     * 超时机制：
+     * 2 秒内未完成输入则会话失效，避免残留的半输入状态。
+     */
     private static class InputSession {
         private final StringBuilder keys = new StringBuilder();
         private final long startTime;
+
+        /** 会话超时时间（毫秒） */
         private static final long TIMEOUT_MS = 2000;
+
+        /** 最大键入数量（源方向 + 目标方向 = 2） */
         private static final int MAX_KEYS = 2;
 
         InputSession() {
             this.startTime = System.currentTimeMillis();
         }
 
+        /** 追加一个键到会话 */
         void appendKey(char key) {
             if (keys.length() < MAX_KEYS) {
                 keys.append(key);
             }
         }
 
+        /** 检查会话是否已完成（已收集 2 个键） */
         boolean isComplete() {
             return keys.length() >= MAX_KEYS;
         }
 
+        /** 检查会话是否已超时 */
         boolean isTimedOut() {
             return System.currentTimeMillis() - startTime > TIMEOUT_MS;
         }
 
+        /** 获取原始输入字符串 */
         String getRawInput() {
             return keys.toString();
         }

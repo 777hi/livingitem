@@ -5,6 +5,7 @@ import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.Container;
@@ -17,7 +18,6 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.ChestType;
 import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
-import com.qiqi.li.living.core.FunctionExecutor;
 
 /**
  * 活物品容器处理器 —— 负责遍历容器中的物品并执行活物品 tick。
@@ -131,7 +131,10 @@ public class ContainerLivingItemHandler {
      * @param level 世界
      */
     public static void processContext(ContainerContext context, Level level) {
-        FunctionExecutor.INSTANCE.resetOccupiedSlots();
+        Set<String> occupiedSlots = context.getOccupiedSlots();
+        if (occupiedSlots != null) {
+            occupiedSlots.clear();
+        }
 
         int containerSize = context.getSize();
         if (containerSize <= 0) {

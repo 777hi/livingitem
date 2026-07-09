@@ -1,5 +1,6 @@
 package com.qiqi.li.living;
 
+import java.util.Set;
 import net.minecraft.world.item.ItemStack;
 
 /**
@@ -34,6 +35,18 @@ public interface ContainerContext {
 
     default boolean isValidSlot(int logicalSlot) {
         return logicalSlot >= 0 && logicalSlot < getSize();
+    }
+
+    /**
+     * 获取本 tick 的已占用槽位集合。
+     *
+     * 用于跨 Function 的槽位互斥：确保同一个输入槽位不会被多个活熔炉同时处理。
+     * 由 ContainerLivingItemHandler 在每次容器 tick 时创建并传入。
+     *
+     * @return 已占用槽位的 key 集合，如果未初始化返回 null
+     */
+    default Set<String> getOccupiedSlots() {
+        return null;
     }
 
     /**
