@@ -11,10 +11,13 @@
 - **活按钮 UI**：在容器界面点击按钮，将手持物品转化为活物品
 - **容器内自动执行**：含活物品的被加载容器会自动 tick
 - **组件化架构**：功能拆分为可复用的原子组件，通过声明式配置组合
+- **编排器模式**：通过 `LivingOrchestrator` 定义组件协作流程，新活物品只需选择编排器 + 配置组件
 - **方向配置组件**：`DirectionModeComponent` 统一管理槽位方向，支持 SLOTS（多槽位映射）和 TRANSFER（传输方向）两种模式
 - **WASD 输入配置**：在容器界面拿起活漏斗悬停活按钮上，通过 WASD 键入改变传输方向
 - **状态持久化**：所有运行数据保存在物品 NBT 中，跨容器迁移不丢失
 - **活物品隔离**：活物品不会被其他活物品当作普通物品处理（不传输、不熔炼、不作为燃料）
+- **GUI交互系统**：容器界面中活物品之间的鼠标交互（如活打火石右键活TNT），声明式规则 + 统一拦截 + 服务端处理
+- **活TNT爆炸**：容器中的可爆炸活物品，引信倒计时后爆炸，威力随数量缩放，支持普通/大当量双模式
 
 ---
 
@@ -29,9 +32,9 @@ ContainerChunkCache (只遍历含容器的区块)
     ↓
 ContainerLivingItemHandler (扫描容器、按功能分组)
     ↓
-LivingItemFunction.tick() (活熔炉 / 活漏斗)
+BaseLivingFunction.tick() (通用编排框架)
     ↓
-FunctionExecutor (加载组件状态、编排执行)
+LivingOrchestrator.orchestrate() (编排器决定组件协作流程)
     ↓
 ┌─────────────────────────────────────────────┐
 │  DirectionModeComponent  → 方向/槽位解析     │
@@ -39,10 +42,33 @@ FunctionExecutor (加载组件状态、编排执行)
 │  ProgressComponent       → 进度计时          │
 │  FuelConsumeComponent    → 燃料消耗          │
 │  ItemTransformComponent  → 配方匹配与转化    │
+│  ExplosionComponent      → 引信倒计时+爆炸   │
 └─────────────────────────────────────────────┘
     ↓
 ContainerContext / SimpleContainerContext (容器读写 + 客户端同步)
 ```
+
+### 编排器体系
+
+编排器将"如何协调组件执行"从活物品功能类中分离出来，使新活物品只需选择合适的编排器，无需重写编排逻辑。
+
+```
+LivingOrchestrator (接口)
+    ├── SimpleOrchestrator       — 直接遍历组件 tick
+    │     适用：活漏斗（无进度/燃料概念）
+    │
+    ├── ProgressOrchestrator     — 检查输入 → tick/pauseTick → 完成时转化
+    │     适用：活磨石（有进度和转化，无燃料）
+    │
+    └── FuelProgressOrchestrator — 检查燃料+输入 → tick/pauseTick → 完成时转化
+          适用：活熔炉、活酿造台（燃料+进度+转化）
+```
+
+| 编排器 | canProgress 检查 | pauseTick | handleCompletion | 输入槽位占用 |
+|--------|-----------------|-----------|-----------------|-------------|
+| SIMPLE | 无 | 无 | 无 | 无 |
+| PROGRESS | 输入有效性 | 进度回退 | 转化+重置 | ✅ |
+| FUEL_PROGRESS | 燃料+输入有效性 | 进度+燃料回退 | 燃料检查+转化+重置 | ✅ |
 
 ### 客户端输入流（活漏斗方向配置）
 
@@ -63,9 +89,53 @@ processInput() → DirectionModeComponent.updateFromInput()
         ↓
 ServerPacketHandler (服务端)
     ├─ getCarried() 获取光标活漏斗
-    ├─ 更新 DirectionModeComponent 状态到 NBT
+    ├─ LivingHopperFunction.updateTransferMapping() 更新方向
     └─ ClientboundContainerSetSlotPacket 同步到客户端
 ```
+
+### GUI交互数据流（活物品间交互）
+
+```
+玩家在容器界面鼠标点击（右键活TNT等）
+    ↓
+Screen Mixin (mouseClicked / mouseReleased HEAD注入)
+    ├─ AbstractContainerScreenMixin  — 通用容器（箱子、潜影盒）
+    ├─ InventoryScreenMixin          — 生存模式背包
+    └─ CreativeModeInventoryScreenMixin — 创造模式背包
+    ↓
+GuiInteractionHelper.tryInteract(hoveredSlot, button, menu)
+    ├─ 获取光标物品(trigger)和槽位物品(target)
+    ├─ InteractionRegistry.findInteraction(trigger, target, button)
+    │     遍历所有 InteractionEntry，匹配 triggerItem + targetItem + button
+    │     同时验证双方都是活物品
+    ├─ resolveContainerSlot() — 解析真实容器索引（兼容 SlotWrapper）
+    ├─ resolveCarriedTag() — 创造模式背包下序列化光标物品NBT
+    └─ 发送 GuiInteractionPacket(slotIndex, containerSlot, actionId, carriedTag)
+        ↓
+GuiInteractionPacket.handle() (服务端)
+    ├─ 创造模式 + carriedTag非空 → menu.setCarried() 恢复光标物品
+    ├─ resolveSlot() 定位目标槽位（slotIndex优先，containerSlot回退）
+    ├─ InteractionRegistry.getHandler(actionId) 查找处理器
+    ├─ handler.handle(player, targetSlot) 执行交互逻辑
+    └─ 创造模式光标被修改 → CarriedUpdatePacket 同步回客户端
+        ↓
+CarriedUpdatePacket.handle() (客户端)
+    └─ 直接更新 menu.setCarried()，绕过原版对 CreativeModeInventoryScreen 的排除
+```
+
+**交互规则声明示例（活TNT）：**
+```java
+// LivingTntFunction.CONFIG 中声明两条交互规则：
+new InteractionEntry(Items.TNT, Items.FLINT_AND_STEEL, 1, "ignite")
+//  目标=活TNT, 触发器=活打火石, 右键 → actionId="ignite" → IgniteHandler
+
+new InteractionEntry(Items.FLINT_AND_STEEL, Items.TNT, 1, "ignite_carried")
+//  目标=活打火石, 触发器=活TNT, 右键 → actionId="ignite_carried" → IgniteCarriedHandler
+```
+
+**新增交互只需两步：**
+1. 在 `LivingFunctionConfig` 中 `addInteraction(new InteractionEntry(...))`
+2. 注册处理器 `InteractionRegistry.registerHandler("actionId", new XxxHandler())`
 
 ### 组件体系
 
@@ -77,7 +147,17 @@ ILivingComponent (接口)
     ├── ItemTransferComponent   — 物品传输逻辑
     ├── ProgressComponent       — 进度计时与暂停
     ├── FuelConsumeComponent    — 燃料消耗与可用性检查
-    └── ItemTransformComponent  — 配方匹配与物品转化
+    ├── ItemTransformComponent  — 配方匹配与物品转化
+    └── ExplosionComponent      — 引信倒计时 + 爆炸逻辑（活TNT）
+          ├── 普通模式 (≤64 TNT)：原版 setBlock，支持原版/100%两种掉落模式
+          └── 大当量模式 (>64 TNT)：直接修改区块数据，无掉落物
+
+交互体系（独立于组件，处理GUI中的活物品间交互）
+    ├── InteractionEntry   — 交互规则（record：targetItem + triggerItem + button + actionId）
+    ├── InteractionRegistry — 交互注册表（规则查询 + 处理器注册）
+    ├── InteractionHandler  — 处理器接口（服务端执行交互逻辑）
+    ├── IgniteHandler       — 点燃槽位TNT（活打火石→活TNT）
+    └── IgniteCarriedHandler — 点燃光标TNT（活TNT→活打火石）
 ```
 
 ### 模型层
@@ -100,21 +180,23 @@ src/main/java/com/qiqi/li/
 │
 ├── living/
 │   ├── LivingItemManager.java               # 核心管理器：DataComponent 注册、数据读写、功能注册
-│   ├── LivingItemFunction.java              # 功能接口定义
-│   ├── LivingFunctionData.java              # NBT 数据容器
-│   ├── LivingFurnaceFunction.java           # 活熔炉：SLOTS 模式配置方向
-│   ├── LivingHopperFunction.java            # 活漏斗：TRANSFER 模式配置方向
-│   ├── ContainerContext.java                # 容器操作抽象接口（含客户端同步）
+│   ├── LivingItemFunction.java              # 功能接口定义（含 appendComponentTooltips 默认方法）
+│   ├── BaseLivingFunction.java              # ⭐ 功能基类：通用 tick 编排 + Tooltip 实现
+│   ├── LivingFurnaceFunction.java           # 活熔炉：FUEL_PROGRESS 编排器 + SLOTS 模式方向
+│   ├── LivingHopperFunction.java            # 活漏斗：SIMPLE 编排器 + TRANSFER 模式方向 + NBT 工具
+│   ├── LivingTntFunction.java               # 活TNT：引信倒计时 + 爆炸，声明两条交互规则
+│   ├── LivingFlintAndSteelFunction.java     # 活打火石：交互触发器，无 tick 逻辑
+│   ├── ContainerContext.java                # 容器操作抽象接口（含客户端同步 + 槽位占用）
 │   ├── SimpleContainerContext.java          # 容器上下文实现（带异常保护 + 同步逻辑）
 │   ├── ContainerLivingItemHandler.java      # 容器扫描、分组调度、大箱子去重
 │   ├── ContainerChunkCache.java             # 区块级容器缓存（事件驱动维护）
 │   │
 │   └── core/
-│       ├── FunctionExecutor.java            # ⭐ 组件编排核心：加载状态、解析方向、执行 tick、处理完成
+│       ├── FunctionExecutor.java            # 纯工具类：状态加载/保存、槽位解析、组件查找
 │       ├── SlotResolver.java                # 槽位解析：基于 9 列网格的相对偏移计算
-│       ├── LivingFunctionConfig.java        # 配置声明：组件注册、预配置实例、配置参数
+│       ├── LivingFunctionConfig.java        # 配置声明：组件注册 + 编排器选择 + 交互规则 + 配置参数
 │       ├── ComponentConfig.java             # 组件配置参数容器
-│       ├── ComponentContext.java            # 组件执行上下文（容器 + 槽位 + 世界 + 状态）
+│       ├── ComponentContext.java            # 组件执行上下文（容器 + 解析槽位 + 世界 + 状态）
 │       ├── ComponentState.java              # 组件运行时状态（NBT 包装器）
 │       │
 │       ├── model/
@@ -123,11 +205,26 @@ src/main/java/com/qiqi/li/
 │       │
 │       ├── components/
 │       │   ├── ILivingComponent.java        # 组件接口：tick + createDefaultState + appendTooltip
-│       │   ├── DirectionModeComponent.java  # 方向配置组件（SLOTS/TRANSFER 双模式）
+│       │   ├── DirectionModeComponent.java  # 方向配置组件（SLOTS/TRANSFER 双模式 + NBT 自治）
 │       │   ├── ItemTransferComponent.java   # 物品传输组件（活漏斗）
 │       │   ├── ProgressComponent.java       # 进度组件（计时、暂停、回退）
 │       │   ├── FuelConsumeComponent.java    # 燃料组件（消耗、可用性检查）
-│       │   └── ItemTransformComponent.java  # 转化组件（配方匹配、物品转化）
+│       │   ├── ItemTransformComponent.java  # 转化组件（配方匹配、物品转化）
+│       │   └── ExplosionComponent.java      # 爆炸组件（引信倒计时、双模式爆炸、流体防爆）
+│       │
+│       ├── orchestrator/
+│       │   ├── LivingOrchestrator.java      # 编排器接口 + 通用辅助方法
+│       │   ├── SimpleOrchestrator.java      # 简单编排器：直接遍历组件 tick
+│       │   ├── ProgressOrchestrator.java    # 进度编排器：检查输入 → tick/pauseTick → 完成时转化
+│       │   ├── FuelProgressOrchestrator.java # 燃料+进度编排器：检查燃料+输入 → tick/pauseTick → 完成时转化
+│       │   └── Orchestrators.java           # 编排器工厂（SIMPLE / PROGRESS / FUEL_PROGRESS 常量）
+│       │
+│       ├── interaction/
+│       │   ├── InteractionEntry.java        # 交互规则 record（targetItem + triggerItem + button + actionId）
+│       │   ├── InteractionRegistry.java     # 交互注册表（规则查询 + 处理器注册）
+│       │   ├── InteractionHandler.java      # 处理器接口（服务端执行交互逻辑）
+│       │   ├── IgniteHandler.java           # 点燃槽位TNT（活打火石→活TNT）
+│       │   └── IgniteCarriedHandler.java    # 点燃光标TNT（活TNT→活打火石）
 │       │
 │       ├── adapters/
 │       │   ├── ContainerAdapter.java        # 适配器接口
@@ -139,15 +236,21 @@ src/main/java/com/qiqi/li/
 │           └── TransferStrategy.java               # 传输策略
 │
 ├── client/
+│   ├── GuiInteractionHelper.java            # ⭐ 客户端GUI交互统一工具（查询规则+解析槽位+序列化光标+发包）
 │   ├── LivingItemInputHandler.java          # 客户端输入处理：WASD 方向配置 + InputSession
 │   ├── LivingItemTooltip.java               # Tooltip 渲染
 │   ├── gui/
 │   │   └── LivingButton.java                # 活按钮：点击切换 IS_LIVING 标记
 │   └── mixin/
-│       ├── AbstractContainerScreenMixin.java # 容器界面 Mixin（注入活按钮）
-│       └── InventoryScreenMixin.java         # 背包界面 Mixin
+│       ├── AbstractContainerScreenMixin.java # 容器界面 Mixin（注入活按钮 + 交互拦截）
+│       ├── InventoryScreenMixin.java         # 生存模式背包 Mixin（交互拦截）
+│       ├── CreativeModeInventoryScreenMixin.java # 创造模式背包 Mixin（交互拦截 + SlotWrapper兼容）
+│       ├── SlotWrapperAccessor.java          # SlotWrapper 访问器接口（获取 target 字段）
+│       └── SpriteIconButtonMixin.java        # 按钮渲染 Mixin
 │
 └── network/
+    ├── GuiInteractionPacket.java            # ⭐ 通用GUI交互包（客户端→服务端：slotIndex + containerSlot + actionId + carriedTag）
+    ├── CarriedUpdatePacket.java             # 光标更新包（服务端→客户端：绕过创造模式光标同步限制）
     ├── LivingTagPacket.java                 # 活物品标签切换包（客户端→服务端）
     ├── HopperDirectionPacket.java           # 漏斗方向配置包（客户端→服务端，v2 格式）
     └── ServerPacketHandler.java             # 服务端包处理：更新光标物品 NBT + 同步
@@ -157,7 +260,48 @@ src/main/java/com/qiqi/li/
 
 ## 关键设计决策
 
-### 1. DirectionModeComponent 双模式设计
+### 1. 编排器模式（Orchestrator Pattern）
+
+活物品的组件协作流程通过 `LivingOrchestrator` 定义，而非硬编码在 Function 或 FunctionExecutor 中。
+
+**为什么不用 FunctionExecutor 编排？**
+- FunctionExecutor 是通用工具类，不应包含任何活物品的业务逻辑
+- 不同活物品有不同的协作流程（活漏斗只需 tick，活熔炉需要 canProgress/pauseTick/handleCompletion）
+- 编排器可复用：活熔炉和活酿造台都用 `FUEL_PROGRESS`，无需重复代码
+
+**为什么不用组件内部编排？**
+- 组件应该是原子的、独立的，不应知道其他组件的存在
+- 编排逻辑跨组件，放在任何单个组件中都会导致职责泄漏
+
+### 2. BaseLivingFunction 基类
+
+`BaseLivingFunction` 提供通用的 tick 编排和 Tooltip 实现，子类只需：
+- 返回 `LivingFunctionConfig`（包含组件列表 + 编排器）
+- 实现 `canApply()` 和 `getFunctionId()`
+
+**新增活物品只需 30-50 行代码**：
+```java
+public class LivingBrewingStandFunction extends BaseLivingFunction {
+    private static final LivingFunctionConfig CONFIG = new LivingFunctionConfig()
+        .withFunctionId("living_brewing_stand")
+        .withOrchestrator(Orchestrators.FUEL_PROGRESS)  // 选择编排器
+        .addComponent(new DirectionModeComponent(Map.of(
+            "input", Pos2D.LEFT, "fuel", Pos2D.DOWN, "output", Pos2D.RIGHT)))
+        .addComponent(FuelConsumeComponent.class,
+            ComponentConfig.of("recipe_type", RecipeType.BREWING))
+        .addComponent(ProgressComponent.class,
+            ComponentConfig.of("total_ticks", 400))
+        .addComponent(ItemTransformComponent.class,
+            ComponentConfig.of("recipe_type", RecipeType.BREWING));
+
+    @Override protected LivingFunctionConfig getConfig() { return CONFIG; }
+    @Override protected String getTooltipTitleKey() { return "tooltip.livingitem.brewing_stand.status"; }
+    @Override public boolean canApply(ItemStack stack) { return stack.is(Items.BREWING_STAND) && LivingItemManager.isLivingItem(stack); }
+    @Override public String getFunctionId() { return "living_brewing_stand"; }
+}
+```
+
+### 3. DirectionModeComponent 双模式设计
 
 | 模式 | 用途 | 数据结构 | 输入方式 |
 |------|------|----------|----------|
@@ -166,28 +310,78 @@ src/main/java/com/qiqi/li/
 
 SLOTS 模式的方向数据存储在 `ComponentState` 中（`slot_input_x`, `slot_input_y` 等），TRANSFER 模式存储 `src_x`, `src_y`, `tgt_x`, `tgt_y`。
 
-### 2. 不可变数据模型
+### 4. DirectionModeComponent NBT 自治
+
+`DirectionModeComponent` 提供静态方法 `updateStateInStack()` 和 `readStateFromStack()`，自己管理自己的 NBT 持久化，调用方无需知道内部结构（ID 常量、默认状态创建、NBT 存储格式）。
+
+### 5. 不可变数据模型
 
 `Pos2D` 和 `SlotMapping` 使用 Java record，确保数据不可变性。NBT 序列化使用纯整数坐标（`src_x`, `src_y` 等），避免字符串解析的歧义问题。
 
-### 3. 活物品隔离
+### 6. 活物品隔离
 
 所有组件在处理物品时检查 `LivingItemManager.isLivingItem()`：
 - `ItemTransferComponent`：不传输活物品
 - `FuelConsumeComponent`：不消耗活物品作为燃料
 - `ItemTransformComponent`：不熔炼活物品
 
-### 4. 服务端权威 + 手动同步
+### 7. 服务端权威 + 手动同步
 
 物品数据在服务端是权威的。活物品 tick 修改 NBT 后，通过 `ContainerContext.syncSlotToClients()` 主动发送 `ClientboundContainerSetSlotPacket` 同步到客户端，因为原版 `broadcastChanges()` 无法检测自定义 DataComponent 的变化。
 
-### 5. 光标物品操作
+### 8. 光标物品操作
 
 活漏斗方向配置时，物品被拿在光标上（`containerMenu.getCarried()`），不在任何槽位中。服务端通过 `getCarried()` 获取引用，修改后用 `ClientboundContainerSetSlotPacket(-1, stateId, -1, ...)` 同步回客户端。
 
-### 6. 容器区块缓存
+### 9. 容器区块缓存
 
 `ContainerChunkCache` 通过事件驱动（区块加载/卸载、方块放置/破坏）维护含容器的区块列表，避免每 tick 全量扫描所有区块。
+
+### 10. GUI交互系统（声明式规则 + 统一拦截）
+
+活物品间的GUI交互通过声明式规则驱动，而非硬编码物品判断：
+
+- **规则声明**：`InteractionEntry(targetItem, triggerItem, button, actionId)` 在 `LivingFunctionConfig` 中注册
+- **统一拦截**：所有 Screen Mixin 调用 `GuiInteractionHelper.tryInteract()`，查询 `InteractionRegistry` 匹配规则
+- **服务端处理**：`GuiInteractionPacket` 携带 `actionId`，服务端通过 `InteractionRegistry.getHandler()` 查找处理器
+
+新增交互类型只需两步：配置 `InteractionEntry` + 注册 `InteractionHandler`，无需修改任何 Mixin 代码。
+
+### 11. 创造模式光标物品同步
+
+创造模式使用 `ItemPickerMenu`，光标物品是客户端虚拟的，服务端 `menu.getCarried()` 返回空。此外原版 `ClientboundContainerSetSlotPacket(containerId=-1)` 明确排除了 `CreativeModeInventoryScreen`。
+
+解决方案分两层：
+- **客户端→服务端**：`GuiInteractionPacket` 携带 `carriedTag`（光标物品NBT），仅在 `CreativeModeInventoryScreen` 下发送；服务端收到后 `menu.setCarried()` 恢复光标物品
+- **服务端→客户端**：`CarriedUpdatePacket` 自定义包，绕过原版排除逻辑，直接更新客户端 `menu.setCarried()`
+
+注意：创造模式打开容器（箱子等）时使用普通容器界面，光标由服务端管理，不需要 `carriedTag`。`resolveCarriedTag()` 仅在 `CreativeModeInventoryScreen` 下返回非空。
+
+### 12. 创造模式 SlotWrapper 兼容
+
+创造模式 INVENTORY 标签页中，快捷栏槽位被 `CreativeModeInventoryScreen.SlotWrapper` 包装：
+- `hoveredSlot.index` = 客户端显示索引
+- `SlotWrapper.target.index` = 服务端实际槽位索引
+
+`GuiInteractionHelper.resolveContainerSlot()` 通过 `SlotWrapperAccessor` 获取 `target` 字段，统一处理此差异。`GuiInteractionPacket` 携带双索引（`slotIndex` + `containerSlot`），服务端优先通过 `containerSlot` 遍历匹配。
+
+### 13. ExplosionComponent 双模式爆炸
+
+活TNT爆炸根据数量自动选择模式：
+
+| 模式 | TNT数量 | 方块破坏方式 | 掉落物 | 适用场景 |
+|------|---------|-------------|--------|---------|
+| 普通模式 | ≤64 | 原版 `setBlock()` + `onExplosionHit()` | 可选原版衰减/100%掉落 | 小规模精确爆炸 |
+| 大当量模式 | >64 | 直接修改 `LevelChunkSection` 底层数据 | 无 | 大规模性能优化 |
+
+**流体防爆**：
+- 普通模式：检查 `FluidState.getExplosionResistance()`，`effectiveResistance >= 100.0F` 的方块（水、岩浆等）绝对不炸
+- 大当量模式：由 `power <= effectiveResistance` 自然判断，威力足够大时可突破流体
+
+**爆炸威力公式**：`radius = 4.0 × √(活TNT总数)`
+- 1个活TNT → 半径4.0（等同原版TNT）
+- 64个活TNT → 半径32.0
+- 1728个活TNT → 半径166.0
 
 ---
 
@@ -198,9 +392,19 @@ SLOTS 模式的方向数据存储在 `ComponentState` 中（`slot_input_x`, `slo
 - [x] DataComponent 数据持久化系统
 - [x] 容器自动扫描与 tick 分发（`ContainerChunkCache` + `ContainerLivingItemHandler`）
 - [x] 多活物品并行处理（按功能分组，无冲突）
-- [x] 组件化架构（`ILivingComponent` + `FunctionExecutor`）
+- [x] 组件化架构（`ILivingComponent` + `FunctionExecutor` 工具类）
+- [x] 编排器模式（`LivingOrchestrator` + 3 种内置编排器）
+- [x] 功能基类（`BaseLivingFunction`：通用 tick + Tooltip）
 - [x] 不可变数据模型（`Pos2D` + `SlotMapping` record）
 - [x] 活物品隔离（不传输/不熔炼/不作为燃料）
+
+### GUI交互系统
+- [x] 声明式交互规则（`InteractionEntry` record + `InteractionRegistry` 注册表）
+- [x] 客户端统一拦截（`GuiInteractionHelper.tryInteract()`，所有 Screen Mixin 共用）
+- [x] 通用交互网络包（`GuiInteractionPacket`：slotIndex + containerSlot + actionId + carriedTag）
+- [x] 创造模式光标物品同步（`CarriedUpdatePacket` 绕过原版排除逻辑）
+- [x] 创造模式 SlotWrapper 兼容（`SlotWrapperAccessor` + 双索引机制）
+- [x] 交互处理器注册（`InteractionHandler` 接口 + `IgniteHandler` / `IgniteCarriedHandler`）
 
 ### 活熔炉功能
 - [x] SLOTS 模式方向配置（input→LEFT, fuel→DOWN, output→RIGHT）
@@ -217,6 +421,16 @@ SLOTS 模式的方向数据存储在 `ComponentState` 中（`slot_input_x`, `slo
 - [x] Tooltip 实时显示当前传输方向
 - [x] 传输冷却机制（基于物品数量动态调整）
 
+### 活TNT功能
+- [x] 引信倒计时（80 tick = 4秒，与原版TNT一致）
+- [x] 两种点燃方式（活打火石右键活TNT / 活TNT右键活打火石）
+- [x] 爆炸威力随数量缩放（radius = 4.0 × √数量）
+- [x] 普通模式（≤64 TNT）：原版掉落物 + 可选100%掉落
+- [x] 大当量模式（>64 TNT）：直接修改区块数据，高性能
+- [x] 流体防爆（普通模式绝对防爆，大当量模式威力突破时可炸流体）
+- [x] 实体伤害与击退（原版公式）
+- [x] 创造模式/生存模式全兼容
+
 ### 容器兼容性
 - [x] 标准矩形容器（27 格箱子、54 格大箱子）
 - [x] 线性容器（5 格漏斗）
@@ -227,35 +441,60 @@ SLOTS 模式的方向数据存储在 `ComponentState` 中（`slot_input_x`, `slo
 
 ## 开发进展
 
-### 当前版本: v0.3-alpha
+### 当前版本: v0.5-alpha
 
-**最近更新** (2026-07-08):
+**最近更新** (2026-07-11):
+- ✅ 新增：活TNT功能（`LivingTntFunction` + `ExplosionComponent`）
+- ✅ 新增：活打火石功能（`LivingFlintAndSteelFunction`，交互触发器，无 tick 逻辑）
+- ✅ 新增：GUI交互系统（`InteractionEntry` + `InteractionRegistry` + `InteractionHandler`）
+- ✅ 新增：客户端统一交互工具（`GuiInteractionHelper.tryInteract()`）
+- ✅ 新增：通用交互网络包（`GuiInteractionPacket`：双索引 + actionId + carriedTag）
+- ✅ 新增：创造模式光标同步（`CarriedUpdatePacket` 绕过原版排除逻辑）
+- ✅ 新增：创造模式 SlotWrapper 兼容（`SlotWrapperAccessor` + 双索引机制）
+- ✅ 新增：ExplosionComponent 双模式爆炸（普通模式 + 大当量模式）
+- ✅ 新增：流体防爆机制（普通模式绝对防爆，大当量模式威力突破时可炸流体）
+- ✅ 修复：创造模式背包中活打火石无法点燃活TNT
+- ✅ 修复：创造模式光标物品消失问题（`resolveCarriedTag` 仅在 `CreativeModeInventoryScreen` 下发送）
+- ✅ 修复：创造模式打开容器时光标物品消失（区分背包界面和容器界面的光标管理）
+- ✅ 重构：所有 Screen Mixin 统一使用 `GuiInteractionHelper.tryInteract()`，移除硬编码物品判断
+- ✅ 重构：引入编排器模式（`LivingOrchestrator` + `SimpleOrchestrator` / `ProgressOrchestrator` / `FuelProgressOrchestrator`）
+- ✅ 重构：提取 `BaseLivingFunction` 基类，通用 tick 编排 + Tooltip 实现
+- ✅ 重构：`LivingFurnaceFunction` 从 317 行 → 82 行（-74%），只保留配置
+- ✅ 重构：`LivingHopperFunction` 从 219 行 → 75 行（-66%），只保留配置 + NBT 工具
+- ✅ 重构：`FunctionExecutor` 从调度器变为纯工具类，移除 `tick()` 方法和所有业务逻辑
+- ✅ 重构：`DirectionModeComponent` NBT 自治（`updateStateInStack` / `readStateFromStack`）
+- ✅ 重构：`LivingFunctionConfig` 新增 `withOrchestrator()` 方法，支持声明式编排器选择
+- ✅ 重构：`ComponentContext` 使用 `ResolvedSlots` 替代三个独立字段，方向解析内聚到 `DirectionModeComponent`
+- ✅ 重构：`ContainerContext` 新增槽位占用机制（`getOccupiedSlots` / `getStableKey`），从 FunctionExecutor 实例字段迁移
+- ✅ 简化：`LivingHopperFunction.canApply()` 移除冗余的物品匹配检查
+- ✅ 简化：`LivingItemFunction` 接口新增 `appendComponentTooltips()` 默认方法，消除 Tooltip 重复代码
+
+### 历史更新 (v0.3-alpha):
 - ✅ 重构：将 `TransferDirection`、`Direction2D`、`HopperModeController`、`LivingHopperInputHandler` 合并为 `DirectionModeComponent` + `LivingItemInputHandler`
 - ✅ 重构：提取 `Pos2D` 和 `SlotMapping` 为独立 model 类
-- ✅ 重构：`DirectionModeComponent` 支持 SLOTS/TRANSFER 双模式，替代 `LivingFunctionConfig` 的方向配置功能
-- ✅ 重构：`LivingFunctionConfig` 精简为纯配置容器，支持预配置组件实例
 - ✅ 修复：活漏斗传输方向修改后 NBT/Tooltip/实际传输未同步更新的问题
 - ✅ 修复：活漏斗传输功能失效（`SlotResolver` 网格宽度计算错误）
-- ✅ 修复：WASD 输入事件未注册导致方向配置功能不可用
 - ✅ 新增：活物品隔离（不传输/不熔炼/不作为燃料）
-- ✅ 简化：网络包移除 slotIndex，直接使用 `getCarried()` 获取光标物品
 
 ### 待办事项
 
 #### 高优先级
-- [ ] 更多活物品类型（活投掷器、活发射器等）
+- [ ] 更多活物品类型（活投掷器、活发射器、活酿造台等）
 - [ ] 活漏斗支持过滤模式（只传输指定物品）
 - [ ] 活熔炉 Tooltip 增强（显示工作模式、预计剩余时间）
+- [ ] 活TNT 红石信号触发（容器被红石激活时自动点燃）
 
 #### 中优先级
 - [ ] 调试命令 `/livingitem info`
 - [ ] 成就系统集成
 - [ ] 音效差异化（不同状态的音效变化）
+- [ ] 活TNT 尊重 `tntExplosionDropDecay` 游戏规则
 
 #### 低优先级 / 未来规划
 - [ ] 活物品状态切换机制（更多配置选项）
 - [ ] 第三方模组适配器 API 开放
 - [ ] JSON 配置文件支持（用户自定义容器规则）
+- [ ] JSON 驱动的活物品注册（无需编写 Java 类）
 - [ ] 槽位内活物品的配置支持（当前仅支持光标物品配置）
 
 ---
@@ -274,11 +513,12 @@ SLOTS 模式的方向数据存储在 `ComponentState` 中（`slot_input_x`, `slo
 ## 设计原则
 
 1. **能力组件化**：功能拆分为可复用的原子组件，通过 `LivingFunctionConfig` 声明式组合
-2. **配置驱动执行**：组件通过 `ComponentConfig` 接收参数，行为由配置决定
-3. **状态完全持久化**：所有数据存储在 NBT，跟随物品迁移
-4. **服务端权威**：客户端只负责输入和显示，数据修改在服务端执行后同步回客户端
-5. **防御性编程**：多层边界检查，优雅降级不崩溃
-6. **开放扩展**：新活物品类型只需实现 `LivingItemFunction` + 配置组件
+2. **编排器驱动**：组件协作流程通过 `LivingOrchestrator` 定义，新活物品只需选择编排器
+3. **配置驱动执行**：组件通过 `ComponentConfig` 接收参数，行为由配置决定
+4. **状态完全持久化**：所有数据存储在 NBT，跟随物品迁移
+5. **服务端权威**：客户端只负责输入和显示，数据修改在服务端执行后同步回客户端
+6. **防御性编程**：多层边界检查，优雅降级不崩溃
+7. **开放扩展**：新活物品类型只需继承 `BaseLivingFunction` + 配置组件 + 选择编排器
 
 ---
 
@@ -286,9 +526,32 @@ SLOTS 模式的方向数据存储在 `ComponentState` 中（`slot_input_x`, `slo
 
 ### 新增活物品类型
 
-1. 实现 `LivingItemFunction` 接口（`canApply`、`tick`、`addToTooltip`、`getFunctionId`）
-2. 创建 `LivingFunctionConfig`，声明所需组件和配置
-3. 在 `LivingItem.commonSetup()` 中注册功能
+1. 继承 `BaseLivingFunction`
+2. 创建 `LivingFunctionConfig`，声明所需组件、编排器和配置参数
+3. 实现 `canApply()`、`getFunctionId()`、`getConfig()`、`getTooltipTitleKey()`
+4. 在 `LivingItem.commonSetup()` 中注册功能
+
+**完整示例（约 30 行）**：
+```java
+public class LivingBrewingStandFunction extends BaseLivingFunction {
+    private static final LivingFunctionConfig CONFIG = new LivingFunctionConfig()
+        .withFunctionId("living_brewing_stand")
+        .withOrchestrator(Orchestrators.FUEL_PROGRESS)
+        .addComponent(new DirectionModeComponent(Map.of(
+            "input", Pos2D.LEFT, "fuel", Pos2D.DOWN, "output", Pos2D.RIGHT)))
+        .addComponent(FuelConsumeComponent.class,
+            ComponentConfig.of("recipe_type", RecipeType.BREWING))
+        .addComponent(ProgressComponent.class,
+            ComponentConfig.of("total_ticks", 400))
+        .addComponent(ItemTransformComponent.class,
+            ComponentConfig.of("recipe_type", RecipeType.BREWING));
+
+    @Override protected LivingFunctionConfig getConfig() { return CONFIG; }
+    @Override protected String getTooltipTitleKey() { return "tooltip.livingitem.brewing_stand.status"; }
+    @Override public boolean canApply(ItemStack stack) { return stack.is(Items.BREWING_STAND) && LivingItemManager.isLivingItem(stack); }
+    @Override public String getFunctionId() { return "living_brewing_stand"; }
+}
+```
 
 ### 新增组件
 
@@ -296,14 +559,20 @@ SLOTS 模式的方向数据存储在 `ComponentState` 中（`slot_input_x`, `slo
 2. 在活物品的 `LivingFunctionConfig` 中通过 `addComponent()` 注册
 3. 如需跨组件数据访问，通过 `ComponentContext.getComponentState()` 读取其他组件状态
 
+### 新增编排器
+
+1. 实现 `LivingOrchestrator` 接口（`orchestrate` 方法）
+2. 在 `Orchestrators` 工厂类中添加常量
+3. 在活物品的 `LivingFunctionConfig` 中通过 `withOrchestrator()` 选择
+
 ### 代码风格
 
 - 使用中文注释（与项目语言一致）
-- 遵循现有命名约定（Config/Component/Context 后缀）
+- 遵循现有命名约定（Config/Component/Context/Orchestrator 后缀）
 - 异常处理必须使用 try-catch 包装容器操作
 - 不可变数据优先使用 Java record
 
 ---
 
-*最后更新: 2026-07-08*
-*状态: Alpha 测试阶段 - 活熔炉和活漏斗核心功能已完成*
+*最后更新: 2026-07-11*
+*状态: Alpha 测试阶段 - 活熔炉、活漏斗、活TNT核心功能已完成，GUI交互系统已就绪*

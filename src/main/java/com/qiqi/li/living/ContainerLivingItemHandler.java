@@ -136,6 +136,11 @@ public class ContainerLivingItemHandler {
             occupiedSlots.clear();
         }
 
+        Set<Integer> transferredTargetSlots = context.getTransferredTargetSlots();
+        if (transferredTargetSlots != null) {
+            transferredTargetSlots.clear();
+        }
+
         int containerSize = context.getSize();
         if (containerSize <= 0) {
             return;

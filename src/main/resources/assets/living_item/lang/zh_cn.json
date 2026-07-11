@@ -17,5 +17,9 @@
   "tooltip.livingitem.progress_wait": "  §7进度: §7初始化中 (§e%.1fs§7)§r",
   "tooltip.livingitem.fuel_burn": "  §7燃烧时间: §c%.1f秒§r",
   "tooltip.livingitem.transform.ready": "  §7状态: §a就绪§r",
-  "tooltip.livingitem.transform.processing": "  §7状态: §e处理中...§r"
+  "tooltip.livingitem.transform.processing": "  §7状态: §e处理中...§r",
+
+  "tooltip.livingitem.hopper.status": "§a活漏斗§r",
+  "tooltip.livingitem.tnt.status": "§c活TNT§r",
+  "tooltip.livingitem.flint_and_steel.status": "§e活打火石§r"
 }

@@ -4,7 +4,9 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "AbstractContainerScreenMixin",
+    "CreativeModeInventoryScreenMixin",
     "InventoryScreenMixin",
+    "SlotWrapperAccessor",
     "SpriteIconButtonMixin"
   ],
   "injectors": {

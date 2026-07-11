@@ -1,6 +1,7 @@
 package com.qiqi.li.living;
 
 import java.util.Set;
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.item.ItemStack;
 
 /**
@@ -11,6 +12,7 @@ import net.minecraft.world.item.ItemStack;
  * 2. 读取/修改容器中的物品
  * 3. 为槽位生成稳定 key（用于缓存和状态关联）
  * 4. 同步数据到客户端（tooltip 实时更新）
+ * 5. 获取容器的方块位置（用于爆炸等需要世界坐标的功能）
  *
  * 同步策略：
  *   活物品 tick 修改 ItemStack 的 DataComponent 后，需要主动同步到客户端。
@@ -50,10 +52,41 @@ public interface ContainerContext {
     }
 
     /**
+     * 获取本 tick 已被传输物品到达的槽位集合。
+     *
+     * 用于防止同 tick 内级联传输：当多个活漏斗组成链时，
+     * 前面的活漏斗把物品放到目标槽位后，后面的活漏斗不应该
+     * 在同一 tick 内继续把这个物品往下传。
+     *
+     * 没有此机制时，上传下方向的漏斗链会瞬间传到底（因为扫描顺序与传输方向一致），
+     * 而下传上方向的漏斗链只能一格一格传（因为扫描顺序与传输方向相反），
+     * 导致方向性行为不一致。
+     *
+     * @return 本 tick 已被传输到达的槽位索引集合，如果未初始化返回 null
+     */
+    default Set<Integer> getTransferredTargetSlots() {
+        return null;
+    }
+
+    /**
      * 将指定槽位的物品数据同步到所有正在查看该容器的客户端。
      *
      * @param logicalSlot 需要同步的槽位索引
      * @param stack 该槽位当前的 ItemStack（已包含最新的 DataComponent 数据）
      */
     void syncSlotToClients(int logicalSlot, ItemStack stack);
+
+    /**
+     * 获取容器的方块位置。
+     *
+     * 用于爆炸等需要世界坐标的功能。对于世界容器（箱子等），
+     * 返回容器方块的坐标；对于玩家背包等非方块容器，返回 null。
+     *
+     * 如果容器是大箱子，返回第一个关联方块的坐标。
+     *
+     * @return 容器的方块位置，如果不是方块容器返回 null
+     */
+    default BlockPos getBlockPos() {
+        return null;
+    }
 }

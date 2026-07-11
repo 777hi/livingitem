@@ -57,6 +57,13 @@ neoForge {
     // These can be tweaked, removed, or duplicated as needed.
     runs {
         client {
+
+            programArguments = [
+                    '--username', '777_hi',
+                    '--width', '1280',
+                    '--height', '720'
+            ]
+
             client()
 
             // Comma-separated list of namespaces to load gametests from. Empty = all namespaces.
@@ -146,6 +153,11 @@ dependencies {
 
     implementation files("libs/tagtooltips-neoforge-1.21.1-1.2.0.jar")
     implementation files("libs/componentviewer-neoforge-1.3.3+1.21.1.jar")
+    implementation files("libs/CustomSkinLoader_ForgeV3-14.27.jar")
+    implementation files("libs/observable-5.4.4.jar")
+    implementation files("libs/architectury-13.0.8-neoforge.jar")
+    implementation files("libs/kotlinforforge-5.12.0-all.jar")
+    implementation files("libs/spark-1.10.124-neoforge.jar")
 }
 
 // This block of code expands all declared replace properties in the specified resource targets.

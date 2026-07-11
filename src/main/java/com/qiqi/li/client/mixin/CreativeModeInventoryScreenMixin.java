@@ -1,33 +1,27 @@
 package com.qiqi.li.client.mixin;
 
 import com.qiqi.li.client.GuiInteractionHelper;
+import net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen;
 import net.minecraft.client.gui.screens.inventory.EffectRenderingInventoryScreen;
-import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.network.chat.Component;
-import net.minecraft.world.entity.player.Inventory;
-import net.minecraft.world.inventory.InventoryMenu;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
- * 生存模式背包界面Mixin，处理活物品GUI交互。
+ * 创造模式背包界面的Mixin，拦截活物品GUI交互。
  *
- * 交互拦截：
- *   通过 GuiInteractionHelper.tryInteract() 统一检测活物品交互，
- *   匹配到交互规则时取消原版点击行为并发送网络包。
+ * SlotWrapper 兼容：
+ *   创造模式 INVENTORY 标签页中，快捷栏槽位被 SlotWrapper 包装，
+ *   getContainerSlot() 返回的是 inventoryMenu 菜单索引而非真实容器索引。
+ *   GuiInteractionHelper.tryInteract() 内部通过 SlotWrapperAccessor
+ *   统一处理此差异，此 Mixin 无需额外关注。
  */
-@Mixin(InventoryScreen.class)
-public abstract class InventoryScreenMixin extends EffectRenderingInventoryScreen<InventoryMenu> {
-    public InventoryScreenMixin(InventoryMenu menu, Inventory playerInventory, Component title) {
+@Mixin(CreativeModeInventoryScreen.class)
+public abstract class CreativeModeInventoryScreenMixin extends EffectRenderingInventoryScreen<CreativeModeInventoryScreen.ItemPickerMenu> {
+    public CreativeModeInventoryScreenMixin(CreativeModeInventoryScreen.ItemPickerMenu menu, net.minecraft.world.entity.player.Inventory playerInventory, Component title) {
         super(menu, playerInventory, title);
-    }
-
-    @Inject(method = "containerTick", at = @At("HEAD"))
-    private void living_item$callContainerTick(CallbackInfo ci) {
-        super.containerTick();
     }
 
     @Inject(method = "mouseClicked", at = @At("HEAD"), cancellable = true)

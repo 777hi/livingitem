@@ -36,14 +36,22 @@ import net.neoforged.neoforge.event.server.ServerStartingEvent;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
+import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import com.qiqi.li.network.LivingTagPacket;
 import com.qiqi.li.network.HopperDirectionPacket;
+import com.qiqi.li.network.GuiInteractionPacket;
+import com.qiqi.li.network.CarriedUpdatePacket;
 import com.qiqi.li.living.LivingItemManager;
 import com.qiqi.li.living.LivingFurnaceFunction;
 import com.qiqi.li.living.LivingHopperFunction;
+import com.qiqi.li.living.LivingTntFunction;
+import com.qiqi.li.living.LivingFlintAndSteelFunction;
 import com.qiqi.li.living.ContainerLivingItemHandler;
 import com.qiqi.li.living.ContainerChunkCache;
+import com.qiqi.li.living.core.interaction.InteractionRegistry;
+import com.qiqi.li.living.core.interaction.IgniteHandler;
+import com.qiqi.li.living.core.interaction.IgniteCarriedHandler;
 import net.neoforged.neoforge.registries.DeferredBlock;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredItem;
@@ -118,6 +126,18 @@ public class LivingItem {
 
         LivingItemManager.registerFunction(new LivingHopperFunction());
         LOGGER.info("已注册活漏斗功能（支持WASD方向设置）");
+
+        LivingItemManager.registerFunction(new LivingTntFunction());
+        LOGGER.info("已注册活TNT功能");
+
+        LivingItemManager.registerFunction(new LivingFlintAndSteelFunction());
+        LOGGER.info("已注册活打火石功能");
+
+        InteractionRegistry.registerHandler("ignite", new IgniteHandler());
+        LOGGER.info("已注册点燃交互处理器");
+
+        InteractionRegistry.registerHandler("ignite_carried", new IgniteCarriedHandler());
+        LOGGER.info("已注册光标点燃交互处理器");
     }
 
     /**
@@ -168,7 +188,7 @@ public class LivingItem {
             if (!level.hasChunk(cPos.x, cPos.z)) continue;
             LevelChunk chunk = level.getChunk(cPos.x, cPos.z);
             ContainerLivingItemHandler.processBlockEntities(
-                    chunk.getBlockEntities().values(), level, processedContainers, processedChests);
+                    new ArrayList<>(chunk.getBlockEntities().values()), level, processedContainers, processedChests);
         }
     }
 
@@ -176,6 +196,8 @@ public class LivingItem {
         PayloadRegistrar registrar = event.registrar(LivingTagPacket.ID.getNamespace()).versioned("1.0.0");
         registrar.playToServer(LivingTagPacket.TYPE, LivingTagPacket.STREAM_CODEC, LivingTagPacket::handle);
         registrar.playToServer(HopperDirectionPacket.TYPE, HopperDirectionPacket.STREAM_CODEC, HopperDirectionPacket::handle);
+        registrar.playToServer(GuiInteractionPacket.TYPE, GuiInteractionPacket.STREAM_CODEC, GuiInteractionPacket::handle);
+        registrar.playToClient(CarriedUpdatePacket.TYPE, CarriedUpdatePacket.STREAM_CODEC, CarriedUpdatePacket::handle);
     }
 
     private void addCreative(BuildCreativeModeTabContentsEvent event) {

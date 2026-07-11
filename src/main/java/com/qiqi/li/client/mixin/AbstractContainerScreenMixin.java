@@ -1,10 +1,12 @@
 package com.qiqi.li.client.mixin;
 
+import com.qiqi.li.client.GuiInteractionHelper;
 import com.qiqi.li.client.gui.LivingButton;
 import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.gui.screens.inventory.ContainerScreen;
+import net.minecraft.client.gui.screens.inventory.ShulkerBoxScreen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
@@ -15,19 +17,21 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 容器界面 Mixin —— 在箱子界面中添加 {@link LivingButton}。
+ * 通用容器界面Mixin，处理活物品GUI交互和LivingButton渲染。
  *
- * 功能：
- * - 在 ContainerScreen（箱子界面）初始化时，在界面底部添加活物品切换按钮
- * - 当界面位置变化时（如窗口大小调整），重新定位按钮
- * - 只对 ContainerScreen 生效，不影响其他容器界面
+ * 交互拦截：
+ *   通过 GuiInteractionHelper.tryInteract() 统一检测活物品交互，
+ *   匹配到交互规则时取消原版点击行为并发送网络包。
+ *   不再硬编码具体的物品类型判断。
  *
- * 按钮位置：界面底部中央（slot 9 上方）
+ * LivingButton：
+ *   在容器/潜影盒界面中添加活物品切换按钮。
  */
 @Mixin(AbstractContainerScreen.class)
 public class AbstractContainerScreenMixin extends Screen {
@@ -46,25 +50,35 @@ public class AbstractContainerScreenMixin extends Screen {
 
     @Shadow protected int imageHeight;
 
+    @Shadow
+    protected Slot hoveredSlot;
+
     @Unique
     private int living_item$previousLeftPos = this.leftPos;
 
     @Unique
     private int living_item$previousTopPos = this.topPos;
 
-    /**
-     * 界面初始化时添加 LivingButton。
-     */
+    @Inject(method = "mouseClicked", at = @At("HEAD"), cancellable = true)
+    private void living_item$interceptMouseClicked(double mouseX, double mouseY, int button, CallbackInfoReturnable<Boolean> cir) {
+        if (GuiInteractionHelper.tryInteract(this.hoveredSlot, button, this.menu)) {
+            cir.setReturnValue(true);
+        }
+    }
+
+    @Inject(method = "mouseReleased", at = @At("HEAD"), cancellable = true)
+    private void living_item$interceptMouseReleased(double mouseX, double mouseY, int button, CallbackInfoReturnable<Boolean> cir) {
+        if (GuiInteractionHelper.tryInteract(this.hoveredSlot, button, this.menu)) {
+            cir.setReturnValue(true);
+        }
+    }
+
     @Inject(method = "init", at = @At("TAIL"))
     private void living_item$addLivingButton(CallbackInfo ci) {
         this.living_item$initButtons();
         LivingButton.LOGGER.info("AbstractContainerScreenMixin on loaded");
     }
 
-    /**
-     * 每 tick 检查界面位置是否变化，如果变化则重新定位按钮。
-     * 窗口大小调整等操作会导致 leftPos/topPos 改变。
-     */
     @Inject(method = "containerTick", at = @At("TAIL"))
     private void living_item$checkForLeftOrTopPosChange(CallbackInfo ci) {
         if (this.leftPos != this.living_item$previousLeftPos || this.topPos != this.living_item$previousTopPos) {
@@ -72,17 +86,9 @@ public class AbstractContainerScreenMixin extends Screen {
         }
     }
 
-    /**
-     * 初始化/重新定位 LivingButton。
-     *
-     * 逻辑：
-     * 1. 只对 ContainerScreen（箱子界面）生效
-     * 2. 移除已有的 LivingButton（避免重复添加）
-     * 3. 在 slot 9 上方创建新的 LivingButton
-     */
     @Unique
     private void living_item$initButtons() {
-        if (!((Screen) this instanceof ContainerScreen)) {
+        if (!((Screen) this instanceof ContainerScreen || (Screen) this instanceof ShulkerBoxScreen)) {
             return;
         }
 

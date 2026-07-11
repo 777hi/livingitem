@@ -48,6 +48,9 @@ public class SimpleContainerContext implements ContainerContext {
     /** 本 tick 的已占用槽位集合（跨 Function 共享） */
     private final Set<String> occupiedSlots = new HashSet<>();
 
+    /** 本 tick 已被传输到达的槽位集合（防止同 tick 级联传输） */
+    private final Set<Integer> transferredTargetSlots = new HashSet<>();
+
     public SimpleContainerContext(Container container) {
         this(container, new ArrayList<>(), new ArrayList<>());
     }
@@ -159,6 +162,22 @@ public class SimpleContainerContext implements ContainerContext {
         return occupiedSlots;
     }
 
+    @Override
+    public Set<Integer> getTransferredTargetSlots() {
+        return transferredTargetSlots;
+    }
+
+    @Override
+    public BlockPos getBlockPos() {
+        if (!associatedBlockPositions.isEmpty()) {
+            return associatedBlockPositions.get(0);
+        }
+        if (container instanceof Inventory inv) {
+            return inv.player.blockPosition();
+        }
+        return null;
+    }
+
     /**
      * 将指定槽位的物品数据同步到所有正在查看该容器的客户端。
      *
@@ -199,39 +218,15 @@ public class SimpleContainerContext implements ContainerContext {
     private void syncPlayerInventory(Inventory inv, int logicalSlot, ItemStack stack) {
         if (!(inv.player instanceof ServerPlayer serverPlayer)) return;
 
-        syncMenuSlot(serverPlayer, serverPlayer.inventoryMenu, logicalSlot, stack, 0);
+        syncInventoryMenuSlot(serverPlayer, serverPlayer.inventoryMenu, logicalSlot, stack);
 
         if (serverPlayer.containerMenu != serverPlayer.inventoryMenu) {
-            syncContainerMenuForInventory(serverPlayer, logicalSlot, stack);
+            syncInventoryMenuSlot(serverPlayer, serverPlayer.containerMenu, logicalSlot, stack);
         }
     }
 
-    /**
-     * 向指定菜单的指定槽位发送同步包。
-     *
-     * @param serverPlayer 目标玩家
-     * @param menu 目标菜单
-     * @param slotIndex 菜单中的槽位索引
-     * @param stack 要同步的 ItemStack
-     * @param containerId 菜单的 containerId
-     */
-    private void syncMenuSlot(ServerPlayer serverPlayer, AbstractContainerMenu menu,
-                              int slotIndex, ItemStack stack, int containerId) {
-        if (slotIndex < 0 || slotIndex >= menu.slots.size()) return;
-
-        int stateId = menu.incrementStateId();
-        menu.remoteSlots.set(slotIndex, stack.copy());
-        serverPlayer.connection.send(new ClientboundContainerSetSlotPacket(containerId, stateId, slotIndex, stack.copy()));
-    }
-
-    /**
-     * 当 containerMenu != inventoryMenu 时，找到活物品在 containerMenu 中的槽位并同步。
-     *
-     * 匹配策略：遍历 containerMenu 的所有 Slot，找到 container 为 Inventory
-     * 且 containerIndex 与 logicalSlot 匹配的槽位。
-     */
-    private void syncContainerMenuForInventory(ServerPlayer serverPlayer, int logicalSlot, ItemStack stack) {
-        AbstractContainerMenu menu = serverPlayer.containerMenu;
+    private void syncInventoryMenuSlot(ServerPlayer serverPlayer, AbstractContainerMenu menu,
+                                        int logicalSlot, ItemStack stack) {
         for (int i = 0; i < menu.slots.size(); i++) {
             Slot slot = menu.slots.get(i);
             if (slot.container instanceof Inventory && slot.getContainerSlot() == logicalSlot) {

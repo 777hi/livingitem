@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.Map;
 import javax.annotation.Nullable;
 import com.qiqi.li.living.core.components.ILivingComponent;
+import com.qiqi.li.living.core.interaction.InteractionEntry;
+import com.qiqi.li.living.core.interaction.InteractionRegistry;
 import com.qiqi.li.living.core.orchestrator.LivingOrchestrator;
 import com.qiqi.li.living.core.orchestrator.Orchestrators;
 
@@ -142,6 +144,31 @@ public class LivingFunctionConfig {
      */
     public LivingFunctionConfig withOrchestrator(LivingOrchestrator orchestrator) {
         this.orchestrator = orchestrator;
+        return this;
+    }
+
+    /**
+     * 注册GUI交互规则。
+     *
+     * 声明此活物品可被哪种物品、通过哪个按键触发什么动作。
+     * 交互规则会被自动注册到 InteractionRegistry 中。
+     *
+     * 使用示例：
+     * <pre>
+     * // 活TNT声明"可被活打火石右键点燃"
+     * .addInteraction(new InteractionEntry(
+     *     Items.TNT,               // 目标物品（我是谁）
+     *     Items.FLINT_AND_STEEL,   // 触发物品（谁来交互）
+     *     1,                       // 鼠标按键（右键）
+     *     "ignite"                 // 动作ID
+     * ))
+     * </pre>
+     *
+     * @param entry 交互规则条目
+     * @return this（支持链式调用）
+     */
+    public LivingFunctionConfig addInteraction(InteractionEntry entry) {
+        InteractionRegistry.register(entry);
         return this;
     }
 

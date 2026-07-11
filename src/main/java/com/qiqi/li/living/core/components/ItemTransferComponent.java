@@ -1,5 +1,8 @@
 package com.qiqi.li.living.core.components;
 
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.function.Consumer;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
@@ -125,11 +128,19 @@ public class ItemTransferComponent implements ILivingComponent {
      * 1. 从 ComponentContext 获取已解析的 sourceSlot 和 targetSlot
      *    （由 DirectionModeComponent.resolveSlots() 预先解析）
      * 2. 检查源槽位是否有物品、是否为活物品（活物品跳过）
-     * 3. 检查目标槽位状态：
+     * 3. 检查目标槽位是否已被本 tick 其他活漏斗传输到达（防止级联传输）
+     * 4. 检查目标槽位状态：
      *    - 空槽位：直接放入物品
      *    - 有相同物品且未满：追加到现有堆叠
      *    - 有不同物品或已满：无法传输
-     * 4. 传输数量受限于：源物品数量、活漏斗堆叠数、maxTransfer 配置
+     * 5. 传输数量受限于：源物品数量、活漏斗堆叠数、maxTransfer 配置
+     * 6. 传输成功后标记目标槽位，防止同 tick 内后续活漏斗继续传输该物品
+     *
+     * 级联传输防护：
+     *   当多个活漏斗组成链时，如果传输方向与扫描顺序一致（如上传下），
+     *   前面的活漏斗放入的物品会被后面的活漏斗在同一 tick 内继续传递，
+     *   导致物品瞬间传到链底。通过 transferredTargetSlots 标记机制，
+     *   确保每个物品每 tick 最多只被传输一次，无论传输方向如何。
      *
      * @param ctx 组件上下文（包含容器引用和已解析的槽位索引）
      * @param stackSize 活漏斗的堆叠数量（影响单次传输量）
@@ -152,6 +163,11 @@ public class ItemTransferComponent implements ILivingComponent {
             return false;
         }
 
+        Set<Integer> transferredTargetSlots = containerCtx.getTransferredTargetSlots();
+        if (transferredTargetSlots != null && transferredTargetSlots.contains(sourceSlot)) {
+            return false;
+        }
+
         ItemStack sourceStack = containerCtx.getItem(sourceSlot);
         if (sourceStack.isEmpty() || LivingItemManager.isLivingItem(sourceStack)) {
             return false;
@@ -159,6 +175,8 @@ public class ItemTransferComponent implements ILivingComponent {
 
         ItemStack targetStack = containerCtx.getItem(targetSlot);
         int transferAmount = Math.min(sourceStack.getCount(), Math.min(stackSize, maxTransfer));
+
+        boolean success = false;
 
         if (targetStack.isEmpty()) {
             ItemStack toTransfer = sourceStack.copy();
@@ -172,7 +190,7 @@ public class ItemTransferComponent implements ILivingComponent {
                 containerCtx.setItem(sourceSlot, sourceStack);
             }
 
-            return true;
+            success = true;
         } else if (targetStack.is(sourceStack.getItem()) &&
                    targetStack.getCount() < targetStack.getMaxStackSize()) {
 
@@ -189,10 +207,14 @@ public class ItemTransferComponent implements ILivingComponent {
                 containerCtx.setItem(sourceSlot, sourceStack);
             }
 
-            return true;
+            success = true;
         }
 
-        return false;
+        if (success && transferredTargetSlots != null) {
+            transferredTargetSlots.add(targetSlot);
+        }
+
+        return success;
     }
 
     /**
