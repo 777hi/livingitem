@@ -62,14 +62,14 @@ public record Pos2D(int x, int y) {
      * @return 方向符号字符串
      */
     public String getSymbol() {
-        if (this == UP) return "↑";
-        if (this == DOWN) return "↓";
-        if (this == LEFT) return "←";
-        if (this == RIGHT) return "→";
-        if (this == UP_LEFT) return "↖";
-        if (this == UP_RIGHT) return "↗";
-        if (this == DOWN_LEFT) return "↙";
-        if (this == DOWN_RIGHT) return "↘";
+        if (this.equals(UP)) return "↑";
+        if (this.equals(DOWN)) return "↓";
+        if (this.equals(LEFT)) return "←";
+        if (this.equals(RIGHT)) return "→";
+        if (this.equals(UP_LEFT)) return "↖";
+        if (this.equals(UP_RIGHT)) return "↗";
+        if (this.equals(DOWN_LEFT)) return "↙";
+        if (this.equals(DOWN_RIGHT)) return "↘";
         return "·";
     }
 

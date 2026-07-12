@@ -72,8 +72,11 @@ public class FuelProgressOrchestrator implements LivingOrchestrator {
             }
         }
 
-        if (transformComp != null && !transformComp.canProcess(ctx)) {
-            return false;
+        if (transformComp != null) {
+            ComponentState transformState = states.get(transformComp.getComponentId());
+            if (!transformComp.canProcess(ctx, transformState)) {
+                return false;
+            }
         }
 
         return true;

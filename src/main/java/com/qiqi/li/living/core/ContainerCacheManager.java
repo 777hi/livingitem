@@ -3,13 +3,13 @@ package com.qiqi.li.living.core;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import net.minecraft.world.Container;
-import net.minecraft.world.item.ItemStack;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.qiqi.li.living.core.components.DirectionModeComponent;
 
 import javax.annotation.Nullable;
 import java.lang.ref.WeakReference;
+import java.util.Map;
 
 /**
  * 容器槽位映射缓存管理器
@@ -56,7 +56,7 @@ public final class ContainerCacheManager {
             return null;
         }
 
-        String fingerprint = generateFingerprint(container, containerSize);
+        String fingerprint = generateFingerprint(container, containerSize, config);
 
         int cacheKey = fingerprint.hashCode();
 
@@ -111,19 +111,24 @@ public final class ContainerCacheManager {
      * - 容器类名（区分不同类型的容器）
      * - 最大堆叠数（某些容器可能不同）
      */
-    private String generateFingerprint(Container container, int size) {
+    private String generateFingerprint(Container container, int size, LivingFunctionConfig config) {
         StringBuilder sb = new StringBuilder();
         sb.append("size=").append(size)
           .append("|type=").append(container.getClass().getSimpleName())
           .append("|maxStack=").append(container.getMaxStackSize());
-        
-        try {
-            ItemStack firstItem = container.getItem(0);
-            sb.append("|sample=").append(firstItem.isEmpty() ? "empty" : firstItem.getItem());
-        } catch (Exception e) {
-            sb.append("|sample=unknown");
-        }
 
+        com.qiqi.li.living.core.components.ILivingComponent rawComp = config.getConfiguredInstance(DirectionModeComponent.class);
+        if (rawComp instanceof DirectionModeComponent dmc) {
+            sb.append("|mode=").append(dmc.getMode());
+            if (dmc.getMode() == DirectionModeComponent.DirectionMode.SLOTS) {
+                Map<String, com.qiqi.li.living.core.model.Pos2D> slots = dmc.getDefaultSlots();
+                for (var entry : slots.entrySet()) {
+                    sb.append("|").append(entry.getKey()).append("=")
+                      .append(entry.getValue().x()).append(",").append(entry.getValue().y());
+                }
+            }
+        }
+        
         return sb.toString();
     }
 
@@ -142,15 +147,18 @@ public final class ContainerCacheManager {
             dirComp = (DirectionModeComponent) FunctionExecutor.INSTANCE.getComponent(DirectionModeComponent.class);
         }
 
+        com.qiqi.li.living.core.model.Pos2D inputDir = com.qiqi.li.living.core.model.Pos2D.LEFT;
+        com.qiqi.li.living.core.model.Pos2D fuelDir = com.qiqi.li.living.core.model.Pos2D.DOWN;
+        com.qiqi.li.living.core.model.Pos2D outputDir = com.qiqi.li.living.core.model.Pos2D.RIGHT;
+
+        if (dirComp != null && dirComp.getMode() == DirectionModeComponent.DirectionMode.SLOTS) {
+            inputDir = dirComp.getDirection(null, "input");
+            fuelDir = dirComp.getDirection(null, "fuel");
+            outputDir = dirComp.getDirection(null, "output");
+        }
+
         for (int hostSlot = 0; hostSlot < size; hostSlot++) {
             try {
-                com.qiqi.li.living.core.model.Pos2D inputDir = dirComp != null && dirComp.getMode() == DirectionModeComponent.DirectionMode.SLOTS
-                    ? dirComp.getDirection(null, "input") : com.qiqi.li.living.core.model.Pos2D.LEFT;
-                com.qiqi.li.living.core.model.Pos2D fuelDir = dirComp != null && dirComp.getMode() == DirectionModeComponent.DirectionMode.SLOTS
-                    ? dirComp.getDirection(null, "fuel") : com.qiqi.li.living.core.model.Pos2D.DOWN;
-                com.qiqi.li.living.core.model.Pos2D outputDir = dirComp != null && dirComp.getMode() == DirectionModeComponent.DirectionMode.SLOTS
-                    ? dirComp.getDirection(null, "output") : com.qiqi.li.living.core.model.Pos2D.RIGHT;
-
                 int inputSlot = SlotResolver.resolve(hostSlot, inputDir, size);
                 int fuelSlot = SlotResolver.resolve(hostSlot, fuelDir, size);
                 int outputSlot = SlotResolver.resolve(hostSlot, outputDir, size);
@@ -212,16 +220,7 @@ public final class ContainerCacheManager {
      */
     public void invalidateContainer(Container container) {
         if (container == null) return;
-        
-        int size = safeGetContainerSize(container);
-        if (size <= 0) return;
-        
-        String fingerprint = generateFingerprint(container, size);
-        int cacheKey = fingerprint.hashCode();
-
-        synchronized (cache) {
-            cache.remove(cacheKey);
-        }
+        clearAll();
     }
 
     /**

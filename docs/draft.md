@@ -1,37 +1,157 @@
-### 文档核心内容总结
-#### 一、基础背景
-- 运行环境：Minecraft 1.21.1 + NeoForge，模组采用 Data Components（非旧版NBT）存储“活物品”状态数据。
-- 预期功能：创造模式下，玩家光标手持活TNT，右键点击槽位中的活打火石，应当点燃光标上的活TNT并启动引信倒计时。
-- 实际现象：服务端日志显示全部处理步骤执行成功，但客户端光标上的活TNT无任何视觉变化（无闪烁、无倒计时效果）。
+在 Minecraft 1.21.1 NeoForge 中，想要让物品栏里的物品根据 NBT 切换不同的材质图片，**最推荐、性能最好且完全兼容原版机制的方案是：自定义物品属性（ItemPropertyFunction）+ 物品模型 Overrides**。
 
-#### 二、当前实现流程
-1. **客户端侧**
-   检测到交互匹配后，序列化光标物品的完整数据（含id、数量、components），向服务端发送 `GuiInteractionPacket` 交互包。
-2. **服务端侧**
-   从数据包中恢复光标物品，定位目标槽位的活打火石，调用处理器修改活TNT的组件数据以启动引信；随后清除服务端菜单的光标物品，通过 `ClientboundContainerSetSlotPacket(-1, stateId, -1, modifiedCarried)` 向客户端同步修改后的物品，最后执行菜单状态广播。
+原版的弓拉弓动画、工具耐久、盾牌状态等，都是通过这套机制实现的，它会自动适配物品栏、箱子、展示框、掉落物等所有物品显示场景。
 
-#### 三、核心疑点与原因分析
-问题的本质是**创造模式玩家背包界面的光标物品特殊性**：该场景下客户端使用 `ItemPickerMenu`，光标物品由客户端纯虚拟管理；而服务端对应的 `InventoryMenu` 光标始终为空，服务端临时设置光标再同步的方案不生效。
-具体疑点包括：
-1. `containerId=-1、slot=-1` 的容器槽位同步包，无法正确更新创造模式下客户端的虚拟光标物品。
-2. 物品复制、网络包序列化/反序列化过程中，Data Components 组件数据可能存在丢失。
-3. 服务端对 `InventoryMenu` 光标临时修改再清除的操作，完全无法影响客户端独立管理的虚拟光标。
+## 核心实现思路
+1. **客户端注册一个自定义物品属性**：读取物品的 NBT 标签，返回对应状态的浮点数值。
+2. **在物品的 JSON 模型中编写 overrides**：根据不同的属性值，切换到对应不同纹理的子模型。
 
-#### 四、对照验证
-| 场景 | 交互方向 | 生效状态 |
-|------|---------|---------|
-| 生存模式 | 光标活TNT → 右键槽位活打火石 | 正常 |
-| 创造模式+容器GUI | 光标活TNT → 右键槽位活打火石 | 正常 |
-| 创造模式+玩家背包 | 光标活TNT → 右键槽位活打火石 | 失效 |
-| 生存模式 | 光标活打火石 → 右键槽位活TNT | 正常 |
-| 创造模式 | 光标活打火石 → 右键槽位活TNT | 正常 |
+---
 
-仅“创造模式+玩家背包”场景失效，与该场景下光标为客户端虚拟管理的特性直接相关。
+## 详细实现步骤
 
-#### 五、待解决的核心问题与备选方向
-- 核心问题：创造模式下，如何将服务端修改后的 ItemStack 组件数据，正确同步到客户端的虚拟光标物品上。
-- 候选解决思路：
-   1. 放弃原版同步包，自定义网络包直接通知客户端更新光标物品。
-   2. 通过客户端 Mixin 拦截原版容器槽位同步包，手动更新虚拟光标物品。
-   3. 完全在客户端处理交互逻辑，但存在安全校验的隐患。
-   4. 换交互逻辑：将光标物品暂存入槽位，在槽位中完成修改后再放回光标。
+### 1. 客户端注册物品属性
+这部分是纯客户端逻辑，必须放在客户端侧执行，不能写到公共端代码里。
+
+#### 示例代码（客户端事件类）
+```java
+package com.yourname.yourmod.client;
+
+import com.yourname.yourmod.YourMod;
+import com.yourname.yourmod.init.ModItems;
+import net.minecraft.resources.ResourceLocation;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.Mod;
+import net.neoforged.neoforge.client.event.RegisterItemPropertiesEvent;
+
+// 只在客户端加载，监听 MOD 总线事件
+@Mod.EventBusSubscriber(
+    modid = YourMod.MOD_ID,
+    value = Dist.CLIENT,
+    bus = Mod.EventBusSubscriber.Bus.MOD
+)
+public class ClientModEvents {
+
+    @SubscribeEvent
+    public static void onRegisterItemProperties(RegisterItemPropertiesEvent event) {
+        // 为你的物品注册属性：属性ID为 yourmod:variant
+        event.register(
+            ModItems.YOUR_ITEM.get(), // 你的物品实例
+            ResourceLocation.fromNamespaceAndPath(YourMod.MOD_ID, "variant"),
+            (itemStack, level, entity, seed) -> {
+                // 安全读取NBT，避免空指针
+                if (itemStack.hasTag() && itemStack.getTag().contains("Variant")) {
+                    // 将NBT中的整数状态转为float返回
+                    return itemStack.getTag().getInt("Variant");
+                }
+                // 默认状态返回 0
+                return 0.0f;
+            }
+        );
+    }
+}
+```
+
+- 如果你的 NBT 是字符串类型（如 `"type": "fire"`），可以在 lambda 中做字符串到数字的映射：
+  ```java
+  if (itemStack.hasTag()) {
+      String type = itemStack.getTag().getString("VariantType");
+      return switch (type) {
+          case "fire" -> 1.0f;
+          case "ice" -> 2.0f;
+          default -> 0.0f;
+      };
+  }
+  return 0.0f;
+  ```
+
+### 2. 编写物品模型 JSON
+在资源包目录 `src/main/resources/assets/yourmod/models/item/` 下创建物品模型。
+
+#### 主模型（your_item.json）
+```json
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "yourmod:item/your_item_default"
+  },
+  "overrides": [
+    {
+      "predicate": {
+        "yourmod:variant": 1
+      },
+      "model": "yourmod:item/your_item_variant1"
+    },
+    {
+      "predicate": {
+        "yourmod:variant": 2
+      },
+      "model": "yourmod:item/your_item_variant2"
+    }
+  ]
+}
+```
+
+#### 子模型（每个变体一个）
+每个子模型只需要指定不同的纹理即可，结构和普通物品模型一致。
+
+`your_item_variant1.json`：
+```json
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "yourmod:item/your_item_texture1"
+  }
+}
+```
+
+`your_item_variant2.json`：
+```json
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "yourmod:item/your_item_texture2"
+  }
+}
+```
+
+### 3. 放置纹理文件
+将对应不同状态的 PNG 图片放到：
+`src/main/resources/assets/yourmod/textures/item/`
+
+比如：
+- `your_item_default.png`（默认状态）
+- `your_item_texture1.png`（状态1）
+- `your_item_texture2.png`（状态2）
+
+---
+
+## 测试与验证
+进入游戏后，用指令给自己发放带 NBT 的物品，即可看到纹理切换：
+```mcfunction
+# 默认状态
+/give @p yourmod:your_item{Variant:0} 1
+
+# 状态1
+/give @p yourmod:your_item{Variant:1} 1
+
+# 状态2
+/give @p yourmod:your_item{Variant:2} 1
+```
+
+---
+
+## 关键注意事项
+1. **客户端侧限制**：属性注册代码必须只在客户端加载，否则服务端启动会报类找不到错误。
+2. **NBT 读取安全**：必须先判断 `hasTag()` 再读取标签，防止空物品导致空指针崩溃。
+3. **匹配逻辑**：Minecraft 会选择**不大于当前属性值的最大 predicate 值**对应的模型，因此离散状态建议用整数对应。
+4. **路径大小写**：资源路径（模型、纹理文件名）是大小写敏感的，必须完全一致。
+5. **多状态叠加**：如果需要同时根据多个 NBT 字段切换，可以注册多个属性，并在 `predicate` 中写入多个条件。
+
+---
+
+## 什么时候需要更复杂的方案？
+如果你的变体数量极多（几十上百种）、需要动态生成纹理、或者需要动画/特殊渲染效果，再考虑**自定义 BakedModel + 自定义 ItemOverrides** 的方案。但对于单纯切换图片的需求，上面的属性方案是最优解。
+
+需要我补充自定义 BakedModel 的实现方式，或者帮你排查纹理不生效的常见问题吗？

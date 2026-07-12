@@ -18,6 +18,7 @@
 - **活物品隔离**：活物品不会被其他活物品当作普通物品处理（不传输、不熔炼、不作为燃料）
 - **GUI交互系统**：容器界面中活物品之间的鼠标交互（如活打火石右键活TNT），声明式规则 + 统一拦截 + 服务端处理
 - **活TNT爆炸**：容器中的可爆炸活物品，引信倒计时后爆炸，威力随数量缩放，支持普通/大当量双模式
+- **活物品图标系统**：组件化的客户端图标框架，声明式配置即可实现活物品图标根据 NBT 动态切换，支持上下文感知（GUI/手持显示不同图标）和 ItemDecorator 叠加层
 
 ---
 
@@ -168,6 +169,62 @@ core/model/
     └── SlotMapping — 不可变槽位映射（record），含 12 种预设方向 + NBT 序列化
 ```
 
+### 客户端图标系统
+
+活物品图标采用三层架构，通过声明式配置（`LivingIconSpec`）驱动，新增活物品图标无需编写任何 Java 类。
+
+```
+┌─────────────────────────────────────────────────────┐
+│  Layer 3: IItemDecorator（可选）                     │  ← 箭头叠加层（仅物品栏）
+│  例: LivingHopperDecorator                          │
+│      hopper_arrow_in.png / hopper_arrow_out.png     │
+├─────────────────────────────────────────────────────┤
+│  Layer 2: GenericContextAwareModel                   │  ← 上下文切换（GUI vs 手持）
+│  ┌──────────────────┬──────────────────────┐        │
+│  │ GUI: 活物品图标    │ 手持/地面: 原版图标   │        │
+│  └──────────────────┴──────────────────────┘        │
+├─────────────────────────────────────────────────────┤
+│  Layer 1: GenericLivingModelWrapper                  │  ← 模型注入（区分活/原版）
+│  └→ GenericLivingItemOverrides.resolve()             │
+│     ├─ 不是活物品 → 返回原版模型                      │
+│     └─ 是活物品 → 遍历 Variant.predicate 匹配变体     │
+└─────────────────────────────────────────────────────┘
+```
+
+**注册示例（在 `LivingIconRegistry.registerAll()` 中）：**
+
+```java
+// 活熔炉：两种状态
+register(LivingIconSpec.builder(Items.FURNACE)
+    .addVariant("idle", "item/furnace_idle", stack -> !isBurning(stack))
+    .addVariant("active", "item/furnace_active", stack -> isBurning(stack))
+    .build());
+
+// 活TNT：闪烁动画（引信倒计时 % 10 == 0 时切换图标）
+register(LivingIconSpec.builder(Items.TNT)
+    .addVariant("lit", "item/tnt_lit", stack -> getFuseTimer(stack) > 0 && getFuseTimer(stack) % 10 == 0)
+    .addVariant("idle", "item/tnt_idle", stack -> true)  // 兜底
+    .build());
+
+// 活漏斗：基础图标 + 箭头叠加层
+register(LivingIconSpec.builder(Items.HOPPER)
+    .addVariant("base", "item/hopper_living", stack -> true)
+    .decorator(new LivingHopperDecorator())
+    .build());
+```
+
+**新增活物品图标只需两步：**
+1. 在 `LivingIconRegistry.registerAll()` 中添加一个 `LivingIconSpec` 声明
+2. 准备对应的纹理 PNG 和模型 JSON 文件
+
+**当前支持的活物品图标：**
+
+| 活物品 | 变体 | 纹理 | 特效 |
+|--------|------|------|------|
+| 活漏斗 | `base` | `hopper_base.png` | 箭头叠加层（方向旋转） |
+| 活熔炉 | `idle` / `active` | `furnace_idle.png` / `furnace_active.png` | 燃烧状态切换 |
+| 活TNT | `idle` / `lit` | `tnt_idle.png` / `tnt_lit.png` | 引信闪烁动画（每10 tick切换） |
+
 ---
 
 ## 核心文件索引
@@ -239,8 +296,15 @@ src/main/java/com/qiqi/li/
 │   ├── GuiInteractionHelper.java            # ⭐ 客户端GUI交互统一工具（查询规则+解析槽位+序列化光标+发包）
 │   ├── LivingItemInputHandler.java          # 客户端输入处理：WASD 方向配置 + InputSession
 │   ├── LivingItemTooltip.java               # Tooltip 渲染
+│   ├── LivingHopperDecorator.java           # 活漏斗箭头叠加层（IItemDecorator，旋转绘制输入/输出箭头）
 │   ├── gui/
 │   │   └── LivingButton.java                # 活按钮：点击切换 IS_LIVING 标记
+│   ├── icon/                                # ⭐ 活物品图标系统（组件化，声明式配置）
+│   │   ├── LivingIconSpec.java              # 图标声明式配置（建造者模式：变体+谓词+叠加层）
+│   │   ├── LivingIconRegistry.java          # 图标注册中心（统一管理所有活物品图标配置和模型注入）
+│   │   ├── GenericLivingModelWrapper.java   # 通用模型包装器（注入自定义 ItemOverrides）
+│   │   ├── GenericContextAwareModel.java    # 通用上下文切换模型（GUI 显示自定义图标，手持显示原版图标）
+│   │   └── GenericLivingItemOverrides.java  # 通用覆盖解析器（根据 Variant.predicate 匹配变体模型）
 │   └── mixin/
 │       ├── AbstractContainerScreenMixin.java # 容器界面 Mixin（注入活按钮 + 交互拦截）
 │       ├── InventoryScreenMixin.java         # 生存模式背包 Mixin（交互拦截）
@@ -347,7 +411,24 @@ SLOTS 模式的方向数据存储在 `ComponentState` 中（`slot_input_x`, `slo
 
 新增交互类型只需两步：配置 `InteractionEntry` + 注册 `InteractionHandler`，无需修改任何 Mixin 代码。
 
-### 11. 创造模式光标物品同步
+### 11. 活物品图标系统（声明式配置 + 通用组件）
+
+活物品图标采用组件化设计，通过 `LivingIconSpec` 声明式配置驱动：
+
+**之前的问题**：每加一种活物品图标需要新建 3-4 个 Java 类（ContextAwareXxxModel、LivingXxxModelWrapper、LivingXxxItemOverrides），代码高度重复。
+
+**解决方案**：
+- `LivingIconSpec` — 声明式配置（建造者模式），描述变体列表和判断谓词
+- 三个通用组件替代所有物品特定的类：`GenericLivingModelWrapper`、`GenericContextAwareModel`、`GenericLivingItemOverrides`
+- `LivingIconRegistry` — 注册中心，统一处理模型注册、注入和叠加层
+
+**核心原理**：
+1. `ModelEvent.ModifyBakingResult` 在模型烘焙后注入 `GenericLivingModelWrapper`，替换原版物品模型
+2. `GenericLivingItemOverrides.resolve()` 在渲染时根据 `Variant.predicate` 匹配当前变体
+3. `GenericContextAwareModel.applyTransform()` 根据 `ItemDisplayContext` 切换：GUI 显示自定义图标，手持显示原版图标
+4. `VariantModelStore` 桥接烘焙阶段和渲染阶段，存储变体模型的 `BakedModel` 引用
+
+### 12. 创造模式光标物品同步
 
 创造模式使用 `ItemPickerMenu`，光标物品是客户端虚拟的，服务端 `menu.getCarried()` 返回空。此外原版 `ClientboundContainerSetSlotPacket(containerId=-1)` 明确排除了 `CreativeModeInventoryScreen`。
 
@@ -575,4 +656,4 @@ public class LivingBrewingStandFunction extends BaseLivingFunction {
 ---
 
 *最后更新: 2026-07-11*
-*状态: Alpha 测试阶段 - 活熔炉、活漏斗、活TNT核心功能已完成，GUI交互系统已就绪*
+*状态: Alpha 测试阶段 - 活熔炉、活漏斗、活TNT核心功能已完成，GUI交互系统已就绪，客户端图标系统已组件化*

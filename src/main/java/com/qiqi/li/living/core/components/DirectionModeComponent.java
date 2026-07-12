@@ -189,8 +189,10 @@ public class DirectionModeComponent implements ILivingComponent {
         for (String slotName : defaultSlots.keySet()) {
             Pos2D dir = getDirection(state, slotName);
             if (dir != null && dir != Pos2D.NONE) {
-                tooltipAdder.accept(Component.literal(
-                    slotName + ": " + dir.getSymbol()
+                tooltipAdder.accept(Component.translatable(
+                    "tooltip.livingitem.direction.slot",
+                    Component.translatable("slot.livingitem." + slotName),
+                    dir.getSymbol()
                 ).withStyle(net.minecraft.ChatFormatting.GRAY));
             }
         }
@@ -199,8 +201,11 @@ public class DirectionModeComponent implements ILivingComponent {
     private void appendTransferTooltip(ComponentState state, Consumer<Component> tooltipAdder) {
         SlotMapping mapping = getCurrentMapping(state);
         if (mapping != null) {
-            tooltipAdder.accept(Component.literal(
-                "传输方向: " + mapping.displaySymbol() + " " + mapping.displayName()
+            tooltipAdder.accept(Component.translatable(
+                "tooltip.livingitem.direction.transfer",
+                mapping.sourceOffset().getSymbol(),
+                mapping.targetOffset().getSymbol(),
+                Component.literal(mapping.displayName())
             ).withStyle(net.minecraft.ChatFormatting.GOLD));
         }
     }
@@ -370,7 +375,7 @@ public class DirectionModeComponent implements ILivingComponent {
 
         return findMatchingPreset(source, target)
             .orElseGet(() -> new SlotMapping(source, target,
-                source.getSymbol() + "→" + target.getSymbol(),
+                source.getSymbol() + "-" + target.getSymbol(),
                 "自定义"));
     }
 

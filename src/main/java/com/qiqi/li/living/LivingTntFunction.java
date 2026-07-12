@@ -79,4 +79,37 @@ public class LivingTntFunction extends BaseLivingFunction {
     public String getFunctionId() { return ID; }
 
     public static LivingFunctionConfig getStaticConfig() { return CONFIG; }
+
+    /**
+     * 检查活TNT是否正在燃烧（引信倒计时中）。
+     *
+     * <p>从 LIVING_FUNCTION_DATA 组件中读取 explosion.ignited 状态。
+     * 供客户端图标系统使用。
+     *
+     * @param stack 物品栈
+     * @return 如果引信正在倒计时返回 true
+     */
+    public static boolean isFuseActive(ItemStack stack) {
+        net.minecraft.nbt.CompoundTag tntTag = LivingItemManager.getFunctionData(stack, ID);
+        if (tntTag.isEmpty()) return false;
+        net.minecraft.nbt.CompoundTag explosionTag = tntTag.getCompound(ExplosionComponent.ID);
+        return explosionTag.getBoolean("ignited");
+    }
+
+    /**
+     * 获取活TNT的引信剩余时间。
+     *
+     * <p>从 LIVING_FUNCTION_DATA 组件中读取 explosion.fuse_timer。
+     * 供客户端图标系统使用，用于判断闪烁动画帧。
+     *
+     * @param stack 物品栈
+     * @return 引信剩余 tick 数；如果未点燃返回 -1
+     */
+    public static int getFuseTimer(ItemStack stack) {
+        net.minecraft.nbt.CompoundTag tntTag = LivingItemManager.getFunctionData(stack, ID);
+        if (tntTag.isEmpty()) return -1;
+        net.minecraft.nbt.CompoundTag explosionTag = tntTag.getCompound(ExplosionComponent.ID);
+        if (!explosionTag.getBoolean("ignited")) return -1;
+        return explosionTag.getInt("fuse_timer");
+    }
 }

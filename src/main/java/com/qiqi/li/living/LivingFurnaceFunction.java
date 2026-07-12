@@ -79,4 +79,24 @@ public class LivingFurnaceFunction extends BaseLivingFunction {
     public String getFunctionId() { return ID; }
 
     public static LivingFunctionConfig getStaticConfig() { return CONFIG; }
+
+    /**
+     * 检查活熔炉是否正在燃烧（供客户端图标系统使用）。
+     *
+     * <p>从 LIVING_FUNCTION_DATA 组件中读取 living_furnace.fuel.burn_time，
+     * 如果大于 0 则表示正在燃烧。
+     *
+     * @param stack 物品栈
+     * @return 如果正在燃烧返回 true
+     */
+    public static boolean isBurning(ItemStack stack) {
+        LivingFunctionData funcData = stack.get(LivingItemManager.LIVING_FUNCTION_DATA.value());
+        if (funcData == null || funcData.isEmpty()) return false;
+
+        net.minecraft.nbt.CompoundTag furnaceTag = funcData.getFunctionData(ID);
+        if (furnaceTag.isEmpty()) return false;
+
+        net.minecraft.nbt.CompoundTag fuelTag = furnaceTag.getCompound("fuel");
+        return fuelTag.getInt("burn_time") > 0;
+    }
 }

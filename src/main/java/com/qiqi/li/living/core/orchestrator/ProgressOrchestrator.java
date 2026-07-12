@@ -40,7 +40,7 @@ public class ProgressOrchestrator implements LivingOrchestrator {
         ProgressComponent progressComp = fe.findComponent(config, ProgressComponent.class);
         ItemTransformComponent transformComp = fe.findComponent(config, ItemTransformComponent.class);
 
-        boolean canProgress = checkCanProgress(transformComp, ctx);
+        boolean canProgress = checkCanProgress(transformComp, ctx, states);
 
         if (canProgress) {
             LivingOrchestrator.tickAllComponents(ctx, slot, stack, states, config, fe);
@@ -53,9 +53,13 @@ public class ProgressOrchestrator implements LivingOrchestrator {
         LivingOrchestrator.markInputSlotOccupied(ctx, ctx.containerCtx());
     }
 
-    private boolean checkCanProgress(ItemTransformComponent transformComp, ComponentContext ctx) {
-        if (transformComp != null && !transformComp.canProcess(ctx)) {
-            return false;
+    private boolean checkCanProgress(ItemTransformComponent transformComp, ComponentContext ctx,
+                                      Map<String, ComponentState> states) {
+        if (transformComp != null) {
+            ComponentState transformState = states.get(transformComp.getComponentId());
+            if (!transformComp.canProcess(ctx, transformState)) {
+                return false;
+            }
         }
         return true;
     }

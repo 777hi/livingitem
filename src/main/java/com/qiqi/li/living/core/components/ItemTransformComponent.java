@@ -1,7 +1,10 @@
 package com.qiqi.li.living.core.components;
 
 import java.util.function.Consumer;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.Recipe;
 import net.minecraft.world.item.crafting.RecipeType;
@@ -52,6 +55,12 @@ public class ItemTransformComponent implements ILivingComponent {
     /** NBT 键名：上次转化的时间戳（用于 Tooltip 显示） */
     private static final String KEY_LAST_TRANSFORM_TICK = "last_transform_tick";
 
+    /** NBT 键名：输入物品的资源路径（如 "minecraft:iron_ore"） */
+    private static final String KEY_INPUT_ITEM = "input_item";
+
+    /** NBT 键名：输出物品的资源路径（如 "minecraft:iron_ingot"） */
+    private static final String KEY_OUTPUT_ITEM = "output_item";
+
     @Override
     public String getComponentId() { return ID; }
 
@@ -73,19 +82,43 @@ public class ItemTransformComponent implements ILivingComponent {
     }
 
     /**
-     * 追加 Tooltip 信息：显示转化状态。
+     * 追加 Tooltip 信息：显示当前配方（原料 → 成品）。
      *
-     * - 未转化过：显示"就绪"
-     * - 已转化过：显示"处理中"
+     * <p>配方信息在 executeTransform() 中保存到状态，tooltip 直接读取显示。
+     * 格式："原料: [铁矿石] → [铁锭]"
+     *
+     * <p>如果尚未执行过转化，不显示任何信息。
      */
     @Override
     public void appendTooltip(ComponentState state, Consumer<Component> tooltipAdder) {
-        long lastTransformTick = state.getInt(KEY_LAST_TRANSFORM_TICK, -1);
-        if (lastTransformTick == -1) {
-            tooltipAdder.accept(Component.translatable("tooltip.livingitem.transform.ready"));
-        } else {
-            tooltipAdder.accept(Component.translatable("tooltip.livingitem.transform.processing"));
+        String inputId = state.getString(KEY_INPUT_ITEM, "");
+        String outputId = state.getString(KEY_OUTPUT_ITEM, "");
+
+        if (inputId.isEmpty() || outputId.isEmpty()) return;
+
+        Component inputName = getItemDisplayName(inputId);
+        Component outputName = getItemDisplayName(outputId);
+
+        tooltipAdder.accept(Component.translatable(
+                "tooltip.livingitem.transform.recipe", inputName, outputName));
+    }
+
+    /**
+     * 根据物品资源路径获取其显示名称。
+     *
+     * @param itemId 物品资源路径（如 "minecraft:iron_ore"）
+     * @return 物品的显示名称组件；如果物品不存在则返回原始 ID
+     */
+    private static Component getItemDisplayName(String itemId) {
+        try {
+            ResourceLocation rl = ResourceLocation.parse(itemId);
+            Item item = BuiltInRegistries.ITEM.get(rl);
+            if (item != null) {
+                return new ItemStack(item).getDisplayName();
+            }
+        } catch (Exception ignored) {
         }
+        return Component.literal(itemId);
     }
 
     /**
@@ -161,6 +194,11 @@ public class ItemTransformComponent implements ILivingComponent {
 
         transformState.setInt(KEY_LAST_TRANSFORM_TICK, (int)(System.currentTimeMillis() / 1000));
 
+        ResourceLocation inputRl = BuiltInRegistries.ITEM.getKey(inputStack.getItem());
+        ResourceLocation outputRl = BuiltInRegistries.ITEM.getKey(result.getItem());
+        transformState.setString(KEY_INPUT_ITEM, inputRl.toString());
+        transformState.setString(KEY_OUTPUT_ITEM, outputRl.toString());
+
         return true;
     }
 
@@ -192,21 +230,25 @@ public class ItemTransformComponent implements ILivingComponent {
     }
 
     /**
-     * 检查当前是否可以执行转化。
+     * 检查当前是否可以执行转化，并在找到配方时保存输入/输出物品信息到状态。
      *
-     * 检查条件：
+     * <p>检查条件：
      * 1. 输入和输出槽位索引有效
      * 2. 输入槽位有物品
      * 3. 输入物品不是活物品
      * 4. 输入物品有匹配的配方
      *
-     * 注意：此方法不检查输出空间，仅检查输入有效性。
+     * <p>注意：此方法不检查输出空间，仅检查输入有效性。
      * 输出空间检查在 executeTransform() 中进行。
      *
-     * @param ctx 组件上下文
+     * <p>副作用：当找到匹配配方时，将输入/输出物品 ID 保存到状态中，
+     * 使 tooltip 能在进度刚开始时就显示配方信息，无需等到第一次转化完成。
+     *
+     * @param ctx   组件上下文
+     * @param state 本组件的状态（用于保存配方信息）
      * @return 是否可以执行转化
      */
-    public boolean canProcess(ComponentContext ctx) {
+    public boolean canProcess(ComponentContext ctx, ComponentState state) {
         if (!ctx.hasValidInput() || !ctx.hasValidOutput()) {
             return false;
         }
@@ -222,6 +264,22 @@ public class ItemTransformComponent implements ILivingComponent {
         var recipeHolderOpt = ctx.level().getRecipeManager()
                 .getRecipeFor((RecipeType)recipeType, recipeInput, ctx.level());
 
-        return recipeHolderOpt.isPresent();
+        if (recipeHolderOpt.isEmpty()) return false;
+
+        Object recipeHolder = recipeHolderOpt.get();
+        Recipe<?> recipe;
+        if (recipeHolder instanceof net.minecraft.world.item.crafting.RecipeHolder<?> holder) {
+            recipe = holder.value();
+        } else {
+            recipe = (Recipe<?>)recipeHolder;
+        }
+        ItemStack result = recipe.getResultItem(ctx.level().registryAccess());
+
+        ResourceLocation inputRl = BuiltInRegistries.ITEM.getKey(inputStack.getItem());
+        ResourceLocation outputRl = BuiltInRegistries.ITEM.getKey(result.getItem());
+        state.setString(KEY_INPUT_ITEM, inputRl.toString());
+        state.setString(KEY_OUTPUT_ITEM, outputRl.toString());
+
+        return true;
     }
 }

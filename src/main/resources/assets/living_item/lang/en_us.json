@@ -18,8 +18,16 @@
   "tooltip.livingitem.fuel_burn": "  §7Burn Time: §c%.1fs§r",
   "tooltip.livingitem.transform.ready": "  §7Status: §aReady§r",
   "tooltip.livingitem.transform.processing": "  §7Status: §eProcessing...§r",
+  "tooltip.livingitem.transform.recipe": "  §7Recipe: §e%s§7 → §a%s§r",
 
   "tooltip.livingitem.hopper.status": "§aLiving Hopper§r",
   "tooltip.livingitem.tnt.status": "§cLiving TNT§r",
-  "tooltip.livingitem.flint_and_steel.status": "§eLiving Flint & Steel§r"
+  "tooltip.livingitem.flint_and_steel.status": "§eLiving Flint & Steel§r",
+
+  "slot.livingitem.input": "Input",
+  "slot.livingitem.fuel": "Fuel",
+  "slot.livingitem.output": "Output",
+
+  "tooltip.livingitem.direction.slot": "  §7%s: %s§r",
+  "tooltip.livingitem.direction.transfer": "  §6Transfer: %s -> %s (%s)§r"
 }
