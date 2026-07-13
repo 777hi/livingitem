@@ -4,6 +4,7 @@ import java.util.Map;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import com.qiqi.li.living.ContainerContext;
+import com.qiqi.li.living.core.model.Pos2D;
 import com.qiqi.li.living.core.components.DirectionModeComponent;
 
 /**
@@ -81,4 +82,10 @@ public record ComponentContext(
     public ComponentState getComponentState(String componentId) {
         return allComponentStates != null ? allComponentStates.get(componentId) : null;
     }
+
+    /** 源方向偏移（TRANSFER 模式有效，用于跨容器传输判断边界方向） */
+    public Pos2D sourceOffset() { return resolvedSlots.sourceOffset(); }
+
+    /** 目标方向偏移（TRANSFER 模式有效，用于跨容器传输判断边界方向） */
+    public Pos2D targetOffset() { return resolvedSlots.targetOffset(); }
 }

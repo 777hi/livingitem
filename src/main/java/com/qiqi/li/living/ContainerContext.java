@@ -3,6 +3,7 @@ package com.qiqi.li.living;
 import java.util.Set;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
 
 /**
  * 容器上下文 —— 活物品功能与容器之间的交互接口。
@@ -87,6 +88,19 @@ public interface ContainerContext {
      * @return 容器的方块位置，如果不是方块容器返回 null
      */
     default BlockPos getBlockPos() {
+        return null;
+    }
+
+    /**
+     * 获取容器所在的世界。
+     *
+     * 用于跨容器传输等需要访问相邻容器的功能。
+     * 对于世界容器（箱子等），返回容器方块所在的 Level；
+     * 对于玩家背包等非方块容器，返回 null。
+     *
+     * @return 容器所在的世界，如果不是方块容器返回 null
+     */
+    default Level getLevel() {
         return null;
     }
 }

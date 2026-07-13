@@ -178,6 +178,19 @@ public class SimpleContainerContext implements ContainerContext {
         return null;
     }
 
+    @Override
+    public Level getLevel() {
+        if (container instanceof BlockEntity be && be.getLevel() != null) {
+            return be.getLevel();
+        }
+        for (BlockEntity be : associatedBlockEntities) {
+            if (be.getLevel() != null) {
+                return be.getLevel();
+            }
+        }
+        return null;
+    }
+
     /**
      * 将指定槽位的物品数据同步到所有正在查看该容器的客户端。
      *

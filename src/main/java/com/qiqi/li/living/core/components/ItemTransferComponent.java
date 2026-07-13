@@ -155,8 +155,11 @@ public class ItemTransferComponent implements ILivingComponent {
         int sourceSlot = ctx.sourceSlot();
         int targetSlot = ctx.targetSlot();
 
-        if (sourceSlot < 0 || targetSlot < 0 || sourceSlot >= containerSize || targetSlot >= containerSize) {
-            return false;
+        boolean sourceOutOfBounds = sourceSlot < 0;
+        boolean targetOutOfBounds = targetSlot < 0 || targetSlot >= containerSize;
+
+        if (sourceOutOfBounds || targetOutOfBounds) {
+            return CrossContainerTransfer.execute(ctx, stackSize, maxTransfer);
         }
 
         if (sourceSlot == targetSlot) {

@@ -71,21 +71,23 @@ public class DirectionModeComponent implements ILivingComponent {
         int fuelSlot,
         int outputSlot,
         int sourceSlot,
-        int targetSlot
+        int targetSlot,
+        Pos2D sourceOffset,
+        Pos2D targetOffset
     ) {
         /** 创建全无效的空结果 */
         public static ResolvedSlots empty() {
-            return new ResolvedSlots(-1, -1, -1, -1, -1);
+            return new ResolvedSlots(-1, -1, -1, -1, -1, Pos2D.NONE, Pos2D.NONE);
         }
 
         /** 创建 SLOTS 模式的结果 */
         public static ResolvedSlots ofSlots(int inputSlot, int fuelSlot, int outputSlot) {
-            return new ResolvedSlots(inputSlot, fuelSlot, outputSlot, -1, -1);
+            return new ResolvedSlots(inputSlot, fuelSlot, outputSlot, -1, -1, Pos2D.NONE, Pos2D.NONE);
         }
 
         /** 创建 TRANSFER 模式的结果 */
-        public static ResolvedSlots ofTransfer(int sourceSlot, int targetSlot) {
-            return new ResolvedSlots(-1, -1, -1, sourceSlot, targetSlot);
+        public static ResolvedSlots ofTransfer(int sourceSlot, int targetSlot, Pos2D sourceOffset, Pos2D targetOffset) {
+            return new ResolvedSlots(-1, -1, -1, sourceSlot, targetSlot, sourceOffset, targetOffset);
         }
     }
 
@@ -247,7 +249,9 @@ public class DirectionModeComponent implements ILivingComponent {
 
             return ResolvedSlots.ofTransfer(
                 SlotResolver.resolve(hostSlot, mapping.sourceOffset(), containerSize),
-                SlotResolver.resolve(hostSlot, mapping.targetOffset(), containerSize)
+                SlotResolver.resolve(hostSlot, mapping.targetOffset(), containerSize),
+                mapping.sourceOffset(),
+                mapping.targetOffset()
             );
         }
     }
