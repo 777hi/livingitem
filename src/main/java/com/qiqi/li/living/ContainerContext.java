@@ -103,4 +103,14 @@ public interface ContainerContext {
     default Level getLevel() {
         return null;
     }
-}
+
+    /**
+     * 获取底层的 Container 实例。
+     *
+     * 用于跨容器传输时检查相邻容器是否与当前容器是同一个实例（防止大箱子内部传输）。
+     *
+     * @return 底层的 Container 对象，如果不可用返回 null
+     */
+    default net.minecraft.world.Container getContainer() {
+        return null;
+    }}

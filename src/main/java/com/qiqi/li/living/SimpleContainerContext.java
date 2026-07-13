@@ -191,6 +191,11 @@ public class SimpleContainerContext implements ContainerContext {
         return null;
     }
 
+    @Override
+    public net.minecraft.world.Container getContainer() {
+        return container;
+    }
+
     /**
      * 将指定槽位的物品数据同步到所有正在查看该容器的客户端。
      *
