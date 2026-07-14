@@ -105,13 +105,14 @@ public final class FunctionExecutor {
                                          ContainerContext containerCtx,
                                          int slot, Level level) {
         int containerSize = containerCtx.getSize();
+        int containerWidth = containerCtx.getWidth();
 
         DirectionModeComponent.ResolvedSlots resolvedSlots;
 
         DirectionModeComponent dirComp = findComponent(config, DirectionModeComponent.class);
         if (dirComp != null) {
             ComponentState dirState = states.get(DirectionModeComponent.ID);
-            resolvedSlots = dirComp.resolveSlots(dirState, slot, containerSize);
+            resolvedSlots = dirComp.resolveSlots(dirState, slot, containerSize, containerWidth);
         } else {
             resolvedSlots = DirectionModeComponent.ResolvedSlots.empty();
         }

@@ -146,6 +146,13 @@ public class ContainerLivingItemHandler {
             return;
         }
 
+//        if (containerSize > 54) {
+////            LOGGER.info("Processing large container: size={}, width={}, class={}",
+////                containerSize,
+////                context.getWidth(),
+////                context.getClass().getSimpleName());
+//        }
+
         Map<LivingItemFunction, List<LivingItemFunction.SlotEntry>> grouped = new LinkedHashMap<>();
 
         for (int i = 0; i < context.getSize(); i++) {
@@ -157,6 +164,10 @@ public class ContainerLivingItemHandler {
                             .add(new LivingItemFunction.SlotEntry(i, stack));
                 }
             }
+        }
+
+        if (!grouped.isEmpty()) {
+            LOGGER.info("[DEBUG] processContext: size={}, width={}, grouped={}", containerSize, context.getWidth(), grouped.keySet());
         }
 
         for (var entry : grouped.entrySet()) {
@@ -217,6 +228,10 @@ public class ContainerLivingItemHandler {
                 container = c;
                 blockEntities2.add(be);
                 positions.add(be.getBlockPos());
+//                if (c.getContainerSize() > 54) {
+////                    LOGGER.info("Found large container BE: type={}, size={}, class={}",
+////                        be.getType(), c.getContainerSize(), c.getClass().getSimpleName());
+//                }
             }
 
             if (container != null) {

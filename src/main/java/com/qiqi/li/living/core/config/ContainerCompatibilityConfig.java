@@ -85,11 +85,25 @@ public final class ContainerCompatibilityConfig {
             register(ResourceLocation.fromNamespaceAndPath("ironchests", "iron_chest"), ContainerRule.builder()
                 .containerSize(45)
                 .layoutType(ContainerLayoutType.RECTANGULAR_STANDARD)
+                .columns(9)
                 .validHostSlots(range(0, 44))
                 .directionMapping(Pos2D.LEFT, -1)
                 .directionMapping(Pos2D.RIGHT, 1)
                 .directionMapping(Pos2D.UP, -9)
                 .directionMapping(Pos2D.DOWN, 9)
+                .edgeBehavior(EdgeBehavior.INVALIDATE)
+                .build()
+            );
+
+            register(ResourceLocation.fromNamespaceAndPath("ironchests", "diamond_chest"), ContainerRule.builder()
+                .containerSize(108)
+                .layoutType(ContainerLayoutType.RECTANGULAR_STANDARD)
+                .columns(12)
+                .validHostSlots(range(0, 107))
+                .directionMapping(Pos2D.LEFT, -1)
+                .directionMapping(Pos2D.RIGHT, 1)
+                .directionMapping(Pos2D.UP, -12)
+                .directionMapping(Pos2D.DOWN, 12)
                 .edgeBehavior(EdgeBehavior.INVALIDATE)
                 .build()
             );
@@ -108,6 +122,34 @@ public final class ContainerCompatibilityConfig {
     /** 根据容器 ID 查找规则 */
     public static Optional<ContainerRule> findRule(ResourceLocation containerId) {
         return Optional.ofNullable(RULES.get(containerId));
+    }
+
+    public static Optional<ContainerRule> findRuleBySize(int containerSize) {
+        for (var entry : RULES.entrySet()) {
+            if (entry.getValue().containerSize() == containerSize) {
+                return Optional.of(entry.getValue());
+            }
+        }
+        return Optional.empty();
+    }
+
+    public static Optional<ContainerRule> findRuleByNamespaceAndKeyword(String namespace, String path) {
+        for (var entry : RULES.entrySet()) {
+            ResourceLocation key = entry.getKey();
+            if (key.getNamespace().equals(namespace)) {
+                String rulePath = key.getPath();
+                String[] ruleParts = rulePath.split("_|-");
+                String[] pathParts = path.split("_|-");
+                for (String rulePart : ruleParts) {
+                    for (String pathPart : pathParts) {
+                        if (rulePart.equalsIgnoreCase(pathPart) && !rulePart.isEmpty()) {
+                            return Optional.of(entry.getValue());
+                        }
+                    }
+                }
+            }
+        }
+        return Optional.empty();
     }
 
     /** 获取所有已注册规则（不可变视图） */
@@ -169,6 +211,7 @@ public final class ContainerCompatibilityConfig {
     public record ContainerRule(
         int containerSize,
         ContainerLayoutType layoutType,
+        int columns,
         List<Integer> validHostSlots,
         Map<Pos2D, Integer> directionMappings,
         EdgeBehavior edgeBehavior,
@@ -195,6 +238,7 @@ public final class ContainerCompatibilityConfig {
     public static class Builder {
         private int containerSize = 0;
         private ContainerLayoutType layoutType = ContainerLayoutType.RECTANGULAR_STANDARD;
+        private int columns = 9;
         private List<Integer> validHostSlots = new ArrayList<>();
         private Map<Pos2D, Integer> directionMappings = new HashMap<>();
         private EdgeBehavior edgeBehavior = EdgeBehavior.INVALIDATE;
@@ -208,6 +252,11 @@ public final class ContainerCompatibilityConfig {
 
         public Builder layoutType(ContainerLayoutType type) {
             this.layoutType = type;
+            return this;
+        }
+
+        public Builder columns(int cols) {
+            this.columns = cols;
             return this;
         }
 
@@ -245,7 +294,7 @@ public final class ContainerCompatibilityConfig {
                 validHostSlots = range(0, containerSize - 1);
             }
             return new ContainerRule(
-                containerSize, layoutType, validHostSlots,
+                containerSize, layoutType, columns, validHostSlots,
                 directionMappings, edgeBehavior, crossBlockEntitySupport, description
             );
         }

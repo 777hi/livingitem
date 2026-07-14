@@ -145,7 +145,8 @@ ILivingComponent (接口)
     ├── DirectionModeComponent  — 方向/槽位配置（双模式）
     │     ├── SLOTS 模式：命名槽位映射（活熔炉的 input/fuel/output）
     │     └── TRANSFER 模式：传输方向映射（活漏斗的 source→target）
-    ├── ItemTransferComponent   — 物品传输逻辑
+    ├── ItemTransferComponent   — 物品传输逻辑（含跨容器传输触发）
+    ├── CrossContainerTransfer  — 跨容器传输工具类（方向映射 + 大箱子处理 + 邻居容器查找）
     ├── ProgressComponent       — 进度计时与暂停
     ├── FuelConsumeComponent    — 燃料消耗与可用性检查
     ├── ItemTransformComponent  — 配方匹配与物品转化
@@ -243,14 +244,14 @@ src/main/java/com/qiqi/li/
 │   ├── LivingHopperFunction.java            # 活漏斗：SIMPLE 编排器 + TRANSFER 模式方向 + NBT 工具
 │   ├── LivingTntFunction.java               # 活TNT：引信倒计时 + 爆炸，声明两条交互规则
 │   ├── LivingFlintAndSteelFunction.java     # 活打火石：交互触发器，无 tick 逻辑
-│   ├── ContainerContext.java                # 容器操作抽象接口（含客户端同步 + 槽位占用）
-│   ├── SimpleContainerContext.java          # 容器上下文实现（带异常保护 + 同步逻辑）
+│   ├── ContainerContext.java                # 容器操作抽象接口（含客户端同步 + 槽位占用 + getWidth 列宽）
+│   ├── SimpleContainerContext.java          # 容器上下文实现（带异常保护 + 同步逻辑 + 三级回退列宽获取）
 │   ├── ContainerLivingItemHandler.java      # 容器扫描、分组调度、大箱子去重
 │   ├── ContainerChunkCache.java             # 区块级容器缓存（事件驱动维护）
 │   │
 │   └── core/
 │       ├── FunctionExecutor.java            # 纯工具类：状态加载/保存、槽位解析、组件查找
-│       ├── SlotResolver.java                # 槽位解析：基于 9 列网格的相对偏移计算
+│       ├── SlotResolver.java                # 槽位解析：基于动态列宽的相对偏移计算（支持非9列容器）
 │       ├── LivingFunctionConfig.java        # 配置声明：组件注册 + 编排器选择 + 交互规则 + 配置参数
 │       ├── ComponentConfig.java             # 组件配置参数容器
 │       ├── ComponentContext.java            # 组件执行上下文（容器 + 解析槽位 + 世界 + 状态）
@@ -263,7 +264,8 @@ src/main/java/com/qiqi/li/
 │       ├── components/
 │       │   ├── ILivingComponent.java        # 组件接口：tick + createDefaultState + appendTooltip
 │       │   ├── DirectionModeComponent.java  # 方向配置组件（SLOTS/TRANSFER 双模式 + NBT 自治）
-│       │   ├── ItemTransferComponent.java   # 物品传输组件（活漏斗）
+│       │   ├── ItemTransferComponent.java   # 物品传输组件（活漏斗，含跨容器传输触发）
+│       │   └── CrossContainerTransfer.java  # 跨容器传输工具类（方向映射 + 大箱子半箱选择 + 邻居容器查找）
 │       │   ├── ProgressComponent.java       # 进度组件（计时、暂停、回退）
 │       │   ├── FuelConsumeComponent.java    # 燃料组件（消耗、可用性检查）
 │       │   ├── ItemTransformComponent.java  # 转化组件（配方匹配、物品转化）
@@ -289,7 +291,7 @@ src/main/java/com/qiqi/li/
 │       │   └── AdapterRegistry.java         # 适配器注册中心
 │       │
 │       └── config/
-│           ├── ContainerCompatibilityConfig.java  # 容器兼容性配置
+│           ├── ContainerCompatibilityConfig.java  # 容器兼容性配置（含 columns 字段 + findRuleBySize 按大小匹配）
 │           └── TransferStrategy.java               # 传输策略
 │
 ├── client/
@@ -446,7 +448,22 @@ SLOTS 模式的方向数据存储在 `ComponentState` 中（`slot_input_x`, `slo
 
 `GuiInteractionHelper.resolveContainerSlot()` 通过 `SlotWrapperAccessor` 获取 `target` 字段，统一处理此差异。`GuiInteractionPacket` 携带双索引（`slotIndex` + `containerSlot`），服务端优先通过 `containerSlot` 遍历匹配。
 
-### 13. ExplosionComponent 双模式爆炸
+### 13. 跨容器传输方向映射
+
+活漏斗在容器边界时触发跨容器传输，需要将容器GUI的二维方向（上下左右）转换为世界三维方向（东南西北）。
+
+**方向映射算法**：
+1. 以方块朝向北方为基准：UP→SOUTH(后方), DOWN→NORTH(前方), LEFT→EAST(右方), RIGHT→WEST(左方)
+2. 根据方块实际朝向进行Y轴顺时针旋转（北0°、东90°、南180°、西270°）
+
+**大箱子半箱选择**：
+大箱子由LEFT和RIGHT两个半箱组成，不同边界的跨容器传输需要基于不同半箱的位置查找邻居：
+- UP/DOWN方向：以RIGHT半箱位置为基准（RIGHT半箱对应GUI下半部分）
+- LEFT/RIGHT方向：以RIGHT半箱位置为基准（RIGHT半箱对应GUI右半部分）
+
+**防内部传输**：通过位置比较（而非实例比较）检测相邻容器是否为大箱子的另一半箱。`ChestBlock.getContainer()` 每次返回新的 CompoundContainer 实例，`==` 比较无效。
+
+### 14. ExplosionComponent 双模式爆炸
 
 活TNT爆炸根据数量自动选择模式：
 
@@ -498,6 +515,9 @@ SLOTS 模式的方向数据存储在 `ComponentState` 中（`slot_input_x`, `slo
 ### 活漏斗功能
 - [x] TRANSFER 模式方向配置（默认上传下 UP→DOWN）
 - [x] WASD 键入改变传输方向（需悬停活按钮 + 拿起活漏斗）
+- [x] 跨容器传输（活漏斗在容器边界时与相邻容器交互）
+- [x] 跨容器方向映射（GUI方向 ↔ 世界方向，基于方块朝向旋转）
+- [x] 大箱子跨容器传输（根据边界方向选择LEFT/RIGHT半箱作为基准位置）
 - [x] 网络包同步（`HopperDirectionPacket` v2 格式）
 - [x] Tooltip 实时显示当前传输方向
 - [x] 传输冷却机制（基于物品数量动态调整）
@@ -561,7 +581,7 @@ SLOTS 模式的方向数据存储在 `ComponentState` 中（`slot_input_x`, `slo
 
 #### 高优先级
 - [ ] 更多活物品类型（活投掷器、活发射器、活酿造台等）
-- [ ] 活漏斗支持过滤模式（只传输指定物品）
+- [ ] 活漏斗支持过滤模式（黑白名单，指定传输槽位）
 - [ ] 活熔炉 Tooltip 增强（显示工作模式、预计剩余时间）
 - [ ] 活TNT 红石信号触发（容器被红石激活时自动点燃）
 
@@ -655,5 +675,5 @@ public class LivingBrewingStandFunction extends BaseLivingFunction {
 
 ---
 
-*最后更新: 2026-07-11*
-*状态: Alpha 测试阶段 - 活熔炉、活漏斗、活TNT核心功能已完成，GUI交互系统已就绪，客户端图标系统已组件化*
+*最后更新: 2026-07-13*
+*状态: Alpha 测试阶段 - 活熔炉、活漏斗、活TNT核心功能已完成，跨容器传输已实现，模组容器兼容（IronChests等），GUI交互系统已就绪，客户端图标系统已组件化*

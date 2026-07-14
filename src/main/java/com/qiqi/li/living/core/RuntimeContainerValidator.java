@@ -133,7 +133,8 @@ public final class RuntimeContainerValidator {
     private int resolveWithValidation(Container container, int baseSlot, Pos2D direction, int containerSize) {
         if (direction == Pos2D.NONE) return -1;
 
-        int resolvedSlot = SlotResolver.resolve(baseSlot, direction, containerSize);
+        int width = getContainerWidth(container);
+        int resolvedSlot = SlotResolver.resolve(baseSlot, direction, containerSize, width);
 
         if (resolvedSlot == -1) return -1;
 
@@ -258,4 +259,26 @@ public final class RuntimeContainerValidator {
             return String.format("ValidationResult{status=%s, message=%s}", status, message);
         }
     }
-}
+
+    private int getContainerWidth(Container container) {
+        var adapter = com.qiqi.li.living.core.adapters.AdapterRegistry.getInstance().findAdapter(container);
+        if (adapter != null) {
+            try {
+                var layout = adapter.getLayout(container);
+                if (layout != null && layout.columns() > 0) {
+                    return layout.columns();
+                }
+            } catch (Exception e) {
+                // 回退到下一策略
+            }
+        }
+
+        int size = container.getContainerSize();
+        if (size > 0 && size % 9 != 0) {
+            for (int w = 9; w >= 1; w--) {
+                if (size % w == 0) return w;
+            }
+        }
+
+        return SlotResolver.DEFAULT_WIDTH;
+    }}

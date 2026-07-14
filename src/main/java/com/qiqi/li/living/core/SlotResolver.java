@@ -36,7 +36,7 @@ import com.qiqi.li.living.core.model.Pos2D;
 public final class SlotResolver {
 
     /** Minecraft 标准容器的列数 */
-    private static final int CONTAINER_WIDTH = 9;
+    public static final int DEFAULT_WIDTH = 9;
 
     private SlotResolver() {}
 
@@ -48,7 +48,7 @@ public final class SlotResolver {
      * @return 目标槽位索引，越界返回 -1
      */
     public static int resolve(int baseSlot, Pos2D direction) {
-        return resolve(baseSlot, direction, Integer.MAX_VALUE);
+        return resolve(baseSlot, direction, Integer.MAX_VALUE, DEFAULT_WIDTH);
     }
 
     /**
@@ -62,16 +62,31 @@ public final class SlotResolver {
      * @return 目标槽位索引，越界返回 -1
      */
     public static int resolve(int baseSlot, Pos2D direction, int containerSize) {
+        return resolve(baseSlot, direction, containerSize, DEFAULT_WIDTH);
+    }
+
+    /**
+     * 解析相对方向为绝对槽位索引（带容器大小和列数限制）。
+     *
+     * 计算公式：result = (baseSlot / width + direction.y) * width + (baseSlot % width + direction.x)
+     *
+     * @param baseSlot 基准槽位索引（活物品所在位置）
+     * @param direction 相对方向偏移（Pos2D）
+     * @param containerSize 容器大小（用于下边界检查）
+     * @param containerWidth 容器列数（GUI 宽度，标准容器为 9）
+     * @return 目标槽位索引，越界返回 -1
+     */
+    public static int resolve(int baseSlot, Pos2D direction, int containerSize, int containerWidth) {
         if (direction == Pos2D.NONE) return -1;
 
-        int row = baseSlot / CONTAINER_WIDTH;
-        int col = baseSlot % CONTAINER_WIDTH;
+        int row = baseSlot / containerWidth;
+        int col = baseSlot % containerWidth;
         int newCol = col + direction.x();
         int newRow = row + direction.y();
 
-        if (newCol < 0 || newCol >= CONTAINER_WIDTH || newRow < 0) return -1;
+        if (newCol < 0 || newCol >= containerWidth || newRow < 0) return -1;
 
-        int result = newRow * CONTAINER_WIDTH + newCol;
+        int result = newRow * containerWidth + newCol;
 
         if (result >= containerSize) return -1;
 
@@ -86,7 +101,7 @@ public final class SlotResolver {
      * @return 槽位索引数组，越界的位置为 -1
      */
     public static int[] resolveAll(int baseSlot, Pos2D... directions) {
-        return resolveAll(baseSlot, Integer.MAX_VALUE, directions);
+        return resolveAll(baseSlot, Integer.MAX_VALUE, DEFAULT_WIDTH, directions);
     }
 
     /**
@@ -98,9 +113,13 @@ public final class SlotResolver {
      * @return 槽位索引数组，越界的位置为 -1
      */
     public static int[] resolveAll(int baseSlot, int containerSize, Pos2D... directions) {
+        return resolveAll(baseSlot, containerSize, DEFAULT_WIDTH, directions);
+    }
+
+    public static int[] resolveAll(int baseSlot, int containerSize, int containerWidth, Pos2D... directions) {
         int[] result = new int[directions.length];
         for (int i = 0; i < directions.length; i++) {
-            result[i] = resolve(baseSlot, directions[i], containerSize);
+            result[i] = resolve(baseSlot, directions[i], containerSize, containerWidth);
         }
         return result;
     }

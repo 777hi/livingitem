@@ -159,9 +159,10 @@ public final class ContainerCacheManager {
 
         for (int hostSlot = 0; hostSlot < size; hostSlot++) {
             try {
-                int inputSlot = SlotResolver.resolve(hostSlot, inputDir, size);
-                int fuelSlot = SlotResolver.resolve(hostSlot, fuelDir, size);
-                int outputSlot = SlotResolver.resolve(hostSlot, outputDir, size);
+                int width = getContainerWidth(container);
+                int inputSlot = SlotResolver.resolve(hostSlot, inputDir, size, width);
+                int fuelSlot = SlotResolver.resolve(hostSlot, fuelDir, size, width);
+                int outputSlot = SlotResolver.resolve(hostSlot, outputDir, size, width);
 
                 if (inputSlot != -1 && fuelSlot != -1 && outputSlot != -1) {
                     boolean allValid = validateSlots(container, inputSlot, fuelSlot, outputSlot);
@@ -309,4 +310,26 @@ public final class ContainerCacheManager {
             return System.currentTimeMillis() - creationTime;
         }
     }
-}
+
+    private int getContainerWidth(net.minecraft.world.Container container) {
+        var adapter = com.qiqi.li.living.core.adapters.AdapterRegistry.getInstance().findAdapter(container);
+        if (adapter != null) {
+            try {
+                var layout = adapter.getLayout(container);
+                if (layout != null && layout.columns() > 0) {
+                    return layout.columns();
+                }
+            } catch (Exception e) {
+                // 回退到下一策略
+            }
+        }
+
+        int size = container.getContainerSize();
+        if (size > 0 && size % 9 != 0) {
+            for (int w = 9; w >= 1; w--) {
+                if (size % w == 0) return w;
+            }
+        }
+
+        return SlotResolver.DEFAULT_WIDTH;
+    }}

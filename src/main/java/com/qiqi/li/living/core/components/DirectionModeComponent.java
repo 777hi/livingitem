@@ -231,15 +231,19 @@ public class DirectionModeComponent implements ILivingComponent {
      * @return 解析结果，SLOTS 模式填充 input/fuel/output，TRANSFER 模式填充 source/target
      */
     public ResolvedSlots resolveSlots(ComponentState state, int hostSlot, int containerSize) {
+        return resolveSlots(state, hostSlot, containerSize, SlotResolver.DEFAULT_WIDTH);
+    }
+
+    public ResolvedSlots resolveSlots(ComponentState state, int hostSlot, int containerSize, int containerWidth) {
         if (mode == DirectionMode.SLOTS) {
             Pos2D inputDir = getDirection(state, "input");
             Pos2D fuelDir = getDirection(state, "fuel");
             Pos2D outputDir = getDirection(state, "output");
 
             return ResolvedSlots.ofSlots(
-                SlotResolver.resolve(hostSlot, inputDir, containerSize),
-                SlotResolver.resolve(hostSlot, fuelDir, containerSize),
-                SlotResolver.resolve(hostSlot, outputDir, containerSize)
+                SlotResolver.resolve(hostSlot, inputDir, containerSize, containerWidth),
+                SlotResolver.resolve(hostSlot, fuelDir, containerSize, containerWidth),
+                SlotResolver.resolve(hostSlot, outputDir, containerSize, containerWidth)
             );
         } else {
             SlotMapping mapping = getCurrentMapping(state);
@@ -248,8 +252,8 @@ public class DirectionModeComponent implements ILivingComponent {
             }
 
             return ResolvedSlots.ofTransfer(
-                SlotResolver.resolve(hostSlot, mapping.sourceOffset(), containerSize),
-                SlotResolver.resolve(hostSlot, mapping.targetOffset(), containerSize),
+                SlotResolver.resolve(hostSlot, mapping.sourceOffset(), containerSize, containerWidth),
+                SlotResolver.resolve(hostSlot, mapping.targetOffset(), containerSize, containerWidth),
                 mapping.sourceOffset(),
                 mapping.targetOffset()
             );

@@ -5,8 +5,10 @@ import com.qiqi.li.client.gui.LivingButton;
 import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
-import net.minecraft.client.gui.screens.inventory.ContainerScreen;
-import net.minecraft.client.gui.screens.inventory.ShulkerBoxScreen;
+import net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen;
+import net.minecraft.client.gui.screens.inventory.InventoryScreen;
+
+
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
@@ -50,6 +52,8 @@ public class AbstractContainerScreenMixin extends Screen {
 
     @Shadow protected int imageHeight;
 
+    @Shadow protected int imageWidth;
+
     @Shadow
     protected Slot hoveredSlot;
 
@@ -88,10 +92,6 @@ public class AbstractContainerScreenMixin extends Screen {
 
     @Unique
     private void living_item$initButtons() {
-        if (!((Screen) this instanceof ContainerScreen || (Screen) this instanceof ShulkerBoxScreen)) {
-            return;
-        }
-
         List<LivingButton> existingLivingButtons = new ArrayList<>();
         for (GuiEventListener widget : this.children()) {
             if (widget instanceof LivingButton livingButton) {
@@ -103,10 +103,16 @@ public class AbstractContainerScreenMixin extends Screen {
             this.removeWidget(button);
         }
 
+        if ((Screen) this instanceof InventoryScreen || (Screen) this instanceof CreativeModeInventoryScreen) {
+            this.living_item$previousLeftPos = this.leftPos;
+            this.living_item$previousTopPos = this.topPos;
+            return;
+        }
+
         if (this.menu.slots.size() > 9) {
             Slot invSlot = this.menu.slots.get(9);
             this.addRenderableWidget(new LivingButton(
-                    this.leftPos + 80, this.topPos + this.imageHeight - 94, this.menu, invSlot));
+                    this.leftPos + (this.imageWidth - 16) / 2, this.topPos + this.imageHeight - 94, this.menu, invSlot));
         }
 
         this.living_item$previousLeftPos = this.leftPos;

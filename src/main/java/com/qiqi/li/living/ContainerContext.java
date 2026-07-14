@@ -113,4 +113,15 @@ public interface ContainerContext {
      */
     default net.minecraft.world.Container getContainer() {
         return null;
+    }
+    /**
+     * 获取容器的列数（GUI 宽度）。
+     *
+     * 用于槽位解析时计算行列位置。标准容器为 9 列，
+     * 模组容器可能有不同的列数（如 13 列）。
+     *
+     * @return 容器的列数，默认 9
+     */
+    default int getWidth() {
+        return 9;
     }}

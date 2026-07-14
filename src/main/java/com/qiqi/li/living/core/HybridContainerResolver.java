@@ -224,9 +224,10 @@ public final class HybridContainerResolver {
             Pos2D outputDir = dirComp != null && dirComp.getMode() == DirectionModeComponent.DirectionMode.SLOTS
                 ? dirComp.getDirection(null, "output") : Pos2D.RIGHT;
 
-            int inputSlot = SlotResolver.resolve(hostSlot, inputDir, size);
-            int fuelSlot = SlotResolver.resolve(hostSlot, fuelDir, size);
-            int outputSlot = SlotResolver.resolve(hostSlot, outputDir, size);
+            int width = getContainerWidth(container);
+            int inputSlot = SlotResolver.resolve(hostSlot, inputDir, size, width);
+            int fuelSlot = SlotResolver.resolve(hostSlot, fuelDir, size, width);
+            int outputSlot = SlotResolver.resolve(hostSlot, outputDir, size, width);
 
             if (inputSlot != -1 && fuelSlot != -1 && outputSlot != -1) {
                 return ResolveResult.valid(new int[]{inputSlot, fuelSlot, outputSlot});
@@ -254,8 +255,28 @@ public final class HybridContainerResolver {
     /** 通过类名识别容器类型 */
     @Nullable
     private ResourceLocation identifyContainer(Container container) {
-        String className = container.getClass().getSimpleName();
+        if (container instanceof net.minecraft.world.level.block.entity.BlockEntity be) {
+            try {
+                ResourceLocation beId = net.minecraft.core.registries.BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(be.getType());
+                if (beId != null) {
+                    var rule = ContainerCompatibilityConfig.findRule(beId);
+                    if (rule.isPresent()) return beId;
 
+                    String ns = beId.getNamespace();
+                    String path = beId.getPath();
+                    if ("minecraft".equals(ns)) {
+                        if (path.contains("chest")) return ResourceLocation.fromNamespaceAndPath("minecraft", "chest");
+                        if (path.contains("hopper")) return ResourceLocation.fromNamespaceAndPath("minecraft", "hopper");
+                    } else {
+                        return beId;
+                    }
+                }
+            } catch (Exception e) {
+                LOGGER.debug("Failed to identify container by BlockEntityType: {}", container.getClass().getSimpleName(), e);
+            }
+        }
+
+        String className = container.getClass().getSimpleName();
         try {
             if (className.contains("Chest")) {
                 return ResourceLocation.fromNamespaceAndPath("minecraft", "chest");
@@ -365,4 +386,39 @@ public final class HybridContainerResolver {
                                valid, source, reason);
         }
     }
-}
+
+    private int getContainerWidth(Container container) {
+        var adapter = AdapterRegistry.getInstance().findAdapter(container);
+        if (adapter != null) {
+            try {
+                var layout = adapter.getLayout(container);
+                if (layout != null && layout.columns() > 0) {
+                    return layout.columns();
+                }
+            } catch (Exception e) {
+                // 回退到下一策略
+            }
+        }
+
+        ResourceLocation containerId = identifyContainer(container);
+        if (containerId != null) {
+            var rule = ContainerCompatibilityConfig.findRule(containerId);
+            if (rule.isPresent() && rule.get().columns() > 0) {
+                return rule.get().columns();
+            }
+        }
+
+        var sizeRule = ContainerCompatibilityConfig.findRuleBySize(container.getContainerSize());
+        if (sizeRule.isPresent() && sizeRule.get().columns() > 0) {
+            return sizeRule.get().columns();
+        }
+
+        int size = container.getContainerSize();
+        if (size > 0 && size % 9 != 0) {
+            for (int w = 9; w >= 1; w--) {
+                if (size % w == 0) return w;
+            }
+        }
+
+        return SlotResolver.DEFAULT_WIDTH;
+    }}

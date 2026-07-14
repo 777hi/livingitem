@@ -35,7 +35,7 @@ repositories {
 }
 
 base {
-    archivesName = mod_id
+    archivesName = "${mod_id}-${minecraft_version}"
 }
 
 // Mojang ships Java 21 to end users in 1.21.1, so mods should target Java 21.
@@ -158,6 +158,9 @@ dependencies {
     implementation files("libs/architectury-13.0.8-neoforge.jar")
     implementation files("libs/kotlinforforge-5.12.0-all.jar")
     implementation files("libs/spark-1.10.124-neoforge.jar")
+    implementation files("libs/ironchest-1.21-neoforge-16.0.7.jar")
+    implementation files("libs/sodium-neoforge-0.8.12+mc1.21.1.jar")
+    implementation files("libs/cloth-config-15.0.140-neoforge.jar")
 }
 
 // This block of code expands all declared replace properties in the specified resource targets.

@@ -130,7 +130,8 @@ public final class AdapterRegistry {
         }
 
         int size = safeGetSize(container);
-        return com.qiqi.li.living.core.SlotResolver.resolve(hostSlot, direction, size);
+        int width = getContainerWidth(adapter, container);
+        return com.qiqi.li.living.core.SlotResolver.resolve(hostSlot, direction, size, width);
     }
 
     /** 安全获取容器大小 */
@@ -155,4 +156,17 @@ public final class AdapterRegistry {
     public int getAdapterCount() {
         return adapters.size();
     }
-}
+
+    private int getContainerWidth(ContainerAdapter adapter, Container container) {
+        if (adapter != null) {
+            try {
+                var layout = adapter.getLayout(container);
+                if (layout != null && layout.columns() > 0) {
+                    return layout.columns();
+                }
+            } catch (Exception e) {
+                // 回退到默认值
+            }
+        }
+        return com.qiqi.li.living.core.SlotResolver.DEFAULT_WIDTH;
+    }}

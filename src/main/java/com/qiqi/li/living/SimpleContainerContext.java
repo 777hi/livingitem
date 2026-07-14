@@ -125,6 +125,64 @@ public class SimpleContainerContext implements ContainerContext {
     }
 
     @Override
+    public int getWidth() {
+        if (container instanceof Inventory) {
+            return 9;
+        }
+
+        var adapter = com.qiqi.li.living.core.adapters.AdapterRegistry.getInstance().findAdapter(container);
+        if (adapter != null) {
+            try {
+                var layout = adapter.getLayout(container);
+                if (layout != null && layout.columns() > 0) {
+                    return layout.columns();
+                }
+            } catch (Exception e) {
+                // 回退到下一策略
+            }
+        }
+
+        java.util.Optional<com.qiqi.li.living.core.config.ContainerCompatibilityConfig.ContainerRule> rule =
+            findContainerRule();
+        if (rule.isPresent() && rule.get().columns() > 0) {
+            return rule.get().columns();
+        }
+
+        int size = getSize();
+        if (size > 0 && size % 9 != 0) {
+            return guessWidth(size);
+        }
+
+        return ContainerContext.super.getWidth();
+    }
+
+    private static int guessWidth(int size) {
+        for (int w = 9; w >= 1; w--) {
+            if (size % w == 0) return w;
+        }
+        return 9;
+    }
+
+    private java.util.Optional<com.qiqi.li.living.core.config.ContainerCompatibilityConfig.ContainerRule> findContainerRule() {
+        if (associatedBlockEntities.isEmpty()) return java.util.Optional.empty();
+
+        for (BlockEntity be : associatedBlockEntities) {
+            net.minecraft.resources.ResourceLocation id =
+                net.minecraft.core.registries.BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(be.getType());
+            if (id != null) {
+                var rule = com.qiqi.li.living.core.config.ContainerCompatibilityConfig.findRule(id);
+                if (rule.isPresent()) return rule;
+
+                rule = com.qiqi.li.living.core.config.ContainerCompatibilityConfig.findRuleByNamespaceAndKeyword(
+                    id.getNamespace(), id.getPath());
+                if (rule.isPresent()) return rule;
+            }
+        }
+
+        return com.qiqi.li.living.core.config.ContainerCompatibilityConfig.findRuleBySize(getSize());
+    }
+
+    @Override
     public ItemStack getItem(int logicalSlot) {
         try {
             if (logicalSlot < 0 || logicalSlot >= container.getContainerSize()) {
