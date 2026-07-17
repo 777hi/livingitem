@@ -166,10 +166,6 @@ public class ContainerLivingItemHandler {
             }
         }
 
-        if (!grouped.isEmpty()) {
-            LOGGER.info("[DEBUG] processContext: size={}, width={}, grouped={}", containerSize, context.getWidth(), grouped.keySet());
-        }
-
         for (var entry : grouped.entrySet()) {
             entry.getKey().tick(entry.getValue(), context, level);
         }

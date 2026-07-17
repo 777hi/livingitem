@@ -1,8 +1,12 @@
 {
   "required": true,
-  "package": "com.qiqi.li.mixin",
+  "package": "com.qiqi.li.living.mixin",
   "compatibilityLevel": "JAVA_21",
-  "mixins": [],
+  "mixins": [
+    "ItemStackMixin",
+    "AbstractContainerMenuMixin",
+    "ServerPlaceRecipeMixin"
+  ],
   "injectors": {
     "defaultRequire": 1
   },

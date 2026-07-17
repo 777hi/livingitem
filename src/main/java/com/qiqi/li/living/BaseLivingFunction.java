@@ -8,8 +8,7 @@ import com.qiqi.li.living.core.ComponentContext;
 import com.qiqi.li.living.core.ComponentState;
 import com.qiqi.li.living.core.FunctionExecutor;
 import com.qiqi.li.living.core.LivingFunctionConfig;
-import org.slf4j.Logger;
-import com.mojang.logging.LogUtils;
+import com.qiqi.li.living.core.orchestrator.LivingOrchestrator;
 
 /**
  * 活物品功能基类 —— 提供通用的 tick 编排和 Tooltip 实现。
@@ -50,8 +49,6 @@ import com.mojang.logging.LogUtils;
  * </pre>
  */
 public abstract class BaseLivingFunction implements LivingItemFunction {
-
-    private static final Logger LOGGER = LogUtils.getLogger();
 
     /**
      * 获取功能配置（包含组件列表、编排器、功能 ID 等）。
@@ -96,11 +93,12 @@ public abstract class BaseLivingFunction implements LivingItemFunction {
             Map<String, ComponentState> states = fe.loadOrCreateStates(stack, config);
             ComponentContext ctx = fe.buildContext(config, states, context, slot, level);
 
-            LOGGER.info("[DEBUG] tick: func={}, slot={}, input={}, fuel={}, output={}, source={}, target={}, containerSize={}",
-                config.getFunctionId(), slot, ctx.inputSlot(), ctx.fuelSlot(), ctx.outputSlot(),
-                ctx.sourceSlot(), ctx.targetSlot(), context.getSize());
-
-            config.getOrchestrator().orchestrate(ctx, slot, stack, states, config, fe);
+            LivingOrchestrator orchestrator = config.getOrchestrator();
+            if (orchestrator != null) {
+                orchestrator.orchestrate(ctx, slot, stack, states, config, fe);
+            } else {
+                LivingOrchestrator.tickAllComponents(ctx, slot, stack, states, config, fe);
+            }
 
             fe.saveStatesToStack(stack, config, states);
             context.syncSlotToClients(slot, stack);

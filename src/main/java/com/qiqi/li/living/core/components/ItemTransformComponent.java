@@ -94,13 +94,15 @@ public class ItemTransformComponent implements ILivingComponent {
         String inputId = state.getString(KEY_INPUT_ITEM, "");
         String outputId = state.getString(KEY_OUTPUT_ITEM, "");
 
-        if (inputId.isEmpty() || outputId.isEmpty()) return;
+        if (inputId.isEmpty()) return;
 
         Component inputName = getItemDisplayName(inputId);
-        Component outputName = getItemDisplayName(outputId);
-
-        tooltipAdder.accept(Component.translatable(
-                "tooltip.livingitem.transform.recipe", inputName, outputName));
+        
+        if (!outputId.isEmpty()) {
+            Component outputName = getItemDisplayName(outputId);
+            tooltipAdder.accept(Component.translatable(
+                    "tooltip.livingitem.transform.recipe", inputName, outputName));
+        }
     }
 
     /**

@@ -6,6 +6,7 @@
     "AbstractContainerScreenMixin",
     "CreativeModeInventoryScreenMixin",
     "InventoryScreenMixin",
+    "RecipeBookComponentMixin",
     "SlotWrapperAccessor",
     "SpriteIconButtonMixin"
   ],

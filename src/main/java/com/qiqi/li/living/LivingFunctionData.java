@@ -117,7 +117,7 @@ public class LivingFunctionData implements TooltipProvider {
     public CompoundTag getFunctionData(String functionId) {
         // 参数 10 表示要求是 TAG_Compound（CompoundTag 的类型编号）
         if (data.contains(functionId, 10)) {
-            return data.getCompound(functionId);
+            return data.getCompound(functionId).copy();
         }
         return new CompoundTag();
     }

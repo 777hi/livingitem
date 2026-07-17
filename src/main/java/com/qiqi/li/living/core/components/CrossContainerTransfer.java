@@ -37,7 +37,9 @@ import net.minecraft.world.level.block.state.properties.ChestType;
 import com.qiqi.li.living.ContainerContext;
 import com.qiqi.li.living.LivingItemManager;
 import com.qiqi.li.living.core.ComponentContext;
+import com.qiqi.li.living.core.ComponentState;
 import com.qiqi.li.living.core.model.Pos2D;
+import com.qiqi.li.living.LivingChestFunction;
 import com.qiqi.li.living.LivingHopperFunction;
 
 public final class CrossContainerTransfer {
@@ -142,6 +144,13 @@ public final class CrossContainerTransfer {
         int targetSlot = ctx.targetSlot();
         ItemStack targetStack = containerCtx.getItem(targetSlot);
 
+        boolean targetIsChest = LivingChestFunction.isLivingChest(targetStack);
+
+        if (targetIsChest) {
+            return pullFromNeighborToLivingChest(ctx, containerCtx, neighborContainer,
+                targetStack, targetSlot, stackSize, maxTransfer);
+        }
+
         for (int i = 0; i < neighborContainer.getContainerSize(); i++) {
             ItemStack sourceStack = neighborContainer.getItem(i);
             if (sourceStack.isEmpty() || LivingItemManager.isLivingItem(sourceStack)) continue;
@@ -205,7 +214,10 @@ public final class CrossContainerTransfer {
                                            int stackSize, int maxTransfer) {
         int sourceSlot = ctx.sourceSlot();
         ItemStack sourceStack = containerCtx.getItem(sourceSlot);
-        if (sourceStack.isEmpty() || LivingItemManager.isLivingItem(sourceStack)) return false;
+        if (sourceStack.isEmpty()) return false;
+
+        boolean sourceIsChest = LivingChestFunction.isLivingChest(sourceStack);
+        if (!sourceIsChest && LivingItemManager.isLivingItem(sourceStack)) return false;
 
         Pos2D targetOffset = ctx.targetOffset();
         Direction targetWorldDir = gridToWorld(targetOffset, blockFacing);
@@ -213,6 +225,11 @@ public final class CrossContainerTransfer {
 
         Container neighborContainer = getNeighborContainer(level, basePos, targetWorldDir, chestPositions);
         if (neighborContainer == null) return false;
+
+        if (sourceIsChest) {
+            return pushFromLivingChestToNeighbor(ctx, containerCtx, neighborContainer,
+                sourceStack, sourceSlot, stackSize, maxTransfer);
+        }
 
         int transferAmount = Math.min(sourceStack.getCount(), Math.min(stackSize, maxTransfer));
 
@@ -239,6 +256,140 @@ public final class CrossContainerTransfer {
                 sourceStack.shrink(actualTransfer);
                 containerCtx.setItem(sourceSlot, sourceStack.isEmpty() ? ItemStack.EMPTY : sourceStack);
 
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * 从活箱子提取物品并推送到相邻容器
+     * 
+     * 当活漏斗的输出槽位超出容器边界，且输入槽位是活箱子时调用。
+     * 从活箱子中提取物品，然后推送到相邻容器的合适槽位中。
+     * 
+     * 传输规则：
+     * - 从活箱子中提取 stackSize 数量的物品
+     * - 在相邻容器中寻找空槽位或可合并的槽位
+     * - 优先推送到空槽位，其次堆叠到已有同类物品的槽位
+     * - 如果相邻容器无法接收，剩余物品退回活箱子
+     * 
+     * @param ctx 组件上下文
+     * @param containerCtx 当前容器上下文
+     * @param neighborContainer 相邻容器
+     * @param chestStack 活箱子物品栈
+     * @param sourceSlot 活箱子所在的槽位索引
+     * @param stackSize 单次传输最大数量
+     * @param maxTransfer 总传输量限制
+     * @return 是否成功推送物品
+     */
+    private static boolean pushFromLivingChestToNeighbor(ComponentContext ctx,
+                                                          ContainerContext containerCtx,
+                                                          Container neighborContainer,
+                                                          ItemStack chestStack,
+                                                          int sourceSlot,
+                                                          int stackSize,
+                                                          int maxTransfer) {
+        if (ctx.level().isClientSide()) return false;
+
+        var server = ctx.level().getServer();
+        if (server == null) return false;
+
+        int capacity = LivingChestFunction.getCapacity(containerCtx);
+        int transferAmount = Math.min(stackSize, maxTransfer);
+
+        // 前置判断：活箱子为空则跳过
+        ComponentState chestState = LivingChestFunction.getStorageState(chestStack);
+        if (InternalStorageComponent.isStorageEmpty(chestState)) {
+            return false;
+        }
+
+        ItemStack extracted = LivingChestFunction.extractItem(server, chestStack, transferAmount, capacity);
+        if (extracted.isEmpty()) return false;
+
+        for (int j = 0; j < neighborContainer.getContainerSize(); j++) {
+            ItemStack targetStack = neighborContainer.getItem(j);
+
+            if (targetStack.isEmpty()) {
+                neighborContainer.setItem(j, extracted.copy());
+                return true;
+            } else if (targetStack.is(extracted.getItem()) &&
+                       targetStack.getCount() < targetStack.getMaxStackSize()) {
+                int spaceAvailable = targetStack.getMaxStackSize() - targetStack.getCount();
+                int actualTransfer = Math.min(extracted.getCount(), spaceAvailable);
+
+                targetStack.grow(actualTransfer);
+                neighborContainer.setItem(j, targetStack);
+                extracted.shrink(actualTransfer);
+
+                if (!extracted.isEmpty()) {
+                    LivingChestFunction.insertItem(server, chestStack, extracted, capacity);
+                }
+                return true;
+            }
+        }
+
+        LivingChestFunction.insertItem(server, chestStack, extracted, capacity);
+        return false;
+    }
+
+    /**
+     * 从相邻容器拉取物品并插入活箱子
+     * 
+     * 当活漏斗的输入槽位超出容器边界，且输出槽位是活箱子时调用。
+     * 从相邻容器中寻找可传输的物品，然后插入到活箱子中。
+     * 
+     * 传输规则：
+     * - 遍历相邻容器的所有槽位，跳过空槽位和活物品
+     * - 找到物品后，插入到活箱子中
+     * - 如果插入成功，从相邻容器中消耗对应数量的物品
+     * - 如果插入失败（活箱子满），尝试下一个槽位
+     * 
+     * @param ctx 组件上下文
+     * @param containerCtx 当前容器上下文
+     * @param neighborContainer 相邻容器
+     * @param chestStack 活箱子物品栈
+     * @param targetSlot 活箱子所在的槽位索引
+     * @param stackSize 单次传输最大数量
+     * @param maxTransfer 总传输量限制
+     * @return 是否成功拉取物品
+     */
+    private static boolean pullFromNeighborToLivingChest(ComponentContext ctx,
+                                                          ContainerContext containerCtx,
+                                                          Container neighborContainer,
+                                                          ItemStack chestStack,
+                                                          int targetSlot,
+                                                          int stackSize,
+                                                          int maxTransfer) {
+        if (ctx.level().isClientSide()) return false;
+
+        var server = ctx.level().getServer();
+        if (server == null) return false;
+
+        int capacity = LivingChestFunction.getCapacity(containerCtx);
+
+        // 前置判断：活箱子已满则跳过
+        ComponentState chestState = LivingChestFunction.getStorageState(chestStack);
+        if (InternalStorageComponent.isStorageFull(chestState, capacity)) {
+            return false;
+        }
+
+        for (int i = 0; i < neighborContainer.getContainerSize(); i++) {
+            ItemStack sourceStack = neighborContainer.getItem(i);
+            if (sourceStack.isEmpty() || LivingItemManager.isLivingItem(sourceStack)) continue;
+
+            int transferAmount = Math.min(sourceStack.getCount(), Math.min(stackSize, maxTransfer));
+
+            ItemStack toInsert = sourceStack.copy();
+            toInsert.setCount(transferAmount);
+
+            LivingChestFunction.insertItem(server, chestStack, toInsert, capacity);
+
+            int inserted = transferAmount - toInsert.getCount();
+            if (inserted > 0) {
+                sourceStack.shrink(inserted);
+                neighborContainer.setItem(i, sourceStack.isEmpty() ? ItemStack.EMPTY : sourceStack);
                 return true;
             }
         }

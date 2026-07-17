@@ -1,14 +1,20 @@
 package com.qiqi.li.network;
 
-import net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket;
-import net.minecraft.nbt.CompoundTag;
-import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.item.ItemStack;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.qiqi.li.living.LivingChestFunction;
 import com.qiqi.li.living.LivingHopperFunction;
 import com.qiqi.li.living.LivingItemManager;
 import com.qiqi.li.living.core.model.SlotMapping;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.item.ItemStack;
+import net.neoforged.neoforge.network.PacketDistributor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 服务端网络包处理器 —— 处理客户端发送的活物品配置请求。
@@ -80,5 +86,143 @@ public class ServerPacketHandler {
 
         LOGGER.debug("Updated hopper direction for player {}: {}",
             player.getName().getString(), newMapping.displayName());
+    }
+
+    public static void handleLivingChestAccess(ServerPlayer player, LivingChestAccessPacket packet) {
+        if (player == null || player.containerMenu == null) return;
+
+        var server = player.getServer();
+        if (server == null) return;
+
+        int action = packet.action();
+        switch (action) {
+            case LivingChestAccessPacket.LOAD -> {
+                sendLivingChestContents(player, server);
+            }
+            case LivingChestAccessPacket.DEPOSIT -> {
+                handleDeposit(player, server, packet);
+            }
+            case LivingChestAccessPacket.WITHDRAW -> {
+                handleWithdraw(player, server, packet);
+            }
+            case LivingChestAccessPacket.WITHDRAW_INVENTORY -> {
+                handleWithdrawToInventory(player, server, packet);
+            }
+        }
+    }
+
+    private static void handleDeposit(ServerPlayer player, MinecraftServer server, LivingChestAccessPacket packet) {
+        ItemStack carried = player.containerMenu.getCarried();
+        if (carried.isEmpty()) return;
+
+        int amount = Math.min(packet.amount(), carried.getCount());
+        if (amount <= 0) return;
+
+        ItemStack toInsert = carried.split(amount);
+        if (toInsert.isEmpty()) return;
+
+        boolean inserted = false;
+        for (ItemStack invStack : player.getInventory().items) {
+            if (!LivingChestFunction.isLivingChest(invStack)) continue;
+            if (!LivingChestFunction.hasStorage(invStack)) continue;
+
+            if (LivingChestFunction.insertItem(server, invStack, toInsert.copy(), 27)) {
+                inserted = true;
+                break;
+            }
+        }
+
+        if (!inserted) {
+            carried.grow(toInsert.getCount());
+        }
+
+        player.containerMenu.setCarried(carried);
+        syncCarriedToClient(player);
+        sendLivingChestContents(player, server);
+    }
+
+    private static void handleWithdraw(ServerPlayer player, MinecraftServer server, LivingChestAccessPacket packet) {
+        if (packet.itemTag() == null) return;
+        ItemStack carried = player.containerMenu.getCarried();
+        ItemStack target = ItemStack.parse(player.registryAccess(), packet.itemTag()).orElse(ItemStack.EMPTY);
+        if (target.isEmpty()) return;
+
+        if (!carried.isEmpty() && !ItemStack.isSameItemSameComponents(carried, target)) {
+            return;
+        }
+
+        int amount = packet.amount();
+        if (amount <= 0) amount = target.getMaxStackSize();
+
+        if (!carried.isEmpty()) {
+            amount = Math.min(amount, target.getMaxStackSize() - carried.getCount());
+            if (amount <= 0) return;
+        }
+
+        ItemStack extracted = ItemStack.EMPTY;
+        for (ItemStack invStack : player.getInventory().items) {
+            if (!LivingChestFunction.isLivingChest(invStack)) continue;
+            if (!LivingChestFunction.hasStorage(invStack)) continue;
+
+            extracted = LivingChestFunction.extractItem(server, invStack, target, amount, 27);
+            if (!extracted.isEmpty()) break;
+        }
+
+        if (extracted.isEmpty()) return;
+
+        if (carried.isEmpty()) {
+            player.containerMenu.setCarried(extracted);
+        } else {
+            carried.grow(extracted.getCount());
+        }
+
+        syncCarriedToClient(player);
+        sendLivingChestContents(player, server);
+    }
+
+    private static void handleWithdrawToInventory(ServerPlayer player, MinecraftServer server, LivingChestAccessPacket packet) {
+        if (packet.itemTag() == null) return;
+        ItemStack target = ItemStack.parse(player.registryAccess(), packet.itemTag()).orElse(ItemStack.EMPTY);
+        if (target.isEmpty()) return;
+
+        int amount = packet.amount();
+        if (amount <= 0) amount = target.getMaxStackSize();
+
+        ItemStack extracted = ItemStack.EMPTY;
+        for (ItemStack invStack : player.getInventory().items) {
+            if (!LivingChestFunction.isLivingChest(invStack)) continue;
+            if (!LivingChestFunction.hasStorage(invStack)) continue;
+
+            extracted = LivingChestFunction.extractItem(server, invStack, target, amount, 27);
+            if (!extracted.isEmpty()) break;
+        }
+
+        if (extracted.isEmpty()) return;
+
+        player.getInventory().add(extracted);
+        player.containerMenu.broadcastChanges();
+        sendLivingChestContents(player, server);
+    }
+
+    private static void sendLivingChestContents(ServerPlayer player, MinecraftServer server) {
+        List<CompoundTag> itemTags = new ArrayList<>();
+        for (ItemStack invStack : player.getInventory().items) {
+            if (!LivingChestFunction.isLivingChest(invStack)) continue;
+            if (!LivingChestFunction.hasStorage(invStack)) continue;
+
+            var merged = LivingChestFunction.getMergedStorage(server, invStack, 27);
+            for (ItemStack chestItem : merged) {
+                if (!chestItem.isEmpty()) {
+                    itemTags.add((CompoundTag) chestItem.save(player.registryAccess()));
+                }
+            }
+        }
+        PacketDistributor.sendToPlayer(player, new LivingChestContentsPacket(itemTags));
+    }
+
+    private static void syncCarriedToClient(ServerPlayer player) {
+        int stateId = player.containerMenu.incrementStateId();
+        player.connection.send(new ClientboundContainerSetSlotPacket(
+            -1, stateId, -1, player.containerMenu.getCarried().copy()));
     }
 }

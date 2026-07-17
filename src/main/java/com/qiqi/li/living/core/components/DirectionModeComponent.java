@@ -300,7 +300,7 @@ public class DirectionModeComponent implements ILivingComponent {
      */
     public static boolean updateStateInStack(ItemStack stack, String functionId,
                                               BiFunction<DirectionModeComponent, ComponentState, Boolean> updater) {
-        CompoundTag functionTag = LivingItemManager.getFunctionData(stack, functionId);
+        CompoundTag functionTag = LivingItemManager.getFunctionData(stack, functionId).copy();
 
         ComponentState dirState;
         if (functionTag.contains(ID)) {

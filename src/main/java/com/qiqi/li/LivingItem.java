@@ -21,8 +21,13 @@ import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
+import net.neoforged.neoforge.event.server.ServerStoppingEvent;
+import net.neoforged.neoforge.event.level.LevelEvent;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
+
+import com.qiqi.li.living.LivingChestFunction;
+import com.qiqi.li.living.core.components.InternalStorageComponent;
 
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
@@ -30,6 +35,8 @@ import com.qiqi.li.network.LivingTagPacket;
 import com.qiqi.li.network.HopperDirectionPacket;
 import com.qiqi.li.network.GuiInteractionPacket;
 import com.qiqi.li.network.CarriedUpdatePacket;
+import com.qiqi.li.network.LivingChestAccessPacket;
+import com.qiqi.li.network.LivingChestContentsPacket;
 import com.qiqi.li.living.LivingItemManager;
 import com.qiqi.li.living.LivingFurnaceFunction;
 import com.qiqi.li.living.LivingHopperFunction;
@@ -84,22 +91,25 @@ public class LivingItem {
 
     private void commonSetup(FMLCommonSetupEvent event) {
         LivingItemManager.registerFunction(new LivingFurnaceFunction());
-        LOGGER.info("已注册活熔炉功能");
+        LOGGER.info("Registered living furnace function");
 
         LivingItemManager.registerFunction(new LivingHopperFunction());
-        LOGGER.info("已注册活漏斗功能（支持WASD方向设置）");
+        LOGGER.info("Registered living hopper function");
 
         LivingItemManager.registerFunction(new LivingTntFunction());
-        LOGGER.info("已注册活TNT功能");
+        LOGGER.info("Registered living TNT function");
 
         LivingItemManager.registerFunction(new LivingFlintAndSteelFunction());
-        LOGGER.info("已注册活打火石功能");
+        LOGGER.info("Registered living flint & steel function");
+
+        LivingItemManager.registerFunction(new LivingChestFunction());
+        LOGGER.info("Registered living chest function");
 
         InteractionRegistry.registerHandler("ignite", new IgniteHandler());
-        LOGGER.info("已注册点燃交互处理器");
+        LOGGER.info("Registered ignite interaction handler");
 
         InteractionRegistry.registerHandler("ignite_carried", new IgniteCarriedHandler());
-        LOGGER.info("已注册光标点燃交互处理器");
+        LOGGER.info("Registered ignite_carried interaction handler");
     }
 
     /**
@@ -160,10 +170,31 @@ public class LivingItem {
         registrar.playToServer(HopperDirectionPacket.TYPE, HopperDirectionPacket.STREAM_CODEC, HopperDirectionPacket::handle);
         registrar.playToServer(GuiInteractionPacket.TYPE, GuiInteractionPacket.STREAM_CODEC, GuiInteractionPacket::handle);
         registrar.playToClient(CarriedUpdatePacket.TYPE, CarriedUpdatePacket.STREAM_CODEC, CarriedUpdatePacket::handle);
+        registrar.playToServer(LivingChestAccessPacket.TYPE, LivingChestAccessPacket.STREAM_CODEC, LivingChestAccessPacket::handle);
+        registrar.playToClient(LivingChestContentsPacket.TYPE, LivingChestContentsPacket.STREAM_CODEC, LivingChestContentsPacket::handle);
     }
 
     @SubscribeEvent
     public void onServerStarting(ServerStartingEvent event) {
         LOGGER.info("HELLO from server starting");
+    }
+
+    @SubscribeEvent
+    public void onLevelSave(LevelEvent.Save event) {
+        if (event.getLevel() instanceof ServerLevel serverLevel && serverLevel == serverLevel.getServer().overworld()) {
+            InternalStorageComponent.WorldStorage storage = InternalStorageComponent.WorldStorage.get(serverLevel.getServer());
+            storage.saveAllDirty();
+            storage.cleanupIdle();
+            storage.cleanupOrphanedFiles();
+        }
+    }
+
+    @SubscribeEvent
+    public void onServerStopping(ServerStoppingEvent event) {
+        InternalStorageComponent.WorldStorage storage = InternalStorageComponent.WorldStorage.get(event.getServer());
+        // 🔴 P0修复：使用同步保存，确保所有数据都写入磁盘后才允许服务器关闭
+        storage.saveAllDirtySync();
+        
+        LOGGER.info("Living chest data saved successfully, server can now shut down safely");
     }
 }
