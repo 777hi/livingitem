@@ -2,7 +2,7 @@ package com.qiqi.li.living.core.orchestrator;
 
 import java.util.Map;
 import net.minecraft.world.item.ItemStack;
-import com.qiqi.li.living.ContainerContext;
+import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.core.ComponentConfig;
 import com.qiqi.li.living.core.ComponentContext;
 import com.qiqi.li.living.core.ComponentState;

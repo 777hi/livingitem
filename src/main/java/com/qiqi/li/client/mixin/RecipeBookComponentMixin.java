@@ -3,16 +3,14 @@ package com.qiqi.li.client.mixin;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.qiqi.li.client.LivingChestContentsCache;
 import com.qiqi.li.client.util.PinyinHelper;
+import com.qiqi.li.living.function.LivingChestFunction;
 import com.qiqi.li.network.LivingChestAccessPacket;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.StateSwitchingButton;
 import net.minecraft.client.gui.components.WidgetSprites;
-import net.minecraft.client.gui.components.events.GuiEventListener;
-import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.gui.screens.recipebook.RecipeBookComponent;
 import net.minecraft.client.gui.screens.recipebook.RecipeBookPage;
@@ -42,7 +40,6 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -295,8 +292,7 @@ public abstract class RecipeBookComponentMixin {
         // ======== 性能优化参数 ========
         /** 过滤结果缓存持续时间（毫秒）- 方案B优化 */
         static final long FILTER_CACHE_DURATION_MS = 50;
-        /** 搜索防抖延迟时间（毫秒）- 防抖优化 */
-        static final long SEARCH_DEBOUNCE_MS = 300;
+        static final long POLL_INTERVAL_MS = 1000;
     }
 
     // ==================== 动态管理的 UI 组件 ====================
@@ -352,13 +348,10 @@ public abstract class RecipeBookComponentMixin {
     @Unique
     private List<ItemStack> filteredContents = new ArrayList<>();
 
-    /**
-     * 强制刷新标志（用于立即刷新界面）
-     * <p>当此标志为 true 时，下一帧会忽略缓存并重新加载所有数据。
-     * 这解决了操作后界面不更新的问题。</p>
-     */
     @Unique
-    private boolean forceRefresh = false;
+    private int lastCacheVersion = -1;
+    @Unique
+    private long lastPollTime = 0;
 
     /**
      * 🆕 上次执行过滤的时间戳（用于方案B缓存优化）
@@ -367,14 +360,6 @@ public abstract class RecipeBookComponentMixin {
      */
     @Unique
     private long lastFilterExecutionTime = 0;
-
-    /**
-     * 🆕 上次搜索输入的时间戳（用于搜索防抖优化）
-     * <p>当用户快速输入时，延迟执行过滤操作，
-     * 只在停止输入 {@link Layout#SEARCH_DEBOUNCE_MS} 毫秒后才真正过滤</p>
-     */
-    @Unique
-    private long lastSearchInputTime = 0;
 
     // ==================== 初始化相关 ====================
 
@@ -529,6 +514,14 @@ public abstract class RecipeBookComponentMixin {
      */
     @Unique
     private void renderLivingChestContents(GuiGraphics guiGraphics, int left, int top, int mouseX, int mouseY) {
+        long now = System.currentTimeMillis();
+        if (now - this.lastPollTime > Layout.POLL_INTERVAL_MS) {
+            this.lastPollTime = now;
+            PacketDistributor.sendToServer(new LivingChestAccessPacket(
+                LivingChestAccessPacket.LOAD, null, 0
+            ));
+        }
+
         List<ItemStack> contents = LivingChestContentsCache.get();
 
         // 🔍 步骤 0: 应用搜索过滤（新增功能）
@@ -604,50 +597,24 @@ public abstract class RecipeBookComponentMixin {
      */
     @Unique
     private List<ItemStack> applySearchFilter(List<ItemStack> originalList) {
-        // 🆕 步骤 0: 使用工具方法安全获取搜索词（优化3: 提取通用工具方法）
         String currentSearchText = getSafeSearchText();
-        
-        // 🆕 防抖检查（优化4: 搜索防抖机制）
         long now = System.currentTimeMillis();
-        if (!currentSearchText.equals(this.lastSearchText)) {
-            // 搜索词变化了，记录输入时间
-            this.lastSearchInputTime = now;
-            
-            // 如果与上次过滤间隔太短（用户正在快速输入），延迟处理
-            if (now - this.lastFilterExecutionTime < Layout.SEARCH_DEBOUNCE_MS) {
-                // 返回旧缓存或原始列表（避免频繁过滤）
-                return this.filteredContents.isEmpty() ? 
-                       originalList : this.filteredContents;
-            }
-        }
 
-        // 🆕 关键修复：检查是否正在等待服务器同步
-        if (this.forceRefresh) {
-            // 如果内容缓存仍然是脏的，说明服务器还没响应
-            // 此时返回空列表，避免基于旧数据显示残影
-            if (LivingChestContentsCache.isDirty()) {
-                return new ArrayList<>();  // 返回空列表（临时状态）
-            }
-
-            // 服务器已响应，可以安全地重新过滤
-            this.forceRefresh = false;
-            this.lastSearchText = "";
+        int cacheVersion = LivingChestContentsCache.getVersion();
+        if (cacheVersion != this.lastCacheVersion) {
+            this.lastCacheVersion = cacheVersion;
             this.filteredContents.clear();
         }
 
-        // 🆕 方案B缓存优化（优化2: 使用缓存结果）
-        // 如果搜索词没变且缓存非空且在有效期内，直接返回缓存
-        if (currentSearchText.equals(this.lastSearchText) 
+        if (currentSearchText.equals(this.lastSearchText)
             && !this.filteredContents.isEmpty()
             && (now - this.lastFilterExecutionTime) < Layout.FILTER_CACHE_DURATION_MS) {
-            return this.filteredContents;  // ⚡ 快速路径：直接返回缓存
+            return this.filteredContents;
         }
 
-        // 更新搜索词缓存和执行时间戳
         this.lastSearchText = currentSearchText;
         this.lastFilterExecutionTime = now;
 
-        // 空搜索词 → 返回原始列表
         if (currentSearchText.isEmpty()) {
             this.filteredContents.clear();
             return originalList;
@@ -681,17 +648,9 @@ public abstract class RecipeBookComponentMixin {
      */
     @Unique
     private String getSafeSearchText() {
-        try {
-            if (this.searchBox != null) {
-                String text = this.searchBox.getValue();
-                if (text != null) {
-                    return text.trim().toLowerCase(Locale.ROOT);
-                }
-            }
-        } catch (Exception ignored) {
-            // 忽略所有异常（如 NPE、状态异常等）
-        }
-        return "";  // 兜底返回空字符串
+        if (this.searchBox == null) return "";
+        String text = this.searchBox.getValue();
+        return text != null ? text.trim().toLowerCase(Locale.ROOT) : "";
     }
 
     /**
@@ -739,13 +698,9 @@ public abstract class RecipeBookComponentMixin {
         }
 
         // 2. 检查物品 ID
-        try {
-            String itemId = stack.getItem().toString().toLowerCase(Locale.ROOT);
-            if (itemId.contains(searchText)) {
-                return true;
-            }
-        } catch (Exception e) {
-            // 忽略异常
+        String itemId = stack.getItem().toString().toLowerCase(Locale.ROOT);
+        if (itemId.contains(searchText)) {
+            return true;
         }
 
         // 3. 检查物品描述/Lore（支持拼音）
@@ -815,7 +770,7 @@ public abstract class RecipeBookComponentMixin {
             for (int slot = 0; slot < Layout.TOTAL_SLOTS; slot++) {
                 int contentIdx = startIdx + slot;
                 ItemStack stack = (contentIdx < contents.size()) ? contents.get(contentIdx) : ItemStack.EMPTY;
-                createLivingChestSlot(left, top, slot, stack);
+                this.livingChestSlots.add(createLivingChestSlot(left, top, slot, stack));
             }
         }
     }
@@ -842,7 +797,7 @@ public abstract class RecipeBookComponentMixin {
      * @param stack 槽位中的物品
      */
     @Unique
-    private void createLivingChestSlot(int left, int top, final int slotIndex, final ItemStack stack) {
+    private Slot createLivingChestSlot(int left, int top, final int slotIndex, final ItemStack stack) {
         int col = slotIndex % Layout.COLUMNS;
         int row = slotIndex / Layout.COLUMNS;
 
@@ -880,7 +835,7 @@ public abstract class RecipeBookComponentMixin {
             }
         };
 
-        this.livingChestSlots.add(slot);
+        return slot;
     }
 
     /**
@@ -889,13 +844,7 @@ public abstract class RecipeBookComponentMixin {
     @Unique
     private void recreateSlotAtIndex(int left, int top, int index, ItemStack newStack) {
         if (index >= 0 && index < this.livingChestSlots.size()) {
-            this.livingChestSlots.remove(index);
-            createLivingChestSlot(left, top, index, newStack);
-            // 插回到原位置
-            if (index < this.livingChestSlots.size()) {
-                Slot removed = this.livingChestSlots.remove(this.livingChestSlots.size() - 1);
-                this.livingChestSlots.add(index, removed);
-            }
+            this.livingChestSlots.set(index, createLivingChestSlot(left, top, index, newStack));
         }
     }
 
@@ -1206,7 +1155,6 @@ public abstract class RecipeBookComponentMixin {
                     this.selectedTab.setStateTriggered(false);
                 }
 
-                LivingChestContentsCache.markDirty();
                 PacketDistributor.sendToServer(new LivingChestAccessPacket(
                     LivingChestAccessPacket.LOAD, null, 0));
             }
@@ -1440,25 +1388,27 @@ public abstract class RecipeBookComponentMixin {
 
                 // 🆕 情况 1: 槽位有物品 → 执行取出或替换操作
                 if (!stack.isEmpty()) {
+                    if (!carried.isEmpty() && LivingChestFunction.isLivingChest(carried)) return false;
                     executeSlotAction(stack, button);
                     return true;
                 }
 
                 // 🆕 情况 2: 空槽位 + 手持有物品 → 执行存入操作
                 if (!carried.isEmpty()) {
+                    if (LivingChestFunction.isLivingChest(carried)) return false;
+
                     // 左键全部存入，右键单个存入
                     int amount = (button == 0)
                         ? carried.getCount()  // 左键: 全部存入
                         : 1;                  // 右键: 单个存入
+
+                    LivingChestContentsCache.adjustItem(carried, amount);
 
                     PacketDistributor.sendToServer(new LivingChestAccessPacket(
                         LivingChestAccessPacket.DEPOSIT,
                         (CompoundTag) carried.save(this.minecraft.player.registryAccess()),
                         amount
                     ));
-
-                    // 触发刷新：强制重新搜索并显示
-                    triggerSearchRefresh();
 
                     return true;
                 }
@@ -1492,14 +1442,18 @@ public abstract class RecipeBookComponentMixin {
             if (carried.isEmpty()) {
                 // 取出操作：左键全部取出（一组）
                 int amount = slotStack.getMaxStackSize();
+                LivingChestContentsCache.adjustItem(slotStack, -amount);
+                ItemStack saveStack = slotStack.copy();
+                saveStack.setCount(1);
                 PacketDistributor.sendToServer(new LivingChestAccessPacket(
                     shift ? LivingChestAccessPacket.WITHDRAW_INVENTORY : LivingChestAccessPacket.WITHDRAW,
-                    (CompoundTag) slotStack.save(this.minecraft.player.registryAccess()),
+                    (CompoundTag) saveStack.save(this.minecraft.player.registryAccess()),
                     amount
                 ));
             } else {
                 // 存入操作：左键全部存入
                 int amount = carried.getCount();
+                LivingChestContentsCache.adjustItem(carried, amount);
                 PacketDistributor.sendToServer(new LivingChestAccessPacket(
                     LivingChestAccessPacket.DEPOSIT,
                     (CompoundTag) carried.save(this.minecraft.player.registryAccess()),
@@ -1510,13 +1464,17 @@ public abstract class RecipeBookComponentMixin {
             if (carried.isEmpty()) {
                 // 取出操作：右键半组，Shift+右键单个
                 int amount = shift ? 1 : Math.max(1, slotStack.getMaxStackSize() / 2);
+                LivingChestContentsCache.adjustItem(slotStack, -amount);
+                ItemStack saveStack = slotStack.copy();
+                saveStack.setCount(1);
                 PacketDistributor.sendToServer(new LivingChestAccessPacket(
                     shift ? LivingChestAccessPacket.WITHDRAW_INVENTORY : LivingChestAccessPacket.WITHDRAW,
-                    (CompoundTag) slotStack.save(this.minecraft.player.registryAccess()),
+                    (CompoundTag) saveStack.save(this.minecraft.player.registryAccess()),
                     amount
                 ));
             } else {
                 // 存入操作：右键始终单个存入
+                LivingChestContentsCache.adjustItem(carried, 1);
                 PacketDistributor.sendToServer(new LivingChestAccessPacket(
                     LivingChestAccessPacket.DEPOSIT,
                     (CompoundTag) carried.save(this.minecraft.player.registryAccess()),
@@ -1524,46 +1482,6 @@ public abstract class RecipeBookComponentMixin {
                 ));
             }
         }
-
-        // 触发刷新：强制重新搜索并显示
-        triggerSearchRefresh();
-    }
-
-    /**
-     * 触发搜索刷新（强制重新搜索并显示）
-     *
-     * <h3>🎯 设计思路</h3>
-     * <p><strong>纯被动刷新策略</strong>: 不做乐观预测，
-     * 直接清除所有缓存并请求服务器同步，确保数据一致性。</p>
-     *
-     * <h3>⏱️ 延迟说明</h3>
-     * <ul>
-     *   <li>操作后会有 100-200ms 延迟（等待服务器响应）</li>
-     *   <li>但保证显示的数据始终与服务器一致</li>
-     *   <li>不会出现"只显示新物品"或"残影"等问题</li>
-     * </ul>
-     */
-    @Unique
-    private void triggerSearchRefresh() {
-        if (!this.livingChestTabActive) return;
-
-        // 步骤 1: 强制重新过滤
-        this.forceRefresh = true;
-        this.lastSearchText = "";
-        this.filteredContents.clear();
-
-        // 步骤 2: 标记内容缓存失效
-        LivingChestContentsCache.markDirty();
-
-        // 步骤 3: 请求服务器发送最新数据
-        PacketDistributor.sendToServer(new LivingChestAccessPacket(
-            LivingChestAccessPacket.LOAD,
-            null,
-            0
-        ));
-
-        // 🆕 不再强制重置页码，让系统自动调整（在渲染时动态计算合法页码）
-        // 如果当前页超出范围，renderLivingChestContents() 会自动修正
     }
 
     /**

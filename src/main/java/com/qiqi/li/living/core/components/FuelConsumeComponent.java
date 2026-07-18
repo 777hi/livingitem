@@ -52,7 +52,8 @@ public class FuelConsumeComponent implements ILivingComponent {
      * 每 tick 执行一次：管理燃烧时间。
      *
      * 执行流程：
-     * 1. 如果当前有燃烧时间（burn_time > 0），递减 1 并返回
+     * 1. 如果当前有燃烧时间（burn_time > 0），递减堆叠数（multiplier）并返回
+     *    堆叠数越多消耗越快，N 个活熔炉使燃料消耗速度 ×N
      * 2. 如果燃烧时间耗尽，检查燃料槽位是否有可用燃料
      * 3. 有可用燃料时，消耗 1 个燃料物品，设置新的燃烧时间
      */
@@ -62,9 +63,10 @@ public class FuelConsumeComponent implements ILivingComponent {
 
         RecipeType<?> recipeType = config.get("recipe_type", RecipeType.class, RecipeType.SMELTING);
         int burnTime = state.getInt(KEY_BURN_TIME, 0);
+        int multiplier = Math.max(1, hostStack.getCount());
 
         if (burnTime > 0) {
-            burnTime--;
+            burnTime -= multiplier;
             state.setInt(KEY_BURN_TIME, burnTime);
             return;
         }

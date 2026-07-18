@@ -27,6 +27,9 @@ public class ComponentState {
     /** 底层 NBT 数据 */
     private final CompoundTag data;
 
+    /** 脏标记：自上次清除后是否有过写入操作 */
+    private boolean dirty = false;
+
     /** 创建空状态 */
     public ComponentState() {
         this.data = new CompoundTag();
@@ -37,6 +40,15 @@ public class ComponentState {
         this.data = data != null ? data : new CompoundTag();
     }
 
+    /** 是否自上次清除后有过写入 */
+    public boolean isDirty() { return dirty; }
+
+    /** 清除脏标记（保存后调用） */
+    public void clearDirty() { dirty = false; }
+
+    /** 标记为脏（外部操作如 merge 后调用） */
+    public void markDirty() { dirty = true; }
+
     /** 读取整数，键不存在时返回默认值 */
     public int getInt(String key, int defaultValue) {
         return data.contains(key) ? data.getInt(key) : defaultValue;
@@ -45,6 +57,7 @@ public class ComponentState {
     /** 写入整数 */
     public void setInt(String key, int value) {
         data.putInt(key, value);
+        dirty = true;
     }
 
     /** 读取浮点数，键不存在时返回默认值 */
@@ -55,6 +68,7 @@ public class ComponentState {
     /** 写入浮点数 */
     public void setFloat(String key, float value) {
         data.putFloat(key, value);
+        dirty = true;
     }
 
     /** 读取布尔值，键不存在时返回默认值 */
@@ -65,6 +79,7 @@ public class ComponentState {
     /** 写入布尔值 */
     public void setBoolean(String key, boolean value) {
         data.putBoolean(key, value);
+        dirty = true;
     }
 
     /** 读取字符串，键不存在时返回默认值 */
@@ -75,6 +90,7 @@ public class ComponentState {
     /** 写入字符串 */
     public void setString(String key, String value) {
         data.putString(key, value);
+        dirty = true;
     }
 
     /** 读取列表 */
@@ -85,6 +101,7 @@ public class ComponentState {
     /** 写入列表 */
     public void putList(String key, ListTag list) {
         data.put(key, list);
+        dirty = true;
     }
 
     /** 读取子复合标签 */
@@ -95,6 +112,7 @@ public class ComponentState {
     /** 写入子复合标签 */
     public void putCompound(String key, CompoundTag tag) {
         data.put(key, tag);
+        dirty = true;
     }
 
     /** 检查键是否存在 */

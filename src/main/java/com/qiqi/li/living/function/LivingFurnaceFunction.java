@@ -1,4 +1,4 @@
-package com.qiqi.li.living;
+package com.qiqi.li.living.function;
 
 import java.util.Map;
 import net.minecraft.world.item.ItemStack;
@@ -6,6 +6,9 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.RecipeType;
 import com.qiqi.li.living.core.ComponentConfig;
 import com.qiqi.li.living.core.LivingFunctionConfig;
+import com.qiqi.li.living.BaseLivingFunction;
+import com.qiqi.li.living.LivingItemManager;
+import com.qiqi.li.living.LivingFunctionData;
 import com.qiqi.li.living.core.model.Pos2D;
 import com.qiqi.li.living.core.components.DirectionModeComponent;
 import com.qiqi.li.living.core.components.FuelConsumeComponent;

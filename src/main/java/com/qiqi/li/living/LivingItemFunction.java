@@ -9,6 +9,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
 import com.qiqi.li.living.core.ComponentState;
+import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.core.FunctionExecutor;
 import com.qiqi.li.living.core.LivingFunctionConfig;
 import com.qiqi.li.living.core.components.ILivingComponent;

@@ -67,8 +67,8 @@ neoForge {
 
             programArguments = [
                     '--username', '777_hi',
-                    '--width', '1280',
-                    '--height', '720'
+                    '--width', '1700',
+                    '--height', '1000'
             ]
 
             client()

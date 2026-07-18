@@ -7,7 +7,7 @@ import net.minecraft.world.item.ItemStack;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.qiqi.li.client.gui.LivingButton;
-import com.qiqi.li.living.LivingHopperFunction;
+import com.qiqi.li.living.function.LivingHopperFunction;
 import com.qiqi.li.living.LivingItemManager;
 import com.qiqi.li.living.core.ComponentState;
 import com.qiqi.li.living.core.components.DirectionModeComponent;

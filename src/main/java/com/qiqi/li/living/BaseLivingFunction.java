@@ -9,6 +9,7 @@ import com.qiqi.li.living.core.ComponentState;
 import com.qiqi.li.living.core.FunctionExecutor;
 import com.qiqi.li.living.core.LivingFunctionConfig;
 import com.qiqi.li.living.core.orchestrator.LivingOrchestrator;
+import com.qiqi.li.living.container.ContainerContext;
 
 /**
  * 活物品功能基类 —— 提供通用的 tick 编排和 Tooltip 实现。
@@ -100,7 +101,14 @@ public abstract class BaseLivingFunction implements LivingItemFunction {
                 LivingOrchestrator.tickAllComponents(ctx, slot, stack, states, config, fe);
             }
 
-            fe.saveStatesToStack(stack, config, states);
+            boolean anyDirty = false;
+            for (ComponentState state : states.values()) {
+                if (state.isDirty()) { anyDirty = true; break; }
+            }
+            if (anyDirty) {
+                fe.saveStatesToStack(stack, config, states);
+                states.values().forEach(ComponentState::clearDirty);
+            }
             context.syncSlotToClients(slot, stack);
         }
     }

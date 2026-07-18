@@ -19,6 +19,7 @@
 - **GUI交互系统**：容器界面中活物品之间的鼠标交互（如活打火石右键活TNT），声明式规则 + 统一拦截 + 服务端处理
 - **活TNT爆炸**：容器中的可爆炸活物品，引信倒计时后爆炸，威力随数量缩放，支持普通/大当量双模式
 - **活物品图标系统**：组件化的客户端图标框架，声明式配置即可实现活物品图标根据 NBT 动态切换，支持上下文感知（GUI/手持显示不同图标）和 ItemDecorator 叠加层
+- **活箱子系统**：将箱子虚拟化到物品 NBT 中，堆叠数 × 27 槽 = 虚拟箱子容量。UUID 映射管理、LRU 缓存、磁盘持久化、漏斗自动传输、跨容器传输、GUI 拆分/合并 UUID 自动分配
 
 ---
 
@@ -225,6 +226,81 @@ register(LivingIconSpec.builder(Items.HOPPER)
 | 活漏斗 | `base` | `hopper_base.png` | 箭头叠加层（方向旋转） |
 | 活熔炉 | `idle` / `active` | `furnace_idle.png` / `furnace_active.png` | 燃烧状态切换 |
 | 活TNT | `idle` / `lit` | `tnt_idle.png` / `tnt_lit.png` | 引信闪烁动画（每10 tick切换） |
+| 活箱子 | `base` | `chest_living.png` | 无 |
+
+---
+
+### 活箱子系统架构
+
+活箱子将原版箱子的格子存储虚拟化到物品 NBT 中，每个物品堆叠计数对应一个虚拟箱子（27 槽），通过 UUID 映射到磁盘持久化文件。
+
+#### 数据流
+
+```
+ItemStack (NBT)
+    └── LIVING_FUNCTION_DATA
+        └── living_chest
+            └── internal_storage
+                ├── _us : int              ← 已用槽位计数（O(1) 空/满判断）
+                └── uuids: ListTag<String>  ← 每个堆叠对应一个 UUID
+                        ↓
+                WorldStorage (LRU 缓存, 最大 200 条)
+                        ↓  磁盘路径: data/living_chests/xx/uuid.dat
+                ItemStack[27]  ← 每个 UUID 对应一个虚拟箱子内容
+```
+
+#### UUID 生命周期
+
+```
+创建
+├── 活箱子首次 tick → 初始化所有 UUID
+├── 堆叠数增加（合并）→ 追加新 UUID
+├── insertItem() 发现 UUID 不足 → 自动补充
+└── createAndRegisterNewUuid() → UUID.randomUUID() + 注册到缓存
+
+读取
+├── getUuids() → 从 ComponentState 解析 UUID 列表
+├── getStorageState() → 从 ItemStack NBT 读取完整状态
+└── getOrCreate(uuid) → 从缓存/磁盘加载虚拟箱子数据
+
+删除
+├── 堆叠数减少（拆分）→ 先掉落物品，再 storage.remove(uuid)
+├── insertItem() 发现 UUID 过多 → 删除多余空 UUID
+├── popUuid() → 弹出最后一个 UUID（调用方需先处理物品）
+└── cleanupOrphanedFiles() → 被动清理无引用的孤儿空文件
+
+持久化
+├── saveUuids() → UUID 列表 → ComponentState → ItemStack NBT
+├── saveToDisk(uuid, items) → 虚拟箱子数据写入磁盘
+├── markDirty(uuid) → 标记脏数据，等待定时保存
+└── cleanupIdle() → 5 分钟未访问 → 从缓存淘汰（脏数据先保存）
+```
+
+#### 关键设计决策
+
+**堆叠倍增模型**：1 个堆叠 = 1 个虚拟箱子（27 槽）。64 个活箱子 = 64 × 27 = 1728 槽。物品插入优先填充已有箱子（先填满现有的），提取优先从已有箱子取；只有满了才新增/空了才删除。
+
+**LRU 缓存策略**：最大 200 条缓存条目，5 分钟空闲超时。淘汰前检查脏标记，脏数据先写盘。避免反复加载/卸载同一 UUID 数据。
+
+**快速短路判断**：`_us`（used slots）字段记录已用槽位总数，O(1) 判断空/满。漏斗传输前先检查源是否空/目标是否满，避免无效的完整插入/提取调用链。
+
+**漏斗自动传输**：`ItemTransferComponent` 在活箱子 tick 时，自动通过漏斗向相邻容器推拉物品。传输方向由 `DirectionModeComponent` 的 TRANSFER 模式控制。
+
+**跨容器传输**：活箱子在容器边界时，通过 `CrossContainerTransfer` 向相邻容器传输物品。方向映射基于容器方块朝向旋转。
+
+**GUI 拆分/合并 UUID 分配**：`ItemStackMixin` 拦截 `split()`/`grow()`/`shrink()`/`copyWithCount()`，通过 `LivingChestStackHandler` 自动分配/合并 UUID。`LivingChestStackFlags` 线程局部标志允许跨 UUID 堆叠。
+
+**被动孤儿清理**：`cleanupOrphanedFiles()` 在 `onLevelSave` 时每 10 次执行一次，扫描 `data/living_chests/` 下所有文件，删除 NBT 全空且无活跃 UUID 引用的孤儿文件，防止取消活化后磁盘文件泄漏。
+
+#### 核心文件
+
+| 文件 | 职责 |
+|------|------|
+| `LivingChestFunction` | 活箱子功能：insertItem/extractItem/getStorageState 等公开 API |
+| `InternalStorageComponent` | 底层实现：UUID 管理、LRU 缓存、磁盘 I/O、WorldStorage |
+| `LivingChestStackHandler` | UUID 列表工具：标准化、创建、拆分、合并、数据校验 |
+| `LivingChestStackFlags` | 线程局部标志：允许跨 UUID 堆叠（GUI 操作期间） |
+| `ChestTransaction` | 事务包装器：确保多次操作间原子保存状态 |
 
 ---
 
@@ -240,14 +316,25 @@ src/main/java/com/qiqi/li/
 │   ├── LivingItemManager.java               # 核心管理器：DataComponent 注册、数据读写、功能注册
 │   ├── LivingItemFunction.java              # 功能接口定义（含 appendComponentTooltips 默认方法）
 │   ├── BaseLivingFunction.java              # ⭐ 功能基类：通用 tick 编排 + Tooltip 实现
-│   ├── LivingFurnaceFunction.java           # 活熔炉：FUEL_PROGRESS 编排器 + SLOTS 模式方向
-│   ├── LivingHopperFunction.java            # 活漏斗：SIMPLE 编排器 + TRANSFER 模式方向 + NBT 工具
-│   ├── LivingTntFunction.java               # 活TNT：引信倒计时 + 爆炸，声明两条交互规则
-│   ├── LivingFlintAndSteelFunction.java     # 活打火石：交互触发器，无 tick 逻辑
-│   ├── ContainerContext.java                # 容器操作抽象接口（含客户端同步 + 槽位占用 + getWidth 列宽）
-│   ├── SimpleContainerContext.java          # 容器上下文实现（带异常保护 + 同步逻辑 + 三级回退列宽获取）
-│   ├── ContainerLivingItemHandler.java      # 容器扫描、分组调度、大箱子去重
-│   ├── ContainerChunkCache.java             # 区块级容器缓存（事件驱动维护）
+│   ├── LivingFunctionData.java              # 活物品功能数据定义（DataComponent 载体）
+│   │
+│   ├── function/                            # 各活物品功能实现
+│   │   ├── LivingChestFunction.java         # 活箱子：堆叠倍增模型、UUID 管理、物品存取 API
+│   │   ├── LivingFurnaceFunction.java       # 活熔炉：FUEL_PROGRESS 编排器 + SLOTS 模式方向
+│   │   ├── LivingHopperFunction.java        # 活漏斗：SIMPLE 编排器 + TRANSFER 模式方向 + NBT 工具
+│   │   ├── LivingTntFunction.java           # 活TNT：引信倒计时 + 爆炸，声明两条交互规则
+│   │   └── LivingFlintAndSteelFunction.java # 活打火石：交互触发器，无 tick 逻辑
+│   │
+│   ├── container/                           # 容器上下文与处理器
+│   │   ├── ContainerContext.java            # 容器操作抽象接口（含客户端同步 + 槽位占用 + getWidth）
+│   │   ├── SimpleContainerContext.java      # 容器上下文实现（带异常保护 + 同步逻辑 + 三级回退列宽）
+│   │   ├── ContainerLivingItemHandler.java  # 容器扫描、分组调度、大箱子去重
+│   │   └── ContainerChunkCache.java         # 区块级容器缓存（事件驱动维护）
+│   │
+│   ├── chest/                               # 活箱子辅助工具
+│   │   ├── LivingChestStackHandler.java     # UUID 列表工具：标准化、创建、拆分、合并、数据校验
+│   │   ├── LivingChestStackFlags.java       # 线程局部标志：允许跨 UUID 堆叠（GUI 操作期间）
+│   │   └── ChestTransaction.java            # 事务包装器：确保多次操作间原子保存状态
 │   │
 │   └── core/
 │       ├── FunctionExecutor.java            # 纯工具类：状态加载/保存、槽位解析、组件查找
@@ -263,9 +350,10 @@ src/main/java/com/qiqi/li/
 │       │
 │       ├── components/
 │       │   ├── ILivingComponent.java        # 组件接口：tick + createDefaultState + appendTooltip
+│       │   ├── InternalStorageComponent.java # ⭐ 活箱子核心：UUID 管理、LRU 缓存、磁盘 I/O、物品存取
 │       │   ├── DirectionModeComponent.java  # 方向配置组件（SLOTS/TRANSFER 双模式 + NBT 自治）
-│       │   ├── ItemTransferComponent.java   # 物品传输组件（活漏斗，含跨容器传输触发）
-│       │   └── CrossContainerTransfer.java  # 跨容器传输工具类（方向映射 + 大箱子半箱选择 + 邻居容器查找）
+│       │   ├── ItemTransferComponent.java   # 物品传输组件（活漏斗/活箱子，含跨容器传输触发）
+│       │   ├── CrossContainerTransfer.java  # 跨容器传输工具类（方向映射 + 大箱子半箱选择 + 邻居容器查找）
 │       │   ├── ProgressComponent.java       # 进度组件（计时、暂停、回退）
 │       │   ├── FuelConsumeComponent.java    # 燃料组件（消耗、可用性检查）
 │       │   ├── ItemTransformComponent.java  # 转化组件（配方匹配、物品转化）
@@ -532,6 +620,20 @@ SLOTS 模式的方向数据存储在 `ComponentState` 中（`slot_input_x`, `slo
 - [x] 实体伤害与击退（原版公式）
 - [x] 创造模式/生存模式全兼容
 
+### 活箱子功能
+- [x] 堆叠倍增模型（1 堆叠 = 1 虚拟箱子 = 27 槽，64 堆叠 = 1728 槽）
+- [x] UUID 映射管理（自动创建、拆分、合并、删除）
+- [x] LRU 缓存策略（最大 200 条，5 分钟空闲超时，脏数据先保存）
+- [x] 磁盘持久化（`data/living_chests/xx/uuid.dat`，分片存储）
+- [x] 快速空/满判断（`_us` 已用槽位计数，O(1) 短路判断）
+- [x] 漏斗自动传输（活箱子 tick 时通过漏斗推拉物品）
+- [x] 跨容器传输（活箱子在容器边界时与相邻容器交互）
+- [x] GUI 拆分/合并 UUID 自动分配（`ItemStackMixin` 拦截 split/grow/shrink/copyWithCount）
+- [x] 跨 UUID 堆叠支持（`LivingChestStackFlags` 线程局部标志）
+- [x] 被动孤儿文件清理（`cleanupOrphanedFiles()` 防止取消活化后磁盘泄漏）
+- [x] 事务包装器（`ChestTransaction` 确保多次操作间原子保存）
+- [x] 活箱子图标（`chest_living.png`）
+
 ### 容器兼容性
 - [x] 标准矩形容器（27 格箱子、54 格大箱子）
 - [x] 线性容器（5 格漏斗）
@@ -542,9 +644,26 @@ SLOTS 模式的方向数据存储在 `ComponentState` 中（`slot_input_x`, `slo
 
 ## 开发进展
 
-### 当前版本: v0.5-alpha
+### 当前版本: v0.6-alpha
 
-**最近更新** (2026-07-11):
+**最近更新** (2026-07-17):
+- ✅ 新增：活箱子系统（`LivingChestFunction` + `InternalStorageComponent` + `ChestTransaction`）
+- ✅ 新增：UUID 映射管理（`LivingChestStackHandler`：创建、拆分、合并、标准化）
+- ✅ 新增：堆叠倍增模型（1 堆叠 = 1 虚拟箱子 = 27 槽，64 堆叠 = 1728 槽）
+- ✅ 新增：LRU 缓存策略（最大 200 条，5 分钟空闲超时，脏数据先保存）
+- ✅ 新增：快速短路判断（`_us` 已用槽位计数，O(1) 空/满判断，避免无效传输）
+- ✅ 新增：漏斗自动传输（活箱子 tick 时通过漏斗推拉物品）
+- ✅ 新增：跨容器传输（活箱子在容器边界时与相邻容器交互）
+- ✅ 新增：GUI 拆分/合并 UUID 自动分配（`ItemStackMixin` 拦截堆叠操作）
+- ✅ 新增：跨 UUID 堆叠支持（`LivingChestStackFlags` 线程局部标志）
+- ✅ 新增：被动孤儿文件清理（防止取消活化后磁盘文件泄漏）
+- ✅ 新增：事务包装器（`ChestTransaction` 确保多次操作间原子保存）
+- ✅ 重构：living 文件夹按职责拆分为 `function/`、`container/`、`chest/` 子包
+- ✅ 修复：堆叠活箱子时漏斗只能访问到一个活箱子的问题
+- ✅ 修复：UUID 创建时机从惰性初始化改为首次 tick 主动初始化
+- ✅ 修复：跨包访问权限（`saveStorageState` → public static）
+
+**历史更新** (2026-07-11):
 - ✅ 新增：活TNT功能（`LivingTntFunction` + `ExplosionComponent`）
 - ✅ 新增：活打火石功能（`LivingFlintAndSteelFunction`，交互触发器，无 tick 逻辑）
 - ✅ 新增：GUI交互系统（`InteractionEntry` + `InteractionRegistry` + `InteractionHandler`）
@@ -675,5 +794,5 @@ public class LivingBrewingStandFunction extends BaseLivingFunction {
 
 ---
 
-*最后更新: 2026-07-13*
-*状态: Alpha 测试阶段 - 活熔炉、活漏斗、活TNT核心功能已完成，跨容器传输已实现，模组容器兼容（IronChests等），GUI交互系统已就绪，客户端图标系统已组件化*
+*最后更新: 2026-07-17*
+*状态: Alpha 测试阶段 - 活箱子、活熔炉、活漏斗、活TNT核心功能已完成，跨容器传输已实现，模组容器兼容（IronChests等），GUI交互系统已就绪，客户端图标系统已组件化，代码结构已按职责重构为子包*

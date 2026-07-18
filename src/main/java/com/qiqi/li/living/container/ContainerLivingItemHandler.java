@@ -1,4 +1,4 @@
-package com.qiqi.li.living;
+package com.qiqi.li.living.container;
 
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
@@ -18,6 +18,8 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.ChestType;
 import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
+import com.qiqi.li.living.LivingItemFunction;
+import com.qiqi.li.living.LivingItemManager;
 
 /**
  * 活物品容器处理器 —— 负责遍历容器中的物品并执行活物品 tick。

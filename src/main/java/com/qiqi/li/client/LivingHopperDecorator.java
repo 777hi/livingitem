@@ -2,7 +2,7 @@ package com.qiqi.li.client;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.qiqi.li.LivingItem;
-import com.qiqi.li.living.LivingHopperFunction;
+import com.qiqi.li.living.function.LivingHopperFunction;
 import com.qiqi.li.living.LivingItemManager;
 import com.qiqi.li.living.core.model.Pos2D;
 import net.minecraft.client.gui.Font;

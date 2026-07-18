@@ -1,6 +1,6 @@
 package com.qiqi.li.living.mixin;
 
-import com.qiqi.li.living.LivingChestStackFlags;
+import com.qiqi.li.living.chest.LivingChestStackFlags;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ClickType;

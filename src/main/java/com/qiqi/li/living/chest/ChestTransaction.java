@@ -1,7 +1,8 @@
-package com.qiqi.li.living;
+package com.qiqi.li.living.chest;
 
 import com.qiqi.li.living.core.ComponentState;
 import com.qiqi.li.living.core.components.InternalStorageComponent;
+import com.qiqi.li.living.function.LivingChestFunction;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.item.ItemStack;
 import org.slf4j.Logger;

@@ -1,4 +1,4 @@
-package com.qiqi.li.living;
+package com.qiqi.li.living.container;
 
 import java.util.Set;
 import net.minecraft.core.BlockPos;

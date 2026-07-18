@@ -1,7 +1,7 @@
 package com.qiqi.li.network;
 
-import com.qiqi.li.living.LivingChestFunction;
-import com.qiqi.li.living.LivingHopperFunction;
+import com.qiqi.li.living.function.LivingChestFunction;
+import com.qiqi.li.living.function.LivingHopperFunction;
 import com.qiqi.li.living.LivingItemManager;
 import com.qiqi.li.living.core.model.SlotMapping;
 import net.minecraft.nbt.CompoundTag;
@@ -114,6 +114,8 @@ public class ServerPacketHandler {
     private static void handleDeposit(ServerPlayer player, MinecraftServer server, LivingChestAccessPacket packet) {
         ItemStack carried = player.containerMenu.getCarried();
         if (carried.isEmpty()) return;
+
+        if (LivingChestFunction.isLivingChest(carried)) return;
 
         int amount = Math.min(packet.amount(), carried.getCount());
         if (amount <= 0) return;

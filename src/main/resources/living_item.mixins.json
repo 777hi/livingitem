@@ -5,7 +5,8 @@
   "mixins": [
     "ItemStackMixin",
     "AbstractContainerMenuMixin",
-    "ServerPlaceRecipeMixin"
+    "ServerPlaceRecipeMixin",
+    "BlockItemMixin"
   ],
   "injectors": {
     "defaultRequire": 1

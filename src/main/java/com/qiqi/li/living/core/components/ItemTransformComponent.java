@@ -61,6 +61,12 @@ public class ItemTransformComponent implements ILivingComponent {
     /** NBT 键名：输出物品的资源路径（如 "minecraft:iron_ingot"） */
     private static final String KEY_OUTPUT_ITEM = "output_item";
 
+    /** NBT 键名：上次配方检查的输入物品 ID（用于缓存跳过重复查表） */
+    private static final String KEY_CACHED_INPUT = "cached_input";
+
+    /** NBT 键名：上次配方检查的结果（0=无配方, 1=有配方） */
+    private static final String KEY_CACHED_RESULT = "cached_result";
+
     @Override
     public String getComponentId() { return ID; }
 
@@ -74,6 +80,12 @@ public class ItemTransformComponent implements ILivingComponent {
     @Override
     public void tick(ComponentContext ctx, int hostSlot, ItemStack hostStack,
                      ComponentState state, ComponentConfig config) {
+        if (!ctx.hasValidInput()) {
+            state.setString(KEY_INPUT_ITEM, "");
+            state.setString(KEY_OUTPUT_ITEM, "");
+            state.setString(KEY_CACHED_INPUT, "");
+            state.setInt(KEY_CACHED_RESULT, 0);
+        }
     }
 
     @Override
@@ -262,11 +274,23 @@ public class ItemTransformComponent implements ILivingComponent {
             return false;
         }
 
+        ResourceLocation inputRl = BuiltInRegistries.ITEM.getKey(inputStack.getItem());
+        String inputKey = inputRl.toString();
+
+        String cachedInput = state.getString(KEY_CACHED_INPUT, "");
+        if (inputKey.equals(cachedInput)) {
+            return state.getInt(KEY_CACHED_RESULT, 0) == 1;
+        }
+
         SingleRecipeInput recipeInput = new SingleRecipeInput(inputStack);
         var recipeHolderOpt = ctx.level().getRecipeManager()
                 .getRecipeFor((RecipeType)recipeType, recipeInput, ctx.level());
 
-        if (recipeHolderOpt.isEmpty()) return false;
+        if (recipeHolderOpt.isEmpty()) {
+            state.setString(KEY_CACHED_INPUT, inputKey);
+            state.setInt(KEY_CACHED_RESULT, 0);
+            return false;
+        }
 
         Object recipeHolder = recipeHolderOpt.get();
         Recipe<?> recipe;
@@ -277,10 +301,11 @@ public class ItemTransformComponent implements ILivingComponent {
         }
         ItemStack result = recipe.getResultItem(ctx.level().registryAccess());
 
-        ResourceLocation inputRl = BuiltInRegistries.ITEM.getKey(inputStack.getItem());
         ResourceLocation outputRl = BuiltInRegistries.ITEM.getKey(result.getItem());
-        state.setString(KEY_INPUT_ITEM, inputRl.toString());
+        state.setString(KEY_INPUT_ITEM, inputKey);
         state.setString(KEY_OUTPUT_ITEM, outputRl.toString());
+        state.setString(KEY_CACHED_INPUT, inputKey);
+        state.setInt(KEY_CACHED_RESULT, 1);
 
         return true;
     }

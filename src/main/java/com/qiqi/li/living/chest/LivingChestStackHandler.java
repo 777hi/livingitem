@@ -1,4 +1,4 @@
-package com.qiqi.li.living;
+package com.qiqi.li.living.chest;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -7,6 +7,8 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.nbt.CompoundTag;
 import com.qiqi.li.living.core.ComponentState;
 import com.qiqi.li.living.core.components.InternalStorageComponent;
+import com.qiqi.li.living.function.LivingChestFunction;
+import com.qiqi.li.living.LivingItemManager;
 
 /**
  * 活箱子 UUID 列表工具类。
@@ -84,12 +86,26 @@ public class LivingChestStackHandler {
     }
 
     /**
-     * 写入 UUID 列表到物品（通过 ComponentState）
+     * 写入 UUID 列表到物品（通过 ComponentState），自动标准化排序。
+     *
+     * <p>用于合并路径，确保 UUID 列表在不同堆叠顺序下仍能匹配。</p>
      */
     public static void setUuids(ItemStack stack, List<UUID> uuids) {
         ComponentState state = getStorageState(stack);
         List<UUID> normalized = normalizeUuidList(uuids);
         InternalStorageComponent.saveUuids(state, normalized);
+        saveToStack(stack, state);
+    }
+
+    /**
+     * 写入 UUID 列表到物品，跳过排序（用于拆分路径）。
+     *
+     * <p>拆分路径的 UUID 来自 {@link #splitUuidList}，已保证有序，
+     * 跳过排序可减少每次 setUuids 的 stream+sorted 开销。</p>
+     */
+    public static void setUuidsUnsorted(ItemStack stack, List<UUID> uuids) {
+        ComponentState state = getStorageState(stack);
+        InternalStorageComponent.saveUuids(state, uuids);
         saveToStack(stack, state);
     }
 

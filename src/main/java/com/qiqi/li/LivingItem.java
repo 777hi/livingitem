@@ -26,7 +26,7 @@ import net.neoforged.neoforge.event.level.LevelEvent;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
-import com.qiqi.li.living.LivingChestFunction;
+import com.qiqi.li.living.function.LivingChestFunction;
 import com.qiqi.li.living.core.components.InternalStorageComponent;
 
 import java.util.ArrayList;
@@ -38,12 +38,12 @@ import com.qiqi.li.network.CarriedUpdatePacket;
 import com.qiqi.li.network.LivingChestAccessPacket;
 import com.qiqi.li.network.LivingChestContentsPacket;
 import com.qiqi.li.living.LivingItemManager;
-import com.qiqi.li.living.LivingFurnaceFunction;
-import com.qiqi.li.living.LivingHopperFunction;
-import com.qiqi.li.living.LivingTntFunction;
-import com.qiqi.li.living.LivingFlintAndSteelFunction;
-import com.qiqi.li.living.ContainerLivingItemHandler;
-import com.qiqi.li.living.ContainerChunkCache;
+import com.qiqi.li.living.function.LivingFurnaceFunction;
+import com.qiqi.li.living.function.LivingHopperFunction;
+import com.qiqi.li.living.function.LivingTntFunction;
+import com.qiqi.li.living.function.LivingFlintAndSteelFunction;
+import com.qiqi.li.living.container.ContainerLivingItemHandler;
+import com.qiqi.li.living.container.ContainerChunkCache;
 import com.qiqi.li.living.core.interaction.InteractionRegistry;
 import com.qiqi.li.living.core.interaction.IgniteHandler;
 import com.qiqi.li.living.core.interaction.IgniteCarriedHandler;

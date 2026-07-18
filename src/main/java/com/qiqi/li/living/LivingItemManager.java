@@ -2,7 +2,9 @@ package com.qiqi.li.living;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponentType;
@@ -12,6 +14,7 @@ import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.util.ExtraCodecs;
 import net.minecraft.world.Container;
 import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -82,6 +85,9 @@ public class LivingItemManager {
     /** 已注册功能的不可变视图 —— 提供给外部只读访问 */
     private static final List<LivingItemFunction> FUNCTIONS_VIEW = Collections.unmodifiableList(FUNCTIONS);
 
+    /** 适用功能缓存：Item → 适用的功能列表，避免每次 tick 都遍历 FUNCTIONS 并调用 canApply */
+    private static final Map<Item, List<LivingItemFunction>> APPLICABLE_CACHE = new HashMap<>();
+
     /**
      * 注册一个活物品功能。
      * 应在 mod 初始化阶段调用（如 LivingItem 类的构造函数或主类的 @Mod 方法）。
@@ -122,14 +128,21 @@ public class LivingItemManager {
      * @return 适用于该物品的功能列表（新创建的列表，可安全遍历）
      */
     public static List<LivingItemFunction> getApplicableFunctions(ItemStack stack) {
+        if (!isLivingItem(stack)) return List.of();
+
+        Item item = stack.getItem();
+        List<LivingItemFunction> cached = APPLICABLE_CACHE.get(item);
+        if (cached != null) return cached;
+
         List<LivingItemFunction> applicable = new ArrayList<>();
-        if (!isLivingItem(stack)) return applicable;
         for (LivingItemFunction function : FUNCTIONS) {
             if (function.canApply(stack)) {
                 applicable.add(function);
             }
         }
-        return applicable;
+        List<LivingItemFunction> result = Collections.unmodifiableList(applicable);
+        APPLICABLE_CACHE.put(item, result);
+        return result;
     }
 
     /**

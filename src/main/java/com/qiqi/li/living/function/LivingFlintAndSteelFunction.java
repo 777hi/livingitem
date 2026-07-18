@@ -1,10 +1,12 @@
-package com.qiqi.li.living;
+package com.qiqi.li.living.function;
 
 import java.util.List;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import com.qiqi.li.living.core.LivingFunctionConfig;
+import com.qiqi.li.living.BaseLivingFunction;
+import com.qiqi.li.living.LivingItemManager;
 
 /**
  * 活打火石功能 —— 右键点燃容器中的活 TNT。

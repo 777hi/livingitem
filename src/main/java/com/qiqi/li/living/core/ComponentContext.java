@@ -3,7 +3,7 @@ package com.qiqi.li.living.core;
 import java.util.Map;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
-import com.qiqi.li.living.ContainerContext;
+import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.core.model.Pos2D;
 import com.qiqi.li.living.core.components.DirectionModeComponent;
 

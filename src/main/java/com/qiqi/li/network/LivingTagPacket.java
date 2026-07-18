@@ -9,6 +9,7 @@ import net.minecraft.network.codec.StreamCodec;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import com.qiqi.li.LivingItem;
 import com.qiqi.li.living.LivingItemManager;
+import com.qiqi.li.living.function.LivingChestFunction;
 
 /**
  * 活物品标签切换网络包。
@@ -58,6 +59,12 @@ public record LivingTagPacket() implements CustomPacketPayload {
                 if (!carriedItem.isEmpty()) {
                     boolean currentLiving = LivingItemManager.isLivingItem(carriedItem);
                     boolean newLiving = !currentLiving;
+
+                    // 取消活化时：活箱子需要先掉落所有物品
+                    if (!newLiving && LivingChestFunction.isLivingChest(carriedItem)) {
+                        LivingChestFunction.dropAllItems(
+                            player.getServer(), carriedItem, player);
+                    }
 
                     LivingItemManager.setLiving(carriedItem, newLiving);
 

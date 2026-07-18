@@ -17,10 +17,11 @@ import net.minecraft.nbt.Tag;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
-import com.qiqi.li.living.ContainerContext;
+import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.core.ComponentConfig;
 import com.qiqi.li.living.core.ComponentContext;
 import com.qiqi.li.living.core.ComponentState;
+import com.qiqi.li.living.function.LivingChestFunction;
 import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
 
@@ -136,7 +137,7 @@ public class InternalStorageComponent implements ILivingComponent {
         if (server == null) return;
 
         int expectedCount = hostStack.getCount();
-        int capacityPerChest = ctx.containerCtx().getSize();
+        int capacityPerChest = LivingChestFunction.CHEST_SLOTS;
 
         if (!state.contains(KEY_UUIDS)) {
             // 首次 tick：活箱子刚放入容器，主动创建 UUID 列表
@@ -148,7 +149,7 @@ public class InternalStorageComponent implements ILivingComponent {
             LOGGER.info("tick: initializing UUIDs for new chest, count={}, capacity={}", initCount, capacityPerChest);
             List<UUID> initUuids = new ArrayList<>(initCount);
             for (int i = 0; i < initCount; i++) {
-                initUuids.add(WorldStorage.createAndRegister(server, capacityPerChest));
+                initUuids.add(WorldStorage.createAndRegister(server, capacityPerChest, "tick-init"));
             }
             saveUuids(state, initUuids);
             state.setInt(KEY_CACHED_COUNT, initCount);
@@ -173,30 +174,16 @@ public class InternalStorageComponent implements ILivingComponent {
         // 数量不足时：创建新的空虚拟箱子
         if (actualCount < expectedCount) {
             while (actualCount < expectedCount) {
-                uuids.add(WorldStorage.createAndRegister(server, capacityPerChest));
+                uuids.add(WorldStorage.createAndRegister(server, capacityPerChest, "tick-grow"));
                 actualCount++;
                 changed = true;
             }
         } 
-        // 数量过多时：删除多余虚拟箱子并掉落物品
+        // 数量过多时：不删除 UUID（UUID 可以多不能少，避免数据丢失）
+        // 后续如果堆叠数再次增加，可直接复用这些 UUID，无需重建
         else if (actualCount > expectedCount) {
-            List<UUID> removedUuids = uuids.subList(expectedCount, actualCount);
-            for (UUID uuid : removedUuids) {
-                // 先取出要删除的箱子中的物品，防止丢失
-                List<ItemStack> chestItems = storage.getOrCreate(uuid, capacityPerChest);
-                for (ItemStack stack : chestItems) {
-                    if (!stack.isEmpty()) {
-                        BlockPos pos = ctx.containerCtx().getBlockPos();
-                        if (pos != null) {
-                            ctx.level().addFreshEntity(new ItemEntity(
-                                ctx.level(), pos.getX(), pos.getY(), pos.getZ(), stack.copy()));
-                        }
-                    }
-                }
-                storage.remove(uuid);  // 删除磁盘文件
-            }
-            uuids = new ArrayList<>(uuids.subList(0, expectedCount));
-            changed = true;
+            LOGGER.info("tick: stack count decreased from {} to {}, keeping all {} uuids (no deletion)",
+                cachedCount, expectedCount, actualCount);
         }
 
         if (changed) {
@@ -228,7 +215,7 @@ public class InternalStorageComponent implements ILivingComponent {
     public void appendTooltip(ComponentState state, java.util.function.Consumer<net.minecraft.network.chat.Component> tooltipAdder) {
         List<UUID> uuids = getUuids(state);
         if (!uuids.isEmpty()) {
-            int totalSlots = uuids.size() * 27;
+            int totalSlots = uuids.size() * LivingChestFunction.CHEST_SLOTS;
             int usedSlots = state.getInt(KEY_USED_SLOTS, -1);
             
             if (usedSlots >= 0) {
@@ -468,6 +455,11 @@ public class InternalStorageComponent implements ILivingComponent {
     public static boolean insertItem(MinecraftServer server, ComponentState state,
                                      ItemStack itemToInsert, int capacityPerChest,
                                      int hostStackCount) {
+        if (LivingChestFunction.isLivingChest(itemToInsert)) {
+            LOGGER.warn("insertItem: rejected living chest self-insertion");
+            return false;
+        }
+
         List<UUID> uuids = getUuids(state);
         WorldStorage storage = WorldStorage.get(server);
         LOGGER.info("insertItem: uuids={}, item={}, capacity={}, hostCount={}",
@@ -485,14 +477,13 @@ public class InternalStorageComponent implements ILivingComponent {
             if (uuids.size() < hostStackCount) {
                 adjustedUuids = new ArrayList<>(uuids);
                 for (int i = uuids.size(); i < hostStackCount; i++) {
-                    adjustedUuids.add(WorldStorage.createAndRegister(server, capacityPerChest));
+                    adjustedUuids.add(WorldStorage.createAndRegister(server, capacityPerChest, "insertItem"));
                 }
             } else {
-                List<UUID> removed = uuids.subList(hostStackCount, uuids.size());
-                for (UUID uuid : removed) {
-                    storage.remove(uuid);  // 删除多余的虚拟箱子
-                }
-                adjustedUuids = new ArrayList<>(uuids.subList(0, hostStackCount));
+                // UUID 可以多不能少，不删除多余的 UUID
+                LOGGER.info("insertItem: UUID count > stack count ({} > {}), keeping all uuids",
+                    uuids.size(), hostStackCount);
+                adjustedUuids = uuids;
             }
             saveUuids(state, adjustedUuids);
             state.setInt(KEY_CACHED_COUNT, hostStackCount);
@@ -705,24 +696,20 @@ public class InternalStorageComponent implements ILivingComponent {
      * @return 新创建的 UUID
      */
     public static UUID createAndRegisterNewUuid(MinecraftServer server, int capacity) {
-        return WorldStorage.createAndRegister(server, capacity);
+        return WorldStorage.createAndRegister(server, capacity, "api");
     }
 
     /**
      * 弹出并删除最后一个 UUID
      * 
-     * <h3>用途</h3>
-     * <p>主要用于减少虚拟箱子数量时的清理工作。
-     * 会同时从内存缓存和磁盘中删除该 UUID 对应的数据。</p>
-     * 
-     * <h3>⚠️ 数据安全</h3>
-     * <p>调用前应该已经将该 UUID 中的物品取出或掉落，
-     * 否则会导致数据永久丢失！</p>
+     * <h3>⚠️ 危险操作</h3>
+     * <p>会从磁盘永久删除该 UUID 对应的虚拟箱子文件。
+     * 调用前必须确保该 UUID 中的物品已取出或掉落。
+     * 仅在用户明确要销毁活箱子时使用（如 dropAllItems）。</p>
      *
-     * @param server Minecraft 服务器实例
-     * @param state 组件状态（会被修改）
-     * @return 被移除的 UUID，如果没有则返回 null
+     * @deprecated 尽量使用 tick 的自动调整，避免手动删除 UUID
      */
+    @Deprecated
     public static UUID popUuid(MinecraftServer server, ComponentState state) {
         List<UUID> uuids = new ArrayList<>(getUuids(state));
         if (uuids.isEmpty()) return null;
@@ -786,6 +773,15 @@ public class InternalStorageComponent implements ILivingComponent {
         
         /** 孤儿文件清理计数器 */
         private int cleanupOrphanCounter = 0;
+        
+        /** 异步保存防抖间隔（毫秒）：避免每次 markDirty 都提交 IO 任务 */
+        private static final long ASYNC_SAVE_DEBOUNCE_MS = 1000;
+        
+        /** 异步保存最小批量：积累到此数量后立即提交，无视防抖 */
+        private static final int ASYNC_SAVE_MIN_BATCH = 16;
+        
+        /** 上次触发异步保存的时间戳 */
+        private long lastAsyncSaveTime = 0;
         
         /** 分片位数：8位 = 256个子目录 */
         private static final int SHARD_BITS = 8;
@@ -1126,6 +1122,18 @@ public class InternalStorageComponent implements ILivingComponent {
          */
         private void triggerAsyncSave() {
             if (asyncShutdown || pendingAsyncSave.isEmpty()) return;
+            
+            int pendingCount = pendingAsyncSave.size();
+            long now = System.currentTimeMillis();
+            
+            if (pendingCount < ASYNC_SAVE_MIN_BATCH) {
+                long elapsed = now - lastAsyncSaveTime;
+                if (elapsed < ASYNC_SAVE_DEBOUNCE_MS) {
+                    return;
+                }
+            }
+            
+            lastAsyncSaveTime = now;
             
             // 快照当前待保存的UUID集合（避免并发修改）
             final Set<UUID> toSave = new HashSet<>(pendingAsyncSave);
@@ -1604,12 +1612,12 @@ public class InternalStorageComponent implements ILivingComponent {
          * @param capacity 每个虚拟箱子的槽数量
          * @return 新创建的 UUID
          */
-        public static UUID createAndRegister(MinecraftServer server, int capacity) {
+        public static UUID createAndRegister(MinecraftServer server, int capacity, String source) {
             UUID uuid = UUID.randomUUID();
             WorldStorage storage = get(server);
             List<ItemStack> emptySlots = createEmptySlots(capacity);
             storage.putCache(uuid, emptySlots, true);
-            LOGGER.debug("Created new UUID={} with capacity={}", uuid, capacity);
+            LOGGER.info("[{}] Created new UUID={} with capacity={}", source, uuid, capacity);
             return uuid;
         }
 

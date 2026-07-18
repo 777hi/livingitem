@@ -10,8 +10,9 @@
 7. [配方书集成](#7-配方书集成)
 8. [持久化机制](#8-持久化机制)
 9. [性能优化策略](#9-性能优化策略)
-10. [已知问题与修复记录](#10-已知问题与修复记录)
-11. [调试指南](#11-调试指南)
+10. [UUID 生命周期管理](#10-uuid-生命周期管理)
+11. [已知问题与修复记录](#11-已知问题与修复记录)
+12. [调试指南](#12-调试指南)
 
 ---
 
@@ -79,6 +80,7 @@
 | `AbstractContainerMenuMixin` | `mixin/AbstractContainerMenuMixin.java` | Mixin：拦截容器点击，设置/清理堆叠标志 |
 | `ItemStackMixin` | `mixin/ItemStackMixin.java` | Mixin：拦截堆叠判定、拆分/合并时的 UUID 分配逻辑 |
 | `LivingChestStackHandler` | `living/LivingChestStackHandler.java` | UUID 列表工具类：标准化、合并、拆分、一致性校验 |
+| `BlockItemMixin` | `mixin/BlockItemMixin.java` | Mixin：拦截方块放置，自动填充物品到实体箱子 |
 
 #### 配方书集成（第7章）
 | 类名 | 文件位置 | 职责 |
@@ -376,16 +378,12 @@ InternalStorageComponent.tick(ctx, hostSlot, hostStack, state, config)
        │         actualCount++
        │         changed = true
        │
-       ├─ 4. 数量过多时（合并/减少堆叠）
-       │     removedUuids = uuids.subList(expectedCount, actualCount)
-       │     for uuid in removedUuids:
-       │         chestItems = storage.getOrCreate(uuid, capacity)
-       │         for item in chestItems:
-       │             if !item.isEmpty:
-       │                 掉落物品到世界 (ItemEntity)
-       │         storage.remove(uuid)  ← 删除磁盘文件
-       │     uuids = uuids.subList(0, expectedCount)
-       │     changed = true
+       ├─ 4. 数量过多时（合并/减少堆叠）⚠️ UUID 只增不减
+       │     // 不删除多余的 UUID，保留所有 UUID
+       │     // 后续如果堆叠数再次增加，可直接复用这些 UUID
+       │     // 记录日志但不删除任何 UUID 或磁盘文件
+       │     LOGGER.info("UUID count > stack count, keeping all uuids")
+       │     // 不执行任何删除操作！
        │
        ├─ 5. 保存变更
        │     if changed:
@@ -398,7 +396,8 @@ InternalStorageComponent.tick(ctx, hostSlot, hostStack, state, config)
 **设计意图**:
 - `_cc` 字段避免每 tick 都解析 UUID 列表（性能优化）
 - 只在堆叠数量变化时才执行实际的增删操作
-- 减少堆叠时会掉落物品（防止数据丢失）
+- **UUID 只增不减**：即使堆叠数减少，也不删除 UUID 和磁盘文件（防止数据丢失）
+- 多余的 UUID 在堆叠数再次增加时可直接复用，无需重建
 
 ### 3.5 活箱子间传输流程
 
@@ -441,6 +440,91 @@ transferBetweenLivingChests(ctx, containerCtx, sourceSlot, targetSlot,
 - 提取失败时不影响任何一方
 - 插入失败时自动回滚（退回源箱子）
 - 部分插入时剩余物品退回源箱子
+
+### 3.6 方块放置自动填充流程
+
+当玩家将装有物品的活箱子放置为方块时，自动将虚拟箱子中的物品填充到实体箱子中。
+
+**触发时机**: `BlockItem.place()` 被调用（玩家右键放置方块）
+
+**Mixin 拦截**: `BlockItemMixin.onPlaceHead()` + `onPlaceReturn()`
+
+```
+玩家操作: 右键放置活箱子方块
+       │
+       ▼
+BlockItem.place(BlockPlaceContext)
+       │
+       ├─ 1. HEAD 注入: 捕获活箱子 UUID 列表
+       │     │
+       │     ├─ 检查是否为活箱子: isLivingChest(stack)
+       │     ├─ 读取 UUID 列表: getUuids(stack)
+       │     │   └─ 如果为空 → 跳过（普通箱子）
+       │     ├─ 设置 BLOCK_PLACING_UUIDS 标志
+       │     │   └─ 阻止 onShrink/onSetCount 在放置期间修改 UUID
+       │     └─ 记录日志: "captured N uuids for block placement"
+       │
+       ├─ 2. 原版执行: 放置方块 + 消耗物品
+       │     │
+       │     ├─ BlockItem.place() 正常放置方块
+       │     ├─ 生存模式: stack.shrink(1) → onShrink 检测到
+       │     │   BLOCK_PLACING_UUIDS 非空 → 跳过
+       │     └─ 创造模式: 物品不消耗，留在手中
+       │
+       ├─ 3. RETURN 注入: 检查放置结果并填充物品
+       │     │
+       │     ├─ 检查放置是否成功 (result.consumesAction())
+       │     │   └─ 失败 → 清理标志，跳过
+       │     │
+       │     ├─ 获取放置位置的方块实体
+       │     │   └─ 必须是 ChestBlockEntity
+       │     │
+       │     ├─ 遍历 UUID 列表，填充物品到实体箱子:
+       │     │   for each uuid in uuids:
+       │     │       chestItems = storage.getOrCreate(uuid, capacity)
+       │     │       for each item in chestItems:
+       │     │           if item.isEmpty(): continue
+       │     │           // 查找空槽位或与同类物品合并
+       │     │           for slot in chestContainer:
+       │     │               if slot.isEmpty():
+       │     │                   setItem(slot, item.copy())
+       │     │               elif sameItem(slot, item):
+       │     │                   slot.grow(mergeAmount)
+       │     │
+       │     ├─ 清空活箱子虚拟存储: LivingChestFunction.clearStorage(stack)
+       │     │   └─ 清空 UUID 列表 + 重置已用槽位计数
+       │     │   └─ 不删除磁盘文件（遵循 UUID 只增不减原则）
+       │     │
+       │     └─ 记录日志: "transferred N items from M virtual chests"
+       │
+       └─ 4. 清理 BLOCK_PLACING_UUIDS 标志
+```
+
+**关键设计决策**:
+
+| 决策 | 理由 |
+|------|------|
+| 使用 HEAD + RETURN 注入 | 放置前捕获 UUID（物品放置后会被消耗），放置后转移物品 |
+| BLOCK_PLACING_UUIDS 互斥标志 | 阻止 onShrink/onSetCount 在放置期间重复处理 UUID |
+| 不删除磁盘文件 | 遵循 UUID 只增不减原则，防止数据丢失 |
+| 支持物品合并 | 如果实体箱子已有同类物品，优先合并而非占用新槽位 |
+| 部分填充处理 | 如果实体箱子已满，剩余物品仍保留在虚拟箱子中，记录警告日志 |
+
+**生存模式 vs 创造模式差异**:
+
+| 模式 | 物品消耗 | clearStorage 效果 |
+|------|---------|-------------------|
+| 生存 | shrink(1) → 物品被消耗 | 清空已消耗物品的 NBT（无影响） |
+| 创造 | 物品不消耗，留在手中 | 清空手中物品的 UUID 引用，变为空活箱子 |
+
+**⚠️ 与 onShrink 的互斥保护**:
+```
+BlockItem.place() 内部调用 shrink() 时:
+  1. BLOCK_PLACING_UUIDS 已在 HEAD 中设置（非 null）
+  2. onShrink 检测到 BLOCK_PLACING_UUIDS 非空 → 跳过
+  3. 防止 PENDING_TRANSFER 被污染
+  4. RETURN 中清理 BLOCK_PLACING_UUIDS
+```
 
 ---
 
@@ -1457,7 +1541,7 @@ Mixin 解决方案：
 | `ServerStoppingEvent` | 服务器停止时 | `saveAllDirty()` |
 | `cleanupIdle()` | 每20次 putCache 或手动调用 | 卸载超时数据并保存 |
 
-### 5.2 持久化流程图
+### 8.2 持久化流程图
 
 ```
 服务器运行中
@@ -1483,7 +1567,7 @@ Mixin 解决方案：
              (这是正常行为，类似原版存档机制)
 ```
 
-### 5.3 文件结构
+### 8.3 文件结构
 
 ```
 <存档>/
@@ -1515,7 +1599,7 @@ private int shardIndex(UUID uuid) {
 - Windows FAT32/exFAT 单目录上限 65534 个文件
 - 分片后每个目录平均只存放 1/256 的文件
 
-### 5.4 数据迁移（Legacy → Sharded）
+### 8.4 数据迁移（Legacy → Sharded）
 
 首次启动时，自动检测并迁移旧格式文件：
 
@@ -1583,7 +1667,7 @@ private int shardIndex(UUID uuid) {
 - 文件系统友好: 避免单目录爆炸
 ```
 
-### 6.4 原子写入
+### 9.4 原子写入
 
 ```
 传统写入 (风险):
@@ -1599,7 +1683,7 @@ private int shardIndex(UUID uuid) {
   ✅ 即使崩溃也不会损坏文件
 ```
 
-### 6.5 快速路径优化
+### 9.5 快速路径优化
 
 ```java
 // tick() 中的快速路径
@@ -1615,9 +1699,120 @@ if (cachedCount == expectedCount) {
 
 ---
 
-## 10. 已知问题与修复记录
+## 10. UUID 生命周期管理
 
-### 10.1 🔴 严重 Bug: ItemStack.save() 返回值被忽略
+活箱子 UUID 的生命周期管理是整个系统最核心的安全机制。UUID 的丢失意味着对应的虚拟箱子物品永不可找回，因此所有操作都遵循"**UUID 可以多，不能少**"的原则。
+
+### 10.1 UUID 生命周期状态机
+
+```
+                    ┌──────────────────────────────────────┐
+                    │              UUID 生命周期            │
+                    │                                      │
+  创建              │  ┌─────────┐                         │
+  ──────────────────┼─▶│  ACTIVE │◀──────────────────────┐ │
+  createAndRegister │  │ (活跃)  │   堆叠增加时复用       │ │
+                    │  └────┬────┘                       │ │
+                    │       │                            │ │
+                    │       │ 用户取消活化                │ │
+                    │       │ (dropAllItems)              │ │
+                    │       ▼                            │ │
+                    │  ┌─────────┐                       │ │
+                    │  │ DELETED │  ← 唯一删除 UUID 路径  │ │
+                    │  │ (已删除) │                       │ │
+                    │  └─────────┘                       │ │
+                    │                                      │
+                    │  ⚠️ 其他所有操作都不删除 UUID！      │
+                    │  - tick 减少堆叠 → 保留             │ │
+                    │  - insertItem 溢出 → 保留           │ │
+                    │  - 方块放置 → 保留（仅清空NBT引用）  │ │
+                    │  - 创造模式切换 → 保留              │ │
+                    └──────────────────────────────────────┘
+```
+
+### 10.2 UUID 创建的所有入口
+
+| 入口 | 触发场景 | 代码位置 |
+|------|---------|---------|
+| `tick-init` | 首次 tick 时 UUID 列表为空 | `InternalStorageComponent.tick()` |
+| `tick-expand` | 堆叠数增加，UUID 不足 | `InternalStorageComponent.tick()` |
+| `insertItem` | 插入物品时 UUID 列表为空 | `InternalStorageComponent.insertItem()` |
+| `insertItem-expand` | 插入物品时 UUID 列表不足 | `InternalStorageComponent.insertItem()` |
+
+**所有入口都通过 `createAndRegister` 统一创建，并通过日志记录来源，便于追踪。**
+
+### 10.3 UUID 只增不减的安全策略
+
+**原则**: 任何自动操作都不能缩减 UUID 列表，只有用户明确"取消活化"（toggle living off）才可删除。
+
+| 操作 | 旧行为（有风险） | 新行为（安全） |
+|------|-----------------|---------------|
+| `tick()` 堆叠数减少 | ❌ 删除多余 UUID + 磁盘文件 | ✅ 保留所有 UUID，仅记录日志 |
+| `insertItem()` UUID 溢出 | ❌ 删除多余 UUID | ✅ 保留所有 UUID |
+| `split()` 拆出空堆 | ❌ 可能丢失 UUID | ✅ 按比例拆分，原堆保留 |
+| 方块放置后 | ❌ 无此功能 | ✅ 清空 NBT 引用，不删磁盘文件 |
+| 切换活化标签 | ❌ 丢失 UUID，重新创建 | ✅ 保存到 CUSTOM_DATA，恢复时还原 |
+
+### 10.4 线程安全保护
+
+UUID 操作仅在服务端主线程执行，避免客户端和服务端 UUID 冲突：
+
+```java
+// 所有 UUID 修改操作的入口检查
+MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
+if (server == null || !server.isSameThread()) {
+    return;  // 客户端线程或非主线程，跳过
+}
+```
+
+**单机模式特殊处理**: 在单机模式下，`ServerLifecycleHooks.getCurrentServer()` 在 Render 线程也返回非 null，因此需要 `isSameThread()` 额外检查。
+
+### 10.5 toggle 活化标签的 UUID 保存/恢复
+
+当用户切换活箱子的活化标签（toggle living tag）时：
+
+```
+取消活化:
+  1. 读取活箱子数据（UUID 列表等）
+  2. 保存到 DataComponent.CUSTOM_DATA 的 "pending_living_chest" 键
+  3. 调用 dropAllItems() 清理物品
+  4. 调用 setLiving(false) 移除 LIVING_FUNCTION_DATA
+
+重新活化:
+  1. 调用 setLiving(true) 设置活化
+  2. 从 CUSTOM_DATA 读取 "pending_living_chest"
+  3. 恢复到 LIVING_FUNCTION_DATA
+  4. 清理 CUSTOM_DATA 中的临时数据
+```
+
+**关键**: 使用 `CUSTOM_DATA` 作为临时存储，避免 UUID 在 toggle 过程中丢失。
+
+### 10.6 ItemStackMixin 的 UUID 管理职责
+
+作为 UUID 生命周期管理的中枢，`ItemStackMixin` 拦截所有物品堆叠操作，确保 UUID 列表与堆叠数同步：
+
+| 职责 | 拦截方法 | 说明 |
+|------|---------|------|
+| 堆叠判定 | `isSameItemSameComponents` | 玩家 GUI 操作时允许跨 UUID 堆叠 |
+| 拆分 UUID 分配 | `split` | 按比例拆分 UUID 列表 |
+| 合并 UUID 转移 | `grow` + `shrink` | 兼容左键/右键/漏斗合并时序 |
+| Shift+点击转移 | `setCount` | 原版容器转移使用 setCount |
+| 右键/中键拖拽 | `copyWithCount` | 拖拽分发时拆分 UUID |
+| 方块放置保护 | `shrink` + `setCount` | 检测 BLOCK_PLACING_UUIDS 跳过 |
+
+**ThreadLocal 变量一览**:
+
+| ThreadLocal | 用途 | 设置位置 | 清理位置 |
+|------------|------|---------|---------|
+| `PRE_SPLIT_UUIDS` | split 中阻止 shrink 重复处理 | `onSplitHead` | `onSplitReturn` |
+| `PENDING_TRANSFER` | grow/shrink 时序协调 | grow 或 shrink 先执行者 | 后执行者消费 |
+| `BLOCK_PLACING_UUIDS` | 方块放置时阻止 shrink 处理 | `BlockItemMixin.HEAD` | `BlockItemMixin.RETURN` |
+
+---
+
+## 11. 已知问题与修复记录
+
+### 11.1 🔴 严重 Bug: ItemStack.save() 返回值被忽略
 
 **影响版本**: 初版 ~ 2024年修复前
 
@@ -1649,7 +1844,7 @@ if (!stack.isEmpty()) {
 
 **影响范围**: 所有通过 `saveToDisk()` 保存的数据都会丢失物品内容。
 
-### 10.2 🟡 中等 Bug: extractItem() 未保存状态
+### 11.2 🟡 中等 Bug: extractItem() 未保存状态
 
 **影响版本**: 初版 ~ 2024年修复前
 
@@ -1666,7 +1861,7 @@ public static ItemStack extractItem(...) {
 }
 ```
 
-### 7.3 🟢 小改进: 异常静默吞掉
+### 11.3 🟢 小改进: 异常静默吞掉
 
 **问题描述**:
 `saveToDisk()` 和 `loadFromDisk()` 中的 IOException 被 `catch (IOException ignored)` 吞掉，导致无法排查问题。
@@ -1679,18 +1874,100 @@ catch (IOException e) {
 }
 ```
 
-### 7.4 🟢 功能增强: syncMergedToStorage() 未保存状态
+### 11.4 🟢 功能增强: syncMergedToStorage() 未保存状态
 
 **问题描述**:
 GUI 操作同步后未保存状态，可能导致 GUI 显示与实际数据不一致。
 
 **修复方案**: 同 `extractItem()`，添加 `saveStorageState()` 调用。
 
+### 11.5 🟡 中等 Bug: 切换活化标签导致 UUID 丢失
+
+**影响版本**: 初版 ~ 2024年修复前
+
+**问题描述**:
+切换活箱子的活化标签（toggle living tag）时，`LivingItemManager.setLiving(false)` 会调用 `clearLivingData()` 移除 `LIVING_FUNCTION_DATA` 组件，导致 UUID 数据丢失。重新活化时 UUID 从零创建，旧的虚拟箱子物品无法找回。
+
+**根本原因**:
+`setLiving(false)` 内部调用 `clearLivingData()` 直接移除 DataComponent，UUID 数据未做任何备份。
+
+**修复方案**:
+```java
+// 取消活化时：保存 UUID 到 CUSTOM_DATA 临时键
+if (!newLiving && LivingChestFunction.isLivingChest(carriedItem)) {
+    CompoundTag chestData = LivingItemManager.getFunctionData(carriedItem, LivingChestFunction.ID);
+    if (!chestData.isEmpty()) {
+        CustomData customData = carriedItem.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY);
+        CompoundTag tag = customData.copyTag();
+        tag.put("pending_living_chest", chestData);  // 临时保存
+        carriedItem.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
+    }
+    LivingChestFunction.dropAllItems(player.getServer(), carriedItem, player);
+}
+
+LivingItemManager.setLiving(carriedItem, newLiving);
+
+// 重新活化时：从 CUSTOM_DATA 恢复 UUID
+if (newLiving && LivingChestFunction.isLivingChest(carriedItem)) {
+    CustomData customData = carriedItem.get(DataComponents.CUSTOM_DATA);
+    if (customData != null) {
+        CompoundTag tag = customData.copyTag();
+        if (tag.contains("pending_living_chest")) {
+            CompoundTag chestData = tag.getCompound("pending_living_chest");
+            LivingItemManager.setFunctionData(carriedItem, LivingChestFunction.ID, chestData);
+            tag.remove("pending_living_chest");
+            carriedItem.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
+        }
+    }
+}
+```
+
+### 11.6 🟡 中等 Bug: 创造模式右键拖拽导致 UUID 重新创建
+
+**影响版本**: 初版 ~ 2024年修复前
+
+**问题描述**:
+从生存模式切换到创造模式后，右键拖拽活箱子（按住右键在容器中拖动分发物品）会导致 UUID 重新创建。
+
+**根本原因**:
+1. 创造模式下，`copyWithCount()` 创建的副本与原始堆共享同一组 UUID（错误理解为"中键复制"）
+2. 实际右键拖拽时，光标的物品堆叠数会减少（与生存模式一致），需要拆分 UUID
+3. 中键拖拽（创造模式独有）才会复制而光标堆叠数不变
+
+**修复方案**:
+- 统一右键拖拽的处理逻辑：无论是生存还是创造模式，都按比例拆分 UUID
+- 中键拖拽场景：`copyWithCount` 拆分 UUID → 后续 `grow` 补齐原堆 UUID
+- 添加 `server.isSameThread()` 检查，确保 UUID 操作仅在服务端线程执行
+
+### 11.7 🟢 功能增强: 方块放置自动填充物品
+
+**影响版本**: 2024年新增
+
+**功能描述**:
+装有物品的活箱子放置为方块时，自动将虚拟箱子中的物品填充到实体箱子中。
+
+**实现方式**:
+- 新增 `BlockItemMixin`，拦截 `BlockItem.place()` 的 HEAD 和 RETURN
+- 新增 `LivingChestFunction.clearStorage()` 方法清空 NBT 引用
+- 新增 `BLOCK_PLACING_UUIDS` ThreadLocal 标志防止 onShrink 冲突
+- 支持物品合并到已有堆叠，部分填充时记录警告日志
+
+### 11.8 🟢 安全策略: UUID 只增不减
+
+**影响版本**: 2024年新增
+
+**修改内容**:
+- `InternalStorageComponent.tick()`: 堆叠数减少时不再删除 UUID 和磁盘文件
+- `InternalStorageComponent.insertItem()`: UUID 数量超过堆叠数时不再删除多余 UUID
+- UUID 重复时直接复用，避免重建的开销和风险
+
+**核心原则**: 只有用户明确"取消活化"（dropAllItems）才能删除 UUID。UUID 丢失 = 物品永久丢失，是所有 bug 中最严重的。
+
 ---
 
-## 11. 调试指南
+## 12. 调试指南
 
-### 11.1 启用调试日志
+### 12.1 启用调试日志
 
 在 `InternalStorageComponent.java` 中已添加的关键日志：
 
@@ -1719,7 +1996,7 @@ LOGGER.debug("Creating new empty storage for UUID={}, capacity={}", ...);
 - `DEBUG`: 详细信息（脏标记、缓存命中、文件I/O）
 - `ERROR`: 异常情况（IO失败）
 
-### 11.2 常见问题排查
+### 12.2 常见问题排查
 
 #### 问题1: 推出重进后物品丢失
 
@@ -1760,7 +2037,7 @@ LOGGER.debug("Creating new empty storage for UUID={}, capacity={}", ...);
 - 减少 `UNLOAD_TIMEOUT_MS`（释放更多内存）
 - 使用 SSD 存储（减少 IO 延迟）
 
-### 11.3 手动检查工具
+### 12.3 手动检查工具
 
 #### 查看活箱子 UUID 列表
 
@@ -1803,9 +2080,11 @@ storage.cleanupIdle();   // 清理空闲缓存
 | 首次insert | 创建UUID列表 | 创建+填充 | 待保存 | markDirty |
 | 后续insert | 可能调整UUID | 修改物品 | 待保存 | markDirty |
 | extract | 不变 | 修改物品 | 待保存 | **必须saveStorageState** |
-| tick调整 | 更新UUID+_cc | 可能增删 | 待保存 | 减少时掉落物品 |
+| tick调整 | 更新UUID+_cc | 不删除文件 | 不变 | UUID 只增不减 |
+| 方块放置 | 清空UUID引用 | 读取物品 | 不变 | 不删除磁盘文件 |
 | saveAllDirty | 不变 | 清除dirty标记 | **写入磁盘** | 原子写入 |
 | cleanupIdle | 不变 | 移除缓存条目 | 可能写入 | 仅脏数据写入 |
+| toggle活化 | 保存到CUSTOM_DATA | 清理物品 | 不变 | 恢复时还原UUID |
 | 服务器重启 | 从物品加载 | 重建缓存 | 从磁盘加载 | 完整恢复 |
 
 ## 附录 B: API 速查
@@ -1840,6 +2119,11 @@ ItemStack result = LivingChestFunction.extractItem(
 List<UUID> uuids = LivingChestFunction.getUuids(chestStack);
 boolean hasStorage = LivingChestFunction.hasStorage(chestStack);
 boolean isChest = LivingChestFunction.isLivingChest(stack);
+
+// 清空存储（方块放置后调用）
+LivingChestFunction.clearStorage(chestStack);
+// 清空 NBT 中的 UUID 引用 + 重置已用槽位计数
+// 不删除磁盘文件（遵循 UUID 只增不减原则）
 ```
 
 ### InternalStorageComponent (静态方法)
@@ -1887,6 +2171,6 @@ storage.cleanupIdle();
 
 ---
 
-*文档版本: 2024.12*
-*最后更新: 修复 ItemStack.save() 返回值 bug*
+*文档版本: 2024.12 v2*
+*最后更新: UUID 只增不减策略、方块放置自动填充、toggle 活化标签 UUID 保存/恢复、创造模式修复*
 *维护者: Living Item Mod Team*

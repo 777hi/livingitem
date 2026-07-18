@@ -1,6 +1,6 @@
 package com.qiqi.li.living.mixin;
 
-import com.qiqi.li.living.LivingChestFunction;
+import com.qiqi.li.living.function.LivingChestFunction;
 import net.minecraft.recipebook.ServerPlaceRecipe;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;

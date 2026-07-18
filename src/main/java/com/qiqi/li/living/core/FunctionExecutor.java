@@ -5,7 +5,7 @@ import java.util.Map;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
-import com.qiqi.li.living.ContainerContext;
+import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.LivingItemManager;
 import com.qiqi.li.living.core.components.*;
 

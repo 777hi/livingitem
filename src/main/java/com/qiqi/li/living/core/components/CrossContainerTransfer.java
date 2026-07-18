@@ -34,13 +34,13 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.ChestBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.ChestType;
-import com.qiqi.li.living.ContainerContext;
+import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.LivingItemManager;
 import com.qiqi.li.living.core.ComponentContext;
 import com.qiqi.li.living.core.ComponentState;
 import com.qiqi.li.living.core.model.Pos2D;
-import com.qiqi.li.living.LivingChestFunction;
-import com.qiqi.li.living.LivingHopperFunction;
+import com.qiqi.li.living.function.LivingChestFunction;
+import com.qiqi.li.living.function.LivingHopperFunction;
 
 public final class CrossContainerTransfer {
 

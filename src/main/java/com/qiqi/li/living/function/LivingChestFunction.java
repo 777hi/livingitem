@@ -1,14 +1,20 @@
-package com.qiqi.li.living;
+package com.qiqi.li.living.function;
 
 import java.util.List;
 import java.util.UUID;
+import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.Level;
 import com.qiqi.li.living.core.ComponentState;
-import com.qiqi.li.living.ContainerContext;
+import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.core.LivingFunctionConfig;
 import com.qiqi.li.living.core.components.InternalStorageComponent;
+import com.qiqi.li.living.BaseLivingFunction;
+import com.qiqi.li.living.LivingItemManager;
 import net.minecraft.nbt.CompoundTag;
 
 /**
@@ -54,8 +60,8 @@ import net.minecraft.nbt.CompoundTag;
  *   <li><strong>状态保存</strong>：所有公开方法都会自动调用 {@code saveStorageState()}，
  *       确保修改后的状态写回 ItemStack 的 NBT</li>
  *   <li><strong>线程安全</strong>：所有方法必须在服务端主线程中调用</li>
- *   <li><strong>容量计算</strong>：{@code capacityPerChest} 通常来自容器的 {@code getSize()}，
- *       对于标准箱子是 27，对于大型箱子是 54</li>
+ *   <li><strong>容量计算</strong>：每个虚拟箱子固定为 27 槽（原版箱子大小），
+ *       不随所在容器变化</li>
  * </ul>
  * 
  * @author Living Item Mod Team
@@ -67,6 +73,9 @@ public class LivingChestFunction extends BaseLivingFunction {
 
     /** 功能 ID，用于在 NBT 中标识此功能 */
     public static final String ID = "living_chest";
+
+    /** 每个虚拟箱子的槽位数（固定为原版箱子大小 27） */
+    public static final int CHEST_SLOTS = 27;
 
     /** 功能配置：只包含 InternalStorageComponent 组件 */
     private static final LivingFunctionConfig CONFIG = new LivingFunctionConfig()
@@ -129,16 +138,15 @@ public class LivingChestFunction extends BaseLivingFunction {
     }
 
     /**
-     * 从容器上下文获取容量（槽数量）
+     * 获取每个虚拟箱子的槽位数（固定为 27，即原版箱子大小）
      * 
-     * <p>通常用于获取活漏斗所在容器的容量，
-     * 以确定每个虚拟箱子应该有多少个槽位。</p>
+     * <p>活箱子的容量不随所在容器变化，始终为原版箱子标准大小。</p>
      *
-     * @param ctx 容器上下文
-     * @return 容器的槽数量
+     * @param ctx 容器上下文（未使用，保留参数兼容性）
+     * @return 固定值 27
      */
     public static int getCapacity(ContainerContext ctx) {
-        return ctx.getSize();
+        return CHEST_SLOTS;
     }
 
     /**
@@ -337,6 +345,91 @@ public class LivingChestFunction extends BaseLivingFunction {
     }
 
     /**
+     * 清空活箱子的存储数据（UUID 列表和已用槽位计数）。
+     * 
+     * <h3>用途</h3>
+     * <p>当活箱子被放置为方块后，物品已转移到实体箱子中，需要清空活箱子的虚拟存储。
+     * 此方法仅清空 NBT 层的 UUID 引用，不删除磁盘文件（遵循 UUID 只增不减原则）。</p>
+     * 
+     * <h3>与 {@link #dropAllItems} 的区别</h3>
+     * <ul>
+     *   <li>{@code dropAllItems}：掉落物品到世界 + 删除磁盘文件 + 清空 UUID（用于取消活化）</li>
+     *   <li>{@code clearStorage}：只清空 NBT 层的 UUID 引用（用于方块放置后的清理）</li>
+     * </ul>
+     * 
+     * <h3>⚠️ 注意事项</h3>
+     * <p>调用此方法前，应确保虚拟箱子中的物品已转移到目标容器中。
+     * 此方法不会删除磁盘文件，但会清空 ItemStack 上的 UUID 引用，
+     * 使得活箱子变为"空箱子"状态。</p>
+     *
+     * @param chestStack 活箱子物品栈（会被修改）
+     */
+    public static void clearStorage(ItemStack chestStack) {
+        if (!isLivingChest(chestStack)) return;
+        ComponentState state = getStorageState(chestStack);
+        InternalStorageComponent.saveUuids(state, List.of());
+        state.setInt(InternalStorageComponent.KEY_USED_SLOTS, 0);
+        saveStorageState(chestStack, state);
+    }
+
+    /**
+     * 掉落活箱子中的所有物品并清理存储文件。
+     * 
+     * <p>在活箱子取消活化时调用，确保：
+     * <ol>
+     *   <li>所有虚拟箱子中的物品掉落到玩家脚下</li>
+     *   <li>所有 UUID 对应的磁盘文件被删除</li>
+     *   <li>组件状态被重置（清空 UUID 列表和已用槽位计数）</li>
+     * </ol>
+     * 
+     * <p>如果箱子为空（无 UUID 或所有物品为空），则直接返回，不产生任何效果。</p>
+     *
+     * @param server Minecraft 服务器实例
+     * @param chestStack 活箱子物品栈（会被修改）
+     * @param player 掉落位置的玩家（物品掉落在玩家脚下）
+     */
+    public static void dropAllItems(MinecraftServer server, ItemStack chestStack, Player player) {
+        if (!isLivingChest(chestStack)) return;
+
+        ComponentState state = getStorageState(chestStack);
+        List<UUID> uuids = InternalStorageComponent.getUuids(state);
+        if (uuids.isEmpty()) return;
+
+        InternalStorageComponent.WorldStorage storage = InternalStorageComponent.WorldStorage.get(server);
+        Level level = player.level();
+        BlockPos dropPos = player.blockPosition();
+        int droppedCount = 0;
+
+        // 遍历所有虚拟箱子，掉落物品
+        for (UUID uuid : uuids) {
+            List<ItemStack> chestItems = storage.getOrCreate(uuid, CHEST_SLOTS);
+            for (ItemStack item : chestItems) {
+                if (!item.isEmpty()) {
+                    level.addFreshEntity(new ItemEntity(
+                        level,
+                        dropPos.getX() + 0.5,
+                        dropPos.getY() + 0.5,
+                        dropPos.getZ() + 0.5,
+                        item.copy()));
+                    droppedCount += item.getCount();
+                }
+            }
+            // 删除磁盘文件
+            storage.remove(uuid);
+        }
+
+        // 重置状态：清空 UUID 列表和已用槽位计数
+        InternalStorageComponent.saveUuids(state, List.of());
+        state.setInt(InternalStorageComponent.KEY_USED_SLOTS, 0);
+        saveStorageState(chestStack, state);
+
+        if (droppedCount > 0) {
+            LivingItemManager.LOGGER.info("活箱子取消活化：掉落 {} 个物品，清理 {} 个 UUID 文件",
+                droppedCount, uuids.size());
+        }
+    }
+
+    /**
      * 从活箱子的 NBT 数据中加载内部存储状态
      * 
      * <h3>数据来源</h3>
@@ -391,7 +484,7 @@ public class LivingChestFunction extends BaseLivingFunction {
      * @param stack 目标活箱子物品栈（会被更新）
      * @param state 要保存的组件状态
      */
-    static void saveStorageState(ItemStack stack, ComponentState state) {
+    public static void saveStorageState(ItemStack stack, ComponentState state) {
         CompoundTag funcData = LivingItemManager.getFunctionData(stack, ID).copy();
         funcData.put(InternalStorageComponent.ID, state.toNBT());
         LivingItemManager.setFunctionData(stack, ID, funcData);

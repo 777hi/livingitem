@@ -18,7 +18,7 @@ import java.util.List;
 public class LivingChestContentsCache {
 
     private static final List<ItemStack> contents = new ArrayList<>();
-    private static boolean dirty = false;
+    private static int version = 0;
 
     public static List<ItemStack> get() {
         return Collections.unmodifiableList(contents);
@@ -26,20 +26,50 @@ public class LivingChestContentsCache {
 
     public static void set(List<ItemStack> items) {
         contents.clear();
-        contents.addAll(items);
-        dirty = false;
+        for (ItemStack incoming : items) {
+            if (incoming.isEmpty()) continue;
+            boolean merged = false;
+            for (ItemStack existing : contents) {
+                if (ItemStack.isSameItemSameComponents(existing, incoming)) {
+                    existing.grow(incoming.getCount());
+                    merged = true;
+                    break;
+                }
+            }
+            if (!merged) {
+                contents.add(incoming.copy());
+            }
+        }
+        version++;
     }
 
-    public static boolean isDirty() {
-        return dirty;
+    public static int getVersion() {
+        return version;
     }
 
-    public static void markDirty() {
-        dirty = true;
+    public static void adjustItem(ItemStack item, int delta) {
+        for (int i = 0; i < contents.size(); i++) {
+            ItemStack existing = contents.get(i);
+            if (ItemStack.isSameItemSameComponents(existing, item)) {
+                int newCount = existing.getCount() + delta;
+                if (newCount <= 0) {
+                    contents.remove(i);
+                } else {
+                    existing.setCount(newCount);
+                }
+                version++;
+                return;
+            }
+        }
+        if (delta > 0) {
+            ItemStack copy = item.copy();
+            copy.setCount(delta);
+            contents.add(copy);
+            version++;
+        }
     }
 
     public static void clear() {
         contents.clear();
-        dirty = false;
     }
 }
