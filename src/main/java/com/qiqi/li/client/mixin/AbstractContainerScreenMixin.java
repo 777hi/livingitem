@@ -2,6 +2,7 @@ package com.qiqi.li.client.mixin;
 
 import com.qiqi.li.client.GuiInteractionHelper;
 import com.qiqi.li.client.gui.LivingButton;
+import com.qiqi.li.living.function.LivingChestFunction;
 import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
@@ -12,6 +13,8 @@ import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.ItemStack;
+import org.lwjgl.glfw.GLFW;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -67,6 +70,30 @@ public class AbstractContainerScreenMixin extends Screen {
     private void living_item$interceptMouseClicked(double mouseX, double mouseY, int button, CallbackInfoReturnable<Boolean> cir) {
         if (GuiInteractionHelper.tryInteract(this.hoveredSlot, button, this.menu)) {
             cir.setReturnValue(true);
+        }
+
+        // 中键点击活箱子拦截：防止创造模式下复制活箱子导致 UUID 不可控
+        // 需要同时检查槽位物品和光标物品：
+        // - 槽位有活箱子 → 阻止中键 CLONE 复制（原版会将槽位物品复制到光标）
+        // - 光标有活箱子 → 阻止中键 QUICK_CRAFT 拖拽分发（创造模式会把光标物品复制到各槽位）
+        if (button == GLFW.GLFW_MOUSE_BUTTON_MIDDLE) {
+            boolean hasLivingChest = false;
+            if (this.hoveredSlot != null) {
+                ItemStack slotStack = this.hoveredSlot.getItem();
+                if (LivingChestFunction.isLivingChest(slotStack)) {
+                    hasLivingChest = true;
+                }
+            }
+            if (!hasLivingChest) {
+                ItemStack cursorStack = this.menu.getCarried();
+                if (LivingChestFunction.isLivingChest(cursorStack)) {
+                    hasLivingChest = true;
+                }
+            }
+            if (hasLivingChest) {
+                cir.setReturnValue(true);
+                return;
+            }
         }
     }
 

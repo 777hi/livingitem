@@ -14,6 +14,13 @@ public final class LivingChestStackFlags {
     public static final ThreadLocal<Boolean> ALLOW_STACK = new ThreadLocal<>();
 
     /**
+     * QUICK_CRAFT 标志：标识当前点击操作为右键拖动分发（ClickType.QUICK_CRAFT）。
+     * 用于在 copyWithCount 中区分创造模式下的正常拆分（QUICK_CRAFT）和复制（CLONE），
+     * 避免误清空 UUID。
+     */
+    public static final ThreadLocal<Boolean> IS_QUICK_CRAFT = new ThreadLocal<>();
+
+    /**
      * 方块放置标志：当活箱子正在被放置为方块时，存储捕获的 UUID 列表。
      * 非 null 时表示正在放置方块，onShrink/onSetCount 会跳过处理。
      * HEAD 注入中设置，RETURN 注入中消费并清除。

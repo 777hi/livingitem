@@ -1,11 +1,13 @@
 package com.qiqi.li.living.mixin;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.UUID;
 
 import com.mojang.logging.LogUtils;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.server.ServerLifecycleHooks;
 
@@ -29,7 +31,7 @@ import com.qiqi.li.living.function.LivingChestFunction;
  * 本 Mixin 的职责是确保在物品堆叠的所有操作中，UUID 列表始终与堆叠数保持同步，
  * 且 UUID 永远不会丢失（UUID 丢失 = 箱内物品永久无法找回）。</p>
  *
- * <h2>五个核心职责</h2>
+ * <h2>六个核心职责</h2>
  * <table>
  *   <tr><th>职责</th><th>拦截方法</th><th>说明</th></tr>
  *   <tr><td>1. 堆叠判定</td><td>isSameItemSameComponents</td>
@@ -40,20 +42,27 @@ import com.qiqi.li.living.function.LivingChestFunction;
  *       <td>通过 ThreadLocal 传递 UUID，兼容左键合并（先 grow 后 shrink）和右键/漏斗合并（先 shrink 后 grow）</td></tr>
  *   <tr><td>4. Shift+点击转移</td><td>setCount</td>
  *       <td>原版容器使用 setCount 而非 grow/shrink 进行物品转移，需要单独拦截</td></tr>
- *   <tr><td>5. 右键/中键拖拽</td><td>copyWithCount</td>
- *       <td>右键拖拽分发物品时按比例拆分 UUID，确保每个槽位的副本获得正确的 UUID 子集</td></tr>
+ * <tr><td>5. 右键/中键拖拽</td><td>copyWithCount</td>
+ *       <td>右键拖拽分发物品时按比例拆分 UUID。创造模式 QUICK_CRAFT 不经过 shrink，
+ *       直接在 copyWithCount 中完成拆分；CLONE 复制则清空副本 UUID 防止泄露。</td></tr>
+ *   <tr><td>6. 创造模式防护</td><td>copyWithCount</td>
+ *       <td>创造模式中键复制（ClickType.CLONE）时清空副本 UUID，防止 UUID 数量不可控膨胀</td></tr>
  * </table>
  *
  * <h2>安全策略</h2>
  * <ul>
- *   <li><strong>仅服务端执行</strong>：所有 UUID 修改操作通过
+ *   <li><strong>仅服务端执行</strong>：除创造模式防护外的 UUID 修改操作通过
  *       {@code ServerLifecycleHooks.getCurrentServer() != null} 检查，客户端调用直接跳过。</li>
+ *   <li><strong>创造模式防护双路径</strong>：创造模式检测同时覆盖服务端和客户端线程，
+ *       因为创造模式物品列表标签页的中键复制在客户端线程执行 copyWithCount。</li>
  *   <li><strong>UUID 只增不减</strong>：任何自动缩减 UUID 列表的操作都被禁止。
  *       唯一删除 UUID 的路径是用户明确 toggle living off（{@code LivingChestFunction.dropAllItems}）。</li>
  *   <li><strong>split 期间互斥</strong>：split() 内部会调用 shrink()，通过
  *       {@link #PRE_SPLIT_UUIDS} 标志阻止 onShrink 在 split 期间重复处理。</li>
  *   <li><strong>线程安全</strong>：所有 ThreadLocal 变量在每次操作完成后立即清理，
- *       避免跨操作污染。单机模式下通过 {@code server.isSameThread()} 确保仅在服务端线程执行。</li>
+ *       避免跨操作污染。创造模式 INVENTORY 标签页的点击操作在客户端线程执行
+ *       （{@code CreativeModeInventoryScreen.slotClicked} 直接调用 {@code inventoryMenu.clicked()}），
+ *       因此 UUID 管理逻辑不再限制服务端线程，客户端和服务端线程均执行。</li>
  * </ul>
  *
  * <h2>合并时序兼容性</h2>
@@ -173,10 +182,6 @@ public abstract class ItemStackMixin {
         // 方块放置期间调用 setCount 时，跳过
         if (LivingChestStackFlags.BLOCK_PLACING_UUIDS.get() != null) return;
 
-        // 仅服务端处理
-        MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
-        if (server == null) return;
-
         // 分支 1：源堆被清零（shift+点击全量转移）
         if (count == 0 && oldCount > 0) {
             List<UUID> uuids = LivingChestStackHandler.getUuids(self);
@@ -195,11 +200,7 @@ public abstract class ItemStackMixin {
                 int delta = count - oldCount;
                 if (pending.uuids().size() == delta) {
                     LOGGER.info("[onSetCount] target grew by {}: consuming {} uuids", delta, pending.uuids().size());
-                    // 将暂存的 UUID 合并到当前堆
-                    List<UUID> current = LivingChestStackHandler.getUuids(self);
-                    List<UUID> merged = new ArrayList<>(current);
-                    merged.addAll(pending.uuids());
-                    LivingChestStackHandler.setUuids(self, merged);
+                    mergeIntoTargetUpToCount(self, pending.uuids(), count, "onSetCount");
                     PENDING_TRANSFER.remove();
                 } else {
                     // 数量不匹配，说明不是同一个合并操作的双方，丢弃 PENDING_TRANSFER
@@ -234,8 +235,9 @@ public abstract class ItemStackMixin {
      *       拆分后新堆的 UUID 存入 {@link #SPLIT_UUIDS_FOR_GROW}，供紧随其后的 grow 消费。</li>
      *   <li><strong>拿起整堆</strong>（amount >= 总数量）：原堆变为空，所有 UUID 跟随新堆。
      *       此时不算真正拆分，跳过处理，新堆自然保留全部 UUID。</li>
-     *   <li><strong>客户端调用</strong>：ServerLifecycleHooks 返回 null，HEAD 直接跳过，
-     *       RETURN 的 PRE_SPLIT_UUIDS 为 null 也跳过，不产生副作用。</li>
+     *   <li><strong>客户端调用</strong>：HEAD 设置 PRE_SPLIT_UUIDS 标志（阻止 onCopyWithCount 在
+     *       创造模式下误清 UUID），RETURN 正常执行 UUID 拆分（不再跳过），
+     *       确保创造模式 INVENTORY 标签页的拆分操作也能正确分配 UUID。</li>
      * </ul>
      *
      * <h3>UUID 安全保证</h3>
@@ -262,19 +264,24 @@ public abstract class ItemStackMixin {
         ItemStack self = (ItemStack)(Object)this;
         if (!isLivingChest(self)) return;
 
-        // 仅服务端处理
-        MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
-        if (server == null) return;
-
-        // 清理上一次可能残留的 SPLIT_UUIDS_FOR_GROW
-        SPLIT_UUIDS_FOR_GROW.remove();
-
         List<UUID> uuids = LivingChestStackHandler.getUuids(self);
         if (uuids.isEmpty()) return;
 
-        LOGGER.info("[onSplitHead] count={}, amount={}, uuids={}", self.getCount(), amount, uuids);
-        // 捕获原始 UUID 快照，同时阻止 onShrink/onSetCount 在 split 期间执行
+        // 始终设置 PRE_SPLIT_UUIDS 标志，阻止 split 内部的 onCopyWithCount/onShrink/onSetCount 执行。
+        // 客户端线程也需要设置：创造模式 INVENTORY 标签页的 slotClicked 在客户端线程
+        // 直接调用 inventoryMenu.clicked()，不经过服务端。若不设置，onCopyWithCount
+        // 的 isCreativeMode() 会误判为"创造模式复制"从而清空 UUID。
+        // onSplitReturn 中会无条件 remove() 清理此标志，不会泄漏。
         PRE_SPLIT_UUIDS.set(new ArrayList<>(uuids));
+
+        // 清理上一次可能残留的 SPLIT_UUIDS_FOR_GROW（客户端和服务端线程都需要清理）
+        SPLIT_UUIDS_FOR_GROW.remove();
+
+        // 以下 UUID 拆分逻辑仅服务端线程处理
+        MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
+        if (server == null || !server.isSameThread()) return;
+
+        LOGGER.info("[onSplitHead] count={}, amount={}, uuids={}", self.getCount(), amount, uuids);
     }
 
     @Inject(method = "split", at = @At("RETURN"))
@@ -282,7 +289,7 @@ public abstract class ItemStackMixin {
         // 取出 HEAD 中捕获的 UUID 快照并立即清理互斥标志
         List<UUID> uuids = PRE_SPLIT_UUIDS.get();
         PRE_SPLIT_UUIDS.remove();
-        if (uuids == null) return;  // 客户端调用或非活箱子，跳过
+        if (uuids == null) return;  // 非活箱子，跳过
 
         ItemStack original = (ItemStack)(Object)this;
         ItemStack newStack = cir.getReturnValue();
@@ -313,6 +320,51 @@ public abstract class ItemStackMixin {
         if (!result.split().isEmpty()) {
             SPLIT_UUIDS_FOR_GROW.set(new ArrayList<>(result.split()));
         }
+    }
+
+    /**
+     * 将一批 UUID 安全合并到目标堆，但绝不让目标堆的 UUID 数量超过预期堆叠数。
+     *
+     * <p>创造模式下某些复制/切换路径可能让目标堆在进入 grow/setCount 之前，
+     * 已经携带了完整甚至偏多的 UUID 列表。此时如果再按常规 addAll，会把
+     * UUID 数量推到超过堆叠数。这里统一做两层保护：</p>
+     * <ul>
+     *   <li>去重：相同 UUID 不重复追加</li>
+     *   <li>限长：最多只补到 expectedCount 为止</li>
+     * </ul>
+     *
+     * <p>注意：这里不会主动删除目标堆已有 UUID，只阻止“继续超量追加”。</p>
+     */
+    private static void mergeIntoTargetUpToCount(ItemStack target, List<UUID> incoming, int expectedCount, String source) {
+        if (incoming == null || incoming.isEmpty()) return;
+        if (expectedCount <= 0) return;
+
+        List<UUID> current = LivingChestStackHandler.getUuids(target);
+        if (current.size() >= expectedCount) {
+            LOGGER.warn("[{}] target already has {} uuids (expectedCount={}), skipping merge to avoid overflow",
+                source, current.size(), expectedCount);
+            return;
+        }
+
+        LinkedHashSet<UUID> mergedSet = new LinkedHashSet<>(current);
+        for (UUID uuid : incoming) {
+            if (mergedSet.size() >= expectedCount) {
+                break;
+            }
+            mergedSet.add(uuid);
+        }
+
+        List<UUID> merged = new ArrayList<>(mergedSet);
+        if (merged.size() > expectedCount) {
+            merged = new ArrayList<>(merged.subList(0, expectedCount));
+        }
+
+        if (merged.size() < current.size() + incoming.size()) {
+            LOGGER.warn("[{}] capped uuid merge: current={}, incoming={}, merged={}, expectedCount={}",
+                source, current.size(), incoming.size(), merged.size(), expectedCount);
+        }
+
+        LivingChestStackHandler.setUuids(target, merged);
     }
 
     private static boolean isLivingChest(ItemStack stack) {
@@ -383,10 +435,6 @@ public abstract class ItemStackMixin {
             return;
         }
 
-        // 仅服务端处理
-        MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
-        if (server == null) return;
-
         // shrink 内部会调用 grow(-amount)，跳过负数调用
         if (amount <= 0) {
             LOGGER.info("[onGrow] amount<=0, skipping (internal shrink call)");
@@ -398,10 +446,7 @@ public abstract class ItemStackMixin {
         if (splitUuids != null && splitUuids.size() == amount) {
             SPLIT_UUIDS_FOR_GROW.remove();
             LOGGER.info("[onGrow] consuming split UUIDs for grow: {}", splitUuids);
-            List<UUID> current = LivingChestStackHandler.getUuids(self);
-            List<UUID> merged = new ArrayList<>(current);
-            merged.addAll(splitUuids);
-            LivingChestStackHandler.setUuids(self, merged);
+            mergeIntoTargetUpToCount(self, splitUuids, self.getCount() + amount, "onGrow-split");
             return;
         }
 
@@ -412,12 +457,9 @@ public abstract class ItemStackMixin {
         if (pending != null && pending.uuids() != null) {
             if (pending.uuids().size() == amount) {
                 LOGGER.info("[onGrow] shrink-first merge: merging {} uuids", pending.uuids().size());
-                List<UUID> current = LivingChestStackHandler.getUuids(self);
-                List<UUID> merged = new ArrayList<>(current);
-                merged.addAll(pending.uuids());
-                LivingChestStackHandler.setUuids(self, merged);
+                mergeIntoTargetUpToCount(self, pending.uuids(), self.getCount() + amount, "onGrow-shrink-first");
                 PENDING_TRANSFER.remove();
-                LOGGER.info("[onGrow] result: {}", merged);
+                LOGGER.info("[onGrow] merge applied safely");
             } else {
                 // 数量不匹配，覆盖为 grow-first 模式（重新开始）
                 LOGGER.info("[onGrow] shrink-first: pending size mismatch, overwriting (pending={}, amount={})", pending.uuids().size(), amount);
@@ -481,10 +523,6 @@ public abstract class ItemStackMixin {
             return;
         }
 
-        // 仅服务端处理
-        MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
-        if (server == null) return;
-
         int oldCount = self.getCount();
         // 无效缩减量：负数或超过当前数量
         if (amount <= 0 || amount > oldCount) return;
@@ -509,12 +547,9 @@ public abstract class ItemStackMixin {
             if (pending.amount() == amount) {
                 // 数量匹配，直接将 UUID 转移到 PENDING_TRANSFER 记录的 target 堆
                 LOGGER.info("[onShrink] grow-first merge: transferring {} uuids to target", removedUuids.size());
-                List<UUID> targetUuids = LivingChestStackHandler.getUuids(pending.target());
-                List<UUID> merged = new ArrayList<>(targetUuids);
-                merged.addAll(removedUuids);
-                LivingChestStackHandler.setUuids(pending.target(), merged);
+                mergeIntoTargetUpToCount(pending.target(), removedUuids, pending.target().getCount(), "onShrink-grow-first");
                 PENDING_TRANSFER.remove();
-                LOGGER.info("[onShrink] target result: {}", merged);
+                LOGGER.info("[onShrink] target merge applied safely");
             } else {
                 // 数量不匹配，覆盖为 shrink-first 模式
                 LOGGER.info("[onShrink] grow-first: pending amount mismatch, overwriting (pending={}, amount={})", pending.amount(), amount);
@@ -549,19 +584,28 @@ public abstract class ItemStackMixin {
      *       <td>同样拆分，后续 tick 通过 grow 补齐原堆 UUID</td></tr>
      * </table>
      *
-     * <h3>为什么统一用拆分逻辑</h3>
-     * <p>之前的实现尝试区分右键和中键拖拽，但中键拖拽的触发频率极低，
-     * 且不容易在 Mixin 中准确区分。统一拆分的好处：</p>
-     * <ul>
-     *   <li>右键拖拽：拆分后原堆 shrink 同步减少，UUID 数与 count 一致</li>
-     *   <li>中键拖拽：拆分后原堆 UUID 暂时变少，但 tick 检测到 count 不变
-     *       → UUID 数少于 count → 创建新 UUID 补齐 → 结果正确</li>
-     * </ul>
+     * <h3>创造模式 QUICK_CRAFT 特殊处理</h3>
+     * <p>创造模式下右键拖动（QUICK_CRAFT）的流程是：</p>
+     * <pre>
+     *   itemstack3 = getCarried().copy();  // 复制光标堆
+     *   for each slot:
+     *       slot.setByPlayer(itemstack3.copyWithCount(l));  // 直接分发，不经过 shrink
+     *   itemstack3.setCount(k1);           // 手动设置剩余数量
+     *   setCarried(itemstack3);            // 替换光标堆
+     * </pre>
+     * <p>QUICK_CRAFT 不经过 shrink，完全依赖 copyWithCount 完成 UUID 拆分。
+     * 因此创造模式下检测到 IS_QUICK_CRAFT 时，跳过清空 UUID 的分支，
+     * 直接走正常拆分逻辑：每次 copyWithCount 从 itemstack3 的 UUID 列表中
+     * 切出 count 个分配给副本，剩余留给 itemstack3 供后续迭代继续拆分。</p>
+     *
+     * <h3>创造模式 CLONE 处理</h3>
+     * <p>中键复制（ClickType.CLONE）不走 QUICK_CRAFT 路径，IS_QUICK_CRAFT 为 null，
+     * 副本 UUID 被清空以防止 UUID 不可控膨胀。复制出的活箱子为"空壳"，
+     * 后续 tick 检测到 count>0 且 UUID 为空时会自动创建新 UUID。</p>
      *
      * <h3>安全边界</h3>
      * <ul>
      *   <li>{@code PRE_SPLIT_UUIDS != null}：split 内部调用，跳过</li>
-     *   <li>{@code server.isSameThread()}：单机模式下确保仅在服务端线程执行</li>
      *   <li>{@code copy.isEmpty()}：副本为空，无需处理</li>
      *   <li>{@code originalUuids.isEmpty()}：无 UUID 可分配，跳过</li>
      *   <li>{@code count >= original.getCount()}：复制整堆（拿起操作），
@@ -578,21 +622,42 @@ public abstract class ItemStackMixin {
 
         // split 内部调用 copyWithCount 时，跳过
         if (PRE_SPLIT_UUIDS.get() != null) {
+            LOGGER.debug("[onCopyWithCount] Inside split, skipping");
             return;
         }
 
-        // 仅服务端线程处理（单机模式下 Render 线程也返回非 null server）
-        MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
-        if (server == null || !server.isSameThread()) return;
-
         ItemStack copy = cir.getReturnValue();
-        if (copy.isEmpty()) return;  // 空副本，跳过
+        if (copy.isEmpty()) {
+            LOGGER.debug("[onCopyWithCount] Copy is empty, skipping");
+            return;
+        }
 
         List<UUID> originalUuids = LivingChestStackHandler.getUuids(original);
-        if (originalUuids.isEmpty()) return;  // 无 UUID 可分配
+        if (originalUuids.isEmpty()) {
+            LOGGER.debug("[onCopyWithCount] No UUIDs to allocate, skipping");
+            return;
+        }
+
+        // 创造模式检测（客户端和服务端线程均需处理，因为创造模式 INVENTORY 标签页
+        // 的点击操作在客户端线程执行 copyWithCount）
+        if (isCreativeMode()) {
+            // 分支 A：QUICK_CRAFT（右键拖动分发）— 走正常拆分逻辑。
+            // QUICK_CRAFT 的流程是 copyWithCount 直接分发（不经过 shrink），
+            // 因此必须在 copyWithCount 中完成 UUID 拆分，不能依赖 PENDING_TRANSFER。
+            if (LivingChestStackFlags.IS_QUICK_CRAFT.get() != null) {
+                LOGGER.info("[onCopyWithCount] QUICK_CRAFT in creative mode: falling through to normal split");
+                // 继续执行下面的正常拆分逻辑
+            } else {
+                // 分支 B：CLONE（中键复制）或其他创造模式复制 — 清空副本 UUID 防止泄露
+                LivingChestStackHandler.setUuids(copy, List.of());
+                LOGGER.info("[onCopyWithCount] Creative mode: clearing UUIDs from copy to prevent UUID leak");
+                return;
+            }
+        }
 
         // 复制整堆（count >= 原堆数量）不是拖拽分发，跳过让 split 路径处理
         if (count >= original.getCount()) {
+            LOGGER.debug("[onCopyWithCount] Copying entire stack (count >= original), skipping");
             return;
         }
 
@@ -601,6 +666,48 @@ public abstract class ItemStackMixin {
         LivingChestStackHandler.setUuidsUnsorted(original, result.remain());
         LivingChestStackHandler.setUuidsUnsorted(copy, result.split());
         LOGGER.info("[onCopyWithCount] count={}, originalUuids={}, remain={}, split={}",
-            count, originalUuids, result.remain(), result.split());
+                count, originalUuids, result.remain(), result.split());
+    }
+
+    /**
+     * 检测当前是否处于创造模式（服务端 + 客户端双路径）。
+     *
+     * <h3>为什么需要双路径</h3>
+     * <p>创造模式中键复制（ClickType.CLONE）和右键拖动（ClickType.QUICK_CRAFT）
+     * 均在客户端线程执行 copyWithCount，仅靠服务端检测无法覆盖。
+     * 客户端路径使用 Minecraft.getInstance().player 作为兜底。</p>
+     *
+     * <h3>与 QUICK_CRAFT 的区分</h3>
+     * <p>本方法仅判断是否创造模式，不区分操作类型。操作类型区分由
+     * {@link LivingChestStackFlags#IS_QUICK_CRAFT} 在 {@code onCopyWithCount} 中处理：
+     * QUICK_CRAFT 走正常拆分逻辑，CLONE 走清空副本 UUID 逻辑。</p>
+     *
+     * <h3>安全性</h3>
+     * <ul>
+     *   <li>服务端路径：遍历在线玩家，任一玩家为创造模式即返回 true</li>
+     *   <li>客户端路径：仅检查本地玩家，try-catch 保护专用服务端环境</li>
+     *   <li>不会误判：生存模式玩家不会触发 UUID 清理</li>
+     * </ul>
+     */
+    private static boolean isCreativeMode() {
+        // 服务端检测
+        MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
+        if (server != null) {
+            for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+                if (p.isCreative()) return true;
+            }
+        }
+
+        // 客户端检测（处理创造模式背包中键克隆，在客户端线程执行）
+        try {
+            net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+            if (mc.player != null && mc.player.isCreative()) {
+                return true;
+            }
+        } catch (Exception ignored) {
+            // 专用服务端环境下 Minecraft 类不可用，忽略
+        }
+
+        return false;
     }
 }

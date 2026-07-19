@@ -1755,17 +1755,29 @@ if (cachedCount == expectedCount) {
 
 ### 10.4 线程安全保护
 
-UUID 操作仅在服务端主线程执行，避免客户端和服务端 UUID 冲突：
+UUID 操作需要同时支持服务端线程和客户端线程，因为创造模式 INVENTORY 标签页的点击操作在客户端线程执行。
 
-```java
-// 所有 UUID 修改操作的入口检查
-MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
-if (server == null || !server.isSameThread()) {
-    return;  // 客户端线程或非主线程，跳过
-}
+**历史演进**:
+
+| 阶段 | 策略 | 问题 |
+|------|------|------|
+| 阶段 1（初版） | 仅在服务端线程执行 UUID 操作 | 创造模式 INVENTORY 标签页点击在客户端线程，UUID 操作被跳过 |
+| 阶段 2（当前） | 客户端/服务端双兼容 | 所有 UUID 管理方法不再做线程检查，客户端和服务端线程均执行 |
+
+**创造模式客户端线程的特殊性**:
+
+```
+创造模式 INVENTORY 标签页的点击流程：
+  CreativeModeInventoryScreen.slotClicked()
+    → inventoryMenu.clicked(slotId, button, clickType, player)
+      → AbstractContainerMenu.clicked()  ← 在客户端线程直接执行！
+        → ItemStack.split() / grow() / shrink() / copyWithCount()
+          → ItemStackMixin 的注入方法 ← 在客户端线程执行
 ```
 
-**单机模式特殊处理**: 在单机模式下，`ServerLifecycleHooks.getCurrentServer()` 在 Render 线程也返回非 null，因此需要 `isSameThread()` 额外检查。
+这与生存模式和其他容器（工作台、箱子等）不同——后者通过发包到服务端处理，操作在服务端线程执行。
+
+**单机模式特殊处理**: 在单机模式下，`ServerLifecycleHooks.getCurrentServer()` 在 Render 线程也返回非 null，因此需要 `isSameThread()` 额外检查。但 `isCreativeMode()` 方法使用双路径检测（服务端 + 客户端），确保即使在线程不确定的情况下也能正确判断创造模式。
 
 ### 10.5 toggle 活化标签的 UUID 保存/恢复
 
@@ -1787,26 +1799,296 @@ if (server == null || !server.isSameThread()) {
 
 **关键**: 使用 `CUSTOM_DATA` 作为临时存储，避免 UUID 在 toggle 过程中丢失。
 
-### 10.6 ItemStackMixin 的 UUID 管理职责
+### 10.6 ItemStackMixin — UUID 生命周期管理中枢
 
-作为 UUID 生命周期管理的中枢，`ItemStackMixin` 拦截所有物品堆叠操作，确保 UUID 列表与堆叠数同步：
+`ItemStackMixin` 是整个 UUID 管理系统的核心，拦截所有物品堆叠操作，确保 UUID 列表始终与堆叠数保持同步。它通过 6 个注入点覆盖了物品堆叠的全部操作路径。
 
-| 职责 | 拦截方法 | 说明 |
+#### 10.6.1 六核心职责总览
+
+| # | 职责 | 拦截方法 | 注入点 | 说明 |
+|---|------|---------|--------|------|
+| 1 | 堆叠判定 | `isSameItemSameComponents` | HEAD | 玩家 GUI 操作时允许跨 UUID 堆叠 |
+| 2 | 拆分 UUID 分配 | `split` | HEAD + RETURN | 按比例拆分 UUID 列表给原堆和新堆 |
+| 3 | 合并 UUID 转移 | `grow` + `shrink` | HEAD | 双向配对，兼容左键/右键/漏斗合并时序 |
+| 4 | Shift+点击转移 | `setCount` | HEAD | 原版容器使用 setCount 而非 grow/shrink |
+| 5 | 右键/中键拖拽 | `copyWithCount` | RETURN | 拖拽分发时拆分 UUID，区分 QUICK_CRAFT/CLONE |
+| 6 | 创造模式防护 | `copyWithCount` | RETURN | 创造模式 CLONE 复制时清空副本 UUID |
+
+#### 10.6.2 职责 1：堆叠判定（isSameItemSameComponents）
+
+**为什么需要拦截**：活箱子使用 DataComponent 存储 UUID 列表，不同堆叠的 UUID 列表内容不同，导致原版 `isSameItemSameComponents` 判定它们为"不同"物品，无法堆叠。
+
+**解决方案**：通过 `ALLOW_STACK` ThreadLocal 标志，仅在玩家 GUI 操作时忽略 UUID 差异：
+
+```
+玩家拖拽物品 → AbstractContainerMenuMixin 设置 ALLOW_STACK=true
+  → isSameItemSameComponents 检测到 ALLOW_STACK → 返回 true（允许堆叠）
+  → 操作完成后 ALLOW_STACK 被清除
+
+掉落物落地 / 漏斗传输 → ALLOW_STACK 为 null
+  → 走原版逻辑 → 不同 UUID 不堆叠
+```
+
+**安全边界**：
+- null 检查：防止空指针
+- 物品类型检查：不同类型物品不应堆叠
+- 活箱子检查：非活箱子走原版逻辑
+
+#### 10.6.3 职责 2：拆分 UUID 分配（split）
+
+**为什么分 HEAD 和 RETURN 两步**：`split()` 内部会调用 `shrink()`，而 `onShrink` 会修改 UUID 列表。如果在 RETURN 才读取 UUID，读到的已经是 `onShrink` 修改后的残缺数据。因此必须在 HEAD 捕获原始 UUID 快照。
+
+```
+split(amount) 执行流程：
+  1. HEAD: 捕获原始 UUID 快照 → PRE_SPLIT_UUIDS
+  2. 原版: 创建新堆，调整两个堆的 count
+  3. 内部调用 shrink() → onShrink 被 PRE_SPLIT_UUIDS 阻断
+  4. RETURN: 用快照拆分 UUID → 分配给两个堆
+```
+
+**拆分算法**：`splitUuidList(uuids, newCount)` 将 UUID 列表按比例拆分为：
+- `remain`（前 N 个）→ 留给原堆
+- `split`（后 M 个）→ 分配给新堆
+
+拆分后新堆的 UUID 存入 `SPLIT_UUIDS_FOR_GROW`，供紧随其后的 `grow` 消费。
+
+**场景分支**：
+- **真正拆分**（amount < 总数量）：按比例分配
+- **拿起整堆**（amount >= 总数量）：原堆变空，新堆获得全部 UUID
+- **客户端调用**：HEAD 设置 PRE_SPLIT_UUIDS 标志（阻止 `onCopyWithCount` 在创造模式下误清 UUID），RETURN 正常执行拆分
+
+#### 10.6.4 职责 3：合并 UUID 转移（grow + shrink 双向配对）
+
+**核心挑战**：不同操作触发的 grow/shrink 调用顺序不同：
+
+| 操作 | 调用顺序 | 说明 |
 |------|---------|------|
-| 堆叠判定 | `isSameItemSameComponents` | 玩家 GUI 操作时允许跨 UUID 堆叠 |
-| 拆分 UUID 分配 | `split` | 按比例拆分 UUID 列表 |
-| 合并 UUID 转移 | `grow` + `shrink` | 兼容左键/右键/漏斗合并时序 |
-| Shift+点击转移 | `setCount` | 原版容器转移使用 setCount |
-| 右键/中键拖拽 | `copyWithCount` | 拖拽分发时拆分 UUID |
-| 方块放置保护 | `shrink` + `setCount` | 检测 BLOCK_PLACING_UUIDS 跳过 |
+| 左键合并 | grow 先 → shrink 后 | 拿起一堆放到另一堆上 |
+| 右键合并 | shrink 先 → grow 后 | 右键逐个放置 |
+| 漏斗/投掷器 | shrink 先 → grow 后 | 世界交互传输 |
+| split 后合并 | shrink 先 → grow 后 | split 内部调用 |
 
-**ThreadLocal 变量一览**:
+**解决方案**：`PENDING_TRANSFER`（`MergeTransfer` 记录）作为双向中转站：
 
-| ThreadLocal | 用途 | 设置位置 | 清理位置 |
-|------------|------|---------|---------|
-| `PRE_SPLIT_UUIDS` | split 中阻止 shrink 重复处理 | `onSplitHead` | `onSplitReturn` |
-| `PENDING_TRANSFER` | grow/shrink 时序协调 | grow 或 shrink 先执行者 | 后执行者消费 |
-| `BLOCK_PLACING_UUIDS` | 方块放置时阻止 shrink 处理 | `BlockItemMixin.HEAD` | `BlockItemMixin.RETURN` |
+```
+MergeTransfer 记录结构：
+  target: ItemStack    — grow-first 模式下 grow 的目标堆（其他模式为 null）
+  amount: int          — 转移的数量，用于校验 grow/shrink 是否匹配
+  uuids: List<UUID>    — 待转移的 UUID 列表（null = grow-first 等待 shrink 填充）
+
+三种使用模式：
+
+1. grow-first（左键合并）：
+   grow() → PENDING_TRANSFER = (target=目标堆, amount=N, uuids=null)
+   shrink() → 发现 uuids=null → 将移除的 UUID 直接转移到 target
+            → 清理 PENDING_TRANSFER
+
+2. shrink-first（右键合并/漏斗）：
+   shrink() → PENDING_TRANSFER = (target=null, amount=N, uuids=[移除的UUID])
+   grow() → 发现 uuids 非 null → 直接合并到当前堆
+         → 清理 PENDING_TRANSFER
+
+3. setCount 路径（shift+点击）：
+   onSetCount 源堆清零 → PENDING_TRANSFER = (target=null, amount=N, uuids=[全部UUID])
+   onSetCount 目标堆增长 → 消费 PENDING_TRANSFER 中的 UUID
+```
+
+**onGrow 执行优先级**：
+1. `SPLIT_UUIDS_FOR_GROW` 有数据 → split 后的 grow，直接合并
+2. `PENDING_TRANSFER.uuids` 非 null → shrink-first 合并，消费并清理
+3. `PENDING_TRANSFER` 为空或 uuids=null → grow-first，存储信息等待 shrink
+
+**onShrink 执行分支**：
+1. `PENDING_TRANSFER` 存在且 uuids=null（grow-first）→ 直接转移 UUID 到 target
+2. 其他情况（shrink-first）→ 将移除的 UUID 存入 PENDING_TRANSFER
+
+**源堆 UUID 更新**：无论哪种分支，shrink 后源堆的 UUID 都被截断为前 `newCount` 个。被移除的 UUID 通过 PENDING_TRANSFER 或直接转移交给目标堆，UUID 总数不变。
+
+**安全边界**：
+- `amount <= 0 || amount > oldCount`：无效缩减量，跳过
+- `myUuids.isEmpty()`：无 UUID 可转移，跳过
+- `myUuids.size() != oldCount`：UUID 数量与堆叠数不匹配，跳过并打印警告
+- `PRE_SPLIT_UUIDS != null`：split 内部调用，跳过
+- `BLOCK_PLACING_UUIDS != null`：方块放置期间，跳过
+
+#### 10.6.5 职责 4：Shift+点击转移（setCount）
+
+**为什么需要拦截**：原版 `AbstractContainerMenu.moveItemStackTo()` 和数字键交换物品时，直接使用 `setCount()` 而非 `grow()`/`shrink()`：
+
+```java
+// 全量合并：两个堆都用 setCount，grow 和 shrink 都不触发
+stack.setCount(0);               // 源堆清零
+itemstack.setCount(j);           // 目标堆增长
+
+// 部分合并：shrink 触发，但 grow 用 setCount 替代
+stack.shrink(k - itemstack.getCount());
+itemstack.setCount(k);           // 目标堆增长，但 onGrow 不触发
+```
+
+**处理策略**：利用 `PENDING_TRANSFER` 作为中转站：
+
+| 分支 | 条件 | 处理 |
+|------|------|------|
+| 源堆清零 | `count == 0 && oldCount > 0` | 将 UUID 列表暂存到 PENDING_TRANSFER，清空自身 UUID |
+| 目标堆增长 | `count > oldCount` | 检查 PENDING_TRANSFER，数量匹配则合并并清理 |
+| 部分减少 | `count < oldCount && count > 0` | 不处理（此时应走 shrink 路径） |
+
+**互斥保护**：
+- `PRE_SPLIT_UUIDS != null`：split 内部调用，跳过
+- `BLOCK_PLACING_UUIDS != null`：方块放置期间，跳过
+
+#### 10.6.6 职责 5+6：右键/中键拖拽（copyWithCount）
+
+**两种拖拽的区别**：
+
+| 操作 | 光标堆叠变化 | 原版调用链 | UUID 处理 |
+|------|------------|-----------|----------|
+| 右键拖拽（生存） | 逐个减少 | `copyWithCount` → `shrink`（原堆减少） | 按比例拆分 UUID |
+| 右键拖拽（创造 QUICK_CRAFT） | 逐个减少 | `copyWithCount` 直接分发，不经过 `shrink` | 在 `copyWithCount` 中直接拆分 |
+| 中键拖拽（创造 CLONE） | 不变 | `copyWithCount`（原堆不动） | 清空副本 UUID，防止泄露 |
+
+**创造模式 QUICK_CRAFT 特殊流程**：
+
+```java
+// AbstractContainerMenu.doClick() — QUICK_CRAFT 实际流程
+ItemStack itemstack3 = this.getCarried().copy();  // 复制光标堆
+for (Slot slot1 : this.quickcraftSlots) {
+    // 注意：没有 shrink()！直接 copyWithCount 分发
+    slot1.setByPlayer(itemstack3.copyWithCount(l));
+}
+itemstack3.setCount(k1);        // 手动设置剩余数量
+this.setCarried(itemstack3);    // 替换光标堆
+```
+
+因为 QUICK_CRAFT 不经过 `shrink`，`onCopyWithCount` 必须在每次调用时从 `itemstack3` 的 UUID 列表中切出 `count` 个分配给副本，剩余留给 `itemstack3` 供后续迭代继续拆分：
+
+```
+itemstack3 = copy([A,B,C,D]), count=4
+
+第1次 copyWithCount(1):
+  splitUuidList([A,B,C,D], 1) → remain=[A,B,C], split=[D]
+  itemstack3 → [A,B,C], 副本 → [D]
+
+第2次 copyWithCount(1):
+  splitUuidList([A,B,C], 1) → remain=[A,B], split=[C]
+  itemstack3 → [A,B], 副本 → [C]
+
+setCarried(itemstack3) → 光标堆 [A,B], count=2
+→ 槽1: [D], 槽2: [C], 光标: [A,B] ✓
+```
+
+**创造模式 CLONE 处理**：中键复制（ClickType.CLONE）不走 QUICK_CRAFT 路径，`IS_QUICK_CRAFT` 为 null，副本 UUID 被清空。复制出的活箱子为"空壳"，后续 tick 检测到 count>0 且 UUID 为空时会自动创建新 UUID。
+
+**安全边界**：
+- `PRE_SPLIT_UUIDS != null`：split 内部调用，跳过
+- `copy.isEmpty()`：副本为空，无需处理
+- `originalUuids.isEmpty()`：无 UUID 可分配，跳过
+- `count >= original.getCount()`：复制整堆（拿起操作），跳过让 split 路径处理
+
+#### 10.6.7 mergeIntoTargetUpToCount 安全合并
+
+创造模式下某些复制/切换路径可能让目标堆在进入 grow/setCount 之前，已经携带了完整甚至偏多的 UUID 列表。`mergeIntoTargetUpToCount` 提供两层保护：
+
+```java
+private static void mergeIntoTargetUpToCount(ItemStack target, List<UUID> incoming,
+                                              int expectedCount, String source) {
+    // 保护 1：去重 — 相同 UUID 不重复追加
+    LinkedHashSet<UUID> mergedSet = new LinkedHashSet<>(current);
+    for (UUID uuid : incoming) {
+        if (mergedSet.size() >= expectedCount) break;
+        mergedSet.add(uuid);
+    }
+
+    // 保护 2：限长 — 最多只补到 expectedCount 为止
+    List<UUID> merged = new ArrayList<>(mergedSet);
+    if (merged.size() > expectedCount) {
+        merged = new ArrayList<>(merged.subList(0, expectedCount));
+    }
+}
+```
+
+注意：这里不会主动删除目标堆已有 UUID，只阻止"继续超量追加"。
+
+### 10.7 创造模式特殊处理
+
+创造模式是 UUID 管理中最复杂的场景，因为 INVENTORY 标签页的点击操作在客户端线程执行，且操作类型多样（CLONE、QUICK_CRAFT、PICKUP 等）。
+
+#### 10.7.1 创造模式检测（isCreativeMode）
+
+```java
+private static boolean isCreativeMode() {
+    // 路径 1：服务端检测
+    MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
+    if (server != null) {
+        for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+            if (p.isCreative()) return true;
+        }
+    }
+
+    // 路径 2：客户端检测（兜底，处理客户端线程的 copyWithCount）
+    try {
+        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+        if (mc.player != null && mc.player.isCreative()) return true;
+    } catch (Exception ignored) { }
+
+    return false;
+}
+```
+
+双路径检测确保无论代码在服务端线程还是客户端线程执行，都能正确判断创造模式。
+
+#### 10.7.2 QUICK_CRAFT vs CLONE 区分
+
+创造模式下，右键拖动（QUICK_CRAFT）和中键复制（CLONE）都走 `copyWithCount`，但语义完全不同：
+
+| 特性 | QUICK_CRAFT（右键拖动） | CLONE（中键复制） |
+|------|----------------------|-------------------|
+| 光标堆叠变化 | 减少 | 不变 |
+| 是否经过 shrink | ❌ 不经过 | ❌ 不经过 |
+| UUID 处理 | 正常拆分 | 清空副本 UUID |
+| IS_QUICK_CRAFT 标志 | ✅ 已设置 | ❌ 未设置 |
+
+区分机制通过 `LivingChestStackFlags.IS_QUICK_CRAFT` ThreadLocal 标志实现：
+
+```java
+// AbstractContainerMenuMixin.onClickedHead()
+if (clickType == ClickType.QUICK_CRAFT) {
+    LivingChestStackFlags.IS_QUICK_CRAFT.set(true);
+}
+
+// ItemStackMixin.onCopyWithCount()
+if (isCreativeMode()) {
+    if (LivingChestStackFlags.IS_QUICK_CRAFT.get() != null) {
+        // QUICK_CRAFT：走正常拆分逻辑（fall through）
+    } else {
+        // CLONE：清空副本 UUID
+        LivingChestStackHandler.setUuids(copy, List.of());
+        return;
+    }
+}
+```
+
+#### 10.7.3 创造模式修复历程
+
+| 问题 | 症状 | 根因 | 修复 |
+|------|------|------|------|
+| 拿起再放下 UUID 消失 | UUID 列表变为空 | `split()` 客户端线程执行时 `onSplitHead` 未设置 `PRE_SPLIT_UUIDS`，`onCopyWithCount` 误判为创造模式复制清空 UUID | `onSplitHead` 中客户端线程也设置 `PRE_SPLIT_UUIDS` |
+| 分离 UUID 未拆分 | 每个子堆都保留全部 UUID | `onSplitReturn`/`onShrink` 有服务端线程检查，客户端线程被跳过 | 移除所有 UUID 管理方法中的服务端线程检查 |
+| 合并 UUID 异常变动 | 鼠标堆 UUID 变，槽位堆不变 | `onGrow`/`onSetCount` 在客户端线程被跳过 | 移除服务端线程检查，客户端线程也执行合并逻辑 |
+| 右键拖动 UUID 不拆分 | 所有堆都保留全部 UUID | QUICK_CRAFT 不经过 shrink，`onCopyWithCount` 创造模式分支直接清空副本 UUID | 检测 IS_QUICK_CRAFT 标志，走正常拆分逻辑 |
+
+### 10.8 ThreadLocal 变量完整清单
+
+| ThreadLocal | 类型 | 用途 | 设置位置 | 清理位置 |
+|------------|------|------|---------|---------|
+| `ALLOW_STACK` | `ThreadLocal<Boolean>` | 玩家 GUI 操作时允许跨 UUID 堆叠 | `AbstractContainerMenuMixin.onClickedHead` | `AbstractContainerMenuMixin.onClickedReturn` |
+| `IS_QUICK_CRAFT` | `ThreadLocal<Boolean>` | 标识当前操作为 QUICK_CRAFT（右键拖动分发） | `AbstractContainerMenuMixin.onClickedHead`（仅 QUICK_CRAFT 时） | `AbstractContainerMenuMixin.onClickedReturn` |
+| `PRE_SPLIT_UUIDS` | `ThreadLocal<List<UUID>>` | split 中捕获原始 UUID 快照，同时作为互斥标志阻止 onShrink/onSetCount/onCopyWithCount 重复处理 | `ItemStackMixin.onSplitHead` | `ItemStackMixin.onSplitReturn` |
+| `SPLIT_UUIDS_FOR_GROW` | `ThreadLocal<List<UUID>>` | split 产出的新堆 UUID，供紧随其后的 grow 消费 | `ItemStackMixin.onSplitReturn` | `ItemStackMixin.onGrow`（消费后）或 `onSplitHead`（清理残留） |
+| `PENDING_TRANSFER` | `ThreadLocal<MergeTransfer>` | grow/shrink/setCount 之间传递待转移的 UUID 数据 | grow 或 shrink 或 setCount 先执行者 | 后执行者消费后清理 |
+| `BLOCK_PLACING_UUIDS` | `ThreadLocal<List<UUID>>` | 方块放置时存储捕获的 UUID，阻止 onShrink/onSetCount 处理 | `BlockItemMixin` HEAD | `BlockItemMixin` RETURN |
+
+**清理原则**：所有 ThreadLocal 变量在每次操作完成后立即清理（`remove()`），避免跨操作污染。`PRE_SPLIT_UUIDS` 和 `SPLIT_UUIDS_FOR_GROW` 在 `onSplitHead` 中有额外的残留清理逻辑，确保即使上次操作异常退出也能正确重置。
 
 ---
 
@@ -1922,22 +2204,84 @@ if (newLiving && LivingChestFunction.isLivingChest(carriedItem)) {
 }
 ```
 
-### 11.6 🟡 中等 Bug: 创造模式右键拖拽导致 UUID 重新创建
+### 11.6 🔴 严重 Bug: 创造模式 UUID 管理全面异常
 
 **影响版本**: 初版 ~ 2024年修复前
 
-**问题描述**:
-从生存模式切换到创造模式后，右键拖拽活箱子（按住右键在容器中拖动分发物品）会导致 UUID 重新创建。
+**问题集群**：创造模式 INVENTORY 标签页的活箱子操作存在 4 个连锁问题，根因均为客户端线程执行与 UUID 管理逻辑的不兼容。
 
-**根本原因**:
-1. 创造模式下，`copyWithCount()` 创建的副本与原始堆共享同一组 UUID（错误理解为"中键复制"）
-2. 实际右键拖拽时，光标的物品堆叠数会减少（与生存模式一致），需要拆分 UUID
-3. 中键拖拽（创造模式独有）才会复制而光标堆叠数不变
+#### 问题 1：拿起再放下 UUID 消失
 
-**修复方案**:
-- 统一右键拖拽的处理逻辑：无论是生存还是创造模式，都按比例拆分 UUID
-- 中键拖拽场景：`copyWithCount` 拆分 UUID → 后续 `grow` 补齐原堆 UUID
-- 添加 `server.isSameThread()` 检查，确保 UUID 操作仅在服务端线程执行
+**症状**：创造模式拿起活箱子再放下，UUID 列表变为空，存储物品丢失。
+
+**根本原因**：
+```
+split() 在创造模式客户端线程执行：
+  1. onSplitHead 未设置 PRE_SPLIT_UUIDS（因服务端线程检查）
+  2. split 内部调用 copyWithCount
+  3. onCopyWithCount 检测到 isCreativeMode()=true 且 PRE_SPLIT_UUIDS=null
+  4. 误判为"创造模式复制"，清空 UUID
+```
+
+**修复**：`onSplitHead` 中移除服务端线程检查，客户端线程也设置 `PRE_SPLIT_UUIDS` 标志，阻止 `onCopyWithCount` 误清 UUID。
+
+#### 问题 2：分离 UUID 未拆分
+
+**症状**：创造模式右键分离活箱子（数量为 N 且 UUID 数量也为 N），每个子堆都保留全部 N 个 UUID。
+
+**根本原因**：`onSplitReturn`、`onShrink` 等 UUID 管理方法有 `server.isSameThread()` 检查，创造模式客户端线程执行时被跳过，UUID 拆分逻辑未执行。
+
+**修复**：移除所有 UUID 管理方法中的服务端线程检查，允许客户端线程执行 UUID 拆分逻辑。
+
+#### 问题 3：合并 UUID 异常变动
+
+**症状**：创造模式用鼠标将一堆活箱子与槽位里另一堆活箱子合并时，鼠标上的活箱子 UUID 异常变动，槽位里的 UUID 不变。
+
+**根本原因**：`onGrow`、`onSetCount` 等合并逻辑在客户端线程被跳过，UUID 未正确转移，而合并后的原版堆叠操作仍会触发，导致 UUID 数与堆叠数不匹配。
+
+**修复**：移除 `onGrow`、`onSetCount` 中的服务端线程检查，确保客户端线程能处理 UUID 合并。
+
+#### 问题 4：右键拖动 UUID 不拆分
+
+**症状**：创造模式鼠标拿起活箱子右键拖动拆分，所有堆（包括光标堆和槽位堆）都保留全部 UUID。例如数量 4 拆分 2 个到 2 个槽位，每个槽位和光标堆都显示 UUID=[A,B,C,D]。
+
+**根本原因**：
+```
+QUICK_CRAFT 实际流程（来自 AbstractContainerMenu.doClick()）：
+  ItemStack itemstack3 = this.getCarried().copy();  // 复制光标堆
+  for each slot:
+      slot.setByPlayer(itemstack3.copyWithCount(l));  // 只有 copyWithCount，没有 shrink！
+  itemstack3.setCount(k1);      // 手动设置剩余数量
+  this.setCarried(itemstack3);
+
+关键发现：QUICK_CRAFT 不经过 shrink()！
+onCopyWithCount 检测到 isCreativeMode()=true → 直接清空副本 UUID
+→ 副本 UUID 被清空，但原堆 itemstack3 的 UUID 未被修改
+→ 所有堆的 UUID 都等于 itemstack3 的初始 UUID = [A,B,C,D]
+```
+
+**修复**：
+1. 新增 `LivingChestStackFlags.IS_QUICK_CRAFT` ThreadLocal 标志
+2. `AbstractContainerMenuMixin` 在 `clickType == ClickType.QUICK_CRAFT` 时设置标志
+3. `onCopyWithCount` 中检测到 `IS_QUICK_CRAFT` 时，跳过清空 UUID 分支，走正常拆分逻辑
+
+**修复后的数据流**：
+```
+itemstack3 = copy([A,B,C,D]), count=4
+
+第1次 copyWithCount(1):
+  splitUuidList([A,B,C,D], 1) → remain=[A,B,C], split=[D]
+  itemstack3 → [A,B,C], 副本 → [D]
+
+第2次 copyWithCount(1):
+  splitUuidList([A,B,C], 1) → remain=[A,B], split=[C]
+  itemstack3 → [A,B], 副本 → [C]
+
+setCarried(itemstack3) → 光标堆 [A,B], count=2
+→ 槽1: [D], 槽2: [C], 光标: [A,B] ✓
+```
+
+**影响范围**：创造模式 INVENTORY 标签页的所有活箱子操作。生存模式和其他容器（工作台、箱子等）不受影响（操作在服务端线程执行）。
 
 ### 11.7 🟢 功能增强: 方块放置自动填充物品
 
@@ -2171,6 +2515,6 @@ storage.cleanupIdle();
 
 ---
 
-*文档版本: 2024.12 v2*
-*最后更新: UUID 只增不减策略、方块放置自动填充、toggle 活化标签 UUID 保存/恢复、创造模式修复*
+*文档版本: 2024.12 v3*
+*最后更新: 创造模式 UUID 管理全面修复（客户端/服务端双兼容、QUICK_CRAFT 拆分、ThreadLocal 完整清单）*
 *维护者: Living Item Mod Team*

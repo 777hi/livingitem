@@ -6,11 +6,16 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+
+import com.qiqi.li.living.core.ComponentState;
+import com.qiqi.li.living.core.components.InternalStorageComponent;
+import com.qiqi.li.living.function.LivingChestFunction;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.ExtraCodecs;
 import net.minecraft.world.Container;
 import net.minecraft.world.entity.player.Inventory;
@@ -21,6 +26,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import com.mojang.serialization.Codec;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredRegister;
+import net.neoforged.neoforge.server.ServerLifecycleHooks;
 import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
 
@@ -211,6 +217,23 @@ public class LivingItemManager {
             stack.set(IS_LIVING.value(), true);
         } else {
             clearLivingData(stack);
+        }
+        if (LivingChestFunction.isLivingChest(stack)) {
+            MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
+            if (server != null && server.isSameThread()) {
+                // ✅ 修正后的调用，传递全部3个参数
+                UUID initialUuid = InternalStorageComponent.WorldStorage.createAndRegister(
+                        server,
+                        LivingChestFunction.CHEST_SLOTS,
+                        "activated"
+                );
+
+                ComponentState storageState = LivingChestFunction.getStorageState(stack);
+                InternalStorageComponent.saveUuids(storageState, List.of(initialUuid));
+                LivingChestFunction.saveStorageState(stack, storageState);
+
+                LivingItemManager.LOGGER.info("成功活化一个新的活箱子，并分配了初始UUID: {}", initialUuid);
+            }
         }
     }
 

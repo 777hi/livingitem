@@ -21,10 +21,14 @@ public abstract class AbstractContainerMenuMixin {
     @Inject(method = "clicked", at = @At("HEAD"))
     private void onClickedHead(int slotId, int button, ClickType clickType, Player player, CallbackInfo ci) {
         LivingChestStackFlags.ALLOW_STACK.set(true);
+        if (clickType == ClickType.QUICK_CRAFT) {
+            LivingChestStackFlags.IS_QUICK_CRAFT.set(true);
+        }
     }
 
     @Inject(method = "clicked", at = @At("RETURN"))
     private void onClickedReturn(int slotId, int button, ClickType clickType, Player player, CallbackInfo ci) {
         LivingChestStackFlags.ALLOW_STACK.remove();
+        LivingChestStackFlags.IS_QUICK_CRAFT.remove();
     }
 }
