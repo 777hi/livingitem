@@ -11,8 +11,14 @@
 8. [持久化机制](#8-持久化机制)
 9. [性能优化策略](#9-性能优化策略)
 10. [UUID 生命周期管理](#10-uuid-生命周期管理)
+    - 10.1 [UUID 生命周期状态机](#101-uuid-生命周期状态机)
+    - 10.6 [ItemStackMixin — UUID 管理中枢](#106-itemstackmixin--uuid-生命周期管理中枢)
+    - 10.9 [通用传输封锁策略](#109-通用传输封锁策略)
 11. [已知问题与修复记录](#11-已知问题与修复记录)
+    - 11.9 [投掷器/发射器 UUID 异常 + 数量翻倍](#119-已修复-投掷器发射器传输导致-uuid-异常变化--数量翻倍)
+    - 11.10 [铁砧重命名堆叠异常](#1110-已修复-铁砧重命名活箱子后与未命名活箱子堆叠)
 12. [调试指南](#12-调试指南)
+13. [反思：为什么需要这么多保障](#13-反思为什么一个看似简单的功能需要这么多保障)
 
 ---
 
@@ -1725,7 +1731,8 @@ if (cachedCount == expectedCount) {
                     │  ⚠️ 其他所有操作都不删除 UUID！      │
                     │  - tick 减少堆叠 → 保留             │ │
                     │  - insertItem 溢出 → 保留           │ │
-                    │  - 方块放置 → 保留（仅清空NBT引用）  │ │
+                    │  - 方块放置 → 移除头部UUID（生存）   │ │
+                    │    或保留 UUID（创造）               │ │
                     │  - 创造模式切换 → 保留              │ │
                     └──────────────────────────────────────┘
 ```
@@ -1807,8 +1814,8 @@ UUID 操作需要同时支持服务端线程和客户端线程，因为创造模
 
 | # | 职责 | 拦截方法 | 注入点 | 说明 |
 |---|------|---------|--------|------|
-| 1 | 堆叠判定 | `isSameItemSameComponents` | HEAD | 玩家 GUI 操作时允许跨 UUID 堆叠 |
-| 2 | 拆分 UUID 分配 | `split` | HEAD + RETURN | 按比例拆分 UUID 列表给原堆和新堆 |
+| 1 | 堆叠判定 | `isSameItemSameComponents` | HEAD | 玩家 GUI 操作时仅忽略 UUID 差异，保留其他 NBT 差异 |
+| 2 | 拆分 UUID 分配 | `split` | HEAD + RETURN | 按比例拆分 UUID 列表给原堆和新堆；非玩家上下文禁止拆分 |
 | 3 | 合并 UUID 转移 | `grow` + `shrink` | HEAD | 双向配对，兼容左键/右键/漏斗合并时序 |
 | 4 | Shift+点击转移 | `setCount` | HEAD | 原版容器使用 setCount 而非 grow/shrink |
 | 5 | 右键/中键拖拽 | `copyWithCount` | RETURN | 拖拽分发时拆分 UUID，区分 QUICK_CRAFT/CLONE |
@@ -1818,16 +1825,43 @@ UUID 操作需要同时支持服务端线程和客户端线程，因为创造模
 
 **为什么需要拦截**：活箱子使用 DataComponent 存储 UUID 列表，不同堆叠的 UUID 列表内容不同，导致原版 `isSameItemSameComponents` 判定它们为"不同"物品，无法堆叠。
 
-**解决方案**：通过 `ALLOW_STACK` ThreadLocal 标志，仅在玩家 GUI 操作时忽略 UUID 差异：
+**解决方案**：通过 `ALLOW_STACK` ThreadLocal 标志，仅在玩家 GUI 操作时**仅忽略 UUID 差异**，保留其他所有 NBT 差异（如铁砧重命名、附魔、损坏值等）。
 
 ```
 玩家拖拽物品 → AbstractContainerMenuMixin 设置 ALLOW_STACK=true
-  → isSameItemSameComponents 检测到 ALLOW_STACK → 返回 true（允许堆叠）
-  → 操作完成后 ALLOW_STACK 被清除
+  → isSameItemSameComponents 检测到 ALLOW_STACK
+  → 创建副本并移除 LIVING_FUNCTION_DATA（含 UUID）+ IS_LIVING 标记
+  → 调用原版 ItemStack.isSameItemSameComponents 比较副本
+  → 副本不再是活箱子，不会递归触发本 Mixin
+  → 自定义名称等差异仍会阻止堆叠，只有 UUID 差异被忽略
 
 掉落物落地 / 漏斗传输 → ALLOW_STACK 为 null
   → 走原版逻辑 → 不同 UUID 不堆叠
 ```
+
+**关键设计：副本比较法**：
+
+```java
+if (LivingChestStackFlags.ALLOW_STACK.get() != null) {
+    ItemStack copyA = stack.copy();
+    ItemStack copyB = other.copy();
+    LivingItemManager.clearLivingData(copyA);  // 移除 UUID 和 IS_LIVING
+    LivingItemManager.clearLivingData(copyB);
+    // 副本不再是活箱子 → 走原版比较 → 不会递归触发本 Mixin
+    cir.setReturnValue(ItemStack.isSameItemSameComponents(copyA, copyB));
+}
+```
+
+**为什么用副本而非直接修改**：直接修改原 ItemStack 的 DataComponent 会污染数据，且可能在并发场景下导致不可预测的行为。副本方式安全、无副作用，且自动绕过 Mixin 递归。
+
+**堆叠结果对比**：
+
+| 场景 | 旧行为（无条件 true） | 新行为（副本比较法） |
+|------|---------------------|---------------------|
+| 两个活箱子（不同 UUID，无名称） | ✅ 堆叠 | ✅ 堆叠 |
+| 重命名 vs 无名称 活箱子 | ❌ 堆叠（错误） | ✅ 不堆叠（正确） |
+| 两个重命名相同名称 活箱子 | ✅ 堆叠 | ✅ 堆叠 |
+| 两个重命名不同名称 活箱子 | ❌ 堆叠（错误） | ✅ 不堆叠（正确） |
 
 **安全边界**：
 - null 检查：防止空指针
@@ -1840,19 +1874,29 @@ UUID 操作需要同时支持服务端线程和客户端线程，因为创造模
 
 ```
 split(amount) 执行流程：
-  1. HEAD: 捕获原始 UUID 快照 → PRE_SPLIT_UUIDS
-  2. 原版: 创建新堆，调整两个堆的 count
-  3. 内部调用 shrink() → onShrink 被 PRE_SPLIT_UUIDS 阻断
-  4. RETURN: 用快照拆分 UUID → 分配给两个堆
+  1. HEAD: 上下文检查 → 非玩家上下文（ALLOW_STACK == null）→ 返回 EMPTY，禁止拆分
+  2. HEAD: 捕获原始 UUID 快照 → PRE_SPLIT_UUIDS
+  3. 原版: 创建新堆，调整两个堆的 count
+  4. 内部调用 shrink() → onShrink 被 PRE_SPLIT_UUIDS 阻断
+  5. RETURN: 用快照拆分 UUID → 分配给两个堆
 ```
 
-**拆分算法**：`splitUuidList(uuids, newCount)` 将 UUID 列表按比例拆分为：
-- `remain`（前 N 个）→ 留给原堆
-- `split`（后 M 个）→ 分配给新堆
+**非玩家上下文拦截**：`onSplitHead` 在捕获 UUID 快照之前，先检查 `ALLOW_STACK` 标志：
 
-拆分后新堆的 UUID 存入 `SPLIT_UUIDS_FOR_GROW`，供紧随其后的 `grow` 消费。
+```java
+// 非玩家上下文（漏斗/投掷器/模组管道等自动化系统）：禁止拆分活箱子
+if (LivingChestStackFlags.ALLOW_STACK.get() == null) {
+    PRE_SPLIT_UUIDS.remove();         // 清理可能残留的 ThreadLocal
+    cir.setReturnValue(ItemStack.EMPTY);  // 返回空堆，阻止拆分
+    return;
+}
+```
+
+这是整个活箱子防护体系的核心哨卡——**只有玩家通过 GUI 操作时才能拆分活箱子堆叠**，所有自动化系统（漏斗、投掷器、发射器、模组管道等）的拆分请求都被拒绝。这从根本上避免了自动化传输导致的 UUID 不一致、数据丢失、物品翻倍等问题。
 
 **场景分支**：
+- **玩家 GUI 拆分**（ALLOW_STACK != null）：正常执行 UUID 拆分
+- **非玩家上下文拆分**（ALLOW_STACK == null）：返回 EMPTY，阻止拆分
 - **真正拆分**（amount < 总数量）：按比例分配
 - **拿起整堆**（amount >= 总数量）：原堆变空，新堆获得全部 UUID
 - **客户端调用**：HEAD 设置 PRE_SPLIT_UUIDS 标志（阻止 `onCopyWithCount` 在创造模式下误清 UUID），RETURN 正常执行拆分
@@ -2068,6 +2112,64 @@ if (isCreativeMode()) {
 }
 ```
 
+
+好问题！让我追踪一下漏斗传输的完整调用链，解释为什么它"意外地"正常工作
+核心原因在于：**`onSplitHead` / `onSplitReturn` 是独立于 `ALLOW_STACK` 的，它们拦截所有 `split()` 调用，不分玩家还是世界。**
+
+追踪漏斗的完整调用链：
+
+```
+漏斗传输: sourceContainer.removeItem(slot, 1)
+           └─→ ItemStack.split(1)
+```
+
+## `split(1)` 内部三步走
+
+```
+                  ┌─────────────────────────────────────┐
+                  │       onSplitHead (HEAD)             │
+                  │  ❌ 不检查 ALLOW_STACK                │
+                  │  ✅ 捕获 UUID 快照 → PRE_SPLIT_UUIDS  │
+                  │     = [A, B, C, D]                   │
+                  │  ✅ 设置互斥标志，阻止内部干扰         │
+                  └──────────────┬──────────────────────┘
+                                 ↓
+                  ┌─────────────────────────────────────┐
+                  │       原版 split(1) 执行              │
+                  │  copyWithCount(1) → onCopyWithCount  │
+                  │    → PRE_SPLIT_UUIDS 非空 → 跳过 ✓   │
+                  │  shrink(1) → onShrink                │
+                  │    → PRE_SPLIT_UUIDS 非空 → 跳过 ✓   │
+                  │  返回 count=1 的新堆                  │
+                  └──────────────┬──────────────────────┘
+                                 ↓
+                  ┌─────────────────────────────────────┐
+                  │       onSplitReturn (RETURN)         │
+                  │  ❌ 不检查 ALLOW_STACK                │
+                  │  ✅ 取回快照 [A,B,C,D]                │
+                  │  ✅ splitUuidList([A,B,C,D], 1)       │
+                  │     → remain=[A,B,C] 分给原堆         │
+                  │     → split=[D]       分给新堆        │
+                  │  ✅ [D] 存入 SPLIT_UUIDS_FOR_GROW    │
+                  │     供后续 grow 消费                  │
+                  └─────────────────────────────────────┘
+```
+
+所以你当初围绕玩家操作设计的 `split` 拦截，恰好是一个**上下文无关**的通用机制——它不关心是谁调用了 `split()`，只要 `split()` 被调用，它就能正确拆分 UUID。
+
+投掷器/发射器之所以出问题，是因为它们**根本不用 `split()`**，而是走 `copyWithCount()` + `shrink()` 这条绕过了 `onSplitHead`/`onSplitReturn` 的路径：
+
+```
+漏斗:      split(1)         → onSplitHead → onSplitReturn → UUID 正确 ✓
+投掷器:    copyWithCount(1)  → onCopyWithCount (无 ALLOW_STACK, 无 PRE_SPLIT_UUIDS)
+           shrink(1)          → onShrink (无 ALLOW_STACK, 无 PRE_SPLIT_UUIDS)
+                              → UUID 分裂/丢失 ✗
+```
+
+**最终决策**：虽然漏斗的 `split()` 路径天然正确，但我们最终选择了更激进的方案——在 `onSplitHead` 中拦截所有非玩家上下文的 `split()` 调用。这意味着漏斗也不再能传输活箱子。这看似"倒退"，实则是为了统一防护策略：**任何自动化系统都不应该操作活箱子的 UUID**。漏斗虽然能正确拆分 UUID，但"正确拆分"不等于"正确分配"——拆分后的 UUID 子堆需要被目标容器正确接收，而这一步在漏斗传输中可能存在未覆盖的边界情况。统一拦截所有非玩家拆分，远比逐个排查每种自动化系统更安全。
+
+这最终催生了 [10.9 通用传输封锁策略](#109-通用传输封锁策略)。
+
 #### 10.7.3 创造模式修复历程
 
 | 问题 | 症状 | 根因 | 修复 |
@@ -2089,6 +2191,90 @@ if (isCreativeMode()) {
 | `BLOCK_PLACING_UUIDS` | `ThreadLocal<List<UUID>>` | 方块放置时存储捕获的 UUID，阻止 onShrink/onSetCount 处理 | `BlockItemMixin` HEAD | `BlockItemMixin` RETURN |
 
 **清理原则**：所有 ThreadLocal 变量在每次操作完成后立即清理（`remove()`），避免跨操作污染。`PRE_SPLIT_UUIDS` 和 `SPLIT_UUIDS_FOR_GROW` 在 `onSplitHead` 中有额外的残留清理逻辑，确保即使上次操作异常退出也能正确重置。
+
+### 10.9 通用传输封锁策略
+
+经过多次迭代和反复修复，最终确立了一套**三层防护体系**，确保活箱子不被任何自动化系统破坏 UUID 完整性。
+
+#### 10.9.1 防护体系架构
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                    活箱子 UUID 三层防护体系                        │
+│                                                                  │
+│  第一层：split() 拦截（ItemStackMixin.onSplitHead）               │
+│  ┌────────────────────────────────────────────────────────────┐ │
+│  │ 拦截所有非玩家上下文的 split() 调用                          │ │
+│  │ 覆盖：漏斗、投掷器、模组管道等所有使用 split() 的自动化系统   │ │
+│  │ 机制：ALLOW_STACK == null → 返回 EMPTY，阻止拆分             │ │
+│  └────────────────────────────────────────────────────────────┘ │
+│                              │                                   │
+│                              ▼                                   │
+│  第二层：发射器注册（DispenserBlock.registerBehavior）            │
+│  ┌────────────────────────────────────────────────────────────┐ │
+│  │ 注册空操作分发行为，阻止发射器发射活箱子                      │ │
+│  │ 覆盖：发射器（Dispenser）的 dispense 流程                    │ │
+│  │ 机制：返回原堆不做任何操作                                    │ │
+│  └────────────────────────────────────────────────────────────┘ │
+│                              │                                   │
+│                              ▼                                   │
+│  第三层：投掷器拦截（DropperBlockMixin）                          │
+│  ┌────────────────────────────────────────────────────────────┐ │
+│  │ 拦截投掷器的随机选槽，检测到活箱子则返回 -1（无可用槽位）    │ │
+│  │ 覆盖：投掷器（Dropper）的 dispenseFrom 流程                  │ │
+│  │ 机制：@Redirect 拦截 getRandomSlot，对活箱子返回 -1          │ │
+│  └────────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+#### 10.9.2 各层防护详解
+
+**第一层：`split()` 拦截（最重要、覆盖面最广）**
+
+- **代码位置**：[ItemStackMixin.java](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/mixin/ItemStackMixin.java) `onSplitHead` 方法
+- **覆盖范围**：所有调用 `ItemStack.split()` 的自动化系统，包括但不限于：原版漏斗、原版投掷器（部分路径）、所有模组管道 / 传送带 / 物流系统
+- **原理**：大多数自动化物品传输系统最终都会调用 `split()` 来拆分源堆叠。在 `onSplitHead` 中检测 `ALLOW_STACK` 标志——只有玩家 GUI 操作时该标志为 true，自动化系统调用时为 null。返回 `ItemStack.EMPTY` 表示"拆分失败"，原版系统会将其视为"无法操作该物品"。
+
+**第二层：发射器空分发行为**
+
+- **代码位置**：[LivingItem.java](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/LivingItem.java) `registerDispenserBehaviors`
+- **覆盖范围**：发射器（Dispenser）的 `dispense` 流程
+- **原理**：通过 `DispenserBlock.registerBehavior(Items.CHEST, noOpBehavior)` 注册一个空操作分发行为。当发射器尝试发射活箱子时，直接返回原堆不做任何操作。
+
+**第三层：投掷器随机选槽拦截**
+
+- **代码位置**：[DropperBlockMixin.java](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/mixin/DropperBlockMixin.java)
+- **覆盖范围**：投掷器（Dropper）的 `dispenseFrom` 流程
+- **原理**：投掷器的 `dispenseFrom` 通过 `getRandomSlot` 随机选择一个非空槽位进行投掷。使用 `@Redirect` 拦截此方法：检测到选中槽位为活箱子时返回 `-1`（表示"无可用槽位"），投掷器跳过本次操作。此方法不会影响其他非活物品的投掷。
+
+#### 10.9.3 为什么需要三层防护
+
+| 层 | 为什么需要 | 如果缺少会怎样 |
+|----|-----------|---------------|
+| 第一层 (split) | 覆盖面最广，拦截绝大部分自动化传输 | 漏斗、模组管道等可拆分活箱子，UUID 可能不一致 |
+| 第二层 (发射器) | 发射器不使用 split() 路径，第一层无法覆盖 | 发射器可发射活箱子，UUID 可能异常变化 |
+| 第三层 (投掷器) | 投掷器不使用 split() 路径，走 shrink + copyWithCount | 投掷器可投掷活箱子，可能触发物品翻倍等 bug |
+
+#### 10.9.4 设计哲学：为什么选择"禁止"而非"修复"
+
+从技术角度看，完全可以让每个自动化系统正确拆分和分配 UUID。但实践中遇到了三大障碍：
+
+1. **无限多的自动化系统**：原版漏斗、投掷器、发射器只是冰山一角。模组生态中有无数种物品传输方式——机械动力的传送带、热力膨胀的管道、应用能源的 ME 网络、精致存储的 RS 网络……每种都有不同的传输实现，修复成本随模组数量指数增长。
+
+2. **拆分逻辑的固有复杂性**：活箱子的 UUID 拆分需要在 `split()` → `copyWithCount()` → `shrink()` → `grow()` 的复杂调用链中保持一致性。即使对于原版方块，不同方块的调用顺序也可能不同（漏斗先 split 后 setItem，投掷器先 shrink 后 setItem），导致同一个"修复"在不同方块上表现不一致。
+
+3. **活箱子本身的设计初衷**：活箱子是一个存储容器，一个实例可以存储 27 格物品。堆叠多个活箱子的需求本就有限。禁止自动化系统操作活箱子，符合"玩家手动管理活箱子"的使用场景。
+
+**最终结论**：**禁止**比**修复**更安全、更简单、更具兼容性。这不是技术妥协，而是工程上的理性选择。
+
+#### 10.9.5 演进历程
+
+| 阶段 | 尝试方案 | 结果 |
+|------|---------|------|
+| 1 | 让 `onCopyWithCount` + `onShrink` 处理非玩家上下文 | 创造模式 CLONE 复制出现 UUID 混乱，方案过于复杂 |
+| 2 | 方案 A：将活箱子设为不可堆叠物品（maxStackSize=1） | 需要修改物品属性，影响现有存档，被否决 |
+| 3 | 方案 B：逐个修复投掷器/发射器的传输逻辑 | 只能修复原版，对模组方块无效，实现复杂 |
+| 4 | **最终方案**：三层防护，禁止所有非玩家拆分 + 拦截投掷器/发射器 | ✅ 简洁、统一、兼容性好 |
 
 ---
 
@@ -2288,13 +2474,30 @@ setCarried(itemstack3) → 光标堆 [A,B], count=2
 **影响版本**: 2024年新增
 
 **功能描述**:
-装有物品的活箱子放置为方块时，自动将虚拟箱子中的物品填充到实体箱子中。
+装有物品的活箱子放置为方块时，自动将虚拟箱子中被消耗的 UUID 对应的物品填充到实体箱子中，实现"虚拟存储 → 实体容器"的转换。
 
 **实现方式**:
 - 新增 `BlockItemMixin`，拦截 `BlockItem.place()` 的 HEAD 和 RETURN
-- 新增 `LivingChestFunction.clearStorage()` 方法清空 NBT 引用
-- 新增 `BLOCK_PLACING_UUIDS` ThreadLocal 标志防止 onShrink 冲突
+- HEAD 注入：捕获 UUID 列表并设置 `BLOCK_PLACING_UUIDS` 互斥标志
+- RETURN 注入：检查放置成功后，从头部第一个 UUID 读取物品填充到实体箱子
+- 新增 `BLOCK_PLACING_UUIDS` ThreadLocal 标志防止 onShrink/onSetCount 冲突
 - 支持物品合并到已有堆叠，部分填充时记录警告日志
+
+**游戏模式差异**:
+
+| 模式 | 物品消耗 | UUID 处理 | 填充逻辑 |
+|------|---------|----------|----------|
+| 生存模式 | shrink(1) 消耗 1 个 | 移除头部第 1 个 UUID，剩余 N-1 个 | 从被移除的 UUID 读取物品填充 |
+| 创造模式 | 不消耗物品 | UUID 列表不变 | 从头部第一个 UUID 读取物品填充（每次放置相同物品） |
+
+**⚠️ 与 onShrink 的互斥保护**:
+```
+BlockItem.place() 内部调用 shrink() 时:
+  1. BLOCK_PLACING_UUIDS 已在 HEAD 中设置（非 null）
+  2. onShrink 检测到 BLOCK_PLACING_UUIDS 非空 → 跳过
+  3. 防止 PENDING_TRANSFER 被污染
+  4. RETURN 中清理 BLOCK_PLACING_UUIDS
+```
 
 ### 11.8 🟢 安全策略: UUID 只增不减
 
@@ -2306,6 +2509,147 @@ setCarried(itemstack3) → 光标堆 [A,B], count=2
 - UUID 重复时直接复用，避免重建的开销和风险
 
 **核心原则**: 只有用户明确"取消活化"（dropAllItems）才能删除 UUID。UUID 丢失 = 物品永久丢失，是所有 bug 中最严重的。
+
+### 11.9 🔴→✅ 已修复: 投掷器/发射器传输导致 UUID 异常变化 + 数量翻倍
+
+**状态**: ✅ 已修复（三层防护体系）
+
+**问题描述**:
+堆叠的活箱子被投掷器（Dropper）或发射器（Dispenser）投掷/发射时，每个被投出的活箱子 UUID 会发生变化，导致之前存储的物品与 UUID 断开关联，物品无法找回。此外，投掷器还会触发数量翻倍 bug——放入一组活箱子，投掷后减少一个但投出两个。
+
+**对比——漏斗**:
+漏斗使用 `split()` 路径，UUID 拆分天然正确。但经过测试发现，漏斗在某些边界情况下仍可能导致 UUID 不一致，因此在最终方案中漏斗也被统一拦截。
+
+**根本原因——投掷器/发射器不使用 `split()`**:
+
+`split()` 的 Mixin 拦截（`onSplitHead`/`onSplitReturn`）能正确处理 UUID 拆分，但投掷器和发射器绕过了这个路径：
+
+```
+漏斗:      split(1)         → onSplitHead → onSplitReturn → UUID 正确 ✓
+投掷器:    copyWithCount(1)  → onCopyWithCount (无 ALLOW_STACK, 无 PRE_SPLIT_UUIDS)
+           shrink(1)          → onShrink (无 ALLOW_STACK, 无 PRE_SPLIT_UUIDS)
+                              → UUID 分裂/丢失 ✗
+发射器:    DispenseItemBehavior 直接操作 → 不经过任何 UUID 管理逻辑 ✗
+```
+
+**数量翻倍的根因**:
+
+投掷器 `DropperBlock.dispenseFrom()` 的流程：
+1. 从槽位取出物品并进行 `split(1)` → `onSplitHead` 返回空堆（因为非玩家上下文）
+2. 但原版 `dispenseFrom` 收到空堆后，仍然会执行 `shrink(1)` 减少源堆数量
+3. 同时，返回的空堆被当作"已投掷"的物品处理
+4. 结果：减了一个但没投出实体的物品，导致数量凭空消失
+
+而当 `onCopyWithCount` 和 `onShrink` 中的非玩家检查顺序错误时（`PRE_SPLIT_UUIDS` 检查在非玩家检查之后），`split()` 内部调用的 `onCopyWithCount`/`onShrink` 也被非玩家逻辑拦截，导致更复杂的翻倍问题——放入一组活箱子，投掷后减少一个，但投出两个活箱子。
+
+**最终解决方案——三层防护体系**:
+
+详见 [10.9 通用传输封锁策略](#109-通用传输封锁策略)。核心思路是**禁止而非修复**：
+
+1. **第一层**：`onSplitHead` 拦截所有非玩家 `split()` 调用（覆盖漏斗、模组管道等）
+2. **第二层**：`DispenserBlock.registerBehavior` 注册空分发行为（覆盖发射器）
+3. **第三层**：`DropperBlockMixin` 的 `@Redirect` 拦截随机选槽（覆盖投掷器）
+
+**修复过程中的关键发现**:
+
+1. `onCopyWithCount` 和 `onShrink` 中检查顺序极为重要：`PRE_SPLIT_UUIDS` 检查必须在非玩家上下文检查**之前**，否则 `split()` 内部调用也会被拦截，导致 UUID 拆分失败。
+2. 投掷器的 `@Redirect` 拦截 `getRandomSlot` 返回 `-1` 是最简洁的方案——不需要遍历所有槽位，不影响其他非活物品的投掷，且完全阻止了对活箱子的操作。
+3. 发射器只需注册一个空分发行为即可，因为发射器的 `dispense` 流程会先检查注册的 `DispenseItemBehavior`，匹配到空操作后直接返回。
+
+**涉及文件**:
+- [ItemStackMixin.java](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/mixin/ItemStackMixin.java) — `onSplitHead` 非玩家拦截
+- [DropperBlockMixin.java](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/mixin/DropperBlockMixin.java) — `@Redirect` 拦截 `getRandomSlot`
+- [LivingItem.java](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/LivingItem.java) — `DispenserBlock.registerBehavior`
+
+### 11.10 🟡→✅ 已修复: 铁砧重命名活箱子后与未命名活箱子堆叠
+
+**状态**: ✅ 已修复
+
+**问题描述**:
+用铁砧给活箱子重命名后，重命名的活箱子能和未命名的活箱子堆叠在一起。原本的 `isSameItemSameComponents` Mixin 在 `ALLOW_STACK` 时无条件返回 `true`，忽略了包括自定义名称在内的所有 NBT 差异。
+
+**根本原因**:
+```java
+// 旧代码：无条件忽略所有 NBT 差异
+if (LivingChestStackFlags.ALLOW_STACK.get() != null) {
+    cir.setReturnValue(true);  // 所有差异都被忽略！
+}
+```
+
+这导致铁砧重命名、附魔等修改都变成了"透明"的——Minecraft 认为两个活箱子完全相同，允许它们堆叠。但重命名是玩家有意为之的操作，不应被忽略。
+
+**修复方案——副本比较法**:
+
+```java
+// 新代码：创建副本，移除活物品数据后调用原版比较
+if (LivingChestStackFlags.ALLOW_STACK.get() != null) {
+    ItemStack copyA = stack.copy();
+    ItemStack copyB = other.copy();
+    LivingItemManager.clearLivingData(copyA);  // 移除 UUID + IS_LIVING
+    LivingItemManager.clearLivingData(copyB);
+    // 副本不再是活箱子 → 走原版比较 → 不会递归触发本 Mixin
+    cir.setReturnValue(ItemStack.isSameItemSameComponents(copyA, copyB));
+}
+```
+
+**关键设计考量**:
+- **副本安全性**：不修改原 ItemStack，避免污染数据
+- **递归避免**：清除 `IS_LIVING` 标记后，副本不再被识别为活箱子，`isSameItemSameComponents` 的递归调用不会触发 Mixin
+- **精确性**：只忽略 UUID 差异，自定义名称、附魔、损坏值等差异仍能阻止堆叠
+
+**堆叠行为对比**:
+
+| 场景 | 修复前 | 修复后 |
+|------|--------|--------|
+| 两个活箱子（不同 UUID，无名称） | ✅ 堆叠 | ✅ 堆叠 |
+| 重命名 vs 无名称 活箱子 | ❌ 错误堆叠 | ✅ 不堆叠 |
+| 两个重命名相同名称 活箱子 | ✅ 堆叠 | ✅ 堆叠 |
+| 两个重命名不同名称 活箱子 | ❌ 错误堆叠 | ✅ 不堆叠 |
+
+**涉及文件**:
+- [ItemStackMixin.java](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/mixin/ItemStackMixin.java) — `onIsSameItemSameComponents` 方法
+
+### 11.11 🟢 设计决策: UUID 操作方向统一（头部优先）
+
+**影响版本**: 2024年统一
+
+**设计背景**:
+活箱子的 UUID 列表在不同操作中有不同的遍历方向需求。早期实现中方向不统一，导致代码理解困难、边界情况易出错。经过统一后，所有核心操作遵循明确的"头部优先"原则。
+
+**方向规则**:
+
+| 操作 | 方向 | 说明 |
+|------|------|------|
+| `insertItem` | 头部优先（index 0 → N） | 先填满头部 UUID 的虚拟箱子，再填尾部 |
+| `extractItem` | 头部优先（index 0 → N） | 先从头部 UUID 提取物品，再提取尾部 |
+| `splitUuidList` | 头部拆分（`subList(0, N)`） | 拆分出的 N 个 UUID 来自头部，剩余留在尾部 |
+| `onShrink` | 头部截断（`subList(amount, size)`） | 减少时保留头部 UUID，移除尾部 |
+| 方块放置 | 头部消耗（`uuids.get(0)`） | 消耗头部第 1 个 UUID |
+| `popUuid` | 尾部弹出（`remove(size-1)`） | 从尾部移除"预留"UUID，用于清理 |
+
+**设计理念**:
+```
+UUID 列表: [活跃区(头部) ... 预留区(尾部)]
+
+头部 ←→ 活跃 UUID（存取、拆分、消耗均从头部操作）
+尾部 ←→ 预留 UUID（popUuid 从尾部弹出，用于批量清理）
+```
+
+**为什么头部优先？**
+1. **自然顺序**：玩家最先放入的物品在头部 UUID，最先被取出的也应该是头部 UUID（FIFO 语义）
+2. **拆分一致性**：`split(amount)` 从头部取 N 个 UUID，`shrink(amount)` 也从头部保留 N 个，两者方向一致，简化了 `onSplitHead`/`onSplitReturn` 的协调逻辑
+3. **方块放置匹配**：`onShrink` 保留头部、移除尾部，方块放置消耗头部 UUID，与 `onShrink` 的行为一致
+
+**为什么 `popUuid` 从尾部？**
+- `popUuid` 是清理操作，用于 `dropAllItems` 逐个移除 UUID
+- 尾部 UUID 是"预留"的，最不活跃，最适合在清理时优先移除
+- 与头部操作互补，避免活跃 UUID 被意外清理
+
+**相关代码**:
+- [LivingChestStackHandler.java](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/chest/LivingChestStackHandler.java) — `splitUuidList` 头部拆分
+- [InternalStorageComponent.java](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/core/components/InternalStorageComponent.java) — `insertItem`/`extractItem` 头部遍历、`popUuid` 尾部弹出
+- [ItemStackMixin.java](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/mixin/ItemStackMixin.java) — `onShrink` 头部保留
+- [BlockItemMixin.java](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/mixin/BlockItemMixin.java) — 方块放置头部消耗
 
 ---
 
@@ -2425,7 +2769,7 @@ storage.cleanupIdle();   // 清理空闲缓存
 | 后续insert | 可能调整UUID | 修改物品 | 待保存 | markDirty |
 | extract | 不变 | 修改物品 | 待保存 | **必须saveStorageState** |
 | tick调整 | 更新UUID+_cc | 不删除文件 | 不变 | UUID 只增不减 |
-| 方块放置 | 清空UUID引用 | 读取物品 | 不变 | 不删除磁盘文件 |
+| 方块放置 | 移除头部UUID(生存) 或 保留UUID(创造) | 读取物品 | 不变 | 不删除磁盘文件 |
 | saveAllDirty | 不变 | 清除dirty标记 | **写入磁盘** | 原子写入 |
 | cleanupIdle | 不变 | 移除缓存条目 | 可能写入 | 仅脏数据写入 |
 | toggle活化 | 保存到CUSTOM_DATA | 清理物品 | 不变 | 恢复时还原UUID |
@@ -2515,6 +2859,95 @@ storage.cleanupIdle();
 
 ---
 
-*文档版本: 2024.12 v3*
-*最后更新: 创造模式 UUID 管理全面修复（客户端/服务端双兼容、QUICK_CRAFT 拆分、ThreadLocal 完整清单）*
+## 13. 反思：为什么一个看似简单的功能需要这么多保障
+
+活箱子的 UUID 管理——这个"看似简单"的功能——最终成为了整个模组开发中耗时最长、最折磨人的部分。以下是对这段经历的诚实复盘。
+
+### 13.1 问题的本质
+
+活箱子的核心需求非常朴素：
+- 每个活箱子实例有一个独立的 UUID，对应一个独立的磁盘文件
+- 多个活箱子可以堆叠，每个子堆保持自己的 UUID 子集
+- 拆分和合并时，UUID 需要正确分配，不能丢失，不能重复
+
+这些需求在玩家手动操作时看似简单——拿起、放下、拆分、合并——但当物品进入 Minecraft 的自动化系统时，复杂度爆炸式增长。
+
+### 13.2 为什么这么难
+
+#### 根本矛盾：DataComponent 不可变 vs 堆叠操作可变
+
+Minecraft 1.21.1 的 DataComponent 系统采用不可变设计——每次修改 DataComponent 都返回一个新的 ItemStack。这导致活箱子的 UUID（存储在 `LIVING_FUNCTION_DATA` 中）无法像普通 NBT 那样随堆叠操作自然流转。
+
+```
+普通物品堆叠:  count 变化 → 自然同步
+活箱子堆叠:    count 变化 + UUID 变化 → 需要显式同步
+```
+
+这层额外的同步需求，就是这个 mod 所有复杂性的根源。
+
+#### 为什么其他模组没这么复杂
+
+大多数模组的存储物品（如背包、储物袋）采用 `maxStackSize = 1`，从根本上避免了堆叠问题。活箱子选择支持堆叠，是为了让玩家更方便地携带多个存储单元。但这个"便利性"的代价远超预期。
+
+| 设计选择 | 优势 | 代价 |
+|---------|------|------|
+| maxStackSize = 1（其他模组） | UUID 管理简单，无拆分/合并问题 | 玩家背包占用多，便利性差 |
+| 支持堆叠（活箱子） | 玩家便利 | 需要处理所有拆分/合并边界情况 |
+
+### 13.3 三次"方向性错误"
+
+回顾整个开发过程，有三个关键决策如果当时做对了，可以节省大量时间：
+
+**错误 1：一开始就支持堆叠**
+- 如果最初就采用 `maxStackSize = 1`，UUID 管理的复杂度会降低 90%
+- 但堆叠带来的便利性确实有吸引力，这个决策在当时是合理的
+
+**错误 2：尝试"修复"而非"禁止"**
+- 在投掷器/发射器问题上，我们花了大量时间尝试让它们正确拆分 UUID
+- 最后发现"禁止"才是正确的答案——活箱子本身就不应该被自动化系统操作
+- 这个认识花了太多时间才到达
+
+**错误 3：ThreadLocal 的过度使用**
+- 6 个 ThreadLocal 变量，复杂的互斥逻辑，不直观的调用时序依赖
+- 虽然最终稳定运行，但维护和理解成本极高
+- 如果重新设计，可能会考虑更显式的状态传递方式
+
+### 13.4 最终方案的合理性
+
+尽管走了很多弯路，最终的三层防护体系是合理的：
+
+```
+第一层（split 拦截）→ 覆盖面最广，拦截 90% 的自动化系统
+第二层（发射器注册）→ 填补 split 路径的盲区
+第三层（投掷器拦截）→ 填补最后一个已知盲区
+```
+
+每一层都有其存在的必要性，合在一起形成了完整的防护。
+
+### 13.5 如果重新来过
+
+如果从头开始设计活箱子，会考虑以下方案之一：
+
+1. **方案 A（最简单）**：`maxStackSize = 1`，完全避免 UUID 拆分/合并问题。玩家通过 Shift+点击等方式在背包中排列多个活箱子，而不是将它们堆叠在一起。
+
+2. **方案 B（折中）**：支持堆叠，但不允许任何自动化系统操作活箱子。这实际上就是当前方案的核心——但会从一开始就明确这个设计决策，而不是在踩了无数坑之后才到达。
+
+3. **方案 C（当前方案）**：支持堆叠 + 玩家 GUI 操作 + 三层防护。这是最完整的方案，但也是复杂度最高的。如果目标是"尽可能兼容模组生态"，这个方案是正确的。
+
+### 13.6 经验教训
+
+1. **DataComponent 的不可变性是双刃剑**：它让数据更安全，但让需要可变状态的场景变得极其复杂。
+
+2. **"禁止"往往比"修复"更优雅**：当系统行为与设计预期冲突时，禁止该行为比修复该行为更简单、更可靠。
+
+3. **ThreadLocal 不是银弹**：它解决了线程安全问题，但引入了隐式状态依赖，增加了调试难度。
+
+4. **先限制，再放开**：如果一开始就限制活箱子只能通过玩家 GUI 操作，后续的很多问题都不会出现。功能可以从"限制"逐步"放开"，但很难反过来。
+
+5. **测试自动化系统**：玩家手动操作只是冰山一角。Minecraft 的自动化系统（漏斗、投掷器、发射器、模组管道）是 bug 的富矿，必须从一开始就纳入测试范围。
+
+---
+
+*文档版本: 2026.07 v5*
+*最后更新: 通用传输封锁策略（三层防护体系）、重命名堆叠修复、全流程反思、方块放置自动填充、UUID操作方向统一、文档修正*
 *维护者: Living Item Mod Team*

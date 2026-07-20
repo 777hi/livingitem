@@ -18,6 +18,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
+import com.qiqi.li.living.LivingItemManager;
 import com.qiqi.li.living.chest.LivingChestStackFlags;
 import com.qiqi.li.living.chest.LivingChestStackHandler;
 import com.qiqi.li.living.function.LivingChestFunction;
@@ -73,7 +74,7 @@ import com.qiqi.li.living.function.LivingChestFunction;
  *   <li><strong>漏斗/投掷器</strong>：shrink 先执行，grow 后执行</li>
  *   <li><strong>split 后合并</strong>：split 内部调用 shrink，紧接着调用 grow</li>
  * </ul>
- * <p>{@link #PENDING_TRANSFER} 的设计允许先执行的一方存储待转移数据，后执行的一方来消费。</p>
+ * <p>{@link #LivingChestStackFlags.PENDING_TRANSFER} 的设计允许先执行的一方存储待转移数据，后执行的一方来消费。</p>
  */
 @Mixin(ItemStack.class)
 public abstract class ItemStackMixin {
@@ -122,8 +123,17 @@ public abstract class ItemStackMixin {
         }
 
         // 仅当玩家 GUI 操作时（ALLOW_STACK 已设置）才允许跨 UUID 堆叠
+        // 但保留其他所有差异（如铁砧重命名、附魔等），只忽略 UUID 差异
         if (LivingChestStackFlags.ALLOW_STACK.get() != null) {
-            cir.setReturnValue(true);
+            // 创建副本并移除 LIVING_FUNCTION_DATA（包含 UUID 等活物品专属数据），
+            // 然后用原版 isSameItemSameComponents 比较副本。
+            // 副本不再是活箱子，因此不会触发本 Mixin 的递归拦截。
+            // 这样自定义名称等差异仍会阻止堆叠，只有 UUID 差异被忽略。
+            ItemStack copyA = stack.copy();
+            ItemStack copyB = other.copy();
+            LivingItemManager.clearLivingData(copyA);
+            LivingItemManager.clearLivingData(copyB);
+            cir.setReturnValue(ItemStack.isSameItemSameComponents(copyA, copyB));
         }
     }
 
@@ -145,18 +155,18 @@ public abstract class ItemStackMixin {
      * </pre>
      *
      * <h3>处理策略</h3>
-     * <p>利用 {@link #PENDING_TRANSFER} 作为中转站：</p>
+     * <p>利用 {@link #LivingChestStackFlags.PENDING_TRANSFER} 作为中转站：</p>
      * <ul>
-     *   <li><strong>源堆清零</strong>（count → 0）：将 UUID 列表暂存到 PENDING_TRANSFER，
+     *   <li><strong>源堆清零</strong>（count → 0）：将 UUID 列表暂存到 LivingChestStackFlags.PENDING_TRANSFER，
      *       等待目标堆的 setCount 来消费。UUID 不会被丢弃，只是暂存。</li>
-     *   <li><strong>目标堆增长</strong>（count 增加）：检查 PENDING_TRANSFER 中是否有
+     *   <li><strong>目标堆增长</strong>（count 增加）：检查 LivingChestStackFlags.PENDING_TRANSFER 中是否有
      *       来自清零源堆的 UUID 等待转移。数量匹配则合并，不匹配则丢弃（表示异源操作）。</li>
      * </ul>
      *
      * <h3>与其他方法的互斥</h3>
      * <ul>
      *   <li>split 内部调用 setCount 时，{@link #PRE_SPLIT_UUIDS} 已设置，直接跳过本方法。</li>
-     *   <li>grow/shrink 内部调用 setCount 时，grow-first 的 PENDING_TRANSFER.uuids 为 null，
+     *   <li>grow/shrink 内部调用 setCount 时，grow-first 的 LivingChestStackFlags.PENDING_TRANSFER.uuids 为 null，
      *       不会被本方法消费，留给 onShrink 处理。</li>
      * </ul>
      *
@@ -177,39 +187,42 @@ public abstract class ItemStackMixin {
         if (oldCount == count) return;  // 无变化，跳过
 
         // split 内部调用 setCount 时，PRE_SPLIT_UUIDS 已设置，跳过
-        if (PRE_SPLIT_UUIDS.get() != null) return;
+        if (LivingChestStackFlags.PRE_SPLIT_UUIDS.get() != null) return;
 
         // 方块放置期间调用 setCount 时，跳过
         if (LivingChestStackFlags.BLOCK_PLACING_UUIDS.get() != null) return;
+
+        // 非玩家上下文：禁止 UUID 转移。
+        if (LivingChestStackFlags.ALLOW_STACK.get() == null) return;
 
         // 分支 1：源堆被清零（shift+点击全量转移）
         if (count == 0 && oldCount > 0) {
             List<UUID> uuids = LivingChestStackHandler.getUuids(self);
             if (!uuids.isEmpty() && uuids.size() == oldCount) {
                 LOGGER.info("[onSetCount] source depleted: storing {} uuids", uuids.size());
-                // 暂存 UUID 到 PENDING_TRANSFER，等待目标堆的 setCount 来消费
-                PENDING_TRANSFER.set(new MergeTransfer(null, oldCount, new ArrayList<>(uuids)));
+                // 暂存 UUID 到 LivingChestStackFlags.PENDING_TRANSFER，等待目标堆的 setCount 来消费
+                LivingChestStackFlags.PENDING_TRANSFER.set(new LivingChestStackFlags.MergeTransfer(null, oldCount, new ArrayList<>(uuids)));
                 // 清空自身的 UUID（源堆即将消失，UUID 已安全转移）
                 LivingChestStackHandler.setUuids(self, List.of());
             }
         }
         // 分支 2：目标堆增长（shift+点击接收方）
         else if (count > oldCount) {
-            MergeTransfer pending = PENDING_TRANSFER.get();
+            LivingChestStackFlags.MergeTransfer pending = LivingChestStackFlags.PENDING_TRANSFER.get();
             if (pending != null && pending.uuids() != null && !pending.uuids().isEmpty()) {
                 int delta = count - oldCount;
                 if (pending.uuids().size() == delta) {
                     LOGGER.info("[onSetCount] target grew by {}: consuming {} uuids", delta, pending.uuids().size());
                     mergeIntoTargetUpToCount(self, pending.uuids(), count, "onSetCount");
-                    PENDING_TRANSFER.remove();
+                    LivingChestStackFlags.PENDING_TRANSFER.remove();
                 } else {
-                    // 数量不匹配，说明不是同一个合并操作的双方，丢弃 PENDING_TRANSFER
+                    // 数量不匹配，说明不是同一个合并操作的双方，丢弃 LivingChestStackFlags.PENDING_TRANSFER
                     LOGGER.info("[onSetCount] target grew by {}: pending size mismatch (pending={}), clearing",
                         delta, pending.uuids().size());
-                    PENDING_TRANSFER.remove();
+                    LivingChestStackFlags.PENDING_TRANSFER.remove();
                 }
             }
-            // 分支 3：PENDING_TRANSFER.uuids 为 null（grow-first 模式），不消费，
+            // 分支 3：LivingChestStackFlags.PENDING_TRANSFER.uuids 为 null（grow-first 模式），不消费，
             // 留给后续 onShrink 处理
         }
     }
@@ -245,50 +258,56 @@ public abstract class ItemStackMixin {
      */
 
     /**
-     * split() 前捕获的原始 UUID 快照。
-     * 同时作为互斥标志：非 null 时 onShrink 和 onSetCount 会跳过处理。
-     * 必须在 RETURN 中 remove() 清理，否则会泄漏到后续操作。
+     * 注意：PRE_SPLIT_UUIDS、SPLIT_UUIDS_FOR_GROW、LivingChestStackFlags.PENDING_TRANSFER 和 LivingChestStackFlags.MergeTransfer
+     * 已移至 {@link LivingChestStackFlags} 统一管理。以下通过该类引用。
      */
-    private static final ThreadLocal<List<UUID>> PRE_SPLIT_UUIDS = new ThreadLocal<>();
 
-    /**
-     * split 产出的新堆 UUID，供紧随其后的 grow() 合并使用。
-     * 在 onSplitReturn 中设置，在 onGrow 中消费并移除。
-     * 与 PENDING_TRANSFER 的区别：这个是专门给 split 后的 grow 用的，
-     * 不会被 PENDING_TRANSFER 的通用逻辑干扰。
-     */
-    private static final ThreadLocal<List<UUID>> SPLIT_UUIDS_FOR_GROW = new ThreadLocal<>();
-
-    @Inject(method = "split", at = @At("HEAD"))
+    @Inject(method = "split", at = @At("HEAD"), cancellable = true)
     private void onSplitHead(int amount, CallbackInfoReturnable<ItemStack> cir) {
         ItemStack self = (ItemStack)(Object)this;
         if (!isLivingChest(self)) return;
 
         List<UUID> uuids = LivingChestStackHandler.getUuids(self);
-        if (uuids.isEmpty()) return;
 
         // 始终设置 PRE_SPLIT_UUIDS 标志，阻止 split 内部的 onCopyWithCount/onShrink/onSetCount 执行。
         // 客户端线程也需要设置：创造模式 INVENTORY 标签页的 slotClicked 在客户端线程
         // 直接调用 inventoryMenu.clicked()，不经过服务端。若不设置，onCopyWithCount
         // 的 isCreativeMode() 会误判为"创造模式复制"从而清空 UUID。
         // onSplitReturn 中会无条件 remove() 清理此标志，不会泄漏。
-        PRE_SPLIT_UUIDS.set(new ArrayList<>(uuids));
+        LivingChestStackFlags.PRE_SPLIT_UUIDS.set(new ArrayList<>(uuids));
 
         // 清理上一次可能残留的 SPLIT_UUIDS_FOR_GROW（客户端和服务端线程都需要清理）
-        SPLIT_UUIDS_FOR_GROW.remove();
+        LivingChestStackFlags.SPLIT_UUIDS_FOR_GROW.remove();
+
+        LOGGER.info("[onSplitHead] count={}, amount={}, uuids={}, uuidsEmpty={}, allowStack={}, thread={}",
+            self.getCount(), amount, uuids, uuids.isEmpty(),
+            LivingChestStackFlags.ALLOW_STACK.get() != null,
+            Thread.currentThread().getName());
+
+        // 非玩家上下文（漏斗/投掷器/模组管道等自动化系统）：禁止拆分活箱子
+        // 只有玩家通过 GUI 操作（AbstractContainerMenu.clicked() 设置了 ALLOW_STACK）
+        // 才能拆分活箱子堆叠，防止自动化物品传输系统导致 UUID 不一致或数据丢失。
+        // 此检查覆盖：原版漏斗、投掷器、发射器，以及所有使用 split() 的模组管道。
+        if (LivingChestStackFlags.ALLOW_STACK.get() == null) {
+            LOGGER.info("[onSplitHead] NON-PLAYER context: blocking split of living chest");
+            LivingChestStackFlags.PRE_SPLIT_UUIDS.remove();
+            cir.setReturnValue(ItemStack.EMPTY);
+            return;
+        }
 
         // 以下 UUID 拆分逻辑仅服务端线程处理
         MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
-        if (server == null || !server.isSameThread()) return;
-
-        LOGGER.info("[onSplitHead] count={}, amount={}, uuids={}", self.getCount(), amount, uuids);
+        if (server == null || !server.isSameThread()) {
+            LOGGER.info("[onSplitHead] not on server thread, skipping UUID split");
+            return;
+        }
     }
 
     @Inject(method = "split", at = @At("RETURN"))
     private void onSplitReturn(int amount, CallbackInfoReturnable<ItemStack> cir) {
         // 取出 HEAD 中捕获的 UUID 快照并立即清理互斥标志
-        List<UUID> uuids = PRE_SPLIT_UUIDS.get();
-        PRE_SPLIT_UUIDS.remove();
+        List<UUID> uuids = LivingChestStackFlags.PRE_SPLIT_UUIDS.get();
+        LivingChestStackFlags.PRE_SPLIT_UUIDS.remove();
         if (uuids == null) return;  // 非活箱子，跳过
 
         ItemStack original = (ItemStack)(Object)this;
@@ -300,7 +319,9 @@ public abstract class ItemStackMixin {
         int originalCount = original.getCount();
         int newCount = newStack.getCount();
 
-        LOGGER.info("[onSplitReturn] originalCount={}, newCount={}, uuids={}", originalCount, newCount, uuids);
+        LOGGER.info("[onSplitReturn] originalCount={}, newCount={}, uuids={}, allowStack={}",
+            originalCount, newCount, uuids,
+            LivingChestStackFlags.ALLOW_STACK.get() != null);
 
         // 校验：拆分后的 count 之和应等于原始 UUID 数
         if (uuids.size() != originalCount + newCount) {
@@ -311,14 +332,14 @@ public abstract class ItemStackMixin {
         // 按 newCount 的比例拆分 UUID 列表
         LivingChestStackHandler.SplitResult result = LivingChestStackHandler.splitUuidList(uuids, newCount);
 
-        // 前 M 个 UUID 留给原堆，后 N 个 UUID 分配给新堆
+        // 新堆获得头部 UUID（活跃的，有物品），原堆保留尾部 UUID（预留的）
         LivingChestStackHandler.setUuidsUnsorted(original, result.remain());
         LivingChestStackHandler.setUuidsUnsorted(newStack, result.split());
         LOGGER.info("[onSplitReturn] remain={}, split={}", result.remain(), result.split());
 
         // 将新堆的 UUID 存入 SPLIT_UUIDS_FOR_GROW，供紧随其后的 grow 消费
         if (!result.split().isEmpty()) {
-            SPLIT_UUIDS_FOR_GROW.set(new ArrayList<>(result.split()));
+            LivingChestStackFlags.SPLIT_UUIDS_FOR_GROW.set(new ArrayList<>(result.split()));
         }
     }
 
@@ -386,22 +407,10 @@ public abstract class ItemStackMixin {
      *       {@code (target=null, amount=oldCount, uuids=全部UUID)}，
      *       目标堆 onSetCount 增长时消费。</li>
      * </ul>
-     *
-     * <h3>字段含义</h3>
-     * <ul>
-     *   <li>{@code target}：grow-first 模式下 grow 的目标堆，其他模式为 null</li>
-     *   <li>{@code amount}：转移的数量，用于校验 grow/shrink 的 amount 是否匹配</li>
-     *   <li>{@code uuids}：待转移的 UUID 列表，null 表示 grow-first 等待 shrink 来填充</li>
-     * </ul>
+     /**
+     * 注意：LivingChestStackFlags.MergeTransfer record 和 LivingChestStackFlags.PENDING_TRANSFER、PRE_SPLIT_UUIDS、
+     * SPLIT_UUIDS_FOR_GROW 已移至 {@link LivingChestStackFlags} 统一管理。
      */
-    private record MergeTransfer(ItemStack target, int amount, List<UUID> uuids) {}
-
-    /**
-     * 线程局部存储，在 grow/shrink/setCount 之间传递待转移的 UUID 数据。
-     * 每次操作完成后必须 remove() 清理，避免泄漏到无关操作。
-     * 支持三种数据来源：grow-first、shrink-first、setCount 源堆清零。
-     */
-    private static final ThreadLocal<MergeTransfer> PENDING_TRANSFER = new ThreadLocal<>();
 
     /**
      * 拦截 grow()，与 shrink() 配对完成 UUID 转移。
@@ -410,10 +419,10 @@ public abstract class ItemStackMixin {
      * <ol>
      *   <li><strong>split 后 grow</strong>：检查 {@link #SPLIT_UUIDS_FOR_GROW}，
      *       如果有数据且数量匹配，直接合并到当前堆。这是 split 内部的 grow，
-     *       不应该走 PENDING_TRANSFER 逻辑。</li>
-     *   <li><strong>shrink-first 合并</strong>：检查 {@link #PENDING_TRANSFER}，
+     *       不应该走 LivingChestStackFlags.PENDING_TRANSFER 逻辑。</li>
+     *   <li><strong>shrink-first 合并</strong>：检查 {@link #LivingChestStackFlags.PENDING_TRANSFER}，
      *       如果 uuids 非 null（shrink 先执行留下的），直接合并并清理。</li>
-     *   <li><strong>grow-first 合并</strong>：如果 PENDING_TRANSFER 为空或
+     *   <li><strong>grow-first 合并</strong>：如果 LivingChestStackFlags.PENDING_TRANSFER 为空或
      *       uuids 为 null，存储当前 grow 信息，等待后续 shrink 来消费。</li>
      * </ol>
      *
@@ -429,8 +438,15 @@ public abstract class ItemStackMixin {
         ItemStack self = (ItemStack)(Object)this;
         if (!isLivingChest(self)) return;
 
+        // 非玩家上下文：禁止 UUID 转移。只有玩家通过 GUI 操作时
+        // （ALLOW_STACK 已设置）才允许 grow 触发 UUID 合并逻辑。
+        // 这防止了任何模组绕过 split() 直接调用 grow() 导致的 UUID 异常。
+        if (LivingChestStackFlags.ALLOW_STACK.get() == null) {
+            return;
+        }
+
         // split 内部调用 grow 时，PRE_SPLIT_UUIDS 已设置，跳过
-        if (PRE_SPLIT_UUIDS.get() != null) {
+        if (LivingChestStackFlags.PRE_SPLIT_UUIDS.get() != null) {
             LOGGER.info("[onGrow] inside split, skipping");
             return;
         }
@@ -442,9 +458,9 @@ public abstract class ItemStackMixin {
         }
 
         // 优先级 1：检查是否有 split 后待消费的 UUID
-        List<UUID> splitUuids = SPLIT_UUIDS_FOR_GROW.get();
+        List<UUID> splitUuids = LivingChestStackFlags.SPLIT_UUIDS_FOR_GROW.get();
         if (splitUuids != null && splitUuids.size() == amount) {
-            SPLIT_UUIDS_FOR_GROW.remove();
+            LivingChestStackFlags.SPLIT_UUIDS_FOR_GROW.remove();
             LOGGER.info("[onGrow] consuming split UUIDs for grow: {}", splitUuids);
             mergeIntoTargetUpToCount(self, splitUuids, self.getCount() + amount, "onGrow-split");
             return;
@@ -452,31 +468,31 @@ public abstract class ItemStackMixin {
 
         LOGGER.info("[onGrow] count={}, amount={}, uuids={}", self.getCount(), amount, LivingChestStackHandler.getUuids(self));
 
-        MergeTransfer pending = PENDING_TRANSFER.get();
-        // 优先级 2：shrink-first 合并 — PENDING_TRANSFER 中有待转移的 UUID
+        LivingChestStackFlags.MergeTransfer pending = LivingChestStackFlags.PENDING_TRANSFER.get();
+        // 优先级 2：shrink-first 合并 — LivingChestStackFlags.PENDING_TRANSFER 中有待转移的 UUID
         if (pending != null && pending.uuids() != null) {
             if (pending.uuids().size() == amount) {
                 LOGGER.info("[onGrow] shrink-first merge: merging {} uuids", pending.uuids().size());
                 mergeIntoTargetUpToCount(self, pending.uuids(), self.getCount() + amount, "onGrow-shrink-first");
-                PENDING_TRANSFER.remove();
+                LivingChestStackFlags.PENDING_TRANSFER.remove();
                 LOGGER.info("[onGrow] merge applied safely");
             } else {
                 // 数量不匹配，覆盖为 grow-first 模式（重新开始）
                 LOGGER.info("[onGrow] shrink-first: pending size mismatch, overwriting (pending={}, amount={})", pending.uuids().size(), amount);
-                PENDING_TRANSFER.set(new MergeTransfer(self, amount, null));
+                LivingChestStackFlags.PENDING_TRANSFER.set(new LivingChestStackFlags.MergeTransfer(self, amount, null));
             }
             return;
         }
         // 优先级 3：grow-first — 存储当前 grow 信息，等待后续 shrink 来消费
         LOGGER.info("[onGrow] grow-first: storing pending transfer");
-        PENDING_TRANSFER.set(new MergeTransfer(self, amount, null));
+        LivingChestStackFlags.PENDING_TRANSFER.set(new LivingChestStackFlags.MergeTransfer(self, amount, null));
     }
 
     /**
      * 拦截 shrink()，与 grow() 配对完成 UUID 转移，并更新源堆的 UUID 列表。
      *
      * <h3>为什么用 HEAD 注入</h3>
-     * <p>在 shrink 发生前读取旧状态，计算被移除的 UUID 尾部子列表，
+     * <p>在 shrink 发生前读取旧状态，计算被移除的 UUID 头部子列表，
      * 完成合并转移后立即更新源堆 UUID。使用 HEAD 而非 RETURN 是因为：</p>
      * <ul>
      *   <li>shrink 后 count 已变，RETURN 时读取的 UUID 列表可能已被其他操作修改</li>
@@ -485,16 +501,16 @@ public abstract class ItemStackMixin {
      *
      * <h3>执行分支</h3>
      * <ol>
-     *   <li><strong>PENDING_TRANSFER 存在且 uuids 为 null</strong>（grow-first）：
-     *       将当前移除的 UUID 直接转移到 PENDING_TRANSFER 记录的 target 堆，
-     *       然后清理 PENDING_TRANSFER。</li>
-     *   <li><strong>PENDING_TRANSFER 不存在或 uuids 非 null</strong>（shrink-first）：
-     *       将移除的 UUID 存入 PENDING_TRANSFER，等待后续 grow 来消费。</li>
+     *   <li><strong>LivingChestStackFlags.PENDING_TRANSFER 存在且 uuids 为 null</strong>（grow-first）：
+     *       将当前移除的 UUID 直接转移到 LivingChestStackFlags.PENDING_TRANSFER 记录的 target 堆，
+     *       然后清理 LivingChestStackFlags.PENDING_TRANSFER。</li>
+     *   <li><strong>LivingChestStackFlags.PENDING_TRANSFER 不存在或 uuids 非 null</strong>（shrink-first）：
+     *       将移除的 UUID 存入 LivingChestStackFlags.PENDING_TRANSFER，等待后续 grow 来消费。</li>
      * </ol>
      *
      * <h3>源堆 UUID 更新</h3>
      * <p>无论哪种分支，shrink 后源堆的 UUID 都会被截断为前 newCount 个。
-     * 被移除的 UUID 通过 PENDING_TRANSFER 或直接转移的方式交给目标堆，
+     * 被移除的 UUID 通过 LivingChestStackFlags.PENDING_TRANSFER 或直接转移的方式交给目标堆，
      * UUID 总数不变，无丢失。</p>
      *
      * <h3>安全边界</h3>
@@ -511,15 +527,21 @@ public abstract class ItemStackMixin {
         if (!isLivingChest(self)) return;
 
         // split 内部调用 shrink 时，PRE_SPLIT_UUIDS 已设置，跳过
-        if (PRE_SPLIT_UUIDS.get() != null) {
+        if (LivingChestStackFlags.PRE_SPLIT_UUIDS.get() != null) {
             LOGGER.info("[onShrink] inside split, skipping");
             return;
         }
 
         // 方块放置期间调用 shrink 时，BLOCK_PLACING_UUIDS 已设置，跳过
-        // 方块放置的逻辑由 BlockItemMixin 独立处理，不需要 onShrink 介入
         if (LivingChestStackFlags.BLOCK_PLACING_UUIDS.get() != null) {
             LOGGER.info("[onShrink] inside block placing, skipping");
+            return;
+        }
+
+        // 非玩家上下文：禁止 UUID 转移。只有玩家通过 GUI 操作时
+        // （ALLOW_STACK 已设置）才允许 shrink 触发 UUID 拆分逻辑。
+        // 这防止了任何模组绕过 split() 直接调用 shrink() 导致的 UUID 异常。
+        if (LivingChestStackFlags.ALLOW_STACK.get() == null) {
             return;
         }
 
@@ -538,33 +560,33 @@ public abstract class ItemStackMixin {
             return;
         }
 
-        // 计算被移除的 UUID 尾部子列表（旧列表的后 amount 个）
-        List<UUID> removedUuids = new ArrayList<>(myUuids.subList(newCount, oldCount));
+        // 计算被移除的 UUID 头部子列表（旧列表的前 amount 个）
+        List<UUID> removedUuids = new ArrayList<>(myUuids.subList(0, amount));
 
-        MergeTransfer pending = PENDING_TRANSFER.get();
-        // 分支 1：grow-first — PENDING_TRANSFER 存在且 uuids 为 null
+        LivingChestStackFlags.MergeTransfer pending = LivingChestStackFlags.PENDING_TRANSFER.get();
+        // 分支 1：grow-first — LivingChestStackFlags.PENDING_TRANSFER 存在且 uuids 为 null
         if (pending != null && pending.uuids() == null) {
             if (pending.amount() == amount) {
-                // 数量匹配，直接将 UUID 转移到 PENDING_TRANSFER 记录的 target 堆
+                // 数量匹配，直接将 UUID 转移到 LivingChestStackFlags.PENDING_TRANSFER 记录的 target 堆
                 LOGGER.info("[onShrink] grow-first merge: transferring {} uuids to target", removedUuids.size());
                 mergeIntoTargetUpToCount(pending.target(), removedUuids, pending.target().getCount(), "onShrink-grow-first");
-                PENDING_TRANSFER.remove();
+                LivingChestStackFlags.PENDING_TRANSFER.remove();
                 LOGGER.info("[onShrink] target merge applied safely");
             } else {
                 // 数量不匹配，覆盖为 shrink-first 模式
                 LOGGER.info("[onShrink] grow-first: pending amount mismatch, overwriting (pending={}, amount={})", pending.amount(), amount);
-                PENDING_TRANSFER.set(new MergeTransfer(null, amount, removedUuids));
+                LivingChestStackFlags.PENDING_TRANSFER.set(new LivingChestStackFlags.MergeTransfer(null, amount, removedUuids));
             }
         }
-        // 分支 2：shrink-first — PENDING_TRANSFER 不存在或已由其他 shrink 填充
+        // 分支 2：shrink-first — LivingChestStackFlags.PENDING_TRANSFER 不存在或已由其他 shrink 填充
         else {
             LOGGER.info("[onShrink] shrink-first: storing pending transfer");
-            PENDING_TRANSFER.set(new MergeTransfer(null, amount, removedUuids));
+            LivingChestStackFlags.PENDING_TRANSFER.set(new LivingChestStackFlags.MergeTransfer(null, amount, removedUuids));
         }
 
-        // 更新源堆 UUID 为剩余的前 newCount 个
+        // 更新源堆 UUID 为剩余的后 newCount 个
         if (newCount > 0) {
-            List<UUID> remaining = new ArrayList<>(myUuids.subList(0, newCount));
+            List<UUID> remaining = new ArrayList<>(myUuids.subList(amount, oldCount));
             LivingChestStackHandler.setUuidsUnsorted(self, remaining);
             LOGGER.info("[onShrink] source remaining: {}", remaining);
         }
@@ -615,14 +637,20 @@ public abstract class ItemStackMixin {
      * <h3>UUID 安全保证</h3>
      * <p>remain + split = originalUuids，UUID 总数不变，无丢失。</p>
      */
-    @Inject(method = "copyWithCount", at = @At("RETURN"))
+    @Inject(method = "copyWithCount", at = @At("RETURN"), cancellable = true)
     private void onCopyWithCount(int count, CallbackInfoReturnable<ItemStack> cir) {
         ItemStack original = (ItemStack)(Object)this;
         if (!isLivingChest(original)) return;
 
         // split 内部调用 copyWithCount 时，跳过
-        if (PRE_SPLIT_UUIDS.get() != null) {
+        if (LivingChestStackFlags.PRE_SPLIT_UUIDS.get() != null) {
             LOGGER.debug("[onCopyWithCount] Inside split, skipping");
+            return;
+        }
+
+        // 非玩家上下文：清除副本 UUID 防止泄露
+        if (LivingChestStackFlags.ALLOW_STACK.get() == null) {
+            LivingChestStackHandler.setUuids(cir.getReturnValue(), List.of());
             return;
         }
 
@@ -643,7 +671,7 @@ public abstract class ItemStackMixin {
         if (isCreativeMode()) {
             // 分支 A：QUICK_CRAFT（右键拖动分发）— 走正常拆分逻辑。
             // QUICK_CRAFT 的流程是 copyWithCount 直接分发（不经过 shrink），
-            // 因此必须在 copyWithCount 中完成 UUID 拆分，不能依赖 PENDING_TRANSFER。
+            // 因此必须在 copyWithCount 中完成 UUID 拆分，不能依赖 LivingChestStackFlags.PENDING_TRANSFER。
             if (LivingChestStackFlags.IS_QUICK_CRAFT.get() != null) {
                 LOGGER.info("[onCopyWithCount] QUICK_CRAFT in creative mode: falling through to normal split");
                 // 继续执行下面的正常拆分逻辑

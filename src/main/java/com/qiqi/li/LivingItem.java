@@ -1,6 +1,8 @@
 package com.qiqi.li;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.dispenser.DispenseItemBehavior;
+import net.minecraft.core.dispenser.DefaultDispenseItemBehavior;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import org.slf4j.Logger;
@@ -8,7 +10,9 @@ import com.mojang.logging.LogUtils;
 
 import net.minecraft.world.Container;
 import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.DispenserBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.ChestBlockEntity;
 import net.minecraft.world.level.chunk.LevelChunk;
@@ -110,6 +114,13 @@ public class LivingItem {
 
         InteractionRegistry.registerHandler("ignite_carried", new IgniteCarriedHandler());
         LOGGER.info("Registered ignite_carried interaction handler");
+
+        DispenseItemBehavior noOpBehavior = (source, stack) -> {
+            LOGGER.info("Living chest cannot be dispensed or dropped from dispenser/dropper");
+            return stack;
+        };
+        DispenserBlock.registerBehavior(Items.CHEST, noOpBehavior);
+        LOGGER.info("Registered no-op dispenser behavior for living chests (prevents duping)");
     }
 
     /**

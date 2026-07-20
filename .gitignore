@@ -39,3 +39,20 @@ run/
 repo/
 !**/src/**/repo/
 libs/
+/assets/
+/.feisuan/
+/com/
+/data/
+/reports/
+/net/
+/META-INF/
+/mcp/
+*.jar
+
+### Logs & Crash Reports ###
+*.log
+/logs/
+/crash-reports/
+
+### IDE ###
+.qoderignore

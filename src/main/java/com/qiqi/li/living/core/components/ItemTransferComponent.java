@@ -114,7 +114,7 @@ public class ItemTransferComponent implements ILivingComponent {
     /** NBT 键名：剩余冷却 ticks */
     private static final String KEY_COOLDOWN = "transfer_cooldown";
     
-    /** 默认基础冷却：8 ticks（约 0.4 秒） */
+    /** 默认基础冷却：4 ticks（约 0.2 秒） */
     private static final int DEFAULT_COOLDOWN = 8;
     
     /** 默认每次最大传输数量：64（一整组） */
@@ -162,6 +162,18 @@ public class ItemTransferComponent implements ILivingComponent {
             cooldown--;
             state.setInt(KEY_COOLDOWN, cooldown);
             return;  // 冷却中，跳过本次传输
+        }
+
+        // 前置判断：输入槽位为空则跳过，不设冷却（等待物品加入）
+        ContainerContext containerCtx = ctx.containerCtx();
+        int sourceSlot = ctx.sourceSlot();
+        int containerSize = containerCtx.getSize();
+        boolean sourceOutOfBounds = sourceSlot < 0 || sourceSlot >= containerSize;
+        if (!sourceOutOfBounds) {
+            ItemStack sourceStack = containerCtx.getItem(sourceSlot);
+            if (sourceStack.isEmpty()) {
+                return;
+            }
         }
 
         boolean success = executeTransfer(ctx, hostStack.getCount(), maxTransfer);
@@ -459,7 +471,12 @@ public class ItemTransferComponent implements ILivingComponent {
         // 场景3：目标槽位有不同物品或已满 → 无法传输（success 保持 false）
 
         if (success && transferredTargetSlots != null) {
-            transferredTargetSlots.add(targetSlot);  // 标记目标槽位
+            transferredTargetSlots.add(targetSlot);
+        }
+
+        if (success) {
+            containerCtx.syncSlotToClients(sourceSlot, containerCtx.getItem(sourceSlot));
+            containerCtx.syncSlotToClients(targetSlot, containerCtx.getItem(targetSlot));
         }
 
         return success;
@@ -543,6 +560,8 @@ public class ItemTransferComponent implements ILivingComponent {
             transferredTargetSlots.add(targetSlot);
         }
 
+        containerCtx.syncSlotToClients(sourceSlot, containerCtx.getItem(sourceSlot));
+
         return true;
     }
 
@@ -595,9 +614,16 @@ public class ItemTransferComponent implements ILivingComponent {
             return false;
         }
 
+        // 前置判断：目标已满则跳过，避免先提取后退回的无用循环
+        if (!targetStack.isEmpty() && targetStack.getCount() >= targetStack.getMaxStackSize()) {
+            return false;
+        }
+
         // 从活箱子提取物品
         ItemStack extracted = LivingChestFunction.extractItem(server, sourceChestStack, extractAmount, capacityPerChest);
-        if (extracted.isEmpty()) return false;  // 活箱子为空
+        if (extracted.isEmpty()) {
+            return false;
+        }
 
         boolean success = false;
 
@@ -621,17 +647,18 @@ public class ItemTransferComponent implements ILivingComponent {
             }
             success = true;
         } else {
-            // 场景3：目标槽位不兼容 → 全部退回活箱子
             LivingChestFunction.insertItem(server, sourceChestStack, extracted, capacityPerChest);
             return false;
         }
 
         if (success) {
-            // 标记目标槽位（防止级联传输）
             Set<Integer> transferredTargetSlots = containerCtx.getTransferredTargetSlots();
             if (transferredTargetSlots != null) {
                 transferredTargetSlots.add(targetSlot);
             }
+
+            containerCtx.syncSlotToClients(sourceSlot, containerCtx.getItem(sourceSlot));
+            containerCtx.syncSlotToClients(targetSlot, containerCtx.getItem(targetSlot));
         }
 
         return success;
@@ -658,20 +685,21 @@ public class ItemTransferComponent implements ILivingComponent {
      * <h3>示例</h3>
      * <table border="1">
      *   <tr><th>堆叠数</th><th>冷却时间</th><th>传输频率</th></tr>
-     *   <tr><td>1</td><td>8 ticks</td><td>2.5 次/秒</td></tr>
-     *   <tr><td>2</td><td>4 ticks</td><td>5 次/秒</td></tr>
-     *   <tr><td>4</td><td>2 ticks</td><td>10 次/秒</td></tr>
-     *   <tr><td>8+</td><td>1 tick</td><td>20 次/秒（上限）</td></tr>
+     *   <tr><td>1</td><td>4 ticks</td><td>5 次/秒</td></tr>
+     *   <tr><td>2</td><td>2 ticks</td><td>10 次/秒</td></tr>
+     *   <tr><td>4+</td><td>1 tick</td><td>20 次/秒（上限）</td></tr>
      * </table>
      *
-     * @param baseCooldown 基础冷却时间（来自配置，默认 8）
+     * @param baseCooldown 基础冷却时间（来自配置，默认 4）
      * @param stackSize 活漏斗的堆叠数量
      * @return 实际冷却时间（ticks），最小为 1
      */
     private int calculateCooldown(int baseCooldown, int stackSize) {
-        if (stackSize <= 1) {
-            return baseCooldown;
-        }
-        return Math.max(1, baseCooldown / stackSize);
+        // TODO: 暂时注销堆叠加速逻辑，等传输稳定性验证后再恢复
+        // if (stackSize <= 1) {
+        //     return baseCooldown;
+        // }
+        // return Math.max(1, baseCooldown / stackSize);
+        return baseCooldown;
     }
 }

@@ -294,6 +294,9 @@ public class SimpleContainerContext implements ContainerContext {
     private void syncPlayerInventory(Inventory inv, int logicalSlot, ItemStack stack) {
         if (!(inv.player instanceof ServerPlayer serverPlayer)) return;
 
+        serverPlayer.connection.send(
+            new ClientboundContainerSetSlotPacket(-2, 0, logicalSlot, stack.copy()));
+
         syncInventoryMenuSlot(serverPlayer, serverPlayer.inventoryMenu, logicalSlot, stack);
 
         if (serverPlayer.containerMenu != serverPlayer.inventoryMenu) {
@@ -303,15 +306,35 @@ public class SimpleContainerContext implements ContainerContext {
 
     private void syncInventoryMenuSlot(ServerPlayer serverPlayer, AbstractContainerMenu menu,
                                         int logicalSlot, ItemStack stack) {
+        Inventory inv = (Inventory) serverPlayer.getInventory();
+        boolean found = false;
+
         for (int i = 0; i < menu.slots.size(); i++) {
             Slot slot = menu.slots.get(i);
             if (slot.container instanceof Inventory && slot.getContainerSlot() == logicalSlot) {
-                int stateId = menu.incrementStateId();
-                menu.remoteSlots.set(i, stack.copy());
-                serverPlayer.connection.send(
-                    new ClientboundContainerSetSlotPacket(menu.containerId, stateId, i, stack.copy()));
+                sendSlotSync(serverPlayer, menu, i, stack);
+                found = true;
+                break;
             }
         }
+
+        if (!found) {
+            for (int i = 0; i < menu.slots.size(); i++) {
+                Slot slot = menu.slots.get(i);
+                if (slot.container instanceof Inventory && slot.getItem() == inv.getItem(logicalSlot)) {
+                    sendSlotSync(serverPlayer, menu, i, stack);
+                    break;
+                }
+            }
+        }
+    }
+
+    private void sendSlotSync(ServerPlayer serverPlayer, AbstractContainerMenu menu,
+                               int slotIndex, ItemStack stack) {
+        int stateId = menu.incrementStateId();
+        menu.remoteSlots.set(slotIndex, stack.copy());
+        serverPlayer.connection.send(
+            new ClientboundContainerSetSlotPacket(menu.containerId, stateId, slotIndex, stack.copy()));
     }
 
     /**

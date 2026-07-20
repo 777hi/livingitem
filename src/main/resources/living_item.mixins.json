@@ -5,8 +5,10 @@
   "mixins": [
     "ItemStackMixin",
     "AbstractContainerMenuMixin",
+    "ServerGamePacketListenerImplMixin",
     "ServerPlaceRecipeMixin",
-    "BlockItemMixin"
+    "BlockItemMixin",
+    "DropperBlockMixin"
   ],
   "injectors": {
     "defaultRequire": 1

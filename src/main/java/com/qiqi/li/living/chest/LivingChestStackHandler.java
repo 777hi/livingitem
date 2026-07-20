@@ -46,10 +46,13 @@ public class LivingChestStackHandler {
     }
 
     /**
-     * 拆分 UUID 列表，按顺序截取。
+     * 拆分 UUID 列表（从头部取）。
+     * <p>存入、提取、拆分、shrink、方块放置全部从头部操作，
+     * 头部 UUID 是"活跃"UUID，尾部是"预留"UUID。</p>
+     *
      * @param sourceUuids 原 UUID 列表
-     * @param splitCount  要拆分出的数量
-     * @return 拆分结果：remain = 剩余的 UUID（前 N 个），split = 拆分出的 UUID（后 M 个）
+     * @param splitCount  要拆分出的数量（从头部取）
+     * @return 拆分结果：split = 拆分出的 UUID（前 N 个，头部），remain = 剩余的 UUID（后 M 个，尾部）
      */
     public static SplitResult splitUuidList(List<UUID> sourceUuids, int splitCount) {
         if (sourceUuids == null || sourceUuids.isEmpty()) {
@@ -62,9 +65,8 @@ public class LivingChestStackHandler {
             return new SplitResult(List.of(), new ArrayList<>(sourceUuids));
         }
 
-        int remainCount = sourceUuids.size() - splitCount;
-        List<UUID> remainPart = new ArrayList<>(sourceUuids.subList(0, remainCount));
-        List<UUID> splitPart = new ArrayList<>(sourceUuids.subList(remainCount, sourceUuids.size()));
+        List<UUID> splitPart = new ArrayList<>(sourceUuids.subList(0, splitCount));
+        List<UUID> remainPart = new ArrayList<>(sourceUuids.subList(splitCount, sourceUuids.size()));
 
         return new SplitResult(remainPart, splitPart);
     }

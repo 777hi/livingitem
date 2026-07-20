@@ -263,10 +263,10 @@ ItemStack (NBT)
 ├── getStorageState() → 从 ItemStack NBT 读取完整状态
 └── getOrCreate(uuid) → 从缓存/磁盘加载虚拟箱子数据
 
-删除
-├── 堆叠数减少（拆分）→ 先掉落物品，再 storage.remove(uuid)
-├── insertItem() 发现 UUID 过多 → 删除多余空 UUID
+⚠️ UUID 只增不减：堆叠数减少、insertItem 溢出等均不删除 UUID
+删除（唯一路径：用户取消活化）
 ├── popUuid() → 弹出最后一个 UUID（调用方需先处理物品）
+├── 取消活化（dropAllItems）→ 清理所有 UUID 和磁盘文件
 └── cleanupOrphanedFiles() → 被动清理无引用的孤儿空文件
 
 持久化
@@ -632,6 +632,10 @@ SLOTS 模式的方向数据存储在 `ComponentState` 中（`slot_input_x`, `slo
 - [x] 跨 UUID 堆叠支持（`LivingChestStackFlags` 线程局部标志）
 - [x] 被动孤儿文件清理（`cleanupOrphanedFiles()` 防止取消活化后磁盘泄漏）
 - [x] 事务包装器（`ChestTransaction` 确保多次操作间原子保存）
+- [x] 方块放置自动填充（生存模式消耗头部UUID + 填充物品到实体箱子，创造模式保留UUID）
+- [x] 三层防护体系（split拦截 + 发射器空分发 + 投掷器选槽拦截，禁止自动化系统操作活箱子）
+- [x] 铁砧重命名堆叠修复（副本比较法，只忽略UUID差异，保留名称等NBT差异）
+- [x] UUID 操作方向统一（头部优先：存入、提取、拆分均从头部开始；尾部弹出：popUuid从尾部移除）
 - [x] 活箱子图标（`chest_living.png`）
 
 ### 容器兼容性
@@ -646,7 +650,13 @@ SLOTS 模式的方向数据存储在 `ComponentState` 中（`slot_input_x`, `slo
 
 ### 当前版本: v0.6-alpha
 
-**最近更新** (2026-07-17):
+**最近更新** (2026-07-20):
+- ✅ 新增：方块放置自动填充（生存模式消耗头部UUID + 填充物品，创造模式保留UUID）
+- ✅ 新增：三层防护体系（split拦截 + 发射器空分发 + 投掷器选槽拦截）
+- ✅ 新增：铁砧重命名堆叠修复（副本比较法）
+- ✅ 统一：UUID 操作方向（头部优先存取/拆分，尾部弹出）
+
+**历史更新** (2026-07-17):
 - ✅ 新增：活箱子系统（`LivingChestFunction` + `InternalStorageComponent` + `ChestTransaction`）
 - ✅ 新增：UUID 映射管理（`LivingChestStackHandler`：创建、拆分、合并、标准化）
 - ✅ 新增：堆叠倍增模型（1 堆叠 = 1 虚拟箱子 = 27 槽，64 堆叠 = 1728 槽）
@@ -794,5 +804,5 @@ public class LivingBrewingStandFunction extends BaseLivingFunction {
 
 ---
 
-*最后更新: 2026-07-17*
-*状态: Alpha 测试阶段 - 活箱子、活熔炉、活漏斗、活TNT核心功能已完成，跨容器传输已实现，模组容器兼容（IronChests等），GUI交互系统已就绪，客户端图标系统已组件化，代码结构已按职责重构为子包*
+*最后更新: 2026-07-20*
+*状态: Alpha 测试阶段 - 活箱子、活熔炉、活漏斗、活TNT核心功能已完成，跨容器传输已实现，模组容器兼容（IronChests等），GUI交互系统已就绪，客户端图标系统已组件化，代码结构已按职责重构为子包，三层防护体系已就绪，方块放置自动填充已实现*
