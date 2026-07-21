@@ -127,6 +127,20 @@ public interface ContainerContext {
     }
 
     /**
+     * 获取容器的唯一标识 key。
+     *
+     * 用于活末影箱路由表等需要跨容器标识的场景。
+     * 对于方块容器，返回基于位置的 key（如 "chest_0_64_0"）；
+     * 对于玩家背包，返回 "player_<uuid>"；
+     * 对于未知容器，返回基于 hashCode 的 key。
+     *
+     * @return 容器唯一标识 key，如果不支持返回 null
+     */
+    default String getContainerKey() {
+        return null;
+    }
+
+    /**
      * 获取本 tick 的容器快照。
      *
      * 由 {@link ContainerLivingItemHandler#processContext} 在每次容器 tick 时构建，

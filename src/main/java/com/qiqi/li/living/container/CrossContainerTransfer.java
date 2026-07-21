@@ -343,6 +343,9 @@ public final class CrossContainerTransfer {
             }
         }
 
+        // 前置判断：目标容器已满则跳过
+        if (!hasAnySpace(neighborContainer)) return false;
+
         ItemStack extracted;
         if (matchingType != null) {
             extracted = LivingChestFunction.extractItem(server, chestStack, matchingType, transferAmount, capacity);
@@ -415,6 +418,8 @@ public final class CrossContainerTransfer {
         var transferredTargetSlots = containerCtx.getTransferredTargetSlots();
         LivingEnderChestAccessor accessor = new LivingEnderChestAccessor(
             server, channel, filterState, transferredTargetSlots);
+
+        if (!hasAnySpace(neighborContainer)) return false;
 
         int transferAmount = Math.min(stackSize, maxTransfer);
         ItemStack extracted = accessor.extract(transferAmount, ItemStack.EMPTY);
@@ -790,28 +795,21 @@ public final class CrossContainerTransfer {
     }
 
     /**
-     * 获取指定方向的相邻容器
+     * 获取指定方向的相邻容器。
      * 
-     * 根据基准位置和指定方向，查找并返回相邻位置的容器。
-     * 该方法处理了多种容器类型的特殊情况：
+     * 统一通过 NeoForge 的 IItemHandler 能力（Capabilities.ItemHandler.BLOCK）获取容器，
+     * 无需区分原版方块或模组方块。NeoForge 自动为所有原版 Container 方块注册该能力，
+     * 包括大箱子合并容器等特殊情况。
      * 
-     * 1. 箱子（ChestBlockEntity）：
-     *    - 检测是否为大箱子（双箱合并）
-     *    - 如果是大箱子，获取合并后的完整容器实例
-     *    - 如果是单箱，直接使用箱子本身
-     * 
-     * 2. 其他容器（Container接口）：
-     *    - 直接使用实现了Container接口的方块实体
-     * 
-     * 3. 大箱子内部传输防护：
-     *    - 通过位置比较，防止在大箱子左右部分之间传输
-     *    - 如果相邻位置是大箱子的另一个半箱，返回null
+     * 大箱子内部传输防护：
+     * 通过位置比较，防止在大箱子左右部分之间传输。
+     * 如果相邻位置是大箱子的另一个半箱，返回 null。
      * 
      * @param level 世界对象
      * @param basePos 基准方块位置（根据方向选择的大箱子半箱位置）
      * @param direction 要查找的方向
      * @param chestPositions 当前大箱子的半箱位置列表（空列表表示非大箱子）
-     * @return 相邻容器对象，如果不存在或为同一大箱子则返回null
+     * @return 相邻容器对象，如果不存在或为同一大箱子则返回 null
      */
     private static Container getNeighborContainer(Level level, BlockPos basePos, Direction direction, List<BlockPos> chestPositions) {
         BlockPos neighborPos = basePos.relative(direction);
@@ -820,90 +818,29 @@ public final class CrossContainerTransfer {
             return null;
         }
 
-        BlockEntity neighborBe = level.getBlockEntity(neighborPos);
-        if (neighborBe == null) return null;
-
-        Container neighborContainer = null;
-
-        if (neighborBe instanceof ChestBlockEntity chest) {
-            BlockState neighborState = level.getBlockState(neighborPos);
-            if (neighborState.getBlock() instanceof ChestBlock chestBlock) {
-                ChestType chestType = neighborState.getValue(ChestBlock.TYPE);
-                if (chestType != ChestType.SINGLE) {
-                    neighborContainer = ChestBlock.getContainer(chestBlock, neighborState, level, neighborPos, false);
-                } else {
-                    neighborContainer = chest;
-                }
-            } else {
-                neighborContainer = chest;
-            }
-        } else if (neighborBe instanceof Container container) {
-            neighborContainer = container;
-        } else {
-            IItemHandler itemHandler = level.getCapability(
-                Capabilities.ItemHandler.BLOCK, neighborPos, direction.getOpposite());
-            if (itemHandler != null) {
-                neighborContainer = new ItemHandlerWrapper(itemHandler);
-            }
+        // 统一通过 IItemHandler 能力获取容器，NeoForge 自动为原版 Container 方块注册该能力，
+        // 模组方块也通过此能力暴露物品交互，无需区分方块类型
+        IItemHandler itemHandler = level.getCapability(
+            Capabilities.ItemHandler.BLOCK, neighborPos, direction.getOpposite());
+        if (itemHandler != null) {
+            return new ItemHandlerWrapper(itemHandler);
         }
-
-        return neighborContainer;
+        return null;
     }
 
     /**
-     * IItemHandler → Container 适配器。
-     * 使支持 IItemHandler 能力（如抽屉、机器等）的模组方块也能被活漏斗跨容器访问。
+     * 检查目标容器是否有任何可用空间。
+     * 只要存在至少一个空槽位，或者存在一个未满栈的槽位，就返回 true。
+     *
+     * @param container 目标容器
+     * @return true 如果容器还有空间可接收物品
      */
-    private record ItemHandlerWrapper(IItemHandler handler) implements Container {
-
-        @Override
-        public int getContainerSize() {
-            return handler.getSlots();
+    private static boolean hasAnySpace(Container container) {
+        for (int i = 0; i < container.getContainerSize(); i++) {
+            ItemStack stack = container.getItem(i);
+            if (stack.isEmpty()) return true;
+            if (stack.getCount() < stack.getMaxStackSize()) return true;
         }
-
-        @Override
-        public boolean isEmpty() {
-            for (int i = 0; i < handler.getSlots(); i++) {
-                if (!handler.getStackInSlot(i).isEmpty()) return false;
-            }
-            return true;
-        }
-
-        @Override
-        public ItemStack getItem(int slot) {
-            return handler.getStackInSlot(slot);
-        }
-
-        @Override
-        public ItemStack removeItem(int slot, int amount) {
-            return handler.extractItem(slot, amount, false);
-        }
-
-        @Override
-        public ItemStack removeItemNoUpdate(int slot) {
-            int count = handler.getStackInSlot(slot).getCount();
-            return handler.extractItem(slot, count, false);
-        }
-
-        @Override
-        public void setItem(int slot, ItemStack stack) {
-            handler.extractItem(slot, Integer.MAX_VALUE, false);
-            handler.insertItem(slot, stack, false);
-        }
-
-        @Override
-        public void setChanged() {}
-
-        @Override
-        public boolean stillValid(net.minecraft.world.entity.player.Player player) {
-            return true;
-        }
-
-        @Override
-        public void clearContent() {
-            for (int i = 0; i < handler.getSlots(); i++) {
-                handler.extractItem(i, Integer.MAX_VALUE, false);
-            }
-        }
+        return false;
     }
 }

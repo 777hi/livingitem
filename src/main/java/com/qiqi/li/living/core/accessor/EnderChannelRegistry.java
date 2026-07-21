@@ -6,6 +6,7 @@ import java.util.Deque;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import com.qiqi.li.living.core.ComponentState;
@@ -56,9 +57,10 @@ public final class EnderChannelRegistry {
         Deque<EnderChannelEntry> queue = channels.computeIfAbsent(channel, k -> new ArrayDeque<>());
 
         for (EnderChannelEntry existing : queue) {
-            if (existing.sourcePos().equals(entry.sourcePos())
+            if (Objects.equals(existing.sourcePos(), entry.sourcePos())
                 && existing.sourceSlot() == entry.sourceSlot()
-                && existing.itemType().equals(entry.itemType())) {
+                && existing.itemType().equals(entry.itemType())
+                && Objects.equals(existing.containerKey(), entry.containerKey())) {
                 LOGGER.trace("EnderChannelRegistry: insert duplicate skipped channel={}, item={}, pos={}, slot={}",
                     channel, entry.itemType(), entry.sourcePos(), entry.sourceSlot());
                 return false;
@@ -164,7 +166,24 @@ public final class EnderChannelRegistry {
     public void removeByPositionAndSlot(int channel, BlockPos sourcePos, int sourceSlot) {
         Deque<EnderChannelEntry> queue = channels.get(channel);
         if (queue != null) {
-            queue.removeIf(entry -> entry.sourcePos().equals(sourcePos) && entry.sourceSlot() == sourceSlot);
+            queue.removeIf(entry -> Objects.equals(entry.sourcePos(), sourcePos) && entry.sourceSlot() == sourceSlot);
+            if (queue.isEmpty()) {
+                channels.remove(channel);
+            }
+        }
+    }
+
+    /**
+     * 移除指定频道中指定容器+槽位的路由条目（玩家背包版本）。
+     *
+     * @param channel 频道号
+     * @param containerKey 容器唯一标识 key
+     * @param sourceSlot 源槽位
+     */
+    public void removeByPositionAndSlot(int channel, String containerKey, int sourceSlot) {
+        Deque<EnderChannelEntry> queue = channels.get(channel);
+        if (queue != null) {
+            queue.removeIf(entry -> containerKey.equals(entry.containerKey()) && entry.sourceSlot() == sourceSlot);
             if (queue.isEmpty()) {
                 channels.remove(channel);
             }
@@ -181,13 +200,29 @@ public final class EnderChannelRegistry {
      * @param activeRegistrarSlots 当前容器中活漏斗所在的槽位集合
      */
     public void removeStaleRoutes(BlockPos sourcePos, Set<Integer> activeRegistrarSlots) {
+        removeStaleRoutesInternal(route ->
+            Objects.equals(route.sourcePos(), sourcePos)
+            && !activeRegistrarSlots.contains(route.registrarSlot()));
+    }
+
+    /**
+     * 清理指定容器中已不存在活漏斗的路由条目（玩家背包版本）。
+     *
+     * @param containerKey 容器唯一标识 key
+     * @param activeRegistrarSlots 当前容器中活漏斗所在的槽位集合
+     */
+    public void removeStaleRoutes(String containerKey, Set<Integer> activeRegistrarSlots) {
+        removeStaleRoutesInternal(route ->
+            containerKey.equals(route.containerKey())
+            && !activeRegistrarSlots.contains(route.registrarSlot()));
+    }
+
+    private void removeStaleRoutesInternal(java.util.function.Predicate<EnderChannelEntry> shouldRemove) {
         List<Integer> channelsToRemove = new ArrayList<>();
         for (var entry : channels.entrySet()) {
             Deque<EnderChannelEntry> queue = entry.getValue();
             if (queue == null) continue;
-            queue.removeIf(route ->
-                route.sourcePos().equals(sourcePos)
-                && !activeRegistrarSlots.contains(route.registrarSlot()));
+            queue.removeIf(shouldRemove);
             if (queue.isEmpty()) {
                 channelsToRemove.add(entry.getKey());
             }
@@ -215,6 +250,7 @@ public final class EnderChannelRegistry {
             queue.removeIf(entry -> {
                 if (!entry.sourceDim().equals(dim)) return false;
                 BlockPos pos = entry.sourcePos();
+                if (pos == null) return false;
                 return pos.getX() >= chunkMinX && pos.getX() <= chunkMaxX
                     && pos.getZ() >= chunkMinZ && pos.getZ() <= chunkMaxZ;
             });

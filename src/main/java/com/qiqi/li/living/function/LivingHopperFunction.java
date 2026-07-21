@@ -80,15 +80,20 @@ public class LivingHopperFunction extends BaseLivingFunction {
 
         if (level.isClientSide) return;
 
-        BlockPos pos = context.getBlockPos();
-        if (pos == null) return;
-
         Set<Integer> activeSlots = new HashSet<>();
         for (SlotEntry entry : entries) {
             activeSlots.add(entry.slotIndex());
         }
 
-        EnderChannelRegistry.getInstance().removeStaleRoutes(pos, activeSlots);
+        BlockPos pos = context.getBlockPos();
+        if (pos != null) {
+            EnderChannelRegistry.getInstance().removeStaleRoutes(pos, activeSlots);
+        } else {
+            String containerKey = context.getContainerKey();
+            if (containerKey != null) {
+                EnderChannelRegistry.getInstance().removeStaleRoutes(containerKey, activeSlots);
+            }
+        }
     }
 
     /**

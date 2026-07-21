@@ -16,6 +16,8 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.ChestBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.ChestType;
+import net.neoforged.neoforge.capabilities.Capabilities;
+import net.neoforged.neoforge.items.IItemHandler;
 import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
 import com.qiqi.li.living.LivingItemFunction;
@@ -68,7 +70,7 @@ public class ContainerLivingItemHandler {
         if (container instanceof ChestBlockEntity chest) {
             return buildChestContext(chest, level);
         }
-        return new SimpleContainerContext(container, new ArrayList<>(), new ArrayList<>());
+        return new SimpleContainerContext(container, new ArrayList<>(), new ArrayList<>(), level);
     }
 
     /**
@@ -172,65 +174,29 @@ public class ContainerLivingItemHandler {
     /**
      * 处理区块中的所有方块实体，对含容器的方块实体执行活物品 tick。
      *
-     * 去重策略：
-     * - 对于大箱子（CompoundContainer），ChestBlock.getContainer() 每次调用都返回新实例，
-     *   不能用 Container 对象做 IdentityHashMap 去重
-     * - 改用 ChestBlockEntity 身份去重：只要大箱子的任一半边已被处理，就跳过
-     * - 对于非箱子容器，仍用 Container 对象去重
+     * 统一通过 NeoForge IItemHandler 能力检测容器，无需区分原版方块或模组方块。
+     * 去重策略：使用 IdentityHashMap 按 IItemHandler 实例去重。
+     * 对于大箱子，NeoForge 为左右两半返回同一个 IItemHandler 实例，天然去重。
      *
      * @param blockEntities 区块中的方块实体集合
      * @param level 世界
-     * @param processedContainers 已处理的非箱子容器（用于去重）
-     * @param processedChests 已处理的箱子方块实体（用于大箱子去重）
+     * @param processedHandlers 已处理的 IItemHandler（用于去重）
      */
     public static void processBlockEntities(Iterable<BlockEntity> blockEntities, Level level,
-                                            IdentityHashMap<Container, Boolean> processedContainers,
-                                            IdentityHashMap<ChestBlockEntity, Boolean> processedChests) {
+                                            IdentityHashMap<IItemHandler, Boolean> processedHandlers) {
         for (var be : blockEntities) {
-            Container container = null;
+            IItemHandler itemHandler = level.getCapability(
+                Capabilities.ItemHandler.BLOCK, be.getBlockPos(), null);
+            if (itemHandler == null) continue;
+            if (processedHandlers.put(itemHandler, Boolean.TRUE) != null) continue;
+
+            Container container = new ItemHandlerWrapper(itemHandler);
             List<BlockPos> positions = new ArrayList<>();
             List<BlockEntity> blockEntities2 = new ArrayList<>();
+            positions.add(be.getBlockPos());
+            blockEntities2.add(be);
 
-            if (be instanceof ChestBlockEntity chest) {
-                if (processedChests.put(chest, Boolean.TRUE) != null) continue;
-
-                BlockPos pos = chest.getBlockPos();
-                BlockState state = level.getBlockState(pos);
-
-                blockEntities2.add(chest);
-                positions.add(pos);
-
-                if (state.getBlock() instanceof ChestBlock chestBlock) {
-                    ChestType chestType = state.getValue(ChestBlock.TYPE);
-                    if (chestType != ChestType.SINGLE) {
-                        Direction direction = ChestBlock.getConnectedDirection(state);
-                        BlockPos otherPos = pos.relative(direction);
-                        BlockEntity otherBe = level.getBlockEntity(otherPos);
-                        if (otherBe instanceof ChestBlockEntity otherChest) {
-                            processedChests.put(otherChest, Boolean.TRUE);
-                            blockEntities2.add(otherChest);
-                            positions.add(otherPos);
-                        }
-                    }
-                    container = ChestBlock.getContainer(chestBlock, state, level, pos, false);
-                }
-                if (container == null) {
-                    container = chest instanceof Container ? (Container) chest : null;
-                }
-            } else if (be instanceof Container c) {
-                if (processedContainers.put(c, Boolean.TRUE) != null) continue;
-                container = c;
-                blockEntities2.add(be);
-                positions.add(be.getBlockPos());
-//                if (c.getContainerSize() > 54) {
-////                    LOGGER.info("Found large container BE: type={}, size={}, class={}",
-////                        be.getType(), c.getContainerSize(), c.getClass().getSimpleName());
-//                }
-            }
-
-            if (container != null) {
-                processContext(new SimpleContainerContext(container, positions, blockEntities2), level);
-            }
+            processContext(new SimpleContainerContext(container, positions, blockEntities2), level);
         }
     }
 }

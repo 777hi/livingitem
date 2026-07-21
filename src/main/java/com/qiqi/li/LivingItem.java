@@ -8,13 +8,9 @@ import net.minecraft.server.level.ServerLevel;
 import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
 
-import net.minecraft.world.Container;
-import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.DispenserBlock;
-import net.minecraft.world.level.block.entity.BlockEntity;
-import net.minecraft.world.level.block.entity.ChestBlockEntity;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -28,6 +24,7 @@ import net.neoforged.neoforge.event.server.ServerStartingEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 import net.neoforged.neoforge.event.level.ChunkEvent;
 import net.neoforged.neoforge.event.level.LevelEvent;
+import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
@@ -169,14 +166,13 @@ public class LivingItem {
      */
     private void processLevelContainers(ServerLevel level) {
         var cachedChunks = ContainerChunkCache.getInstance().getCachedChunks(level.dimension());
-        IdentityHashMap<Container, Boolean> processedContainers = new IdentityHashMap<>();
-        IdentityHashMap<ChestBlockEntity, Boolean> processedChests = new IdentityHashMap<>();
+        IdentityHashMap<IItemHandler, Boolean> processedHandlers = new IdentityHashMap<>();
 
         for (var cPos : cachedChunks) {
             if (!level.hasChunk(cPos.x, cPos.z)) continue;
             LevelChunk chunk = level.getChunk(cPos.x, cPos.z);
             ContainerLivingItemHandler.processBlockEntities(
-                    new ArrayList<>(chunk.getBlockEntities().values()), level, processedContainers, processedChests);
+                    new ArrayList<>(chunk.getBlockEntities().values()), level, processedHandlers);
         }
     }
 

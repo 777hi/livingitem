@@ -44,6 +44,7 @@ public class SimpleContainerContext implements ContainerContext {
     private final String containerKey;
     private final List<BlockPos> associatedBlockPositions;
     private final List<BlockEntity> associatedBlockEntities;
+    private final Level overrideLevel;
 
     /** 本 tick 的已占用槽位集合（跨 Function 共享） */
     private final Set<String> occupiedSlots = new HashSet<>();
@@ -55,13 +56,18 @@ public class SimpleContainerContext implements ContainerContext {
     private ContainerSnapshot snapshot;
 
     public SimpleContainerContext(Container container) {
-        this(container, new ArrayList<>(), new ArrayList<>());
+        this(container, new ArrayList<>(), new ArrayList<>(), null);
     }
 
     public SimpleContainerContext(Container container, List<BlockPos> positions, List<BlockEntity> blockEntities) {
+        this(container, positions, blockEntities, null);
+    }
+
+    public SimpleContainerContext(Container container, List<BlockPos> positions, List<BlockEntity> blockEntities, Level overrideLevel) {
         this.container = container;
         this.associatedBlockPositions = new ArrayList<>();
         this.associatedBlockEntities = new ArrayList<>();
+        this.overrideLevel = overrideLevel;
 
         if (positions != null && !positions.isEmpty()) {
             this.associatedBlockPositions.addAll(positions);
@@ -219,6 +225,11 @@ public class SimpleContainerContext implements ContainerContext {
     }
 
     @Override
+    public String getContainerKey() {
+        return containerKey;
+    }
+
+    @Override
     public Set<String> getOccupiedSlots() {
         return occupiedSlots;
     }
@@ -243,14 +254,14 @@ public class SimpleContainerContext implements ContainerContext {
         if (!associatedBlockPositions.isEmpty()) {
             return associatedBlockPositions.get(0);
         }
-        if (container instanceof Inventory inv) {
-            return inv.player.blockPosition();
-        }
         return null;
     }
 
     @Override
     public Level getLevel() {
+        if (overrideLevel != null) {
+            return overrideLevel;
+        }
         if (container instanceof BlockEntity be && be.getLevel() != null) {
             return be.getLevel();
         }

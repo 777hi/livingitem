@@ -2,16 +2,18 @@ package com.qiqi.li.living.container;
 
 import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
+import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.world.Container;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.event.level.ChunkEvent;
+import net.neoforged.neoforge.items.IItemHandler;
 import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
 
@@ -81,40 +83,47 @@ public class ContainerChunkCache {
     }
 
     /**
-     * 方块放置事件 —— 如果放置的是容器方块，重新扫描该区块。
+     * 方块放置事件 —— 如果放置的是容器方块（或 IItemHandler 方块），重新扫描该区块。
      */
     @SubscribeEvent
     public void onBlockPlace(BlockEvent.EntityPlaceEvent event) {
         if (event.getLevel() instanceof ServerLevel level) {
-            BlockEntity be = level.getBlockEntity(event.getPos());
-            if (be instanceof Container) {
-                ChunkPos pos = new ChunkPos(event.getPos());
-                if (level.hasChunk(pos.x, pos.z)) {
-                    scanChunkForContainers(level, level.getChunk(pos.x, pos.z));
-                }
+            if (hasContainerOrItemHandler(level, event.getPos())) {
+                rescanChunk(level, event.getPos());
             }
         }
     }
 
     /**
-     * 方块破坏事件 —— 如果破坏的是容器方块，重新扫描该区块。
+     * 方块破坏事件 —— 如果破坏的是容器方块（或 IItemHandler 方块），重新扫描该区块。
      * 即使破坏后该区块仍有其他容器，重新扫描也能正确更新缓存。
      */
     @SubscribeEvent
     public void onBlockBreak(BlockEvent.BreakEvent event) {
         if (event.getLevel() instanceof ServerLevel level) {
-            BlockEntity be = level.getBlockEntity(event.getPos());
-            if (be instanceof Container) {
-                ChunkPos pos = new ChunkPos(event.getPos());
-                if (level.hasChunk(pos.x, pos.z)) {
-                    scanChunkForContainers(level, level.getChunk(pos.x, pos.z));
-                }
+            if (hasContainerOrItemHandler(level, event.getPos())) {
+                rescanChunk(level, event.getPos());
             }
         }
     }
 
+    private void rescanChunk(ServerLevel level, BlockPos pos) {
+        ChunkPos cPos = new ChunkPos(pos);
+        if (level.hasChunk(cPos.x, cPos.z)) {
+            scanChunkForContainers(level, level.getChunk(cPos.x, cPos.z));
+        }
+    }
+
     /**
-     * 扫描指定区块，检查是否包含容器方块实体，更新缓存。
+     * 检查指定位置是否有容器（通过 IItemHandler 能力）。
+     * NeoForge 自动为所有原版 Container 方块注册该能力，模组方块也通过此能力暴露物品交互。
+     */
+    private static boolean hasContainerOrItemHandler(ServerLevel level, BlockPos pos) {
+        return level.getCapability(Capabilities.ItemHandler.BLOCK, pos, null) != null;
+    }
+
+    /**
+     * 扫描指定区块，检查是否包含容器方块实体（通过 IItemHandler 能力），更新缓存。
      *
      * @param level 服务端世界
      * @param chunk 要扫描的区块
@@ -125,7 +134,7 @@ public class ContainerChunkCache {
 
         boolean hasContainer = false;
         for (BlockEntity be : chunk.getBlockEntities().values()) {
-            if (be instanceof Container) {
+            if (level.getCapability(Capabilities.ItemHandler.BLOCK, be.getBlockPos(), null) != null) {
                 hasContainer = true;
                 break;
             }
