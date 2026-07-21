@@ -7,102 +7,87 @@ import java.util.Set;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.Container;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
-import net.minecraft.world.level.block.entity.ChestBlockEntity;
+import net.neoforged.neoforge.items.IItemHandler;
+
+import com.mojang.logging.LogUtils;
+import org.slf4j.Logger;
 
 /**
- * {@link ContainerContext} 的通用实现。
+ * {@link ContainerContext} 的通用实现，基于 IItemHandler。
  *
  * 核心机制：
- * - container：用于数据读写（getItem/setItem），可以是任何 Container
+ * - handler：用于数据读写（getStackInSlot/extractItem/insertItem），统一基于 IItemHandler
+ * - inventory：玩家背包引用（nullable），用于同步和 key 生成
  * - associatedBlockPositions / associatedBlockEntities：用于生成稳定的容器标识 key
  * - syncSlotToClients：手动同步 DataComponent 变化到客户端
- *
- * 同步策略：
- *   原版 broadcastChanges() 使用 ItemStack.matches() 检测变化，
- *   但 PatchedDataComponentMap.equals() 无法检测自定义组件变化，
- *   导致 LIVING_FUNCTION_DATA 更新后客户端 tooltip 不刷新。
- *
- *   解决方案：在活物品 tick 后，手动遍历所有正在查看该容器的玩家，
- *   通过 ClientboundContainerSetSlotPacket 发送更新包。
- *
- *   关键细节：
- *   1. 使用 containerMenu.incrementStateId() 获取新 stateId，
- *      确保客户端接受更新（客户端会忽略 stateId 不递增的包）
- *   2. 同时更新 remoteSlots，避免后续 broadcastChanges() 重复发送
- *   3. 对于玩家背包，需要同时处理 inventoryMenu 和 containerMenu
  */
 public class SimpleContainerContext implements ContainerContext {
 
-    private final Container container;
+    private static final Logger LOGGER = LogUtils.getLogger();
+
+    private final IItemHandler handler;
+    private final Inventory inventory;
     private final String containerKey;
     private final List<BlockPos> associatedBlockPositions;
     private final List<BlockEntity> associatedBlockEntities;
     private final Level overrideLevel;
 
-    /** 本 tick 的已占用槽位集合（跨 Function 共享） */
     private final Set<String> occupiedSlots = new HashSet<>();
-
-    /** 本 tick 已被传输到达的槽位集合（防止同 tick 级联传输） */
     private final Set<Integer> transferredTargetSlots = new HashSet<>();
-
-    /** 本 tick 的容器快照（预扫描结果，供所有组件复用） */
     private ContainerSnapshot snapshot;
 
-    public SimpleContainerContext(Container container) {
-        this(container, new ArrayList<>(), new ArrayList<>(), null);
+    /**
+     * 为玩家背包创建容器上下文。
+     */
+    public SimpleContainerContext(IItemHandler handler, Inventory inventory) {
+        this(handler, inventory, new ArrayList<>(), new ArrayList<>(), null);
     }
 
-    public SimpleContainerContext(Container container, List<BlockPos> positions, List<BlockEntity> blockEntities) {
-        this(container, positions, blockEntities, null);
+    /**
+     * 为方块容器创建容器上下文。
+     */
+    public SimpleContainerContext(IItemHandler handler, List<BlockPos> positions, List<BlockEntity> blockEntities) {
+        this(handler, null, positions, blockEntities, null);
     }
 
-    public SimpleContainerContext(Container container, List<BlockPos> positions, List<BlockEntity> blockEntities, Level overrideLevel) {
-        this.container = container;
-        this.associatedBlockPositions = new ArrayList<>();
-        this.associatedBlockEntities = new ArrayList<>();
+    /**
+     * 完整构造器。
+     *
+     * @param handler      IItemHandler，用于物品读写
+     * @param inventory    玩家背包（nullable，仅玩家背包场景传入）
+     * @param positions    关联方块位置
+     * @param blockEntities 关联方块实体
+     * @param overrideLevel 覆盖的世界（nullable）
+     */
+    public SimpleContainerContext(IItemHandler handler, Inventory inventory,
+                                  List<BlockPos> positions, List<BlockEntity> blockEntities,
+                                  Level overrideLevel) {
+        this.handler = handler;
+        this.inventory = inventory;
         this.overrideLevel = overrideLevel;
 
-        if (positions != null && !positions.isEmpty()) {
+        this.associatedBlockPositions = new ArrayList<>();
+        if (positions != null) {
             this.associatedBlockPositions.addAll(positions);
-        } else {
-            autoDetectPositions(container, this.associatedBlockPositions);
         }
 
-        if (blockEntities != null && !blockEntities.isEmpty()) {
+        this.associatedBlockEntities = new ArrayList<>();
+        if (blockEntities != null) {
             this.associatedBlockEntities.addAll(blockEntities);
-        } else {
-            autoDetectBlockEntities(container, this.associatedBlockEntities);
         }
 
-        this.containerKey = buildContainerKey(container, this.associatedBlockPositions, this.associatedBlockEntities);
+        this.containerKey = buildContainerKey(inventory, this.associatedBlockPositions, this.associatedBlockEntities, handler);
     }
 
-    private static void autoDetectPositions(Container container, List<BlockPos> positions) {
-        if (container instanceof ChestBlockEntity chest) {
-            positions.add(chest.getBlockPos());
-        } else if (container instanceof BlockEntity be) {
-            positions.add(be.getBlockPos());
-        }
-    }
-
-    private static void autoDetectBlockEntities(Container container, List<BlockEntity> entities) {
-        if (container instanceof ChestBlockEntity chest) {
-            entities.add(chest);
-        } else if (container instanceof BlockEntity be) {
-            entities.add(be);
-        }
-    }
-
-    private static String buildContainerKey(Container container, List<BlockPos> positions, List<BlockEntity> entities) {
-        if (container instanceof Inventory inv) {
-            return "player_" + inv.player.getStringUUID();
+    private static String buildContainerKey(Inventory inventory, List<BlockPos> positions, List<BlockEntity> entities, IItemHandler handler) {
+        if (inventory != null) {
+            return "player_" + inventory.player.getStringUUID();
         }
         if (!positions.isEmpty()) {
             StringBuilder sb = new StringBuilder("chest");
@@ -121,34 +106,18 @@ public class SimpleContainerContext implements ContainerContext {
             }
             return sb.toString();
         }
-        return "container_" + Integer.toHexString(container.hashCode());
+        return "container_" + Integer.toHexString(handler.hashCode());
     }
 
     @Override
     public int getSize() {
-        try {
-            return container.getContainerSize();
-        } catch (Exception e) {
-            return 0;
-        }
+        return handler.getSlots();
     }
 
     @Override
     public int getWidth() {
-        if (container instanceof Inventory) {
+        if (inventory != null) {
             return 9;
-        }
-
-        var adapter = com.qiqi.li.living.core.adapters.AdapterRegistry.getInstance().findAdapter(container);
-        if (adapter != null) {
-            try {
-                var layout = adapter.getLayout(container);
-                if (layout != null && layout.columns() > 0) {
-                    return layout.columns();
-                }
-            } catch (Exception e) {
-                // 回退到下一策略
-            }
         }
 
         java.util.Optional<com.qiqi.li.living.core.config.ContainerCompatibilityConfig.ContainerRule> rule =
@@ -194,38 +163,34 @@ public class SimpleContainerContext implements ContainerContext {
 
     @Override
     public ItemStack getItem(int logicalSlot) {
-        try {
-            if (logicalSlot < 0 || logicalSlot >= container.getContainerSize()) {
-                return ItemStack.EMPTY;
-            }
-            return container.getItem(logicalSlot);
-        } catch (Exception e) {
+        if (logicalSlot < 0 || logicalSlot >= handler.getSlots()) {
             return ItemStack.EMPTY;
         }
+        return handler.getStackInSlot(logicalSlot);
     }
 
     @Override
     public void setItem(int logicalSlot, ItemStack stack) {
-        try {
-            if (logicalSlot < 0 || logicalSlot >= container.getContainerSize()) {
-                return;
-            }
-            container.setItem(logicalSlot, stack);
-        } catch (Exception e) {
+        if (logicalSlot < 0 || logicalSlot >= handler.getSlots()) {
+            return;
+        }
+        ItemStack toInsert = stack.copy();
+        handler.extractItem(logicalSlot, Integer.MAX_VALUE, false);
+        ItemStack remaining = handler.insertItem(logicalSlot, toInsert, false);
+        if (!remaining.isEmpty()) {
+            LOGGER.warn("SimpleContainerContext.setItem: {} items of {} 未能插入槽位 {}",
+                remaining.getCount(), toInsert.getItem(), logicalSlot);
         }
     }
 
     @Override
     public int getMaxStackSize() {
-        return container.getMaxStackSize();
+        return handler.getSlots() > 0 ? handler.getSlotLimit(0) : 64;
     }
 
     @Override
     public int getSlotLimit(int slot) {
-        if (container instanceof ItemHandlerWrapper wrapper) {
-            return wrapper.handler().getSlotLimit(slot);
-        }
-        return getMaxStackSize();
+        return handler.getSlotLimit(slot);
     }
 
     @Override
@@ -271,59 +236,26 @@ public class SimpleContainerContext implements ContainerContext {
         if (overrideLevel != null) {
             return overrideLevel;
         }
-        if (container instanceof BlockEntity be && be.getLevel() != null) {
-            return be.getLevel();
-        }
         for (BlockEntity be : associatedBlockEntities) {
             if (be.getLevel() != null) {
                 return be.getLevel();
             }
         }
+        if (inventory != null) {
+            return inventory.player.level();
+        }
         return null;
     }
 
     @Override
-    public net.minecraft.world.Container getContainer() {
-        return container;
-    }
-
-    /**
-     * 将指定槽位的物品数据同步到所有正在查看该容器的客户端。
-     *
-     * 实现逻辑：
-     * 1. 玩家背包：直接向背包所属玩家同步 inventoryMenu 和 containerMenu
-     * 2. 世界容器（箱子等）：遍历服务器上所有玩家，找到正在查看该容器的玩家
-     *
-     * 对于玩家背包的特殊处理：
-     *   - 创造模式下 containerMenu 是 ItemPickerMenu，不是 InventoryMenu
-     *   - ServerPlayer.tick() 只同步 containerMenu，不同步 inventoryMenu
-     *   - 所以需要同时向两个菜单发送同步包
-     *   - 客户端 handleContainerSetSlot() 根据 containerId 路由到对应菜单
-     *
-     * stateId 机制：
-     *   - 客户端只接受 stateId 递增的同步包，忽略旧包
-     *   - 使用 containerMenu.incrementStateId() 获取新的 stateId
-     *   - 同时更新 remoteSlots 防止 broadcastChanges() 重复发送
-     */
-    @Override
     public void syncSlotToClients(int logicalSlot, ItemStack stack) {
-        if (container instanceof Inventory inv) {
-            syncPlayerInventory(inv, logicalSlot, stack);
+        if (inventory != null) {
+            syncPlayerInventory(inventory, logicalSlot, stack);
         } else {
             syncWorldContainer(logicalSlot, stack);
         }
     }
 
-    /**
-     * 同步玩家背包中的活物品数据。
-     *
-     * 需要同时处理两个菜单：
-     * - inventoryMenu：玩家背包菜单（containerId=0），始终存在
-     * - containerMenu：当前打开的菜单（可能是 ChestMenu、ItemPickerMenu 等）
-     *
-     * 两个菜单可能共享相同的 Inventory 对象，但有不同的 Slot 列表和 remoteSlots。
-     * 需要分别找到活物品在两个菜单中的槽位索引并发送同步包。
-     */
     private void syncPlayerInventory(Inventory inv, int logicalSlot, ItemStack stack) {
         if (!(inv.player instanceof ServerPlayer serverPlayer)) return;
 
@@ -370,34 +302,12 @@ public class SimpleContainerContext implements ContainerContext {
             new ClientboundContainerSetSlotPacket(menu.containerId, stateId, slotIndex, stack.copy()));
     }
 
-    /**
-     * 同步世界容器（箱子等）中的活物品数据。
-     *
-     * 遍历服务器上所有玩家，找到正在查看该容器的玩家。
-     *
-     * 匹配策略 —— ItemStack 引用匹配：
-     *   容器中同一槽位的 ItemStack 在内存中是同一个对象引用。
-     *   无论通过 CompoundContainer（大箱子）还是 ChestBlockEntity（单箱子）访问，
-     *   最终都路由到同一个底层 ItemStack 对象。
-     *
-     *   因此用 ==（引用相等）比较 slot.getItem() 和 stack 即可精准匹配，
-     *   无需关心容器的包装层级，适用于所有容器类型。
-     *
-     *   示例：
-     *   container.getItem(5)       → ChestBlockEntity.getItem(5) → ItemStack@A
-     *   slot.getItem()             → CompoundContainer.getItem(5) → ChestBlockEntity.getItem(5) → ItemStack@A
-     *                                                                                          ↑ 同一个对象
-     */
     private void syncWorldContainer(int logicalSlot, ItemStack stack) {
         Level level = null;
-        if (container instanceof BlockEntity be && be.getLevel() != null) {
-            level = be.getLevel();
-        } else {
-            for (BlockEntity be : associatedBlockEntities) {
-                if (be.getLevel() != null) {
-                    level = be.getLevel();
-                    break;
-                }
+        for (BlockEntity be : associatedBlockEntities) {
+            if (be.getLevel() != null) {
+                level = be.getLevel();
+                break;
             }
         }
         if (level == null || level.isClientSide) return;

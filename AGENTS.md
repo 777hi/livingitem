@@ -47,9 +47,7 @@ LivingOrchestrator.orchestrate() (编排器决定组件协作流程)
 │  ExplosionComponent      → 引信倒计时+爆炸   │
 └─────────────────────────────────────────────┘
     ↓
-ContainerContext / SimpleContainerContext (容器读写 + 客户端同步 + getSlotLimit)
-    ↓
-ItemHandlerWrapper (IItemHandler → Container 适配器，统一原版和模组容器)
+ContainerContext / SimpleContainerContext (直接基于 IItemHandler 读写，统一原版和模组容器)
 ```
 
 ### 编排器体系
@@ -335,10 +333,10 @@ src/main/java/com/qiqi/li/
 │   │
 │   ├── container/                           # 容器上下文与处理器
 │   │   ├── ContainerContext.java            # 容器操作抽象接口（含客户端同步 + 槽位占用 + getWidth + getSlotLimit）
-│   │   ├── SimpleContainerContext.java      # 容器上下文实现（带异常保护 + 同步逻辑 + 三级回退列宽 + getSlotLimit(IItemHandler)）
+│   │   ├── SimpleContainerContext.java      # 容器上下文实现（直接基于 IItemHandler 读写，不再依赖 Container 接口）
 │   │   ├── ContainerLivingItemHandler.java  # 容器扫描、分组调度、IItemHandler 去重、buildChestContext（统一 IItemHandler）
 │   │   ├── ContainerChunkCache.java         # 区块级容器缓存（事件驱动维护 + IItemHandler 检测）
-│   │   ├── ItemHandlerWrapper.java          # IItemHandler → Container 适配器（桥接 NeoForge 能力与原版接口）
+│   │   ├── CrossContainerTransfer.java      # 跨容器传输工具类（方向映射 + 大箱子处理 + 邻居容器查找 + ItemHandlerHelper）
 │   │   └── ContainerSnapshot.java           # 容器快照（预扫描活漏斗连接图）
 │   │
 │   ├── chest/                               # 活箱子辅助工具
@@ -388,11 +386,6 @@ src/main/java/com/qiqi/li/
 │       │   ├── InteractionHandler.java      # 处理器接口（服务端执行交互逻辑）
 │       │   ├── IgniteHandler.java           # 点燃槽位TNT（活打火石→活TNT）
 │       │   └── IgniteCarriedHandler.java    # 点燃光标TNT（活TNT→活打火石）
-│       │
-│       ├── adapters/
-│       │   ├── ContainerAdapter.java        # 适配器接口
-│       │   ├── HopperAdapter.java           # 漏斗适配器
-│       │   └── AdapterRegistry.java         # 适配器注册中心
 │       │
 │       └── config/
 │           ├── ContainerCompatibilityConfig.java  # 容器兼容性配置（含 columns + findRuleBySize + findOrGenerateRule 自动推断标准布局）
@@ -587,22 +580,22 @@ SLOTS 模式的方向数据存储在 `ComponentState` 中（`slot_input_x`, `slo
 
 ### 15. IItemHandler 统一容器抽象
 
-项目全面使用 NeoForge 的 `IItemHandler` 能力替代原版 `Container` 接口进行容器检测和物品交互：
+项目全面使用 NeoForge 的 `IItemHandler` 能力替代原版 `Container` 接口进行容器读写和物品交互，**无需适配器层**。
 
 **为什么用 IItemHandler？**
 - NeoForge 自动为所有原版 Container 方块注册 `IItemHandler` 能力，无需区分方块类型
-- 模组容器（抽屉、精妙背包等）通过 `IItemHandler` 暴露能力，无需适配器
+- 模组容器（抽屉、精妙背包等）通过 `IItemHandler` 暴露能力，天然兼容
 - `getSlotLimit(slot)` 返回每槽真实上限（抽屉 2048、精妙背包 256），远高于 `ItemStack.getMaxStackSize()` 的固定 64
 
-**核心适配层：**
-- `ItemHandlerWrapper`：`IItemHandler → Container` 适配器（record），使活物品系统能统一处理原版和模组容器
-- `ContainerContext.getSlotLimit(slot)`：新建接口方法，自动感知 `ItemHandlerWrapper` 的每槽上限
+**核心实现：**
+- `SimpleContainerContext`：直接持有 `IItemHandler handler` 字段，`getItem()`/`setItem()` 直接调用 `handler.getStackInSlot()`/`handler.extractItem()`/`handler.insertItem()`
+- `ContainerContext.getSlotLimit(slot)`：委托给 `handler.getSlotLimit(slot)`，玩家背包盔甲槽位（36-39）返回 1
 - `ContainerCompatibilityConfig.findOrGenerateRule(size)`：根据 `IItemHandler.getSlots()` 自动推断标准矩形布局，无需手动注册
 
-**传输优化：**
-- `CrossContainerTransfer.tryInsert()`：`IItemHandler` 分支使用 `ItemHandlerHelper.insertItemStacked()` 一行完成插入，容器自动处理分堆和上限
-- `CrossContainerTransfer.hasAnySpace()`：`IItemHandler` 分支使用 `getSlotLimit(i)` 精确判断空间
-- `LivingEnderChestAccessor.rollback()`：`IItemHandler` 分支直接调用 `insertItem()` 回滚，避免 `setItem` 先 `extractItem` 再 `insertItem` 的冗余操作
+**传输防护（双重限制）：**
+- `PlainSlotAccessor.insert()`：使用 `Math.min(slotLimit, stack.getMaxStackSize())` 同时检查槽位上限和物品最大堆叠上限，防止创建超出物品类型限制的堆叠
+- `CrossContainerTransfer.tryInsert()`：统一使用 `ItemHandlerHelper.insertItemStacked()` 一行完成插入，容器自动处理分堆和上限
+- `CrossContainerTransfer.hasAnySpace()`：使用 `handler.getSlotLimit(i)` 精确判断每槽空间
 
 **容器检测：**
 - `ContainerChunkCache`：通过 `Capabilities.ItemHandler.BLOCK` 检测容器（替代 `Container` 接口检查）
@@ -683,7 +676,7 @@ SLOTS 模式的方向数据存储在 `ComponentState` 中（`slot_input_x`, `slo
 - [x] 线性容器（5 格漏斗）
 - [x] 边界检查与异常安全
 - [x] IItemHandler 去重（大箱子左右半箱共享同一实例，天然去重）
-- [x] 模组容器兼容（通过 ItemHandlerWrapper 适配，抽屉、精妙背包等）
+- [x] 模组容器兼容（通过 IItemHandler 直接适配，抽屉、精妙背包等）
 - [x] 自动布局推断（ContainerCompatibilityConfig.findOrGenerateRule 根据槽位数自动推断列宽）
 
 ---
@@ -692,13 +685,20 @@ SLOTS 模式的方向数据存储在 `ComponentState` 中（`slot_input_x`, `slo
 
 ### 当前版本: v0.6-alpha
 
-**最近更新** (2026-07-21):
+**最近更新** (2026-07-22):
+- ✅ 重构：移除 `ItemHandlerWrapper` 适配器，`SimpleContainerContext` 直接基于 `IItemHandler` 读写
+- ✅ 重构：移除适配器体系（`AdapterRegistry`、`ContainerAdapter`、`HopperAdapter`），确认为死代码
+- ✅ 修复：`PlainSlotAccessor.insert()` 添加双重限制 `Math.min(slotLimit, stack.getMaxStackSize())`，防止突破物品堆叠上限
+- ✅ 修复：原版箱子中活漏斗输出槽位满后继续传输导致物品消失
+- ✅ 修复：玩家背包中活漏斗输出槽位满后突破物品堆叠上限 64 继续堆叠
+- ✅ 修复：活漏斗输出槽位 64 个铁锭时，往输入槽位放入铁锭后铁锭消失
+
+**历史更新** (2026-07-21):
 - ✅ 重构：全面使用 IItemHandler 统一容器抽象（替代 Container 接口检查）
-- ✅ 新增：`ItemHandlerWrapper` 适配器（IItemHandler → Container 桥接，record 实现）
+- ✅ 新增：`ItemHandlerWrapper` 适配器（IItemHandler → Container 桥接，record 实现，已废弃）
 - ✅ 新增：`ContainerContext.getSlotLimit(slot)` 接口方法（感知模组槽位上限）
-- ✅ 优化：`CrossContainerTransfer.tryInsert()` IItemHandler 分支使用 `ItemHandlerHelper.insertItemStacked()`
-- ✅ 优化：`CrossContainerTransfer.hasAnySpace()` IItemHandler 分支使用 `getSlotLimit(i)`
-- ✅ 优化：`LivingEnderChestAccessor.rollback()` IItemHandler 分支直接调用 `insertItem()`
+- ✅ 优化：`CrossContainerTransfer.tryInsert()` 使用 `ItemHandlerHelper.insertItemStacked()`
+- ✅ 优化：`CrossContainerTransfer.hasAnySpace()` 使用 `getSlotLimit(i)`
 - ✅ 优化：`PlainSlotAccessor.insert()` / `isFull()` 使用 `getSlotLimit(slot)` 替代 `getMaxStackSize()`
 - ✅ 优化：`ItemTransformComponent.calculateOutputSpace()` 使用 `getSlotLimit(outputSlot)`
 - ✅ 优化：`ContainerCompatibilityConfig` 新增 `findOrGenerateRule()` 自动推断标准布局
@@ -869,5 +869,5 @@ public class LivingBrewingStandFunction extends BaseLivingFunction {
 
 ---
 
-*最后更新: 2026-07-21*
-*状态: Alpha 测试阶段 - 活箱子、活熔炉、活漏斗、活TNT核心功能已完成，跨容器传输已实现，IItemHandler 全面统一容器抽象（兼容抽屉、精妙背包等模组容器），GUI交互系统已就绪，客户端图标系统已组件化，代码结构已按职责重构为子包，SlotAccessor 统一传输架构已实现，三层防护体系已就绪，方块放置自动填充已实现*
+*最后更新: 2026-07-22*
+*状态: Alpha 测试阶段 - 活箱子、活熔炉、活漏斗、活TNT核心功能已完成，跨容器传输已实现，IItemHandler 直接驱动容器读写（无需适配器），兼容抽屉、精妙背包等模组容器，GUI交互系统已就绪，客户端图标系统已组件化，代码结构已按职责重构为子包，SlotAccessor 统一传输架构已实现，三层防护体系已就绪，方块放置自动填充已实现，适配器体系已移除，传输双重限制已修复*

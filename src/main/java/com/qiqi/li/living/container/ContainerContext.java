@@ -118,16 +118,6 @@ public interface ContainerContext {
     }
 
     /**
-     * 获取底层的 Container 实例。
-     *
-     * 用于跨容器传输时检查相邻容器是否与当前容器是同一个实例（防止大箱子内部传输）。
-     *
-     * @return 底层的 Container 对象，如果不可用返回 null
-     */
-    default net.minecraft.world.Container getContainer() {
-        return null;
-    }
-    /**
      * 获取容器的列数（GUI 宽度）。
      *
      * 用于槽位解析时计算行列位置。标准容器为 9 列，

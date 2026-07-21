@@ -7,15 +7,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
-import net.minecraft.world.Container;
+import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.ChestBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
-import net.minecraft.world.level.block.entity.ChestBlockEntity;
-import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.block.state.properties.ChestType;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.items.IItemHandler;
 import org.slf4j.Logger;
@@ -27,96 +22,42 @@ import com.qiqi.li.living.LivingItemManager;
  * 活物品容器处理器 —— 负责遍历容器中的物品并执行活物品 tick。
  *
  * 职责：
- * 1. 将不同类型的 Container 统一转换为 {@link ContainerContext}
+ * 1. 将不同类型的容器统一转换为 {@link ContainerContext}
  * 2. 遍历容器中所有物品，对活物品执行已注册功能的 tick 逻辑
  * 3. 处理大箱子的去重（避免左右两半被分别处理导致速度翻倍）
  *
  * 容器类型与 Context 构建策略：
  * - 玩家背包（Inventory）：直接包装为 SimpleContainerContext
- * - 单箱子（ChestBlockEntity）：直接包装，associatedBlockEntities 包含自身
- * - 大箱子（两个 ChestBlockEntity）：
- *     dataContainer = ChestBlock.getContainer() 返回的 CompoundContainer（统一索引 0-53）
- *     associatedBlockEntities = 两个 ChestBlockEntity（用于匹配玩家菜单中的 slot）
- *
- * 为什么大箱子需要同时保存 CompoundContainer 和 ChestBlockEntity：
- *   CompoundContainer 提供统一的 getItem/setItem 接口（索引 0-53），
- *   但玩家菜单中的 slot.container 指向的是 ChestBlockEntity 本身。
- *   同步时需要通过 ItemStack 引用匹配来找到正确的菜单槽位。
+ * - 方块容器（箱子等）：通过 IItemHandler 能力获取并包装
+ * - 大箱子：NeoForge 为左右两半返回同一个 IItemHandler 实例，天然去重
  */
 public class ContainerLivingItemHandler {
     public static final Logger LOGGER = LogUtils.getLogger();
 
     /**
-     * 处理容器中的所有活物品。
-     * 用于玩家背包等简单容器场景。
+     * 处理玩家背包中的所有活物品。
      *
-     * @param container 容器（如玩家背包）
+     * @param inventory 玩家背包
      * @param level 世界
      */
-    public static void processContainer(Container container, Level level) {
+    public static void processContainer(Inventory inventory, Level level) {
         if (level.isClientSide) return;
-        ContainerContext context = buildContext(container, level);
+        IItemHandler handler = inventory.player.getCapability(Capabilities.ItemHandler.ENTITY);
+        if (handler == null) return;
+        ContainerContext context = buildContext(handler, inventory, level);
         processContext(context, level);
     }
 
     /**
      * 根据容器类型构建对应的 ContainerContext。
      *
-     * @param container 容器
+     * @param handler IItemHandler
+     * @param inventory 玩家背包（nullable，仅玩家背包场景传入）
      * @param level 世界
      * @return 包装后的容器上下文
      */
-    public static ContainerContext buildContext(Container container, Level level) {
-        if (container instanceof ChestBlockEntity chest) {
-            return buildChestContext(chest, level);
-        }
-        return new SimpleContainerContext(container, new ArrayList<>(), new ArrayList<>(), level);
-    }
-
-    /**
-     * 为 ChestBlockEntity 构建容器上下文。
-     *
-     * 核心策略：
-     * - dataContainer（组合容器）用于数据读写（getItem/setItem）
-     *   因为它提供了大箱子场景下的统一索引（单箱 0-26，大箱 0-53）
-     * - associatedBlockEntities（关联的 BlockEntity）用于同步时匹配玩家菜单
-     *   因为玩家 ChestMenu 中的 slot.container 指向 ChestBlockEntity 本身
-     * - associatedBlockPositions 用于生成稳定的容器标识 key
-     *
-     * @param chest 箱子方块实体
-     * @param level 世界
-     * @return 构建好的容器上下文
-     */
-    private static ContainerContext buildChestContext(ChestBlockEntity chest, Level level) {
-        BlockPos pos = chest.getBlockPos();
-        BlockState state = level.getBlockState(pos);
-
-        List<BlockEntity> associatedBlockEntities = new ArrayList<>();
-        List<BlockPos> associatedBlockPositions = new ArrayList<>();
-
-        associatedBlockEntities.add(chest);
-        associatedBlockPositions.add(pos);
-
-        if (state.getBlock() instanceof ChestBlock chestBlock) {
-            ChestType chestType = state.getValue(ChestBlock.TYPE);
-            if (chestType != ChestType.SINGLE) {
-                Direction direction = ChestBlock.getConnectedDirection(state);
-                BlockPos otherPos = pos.relative(direction);
-                BlockEntity otherBe = level.getBlockEntity(otherPos);
-                if (otherBe instanceof ChestBlockEntity otherChest) {
-                    associatedBlockEntities.add(otherChest);
-                    associatedBlockPositions.add(otherPos);
-                }
-            }
-        }
-
-        IItemHandler itemHandler = level.getCapability(Capabilities.ItemHandler.BLOCK, pos, null);
-        if (itemHandler != null) {
-            return new SimpleContainerContext(
-                new ItemHandlerWrapper(itemHandler), associatedBlockPositions, associatedBlockEntities);
-        }
-
-        return new SimpleContainerContext(chest, associatedBlockPositions, associatedBlockEntities);
+    public static ContainerContext buildContext(IItemHandler handler, Inventory inventory, Level level) {
+        return new SimpleContainerContext(handler, inventory, new ArrayList<>(), new ArrayList<>(), level);
     }
 
     /**
@@ -191,13 +132,12 @@ public class ContainerLivingItemHandler {
             if (itemHandler == null) continue;
             if (processedHandlers.put(itemHandler, Boolean.TRUE) != null) continue;
 
-            Container container = new ItemHandlerWrapper(itemHandler);
             List<BlockPos> positions = new ArrayList<>();
             List<BlockEntity> blockEntities2 = new ArrayList<>();
             positions.add(be.getBlockPos());
             blockEntities2.add(be);
 
-            processContext(new SimpleContainerContext(container, positions, blockEntities2), level);
+            processContext(new SimpleContainerContext(itemHandler, null, positions, blockEntities2, level), level);
         }
     }
 }

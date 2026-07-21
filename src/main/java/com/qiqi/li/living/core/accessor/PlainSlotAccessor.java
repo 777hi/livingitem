@@ -31,8 +31,9 @@ public class PlainSlotAccessor implements SlotAccessor {
         ItemStack extracted = sourceStack.copy();
         extracted.setCount(transferAmount);
 
-        sourceStack.shrink(transferAmount);
-        containerCtx.setItem(slot, sourceStack.isEmpty() ? ItemStack.EMPTY : sourceStack);
+        ItemStack remaining = sourceStack.copy();
+        remaining.shrink(transferAmount);
+        containerCtx.setItem(slot, remaining.isEmpty() ? ItemStack.EMPTY : remaining);
 
         return extracted;
     }
@@ -40,20 +41,25 @@ public class PlainSlotAccessor implements SlotAccessor {
     @Override
     public int insert(ItemStack stack) {
         ItemStack targetStack = containerCtx.getItem(slot);
+        int slotLimit = containerCtx.getSlotLimit(slot);
 
         if (targetStack.isEmpty()) {
-            containerCtx.setItem(slot, stack.copy());
-            int inserted = stack.getCount();
-            stack.setCount(0);
-            return inserted;
+            int maxStackSize = Math.min(slotLimit, stack.getMaxStackSize());
+            int actual = Math.min(stack.getCount(), maxStackSize);
+            ItemStack toInsert = stack.copy();
+            toInsert.setCount(actual);
+            containerCtx.setItem(slot, toInsert);
+            stack.shrink(actual);
+            return actual;
         }
 
-        int slotLimit = containerCtx.getSlotLimit(slot);
-        if (targetStack.is(stack.getItem()) && targetStack.getCount() < slotLimit) {
-            int space = slotLimit - targetStack.getCount();
+        int maxStackSize = Math.min(slotLimit, targetStack.getMaxStackSize());
+        if (targetStack.is(stack.getItem()) && targetStack.getCount() < maxStackSize) {
+            int space = maxStackSize - targetStack.getCount();
             int actual = Math.min(stack.getCount(), space);
-            targetStack.grow(actual);
-            containerCtx.setItem(slot, targetStack);
+            ItemStack grown = targetStack.copy();
+            grown.grow(actual);
+            containerCtx.setItem(slot, grown);
             stack.shrink(actual);
             return actual;
         }
@@ -67,8 +73,9 @@ public class PlainSlotAccessor implements SlotAccessor {
         if (current.isEmpty()) {
             containerCtx.setItem(slot, stack);
         } else if (current.is(stack.getItem())) {
-            current.grow(stack.getCount());
-            containerCtx.setItem(slot, current);
+            ItemStack grown = current.copy();
+            grown.grow(stack.getCount());
+            containerCtx.setItem(slot, grown);
         }
     }
 

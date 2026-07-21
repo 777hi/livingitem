@@ -6,7 +6,6 @@ import java.util.UUID;
 import com.qiqi.li.living.core.ComponentState;
 import com.qiqi.li.living.core.components.ItemFilterComponent;
 import com.qiqi.li.living.container.ContainerContext;
-import com.qiqi.li.living.container.ItemHandlerWrapper;
 import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -14,7 +13,6 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.Container;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -128,7 +126,7 @@ public class LivingEnderChestAccessor implements SlotAccessor {
                 continue;
             }
 
-            Container sourceContainer;
+            IItemHandler sourceHandler;
             BlockPos sourcePos = entry.sourcePos();
 
             if (sourcePos != null) {
@@ -140,8 +138,8 @@ public class LivingEnderChestAccessor implements SlotAccessor {
                 }
 
                 BlockEntity be = sourceLevel.getBlockEntity(sourcePos);
-                sourceContainer = getContainer(sourceLevel, sourcePos, be);
-                if (sourceContainer == null) {
+                sourceHandler = getHandler(sourceLevel, sourcePos, be);
+                if (sourceHandler == null) {
                     LOGGER.debug("LivingEnderChestAccessor: extract source not container, pop channel={}, pos={}",
                         channel, sourcePos);
                     registry.pop(channel);
@@ -165,7 +163,11 @@ public class LivingEnderChestAccessor implements SlotAccessor {
                         registry.pop(channel);
                         continue;
                     }
-                    sourceContainer = player.getInventory();
+                    sourceHandler = player.getCapability(Capabilities.ItemHandler.ENTITY);
+                    if (sourceHandler == null) {
+                        registry.pop(channel);
+                        continue;
+                    }
                 } catch (IllegalArgumentException e) {
                     LOGGER.debug("LivingEnderChestAccessor: extract invalid containerKey, pop channel={}, key={}",
                         channel, containerKey);
@@ -174,7 +176,7 @@ public class LivingEnderChestAccessor implements SlotAccessor {
                 }
             }
 
-            ItemStack sourceStack = sourceContainer.getItem(entry.sourceSlot());
+            ItemStack sourceStack = sourceHandler.getStackInSlot(entry.sourceSlot());
             if (sourceStack.isEmpty()) {
                 LOGGER.debug("LivingEnderChestAccessor: extract source slot empty, pop channel={}, slot={}",
                     channel, entry.sourceSlot());
@@ -198,17 +200,14 @@ public class LivingEnderChestAccessor implements SlotAccessor {
             }
 
             int toExtract = Math.min(amount, sourceStack.getCount());
-            ItemStack extracted = sourceStack.copy();
-            extracted.setCount(toExtract);
-            sourceStack.shrink(toExtract);
-            sourceContainer.setItem(entry.sourceSlot(), sourceStack);
+            ItemStack extracted = sourceHandler.extractItem(entry.sourceSlot(), toExtract, false);
 
             rollbackDim = entry.sourceDim();
             rollbackPos = sourcePos;
             rollbackSlot = entry.sourceSlot();
             rollbackContainerKey = entry.containerKey();
 
-            if (sourceStack.isEmpty()) {
+            if (sourceHandler.getStackInSlot(entry.sourceSlot()).isEmpty()) {
                 registry.pop(channel);
             }
 
@@ -236,8 +235,6 @@ public class LivingEnderChestAccessor implements SlotAccessor {
             return;
         }
 
-        Container container;
-
         if (rollbackPos != null) {
             if (!level.isLoaded(rollbackPos)) {
                 LOGGER.warn("LivingEnderChestAccessor: rollback target unloaded, channel={}, pos={}",
@@ -246,12 +243,13 @@ public class LivingEnderChestAccessor implements SlotAccessor {
             }
 
             BlockEntity be = level.getBlockEntity(rollbackPos);
-            container = getContainer(level, rollbackPos, be);
-            if (container == null) {
+            IItemHandler handler = getHandler(level, rollbackPos, be);
+            if (handler == null) {
                 LOGGER.warn("LivingEnderChestAccessor: rollback target not container, channel={}, pos={}",
                     channel, rollbackPos);
                 return;
             }
+            handler.insertItem(rollbackSlot, stack, false);
         } else if (rollbackContainerKey != null && rollbackContainerKey.startsWith("player_")) {
             try {
                 UUID playerId = UUID.fromString(rollbackContainerKey.substring(7));
@@ -261,7 +259,10 @@ public class LivingEnderChestAccessor implements SlotAccessor {
                         channel, playerId);
                     return;
                 }
-                container = player.getInventory();
+                IItemHandler handler = player.getCapability(Capabilities.ItemHandler.ENTITY);
+                if (handler != null) {
+                    handler.insertItem(rollbackSlot, stack, false);
+                }
             } catch (IllegalArgumentException e) {
                 LOGGER.warn("LivingEnderChestAccessor: rollback invalid containerKey, channel={}, key={}",
                     channel, rollbackContainerKey);
@@ -270,16 +271,6 @@ public class LivingEnderChestAccessor implements SlotAccessor {
         } else {
             LOGGER.warn("LivingEnderChestAccessor: rollback no saved position or containerKey, channel={}", channel);
             return;
-        }
-
-        ItemStack current = container.getItem(rollbackSlot);
-        if (container instanceof ItemHandlerWrapper wrapper) {
-            wrapper.handler().insertItem(rollbackSlot, stack, false);
-        } else if (current.isEmpty()) {
-            container.setItem(rollbackSlot, stack);
-        } else if (ItemStack.isSameItemSameComponents(current, stack)) {
-            current.grow(stack.getCount());
-            container.setItem(rollbackSlot, current);
         }
         LOGGER.debug("LivingEnderChestAccessor: rollback channel={}, item={}, count={}, pos={}, slot={}",
             channel, stack.getHoverName().getString(), stack.getCount(), rollbackPos, rollbackSlot);
@@ -307,14 +298,9 @@ public class LivingEnderChestAccessor implements SlotAccessor {
     }
 
     /**
-     * 从方块位置获取容器，统一通过 IItemHandler 能力。
-     * NeoForge 自动为所有原版 Container 方块注册该能力，无需区分方块类型。
+     * 从方块位置获取 IItemHandler，统一通过 NeoForge 能力获取。
      */
-    private static Container getContainer(Level level, BlockPos pos, BlockEntity be) {
-        IItemHandler itemHandler = level.getCapability(Capabilities.ItemHandler.BLOCK, pos, null);
-        if (itemHandler != null) {
-            return new ItemHandlerWrapper(itemHandler);
-        }
-        return null;
+    private static IItemHandler getHandler(Level level, BlockPos pos, BlockEntity be) {
+        return level.getCapability(Capabilities.ItemHandler.BLOCK, pos, null);
     }
 }
