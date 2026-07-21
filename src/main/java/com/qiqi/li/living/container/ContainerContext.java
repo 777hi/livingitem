@@ -124,4 +124,24 @@ public interface ContainerContext {
      */
     default int getWidth() {
         return 9;
+    }
+
+    /**
+     * 获取本 tick 的容器快照。
+     *
+     * 由 {@link ContainerLivingItemHandler#processContext} 在每次容器 tick 时构建，
+     * 包含预扫描的容器信息（如活漏斗连接图），供所有组件复用。
+     *
+     * @return 容器快照，如果尚未构建返回 null
+     */
+    default ContainerSnapshot getSnapshot() {
+        return null;
+    }
+
+    /**
+     * 设置本 tick 的容器快照。
+     *
+     * @param snapshot 容器快照
+     */
+    default void setSnapshot(ContainerSnapshot snapshot) {
     }}

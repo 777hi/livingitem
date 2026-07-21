@@ -13,7 +13,6 @@ import java.util.*;
  * 职责：
  * 1. 注册每种容器类型的解析规则（ContainerRule）
  * 2. 根据容器 ID 查找对应的规则
- * 3. 为 HybridContainerResolver 的配置解析策略提供数据源
  *
  * 内置规则：
  * - minecraft:chest（27 格箱子）：标准 9 列矩形，越界无效
@@ -26,8 +25,7 @@ import java.util.*;
  * - 通过 loadFromJson() 从 JSON 文件加载（预留接口）
  *
  * 规则匹配流程：
- *   HybridContainerResolver → identifyContainer() → ResourceLocation
- *   → findRule() → ContainerRule → applyDirectionRule()
+ *   identifyContainer() → ResourceLocation → findRule() → ContainerRule
  */
 public final class ContainerCompatibilityConfig {
 

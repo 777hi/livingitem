@@ -60,6 +60,25 @@ public class ComponentState {
         dirty = true;
     }
 
+    /**
+     * 静默写入整数，不标记脏数据。
+     * 用于高频更新的值（如冷却计数），避免每 tick 触发 NBT 序列化。
+     */
+    public void setIntSilent(String key, int value) {
+        data.putInt(key, value);
+    }
+
+    /** 读取长整数，键不存在时返回默认值 */
+    public long getLong(String key, long defaultValue) {
+        return data.contains(key) ? data.getLong(key) : defaultValue;
+    }
+
+    /** 写入长整数 */
+    public void setLong(String key, long value) {
+        data.putLong(key, value);
+        dirty = true;
+    }
+
     /** 读取浮点数，键不存在时返回默认值 */
     public float getFloat(String key, float defaultValue) {
         return data.contains(key) ? data.getFloat(key) : defaultValue;

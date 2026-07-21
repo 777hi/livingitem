@@ -19,14 +19,15 @@
  * - 根据传输方向选择正确的半箱作为基准位置：
  *   上方/左侧边界以LEFT半箱为基础，下方/右侧边界以RIGHT半箱为基础
  */
-package com.qiqi.li.living.core.components;
+package com.qiqi.li.living.container;
 
 import java.util.ArrayList;
 import java.util.List;
+
+import com.qiqi.li.living.core.components.InternalStorageComponent;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.Container;
-import net.minecraft.world.WorldlyContainer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.ChestBlock;
@@ -34,13 +35,17 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.ChestBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.ChestType;
-import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.LivingItemManager;
 import com.qiqi.li.living.core.ComponentContext;
 import com.qiqi.li.living.core.ComponentState;
+import com.qiqi.li.living.core.accessor.LivingEnderChestAccessor;
 import com.qiqi.li.living.core.model.Pos2D;
+import com.qiqi.li.living.core.components.ItemFilterComponent;
 import com.qiqi.li.living.function.LivingChestFunction;
-import com.qiqi.li.living.function.LivingHopperFunction;
+import com.qiqi.li.living.function.LivingEnderChestFunction;
+import net.minecraft.server.MinecraftServer;
+import net.neoforged.neoforge.capabilities.Capabilities;
+import net.neoforged.neoforge.items.IItemHandler;
 
 public final class CrossContainerTransfer {
 
@@ -89,19 +94,21 @@ public final class CrossContainerTransfer {
         BlockPos sourceBasePos = getBasePosForDirection(containerPos, ctx.sourceOffset(), chestPositions);
         BlockPos targetBasePos = getBasePosForDirection(containerPos, ctx.targetOffset(), chestPositions);
 
+        ComponentState filterState = ctx.getComponentState(ItemFilterComponent.ID);
+
         if (sourceOutOfBounds && !targetOutOfBounds) {
             return pullFromNeighbor(ctx, containerCtx, level, sourceBasePos,
-                                     blockFacing, chestPositions, stackSize, maxTransfer);
+                                     blockFacing, chestPositions, stackSize, maxTransfer, filterState);
         }
 
         if (targetOutOfBounds && !sourceOutOfBounds) {
             return pushToNeighbor(ctx, containerCtx, level, targetBasePos,
-                                   blockFacing, chestPositions, stackSize, maxTransfer);
+                                   blockFacing, chestPositions, stackSize, maxTransfer, filterState);
         }
 
         if (sourceOutOfBounds && targetOutOfBounds) {
             return transferBetweenNeighbors(ctx, containerCtx, level, sourceBasePos, targetBasePos,
-                                             blockFacing, chestPositions, stackSize, maxTransfer);
+                                             blockFacing, chestPositions, stackSize, maxTransfer, filterState);
         }
 
         return false;
@@ -133,7 +140,8 @@ public final class CrossContainerTransfer {
                                              ContainerContext containerCtx, Level level,
                                              BlockPos basePos, Direction blockFacing,
                                              List<BlockPos> chestPositions,
-                                             int stackSize, int maxTransfer) {
+                                             int stackSize, int maxTransfer,
+                                             ComponentState filterState) {
         Pos2D sourceOffset = ctx.sourceOffset();
         Direction sourceWorldDir = gridToWorld(sourceOffset, blockFacing);
         if (sourceWorldDir == null) return false;
@@ -148,12 +156,15 @@ public final class CrossContainerTransfer {
 
         if (targetIsChest) {
             return pullFromNeighborToLivingChest(ctx, containerCtx, neighborContainer,
-                targetStack, targetSlot, stackSize, maxTransfer);
+                targetStack, targetSlot, stackSize, maxTransfer, filterState);
         }
 
         for (int i = 0; i < neighborContainer.getContainerSize(); i++) {
             ItemStack sourceStack = neighborContainer.getItem(i);
             if (sourceStack.isEmpty() || LivingItemManager.isLivingItem(sourceStack)) continue;
+
+            // 物品过滤
+            if (filterState != null && !ItemFilterComponent.allows(filterState, sourceStack)) continue;
 
             int transferAmount = Math.min(sourceStack.getCount(), Math.min(stackSize, maxTransfer));
 
@@ -211,13 +222,19 @@ public final class CrossContainerTransfer {
                                            ContainerContext containerCtx, Level level,
                                            BlockPos basePos, Direction blockFacing,
                                            List<BlockPos> chestPositions,
-                                           int stackSize, int maxTransfer) {
+                                           int stackSize, int maxTransfer,
+                                           ComponentState filterState) {
         int sourceSlot = ctx.sourceSlot();
         ItemStack sourceStack = containerCtx.getItem(sourceSlot);
         if (sourceStack.isEmpty()) return false;
 
         boolean sourceIsChest = LivingChestFunction.isLivingChest(sourceStack);
-        if (!sourceIsChest && LivingItemManager.isLivingItem(sourceStack)) return false;
+        boolean sourceIsEnderChest = LivingEnderChestFunction.isLivingEnderChest(sourceStack);
+        if (!sourceIsChest && !sourceIsEnderChest && LivingItemManager.isLivingItem(sourceStack)) return false;
+
+        // 物品过滤
+        if (filterState != null && !sourceIsChest && !sourceIsEnderChest
+            && !ItemFilterComponent.allows(filterState, sourceStack)) return false;
 
         Pos2D targetOffset = ctx.targetOffset();
         Direction targetWorldDir = gridToWorld(targetOffset, blockFacing);
@@ -226,9 +243,14 @@ public final class CrossContainerTransfer {
         Container neighborContainer = getNeighborContainer(level, basePos, targetWorldDir, chestPositions);
         if (neighborContainer == null) return false;
 
+        if (sourceIsEnderChest) {
+            return pushFromLivingEnderChestToNeighbor(ctx, containerCtx, neighborContainer,
+                sourceStack, sourceSlot, stackSize, maxTransfer, filterState);
+        }
+
         if (sourceIsChest) {
             return pushFromLivingChestToNeighbor(ctx, containerCtx, neighborContainer,
-                sourceStack, sourceSlot, stackSize, maxTransfer);
+                sourceStack, sourceSlot, stackSize, maxTransfer, filterState);
         }
 
         int transferAmount = Math.min(sourceStack.getCount(), Math.min(stackSize, maxTransfer));
@@ -290,7 +312,8 @@ public final class CrossContainerTransfer {
                                                           ItemStack chestStack,
                                                           int sourceSlot,
                                                           int stackSize,
-                                                          int maxTransfer) {
+                                                          int maxTransfer,
+                                                          ComponentState filterState) {
         if (ctx.level().isClientSide()) return false;
 
         var server = ctx.level().getServer();
@@ -305,7 +328,27 @@ public final class CrossContainerTransfer {
             return false;
         }
 
-        ItemStack extracted = LivingChestFunction.extractItem(server, chestStack, transferAmount, capacity);
+        // 物品过滤：查找第一个能通过过滤的物品类型
+        ItemStack matchingType = null;
+        if (filterState != null) {
+            List<ItemStack> merged = LivingChestFunction.getMergedStorage(server, chestStack, capacity);
+            for (ItemStack item : merged) {
+                if (!item.isEmpty() && ItemFilterComponent.allows(filterState, item)) {
+                    matchingType = item;
+                    break;
+                }
+            }
+            if (matchingType == null) {
+                return false; // 没有物品能通过过滤
+            }
+        }
+
+        ItemStack extracted;
+        if (matchingType != null) {
+            extracted = LivingChestFunction.extractItem(server, chestStack, matchingType, transferAmount, capacity);
+        } else {
+            extracted = LivingChestFunction.extractItem(server, chestStack, transferAmount, capacity);
+        }
         if (extracted.isEmpty()) return false;
 
         for (int j = 0; j < neighborContainer.getContainerSize(); j++) {
@@ -331,6 +374,74 @@ public final class CrossContainerTransfer {
         }
 
         LivingChestFunction.insertItem(server, chestStack, extracted, capacity);
+        return false;
+    }
+
+    /**
+     * 从活末影箱提取物品并推送到相邻容器
+     * 
+     * 当活漏斗的输出槽位超出容器边界，且输入槽位是活末影箱时调用。
+     * 从活末影箱的路由中提取物品，然后推送到相邻容器的合适槽位中。
+     * 
+     * 传输规则：
+     * - 从活末影箱中提取 stackSize 数量的物品
+     * - 在相邻容器中寻找空槽位或可合并的槽位
+     * - 优先推送到空槽位，其次堆叠到已有同类物品的槽位
+     * 
+     * @param ctx 组件上下文
+     * @param containerCtx 当前容器上下文
+     * @param neighborContainer 相邻容器
+     * @param enderChestStack 活末影箱物品栈
+     * @param sourceSlot 活末影箱所在的槽位索引
+     * @param stackSize 单次传输最大数量
+     * @param maxTransfer 总传输量限制
+     * @param filterState 物品过滤器状态
+     * @return 是否成功推送物品
+     */
+    private static boolean pushFromLivingEnderChestToNeighbor(ComponentContext ctx,
+                                                               ContainerContext containerCtx,
+                                                               Container neighborContainer,
+                                                               ItemStack enderChestStack,
+                                                               int sourceSlot,
+                                                               int stackSize,
+                                                               int maxTransfer,
+                                                               ComponentState filterState) {
+        if (ctx.level().isClientSide()) return false;
+
+        MinecraftServer server = ctx.level().getServer();
+        if (server == null) return false;
+
+        int channel = enderChestStack.getCount();
+        var transferredTargetSlots = containerCtx.getTransferredTargetSlots();
+        LivingEnderChestAccessor accessor = new LivingEnderChestAccessor(
+            server, channel, filterState, transferredTargetSlots);
+
+        int transferAmount = Math.min(stackSize, maxTransfer);
+        ItemStack extracted = accessor.extract(transferAmount, ItemStack.EMPTY);
+        if (extracted.isEmpty()) return false;
+
+        for (int j = 0; j < neighborContainer.getContainerSize(); j++) {
+            ItemStack targetStack = neighborContainer.getItem(j);
+
+            if (targetStack.isEmpty()) {
+                neighborContainer.setItem(j, extracted.copy());
+                return true;
+            } else if (targetStack.is(extracted.getItem()) &&
+                       targetStack.getCount() < targetStack.getMaxStackSize()) {
+                int spaceAvailable = targetStack.getMaxStackSize() - targetStack.getCount();
+                int actualTransfer = Math.min(extracted.getCount(), spaceAvailable);
+
+                targetStack.grow(actualTransfer);
+                neighborContainer.setItem(j, targetStack);
+                extracted.shrink(actualTransfer);
+
+                if (extracted.getCount() > 0) {
+                    // 退回到末影箱路由（实际上无法退回，这里忽略）
+                }
+                return true;
+            }
+        }
+
         return false;
     }
 
@@ -361,7 +472,8 @@ public final class CrossContainerTransfer {
                                                           ItemStack chestStack,
                                                           int targetSlot,
                                                           int stackSize,
-                                                          int maxTransfer) {
+                                                          int maxTransfer,
+                                                          ComponentState filterState) {
         if (ctx.level().isClientSide()) return false;
 
         var server = ctx.level().getServer();
@@ -378,6 +490,9 @@ public final class CrossContainerTransfer {
         for (int i = 0; i < neighborContainer.getContainerSize(); i++) {
             ItemStack sourceStack = neighborContainer.getItem(i);
             if (sourceStack.isEmpty() || LivingItemManager.isLivingItem(sourceStack)) continue;
+
+            // 物品过滤
+            if (filterState != null && !ItemFilterComponent.allows(filterState, sourceStack)) continue;
 
             int transferAmount = Math.min(sourceStack.getCount(), Math.min(stackSize, maxTransfer));
 
@@ -426,7 +541,8 @@ public final class CrossContainerTransfer {
                                                      BlockPos sourceBasePos, BlockPos targetBasePos,
                                                      Direction blockFacing,
                                                      List<BlockPos> chestPositions,
-                                                     int stackSize, int maxTransfer) {
+                                                     int stackSize, int maxTransfer,
+                                                     ComponentState filterState) {
         Pos2D sourceOffset = ctx.sourceOffset();
         Direction sourceWorldDir = gridToWorld(sourceOffset, blockFacing);
         if (sourceWorldDir == null) return false;
@@ -444,6 +560,9 @@ public final class CrossContainerTransfer {
         for (int i = 0; i < sourceContainer.getContainerSize(); i++) {
             ItemStack sourceStack = sourceContainer.getItem(i);
             if (sourceStack.isEmpty() || LivingItemManager.isLivingItem(sourceStack)) continue;
+
+            // 物品过滤
+            if (filterState != null && !ItemFilterComponent.allows(filterState, sourceStack)) continue;
 
             int transferAmount = Math.min(sourceStack.getCount(), Math.min(stackSize, maxTransfer));
 
@@ -720,8 +839,71 @@ public final class CrossContainerTransfer {
             }
         } else if (neighborBe instanceof Container container) {
             neighborContainer = container;
+        } else {
+            IItemHandler itemHandler = level.getCapability(
+                Capabilities.ItemHandler.BLOCK, neighborPos, direction.getOpposite());
+            if (itemHandler != null) {
+                neighborContainer = new ItemHandlerWrapper(itemHandler);
+            }
         }
 
         return neighborContainer;
+    }
+
+    /**
+     * IItemHandler → Container 适配器。
+     * 使支持 IItemHandler 能力（如抽屉、机器等）的模组方块也能被活漏斗跨容器访问。
+     */
+    private record ItemHandlerWrapper(IItemHandler handler) implements Container {
+
+        @Override
+        public int getContainerSize() {
+            return handler.getSlots();
+        }
+
+        @Override
+        public boolean isEmpty() {
+            for (int i = 0; i < handler.getSlots(); i++) {
+                if (!handler.getStackInSlot(i).isEmpty()) return false;
+            }
+            return true;
+        }
+
+        @Override
+        public ItemStack getItem(int slot) {
+            return handler.getStackInSlot(slot);
+        }
+
+        @Override
+        public ItemStack removeItem(int slot, int amount) {
+            return handler.extractItem(slot, amount, false);
+        }
+
+        @Override
+        public ItemStack removeItemNoUpdate(int slot) {
+            int count = handler.getStackInSlot(slot).getCount();
+            return handler.extractItem(slot, count, false);
+        }
+
+        @Override
+        public void setItem(int slot, ItemStack stack) {
+            handler.extractItem(slot, Integer.MAX_VALUE, false);
+            handler.insertItem(slot, stack, false);
+        }
+
+        @Override
+        public void setChanged() {}
+
+        @Override
+        public boolean stillValid(net.minecraft.world.entity.player.Player player) {
+            return true;
+        }
+
+        @Override
+        public void clearContent() {
+            for (int i = 0; i < handler.getSlots(); i++) {
+                handler.extractItem(i, Integer.MAX_VALUE, false);
+            }
+        }
     }
 }

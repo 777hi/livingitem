@@ -33,7 +33,6 @@ public interface ContainerAdapter {
      * 获取容器的布局信息。
      *
      * 返回包含容器大小、行列数、每个槽位详细信息的布局对象。
-     * 用于 HybridContainerResolver 的配置解析策略。
      *
      * @param container 目标容器
      * @return 容器布局信息

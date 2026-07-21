@@ -148,12 +148,8 @@ public class ContainerLivingItemHandler {
             return;
         }
 
-//        if (containerSize > 54) {
-////            LOGGER.info("Processing large container: size={}, width={}, class={}",
-////                containerSize,
-////                context.getWidth(),
-////                context.getClass().getSimpleName());
-//        }
+        // 构建容器快照：每 tick 扫描一次，供所有组件复用
+        context.setSnapshot(ContainerSnapshot.capture(context));
 
         Map<LivingItemFunction, List<LivingItemFunction.SlotEntry>> grouped = new LinkedHashMap<>();
 

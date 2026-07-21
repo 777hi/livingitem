@@ -21,6 +21,8 @@
   "tooltip.livingitem.transform.recipe": "  §7Recipe: §e%s§7 → §a%s§r",
 
   "tooltip.livingitem.hopper.status": "§aLiving Hopper§r",
+  "tooltip.livingitem.filter.blacklist": "  §cBlacklist:§r",
+  "tooltip.livingitem.filter.whitelist": "  §aWhitelist:§r",
   "tooltip.livingitem.chest.status": "§aLiving Chest§r",
   "tooltip.livingitem.chest.storage": "  §7Storage: §e%d§7/§a%d §7slots (§b%d §7free)§r",
   "tooltip.livingitem.chest.storage_empty": "  §7Storage: §a%d §7slots§r",

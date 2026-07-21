@@ -26,11 +26,13 @@ import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
+import net.neoforged.neoforge.event.level.ChunkEvent;
 import net.neoforged.neoforge.event.level.LevelEvent;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
 import com.qiqi.li.living.function.LivingChestFunction;
+import com.qiqi.li.living.function.LivingEnderChestFunction;
 import com.qiqi.li.living.core.components.InternalStorageComponent;
 
 import java.util.ArrayList;
@@ -108,6 +110,9 @@ public class LivingItem {
 
         LivingItemManager.registerFunction(new LivingChestFunction());
         LOGGER.info("Registered living chest function");
+
+        LivingItemManager.registerFunction(new LivingEnderChestFunction());
+        LOGGER.info("Registered living ender chest function");
 
         InteractionRegistry.registerHandler("ignite", new IgniteHandler());
         LOGGER.info("Registered ignite interaction handler");
@@ -207,5 +212,13 @@ public class LivingItem {
         storage.saveAllDirtySync();
         
         LOGGER.info("Living chest data saved successfully, server can now shut down safely");
+    }
+
+    @SubscribeEvent
+    public void onChunkUnload(ChunkEvent.Unload event) {
+        if (event.getLevel() instanceof ServerLevel serverLevel) {
+            com.qiqi.li.living.core.accessor.EnderChannelRegistry.getInstance()
+                .onChunkUnload(serverLevel, event.getChunk().getPos());
+        }
     }
 }

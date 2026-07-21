@@ -51,6 +51,9 @@ public class SimpleContainerContext implements ContainerContext {
     /** 本 tick 已被传输到达的槽位集合（防止同 tick 级联传输） */
     private final Set<Integer> transferredTargetSlots = new HashSet<>();
 
+    /** 本 tick 的容器快照（预扫描结果，供所有组件复用） */
+    private ContainerSnapshot snapshot;
+
     public SimpleContainerContext(Container container) {
         this(container, new ArrayList<>(), new ArrayList<>());
     }
@@ -223,6 +226,16 @@ public class SimpleContainerContext implements ContainerContext {
     @Override
     public Set<Integer> getTransferredTargetSlots() {
         return transferredTargetSlots;
+    }
+
+    @Override
+    public ContainerSnapshot getSnapshot() {
+        return snapshot;
+    }
+
+    @Override
+    public void setSnapshot(ContainerSnapshot snapshot) {
+        this.snapshot = snapshot;
     }
 
     @Override

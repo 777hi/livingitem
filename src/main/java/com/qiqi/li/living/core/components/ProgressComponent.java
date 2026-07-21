@@ -58,7 +58,7 @@ public class ProgressComponent implements ILivingComponent {
         state.setInt(KEY_TOTAL, total);
 
         int current = state.getInt(KEY_PROGRESS, 0);
-        current += multiplier;
+        current = Math.min(total, current + multiplier);
         state.setInt(KEY_PROGRESS, current);
     }
 

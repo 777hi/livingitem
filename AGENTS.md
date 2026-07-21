@@ -146,7 +146,7 @@ ILivingComponent (接口)
     ├── DirectionModeComponent  — 方向/槽位配置（双模式）
     │     ├── SLOTS 模式：命名槽位映射（活熔炉的 input/fuel/output）
     │     └── TRANSFER 模式：传输方向映射（活漏斗的 source→target）
-    ├── ItemTransferComponent   — 物品传输逻辑（含跨容器传输触发）
+    ├── ItemTransferComponent   — 物品传输逻辑（含跨容器传输触发 + SlotAccessor 调度）
     ├── CrossContainerTransfer  — 跨容器传输工具类（方向映射 + 大箱子处理 + 邻居容器查找）
     ├── ProgressComponent       — 进度计时与暂停
     ├── FuelConsumeComponent    — 燃料消耗与可用性检查
@@ -154,6 +154,12 @@ ILivingComponent (接口)
     └── ExplosionComponent      — 引信倒计时 + 爆炸逻辑（活TNT）
           ├── 普通模式 (≤64 TNT)：原版 setBlock，支持原版/100%两种掉落模式
           └── 大当量模式 (>64 TNT)：直接修改区块数据，无掉落物
+
+SlotAccessor 存储后端抽象（独立于组件体系，供传输引擎使用）
+    ├── SlotAccessor          — 接口：extract/insert/rollback/isEmpty/isFull/markTransferred/sync
+    ├── PlainSlotAccessor     — 普通槽位：直接读写 ContainerContext
+    ├── LivingChestAccessor   — 活箱子：通过 LivingChestFunction API 操作虚拟存储
+    └── SlotAccessorFactory   — 工厂：根据槽位物品类型创建对应访问器
 
 交互体系（独立于组件，处理GUI中的活物品间交互）
     ├── InteractionEntry   — 交互规则（record：targetItem + triggerItem + button + actionId）
@@ -343,6 +349,12 @@ src/main/java/com/qiqi/li/
 │       ├── ComponentConfig.java             # 组件配置参数容器
 │       ├── ComponentContext.java            # 组件执行上下文（容器 + 解析槽位 + 世界 + 状态）
 │       ├── ComponentState.java              # 组件运行时状态（NBT 包装器）
+│       │
+│       ├── accessor/                        # SlotAccessor 存储后端抽象
+│       │   ├── SlotAccessor.java            # 接口：extract/insert/rollback/isEmpty/isFull/markTransferred/sync
+│       │   ├── PlainSlotAccessor.java       # 普通槽位：直接读写 ContainerContext
+│       │   ├── LivingChestAccessor.java     # 活箱子：通过 LivingChestFunction API 操作虚拟存储
+│       │   └── SlotAccessorFactory.java     # 工厂：根据槽位物品类型创建对应访问器
 │       │
 │       ├── model/
 │       │   ├── Pos2D.java                   # 不可变 2D 坐标，方向常量，NBT 序列化
@@ -650,7 +662,14 @@ SLOTS 模式的方向数据存储在 `ComponentState` 中（`slot_input_x`, `slo
 
 ### 当前版本: v0.6-alpha
 
-**最近更新** (2026-07-20):
+**最近更新** (2026-07-22):
+- ✅ 重构：活漏斗传输引擎引入 SlotAccessor 统一架构（extract → insert → rollback 统一流程）
+- ✅ 新增：`SlotAccessor` 接口 + `PlainSlotAccessor` + `LivingChestAccessor` + `SlotAccessorFactory`
+- ✅ 删除：4 个旧传输方法（`transferBetweenSlots`/`transferToLivingChest`/`transferFromLivingChest`/`transferBetweenLivingChests`），~400 行重复代码
+- ✅ 修复：混搭黑白名单链传递失效（`inheritFilter` 同时继承邻居的黑白名单）
+- ✅ 修复：过滤器拦截时冷却未设置导致无限循环（冷却设置移到 if(success) 外部）
+
+**历史更新** (2026-07-20):
 - ✅ 新增：方块放置自动填充（生存模式消耗头部UUID + 填充物品，创造模式保留UUID）
 - ✅ 新增：三层防护体系（split拦截 + 发射器空分发 + 投掷器选槽拦截）
 - ✅ 新增：铁砧重命名堆叠修复（副本比较法）
@@ -804,5 +823,5 @@ public class LivingBrewingStandFunction extends BaseLivingFunction {
 
 ---
 
-*最后更新: 2026-07-20*
-*状态: Alpha 测试阶段 - 活箱子、活熔炉、活漏斗、活TNT核心功能已完成，跨容器传输已实现，模组容器兼容（IronChests等），GUI交互系统已就绪，客户端图标系统已组件化，代码结构已按职责重构为子包，三层防护体系已就绪，方块放置自动填充已实现*
+*最后更新: 2026-07-22*
+*状态: Alpha 测试阶段 - 活箱子、活熔炉、活漏斗、活TNT核心功能已完成，跨容器传输已实现，模组容器兼容（IronChests等），GUI交互系统已就绪，客户端图标系统已组件化，代码结构已按职责重构为子包，SlotAccessor 统一传输架构已实现，三层防护体系已就绪，方块放置自动填充已实现*

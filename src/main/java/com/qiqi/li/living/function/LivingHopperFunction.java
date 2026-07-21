@@ -1,16 +1,24 @@
 package com.qiqi.li.living.function;
 
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.Level;
 import com.qiqi.li.living.core.ComponentState;
 import com.qiqi.li.living.core.LivingFunctionConfig;
 import com.qiqi.li.living.BaseLivingFunction;
 import com.qiqi.li.living.LivingItemManager;
+import com.qiqi.li.living.core.accessor.EnderChannelRegistry;
 import com.qiqi.li.living.core.components.DirectionModeComponent;
+import com.qiqi.li.living.core.components.ItemFilterComponent;
 import com.qiqi.li.living.core.components.ItemTransferComponent;
 import com.qiqi.li.living.core.model.SlotMapping;
 import com.qiqi.li.living.core.orchestrator.Orchestrators;
+import com.qiqi.li.living.container.ContainerContext;
 
 /**
  * 活漏斗功能 —— 实现活漏斗的物品传输逻辑。
@@ -40,6 +48,7 @@ public class LivingHopperFunction extends BaseLivingFunction {
         .withFunctionId(ID)
         .withStackMultiplier(true)
         .withOrchestrator(Orchestrators.SIMPLE)
+        .addComponent(new ItemFilterComponent())
         .addComponent(new DirectionModeComponent())
         .addComponent(new ItemTransferComponent());
 
@@ -56,6 +65,43 @@ public class LivingHopperFunction extends BaseLivingFunction {
 
     @Override
     public String getFunctionId() { return ID; }
+
+    /**
+     * 重写 tick()：在活漏斗处理完成后清理已移除漏斗的路由。
+     *
+     * <p>当活漏斗从容器中被移走时，该漏斗注册的所有活末影箱路由
+     * 应当被清理。此方法在父类 tick() 完成后收集当前容器中
+     * 所有活漏斗的槽位，并调用 EnderChannelRegistry 清理
+     * 对应容器位置中 registrarSlot 不在活跃列表中的路由。</p>
+     */
+    @Override
+    public void tick(List<SlotEntry> entries, ContainerContext context, Level level) {
+        super.tick(entries, context, level);
+
+        if (level.isClientSide) return;
+
+        BlockPos pos = context.getBlockPos();
+        if (pos == null) return;
+
+        Set<Integer> activeSlots = new HashSet<>();
+        for (SlotEntry entry : entries) {
+            activeSlots.add(entry.slotIndex());
+        }
+
+        EnderChannelRegistry.getInstance().removeStaleRoutes(pos, activeSlots);
+    }
+
+    /**
+     * 判断物品是否为活漏斗。
+     *
+     * 同时检查物品类型（漏斗）和活物品标记。
+     *
+     * @param stack 要检查的物品
+     * @return true 如果是活漏斗
+     */
+    public static boolean isLivingHopper(ItemStack stack) {
+        return stack.is(Items.HOPPER) && LivingItemManager.isLivingItem(stack);
+    }
 
     public static LivingFunctionConfig getStaticConfig() { return CONFIG; }
 
