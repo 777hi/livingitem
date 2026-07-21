@@ -188,7 +188,8 @@ public class SimpleContainerContext implements ContainerContext {
             }
         }
 
-        return com.qiqi.li.living.core.config.ContainerCompatibilityConfig.findRuleBySize(getSize());
+        return java.util.Optional.of(
+            com.qiqi.li.living.core.config.ContainerCompatibilityConfig.findOrGenerateRule(getSize()));
     }
 
     @Override
@@ -217,6 +218,14 @@ public class SimpleContainerContext implements ContainerContext {
     @Override
     public int getMaxStackSize() {
         return container.getMaxStackSize();
+    }
+
+    @Override
+    public int getSlotLimit(int slot) {
+        if (container instanceof ItemHandlerWrapper wrapper) {
+            return wrapper.handler().getSlotLimit(slot);
+        }
+        return getMaxStackSize();
     }
 
     @Override

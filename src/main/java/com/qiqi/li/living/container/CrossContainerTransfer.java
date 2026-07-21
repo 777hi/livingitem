@@ -46,6 +46,7 @@ import com.qiqi.li.living.function.LivingEnderChestFunction;
 import net.minecraft.server.MinecraftServer;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.items.IItemHandler;
+import net.neoforged.neoforge.items.ItemHandlerHelper;
 
 public final class CrossContainerTransfer {
 
@@ -169,25 +170,20 @@ public final class CrossContainerTransfer {
             int transferAmount = Math.min(sourceStack.getCount(), Math.min(stackSize, maxTransfer));
 
             if (targetStack.isEmpty()) {
-                ItemStack toTransfer = sourceStack.copy();
-                toTransfer.setCount(transferAmount);
-                containerCtx.setItem(targetSlot, toTransfer);
-
-                sourceStack.shrink(transferAmount);
-                neighborContainer.setItem(i, sourceStack.isEmpty() ? ItemStack.EMPTY : sourceStack);
-
+                ItemStack extracted = extractFromContainer(neighborContainer, i, transferAmount);
+                if (extracted.isEmpty()) continue;
+                containerCtx.setItem(targetSlot, extracted);
                 return true;
             } else if (targetStack.is(sourceStack.getItem()) &&
-                       targetStack.getCount() < targetStack.getMaxStackSize()) {
-                int spaceAvailable = targetStack.getMaxStackSize() - targetStack.getCount();
+                       targetStack.getCount() < containerCtx.getSlotLimit(targetSlot)) {
+                int spaceAvailable = containerCtx.getSlotLimit(targetSlot) - targetStack.getCount();
                 int actualTransfer = Math.min(transferAmount, spaceAvailable);
 
-                targetStack.grow(actualTransfer);
+                ItemStack extracted = extractFromContainer(neighborContainer, i, actualTransfer);
+                if (extracted.isEmpty()) continue;
+
+                targetStack.grow(extracted.getCount());
                 containerCtx.setItem(targetSlot, targetStack);
-
-                sourceStack.shrink(actualTransfer);
-                neighborContainer.setItem(i, sourceStack.isEmpty() ? ItemStack.EMPTY : sourceStack);
-
                 return true;
             }
         }
@@ -255,31 +251,15 @@ public final class CrossContainerTransfer {
 
         int transferAmount = Math.min(sourceStack.getCount(), Math.min(stackSize, maxTransfer));
 
-        for (int j = 0; j < neighborContainer.getContainerSize(); j++) {
-            ItemStack targetStack = neighborContainer.getItem(j);
+        ItemStack toTransfer = sourceStack.copy();
+        toTransfer.setCount(transferAmount);
+        ItemStack remaining = tryInsert(neighborContainer, toTransfer);
+        int actuallyTransferred = transferAmount - remaining.getCount();
 
-            if (targetStack.isEmpty()) {
-                ItemStack toTransfer = sourceStack.copy();
-                toTransfer.setCount(transferAmount);
-                neighborContainer.setItem(j, toTransfer);
-
-                sourceStack.shrink(transferAmount);
-                containerCtx.setItem(sourceSlot, sourceStack.isEmpty() ? ItemStack.EMPTY : sourceStack);
-
-                return true;
-            } else if (targetStack.is(sourceStack.getItem()) &&
-                       targetStack.getCount() < targetStack.getMaxStackSize()) {
-                int spaceAvailable = targetStack.getMaxStackSize() - targetStack.getCount();
-                int actualTransfer = Math.min(transferAmount, spaceAvailable);
-
-                targetStack.grow(actualTransfer);
-                neighborContainer.setItem(j, targetStack);
-
-                sourceStack.shrink(actualTransfer);
-                containerCtx.setItem(sourceSlot, sourceStack.isEmpty() ? ItemStack.EMPTY : sourceStack);
-
-                return true;
-            }
+        if (actuallyTransferred > 0) {
+            sourceStack.shrink(actuallyTransferred);
+            containerCtx.setItem(sourceSlot, sourceStack.isEmpty() ? ItemStack.EMPTY : sourceStack);
+            return true;
         }
 
         return false;
@@ -354,30 +334,11 @@ public final class CrossContainerTransfer {
         }
         if (extracted.isEmpty()) return false;
 
-        for (int j = 0; j < neighborContainer.getContainerSize(); j++) {
-            ItemStack targetStack = neighborContainer.getItem(j);
-
-            if (targetStack.isEmpty()) {
-                neighborContainer.setItem(j, extracted.copy());
-                return true;
-            } else if (targetStack.is(extracted.getItem()) &&
-                       targetStack.getCount() < targetStack.getMaxStackSize()) {
-                int spaceAvailable = targetStack.getMaxStackSize() - targetStack.getCount();
-                int actualTransfer = Math.min(extracted.getCount(), spaceAvailable);
-
-                targetStack.grow(actualTransfer);
-                neighborContainer.setItem(j, targetStack);
-                extracted.shrink(actualTransfer);
-
-                if (!extracted.isEmpty()) {
-                    LivingChestFunction.insertItem(server, chestStack, extracted, capacity);
-                }
-                return true;
-            }
+        ItemStack remaining = tryInsert(neighborContainer, extracted);
+        if (!remaining.isEmpty()) {
+            LivingChestFunction.insertItem(server, chestStack, remaining, capacity);
         }
-
-        LivingChestFunction.insertItem(server, chestStack, extracted, capacity);
-        return false;
+        return remaining.isEmpty();
     }
 
     /**
@@ -425,29 +386,11 @@ public final class CrossContainerTransfer {
         ItemStack extracted = accessor.extract(transferAmount, ItemStack.EMPTY);
         if (extracted.isEmpty()) return false;
 
-        for (int j = 0; j < neighborContainer.getContainerSize(); j++) {
-            ItemStack targetStack = neighborContainer.getItem(j);
-
-            if (targetStack.isEmpty()) {
-                neighborContainer.setItem(j, extracted.copy());
-                return true;
-            } else if (targetStack.is(extracted.getItem()) &&
-                       targetStack.getCount() < targetStack.getMaxStackSize()) {
-                int spaceAvailable = targetStack.getMaxStackSize() - targetStack.getCount();
-                int actualTransfer = Math.min(extracted.getCount(), spaceAvailable);
-
-                targetStack.grow(actualTransfer);
-                neighborContainer.setItem(j, targetStack);
-                extracted.shrink(actualTransfer);
-
-                if (extracted.getCount() > 0) {
-                    // 退回到末影箱路由（实际上无法退回，这里忽略）
-                }
-                return true;
-            }
+        ItemStack remaining = tryInsert(neighborContainer, extracted);
+        if (!remaining.isEmpty()) {
+            accessor.rollback(remaining);
         }
-
-        return false;
+        return remaining.isEmpty();
     }
 
     /**
@@ -508,8 +451,7 @@ public final class CrossContainerTransfer {
 
             int inserted = transferAmount - toInsert.getCount();
             if (inserted > 0) {
-                sourceStack.shrink(inserted);
-                neighborContainer.setItem(i, sourceStack.isEmpty() ? ItemStack.EMPTY : sourceStack);
+                extractFromContainer(neighborContainer, i, inserted);
                 return true;
             }
         }
@@ -571,31 +513,14 @@ public final class CrossContainerTransfer {
 
             int transferAmount = Math.min(sourceStack.getCount(), Math.min(stackSize, maxTransfer));
 
-            for (int j = 0; j < targetContainer.getContainerSize(); j++) {
-                ItemStack targetStack = targetContainer.getItem(j);
+            ItemStack toTransfer = sourceStack.copy();
+            toTransfer.setCount(transferAmount);
+            ItemStack remaining = tryInsert(targetContainer, toTransfer);
+            int actuallyTransferred = transferAmount - remaining.getCount();
 
-                if (targetStack.isEmpty()) {
-                    ItemStack toTransfer = sourceStack.copy();
-                    toTransfer.setCount(transferAmount);
-                    targetContainer.setItem(j, toTransfer);
-
-                    sourceStack.shrink(transferAmount);
-                    sourceContainer.setItem(i, sourceStack.isEmpty() ? ItemStack.EMPTY : sourceStack);
-
-                    return true;
-                } else if (targetStack.is(sourceStack.getItem()) &&
-                           targetStack.getCount() < targetStack.getMaxStackSize()) {
-                    int spaceAvailable = targetStack.getMaxStackSize() - targetStack.getCount();
-                    int actualTransfer = Math.min(transferAmount, spaceAvailable);
-
-                    targetStack.grow(actualTransfer);
-                    targetContainer.setItem(j, targetStack);
-
-                    sourceStack.shrink(actualTransfer);
-                    sourceContainer.setItem(i, sourceStack.isEmpty() ? ItemStack.EMPTY : sourceStack);
-
-                    return true;
-                }
+            if (actuallyTransferred > 0) {
+                extractFromContainer(sourceContainer, i, actuallyTransferred);
+                return true;
             }
         }
 
@@ -832,15 +757,80 @@ public final class CrossContainerTransfer {
      * 检查目标容器是否有任何可用空间。
      * 只要存在至少一个空槽位，或者存在一个未满栈的槽位，就返回 true。
      *
+     * 对于 IItemHandler 容器（抽屉、精妙背包等），使用 getSlotLimit 而非
+     * ItemStack.getMaxStackSize()，因为模组槽位上限可能远超 64。
+     *
      * @param container 目标容器
      * @return true 如果容器还有空间可接收物品
      */
     private static boolean hasAnySpace(Container container) {
+        if (container instanceof ItemHandlerWrapper wrapper) {
+            IItemHandler handler = wrapper.handler();
+            for (int i = 0; i < handler.getSlots(); i++) {
+                ItemStack stack = handler.getStackInSlot(i);
+                if (stack.isEmpty()) return true;
+                if (stack.getCount() < handler.getSlotLimit(i)) return true;
+            }
+            return false;
+        }
         for (int i = 0; i < container.getContainerSize(); i++) {
             ItemStack stack = container.getItem(i);
             if (stack.isEmpty()) return true;
             if (stack.getCount() < stack.getMaxStackSize()) return true;
         }
         return false;
+    }
+
+    /**
+     * 尝试将物品插入目标容器。
+     * 对于 IItemHandler 容器，使用 insertItem 直接插入（原生支持槽位上限 > 64）；
+     * 对于传统 Container，回退到 setItem/getItem 方式。
+     *
+     * @param container 目标容器
+     * @param stack 要插入的物品
+     * @return 未能插入的剩余物品（empty 表示全部插入成功）
+     */
+    private static ItemStack tryInsert(Container container, ItemStack stack) {
+        if (stack.isEmpty()) return ItemStack.EMPTY;
+
+        if (container instanceof ItemHandlerWrapper wrapper) {
+            return ItemHandlerHelper.insertItemStacked(wrapper.handler(), stack.copy(), false);
+        }
+
+        ItemStack remaining = stack.copy();
+        for (int i = 0; i < container.getContainerSize() && !remaining.isEmpty(); i++) {
+            ItemStack existing = container.getItem(i);
+            if (existing.isEmpty()) {
+                container.setItem(i, remaining.copy());
+                return ItemStack.EMPTY;
+            }
+            if (ItemStack.isSameItemSameComponents(existing, remaining)) {
+                int space = existing.getMaxStackSize() - existing.getCount();
+                if (space > 0) {
+                    int toAdd = Math.min(remaining.getCount(), space);
+                    existing.grow(toAdd);
+                    container.setItem(i, existing);
+                    remaining.shrink(toAdd);
+                }
+            }
+        }
+        return remaining;
+    }
+
+    /**
+     * 从容器中安全提取物品。
+     * 对于 IItemHandler 容器，直接使用 extractItem 方法，
+     * 避免 getItem + shrink + setItem 模式中 shrink 直接修改内部栈引用
+     * 导致创造模式容器（如机械动力创造板条箱）状态被意外破坏。
+     */
+    private static ItemStack extractFromContainer(Container container, int slot, int amount) {
+        if (container instanceof ItemHandlerWrapper wrapper) {
+            return wrapper.handler().extractItem(slot, amount, false);
+        }
+        ItemStack stack = container.getItem(slot);
+        if (stack.isEmpty()) return ItemStack.EMPTY;
+        ItemStack extracted = stack.split(amount);
+        container.setItem(slot, stack.isEmpty() ? ItemStack.EMPTY : stack);
+        return extracted;
     }
 }

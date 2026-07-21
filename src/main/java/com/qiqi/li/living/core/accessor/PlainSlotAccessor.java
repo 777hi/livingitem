@@ -48,8 +48,9 @@ public class PlainSlotAccessor implements SlotAccessor {
             return inserted;
         }
 
-        if (targetStack.is(stack.getItem()) && targetStack.getCount() < targetStack.getMaxStackSize()) {
-            int space = targetStack.getMaxStackSize() - targetStack.getCount();
+        int slotLimit = containerCtx.getSlotLimit(slot);
+        if (targetStack.is(stack.getItem()) && targetStack.getCount() < slotLimit) {
+            int space = slotLimit - targetStack.getCount();
             int actual = Math.min(stack.getCount(), space);
             targetStack.grow(actual);
             containerCtx.setItem(slot, targetStack);
@@ -79,7 +80,7 @@ public class PlainSlotAccessor implements SlotAccessor {
     @Override
     public boolean isFull() {
         ItemStack stack = containerCtx.getItem(slot);
-        return !stack.isEmpty() && stack.getCount() >= stack.getMaxStackSize();
+        return !stack.isEmpty() && stack.getCount() >= containerCtx.getSlotLimit(slot);
     }
 
     @Override

@@ -131,6 +131,52 @@ public final class ContainerCompatibilityConfig {
         return Optional.empty();
     }
 
+    /**
+     * 查找或自动生成容器规则。
+     *
+     * 优先查找已注册的规则，如果没有找到，则根据 IItemHandler.getSlots() 自动推断
+     * 标准矩形布局（无需手动为每个容器类型注册规则）。
+     *
+     * @param containerSize 容器槽位数
+     * @return 容器规则（永不返回 null）
+     */
+    public static ContainerRule findOrGenerateRule(int containerSize) {
+        return findRuleBySize(containerSize).orElseGet(() -> generateStandardRule(containerSize));
+    }
+
+    /**
+     * 根据槽位数自动生成标准矩形布局规则。
+     *
+     * 列数推断规则：尝试从 9 列开始，找到能整除槽位数的列宽。
+     * 例如：27→9列, 54→9列, 45→9列, 108→12列, 81→9列。
+     */
+    private static ContainerRule generateStandardRule(int containerSize) {
+        int columns = resolveColumns(containerSize);
+        return ContainerRule.builder()
+            .containerSize(containerSize)
+            .layoutType(ContainerLayoutType.RECTANGULAR_STANDARD)
+            .columns(columns)
+            .validHostSlots(range(0, containerSize - 1))
+            .directionMapping(Pos2D.LEFT, -1)
+            .directionMapping(Pos2D.RIGHT, 1)
+            .directionMapping(Pos2D.UP, -columns)
+            .directionMapping(Pos2D.DOWN, columns)
+            .edgeBehavior(EdgeBehavior.INVALIDATE)
+            .description("auto-generated from slot count " + containerSize)
+            .build();
+    }
+
+    /**
+     * 根据槽位数推断列数。
+     * 尝试 9~13 列，找到能整除的列宽；否则默认 9 列。
+     */
+    private static int resolveColumns(int slotCount) {
+        for (int w = 9; w <= 13; w++) {
+            if (slotCount % w == 0) return w;
+        }
+        return 9;
+    }
+
     public static Optional<ContainerRule> findRuleByNamespaceAndKeyword(String namespace, String path) {
         for (var entry : RULES.entrySet()) {
             ResourceLocation key = entry.getKey();

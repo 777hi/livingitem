@@ -47,7 +47,9 @@ LivingOrchestrator.orchestrate() (编排器决定组件协作流程)
 │  ExplosionComponent      → 引信倒计时+爆炸   │
 └─────────────────────────────────────────────┘
     ↓
-ContainerContext / SimpleContainerContext (容器读写 + 客户端同步)
+ContainerContext / SimpleContainerContext (容器读写 + 客户端同步 + getSlotLimit)
+    ↓
+ItemHandlerWrapper (IItemHandler → Container 适配器，统一原版和模组容器)
 ```
 
 ### 编排器体系
@@ -147,7 +149,7 @@ ILivingComponent (接口)
     │     ├── SLOTS 模式：命名槽位映射（活熔炉的 input/fuel/output）
     │     └── TRANSFER 模式：传输方向映射（活漏斗的 source→target）
     ├── ItemTransferComponent   — 物品传输逻辑（含跨容器传输触发 + SlotAccessor 调度）
-    ├── CrossContainerTransfer  — 跨容器传输工具类（方向映射 + 大箱子处理 + 邻居容器查找）
+    ├── CrossContainerTransfer  — 跨容器传输工具类（方向映射 + 大箱子处理 + 邻居容器查找 + tryInsert/hasAnySpace）
     ├── ProgressComponent       — 进度计时与暂停
     ├── FuelConsumeComponent    — 燃料消耗与可用性检查
     ├── ItemTransformComponent  — 配方匹配与物品转化
@@ -157,7 +159,7 @@ ILivingComponent (接口)
 
 SlotAccessor 存储后端抽象（独立于组件体系，供传输引擎使用）
     ├── SlotAccessor          — 接口：extract/insert/rollback/isEmpty/isFull/markTransferred/sync
-    ├── PlainSlotAccessor     — 普通槽位：直接读写 ContainerContext
+    ├── PlainSlotAccessor     — 普通槽位：直接读写 ContainerContext（支持 getSlotLimit 感知模组槽位上限）
     ├── LivingChestAccessor   — 活箱子：通过 LivingChestFunction API 操作虚拟存储
     └── SlotAccessorFactory   — 工厂：根据槽位物品类型创建对应访问器
 
@@ -292,7 +294,7 @@ ItemStack (NBT)
 
 **漏斗自动传输**：`ItemTransferComponent` 在活箱子 tick 时，自动通过漏斗向相邻容器推拉物品。传输方向由 `DirectionModeComponent` 的 TRANSFER 模式控制。
 
-**跨容器传输**：活箱子在容器边界时，通过 `CrossContainerTransfer` 向相邻容器传输物品。方向映射基于容器方块朝向旋转。
+**跨容器传输**：活箱子在容器边界时，通过 `CrossContainerTransfer` 向相邻容器传输物品。方向映射基于容器方块朝向旋转，插入使用 `tryInsert()`（IItemHandler 分支通过 `ItemHandlerHelper.insertItemStacked()` 一行完成）。
 
 **GUI 拆分/合并 UUID 分配**：`ItemStackMixin` 拦截 `split()`/`grow()`/`shrink()`/`copyWithCount()`，通过 `LivingChestStackHandler` 自动分配/合并 UUID。`LivingChestStackFlags` 线程局部标志允许跨 UUID 堆叠。
 
@@ -332,10 +334,12 @@ src/main/java/com/qiqi/li/
 │   │   └── LivingFlintAndSteelFunction.java # 活打火石：交互触发器，无 tick 逻辑
 │   │
 │   ├── container/                           # 容器上下文与处理器
-│   │   ├── ContainerContext.java            # 容器操作抽象接口（含客户端同步 + 槽位占用 + getWidth）
-│   │   ├── SimpleContainerContext.java      # 容器上下文实现（带异常保护 + 同步逻辑 + 三级回退列宽）
-│   │   ├── ContainerLivingItemHandler.java  # 容器扫描、分组调度、大箱子去重
-│   │   └── ContainerChunkCache.java         # 区块级容器缓存（事件驱动维护）
+│   │   ├── ContainerContext.java            # 容器操作抽象接口（含客户端同步 + 槽位占用 + getWidth + getSlotLimit）
+│   │   ├── SimpleContainerContext.java      # 容器上下文实现（带异常保护 + 同步逻辑 + 三级回退列宽 + getSlotLimit(IItemHandler)）
+│   │   ├── ContainerLivingItemHandler.java  # 容器扫描、分组调度、IItemHandler 去重、buildChestContext（统一 IItemHandler）
+│   │   ├── ContainerChunkCache.java         # 区块级容器缓存（事件驱动维护 + IItemHandler 检测）
+│   │   ├── ItemHandlerWrapper.java          # IItemHandler → Container 适配器（桥接 NeoForge 能力与原版接口）
+│   │   └── ContainerSnapshot.java           # 容器快照（预扫描活漏斗连接图）
 │   │
 │   ├── chest/                               # 活箱子辅助工具
 │   │   ├── LivingChestStackHandler.java     # UUID 列表工具：标准化、创建、拆分、合并、数据校验
@@ -352,7 +356,7 @@ src/main/java/com/qiqi/li/
 │       │
 │       ├── accessor/                        # SlotAccessor 存储后端抽象
 │       │   ├── SlotAccessor.java            # 接口：extract/insert/rollback/isEmpty/isFull/markTransferred/sync
-│       │   ├── PlainSlotAccessor.java       # 普通槽位：直接读写 ContainerContext
+│       │   ├── PlainSlotAccessor.java       # 普通槽位：直接读写 ContainerContext（使用 getSlotLimit 感知模组槽位上限）
 │       │   ├── LivingChestAccessor.java     # 活箱子：通过 LivingChestFunction API 操作虚拟存储
 │       │   └── SlotAccessorFactory.java     # 工厂：根据槽位物品类型创建对应访问器
 │       │
@@ -365,7 +369,7 @@ src/main/java/com/qiqi/li/
 │       │   ├── InternalStorageComponent.java # ⭐ 活箱子核心：UUID 管理、LRU 缓存、磁盘 I/O、物品存取
 │       │   ├── DirectionModeComponent.java  # 方向配置组件（SLOTS/TRANSFER 双模式 + NBT 自治）
 │       │   ├── ItemTransferComponent.java   # 物品传输组件（活漏斗/活箱子，含跨容器传输触发）
-│       │   ├── CrossContainerTransfer.java  # 跨容器传输工具类（方向映射 + 大箱子半箱选择 + 邻居容器查找）
+│       │   ├── CrossContainerTransfer.java  # 跨容器传输工具类（方向映射 + 大箱子半箱选择 + 邻居容器查找 + tryInsert/hasAnySpace + ItemHandlerHelper）
 │       │   ├── ProgressComponent.java       # 进度组件（计时、暂停、回退）
 │       │   ├── FuelConsumeComponent.java    # 燃料组件（消耗、可用性检查）
 │       │   ├── ItemTransformComponent.java  # 转化组件（配方匹配、物品转化）
@@ -391,7 +395,7 @@ src/main/java/com/qiqi/li/
 │       │   └── AdapterRegistry.java         # 适配器注册中心
 │       │
 │       └── config/
-│           ├── ContainerCompatibilityConfig.java  # 容器兼容性配置（含 columns 字段 + findRuleBySize 按大小匹配）
+│           ├── ContainerCompatibilityConfig.java  # 容器兼容性配置（含 columns + findRuleBySize + findOrGenerateRule 自动推断标准布局）
 │           └── TransferStrategy.java               # 传输策略
 │
 ├── client/
@@ -581,6 +585,30 @@ SLOTS 模式的方向数据存储在 `ComponentState` 中（`slot_input_x`, `slo
 - 64个活TNT → 半径32.0
 - 1728个活TNT → 半径166.0
 
+### 15. IItemHandler 统一容器抽象
+
+项目全面使用 NeoForge 的 `IItemHandler` 能力替代原版 `Container` 接口进行容器检测和物品交互：
+
+**为什么用 IItemHandler？**
+- NeoForge 自动为所有原版 Container 方块注册 `IItemHandler` 能力，无需区分方块类型
+- 模组容器（抽屉、精妙背包等）通过 `IItemHandler` 暴露能力，无需适配器
+- `getSlotLimit(slot)` 返回每槽真实上限（抽屉 2048、精妙背包 256），远高于 `ItemStack.getMaxStackSize()` 的固定 64
+
+**核心适配层：**
+- `ItemHandlerWrapper`：`IItemHandler → Container` 适配器（record），使活物品系统能统一处理原版和模组容器
+- `ContainerContext.getSlotLimit(slot)`：新建接口方法，自动感知 `ItemHandlerWrapper` 的每槽上限
+- `ContainerCompatibilityConfig.findOrGenerateRule(size)`：根据 `IItemHandler.getSlots()` 自动推断标准矩形布局，无需手动注册
+
+**传输优化：**
+- `CrossContainerTransfer.tryInsert()`：`IItemHandler` 分支使用 `ItemHandlerHelper.insertItemStacked()` 一行完成插入，容器自动处理分堆和上限
+- `CrossContainerTransfer.hasAnySpace()`：`IItemHandler` 分支使用 `getSlotLimit(i)` 精确判断空间
+- `LivingEnderChestAccessor.rollback()`：`IItemHandler` 分支直接调用 `insertItem()` 回滚，避免 `setItem` 先 `extractItem` 再 `insertItem` 的冗余操作
+
+**容器检测：**
+- `ContainerChunkCache`：通过 `Capabilities.ItemHandler.BLOCK` 检测容器（替代 `Container` 接口检查）
+- `ContainerLivingItemHandler.processBlockEntities()`：使用 `IdentityHashMap<IItemHandler, Boolean>` 去重（大箱子左右半箱共享同一 `IItemHandler` 实例，天然去重）
+- `ContainerLivingItemHandler.buildChestContext()`：统一使用 `IItemHandler` 获取容器，移除 `ChestBlock.getContainer()` 依赖
+
 ---
 
 ## 已完成功能
@@ -654,7 +682,9 @@ SLOTS 模式的方向数据存储在 `ComponentState` 中（`slot_input_x`, `slo
 - [x] 标准矩形容器（27 格箱子、54 格大箱子）
 - [x] 线性容器（5 格漏斗）
 - [x] 边界检查与异常安全
-- [x] 大箱子去重（避免左右两半被分别处理）
+- [x] IItemHandler 去重（大箱子左右半箱共享同一实例，天然去重）
+- [x] 模组容器兼容（通过 ItemHandlerWrapper 适配，抽屉、精妙背包等）
+- [x] 自动布局推断（ContainerCompatibilityConfig.findOrGenerateRule 根据槽位数自动推断列宽）
 
 ---
 
@@ -662,7 +692,23 @@ SLOTS 模式的方向数据存储在 `ComponentState` 中（`slot_input_x`, `slo
 
 ### 当前版本: v0.6-alpha
 
-**最近更新** (2026-07-22):
+**最近更新** (2026-07-21):
+- ✅ 重构：全面使用 IItemHandler 统一容器抽象（替代 Container 接口检查）
+- ✅ 新增：`ItemHandlerWrapper` 适配器（IItemHandler → Container 桥接，record 实现）
+- ✅ 新增：`ContainerContext.getSlotLimit(slot)` 接口方法（感知模组槽位上限）
+- ✅ 优化：`CrossContainerTransfer.tryInsert()` IItemHandler 分支使用 `ItemHandlerHelper.insertItemStacked()`
+- ✅ 优化：`CrossContainerTransfer.hasAnySpace()` IItemHandler 分支使用 `getSlotLimit(i)`
+- ✅ 优化：`LivingEnderChestAccessor.rollback()` IItemHandler 分支直接调用 `insertItem()`
+- ✅ 优化：`PlainSlotAccessor.insert()` / `isFull()` 使用 `getSlotLimit(slot)` 替代 `getMaxStackSize()`
+- ✅ 优化：`ItemTransformComponent.calculateOutputSpace()` 使用 `getSlotLimit(outputSlot)`
+- ✅ 优化：`ContainerCompatibilityConfig` 新增 `findOrGenerateRule()` 自动推断标准布局
+- ✅ 优化：`ContainerLivingItemHandler.buildChestContext()` 统一使用 IItemHandler，移除 `ChestBlock.getContainer()`
+- ✅ 优化：`ContainerLivingItemHandler.processBlockEntities()` 使用 `IdentityHashMap<IItemHandler>` 去重
+- ✅ 优化：`ContainerChunkCache` 通过 `Capabilities.ItemHandler.BLOCK` 检测容器
+- ✅ 修复：抽屉模组容器满时活漏斗仍传输导致物品消失
+- ✅ 修复：精妙背包堆叠上限升级后活漏斗误判槽位已满
+
+**历史更新** (2026-07-22):
 - ✅ 重构：活漏斗传输引擎引入 SlotAccessor 统一架构（extract → insert → rollback 统一流程）
 - ✅ 新增：`SlotAccessor` 接口 + `PlainSlotAccessor` + `LivingChestAccessor` + `SlotAccessorFactory`
 - ✅ 删除：4 个旧传输方法（`transferBetweenSlots`/`transferToLivingChest`/`transferFromLivingChest`/`transferBetweenLivingChests`），~400 行重复代码
@@ -754,7 +800,7 @@ SLOTS 模式的方向数据存储在 `ComponentState` 中（`slot_input_x`, `slo
 - **Minecraft 1.21.1**
 - 构建工具: Gradle
 - 数据持久化: Minecraft DataComponent API + NBT
-- 容器访问: NeoForge Container 接口
+- 容器访问: NeoForge IItemHandler 能力（Capabilities.ItemHandler.BLOCK）
 - 网络通信: NeoForge CustomPacketPayload API
 
 ---
@@ -823,5 +869,5 @@ public class LivingBrewingStandFunction extends BaseLivingFunction {
 
 ---
 
-*最后更新: 2026-07-22*
-*状态: Alpha 测试阶段 - 活箱子、活熔炉、活漏斗、活TNT核心功能已完成，跨容器传输已实现，模组容器兼容（IronChests等），GUI交互系统已就绪，客户端图标系统已组件化，代码结构已按职责重构为子包，SlotAccessor 统一传输架构已实现，三层防护体系已就绪，方块放置自动填充已实现*
+*最后更新: 2026-07-21*
+*状态: Alpha 测试阶段 - 活箱子、活熔炉、活漏斗、活TNT核心功能已完成，跨容器传输已实现，IItemHandler 全面统一容器抽象（兼容抽屉、精妙背包等模组容器），GUI交互系统已就绪，客户端图标系统已组件化，代码结构已按职责重构为子包，SlotAccessor 统一传输架构已实现，三层防护体系已就绪，方块放置自动填充已实现*

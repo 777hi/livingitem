@@ -41,8 +41,11 @@ public record ItemHandlerWrapper(IItemHandler handler) implements Container {
 
     @Override
     public void setItem(int slot, ItemStack stack) {
+        // 先拷贝再操作：避免 stack 是 handler 内部栈的引用时，
+        // extractItem 清空内部栈导致 stack 也跟着变空，使得 insertItem 插入空物品。
+        ItemStack toInsert = stack.copy();
         handler.extractItem(slot, Integer.MAX_VALUE, false);
-        handler.insertItem(slot, stack, false);
+        handler.insertItem(slot, toInsert, false);
     }
 
     @Override

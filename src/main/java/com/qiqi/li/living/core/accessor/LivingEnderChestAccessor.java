@@ -273,7 +273,9 @@ public class LivingEnderChestAccessor implements SlotAccessor {
         }
 
         ItemStack current = container.getItem(rollbackSlot);
-        if (current.isEmpty()) {
+        if (container instanceof ItemHandlerWrapper wrapper) {
+            wrapper.handler().insertItem(rollbackSlot, stack, false);
+        } else if (current.isEmpty()) {
             container.setItem(rollbackSlot, stack);
         } else if (ItemStack.isSameItemSameComponents(current, stack)) {
             current.grow(stack.getCount());

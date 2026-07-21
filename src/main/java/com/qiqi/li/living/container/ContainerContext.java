@@ -34,6 +34,19 @@ public interface ContainerContext {
 
     int getMaxStackSize();
 
+    /**
+     * 获取指定槽位的最大堆叠上限。
+     *
+     * 对于 IItemHandler 容器（抽屉、精妙背包等），返回 handler.getSlotLimit(slot)，
+     * 可能远超 64；对于传统 Container，回退到 getMaxStackSize()。
+     *
+     * @param slot 槽位索引
+     * @return 该槽位的最大堆叠数
+     */
+    default int getSlotLimit(int slot) {
+        return getMaxStackSize();
+    }
+
     String getStableKey(int logicalSlot, String functionId);
 
     default boolean isValidSlot(int logicalSlot) {

@@ -1,14 +1,18 @@
 package com.qiqi.li.living.core.components;
 
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.IntTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.StringTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -59,6 +63,8 @@ public class ItemFilterComponent implements ILivingComponent {
 
     private static final String KEY_BLACKLIST = "blacklist";
     private static final String KEY_WHITELIST = "whitelist";
+    private static final String KEY_BLACKLIST_SLOTS = "blacklist_slots";
+    private static final String KEY_WHITELIST_SLOTS = "whitelist_slots";
 
     @Override
     public String getComponentId() { return ID; }
@@ -68,6 +74,8 @@ public class ItemFilterComponent implements ILivingComponent {
         ComponentState state = new ComponentState();
         state.putList(KEY_BLACKLIST, new ListTag());
         state.putList(KEY_WHITELIST, new ListTag());
+        state.putList(KEY_BLACKLIST_SLOTS, new ListTag());
+        state.putList(KEY_WHITELIST_SLOTS, new ListTag());
         return state;
     }
 
@@ -83,7 +91,9 @@ public class ItemFilterComponent implements ILivingComponent {
         int[] targetOf = snapshot.getTargetOf();
 
         Set<String> blacklist = new HashSet<>();
+        Map<String, Integer> blacklistSlots = new HashMap<>();
         Set<String> whitelist = new HashSet<>();
+        Map<String, Integer> whitelistSlots = new HashMap<>();
 
         for (int slot = 0; slot < containerSize; slot++) {
             if (targetOf[slot] == hostSlot) {
@@ -92,11 +102,13 @@ public class ItemFilterComponent implements ILivingComponent {
                 if (srcSlot >= 0) {
                     ItemStack srcItem = container.getItem(srcSlot);
                     if (!srcItem.isEmpty() && !LivingHopperFunction.isLivingHopper(srcItem)) {
-                        blacklist.add(getItemId(srcItem));
+                        String itemId = getItemId(srcItem);
+                        blacklist.add(itemId);
+                        blacklistSlots.putIfAbsent(itemId, slot);
                     }
                 }
                 // 继承邻居的全部名单（链式传递：每 tick 传播一跳）
-                inheritFilter(container, slot, blacklist, whitelist);
+                inheritFilter(container, slot, blacklist, blacklistSlots, whitelist, whitelistSlots);
             }
         }
 
@@ -107,23 +119,30 @@ public class ItemFilterComponent implements ILivingComponent {
                 if (tgtSlot >= 0) {
                     ItemStack tgtItem = container.getItem(tgtSlot);
                     if (!tgtItem.isEmpty() && !LivingHopperFunction.isLivingHopper(tgtItem)) {
-                        whitelist.add(getItemId(tgtItem));
+                        String itemId = getItemId(tgtItem);
+                        whitelist.add(itemId);
+                        whitelistSlots.putIfAbsent(itemId, slot);
                     }
                 }
                 // 继承邻居的全部名单（链式传递：每 tick 传播一跳）
-                inheritFilter(container, slot, blacklist, whitelist);
+                inheritFilter(container, slot, blacklist, blacklistSlots, whitelist, whitelistSlots);
             }
         }
 
         saveItemSet(state, KEY_BLACKLIST, blacklist);
         saveItemSet(state, KEY_WHITELIST, whitelist);
+        saveSlotMap(state, KEY_BLACKLIST_SLOTS, blacklist, blacklistSlots);
+        saveSlotMap(state, KEY_WHITELIST_SLOTS, whitelist, whitelistSlots);
     }
 
     /**
      * 从邻居活漏斗的 NBT 中继承其全部已计算的名单（黑白名单都拿）。
      * 名单像物品一样，每 tick 沿漏斗链传播一跳。
+     * 继承来的物品来源槽位标记为 -1（未知原始槽位）。
      */
-    private void inheritFilter(ContainerContext container, int slot, Set<String> blacklist, Set<String> whitelist) {
+    private void inheritFilter(ContainerContext container, int slot,
+                               Set<String> blacklist, Map<String, Integer> blacklistSlots,
+                               Set<String> whitelist, Map<String, Integer> whitelistSlots) {
         ItemStack stack = container.getItem(slot);
         if (stack.isEmpty() || !LivingHopperFunction.isLivingHopper(stack)) return;
 
@@ -131,32 +150,55 @@ public class ItemFilterComponent implements ILivingComponent {
         if (funcTag == null || !funcTag.contains(ID)) return;
 
         ComponentState neighborState = ComponentState.fromNBT(funcTag.getCompound(ID));
-        blacklist.addAll(loadItemSet(neighborState, KEY_BLACKLIST));
-        whitelist.addAll(loadItemSet(neighborState, KEY_WHITELIST));
+        Set<String> nBlacklist = loadItemSet(neighborState, KEY_BLACKLIST);
+        Set<String> nWhitelist = loadItemSet(neighborState, KEY_WHITELIST);
+        Map<String, Integer> nBlacklistSlots = loadSlotMap(neighborState, KEY_BLACKLIST_SLOTS);
+        Map<String, Integer> nWhitelistSlots = loadSlotMap(neighborState, KEY_WHITELIST_SLOTS);
+
+        for (String itemId : nBlacklist) {
+            if (blacklist.add(itemId)) {
+                Integer origSlot = nBlacklistSlots.get(itemId);
+                blacklistSlots.put(itemId, origSlot != null ? origSlot : -1);
+            }
+        }
+        for (String itemId : nWhitelist) {
+            if (whitelist.add(itemId)) {
+                Integer origSlot = nWhitelistSlots.get(itemId);
+                whitelistSlots.put(itemId, origSlot != null ? origSlot : -1);
+            }
+        }
     }
 
     @Override
     public void appendTooltip(ComponentState state, Consumer<Component> tooltipAdder) {
         Set<String> blacklist = loadItemSet(state, KEY_BLACKLIST);
         Set<String> whitelist = loadItemSet(state, KEY_WHITELIST);
+        Map<String, Integer> blacklistSlots = loadSlotMap(state, KEY_BLACKLIST_SLOTS);
+        Map<String, Integer> whitelistSlots = loadSlotMap(state, KEY_WHITELIST_SLOTS);
 
         if (!whitelist.isEmpty()) {
             tooltipAdder.accept(Component.translatable("tooltip.livingitem.filter.whitelist"));
             for (String itemId : whitelist) {
-                tooltipAdder.accept(Component.literal("  - ").append(getItemDisplayName(itemId))
-                    .withStyle(net.minecraft.ChatFormatting.GRAY));
+                Integer slot = whitelistSlots.get(itemId);
+                MutableComponent line = Component.literal("  - ").append(getItemDisplayName(itemId));
+                if (slot != null && slot >= 0) {
+                    line.append(Component.literal(" (§7槽" + (slot + 1) + "§r)"));
+                }
+                tooltipAdder.accept(line.withStyle(net.minecraft.ChatFormatting.GRAY));
             }
         }
 
         if (!blacklist.isEmpty()) {
             tooltipAdder.accept(Component.translatable("tooltip.livingitem.filter.blacklist"));
             for (String itemId : blacklist) {
-                tooltipAdder.accept(Component.literal("  - ").append(getItemDisplayName(itemId))
-                    .withStyle(net.minecraft.ChatFormatting.GRAY));
+                Integer slot = blacklistSlots.get(itemId);
+                MutableComponent line = Component.literal("  - ").append(getItemDisplayName(itemId));
+                if (slot != null && slot >= 0) {
+                    line.append(Component.literal(" (§7槽" + (slot + 1) + "§r)"));
+                }
+                tooltipAdder.accept(line.withStyle(net.minecraft.ChatFormatting.GRAY));
             }
         }
-
-
     }
 
     private static Component getItemDisplayName(String itemId) {
@@ -240,12 +282,39 @@ public class ItemFilterComponent implements ILivingComponent {
         state.putList(key, list);
     }
 
+    private static void saveSlotMap(ComponentState state, String key, Set<String> items, Map<String, Integer> slots) {
+        ListTag list = new ListTag();
+        for (String item : items) {
+            Integer slot = slots.get(item);
+            list.add(IntTag.valueOf(slot != null ? slot : -1));
+        }
+        state.putList(key, list);
+    }
+
     private static Set<String> loadItemSet(ComponentState state, String key) {
         Set<String> result = new HashSet<>();
         ListTag list = state.getList(key, Tag.TAG_STRING);
         if (list == null) return result;
         for (int i = 0; i < list.size(); i++) {
             result.add(list.getString(i));
+        }
+        return result;
+    }
+
+    private static Map<String, Integer> loadSlotMap(ComponentState state, String key) {
+        Map<String, Integer> result = new HashMap<>();
+        ListTag list = state.getList(key, Tag.TAG_INT);
+        if (list == null) return result;
+        ListTag itemList = state.getList(
+            key.equals(KEY_BLACKLIST_SLOTS) ? KEY_BLACKLIST : KEY_WHITELIST,
+            Tag.TAG_STRING);
+        if (itemList == null) return result;
+        int size = Math.min(itemList.size(), list.size());
+        for (int i = 0; i < size; i++) {
+            int slot = ((net.minecraft.nbt.IntTag) list.get(i)).getAsInt();
+            if (slot >= 0) {
+                result.put(itemList.getString(i), slot);
+            }
         }
         return result;
     }

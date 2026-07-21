@@ -108,11 +108,12 @@ public class ContainerLivingItemHandler {
                     associatedBlockPositions.add(otherPos);
                 }
             }
+        }
 
-            Container container = ChestBlock.getContainer(chestBlock, state, level, pos, false);
-            if (container != null) {
-                return new SimpleContainerContext(container, associatedBlockPositions, associatedBlockEntities);
-            }
+        IItemHandler itemHandler = level.getCapability(Capabilities.ItemHandler.BLOCK, pos, null);
+        if (itemHandler != null) {
+            return new SimpleContainerContext(
+                new ItemHandlerWrapper(itemHandler), associatedBlockPositions, associatedBlockEntities);
         }
 
         return new SimpleContainerContext(chest, associatedBlockPositions, associatedBlockEntities);

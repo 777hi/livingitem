@@ -230,14 +230,14 @@ public class ItemTransformComponent implements ILivingComponent {
      */
     private int calculateOutputSpace(ComponentContext ctx, ItemStack result) {
         ItemStack outputStack = ctx.containerCtx().getItem(ctx.outputSlot());
-        int maxStack = ctx.containerCtx().getMaxStackSize();
+        int slotLimit = ctx.containerCtx().getSlotLimit(ctx.outputSlot());
 
         if (outputStack.isEmpty()) {
-            return Math.min(maxStack, result.getMaxStackSize());
+            return slotLimit;
         }
 
         if (ItemStack.isSameItemSameComponents(outputStack, result)) {
-            return Math.min(maxStack, outputStack.getMaxStackSize()) - outputStack.getCount();
+            return slotLimit - outputStack.getCount();
         }
 
         return 0;
