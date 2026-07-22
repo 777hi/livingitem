@@ -1,8 +1,10 @@
 package com.qiqi.li.network;
 
 import com.qiqi.li.living.function.LivingChestFunction;
+import com.qiqi.li.living.function.LivingFurnaceFunction;
 import com.qiqi.li.living.function.LivingHopperFunction;
 import com.qiqi.li.living.LivingItemManager;
+import com.qiqi.li.living.core.model.Pos2D;
 import com.qiqi.li.living.core.model.SlotMapping;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket;
@@ -86,6 +88,41 @@ public class ServerPacketHandler {
 
         LOGGER.debug("Updated hopper direction for player {}: {}",
             player.getName().getString(), newMapping.displayName());
+    }
+
+    /**
+     * 处理活熔炉槽位方向配置请求（SLOTS 模式）。
+     */
+    public static void handleSlotDirection(ServerPlayer player, SlotDirectionPacket payload) {
+        if (player == null || player.containerMenu == null) return;
+
+        ItemStack carried = player.containerMenu.getCarried();
+        if (carried.isEmpty() || !carried.is(net.minecraft.world.item.Items.FURNACE)) {
+            LOGGER.warn("Player {} has no furnace on cursor", player.getName().getString());
+            return;
+        }
+
+        if (!LivingItemManager.isLivingItem(carried)) {
+            LOGGER.warn("Player {} carried item is not living", player.getName().getString());
+            return;
+        }
+
+        Pos2D direction = new Pos2D(payload.directionX(), payload.directionY());
+        boolean success = LivingFurnaceFunction.updateSlotDirection(
+            carried, payload.slotName(), direction);
+
+        if (!success) {
+            LOGGER.warn("Failed to update slot direction for player {}: slot={} dir={}",
+                player.getName().getString(), payload.slotName(), direction);
+            return;
+        }
+
+        int stateId = player.containerMenu.incrementStateId();
+        player.connection.send(new ClientboundContainerSetSlotPacket(
+            -1, stateId, -1, carried.copy()));
+
+        LOGGER.debug("Updated furnace slot direction for player {}: {} = {}",
+            player.getName().getString(), payload.slotName(), direction.getSymbol());
     }
 
     public static void handleLivingChestAccess(ServerPlayer player, LivingChestAccessPacket packet) {

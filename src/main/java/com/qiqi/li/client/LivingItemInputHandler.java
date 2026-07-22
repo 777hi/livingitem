@@ -7,10 +7,12 @@ import net.minecraft.world.item.ItemStack;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.qiqi.li.client.gui.LivingButton;
+import com.qiqi.li.living.function.LivingFurnaceFunction;
 import com.qiqi.li.living.function.LivingHopperFunction;
 import com.qiqi.li.living.LivingItemManager;
 import com.qiqi.li.living.core.ComponentState;
 import com.qiqi.li.living.core.components.DirectionModeComponent;
+import com.qiqi.li.living.core.model.Pos2D;
 import com.qiqi.li.living.core.model.SlotMapping;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -18,6 +20,7 @@ import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
 import com.qiqi.li.LivingItem;
 import com.qiqi.li.network.HopperDirectionPacket;
+import com.qiqi.li.network.SlotDirectionPacket;
 
 /**
  * 活物品客户端输入处理器 —— 处理 WASD 键入配置活漏斗传输方向。
@@ -78,13 +81,19 @@ public class LivingItemInputHandler {
 
         if (!LivingItemManager.isLivingItem(carried)) return;
 
-        if (!isHopperItem(carried)) return;
-
         char typedChar = event.getCodePoint();
         char upperChar = Character.toUpperCase(typedChar);
 
         DirectionModeComponent tempComp = new DirectionModeComponent();
         if (!tempComp.getValidKeys().contains(upperChar)) return;
+
+        if (isFurnaceItem(carried)) {
+            event.setCanceled(true);
+            processFurnaceInput(upperChar, carried);
+            return;
+        }
+
+        if (!isHopperItem(carried)) return;
 
         event.setCanceled(true);
 
@@ -172,6 +181,59 @@ public class LivingItemInputHandler {
     private static boolean isHopperItem(ItemStack stack) {
         return stack.is(net.minecraft.world.item.Items.HOPPER) &&
                LivingItemManager.isLivingItem(stack);
+    }
+
+    /** 检查物品是否为活熔炉 */
+    private static boolean isFurnaceItem(ItemStack stack) {
+        return stack.is(net.minecraft.world.item.Items.FURNACE) &&
+               LivingItemManager.isLivingItem(stack);
+    }
+
+    /**
+     * 处理活熔炉的单键输入（SLOTS 模式）。
+     *
+     * 每个 WASD 键立即设置当前激活槽位的方向，然后自动切换到下一个槽位。
+     * 例如：input→fuel→output→input...
+     *
+     * @param key 按键字符（W/A/S/D）
+     * @param furnaceStack 光标上的活熔炉 ItemStack
+     */
+    private static void processFurnaceInput(char key, ItemStack furnaceStack) {
+        Pos2D direction = DirectionModeComponent.WASDSequenceParser.keyToDirection(key);
+        if (direction == null) {
+            LOGGER.debug("Invalid furnace input key: {}", key);
+            return;
+        }
+
+        ComponentState dirState = LivingFurnaceFunction.readDirectionState(furnaceStack);
+        if (dirState == null) {
+            LOGGER.debug("Failed to read direction state from furnace");
+            return;
+        }
+
+        DirectionModeComponent dirComp = LivingFurnaceFunction.getDirectionComponent();
+        String activeSlotBefore = dirComp.getActiveSlotName(dirState);
+        if (activeSlotBefore == null) {
+            LOGGER.debug("Failed to get active slot name");
+            return;
+        }
+
+        boolean success = dirComp.updateFromInput(dirState, String.valueOf(key));
+        if (!success) {
+            LOGGER.debug("Failed to update furnace slot direction: key={}", key);
+            return;
+        }
+
+        sendSlotDirectionPacket(activeSlotBefore, direction);
+
+        LOGGER.debug("Updated furnace slot direction: {} ({}) = {}",
+            activeSlotBefore, key, direction.getSymbol());
+    }
+
+    /** 发送槽位方向配置网络包到服务端 */
+    private static void sendSlotDirectionPacket(String slotName, Pos2D direction) {
+        PacketDistributor.sendToServer(new SlotDirectionPacket(
+            LivingFurnaceFunction.ID, slotName, direction.x(), direction.y()));
     }
 
     /**

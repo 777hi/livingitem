@@ -67,6 +67,9 @@ public class ItemTransformComponent implements ILivingComponent {
     /** NBT 键名：上次配方检查的结果（0=无配方, 1=有配方） */
     private static final String KEY_CACHED_RESULT = "cached_result";
 
+    /** NBT 键名：上次配方检查的输出物品 ID（用于缓存输出空间检查） */
+    private static final String KEY_CACHED_OUTPUT = "cached_output";
+
     @Override
     public String getComponentId() { return ID; }
 
@@ -85,6 +88,7 @@ public class ItemTransformComponent implements ILivingComponent {
             state.setString(KEY_OUTPUT_ITEM, "");
             state.setString(KEY_CACHED_INPUT, "");
             state.setInt(KEY_CACHED_RESULT, 0);
+            state.setString(KEY_CACHED_OUTPUT, "");
         }
     }
 
@@ -193,6 +197,9 @@ public class ItemTransformComponent implements ILivingComponent {
 
         if (transformCount <= 0) return false;
 
+        ResourceLocation inputRl = BuiltInRegistries.ITEM.getKey(inputStack.getItem());
+        ResourceLocation outputRl = BuiltInRegistries.ITEM.getKey(result.getItem());
+
         inputStack.shrink(transformCount);
         ctx.containerCtx().setItem(ctx.inputSlot(), inputStack.copy());
 
@@ -208,8 +215,6 @@ public class ItemTransformComponent implements ILivingComponent {
 
         transformState.setInt(KEY_LAST_TRANSFORM_TICK, (int)(System.currentTimeMillis() / 1000));
 
-        ResourceLocation inputRl = BuiltInRegistries.ITEM.getKey(inputStack.getItem());
-        ResourceLocation outputRl = BuiltInRegistries.ITEM.getKey(result.getItem());
         transformState.setString(KEY_INPUT_ITEM, inputRl.toString());
         transformState.setString(KEY_OUTPUT_ITEM, outputRl.toString());
 
@@ -233,11 +238,12 @@ public class ItemTransformComponent implements ILivingComponent {
         int slotLimit = ctx.containerCtx().getSlotLimit(ctx.outputSlot());
 
         if (outputStack.isEmpty()) {
-            return slotLimit;
+            return Math.min(slotLimit, result.getMaxStackSize());
         }
 
         if (ItemStack.isSameItemSameComponents(outputStack, result)) {
-            return slotLimit - outputStack.getCount();
+            int maxCount = Math.min(slotLimit, outputStack.getMaxStackSize());
+            return maxCount - outputStack.getCount();
         }
 
         return 0;
@@ -279,7 +285,11 @@ public class ItemTransformComponent implements ILivingComponent {
 
         String cachedInput = state.getString(KEY_CACHED_INPUT, "");
         if (inputKey.equals(cachedInput)) {
-            return state.getInt(KEY_CACHED_RESULT, 0) == 1;
+            if (state.getInt(KEY_CACHED_RESULT, 0) != 1) {
+                return false;
+            }
+            String cachedOutput = state.getString(KEY_CACHED_OUTPUT, "");
+            return hasOutputSpace(ctx, cachedOutput);
         }
 
         SingleRecipeInput recipeInput = new SingleRecipeInput(inputStack);
@@ -289,6 +299,7 @@ public class ItemTransformComponent implements ILivingComponent {
         if (recipeHolderOpt.isEmpty()) {
             state.setString(KEY_CACHED_INPUT, inputKey);
             state.setInt(KEY_CACHED_RESULT, 0);
+            state.setString(KEY_CACHED_OUTPUT, "");
             return false;
         }
 
@@ -302,11 +313,25 @@ public class ItemTransformComponent implements ILivingComponent {
         ItemStack result = recipe.getResultItem(ctx.level().registryAccess());
 
         ResourceLocation outputRl = BuiltInRegistries.ITEM.getKey(result.getItem());
+        String outputKey = outputRl.toString();
         state.setString(KEY_INPUT_ITEM, inputKey);
-        state.setString(KEY_OUTPUT_ITEM, outputRl.toString());
+        state.setString(KEY_OUTPUT_ITEM, outputKey);
         state.setString(KEY_CACHED_INPUT, inputKey);
         state.setInt(KEY_CACHED_RESULT, 1);
+        state.setString(KEY_CACHED_OUTPUT, outputKey);
 
-        return true;
+        return hasOutputSpace(ctx, outputKey);
+    }
+
+    private boolean hasOutputSpace(ComponentContext ctx, String outputItemId) {
+        ItemStack outputStack = ctx.containerCtx().getItem(ctx.outputSlot());
+        if (outputStack.isEmpty()) return true;
+
+        ResourceLocation outputRl = BuiltInRegistries.ITEM.getKey(outputStack.getItem());
+        if (!outputRl.toString().equals(outputItemId)) return false;
+
+        int slotLimit = ctx.containerCtx().getSlotLimit(ctx.outputSlot());
+        int maxCount = Math.min(slotLimit, outputStack.getMaxStackSize());
+        return outputStack.getCount() < maxCount;
     }
 }

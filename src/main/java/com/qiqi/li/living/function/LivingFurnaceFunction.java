@@ -1,10 +1,13 @@
 package com.qiqi.li.living.function;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.RecipeType;
 import com.qiqi.li.living.core.ComponentConfig;
+import com.qiqi.li.living.core.ComponentState;
 import com.qiqi.li.living.core.LivingFunctionConfig;
 import com.qiqi.li.living.BaseLivingFunction;
 import com.qiqi.li.living.LivingItemManager;
@@ -51,15 +54,19 @@ public class LivingFurnaceFunction extends BaseLivingFunction {
 
     public static final String ID = "living_furnace";
 
+    private static LinkedHashMap<String, Pos2D> slotOrder() {
+        LinkedHashMap<String, Pos2D> map = new LinkedHashMap<>();
+        map.put("input", Pos2D.LEFT);
+        map.put("output", Pos2D.RIGHT);
+        map.put("fuel", Pos2D.DOWN);
+        return map;
+    }
+
     private static final LivingFunctionConfig CONFIG = new LivingFunctionConfig()
         .withFunctionId(ID)
         .withStackMultiplier(true)
         .withOrchestrator(Orchestrators.FUEL_PROGRESS)
-        .addComponent(new DirectionModeComponent(Map.of(
-            "input", Pos2D.LEFT,
-            "fuel", Pos2D.DOWN,
-            "output", Pos2D.RIGHT
-        )))
+        .addComponent(new DirectionModeComponent(slotOrder()))
         .addComponent(FuelConsumeComponent.class,
             ComponentConfig.of("recipe_type", RecipeType.SMELTING))
         .addComponent(ProgressComponent.class,
@@ -101,5 +108,51 @@ public class LivingFurnaceFunction extends BaseLivingFunction {
 
         net.minecraft.nbt.CompoundTag fuelTag = furnaceTag.getCompound("fuel");
         return fuelTag.getInt("burn_time") > 0;
+    }
+
+    /**
+     * 获取活熔炉的方向配置组件实例（SLOTS 模式）。
+     */
+    public static DirectionModeComponent getDirectionComponent() {
+        return new DirectionModeComponent(slotOrder());
+    }
+
+    /**
+     * 从 ItemStack 读取活熔炉的方向状态。
+     */
+    public static ComponentState readDirectionState(ItemStack furnaceStack) {
+        return DirectionModeComponent.readStateFromStack(furnaceStack, ID);
+    }
+
+    /**
+     * 更新活熔炉的指定槽位方向（服务端使用）。
+     */
+    public static boolean updateSlotDirection(ItemStack furnaceStack, String slotName, Pos2D direction) {
+        if (furnaceStack == null || furnaceStack.isEmpty() || slotName == null || direction == null) return false;
+
+        CompoundTag functionTag = LivingItemManager.getFunctionData(furnaceStack, ID).copy();
+
+        ComponentState dirState;
+        if (functionTag.contains(DirectionModeComponent.ID)) {
+            dirState = ComponentState.fromNBT(functionTag.getCompound(DirectionModeComponent.ID));
+        } else {
+            dirState = getDirectionComponent().createDefaultState();
+        }
+
+        DirectionModeComponent dirComp = getDirectionComponent();
+        boolean success = dirComp.setDirection(dirState, slotName, direction);
+        if (!success) return false;
+
+        String[] slotNames = dirComp.getSlotNames();
+        for (int i = 0; i < slotNames.length; i++) {
+            if (slotNames[i].equals(slotName)) {
+                dirState.setInt("active_slot_index", (i + 1) % slotNames.length);
+                break;
+            }
+        }
+
+        functionTag.put(DirectionModeComponent.ID, dirState.toNBT());
+        LivingItemManager.setFunctionData(furnaceStack, ID, functionTag);
+        return true;
     }
 }

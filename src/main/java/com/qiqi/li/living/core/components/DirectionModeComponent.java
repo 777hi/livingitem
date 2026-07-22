@@ -142,7 +142,7 @@ public class DirectionModeComponent implements ILivingComponent {
                                    SlotMapping defaultMapping, Set<Character> validKeys,
                                    KeyParser keyParser, int minInputs, int maxInputs) {
         this.mode = mode;
-        this.defaultSlots = Collections.unmodifiableMap(new HashMap<>(defaultSlots));
+        this.defaultSlots = Collections.unmodifiableMap(new LinkedHashMap<>(defaultSlots));
         this.defaultMapping = defaultMapping;
         this.validKeys = Collections.unmodifiableSet(new HashSet<>(validKeys));
         this.keyParser = keyParser;
@@ -167,6 +167,7 @@ public class DirectionModeComponent implements ILivingComponent {
                 state.setInt(key + "_x", entry.getValue().x());
                 state.setInt(key + "_y", entry.getValue().y());
             }
+            state.setInt("active_slot_index", 0);
         } else {
             if (defaultMapping != null) {
                 state.setInt("src_x", defaultMapping.sourceOffset().x());
@@ -188,14 +189,16 @@ public class DirectionModeComponent implements ILivingComponent {
     }
 
     private void appendSlotsTooltip(ComponentState state, Consumer<Component> tooltipAdder) {
+        String activeSlot = getActiveSlotName(state);
         for (String slotName : defaultSlots.keySet()) {
             Pos2D dir = getDirection(state, slotName);
             if (dir != null && dir != Pos2D.NONE) {
+                boolean isActive = slotName.equals(activeSlot);
                 tooltipAdder.accept(Component.translatable(
                     "tooltip.livingitem.direction.slot",
                     Component.translatable("slot.livingitem." + slotName),
                     dir.getSymbol()
-                ).withStyle(net.minecraft.ChatFormatting.GRAY));
+                ).withStyle(isActive ? net.minecraft.ChatFormatting.GOLD : net.minecraft.ChatFormatting.GRAY));
             }
         }
     }
@@ -407,22 +410,48 @@ public class DirectionModeComponent implements ILivingComponent {
     }
 
     /**
-     * 通过按键输入更新传输方向（TRANSFER 模式）。
+     * 通过按键输入更新方向配置。
      *
-     * 验证输入合法性后，通过 KeyParser 解析为 SlotMapping，
-     * 然后调用 updateMapping() 写入状态。
+     * TRANSFER 模式：验证输入合法性后，通过 KeyParser 解析为 SlotMapping，然后写入状态。
+     * SLOTS 模式：单键输入，将方向写入当前激活槽位，然后自动切换到下一个槽位。
      *
      * @param state 组件状态
-     * @param rawInput 原始按键序列（如 "WD"）
+     * @param rawInput 原始按键序列（TRANSFER 模式如 "WD"，SLOTS 模式如 "W"）
      * @return 是否成功更新
      */
     public boolean updateFromInput(ComponentState state, String rawInput) {
-        if (mode != DirectionMode.TRANSFER || keyParser == null || rawInput == null) return false;
+        if (rawInput == null) return false;
 
-        if (!validateInput(rawInput)) return false;
+        if (mode == DirectionMode.TRANSFER) {
+            if (keyParser == null) return false;
+            if (!validateInput(rawInput)) return false;
+            Optional<SlotMapping> parsed = keyParser.parse(rawInput);
+            return parsed.map(mapping -> updateMapping(state, mapping)).orElse(false);
+        }
 
-        Optional<SlotMapping> parsed = keyParser.parse(rawInput);
-        return parsed.map(mapping -> updateMapping(state, mapping)).orElse(false);
+        if (mode == DirectionMode.SLOTS) {
+            if (rawInput.isEmpty()) return false;
+            Pos2D direction = WASDSequenceParser.keyToDirection(rawInput.toUpperCase().charAt(0));
+            if (direction == null) return false;
+
+            String[] slotNames = getSlotNames();
+            if (slotNames.length == 0) return false;
+
+            int activeIndex = state.getInt("active_slot_index", 0);
+            if (activeIndex < 0 || activeIndex >= slotNames.length) {
+                activeIndex = 0;
+            }
+
+            String slotName = slotNames[activeIndex];
+            setDirection(state, slotName, direction);
+
+            activeIndex = (activeIndex + 1) % slotNames.length;
+            state.setInt("active_slot_index", activeIndex);
+
+            return true;
+        }
+
+        return false;
     }
 
     private boolean validateInput(String rawInput) {
@@ -490,5 +519,35 @@ public class DirectionModeComponent implements ILivingComponent {
                 source.getSymbol() + "→" + target.getSymbol(),
                 source.getSymbol() + "到" + target.getSymbol()));
         }
+
+        /**
+         * 将单个 WASD 按键字符转换为方向偏移（供 SLOTS 模式使用）。
+         */
+        public static Pos2D keyToDirection(char key) {
+            return KEY_MAP.get(Character.toUpperCase(key));
+        }
+    }
+
+    /**
+     * 获取 SLOTS 模式下的槽位名称列表（按定义顺序）。
+     */
+    public String[] getSlotNames() {
+        return defaultSlots.keySet().toArray(new String[0]);
+    }
+
+    /**
+     * 获取 SLOTS 模式下当前激活的槽位名称。
+     *
+     * @param state 组件状态
+     * @return 当前激活的槽位名称，如果不是 SLOTS 模式返回 null
+     */
+    public String getActiveSlotName(ComponentState state) {
+        if (mode != DirectionMode.SLOTS || defaultSlots.isEmpty()) return null;
+        String[] slotNames = getSlotNames();
+        int activeIndex = state.getInt("active_slot_index", 0);
+        if (activeIndex < 0 || activeIndex >= slotNames.length) {
+            activeIndex = 0;
+        }
+        return slotNames[activeIndex];
     }
 }

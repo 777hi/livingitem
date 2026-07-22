@@ -74,6 +74,7 @@
 │  │  • 邻居间传输 (transferBetweenNeighbors)       │             │
 │  │  • 大箱子合并处理                               │             │
 │  │  • GUI→世界方向转换                             │             │
+│  │  • 活末影箱路由注册 (pullFromNeighborToLivingEnderChest) │    │
 │  └─────────────────────────────────────────────────┘             │
 │                                                                  │
 │  ┌──────────────────────────────────────────────────┐            │
@@ -175,11 +176,17 @@ tick()
                     创建 SlotAccessor
                     ├─ source = SlotAccessorFactory.create(sourceSlot)
                     │    └─ 活箱子 → LivingChestAccessor
+                    │    └─ 活末影箱 → LivingEnderChestAccessor
                     │    └─ 普通物品 → PlainSlotAccessor
                     ├─ target = SlotAccessorFactory.create(targetSlot)
                     │    └─ 活箱子 → LivingChestAccessor
+                    │    └─ 活末影箱 → LivingEnderChestAccessor
                     │    └─ 普通物品 → PlainSlotAccessor
                     └─ source == null 或 target == null → return false
+                                  │
+                    target 是活末影箱？→ registerRoute() → return true
+                                  │
+                    source 是活末影箱？→ doTransfer(source, target, amount)
                                   │
                     doTransfer(source, target, amount)
                     ├─ source.isEmpty() || target.isFull() → return false
@@ -335,11 +342,18 @@ BaseLivingFunction.tick()                                   [每 tick]
       ├─ executeTransfer()
       │   ├─ 越界？→ CrossContainerTransfer.execute()
       │   │   ├─ pullFromNeighbor (源越界)
+      │   │   │   ├─ targetIsChest → pullFromNeighborToLivingChest
+      │   │   │   ├─ targetIsEnderChest → pullFromNeighborToLivingEnderChest (NEW)
+      │   │   │   └─ 普通物品 → 直接拉取 + markSlotTransferred
       │   │   ├─ pushToNeighbor (目标越界)
+      │   │   │   ├─ sourceIsChest → pushFromLivingChestToNeighbor
+      │   │   │   ├─ sourceIsEnderChest → pushFromLivingEnderChestToNeighbor
+      │   │   │   └─ 普通物品 → 直接推送
       │   │   └─ transferBetweenNeighbors (都越界)
       │   └─ 未越界 → 前置检查 → SlotAccessor 创建 → doTransfer
       │       ├─ source = SlotAccessorFactory.create(sourceSlot)
       │       ├─ target = SlotAccessorFactory.create(targetSlot)
+      │       ├─ target 是活末影箱 → registerRoute()
       │       └─ doTransfer(source, target, amount)
       │           ├─ extract → insert → rollback
       │           └─ markTransferred → sync
@@ -445,6 +459,18 @@ ContainerContext 维护一个 Set<Integer> transferredTargetSlots
 
 **注意**：`transferredTargetSlots` 在同一 tick 内有效，下一 tick 清空。
 
+### 5.3 跨容器级联防护
+
+`CrossContainerTransfer.pullFromNeighbor()` 在成功拉取物品后，同样调用 `markSlotTransferred(containerCtx, targetSlot)` 标记目标槽位，防止跨容器场景下的级联穿透：
+
+```
+容器A: [物品]   容器B: [漏斗A↑↓] [漏斗B↑↓] [空槽]
+                    ↑ pullFromNeighbor 从容器A拉取
+
+修复前：漏斗A拉取→放入槽位X → 漏斗B同tick取走 → 1tick跳2格
+修复后：漏斗A拉取→放入槽位X → markSlotTransferred(X) → 漏斗B跳过
+```
+
 ---
 
 ## 6. 跨容器传输
@@ -499,6 +525,17 @@ GUI右(RIGHT) → 世界西(WEST)   → 旋转后
   - `getMergedStorage()` → 过滤查找 → `extractItem(targetType)`
 - **pullFromNeighborToLivingChest**：相邻容器→活箱子
   - 在遍历相邻容器物品时直接过滤跳过
+
+### 6.6 活末影箱在跨容器中的支持
+
+跨容器传输中对活末影箱的支持：
+
+- **pushFromLivingEnderChestToNeighbor**：活末影箱→相邻容器
+  - 创建 `LivingEnderChestAccessor` → `extract()` → `tryInsert(neighborHandler)`
+  - 提取失败时 `rollback()` 退回物品
+- **pullFromNeighborToLivingEnderChest**：相邻容器→活末影箱 (NEW 2026-07-22)
+  - 遍历相邻容器物品 → 构建 `EnderChannelEntry` → `registry.insert()`
+  - 不实际提取物品，只注册路由条目，物品始终留在源容器中
 
 ---
 
@@ -556,6 +593,21 @@ for (容器中每个槽位) {
 - 不需要 UUID 旋转（无 `rotateStorageHeadToTail`）
 - 不需要槽位旋转（无 `insertItemAtEnd`）
 - 过滤发生在"查找"阶段，天然正确
+
+### 7.5 互相指向防护 (NEW 2026-07-22)
+
+当两个活漏斗互相指向时（A→B 且 B→A），`inheritFilter()` 会跳过继承，避免循环反馈导致名单永久残留：
+
+```
+A→B 且 B→A 时：
+  A 尝试从 B 继承 → sourceOf[A] == slot(B) → 互相指向 → 跳过
+  B 尝试从 A 继承 → sourceOf[B] == slot(A) → 互相指向 → 跳过
+```
+
+检测逻辑：`sourceOf[hostSlot] != slot && targetOf[hostSlot] != slot`
+
+- 链条 `A→B→C`：A 和 C 不互相指向，正常继承，链式传递不受影响
+- 闭环 `A⇄B`：互相指向，跳过继承，名单物品拿走后就自动清除
 
 ---
 
@@ -748,6 +800,39 @@ result = (baseRow + direction.y) * containerWidth + (baseCol + direction.x)
 
 **相关提交**：2026-07-22
 
+### 10.7 已修复：跨容器 pullFromNeighbor 级联穿透
+
+**问题**：两个活漏斗跨容器组成循环（push→pull→push），`pullFromNeighbor` 成功拉取后未标记 `transferredTargetSlots`，导致同一 tick 内物品被另一个漏斗取走，形成空循环。
+
+**根因**：`pullFromNeighbor` 的两条成功路径（空槽位/堆叠）只做了 `containerCtx.setItem()`，未调用 `markSlotTransferred`。
+
+**修复**：提取 `markSlotTransferred(containerCtx, targetSlot)` 方法，在两处成功路径中调用。同时精简 `findDoubleChestPositions`、`getBlockFacing`、`getBasePosForDirection` 等冗余代码。
+
+**相关提交**：2026-07-22
+
+### 10.8 已修复：黑白名单循环反馈永久残留
+
+**问题**：两个活漏斗互相指向（A→B 且 B→A）时，`inheritFilter()` 形成循环反馈，导致黑白名单物品即使被拿走也永久残留。
+
+**根因**：A 从 B 继承名单 → B 的名单含从 A 继承的 → A 再继承回来 → 无限循环。
+
+**修复**：在 `inheritFilter()` 调用前检查 `sourceOf[hostSlot] != slot && targetOf[hostSlot] != slot`，互相指向时跳过继承。
+
+**相关提交**：2026-07-22
+
+### 10.9 已修复：跨容器活末影箱无法注册路由
+
+**问题**：活漏斗 source=跨容器(越界)，target=活末影箱(容器内) 时，无法向频道添加路由。
+
+**根因**：`executeTransfer()` 中越界检查在最前面，source 越界时直接跳转到 `CrossContainerTransfer.execute()`，跳过了 `target instanceof LivingEnderChestAccessor` 的 `registerRoute` 调用。而 `pullFromNeighbor` 只检查了 `targetIsChest`，未检查 `targetIsEnderChest`。
+
+**修复**：
+1. `CrossContainerTransfer.execute()` 新增 `hostSlot` 参数
+2. `pullFromNeighbor` 新增 `targetIsEnderChest` 检查
+3. 新增 `pullFromNeighborToLivingEnderChest()` 方法，遍历相邻容器物品，构建 `EnderChannelEntry` 并注册到全局路由表
+
+**相关提交**：2026-07-22
+
 ---
 
 ## 11. 调试指南
@@ -776,6 +861,8 @@ LOGGER.info("Cooldown: {} ticks remaining", cooldown);
 | 物品被错误过滤 | 黑白名单解析错误 | 邻居活漏斗的 source/target 是否指向正确 |
 | 跨容器不工作 | 方向转换错误 | 方块朝向与 GUI 方向的对应关系 |
 | 级联传输（物品瞬间穿过链） | 级联防护失效 | `transferredTargetSlots` 是否正确维护 |
+| 黑白名单永久残留 | 互相指向循环反馈 | 活漏斗是否成对互相指向 |
+| 活末影箱路由不注册 | 跨容器越界分支跳过 | target 是否在越界分支前被检查 |
 
 ### 11.3 方向调试
 
