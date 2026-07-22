@@ -108,7 +108,10 @@ public class ItemFilterComponent implements ILivingComponent {
                     }
                 }
                 // 继承邻居的全部名单（链式传递：每 tick 传播一跳）
-                inheritFilter(container, slot, blacklist, blacklistSlots, whitelist, whitelistSlots);
+                // 但如果邻居也指向我（互相指向），则跳过继承，避免循环反馈
+                if (sourceOf[hostSlot] != slot && targetOf[hostSlot] != slot) {
+                    inheritFilter(container, slot, blacklist, blacklistSlots, whitelist, whitelistSlots);
+                }
             }
         }
 
@@ -125,7 +128,10 @@ public class ItemFilterComponent implements ILivingComponent {
                     }
                 }
                 // 继承邻居的全部名单（链式传递：每 tick 传播一跳）
-                inheritFilter(container, slot, blacklist, blacklistSlots, whitelist, whitelistSlots);
+                // 但如果邻居也指向我（互相指向），则跳过继承，避免循环反馈
+                if (sourceOf[hostSlot] != slot && targetOf[hostSlot] != slot) {
+                    inheritFilter(container, slot, blacklist, blacklistSlots, whitelist, whitelistSlots);
+                }
             }
         }
 

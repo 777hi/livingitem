@@ -21,20 +21,25 @@
  */
 package com.qiqi.li.living.container;
 
-import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import com.qiqi.li.living.core.components.InternalStorageComponent;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.ChestBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.ChestType;
+import net.minecraft.world.level.block.state.properties.DirectionProperty;
 import com.qiqi.li.living.LivingItemManager;
 import com.qiqi.li.living.core.ComponentContext;
 import com.qiqi.li.living.core.ComponentState;
+import com.qiqi.li.living.core.accessor.EnderChannelEntry;
+import com.qiqi.li.living.core.accessor.EnderChannelRegistry;
 import com.qiqi.li.living.core.accessor.LivingEnderChestAccessor;
 import com.qiqi.li.living.core.model.Pos2D;
 import com.qiqi.li.living.core.components.ItemFilterComponent;
@@ -68,7 +73,8 @@ public final class CrossContainerTransfer {
      * @return 是否成功执行了传输操作
      */
     public static boolean execute(ComponentContext ctx,
-                                   int stackSize, int maxTransfer) {
+                                   int stackSize, int maxTransfer,
+                                   int hostSlot) {
         ContainerContext containerCtx = ctx.containerCtx();
         int containerSize = containerCtx.getSize();
         int sourceSlot = ctx.sourceSlot();
@@ -96,7 +102,7 @@ public final class CrossContainerTransfer {
 
         if (sourceOutOfBounds && !targetOutOfBounds) {
             return pullFromNeighbor(ctx, containerCtx, level, sourceBasePos,
-                                     blockFacing, chestPositions, stackSize, maxTransfer, filterState);
+                                     blockFacing, chestPositions, stackSize, maxTransfer, filterState, hostSlot);
         }
 
         if (targetOutOfBounds && !sourceOutOfBounds) {
@@ -139,7 +145,8 @@ public final class CrossContainerTransfer {
                                              BlockPos basePos, Direction blockFacing,
                                              List<BlockPos> chestPositions,
                                              int stackSize, int maxTransfer,
-                                             ComponentState filterState) {
+                                             ComponentState filterState,
+                                             int hostSlot) {
         Pos2D sourceOffset = ctx.sourceOffset();
         Direction sourceWorldDir = gridToWorld(sourceOffset, blockFacing);
         if (sourceWorldDir == null) return false;
@@ -151,10 +158,16 @@ public final class CrossContainerTransfer {
         ItemStack targetStack = containerCtx.getItem(targetSlot);
 
         boolean targetIsChest = LivingChestFunction.isLivingChest(targetStack);
+        boolean targetIsEnderChest = LivingEnderChestFunction.isLivingEnderChest(targetStack);
 
         if (targetIsChest) {
             return pullFromNeighborToLivingChest(ctx, containerCtx, neighborHandler,
                 targetStack, targetSlot, stackSize, maxTransfer, filterState);
+        }
+
+        if (targetIsEnderChest) {
+            return pullFromNeighborToLivingEnderChest(ctx, containerCtx, level, neighborHandler,
+                basePos, sourceWorldDir, targetStack, targetSlot, stackSize, maxTransfer, filterState, hostSlot);
         }
 
         for (int i = 0; i < neighborHandler.getSlots(); i++) {
@@ -170,6 +183,7 @@ public final class CrossContainerTransfer {
                 ItemStack extracted = extractFromHandler(neighborHandler, i, transferAmount);
                 if (extracted.isEmpty()) continue;
                 containerCtx.setItem(targetSlot, extracted);
+                markSlotTransferred(containerCtx, targetSlot);
                 return true;
             } else if (targetStack.is(sourceStack.getItem()) &&
                        targetStack.getCount() < containerCtx.getSlotLimit(targetSlot)) {
@@ -182,6 +196,7 @@ public final class CrossContainerTransfer {
                 ItemStack grown = targetStack.copy();
                 grown.grow(extracted.getCount());
                 containerCtx.setItem(targetSlot, grown);
+                markSlotTransferred(containerCtx, targetSlot);
                 return true;
             }
         }
@@ -459,6 +474,75 @@ public final class CrossContainerTransfer {
     }
 
     /**
+     * 从相邻容器拉取物品并注册到活末影箱路由
+     * 
+     * 当活漏斗的输入槽位超出容器边界，且输出槽位是活末影箱时调用。
+     * 不实际提取物品，而是将相邻容器中的物品位置注册到全局路由表中，
+     * 供其他活末影箱的 pull 端提取。
+     * 
+     * 传输规则：
+     * - 遍历相邻容器的所有槽位，跳过空槽位和活物品
+     * - 找到物品后，将其位置注册为活末影箱路由条目
+     * - 路由条目指向相邻容器的物品位置，物品始终留在源容器中
+     * 
+     * @param ctx 组件上下文
+     * @param containerCtx 当前容器上下文
+     * @param level 世界对象
+     * @param neighborHandler 相邻容器
+     * @param basePos 基准方块位置
+     * @param sourceWorldDir 源方向
+     * @param enderChestStack 活末影箱物品栈
+     * @param targetSlot 活末影箱所在的槽位索引
+     * @param stackSize 单次传输最大数量
+     * @param maxTransfer 总传输量限制
+     * @param filterState 物品过滤器状态
+     * @param hostSlot 活漏斗所在槽位
+     * @return 是否成功注册路由
+     */
+    private static boolean pullFromNeighborToLivingEnderChest(ComponentContext ctx,
+                                                               ContainerContext containerCtx,
+                                                               Level level,
+                                                               IItemHandler neighborHandler,
+                                                               BlockPos basePos,
+                                                               Direction sourceWorldDir,
+                                                               ItemStack enderChestStack,
+                                                               int targetSlot,
+                                                               int stackSize,
+                                                               int maxTransfer,
+                                                               ComponentState filterState,
+                                                               int hostSlot) {
+        if (ctx.level().isClientSide()) return false;
+
+        var server = ctx.level().getServer();
+        if (server == null) return false;
+
+        BlockPos neighborPos = basePos.relative(sourceWorldDir);
+        int channel = enderChestStack.getCount();
+        var registry = EnderChannelRegistry.getInstance();
+
+        for (int i = 0; i < neighborHandler.getSlots(); i++) {
+            ItemStack sourceStack = neighborHandler.getStackInSlot(i);
+            if (sourceStack.isEmpty() || LivingItemManager.isLivingItem(sourceStack)) continue;
+
+            if (filterState != null && !ItemFilterComponent.allows(filterState, sourceStack)) continue;
+
+            String itemType = BuiltInRegistries.ITEM.getKey(sourceStack.getItem()).toString();
+            var entry = new EnderChannelEntry(
+                itemType, level.dimension(), neighborPos, i, hostSlot, null);
+
+            if (registry.contains(channel, entry)) {
+                return true;
+            }
+
+            registry.removeByPositionAndSlotFromAllChannels(neighborPos, i);
+            registry.insert(channel, entry);
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
      * 在两个相邻容器之间直接传输物品
      * 
      * 当源槽位和目标槽位都超出容器边界时调用此方法。
@@ -552,17 +636,11 @@ public final class CrossContainerTransfer {
         if (gridDir == null || gridDir.isNone()) return null;
 
         Direction normalized;
-        if (gridDir.equals(Pos2D.UP)) {
-            normalized = Direction.SOUTH;
-        } else if (gridDir.equals(Pos2D.DOWN)) {
-            normalized = Direction.NORTH;
-        } else if (gridDir.equals(Pos2D.LEFT)) {
-            normalized = Direction.EAST;
-        } else if (gridDir.equals(Pos2D.RIGHT)) {
-            normalized = Direction.WEST;
-        } else {
-            return null;
-        }
+        if (gridDir.equals(Pos2D.UP))         normalized = Direction.SOUTH;
+        else if (gridDir.equals(Pos2D.DOWN))  normalized = Direction.NORTH;
+        else if (gridDir.equals(Pos2D.LEFT))  normalized = Direction.EAST;
+        else if (gridDir.equals(Pos2D.RIGHT)) normalized = Direction.WEST;
+        else return null;
 
         int rotations = getRotationCount(blockFacing);
         for (int i = 0; i < rotations; i++) {
@@ -636,11 +714,11 @@ public final class CrossContainerTransfer {
      * @return 方块的朝向方向，如果没有朝向属性则返回null
      */
     private static Direction getBlockFacing(BlockState state) {
-        if (state.hasProperty(net.minecraft.world.level.block.state.properties.BlockStateProperties.FACING)) {
-            return state.getValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.FACING);
-        }
-        if (state.hasProperty(net.minecraft.world.level.block.state.properties.BlockStateProperties.HORIZONTAL_FACING)) {
-            return state.getValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.HORIZONTAL_FACING);
+        for (DirectionProperty prop : new DirectionProperty[]{
+            BlockStateProperties.FACING, BlockStateProperties.HORIZONTAL_FACING}) {
+            if (state.hasProperty(prop)) {
+                return state.getValue(prop);
+            }
         }
         return null;
     }
@@ -671,9 +749,7 @@ public final class CrossContainerTransfer {
         }
 
         boolean useLeft = gridDir.equals(Pos2D.DOWN) || gridDir.equals(Pos2D.RIGHT);
-        boolean useRight = gridDir.equals(Pos2D.UP) || gridDir.equals(Pos2D.LEFT);
-
-        if (!useLeft && !useRight) {
+        if (!useLeft && !gridDir.equals(Pos2D.UP) && !gridDir.equals(Pos2D.LEFT)) {
             return defaultPos;
         }
 
@@ -696,26 +772,25 @@ public final class CrossContainerTransfer {
      * @return 半箱位置列表，[0]=LEFT位置, [1]=RIGHT位置；空列表表示非大箱子
      */
     private static List<BlockPos> findDoubleChestPositions(Level level, BlockPos pos) {
-        List<BlockPos> positions = new ArrayList<>();
         BlockState state = level.getBlockState(pos);
 
-        if (state.getBlock() instanceof ChestBlock) {
-            ChestType chestType = state.getValue(ChestBlock.TYPE);
-            if (chestType != ChestType.SINGLE) {
-                Direction connectedDir = ChestBlock.getConnectedDirection(state);
-                BlockPos otherPos = pos.relative(connectedDir);
-
-                if (chestType == ChestType.LEFT) {
-                    positions.add(pos);
-                    positions.add(otherPos);
-                } else {
-                    positions.add(otherPos);
-                    positions.add(pos);
-                }
-            }
+        if (!(state.getBlock() instanceof ChestBlock)) {
+            return List.of();
         }
 
-        return positions;
+        ChestType chestType = state.getValue(ChestBlock.TYPE);
+        if (chestType == ChestType.SINGLE) {
+            return List.of();
+        }
+
+        Direction connectedDir = ChestBlock.getConnectedDirection(state);
+        BlockPos otherPos = pos.relative(connectedDir);
+
+        if (chestType == ChestType.LEFT) {
+            return List.of(pos, otherPos);
+        } else {
+            return List.of(otherPos, pos);
+        }
     }
 
     /**
@@ -781,5 +856,17 @@ public final class CrossContainerTransfer {
      */
     private static ItemStack extractFromHandler(IItemHandler handler, int slot, int amount) {
         return handler.extractItem(slot, amount, false);
+    }
+
+    /**
+     * 将目标槽位标记为"本 tick 已被传输到达"，用于级联防护。
+     *
+     * 防止同一 tick 内多个活漏斗级联传输同一物品。
+     */
+    private static void markSlotTransferred(ContainerContext containerCtx, int slot) {
+        Set<Integer> transferredTargetSlots = containerCtx.getTransferredTargetSlots();
+        if (transferredTargetSlots != null) {
+            transferredTargetSlots.add(slot);
+        }
     }
 }

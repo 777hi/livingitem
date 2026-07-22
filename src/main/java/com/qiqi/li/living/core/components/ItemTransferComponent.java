@@ -13,6 +13,7 @@ import net.minecraft.world.item.ItemStack;
 import com.mojang.logging.LogUtils;
 import org.slf4j.Logger;
 import com.qiqi.li.living.container.ContainerContext;
+import com.qiqi.li.living.BaseLivingFunction;
 import com.qiqi.li.living.LivingItemManager;
 import com.qiqi.li.living.core.ComponentConfig;
 import com.qiqi.li.living.core.ComponentContext;
@@ -246,7 +247,7 @@ public class ItemTransferComponent implements ILivingComponent {
         boolean targetOutOfBounds = targetSlot < 0 || targetSlot >= containerSize;
 
         if (sourceOutOfBounds || targetOutOfBounds) {
-            return CrossContainerTransfer.execute(ctx, stackSize, maxTransfer);
+            return CrossContainerTransfer.execute(ctx, stackSize, maxTransfer, hostSlot);
         }
 
         if (sourceSlot == targetSlot) {
@@ -297,6 +298,10 @@ public class ItemTransferComponent implements ILivingComponent {
                 enderChest.registerRoute(sourceStackForRoute, containerCtx, sourceSlot, hostSlot);
             }
             return true;
+        }
+
+        if (source instanceof LivingEnderChestAccessor) {
+            return doTransfer(source, target, Math.min(stackSize, maxTransfer));
         }
 
         return doTransfer(source, target, Math.min(stackSize, maxTransfer));

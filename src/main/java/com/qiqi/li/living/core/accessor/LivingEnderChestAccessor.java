@@ -95,11 +95,15 @@ public class LivingEnderChestAccessor implements SlotAccessor {
             itemType, level.dimension(), pos, slot, registrarSlot, containerKey);
 
         EnderChannelRegistry registry = EnderChannelRegistry.getInstance();
-        // 先清理同位置+槽位的旧路由（物品类型可能已变化），再插入新路由
+        // 快速路径：如果当前频道已存在相同条目，跳过（绝大多数tick走这里）
+        if (registry.contains(channel, entry)) {
+            return;
+        }
+        // 频道可能已改变，清理所有频道中同位置+槽位的旧路由
         if (pos != null) {
-            registry.removeByPositionAndSlot(channel, pos, slot);
+            registry.removeByPositionAndSlotFromAllChannels(pos, slot);
         } else {
-            registry.removeByPositionAndSlot(channel, containerKey, slot);
+            registry.removeByPositionAndSlotFromAllChannels(containerKey, slot);
         }
         registry.insert(channel, entry);
         LOGGER.debug("LivingEnderChestAccessor: registered route channel={}, item={}, pos={}, key={}, slot={}, count={}",

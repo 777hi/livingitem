@@ -67,6 +67,14 @@ public final class LivingIconRegistry {
                 })
             .addVariant("idle", "item/tnt_idle", stack -> true)
             .build());
+
+        register(LivingIconSpec.builder(net.minecraft.world.item.Items.CHEST)
+            .addVariant("base", "item/chest", stack -> true)
+            .build());
+
+        register(LivingIconSpec.builder(net.minecraft.world.item.Items.ENDER_CHEST)
+            .addVariant("base", "item/ender", stack -> true)
+            .build());
     }
 
     /** 注册一个图标配置 */
