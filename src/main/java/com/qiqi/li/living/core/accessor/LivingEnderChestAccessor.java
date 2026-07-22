@@ -114,15 +114,15 @@ public class LivingEnderChestAccessor implements SlotAccessor {
         while (true) {
             EnderChannelEntry entry = registry.peek(channel, filterState);
             if (entry == null) {
-                LOGGER.debug("LivingEnderChestAccessor: extract channel={}, no entry found", channel);
+                LOGGER.trace("LivingEnderChestAccessor: extract channel={}, no entry found", channel);
                 return ItemStack.EMPTY;
             }
 
             ServerLevel sourceLevel = server.getLevel(entry.sourceDim());
             if (sourceLevel == null) {
-                LOGGER.debug("LivingEnderChestAccessor: extract source dim invalid, pop channel={}, dim={}",
+                LOGGER.debug("LivingEnderChestAccessor: extract source dim invalid, remove channel={}, dim={}",
                     channel, entry.sourceDim());
-                registry.pop(channel);
+                registry.remove(channel, entry);
                 continue;
             }
 
@@ -131,26 +131,26 @@ public class LivingEnderChestAccessor implements SlotAccessor {
 
             if (sourcePos != null) {
                 if (!sourceLevel.isLoaded(sourcePos)) {
-                    LOGGER.debug("LivingEnderChestAccessor: extract source unloaded, pop channel={}, pos={}",
+                    LOGGER.debug("LivingEnderChestAccessor: extract source unloaded, remove channel={}, pos={}",
                         channel, sourcePos);
-                    registry.pop(channel);
+                    registry.remove(channel, entry);
                     continue;
                 }
 
                 BlockEntity be = sourceLevel.getBlockEntity(sourcePos);
                 sourceHandler = getHandler(sourceLevel, sourcePos, be);
                 if (sourceHandler == null) {
-                    LOGGER.debug("LivingEnderChestAccessor: extract source not container, pop channel={}, pos={}",
+                    LOGGER.debug("LivingEnderChestAccessor: extract source not container, remove channel={}, pos={}",
                         channel, sourcePos);
-                    registry.pop(channel);
+                    registry.remove(channel, entry);
                     continue;
                 }
             } else {
                 String containerKey = entry.containerKey();
                 if (containerKey == null || !containerKey.startsWith("player_")) {
-                    LOGGER.debug("LivingEnderChestAccessor: extract unknown containerKey, pop channel={}, key={}",
+                    LOGGER.debug("LivingEnderChestAccessor: extract unknown containerKey, remove channel={}, key={}",
                         channel, containerKey);
-                    registry.pop(channel);
+                    registry.remove(channel, entry);
                     continue;
                 }
 
@@ -158,44 +158,44 @@ public class LivingEnderChestAccessor implements SlotAccessor {
                     UUID playerId = UUID.fromString(containerKey.substring(7));
                     ServerPlayer player = server.getPlayerList().getPlayer(playerId);
                     if (player == null) {
-                        LOGGER.debug("LivingEnderChestAccessor: extract player offline, pop channel={}, uuid={}",
+                        LOGGER.debug("LivingEnderChestAccessor: extract player offline, remove channel={}, uuid={}",
                             channel, playerId);
-                        registry.pop(channel);
+                        registry.remove(channel, entry);
                         continue;
                     }
                     sourceHandler = player.getCapability(Capabilities.ItemHandler.ENTITY);
                     if (sourceHandler == null) {
-                        registry.pop(channel);
+                        registry.remove(channel, entry);
                         continue;
                     }
                 } catch (IllegalArgumentException e) {
-                    LOGGER.debug("LivingEnderChestAccessor: extract invalid containerKey, pop channel={}, key={}",
+                    LOGGER.debug("LivingEnderChestAccessor: extract invalid containerKey, remove channel={}, key={}",
                         channel, containerKey);
-                    registry.pop(channel);
+                    registry.remove(channel, entry);
                     continue;
                 }
             }
 
             ItemStack sourceStack = sourceHandler.getStackInSlot(entry.sourceSlot());
             if (sourceStack.isEmpty()) {
-                LOGGER.debug("LivingEnderChestAccessor: extract source slot empty, pop channel={}, slot={}",
+                LOGGER.debug("LivingEnderChestAccessor: extract source slot empty, remove channel={}, slot={}",
                     channel, entry.sourceSlot());
-                registry.pop(channel);
+                registry.remove(channel, entry);
                 continue;
             }
 
             String itemId = BuiltInRegistries.ITEM.getKey(sourceStack.getItem()).toString();
             if (!itemId.equals(entry.itemType())) {
-                LOGGER.debug("LivingEnderChestAccessor: extract type mismatch, pop channel={}, expected={}, actual={}",
+                LOGGER.debug("LivingEnderChestAccessor: extract type mismatch, remove channel={}, expected={}, actual={}",
                     channel, entry.itemType(), itemId);
-                registry.pop(channel);
+                registry.remove(channel, entry);
                 continue;
             }
 
             if (filterState != null && !ItemFilterComponent.allows(filterState, sourceStack)) {
-                LOGGER.debug("LivingEnderChestAccessor: extract filter blocked, pop channel={}, item={}",
+                LOGGER.debug("LivingEnderChestAccessor: extract filter blocked, remove channel={}, item={}",
                     channel, itemId);
-                registry.pop(channel);
+                registry.remove(channel, entry);
                 continue;
             }
 
@@ -208,7 +208,7 @@ public class LivingEnderChestAccessor implements SlotAccessor {
             rollbackContainerKey = entry.containerKey();
 
             if (sourceHandler.getStackInSlot(entry.sourceSlot()).isEmpty()) {
-                registry.pop(channel);
+                registry.remove(channel, entry);
             }
 
             LOGGER.info("LivingEnderChestAccessor: extracted channel={}, item={}, count={}, from={}, slot={}",

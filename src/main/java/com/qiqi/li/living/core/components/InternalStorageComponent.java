@@ -766,7 +766,7 @@ public class InternalStorageComponent implements ILivingComponent {
         private static final long UNLOAD_TIMEOUT_MS = 5 * 60 * 1000;
         
         /** 最大缓存条目数：超过此数量会淘汰最久未访问的条目 */
-        private static final int MAX_CACHE_SIZE = 200;
+        private static final int MAX_CACHE_SIZE = 7777;
         
         /** 孤儿文件清理间隔：每 N 次 saveAllDirty 调用执行一次 */
         private static final int CLEANUP_ORPHAN_INTERVAL = 10;
@@ -801,7 +801,8 @@ public class InternalStorageComponent implements ILivingComponent {
         /** LRU 缓存：访问顺序 LinkedHashMap，最近访问的在尾部 */
         private final LinkedHashMap<UUID, CachedStorage> cache;
         
-        /** 脏数据集合：独立追踪被修改的 UUID，优化 saveAllDirty 性能 */
+        /** 脏数据集合：独立追踪被修改的 UUID，优化 saveAllDirty 性能。
+         *  使用 ConcurrentHashMap.newKeySet() 保证线程安全（异步IO线程也会修改此集合） */
         private final Set<UUID> dirtyKeys;
         
         /** 🔴 P0修复：异步IO执行器（用于后台写入磁盘，避免主线程卡顿） */
@@ -812,6 +813,9 @@ public class InternalStorageComponent implements ILivingComponent {
         
         /** 🔴 P0修复：异步写入是否已关闭 */
         private volatile boolean asyncShutdown = false;
+        
+        /** 🔴 P0修复：标记是否有异步保存任务正在执行，防止任务堆积淹没执行器 */
+        private final java.util.concurrent.atomic.AtomicBoolean asyncSaveInProgress = new java.util.concurrent.atomic.AtomicBoolean(false);
         
         /** 是否已完成旧数据迁移 */
         private boolean migrated;
@@ -836,7 +840,7 @@ public class InternalStorageComponent implements ILivingComponent {
             this.server = server;
             this.storageDir = server.getWorldPath(LevelResource.ROOT).resolve("data").resolve(DIR_NAME);
             this.cache = new LinkedHashMap<>(16, 0.75f, true);  // accessOrder=true 启用 LRU
-            this.dirtyKeys = new LinkedHashSet<>();
+            this.dirtyKeys = ConcurrentHashMap.newKeySet();
             
             // 🔴 P0修复：初始化异步IO执行器（单线程，保证写入顺序）
             this.ioExecutor = Executors.newSingleThreadExecutor(r -> {
@@ -1024,9 +1028,12 @@ public class InternalStorageComponent implements ILivingComponent {
         public List<ItemStack> getOrCreate(UUID uuid, int capacity) {
             migrateLegacyFiles();
 
-            CachedStorage cached = cache.get(uuid);
+            CachedStorage cached;
+            synchronized (cache) {
+                cached = cache.get(uuid);
+            }
             if (cached != null) {
-                cached.lastAccess = System.currentTimeMillis();  // 更新访问时间（LRU）
+                cached.lastAccess = System.currentTimeMillis();
                 return cached.items;
             }
 
@@ -1049,7 +1056,9 @@ public class InternalStorageComponent implements ILivingComponent {
          * @return true 如果存在
          */
         public boolean contains(UUID uuid) {
-            if (cache.containsKey(uuid)) return true;
+            synchronized (cache) {
+                if (cache.containsKey(uuid)) return true;
+            }
             return Files.exists(getFilePath(uuid));
         }
 
@@ -1061,7 +1070,9 @@ public class InternalStorageComponent implements ILivingComponent {
          * @param uuid 要移除的 UUID
          */
         public void remove(UUID uuid) {
-            cache.remove(uuid);
+            synchronized (cache) {
+                cache.remove(uuid);
+            }
             dirtyKeys.remove(uuid);
             try {
                 Files.deleteIfExists(getFilePath(uuid));
@@ -1089,18 +1100,19 @@ public class InternalStorageComponent implements ILivingComponent {
          * @param uuid 被修改的 UUID
          */
         public void markDirty(UUID uuid) {
-            CachedStorage cached = cache.get(uuid);
+            CachedStorage cached;
+            synchronized (cache) {
+                cached = cache.get(uuid);
+            }
             if (cached != null) {
                 cached.dirty = true;
                 dirtyKeys.add(uuid);
                 
-                // 🔴 P0修复：同时标记为待异步保存
                 pendingAsyncSave.add(uuid);
                 
                 LOGGER.debug("Marked dirty: UUID={}, cacheSize={}, dirtyKeys={}, asyncPending={}", 
                            uuid, cache.size(), dirtyKeys.size(), pendingAsyncSave.size());
                 
-                // 触发异步保存（非阻塞）
                 triggerAsyncSave();
             } else {
                 LOGGER.warn("markDirty called but UUID={} not in cache!", uuid);
@@ -1123,12 +1135,19 @@ public class InternalStorageComponent implements ILivingComponent {
         private void triggerAsyncSave() {
             if (asyncShutdown || pendingAsyncSave.isEmpty()) return;
             
+            // 🔴 关键修复：如果已有异步保存任务正在执行，跳过本次触发
+            // 防止大量 markDirty 调用导致任务堆积淹没单线程执行器
+            if (!asyncSaveInProgress.compareAndSet(false, true)) {
+                return;
+            }
+            
             int pendingCount = pendingAsyncSave.size();
             long now = System.currentTimeMillis();
             
             if (pendingCount < ASYNC_SAVE_MIN_BATCH) {
                 long elapsed = now - lastAsyncSaveTime;
                 if (elapsed < ASYNC_SAVE_DEBOUNCE_MS) {
+                    asyncSaveInProgress.set(false);  // 恢复标志
                     return;
                 }
             }
@@ -1144,19 +1163,19 @@ public class InternalStorageComponent implements ILivingComponent {
                 try {
                     int savedCount = 0;
                     for (UUID uuid : toSave) {
-                        CachedStorage cached;  // 需要同步访问缓存
-                        synchronized(cache) {  // 简单的互斥锁
+                        CachedStorage cached;
+                        synchronized(cache) {
                             cached = cache.get(uuid);
                         }
                         
                         if (cached != null && cached.dirty) {
-                            saveToDisk(uuid, cached.items);  // 实际磁盘写入
+                            saveToDisk(uuid, cached.items);
                             synchronized(cache) {
-                                cached.dirty = false;  // 清除脏标记
+                                cached.dirty = false;
                             }
                             savedCount++;
                             
-                            // 同步清除主集合中的标记
+                            // dirtyKeys 现在是 ConcurrentHashMap.newKeySet()，线程安全
                             dirtyKeys.remove(uuid);
                         }
                     }
@@ -1168,6 +1187,9 @@ public class InternalStorageComponent implements ILivingComponent {
                     LOGGER.error("[AsyncIO] Failed to save data asynchronously!", e);
                     // 失败时重新加入待保存队列（下次重试）
                     pendingAsyncSave.addAll(toSave);
+                } finally {
+                    // 🔴 关键修复：任务完成后重置标志，允许下一次触发
+                    asyncSaveInProgress.set(false);
                 }
             });
         }
@@ -1256,15 +1278,17 @@ public class InternalStorageComponent implements ILivingComponent {
                     }
                 }
                 
-                // 3. 同步保存剩余的脏数据（此时异步线程已停止）
+                // 3. 同步保存剩余的脏数据（此时异步线程应已停止，但加锁以防万一）
                 if (!dirtyKeys.isEmpty()) {
                     LOGGER.info("[Sync] Saving {} remaining dirty entries before shutdown...", dirtyKeys.size());
                     
-                    for (UUID uuid : new ArrayList<>(dirtyKeys)) {  // 创建副本避免 ConcurrentModificationException
-                        CachedStorage cached = cache.get(uuid);
-                        if (cached != null && cached.dirty) {
-                            saveToDisk(uuid, cached.items);  // 同步磁盘写入
-                            cached.dirty = false;
+                    synchronized (cache) {
+                        for (UUID uuid : new ArrayList<>(dirtyKeys)) {
+                            CachedStorage cached = cache.get(uuid);
+                            if (cached != null && cached.dirty) {
+                                saveToDisk(uuid, cached.items);
+                                cached.dirty = false;
+                            }
                         }
                     }
                     
@@ -1295,16 +1319,18 @@ public class InternalStorageComponent implements ILivingComponent {
             int saved = 0;
             int failed = 0;
             
-            for (UUID uuid : new ArrayList<>(dirtyKeys)) {
-                try {
-                    CachedStorage cached = cache.get(uuid);
-                    if (cached != null && cached.dirty) {
-                        saveToDisk(uuid, cached.items);
-                        saved++;
+            synchronized (cache) {
+                for (UUID uuid : new ArrayList<>(dirtyKeys)) {
+                    try {
+                        CachedStorage cached = cache.get(uuid);
+                        if (cached != null && cached.dirty) {
+                            saveToDisk(uuid, cached.items);
+                            saved++;
+                        }
+                    } catch (Exception e) {
+                        failed++;
+                        LOGGER.error("[Emergency] Failed to save UUID={}", uuid, e);
                     }
-                } catch (Exception e) {
-                    failed++;
-                    LOGGER.error("[Emergency] Failed to save UUID={}", uuid, e);
                 }
             }
             
@@ -1332,33 +1358,43 @@ public class InternalStorageComponent implements ILivingComponent {
          * </ul>
          */
         public void cleanupIdle() {
-            long now = System.currentTimeMillis();
+            // 收集需要淘汰的 UUID 和需要保存的脏数据（在锁外执行磁盘IO）
             List<UUID> toUnload = new ArrayList<>();
+            List<Map.Entry<UUID, CachedStorage>> dirtyToSave = new ArrayList<>();
 
-            for (Map.Entry<UUID, CachedStorage> entry : cache.entrySet()) {
-                if (now - entry.getValue().lastAccess > UNLOAD_TIMEOUT_MS) {
-                    toUnload.add(entry.getKey());
+            synchronized (cache) {
+                long now = System.currentTimeMillis();
+
+                for (Map.Entry<UUID, CachedStorage> entry : cache.entrySet()) {
+                    if (now - entry.getValue().lastAccess > UNLOAD_TIMEOUT_MS) {
+                        toUnload.add(entry.getKey());
+                    }
+                }
+
+                for (UUID uuid : toUnload) {
+                    CachedStorage cached = cache.get(uuid);
+                    if (cached != null && cached.dirty) {
+                        dirtyToSave.add(new java.util.AbstractMap.SimpleEntry<>(uuid, cached));
+                    }
+                    cache.remove(uuid);
+                    dirtyKeys.remove(uuid);
+                }
+
+                while (cache.size() > MAX_CACHE_SIZE) {
+                    Map.Entry<UUID, CachedStorage> eldest = cache.entrySet().iterator().next();
+                    UUID eldestKey = eldest.getKey();
+                    CachedStorage eldestValue = eldest.getValue();
+                    if (eldestValue != null && eldestValue.dirty) {
+                        dirtyToSave.add(new java.util.AbstractMap.SimpleEntry<>(eldestKey, eldestValue));
+                    }
+                    cache.remove(eldestKey);
+                    dirtyKeys.remove(eldestKey);
                 }
             }
 
-            for (UUID uuid : toUnload) {
-                CachedStorage cached = cache.get(uuid);
-                if (cached != null && cached.dirty) {
-                    saveToDisk(uuid, cached.items);  // 先保存脏数据
-                }
-                cache.remove(uuid);
-                dirtyKeys.remove(uuid);
-            }
-
-            while (cache.size() > MAX_CACHE_SIZE) {
-                Map.Entry<UUID, CachedStorage> eldest = cache.entrySet().iterator().next();
-                UUID eldestKey = eldest.getKey();
-                CachedStorage eldestValue = eldest.getValue();
-                if (eldestValue != null && eldestValue.dirty) {
-                    saveToDisk(eldestKey, eldestValue.items);
-                }
-                cache.remove(eldestKey);
-                dirtyKeys.remove(eldestKey);
+            // 在锁外执行磁盘IO，避免阻塞异步线程
+            for (Map.Entry<UUID, CachedStorage> entry : dirtyToSave) {
+                saveToDisk(entry.getKey(), entry.getValue().items);
             }
         }
 
@@ -1409,7 +1445,11 @@ public class InternalStorageComponent implements ILivingComponent {
                                 UUID uuid = UUID.fromString(uuidStr);
                                 
                                 // 跳过缓存中活跃的 UUID
-                                if (cache.containsKey(uuid)) continue;
+                                boolean inCache;
+                                synchronized (cache) {
+                                    inCache = cache.containsKey(uuid);
+                                }
+                                if (inCache) continue;
                                 
                                 // 快速检查文件大小：空文件非常小（< 300 字节）
                                 long fileSize = Files.size(file);
@@ -1641,7 +1681,9 @@ public class InternalStorageComponent implements ILivingComponent {
             cached.items = items;
             cached.dirty = dirty;
             cached.lastAccess = System.currentTimeMillis();
-            cache.put(uuid, cached);
+            synchronized (cache) {
+                cache.put(uuid, cached);
+            }
             if (dirty) {
                 dirtyKeys.add(uuid);
             }

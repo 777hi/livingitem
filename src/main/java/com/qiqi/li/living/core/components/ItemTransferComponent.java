@@ -263,16 +263,15 @@ public class ItemTransferComponent implements ILivingComponent {
             return false;
         }
 
-        if (LivingItemManager.isLivingItem(sourceStack)
-            && !com.qiqi.li.living.function.LivingChestFunction.isLivingChest(sourceStack)
-            && !com.qiqi.li.living.function.LivingEnderChestFunction.isLivingEnderChest(sourceStack)) {
+        boolean isStorageContainer = com.qiqi.li.living.function.LivingChestFunction.isLivingChest(sourceStack)
+            || com.qiqi.li.living.function.LivingEnderChestFunction.isLivingEnderChest(sourceStack);
+
+        if (LivingItemManager.isLivingItem(sourceStack) && !isStorageContainer) {
             return false;
         }
 
         ComponentState filterState = ctx.getComponentState(ItemFilterComponent.ID);
-        if (filterState != null
-            && !com.qiqi.li.living.function.LivingChestFunction.isLivingChest(sourceStack)
-            && !com.qiqi.li.living.function.LivingEnderChestFunction.isLivingEnderChest(sourceStack)
+        if (filterState != null && !isStorageContainer
             && !ItemFilterComponent.allows(filterState, sourceStack)) {
             return false;
         }
@@ -297,7 +296,7 @@ public class ItemTransferComponent implements ILivingComponent {
                     sourceSlot, targetSlot);
                 enderChest.registerRoute(sourceStackForRoute, containerCtx, sourceSlot, hostSlot);
             }
-            return false;
+            return true;
         }
 
         return doTransfer(source, target, Math.min(stackSize, maxTransfer));
