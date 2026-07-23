@@ -1,18 +1,26 @@
 package com.qiqi.li.living.container;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.PlayerEnderChestContainer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.ChestBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.ChestType;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.items.IItemHandler;
+import net.neoforged.neoforge.items.wrapper.InvWrapper;
 import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
 import com.qiqi.li.living.LivingItemFunction;
@@ -45,6 +53,37 @@ public class ContainerLivingItemHandler {
         IItemHandler handler = inventory.player.getCapability(Capabilities.ItemHandler.ENTITY);
         if (handler == null) return;
         ContainerContext context = buildContext(handler, inventory, level);
+        processContext(context, level);
+
+        processEnderChest(inventory.player, level);
+    }
+
+    /**
+     * 处理玩家末影箱中的所有活物品。
+     *
+     * <p>末影箱容器（{@link PlayerEnderChestContainer}）既不是方块实体也不是玩家背包的一部分，
+     * 需要单独处理。使用 "player_&lt;uuid&gt;_ender_chest" 作为容器 key，
+     * 与玩家背包的 key（"player_&lt;uuid&gt;"）区分。</p>
+     *
+     * @param player 玩家
+     * @param level 世界
+     */
+    public static void processEnderChest(Player player, Level level) {
+        if (level.isClientSide) return;
+        PlayerEnderChestContainer enderChest = player.getEnderChestInventory();
+        if (enderChest == null) return;
+
+        boolean hasLivingItem = false;
+        for (int i = 0; i < enderChest.getContainerSize(); i++) {
+            if (LivingItemManager.isLivingItem(enderChest.getItem(i))) {
+                hasLivingItem = true;
+                break;
+            }
+        }
+        if (!hasLivingItem) return;
+
+        IItemHandler handler = new InvWrapper(enderChest);
+        ContainerContext context = new EnderChestContainerContext(handler, player, level);
         processContext(context, level);
     }
 
@@ -116,9 +155,14 @@ public class ContainerLivingItemHandler {
     /**
      * 处理区块中的所有方块实体，对含容器的方块实体执行活物品 tick。
      *
-     * 统一通过 NeoForge IItemHandler 能力检测容器，无需区分原版方块或模组方块。
-     * 去重策略：使用 IdentityHashMap 按 IItemHandler 实例去重。
-     * 对于大箱子，NeoForge 为左右两半返回同一个 IItemHandler 实例，天然去重。
+     * 去重策略（双重保障）：
+     * 1. IdentityHashMap 按 IItemHandler 实例去重（NeoForge 大箱子可能返回同一实例）
+     * 2. HashSet 按 containerKey 去重（防止 IItemHandler 每次创建新实例时重复处理）
+     *
+     * 大箱子处理：
+     * 对大箱子左右两半，NeoForge 返回同一个 IItemHandler（CombinedInvWrapper），
+     * 但如果每次创建新实例则 IdentityHashMap 去重失败。
+     * 因此额外用 containerKey 去重，并在遇到大箱子时收集两半的位置信息。
      *
      * @param blockEntities 区块中的方块实体集合
      * @param level 世界
@@ -126,6 +170,8 @@ public class ContainerLivingItemHandler {
      */
     public static void processBlockEntities(Iterable<BlockEntity> blockEntities, Level level,
                                             IdentityHashMap<IItemHandler, Boolean> processedHandlers) {
+        Set<String> processedKeys = new HashSet<>();
+
         for (var be : blockEntities) {
             IItemHandler itemHandler = level.getCapability(
                 Capabilities.ItemHandler.BLOCK, be.getBlockPos(), null);
@@ -134,10 +180,65 @@ public class ContainerLivingItemHandler {
 
             List<BlockPos> positions = new ArrayList<>();
             List<BlockEntity> blockEntities2 = new ArrayList<>();
-            positions.add(be.getBlockPos());
-            blockEntities2.add(be);
 
-            processContext(new SimpleContainerContext(itemHandler, null, positions, blockEntities2, level), level);
+            List<BlockPos> doubleChestPos = findDoubleChestPositions(level, be.getBlockPos());
+            if (!doubleChestPos.isEmpty()) {
+                for (BlockPos pos : doubleChestPos) {
+                    positions.add(pos);
+                    BlockEntity halfBe = level.getBlockEntity(pos);
+                    if (halfBe != null) blockEntities2.add(halfBe);
+                }
+            } else {
+                positions.add(be.getBlockPos());
+                blockEntities2.add(be);
+            }
+
+            ContainerContext context = new SimpleContainerContext(itemHandler, null, positions, blockEntities2, level);
+            String key = context.getContainerKey();
+            if (!processedKeys.add(key)) continue;
+
+            processContext(context, level);
+        }
+    }
+
+    /**
+     * 检测指定位置是否是大箱子，返回左右两半的位置（LEFT 在前，RIGHT 在后）。
+     * 如果不是大箱子，返回空列表。
+     */
+    private static List<BlockPos> findDoubleChestPositions(Level level, BlockPos pos) {
+        BlockState state = level.getBlockState(pos);
+        if (!(state.getBlock() instanceof ChestBlock)) return List.of();
+
+        ChestType chestType = state.getValue(ChestBlock.TYPE);
+        if (chestType == ChestType.SINGLE) return List.of();
+
+        Direction connectedDir = ChestBlock.getConnectedDirection(state);
+        BlockPos otherPos = pos.relative(connectedDir);
+
+        if (chestType == ChestType.LEFT) {
+            return List.of(pos, otherPos);
+        } else {
+            return List.of(otherPos, pos);
+        }
+    }
+
+    /**
+     * 末影箱容器上下文 —— 包装 {@link PlayerEnderChestContainer} 为活物品可处理的容器。
+     *
+     * <p>与玩家背包使用不同的 containerKey（"player_&lt;uuid&gt;_ender_chest"），
+     * 确保末影箱中的活漏斗路由和玩家背包中的路由互不干扰。</p>
+     */
+    private static class EnderChestContainerContext extends SimpleContainerContext {
+        private final String enderChestKey;
+
+        EnderChestContainerContext(IItemHandler handler, Player player, Level level) {
+            super(handler, null, new ArrayList<>(), new ArrayList<>(), level);
+            this.enderChestKey = "player_" + player.getStringUUID() + "_ender_chest";
+        }
+
+        @Override
+        public String getContainerKey() {
+            return enderChestKey;
         }
     }
 }

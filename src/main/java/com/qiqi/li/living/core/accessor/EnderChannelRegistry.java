@@ -258,6 +258,19 @@ public final class EnderChannelRegistry {
             && !activeRegistrarSlots.contains(route.registrarSlot()));
     }
 
+    /**
+     * 清理活末影箱被移走后的路由条目。
+     *
+     * <p>当路由条目关联了 targetSlot（活末影箱所在槽位），
+     * 但该槽位已不再是活末影箱时，移除该路由。</p>
+     *
+     * @param activeEnderChestSlots 当前容器中活末影箱所在的槽位集合
+     */
+    public void removeStaleEnderChestRoutes(Set<Integer> activeEnderChestSlots) {
+        removeStaleRoutesInternal(route ->
+            route.targetSlot() >= 0 && !activeEnderChestSlots.contains(route.targetSlot()));
+    }
+
     private void removeStaleRoutesInternal(java.util.function.Predicate<EnderChannelEntry> shouldRemove) {
         List<Integer> channelsToRemove = new ArrayList<>();
         for (var entry : channels.entrySet()) {

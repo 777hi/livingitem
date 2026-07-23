@@ -29,6 +29,9 @@
   "tooltip.livingitem.tnt.status": "§cLiving TNT§r",
   "tooltip.livingitem.flint_and_steel.status": "§eLiving Flint & Steel§r",
 
+  "tooltip.livingitem.ender_chest.status": "§dLiving Ender Chest§r",
+  "tooltip.livingitem.ender_chest.bound_player": "  §bBound: %s§r",
+
   "slot.livingitem.input": "Input",
   "slot.livingitem.fuel": "Fuel",
   "slot.livingitem.output": "Output",

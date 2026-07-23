@@ -1,6 +1,7 @@
 package com.qiqi.li.living.core.accessor;
 
 import java.util.Set;
+import java.util.UUID;
 
 import com.mojang.logging.LogUtils;
 import net.minecraft.server.MinecraftServer;
@@ -53,7 +54,12 @@ public final class SlotAccessorFactory {
 
         if (LivingEnderChestFunction.isLivingEnderChest(stack)) {
             int ch = stack.getCount();
-            LOGGER.debug("SlotAccessorFactory: creating LivingEnderChestAccessor, channel={}, slot={}", ch, slot);
+            UUID boundUuid = LivingEnderChestFunction.getBoundPlayerUuid(stack);
+            LOGGER.debug("SlotAccessorFactory: creating LivingEnderChestAccessor, channel={}, slot={}, direct={}", ch, slot, boundUuid != null);
+            if (boundUuid != null) {
+                return new LivingEnderChestAccessor(server, ch, filterState,
+                    transferredTargetSlots, boundUuid);
+            }
             return new LivingEnderChestAccessor(server, ch, filterState,
                 transferredTargetSlots);
         }

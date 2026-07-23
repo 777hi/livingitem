@@ -29,6 +29,9 @@
   "tooltip.livingitem.tnt.status": "§c活TNT§r",
   "tooltip.livingitem.flint_and_steel.status": "§e活打火石§r",
 
+  "tooltip.livingitem.ender_chest.status": "§d活末影箱§r",
+  "tooltip.livingitem.ender_chest.bound_player": "  §b绑定: %s§r",
+
   "slot.livingitem.input": "输入",
   "slot.livingitem.fuel": "燃料",
   "slot.livingitem.output": "输出",

@@ -19,7 +19,6 @@ import com.qiqi.li.living.core.components.ItemTransferComponent;
 import com.qiqi.li.living.core.model.SlotMapping;
 import com.qiqi.li.living.core.orchestrator.Orchestrators;
 import com.qiqi.li.living.container.ContainerContext;
-
 /**
  * 活漏斗功能 —— 实现活漏斗的物品传输逻辑。
  *
@@ -81,19 +80,32 @@ public class LivingHopperFunction extends BaseLivingFunction {
         if (level.isClientSide) return;
 
         Set<Integer> activeSlots = new HashSet<>();
+        Set<Integer> activeEnderChestSlots = new HashSet<>();
         for (SlotEntry entry : entries) {
             activeSlots.add(entry.slotIndex());
         }
 
+        int containerSize = context.getSize();
+        for (int i = 0; i < containerSize; i++) {
+            ItemStack stack = context.getItem(i);
+            if (LivingEnderChestFunction.isLivingEnderChest(stack)) {
+                activeEnderChestSlots.add(i);
+            }
+        }
+
+        EnderChannelRegistry registry = EnderChannelRegistry.getInstance();
+
         BlockPos pos = context.getBlockPos();
         if (pos != null) {
-            EnderChannelRegistry.getInstance().removeStaleRoutes(pos, activeSlots);
+            registry.removeStaleRoutes(pos, activeSlots);
         } else {
             String containerKey = context.getContainerKey();
             if (containerKey != null) {
-                EnderChannelRegistry.getInstance().removeStaleRoutes(containerKey, activeSlots);
+                registry.removeStaleRoutes(containerKey, activeSlots);
             }
         }
+
+        registry.removeStaleEnderChestRoutes(activeEnderChestSlots);
     }
 
     /**

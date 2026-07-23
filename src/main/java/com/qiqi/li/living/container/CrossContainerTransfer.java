@@ -23,6 +23,7 @@ package com.qiqi.li.living.container;
 
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 
 import com.qiqi.li.living.core.components.InternalStorageComponent;
 import net.minecraft.core.BlockPos;
@@ -391,8 +392,10 @@ public final class CrossContainerTransfer {
 
         int channel = enderChestStack.getCount();
         var transferredTargetSlots = containerCtx.getTransferredTargetSlots();
-        LivingEnderChestAccessor accessor = new LivingEnderChestAccessor(
-            server, channel, filterState, transferredTargetSlots);
+        UUID boundUuid = LivingEnderChestFunction.getBoundPlayerUuid(enderChestStack);
+        LivingEnderChestAccessor accessor = boundUuid != null
+            ? new LivingEnderChestAccessor(server, channel, filterState, transferredTargetSlots, boundUuid)
+            : new LivingEnderChestAccessor(server, channel, filterState, transferredTargetSlots);
 
         if (!hasAnySpace(neighborHandler)) return false;
 
@@ -516,6 +519,12 @@ public final class CrossContainerTransfer {
         var server = ctx.level().getServer();
         if (server == null) return false;
 
+        UUID boundUuid = LivingEnderChestFunction.getBoundPlayerUuid(enderChestStack);
+        if (boundUuid != null) {
+            return pullFromNeighborToDirectEnderChest(ctx, server, neighborHandler,
+                boundUuid, stackSize, maxTransfer, filterState);
+        }
+
         BlockPos neighborPos = basePos.relative(sourceWorldDir);
         int channel = enderChestStack.getCount();
         var registry = EnderChannelRegistry.getInstance();
@@ -528,7 +537,7 @@ public final class CrossContainerTransfer {
 
             String itemType = BuiltInRegistries.ITEM.getKey(sourceStack.getItem()).toString();
             var entry = new EnderChannelEntry(
-                itemType, level.dimension(), neighborPos, i, hostSlot, null);
+                itemType, level.dimension(), neighborPos, i, hostSlot, null, targetSlot);
 
             if (registry.contains(channel, entry)) {
                 return true;
@@ -537,6 +546,41 @@ public final class CrossContainerTransfer {
             registry.removeByPositionAndSlotFromAllChannels(neighborPos, i);
             registry.insert(channel, entry);
             return true;
+        }
+
+        return false;
+    }
+
+    private static boolean pullFromNeighborToDirectEnderChest(ComponentContext ctx,
+                                                                MinecraftServer server,
+                                                                IItemHandler neighborHandler,
+                                                                UUID boundUuid,
+                                                                int stackSize,
+                                                                int maxTransfer,
+                                                                ComponentState filterState) {
+        var player = server.getPlayerList().getPlayer(boundUuid);
+        if (player == null) return false;
+
+        var enderChest = player.getEnderChestInventory();
+
+        for (int i = 0; i < neighborHandler.getSlots(); i++) {
+            ItemStack sourceStack = neighborHandler.getStackInSlot(i);
+            if (sourceStack.isEmpty() || LivingItemManager.isLivingItem(sourceStack)) continue;
+
+            if (filterState != null && !ItemFilterComponent.allows(filterState, sourceStack)) continue;
+
+            int transferAmount = Math.min(sourceStack.getCount(), Math.min(stackSize, maxTransfer));
+            ItemStack toInsert = sourceStack.copy();
+            toInsert.setCount(transferAmount);
+
+            ItemStack remaining = ItemHandlerHelper.insertItem(
+                new net.neoforged.neoforge.items.wrapper.InvWrapper(enderChest), toInsert, false);
+
+            int inserted = transferAmount - remaining.getCount();
+            if (inserted > 0) {
+                extractFromHandler(neighborHandler, i, inserted);
+                return true;
+            }
         }
 
         return false;

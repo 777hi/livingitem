@@ -290,6 +290,9 @@ public class ItemTransferComponent implements ILivingComponent {
         }
 
         if (target instanceof LivingEnderChestAccessor enderChest) {
+            if (enderChest.isDirectMode()) {
+                return doTransfer(source, target, Math.min(stackSize, maxTransfer));
+            }
             ItemStack sourceStackForRoute = containerCtx.getItem(sourceSlot);
             if (!sourceStackForRoute.isEmpty()
                 && !LivingItemManager.isLivingItem(sourceStackForRoute)) {

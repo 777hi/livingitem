@@ -4,12 +4,16 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.inventory.ChestMenu;
+import net.minecraft.world.inventory.PlayerEnderChestContainer;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.network.codec.StreamCodec;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import com.qiqi.li.LivingItem;
 import com.qiqi.li.living.LivingItemManager;
 import com.qiqi.li.living.function.LivingChestFunction;
+import com.qiqi.li.living.function.LivingEnderChestFunction;
 
 /**
  * 活物品标签切换网络包。
@@ -66,7 +70,20 @@ public record LivingTagPacket() implements CustomPacketPayload {
                             player.getServer(), carriedItem, player);
                     }
 
+                    // 取消活化时：活末影箱清空绑定玩家
+                    if (!newLiving && carriedItem.is(Items.ENDER_CHEST)) {
+                        LivingEnderChestFunction.clearBoundPlayer(carriedItem);
+                    }
+
                     LivingItemManager.setLiving(carriedItem, newLiving);
+
+                    // 活化末影箱时：如果玩家在末影箱 GUI 中，绑定当前玩家
+                    if (newLiving && carriedItem.is(Items.ENDER_CHEST)
+                        && isInEnderChestGui(player)) {
+                        LivingEnderChestFunction.setBoundPlayer(
+                            carriedItem, player.getUUID(), player.getName().getString());
+                        LivingItem.LOGGER.info("活末影箱绑定玩家: {}", player.getName().getString());
+                    }
 
                     LivingItem.LOGGER.info("服务端：将物品 {} 的 living 标签从 {} 切换为 {}",
                             carriedItem.getItem().getName(carriedItem).getString(),
@@ -77,5 +94,12 @@ public record LivingTagPacket() implements CustomPacketPayload {
                 }
             }
         });
+    }
+
+    private static boolean isInEnderChestGui(ServerPlayer player) {
+        if (player.containerMenu instanceof ChestMenu chestMenu) {
+            return chestMenu.getContainer() instanceof PlayerEnderChestContainer;
+        }
+        return false;
     }
 }

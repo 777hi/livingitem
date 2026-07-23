@@ -47,6 +47,7 @@ public class ContainerSnapshot {
      */
     public static ContainerSnapshot capture(ContainerContext context) {
         int containerSize = context.getSize();
+        int containerWidth = context.getWidth();
         int[] sourceOf = new int[containerSize];
         int[] targetOf = new int[containerSize];
         Arrays.fill(sourceOf, -1);
@@ -66,8 +67,8 @@ public class ContainerSnapshot {
             SlotMapping mapping = dirComp.getCurrentMapping(dirState);
             if (mapping == null) continue;
 
-            sourceOf[slot] = SlotResolver.resolve(slot, mapping.sourceOffset(), containerSize);
-            targetOf[slot] = SlotResolver.resolve(slot, mapping.targetOffset(), containerSize);
+            sourceOf[slot] = SlotResolver.resolve(slot, mapping.sourceOffset(), containerSize, containerWidth);
+            targetOf[slot] = SlotResolver.resolve(slot, mapping.targetOffset(), containerSize, containerWidth);
         }
 
         return new ContainerSnapshot(containerSize, sourceOf, targetOf);
