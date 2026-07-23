@@ -48,9 +48,7 @@ public class FilteredSlotAccessor implements SlotAccessor {
         ItemStack result = delegate.extract(amount, filterType);
         if (result.isEmpty()) return result;
 
-        // 提取后检查是否通过过滤
         if (filterState != null && !ItemFilterComponent.allows(filterState, result)) {
-            // 不通过过滤，退回物品
             delegate.rollback(result);
             return ItemStack.EMPTY;
         }
@@ -58,12 +56,30 @@ public class FilteredSlotAccessor implements SlotAccessor {
     }
 
     @Override
+    public ItemStack simulateExtract(int amount) {
+        ItemStack result = delegate.simulateExtract(amount);
+        if (result.isEmpty()) return result;
+
+        if (filterState != null && !ItemFilterComponent.allows(filterState, result)) {
+            return ItemStack.EMPTY;
+        }
+        return result;
+    }
+
+    @Override
     public int insert(ItemStack stack) {
-        // 插入前检查是否通过过滤
         if (filterState != null && !ItemFilterComponent.allows(filterState, stack)) {
-            return 0; // 拒绝插入
+            return 0;
         }
         return delegate.insert(stack);
+    }
+
+    @Override
+    public int simulateInsert(ItemStack stack) {
+        if (filterState != null && !ItemFilterComponent.allows(filterState, stack)) {
+            return 0;
+        }
+        return delegate.simulateInsert(stack);
     }
 
     @Override

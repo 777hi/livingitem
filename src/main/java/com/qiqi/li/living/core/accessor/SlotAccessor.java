@@ -41,9 +41,31 @@ public interface SlotAccessor {
     int insert(ItemStack stack);
 
     /**
+     * 模拟提取：检查源能提供多少物品，但不实际移除。
+     *
+     * <p>返回的 ItemStack 是副本，调用方可以安全地修改。
+     * 不会修改源槽位的任何状态。</p>
+     *
+     * @param amount 最大提取数量
+     * @return 模拟提取的物品副本（EMPTY 表示无法提取）
+     */
+    ItemStack simulateExtract(int amount);
+
+    /**
+     * 模拟插入：检查目标能接受多少物品，但不实际写入。
+     *
+     * <p>不会修改 {@code stack}，也不会修改目标槽位的任何状态。</p>
+     *
+     * @param stack 要检查的物品（不会被修改）
+     * @return 可以接受的数量
+     */
+    int simulateInsert(ItemStack stack);
+
+    /**
      * 回滚：将物品退回源槽位。
      *
-     * <p>当 extract 成功但 insert 失败时调用，确保物品不丢失。</p>
+     * <p>当 extract 成功但 insert 失败时调用，确保物品不丢失。
+     * 在模拟优先模式下，此方法仅作为安全兜底，正常流程不应触发。</p>
      *
      * @param stack 要退回的物品
      */
@@ -76,7 +98,15 @@ public interface SlotAccessor {
     }
 
     /**
-     * 统一的传输执行逻辑：extract → insert → rollback。
+     * 统一的传输执行逻辑：模拟优先模式。
+     *
+     * <p>流程：</p>
+     * <ol>
+     *   <li>模拟提取：检查源能提供多少物品（不实际移除）</li>
+     *   <li>模拟插入：检查目标能接受多少物品（不实际写入）</li>
+     *   <li>确认可行后，执行真实提取和插入</li>
+     *   <li>rollback 仅作为安全兜底</li>
+     * </ol>
      *
      * <p>适用于所有 SlotAccessor 组合（普通×普通、普通×活箱子、邻居×邻居等）。</p>
      *
@@ -90,7 +120,18 @@ public interface SlotAccessor {
             return false;
         }
 
-        net.minecraft.world.item.ItemStack extracted = source.extract(amount, null);
+        ItemStack simulated = source.simulateExtract(amount);
+        if (simulated.isEmpty()) {
+            return false;
+        }
+
+        int canAccept = target.simulateInsert(simulated);
+        if (canAccept <= 0) {
+            return false;
+        }
+
+        int toExtract = Math.min(canAccept, simulated.getCount());
+        ItemStack extracted = source.extract(toExtract, null);
         if (extracted.isEmpty()) {
             return false;
         }

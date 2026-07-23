@@ -163,7 +163,7 @@ public final class CrossContainerTransfer {
 
         SlotAccessor target = SlotAccessorFactory.create(server, containerCtx, targetSlot, null,
             containerCtx.getTransferredTargetSlots());
-        if (target == null) return false;
+        if (target == null || target.isFull()) return false;
 
         int amount = Math.min(stackSize, maxTransfer);
 

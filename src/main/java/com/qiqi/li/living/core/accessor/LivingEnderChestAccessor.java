@@ -166,6 +166,60 @@ public class LivingEnderChestAccessor implements SlotAccessor {
         return routeExtract(amount);
     }
 
+    @Override
+    public ItemStack simulateExtract(int amount) {
+        if (directMode) {
+            return directSimulateExtract(amount);
+        }
+        return routeSimulateExtract(amount);
+    }
+
+    private ItemStack directSimulateExtract(int amount) {
+        if (cachedEnderChest == null) return ItemStack.EMPTY;
+
+        for (int i = 0; i < cachedEnderChest.getContainerSize(); i++) {
+            ItemStack slotStack = cachedEnderChest.getItem(i);
+            if (slotStack.isEmpty()) continue;
+
+            int toExtract = Math.min(amount, slotStack.getCount());
+            ItemStack result = slotStack.copy();
+            result.setCount(toExtract);
+            return result;
+        }
+        return ItemStack.EMPTY;
+    }
+
+    private ItemStack routeSimulateExtract(int amount) {
+        EnderChannelRegistry registry = EnderChannelRegistry.getInstance();
+        EnderChannelEntry entry = registry.peek(channel, filterState);
+        if (entry == null) return ItemStack.EMPTY;
+
+        ServerLevel sourceLevel = server.getLevel(entry.sourceDim());
+        if (sourceLevel == null) return ItemStack.EMPTY;
+
+        IItemHandler sourceHandler;
+        BlockPos sourcePos = entry.sourcePos();
+
+        if (sourcePos != null) {
+            if (!sourceLevel.isLoaded(sourcePos)) return ItemStack.EMPTY;
+
+            BlockEntity be = sourceLevel.getBlockEntity(sourcePos);
+            sourceHandler = getHandler(sourceLevel, sourcePos, be);
+            if (sourceHandler == null) return ItemStack.EMPTY;
+        } else {
+            return ItemStack.EMPTY;
+        }
+
+        ItemStack sourceStack = sourceHandler.getStackInSlot(entry.sourceSlot());
+        if (sourceStack.isEmpty()) return ItemStack.EMPTY;
+
+        String itemId = BuiltInRegistries.ITEM.getKey(sourceStack.getItem()).toString();
+        if (!itemId.equals(entry.itemType())) return ItemStack.EMPTY;
+
+        int toExtract = Math.min(amount, sourceStack.getCount());
+        return sourceHandler.extractItem(entry.sourceSlot(), toExtract, true);
+    }
+
     private ItemStack directExtract(int amount) {
         if (cachedEnderChest == null) {
             LOGGER.debug("LivingEnderChestAccessor: direct extract player offline, uuid={}", boundPlayerUuid);
@@ -354,6 +408,29 @@ public class LivingEnderChestAccessor implements SlotAccessor {
         LOGGER.debug("LivingEnderChestAccessor: direct insert item={}, count={}, inserted={}",
             BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(), originalCount, inserted);
         return inserted;
+    }
+
+    @Override
+    public int simulateInsert(ItemStack stack) {
+        if (!directMode) return 0;
+
+        if (cachedEnderChest == null) return 0;
+
+        int remaining = stack.getCount();
+        for (int i = 0; i < cachedEnderChest.getContainerSize() && remaining > 0; i++) {
+            ItemStack slotStack = cachedEnderChest.getItem(i);
+            if (slotStack.isEmpty()) {
+                int toPlace = Math.min(remaining, stack.getMaxStackSize());
+                remaining -= toPlace;
+            } else if (ItemStack.isSameItemSameComponents(slotStack, stack)
+                       && slotStack.getCount() < slotStack.getMaxStackSize()) {
+                int space = slotStack.getMaxStackSize() - slotStack.getCount();
+                int toPlace = Math.min(space, remaining);
+                remaining -= toPlace;
+            }
+        }
+
+        return stack.getCount() - remaining;
     }
 
     @Override

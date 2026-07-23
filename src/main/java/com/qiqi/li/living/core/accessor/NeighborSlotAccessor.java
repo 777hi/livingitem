@@ -30,6 +30,14 @@ public class NeighborSlotAccessor implements SlotAccessor {
     }
 
     @Override
+    public ItemStack simulateExtract(int amount) {
+        ItemStack stack = handler.getStackInSlot(slot);
+        if (stack.isEmpty()) return ItemStack.EMPTY;
+        int toExtract = Math.min(amount, stack.getCount());
+        return handler.extractItem(slot, toExtract, true);
+    }
+
+    @Override
     public int insert(ItemStack stack) {
         ItemStack original = stack.copy();
         ItemStack remaining = ItemHandlerHelper.insertItemStacked(handler, stack.copy(), false);
@@ -39,8 +47,21 @@ public class NeighborSlotAccessor implements SlotAccessor {
     }
 
     @Override
+    public int simulateInsert(ItemStack stack) {
+        ItemStack remaining = ItemHandlerHelper.insertItemStacked(handler, stack.copy(), true);
+        return stack.getCount() - remaining.getCount();
+    }
+
+    @Override
     public void rollback(ItemStack stack) {
-        ItemHandlerHelper.insertItem(handler, stack, false);
+        ItemStack current = handler.getStackInSlot(slot);
+        if (current.isEmpty()) {
+            handler.insertItem(slot, stack, false);
+        } else if (ItemStack.isSameItemSameComponents(current, stack)) {
+            handler.insertItem(slot, stack, false);
+        } else {
+            ItemHandlerHelper.insertItem(handler, stack, false);
+        }
     }
 
     @Override

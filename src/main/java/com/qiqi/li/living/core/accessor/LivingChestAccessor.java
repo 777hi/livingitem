@@ -45,6 +45,24 @@ public class LivingChestAccessor implements SlotAccessor {
     }
 
     @Override
+    public ItemStack simulateExtract(int amount) {
+        ComponentState chestState = LivingChestFunction.getStorageState(chestStack);
+        if (InternalStorageComponent.isStorageEmpty(chestState)) {
+            return ItemStack.EMPTY;
+        }
+
+        List<ItemStack> merged = LivingChestFunction.getMergedStorage(server, chestStack, capacityPerChest);
+        for (ItemStack item : merged) {
+            if (!item.isEmpty()) {
+                ItemStack result = item.copy();
+                result.setCount(Math.min(amount, item.getCount()));
+                return result;
+            }
+        }
+        return ItemStack.EMPTY;
+    }
+
+    @Override
     public int insert(ItemStack stack) {
         ComponentState chestState = LivingChestFunction.getStorageState(chestStack);
         if (InternalStorageComponent.isStorageFull(chestState, capacityPerChest)) {
@@ -54,6 +72,22 @@ public class LivingChestAccessor implements SlotAccessor {
         int originalCount = stack.getCount();
         LivingChestFunction.insertItem(server, chestStack, stack, capacityPerChest);
         return originalCount - stack.getCount();
+    }
+
+    @Override
+    public int simulateInsert(ItemStack stack) {
+        ComponentState chestState = LivingChestFunction.getStorageState(chestStack);
+        if (InternalStorageComponent.isStorageFull(chestState, capacityPerChest)) {
+            return 0;
+        }
+
+        int usedSlots = chestState.getInt(InternalStorageComponent.KEY_USED_SLOTS, 0);
+        int totalSlots = chestStack.getCount() * capacityPerChest;
+        int freeSlots = totalSlots - usedSlots;
+
+        if (freeSlots <= 0) return 0;
+
+        return Math.min(stack.getCount(), freeSlots * stack.getMaxStackSize());
     }
 
     @Override
