@@ -90,4 +90,9 @@ public class FilteredSlotAccessor implements SlotAccessor {
     public void sync() {
         delegate.sync();
     }
+
+    @Override
+    public SlotAccessor unwrap() {
+        return delegate;
+    }
 }

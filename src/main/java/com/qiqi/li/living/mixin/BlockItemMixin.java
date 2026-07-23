@@ -8,6 +8,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.Container;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.BlockPlaceContext;
@@ -176,30 +177,17 @@ public class BlockItemMixin {
         for (ItemStack item : chestItems) {
             if (item.isEmpty()) continue;
 
-            boolean placed = false;
-            for (int slot = 0; slot < chestContainer.getContainerSize(); slot++) {
-                if (chestContainer.getItem(slot).isEmpty()) {
-                    chestContainer.setItem(slot, item.copy());
-                    totalTransferred += item.getCount();
-                    placed = true;
-                    break;
-                }
-                ItemStack slotItem = chestContainer.getItem(slot);
-                if (ItemStack.isSameItemSameComponents(slotItem, item)) {
-                    int space = slotItem.getMaxStackSize() - slotItem.getCount();
-                    int toTransfer = Math.min(item.getCount(), space);
-                    if (toTransfer > 0) {
-                        slotItem.grow(toTransfer);
-                        totalTransferred += toTransfer;
-                        placed = true;
-                        break;
-                    }
-                }
-            }
+            ItemStack remaining = insertIntoContainer(chestContainer, item);
+            totalTransferred += item.getCount() - remaining.getCount();
 
-            if (!placed) {
-                LOGGER.warn("[BlockItemMixin] chest is full, {} items left in virtual storage",
-                    item.getCount());
+            if (!remaining.isEmpty()) {
+                level.addFreshEntity(new ItemEntity(
+                    level,
+                    pos.getX() + 0.5,
+                    pos.getY() + 1.0,
+                    pos.getZ() + 0.5,
+                    remaining.copy()));
+                LOGGER.info("[BlockItemMixin] chest full, dropped {} items at {}", remaining.getCount(), pos);
             }
         }
 
@@ -220,5 +208,42 @@ public class BlockItemMixin {
             LOGGER.info("[BlockItemMixin] survival mode: removed placed UUID, remaining={}, {} items transferred",
                 remaining.size(), totalTransferred);
         }
+    }
+
+    /**
+     * 将物品尽可能插入容器，返回未能插入的剩余物品。
+     *
+     * <p>先尝试与已有同类物品堆叠，再尝试放入空槽位。
+     * 如果容器满了，返回未插入的部分。</p>
+     *
+     * @param container 目标容器
+     * @param stack     待插入的物品（会被修改）
+     * @return 未能插入的剩余物品，如果全部插入则返回 {@link ItemStack#EMPTY}
+     */
+    private static ItemStack insertIntoContainer(Container container, ItemStack stack) {
+        ItemStack remaining = stack.copy();
+
+        for (int slot = 0; slot < container.getContainerSize() && !remaining.isEmpty(); slot++) {
+            ItemStack slotItem = container.getItem(slot);
+            if (!slotItem.isEmpty() && ItemStack.isSameItemSameComponents(slotItem, remaining)) {
+                int space = slotItem.getMaxStackSize() - slotItem.getCount();
+                int toTransfer = Math.min(remaining.getCount(), space);
+                if (toTransfer > 0) {
+                    slotItem.grow(toTransfer);
+                    remaining.shrink(toTransfer);
+                }
+            }
+        }
+
+        for (int slot = 0; slot < container.getContainerSize() && !remaining.isEmpty(); slot++) {
+            if (container.getItem(slot).isEmpty()) {
+                int toPlace = Math.min(remaining.getCount(), remaining.getMaxStackSize());
+                container.setItem(slot, remaining.copy());
+                container.getItem(slot).setCount(toPlace);
+                remaining.shrink(toPlace);
+            }
+        }
+
+        return remaining.isEmpty() ? ItemStack.EMPTY : remaining;
     }
 }

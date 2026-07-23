@@ -289,7 +289,7 @@ public class ItemTransferComponent implements ILivingComponent {
             return false;
         }
 
-        if (target instanceof LivingEnderChestAccessor enderChest) {
+        if (target.unwrap() instanceof LivingEnderChestAccessor enderChest) {
             if (enderChest.isDirectMode()) {
                 return doTransfer(source, target, Math.min(stackSize, maxTransfer));
             }
@@ -303,7 +303,7 @@ public class ItemTransferComponent implements ILivingComponent {
             return true;
         }
 
-        if (source instanceof LivingEnderChestAccessor) {
+        if (source.unwrap() instanceof LivingEnderChestAccessor) {
             return doTransfer(source, target, Math.min(stackSize, maxTransfer));
         }
 

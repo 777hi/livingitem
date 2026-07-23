@@ -1,12 +1,9 @@
 package com.qiqi.li.living.core.components;
 
 import java.util.HashSet;
-import java.util.List;
 import java.util.Set;
-import java.util.UUID;
 import java.util.function.Consumer;
 
-import com.qiqi.li.living.LivingItemManager;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.core.ComponentConfig;
 import com.qiqi.li.living.core.ComponentContext;
@@ -57,9 +54,7 @@ public class EnderChannelComponent implements ILivingComponent {
 
     public static final String ID = "ender_channel";
 
-    private static final String KEY_CHANNEL = "channel";
-    private static final String KEY_ROUTE_COUNT = "route_count";
-    private static final String KEY_LAST_CLEANUP_TICK = "last_cleanup_tick";
+    private long lastCleanupTick = -1;
 
     @Override
     public String getComponentId() {
@@ -68,11 +63,7 @@ public class EnderChannelComponent implements ILivingComponent {
 
     @Override
     public ComponentState createDefaultState() {
-        ComponentState state = new ComponentState();
-        state.setInt(KEY_CHANNEL, 1);
-        state.setInt(KEY_ROUTE_COUNT, 0);
-        state.setLong(KEY_LAST_CLEANUP_TICK, 0);
-        return state;
+        return new ComponentState();
     }
 
     /**
@@ -85,8 +76,8 @@ public class EnderChannelComponent implements ILivingComponent {
      *   <li>源物品已被移走或替换的路由</li>
      * </ol>
      *
-     * <p>为避免多个活末影箱重复清理，使用 last_cleanup_tick 状态
-     * 确保同一 tick 内只清理一次。</p>
+     * <p>为避免多个活末影箱重复清理，使用 lastCleanupTick 实例字段
+     * 确保同一 tick 内只清理一次（运行时临时变量，不持久化到 NBT）。</p>
      */
     @Override
     public void tick(ComponentContext context, int hostSlot, ItemStack hostStack,
@@ -95,10 +86,8 @@ public class EnderChannelComponent implements ILivingComponent {
         if (level == null || level.isClientSide()) return;
 
         long currentTick = level.getGameTime();
-        long lastCleanup = state.getLong(KEY_LAST_CLEANUP_TICK, 0);
-        if (currentTick == lastCleanup) return;
-
-        state.setLong(KEY_LAST_CLEANUP_TICK, currentTick);
+        if (currentTick == lastCleanupTick) return;
+        lastCleanupTick = currentTick;
 
         ContainerContext containerCtx = context.containerCtx();
         Set<Integer> activeEnderChestSlots = new HashSet<>();
@@ -114,11 +103,6 @@ public class EnderChannelComponent implements ILivingComponent {
         registry.removeStaleEnderChestRoutes(activeEnderChestSlots);
         int cleaned = registry.cleanStaleSourceRoutes(containerCtx);
 
-        // 更新路由统计
-        int channel = hostStack.getCount();
-        state.setInt(KEY_CHANNEL, channel);
-        state.setInt(KEY_ROUTE_COUNT, registry.getChannelSize(channel));
-
         if (cleaned > 0) {
             LOGGER.debug("EnderChannelComponent: cleaned {} stale routes at tick {}", cleaned, currentTick);
         }
@@ -133,20 +117,6 @@ public class EnderChannelComponent implements ILivingComponent {
     }
 
     /**
-     * 获取当前频道号。
-     */
-    public static int getChannel(ComponentState state) {
-        return state.getInt(KEY_CHANNEL, 1);
-    }
-
-    /**
-     * 获取当前路由数量。
-     */
-    public static int getRouteCount(ComponentState state) {
-        return state.getInt(KEY_ROUTE_COUNT, 0);
-    }
-
-    /**
      * 构建 Tooltip 显示内容（供 LivingEnderChestFunction 调用）。
      */
     public static void buildTooltip(ItemStack stack, CompoundTag functionData,
@@ -156,7 +126,7 @@ public class EnderChannelComponent implements ILivingComponent {
             if (name == null) name = "???";
             tooltipAdder.accept(Component.translatable(
                 "tooltip.livingitem.ender_chest.bound_player", name)
-                .withStyle(style -> style.withColor(0x55FFFF)));
+                .withStyle(style -> style.withColor(0xDD44FF).withBold(true)));
         } else {
             int channel = stack.getCount();
             var registry = EnderChannelRegistry.getInstance();
@@ -165,10 +135,10 @@ public class EnderChannelComponent implements ILivingComponent {
 
             tooltipAdder.accept(Component.translatable(
                 "tooltip.livingitem.ender_chest.channel", channel)
-                .withStyle(style -> style.withColor(0xAAAAAA)));
+                .withStyle(style -> style.withColor(0xCC66FF)));
             tooltipAdder.accept(Component.translatable(
                 "tooltip.livingitem.ender_chest.routes", routeCount, totalRoutes)
-                .withStyle(style -> style.withColor(0xAAAAAA)));
+                .withStyle(style -> style.withColor(0xAA88FF)));
 
             if (routeCount > 0 && flag.isAdvanced()) {
                 var entries = registry.getEntries(channel);
@@ -183,7 +153,7 @@ public class EnderChannelComponent implements ILivingComponent {
                     }
                     tooltipAdder.accept(Component.literal(
                         "  " + entry.itemType() + " @" + locStr + " slot=" + entry.sourceSlot())
-                        .withStyle(style -> style.withColor(0x777777)));
+                        .withStyle(style -> style.withColor(0x9966CC).withItalic(true)));
                 }
             }
         }

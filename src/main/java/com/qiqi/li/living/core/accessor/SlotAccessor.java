@@ -64,6 +64,18 @@ public interface SlotAccessor {
     void sync();
 
     /**
+     * 解包装饰器，获取底层 SlotAccessor。
+     *
+     * <p>用于需要判断具体类型的场景（如 {@code instanceof LivingEnderChestAccessor}）。
+     * 非装饰器实现返回 this，装饰器实现返回被装饰的对象。</p>
+     *
+     * @return 底层 SlotAccessor
+     */
+    default SlotAccessor unwrap() {
+        return this;
+    }
+
+    /**
      * 统一的传输执行逻辑：extract → insert → rollback。
      *
      * <p>适用于所有 SlotAccessor 组合（普通×普通、普通×活箱子、邻居×邻居等）。</p>
