@@ -52,9 +52,6 @@ public class ItemTransformComponent implements ILivingComponent {
     /** 组件 ID，用于在 ComponentState 和 NBT 中标识此组件 */
     public static final String ID = "transform";
 
-    /** NBT 键名：上次转化的时间戳（用于 Tooltip 显示） */
-    private static final String KEY_LAST_TRANSFORM_TICK = "last_transform_tick";
-
     /** NBT 键名：输入物品的资源路径（如 "minecraft:iron_ore"） */
     private static final String KEY_INPUT_ITEM = "input_item";
 
@@ -69,6 +66,9 @@ public class ItemTransformComponent implements ILivingComponent {
 
     /** NBT 键名：上次配方检查的输出物品 ID（用于缓存输出空间检查） */
     private static final String KEY_CACHED_OUTPUT = "cached_output";
+
+    /** NBT 键名：配方的烹饪时间（ticks），从 AbstractCookingRecipe.getCookingTime() 获取 */
+    private static final String KEY_COOKING_TIME = "cooking_time";
 
     @Override
     public String getComponentId() { return ID; }
@@ -213,8 +213,6 @@ public class ItemTransformComponent implements ILivingComponent {
             ctx.containerCtx().setItem(ctx.outputSlot(), outputStack.copy());
         }
 
-        transformState.setInt(KEY_LAST_TRANSFORM_TICK, (int)(System.currentTimeMillis() / 1000));
-
         transformState.setString(KEY_INPUT_ITEM, inputRl.toString());
         transformState.setString(KEY_OUTPUT_ITEM, outputRl.toString());
 
@@ -268,12 +266,12 @@ public class ItemTransformComponent implements ILivingComponent {
      * @param state 本组件的状态（用于保存配方信息）
      * @return 是否可以执行转化
      */
-    public boolean canProcess(ComponentContext ctx, ComponentState state) {
+    public boolean canProcess(ComponentContext ctx, ComponentState state, ComponentConfig config) {
         if (!ctx.hasValidInput() || !ctx.hasValidOutput()) {
             return false;
         }
 
-        RecipeType<?> recipeType = RecipeType.SMELTING;
+        RecipeType<?> recipeType = config.get("recipe_type", RecipeType.class, RecipeType.SMELTING);
         ItemStack inputStack = ctx.containerCtx().getItem(ctx.inputSlot());
 
         if (inputStack.isEmpty() || LivingItemManager.isLivingItem(inputStack)) {
@@ -312,6 +310,12 @@ public class ItemTransformComponent implements ILivingComponent {
         }
         ItemStack result = recipe.getResultItem(ctx.level().registryAccess());
 
+        int cookingTime = 200;
+        try {
+            var method = recipe.getClass().getMethod("getCookingTime");
+            cookingTime = (int) method.invoke(recipe);
+        } catch (Exception ignored) {}
+
         ResourceLocation outputRl = BuiltInRegistries.ITEM.getKey(result.getItem());
         String outputKey = outputRl.toString();
         state.setString(KEY_INPUT_ITEM, inputKey);
@@ -319,6 +323,7 @@ public class ItemTransformComponent implements ILivingComponent {
         state.setString(KEY_CACHED_INPUT, inputKey);
         state.setInt(KEY_CACHED_RESULT, 1);
         state.setString(KEY_CACHED_OUTPUT, outputKey);
+        state.setInt(KEY_COOKING_TIME, cookingTime);
 
         return hasOutputSpace(ctx, outputKey);
     }
@@ -333,5 +338,9 @@ public class ItemTransformComponent implements ILivingComponent {
         int slotLimit = ctx.containerCtx().getSlotLimit(ctx.outputSlot());
         int maxCount = Math.min(slotLimit, outputStack.getMaxStackSize());
         return outputStack.getCount() < maxCount;
+    }
+
+    public int getCookingTime(ComponentState state) {
+        return state.getInt(KEY_COOKING_TIME, 200);
     }
 }

@@ -1398,6 +1398,37 @@ public class InternalStorageComponent implements ILivingComponent {
             }
         }
 
+        public Set<UUID> getAllUuidsOnDisk() {
+            Set<UUID> result = new HashSet<>();
+            if (!Files.exists(storageDir)) return result;
+
+            try (var shardDirs = Files.list(storageDir)) {
+                var dirs = shardDirs.filter(Files::isDirectory).toList();
+
+                for (Path shardDir : dirs) {
+                    try (var files = Files.list(shardDir)) {
+                        var datFiles = files.filter(p -> p.toString().endsWith(".dat") && Files.isRegularFile(p)).toList();
+
+                        for (Path file : datFiles) {
+                            String name = file.getFileName().toString();
+                            String uuidStr = name.substring(0, name.length() - 4);
+                            try {
+                                result.add(UUID.fromString(uuidStr));
+                            } catch (IllegalArgumentException ignored) {}
+                        }
+                    }
+                }
+            } catch (IOException e) {
+                LOGGER.warn("Failed to scan UUID files on disk: {}", e.getMessage());
+            }
+
+            return result;
+        }
+
+        public boolean hasFileOnDisk(UUID uuid) {
+            return Files.exists(getFilePath(uuid));
+        }
+
         /**
          * 被动清理孤儿文件：删除磁盘上不再被任何活物品引用的空数据文件。
          * 

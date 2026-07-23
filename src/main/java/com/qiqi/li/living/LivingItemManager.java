@@ -8,9 +8,14 @@ import java.util.Map;
 import java.util.UUID;
 
 import com.qiqi.li.living.core.ComponentState;
+import com.qiqi.li.living.core.LivingFunctionConfig;
+import com.qiqi.li.living.core.FunctionExecutor;
+import com.qiqi.li.living.core.components.ILivingComponent;
 import com.qiqi.li.living.core.components.InternalStorageComponent;
 import com.qiqi.li.living.function.LivingChestFunction;
+import com.qiqi.li.living.function.LivingFurnaceFunction;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.item.Items;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
@@ -234,6 +239,16 @@ public class LivingItemManager {
 
                 LivingItemManager.LOGGER.info("成功活化一个新的活箱子，并分配了初始UUID: {}", initialUuid);
             }
+        }
+        if (stack.is(Items.FURNACE) && isLivingItem(stack)) {
+            LivingFunctionConfig funcConfig = LivingFurnaceFunction.getStaticConfig();
+            CompoundTag funcData = new CompoundTag();
+            for (var entry : funcConfig.getComponents()) {
+                ILivingComponent comp = FunctionExecutor.INSTANCE.resolveComponent(funcConfig, entry);
+                ComponentState initialState = comp.createInitialState(entry.config());
+                funcData.put(comp.getComponentId(), initialState.toNBT());
+            }
+            setFunctionData(stack, LivingFurnaceFunction.ID, funcData);
         }
     }
 

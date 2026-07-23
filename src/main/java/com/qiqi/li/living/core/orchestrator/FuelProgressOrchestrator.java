@@ -49,9 +49,10 @@ public class FuelProgressOrchestrator implements LivingOrchestrator {
 
         ComponentConfig fuelConfig = LivingOrchestrator.findConfig(FuelConsumeComponent.class, config);
 
-        boolean canProgress = checkCanProgress(fuelComp, transformComp, ctx, states, fuelConfig);
+        boolean canProgress = checkCanProgress(fuelComp, transformComp, ctx, states, fuelConfig, config);
 
         if (canProgress) {
+            syncCookingTime(transformComp, progressComp, states);
             LivingOrchestrator.tickAllComponents(ctx, slot, stack, states, config, fe);
         } else {
             pauseTickComponents(fuelComp, progressComp, ctx, slot, stack, states, config, fe);
@@ -62,9 +63,18 @@ public class FuelProgressOrchestrator implements LivingOrchestrator {
         LivingOrchestrator.markInputSlotOccupied(ctx, ctx.containerCtx());
     }
 
+    private void syncCookingTime(ItemTransformComponent transformComp, ProgressComponent progressComp,
+                                  Map<String, ComponentState> states) {
+        if (transformComp == null || progressComp == null) return;
+        ComponentState transformState = states.get(transformComp.getComponentId());
+        ComponentState progressState = states.get(progressComp.getComponentId());
+        int cookingTime = transformComp.getCookingTime(transformState);
+        progressState.setInt(ProgressComponent.KEY_TOTAL, cookingTime);
+    }
+
     private boolean checkCanProgress(FuelConsumeComponent fuelComp, ItemTransformComponent transformComp,
                                       ComponentContext ctx, Map<String, ComponentState> states,
-                                      ComponentConfig fuelConfig) {
+                                      ComponentConfig fuelConfig, LivingFunctionConfig config) {
         if (fuelComp != null) {
             ComponentState fuelState = states.get(fuelComp.getComponentId());
             if (!fuelComp.isBurning(fuelState) && !fuelComp.hasUsableFuel(ctx, fuelConfig)) {
@@ -74,7 +84,8 @@ public class FuelProgressOrchestrator implements LivingOrchestrator {
 
         if (transformComp != null) {
             ComponentState transformState = states.get(transformComp.getComponentId());
-            if (!transformComp.canProcess(ctx, transformState)) {
+            ComponentConfig transformConfig = LivingOrchestrator.findConfig(ItemTransformComponent.class, config);
+            if (!transformComp.canProcess(ctx, transformState, transformConfig)) {
                 return false;
             }
         }
@@ -117,7 +128,7 @@ public class FuelProgressOrchestrator implements LivingOrchestrator {
         if (fuelComp != null && !fuelComp.isBurning(fuelState)) return;
 
         ComponentState transformState = states.get(transformComp.getComponentId());
-        if (!transformComp.canProcess(ctx, transformState)) return;
+        if (!transformComp.canProcess(ctx, transformState, transformConfig)) return;
 
         boolean success = transformComp.executeTransform(ctx, stack, transformConfig, progressComp, transformState);
         if (success) {

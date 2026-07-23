@@ -57,7 +57,7 @@ import com.qiqi.li.living.function.LivingEnderChestFunction;
  * </p>
  * <ul>
  *   <li><strong>基础冷却</strong>：默认 8 ticks（约 0.4 秒）</li>
- *   <li><strong>堆叠加速</strong>：{@code cooldown = baseCooldown / stackSize}</li>
+ *   <li><strong>堆叠加速</strong>：{@code cooldown = max(1, baseCooldown - stackSize / 8)}</li>
  *   <li><strong>最小限制</strong>：最小 1 tick（20 次/秒），防止无限加速</li>
  * </ul>
  * 
@@ -319,37 +319,34 @@ public class ItemTransferComponent implements ILivingComponent {
      * 
      * <h3>算法公式</h3>
      * <pre>
-     * if (stackSize <= 1):
-     *     return baseCooldown          // 单个漏斗：正常速度
-     * else:
-     *     return max(1, baseCooldown / stackSize)  // 多个漏斗：加速（最低1tick）
+     * cooldown = max(1, baseCooldown - stackSize / 8)
      * </pre>
      * 
      * <h3>设计意图</h3>
      * <ul>
-     *   <li><strong>线性加速</strong>：堆叠越多，传输越快</li>
+     *   <li><strong>阶梯加速</strong>：每多堆叠8个活漏斗，冷却减少1 tick</li>
      *   <li><strong>上限控制</strong>：最快 1 tick（20次/秒），防止无限加速</li>
      *   <li><strong>游戏平衡</strong>：鼓励玩家制作多个活漏斗堆叠使用</li>
      * </ul>
      * 
-     * <h3>示例</h3>
+     * <h3>示例（baseCooldown = 8）</h3>
      * <table border="1">
      *   <tr><th>堆叠数</th><th>冷却时间</th><th>传输频率</th></tr>
-     *   <tr><td>1</td><td>4 ticks</td><td>5 次/秒</td></tr>
-     *   <tr><td>2</td><td>2 ticks</td><td>10 次/秒</td></tr>
-     *   <tr><td>4+</td><td>1 tick</td><td>20 次/秒（上限）</td></tr>
+     *   <tr><td>1-7</td><td>8 ticks</td><td>2.5 次/秒</td></tr>
+     *   <tr><td>8-15</td><td>7 ticks</td><td>~2.9 次/秒</td></tr>
+     *   <tr><td>16-23</td><td>6 ticks</td><td>~3.3 次/秒</td></tr>
+     *   <tr><td>24-31</td><td>5 ticks</td><td>4 次/秒</td></tr>
+     *   <tr><td>32-39</td><td>4 ticks</td><td>5 次/秒</td></tr>
+     *   <tr><td>40-47</td><td>3 ticks</td><td>~6.7 次/秒</td></tr>
+     *   <tr><td>48-55</td><td>2 ticks</td><td>10 次/秒</td></tr>
+     *   <tr><td>56-64</td><td>1 tick</td><td>20 次/秒（上限）</td></tr>
      * </table>
      *
-     * @param baseCooldown 基础冷却时间（来自配置，默认 4）
+     * @param baseCooldown 基础冷却时间（来自配置，默认 8）
      * @param stackSize 活漏斗的堆叠数量
      * @return 实际冷却时间（ticks），最小为 1
      */
     private int calculateCooldown(int baseCooldown, int stackSize) {
-        // TODO: 暂时注销堆叠加速逻辑，等传输稳定性验证后再恢复
-        // if (stackSize <= 1) {
-        //     return baseCooldown;
-        // }
-        // return Math.max(1, baseCooldown / stackSize);
-        return baseCooldown;
+        return Math.max(1, baseCooldown - stackSize / 8);
     }
 }

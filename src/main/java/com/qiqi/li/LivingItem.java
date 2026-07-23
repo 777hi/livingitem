@@ -24,6 +24,7 @@ import net.neoforged.neoforge.event.server.ServerStartingEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 import net.neoforged.neoforge.event.level.ChunkEvent;
 import net.neoforged.neoforge.event.level.LevelEvent;
+import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
@@ -118,12 +119,17 @@ public class LivingItem {
         InteractionRegistry.registerHandler("ignite_carried", new IgniteCarriedHandler());
         LOGGER.info("Registered ignite_carried interaction handler");
 
-        DispenseItemBehavior noOpBehavior = (source, stack) -> {
-            LOGGER.info("Living chest cannot be dispensed or dropped from dispenser/dropper");
+        DispenseItemBehavior defaultChestBehavior = DispenserBlock.DISPENSER_REGISTRY.get(Items.CHEST);
+        DispenserBlock.registerBehavior(Items.CHEST, (source, stack) -> {
+            if (LivingChestFunction.isLivingChest(stack)) {
+                return stack;
+            }
+            if (defaultChestBehavior != null) {
+                return defaultChestBehavior.dispense(source, stack);
+            }
             return stack;
-        };
-        DispenserBlock.registerBehavior(Items.CHEST, noOpBehavior);
-        LOGGER.info("Registered no-op dispenser behavior for living chests (prevents duping)");
+        });
+        LOGGER.info("Registered conditional dispenser behavior for chests (blocks living chests only)");
     }
 
     /**
@@ -218,5 +224,10 @@ public class LivingItem {
             com.qiqi.li.living.core.accessor.EnderChannelRegistry.getInstance()
                 .onChunkUnload(serverLevel, event.getChunk().getPos());
         }
+    }
+
+    @SubscribeEvent
+    public void onRegisterCommands(RegisterCommandsEvent event) {
+        com.qiqi.li.living.command.LivingChestCommand.register(event.getDispatcher());
     }
 }

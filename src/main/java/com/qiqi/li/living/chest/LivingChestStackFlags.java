@@ -8,14 +8,20 @@ import net.minecraft.world.item.ItemStack;
 /**
  * 活箱子堆叠上下文标志 —— 在玩家 GUI 操作期间标记允许跨 UUID 堆叠。
  * 由 AbstractContainerMenuMixin 在 clicked() 前后设置/清除，
- * 由 ItemStackMixin 在各注入点检查。
+ * 由 ItemStackMixin 在 isSameItemSameComponents 中检查。
+ *
+ * <h3>方案A：ALLOW_STACK 仅用于堆叠判定</h3>
+ * <p>ALLOW_STACK 的唯一作用是让 isSameItemSameComponents 忽略 UUID 差异，
+ * 允许不同 UUID 的活箱子在玩家 GUI 操作时相互堆叠。
+ * split/shrink/grow/setCount/copyWithCount 中的 UUID 转移逻辑不再检查 ALLOW_STACK，
+ * 确保漏斗、投掷器、模组管道等自动化系统也能正确处理 UUID 的合并与拆分。</p>
  *
  * <h3>ThreadLocal 变量完整清单</h3>
  * <table>
  *   <tr><th>变量</th><th>用途</th><th>设置者</th><th>消费者</th></tr>
- *   <tr><td>{@link #ALLOW_STACK}</td><td>标记玩家 GUI 操作</td>
+ *   <tr><td>{@link #ALLOW_STACK}</td><td>标记玩家 GUI 操作（仅用于堆叠判定）</td>
  *       <td>AbstractContainerMenuMixin</td>
- *       <td>isSameItemSameComponents, onGrow, onShrink, onSetCount, onCopyWithCount, onSplitHead</td></tr>
+ *       <td>isSameItemSameComponents</td></tr>
  *   <tr><td>{@link #IS_QUICK_CRAFT}</td><td>标记 QUICK_CRAFT 操作</td>
  *       <td>AbstractContainerMenuMixin</td>
  *       <td>onCopyWithCount</td></tr>
@@ -35,7 +41,9 @@ import net.minecraft.world.item.ItemStack;
  */
 public final class LivingChestStackFlags {
 
-    /** 玩家 GUI 堆叠标志：仅在玩家鼠标/键盘操作时允许活箱子跨 UUID 堆叠 */
+    /** 玩家 GUI 堆叠标志：仅在玩家鼠标/键盘操作时允许活箱子跨 UUID 堆叠。
+     *  方案A：此标志仅用于 isSameItemSameComponents 的堆叠判定，
+     *  不再影响 split/shrink/grow/setCount/copyWithCount 的 UUID 转移逻辑。 */
     public static final ThreadLocal<Boolean> ALLOW_STACK = new ThreadLocal<>();
 
     /**

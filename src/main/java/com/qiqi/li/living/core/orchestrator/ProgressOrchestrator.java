@@ -15,7 +15,7 @@ import com.qiqi.li.living.core.components.ProgressComponent;
  * 进度编排器 —— 检查输入有效性，管理进度推进/回退，完成时执行转化。
  *
  * 适用场景：
- * - 活磨石：有进度和转化，但无燃料消耗
+ * - 活熔炉：有进度和转化，但无燃料消耗
  * - 任何需要 canProgress/pauseTick/handleCompletion 但无燃料的活物品
  *
  * 编排流程：
@@ -40,9 +40,10 @@ public class ProgressOrchestrator implements LivingOrchestrator {
         ProgressComponent progressComp = fe.findComponent(config, ProgressComponent.class);
         ItemTransformComponent transformComp = fe.findComponent(config, ItemTransformComponent.class);
 
-        boolean canProgress = checkCanProgress(transformComp, ctx, states);
+        boolean canProgress = checkCanProgress(transformComp, ctx, states, config);
 
         if (canProgress) {
+            syncCookingTime(transformComp, progressComp, states);
             LivingOrchestrator.tickAllComponents(ctx, slot, stack, states, config, fe);
         } else {
             pauseTickComponents(progressComp, ctx, slot, stack, states, config, fe);
@@ -53,11 +54,21 @@ public class ProgressOrchestrator implements LivingOrchestrator {
         LivingOrchestrator.markInputSlotOccupied(ctx, ctx.containerCtx());
     }
 
+    private void syncCookingTime(ItemTransformComponent transformComp, ProgressComponent progressComp,
+                                  Map<String, ComponentState> states) {
+        if (transformComp == null || progressComp == null) return;
+        ComponentState transformState = states.get(transformComp.getComponentId());
+        ComponentState progressState = states.get(progressComp.getComponentId());
+        int cookingTime = transformComp.getCookingTime(transformState);
+        progressState.setInt(ProgressComponent.KEY_TOTAL, cookingTime);
+    }
+
     private boolean checkCanProgress(ItemTransformComponent transformComp, ComponentContext ctx,
-                                      Map<String, ComponentState> states) {
+                                      Map<String, ComponentState> states, LivingFunctionConfig config) {
         if (transformComp != null) {
             ComponentState transformState = states.get(transformComp.getComponentId());
-            if (!transformComp.canProcess(ctx, transformState)) {
+            ComponentConfig transformConfig = LivingOrchestrator.findConfig(ItemTransformComponent.class, config);
+            if (!transformComp.canProcess(ctx, transformState, transformConfig)) {
                 return false;
             }
         }

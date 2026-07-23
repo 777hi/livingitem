@@ -16,9 +16,11 @@ import com.qiqi.li.living.core.ComponentState;
  * 3. 暂停时回退进度（防止无输入时进度卡在临界值）
  * 4. 完成后重置进度
  *
- * 堆叠加速机制：
- *   progress += multiplier（multiplier = hostStack.getCount()）
- *   例如：8 个活熔炉堆叠时，每 tick 进度 +8，200 ticks 的配方只需 25 ticks
+ * 堆叠加速机制（阶梯式）：
+ *   multiplier = 1 + stackSize / 8
+ *   每多堆叠8个活熔炉，每tick进度额外+1
+ *   例如：8个堆叠时进度+2/tick，64个堆叠时进度+8/tick
+ *   200 ticks 的配方在 64 堆叠时只需 25 ticks
  *
  * 暂停回退机制：
  *   当活熔炉无法继续处理（无输入/无燃料/输出满）时，
@@ -38,7 +40,7 @@ public class ProgressComponent implements ILivingComponent {
     private static final String KEY_PROGRESS = "progress";
 
     /** NBT 键名：总进度值 */
-    private static final String KEY_TOTAL = "total";
+    public static final String KEY_TOTAL = "total";
 
     @Override
     public String getComponentId() { return ID; }
@@ -52,8 +54,8 @@ public class ProgressComponent implements ILivingComponent {
     @Override
     public void tick(ComponentContext ctx, int hostSlot, ItemStack hostStack,
                      ComponentState state, ComponentConfig config) {
-        int total = config.get("total_ticks", Integer.class, 200);
-        int multiplier = Math.max(1, hostStack.getCount());
+        int total = state.getInt(KEY_TOTAL, config.get("total_ticks", Integer.class, 200));
+        int multiplier = 1 + hostStack.getCount() / 8;
 
         state.setInt(KEY_TOTAL, total);
 
@@ -65,6 +67,14 @@ public class ProgressComponent implements ILivingComponent {
     @Override
     public ComponentState createDefaultState() {
         return new ComponentState();
+    }
+
+    @Override
+    public ComponentState createInitialState(ComponentConfig config) {
+        ComponentState state = new ComponentState();
+        state.setInt(KEY_PROGRESS, 0);
+        state.setInt(KEY_TOTAL, config.get("total_ticks", Integer.class, 200));
+        return state;
     }
 
     /**

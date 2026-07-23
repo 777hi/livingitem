@@ -67,6 +67,22 @@ public interface ILivingComponent {
     ComponentState createDefaultState();
 
     /**
+     * 创建组件的活化初始状态。
+     *
+     * 在活物品被活化（setLiving）时调用，用于初始化需要在活化时就存在的数据。
+     * 与 createDefaultState() 的区别：此方法可以访问 ComponentConfig，
+     * 因此可以根据配置参数初始化状态（如 ProgressComponent 根据 total_ticks 设置 total）。
+     *
+     * 默认实现直接返回 createDefaultState()，无需特殊初始化的组件无需覆写。
+     *
+     * @param config 本组件的配置参数
+     * @return 包含初始值的组件状态
+     */
+    default ComponentState createInitialState(ComponentConfig config) {
+        return createDefaultState();
+    }
+
+    /**
      * 追加 Tooltip 信息。
      *
      * 默认空实现，组件可覆盖此方法以显示运行时信息。
