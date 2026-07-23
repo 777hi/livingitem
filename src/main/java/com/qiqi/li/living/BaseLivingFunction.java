@@ -126,7 +126,8 @@ public abstract class BaseLivingFunction implements LivingItemFunction {
     public void addToTooltip(net.minecraft.nbt.CompoundTag functionData,
                              net.minecraft.world.item.Item.TooltipContext context,
                              java.util.function.Consumer<net.minecraft.network.chat.Component> tooltipAdder,
-                             net.minecraft.world.item.TooltipFlag flag) {
+                             net.minecraft.world.item.TooltipFlag flag,
+                             net.minecraft.world.item.ItemStack stack) {
         if (functionData == null || functionData.isEmpty()) return;
 
         tooltipAdder.accept(net.minecraft.network.chat.Component.nullToEmpty(""));

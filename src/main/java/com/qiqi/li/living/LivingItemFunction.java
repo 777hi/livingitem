@@ -67,9 +67,10 @@ public interface LivingItemFunction {
      * @param context 物品 tooltip 上下文，包含 registryAccess 等信息
      * @param tooltipAdder 向 tooltip 添加一行内容的 Consumer，直接 accept 即可
      * @param flag tooltip 显示标志（是否详细模式、是否创造模式）
+     * @param stack 当前物品栈，可用于获取堆叠数等信息
      */
     void addToTooltip(CompoundTag functionData, Item.TooltipContext context,
-                      Consumer<Component> tooltipAdder, TooltipFlag flag);
+                      Consumer<Component> tooltipAdder, TooltipFlag flag, ItemStack stack);
 
     /**
      * 获取该功能的唯一标识符。

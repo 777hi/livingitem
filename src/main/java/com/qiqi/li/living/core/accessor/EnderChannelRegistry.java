@@ -9,8 +9,11 @@ import java.util.Set;
 
 import com.qiqi.li.living.core.ComponentState;
 import com.qiqi.li.living.core.components.ItemFilterComponent;
+import com.qiqi.li.living.container.ContainerContext;
 import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import org.slf4j.Logger;
@@ -24,6 +27,13 @@ import org.slf4j.Logger;
  *   <li>物品始终留在源容器中，由活末影箱的漏斗负责传输</li>
  *   <li>轮询公平调度：用 nextIndex 指针轮流取，每个 push 端机会均等</li>
  *   <li>频道隔离：堆叠数 = 频道号，不同堆叠数互不干扰</li>
+ * </ul>
+ *
+ * <h3>反向索引</h3>
+ * <ul>
+ *   <li>维护 sourcePos → entries 和 containerKey → entries 的反向索引</li>
+ *   <li>清理时直接查询相关路由，不需要遍历所有频道</li>
+ *   <li>时间复杂度从 O(所有路由) 优化到 O(相关路由)</li>
  * </ul>
  *
  * <h3>线程安全</h3>
@@ -41,6 +51,12 @@ public final class EnderChannelRegistry {
     }
 
     private final Map<Integer, ChannelData> channels = new HashMap<>();
+
+    /** 反向索引：方块位置 → 路由条目列表 */
+    private final Map<BlockPos, List<EnderChannelEntry>> posIndex = new HashMap<>();
+
+    /** 反向索引：容器 key → 路由条目列表 */
+    private final Map<String, List<EnderChannelEntry>> keyIndex = new HashMap<>();
 
     private EnderChannelRegistry() {}
 
@@ -93,9 +109,21 @@ public final class EnderChannelRegistry {
         }
 
         data.entries.add(entry);
+        addToIndex(entry);
         LOGGER.trace("EnderChannelRegistry: insert channel={}, item={}, pos={}, slot={}, size={}",
             channel, entry.itemType(), entry.sourcePos(), entry.sourceSlot(), data.entries.size());
         return true;
+    }
+
+    /**
+     * 将路由条目添加到反向索引。
+     */
+    private void addToIndex(EnderChannelEntry entry) {
+        if (entry.sourcePos() != null) {
+            posIndex.computeIfAbsent(entry.sourcePos(), k -> new ArrayList<>()).add(entry);
+        } else if (entry.containerKey() != null) {
+            keyIndex.computeIfAbsent(entry.containerKey(), k -> new ArrayList<>()).add(entry);
+        }
     }
 
     /**
@@ -155,11 +183,31 @@ public final class EnderChannelRegistry {
         int idx = data.entries.indexOf(entry);
         if (idx < 0) return;
         data.entries.remove(idx);
+        removeFromIndex(entry);
         if (idx < data.nextIndex) {
             data.nextIndex--;
         }
         if (data.entries.isEmpty()) {
             channels.remove(channel);
+        }
+    }
+
+    /**
+     * 从反向索引中移除路由条目。
+     */
+    private void removeFromIndex(EnderChannelEntry entry) {
+        if (entry.sourcePos() != null) {
+            List<EnderChannelEntry> list = posIndex.get(entry.sourcePos());
+            if (list != null) {
+                list.remove(entry);
+                if (list.isEmpty()) posIndex.remove(entry.sourcePos());
+            }
+        } else if (entry.containerKey() != null) {
+            List<EnderChannelEntry> list = keyIndex.get(entry.containerKey());
+            if (list != null) {
+                list.remove(entry);
+                if (list.isEmpty()) keyIndex.remove(entry.containerKey());
+            }
         }
     }
 
@@ -271,12 +319,108 @@ public final class EnderChannelRegistry {
             route.targetSlot() >= 0 && !activeEnderChestSlots.contains(route.targetSlot()));
     }
 
+    /**
+     * 清理源物品已被移走或替换的路由。
+     *
+     * <p>使用反向索引直接查询与当前容器相关的路由条目，不需要遍历所有频道。
+     * 时间复杂度从 O(所有路由) 优化到 O(相关路由)。</p>
+     *
+     * @param context 容器上下文，用于获取源物品和维度信息
+     * @return 清理的路由条目数量
+     */
+    public int cleanStaleSourceRoutes(ContainerContext context) {
+        Level level = context.getLevel();
+        if (level == null || level.isClientSide) return 0;
+
+        var dim = level.dimension();
+        BlockPos pos = context.getBlockPos();
+        String containerKey = context.getContainerKey();
+        int cleaned = 0;
+
+        // 使用反向索引精确查询相关路由条目
+        List<EnderChannelEntry> relevantEntries;
+        if (pos != null) {
+            relevantEntries = posIndex.get(pos);
+        } else if (containerKey != null) {
+            relevantEntries = keyIndex.get(containerKey);
+        } else {
+            return 0;
+        }
+
+        if (relevantEntries == null || relevantEntries.isEmpty()) return 0;
+
+        // 倒序遍历，安全删除
+        for (int i = relevantEntries.size() - 1; i >= 0; i--) {
+            EnderChannelEntry entry = relevantEntries.get(i);
+            if (!entry.sourceDim().equals(dim)) continue;
+
+            ItemStack sourceStack = context.getItem(entry.sourceSlot());
+            if (sourceStack.isEmpty() || !isItemTypeMatch(sourceStack, entry)) {
+                // 从主表和反向索引中同时删除
+                removeEntryFromChannel(entry);
+                relevantEntries.remove(i);
+                cleaned++;
+            }
+        }
+
+        if (cleaned > 0) {
+            LOGGER.debug("EnderChannelRegistry: cleaned {} stale source routes for pos={}, key={}",
+                cleaned, pos, containerKey);
+        }
+        return cleaned;
+    }
+
+    /**
+     * 检查物品栈是否与路由条目的物品类型匹配。
+     */
+    private boolean isItemTypeMatch(ItemStack stack, EnderChannelEntry entry) {
+        String itemId = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+        return itemId.equals(entry.itemType());
+    }
+
+    /**
+     * 从频道主表中删除路由条目，同时更新反向索引。
+     */
+    private void removeEntryFromChannel(EnderChannelEntry entry) {
+        for (var channelEntry : channels.entrySet()) {
+            ChannelData data = channelEntry.getValue();
+            int idx = data.entries.indexOf(entry);
+            if (idx >= 0) {
+                data.entries.remove(idx);
+                removeFromIndex(entry);
+                if (idx < data.nextIndex) {
+                    data.nextIndex--;
+                }
+                if (data.entries.isEmpty()) {
+                    channels.remove(channelEntry.getKey());
+                } else {
+                    data.nextIndex %= data.entries.size();
+                }
+                return;
+            }
+        }
+    }
+
     private void removeStaleRoutesInternal(java.util.function.Predicate<EnderChannelEntry> shouldRemove) {
         List<Integer> channelsToRemove = new ArrayList<>();
         for (var entry : channels.entrySet()) {
             ChannelData data = entry.getValue();
             if (data == null) continue;
-            data.entries.removeIf(shouldRemove);
+
+            // 收集需要删除的条目
+            List<EnderChannelEntry> toRemove = new ArrayList<>();
+            for (EnderChannelEntry e : data.entries) {
+                if (shouldRemove.test(e)) {
+                    toRemove.add(e);
+                }
+            }
+
+            // 从主表和反向索引中删除
+            for (EnderChannelEntry e : toRemove) {
+                data.entries.remove(e);
+                removeFromIndex(e);
+            }
+
             if (data.entries.isEmpty()) {
                 channelsToRemove.add(entry.getKey());
             } else {
@@ -302,22 +446,25 @@ public final class EnderChannelRegistry {
         int chunkMaxZ = chunkPos.getMaxBlockZ();
 
         int totalBefore = channels.values().stream().mapToInt(d -> d.entries.size()).sum();
-        for (ChannelData data : channels.values()) {
-            data.entries.removeIf(entry -> {
-                if (!entry.sourceDim().equals(dim)) return false;
-                BlockPos pos = entry.sourcePos();
-                if (pos == null) return false;
-                return pos.getX() >= chunkMinX && pos.getX() <= chunkMaxX
-                    && pos.getZ() >= chunkMinZ && pos.getZ() <= chunkMaxZ;
-            });
-        }
-        channels.entrySet().removeIf(e -> {
-            if (e.getValue().entries.isEmpty()) return true;
-            e.getValue().nextIndex %= e.getValue().entries.size();
-            return false;
-        });
-        int totalAfter = channels.values().stream().mapToInt(d -> d.entries.size()).sum();
+        List<EnderChannelEntry> toRemove = new ArrayList<>();
 
+        for (ChannelData data : channels.values()) {
+            for (EnderChannelEntry entry : data.entries) {
+                if (!entry.sourceDim().equals(dim)) continue;
+                BlockPos pos = entry.sourcePos();
+                if (pos == null) continue;
+                if (pos.getX() >= chunkMinX && pos.getX() <= chunkMaxX
+                    && pos.getZ() >= chunkMinZ && pos.getZ() <= chunkMaxZ) {
+                    toRemove.add(entry);
+                }
+            }
+        }
+
+        for (EnderChannelEntry entry : toRemove) {
+            removeEntryFromChannel(entry);
+        }
+
+        int totalAfter = channels.values().stream().mapToInt(d -> d.entries.size()).sum();
         int removed = totalBefore - totalAfter;
         if (removed > 0) {
             LOGGER.info("EnderChannelRegistry: chunkUnload dim={}, chunk=({},{}), removed={} entries",
@@ -334,6 +481,25 @@ public final class EnderChannelRegistry {
     }
 
     /**
+     * 获取指定频道中的所有路由条目（只读副本，用于 Tooltip 显示）。
+     *
+     * @param channel 频道号
+     * @return 路由条目列表，频道不存在时返回空列表
+     */
+    public List<EnderChannelEntry> getEntries(int channel) {
+        ChannelData data = channels.get(channel);
+        if (data == null) return List.of();
+        return List.copyOf(data.entries);
+    }
+
+    /**
+     * 获取所有活跃频道集合的副本（用于安全遍历）。
+     */
+    public Set<Integer> getChannels() {
+        return new java.util.HashSet<>(channels.keySet());
+    }
+
+    /**
      * 获取所有活跃频道数量（用于调试）。
      */
     public int getActiveChannelCount() {
@@ -341,10 +507,23 @@ public final class EnderChannelRegistry {
     }
 
     /**
-     * 清空所有路由表（用于调试命令或服务器重置）。
+     * 获取所有频道的路由条目总数（用于 Tooltip 显示）。
+     */
+    public int getTotalRouteCount() {
+        int total = 0;
+        for (ChannelData data : channels.values()) {
+            total += data.entries.size();
+        }
+        return total;
+    }
+
+    /**
+     * 清空所有路由表和反向索引（用于调试命令或服务器重置）。
      */
     public void clearAll() {
         channels.clear();
+        posIndex.clear();
+        keyIndex.clear();
     }
 
     private void cleanupChannel(int channel, ChannelData data) {

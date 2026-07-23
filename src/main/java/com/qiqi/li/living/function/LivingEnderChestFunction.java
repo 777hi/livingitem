@@ -1,16 +1,22 @@
 package com.qiqi.li.living.function;
 
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
+
+import com.qiqi.li.living.BaseLivingFunction;
+import com.qiqi.li.living.LivingItemManager;
+import com.qiqi.li.living.core.ComponentConfig;
+import com.qiqi.li.living.core.LivingFunctionConfig;
+import com.qiqi.li.living.core.components.EnderChannelComponent;
+import com.qiqi.li.living.core.orchestrator.Orchestrators;
+import com.qiqi.li.living.container.ContainerContext;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.TooltipFlag;
-import com.qiqi.li.living.BaseLivingFunction;
-import com.qiqi.li.living.LivingItemManager;
-import com.qiqi.li.living.core.LivingFunctionConfig;
-import com.qiqi.li.living.core.orchestrator.Orchestrators;
-
-import java.util.UUID;
 
 /**
  * 活末影箱功能 —— 无线传输路由器 / 玩家末影箱直连接口。
@@ -33,7 +39,8 @@ import java.util.UUID;
  * 路由模式下：堆叠数 = 频道号。直连模式下：频道号无意义。
  *
  * <h3>组件配置</h3>
- * 活末影箱本身不需要 tick 组件，路由和传输由：
+ * 活末影箱通过 tick() 清理已移走的末影箱和源物品关联的路由。
+ * 路由和传输由：
  * <ul>
  *   <li>{@link com.qiqi.li.living.core.accessor.LivingEnderChestAccessor} 处理</li>
  *   <li>{@link com.qiqi.li.living.core.accessor.EnderChannelRegistry} 维护路由表</li>
@@ -49,7 +56,8 @@ public class LivingEnderChestFunction extends BaseLivingFunction {
     private static final LivingFunctionConfig CONFIG = new LivingFunctionConfig()
         .withFunctionId(ID)
         .withStackMultiplier(false)
-        .withOrchestrator(Orchestrators.SIMPLE);
+        .withOrchestrator(Orchestrators.SIMPLE)
+        .addComponent(EnderChannelComponent.class, ComponentConfig.empty());
 
     @Override
     protected LivingFunctionConfig getConfig() { return CONFIG; }
@@ -108,15 +116,9 @@ public class LivingEnderChestFunction extends BaseLivingFunction {
 
     @Override
     public void addToTooltip(CompoundTag functionData, net.minecraft.world.item.Item.TooltipContext context,
-                             java.util.function.Consumer<Component> tooltipAdder, TooltipFlag flag) {
-        super.addToTooltip(functionData, context, tooltipAdder, flag);
-
-        if (functionData != null && functionData.contains(KEY_BOUND_UUID)) {
-            String name = functionData.contains(KEY_BOUND_NAME)
-                ? functionData.getString(KEY_BOUND_NAME) : "???";
-            tooltipAdder.accept(Component.translatable(
-                "tooltip.livingitem.ender_chest.bound_player", name)
-                .withStyle(style -> style.withColor(0x55FFFF)));
-        }
+                             java.util.function.Consumer<Component> tooltipAdder, TooltipFlag flag,
+                             ItemStack stack) {
+        super.addToTooltip(functionData, context, tooltipAdder, flag, stack);
+        EnderChannelComponent.buildTooltip(stack, functionData, tooltipAdder, flag);
     }
 }

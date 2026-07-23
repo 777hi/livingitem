@@ -3,8 +3,6 @@ package com.qiqi.li.living.core.accessor;
 import java.util.Set;
 import java.util.UUID;
 
-import com.qiqi.li.living.core.ComponentState;
-import com.qiqi.li.living.core.components.ItemFilterComponent;
 import com.qiqi.li.living.container.ContainerContext;
 import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;
@@ -42,6 +40,11 @@ import org.slf4j.Logger;
  *   <li>玩家离线时跳过</li>
  * </ul>
  *
+ * <h3>黑白名单过滤</h3>
+ * <p>直连模式的过滤由 {@link FilteredSlotAccessor} 统一处理。
+ * 路由模式的 {@code filterState} 仅用于路由表预过滤（{@code registry.peek()}），
+ * 避免提取不匹配的物品类型。</p>
+ *
  * <h3>频道隔离</h3>
  * 路由模式下：堆叠数 = 频道号。直连模式下：频道号无意义。
  */
@@ -51,10 +54,14 @@ public class LivingEnderChestAccessor implements SlotAccessor {
 
     private final int channel;
     private final MinecraftServer server;
-    private final ComponentState filterState;
+    /** 路由模式下用于路由表预过滤（直连模式下为 null，由 FilteredSlotAccessor 处理） */
+    private final com.qiqi.li.living.core.ComponentState filterState;
     private final Set<Integer> transferredTargetSlots;
     private final UUID boundPlayerUuid;
     private final boolean directMode;
+
+    /** 预加载的玩家末影箱引用（直连模式下缓存，避免重复查找玩家） */
+    private final PlayerEnderChestContainer cachedEnderChest;
 
     private ContainerContext sourceContainerCtx;
     private int sourceSlot;
@@ -67,38 +74,39 @@ public class LivingEnderChestAccessor implements SlotAccessor {
     private int directRollbackSlot = -1;
 
     public LivingEnderChestAccessor(MinecraftServer server, int channel,
-                                     ComponentState filterState, Set<Integer> transferredTargetSlots) {
+                                     Set<Integer> transferredTargetSlots) {
+        this(server, channel, null, transferredTargetSlots);
+    }
+
+    public LivingEnderChestAccessor(MinecraftServer server, int channel,
+                                     com.qiqi.li.living.core.ComponentState filterState,
+                                     Set<Integer> transferredTargetSlots) {
         this.server = server;
         this.channel = channel;
         this.filterState = filterState;
         this.transferredTargetSlots = transferredTargetSlots;
         this.boundPlayerUuid = null;
         this.directMode = false;
+        this.cachedEnderChest = null;
     }
 
     public LivingEnderChestAccessor(MinecraftServer server, int channel,
-                                     ComponentState filterState, Set<Integer> transferredTargetSlots,
+                                     Set<Integer> transferredTargetSlots,
                                      UUID boundPlayerUuid) {
         this.server = server;
         this.channel = channel;
-        this.filterState = filterState;
+        this.filterState = null; // 直连模式不需要 filterState，由 FilteredSlotAccessor 处理
         this.transferredTargetSlots = transferredTargetSlots;
         this.boundPlayerUuid = boundPlayerUuid;
         this.directMode = boundPlayerUuid != null;
+
+        // 预加载玩家末影箱引用，避免每次操作都查找玩家
+        ServerPlayer player = server.getPlayerList().getPlayer(boundPlayerUuid);
+        this.cachedEnderChest = player != null ? player.getEnderChestInventory() : null;
     }
 
     public boolean isDirectMode() {
         return directMode;
-    }
-
-    private ServerPlayer getBoundPlayer() {
-        if (boundPlayerUuid == null) return null;
-        return server.getPlayerList().getPlayer(boundPlayerUuid);
-    }
-
-    private PlayerEnderChestContainer getEnderChestInventory() {
-        ServerPlayer player = getBoundPlayer();
-        return player != null ? player.getEnderChestInventory() : null;
     }
 
     /**
@@ -159,17 +167,14 @@ public class LivingEnderChestAccessor implements SlotAccessor {
     }
 
     private ItemStack directExtract(int amount) {
-        PlayerEnderChestContainer enderChest = getEnderChestInventory();
-        if (enderChest == null) {
+        if (cachedEnderChest == null) {
             LOGGER.debug("LivingEnderChestAccessor: direct extract player offline, uuid={}", boundPlayerUuid);
             return ItemStack.EMPTY;
         }
 
-        for (int i = 0; i < enderChest.getContainerSize(); i++) {
-            ItemStack slotStack = enderChest.getItem(i);
+        for (int i = 0; i < cachedEnderChest.getContainerSize(); i++) {
+            ItemStack slotStack = cachedEnderChest.getItem(i);
             if (slotStack.isEmpty()) continue;
-
-            if (filterState != null && !ItemFilterComponent.allows(filterState, slotStack)) continue;
 
             int toExtract = Math.min(amount, slotStack.getCount());
             ItemStack extracted = slotStack.copy();
@@ -177,7 +182,7 @@ public class LivingEnderChestAccessor implements SlotAccessor {
 
             ItemStack remaining = slotStack.copy();
             remaining.shrink(toExtract);
-            enderChest.setItem(i, remaining.isEmpty() ? ItemStack.EMPTY : remaining);
+            cachedEnderChest.setItem(i, remaining.isEmpty() ? ItemStack.EMPTY : remaining);
 
             directRollbackSlot = i;
 
@@ -297,13 +302,6 @@ public class LivingEnderChestAccessor implements SlotAccessor {
                 continue;
             }
 
-            if (filterState != null && !ItemFilterComponent.allows(filterState, sourceStack)) {
-                LOGGER.debug("LivingEnderChestAccessor: extract filter blocked, remove channel={}, item={}",
-                    channel, itemId);
-                registry.remove(channel, entry);
-                continue;
-            }
-
             int toExtract = Math.min(amount, sourceStack.getCount());
             ItemStack extracted = sourceHandler.extractItem(entry.sourceSlot(), toExtract, false);
 
@@ -326,21 +324,20 @@ public class LivingEnderChestAccessor implements SlotAccessor {
     public int insert(ItemStack stack) {
         if (!directMode) return 0;
 
-        PlayerEnderChestContainer enderChest = getEnderChestInventory();
-        if (enderChest == null) {
+        if (cachedEnderChest == null) {
             LOGGER.debug("LivingEnderChestAccessor: direct insert player offline, uuid={}", boundPlayerUuid);
             return 0;
         }
 
         int originalCount = stack.getCount();
         ItemStack remaining = stack.copy();
-        for (int i = 0; i < enderChest.getContainerSize() && !remaining.isEmpty(); i++) {
-            ItemStack slotStack = enderChest.getItem(i);
+        for (int i = 0; i < cachedEnderChest.getContainerSize() && !remaining.isEmpty(); i++) {
+            ItemStack slotStack = cachedEnderChest.getItem(i);
             if (slotStack.isEmpty()) {
                 int toPlace = Math.min(remaining.getCount(), remaining.getMaxStackSize());
                 ItemStack toSet = remaining.copy();
                 toSet.setCount(toPlace);
-                enderChest.setItem(i, toSet);
+                cachedEnderChest.setItem(i, toSet);
                 remaining.shrink(toPlace);
             } else if (ItemStack.isSameItemSameComponents(slotStack, remaining)
                        && slotStack.getCount() < slotStack.getMaxStackSize()) {
@@ -362,14 +359,13 @@ public class LivingEnderChestAccessor implements SlotAccessor {
     @Override
     public void rollback(ItemStack stack) {
         if (directMode && directRollbackSlot >= 0) {
-            PlayerEnderChestContainer enderChest = getEnderChestInventory();
-            if (enderChest == null) {
+            if (cachedEnderChest == null) {
                 LOGGER.warn("LivingEnderChestAccessor: direct rollback player offline, uuid={}", boundPlayerUuid);
                 return;
             }
-            ItemStack existing = enderChest.getItem(directRollbackSlot);
+            ItemStack existing = cachedEnderChest.getItem(directRollbackSlot);
             if (existing.isEmpty()) {
-                enderChest.setItem(directRollbackSlot, stack.copy());
+                cachedEnderChest.setItem(directRollbackSlot, stack.copy());
             } else if (ItemStack.isSameItemSameComponents(existing, stack)) {
                 existing.grow(stack.getCount());
             } else {
@@ -450,10 +446,9 @@ public class LivingEnderChestAccessor implements SlotAccessor {
     @Override
     public boolean isEmpty() {
         if (directMode) {
-            PlayerEnderChestContainer enderChest = getEnderChestInventory();
-            if (enderChest == null) return true;
-            for (int i = 0; i < enderChest.getContainerSize(); i++) {
-                if (!enderChest.getItem(i).isEmpty()) return false;
+            if (cachedEnderChest == null) return true;
+            for (int i = 0; i < cachedEnderChest.getContainerSize(); i++) {
+                if (!cachedEnderChest.getItem(i).isEmpty()) return false;
             }
             return true;
         }
@@ -463,10 +458,9 @@ public class LivingEnderChestAccessor implements SlotAccessor {
     @Override
     public boolean isFull() {
         if (directMode) {
-            PlayerEnderChestContainer enderChest = getEnderChestInventory();
-            if (enderChest == null) return true;
-            for (int i = 0; i < enderChest.getContainerSize(); i++) {
-                ItemStack slotStack = enderChest.getItem(i);
+            if (cachedEnderChest == null) return true;
+            for (int i = 0; i < cachedEnderChest.getContainerSize(); i++) {
+                ItemStack slotStack = cachedEnderChest.getItem(i);
                 if (slotStack.isEmpty() || slotStack.getCount() < slotStack.getMaxStackSize()) {
                     return false;
                 }

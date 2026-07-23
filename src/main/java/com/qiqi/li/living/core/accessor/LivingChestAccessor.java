@@ -8,14 +8,12 @@ import net.minecraft.world.item.ItemStack;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.core.ComponentState;
 import com.qiqi.li.living.core.components.InternalStorageComponent;
-import com.qiqi.li.living.core.components.ItemFilterComponent;
 import com.qiqi.li.living.function.LivingChestFunction;
 
 /**
  * 活箱子槽位访问器 —— 通过 LivingChestFunction API 读写活箱子存储。
  *
- * <p>extract 采用"预查+精确提取"策略：先遍历所有虚拟箱子找到能通过过滤的物品类型，
- * 再按类型精确提取，避免"提取→检查→退回"的循环。</p>
+ * <p>黑白名单过滤由 {@link FilteredSlotAccessor} 统一处理。</p>
  */
 public class LivingChestAccessor implements SlotAccessor {
 
@@ -24,17 +22,15 @@ public class LivingChestAccessor implements SlotAccessor {
     private final int slot;
     private final ItemStack chestStack;
     private final int capacityPerChest;
-    private final ComponentState filterState;
     private final Set<Integer> transferredTargetSlots;
 
     LivingChestAccessor(MinecraftServer server, ContainerContext containerCtx, int slot, ItemStack chestStack,
-                        int capacityPerChest, ComponentState filterState, Set<Integer> transferredTargetSlots) {
+                        int capacityPerChest, Set<Integer> transferredTargetSlots) {
         this.server = server;
         this.containerCtx = containerCtx;
         this.slot = slot;
         this.chestStack = chestStack;
         this.capacityPerChest = capacityPerChest;
-        this.filterState = filterState;
         this.transferredTargetSlots = transferredTargetSlots;
     }
 
@@ -43,21 +39,6 @@ public class LivingChestAccessor implements SlotAccessor {
         ComponentState chestState = LivingChestFunction.getStorageState(chestStack);
         if (InternalStorageComponent.isStorageEmpty(chestState)) {
             return ItemStack.EMPTY;
-        }
-
-        if (filterState != null) {
-            List<ItemStack> merged = LivingChestFunction.getMergedStorage(server, chestStack, capacityPerChest);
-            ItemStack matchingType = null;
-            for (ItemStack item : merged) {
-                if (!item.isEmpty() && ItemFilterComponent.allows(filterState, item)) {
-                    matchingType = item;
-                    break;
-                }
-            }
-            if (matchingType == null) {
-                return ItemStack.EMPTY;
-            }
-            return LivingChestFunction.extractItem(server, chestStack, matchingType, amount, capacityPerChest);
         }
 
         return LivingChestFunction.extractItem(server, chestStack, amount, capacityPerChest);

@@ -57,7 +57,7 @@ public class LivingItemTooltip {
                 CompoundTag functionData = LivingItemManager.getFunctionData(stack, function.getFunctionId());
                 
                 // 委托给功能对象渲染tooltip（功能内部会进一步委托给组件）
-                function.addToTooltip(functionData, context, tooltipAdder, flag);
+                function.addToTooltip(functionData, context, tooltipAdder, flag, stack);
             }
         }
     }

@@ -62,4 +62,40 @@ public interface SlotAccessor {
      * 同步此槽位到客户端。
      */
     void sync();
+
+    /**
+     * 统一的传输执行逻辑：extract → insert → rollback。
+     *
+     * <p>适用于所有 SlotAccessor 组合（普通×普通、普通×活箱子、邻居×邻居等）。</p>
+     *
+     * @param source 源槽位访问器
+     * @param target 目标槽位访问器
+     * @param amount 最大传输数量
+     * @return 是否成功传输
+     */
+    static boolean transfer(SlotAccessor source, SlotAccessor target, int amount) {
+        if (source.isEmpty() || target.isFull()) {
+            return false;
+        }
+
+        net.minecraft.world.item.ItemStack extracted = source.extract(amount, null);
+        if (extracted.isEmpty()) {
+            return false;
+        }
+
+        int inserted = target.insert(extracted);
+        if (inserted <= 0) {
+            source.rollback(extracted);
+            return false;
+        }
+
+        if (!extracted.isEmpty()) {
+            source.rollback(extracted);
+        }
+
+        target.markTransferred();
+        source.sync();
+        target.sync();
+        return true;
+    }
 }

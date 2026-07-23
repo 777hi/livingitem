@@ -20,6 +20,7 @@
 - **活TNT爆炸**：容器中的可爆炸活物品，引信倒计时后爆炸，威力随数量缩放，支持普通/大当量双模式
 - **活物品图标系统**：组件化的客户端图标框架，声明式配置即可实现活物品图标根据 NBT 动态切换，支持上下文感知（GUI/手持显示不同图标）和 ItemDecorator 叠加层
 - **活箱子系统**：将箱子虚拟化到物品 NBT 中，堆叠数 × 27 槽 = 虚拟箱子容量。UUID 映射管理、LRU 缓存、磁盘持久化、漏斗自动传输、跨容器传输、GUI 拆分/合并 UUID 自动分配
+- **活末影箱系统**：无线传输路由器，支持路由模式（共享黑板架构，通过全局路由表跨容器无线传输）和直连模式（绑定玩家末影箱直连）。频道隔离、轮询公平调度、反向索引路由清理、黑白名单统一过滤
 
 ---
 
@@ -41,6 +42,8 @@ LivingOrchestrator.orchestrate() (编排器决定组件协作流程)
 ┌─────────────────────────────────────────────┐
 │  DirectionModeComponent  → 方向/槽位解析     │
 │  ItemTransferComponent   → 物品传输（活漏斗） │
+│  ItemFilterComponent     → 黑白名单过滤      │
+│  EnderChannelComponent   → 活末影箱路由清理   │
 │  ProgressComponent       → 进度计时          │
 │  FuelConsumeComponent    → 燃料消耗          │
 │  ItemTransformComponent  → 配方匹配与转化    │
@@ -48,6 +51,8 @@ LivingOrchestrator.orchestrate() (编排器决定组件协作流程)
 └─────────────────────────────────────────────┘
     ↓
 ContainerContext / SimpleContainerContext (直接基于 IItemHandler 读写，统一原版和模组容器)
+    ↓
+SlotAccessor (统一传输：extract → insert → rollback + FilteredSlotAccessor 过滤)
 ```
 
 ### 编排器体系
@@ -146,20 +151,40 @@ ILivingComponent (接口)
     ├── DirectionModeComponent  — 方向/槽位配置（双模式）
     │     ├── SLOTS 模式：命名槽位映射（活熔炉的 input/fuel/output）
     │     └── TRANSFER 模式：传输方向映射（活漏斗的 source→target）
-    ├── ItemTransferComponent   — 物品传输逻辑（含跨容器传输触发 + SlotAccessor 调度）
-    ├── CrossContainerTransfer  — 跨容器传输工具类（方向映射 + 大箱子处理 + 邻居容器查找 + tryInsert/hasAnySpace）
+    ├── ItemTransferComponent   — 物品传输逻辑（含跨容器传输触发 + SlotAccessor 调度 + SlotAccessor.transfer 统一传输）
+    ├── ItemFilterComponent     — 黑白名单过滤（链式传递：每 tick 沿漏斗链传播一跳，仅活漏斗拥有；活末影箱过滤由 FilteredSlotAccessor 统一处理）
+    ├── EnderChannelComponent   — 活末影箱频道组件（路由清理：移走末影箱/源物品时清理 + Tooltip 显示：频道/路由/绑定玩家）
+    ├── CrossContainerTransfer  — 跨容器传输工具类（方向映射 + 大箱子处理 + 邻居容器查找 + SlotAccessor 统一传输）
     ├── ProgressComponent       — 进度计时与暂停
     ├── FuelConsumeComponent    — 燃料消耗与可用性检查
     ├── ItemTransformComponent  — 配方匹配与物品转化
+    ├── InternalStorageComponent — 活箱子内部存储（UUID 管理、LRU 缓存、磁盘 I/O、快速空/满判断）
     └── ExplosionComponent      — 引信倒计时 + 爆炸逻辑（活TNT）
           ├── 普通模式 (≤64 TNT)：原版 setBlock，支持原版/100%两种掉落模式
           └── 大当量模式 (>64 TNT)：直接修改区块数据，无掉落物
 
 SlotAccessor 存储后端抽象（独立于组件体系，供传输引擎使用）
-    ├── SlotAccessor          — 接口：extract/insert/rollback/isEmpty/isFull/markTransferred/sync
+    ├── SlotAccessor          — 接口：extract/insert/rollback/isEmpty/isFull/markTransferred/sync + transfer() 统一传输
+    │     └── transfer(source, target, amount) — extract→insert→rollback 三步原子传输，所有 Accessor 复用
     ├── PlainSlotAccessor     — 普通槽位：直接读写 ContainerContext（支持 getSlotLimit 感知模组槽位上限）
-    ├── LivingChestAccessor   — 活箱子：通过 LivingChestFunction API 操作虚拟存储
-    └── SlotAccessorFactory   — 工厂：根据槽位物品类型创建对应访问器
+    ├── LivingChestAccessor   — 活箱子：通过 LivingChestFunction API 操作虚拟存储（insert/extract/isEmpty/isFull）
+    ├── LivingEnderChestAccessor — 活末影箱双模式访问器
+    │     ├── 路由模式（无绑定玩家）：insert=注册路由（不存物品），extract=查路由表→跳转源容器提取
+    │     ├── 直连模式（有绑定玩家）：直接读写 PlayerEnderChestContainer（构造时预加载引用，离线跳过）
+    │     └── registerRoute() — push端注册路由条目到 EnderChannelRegistry
+    ├── NeighborSlotAccessor  — 邻居容器：包装 IItemHandler 槽位，跨容器传输统一接入 SlotAccessor 架构
+    │     └── extract/insert/rollback 委托给 IItemHandler，markTransferred/sync 空实现
+    ├── FilteredSlotAccessor  — 过滤装饰器（Decorator 模式）：为任意 Accessor 添加黑白名单过滤
+    │     ├── extract()：提取后检查过滤，不通过则 rollback 退回
+    │     └── insert()：插入前检查过滤，不通过则拒绝（返回0）
+    ├── EnderChannelRegistry  — 全局路由表（服务端单例）：频道→路由条目映射
+    │     ├── 轮询公平调度：nextIndex 指针轮流取，每个 push 端机会均等
+    │     ├── 反向索引：posIndex（方块位置→条目）+ keyIndex（容器key→条目），O(相关路由) 清理
+    │     └── 路由清理：removeStaleEnderChestRoutes / cleanStaleSourceRoutes / removeStaleRoutes / onChunkUnload
+    ├── EnderChannelEntry     — 路由条目 record：itemType + sourceDim + sourcePos + sourceSlot + registrarSlot + containerKey + targetSlot
+    └── SlotAccessorFactory   — 工厂：根据槽位物品类型创建对应访问器 + 自动包装 FilteredSlotAccessor
+          ├── create() — 活箱子→LivingChestAccessor，活末影箱→LivingEnderChestAccessor，其他活物品→null，普通→PlainSlotAccessor
+          └── createForNeighbor() — 邻居容器→NeighborSlotAccessor + FilteredSlotAccessor
 
 交互体系（独立于组件，处理GUI中的活物品间交互）
     ├── InteractionEntry   — 交互规则（record：targetItem + triggerItem + button + actionId）
@@ -310,6 +335,138 @@ ItemStack (NBT)
 
 ---
 
+### 活末影箱系统架构
+
+活末影箱**不存储任何物品**，本质是一个**无线传输路由器**。通过与活漏斗配合，将不同容器中的物品传输链路连接起来，实现跨容器甚至跨维度的无线物品传输。支持路由模式（无绑定玩家）和直连模式（有绑定玩家）。
+
+#### 双模式工作机制
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                    活末影箱双模式                                  │
+│                                                                  │
+│  路由模式（无绑定玩家）           直连模式（有绑定玩家）            │
+│  ┌────────────────────────┐     ┌──────────────────────────┐    │
+│  │ Push: registerRoute()  │     │ Push: 直接写入玩家末影箱   │    │
+│  │   → 写入全局路由表      │     │   → PlayerEnderChestContainer │
+│  │ Pull: 查路由表→跳转提取 │     │ Pull: 直接读取玩家末影箱   │    │
+│  │   → EnderChannelRegistry│    │   → 离线时跳过            │    │
+│  │ 频道号 = 堆叠数         │     │ 频道号无意义              │    │
+│  └────────────────────────┘     └──────────────────────────┘    │
+│                                                                  │
+│  绑定触发：末影箱GUI中活化 → 绑定当前玩家UUID+名称               │
+│  取消活化：清空绑定数据                                          │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+#### 路由模式数据流（共享黑板架构）
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                       EnderChannelRegistry                       │
+│                       (全局单例·共享黑板)                        │
+│                                                                  │
+│  频道1: [钻石@容器A槽0, 铁锭@容器B槽2, ...]                       │
+│  频道2: [石头@容器C槽5, ...]                                     │
+│                                                                  │
+│         ▲ 写入路由                          ▼ 读取路由            │
+│  ┌──────┴──────────┐              ┌─────────┴──────────┐        │
+│  │ push端活漏斗     │              │ pull端活漏斗        │        │
+│  │ [活漏斗]→[活末影箱]│              │ [活末影箱]→[输出槽]  │        │
+│  └─────────────────┘              └────────────────────┘        │
+│                                                                  │
+│  反向索引：posIndex(方块位置→条目) + keyIndex(容器key→条目)       │
+│  轮询调度：nextIndex 指针轮流取，每个 push 端机会均等             │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+#### 路由生命周期
+
+```
+注册（push端）
+├── ItemTransferComponent 检测 target 为活末影箱 → registerRoute()
+├── CrossContainerTransfer 跨容器拉取到活末影箱 → registry.insert()
+└── contains() 快速路径：已存在相同条目则跳过
+
+提取（pull端）
+├── ItemTransferComponent 检测 source 为活末影箱 → accessor.extract()
+├── registry.peek() 轮询获取路由条目（支持黑白名单预过滤）
+├── 跳转到源容器 → handler.extractItem() 实际提取
+└── 提取失败 → registry.remove() 清理无效条目
+
+清理
+├── 活漏斗移走 → removeStaleRoutes(pos, activeSlots)
+├── 活末影箱移走 → removeStaleEnderChestRoutes(activeSlots)
+├── 源物品移走/替换 → cleanStaleSourceRoutes(context) [反向索引优化]
+├── 频道改变 → removeByPositionAndSlotFromAllChannels(pos, slot)
+└── 区块卸载 → onChunkUnload(level, chunkPos)
+```
+
+#### SlotAccessor 统一传输架构
+
+所有物品传输统一通过 `SlotAccessor` 接口完成，黑白名单过滤由 `FilteredSlotAccessor` 装饰器统一处理：
+
+```
+SlotAccessorFactory.create() / createForNeighbor()
+    ↓ 自动包装 FilteredSlotAccessor
+    ↓
+┌──────────────────────────────────────────────────────────────┐
+│  FilteredSlotAccessor (装饰器)                                │
+│  ├── extract() → 委托 → 检查过滤 → 不通过则 rollback 退回     │
+│  └── insert()  → 检查过滤 → 不通过则拒绝 → 委托              │
+│                                                              │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │ 实际 SlotAccessor 实现                                  │  │
+│  │ ├── PlainSlotAccessor     — 普通槽位                    │  │
+│  │ ├── LivingChestAccessor   — 活箱子虚拟存储              │  │
+│  │ ├── LivingEnderChestAccessor — 活末影箱（路由/直连）     │  │
+│  │ └── NeighborSlotAccessor  — 邻居容器跨容器传输          │  │
+│  └────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────┘
+
+统一传输流程：SlotAccessor.transfer(source, target, amount)
+    1. source.extract() → 提取物品
+    2. target.insert()  → 插入物品
+    3. 失败时 source.rollback() → 回滚，确保物品不丢失
+    4. target.markTransferred() → 级联防护
+    5. source.sync() + target.sync() → 客户端同步
+```
+
+#### 关键设计决策
+
+**共享黑板模式**：push端和pull端互不感知，只通过 `EnderChannelRegistry` 通信。push端写"我这里有XX物品在YY位置"，pull端读"有东西吗？有就跳转过去取"。
+
+**频道隔离**：堆叠数 = 频道号，不同堆叠数的活末影箱互不干扰。
+
+**直连模式预加载**：`LivingEnderChestAccessor` 构造时一次性获取 `PlayerEnderChestContainer` 引用并缓存，避免每次操作都查找玩家。玩家离线时 `cachedEnderChest` 为 null，操作直接跳过。
+
+**反向索引优化**：`EnderChannelRegistry` 维护 `posIndex`（方块位置→条目）和 `keyIndex`（容器key→条目）两个反向索引，路由清理时直接查询相关路由，时间复杂度从 O(所有路由) 优化到 O(相关路由)。
+
+**黑白名单统一过滤**：`FilteredSlotAccessor` 装饰器在 `SlotAccessor` 层统一处理过滤逻辑，所有活漏斗主导的传输自动遵守黑白名单，无需在各处手动检查 `filterState`。
+
+**跨容器传输统一**：`NeighborSlotAccessor` 将邻居容器的 `IItemHandler` 槽位包装为 `SlotAccessor`，使跨容器传输也能复用 `FilteredSlotAccessor` 过滤和 `SlotAccessor.transfer()` 统一传输逻辑。
+
+**末影箱容器处理**：`ContainerLivingItemHandler.processEnderChest()` 将玩家末影箱空间加入被处理的容器类型，使用 `EnderChestContainerContext`（containerKey = `player_<uuid>_ender_chest`）确保末影箱中的活物品正常工作，但跨容器传输不生效（`getBlockPos()` 返回 null）。
+
+**双重去重**：大箱子处理时，通过 `IdentityHashMap<IItemHandler, Boolean>` 按 IItemHandler 实例去重 + `HashSet<String>` 按 containerKey 去重，确保同一容器不被重复处理。
+
+#### 核心文件
+
+| 文件 | 职责 |
+|------|------|
+| `LivingEnderChestFunction` | 活末影箱功能入口：双模式切换、玩家绑定数据管理、Tooltip 显示 |
+| `LivingEnderChestAccessor` | 活末影箱访问器：路由模式（registerRoute + 查路由表跳转提取）+ 直连模式（预加载玩家末影箱引用） |
+| `EnderChannelRegistry` | 全局路由表：频道→路由条目映射 + 反向索引 + 轮询调度 + 多种清理策略 |
+| `EnderChannelEntry` | 路由条目 record：物品类型 + 维度 + 位置 + 槽位 + 注册者槽位 + 容器key + 目标槽位 |
+| `EnderChannelComponent` | 活末影箱频道组件：路由清理（移走末影箱/源物品）+ Tooltip 构建 |
+| `FilteredSlotAccessor` | 过滤装饰器：为任意 SlotAccessor 添加黑白名单过滤（活漏斗侧统一处理，活末影箱无需拥有 ItemFilterComponent） |
+| `NeighborSlotAccessor` | 邻居容器访问器：包装 IItemHandler 槽位，跨容器传输统一接入 |
+| `SlotAccessorFactory` | 工厂：create() + createForNeighbor()，自动包装 FilteredSlotAccessor |
+
+> 📄 详细技术文档见 [living-ender-chest-tech.md](docs/tech/living-ender-chest-tech.md)
+
+---
+
 ## 核心文件索引
 
 ```
@@ -326,18 +483,19 @@ src/main/java/com/qiqi/li/
 │   │
 │   ├── function/                            # 各活物品功能实现
 │   │   ├── LivingChestFunction.java         # 活箱子：堆叠倍增模型、UUID 管理、物品存取 API
+│   │   ├── LivingEnderChestFunction.java    # 活末影箱：双模式（路由/直连）、玩家绑定、频道管理、Tooltip
 │   │   ├── LivingFurnaceFunction.java       # 活熔炉：FUEL_PROGRESS 编排器 + SLOTS 模式方向
 │   │   ├── LivingHopperFunction.java        # 活漏斗：SIMPLE 编排器 + TRANSFER 模式方向 + NBT 工具
 │   │   ├── LivingTntFunction.java           # 活TNT：引信倒计时 + 爆炸，声明两条交互规则
 │   │   └── LivingFlintAndSteelFunction.java # 活打火石：交互触发器，无 tick 逻辑
 │   │
 │   ├── container/                           # 容器上下文与处理器
-│   │   ├── ContainerContext.java            # 容器操作抽象接口（含客户端同步 + 槽位占用 + getWidth + getSlotLimit）
+│   │   ├── ContainerContext.java            # 容器操作抽象接口（含客户端同步 + 槽位占用 + getWidth + getSlotLimit + getContainerKey）
 │   │   ├── SimpleContainerContext.java      # 容器上下文实现（直接基于 IItemHandler 读写，不再依赖 Container 接口）
-│   │   ├── ContainerLivingItemHandler.java  # 容器扫描、分组调度、IItemHandler 去重、buildChestContext（统一 IItemHandler）
+│   │   ├── ContainerLivingItemHandler.java  # 容器扫描、分组调度、IItemHandler 去重、buildChestContext、processEnderChest（末影箱容器处理）
 │   │   ├── ContainerChunkCache.java         # 区块级容器缓存（事件驱动维护 + IItemHandler 检测）
-│   │   ├── CrossContainerTransfer.java      # 跨容器传输工具类（方向映射 + 大箱子处理 + 邻居容器查找 + ItemHandlerHelper）
-│   │   └── ContainerSnapshot.java           # 容器快照（预扫描活漏斗连接图）
+│   │   ├── CrossContainerTransfer.java      # 跨容器传输工具类（方向映射 + 大箱子处理 + 邻居容器查找 + SlotAccessor 统一传输 + 活末影箱路由注册/提取）
+│   │   └── ContainerSnapshot.java           # 容器快照（预扫描活漏斗连接图，供 ItemFilterComponent 使用）
 │   │
 │   ├── chest/                               # 活箱子辅助工具
 │   │   ├── LivingChestStackHandler.java     # UUID 列表工具：标准化、创建、拆分、合并、数据校验
@@ -353,10 +511,15 @@ src/main/java/com/qiqi/li/
 │       ├── ComponentState.java              # 组件运行时状态（NBT 包装器）
 │       │
 │       ├── accessor/                        # SlotAccessor 存储后端抽象
-│       │   ├── SlotAccessor.java            # 接口：extract/insert/rollback/isEmpty/isFull/markTransferred/sync
+│       │   ├── SlotAccessor.java            # 接口：extract/insert/rollback/isEmpty/isFull/markTransferred/sync + transfer() 统一传输
 │       │   ├── PlainSlotAccessor.java       # 普通槽位：直接读写 ContainerContext（使用 getSlotLimit 感知模组槽位上限）
 │       │   ├── LivingChestAccessor.java     # 活箱子：通过 LivingChestFunction API 操作虚拟存储
-│       │   └── SlotAccessorFactory.java     # 工厂：根据槽位物品类型创建对应访问器
+│       │   ├── LivingEnderChestAccessor.java # 活末影箱双模式访问器：路由模式（registerRoute+查路由表跳转提取）+ 直连模式（预加载玩家末影箱引用）
+│       │   ├── NeighborSlotAccessor.java    # 邻居容器：包装 IItemHandler 槽位，跨容器传输统一接入 SlotAccessor 架构
+│       │   ├── FilteredSlotAccessor.java    # 过滤装饰器（Decorator）：extract后检查/insert前检查，为任意 Accessor 添加黑白名单过滤
+│       │   ├── EnderChannelRegistry.java    # 全局路由表（服务端单例）：频道→路由条目映射 + 反向索引（posIndex/keyIndex）快速清理 + 轮询调度
+│       │   ├── EnderChannelEntry.java       # 路由条目 record：itemType + sourceDim + sourcePos + sourceSlot + registrarSlot + containerKey + targetSlot
+│       │   └── SlotAccessorFactory.java     # 工厂：create()根据物品类型创建访问器 + createForNeighbor()邻居容器 + 自动包装 FilteredSlotAccessor
 │       │
 │       ├── model/
 │       │   ├── Pos2D.java                   # 不可变 2D 坐标，方向常量，NBT 序列化
@@ -366,8 +529,10 @@ src/main/java/com/qiqi/li/
 │       │   ├── ILivingComponent.java        # 组件接口：tick + createDefaultState + appendTooltip
 │       │   ├── InternalStorageComponent.java # ⭐ 活箱子核心：UUID 管理、LRU 缓存、磁盘 I/O、物品存取
 │       │   ├── DirectionModeComponent.java  # 方向配置组件（SLOTS/TRANSFER 双模式 + NBT 自治）
-│       │   ├── ItemTransferComponent.java   # 物品传输组件（活漏斗/活箱子，含跨容器传输触发）
-│       │   ├── CrossContainerTransfer.java  # 跨容器传输工具类（方向映射 + 大箱子半箱选择 + 邻居容器查找 + tryInsert/hasAnySpace + ItemHandlerHelper）
+│       │   ├── ItemTransferComponent.java   # 物品传输组件（活漏斗/活箱子，含跨容器传输触发 + SlotAccessor 调度）
+│       │       ├── ItemFilterComponent.java     # 黑白名单过滤组件（链式传递：每 tick 沿漏斗链传播一跳，仅活漏斗拥有）
+│       │   ├── EnderChannelComponent.java   # 活末影箱频道组件（路由清理：移走末影箱/源物品 + Tooltip：频道/路由/绑定玩家）
+│       │   ├── CrossContainerTransfer.java  # 跨容器传输工具类（方向映射 + 大箱子半箱选择 + 邻居容器查找 + SlotAccessor 统一传输）
 │       │   ├── ProgressComponent.java       # 进度组件（计时、暂停、回退）
 │       │   ├── FuelConsumeComponent.java    # 燃料组件（消耗、可用性检查）
 │       │   ├── ItemTransformComponent.java  # 转化组件（配方匹配、物品转化）
@@ -671,6 +836,27 @@ SLOTS 模式的方向数据存储在 `ComponentState` 中（`slot_input_x`, `slo
 - [x] UUID 操作方向统一（头部优先：存入、提取、拆分均从头部开始；尾部弹出：popUuid从尾部移除）
 - [x] 活箱子图标（`chest_living.png`）
 
+### 活末影箱功能
+- [x] 路由模式（无绑定玩家）：通过全局路由表实现跨容器无线传输
+- [x] 直连模式（有绑定玩家）：直接读写绑定玩家的末影箱背包
+- [x] 玩家绑定机制（末影箱GUI中活化 → 绑定当前玩家UUID+名称，取消活化时清空）
+- [x] 频道隔离（堆叠数 = 频道号，不同堆叠数互不干扰）
+- [x] 轮询公平调度（nextIndex 指针轮流取，每个 push 端机会均等）
+- [x] 末影箱容器处理（`processEnderChest` + `EnderChestContainerContext`，活物品在末影箱中正常工作）
+- [x] 直连模式预加载（构造时缓存 `PlayerEnderChestContainer` 引用，离线跳过）
+- [x] 黑白名单统一过滤（`FilteredSlotAccessor` 装饰器，所有传输自动遵守活漏斗黑白名单，活末影箱无需拥有 ItemFilterComponent）
+- [x] 跨容器传输架构统一（`NeighborSlotAccessor` + `SlotAccessor.transfer()` 统一传输逻辑）
+- [x] 反向索引路由清理（`posIndex` + `keyIndex`，O(相关路由) 清理）
+- [x] 活末影箱移走后路由清理（`removeStaleEnderChestRoutes`）
+- [x] 源物品移走后路由清理（`cleanStaleSourceRoutes`，使用反向索引优化）
+- [x] 活漏斗移走后路由清理（`removeStaleRoutes`）
+- [x] 区块卸载路由清理（`onChunkUnload`）
+- [x] Tooltip 显示（路由模式：频道号+路由数量+高级模式路由详情；直连模式：绑定玩家名称）
+- [x] 组件化改造（`EnderChannelComponent` 路由清理，与其他活物品架构一致；活末影箱不拥有 ItemFilterComponent，过滤由活漏斗侧统一处理）
+- [x] 大箱子双重去重（`IdentityHashMap<IItemHandler>` + `HashSet<containerKey>`）
+- [x] 水晶箱子黑白名单适配（`SlotResolver` 使用容器实际宽度计算槽位）
+- [x] 跨容器路由注册修复（`getBasePosForDirection` 大箱子半箱选择逻辑修正）
+
 ### 容器兼容性
 - [x] 标准矩形容器（27 格箱子、54 格大箱子）
 - [x] 线性容器（5 格漏斗）
@@ -683,17 +869,36 @@ SLOTS 模式的方向数据存储在 `ComponentState` 中（`slot_input_x`, `slo
 
 ## 开发进展
 
-### 当前版本: v0.6-alpha
+### 当前版本: v0.7-alpha
 
-**最近更新** (2026-07-22):
-- ✅ 重构：移除 `ItemHandlerWrapper` 适配器，`SimpleContainerContext` 直接基于 `IItemHandler` 读写
-- ✅ 重构：移除适配器体系（`AdapterRegistry`、`ContainerAdapter`、`HopperAdapter`），确认为死代码
-- ✅ 修复：`PlainSlotAccessor.insert()` 添加双重限制 `Math.min(slotLimit, stack.getMaxStackSize())`，防止突破物品堆叠上限
-- ✅ 修复：原版箱子中活漏斗输出槽位满后继续传输导致物品消失
-- ✅ 修复：玩家背包中活漏斗输出槽位满后突破物品堆叠上限 64 继续堆叠
-- ✅ 修复：活漏斗输出槽位 64 个铁锭时，往输入槽位放入铁锭后铁锭消失
+**最近更新** (2026-07-23):
+- ✅ 新增：活末影箱系统（`LivingEnderChestFunction` + `LivingEnderChestAccessor` + `EnderChannelRegistry` + `EnderChannelEntry`）
+- ✅ 新增：活末影箱双模式（路由模式：共享黑板无线传输 + 直连模式：绑定玩家末影箱直连）
+- ✅ 新增：玩家绑定机制（末影箱GUI中活化绑定UUID+名称，取消活化清空）
+- ✅ 新增：直连模式预加载（构造时缓存 `PlayerEnderChestContainer` 引用，离线跳过）
+- ✅ 新增：`EnderChannelComponent` 频道组件（路由清理 + Tooltip 构建，与其他活物品架构一致）
+- ✅ 新增：`ItemFilterComponent` 黑白名单过滤组件（链式传递：每 tick 沿漏斗链传播一跳，支持活漏斗+活末影箱）
+- ✅ 新增：`FilteredSlotAccessor` 过滤装饰器（Decorator 模式，统一所有传输的黑白名单过滤）
+- ✅ 新增：`NeighborSlotAccessor` 邻居容器访问器（跨容器传输统一接入 SlotAccessor 架构）
+- ✅ 新增：`SlotAccessor.transfer()` 统一传输方法（extract→insert→rollback 三步原子传输）
+- ✅ 新增：`SlotAccessorFactory.createForNeighbor()` 工厂方法（邻居容器 + 自动包装过滤装饰器）
+- ✅ 新增：末影箱容器处理（`processEnderChest` + `EnderChestContainerContext`）
+- ✅ 新增：反向索引路由清理（`posIndex` + `keyIndex`，O(相关路由) 清理）
+- ✅ 新增：活末影箱 Tooltip（路由模式：频道+路由+详情；直连模式：绑定玩家名称）
+- ✅ 重构：`CrossContainerTransfer` 使用 `NeighborSlotAccessor` + `SlotAccessor.transfer()` 统一传输
+- ✅ 重构：活末影箱组件化改造（`EnderChannelComponent` + `ItemFilterComponent`，与其他活物品架构一致）
+- ✅ 修复：末影箱中活物品不工作（新增 `processEnderChest` 方法处理末影箱容器）
+- ✅ 修复：活漏斗往绑定玩家的活末影箱输入物品不消耗（修正 `LivingEnderChestAccessor.insert` 返回值和物品栈修改逻辑）
+- ✅ 修复：末影箱中未绑定玩家的活末影箱无法建立路由
+- ✅ 修复：水晶箱子（12×9）中活漏斗黑白名单无法正确生效（`SlotResolver` 使用容器实际宽度）
+- ✅ 修复：大箱子中活物品一 tick 内被处理两次（双重去重：`IdentityHashMap<IItemHandler>` + `HashSet<containerKey>`）
+- ✅ 修复：跨容器注册路由不生效（`getBasePosForDirection` 大箱子半箱选择逻辑修正）
+- ✅ 修复：已绑定玩家的活末影箱仍显示频道信息（Tooltip 条件判断）
+- ✅ 修复：活末影箱移走后路由未清理（`EnderChannelComponent.tick` → `removeStaleEnderChestRoutes`）
+- ✅ 修复：源物品移走后路由未清理（`cleanStaleSourceRoutes`，使用反向索引优化）
+- ✅ 修复：`EnderChannelRegistry.getChannels()` 遍历时 `ConcurrentModificationException`（返回安全副本）
 
-**历史更新** (2026-07-21):
+**历史更新** (2026-07-22):
 - ✅ 重构：全面使用 IItemHandler 统一容器抽象（替代 Container 接口检查）
 - ✅ 新增：`ItemHandlerWrapper` 适配器（IItemHandler → Container 桥接，record 实现，已废弃）
 - ✅ 新增：`ContainerContext.getSlotLimit(slot)` 接口方法（感知模组槽位上限）
@@ -775,9 +980,9 @@ SLOTS 模式的方向数据存储在 `ComponentState` 中（`slot_input_x`, `slo
 
 #### 高优先级
 - [ ] 更多活物品类型（活投掷器、活发射器、活酿造台等）
-- [ ] 活漏斗支持过滤模式（黑白名单，指定传输槽位）
 - [ ] 活熔炉 Tooltip 增强（显示工作模式、预计剩余时间）
 - [ ] 活TNT 红石信号触发（容器被红石激活时自动点燃）
+- [ ] 黑白名单传递优化（改为一 tick 传递完整条漏斗链，而非逐跳传播）
 
 #### 中优先级
 - [ ] 调试命令 `/livingitem info`
@@ -869,5 +1074,5 @@ public class LivingBrewingStandFunction extends BaseLivingFunction {
 
 ---
 
-*最后更新: 2026-07-22*
-*状态: Alpha 测试阶段 - 活箱子、活熔炉、活漏斗、活TNT核心功能已完成，跨容器传输已实现，IItemHandler 直接驱动容器读写（无需适配器），兼容抽屉、精妙背包等模组容器，GUI交互系统已就绪，客户端图标系统已组件化，代码结构已按职责重构为子包，SlotAccessor 统一传输架构已实现，三层防护体系已就绪，方块放置自动填充已实现，适配器体系已移除，传输双重限制已修复*
+*最后更新: 2026-07-23*
+*状态: Alpha 测试阶段 - 活箱子、活熔炉、活漏斗、活TNT、活末影箱核心功能已完成，跨容器传输已实现，IItemHandler 直接驱动容器读写（无需适配器），兼容抽屉、精妙背包等模组容器，GUI交互系统已就绪，客户端图标系统已组件化，代码结构已按职责重构为子包，SlotAccessor 统一传输架构已实现，活末影箱双模式（路由/直连）+ 反向索引路由清理 + FilteredSlotAccessor 统一过滤 + NeighborSlotAccessor 跨容器统一，三层防护体系已就绪，方块放置自动填充已实现，适配器体系已移除，传输双重限制已修复*

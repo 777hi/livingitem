@@ -27,8 +27,8 @@ import com.qiqi.li.living.function.LivingHopperFunction;
 /**
  * 物品过滤组件 (Item Filter Component)
  *
- * 通过相邻活漏斗的输入/输出槽位物品，自动为当前活物品构建黑白名单过滤规则。
- * 设计为通用组件，任何活物品（活漏斗、活熔炉等）均可使用。
+ * 通过相邻活漏斗的输入/输出槽位物品，自动为当前活漏斗构建黑白名单过滤规则。
+ * 仅适用于活漏斗，活末影箱不拥有此组件（其过滤由活漏斗侧的 FilteredSlotAccessor 统一处理）。
  *
  * <h2>过滤规则</h2>
  * <ol>
@@ -145,12 +145,17 @@ public class ItemFilterComponent implements ILivingComponent {
      * 从邻居活漏斗的 NBT 中继承其全部已计算的名单（黑白名单都拿）。
      * 名单像物品一样，每 tick 沿漏斗链传播一跳。
      * 继承来的物品来源槽位标记为 -1（未知原始槽位）。
+     *
+     * <p>仅从活漏斗继承名单。活末影箱不拥有 ItemFilterComponent，
+     * 其过滤由活漏斗侧的 FilteredSlotAccessor 统一处理。</p>
      */
     private void inheritFilter(ContainerContext container, int slot,
                                Set<String> blacklist, Map<String, Integer> blacklistSlots,
                                Set<String> whitelist, Map<String, Integer> whitelistSlots) {
         ItemStack stack = container.getItem(slot);
-        if (stack.isEmpty() || !LivingHopperFunction.isLivingHopper(stack)) return;
+        if (stack.isEmpty()) return;
+
+        if (!LivingHopperFunction.isLivingHopper(stack)) return;
 
         CompoundTag funcTag = LivingItemManager.getFunctionData(stack, LivingHopperFunction.ID);
         if (funcTag == null || !funcTag.contains(ID)) return;

@@ -31,6 +31,8 @@
 
   "tooltip.livingitem.ender_chest.status": "§d活末影箱§r",
   "tooltip.livingitem.ender_chest.bound_player": "  §b绑定: %s§r",
+  "tooltip.livingitem.ender_chest.channel": "  §7频道: §e%d§r",
+  "tooltip.livingitem.ender_chest.routes": "  §7路由: §e%d§7/§a%d§r",
 
   "slot.livingitem.input": "输入",
   "slot.livingitem.fuel": "燃料",

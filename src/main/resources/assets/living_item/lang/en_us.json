@@ -31,6 +31,8 @@
 
   "tooltip.livingitem.ender_chest.status": "§dLiving Ender Chest§r",
   "tooltip.livingitem.ender_chest.bound_player": "  §bBound: %s§r",
+  "tooltip.livingitem.ender_chest.channel": "  §7Channel: §e%d§r",
+  "tooltip.livingitem.ender_chest.routes": "  §7Routes: §e%d§7/§a%d§r",
 
   "slot.livingitem.input": "Input",
   "slot.livingitem.fuel": "Fuel",
