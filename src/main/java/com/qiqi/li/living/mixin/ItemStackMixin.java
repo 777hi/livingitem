@@ -534,8 +534,26 @@ public abstract class ItemStackMixin {
 
         List<UUID> myUuids = LivingChestStackHandler.getUuids(self);
         LOGGER.info("[onShrink] oldCount={}, newCount={}, amount={}, uuids={}", oldCount, newCount, amount, myUuids);
-        // 无 UUID 可转移
-        if (myUuids.isEmpty()) return;
+        // 无 UUID 可转移（源堆是空 UUID 的活箱子）
+        if (myUuids.isEmpty()) {
+            LivingChestStackFlags.MergeTransfer pending = LivingChestStackFlags.PENDING_TRANSFER.get();
+            if (pending != null && pending.uuids() == null && pending.amount() == amount) {
+                MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
+                if (server != null && server.isSameThread()) {
+                    List<UUID> generated = new ArrayList<>(amount);
+                    for (int i = 0; i < amount; i++) {
+                        UUID uuid = com.qiqi.li.living.core.components.InternalStorageComponent.WorldStorage
+                            .createAndRegister(server, LivingChestFunction.CHEST_SLOTS, "merge-repair");
+                        generated.add(uuid);
+                    }
+                    mergeIntoTargetUpToCount(pending.target(), generated,
+                        pending.target().getCount(), "onShrink-repair");
+                    LOGGER.info("[onShrink] source had no UUIDs, generated {} new UUIDs for target", amount);
+                }
+            }
+            LivingChestStackFlags.PENDING_TRANSFER.remove();
+            return;
+        }
         // UUID 数量与堆叠数不匹配，数据已不一致，跳过
         if (myUuids.size() != oldCount) {
             LOGGER.warn("[onShrink] UUID count mismatch: uuids.size={}, oldCount={}", myUuids.size(), oldCount);

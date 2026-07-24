@@ -1,9 +1,12 @@
 package com.qiqi.li.living.command;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 
@@ -19,6 +22,8 @@ import com.qiqi.li.living.function.LivingChestFunction;
 
 public class LivingChestCommand {
 
+    private static final int MAX_CHEST_STACK = 64;
+
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(Commands.literal("livingchest")
             .requires(source -> source.hasPermission(2))
@@ -28,6 +33,14 @@ public class LivingChestCommand {
             .then(Commands.literal("recover")
                 .then(Commands.argument("uuid", StringArgumentType.string())
                     .executes(LivingChestCommand::recoverUuid)
+                )
+                .then(Commands.literal("list")
+                    .executes(LivingChestCommand::recoverList)
+                )
+                .then(Commands.literal("index")
+                    .then(Commands.argument("index", IntegerArgumentType.integer(1))
+                        .executes(LivingChestCommand::recoverByIndex)
+                    )
                 )
             )
             .then(Commands.literal("recoverall")
@@ -39,30 +52,62 @@ public class LivingChestCommand {
         );
     }
 
+    private static List<UUID> getSortedOrphaned(MinecraftServer server) {
+        List<UUID> list = new ArrayList<>(LivingChestFunction.findOrphanedUuids(server));
+        list.sort(UUID::compareTo);
+        return list;
+    }
+
     private static int listOrphaned(CommandContext<CommandSourceStack> context) {
         CommandSourceStack source = context.getSource();
         MinecraftServer server = source.getServer();
 
-        Set<UUID> orphaned = LivingChestFunction.findOrphanedUuids(server);
+        List<UUID> orphaned = getSortedOrphaned(server);
 
         if (orphaned.isEmpty()) {
             source.sendSuccess(() -> Component.literal("No orphaned UUIDs found on disk"), false);
-        } else {
-            int total = orphaned.size();
-            source.sendSuccess(() -> Component.literal("Found " + total + " orphaned UUID(s) on disk:"), false);
-            int shown = 0;
-            for (UUID uuid : orphaned) {
-                if (shown >= 20) {
-                    final int remaining = total - shown;
-                    source.sendSuccess(() -> Component.literal("  ... and " + remaining + " more"), false);
-                    break;
-                }
-                source.sendSuccess(() -> Component.literal("  " + uuid), false);
-                shown++;
-            }
+            return 0;
         }
 
-        return orphaned.size();
+        int total = orphaned.size();
+        source.sendSuccess(() -> Component.literal("Found " + total + " orphaned UUID(s) on disk:"), false);
+        for (int i = 0; i < total; i++) {
+            if (i >= 20) {
+                final int remaining = total - i;
+                source.sendSuccess(() -> Component.literal("  ... and " + remaining + " more"), false);
+                break;
+            }
+            final int idx = i + 1;
+            final UUID uuid = orphaned.get(i);
+            int itemCount = LivingChestFunction.countItemsOnDisk(server, uuid);
+            source.sendSuccess(() -> Component.literal(
+                "  [" + idx + "] " + uuid + " (" + itemCount + " items)"), false);
+        }
+        source.sendSuccess(() -> Component.literal(
+            "Use /livingchest recover index <n> to recover by number"), false);
+
+        return total;
+    }
+
+    private static int recoverList(CommandContext<CommandSourceStack> context) {
+        return listOrphaned(context);
+    }
+
+    private static int recoverByIndex(CommandContext<CommandSourceStack> context) {
+        CommandSourceStack source = context.getSource();
+        int index = IntegerArgumentType.getInteger(context, "index");
+
+        MinecraftServer server = source.getServer();
+        List<UUID> orphaned = getSortedOrphaned(server);
+
+        if (index < 1 || index > orphaned.size()) {
+            source.sendFailure(Component.literal(
+                "Invalid index: " + index + " (valid range: 1-" + orphaned.size() + ")"));
+            return 0;
+        }
+
+        UUID uuid = orphaned.get(index - 1);
+        return recoverSingleUuid(source, server, uuid);
     }
 
     private static int recoverUuid(CommandContext<CommandSourceStack> context) {
@@ -77,7 +122,10 @@ public class LivingChestCommand {
             return 0;
         }
 
-        MinecraftServer server = source.getServer();
+        return recoverSingleUuid(source, source.getServer(), uuid);
+    }
+
+    private static int recoverSingleUuid(CommandSourceStack source, MinecraftServer server, UUID uuid) {
         InternalStorageComponent.WorldStorage storage = InternalStorageComponent.WorldStorage.get(server);
 
         if (!storage.hasFileOnDisk(uuid)) {
@@ -93,12 +141,16 @@ public class LivingChestCommand {
             return 0;
         }
 
+        int itemCount = LivingChestFunction.countItemsOnDisk(server, uuid);
         ItemStack chest = LivingChestFunction.createRecoveryChest(uuid);
-        if (!player.getInventory().add(chest)) {
+        boolean added = player.getInventory().add(chest);
+        if (!added) {
             player.drop(chest, false);
         }
 
-        source.sendSuccess(() -> Component.literal("Recovered living chest with UUID: " + uuid), true);
+        final int count = itemCount;
+        source.sendSuccess(() -> Component.literal(
+            "Recovered living chest with UUID: " + uuid + " (" + count + " items)"), true);
         return 1;
     }
 
@@ -106,7 +158,7 @@ public class LivingChestCommand {
         CommandSourceStack source = context.getSource();
         MinecraftServer server = source.getServer();
 
-        Set<UUID> orphaned = LivingChestFunction.findOrphanedUuids(server);
+        List<UUID> orphaned = getSortedOrphaned(server);
 
         if (orphaned.isEmpty()) {
             source.sendFailure(Component.literal("No orphaned UUIDs found on disk"));
@@ -121,17 +173,42 @@ public class LivingChestCommand {
             return 0;
         }
 
+        int totalItems = 0;
         int recovered = 0;
+        int dropped = 0;
+
         for (UUID uuid : orphaned) {
-            ItemStack chest = LivingChestFunction.createRecoveryChest(uuid);
-            if (!player.getInventory().add(chest)) {
-                player.drop(chest, false);
-            }
-            recovered++;
+            totalItems += LivingChestFunction.countItemsOnDisk(server, uuid);
         }
 
-        final int count = recovered;
-        source.sendSuccess(() -> Component.literal("Recovered " + count + " orphaned UUID(s)"), true);
+        List<List<UUID>> batches = new ArrayList<>();
+        for (int i = 0; i < orphaned.size(); i += MAX_CHEST_STACK) {
+            int end = Math.min(i + MAX_CHEST_STACK, orphaned.size());
+            batches.add(orphaned.subList(i, end));
+        }
+
+        for (List<UUID> batch : batches) {
+            ItemStack stack = LivingChestFunction.createRecoveryChestBatch(batch);
+            boolean added = player.getInventory().add(stack);
+            if (added) {
+                recovered += stack.getCount();
+            } else {
+                player.drop(stack, false);
+                dropped += stack.getCount();
+            }
+        }
+
+        final int rec = recovered;
+        final int drop = dropped;
+        final int items = totalItems;
+        if (drop > 0) {
+            source.sendSuccess(() -> Component.literal(
+                "Recovered " + rec + " chest(s) (" + items + " items total), " +
+                drop + " dropped at feet (inventory full)"), true);
+        } else {
+            source.sendSuccess(() -> Component.literal(
+                "Recovered " + rec + " chest(s) (" + items + " items total)"), true);
+        }
         return recovered;
     }
 

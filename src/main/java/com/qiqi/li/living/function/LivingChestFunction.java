@@ -25,6 +25,8 @@ import com.qiqi.li.living.core.components.InternalStorageComponent;
 import com.qiqi.li.living.BaseLivingFunction;
 import com.qiqi.li.living.LivingItemManager;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.StringTag;
 
 /**
  * 活箱子功能 (Living Chest Function)
@@ -108,6 +110,27 @@ public class LivingChestFunction extends BaseLivingFunction {
      */
     @Override
     protected String getTooltipTitleKey() { return "tooltip.livingitem.chest.status"; }
+
+    @Override
+    public void addToTooltip(net.minecraft.nbt.CompoundTag functionData,
+                             net.minecraft.world.item.Item.TooltipContext context,
+                             java.util.function.Consumer<net.minecraft.network.chat.Component> tooltipAdder,
+                             net.minecraft.world.item.TooltipFlag flag,
+                             net.minecraft.world.item.ItemStack stack) {
+        if (functionData == null) return;
+
+        tooltipAdder.accept(net.minecraft.network.chat.Component.nullToEmpty(""));
+        tooltipAdder.accept(net.minecraft.network.chat.Component.translatable(getTooltipTitleKey()));
+
+        List<UUID> uuids = getUuids(stack);
+        if (uuids.isEmpty()) {
+            tooltipAdder.accept(net.minecraft.network.chat.Component.translatable(
+                "tooltip.livingitem.chest.uuid_lost")
+                .withStyle(net.minecraft.ChatFormatting.RED));
+        }
+
+        appendComponentTooltips(functionData, tooltipAdder, getConfig());
+    }
 
     /**
      * 判断指定物品栈是否可以作为活箱子
@@ -507,6 +530,11 @@ public class LivingChestFunction extends BaseLivingFunction {
         return onDisk;
     }
 
+    public static int countItemsOnDisk(MinecraftServer server, UUID uuid) {
+        InternalStorageComponent.WorldStorage storage = InternalStorageComponent.WorldStorage.get(server);
+        return storage.countItemsOnDisk(uuid);
+    }
+
     public static Set<UUID> collectReferencedUuids(MinecraftServer server) {
         Set<UUID> referenced = new HashSet<>();
 
@@ -541,11 +569,69 @@ public class LivingChestFunction extends BaseLivingFunction {
 
     public static ItemStack createRecoveryChest(UUID uuid) {
         ItemStack chest = new ItemStack(Items.CHEST);
-        LivingItemManager.setLiving(chest, true);
-        ComponentState state = getStorageState(chest);
-        InternalStorageComponent.saveUuids(state, List.of(uuid));
-        state.setInt(InternalStorageComponent.KEY_CACHED_COUNT, 1);
-        saveStorageState(chest, state);
+
+        MinecraftServer server = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer();
+        if (server != null && server.isSameThread()) {
+            InternalStorageComponent.WorldStorage storage = InternalStorageComponent.WorldStorage.get(server);
+            storage.getOrCreate(uuid, CHEST_SLOTS);
+        }
+
+        chest.set(LivingItemManager.IS_LIVING.value(), true);
+
+        CompoundTag internalStorageTag = new CompoundTag();
+        ListTag uuidList = new ListTag();
+        uuidList.add(StringTag.valueOf(uuid.toString()));
+        internalStorageTag.put("uuids", uuidList);
+        internalStorageTag.putInt("_cc", 1);
+
+        CompoundTag funcData = new CompoundTag();
+        funcData.put("internal_storage", internalStorageTag);
+
+        LivingItemManager.setFunctionData(chest, ID, funcData);
+
+        LivingItemManager.LOGGER.info("createRecoveryChest: uuid={}, verify={}, hasLiving={}, funcDataNbt={}",
+            uuid, getUuids(chest),
+            chest.has(LivingItemManager.IS_LIVING.value()),
+            chest.has(LivingItemManager.LIVING_FUNCTION_DATA.value())
+                ? String.valueOf(chest.get(LivingItemManager.LIVING_FUNCTION_DATA.value()).getRawData()) : "null");
+
+        return chest;
+    }
+
+    public static ItemStack createRecoveryChestBatch(List<UUID> uuids) {
+        if (uuids.isEmpty()) return ItemStack.EMPTY;
+
+        int count = Math.min(uuids.size(), 64);
+        ItemStack chest = new ItemStack(Items.CHEST, count);
+
+        MinecraftServer server = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer();
+        if (server != null && server.isSameThread()) {
+            InternalStorageComponent.WorldStorage storage = InternalStorageComponent.WorldStorage.get(server);
+            for (UUID uuid : uuids) {
+                storage.getOrCreate(uuid, CHEST_SLOTS);
+            }
+        }
+
+        chest.set(LivingItemManager.IS_LIVING.value(), true);
+
+        CompoundTag internalStorageTag = new CompoundTag();
+        ListTag uuidList = new ListTag();
+        for (UUID uuid : uuids) {
+            uuidList.add(StringTag.valueOf(uuid.toString()));
+        }
+        internalStorageTag.put("uuids", uuidList);
+        internalStorageTag.putInt("_cc", uuids.size());
+
+        CompoundTag funcData = new CompoundTag();
+        funcData.put("internal_storage", internalStorageTag);
+
+        LivingItemManager.setFunctionData(chest, ID, funcData);
+
+        LivingItemManager.LOGGER.info("createRecoveryChestBatch: count={}, uuids={}, verify={}, funcDataNbt={}",
+            count, uuids.size(), getUuids(chest).size(),
+            chest.has(LivingItemManager.LIVING_FUNCTION_DATA.value())
+                ? String.valueOf(chest.get(LivingItemManager.LIVING_FUNCTION_DATA.value()).getRawData()) : "null");
+
         return chest;
     }
 }

@@ -226,18 +226,23 @@ public class LivingItemManager {
         if (LivingChestFunction.isLivingChest(stack)) {
             MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
             if (server != null && server.isSameThread()) {
-                // ✅ 修正后的调用，传递全部3个参数
-                UUID initialUuid = InternalStorageComponent.WorldStorage.createAndRegister(
-                        server,
-                        LivingChestFunction.CHEST_SLOTS,
-                        "activated"
-                );
+                int count = stack.getCount();
+                List<UUID> uuids = new ArrayList<>(count);
+                for (int i = 0; i < count; i++) {
+                    UUID uuid = InternalStorageComponent.WorldStorage.createAndRegister(
+                            server,
+                            LivingChestFunction.CHEST_SLOTS,
+                            "activated"
+                    );
+                    uuids.add(uuid);
+                }
 
                 ComponentState storageState = LivingChestFunction.getStorageState(stack);
-                InternalStorageComponent.saveUuids(storageState, List.of(initialUuid));
+                InternalStorageComponent.saveUuids(storageState, uuids);
+                storageState.setInt(InternalStorageComponent.KEY_CACHED_COUNT, count);
                 LivingChestFunction.saveStorageState(stack, storageState);
 
-                LivingItemManager.LOGGER.info("成功活化一个新的活箱子，并分配了初始UUID: {}", initialUuid);
+                LivingItemManager.LOGGER.info("成功活化活箱子 x{}，分配了 {} 个UUID", count, count);
             }
         }
         if (stack.is(Items.FURNACE) && isLivingItem(stack)) {

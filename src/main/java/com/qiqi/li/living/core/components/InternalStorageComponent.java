@@ -139,56 +139,19 @@ public class InternalStorageComponent implements ILivingComponent {
         int expectedCount = hostStack.getCount();
         int capacityPerChest = LivingChestFunction.CHEST_SLOTS;
 
-        if (!state.contains(KEY_UUIDS)) {
-            // 首次 tick：活箱子刚放入容器，主动创建 UUID 列表
-            int initCount = hostStack.getCount();
-            if (initCount <= 0) {
-                LOGGER.debug("tick: hostStack count is 0, skipping UUID init");
-                return;
-            }
-            LOGGER.info("tick: initializing UUIDs for new chest, count={}, capacity={}", initCount, capacityPerChest);
-            List<UUID> initUuids = new ArrayList<>(initCount);
-            for (int i = 0; i < initCount; i++) {
-                initUuids.add(WorldStorage.createAndRegister(server, capacityPerChest, "tick-init"));
-            }
-            saveUuids(state, initUuids);
-            state.setInt(KEY_CACHED_COUNT, initCount);
-            state.setInt(KEY_USED_SLOTS, 0);  // 新箱子，0 已用
+        if (!state.contains(KEY_UUIDS) || getUuids(state).isEmpty()) {
             return;
         }
 
         int cachedCount = state.getInt(KEY_CACHED_COUNT, -1);
-        
+
         if (cachedCount == expectedCount) {
-            return;  // 快速路径：堆叠数未变，跳过调整
+            return;
         }
 
-        LOGGER.info("tick: adjusting chest count from {} to {}, uuids={}",
+        LOGGER.info("tick: chest count changed from {} to {}, uuids={} (no auto-create)",
             cachedCount, expectedCount, getUuids(state).size());
 
-        List<UUID> uuids = new ArrayList<>(getUuids(state));
-        int actualCount = uuids.size();
-        boolean changed = false;
-        WorldStorage storage = WorldStorage.get(server);
-
-        // 数量不足时：创建新的空虚拟箱子
-        if (actualCount < expectedCount) {
-            while (actualCount < expectedCount) {
-                uuids.add(WorldStorage.createAndRegister(server, capacityPerChest, "tick-grow"));
-                actualCount++;
-                changed = true;
-            }
-        } 
-        // 数量过多时：不删除 UUID（UUID 可以多不能少，避免数据丢失）
-        // 后续如果堆叠数再次增加，可直接复用这些 UUID，无需重建
-        else if (actualCount > expectedCount) {
-            LOGGER.info("tick: stack count decreased from {} to {}, keeping all {} uuids (no deletion)",
-                cachedCount, expectedCount, actualCount);
-        }
-
-        if (changed) {
-            saveUuids(state, uuids);
-        }
         state.setInt(KEY_CACHED_COUNT, expectedCount);
         countUsedSlots(server, state, capacityPerChest);
     }
@@ -465,29 +428,17 @@ public class InternalStorageComponent implements ILivingComponent {
         LOGGER.info("insertItem: uuids={}, item={}, capacity={}, hostCount={}",
             uuids.size(), itemToInsert, capacityPerChest, hostStackCount);
 
-        // UUID 未初始化：可能是 tick 还没跑，拒绝插入并等待下次 tick
+        // UUID 未初始化：拒绝插入（UUID 只能通过活化按钮获取）
         if (uuids.isEmpty()) {
-            LOGGER.warn("insertItem: UUIDs not initialized yet, rejecting insert");
+            LOGGER.warn("insertItem: UUIDs not initialized, rejecting insert");
             return false;
         }
 
-        // 数量不匹配：调整 UUID 列表
-        else if (uuids.size() != hostStackCount) {
-            List<UUID> adjustedUuids;
-            if (uuids.size() < hostStackCount) {
-                adjustedUuids = new ArrayList<>(uuids);
-                for (int i = uuids.size(); i < hostStackCount; i++) {
-                    adjustedUuids.add(WorldStorage.createAndRegister(server, capacityPerChest, "insertItem"));
-                }
-            } else {
-                // UUID 可以多不能少，不删除多余的 UUID
-                LOGGER.info("insertItem: UUID count > stack count ({} > {}), keeping all uuids",
-                    uuids.size(), hostStackCount);
-                adjustedUuids = uuids;
-            }
-            saveUuids(state, adjustedUuids);
-            state.setInt(KEY_CACHED_COUNT, hostStackCount);
-            uuids = adjustedUuids;
+        // 数量不匹配：拒绝插入，不自动创建 UUID
+        if (uuids.size() != hostStackCount) {
+            LOGGER.warn("insertItem: UUID count mismatch ({} != {}), rejecting insert",
+                uuids.size(), hostStackCount);
+            return false;
         }
 
         // 按顺序向虚拟箱子中插入物品
@@ -1428,6 +1379,24 @@ public class InternalStorageComponent implements ILivingComponent {
 
         public boolean hasFileOnDisk(UUID uuid) {
             return Files.exists(getFilePath(uuid));
+        }
+
+        public int countItemsOnDisk(UUID uuid) {
+            Path path = getFilePath(uuid);
+            if (!Files.exists(path)) return 0;
+
+            try {
+                CompoundTag tag = NbtIo.readCompressed(path, NbtAccounter.unlimitedHeap());
+                ListTag itemsList = tag.getList("items", Tag.TAG_COMPOUND);
+                int count = 0;
+                for (int i = 0; i < itemsList.size(); i++) {
+                    if (!itemsList.getCompound(i).isEmpty()) count++;
+                }
+                return count;
+            } catch (IOException e) {
+                LOGGER.debug("Failed to count items for UUID={}: {}", uuid, e.getMessage());
+                return 0;
+            }
         }
 
         /**

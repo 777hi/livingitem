@@ -1,136 +1,264 @@
-The user wants me to trace all places where UUIDs are operated on (created, read, modified, deleted) in the codebase. Let me do a comprehensive search.
+好的，让我先深入理解当前架构，再分析具体改动方案。
+The user wants me to analyze the proposal in their 777.md file. They want to simplify the living chest implementation by:
 
-Let me continue reading the grep results, and also search for UUID-related operations in other files:
+1. Storing items directly in the chest's NBT (like creative mode ctrl+middle-click copy)
+2. Removing the UUID-based virtual storage system
+3. Giving up stacking ability for chests with different NBT
+4. This eliminates countless bugs related to UUID management, stacking, and transfer
 
-Let me also check the `LivingChestFunction.java` for UUID-related operations:
+Let me first understand the current architecture thoroughly, then analyze what needs to change.
 
-Now let me also check `LivingChestStackHandler.java` for UUID operations:
+现在让我看看哪些文件引用了活箱子相关的 mixin 和 UUID 系统：
 
-Let me also check `LivingChestStackFlags.java` for UUID operations:
-
-Let me also check `ItemStackMixin.java` for UUID-related operations:
-
-Now let me also check the `ChestTransaction.java` for UUID operations:
-
-Let me also check the network packet and `AbstractContainerMenuMixin` for UUID operations:
-
-Now let me also check the network packets for UUID operations:
-
-Now I have a comprehensive picture. Let me also check the `cleanupOrphanedFiles` method I just added for UUID operations:
-Now I have a complete picture. Let me organize everything:
+好了，我已经完整理解了当前架构。下面是详细分析：
 
 ---
 
-## 活箱子 UUID 全链路操作清单
+## 改造分析：活箱子从 UUID 外部存储 → NBT 内嵌存储
 
-### 一、UUID 生命周期全景
+### 一、当前架构
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│                        UUID 生命周期                                  │
-│                                                                      │
-│  创建 ──→ 持久化(NBT) ──→ 读写(磁盘) ──→ 调整(增减) ──→ 删除(遗弃)    │
-│                                                                      │
-└──────────────────────────────────────────────────────────────────────┘
+活箱子 ItemStack
+  ├── IS_LIVING = true
+  └── LIVING_FUNCTION_DATA
+        └── living_chest
+              └── internal_storage
+                    ├── uuids: ["uuid1", "uuid2", ...]  ← UUID 索引
+                    ├── _cc: 3                           ← 缓存堆叠数
+                    └── _us: 15                          ← 已用槽位数
+
+磁盘: data/living_chests/00/uuid1.dat  ← 实际物品数据
+      data/living_chests/00/uuid2.dat
 ```
 
----
+**核心问题**：UUID 是外部引用，堆叠时需要动态管理 UUID 转移 → 大量 Mixin 拦截 → 无尽 bug
 
-### 二、UUID 创建（4 处）
+### 二、目标架构
 
-| # | 位置 | 文件 | 触发条件 |
-|---|------|------|----------|
-| 1 | `tick()` 首次初始化 | [InternalStorageComponent.java:L149](file:///G:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/core/components/InternalStorageComponent.java#L149) | 活箱子放入容器后首次 tick |
-| 2 | `tick()` 堆叠数增加 | [InternalStorageComponent.java:L176](file:///G:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/core/components/InternalStorageComponent.java#L176) | 同种活箱子合并，堆叠数变大 |
-| 3 | `insertItem()` 调整 | [InternalStorageComponent.java:L488](file:///G:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/core/components/InternalStorageComponent.java#L488) | 插入时发现 UUID 数量不足 |
-| 4 | `createAndRegisterNewUuid()` | [InternalStorageComponent.java:L707](file:///G:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/core/components/InternalStorageComponent.java#L707) | 公开 API，外部可调用 |
+```
+活箱子 ItemStack (count=1, 不可堆叠)
+  ├── IS_LIVING = true
+  └── LIVING_FUNCTION_DATA
+        └── living_chest
+              └── internal_storage
+                    ├── items: [物品NBT列表]    ← 直接内嵌 27 槽物品
+                    └── _us: 15                 ← 已用槽位数
+```
 
-**底层实现**：全部调用 `WorldStorage.createAndRegister()` → `UUID.randomUUID()` + `putCache(uuid, emptySlots, true)`
+**关键变化**：
+- 物品数据直接存在 ItemStack 的 DataComponent 里（NBT 内嵌）
+- 不再需要 UUID、磁盘文件、WorldStorage、LRU 缓存
+- 不再需要堆叠 → 不再需要 ItemStackMixin/AbstractContainerMenuMixin/BlockItemMixin 的 UUID 转移逻辑
+- NBT 不同的箱子自然无法堆叠（原版 `isSameItemSameComponents` 行为）
 
----
+### 三、受影响的文件清单
 
-### 三、UUID 读取（6 处）
-
-| # | 位置 | 文件 | 用途 |
-|---|------|------|------|
-| 1 | `getUuids()` | [InternalStorageComponent.java:L260](file:///G:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/core/components/InternalStorageComponent.java#L260) | 从 ComponentState 解析 UUID 列表 |
-| 2 | `getStorageState()` | [LivingChestFunction.java:L360](file:///G:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/LivingChestFunction.java#L360) | 从 ItemStack NBT 读取完整状态 |
-| 3 | `getUuids()` 快捷方法 | [LivingChestFunction.java:L161](file:///G:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/LivingChestFunction.java#L161) | 供外部调用的便捷包装 |
-| 4 | `getUuids()` 工具方法 | [LivingChestStackHandler.java:L81](file:///G:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/LivingChestStackHandler.java#L81) | 通过 `getStorageState()` 读取 |
-| 5 | `getAllItemsForDisplay()` | [InternalStorageComponent.java:L310](file:///G:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/core/components/InternalStorageComponent.java#L310) | GUI 显示时遍历所有 UUID |
-| 6 | `getFilePath()` / `getLegacyFilePath()` | [InternalStorageComponent.java:L949](file:///G:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/core/components/InternalStorageComponent.java#L949) | UUID → 磁盘文件路径映射 |
-
----
-
-### 四、UUID 写入/持久化（3 处）
-
-| # | 位置 | 文件 | 说明 |
-|---|------|------|------|
-| 1 | `saveUuids()` | [InternalStorageComponent.java:L285](file:///G:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/core/components/InternalStorageComponent.java#L285) | UUID → `ListTag<String>` → ComponentState |
-| 2 | `saveStorageState()` | [LivingChestFunction.java:L378](file:///G:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/LivingChestFunction.java#L378) | ComponentState → ItemStack NBT |
-| 3 | `setUuids()` | [LivingChestStackHandler.java:L89](file:///G:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/LivingChestStackHandler.java#L89) | 工具方法：UUID 列表 → 标准化 → ItemStack |
-
----
-
-### 五、UUID 数据读写（涉及磁盘文件的操作）
-
-| 操作 | 方法 | 文件 |
+| 类别 | 文件 | 改动 |
 |------|------|------|
-| 加载/创建 | `getOrCreate(uuid, capacity)` | [InternalStorageComponent.java:L1028](file:///G:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/core/components/InternalStorageComponent.java#L1028) |
-| 标记脏数据 | `markDirty(uuid)` | [InternalStorageComponent.java:L1095](file:///G:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/core/components/InternalStorageComponent.java#L1095) |
-| 写入磁盘 | `saveToDisk(uuid, items)` | [InternalStorageComponent.java:L1458](file:///G:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/core/components/InternalStorageComponent.java#L1458) |
-| 从磁盘加载 | `loadFromDisk(uuid)` | [InternalStorageComponent.java:L1385](file:///G:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/core/components/InternalStorageComponent.java#L1385) |
-| 检查存在 | `contains(uuid)` | [InternalStorageComponent.java:L1055](file:///G:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/core/components/InternalStorageComponent.java#L1055) |
+| **核心存储** | `InternalStorageComponent.java` | **重写**：删除 WorldStorage/UUID/磁盘 IO，改为纯 NBT 读写 |
+| **功能入口** | `LivingChestFunction.java` | **重写**：所有 API 改为直接读写 NBT 内嵌物品 |
+| **活化按钮** | `LivingItemManager.setLiving()` | **简化**：删除 UUID 创建逻辑 |
+| **堆叠系统** | `LivingChestStackHandler.java` | **删除**：不再需要 |
+| **堆叠标志** | `LivingChestStackFlags.java` | **删除**：不再需要 |
+| **事务管理** | `ChestTransaction.java` | **简化**：只需备份/恢复 NBT |
+| **Mixin** | `ItemStackMixin.java` | **大幅简化**：删除所有 UUID 转移逻辑 |
+| **Mixin** | `AbstractContainerMenuMixin.java` | **删除**：不再需要 ALLOW_STACK |
+| **Mixin** | `BlockItemMixin.java` | **重写**：改为从 NBT 直接读取物品填充实体箱子 |
+| **Mixin** | `DropperBlockMixin.java` | **保留**：仍需阻止活箱子被发射 |
+| **Mixin** | `ServerPlaceRecipeMixin.java` | **检查**：可能需调整 |
+| **访问器** | `LivingChestAccessor.java` | **重写**：改为直接读写 NBT |
+| **访问器** | `SlotAccessorFactory.java` | **微调**：适配新 API |
+| **指令** | `LivingChestCommand.java` | **重写**：删除 recover/orphaned，改为简单状态查询 |
+| **网络** | `ServerPacketHandler.java` | **调整**：存取 API 变更 |
+| **网络** | `LivingChestAccessPacket.java` | **保留**：协议不变 |
+| **网络** | `LivingChestContentsPacket.java` | **调整**：数据来源变更 |
+| **客户端** | `LivingChestContentsCache.java` | **保留**：缓存逻辑不变 |
+| **客户端** | `AbstractContainerScreenMixin.java` | **检查**：可能需调整 |
+| **客户端** | `RecipeBookComponentMixin.java` | **保留**：读取缓存不变 |
+| **容器** | `ContainerLivingItemHandler.java` | **微调**：tick 逻辑简化 |
+| **容器** | `CrossContainerTransfer.java` | **检查**：通过 SlotAccessor 间接使用 |
 
----
+### 四、具体实现步骤
 
-### 六、UUID 删除（5 处）
+#### 步骤 1：重写 InternalStorageComponent
 
-| # | 位置 | 文件 | 触发条件 |
-|---|------|------|----------|
-| 1 | `tick()` 堆叠数减少 | [InternalStorageComponent.java:L196](file:///G:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/core/components/InternalStorageComponent.java#L196) | 活箱子拆分，先掉落物品再 `storage.remove(uuid)` |
-| 2 | `insertItem()` 调整 | [InternalStorageComponent.java:L493](file:///G:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/core/components/InternalStorageComponent.java#L493) | 插入时发现 UUID 过多 |
-| 3 | `popUuid()` | [InternalStorageComponent.java:L729](file:///G:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/core/components/InternalStorageComponent.java#L729) | 公开 API，弹出最后一个 UUID |
-| 4 | `WorldStorage.remove()` | [InternalStorageComponent.java:L1067](file:///G:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/core/components/InternalStorageComponent.java#L1067) | 底层实现：清缓存 + 删磁盘文件 |
-| 5 | `cleanupOrphanedFiles()` | [InternalStorageComponent.java:L1376](file:///G:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/core/components/InternalStorageComponent.java#L1376) | 被动清理孤儿空文件 |
+```java
+// 新的 NBT 结构（在 living_chest → internal_storage 下）：
+// {
+//   "items": [                    ← ListTag，27 个 CompoundTag
+//     { id:"minecraft:diamond", count:64, ... },  // 槽位 0
+//     {},                                           // 槽位 1（空）
+//     ...
+//   ],
+//   "_us": 15                     ← 已用槽位数
+// }
 
----
+public class InternalStorageComponent implements ILivingComponent {
+    public static final String ID = "internal_storage";
+    public static final String KEY_ITEMS = "items";
+    public static final String KEY_USED_SLOTS = "_us";
+    public static final int CAPACITY = 27;
 
-### 七、UUID 拆分/合并（玩家 GUI 操作，3 处）
+    // 删除: KEY_UUIDS, KEY_CACHED_COUNT
+    // 删除: WorldStorage 内部类（整个磁盘 IO 系统）
+    // 删除: getUuids(), saveUuids(), createAndRegister(), popUuid()
+    // 删除: 所有磁盘相关方法
 
-| # | 位置 | 文件 | 触发条件 |
-|---|------|------|------|
-| 1 | `onSplitReturn` | [ItemStackMixin.java:L101](file:///G:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/mixin/ItemStackMixin.java#L101) | 右键拿起一半，UUID 按比例拆分 |
-| 2 | `onGrow` + `onShrink` 配对 | [ItemStackMixin.java:L157](file:///G:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/mixin/ItemStackMixin.java#L157)/[L226](file:///G:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/mixin/ItemStackMixin.java#L226) | 右键合并/漏斗传输，UUID 自动转移 |
-| 3 | `onCopyWithCount` | [ItemStackMixin.java:L271](file:///G:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/mixin/ItemStackMixin.java#L271) | 右键拖拽分发，UUID 拆分 |
+    // 新增: 直接从 ComponentState 读写物品列表
+    public static List<ItemStack> getItems(ComponentState state) { ... }
+    public static void setItems(ComponentState state, List<ItemStack> items) { ... }
+    
+    // 保留但简化: insertItem, extractItem, isStorageFull, isStorageEmpty
+    // 这些方法直接操作 state 中的 items 列表，不再需要 server 参数
+    public static boolean insertItem(ComponentState state, ItemStack itemToInsert) { ... }
+    public static ItemStack extractItem(ComponentState state, int amount) { ... }
+    
+    // tick: 简化为只更新 _us 计数
+    @Override
+    public void tick(...) { ... }
+}
+```
 
----
+#### 步骤 2：重写 LivingChestFunction
 
-### 八、UUID 缓存淘汰（无删除，仅卸载）
+```java
+// 删除所有 UUID 相关方法:
+//   getUuids(), hasStorage(), clearStorage(), dropAllItems()
+//   findOrphanedUuids(), collectReferencedUuids(), countItemsOnDisk()
+//   createRecoveryChest(), createRecoveryChestBatch()
+//   scanContainerForUuids()
 
-| 操作 | 位置 | 说明 |
-|------|------|------|
-| `cleanupIdle()` | [InternalStorageComponent.java:L1320](file:///G:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/core/components/InternalStorageComponent.java#L1320) | 5分钟未访问 → 从缓存移除（脏数据先保存） |
-| LRU 淘汰 | [InternalStorageComponent.java:L1348](file:///G:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/core/components/InternalStorageComponent.java#L1348) | 缓存超过 200 条 → 淘汰最旧的 |
+// 简化所有 API:
+public static boolean insertItem(ItemStack chestStack, ItemStack itemToInsert) {
+    ComponentState state = getStorageState(chestStack);
+    boolean result = InternalStorageComponent.insertItem(state, itemToInsert);
+    saveStorageState(chestStack, state);
+    return result;
+}
+// 不再需要 server 参数！
 
----
+// 新增: 放置时读取物品列表（替代 UUID → 磁盘读取）
+public static List<ItemStack> getItems(ItemStack stack) {
+    ComponentState state = getStorageState(stack);
+    return InternalStorageComponent.getItems(state);
+}
+```
 
-### 九、UUID 泄漏路径（已知风险）
+#### 步骤 3：简化 LivingItemManager.setLiving()
 
-| 场景 | 泄漏内容 | 后果 |
-|------|----------|------|
-| 取消活化 | NBT 中 UUID 被 `remove()` 丢弃，磁盘文件残留 | 孤儿文件，`cleanupOrphanedFiles()` 可清理 |
-| `popUuid()` 未处理物品 | 直接删 UUID 和磁盘文件，物品丢失 | 调用方需先取出物品 |
-| 堆叠数减少时未掉落 | tick 中已处理（先掉落物品再删 UUID） | ✅ 安全 |
+```java
+public static void setLiving(ItemStack stack, boolean living) {
+    if (living) {
+        stack.set(IS_LIVING.value(), true);
+    } else {
+        clearLivingData(stack);
+    }
+    // 删除整个 if (isLivingChest) 块 — 不再需要创建 UUID
+    // 活箱子首次 tick 时会自动初始化空物品列表
+    // ... 熔炉逻辑保留 ...
+}
+```
 
----
+#### 步骤 4：重写 BlockItemMixin
 
-### 关键文件速查
+```java
+// 之前: UUID → 磁盘读取 → 填充实体箱子
+// 之后: NBT 直接读取 → 填充实体箱子
 
-| 文件 | 职责 |
+@Inject(method = "place", at = @At("RETURN"))
+private void onPlaceReturn(BlockPlaceContext context, ...) {
+    // 不再需要 BLOCK_PLACING_UUIDS 标志
+    // 不再需要 LivingChestStackHandler
+    
+    ItemStack stack = context.getItemInHand();
+    if (!LivingChestFunction.isLivingChest(stack)) return;
+    
+    // 直接从 NBT 读取物品
+    List<ItemStack> items = LivingChestFunction.getItems(stack);
+    
+    // 填充到实体箱子
+    ChestBlockEntity chest = ...;
+    for (int i = 0; i < items.size(); i++) {
+        chest.setItem(i, items.get(i).copy());
+    }
+    
+    // 清空活箱子的物品数据（生存模式下物品已转移到方块）
+    if (!isCreative) {
+        LivingChestFunction.clearStorage(stack);
+    }
+}
+```
+
+#### 步骤 5：简化 ItemStackMixin
+
+```java
+// 删除:
+//   onIsSameItemSameComponents — 不再需要 ALLOW_STACK 跨 UUID 堆叠
+//   onSetCount — 不再需要 UUID 转移
+//   onGrow — 不再需要 UUID 转移
+//   onShrink — 不再需要 UUID 转移
+//   onSplit / onCopyWithCount — 不再需要 UUID 拆分
+//   mergeIntoTargetUpToCount — 不再需要
+//   PENDING_TRANSFER / PRE_SPLIT_UUIDS 等所有 ThreadLocal
+
+// 保留（可能）:
+//   如果需要阻止活箱子与普通箱子堆叠，可以保留一个简单的 isSameItemSameComponents 拦截
+//   但实际上，活箱子有 IS_LIVING=true + LIVING_FUNCTION_DATA，原版比较已经会阻止堆叠
+```
+
+#### 步骤 6：删除文件
+
+- `LivingChestStackHandler.java` — 整个文件删除
+- `LivingChestStackFlags.java` — 整个文件删除
+- `AbstractContainerMenuMixin.java` — 整个文件删除
+
+#### 步骤 7：重写 LivingChestCommand
+
+```java
+// 删除: orphaned, recover, recoverall, list 子命令
+// 保留/新增:
+//   /livingchest info — 显示当前手持活箱子的物品数量
+//   /livingchest clear — 清空活箱子内容
+//   /livingchest export — 导出物品列表（调试用）
+```
+
+#### 步骤 8：调整网络包
+
+```java
+// ServerPacketHandler.handleDeposit/handleWithdraw:
+// 不再需要 server 参数调用 LivingChestFunction.insertItem/extractItem
+// 改为: LivingChestFunction.insertItem(invStack, toInsert)
+
+// sendLivingChestContents:
+// 不再需要 server 参数调用 getMergedStorage
+// 改为: LivingChestFunction.getItems(invStack)
+```
+
+### 五、风险与注意事项
+
+1. **存档兼容性**：旧存档中的 UUID 数据无法自动迁移。需要提供一个迁移工具或指令，将磁盘上的 UUID 数据读取后转为 NBT 内嵌格式
+2. **NBT 大小限制**：27 槽物品的 NBT 数据量约 1-5KB，远低于 Minecraft 的 NBT 大小限制（约 2MB），不会成为问题
+3. **网络同步**：`LivingFunctionData` 的 `STREAM_CODEC` 已经支持 CompoundTag 同步，无需额外修改
+4. **活漏斗交互**：`LivingChestAccessor` 的 API 签名会变（去掉 server 参数），但 `SlotAccessor` 接口不变，上层代码无需修改
+5. **客户端 tooltip**：`_us` 字段仍保留在 NBT 中，客户端可以正常显示已用/可用槽位
+
+### 六、优势总结
+
+| 之前 | 之后 |
 |------|------|
-| [InternalStorageComponent.java](file:///G:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/core/components/InternalStorageComponent.java) | UUID 创建/读写/删除/缓存/磁盘 IO 全部底层实现 |
-| [LivingChestFunction.java](file:///G:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/LivingChestFunction.java) | 对外 API 层，封装 `getUuids`/`insertItem`/`extractItem` |
-| [LivingChestStackHandler.java](file:///G:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/LivingChestStackHandler.java) | UUID 列表标准化/合并/拆分/数据校验 |
-| [ItemStackMixin.java](file:///G:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/mixin/ItemStackMixin.java) | 拦截 `split`/`grow`/`shrink`/`copyWithCount` 实现 UUID 自动分配 |
-| [LivingItem.java](file:///G:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/LivingItem.java) | 事件入口：`onLevelSave` 触发持久化 + 孤儿清理 |
+| UUID + 磁盘文件 + LRU 缓存 + 异步 IO | 纯 NBT 内嵌 |
+| ~700 行 InternalStorageComponent | ~200 行 |
+| ~700 行 ItemStackMixin | ~50 行（或删除） |
+| 5 个 Mixin 文件 | 1-2 个 |
+| 堆叠时 UUID 转移 bug | 不存在 |
+| recover/orphaned 指令 | 不需要 |
+| 磁盘文件泄漏/孤儿 | 不存在 |
+| 放置时 UUID→实体箱子填充 | 直接从 NBT 读取 |
+| 可堆叠（但有 bug） | 不可堆叠（但稳定） |
+
+**核心权衡**：放弃堆叠能力，换来整个系统的稳定性和可维护性。活箱子本质上就是一个"便携箱子"，和创造模式 Ctrl+中键复制的行为一致，只是多了一个活物品的 tick 能力（可以被活漏斗传输等）。
+
+---
+
+需要我开始实施这些改动吗？

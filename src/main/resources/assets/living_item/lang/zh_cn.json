@@ -26,6 +26,7 @@
   "tooltip.livingitem.chest.status": "§a活箱子§r",
   "tooltip.livingitem.chest.storage": "  §7存储: §e%d§7/§a%d §7槽位 (§b%d §7可用)§r",
   "tooltip.livingitem.chest.storage_empty": "  §7存储: §a%d §7槽位§r",
+  "tooltip.livingitem.chest.uuid_lost": "§c  UUID已丢失！请使用 /livingchest recover 指令找回§r",
   "tooltip.livingitem.tnt.status": "§c活TNT§r",
   "tooltip.livingitem.flint_and_steel.status": "§e活打火石§r",
 
