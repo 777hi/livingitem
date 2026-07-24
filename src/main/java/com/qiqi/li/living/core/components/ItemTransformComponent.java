@@ -67,6 +67,9 @@ public class ItemTransformComponent implements ILivingComponent {
     /** NBT 键名：上次配方检查的输出物品 ID（用于缓存输出空间检查） */
     private static final String KEY_CACHED_OUTPUT = "cached_output";
 
+    /** NBT 键名：缓存配方的输出物品数量（如 1 个矿石产出 1 个锭） */
+    private static final String KEY_CACHED_OUTPUT_COUNT = "cached_output_count";
+
     /** NBT 键名：配方的烹饪时间（ticks），从 AbstractCookingRecipe.getCookingTime() 获取 */
     private static final String KEY_COOKING_TIME = "cooking_time";
 
@@ -140,83 +143,117 @@ public class ItemTransformComponent implements ILivingComponent {
     }
 
     /**
-     * 执行实际的物品转化操作。
+     * 查询配方结果，优先使用缓存。
      *
-     * 由 FunctionExecutor.handleCompletion() 在进度完成时调用。
+     * <p>缓存命中时跳过 RecipeManager 查询，零开销。
+     * 缓存未命中时查询配方并更新缓存。</p>
      *
-     * 执行流程：
-     * 1. 检查输入/输出槽位有效性
-     * 2. 检查输入物品是否为活物品（活物品跳过）
-     * 3. 通过 RecipeManager 查询匹配的配方
-     * 4. 计算转化数量（受限于输入数量、堆叠数、输出空间）
-     * 5. 消耗输入物品，生成产物到输出槽位
-     *
-     * 堆叠加速机制：
-     *   transformCount = min(stackMultiplier, inputCount, maxByOutput)
-     *   其中 stackMultiplier = hostStack.getCount()（活熔炉堆叠数）
-     *   这意味着 8 个活熔炉堆叠时，一次可转化 8 个物品
-     *
-     * @param ctx 组件上下文
-     * @param hostStack 活熔炉物品（堆叠数影响转化数量）
-     * @param config 组件配置（包含 recipe_type）
-     * @param progress 进度组件（用于重置进度）
-     * @param transformState 本组件的状态
-     * @return 是否成功执行了转化
+     * @return 配方结果（null 表示无匹配配方）
      */
+    private RecipeResult resolveRecipe(ComponentContext ctx, ComponentState state, ComponentConfig config) {
+        ItemStack inputStack = ctx.containerCtx().getItem(ctx.inputSlot());
+        if (inputStack.isEmpty() || LivingItemManager.isLivingItem(inputStack)) return null;
+
+        RecipeType<?> recipeType = config.get("recipe_type", RecipeType.class, RecipeType.SMELTING);
+        ResourceLocation inputRl = BuiltInRegistries.ITEM.getKey(inputStack.getItem());
+        String inputKey = inputRl.toString();
+
+        String cachedInput = state.getString(KEY_CACHED_INPUT, "");
+        if (inputKey.equals(cachedInput)) {
+            if (state.getInt(KEY_CACHED_RESULT, 0) != 1) return null;
+            String outputItemId = state.getString(KEY_CACHED_OUTPUT, "");
+            int resultCount = state.getInt(KEY_CACHED_OUTPUT_COUNT, 1);
+            return new RecipeResult(inputKey, outputItemId, resultCount);
+        }
+
+        SingleRecipeInput recipeInput = new SingleRecipeInput(inputStack);
+        var recipeHolderOpt = ctx.level().getRecipeManager()
+                .getRecipeFor((RecipeType)recipeType, recipeInput, ctx.level());
+
+        if (recipeHolderOpt.isEmpty()) {
+            state.setString(KEY_CACHED_INPUT, inputKey);
+            state.setInt(KEY_CACHED_RESULT, 0);
+            state.setString(KEY_CACHED_OUTPUT, "");
+            state.setInt(KEY_CACHED_OUTPUT_COUNT, 1);
+            return null;
+        }
+
+        Recipe<?> recipe = unwrapRecipe(recipeHolderOpt.get());
+        ItemStack result = recipe.getResultItem(ctx.level().registryAccess());
+        int resultCount = result.getCount();
+        int cookingTime = getCookingTimeFromRecipe(recipe);
+
+        ResourceLocation outputRl = BuiltInRegistries.ITEM.getKey(result.getItem());
+        String outputKey = outputRl.toString();
+
+        state.setString(KEY_CACHED_INPUT, inputKey);
+        state.setInt(KEY_CACHED_RESULT, 1);
+        state.setString(KEY_CACHED_OUTPUT, outputKey);
+        state.setInt(KEY_CACHED_OUTPUT_COUNT, resultCount);
+        state.setInt(KEY_COOKING_TIME, cookingTime);
+        state.setString(KEY_INPUT_ITEM, inputKey);
+        state.setString(KEY_OUTPUT_ITEM, outputKey);
+
+        return new RecipeResult(inputKey, outputKey, resultCount);
+    }
+
+    private record RecipeResult(String inputKey, String outputItemId, int resultCount) {}
+
     public boolean executeTransform(ComponentContext ctx, ItemStack hostStack,
                                      ComponentConfig config, ProgressComponent progress,
                                      ComponentState transformState) {
 
-        RecipeType<?> recipeType = config.get("recipe_type", RecipeType.class, RecipeType.SMELTING);
-
         if (!ctx.hasValidInput() || !ctx.hasValidOutput()) return false;
 
-        ItemStack inputStack = ctx.containerCtx().getItem(ctx.inputSlot());
-        if (LivingItemManager.isLivingItem(inputStack)) return false;
-        SingleRecipeInput recipeInput = new SingleRecipeInput(inputStack);
+        RecipeResult recipe = resolveRecipe(ctx, transformState, config);
+        if (recipe == null) return false;
 
-        var recipeHolderOpt = ctx.level().getRecipeManager()
-                .getRecipeFor((RecipeType)recipeType, recipeInput, ctx.level());
-
-        if (recipeHolderOpt.isEmpty()) return false;
-
-        Object recipeHolder = recipeHolderOpt.get();
-        Recipe<?> recipe;
-        if (recipeHolder instanceof net.minecraft.world.item.crafting.RecipeHolder<?> holder) {
-            recipe = holder.value();
-        } else {
-            recipe = (Recipe<?>)recipeHolder;
+        ItemStack resultItem;
+        try {
+            ResourceLocation outputRl = ResourceLocation.parse(recipe.outputItemId());
+            Item outputItem = BuiltInRegistries.ITEM.get(outputRl);
+            resultItem = new ItemStack(outputItem, recipe.resultCount());
+        } catch (Exception e) {
+            return false;
         }
-        ItemStack result = recipe.getResultItem(ctx.level().registryAccess());
-        int resultCount = result.getCount();
 
+        ItemStack inputStack = ctx.containerCtx().getItem(ctx.inputSlot());
         int stackMultiplier = Math.max(1, hostStack.getCount());
-        int outputSpace = calculateOutputSpace(ctx, result);
-        int maxByOutput = resultCount > 0 ? outputSpace / resultCount : 0;
+        int outputSpace = calculateOutputSpace(ctx, resultItem);
+        int maxByOutput = recipe.resultCount() > 0 ? outputSpace / recipe.resultCount() : 0;
         int transformCount = Math.min(stackMultiplier, Math.min(inputStack.getCount(), maxByOutput));
 
         if (transformCount <= 0) return false;
-
-        ResourceLocation inputRl = BuiltInRegistries.ITEM.getKey(inputStack.getItem());
-        ResourceLocation outputRl = BuiltInRegistries.ITEM.getKey(result.getItem());
 
         inputStack.shrink(transformCount);
         ctx.containerCtx().setItem(ctx.inputSlot(), inputStack.copy());
 
         ItemStack outputStack = ctx.containerCtx().getItem(ctx.outputSlot());
         if (outputStack.isEmpty()) {
-            ItemStack newOutput = result.copy();
-            newOutput.setCount(transformCount * resultCount);
+            ItemStack newOutput = resultItem.copy();
+            newOutput.setCount(transformCount * recipe.resultCount());
             ctx.containerCtx().setItem(ctx.outputSlot(), newOutput);
         } else {
-            outputStack.grow(transformCount * resultCount);
+            outputStack.grow(transformCount * recipe.resultCount());
             ctx.containerCtx().setItem(ctx.outputSlot(), outputStack.copy());
         }
 
-        transformState.setString(KEY_INPUT_ITEM, inputRl.toString());
-        transformState.setString(KEY_OUTPUT_ITEM, outputRl.toString());
-
         return true;
+    }
+
+    private static Recipe<?> unwrapRecipe(Object recipeHolder) {
+        if (recipeHolder instanceof net.minecraft.world.item.crafting.RecipeHolder<?> holder) {
+            return holder.value();
+        }
+        return (Recipe<?>)recipeHolder;
+    }
+
+    private static int getCookingTimeFromRecipe(Recipe<?> recipe) {
+        try {
+            var method = recipe.getClass().getMethod("getCookingTime");
+            return (int) method.invoke(recipe);
+        } catch (Exception ignored) {}
+        return 200;
     }
 
     /**
@@ -271,61 +308,10 @@ public class ItemTransformComponent implements ILivingComponent {
             return false;
         }
 
-        RecipeType<?> recipeType = config.get("recipe_type", RecipeType.class, RecipeType.SMELTING);
-        ItemStack inputStack = ctx.containerCtx().getItem(ctx.inputSlot());
+        RecipeResult recipe = resolveRecipe(ctx, state, config);
+        if (recipe == null) return false;
 
-        if (inputStack.isEmpty() || LivingItemManager.isLivingItem(inputStack)) {
-            return false;
-        }
-
-        ResourceLocation inputRl = BuiltInRegistries.ITEM.getKey(inputStack.getItem());
-        String inputKey = inputRl.toString();
-
-        String cachedInput = state.getString(KEY_CACHED_INPUT, "");
-        if (inputKey.equals(cachedInput)) {
-            if (state.getInt(KEY_CACHED_RESULT, 0) != 1) {
-                return false;
-            }
-            String cachedOutput = state.getString(KEY_CACHED_OUTPUT, "");
-            return hasOutputSpace(ctx, cachedOutput);
-        }
-
-        SingleRecipeInput recipeInput = new SingleRecipeInput(inputStack);
-        var recipeHolderOpt = ctx.level().getRecipeManager()
-                .getRecipeFor((RecipeType)recipeType, recipeInput, ctx.level());
-
-        if (recipeHolderOpt.isEmpty()) {
-            state.setString(KEY_CACHED_INPUT, inputKey);
-            state.setInt(KEY_CACHED_RESULT, 0);
-            state.setString(KEY_CACHED_OUTPUT, "");
-            return false;
-        }
-
-        Object recipeHolder = recipeHolderOpt.get();
-        Recipe<?> recipe;
-        if (recipeHolder instanceof net.minecraft.world.item.crafting.RecipeHolder<?> holder) {
-            recipe = holder.value();
-        } else {
-            recipe = (Recipe<?>)recipeHolder;
-        }
-        ItemStack result = recipe.getResultItem(ctx.level().registryAccess());
-
-        int cookingTime = 200;
-        try {
-            var method = recipe.getClass().getMethod("getCookingTime");
-            cookingTime = (int) method.invoke(recipe);
-        } catch (Exception ignored) {}
-
-        ResourceLocation outputRl = BuiltInRegistries.ITEM.getKey(result.getItem());
-        String outputKey = outputRl.toString();
-        state.setString(KEY_INPUT_ITEM, inputKey);
-        state.setString(KEY_OUTPUT_ITEM, outputKey);
-        state.setString(KEY_CACHED_INPUT, inputKey);
-        state.setInt(KEY_CACHED_RESULT, 1);
-        state.setString(KEY_CACHED_OUTPUT, outputKey);
-        state.setInt(KEY_COOKING_TIME, cookingTime);
-
-        return hasOutputSpace(ctx, outputKey);
+        return hasOutputSpace(ctx, recipe.outputItemId());
     }
 
     private boolean hasOutputSpace(ComponentContext ctx, String outputItemId) {

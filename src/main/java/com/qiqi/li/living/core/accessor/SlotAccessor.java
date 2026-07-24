@@ -1,6 +1,8 @@
 package com.qiqi.li.living.core.accessor;
 
 import net.minecraft.world.item.ItemStack;
+import org.slf4j.Logger;
+import com.mojang.logging.LogUtils;
 
 /**
  * 槽位访问器 —— 统一抽象不同存储后端的读写操作。
@@ -20,6 +22,8 @@ import net.minecraft.world.item.ItemStack;
  * <p>只需新增一个 Accessor 实现类，无需修改传输引擎代码。</p>
  */
 public interface SlotAccessor {
+
+    Logger ROLLBACK_LOGGER = LogUtils.getLogger();
 
     /**
      * 从槽位提取物品。
@@ -66,6 +70,10 @@ public interface SlotAccessor {
      *
      * <p>当 extract 成功但 insert 失败时调用，确保物品不丢失。
      * 在模拟优先模式下，此方法仅作为安全兜底，正常流程不应触发。</p>
+     *
+     * <p><strong>如果此方法被触发，说明 simulateInsert 的结果与真实 insert 不一致，
+     * 属于模拟实现的 bug。</strong> {@link #transfer} 方法会在 rollback 时输出 WARN 日志，
+     * 帮助定位是哪个 SlotAccessor 实现的模拟不准确。</p>
      *
      * @param stack 要退回的物品
      */
@@ -138,12 +146,20 @@ public interface SlotAccessor {
 
         int inserted = target.insert(extracted);
         if (inserted <= 0) {
+            ROLLBACK_LOGGER.warn("SlotAccessor rollback: insert returned 0 after simulateInsert said {} (source={}, target={}, item={})",
+                canAccept, source.getClass().getSimpleName(), target.getClass().getSimpleName(),
+                extracted.getItem());
             source.rollback(extracted);
             return false;
         }
 
-        if (!extracted.isEmpty()) {
-            source.rollback(extracted);
+        if (inserted < extracted.getCount()) {
+            ItemStack leftover = extracted.copy();
+            leftover.setCount(extracted.getCount() - inserted);
+            ROLLBACK_LOGGER.warn("SlotAccessor rollback: partial insert simulated={} actual={} (source={}, target={}, item={})",
+                canAccept, inserted, source.getClass().getSimpleName(), target.getClass().getSimpleName(),
+                extracted.getItem());
+            source.rollback(leftover);
         }
 
         target.markTransferred();

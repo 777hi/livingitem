@@ -116,6 +116,8 @@ public class ContainerLivingItemHandler {
      * @param level 世界
      */
     public static void processContext(ContainerContext context, Level level) {
+        long startNanos = System.nanoTime();
+
         Set<String> occupiedSlots = context.getOccupiedSlots();
         if (occupiedSlots != null) {
             occupiedSlots.clear();
@@ -150,6 +152,71 @@ public class ContainerLivingItemHandler {
         for (var entry : grouped.entrySet()) {
             entry.getKey().tick(entry.getValue(), context, level);
         }
+
+        long elapsedMs = (System.nanoTime() - startNanos) / 1_000_000;
+        if (elapsedMs > 5) {
+            LOGGER.warn("[Perf] processContext key={} size={} livingItems={} functions={} elapsed={}ms",
+                context.getContainerKey(), containerSize, grouped.values().stream().mapToInt(List::size).sum(),
+                grouped.size(), elapsedMs);
+        }
+    }
+
+    /**
+     * 处理指定位置的容器方块实体，构建上下文并执行活物品 tick。
+     *
+     * <p>此方法是 {@link #processBlockEntities} 和
+     * {@link com.qiqi.li.LivingItem#processLevelContainers} 的公共逻辑提取，
+     * 避免两个调用点重复编写"获取 handler → 大箱子检测 → 构建上下文 →
+     * 活跃标记 → 处理"的流程。</p>
+     *
+     * @param level 世界
+     * @param pos 容器方块位置
+     * @param handler 已获取的 IItemHandler（如果为 null 则从能力系统获取）
+     * @param processedHandlers 已处理的 IItemHandler 去重集合
+     * @param processedKeys 已处理的 containerKey 去重集合
+     * @return 是否成功处理了该容器
+     */
+    public static boolean processContainerAt(Level level, BlockPos pos, IItemHandler handler,
+                                              IdentityHashMap<IItemHandler, Boolean> processedHandlers,
+                                              Set<String> processedKeys) {
+        if (handler == null) {
+            handler = level.getCapability(Capabilities.ItemHandler.BLOCK, pos, null);
+        }
+        if (handler == null) return false;
+        if (processedHandlers != null && processedHandlers.put(handler, Boolean.TRUE) != null) return false;
+
+        List<BlockPos> positions = new ArrayList<>();
+        List<BlockEntity> blockEntities = new ArrayList<>();
+
+        List<BlockPos> doubleChestPos = findDoubleChestPositions(level, pos);
+        if (!doubleChestPos.isEmpty()) {
+            for (BlockPos cp : doubleChestPos) {
+                positions.add(cp);
+                BlockEntity halfBe = level.getBlockEntity(cp);
+                if (halfBe != null) blockEntities.add(halfBe);
+            }
+        } else {
+            positions.add(pos);
+            BlockEntity be = level.getBlockEntity(pos);
+            if (be != null) blockEntities.add(be);
+        }
+
+        ContainerContext context = new SimpleContainerContext(handler, null, positions, blockEntities, level);
+        String key = context.getContainerKey();
+        if (processedKeys != null && !processedKeys.add(key)) return false;
+
+        boolean hasLivingItem = false;
+        for (int i = 0; i < context.getSize(); i++) {
+            if (LivingItemManager.isLivingItem(context.getItem(i))) {
+                hasLivingItem = true;
+                break;
+            }
+        }
+
+        if (!hasLivingItem) return false;
+
+        processContext(context, level);
+        return true;
     }
 
     /**
@@ -159,10 +226,9 @@ public class ContainerLivingItemHandler {
      * 1. IdentityHashMap 按 IItemHandler 实例去重（NeoForge 大箱子可能返回同一实例）
      * 2. HashSet 按 containerKey 去重（防止 IItemHandler 每次创建新实例时重复处理）
      *
-     * 大箱子处理：
-     * 对大箱子左右两半，NeoForge 返回同一个 IItemHandler（CombinedInvWrapper），
-     * 但如果每次创建新实例则 IdentityHashMap 去重失败。
-     * 因此额外用 containerKey 去重，并在遇到大箱子时收集两半的位置信息。
+     * 惰性 Tick 优化：
+     * 扫描容器时，如果发现活物品则标记容器为活跃，
+     * 如果没有活物品则移除活跃标记。
      *
      * @param blockEntities 区块中的方块实体集合
      * @param level 世界
@@ -173,39 +239,18 @@ public class ContainerLivingItemHandler {
         Set<String> processedKeys = new HashSet<>();
 
         for (var be : blockEntities) {
-            IItemHandler itemHandler = level.getCapability(
-                Capabilities.ItemHandler.BLOCK, be.getBlockPos(), null);
-            if (itemHandler == null) continue;
-            if (processedHandlers.put(itemHandler, Boolean.TRUE) != null) continue;
-
-            List<BlockPos> positions = new ArrayList<>();
-            List<BlockEntity> blockEntities2 = new ArrayList<>();
-
-            List<BlockPos> doubleChestPos = findDoubleChestPositions(level, be.getBlockPos());
-            if (!doubleChestPos.isEmpty()) {
-                for (BlockPos pos : doubleChestPos) {
-                    positions.add(pos);
-                    BlockEntity halfBe = level.getBlockEntity(pos);
-                    if (halfBe != null) blockEntities2.add(halfBe);
-                }
-            } else {
-                positions.add(be.getBlockPos());
-                blockEntities2.add(be);
-            }
-
-            ContainerContext context = new SimpleContainerContext(itemHandler, null, positions, blockEntities2, level);
-            String key = context.getContainerKey();
-            if (!processedKeys.add(key)) continue;
-
-            processContext(context, level);
+            processContainerAt(level, be.getBlockPos(), null, processedHandlers, processedKeys);
         }
     }
 
     /**
      * 检测指定位置是否是大箱子，返回左右两半的位置（LEFT 在前，RIGHT 在后）。
      * 如果不是大箱子，返回空列表。
+     *
+     * <p>此方法为 public static，供 {@link com.qiqi.li.LivingItem#processLevelContainers}
+     * 在活跃容器路径中复用，避免代码重复。</p>
      */
-    private static List<BlockPos> findDoubleChestPositions(Level level, BlockPos pos) {
+    public static List<BlockPos> findDoubleChestPositions(Level level, BlockPos pos) {
         BlockState state = level.getBlockState(pos);
         if (!(state.getBlock() instanceof ChestBlock)) return List.of();
 

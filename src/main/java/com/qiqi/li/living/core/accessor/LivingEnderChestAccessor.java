@@ -109,6 +109,11 @@ public class LivingEnderChestAccessor implements SlotAccessor {
         return directMode;
     }
 
+    /** 获取频道号（路由模式下 = 堆叠数，直连模式下无意义） */
+    public int getChannel() {
+        return channel;
+    }
+
     /**
      * 注册路由条目 —— 记录源物品的类型和位置，不实际存储物品。
      *
@@ -194,21 +199,36 @@ public class LivingEnderChestAccessor implements SlotAccessor {
         EnderChannelEntry entry = registry.peek(channel, filterState);
         if (entry == null) return ItemStack.EMPTY;
 
-        ServerLevel sourceLevel = server.getLevel(entry.sourceDim());
-        if (sourceLevel == null) return ItemStack.EMPTY;
-
-        IItemHandler sourceHandler;
+        ServerLevel sourceLevel;
         BlockPos sourcePos = entry.sourcePos();
 
         if (sourcePos != null) {
+            sourceLevel = server.getLevel(entry.sourceDim());
+            if (sourceLevel == null) return ItemStack.EMPTY;
             if (!sourceLevel.isLoaded(sourcePos)) return ItemStack.EMPTY;
-
-            BlockEntity be = sourceLevel.getBlockEntity(sourcePos);
-            sourceHandler = getHandler(sourceLevel, sourcePos, be);
-            if (sourceHandler == null) return ItemStack.EMPTY;
         } else {
-            return ItemStack.EMPTY;
+            String containerKey = entry.containerKey();
+            if (containerKey == null || !containerKey.startsWith("player_")) return ItemStack.EMPTY;
+
+            try {
+                UUID playerId;
+                if (containerKey.endsWith("_ender_chest")) {
+                    String uuidPart = containerKey.substring(7, containerKey.length() - 12);
+                    playerId = UUID.fromString(uuidPart);
+                } else {
+                    playerId = UUID.fromString(containerKey.substring(7));
+                }
+
+                ServerPlayer player = server.getPlayerList().getPlayer(playerId);
+                if (player == null) return ItemStack.EMPTY;
+                sourceLevel = (ServerLevel) player.level();
+            } catch (IllegalArgumentException e) {
+                return ItemStack.EMPTY;
+            }
         }
+
+        IItemHandler sourceHandler = resolveSourceHandler(entry, sourceLevel);
+        if (sourceHandler == null) return ItemStack.EMPTY;
 
         ItemStack sourceStack = sourceHandler.getStackInSlot(entry.sourceSlot());
         if (sourceStack.isEmpty()) return ItemStack.EMPTY;
@@ -258,86 +278,58 @@ public class LivingEnderChestAccessor implements SlotAccessor {
                 return ItemStack.EMPTY;
             }
 
-            ServerLevel sourceLevel = server.getLevel(entry.sourceDim());
-            if (sourceLevel == null) {
-                LOGGER.debug("LivingEnderChestAccessor: extract source dim invalid, remove channel={}, dim={}",
-                    channel, entry.sourceDim());
-                registry.remove(channel, entry);
-                continue;
-            }
-
-            IItemHandler sourceHandler;
+            ServerLevel sourceLevel;
             BlockPos sourcePos = entry.sourcePos();
 
             if (sourcePos != null) {
-                if (!sourceLevel.isLoaded(sourcePos)) {
-                    LOGGER.debug("LivingEnderChestAccessor: extract source unloaded, remove channel={}, pos={}",
-                        channel, sourcePos);
-                    registry.remove(channel, entry);
-                    continue;
-                }
-
-                BlockEntity be = sourceLevel.getBlockEntity(sourcePos);
-                sourceHandler = getHandler(sourceLevel, sourcePos, be);
-                if (sourceHandler == null) {
-                    LOGGER.debug("LivingEnderChestAccessor: extract source not container, remove channel={}, pos={}",
-                        channel, sourcePos);
+                // 方块容器：通过维度获取世界
+                sourceLevel = server.getLevel(entry.sourceDim());
+                if (sourceLevel == null) {
+                    LOGGER.debug("LivingEnderChestAccessor: extract source dim invalid, remove channel={}, dim={}",
+                        channel, entry.sourceDim());
                     registry.remove(channel, entry);
                     continue;
                 }
             } else {
+                // 玩家背包/末影箱：从 containerKey 解析玩家 UUID，获取玩家所在世界
                 String containerKey = entry.containerKey();
-                if (containerKey == null) {
-                    LOGGER.debug("LivingEnderChestAccessor: extract null containerKey, remove channel={}", channel);
-                    registry.remove(channel, entry);
-                    continue;
-                }
-
-                if (containerKey.endsWith("_ender_chest") && containerKey.startsWith("player_")) {
-                    String uuidPart = containerKey.substring(7, containerKey.length() - 12);
-                    try {
-                        UUID playerId = UUID.fromString(uuidPart);
-                        ServerPlayer player = server.getPlayerList().getPlayer(playerId);
-                        if (player == null) {
-                            LOGGER.debug("LivingEnderChestAccessor: extract ender chest player offline, remove channel={}, uuid={}",
-                                channel, playerId);
-                            registry.remove(channel, entry);
-                            continue;
-                        }
-                        sourceHandler = new InvWrapper(player.getEnderChestInventory());
-                    } catch (IllegalArgumentException e) {
-                        LOGGER.debug("LivingEnderChestAccessor: extract invalid ender chest containerKey, remove channel={}, key={}",
-                            channel, containerKey);
-                        registry.remove(channel, entry);
-                        continue;
-                    }
-                } else if (containerKey.startsWith("player_")) {
-                    try {
-                        UUID playerId = UUID.fromString(containerKey.substring(7));
-                        ServerPlayer player = server.getPlayerList().getPlayer(playerId);
-                        if (player == null) {
-                            LOGGER.debug("LivingEnderChestAccessor: extract player offline, remove channel={}, uuid={}",
-                                channel, playerId);
-                            registry.remove(channel, entry);
-                            continue;
-                        }
-                        sourceHandler = player.getCapability(Capabilities.ItemHandler.ENTITY);
-                        if (sourceHandler == null) {
-                            registry.remove(channel, entry);
-                            continue;
-                        }
-                    } catch (IllegalArgumentException e) {
-                        LOGGER.debug("LivingEnderChestAccessor: extract invalid containerKey, remove channel={}, key={}",
-                            channel, containerKey);
-                        registry.remove(channel, entry);
-                        continue;
-                    }
-                } else {
-                    LOGGER.debug("LivingEnderChestAccessor: extract unknown containerKey, remove channel={}, key={}",
+                if (containerKey == null || !containerKey.startsWith("player_")) {
+                    LOGGER.debug("LivingEnderChestAccessor: extract invalid containerKey, remove channel={}, key={}",
                         channel, containerKey);
                     registry.remove(channel, entry);
                     continue;
                 }
+
+                try {
+                    UUID playerId;
+                    if (containerKey.endsWith("_ender_chest")) {
+                        String uuidPart = containerKey.substring(7, containerKey.length() - 12);
+                        playerId = UUID.fromString(uuidPart);
+                    } else {
+                        playerId = UUID.fromString(containerKey.substring(7));
+                    }
+
+                    ServerPlayer player = server.getPlayerList().getPlayer(playerId);
+                    if (player == null) {
+                        LOGGER.debug("LivingEnderChestAccessor: extract player offline, remove channel={}, uuid={}",
+                            channel, playerId);
+                        registry.remove(channel, entry);
+                        continue;
+                    }
+                    sourceLevel = (ServerLevel) player.level();
+                } catch (IllegalArgumentException e) {
+                    LOGGER.debug("LivingEnderChestAccessor: extract invalid containerKey, remove channel={}, key={}",
+                        channel, containerKey);
+                    registry.remove(channel, entry);
+                    continue;
+                }
+            }
+
+            // 获取 sourceHandler
+            IItemHandler sourceHandler = resolveSourceHandler(entry, sourceLevel);
+            if (sourceHandler == null) {
+                registry.remove(channel, entry);
+                continue;
             }
 
             ItemStack sourceStack = sourceHandler.getStackInSlot(entry.sourceSlot());
@@ -556,6 +548,55 @@ public class LivingEnderChestAccessor implements SlotAccessor {
 
     @Override
     public void sync() {
+    }
+
+    /**
+     * 解析源 IItemHandler。
+     *
+     * @return IItemHandler 实例，如果无法解析则返回 null（调用方负责清理路由）
+     */
+    private IItemHandler resolveSourceHandler(EnderChannelEntry entry, ServerLevel sourceLevel) {
+        BlockPos sourcePos = entry.sourcePos();
+
+        if (sourcePos != null) {
+            if (!sourceLevel.isLoaded(sourcePos)) {
+                LOGGER.debug("LivingEnderChestAccessor: extract source unloaded, remove channel={}, pos={}",
+                    channel, sourcePos);
+                return null;
+            }
+
+            BlockEntity be = sourceLevel.getBlockEntity(sourcePos);
+            IItemHandler handler = getHandler(sourceLevel, sourcePos, be);
+            if (handler == null) {
+                LOGGER.debug("LivingEnderChestAccessor: extract source not container, remove channel={}, pos={}",
+                    channel, sourcePos);
+            }
+            return handler;
+        } else {
+            String containerKey = entry.containerKey();
+            if (containerKey == null) return null;
+
+            try {
+                ServerPlayer player;
+                if (containerKey.endsWith("_ender_chest")) {
+                    String uuidPart = containerKey.substring(7, containerKey.length() - 12);
+                    player = server.getPlayerList().getPlayer(UUID.fromString(uuidPart));
+                    return player != null ? new InvWrapper(player.getEnderChestInventory()) : null;
+                } else {
+                    player = server.getPlayerList().getPlayer(UUID.fromString(containerKey.substring(7)));
+                    if (player == null) return null;
+                    IItemHandler handler = player.getCapability(Capabilities.ItemHandler.ENTITY);
+                    if (handler == null) {
+                        LOGGER.debug("LivingEnderChestAccessor: extract player has no ItemHandler, channel={}", channel);
+                    }
+                    return handler;
+                }
+            } catch (IllegalArgumentException e) {
+                LOGGER.debug("LivingEnderChestAccessor: extract invalid containerKey, channel={}, key={}",
+                    channel, containerKey);
+                return null;
+            }
+        }
     }
 
     /**

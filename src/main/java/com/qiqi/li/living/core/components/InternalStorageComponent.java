@@ -1266,19 +1266,22 @@ public class InternalStorageComponent implements ILivingComponent {
             asyncShutdown = true;
             
             try {
-                // 2. 等待当前正在执行的异步任务完成
-                ioExecutor.shutdown();
-                if (!ioExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
-                    LOGGER.warn("Async IO executor did not terminate in time! Forcing shutdown...");
-                    ioExecutor.shutdownNow();  // 强制终止
-                    
-                    // 等待强制终止完成
-                    if (!ioExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
-                        LOGGER.error("Failed to force shutdown async executor! Data loss may occur!");
-                    }
+                // 2. 将 pendingAsyncSave 中的任务也加入 dirtyKeys（防止遗漏）
+                if (!pendingAsyncSave.isEmpty()) {
+                    dirtyKeys.addAll(pendingAsyncSave);
+                    pendingAsyncSave.clear();
+                    LOGGER.info("[Sync] Merged {} pending async saves into dirtyKeys", dirtyKeys.size());
                 }
                 
-                // 3. 同步保存剩余的脏数据（此时异步线程应已停止，但加锁以防万一）
+                // 3. 等待当前正在执行的异步任务完成（最多等待 5 秒）
+                ioExecutor.shutdown();
+                if (!ioExecutor.awaitTermination(5, TimeUnit.SECONDS)) {
+                    LOGGER.warn("Async IO executor did not terminate in 5s! Forcing shutdown...");
+                    ioExecutor.shutdownNow();
+                    // shutdownNow 后不再等待，直接执行紧急保存
+                }
+                
+                // 4. 同步保存剩余的脏数据
                 if (!dirtyKeys.isEmpty()) {
                     LOGGER.info("[Sync] Saving {} remaining dirty entries before shutdown...", dirtyKeys.size());
                     
@@ -1297,13 +1300,11 @@ public class InternalStorageComponent implements ILivingComponent {
                 }
                 
             } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();  // 恢复中断状态
+                Thread.currentThread().interrupt();
                 LOGGER.error("[Sync] Interrupted while waiting for async tasks! Data may be lost!", e);
-                
-                // 尝试紧急保存
                 emergencySave();
             } finally {
-                asyncShutdown = false;  // 重置标志（虽然实例可能被丢弃）
+                asyncShutdown = false;
             }
         }
 
@@ -1448,15 +1449,49 @@ public class InternalStorageComponent implements ILivingComponent {
          * <p>通过 {@code CLEANUP_ORPHAN_INTERVAL} 控制，默认每 10 次 save 执行一次，
          * 避免频繁扫描磁盘。</p>
          */
-        public void cleanupOrphanedFiles() {
-            cleanupOrphanCounter++;
-            if (cleanupOrphanCounter < CLEANUP_ORPHAN_INTERVAL) {
-                return;
-            }
-            cleanupOrphanCounter = 0;
+        /**
+         * 异步清理孤儿文件（不阻塞主线程）
+         * 
+         * <p>在 {@code LevelEvent.Save} 中调用此方法，
+         * 避免磁盘扫描阻塞主线程。</p>
+         */
+        public void cleanupOrphanedFilesAsync() {
+            if (!shouldRunCleanup()) return;
+            if (!Files.exists(storageDir)) return;
+            if (asyncShutdown) return;
             
+            ioExecutor.submit(() -> {
+                try {
+                    cleanupOrphanedFilesInternal();
+                } catch (Exception e) {
+                    LOGGER.error("[AsyncIO] Failed to cleanup orphaned files!", e);
+                }
+            });
+        }
+
+        /**
+         * 同步清理孤儿文件（阻塞直到完成）
+         * 
+         * <h3>⚠️ 使用场景</h3>
+         * <p><strong>仅用于服务器停止前！</strong>正常运行时请用 {@link #cleanupOrphanedFilesAsync()}</p>
+         */
+        public void cleanupOrphanedFiles() {
+            if (!shouldRunCleanup()) return;
             if (!Files.exists(storageDir)) return;
             
+            cleanupOrphanedFilesInternal();
+        }
+
+        private boolean shouldRunCleanup() {
+            cleanupOrphanCounter++;
+            if (cleanupOrphanCounter < CLEANUP_ORPHAN_INTERVAL) {
+                return false;
+            }
+            cleanupOrphanCounter = 0;
+            return true;
+        }
+
+        private void cleanupOrphanedFilesInternal() {
             int deleted = 0;
             int checked = 0;
             

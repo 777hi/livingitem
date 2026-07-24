@@ -352,13 +352,14 @@ public final class EnderChannelRegistry {
         // 倒序遍历，安全删除
         for (int i = relevantEntries.size() - 1; i >= 0; i--) {
             EnderChannelEntry entry = relevantEntries.get(i);
-            if (!entry.sourceDim().equals(dim)) continue;
+            // 玩家背包注册的路由 sourceDim 为 null，跳过维度检查
+            if (entry.sourceDim() != null && !entry.sourceDim().equals(dim)) continue;
 
             ItemStack sourceStack = context.getItem(entry.sourceSlot());
             if (sourceStack.isEmpty() || !isItemTypeMatch(sourceStack, entry)) {
-                // 从主表和反向索引中同时删除
+                // removeFromIndex 内部会从 relevantEntries 中移除条目，
+                // 所以这里不需要再调用 relevantEntries.remove(i)
                 removeEntryFromChannel(entry);
-                relevantEntries.remove(i);
                 cleaned++;
             }
         }
@@ -445,30 +446,29 @@ public final class EnderChannelRegistry {
         int chunkMaxX = chunkPos.getMaxBlockX();
         int chunkMaxZ = chunkPos.getMaxBlockZ();
 
-        int totalBefore = channels.values().stream().mapToInt(d -> d.entries.size()).sum();
+        // 使用反向索引：只遍历 posIndex 中在该区块范围内的条目
         List<EnderChannelEntry> toRemove = new ArrayList<>();
-
-        for (ChannelData data : channels.values()) {
-            for (EnderChannelEntry entry : data.entries) {
-                if (!entry.sourceDim().equals(dim)) continue;
-                BlockPos pos = entry.sourcePos();
-                if (pos == null) continue;
-                if (pos.getX() >= chunkMinX && pos.getX() <= chunkMaxX
-                    && pos.getZ() >= chunkMinZ && pos.getZ() <= chunkMaxZ) {
-                    toRemove.add(entry);
+        for (var iter = posIndex.entrySet().iterator(); iter.hasNext(); ) {
+            var entry = iter.next();
+            BlockPos pos = entry.getKey();
+            if (pos.getX() >= chunkMinX && pos.getX() <= chunkMaxX
+                && pos.getZ() >= chunkMinZ && pos.getZ() <= chunkMaxZ) {
+                // 检查维度是否匹配
+                for (EnderChannelEntry route : entry.getValue()) {
+                    if (dim.equals(route.sourceDim())) {
+                        toRemove.add(route);
+                    }
                 }
             }
         }
 
-        for (EnderChannelEntry entry : toRemove) {
-            removeEntryFromChannel(entry);
+        for (EnderChannelEntry route : toRemove) {
+            removeEntryFromChannel(route);
         }
 
-        int totalAfter = channels.values().stream().mapToInt(d -> d.entries.size()).sum();
-        int removed = totalBefore - totalAfter;
-        if (removed > 0) {
+        if (!toRemove.isEmpty()) {
             LOGGER.info("EnderChannelRegistry: chunkUnload dim={}, chunk=({},{}), removed={} entries",
-                dim.location(), chunkPos.x, chunkPos.z, removed);
+                dim.location(), chunkPos.x, chunkPos.z, toRemove.size());
         }
     }
 

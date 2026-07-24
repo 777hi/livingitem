@@ -11,7 +11,6 @@ import com.mojang.logging.LogUtils;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.DispenserBlock;
-import net.minecraft.world.level.chunk.LevelChunk;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.Mod;
@@ -26,6 +25,7 @@ import net.neoforged.neoforge.event.level.ChunkEvent;
 import net.neoforged.neoforge.event.level.LevelEvent;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.items.IItemHandler;
+import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
@@ -33,8 +33,11 @@ import com.qiqi.li.living.function.LivingChestFunction;
 import com.qiqi.li.living.function.LivingEnderChestFunction;
 import com.qiqi.li.living.core.components.InternalStorageComponent;
 
-import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
+import java.util.Set;
+import com.qiqi.li.living.container.ContainerChunkCache;
+import com.qiqi.li.living.container.ContainerLivingItemHandler;
 import com.qiqi.li.network.LivingTagPacket;
 import com.qiqi.li.network.HopperDirectionPacket;
 import com.qiqi.li.network.SlotDirectionPacket;
@@ -47,8 +50,6 @@ import com.qiqi.li.living.function.LivingFurnaceFunction;
 import com.qiqi.li.living.function.LivingHopperFunction;
 import com.qiqi.li.living.function.LivingTntFunction;
 import com.qiqi.li.living.function.LivingFlintAndSteelFunction;
-import com.qiqi.li.living.container.ContainerLivingItemHandler;
-import com.qiqi.li.living.container.ContainerChunkCache;
 import com.qiqi.li.living.core.interaction.InteractionRegistry;
 import com.qiqi.li.living.core.interaction.IgniteHandler;
 import com.qiqi.li.living.core.interaction.IgniteCarriedHandler;
@@ -145,6 +146,9 @@ public class LivingItem {
      *   - 使用 IdentityHashMap 对容器和箱子方块实体去重，
      *     避免大箱子被重复处理（左右两半各处理一次 = 速度翻倍）
      */
+    private final IdentityHashMap<IItemHandler, Boolean> reusableHandlerMap = new IdentityHashMap<>();
+    private final Set<String> reusableKeySet = new HashSet<>();
+
     @SubscribeEvent
     public void onServerTick(ServerTickEvent.Post event) {
         var server = event.getServer();
@@ -153,33 +157,42 @@ public class LivingItem {
             ContainerLivingItemHandler.processContainer(player.getInventory(), player.level());
         }
 
+        reusableHandlerMap.clear();
+        reusableKeySet.clear();
+
         for (var level : server.getAllLevels()) {
             processLevelContainers(level);
         }
     }
 
-    /**
-     * 处理指定世界中所有容器内的活物品。
-     *
-     * 通过 ContainerChunkCache 获取含容器的区块列表，
-     * 只遍历这些区块中的方块实体，避免全量扫描。
-     *
-     * 去重机制：
-     *   - processedContainers：非箱子容器去重（IdentityHashMap，按对象引用）
-     *   - processedChests：箱子方块实体去重（大箱子左右两半共享同一组数据，
-     *     只需处理一次，否则活物品逻辑会执行两次导致速度翻倍）
-     *
-     * @param level 服务端世界
-     */
     private void processLevelContainers(ServerLevel level) {
-        var cachedChunks = ContainerChunkCache.getInstance().getCachedChunks(level.dimension());
-        IdentityHashMap<IItemHandler, Boolean> processedHandlers = new IdentityHashMap<>();
+        var cache = ContainerChunkCache.getInstance();
+        var chunkSet = cache.getCachedChunks(level.dimension());
+        if (chunkSet.isEmpty()) return;
 
-        for (var cPos : cachedChunks) {
-            if (!level.hasChunk(cPos.x, cPos.z)) continue;
-            LevelChunk chunk = level.getChunk(cPos.x, cPos.z);
-            ContainerLivingItemHandler.processBlockEntities(
-                    new ArrayList<>(chunk.getBlockEntities().values()), level, processedHandlers);
+        long startNanos = System.nanoTime();
+        int processedCount = 0;
+
+        for (var chunkPos : chunkSet) {
+            if (!level.hasChunk(chunkPos.x, chunkPos.z)) continue;
+
+            var chunk = level.getChunk(chunkPos.x, chunkPos.z);
+            for (var be : chunk.getBlockEntities().values()) {
+                var pos = be.getBlockPos();
+                IItemHandler handler = level.getCapability(
+                    Capabilities.ItemHandler.BLOCK, pos, null);
+                if (handler == null) continue;
+
+                ContainerLivingItemHandler.processContainerAt(
+                    level, pos, handler, reusableHandlerMap, reusableKeySet);
+                processedCount++;
+            }
+        }
+
+        long elapsedMs = (System.nanoTime() - startNanos) / 1_000_000;
+        if (elapsedMs > 10) {
+            LOGGER.warn("[Perf] processLevelContainers dim={} chunks={} containers={} elapsed={}ms",
+                level.dimension(), chunkSet.size(), processedCount, elapsedMs);
         }
     }
 
@@ -205,7 +218,8 @@ public class LivingItem {
             InternalStorageComponent.WorldStorage storage = InternalStorageComponent.WorldStorage.get(serverLevel.getServer());
             storage.saveAllDirty();
             storage.cleanupIdle();
-            storage.cleanupOrphanedFiles();
+            // cleanupOrphanedFiles 已改为异步执行，不再阻塞主线程
+            storage.cleanupOrphanedFilesAsync();
         }
     }
 
@@ -214,6 +228,8 @@ public class LivingItem {
         InternalStorageComponent.WorldStorage storage = InternalStorageComponent.WorldStorage.get(event.getServer());
         // 🔴 P0修复：使用同步保存，确保所有数据都写入磁盘后才允许服务器关闭
         storage.saveAllDirtySync();
+        // 服务器停止时也异步清理孤儿文件（不阻塞关闭流程）
+        storage.cleanupOrphanedFilesAsync();
         
         LOGGER.info("Living chest data saved successfully, server can now shut down safely");
     }

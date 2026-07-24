@@ -55,9 +55,7 @@ public class NeighborSlotAccessor implements SlotAccessor {
     @Override
     public void rollback(ItemStack stack) {
         ItemStack current = handler.getStackInSlot(slot);
-        if (current.isEmpty()) {
-            handler.insertItem(slot, stack, false);
-        } else if (ItemStack.isSameItemSameComponents(current, stack)) {
+        if (current.isEmpty() || ItemStack.isSameItemSameComponents(current, stack)) {
             handler.insertItem(slot, stack, false);
         } else {
             ItemHandlerHelper.insertItem(handler, stack, false);

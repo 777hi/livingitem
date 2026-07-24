@@ -289,6 +289,17 @@ public class ItemTransferComponent implements ILivingComponent {
             return false;
         }
 
+        // 检测 source 和 target 都是同频道活末影箱的场景（会导致物品凭空消失）
+        if (source.unwrap() instanceof LivingEnderChestAccessor sourceEnder
+            && target.unwrap() instanceof LivingEnderChestAccessor targetEnder) {
+            if (!sourceEnder.isDirectMode() && !targetEnder.isDirectMode()
+                && sourceEnder.getChannel() == targetEnder.getChannel()) {
+                LOGGER.debug("ItemTransferComponent: skip same-channel ender chest transfer, channel={}, sourceSlot={}, targetSlot={}",
+                    sourceEnder.getChannel(), sourceSlot, targetSlot);
+                return false;
+            }
+        }
+
         if (target.unwrap() instanceof LivingEnderChestAccessor enderChest) {
             if (enderChest.isDirectMode()) {
                 return doTransfer(source, target, Math.min(stackSize, maxTransfer));

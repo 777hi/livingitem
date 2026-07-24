@@ -31,7 +31,7 @@
 ```
 服务端 tick (LivingItem.onServerTick)
     ↓
-ContainerChunkCache (只遍历含容器的区块)
+ContainerChunkCache (容器位置缓存，拉取模型，直接遍历所有已知容器位置)
     ↓
 ContainerLivingItemHandler (扫描容器、按功能分组)
     ↓
@@ -52,7 +52,7 @@ LivingOrchestrator.orchestrate() (编排器决定组件协作流程)
     ↓
 ContainerContext / SimpleContainerContext (直接基于 IItemHandler 读写，统一原版和模组容器)
     ↓
-SlotAccessor (统一传输：extract → insert → rollback + FilteredSlotAccessor 过滤)
+SlotAccessor (模拟优先传输：simulateExtract → simulateInsert → extract → insert → rollback安全兜底 + FilteredSlotAccessor 过滤)
 ```
 
 ### 编排器体系
@@ -164,8 +164,11 @@ ILivingComponent (接口)
           └── 大当量模式 (>64 TNT)：直接修改区块数据，无掉落物
 
 SlotAccessor 存储后端抽象（独立于组件体系，供传输引擎使用）
-    ├── SlotAccessor          — 接口：extract/insert/rollback/isEmpty/isFull/markTransferred/sync + transfer() 统一传输
-    │     └── transfer(source, target, amount) — extract→insert→rollback 三步原子传输，所有 Accessor 复用
+    ├── SlotAccessor          — 接口：simulateExtract/simulateInsert/extract/insert/rollback/isEmpty/isFull/markTransferred/sync + transfer() 模拟优先传输
+    │     ├── simulateExtract(amount) — 模拟提取：检查源能提供多少物品，不修改状态，返回物品副本
+    │     ├── simulateInsert(stack) — 模拟插入：检查目标能接受多少物品，不修改状态，返回可接受数量
+    │     └── transfer(source, target, amount) — 模拟优先模式：simulate→confirm→execute→rollback安全兜底
+    │           流程：simulateExtract → simulateInsert → extract → insert → rollback(仅安全兜底+WARN日志)
     ├── PlainSlotAccessor     — 普通槽位：直接读写 ContainerContext（支持 getSlotLimit 感知模组槽位上限）
     ├── LivingChestAccessor   — 活箱子：通过 LivingChestFunction API 操作虚拟存储（insert/extract/isEmpty/isFull）
     ├── LivingEnderChestAccessor — 活末影箱双模式访问器
@@ -173,7 +176,9 @@ SlotAccessor 存储后端抽象（独立于组件体系，供传输引擎使用�
     │     ├── 直连模式（有绑定玩家）：直接读写 PlayerEnderChestContainer（构造时预加载引用，离线跳过）
     │     └── registerRoute() — push端注册路由条目到 EnderChannelRegistry
     ├── NeighborSlotAccessor  — 邻居容器：包装 IItemHandler 槽位，跨容器传输统一接入 SlotAccessor 架构
-    │     └── extract/insert/rollback 委托给 IItemHandler，markTransferred/sync 空实现
+    │     ├── simulateExtract → handler.extractItem(slot, amount, true)
+    │     ├── simulateInsert → ItemHandlerHelper.insertItemStacked(handler, stack.copy(), true)
+    │     └── rollback → 优先放回原槽位（current.isEmpty || sameItemSameComponents），否则 ItemHandlerHelper.insertItem
     ├── FilteredSlotAccessor  — 过滤装饰器（Decorator 模式）：为任意 Accessor 添加黑白名单过滤
     │     ├── extract()：提取后检查过滤，不通过则 rollback 退回
     │     └── insert()：插入前检查过滤，不通过则拒绝（返回0）
@@ -510,13 +515,13 @@ src/main/java/com/qiqi/li/
 │       ├── ComponentContext.java            # 组件执行上下文（容器 + 解析槽位 + 世界 + 状态）
 │       ├── ComponentState.java              # 组件运行时状态（NBT 包装器）
 │       │
-│       ├── accessor/                        # SlotAccessor 存储后端抽象
-│       │   ├── SlotAccessor.java            # 接口：extract/insert/rollback/isEmpty/isFull/markTransferred/sync + transfer() 统一传输
-│       │   ├── PlainSlotAccessor.java       # 普通槽位：直接读写 ContainerContext（使用 getSlotLimit 感知模组槽位上限）
-│       │   ├── LivingChestAccessor.java     # 活箱子：通过 LivingChestFunction API 操作虚拟存储
-│       │   ├── LivingEnderChestAccessor.java # 活末影箱双模式访问器：路由模式（registerRoute+查路由表跳转提取）+ 直连模式（预加载玩家末影箱引用）
-│       │   ├── NeighborSlotAccessor.java    # 邻居容器：包装 IItemHandler 槽位，跨容器传输统一接入 SlotAccessor 架构
-│       │   ├── FilteredSlotAccessor.java    # 过滤装饰器（Decorator）：extract后检查/insert前检查，为任意 Accessor 添加黑白名单过滤
+│   ├── accessor/                        # SlotAccessor 存储后端抽象（模拟优先模式）
+        │   │   ├── SlotAccessor.java            # 接口：simulateExtract/simulateInsert/extract/insert/rollback + transfer() 模拟优先传输 + WARN日志兜底
+        │   │   ├── PlainSlotAccessor.java       # 普通槽位：直接读写 ContainerContext（使用 getSlotLimit 感知模组槽位上限）
+        │   │   ├── LivingChestAccessor.java     # 活箱子：通过 LivingChestFunction API 操作虚拟存储
+        │   │   ├── LivingEnderChestAccessor.java # 活末影箱双模式访问器：路由模式（registerRoute+查路由表跳转提取）+ 直连模式（预加载玩家末影箱引用）
+        │   │   ├── NeighborSlotAccessor.java    # 邻居容器：模拟优先（simulateExtract/simulateInsert）+ rollback优先放回原槽位
+        │   │   ├── FilteredSlotAccessor.java    # 过滤装饰器（Decorator）：extract后检查/insert前检查，为任意 Accessor 添加黑白名单过滤
 │       │   ├── EnderChannelRegistry.java    # 全局路由表（服务端单例）：频道→路由条目映射 + 反向索引（posIndex/keyIndex）快速清理 + 轮询调度
 │       │   ├── EnderChannelEntry.java       # 路由条目 record：itemType + sourceDim + sourcePos + sourceSlot + registrarSlot + containerKey + targetSlot
 │       │   └── SlotAccessorFactory.java     # 工厂：create()根据物品类型创建访问器 + createForNeighbor()邻居容器 + 自动包装 FilteredSlotAccessor
@@ -535,7 +540,9 @@ src/main/java/com/qiqi/li/
 │       │   ├── CrossContainerTransfer.java  # 跨容器传输工具类（方向映射 + 大箱子半箱选择 + 邻居容器查找 + SlotAccessor 统一传输）
 │       │   ├── ProgressComponent.java       # 进度组件（计时、暂停、回退）
 │       │   ├── FuelConsumeComponent.java    # 燃料组件（消耗、可用性检查）
-│       │   ├── ItemTransformComponent.java  # 转化组件（配方匹配、物品转化）
+│       │   ├── ItemTransformComponent.java  # 转化组件（配方匹配、物品转化、配方缓存 + resolveRecipe 公共方法）
+    │   │   ├── canProcess() — 检查输入有效性 + resolveRecipe 缓存查询 + 输出空间检查
+    │   │   └── executeTransform() — resolveRecipe 缓存查询 + 计算转化数量 + 消耗输入/生成产物
 │       │   └── ExplosionComponent.java      # 爆炸组件（引信倒计时、双模式爆炸、流体防爆）
 │       │
 │       ├── orchestrator/
@@ -661,9 +668,28 @@ SLOTS 模式的方向数据存储在 `ComponentState` 中（`slot_input_x`, `slo
 
 活漏斗方向配置时，物品被拿在光标上（`containerMenu.getCarried()`），不在任何槽位中。服务端通过 `getCarried()` 获取引用，修改后用 `ClientboundContainerSetSlotPacket(-1, stateId, -1, ...)` 同步回客户端。
 
-### 9. 容器区块缓存
+### 9. 容器位置缓存（拉取模型）
 
-`ContainerChunkCache` 通过事件驱动（区块加载/卸载、方块放置/破坏）维护含容器的区块列表，避免每 tick 全量扫描所有区块。
+`ContainerChunkCache` 采用**拉取模型**，直接维护"世界中所有容器方块的位置"列表，每 tick 遍历这些位置。
+
+**为什么不用推送模型（活跃列表）？**
+- 推送模型需要监听"活物品进入容器"的事件，但拖拽、Shift+点击、漏斗输入等场景无法监听
+- 定期全量扫描是补丁，不是解决方案——新放入活物品的容器必须等 30 秒才能被发现，体验差
+
+**缓存数据来源（事件驱动）：**
+- **强事件（高权威）**：`ChunkEvent.Load`（全量扫描区块中所有方块实体）、`ChunkEvent.Unload`（移除该区块所有容器位置）
+- **弱事件（增量更新）**：`BlockEvent` 及所有子类（`EntityPlaceEvent`、`BreakEvent`、`NeighborNotifyEvent`、`PistonEvent` 等），统一调用 `refreshPosition` 检查当前 IItemHandler 能力并更新缓存
+
+**缓存一致性保障：**
+- 幽灵条目（缓存有，世界没有）→ tick 时 getCapability 返回 null，自动跳过，无害
+- 幽灵容器（世界有，缓存没有）→ 区块卸载后重新加载时全量扫描修正，最多持续到区块重载
+- 空维度自动清理，避免内存泄漏
+
+**性能对比：**
+- 旧方案（区块缓存 + 活跃列表）：活跃路径 ~10 个位置，全量路径 ~2000 个 BE，新容器延迟 30 秒
+- 新方案（容器位置缓存）：~200 个位置，新容器延迟 0（下一个 tick）
+
+**GC 优化：**`LivingItem` 复用 `IdentityHashMap` 和 `HashSet`（实例字段，每 tick clear），避免每 tick 分配新对象。
 
 ### 10. GUI交互系统（声明式规则 + 统一拦截）
 
@@ -743,7 +769,39 @@ SLOTS 模式的方向数据存储在 `ComponentState` 中（`slot_input_x`, `slo
 - 64个活TNT → 半径32.0
 - 1728个活TNT → 半径166.0
 
-### 15. IItemHandler 统一容器抽象
+### 15. 模拟优先传输模式（Simulate-First Pattern）
+
+`SlotAccessor.transfer()` 采用"先模拟确认再真实操作"的模式，替代旧的"先提取再回滚"模式。
+
+**为什么不用旧的"先提取再回滚"模式？**
+- 旧模式中，`NeighborSlotAccessor.rollback` 使用 `ItemHandlerHelper.insertItem` 自动找槽位插入
+- 当目标槽位不可用时，提取的物品被 rollback 到源容器，但 `insertItem` 可能找到其他槽位
+- 导致物品被快速排序到非预期位置
+
+**模拟优先模式流程：**
+1. `simulateExtract(amount)` — 检查源能提供多少物品，不修改状态
+2. `simulateInsert(stack)` — 检查目标能接受多少物品，不修改状态
+3. `extract(toExtract)` — 真实提取
+4. `insert(extracted)` — 真实插入
+5. `rollback` — 仅作为安全兜底，正常流程不应触发
+
+**rollback 安全兜底 + WARN 日志：**
+- rollback 触发意味着 `simulateInsert` 的结果与真实 `insert` 不一致，属于模拟实现的 bug
+- `transfer()` 方法在 rollback 时输出 WARN 日志，包含：模拟值 vs 实际值、哪个 Accessor 类型、什么物品
+- 帮助快速定位是哪个 SlotAccessor 实现的模拟不准确
+
+### 16. 配方缓存优化
+
+`ItemTransformComponent` 通过 `resolveRecipe()` 公共方法实现配方缓存，避免每 tick 重复查询 `RecipeManager`。
+
+**缓存策略：**
+- 在 `ComponentState` 中缓存输入物品 ID（`KEY_CACHED_INPUT`）和配方结果（`KEY_CACHED_OUTPUT`、`KEY_CACHED_OUTPUT_COUNT`）
+- 输入物品不变时直接从缓存读取，跳过 `RecipeManager.getRecipeFor()` 查询
+- `canProcess()` 和 `executeTransform()` 共享 `resolveRecipe()` 方法，消除代码重复
+
+**性能影响：**大量活熔炉同时工作时，每个活熔炉每 tick 的配方查询从 2 次降为 0 次（缓存命中），零配方查询开销。
+
+### 17. IItemHandler 统一容器抽象
 
 项目全面使用 NeoForge 的 `IItemHandler` 能力替代原版 `Container` 接口进行容器读写和物品交互，**无需适配器层**。
 
@@ -871,7 +929,19 @@ SLOTS 模式的方向数据存储在 `ComponentState` 中（`slot_input_x`, `slo
 
 ### 当前版本: v0.7-alpha
 
-**最近更新** (2026-07-23):
+**最近更新** (2026-07-24):
+- ✅ 重构：SlotAccessor 模拟优先传输模式（`simulateExtract` → `simulateInsert` → `extract` → `insert` → `rollback` 安全兜底 + WARN 日志）
+- ✅ 新增：`SlotAccessor` 接口新增 `simulateExtract()` 和 `simulateInsert()` 模拟方法（所有实现类均已实现）
+- ✅ 优化：`SlotAccessor.transfer()` 改为"先模拟确认再真实操作"，彻底消除旧"先提取再回滚"模式的物品排序问题
+- ✅ 优化：`rollback` 修复部分插入场景（仅在 `inserted < extracted.getCount()` 时退回剩余部分，防止物品复制）
+- ✅ 优化：`NeighborSlotAccessor.rollback()` 优先放回原槽位，仅在原槽位不可用时才自动找位置插入
+- ✅ 优化：配方缓存（`ItemTransformComponent.resolveRecipe()` 公共方法，`canProcess()` 和 `executeTransform()` 共享，`ComponentState` 缓存输入物品和配方结果）
+- ✅ 优化：容器位置缓存（拉取模型）替代活跃列表（推送模型），`ContainerChunkCache` 直接维护所有容器位置，新容器零延迟发现
+- ✅ 新增：`BlockEvent` 通用监听兜底（任何方块变化都刷新缓存状态，解决 `/setblock`、结构生成等弱事件无法捕获的场景）
+- ✅ 优化：GC 压力降低（`LivingItem` 复用 `IdentityHashMap` 和 `HashSet` 实例字段，每 tick clear 而非 new）
+- ✅ 优化：惰性 Tick 去重集合复用（实例字段，避免每 tick 分配新对象）
+
+**历史更新** (2026-07-23):
 - ✅ 新增：活末影箱系统（`LivingEnderChestFunction` + `LivingEnderChestAccessor` + `EnderChannelRegistry` + `EnderChannelEntry`）
 - ✅ 新增：活末影箱双模式（路由模式：共享黑板无线传输 + 直连模式：绑定玩家末影箱直连）
 - ✅ 新增：玩家绑定机制（末影箱GUI中活化绑定UUID+名称，取消活化清空）
@@ -1074,5 +1144,5 @@ public class LivingBrewingStandFunction extends BaseLivingFunction {
 
 ---
 
-*最后更新: 2026-07-23*
-*状态: Alpha 测试阶段 - 活箱子、活熔炉、活漏斗、活TNT、活末影箱核心功能已完成，跨容器传输已实现，IItemHandler 直接驱动容器读写（无需适配器），兼容抽屉、精妙背包等模组容器，GUI交互系统已就绪，客户端图标系统已组件化，代码结构已按职责重构为子包，SlotAccessor 统一传输架构已实现，活末影箱双模式（路由/直连）+ 反向索引路由清理 + FilteredSlotAccessor 统一过滤 + NeighborSlotAccessor 跨容器统一，三层防护体系已就绪，方块放置自动填充已实现，适配器体系已移除，传输双重限制已修复*
+*最后更新: 2026-07-24*
+*状态: Alpha 测试阶段 - 活箱子、活熔炉、活漏斗、活TNT、活末影箱核心功能已完成，跨容器传输已实现，IItemHandler 直接驱动容器读写（无需适配器），兼容抽屉、精妙背包等模组容器，GUI交互系统已就绪，客户端图标系统已组件化，代码结构已按职责重构为子包，SlotAccessor 模拟优先传输架构已实现（simulateExtract→simulateInsert→extract→insert→rollback安全兜底+WARN日志），活末影箱双模式（路由/直连）+ 反向索引路由清理 + FilteredSlotAccessor 统一过滤 + NeighborSlotAccessor 跨容器统一，三层防护体系已就绪，方块放置自动填充已实现，适配器体系已移除，传输双重限制已修复，容器位置缓存（拉取模型）替代活跃列表（推送模型）实现零延迟容器发现，配方缓存优化（resolveRecipe 公共方法 + ComponentState 缓存），GC 优化（复用去重集合），rollback 修复（部分插入时只退回剩余）*

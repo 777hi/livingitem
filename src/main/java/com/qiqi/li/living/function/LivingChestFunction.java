@@ -1,6 +1,5 @@
 package com.qiqi.li.living.function;
 
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -16,7 +15,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.block.entity.BlockEntity;
 
 import com.qiqi.li.living.core.ComponentState;
 import com.qiqi.li.living.container.ContainerContext;
@@ -516,11 +515,11 @@ public class LivingChestFunction extends BaseLivingFunction {
         }
 
         for (ServerLevel level : server.getAllLevels()) {
-            var cachedChunks = ContainerChunkCache.getInstance().getCachedChunks(level.dimension());
-            for (var cPos : cachedChunks) {
-                if (!level.hasChunk(cPos.x, cPos.z)) continue;
-                LevelChunk chunk = level.getChunk(cPos.x, cPos.z);
-                for (var be : new ArrayList<>(chunk.getBlockEntities().values())) {
+            var chunkSet = ContainerChunkCache.getInstance().getCachedChunks(level.dimension());
+            for (var chunkPos : chunkSet) {
+                if (!level.hasChunk(chunkPos.x, chunkPos.z)) continue;
+                var chunk = level.getChunk(chunkPos.x, chunkPos.z);
+                for (var be : chunk.getBlockEntities().values()) {
                     if (be instanceof Container container) {
                         scanContainerForUuids(container, referenced);
                     }
