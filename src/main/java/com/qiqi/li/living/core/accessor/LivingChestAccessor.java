@@ -3,30 +3,23 @@ package com.qiqi.li.living.core.accessor;
 import java.util.List;
 import java.util.Set;
 
-import net.minecraft.server.MinecraftServer;
+import net.minecraft.core.HolderLookup;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.item.ItemStack;
 import com.qiqi.li.living.container.ContainerContext;
-import com.qiqi.li.living.core.ComponentState;
 import com.qiqi.li.living.core.components.InternalStorageComponent;
 import com.qiqi.li.living.function.LivingChestFunction;
 
-/**
- * 活箱子槽位访问器 —— 通过 LivingChestFunction API 读写活箱子存储。
- *
- * <p>黑白名单过滤由 {@link FilteredSlotAccessor} 统一处理。</p>
- */
 public class LivingChestAccessor implements SlotAccessor {
 
-    private final MinecraftServer server;
     private final ContainerContext containerCtx;
     private final int slot;
     private final ItemStack chestStack;
     private final int capacityPerChest;
     private final Set<Integer> transferredTargetSlots;
 
-    LivingChestAccessor(MinecraftServer server, ContainerContext containerCtx, int slot, ItemStack chestStack,
+    LivingChestAccessor(ContainerContext containerCtx, int slot, ItemStack chestStack,
                         int capacityPerChest, Set<Integer> transferredTargetSlots) {
-        this.server = server;
         this.containerCtx = containerCtx;
         this.slot = slot;
         this.chestStack = chestStack;
@@ -34,25 +27,30 @@ public class LivingChestAccessor implements SlotAccessor {
         this.transferredTargetSlots = transferredTargetSlots;
     }
 
+    private HolderLookup.Provider getRegistries() {
+        net.minecraft.world.level.Level level = containerCtx.getLevel();
+        if (level instanceof ServerLevel serverLevel) {
+            return serverLevel.registryAccess();
+        }
+        return null;
+    }
+
     @Override
     public ItemStack extract(int amount, ItemStack filterType) {
-        ComponentState chestState = LivingChestFunction.getStorageState(chestStack);
-        if (InternalStorageComponent.isStorageEmpty(chestState)) {
+        if (InternalStorageComponent.isStorageEmpty(chestStack)) {
             return ItemStack.EMPTY;
         }
-
-        return LivingChestFunction.extractItem(server, chestStack, amount, capacityPerChest);
+        return LivingChestFunction.extractItem(chestStack, amount);
     }
 
     @Override
     public ItemStack simulateExtract(int amount) {
-        ComponentState chestState = LivingChestFunction.getStorageState(chestStack);
-        if (InternalStorageComponent.isStorageEmpty(chestState)) {
+        if (InternalStorageComponent.isStorageEmpty(chestStack)) {
             return ItemStack.EMPTY;
         }
 
-        List<ItemStack> merged = LivingChestFunction.getMergedStorage(server, chestStack, capacityPerChest);
-        for (ItemStack item : merged) {
+        List<ItemStack> items = LivingChestFunction.getItems(chestStack);
+        for (ItemStack item : items) {
             if (!item.isEmpty()) {
                 ItemStack result = item.copy();
                 result.setCount(Math.min(amount, item.getCount()));
@@ -64,26 +62,28 @@ public class LivingChestAccessor implements SlotAccessor {
 
     @Override
     public int insert(ItemStack stack) {
-        ComponentState chestState = LivingChestFunction.getStorageState(chestStack);
-        if (InternalStorageComponent.isStorageFull(chestState, capacityPerChest)) {
+        if (InternalStorageComponent.isStorageFull(chestStack)) {
             return 0;
         }
 
         int originalCount = stack.getCount();
-        LivingChestFunction.insertItem(server, chestStack, stack, capacityPerChest);
+        LivingChestFunction.insertItem(chestStack, stack, getRegistries());
         return originalCount - stack.getCount();
     }
 
     @Override
     public int simulateInsert(ItemStack stack) {
-        ComponentState chestState = LivingChestFunction.getStorageState(chestStack);
-        if (InternalStorageComponent.isStorageFull(chestState, capacityPerChest)) {
+        HolderLookup.Provider registries = getRegistries();
+        if (InternalStorageComponent.isStorageFull(chestStack) || InternalStorageComponent.isByteFull(chestStack, registries)) {
             return 0;
         }
 
-        int usedSlots = chestState.getInt(InternalStorageComponent.KEY_USED_SLOTS, 0);
-        int totalSlots = chestStack.getCount() * capacityPerChest;
-        int freeSlots = totalSlots - usedSlots;
+        List<ItemStack> items = LivingChestFunction.getItems(chestStack);
+        int usedSlots = 0;
+        for (ItemStack item : items) {
+            if (!item.isEmpty()) usedSlots++;
+        }
+        int freeSlots = capacityPerChest - usedSlots;
 
         if (freeSlots <= 0) return 0;
 
@@ -92,19 +92,18 @@ public class LivingChestAccessor implements SlotAccessor {
 
     @Override
     public void rollback(ItemStack stack) {
-        LivingChestFunction.insertItem(server, chestStack, stack, capacityPerChest);
+        LivingChestFunction.insertItem(chestStack, stack);
     }
 
     @Override
     public boolean isEmpty() {
-        ComponentState state = LivingChestFunction.getStorageState(chestStack);
-        return InternalStorageComponent.isStorageEmpty(state);
+        return InternalStorageComponent.isStorageEmpty(chestStack);
     }
 
     @Override
     public boolean isFull() {
-        ComponentState state = LivingChestFunction.getStorageState(chestStack);
-        return InternalStorageComponent.isStorageFull(state, capacityPerChest);
+        HolderLookup.Provider registries = getRegistries();
+        return InternalStorageComponent.isStorageFull(chestStack) || InternalStorageComponent.isByteFull(chestStack, registries);
     }
 
     @Override

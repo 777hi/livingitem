@@ -1,7 +1,7 @@
 # Living Hopper (活漏斗) 技术文档
 
-> **文档版本**: 2026.07 v2  
-> **最后更新**: 2026-07-22  
+> **文档版本**: 2026.07 v3  
+> **最后更新**: 2026-07-25  
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -260,21 +260,75 @@ tick()
 
 通用组件，通过相邻活漏斗自动构建黑白名单过滤规则。任何活物品均可使用。
 
-**过滤规则**：
+#### 2.4.1 过滤模式（基于堆叠数量）
+
+活漏斗的堆叠数量决定过滤的精细程度：
+
+| 堆叠数量 | 过滤模式 | 比较级别 | 说明 |
+|---------|---------|---------|------|
+| 1 | ID 模式 | 仅物品ID | `minecraft:diamond_sword`，不区分NBT |
+| 2 | NBT 模式 | 物品ID + DataComponents | `diamond_sword@hashCode`，区分不同附魔/属性 |
+| 3+ | Tag 模式 | 物品标签 | `#minecraft:swords`，按标签类别过滤 |
+
+**设计意图**：堆叠越多 → 过滤越宽泛（Tag涵盖最广），堆叠越少 → 过滤越精确（NBT最具体）。
+
+#### 2.4.2 过滤规则构建
+
 ```
 邻居活漏斗的 target 指向我 → 邻居的 source 物品 = 我的黑名单
 邻居活漏斗的 source 指向我 → 邻居的 target 物品 = 我的白名单
 ```
 
-**判断逻辑**：
+根据当前过滤模式，同一物品会被记录到不同级别的数据集中：
+
 ```
-allows(item):
-  1. 黑名单非空 且 item 在黑名单中 → 拒绝
-  2. 白名单非空 且 item 不在白名单中 → 拒绝
-  3. 其他情况 → 允许
+ID 模式:   blacklist/whitelist (物品ID集合)
+NBT 模式:  bl_comp/wl_comp (compositeKey = "itemId@componentHashCode")
+Tag 模式:  bl_tags/wl_tags (标签字符串集合, 如 "minecraft:swords")
 ```
 
-**配置示例**（容器内布局）：
+#### 2.4.3 优先级判定模型（田忌赛马）
+
+当同一物品同时出现在白名单和黑名单时（可能来自不同邻居活漏斗），采用**基于涵盖范围的优先级模型**解决冲突：
+
+**优先级定义**（涵盖范围越小 → 优先级越高）：
+
+| 级别 | 优先级 | 涵盖范围 | 示例 |
+|------|--------|---------|------|
+| NBT (Composite) | 3 (最高) | 仅匹配特定NBT变体 | `diamond_sword@12345` |
+| ID | 2 (中等) | 匹配该物品所有变体 | `diamond_sword` |
+| Tag | 1 (最低) | 匹配标签下所有物品 | `#minecraft:swords` |
+
+**判定规则**：
+
+```
+allowsByPriority(item):
+  wlPriority = 白名单匹配的最高优先级
+  blPriority = 黑名单匹配的最高优先级
+
+  双方都匹配 → 高优先级胜 (wlPriority > blPriority → 放行)
+  同优先级   → 黑名单胜 (wlPriority == blPriority → 拒绝)
+  仅白名单   → 放行
+  仅黑名单   → 拒绝
+  双方都不匹配 → 有白名单规则则拒绝，否则放行
+```
+
+**遮蔽机制**：同一列表中，NBT级条目会遮蔽ID级条目。例如白名单有 `diamond_sword@12345`（NBT级），则 `diamond_sword`（ID级）不再被视为白名单匹配——因为白名单已明确表示"只要这个特定变体"，ID级的宽泛许可被更精确的NBT级规则取代。
+
+**典型场景**（田忌赛马）：
+
+| 场景 | 白名单 | 黑名单 | 结果 | 原因 |
+|------|--------|--------|------|------|
+| NBT白 vs ID黑 | `sword@123`(3) | `sword`(2) | ✅ 放行 | 3 > 2 |
+| ID白 vs Tag黑 | `sword`(2) | `#weapons`(1) | ✅ 放行 | 2 > 1 |
+| NBT白 vs NBT黑 | `sword@123`(3) | `sword@123`(3) | ❌ 拒绝 | 同级黑胜 |
+| ID白 vs ID黑 | `sword`(2) | `sword`(2) | ❌ 拒绝 | 同级黑胜 |
+| Tag白 vs NBT黑 | `#weapons`(1) | `sword@123`(3) | ❌ 拒绝 | 1 < 3 |
+| ID黑 + Tag白 | `#swords`(1) | `diamond_sword`(2) | 钻石剑❌/木剑✅ | 钻石剑: 1<2; 木剑: 1>0 |
+
+#### 2.4.4 配置示例
+
+**ID 模式**（堆叠1）：
 ```
 ┌───────┬───────────┬───────┐
 │ 铁锭  │ 活漏斗(我) │ 金锭  │
@@ -284,37 +338,57 @@ allows(item):
     另一个活漏斗
     source=左, target=我
     → 邻居source物品=铁锭 → 我的白名单=["铁锭"]
-
-┌───────┬───────────┬───────┐
-│ 泥土  │ 活漏斗(我) │       │
-│(source)│           │       │
-└───────┴───────────┴───────┘
-              ↑
-         另一个活漏斗
-         target=我, source=左
-         → 邻居source物品=泥土 → 我的黑名单=["泥土"]
 ```
 
-**NBT 存储**：
+**NBT 模式**（堆叠2）：
+```
+白名单: wl_comp = ["diamond_sword@12345"]
+黑名单: bl_comp = ["diamond_sword@67890"]
+→ 附魔A的钻石剑放行，附魔B的钻石剑拒绝
+```
+
+**Tag 模式**（堆叠3）：
+```
+白名单: wl_tags = ["minecraft:swords"]
+黑名单: bl_tags = ["minecraft:tools"]
+→ 剑类放行，工具类拒绝（如果某物品同时是剑和工具，同级黑胜→拒绝）
+```
+
+#### 2.4.5 NBT 存储
+
 | 键名 | 类型 | 说明 |
 |------|------|------|
 | `blacklist` | ListTag\<String\> | 黑名单物品ID列表 |
 | `whitelist` | ListTag\<String\> | 白名单物品ID列表 |
+| `blacklist_slots` | ListTag\<Int\> | 黑名单物品对应槽位 |
+| `whitelist_slots` | ListTag\<Int\> | 白名单物品对应槽位 |
+| `mode` | int | 过滤模式 (1=ID, 2=NBT, 3=Tag) |
+| `bl_comp` | ListTag\<String\> | 黑名单NBT组合键列表 |
+| `wl_comp` | ListTag\<String\> | 白名单NBT组合键列表 |
+| `bl_tags` | ListTag\<String\> | 黑名单标签列表 |
+| `wl_tags` | ListTag\<String\> | 白名单标签列表 |
 
-**链式传递机制**（沿活漏斗链逐 tick 传播一跳）：
+#### 2.4.6 链式传递机制
+
+沿活漏斗链逐 tick 传播一跳：
 
 ```
 tick N:   活漏斗A(有名单)  ────→ 活漏斗B(继承A的名单)  ────→ 活漏斗C(无名单)
 tick N+1: 活漏斗A(有名单)  ────→ 活漏斗B(有名单)         ────→ 活漏斗C(继承B的名单)
 ```
 
-`inheritFilter()` 从邻居活漏斗**同时继承黑名单和白名单**（而非仅继承同类型名单），确保链上混搭黑白名单时传递不中断。
+`inheritFilter()` 从邻居活漏斗**同时继承黑名单和白名单**（而非仅继承同类型名单），确保链上混搭黑白名单时传递不中断。继承时根据当前模式同步继承对应级别的数据（NBT模式继承comp，Tag模式继承tags）。
 
-**关键方法**：
-- `tick()` — 每 tick 扫描容器中所有邻居活漏斗，重新解析黑白名单
+#### 2.4.7 关键方法
+
+- `tick()` — 每 tick 扫描容器中所有邻居活漏斗，根据堆叠数量确定模式，重新解析黑白名单
 - `inheritFilter()` — 从邻居活漏斗同时继承黑白名单，支持链式传播
-- `allows(ComponentState, ItemStack)` — 静态方法，判断物品是否允许通过
-- `appendTooltip()` — 显示"过滤规则已激活"提示
+- `allows(ComponentState, ItemStack)` — 静态方法，统一优先级判定，判断物品是否允许通过
+- `allowsItemType(ComponentState, String)` — 静态方法，仅基于ID的优先级判定（无NBT匹配能力）
+- `calcMatchPriority()` — 计算单侧（白/黑）匹配的最高优先级
+- `hasNbtEntriesForId()` — 检测NBT级条目是否遮蔽ID级条目
+- `matchesAnyTag()` — Tag级匹配检查
+- `appendTooltip()` — 显示过滤模式和名单内容
 
 ---
 
@@ -548,10 +622,14 @@ GUI右(RIGHT) → 世界西(WEST)   → 旋转后
 - 如果邻居活漏斗**向我传输**（邻居的 target 指向我），邻居的 source 物品就是我的黑名单
 - 如果邻居活漏斗**从我取物**（邻居的 source 指向我），邻居的 target 物品就是我的白名单
 
+过滤的精细程度由活漏斗堆叠数量决定（详见 2.4.1 过滤模式）。
+
 ### 7.2 扫描逻辑
 
 ```java
 // ItemFilterComponent.tick()
+int mode = normalizeMode(hostStack.getCount());  // 堆叠1→ID, 2→NBT, 3+→Tag
+
 for (容器中每个槽位) {
     if (槽位是活漏斗 && 不是自己) {
         读取邻居的 DirectionModeComponent 状态
@@ -560,17 +638,36 @@ for (容器中每个槽位) {
         if (邻居的 targetSlot == 我的槽位) {
             // 邻居向我传输 → 邻居的 source 物品 = 我的黑名单
             blacklist.add(邻居source槽位的物品ID)
+            if (mode == MODE_COMPONENT) blComp.add(compositeKey)
+            if (mode == MODE_TAG) blTags.addAll(物品标签)
         }
         
         if (邻居的 sourceSlot == 我的槽位) {
             // 邻居从我取物 → 邻居的 target 物品 = 我的白名单
             whitelist.add(邻居target槽位的物品ID)
+            if (mode == MODE_COMPONENT) wlComp.add(compositeKey)
+            if (mode == MODE_TAG) wlTags.addAll(物品标签)
         }
     }
 }
 ```
 
-### 7.3 过滤生效位置
+### 7.3 优先级判定
+
+当同一物品同时出现在白名单和黑名单时，采用**田忌赛马式优先级模型**（详见 2.4.3）：
+
+```
+allowsByPriority(item):
+  wlPriority = calcMatchPriority(白名单侧)  // NBT=3 > ID=2 > Tag=1
+  blPriority = calcMatchPriority(黑名单侧)
+
+  双方都匹配 → 高优先级胜
+  同优先级   → 黑名单胜
+  仅一方匹配 → 匹配方决定
+  双方都不匹配 → 有白名单规则则拒绝，否则放行
+```
+
+### 7.4 过滤生效位置
 
 | 传输场景 | 过滤方式 |
 |---------|---------|
@@ -579,7 +676,7 @@ for (容器中每个槽位) {
 | 跨容器推送（活箱子） | `pushFromLivingChestToNeighbor()` 中预查过滤 |
 | 跨容器拉取→活箱子 | `pullFromNeighborToLivingChest()` 遍历时跳过 |
 
-### 7.4 活箱子过滤的特殊处理
+### 7.5 活箱子过滤的特殊处理
 
 活箱子场景采用**预查 + 类型提取**策略，而非"先提取再检查"：
 
@@ -594,7 +691,7 @@ for (容器中每个槽位) {
 - 不需要槽位旋转（无 `insertItemAtEnd`）
 - 过滤发生在"查找"阶段，天然正确
 
-### 7.5 互相指向防护 (NEW 2026-07-22)
+### 7.6 互相指向防护 (NEW 2026-07-22)
 
 当两个活漏斗互相指向时（A→B 且 B→A），`inheritFilter()` 会跳过继承，避免循环反馈导致名单永久残留：
 
@@ -833,6 +930,33 @@ result = (baseRow + direction.y) * containerWidth + (baseCol + direction.x)
 
 **相关提交**：2026-07-22
 
+### 10.10 已重构：ItemFilterComponent 统一优先级判定模型 (NEW 2026-07-25)
+
+**背景**：原 `allows()` 方法根据过滤模式（ID/NBT/Tag）分派到三个独立方法（`allowsById`、`allowsByComposite`、`allowsByTag`），每个方法独立处理黑白名单冲突。当同一物品同时出现在白名单和黑名单且来自不同级别时（如NBT级白名单 vs ID级黑名单），缺乏统一的冲突解决机制。
+
+**重构方案**：引入基于涵盖范围的优先级模型（田忌赛马），统一所有模式下的过滤判定：
+
+- **优先级**：NBT(3) > ID(2) > Tag(1)，涵盖范围越小优先级越高
+- **冲突规则**：高优先级胜，同优先级黑名单胜
+- **遮蔽机制**：同一列表中NBT级条目遮蔽ID级条目
+
+**删除的旧方法**：
+- `allowsById()` — 仅ID级过滤
+- `allowsByComposite()` — 仅NBT级过滤
+- `allowsByTag()` — 仅Tag级过滤
+- `allowsItemTypeById()` — 仅ID级类型过滤
+
+**新增方法**：
+- `allowsByPriority()` — 统一优先级判定入口
+- `calcMatchPriority()` — 计算单侧匹配的最高优先级
+- `hasNbtEntriesForId()` — NBT级遮蔽检测
+- `matchesAnyTag()` — Tag级匹配检查
+- `calcTagPriorityForItemId()` — 仅ID场景的Tag优先级计算
+
+**同时清理**：移除 `FilterData.blCompIds`/`wlCompIds` 死代码，更新 `hasFilterRules()` 检查所有级别数据。
+
+**相关提交**：2026-07-25
+
 ---
 
 ## 11. 调试指南
@@ -880,4 +1004,5 @@ LOGGER.info("Cooldown: {} ticks remaining", cooldown);
 ---
 
 > **文档维护者**: Living Item Mod Team  
-> **下次更新建议**: 多功能模式（PUSH/PULL/COLLECT/DISTRIBUTE）实现后同步更新第 8 章
+> **下次更新建议**: 多功能模式（PUSH/PULL/COLLECT/DISTRIBUTE）实现后同步更新第 8 章  
+> **v3 变更**: 新增过滤模式（基于堆叠数量）、优先级判定模型（田忌赛马）、统一过滤架构

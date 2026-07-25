@@ -1,12 +1,22 @@
 package com.qiqi.li.client.mixin;
 
 import com.qiqi.li.client.GuiInteractionHelper;
+import com.qiqi.li.client.util.LivingChestTabState;
+import com.qiqi.li.living.function.LivingChestFunction;
+import com.qiqi.li.network.LivingChestAccessPacket;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.EffectRenderingInventoryScreen;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
+import net.minecraft.client.gui.screens.recipebook.RecipeBookComponent;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.InventoryMenu;
+import net.minecraft.world.item.ItemStack;
+import net.neoforged.neoforge.network.PacketDistributor;
+import org.lwjgl.glfw.GLFW;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -25,6 +35,9 @@ public abstract class InventoryScreenMixin extends EffectRenderingInventoryScree
         super(menu, playerInventory, title);
     }
 
+    @Shadow
+    private RecipeBookComponent recipeBookComponent;
+
     @Inject(method = "containerTick", at = @At("HEAD"))
     private void living_item$callContainerTick(CallbackInfo ci) {
         super.containerTick();
@@ -34,6 +47,20 @@ public abstract class InventoryScreenMixin extends EffectRenderingInventoryScree
     private void living_item$interceptMouseClicked(double mouseX, double mouseY, int button, CallbackInfoReturnable<Boolean> cir) {
         if (GuiInteractionHelper.tryInteract(this.hoveredSlot, button, this.menu)) {
             cir.setReturnValue(true);
+        }
+
+        if (button == GLFW.GLFW_MOUSE_BUTTON_1 && hasShiftDown()
+            && LivingChestTabState.isActive()
+            && this.recipeBookComponent.isVisible()
+            && this.hoveredSlot != null && this.hoveredSlot.hasItem()) {
+            ItemStack slotStack = this.hoveredSlot.getItem();
+            if (!LivingChestFunction.isLivingChest(slotStack)) {
+                CompoundTag itemTag = (CompoundTag) slotStack.saveOptional(
+                    Minecraft.getInstance().player.registryAccess());
+                PacketDistributor.sendToServer(new LivingChestAccessPacket(
+                    LivingChestAccessPacket.DEPOSIT_SLOT, itemTag, slotStack.getCount()));
+                cir.setReturnValue(true);
+            }
         }
     }
 

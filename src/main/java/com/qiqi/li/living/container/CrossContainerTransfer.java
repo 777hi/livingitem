@@ -261,14 +261,13 @@ public final class CrossContainerTransfer {
         int capacity = LivingChestFunction.getCapacity(containerCtx);
         int transferAmount = Math.min(stackSize, maxTransfer);
 
-        ComponentState chestState = LivingChestFunction.getStorageState(chestStack);
-        if (InternalStorageComponent.isStorageEmpty(chestState)) {
+        if (InternalStorageComponent.isStorageEmpty(chestStack)) {
             return false;
         }
 
         ItemStack matchingType = null;
         if (filterState != null) {
-            List<ItemStack> merged = LivingChestFunction.getMergedStorage(server, chestStack, capacity);
+            List<ItemStack> merged = InternalStorageComponent.getItems(chestStack);
             for (ItemStack item : merged) {
                 if (!item.isEmpty() && ItemFilterComponent.allows(filterState, item)) {
                     matchingType = item;
@@ -284,15 +283,15 @@ public final class CrossContainerTransfer {
 
         ItemStack extracted;
         if (matchingType != null) {
-            extracted = LivingChestFunction.extractItem(server, chestStack, matchingType, transferAmount, capacity);
+            extracted = LivingChestFunction.extractItem(chestStack, matchingType, transferAmount);
         } else {
-            extracted = LivingChestFunction.extractItem(server, chestStack, transferAmount, capacity);
+            extracted = LivingChestFunction.extractItem(chestStack, transferAmount);
         }
         if (extracted.isEmpty()) return false;
 
         ItemStack remaining = tryInsert(neighborHandler, extracted);
         if (!remaining.isEmpty()) {
-            LivingChestFunction.insertItem(server, chestStack, remaining, capacity);
+            LivingChestFunction.insertItem(chestStack, remaining);
         }
         return remaining.isEmpty();
     }
@@ -354,8 +353,7 @@ public final class CrossContainerTransfer {
 
         int capacity = LivingChestFunction.getCapacity(containerCtx);
 
-        ComponentState chestState = LivingChestFunction.getStorageState(chestStack);
-        if (InternalStorageComponent.isStorageFull(chestState, capacity)) {
+        if (InternalStorageComponent.isStorageFull(chestStack) || InternalStorageComponent.isByteFull(chestStack, server.registryAccess())) {
             return false;
         }
 
@@ -370,7 +368,7 @@ public final class CrossContainerTransfer {
             ItemStack toInsert = sourceStack.copy();
             toInsert.setCount(transferAmount);
 
-            LivingChestFunction.insertItem(server, chestStack, toInsert, capacity);
+            LivingChestFunction.insertItem(chestStack, toInsert, server.registryAccess());
 
             int inserted = transferAmount - toInsert.getCount();
             if (inserted > 0) {

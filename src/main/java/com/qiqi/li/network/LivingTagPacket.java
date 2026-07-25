@@ -66,8 +66,7 @@ public record LivingTagPacket() implements CustomPacketPayload {
 
                     // 取消活化时：活箱子需要先掉落所有物品
                     if (!newLiving && LivingChestFunction.isLivingChest(carriedItem)) {
-                        LivingChestFunction.dropAllItems(
-                            player.getServer(), carriedItem, player);
+                        LivingChestFunction.dropAllItems(carriedItem, player);
                     }
 
                     // 取消活化时：活末影箱清空绑定玩家

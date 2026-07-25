@@ -1,8 +1,6 @@
 package com.qiqi.li;
 
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.dispenser.DispenseItemBehavior;
-import net.minecraft.core.dispenser.DefaultDispenseItemBehavior;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import org.slf4j.Logger;
@@ -10,7 +8,6 @@ import com.mojang.logging.LogUtils;
 
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.DispenserBlock;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.Mod;
@@ -20,10 +17,7 @@ import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
-import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 import net.neoforged.neoforge.event.level.ChunkEvent;
-import net.neoforged.neoforge.event.level.LevelEvent;
-import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
@@ -31,7 +25,6 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
 import com.qiqi.li.living.function.LivingChestFunction;
 import com.qiqi.li.living.function.LivingEnderChestFunction;
-import com.qiqi.li.living.core.components.InternalStorageComponent;
 
 import java.util.HashSet;
 import java.util.IdentityHashMap;
@@ -44,7 +37,6 @@ import com.qiqi.li.network.SlotDirectionPacket;
 import com.qiqi.li.network.GuiInteractionPacket;
 import com.qiqi.li.network.CarriedUpdatePacket;
 import com.qiqi.li.network.LivingChestAccessPacket;
-import com.qiqi.li.network.LivingChestContentsPacket;
 import com.qiqi.li.living.LivingItemManager;
 import com.qiqi.li.living.function.LivingFurnaceFunction;
 import com.qiqi.li.living.function.LivingHopperFunction;
@@ -119,18 +111,6 @@ public class LivingItem {
 
         InteractionRegistry.registerHandler("ignite_carried", new IgniteCarriedHandler());
         LOGGER.info("Registered ignite_carried interaction handler");
-
-        DispenseItemBehavior defaultChestBehavior = DispenserBlock.DISPENSER_REGISTRY.get(Items.CHEST);
-        DispenserBlock.registerBehavior(Items.CHEST, (source, stack) -> {
-            if (LivingChestFunction.isLivingChest(stack)) {
-                return stack;
-            }
-            if (defaultChestBehavior != null) {
-                return defaultChestBehavior.dispense(source, stack);
-            }
-            return stack;
-        });
-        LOGGER.info("Registered conditional dispenser behavior for chests (blocks living chests only)");
     }
 
     /**
@@ -204,7 +184,6 @@ public class LivingItem {
         registrar.playToServer(GuiInteractionPacket.TYPE, GuiInteractionPacket.STREAM_CODEC, GuiInteractionPacket::handle);
         registrar.playToClient(CarriedUpdatePacket.TYPE, CarriedUpdatePacket.STREAM_CODEC, CarriedUpdatePacket::handle);
         registrar.playToServer(LivingChestAccessPacket.TYPE, LivingChestAccessPacket.STREAM_CODEC, LivingChestAccessPacket::handle);
-        registrar.playToClient(LivingChestContentsPacket.TYPE, LivingChestContentsPacket.STREAM_CODEC, LivingChestContentsPacket::handle);
     }
 
     @SubscribeEvent
@@ -213,37 +192,10 @@ public class LivingItem {
     }
 
     @SubscribeEvent
-    public void onLevelSave(LevelEvent.Save event) {
-        if (event.getLevel() instanceof ServerLevel serverLevel && serverLevel == serverLevel.getServer().overworld()) {
-            InternalStorageComponent.WorldStorage storage = InternalStorageComponent.WorldStorage.get(serverLevel.getServer());
-            storage.saveAllDirty();
-            storage.cleanupIdle();
-            // cleanupOrphanedFiles 已改为异步执行，不再阻塞主线程
-            storage.cleanupOrphanedFilesAsync();
-        }
-    }
-
-    @SubscribeEvent
-    public void onServerStopping(ServerStoppingEvent event) {
-        InternalStorageComponent.WorldStorage storage = InternalStorageComponent.WorldStorage.get(event.getServer());
-        // 🔴 P0修复：使用同步保存，确保所有数据都写入磁盘后才允许服务器关闭
-        storage.saveAllDirtySync();
-        // 服务器停止时也异步清理孤儿文件（不阻塞关闭流程）
-        storage.cleanupOrphanedFilesAsync();
-        
-        LOGGER.info("Living chest data saved successfully, server can now shut down safely");
-    }
-
-    @SubscribeEvent
     public void onChunkUnload(ChunkEvent.Unload event) {
         if (event.getLevel() instanceof ServerLevel serverLevel) {
             com.qiqi.li.living.core.accessor.EnderChannelRegistry.getInstance()
                 .onChunkUnload(serverLevel, event.getChunk().getPos());
         }
-    }
-
-    @SubscribeEvent
-    public void onRegisterCommands(RegisterCommandsEvent event) {
-        com.qiqi.li.living.command.LivingChestCommand.register(event.getDispatcher());
     }
 }

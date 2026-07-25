@@ -8,8 +8,13 @@
 5. [GUI 交互与网络通信](#5-gui-交互与网络通信)
 6. [堆叠管理系统](#6-堆叠管理系统)
 7. [配方书集成](#7-配方书集成)
+   - 7.1 [配方书合成材料提取](#71-配方书合成材料提取)
+   - 7.2 [配方书活箱子标签页](#72-配方书活箱子标签页)
+   - 7.3 [拼音搜索](#73-拼音搜索)
+   - 7.4 [Shift+左键快速存入](#74-shift左键快速存入)
 8. [持久化机制](#8-持久化机制)
 9. [性能优化策略](#9-性能优化策略)
+   - 9.8 [16KB 字节容量限制](#98-16kb-字节容量限制)
 10. [UUID 生命周期管理](#10-uuid-生命周期管理)
     - 10.1 [UUID 生命周期状态机](#101-uuid-生命周期状态机)
     - 10.6 [ItemStackMixin — UUID 管理中枢](#106-itemstackmixin--uuid-生命周期管理中枢)
@@ -17,6 +22,13 @@
 11. [已知问题与修复记录](#11-已知问题与修复记录)
     - 11.9 [投掷器/发射器 UUID 异常 + 数量翻倍](#119-已修复-投掷器发射器传输导致-uuid-异常变化--数量翻倍)
     - 11.10 [铁砧重命名堆叠异常](#1110-已修复-铁砧重命名活箱子后与未命名活箱子堆叠)
+    - 11.12 [配方书翻页越界](#1112-已修复-配方书翻页越界)
+    - 11.13 [搜索结果缓存不一致](#1113-已修复-搜索结果缓存不一致)
+    - 11.14 [关闭配方书后 Shift+左键仍触发快速存入](#1114-已修复-关闭配方书后shift左键仍触发快速存入)
+    - 11.15 [拼音搜索](#1115-功能增强-拼音搜索)
+    - 11.16 [Shift+左键快速存入 + 空活箱子支持](#1116-功能增强-shift左键快速存入--空活箱子支持)
+    - 11.17 [活箱子套娃存放](#1117-功能增强-活箱子套娃存放)
+    - 11.18 [16KB 字节容量限制](#1118-功能增强-16kb-字节容量限制)
 12. [调试指南](#12-调试指南)
 13. [反思：为什么需要这么多保障](#13-反思为什么一个看似简单的功能需要这么多保障)
 
@@ -92,6 +104,11 @@
 | 类名 | 文件位置 | 职责 |
 |------|---------|------|
 | `ServerPlaceRecipeMixin` | `mixin/ServerPlaceRecipeMixin.java` | Mixin：拦截配方书合成，支持从活箱子提取材料 |
+| `RecipeBookComponentMixin` | `client/mixin/RecipeBookComponentMixin.java` | Mixin：配方书活箱子标签页（客户端），网格显示、搜索、翻页、点击存取 |
+| `PinyinHelper` | `client/util/PinyinHelper.java` | 拼音搜索工具类，20924 字符映射，支持全拼/首字母/混合匹配 |
+| `LivingChestTabState` | `client/util/LivingChestTabState.java` | 活箱子标签页激活状态（跨 Mixin 共享） |
+| `InventoryScreenMixin` | `client/mixin/InventoryScreenMixin.java` | Mixin：生存模式背包界面，Shift+左键快速存入活箱子 |
+| `AbstractContainerScreenMixin` | `client/mixin/AbstractContainerScreenMixin.java` | Mixin：通用容器界面，Shift+左键快速存入活箱子 |
 
 ---
 
@@ -756,6 +773,7 @@ public class LivingChestFunction extends BaseLivingFunction {
 | `DEPOSIT` | 1 | 将光标上的物品存入活箱子 |
 | `WITHDRAW` | 2 | 从活箱子取出指定物品到光标 |
 | `WITHDRAW_INVENTORY` | 3 | 从活箱子取出物品到玩家背包 |
+| `DEPOSIT_SLOT` | 4 | 从玩家背包指定槽位存入物品到活箱子（Shift+左键快速存入） |
 
 **数据结构**:
 ```java
@@ -774,17 +792,27 @@ public record LivingChestAccessPacket(
        ├─ 2. 构造 LivingChestAccessPacket(DEPOSIT, itemTag, amount)
        └─ 3. 发送到服务端
 
+客户端: 用户 Shift+左键点击背包物品（配方书活箱子标签页激活时）
+       │
+       ├─ 1. 检查: 配方书可见 && 活箱子标签激活 && 非活箱子物品
+       ├─ 2. 构造 LivingChestAccessPacket(DEPOSIT_SLOT, itemTag, count)
+       └─ 3. 发送到服务端
+
 服务端: ServerPacketHandler.handleLivingChestAccess()
        │
        ├─ 1. 解析操作类型和参数
        ├─ 2. 根据 action 分发处理:
        │     case DEPOSIT:
-       │         LivingChestFunction.insertItem(server, chestStack, itemStack, capacity)
+       │         从光标物品存入活箱子
        │     case WITHDRAW:
-       │         LivingChestFunction.extractItem(server, chestStack, amount, capacity)
+       │         从活箱子取出物品到光标
+       │     case WITHDRAW_INVENTORY:
+       │         从活箱子取出物品到背包
        │     case LOAD:
-       │         items = LivingChestFunction.getMergedStorage(server, chestStack, capacity)
-       └─ 3. 发送 LivingChestContentsPacket 响应给客户端
+       │         加载活箱子内容列表
+       │     case DEPOSIT_SLOT:
+       │         从背包指定槽位存入活箱子（优先已有物品的活箱子 > 空活箱子）
+       └─ 3. 发送 LivingChestContentsPacket 响应给客户端（LOAD/DEPOSIT/WITHDRAW 时）
 ```
 
 #### 5.2.2 LivingChestContentsPacket（内容同步包）
@@ -1278,9 +1306,14 @@ AbstractContainerMenuMixin.onClickedReturn()
 
 ## 7. 配方书集成
 
-活箱子可以作为合成材料的来源参与配方书的自动合成功能。这使得玩家可以通过配方书一键合成，材料会自动从活箱子中提取。
+活箱子与配方书的集成分为两个独立功能：
 
-### 7.1 系统架构图
+1. **配方书合成材料提取**：活箱子内的物品可被配方系统识别，一键合成时自动从活箱子提取材料
+2. **配方书活箱子标签页**：在配方书中新增"活箱子"标签页，以网格形式浏览和操作活箱子内容
+
+### 7.1 配方书合成材料提取
+
+#### 7.1.1 系统架构图
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -1325,7 +1358,7 @@ AbstractContainerMenuMixin.onClickedReturn()
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### 7.2 核心文件说明
+#### 7.1.2 核心文件说明
 
 #### ServerPlaceRecipeMixin（配方书 Mixin）
 
@@ -1454,7 +1487,7 @@ private ItemStack extractFromLivingChests(ItemStack requested, int maxAmount) {
    └─ 没有 → 返回 -1（材料不足）
 ```
 
-### 7.3 完整操作流程
+#### 7.1.3 完整操作流程
 
 **场景**: 玩家通过配方书合成 10 个铁镐
 
@@ -1508,7 +1541,7 @@ private ItemStack extractFromLivingChests(ItemStack requested, int maxAmount) {
   活箱子0: 内部存储 [木棍×34, 铁锭×43]  (已被消耗26木棍+20铁锭)
 ```
 
-### 7.4 设计考量
+#### 7.1.4 设计考量
 
 #### 为什么需要 Mixin 拦截？
 
@@ -1534,6 +1567,297 @@ Mixin 解决方案：
 - 只在 `recipeClicked()` 时才扫描活箱子（不是每次 tick）
 - 提取物品时短路返回（找到即停止）
 - 缓存 `getMergedStorage()` 结果（如果频繁调用）
+
+### 7.2 配方书活箱子标签页
+
+在配方书中新增"活箱子"标签页，玩家可以以网格形式浏览背包中所有活箱子的内容，并进行存取操作。
+
+#### 7.2.1 系统架构图
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                   配方书活箱子标签页架构                              │
+│                                                                     │
+│  客户端 (Client)                                                     │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │              RecipeBookComponentMixin                        │  │
+│  │  ┌────────────┐  ┌──────────────┐  ┌────────────────────┐  │  │
+│  │  │ 标签页切换  │  │ 网格渲染     │  │ 搜索过滤          │  │  │
+│  │  │ (Tab Button)│  │ (5×4 Grid)   │  │ (PinyinHelper)    │  │  │
+│  │  └────────────┘  └──────────────┘  └────────────────────┘  │  │
+│  │  ┌────────────┐  ┌──────────────┐  ┌────────────────────┐  │  │
+│  │  │ 翻页导航    │  │ 点击存取     │  │ Shift+左键存入    │  │  │
+│  │  │ (Page Btns) │  │ (L/R Click)  │  │ (DEPOSIT_SLOT)    │  │  │
+│  │  └────────────┘  └──────────────┘  └────────────────────┘  │  │
+│  └──────────────────────────────────────────────────────────────┘  │
+│                              │                                      │
+│                    LivingChestAccessPacket                          │
+│                    (DEPOSIT / WITHDRAW / DEPOSIT_SLOT)              │
+│                              ▼                                      │
+│  服务端 (Server)                                                     │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │              ServerPacketHandler                             │  │
+│  │  handleDeposit() / handleWithdraw() / handleDepositFromSlot()│  │
+│  └──────────────────────────────────────────────────────────────┘  │
+│                              │                                      │
+│                              ▼                                      │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │         LivingChestFunction → InternalStorageComponent       │  │
+│  └──────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+#### 7.2.2 核心文件说明
+
+##### RecipeBookComponentMixin（配方书标签页 Mixin）
+
+**文件位置**: `client/mixin/RecipeBookComponentMixin.java`
+
+**功能**: 在原版配方书中注入"活箱子"标签页，提供网格显示、搜索、翻页、点击存取等功能
+
+**UI 布局**:
+```
+┌─────────────────────────────┐
+│ [合成] [熔炉] [活箱子]      │ ← 标签栏（追加活箱子标签）
+├─────────────────────────────┤
+│ 活箱子                      │ ← 标题
+│ ┌─┬─┬─┬─┬─┐               │
+│ │ │ │ │ │ │               │ ← 5列 × 4行 物品网格
+│ ├─┼─┼─┼─┼─┤               │
+│ │ │ │ │ │ │               │
+│ ├─┼─┼─┼─┼─┤               │
+│ │ │ │ │ │ │               │
+│ ├─┼─┼─┼─┼─┤               │
+│ │ │ │ │ │ │               │
+│ └─┴─┴─┴─┴─┘               │
+│     [<] 1/3 [>]           │ ← 分页导航
+└─────────────────────────────┘
+```
+
+**核心方法**:
+
+| 方法 | 功能 |
+|------|------|
+| `collectLivingChestItems()` | 扫描玩家背包中所有活箱子的物品，合并为一个列表 |
+| `applySearchFilter(items, text)` | 根据搜索文本过滤物品列表（支持拼音搜索） |
+| `handleLivingChestItemClick(mouseX, mouseY, button)` | 处理网格内物品的点击操作（左键取出、右键取出1个、Shift+左键存入） |
+| `setupPageButtons(left, top, totalPages)` | 设置翻页按钮，使用实例字段 `totalPages` 避免闭包捕获问题 |
+
+**标签页状态管理**:
+
+标签页的激活状态通过 `LivingChestTabState`（静态布尔值）跨 Mixin 共享，供 `InventoryScreenMixin` 和 `AbstractContainerScreenMixin` 判断是否启用 Shift+左键快速存入功能。
+
+```
+标签页激活:
+  RecipeBookComponentMixin → LivingChestTabState.setActive(true)
+
+标签页取消:
+  1. 玩家点击其他标签 → LivingChestTabState.setActive(false)
+  2. 配方书关闭 → LivingChestTabState.setActive(false)
+  3. 配方书不可见时 → LivingChestTabState.setActive(false)
+```
+
+**数据读取方式**:
+
+标签页直接从客户端的玩家背包 NBT 数据读取活箱子内容，无需向服务端请求。这是因为 `ItemContainerContents` 组件已随物品同步到客户端。操作（存取）则通过 `LivingChestAccessPacket` 发送到服务端执行。
+
+##### LivingChestTabState（标签页状态共享）
+
+**文件位置**: `client/util/LivingChestTabState.java`
+
+**功能**: 静态布尔标志，记录活箱子标签页是否激活
+
+**设计原因**: `InventoryScreenMixin` 和 `AbstractContainerScreenMixin` 需要知道活箱子标签页是否激活，以决定是否拦截 Shift+左键操作。由于这些 Mixin 无法直接访问 `RecipeBookComponentMixin` 的实例字段，使用静态类作为中转。
+
+```java
+public class LivingChestTabState {
+    private static boolean active = false;
+    public static boolean isActive() { return active; }
+    public static void setActive(boolean value) { active = value; }
+}
+```
+
+#### 7.2.3 翻页功能
+
+翻页按钮使用实例字段 `totalPages` 存储总页数，避免 lambda 闭包捕获局部变量导致的状态不同步问题。
+
+```
+翻页按钮逻辑:
+  上一页: if (currentPage > 0) currentPage--;
+  下一页: if (currentPage < totalPages - 1) currentPage++;
+
+  totalPages 在每次 collectLivingChestItems() 后重新计算:
+    totalPages = max(1, ceil(filteredItems.size() / TOTAL_SLOTS))
+```
+
+**历史 Bug**: 早期版本中翻页按钮的 lambda 捕获了 `totalPages` 局部变量，当物品数量变化导致总页数变化后，按钮的页数上限仍为旧值，导致可以翻到空白页。修复方法是将 `totalPages` 改为实例字段。
+
+#### 7.2.4 活箱子套娃存放
+
+活箱子允许存放其他活箱子（套娃），但**禁止将自己存入自己**。
+
+**实现方式**（`InternalStorageComponent.insertItem`）:
+```java
+public static boolean insertItem(ItemStack chestStack, ItemStack itemToInsert) {
+    if (chestStack.getCount() > 1) return false;  // 堆叠数>1不允许操作
+    if (chestStack == itemToInsert) return false;  // 禁止自引用（同一对象）
+    // ... 正常插入逻辑
+}
+```
+
+**自引用检查**:
+- `chestStack == itemToInsert`：Java 对象同一性检查，防止"把自己放进自己里面"
+- 允许将活箱子A放入活箱子B（不同对象），实现套娃存储
+- 堆叠数 > 1 的活箱子不允许插入操作（避免 UUID 管理复杂性）
+
+**DEPOSIT_SLOT 的额外保护**（`ServerPacketHandler.handleDepositFromSlot`）:
+```java
+// 优先存入已有物品的活箱子（count==1 且 hasStorage）
+for (ItemStack invStack : player.getInventory().items) {
+    if (!LivingChestFunction.isLivingChest(invStack)) continue;
+    if (invStack.getCount() > 1) continue;          // 跳过堆叠的活箱子
+    if (!LivingChestFunction.hasStorage(invStack)) continue;  // 跳过空活箱子
+    if (LivingChestFunction.isStorageFull(invStack)) continue; // 跳过已满的活箱子
+    if (LivingChestFunction.insertItem(invStack, toInsert.copy())) {
+        inserted = true;
+        break;
+    }
+}
+// 如果没有已有物品的活箱子，尝试存入空的活箱子
+// （空活箱子会在 insertItem 时自动创建 UUID 和存储）
+```
+
+### 7.3 拼音搜索
+
+配方书活箱子标签页支持拼音搜索，玩家可以输入汉字的全拼、首字母或混合形式来过滤物品。
+
+#### 7.3.1 数据来源
+
+使用 [pinyin-data](https://github.com/mozillazg/pinyin-data) 开源数据集（v0.15.0），覆盖 **20924 个汉字**的拼音映射。
+
+#### 7.3.2 PinyinHelper 实现
+
+**文件位置**: `client/util/PinyinHelper.java`
+
+**核心数据结构**:
+```java
+// 按Unicode排序的汉字字符串（支持二分查找）
+private static final String CHARS = "一丁丂七丄丅丆万丈三上下...";
+
+// 逗号分隔的拼音数据（拆分为2个字段避免Java 65535字节常量限制）
+private static final String PINYIN_DATA_0 = "yi,ding,kao,qi,...";  // ≤60000字节
+private static final String PINYIN_DATA_1 = "...";                  // 剩余部分
+
+// 运行时拼接并拆分为数组
+private static final String[] PINYINS = PINYIN_DATA_0.concat(PINYIN_DATA_1).split(",");
+```
+
+**查找算法**: 二分查找 O(log n)
+```java
+private static int binarySearch(char c) {
+    int low = 0, high = CHARS.length() - 1;
+    while (low <= high) {
+        int mid = (low + high) >>> 1;
+        char midVal = CHARS.charAt(mid);
+        if (midVal < c) low = mid + 1;
+        else if (midVal > c) high = mid - 1;
+        else return mid;
+    }
+    return -1;
+}
+```
+
+**匹配模式**（`isPinyinMatch` 方法）:
+
+| 匹配模式 | 示例搜索 | 匹配"钻石剑" |
+|---------|---------|-------------|
+| 原文包含 | `钻石` | ✅ |
+| 全拼包含 | `zuanshijian` | ✅ |
+| 首字母包含 | `zsj` | ✅ |
+| 混合匹配 | `zshi` | ✅ |
+
+**代码生成流程**:
+
+拼音数据通过 Python 脚本 `_build_pinyin_helper.py` 从 `_pinyin_data_fragment.txt` 生成 `PinyinHelper.java`：
+
+```
+_pinyin_data_fragment.txt  →  _build_pinyin_helper.py  →  PinyinHelper.java
+      (20924字符数据源)         (解析+生成Java代码)       (最终Java类)
+```
+
+**Java 代码大小限制的解决**:
+
+| 限制 | 问题 | 解决方案 |
+|------|------|---------|
+| 单字符串常量 ≤ 65535 字节 | PINYIN_DATA 有 85590 字节 | 拆分为 `PINYIN_DATA_0` + `PINYIN_DATA_1` |
+| 编译期常量折叠 | `A + B` 会被编译器合并，仍超限 | 改用 `A.concat(B)` 方法调用，阻止折叠 |
+| 数组初始化 code too large | 20924 个字符串字面量超过 65535 字节 | 改用逗号分隔长字符串 + `split(",")` |
+
+### 7.4 Shift+左键快速存入
+
+在配方书活箱子标签页激活时，玩家可以 Shift+左键点击背包中的物品，快速存入活箱子。
+
+#### 7.4.1 触发条件
+
+Shift+左键快速存入需要**同时满足**以下条件：
+
+1. **配方书已打开**（`isVisible()` 返回 true）
+2. **活箱子标签页已激活**（`LivingChestTabState.isActive()` 返回 true）
+3. **点击的是背包槽位**（非活箱子物品）
+4. **玩家背包中有活箱子**（至少一个 `count==1` 的活箱子）
+
+**为什么需要检查配方书打开状态**：早期版本只检查标签页激活状态，导致关闭配方书后 Shift+左键仍然触发快速存入。修复后增加了配方书可见性检查。
+
+#### 7.4.2 实现流程
+
+```
+玩家 Shift+左键点击背包物品
+       │
+       ▼
+InventoryScreenMixin.mouseClicked() / AbstractContainerScreenMixin.mouseClicked()
+       │
+       ├─ 1. 检查条件
+       │     button == LEFT && hasShiftDown()
+       │     && LivingChestTabState.isActive()
+       │     && hoveredSlot != null && hoveredSlot.hasItem()
+       │
+       ├─ 2. 排除活箱子自身
+       │     if (LivingChestFunction.isLivingChest(slotStack)) → 跳过
+       │
+       ├─ 3. 构造网络包
+       │     itemTag = slotStack.saveOptional(registryAccess)
+       │     packet = LivingChestAccessPacket(DEPOSIT_SLOT, itemTag, count)
+       │
+       └─ 4. 发送到服务端
+              PacketDistributor.sendToServer(packet)
+```
+
+**服务端处理**（`ServerPacketHandler.handleDepositFromSlot`）:
+```
+DEPOSIT_SLOT 请求到达服务端
+       │
+       ├─ 1. 从玩家背包找到匹配的物品
+       │     ItemStack.isSameItemSameComponents(invStack, target)
+       │     toInsert = invStack.copyWithCount(transfer)
+       │     invStack.shrink(transfer)
+       │
+       ├─ 2. 优先存入已有物品的活箱子
+       │     遍历背包: isLivingChest && count==1 && hasStorage && !isStorageFull
+       │     insertItem(invStack, toInsert.copy())
+       │
+       ├─ 3. 如果没有已有物品的活箱子，尝试空活箱子
+       │     空活箱子会在 insertItem 时自动创建存储
+       │
+       └─ 4. 如果所有活箱子都满了，物品放回背包
+              player.getInventory().add(toInsert)
+              broadcastChanges()
+```
+
+#### 7.4.3 空活箱子处理
+
+早期版本只能往已有物品的活箱子存入物品。修复后，空活箱子（`count==1` 但 `hasStorage()==false`）也会被尝试存入。`insertItem` 检测到 UUID 列表为空时会自动创建新的存储单元。
+
+**优先级**: 已有物品的活箱子 > 空活箱子（避免空活箱子浪费存储空间）
 
 ---
 
@@ -1702,6 +2026,128 @@ if (cachedCount == expectedCount) {
 **效果**: 
 - 正常情况下（堆叠数不变），tick 开销 ≈ 0
 - 只有在玩家合并/拆分活箱子时才执行完整逻辑
+
+### 9.6 拼音搜索二分查找
+
+拼音搜索使用二分查找替代 HashMap，在 20924 个汉字的映射中实现 O(log n) 查找。
+
+```
+数据结构:
+  CHARS: 按Unicode排序的汉字字符串（支持 String.charAt 索引访问）
+  PINYINS: 逗号分隔拼音字符串运行时 split 的数组
+
+查找流程:
+  输入字符 c → binarySearch(c) → O(log 20924) ≈ 15次比较 → 拼音
+
+对比:
+  HashMap<Character, String>: O(1) 但需要 20924 个 Entry 对象，内存开销大
+  二分查找 String.charAt: O(log n) 但零额外对象分配，内存紧凑
+```
+
+**选择二分查找的原因**:
+- `CHARS` 和 `PINYINS` 是静态常量，不随 GC 移动
+- `String.charAt()` 比 `HashMap.get()` 的缓存友好性更好
+- 20924 个 Entry 对象的内存开销（约 1.5MB）远超两个字符串
+
+### 9.7 配方书标签页实时过滤（无缓存）
+
+配方书活箱子标签页的搜索过滤采用实时计算，不使用缓存。
+
+```
+设计决策:
+  玩家背包活箱子数量 ≤ 36（背包大小）
+  每个活箱子物品数 ≤ 27（CHEST_SLOTS）
+  总物品数 ≤ 36 × 27 = 972
+
+  过滤开销: 遍历 972 个物品 × isPinyinMatch() ≈ 微秒级
+  缓存开销: 维护 filterCacheValid 标志 + 多处失效逻辑 + Bug 风险
+
+  结论: 缓存的维护成本 > 缓存的性能收益
+```
+
+### 9.8 16KB 字节容量限制
+
+活箱子的 NBT 数据通过网络包同步到客户端。Minecraft 的网络栈对单个 NBT Tag 有 2MB 硬上限，超过会导致崩溃。为防止玩家向活箱子塞入大量高 NBT 物品（如成书、附魔武器等）导致网络包超限，设置了 16KB（16384 字节）的警戒线。
+
+#### 9.8.1 设计原则
+
+```
+16KB 是"禁止线"而非"容量上限":
+  当前活箱子大小 < 16KB → 允许插入
+  当前活箱子大小 ≥ 16KB → 拒绝插入
+
+  15KB 时放入 2KB 物品 → 允许（当前 < 16KB）
+  插入后变成 17KB → 下次插入被拒绝（当前 ≥ 16KB）
+```
+
+这种"事后关门"的设计避免了预测插入后大小的复杂性，同时保证活箱子不会无限增长。
+
+#### 9.8.2 字节大小计算
+
+```java
+// 精确计算：序列化整个活箱子 ItemStack → 二进制字节
+public static int getCurrentByteUsage(ItemStack chestStack, HolderLookup.Provider registries) {
+    CompoundTag tag = (CompoundTag) chestStack.saveOptional(registries);
+    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+    try (DataOutputStream dos = new DataOutputStream(baos)) {
+        NbtIo.write(tag, dos);
+    }
+    return baos.size();
+}
+
+// 估算（无 registries 时的后备）：物品数 × 64字节
+private static int estimateByteUsage(ItemStack chestStack) {
+    int count = countUsedSlots(chestStack);
+    return count * 64;
+}
+```
+
+#### 9.8.3 脏检查机制
+
+为避免每 tick 都序列化活箱子（微秒级但频率高），使用 `hashCode` 脏检查：
+
+```java
+// tick() 中
+int prevHash = state.getInt(KEY_CONTAINER_HASH, 0);
+int curHash = containerHash(chestStack);  // ItemContainerContents.hashCode()
+if (curHash != prevHash) {
+    state.setIntSilent(KEY_CONTAINER_HASH, curHash);
+    updateByteUsage(chestStack, state, ctx.level());  // 变了才序列化
+}
+```
+
+| 检查方式 | 开销 | 精确度 |
+|---------|------|--------|
+| `hashCode()` 比较 | 纳秒级 | 检测任何变化 |
+| 序列化计算字节 | 微秒级 | 精确字节数 |
+
+99.9% 的 tick 只做 `hashCode()` 比较（零序列化开销），只有物品变化时才触发一次序列化。
+
+#### 9.8.4 全路径覆盖
+
+所有插入路径都经过 `canInsert()` → `isByteFull()` 检查：
+
+| 入口 | 精确度 | registries 来源 |
+|------|--------|----------------|
+| `ServerPacketHandler` (玩家操作) | ✅ 精确序列化 | `player.registryAccess()` |
+| `CrossContainerTransfer` (漏斗推送) | ✅ 精确序列化 | `server.registryAccess()` |
+| `LivingChestAccessor` (跨容器) | ✅ 精确序列化 | `containerCtx.getLevel()` → `ServerLevel.registryAccess()` |
+| `insertItem()` (内部插入) | ✅ 精确序列化 | 调用方传入 |
+
+#### 9.8.5 Tooltip 显示
+
+```
+容量: 3.2KB/16.0KB
+```
+
+字节缓存值存储在 `ComponentState` 的 `_bu` 键中，客户端通过 Tooltip 读取显示。格式化方法：
+
+```java
+public static String formatByteSize(int bytes) {
+    if (bytes < 1024) return bytes + "B";
+    return String.format("%.1fKB", bytes / 1024.0);
+}
+```
 
 ---
 
@@ -2651,6 +3097,149 @@ UUID 列表: [活跃区(头部) ... 预留区(尾部)]
 - [ItemStackMixin.java](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/mixin/ItemStackMixin.java) — `onShrink` 头部保留
 - [BlockItemMixin.java](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/mixin/BlockItemMixin.java) — 方块放置头部消耗
 
+### 11.12 🟡→✅ 已修复: 配方书翻页越界
+
+**状态**: ✅ 已修复
+
+**问题描述**:
+配方书活箱子标签页的翻页按钮使用 lambda 表达式，捕获了 `totalPages` 局部变量。当活箱子内物品数量变化导致总页数变化后，按钮的页数上限仍为旧值，玩家可以翻到空白页。
+
+**根本原因**:
+```java
+// 旧代码（有 Bug）
+int totalPages = ...; // 局部变量
+this.forwardButton = Button.builder(Component.empty(), (button) -> {
+    if (this.currentPage < totalPages - 1) { // 捕获的是旧值
+        this.currentPage++;
+    }
+}).build();
+```
+
+**修复**: 将 `totalPages` 改为 Mixin 实例字段，按钮逻辑引用该字段，确保始终使用最新值：
+```java
+@Unique private int totalPages = 1; // 实例字段
+
+this.forwardButton = Button.builder(Component.empty(), (button) -> {
+    if (this.currentPage < this.totalPages - 1) { // 引用实例字段
+        this.currentPage++;
+    }
+}).build();
+```
+
+### 11.13 🟡→✅ 已修复: 搜索结果缓存不一致
+
+**状态**: ✅ 已修复（移除缓存机制）
+
+**问题描述**:
+配方书活箱子标签页使用搜索结果缓存（`filteredContents` + `filterCacheValid` 标志位），但存在多个缓存失效问题：
+1. 搜索结果为空时缓存永远不命中（`!filteredContents.isEmpty()` 判断跳过空列表）
+2. 存取物品后缓存未及时失效
+3. 需要在多个方法中手动维护 `filterCacheValid` 标志
+
+**修复**: 彻底移除缓存机制，改为实时过滤。玩家背包中的活箱子数量有限，实时扫描性能完全可接受。
+
+### 11.14 🟡→✅ 已修复: 关闭配方书后 Shift+左键仍触发快速存入
+
+**状态**: ✅ 已修复
+
+**问题描述**:
+关闭配方书界面后，`LivingChestTabState.isActive()` 仍为 `true`，导致 Shift+左键点击背包物品仍会触发快速存入活箱子功能。
+
+**根本原因**:
+`InventoryScreenMixin` 和 `AbstractContainerScreenMixin` 仅检查 `LivingChestTabState.isActive()`，未检查配方书是否可见。
+
+**修复**: 在 Shift+左键拦截逻辑中增加配方书可见性检查：
+```java
+// 修复前
+if (button == GLFW.GLFW_MOUSE_BUTTON_1 && hasShiftDown()
+    && LivingChestTabState.isActive() && ...)
+
+// 修复后（增加配方书可见性检查）
+if (button == GLFW.GLFW_MOUSE_BUTTON_1 && hasShiftDown()
+    && LivingChestTabState.isActive()
+    && this.getRecipeBookComponent().isVisible() && ...)
+```
+
+### 11.15 🟢 功能增强: 拼音搜索
+
+**影响版本**: 2025年新增
+
+**功能描述**:
+配方书活箱子标签页支持拼音搜索，玩家可以输入汉字的全拼、首字母或混合形式来过滤物品。
+
+**实现方式**:
+- 使用 [pinyin-data](https://github.com/mozillazg/pinyin-data) 开源数据集，覆盖 20924 个汉字
+- `PinyinHelper` 类使用二分查找（O(log n)）进行汉字→拼音映射
+- 数据存储为排序字符串 + 逗号分隔拼音，运行时 `split(",")` 初始化
+- 为避免 Java 65535 字节常量限制，拼音数据拆分为 `PINYIN_DATA_0` + `PINYIN_DATA_1`，使用 `.concat()` 拼接
+
+**匹配模式**:
+| 模式 | 示例 | 匹配"钻石剑" |
+|------|------|-------------|
+| 原文包含 | `钻石` | ✅ |
+| 全拼包含 | `zuanshijian` | ✅ |
+| 首字母包含 | `zsj` | ✅ |
+| 混合匹配 | `zshi` | ✅ |
+
+### 11.16 🟢 功能增强: Shift+左键快速存入 + 空活箱子支持
+
+**影响版本**: 2025年新增
+
+**功能描述**:
+1. 在配方书活箱子标签页激活时，Shift+左键点击背包物品可快速存入活箱子
+2. 空活箱子（`count==1` 但无存储）也可作为存入目标
+
+**实现方式**:
+- 客户端：`InventoryScreenMixin` / `AbstractContainerScreenMixin` 拦截 Shift+左键，发送 `DEPOSIT_SLOT` 网络包
+- 服务端：`ServerPacketHandler.handleDepositFromSlot()` 从背包移除物品，遍历活箱子存入
+- 优先存入已有物品的活箱子，其次尝试空活箱子
+
+**新增网络操作**: `LivingChestAccessPacket.DEPOSIT_SLOT`（值=4）
+
+### 11.17 🟢 功能增强: 活箱子套娃存放
+
+**影响版本**: 2025年新增
+
+**功能描述**:
+允许活箱子存放其他活箱子（套娃），但禁止将自己存入自己。
+
+**实现方式**:
+- `InternalStorageComponent.insertItem()` 使用 `chestStack == itemToInsert`（Java 对象同一性检查）防止自引用
+- 允许不同活箱子对象互相存放
+- 堆叠数 > 1 的活箱子不允许插入操作
+
+### 11.18 🟢 功能增强: 16KB 字节容量限制
+
+**影响版本**: 2026年新增
+
+**背景问题**:
+玩家向活箱子塞入大量高 NBT 物品（如装满100页成书的潜影盒），仅塞了10多个游戏就崩溃。原因是活箱子的 NBT 数据通过网络包同步到客户端，超过 Minecraft 网络栈的 2MB 硬上限导致崩溃。
+
+**解决方案**:
+设置 16KB（16384 字节）警戒线，在活箱子序列化后字节大小达到 16KB 时拒绝继续插入。
+
+**设计决策**:
+- 16KB 是"禁止线"而非"容量上限"——当前 < 16KB 就允许插入，即使插入后会超过
+- 这避免了预测插入后大小的复杂性，同时保证活箱子不会无限增长
+- 16KB 远低于 2MB 硬上限，留有充足安全余量
+
+**实现细节**:
+- `InternalStorageComponent.MAX_STORAGE_BYTES = 16384`
+- `getCurrentByteUsage()`: 精确序列化整个活箱子 ItemStack 计算字节大小
+- `isByteFull()`: 当前字节 ≥ 16KB 时返回 true
+- `canInsert()`: 简化为 `!isByteFull()`，不做预测
+- `containerHash()` 脏检查: tick 中用 `ItemContainerContents.hashCode()` 检测变化，变了才序列化
+- Tooltip 显示: `容量: 3.2KB/16.0KB`（从 ComponentState 缓存读取）
+- 全路径覆盖: ServerPacketHandler、CrossContainerTransfer、LivingChestAccessor 均传入 `registries` 精确计算
+
+**涉及文件**:
+- `InternalStorageComponent.java`: 核心字节计算与容量检查
+- `LivingChestFunction.java`: 对外接口方法
+- `ServerPacketHandler.java`: 网络包处理中的容量检查
+- `LivingChestAccessor.java`: 跨容器传输中的容量检查
+- `CrossContainerTransfer.java`: 漏斗推送中的容量检查
+- `zh_cn.json` / `en_us.json`: Tooltip 翻译
+
 ---
 
 ## 12. 调试指南
@@ -2948,6 +3537,6 @@ Minecraft 1.21.1 的 DataComponent 系统采用不可变设计——每次修改
 
 ---
 
-*文档版本: 2026.07 v5*
-*最后更新: 通用传输封锁策略（三层防护体系）、重命名堆叠修复、全流程反思、方块放置自动填充、UUID操作方向统一、文档修正*
+*文档版本: 2026.07 v6*
+*最后更新: 16KB字节容量限制（禁止线模型、hashCode脏检查、全路径精确序列化）*
 *维护者: Living Item Mod Team*

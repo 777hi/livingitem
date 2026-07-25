@@ -23,6 +23,7 @@ public record LivingChestAccessPacket(int action, @Nullable CompoundTag itemTag,
     public static final int DEPOSIT = 1;
     public static final int WITHDRAW = 2;
     public static final int WITHDRAW_INVENTORY = 3;
+    public static final int DEPOSIT_SLOT = 4;
 
     public static final ResourceLocation ID = ResourceLocation.fromNamespaceAndPath("living_item", "living_chest_access");
     public static final CustomPacketPayload.Type<LivingChestAccessPacket> TYPE = new CustomPacketPayload.Type<>(ID);

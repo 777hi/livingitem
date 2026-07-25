@@ -1,8 +1,8 @@
 package com.qiqi.li.living.mixin;
 
+import com.qiqi.li.living.core.components.InternalStorageComponent;
 import com.qiqi.li.living.function.LivingChestFunction;
 import net.minecraft.recipebook.ServerPlaceRecipe;
-import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.StackedContents;
@@ -33,19 +33,16 @@ public abstract class ServerPlaceRecipeMixin {
         shift = At.Shift.AFTER
     ))
     private void afterFillStackedContents(ServerPlayer player, RecipeHolder recipe, boolean placeAll, CallbackInfo ci) {
-        addLivingChestItemsToStackedContents(player);
+        addLivingChestItemsToStackedContents();
     }
 
-    private void addLivingChestItemsToStackedContents(ServerPlayer player) {
-        MinecraftServer server = player.getServer();
-        if (server == null) return;
-
+    private void addLivingChestItemsToStackedContents() {
         for (ItemStack invStack : this.inventory.items) {
             if (!LivingChestFunction.isLivingChest(invStack)) continue;
             if (!LivingChestFunction.hasStorage(invStack)) continue;
 
-            var merged = LivingChestFunction.getMergedStorage(server, invStack, 27);
-            for (ItemStack chestItem : merged) {
+            java.util.List<ItemStack> items = InternalStorageComponent.getItems(invStack);
+            for (ItemStack chestItem : items) {
                 if (!chestItem.isEmpty()) {
                     this.stackedContents.accountStack(chestItem);
                 }
@@ -76,15 +73,12 @@ public abstract class ServerPlaceRecipeMixin {
     }
 
     private ItemStack extractFromLivingChests(ItemStack requested, int maxAmount) {
-        MinecraftServer server = this.inventory.player.getServer();
-        if (server == null) return ItemStack.EMPTY;
-
         for (int i = 0; i < this.inventory.items.size(); i++) {
             ItemStack invStack = this.inventory.items.get(i);
             if (!LivingChestFunction.isLivingChest(invStack)) continue;
             if (!LivingChestFunction.hasStorage(invStack)) continue;
 
-            ItemStack extracted = LivingChestFunction.extractItem(server, invStack, requested, maxAmount, 27);
+            ItemStack extracted = LivingChestFunction.extractItem(invStack, requested, maxAmount);
             if (!extracted.isEmpty()) {
                 return extracted;
             }

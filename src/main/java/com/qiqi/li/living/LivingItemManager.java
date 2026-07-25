@@ -11,7 +11,6 @@ import com.qiqi.li.living.core.ComponentState;
 import com.qiqi.li.living.core.LivingFunctionConfig;
 import com.qiqi.li.living.core.FunctionExecutor;
 import com.qiqi.li.living.core.components.ILivingComponent;
-import com.qiqi.li.living.core.components.InternalStorageComponent;
 import com.qiqi.li.living.function.LivingChestFunction;
 import com.qiqi.li.living.function.LivingFurnaceFunction;
 import net.minecraft.core.BlockPos;
@@ -31,7 +30,6 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import com.mojang.serialization.Codec;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredRegister;
-import net.neoforged.neoforge.server.ServerLifecycleHooks;
 import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
 
@@ -220,30 +218,12 @@ public class LivingItemManager {
     public static void setLiving(ItemStack stack, boolean living) {
         if (living) {
             stack.set(IS_LIVING.value(), true);
+            if (stack.is(Items.CHEST) && !stack.has(net.minecraft.core.component.DataComponents.CONTAINER)) {
+                stack.set(net.minecraft.core.component.DataComponents.CONTAINER,
+                    net.minecraft.world.item.component.ItemContainerContents.EMPTY);
+            }
         } else {
             clearLivingData(stack);
-        }
-        if (LivingChestFunction.isLivingChest(stack)) {
-            MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
-            if (server != null && server.isSameThread()) {
-                int count = stack.getCount();
-                List<UUID> uuids = new ArrayList<>(count);
-                for (int i = 0; i < count; i++) {
-                    UUID uuid = InternalStorageComponent.WorldStorage.createAndRegister(
-                            server,
-                            LivingChestFunction.CHEST_SLOTS,
-                            "activated"
-                    );
-                    uuids.add(uuid);
-                }
-
-                ComponentState storageState = LivingChestFunction.getStorageState(stack);
-                InternalStorageComponent.saveUuids(storageState, uuids);
-                storageState.setInt(InternalStorageComponent.KEY_CACHED_COUNT, count);
-                LivingChestFunction.saveStorageState(stack, storageState);
-
-                LivingItemManager.LOGGER.info("成功活化活箱子 x{}，分配了 {} 个UUID", count, count);
-            }
         }
         if (stack.is(Items.FURNACE) && isLivingItem(stack)) {
             LivingFunctionConfig funcConfig = LivingFurnaceFunction.getStaticConfig();

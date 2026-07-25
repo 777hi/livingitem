@@ -2,7 +2,10 @@ package com.qiqi.li.client.mixin;
 
 import com.qiqi.li.client.GuiInteractionHelper;
 import com.qiqi.li.client.gui.LivingButton;
+import com.qiqi.li.client.util.LivingChestTabState;
 import com.qiqi.li.living.function.LivingChestFunction;
+import com.qiqi.li.network.LivingChestAccessPacket;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
@@ -10,10 +13,12 @@ import net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 
 
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
+import net.neoforged.neoforge.network.PacketDistributor;
 import org.lwjgl.glfw.GLFW;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
@@ -72,10 +77,6 @@ public class AbstractContainerScreenMixin extends Screen {
             cir.setReturnValue(true);
         }
 
-        // 中键点击活箱子拦截：防止创造模式下复制活箱子导致 UUID 不可控
-        // 需要同时检查槽位物品和光标物品：
-        // - 槽位有活箱子 → 阻止中键 CLONE 复制（原版会将槽位物品复制到光标）
-        // - 光标有活箱子 → 阻止中键 QUICK_CRAFT 拖拽分发（创造模式会把光标物品复制到各槽位）
         if (button == GLFW.GLFW_MOUSE_BUTTON_MIDDLE) {
             boolean hasLivingChest = false;
             if (this.hoveredSlot != null) {
@@ -93,6 +94,20 @@ public class AbstractContainerScreenMixin extends Screen {
             if (hasLivingChest) {
                 cir.setReturnValue(true);
                 return;
+            }
+        }
+
+        if (button == GLFW.GLFW_MOUSE_BUTTON_1 && hasShiftDown()
+            && LivingChestTabState.isActive()
+            && living_item$isRecipeBookVisible()
+            && this.hoveredSlot != null && this.hoveredSlot.hasItem()) {
+            ItemStack slotStack = this.hoveredSlot.getItem();
+            if (!LivingChestFunction.isLivingChest(slotStack)) {
+                CompoundTag itemTag = (CompoundTag) slotStack.saveOptional(
+                    Minecraft.getInstance().player.registryAccess());
+                PacketDistributor.sendToServer(new LivingChestAccessPacket(
+                    LivingChestAccessPacket.DEPOSIT_SLOT, itemTag, slotStack.getCount()));
+                cir.setReturnValue(true);
             }
         }
     }
@@ -144,5 +159,14 @@ public class AbstractContainerScreenMixin extends Screen {
 
         this.living_item$previousLeftPos = this.leftPos;
         this.living_item$previousTopPos = this.topPos;
+    }
+
+    @Unique
+    private boolean living_item$isRecipeBookVisible() {
+        Screen screen = Minecraft.getInstance().screen;
+        if (screen instanceof InventoryScreen invScreen) {
+            return invScreen.getRecipeBookComponent().isVisible();
+        }
+        return false;
     }
 }

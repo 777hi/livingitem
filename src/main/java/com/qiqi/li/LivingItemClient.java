@@ -1,6 +1,8 @@
 package com.qiqi.li;
 
 import com.qiqi.li.client.icon.LivingIconRegistry;
+import com.qiqi.li.client.tooltip.LivingChestTooltipRenderer;
+import com.qiqi.li.living.core.components.LivingChestTooltipComponent;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.item.ItemProperties;
 import net.minecraft.resources.ResourceLocation;
@@ -15,6 +17,7 @@ import net.neoforged.neoforge.client.event.ModelEvent;
 import net.neoforged.neoforge.client.event.RegisterItemDecorationsEvent;
 import net.neoforged.neoforge.client.gui.ConfigurationScreen;
 import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
+import net.neoforged.neoforge.client.event.RegisterClientTooltipComponentFactoriesEvent;
 
 /**
  * 客户端入口类，通过 LivingIconRegistry 统一管理活物品图标。
@@ -66,5 +69,10 @@ public class LivingItemClient {
     @SubscribeEvent
     static void onRegisterItemDecorations(RegisterItemDecorationsEvent event) {
         LivingIconRegistry.onRegisterItemDecorations(event);
+    }
+
+    @SubscribeEvent
+    static void onRegisterTooltipComponentFactories(RegisterClientTooltipComponentFactoriesEvent event) {
+        event.register(LivingChestTooltipComponent.class, LivingChestTooltipRenderer::new);
     }
 }

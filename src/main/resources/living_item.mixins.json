@@ -4,11 +4,7 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "ItemStackMixin",
-    "AbstractContainerMenuMixin",
-    "ServerGamePacketListenerImplMixin",
-    "ServerPlaceRecipeMixin",
-    "BlockItemMixin",
-    "DropperBlockMixin"
+    "ServerPlaceRecipeMixin"
   ],
   "injectors": {
     "defaultRequire": 1

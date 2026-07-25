@@ -1,8 +1,9 @@
 package com.qiqi.li.client.mixin;
 
 import com.mojang.blaze3d.systems.RenderSystem;
-import com.qiqi.li.client.LivingChestContentsCache;
+import com.qiqi.li.client.util.LivingChestTabState;
 import com.qiqi.li.client.util.PinyinHelper;
+import com.qiqi.li.living.core.components.InternalStorageComponent;
 import com.qiqi.li.living.function.LivingChestFunction;
 import com.qiqi.li.network.LivingChestAccessPacket;
 import net.minecraft.client.Minecraft;
@@ -11,20 +12,18 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.StateSwitchingButton;
 import net.minecraft.client.gui.components.WidgetSprites;
-import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.gui.screens.recipebook.RecipeBookComponent;
 import net.minecraft.client.gui.screens.recipebook.RecipeBookPage;
 import net.minecraft.client.gui.screens.recipebook.RecipeBookTabButton;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.player.StackedContents;
 import net.minecraft.world.inventory.Slot;
-import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.item.TooltipFlag;
 import net.neoforged.api.distmarker.Dist;
 
 import java.util.Locale;
@@ -61,7 +60,7 @@ import java.util.List;
  * <h2>🔧 技术实现</h2>
  * <ul>
  *   <li>使用 SpongePowered Mixin 注入到 {@code RecipeBookComponent}</li>
- *   <li>通过 {@link LivingChestContentsCache} 缓存活箱子数据</li>
+ *   <li>通过直接读取玩家背包内活箱子的NBT数据获取内容</li>
  *   <li>使用 {@link LivingChestAccessPacket} 与服务器通信进行实际操作</li>
  * </ul>
  * 
@@ -166,19 +165,11 @@ public abstract class RecipeBookComponentMixin {
     @Unique
     private StateSwitchingButton livingChestTab;
 
-    /**
-     * 活箱子标签是否激活状态
-     * <p>true = 显示活箱子内容；false = 显示原版配方页面</p>
-     */
-    @Unique
-    private boolean livingChestTabActive;
-
-    /**
-     * 当前分页索引（从 0 开始）
-     * <p>每页显示 Layout.TOTAL_SLOTS 个物品槽位，超出部分分页显示</p>
-     */
     @Unique
     private int currentPage;
+
+    @Unique
+    private int totalPages = 1;
 
     /**
      * 活箱子标签按钮的纹理精灵图集
@@ -288,11 +279,6 @@ public abstract class RecipeBookComponentMixin {
         static final int BUTTON_WIDTH = 12;
         /** 分页按钮高度（17 像素） */
         static final int BUTTON_HEIGHT = 17;
-        
-        // ======== 性能优化参数 ========
-        /** 过滤结果缓存持续时间（毫秒）- 方案B优化 */
-        static final long FILTER_CACHE_DURATION_MS = 50;
-        static final long POLL_INTERVAL_MS = 1000;
     }
 
     // ==================== 动态管理的 UI 组件 ====================
@@ -312,15 +298,6 @@ public abstract class RecipeBookComponentMixin {
     private int hoveredSlotIndex = -1;
 
     /**
-     * 上一次渲染时的配方书位置（用于检测窗口大小变化）
-     * 当 left 或 top 变化时，需要重建所有 Slot 以更新坐标
-     */
-    @Unique
-    private int lastRenderLeft = Integer.MIN_VALUE;
-    @Unique
-    private int lastRenderTop = Integer.MIN_VALUE;
-
-    /**
      * 上一页按钮（使用原版 Button 组件）
      */
     @Unique
@@ -332,34 +309,8 @@ public abstract class RecipeBookComponentMixin {
     @Unique
     private Button forwardButton;
 
-    // ==================== 搜索过滤相关 ====================
-
-    /**
-     * 上一次检测到的搜索关键词（用于变化检测）
-     * <p>通过对比当前值和上次值，判断是否需要重新过滤物品列表</p>
-     */
     @Unique
     private String lastSearchText = "";
-
-    /**
-     * 搜索过滤后的物品列表缓存
-     * <p>避免每帧都执行过滤操作，只在搜索内容变化时更新</p>
-     */
-    @Unique
-    private List<ItemStack> filteredContents = new ArrayList<>();
-
-    @Unique
-    private int lastCacheVersion = -1;
-    @Unique
-    private long lastPollTime = 0;
-
-    /**
-     * 🆕 上次执行过滤的时间戳（用于方案B缓存优化）
-     * <p>如果连续多帧搜索词不变且时间间隔小于 {@link Layout#FILTER_CACHE_DURATION_MS}，
-     * 直接返回缓存结果而不重新计算</p>
-     */
-    @Unique
-    private long lastFilterExecutionTime = 0;
 
     // ==================== 初始化相关 ====================
 
@@ -390,7 +341,7 @@ public abstract class RecipeBookComponentMixin {
             this.livingChestTab = new StateSwitchingButton(0, 0, 35, 27, false);
             this.livingChestTab.initTextureValues(LIVING_CHEST_TAB_SPRITES);
         }
-        this.livingChestTabActive = false;
+        LivingChestTabState.setActive(false);
         this.livingChestTab.setStateTriggered(false);
         this.currentPage = 0;
 
@@ -423,7 +374,12 @@ public abstract class RecipeBookComponentMixin {
         target = "Lcom/mojang/blaze3d/vertex/PoseStack;popPose()V"
     ))
     private void onRenderBeforePop(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick, CallbackInfo ci) {
-        if (this.livingChestTab == null || !this.livingChestTabActive) return;
+        if (LivingChestTabState.isActive() && !isVisible()) {
+            LivingChestTabState.setActive(false);
+            this.livingChestTab.setStateTriggered(false);
+        }
+
+        if (this.livingChestTab == null || !LivingChestTabState.isActive()) return;
 
         int i = (this.width - 147) / 2 - this.xOffset;
         int j = (this.height - 166) / 2;
@@ -513,24 +469,41 @@ public abstract class RecipeBookComponentMixin {
      * @param mouseY 鼠标 Y 坐标
      */
     @Unique
+    private List<ItemStack> collectLivingChestItems() {
+        List<ItemStack> contents = new ArrayList<>();
+        Player player = Minecraft.getInstance().player;
+        if (player == null) return contents;
+
+        for (ItemStack invStack : player.getInventory().items) {
+            if (!LivingChestFunction.isLivingChest(invStack)) continue;
+            if (invStack.getCount() > 1) continue;
+
+            List<ItemStack> items = InternalStorageComponent.getItems(invStack);
+            for (ItemStack item : items) {
+                if (!item.isEmpty()) {
+                    contents.add(item);
+                }
+            }
+        }
+        return contents;
+    }
+
+    @Unique
     private void renderLivingChestContents(GuiGraphics guiGraphics, int left, int top, int mouseX, int mouseY) {
-        long now = System.currentTimeMillis();
-        if (now - this.lastPollTime > Layout.POLL_INTERVAL_MS) {
-            this.lastPollTime = now;
-            PacketDistributor.sendToServer(new LivingChestAccessPacket(
-                LivingChestAccessPacket.LOAD, null, 0
-            ));
+        String currentSearch = getSafeSearchText();
+        if (!currentSearch.equals(this.lastSearchText)) {
+            this.lastSearchText = currentSearch;
+            this.currentPage = 0;
         }
 
-        List<ItemStack> contents = LivingChestContentsCache.get();
+        List<ItemStack> contents = collectLivingChestItems();
 
-        // 🔍 步骤 0: 应用搜索过滤（新增功能）
         List<ItemStack> displayContents = applySearchFilter(contents);
 
-        // 计算分页信息（基于过滤后的列表）
-        int totalPages = Math.max(1, (displayContents.size() + Layout.TOTAL_SLOTS - 1) / Layout.TOTAL_SLOTS);
-        if (this.currentPage > totalPages) {
-            this.currentPage = totalPages - 1;
+        int pages = Math.max(1, (displayContents.size() + Layout.TOTAL_SLOTS - 1) / Layout.TOTAL_SLOTS);
+        this.totalPages = pages;
+        if (this.currentPage >= pages) {
+            this.currentPage = pages - 1;
         }
         int startIdx = this.currentPage * Layout.TOTAL_SLOTS;
 
@@ -573,65 +546,29 @@ public abstract class RecipeBookComponentMixin {
     }
 
     /**
-     * 应用搜索过滤到物品列表（适配原版搜索框）
-     *
-     * <h3>🔍 过滤逻辑</h3>
-     * <ol>
-     *   <li><strong>获取搜索词</strong>: 从原版 searchBox 读取当前文本</li>
-     *   <li><strong>变化检测</strong>: 只有搜索词变化时才重新过滤（性能优化）</li>
-     *   <li><strong>执行过滤</strong>: 遍历所有物品，匹配名称、ID、描述等</li>
-     *   <li><strong>缓存结果</strong>: 将过滤后的列表存入 {@code filteredContents}</li>
-     * </ol>
-     *
-     * <h3>📝 匹配规则</h3>
-     * <ul>
-     *   <li>✅ 物品显示名称（HoverName）</li>
-     *   <li>✅ 物品 ID（如 `minecraft:diamond`）</li>
-     *   <li>✅ 物品描述/Lore 文本</li>
-     *   <li>✅ 大小写不敏感（`Diamond` == `diamond`）</li>
-     *   <li>✅ 部分匹配（输入 `dia` 可匹配 `Diamond`）</li>
-     * </ul>
+     * 应用搜索过滤到物品列表（实时扫描，无缓存）
      *
      * @param originalList 原始物品列表（未过滤）
      * @return 过滤后的物品列表
      */
     @Unique
     private List<ItemStack> applySearchFilter(List<ItemStack> originalList) {
-        String currentSearchText = getSafeSearchText();
-        long now = System.currentTimeMillis();
+        String searchText = getSafeSearchText();
 
-        int cacheVersion = LivingChestContentsCache.getVersion();
-        if (cacheVersion != this.lastCacheVersion) {
-            this.lastCacheVersion = cacheVersion;
-            this.filteredContents.clear();
-        }
-
-        if (currentSearchText.equals(this.lastSearchText)
-            && !this.filteredContents.isEmpty()
-            && (now - this.lastFilterExecutionTime) < Layout.FILTER_CACHE_DURATION_MS) {
-            return this.filteredContents;
-        }
-
-        this.lastSearchText = currentSearchText;
-        this.lastFilterExecutionTime = now;
-
-        if (currentSearchText.isEmpty()) {
-            this.filteredContents.clear();
+        if (searchText.isEmpty()) {
             return originalList;
         }
 
-        // 重新执行过滤（基于最新的 originalList）
-        this.filteredContents.clear();
+        List<ItemStack> result = new ArrayList<>();
         for (ItemStack stack : originalList) {
             if (stack.isEmpty()) continue;
 
-            if (matchesSearchText(stack, currentSearchText)) {
-                this.filteredContents.add(stack);
+            if (matchesSearchText(stack, searchText)) {
+                result.add(stack);
             }
         }
 
-        this.currentPage = 0;
-        return this.filteredContents;
+        return result;
     }
 
     /**
@@ -686,44 +623,19 @@ public abstract class RecipeBookComponentMixin {
             return !searchText.isEmpty();
         }
 
-        // 1. 检查物品显示名称（支持拼音）
         Component hoverName = stack.getHoverName();
         if (hoverName != null) {
             String name = hoverName.getString();
-
-            // 🆕 使用 PinyinHelper 进行智能匹配（支持中文+拼音+首字母）
+            if (name.toLowerCase(Locale.ROOT).contains(searchText)) {
+                return true;
+            }
             if (PinyinHelper.isPinyinMatch(name, searchText)) {
                 return true;
             }
         }
 
-        // 2. 检查物品 ID
         String itemId = stack.getItem().toString().toLowerCase(Locale.ROOT);
-        if (itemId.contains(searchText)) {
-            return true;
-        }
-
-        // 3. 检查物品描述/Lore（支持拼音）
-        try {
-            List<Component> loreLines = stack.getTooltipLines(
-                Item.TooltipContext.of(this.minecraft.player.level()),
-                this.minecraft.player,
-                TooltipFlag.Default.NORMAL
-            );
-
-            for (Component line : loreLines) {
-                String loreText = line.getString();
-
-                // 🆕 Lore 文本也支持拼音搜索
-                if (PinyinHelper.isPinyinMatch(loreText, searchText)) {
-                    return true;
-                }
-            }
-        } catch (Exception e) {
-            // 忽略异常
-        }
-
-        return false;
+        return itemId.contains(searchText);
     }
 
     /**
@@ -743,35 +655,11 @@ public abstract class RecipeBookComponentMixin {
      */
     @Unique
     private void updateLivingChestSlots(int left, int top, List<ItemStack> contents, int startIdx) {
-        // 🆕 检测窗口大小变化：如果配方书位置改变，强制完全重建
-        boolean positionChanged = (left != this.lastRenderLeft || top != this.lastRenderTop);
-        if (positionChanged) {
-            this.lastRenderLeft = left;
-            this.lastRenderTop = top;
-            this.livingChestSlots.clear();  // 强制重建所有 Slot
-        }
-
-        // 如果槽数量不变且数据未变，可以跳过重建（简单优化）
-        if (this.livingChestSlots.size() == Layout.TOTAL_SLOTS && !positionChanged) {
-            // 更新现有 Slot 的物品内容
-            for (int i = 0; i < Layout.TOTAL_SLOTS; i++) {
-                int contentIdx = startIdx + i;
-                ItemStack stack = (contentIdx < contents.size()) ? contents.get(contentIdx) : ItemStack.EMPTY;
-                
-                // 由于 Slot 的 setByPlayer 等方法需要 ContainerMenu，
-                // 我们直接操作内部字段（通过反射或重新创建）
-                if (!ItemStack.matches(this.livingChestSlots.get(i).getItem(), stack)) {
-                    recreateSlotAtIndex(left, top, i, stack);
-                }
-            }
-        } else {
-            // 首次创建或数量变化时完全重建
-            this.livingChestSlots.clear();
-            for (int slot = 0; slot < Layout.TOTAL_SLOTS; slot++) {
-                int contentIdx = startIdx + slot;
-                ItemStack stack = (contentIdx < contents.size()) ? contents.get(contentIdx) : ItemStack.EMPTY;
-                this.livingChestSlots.add(createLivingChestSlot(left, top, slot, stack));
-            }
+        this.livingChestSlots.clear();
+        for (int slot = 0; slot < Layout.TOTAL_SLOTS; slot++) {
+            int contentIdx = startIdx + slot;
+            ItemStack stack = (contentIdx < contents.size()) ? contents.get(contentIdx) : ItemStack.EMPTY;
+            this.livingChestSlots.add(createLivingChestSlot(left, top, slot, stack));
         }
     }
 
@@ -836,16 +724,6 @@ public abstract class RecipeBookComponentMixin {
         };
 
         return slot;
-    }
-
-    /**
-     * 重建指定索引处的槽位（当物品内容变化时调用）
-     */
-    @Unique
-    private void recreateSlotAtIndex(int left, int top, int index, ItemStack newStack) {
-        if (index >= 0 && index < this.livingChestSlots.size()) {
-            this.livingChestSlots.set(index, createLivingChestSlot(left, top, index, newStack));
-        }
     }
 
     /**
@@ -965,12 +843,10 @@ public abstract class RecipeBookComponentMixin {
      */
     @Unique
     private void setupPageButtons(int left, int top, int totalPages) {
-        // 🆕 使用 Layout 常量（优化1: 提取魔法数字为常量）
         int btnY = top + Layout.BUTTON_Y_OFFSET;
         int backwardX = left + Layout.BACK_BUTTON_X_OFFSET;
         int forwardX = left + Layout.FORWARD_BUTTON_X_OFFSET;
 
-        // 创建上一页按钮（首次创建或更新状态）
         if (this.backButton == null) {
             this.backButton = Button.builder(Component.literal("<"), (button) -> {
                 if (this.currentPage > 0) {
@@ -981,15 +857,13 @@ public abstract class RecipeBookComponentMixin {
             .size(Layout.BUTTON_WIDTH, Layout.BUTTON_HEIGHT)
             .build();
         } else {
-            // 🆕 窗口大小改变时更新按钮位置
             this.backButton.setPosition(backwardX, btnY);
         }
-        this.backButton.active = this.currentPage > 0;  // 第一页时禁用
+        this.backButton.active = this.currentPage > 0;
 
-        // 创建下一页按钮
         if (this.forwardButton == null) {
             this.forwardButton = Button.builder(Component.literal(">"), (button) -> {
-                if (this.currentPage < totalPages - 1) {
+                if (this.currentPage < this.totalPages - 1) {
                     this.currentPage++;
                 }
             })
@@ -997,10 +871,9 @@ public abstract class RecipeBookComponentMixin {
             .size(Layout.BUTTON_WIDTH, Layout.BUTTON_HEIGHT)
             .build();
         } else {
-            // 🆕 窗口大小改变时更新按钮位置
             this.forwardButton.setPosition(forwardX, btnY);
         }
-        this.forwardButton.active = this.currentPage < totalPages - 1;  // 最后一页时禁用
+        this.forwardButton.active = this.currentPage < totalPages - 1;
     }
 
     // ⚠️ 注意：旧的 renderPageButtons 方法已被删除
@@ -1056,7 +929,7 @@ public abstract class RecipeBookComponentMixin {
     ))
     private void redirectRecipeBookPageRender(RecipeBookPage instance, GuiGraphics guiGraphics,
                                               int x, int y, int mouseX, int mouseY, float partialTick) {
-        if (!this.livingChestTabActive) {
+        if (!LivingChestTabState.isActive()) {
             instance.render(guiGraphics, x, y, mouseX, mouseY, partialTick);
         }
     }
@@ -1076,7 +949,7 @@ public abstract class RecipeBookComponentMixin {
         target = "Lnet/minecraft/client/gui/screens/recipebook/RecipeBookPage;renderTooltip(Lnet/minecraft/client/gui/GuiGraphics;II)V"
     ))
     private void redirectRecipeBookPageTooltip(RecipeBookPage instance, GuiGraphics guiGraphics, int mouseX, int mouseY) {
-        if (!this.livingChestTabActive) {
+        if (!LivingChestTabState.isActive()) {
             instance.renderTooltip(guiGraphics, mouseX, mouseY);
         }
     }
@@ -1103,7 +976,7 @@ public abstract class RecipeBookComponentMixin {
     ))
     private boolean redirectRecipeBookPageMouseClick(RecipeBookPage instance, double mouseX, double mouseY,
                                                      int button, int x, int y, int width, int height) {
-        if (this.livingChestTabActive) {
+        if (LivingChestTabState.isActive()) {
             return false;
         }
         return instance.mouseClicked(mouseX, mouseY, button, x, y, width, height);
@@ -1127,7 +1000,7 @@ public abstract class RecipeBookComponentMixin {
      * <h3>🔄 标签切换逻辑</h3>
      * <pre>
      * 点击"活箱子"标签时:
-     * 1. 设置 livingChestTabActive = true
+     * 1. 设置 LivingChestTabState 为激活
      * 2. 更新按钮视觉状态（按下效果）
      * 3. 重置分页到第 0 页
      * 4. 取消原版标签的选中状态
@@ -1146,24 +1019,21 @@ public abstract class RecipeBookComponentMixin {
         if (this.livingChestTab == null) return;
 
         if (this.livingChestTab.mouseClicked(mouseX, mouseY, button)) {
-            if (!this.livingChestTabActive) {
-                this.livingChestTabActive = true;
+            if (!LivingChestTabState.isActive()) {
+                LivingChestTabState.setActive(true);
                 this.livingChestTab.setStateTriggered(true);
                 this.currentPage = 0;
 
                 if (this.selectedTab != null) {
                     this.selectedTab.setStateTriggered(false);
                 }
-
-                PacketDistributor.sendToServer(new LivingChestAccessPacket(
-                    LivingChestAccessPacket.LOAD, null, 0));
             }
 
             cir.setReturnValue(true);
             return;
         }
 
-        if (this.livingChestTabActive && this.isVisible()) {
+        if (LivingChestTabState.isActive() && this.isVisible()) {
             if (this.handlePageButtonClick(mouseX, mouseY, button)) {
                 cir.setReturnValue(true);
                 return;
@@ -1189,12 +1059,9 @@ public abstract class RecipeBookComponentMixin {
      */
     @Unique
     private boolean handlePageButtonClick(double mouseX, double mouseY, int button) {
-        // 如果按钮不存在或只有一页，不处理
         if (this.backButton == null || this.forwardButton == null) return false;
-        
-        List<ItemStack> contents = LivingChestContentsCache.get();
-        int totalPages = Math.max(1, (contents.size() + Layout.TOTAL_SLOTS - 1) / Layout.TOTAL_SLOTS);
-        if (totalPages <= 1) return false;
+
+        if (this.totalPages <= 1) return false;
 
         // 🔥 使用原版 Button 的鼠标事件处理
         // 这会自动：
@@ -1250,8 +1117,8 @@ public abstract class RecipeBookComponentMixin {
             return;  // 保持活箱子标签页不变
         }
 
-        if (this.livingChestTabActive && cir.getReturnValue() && this.selectedTab != null) {
-            this.livingChestTabActive = false;
+        if (LivingChestTabState.isActive() && cir.getReturnValue() && this.selectedTab != null) {
+            LivingChestTabState.setActive(false);
             this.livingChestTab.setStateTriggered(false);
         }
     }
@@ -1317,7 +1184,7 @@ public abstract class RecipeBookComponentMixin {
         target = "Lnet/minecraft/client/gui/screens/recipebook/RecipeBookComponent;updateCollections(Z)V"
     ))
     private void beforeUpdateCollections(CallbackInfo ci) {
-        List<ItemStack> contents = LivingChestContentsCache.get();
+        List<ItemStack> contents = collectLivingChestItems();
         for (ItemStack chestItem : contents) {
             if (!chestItem.isEmpty()) {
                 this.stackedContents.accountStack(chestItem);
@@ -1388,21 +1255,14 @@ public abstract class RecipeBookComponentMixin {
 
                 // 🆕 情况 1: 槽位有物品 → 执行取出或替换操作
                 if (!stack.isEmpty()) {
-                    if (!carried.isEmpty() && LivingChestFunction.isLivingChest(carried)) return false;
                     executeSlotAction(stack, button);
                     return true;
                 }
 
-                // 🆕 情况 2: 空槽位 + 手持有物品 → 执行存入操作
                 if (!carried.isEmpty()) {
-                    if (LivingChestFunction.isLivingChest(carried)) return false;
-
-                    // 左键全部存入，右键单个存入
                     int amount = (button == 0)
-                        ? carried.getCount()  // 左键: 全部存入
-                        : 1;                  // 右键: 单个存入
-
-                    LivingChestContentsCache.adjustItem(carried, amount);
+                        ? carried.getCount()
+                        : 1;
 
                     PacketDistributor.sendToServer(new LivingChestAccessPacket(
                         LivingChestAccessPacket.DEPOSIT,
@@ -1436,13 +1296,11 @@ public abstract class RecipeBookComponentMixin {
     @Unique
     private void executeSlotAction(ItemStack slotStack, int button) {
         ItemStack carried = this.minecraft.player.containerMenu.getCarried();
-        boolean shift = hasShiftDown();
+        boolean shift = Screen.hasShiftDown();
 
-        if (button == 0) {  // 左键 - 全部操作
+        if (button == 0) {
             if (carried.isEmpty()) {
-                // 取出操作：左键全部取出（一组）
                 int amount = slotStack.getMaxStackSize();
-                LivingChestContentsCache.adjustItem(slotStack, -amount);
                 ItemStack saveStack = slotStack.copy();
                 saveStack.setCount(1);
                 PacketDistributor.sendToServer(new LivingChestAccessPacket(
@@ -1451,20 +1309,16 @@ public abstract class RecipeBookComponentMixin {
                     amount
                 ));
             } else {
-                // 存入操作：左键全部存入
                 int amount = carried.getCount();
-                LivingChestContentsCache.adjustItem(carried, amount);
                 PacketDistributor.sendToServer(new LivingChestAccessPacket(
                     LivingChestAccessPacket.DEPOSIT,
                     (CompoundTag) carried.save(this.minecraft.player.registryAccess()),
                     amount
                 ));
             }
-        } else if (button == 1) {  // 右键 - 单个/半组操作
+        } else if (button == 1) {
             if (carried.isEmpty()) {
-                // 取出操作：右键半组，Shift+右键单个
                 int amount = shift ? 1 : Math.max(1, slotStack.getMaxStackSize() / 2);
-                LivingChestContentsCache.adjustItem(slotStack, -amount);
                 ItemStack saveStack = slotStack.copy();
                 saveStack.setCount(1);
                 PacketDistributor.sendToServer(new LivingChestAccessPacket(
@@ -1473,8 +1327,6 @@ public abstract class RecipeBookComponentMixin {
                     amount
                 ));
             } else {
-                // 存入操作：右键始终单个存入
-                LivingChestContentsCache.adjustItem(carried, 1);
                 PacketDistributor.sendToServer(new LivingChestAccessPacket(
                     LivingChestAccessPacket.DEPOSIT,
                     (CompoundTag) carried.save(this.minecraft.player.registryAccess()),
@@ -1482,27 +1334,5 @@ public abstract class RecipeBookComponentMixin {
                 ));
             }
         }
-    }
-
-    /**
-     * 检测 Shift 键是否被按下
-     *
-     * <h3>🔍 技术实现</h3>
-     * <p>使用 GLFW 库直接查询键盘状态，而非依赖 Minecraft 的事件系统。
-     * 这是因为我们需要在任意时刻检测 Shift 键状态，而不仅仅是按键事件触发时。</p>
-     *
-     * <h3>⌨️ 支持的按键</h3>
-     * <ul>
-     *   <li>左 Shift ({@code GLFW_KEY_LEFT_SHIFT})</li>
-     *   <li>右 Shift ({@code GLFW_KEY_RIGHT_SHIFT})</li>
-     * </ul>
-     * 
-     * @return 如果任一 Shift 键处于按下状态返回 true
-     */
-    @Unique
-    private static boolean hasShiftDown() {
-        long window = Minecraft.getInstance().getWindow().getWindow();
-        return org.lwjgl.glfw.GLFW.glfwGetKey(window, org.lwjgl.glfw.GLFW.GLFW_KEY_LEFT_SHIFT) == org.lwjgl.glfw.GLFW.GLFW_PRESS
-            || org.lwjgl.glfw.GLFW.glfwGetKey(window, org.lwjgl.glfw.GLFW.GLFW_KEY_RIGHT_SHIFT) == org.lwjgl.glfw.GLFW.GLFW_PRESS;
     }
 }
