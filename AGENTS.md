@@ -812,7 +812,9 @@ SLOTS 模式的方向数据存储在 `ComponentState` 中（`slot_input_x`, `slo
 
 **核心实现：**
 - `SimpleContainerContext`：直接持有 `IItemHandler handler` 字段，`getItem()`/`setItem()` 直接调用 `handler.getStackInSlot()`/`handler.extractItem()`/`handler.insertItem()`
-- `ContainerContext.getSlotLimit(slot)`：委托给 `handler.getSlotLimit(slot)`，玩家背包盔甲槽位（36-39）返回 1
+- `ContainerContext.getSlotLimit(slot)`：委托给 `handler.getSlotLimit(slot)`，玩家盔甲槽位（36-39）返回 `getMaxStackSize()`，允许活漏斗无视限制
+- `ContainerContext.simulateInsertItem(slot, stack)`：委托给 `handler.insertItem(slot, stack, true)` 模拟插入；盔甲槽位直接按普通槽位计算，不做类型限制
+- `SimpleContainerContext.setItem()`：`handler.insertItem()` 失败时，若为玩家盔甲槽位则直接 `inventory.armor.set()` 绕过限制，实现"方块放头上"等趣味玩法
 - `ContainerCompatibilityConfig.findOrGenerateRule(size)`：根据 `IItemHandler.getSlots()` 自动推断标准矩形布局，无需手动注册
 
 **传输防护（双重限制）：**

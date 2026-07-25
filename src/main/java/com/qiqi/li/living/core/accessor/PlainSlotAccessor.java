@@ -55,6 +55,7 @@ public class PlainSlotAccessor implements SlotAccessor {
         int slotLimit = containerCtx.getSlotLimit(slot);
 
         if (targetStack.isEmpty()) {
+            if (containerCtx.simulateInsertItem(slot, stack) <= 0) return 0;
             int maxStackSize = Math.min(slotLimit, stack.getMaxStackSize());
             int actual = Math.min(stack.getCount(), maxStackSize);
             ItemStack toInsert = stack.copy();
@@ -81,13 +82,12 @@ public class PlainSlotAccessor implements SlotAccessor {
     @Override
     public int simulateInsert(ItemStack stack) {
         ItemStack targetStack = containerCtx.getItem(slot);
-        int slotLimit = containerCtx.getSlotLimit(slot);
 
         if (targetStack.isEmpty()) {
-            int maxStackSize = Math.min(slotLimit, stack.getMaxStackSize());
-            return Math.min(stack.getCount(), maxStackSize);
+            return containerCtx.simulateInsertItem(slot, stack);
         }
 
+        int slotLimit = containerCtx.getSlotLimit(slot);
         int maxStackSize = Math.min(slotLimit, targetStack.getMaxStackSize());
         if (targetStack.is(stack.getItem()) && targetStack.getCount() < maxStackSize) {
             int space = maxStackSize - targetStack.getCount();

@@ -169,6 +169,10 @@ public class SimpleContainerContext implements ContainerContext {
         return handler.getStackInSlot(logicalSlot);
     }
 
+    private static boolean isArmorSlot(Inventory inventory, int slot) {
+        return inventory != null && slot >= 36 && slot < 40;
+    }
+
     @Override
     public void setItem(int logicalSlot, ItemStack stack) {
         if (logicalSlot < 0 || logicalSlot >= handler.getSlots()) {
@@ -177,7 +181,11 @@ public class SimpleContainerContext implements ContainerContext {
         ItemStack toInsert = stack.copy();
         handler.extractItem(logicalSlot, Integer.MAX_VALUE, false);
         ItemStack remaining = handler.insertItem(logicalSlot, toInsert, false);
-        if (!remaining.isEmpty()) {
+        if (!remaining.isEmpty() && isArmorSlot(inventory, logicalSlot)) {
+            // 活漏斗绕过盔甲槽限制，直接设置物品（方块放头上等趣味玩法）
+            inventory.armor.set(logicalSlot - 36, toInsert);
+            syncSlotToClients(logicalSlot, toInsert);
+        } else if (!remaining.isEmpty()) {
             LOGGER.warn("SimpleContainerContext.setItem: {} items of {} 未能插入槽位 {}",
                 remaining.getCount(), toInsert.getItem(), logicalSlot);
         }
@@ -190,7 +198,29 @@ public class SimpleContainerContext implements ContainerContext {
 
     @Override
     public int getSlotLimit(int slot) {
+        if (isArmorSlot(inventory, slot)) {
+            return getMaxStackSize();
+        }
         return handler.getSlotLimit(slot);
+    }
+
+    @Override
+    public boolean isItemValid(int slot, ItemStack stack) {
+        if (isArmorSlot(inventory, slot)) {
+            return true;
+        }
+        return handler.isItemValid(slot, stack);
+    }
+
+    @Override
+    public int simulateInsertItem(int slot, ItemStack stack) {
+        if (isArmorSlot(inventory, slot)) {
+            int slotLimit = getSlotLimit(slot);
+            int maxStack = Math.min(slotLimit, stack.getMaxStackSize());
+            return Math.min(stack.getCount(), maxStack);
+        }
+        ItemStack remaining = handler.insertItem(slot, stack.copy(), true);
+        return stack.getCount() - remaining.getCount();
     }
 
     @Override

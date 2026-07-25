@@ -272,6 +272,8 @@ tick()
 
 **设计意图**：堆叠越多 → 过滤越宽泛（Tag涵盖最广），堆叠越少 → 过滤越精确（NBT最具体）。
 
+**重要：模式由邻居决定**。活漏斗自身的堆叠数不决定自己的过滤模式，而是决定**别人扫描它时**的精度。扫描时读取邻居活漏斗的堆叠数来确定模式，而非自身堆叠数。这意味着同一个活漏斗被不同堆叠数的邻居扫描时，会以不同精度收集数据。
+
 #### 2.4.2 过滤规则构建
 
 ```
@@ -362,11 +364,14 @@ allowsByPriority(item):
 | `whitelist` | ListTag\<String\> | 白名单物品ID列表 |
 | `blacklist_slots` | ListTag\<Int\> | 黑名单物品对应槽位 |
 | `whitelist_slots` | ListTag\<Int\> | 白名单物品对应槽位 |
-| `mode` | int | 过滤模式 (1=ID, 2=NBT, 3=Tag) |
 | `bl_comp` | ListTag\<String\> | 黑名单NBT组合键列表 |
 | `wl_comp` | ListTag\<String\> | 白名单NBT组合键列表 |
 | `bl_tags` | ListTag\<String\> | 黑名单标签列表 |
 | `wl_tags` | ListTag\<String\> | 白名单标签列表 |
+| `bl_tag_slots` | ListTag\<Int\> | 黑名单Tag级对应槽位 |
+| `wl_tag_slots` | ListTag\<Int\> | 白名单Tag级对应槽位 |
+
+> **注意**：`mode` 不再作为 NBT 键持久化存储。模式由扫描时读取邻居活漏斗的堆叠数动态计算，不写入状态。
 
 #### 2.4.6 链式传递机制
 
@@ -377,7 +382,7 @@ tick N:   活漏斗A(有名单)  ────→ 活漏斗B(继承A的名单)  �
 tick N+1: 活漏斗A(有名单)  ────→ 活漏斗B(有名单)         ────→ 活漏斗C(继承B的名单)
 ```
 
-`inheritFilter()` 从邻居活漏斗**同时继承黑名单和白名单**（而非仅继承同类型名单），确保链上混搭黑白名单时传递不中断。继承时根据当前模式同步继承对应级别的数据（NBT模式继承comp，Tag模式继承tags）。
+`inheritFilter()` 从邻居活漏斗**同时继承黑名单和白名单**（而非仅继承同类型名单），确保链上混搭黑白名单时传递不中断。继承时**无条件继承所有级别数据**（ID、NBT、Tag 全部继承），不依赖当前模式，确保链式传递不会因模式差异丢失高精度数据。
 
 #### 2.4.7 关键方法
 
@@ -388,7 +393,7 @@ tick N+1: 活漏斗A(有名单)  ────→ 活漏斗B(有名单)         �
 - `calcMatchPriority()` — 计算单侧（白/黑）匹配的最高优先级
 - `hasNbtEntriesForId()` — 检测NBT级条目是否遮蔽ID级条目
 - `matchesAnyTag()` — Tag级匹配检查
-- `appendTooltip()` — 显示过滤模式和名单内容
+- `appendTooltip()` — 显示过滤模式和名单内容，使用 `appendFilterEntries()` 辅助方法减少黑白名单重复渲染
 
 ---
 
@@ -477,17 +482,24 @@ target.sync() → 同步目标槽位
 
 ```
 baseCooldown = 8 ticks（配置项）
-actualCooldown = baseCooldown / stackSize
-最小限制 = 1 tick
+actualCooldown = max(1, baseCooldown - stackSize / 8)
 ```
+
+**设计意图**：
+- **阶梯加速**：每多堆叠 8 个活漏斗，冷却减少 1 tick
+- **上限控制**：最快 1 tick（20次/秒），防止无限加速
 
 **示例**：
 | 堆叠数 | 冷却时间 | 传输速率 |
 |--------|---------|---------|
-| 1 | 8 ticks | 2.5 次/秒 |
-| 2 | 4 ticks | 5 次/秒 |
-| 4 | 2 ticks | 10 次/秒 |
-| 8+ | 1 tick | 20 次/秒（上限） |
+| 1-7 | 8 ticks | 2.5 次/秒 |
+| 8-15 | 7 ticks | 2.86 次/秒 |
+| 16-23 | 6 ticks | 3.33 次/秒 |
+| 24-31 | 5 ticks | 4 次/秒 |
+| 32-39 | 4 ticks | 5 次/秒 |
+| 40-47 | 3 ticks | 6.67 次/秒 |
+| 48-55 | 2 ticks | 10 次/秒 |
+| 56+ | 1 tick | 20 次/秒（上限） |
 
 ### 4.2 冷却设置策略
 
@@ -628,12 +640,12 @@ GUI右(RIGHT) → 世界西(WEST)   → 旋转后
 
 ```java
 // ItemFilterComponent.tick()
-int mode = normalizeMode(hostStack.getCount());  // 堆叠1→ID, 2→NBT, 3+→Tag
-
+// 扫描容器中每个槽位，寻找邻居活漏斗
 for (容器中每个槽位) {
     if (槽位是活漏斗 && 不是自己) {
         读取邻居的 DirectionModeComponent 状态
         获取邻居的 sourceSlot 和 targetSlot
+        int mode = normalizeMode(neighborStack.getCount());  // 邻居的堆叠数决定模式
         
         if (邻居的 targetSlot == 我的槽位) {
             // 邻居向我传输 → 邻居的 source 物品 = 我的黑名单
@@ -953,7 +965,62 @@ result = (baseRow + direction.y) * containerWidth + (baseCol + direction.x)
 - `matchesAnyTag()` — Tag级匹配检查
 - `calcTagPriorityForItemId()` — 仅ID场景的Tag优先级计算
 
-**同时清理**：移除 `FilterData.blCompIds`/`wlCompIds` 死代码，更新 `hasFilterRules()` 检查所有级别数据。
+**同时清理**：移除 `FilterData.blCompIds`/`wlCompIds` 死代码，更新 `hasFilterRules()` 检查所有级别数据。移除 `mode` NBT 键 — 模式由扫描时读取邻居活漏斗的堆叠数动态计算，不再持久化存储。
+
+**相关提交**：2026-07-25
+
+### 10.11 已修复：Tag级继承后显示为NBT级 (NEW 2026-07-25)
+
+**问题**：堆叠 3 的活漏斗 A 传递 Tag 白名单给堆叠 2 的活漏斗 B，B 的 tooltip 显示为 `[NBT]` 而非 `[Tag]`。
+
+**根因**：`inheritFilter()` 中将 Tag 数据存入了 NBT 级别的 `composites` 集合，而非 `tags` 集合。
+
+**修复**：确保 `inheritFilter()` 中 `KEY_WL_TAGS` 数据存入 `wlTags`，`KEY_BL_TAGS` 数据存入 `blTags`，NBT 级数据存入 `wlComposites`/`blComposites`，各级别数据集合完全隔离。
+
+**相关提交**：2026-07-25
+
+### 10.12 已修复：NBT级存在时ID级重复显示 (NEW 2026-07-25)
+
+**问题**：白名单中 `diamond_sword@12345`（NBT级）和 `diamond_sword`（ID级）同时显示在 tooltip 中，造成重复。
+
+**根因**：tooltip 渲染未应用遮蔽机制 — NBT级条目应遮蔽同 ID 的 ID级条目。
+
+**修复**：在 `appendFilterEntries()` 中，遍历 ID 级条目时检查 `hasNbtEntriesForId()`，若 NBT 级已存在该 ID 的条目则跳过 ID 级显示。
+
+**相关提交**：2026-07-25
+
+### 10.13 已修复：Tag级槽位映射不显示 (NEW 2026-07-25)
+
+**问题**：Tag 级条目在 tooltip 中不显示来源槽位，格式为 `标签名 [Tag]` 而非 `标签名 (槽N) [Tag]`。
+
+**根因**：缺少 Tag 级槽位映射存储，`FilterData` 中只有 `blTagSlots`/`wlTagSlots` 字段但收集时未写入。
+
+**修复**：新增 `KEY_BL_TAG_SLOTS`/`KEY_WL_TAG_SLOTS` NBT 键，在扫描 Tag 级数据时同步记录槽位映射，tooltip 渲染时读取显示。
+
+**相关提交**：2026-07-25
+
+### 10.14 已修复：inheritFilter 无条件继承 (NEW 2026-07-25)
+
+**问题**：`inheritFilter()` 带有 `mode` 参数，继承时只继承当前模式对应的级别数据，导致链式传递中高精度数据（如 NBT）丢失。
+
+**根因**：活漏斗自身的模式标签是给邻居扫描用的，不是控制继承范围的。继承应无条件传递所有级别数据。
+
+**修复**：移除 `inheritFilter()` 的 `mode` 参数，无条件继承邻居所有级别（ID + NBT + Tag）的数据，确保链式传递不丢失精度。
+
+**相关提交**：2026-07-25
+
+### 10.15 新增：活漏斗盔甲槽绕过限制 (NEW 2026-07-25)
+
+**背景**：活漏斗向玩家盔甲槽位（36-39）传输非盔甲物品时，`IItemHandler.isItemValid()` 会拒绝，物品直接消失。
+
+**方案**：在 `SimpleContainerContext` 中检测盔甲槽位，全线绕过限制：
+
+- `getSlotLimit()`：返回 `getMaxStackSize()`（64），不限制 1
+- `isItemValid()`：返回 `true`，任何物品"合法"
+- `simulateInsertItem()`：按普通槽位计算，不做类型限制
+- `setItem()`：`handler.insertItem()` 失败后直接 `inventory.armor.set()` 写入
+
+**效果**：活漏斗能把方块放入玩家头盔槽位，玩家头显示方块模样，增加趣味玩法。玩家手动操作不受影响。
 
 **相关提交**：2026-07-25
 
@@ -1005,4 +1072,4 @@ LOGGER.info("Cooldown: {} ticks remaining", cooldown);
 
 > **文档维护者**: Living Item Mod Team  
 > **下次更新建议**: 多功能模式（PUSH/PULL/COLLECT/DISTRIBUTE）实现后同步更新第 8 章  
-> **v3 变更**: 新增过滤模式（基于堆叠数量）、优先级判定模型（田忌赛马）、统一过滤架构
+> **v3 变更**: 新增过滤模式（基于堆叠数量）、优先级判定模型（田忌赛马）、统一过滤架构、邻居模式决定扫描精度、盔甲槽绕过限制

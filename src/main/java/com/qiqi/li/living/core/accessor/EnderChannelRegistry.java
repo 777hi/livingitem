@@ -2,6 +2,7 @@ package com.qiqi.li.living.core.accessor;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -50,7 +51,7 @@ public final class EnderChannelRegistry {
         int nextIndex;
     }
 
-    private final Map<Integer, ChannelData> channels = new HashMap<>();
+    private final Map<Integer, ChannelData> channels = new ConcurrentHashMap<>();
 
     /** 反向索引：方块位置 → 路由条目列表 */
     private final Map<BlockPos, List<EnderChannelEntry>> posIndex = new HashMap<>();

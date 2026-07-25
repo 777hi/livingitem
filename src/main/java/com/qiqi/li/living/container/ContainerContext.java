@@ -47,6 +47,24 @@ public interface ContainerContext {
         return getMaxStackSize();
     }
 
+    /**
+     * 检查物品是否能放入指定槽位。
+     * 对于玩家盔甲槽位，非盔甲物品会返回 false，防止物品消失。
+     */
+    default boolean isItemValid(int slot, ItemStack stack) {
+        return true;
+    }
+
+    /**
+     * 模拟向指定槽位插入物品，返回实际可插入的数量。
+     * 委托给 handler.insertItem(slot, stack, true)，比 isItemValid 更全面。
+     */
+    default int simulateInsertItem(int slot, ItemStack stack) {
+        int slotLimit = getSlotLimit(slot);
+        int maxStack = Math.min(slotLimit, stack.getMaxStackSize());
+        return Math.min(stack.getCount(), maxStack);
+    }
+
     String getStableKey(int logicalSlot, String functionId);
 
     default boolean isValidSlot(int logicalSlot) {
