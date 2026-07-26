@@ -1,36 +1,16 @@
-# Living Chest (活箱子) 技术文档 — 完整数据流
+# Living Chest (活箱子) 技术文档
 
 ## 目录
 1. [架构概览](#1-架构概览)
-2. [两层存储系统](#2-两层存储系统)
+2. [存储系统](#2-存储系统)
 3. [核心数据流](#3-核心数据流)
 4. [关键组件详解](#4-关键组件详解)
 5. [GUI 交互与网络通信](#5-gui-交互与网络通信)
-6. [堆叠管理系统](#6-堆叠管理系统)
-7. [配方书集成](#7-配方书集成)
-   - 7.1 [配方书合成材料提取](#71-配方书合成材料提取)
-   - 7.2 [配方书活箱子标签页](#72-配方书活箱子标签页)
-   - 7.3 [拼音搜索](#73-拼音搜索)
-   - 7.4 [Shift+左键快速存入](#74-shift左键快速存入)
-8. [持久化机制](#8-持久化机制)
-9. [性能优化策略](#9-性能优化策略)
-   - 9.8 [16KB 字节容量限制](#98-16kb-字节容量限制)
-10. [UUID 生命周期管理](#10-uuid-生命周期管理)
-    - 10.1 [UUID 生命周期状态机](#101-uuid-生命周期状态机)
-    - 10.6 [ItemStackMixin — UUID 管理中枢](#106-itemstackmixin--uuid-生命周期管理中枢)
-    - 10.9 [通用传输封锁策略](#109-通用传输封锁策略)
-11. [已知问题与修复记录](#11-已知问题与修复记录)
-    - 11.9 [投掷器/发射器 UUID 异常 + 数量翻倍](#119-已修复-投掷器发射器传输导致-uuid-异常变化--数量翻倍)
-    - 11.10 [铁砧重命名堆叠异常](#1110-已修复-铁砧重命名活箱子后与未命名活箱子堆叠)
-    - 11.12 [配方书翻页越界](#1112-已修复-配方书翻页越界)
-    - 11.13 [搜索结果缓存不一致](#1113-已修复-搜索结果缓存不一致)
-    - 11.14 [关闭配方书后 Shift+左键仍触发快速存入](#1114-已修复-关闭配方书后shift左键仍触发快速存入)
-    - 11.15 [拼音搜索](#1115-功能增强-拼音搜索)
-    - 11.16 [Shift+左键快速存入 + 空活箱子支持](#1116-功能增强-shift左键快速存入--空活箱子支持)
-    - 11.17 [活箱子套娃存放](#1117-功能增强-活箱子套娃存放)
-    - 11.18 [16KB 字节容量限制](#1118-功能增强-16kb-字节容量限制)
-12. [调试指南](#12-调试指南)
-13. [反思：为什么需要这么多保障](#13-反思为什么一个看似简单的功能需要这么多保障)
+6. [配方书集成](#6-配方书集成)
+7. [SlotAccessor 传输架构](#7-slotaccessor-传输架构)
+8. [性能优化策略](#8-性能优化策略)
+9. [已知问题与修复记录](#9-已知问题与修复记录)
+10. [调试指南](#10-调试指南)
 
 ---
 
@@ -38,2052 +18,157 @@
 
 ### 1.1 什么是活箱子？
 
-活箱子是一种特殊的活物品（Living Item），它将普通箱子的物品存储功能**虚拟化**到独立的外部文件中。每个活箱子实例可以包含多个"虚拟箱子槽位"，每个槽位对应一个独立的 UUID 和磁盘文件。
+活箱子是一种特殊的活物品（Living Item），它将普通箱子的物品存储功能**内嵌到物品自身的 DataComponent 中**。每个活箱子实例直接在 `CONTAINER` 组件中存储最多 27 个槽位的物品数据，无需外部文件或 UUID 映射。
 
 ### 1.2 数据流总览图
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        运行时内存层级                                │
-│                                                                     │
-│  ┌──────────────┐    ┌─────────────────┐    ┌──────────────────┐  │
-│  │ ItemStack    │    │ ComponentState  │    │ WorldStorage     │  │
-│  │ (DataComponent)│──→│ (NBT in memory) │──→│ (LRU Cache)      │  │
-│  │              │    │                 │    │                  │  │
-│  │ • UUID列表   │    │ • uuids: [...]  │    │ UUID → items[]   │  │
-│  │ • 缓存计数   │    │ • _cc: int      │    │ dirty: boolean   │  │
-│  └──────────────┘    └─────────────────┘    └────────┬─────────┘  │
-│                                                     │             │
-│                          磁盘持久化层                ▼             │
-│                     ┌────────────────────────────────────────┐    │
-│                     │ 存档目录/data/living_chests/           │    │
-│                     │  ├── 00/                              │    │
-│                     │  │   ├── uuid-xxxx.dat               │    │
-│                     │  │   └── uuid-yyyy.dat               │    │
-│                     │  ├── 01/                              │    │
-│                     │  │   └── ...                         │    │
-│                     │  └── ff/ (共256个分片)                │    │
-│                     └────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                    单层存储架构                                │
+│                                                              │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  ItemStack (DataComponent)                           │   │
+│  │                                                      │   │
+│  │  • IS_LIVING: true          ← 活物品标记             │   │
+│  │  • LIVING_FUNCTION_DATA:    ← 功能状态               │   │
+│  │    └─ living_chest                                   │   │
+│  │       └─ internal_storage                            │   │
+│  │          ├─ _us: int        ← 已用槽位数             │   │
+│  │          ├─ _bu: int        ← 字节用量               │   │
+│  │          └─ _ch: int        ← 容器哈希（脏检查）     │   │
+│  │  • CONTAINER: ItemContainerContents  ← 27 槽物品数据  │   │
+│  │                                                      │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                                                              │
+│  ✅ 随物品迁移（放入背包、容器、丢出地面都保留）             │
+│  ✅ 可序列化到存档（通过 DataComponent 系统）                │
+│  ✅ 自动同步到客户端（原版容器同步机制）                     │
+│  ✅ 无外部文件、无 UUID、无缓存一致性问题                    │
+└──────────────────────────────────────────────────────────────┘
 ```
+
+**与旧版 UUID 架构的对比**:
+
+| 特性 | 旧版（UUID + WorldStorage） | 当前版（DataComponent 直存） |
+|------|---------------------------|---------------------------|
+| 存储位置 | 磁盘文件 `data/living_chests/xx/uuid.dat` | ItemStack 的 `CONTAINER` 组件 |
+| 数据同步 | 需要自定义网络包 | 原版容器同步自动处理 |
+| 缓存管理 | LRU 缓存 + 脏标记 + 定期保存 | 无需缓存 |
+| 堆叠支持 | UUID 拆分/合并 + 6 个 ThreadLocal | `isSameItemSameComponents` 忽略运行时组件（LIVING_FUNCTION_DATA），不同物品的活箱子不堆叠 |
+| 持久化 | 显式 `saveAllDirty()` | 随存档自动保存 |
+| 复杂度 | 高（两层存储 + 线程安全 + 文件 I/O） | 低（单层存储 + 原版机制） |
 
 ### 1.3 关键类和职责
 
 #### 核心存储系统
-| 类名 | 文件位置 | 职责 |
-|------|---------|------|
-| `LivingChestFunction` | `living/LivingChestFunction.java` | 活箱子功能入口，提供 insert/extract API |
-| `InternalStorageComponent` | `core/components/InternalStorageComponent.java` | 内部存储组件，管理 UUID 列表和 WorldStorage 交互 |
-| `WorldStorage` | `InternalStorageComponent.java` 内部类 | 全局单例，管理磁盘文件 I/O 和 LRU 缓存 |
-| `ItemTransferComponent` | `core/components/ItemTransferComponent.java` | 物品传输组件，处理活漏斗↔活箱子的传输 |
-
-#### 基础设施
-| 类名 | 文件位置 | 职责 |
-|------|---------|------|
-| `BaseLivingFunction` | `living/BaseLivingFunction.java` | 基类，负责 tick 编排和状态保存 |
-| `ContainerContext` | `living/ContainerContext.java` | 容器上下文接口，抽象容器操作 |
-| `ComponentState` | `core/ComponentState.java` | 组件状态包装器，类型安全的 NBT 读写 |
-
-#### GUI 交互与网络通信（第5章）
-| 类名 | 文件位置 | 职责 |
-|------|---------|------|
-| `LivingChestAccessPacket` | `network/LivingChestAccessPacket.java` | 存取请求包（客户端→服务端）: LOAD/DEPOSIT/WITHDRAW |
-| `LivingChestContentsPacket` | `network/LivingChestContentsPacket.java` | 内容同步包（服务端→客户端）: 同步活箱子物品列表 |
-| `ServerPacketHandler` | `network/ServerPacketHandler.java` | 网络请求处理器，分发并执行存取操作 |
-
-#### 堆叠管理系统（第6章）
-| 类名 | 文件位置 | 职责 |
-|------|---------|------|
-| `LivingChestStackFlags` | `living/LivingChestStackFlags.java` | ThreadLocal 标志，标记允许跨 UUID 堆叠的 GUI 操作上下文 |
-| `AbstractContainerMenuMixin` | `mixin/AbstractContainerMenuMixin.java` | Mixin：拦截容器点击，设置/清理堆叠标志 |
-| `ItemStackMixin` | `mixin/ItemStackMixin.java` | Mixin：拦截堆叠判定、拆分/合并时的 UUID 分配逻辑 |
-| `LivingChestStackHandler` | `living/LivingChestStackHandler.java` | UUID 列表工具类：标准化、合并、拆分、一致性校验 |
-| `BlockItemMixin` | `mixin/BlockItemMixin.java` | Mixin：拦截方块放置，自动填充物品到实体箱子 |
-
-#### 配方书集成（第7章）
-| 类名 | 文件位置 | 职责 |
-|------|---------|------|
-| `ServerPlaceRecipeMixin` | `mixin/ServerPlaceRecipeMixin.java` | Mixin：拦截配方书合成，支持从活箱子提取材料 |
-| `RecipeBookComponentMixin` | `client/mixin/RecipeBookComponentMixin.java` | Mixin：配方书活箱子标签页（客户端），网格显示、搜索、翻页、点击存取 |
-| `PinyinHelper` | `client/util/PinyinHelper.java` | 拼音搜索工具类，20924 字符映射，支持全拼/首字母/混合匹配 |
-| `LivingChestTabState` | `client/util/LivingChestTabState.java` | 活箱子标签页激活状态（跨 Mixin 共享） |
-| `InventoryScreenMixin` | `client/mixin/InventoryScreenMixin.java` | Mixin：生存模式背包界面，Shift+左键快速存入活箱子 |
-| `AbstractContainerScreenMixin` | `client/mixin/AbstractContainerScreenMixin.java` | Mixin：通用容器界面，Shift+左键快速存入活箱子 |
-
----
-
-## 2. 两层存储系统
-
-活箱子的数据存储分为两个层次，理解这两层的交互是掌握整个系统的关键。
-
-### 2.1 第一层：物品 NBT 层（ItemStack DataComponent）
-
-**存储位置**: `ItemStack → LivingFunctionData → living_chest → internal_storage`
-
-**存储内容**:
-```json
-{
-  "internal_storage": {
-    "uuids": [
-      "550e8400-e29b-41d4-a716-446655440000",
-      "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
-    ],
-    "_cc": 2
-  }
-}
-```
-
-**关键字段**:
-- **`uuids`** (ListTag): 虚拟箱子的 UUID 列表。每个 UUID 对应一个独立的存储单元。
-- **`_cc`** (int): Cached Count，缓存的堆叠数量。用于 tick 时快速判断是否需要调整。
-
-**特点**:
-- ✅ 随物品迁移（放入背包、容器、丢出地面都保留）
-- ✅ 可序列化到存档（通过 DataComponent 系统）
-- ❌ 不存储实际物品数据（只存 UUID 引用）
-
-### 2.2 第二层：磁盘文件层（WorldStorage）
-
-**存储位置**: `<存档>/data/living_chests/<分片>/<uuid>.dat`
-
-**文件格式**: 压缩的 NBT (gzip + CompoundTag)
-
-**文件内容示例**:
-```json
-{
-  "items": [
-    {"id":"minecraft:diamond","count":64,"components":{}},
-    {"id":"minecraft:iron_ingot","count":32,"components":{}},
-    {},  // 空槽位
-    // ... 共 capacityPerChest 个元素
-  ]
-}
-```
-
-**特点**:
-- ✅ 每个 UUID 对应一个独立文件
-- ✅ 支持二级目录分片（256 个子目录）
-- ✅ 使用 LRU + 超时双策略缓存
-- ⚠️ 需要显式调用 `markDirty()` + `saveAllDirty()` 才会写入磁盘
-
-### 2.3 两层数据同步机制
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    数据同步时序图                             │
-│                                                             │
-│  时间轴 ─────────────────────────────────────────────────→  │
-│                                                             │
-│  [操作]         [NBT层]          [WorldStorage]    [磁盘]    │
-│                                                             │
-│  insertItem()  │ 读取UUID列表     │ getOrCreate()    │        │
-│                │ ↓               │ ↓                │        │
-│                │ 修改WorldStorage │ markDirty()      │        │
-│                │ ↓               │ ↓                │        │
-│                │ saveStorageState│ (缓存标记脏)      │        │
-│                │ (写回NBT)       │                  │        │
-│                                                             │
-│  LevelEvent.Save│                │ saveAllDirty()   │ 写入   │
-│                │                │ (遍历脏条目)      │ 磁盘   │
-│                                                             │
-│  ServerStopping│                │ saveAllDirty()   │ 最终   │
-│                │                │ (确保所有数据保存)│ 保存   │
-└─────────────────────────────────────────────────────────────┘
-```
-
-**核心原则**:
-1. **NBT 层是"索引"**: 只存储 UUID 列表，不存储实际物品
-2. **WorldStorage 是"缓存"**: 内存中的物品数据，需要 markDirty 才会被保存
-3. **磁盘是"真相来源"**: 重启后从磁盘加载数据
-
----
-
-## 3. 核心数据流
-
-### 3.1 初始化流程（首次使用）
-
-当活漏斗第一次往空活箱子存入物品时触发。
-
-**触发条件**: `insertItem()` 发现 `uuids.isEmpty() == true`
-
-```
-用户操作: 用活漏斗往空活箱子放入钻石
-       │
-       ▼
-LivingChestFunction.insertItem(server, chestStack, diamondStack, 27)
-       │
-       ├─ 1. getStorageState(chestStack)
-       │     └─ 从 ItemStack 的 DataComponent 读取 ComponentState
-       │        └─ 结果: state = { uuids: [], _cc: -1 }
-       │
-       ├─ 2. InternalStorageComponent.insertItem(server, state, diamond, 27, stackCount)
-       │     │
-       │     ├─ 检测到 uuids 为空
-       │     │
-       │     ├─ 创建新的 UUID 列表:
-       │     │    for i in 0..stackCount:
-       │     │        uuid = WorldStorage.createAndRegister(server, 27)
-       │     │        uuids.add(uuid)
-       │     │
-       │     ├─ saveUuids(state, uuids)  ← 更新 ComponentState
-       │     ├─ state.setInt(KEY_CACHED_COUNT, stackCount)
-       │     │
-       │     ├─ 将物品插入第一个 UUID 的存储:
-       │     │    chestSlots = storage.getOrCreate(uuid[0], 27)
-       │     │    chestSlots[0] = diamond.copy()
-       │     │    diamond.setCount(0)  ← 消耗源物品
-       │     │
-       │     └─ storage.markDirty(uuid[0])  ← 标记为脏数据
-       │
-       └─ 3. saveStorageState(chestStack, state)
-              └─ 将更新后的 ComponentState 写回 ItemStack 的 DataComponent
-```
-
-**结果**:
-- NBT 层: `{ uuids: ["xxx"], _cc: 1 }`
-- WorldStorage 缓存: `{"xxx": [diamond, empty, ..., empty]}`
-- 磁盘: 尚未写入（等待下次 saveAllDirty）
-
-### 3.2 存入物品流程（已有 UUID）
-
-当活漏斗往已有数据的活箱子继续存入物品时。
-
-**触发场景**: `transferToLivingChest()` 被调用
-
-```
-用户操作: 活漏斗再次往活箱子放入铁锭
-       │
-       ▼
-ItemTransferComponent.transferToLivingChest(ctx, containerCtx,
-                                             sourceSlot, targetSlot,
-                                             sourceStack, stackSize, maxTransfer)
-       │
-       ├─ 1. 获取目标活箱子引用
-       │     targetChestStack = containerCtx.getItem(targetSlot)
-       │
-       ├─ 2. 计算传输数量
-       │     transferAmount = min(sourceStack.count, stackSize, maxTransfer)
-       │     toInsert = sourceStack.copy()
-       │     toInsert.setCount(transferAmount)
-       │
-       ├─ 3. 调用 LivingChestFunction.insertItem()
-       │     LivingChestFunction.insertItem(server, targetChestStack, toInsert, 27)
-       │     │
-       │     ├─ getStorageState(chestStack)
-       │     │    └─ 读取当前 UUID 列表: ["xxx"]
-       │     │
-       │     ├─ InternalStorageComponent.insertItem()
-       │     │    │
-       │     │    ├─ 检查 uuids.size() vs hostStackCount
-       │     │    │   └─ 如果匹配，跳过调整
-       │     │    │
-       │     │    ├─ 遍历 UUID 列表，尝试插入物品:
-       │     │    │   for each uuid in uuids:
-       │     │    │       chestSlots = storage.getOrCreate(uuid, 27)
-       │     │    │       for each slot in chestSlots:
-       │     │    │           if slot.isEmpty():
-       │     │    │               slot = toInsert.copy()
-       │     │    │               toInsert.setCount(0)  ← 完全消耗
-       │     │    │           else if sameItem(slot, toInsert):
-       │     │    │               transfer = min(available, toInsert.count)
-       │     │    │               slot.grow(transfer)
-       │     │    │               toInsert.shrink(transfer)
-       │     │    │
-       │     │    └─ storage.markDirty(uuid)  ← 标记修改过的 UUID
-       │     │
-       │     └─ saveStorageState(chestStack, state)
-       │        └─ 将更新后的状态写回 ItemStack
-       │
-       ├─ 4. 计算实际传输数量
-       │     actuallyTransferred = originalCount - toInsert.getCount()
-       │
-       ├─ 5. 更新源槽位
-       │     sourceStack.shrink(actuallyTransferred)
-       │     containerCtx.setItem(sourceSlot, sourceStack)
-       │
-       └─ 6. 标记目标槽位（防止级联传输）
-              transferredTargetSlots.add(targetSlot)
-```
-
-**关键点**:
-- `toInsert` 是副本，修改它不会影响原始 `sourceStack`
-- 只有实际被插入的物品才会从源槽位移除
-- 如果活箱子已满，`actuallyTransferred == 0`，源物品不变
-
-### 3.3 取出物品流程
-
-当活漏斗从活箱子取出物品时。
-
-**触发场景**: `transferFromLivingChest()` 被调用
-
-```
-用户操作: 活漏斗从活箱子取出物品到相邻容器
-       │
-       ▼
-ItemTransferComponent.transferFromLivingChest(ctx, containerCtx,
-                                               sourceSlot, targetSlot,
-                                               targetStack, stackSize, maxTransfer)
-       │
-       ├─ 1. 获取源活箱子引用
-       │     sourceChestStack = containerCtx.getItem(sourceSlot)
-       │
-       ├─ 2. 计算提取数量
-       │     extractAmount = min(stackSize, maxTransfer)
-       │
-       ├─ 3. 调用 LivingChestFunction.extractItem()
-       │     LivingChestFunction.extractItem(server, sourceChestStack,
-       │                                      extractAmount, 27, hostStackCount)
-       │     │
-       │     ├─ getStorageState(chestStack)
-       │     │    └─ 读取 UUID 列表: ["xxx"]
-       │     │
-       │     ├─ InternalStorageComponent.extractItem()
-       │     │    │
-       │     │    ├─ 遍历 UUID 列表，按顺序提取:
-       │     │    │   for each uuid in uuids:
-       │     │    │       chestSlots = storage.getOrCreate(uuid, 27)
-       │     │    │       for each slot in chestSlots:
-       │     │    │           if slot.isEmpty(): continue
-       │     │    │
-       │     │    │           if result.isEmpty():
-       │     │    │               result = slot.copyWithCount(min(amount, slot.count))
-       │     │    │               slot.shrink(extracted)
-       │     │    │           else if sameItem(result, slot):
-       │     │    │               extracted = min(remaining, spaceAvailable)
-       │     │    │               result.grow(extracted)
-       │     │    │               slot.shrink(extracted)
-       │     │    │
-       │     │    │           if slot.isEmpty():
-       │     │    │               chestSlots[j] = EMPTY
-       │     │    │
-       │     │    └─ storage.markDirty(uuid)  ← 标记修改过的 UUID
-       │     │
-       │     └─ saveStorageState(chestStack, state)  ← ⚠️ 必须调用！
-       │
-       └─ 4. 将提取的物品放入目标槽位
-              if targetStack.isEmpty:
-                  containerCtx.setItem(targetSlot, extracted)
-              else if canMerge:
-                  targetStack.grow(transferAmount)
-                  containerCtx.setItem(targetSlot, targetStack)
-```
-
-**⚠️ 重要**: `extractItem()` 必须调用 `saveStorageState()`！否则：
-- WorldStorage 中的数据已更新（物品被移除）
-- 但 NBT 层的状态未保存（如果后续 tick 覆盖了状态，可能导致不一致）
-
-### 3.4 Tick 调整流程
-
-每次服务端 tick，活箱子都会检查是否需要调整虚拟箱子数量。
-
-**触发时机**: `BaseLivingFunction.tick()` → `InternalStorageComponent.tick()`
-
-```
-每 tick 执行:
-       │
-       ▼
-InternalStorageComponent.tick(ctx, hostSlot, hostStack, state, config)
-       │
-       ├─ 1. 快速路径检查
-       │     cachedCount = state.getInt("_cc", -1)
-       │     expectedCount = hostStack.getCount()
-       │     if cachedCount == expectedCount:
-       │         return  ← 无需调整
-       │
-       ├─ 2. 加载 UUID 列表
-       │     uuids = getUuids(state)
-       │     actualCount = uuids.size()
-       │
-       ├─ 3. 数量不足时（拆分/增加堆叠）
-       │     while actualCount < expectedCount:
-       │         newUuid = WorldStorage.createAndRegister(server, capacity)
-       │         uuids.add(newUuid)
-       │         actualCount++
-       │         changed = true
-       │
-       ├─ 4. 数量过多时（合并/减少堆叠）⚠️ UUID 只增不减
-       │     // 不删除多余的 UUID，保留所有 UUID
-       │     // 后续如果堆叠数再次增加，可直接复用这些 UUID
-       │     // 记录日志但不删除任何 UUID 或磁盘文件
-       │     LOGGER.info("UUID count > stack count, keeping all uuids")
-       │     // 不执行任何删除操作！
-       │
-       ├─ 5. 保存变更
-       │     if changed:
-       │         saveUuids(state, uuids)
-       │
-       └─ 6. 更新缓存计数
-              state.setInt("_cc", expectedCount)
-```
-
-**设计意图**:
-- `_cc` 字段避免每 tick 都解析 UUID 列表（性能优化）
-- 只在堆叠数量变化时才执行实际的增删操作
-- **UUID 只增不减**：即使堆叠数减少，也不删除 UUID 和磁盘文件（防止数据丢失）
-- 多余的 UUID 在堆叠数再次增加时可直接复用，无需重建
-
-### 3.5 活箱子间传输流程
-
-当两个活箱子之间直接传输物品时。
-
-**触发场景**: `transferBetweenLivingChests()` 被调用
-
-```
-活箱子A → 活箱子B 传输
-       │
-       ▼
-transferBetweenLivingChests(ctx, containerCtx, sourceSlot, targetSlot,
-                              stackSize, maxTransfer)
-       │
-       ├─ 1. 从源活箱子提取物品
-       │     extracted = LivingChestFunction.extractItem(
-       │                    server, sourceChestStack, transferAmount, capacity)
-       │     if extracted.isEmpty(): return false
-       │
-       ├─ 2. 尝试插入目标活箱子
-       │     originalCount = extracted.getCount()
-       │     LivingChestFunction.insertItem(server, targetChestStack, extracted, capacity)
-       │     actuallyInserted = originalCount - extracted.getCount()
-       │
-       ├─ 3. 处理部分插入失败
-       │     if actuallyInserted <= 0:
-       │         LivingChestFunction.insertItem(server, sourceChestStack, extracted, capacity)
-       │         return false  ← 物品退回源箱子
-       │
-       ├─ 4. 处理部分插入成功
-       │     if !extracted.isEmpty:
-       │         LivingChestFunction.insertItem(server, sourceChestStack, extracted, capacity)
-       │         return true  ← 剩余物品退回源箱子
-       │
-       └─ 5. 标记目标槽位（防止级联传输）
-              transferredTargetSlots.add(targetSlot)
-```
-
-**原子性保证**:
-- 提取失败时不影响任何一方
-- 插入失败时自动回滚（退回源箱子）
-- 部分插入时剩余物品退回源箱子
-
-### 3.6 方块放置自动填充流程
-
-当玩家将装有物品的活箱子放置为方块时，自动将虚拟箱子中的物品填充到实体箱子中。
-
-**触发时机**: `BlockItem.place()` 被调用（玩家右键放置方块）
-
-**Mixin 拦截**: `BlockItemMixin.onPlaceHead()` + `onPlaceReturn()`
-
-```
-玩家操作: 右键放置活箱子方块
-       │
-       ▼
-BlockItem.place(BlockPlaceContext)
-       │
-       ├─ 1. HEAD 注入: 捕获活箱子 UUID 列表
-       │     │
-       │     ├─ 检查是否为活箱子: isLivingChest(stack)
-       │     ├─ 读取 UUID 列表: getUuids(stack)
-       │     │   └─ 如果为空 → 跳过（普通箱子）
-       │     ├─ 设置 BLOCK_PLACING_UUIDS 标志
-       │     │   └─ 阻止 onShrink/onSetCount 在放置期间修改 UUID
-       │     └─ 记录日志: "captured N uuids for block placement"
-       │
-       ├─ 2. 原版执行: 放置方块 + 消耗物品
-       │     │
-       │     ├─ BlockItem.place() 正常放置方块
-       │     ├─ 生存模式: stack.shrink(1) → onShrink 检测到
-       │     │   BLOCK_PLACING_UUIDS 非空 → 跳过
-       │     └─ 创造模式: 物品不消耗，留在手中
-       │
-       ├─ 3. RETURN 注入: 检查放置结果并填充物品
-       │     │
-       │     ├─ 检查放置是否成功 (result.consumesAction())
-       │     │   └─ 失败 → 清理标志，跳过
-       │     │
-       │     ├─ 获取放置位置的方块实体
-       │     │   └─ 必须是 ChestBlockEntity
-       │     │
-       │     ├─ 遍历 UUID 列表，填充物品到实体箱子:
-       │     │   for each uuid in uuids:
-       │     │       chestItems = storage.getOrCreate(uuid, capacity)
-       │     │       for each item in chestItems:
-       │     │           if item.isEmpty(): continue
-       │     │           // 查找空槽位或与同类物品合并
-       │     │           for slot in chestContainer:
-       │     │               if slot.isEmpty():
-       │     │                   setItem(slot, item.copy())
-       │     │               elif sameItem(slot, item):
-       │     │                   slot.grow(mergeAmount)
-       │     │
-       │     ├─ 清空活箱子虚拟存储: LivingChestFunction.clearStorage(stack)
-       │     │   └─ 清空 UUID 列表 + 重置已用槽位计数
-       │     │   └─ 不删除磁盘文件（遵循 UUID 只增不减原则）
-       │     │
-       │     └─ 记录日志: "transferred N items from M virtual chests"
-       │
-       └─ 4. 清理 BLOCK_PLACING_UUIDS 标志
-```
-
-**关键设计决策**:
-
-| 决策 | 理由 |
+| 类名 | 职责 |
 |------|------|
-| 使用 HEAD + RETURN 注入 | 放置前捕获 UUID（物品放置后会被消耗），放置后转移物品 |
-| BLOCK_PLACING_UUIDS 互斥标志 | 阻止 onShrink/onSetCount 在放置期间重复处理 UUID |
-| 不删除磁盘文件 | 遵循 UUID 只增不减原则，防止数据丢失 |
-| 支持物品合并 | 如果实体箱子已有同类物品，优先合并而非占用新槽位 |
-| 部分填充处理 | 如果实体箱子已满，剩余物品仍保留在虚拟箱子中，记录警告日志 |
-
-**生存模式 vs 创造模式差异**:
-
-| 模式 | 物品消耗 | clearStorage 效果 |
-|------|---------|-------------------|
-| 生存 | shrink(1) → 物品被消耗 | 清空已消耗物品的 NBT（无影响） |
-| 创造 | 物品不消耗，留在手中 | 清空手中物品的 UUID 引用，变为空活箱子 |
-
-**⚠️ 与 onShrink 的互斥保护**:
-```
-BlockItem.place() 内部调用 shrink() 时:
-  1. BLOCK_PLACING_UUIDS 已在 HEAD 中设置（非 null）
-  2. onShrink 检测到 BLOCK_PLACING_UUIDS 非空 → 跳过
-  3. 防止 PENDING_TRANSFER 被污染
-  4. RETURN 中清理 BLOCK_PLACING_UUIDS
-```
-
----
-
-## 4. 关键组件详解
-
-### 4.1 WorldStorage（全局存储管理器）
-
-**设计模式**: 单例模式 + 工厂模式
-
-```java
-public static class WorldStorage {
-    private static final String DIR_NAME = "living_chests";
-    private static final long UNLOAD_TIMEOUT_MS = 5 * 60 * 1000;  // 5分钟
-    private static final int MAX_CACHE_SIZE = 200;  // 最大缓存200个箱子
-    private static final int SHARD_BITS = 8;  // 8位分片 = 256个子目录
-
-    private static WorldStorage instance;  // 全局单例
-    private final MinecraftServer server;
-    private final Path storageDir;
-    private final LinkedHashMap<UUID, CachedStorage> cache;  // LRU缓存
-    private final Set<UUID> dirtyKeys;  // 脏数据追踪集合
-}
-```
-
-**核心方法**:
-
-#### `getOrCreate(UUID uuid, int capacity)`
-```
-输入: UUID + 槽位数
-输出: List<ItemStack> （可修改的引用）
-
-流程:
-1. 检查缓存命中 → 直接返回（更新访问时间）
-2. 尝试从磁盘加载 → loadFromDisk(uuid)
-3. 磁盘不存在 → 创建空槽位 createEmptySlots(capacity)
-4. 放入缓存 → putCache(uuid, items, false)
-5. 返回 items 引用
-```
-
-**⚠️ 注意**: 返回的是内部列表的**直接引用**，修改它会直接影响缓存！
-
-#### `markDirty(UUID uuid)`
-```
-作用: 标记指定 UUID 的数据已被修改
-
-流程:
-1. 在 cache 中查找 uuid
-2. 设置 cached.dirty = true
-3. 将 uuid 加入 dirtyKeys 集合
-4. 日志: 记录当前缓存大小和脏数据数量
-```
-
-#### `saveAllDirty()`
-```
-作用: 将所有脏数据写入磁盘
-
-触发时机:
-- LevelEvent.Save (主世界保存时)
-- ServerStoppingEvent (服务器停止时)
-
-流程:
-1. 检查 dirtyKeys 是否为空 → 是则返回
-2. 遍历 dirtyKeys:
-   for uuid in dirtyKeys:
-       cached = cache.get(uuid)
-       if cached && cached.dirty:
-           saveToDisk(uuid, cached.items)  ← 写入磁盘
-           cached.dirty = false
-3. 清空 dirtyKeys
-```
-
-#### `saveToDisk(UUID uuid, List<ItemStack> items)`
-```
-作用: 将物品列表序列化为 NBT 并写入磁盘
-
-文件格式:
-{
-  "items": [
-    <ItemStack NBT>,  // 非空物品
-    {},               // 空槽位（空的 CompoundTag）
-    ...
-  ]
-}
-
-原子性保证:
-1. 先写入临时文件: xxx.tmp
-2. 再原子替换: Files.move(tmp, path, ATOMIC_MOVE)
-3. ATOMIC_MOVE 失败时降级为普通移动
-```
-
-**🔴 关键 Bug 修复 (2024)**:
-```java
-// 错误写法（旧版本）:
-CompoundTag itemTag = new CompoundTag();
-stack.save(provider, itemTag);  // ❌ 返回值被忽略！
-itemsList.add(itemTag);  // itemTag 仍然是空的！
-
-// 正确写法（修复后）:
-if (!stack.isEmpty()) {
-    Tag saved = stack.save(provider, new CompoundTag());  // ✅ 使用返回值
-    itemsList.add(saved);
-} else {
-    itemsList.add(new CompoundTag());
-}
-```
-
-**原因**: `ItemStack.save()` 内部使用 `Codec.encode()`，而 `NbtOps.mergeToMap()` 会创建浅拷贝，不会修改传入的 tag！
-
-### 4.2 ComponentState（组件状态包装器）
-
-**设计原则**: 类型安全的 NBT 读写接口
-
-```java
-public class ComponentState {
-    private final CompoundTag data;
-
-    public int getInt(String key, int defaultValue);
-    public void setInt(String key, int value);
-    public ListTag getList(String key, int type);
-    public void putList(String key, ListTag list);
-    public CompoundTag toNBT();  // 导出深拷贝
-    public static ComponentState fromNBT(CompoundTag tag);  // 从NBT创建
-}
-```
-
-**在活箱子中的使用**:
-
-| Key | Type | 说明 |
-|-----|------|------|
-| `uuids` | ListTag (String) | 虚拟箱子的 UUID 列表 |
-| `_cc` | int | 缓存的堆叠数量 |
-
-**不可变性注意**:
-- `ComponentState` 本身不是不可变的（可修改 data）
-- 但 `toNBT()` 返回深拷贝，修改不影响原对象
-- `fromNBT()` 创建新实例，不共享引用
-
-### 4.3 LivingChestFunction（功能入口）
-
-**职责**: 提供简洁的 API，隐藏内部复杂性
-
-```java
-public class LivingChestFunction extends BaseLivingFunction {
-
-    // ========== 公开 API ==========
-
-    public static boolean insertItem(MinecraftServer server,
-                                     ItemStack chestStack,
-                                     ItemStack itemToInsert,
-                                     int capacityPerChest);
-
-    public static ItemStack extractItem(MinecraftServer server,
-                                        ItemStack chestStack,
-                                        int amount,
-                                        int capacityPerChest);
-
-    public static List<UUID> getUuids(ItemStack stack);
-
-    public static boolean hasStorage(ItemStack stack);
-
-    // ========== 内部方法 ==========
-
-    private static void saveStorageState(ItemStack stack, ComponentState state);
-    private static ComponentState getStorageState(ItemStack stack);
-}
-```
-
-**API 设计模式**:
-1. 所有公开方法都是 `static`，无需实例化
-2. 自动处理状态加载和保存（getStorageState + saveStorageState）
-3. 参数清晰：server、chestStack、操作参数
-
----
-
-## 5. GUI 交互与网络通信
-
-活箱子支持通过 GUI 界面进行物品存取操作，这需要客户端与服务端之间的网络通信。
-
-### 5.1 系统架构图
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        GUI 交互系统架构                              │
-│                                                                     │
-│  客户端 (Client)                                                     │
-│  ┌─────────────┐    ┌───────────────────┐    ┌──────────────────┐  │
-│  │ 活箱子 GUI   │───▶│ LivingChestAccess │───▶│ LivingChest      │  │
-│  │ (用户操作)   │    │ Packet (请求包)    │    │ ContentsPacket   │  │
-│  └─────────────┘    └───────────────────┘    │ (响应/同步包)     │  │
-│                                                 └────────┬────────┘  │
-│                                                          │           │
-│  服务端 (Server)                                          ▼           │
-│  ┌────────────────────────────────────────────────────────────────┐ │
-│  │                    ServerPacketHandler                         │ │
-│  │              (处理客户端请求并返回响应)                          │ │
-│  └─────────────────────────────────┬──────────────────────────────┘ │
-│                                    │                                │
-│                                    ▼                                │
-│  ┌────────────────────────────────────────────────────────────────┐ │
-│  │                  LivingChestFunction                            │ │
-│  │            (insertItem / extractItem / getMergedStorage)        │ │
-│  └─────────────────────────────────┬──────────────────────────────┘ │
-│                                    │                                │
-│                                    ▼                                │
-│  ┌────────────────────────────────────────────────────────────────┐ │
-│  │               InternalStorageComponent → WorldStorage          │ │
-│  └────────────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-### 5.2 核心文件说明
-
-#### 5.2.1 LivingChestAccessPacket（存取请求包）
-
-**文件位置**: `network/LivingChestAccessPacket.java`
-
-**功能**: 客户端向服务端发送活箱子的存取请求
-
-**操作类型**:
-| 操作 | 值 | 说明 |
-|------|-----|------|
-| `LOAD` | 0 | 请求加载活箱子的完整内容列表 |
-| `DEPOSIT` | 1 | 将光标上的物品存入活箱子 |
-| `WITHDRAW` | 2 | 从活箱子取出指定物品到光标 |
-| `WITHDRAW_INVENTORY` | 3 | 从活箱子取出物品到玩家背包 |
-| `DEPOSIT_SLOT` | 4 | 从玩家背包指定槽位存入物品到活箱子（Shift+左键快速存入） |
-
-**数据结构**:
-```java
-public record LivingChestAccessPacket(
-    int action,           // 操作类型 (LOAD/DEPOSIT/WITHDRAW)
-    @Nullable CompoundTag itemTag,  // 物品 NBT（DEPOSIT/WITHDRAW 时使用）
-    int amount            // 数量（DEPOSIT/WITHDRAW 时使用）
-)
-```
-
-**使用流程**:
-```
-客户端: 用户点击"存入"按钮
-       │
-       ├─ 1. 获取光标物品的 NBT 和数量
-       ├─ 2. 构造 LivingChestAccessPacket(DEPOSIT, itemTag, amount)
-       └─ 3. 发送到服务端
-
-客户端: 用户 Shift+左键点击背包物品（配方书活箱子标签页激活时）
-       │
-       ├─ 1. 检查: 配方书可见 && 活箱子标签激活 && 非活箱子物品
-       ├─ 2. 构造 LivingChestAccessPacket(DEPOSIT_SLOT, itemTag, count)
-       └─ 3. 发送到服务端
-
-服务端: ServerPacketHandler.handleLivingChestAccess()
-       │
-       ├─ 1. 解析操作类型和参数
-       ├─ 2. 根据 action 分发处理:
-       │     case DEPOSIT:
-       │         从光标物品存入活箱子
-       │     case WITHDRAW:
-       │         从活箱子取出物品到光标
-       │     case WITHDRAW_INVENTORY:
-       │         从活箱子取出物品到背包
-       │     case LOAD:
-       │         加载活箱子内容列表
-       │     case DEPOSIT_SLOT:
-       │         从背包指定槽位存入活箱子（优先已有物品的活箱子 > 空活箱子）
-       └─ 3. 发送 LivingChestContentsPacket 响应给客户端（LOAD/DEPOSIT/WITHDRAW 时）
-```
-
-#### 5.2.2 LivingChestContentsPacket（内容同步包）
-
-**文件位置**: `network/LivingChestContentsPacket.java`
-
-**功能**: 服务端向客户端同步活箱子的物品内容
-
-**触发时机**:
-1. 客户端发送 `LOAD` 请求后
-2. 客户端执行 `DEPOSIT` 或 `WITHDRAW` 操作后
-
-**数据结构**:
-```java
-public record LivingChestContentsPacket(
-    List<CompoundTag> itemTags  // 活箱子内所有物品的 NBT 列表
-)
-```
-
-**客户端处理**:
-```java
-public static void handle(LivingChestContentsPacket packet, IPayloadContext context) {
-    context.enqueueWork(() -> {
-        List<ItemStack> items = new ArrayList<>();
-        for (CompoundTag tag : packet.itemTags) {
-            ItemStack stack = ItemStack.parse(registryAccess, tag).orElse(EMPTY);
-            if (!stack.isEmpty()) items.add(stack);
-        }
-        LivingChestContentsCache.set(items);  // 更新本地缓存
-    });
-}
-```
-
-### 5.3 网络通信时序图
-
-```
-时间轴 ─────────────────────────────────────────────────────────→
-
-[客户端]                    [服务端]                     [磁盘]
-
-  │                           │                           │
-  │  ① 用户打开活箱子 GUI      │                           │
-  │──────────────────────────▶│                           │
-  │  LivingChestAccessPacket  │                           │
-  │  (action=LOAD)            │                           │
-  │                           │                           │
-  │                           │ ② 加载活箱子内容           │
-  │                           │──────────────────────────▶│
-  │                           │  WorldStorage.getOrCreate()│
-  │                           │◀───────────────────────────│
-  │                           │                           │
-  │  ③ 返回内容列表            │                           │
-  │◀──────────────────────────│                           │
-  │  LivingChestContentsPacket│                           │
-  │                           │                           │
-  │  ④ 用户存入物品            │                           │
-  │──────────────────────────▶│                           │
-  │  LivingChestAccessPacket  │                           │
-  │  (action=DEPOSIT)         │                           │
-  │                           │                           │
-  │                           │ ⑤ 执行存入操作             │
-  │                           │  InternalStorageComponent  │
-  │                           │  .insertItem()             │
-  │                           │  markDirty()               │
-  │                           │                           │
-  │  ⑥ 同步更新后的内容        │                           │
-  │◀──────────────────────────│                           │
-  │  LivingChestContentsPacket│                           │
-  │                           │                           │
-  │  ⑦ LevelEvent.Save        │                           │
-  │                           │──────────────────────────▶│
-  │                           │  saveAllDirty()           │
-  │                           │  (写入磁盘)                │
-```
-
-### 5.4 设计要点
-
-#### 为什么需要自定义网络包？
-
-原版 Minecraft 的容器系统基于槽位索引（slot index），但活箱子的存储是虚拟化的：
-- **不在任何容器的实际槽位中**
-- **数据存储在外部文件中**
-- **需要特殊的序列化/反序列化逻辑**
-
-因此无法复用原版的容器同步机制，必须实现自定义网络通信。
-
-#### 数据一致性保障
-
-1. **服务端权威**: 所有修改操作都在服务端执行
-2. **原子性**: 每次操作后立即同步完整状态
-3. **乐观更新**: 客户端先更新 UI，收到确认后修正
-
----
-
-## 6. 堆叠管理系统
-
-活箱子的特殊之处在于：**每个堆叠的物品都对应一个独立的 UUID 和存储单元**。这导致原版的堆叠判定逻辑失效——两个相同类型的活箱子如果 UUID 不同，默认情况下无法堆叠。
-
-堆叠管理系统的目标是：**在玩家手动操作时允许跨 UUID 堆叠，同时保持世界交互的安全性**。
-
-### 6.1 系统架构图
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                       堆叠管理系统架构                               │
-│                                                                     │
-│  触发源                                                             │
-│  ┌──────────────────────┐                                         │
-│  │ AbstractContainerMenu│                                         │
-│  │     Mixin            │                                         │
-│  └──────────┬───────────┘                                         │
-│             │ 拦截 clicked() 方法                                   │
-│             │ 设置 ALLOW_STACK = true                              │
-│             ▼                                                     │
-│  ┌──────────────────────┐                                         │
-│  │ LivingChestStackFlags│ ◀── ThreadLocal<Boolean>                 │
-│  │  (上下文标志)         │                                         │
-│  └──────────┬───────────┘                                         │
-│             │ 被 isSameItemSameComponents 检查                     │
-│             ▼                                                     │
-│  ┌──────────────────────────────────────────────────────────────┐ │
-│  │                      ItemStack Mixin                         │ │
-│  │                                                               │ │
-│  │  ┌─────────────────────────────────────────────────────────┐ │ │
-│  │  │ isSameItemSameComponents()                              │ │ │
-│  │  │ • 检查是否为活箱子                                       │ │ │
-│  │  │ • 如果 ALLOW_STACK=true → 返回 true（允许堆叠）          │ │ │
-│  │  │ • 否则 → 走原版逻辑（不同 NBT 不堆叠）                   │ │ │
-│  │  ├─────────────────────────────────────────────────────────┤ │ │
-│  │  │ split(amount)                                           │ │ │
-│  │  │ • HEAD: 捕获原始 UUID 列表                              │ │ │
-│  │  │ • RETURN: 按比例拆分 UUID（remain + split）              │ │ │
-│  │  ├─────────────────────────────────────────────────────────┤ │ │
-│  │  │ grow(amount)                                            │ │ │
-│  │  │ • 与 shrink 配对完成 UUID 转移                           │ │ │
-│  │  │ • 支持两种合并顺序（grow-first / shrink-first）          │ │ │
-│  │  ├─────────────────────────────────────────────────────────┤ │ │
-│  │  │ shrink(amount)                                          │ │ │
-│  │  │ • HEAD 注入：读取旧状态并计算被移除的 UUID               │ │ │
-│  │  │ • 立即更新源堆和目标堆的 UUID 列表                       │ │ │
-│  │  ├─────────────────────────────────────────────────────────┤ │ │
-│  │  │ copyWithCount(count)                                    │ │ │
-│  │  │ • 处理右键拖拽分发场景                                   │ │ │
-│  │  │ • 按 count 拆分 UUID 列表                               │ │ │
-│  │  └─────────────────────────────────────────────────────────┘ │ │
-│  └──────────────────────────────────────────────────────────────┘ │
-│                          │                                        │
-│                          ▼                                        │
-│  ┌──────────────────────────────────────────────────────────────┐ │
-│  │                  LivingChestStackHandler                     │ │
-│  │                                                               │ │
-│  │  • normalizeUuidList() — 排序标准化                          │ │
-│  │  • mergeUuidLists() — 合并去重                               │ │
-│  │  • splitUuidList() — 按顺序截取                             │ │
-│  │  • getUuids() / setUuids() — 读写 UUID                      │ │
-│  └──────────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-### 6.2 核心文件说明
-
-#### 6.2.1 LivingChestStackFlags（堆叠标志）
-
-**文件位置**: `living/LivingChestStackFlags.java`
-
-**功能**: ThreadLocal 布尔标志，标记当前线程是否允许活箱子跨 UUID 堆叠
-
-**设计意图**:
-```java
-/**
- * 仅当玩家通过鼠标/键盘操作物品时，活箱子才允许跨 UUID 堆叠。
- * 掉落物、漏斗等世界交互不受影响，按原版逻辑处理（不同 NBT 无法堆叠）。
- */
-public final class LivingChestStackFlags {
-    public static final ThreadLocal<Boolean> ALLOW_STACK = new ThreadLocal<>();
-}
-```
-
-**生命周期**:
-```
-玩家点击容器槽位
-       │
-       ▼
-AbstractContainerMenuMixin.onClickedHead()
-       │
-       ├─ LivingChestStackFlags.ALLOW_STACK.set(true)
-       │
-       ▼
-执行 clicked() 方法体（包含堆叠判定）
-       │
-       ├─ ItemStackMixin.isSameItemSameComponents()
-       │    └─ 检查 ALLOW_STACK.get() != null → 允许堆叠
-       │
-       ▼
-AbstractContainerMenuMixin.onClickedReturn()
-       │
-       └─ LivingChestStackFlags.ALLOW_STACK.remove()  ← 清理！
-```
-
-**⚠️ 安全性**:
-- 使用 `ThreadLocal` 确保多线程安全
-- 必须在 finally 中清理（当前实现在 RETURN 处清理）
-- 避免标志泄漏到其他操作
-
-#### 6.2.2 AbstractContainerMenuMixin（容器拦截器）
-
-**文件位置**: `mixin/AbstractContainerMenuMixin.java`
-
-**功能**: Mixin 拦截 `AbstractContainerMenu.clicked()` 方法
-
-**注入点**:
-```java
-@Mixin(AbstractContainerMenu.class)
-public abstract class AbstractContainerMenuMixin {
-
-    @Inject(method = "clicked", at = @At("HEAD"))
-    private void onClickedHead(...) {
-        LivingChestStackFlags.ALLOW_STACK.set(true);
-    }
-
-    @Inject(method = "clicked", at = @At("RETURN"))
-    private void onClickedReturn(...) {
-        LivingChestStackFlags.ALLOW_STACK.remove();
-    }
-}
-```
-
-**为什么选择 HEAD/RETURN 而不是 AROUND？**
-- **HEAD**: 在方法执行前设置标志，确保整个方法体内可用
-- **RETURN**: 在方法返回后清理，覆盖所有代码路径（包括异常）
-- **避免 AROUND**: 减少对原方法执行的干扰
-
-#### 6.2.3 ItemStackMixin（核心拦截器）
-
-**文件位置**: `mixin/ItemStackMixin.java`
-
-**功能**: 拦截 ItemStack 的关键方法，维护 UUID 一致性
-
-**四大职责**:
-
-##### 职责 1: 堆叠判定 (`isSameItemSameComponents`)
-```java
-@Inject(method = "isSameItemSameComponents", at = @At("HEAD"), cancellable = true)
-private static void onIsSameItemSameComponents(ItemStack stack, ItemStack other, 
-                                                CallbackInfoReturnable<Boolean> cir) {
-    // 1. 非活箱子 → 走原版逻辑
-    if (!isLivingChest(stack) || !isLivingChest(other)) return;
-    
-    // 2. 不同物品类型 → 不可堆叠
-    if (stack.getItem() != other.getItem()) {
-        cir.setReturnValue(false);
-        return;
-    }
-    
-    // 3. 玩家 GUI 操作 → 忽略 UUID 差异，允许堆叠
-    if (LivingChestStackFlags.ALLOW_STACK.get() != null) {
-        cir.setReturnValue(true);
-    }
-    // 4. 其他情况 → 走原版逻辑（检查所有 DataComponent）
-}
-```
-
-**效果对比**:
-| 场景 | ALLOW_STACK | 结果 |
-|------|-------------|------|
-| 玩家 Shift+左键整理背包 | `true` | ✅ 不同 UUID 的活箱子可以堆叠 |
-| 活箱子掉落物自动堆叠 | `null` | ❌ 不同 UUID 无法堆叠（安全） |
-| 漏斗输出活箱子到另一个活箱子 | `null` | ❌ 无法堆叠（走原版逻辑） |
-
-##### 职责 2: 拆分 UUID 分配 (`split`)
-```
-场景: 玩家从 64 个活箱子堆中拿起 16 个
-
-原始状态:
-  ItemStack(count=64, uuids=[A,B,C,D,...,X])  ← 64个UUID
-
-split(16) 后:
-  原堆: ItemStack(count=48, uuids=[A,B,C,D,...,L])  ← 前48个UUID
-  新堆: ItemStack(count=16, uuids=[M,N,...,X])       ← 后16个UUID
-```
-
-**实现细节**:
-```java
-// HEAD: 捕获原始 UUID 列表（防止 onShrink 修改）
-private static final ThreadLocal<List<UUID>> PRE_SPLIT_UUIDS = new ThreadLocal<>();
-
-@Inject(method = "split", at = @At("HEAD"))
-private void onSplitHead(int amount, CallbackInfoReturnable<ItemStack> cir) {
-    List<UUID> uuids = LivingChestStackHandler.getUuids(self);
-    PRE_SPLIT_UUIDS.set(new ArrayList<>(uuids));  // 快照
-}
-
-// RETURN: 执行实际的拆分逻辑
-@Inject(method = "split", at = @At("RETURN"))
-private void onSplitReturn(int amount, CallbackInfoReturnable<ItemStack> cir) {
-    List<UUID> originalUuids = PRE_SPLIT_UUIDS.get();  // 使用快照
-    
-    SplitResult result = LivingChestStackHandler.splitUuidList(originalUuids, newCount);
-    
-    LivingChestStackHandler.setUuids(original, result.remain());   // 原堆保留前N个
-    LivingChestStackHandler.setUuids(newStack, result.split());    // 新堆获得后M个
-}
-```
-
-**⚠️ 为什么要在 HEAD 捕获快照？**
-- `split()` 内部会调用 `shrink()`，而 `shrink()` 会触发 `onShrink`
-- `onShrink` 会修改 UUID 列表
-- 如果不捕获快照，`onSplitReturn` 会拿到被修改过的数据，导致拆分错误
-
-##### 职责 3: 合并 UUID 转移 (`grow` / `shrink`)
-
-**问题场景**: 两个活箱子堆合并时的 UUID 转移
-
-**场景 A: 左键合并（先 grow 后 shrink）**
-```
-玩家将活箱子A拖到活箱子B上（左键）
-
-1. B.grow(A.count)  ← 目标堆增长
-2. A.shrink(A.count) ← 源堆缩减
-
-UUID 流转:
-  B.uuids += A.uuids的前N个  (在 grow 中完成)
-  A.uuids = A.uuids的后M个    (在 shrink 中完成)
-```
-
-**场景 B: 右键/漏斗合并（先 shrink 后 grow）**
-```
-玩家右键活箱子A放到活箱子B上
-
-1. A.shrink(halfCount)  ← 源堆先缩减
-2. B.grow(halfCount)    ← 目标堆后增长
-
-UUID 流转:
-  pending = A.uuids的被移除部分  (在 shrink 中暂存)
-  B.uuids += pending             (在 grow 中消费)
-```
-
-**协调机制 - MergeTransfer 记录**:
-```java
-private record MergeTransfer(ItemStack target, int amount, List<UUID> uuids) {}
-
-private static final ThreadLocal<MergeTransfer> PENDING_TRANSFER = new ThreadLocal<>();
-
-// grow() 的处理逻辑
-@Inject(method = "grow", at = @At("HEAD"))
-private void onGrow(int amount, CallbackInfo ci) {
-    MergeTransfer pending = PENDING_TRANSFER.get();
-    
-    if (pending != null && pending.uuids() != null) {
-        // 场景B: shrink已执行，消费暂存的UUID
-        mergeUuids(self, pending.uuids());
-        PENDING_TRANSFER.remove();
-    } else {
-        // 场景A: grow先执行，记录待转移信息
-        PENDING_TRANSFER.set(new MergeTransfer(self, amount, null));
-    }
-}
-
-// shrink() 的处理逻辑
-@Inject(method = "shrink", at = @At("HEAD"))
-private void onShrink(int amount, CallbackInfo ci) {
-    List<UUID> removedUuids = calculateRemovedUuids(self, amount);
-    
-    MergeTransfer pending = PENDING_TRANSFER.get();
-    
-    if (pending != null && pending.uuids() == null) {
-        // 场景A: grow已执行，直接转移到目标
-        transferUuidsToTarget(pending.target(), removedUuids);
-        PENDING_TRANSFER.remove();
-    } else {
-        // 场景B: shrink先执行，暂存被移除的UUID
-        PENDING_TRANSFER.set(new MergeTransfer(null, amount, removedUuids));
-    }
-    
-    updateSourceUuids(self, remainingUuids);
-}
-```
-
-##### 职责 4: 右键拖拽分发 (`copyWithCount`)
-
-**场景**: 玩家按住右键从活箱子堆中分发物品到其他槽位
-
-**为什么需要单独处理？**
-- 右键拖拽使用 `copyWithCount()` 而非 `split()`
-- 因此 `onSplitHead/onSplitReturn` 不会触发
-- 需要单独拦截以正确分配 UUID
-
-```java
-@Inject(method = "copyWithCount", at = @At("RETURN"))
-private void onCopyWithCount(int count, CallbackInfoReturnable<ItemStack> cir) {
-    // 类似 split 的逻辑：按 count 拆分 UUID
-    SplitResult result = LivingChestStackHandler.splitUuidList(originalUuids, count);
-    LivingChestStackHandler.setUuids(original, result.remain());
-    LivingChestStackHandler.setUuids(copy, result.split());
-}
-```
-
-#### 6.2.4 LivingChestStackHandler（UUID 工具类）
-
-**文件位置**: `living/LivingChestStackHandler.java`
-
-**功能**: 提供 UUID 列表的标准化操作
-
-**核心方法**:
-
-| 方法 | 功能 | 使用场景 |
-|------|------|----------|
-| `normalizeUuidList(uuids)` | 按自然顺序排序 | 保证集合相等则列表完全相同 |
-| `mergeUuidLists(a, b)` | 合并去重 + 标准化 | 多个堆合并时 |
-| `splitUuidList(source, n)` | 按顺序截取 | 拆分堆叠时 |
-| `getUuids(stack)` | 从 ItemStack 读取 UUID | 所有需要 UUID 的地方 |
-| `setUuids(stack, uuids)` | 写入 UUID 到 ItemStack | 修改 UUID 后保存 |
-| `isConsistent(stack)` | 校验数量一致性 | 调试和数据修复 |
-
-**设计原则**:
-- **不可变输入**: 所有方法接收副本或创建新列表
-- **标准化输出**: 所有返回值都是排序后的不可变列表
-- **原子操作**: `setUuids()` 是完整的读-改-写事务
-
-### 6.3 完整操作流程示例
-
-#### 示例 1: Shift+左键整理背包
-
-```
-初始状态:
-  槽位0: 活箱子×32 (uuids=[A,B,...,AF])
-  槽位5: 活箱子×16 (uuids=[G,H,...,P])
-  槽位9: 活箱子×8  (uuids=[Q,R,...,X])
-
-玩家按 Shift+左键
-       │
-       ▼
-AbstractContainerMenuMixin.onClickedHead()
-       │
-       └─ ALLOW_STACK = true
-       
-遍历所有槽位，尝试堆叠:
-       │
-       ├─ 槽位0 vs 槽位5: 
-       │    isSameItemSameComponents(槽0, 槽5)
-       │    └─ ALLOW_STACK!=null → true → 可以堆叠!
-       │    槽5.grow(16) → 槽5.uuids += [G,H,...,P]
-       │    槽0.shrink(16) → 槽0.uuids = [Q,R,...,X] (剩余)
-       │
-       ├─ 槽位0(剩余16) vs 槽位9:
-       │    isSameItemSameComponents(槽0, 槽9)
-       │    └─ ALLOW_STACK!=null → true → 可以堆叠!
-       │    槽9.grow(8) → 槽9.uuids += [Q,R,...,X]的前8个
-       │    槽0.shrink(8) → 槽0.uuids = [U,V,W,X] (最后4个)
-       │
-       ▼
-最终状态:
-  槽位0: 活箱子×4  (uuids=[U,V,W,X])
-  槽位5: 活箱子×32 (uuids=[A,B,...,AF] + [G,H,...,P])
-  槽位9: 活箱子×16 (uuids=[原9的8个] + [Q,R,...,T])
-
-AbstractContainerMenuMixin.onClickedReturn()
-       │
-       └─ ALLOW_STACK.remove()  ← 清理
-```
-
-#### 示例 2: 活箱子掉落物堆叠
-
-```
-场景: 两个不同 UUID 的活箱子掉落物相遇
-
-掉落物A: 活箱子×10 (uuids=[1,2,...,A])
-掉落物B: 活箱子×20 (uuids=[B,C,...,U])
-
-原版逻辑调用: isSameItemSameComponents(A, B)
-       │
-       ├─ ItemStackMixin 检测到两者都是活箱子
-       ├─ 检查 ALLOW_STACK.get() → null（不是GUI操作）
-       └─ 返回 cir 未设置 → 走原版逻辑
-          └─ 比较 DataComponent（包括 UUID 列表）
-             └─ [1,2,...,A] != [B,C,...,U] → false → 不堆叠!
-
-结果: 两个掉落物保持分离 ✅（符合预期，保证安全性）
-```
-
-### 6.4 安全策略总结
-
-| 交互方式 | ALLOW_STACK | 堆叠行为 | 安全性 |
-|---------|-------------|----------|--------|
-| 玩家鼠标/键盘操作 | `true` | ✅ 允许跨UUID堆叠 | 安全（用户可控） |
-| 掉落物自动合并 | `null` | ❌ 不堆叠 | 安全（世界物理规则） |
-| 漏斗输出/输入 | `null` | ❌ 不堆叠 | 安全（红石系统隔离） |
-| 命令生成 | `null` | ❌ 不堆叠 | 安全（管理员操作） |
-
----
-
-## 7. 配方书集成
-
-活箱子与配方书的集成分为两个独立功能：
-
-1. **配方书合成材料提取**：活箱子内的物品可被配方系统识别，一键合成时自动从活箱子提取材料
-2. **配方书活箱子标签页**：在配方书中新增"活箱子"标签页，以网格形式浏览和操作活箱子内容
-
-### 7.1 配方书合成材料提取
-
-#### 7.1.1 系统架构图
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                     配方书集成系统架构                               │
-│                                                                     │
-│  玩家操作                                                           │
-│  ┌──────────────────────┐                                         │
-│  │ 点击配方书的"合成"按钮 │                                         │
-│  └──────────┬───────────┘                                         │
-│             │                                                   │
-│             ▼                                                   │
-│  ┌──────────────────────┐                                         │
-│  │ ServerPlaceRecipe    │                                         │
-│  │     Mixin            │                                         │
-│  └──────────┬───────────┘                                         │
-│             │                                                   │
-│             ├──────────────────────────────────┐                  │
-│             ▼                                  ▼                  │
-│  ┌────────────────────┐            ┌────────────────────┐        │
-│  │ recipeClicked()    │            │ moveItemToGrid()   │        │
-│  │ 拦截点             │            │ 拦截点             │        │
-│  └────────┬───────────┘            └────────┬───────────┘        │
-│           │                                 │                    │
-│           ▼                                 ▼                    │
-│  ┌──────────────────┐          ┌────────────────────┐           │
-│  │ addLivingChest   │          │ extractFromLiving  │           │
-│  │ ItemsToStacked   │          │ Chests            │           │
-│  │ Contents()       │          │ ()                │           │
-│  └────────┬─────────┘          └────────┬───────────┘           │
-│           │                             │                       │
-│           ▼                             ▼                       │
-│  ┌────────────────────────────────────────────────┐            │
-│  │              LivingChestFunction               │            │
-│  │  getMergedStorage() / extractItem()            │            │
-│  └────────────────────────────────────────────────┘            │
-│                           │                                     │
-│                           ▼                                     │
-│  ┌────────────────────────────────────────────────┐            │
-│  │         StackedContents (原版配方系统)          │            │
-│  │    accountStack() — 注册可用物品               │            │
-│  └────────────────────────────────────────────────┘            │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-#### 7.1.2 核心文件说明
-
-#### ServerPlaceRecipeMixin（配方书 Mixin）
-
-**文件位置**: `mixin/ServerPlaceRecipeMixin.java`
-
-**功能**: 拦截配方书的材料计算和物品放置逻辑
-
-**两大拦截点**:
-
-##### 拦截点 1: `recipeClicked()` — 材料注册
-
-**目的**: 将活箱子内的物品注册到配方系统的材料计数器中
-
-**原版流程**:
-```
-recipeClicked()
-  → inventory.fillStackedContents(stackedContents)
-    → 遍历玩家背包，调用 stackedContents.accountStack(item)
-```
-
-**Mixin 增强**:
-```java
-@Inject(method = "recipeClicked", at = @At(...))
-private void afterFillStackedContents(ServerPlayer player, ...) {
-    addLivingChestItemsToStackedContents(player);
-}
-
-private void addLivingChestItemsToStackedContents(ServerPlayer player) {
-    for (ItemStack invStack : this.inventory.items) {
-        // 只处理有存储的活箱子
-        if (!LivingChestFunction.isLivingChest(invStack)) continue;
-        if (!LivingChestFunction.hasStorage(invStack)) continue;
-        
-        // 合并所有虚拟箱子的物品
-        var merged = LivingChestFunction.getMergedStorage(server, invStack, 27);
-        
-        // 注册到 StackedContents（让配方系统知道这些物品可用）
-        for (ItemStack chestItem : merged) {
-            if (!chestItem.isEmpty()) {
-                this.stackedContents.accountStack(chestItem);
-            }
-        }
-    }
-}
-```
-
-**效果**:
-```
-玩家背包:
-  槽位0: 活箱子×3 (内部存储: 64钻石 + 32铁锭 + 16金锭)
-
-配方书查询"钻石剑"合成:
-  原版只看到背包里的显式物品 → ❌ 材料不足
-  
-  Mixin增强后:
-  StackedContents 包含:
-    - 64个钻石 (来自活箱子)
-    - 32个铁锭 (来自活箱子)
-    - 16个金锭 (来自活箱子)
-  → ✅ 显示可合成!
-```
-
-##### 拦截点 2: `moveItemToGrid()` — 物品提取与放置
-
-**目的**: 当配方书需要材料时，从活箱子中提取物品放入工作台
-
-**原版流程**:
-```
-moveItemToGrid(slot, stack, maxAmount)
-  → 在背包中查找匹配的物品
-  → 移动到工作台槽位
-  → 返回实际移动数量
-```
-
-**Mixin 增强**:
-```java
-@Inject(method = "moveItemToGrid", at = @At("HEAD"), cancellable = true)
-private void onMoveItemToGrid(Slot slot, ItemStack stack, int maxAmount, ...) {
-    // 先尝试从普通背包获取
-    int slotIndex = this.inventory.findSlotMatchingUnusedItem(stack);
-    if (slotIndex != -1) {
-        return;  // 背包里有，走原版逻辑
-    }
-    
-    // 背包里没有，尝试从活箱子提取
-    ItemStack extracted = extractFromLivingChests(stack, maxAmount);
-    if (extracted.isEmpty()) {
-        cir.setReturnValue(-1);  // 无法提取，通知配方系统
-        return;
-    }
-    
-    // 放置到工作台
-    if (slot.getItem().isEmpty()) {
-        slot.set(extracted);
-    } else {
-        slot.getItem().grow(extracted.getCount());
-    }
-    
-    cir.setReturnValue(maxAmount - extracted.getCount());  // 返回提取数量
-}
-
-private ItemStack extractFromLivingChests(ItemStack requested, int maxAmount) {
-    // 遍历背包中的活箱子
-    for (ItemStack invStack : this.inventory.items) {
-        if (!LivingChestFunction.isLivingChest(invStack)) continue;
-        
-        // 尝试提取指定物品
-        ItemStack extracted = LivingChestFunction.extractItem(
-            server, invStack, requested, maxAmount, 27);
-        
-        if (!extracted.isEmpty()) {
-            return extracted;  // 成功提取
-        }
-    }
-    return ItemStack.EMPTY;  // 所有活箱子都没有该物品
-}
-```
-
-**优先级逻辑**:
-```
-1. 先检查普通背包 (findSlotMatchingUnusedItem)
-   └─ 有 → 走原版逻辑（消耗普通物品）
-   
-2. 普通背包没有 → 检查活箱子
-   ├─ 有 → 从活箱子提取（消耗活箱子存储）
-   └─ 没有 → 返回 -1（材料不足）
-```
-
-#### 7.1.3 完整操作流程
-
-**场景**: 玩家通过配方书合成 10 个铁镐
-
-```
-前置条件:
-  玩家背包:
-    槽位0: 活箱子×2 (内部: 64木棍 + 63铁锭)
-    其他槽位: 空
-
-步骤1: 玩家打开配方书，浏览铁镐配方
-       │
-       ▼
-步骤2: 玩家点击"合成"按钮（shift+左键）
-       │
-       ▼
-步骤3: ServerPlaceRecipe.recipeClicked() 被调用
-       │
-       ├─ 3.1 原版: inventory.fillStackedContents(stackedContents)
-       │    └─ 遍历背包，发现只有活箱子（无显式物品）
-       │       └─ StackedContents 为空
-       │
-       ├─ 3.2 Mixin: addLivingChestItemsToStackedContents(player)
-       │    ├─ 发现槽位0是活箱子且有存储
-       │    ├─ getMergedStorage() → [木棍×64, 铁锭×63]
-       │    ├─ stackedContents.accountStack(木棍×64)
-       │    └─ stackedContents.accountStack(铁锭×63)
-       │
-       └─ 3.3 配方系统判断: 可合成 10 个铁镐（需30木棍+30铁锭）
-       
-步骤4: 循环调用 moveItemToGrid() 放置材料（共10次）
-       │
-       ├─ 第1次: 放置3木棍+2铁锭
-       │    ├─ findSlotMatchingUnusedItem(木棍) → -1（背包没有）
-       │    ├─ extractFromLivingChests(木棍, 3)
-       │    │    └─ LivingChestFunction.extractItem(活箱子0, 木棍, 3)
-       │    │       └─ 从内部存储移除3木棍 → 返回 木棍×3
-       │    └─ slot.set(木棍×3) ✓
-       │
-       ├─ ... (重复类似逻辑)
-       │
-       └─ 第10次: 放置最后一批材料
-              └─ 活箱子0内部剩余: 木棍×34 + 铁锭×33
-              
-步骤5: 工作台显示 10 个铁镐成品
-       │
-       ▼
-步骤6: 玩家拿走成品（或 shift+左键全部拿走）
-       
-最终结果:
-  工作台: 10个铁镐
-  活箱子0: 内部存储 [木棍×34, 铁锭×43]  (已被消耗26木棍+20铁锭)
-```
-
-#### 7.1.4 设计考量
-
-#### 为什么需要 Mixin 拦截？
-
-原版配方系统的限制：
-1. **只扫描显式物品**: `fillStackedContents()` 只遍历 `inventory.items`
-2. **不支持虚拟存储**: 不知道活箱子内部有物品
-3. **无法提取外部数据**: `moveItemToGrid()` 只能移动已有 ItemStack
-
-Mixin 解决方案：
-1. **扩展材料来源**: 在 `fillStackedContents()` 后追加活箱子内容
-2. **智能回退**: 优先使用背包物品，不足时才从活箱子提取
-3. **透明集成**: 对配方系统完全透明，无需修改原版代码
-
-#### 性能影响
-
-| 操作 | 额外开销 | 影响 |
-|------|---------|------|
-| 打开配方书 | 遍历背包+读取活箱子存储 | 低（仅 GUI 操作） |
-| 点击合成 | 可能多次提取物品 | 中（取决于合成数量） |
-| 非配方操作 | 无 | 无 |
-
-**优化措施**:
-- 只在 `recipeClicked()` 时才扫描活箱子（不是每次 tick）
-- 提取物品时短路返回（找到即停止）
-- 缓存 `getMergedStorage()` 结果（如果频繁调用）
-
-### 7.2 配方书活箱子标签页
-
-在配方书中新增"活箱子"标签页，玩家可以以网格形式浏览背包中所有活箱子的内容，并进行存取操作。
-
-#### 7.2.1 系统架构图
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                   配方书活箱子标签页架构                              │
-│                                                                     │
-│  客户端 (Client)                                                     │
-│  ┌──────────────────────────────────────────────────────────────┐  │
-│  │              RecipeBookComponentMixin                        │  │
-│  │  ┌────────────┐  ┌──────────────┐  ┌────────────────────┐  │  │
-│  │  │ 标签页切换  │  │ 网格渲染     │  │ 搜索过滤          │  │  │
-│  │  │ (Tab Button)│  │ (5×4 Grid)   │  │ (PinyinHelper)    │  │  │
-│  │  └────────────┘  └──────────────┘  └────────────────────┘  │  │
-│  │  ┌────────────┐  ┌──────────────┐  ┌────────────────────┐  │  │
-│  │  │ 翻页导航    │  │ 点击存取     │  │ Shift+左键存入    │  │  │
-│  │  │ (Page Btns) │  │ (L/R Click)  │  │ (DEPOSIT_SLOT)    │  │  │
-│  │  └────────────┘  └──────────────┘  └────────────────────┘  │  │
-│  └──────────────────────────────────────────────────────────────┘  │
-│                              │                                      │
-│                    LivingChestAccessPacket                          │
-│                    (DEPOSIT / WITHDRAW / DEPOSIT_SLOT)              │
-│                              ▼                                      │
-│  服务端 (Server)                                                     │
-│  ┌──────────────────────────────────────────────────────────────┐  │
-│  │              ServerPacketHandler                             │  │
-│  │  handleDeposit() / handleWithdraw() / handleDepositFromSlot()│  │
-│  └──────────────────────────────────────────────────────────────┘  │
-│                              │                                      │
-│                              ▼                                      │
-│  ┌──────────────────────────────────────────────────────────────┐  │
-│  │         LivingChestFunction → InternalStorageComponent       │  │
-│  └──────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
-#### 7.2.2 核心文件说明
-
-##### RecipeBookComponentMixin（配方书标签页 Mixin）
-
-**文件位置**: `client/mixin/RecipeBookComponentMixin.java`
-
-**功能**: 在原版配方书中注入"活箱子"标签页，提供网格显示、搜索、翻页、点击存取等功能
-
-**UI 布局**:
-```
-┌─────────────────────────────┐
-│ [合成] [熔炉] [活箱子]      │ ← 标签栏（追加活箱子标签）
-├─────────────────────────────┤
-│ 活箱子                      │ ← 标题
-│ ┌─┬─┬─┬─┬─┐               │
-│ │ │ │ │ │ │               │ ← 5列 × 4行 物品网格
-│ ├─┼─┼─┼─┼─┤               │
-│ │ │ │ │ │ │               │
-│ ├─┼─┼─┼─┼─┤               │
-│ │ │ │ │ │ │               │
-│ ├─┼─┼─┼─┼─┤               │
-│ │ │ │ │ │ │               │
-│ └─┴─┴─┴─┴─┘               │
-│     [<] 1/3 [>]           │ ← 分页导航
-└─────────────────────────────┘
-```
-
-**核心方法**:
-
-| 方法 | 功能 |
+| `LivingChestFunction` | 活箱子功能入口，提供 insert/extract/canInsert 等 API |
+| `InternalStorageComponent` | 内部存储组件，管理 CONTAINER 组件的读写、字节容量限制 |
+
+#### 传输架构
+| 类名 | 职责 |
 |------|------|
-| `collectLivingChestItems()` | 扫描玩家背包中所有活箱子的物品，合并为一个列表 |
-| `applySearchFilter(items, text)` | 根据搜索文本过滤物品列表（支持拼音搜索） |
-| `handleLivingChestItemClick(mouseX, mouseY, button)` | 处理网格内物品的点击操作（左键取出、右键取出1个、Shift+左键存入） |
-| `setupPageButtons(left, top, totalPages)` | 设置翻页按钮，使用实例字段 `totalPages` 避免闭包捕获问题 |
+| `ItemTransferComponent` | 物品传输组件，处理活漏斗↔活箱子的传输 |
+| `LivingChestAccessor` | SlotAccessor 实现，统一活箱子的 extract/insert 接口 |
+| `SlotAccessorFactory` | 工厂类，根据物品类型创建对应的 SlotAccessor |
 
-**标签页状态管理**:
+#### GUI 交互与网络通信
+| 类名 | 职责 |
+|------|------|
+| `LivingChestAccessPacket` | 存取请求包（客户端→服务端）: DEPOSIT/WITHDRAW/WITHDRAW_INVENTORY/DEPOSIT_SLOT |
+| `ServerPacketHandler` | 网络请求处理器，分发并执行存取操作 |
 
-标签页的激活状态通过 `LivingChestTabState`（静态布尔值）跨 Mixin 共享，供 `InventoryScreenMixin` 和 `AbstractContainerScreenMixin` 判断是否启用 Shift+左键快速存入功能。
+#### 配方书集成
+| 类名 | 职责 |
+|------|------|
+| `ServerPlaceRecipeMixin` | Mixin：拦截配方书合成，支持从活箱子提取材料 |
+| `RecipeBookComponentMixin` | Mixin：配方书活箱子标签页（客户端），网格显示、搜索、翻页、点击存取 |
+| `PinyinHelper` | 拼音搜索工具类，20924 字符映射，支持全拼/首字母/混合匹配 |
+| `LivingChestTabState` | 活箱子标签页激活状态（跨 Mixin 共享） |
 
-```
-标签页激活:
-  RecipeBookComponentMixin → LivingChestTabState.setActive(true)
-
-标签页取消:
-  1. 玩家点击其他标签 → LivingChestTabState.setActive(false)
-  2. 配方书关闭 → LivingChestTabState.setActive(false)
-  3. 配方书不可见时 → LivingChestTabState.setActive(false)
-```
-
-**数据读取方式**:
-
-标签页直接从客户端的玩家背包 NBT 数据读取活箱子内容，无需向服务端请求。这是因为 `ItemContainerContents` 组件已随物品同步到客户端。操作（存取）则通过 `LivingChestAccessPacket` 发送到服务端执行。
-
-##### LivingChestTabState（标签页状态共享）
-
-**文件位置**: `client/util/LivingChestTabState.java`
-
-**功能**: 静态布尔标志，记录活箱子标签页是否激活
-
-**设计原因**: `InventoryScreenMixin` 和 `AbstractContainerScreenMixin` 需要知道活箱子标签页是否激活，以决定是否拦截 Shift+左键操作。由于这些 Mixin 无法直接访问 `RecipeBookComponentMixin` 的实例字段，使用静态类作为中转。
-
-```java
-public class LivingChestTabState {
-    private static boolean active = false;
-    public static boolean isActive() { return active; }
-    public static void setActive(boolean value) { active = value; }
-}
-```
-
-#### 7.2.3 翻页功能
-
-翻页按钮使用实例字段 `totalPages` 存储总页数，避免 lambda 闭包捕获局部变量导致的状态不同步问题。
-
-```
-翻页按钮逻辑:
-  上一页: if (currentPage > 0) currentPage--;
-  下一页: if (currentPage < totalPages - 1) currentPage++;
-
-  totalPages 在每次 collectLivingChestItems() 后重新计算:
-    totalPages = max(1, ceil(filteredItems.size() / TOTAL_SLOTS))
-```
-
-**历史 Bug**: 早期版本中翻页按钮的 lambda 捕获了 `totalPages` 局部变量，当物品数量变化导致总页数变化后，按钮的页数上限仍为旧值，导致可以翻到空白页。修复方法是将 `totalPages` 改为实例字段。
-
-#### 7.2.4 活箱子套娃存放
-
-活箱子允许存放其他活箱子（套娃），但**禁止将自己存入自己**。
-
-**实现方式**（`InternalStorageComponent.insertItem`）:
-```java
-public static boolean insertItem(ItemStack chestStack, ItemStack itemToInsert) {
-    if (chestStack.getCount() > 1) return false;  // 堆叠数>1不允许操作
-    if (chestStack == itemToInsert) return false;  // 禁止自引用（同一对象）
-    // ... 正常插入逻辑
-}
-```
-
-**自引用检查**:
-- `chestStack == itemToInsert`：Java 对象同一性检查，防止"把自己放进自己里面"
-- 允许将活箱子A放入活箱子B（不同对象），实现套娃存储
-- 堆叠数 > 1 的活箱子不允许插入操作（避免 UUID 管理复杂性）
-
-**DEPOSIT_SLOT 的额外保护**（`ServerPacketHandler.handleDepositFromSlot`）:
-```java
-// 优先存入已有物品的活箱子（count==1 且 hasStorage）
-for (ItemStack invStack : player.getInventory().items) {
-    if (!LivingChestFunction.isLivingChest(invStack)) continue;
-    if (invStack.getCount() > 1) continue;          // 跳过堆叠的活箱子
-    if (!LivingChestFunction.hasStorage(invStack)) continue;  // 跳过空活箱子
-    if (LivingChestFunction.isStorageFull(invStack)) continue; // 跳过已满的活箱子
-    if (LivingChestFunction.insertItem(invStack, toInsert.copy())) {
-        inserted = true;
-        break;
-    }
-}
-// 如果没有已有物品的活箱子，尝试存入空的活箱子
-// （空活箱子会在 insertItem 时自动创建 UUID 和存储）
-```
-
-### 7.3 拼音搜索
-
-配方书活箱子标签页支持拼音搜索，玩家可以输入汉字的全拼、首字母或混合形式来过滤物品。
-
-#### 7.3.1 数据来源
-
-使用 [pinyin-data](https://github.com/mozillazg/pinyin-data) 开源数据集（v0.15.0），覆盖 **20924 个汉字**的拼音映射。
-
-#### 7.3.2 PinyinHelper 实现
-
-**文件位置**: `client/util/PinyinHelper.java`
-
-**核心数据结构**:
-```java
-// 按Unicode排序的汉字字符串（支持二分查找）
-private static final String CHARS = "一丁丂七丄丅丆万丈三上下...";
-
-// 逗号分隔的拼音数据（拆分为2个字段避免Java 65535字节常量限制）
-private static final String PINYIN_DATA_0 = "yi,ding,kao,qi,...";  // ≤60000字节
-private static final String PINYIN_DATA_1 = "...";                  // 剩余部分
-
-// 运行时拼接并拆分为数组
-private static final String[] PINYINS = PINYIN_DATA_0.concat(PINYIN_DATA_1).split(",");
-```
-
-**查找算法**: 二分查找 O(log n)
-```java
-private static int binarySearch(char c) {
-    int low = 0, high = CHARS.length() - 1;
-    while (low <= high) {
-        int mid = (low + high) >>> 1;
-        char midVal = CHARS.charAt(mid);
-        if (midVal < c) low = mid + 1;
-        else if (midVal > c) high = mid - 1;
-        else return mid;
-    }
-    return -1;
-}
-```
-
-**匹配模式**（`isPinyinMatch` 方法）:
-
-| 匹配模式 | 示例搜索 | 匹配"钻石剑" |
-|---------|---------|-------------|
-| 原文包含 | `钻石` | ✅ |
-| 全拼包含 | `zuanshijian` | ✅ |
-| 首字母包含 | `zsj` | ✅ |
-| 混合匹配 | `zshi` | ✅ |
-
-**代码生成流程**:
-
-拼音数据通过 Python 脚本 `_build_pinyin_helper.py` 从 `_pinyin_data_fragment.txt` 生成 `PinyinHelper.java`：
-
-```
-_pinyin_data_fragment.txt  →  _build_pinyin_helper.py  →  PinyinHelper.java
-      (20924字符数据源)         (解析+生成Java代码)       (最终Java类)
-```
-
-**Java 代码大小限制的解决**:
-
-| 限制 | 问题 | 解决方案 |
-|------|------|---------|
-| 单字符串常量 ≤ 65535 字节 | PINYIN_DATA 有 85590 字节 | 拆分为 `PINYIN_DATA_0` + `PINYIN_DATA_1` |
-| 编译期常量折叠 | `A + B` 会被编译器合并，仍超限 | 改用 `A.concat(B)` 方法调用，阻止折叠 |
-| 数组初始化 code too large | 20924 个字符串字面量超过 65535 字节 | 改用逗号分隔长字符串 + `split(",")` |
-
-### 7.4 Shift+左键快速存入
-
-在配方书活箱子标签页激活时，玩家可以 Shift+左键点击背包中的物品，快速存入活箱子。
-
-#### 7.4.1 触发条件
-
-Shift+左键快速存入需要**同时满足**以下条件：
-
-1. **配方书已打开**（`isVisible()` 返回 true）
-2. **活箱子标签页已激活**（`LivingChestTabState.isActive()` 返回 true）
-3. **点击的是背包槽位**（非活箱子物品）
-4. **玩家背包中有活箱子**（至少一个 `count==1` 的活箱子）
-
-**为什么需要检查配方书打开状态**：早期版本只检查标签页激活状态，导致关闭配方书后 Shift+左键仍然触发快速存入。修复后增加了配方书可见性检查。
-
-#### 7.4.2 实现流程
-
-```
-玩家 Shift+左键点击背包物品
-       │
-       ▼
-InventoryScreenMixin.mouseClicked() / AbstractContainerScreenMixin.mouseClicked()
-       │
-       ├─ 1. 检查条件
-       │     button == LEFT && hasShiftDown()
-       │     && LivingChestTabState.isActive()
-       │     && hoveredSlot != null && hoveredSlot.hasItem()
-       │
-       ├─ 2. 排除活箱子自身
-       │     if (LivingChestFunction.isLivingChest(slotStack)) → 跳过
-       │
-       ├─ 3. 构造网络包
-       │     itemTag = slotStack.saveOptional(registryAccess)
-       │     packet = LivingChestAccessPacket(DEPOSIT_SLOT, itemTag, count)
-       │
-       └─ 4. 发送到服务端
-              PacketDistributor.sendToServer(packet)
-```
-
-**服务端处理**（`ServerPacketHandler.handleDepositFromSlot`）:
-```
-DEPOSIT_SLOT 请求到达服务端
-       │
-       ├─ 1. 从玩家背包找到匹配的物品
-       │     ItemStack.isSameItemSameComponents(invStack, target)
-       │     toInsert = invStack.copyWithCount(transfer)
-       │     invStack.shrink(transfer)
-       │
-       ├─ 2. 优先存入已有物品的活箱子
-       │     遍历背包: isLivingChest && count==1 && hasStorage && !isStorageFull
-       │     insertItem(invStack, toInsert.copy())
-       │
-       ├─ 3. 如果没有已有物品的活箱子，尝试空活箱子
-       │     空活箱子会在 insertItem 时自动创建存储
-       │
-       └─ 4. 如果所有活箱子都满了，物品放回背包
-              player.getInventory().add(toInsert)
-              broadcastChanges()
-```
-
-#### 7.4.3 空活箱子处理
-
-早期版本只能往已有物品的活箱子存入物品。修复后，空活箱子（`count==1` 但 `hasStorage()==false`）也会被尝试存入。`insertItem` 检测到 UUID 列表为空时会自动创建新的存储单元。
-
-**优先级**: 已有物品的活箱子 > 空活箱子（避免空活箱子浪费存储空间）
+#### 堆叠与比较
+| 类名 | 职责 |
+|------|------|
+| `ItemStackMixin` | Mixin：活物品堆叠比较（忽略运行时组件差异）+ 工具提示渲染 |
+| `LivingChestTooltipComponent` | 工具提示数据记录，传递物品列表给渲染器 |
 
 ---
 
-## 8. 持久化机制
+## 2. 存储系统
 
-### 8.1 触发时机
+### 2.1 存储位置
 
-| 事件 | 触发条件 | 处理逻辑 |
-|------|---------|---------|
-| `LevelEvent.Save` | 主世界保存时 | `saveAllDirty()` + `cleanupIdle()` |
-| `ServerStoppingEvent` | 服务器停止时 | `saveAllDirty()` |
-| `cleanupIdle()` | 每20次 putCache 或手动调用 | 卸载超时数据并保存 |
+活箱子的所有数据存储在 ItemStack 的 DataComponent 中，无需外部文件。
 
-### 8.2 持久化流程图
-
+**存储结构**:
 ```
-服务器运行中
-     │
-     ├─ 每tick: 活漏斗/活箱子 tick
-     │    └─ 修改 WorldStorage 缓存
-     │    └─ markDirty(uuid)
-     │
-     ├─ 定期自动保存 (Minecraft 默认 ~45秒一次)
-     │    └─ LevelEvent.Save 触发
-     │    └─ saveAllDirty()
-     │       └─ 遍历 dirtyKeys
-     │          └─ saveToDisk(uuid, items)
-     │             └─ 写入临时文件 .tmp
-     │             └─ 原子替换为 .dat
-     │
-     ├─ 玩家点击"保存并退出"
-     │    └─ ServerStoppingEvent 触发
-     │    └─ saveAllDirty()  ← 最终保存
-     │
-     └─ 服务器崩溃/强制关闭
-          └─ ⚠️ 未保存的脏数据丢失！
-             (这是正常行为，类似原版存档机制)
+ItemStack
+├── IS_LIVING: true                          ← 活物品标记
+├── CONTAINER: ItemContainerContents         ← 27 槽物品数据
+│   └── [ItemStack × 27]                     ← 实际物品（空槽为 EMPTY）
+└── LIVING_FUNCTION_DATA: CompoundTag        ← 功能状态
+    └─ living_chest
+       └─ internal_storage
+          ├─ _us: int                        ← 已用槽位数（O(1) 快速判断）
+          ├─ _bu: int                        ← 字节用量（16KB 限制）
+          └─ _ch: int                        ← 容器哈希（脏检查优化）
 ```
 
-### 8.3 文件结构
+### 2.2 CONTAINER 组件
 
-```
-<存档>/
-├── level.dat
-├── data/
-│   ├── living_chests/           ← 活箱子根目录
-│   │   ├── 00/                  ← 分片目录 (UUID最低8位 = 0x00)
-│   │   │   ├── 550e8400-e29b-41d4-a716-446655440000.dat
-│   │   │   └── ...
-│   │   ├── 01/
-│   │   │   └── ...
-│   │   ├── ...                  ← 共256个分片 (0x00 - 0xFF)
-│   │   └── ff/
-│   │       └── ...
-│   └── ...
-├── region/
-└── ...
-```
+使用原版 `DataComponents.CONTAINER`（`ItemContainerContents`）存储物品：
 
-**分片算法**:
 ```java
-private int shardIndex(UUID uuid) {
-    return (int) (uuid.getLeastSignificantBits() & 0xFF);  // 取最低8位
+// 读取
+ItemContainerContents contents = stack.get(DataComponents.CONTAINER);
+NonNullList<ItemStack> list = NonNullList.withSize(27, ItemStack.EMPTY);
+contents.copyInto(list);
+
+// 写入
+NonNullList<ItemStack> list = NonNullList.withSize(27, ItemStack.EMPTY);
+// ... 填充物品 ...
+stack.set(DataComponents.CONTAINER, ItemContainerContents.fromItems(list));
+
+// 清空
+stack.remove(DataComponents.CONTAINER);
+```
+
+**优势**:
+- ✅ 原版组件，序列化/反序列化由 Minecraft 处理
+- ✅ 自动随存档保存和加载
+- ✅ 自动通过网络包同步到客户端
+- ✅ 无需自定义持久化逻辑
+
+**限制**:
+- ⚠️ NBT 大小受网络包限制（2MB 硬上限），因此设置 16KB 警戒线
+- ⚠️ 堆叠数 > 1 时禁止操作（防止数据分裂）
+
+### 2.3 初始化
+
+当物品被标记为活箱子时，自动添加空的 CONTAINER 组件：
+
+```java
+// LivingItemManager.setLiving()
+if (stack.is(Items.CHEST) && !stack.has(DataComponents.CONTAINER)) {
+    stack.set(DataComponents.CONTAINER, ItemContainerContents.EMPTY);
 }
 ```
 
-**为什么需要分片?**
-- 单目录下文件数超过 1000 会显著降低文件系统性能
-- Windows FAT32/exFAT 单目录上限 65534 个文件
-- 分片后每个目录平均只存放 1/256 的文件
+### 2.4 字节容量限制（16KB）
 
-### 8.4 数据迁移（Legacy → Sharded）
+活箱子的 NBT 数据通过网络包同步到客户端。Minecraft 的网络栈对单个 NBT Tag 有 2MB 硬上限，超过会导致崩溃。为防止玩家向活箱子塞入大量高 NBT 物品（如成书、附魔武器等），设置了 16KB（16384 字节）的警戒线。
 
-首次启动时，自动检测并迁移旧格式文件：
-
+**设计原则**: 16KB 是"禁止线"而非"容量上限"
 ```
-旧路径: data/living_chests/<uuid>.dat
-新路径: data/living_chests/<xx>/<uuid>.dat  (xx = 分片索引)
+当前活箱子大小 < 16KB → 允许插入
+当前活箱子大小 ≥ 16KB → 拒绝插入
 
-迁移逻辑:
-1. 扫描根目录下所有 .dat 文件
-2. 解析文件名为 UUID
-3. 移动到对应的分片目录
-4. 只执行一次（migrated 标志位）
+15KB 时放入 2KB 物品 → 允许（当前 < 16KB）
+插入后变成 17KB → 下次插入被拒绝（当前 ≥ 16KB）
 ```
 
----
-
-## 9. 性能优化策略
-
-### 9.1 LRU 缓存 + 超时淘汰
-
-```
-┌─────────────────────────────────────────┐
-│            LRU Cache (max=200)          │
-│                                         │
-│  [最近访问] ← ← ← ← ← ← [最久未访问]   │
-│                                         │
-│  淘汰条件 (满足任一):                   │
-│  1. 超过 5 分钟未被访问                  │
-│  2. 缓存数 > 200 且有新数据加入          │
-│                                         │
-│  淘汰前动作:                            │
-│  if dirty → saveToDisk()  ← 保存脏数据  │
-│  cache.remove(uuid)                     │
-│  dirtyKeys.remove(uuid)                 │
-└─────────────────────────────────────────┘
-```
-
-**为什么选择 LRU?**
-- 局部性原理：最近使用的箱子很可能再次被访问
-- 活漏斗通常持续向同一个活箱子传输
-- 避免频繁的磁盘 I/O
-
-### 9.2 精确脏标记
-
-```
-传统方案 (低效):
-  saveAll() → 遍历所有缓存条目 → 检查dirty → 保存
-  问题: 即使只有1个脏数据，也要遍历全部
-
-优化方案 (高效):
-  dirtyKeys = Set<UUID>  ← 独立追踪脏数据
-  saveAllDirty() → 只遍历 dirtyKeys
-  时间复杂度: O(dirtyCount) 而非 O(cacheSize)
-```
-
-### 9.3 二级目录分片
-
-```
-问题: 10000个活箱子 → 10000个文件在同一目录
-解决: 256个子目录 → 平均每个目录39个文件
-
-性能提升:
-- 文件创建/删除: O(1) vs O(N)
-- 目录扫描: O(N/256) vs O(N)
-- 文件系统友好: 避免单目录爆炸
-```
-
-### 9.4 原子写入
-
-```
-传统写入 (风险):
-  1. 打开文件
-  2. 写入数据
-  3. 关闭文件
-  ⚠️ 步骤2-3之间崩溃 → 文件损坏
-
-原子写入 (安全):
-  1. 写入临时文件 xxx.tmp
-  2. 原子替换: rename(tmp, dat)
-  ✅ 要么完全写入，要么完全不写入
-  ✅ 即使崩溃也不会损坏文件
-```
-
-### 9.5 快速路径优化
-
-```java
-// tick() 中的快速路径
-int cachedCount = state.getInt(KEY_CACHED_COUNT, -1);
-if (cachedCount == expectedCount) {
-    return;  // 跳过所有逻辑
-}
-```
-
-**效果**: 
-- 正常情况下（堆叠数不变），tick 开销 ≈ 0
-- 只有在玩家合并/拆分活箱子时才执行完整逻辑
-
-### 9.6 拼音搜索二分查找
-
-拼音搜索使用二分查找替代 HashMap，在 20924 个汉字的映射中实现 O(log n) 查找。
-
-```
-数据结构:
-  CHARS: 按Unicode排序的汉字字符串（支持 String.charAt 索引访问）
-  PINYINS: 逗号分隔拼音字符串运行时 split 的数组
-
-查找流程:
-  输入字符 c → binarySearch(c) → O(log 20924) ≈ 15次比较 → 拼音
-
-对比:
-  HashMap<Character, String>: O(1) 但需要 20924 个 Entry 对象，内存开销大
-  二分查找 String.charAt: O(log n) 但零额外对象分配，内存紧凑
-```
-
-**选择二分查找的原因**:
-- `CHARS` 和 `PINYINS` 是静态常量，不随 GC 移动
-- `String.charAt()` 比 `HashMap.get()` 的缓存友好性更好
-- 20924 个 Entry 对象的内存开销（约 1.5MB）远超两个字符串
-
-### 9.7 配方书标签页实时过滤（无缓存）
-
-配方书活箱子标签页的搜索过滤采用实时计算，不使用缓存。
-
-```
-设计决策:
-  玩家背包活箱子数量 ≤ 36（背包大小）
-  每个活箱子物品数 ≤ 27（CHEST_SLOTS）
-  总物品数 ≤ 36 × 27 = 972
-
-  过滤开销: 遍历 972 个物品 × isPinyinMatch() ≈ 微秒级
-  缓存开销: 维护 filterCacheValid 标志 + 多处失效逻辑 + Bug 风险
-
-  结论: 缓存的维护成本 > 缓存的性能收益
-```
-
-### 9.8 16KB 字节容量限制
-
-活箱子的 NBT 数据通过网络包同步到客户端。Minecraft 的网络栈对单个 NBT Tag 有 2MB 硬上限，超过会导致崩溃。为防止玩家向活箱子塞入大量高 NBT 物品（如成书、附魔武器等）导致网络包超限，设置了 16KB（16384 字节）的警戒线。
-
-#### 9.8.1 设计原则
-
-```
-16KB 是"禁止线"而非"容量上限":
-  当前活箱子大小 < 16KB → 允许插入
-  当前活箱子大小 ≥ 16KB → 拒绝插入
-
-  15KB 时放入 2KB 物品 → 允许（当前 < 16KB）
-  插入后变成 17KB → 下次插入被拒绝（当前 ≥ 16KB）
-```
-
-这种"事后关门"的设计避免了预测插入后大小的复杂性，同时保证活箱子不会无限增长。
-
-#### 9.8.2 字节大小计算
-
+**字节大小计算**:
 ```java
 // 精确计算：序列化整个活箱子 ItemStack → 二进制字节
 public static int getCurrentByteUsage(ItemStack chestStack, HolderLookup.Provider registries) {
@@ -2102,10 +187,7 @@ private static int estimateByteUsage(ItemStack chestStack) {
 }
 ```
 
-#### 9.8.3 脏检查机制
-
-为避免每 tick 都序列化活箱子（微秒级但频率高），使用 `hashCode` 脏检查：
-
+**脏检查机制**（避免每 tick 序列化）:
 ```java
 // tick() 中
 int prevHash = state.getInt(KEY_CONTAINER_HASH, 0);
@@ -2123,1420 +205,693 @@ if (curHash != prevHash) {
 
 99.9% 的 tick 只做 `hashCode()` 比较（零序列化开销），只有物品变化时才触发一次序列化。
 
-#### 9.8.4 全路径覆盖
+---
 
-所有插入路径都经过 `canInsert()` → `isByteFull()` 检查：
+## 3. 核心数据流
 
-| 入口 | 精确度 | registries 来源 |
-|------|--------|----------------|
-| `ServerPacketHandler` (玩家操作) | ✅ 精确序列化 | `player.registryAccess()` |
-| `CrossContainerTransfer` (漏斗推送) | ✅ 精确序列化 | `server.registryAccess()` |
-| `LivingChestAccessor` (跨容器) | ✅ 精确序列化 | `containerCtx.getLevel()` → `ServerLevel.registryAccess()` |
-| `insertItem()` (内部插入) | ✅ 精确序列化 | 调用方传入 |
-
-#### 9.8.5 Tooltip 显示
+### 3.1 存入物品流程
 
 ```
-容量: 3.2KB/16.0KB
+用户操作: 往活箱子放入钻石
+       │
+       ▼
+InternalStorageComponent.insertItem(chestStack, diamondStack, registries)
+       │
+       ├─ 1. 前置检查
+       │     chestStack.getCount() > 1 → 拒绝（堆叠数 >1 不允许操作）
+       │     chestStack == itemToInsert → 拒绝（不能存入自己）
+       │     !canInsert() → 拒绝（字节容量已满）
+       │
+       ├─ 2. 读取当前物品列表
+       │     List<ItemStack> items = getItems(chestStack);
+       │     └─ 从 CONTAINER 组件复制 27 个槽位
+       │
+       ├─ 3. 遍历槽位，尝试插入
+       │     for each slot in items:
+       │       if slot.isEmpty():
+       │           slot = itemToInsert.copy()
+       │           itemToInsert.setCount(0)  ← 完全消耗
+       │       else if sameItemSameComponents(slot, itemToInsert):
+       │           transfer = min(available, itemToInsert.count)
+       │           slot.grow(transfer)
+       │           itemToInsert.shrink(transfer)
+       │
+       ├─ 4. 写回 CONTAINER 组件
+       │     if modified:
+       │         setItems(chestStack, items)
+       │
+       └─ 5. 返回结果
+              return itemToInsert.isEmpty()  ← true=完全插入, false=部分/未插入
 ```
 
-字节缓存值存储在 `ComponentState` 的 `_bu` 键中，客户端通过 Tooltip 读取显示。格式化方法：
+### 3.2 取出物品流程
 
-```java
-public static String formatByteSize(int bytes) {
-    if (bytes < 1024) return bytes + "B";
-    return String.format("%.1fKB", bytes / 1024.0);
-}
 ```
+用户操作: 从活箱子取出物品
+       │
+       ▼
+InternalStorageComponent.extractItem(chestStack, target, amount)
+       │
+       ├─ 1. 前置检查
+       │     chestStack.getCount() > 1 → 返回 EMPTY
+       │
+       ├─ 2. 读取当前物品列表
+       │     List<ItemStack> items = getItems(chestStack);
+       │
+       ├─ 3. 遍历槽位，提取匹配物品
+       │     for each slot in items:
+       │       if slot.isEmpty() || !sameItemSameComponents(target, slot): continue
+       │
+       │       if result.isEmpty():
+       │           result = slot.copyWithCount(min(amount, slot.count))
+       │           slot.shrink(extracted)
+       │       else if sameItemSameComponents(result, slot):
+       │           toExtract = min(remaining, spaceAvailable)
+       │           result.grow(toExtract)
+       │           slot.shrink(toExtract)
+       │
+       │       if slot.isEmpty(): items.set(i, EMPTY)
+       │
+       ├─ 4. 写回 CONTAINER 组件
+       │     if modified: setItems(chestStack, items)
+       │
+       └─ 5. 返回提取的物品
+              return result
+```
+
+### 3.3 Tick 维护流程
+
+每次服务端 tick，`InternalStorageComponent.tick()` 更新缓存状态：
+
+```
+每 tick 执行:
+       │
+       ▼
+InternalStorageComponent.tick(ctx, hostSlot, hostStack, state, config)
+       │
+       ├─ 1. 客户端跳过
+       │     if ctx.level().isClientSide() → return
+       │
+       ├─ 2. 哈希脏检查
+       │     prevHash = state.getInt(KEY_CONTAINER_HASH, 0)
+       │     curHash = containerHash(hostStack)
+       │     if curHash != prevHash:
+       │         updateByteUsage(hostStack, state, ctx.level())
+       │
+       └─ 3. 更新已用槽位数
+              state.setInt(KEY_USED_SLOTS, countUsedSlots(hostStack))
+```
+
+**设计意图**:
+- `_ch` 哈希脏检查避免每 tick 序列化（性能优化）
+- `_us` 已用槽位计数提供 O(1) 快速判断
+- `_bu` 字节用量仅在物品变化时重新计算
 
 ---
 
-## 10. UUID 生命周期管理
+## 4. 关键组件详解
 
-活箱子 UUID 的生命周期管理是整个系统最核心的安全机制。UUID 的丢失意味着对应的虚拟箱子物品永不可找回，因此所有操作都遵循"**UUID 可以多，不能少**"的原则。
+### 4.1 InternalStorageComponent（内部存储组件）
 
-### 10.1 UUID 生命周期状态机
+**职责**: 管理 CONTAINER 组件的读写、字节容量限制、缓存状态更新
 
-```
-                    ┌──────────────────────────────────────┐
-                    │              UUID 生命周期            │
-                    │                                      │
-  创建              │  ┌─────────┐                         │
-  ──────────────────┼─▶│  ACTIVE │◀──────────────────────┐ │
-  createAndRegister │  │ (活跃)  │   堆叠增加时复用       │ │
-                    │  └────┬────┘                       │ │
-                    │       │                            │ │
-                    │       │ 用户取消活化                │ │
-                    │       │ (dropAllItems)              │ │
-                    │       ▼                            │ │
-                    │  ┌─────────┐                       │ │
-                    │  │ DELETED │  ← 唯一删除 UUID 路径  │ │
-                    │  │ (已删除) │                       │ │
-                    │  └─────────┘                       │ │
-                    │                                      │
-                    │  ⚠️ 其他所有操作都不删除 UUID！      │
-                    │  - tick 减少堆叠 → 保留             │ │
-                    │  - insertItem 溢出 → 保留           │ │
-                    │  - 方块放置 → 移除头部UUID（生存）   │ │
-                    │    或保留 UUID（创造）               │ │
-                    │  - 创造模式切换 → 保留              │ │
-                    └──────────────────────────────────────┘
-```
+**核心方法**:
 
-### 10.2 UUID 创建的所有入口
+| 方法 | 功能 | 返回值 |
+|------|------|--------|
+| `getItems(chestStack)` | 读取 27 槽物品列表 | `List<ItemStack>`（副本） |
+| `setItems(chestStack, items)` | 写入 27 槽物品列表 | void |
+| `insertItem(chestStack, item, registries)` | 存入物品 | `boolean`（是否完全插入） |
+| `extractItem(chestStack, amount)` | 按数量取出 | `ItemStack` |
+| `extractItem(chestStack, target, amount)` | 按类型取出 | `ItemStack` |
+| `canInsert(chestStack, item, registries)` | 检查是否可插入 | `boolean` |
+| `isStorageEmpty(chestStack)` | 存储是否为空 | `boolean` |
+| `isStorageFull(chestStack)` | 存储是否已满 | `boolean` |
+| `isByteFull(chestStack, registries)` | 字节容量是否已满 | `boolean` |
+| `getCurrentByteUsage(chestStack, registries)` | 当前字节用量 | `int` |
+| `clearStorage(chestStack)` | 清空存储 | void |
 
-| 入口 | 触发场景 | 代码位置 |
-|------|---------|---------|
-| `tick-init` | 首次 tick 时 UUID 列表为空 | `InternalStorageComponent.tick()` |
-| `tick-expand` | 堆叠数增加，UUID 不足 | `InternalStorageComponent.tick()` |
-| `insertItem` | 插入物品时 UUID 列表为空 | `InternalStorageComponent.insertItem()` |
-| `insertItem-expand` | 插入物品时 UUID 列表不足 | `InternalStorageComponent.insertItem()` |
+**安全检查**:
+- `chestStack.getCount() > 1` → 拒绝所有操作（堆叠数 >1 时活箱子不可操作）
+- `chestStack == itemToInsert` → 拒绝存入（防止存入自己）
+- `isByteFull()` → 拒绝存入（16KB 限制）
 
-**所有入口都通过 `createAndRegister` 统一创建，并通过日志记录来源，便于追踪。**
+### 4.2 LivingChestFunction（功能入口）
 
-### 10.3 UUID 只增不减的安全策略
-
-**原则**: 任何自动操作都不能缩减 UUID 列表，只有用户明确"取消活化"（toggle living off）才可删除。
-
-| 操作 | 旧行为（有风险） | 新行为（安全） |
-|------|-----------------|---------------|
-| `tick()` 堆叠数减少 | ❌ 删除多余 UUID + 磁盘文件 | ✅ 保留所有 UUID，仅记录日志 |
-| `insertItem()` UUID 溢出 | ❌ 删除多余 UUID | ✅ 保留所有 UUID |
-| `split()` 拆出空堆 | ❌ 可能丢失 UUID | ✅ 按比例拆分，原堆保留 |
-| 方块放置后 | ❌ 无此功能 | ✅ 清空 NBT 引用，不删磁盘文件 |
-| 切换活化标签 | ❌ 丢失 UUID，重新创建 | ✅ 保存到 CUSTOM_DATA，恢复时还原 |
-
-### 10.4 线程安全保护
-
-UUID 操作需要同时支持服务端线程和客户端线程，因为创造模式 INVENTORY 标签页的点击操作在客户端线程执行。
-
-**历史演进**:
-
-| 阶段 | 策略 | 问题 |
-|------|------|------|
-| 阶段 1（初版） | 仅在服务端线程执行 UUID 操作 | 创造模式 INVENTORY 标签页点击在客户端线程，UUID 操作被跳过 |
-| 阶段 2（当前） | 客户端/服务端双兼容 | 所有 UUID 管理方法不再做线程检查，客户端和服务端线程均执行 |
-
-**创造模式客户端线程的特殊性**:
-
-```
-创造模式 INVENTORY 标签页的点击流程：
-  CreativeModeInventoryScreen.slotClicked()
-    → inventoryMenu.clicked(slotId, button, clickType, player)
-      → AbstractContainerMenu.clicked()  ← 在客户端线程直接执行！
-        → ItemStack.split() / grow() / shrink() / copyWithCount()
-          → ItemStackMixin 的注入方法 ← 在客户端线程执行
-```
-
-这与生存模式和其他容器（工作台、箱子等）不同——后者通过发包到服务端处理，操作在服务端线程执行。
-
-**单机模式特殊处理**: 在单机模式下，`ServerLifecycleHooks.getCurrentServer()` 在 Render 线程也返回非 null，因此需要 `isSameThread()` 额外检查。但 `isCreativeMode()` 方法使用双路径检测（服务端 + 客户端），确保即使在线程不确定的情况下也能正确判断创造模式。
-
-### 10.5 toggle 活化标签的 UUID 保存/恢复
-
-当用户切换活箱子的活化标签（toggle living tag）时：
-
-```
-取消活化:
-  1. 读取活箱子数据（UUID 列表等）
-  2. 保存到 DataComponent.CUSTOM_DATA 的 "pending_living_chest" 键
-  3. 调用 dropAllItems() 清理物品
-  4. 调用 setLiving(false) 移除 LIVING_FUNCTION_DATA
-
-重新活化:
-  1. 调用 setLiving(true) 设置活化
-  2. 从 CUSTOM_DATA 读取 "pending_living_chest"
-  3. 恢复到 LIVING_FUNCTION_DATA
-  4. 清理 CUSTOM_DATA 中的临时数据
-```
-
-**关键**: 使用 `CUSTOM_DATA` 作为临时存储，避免 UUID 在 toggle 过程中丢失。
-
-### 10.6 ItemStackMixin — UUID 生命周期管理中枢
-
-`ItemStackMixin` 是整个 UUID 管理系统的核心，拦截所有物品堆叠操作，确保 UUID 列表始终与堆叠数保持同步。它通过 6 个注入点覆盖了物品堆叠的全部操作路径。
-
-#### 10.6.1 六核心职责总览
-
-| # | 职责 | 拦截方法 | 注入点 | 说明 |
-|---|------|---------|--------|------|
-| 1 | 堆叠判定 | `isSameItemSameComponents` | HEAD | 玩家 GUI 操作时仅忽略 UUID 差异，保留其他 NBT 差异 |
-| 2 | 拆分 UUID 分配 | `split` | HEAD + RETURN | 按比例拆分 UUID 列表给原堆和新堆；非玩家上下文禁止拆分 |
-| 3 | 合并 UUID 转移 | `grow` + `shrink` | HEAD | 双向配对，兼容左键/右键/漏斗合并时序 |
-| 4 | Shift+点击转移 | `setCount` | HEAD | 原版容器使用 setCount 而非 grow/shrink |
-| 5 | 右键/中键拖拽 | `copyWithCount` | RETURN | 拖拽分发时拆分 UUID，区分 QUICK_CRAFT/CLONE |
-| 6 | 创造模式防护 | `copyWithCount` | RETURN | 创造模式 CLONE 复制时清空副本 UUID |
-
-#### 10.6.2 职责 1：堆叠判定（isSameItemSameComponents）
-
-**为什么需要拦截**：活箱子使用 DataComponent 存储 UUID 列表，不同堆叠的 UUID 列表内容不同，导致原版 `isSameItemSameComponents` 判定它们为"不同"物品，无法堆叠。
-
-**解决方案**：通过 `ALLOW_STACK` ThreadLocal 标志，仅在玩家 GUI 操作时**仅忽略 UUID 差异**，保留其他所有 NBT 差异（如铁砧重命名、附魔、损坏值等）。
-
-```
-玩家拖拽物品 → AbstractContainerMenuMixin 设置 ALLOW_STACK=true
-  → isSameItemSameComponents 检测到 ALLOW_STACK
-  → 创建副本并移除 LIVING_FUNCTION_DATA（含 UUID）+ IS_LIVING 标记
-  → 调用原版 ItemStack.isSameItemSameComponents 比较副本
-  → 副本不再是活箱子，不会递归触发本 Mixin
-  → 自定义名称等差异仍会阻止堆叠，只有 UUID 差异被忽略
-
-掉落物落地 / 漏斗传输 → ALLOW_STACK 为 null
-  → 走原版逻辑 → 不同 UUID 不堆叠
-```
-
-**关键设计：副本比较法**：
+**职责**: 提供简洁的 API，委托给 `InternalStorageComponent`
 
 ```java
-if (LivingChestStackFlags.ALLOW_STACK.get() != null) {
-    ItemStack copyA = stack.copy();
-    ItemStack copyB = other.copy();
-    LivingItemManager.clearLivingData(copyA);  // 移除 UUID 和 IS_LIVING
-    LivingItemManager.clearLivingData(copyB);
-    // 副本不再是活箱子 → 走原版比较 → 不会递归触发本 Mixin
-    cir.setReturnValue(ItemStack.isSameItemSameComponents(copyA, copyB));
-}
-```
+public class LivingChestFunction extends BaseLivingFunction {
+    public static final String ID = "living_chest";
+    public static final int CHEST_SLOTS = 27;
 
-**为什么用副本而非直接修改**：直接修改原 ItemStack 的 DataComponent 会污染数据，且可能在并发场景下导致不可预测的行为。副本方式安全、无副作用，且自动绕过 Mixin 递归。
-
-**堆叠结果对比**：
-
-| 场景 | 旧行为（无条件 true） | 新行为（副本比较法） |
-|------|---------------------|---------------------|
-| 两个活箱子（不同 UUID，无名称） | ✅ 堆叠 | ✅ 堆叠 |
-| 重命名 vs 无名称 活箱子 | ❌ 堆叠（错误） | ✅ 不堆叠（正确） |
-| 两个重命名相同名称 活箱子 | ✅ 堆叠 | ✅ 堆叠 |
-| 两个重命名不同名称 活箱子 | ❌ 堆叠（错误） | ✅ 不堆叠（正确） |
-
-**安全边界**：
-- null 检查：防止空指针
-- 物品类型检查：不同类型物品不应堆叠
-- 活箱子检查：非活箱子走原版逻辑
-
-#### 10.6.3 职责 2：拆分 UUID 分配（split）
-
-**为什么分 HEAD 和 RETURN 两步**：`split()` 内部会调用 `shrink()`，而 `onShrink` 会修改 UUID 列表。如果在 RETURN 才读取 UUID，读到的已经是 `onShrink` 修改后的残缺数据。因此必须在 HEAD 捕获原始 UUID 快照。
-
-```
-split(amount) 执行流程：
-  1. HEAD: 上下文检查 → 非玩家上下文（ALLOW_STACK == null）→ 返回 EMPTY，禁止拆分
-  2. HEAD: 捕获原始 UUID 快照 → PRE_SPLIT_UUIDS
-  3. 原版: 创建新堆，调整两个堆的 count
-  4. 内部调用 shrink() → onShrink 被 PRE_SPLIT_UUIDS 阻断
-  5. RETURN: 用快照拆分 UUID → 分配给两个堆
-```
-
-**非玩家上下文拦截**：`onSplitHead` 在捕获 UUID 快照之前，先检查 `ALLOW_STACK` 标志：
-
-```java
-// 非玩家上下文（漏斗/投掷器/模组管道等自动化系统）：禁止拆分活箱子
-if (LivingChestStackFlags.ALLOW_STACK.get() == null) {
-    PRE_SPLIT_UUIDS.remove();         // 清理可能残留的 ThreadLocal
-    cir.setReturnValue(ItemStack.EMPTY);  // 返回空堆，阻止拆分
-    return;
-}
-```
-
-这是整个活箱子防护体系的核心哨卡——**只有玩家通过 GUI 操作时才能拆分活箱子堆叠**，所有自动化系统（漏斗、投掷器、发射器、模组管道等）的拆分请求都被拒绝。这从根本上避免了自动化传输导致的 UUID 不一致、数据丢失、物品翻倍等问题。
-
-**场景分支**：
-- **玩家 GUI 拆分**（ALLOW_STACK != null）：正常执行 UUID 拆分
-- **非玩家上下文拆分**（ALLOW_STACK == null）：返回 EMPTY，阻止拆分
-- **真正拆分**（amount < 总数量）：按比例分配
-- **拿起整堆**（amount >= 总数量）：原堆变空，新堆获得全部 UUID
-- **客户端调用**：HEAD 设置 PRE_SPLIT_UUIDS 标志（阻止 `onCopyWithCount` 在创造模式下误清 UUID），RETURN 正常执行拆分
-
-#### 10.6.4 职责 3：合并 UUID 转移（grow + shrink 双向配对）
-
-**核心挑战**：不同操作触发的 grow/shrink 调用顺序不同：
-
-| 操作 | 调用顺序 | 说明 |
-|------|---------|------|
-| 左键合并 | grow 先 → shrink 后 | 拿起一堆放到另一堆上 |
-| 右键合并 | shrink 先 → grow 后 | 右键逐个放置 |
-| 漏斗/投掷器 | shrink 先 → grow 后 | 世界交互传输 |
-| split 后合并 | shrink 先 → grow 后 | split 内部调用 |
-
-**解决方案**：`PENDING_TRANSFER`（`MergeTransfer` 记录）作为双向中转站：
-
-```
-MergeTransfer 记录结构：
-  target: ItemStack    — grow-first 模式下 grow 的目标堆（其他模式为 null）
-  amount: int          — 转移的数量，用于校验 grow/shrink 是否匹配
-  uuids: List<UUID>    — 待转移的 UUID 列表（null = grow-first 等待 shrink 填充）
-
-三种使用模式：
-
-1. grow-first（左键合并）：
-   grow() → PENDING_TRANSFER = (target=目标堆, amount=N, uuids=null)
-   shrink() → 发现 uuids=null → 将移除的 UUID 直接转移到 target
-            → 清理 PENDING_TRANSFER
-
-2. shrink-first（右键合并/漏斗）：
-   shrink() → PENDING_TRANSFER = (target=null, amount=N, uuids=[移除的UUID])
-   grow() → 发现 uuids 非 null → 直接合并到当前堆
-         → 清理 PENDING_TRANSFER
-
-3. setCount 路径（shift+点击）：
-   onSetCount 源堆清零 → PENDING_TRANSFER = (target=null, amount=N, uuids=[全部UUID])
-   onSetCount 目标堆增长 → 消费 PENDING_TRANSFER 中的 UUID
-```
-
-**onGrow 执行优先级**：
-1. `SPLIT_UUIDS_FOR_GROW` 有数据 → split 后的 grow，直接合并
-2. `PENDING_TRANSFER.uuids` 非 null → shrink-first 合并，消费并清理
-3. `PENDING_TRANSFER` 为空或 uuids=null → grow-first，存储信息等待 shrink
-
-**onShrink 执行分支**：
-1. `PENDING_TRANSFER` 存在且 uuids=null（grow-first）→ 直接转移 UUID 到 target
-2. 其他情况（shrink-first）→ 将移除的 UUID 存入 PENDING_TRANSFER
-
-**源堆 UUID 更新**：无论哪种分支，shrink 后源堆的 UUID 都被截断为前 `newCount` 个。被移除的 UUID 通过 PENDING_TRANSFER 或直接转移交给目标堆，UUID 总数不变。
-
-**安全边界**：
-- `amount <= 0 || amount > oldCount`：无效缩减量，跳过
-- `myUuids.isEmpty()`：无 UUID 可转移，跳过
-- `myUuids.size() != oldCount`：UUID 数量与堆叠数不匹配，跳过并打印警告
-- `PRE_SPLIT_UUIDS != null`：split 内部调用，跳过
-- `BLOCK_PLACING_UUIDS != null`：方块放置期间，跳过
-
-#### 10.6.5 职责 4：Shift+点击转移（setCount）
-
-**为什么需要拦截**：原版 `AbstractContainerMenu.moveItemStackTo()` 和数字键交换物品时，直接使用 `setCount()` 而非 `grow()`/`shrink()`：
-
-```java
-// 全量合并：两个堆都用 setCount，grow 和 shrink 都不触发
-stack.setCount(0);               // 源堆清零
-itemstack.setCount(j);           // 目标堆增长
-
-// 部分合并：shrink 触发，但 grow 用 setCount 替代
-stack.shrink(k - itemstack.getCount());
-itemstack.setCount(k);           // 目标堆增长，但 onGrow 不触发
-```
-
-**处理策略**：利用 `PENDING_TRANSFER` 作为中转站：
-
-| 分支 | 条件 | 处理 |
-|------|------|------|
-| 源堆清零 | `count == 0 && oldCount > 0` | 将 UUID 列表暂存到 PENDING_TRANSFER，清空自身 UUID |
-| 目标堆增长 | `count > oldCount` | 检查 PENDING_TRANSFER，数量匹配则合并并清理 |
-| 部分减少 | `count < oldCount && count > 0` | 不处理（此时应走 shrink 路径） |
-
-**互斥保护**：
-- `PRE_SPLIT_UUIDS != null`：split 内部调用，跳过
-- `BLOCK_PLACING_UUIDS != null`：方块放置期间，跳过
-
-#### 10.6.6 职责 5+6：右键/中键拖拽（copyWithCount）
-
-**两种拖拽的区别**：
-
-| 操作 | 光标堆叠变化 | 原版调用链 | UUID 处理 |
-|------|------------|-----------|----------|
-| 右键拖拽（生存） | 逐个减少 | `copyWithCount` → `shrink`（原堆减少） | 按比例拆分 UUID |
-| 右键拖拽（创造 QUICK_CRAFT） | 逐个减少 | `copyWithCount` 直接分发，不经过 `shrink` | 在 `copyWithCount` 中直接拆分 |
-| 中键拖拽（创造 CLONE） | 不变 | `copyWithCount`（原堆不动） | 清空副本 UUID，防止泄露 |
-
-**创造模式 QUICK_CRAFT 特殊流程**：
-
-```java
-// AbstractContainerMenu.doClick() — QUICK_CRAFT 实际流程
-ItemStack itemstack3 = this.getCarried().copy();  // 复制光标堆
-for (Slot slot1 : this.quickcraftSlots) {
-    // 注意：没有 shrink()！直接 copyWithCount 分发
-    slot1.setByPlayer(itemstack3.copyWithCount(l));
-}
-itemstack3.setCount(k1);        // 手动设置剩余数量
-this.setCarried(itemstack3);    // 替换光标堆
-```
-
-因为 QUICK_CRAFT 不经过 `shrink`，`onCopyWithCount` 必须在每次调用时从 `itemstack3` 的 UUID 列表中切出 `count` 个分配给副本，剩余留给 `itemstack3` 供后续迭代继续拆分：
-
-```
-itemstack3 = copy([A,B,C,D]), count=4
-
-第1次 copyWithCount(1):
-  splitUuidList([A,B,C,D], 1) → remain=[A,B,C], split=[D]
-  itemstack3 → [A,B,C], 副本 → [D]
-
-第2次 copyWithCount(1):
-  splitUuidList([A,B,C], 1) → remain=[A,B], split=[C]
-  itemstack3 → [A,B], 副本 → [C]
-
-setCarried(itemstack3) → 光标堆 [A,B], count=2
-→ 槽1: [D], 槽2: [C], 光标: [A,B] ✓
-```
-
-**创造模式 CLONE 处理**：中键复制（ClickType.CLONE）不走 QUICK_CRAFT 路径，`IS_QUICK_CRAFT` 为 null，副本 UUID 被清空。复制出的活箱子为"空壳"，后续 tick 检测到 count>0 且 UUID 为空时会自动创建新 UUID。
-
-**安全边界**：
-- `PRE_SPLIT_UUIDS != null`：split 内部调用，跳过
-- `copy.isEmpty()`：副本为空，无需处理
-- `originalUuids.isEmpty()`：无 UUID 可分配，跳过
-- `count >= original.getCount()`：复制整堆（拿起操作），跳过让 split 路径处理
-
-#### 10.6.7 mergeIntoTargetUpToCount 安全合并
-
-创造模式下某些复制/切换路径可能让目标堆在进入 grow/setCount 之前，已经携带了完整甚至偏多的 UUID 列表。`mergeIntoTargetUpToCount` 提供两层保护：
-
-```java
-private static void mergeIntoTargetUpToCount(ItemStack target, List<UUID> incoming,
-                                              int expectedCount, String source) {
-    // 保护 1：去重 — 相同 UUID 不重复追加
-    LinkedHashSet<UUID> mergedSet = new LinkedHashSet<>(current);
-    for (UUID uuid : incoming) {
-        if (mergedSet.size() >= expectedCount) break;
-        mergedSet.add(uuid);
+    // 所有静态方法直接委托给 InternalStorageComponent
+    public static boolean insertItem(ItemStack chestStack, ItemStack itemToInsert, ...) {
+        return InternalStorageComponent.insertItem(chestStack, itemToInsert, ...);
     }
-
-    // 保护 2：限长 — 最多只补到 expectedCount 为止
-    List<UUID> merged = new ArrayList<>(mergedSet);
-    if (merged.size() > expectedCount) {
-        merged = new ArrayList<>(merged.subList(0, expectedCount));
-    }
+    // ...
 }
 ```
 
-注意：这里不会主动删除目标堆已有 UUID，只阻止"继续超量追加"。
+**额外功能**:
+- `isLivingChest(stack)`: 判断是否为活箱子（`Items.CHEST` + `isLivingItem`）
+- `hasStorage(stack)`: 判断是否有 CONTAINER 组件
+- `dropAllItems(chestStack, player)`: 取消活化时掉落所有物品
+- `getStorageState(stack)` / `saveStorageState(stack, state)`: 读写功能状态
 
-### 10.7 创造模式特殊处理
+### 4.3 ItemStackMixin（堆叠比较）
 
-创造模式是 UUID 管理中最复杂的场景，因为 INVENTORY 标签页的点击操作在客户端线程执行，且操作类型多样（CLONE、QUICK_CRAFT、PICKUP 等）。
+**职责**: 活物品堆叠比较时忽略运行时状态组件的差异
 
-#### 10.7.1 创造模式检测（isCreativeMode）
+**两大注入**:
+
+#### 注入 1: `getTooltipImage` — 工具提示渲染
+
+当活箱子有物品时，显示缩略图：
 
 ```java
-private static boolean isCreativeMode() {
-    // 路径 1：服务端检测
-    MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
-    if (server != null) {
-        for (ServerPlayer p : server.getPlayerList().getPlayers()) {
-            if (p.isCreative()) return true;
-        }
-    }
-
-    // 路径 2：客户端检测（兜底，处理客户端线程的 copyWithCount）
-    try {
-        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
-        if (mc.player != null && mc.player.isCreative()) return true;
-    } catch (Exception ignored) { }
-
-    return false;
+@Inject(method = "getTooltipImage", at = @At("RETURN"), cancellable = true)
+private void onGetTooltipImage(CallbackInfoReturnable<Optional<TooltipComponent>> cir) {
+    ItemStack self = (ItemStack) (Object) this;
+    if (!LivingChestFunction.isLivingChest(self)) return;
+    if (InternalStorageComponent.isStorageEmpty(self)) return;
+    cir.setReturnValue(Optional.of(new LivingChestTooltipComponent(
+        InternalStorageComponent.getItems(self), 9, 3)));
 }
 ```
 
-双路径检测确保无论代码在服务端线程还是客户端线程执行，都能正确判断创造模式。
+#### 注入 2: `isSameItemSameComponents` — 堆叠判定
 
-#### 10.7.2 QUICK_CRAFT vs CLONE 区分
-
-创造模式下，右键拖动（QUICK_CRAFT）和中键复制（CLONE）都走 `copyWithCount`，但语义完全不同：
-
-| 特性 | QUICK_CRAFT（右键拖动） | CLONE（中键复制） |
-|------|----------------------|-------------------|
-| 光标堆叠变化 | 减少 | 不变 |
-| 是否经过 shrink | ❌ 不经过 | ❌ 不经过 |
-| UUID 处理 | 正常拆分 | 清空副本 UUID |
-| IS_QUICK_CRAFT 标志 | ✅ 已设置 | ❌ 未设置 |
-
-区分机制通过 `LivingChestStackFlags.IS_QUICK_CRAFT` ThreadLocal 标志实现：
+活物品比较时，收集所有适用功能的 `getIgnoredComponentTypes()`，在比较时跳过这些组件：
 
 ```java
-// AbstractContainerMenuMixin.onClickedHead()
-if (clickType == ClickType.QUICK_CRAFT) {
-    LivingChestStackFlags.IS_QUICK_CRAFT.set(true);
-}
+@Inject(method = "isSameItemSameComponents", at = @At("HEAD"), cancellable = true)
+private static void onIsSameItemSameComponents(ItemStack stack1, ItemStack stack2, ...) {
+    if (!LivingItemManager.isLivingItem(stack1) || !LivingItemManager.isLivingItem(stack2)) return;
+    if (stack1.getItem() != stack2.getItem()) { cir.setReturnValue(false); return; }
 
-// ItemStackMixin.onCopyWithCount()
-if (isCreativeMode()) {
-    if (LivingChestStackFlags.IS_QUICK_CRAFT.get() != null) {
-        // QUICK_CRAFT：走正常拆分逻辑（fall through）
-    } else {
-        // CLONE：清空副本 UUID
-        LivingChestStackHandler.setUuids(copy, List.of());
-        return;
+    Set<DataComponentType<?>> ignoredTypes = new HashSet<>();
+    for (LivingItemFunction func : LivingItemManager.getApplicableFunctions(stack1)) {
+        ignoredTypes.addAll(func.getIgnoredComponentTypes());
     }
+    if (ignoredTypes.isEmpty()) return;
+
+    // 逐组件比较，跳过 ignoredTypes
+    DataComponentMap map1 = stack1.getComponents();
+    DataComponentMap map2 = stack2.getComponents();
+    // ... 比较逻辑 ...
+    cir.setReturnValue(true);
 }
 ```
 
+**效果**:
+- 两个活箱子（不同内部物品）→ 不堆叠（CONTAINER 差异不被忽略，物品数据直接存储在组件中）
+- 两个活箱子（相同内部物品，不同运行时状态）→ 可以堆叠（忽略 LIVING_FUNCTION_DATA 差异）
+- 重命名 vs 无名称 活箱子 → 不堆叠（保留自定义名称差异）
+- 不同类型活物品 → 不堆叠
 
-好问题！让我追踪一下漏斗传输的完整调用链，解释为什么它"意外地"正常工作
-核心原因在于：**`onSplitHead` / `onSplitReturn` 是独立于 `ALLOW_STACK` 的，它们拦截所有 `split()` 调用，不分玩家还是世界。**
+---
 
-追踪漏斗的完整调用链：
+## 5. GUI 交互与网络通信
 
-```
-漏斗传输: sourceContainer.removeItem(slot, 1)
-           └─→ ItemStack.split(1)
-```
-
-## `split(1)` 内部三步走
-
-```
-                  ┌─────────────────────────────────────┐
-                  │       onSplitHead (HEAD)             │
-                  │  ❌ 不检查 ALLOW_STACK                │
-                  │  ✅ 捕获 UUID 快照 → PRE_SPLIT_UUIDS  │
-                  │     = [A, B, C, D]                   │
-                  │  ✅ 设置互斥标志，阻止内部干扰         │
-                  └──────────────┬──────────────────────┘
-                                 ↓
-                  ┌─────────────────────────────────────┐
-                  │       原版 split(1) 执行              │
-                  │  copyWithCount(1) → onCopyWithCount  │
-                  │    → PRE_SPLIT_UUIDS 非空 → 跳过 ✓   │
-                  │  shrink(1) → onShrink                │
-                  │    → PRE_SPLIT_UUIDS 非空 → 跳过 ✓   │
-                  │  返回 count=1 的新堆                  │
-                  └──────────────┬──────────────────────┘
-                                 ↓
-                  ┌─────────────────────────────────────┐
-                  │       onSplitReturn (RETURN)         │
-                  │  ❌ 不检查 ALLOW_STACK                │
-                  │  ✅ 取回快照 [A,B,C,D]                │
-                  │  ✅ splitUuidList([A,B,C,D], 1)       │
-                  │     → remain=[A,B,C] 分给原堆         │
-                  │     → split=[D]       分给新堆        │
-                  │  ✅ [D] 存入 SPLIT_UUIDS_FOR_GROW    │
-                  │     供后续 grow 消费                  │
-                  └─────────────────────────────────────┘
-```
-
-所以你当初围绕玩家操作设计的 `split` 拦截，恰好是一个**上下文无关**的通用机制——它不关心是谁调用了 `split()`，只要 `split()` 被调用，它就能正确拆分 UUID。
-
-投掷器/发射器之所以出问题，是因为它们**根本不用 `split()`**，而是走 `copyWithCount()` + `shrink()` 这条绕过了 `onSplitHead`/`onSplitReturn` 的路径：
-
-```
-漏斗:      split(1)         → onSplitHead → onSplitReturn → UUID 正确 ✓
-投掷器:    copyWithCount(1)  → onCopyWithCount (无 ALLOW_STACK, 无 PRE_SPLIT_UUIDS)
-           shrink(1)          → onShrink (无 ALLOW_STACK, 无 PRE_SPLIT_UUIDS)
-                              → UUID 分裂/丢失 ✗
-```
-
-**最终决策**：虽然漏斗的 `split()` 路径天然正确，但我们最终选择了更激进的方案——在 `onSplitHead` 中拦截所有非玩家上下文的 `split()` 调用。这意味着漏斗也不再能传输活箱子。这看似"倒退"，实则是为了统一防护策略：**任何自动化系统都不应该操作活箱子的 UUID**。漏斗虽然能正确拆分 UUID，但"正确拆分"不等于"正确分配"——拆分后的 UUID 子堆需要被目标容器正确接收，而这一步在漏斗传输中可能存在未覆盖的边界情况。统一拦截所有非玩家拆分，远比逐个排查每种自动化系统更安全。
-
-这最终催生了 [10.9 通用传输封锁策略](#109-通用传输封锁策略)。
-
-#### 10.7.3 创造模式修复历程
-
-| 问题 | 症状 | 根因 | 修复 |
-|------|------|------|------|
-| 拿起再放下 UUID 消失 | UUID 列表变为空 | `split()` 客户端线程执行时 `onSplitHead` 未设置 `PRE_SPLIT_UUIDS`，`onCopyWithCount` 误判为创造模式复制清空 UUID | `onSplitHead` 中客户端线程也设置 `PRE_SPLIT_UUIDS` |
-| 分离 UUID 未拆分 | 每个子堆都保留全部 UUID | `onSplitReturn`/`onShrink` 有服务端线程检查，客户端线程被跳过 | 移除所有 UUID 管理方法中的服务端线程检查 |
-| 合并 UUID 异常变动 | 鼠标堆 UUID 变，槽位堆不变 | `onGrow`/`onSetCount` 在客户端线程被跳过 | 移除服务端线程检查，客户端线程也执行合并逻辑 |
-| 右键拖动 UUID 不拆分 | 所有堆都保留全部 UUID | QUICK_CRAFT 不经过 shrink，`onCopyWithCount` 创造模式分支直接清空副本 UUID | 检测 IS_QUICK_CRAFT 标志，走正常拆分逻辑 |
-
-### 10.8 ThreadLocal 变量完整清单
-
-| ThreadLocal | 类型 | 用途 | 设置位置 | 清理位置 |
-|------------|------|------|---------|---------|
-| `ALLOW_STACK` | `ThreadLocal<Boolean>` | 玩家 GUI 操作时允许跨 UUID 堆叠 | `AbstractContainerMenuMixin.onClickedHead` | `AbstractContainerMenuMixin.onClickedReturn` |
-| `IS_QUICK_CRAFT` | `ThreadLocal<Boolean>` | 标识当前操作为 QUICK_CRAFT（右键拖动分发） | `AbstractContainerMenuMixin.onClickedHead`（仅 QUICK_CRAFT 时） | `AbstractContainerMenuMixin.onClickedReturn` |
-| `PRE_SPLIT_UUIDS` | `ThreadLocal<List<UUID>>` | split 中捕获原始 UUID 快照，同时作为互斥标志阻止 onShrink/onSetCount/onCopyWithCount 重复处理 | `ItemStackMixin.onSplitHead` | `ItemStackMixin.onSplitReturn` |
-| `SPLIT_UUIDS_FOR_GROW` | `ThreadLocal<List<UUID>>` | split 产出的新堆 UUID，供紧随其后的 grow 消费 | `ItemStackMixin.onSplitReturn` | `ItemStackMixin.onGrow`（消费后）或 `onSplitHead`（清理残留） |
-| `PENDING_TRANSFER` | `ThreadLocal<MergeTransfer>` | grow/shrink/setCount 之间传递待转移的 UUID 数据 | grow 或 shrink 或 setCount 先执行者 | 后执行者消费后清理 |
-| `BLOCK_PLACING_UUIDS` | `ThreadLocal<List<UUID>>` | 方块放置时存储捕获的 UUID，阻止 onShrink/onSetCount 处理 | `BlockItemMixin` HEAD | `BlockItemMixin` RETURN |
-
-**清理原则**：所有 ThreadLocal 变量在每次操作完成后立即清理（`remove()`），避免跨操作污染。`PRE_SPLIT_UUIDS` 和 `SPLIT_UUIDS_FOR_GROW` 在 `onSplitHead` 中有额外的残留清理逻辑，确保即使上次操作异常退出也能正确重置。
-
-### 10.9 通用传输封锁策略
-
-经过多次迭代和反复修复，最终确立了一套**三层防护体系**，确保活箱子不被任何自动化系统破坏 UUID 完整性。
-
-#### 10.9.1 防护体系架构
+### 5.1 系统架构图
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                    活箱子 UUID 三层防护体系                        │
+│                     GUI 交互系统架构                              │
 │                                                                  │
-│  第一层：split() 拦截（ItemStackMixin.onSplitHead）               │
-│  ┌────────────────────────────────────────────────────────────┐ │
-│  │ 拦截所有非玩家上下文的 split() 调用                          │ │
-│  │ 覆盖：漏斗、投掷器、模组管道等所有使用 split() 的自动化系统   │ │
-│  │ 机制：ALLOW_STACK == null → 返回 EMPTY，阻止拆分             │ │
-│  └────────────────────────────────────────────────────────────┘ │
-│                              │                                   │
-│                              ▼                                   │
-│  第二层：发射器注册（DispenserBlock.registerBehavior）            │
-│  ┌────────────────────────────────────────────────────────────┐ │
-│  │ 注册空操作分发行为，阻止发射器发射活箱子                      │ │
-│  │ 覆盖：发射器（Dispenser）的 dispense 流程                    │ │
-│  │ 机制：返回原堆不做任何操作                                    │ │
-│  └────────────────────────────────────────────────────────────┘ │
-│                              │                                   │
-│                              ▼                                   │
-│  第三层：投掷器拦截（DropperBlockMixin）                          │
-│  ┌────────────────────────────────────────────────────────────┐ │
-│  │ 拦截投掷器的随机选槽，检测到活箱子则返回 -1（无可用槽位）    │ │
-│  │ 覆盖：投掷器（Dropper）的 dispenseFrom 流程                  │ │
-│  │ 机制：@Redirect 拦截 getRandomSlot，对活箱子返回 -1          │ │
-│  └────────────────────────────────────────────────────────────┘ │
+│  客户端 (Client)                                                  │
+│  ┌──────────────────┐    ┌────────────────────┐                 │
+│  │ 配方书活箱子标签页 │───▶│ LivingChestAccess  │                 │
+│  │ (RecipeBookComp   │    │ Packet (请求包)     │                 │
+│  │  onentMixin)      │    └────────────────────┘                 │
+│  └──────────────────┘                                             │
+│  ┌──────────────────┐    ┌────────────────────┐                 │
+│  │ Shift+左键快速存入│───▶│ LivingChestAccess  │                 │
+│  │ (InventoryScreen  │    │ Packet             │                 │
+│  │  Mixin等)         │    │ (DEPOSIT_SLOT)     │                 │
+│  └──────────────────┘    └────────────────────┘                 │
+│                                                                  │
+│  服务端 (Server)                                                  │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │                    ServerPacketHandler                    │   │
+│  │  handleDeposit() / handleWithdraw() / handleDepositFrom  │   │
+│  │  Slot() / handleWithdrawToInventory()                    │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│                          │                                       │
+│                          ▼                                       │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │         LivingChestFunction → InternalStorageComponent   │   │
+│  └──────────────────────────────────────────────────────────┘   │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
-#### 10.9.2 各层防护详解
+**关键设计**: 客户端直接从 ItemStack 的 CONTAINER 组件读取物品数据（无需请求服务端），操作（存取）则通过网络包发送到服务端执行。
 
-**第一层：`split()` 拦截（最重要、覆盖面最广）**
+### 5.2 LivingChestAccessPacket（存取请求包）
 
-- **代码位置**：[ItemStackMixin.java](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/mixin/ItemStackMixin.java) `onSplitHead` 方法
-- **覆盖范围**：所有调用 `ItemStack.split()` 的自动化系统，包括但不限于：原版漏斗、原版投掷器（部分路径）、所有模组管道 / 传送带 / 物流系统
-- **原理**：大多数自动化物品传输系统最终都会调用 `split()` 来拆分源堆叠。在 `onSplitHead` 中检测 `ALLOW_STACK` 标志——只有玩家 GUI 操作时该标志为 true，自动化系统调用时为 null。返回 `ItemStack.EMPTY` 表示"拆分失败"，原版系统会将其视为"无法操作该物品"。
+**操作类型**:
+| 操作 | 值 | 说明 |
+|------|-----|------|
+| `LOAD` | 0 | 请求加载活箱子内容（当前未使用，客户端直接读取） |
+| `DEPOSIT` | 1 | 将光标物品存入活箱子 |
+| `WITHDRAW` | 2 | 从活箱子取出指定物品到光标 |
+| `WITHDRAW_INVENTORY` | 3 | 从活箱子取出物品到玩家背包 |
+| `DEPOSIT_SLOT` | 4 | 从玩家背包指定槽位存入物品到活箱子（Shift+左键快速存入） |
 
-**第二层：发射器空分发行为**
-
-- **代码位置**：[LivingItem.java](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/LivingItem.java) `registerDispenserBehaviors`
-- **覆盖范围**：发射器（Dispenser）的 `dispense` 流程
-- **原理**：通过 `DispenserBlock.registerBehavior(Items.CHEST, noOpBehavior)` 注册一个空操作分发行为。当发射器尝试发射活箱子时，直接返回原堆不做任何操作。
-
-**第三层：投掷器随机选槽拦截**
-
-- **代码位置**：[DropperBlockMixin.java](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/mixin/DropperBlockMixin.java)
-- **覆盖范围**：投掷器（Dropper）的 `dispenseFrom` 流程
-- **原理**：投掷器的 `dispenseFrom` 通过 `getRandomSlot` 随机选择一个非空槽位进行投掷。使用 `@Redirect` 拦截此方法：检测到选中槽位为活箱子时返回 `-1`（表示"无可用槽位"），投掷器跳过本次操作。此方法不会影响其他非活物品的投掷。
-
-#### 10.9.3 为什么需要三层防护
-
-| 层 | 为什么需要 | 如果缺少会怎样 |
-|----|-----------|---------------|
-| 第一层 (split) | 覆盖面最广，拦截绝大部分自动化传输 | 漏斗、模组管道等可拆分活箱子，UUID 可能不一致 |
-| 第二层 (发射器) | 发射器不使用 split() 路径，第一层无法覆盖 | 发射器可发射活箱子，UUID 可能异常变化 |
-| 第三层 (投掷器) | 投掷器不使用 split() 路径，走 shrink + copyWithCount | 投掷器可投掷活箱子，可能触发物品翻倍等 bug |
-
-#### 10.9.4 设计哲学：为什么选择"禁止"而非"修复"
-
-从技术角度看，完全可以让每个自动化系统正确拆分和分配 UUID。但实践中遇到了三大障碍：
-
-1. **无限多的自动化系统**：原版漏斗、投掷器、发射器只是冰山一角。模组生态中有无数种物品传输方式——机械动力的传送带、热力膨胀的管道、应用能源的 ME 网络、精致存储的 RS 网络……每种都有不同的传输实现，修复成本随模组数量指数增长。
-
-2. **拆分逻辑的固有复杂性**：活箱子的 UUID 拆分需要在 `split()` → `copyWithCount()` → `shrink()` → `grow()` 的复杂调用链中保持一致性。即使对于原版方块，不同方块的调用顺序也可能不同（漏斗先 split 后 setItem，投掷器先 shrink 后 setItem），导致同一个"修复"在不同方块上表现不一致。
-
-3. **活箱子本身的设计初衷**：活箱子是一个存储容器，一个实例可以存储 27 格物品。堆叠多个活箱子的需求本就有限。禁止自动化系统操作活箱子，符合"玩家手动管理活箱子"的使用场景。
-
-**最终结论**：**禁止**比**修复**更安全、更简单、更具兼容性。这不是技术妥协，而是工程上的理性选择。
-
-#### 10.9.5 演进历程
-
-| 阶段 | 尝试方案 | 结果 |
-|------|---------|------|
-| 1 | 让 `onCopyWithCount` + `onShrink` 处理非玩家上下文 | 创造模式 CLONE 复制出现 UUID 混乱，方案过于复杂 |
-| 2 | 方案 A：将活箱子设为不可堆叠物品（maxStackSize=1） | 需要修改物品属性，影响现有存档，被否决 |
-| 3 | 方案 B：逐个修复投掷器/发射器的传输逻辑 | 只能修复原版，对模组方块无效，实现复杂 |
-| 4 | **最终方案**：三层防护，禁止所有非玩家拆分 + 拦截投掷器/发射器 | ✅ 简洁、统一、兼容性好 |
-
----
-
-## 11. 已知问题与修复记录
-
-### 11.1 🔴 严重 Bug: ItemStack.save() 返回值被忽略
-
-**影响版本**: 初版 ~ 2024年修复前
-
-**问题描述**:
-推出存档重进后，活箱子内物品丢失，但 UUID 不变。
-
-**根本原因**:
+**数据结构**:
 ```java
-// 错误代码
-CompoundTag itemTag = new CompoundTag();
-if (!stack.isEmpty()) {
-    stack.save(provider, itemTag);  // 返回值被忽略！
-}
-itemsList.add(itemTag);  // 添加的是空标签！
+public record LivingChestAccessPacket(
+    int action,
+    @Nullable CompoundTag itemTag,  // 物品 NBT（DEPOSIT/WITHDRAW 时使用）
+    int amount                       // 数量
+)
 ```
 
-`ItemStack.save()` 在 NeoForge 1.21.1 中返回编码后的 Tag，传入的参数不会被修改（因为使用了 shallowCopy）。
+### 5.3 服务端处理逻辑
 
-**修复方案**:
-```java
-// 正确代码
-if (!stack.isEmpty()) {
-    Tag saved = stack.save(provider, new CompoundTag());  // 使用返回值
-    itemsList.add(saved);
-} else {
-    itemsList.add(new CompoundTag());
-}
-```
-
-**影响范围**: 所有通过 `saveToDisk()` 保存的数据都会丢失物品内容。
-
-### 11.2 🟡 中等 Bug: extractItem() 未保存状态
-
-**影响版本**: 初版 ~ 2024年修复前
-
-**问题描述**:
-从活箱子取物品后，如果后续 tick 覆盖了状态，可能导致 UUID 列表不一致。
-
-**修复方案**:
-```java
-public static ItemStack extractItem(...) {
-    ComponentState state = getStorageState(chestStack);
-    ItemStack result = InternalStorageComponent.extractItem(...);
-    saveStorageState(chestStack, state);  // ← 添加此行
-    return result;
-}
-```
-
-### 11.3 🟢 小改进: 异常静默吞掉
-
-**问题描述**:
-`saveToDisk()` 和 `loadFromDisk()` 中的 IOException 被 `catch (IOException ignored)` 吞掉，导致无法排查问题。
-
-**修复方案**:
-```java
-catch (IOException e) {
-    LOGGER.error("Failed to save/load living chest data for UUID={}", uuid, e);
-    // 可以选择抛出或返回默认值
-}
-```
-
-### 11.4 🟢 功能增强: syncMergedToStorage() 未保存状态
-
-**问题描述**:
-GUI 操作同步后未保存状态，可能导致 GUI 显示与实际数据不一致。
-
-**修复方案**: 同 `extractItem()`，添加 `saveStorageState()` 调用。
-
-### 11.5 🟡 中等 Bug: 切换活化标签导致 UUID 丢失
-
-**影响版本**: 初版 ~ 2024年修复前
-
-**问题描述**:
-切换活箱子的活化标签（toggle living tag）时，`LivingItemManager.setLiving(false)` 会调用 `clearLivingData()` 移除 `LIVING_FUNCTION_DATA` 组件，导致 UUID 数据丢失。重新活化时 UUID 从零创建，旧的虚拟箱子物品无法找回。
-
-**根本原因**:
-`setLiving(false)` 内部调用 `clearLivingData()` 直接移除 DataComponent，UUID 数据未做任何备份。
-
-**修复方案**:
-```java
-// 取消活化时：保存 UUID 到 CUSTOM_DATA 临时键
-if (!newLiving && LivingChestFunction.isLivingChest(carriedItem)) {
-    CompoundTag chestData = LivingItemManager.getFunctionData(carriedItem, LivingChestFunction.ID);
-    if (!chestData.isEmpty()) {
-        CustomData customData = carriedItem.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY);
-        CompoundTag tag = customData.copyTag();
-        tag.put("pending_living_chest", chestData);  // 临时保存
-        carriedItem.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
-    }
-    LivingChestFunction.dropAllItems(player.getServer(), carriedItem, player);
-}
-
-LivingItemManager.setLiving(carriedItem, newLiving);
-
-// 重新活化时：从 CUSTOM_DATA 恢复 UUID
-if (newLiving && LivingChestFunction.isLivingChest(carriedItem)) {
-    CustomData customData = carriedItem.get(DataComponents.CUSTOM_DATA);
-    if (customData != null) {
-        CompoundTag tag = customData.copyTag();
-        if (tag.contains("pending_living_chest")) {
-            CompoundTag chestData = tag.getCompound("pending_living_chest");
-            LivingItemManager.setFunctionData(carriedItem, LivingChestFunction.ID, chestData);
-            tag.remove("pending_living_chest");
-            carriedItem.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
-        }
-    }
-}
-```
-
-### 11.6 🔴 严重 Bug: 创造模式 UUID 管理全面异常
-
-**影响版本**: 初版 ~ 2024年修复前
-
-**问题集群**：创造模式 INVENTORY 标签页的活箱子操作存在 4 个连锁问题，根因均为客户端线程执行与 UUID 管理逻辑的不兼容。
-
-#### 问题 1：拿起再放下 UUID 消失
-
-**症状**：创造模式拿起活箱子再放下，UUID 列表变为空，存储物品丢失。
-
-**根本原因**：
-```
-split() 在创造模式客户端线程执行：
-  1. onSplitHead 未设置 PRE_SPLIT_UUIDS（因服务端线程检查）
-  2. split 内部调用 copyWithCount
-  3. onCopyWithCount 检测到 isCreativeMode()=true 且 PRE_SPLIT_UUIDS=null
-  4. 误判为"创造模式复制"，清空 UUID
-```
-
-**修复**：`onSplitHead` 中移除服务端线程检查，客户端线程也设置 `PRE_SPLIT_UUIDS` 标志，阻止 `onCopyWithCount` 误清 UUID。
-
-#### 问题 2：分离 UUID 未拆分
-
-**症状**：创造模式右键分离活箱子（数量为 N 且 UUID 数量也为 N），每个子堆都保留全部 N 个 UUID。
-
-**根本原因**：`onSplitReturn`、`onShrink` 等 UUID 管理方法有 `server.isSameThread()` 检查，创造模式客户端线程执行时被跳过，UUID 拆分逻辑未执行。
-
-**修复**：移除所有 UUID 管理方法中的服务端线程检查，允许客户端线程执行 UUID 拆分逻辑。
-
-#### 问题 3：合并 UUID 异常变动
-
-**症状**：创造模式用鼠标将一堆活箱子与槽位里另一堆活箱子合并时，鼠标上的活箱子 UUID 异常变动，槽位里的 UUID 不变。
-
-**根本原因**：`onGrow`、`onSetCount` 等合并逻辑在客户端线程被跳过，UUID 未正确转移，而合并后的原版堆叠操作仍会触发，导致 UUID 数与堆叠数不匹配。
-
-**修复**：移除 `onGrow`、`onSetCount` 中的服务端线程检查，确保客户端线程能处理 UUID 合并。
-
-#### 问题 4：右键拖动 UUID 不拆分
-
-**症状**：创造模式鼠标拿起活箱子右键拖动拆分，所有堆（包括光标堆和槽位堆）都保留全部 UUID。例如数量 4 拆分 2 个到 2 个槽位，每个槽位和光标堆都显示 UUID=[A,B,C,D]。
-
-**根本原因**：
-```
-QUICK_CRAFT 实际流程（来自 AbstractContainerMenu.doClick()）：
-  ItemStack itemstack3 = this.getCarried().copy();  // 复制光标堆
-  for each slot:
-      slot.setByPlayer(itemstack3.copyWithCount(l));  // 只有 copyWithCount，没有 shrink！
-  itemstack3.setCount(k1);      // 手动设置剩余数量
-  this.setCarried(itemstack3);
-
-关键发现：QUICK_CRAFT 不经过 shrink()！
-onCopyWithCount 检测到 isCreativeMode()=true → 直接清空副本 UUID
-→ 副本 UUID 被清空，但原堆 itemstack3 的 UUID 未被修改
-→ 所有堆的 UUID 都等于 itemstack3 的初始 UUID = [A,B,C,D]
-```
-
-**修复**：
-1. 新增 `LivingChestStackFlags.IS_QUICK_CRAFT` ThreadLocal 标志
-2. `AbstractContainerMenuMixin` 在 `clickType == ClickType.QUICK_CRAFT` 时设置标志
-3. `onCopyWithCount` 中检测到 `IS_QUICK_CRAFT` 时，跳过清空 UUID 分支，走正常拆分逻辑
-
-**修复后的数据流**：
-```
-itemstack3 = copy([A,B,C,D]), count=4
-
-第1次 copyWithCount(1):
-  splitUuidList([A,B,C,D], 1) → remain=[A,B,C], split=[D]
-  itemstack3 → [A,B,C], 副本 → [D]
-
-第2次 copyWithCount(1):
-  splitUuidList([A,B,C], 1) → remain=[A,B], split=[C]
-  itemstack3 → [A,B], 副本 → [C]
-
-setCarried(itemstack3) → 光标堆 [A,B], count=2
-→ 槽1: [D], 槽2: [C], 光标: [A,B] ✓
-```
-
-**影响范围**：创造模式 INVENTORY 标签页的所有活箱子操作。生存模式和其他容器（工作台、箱子等）不受影响（操作在服务端线程执行）。
-
-### 11.7 🟢 功能增强: 方块放置自动填充物品
-
-**影响版本**: 2024年新增
-
-**功能描述**:
-装有物品的活箱子放置为方块时，自动将虚拟箱子中被消耗的 UUID 对应的物品填充到实体箱子中，实现"虚拟存储 → 实体容器"的转换。
-
-**实现方式**:
-- 新增 `BlockItemMixin`，拦截 `BlockItem.place()` 的 HEAD 和 RETURN
-- HEAD 注入：捕获 UUID 列表并设置 `BLOCK_PLACING_UUIDS` 互斥标志
-- RETURN 注入：检查放置成功后，从头部第一个 UUID 读取物品填充到实体箱子
-- 新增 `BLOCK_PLACING_UUIDS` ThreadLocal 标志防止 onShrink/onSetCount 冲突
-- 支持物品合并到已有堆叠，部分填充时记录警告日志
-
-**游戏模式差异**:
-
-| 模式 | 物品消耗 | UUID 处理 | 填充逻辑 |
-|------|---------|----------|----------|
-| 生存模式 | shrink(1) 消耗 1 个 | 移除头部第 1 个 UUID，剩余 N-1 个 | 从被移除的 UUID 读取物品填充 |
-| 创造模式 | 不消耗物品 | UUID 列表不变 | 从头部第一个 UUID 读取物品填充（每次放置相同物品） |
-
-**⚠️ 与 onShrink 的互斥保护**:
-```
-BlockItem.place() 内部调用 shrink() 时:
-  1. BLOCK_PLACING_UUIDS 已在 HEAD 中设置（非 null）
-  2. onShrink 检测到 BLOCK_PLACING_UUIDS 非空 → 跳过
-  3. 防止 PENDING_TRANSFER 被污染
-  4. RETURN 中清理 BLOCK_PLACING_UUIDS
-```
-
-### 11.8 🟢 安全策略: UUID 只增不减
-
-**影响版本**: 2024年新增
-
-**修改内容**:
-- `InternalStorageComponent.tick()`: 堆叠数减少时不再删除 UUID 和磁盘文件
-- `InternalStorageComponent.insertItem()`: UUID 数量超过堆叠数时不再删除多余 UUID
-- UUID 重复时直接复用，避免重建的开销和风险
-
-**核心原则**: 只有用户明确"取消活化"（dropAllItems）才能删除 UUID。UUID 丢失 = 物品永久丢失，是所有 bug 中最严重的。
-
-### 11.9 🔴→✅ 已修复: 投掷器/发射器传输导致 UUID 异常变化 + 数量翻倍
-
-**状态**: ✅ 已修复（三层防护体系）
-
-**问题描述**:
-堆叠的活箱子被投掷器（Dropper）或发射器（Dispenser）投掷/发射时，每个被投出的活箱子 UUID 会发生变化，导致之前存储的物品与 UUID 断开关联，物品无法找回。此外，投掷器还会触发数量翻倍 bug——放入一组活箱子，投掷后减少一个但投出两个。
-
-**对比——漏斗**:
-漏斗使用 `split()` 路径，UUID 拆分天然正确。但经过测试发现，漏斗在某些边界情况下仍可能导致 UUID 不一致，因此在最终方案中漏斗也被统一拦截。
-
-**根本原因——投掷器/发射器不使用 `split()`**:
-
-`split()` 的 Mixin 拦截（`onSplitHead`/`onSplitReturn`）能正确处理 UUID 拆分，但投掷器和发射器绕过了这个路径：
+#### handleDeposit（光标物品存入）
 
 ```
-漏斗:      split(1)         → onSplitHead → onSplitReturn → UUID 正确 ✓
-投掷器:    copyWithCount(1)  → onCopyWithCount (无 ALLOW_STACK, 无 PRE_SPLIT_UUIDS)
-           shrink(1)          → onShrink (无 ALLOW_STACK, 无 PRE_SPLIT_UUIDS)
-                              → UUID 分裂/丢失 ✗
-发射器:    DispenseItemBehavior 直接操作 → 不经过任何 UUID 管理逻辑 ✗
+1. 获取光标物品 carried
+2. carried.split(amount) 分离出 toInsert
+3. 遍历背包找活箱子:
+   isLivingChest && hasStorage && canInsert → insertItem
+4. 插入失败 → carried.grow(toInsert.getCount()) 退回
+5. syncCarriedToClient + broadcastChanges
 ```
 
-**数量翻倍的根因**:
+#### handleWithdraw（取出到光标）
 
-投掷器 `DropperBlock.dispenseFrom()` 的流程：
-1. 从槽位取出物品并进行 `split(1)` → `onSplitHead` 返回空堆（因为非玩家上下文）
-2. 但原版 `dispenseFrom` 收到空堆后，仍然会执行 `shrink(1)` 减少源堆数量
-3. 同时，返回的空堆被当作"已投掷"的物品处理
-4. 结果：减了一个但没投出实体的物品，导致数量凭空消失
-
-而当 `onCopyWithCount` 和 `onShrink` 中的非玩家检查顺序错误时（`PRE_SPLIT_UUIDS` 检查在非玩家检查之后），`split()` 内部调用的 `onCopyWithCount`/`onShrink` 也被非玩家逻辑拦截，导致更复杂的翻倍问题——放入一组活箱子，投掷后减少一个，但投出两个活箱子。
-
-**最终解决方案——三层防护体系**:
-
-详见 [10.9 通用传输封锁策略](#109-通用传输封锁策略)。核心思路是**禁止而非修复**：
-
-1. **第一层**：`onSplitHead` 拦截所有非玩家 `split()` 调用（覆盖漏斗、模组管道等）
-2. **第二层**：`DispenserBlock.registerBehavior` 注册空分发行为（覆盖发射器）
-3. **第三层**：`DropperBlockMixin` 的 `@Redirect` 拦截随机选槽（覆盖投掷器）
-
-**修复过程中的关键发现**:
-
-1. `onCopyWithCount` 和 `onShrink` 中检查顺序极为重要：`PRE_SPLIT_UUIDS` 检查必须在非玩家上下文检查**之前**，否则 `split()` 内部调用也会被拦截，导致 UUID 拆分失败。
-2. 投掷器的 `@Redirect` 拦截 `getRandomSlot` 返回 `-1` 是最简洁的方案——不需要遍历所有槽位，不影响其他非活物品的投掷，且完全阻止了对活箱子的操作。
-3. 发射器只需注册一个空分发行为即可，因为发射器的 `dispense` 流程会先检查注册的 `DispenseItemBehavior`，匹配到空操作后直接返回。
-
-**涉及文件**:
-- [ItemStackMixin.java](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/mixin/ItemStackMixin.java) — `onSplitHead` 非玩家拦截
-- [DropperBlockMixin.java](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/mixin/DropperBlockMixin.java) — `@Redirect` 拦截 `getRandomSlot`
-- [LivingItem.java](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/LivingItem.java) — `DispenserBlock.registerBehavior`
-
-### 11.10 🟡→✅ 已修复: 铁砧重命名活箱子后与未命名活箱子堆叠
-
-**状态**: ✅ 已修复
-
-**问题描述**:
-用铁砧给活箱子重命名后，重命名的活箱子能和未命名的活箱子堆叠在一起。原本的 `isSameItemSameComponents` Mixin 在 `ALLOW_STACK` 时无条件返回 `true`，忽略了包括自定义名称在内的所有 NBT 差异。
-
-**根本原因**:
-```java
-// 旧代码：无条件忽略所有 NBT 差异
-if (LivingChestStackFlags.ALLOW_STACK.get() != null) {
-    cir.setReturnValue(true);  // 所有差异都被忽略！
-}
+```
+1. 解析目标物品 target = ItemStack.parse(registries, itemTag)
+2. 检查光标兼容性（空或同类）
+3. 遍历背包找活箱子:
+   isLivingChest && hasStorage → extractItem(invStack, target, amount)
+4. 设置光标或增长光标
+5. syncCarriedToClient + broadcastChanges
 ```
 
-这导致铁砧重命名、附魔等修改都变成了"透明"的——Minecraft 认为两个活箱子完全相同，允许它们堆叠。但重命名是玩家有意为之的操作，不应被忽略。
+#### handleDepositFromSlot（Shift+左键快速存入）
 
-**修复方案——副本比较法**:
-
-```java
-// 新代码：创建副本，移除活物品数据后调用原版比较
-if (LivingChestStackFlags.ALLOW_STACK.get() != null) {
-    ItemStack copyA = stack.copy();
-    ItemStack copyB = other.copy();
-    LivingItemManager.clearLivingData(copyA);  // 移除 UUID + IS_LIVING
-    LivingItemManager.clearLivingData(copyB);
-    // 副本不再是活箱子 → 走原版比较 → 不会递归触发本 Mixin
-    cir.setReturnValue(ItemStack.isSameItemSameComponents(copyA, copyB));
-}
+```
+1. 从背包找到匹配物品 invStack
+2. toInsert = invStack.copyWithCount(transfer); invStack.shrink(transfer)
+3. 遍历背包找活箱子:
+   isLivingChest && count==1 && hasStorage && !isStorageFull && canInsert
+   → insertItem
+4. 插入失败 → 放回背包
+5. broadcastChanges
 ```
 
-**关键设计考量**:
-- **副本安全性**：不修改原 ItemStack，避免污染数据
-- **递归避免**：清除 `IS_LIVING` 标记后，副本不再被识别为活箱子，`isSameItemSameComponents` 的递归调用不会触发 Mixin
-- **精确性**：只忽略 UUID 差异，自定义名称、附魔、损坏值等差异仍能阻止堆叠
+#### handleWithdrawToInventory（取出到背包）
 
-**堆叠行为对比**:
-
-| 场景 | 修复前 | 修复后 |
-|------|--------|--------|
-| 两个活箱子（不同 UUID，无名称） | ✅ 堆叠 | ✅ 堆叠 |
-| 重命名 vs 无名称 活箱子 | ❌ 错误堆叠 | ✅ 不堆叠 |
-| 两个重命名相同名称 活箱子 | ✅ 堆叠 | ✅ 堆叠 |
-| 两个重命名不同名称 活箱子 | ❌ 错误堆叠 | ✅ 不堆叠 |
-
-**涉及文件**:
-- [ItemStackMixin.java](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/mixin/ItemStackMixin.java) — `onIsSameItemSameComponents` 方法
-
-### 11.11 🟢 设计决策: UUID 操作方向统一（头部优先）
-
-**影响版本**: 2024年统一
-
-**设计背景**:
-活箱子的 UUID 列表在不同操作中有不同的遍历方向需求。早期实现中方向不统一，导致代码理解困难、边界情况易出错。经过统一后，所有核心操作遵循明确的"头部优先"原则。
-
-**方向规则**:
-
-| 操作 | 方向 | 说明 |
-|------|------|------|
-| `insertItem` | 头部优先（index 0 → N） | 先填满头部 UUID 的虚拟箱子，再填尾部 |
-| `extractItem` | 头部优先（index 0 → N） | 先从头部 UUID 提取物品，再提取尾部 |
-| `splitUuidList` | 头部拆分（`subList(0, N)`） | 拆分出的 N 个 UUID 来自头部，剩余留在尾部 |
-| `onShrink` | 头部截断（`subList(amount, size)`） | 减少时保留头部 UUID，移除尾部 |
-| 方块放置 | 头部消耗（`uuids.get(0)`） | 消耗头部第 1 个 UUID |
-| `popUuid` | 尾部弹出（`remove(size-1)`） | 从尾部移除"预留"UUID，用于清理 |
-
-**设计理念**:
 ```
-UUID 列表: [活跃区(头部) ... 预留区(尾部)]
-
-头部 ←→ 活跃 UUID（存取、拆分、消耗均从头部操作）
-尾部 ←→ 预留 UUID（popUuid 从尾部弹出，用于批量清理）
-```
-
-**为什么头部优先？**
-1. **自然顺序**：玩家最先放入的物品在头部 UUID，最先被取出的也应该是头部 UUID（FIFO 语义）
-2. **拆分一致性**：`split(amount)` 从头部取 N 个 UUID，`shrink(amount)` 也从头部保留 N 个，两者方向一致，简化了 `onSplitHead`/`onSplitReturn` 的协调逻辑
-3. **方块放置匹配**：`onShrink` 保留头部、移除尾部，方块放置消耗头部 UUID，与 `onShrink` 的行为一致
-
-**为什么 `popUuid` 从尾部？**
-- `popUuid` 是清理操作，用于 `dropAllItems` 逐个移除 UUID
-- 尾部 UUID 是"预留"的，最不活跃，最适合在清理时优先移除
-- 与头部操作互补，避免活跃 UUID 被意外清理
-
-**相关代码**:
-- [LivingChestStackHandler.java](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/chest/LivingChestStackHandler.java) — `splitUuidList` 头部拆分
-- [InternalStorageComponent.java](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/core/components/InternalStorageComponent.java) — `insertItem`/`extractItem` 头部遍历、`popUuid` 尾部弹出
-- [ItemStackMixin.java](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/mixin/ItemStackMixin.java) — `onShrink` 头部保留
-- [BlockItemMixin.java](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/mixin/BlockItemMixin.java) — 方块放置头部消耗
-
-### 11.12 🟡→✅ 已修复: 配方书翻页越界
-
-**状态**: ✅ 已修复
-
-**问题描述**:
-配方书活箱子标签页的翻页按钮使用 lambda 表达式，捕获了 `totalPages` 局部变量。当活箱子内物品数量变化导致总页数变化后，按钮的页数上限仍为旧值，玩家可以翻到空白页。
-
-**根本原因**:
-```java
-// 旧代码（有 Bug）
-int totalPages = ...; // 局部变量
-this.forwardButton = Button.builder(Component.empty(), (button) -> {
-    if (this.currentPage < totalPages - 1) { // 捕获的是旧值
-        this.currentPage++;
-    }
-}).build();
-```
-
-**修复**: 将 `totalPages` 改为 Mixin 实例字段，按钮逻辑引用该字段，确保始终使用最新值：
-```java
-@Unique private int totalPages = 1; // 实例字段
-
-this.forwardButton = Button.builder(Component.empty(), (button) -> {
-    if (this.currentPage < this.totalPages - 1) { // 引用实例字段
-        this.currentPage++;
-    }
-}).build();
-```
-
-### 11.13 🟡→✅ 已修复: 搜索结果缓存不一致
-
-**状态**: ✅ 已修复（移除缓存机制）
-
-**问题描述**:
-配方书活箱子标签页使用搜索结果缓存（`filteredContents` + `filterCacheValid` 标志位），但存在多个缓存失效问题：
-1. 搜索结果为空时缓存永远不命中（`!filteredContents.isEmpty()` 判断跳过空列表）
-2. 存取物品后缓存未及时失效
-3. 需要在多个方法中手动维护 `filterCacheValid` 标志
-
-**修复**: 彻底移除缓存机制，改为实时过滤。玩家背包中的活箱子数量有限，实时扫描性能完全可接受。
-
-### 11.14 🟡→✅ 已修复: 关闭配方书后 Shift+左键仍触发快速存入
-
-**状态**: ✅ 已修复
-
-**问题描述**:
-关闭配方书界面后，`LivingChestTabState.isActive()` 仍为 `true`，导致 Shift+左键点击背包物品仍会触发快速存入活箱子功能。
-
-**根本原因**:
-`InventoryScreenMixin` 和 `AbstractContainerScreenMixin` 仅检查 `LivingChestTabState.isActive()`，未检查配方书是否可见。
-
-**修复**: 在 Shift+左键拦截逻辑中增加配方书可见性检查：
-```java
-// 修复前
-if (button == GLFW.GLFW_MOUSE_BUTTON_1 && hasShiftDown()
-    && LivingChestTabState.isActive() && ...)
-
-// 修复后（增加配方书可见性检查）
-if (button == GLFW.GLFW_MOUSE_BUTTON_1 && hasShiftDown()
-    && LivingChestTabState.isActive()
-    && this.getRecipeBookComponent().isVisible() && ...)
-```
-
-### 11.15 🟢 功能增强: 拼音搜索
-
-**影响版本**: 2025年新增
-
-**功能描述**:
-配方书活箱子标签页支持拼音搜索，玩家可以输入汉字的全拼、首字母或混合形式来过滤物品。
-
-**实现方式**:
-- 使用 [pinyin-data](https://github.com/mozillazg/pinyin-data) 开源数据集，覆盖 20924 个汉字
-- `PinyinHelper` 类使用二分查找（O(log n)）进行汉字→拼音映射
-- 数据存储为排序字符串 + 逗号分隔拼音，运行时 `split(",")` 初始化
-- 为避免 Java 65535 字节常量限制，拼音数据拆分为 `PINYIN_DATA_0` + `PINYIN_DATA_1`，使用 `.concat()` 拼接
-
-**匹配模式**:
-| 模式 | 示例 | 匹配"钻石剑" |
-|------|------|-------------|
-| 原文包含 | `钻石` | ✅ |
-| 全拼包含 | `zuanshijian` | ✅ |
-| 首字母包含 | `zsj` | ✅ |
-| 混合匹配 | `zshi` | ✅ |
-
-### 11.16 🟢 功能增强: Shift+左键快速存入 + 空活箱子支持
-
-**影响版本**: 2025年新增
-
-**功能描述**:
-1. 在配方书活箱子标签页激活时，Shift+左键点击背包物品可快速存入活箱子
-2. 空活箱子（`count==1` 但无存储）也可作为存入目标
-
-**实现方式**:
-- 客户端：`InventoryScreenMixin` / `AbstractContainerScreenMixin` 拦截 Shift+左键，发送 `DEPOSIT_SLOT` 网络包
-- 服务端：`ServerPacketHandler.handleDepositFromSlot()` 从背包移除物品，遍历活箱子存入
-- 优先存入已有物品的活箱子，其次尝试空活箱子
-
-**新增网络操作**: `LivingChestAccessPacket.DEPOSIT_SLOT`（值=4）
-
-### 11.17 🟢 功能增强: 活箱子套娃存放
-
-**影响版本**: 2025年新增
-
-**功能描述**:
-允许活箱子存放其他活箱子（套娃），但禁止将自己存入自己。
-
-**实现方式**:
-- `InternalStorageComponent.insertItem()` 使用 `chestStack == itemToInsert`（Java 对象同一性检查）防止自引用
-- 允许不同活箱子对象互相存放
-- 堆叠数 > 1 的活箱子不允许插入操作
-
-### 11.18 🟢 功能增强: 16KB 字节容量限制
-
-**影响版本**: 2026年新增
-
-**背景问题**:
-玩家向活箱子塞入大量高 NBT 物品（如装满100页成书的潜影盒），仅塞了10多个游戏就崩溃。原因是活箱子的 NBT 数据通过网络包同步到客户端，超过 Minecraft 网络栈的 2MB 硬上限导致崩溃。
-
-**解决方案**:
-设置 16KB（16384 字节）警戒线，在活箱子序列化后字节大小达到 16KB 时拒绝继续插入。
-
-**设计决策**:
-- 16KB 是"禁止线"而非"容量上限"——当前 < 16KB 就允许插入，即使插入后会超过
-- 这避免了预测插入后大小的复杂性，同时保证活箱子不会无限增长
-- 16KB 远低于 2MB 硬上限，留有充足安全余量
-
-**实现细节**:
-- `InternalStorageComponent.MAX_STORAGE_BYTES = 16384`
-- `getCurrentByteUsage()`: 精确序列化整个活箱子 ItemStack 计算字节大小
-- `isByteFull()`: 当前字节 ≥ 16KB 时返回 true
-- `canInsert()`: 简化为 `!isByteFull()`，不做预测
-- `containerHash()` 脏检查: tick 中用 `ItemContainerContents.hashCode()` 检测变化，变了才序列化
-- Tooltip 显示: `容量: 3.2KB/16.0KB`（从 ComponentState 缓存读取）
-- 全路径覆盖: ServerPacketHandler、CrossContainerTransfer、LivingChestAccessor 均传入 `registries` 精确计算
-
-**涉及文件**:
-- `InternalStorageComponent.java`: 核心字节计算与容量检查
-- `LivingChestFunction.java`: 对外接口方法
-- `ServerPacketHandler.java`: 网络包处理中的容量检查
-- `LivingChestAccessor.java`: 跨容器传输中的容量检查
-- `CrossContainerTransfer.java`: 漏斗推送中的容量检查
-- `zh_cn.json` / `en_us.json`: Tooltip 翻译
-
----
-
-## 12. 调试指南
-
-### 12.1 启用调试日志
-
-在 `InternalStorageComponent.java` 中已添加的关键日志：
-
-```java
-// 初始化日志
-LOGGER.info("Living chest storage initialized at {}", storageDir);
-
-// 操作日志
-LOGGER.info("insertItem: uuids={}, item={}, capacity={}", ...);
-LOGGER.info("extractItem: uuids={}, amount={}, capacity={}", ...);
-
-// 脏标记日志
-LOGGER.debug("Marked dirty: UUID={}, cacheSize={}, dirtyKeys={}", ...);
-
-// 持久化日志
-LOGGER.info("Saving {} dirty living chest entries", dirtyKeys.size());
-LOGGER.debug("Saved living chest data for UUID={}, items={}", ...);
-
-// 加载日志
-LOGGER.debug("Loaded storage from disk for UUID={}, slots={}", ...);
-LOGGER.debug("Creating new empty storage for UUID={}, capacity={}", ...);
-```
-
-**日志级别配置**:
-- `INFO`: 关键操作（初始化、保存、insert/extract）
-- `DEBUG`: 详细信息（脏标记、缓存命中、文件I/O）
-- `ERROR`: 异常情况（IO失败）
-
-### 12.2 常见问题排查
-
-#### 问题1: 推出重进后物品丢失
-
-**排查步骤**:
-1. 检查日志是否有 `"Saving X dirty living chest entries"`
-2. 检查磁盘文件是否存在: `data/living_chests/<xx>/<uuid>.dat`
-3. 检查文件大小是否正常（应该 > 0 bytes）
-4. 检查文件内容是否有效（可以用 NBT Explorer 查看）
-
-**可能原因**:
-- `saveToDisk()` 中的 bug（见 7.1）
-- 服务器异常关闭（未触发 saveAllDirty）
-- 文件权限问题
-
-#### 问题2: 活箱子无法存入物品
-
-**排查步骤**:
-1. 检查 `insertItem` 日志是否输出
-2. 检查 `markDirty` 是否被调用
-3. 检查 `capacityPerChest` 是否正确（应该是容器大小）
-4. 检查 `hostStackCount` 是否正确（应该是活箱子堆叠数）
-
-**可能原因**:
-- UUID 列表为空且创建失败
-- 容器大小获取错误（返回0或负数）
-- `WorldStorage` 未正确初始化
-
-#### 问题3: 性能问题（大量活箱子卡顿）
-
-**排查步骤**:
-1. 检查缓存命中率（`getOrCreate` 日志）
-2. 检查 `cleanupIdle` 是否频繁执行
-3. 检查 `saveAllDirty` 耗时
-4. 检查磁盘 I/O 延迟
-
-**优化建议**:
-- 增加 `MAX_CACHE_SIZE`（如果内存充足）
-- 减少 `UNLOAD_TIMEOUT_MS`（释放更多内存）
-- 使用 SSD 存储（减少 IO 延迟）
-
-### 12.3 手动检查工具
-
-#### 查看活箱子 UUID 列表
-
-```java
-// 在游戏中执行（命令或调试模式）
-List<UUID> uuids = LivingChestFunction.getUuids(chestStack);
-System.out.println("UUID count: " + uuids.size());
-for (UUID uuid : uuids) {
-    System.out.println("  " + uuid);
-}
-```
-
-#### 检查磁盘文件
-
-```bash
-# Windows PowerShell
-cd <存档>\data\living_chests
-Get-ChildItem -Recurse -Filter "*.dat" | Measure-Object | Select-Object Count
-
-# Linux/Mac
-find <存档>/data/living_chests -name "*.dat" | wc -l
-```
-
-#### 手动触发保存
-
-```java
-// 在调试代码中强制保存
-InternalStorageComponent.WorldStorage storage =
-    InternalStorageComponent.WorldStorage.get(server);
-storage.saveAllDirty();  // 保存所有脏数据
-storage.cleanupIdle();   // 清理空闲缓存
+1. 解析目标物品
+2. 遍历背包找活箱子 → extractItem
+3. player.getInventory().add(extracted)
+4. broadcastChanges
 ```
 
 ---
 
-## 附录 A: 数据流速查表
+## 6. 配方书集成
 
-| 操作 | NBT层 | WorldStorage | 磁盘 | 备注 |
-|------|-------|-------------|------|------|
-| 首次insert | 创建UUID列表 | 创建+填充 | 待保存 | markDirty |
-| 后续insert | 可能调整UUID | 修改物品 | 待保存 | markDirty |
-| extract | 不变 | 修改物品 | 待保存 | **必须saveStorageState** |
-| tick调整 | 更新UUID+_cc | 不删除文件 | 不变 | UUID 只增不减 |
-| 方块放置 | 移除头部UUID(生存) 或 保留UUID(创造) | 读取物品 | 不变 | 不删除磁盘文件 |
-| saveAllDirty | 不变 | 清除dirty标记 | **写入磁盘** | 原子写入 |
-| cleanupIdle | 不变 | 移除缓存条目 | 可能写入 | 仅脏数据写入 |
-| toggle活化 | 保存到CUSTOM_DATA | 清理物品 | 不变 | 恢复时还原UUID |
-| 服务器重启 | 从物品加载 | 重建缓存 | 从磁盘加载 | 完整恢复 |
+### 6.1 配方书合成材料提取
 
-## 附录 B: API 速查
+#### ServerPlaceRecipeMixin
+
+**两大拦截点**:
+
+##### 拦截点 1: `recipeClicked()` — 材料注册
+
+在原版 `fillStackedContents()` 之后，将活箱子内的物品注册到配方系统的材料计数器：
+
+```java
+@Inject(method = "recipeClicked", at = @At(
+    value = "INVOKE",
+    target = "...Inventory;fillStackedContents...",
+    shift = At.Shift.AFTER
+))
+private void afterFillStackedContents(ServerPlayer player, RecipeHolder recipe, boolean placeAll, CallbackInfo ci) {
+    addLivingChestItemsToStackedContents();
+}
+```
+
+**效果**: 配方书能识别活箱子内的物品，显示"可合成"标记。
+
+##### 拦截点 2: `moveItemToGrid()` — 物品提取
+
+当背包中没有所需物品时，从活箱子提取物品放入合成栏：
+
+```java
+@Inject(method = "moveItemToGrid", at = @At("HEAD"), cancellable = true)
+private void onMoveItemToGrid(Slot slot, ItemStack stack, int maxAmount, ...) {
+    int slotIndex = this.inventory.findSlotMatchingUnusedItem(stack);
+    if (slotIndex != -1) return;  // 背包有，走原版
+
+    ItemStack extracted = extractFromLivingChests(stack, maxAmount);
+    if (extracted.isEmpty()) { cir.setReturnValue(-1); return; }
+
+    if (slot.getItem().isEmpty()) slot.set(extracted);
+    else slot.getItem().grow(extracted.getCount());
+
+    cir.setReturnValue(maxAmount - extracted.getCount());
+}
+```
+
+**优先级**: 普通背包 > 活箱子
+
+### 6.2 配方书活箱子标签页
+
+#### RecipeBookComponentMixin
+
+在原版配方书中注入"活箱子"标签页，提供网格显示、搜索、翻页、点击存取功能。
+
+**UI 布局**:
+```
+┌─────────────────────────────┐
+│ [合成] [熔炉] [活箱子]      │ ← 标签栏
+├─────────────────────────────┤
+│ ┌─┬─┬─┬─┬─┐               │
+│ │ │ │ │ │ │               │ ← 5列 × 4行 物品网格
+│ ├─┼─┼─┼─┼─┤               │
+│ │ │ │ │ │ │               │
+│ ├─┼─┼─┼─┼─┤               │
+│ │ │ │ │ │ │               │
+│ ├─┼─┼─┼─┼─┤               │
+│ │ │ │ │ │ │               │
+│ └─┴─┴─┴─┴─┘               │
+│     [<] 1/3 [>]           │ ← 分页导航
+└─────────────────────────────┘
+```
+
+**数据读取**: 直接从客户端玩家背包的 ItemStack 读取 CONTAINER 组件，无需网络请求。
+
+**交互操作**:
+| 操作 | 行为 |
+|------|------|
+| 左键点击物品 | 取出 1 组到光标 |
+| 右键点击物品 | 取出 1 个到光标 |
+| Shift+左键点击背包物品 | 快速存入活箱子（DEPOSIT_SLOT） |
+
+**搜索过滤**: 支持拼音搜索（全拼/首字母/混合匹配），通过 `PinyinHelper` 实现。
+
+**标签页状态**: 通过 `LivingChestTabState`（静态布尔值）跨 Mixin 共享，供 `InventoryScreenMixin` 和 `AbstractContainerScreenMixin` 判断是否启用 Shift+左键快速存入。
+
+### 6.3 Shift+左键快速存入
+
+**触发条件**（同时满足）:
+1. 配方书已打开且活箱子标签页激活
+2. 点击的是背包槽位（非活箱子物品）
+3. 玩家背包中有活箱子（`count==1`）
+
+**实现**: `InventoryScreenMixin` 和 `AbstractContainerScreenMixin` 拦截 Shift+左键，发送 `DEPOSIT_SLOT` 网络包。
+
+**服务端优先级**: 已有物品的活箱子 > 空活箱子
+
+---
+
+## 7. SlotAccessor 传输架构
+
+### 7.1 架构概览
+
+活漏斗与活箱子之间的物品传输通过 `SlotAccessor` 接口统一抽象，传输引擎不关心槽位背后是普通物品、活箱子还是活末影箱。
+
+```
+ItemTransferComponent.tick()
+  → executeTransfer()
+    → SlotAccessorFactory.create(sourceSlot)  → LivingChestAccessor
+    → SlotAccessorFactory.create(targetSlot)  → PlainSlotAccessor
+    → SlotAccessor.transfer(source, target, amount)
+      → source.simulateExtract() → target.simulateInsert()
+      → source.extract() → target.insert()
+      → rollback on failure
+```
+
+### 7.2 LivingChestAccessor
+
+**职责**: 将活箱子的 `InternalStorageComponent` API 适配为 `SlotAccessor` 接口
+
+| 方法 | 实现 |
+|------|------|
+| `extract(amount, filterType)` | `LivingChestFunction.extractItem(chestStack, amount)` |
+| `insert(stack)` | `LivingChestFunction.insertItem(chestStack, stack, registries)` |
+| `simulateExtract(amount)` | 读取第一个非空物品，返回副本 |
+| `simulateInsert(stack)` | 估算可用空间（freeSlots × maxStackSize） |
+| `rollback(stack)` | `LivingChestFunction.insertItem(chestStack, stack)` |
+| `isEmpty()` | `InternalStorageComponent.isStorageEmpty(chestStack)` |
+| `isFull()` | `isStorageFull() \|\| isByteFull()` |
+
+### 7.3 模拟优先传输模式
+
+`SlotAccessor.transfer()` 采用"模拟优先"模式，确保物品不丢失：
+
+```
+1. source.simulateExtract(amount) → 检查源能提供多少
+2. target.simulateInsert(simulated) → 检查目标能接受多少
+3. source.extract(toExtract) → 实际提取
+4. target.insert(extracted) → 实际插入
+5. 如果 insert 失败 → source.rollback(leftover) → 安全退回
+```
+
+---
+
+## 8. 性能优化策略
+
+### 8.1 哈希脏检查
+
+`InternalStorageComponent.tick()` 使用 `ItemContainerContents.hashCode()` 检测变化，避免每 tick 序列化：
+
+```
+99.9% 的 tick: hashCode 比较 → 纳秒级 → 无变化 → 跳过
+0.1% 的 tick:  物品变化 → 序列化计算字节 → 微秒级 → 更新 _bu
+```
+
+### 8.2 已用槽位计数
+
+`_us` 字段提供 O(1) 的空/满判断，避免遍历 27 个槽位：
+
+```java
+// tick() 中更新
+state.setInt(KEY_USED_SLOTS, countUsedSlots(hostStack));
+
+// 外部查询时可直接读取（如果信任缓存）
+// 或通过 isStorageEmpty/isStorageFull 实时计算
+```
+
+### 8.3 拼音搜索二分查找
+
+`PinyinHelper` 使用二分查找替代 HashMap，在 20924 个汉字的映射中实现 O(log n) 查找：
+
+```
+数据结构:
+  CHARS: 按Unicode排序的汉字字符串
+  PINYINS: 逗号分隔拼音字符串
+
+查找流程:
+  输入字符 c → binarySearch(c) → O(log 20924) ≈ 15次比较 → 拼音
+```
+
+**选择二分查找的原因**: 零额外对象分配，内存紧凑，缓存友好。
+
+### 8.4 配方书标签页实时过滤
+
+搜索过滤采用实时计算，不使用缓存：
+
+```
+玩家背包活箱子数量 ≤ 36
+每个活箱子物品数 ≤ 27
+总物品数 ≤ 972
+
+过滤开销: 遍历 972 个物品 × isPinyinMatch() ≈ 微秒级
+缓存维护成本 > 缓存性能收益 → 不缓存
+```
+
+### 8.5 创造模式中键防复制
+
+原版行为天然防止复制：活箱子的含 NBT 物品不在创造物品列表中，中键拾取失败或拾到普通箱子（不带活物品数据）。无需额外代码。
+
+---
+
+## 9. 已知问题与修复记录
+
+### 9.1 ✅ 已修复: 配方书物品无法自动放入合成栏
+
+**问题**: 配方书显示活箱子物品可以合成，但点击后不会把物品自动放到合成栏。
+
+**根因**: `ServerPlaceRecipeMixin` 中 `ENABLED = false`，功能被禁用。
+
+**修复**: 将 `ENABLED` 改为 `true`。
+
+### 9.2 ✅ 已修复: 配方书翻页越界
+
+**问题**: 翻页按钮使用 lambda 捕获 `totalPages` 局部变量，物品数量变化后页数上限仍为旧值。
+
+**修复**: 将 `totalPages` 改为 Mixin 实例字段。
+
+### 9.3 ✅ 已修复: 搜索结果缓存不一致
+
+**问题**: 搜索缓存存在多个失效问题（空列表不命中、存取后未失效等）。
+
+**修复**: 彻底移除缓存机制，改为实时过滤。
+
+### 9.4 ✅ 已修复: 关闭配方书后 Shift+左键仍触发快速存入
+
+**问题**: 关闭配方书后 `LivingChestTabState.isActive()` 仍为 true。
+
+**修复**: 在 Shift+左键拦截逻辑中增加配方书可见性检查。
+
+### 9.5 ✅ 已修复: 铁砧重命名堆叠异常
+
+**问题**: 重命名的活箱子能和未命名的活箱子堆叠。
+
+**根因**: `isSameItemSameComponents` Mixin 无条件返回 true，忽略所有 NBT 差异。
+
+**修复**: 改为"忽略运行时组件差异"策略——收集 `getIgnoredComponentTypes()`，只跳过这些组件的比较，保留名称等差异。
+
+### 9.6 ✅ 功能增强: 拼音搜索
+
+支持全拼/首字母/混合匹配，覆盖 20924 个汉字。
+
+### 9.7 ✅ 功能增强: Shift+左键快速存入
+
+配方书活箱子标签页激活时，Shift+左键点击背包物品可快速存入活箱子。
+
+### 9.8 ✅ 功能增强: 活箱子套娃存放
+
+允许活箱子存放其他活箱子，但禁止将自己存入自己（`chestStack == itemToInsert` 检查）。
+
+### 9.9 ✅ 功能增强: 16KB 字节容量限制
+
+防止活箱子 NBT 过大导致网络包超限。
+
+### 9.10 ✅ 已修复: 多活箱子存入时物品复制 Bug
+
+**问题**: `handleDeposit` 和 `handleDepositFromSlot` 中使用 `toInsert.copy()` 传递给 `insertItem`，导致当多个活箱子存在且第一个活箱子部分接受物品时，后续活箱子仍尝试插入原始数量的物品，造成物品复制。
+
+**根因**:
+```
+toInsert 有 10 个钻石
+Chest1: insertItem(chest1, toInsert.copy()) → 插入 7 个，返回 false
+  toInsert 仍有 10 个（因为传了副本）
+Chest2: insertItem(chest2, toInsert.copy()) → 插入 10 个，返回 true
+  总计插入 17 个，但原始只有 10 个 → 复制 Bug！
+```
+
+**修复**: 移除 `.copy()`，让 `insertItem` 直接修改 `toInsert`，后续活箱子只尝试插入剩余物品：
+```
+toInsert 有 10 个钻石
+Chest1: insertItem(chest1, toInsert) → 插入 7 个，toInsert 剩余 3 个
+Chest2: insertItem(chest2, toInsert) → 插入 3 个，toInsert 剩余 0 个
+  总计插入 10 个 → 正确！
+```
+
+### 9.11 ✅ 已优化: isStorageFull/isStorageEmpty 减少对象分配
+
+**优化前**: `isStorageFull` 和 `isStorageEmpty` 各自分配 `NonNullList` 并遍历 27 个槽位。
+
+**优化后**: 统一委托给 `countUsedSlots()`，避免重复分配。`countUsedSlots` 也从调用 `getItems()`（分配 ArrayList）改为直接使用 `contents.copyInto()`。
+
+### 9.12 ✅ 已优化: LivingChestAccessor.simulateInsert 精确估算
+
+**优化前**: `simulateInsert` 使用 `freeSlots × maxStackSize` 估算可用空间，不考虑已有物品的堆叠空间，严重高估容量。
+
+**优化后**: 遍历槽位，精确计算空槽位和同类物品的可用堆叠空间，与 `insertItem` 的实际插入逻辑一致。
+
+---
+
+## 10. 调试指南
+
+### 10.1 常见问题排查
+
+#### 问题1: 物品无法存入活箱子
+
+**排查步骤**:
+1. 检查活箱子堆叠数是否 > 1（`chestStack.getCount() > 1` → 拒绝所有操作）
+2. 检查字节容量是否已满（`isByteFull()` → 16KB 限制）
+3. 检查是否尝试存入自己（`chestStack == itemToInsert`）
+4. 检查活箱子是否有 CONTAINER 组件（`hasStorage()`）
+
+#### 问题2: 配方书不显示活箱子物品
+
+**排查步骤**:
+1. 检查 `ServerPlaceRecipeMixin.ENABLED` 是否为 true
+2. 检查活箱子堆叠数是否 > 1（`RecipeBookComponentMixin.collectLivingChestItems` 跳过 `count > 1` 的活箱子）
+3. 检查活箱子是否有 CONTAINER 组件
+
+#### 问题3: 字节用量显示异常
+
+**排查步骤**:
+1. 检查 `_ch` 哈希是否正确更新（tick 中的脏检查）
+2. 检查 `registries` 是否可用（服务端有，客户端估算）
+3. 检查 `estimateByteUsage` 的估算是否合理（物品数 × 64 字节）
+
+### 10.2 手动检查工具
+
+```java
+// 检查活箱子状态
+boolean isChest = LivingChestFunction.isLivingChest(stack);
+boolean hasStorage = LivingChestFunction.hasStorage(stack);
+boolean isEmpty = LivingChestFunction.isStorageEmpty(stack);
+boolean isFull = LivingChestFunction.isStorageFull(stack);
+int byteUsage = LivingChestFunction.getCurrentByteUsage(stack, registries);
+int usedSlots = InternalStorageComponent.countUsedSlots(stack);
+
+// 读取物品列表
+List<ItemStack> items = LivingChestFunction.getItems(stack);
+```
+
+---
+
+## 附录 A: API 速查
 
 ### LivingChestFunction (静态方法)
 
 ```java
-// 存入物品
-boolean success = LivingChestFunction.insertItem(
-    server,           // MinecraftServer
-    chestStack,       // 活箱子物品栈
-    itemToInsert,     // 要存入的物品（会被修改）
-    capacityPerChest  // 每个虚拟箱子的槽数
-);
+// 判断
+boolean isChest = LivingChestFunction.isLivingChest(stack);
+boolean hasStorage = LivingChestFunction.hasStorage(stack);
+boolean isEmpty = LivingChestFunction.isStorageEmpty(stack);
+boolean isFull = LivingChestFunction.isStorageFull(stack);
+boolean isByteFull = LivingChestFunction.isByteFull(stack);
 
-// 取出物品
-ItemStack result = LivingChestFunction.extractItem(
-    server,           // MinecraftServer
-    chestStack,       // 活箱子物品栈
-    amount,           // 最大取出数量
-    capacityPerChest  // 每个虚拟箱子的槽数
-);
-
-// 按类型取出
-ItemStack result = LivingChestFunction.extractItem(
-    server, chestStack,
-    targetItem,  // 目标物品类型（过滤用）
-    amount, capacityPerChest
-);
+// 存取
+boolean success = LivingChestFunction.insertItem(chestStack, itemToInsert, registries);
+ItemStack result = LivingChestFunction.extractItem(chestStack, amount);
+ItemStack result = LivingChestFunction.extractItem(chestStack, target, amount);
 
 // 查询
-List<UUID> uuids = LivingChestFunction.getUuids(chestStack);
-boolean hasStorage = LivingChestFunction.hasStorage(chestStack);
-boolean isChest = LivingChestFunction.isLivingChest(stack);
+List<ItemStack> items = LivingChestFunction.getItems(chestStack);
+int byteUsage = LivingChestFunction.getCurrentByteUsage(chestStack, registries);
+int maxBytes = LivingChestFunction.getMaxStorageBytes();  // 16384
 
-// 清空存储（方块放置后调用）
+// 操作
 LivingChestFunction.clearStorage(chestStack);
-// 清空 NBT 中的 UUID 引用 + 重置已用槽位计数
-// 不删除磁盘文件（遵循 UUID 只增不减原则）
+LivingChestFunction.dropAllItems(chestStack, player);
 ```
 
 ### InternalStorageComponent (静态方法)
 
 ```java
-// UUID 管理
-List<UUID> uuids = InternalStorageComponent.getUuids(state);
-InternalStorageComponent.saveUuids(state, uuids);
+// 存取（核心实现）
+boolean success = InternalStorageComponent.insertItem(chestStack, itemToInsert, registries);
+ItemStack result = InternalStorageComponent.extractItem(chestStack, amount);
+ItemStack result = InternalStorageComponent.extractItem(chestStack, target, amount);
 
-// 批量操作
-List<ItemStack> merged = InternalStorageComponent.getMergedStorage(
-    server, state, capacityPerChest
-);
-InternalStorageComponent.syncMergedToStorage(
-    server, state, merged, capacityPerChest
-);
+// 查询
+List<ItemStack> items = InternalStorageComponent.getItems(chestStack);
+int byteUsage = InternalStorageComponent.getCurrentByteUsage(chestStack, registries);
+boolean canInsert = InternalStorageComponent.canInsert(chestStack, itemToInsert, registries);
 
-// 创建新UUID
-UUID newUuid = InternalStorageComponent.createAndRegisterNewUuid(
-    server, capacity
-);
-
-// 弹出最后一个UUID
-UUID popped = InternalStorageComponent.popUuid(server, state);
-```
-
-### WorldStorage (实例方法)
-
-```java
-// 获取实例
-WorldStorage storage = WorldStorage.get(server);
-
-// 缓存操作
-List<ItemStack> items = storage.getOrCreate(uuid, capacity);
-storage.contains(uuid);
-storage.remove(uuid);
-
-// 脏标记
-storage.markDirty(uuid);
-storage.saveAllDirty();
-
-// 维护
-storage.cleanupIdle();
+// 操作
+void InternalStorageComponent.setItems(chestStack, items);
+void InternalStorageComponent.clearStorage(chestStack);
 ```
 
 ---
 
-## 13. 反思：为什么一个看似简单的功能需要这么多保障
-
-活箱子的 UUID 管理——这个"看似简单"的功能——最终成为了整个模组开发中耗时最长、最折磨人的部分。以下是对这段经历的诚实复盘。
-
-### 13.1 问题的本质
-
-活箱子的核心需求非常朴素：
-- 每个活箱子实例有一个独立的 UUID，对应一个独立的磁盘文件
-- 多个活箱子可以堆叠，每个子堆保持自己的 UUID 子集
-- 拆分和合并时，UUID 需要正确分配，不能丢失，不能重复
-
-这些需求在玩家手动操作时看似简单——拿起、放下、拆分、合并——但当物品进入 Minecraft 的自动化系统时，复杂度爆炸式增长。
-
-### 13.2 为什么这么难
-
-#### 根本矛盾：DataComponent 不可变 vs 堆叠操作可变
-
-Minecraft 1.21.1 的 DataComponent 系统采用不可变设计——每次修改 DataComponent 都返回一个新的 ItemStack。这导致活箱子的 UUID（存储在 `LIVING_FUNCTION_DATA` 中）无法像普通 NBT 那样随堆叠操作自然流转。
-
-```
-普通物品堆叠:  count 变化 → 自然同步
-活箱子堆叠:    count 变化 + UUID 变化 → 需要显式同步
-```
-
-这层额外的同步需求，就是这个 mod 所有复杂性的根源。
-
-#### 为什么其他模组没这么复杂
-
-大多数模组的存储物品（如背包、储物袋）采用 `maxStackSize = 1`，从根本上避免了堆叠问题。活箱子选择支持堆叠，是为了让玩家更方便地携带多个存储单元。但这个"便利性"的代价远超预期。
-
-| 设计选择 | 优势 | 代价 |
-|---------|------|------|
-| maxStackSize = 1（其他模组） | UUID 管理简单，无拆分/合并问题 | 玩家背包占用多，便利性差 |
-| 支持堆叠（活箱子） | 玩家便利 | 需要处理所有拆分/合并边界情况 |
-
-### 13.3 三次"方向性错误"
-
-回顾整个开发过程，有三个关键决策如果当时做对了，可以节省大量时间：
-
-**错误 1：一开始就支持堆叠**
-- 如果最初就采用 `maxStackSize = 1`，UUID 管理的复杂度会降低 90%
-- 但堆叠带来的便利性确实有吸引力，这个决策在当时是合理的
-
-**错误 2：尝试"修复"而非"禁止"**
-- 在投掷器/发射器问题上，我们花了大量时间尝试让它们正确拆分 UUID
-- 最后发现"禁止"才是正确的答案——活箱子本身就不应该被自动化系统操作
-- 这个认识花了太多时间才到达
-
-**错误 3：ThreadLocal 的过度使用**
-- 6 个 ThreadLocal 变量，复杂的互斥逻辑，不直观的调用时序依赖
-- 虽然最终稳定运行，但维护和理解成本极高
-- 如果重新设计，可能会考虑更显式的状态传递方式
-
-### 13.4 最终方案的合理性
-
-尽管走了很多弯路，最终的三层防护体系是合理的：
-
-```
-第一层（split 拦截）→ 覆盖面最广，拦截 90% 的自动化系统
-第二层（发射器注册）→ 填补 split 路径的盲区
-第三层（投掷器拦截）→ 填补最后一个已知盲区
-```
-
-每一层都有其存在的必要性，合在一起形成了完整的防护。
-
-### 13.5 如果重新来过
-
-如果从头开始设计活箱子，会考虑以下方案之一：
-
-1. **方案 A（最简单）**：`maxStackSize = 1`，完全避免 UUID 拆分/合并问题。玩家通过 Shift+点击等方式在背包中排列多个活箱子，而不是将它们堆叠在一起。
-
-2. **方案 B（折中）**：支持堆叠，但不允许任何自动化系统操作活箱子。这实际上就是当前方案的核心——但会从一开始就明确这个设计决策，而不是在踩了无数坑之后才到达。
-
-3. **方案 C（当前方案）**：支持堆叠 + 玩家 GUI 操作 + 三层防护。这是最完整的方案，但也是复杂度最高的。如果目标是"尽可能兼容模组生态"，这个方案是正确的。
-
-### 13.6 经验教训
-
-1. **DataComponent 的不可变性是双刃剑**：它让数据更安全，但让需要可变状态的场景变得极其复杂。
-
-2. **"禁止"往往比"修复"更优雅**：当系统行为与设计预期冲突时，禁止该行为比修复该行为更简单、更可靠。
-
-3. **ThreadLocal 不是银弹**：它解决了线程安全问题，但引入了隐式状态依赖，增加了调试难度。
-
-4. **先限制，再放开**：如果一开始就限制活箱子只能通过玩家 GUI 操作，后续的很多问题都不会出现。功能可以从"限制"逐步"放开"，但很难反过来。
-
-5. **测试自动化系统**：玩家手动操作只是冰山一角。Minecraft 的自动化系统（漏斗、投掷器、发射器、模组管道）是 bug 的富矿，必须从一开始就纳入测试范围。
-
----
-
-*文档版本: 2026.07 v6*
-*最后更新: 16KB字节容量限制（禁止线模型、hashCode脏检查、全路径精确序列化）*
+*文档版本: 2026.07 v7*
+*架构: DataComponent 直存（无 UUID、无 WorldStorage、无磁盘文件）*
+*更新: 修复多活箱子存入复制 Bug、优化 simulateInsert 精确度、减少对象分配*
 *维护者: Living Item Mod Team*

@@ -91,12 +91,7 @@ public class InternalStorageComponent implements ILivingComponent {
     private static int estimateByteUsage(ItemStack chestStack) {
         ItemContainerContents contents = chestStack.get(net.minecraft.core.component.DataComponents.CONTAINER);
         if (contents == null) return 0;
-        List<ItemStack> items = getItems(chestStack);
-        int count = 0;
-        for (ItemStack item : items) {
-            if (!item.isEmpty()) count++;
-        }
-        return count * 64;
+        return countUsedSlots(chestStack) * 64;
     }
 
     public static boolean canInsert(ItemStack chestStack, ItemStack itemToInsert) {
@@ -259,14 +254,7 @@ public class InternalStorageComponent implements ILivingComponent {
         if (chestStack.getCount() > 1) {
             return true;
         }
-        ItemContainerContents contents = chestStack.get(net.minecraft.core.component.DataComponents.CONTAINER);
-        if (contents == null) return false;
-        NonNullList<ItemStack> list = NonNullList.withSize(LivingChestFunction.CHEST_SLOTS, ItemStack.EMPTY);
-        contents.copyInto(list);
-        for (ItemStack item : list) {
-            if (item.isEmpty()) return false;
-        }
-        return true;
+        return countUsedSlots(chestStack) >= LivingChestFunction.CHEST_SLOTS;
     }
 
     public static boolean isByteFull(ItemStack chestStack) {
@@ -281,14 +269,7 @@ public class InternalStorageComponent implements ILivingComponent {
         if (chestStack.getCount() > 1) {
             return true;
         }
-        ItemContainerContents contents = chestStack.get(net.minecraft.core.component.DataComponents.CONTAINER);
-        if (contents == null) return true;
-        NonNullList<ItemStack> list = NonNullList.withSize(LivingChestFunction.CHEST_SLOTS, ItemStack.EMPTY);
-        contents.copyInto(list);
-        for (ItemStack item : list) {
-            if (!item.isEmpty()) return false;
-        }
-        return true;
+        return countUsedSlots(chestStack) == 0;
     }
 
     public static void clearStorage(ItemStack chestStack) {
@@ -298,9 +279,10 @@ public class InternalStorageComponent implements ILivingComponent {
     private static int countUsedSlots(ItemStack chestStack) {
         ItemContainerContents contents = chestStack.get(net.minecraft.core.component.DataComponents.CONTAINER);
         if (contents == null) return 0;
-        List<ItemStack> items = getItems(chestStack);
+        NonNullList<ItemStack> list = NonNullList.withSize(LivingChestFunction.CHEST_SLOTS, ItemStack.EMPTY);
+        contents.copyInto(list);
         int used = 0;
-        for (ItemStack item : items) {
+        for (ItemStack item : list) {
             if (!item.isEmpty()) used++;
         }
         return used;

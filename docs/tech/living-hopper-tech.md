@@ -267,10 +267,10 @@ tick()
 | 堆叠数量 | 过滤模式 | 比较级别 | 说明 |
 |---------|---------|---------|------|
 | 1 | ID 模式 | 仅物品ID | `minecraft:diamond_sword`，不区分NBT |
-| 2 | NBT 模式 | 物品ID + DataComponents | `diamond_sword@hashCode`，区分不同附魔/属性 |
+| 2 | NBT 模式 | 物品 DataComponents | `diamond_sword@hashCode`，区分不同附魔/属性 |
 | 3+ | Tag 模式 | 物品标签 | `#minecraft:swords`，按标签类别过滤 |
 
-**设计意图**：堆叠越多 → 过滤越宽泛（Tag涵盖最广），堆叠越少 → 过滤越精确（NBT最具体）。
+**设计意图**：堆叠越多 → 过滤越宽泛（Tag涵盖最广），堆叠越少 → 过滤越精确（NBT最具体）。三种模式互斥，各收集各的级别数据，不混杂。
 
 **重要：模式由邻居决定**。活漏斗自身的堆叠数不决定自己的过滤模式，而是决定**别人扫描它时**的精度。扫描时读取邻居活漏斗的堆叠数来确定模式，而非自身堆叠数。这意味着同一个活漏斗被不同堆叠数的邻居扫描时，会以不同精度收集数据。
 
@@ -649,16 +649,24 @@ for (容器中每个槽位) {
         
         if (邻居的 targetSlot == 我的槽位) {
             // 邻居向我传输 → 邻居的 source 物品 = 我的黑名单
-            blacklist.add(邻居source槽位的物品ID)
-            if (mode == MODE_COMPONENT) blComp.add(compositeKey)
-            if (mode == MODE_TAG) blTags.addAll(物品标签)
+            if (mode == MODE_TAG) {
+                blTags.addAll(物品标签)
+            } else if (mode == MODE_COMPONENT) {
+                blComp.add(compositeKey)
+            } else {
+                blacklist.add(邻居source槽位的物品ID)
+            }
         }
         
         if (邻居的 sourceSlot == 我的槽位) {
             // 邻居从我取物 → 邻居的 target 物品 = 我的白名单
-            whitelist.add(邻居target槽位的物品ID)
-            if (mode == MODE_COMPONENT) wlComp.add(compositeKey)
-            if (mode == MODE_TAG) wlTags.addAll(物品标签)
+            if (mode == MODE_TAG) {
+                wlTags.addAll(物品标签)
+            } else if (mode == MODE_COMPONENT) {
+                wlComp.add(compositeKey)
+            } else {
+                whitelist.add(邻居target槽位的物品ID)
+            }
         }
     }
 }

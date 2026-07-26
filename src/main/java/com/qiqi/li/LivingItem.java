@@ -25,6 +25,7 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
 import com.qiqi.li.living.function.LivingChestFunction;
 import com.qiqi.li.living.function.LivingEnderChestFunction;
+import com.qiqi.li.living.function.LivingWaterBucketFunction;
 
 import java.util.HashSet;
 import java.util.IdentityHashMap;
@@ -105,6 +106,9 @@ public class LivingItem {
 
         LivingItemManager.registerFunction(new LivingEnderChestFunction());
         LOGGER.info("Registered living ender chest function");
+
+        LivingItemManager.registerFunction(new LivingWaterBucketFunction());
+        LOGGER.info("Registered living water bucket function");
 
         InteractionRegistry.registerHandler("ignite", new IgniteHandler());
         LOGGER.info("Registered ignite interaction handler");

@@ -215,17 +215,17 @@ public class ItemFilterComponent implements ILivingComponent {
                                 ? normalizeMode(neighborStack.getCount()) : MODE_ID;
 
                         String itemId = getItemId(srcItem);
-                        fd.blacklist.add(itemId);
-                        fd.blacklistSlots.putIfAbsent(itemId, slot);
-                        if (neighborMode == MODE_COMPONENT) {
-                            fd.blComposites.add(getCompositeKey(srcItem));
-                        }
                         if (neighborMode == MODE_TAG) {
                             for (String tag : collectItemTags(srcItem)) {
                                 if (fd.blTags.add(tag)) {
                                     fd.blTagSlots.put(tag, slot);
                                 }
                             }
+                        } else if (neighborMode == MODE_COMPONENT) {
+                            fd.blComposites.add(getCompositeKey(srcItem));
+                        } else {
+                            fd.blacklist.add(itemId);
+                            fd.blacklistSlots.putIfAbsent(itemId, slot);
                         }
                     }
                 }
@@ -249,17 +249,17 @@ public class ItemFilterComponent implements ILivingComponent {
                                 ? normalizeMode(neighborStack.getCount()) : MODE_ID;
 
                         String itemId = getItemId(tgtItem);
-                        fd.whitelist.add(itemId);
-                        fd.whitelistSlots.putIfAbsent(itemId, slot);
-                        if (neighborMode == MODE_COMPONENT) {
-                            fd.wlComposites.add(getCompositeKey(tgtItem));
-                        }
                         if (neighborMode == MODE_TAG) {
                             for (String tag : collectItemTags(tgtItem)) {
                                 if (fd.wlTags.add(tag)) {
                                     fd.wlTagSlots.put(tag, slot);
                                 }
                             }
+                        } else if (neighborMode == MODE_COMPONENT) {
+                            fd.wlComposites.add(getCompositeKey(tgtItem));
+                        } else {
+                            fd.whitelist.add(itemId);
+                            fd.whitelistSlots.putIfAbsent(itemId, slot);
                         }
                     }
                 }

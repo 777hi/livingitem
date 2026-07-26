@@ -1,13 +1,14 @@
 package com.qiqi.li.living.mixin;
 
+import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
 
+import com.qiqi.li.living.LivingItemFunction;
 import com.qiqi.li.living.LivingItemManager;
 import com.qiqi.li.living.core.components.InternalStorageComponent;
 import com.qiqi.li.living.core.components.LivingChestTooltipComponent;
 import com.qiqi.li.living.function.LivingChestFunction;
-import com.qiqi.li.living.function.LivingHopperFunction;
 import net.minecraft.core.component.DataComponentMap;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.world.inventory.tooltip.TooltipComponent;
@@ -34,24 +35,34 @@ public abstract class ItemStackMixin {
         )));
     }
 
+    /**
+     * 活物品堆叠比较：忽略运行时状态组件的差异。
+     *
+     * <p>两个同类活物品比较是否能堆叠时，收集所有适用功能的
+     * {@link LivingItemFunction#getIgnoredComponentTypes()}，
+     * 在比较时跳过这些组件。</p>
+     *
+     * <p>组件化设计：活物品只需在 {@link com.qiqi.li.living.core.LivingFunctionConfig}
+     * 中通过 {@code withIgnoreComponentTypes()} 声明即可，
+     * 无需在此 Mixin 中硬编码物品类型。</p>
+     */
     @Inject(method = "isSameItemSameComponents", at = @At("HEAD"), cancellable = true)
     private static void onIsSameItemSameComponents(ItemStack stack1, ItemStack stack2,
                                                     CallbackInfoReturnable<Boolean> cir) {
-        boolean isHopper1 = LivingHopperFunction.isLivingHopper(stack1);
-        boolean isFurnace1 = !isHopper1 && stack1.is(net.minecraft.world.item.Items.FURNACE)
-                && LivingItemManager.isLivingItem(stack1);
-        if (!isHopper1 && !isFurnace1) {
-            return;
-        }
-        if (!LivingItemManager.isLivingItem(stack2)) {
+        if (!LivingItemManager.isLivingItem(stack1) || !LivingItemManager.isLivingItem(stack2)) {
             return;
         }
         if (stack1.getItem() != stack2.getItem()) {
             cir.setReturnValue(false);
             return;
         }
-        DataComponentType<com.qiqi.li.living.LivingFunctionData> funcDataType =
-                LivingItemManager.LIVING_FUNCTION_DATA.value();
+
+        Set<DataComponentType<?>> ignoredTypes = new HashSet<>();
+        for (LivingItemFunction func : LivingItemManager.getApplicableFunctions(stack1)) {
+            ignoredTypes.addAll(func.getIgnoredComponentTypes());
+        }
+        if (ignoredTypes.isEmpty()) return;
+
         DataComponentMap map1 = stack1.getComponents();
         DataComponentMap map2 = stack2.getComponents();
         Set<DataComponentType<?>> types1 = map1.keySet();
@@ -61,7 +72,7 @@ public abstract class ItemStackMixin {
             return;
         }
         for (DataComponentType<?> type : types1) {
-            if (type == funcDataType) continue;
+            if (ignoredTypes.contains(type)) continue;
             if (!types2.contains(type)) {
                 cir.setReturnValue(false);
                 return;

@@ -24,6 +24,7 @@ import com.qiqi.li.living.function.LivingHopperFunction;
  *
  * 当前包含的信息：
  * - 活漏斗连接图（sourceOf / targetOf 数组）
+ * - 容器级流体数据（ContainerFluidData，跨 tick 持续存在）
  *
  * 扩展方式：
  * - 未来需要新的容器扫描信息时，在此类中添加字段和构建方法
@@ -33,19 +34,26 @@ public class ContainerSnapshot {
     private final int containerSize;
     private final int[] sourceOf;
     private final int[] targetOf;
+    private final ContainerFluidData fluidData;
 
-    private ContainerSnapshot(int containerSize, int[] sourceOf, int[] targetOf) {
+    private ContainerSnapshot(int containerSize, int[] sourceOf, int[] targetOf,
+                              ContainerFluidData fluidData) {
         this.containerSize = containerSize;
         this.sourceOf = sourceOf;
         this.targetOf = targetOf;
+        this.fluidData = fluidData;
     }
 
     /**
      * 从容器上下文构建快照。
      *
      * 扫描容器中所有槽位，识别活漏斗并构建连接关系图。
+     * 流体数据从外部持久化存储传入，确保水桶移除后水流继续干涸。
+     *
+     * @param context 容器上下文
+     * @param fluidData 持久化的流体数据（跨 tick 存活），不可为 null
      */
-    public static ContainerSnapshot capture(ContainerContext context) {
+    public static ContainerSnapshot capture(ContainerContext context, ContainerFluidData fluidData) {
         int containerSize = context.getSize();
         int containerWidth = context.getWidth();
         int[] sourceOf = new int[containerSize];
@@ -71,7 +79,7 @@ public class ContainerSnapshot {
             targetOf[slot] = SlotResolver.resolve(slot, mapping.targetOffset(), containerSize, containerWidth);
         }
 
-        return new ContainerSnapshot(containerSize, sourceOf, targetOf);
+        return new ContainerSnapshot(containerSize, sourceOf, targetOf, fluidData);
     }
 
     public int getContainerSize() {
@@ -92,5 +100,9 @@ public class ContainerSnapshot {
 
     public int getTargetOf(int slot) {
         return slot >= 0 && slot < containerSize ? targetOf[slot] : -1;
+    }
+
+    public ContainerFluidData getFluidData() {
+        return fluidData;
     }
 }

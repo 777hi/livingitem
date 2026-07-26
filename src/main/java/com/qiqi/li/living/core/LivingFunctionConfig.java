@@ -1,10 +1,13 @@
 package com.qiqi.li.living.core;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 import javax.annotation.Nullable;
+import net.minecraft.core.component.DataComponentType;
 import com.qiqi.li.living.core.components.ILivingComponent;
 import com.qiqi.li.living.core.interaction.InteractionEntry;
 import com.qiqi.li.living.core.interaction.InteractionRegistry;
@@ -62,6 +65,14 @@ public class LivingFunctionConfig {
 
     /** 编排器（定义组件的执行编排策略） */
     private LivingOrchestrator orchestrator = Orchestrators.SIMPLE;
+
+    /**
+     * 额外忽略的 DataComponent 类型（堆叠比较时跳过）。
+     * 使用 Supplier 延迟解析，避免在静态初始化阶段访问未就绪的注册表。
+     * 所有活物品的 {@code LIVING_FUNCTION_DATA} 由 BaseLivingFunction 统一忽略，
+     * 此列表仅用于函数特定的额外组件。
+     */
+    private final List<Supplier<DataComponentType<?>>> extraIgnoredTypes = new ArrayList<>();
 
     /**
      * 组件注册条目。
@@ -172,8 +183,23 @@ public class LivingFunctionConfig {
         return this;
     }
 
+    /**
+     * 声明堆叠比较时额外忽略的 DataComponent 类型。
+     * 所有活物品的 {@code LIVING_FUNCTION_DATA} 已由 BaseLivingFunction 统一忽略，
+     * 此处仅用于函数特定的额外组件（如未来某个活物品需要忽略 CUSTOM_DATA 等）。
+     *
+     * @param suppliers DataComponent 类型的 Supplier（可使用 DeferredHolder 直接传入）
+     * @return this（支持链式调用）
+     */
+    @SafeVarargs
+    public final LivingFunctionConfig withIgnoreComponentTypes(Supplier<DataComponentType<?>>... suppliers) {
+        Collections.addAll(extraIgnoredTypes, suppliers);
+        return this;
+    }
+
     public List<ComponentEntry> getComponents() { return components; }
     public boolean isStackMultiplierEnabled() { return enableStackMultiplier; }
     public String getFunctionId() { return functionId; }
     public LivingOrchestrator getOrchestrator() { return orchestrator; }
+    public List<Supplier<DataComponentType<?>>> getExtraIgnoredTypes() { return extraIgnoredTypes; }
 }

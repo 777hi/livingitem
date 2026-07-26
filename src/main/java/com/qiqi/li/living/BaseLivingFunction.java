@@ -1,7 +1,10 @@
 package com.qiqi.li.living;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import net.minecraft.core.component.DataComponentType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import com.qiqi.li.living.core.ComponentContext;
@@ -134,5 +137,20 @@ public abstract class BaseLivingFunction implements LivingItemFunction {
         tooltipAdder.accept(net.minecraft.network.chat.Component.translatable(getTooltipTitleKey()));
 
         appendComponentTooltips(functionData, tooltipAdder, getConfig());
+    }
+
+    /**
+     * 获取堆叠比较时需要忽略的 DataComponent 类型。
+     * 统一包含 {@code LIVING_FUNCTION_DATA}（所有活物品的运行时状态不应阻止堆叠），
+     * 并合并 {@link LivingFunctionConfig#getExtraIgnoredTypes()} 中的额外类型。
+     */
+    @Override
+    public Set<DataComponentType<?>> getIgnoredComponentTypes() {
+        Set<DataComponentType<?>> result = new HashSet<>();
+        result.add(LivingItemManager.LIVING_FUNCTION_DATA.value());
+        for (var supplier : getConfig().getExtraIgnoredTypes()) {
+            result.add(supplier.get());
+        }
+        return result;
     }
 }

@@ -79,15 +79,26 @@ public class LivingChestAccessor implements SlotAccessor {
         }
 
         List<ItemStack> items = LivingChestFunction.getItems(chestStack);
-        int usedSlots = 0;
-        for (ItemStack item : items) {
-            if (!item.isEmpty()) usedSlots++;
+        int canAccept = 0;
+        int remaining = stack.getCount();
+
+        for (ItemStack slotItem : items) {
+            if (remaining <= 0) break;
+            if (slotItem.isEmpty()) {
+                int toAdd = Math.min(remaining, stack.getMaxStackSize());
+                canAccept += toAdd;
+                remaining -= toAdd;
+            } else if (net.minecraft.world.item.ItemStack.isSameItemSameComponents(slotItem, stack)) {
+                int spaceAvailable = slotItem.getMaxStackSize() - slotItem.getCount();
+                if (spaceAvailable > 0) {
+                    int toAdd = Math.min(remaining, spaceAvailable);
+                    canAccept += toAdd;
+                    remaining -= toAdd;
+                }
+            }
         }
-        int freeSlots = capacityPerChest - usedSlots;
 
-        if (freeSlots <= 0) return 0;
-
-        return Math.min(stack.getCount(), freeSlots * stack.getMaxStackSize());
+        return canAccept;
     }
 
     @Override

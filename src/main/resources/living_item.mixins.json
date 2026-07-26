@@ -6,6 +6,9 @@
     "ItemStackMixin",
     "ServerPlaceRecipeMixin"
   ],
+  "client": [
+    "AbstractContainerScreenMixin"
+  ],
   "injectors": {
     "defaultRequire": 1
   },

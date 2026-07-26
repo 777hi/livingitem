@@ -879,22 +879,18 @@ SLOTS 模式的方向数据存储在 `ComponentState` 中（`slot_input_x`, `slo
 - [x] 创造模式/生存模式全兼容
 
 ### 活箱子功能
-- [x] 堆叠倍增模型（1 堆叠 = 1 虚拟箱子 = 27 槽，64 堆叠 = 1728 槽）
-- [x] UUID 映射管理（自动创建、拆分、合并、删除）
-- [x] LRU 缓存策略（最大 200 条，5 分钟空闲超时，脏数据先保存）
-- [x] 磁盘持久化（`data/living_chests/xx/uuid.dat`，分片存储）
-- [x] 快速空/满判断（`_us` 已用槽位计数，O(1) 短路判断）
+- [x] 基于 DataComponent 的直接存储（`CONTAINER` 组件 = `ItemContainerContents`，27 槽）
+- [x] 字节容量限制（`InternalStorageComponent.MAX_STORAGE_BYTES = 16384`，防止 NBT 过大）
+- [x] 快速空/满判断（`_us` 已用槽位计数，`_bu` 字节用量，O(1) 短路判断）
 - [x] 漏斗自动传输（活箱子 tick 时通过漏斗推拉物品）
 - [x] 跨容器传输（活箱子在容器边界时与相邻容器交互）
-- [x] GUI 拆分/合并 UUID 自动分配（`ItemStackMixin` 拦截 split/grow/shrink/copyWithCount）
-- [x] 跨 UUID 堆叠支持（`LivingChestStackFlags` 线程局部标志）
-- [x] 被动孤儿文件清理（`cleanupOrphanedFiles()` 防止取消活化后磁盘泄漏）
-- [x] 事务包装器（`ChestTransaction` 确保多次操作间原子保存）
-- [x] 方块放置自动填充（生存模式消耗头部UUID + 填充物品到实体箱子，创造模式保留UUID）
-- [x] 三层防护体系（split拦截 + 发射器空分发 + 投掷器选槽拦截，禁止自动化系统操作活箱子）
-- [x] 铁砧重命名堆叠修复（副本比较法，只忽略UUID差异，保留名称等NBT差异）
-- [x] UUID 操作方向统一（头部优先：存入、提取、拆分均从头部开始；尾部弹出：popUuid从尾部移除）
+- [x] 活物品堆叠比较（`ItemStackMixin.isSameItemSameComponents` 忽略运行时状态组件，允许活箱子堆叠）
+- [x] 创造模式中键防复制（原版行为：活箱子的含 NBT 物品不在创造物品列表中，中键拾取失败）
+- [x] 铁砧重命名兼容（`isSameItemSameComponents` 只忽略运行时组件差异，保留名称等 NBT 差异）
+- [x] 配方书支持（`ServerPlaceRecipeMixin` 服务端注入活箱子物品到合成栏）
 - [x] 活箱子图标（`chest_living.png`）
+- [ ] 方块放置自动填充（活箱子放置为实体箱子时，保留存储内容）
+- [ ] 三层防护体系（禁止发射器/投掷器等自动化系统操作活箱子）
 
 ### 活末影箱功能
 - [x] 路由模式（无绑定玩家）：通过全局路由表实现跨容器无线传输

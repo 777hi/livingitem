@@ -121,7 +121,8 @@ public class ServerPacketHandler {
             if (!LivingChestFunction.hasStorage(invStack)) continue;
             if (!LivingChestFunction.canInsert(invStack, toInsert, player.registryAccess())) continue;
 
-            if (LivingChestFunction.insertItem(invStack, toInsert.copy(), player.registryAccess())) {
+            LivingChestFunction.insertItem(invStack, toInsert, player.registryAccess());
+            if (toInsert.isEmpty()) {
                 inserted = true;
                 break;
             }
@@ -227,19 +228,15 @@ public class ServerPacketHandler {
             if (LivingChestFunction.isStorageFull(invStack)) continue;
             if (!LivingChestFunction.canInsert(invStack, toInsert, player.registryAccess())) continue;
 
-            if (LivingChestFunction.insertItem(invStack, toInsert.copy(), player.registryAccess())) {
+            LivingChestFunction.insertItem(invStack, toInsert, player.registryAccess());
+            if (toInsert.isEmpty()) {
                 inserted = true;
                 break;
             }
         }
 
         if (!inserted) {
-            for (ItemStack invStack : player.getInventory().items) {
-                if (invStack.isEmpty()) {
-                    player.getInventory().add(toInsert);
-                    break;
-                }
-            }
+            player.getInventory().add(toInsert);
         }
 
         player.containerMenu.broadcastChanges();

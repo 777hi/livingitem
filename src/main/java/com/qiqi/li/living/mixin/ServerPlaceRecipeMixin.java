@@ -20,6 +20,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Mixin(ServerPlaceRecipe.class)
 public abstract class ServerPlaceRecipeMixin {
 
+    private static final boolean ENABLED = true;
+
     @Shadow
     @Final
     protected StackedContents stackedContents;
@@ -33,6 +35,7 @@ public abstract class ServerPlaceRecipeMixin {
         shift = At.Shift.AFTER
     ))
     private void afterFillStackedContents(ServerPlayer player, RecipeHolder recipe, boolean placeAll, CallbackInfo ci) {
+        if (!ENABLED) return;
         addLivingChestItemsToStackedContents();
     }
 
@@ -52,6 +55,7 @@ public abstract class ServerPlaceRecipeMixin {
 
     @Inject(method = "moveItemToGrid", at = @At("HEAD"), cancellable = true)
     private void onMoveItemToGrid(Slot slot, ItemStack stack, int maxAmount, CallbackInfoReturnable<Integer> cir) {
+        if (!ENABLED) return;
         int slotIndex = this.inventory.findSlotMatchingUnusedItem(stack);
         if (slotIndex != -1) {
             return;

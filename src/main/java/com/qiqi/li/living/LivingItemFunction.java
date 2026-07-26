@@ -1,7 +1,9 @@
 package com.qiqi.li.living;
 
 import java.util.List;
+import java.util.Set;
 import java.util.function.Consumer;
+import net.minecraft.core.component.DataComponentType;
 import net.minecraft.network.chat.Component;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.item.Item;
@@ -111,5 +113,20 @@ public interface LivingItemFunction {
                 component.appendTooltip(state, tooltipAdder);
             }
         }
+    }
+
+    /**
+     * 获取堆叠比较时需要忽略的 DataComponent 类型。
+     * 两个同类活物品比较是否能堆叠时，这些组件的差异会被忽略。
+     *
+     * <p>默认返回空集合。BaseLivingFunction 会统一包含
+     * {@code LIVING_FUNCTION_DATA}（运行时状态），
+     * 子类可通过重写此方法或通过
+     * {@link LivingFunctionConfig#withIgnoreComponentTypes} 添加额外组件。</p>
+     *
+     * @return 需要忽略的 DataComponent 类型集合
+     */
+    default Set<DataComponentType<?>> getIgnoredComponentTypes() {
+        return Set.of();
     }
 }
