@@ -2,7 +2,6 @@ package com.qiqi.li.living.core.accessor;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -11,12 +10,17 @@ import java.util.Set;
 import com.qiqi.li.living.core.ComponentState;
 import com.qiqi.li.living.core.components.ItemFilterComponent;
 import com.qiqi.li.living.container.ContainerContext;
+import com.qiqi.li.network.EnderChannelSyncPacket;
 import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
+import net.neoforged.neoforge.network.PacketDistributor;
 import org.slf4j.Logger;
 
 /**
@@ -39,6 +43,9 @@ import org.slf4j.Logger;
  *
  * <h3>线程安全</h3>
  * 所有操作在服务端 tick 线程中执行，无需额外同步。
+ * 客户端通过 {@link EnderChannelSyncPacket} 接收路由快照，
+ * 存储在 {@link EnderChannelClientCache} 中供 Tooltip 读取，
+ * 不直接访问本注册表。
  */
 public final class EnderChannelRegistry {
 
@@ -46,12 +53,14 @@ public final class EnderChannelRegistry {
 
     private static final EnderChannelRegistry INSTANCE = new EnderChannelRegistry();
 
+    private MinecraftServer server;
+
     private static class ChannelData {
         final List<EnderChannelEntry> entries = new ArrayList<>();
         int nextIndex;
     }
 
-    private final Map<Integer, ChannelData> channels = new ConcurrentHashMap<>();
+    private final Map<Integer, ChannelData> channels = new HashMap<>();
 
     /** 反向索引：方块位置 → 路由条目列表 */
     private final Map<BlockPos, List<EnderChannelEntry>> posIndex = new HashMap<>();
@@ -63,6 +72,25 @@ public final class EnderChannelRegistry {
 
     public static EnderChannelRegistry getInstance() {
         return INSTANCE;
+    }
+
+    public void setServer(MinecraftServer server) {
+        this.server = server;
+    }
+
+    private void syncChannelToAll(int channel) {
+        if (server == null) return;
+        ChannelData data = channels.get(channel);
+        int channelSize = data == null ? 0 : data.entries.size();
+        int totalRoutes = getTotalRouteCount();
+        List<EnderChannelEntry> entryList = data == null ? List.of() : List.copyOf(data.entries);
+
+        EnderChannelSyncPacket packet = EnderChannelSyncPacket.fromRegistry(
+            channel, channelSize, totalRoutes, entryList);
+
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            PacketDistributor.sendToPlayer(player, packet);
+        }
     }
 
     /**
@@ -113,6 +141,7 @@ public final class EnderChannelRegistry {
         addToIndex(entry);
         LOGGER.trace("EnderChannelRegistry: insert channel={}, item={}, pos={}, slot={}, size={}",
             channel, entry.itemType(), entry.sourcePos(), entry.sourceSlot(), data.entries.size());
+        syncChannelToAll(channel);
         return true;
     }
 
@@ -188,9 +217,8 @@ public final class EnderChannelRegistry {
         if (idx < data.nextIndex) {
             data.nextIndex--;
         }
-        if (data.entries.isEmpty()) {
-            channels.remove(channel);
-        }
+        cleanupChannel(channel, data);
+        syncChannelToAll(channel);
     }
 
     /**
@@ -222,8 +250,15 @@ public final class EnderChannelRegistry {
     public void removeByPosition(int channel, BlockPos sourcePos) {
         ChannelData data = channels.get(channel);
         if (data == null) return;
-        data.entries.removeIf(entry -> entry.sourcePos().equals(sourcePos));
+        data.entries.removeIf(entry -> {
+            if (entry.sourcePos().equals(sourcePos)) {
+                removeFromIndex(entry);
+                return true;
+            }
+            return false;
+        });
         cleanupChannel(channel, data);
+        syncChannelToAll(channel);
     }
 
     /**
@@ -237,9 +272,15 @@ public final class EnderChannelRegistry {
     public void removeByPositionAndSlot(int channel, BlockPos sourcePos, int sourceSlot) {
         ChannelData data = channels.get(channel);
         if (data == null) return;
-        data.entries.removeIf(entry ->
-            Objects.equals(entry.sourcePos(), sourcePos) && entry.sourceSlot() == sourceSlot);
+        data.entries.removeIf(entry -> {
+            if (Objects.equals(entry.sourcePos(), sourcePos) && entry.sourceSlot() == sourceSlot) {
+                removeFromIndex(entry);
+                return true;
+            }
+            return false;
+        });
         cleanupChannel(channel, data);
+        syncChannelToAll(channel);
     }
 
     /**
@@ -275,9 +316,15 @@ public final class EnderChannelRegistry {
     public void removeByPositionAndSlot(int channel, String containerKey, int sourceSlot) {
         ChannelData data = channels.get(channel);
         if (data == null) return;
-        data.entries.removeIf(entry ->
-            containerKey.equals(entry.containerKey()) && entry.sourceSlot() == sourceSlot);
+        data.entries.removeIf(entry -> {
+            if (containerKey.equals(entry.containerKey()) && entry.sourceSlot() == sourceSlot) {
+                removeFromIndex(entry);
+                return true;
+            }
+            return false;
+        });
         cleanupChannel(channel, data);
+        syncChannelToAll(channel);
     }
 
     /**
@@ -338,7 +385,6 @@ public final class EnderChannelRegistry {
         String containerKey = context.getContainerKey();
         int cleaned = 0;
 
-        // 使用反向索引精确查询相关路由条目
         List<EnderChannelEntry> relevantEntries;
         if (pos != null) {
             relevantEntries = posIndex.get(pos);
@@ -350,19 +396,22 @@ public final class EnderChannelRegistry {
 
         if (relevantEntries == null || relevantEntries.isEmpty()) return 0;
 
-        // 倒序遍历，安全删除
+        Set<Integer> dirtyChannels = new java.util.HashSet<>();
         for (int i = relevantEntries.size() - 1; i >= 0; i--) {
             EnderChannelEntry entry = relevantEntries.get(i);
-            // 玩家背包注册的路由 sourceDim 为 null，跳过维度检查
             if (entry.sourceDim() != null && !entry.sourceDim().equals(dim)) continue;
 
             ItemStack sourceStack = context.getItem(entry.sourceSlot());
             if (sourceStack.isEmpty() || !isItemTypeMatch(sourceStack, entry)) {
-                // removeFromIndex 内部会从 relevantEntries 中移除条目，
-                // 所以这里不需要再调用 relevantEntries.remove(i)
+                int ch = findChannelForEntry(entry);
                 removeEntryFromChannel(entry);
                 cleaned++;
+                if (ch >= 0) dirtyChannels.add(ch);
             }
+        }
+
+        for (int ch : dirtyChannels) {
+            syncChannelToAll(ch);
         }
 
         if (cleaned > 0) {
@@ -378,6 +427,15 @@ public final class EnderChannelRegistry {
     private boolean isItemTypeMatch(ItemStack stack, EnderChannelEntry entry) {
         String itemId = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
         return itemId.equals(entry.itemType());
+    }
+
+    private int findChannelForEntry(EnderChannelEntry target) {
+        for (var channelEntry : channels.entrySet()) {
+            if (channelEntry.getValue().entries.contains(target)) {
+                return channelEntry.getKey();
+            }
+        }
+        return -1;
     }
 
     /**
@@ -404,12 +462,12 @@ public final class EnderChannelRegistry {
     }
 
     private void removeStaleRoutesInternal(java.util.function.Predicate<EnderChannelEntry> shouldRemove) {
+        Set<Integer> dirtyChannels = new java.util.HashSet<>();
         List<Integer> channelsToRemove = new ArrayList<>();
         for (var entry : channels.entrySet()) {
             ChannelData data = entry.getValue();
             if (data == null) continue;
 
-            // 收集需要删除的条目
             List<EnderChannelEntry> toRemove = new ArrayList<>();
             for (EnderChannelEntry e : data.entries) {
                 if (shouldRemove.test(e)) {
@@ -417,7 +475,6 @@ public final class EnderChannelRegistry {
                 }
             }
 
-            // 从主表和反向索引中删除
             for (EnderChannelEntry e : toRemove) {
                 data.entries.remove(e);
                 removeFromIndex(e);
@@ -427,10 +484,15 @@ public final class EnderChannelRegistry {
                 channelsToRemove.add(entry.getKey());
             } else {
                 data.nextIndex %= data.entries.size();
+                dirtyChannels.add(entry.getKey());
             }
         }
         for (int channel : channelsToRemove) {
             channels.remove(channel);
+            dirtyChannels.add(channel);
+        }
+        for (int ch : dirtyChannels) {
+            syncChannelToAll(ch);
         }
     }
 
@@ -447,14 +509,13 @@ public final class EnderChannelRegistry {
         int chunkMaxX = chunkPos.getMaxBlockX();
         int chunkMaxZ = chunkPos.getMaxBlockZ();
 
-        // 使用反向索引：只遍历 posIndex 中在该区块范围内的条目
         List<EnderChannelEntry> toRemove = new ArrayList<>();
+        Set<Integer> dirtyChannels = new java.util.HashSet<>();
         for (var iter = posIndex.entrySet().iterator(); iter.hasNext(); ) {
             var entry = iter.next();
             BlockPos pos = entry.getKey();
             if (pos.getX() >= chunkMinX && pos.getX() <= chunkMaxX
                 && pos.getZ() >= chunkMinZ && pos.getZ() <= chunkMaxZ) {
-                // 检查维度是否匹配
                 for (EnderChannelEntry route : entry.getValue()) {
                     if (dim.equals(route.sourceDim())) {
                         toRemove.add(route);
@@ -464,7 +525,13 @@ public final class EnderChannelRegistry {
         }
 
         for (EnderChannelEntry route : toRemove) {
+            int ch = findChannelForEntry(route);
             removeEntryFromChannel(route);
+            if (ch >= 0) dirtyChannels.add(ch);
+        }
+
+        for (int ch : dirtyChannels) {
+            syncChannelToAll(ch);
         }
 
         if (!toRemove.isEmpty()) {
@@ -508,15 +575,47 @@ public final class EnderChannelRegistry {
     }
 
     /**
-     * 获取所有频道的路由条目总数（用于 Tooltip 显示）。
+     * 获取所有频道的路由条目总数。
      */
     public int getTotalRouteCount() {
+        return getTotalRouteCountLocked();
+    }
+
+    /**
+     * 获取指定频道的路由快照（用于 S2C 同步包构建）。
+     *
+     * <p>仅在服务端调用，返回的数据将被打包为 {@link EnderChannelSyncPacket} 发送到客户端。</p>
+     *
+     * @param channel 频道号
+     * @return 快照对象
+     */
+    public ChannelSnapshot getChannelSnapshot(int channel) {
+        ChannelData data = channels.get(channel);
+        int channelSize = data == null ? 0 : data.entries.size();
+        int totalRoutes = getTotalRouteCountLocked();
+        List<EnderChannelEntry> entries = data == null ? List.of() : List.copyOf(data.entries);
+        return new ChannelSnapshot(channelSize, totalRoutes, entries);
+    }
+
+    /**
+     * 获取所有频道的路由条目总数（内部方法）。
+     */
+    private int getTotalRouteCountLocked() {
         int total = 0;
         for (ChannelData data : channels.values()) {
             total += data.entries.size();
         }
         return total;
     }
+
+    /**
+     * 频道快照 record，用于线程安全地传递 Tooltip 数据。
+     */
+    public record ChannelSnapshot(
+        int channelSize,
+        int totalRoutes,
+        List<EnderChannelEntry> entries
+    ) {}
 
     /**
      * 清空所有路由表和反向索引（用于调试命令或服务器重置）。

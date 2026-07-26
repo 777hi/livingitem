@@ -332,9 +332,11 @@ InternalStorageComponent.tick(ctx, hostSlot, hostStack, state, config)
 | `clearStorage(chestStack)` | 清空存储 | void |
 
 **安全检查**:
-- `chestStack.getCount() > 1` → 拒绝所有操作（堆叠数 >1 时活箱子不可操作）
+- `chestStack.getCount() > 1` → 拒绝存取操作（`insertItem`/`extractItem`/`canInsert`），堆叠活箱子处于"冻结"状态
 - `chestStack == itemToInsert` → 拒绝存入（防止存入自己）
 - `isByteFull()` → 拒绝存入（16KB 限制）
+
+**注意**: `isStorageEmpty`/`isStorageFull` 是纯查询方法，反映 CONTAINER 的实际状态，不受 `count > 1` 影响。这意味着堆叠活箱子如果有物品，`isStorageEmpty` 返回 `false`（工具提示会显示内容预览），但存取操作仍被拦截。
 
 ### 4.2 LivingChestFunction（功能入口）
 

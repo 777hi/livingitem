@@ -37,6 +37,7 @@ import com.qiqi.li.network.HopperDirectionPacket;
 import com.qiqi.li.network.SlotDirectionPacket;
 import com.qiqi.li.network.GuiInteractionPacket;
 import com.qiqi.li.network.CarriedUpdatePacket;
+import com.qiqi.li.network.EnderChannelSyncPacket;
 import com.qiqi.li.network.LivingChestAccessPacket;
 import com.qiqi.li.living.LivingItemManager;
 import com.qiqi.li.living.function.LivingFurnaceFunction;
@@ -187,11 +188,14 @@ public class LivingItem {
         registrar.playToServer(SlotDirectionPacket.TYPE, SlotDirectionPacket.STREAM_CODEC, SlotDirectionPacket::handle);
         registrar.playToServer(GuiInteractionPacket.TYPE, GuiInteractionPacket.STREAM_CODEC, GuiInteractionPacket::handle);
         registrar.playToClient(CarriedUpdatePacket.TYPE, CarriedUpdatePacket.STREAM_CODEC, CarriedUpdatePacket::handle);
+        registrar.playToClient(EnderChannelSyncPacket.TYPE, EnderChannelSyncPacket.STREAM_CODEC, EnderChannelSyncPacket::handle);
         registrar.playToServer(LivingChestAccessPacket.TYPE, LivingChestAccessPacket.STREAM_CODEC, LivingChestAccessPacket::handle);
     }
 
     @SubscribeEvent
     public void onServerStarting(ServerStartingEvent event) {
+        com.qiqi.li.living.core.accessor.EnderChannelRegistry.getInstance()
+            .setServer(event.getServer());
         LOGGER.info("HELLO from server starting");
     }
 

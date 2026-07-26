@@ -1,7 +1,7 @@
 # Living Ender Chest (活末影箱) 技术文档
 
-> **文档版本**: 2026.07 v2
-> **最后更新**: 2026-07-23
+> **文档版本**: 2026.07 v3
+> **最后更新**: 2026-07-27
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -62,7 +62,9 @@
 |------|---------|------|
 | `LivingEnderChestFunction` | `function/LivingEnderChestFunction.java` | 活末影箱功能入口，**不注册任何组件**，管理玩家绑定数据，处理 Tooltip 显示 |
 | `LivingEnderChestAccessor` | `core/accessor/LivingEnderChestAccessor.java` | 活末影箱槽位访问器，实现 registerRoute/extract/rollback，支持路由模式和直连模式 |
-| `EnderChannelRegistry` | `core/accessor/EnderChannelRegistry.java` | 全局路由表单例，维护频道→路由条目列表的映射，轮询调度 |
+| `EnderChannelRegistry` | `core/accessor/EnderChannelRegistry.java` | 全局路由表单例（服务端），维护频道→路由条目列表的映射，轮询调度，路由变更时发送 S2C 同步包 |
+| `EnderChannelClientCache` | `core/accessor/EnderChannelClientCache.java` | 客户端路由缓存，存储频道快照供 Tooltip 读取，通过 `EnderChannelSyncPacket` 更新 |
+| `EnderChannelSyncPacket` | `network/EnderChannelSyncPacket.java` | S2C 同步包，将路由快照从服务端发送到客户端 |
 | `EnderChannelEntry` | `core/accessor/EnderChannelEntry.java` | 路由条目 record，描述源物品的"指针"（类型+维度+位置+槽位） |
 | `SlotAccessorFactory` | `core/accessor/SlotAccessorFactory.java` | 工厂类，检测到活末影箱时创建 LivingEnderChestAccessor |
 | `ItemTransferComponent` | `core/components/ItemTransferComponent.java` | 活漏斗传输引擎，检测到 target/source 为活末影箱时分发到对应逻辑 |
@@ -868,3 +870,79 @@ boolean useLeft = gridDir.equals(Pos2D.UP) || gridDir.equals(Pos2D.LEFT);
 - 路由模式（未绑定玩家）显示频道号、当前频道路由数、全局路由总数
 - 高级模式（F3+H）显示每条路由的详细信息（物品类型、位置、槽位）
 - `EnderChannelRegistry` 新增 `getEntries()` 和 `getTotalRouteCount()` 方法
+
+### 12.6 已修复：直连模式手动操作 PlayerEnderChestContainer 绕过 NeoForge 能力系统
+
+**问题描述**：
+`directExtract`、`directInsert`、`simulateInsert`、`directSimulateExtract` 四个方法直接操作 `PlayerEnderChestContainer` 的 `getItem()`/`setItem()`，绕过了 NeoForge 的 `IItemHandler` 能力系统。这可能导致与其他 mod 的物品处理器不兼容，且手动 ItemStack 复制/缩减逻辑容易出错。
+
+**修复方案**：
+统一使用 `InvWrapper`（`PlayerEnderChestInventory` → `IItemHandler` 适配器）+ `ItemHandlerHelper.insertItem()` / `wrapper.extractItem()` 替代手动操作：
+- `directExtract`：`wrapper.extractItem(i, toExtract, false)` 替代手动 `copy()` + `shrink()` + `setItem()`
+- `directInsert`：`ItemHandlerHelper.insertItem(wrapper, stack.copy(), false)` 替代手动遍历槽位
+- `simulateInsert`：`ItemHandlerHelper.insertItem(wrapper, stack.copy(), true)` 替代手动计算
+- `directSimulateExtract`：`wrapper.extractItem(i, toExtract, true)` 替代手动 `copy()`
+
+### 12.7 已修复：containerKey UUID 解析逻辑重复 4 次
+
+**问题描述**：
+`containerKey` 的 UUID 解析逻辑（`containerKey.substring(7, containerKey.length() - 12)` 等）在 `LivingEnderChestAccessor` 中重复了 4 次，每次都包含 try-catch 和格式判断。这种魔法数字（7、12）和重复代码极易出错。
+
+**修复方案**：
+提取 `parsePlayerUuid(String containerKey)` 静态工具方法，统一处理 `"player_<uuid>"` 和 `"player_<uuid>_ender_chest"` 两种格式。所有调用点改为 `parsePlayerUuid(containerKey)`，解析失败返回 `null`。
+
+### 12.8 已修复：EnderChannelRegistry.removeByPosition/removeByPositionAndSlot 未更新反向索引
+
+**问题描述**：
+`removeByPosition(channel, sourcePos)` 和 `removeByPositionAndSlot(channel, sourcePos/containerKey, sourceSlot)` 使用 `removeIf` 直接删除条目，但没有调用 `removeFromIndex()` 更新反向索引。这导致 `posIndex` 和 `keyIndex` 中残留已删除条目的引用，`cleanStaleSourceRoutes()` 可能操作已不存在的条目。
+
+**修复方案**：
+将 `removeIf` 的 Predicate 改为在匹配时先调用 `removeFromIndex(entry)` 再返回 `true`，确保反向索引与主表同步。
+
+### 12.9 已修复：directRollbackSlot 日志打印 -1
+
+**问题描述**：
+`rollback()` 方法中，`directRollbackSlot = -1` 在日志打印之前执行，导致日志总是显示 `slot=-1` 而非实际回退的槽位号。
+
+**修复方案**：
+先保存 `int slot = directRollbackSlot`，再重置为 `-1`，日志打印 `slot` 变量。
+
+### 12.10 已优化：routeExtract 日志级别从 INFO 降为 DEBUG
+
+**问题描述**：
+`routeExtract` 成功提取物品时使用 `LOGGER.info()` 记录，正常操作下产生大量日志噪音。
+
+**修复方案**：
+改为 `LOGGER.debug()`，与 `directExtract` 等方法保持一致。
+
+### 12.11 已重构：EnderChannelRegistry 线程安全 —— 从 synchronized 重构为客户端缓存 + S2C 同步包
+
+**问题描述**：
+`EnderChannelRegistry` 是全局单例，在集成服务器中存在跨线程访问：
+- 服务端 tick 线程写入（路由注册/删除）
+- 客户端渲染线程读取（Tooltip 显示）
+
+这导致 `ConcurrentModificationException` 崩溃（crash-2026-07-25_17.17.29）。
+
+**旧方案**：`ConcurrentHashMap` + `synchronized(this)` — 粗粒度锁，架构不正确（客户端不应直接读取服务端数据）
+
+**新方案**：客户端缓存 + S2C 同步包（Minecraft 标准模式）
+
+架构变更：
+```
+旧架构（跨线程直接访问）：
+  Render Thread → EnderChannelRegistry.getTotalRouteCount()  ← ConcurrentModificationException!
+
+新架构（客户端缓存 + 包同步）：
+  Server Thread → EnderChannelRegistry.insert/remove → syncChannelToAll() → EnderChannelSyncPacket
+  Render Thread → EnderChannelClientCache.getSnapshot()  ← 无竞争，纯客户端数据
+```
+
+新增文件：
+- `EnderChannelSyncPacket` — S2C 同步包，序列化频道快照数据
+- `EnderChannelClientCache` — 客户端缓存，存储频道→快照的映射
+
+修改文件：
+- `EnderChannelRegistry` — 移除所有 `synchronized` 和 `ConcurrentHashMap`，改为 `HashMap`；路由变更时调用 `syncChannelToAll()` 发送同步包
+- `EnderChannelComponent.buildTooltip` — 从 `EnderChannelClientCache` 读取，不再直接访问 `EnderChannelRegistry`
+- `LivingItem` — 注册新包 `EnderChannelSyncPacket`；`onServerStarting` 中调用 `EnderChannelRegistry.setServer()`

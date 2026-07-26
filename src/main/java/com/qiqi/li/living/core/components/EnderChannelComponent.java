@@ -8,6 +8,7 @@ import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.core.ComponentConfig;
 import com.qiqi.li.living.core.ComponentContext;
 import com.qiqi.li.living.core.ComponentState;
+import com.qiqi.li.living.core.accessor.EnderChannelClientCache;
 import com.qiqi.li.living.core.accessor.EnderChannelRegistry;
 import com.qiqi.li.living.function.LivingEnderChestFunction;
 import net.minecraft.nbt.CompoundTag;
@@ -129,25 +130,22 @@ public class EnderChannelComponent implements ILivingComponent {
                 .withStyle(style -> style.withColor(0xDD44FF).withBold(true)));
         } else {
             int channel = stack.getCount();
-            var registry = EnderChannelRegistry.getInstance();
-            int routeCount = registry.getChannelSize(channel);
-            int totalRoutes = registry.getTotalRouteCount();
+            var snapshot = EnderChannelClientCache.getSnapshot(channel);
 
             tooltipAdder.accept(Component.translatable(
                 "tooltip.livingitem.ender_chest.channel", channel)
                 .withStyle(style -> style.withColor(0xCC66FF)));
             tooltipAdder.accept(Component.translatable(
-                "tooltip.livingitem.ender_chest.routes", routeCount, totalRoutes)
+                "tooltip.livingitem.ender_chest.routes", snapshot.channelSize(), snapshot.totalRoutes())
                 .withStyle(style -> style.withColor(0xAA88FF)));
 
-            if (routeCount > 0 && flag.isAdvanced()) {
-                var entries = registry.getEntries(channel);
-                for (var entry : entries) {
+            if (snapshot.channelSize() > 0 && flag.isAdvanced()) {
+                for (var entry : snapshot.entries()) {
                     String locStr;
                     if (entry.sourcePos() != null) {
                         locStr = entry.sourcePos().toShortString();
-                    } else if (entry.containerKey() != null) {
-                        locStr = entry.containerKey();
+                    } else if (entry.dimKey() != null) {
+                        locStr = entry.dimKey();
                     } else {
                         locStr = "???";
                     }

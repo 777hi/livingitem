@@ -251,9 +251,6 @@ public class InternalStorageComponent implements ILivingComponent {
     }
 
     public static boolean isStorageFull(ItemStack chestStack) {
-        if (chestStack.getCount() > 1) {
-            return true;
-        }
         return countUsedSlots(chestStack) >= LivingChestFunction.CHEST_SLOTS;
     }
 
@@ -266,9 +263,6 @@ public class InternalStorageComponent implements ILivingComponent {
     }
 
     public static boolean isStorageEmpty(ItemStack chestStack) {
-        if (chestStack.getCount() > 1) {
-            return true;
-        }
         return countUsedSlots(chestStack) == 0;
     }
 
