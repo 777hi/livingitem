@@ -295,7 +295,7 @@ public class LivingChestFunction implements LivingItemFunction {
         }
     }
 
-    private static int countUsedSlots(ItemStack stack) {
+    public static int countUsedSlots(ItemStack stack) {
         ItemContainerContents contents = stack.get(net.minecraft.core.component.DataComponents.CONTAINER);
         if (contents == null) return 0;
         NonNullList<ItemStack> list = NonNullList.withSize(CHEST_SLOTS, ItemStack.EMPTY);

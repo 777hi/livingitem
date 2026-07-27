@@ -191,7 +191,14 @@ public class ContainerLivingItemHandler {
             fluidData.tick(context);
         }
 
-        LivingWaterBucketFunction.postTickSync(context, fluidData);
+        List<LivingItemFunction.SlotEntry> waterBucketEntries = List.of();
+        for (var gEntry : grouped.entrySet()) {
+            if (LivingWaterBucketFunction.ID.equals(gEntry.getKey().getFunctionId())) {
+                waterBucketEntries = gEntry.getValue();
+                break;
+            }
+        }
+        LivingWaterBucketFunction.postTickSync(context, fluidData, waterBucketEntries);
 
         String containerKey = context.getContainerKey();
         if (fluidData != null && fluidData.isEmpty() && containerKey != null) {
@@ -204,7 +211,6 @@ public class ContainerLivingItemHandler {
             cleanupStaleFluidData(System.currentTimeMillis());
         }
 
-        // 归还 TickContext 到对象池
         tick.release();
 
         long elapsedMs = (System.nanoTime() - startNanos) / 1_000_000;
@@ -324,12 +330,6 @@ public class ContainerLivingItemHandler {
         }
     }
 
-    /**
-     * 末影箱容器上下文 —— 包装 {@link PlayerEnderChestContainer} 为活物品可处理的容器。
-     *
-     * <p>与玩家背包使用不同的 containerKey（"player_&lt;uuid&gt;_ender_chest"），
-     * 确保末影箱中的活漏斗路由和玩家背包中的路由互不干扰。</p>
-     */
     private static class EnderChestContainerContext extends SimpleContainerContext {
         private final String enderChestKey;
 

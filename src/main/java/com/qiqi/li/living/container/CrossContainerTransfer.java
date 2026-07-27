@@ -420,7 +420,8 @@ public final class CrossContainerTransfer {
 
             String itemType = BuiltInRegistries.ITEM.getKey(sourceStack.getItem()).toString();
             var entry = new EnderChannelEntry(
-                itemType, level.dimension(), neighborPos, i, hostSlot, null, targetSlot);
+                itemType, level.dimension(), neighborPos, i, hostSlot, null, targetSlot,
+                containerCtx.getContainerKey());
 
             if (registry.contains(channel, entry)) {
                 return true;

@@ -168,7 +168,7 @@ public class LivingEnderChestAccessor implements SlotAccessor {
 
         String itemType = BuiltInRegistries.ITEM.getKey(sourceStack.getItem()).toString();
         EnderChannelEntry entry = new EnderChannelEntry(
-            itemType, level.dimension(), pos, slot, registrarSlot, containerKey, -1);
+            itemType, level.dimension(), pos, slot, registrarSlot, containerKey, -1, containerKey);
 
         EnderChannelRegistry registry = EnderChannelRegistry.getInstance();
         // 快速路径：如果当前频道已存在相同条目，跳过（绝大多数tick走这里）

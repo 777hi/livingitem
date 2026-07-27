@@ -1,7 +1,7 @@
 # Living Ender Chest (活末影箱) 技术文档
 
-> **文档版本**: 2026.07 v3
-> **最后更新**: 2026-07-27
+> **文档版本**: 2026.07 v5  
+> **最后更新**: 2026-07-28  
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -54,38 +54,39 @@
 - **push端**（活漏斗→活末影箱）：往黑板上写"我这里有XX物品在YY位置"
 - **pull端**（活末影箱→输出槽）：从黑板上读"有东西吗？有就跳转过去取"
 
-这是一个典型的**独立代理 + 共享状态**架构，每个活漏斗独立执行自己的 tick，互不干扰。
-
 ### 1.3 关键类和职责
 
 | 类名 | 文件位置 | 职责 |
 |------|---------|------|
-| `LivingEnderChestFunction` | `function/LivingEnderChestFunction.java` | 活末影箱功能入口，**不注册任何组件**，管理玩家绑定数据，处理 Tooltip 显示 |
+| `LivingEnderChestFunction` | `function/LivingEnderChestFunction.java` | 活末影箱功能入口，实现 `LivingItemFunction` 接口，管理玩家绑定数据和路由清理 |
 | `LivingEnderChestAccessor` | `core/accessor/LivingEnderChestAccessor.java` | 活末影箱槽位访问器，实现 registerRoute/extract/rollback，支持路由模式和直连模式 |
-| `EnderChannelRegistry` | `core/accessor/EnderChannelRegistry.java` | 全局路由表单例（服务端），维护频道→路由条目列表的映射，轮询调度，路由变更时发送 S2C 同步包 |
-| `EnderChannelClientCache` | `core/accessor/EnderChannelClientCache.java` | 客户端路由缓存，存储频道快照供 Tooltip 读取，通过 `EnderChannelSyncPacket` 更新 |
+| `EnderChannelRegistry` | `core/accessor/EnderChannelRegistry.java` | 全局路由表单例（服务端），维护频道→路由条目列表的映射，轮询调度，路由清理 |
+| `EnderChannelClientCache` | `core/accessor/EnderChannelClientCache.java` | 客户端路由缓存，存储频道快照供 Tooltip 读取（ConcurrentHashMap，线程安全） |
 | `EnderChannelSyncPacket` | `network/EnderChannelSyncPacket.java` | S2C 同步包，将路由快照从服务端发送到客户端 |
-| `EnderChannelEntry` | `core/accessor/EnderChannelEntry.java` | 路由条目 record，描述源物品的"指针"（类型+维度+位置+槽位） |
+| `EnderChannelEntry` | `core/accessor/EnderChannelEntry.java` | 路由条目 record，描述源物品的"指针"，支持方块容器和玩家背包两种类型 |
 | `SlotAccessorFactory` | `core/accessor/SlotAccessorFactory.java` | 工厂类，检测到活末影箱时创建 LivingEnderChestAccessor |
-| `ItemTransferComponent` | `core/components/ItemTransferComponent.java` | 活漏斗传输引擎，检测到 target/source 为活末影箱时分发到对应逻辑 |
 | `CrossContainerTransfer` | `container/CrossContainerTransfer.java` | 跨容器传输工具类，处理相邻容器与活末影箱之间的路由注册和物品拉取 |
+| `LivingHopperFunction` | `function/LivingHopperFunction.java` | 活漏斗功能入口，在 `executeTransfer()` 中检测活末影箱并分发到路由注册/提取逻辑 |
 
 ### 1.4 组件架构总览
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │                    LivingEnderChestFunction                      │
-│                    (功能入口 · 无组件)                            │
-│                    Orchestrators.SIMPLE                          │
+│                    (功能入口 · 实现 LivingItemFunction)           │
 ├──────────────────────────────────────────────────────────────────┤
 │                                                                  │
-│  活末影箱本身不注册任何组件！路由和传输由活漏斗的                    │
-│  ItemTransferComponent 触发，通过 LivingEnderChestAccessor 完成。  │
+│  活末影箱本身不执行传输逻辑！路由和传输由活漏斗的                    │
+│  executeTransfer() 触发，通过 LivingEnderChestAccessor 完成。      │
+│                                                                  │
+│  tick() 中仅做路由清理：                                          │
+│    - removeStaleEnderChestRoutes() — 清理末影箱被移走的路由        │
+│    - cleanStaleSourceRoutes() — 清理源物品已消失的路由             │
 │                                                                  │
 └──────────────────────────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────────────────────────┐
-│                ItemTransferComponent.executeTransfer()           │
+│                LivingHopperFunction.executeTransfer()            │
 │                (活漏斗传输引擎 · 分发)                            │
 │                                                                  │
 │  ┌─────────────────────────────────────────────────────────┐    │
@@ -94,8 +95,8 @@
 │  │  └─ NO  → 继续                                          │    │
 │  │                                                          │    │
 │  │  source instanceof LivingEnderChestAccessor?             │    │
-│  │  ├─ YES → pull端：doTransfer() → return true             │    │
-│  │  └─ NO  → 普通传输：doTransfer() → return result         │    │
+│  │  ├─ YES → pull端：extract() → 从路由表查找 → 跳转提取    │    │
+│  │  └─ NO  → 普通传输：SlotAccessor.transfer()              │    │
 │  └─────────────────────────────────────────────────────────┘    │
 │                                                                  │
 │  ┌──────────────────┐         ┌──────────────────────────────┐  │
@@ -117,6 +118,77 @@
 
 ---
 
+## 2. 核心数据结构
+
+### 2.1 EnderChannelEntry — 路由条目
+
+```java
+public record EnderChannelEntry(
+    String itemType,                    // 物品注册名，如 "minecraft:diamond"
+    ResourceKey<Level> sourceDim,       // 源容器所在维度
+    BlockPos sourcePos,                 // 源容器方块位置
+    int sourceSlot,                     // 源物品在容器中的槽位索引
+    int registrarSlot,                  // 注册此路由的活漏斗所在槽位（用于清理）
+    String containerKey,                // 源容器唯一标识 key
+    int targetSlot,                     // 活末影箱所在槽位（-1 表示无关联末影箱）
+    String registrarContainerKey        // 注册者容器的唯一标识 key（用于跨容器路由清理）
+)
+```
+
+路由条目**不存储物品本身**，只存储"指针"——指向源物品的位置。物品始终留在源容器中，由 pull 端的活漏斗负责实际提取。
+
+### 2.2 EnderChannelRegistry — 全局路由表
+
+```java
+// 单例
+private static final EnderChannelRegistry INSTANCE = new EnderChannelRegistry();
+
+// 内部结构
+private final Map<Integer, ChannelData> channels = new HashMap<>();
+
+// 反向索引（v5 新增）
+private final Map<BlockPos, List<EnderChannelEntry>> posIndex = new HashMap<>();     // 方块位置 → 路由条目
+private final Map<String, List<EnderChannelEntry>> keyIndex = new HashMap<>();       // 容器 key → 路由条目
+```
+
+**反向索引**（v5 新增）：
+
+路由注册/移除时同步维护 `posIndex` 和 `keyIndex` 两个反向索引，清理时直接查询相关路由，不需要遍历所有频道：
+
+| 索引 | 键 | 用途 |
+|------|-----|------|
+| `posIndex` | `BlockPos` | 按方块位置快速查找相关路由 |
+| `keyIndex` | `String`（容器 key） | 按容器标识快速查找相关路由（玩家背包等无 BlockPos 的场景） |
+
+**性能优化**：`cleanStaleSourceRoutes()` 使用反向索引后，时间复杂度从 O(所有路由) 优化到 O(相关路由)。
+
+**关键方法**：
+
+| 方法 | 职责 |
+|------|------|
+| `insert(channel, entry)` | 注册路由条目（去重），同步更新反向索引 |
+| `contains(channel, entry)` | 检查条目是否已存在（快速路径） |
+| `peek(channel, filterData)` | 轮询查看路由条目（不移除），支持物品过滤 |
+| `remove(channel, entry)` | 移除指定路由条目，同步更新反向索引 |
+| `removeByPositionAndSlot(channel, pos, slot)` | 移除指定位置+槽位的路由 |
+| `removeStaleRoutes(pos, activeSlots)` | 按方块位置清理失效路由 |
+| `removeStaleRoutes(containerKey, activeSlots)` | 按容器 key 清理失效路由 |
+| `removeStaleEnderChestRoutes(containerKey, activeSlots)` | 清理源末影箱被移走的路由 |
+| `removeStaleRoutesByRegistrarKey(containerKey, activeSlots)` | 按注册者容器 key 清理跨容器路由 |
+| `cleanStaleSourceRoutes(ctx)` | 清理源物品已消失或变化的失效路由（使用反向索引优化） |
+| `onChunkUnload(level, chunkPos)` | 区块卸载时清理该区块所有相关路由 |
+
+### 2.3 ChannelData — 频道数据
+
+```java
+private static class ChannelData {
+    List<EnderChannelEntry> entries = new ArrayList<>();
+    int nextIndex;  // 轮询指针，保证公平调度
+}
+```
+
+---
+
 ## 3. 双模式工作机制
 
 ### 3.1 模式概述
@@ -132,28 +204,33 @@
 
 **绑定触发**：玩家在末影箱 GUI 中，光标持有末影箱物品，点击活按钮 → 末影箱被活化并绑定当前玩家。
 
-绑定数据存储在活末影箱物品的 NBT 中：
-```java
-// LivingEnderChestFunction.java
-private static final String KEY_BOUND_UUID = "bound_player_uuid";
-private static final String KEY_BOUND_NAME = "bound_player_name";
+绑定数据存储在活末影箱物品的 DataComponent 中（通过 `LivingEnderChestData` + `EnderChannelData` record）：
 
-public static void setBoundPlayer(ItemStack stack, UUID uuid, String name) {
-    CompoundTag data = LivingItemManager.getFunctionData(stack, ID).copy();
-    data.putUUID(KEY_BOUND_UUID, uuid);
-    data.putString(KEY_BOUND_NAME, name);
-    LivingItemManager.setFunctionData(stack, ID, data);
+```java
+// EnderChannelData — 绑定玩家数据
+public record EnderChannelData(
+    Optional<String> boundPlayerUuid,   // 绑定玩家 UUID（字符串形式）
+    Optional<String> boundPlayerName    // 绑定玩家名称
+) {
+    public static final EnderChannelData EMPTY = new EnderChannelData(Optional.empty(), Optional.empty());
+
+    public EnderChannelData withBoundPlayer(UUID uuid, String name) {
+        return new EnderChannelData(Optional.of(uuid.toString()), Optional.of(name));
+    }
+
+    public Optional<UUID> getPlayerUuid() {
+        return boundPlayerUuid.map(UUID::fromString);
+    }
 }
 
-public static void clearBoundPlayer(ItemStack stack) {
-    CompoundTag data = LivingItemManager.getFunctionData(stack, ID).copy();
-    data.remove(KEY_BOUND_UUID);
-    data.remove(KEY_BOUND_NAME);
-    LivingItemManager.setFunctionData(stack, ID, data);
+// LivingEnderChestData — 活末影箱数据容器
+public record LivingEnderChestData(EnderChannelData channel) implements TooltipProvider {
+    public static final LivingEnderChestData EMPTY = new LivingEnderChestData(EnderChannelData.EMPTY);
+    public LivingEnderChestData withChannel(EnderChannelData c) { return new LivingEnderChestData(c); }
 }
 ```
 
-**取消活化**时清空绑定数据。
+> **v5 变更**：`EnderChannelData` 的 `boundPlayerUuid` 字段类型从 `Optional<UUID>` 改为 `Optional<String>`，序列化时直接存储 UUID 字符串，避免 Codec 兼容性问题。通过 `getPlayerUuid()` 方法在运行时转换回 `UUID`。
 
 ### 3.3 访问器工厂分发
 
@@ -165,12 +242,10 @@ if (LivingEnderChestFunction.isLivingEnderChest(stack)) {
     UUID boundUuid = LivingEnderChestFunction.getBoundPlayerUuid(stack);
     if (boundUuid != null) {
         // 直连模式：传入绑定 UUID
-        return new LivingEnderChestAccessor(server, ch, filterState,
-            transferredTargetSlots, boundUuid);
+        return new LivingEnderChestAccessor(server, ch, filterData, transferredTargetSlots, boundUuid);
     }
     // 路由模式：无绑定 UUID
-    return new LivingEnderChestAccessor(server, ch, filterState,
-        transferredTargetSlots);
+    return new LivingEnderChestAccessor(server, ch, filterData, transferredTargetSlots);
 }
 ```
 
@@ -196,753 +271,409 @@ if (LivingEnderChestFunction.isLivingEnderChest(stack)) {
 └──────────────────────────────────────────────────────────────┘
 ```
 
-### 3.5 跨容器路由注册（路由模式）
-
-当活末影箱处于路由模式（无绑定玩家）时，活漏斗从相邻容器拉取物品时会注册路由：
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│              跨容器路由注册流程                                │
-│                                                              │
-│  活漏斗（sourceOffset 越界）→ CrossContainerTransfer.execute │
-│       │                                                      │
-│       └─ pullFromNeighbor()                                  │
-│            │                                                 │
-│            └─ target 是活末影箱？                             │
-│                 │                                            │
-│                 ├─ 是 → pullFromNeighborToLivingEnderChest   │
-│                 │    │                                       │
-│                 │    ├─ 检查绑定 UUID → 有 → 直连提取         │
-│                 │    └─ 无绑定 → 路由模式                     │
-│                 │         │                                  │
-│                 │         ├─ neighborPos = basePos.relative  │
-│                 │         │   (sourceWorldDir)               │
-│                 │         │                                  │
-│                 │         └─ 遍历 neighborHandler 槽位       │
-│                 │              │                             │
-│                 │              └─ 找到可传输物品              │
-│                 │                   │                        │
-│                 │                   └─ registry.insert(      │
-│                 │                         channel, entry)    │
-│                 │                                            │
-│                 └─ 否 → 普通传输到目标槽位                    │
-│                                                              │
-└──────────────────────────────────────────────────────────────┘
-```
-
-### 3.6 大箱子基准位置选择
-
-对于大箱子（双箱合并），`getBasePosForDirection()` 根据 GUI 网格方向选择正确的半箱作为基准位置：
-
-```
-大箱子 GUI 布局：
-┌─────────────────────────────────┐ ← LEFT 半箱（槽位 0-26）
-│  0  1  2  3  4  5  6  7  8      │
-│  9 10 11 12 13 14 15 16 17      │
-│ 18 19 20 21 22 23 24 25 26      │
-├─────────────────────────────────┤ ← RIGHT 半箱（槽位 27-53）
-│ 27 28 29 30 31 32 33 34 35      │
-│ 36 37 38 39 40 41 42 43 44      │
-│ 45 46 47 48 49 50 51 52 53      │
-└─────────────────────────────────┘
-
-方向映射：
-- UP / LEFT  → 使用 LEFT 半箱（chestPositions.get(0)）
-- DOWN / RIGHT → 使用 RIGHT 半箱（chestPositions.get(1)）
-```
-
-这确保了跨容器传输时 `neighborPos` 计算正确，路由注册到准确的位置。
-
 ---
 
-## 2. 核心数据结构
+## 4. Push 端流程（注册路由）
 
-### 2.1 EnderChannelEntry — 路由条目
+### 4.1 容器内路由注册
 
-```java
-public record EnderChannelEntry(
-    String itemType,                    // 物品注册名，如 "minecraft:diamond"
-    ResourceKey<Level> sourceDim,       // 源容器所在维度
-    BlockPos sourcePos,                 // 源容器方块位置（玩家背包时为 null）
-    int sourceSlot,                     // 源物品在容器中的槽位索引
-    int registrarSlot,                  // 注册此路由的活漏斗所在槽位（用于清理）
-    String containerKey,                // 容器唯一标识 key（来自 ContainerContext.getContainerKey()）
-    int targetSlot                      // 活末影箱所在槽位（-1 表示无关联末影箱）
-)
-```
-
-路由条目**不存储物品本身**，只存储"指针"——指向源物品的位置。物品始终留在源容器中，由 pull 端的活漏斗负责实际提取。
-
-### 2.2 EnderChannelRegistry — 全局路由表
+当活漏斗的 target 是活末影箱（路由模式）时，在 `executeTransfer()` 中触发：
 
 ```java
-// 单例
-private static final EnderChannelRegistry INSTANCE = new EnderChannelRegistry();
-
-// 内部结构
-private static class ChannelData {
-    List<EnderChannelEntry> entries = new ArrayList<>();
-    int nextIndex;  // 轮询指针，保证公平调度
-}
-
-private final Map<Integer, ChannelData> channels = new HashMap<>();
-```
-
-**关键方法**：
-
-| 方法 | 复杂度 | 职责 |
-|------|--------|------|
-| `insert(channel, entry)` | O(n) | 注册路由条目（去重） |
-| `contains(channel, entry)` | O(n) | 检查条目是否已存在（快速路径） |
-| `peek(channel, filterState)` | O(n) | 轮询查看路由条目（不移除），支持物品过滤 |
-| `remove(channel, entry)` | O(n) | 移除指定路由条目 |
-| `removeByPositionAndSlot(channel, pos, slot)` | O(n) | 移除指定位置+槽位的路由 |
-| `removeByPositionAndSlotFromAllChannels(pos, slot)` | O(k×n) | 跨频道清理指定位置+槽位的路由 |
-| `removeStaleRoutes(pos, activeSlots)` | O(k×n) | 清理活漏斗被移走后的残留路由 |
-| `onChunkUnload(level, chunkPos)` | O(k×n) | 区块卸载时清理该区块的路由 |
-| `getEntries(channel)` | O(1) | 获取指定频道的所有路由条目（只读副本） |
-| `getChannelSize(channel)` | O(1) | 获取频道中的路由条目数量 |
-| `getActiveChannelCount()` | O(1) | 获取所有活跃频道数量 |
-| `getTotalRouteCount()` | O(k) | 获取所有频道的路由条目总数 |
-
-### 2.3 轮询调度算法
-
-`peek()` 方法使用 `nextIndex` 指针实现公平调度：
-
-```
-频道1 entries: [钻石@容器A, 铁锭@容器B, 石头@容器C]
-                ↑ nextIndex
-
-第1次 peek → 返回钻石@容器A, nextIndex → 1
-第2次 peek → 返回铁锭@容器B, nextIndex → 2
-第3次 peek → 返回石头@容器C, nextIndex → 0
-第4次 peek → 返回钻石@容器A, nextIndex → 1
-```
-
-**目的**：多 push 端场景下，每个 push 端的物品都有机会被提取，不会出现排在前面的条目被反复提取而排在后面的永远拿不到的情况。
-
----
-
-## 3. Push 端流程（注册路由）
-
-### 3.1 触发条件
-
-活漏斗的方向配置为 `sourceOffset → targetOffset`，其中 targetOffset 指向活末影箱所在的槽位。
-
-在 `ItemTransferComponent.executeTransfer()` 中：
-```java
-SlotAccessor target = SlotAccessorFactory.create(server, containerCtx, targetSlot,
-    null, transferredTargetSlots);
-
-if (target instanceof LivingEnderChestAccessor enderChest) {
-    // push端：注册路由
-    enderChest.registerRoute(sourceStackForRoute, containerCtx, sourceSlot, hostSlot);
-    return true;  // 触发冷却
-}
-```
-
-### 3.2 registerRoute() 详细流程
-
-```
-registerRoute(sourceStack, containerCtx, sourceSlot, hostSlot)
-  │
-  ├─ 验证：sourceStack 非空、level 非空、pos 或 containerKey 有效
-  │
-  ├─ 构建 EnderChannelEntry：
-  │     itemType = "minecraft:diamond"（从 sourceStack 获取）
-  │     sourceDim = containerCtx.getLevel().dimension()
-  │     sourcePos = containerCtx.getBlockPos()
-  │     sourceSlot = 源物品在容器中的槽位
-  │     registrarSlot = hostSlot（活漏斗所在槽位）
-  │     containerKey = containerCtx.getContainerKey()
-  │
-  ├─ contains(channel, entry) → 快速路径：
-  │     如果当前频道已存在相同条目 → return（跳过）
-  │     （优化：避免每 tick 都删了又加，节省 O(k×n) 遍历）
-  │
-  ├─ removeByPositionAndSlotFromAllChannels(pos, sourceSlot)：
-  │     清理所有频道中同位置+槽位的旧路由
-  │     （频道可能已改变，防止旧频道残留路由）
-  │
-  └─ insert(channel, entry)：
-        去重插入到当前频道
-```
-
-### 3.3 insert() 去重逻辑
-
-```java
-for (EnderChannelEntry existing : data.entries) {
-    if (Objects.equals(existing.sourcePos(), entry.sourcePos())
-        && existing.sourceSlot() == entry.sourceSlot()
-        && existing.itemType().equals(entry.itemType())
-        && Objects.equals(existing.containerKey(), entry.containerKey())) {
-        return false;  // 重复条目，跳过
+// LivingHopperFunction.executeTransfer()
+if (target.unwrap() instanceof LivingEnderChestAccessor enderChest) {
+    if (enderChest.isDirectMode()) {
+        // 直连模式 → 直接传输
+        return SlotAccessor.transfer(source, target, amount);
     }
-}
-data.entries.add(entry);
-return true;
-```
-
-**去重规则**：相同位置 + 相同槽位 + 相同物品类型 + 相同容器 key → 视为重复，不添加。
-
----
-
-## 4. Pull 端流程（无线提取）
-
-### 4.1 触发条件
-
-活漏斗的方向配置为 `sourceOffset → targetOffset`，其中 sourceOffset 指向活末影箱所在的槽位。
-
-在 `ItemTransferComponent.executeTransfer()` 中：
-```java
-SlotAccessor source = SlotAccessorFactory.create(server, containerCtx, sourceSlot,
-    filterState, transferredTargetSlots);
-
-if (source instanceof LivingEnderChestAccessor) {
-    // pull端：从路由表提取
-    doTransfer(source, target, Math.min(stackSize, maxTransfer));
-    return true;  // 触发冷却
+    // 路由模式 → 注册路由
+    ItemStack srcStack = ctx.getItem(sourceSlot);
+    if (!srcStack.isEmpty() && !LivingItemManager.isLivingItem(srcStack)) {
+        enderChest.registerRoute(srcStack, ctx, sourceSlot, hostSlot);
+    }
+    return true;
 }
 ```
 
-### 4.2 extract() 详细流程
+### 4.2 跨容器路由注册
+
+当活漏斗的 source 越界（从相邻容器拉取）、target 是活末影箱时，通过 `CrossContainerTransfer` 处理：
 
 ```
-extract(amount, filterType)
-  │
-  └─ 循环（直到提取成功或路由表为空）：
-       │
-       ├─ registry.peek(channel, filterState)：
-       │     轮询获取路由条目
-       │     ├─ 无 filterState → 直接取 nextIndex 指向的条目
-       │     └─ 有 filterState → 遍历找第一个匹配过滤器的条目
-       │
-       ├─ entry == null → 路由表为空 → return ItemStack.EMPTY
-       │
-       ├─ 验证源维度：
-       │     server.getLevel(entry.sourceDim())
-       │     ├─ null → 维度无效 → remove 路由 → continue
-       │
-       ├─ 获取源容器 IItemHandler：
-       │     ├─ sourcePos 非 null（方块容器）：
-       │     │   ├─ 区块未加载 → remove 路由 → continue
-       │     │   └─ getHandler(level, pos, be) → IItemHandler
-       │     └─ sourcePos 为 null（玩家背包）：
-       │         └─ 通过 containerKey 获取玩家 IItemHandler
-       │
-       ├─ 验证源物品：
-       │     ├─ sourceStack.isEmpty() → 源空 → remove 路由 → continue
-       │     ├─ 物品类型不匹配 → remove 路由 → continue
-       │     └─ 过滤器不匹配 → remove 路由 → continue
-       │
-       ├─ 提取物品：
-       │     extracted = sourceHandler.extractItem(sourceSlot, toExtract, false)
-       │
-       ├─ 保存回滚信息：
-       │     rollbackDim, rollbackPos, rollbackSlot, rollbackContainerKey
-       │
-       ├─ 源槽位变空 → remove 路由
-       │
-       └─ return extracted
+LivingHopperFunction.executeTransfer()
+  └─ sourceOutOfBounds → CrossContainerTransfer.execute()
+      └─ pullFromNeighbor()
+          └─ target 是活末影箱 → pullFromNeighborToLivingEnderChest()
+              ├─ 有绑定 UUID → 直连模式提取
+              └─ 无绑定 → 路由模式
+                  ├─ 遍历相邻容器槽位，找到可传输物品
+                  └─ registry.insert(channel, EnderChannelEntry(
+                         itemType, sourceDim, sourcePos, sourceSlot,
+                         registrarSlot, containerKey, -1,  // targetSlot = -1
+                         registrarContainerKey
+                     ))
 ```
 
-### 4.3 提取验证链
-
-`extract()` 在提取前会进行多层验证，任何一层失败都会**移除路由条目**并继续尝试下一个：
-
-```
-验证链（任一失败 → remove 路由 → continue）：
-  ① 维度有效性
-  ② 区块加载状态
-  ③ IItemHandler 可用性
-  ④ 源槽位非空
-  ⑤ 物品类型匹配
-  ⑥ 过滤器匹配
-```
-
-这确保了路由表始终保持干净，不会有"僵尸路由"指向无效位置。
+**targetSlot = -1 的设计**：跨容器场景下活末影箱不在当前容器中，将 `targetSlot` 设为 `-1` 避免路由与活末影箱的具体槽位绑定，防止容器刷新时路由被误清理。
 
 ---
 
-## 5. 路由生命周期
+## 5. Pull 端流程（无线提取）
 
-### 5.1 路由的出生与死亡
+### 5.1 提取流程
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        路由生命周期                              │
-│                                                                 │
-│  [出生] registerRoute()  ← push端活漏斗检测到物品               │
-│     │                                                            │
-│     ├── 正常提取 → extract() 成功 → 源槽位变空 → remove() → [死亡]│
-│     │                                                            │
-│     ├── 源容器区块卸载 → onChunkUnload() → [死亡]                │
-│     │                                                            │
-│     ├── 活漏斗被移走 → removeStaleRoutes() → [死亡]              │
-│     │                                                            │
-│     ├── 活末影箱频道改变 → removeByPositionAndSlotFromAllChannels│
-│     │                     → registerRoute() 新频道 → [重生]       │
-│     │                                                            │
-│     └── 提取验证失败 → remove() → [死亡]                         │
-│         （维度无效/区块卸载/物品消失/类型不匹配/过滤器不匹配）     │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### 5.2 路由的"重生"（频道改变）
-
-当活末影箱的堆叠数改变时（频道改变），`registerRoute()` 会调用 `removeByPositionAndSlotFromAllChannels()` 清理旧频道中的残留路由，然后在当前频道中重新注册：
+当活漏斗的 source 是活末影箱（路由模式）时：
 
 ```
-堆叠数 3 → 堆叠数 4（频道 3 → 频道 4）
-  registerRoute():
-    ① contains(4, entry) → false（频道4没有）
-    ② removeByPositionAndSlotFromAllChannels(pos, slot) → 清理频道3的旧路由
-    ③ insert(4, entry) → 在频道4注册新路由
+LivingHopperFunction.executeTransfer()
+  └─ source 是 LivingEnderChestAccessor
+      └─ enderChest.extract(amount, filterType)
+          ├─ 从 EnderChannelRegistry 查找匹配路由
+          ├─ peek(channel, filterState) → 轮询获取路由条目
+          ├─ 根据路由条目中的 sourceDim + sourcePos + sourceSlot
+          │   跳转到源容器，提取物品
+          ├─ 提取成功 → 移除路由条目
+          └─ 提取失败 → 路由条目保留（下次重试）
 ```
 
----
+### 5.2 轮询调度
 
-## 6. 冷却机制
-
-### 6.1 冷却触发规则
-
-| 场景 | 是否触发冷却 | 原因 |
-|------|-------------|------|
-| push端：源有物品，注册路由成功 | ✅ 触发 | 让push端歇一歇，等pull端提取 |
-| push端：源有物品，路由已存在（contains=true） | ❌ 不触发 | contains快速返回，不走return true |
-| push端：源为空 | ❌ 不触发 | sourceStack.isEmpty() 提前返回 false |
-| pull端：路由表有物品，提取成功 | ✅ 触发 | 正常传输 |
-| pull端：路由表为空 | ✅ 触发 | 走 doTransfer→返回false，但 executeTransfer 返回 true |
-| 普通传输：源空或目标满 | ❌ 不触发 | doTransfer 返回 false |
-
-### 6.2 冷却独立性
-
-**每个活漏斗有自己的 ComponentState，冷却完全独立：**
-
-```
-push端活漏斗的 ComponentState:
-  transfer_cooldown: 8  ← 只影响push端自己
-
-pull端活漏斗的 ComponentState:
-  transfer_cooldown: 8  ← 只影响pull端自己
-```
-
-两个活漏斗的冷却互不干扰。不存在"共享冷却"问题——每个活漏斗只有一个方向（source→target），一次只做一件事。
-
-### 6.3 计算逻辑
+`EnderChannelRegistry` 使用轮询指针 `nextIndex` 保证同一频道内的路由条目被公平调度：
 
 ```java
-private int calculateCooldown(int baseCooldown, int stackSize) {
-    return baseCooldown;  // 默认 8 ticks
+public EnderChannelEntry peek(int channel, FilterState filter) {
+    ChannelData data = channels.get(channel);
+    if (data == null || data.entries.isEmpty()) return null;
+
+    int startIndex = data.nextIndex;
+    for (int i = 0; i < data.entries.size(); i++) {
+        int idx = (startIndex + i) % data.entries.size();
+        EnderChannelEntry entry = data.entries.get(idx);
+        if (matchesFilter(entry, filter)) {
+            data.nextIndex = (idx + 1) % data.entries.size();  // 推进指针
+            return entry;
+        }
+    }
+    return null;
 }
 ```
 
-当前版本堆叠加速逻辑已暂时注销，所有活漏斗统一使用 8 ticks 基础冷却。
-
 ---
 
-## 7. 频道隔离
+## 6. 路由生命周期
 
-### 7.1 频道号 = 堆叠数
+### 6.1 路由注册
 
-```java
-// SlotAccessorFactory.create() 中
-int channel = stack.getCount();  // 堆叠数就是频道号
-return new LivingEnderChestAccessor(server, channel, filterState, transferredTargetSlots);
+```
+活漏斗 tick → executeTransfer() → target=活末影箱
+  └─ LivingEnderChestAccessor.registerRoute()
+      └─ EnderChannelRegistry.insert(channel, entry)
+          ├─ 检查重复（contains）
+          └─ 添加到 channels[channel].entries
 ```
 
-**频道隔离规则**：
-- 堆叠数为 1 的活末影箱 → 频道 1
-- 堆叠数为 3 的活末影箱 → 频道 3
-- 堆叠数为 64 的活末影箱 → 频道 64
+### 6.2 路由消费
 
-不同频道的活末影箱**完全隔离**，互不干扰。这意味着：
-- 频道 1 的 push 端只能被频道 1 的 pull 端提取
-- 频道 3 的 push 端只能被频道 3 的 pull 端提取
+```
+活漏斗 tick → executeTransfer() → source=活末影箱
+  └─ LivingEnderChestAccessor.extract()
+      └─ EnderChannelRegistry.peek(channel, filter)
+          ├─ 找到匹配路由 → 跳转提取
+          └─ 提取成功 → remove(entry)
+```
 
-### 7.2 频道本意
+### 6.3 路由清理
 
-频道隔离的设计意图是让玩家可以通过调整堆叠数来创建独立的传输网络。例如：
-- 频道 1：钻石传输网络
-- 频道 2：铁锭传输网络
-- 频道 3：石头传输网络
-
-不同网络互不干扰，即使它们都使用相同的源容器。
+路由在以下情况被清理（详见第 9 章）：
+- 源物品被移走或改变
+- 活漏斗被移走
+- 活末影箱被移走
+- 容器区块卸载
+- 注册者容器区块卸载
 
 ---
 
-## 8. 路由清理策略
+## 7. 冷却机制
 
-### 8.1 清理时机
+活末影箱本身没有冷却机制。冷却由活漏斗管理（详见活漏斗文档）。
 
-| 触发时机 | 清理范围 | 调用方法 |
+---
+
+## 8. 频道隔离
+
+### 8.1 频道定义
+
+频道号 = 活末影箱物品的堆叠数量：
+
+```java
+int channel = enderChestStack.getCount();
+```
+
+不同堆叠数的活末影箱属于不同频道，路由互不干扰。
+
+### 8.2 频道用途
+
+- 同一频道内的活末影箱共享路由表
+- 不同频道的活末影箱完全隔离
+- 玩家可以通过堆叠/拆分活末影箱来切换频道
+
+---
+
+## 9. 路由清理策略
+
+### 9.1 清理触发点
+
+路由清理在 `LivingEnderChestFunction.tick()` 和 `LivingHopperFunction.cleanupStaleRoutes()` 中触发：
+
+```java
+// LivingEnderChestFunction.tick() — 使用 entries 参数直接获取活末影箱槽位
+@Override
+public void tick(List<SlotEntry> entries, ContainerContext context, TickContext tick, Level level) {
+    if (level.isClientSide) return;
+
+    Set<Integer> activeEnderChestSlots = new HashSet<>();
+    for (SlotEntry entry : entries) {
+        activeEnderChestSlots.add(entry.slotIndex());
+    }
+
+    EnderChannelRegistry registry = EnderChannelRegistry.getInstance();
+    registry.removeStaleEnderChestRoutes(context.getContainerKey(), activeEnderChestSlots);
+    registry.cleanStaleSourceRoutes(context);
+}
+
+// LivingHopperFunction.cleanupStaleRoutes()
+registry.removeStaleRoutes(pos, activeSlots);           // 按方块位置清理
+registry.removeStaleEnderChestRoutes(containerKey, activeSlots);  // 按容器清理末影箱路由
+registry.removeStaleRoutesByRegistrarKey(containerKey, activeSlots);  // 按注册者容器清理
+```
+
+### 9.2 清理类型
+
+| 清理方法 | 触发条件 | 清理对象 |
 |---------|---------|---------|
-| 提取后源槽位变空 | 当前频道 | `registry.remove(channel, entry)` |
-| 提取验证失败 | 当前频道 | `registry.remove(channel, entry)` |
-| 频道改变 | 所有频道 | `removeByPositionAndSlotFromAllChannels` |
-| 活漏斗被移走 | 所有频道 | `removeStaleRoutes` |
-| 区块卸载 | 所有频道 | `onChunkUnload` |
+| `removeStaleRoutes(pos, activeSlots)` | 源容器中活漏斗被移走 | 该位置下所有槽位不在 activeSlots 中的路由 |
+| `removeStaleRoutes(containerKey, activeSlots)` | 同上，按容器 key | 同上 |
+| `removeStaleEnderChestRoutes(containerKey, activeSlots)` | 活末影箱被移走 | 该容器中末影箱槽位不在 activeSlots 中的路由 |
+| `removeStaleRoutesByRegistrarKey(containerKey, activeSlots)` | 注册者容器中活漏斗被移走 | 注册者不在 activeSlots 中的跨容器路由 |
+| `cleanStaleSourceRoutes(ctx)` | 源物品变化或消失 | 源物品 ID 变化或槽位变空的路由 |
 
-### 8.2 注册时跨频道清理
+### 9.3 容器隔离清理
 
-在 `registerRoute()` 中，**先删后加**：
+`registrarContainerKey` 字段确保跨容器路由的清理只影响正确的容器：
 
-```java
-// 必须先清理所有频道中的旧路由
-registry.removeByPositionAndSlotFromAllChannels(pos, sourceSlot);
-// 再在当前频道插入新路由
-registry.insert(channel, entry);
 ```
+容器A（注册者）          容器B（源）
+┌──────────────┐       ┌──────────────┐
+│ 活漏斗(槽3)  │       │ 钻石(槽0)    │
+│ target=末影箱 │       │              │
+└──────────────┘       └──────────────┘
 
-**为什么需要跨频道清理？** 因为活末影箱的堆叠数可能改变（频道改变），旧频道路由如果不清理，pull 端会从旧频道提取到已失效的路由。
+路由条目：itemType="钻石", sourcePos=容器B, registrarSlot=3, registrarContainerKey=容器A
 
-### 8.3 活漏斗移走清理
-
-当活漏斗从容器中移除后，`removeStaleRoutes()` 清理该漏斗注册的所有路由：
-
-```java
-public void removeStaleRoutes(BlockPos sourcePos, Set<Integer> activeRegistrarSlots) {
-    removeStaleRoutesInternal(route ->
-        Objects.equals(route.sourcePos(), sourcePos)
-        && !activeRegistrarSlots.contains(route.registrarSlot()));
-}
+容器A区块卸载 → removeStaleRoutesByRegistrarKey("容器A", {})
+  → 清理所有 registrarContainerKey="容器A" 的路由
+容器B区块卸载 → 不会误删容器A注册的路由
 ```
-
-通过 `registrarSlot` 字段判断：如果路由的注册者（活漏斗）不在当前容器的活跃槽位中，说明活漏斗已被移走，路由应清理。
 
 ---
 
-## 9. 区块卸载处理
+## 10. 区块卸载处理
 
-### 9.1 触发机制
+### 10.1 源容器区块卸载
 
-在 `LivingItem.onChunkUnload()` 中注册事件监听：
+当源容器所在的区块被卸载时，`cleanStaleSourceRoutes()` 会检测到源物品不存在（`level.getBlockEntity(pos)` 返回 null），自动清理相关路由。
 
-```java
-@SubscribeEvent
-public void onChunkUnload(ChunkEvent.Unload event) {
-    if (event.getLevel() instanceof ServerLevel serverLevel) {
-        EnderChannelRegistry.getInstance()
-            .onChunkUnload(serverLevel, event.getChunk().getPos());
-    }
-}
-```
+### 10.2 注册者容器区块卸载
 
-### 9.2 清理逻辑
-
-```java
-public void onChunkUnload(Level level, ChunkPos chunkPos) {
-    // 遍历所有频道的所有条目
-    for (ChannelData data : channels.values()) {
-        data.entries.removeIf(entry -> {
-            // 只清理同维度、同区块的源容器路由
-            if (!entry.sourceDim().equals(dim)) return false;
-            BlockPos pos = entry.sourcePos();
-            if (pos == null) return false;
-            return pos.getX() >= chunkMinX && pos.getX() <= chunkMaxX
-                && pos.getZ() >= chunkMinZ && pos.getZ() <= chunkMaxZ;
-        });
-    }
-    // 清理空频道
-    channels.entrySet().removeIf(e -> e.getValue().entries.isEmpty());
-}
-```
-
-**为什么需要？** 源容器所在区块卸载后，pull 端的 `extract()` 无法访问源容器，必须清理路由避免无效提取。
+当注册者容器所在的区块被卸载时，`removeStaleRoutesByRegistrarKey()` 会清理所有以该容器为注册者的路由，防止路由泄漏。
 
 ---
 
 ## 11. Tooltip 显示
 
-### 11.1 显示规则
+### 11.1 显示内容
 
-活末影箱的 Tooltip 根据绑定状态显示不同信息：
+| 状态 | 显示内容 |
+|------|---------|
+| 有绑定玩家 | "绑定玩家: xxx"（紫色加粗） |
+| 路由模式 | "频道: N" + "路由: X条/共Y条" |
+| 高级模式（F3+H） | 每条路由的详细信息（物品类型、位置、槽位） |
 
-**已绑定玩家（直连模式）**：
-```
-§d活末影箱§r
-  §b绑定: 玩家名§r
-```
-
-**未绑定玩家（路由模式）**：
-```
-§d活末影箱§r
-  §7频道: §e5§r              ← 当前堆叠数 = 频道号
-  §7路由: §e3§7/§a12§r       ← 当前频道3条路由，全局共12条
-  （F3+H 高级模式时显示路由详情）
-  minecraft:diamond @100, 64, 200 slot=5
-  minecraft:iron_ingot @player_xxx_ender_chest slot=10
-```
-
-### 11.2 实现方式
-
-在 `LivingEnderChestFunction.addToTooltip()` 中实现：
+### 11.2 实现
 
 ```java
 @Override
-public void addToTooltip(CompoundTag functionData, Item.TooltipContext context,
-                         Consumer<Component> tooltipAdder, TooltipFlag flag,
+public void addToTooltip(Item.TooltipContext context,
+                         Consumer<Component> tooltipAdder,
+                         TooltipFlag flag,
                          ItemStack stack) {
-    super.addToTooltip(functionData, context, tooltipAdder, flag, stack);
+    LivingEnderChestData data = LivingItemManager.getEnderChestData(stack);
+    EnderChannelData channel = data.channel();
 
-    if (functionData != null && functionData.contains(KEY_BOUND_UUID)) {
-        // 直连模式：显示绑定玩家
-        String name = functionData.getString(KEY_BOUND_NAME);
+    tooltipAdder.accept(Component.nullToEmpty(""));
+    tooltipAdder.accept(Component.translatable("tooltip.livingitem.ender_chest.status"));
+
+    if (channel.boundPlayerUuid().isPresent()) {
+        // 直连模式
+        String name = channel.boundPlayerName().orElse("???");
         tooltipAdder.accept(Component.translatable(
             "tooltip.livingitem.ender_chest.bound_player", name)
-            .withStyle(style -> style.withColor(0x55FFFF)));
+            .withStyle(style -> style.withColor(0xDD44FF).withBold(true)));
     } else {
-        // 路由模式：显示频道和路由信息
-        int channel = stack.getCount();
-        var registry = EnderChannelRegistry.getInstance();
-        int routeCount = registry.getChannelSize(channel);
-        int totalRoutes = registry.getTotalRouteCount();
+        // 路由模式 — 从客户端缓存读取
+        int ch = stack.getCount();
+        var snapshot = EnderChannelClientCache.getSnapshot(ch);
 
         tooltipAdder.accept(Component.translatable(
-            "tooltip.livingitem.ender_chest.channel", channel)
-            .withStyle(style -> style.withColor(0xAAAAAA)));
+            "tooltip.livingitem.ender_chest.channel", ch)
+            .withStyle(style -> style.withColor(0xCC66FF)));
         tooltipAdder.accept(Component.translatable(
-            "tooltip.livingitem.ender_chest.routes", routeCount, totalRoutes)
-            .withStyle(style -> style.withColor(0xAAAAAA)));
+            "tooltip.livingitem.ender_chest.routes", snapshot.channelSize(), snapshot.totalRoutes())
+            .withStyle(style -> style.withColor(0xAA88FF)));
 
-        // 高级模式（F3+H）显示路由详情
-        if (routeCount > 0 && flag.isAdvanced()) {
-            var entries = registry.getEntries(channel);
-            for (var entry : entries) {
-                String locStr = entry.sourcePos() != null
-                    ? entry.sourcePos().toShortString()
-                    : entry.containerKey();
+        // 高级模式显示详细路由
+        if (snapshot.channelSize() > 0 && flag.isAdvanced()) {
+            for (var entry : snapshot.entries()) {
+                String locStr;
+                if (entry.sourcePos() != null) {
+                    locStr = entry.sourcePos().toShortString();
+                } else if (entry.dimKey() != null) {
+                    locStr = entry.dimKey();
+                } else {
+                    locStr = "???";
+                }
                 tooltipAdder.accept(Component.literal(
                     "  " + entry.itemType() + " @" + locStr + " slot=" + entry.sourceSlot())
-                    .withStyle(style -> style.withColor(0x777777)));
+                    .withStyle(style -> style.withColor(0x9966CC).withItalic(true)));
             }
         }
     }
 }
 ```
 
-### 11.3 EnderChannelRegistry 新增方法
+### 11.3 客户端缓存同步
 
-为支持 Tooltip 显示，`EnderChannelRegistry` 新增了两个查询方法：
+路由信息通过 `EnderChannelSyncPacket`（S2C）从服务端同步到客户端 `EnderChannelClientCache`：
 
-```java
-// 获取指定频道的所有路由条目（只读副本）
-public List<EnderChannelEntry> getEntries(int channel) {
-    ChannelData data = channels.get(channel);
-    if (data == null) return List.of();
-    return List.copyOf(data.entries);
-}
-
-// 获取所有频道的路由条目总数
-public int getTotalRouteCount() {
-    int total = 0;
-    for (ChannelData data : channels.values()) {
-        total += data.entries.size();
-    }
-    return total;
-}
 ```
+服务端 EnderChannelRegistry.insert/remove
+  └─ syncChannelToAll(channel)
+      └─ EnderChannelSyncPacket → 发送给所有在线玩家
+          └─ 客户端 EnderChannelClientCache.update(channel, ...)
+              └─ Tooltip 读取 EnderChannelClientCache.getSnapshot(ch)
+```
+
+`EnderChannelClientCache` 使用 `ConcurrentHashMap` 存储，确保网络线程写入和渲染线程读取的线程安全。
 
 ---
 
 ## 12. 已知问题与修复记录
 
-### 12.1 已修复：push端源耗尽后pull端不再拉取
+### 12.1 跨容器路由 targetSlot 误绑定
 
-**问题描述**：
-push端源容器物品耗尽后，pull端输出槽还能输出但不再拉取新物品。
+**问题**：跨容器场景下 `targetSlot` 被设为活末影箱在当前容器中的槽位，容器刷新时路由被误清理。
 
-**根因分析**：
-1. push端源物品耗尽 → `sourceStack.isEmpty()` → 返回 false → 不设置冷却
-2. pull端路由表为空 → `extract()` 返回 EMPTY → `doTransfer` 返回 false → 但 `executeTransfer` 返回 true → 设置冷却 8 ticks
-3. pull端陷入"空路由表→触发冷却→等冷却→再试→空路由表→再触发冷却"的死循环
+**修复**：将跨容器场景下的 `targetSlot` 设为 `-1`，避免路由与活末影箱的具体槽位绑定。
 
-**修复方案**：
-玩家往源容器补物品后，push端下一tick检测到物品 → `registerRoute()` 注册路由 → pull端冷却到期后成功提取。系统可自动恢复，但最坏延迟 8 ticks。
+### 12.2 注册者容器路由泄漏
 
-**优化建议**（未实施）：
-将 pull 端从 `return true` 改为 `return doTransfer(...)`，路由表为空时不触发冷却，实现零延迟恢复。
+**问题**：注册者容器区块卸载时，跨容器路由未被清理，导致路由泄漏。
 
-### 12.2 已修复：registerRoute 每 tick 重复删加
-
-**问题描述**：
-push端每 tick 冷却到期后，`registerRoute()` 都会执行 `removeByPositionAndSlotFromAllChannels`（遍历所有频道 O(k×n)）+ `insert`（遍历当前频道 O(n)），即使路由已存在。
-
-**修复方案**：
-添加 `contains()` 方法作为快速路径检查。如果当前频道已存在相同条目，直接跳过，避免不必要的跨频道遍历。
-
-```java
-// 修复后
-if (registry.contains(channel, entry)) {
-    return;  // 快速跳过
-}
-```
-
-### 12.3 已修复：频道改变后旧路由残留
-
-**问题描述**：
-修改活末影箱堆叠数（频道改变）后，旧频道中的路由条目未被清理，导致 pull 端可能从旧频道提取到失效路由。
-
-**修复方案**：
-`registerRoute()` 中调用 `removeByPositionAndSlotFromAllChannels()` 跨频道清理旧路由。
+**修复**：新增 `registrarContainerKey` 字段和 `removeStaleRoutesByRegistrarKey()` 方法，实现按注册者容器隔离清理。
 
 ---
 
 ## 13. 调试指南
 
-### 13.1 查看路由表状态
+### 13.1 查看路由表
 
-```java
-// 获取频道大小
-int size = EnderChannelRegistry.getInstance().getChannelSize(channel);
+在游戏中通过 Tooltip（F3+H 高级模式）查看当前频道的路由条目。
 
-// 获取活跃频道数
-int count = EnderChannelRegistry.getInstance().getActiveChannelCount();
+### 13.2 日志输出
 
-// 清空所有路由（调试用）
-EnderChannelRegistry.getInstance().clearAll();
+启用 debug 日志可查看路由注册、消费和清理的详细记录：
 ```
-
-### 13.2 关键日志
-
-所有关键日志使用 SLF4J，通过 `LogUtils.getLogger()` 获取：
-
-```java
-// 路由注册
-LOGGER.debug("registered route channel={}, item={}, pos={}, key={}, slot={}, count={}");
-
-// 物品提取
-LOGGER.info("extracted channel={}, item={}, count={}, from={}, slot={}");
-
-// 路由为空
-LOGGER.trace("extract channel={}, no entry found");
-
-// 路由表轮询
-LOGGER.trace("peek channel={}, no filter, index={} → {}");
-
-// 区块卸载
-LOGGER.info("chunkUnload dim={}, chunk=({},{}), removed={} entries");
+EnderChannelComponent: cleaned N stale routes at tick T
 ```
 
 ### 13.3 常见问题排查
 
-| 问题 | 排查方向 |
-|------|---------|
-| pull端不拉取 | 检查路由表是否为空（`getChannelSize`），检查 push 端是否正常注册路由 |
-| 物品类型不匹配 | 检查 `extract()` 中 `itemType` 是否一致，源容器物品是否被替换 |
-| 跨维度不工作 | 确认源区块和目标区块都已加载 |
-| 频道隔离不生效 | 确认两个活末影箱的堆叠数是否一致 |
-| 路由残留 | 调用 `clearAll()` 清理，检查活漏斗是否被正确移除 |
-| 大箱子路由不生效 | 检查 `getBasePosForDirection()` 半箱选择逻辑，UP/LEFT 应选 LEFT 半箱，DOWN/RIGHT 应选 RIGHT 半箱 |
-| 直连模式物品不消耗 | 检查 `LivingEnderChestAccessor.insert()` 返回值和 `stack.shrink()` 调用 |
-| 直连模式提取异常 | 检查玩家在线状态，离线时应返回 EMPTY |
-| 末影箱中活物品不工作 | 确认 `ContainerLivingItemHandler.processEnderChest()` 是否被调用 |
-| 大箱子重复处理 | 确认 `processBlockEntities` 中双重去重策略（`IdentityHashMap` + `HashSet<String>`） |
+| 问题 | 可能原因 | 排查方法 |
+|------|---------|---------|
+| 物品不传输 | 频道不匹配 | 检查两端活末影箱堆叠数是否相同 |
+| 路由丢失 | 区块卸载 | 检查源容器和注册者容器是否在同一区块 |
+| 传输速度慢 | 轮询调度 | 正常现象，多个路由条目轮流调度 |
+| 直连模式不工作 | 玩家离线 | 直连模式需要玩家在线 |
 
-### 12.4 已修复：大箱子跨容器路由注册不生效
+---
 
-**问题描述**：
-在大箱子中放置活末影箱和活漏斗，跨容器路由注册不生效，物品无法通过路由传输。
+### 12.3 v5 架构变更 (2026-07-28)
 
-**根因分析**：
-`getBasePosForDirection()` 方法中半箱选择逻辑写反了。大箱子的 LEFT 半箱对应 GUI 上半部分（槽位 0-26），RIGHT 半箱对应 GUI 下半部分（槽位 27-53）。当活漏斗的源方向是 UP 时，相邻容器应该在 LEFT 半箱的上方，但代码错误地使用了 RIGHT 半箱作为基准。
+**变更1：EnderChannelData 字段类型调整**
 
-```java
-// ❌ 修复前
-boolean useLeft = gridDir.equals(Pos2D.DOWN) || gridDir.equals(Pos2D.RIGHT);
+`boundPlayerUuid` 从 `Optional<UUID>` 改为 `Optional<String>`，序列化时直接存储 UUID 字符串，避免 Codec 兼容性问题。运行时通过 `getPlayerUuid()` 转换回 `UUID`。
 
-// ✅ 修复后
-boolean useLeft = gridDir.equals(Pos2D.UP) || gridDir.equals(Pos2D.LEFT);
-```
+**变更2：反向索引优化**
 
-**修复方案**：
-修正 `getBasePosForDirection()` 中的方向判断逻辑，确保 UP/LEFT 方向使用 LEFT 半箱，DOWN/RIGHT 方向使用 RIGHT 半箱。
+`EnderChannelRegistry` 新增 `posIndex`（BlockPos → 路由条目）和 `keyIndex`（容器 key → 路由条目）两个反向索引。路由注册/移除时同步维护，`cleanStaleSourceRoutes()` 使用反向索引后时间复杂度从 O(所有路由) 优化到 O(相关路由)。
 
-### 12.5 已修复：活末影箱 Tooltip 显示
+**变更3：tick() 使用 entries 参数**
 
-**问题描述**：
-活末影箱缺少频道和路由信息的可视化显示，玩家无法直观了解当前路由状态。
+`LivingEnderChestFunction.tick()` 从遍历全容器查找活末影箱槽位改为直接从 `entries` 参数读取，消除冗余扫描。
 
-**修复方案**：
-- 在 `LivingEnderChestFunction.addToTooltip()` 中添加频道号和路由信息显示
-- 直连模式（已绑定玩家）显示绑定玩家名
-- 路由模式（未绑定玩家）显示频道号、当前频道路由数、全局路由总数
-- 高级模式（F3+H）显示每条路由的详细信息（物品类型、位置、槽位）
-- `EnderChannelRegistry` 新增 `getEntries()` 和 `getTotalRouteCount()` 方法
+**变更4：EnderChannelClientCache 线程安全**
 
-### 12.6 已修复：直连模式手动操作 PlayerEnderChestContainer 绕过 NeoForge 能力系统
+客户端缓存使用 `ConcurrentHashMap` 替代普通 `HashMap`，确保网络线程写入和渲染线程读取的线程安全。
 
-**问题描述**：
-`directExtract`、`directInsert`、`simulateInsert`、`directSimulateExtract` 四个方法直接操作 `PlayerEnderChestContainer` 的 `getItem()`/`setItem()`，绕过了 NeoForge 的 `IItemHandler` 能力系统。这可能导致与其他 mod 的物品处理器不兼容，且手动 ItemStack 复制/缩减逻辑容易出错。
+---
 
-**修复方案**：
-统一使用 `InvWrapper`（`PlayerEnderChestInventory` → `IItemHandler` 适配器）+ `ItemHandlerHelper.insertItem()` / `wrapper.extractItem()` 替代手动操作：
-- `directExtract`：`wrapper.extractItem(i, toExtract, false)` 替代手动 `copy()` + `shrink()` + `setItem()`
-- `directInsert`：`ItemHandlerHelper.insertItem(wrapper, stack.copy(), false)` 替代手动遍历槽位
-- `simulateInsert`：`ItemHandlerHelper.insertItem(wrapper, stack.copy(), true)` 替代手动计算
-- `directSimulateExtract`：`wrapper.extractItem(i, toExtract, true)` 替代手动 `copy()`
+## 14. 验证清单
 
-### 12.7 已修复：containerKey UUID 解析逻辑重复 4 次
+> 重构或架构迁移后，必须逐项验证以下用例。标注 `(→ 12.X)` 的条目来源于历史 bug，不可省略。
 
-**问题描述**：
-`containerKey` 的 UUID 解析逻辑（`containerKey.substring(7, containerKey.length() - 12)` 等）在 `LivingEnderChestAccessor` 中重复了 4 次，每次都包含 try-catch 和格式判断。这种魔法数字（7、12）和重复代码极易出错。
+### 14.1 双模式切换
 
-**修复方案**：
-提取 `parsePlayerUuid(String containerKey)` 静态工具方法，统一处理 `"player_<uuid>"` 和 `"player_<uuid>_ender_chest"` 两种格式。所有调用点改为 `parsePlayerUuid(containerKey)`，解析失败返回 `null`。
+- [ ] 未绑定玩家时为路由模式，堆叠数=频道号
+- [ ] 绑定玩家后切换为直连模式，直接读写玩家末影箱
+- [ ] 直连模式下玩家离线时跳过传输
+- [ ] 解绑后恢复路由模式
 
-### 12.8 已修复：EnderChannelRegistry.removeByPosition/removeByPositionAndSlot 未更新反向索引
+### 14.2 路由模式
 
-**问题描述**：
-`removeByPosition(channel, sourcePos)` 和 `removeByPositionAndSlot(channel, sourcePos/containerKey, sourceSlot)` 使用 `removeIf` 直接删除条目，但没有调用 `removeFromIndex()` 更新反向索引。这导致 `posIndex` 和 `keyIndex` 中残留已删除条目的引用，`cleanStaleSourceRoutes()` 可能操作已不存在的条目。
+- [ ] 活漏斗 target 指向活末影箱时注册路由到全局路由表
+- [ ] 活漏斗 source 指向活末影箱时从路由表提取物品
+- [ ] 同频道多个源物品轮询公平调度
+- [ ] 频道号=堆叠数，不同堆叠数的活末影箱在不同频道
+- [ ] 路由条目去重：同一源物品不重复注册
 
-**修复方案**：
-将 `removeIf` 的 Predicate 改为在匹配时先调用 `removeFromIndex(entry)` 再返回 `true`，确保反向索引与主表同步。
+### 14.3 跨容器路由
 
-### 12.9 已修复：directRollbackSlot 日志打印 -1
+- [ ] 活漏斗 source 越界 + target 是活末影箱时，路由仍能注册（→ 10.9）
+- [ ] 跨容器路由的 targetSlot 设为 -1，不绑定具体槽位（→ 12.1）
+- [ ] 注册者容器区块卸载时，跨容器路由被清理（→ 12.2）
 
-**问题描述**：
-`rollback()` 方法中，`directRollbackSlot = -1` 在日志打印之前执行，导致日志总是显示 `slot=-1` 而非实际回退的槽位号。
+### 14.4 路由清理
 
-**修复方案**：
-先保存 `int slot = directRollbackSlot`，再重置为 `-1`，日志打印 `slot` 变量。
+- [ ] 源物品被移走后，路由被清理（cleanStaleSourceRoutes）
+- [ ] 活末影箱被移走后，相关路由被清理（removeStaleEnderChestRoutes）
+- [ ] 区块卸载时，该区块所有相关路由被清理（onChunkUnload）
+- [ ] 反向索引正确维护：路由注册/移除时 posIndex 和 keyIndex 同步更新
+- [ ] cleanStaleSourceRoutes 使用反向索引，不遍历所有频道
 
-### 12.10 已优化：routeExtract 日志级别从 INFO 降为 DEBUG
+### 14.5 过滤规则
 
-**问题描述**：
-`routeExtract` 成功提取物品时使用 `LOGGER.info()` 记录，正常操作下产生大量日志噪音。
+- [ ] 活末影箱的过滤规则（黑白名单）在路由提取时生效
+- [ ] peek(channel, filterData) 正确过滤不匹配的源物品
 
-**修复方案**：
-改为 `LOGGER.debug()`，与 `directExtract` 等方法保持一致。
+### 14.6 Tooltip 与同步
 
-### 12.11 已重构：EnderChannelRegistry 线程安全 —— 从 synchronized 重构为客户端缓存 + S2C 同步包
+- [ ] 路由模式显示频道号和路由数量
+- [ ] 直连模式显示绑定玩家名称（紫色加粗）
+- [ ] 高级模式（F3+H）显示每条路由的详细信息
+- [ ] 客户端缓存与服务端同步：路由变化后 Tooltip 立即更新
+- [ ] EnderChannelClientCache 线程安全（ConcurrentHashMap）
 
-**问题描述**：
-`EnderChannelRegistry` 是全局单例，在集成服务器中存在跨线程访问：
-- 服务端 tick 线程写入（路由注册/删除）
-- 客户端渲染线程读取（Tooltip 显示）
+### 14.7 数据持久化
 
-这导致 `ConcurrentModificationException` 崩溃（crash-2026-07-25_17.17.29）。
-
-**旧方案**：`ConcurrentHashMap` + `synchronized(this)` — 粗粒度锁，架构不正确（客户端不应直接读取服务端数据）
-
-**新方案**：客户端缓存 + S2C 同步包（Minecraft 标准模式）
-
-架构变更：
-```
-旧架构（跨线程直接访问）：
-  Render Thread → EnderChannelRegistry.getTotalRouteCount()  ← ConcurrentModificationException!
-
-新架构（客户端缓存 + 包同步）：
-  Server Thread → EnderChannelRegistry.insert/remove → syncChannelToAll() → EnderChannelSyncPacket
-  Render Thread → EnderChannelClientCache.getSnapshot()  ← 无竞争，纯客户端数据
-```
-
-新增文件：
-- `EnderChannelSyncPacket` — S2C 同步包，序列化频道快照数据
-- `EnderChannelClientCache` — 客户端缓存，存储频道→快照的映射
-
-修改文件：
-- `EnderChannelRegistry` — 移除所有 `synchronized` 和 `ConcurrentHashMap`，改为 `HashMap`；路由变更时调用 `syncChannelToAll()` 发送同步包
-- `EnderChannelComponent.buildTooltip` — 从 `EnderChannelClientCache` 读取，不再直接访问 `EnderChannelRegistry`
-- `LivingItem` — 注册新包 `EnderChannelSyncPacket`；`onServerStarting` 中调用 `EnderChannelRegistry.setServer()`
+- [ ] boundPlayerUuid 以字符串形式序列化，运行时通过 getPlayerUuid() 转换
+- [ ] 解绑后 EnderChannelData 为 EMPTY，不残留旧数据

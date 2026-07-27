@@ -355,16 +355,35 @@ public final class EnderChannelRegistry {
     }
 
     /**
-     * 清理活末影箱被移走后的路由条目。
+     * 清理活末影箱被移走后的路由条目（按容器隔离）。
      *
-     * <p>当路由条目关联了 targetSlot（活末影箱所在槽位），
+     * <p>仅清理 registrarContainerKey 匹配的路由条目。
+     * 当路由条目关联了 targetSlot（活末影箱所在槽位），
      * 但该槽位已不再是活末影箱时，移除该路由。</p>
      *
+     * @param containerKey 当前容器的唯一标识 key，用于隔离不同容器的路由
      * @param activeEnderChestSlots 当前容器中活末影箱所在的槽位集合
      */
-    public void removeStaleEnderChestRoutes(Set<Integer> activeEnderChestSlots) {
+    public void removeStaleEnderChestRoutes(String containerKey, Set<Integer> activeEnderChestSlots) {
         removeStaleRoutesInternal(route ->
-            route.targetSlot() >= 0 && !activeEnderChestSlots.contains(route.targetSlot()));
+            containerKey.equals(route.registrarContainerKey())
+            && route.targetSlot() >= 0 && !activeEnderChestSlots.contains(route.targetSlot()));
+    }
+
+    /**
+     * 清理跨容器路由中活漏斗被移走后的路由条目。
+     *
+     * <p>对于跨容器路由（sourcePos 指向邻居容器），
+     * 当活漏斗被移走时需要清理路由。
+     * 按 registrarContainerKey 匹配当前容器，按 registrarSlot 匹配活漏斗槽位。</p>
+     *
+     * @param registrarContainerKey 注册者（活漏斗）所在容器的唯一标识 key
+     * @param activeRegistrarSlots 当前容器中活漏斗所在的槽位集合
+     */
+    public void removeStaleRoutesByRegistrarKey(String registrarContainerKey, Set<Integer> activeRegistrarSlots) {
+        removeStaleRoutesInternal(route ->
+            registrarContainerKey.equals(route.registrarContainerKey())
+            && !activeRegistrarSlots.contains(route.registrarSlot()));
     }
 
     /**
@@ -497,7 +516,7 @@ public final class EnderChannelRegistry {
     }
 
     /**
-     * 当区块卸载时，清理该区块中所有源容器的路由条目。
+     * 当区块卸载时，清理该区块中所有源容器和注册者容器的路由条目。
      *
      * @param level 区块所在世界
      * @param chunkPos 区块坐标
@@ -511,6 +530,7 @@ public final class EnderChannelRegistry {
 
         List<EnderChannelEntry> toRemove = new ArrayList<>();
         Set<Integer> dirtyChannels = new java.util.HashSet<>();
+
         for (var iter = posIndex.entrySet().iterator(); iter.hasNext(); ) {
             var entry = iter.next();
             BlockPos pos = entry.getKey();
@@ -519,6 +539,22 @@ public final class EnderChannelRegistry {
                 for (EnderChannelEntry route : entry.getValue()) {
                     if (dim.equals(route.sourceDim())) {
                         toRemove.add(route);
+                    }
+                }
+            }
+        }
+
+        for (var channelEntry : channels.entrySet()) {
+            for (EnderChannelEntry route : channelEntry.getValue().entries) {
+                String rck = route.registrarContainerKey();
+                if (rck == null) continue;
+                if (route.sourcePos() != null && isInChunk(route.sourcePos(), chunkMinX, chunkMinZ, chunkMaxX, chunkMaxZ)) {
+                    continue;
+                }
+                for (BlockPos registrarPos : extractBlockPositions(rck)) {
+                    if (isInChunk(registrarPos, chunkMinX, chunkMinZ, chunkMaxX, chunkMaxZ)) {
+                        toRemove.add(route);
+                        break;
                     }
                 }
             }
@@ -538,6 +574,51 @@ public final class EnderChannelRegistry {
             LOGGER.info("EnderChannelRegistry: chunkUnload dim={}, chunk=({},{}), removed={} entries",
                 dim.location(), chunkPos.x, chunkPos.z, toRemove.size());
         }
+    }
+
+    private static boolean isInChunk(BlockPos pos, int chunkMinX, int chunkMinZ, int chunkMaxX, int chunkMaxZ) {
+        return pos.getX() >= chunkMinX && pos.getX() <= chunkMaxX
+            && pos.getZ() >= chunkMinZ && pos.getZ() <= chunkMaxZ;
+    }
+
+    /**
+     * 从容器 key 字符串中提取所有方块位置。
+     *
+     * <p>支持的格式：</p>
+     * <ul>
+     *   <li>{@code chest_x_y_z} - 单个箱子</li>
+     *   <li>{@code chest_x1_y1_z1_x2_y2_z2} - 双箱子</li>
+     *   <li>{@code container_dim_x_y_z} - 其他方块实体</li>
+     * </ul>
+     */
+    private static List<BlockPos> extractBlockPositions(String containerKey) {
+        List<BlockPos> positions = new ArrayList<>();
+
+        if (containerKey.startsWith("chest_")) {
+            String[] parts = containerKey.substring(6).split("_");
+            for (int i = 0; i + 2 < parts.length; i += 3) {
+                try {
+                    int x = Integer.parseInt(parts[i]);
+                    int y = Integer.parseInt(parts[i + 1]);
+                    int z = Integer.parseInt(parts[i + 2]);
+                    positions.add(new BlockPos(x, y, z));
+                } catch (NumberFormatException ignored) {
+                }
+            }
+        } else if (containerKey.startsWith("container_")) {
+            String[] parts = containerKey.substring(10).split("_");
+            if (parts.length >= 3) {
+                try {
+                    int x = Integer.parseInt(parts[parts.length - 3]);
+                    int y = Integer.parseInt(parts[parts.length - 2]);
+                    int z = Integer.parseInt(parts[parts.length - 1]);
+                    positions.add(new BlockPos(x, y, z));
+                } catch (NumberFormatException ignored) {
+                }
+            }
+        }
+
+        return positions;
     }
 
     /**

@@ -118,9 +118,12 @@ public class LivingWaterBucketFunction implements LivingItemFunction {
         return stack.is(Items.WATER_BUCKET) && LivingItemManager.isLivingItem(stack);
     }
 
-    public static void postTickSync(ContainerContext ctx, ContainerFluidData fluidData) {
+    public static void postTickSync(ContainerContext ctx, ContainerFluidData fluidData,
+        List<SlotEntry> waterBucketEntries) {
+        if (waterBucketEntries.isEmpty()) return;
         String flowStr = buildFlowString(fluidData);
-        for (int i = 0; i < ctx.getSize(); i++) {
+        for (SlotEntry entry : waterBucketEntries) {
+            int i = entry.slotIndex();
             ItemStack stack = ctx.getItem(i);
             if (!isLivingWaterBucket(stack)) continue;
 

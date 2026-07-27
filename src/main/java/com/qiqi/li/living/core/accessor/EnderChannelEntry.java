@@ -23,6 +23,8 @@ import net.minecraft.world.level.Level;
  * @param registrarSlot 注册此路由的活漏斗所在槽位，用于漏斗移走时清理路由
  * @param containerKey 容器唯一标识 key（来自 ContainerContext.getContainerKey()）
  * @param targetSlot 活末影箱所在槽位，用于末影箱移走时清理路由（-1 表示无关联末影箱）
+ * @param registrarContainerKey 注册者（活漏斗/活末影箱）所在容器的唯一标识 key，
+ *                               用于 removeStaleEnderChestRoutes 按容器隔离清理
  */
 public record EnderChannelEntry(
     String itemType,
@@ -31,5 +33,6 @@ public record EnderChannelEntry(
     int sourceSlot,
     int registrarSlot,
     String containerKey,
-    int targetSlot
+    int targetSlot,
+    String registrarContainerKey
 ) {}

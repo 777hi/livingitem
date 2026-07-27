@@ -1,12 +1,12 @@
 # Living Furnace (活熔炉) 技术文档
 
-> **文档版本**: 2026.07 v1  
-> **最后更新**: 2026-07-22  
+> **文档版本**: 2026.07 v4  
+> **最后更新**: 2026-07-28  
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
 1. [架构概览](#1-架构概览)
-2. [核心组件详解](#2-核心组件详解)
+2. [核心流程](#2-核心流程)
 3. [熔炼流程](#3-熔炼流程)
 4. [燃料机制](#4-燃料机制)
 5. [进度机制](#5-进度机制)
@@ -25,49 +25,40 @@
 
 活熔炉的宿主物品是 `minecraft:furnace`（熔炉），必须同时具备活物品标记。
 
-### 1.2 组件架构总览
+### 1.2 数据流总览图
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │                    LivingFurnaceFunction                         │
-│                    (功能入口 + 组件注册)                          │
+│                    (功能入口 · 实现 LivingItemFunction)           │
 ├──────────────────────────────────────────────────────────────────┤
 │                                                                  │
-│  ┌──────────────────────┐  ┌──────────────────────┐             │
-│  │ DirectionModeComponent│  │ FuelConsumeComponent │             │
-│  │ (方向配置)            │  │ (燃料管理)            │             │
-│  │                      │  │                      │             │
-│  │ • SLOTS 模式         │  │ • 燃烧时间管理        │             │
-│  │ • WASD 输入解析      │  │ • 燃料消耗            │             │
-│  │ • input/fuel/output  │  │ • isBurning() 检查    │             │
-│  └──────────┬───────────┘  └──────────┬───────────┘             │
-│             │                         │                          │
-│  ┌──────────┴─────────────────────────┴───────────┐             │
-│  │              FuelProgressOrchestrator            │             │
-│  │              (编排器)                            │             │
-│  │                                                 │             │
-│  │  • checkCanProgress() — 燃料+输入有效性检查     │             │
-│  │  • tickAllComponents() / pauseTickComponents()  │             │
-│  │  • handleCompletion() — 进度完成时执行转化       │             │
-│  └──┬──────────────┬──────────────┬────────────────┘             │
-│     │              │              │                               │
-│  ┌──┴──────────┐ ┌─┴───────────┐ ┌┴──────────────────┐          │
-│  │ProgressComp │ │FuelConsume  │ │ItemTransform      │          │
-│  │ (进度)      │ │ (燃料)      │ │ (转化)            │          │
-│  │             │ │             │ │                   │          │
-│  │ • tick      │ │ • tick      │ │ • canProcess()    │          │
-│  │ • pauseTick │ │ • pauseTick │ │ • executeTransform│          │
-│  │ • isComplete│ │ • isBurning │ │ • 配方匹配        │          │
-│  │ • reset     │ │ • hasUsable │ │ • 输出空间计算    │          │
-│  └─────────────┘ └─────────────┘ └───────────────────┘          │
+│  tick() 流程:                                                    │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │ 1. 读取方向配置 → 解析 input/fuel/output 槽位              │   │
+│  │ 2. checkCanProgress() → 检查燃料+输入+配方                │   │
+│  │ 3. tickTransform() → 配方缓存匹配                         │   │
+│  │ 4. canProgress?                                           │   │
+│  │    ├─ YES → tickProgress() + tickFuel()                   │   │
+│  │    │       └─ progress完成? → executeTransform()          │   │
+│  │    └─ NO  → pauseTick() (回退进度 + 消耗余热)             │   │
+│  │ 5. 保存状态 + 同步客户端                                   │   │
+│  └──────────────────────────────────────────────────────────┘   │
 │                                                                  │
-│  ┌──────────────────────────────────────────────────┐            │
-│  │                 SlotResolver                      │            │
-│  │                 (槽位解析器)                       │            │
-│  │                                                   │            │
-│  │  • 相对方向 → 绝对槽位索引                         │            │
-│  │  • 9列网格布局计算                                │            │
-│  └──────────────────────────────────────────────────┘            │
+│  数据通过 LivingItemManager 管理，使用 record 类序列化：          │
+│  ┌─────────────┐  ┌──────────┐  ┌──────────┐  ┌─────────────┐  │
+│  │ FuelData     │  │ProgressData│ │TransformData│ │DirectionSlots│ │
+│  │ burnTime     │  │ progress  │  │ inputItem  │  │ directions  │  │
+│  │              │  │ total     │  │ outputItem │  │             │  │
+│  └─────────────┘  └──────────┘  └──────────┘  └─────────────┘  │
+│                                                                  │
+│  ┌──────────────────────────────────────────────────┐           │
+│  │                 SlotResolver                      │           │
+│  │                 (槽位解析器)                       │           │
+│  │                                                   │           │
+│  │  • 相对方向 → 绝对槽位索引                         │           │
+│  │  • 9列网格布局计算                                │           │
+│  └──────────────────────────────────────────────────┘           │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -75,429 +66,473 @@
 
 | 类名 | 文件位置 | 职责 |
 |------|---------|------|
-| `LivingFurnaceFunction` | `function/LivingFurnaceFunction.java` | 活熔炉功能入口，注册组件，配置参数 |
-| `FuelProgressOrchestrator` | `core/orchestrator/FuelProgressOrchestrator.java` | 编排器：协调燃料、进度、转化三个组件 |
-| `FuelConsumeComponent` | `core/components/FuelConsumeComponent.java` | 燃料管理：燃烧时间维护、燃料消耗 |
-| `ProgressComponent` | `core/components/ProgressComponent.java` | 进度管理：推进/回退/完成判断 |
-| `ItemTransformComponent` | `core/components/ItemTransformComponent.java` | 物品转化：配方匹配、输入消耗、产物生成 |
-| `DirectionModeComponent` | `core/components/DirectionModeComponent.java` | 方向配置：SLOTS 模式，input/fuel/output 槽位 |
+| `LivingFurnaceFunction` | `function/LivingFurnaceFunction.java` | 活熔炉功能入口，实现 `LivingItemFunction` 接口，所有熔炼逻辑集中在此 |
+| `LivingFurnaceData` | `data/LivingFurnaceData.java` | 活熔炉数据容器 record：包含 FuelData、ProgressData、TransformData、DirectionSlotsData |
+| `FuelData` | `data/FuelData.java` | 燃料状态 record：burnTime |
+| `ProgressData` | `data/ProgressData.java` | 进度状态 record：progress + total |
+| `TransformData` | `data/TransformData.java` | 转化状态 record：配方缓存、输入/输出物品 ID |
+| `DirectionSlotsData` | `data/DirectionSlotsData.java` | 方向配置 record：input/fuel/output 的 Pos2D 偏移 |
 | `SlotResolver` | `core/SlotResolver.java` | 相对方向→绝对槽位索引的数学计算 |
+
+### 1.4 存储结构
+
+活熔炉的所有数据存储在 ItemStack 的 DataComponent 中，通过 `LivingFurnaceData` record 管理：
+
+```
+ItemStack
+├── IS_LIVING: true                          ← 活物品标记
+└── LIVING_FURNACE_DATA: LivingFurnaceData   ← 功能状态（DataComponent）
+    ├─ direction: DirectionSlotsData          ← 方向配置
+    │   ├─ input: Pos2D
+    │   ├─ fuel: Pos2D
+    │   └─ output: Pos2D
+    ├─ fuel: FuelData                         ← 燃料状态
+    │   └─ burnTime: int
+    ├─ progress: ProgressData                 ← 进度状态
+    │   ├─ progress: int
+    │   └─ total: int
+    └─ transform: TransformData               ← 转化状态
+        ├─ inputItem: String
+        ├─ outputItem: String
+        ├─ cachedInput: String
+        ├─ cachedResult: int
+        ├─ cachedOutput: String
+        ├─ cachedOutputCount: int
+        └─ cachedCookingTime: int
+```
+
+> **v4 变更**：存储从 `LIVING_FUNCTION_DATA: CompoundTag` 迁移到独立的 DataComponent（`LivingFurnaceData`），利用 Minecraft 内置的序列化和同步机制。
 
 ---
 
-## 2. 核心组件详解
+## 2. 核心流程
 
-### 2.1 LivingFurnaceFunction — 功能入口
+### 2.1 Tick 主循环
 
-活熔炉的功能配置类，继承 `BaseLivingFunction`。负责注册组件、配置参数。
-
-**组件注册顺序**：
 ```java
-.addComponent(new DirectionModeComponent(Map.of(
-    "input", Pos2D.LEFT,
-    "fuel", Pos2D.DOWN,
-    "output", Pos2D.RIGHT
-)))
-.addComponent(FuelConsumeComponent.class,
-    ComponentConfig.of("recipe_type", RecipeType.SMELTING))
-.addComponent(ProgressComponent.class,
-    ComponentConfig.of("total_ticks", 200))
-.addComponent(ItemTransformComponent.class,
-    ComponentConfig.of("recipe_type", RecipeType.SMELTING))
+@Override
+public void tick(List<SlotEntry> entries, ContainerContext context, TickContext tick, Level level) {
+    if (level.isClientSide) return;
+
+    for (SlotEntry entry : entries) {
+        ItemStack stack = entry.stack();
+        LivingFurnaceData data = LivingItemManager.getFurnaceData(stack);
+
+        // 1. 解析方向 → 计算槽位
+        DirectionSlotsData dir = data.direction();
+        int inputSlot = SlotResolver.resolve(slot, dir.getDirection("input"), containerSize, containerWidth);
+        int fuelSlot = SlotResolver.resolve(slot, dir.getDirection("fuel"), containerSize, containerWidth);
+        int outputSlot = SlotResolver.resolve(slot, dir.getDirection("output"), containerSize, containerWidth);
+
+        // 2. 检查是否可以继续熔炼
+        boolean canProgress = checkCanProgress(context, level, inputSlot, fuelSlot, outputSlot, data);
+
+        // 3. 更新配方缓存
+        data = tickTransform(context, data, inputSlot, level);
+
+        // 4. 推进或回退
+        if (canProgress) {
+            data = tickProgress(data, stack.getCount());
+            data = tickFuel(context, data, fuelSlot, stack.getCount());
+
+            if (data.progress().isComplete() && data.fuel().isBurning()) {
+                boolean success = executeTransform(context, level, data, inputSlot, outputSlot, stack.getCount());
+                if (success) {
+                    data = data.withProgress(data.progress().reset());
+                }
+            }
+        } else {
+            data = pauseTick(data);
+        }
+
+        // 5. 保存状态
+        LivingItemManager.setFurnaceData(stack, data);
+        context.syncSlotToClients(slot, stack);
+    }
+}
 ```
 
-**关键配置**：
+### 2.2 关键配置
+
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| `total_ticks` | 200 | 完成一次熔炼所需的总 ticks（10 秒） |
-| `stackMultiplier` | true | 堆叠加速（更多熔炉=更快） |
-| `orchestrator` | FUEL_PROGRESS | 编排策略 |
-
-**槽位布局示例**（在 9 列箱子中，默认方向）：
-```
-┌───┬───┬───┬───┬───┬───┬───┬───┬───┐
-│   │   │   │   │   │   │   │   │   │
-├───┼───┼───┼───┼───┼───┼───┼───┼───┤
-│原料│   │   │熔炉│   │   │产物│   │   │
-├───┼───┼───┼───┼───┼───┼───┼───┼───┤
-│   │   │燃料│   │   │   │   │   │   │
-└───┴───┴───┴───┴───┴───┴───┴───┴───┘
-```
-
-### 2.2 FuelConsumeComponent — 燃料管理
-
-管理活熔炉的燃料消耗和燃烧时间。
-
-**NBT 存储**：
-| 键名 | 类型 | 说明 |
-|------|------|------|
-| `burn_time` | int | 剩余燃烧时间（ticks） |
-
-**tick() 执行流程**：
-```
-tick()
-  ├─ 有燃烧时间？
-  │   └─ burn_time -= multiplier（堆叠加速消耗）
-  │       └─ return
-  └─ 燃烧时间耗尽
-      ├─ 燃料槽位有效？
-      ├─ 燃料物品有燃料值？（getBurnTime > 0）
-      ├─ 燃料不是活物品？
-      └─ 消耗 1 个燃料 → 设置 burn_time = 燃料值
-```
-
-**关键方法**：
-- `isBurning(state)` — 检查是否正在燃烧（burn_time > 0）
-- `hasUsableFuel(ctx, config)` — 检查燃料槽位是否有可用燃料
-- `pauseTick(state)` — 暂停时每 tick -1（模拟余热消耗）
-
-**燃料值获取**：通过 NeoForge 的 `IItemExtension.getBurnTime(stack, recipeType)` 接口查询，支持原版和模组的燃料物品。
-
-### 2.3 ProgressComponent — 进度管理
-
-管理活熔炉的熔炼进度。
-
-**NBT 存储**：
-| 键名 | 类型 | 说明 |
-|------|------|------|
-| `progress` | int | 当前进度值（ticks） |
-| `total` | int | 总进度值（ticks） |
-
-**tick() 执行流程**：
-```
-tick()
-  └─ progress += multiplier（堆叠加速推进）
-      └─ progress = min(total, progress)（不超上限）
-```
-
-**堆叠加速机制**：
-```
-progress += multiplier（multiplier = hostStack.getCount()）
-例如：8 个活熔炉堆叠时，每 tick 进度 +8，200 ticks 的配方只需 25 ticks
-```
-
-| 堆叠数 | 完成时间 | 速度 |
-|--------|---------|------|
-| 1 | 200 ticks (10s) | 1x |
-| 2 | 100 ticks (5s) | 2x |
-| 4 | 50 ticks (2.5s) | 4x |
-| 8 | 25 ticks (1.25s) | 8x |
-
-**关键方法**：
-- `isComplete(state, config)` — 检查进度是否完成（progress >= total）
-- `reset(state)` — 重置进度（转化成功后调用）
-- `pauseTick(state)` — 暂停时每 tick -1（模拟余热消散，避免进度卡在 99%）
-
-### 2.4 ItemTransformComponent — 物品转化
-
-实现配方匹配与物品转化逻辑。
-
-**NBT 存储**：
-| 键名 | 类型 | 说明 |
-|------|------|------|
-| `input_item` | string | 当前配方的输入物品 ID |
-| `output_item` | string | 当前配方的输出物品 ID |
-| `cached_input` | string | 上次配方检查的输入 ID（缓存） |
-| `cached_result` | int | 上次配方检查的结果（0=无配方, 1=有配方） |
-| `cached_output` | string | 上次配方检查的输出 ID（缓存，用于输出空间检查） |
-
-**canProcess() 执行流程**：
-```
-canProcess(ctx, state)
-  ├─ hasValidInput() && hasValidOutput()？→ 否 → return false
-  ├─ 输入为空 或 是活物品？→ return false
-  ├─ 缓存命中？
-  │   ├─ cached_result == 0？→ return false
-  │   └─ hasOutputSpace(ctx, cached_output)？→ 返回结果
-  └─ 缓存未命中
-      ├─ 查询 RecipeManager 匹配配方
-      ├─ 无配方 → 缓存结果=0 → return false
-      ├─ 有配方 → 缓存结果=1 + 缓存产物 ID
-      └─ hasOutputSpace(ctx, outputKey)？→ 返回结果
-```
-
-**hasOutputSpace() 检查逻辑**：
-```
-hasOutputSpace(ctx, outputItemId)
-  ├─ 输出槽位为空 → true（有空间）
-  ├─ 输出物品 ≠ 产物 → false（不同物品，无空间）
-  └─ 输出物品 == 产物 → count < slotLimit？（有空间/已满）
-```
-
-**executeTransform() 执行流程**：
-```
-executeTransform(ctx, hostStack, config, progress, transformState)
-  ├─ 输入/输出槽位有效？→ 否 → return false
-  ├─ 输入是活物品？→ return false
-  ├─ RecipeManager 查询配方
-  ├─ 无配方 → return false
-  ├─ 计算转化数量
-  │   └─ transformCount = min(stackMultiplier, inputCount, outputSpace/resultCount)
-  ├─ transformCount <= 0 → return false
-  ├─ 消耗输入：inputStack.shrink(transformCount)
-  └─ 生成产物：outputStack.grow(transformCount * resultCount)
-```
+| `DEFAULT_COOKING_TIME` | 200 | 完成一次熔炼所需的总 ticks（10 秒） |
+| 堆叠加速 | stackCount / 8 + 1 | 进度推进倍率 |
+| 燃料加速 | stackCount | 燃料消耗倍率（堆叠数越多烧得越快） |
 
 ---
 
 ## 3. 熔炼流程
 
-### 3.1 完整 tick 流程
+### 3.1 前置检查 `checkCanProgress()`
 
 ```
-BaseLivingFunction.tick()                                    [每 tick]
-  │
-  ├─ FunctionExecutor 创建 ComponentContext
-  │   ├─ 读取 DirectionModeComponent 状态
-  │   ├─ 调用 resolveSlots() → 解析 inputSlot/fuelSlot/outputSlot
-  │   └─ 收集所有组件状态 → allComponentStates
-  │
-  └─ FuelProgressOrchestrator.orchestrate()
-      │
-      ├─ 1. isInputSlotOccupied() → 已占用则跳过
-      │
-      ├─ 2. checkCanProgress()
-      │   ├─ 燃料检查
-      │   │   ├─ isBurning()？→ 是 → 通过
-      │   │   └─ hasUsableFuel()？→ 是 → 通过
-      │   │                    → 否 → return false
-      │   └─ 输入检查
-      │       └─ canProcess()？→ 是 → return true
-      │                        → 否 → return false
-      │
-      ├─ 3. canProgress == true？
-      │   ├─ 是 → tickAllComponents()
-      │   │   ├─ DirectionModeComponent.tick()（空操作）
-      │   │   ├─ FuelConsumeComponent.tick()
-      │   │   │   ├─ burn_time > 0 → burn_time -= multiplier
-      │   │   │   └─ burn_time == 0 → 尝试消耗新燃料
-      │   │   ├─ ProgressComponent.tick()
-      │   │   │   └─ progress += multiplier
-      │   │   └─ ItemTransformComponent.tick()
-      │   │       └─ 无输入时清除配方信息
-      │   └─ 否 → pauseTickComponents()
-      │       ├─ ProgressComponent.pauseTick() → progress -= 1
-      │       ├─ FuelConsumeComponent.pauseTick() → burn_time -= 1
-      │       └─ 其他组件正常 tick()
-      │
-      ├─ 4. handleCompletion()
-      │   ├─ progressComp.isComplete()？→ 否 → 跳过
-      │   ├─ fuelComp.isBurning()？→ 否 → 跳过
-      │   └─ transformComp.executeTransform()
-      │       ├─ 成功 → progressComp.reset() + 保存配方信息
-      │       └─ 失败 → 进度不回退（wait for output space）
-      │
-      └─ 5. markInputSlotOccupied()
+checkCanProgress(ctx, level, inputSlot, fuelSlot, outputSlot, data)
+  ├─ inputSlot < 0 或 outputSlot < 0 → return false
+  ├─ 输入槽为空 或 是活物品 → return false
+  ├─ 燃料检查
+  │   ├─ 正在燃烧？→ 通过
+  │   ├─ fuelSlot 无效？→ return false
+  │   ├─ 燃料槽为空？→ return false
+  │   ├─ 燃料值 <= 0？→ return false
+  │   └─ 燃料是活物品？→ return false
+  └─ hasMatchingRecipe() → 返回配方匹配结果
 ```
 
-### 3.2 暂停回退机制
+### 3.2 进度推进 `tickProgress()`
 
-当活熔炉无法继续处理时（无输入/无燃料/输出满），编排器走 `pauseTick` 路径：
+```
+tickProgress(data, stackCount)
+  ├─ multiplier = 1 + stackCount / 8
+  └─ progress = min(total, progress + multiplier)
+```
 
-| 组件 | 正常 tick | pauseTick |
-|------|----------|-----------|
-| `ProgressComponent` | progress += multiplier | progress -= 1 |
-| `FuelConsumeComponent` | burn_time -= multiplier | burn_time -= 1 |
-| 其他组件 | 正常 tick | 正常 tick |
+| 堆叠数 | 倍率 | 完成时间 |
+|--------|------|---------|
+| 1 | 1x | 200 ticks (10s) |
+| 8 | 2x | 100 ticks (5s) |
+| 16 | 3x | 67 ticks (3.3s) |
+| 32 | 5x | 40 ticks (2s) |
+| 56 | 8x | 25 ticks (1.25s) |
 
-**设计意图**：
-- **进度回退**：模拟余热消散，避免进度卡在 199/200 等待燃料
-- **燃料回退**：避免无输入时燃料白白消耗
-- 回退速度固定为 1/tick，远慢于正常推进（multiplier/tick），所以不会在短暂中断后丢失全部进度
+### 3.3 暂停回退 `pauseTick()`
+
+当活熔炉无法继续处理时（无输入/无燃料/输出满），走暂停路径：
+
+| 状态 | 行为 |
+|------|------|
+| 进度 > 0 | progress -= 1（模拟余热消散） |
+| 燃料在燃烧 | burnTime -= 1（模拟余热消耗） |
 
 ---
 
 ## 4. 燃料机制
 
-### 4.1 燃料消耗流程
+### 4.1 燃料消耗
+
+```java
+private LivingFurnaceData tickFuel(ContainerContext ctx, LivingFurnaceData data, int fuelSlot, int stackCount) {
+    FuelData fuel = data.fuel();
+    if (fuel.isBurning()) {
+        // 正在燃烧 → 消耗燃料
+        int multiplier = Math.max(1, stackCount);
+        return data.withFuel(fuel.tick(multiplier));
+    }
+
+    // 燃料耗尽 → 尝试消耗新燃料
+    ItemStack fuelStack = ctx.getItem(fuelSlot);
+    int fuelValue = getFuelValue(fuelStack);
+    if (fuelValue > 0 && !LivingItemManager.isLivingItem(fuelStack)) {
+        fuelStack.shrink(1);  // 消耗 1 个燃料物品
+        ctx.setItem(fuelSlot, fuelStack.copy());
+        return data.withFuel(new FuelData(fuelValue));
+    }
+    return data;
+}
+```
+
+### 4.2 燃料值获取
+
+通过 NeoForge 的 `IItemExtension.getBurnTime(stack, recipeType)` 接口查询，支持原版和模组的燃料物品。
 
 ```
-燃料槽位有物品
-  │
-  ├─ burn_time > 0？
-  │   └─ 是 → burn_time -= multiplier（堆叠加速消耗）
-  │       └─ 继续熔炼
-  │
-  └─ burn_time == 0？
-      ├─ 燃料槽位有可用燃料？
-      │   ├─ 是 → 消耗 1 个燃料物品
-      │   │   └─ burn_time = getBurnTime(fuelStack)
-      │   └─ 否 → canProgress = false
-      │       └─ 走 pauseTick 路径
-      └─ 燃料是活物品？→ 跳过
+原版燃料值示例：
+  煤炭/木炭 → 1600 ticks (80秒)
+  木板 → 300 ticks (15秒)
+  木棍 → 100 ticks (5秒)
+  熔岩桶 → 20000 ticks (1000秒)
 ```
 
-### 4.2 堆叠加速对燃料的影响
+### 4.3 堆叠加速消耗
 
-堆叠加速不仅加快进度，也加快燃料消耗：
+燃料消耗速度与活熔炉堆叠数成正比：
 
-| 堆叠数 | 进度速度 | 燃料消耗速度 | 燃料效率 |
-|--------|---------|-------------|---------|
-| 1 | 1x | 1x | 1:1 |
-| 8 | 8x | 8x | 1:1 |
-
-燃料效率不变（1 个煤炭始终能熔炼 8 个物品），只是速度更快。
+| 堆叠数 | 消耗倍率 | 煤炭燃烧时间 |
+|--------|---------|-------------|
+| 1 | 1x | 1600 ticks |
+| 8 | 8x | 200 ticks |
+| 16 | 16x | 100 ticks |
 
 ---
 
 ## 5. 进度机制
 
-### 5.1 进度计算
+### 5.1 进度完成判断
 
-```
-progress += multiplier（每 tick）
-total = 200（配置项，针对原版熔炉配方）
-
-完成 = progress >= total
-```
-
-### 5.2 进度完成 → 转化 → 重置
-
-```
-progress >= total
-  │
-  ├─ 燃料还在燃烧？
-  │   └─ 否 → 等待燃料（进度保持，不重置）
-  │
-  └─ 燃料在燃烧
-      └─ executeTransform()
-          ├─ 成功 → progress = 0（重置）
-          └─ 失败（输出满）→ 进度保持（等待输出空间）
+```java
+public boolean isComplete() {
+    return progress >= total;
+}
 ```
 
-### 5.3 进度 Tooltip
+完成条件：`progress >= total`（默认 total = 200）。
 
-Tooltip 显示当前进度百分比和时间：
-```
-进度: 50% (5.0s/10.0s)
+### 5.2 进度重置
+
+转化成功后，进度重置为 0：
+
+```java
+data = data.withProgress(data.progress().reset());
 ```
 
 ---
 
 ## 6. 物品转化
 
-### 6.1 配方匹配
+### 6.1 配方缓存 `tickTransform()`
 
-使用 Minecraft 原版的 `RecipeManager.getRecipeFor()` 查询配方，支持 `RecipeType.SMELTING`（熔炼配方）。
+为避免每 tick 查询配方管理器，活熔炉使用缓存机制：
 
-**缓存机制**：`canProcess()` 缓存上次的输入物品 ID 和查表结果，避免重复查表：
-- 输入物品未变 → 直接用缓存结果
-- 输入物品变化 → 重新查表
+```java
+private LivingFurnaceData tickTransform(ContainerContext ctx, LivingFurnaceData data, int inputSlot, Level level) {
+    ItemStack inputStack = ctx.getItem(inputSlot);
+    String inputKey = BuiltInRegistries.ITEM.getKey(inputStack.getItem()).toString();
+    TransformData transform = data.transform();
 
-### 6.2 转化数量计算
+    // 缓存命中：输入物品没变
+    if (inputKey.equals(transform.cachedInput()) && transform.cachedResult() == 1) {
+        return data;  // 直接使用缓存
+    }
+
+    // 缓存未命中 → 查询配方
+    var recipeHolderOpt = level.getRecipeManager()
+        .getRecipeFor(RecipeType.SMELTING, new SingleRecipeInput(inputStack), level);
+    if (recipeHolderOpt.isPresent()) {
+        // 缓存配方结果
+        transform = transform.withCache(inputKey, 1, outputKey, resultCount, cookingTime);
+    } else {
+        // 缓存"无配方"
+        transform = transform.withCache(inputKey, 0, "", 0, 0);
+    }
+    return data.withTransform(transform);
+}
+```
+
+### 6.2 转化执行 `executeTransform()`
 
 ```
-transformCount = min(
-    stackMultiplier,      // 堆叠加速上限
-    inputStack.getCount(), // 输入物品数量
-    outputSpace / resultCount  // 输出空间上限
-)
+executeTransform(ctx, level, data, inputSlot, outputSlot, stackCount)
+  ├─ 输入/输出槽位有效？→ 否 → return false
+  ├─ 输入是活物品？→ return false
+  ├─ RecipeManager 查询配方
+  ├─ 无配方 → return false
+  ├─ 计算转化数量
+  │   ├─ outputSpace = 输出槽可用空间
+  │   ├─ maxByOutput = outputSpace / resultCount
+  │   └─ transformCount = min(stackCount, inputCount, maxByOutput)
+  ├─ transformCount <= 0 → return false
+  ├─ 消耗输入：inputStack.shrink(transformCount)
+  └─ 生成产物：outputStack.grow(transformCount * resultCount)
 ```
 
-**示例**：8 个活熔炉，输入 64 个铁矿石，输出 1 个铁锭（64 个空间）：
-```
-transformCount = min(8, 64, 64/1) = 8
-→ 一次转化 8 个铁矿石 → 8 个铁锭
-```
+### 6.3 输出空间计算
 
-### 6.3 转化规则
-
-- 活物品不能作为输入（`LivingItemManager.isLivingItem()` 检查）
-- 产物数量 = `transformCount * resultCount`（配方本身可能产出多个物品）
-- 输入物品全部消耗完→自动停止
+```java
+private int calculateOutputSpace(ContainerContext ctx, int outputSlot, ItemStack result) {
+    ItemStack outputStack = ctx.getItem(outputSlot);
+    int slotLimit = ctx.getSlotLimit(outputSlot);
+    if (outputStack.isEmpty()) {
+        return Math.min(slotLimit, result.getMaxStackSize());
+    }
+    if (ItemStack.isSameItemSameComponents(outputStack, result)) {
+        int maxCount = Math.min(slotLimit, outputStack.getMaxStackSize());
+        return maxCount - outputStack.getCount();
+    }
+    return 0;  // 不同物品，无空间
+}
+```
 
 ---
 
 ## 7. 方向配置系统
 
-### 7.1 SLOTS 模式
+### 7.1 DirectionSlotsData
 
-活熔炉使用 `DirectionModeComponent` 的 **SLOTS 模式**，管理三个槽位方向：
+活熔炉使用 `DirectionSlotsData` 管理三个功能槽位的方向：
 
-| 槽位 | 默认方向 | 偏移 |
-|------|---------|------|
-| input（输入） | LEFT | (-1, 0) |
-| fuel（燃料） | DOWN | (0, 1) |
-| output（输出） | RIGHT | (1, 0) |
-
-### 7.2 WASD 输入
-
-通过 WASD 序列修改方向，格式为 `键+槽位ID`：
-
-```
-W + 熔炉  → 修改当前选中槽位的方向为 UP
-A + 熔炉  → 修改为 LEFT
-S + 熔炉  → 修改为 DOWN
-D + 熔炉  → 修改为 RIGHT
+```java
+public static final DirectionSlotsData DEFAULT_DIRECTION = DirectionSlotsData.DEFAULT_FURNACE;
+// 默认方向：input=LEFT, fuel=DOWN, output=RIGHT
 ```
 
-每次按键修改一个槽位方向，按顺序轮换 input → fuel → output。
+### 7.2 槽位布局示例
+
+在 9 列箱子中，默认方向：
+```
+┌───┬───┬───┬───┬───┬───┬───┬───┬───┐
+│   │   │   │   │   │   │   │   │   │
+├───┼───┼───┼───┼───┼───┼───┼───┼───┤
+│原料│   │   │熔炉│   │   │产物│   │   │
+│(input)│   │(slot)│   │(output)│   │
+├───┼───┼───┼───┼───┼───┼───┼───┼───┤
+│   │   │燃料│   │   │   │   │   │   │
+│   │   │(fuel)│   │   │   │   │   │
+└───┴───┴───┴───┴───┴───┴───┴───┴───┘
+```
 
 ### 7.3 槽位解析
 
-与活漏斗共用 `SlotResolver`，通过相对方向偏移计算绝对槽位索引：
-```
-result = (baseRow + direction.y) * containerWidth + (baseCol + direction.x)
+`SlotResolver.resolve()` 将相对方向转换为绝对槽位索引：
+
+```java
+int inputSlot = SlotResolver.resolve(slot, dir.getDirection("input"), containerSize, containerWidth);
+int fuelSlot = SlotResolver.resolve(slot, dir.getDirection("fuel"), containerSize, containerWidth);
+int outputSlot = SlotResolver.resolve(slot, dir.getDirection("output"), containerSize, containerWidth);
 ```
 
 ---
 
 ## 8. 已知问题与修复记录
 
-### 8.1 已修复：输出满时进度仍增长
+### 8.3 配方缓存未命中导致重复查询
 
-**问题**：输出槽位已满时，`canProcess()` 仍返回 `true`，进度继续推进，但 `executeTransform()` 发现输出满后直接返回 `false`，进度被浪费。
+**问题**：输入物品变化时，缓存未及时更新，导致每 tick 都查询配方管理器。
 
-**根因**：`canProcess()` 只检查输出槽位是否存在（`hasValidOutput()` = `outputSlot >= 0`），不检查输出空间。
+**修复**：在 `tickTransform()` 中检测输入物品变化时立即更新缓存。
 
-**修复**：
-1. 新增 `hasOutputSpace(ctx, outputItemId)` 方法，检查输出槽位是否有空间
-2. 新增 `KEY_CACHED_OUTPUT` 缓存键，让缓存路径也能检查输出空间
-3. `canProcess()` 在两个路径都调用 `hasOutputSpace()`
+### 8.4 燃料消耗与进度不同步
 
-**相关提交**：2026-07-22
+**问题**：燃料耗尽但进度未回退，导致下次补充燃料后立即完成熔炼（进度卡在 99%）。
+
+**修复**：在 `pauseTick()` 中同时回退进度和消耗燃料余热。
+
+### 8.5 配方缓存机制优化 (NEW 2026-07-27)
+
+**背景**：原版 `RecipeManager.getRecipeFor()` 查询开销较大，每 tick 查询会影响性能。
+
+**优化方案**：引入 `TransformData` 缓存机制：
+
+```java
+// 缓存命中：输入物品没变，直接使用缓存结果
+if (inputKey.equals(transform.cachedInput()) && transform.cachedResult() == 1) {
+    return data;  // 跳过配方查询
+}
+
+// 缓存未命中 → 查询配方 → 更新缓存
+var recipeHolderOpt = level.getRecipeManager()
+    .getRecipeFor(RecipeType.SMELTING, new SingleRecipeInput(inputStack), level);
+if (recipeHolderOpt.isPresent()) {
+    transform = transform.withCache(inputKey, 1, outputKey, resultCount, cookingTime);
+} else {
+    transform = transform.withCache(inputKey, 0, "", 0, 0);  // 缓存"无配方"
+}
+```
+
+**缓存字段**：
+- `cachedInput`：缓存的输入物品 ID
+- `cachedResult`：是否有配方（1=有，0=无）
+- `cachedOutput`：缓存的输出物品 ID
+- `cachedOutputCount`：缓存的输出数量
+- `cachedCookingTime`：缓存的熔炼时间
+
+**效果**：相同输入物品只查询一次配方，后续 tick 直接使用缓存，大幅降低 CPU 开销。
+
+### 8.6 堆叠加速计算方式 (NEW 2026-07-27)
+
+活熔炉的堆叠数量影响熔炼速度：
+
+**进度推进**：
+```java
+int multiplier = 1 + stackCount / 8;
+// 堆叠 1-7 → 1x 速度
+// 堆叠 8-15 → 2x 速度
+// 堆叠 16-23 → 3x 速度
+// ...
+```
+
+**燃料消耗**：
+```java
+int multiplier = Math.max(1, stackCount);
+// 堆叠 1 → 1x 消耗（正常速度）
+// 堆叠 8 → 8x 消耗（燃料烧得更快）
+// 堆叠 16 → 16x 消耗
+```
+
+**设计意图**：堆叠越多 → 熔炼越快，但燃料消耗也越快，形成平衡。
 
 ---
 
 ## 9. 调试指南
 
-### 9.1 关键日志点
+### 9.1 查看状态
 
-```java
-// 燃料状态
-LOGGER.info("Burn time: {} ticks remaining", burnTime);
+Tooltip 中显示：
+- 燃料状态：燃烧中/剩余时间
+- 进度状态：百分比 + 时间
+- 转化状态：输入物品 → 输出物品
 
-// 进度状态
-LOGGER.info("Progress: {}/{} ({}%)", progress, total, percent);
+### 9.2 常见问题
 
-// 转化执行
-LOGGER.info("Transform: {}x {} -> {}x {}",
-    transformCount, inputId, transformCount * resultCount, outputId);
-```
-
-### 9.2 常见问题排查
-
-| 症状 | 可能原因 | 检查点 |
-|------|---------|--------|
-| 活熔炉完全不工作 | 方向配置错误 | Tooltip 显示的方向是否正确 |
-| 进度不推进 | 无燃料/无输入 | 燃料槽位是否有燃料，输入槽位是否有可熔炼物品 |
-| 有燃料但进度不推进 | 输入物品无配方 | 输入物品是否可熔炼 |
-| 进度卡在 99% | 燃料耗尽 | 燃料槽位是否还有燃料 |
-| 输出物品未生成 | 输出槽位已满 | 输出槽位是否还有空间 |
-| 进度推进但输出满 | 输出空间检查失效 | `canProcess()` 是否正确检查输出空间 |
-| 速度异常慢 | 堆叠数不足 | 活熔炉堆叠数是否足够 |
-
-### 9.3 Tooltip 调试
-
-在 Tooltip 中可以看到当前状态：
-```
-状态: 熔炼中
-进度: 50% (5.0s/10.0s)
-燃烧: 80.0s
-原料: [铁矿石] → [铁锭]
-```
+| 问题 | 可能原因 | 排查方法 |
+|------|---------|---------|
+| 不熔炼 | 输入方向错误 | 检查 Tooltip 中的方向配置 |
+| 不消耗燃料 | 燃料槽位方向错误 | 检查燃料槽位中是否有燃料物品 |
+| 产物不生成 | 输出槽已满 | 检查输出槽位空间 |
+| 速度慢 | 堆叠数不足 | 增加活熔炉堆叠数以加速 |
 
 ---
 
-> **文档维护者**: Living Item Mod Team  
-> **下次更新建议**: 支持更多配方类型（BLASTING/SMOKING）后同步更新第 6 章
+## 附录：v4 变更记录 (2026-07-28)
+
+**变更1：DataComponent 迁移**
+
+存储从 `LIVING_FUNCTION_DATA: CompoundTag` 迁移到独立的 DataComponent（`LivingFurnaceData`），利用 Minecraft 内置的序列化和同步机制，无需手动管理 NBT 读写。
+
+**变更2：Tooltip 国际化**
+
+Tooltip 显示从硬编码字符串改为使用 `Component.translatable()` 国际化键，支持多语言。方向配置、燃料状态、进度、转化信息均使用翻译键。
+
+**变更3：配方缓存字段扩展**
+
+`TransformData` 新增 `cachedOutputCount` 和 `cachedCookingTime` 字段，缓存完整的配方结果信息，减少运行时查询。
+
+---
+
+## 附录：验证清单
+
+> 重构或架构迁移后，必须逐项验证以下用例。
+
+### 基础熔炼
+
+- [ ] 输入物品放入后自动开始熔炼
+- [ ] 熔炼进度每 tick 递增，达到 cookingTime 后产出成品
+- [ ] 堆叠数影响熔炼速度：堆叠越多越快
+- [ ] 无输入物品时不熔炼
+- [ ] 输出槽已有不同类型物品时不熔炼
+- [ ] 输出槽已满（堆叠达上限）时不熔炼
+
+### 燃料系统
+
+- [ ] 燃料物品放入燃料槽后自动燃烧
+- [ ] 燃烧时间与原版燃料一致
+- [ ] 燃料耗尽后停止熔炼，进度保留
+- [ ] 无燃料时不熔炼
+- [ ] 多个燃料物品顺序燃烧
+
+### 配方匹配
+
+- [ ] 正确匹配原版熔炼配方
+- [ ] 无匹配配方时不熔炼
+- [ ] TransformData 缓存配方结果（outputItem、cachedOutputCount、cachedCookingTime）
+- [ ] 输入物品变化时重新查询配方，更新缓存
+
+### 方向配置
+
+- [ ] 输入/燃料/输出方向正确配置
+- [ ] 活漏斗能向正确方向插入输入/燃料物品
+- [ ] 活漏斗能从输出方向提取成品
+
+### Tooltip 与同步
+
+- [ ] Tooltip 显示燃料状态（燃烧中/剩余时间）
+- [ ] Tooltip 显示进度（百分比 + 时间）
+- [ ] Tooltip 显示转化信息（输入→输出）
+- [ ] Tooltip 国际化（Component.translatable）
+- [ ] 方向配置在 Tooltip 中显示
+
+### 数据持久化
+
+- [ ] LivingFurnaceData 通过 DataComponent 持久化
+- [ ] 熔炼进度在物品离开容器后保留
+- [ ] 燃料剩余时间在物品离开容器后保留
+- [ ] 配方缓存（TransformData）在物品离开容器后保留

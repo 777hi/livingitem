@@ -39,16 +39,12 @@ public class LivingEnderChestFunction implements LivingItemFunction {
 
         long currentTick = level.getGameTime();
         Set<Integer> activeEnderChestSlots = new HashSet<>();
-        int containerSize = context.getSize();
-        for (int i = 0; i < containerSize; i++) {
-            ItemStack stack = context.getItem(i);
-            if (isLivingEnderChest(stack)) {
-                activeEnderChestSlots.add(i);
-            }
+        for (SlotEntry entry : entries) {
+            activeEnderChestSlots.add(entry.slotIndex());
         }
 
         EnderChannelRegistry registry = EnderChannelRegistry.getInstance();
-        registry.removeStaleEnderChestRoutes(activeEnderChestSlots);
+        registry.removeStaleEnderChestRoutes(context.getContainerKey(), activeEnderChestSlots);
         int cleaned = registry.cleanStaleSourceRoutes(context);
 
         if (cleaned > 0) {

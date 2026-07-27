@@ -1,7 +1,7 @@
 # Living Hopper (活漏斗) 技术文档
 
-> **文档版本**: 2026.07 v3  
-> **最后更新**: 2026-07-25  
+> **文档版本**: 2026.07 v7  
+> **最后更新**: 2026-07-28  
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -98,6 +98,7 @@
 | `ItemFilterComponent` | `core/components/ItemFilterComponent.java` | 物品黑白名单过滤，扫描邻居活漏斗自动构建规则 |
 | `CrossContainerTransfer` | `core/components/CrossContainerTransfer.java` | 跨容器传输，GUI→世界方向转换，大箱子处理 |
 | `SlotResolver` | `core/SlotResolver.java` | 相对方向偏移→绝对槽位索引的数学计算 |
+| `ContainerSnapshot` | `container/ContainerSnapshot.java` | 容器级共享缓存，每 tick 预计算 sourceOf/targetOf/filterOf 数组，所有活漏斗共享 |
 | `SlotAccessor` | `core/accessor/SlotAccessor.java` | 槽位访问器接口，统一 extract/insert/rollback/sync 操作 |
 | `PlainSlotAccessor` | `core/accessor/PlainSlotAccessor.java` | 普通槽位访问器，直接读写 ContainerContext |
 | `LivingChestAccessor` | `core/accessor/LivingChestAccessor.java` | 活箱子访问器，通过 LivingChestFunction API 操作虚拟存储 |
@@ -276,17 +277,71 @@ tick()
 
 #### 2.4.2 过滤规则构建
 
+过滤规则由 `ContainerSnapshot.buildFilterForSlot()` 方法在每 tick 的 `capture()` 阶段统一预计算，直接读取预计算的 `sourceOf`/`targetOf` 数组，无需重复扫描容器或调用 `SlotResolver`。计算完成后写回 `LivingHopperData.filter`，利用 Minecraft 内置的 DataComponent 同步机制推送到客户端，确保 tooltip 在任何场景下都能显示。
+
+**过滤规则语义**：
+
 ```
 邻居活漏斗的 target 指向我 → 邻居的 source 物品 = 我的黑名单
 邻居活漏斗的 source 指向我 → 邻居的 target 物品 = 我的白名单
 ```
 
+**设计意图**：
+- 邻居向我推送物品（target 指向我）→ 我**黑名单**邻居的 source 物品，避免从源重复拉取相同物品
+- 邻居从我取物品（source 指向我）→ 我**白名单**邻居的 target 物品，确保我只拉取邻居需要的物品给它
+
+**buildFilterForSlot() 工作流程**（在 `ContainerSnapshot.capture()` 中调用）：
+
+```java
+// ContainerSnapshot.buildFilterForSlot() — 容器级预计算
+// sourceOf/targetOf 数组已在 capture() 前半段计算完成
+for (int i = 0; i < containerSize; i++) {
+    if (i == mySlot) continue;
+
+    int neighborSourceSlot = sourceOf[i];
+    int neighborTargetSlot = targetOf[i];
+
+    // 非活漏斗槽位（sourceOf 和 targetOf 都为 -1）直接跳过
+    if (neighborSourceSlot == -1 && neighborTargetSlot == -1) continue;
+
+    // 读取邻居堆叠数确定过滤模式（无需调用 isLivingHopper/getHopperData/SlotResolver）
+    ItemStack neighborStack = ctx.getItem(i);
+    int mode = ItemFilterComponent.normalizeMode(neighborStack.getCount());
+
+    // 邻居向我传输 → 邻居的 source 物品 = 我的黑名单
+    if (neighborTargetSlot == mySlot) {
+        addToFilter(mode, filterItem, blacklist, blComposites, blTags, ...);
+    }
+
+    // 邻居从我取物 → 邻居的 target 物品 = 我的白名单
+    if (neighborSourceSlot == mySlot) {
+        addToFilter(mode, filterItem, whitelist, wlComposites, wlTags, ...);
+    }
+}
+```
+
+**addToFilter() 辅助方法**：根据模式将物品添加到对应的数据集，同时记录来源槽位：
+
+```java
+switch (mode) {
+    case MODE_COMPONENT -> compositeList.add(compositeKey);  // NBT模式
+    case MODE_TAG -> {
+        tagList.addAll(collectItemTags(stack));             // Tag模式
+        tagSlots.add(refSlot);
+    }
+    default -> {
+        idList.add(itemId);                                 // ID模式
+        idSlots.add(refSlot);
+    }
+}
+```
+
 根据当前过滤模式，同一物品会被记录到不同级别的数据集中：
 
 ```
-ID 模式:   blacklist/whitelist (物品ID集合)
+ID 模式:   blacklist/whitelist + blacklist_slots/whitelist_slots (物品ID集合 + 槽位)
 NBT 模式:  bl_comp/wl_comp (compositeKey = "itemId@componentHashCode")
-Tag 模式:  bl_tags/wl_tags (标签字符串集合, 如 "minecraft:swords")
+Tag 模式:  bl_tags/wl_tags + bl_tag_slots/wl_tag_slots (标签字符串集合 + 槽位)
 ```
 
 #### 2.4.3 优先级判定模型（田忌赛马）
@@ -373,27 +428,59 @@ allowsByPriority(item):
 
 > **注意**：`mode` 不再作为 NBT 键持久化存储。模式由扫描时读取邻居活漏斗的堆叠数动态计算，不写入状态。
 
+> **v7 注意**：以上 FilterData 字段由 `ContainerSnapshot.buildAllFilters()` 每 tick 预计算后写回 DataComponent，而非由活漏斗自身构建。存档中可能包含旧数据，但每 tick 会被覆盖为最新值。
+
 #### 2.4.6 链式传递机制
 
-沿活漏斗链逐 tick 传播一跳：
+在 v7 架构下，`ContainerSnapshot.buildFilterForSlot()` 为每个活漏斗独立构建过滤规则。当邻居的 source/target 指向另一个活漏斗时，`collectFilterItems()` 会沿链递归查找，直到找到非活物品的过滤源：
+
+**递归方向规则**：
+- **黑名单**（邻居的 target 指向我）：沿活漏斗的 **source** 方向递归（查找上游过滤源）
+- **白名单**（邻居的 source 指向我）：沿活漏斗的 **target** 方向递归（查找下游过滤源）
 
 ```
-tick N:   活漏斗A(有名单)  ────→ 活漏斗B(继承A的名单)  ────→ 活漏斗C(无名单)
-tick N+1: 活漏斗A(有名单)  ────→ 活漏斗B(有名单)         ────→ 活漏斗C(继承B的名单)
+场景：三段漏斗链
+
+  [物品A]  [活漏斗1]  [活漏斗2]  [活漏斗3]  [物品B]
+              →→→→→→→→→→→→→→→→→→→→→→→→→→→→→→→→→→
+
+  活漏斗1: source=物品A, target=活漏斗2
+  活漏斗2: source=活漏斗1, target=活漏斗3
+  活漏斗3: source=活漏斗2, target=物品B
+
+  对活漏斗3构建过滤规则：
+    邻居活漏斗2的target指向3 → 黑名单分支
+    → 查找活漏斗2的source(活漏斗1) → 是活漏斗
+    → 沿source方向递归 → 物品A → 加入黑名单 ✓
+
+  对活漏斗1构建过滤规则：
+    邻居活漏斗2的source指向1 → 白名单分支
+    → 查找活漏斗2的target(活漏斗3) → 是活漏斗
+    → 沿target方向递归 → 物品B → 加入白名单 ✓
 ```
 
-`inheritFilter()` 从邻居活漏斗**同时继承黑名单和白名单**（而非仅继承同类型名单），确保链上混搭黑白名单时传递不中断。继承时**无条件继承所有级别数据**（ID、NBT、Tag 全部继承），不依赖当前模式，确保链式传递不会因模式差异丢失高精度数据。
+**循环防护**：`collectFilterItems()` 使用 `visited` 集合防止互相指向时无限递归。
+
+> **v7 变更**：旧版通过 `inheritFilter()` 从邻居活漏斗继承名单实现链式传递。新版由 `ContainerSnapshot` 的 `collectFilterItems()` 沿链递归查找过滤源，天然支持链式效果，不再需要继承机制。
 
 #### 2.4.7 关键方法
 
-- `tick()` — 每 tick 扫描容器中所有邻居活漏斗，根据堆叠数量确定模式，重新解析黑白名单
-- `inheritFilter()` — 从邻居活漏斗同时继承黑白名单，支持链式传播
-- `allows(ComponentState, ItemStack)` — 静态方法，统一优先级判定，判断物品是否允许通过
+**ContainerSnapshot 中的过滤方法**：
+- `buildAllFilters()` — 容器级预计算入口，遍历所有活漏斗槽位调用 `buildFilterForSlot()`
+- `buildFilterForSlot()` — 为单个活漏斗构建完整 FilterData（包含 ID/NBT/Tag 三级黑白名单 + 槽位映射）
+- `collectFilterItems()` — 沿漏斗链递归收集过滤物品，遇到活漏斗时根据黑/白名单方向继续递归，遇到非活物品时加入过滤规则
+- `addToFilter()` — 根据过滤模式将物品添加到对应数据集，同时记录来源槽位
+
+**ItemFilterComponent 中的判定方法**：
+- `allows(FilterData, ItemStack)` — 静态方法，统一优先级判定，判断物品是否允许通过
 - `allowsItemType(ComponentState, String)` — 静态方法，仅基于ID的优先级判定（无NBT匹配能力）
 - `calcMatchPriority()` — 计算单侧（白/黑）匹配的最高优先级
 - `hasNbtEntriesForId()` — 检测NBT级条目是否遮蔽ID级条目
 - `matchesAnyTag()` — Tag级匹配检查
-- `appendTooltip()` — 显示过滤模式和名单内容，使用 `appendFilterEntries()` 辅助方法减少黑白名单重复渲染
+- `appendFilterTooltip()` — 显示过滤模式和名单内容，使用 `appendFilterEntries()` 辅助方法减少黑白名单重复渲染
+- `normalizeMode()` — 根据堆叠数量确定过滤模式（1=ID, 2=NBT, 3+=Tag）
+- `getCompositeKey()` — 计算物品的 NBT 复合键（itemId@componentHashCode）
+- `collectItemTags()` — 收集物品的所有标签
 
 ---
 
@@ -402,42 +489,58 @@ tick N+1: 活漏斗A(有名单)  ────→ 活漏斗B(有名单)         �
 ### 3.1 完整 tick 流程
 
 ```
-BaseLivingFunction.tick()                                   [每 tick]
+LivingHopperFunction.tick()                                 [每 tick]
   │
-  ├─ FunctionExecutor 创建 ComponentContext
-  │   ├─ 读取 DirectionModeComponent 状态
-  │   ├─ 调用 resolveSlots() → 解析 sourceSlot/targetSlot
-  │   └─ 收集所有组件状态 → allComponentStates
+  ├─ 读取活漏斗数据 (LivingHopperData)
+  │   ├─ DirectionTransferData → 解析 sourceSlot/targetSlot
+  │   └─ TransferData → 检查冷却状态
   │
-  ├─ ItemFilterComponent.tick()                             [组件1]
-  │   └─ 扫描邻居活漏斗 → 构建黑白名单
+  ├─ 冷却中？→ tick() 递减冷却，return
   │
-  ├─ DirectionModeComponent.tick()                          [组件2]
-  │   └─ (空操作，方向由 WASD 输入修改)
+  ├─ filter = tick.snapshot.getFilterOf(slot)               [直接读容器快照]
+  │   └─ FilterData 已在 ContainerSnapshot.capture() 中预计算
   │
-  └─ ItemTransferComponent.tick()                           [组件3]
-      ├─ 读取冷却 → 冷却中则递减返回
-      ├─ 前置判断：源槽位为空 → 返回
-      ├─ executeTransfer()
-      │   ├─ 越界？→ CrossContainerTransfer.execute()
-      │   │   ├─ pullFromNeighbor (源越界)
-      │   │   │   ├─ targetIsChest → pullFromNeighborToLivingChest
-      │   │   │   ├─ targetIsEnderChest → pullFromNeighborToLivingEnderChest (NEW)
-      │   │   │   └─ 普通物品 → 直接拉取 + markSlotTransferred
-      │   │   ├─ pushToNeighbor (目标越界)
-      │   │   │   ├─ sourceIsChest → pushFromLivingChestToNeighbor
-      │   │   │   ├─ sourceIsEnderChest → pushFromLivingEnderChestToNeighbor
-      │   │   │   └─ 普通物品 → 直接推送
-      │   │   └─ transferBetweenNeighbors (都越界)
-      │   └─ 未越界 → 前置检查 → SlotAccessor 创建 → doTransfer
-      │       ├─ source = SlotAccessorFactory.create(sourceSlot)
-      │       ├─ target = SlotAccessorFactory.create(targetSlot)
-      │       ├─ target 是活末影箱 → registerRoute()
-      │       └─ doTransfer(source, target, amount)
-      │           ├─ extract → insert → rollback
-      │           └─ markTransferred → sync
-      └─ 设置冷却（无条件）
+  ├─ executeTransfer(context, level, slot, source, target, stackSize, filter, dir, tick)
+  │
+  ├─ executeTransfer()                                      [传输执行]
+  │   ├─ 越界？→ CrossContainerTransfer.execute()
+  │   │   ├─ pullFromNeighbor (源越界)
+  │   │   │   ├─ targetIsChest → pullFromNeighborToLivingChest
+  │   │   │   ├─ targetIsEnderChest → pullFromNeighborToLivingEnderChest
+  │   │   │   └─ 普通物品 → 直接拉取 + markSlotTransferred
+  │   │   ├─ pushToNeighbor (目标越界)
+  │   │   │   ├─ sourceIsChest → pushFromLivingChestToNeighbor
+  │   │   │   ├─ sourceIsEnderChest → pushFromLivingEnderChestToNeighbor
+  │   │   │   └─ 普通物品 → 直接推送
+  │   │   └─ transferBetweenNeighbors (都越界)
+  │   └─ 未越界 → 前置检查 → SlotAccessor 创建 → doTransfer
+  │       ├─ 自环检查 (sourceSlot == targetSlot)
+  │       ├─ 级联防护 (transferredTargetSlots 包含 sourceSlot)
+  │       ├─ 源槽位为空？→ return false
+  │       ├─ 源是活物品（非存储容器）？→ return false
+  │       ├─ 物品过滤检查 (ItemFilterComponent.allows())
+  │       ├─ source = SlotAccessorFactory.create(sourceSlot)
+  │       ├─ target = SlotAccessorFactory.create(targetSlot)
+  │       ├─ target 是活末影箱（路由模式）→ registerRoute() → return true
+  │       └─ SlotAccessor.transfer(source, target, amount)
+  │           ├─ extract → insert → rollback
+  │           └─ markTransferred → sync
+  │
+  ├─ 传输成功？→ 设置冷却 (max(1, 8 - stackCount/8))
+  │
+  ├─ 保存数据 + 同步客户端
+  │
+  └─ cleanupStaleRoutes()                                   [路由清理]
+      └─ 清理失效的活末影箱路由条目
 ```
+
+**关键变化**（v7 架构优化后）：
+- **核心原则：计算归容器，展示归物品**。`FilterData` 由 `ContainerSnapshot` 容器级预计算（衍生数据），但写回 `LivingHopperData.filter`（DataComponent），利用 Minecraft 内置同步机制推送到客户端
+- `ContainerSnapshot.capture()` 中一次性计算所有活漏斗的 `sourceOf`/`targetOf`/`filterOf`，每 tick 只算一次
+- `LivingHopperFunction.tick()` 从 `tick.snapshot.getFilterOf(slot)` 读取过滤规则，写回 `data.withFilter(filter).withTransfer(transfer)`
+- `LivingHopperData` 保留 `FilterData filter` 字段，tooltip 直接从 `data.filter()` 读取
+- `buildFilterChain`/`addToFilter` 方法位于 `ContainerSnapshot`，作为容器级预计算逻辑
+- 新增 `PerfMetrics.recordTransfer()` 性能记录
 
 ### 3.2 SlotAccessor 统一传输流程
 
@@ -636,37 +739,58 @@ GUI右(RIGHT) → 世界西(WEST)   → 旋转后
 
 过滤的精细程度由活漏斗堆叠数量决定（详见 2.4.1 过滤模式）。
 
-### 7.2 扫描逻辑
+### 7.2 过滤规则构建（ContainerSnapshot 预计算 + DataComponent 写回）
+
+过滤规则构建逻辑位于 `ContainerSnapshot.buildFilterForSlot()`，作为容器级预计算的一部分。
+
+**核心原则：计算归容器，展示归物品**。`FilterData` 是衍生数据（由邻居活漏斗的配置和物品推导），其**计算**归容器（`ContainerSnapshot` 统一预计算），但**展示**借物品的 DataComponent 通道同步到客户端。这样既保留了容器级预计算的性能优势，又确保 tooltip 在任何场景下（光标上、地上、聊天框）都能正常显示。
+
+**构建流程**（在 `ContainerSnapshot.capture()` 中一次性完成）：
 
 ```java
-// ItemFilterComponent.tick()
-// 扫描容器中每个槽位，寻找邻居活漏斗
+// ContainerSnapshot.capture() 中：
+// 1. 预计算 sourceOf/targetOf 数组（活漏斗连接图）
+// 2. 预计算 filterOf 数组（每个活漏斗的过滤规则）
+FilterData[] filterOf = buildAllFilters(ctx, containerSize, sourceOf, targetOf);
+
+// buildAllFilters() 遍历所有活漏斗槽位，为每个活漏斗构建过滤规则
+for (int slot = 0; slot < containerSize; slot++) {
+    if (sourceOf[slot] == -1 && targetOf[slot] == -1) continue;
+    filterOf[slot] = buildFilterForSlot(slot, ctx, containerSize, sourceOf, targetOf);
+}
+
+// buildFilterForSlot() 与旧版 buildFilterChain() 逻辑相同
+// 但作为容器级预计算，每 tick 只执行一次
 for (容器中每个槽位) {
-    if (槽位是活漏斗 && 不是自己) {
-        读取邻居的 DirectionModeComponent 状态
-        获取邻居的 sourceSlot 和 targetSlot
-        int mode = normalizeMode(neighborStack.getCount());  // 邻居的堆叠数决定模式
-        
-        if (邻居的 targetSlot == 我的槽位) {
-            // 邻居向我传输 → 邻居的 source 物品 = 我的黑名单
-            if (mode == MODE_TAG) {
-                blTags.addAll(物品标签)
-            } else if (mode == MODE_COMPONENT) {
-                blComp.add(compositeKey)
-            } else {
-                blacklist.add(邻居source槽位的物品ID)
-            }
+    if (槽位 == 我的槽位) continue;
+
+    int neighborSourceSlot = sourceOf[i];
+    int neighborTargetSlot = targetOf[i];
+
+    // 非活漏斗槽位直接跳过（无需 isLivingHopper 判断）
+    if (neighborSourceSlot == -1 && neighborTargetSlot == -1) continue;
+
+    // 读取邻居堆叠数确定过滤模式（无需 getHopperData/SlotResolver.resolve）
+    int mode = ItemFilterComponent.normalizeMode(neighborStack.getCount());
+    if (邻居的 targetSlot == 我的槽位) {
+        // 邻居向我传输 → 邻居的 source 物品 = 我的黑名单
+        if (mode == MODE_TAG) {
+            blTags.addAll(物品标签)
+        } else if (mode == MODE_COMPONENT) {
+            blComp.add(compositeKey)
+        } else {
+            blacklist.add(邻居source槽位的物品ID)
         }
-        
-        if (邻居的 sourceSlot == 我的槽位) {
-            // 邻居从我取物 → 邻居的 target 物品 = 我的白名单
-            if (mode == MODE_TAG) {
-                wlTags.addAll(物品标签)
-            } else if (mode == MODE_COMPONENT) {
-                wlComp.add(compositeKey)
-            } else {
-                whitelist.add(邻居target槽位的物品ID)
-            }
+    }
+
+    if (邻居的 sourceSlot == 我的槽位) {
+        // 邻居从我取物 → 邻居的 target 物品 = 我的白名单
+        if (mode == MODE_TAG) {
+            wlTags.addAll(物品标签)
+        } else if (mode == MODE_COMPONENT) {
+            wlComp.add(compositeKey)
+        } else {
+            whitelist.add(邻居target槽位的物品ID)
         }
     }
 }
@@ -713,18 +837,20 @@ allowsByPriority(item):
 
 ### 7.6 互相指向防护 (NEW 2026-07-22)
 
-当两个活漏斗互相指向时（A→B 且 B→A），`inheritFilter()` 会跳过继承，避免循环反馈导致名单永久残留：
+当两个活漏斗互相指向时（A→B 且 B→A），`collectFilterItems()` 使用 `visited` 集合防止无限递归：
 
 ```
 A→B 且 B→A 时：
-  A 尝试从 B 继承 → sourceOf[A] == slot(B) → 互相指向 → 跳过
-  B 尝试从 A 继承 → sourceOf[B] == slot(A) → 互相指向 → 跳过
+  对 A 构建过滤规则：
+    邻居 B 的 target 指向 A → 黑名单分支 → 查找 B 的 source(活漏斗A)
+    → A 已在 visited 中 → 停止递归 → 无过滤规则
+  对 B 构建过滤规则：
+    邻居 A 的 target 指向 B → 黑名单分支 → 查找 A 的 source(活漏斗B)
+    → B 已在 visited 中 → 停止递归 → 无过滤规则
+  → 互相指向时双方均无过滤规则，名单物品拿走后自然消失
 ```
 
-检测逻辑：`sourceOf[hostSlot] != slot && targetOf[hostSlot] != slot`
-
-- 链条 `A→B→C`：A 和 C 不互相指向，正常继承，链式传递不受影响
-- 闭环 `A⇄B`：互相指向，跳过继承，名单物品拿走后就自动清除
+> **v7 变更**：旧版通过 `inheritFilter()` 继承邻居名单，互相指向时需要显式检测并跳过。新版由 `collectFilterItems()` 的 `visited` 集合天然避免循环。
 
 ---
 
@@ -1032,6 +1158,218 @@ result = (baseRow + direction.y) * containerWidth + (baseCol + direction.x)
 
 **相关提交**：2026-07-25
 
+### 10.16 已重构：过滤链构建移至 ContainerSnapshot (NEW 2026-07-27)
+
+**背景**：原 `ItemFilterComponent.tick()` 负责扫描邻居活漏斗构建黑白名单，但组件架构下组件间状态传递复杂，且过滤规则需要与传输逻辑紧密配合。
+
+**重构方案**：将过滤链构建逻辑移至 `ContainerSnapshot.buildFilterForSlot()`，在 `capture()` 阶段统一预计算：
+
+**新增方法**（`ContainerSnapshot`）：
+- `buildAllFilters(ctx, containerSize, sourceOf, targetOf)` — 容器级预计算入口，遍历所有活漏斗槽位
+- `buildFilterForSlot(mySlot, ctx, containerSize, sourceOf, targetOf)` — 为单个活漏斗构建完整 FilterData（包含 ID/NBT/Tag 三个级别的黑名单和白名单，以及对应的槽位映射）
+- `addToFilter(mode, stack, idList, compositeList, tagList, idSlots, tagSlots, refSlot)` — 根据过滤模式将物品添加到对应数据集，同时记录来源槽位
+
+**tick 流程变化**：
+```java
+// 旧流程：ItemFilterComponent.tick() 独立扫描，每漏斗重复 isLivingHopper + getHopperData + SlotResolver.resolve
+// 新流程：ContainerSnapshot.capture() 统一预计算，tick() 直接读取
+FilterData filter = tick.snapshot.getFilterOf(slot);
+data = data.withTransfer(transfer).withFilter(filter);
+LivingItemManager.setHopperData(stack, data);
+```
+
+**优势**：
+- 过滤规则由容器级缓存统一预计算，N 个活漏斗只需 1 次遍历（O(N) 而非 O(N²)）
+- 复用 `ContainerSnapshot` 预计算结果，省去 `isLivingHopper`/`getHopperData`/`SlotResolver.resolve` 三组重复操作
+- 每次 tick 实时扫描，确保过滤规则始终反映最新邻居布局
+- 计算结果写回 DataComponent，利用 Minecraft 内置同步机制确保 tooltip 可靠显示
+- 新增 `PerfMetrics.recordTransfer()` 性能记录，便于监控传输成功率
+
+**相关提交**：2026-07-27
+
+### 10.17 新增：cleanupStaleRoutes 路由清理机制 (NEW 2026-07-27)
+
+**背景**：活末影箱路由模式下，路由条目注册到全局路由表 `EnderChannelRegistry`。当容器被异常清除（如区块卸载、方块破坏）时，需要清理失效路由，避免路由表中积累无效条目。
+
+**实现**：在 `LivingHopperFunction.tick()` 末尾调用 `cleanupStaleRoutes()`：
+
+```java
+private void cleanupStaleRoutes(List<SlotEntry> entries, ContainerContext context, Level level) {
+    // 收集当前容器中所有活末影箱的槽位
+    Set<Integer> activeEnderChestSlots = new HashSet<>();
+    for (int i = 0; i < context.getSize(); i++) {
+        if (LivingEnderChestFunction.isLivingEnderChest(context.getItem(i))) {
+            activeEnderChestSlots.add(i);
+        }
+    }
+
+    // 清理失效路由
+    EnderChannelRegistry registry = EnderChannelRegistry.getInstance();
+    registry.removeStaleEnderChestRoutes(context.getContainerKey(), activeEnderChestSlots);
+    registry.cleanStaleSourceRoutes(context);
+}
+```
+
+**清理策略**：
+- `removeStaleEnderChestRoutes(containerKey, activeSlots)` — 清理活末影箱被移走的路由（按容器隔离）
+- `cleanStaleSourceRoutes(context)` — 清理源物品已消失或变化的路由
+- `removeStaleRoutesByRegistrarKey(containerKey, activeSlots)` — 清理注册者容器区块卸载时的跨容器路由
+
+**相关提交**：2026-07-27
+
+### 10.18 已修复：buildFilterChain 黑白名单语义颠倒 (NEW 2026-07-27)
+
+**问题**：`buildFilterChain()` 中黑白名单的赋值逻辑与实际语义完全相反，导致过滤链完全不工作。
+
+**根因分析**：
+
+过滤规则影响的是当前活漏斗**拉取**物品的行为（源槽位物品的过滤），而非接收行为。原有代码混淆了这两个方向：
+
+| 场景 | 旧代码（错误） | 正确语义 | 修复后 |
+|------|--------------|---------|--------|
+| 邻居 target→我（邻居向我推送） | `addToFilter(..., whitelist)` | 邻居推 X 给我，我应**黑名单 X**，避免从源重复拉取相同物品 | `addToFilter(..., blacklist)` |
+| 邻居 source→我（邻居从我取物） | `addToFilter(..., blacklist)` | 邻居要 Y 从我，我应**白名单 Y**，确保只拉取邻居需要的物品 | `addToFilter(..., whitelist)` |
+
+**具体场景验证**：
+
+- **场景 A**：邻居 B 的 source 指向我，B 的 target 槽位放钻石。B 想从我取钻石。
+  - 旧代码：钻石 → 我的黑名单 → 我不拉钻石 → B 永远拿不到钻石 ❌
+  - 修复后：钻石 → 我的白名单 → 我只拉钻石 → B 能拿到钻石 ✅
+
+- **场景 B**：邻居 B 的 target 指向我，B 的 source 槽位放钻石。B 想向我推钻石。
+  - 旧代码：钻石 → 我的白名单 → 我只拉钻石 → B 推钻石 + 我拉钻石 = 可能重复 ❌
+  - 修复后：钻石 → 我的黑名单 → 我不拉钻石 → B 推钻石给我，无重复 ✅
+
+**相关提交**：2026-07-27
+
+### 10.19 已修复：ContainerSnapshot 跳过 DEFAULT 活漏斗导致过滤链为空 (NEW 2026-07-27)
+
+**问题**：`buildFilterChain` 使用 `ContainerSnapshot` 后，过滤链始终为 `FilterData.EMPTY`，黑白名单不生效且 tooltip 不显示。
+
+**根因**：`ContainerSnapshot.capture()` 中有一行跳过了所有未配置方向（`LivingHopperData.DEFAULT`）的活漏斗：
+
+```java
+// 旧：跳过 DEFAULT 数据的活漏斗
+if (data == null || data == LivingHopperData.DEFAULT) continue;
+```
+
+默认方向 `(UP, DOWN)` 的活漏斗同样是有效邻居，它们的 `sourceOf`/`targetOf` 应该被预计算。跳过后这些槽位的 `sourceOf[i]` 和 `targetOf[i]` 保持 -1，`buildFilterChain` 中判断 `neighborSourceSlot == -1 && neighborTargetSlot == -1` 直接跳过，导致所有邻居被忽略。
+
+**修复**：删除 `|| data == LivingHopperData.DEFAULT` 条件：
+
+```java
+// 新：只跳过 null
+if (data == null) continue;
+```
+
+**影响链**：
+
+```
+ContainerSnapshot 跳过 DEFAULT 活漏斗
+  → sourceOf[i] = -1, targetOf[i] = -1  (未捕获)
+    → buildFilterChain 中 neighborSourceSlot == -1 && neighborTargetSlot == -1 → continue
+      → 所有邻居被跳过 → chainFilter = EMPTY
+        → 过滤不生效 + tooltip 不显示
+```
+
+**相关提交**：2026-07-27
+
+### 10.20 已修复：data 局部变量未更新导致 FilterData 被覆盖回 EMPTY (NEW 2026-07-27)
+
+**问题**：过滤功能在内存中生效（每 tick 重新构建 chainFilter），但 tooltip 不显示、NBT 中没有 FilterData 数据。
+
+**根因**：`tick()` 方法中，写入 FilterData 后没有更新 `data` 局部变量，后续 `data.withTransfer(transfer)` 仍基于旧的 `data`（filter 为 EMPTY），覆盖了刚写入的 FilterData：
+
+```
+L65: data = getHopperData(stack)                    → data.filter = EMPTY
+L88: setHopperData(stack, data.withFilter(chain))   → stack.filter = chainFilter ✅
+L103: setHopperData(stack, data.withTransfer(xfer)) → data.filter 仍是 EMPTY → 覆盖回 EMPTY ❌
+```
+
+**修复**：在写入 FilterData 后更新 `data` 局部变量：
+
+```java
+// 旧：data 不更新，后续 withTransfer 用旧 data 覆盖
+if (!chainFilter.equals(storedFilter)) {
+    LivingItemManager.setHopperData(stack, data.withFilter(chainFilter));
+}
+
+// 新：data 更新，后续 withTransfer 保留 filter
+if (!chainFilter.equals(storedFilter)) {
+    data = data.withFilter(chainFilter);
+    LivingItemManager.setHopperData(stack, data);
+}
+```
+
+**教训**：`record` 类型通过 `withX()` 生成新实例而非修改原实例。在连续多次 `withX()` 调用时，必须始终基于最新的实例链式调用，否则中间的修改会被后续调用覆盖。
+
+**相关提交**：2026-07-27
+
+### 10.21 已优化：容器级冗余扫描消除 (NEW 2026-07-27)
+
+**背景**：`processContext()` 在 tick 开始时扫描全容器，将活物品按功能分组到 `entries` 列表。但部分功能函数在收到 `entries` 后又重新扫描全容器做相同的事。
+
+**优化**：
+
+| 功能函数 | 旧代码（冗余扫描） | 新代码（复用 entries） |
+|---------|-------------------|---------------------|
+| `LivingEnderChestFunction.tick()` | 遍历全容器找活末影箱槽位 | 直接从 `entries` 参数读取槽位 |
+| `LivingWaterBucketFunction.postTickSync()` | 遍历全容器找水桶槽位 | 接收 `waterBucketEntries` 参数，直接遍历 |
+| `LivingHopperFunction.buildFilterChain()` | 遍历全容器 + `isLivingHopper` + `getHopperData` + `SlotResolver.resolve` | 读取 `ContainerSnapshot` 预计算数组 |
+
+**具体改动**：
+
+1. `LivingEnderChestFunction.tick()`：
+```java
+// 旧
+for (int i = 0; i < containerSize; i++) {
+    if (isLivingEnderChest(context.getItem(i))) activeEnderChestSlots.add(i);
+}
+// 新
+for (SlotEntry entry : entries) { activeEnderChestSlots.add(entry.slotIndex()); }
+```
+
+2. `LivingWaterBucketFunction.postTickSync()`：
+```java
+// 旧
+public static void postTickSync(ContainerContext ctx, ContainerFluidData fluidData) {
+    for (int i = 0; i < ctx.getSize(); i++) { ... }
+}
+// 新
+public static void postTickSync(ContainerContext ctx, ContainerFluidData fluidData,
+    List<SlotEntry> waterBucketEntries) {
+    if (waterBucketEntries.isEmpty()) return;
+    for (SlotEntry entry : waterBucketEntries) { ... }
+}
+```
+
+3. `ContainerLivingItemHandler.processContext()`：从 `grouped` 中查找水桶功能并传递给 `postTickSync`。
+
+**原则**：`processContext()` 的一次扫描结果是容器级共享资源，所有功能函数应复用而非重复扫描。
+
+**相关提交**：2026-07-27
+
+**10.22 FilterData 容器级预计算 + DataComponent 写回（架构优化）**
+
+**问题**：`FilterData` 作为衍生数据存储在物品 NBT 中，存在数据一致性风险（过期、覆盖），且每个活漏斗 tick 都需重复构建过滤链。
+
+**方案演进**：
+
+1. **v6 方案**（已废弃）：将 `FilterData` 从 NBT 完全移除，由 `ContainerSnapshot` 预计算后通过自定义 `FilterSyncPacket` 同步到客户端 `FilterDisplayCache`。
+   - 问题：tooltip 在物品不在容器中时无法显示（光标上、地上、聊天框），自定义同步机制不如 Minecraft 内置 DataComponent 同步可靠，为 tooltip 花费了过多复杂度。
+
+2. **v7 方案**（当前）：**计算归容器，展示归物品**。`FilterData` 仍由 `ContainerSnapshot` 容器级预计算（保留性能优势），但计算完后写回 `LivingHopperData.filter`（DataComponent），利用 Minecraft 内置同步机制推送到客户端。
+
+**当前实现**：
+- `ContainerSnapshot.capture()` 中新增 `buildAllFilters()`，一次性预计算所有活漏斗的过滤规则
+- `buildFilterForSlot()` 为每个活漏斗构建过滤规则，遇到活漏斗时调用 `collectFilterItems()` 沿链递归
+- `collectFilterItems()` 根据黑/白名单方向选择递归方向：黑名单沿 source 方向、白名单沿 target 方向
+- `LivingHopperFunction.tick()` 从 `tick.snapshot.getFilterOf(slot)` 读取过滤规则，写回 `data.withFilter(filter).withTransfer(transfer)`
+- `LivingHopperData` 保留 `FilterData filter` 字段，tooltip 直接从 `data.filter()` 读取
+- 删除 `FilterSyncPacket`、`FilterDisplayCache`、`syncFilterData()`、`LAST_FILTER_CACHE` 等自定义同步机制
+
+**核心认知**："配置数据归物品，衍生数据归容器"说的是**计算归属**，不是**存储归属**。FilterData 的**计算**归容器（ContainerSnapshot 预计算），但**展示**仍然可以借助物品的 DataComponent 通道同步到客户端。不重复造轮子。
+
 ---
 
 ## 11. 调试指南
@@ -1062,6 +1400,8 @@ LOGGER.info("Cooldown: {} ticks remaining", cooldown);
 | 级联传输（物品瞬间穿过链） | 级联防护失效 | `transferredTargetSlots` 是否正确维护 |
 | 黑白名单永久残留 | 互相指向循环反馈 | 活漏斗是否成对互相指向 |
 | 活末影箱路由不注册 | 跨容器越界分支跳过 | target 是否在越界分支前被检查 |
+| 黑白名单不生效但功能正常 | data 局部变量未更新 | `data.withFilter()` 后是否更新了 `data` 变量 |
+| 过滤链始终为空 | ContainerSnapshot 跳过 DEFAULT | `capture()` 是否跳过了未配置方向的活漏斗 |
 
 ### 11.3 方向调试
 
@@ -1080,4 +1420,82 @@ LOGGER.info("Cooldown: {} ticks remaining", cooldown);
 
 > **文档维护者**: Living Item Mod Team  
 > **下次更新建议**: 多功能模式（PUSH/PULL/COLLECT/DISTRIBUTE）实现后同步更新第 8 章  
-> **v3 变更**: 新增过滤模式（基于堆叠数量）、优先级判定模型（田忌赛马）、统一过滤架构、邻居模式决定扫描精度、盔甲槽绕过限制
+> **v7 变更**: FilterData 由 ContainerSnapshot 容器级预计算但写回 DataComponent、删除 FilterSyncPacket/FilterDisplayCache 自定义同步机制、核心原则修正为"计算归容器，展示归物品"、新增 collectFilterItems() 沿漏斗链递归传递黑白名单
+
+---
+
+## 12. 验证清单
+
+> 重构或架构迁移后，必须逐项验证以下用例。标注 `(→ 10.X)` 的条目来源于历史 bug，不可省略。
+
+### 12.1 基础传输
+
+- [ ] 活漏斗能从 source 槽位提取物品到 target 槽位
+- [ ] 冷却机制正常：传输后进入冷却，冷却期间不传输
+- [ ] 堆叠数影响冷却时间：堆叠越多冷却越短
+- [ ] source 或 target 为空槽位时不传输
+- [ ] source 是活物品（非存储类）时不传输
+- [ ] source 和 target 是同一槽位时不传输
+
+### 12.2 方向配置
+
+- [ ] 默认方向为 上→下（source=↑, target=↓）
+- [ ] WASD 输入能正确修改方向
+- [ ] 方向越界（如第一行向上）时触发跨容器传输
+- [ ] Tooltip 显示当前方向和模式名称
+
+### 12.3 链式传递
+
+- [ ] 2段链：`[物品A]→[漏斗1]→[漏斗2]→[物品B]`，漏斗2黑名单含A，漏斗1白名单含B
+- [ ] 3段链：`[物品A]→[漏斗1]→[漏斗2]→[漏斗3]→[物品B]`，漏斗3黑名单含A，漏斗1白名单含B
+- [ ] 混搭链：链上黑名单漏斗和白名单漏斗交替，名单不中断（→ 10.5）
+- [ ] 互相指向：A→B 且 B→A 时，双方均无过滤规则，不循环反馈（→ 10.8）
+- [ ] 链中间漏斗同时获得上游黑名单和下游白名单
+
+### 12.4 过滤级别
+
+- [ ] ID级（堆叠1）：按物品ID过滤，Tooltip 显示 `[ID]`
+- [ ] NBT级（堆叠2）：按物品+组件哈希过滤，Tooltip 显示 `[NBT]`
+- [ ] Tag级（堆叠3）：按物品标签过滤，Tooltip 显示 `[Tag]`
+- [ ] Tag级继承后显示为 `[Tag]` 而非 `[NBT]`（→ 10.11）
+- [ ] NBT级存在时，同ID的ID级条目不重复显示（→ 10.12）
+- [ ] Tag级条目显示来源槽位（→ 10.13）
+
+### 12.5 优先级冲突
+
+- [ ] 白名单NBT级 vs 黑名单ID级 → 白名单胜（高优先级胜）
+- [ ] 同优先级黑白冲突 → 黑名单胜
+- [ ] 无任何规则时 → 允许所有物品通过
+- [ ] 仅有白名单时 → 不在白名单中的物品被拒绝
+- [ ] 仅有黑名单时 → 在黑名单中的物品被拒绝
+
+### 12.6 跨容器传输
+
+- [ ] source越界时跨容器拉取
+- [ ] target越界时跨容器推送
+- [ ] target是活末影箱时注册路由而非直接传输
+- [ ] source是活末影箱时从路由表提取
+- [ ] 跨容器pullFromNeighbor级联防护：同一tick内物品不被重复取走（→ 10.7）
+- [ ] 跨容器传输绕过过滤：跨容器路径上过滤规则仍然生效（→ 10.3）
+
+### 12.7 活箱子/活末影箱交互
+
+- [ ] source是活箱子时从虚拟存储提取
+- [ ] target是活箱子时插入虚拟存储
+- [ ] 活箱子间传输检查过滤规则（→ 10.4）
+- [ ] 活箱子中白名单过滤时精确提取目标类型（→ 10.2）
+- [ ] 同频道活末影箱间不互相传输（防自循环）
+
+### 12.8 Tooltip 与同步
+
+- [ ] 过滤规则在 Tooltip 中正确显示（黑白名单、级别标注、来源槽位）
+- [ ] 过滤规则在物品离开容器后仍可显示（光标上、地上、聊天框）
+- [ ] 冷却状态在 Tooltip 中显示
+- [ ] 方向和模式名称在 Tooltip 中显示
+
+### 12.9 路由清理
+
+- [ ] 活漏斗被移走后，相关路由被清理
+- [ ] 活末影箱被移走后，相关路由被清理
+- [ ] 区块卸载时，相关路由被清理
+- [ ] 注册者容器区块卸载时，跨容器路由被清理（→ 12.2 末影箱文档）

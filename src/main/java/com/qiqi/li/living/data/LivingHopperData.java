@@ -24,7 +24,7 @@ public record LivingHopperData(
         instance.group(
             DirectionTransferData.CODEC.fieldOf("direction").forGetter(LivingHopperData::direction),
             TransferData.CODEC.fieldOf("transfer").forGetter(LivingHopperData::transfer),
-            FilterData.CODEC.fieldOf("filter").forGetter(LivingHopperData::filter)
+            FilterData.CODEC.optionalFieldOf("filter", FilterData.EMPTY).forGetter(LivingHopperData::filter)
         ).apply(instance, LivingHopperData::new)
     );
 

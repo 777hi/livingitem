@@ -76,11 +76,11 @@ public class LivingHopperFunction implements LivingItemFunction {
                 continue;
             }
 
-            FilterData filter = data.filter();
+            FilterData filter = tick.snapshot.getFilterOf(slot);
+
             boolean transferred = executeTransfer(context, level, slot, sourceSlot, targetSlot,
                 stack.getCount(), filter, dir, tick);
 
-            // 记录传输结果
             PerfMetrics.recordTransfer(transferred);
 
             if (transferred) {
@@ -88,7 +88,8 @@ public class LivingHopperFunction implements LivingItemFunction {
                 transfer = transfer.withCooldown(actualCooldown);
             }
 
-            LivingItemManager.setHopperData(stack, data.withTransfer(transfer));
+            data = data.withTransfer(transfer).withFilter(filter);
+            LivingItemManager.setHopperData(stack, data);
             context.syncSlotToClients(slot, stack);
         }
 
@@ -186,7 +187,8 @@ public class LivingHopperFunction implements LivingItemFunction {
                 registry.removeStaleRoutes(containerKey, activeSlots);
             }
         }
-        registry.removeStaleEnderChestRoutes(activeEnderChestSlots);
+        registry.removeStaleEnderChestRoutes(context.getContainerKey(), activeEnderChestSlots);
+        registry.removeStaleRoutesByRegistrarKey(context.getContainerKey(), activeSlots);
     }
 
     @Override
@@ -211,12 +213,12 @@ public class LivingHopperFunction implements LivingItemFunction {
         TransferData transfer = data.transfer();
         if (transfer.isOnCooldown()) {
             tooltipAdder.accept(Component.literal(
-                "冷却中: " + transfer.cooldown() + " ticks")
+                "\u51b7\u5374\u4e2d: " + transfer.cooldown() + " ticks")
                 .withStyle(net.minecraft.ChatFormatting.DARK_GRAY));
         }
 
         FilterData filter = data.filter();
-        if (!filter.equals(FilterData.EMPTY)) {
+        if (filter != null && !filter.equals(FilterData.EMPTY)) {
             ItemFilterComponent.appendFilterTooltip(filter, tooltipAdder);
         }
     }
