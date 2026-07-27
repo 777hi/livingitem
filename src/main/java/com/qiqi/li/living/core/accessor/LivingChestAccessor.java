@@ -6,13 +6,17 @@ import java.util.Set;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
 import com.qiqi.li.living.container.ContainerContext;
+import com.qiqi.li.living.container.ContainerIdentity;
+import com.qiqi.li.living.container.ContainerSync;
 import com.qiqi.li.living.core.components.InternalStorageComponent;
 import com.qiqi.li.living.function.LivingChestFunction;
 
 public class LivingChestAccessor implements SlotAccessor {
 
-    private final ContainerContext containerCtx;
+    private final ContainerIdentity identity;
+    private final ContainerSync sync;
     private final int slot;
     private final ItemStack chestStack;
     private final int capacityPerChest;
@@ -20,7 +24,8 @@ public class LivingChestAccessor implements SlotAccessor {
 
     LivingChestAccessor(ContainerContext containerCtx, int slot, ItemStack chestStack,
                         int capacityPerChest, Set<Integer> transferredTargetSlots) {
-        this.containerCtx = containerCtx;
+        this.identity = containerCtx;
+        this.sync = containerCtx;
         this.slot = slot;
         this.chestStack = chestStack;
         this.capacityPerChest = capacityPerChest;
@@ -28,7 +33,7 @@ public class LivingChestAccessor implements SlotAccessor {
     }
 
     private HolderLookup.Provider getRegistries() {
-        net.minecraft.world.level.Level level = containerCtx.getLevel();
+        Level level = identity.getLevel();
         if (level instanceof ServerLevel serverLevel) {
             return serverLevel.registryAccess();
         }
@@ -126,6 +131,6 @@ public class LivingChestAccessor implements SlotAccessor {
 
     @Override
     public void sync() {
-        containerCtx.syncSlotToClients(slot, containerCtx.getItem(slot));
+        sync.syncSlotToClients(slot, sync.getItem(slot));
     }
 }

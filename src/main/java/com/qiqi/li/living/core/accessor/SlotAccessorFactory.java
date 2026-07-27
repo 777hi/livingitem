@@ -9,7 +9,7 @@ import com.mojang.logging.LogUtils;
 import net.minecraft.world.item.ItemStack;
 import com.qiqi.li.living.LivingItemManager;
 import com.qiqi.li.living.container.ContainerContext;
-import com.qiqi.li.living.core.ComponentState;
+import com.qiqi.li.living.data.FilterData;
 import com.qiqi.li.living.function.LivingChestFunction;
 import com.qiqi.li.living.function.LivingEnderChestFunction;
 import net.minecraft.server.MinecraftServer;
@@ -22,7 +22,7 @@ public final class SlotAccessorFactory {
     private SlotAccessorFactory() {}
 
     public static SlotAccessor create(MinecraftServer server, ContainerContext containerCtx, int slot,
-                                       ComponentState filterState, Set<Integer> transferredTargetSlots) {
+                                       FilterData filterData, Set<Integer> transferredTargetSlots) {
         ItemStack stack = containerCtx.getItem(slot);
 
         SlotAccessor raw;
@@ -39,7 +39,7 @@ public final class SlotAccessorFactory {
                 raw = new LivingEnderChestAccessor(server, ch,
                     transferredTargetSlots, boundUuid);
             } else {
-                raw = new LivingEnderChestAccessor(server, ch, filterState,
+                raw = new LivingEnderChestAccessor(server, ch, filterData,
                     transferredTargetSlots);
             }
         } else if (LivingItemManager.isLivingItem(stack)) {
@@ -48,12 +48,12 @@ public final class SlotAccessorFactory {
             raw = new PlainSlotAccessor(containerCtx, slot, transferredTargetSlots);
         }
 
-        return new FilteredSlotAccessor(raw, filterState);
+        return new FilteredSlotAccessor(raw, filterData);
     }
 
     public static SlotAccessor createForNeighbor(IItemHandler handler, int slot,
-                                                  ComponentState filterState) {
+                                                  FilterData filterData) {
         SlotAccessor raw = new NeighborSlotAccessor(handler, slot);
-        return new FilteredSlotAccessor(raw, filterState);
+        return new FilteredSlotAccessor(raw, filterData);
     }
 }

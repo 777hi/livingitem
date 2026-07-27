@@ -22,6 +22,8 @@ import net.minecraft.world.item.ItemStack;
  */
 public class ContainerFluidData {
 
+    public static final ContainerFluidData EMPTY = new ContainerFluidData();
+
     public static final int SOURCE_LEVEL = 0;
     public static final int MAX_FLOW_LEVEL = 7;
     public static final int FLOW_STEP_TICKS = 4;

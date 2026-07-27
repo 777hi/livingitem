@@ -7,9 +7,8 @@ import java.util.Map;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.qiqi.li.living.LivingItemManager;
-import com.qiqi.li.living.LivingFunctionData;
-import com.qiqi.li.living.core.ComponentState;
-import com.qiqi.li.living.core.components.WaterSpreadComponent;
+import com.qiqi.li.living.data.LivingWaterBucketData;
+import com.qiqi.li.living.data.WaterData;
 import com.qiqi.li.living.function.LivingWaterBucketFunction;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -17,7 +16,6 @@ import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
-import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.Container;
 import net.minecraft.world.inventory.Slot;
@@ -100,18 +98,18 @@ public abstract class AbstractContainerScreenMixin {
             if (stack.isEmpty()) continue;
             if (!LivingWaterBucketFunction.isLivingWaterBucket(stack)) continue;
 
-            LivingFunctionData funcData = stack.get(LivingItemManager.LIVING_FUNCTION_DATA.value());
-            if (funcData == null) continue;
+            LivingWaterBucketData bucketData = LivingItemManager.getWaterBucketData(stack);
+            WaterData water = bucketData.water();
+            if (water.equals(WaterData.EMPTY)) continue;
 
-            CompoundTag funcTag = funcData.getFunctionData(LivingWaterBucketFunction.ID);
-            if (funcTag.isEmpty()) continue;
+            String flowStr = water.flow();
+            if (flowStr == null || flowStr.isEmpty()) continue;
 
-            ComponentState state = new ComponentState(funcTag.getCompound(WaterSpreadComponent.ID));
-            Map<Integer, Integer> handlerFlow = WaterSpreadComponent.loadFlowData(state);
+            Map<Integer, Integer> handlerFlow = parseFlowData(flowStr);
             if (handlerFlow.isEmpty()) continue;
 
-            int hostSlot = state.getInt(WaterSpreadComponent.KEY_HOST_SLOT, -1);
-            int handlerWidth = state.getInt(WaterSpreadComponent.KEY_WIDTH, 9);
+            int hostSlot = water.hostSlot();
+            int handlerWidth = water.width();
 
             Container bucketContainer = slot.container;
             Map<Integer, Slot> handlerToMenu = new HashMap<>();
@@ -146,6 +144,18 @@ public abstract class AbstractContainerScreenMixin {
         }
 
         return buckets;
+    }
+
+    private static Map<Integer, Integer> parseFlowData(String data) {
+        Map<Integer, Integer> map = new HashMap<>();
+        if (data == null || data.isEmpty()) return map;
+        for (String part : data.split(",")) {
+            String[] kv = part.split(":");
+            if (kv.length >= 2) {
+                map.put(Integer.parseInt(kv[0]), Integer.parseInt(kv[1]));
+            }
+        }
+        return map;
     }
 
     private record WaterCell(int level, int dx, int dy) {}

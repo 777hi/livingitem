@@ -1,58 +1,39 @@
 package com.qiqi.li.living.function;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
-import net.minecraft.nbt.CompoundTag;
+import java.util.Set;
+import java.util.function.Consumer;
+import net.minecraft.core.component.DataComponentType;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.TooltipFlag;
+import net.minecraft.world.item.crafting.Recipe;
 import net.minecraft.world.item.crafting.RecipeType;
-import com.qiqi.li.living.core.ComponentConfig;
-import com.qiqi.li.living.core.ComponentState;
-import com.qiqi.li.living.core.LivingFunctionConfig;
-import com.qiqi.li.living.BaseLivingFunction;
+import net.minecraft.world.item.crafting.SingleRecipeInput;
+import net.minecraft.world.level.Level;
+import net.neoforged.neoforge.common.extensions.IItemExtension;
+import com.qiqi.li.living.LivingItemFunction;
 import com.qiqi.li.living.LivingItemManager;
-import com.qiqi.li.living.LivingFunctionData;
+import com.qiqi.li.living.container.ContainerContext;
+import com.qiqi.li.living.container.TickContext;
+import com.qiqi.li.living.core.SlotResolver;
 import com.qiqi.li.living.core.model.Pos2D;
-import com.qiqi.li.living.core.components.DirectionModeComponent;
-import com.qiqi.li.living.core.components.FuelConsumeComponent;
-import com.qiqi.li.living.core.components.ItemTransformComponent;
-import com.qiqi.li.living.core.components.ProgressComponent;
-import com.qiqi.li.living.core.orchestrator.Orchestrators;
+import com.qiqi.li.living.data.DirectionSlotsData;
+import com.qiqi.li.living.data.FuelData;
+import com.qiqi.li.living.data.LivingFurnaceData;
+import com.qiqi.li.living.data.ProgressData;
+import com.qiqi.li.living.data.TransformData;
 
-/**
- * 活熔炉功能 —— 实现活熔炉的自动熔炼逻辑。
- *
- * 功能概述：
- * 活熔炉是一种可以自动在容器内熔炼物品的活物品。
- * 它从输入槽位取出原料，消耗燃料槽位的燃料，将产物放入输出槽位。
- *
- * 组件配置：
- * - DirectionModeComponent（SLOTS模式）：管理输入/燃料/输出槽位方向
- * - FuelConsumeComponent：管理燃料消耗和燃烧时间
- * - ProgressComponent：管理熔炼进度（默认 200 ticks = 10 秒）
- * - ItemTransformComponent：执行配方匹配和物品转化
- *
- * 熔炼规则：
- * - 只能熔炼非活物品（LivingItemManager.isLivingItem() 检查）
- * - 只能消耗非活燃料（同上）
- * - 支持堆叠加速（8 个活熔炉堆叠 = 8 倍速度）
- * - 使用 Minecraft 原版 SMELTING 配方类型
- *
- * 编排策略：FUEL_PROGRESS
- * - 检查燃料+输入有效性 → tick/pauseTick → 完成时转化
- *
- * 槽位布局示例（在 9 列箱子中）：
- * ┌───┬───┬───┬───┬───┬───┬───┬───┬───┐
- * │   │   │   │   │   │   │   │   │   │
- * ├───┼───┼───┼───┼───┼───┼───┼───┼───┤
- * │原料│   │   │熔炉│   │   │产物│   │   │
- * ├───┼───┼───┼───┼───┼───┼───┼───┼───┤
- * │   │   │燃料│   │   │   │   │   │   │
- * └───┴───┴───┴───┴───┴───┴───┴───┴───┘
- */
-public class LivingFurnaceFunction extends BaseLivingFunction {
+public class LivingFurnaceFunction implements LivingItemFunction {
 
     public static final String ID = "living_furnace";
+    private static final int DEFAULT_COOKING_TIME = 200;
 
     private static LinkedHashMap<String, Pos2D> slotOrder() {
         LinkedHashMap<String, Pos2D> map = new LinkedHashMap<>();
@@ -62,23 +43,7 @@ public class LivingFurnaceFunction extends BaseLivingFunction {
         return map;
     }
 
-    private static final LivingFunctionConfig CONFIG = new LivingFunctionConfig()
-        .withFunctionId(ID)
-        .withStackMultiplier(true)
-        .withOrchestrator(Orchestrators.FUEL_PROGRESS)
-        .addComponent(new DirectionModeComponent(slotOrder()))
-        .addComponent(FuelConsumeComponent.class,
-            ComponentConfig.of("recipe_type", RecipeType.SMELTING))
-        .addComponent(ProgressComponent.class,
-            ComponentConfig.of("total_ticks", 200))
-        .addComponent(ItemTransformComponent.class,
-            ComponentConfig.of("recipe_type", RecipeType.SMELTING));
-
-    @Override
-    protected LivingFunctionConfig getConfig() { return CONFIG; }
-
-    @Override
-    protected String getTooltipTitleKey() { return "tooltip.livingitem.furnace.status"; }
+    private static final DirectionSlotsData DEFAULT_DIRECTION = new DirectionSlotsData(slotOrder(), 0);
 
     @Override
     public boolean canApply(ItemStack stack) {
@@ -88,71 +53,270 @@ public class LivingFurnaceFunction extends BaseLivingFunction {
     @Override
     public String getFunctionId() { return ID; }
 
-    public static LivingFunctionConfig getStaticConfig() { return CONFIG; }
+    @Override
+    public void tick(List<SlotEntry> entries, ContainerContext context, TickContext tick, Level level) {
+        if (level.isClientSide) return;
 
-    /**
-     * 检查活熔炉是否正在燃烧（供客户端图标系统使用）。
-     *
-     * <p>从 LIVING_FUNCTION_DATA 组件中读取 living_furnace.fuel.burn_time，
-     * 如果大于 0 则表示正在燃烧。
-     *
-     * @param stack 物品栈
-     * @return 如果正在燃烧返回 true
-     */
-    public static boolean isBurning(ItemStack stack) {
-        LivingFunctionData funcData = stack.get(LivingItemManager.LIVING_FUNCTION_DATA.value());
-        if (funcData == null || funcData.isEmpty()) return false;
+        for (SlotEntry entry : entries) {
+            int slot = entry.slotIndex();
+            if (slot < 0 || slot >= context.getSize()) continue;
 
-        net.minecraft.nbt.CompoundTag furnaceTag = funcData.getFunctionData(ID);
-        if (furnaceTag.isEmpty()) return false;
+            ItemStack stack = entry.stack();
+            LivingFurnaceData data = LivingItemManager.getFurnaceData(stack);
 
-        net.minecraft.nbt.CompoundTag fuelTag = furnaceTag.getCompound("fuel");
-        return fuelTag.getInt("burn_time") > 0;
+            DirectionSlotsData dir = data.direction();
+            int containerSize = context.getSize();
+            int containerWidth = context.getWidth();
+
+            int inputSlot = SlotResolver.resolve(slot, dir.getDirection("input"), containerSize, containerWidth);
+            int fuelSlot = SlotResolver.resolve(slot, dir.getDirection("fuel"), containerSize, containerWidth);
+            int outputSlot = SlotResolver.resolve(slot, dir.getDirection("output"), containerSize, containerWidth);
+
+            boolean canProgress = checkCanProgress(context, level, inputSlot, fuelSlot, outputSlot, data);
+
+            if (canProgress) {
+                data = tickProgress(data, stack.getCount());
+                data = tickFuel(context, data, fuelSlot, stack.getCount());
+                data = tickTransform(context, data, inputSlot);
+
+                if (data.progress().isComplete() && data.fuel().isBurning()) {
+                    boolean success = executeTransform(context, level, data, inputSlot, outputSlot, stack.getCount());
+                    if (success) {
+                        data = data.withProgress(data.progress().reset());
+                    }
+                }
+            } else {
+                data = pauseTick(data);
+            }
+
+            LivingItemManager.setFurnaceData(stack, data);
+            context.syncSlotToClients(slot, stack);
+        }
     }
 
-    /**
-     * 获取活熔炉的方向配置组件实例（SLOTS 模式）。
-     */
-    public static DirectionModeComponent getDirectionComponent() {
-        return new DirectionModeComponent(slotOrder());
-    }
+    private boolean checkCanProgress(ContainerContext ctx, Level level,
+                                      int inputSlot, int fuelSlot, int outputSlot,
+                                      LivingFurnaceData data) {
+        if (inputSlot < 0 || outputSlot < 0) return false;
 
-    /**
-     * 从 ItemStack 读取活熔炉的方向状态。
-     */
-    public static ComponentState readDirectionState(ItemStack furnaceStack) {
-        return DirectionModeComponent.readStateFromStack(furnaceStack, ID);
-    }
+        ItemStack inputStack = ctx.getItem(inputSlot);
+        if (inputStack.isEmpty() || LivingItemManager.isLivingItem(inputStack)) return false;
 
-    /**
-     * 更新活熔炉的指定槽位方向（服务端使用）。
-     */
-    public static boolean updateSlotDirection(ItemStack furnaceStack, String slotName, Pos2D direction) {
-        if (furnaceStack == null || furnaceStack.isEmpty() || slotName == null || direction == null) return false;
-
-        CompoundTag functionTag = LivingItemManager.getFunctionData(furnaceStack, ID).copy();
-
-        ComponentState dirState;
-        if (functionTag.contains(DirectionModeComponent.ID)) {
-            dirState = ComponentState.fromNBT(functionTag.getCompound(DirectionModeComponent.ID));
-        } else {
-            dirState = getDirectionComponent().createDefaultState();
+        if (!data.fuel().isBurning()) {
+            if (fuelSlot < 0) return false;
+            ItemStack fuelStack = ctx.getItem(fuelSlot);
+            if (fuelStack.isEmpty()) return false;
+            int fuelValue = getFuelValue(fuelStack);
+            if (fuelValue <= 0 || LivingItemManager.isLivingItem(fuelStack)) return false;
         }
 
-        DirectionModeComponent dirComp = getDirectionComponent();
-        boolean success = dirComp.setDirection(dirState, slotName, direction);
-        if (!success) return false;
+        return hasMatchingRecipe(level, inputStack, data.transform());
+    }
 
-        String[] slotNames = dirComp.getSlotNames();
-        for (int i = 0; i < slotNames.length; i++) {
-            if (slotNames[i].equals(slotName)) {
-                dirState.setInt("active_slot_index", (i + 1) % slotNames.length);
-                break;
+    private LivingFurnaceData tickProgress(LivingFurnaceData data, int stackCount) {
+        int multiplier = 1 + stackCount / 8;
+        ProgressData progress = data.progress();
+        int newProgress = Math.min(progress.total(), progress.progress() + multiplier);
+        return data.withProgress(new ProgressData(newProgress, progress.total()));
+    }
+
+    private LivingFurnaceData tickFuel(ContainerContext ctx, LivingFurnaceData data, int fuelSlot, int stackCount) {
+        FuelData fuel = data.fuel();
+        if (fuel.isBurning()) {
+            int multiplier = Math.max(1, stackCount);
+            return data.withFuel(fuel.tick(multiplier));
+        }
+
+        if (fuelSlot < 0) return data;
+        ItemStack fuelStack = ctx.getItem(fuelSlot);
+        int fuelValue = getFuelValue(fuelStack);
+        if (fuelValue > 0 && !LivingItemManager.isLivingItem(fuelStack)) {
+            fuelStack.shrink(1);
+            ctx.setItem(fuelSlot, fuelStack.copy());
+            return data.withFuel(new FuelData(fuelValue));
+        }
+
+        return data;
+    }
+
+    private LivingFurnaceData tickTransform(ContainerContext ctx, LivingFurnaceData data, int inputSlot) {
+        if (inputSlot < 0) return data;
+        ItemStack inputStack = ctx.getItem(inputSlot);
+        if (inputStack.isEmpty() || LivingItemManager.isLivingItem(inputStack)) {
+            return data.withTransform(TransformData.EMPTY);
+        }
+        return data;
+    }
+
+    private LivingFurnaceData pauseTick(LivingFurnaceData data) {
+        ProgressData progress = data.progress();
+        if (progress.progress() > 0) {
+            data = data.withProgress(progress.withProgress(Math.max(0, progress.progress() - 1)));
+        }
+        FuelData fuel = data.fuel();
+        if (fuel.isBurning()) {
+            data = data.withFuel(fuel.tick(1));
+        }
+        return data;
+    }
+
+    private boolean executeTransform(ContainerContext ctx, Level level, LivingFurnaceData data,
+                                      int inputSlot, int outputSlot, int stackCount) {
+        if (inputSlot < 0 || outputSlot < 0) return false;
+
+        ItemStack inputStack = ctx.getItem(inputSlot);
+        if (inputStack.isEmpty() || LivingItemManager.isLivingItem(inputStack)) return false;
+
+        var recipeHolderOpt = level.getRecipeManager()
+            .getRecipeFor(RecipeType.SMELTING, new SingleRecipeInput(inputStack), level);
+        if (recipeHolderOpt.isEmpty()) return false;
+
+        Recipe<?> recipe = unwrapRecipe(recipeHolderOpt.get());
+        ItemStack result = recipe.getResultItem(level.registryAccess());
+        int resultCount = result.getCount();
+
+        int outputSpace = calculateOutputSpace(ctx, outputSlot, result);
+        int maxByOutput = resultCount > 0 ? outputSpace / resultCount : 0;
+        int transformCount = Math.min(stackCount, Math.min(inputStack.getCount(), maxByOutput));
+        if (transformCount <= 0) return false;
+
+        inputStack.shrink(transformCount);
+        ctx.setItem(inputSlot, inputStack.copy());
+
+        ItemStack outputStack = ctx.getItem(outputSlot);
+        if (outputStack.isEmpty()) {
+            ItemStack newOutput = result.copy();
+            newOutput.setCount(transformCount * resultCount);
+            ctx.setItem(outputSlot, newOutput);
+        } else {
+            outputStack.grow(transformCount * resultCount);
+            ctx.setItem(outputSlot, outputStack.copy());
+        }
+
+        return true;
+    }
+
+    private int calculateOutputSpace(ContainerContext ctx, int outputSlot, ItemStack result) {
+        ItemStack outputStack = ctx.getItem(outputSlot);
+        int slotLimit = ctx.getSlotLimit(outputSlot);
+        if (outputStack.isEmpty()) {
+            return Math.min(slotLimit, result.getMaxStackSize());
+        }
+        if (ItemStack.isSameItemSameComponents(outputStack, result)) {
+            int maxCount = Math.min(slotLimit, outputStack.getMaxStackSize());
+            return maxCount - outputStack.getCount();
+        }
+        return 0;
+    }
+
+    private boolean hasMatchingRecipe(Level level, ItemStack input, TransformData transform) {
+        String inputKey = BuiltInRegistries.ITEM.getKey(input.getItem()).toString();
+        if (inputKey.equals(transform.cachedInput()) && transform.cachedResult() == 1) {
+            return true;
+        }
+        if (inputKey.equals(transform.cachedInput()) && transform.cachedResult() == 0) {
+            return false;
+        }
+        var opt = level.getRecipeManager()
+            .getRecipeFor(RecipeType.SMELTING, new SingleRecipeInput(input), level);
+        return opt.isPresent();
+    }
+
+    private static Recipe<?> unwrapRecipe(Object recipeHolder) {
+        if (recipeHolder instanceof net.minecraft.world.item.crafting.RecipeHolder<?> holder) {
+            return holder.value();
+        }
+        return (Recipe<?>) recipeHolder;
+    }
+
+    private static int getFuelValue(ItemStack stack) {
+        if (stack.isEmpty()) return 0;
+        Item item = stack.getItem();
+        if (!(item instanceof IItemExtension extension)) return 0;
+        return extension.getBurnTime(stack, RecipeType.SMELTING);
+    }
+
+    @Override
+    public void addToTooltip(Item.TooltipContext context,
+                             Consumer<Component> tooltipAdder,
+                             TooltipFlag flag,
+                             ItemStack stack) {
+        LivingFurnaceData data = LivingItemManager.getFurnaceData(stack);
+
+        tooltipAdder.accept(Component.nullToEmpty(""));
+        tooltipAdder.accept(Component.translatable("tooltip.livingitem.furnace.status"));
+
+        FuelData fuel = data.fuel();
+        if (fuel.isBurning()) {
+            tooltipAdder.accept(Component.translatable(
+                "tooltip.livingitem.fuel_burn",
+                String.format("%.1f", fuel.burnTime() / 20.0)));
+        }
+
+        ProgressData progress = data.progress();
+        if (progress.total() > 0) {
+            int percent = (int) ((progress.progress() * 100.0f) / progress.total());
+            tooltipAdder.accept(Component.translatable(
+                "tooltip.livingitem.progress",
+                percent,
+                String.format("%.1f", progress.progress() / 20.0),
+                String.format("%.1f", progress.total() / 20.0)));
+        }
+
+        TransformData transform = data.transform();
+        if (!transform.inputItem().isEmpty()) {
+            Component inputName = getItemDisplayName(transform.inputItem());
+            if (!transform.outputItem().isEmpty()) {
+                Component outputName = getItemDisplayName(transform.outputItem());
+                tooltipAdder.accept(Component.translatable(
+                    "tooltip.livingitem.transform.recipe", inputName, outputName));
             }
         }
 
-        functionTag.put(DirectionModeComponent.ID, dirState.toNBT());
-        LivingItemManager.setFunctionData(furnaceStack, ID, functionTag);
+        DirectionSlotsData dir = data.direction();
+        for (var entry : dir.directions().entrySet()) {
+            Pos2D d = entry.getValue();
+            if (d != null && d != Pos2D.NONE) {
+                tooltipAdder.accept(Component.translatable(
+                    "tooltip.livingitem.direction.slot",
+                    Component.translatable("slot.livingitem." + entry.getKey()),
+                    d.getSymbol()
+                ).withStyle(net.minecraft.ChatFormatting.GRAY));
+            }
+        }
+    }
+
+    private static net.minecraft.network.chat.Component getItemDisplayName(String itemId) {
+        try {
+            ResourceLocation rl = ResourceLocation.parse(itemId);
+            Item item = BuiltInRegistries.ITEM.get(rl);
+            if (item != null) {
+                return new ItemStack(item).getDisplayName();
+            }
+        } catch (Exception ignored) {
+        }
+        return net.minecraft.network.chat.Component.literal(itemId);
+    }
+
+    public static boolean isBurning(ItemStack stack) {
+        return LivingItemManager.getFurnaceData(stack).fuel().isBurning();
+    }
+
+    public static DirectionSlotsData getDefaultDirection() {
+        return DEFAULT_DIRECTION;
+    }
+
+    public static boolean updateSlotDirection(ItemStack furnaceStack, String slotName, Pos2D direction) {
+        if (furnaceStack == null || furnaceStack.isEmpty() || slotName == null || direction == null) return false;
+        LivingFurnaceData data = LivingItemManager.getFurnaceData(furnaceStack);
+        DirectionSlotsData dir = data.direction();
+        dir = dir.withDirection(slotName, direction);
+        LivingItemManager.setFurnaceData(furnaceStack, data.withDirection(dir));
         return true;
+    }
+
+    @Override
+    public Set<DataComponentType<?>> getIgnoredComponentTypes() {
+        return Set.of();
     }
 }

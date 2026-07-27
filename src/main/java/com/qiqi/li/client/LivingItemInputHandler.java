@@ -10,8 +10,10 @@ import com.qiqi.li.client.gui.LivingButton;
 import com.qiqi.li.living.function.LivingFurnaceFunction;
 import com.qiqi.li.living.function.LivingHopperFunction;
 import com.qiqi.li.living.LivingItemManager;
-import com.qiqi.li.living.core.ComponentState;
-import com.qiqi.li.living.core.components.DirectionModeComponent;
+import com.qiqi.li.living.data.DirectionSlotsData;
+import com.qiqi.li.living.data.DirectionTransferData;
+import com.qiqi.li.living.data.LivingFurnaceData;
+import com.qiqi.li.living.data.LivingHopperData;
 import com.qiqi.li.living.core.model.Pos2D;
 import com.qiqi.li.living.core.model.SlotMapping;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -84,8 +86,7 @@ public class LivingItemInputHandler {
         char typedChar = event.getCodePoint();
         char upperChar = Character.toUpperCase(typedChar);
 
-        DirectionModeComponent tempComp = new DirectionModeComponent();
-        if (!tempComp.getValidKeys().contains(upperChar)) return;
+        if (!isValidKey(upperChar)) return;
 
         if (isFurnaceItem(carried)) {
             event.setCanceled(true);
@@ -148,20 +149,25 @@ public class LivingItemInputHandler {
      * @param hopperStack 光标上的活漏斗 ItemStack
      */
     private static void processInput(String rawInput, ItemStack hopperStack) {
-        ComponentState dirState = LivingHopperFunction.readDirectionState(hopperStack);
-        if (dirState == null) {
-            LOGGER.debug("Failed to read direction state from hopper");
+        DirectionTransferData dirData = LivingHopperFunction.readDirectionData(hopperStack);
+        if (dirData == null) {
+            LOGGER.debug("Failed to read direction data from hopper");
             return;
         }
 
-        DirectionModeComponent dirComp = new DirectionModeComponent();
-        boolean success = dirComp.updateFromInput(dirState, rawInput);
-        if (!success) {
-            LOGGER.debug("Failed to parse input: {}", rawInput);
-            return;
+        Pos2D source = dirData.sourceOffset();
+        Pos2D target = dirData.targetOffset();
+
+        if (rawInput.length() >= 1) {
+            Pos2D newSource = keyToDirection(rawInput.charAt(0));
+            if (newSource != null) source = newSource;
+        }
+        if (rawInput.length() >= 2) {
+            Pos2D newTarget = keyToDirection(rawInput.charAt(1));
+            if (newTarget != null) target = newTarget;
         }
 
-        SlotMapping mapping = dirComp.getCurrentMapping(dirState);
+        SlotMapping mapping = SlotMapping.fromDirections(source, target);
         if (mapping == null) {
             LOGGER.debug("No mapping resolved from input: {}", rawInput);
             return;
@@ -170,6 +176,20 @@ public class LivingItemInputHandler {
         sendDirectionPacket(mapping);
 
         LOGGER.debug("Updated hopper direction: {} -> {}", rawInput, mapping.displayName());
+    }
+
+    private static Pos2D keyToDirection(char key) {
+        return switch (Character.toUpperCase(key)) {
+            case 'W' -> Pos2D.UP;
+            case 'S' -> Pos2D.DOWN;
+            case 'A' -> Pos2D.LEFT;
+            case 'D' -> Pos2D.RIGHT;
+            default -> null;
+        };
+    }
+
+    private static boolean isValidKey(char key) {
+        return keyToDirection(key) != null;
     }
 
     /** 发送方向配置网络包到服务端 */
@@ -199,35 +219,27 @@ public class LivingItemInputHandler {
      * @param furnaceStack 光标上的活熔炉 ItemStack
      */
     private static void processFurnaceInput(char key, ItemStack furnaceStack) {
-        Pos2D direction = DirectionModeComponent.WASDSequenceParser.keyToDirection(key);
+        Pos2D direction = keyToDirection(key);
         if (direction == null) {
             LOGGER.debug("Invalid furnace input key: {}", key);
             return;
         }
 
-        ComponentState dirState = LivingFurnaceFunction.readDirectionState(furnaceStack);
-        if (dirState == null) {
-            LOGGER.debug("Failed to read direction state from furnace");
+        LivingFurnaceData data = LivingItemManager.getFurnaceData(furnaceStack);
+        DirectionSlotsData dir = data.direction();
+        String[] slotNames = dir.getSlotNames();
+        int activeIndex = dir.activeSlotIndex();
+        if (slotNames.length == 0) {
+            LOGGER.debug("No slot names in furnace direction data");
             return;
         }
 
-        DirectionModeComponent dirComp = LivingFurnaceFunction.getDirectionComponent();
-        String activeSlotBefore = dirComp.getActiveSlotName(dirState);
-        if (activeSlotBefore == null) {
-            LOGGER.debug("Failed to get active slot name");
-            return;
-        }
+        String activeSlotName = slotNames[activeIndex % slotNames.length];
 
-        boolean success = dirComp.updateFromInput(dirState, String.valueOf(key));
-        if (!success) {
-            LOGGER.debug("Failed to update furnace slot direction: key={}", key);
-            return;
-        }
-
-        sendSlotDirectionPacket(activeSlotBefore, direction);
+        sendSlotDirectionPacket(activeSlotName, direction);
 
         LOGGER.debug("Updated furnace slot direction: {} ({}) = {}",
-            activeSlotBefore, key, direction.getSymbol());
+            activeSlotName, key, direction.getSymbol());
     }
 
     /** 发送槽位方向配置网络包到服务端 */

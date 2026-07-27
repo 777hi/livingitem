@@ -2,60 +2,43 @@ package com.qiqi.li.living.function;
 
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.component.DataComponentType;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
-import com.qiqi.li.living.core.ComponentState;
-import com.qiqi.li.living.core.LivingFunctionConfig;
-import com.qiqi.li.living.BaseLivingFunction;
+import com.qiqi.li.living.LivingItemFunction;
 import com.qiqi.li.living.LivingItemManager;
-import com.qiqi.li.living.core.accessor.EnderChannelRegistry;
-import com.qiqi.li.living.core.components.DirectionModeComponent;
-import com.qiqi.li.living.core.components.ItemFilterComponent;
-import com.qiqi.li.living.core.components.ItemTransferComponent;
-import com.qiqi.li.living.core.model.SlotMapping;
-import com.qiqi.li.living.core.orchestrator.Orchestrators;
 import com.qiqi.li.living.container.ContainerContext;
-/**
- * 活漏斗功能 —— 实现活漏斗的物品传输逻辑。
- *
- * 功能概述：
- * 活漏斗是一种可以自动在容器内移动物品的活物品。
- * 它从源槽位取出物品，放入目标槽位，实现自动化的物品传输。
- *
- * 组件配置：
- * - DirectionModeComponent（TRANSFER模式）：管理传输方向（源→目标）
- * - ItemTransferComponent：执行实际的物品传输操作
- *
- * 传输规则：
- * - 只能传输非活物品（LivingItemManager.isLivingItem() 检查）
- * - 支持堆叠加速（多个活漏斗堆叠时缩短冷却时间）
- * - 默认冷却时间 8 ticks（约 0.4 秒）
- *
- * 方向配置：
- * 支持 12 种基本传输方向（上下左右之间的组合），
- * 通过 WASD 键入动态修改（客户端 LivingItemInputHandler 处理）。
- */
-public class LivingHopperFunction extends BaseLivingFunction {
+import com.qiqi.li.living.container.TickContext;
+import com.qiqi.li.living.container.CrossContainerTransfer;
+import com.qiqi.li.living.core.SlotResolver;
+import com.qiqi.li.living.core.accessor.SlotAccessor;
+import com.qiqi.li.living.core.accessor.SlotAccessorFactory;
+import com.qiqi.li.living.core.accessor.LivingEnderChestAccessor;
+import com.qiqi.li.living.core.model.Pos2D;
+import com.qiqi.li.living.core.model.ResolvedSlots;
+import com.qiqi.li.living.core.model.SlotMapping;
+import com.qiqi.li.living.core.accessor.EnderChannelRegistry;
+import com.qiqi.li.living.data.DirectionTransferData;
+import com.qiqi.li.living.data.FilterData;
+import com.qiqi.li.living.data.LivingHopperData;
+import com.qiqi.li.living.data.TransferData;
+import com.qiqi.li.living.core.components.ItemFilterComponent;
+import com.mojang.logging.LogUtils;
+import org.slf4j.Logger;
+
+public class LivingHopperFunction implements LivingItemFunction {
 
     public static final String ID = "living_hopper";
-
-    private static final LivingFunctionConfig CONFIG = new LivingFunctionConfig()
-        .withFunctionId(ID)
-        .withStackMultiplier(true)
-        .withOrchestrator(Orchestrators.SIMPLE)
-        .addComponent(new ItemFilterComponent())
-        .addComponent(new DirectionModeComponent())
-        .addComponent(new ItemTransferComponent());
-
-    @Override
-    protected LivingFunctionConfig getConfig() { return CONFIG; }
-
-    @Override
-    protected String getTooltipTitleKey() { return "tooltip.livingitem.hopper.status"; }
+    private static final Logger LOGGER = LogUtils.getLogger();
+    private static final int DEFAULT_COOLDOWN = 8;
+    private static final int DEFAULT_MAX_TRANSFER = 64;
 
     @Override
     public boolean canApply(ItemStack stack) {
@@ -65,20 +48,115 @@ public class LivingHopperFunction extends BaseLivingFunction {
     @Override
     public String getFunctionId() { return ID; }
 
-    /**
-     * 重写 tick()：在活漏斗处理完成后清理已移除漏斗的路由。
-     *
-     * <p>当活漏斗从容器中被移走时，该漏斗注册的所有活末影箱路由
-     * 应当被清理。此方法在父类 tick() 完成后收集当前容器中
-     * 所有活漏斗的槽位，并调用 EnderChannelRegistry 清理
-     * 对应容器位置中 registrarSlot 不在活跃列表中的路由。</p>
-     */
     @Override
-    public void tick(List<SlotEntry> entries, ContainerContext context, Level level) {
-        super.tick(entries, context, level);
-
+    public void tick(List<SlotEntry> entries, ContainerContext context, TickContext tick, Level level) {
         if (level.isClientSide) return;
 
+        for (SlotEntry entry : entries) {
+            int slot = entry.slotIndex();
+            if (slot < 0 || slot >= context.getSize()) continue;
+
+            ItemStack stack = entry.stack();
+            LivingHopperData data = LivingItemManager.getHopperData(stack);
+
+            DirectionTransferData dir = data.direction();
+            int containerSize = context.getSize();
+            int containerWidth = context.getWidth();
+
+            int sourceSlot = SlotResolver.resolve(slot, dir.sourceOffset(), containerSize, containerWidth);
+            int targetSlot = SlotResolver.resolve(slot, dir.targetOffset(), containerSize, containerWidth);
+
+            TransferData transfer = data.transfer();
+            if (transfer.isOnCooldown()) {
+                transfer = transfer.tick();
+                LivingItemManager.setHopperData(stack, data.withTransfer(transfer));
+                context.syncSlotToClients(slot, stack);
+                continue;
+            }
+
+            FilterData filter = data.filter();
+            boolean transferred = executeTransfer(context, level, slot, sourceSlot, targetSlot,
+                stack.getCount(), filter, dir, tick);
+
+            if (transferred) {
+                int actualCooldown = Math.max(1, DEFAULT_COOLDOWN - stack.getCount() / 8);
+                transfer = transfer.withCooldown(actualCooldown);
+            }
+
+            LivingItemManager.setHopperData(stack, data.withTransfer(transfer));
+            context.syncSlotToClients(slot, stack);
+        }
+
+        cleanupStaleRoutes(entries, context, level);
+    }
+
+    private boolean executeTransfer(ContainerContext ctx, Level level, int hostSlot,
+                                     int sourceSlot, int targetSlot,
+                                     int stackSize, FilterData filter,
+                                     DirectionTransferData dir,
+                                     TickContext tick) {
+        int containerSize = ctx.getSize();
+
+        boolean sourceOutOfBounds = sourceSlot < 0 || sourceSlot >= containerSize;
+        boolean targetOutOfBounds = targetSlot < 0 || targetSlot >= containerSize;
+
+        if (sourceOutOfBounds || targetOutOfBounds) {
+            return CrossContainerTransfer.execute(
+                ctx,
+                ResolvedSlots.ofTransfer(
+                    sourceSlot, targetSlot, dir.sourceOffset(), dir.targetOffset()),
+                level, filter,
+                stackSize, DEFAULT_MAX_TRANSFER, hostSlot, tick);
+        }
+
+        if (sourceSlot == targetSlot) return false;
+
+        Set<Integer> transferredTargetSlots = tick.transferredTargetSlots();
+        if (transferredTargetSlots != null && transferredTargetSlots.contains(sourceSlot)) {
+            return false;
+        }
+
+        ItemStack sourceStack = ctx.getItem(sourceSlot);
+        if (sourceStack.isEmpty()) return false;
+
+        boolean isStorageContainer = LivingChestFunction.isLivingChest(sourceStack)
+            || LivingEnderChestFunction.isLivingEnderChest(sourceStack);
+
+        if (LivingItemManager.isLivingItem(sourceStack) && !isStorageContainer) return false;
+
+        if (!isStorageContainer && !ItemFilterComponent.allows(filter, sourceStack)) return false;
+
+        var server = level.getServer();
+        if (server == null) return false;
+
+        SlotAccessor source = SlotAccessorFactory.create(server, ctx, sourceSlot, filter, transferredTargetSlots);
+        SlotAccessor target = SlotAccessorFactory.create(server, ctx, targetSlot, null, transferredTargetSlots);
+
+        if (source == null || target == null) return false;
+
+        if (source.unwrap() instanceof LivingEnderChestAccessor sourceEnder
+            && target.unwrap() instanceof LivingEnderChestAccessor targetEnder) {
+            if (!sourceEnder.isDirectMode() && !targetEnder.isDirectMode()
+                && sourceEnder.getChannel() == targetEnder.getChannel()) {
+                return false;
+            }
+        }
+
+        if (target.unwrap() instanceof LivingEnderChestAccessor enderChest) {
+            if (enderChest.isDirectMode()) {
+                return SlotAccessor.transfer(source, target, Math.min(stackSize, DEFAULT_MAX_TRANSFER));
+            }
+            ItemStack srcStack = ctx.getItem(sourceSlot);
+            if (!srcStack.isEmpty() && !LivingItemManager.isLivingItem(srcStack)) {
+                enderChest.registerRoute(srcStack, ctx, sourceSlot, hostSlot);
+            }
+            return true;
+        }
+
+        return SlotAccessor.transfer(source, target, Math.min(stackSize, DEFAULT_MAX_TRANSFER));
+    }
+
+    private void cleanupStaleRoutes(List<SlotEntry> entries, ContainerContext context, Level level) {
         Set<Integer> activeSlots = new HashSet<>();
         Set<Integer> activeEnderChestSlots = new HashSet<>();
         for (SlotEntry entry : entries) {
@@ -94,7 +172,6 @@ public class LivingHopperFunction extends BaseLivingFunction {
         }
 
         EnderChannelRegistry registry = EnderChannelRegistry.getInstance();
-
         BlockPos pos = context.getBlockPos();
         if (pos != null) {
             registry.removeStaleRoutes(pos, activeSlots);
@@ -104,31 +181,70 @@ public class LivingHopperFunction extends BaseLivingFunction {
                 registry.removeStaleRoutes(containerKey, activeSlots);
             }
         }
-
         registry.removeStaleEnderChestRoutes(activeEnderChestSlots);
     }
 
-    /**
-     * 判断物品是否为活漏斗。
-     *
-     * 同时检查物品类型（漏斗）和活物品标记。
-     *
-     * @param stack 要检查的物品
-     * @return true 如果是活漏斗
-     */
+    @Override
+    public void addToTooltip(Item.TooltipContext context,
+                             Consumer<Component> tooltipAdder,
+                             TooltipFlag flag,
+                             ItemStack stack) {
+        LivingHopperData data = LivingItemManager.getHopperData(stack);
+
+        tooltipAdder.accept(Component.nullToEmpty(""));
+        tooltipAdder.accept(Component.translatable("tooltip.livingitem.hopper.status"));
+
+        DirectionTransferData dir = data.direction();
+        tooltipAdder.accept(Component.translatable(
+            "tooltip.livingitem.direction.transfer",
+            dir.sourceOffset().getSymbol(),
+            dir.targetOffset().getSymbol(),
+            Component.literal(
+                findMappingName(dir.sourceOffset(), dir.targetOffset()))
+        ).withStyle(net.minecraft.ChatFormatting.GOLD));
+
+        TransferData transfer = data.transfer();
+        if (transfer.isOnCooldown()) {
+            tooltipAdder.accept(Component.literal(
+                "冷却中: " + transfer.cooldown() + " ticks")
+                .withStyle(net.minecraft.ChatFormatting.DARK_GRAY));
+        }
+
+        FilterData filter = data.filter();
+        if (!filter.equals(FilterData.EMPTY)) {
+            ItemFilterComponent.appendFilterTooltip(filter, tooltipAdder);
+        }
+    }
+
+    private String findMappingName(Pos2D source, Pos2D target) {
+        for (var preset : SlotMapping.PRESETS) {
+            if (preset.sourceOffset().equals(source) && preset.targetOffset().equals(target)) {
+                return preset.displayName();
+            }
+        }
+        return source.getSymbol() + "-" + target.getSymbol();
+    }
+
     public static boolean isLivingHopper(ItemStack stack) {
         return stack.is(Items.HOPPER) && LivingItemManager.isLivingItem(stack);
     }
 
-    public static LivingFunctionConfig getStaticConfig() { return CONFIG; }
-
     public static boolean updateTransferMapping(ItemStack hopperStack, SlotMapping newMapping) {
         if (hopperStack == null || hopperStack.isEmpty() || newMapping == null) return false;
-        return DirectionModeComponent.updateStateInStack(hopperStack, ID,
-            (dirComp, dirState) -> dirComp.updateMapping(dirState, newMapping));
+        LivingHopperData data = LivingItemManager.getHopperData(hopperStack);
+        DirectionTransferData dir = data.direction()
+            .withSource(newMapping.sourceOffset())
+            .withTarget(newMapping.targetOffset());
+        LivingItemManager.setHopperData(hopperStack, data.withDirection(dir));
+        return true;
     }
 
-    public static ComponentState readDirectionState(ItemStack hopperStack) {
-        return DirectionModeComponent.readStateFromStack(hopperStack, ID);
+    public static DirectionTransferData readDirectionData(ItemStack hopperStack) {
+        return LivingItemManager.getHopperData(hopperStack).direction();
+    }
+
+    @Override
+    public Set<DataComponentType<?>> getIgnoredComponentTypes() {
+        return Set.of();
     }
 }

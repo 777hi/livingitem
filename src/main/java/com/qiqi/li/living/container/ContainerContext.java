@@ -1,182 +1,33 @@
 package com.qiqi.li.living.container;
 
-import java.util.Set;
-import net.minecraft.core.BlockPos;
-import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.Level;
-
 /**
- * 容器上下文 —— 活物品功能与容器之间的交互接口。
+ * 容器上下文 —— 活物品功能与容器之间的完整交互接口。
  *
- * 提供以下能力：
- * 1. 查询容器大小和槽位最大堆叠数
- * 2. 读取/修改容器中的物品
- * 3. 为槽位生成稳定 key（用于缓存和状态关联）
- * 4. 同步数据到客户端（tooltip 实时更新）
- * 5. 获取容器的方块位置（用于爆炸等需要世界坐标的功能）
+ * <p>这是一个组合接口，继承所有容器能力接口：
+ * <ul>
+ *   <li>{@link SlotInfoProvider} — 物品读写 + 槽位能力查询</li>
+ *   <li>{@link ContainerSync} — 客户端数据同步</li>
+ *   <li>{@link ContainerIdentity} — 容器身份标识 + 世界信息</li>
+ * </ul>
  *
- * 同步策略：
- *   活物品 tick 修改 ItemStack 的 DataComponent 后，需要主动同步到客户端。
- *   因为原版 broadcastChanges() 依赖 ItemStack.matches() 检测变化，
- *   而 PatchedDataComponentMap.equals() 无法检测到自定义组件的变化，
- *   所以必须手动发送 ClientboundContainerSetSlotPacket。
+ * <p>注意：tick 级临时状态（槽位互斥、级联防护、快照、流体数据）
+ * 已移至 {@link TickContext}，不再属于此接口。</p>
  *
- *   同步时需要遍历所有正在查看该容器的玩家，向每个玩家发送更新包。
- *   使用正确的 stateId（从 containerMenu 获取）确保客户端接受更新。
+ * <p>功能类应优先依赖最小接口（如 {@link SlotInfoProvider}），
+ * 只有需要完整容器能力时才依赖此接口。</p>
+ *
+ * @see LivingContainer 基础物品读写
+ * @see SlotInfoProvider 槽位能力查询
+ * @see ContainerSync 客户端同步
+ * @see ContainerIdentity 身份标识
+ * @see TickContext Tick 级临时状态
  */
-public interface ContainerContext {
-
-    int getSize();
-
-    ItemStack getItem(int logicalSlot);
-
-    void setItem(int logicalSlot, ItemStack stack);
-
-    int getMaxStackSize();
+public interface ContainerContext extends SlotInfoProvider, ContainerSync, ContainerIdentity {
 
     /**
-     * 获取指定槽位的最大堆叠上限。
-     *
-     * 对于 IItemHandler 容器（抽屉、精妙背包等），返回 handler.getSlotLimit(slot)，
-     * 可能远超 64；对于传统 Container，回退到 getMaxStackSize()。
-     *
-     * @param slot 槽位索引
-     * @return 该槽位的最大堆叠数
+     * 检查槽位是否有效。
      */
-    default int getSlotLimit(int slot) {
-        return getMaxStackSize();
-    }
-
-    /**
-     * 检查物品是否能放入指定槽位。
-     * 对于玩家盔甲槽位，非盔甲物品会返回 false，防止物品消失。
-     */
-    default boolean isItemValid(int slot, ItemStack stack) {
-        return true;
-    }
-
-    /**
-     * 模拟向指定槽位插入物品，返回实际可插入的数量。
-     * 委托给 handler.insertItem(slot, stack, true)，比 isItemValid 更全面。
-     */
-    default int simulateInsertItem(int slot, ItemStack stack) {
-        int slotLimit = getSlotLimit(slot);
-        int maxStack = Math.min(slotLimit, stack.getMaxStackSize());
-        return Math.min(stack.getCount(), maxStack);
-    }
-
-    String getStableKey(int logicalSlot, String functionId);
-
     default boolean isValidSlot(int logicalSlot) {
         return logicalSlot >= 0 && logicalSlot < getSize();
     }
-
-    /**
-     * 获取本 tick 的已占用槽位集合。
-     *
-     * 用于跨 Function 的槽位互斥：确保同一个输入槽位不会被多个活熔炉同时处理。
-     * 由 ContainerLivingItemHandler 在每次容器 tick 时创建并传入。
-     *
-     * @return 已占用槽位的 key 集合，如果未初始化返回 null
-     */
-    default Set<String> getOccupiedSlots() {
-        return null;
-    }
-
-    /**
-     * 获取本 tick 已被传输物品到达的槽位集合。
-     *
-     * 用于防止同 tick 内级联传输：当多个活漏斗组成链时，
-     * 前面的活漏斗把物品放到目标槽位后，后面的活漏斗不应该
-     * 在同一 tick 内继续把这个物品往下传。
-     *
-     * 没有此机制时，上传下方向的漏斗链会瞬间传到底（因为扫描顺序与传输方向一致），
-     * 而下传上方向的漏斗链只能一格一格传（因为扫描顺序与传输方向相反），
-     * 导致方向性行为不一致。
-     *
-     * @return 本 tick 已被传输到达的槽位索引集合，如果未初始化返回 null
-     */
-    default Set<Integer> getTransferredTargetSlots() {
-        return null;
-    }
-
-    /**
-     * 将指定槽位的物品数据同步到所有正在查看该容器的客户端。
-     *
-     * @param logicalSlot 需要同步的槽位索引
-     * @param stack 该槽位当前的 ItemStack（已包含最新的 DataComponent 数据）
-     */
-    void syncSlotToClients(int logicalSlot, ItemStack stack);
-
-    /**
-     * 获取容器的方块位置。
-     *
-     * 用于爆炸等需要世界坐标的功能。对于世界容器（箱子等），
-     * 返回容器方块的坐标；对于玩家背包等非方块容器，返回 null。
-     *
-     * 如果容器是大箱子，返回第一个关联方块的坐标。
-     *
-     * @return 容器的方块位置，如果不是方块容器返回 null
-     */
-    default BlockPos getBlockPos() {
-        return null;
-    }
-
-    /**
-     * 获取容器所在的世界。
-     *
-     * 用于跨容器传输等需要访问相邻容器的功能。
-     * 对于世界容器（箱子等），返回容器方块所在的 Level；
-     * 对于玩家背包等非方块容器，返回 null。
-     *
-     * @return 容器所在的世界，如果不是方块容器返回 null
-     */
-    default Level getLevel() {
-        return null;
-    }
-
-    /**
-     * 获取容器的列数（GUI 宽度）。
-     *
-     * 用于槽位解析时计算行列位置。标准容器为 9 列，
-     * 模组容器可能有不同的列数（如 13 列）。
-     *
-     * @return 容器的列数，默认 9
-     */
-    default int getWidth() {
-        return 9;
-    }
-
-    /**
-     * 获取容器的唯一标识 key。
-     *
-     * 用于活末影箱路由表等需要跨容器标识的场景。
-     * 对于方块容器，返回基于位置的 key（如 "chest_0_64_0"）；
-     * 对于玩家背包，返回 "player_<uuid>"；
-     * 对于未知容器，返回基于 hashCode 的 key。
-     *
-     * @return 容器唯一标识 key，如果不支持返回 null
-     */
-    default String getContainerKey() {
-        return null;
-    }
-
-    /**
-     * 获取本 tick 的容器快照。
-     *
-     * 由 {@link ContainerLivingItemHandler#processContext} 在每次容器 tick 时构建，
-     * 包含预扫描的容器信息（如活漏斗连接图），供所有组件复用。
-     *
-     * @return 容器快照，如果尚未构建返回 null
-     */
-    default ContainerSnapshot getSnapshot() {
-        return null;
-    }
-
-    /**
-     * 设置本 tick 的容器快照。
-     *
-     * @param snapshot 容器快照
-     */
-    default void setSnapshot(ContainerSnapshot snapshot) {
-    }}
+}

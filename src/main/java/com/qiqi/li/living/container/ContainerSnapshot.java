@@ -2,34 +2,14 @@ package com.qiqi.li.living.container;
 
 import java.util.Arrays;
 import net.minecraft.world.item.ItemStack;
+import com.qiqi.li.living.LivingItemManager;
 import com.qiqi.li.living.core.SlotResolver;
-import com.qiqi.li.living.core.components.DirectionModeComponent;
-import com.qiqi.li.living.core.ComponentState;
-import com.qiqi.li.living.core.model.SlotMapping;
+import com.qiqi.li.living.data.LivingHopperData;
 import com.qiqi.li.living.function.LivingHopperFunction;
 
-/**
- * 容器快照 —— 每 tick 构建一次，供所有组件共享的容器扫描结果。
- *
- * 设计理念：
- * 多个活物品组件可能都需要扫描容器获取信息（如 ItemFilterComponent 需要
- * 活漏斗连接图，未来的活熔炉组件可能需要输入/燃料/输出槽位映射）。
- * 与其每个组件各自扫描一次，不如在 {@link ContainerLivingItemHandler#processContext}
- * 中统一扫描一次，构建快照供所有组件复用。
- *
- * 生命周期：
- * - 由 {@link ContainerLivingItemHandler#processContext} 在每次容器 tick 时构建
- * - 存储在 {@link ContainerContext} 中，通过 {@link ContainerContext#getSnapshot()} 访问
- * - 每 tick 自动失效（新 tick 构建新快照）
- *
- * 当前包含的信息：
- * - 活漏斗连接图（sourceOf / targetOf 数组）
- * - 容器级流体数据（ContainerFluidData，跨 tick 持续存在）
- *
- * 扩展方式：
- * - 未来需要新的容器扫描信息时，在此类中添加字段和构建方法
- */
 public class ContainerSnapshot {
+
+    public static final ContainerSnapshot EMPTY = new ContainerSnapshot(0, new int[0], new int[0], ContainerFluidData.EMPTY);
 
     private final int containerSize;
     private final int[] sourceOf;
@@ -44,15 +24,6 @@ public class ContainerSnapshot {
         this.fluidData = fluidData;
     }
 
-    /**
-     * 从容器上下文构建快照。
-     *
-     * 扫描容器中所有槽位，识别活漏斗并构建连接关系图。
-     * 流体数据从外部持久化存储传入，确保水桶移除后水流继续干涸。
-     *
-     * @param context 容器上下文
-     * @param fluidData 持久化的流体数据（跨 tick 存活），不可为 null
-     */
     public static ContainerSnapshot capture(ContainerContext context, ContainerFluidData fluidData) {
         int containerSize = context.getSize();
         int containerWidth = context.getWidth();
@@ -61,22 +32,17 @@ public class ContainerSnapshot {
         Arrays.fill(sourceOf, -1);
         Arrays.fill(targetOf, -1);
 
-        DirectionModeComponent dirComp = new DirectionModeComponent();
-
         for (int slot = 0; slot < containerSize; slot++) {
             ItemStack stack = context.getItem(slot);
             if (stack.isEmpty()) continue;
             if (!LivingHopperFunction.isLivingHopper(stack)) continue;
 
-            ComponentState dirState = DirectionModeComponent.readStateFromStack(
-                stack, LivingHopperFunction.ID);
-            if (dirState == null) continue;
+            LivingHopperData data = LivingItemManager.getHopperData(stack);
+            if (data == null || data == LivingHopperData.DEFAULT) continue;
 
-            SlotMapping mapping = dirComp.getCurrentMapping(dirState);
-            if (mapping == null) continue;
-
-            sourceOf[slot] = SlotResolver.resolve(slot, mapping.sourceOffset(), containerSize, containerWidth);
-            targetOf[slot] = SlotResolver.resolve(slot, mapping.targetOffset(), containerSize, containerWidth);
+            var dir = data.direction();
+            sourceOf[slot] = SlotResolver.resolve(slot, dir.sourceOffset(), containerSize, containerWidth);
+            targetOf[slot] = SlotResolver.resolve(slot, dir.targetOffset(), containerSize, containerWidth);
         }
 
         return new ContainerSnapshot(containerSize, sourceOf, targetOf, fluidData);

@@ -1,50 +1,31 @@
 package com.qiqi.li.living.function;
 
+import java.util.ArrayList;
 import java.util.List;
-
+import java.util.Set;
+import java.util.function.Consumer;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.NonNullList;
+import net.minecraft.core.component.DataComponentType;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.TooltipFlag;
+import net.minecraft.world.item.component.ItemContainerContents;
 import net.minecraft.world.level.Level;
-
-import com.qiqi.li.living.core.ComponentState;
-import com.qiqi.li.living.core.LivingFunctionConfig;
-import com.qiqi.li.living.core.components.InternalStorageComponent;
-import com.qiqi.li.living.BaseLivingFunction;
+import com.qiqi.li.living.LivingItemFunction;
 import com.qiqi.li.living.LivingItemManager;
+import com.qiqi.li.living.container.ContainerContext;
+import com.qiqi.li.living.container.TickContext;
 
-public class LivingChestFunction extends BaseLivingFunction {
+public class LivingChestFunction implements LivingItemFunction {
 
     public static final String ID = "living_chest";
     public static final int CHEST_SLOTS = 27;
-
-    private static final LivingFunctionConfig CONFIG = new LivingFunctionConfig()
-        .withFunctionId(ID)
-        .withStackMultiplier(false)
-        .withOrchestrator(null)
-        .addComponent(new InternalStorageComponent());
-
-    @Override
-    protected LivingFunctionConfig getConfig() { return CONFIG; }
-
-    @Override
-    protected String getTooltipTitleKey() { return "tooltip.livingitem.chest.status"; }
-
-    @Override
-    public void addToTooltip(net.minecraft.nbt.CompoundTag functionData,
-                             net.minecraft.world.item.Item.TooltipContext context,
-                             java.util.function.Consumer<net.minecraft.network.chat.Component> tooltipAdder,
-                             net.minecraft.world.item.TooltipFlag flag,
-                             net.minecraft.world.item.ItemStack stack) {
-        if (functionData == null) return;
-
-        tooltipAdder.accept(net.minecraft.network.chat.Component.nullToEmpty(""));
-        tooltipAdder.accept(net.minecraft.network.chat.Component.translatable(getTooltipTitleKey()));
-
-        appendComponentTooltips(functionData, tooltipAdder, getConfig());
-    }
+    public static final int MAX_STORAGE_BYTES = 16384;
 
     @Override
     public boolean canApply(ItemStack stack) {
@@ -54,36 +35,160 @@ public class LivingChestFunction extends BaseLivingFunction {
     @Override
     public String getFunctionId() { return ID; }
 
+    @Override
+    public void tick(List<SlotEntry> entries, ContainerContext context, TickContext tick, Level level) {
+        if (level.isClientSide) return;
+    }
+
+    @Override
+    public void addToTooltip(Item.TooltipContext context,
+                             Consumer<Component> tooltipAdder,
+                             TooltipFlag flag,
+                             ItemStack stack) {
+        tooltipAdder.accept(Component.nullToEmpty(""));
+        tooltipAdder.accept(Component.translatable("tooltip.livingitem.chest.status"));
+
+        int usedBytes = estimateByteUsage(stack);
+        if (usedBytes > 0) {
+            String usedStr = formatByteSize(usedBytes);
+            String maxStr = formatByteSize(MAX_STORAGE_BYTES);
+            tooltipAdder.accept(Component.translatable(
+                "tooltip.livingitem.chest.bytes", usedStr, maxStr));
+        }
+
+        int usedSlots = countUsedSlots(stack);
+        if (usedSlots > 0) {
+            tooltipAdder.accept(Component.translatable(
+                "tooltip.livingitem.chest.slots", usedSlots, CHEST_SLOTS));
+        }
+    }
+
+    @Override
+    public Set<DataComponentType<?>> getIgnoredComponentTypes() {
+        return Set.of();
+    }
+
     public static boolean isLivingChest(ItemStack stack) {
         return stack.is(Items.CHEST) && LivingItemManager.isLivingItem(stack);
     }
 
-    public static int getCapacity(com.qiqi.li.living.container.ContainerContext ctx) {
+    public static int getCapacity(ContainerContext ctx) {
         return CHEST_SLOTS;
     }
 
     public static List<ItemStack> getItems(ItemStack chestStack) {
-        return InternalStorageComponent.getItems(chestStack);
+        ItemContainerContents contents = chestStack.get(net.minecraft.core.component.DataComponents.CONTAINER);
+        if (contents == null) {
+            return createEmptySlots(CHEST_SLOTS);
+        }
+        NonNullList<ItemStack> list = NonNullList.withSize(CHEST_SLOTS, ItemStack.EMPTY);
+        contents.copyInto(list);
+        return new ArrayList<>(list);
     }
 
     public static void setItems(ItemStack chestStack, List<ItemStack> items) {
-        InternalStorageComponent.setItems(chestStack, items);
+        NonNullList<ItemStack> list = NonNullList.withSize(CHEST_SLOTS, ItemStack.EMPTY);
+        for (int i = 0; i < Math.min(items.size(), CHEST_SLOTS); i++) {
+            list.set(i, items.get(i).copy());
+        }
+        chestStack.set(net.minecraft.core.component.DataComponents.CONTAINER, ItemContainerContents.fromItems(list));
     }
 
     public static boolean insertItem(ItemStack chestStack, ItemStack itemToInsert) {
-        return InternalStorageComponent.insertItem(chestStack, itemToInsert);
+        if (chestStack.getCount() > 1 || chestStack == itemToInsert) return false;
+        if (!canInsert(chestStack, itemToInsert)) return false;
+
+        List<ItemStack> items = getItems(chestStack);
+        boolean modified = false;
+
+        for (int i = 0; i < items.size() && !itemToInsert.isEmpty(); i++) {
+            ItemStack slotItem = items.get(i);
+            if (slotItem.isEmpty()) {
+                items.set(i, itemToInsert.copy());
+                itemToInsert.setCount(0);
+                modified = true;
+            } else if (ItemStack.isSameItemSameComponents(slotItem, itemToInsert)) {
+                int space = slotItem.getMaxStackSize() - slotItem.getCount();
+                int transfer = Math.min(itemToInsert.getCount(), space);
+                if (transfer > 0) {
+                    slotItem.grow(transfer);
+                    itemToInsert.shrink(transfer);
+                    modified = true;
+                }
+            }
+        }
+
+        if (modified) setItems(chestStack, items);
+        return itemToInsert.isEmpty();
     }
 
     public static boolean insertItem(ItemStack chestStack, ItemStack itemToInsert, net.minecraft.core.HolderLookup.Provider registries) {
-        return InternalStorageComponent.insertItem(chestStack, itemToInsert, registries);
+        return insertItem(chestStack, itemToInsert);
     }
 
     public static ItemStack extractItem(ItemStack chestStack, int amount) {
-        return InternalStorageComponent.extractItem(chestStack, amount);
+        if (chestStack.getCount() > 1) return ItemStack.EMPTY;
+        List<ItemStack> items = getItems(chestStack);
+        ItemStack result = ItemStack.EMPTY;
+        int remaining = amount;
+        boolean modified = false;
+
+        for (int i = 0; i < items.size() && remaining > 0; i++) {
+            ItemStack slotItem = items.get(i);
+            if (slotItem.isEmpty()) continue;
+
+            if (result.isEmpty()) {
+                int toExtract = Math.min(remaining, slotItem.getCount());
+                result = slotItem.copyWithCount(toExtract);
+                slotItem.shrink(toExtract);
+                remaining -= toExtract;
+                modified = true;
+            } else if (ItemStack.isSameItemSameComponents(result, slotItem)) {
+                int toExtract = Math.min(remaining, Math.min(slotItem.getCount(), result.getMaxStackSize() - result.getCount()));
+                if (toExtract > 0) {
+                    result.grow(toExtract);
+                    slotItem.shrink(toExtract);
+                    remaining -= toExtract;
+                    modified = true;
+                }
+            }
+
+            if (slotItem.isEmpty()) items.set(i, ItemStack.EMPTY);
+        }
+
+        if (modified) setItems(chestStack, items);
+        return result;
     }
 
     public static ItemStack extractItem(ItemStack chestStack, ItemStack target, int amount) {
-        return InternalStorageComponent.extractItem(chestStack, target, amount);
+        if (chestStack.getCount() > 1) return ItemStack.EMPTY;
+        List<ItemStack> items = getItems(chestStack);
+        ItemStack result = ItemStack.EMPTY;
+        int remaining = amount;
+        boolean modified = false;
+
+        for (int i = 0; i < items.size() && remaining > 0; i++) {
+            ItemStack slotItem = items.get(i);
+            if (slotItem.isEmpty() || !ItemStack.isSameItemSameComponents(target, slotItem)) continue;
+
+            int toExtract;
+            if (result.isEmpty()) {
+                toExtract = Math.min(remaining, slotItem.getCount());
+                result = slotItem.copyWithCount(toExtract);
+            } else {
+                toExtract = Math.min(remaining, Math.min(slotItem.getCount(), result.getMaxStackSize() - result.getCount()));
+                if (toExtract <= 0) { remaining = 0; break; }
+                result.grow(toExtract);
+            }
+
+            slotItem.shrink(toExtract);
+            remaining -= toExtract;
+            modified = true;
+            if (slotItem.isEmpty()) items.set(i, ItemStack.EMPTY);
+        }
+
+        if (modified) setItems(chestStack, items);
+        return result;
     }
 
     public static boolean hasStorage(ItemStack stack) {
@@ -91,46 +196,64 @@ public class LivingChestFunction extends BaseLivingFunction {
     }
 
     public static boolean isStorageEmpty(ItemStack stack) {
-        return InternalStorageComponent.isStorageEmpty(stack);
+        return countUsedSlots(stack) == 0;
     }
 
     public static boolean isStorageFull(ItemStack stack) {
-        return InternalStorageComponent.isStorageFull(stack);
+        return countUsedSlots(stack) >= CHEST_SLOTS;
     }
 
     public static boolean isByteFull(ItemStack stack) {
-        return InternalStorageComponent.isByteFull(stack);
+        return estimateByteUsage(stack) >= MAX_STORAGE_BYTES;
+    }
+
+    public static boolean isByteFull(ItemStack stack, net.minecraft.core.HolderLookup.Provider registries) {
+        return getCurrentByteUsage(stack, registries) >= MAX_STORAGE_BYTES;
     }
 
     public static int getCurrentByteUsage(ItemStack stack) {
-        return InternalStorageComponent.getCurrentByteUsage(stack);
+        return estimateByteUsage(stack);
     }
 
     public static int getCurrentByteUsage(ItemStack stack, net.minecraft.core.HolderLookup.Provider registries) {
-        return InternalStorageComponent.getCurrentByteUsage(stack, registries);
+        if (registries != null) {
+            try {
+                net.minecraft.nbt.CompoundTag tag = (net.minecraft.nbt.CompoundTag) stack.saveOptional(registries);
+                java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+                try (java.io.DataOutputStream dos = new java.io.DataOutputStream(baos)) {
+                    net.minecraft.nbt.NbtIo.write(tag, dos);
+                }
+                return baos.size();
+            } catch (Exception e) {
+                return estimateByteUsage(stack);
+            }
+        }
+        return estimateByteUsage(stack);
     }
 
     public static int getMaxStorageBytes() {
-        return InternalStorageComponent.MAX_STORAGE_BYTES;
+        return MAX_STORAGE_BYTES;
     }
 
     public static boolean canInsert(ItemStack chestStack, ItemStack itemToInsert) {
-        return InternalStorageComponent.canInsert(chestStack, itemToInsert);
+        if (chestStack == itemToInsert || chestStack.getCount() > 1) return false;
+        return !isByteFull(chestStack);
     }
 
     public static boolean canInsert(ItemStack chestStack, ItemStack itemToInsert, net.minecraft.core.HolderLookup.Provider registries) {
-        return InternalStorageComponent.canInsert(chestStack, itemToInsert, registries);
+        if (chestStack == itemToInsert || chestStack.getCount() > 1) return false;
+        return !isByteFull(chestStack, registries);
     }
 
     public static void clearStorage(ItemStack chestStack) {
         if (!isLivingChest(chestStack)) return;
-        InternalStorageComponent.clearStorage(chestStack);
+        chestStack.remove(net.minecraft.core.component.DataComponents.CONTAINER);
     }
 
     public static void dropAllItems(ItemStack chestStack, Player player) {
         if (!isLivingChest(chestStack)) return;
 
-        List<ItemStack> items = InternalStorageComponent.getItems(chestStack);
+        List<ItemStack> items = getItems(chestStack);
         Level level = player.level();
         BlockPos dropPos = player.blockPosition();
         int droppedCount = 0;
@@ -138,34 +261,43 @@ public class LivingChestFunction extends BaseLivingFunction {
         for (ItemStack item : items) {
             if (!item.isEmpty()) {
                 level.addFreshEntity(new ItemEntity(
-                    level,
-                    dropPos.getX() + 0.5,
-                    dropPos.getY() + 0.5,
-                    dropPos.getZ() + 0.5,
+                    level, dropPos.getX() + 0.5, dropPos.getY() + 0.5, dropPos.getZ() + 0.5,
                     item.copy()));
                 droppedCount += item.getCount();
             }
         }
 
-        InternalStorageComponent.clearStorage(chestStack);
+        clearStorage(chestStack);
 
         if (droppedCount > 0) {
             LivingItemManager.LOGGER.info("活箱子取消活化：掉落 {} 个物品", droppedCount);
         }
     }
 
-    public static ComponentState getStorageState(ItemStack stack) {
-        net.minecraft.nbt.CompoundTag funcData = LivingItemManager.getFunctionData(stack, ID).copy();
-        if (funcData == null || funcData.isEmpty()) {
-            return new ComponentState();
+    private static int countUsedSlots(ItemStack stack) {
+        ItemContainerContents contents = stack.get(net.minecraft.core.component.DataComponents.CONTAINER);
+        if (contents == null) return 0;
+        NonNullList<ItemStack> list = NonNullList.withSize(CHEST_SLOTS, ItemStack.EMPTY);
+        contents.copyInto(list);
+        int used = 0;
+        for (ItemStack item : list) {
+            if (!item.isEmpty()) used++;
         }
-        net.minecraft.nbt.CompoundTag storageTag = funcData.getCompound(InternalStorageComponent.ID).copy();
-        return ComponentState.fromNBT(storageTag);
+        return used;
     }
 
-    public static void saveStorageState(ItemStack stack, ComponentState state) {
-        net.minecraft.nbt.CompoundTag funcData = LivingItemManager.getFunctionData(stack, ID).copy();
-        funcData.put(InternalStorageComponent.ID, state.toNBT());
-        LivingItemManager.setFunctionData(stack, ID, funcData);
+    private static int estimateByteUsage(ItemStack stack) {
+        return countUsedSlots(stack) * 64;
+    }
+
+    private static List<ItemStack> createEmptySlots(int capacity) {
+        List<ItemStack> slots = new ArrayList<>(capacity);
+        for (int i = 0; i < capacity; i++) slots.add(ItemStack.EMPTY);
+        return slots;
+    }
+
+    public static String formatByteSize(int bytes) {
+        if (bytes < 1024) return bytes + "B";
+        return String.format("%.1fKB", bytes / 1024.0);
     }
 }

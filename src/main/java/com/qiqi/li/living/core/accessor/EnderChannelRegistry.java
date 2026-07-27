@@ -7,7 +7,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
-import com.qiqi.li.living.core.ComponentState;
+import com.qiqi.li.living.data.FilterData;
 import com.qiqi.li.living.core.components.ItemFilterComponent;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.network.EnderChannelSyncPacket;
@@ -164,10 +164,10 @@ public final class EnderChannelRegistry {
      * 而排在后面的条目永远拿不到的情况。</p>
      *
      * @param channel 频道号
-     * @param filterState 过滤状态（用于白名单匹配，可为 null）
+     * @param filterData 过滤数据（用于白名单匹配，可为 null）
      * @return 匹配的路由条目，如果频道为空或无匹配条目返回 null
      */
-    public EnderChannelEntry peek(int channel, ComponentState filterState) {
+    public EnderChannelEntry peek(int channel, FilterData filterData) {
         ChannelData data = channels.get(channel);
         if (data == null || data.entries.isEmpty()) {
             LOGGER.trace("EnderChannelRegistry: peek channel={}, empty", channel);
@@ -178,7 +178,7 @@ public final class EnderChannelRegistry {
         int size = list.size();
         data.nextIndex %= size;
 
-        if (filterState == null) {
+        if (filterData == null) {
             EnderChannelEntry entry = list.get(data.nextIndex);
             data.nextIndex = (data.nextIndex + 1) % size;
             LOGGER.trace("EnderChannelRegistry: peek channel={}, no filter, index={} → {}",
@@ -189,7 +189,7 @@ public final class EnderChannelRegistry {
         for (int i = 0; i < size; i++) {
             int idx = (data.nextIndex + i) % size;
             EnderChannelEntry entry = list.get(idx);
-            if (ItemFilterComponent.allowsItemType(filterState, entry.itemType())) {
+            if (ItemFilterComponent.allowsItemType(filterData, entry.itemType())) {
                 data.nextIndex = (idx + 1) % size;
                 LOGGER.trace("EnderChannelRegistry: peek channel={}, filter matched, index={} → {}",
                     channel, idx, entry.itemType());

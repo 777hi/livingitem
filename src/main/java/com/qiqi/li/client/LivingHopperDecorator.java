@@ -2,6 +2,7 @@ package com.qiqi.li.client;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.qiqi.li.LivingItem;
+import com.qiqi.li.living.data.DirectionTransferData;
 import com.qiqi.li.living.function.LivingHopperFunction;
 import com.qiqi.li.living.LivingItemManager;
 import com.qiqi.li.living.core.model.Pos2D;
@@ -55,18 +56,11 @@ public class LivingHopperDecorator implements IItemDecorator {
     public boolean render(GuiGraphics guiGraphics, Font font, ItemStack stack, int xOffset, int yOffset) {
         if (!LivingItemManager.isLivingItem(stack)) return false;
 
-        var dirState = LivingHopperFunction.readDirectionState(stack);
-        if (dirState == null) return false;
+        DirectionTransferData dirData = LivingHopperFunction.readDirectionData(stack);
+        if (dirData == null) return false;
 
-        int srcX = dirState.getInt("src_x", Integer.MIN_VALUE);
-        int srcY = dirState.getInt("src_y", Integer.MIN_VALUE);
-        int tgtX = dirState.getInt("tgt_x", Integer.MIN_VALUE);
-        int tgtY = dirState.getInt("tgt_y", Integer.MIN_VALUE);
-
-        if (srcX == Integer.MIN_VALUE || tgtX == Integer.MIN_VALUE) return false;
-
-        Pos2D source = new Pos2D(srcX, srcY);
-        Pos2D target = new Pos2D(tgtX, tgtY);
+        Pos2D source = dirData.sourceOffset();
+        Pos2D target = dirData.targetOffset();
 
         int inputRot = directionToRotation(source);
         int outputRot = directionToRotation(target);

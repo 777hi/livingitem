@@ -4,6 +4,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import com.qiqi.li.living.container.ContainerContext;
+import com.qiqi.li.living.data.FilterData;
 import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -42,7 +43,7 @@ import org.slf4j.Logger;
  *
  * <h3>黑白名单过滤</h3>
  * <p>直连模式的过滤由 {@link FilteredSlotAccessor} 统一处理。
- * 路由模式的 {@code filterState} 仅用于路由表预过滤（{@code registry.peek()}），
+ * 路由模式的 {@code filterData} 仅用于路由表预过滤（{@code registry.peek()}），
  * 避免提取不匹配的物品类型。</p>
  *
  * <h3>频道隔离</h3>
@@ -55,7 +56,7 @@ public class LivingEnderChestAccessor implements SlotAccessor {
     private final int channel;
     private final MinecraftServer server;
     /** 路由模式下用于路由表预过滤（直连模式下为 null，由 FilteredSlotAccessor 处理） */
-    private final com.qiqi.li.living.core.ComponentState filterState;
+    private final FilterData filterData;
     private final Set<Integer> transferredTargetSlots;
     private final UUID boundPlayerUuid;
     private final boolean directMode;
@@ -79,11 +80,11 @@ public class LivingEnderChestAccessor implements SlotAccessor {
     }
 
     public LivingEnderChestAccessor(MinecraftServer server, int channel,
-                                     com.qiqi.li.living.core.ComponentState filterState,
+                                     FilterData filterData,
                                      Set<Integer> transferredTargetSlots) {
         this.server = server;
         this.channel = channel;
-        this.filterState = filterState;
+        this.filterData = filterData;
         this.transferredTargetSlots = transferredTargetSlots;
         this.boundPlayerUuid = null;
         this.directMode = false;
@@ -95,7 +96,7 @@ public class LivingEnderChestAccessor implements SlotAccessor {
                                      UUID boundPlayerUuid) {
         this.server = server;
         this.channel = channel;
-        this.filterState = null; // 直连模式不需要 filterState，由 FilteredSlotAccessor 处理
+        this.filterData = null;
         this.transferredTargetSlots = transferredTargetSlots;
         this.boundPlayerUuid = boundPlayerUuid;
         this.directMode = boundPlayerUuid != null;
@@ -195,7 +196,7 @@ public class LivingEnderChestAccessor implements SlotAccessor {
 
     private ItemStack routeSimulateExtract(int amount) {
         EnderChannelRegistry registry = EnderChannelRegistry.getInstance();
-        EnderChannelEntry entry = registry.peek(channel, filterState);
+        EnderChannelEntry entry = registry.peek(channel, filterData);
         if (entry == null) return ItemStack.EMPTY;
 
         ServerLevel sourceLevel;
@@ -256,7 +257,7 @@ public class LivingEnderChestAccessor implements SlotAccessor {
         LOGGER.debug("LivingEnderChestAccessor: extract begin channel={}, amount={}", channel, amount);
 
         while (true) {
-            EnderChannelEntry entry = registry.peek(channel, filterState);
+            EnderChannelEntry entry = registry.peek(channel, filterData);
             if (entry == null) {
                 LOGGER.trace("LivingEnderChestAccessor: extract channel={}, no entry found", channel);
                 return ItemStack.EMPTY;

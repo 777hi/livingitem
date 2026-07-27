@@ -131,4 +131,15 @@ public record SlotMapping(
             symbol.isEmpty() ? source.getSymbol() + "→" + target.getSymbol() : symbol,
             name.isEmpty() ? "自定义" : name);
     }
+
+    public static SlotMapping fromDirections(Pos2D source, Pos2D target) {
+        for (SlotMapping preset : PRESETS) {
+            if (preset.sourceOffset().equals(source) && preset.targetOffset().equals(target)) {
+                return preset;
+            }
+        }
+        return new SlotMapping(source, target,
+            source.getSymbol() + "→" + target.getSymbol(),
+            "自定义");
+    }
 }

@@ -25,7 +25,7 @@ import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
 import com.qiqi.li.living.LivingItemFunction;
 import com.qiqi.li.living.LivingItemManager;
-import com.qiqi.li.living.core.components.WaterSpreadComponent;
+import com.qiqi.li.living.function.LivingWaterBucketFunction;
 
 /**
  * 活物品容器处理器 —— 负责遍历容器中的物品并执行活物品 tick。
@@ -151,28 +151,13 @@ public class ContainerLivingItemHandler {
     public static void processContext(ContainerContext context, Level level) {
         long startNanos = System.nanoTime();
 
-        Set<String> occupiedSlots = context.getOccupiedSlots();
-        if (occupiedSlots != null) {
-            occupiedSlots.clear();
-        }
-
-        Set<Integer> transferredTargetSlots = context.getTransferredTargetSlots();
-        if (transferredTargetSlots != null) {
-            transferredTargetSlots.clear();
-        }
-
         int containerSize = context.getSize();
         if (containerSize <= 0) {
             return;
         }
 
-        // 构建容器快照：每 tick 扫描一次，供所有组件复用
-        // 流体数据从持久化缓存获取，确保跨 tick 存活
-        String containerKey = context.getContainerKey();
-        ContainerFluidData fluidData = containerKey != null
-            ? FLUID_DATA_CACHE.computeIfAbsent(containerKey, k -> new ContainerFluidData())
-            : new ContainerFluidData();
-        context.setSnapshot(ContainerSnapshot.capture(context, fluidData));
+        // 创建 TickContext（包含快照、流体数据、互斥集合等）
+        TickContext tick = TickContext.create(context);
 
         Map<LivingItemFunction, List<LivingItemFunction.SlotEntry>> grouped = new LinkedHashMap<>();
 
@@ -188,19 +173,20 @@ public class ContainerLivingItemHandler {
         }
 
         for (var entry : grouped.entrySet()) {
-            entry.getKey().tick(entry.getValue(), context, level);
+            entry.getKey().tick(entry.getValue(), context, tick, level);
         }
 
         // 在函数 tick 之后运行容器级流体数据：
         // 水桶组件已注册水源 → 现在蔓延 + 干涸
+        ContainerFluidData fluidData = tick.fluidData();
         if (fluidData != null && !fluidData.isEmpty()) {
             fluidData.setLastTickTime(System.currentTimeMillis());
             fluidData.tick(context);
         }
 
-        // 蔓延完成后，将最新水流数据同步到所有活水桶的 ComponentState
-        WaterSpreadComponent.postTickSync(context, fluidData);
+        LivingWaterBucketFunction.postTickSync(context, fluidData);
 
+        String containerKey = context.getContainerKey();
         if (fluidData != null && fluidData.isEmpty() && containerKey != null) {
             FLUID_DATA_CACHE.remove(containerKey);
         }
@@ -214,7 +200,7 @@ public class ContainerLivingItemHandler {
         long elapsedMs = (System.nanoTime() - startNanos) / 1_000_000;
         if (elapsedMs > 5) {
             LOGGER.warn("[Perf] processContext key={} size={} livingItems={} functions={} elapsed={}ms",
-                context.getContainerKey(), containerSize, grouped.values().stream().mapToInt(List::size).sum(),
+                containerKey, containerSize, grouped.values().stream().mapToInt(List::size).sum(),
                 grouped.size(), elapsedMs);
         }
     }

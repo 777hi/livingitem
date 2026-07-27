@@ -4,22 +4,24 @@
 
 ## 项目概述
 
-将世界中的方块功能（熔炉、漏斗等）**活化到物品层面**。活物品在容器（箱子、背包等）内自动运行，状态通过 NBT 持久化，跟随物品跨容器迁移。
+将世界中的方块功能（熔炉、漏斗等）**活化到物品层面**。活物品在容器（箱子、背包等）内自动运行，状态通过 DataComponent 持久化，跟随物品跨容器迁移。
 
 ### 核心特性
 
 - **活按钮 UI**：在容器界面点击按钮，将手持物品转化为活物品
 - **容器内自动执行**：含活物品的被加载容器会自动 tick
-- **组件化架构**：功能拆分为可复用的原子组件，通过声明式配置组合
-- **编排器模式**：通过 `LivingOrchestrator` 定义组件协作流程，新活物品只需选择编排器 + 配置组件
-- **方向配置组件**：`DirectionModeComponent` 统一管理槽位方向，支持 SLOTS（多槽位映射）和 TRANSFER（传输方向）两种模式
+- **DataComponent 直接管理**：每个功能类直接管理其类型化的 DataComponent（如 `LivingTntData`、`LivingFurnaceData`），替代旧的 `ComponentState` + `LivingFunctionData` 中转层
+- **功能内聚**：每个功能类自行实现 tick 逻辑和数据管理，不再依赖编排器或 FunctionExecutor 调度
+- **不可变数据模型**：使用 Java Record 实现不可变数据结构（如 `ProgressData`、`FuelData`），通过 `withXxx()` 方法创建新实例
+- **增量同步**：功能数据拆分为独立的 DataComponent，只在数据变化时更新并同步到客户端
+- **方向数据模型**：`DirectionSlotsData`（多槽位映射）和 `DirectionTransferData`（传输方向）替代旧的 `DirectionModeComponent` + `ComponentState`
 - **WASD 输入配置**：在容器界面拿起活漏斗悬停活按钮上，通过 WASD 键入改变传输方向
-- **状态持久化**：所有运行数据保存在物品 NBT 中，跨容器迁移不丢失
+- **状态持久化**：所有运行数据保存在 DataComponent 中，跨容器迁移不丢失
 - **活物品隔离**：活物品不会被其他活物品当作普通物品处理（不传输、不熔炼、不作为燃料）
 - **GUI交互系统**：容器界面中活物品之间的鼠标交互（如活打火石右键活TNT），声明式规则 + 统一拦截 + 服务端处理
 - **活TNT爆炸**：容器中的可爆炸活物品，引信倒计时后爆炸，威力随数量缩放，支持普通/大当量双模式
-- **活物品图标系统**：组件化的客户端图标框架，声明式配置即可实现活物品图标根据 NBT 动态切换，支持上下文感知（GUI/手持显示不同图标）和 ItemDecorator 叠加层
-- **活箱子系统**：将箱子虚拟化到物品 NBT 中，堆叠数 × 27 槽 = 虚拟箱子容量。UUID 映射管理、LRU 缓存、磁盘持久化、漏斗自动传输、跨容器传输、GUI 拆分/合并 UUID 自动分配
+- **活物品图标系统**：组件化的客户端图标框架，声明式配置即可实现活物品图标根据状态动态切换，支持上下文感知（GUI/手持显示不同图标）和 ItemDecorator 叠加层
+- **活箱子系统**：将箱子虚拟化到物品 DataComponent 中，堆叠数 × 27 槽 = 虚拟箱子容量。UUID 映射管理、LRU 缓存、磁盘持久化、漏斗自动传输、跨容器传输、GUI 拆分/合并 UUID 自动分配
 - **活末影箱系统**：无线传输路由器，支持路由模式（共享黑板架构，通过全局路由表跨容器无线传输）和直连模式（绑定玩家末影箱直连）。频道隔离、轮询公平调度、反向索引路由清理、黑白名单统一过滤
 
 ---
@@ -35,47 +37,147 @@ ContainerChunkCache (容器位置缓存，拉取模型，直接遍历所有已�
     ↓
 ContainerLivingItemHandler (扫描容器、按功能分组)
     ↓
-BaseLivingFunction.tick() (通用编排框架)
+LivingItemFunction.tick(entries, context, tick, level) (各功能类自行实现 tick 逻辑)
     ↓
-LivingOrchestrator.orchestrate() (编排器决定组件协作流程)
+┌─────────────────────────────────────────────────────────────────┐
+│  功能类直接管理 DataComponent，无中间层                          │
+│                                                                 │
+│  LivingTntFunction        → LivingTntData (ExplosionData)       │
+│  LivingWaterBucketFunction→ LivingWaterBucketData (WaterData)   │
+│  LivingFurnaceFunction    → LivingFurnaceData (ProgressData,    │
+│                              FuelData, TransformData,           │
+│                              DirectionSlotsData)                │
+│  LivingHopperFunction     → LivingHopperData (TransferData,     │
+│                              FilterData, DirectionTransferData) │
+│  LivingEnderChestFunction → LivingEnderChestData (EnderChannel) │
+│  LivingChestFunction      → InternalStorageComponent (旧架构)   │
+│                                                                 │
+│  无状态工具类（接收类型化数据 → 返回新数据）：                     │
+│  ProgressComponent  → tick(ProgressData) → ProgressData         │
+│  FuelConsumeComponent → tick(FuelData) → FuelData               │
+│  ItemTransformComponent → transform(TransformData) → Transform  │
+│  ExplosionComponent → tick(ExplosionData) → ExplosionData       │
+│  ItemFilterComponent → allows(FilterData, ItemStack) → boolean  │
+│  ItemTransferComponent → transfer(...) → boolean                │
+│  EnderChannelComponent → cleanup(...) → void                    │
+└─────────────────────────────────────────────────────────────────┘
     ↓
-┌─────────────────────────────────────────────┐
-│  DirectionModeComponent  → 方向/槽位解析     │
-│  ItemTransferComponent   → 物品传输（活漏斗） │
-│  ItemFilterComponent     → 黑白名单过滤      │
-│  EnderChannelComponent   → 活末影箱路由清理   │
-│  ProgressComponent       → 进度计时          │
-│  FuelConsumeComponent    → 燃料消耗          │
-│  ItemTransformComponent  → 配方匹配与转化    │
-│  ExplosionComponent      → 引信倒计时+爆炸   │
-└─────────────────────────────────────────────┘
+ContainerContext (组合接口：LivingContainer + SlotInfoProvider + ContainerSync + ContainerIdentity)
     ↓
-ContainerContext / SimpleContainerContext (直接基于 IItemHandler 读写，统一原版和模组容器)
+TickContext (tick 级临时状态：槽位互斥、级联防护、容器快照、流体数据)
     ↓
 SlotAccessor (模拟优先传输：simulateExtract → simulateInsert → extract → insert → rollback安全兜底 + FilteredSlotAccessor 过滤)
 ```
 
-### 编排器体系
+### DataComponent 数据模型
 
-编排器将"如何协调组件执行"从活物品功能类中分离出来，使新活物品只需选择合适的编排器，无需重写编排逻辑。
+每个功能类拥有独立的 DataComponent 类型，数据通过不可变 Record 聚合：
 
 ```
-LivingOrchestrator (接口)
+LivingItemManager (DataComponent 注册中心)
+    ├── LIVING_TNT_DATA          → LivingTntData
+    │     └── explosion: ExplosionData (ignited, fuseDuration)
+    │
+    ├── LIVING_WATER_BUCKET_DATA → LivingWaterBucketData
+    │     └── water: WaterData (flow, hostSlot, width)
+    │
+    ├── LIVING_FURNACE_DATA      → LivingFurnaceData
+    │     ├── progress: ProgressData (progress, total)
+    │     ├── fuel: FuelData (burnTime, maxBurnTime)
+    │     ├── transform: TransformData (input, output, inputCount, outputCount)
+    │     └── direction: DirectionSlotsData (slots, activeSlotIndex)
+    │
+    ├── LIVING_HOPPER_DATA       → LivingHopperData
+    │     ├── transfer: TransferData (cooldown, maxCooldown)
+    │     ├── filter: FilterData (blacklist, whitelist, tags, slots)
+    │     └── direction: DirectionTransferData (sourceOffset, targetOffset)
+    │
+    └── LIVING_ENDER_CHEST_DATA  → LivingEnderChestData
+          └── channel: EnderChannelData (channel, boundPlayer, routes)
+```
+
+**数据流转模式（以活熔炉为例）：**
+```
+tick() 入口
+    ↓
+LivingFurnaceData data = LivingItemManager.getData(stack, LIVING_FURNACE_DATA.value(), LivingFurnaceData.DEFAULT)
+    ↓
+读取子数据：data.progress(), data.fuel(), data.direction()
+    ↓
+无状态工具类处理：
+    data = tickProgress(data, stack.getCount())   // ProgressComponent.tick()
+    data = tickFuel(data, fuelSlot, stack.getCount()) // FuelConsumeComponent.tick()
+    data = tickTransform(data, inputSlot)          // ItemTransformComponent.tick()
+    ↓
+写入新数据：LivingItemManager.setData(stack, LIVING_FURNACE_DATA.value(), data, LivingFurnaceData.DEFAULT)
+    ↓
+同步到客户端：context.syncSlotToClients(slot, stack)
+```
+
+### 容器上下文架构（接口拆分）
+
+`ContainerContext` 已从上帝接口重构为组合接口，拆分为 4 个正交接口：
+
+```
+ContainerContext (组合接口，继承以下 4 个接口)
+    ├── LivingContainer          — 基础物品读写（getSize, getItem, setItem, getMaxStackSize）
+    ├── SlotInfoProvider         — 槽位能力（getSlotLimit, isItemValid, simulateInsertItem, getWidth）
+    ├── ContainerSync            — 客户端同步（syncSlotToClients）
+    └── ContainerIdentity        — 身份标识（getContainerKey, getStableKey, getBlockPos, getLevel）
+```
+
+**为什么拆分？**
+- 原 `ContainerContext` 承担了太多职责（物品读写、槽位能力、同步、身份标识、tick 状态），违反接口隔离原则
+- 功能类通常只需要部分能力（如熔炉只需读写+同步，不需要槽位验证）
+- 拆分后，功能类可以只依赖最小接口，降低耦合
+
+**TickContext 模式**：
+```
+TickContext (tick 级临时状态，生命周期仅为单次 tick)
+    ├── occupiedSlots: Set<String>          — 槽位互斥集合（防止同槽位重复处理）
+    ├── transferredTargetSlots: Set<Integer> — 级联传输防护（防止漏斗循环传输）
+    ├── snapshot: ContainerSnapshot         — 容器快照（预扫描活漏斗连接图）
+    └── fluidData: ContainerFluidData       — 容器级流体数据（实例绑定，非静态缓存）
+```
+
+**泛型数据访问**：
+```java
+// 替代所有 getXxxData/setXxxData 方法
+LivingItemManager.getData(stack, type, defaultValue)
+LivingItemManager.setData(stack, type, data, defaultValue)  // 等于默认值时自动移除
+```
+
+### 编排器体系（旧架构，已废弃）
+
+> ⚠️ 编排器模式已被功能内聚模式替代。新功能类（`LivingTntFunction`、`LivingWaterBucketFunction`、`LivingFurnaceFunction`、`LivingHopperFunction`、`LivingEnderChestFunction`）自行实现 tick 逻辑，不再使用编排器。旧编排器文件保留仅用于 `LivingChestFunction` 等尚未迁移的功能。
+
+**旧模式**：编排器将"如何协调组件执行"从活物品功能类中分离出来，使新活物品只需选择合适的编排器，无需重写编排逻辑。
+
+**新模式**：每个功能类直接管理其 DataComponent，自行实现 tick 逻辑。功能类内部调用无状态工具类（`ProgressComponent`、`FuelConsumeComponent` 等）处理具体逻辑，但编排流程由功能类自己控制。
+
+```
+LivingOrchestrator (接口) — 旧架构，仅 LivingChestFunction 使用
     ├── SimpleOrchestrator       — 直接遍历组件 tick
-    │     适用：活漏斗（无进度/燃料概念）
-    │
     ├── ProgressOrchestrator     — 检查输入 → tick/pauseTick → 完成时转化
-    │     适用：活磨石（有进度和转化，无燃料）
-    │
     └── FuelProgressOrchestrator — 检查燃料+输入 → tick/pauseTick → 完成时转化
-          适用：活熔炉、活酿造台（燃料+进度+转化）
 ```
 
-| 编排器 | canProgress 检查 | pauseTick | handleCompletion | 输入槽位占用 |
-|--------|-----------------|-----------|-----------------|-------------|
-| SIMPLE | 无 | 无 | 无 | 无 |
-| PROGRESS | 输入有效性 | 进度回退 | 转化+重置 | ✅ |
-| FUEL_PROGRESS | 燃料+输入有效性 | 进度+燃料回退 | 燃料检查+转化+重置 | ✅ |
+**新旧架构对比：**
+
+| 维度 | 旧架构（编排器 + ComponentState） | 新架构（功能内聚 + DataComponent） |
+|------|--------------------------------|--------------------------------|
+| 数据存储 | `LivingFunctionData` → `Map<String, CompoundTag>` | 独立 `DataComponent<LivingXxxData>` |
+| 数据模型 | `ComponentState`（可变 NBT 包装器） | Java Record（不可变，`withXxx()` 创建新实例） |
+| 编排方式 | `LivingOrchestrator.orchestrate()` | 功能类自行实现 `tick()` |
+| 组件调用 | `ILivingComponent.tick(context, state)` | 无状态工具类：`ProgressComponent.tick(data) → data` |
+| 方向数据 | `DirectionModeComponent` + `ComponentState` | `DirectionSlotsData` / `DirectionTransferData` Record |
+| Tooltip | `addToTooltip(CompoundTag, ...)` | `addToTooltip(Item.TooltipContext, ..., ItemStack)` |
+| 同步粒度 | 整个 `LivingFunctionData` 一起同步 | 独立 DataComponent 增量同步 |
+| 类型安全 | 运行时字符串键（`state.getInt("progress")`） | 编译时类型检查（`data.progress()`） |
+| 容器上下文 | 上帝接口（所有职责混杂） | 组合接口（4 个正交接口） |
+| tick 状态 | 存储在 ContainerContext 中 | 独立 TickContext（生命周期仅为单次 tick） |
+| 数据访问 | 多个 getXxxData/setXxxData 方法 | 泛型 getData/setData（等于默认值自动移除） |
+| 流体数据 | 静态 FLUID_DATA_CACHE | 容器实例字段（SimpleContainerContext.fluidData） |
 
 ### 客户端输入流（活漏斗方向配置）
 
@@ -89,9 +191,10 @@ ScreenEvent.CharacterTyped.Pre (LivingItemInputHandler)
     ├─ 检查：按键是否为有效键（W/A/S/D）？
     ├─ 收集 2 次按键 → InputSession（2 秒超时）
     ↓
-processInput() → DirectionModeComponent.updateFromInput()
-    ├─ WASDSequenceParser 解析按键序列为 SlotMapping
-    ├─ 更新客户端物品 NBT（即时 Tooltip 反馈）
+processInput() → keyToDirection() 解析为 Pos2D
+    ├─ 从 LivingHopperFunction.readDirectionData() 读取当前方向
+    ├─ 更新 source/target Pos2D
+    ├─ SlotMapping.fromDirections(source, target) 构建映射
     └─ 发送 HopperDirectionPacket(mappingData)
         ↓
 ServerPacketHandler (服务端)
@@ -147,21 +250,50 @@ new InteractionEntry(Items.FLINT_AND_STEEL, Items.TNT, 1, "ignite_carried")
 ### 组件体系
 
 ```
-ILivingComponent (接口)
-    ├── DirectionModeComponent  — 方向/槽位配置（双模式）
-    │     ├── SLOTS 模式：命名槽位映射（活熔炉的 input/fuel/output）
-    │     └── TRANSFER 模式：传输方向映射（活漏斗的 source→target）
-    ├── ItemTransferComponent   — 物品传输逻辑（含跨容器传输触发 + SlotAccessor 调度 + SlotAccessor.transfer 统一传输）
-    ├── ItemFilterComponent     — 黑白名单过滤（链式传递：每 tick 沿漏斗链传播一跳，仅活漏斗拥有；活末影箱过滤由 FilteredSlotAccessor 统一处理）
-    ├── EnderChannelComponent   — 活末影箱频道组件（路由清理：移走末影箱/源物品时清理 + Tooltip 显示：频道/路由/绑定玩家）
-    ├── CrossContainerTransfer  — 跨容器传输工具类（方向映射 + 大箱子处理 + 邻居容器查找 + SlotAccessor 统一传输）
-    ├── ProgressComponent       — 进度计时与暂停
+数据层（DataComponent Record，不可变）
+    ├── LivingTntData          — 活TNT 聚合数据
+    │     └── explosion: ExplosionData (ignited, fuseDuration)
+    ├── LivingWaterBucketData  — 活水桶聚合数据
+    │     └── water: WaterData (flow, hostSlot, width)
+    ├── LivingFurnaceData      — 活熔炉聚合数据
+    │     ├── progress: ProgressData (progress, total)
+    │     ├── fuel: FuelData (burnTime, maxBurnTime)
+    │     ├── transform: TransformData (input, output, inputCount, outputCount)
+    │     └── direction: DirectionSlotsData (slots, activeSlotIndex)
+    ├── LivingHopperData       — 活漏斗聚合数据
+    │     ├── transfer: TransferData (cooldown, maxCooldown)
+    │     ├── filter: FilterData (blacklist, whitelist, tags, slots)
+    │     └── direction: DirectionTransferData (sourceOffset, targetOffset)
+    └── LivingEnderChestData   — 活末影箱聚合数据
+          └── channel: EnderChannelData (channel, boundPlayer, routes)
+
+无状态工具类（接收类型化数据 → 返回新数据，不持有状态）
+    ├── ProgressComponent       — 进度计时与暂停（tick/pauseTick/isComplete/reset）
     ├── FuelConsumeComponent    — 燃料消耗与可用性检查
-    ├── ItemTransformComponent  — 配方匹配与物品转化
-    ├── InternalStorageComponent — 活箱子内部存储（UUID 管理、LRU 缓存、磁盘 I/O、快速空/满判断）
-    └── ExplosionComponent      — 引信倒计时 + 爆炸逻辑（活TNT）
-          ├── 普通模式 (≤64 TNT)：原版 setBlock，支持原版/100%两种掉落模式
-          └── 大当量模式 (>64 TNT)：直接修改区块数据，无掉落物
+    ├── ItemTransformComponent  — 配方匹配与物品转化（含配方缓存）
+    ├── ExplosionComponent      — 引信倒计时 + 爆炸逻辑（活TNT）
+    ├── ItemFilterComponent     — 黑白名单过滤（链式传递 + FilterData 支持）
+    ├── ItemTransferComponent   — 物品传输逻辑（含跨容器传输触发 + SlotAccessor 调度）
+    ├── EnderChannelComponent   — 活末影箱频道组件（路由清理 + Tooltip）
+    ├── CrossContainerTransfer  — 跨容器传输工具类（方向映射 + 大箱子处理 + 邻居容器查找）
+    └── InternalStorageComponent — 活箱子内部存储（UUID 管理、LRU 缓存、磁盘 I/O）— 旧架构
+
+旧架构组件（ILivingComponent 接口，仅 LivingChestFunction 使用）
+    ├── DirectionModeComponent  — 方向/槽位配置（SLOTS/TRANSFER 双模式 + ComponentState）
+    └── （其他旧组件已迁移为无状态工具类）
+
+容器上下文（接口拆分）
+    ├── ContainerContext        — 组合接口（继承以下 4 个接口）
+    ├── LivingContainer         — 基础物品读写（getSize, getItem, setItem, getMaxStackSize）
+    ├── SlotInfoProvider        — 槽位能力（getSlotLimit, isItemValid, simulateInsertItem, getWidth）
+    ├── ContainerSync           — 客户端同步（syncSlotToClients）
+    └── ContainerIdentity       — 身份标识（getContainerKey, getStableKey, getBlockPos, getLevel）
+
+TickContext（tick 级临时状态）
+    ├── occupiedSlots           — 槽位互斥集合
+    ├── transferredTargetSlots  — 级联传输防护
+    ├── snapshot                — 容器快照
+    └── fluidData               — 容器级流体数据
 
 SlotAccessor 存储后端抽象（独立于组件体系，供传输引擎使用）
     ├── SlotAccessor          — 接口：simulateExtract/simulateInsert/extract/insert/rollback/isEmpty/isFull/markTransferred/sync + transfer() 模拟优先传输
@@ -268,21 +400,20 @@ register(LivingIconSpec.builder(Items.HOPPER)
 
 ### 活箱子系统架构
 
-活箱子将原版箱子的格子存储虚拟化到物品 NBT 中，每个物品堆叠计数对应一个虚拟箱子（27 槽），通过 UUID 映射到磁盘持久化文件。
+活箱子将原版箱子的格子存储虚拟化到物品 DataComponent 中，每个物品堆叠计数对应一个虚拟箱子（27 槽），通过 UUID 映射到磁盘持久化文件。
 
 #### 数据流
 
 ```
-ItemStack (NBT)
-    └── LIVING_FUNCTION_DATA
-        └── living_chest
-            └── internal_storage
-                ├── _us : int              ← 已用槽位计数（O(1) 空/满判断）
-                └── uuids: ListTag<String>  ← 每个堆叠对应一个 UUID
-                        ↓
-                WorldStorage (LRU 缓存, 最大 200 条)
-                        ↓  磁盘路径: data/living_chests/xx/uuid.dat
-                ItemStack[27]  ← 每个 UUID 对应一个虚拟箱子内容
+ItemStack (DataComponent)
+    └── LIVING_FUNCTION_DATA (旧架构) / CONTAINER (ItemContainerContents)
+        └── internal_storage
+            ├── _us : int              ← 已用槽位计数（O(1) 空/满判断）
+            └── uuids: ListTag<String>  ← 每个堆叠对应一个 UUID
+                    ↓
+            WorldStorage (LRU 缓存, 最大 200 条)
+                    ↓  磁盘路径: data/living_chests/xx/uuid.dat
+            ItemStack[27]  ← 每个 UUID 对应一个虚拟箱子内容
 ```
 
 #### UUID 生命周期
@@ -482,25 +613,49 @@ src/main/java/com/qiqi/li/
 │
 ├── living/
 │   ├── LivingItemManager.java               # 核心管理器：DataComponent 注册、数据读写、功能注册
-│   ├── LivingItemFunction.java              # 功能接口定义（含 appendComponentTooltips 默认方法）
-│   ├── BaseLivingFunction.java              # ⭐ 功能基类：通用 tick 编排 + Tooltip 实现
-│   ├── LivingFunctionData.java              # 活物品功能数据定义（DataComponent 载体）
+│   ├── LivingItemFunction.java              # 功能接口定义（tick + addToTooltip + canApply + getFunctionId）
+│   ├── BaseLivingFunction.java              # 旧架构功能基类（仅 LivingChestFunction 使用）
+│   ├── LivingFunctionData.java              # 旧架构功能数据载体（仅 LivingChestFunction 使用）
+│   │
+│   ├── data/                                # ⭐ DataComponent 数据模型（不可变 Record）
+│   │   ├── LivingTntData.java               # 活TNT 聚合数据（含 ExplosionData）
+│   │   ├── LivingWaterBucketData.java       # 活水桶聚合数据（含 WaterData）
+│   │   ├── LivingFurnaceData.java           # 活熔炉聚合数据（含 ProgressData + FuelData + TransformData + DirectionSlotsData）
+│   │   ├── LivingHopperData.java            # 活漏斗聚合数据（含 TransferData + FilterData + DirectionTransferData）
+│   │   ├── LivingEnderChestData.java        # 活末影箱聚合数据（含 EnderChannelData）
+│   │   ├── ExplosionData.java               # 爆炸数据（ignited, fuseDuration）
+│   │   ├── WaterData.java                   # 水流数据（flow, hostSlot, width）
+│   │   ├── ProgressData.java                # 进度数据（progress, total）
+│   │   ├── FuelData.java                    # 燃料数据（burnTime, maxBurnTime）
+│   │   ├── TransformData.java               # 转化数据（input, output, inputCount, outputCount）
+│   │   ├── TransferData.java                # 传输数据（cooldown, maxCooldown）
+│   │   ├── FilterData.java                  # 过滤数据（blacklist, whitelist, tags, slots）
+│   │   ├── DirectionSlotsData.java          # 方向-多槽位映射数据（slots, activeSlotIndex）
+│   │   ├── DirectionTransferData.java       # 方向-传输映射数据（sourceOffset, targetOffset）
+│   │   └── EnderChannelData.java            # 末影频道数据（channel, boundPlayer, routes）
 │   │
 │   ├── function/                            # 各活物品功能实现
-│   │   ├── LivingChestFunction.java         # 活箱子：堆叠倍增模型、UUID 管理、物品存取 API
+│   │   ├── LivingChestFunction.java         # 活箱子：堆叠倍增模型、UUID 管理、物品存取 API（旧架构）
 │   │   ├── LivingEnderChestFunction.java    # 活末影箱：双模式（路由/直连）、玩家绑定、频道管理、Tooltip
-│   │   ├── LivingFurnaceFunction.java       # 活熔炉：FUEL_PROGRESS 编排器 + SLOTS 模式方向
-│   │   ├── LivingHopperFunction.java        # 活漏斗：SIMPLE 编排器 + TRANSFER 模式方向 + NBT 工具
-│   │   ├── LivingTntFunction.java           # 活TNT：引信倒计时 + 爆炸，声明两条交互规则
+│   │   ├── LivingFurnaceFunction.java       # 活熔炉：DataComponent 直接管理 + 无状态工具类调用
+│   │   ├── LivingHopperFunction.java        # 活漏斗：DataComponent 直接管理 + 无状态工具类调用
+│   │   ├── LivingTntFunction.java           # 活TNT：DataComponent 直接管理 + 引信倒计时 + 爆炸
+│   │   ├── LivingWaterBucketFunction.java   # 活水桶：DataComponent 直接管理 + 水流扩散
 │   │   └── LivingFlintAndSteelFunction.java # 活打火石：交互触发器，无 tick 逻辑
 │   │
 │   ├── container/                           # 容器上下文与处理器
-│   │   ├── ContainerContext.java            # 容器操作抽象接口（含客户端同步 + 槽位占用 + getWidth + getSlotLimit + getContainerKey）
-│   │   ├── SimpleContainerContext.java      # 容器上下文实现（直接基于 IItemHandler 读写，不再依赖 Container 接口）
-│   │   ├── ContainerLivingItemHandler.java  # 容器扫描、分组调度、IItemHandler 去重、buildChestContext、processEnderChest（末影箱容器处理）
+│   │   ├── ContainerContext.java            # 组合接口（继承 LivingContainer + SlotInfoProvider + ContainerSync + ContainerIdentity）
+│   │   ├── LivingContainer.java             # 基础物品读写接口
+│   │   ├── SlotInfoProvider.java            # 槽位能力接口
+│   │   ├── ContainerSync.java               # 客户端同步接口
+│   │   ├── ContainerIdentity.java           # 身份标识接口
+│   │   ├── TickContext.java                 # Tick 级临时状态（槽位互斥、级联防护、快照、流体数据）
+│   │   ├── SimpleContainerContext.java      # 容器上下文实现（直接基于 IItemHandler 读写）
+│   │   ├── ContainerLivingItemHandler.java  # 容器扫描、分组调度、IItemHandler 去重
 │   │   ├── ContainerChunkCache.java         # 区块级容器缓存（事件驱动维护 + IItemHandler 检测）
-│   │   ├── CrossContainerTransfer.java      # 跨容器传输工具类（方向映射 + 大箱子处理 + 邻居容器查找 + SlotAccessor 统一传输 + 活末影箱路由注册/提取）
-│   │   └── ContainerSnapshot.java           # 容器快照（预扫描活漏斗连接图，供 ItemFilterComponent 使用）
+│   │   ├── CrossContainerTransfer.java      # 跨容器传输工具类
+│   │   ├── ContainerSnapshot.java           # 容器快照（预扫描活漏斗连接图，供 ItemFilterComponent 使用）
+│   │   └── ContainerFluidData.java          # 容器级流体数据（实例绑定，非静态缓存）
 │   │
 │   ├── chest/                               # 活箱子辅助工具
 │   │   ├── LivingChestStackHandler.java     # UUID 列表工具：标准化、创建、拆分、合并、数据校验
@@ -508,49 +663,42 @@ src/main/java/com/qiqi/li/
 │   │   └── ChestTransaction.java            # 事务包装器：确保多次操作间原子保存状态
 │   │
 │   └── core/
-│       ├── FunctionExecutor.java            # 纯工具类：状态加载/保存、槽位解析、组件查找
 │       ├── SlotResolver.java                # 槽位解析：基于动态列宽的相对偏移计算（支持非9列容器）
-│       ├── LivingFunctionConfig.java        # 配置声明：组件注册 + 编排器选择 + 交互规则 + 配置参数
-│       ├── ComponentConfig.java             # 组件配置参数容器
-│       ├── ComponentContext.java            # 组件执行上下文（容器 + 解析槽位 + 世界 + 状态）
-│       ├── ComponentState.java              # 组件运行时状态（NBT 包装器）
 │       │
-│   ├── accessor/                        # SlotAccessor 存储后端抽象（模拟优先模式）
-        │   │   ├── SlotAccessor.java            # 接口：simulateExtract/simulateInsert/extract/insert/rollback + transfer() 模拟优先传输 + WARN日志兜底
-        │   │   ├── PlainSlotAccessor.java       # 普通槽位：直接读写 ContainerContext（使用 getSlotLimit 感知模组槽位上限）
-        │   │   ├── LivingChestAccessor.java     # 活箱子：通过 LivingChestFunction API 操作虚拟存储
-        │   │   ├── LivingEnderChestAccessor.java # 活末影箱双模式访问器：路由模式（registerRoute+查路由表跳转提取）+ 直连模式（预加载玩家末影箱引用）
-        │   │   ├── NeighborSlotAccessor.java    # 邻居容器：模拟优先（simulateExtract/simulateInsert）+ rollback优先放回原槽位
-        │   │   ├── FilteredSlotAccessor.java    # 过滤装饰器（Decorator）：extract后检查/insert前检查，为任意 Accessor 添加黑白名单过滤
-│       │   ├── EnderChannelRegistry.java    # 全局路由表（服务端单例）：频道→路由条目映射 + 反向索引（posIndex/keyIndex）快速清理 + 轮询调度
-│       │   ├── EnderChannelEntry.java       # 路由条目 record：itemType + sourceDim + sourcePos + sourceSlot + registrarSlot + containerKey + targetSlot
-│       │   └── SlotAccessorFactory.java     # 工厂：create()根据物品类型创建访问器 + createForNeighbor()邻居容器 + 自动包装 FilteredSlotAccessor
+│       ├── accessor/                        # SlotAccessor 存储后端抽象（模拟优先模式）
+│       │   ├── SlotAccessor.java            # 接口：simulateExtract/simulateInsert/extract/insert/rollback + transfer()
+│       │   ├── PlainSlotAccessor.java       # 普通槽位：直接读写 ContainerContext
+│       │   ├── LivingChestAccessor.java     # 活箱子：通过 LivingChestFunction API 操作虚拟存储
+│       │   ├── LivingEnderChestAccessor.java # 活末影箱双模式访问器
+│       │   ├── NeighborSlotAccessor.java    # 邻居容器：模拟优先 + rollback优先放回原槽位
+│       │   ├── FilteredSlotAccessor.java    # 过滤装饰器（Decorator）：黑白名单过滤
+│       │   ├── EnderChannelRegistry.java    # 全局路由表（服务端单例）
+│       │   ├── EnderChannelEntry.java       # 路由条目 record
+│       │   └── SlotAccessorFactory.java     # 工厂：根据物品类型创建访问器 + 自动包装过滤
 │       │
 │       ├── model/
-│       │   ├── Pos2D.java                   # 不可变 2D 坐标，方向常量，NBT 序列化
-│       │   └── SlotMapping.java             # 不可变槽位映射，12 种预设，NBT 序列化
+│       │   ├── Pos2D.java                   # 不可变 2D 坐标，方向常量
+│       │   └── SlotMapping.java             # 不可变槽位映射，12 种预设
 │       │
-│       ├── components/
-│       │   ├── ILivingComponent.java        # 组件接口：tick + createDefaultState + appendTooltip
-│       │   ├── InternalStorageComponent.java # ⭐ 活箱子核心：UUID 管理、LRU 缓存、磁盘 I/O、物品存取
-│       │   ├── DirectionModeComponent.java  # 方向配置组件（SLOTS/TRANSFER 双模式 + NBT 自治）
-│       │   ├── ItemTransferComponent.java   # 物品传输组件（活漏斗/活箱子，含跨容器传输触发 + SlotAccessor 调度）
-│       │       ├── ItemFilterComponent.java     # 黑白名单过滤组件（链式传递：每 tick 沿漏斗链传播一跳，仅活漏斗拥有）
-│       │   ├── EnderChannelComponent.java   # 活末影箱频道组件（路由清理：移走末影箱/源物品 + Tooltip：频道/路由/绑定玩家）
-│       │   ├── CrossContainerTransfer.java  # 跨容器传输工具类（方向映射 + 大箱子半箱选择 + 邻居容器查找 + SlotAccessor 统一传输）
-│       │   ├── ProgressComponent.java       # 进度组件（计时、暂停、回退）
-│       │   ├── FuelConsumeComponent.java    # 燃料组件（消耗、可用性检查）
-│       │   ├── ItemTransformComponent.java  # 转化组件（配方匹配、物品转化、配方缓存 + resolveRecipe 公共方法）
-    │   │   ├── canProcess() — 检查输入有效性 + resolveRecipe 缓存查询 + 输出空间检查
-    │   │   └── executeTransform() — resolveRecipe 缓存查询 + 计算转化数量 + 消耗输入/生成产物
-│       │   └── ExplosionComponent.java      # 爆炸组件（引信倒计时、双模式爆炸、流体防爆）
+│       ├── components/                      # 无状态工具类 + 旧架构组件
+│       │   ├── ILivingComponent.java        # 旧架构组件接口（仅 LivingChestFunction 使用）
+│       │   ├── InternalStorageComponent.java # 活箱子核心：UUID 管理、LRU 缓存、磁盘 I/O（旧架构）
+│       │   ├── DirectionModeComponent.java  # 旧架构方向配置组件（SLOTS/TRANSFER 双模式 + ComponentState）
+│       │   ├── ItemTransferComponent.java   # 物品传输逻辑（含跨容器传输触发 + SlotAccessor 调度）
+│       │   ├── ItemFilterComponent.java     # 黑白名单过滤（链式传递 + FilterData 支持）
+│       │   ├── EnderChannelComponent.java   # 活末影箱频道组件（路由清理 + Tooltip）
+│       │   ├── ProgressComponent.java       # 进度工具类（tick/pauseTick/isComplete/reset，支持 ProgressData + ComponentState）
+│       │   ├── FuelConsumeComponent.java    # 燃料工具类（消耗、可用性检查）
+│       │   ├── ItemTransformComponent.java  # 转化工具类（配方匹配、物品转化、配方缓存）
+│       │   ├── ExplosionComponent.java      # 爆炸工具类（引信倒计时、双模式爆炸、流体防爆）
+│       │   └── WaterSpreadComponent.java    # 水流扩散工具类（旧架构，待迁移）
 │       │
-│       ├── orchestrator/
+│       ├── orchestrator/                    # 旧架构编排器（仅 LivingChestFunction 使用）
 │       │   ├── LivingOrchestrator.java      # 编排器接口 + 通用辅助方法
-│       │   ├── SimpleOrchestrator.java      # 简单编排器：直接遍历组件 tick
-│       │   ├── ProgressOrchestrator.java    # 进度编排器：检查输入 → tick/pauseTick → 完成时转化
-│       │   ├── FuelProgressOrchestrator.java # 燃料+进度编排器：检查燃料+输入 → tick/pauseTick → 完成时转化
-│       │   └── Orchestrators.java           # 编排器工厂（SIMPLE / PROGRESS / FUEL_PROGRESS 常量）
+│       │   ├── SimpleOrchestrator.java      # 简单编排器
+│       │   ├── ProgressOrchestrator.java    # 进度编排器
+│       │   ├── FuelProgressOrchestrator.java # 燃料+进度编排器
+│       │   └── Orchestrators.java           # 编排器工厂
 │       │
 │       ├── interaction/
 │       │   ├── InteractionEntry.java        # 交互规则 record（targetItem + triggerItem + button + actionId）
@@ -595,74 +743,71 @@ src/main/java/com/qiqi/li/
 
 ## 关键设计决策
 
-### 1. 编排器模式（Orchestrator Pattern）
+### 1. 功能内聚 + DataComponent 直接管理（新架构）
 
-活物品的组件协作流程通过 `LivingOrchestrator` 定义，而非硬编码在 Function 或 FunctionExecutor 中。
+每个功能类直接管理其类型化的 DataComponent，自行实现 tick 逻辑，不再依赖编排器和 FunctionExecutor。
 
-**为什么不用 FunctionExecutor 编排？**
-- FunctionExecutor 是通用工具类，不应包含任何活物品的业务逻辑
-- 不同活物品有不同的协作流程（活漏斗只需 tick，活熔炉需要 canProgress/pauseTick/handleCompletion）
-- 编排器可复用：活熔炉和活酿造台都用 `FUEL_PROGRESS`，无需重复代码
+**为什么从编排器模式迁移到功能内聚？**
+- 编排器模式虽然减少了重复代码，但引入了间接层（`ComponentState` → `ILivingComponent.tick()` → `ComponentState`），数据流转不透明
+- `ComponentState` 是无类型的 NBT 包装器，运行时字符串键（`state.getInt("progress")`）缺乏编译时类型安全
+- 编排器将编排逻辑从功能类中分离，但功能类仍需理解编排器的行为才能正确配置，认知负担并未减少
+- 新架构中，功能类直接操作类型化的 Record 数据，调用无状态工具类处理具体逻辑，编排流程由功能类自己控制
 
-**为什么不用组件内部编排？**
-- 组件应该是原子的、独立的，不应知道其他组件的存在
-- 编排逻辑跨组件，放在任何单个组件中都会导致职责泄漏
+**新架构的核心原则：**
+- **数据不可变**：所有数据模型使用 Java Record，通过 `withXxx()` 创建新实例
+- **无状态工具类**：`ProgressComponent.tick(data) → data`，不持有状态，接收数据返回新数据
+- **增量同步**：数据变化时才写入 DataComponent 并同步到客户端
+- **类型安全**：`data.progress()` 替代 `state.getInt("progress")`
+- **接口隔离**：`ContainerContext` 拆分为 4 个正交接口，功能类只依赖最小接口
+- **状态分离**：tick 级临时状态独立为 `TickContext`，生命周期仅为单次 tick
+- **泛型数据访问**：`getData/setData` 替代多个专属 getter/setter，等于默认值时自动移除
 
-### 2. BaseLivingFunction 基类
+### 2. BaseLivingFunction 基类（旧架构，仅 LivingChestFunction 使用）
 
-`BaseLivingFunction` 提供通用的 tick 编排和 Tooltip 实现，子类只需：
-- 返回 `LivingFunctionConfig`（包含组件列表 + 编排器）
-- 实现 `canApply()` 和 `getFunctionId()`
+> ⚠️ 新功能类不再继承 `BaseLivingFunction`，而是直接实现 `LivingItemFunction` 接口。
 
-**新增活物品只需 30-50 行代码**：
-```java
-public class LivingBrewingStandFunction extends BaseLivingFunction {
-    private static final LivingFunctionConfig CONFIG = new LivingFunctionConfig()
-        .withFunctionId("living_brewing_stand")
-        .withOrchestrator(Orchestrators.FUEL_PROGRESS)  // 选择编排器
-        .addComponent(new DirectionModeComponent(Map.of(
-            "input", Pos2D.LEFT, "fuel", Pos2D.DOWN, "output", Pos2D.RIGHT)))
-        .addComponent(FuelConsumeComponent.class,
-            ComponentConfig.of("recipe_type", RecipeType.BREWING))
-        .addComponent(ProgressComponent.class,
-            ComponentConfig.of("total_ticks", 400))
-        .addComponent(ItemTransformComponent.class,
-            ComponentConfig.of("recipe_type", RecipeType.BREWING));
+旧架构中 `BaseLivingFunction` 提供通用的 tick 编排和 Tooltip 实现，子类只需返回 `LivingFunctionConfig`。
 
-    @Override protected LivingFunctionConfig getConfig() { return CONFIG; }
-    @Override protected String getTooltipTitleKey() { return "tooltip.livingitem.brewing_stand.status"; }
-    @Override public boolean canApply(ItemStack stack) { return stack.is(Items.BREWING_STAND) && LivingItemManager.isLivingItem(stack); }
-    @Override public String getFunctionId() { return "living_brewing_stand"; }
-}
-```
+新架构中，功能类直接实现 `LivingItemFunction` 接口：
+- `tick(entries, context, tick, level)` — 自行实现 tick 逻辑（context 为容器上下文，tick 为 tick 级临时状态）
+- `addToTooltip(context, tooltipAdder, flag, stack)` — 直接从 ItemStack 读取 DataComponent 渲染 Tooltip
+- `canApply(stack)` — 判断物品是否匹配
+- `getFunctionId()` — 返回功能 ID（用于注册日志）
 
-### 3. DirectionModeComponent 双模式设计
+### 3. 方向数据模型
 
 | 模式 | 用途 | 数据结构 | 输入方式 |
 |------|------|----------|----------|
-| **SLOTS** | 活熔炉等需要多个命名槽位的场景 | `Map<String, Pos2D>`（如 input→LEFT, fuel→DOWN, output→RIGHT） | 代码配置，运行时不可变 |
-| **TRANSFER** | 活漏斗等需要动态传输方向的场景 | `SlotMapping`（sourceOffset + targetOffset） | WASD 键入，运行时可变 |
+| **DirectionSlotsData** | 活熔炉等需要多个命名槽位的场景 | `Map<String, Pos2D>` + `activeSlotIndex` | 代码配置，运行时可通过 WASD 切换活跃槽位 |
+| **DirectionTransferData** | 活漏斗等需要动态传输方向的场景 | `sourceOffset: Pos2D` + `targetOffset: Pos2D` | WASD 键入，运行时可变 |
 
-SLOTS 模式的方向数据存储在 `ComponentState` 中（`slot_input_x`, `slot_input_y` 等），TRANSFER 模式存储 `src_x`, `src_y`, `tgt_x`, `tgt_y`。
+两种方向数据均为不可变 Record，通过 `withXxx()` 方法创建新实例。替代旧的 `DirectionModeComponent` + `ComponentState` 模式。
 
-### 4. DirectionModeComponent NBT 自治
+### 4. 不可变数据模型
 
-`DirectionModeComponent` 提供静态方法 `updateStateInStack()` 和 `readStateFromStack()`，自己管理自己的 NBT 持久化，调用方无需知道内部结构（ID 常量、默认状态创建、NBT 存储格式）。
+所有数据模型使用 Java Record，确保数据不可变性：
+- `Pos2D`、`SlotMapping` — 方向和映射
+- `ProgressData`、`FuelData`、`TransformData` — 熔炉子数据
+- `TransferData`、`FilterData` — 漏斗子数据
+- `ExplosionData`、`WaterData` — TNT/水桶子数据
+- `LivingTntData`、`LivingFurnaceData` 等 — 功能聚合数据
 
-### 5. 不可变数据模型
+数据变更通过 `withXxx()` 方法创建新实例，而非修改现有实例。
 
-`Pos2D` 和 `SlotMapping` 使用 Java record，确保数据不可变性。NBT 序列化使用纯整数坐标（`src_x`, `src_y` 等），避免字符串解析的歧义问题。
-
-### 6. 活物品隔离
+### 5. 活物品隔离
 
 所有组件在处理物品时检查 `LivingItemManager.isLivingItem()`：
 - `ItemTransferComponent`：不传输活物品
 - `FuelConsumeComponent`：不消耗活物品作为燃料
 - `ItemTransformComponent`：不熔炼活物品
 
-### 7. 服务端权威 + 手动同步
+### 6. 服务端权威 + 手动同步
 
-物品数据在服务端是权威的。活物品 tick 修改 NBT 后，通过 `ContainerContext.syncSlotToClients()` 主动发送 `ClientboundContainerSetSlotPacket` 同步到客户端，因为原版 `broadcastChanges()` 无法检测自定义 DataComponent 的变化。
+物品数据在服务端是权威的。活物品 tick 修改 DataComponent 后，通过 `ContainerContext.syncSlotToClients()` 主动发送 `ClientboundContainerSetSlotPacket` 同步到客户端，因为原版 `broadcastChanges()` 无法检测自定义 DataComponent 的变化。
+
+**增量同步策略**：新架构中，功能类只在数据实际变化时才写入 DataComponent 并调用同步，减少不必要的网络传输。
+
+**接口拆分**：同步能力独立为 `ContainerSync` 接口，功能类只需依赖此接口即可同步，无需依赖完整的 `ContainerContext`。
 
 ### 8. 光标物品操作
 
@@ -925,9 +1070,24 @@ SLOTS 模式的方向数据存储在 `ComponentState` 中（`slot_input_x`, `slo
 
 ## 开发进展
 
-### 当前版本: v0.7-alpha
+### 当前版本: v0.8-alpha
 
-**最近更新** (2026-07-24):
+**最近更新** (2026-07-27):
+- ✅ 重构：DataComponent 直接管理架构迁移（功能类直接管理类型化 DataComponent，替代 `ComponentState` + `LivingFunctionData` 中转层）
+- ✅ 重构：组件无状态化改造（`ProgressComponent`、`FuelConsumeComponent` 等从有状态组件变为无状态工具类，接收类型化数据返回新数据）
+- ✅ 新增：`data/` 包 — 不可变 Record 数据模型（`LivingTntData`、`LivingWaterBucketData`、`LivingFurnaceData`、`LivingHopperData`、`LivingEnderChestData` 及其子数据）
+- ✅ 新增：`DirectionSlotsData` / `DirectionTransferData` 不可变方向数据模型，替代 `DirectionModeComponent` + `ComponentState`
+- ✅ 重构：`LivingItemFunction.addToTooltip()` 移除 `CompoundTag` 参数，功能类直接从 `ItemStack` 读取 DataComponent
+- ✅ 重构：`LivingTntFunction`、`LivingWaterBucketFunction`、`LivingFurnaceFunction`、`LivingHopperFunction`、`LivingEnderChestFunction` 迁移到新架构
+- ✅ 重构：客户端渲染层迁移（`AbstractContainerScreenMixin` 水流渲染从 `LivingFunctionData` → `LivingWaterBucketData`；`LivingHopperDecorator` 从 `readDirectionState` → `readDirectionData`；`LivingItemInputHandler` 移除 `DirectionModeComponent` 依赖）
+- ✅ 重构：`LivingItemTooltip` 简化（移除 `getFunctionData()` 调用，直接调用 `function.addToTooltip()`）
+- ✅ 重构：`ItemFilterComponent.inheritFilter()` 从 `getFunctionData` 迁移到 `LivingItemManager.getHopperData()`
+- ✅ 新增：`SlotMapping.fromDirections(Pos2D, Pos2D)` 工厂方法
+- ✅ 修复：`LivingWaterBucketData.DEFAULT` → `LivingWaterBucketData.EMPTY`
+- ✅ 修复：`ExplosionData.ignite()` 无参重载方法（默认 80 刻引信）
+- ✅ 兼容：`ProgressComponent` 实现 `ILivingComponent` 接口 + `ComponentState` 适配器方法，保持旧编排器编译兼容
+
+**历史更新** (2026-07-24):
 - ✅ 重构：SlotAccessor 模拟优先传输模式（`simulateExtract` → `simulateInsert` → `extract` → `insert` → `rollback` 安全兜底 + WARN 日志）
 - ✅ 新增：`SlotAccessor` 接口新增 `simulateExtract()` 和 `simulateInsert()` 模拟方法（所有实现类均已实现）
 - ✅ 优化：`SlotAccessor.transfer()` 改为"先模拟确认再真实操作"，彻底消除旧"先提取再回滚"模式的物品排序问题
@@ -1047,6 +1207,9 @@ SLOTS 模式的方向数据存储在 `ComponentState` 中（`slot_input_x`, `slo
 ### 待办事项
 
 #### 高优先级
+- [ ] `LivingChestFunction` 迁移到新架构（DataComponent 直接管理 + 功能内聚）
+- [ ] `LivingFlintAndSteelFunction` 迁移到新架构
+- [ ] 移除旧基础设施（`ComponentState`、`LivingFunctionData`、`FunctionExecutor`、`Orchestrator` 等，待所有功能类迁移完成后）
 - [ ] 更多活物品类型（活投掷器、活发射器、活酿造台等）
 - [ ] 活熔炉 Tooltip 增强（显示工作模式、预计剩余时间）
 - [ ] 活TNT 红石信号触发（容器被红石激活时自动点燃）
@@ -1080,67 +1243,72 @@ SLOTS 模式的方向数据存储在 `ComponentState` 中（`slot_input_x`, `slo
 
 ## 设计原则
 
-1. **能力组件化**：功能拆分为可复用的原子组件，通过 `LivingFunctionConfig` 声明式组合
-2. **编排器驱动**：组件协作流程通过 `LivingOrchestrator` 定义，新活物品只需选择编排器
-3. **配置驱动执行**：组件通过 `ComponentConfig` 接收参数，行为由配置决定
-4. **状态完全持久化**：所有数据存储在 NBT，跟随物品迁移
-5. **服务端权威**：客户端只负责输入和显示，数据修改在服务端执行后同步回客户端
-6. **防御性编程**：多层边界检查，优雅降级不崩溃
-7. **开放扩展**：新活物品类型只需继承 `BaseLivingFunction` + 配置组件 + 选择编排器
+1. **功能内聚**：每个功能类直接管理其 DataComponent，自行实现 tick 逻辑和数据管理
+2. **数据不可变**：所有数据模型使用 Java Record，通过 `withXxx()` 创建新实例
+3. **无状态工具类**：组件作为无状态工具类，接收类型化数据返回新数据，不持有状态
+4. **增量同步**：数据变化时才写入 DataComponent 并同步到客户端
+5. **类型安全**：`data.progress()` 替代 `state.getInt("progress")`，编译时检查
+6. **状态完全持久化**：所有数据存储在 DataComponent 中，跟随物品迁移
+7. **服务端权威**：客户端只负责输入和显示，数据修改在服务端执行后同步回客户端
+8. **防御性编程**：多层边界检查，优雅降级不崩溃
+9. **开放扩展**：新活物品类型只需实现 `LivingItemFunction` + 定义 DataComponent + 实现逻辑
 
 ---
 
 ## 贡献指南
 
-### 新增活物品类型
+### 新增活物品类型（新架构）
 
-1. 继承 `BaseLivingFunction`
-2. 创建 `LivingFunctionConfig`，声明所需组件、编排器和配置参数
-3. 实现 `canApply()`、`getFunctionId()`、`getConfig()`、`getTooltipTitleKey()`
+1. 在 `data/` 包中创建不可变 Record 数据模型（如 `LivingXxxData`）及其子数据
+2. 在 `LivingItemManager` 中注册 DataComponent 类型并添加 get/set 访问器
+3. 在 `function/` 包中创建功能类，实现 `LivingItemFunction` 接口
 4. 在 `LivingItem.commonSetup()` 中注册功能
 
-**完整示例（约 30 行）**：
+**完整示例（以活TNT为例）**：
 ```java
-public class LivingBrewingStandFunction extends BaseLivingFunction {
-    private static final LivingFunctionConfig CONFIG = new LivingFunctionConfig()
-        .withFunctionId("living_brewing_stand")
-        .withOrchestrator(Orchestrators.FUEL_PROGRESS)
-        .addComponent(new DirectionModeComponent(Map.of(
-            "input", Pos2D.LEFT, "fuel", Pos2D.DOWN, "output", Pos2D.RIGHT)))
-        .addComponent(FuelConsumeComponent.class,
-            ComponentConfig.of("recipe_type", RecipeType.BREWING))
-        .addComponent(ProgressComponent.class,
-            ComponentConfig.of("total_ticks", 400))
-        .addComponent(ItemTransformComponent.class,
-            ComponentConfig.of("recipe_type", RecipeType.BREWING));
+// 1. 数据模型 (data/LivingTntData.java)
+public record LivingTntData(ExplosionData explosion) {
+    public static final LivingTntData EMPTY = new LivingTntData(ExplosionData.EMPTY);
+    public LivingTntData withExplosion(ExplosionData explosion) { return new LivingTntData(explosion); }
+}
 
-    @Override protected LivingFunctionConfig getConfig() { return CONFIG; }
-    @Override protected String getTooltipTitleKey() { return "tooltip.livingitem.brewing_stand.status"; }
-    @Override public boolean canApply(ItemStack stack) { return stack.is(Items.BREWING_STAND) && LivingItemManager.isLivingItem(stack); }
-    @Override public String getFunctionId() { return "living_brewing_stand"; }
+// 2. DataComponent 注册 (LivingItemManager.java)
+public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingTntData>> LIVING_TNT_DATA =
+    COMPONENTS.register("living_tnt_data", () -> DataComponentType.<LivingTntData>builder()
+        .persistent(LivingTntData.CODEC).networkSynchronized(LivingTntData.STREAM_CODEC).build());
+
+// 3. 功能类 (function/LivingTntFunction.java)
+public class LivingTntFunction implements LivingItemFunction {
+    @Override public void tick(List<SlotEntry> entries, ContainerContext context, Level level) {
+        // 直接管理 DataComponent
+        LivingTntData data = LivingItemManager.getTntData(stack);
+        data = data.withExplosion(data.explosion().tick());
+        LivingItemManager.setTntData(stack, data);
+        context.syncSlotToClients(slot, stack);
+    }
+    @Override public void addToTooltip(Item.TooltipContext context, Consumer<Component> tooltipAdder,
+                                        TooltipFlag flag, ItemStack stack) {
+        LivingTntData data = LivingItemManager.getTntData(stack);
+        // 直接从 DataComponent 读取数据渲染 Tooltip
+    }
 }
 ```
 
-### 新增组件
+### 新增无状态工具类
 
-1. 实现 `ILivingComponent` 接口（`getComponentId`、`tick`、`createDefaultState`）
-2. 在活物品的 `LivingFunctionConfig` 中通过 `addComponent()` 注册
-3. 如需跨组件数据访问，通过 `ComponentContext.getComponentState()` 读取其他组件状态
-
-### 新增编排器
-
-1. 实现 `LivingOrchestrator` 接口（`orchestrate` 方法）
-2. 在 `Orchestrators` 工厂类中添加常量
-3. 在活物品的 `LivingFunctionConfig` 中通过 `withOrchestrator()` 选择
+1. 创建工具类，提供接收类型化数据并返回新数据的静态/实例方法
+2. 在功能类的 `tick()` 方法中调用工具类处理具体逻辑
+3. 工具类不持有状态，不依赖 `ComponentState` 或 `ComponentConfig`
 
 ### 代码风格
 
 - 使用中文注释（与项目语言一致）
-- 遵循现有命名约定（Config/Component/Context/Orchestrator 后缀）
+- 遵循现有命名约定（Data/Function/Component/Context 后缀）
 - 异常处理必须使用 try-catch 包装容器操作
 - 不可变数据优先使用 Java record
+- 数据变更通过 `withXxx()` 方法创建新实例
 
 ---
 
-*最后更新: 2026-07-24*
-*状态: Alpha 测试阶段 - 活箱子、活熔炉、活漏斗、活TNT、活末影箱核心功能已完成，跨容器传输已实现，IItemHandler 直接驱动容器读写（无需适配器），兼容抽屉、精妙背包等模组容器，GUI交互系统已就绪，客户端图标系统已组件化，代码结构已按职责重构为子包，SlotAccessor 模拟优先传输架构已实现（simulateExtract→simulateInsert→extract→insert→rollback安全兜底+WARN日志），活末影箱双模式（路由/直连）+ 反向索引路由清理 + FilteredSlotAccessor 统一过滤 + NeighborSlotAccessor 跨容器统一，三层防护体系已就绪，方块放置自动填充已实现，适配器体系已移除，传输双重限制已修复，容器位置缓存（拉取模型）替代活跃列表（推送模型）实现零延迟容器发现，配方缓存优化（resolveRecipe 公共方法 + ComponentState 缓存），GC 优化（复用去重集合），rollback 修复（部分插入时只退回剩余）*
+*最后更新: 2026-07-27*
+*状态: Alpha 测试阶段 - DataComponent 直接管理架构迁移已完成（活TNT/活水桶/活熔炉/活漏斗/活末影箱），活箱子待迁移，跨容器传输已实现，IItemHandler 直接驱动容器读写，兼容抽屉、精妙背包等模组容器，GUI交互系统已就绪，客户端图标系统已组件化，SlotAccessor 模拟优先传输架构已实现，活末影箱双模式（路由/直连）+ 反向索引路由清理 + FilteredSlotAccessor 统一过滤，容器位置缓存（拉取模型）实现零延迟容器发现，不可变数据模型 + 功能内聚 + 无状态工具类新架构*

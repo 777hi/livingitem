@@ -1,57 +1,60 @@
 package com.qiqi.li.living.core.model;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+import com.mojang.serialization.Codec;
+import com.mojang.serialization.DataResult;
+import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
 
-/**
- * 不可变二维坐标模型 —— 表示容器中的相对方向偏移。
- *
- * 使用 Java record 实现不可变性，确保线程安全和数据一致性。
- * 用于 DirectionModeComponent 的槽位方向配置和 SlotResolver 的槽位解析。
- *
- * 坐标系说明：
- *   - x 轴：水平方向，左为负（-1），右为正（+1）
- *   - y 轴：垂直方向，上为负（-1），下为正（+1）
- *   - 原点 (0,0)：活物品所在的槽位
- *
- * 预定义常量：
- *   - 四个基本方向：UP(0,-1), DOWN(0,1), LEFT(-1,0), RIGHT(1,0)
- *   - 四个对角方向：UP_LEFT, UP_RIGHT, DOWN_LEFT, DOWN_RIGHT
- *   - 特殊值：NONE(0,0) 表示无偏移
- *
- * 使用场景：
- *   - SLOTS 模式：Pos2D 定义命名槽位相对于活物品的方向
- *     例如：input=LEFT 表示输入槽位在活熔炉左边
- *   - TRANSFER 模式：SlotMapping 包含两个 Pos2D（源和目标）
- *     例如：source=UP, target=DOWN 表示从上方取物品放到下方
- */
 public record Pos2D(int x, int y) {
 
-    /** 无偏移 —— 表示自身或无效方向 */
     public static final Pos2D NONE = new Pos2D(0, 0);
-
-    /** 向上偏移（y-1）—— 活物品上方的槽位 */
     public static final Pos2D UP = new Pos2D(0, -1);
-
-    /** 向下偏移（y+1）—— 活物品下方的槽位 */
     public static final Pos2D DOWN = new Pos2D(0, 1);
-
-    /** 向左偏移（x-1）—— 活物品左边的槽位 */
     public static final Pos2D LEFT = new Pos2D(-1, 0);
-
-    /** 向右偏移（x+1）—— 活物品右边的槽位 */
     public static final Pos2D RIGHT = new Pos2D(1, 0);
-
-    /** 左上对角偏移（x-1, y-1） */
     public static final Pos2D UP_LEFT = new Pos2D(-1, -1);
-
-    /** 右上对角偏移（x+1, y-1） */
     public static final Pos2D UP_RIGHT = new Pos2D(1, -1);
-
-    /** 左下对角偏移（x-1, y+1） */
     public static final Pos2D DOWN_LEFT = new Pos2D(-1, 1);
-
-    /** 右下对角偏移（x+1, y+1） */
     public static final Pos2D DOWN_RIGHT = new Pos2D(1, 1);
+
+    public static final Codec<Pos2D> CODEC = RecordCodecBuilder.create(instance ->
+        instance.group(
+            Codec.INT.fieldOf("x").forGetter(Pos2D::x),
+            Codec.INT.fieldOf("y").forGetter(Pos2D::y)
+        ).apply(instance, Pos2D::new)
+    );
+
+    public static final StreamCodec<RegistryFriendlyByteBuf, Pos2D> STREAM_CODEC = StreamCodec.composite(
+        net.minecraft.network.codec.ByteBufCodecs.INT, Pos2D::x,
+        net.minecraft.network.codec.ByteBufCodecs.INT, Pos2D::y,
+        Pos2D::new
+    );
+
+    public static final StreamCodec<RegistryFriendlyByteBuf, Map<String, Pos2D>> MAP_STREAM_CODEC =
+        new StreamCodec<>() {
+            @Override
+            public Map<String, Pos2D> decode(RegistryFriendlyByteBuf buf) {
+                int size = buf.readVarInt();
+                Map<String, Pos2D> map = new LinkedHashMap<>();
+                for (int i = 0; i < size; i++) {
+                    String key = buf.readUtf();
+                    map.put(key, Pos2D.STREAM_CODEC.decode(buf));
+                }
+                return map;
+            }
+            @Override
+            public void encode(RegistryFriendlyByteBuf buf, Map<String, Pos2D> value) {
+                buf.writeVarInt(value.size());
+                for (var entry : value.entrySet()) {
+                    buf.writeUtf(entry.getKey());
+                    Pos2D.STREAM_CODEC.encode(buf, entry.getValue());
+                }
+            }
+        };
 
     /**
      * 获取方向的 Unicode 符号表示。

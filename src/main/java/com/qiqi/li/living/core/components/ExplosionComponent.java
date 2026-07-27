@@ -40,12 +40,6 @@ import net.minecraft.world.phys.Vec3;
 import com.qiqi.li.LivingItem;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.LivingItemManager;
-import com.qiqi.li.living.function.LivingTntFunction;
-import com.qiqi.li.living.core.ComponentConfig;
-import com.qiqi.li.living.core.ComponentContext;
-import com.qiqi.li.living.core.ComponentState;
-import com.qiqi.li.living.core.FunctionExecutor;
-import com.qiqi.li.living.core.LivingFunctionConfig;
 
 /*
  * ╔══════════════════════════════════════════════════════════════╗
@@ -84,108 +78,32 @@ import com.qiqi.li.living.core.LivingFunctionConfig;
  * ╚══════════════════════════════════════════════════════════════╝
  */
 
-public class ExplosionComponent implements ILivingComponent {
+public class ExplosionComponent {
 
     public static final String ID = "explosion";
 
-    private static final String KEY_BASE_RADIUS = "base_radius";
     private static final float DEFAULT_BASE_RADIUS = 4.0f;
-
-    private static final String KEY_IGNITED = "ignited";
-    private static final String KEY_FUSE_TIMER = "fuse_timer";
-
-    // 掉落物模式开关：
-    //   true  → 原版逻辑（战利品表 + 爆炸衰减，离中心越远掉越少）
-    //   false → 100%掉落（所有被炸方块都完整掉落，无衰减）
-    private static final String KEY_VANILLA_DROPS = "vanilla_drops";
     private static final boolean DEFAULT_VANILLA_DROPS = true;
 
-    // 引信时长 80 tick = 4秒，和原版TNT一样
-    private static final int DEFAULT_FUSE_DURATION = 80;
-
-    @Override
-    public String getComponentId() { return ID; }
-
-    // ──────────────────────────────────────────────
-    //  第1步：引信倒计时
-    // ──────────────────────────────────────────────
-    // 每个游戏tick都会调用这个方法。
-    // 如果TNT已被点燃，倒计时-1；倒计时归零时触发爆炸。
-    // 就像原版TNT被点燃后冒烟4秒再炸一样。
-
-    @Override
-    public void tick(ComponentContext context, int hostSlot, ItemStack hostStack,
-                     ComponentState state, ComponentConfig config) {
-        if (!state.getBoolean(KEY_IGNITED, false)) return;
-
-        int fuseTimer = state.getInt(KEY_FUSE_TIMER, DEFAULT_FUSE_DURATION);
-        fuseTimer--;
-
-        if (fuseTimer <= 0) {
-            state.setBoolean(KEY_IGNITED, false);
-            state.setInt(KEY_FUSE_TIMER, 0);
-            ignite(context.containerCtx(), context.level(), config);
-        } else {
-            state.setInt(KEY_FUSE_TIMER, fuseTimer);
-        }
-    }
-
-    @Override
-    public ComponentState createDefaultState() {
-        return new ComponentState();
-    }
-
-    // tooltip显示：未点燃显示"TNT"，点燃后显示"TNT [Fuse: XX ticks]"
-
-    @Override
-    public void appendTooltip(ComponentState state, Consumer<Component> tooltipAdder) {
-        if (state.getBoolean(KEY_IGNITED, false)) {
-            int fuseTimer = state.getInt(KEY_FUSE_TIMER, DEFAULT_FUSE_DURATION);
-            tooltipAdder.accept(Component.literal("TNT [Fuse: " + fuseTimer + " ticks]")
-                .withStyle(net.minecraft.ChatFormatting.RED, net.minecraft.ChatFormatting.BOLD));
-        } else {
-            tooltipAdder.accept(Component.literal("TNT")
-                .withStyle(net.minecraft.ChatFormatting.RED));
-        }
-    }
-
-    // ──────────────────────────────────────────────
-    //  引信启动（被外部调用）
-    // ──────────────────────────────────────────────
-    // 当玩家在容器GUI中用活打火石右键活TNT时，
-    // IgniteHandler会在服务端调用这个方法，启动倒计时。
+    private ExplosionComponent() {}
 
     public static boolean startFuseOnStack(ItemStack tntStack) {
-        LivingFunctionConfig config = LivingTntFunction.getStaticConfig();
-        Map<String, ComponentState> states = FunctionExecutor.INSTANCE.loadOrCreateStates(tntStack, config);
-        ComponentState explosionState = states.get(ID);
-        if (explosionState == null) return false;
-
-        startFuse(explosionState);
-        FunctionExecutor.INSTANCE.saveStatesToStack(tntStack, config, states);
+        com.qiqi.li.living.data.LivingTntData data = com.qiqi.li.living.LivingItemManager.getTntData(tntStack);
+        com.qiqi.li.living.data.ExplosionData explosion = data.explosion();
+        if (!explosion.ignited()) {
+            explosion = explosion.ignite();
+            com.qiqi.li.living.LivingItemManager.setTntData(tntStack, data.withExplosion(explosion));
+        }
         return true;
     }
 
-    public static void startFuse(ComponentState state) {
-        state.setBoolean(KEY_IGNITED, true);
-        state.setInt(KEY_FUSE_TIMER, DEFAULT_FUSE_DURATION);
+    public static boolean ignite(ContainerContext containerCtx, Level level) {
+        return ignite(containerCtx, level, DEFAULT_BASE_RADIUS, DEFAULT_VANILLA_DROPS);
     }
 
-    // ──────────────────────────────────────────────
-    //  第2步：点燃入口
-    // ──────────────────────────────────────────────
-    // 引信倒计时归零后调用这里。
-    // 做三件事：
-    //   ① 数一数容器里有多少个活TNT
-    //   ② 算出爆炸半径：radius = 4 × √数量
-    //   ③ 清空容器里的活TNT（炸了就没了）
-    // 然后交给 executeExplosion() 去实际爆炸。
-
-    public static boolean ignite(ContainerContext containerCtx, Level level, ComponentConfig config) {
+    public static boolean ignite(ContainerContext containerCtx, Level level, float baseRadius, boolean vanillaDrops) {
         BlockPos pos = containerCtx.getBlockPos();
         if (pos == null) return false;
-
-        float baseRadius = config.get(KEY_BASE_RADIUS, Float.class, DEFAULT_BASE_RADIUS);
 
         int totalTntCount = 0;
         int containerSize = containerCtx.getSize();
@@ -209,7 +127,6 @@ public class ExplosionComponent implements ILivingComponent {
             }
         }
 
-        boolean vanillaDrops = config.get(KEY_VANILLA_DROPS, Boolean.class, DEFAULT_VANILLA_DROPS);
         executeExplosion(level, centerX, centerY, centerZ, radius, totalTntCount, vanillaDrops);
         return true;
     }

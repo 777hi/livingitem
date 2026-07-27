@@ -51,6 +51,10 @@ import net.neoforged.neoforge.registries.DeferredBlock;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredItem;
 import net.neoforged.neoforge.registries.DeferredRegister;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
+import com.qiqi.li.living.capability.LivingChestItemHandler;
+import com.qiqi.li.living.capability.LivingEnderChestItemHandler;
 
 /**
  * 活物品 Mod 主类。
@@ -81,6 +85,7 @@ public class LivingItem {
 
     public LivingItem(IEventBus modEventBus, ModContainer modContainer) {
         modEventBus.addListener(this::commonSetup);
+        modEventBus.addListener(this::onRegisterCapabilities);
         ITEMS.register(modEventBus);
         LivingItemManager.DATA_COMPONENT_TYPES.register(modEventBus);
         NeoForge.EVENT_BUS.register(this);
@@ -197,6 +202,28 @@ public class LivingItem {
         com.qiqi.li.living.core.accessor.EnderChannelRegistry.getInstance()
             .setServer(event.getServer());
         LOGGER.info("HELLO from server starting");
+    }
+
+    private void onRegisterCapabilities(RegisterCapabilitiesEvent event) {
+        event.registerItem(Capabilities.ItemHandler.ITEM,
+            (stack, context) -> {
+                if (!LivingItemManager.isLivingItem(stack)) return null;
+                if (!LivingChestFunction.isLivingChest(stack)) return null;
+                return new LivingChestItemHandler(stack);
+            },
+            Items.CHEST
+        );
+
+        event.registerItem(Capabilities.ItemHandler.ITEM,
+            (stack, context) -> {
+                if (!LivingItemManager.isLivingItem(stack)) return null;
+                if (!LivingEnderChestFunction.isLivingEnderChest(stack)) return null;
+                return new LivingEnderChestItemHandler(stack);
+            },
+            Items.ENDER_CHEST
+        );
+
+        LOGGER.info("Registered living item capabilities");
     }
 
     @SubscribeEvent

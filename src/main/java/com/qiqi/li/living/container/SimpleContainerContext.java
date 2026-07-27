@@ -38,9 +38,7 @@ public class SimpleContainerContext implements ContainerContext {
     private final List<BlockEntity> associatedBlockEntities;
     private final Level overrideLevel;
 
-    private final Set<String> occupiedSlots = new HashSet<>();
-    private final Set<Integer> transferredTargetSlots = new HashSet<>();
-    private ContainerSnapshot snapshot;
+    private ContainerFluidData fluidData;
 
     /**
      * 为玩家背包创建容器上下文。
@@ -234,26 +232,6 @@ public class SimpleContainerContext implements ContainerContext {
     }
 
     @Override
-    public Set<String> getOccupiedSlots() {
-        return occupiedSlots;
-    }
-
-    @Override
-    public Set<Integer> getTransferredTargetSlots() {
-        return transferredTargetSlots;
-    }
-
-    @Override
-    public ContainerSnapshot getSnapshot() {
-        return snapshot;
-    }
-
-    @Override
-    public void setSnapshot(ContainerSnapshot snapshot) {
-        this.snapshot = snapshot;
-    }
-
-    @Override
     public BlockPos getBlockPos() {
         if (!associatedBlockPositions.isEmpty()) {
             return associatedBlockPositions.get(0);
@@ -284,6 +262,16 @@ public class SimpleContainerContext implements ContainerContext {
         } else {
             syncWorldContainer(logicalSlot, stack);
         }
+    }
+
+    /**
+     * 获取或创建容器流体数据。
+     */
+    ContainerFluidData getOrCreateFluidData() {
+        if (fluidData == null) {
+            fluidData = new ContainerFluidData();
+        }
+        return fluidData;
     }
 
     private void syncPlayerInventory(Inventory inv, int logicalSlot, ItemStack stack) {
