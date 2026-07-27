@@ -1,6 +1,5 @@
 package com.qiqi.li.living.mixin;
 
-import com.qiqi.li.living.core.components.InternalStorageComponent;
 import com.qiqi.li.living.function.LivingChestFunction;
 import net.minecraft.recipebook.ServerPlaceRecipe;
 import net.minecraft.server.level.ServerPlayer;
@@ -44,7 +43,7 @@ public abstract class ServerPlaceRecipeMixin {
             if (!LivingChestFunction.isLivingChest(invStack)) continue;
             if (!LivingChestFunction.hasStorage(invStack)) continue;
 
-            java.util.List<ItemStack> items = InternalStorageComponent.getItems(invStack);
+            java.util.List<ItemStack> items = LivingChestFunction.getItems(invStack);
             for (ItemStack chestItem : items) {
                 if (!chestItem.isEmpty()) {
                     this.stackedContents.accountStack(chestItem);

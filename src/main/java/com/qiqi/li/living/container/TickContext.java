@@ -3,6 +3,8 @@ package com.qiqi.li.living.container;
 import java.util.HashSet;
 import java.util.Set;
 
+import com.qiqi.li.living.perf.PerfMetrics;
+
 /**
  * Tick 级上下文 —— 每次容器 tick 时创建的临时状态。
  *
@@ -16,34 +18,52 @@ import java.util.Set;
  * </ul>
  *
  * <p>由 {@link ContainerLivingItemHandler} 在每次 tick 开始时创建，
- * tick 结束后丢弃。</p>
+ * tick 结束后通过 {@link #release()} 归还到对象池。</p>
  */
-public record TickContext(
-    Set<String> occupiedSlots,
-    Set<Integer> transferredTargetSlots,
-    ContainerSnapshot snapshot,
-    ContainerFluidData fluidData
-) {
+public class TickContext {
+
+    /** 对象池 —— 复用 TickContext 实例，减少 GC 压力。 */
+    private static final ThreadLocal<TickContextPool> POOL = ThreadLocal.withInitial(TickContextPool::new);
+
+    // 可变字段（对象池复用需要）
+    public final Set<String> occupiedSlots = new HashSet<>();
+    public final Set<Integer> transferredTargetSlots = new HashSet<>();
+    public ContainerSnapshot snapshot = ContainerSnapshot.EMPTY;
+    public ContainerFluidData fluidData = ContainerFluidData.EMPTY;
+
+    /**
+     * 从对象池获取 TickContext（如果池中有可用实例则复用，否则创建新实例）。
+     */
+    public static TickContext acquire(ContainerContext ctx) {
+        return POOL.get().acquire(ctx);
+    }
+
+    /**
+     * 将 TickContext 归还到对象池，清空状态以便下次复用。
+     */
+    public void release() {
+        POOL.get().release(this);
+    }
 
     /**
      * 创建空的 TickContext（用于测试）。
      */
     public static TickContext empty() {
-        return new TickContext(
-            new HashSet<>(),
-            new HashSet<>(),
-            ContainerSnapshot.EMPTY,
-            ContainerFluidData.EMPTY
-        );
+        TickContext ctx = new TickContext();
+        ctx.occupiedSlots.clear();
+        ctx.transferredTargetSlots.clear();
+        ctx.snapshot = ContainerSnapshot.EMPTY;
+        ctx.fluidData = ContainerFluidData.EMPTY;
+        return ctx;
     }
 
     /**
-     * 为容器创建 TickContext。
-     *
-     * @param ctx 容器上下文
-     * @return 新的 TickContext
+     * 重置此 TickContext 的状态（内部使用，对象池调用）。
      */
-    public static TickContext create(ContainerContext ctx) {
+    void reset(ContainerContext ctx) {
+        occupiedSlots.clear();
+        transferredTargetSlots.clear();
+
         // 扫描流体数据（如果有）
         ContainerFluidData fluidData = ContainerFluidData.EMPTY;
         if (ctx instanceof SimpleContainerContext simpleCtx) {
@@ -51,13 +71,57 @@ public record TickContext(
         }
 
         // 捕获快照（包含活漏斗连接图等）
-        ContainerSnapshot snapshot = ContainerSnapshot.capture(ctx, fluidData);
+        this.snapshot = ContainerSnapshot.capture(ctx, fluidData);
+        this.fluidData = fluidData;
+    }
 
-        return new TickContext(
-            new HashSet<>(),
-            new HashSet<>(),
-            snapshot,
-            fluidData
-        );
+    /**
+     * 清空此 TickContext 的所有状态（归还到对象池前调用）。
+     */
+    void clear() {
+        occupiedSlots.clear();
+        transferredTargetSlots.clear();
+        snapshot = ContainerSnapshot.EMPTY;
+        fluidData = ContainerFluidData.EMPTY;
+    }
+
+    /**
+     * 简单的对象池实现。
+     */
+    private static class TickContextPool {
+        private static final int MAX_POOL_SIZE = 4;
+        private final TickContext[] pool = new TickContext[MAX_POOL_SIZE];
+        private int size = 0;
+
+        /**
+         * 获取 TickContext（池中有则复用，否则创建新实例）。
+         */
+        TickContext acquire(ContainerContext ctx) {
+            if (size > 0) {
+                TickContext tick = pool[--size];
+                pool[size] = null;
+                tick.reset(ctx);
+                PerfMetrics.recordPoolHit(true);
+                return tick;
+            }
+            PerfMetrics.recordPoolHit(false);
+            return createNew(ctx);
+        }
+
+        /**
+         * 归还 TickContext 到池中（如果池未满）。
+         */
+        void release(TickContext tick) {
+            tick.clear();
+            if (size < MAX_POOL_SIZE) {
+                pool[size++] = tick;
+            }
+        }
+
+        private static TickContext createNew(ContainerContext ctx) {
+            TickContext tick = new TickContext();
+            tick.reset(ctx);
+            return tick;
+        }
     }
 }

@@ -48,12 +48,13 @@ public class LivingChestFunction implements LivingItemFunction {
         tooltipAdder.accept(Component.nullToEmpty(""));
         tooltipAdder.accept(Component.translatable("tooltip.livingitem.chest.status"));
 
-        int usedBytes = estimateByteUsage(stack);
+        int usedBytes = getCurrentByteUsage(stack);
         if (usedBytes > 0) {
             String usedStr = formatByteSize(usedBytes);
             String maxStr = formatByteSize(MAX_STORAGE_BYTES);
+            double percentage = (usedBytes * 100.0) / MAX_STORAGE_BYTES;
             tooltipAdder.accept(Component.translatable(
-                "tooltip.livingitem.chest.bytes", usedStr, maxStr));
+                "tooltip.livingitem.chest.bytes", usedStr, maxStr, String.format("%.1f", percentage)));
         }
 
         int usedSlots = countUsedSlots(stack);
@@ -204,7 +205,7 @@ public class LivingChestFunction implements LivingItemFunction {
     }
 
     public static boolean isByteFull(ItemStack stack) {
-        return estimateByteUsage(stack) >= MAX_STORAGE_BYTES;
+        return getCurrentByteUsage(stack) >= MAX_STORAGE_BYTES;
     }
 
     public static boolean isByteFull(ItemStack stack, net.minecraft.core.HolderLookup.Provider registries) {
@@ -212,23 +213,43 @@ public class LivingChestFunction implements LivingItemFunction {
     }
 
     public static int getCurrentByteUsage(ItemStack stack) {
-        return estimateByteUsage(stack);
+        return calculateExactByteUsage(stack, null);
     }
 
     public static int getCurrentByteUsage(ItemStack stack, net.minecraft.core.HolderLookup.Provider registries) {
-        if (registries != null) {
-            try {
-                net.minecraft.nbt.CompoundTag tag = (net.minecraft.nbt.CompoundTag) stack.saveOptional(registries);
-                java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-                try (java.io.DataOutputStream dos = new java.io.DataOutputStream(baos)) {
-                    net.minecraft.nbt.NbtIo.write(tag, dos);
-                }
-                return baos.size();
-            } catch (Exception e) {
-                return estimateByteUsage(stack);
+        return calculateExactByteUsage(stack, registries);
+    }
+
+    private static int calculateExactByteUsage(ItemStack stack, net.minecraft.core.HolderLookup.Provider registries) {
+        ItemContainerContents contents = stack.get(net.minecraft.core.component.DataComponents.CONTAINER);
+        if (contents == null) return 0;
+
+        int totalBytes = 0;
+        NonNullList<ItemStack> list = NonNullList.withSize(CHEST_SLOTS, ItemStack.EMPTY);
+        contents.copyInto(list);
+
+        for (ItemStack item : list) {
+            if (!item.isEmpty()) {
+                totalBytes += calculateItemByteUsage(item, registries);
             }
         }
-        return estimateByteUsage(stack);
+        return totalBytes;
+    }
+
+    private static int calculateItemByteUsage(ItemStack stack, net.minecraft.core.HolderLookup.Provider registries) {
+        if (registries == null) {
+            return 64;
+        }
+        try {
+            net.minecraft.nbt.CompoundTag tag = (net.minecraft.nbt.CompoundTag) stack.saveOptional(registries);
+            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+            try (java.io.DataOutputStream dos = new java.io.DataOutputStream(baos)) {
+                net.minecraft.nbt.NbtIo.write(tag, dos);
+            }
+            return baos.size();
+        } catch (Exception e) {
+            return 64;
+        }
     }
 
     public static int getMaxStorageBytes() {
@@ -284,10 +305,6 @@ public class LivingChestFunction implements LivingItemFunction {
             if (!item.isEmpty()) used++;
         }
         return used;
-    }
-
-    private static int estimateByteUsage(ItemStack stack) {
-        return countUsedSlots(stack) * 64;
     }
 
     private static List<ItemStack> createEmptySlots(int capacity) {

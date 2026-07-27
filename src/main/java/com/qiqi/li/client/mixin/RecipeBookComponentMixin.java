@@ -3,7 +3,6 @@ package com.qiqi.li.client.mixin;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.qiqi.li.client.util.LivingChestTabState;
 import com.qiqi.li.client.util.PinyinHelper;
-import com.qiqi.li.living.core.components.InternalStorageComponent;
 import com.qiqi.li.living.function.LivingChestFunction;
 import com.qiqi.li.network.LivingChestAccessPacket;
 import net.minecraft.client.Minecraft;
@@ -478,7 +477,7 @@ public abstract class RecipeBookComponentMixin {
             if (!LivingChestFunction.isLivingChest(invStack)) continue;
             if (invStack.getCount() > 1) continue;
 
-            List<ItemStack> items = InternalStorageComponent.getItems(invStack);
+            List<ItemStack> items = LivingChestFunction.getItems(invStack);
             for (ItemStack item : items) {
                 if (!item.isEmpty()) {
                     contents.add(item);

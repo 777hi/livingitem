@@ -6,7 +6,6 @@ import net.minecraft.world.item.component.ItemContainerContents;
 import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.items.ItemHandlerHelper;
 
-import com.qiqi.li.living.core.components.InternalStorageComponent;
 import com.qiqi.li.living.function.LivingChestFunction;
 
 public class LivingChestItemHandler implements IItemHandler {
@@ -41,14 +40,14 @@ public class LivingChestItemHandler implements IItemHandler {
         if (stack.isEmpty()) return ItemStack.EMPTY;
         if (slot < 0 || slot >= slots) return stack;
         if (!isItemValid(slot, stack)) return stack;
-        if (InternalStorageComponent.isByteFull(chestStack)) return stack;
+        if (LivingChestFunction.isByteFull(chestStack)) return stack;
 
         if (simulate) {
             return simulateInsertInternal(slot, stack);
         }
 
         int originalCount = stack.getCount();
-        InternalStorageComponent.insertItem(chestStack, stack.copy());
+        LivingChestFunction.insertItem(chestStack, stack.copy());
         int inserted = originalCount - stack.getCount();
         if (inserted <= 0) return stack.copy();
         ItemStack remainder = stack.copy();
@@ -115,6 +114,6 @@ public class LivingChestItemHandler implements IItemHandler {
     public boolean isItemValid(int slot, ItemStack stack) {
         if (chestStack.getCount() > 1) return false;
         if (stack.isEmpty()) return false;
-        return !InternalStorageComponent.isByteFull(chestStack);
+        return !LivingChestFunction.isByteFull(chestStack);
     }
 }

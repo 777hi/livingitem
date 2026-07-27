@@ -21,6 +21,8 @@ import com.qiqi.li.living.core.SlotResolver;
 import com.qiqi.li.living.core.accessor.SlotAccessor;
 import com.qiqi.li.living.core.accessor.SlotAccessorFactory;
 import com.qiqi.li.living.core.accessor.LivingEnderChestAccessor;
+import com.qiqi.li.living.data.*;
+import com.qiqi.li.living.perf.PerfMetrics;
 import com.qiqi.li.living.core.model.Pos2D;
 import com.qiqi.li.living.core.model.ResolvedSlots;
 import com.qiqi.li.living.core.model.SlotMapping;
@@ -78,6 +80,9 @@ public class LivingHopperFunction implements LivingItemFunction {
             boolean transferred = executeTransfer(context, level, slot, sourceSlot, targetSlot,
                 stack.getCount(), filter, dir, tick);
 
+            // 记录传输结果
+            PerfMetrics.recordTransfer(transferred);
+
             if (transferred) {
                 int actualCooldown = Math.max(1, DEFAULT_COOLDOWN - stack.getCount() / 8);
                 transfer = transfer.withCooldown(actualCooldown);
@@ -111,7 +116,7 @@ public class LivingHopperFunction implements LivingItemFunction {
 
         if (sourceSlot == targetSlot) return false;
 
-        Set<Integer> transferredTargetSlots = tick.transferredTargetSlots();
+        Set<Integer> transferredTargetSlots = tick.transferredTargetSlots;
         if (transferredTargetSlots != null && transferredTargetSlots.contains(sourceSlot)) {
             return false;
         }

@@ -6,7 +6,6 @@ import java.util.Set;
 
 import com.qiqi.li.living.LivingItemFunction;
 import com.qiqi.li.living.LivingItemManager;
-import com.qiqi.li.living.core.components.InternalStorageComponent;
 import com.qiqi.li.living.core.components.LivingChestTooltipComponent;
 import com.qiqi.li.living.function.LivingChestFunction;
 import net.minecraft.core.component.DataComponentMap;
@@ -26,10 +25,10 @@ public abstract class ItemStackMixin {
         ItemStack self = (ItemStack) (Object) this;
         if (!LivingChestFunction.isLivingChest(self)) return;
 
-        if (InternalStorageComponent.isStorageEmpty(self)) return;
+        if (LivingChestFunction.isStorageEmpty(self)) return;
 
         cir.setReturnValue(Optional.of(new LivingChestTooltipComponent(
-            InternalStorageComponent.getItems(self),
+            LivingChestFunction.getItems(self),
             9,
             LivingChestFunction.CHEST_SLOTS / 9
         )));

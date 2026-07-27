@@ -58,7 +58,7 @@ public class LivingWaterBucketFunction implements LivingItemFunction {
                 needsReset = true;
             }
 
-            ContainerSnapshot snapshot = tick.snapshot();
+            ContainerSnapshot snapshot = tick.snapshot;
             ContainerFluidData fluidData = snapshot != null ? snapshot.getFluidData() : null;
 
             if (needsReset && fluidData != null && water.hostSlot() >= 0) {

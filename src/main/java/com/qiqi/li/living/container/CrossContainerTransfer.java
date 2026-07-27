@@ -30,7 +30,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
-import com.qiqi.li.living.core.components.InternalStorageComponent;
+import com.qiqi.li.living.function.LivingChestFunction;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -163,7 +163,7 @@ public final class CrossContainerTransfer {
         if (server == null) return false;
 
         SlotAccessor target = SlotAccessorFactory.create(server, containerCtx, targetSlot, null,
-            tick.transferredTargetSlots());
+            tick.transferredTargetSlots);
         if (target == null || target.isFull()) return false;
 
         int amount = Math.min(stackSize, maxTransfer);
@@ -225,7 +225,7 @@ public final class CrossContainerTransfer {
         if (server == null) return false;
 
         SlotAccessor source = SlotAccessorFactory.create(server, containerCtx, sourceSlot,
-            filterData, tick.transferredTargetSlots());
+            filterData, tick.transferredTargetSlots);
         if (source == null) return false;
 
         int amount = Math.min(stackSize, maxTransfer);
@@ -263,13 +263,13 @@ public final class CrossContainerTransfer {
         int capacity = LivingChestFunction.getCapacity(containerCtx);
         int transferAmount = Math.min(stackSize, maxTransfer);
 
-        if (InternalStorageComponent.isStorageEmpty(chestStack)) {
+        if (LivingChestFunction.isStorageEmpty(chestStack)) {
             return false;
         }
 
         ItemStack matchingType = null;
         if (filterData != null && !filterData.equals(FilterData.EMPTY)) {
-            List<ItemStack> merged = InternalStorageComponent.getItems(chestStack);
+            List<ItemStack> merged = LivingChestFunction.getItems(chestStack);
             for (ItemStack item : merged) {
                 if (!item.isEmpty() && ItemFilterComponent.allows(filterData, item)) {
                     matchingType = item;
@@ -316,7 +316,7 @@ public final class CrossContainerTransfer {
         if (server == null) return false;
 
         int channel = enderChestStack.getCount();
-        var transferredTargetSlots = tick.transferredTargetSlots();
+        var transferredTargetSlots = tick.transferredTargetSlots;
         UUID boundUuid = LivingEnderChestFunction.getBoundPlayerUuid(enderChestStack);
         LivingEnderChestAccessor accessor;
         if (boundUuid != null) {
@@ -356,7 +356,7 @@ public final class CrossContainerTransfer {
 
         int capacity = LivingChestFunction.getCapacity(containerCtx);
 
-        if (InternalStorageComponent.isStorageFull(chestStack) || InternalStorageComponent.isByteFull(chestStack, server.registryAccess())) {
+        if (LivingChestFunction.isStorageFull(chestStack) || LivingChestFunction.isByteFull(chestStack, server.registryAccess())) {
             return false;
         }
 
@@ -640,7 +640,7 @@ public final class CrossContainerTransfer {
     }
 
     private static void markSlotTransferred(ContainerContext containerCtx, int slot, TickContext tick) {
-        Set<Integer> transferredTargetSlots = tick.transferredTargetSlots();
+        Set<Integer> transferredTargetSlots = tick.transferredTargetSlots;
         if (transferredTargetSlots != null) {
             transferredTargetSlots.add(slot);
         }

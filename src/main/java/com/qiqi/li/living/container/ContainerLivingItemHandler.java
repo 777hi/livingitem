@@ -26,6 +26,7 @@ import com.mojang.logging.LogUtils;
 import com.qiqi.li.living.LivingItemFunction;
 import com.qiqi.li.living.LivingItemManager;
 import com.qiqi.li.living.function.LivingWaterBucketFunction;
+import com.qiqi.li.living.perf.PerfMetrics;
 
 /**
  * 活物品容器处理器 —— 负责遍历容器中的物品并执行活物品 tick。
@@ -156,8 +157,8 @@ public class ContainerLivingItemHandler {
             return;
         }
 
-        // 创建 TickContext（包含快照、流体数据、互斥集合等）
-        TickContext tick = TickContext.create(context);
+        // 从对象池获取 TickContext（复用减少 GC 压力）
+        TickContext tick = TickContext.acquire(context);
 
         Map<LivingItemFunction, List<LivingItemFunction.SlotEntry>> grouped = new LinkedHashMap<>();
 
@@ -172,13 +173,19 @@ public class ContainerLivingItemHandler {
             }
         }
 
+        // 记录活物品数量和功能调用
+        for (var entry : grouped.entrySet()) {
+            PerfMetrics.addLivingItem(entry.getKey().getFunctionId(), entry.getValue().size());
+            PerfMetrics.recordFunctionCall(entry.getKey().getFunctionId());
+        }
+
         for (var entry : grouped.entrySet()) {
             entry.getKey().tick(entry.getValue(), context, tick, level);
         }
 
         // 在函数 tick 之后运行容器级流体数据：
         // 水桶组件已注册水源 → 现在蔓延 + 干涸
-        ContainerFluidData fluidData = tick.fluidData();
+        ContainerFluidData fluidData = tick.fluidData;
         if (fluidData != null && !fluidData.isEmpty()) {
             fluidData.setLastTickTime(System.currentTimeMillis());
             fluidData.tick(context);
@@ -197,11 +204,17 @@ public class ContainerLivingItemHandler {
             cleanupStaleFluidData(System.currentTimeMillis());
         }
 
+        // 归还 TickContext 到对象池
+        tick.release();
+
         long elapsedMs = (System.nanoTime() - startNanos) / 1_000_000;
-        if (elapsedMs > 5) {
-            LOGGER.warn("[Perf] processContext key={} size={} livingItems={} functions={} elapsed={}ms",
-                containerKey, containerSize, grouped.values().stream().mapToInt(List::size).sum(),
-                grouped.size(), elapsedMs);
+
+        // 记录 tick 耗时
+        PerfMetrics.recordTick(elapsedMs);
+
+        // 检查是否需要打印报告
+        if (PerfMetrics.shouldReport()) {
+            PerfMetrics.printReport();
         }
     }
 

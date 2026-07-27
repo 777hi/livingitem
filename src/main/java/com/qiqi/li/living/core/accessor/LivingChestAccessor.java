@@ -10,8 +10,11 @@ import net.minecraft.world.level.Level;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.ContainerIdentity;
 import com.qiqi.li.living.container.ContainerSync;
-import com.qiqi.li.living.core.components.InternalStorageComponent;
+import com.qiqi.li.living.data.FilterData;
 import com.qiqi.li.living.function.LivingChestFunction;
+import net.minecraft.server.MinecraftServer;
+
+import java.util.Set;
 
 public class LivingChestAccessor implements SlotAccessor {
 
@@ -32,6 +35,21 @@ public class LivingChestAccessor implements SlotAccessor {
         this.transferredTargetSlots = transferredTargetSlots;
     }
 
+    /**
+     * 尝试创建 LivingChestAccessor（用于注册式工厂）。
+     *
+     * @return 如果是活箱子则返回 Accessor，否则返回 null
+     */
+    public static SlotAccessor tryCreate(MinecraftServer server, ContainerContext containerCtx, int slot,
+                                          FilterData filterData, Set<Integer> transferredTargetSlots) {
+        ItemStack stack = containerCtx.getItem(slot);
+        if (!LivingChestFunction.isLivingChest(stack)) {
+            return null;
+        }
+        int capacity = LivingChestFunction.getCapacity(containerCtx);
+        return new LivingChestAccessor(containerCtx, slot, stack, capacity, transferredTargetSlots);
+    }
+
     private HolderLookup.Provider getRegistries() {
         Level level = identity.getLevel();
         if (level instanceof ServerLevel serverLevel) {
@@ -42,7 +60,7 @@ public class LivingChestAccessor implements SlotAccessor {
 
     @Override
     public ItemStack extract(int amount, ItemStack filterType) {
-        if (InternalStorageComponent.isStorageEmpty(chestStack)) {
+        if (LivingChestFunction.isStorageEmpty(chestStack)) {
             return ItemStack.EMPTY;
         }
         return LivingChestFunction.extractItem(chestStack, amount);
@@ -50,7 +68,7 @@ public class LivingChestAccessor implements SlotAccessor {
 
     @Override
     public ItemStack simulateExtract(int amount) {
-        if (InternalStorageComponent.isStorageEmpty(chestStack)) {
+        if (LivingChestFunction.isStorageEmpty(chestStack)) {
             return ItemStack.EMPTY;
         }
 
@@ -67,7 +85,7 @@ public class LivingChestAccessor implements SlotAccessor {
 
     @Override
     public int insert(ItemStack stack) {
-        if (InternalStorageComponent.isStorageFull(chestStack)) {
+        if (LivingChestFunction.isStorageFull(chestStack)) {
             return 0;
         }
 
@@ -79,7 +97,7 @@ public class LivingChestAccessor implements SlotAccessor {
     @Override
     public int simulateInsert(ItemStack stack) {
         HolderLookup.Provider registries = getRegistries();
-        if (InternalStorageComponent.isStorageFull(chestStack) || InternalStorageComponent.isByteFull(chestStack, registries)) {
+        if (LivingChestFunction.isStorageFull(chestStack) || LivingChestFunction.isByteFull(chestStack, registries)) {
             return 0;
         }
 
@@ -113,13 +131,13 @@ public class LivingChestAccessor implements SlotAccessor {
 
     @Override
     public boolean isEmpty() {
-        return InternalStorageComponent.isStorageEmpty(chestStack);
+        return LivingChestFunction.isStorageEmpty(chestStack);
     }
 
     @Override
     public boolean isFull() {
         HolderLookup.Provider registries = getRegistries();
-        return InternalStorageComponent.isStorageFull(chestStack) || InternalStorageComponent.isByteFull(chestStack, registries);
+        return LivingChestFunction.isStorageFull(chestStack) || LivingChestFunction.isByteFull(chestStack, registries);
     }
 
     @Override

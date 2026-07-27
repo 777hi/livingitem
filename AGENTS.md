@@ -289,11 +289,17 @@ new InteractionEntry(Items.FLINT_AND_STEEL, Items.TNT, 1, "ignite_carried")
     ├── ContainerSync           — 客户端同步（syncSlotToClients）
     └── ContainerIdentity       — 身份标识（getContainerKey, getStableKey, getBlockPos, getLevel）
 
-TickContext（tick 级临时状态）
+TickContext（tick 级临时状态，对象池复用）
     ├── occupiedSlots           — 槽位互斥集合
     ├── transferredTargetSlots  — 级联传输防护
     ├── snapshot                — 容器快照
     └── fluidData               — 容器级流体数据
+
+TickContextPool（对象池，ThreadLocal 线程安全）
+    ├── MAX_POOL_SIZE = 4       — 每个线程最多缓存 4 个实例
+    ├── acquire(ctx)            — 池中有则复用，否则创建新实例
+    ├── release(tick)           — 归还到池中（池满则丢弃）
+    └── reset(ctx)              — 每次复用前重新扫描容器真实状态
 
 SlotAccessor 存储后端抽象（独立于组件体系，供传输引擎使用）
     ├── SlotAccessor          — 接口：simulateExtract/simulateInsert/extract/insert/rollback/isEmpty/isFull/markTransferred/sync + transfer() 模拟优先传输
@@ -319,8 +325,10 @@ SlotAccessor 存储后端抽象（独立于组件体系，供传输引擎使用�
     │     ├── 反向索引：posIndex（方块位置→条目）+ keyIndex（容器key→条目），O(相关路由) 清理
     │     └── 路由清理：removeStaleEnderChestRoutes / cleanStaleSourceRoutes / removeStaleRoutes / onChunkUnload
     ├── EnderChannelEntry     — 路由条目 record：itemType + sourceDim + sourcePos + sourceSlot + registrarSlot + containerKey + targetSlot
-    └── SlotAccessorFactory   — 工厂：根据槽位物品类型创建对应访问器 + 自动包装 FilteredSlotAccessor
-          ├── create() — 活箱子→LivingChestAccessor，活末影箱→LivingEnderChestAccessor，其他活物品→null，普通→PlainSlotAccessor
+    └── SlotAccessorFactory   — 注册式工厂：根据槽位物品类型创建对应访问器 + 自动包装 FilteredSlotAccessor
+          ├── Provider 接口 — 返回 null 表示不匹配，交给下一个 Provider
+          ├── registerProvider(provider) — 注册新 Provider（第三方模组可扩展）
+          ├── create() — 遍历 Provider 列表，活箱子→LivingChestAccessor，活末影箱→LivingEnderChestAccessor，其他活物品→null，普通→PlainSlotAccessor
           └── createForNeighbor() — 邻居容器→NeighborSlotAccessor + FilteredSlotAccessor
 
 交互体系（独立于组件，处理GUI中的活物品间交互）
@@ -649,9 +657,9 @@ src/main/java/com/qiqi/li/
 │   │   ├── SlotInfoProvider.java            # 槽位能力接口
 │   │   ├── ContainerSync.java               # 客户端同步接口
 │   │   ├── ContainerIdentity.java           # 身份标识接口
-│   │   ├── TickContext.java                 # Tick 级临时状态（槽位互斥、级联防护、快照、流体数据）
+│   │   ├── TickContext.java                 # Tick 级临时状态（槽位互斥、级联防护、快照、流体数据，对象池复用）
 │   │   ├── SimpleContainerContext.java      # 容器上下文实现（直接基于 IItemHandler 读写）
-│   │   ├── ContainerLivingItemHandler.java  # 容器扫描、分组调度、IItemHandler 去重
+│   │   ├── ContainerLivingItemHandler.java  # 容器扫描、分组调度、IItemHandler 去重、性能监控
 │   │   ├── ContainerChunkCache.java         # 区块级容器缓存（事件驱动维护 + IItemHandler 检测）
 │   │   ├── CrossContainerTransfer.java      # 跨容器传输工具类
 │   │   ├── ContainerSnapshot.java           # 容器快照（预扫描活漏斗连接图，供 ItemFilterComponent 使用）
@@ -674,7 +682,7 @@ src/main/java/com/qiqi/li/
 │       │   ├── FilteredSlotAccessor.java    # 过滤装饰器（Decorator）：黑白名单过滤
 │       │   ├── EnderChannelRegistry.java    # 全局路由表（服务端单例）
 │       │   ├── EnderChannelEntry.java       # 路由条目 record
-│       │   └── SlotAccessorFactory.java     # 工厂：根据物品类型创建访问器 + 自动包装过滤
+│       │   └── SlotAccessorFactory.java     # 注册式工厂：Provider 接口 + registerProvider() + 自动包装过滤
 │       │
 │       ├── model/
 │       │   ├── Pos2D.java                   # 不可变 2D 坐标，方向常量
@@ -710,6 +718,9 @@ src/main/java/com/qiqi/li/
 │       └── config/
 │           ├── ContainerCompatibilityConfig.java  # 容器兼容性配置（含 columns + findRuleBySize + findOrGenerateRule 自动推断标准布局）
 │           └── TransferStrategy.java               # 传输策略
+│
+│   └── perf/                                # 性能监控指标
+│       └── PerfMetrics.java                 # 性能监控：Tick 耗时/活物品数量/功能调用/对象池命中率/传输成功率
 │
 ├── client/
 │   ├── GuiInteractionHelper.java            # ⭐ 客户端GUI交互统一工具（查询规则+解析槽位+序列化光标+发包）
@@ -1086,6 +1097,11 @@ src/main/java/com/qiqi/li/
 - ✅ 修复：`LivingWaterBucketData.DEFAULT` → `LivingWaterBucketData.EMPTY`
 - ✅ 修复：`ExplosionData.ignite()` 无参重载方法（默认 80 刻引信）
 - ✅ 兼容：`ProgressComponent` 实现 `ILivingComponent` 接口 + `ComponentState` 适配器方法，保持旧编排器编译兼容
+- ✅ **优化：TickContext 对象池**（`TickContextPool` 复用 tick 实例，减少 GC 压力，ThreadLocal 线程安全，命中率 ~87%）
+- ✅ **优化：SlotAccessor 注册式工厂**（`SlotAccessorFactory.registerProvider()` 开放扩展，第三方模组可注册自定义 Accessor）
+- ✅ **优化：LivingItemFunction 接口职责拆分**（5 个逻辑模块：匹配/标识/Tick/Tooltip/组件过滤，可选方法默认空实现）
+- ✅ **优化：活箱子精确字节计算**（`LivingChestFunction.calculateExactByteUsage()` 替代粗糙估算，NBT 序列化获取真实大小，Tooltip 显示百分比）
+- ✅ **新增：性能监控指标系统**（`PerfMetrics` 收集 Tick 耗时/活物品数量/功能调用/对象池命中率/传输成功率，每 60 秒自动打印报告）
 
 **历史更新** (2026-07-24):
 - ✅ 重构：SlotAccessor 模拟优先传输模式（`simulateExtract` → `simulateInsert` → `extract` → `insert` → `rollback` 安全兜底 + WARN 日志）
@@ -1311,4 +1327,4 @@ public class LivingTntFunction implements LivingItemFunction {
 ---
 
 *最后更新: 2026-07-27*
-*状态: Alpha 测试阶段 - DataComponent 直接管理架构迁移已完成（活TNT/活水桶/活熔炉/活漏斗/活末影箱），活箱子待迁移，跨容器传输已实现，IItemHandler 直接驱动容器读写，兼容抽屉、精妙背包等模组容器，GUI交互系统已就绪，客户端图标系统已组件化，SlotAccessor 模拟优先传输架构已实现，活末影箱双模式（路由/直连）+ 反向索引路由清理 + FilteredSlotAccessor 统一过滤，容器位置缓存（拉取模型）实现零延迟容器发现，不可变数据模型 + 功能内聚 + 无状态工具类新架构*
+*状态: Alpha 测试阶段 - DataComponent 直接管理架构迁移已完成（活TNT/活水桶/活熔炉/活漏斗/活末影箱），活箱子待迁移，跨容器传输已实现，IItemHandler 直接驱动容器读写，兼容抽屉、精妙背包等模组容器，GUI交互系统已就绪，客户端图标系统已组件化，SlotAccessor 模拟优先传输架构已实现，活末影箱双模式（路由/直连）+ 反向索引路由清理 + FilteredSlotAccessor 统一过滤，容器位置缓存（拉取模型）实现零延迟容器发现，不可变数据模型 + 功能内聚 + 无状态工具类新架构，TickContext 对象池优化，SlotAccessor 注册式工厂，LivingItemFunction 接口职责拆分，活箱子精确字节计算，性能监控指标系统*

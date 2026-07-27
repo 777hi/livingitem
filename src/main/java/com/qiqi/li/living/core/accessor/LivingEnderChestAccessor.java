@@ -1,10 +1,8 @@
 package com.qiqi.li.living.core.accessor;
 
-import java.util.Set;
-import java.util.UUID;
-
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.data.FilterData;
+import com.qiqi.li.living.function.LivingEnderChestFunction;
 import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -22,6 +20,9 @@ import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.items.ItemHandlerHelper;
 import net.neoforged.neoforge.items.wrapper.InvWrapper;
 import org.slf4j.Logger;
+
+import java.util.Set;
+import java.util.UUID;
 
 /**
  * 活末影箱槽位访问器 —— 支持路由模式和直连模式。
@@ -73,6 +74,27 @@ public class LivingEnderChestAccessor implements SlotAccessor {
     private String rollbackContainerKey;
 
     private int directRollbackSlot = -1;
+
+    /**
+     * 尝试创建 LivingEnderChestAccessor（用于注册式工厂）。
+     *
+     * @return 如果是活末影箱则返回 Accessor，否则返回 null
+     */
+    public static SlotAccessor tryCreate(MinecraftServer server, ContainerContext containerCtx, int slot,
+                                          FilterData filterData, Set<Integer> transferredTargetSlots) {
+        ItemStack stack = containerCtx.getItem(slot);
+        if (!LivingEnderChestFunction.isLivingEnderChest(stack)) {
+            return null;
+        }
+        int ch = stack.getCount();
+        UUID boundUuid = LivingEnderChestFunction.getBoundPlayerUuid(stack);
+        LOGGER.debug("LivingEnderChestAccessor.tryCreate: channel={}, slot={}, direct={}", ch, slot, boundUuid != null);
+        if (boundUuid != null) {
+            return new LivingEnderChestAccessor(server, ch, transferredTargetSlots, boundUuid);
+        } else {
+            return new LivingEnderChestAccessor(server, ch, filterData, transferredTargetSlots);
+        }
+    }
 
     public LivingEnderChestAccessor(MinecraftServer server, int channel,
                                      Set<Integer> transferredTargetSlots) {
