@@ -22,7 +22,7 @@ public record LivingFurnaceData(
 ) implements TooltipProvider {
 
     public static final LivingFurnaceData DEFAULT = new LivingFurnaceData(
-        ProgressData.DEFAULT, FuelData.DEFAULT, DirectionSlotsData.EMPTY, TransformData.EMPTY
+        ProgressData.DEFAULT, FuelData.DEFAULT, DirectionSlotsData.DEFAULT_FURNACE, TransformData.EMPTY
     );
 
     public static final Codec<LivingFurnaceData> CODEC = RecordCodecBuilder.create(instance ->

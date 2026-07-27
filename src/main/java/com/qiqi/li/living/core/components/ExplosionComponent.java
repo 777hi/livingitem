@@ -39,6 +39,7 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import com.qiqi.li.LivingItem;
 import com.qiqi.li.living.container.ContainerContext;
+import com.qiqi.li.living.container.SimpleContainerContext;
 import com.qiqi.li.living.LivingItemManager;
 
 /*
@@ -103,7 +104,16 @@ public class ExplosionComponent {
 
     public static boolean ignite(ContainerContext containerCtx, Level level, float baseRadius, boolean vanillaDrops) {
         BlockPos pos = containerCtx.getBlockPos();
-        if (pos == null) return false;
+        Vec3 center;
+
+        if (pos != null) {
+            center = new Vec3(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
+        } else if (containerCtx instanceof SimpleContainerContext scc && scc.getInventory() != null) {
+            var player = scc.getInventory().player;
+            center = player.position();
+        } else {
+            return false;
+        }
 
         int totalTntCount = 0;
         int containerSize = containerCtx.getSize();
@@ -116,9 +126,6 @@ public class ExplosionComponent {
         if (totalTntCount <= 0) return false;
 
         double radius = baseRadius * Math.sqrt(totalTntCount);
-        double centerX = pos.getX() + 0.5;
-        double centerY = pos.getY() + 0.5;
-        double centerZ = pos.getZ() + 0.5;
 
         for (int i = 0; i < containerSize; i++) {
             ItemStack stack = containerCtx.getItem(i);
@@ -127,7 +134,7 @@ public class ExplosionComponent {
             }
         }
 
-        executeExplosion(level, centerX, centerY, centerZ, radius, totalTntCount, vanillaDrops);
+        executeExplosion(level, center.x, center.y, center.z, radius, totalTntCount, vanillaDrops);
         return true;
     }
 

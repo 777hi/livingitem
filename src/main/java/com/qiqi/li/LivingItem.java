@@ -29,6 +29,7 @@ import com.qiqi.li.living.function.LivingWaterBucketFunction;
 
 import java.util.HashSet;
 import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Set;
 import com.qiqi.li.living.container.ContainerChunkCache;
 import com.qiqi.li.living.container.ContainerLivingItemHandler;
@@ -121,6 +122,16 @@ public class LivingItem {
 
         InteractionRegistry.registerHandler("ignite_carried", new IgniteCarriedHandler());
         LOGGER.info("Registered ignite_carried interaction handler");
+
+        // 注册交互规则：活打火石右键活TNT点燃
+        InteractionRegistry.register(new com.qiqi.li.living.core.interaction.InteractionEntry(
+            Items.TNT, Items.FLINT_AND_STEEL, 1, "ignite"));
+        LOGGER.info("Registered ignite interaction rule");
+
+        // 注册交互规则：活TNT右键活打火石点燃（反向）
+        InteractionRegistry.register(new com.qiqi.li.living.core.interaction.InteractionEntry(
+            Items.FLINT_AND_STEEL, Items.TNT, 1, "ignite_carried"));
+        LOGGER.info("Registered ignite_carried interaction rule");
     }
 
     /**
@@ -167,7 +178,8 @@ public class LivingItem {
             if (!level.hasChunk(chunkPos.x, chunkPos.z)) continue;
 
             var chunk = level.getChunk(chunkPos.x, chunkPos.z);
-            for (var be : chunk.getBlockEntities().values()) {
+            var blockEntities = List.copyOf(chunk.getBlockEntities().values());
+            for (var be : blockEntities) {
                 var pos = be.getBlockPos();
                 IItemHandler handler = level.getCapability(
                     Capabilities.ItemHandler.BLOCK, pos, null);

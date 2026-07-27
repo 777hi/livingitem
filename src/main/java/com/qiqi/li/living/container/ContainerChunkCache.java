@@ -155,7 +155,9 @@ public class ContainerChunkCache {
      * @return 不可修改的区块坐标集合；如果该维度没有缓存则返回空集合
      */
     public Set<ChunkPos> getCachedChunks(ResourceKey<Level> dim) {
-        return chunkCache.getOrDefault(dim, Collections.emptySet());
+        Set<ChunkPos> raw = chunkCache.get(dim);
+        if (raw == null || raw.isEmpty()) return Collections.emptySet();
+        return new java.util.HashSet<>(raw);
     }
 
     /** 清空所有缓存（用于服务端关闭或维度卸载等场景） */

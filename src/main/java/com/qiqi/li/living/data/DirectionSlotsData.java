@@ -14,6 +14,14 @@ public record DirectionSlotsData(Map<String, Pos2D> directions, int activeSlotIn
 
     public static final DirectionSlotsData EMPTY = new DirectionSlotsData(Map.of(), 0);
 
+    private static final LinkedHashMap<String, Pos2D> FURNACE_ORDER = new LinkedHashMap<>() {{
+        put("input", Pos2D.LEFT);
+        put("output", Pos2D.RIGHT);
+        put("fuel", Pos2D.DOWN);
+    }};
+
+    public static final DirectionSlotsData DEFAULT_FURNACE = new DirectionSlotsData(FURNACE_ORDER, 0);
+
     public static final Codec<DirectionSlotsData> CODEC = RecordCodecBuilder.create(instance ->
         instance.group(
             Codec.unboundedMap(Codec.STRING, Pos2D.CODEC).fieldOf("directions").forGetter(DirectionSlotsData::directions),

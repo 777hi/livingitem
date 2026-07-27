@@ -1,8 +1,6 @@
 package com.qiqi.li.living.function;
 
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 import net.minecraft.core.component.DataComponentType;
@@ -35,15 +33,7 @@ public class LivingFurnaceFunction implements LivingItemFunction {
     public static final String ID = "living_furnace";
     private static final int DEFAULT_COOKING_TIME = 200;
 
-    private static LinkedHashMap<String, Pos2D> slotOrder() {
-        LinkedHashMap<String, Pos2D> map = new LinkedHashMap<>();
-        map.put("input", Pos2D.LEFT);
-        map.put("output", Pos2D.RIGHT);
-        map.put("fuel", Pos2D.DOWN);
-        return map;
-    }
-
-    private static final DirectionSlotsData DEFAULT_DIRECTION = new DirectionSlotsData(slotOrder(), 0);
+    public static final DirectionSlotsData DEFAULT_DIRECTION = DirectionSlotsData.DEFAULT_FURNACE;
 
     @Override
     public boolean canApply(ItemStack stack) {
@@ -65,6 +55,10 @@ public class LivingFurnaceFunction implements LivingItemFunction {
             LivingFurnaceData data = LivingItemManager.getFurnaceData(stack);
 
             DirectionSlotsData dir = data.direction();
+            if (dir.directions().isEmpty()) {
+                dir = DEFAULT_DIRECTION;
+                data = data.withDirection(dir);
+            }
             int containerSize = context.getSize();
             int containerWidth = context.getWidth();
 
@@ -74,10 +68,11 @@ public class LivingFurnaceFunction implements LivingItemFunction {
 
             boolean canProgress = checkCanProgress(context, level, inputSlot, fuelSlot, outputSlot, data);
 
+            data = tickTransform(context, data, inputSlot, level);
+
             if (canProgress) {
                 data = tickProgress(data, stack.getCount());
                 data = tickFuel(context, data, fuelSlot, stack.getCount());
-                data = tickTransform(context, data, inputSlot);
 
                 if (data.progress().isComplete() && data.fuel().isBurning()) {
                     boolean success = executeTransform(context, level, data, inputSlot, outputSlot, stack.getCount());
@@ -139,12 +134,44 @@ public class LivingFurnaceFunction implements LivingItemFunction {
         return data;
     }
 
-    private LivingFurnaceData tickTransform(ContainerContext ctx, LivingFurnaceData data, int inputSlot) {
+    private LivingFurnaceData tickTransform(ContainerContext ctx, LivingFurnaceData data, int inputSlot, Level level) {
         if (inputSlot < 0) return data;
         ItemStack inputStack = ctx.getItem(inputSlot);
         if (inputStack.isEmpty() || LivingItemManager.isLivingItem(inputStack)) {
             return data.withTransform(TransformData.EMPTY);
         }
+
+        String inputKey = BuiltInRegistries.ITEM.getKey(inputStack.getItem()).toString();
+        TransformData transform = data.transform();
+
+        if (inputKey.equals(transform.cachedInput()) && transform.cachedResult() == 1) {
+            if (transform.inputItem().isEmpty()) {
+                transform = transform.withInputItem(inputKey);
+                data = data.withTransform(transform);
+            }
+            return data;
+        }
+
+        var recipeHolderOpt = level.getRecipeManager()
+            .getRecipeFor(RecipeType.SMELTING, new SingleRecipeInput(inputStack), level);
+        if (recipeHolderOpt.isPresent()) {
+            Recipe<?> recipe = unwrapRecipe(recipeHolderOpt.get());
+            ItemStack result = recipe.getResultItem(level.registryAccess());
+            String outputKey = BuiltInRegistries.ITEM.getKey(result.getItem()).toString();
+            int cookingTime = DEFAULT_COOKING_TIME;
+
+            transform = transform.withInputItem(inputKey)
+                .withOutputItem(outputKey)
+                .withCache(inputKey, 1, outputKey, result.getCount(), cookingTime);
+            data = data.withTransform(transform);
+        } else {
+            if (!transform.inputItem().isEmpty()) {
+                transform = transform.withInputItem(inputKey).withOutputItem("");
+                transform = transform.withCache(inputKey, 0, "", 0, 0);
+                data = data.withTransform(transform);
+            }
+        }
+
         return data;
     }
 
@@ -251,6 +278,10 @@ public class LivingFurnaceFunction implements LivingItemFunction {
             tooltipAdder.accept(Component.translatable(
                 "tooltip.livingitem.fuel_burn",
                 String.format("%.1f", fuel.burnTime() / 20.0)));
+        } else if (fuel.burnTime() > 0) {
+            tooltipAdder.accept(Component.translatable(
+                "tooltip.livingitem.fuel_remaining",
+                String.format("%.1f", fuel.burnTime() / 20.0)));
         }
 
         ProgressData progress = data.progress();
@@ -264,22 +295,28 @@ public class LivingFurnaceFunction implements LivingItemFunction {
         }
 
         TransformData transform = data.transform();
-        if (!transform.inputItem().isEmpty()) {
+        if (!transform.inputItem().isEmpty() && !transform.outputItem().isEmpty()) {
             Component inputName = getItemDisplayName(transform.inputItem());
-            if (!transform.outputItem().isEmpty()) {
-                Component outputName = getItemDisplayName(transform.outputItem());
-                tooltipAdder.accept(Component.translatable(
-                    "tooltip.livingitem.transform.recipe", inputName, outputName));
-            }
+            Component outputName = getItemDisplayName(transform.outputItem());
+            tooltipAdder.accept(Component.translatable(
+                "tooltip.livingitem.transform.recipe", inputName, outputName));
+        } else if (!transform.inputItem().isEmpty()) {
+            Component inputName = getItemDisplayName(transform.inputItem());
+            tooltipAdder.accept(Component.translatable(
+                "tooltip.livingitem.transform.no_recipe", inputName));
         }
 
         DirectionSlotsData dir = data.direction();
-        for (var entry : dir.directions().entrySet()) {
-            Pos2D d = entry.getValue();
+        if (dir.directions().isEmpty()) {
+            dir = DEFAULT_DIRECTION;
+        }
+        String[] slotOrder = {"input", "output", "fuel"};
+        for (String slotName : slotOrder) {
+            Pos2D d = dir.getDirection(slotName);
             if (d != null && d != Pos2D.NONE) {
                 tooltipAdder.accept(Component.translatable(
                     "tooltip.livingitem.direction.slot",
-                    Component.translatable("slot.livingitem." + entry.getKey()),
+                    Component.translatable("slot.livingitem." + slotName),
                     d.getSymbol()
                 ).withStyle(net.minecraft.ChatFormatting.GRAY));
             }

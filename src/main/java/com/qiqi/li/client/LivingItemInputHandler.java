@@ -10,9 +10,7 @@ import com.qiqi.li.client.gui.LivingButton;
 import com.qiqi.li.living.function.LivingFurnaceFunction;
 import com.qiqi.li.living.function.LivingHopperFunction;
 import com.qiqi.li.living.LivingItemManager;
-import com.qiqi.li.living.data.DirectionSlotsData;
 import com.qiqi.li.living.data.DirectionTransferData;
-import com.qiqi.li.living.data.LivingFurnaceData;
 import com.qiqi.li.living.data.LivingHopperData;
 import com.qiqi.li.living.core.model.Pos2D;
 import com.qiqi.li.living.core.model.SlotMapping;
@@ -62,6 +60,7 @@ public class LivingItemInputHandler {
 
     /** 当前活跃的输入会话 */
     private static InputSession currentSession = null;
+    private static FurnaceInputSession furnaceSession = null;
 
     /**
      * 监听字符输入事件。
@@ -90,7 +89,7 @@ public class LivingItemInputHandler {
 
         if (isFurnaceItem(carried)) {
             event.setCanceled(true);
-            processFurnaceInput(upperChar, carried);
+            processFurnaceCharInput(upperChar, carried);
             return;
         }
 
@@ -134,6 +133,10 @@ public class LivingItemInputHandler {
         if (currentSession != null && currentSession.isTimedOut()) {
             LOGGER.debug("Input session timed out: {}", currentSession.getRawInput());
             currentSession = null;
+        }
+        if (furnaceSession != null && furnaceSession.isTimedOut()) {
+            LOGGER.debug("Furnace input session timed out: {}", furnaceSession.getRawInput());
+            furnaceSession = null;
         }
     }
 
@@ -210,36 +213,61 @@ public class LivingItemInputHandler {
     }
 
     /**
-     * 处理活熔炉的单键输入（SLOTS 模式）。
+     * 处理活熔炉的单字符输入，收集到 3 键会话中。
      *
-     * 每个 WASD 键立即设置当前激活槽位的方向，然后自动切换到下一个槽位。
-     * 例如：input→fuel→output→input...
+     * 输入规则（与活漏斗类似，但需要 3 个键）：
+     * - 第 1 个键：input 槽位方向
+     * - 第 2 个键：fuel 槽位方向
+     * - 第 3 个键：output 槽位方向
+     * - 示例："ASD" = input← fuel↓ output→
      *
      * @param key 按键字符（W/A/S/D）
      * @param furnaceStack 光标上的活熔炉 ItemStack
      */
-    private static void processFurnaceInput(char key, ItemStack furnaceStack) {
+    private static void processFurnaceCharInput(char key, ItemStack furnaceStack) {
         Pos2D direction = keyToDirection(key);
         if (direction == null) {
             LOGGER.debug("Invalid furnace input key: {}", key);
             return;
         }
 
-        LivingFurnaceData data = LivingItemManager.getFurnaceData(furnaceStack);
-        DirectionSlotsData dir = data.direction();
-        String[] slotNames = dir.getSlotNames();
-        int activeIndex = dir.activeSlotIndex();
-        if (slotNames.length == 0) {
-            LOGGER.debug("No slot names in furnace direction data");
-            return;
+        if (furnaceSession == null) {
+            furnaceSession = new FurnaceInputSession();
         }
 
-        String activeSlotName = slotNames[activeIndex % slotNames.length];
+        furnaceSession.appendKey(key);
 
-        sendSlotDirectionPacket(activeSlotName, direction);
+        if (furnaceSession.isComplete()) {
+            processFurnaceInput(furnaceSession, furnaceStack);
+            furnaceSession = null;
+        }
+    }
 
-        LOGGER.debug("Updated furnace slot direction: {} ({}) = {}",
-            activeSlotName, key, direction.getSymbol());
+    /**
+     * 处理完整的活熔炉 3 键输入。
+     *
+     * 依次设置 input、fuel、output 三个槽位的方向，
+     * 通过 3 个 SlotDirectionPacket 发送到服务端。
+     *
+     * @param session 已完成的 3 键输入会话
+     * @param furnaceStack 光标上的活熔炉 ItemStack
+     */
+    private static void processFurnaceInput(FurnaceInputSession session, ItemStack furnaceStack) {
+        String[] slotNames = {"input", "output", "fuel"};
+        String keys = session.getRawInput();
+
+        for (int i = 0; i < slotNames.length && i < keys.length(); i++) {
+            Pos2D direction = keyToDirection(keys.charAt(i));
+            if (direction != null) {
+                sendSlotDirectionPacket(slotNames[i], direction);
+            }
+        }
+
+        LOGGER.debug("Updated furnace directions: {} (input={}, fuel={}, output={})",
+            keys,
+            keys.length() > 0 ? keyToDirection(keys.charAt(0)) : "?",
+            keys.length() > 1 ? keyToDirection(keys.charAt(1)) : "?",
+            keys.length() > 2 ? keyToDirection(keys.charAt(2)) : "?");
     }
 
     /** 发送槽位方向配置网络包到服务端 */
@@ -291,6 +319,47 @@ public class LivingItemInputHandler {
         }
 
         /** 获取原始输入字符串 */
+        String getRawInput() {
+            return keys.toString();
+        }
+    }
+
+    /**
+     * 活熔炉输入会话 —— 管理 3 键 WASD 输入的生命周期。
+     *
+     * 输入规则：
+     * - 第 1 个键：input 槽位方向
+     * - 第 2 个键：fuel 槽位方向
+     * - 第 3 个键：output 槽位方向
+     * - 示例："ASD" = input← fuel↓ output→
+     *
+     * 超时机制：3 秒内未完成输入则会话失效。
+     */
+    private static class FurnaceInputSession {
+        private final StringBuilder keys = new StringBuilder();
+        private final long startTime;
+
+        private static final long TIMEOUT_MS = 3000;
+        private static final int MAX_KEYS = 3;
+
+        FurnaceInputSession() {
+            this.startTime = System.currentTimeMillis();
+        }
+
+        void appendKey(char key) {
+            if (keys.length() < MAX_KEYS) {
+                keys.append(key);
+            }
+        }
+
+        boolean isComplete() {
+            return keys.length() >= MAX_KEYS;
+        }
+
+        boolean isTimedOut() {
+            return System.currentTimeMillis() - startTime > TIMEOUT_MS;
+        }
+
         String getRawInput() {
             return keys.toString();
         }
