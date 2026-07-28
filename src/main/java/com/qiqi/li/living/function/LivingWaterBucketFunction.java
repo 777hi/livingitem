@@ -15,7 +15,6 @@ import com.qiqi.li.living.LivingItemManager;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.container.ContainerFluidData;
-import com.qiqi.li.living.container.ContainerSnapshot;
 import com.qiqi.li.living.data.LivingWaterBucketData;
 import com.qiqi.li.living.data.WaterData;
 
@@ -58,8 +57,7 @@ public class LivingWaterBucketFunction implements LivingItemFunction {
                 needsReset = true;
             }
 
-            ContainerSnapshot snapshot = tick.snapshot;
-            ContainerFluidData fluidData = snapshot != null ? snapshot.getFluidData() : null;
+            ContainerFluidData fluidData = tick.fluidData;
 
             if (needsReset && fluidData != null && water.hostSlot() >= 0) {
                 fluidData.removeSource(water.hostSlot());

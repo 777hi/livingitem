@@ -28,8 +28,23 @@ public class TickContext {
     // 可变字段（对象池复用需要）
     public final Set<String> occupiedSlots = new HashSet<>();
     public final Set<Integer> transferredTargetSlots = new HashSet<>();
-    public ContainerSnapshot snapshot = ContainerSnapshot.EMPTY;
     public ContainerFluidData fluidData = ContainerFluidData.EMPTY;
+
+    private ContainerContext ctx;
+    private ContainerSnapshot _snapshot = ContainerSnapshot.EMPTY;
+    private boolean snapshotBuilt = false;
+
+    /**
+     * 获取容器快照（延迟构建）。
+     * 仅在首次访问时调用 {@link ContainerSnapshot#capture}，避免对闲置容器产生开销。
+     */
+    public ContainerSnapshot getSnapshot() {
+        if (!snapshotBuilt) {
+            _snapshot = ContainerSnapshot.capture(ctx, fluidData);
+            snapshotBuilt = true;
+        }
+        return _snapshot;
+    }
 
     /**
      * 从对象池获取 TickContext（如果池中有可用实例则复用，否则创建新实例）。
@@ -52,7 +67,8 @@ public class TickContext {
         TickContext ctx = new TickContext();
         ctx.occupiedSlots.clear();
         ctx.transferredTargetSlots.clear();
-        ctx.snapshot = ContainerSnapshot.EMPTY;
+        ctx._snapshot = ContainerSnapshot.EMPTY;
+        ctx.snapshotBuilt = false;
         ctx.fluidData = ContainerFluidData.EMPTY;
         return ctx;
     }
@@ -64,14 +80,14 @@ public class TickContext {
         occupiedSlots.clear();
         transferredTargetSlots.clear();
 
-        // 扫描流体数据（如果有）
+        this.ctx = ctx;
+        this._snapshot = ContainerSnapshot.EMPTY;
+        this.snapshotBuilt = false;
+
         ContainerFluidData fluidData = ContainerFluidData.EMPTY;
         if (ctx instanceof SimpleContainerContext simpleCtx) {
             fluidData = simpleCtx.getOrCreateFluidData();
         }
-
-        // 捕获快照（包含活漏斗连接图等）
-        this.snapshot = ContainerSnapshot.capture(ctx, fluidData);
         this.fluidData = fluidData;
     }
 
@@ -81,7 +97,9 @@ public class TickContext {
     void clear() {
         occupiedSlots.clear();
         transferredTargetSlots.clear();
-        snapshot = ContainerSnapshot.EMPTY;
+        ctx = null;
+        _snapshot = ContainerSnapshot.EMPTY;
+        snapshotBuilt = false;
         fluidData = ContainerFluidData.EMPTY;
     }
 

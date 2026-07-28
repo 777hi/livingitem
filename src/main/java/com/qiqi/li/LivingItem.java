@@ -175,19 +175,27 @@ public class LivingItem {
         int processedCount = 0;
 
         for (var chunkPos : chunkSet) {
-            if (!level.hasChunk(chunkPos.x, chunkPos.z)) continue;
+            if (!level.hasChunk(chunkPos.x, chunkPos.z)) {
+                cache.removeChunk(level.dimension(), chunkPos);
+                continue;
+            }
 
             var chunk = level.getChunk(chunkPos.x, chunkPos.z);
             var blockEntities = List.copyOf(chunk.getBlockEntities().values());
+            boolean hasContainer = false;
             for (var be : blockEntities) {
                 var pos = be.getBlockPos();
                 IItemHandler handler = level.getCapability(
                     Capabilities.ItemHandler.BLOCK, pos, null);
                 if (handler == null) continue;
 
+                hasContainer = true;
                 ContainerLivingItemHandler.processContainerAt(
                     level, pos, handler, reusableHandlerMap, reusableKeySet);
                 processedCount++;
+            }
+            if (!hasContainer) {
+                cache.removeChunk(level.dimension(), chunkPos);
             }
         }
 

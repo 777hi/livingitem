@@ -164,4 +164,12 @@ public class ContainerChunkCache {
     public void clear() {
         chunkCache.clear();
     }
+
+    /** 从缓存中移除指定区块（自清洁，由 tick 循环调用） */
+    public void removeChunk(ResourceKey<Level> dim, ChunkPos pos) {
+        Set<ChunkPos> chunkSet = chunkCache.get(dim);
+        if (chunkSet != null) {
+            chunkSet.remove(pos);
+        }
+    }
 }

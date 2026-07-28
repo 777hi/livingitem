@@ -108,15 +108,6 @@ public class ContainerLivingItemHandler {
         PlayerEnderChestContainer enderChest = player.getEnderChestInventory();
         if (enderChest == null) return;
 
-        boolean hasLivingItem = false;
-        for (int i = 0; i < enderChest.getContainerSize(); i++) {
-            if (LivingItemManager.isLivingItem(enderChest.getItem(i))) {
-                hasLivingItem = true;
-                break;
-            }
-        }
-        if (!hasLivingItem) return;
-
         IItemHandler handler = new InvWrapper(enderChest);
         ContainerContext context = new EnderChestContainerContext(handler, player, level);
         processContext(context, level);
@@ -172,6 +163,16 @@ public class ContainerLivingItemHandler {
                             .add(new LivingItemFunction.SlotEntry(i, stack));
                 }
             }
+        }
+
+        if (grouped.isEmpty()) {
+            tick.release();
+            long elapsedMs = (System.nanoTime() - startNanos) / 1_000_000;
+            PerfMetrics.recordTick(elapsedMs);
+            if (PerfMetrics.shouldReport()) {
+                PerfMetrics.printReport();
+            }
+            return;
         }
 
         // 记录活物品数量和功能调用
@@ -270,16 +271,6 @@ public class ContainerLivingItemHandler {
         ContainerContext context = new SimpleContainerContext(handler, null, positions, blockEntities, level);
         String key = context.getContainerKey();
         if (processedKeys != null && !processedKeys.add(key)) return false;
-
-        boolean hasLivingItem = false;
-        for (int i = 0; i < context.getSize(); i++) {
-            if (LivingItemManager.isLivingItem(context.getItem(i))) {
-                hasLivingItem = true;
-                break;
-            }
-        }
-
-        if (!hasLivingItem) return false;
 
         processContext(context, level);
         return true;

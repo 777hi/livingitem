@@ -76,7 +76,7 @@ public class LivingHopperFunction implements LivingItemFunction {
                 continue;
             }
 
-            FilterData filter = tick.snapshot.getFilterOf(slot);
+            FilterData filter = tick.getSnapshot().getFilterOf(slot);
 
             boolean transferred = executeTransfer(context, level, slot, sourceSlot, targetSlot,
                 stack.getCount(), filter, dir, tick);
@@ -135,8 +135,8 @@ public class LivingHopperFunction implements LivingItemFunction {
         var server = level.getServer();
         if (server == null) return false;
 
-        SlotAccessor source = SlotAccessorFactory.create(server, ctx, sourceSlot, filter, transferredTargetSlots, tick.snapshot);
-        SlotAccessor target = SlotAccessorFactory.create(server, ctx, targetSlot, null, transferredTargetSlots, tick.snapshot);
+        SlotAccessor source = SlotAccessorFactory.create(server, ctx, sourceSlot, filter, transferredTargetSlots, tick.getSnapshot());
+        SlotAccessor target = SlotAccessorFactory.create(server, ctx, targetSlot, null, transferredTargetSlots, tick.getSnapshot());
 
         if (source == null || target == null) return false;
 

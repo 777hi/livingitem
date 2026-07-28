@@ -840,6 +840,7 @@ src/main/java/com/qiqi/li/
 - 幽灵条目（缓存有，世界没有）→ tick 时 getCapability 返回 null，自动跳过，无害
 - 幽灵容器（世界有，缓存没有）→ 区块卸载后重新加载时全量扫描修正，最多持续到区块重载
 - 空维度自动清理，避免内存泄漏
+- **自清洁机制**：`processLevelContainers` 遍历时自动移除已卸载区块和无容器区块的缓存条目，零额外扫描开销，缓存自动收敛到真实状态
 
 **性能对比：**
 - 旧方案（区块缓存 + 活跃列表）：活跃路径 ~10 个位置，全量路径 ~2000 个 BE，新容器延迟 30 秒
@@ -1103,6 +1104,16 @@ src/main/java/com/qiqi/li/
 - ✅ **优化：活箱子精确字节计算**（`LivingChestFunction.calculateExactByteUsage()` 替代粗糙估算，NBT 序列化获取真实大小，Tooltip 显示百分比）
 - ✅ **新增：性能监控指标系统**（`PerfMetrics` 收集 Tick 耗时/活物品数量/功能调用/对象池命中率/传输成功率，每 60 秒自动打印报告）
 
+**最近更新** (2026-07-28):
+- ✅ **优化：双重扫描合并**（`processContext` 内部扫描后 `grouped` 为空时提前 return，`processEnderChest` 和 `processContainerAt` 不再做预扫描，每容器每 tick 省一次全量槽位扫描）
+- ✅ **优化：Snapshot 懒加载**（`TickContext.getSnapshot()` 按需构建，闲置容器和只有活熔炉的容器零开销，`reset()` 不再预构建 snapshot）
+- ✅ **优化：容器缓存自清洁**（`ContainerChunkCache.removeChunk()` + `processLevelContainers` 自动清理已卸载区块和无容器区块，零额外扫描开销，缓存自动收敛）
+- ✅ **优化：直连模式 InvWrapper 缓存**（`LivingEnderChestAccessor` 构造时缓存 `cachedInvWrapper`，所有操作复用同一实例，避免每 tick 重复创建 `InvWrapper`）
+- ✅ **优化：直连模式轮询提取**（`nextExtractSlot` 指针记录上次提取槽位，末影箱所有槽位公平轮询，解决特定槽位物品无法被提取的问题）
+- ✅ **重构：EnderChannelRegistry Deque 替代 List+nextIndex**（`ArrayDeque` + `poll()`/`reoffer()` 天然实现轮询调度，消除手动指针管理，`peekEntry()`/`advancePointer()`/`peek()` 三个方法合并为 `poll()` + 条件 `reoffer()`）
+- ✅ **新增：RouteKey 内部类 + 反向索引**（`routeKeys` 集合 O(1) 路由去重检查，`entryToChannel` 反向索引 O(1) 查找条目所属频道）
+- ✅ **重构：removeIf() 收集后删除模式**（先收集符合条件的条目再批量删除，避免在遍历中混用 `poll()`/`offer()` 导致的 `ConcurrentModificationException`）
+
 **历史更新** (2026-07-24):
 - ✅ 重构：SlotAccessor 模拟优先传输模式（`simulateExtract` → `simulateInsert` → `extract` → `insert` → `rollback` 安全兜底 + WARN 日志）
 - ✅ 新增：`SlotAccessor` 接口新增 `simulateExtract()` 和 `simulateInsert()` 模拟方法（所有实现类均已实现）
@@ -1326,5 +1337,5 @@ public class LivingTntFunction implements LivingItemFunction {
 
 ---
 
-*最后更新: 2026-07-27*
-*状态: Alpha 测试阶段 - DataComponent 直接管理架构迁移已完成（活TNT/活水桶/活熔炉/活漏斗/活末影箱），活箱子待迁移，跨容器传输已实现，IItemHandler 直接驱动容器读写，兼容抽屉、精妙背包等模组容器，GUI交互系统已就绪，客户端图标系统已组件化，SlotAccessor 模拟优先传输架构已实现，活末影箱双模式（路由/直连）+ 反向索引路由清理 + FilteredSlotAccessor 统一过滤，容器位置缓存（拉取模型）实现零延迟容器发现，不可变数据模型 + 功能内聚 + 无状态工具类新架构，TickContext 对象池优化，SlotAccessor 注册式工厂，LivingItemFunction 接口职责拆分，活箱子精确字节计算，性能监控指标系统*
+*最后更新: 2026-07-28*
+*状态: Alpha 测试阶段 - DataComponent 直接管理架构迁移已完成（活TNT/活水桶/活熔炉/活漏斗/活末影箱），活箱子待迁移，跨容器传输已实现，IItemHandler 直接驱动容器读写，兼容抽屉、精妙背包等模组容器，GUI交互系统已就绪，客户端图标系统已组件化，SlotAccessor 模拟优先传输架构已实现，活末影箱双模式（路由/直连）+ Deque 轮询调度 + 反向索引路由清理 + FilteredSlotAccessor 统一过滤，容器位置缓存（拉取模型 + 自清洁）实现零延迟容器发现，双重扫描合并 + Snapshot 懒加载 + 直连模式 InvWrapper 缓存/轮询提取等性能优化，不可变数据模型 + 功能内聚 + 无状态工具类新架构，TickContext 对象池优化，SlotAccessor 注册式工厂，LivingItemFunction 接口职责拆分，活箱子精确字节计算，性能监控指标系统*

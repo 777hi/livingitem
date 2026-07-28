@@ -163,7 +163,7 @@ public final class CrossContainerTransfer {
         if (server == null) return false;
 
         SlotAccessor target = SlotAccessorFactory.create(server, containerCtx, targetSlot, null,
-            tick.transferredTargetSlots, tick.snapshot);
+            tick.transferredTargetSlots, tick.getSnapshot());
         if (target == null || target.isFull()) return false;
 
         int amount = Math.min(stackSize, maxTransfer);
@@ -225,7 +225,7 @@ public final class CrossContainerTransfer {
         if (server == null) return false;
 
         SlotAccessor source = SlotAccessorFactory.create(server, containerCtx, sourceSlot,
-            filterData, tick.transferredTargetSlots, tick.snapshot);
+            filterData, tick.transferredTargetSlots, tick.getSnapshot());
         if (source == null) return false;
 
         int amount = Math.min(stackSize, maxTransfer);
@@ -264,7 +264,7 @@ public final class CrossContainerTransfer {
         int capacity = LivingChestFunction.getCapacity(containerCtx);
         int transferAmount = Math.min(stackSize, maxTransfer);
 
-        ContainerSnapshot.ChestSnapshot chestSnap = tick.snapshot.getChestSnapshot(sourceSlot);
+        ContainerSnapshot.ChestSnapshot chestSnap = tick.getSnapshot().getChestSnapshot(sourceSlot);
         if (chestSnap.usedSlots() == 0) {
             return false;
         }
@@ -359,7 +359,7 @@ public final class CrossContainerTransfer {
 
         int capacity = LivingChestFunction.getCapacity(containerCtx);
 
-        ContainerSnapshot.ChestSnapshot chestSnap = tick.snapshot.getChestSnapshot(targetSlot);
+        ContainerSnapshot.ChestSnapshot chestSnap = tick.getSnapshot().getChestSnapshot(targetSlot);
         if (chestSnap.isFull() || chestSnap.isByteFull()) {
             return false;
         }
