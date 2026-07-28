@@ -154,7 +154,7 @@ public class LivingHopperFunction implements LivingItemFunction {
             }
             ItemStack srcStack = ctx.getItem(sourceSlot);
             if (!srcStack.isEmpty() && !LivingItemManager.isLivingItem(srcStack)) {
-                enderChest.registerRoute(srcStack, ctx, sourceSlot, hostSlot);
+                enderChest.registerRoute(srcStack, ctx, sourceSlot, hostSlot, targetSlot);
             }
             return true;
         }

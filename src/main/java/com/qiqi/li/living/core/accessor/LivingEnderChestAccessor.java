@@ -158,7 +158,7 @@ public class LivingEnderChestAccessor implements SlotAccessor {
      * @param containerCtx 当前容器上下文
      * @param slot 源物品槽位
      */
-    public void registerRoute(ItemStack sourceStack, ContainerContext containerCtx, int slot, int registrarSlot) {
+    public void registerRoute(ItemStack sourceStack, ContainerContext containerCtx, int slot, int registrarSlot, int targetSlot) {
         if (sourceStack.isEmpty()) {
             LOGGER.warn("LivingEnderChestAccessor: registerRoute called with empty stack, channel={}", channel);
             return;
@@ -180,7 +180,7 @@ public class LivingEnderChestAccessor implements SlotAccessor {
 
         String itemType = BuiltInRegistries.ITEM.getKey(sourceStack.getItem()).toString();
         EnderChannelEntry entry = new EnderChannelEntry(
-            itemType, level.dimension(), pos, slot, registrarSlot, containerKey, -1, containerKey);
+            itemType, level.dimension(), pos, slot, registrarSlot, containerKey, targetSlot, containerKey);
 
         EnderChannelRegistry registry = EnderChannelRegistry.getInstance();
         // 快速路径：如果当前频道已存在相同条目，跳过（绝大多数tick走这里）
