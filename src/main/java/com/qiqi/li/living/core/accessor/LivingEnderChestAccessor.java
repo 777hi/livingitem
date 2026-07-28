@@ -96,7 +96,9 @@ public class LivingEnderChestAccessor implements SlotAccessor {
         }
         int ch = stack.getCount();
         UUID boundUuid = LivingEnderChestFunction.getBoundPlayerUuid(stack);
-        LOGGER.debug("LivingEnderChestAccessor.tryCreate: channel={}, slot={}, direct={}", ch, slot, boundUuid != null);
+        if (LOGGER.isDebugEnabled()) {
+            LOGGER.debug("LivingEnderChestAccessor.tryCreate: channel={}, slot={}, direct={}", ch, slot, boundUuid != null);
+        }
         if (boundUuid != null) {
             return new LivingEnderChestAccessor(server, ch, transferredTargetSlots, boundUuid);
         } else {
@@ -289,7 +291,9 @@ public class LivingEnderChestAccessor implements SlotAccessor {
 
     private ItemStack routeExtract(int amount) {
         EnderChannelRegistry registry = EnderChannelRegistry.getInstance();
-        LOGGER.debug("LivingEnderChestAccessor: extract begin channel={}, amount={}", channel, amount);
+        if (LOGGER.isDebugEnabled()) {
+            LOGGER.debug("LivingEnderChestAccessor: extract begin channel={}, amount={}", channel, amount);
+        }
 
         while (true) {
             EnderChannelEntry entry;
@@ -376,13 +380,17 @@ public class LivingEnderChestAccessor implements SlotAccessor {
 
             if (sourceHandler.getStackInSlot(entry.sourceSlot()).isEmpty()) {
                 // 源槽已空，entry 已从队列移除，不 reoffer
-                LOGGER.debug("LivingEnderChestAccessor: extracted channel={}, item={}, count={}, from={}, slot={}, drained",
-                    channel, itemId, toExtract, sourcePos != null ? sourcePos : entry.containerKey(), entry.sourceSlot());
+                if (LOGGER.isDebugEnabled()) {
+                    LOGGER.debug("LivingEnderChestAccessor: extracted channel={}, item={}, count={}, from={}, slot={}, drained",
+                        channel, itemId, toExtract, sourcePos != null ? sourcePos : entry.containerKey(), entry.sourceSlot());
+                }
             } else {
                 // 源槽还有物品，放回队列尾部继续参与轮询
                 registry.reoffer(channel, entry);
-                LOGGER.debug("LivingEnderChestAccessor: extracted channel={}, item={}, count={}, from={}, slot={}, reoffer",
-                    channel, itemId, toExtract, sourcePos != null ? sourcePos : entry.containerKey(), entry.sourceSlot());
+                if (LOGGER.isDebugEnabled()) {
+                    LOGGER.debug("LivingEnderChestAccessor: extracted channel={}, item={}, count={}, from={}, slot={}, reoffer",
+                        channel, itemId, toExtract, sourcePos != null ? sourcePos : entry.containerKey(), entry.sourceSlot());
+                }
             }
             return extracted;
         }
