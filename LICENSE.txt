@@ -26,14 +26,11 @@ without explicit written permission from the author.
 
 ## 5. Dependency and API Use
 
-Other mod authors MAY:
-- Declare Living Item as a required dependency in their mod configuration
-- Use the public API (interfaces, registries, data components) provided by Living Item
-- Implement their own LivingItemFunction to create custom living items
+Living Item may be used as a mod dependency. Its public API (interfaces, registries,
+data components) may be called and implemented to create custom living items.
 
-Other mod authors may NOT:
-- Copy Living Item's source code into their own projects
-- Redistribute Living Item as part of their mod
+Living Item's code or jar file may NOT be bundled or redistributed within another
+mod's distribution.
 
 ## 6. No Unauthorized Forks or Derivative Works
 
