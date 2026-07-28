@@ -635,6 +635,7 @@ for (var entry : grouped.entrySet()) {
 | `transferredTargetSlots` | 级联传输防护，防止同 tick 内漏斗链级联传输 |
 | `snapshot` | 容器快照，预扫描的活漏斗连接图和过滤链 |
 | `fluidData` | 容器关联的流体状态 |
+| `functionSlots` | 功能槽位缓存，processContext 分组时填充，O(1) 读取各功能的活跃槽位集合 |
 
 **对象池复用**：
 
@@ -809,6 +810,7 @@ registerProvider(SlotAccessorFactory::defaultProvider); // 优先级 3：普通�
 | TickContext 对象池 | TickContext | 复用实例，减少 GC |
 | 反向索引 | EnderChannelRegistry | 路由清理 O(路由总数) → O(相关路由) |
 | 延迟同步 | EnderChannelRegistry | tick 末尾统一发包，减少网络抖动 |
+| 贪心提取 | EnderChannelRegistry | 输出槽有物品时优先提取同类型（可堆叠），避免轮询到不同类型导致传输停止 |
 | IdentityHashMap 去重 | 大箱子 | 避免同一 IItemHandler 被处理两次 |
 | InvWrapper 缓存 | LivingEnderChestAccessor | 直连模式避免每 tick 重复创建 |
 

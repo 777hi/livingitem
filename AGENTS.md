@@ -64,7 +64,7 @@ LivingItemFunction.tick(entries, context, tick, level) (各功能类自行实现
     ↓
 ContainerContext (组合接口：LivingContainer + SlotInfoProvider + ContainerSync + ContainerIdentity)
     ↓
-TickContext (tick 级临时状态：槽位互斥、级联防护、容器快照、流体数据)
+TickContext (tick 级临时状态：槽位互斥、级联防护、容器快照、流体数据、功能槽位缓存)
     ↓
 SlotAccessor (模拟优先传输：simulateExtract → simulateInsert → extract → insert → rollback安全兜底 + FilteredSlotAccessor 过滤)
 ```
@@ -137,7 +137,8 @@ TickContext (tick 级临时状态，生命周期仅为单次 tick)
     ├── occupiedSlots: Set<String>          — 槽位互斥集合（防止同槽位重复处理）
     ├── transferredTargetSlots: Set<Integer> — 级联传输防护（防止漏斗循环传输）
     ├── snapshot: ContainerSnapshot         — 容器快照（预扫描活漏斗连接图）
-    └── fluidData: ContainerFluidData       — 容器级流体数据（实例绑定，非静态缓存）
+    ├── fluidData: ContainerFluidData       — 容器级流体数据（实例绑定，非静态缓存）
+    └── functionSlots: Map<String, Set<Integer>> — 功能槽位缓存（processContext 分组时填充，O(1) 读取）
 ```
 
 **泛型数据访问**：
@@ -293,7 +294,8 @@ TickContext（tick 级临时状态，对象池复用）
     ├── occupiedSlots           — 槽位互斥集合
     ├── transferredTargetSlots  — 级联传输防护
     ├── snapshot                — 容器快照
-    └── fluidData               — 容器级流体数据
+    ├── fluidData               — 容器级流体数据
+    └── functionSlots           — 功能槽位缓存（processContext 分组时填充，O(1) 读取）
 
 TickContextPool（对象池，ThreadLocal 线程安全）
     ├── MAX_POOL_SIZE = 4       — 每个线程最多缓存 4 个实例
@@ -322,8 +324,8 @@ SlotAccessor 存储后端抽象（独立于组件体系，供传输引擎使用�
     │     └── insert()：插入前检查过滤，不通过则拒绝（返回0）
     ├── EnderChannelRegistry  — 全局路由表（服务端单例）：频道→路由条目映射
     │     ├── 轮询公平调度：nextIndex 指针轮流取，每个 push 端机会均等
-    │     ├── 反向索引：posIndex（方块位置→条目）+ keyIndex（容器key→条目），O(相关路由) 清理
-    │     └── 路由清理：removeStaleEnderChestRoutes / cleanStaleSourceRoutes / removeStaleRoutes / onChunkUnload
+    │     ├── 反向索引：posIndex（方块位置→条目）+ keyIndex（容器key→条目）+ registrarKeyIndex（注册者容器key→条目），O(相关路由) 清理
+    │     └── 路由清理：validateRoutes（统一验证，一次遍历完成注册者/目标/源物品三项检查）/ onChunkUnload
     ├── EnderChannelEntry     — 路由条目 record：itemType + sourceDim + sourcePos + sourceSlot + registrarSlot + containerKey + targetSlot
     └── SlotAccessorFactory   — 注册式工厂：根据槽位物品类型创建对应访问器 + 自动包装 FilteredSlotAccessor
           ├── Provider 接口 — 返回 null 表示不匹配，交给下一个 Provider
@@ -539,9 +541,10 @@ ItemStack (DataComponent)
 └── 提取失败 → registry.remove() 清理无效条目
 
 清理
-├── 活漏斗移走 → removeStaleRoutes(pos, activeSlots)
-├── 活末影箱移走 → removeStaleEnderChestRoutes(activeSlots)
-├── 源物品移走/替换 → cleanStaleSourceRoutes(context) [反向索引优化]
+├── validateRoutes(context, activeRegistrarSlots, activeTargetSlots) — 统一验证（v9 重构）
+│     ├── 检查1: 注册者还在吗？  registrarSlot ∈ activeRegistrarSlots?
+│     ├── 检查2: 目标还在吗？    targetSlot ∈ activeTargetSlots?
+│     └── 检查3: 源物品还在吗？  context.getItem(sourceSlot) 匹配?
 ├── 频道改变 → removeByPositionAndSlotFromAllChannels(pos, slot)
 └── 区块卸载 → onChunkUnload(level, chunkPos)
 ```
@@ -584,7 +587,9 @@ SlotAccessorFactory.create() / createForNeighbor()
 
 **直连模式预加载**：`LivingEnderChestAccessor` 构造时一次性获取 `PlayerEnderChestContainer` 引用并缓存，避免每次操作都查找玩家。玩家离线时 `cachedEnderChest` 为 null，操作直接跳过。
 
-**反向索引优化**：`EnderChannelRegistry` 维护 `posIndex`（方块位置→条目）和 `keyIndex`（容器key→条目）两个反向索引，路由清理时直接查询相关路由，时间复杂度从 O(所有路由) 优化到 O(相关路由)。
+**反向索引优化**：`EnderChannelRegistry` 维护 `posIndex`（方块位置→条目）、`keyIndex`（容器key→条目）和 `registrarKeyIndex`（注册者容器key→条目）三个反向索引，路由清理时直接查询相关路由，时间复杂度从 O(所有路由) 优化到 O(相关路由)。
+
+**贪心提取策略**：`EnderChannelRegistry.peek/poll(channel, filterData, preferredItemType)` 优先返回匹配偏好类型的条目。`LivingHopperFunction.executeTransfer()` 在 pull 端创建 accessor 后，检查输出槽物品类型并设置偏好，实现"输出槽有铁锭就继续提取铁锭"的贪心行为，避免轮询到金锭导致传输停止。偏好类型无匹配时回退正常轮询。
 
 **黑白名单统一过滤**：`FilteredSlotAccessor` 装饰器在 `SlotAccessor` 层统一处理过滤逻辑，所有活漏斗主导的传输自动遵守黑白名单，无需在各处手动检查 `filterState`。
 
@@ -599,8 +604,8 @@ SlotAccessorFactory.create() / createForNeighbor()
 | 文件 | 职责 |
 |------|------|
 | `LivingEnderChestFunction` | 活末影箱功能入口：双模式切换、玩家绑定数据管理、Tooltip 显示 |
-| `LivingEnderChestAccessor` | 活末影箱访问器：路由模式（registerRoute + 查路由表跳转提取）+ 直连模式（预加载玩家末影箱引用） |
-| `EnderChannelRegistry` | 全局路由表：频道→路由条目映射 + 反向索引 + 轮询调度 + 多种清理策略 |
+| `LivingEnderChestAccessor` | 活末影箱访问器：路由模式（registerRoute + 查路由表跳转提取 + 贪心偏好）+ 直连模式（预加载玩家末影箱引用） |
+| `EnderChannelRegistry` | 全局路由表：频道→路由条目映射 + 反向索引 + 轮询调度 + 贪心提取 + 统一路由验证 |
 | `EnderChannelEntry` | 路由条目 record：物品类型 + 维度 + 位置 + 槽位 + 注册者槽位 + 容器key + 目标槽位 |
 | `EnderChannelComponent` | 活末影箱频道组件：路由清理（移走末影箱/源物品）+ Tooltip 构建 |
 | `FilteredSlotAccessor` | 过滤装饰器：为任意 SlotAccessor 添加黑白名单过滤（活漏斗侧统一处理，活末影箱无需拥有 ItemFilterComponent） |
@@ -657,7 +662,7 @@ src/main/java/com/qiqi/li/
 │   │   ├── SlotInfoProvider.java            # 槽位能力接口
 │   │   ├── ContainerSync.java               # 客户端同步接口
 │   │   ├── ContainerIdentity.java           # 身份标识接口
-│   │   ├── TickContext.java                 # Tick 级临时状态（槽位互斥、级联防护、快照、流体数据，对象池复用）
+│   │   ├── TickContext.java                 # Tick 级临时状态（槽位互斥、级联防护、快照、流体数据、功能槽位缓存，对象池复用）
 │   │   ├── SimpleContainerContext.java      # 容器上下文实现（直接基于 IItemHandler 读写）
 │   │   ├── ContainerLivingItemHandler.java  # 容器扫描、分组调度、IItemHandler 去重、性能监控
 │   │   ├── ContainerChunkCache.java         # 区块级容器缓存（事件驱动维护 + IItemHandler 检测）
@@ -1059,10 +1064,12 @@ src/main/java/com/qiqi/li/
 - [x] 直连模式预加载（构造时缓存 `PlayerEnderChestContainer` 引用，离线跳过）
 - [x] 黑白名单统一过滤（`FilteredSlotAccessor` 装饰器，所有传输自动遵守活漏斗黑白名单，活末影箱无需拥有 ItemFilterComponent）
 - [x] 跨容器传输架构统一（`NeighborSlotAccessor` + `SlotAccessor.transfer()` 统一传输逻辑）
-- [x] 反向索引路由清理（`posIndex` + `keyIndex`，O(相关路由) 清理）
-- [x] 活末影箱移走后路由清理（`removeStaleEnderChestRoutes`）
-- [x] 源物品移走后路由清理（`cleanStaleSourceRoutes`，使用反向索引优化）
-- [x] 活漏斗移走后路由清理（`removeStaleRoutes`）
+- [x] 反向索引路由清理（`posIndex` + `keyIndex` + `registrarKeyIndex`，O(相关路由) 清理）
+- [x] 统一路由验证（`validateRoutes` 替代 5 个独立清理方法，一次遍历完成注册者/目标/源物品三项检查）
+- [x] 活末影箱移走后路由清理（`validateRoutes` 检查2：目标验证）
+- [x] 源物品移走后路由清理（`validateRoutes` 检查3：源物品验证）
+- [x] 活漏斗移走后路由清理（`validateRoutes` 检查1：注册者验证，空集触发）
+- [x] 功能槽位缓存（`TickContext.functionSlots`，processContext 分组时填充，O(1) 读取）
 - [x] 区块卸载路由清理（`onChunkUnload`）
 - [x] Tooltip 显示（路由模式：频道号+路由数量+高级模式路由详情；直连模式：绑定玩家名称）
 - [x] 组件化改造（`EnderChannelComponent` 路由清理，与其他活物品架构一致；活末影箱不拥有 ItemFilterComponent，过滤由活漏斗侧统一处理）
@@ -1103,6 +1110,13 @@ src/main/java/com/qiqi/li/
 - ✅ **优化：LivingItemFunction 接口职责拆分**（5 个逻辑模块：匹配/标识/Tick/Tooltip/组件过滤，可选方法默认空实现）
 - ✅ **优化：活箱子精确字节计算**（`LivingChestFunction.calculateExactByteUsage()` 替代粗糙估算，NBT 序列化获取真实大小，Tooltip 显示百分比）
 - ✅ **新增：性能监控指标系统**（`PerfMetrics` 收集 Tick 耗时/活物品数量/功能调用/对象池命中率/传输成功率，每 60 秒自动打印报告）
+
+**最近更新** (2026-07-29):
+- ✅ **新增：贪心提取策略**（`preferredItemType` 偏好提取，输出槽有铁锭时优先继续提取铁锭可堆叠，而非轮询到金锭导致传输停止，回退正常轮询）
+- ✅ **重构：统一路由验证**（`validateRoutes()` 替代 5 个独立清理方法，一次遍历完成注册者/目标/源物品三项检查，新增 `registrarKeyIndex` 反向索引）
+- ✅ **修复：活末影箱被拿走后路由不清理**（`registerRoute()` 接收 `targetSlot` 参数，路由条目正确记录活末影箱所在槽位）
+- ✅ **修复：活漏斗被拿起到鼠标后路由不清理**（`LivingEnderChestFunction.tick()` 现在也扫描活漏斗槽位，空集触发清理）
+- ✅ **新增：TickContext.functionSlots 缓存**（`processContext()` 分组时一次性填充各功能活跃槽位集合，功能类 O(1) 读取，无需遍历容器）
 
 **最近更新** (2026-07-28):
 - ✅ **优化：双重扫描合并**（`processContext` 内部扫描后 `grouped` 为空时提前 return，`processEnderChest` 和 `processContainerAt` 不再做预扫描，每容器每 tick 省一次全量槽位扫描）

@@ -37,20 +37,13 @@ public class LivingEnderChestFunction implements LivingItemFunction {
     public void tick(List<SlotEntry> entries, ContainerContext context, TickContext tick, Level level) {
         if (level.isClientSide) return;
 
-        long currentTick = level.getGameTime();
         Set<Integer> activeEnderChestSlots = new HashSet<>();
         for (SlotEntry entry : entries) {
             activeEnderChestSlots.add(entry.slotIndex());
         }
 
-        EnderChannelRegistry registry = EnderChannelRegistry.getInstance();
-        registry.removeStaleEnderChestRoutes(context.getContainerKey(), activeEnderChestSlots);
-        int cleaned = registry.cleanStaleSourceRoutes(context);
-
-        if (cleaned > 0) {
-            com.mojang.logging.LogUtils.getLogger().debug(
-                "EnderChannelComponent: cleaned {} stale routes at tick {}", cleaned, currentTick);
-        }
+        Set<Integer> activeHopperSlots = tick.getFunctionSlots(LivingHopperFunction.ID);
+        EnderChannelRegistry.getInstance().validateRoutes(context, activeHopperSlots, activeEnderChestSlots);
     }
 
     @Override

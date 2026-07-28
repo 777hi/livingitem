@@ -1,7 +1,10 @@
 package com.qiqi.li.living.container;
 
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import com.qiqi.li.living.perf.PerfMetrics;
 
@@ -30,6 +33,8 @@ public class TickContext {
     public final Set<Integer> transferredTargetSlots = new HashSet<>();
     public ContainerFluidData fluidData = ContainerFluidData.EMPTY;
 
+    private Map<String, Set<Integer>> functionSlots = Collections.emptyMap();
+
     private ContainerContext ctx;
     private ContainerSnapshot _snapshot = ContainerSnapshot.EMPTY;
     private boolean snapshotBuilt = false;
@@ -44,6 +49,26 @@ public class TickContext {
             snapshotBuilt = true;
         }
         return _snapshot;
+    }
+
+    /**
+     * 获取指定功能的活跃槽位集合（只读）。
+     * 由 {@link ContainerLivingItemHandler} 在分组后填充，功能类可直接读取，
+     * 无需再遍历整个容器查找其他功能的槽位。
+     *
+     * @param functionId 功能 ID，如 "living_hopper"、"living_ender_chest"
+     * @return 活跃槽位集合（不可修改），不存在则返回空集合
+     */
+    public Set<Integer> getFunctionSlots(String functionId) {
+        Set<Integer> slots = functionSlots.get(functionId);
+        return slots != null ? Collections.unmodifiableSet(slots) : Collections.emptySet();
+    }
+
+    /**
+     * 设置功能槽位缓存（由 processContext 调用）。
+     */
+    public void setFunctionSlots(Map<String, Set<Integer>> functionSlots) {
+        this.functionSlots = functionSlots;
     }
 
     /**
@@ -83,6 +108,7 @@ public class TickContext {
         this.ctx = ctx;
         this._snapshot = ContainerSnapshot.EMPTY;
         this.snapshotBuilt = false;
+        this.functionSlots = Collections.emptyMap();
 
         ContainerFluidData fluidData = ContainerFluidData.EMPTY;
         if (ctx instanceof SimpleContainerContext simpleCtx) {
@@ -100,6 +126,7 @@ public class TickContext {
         ctx = null;
         _snapshot = ContainerSnapshot.EMPTY;
         snapshotBuilt = false;
+        functionSlots = Collections.emptyMap();
         fluidData = ContainerFluidData.EMPTY;
     }
 

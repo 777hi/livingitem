@@ -1,0 +1,73 @@
+All Rights Reserved License for Living Item
+
+Copyright (c) 2026 777hi
+
+This project is licensed under All Rights Reserved (ARR) with the following exceptions.
+
+## 1. No Redistribution
+
+You may NOT redistribute this software in any form without explicit written permission from the author.
+
+## 2. Modpacks
+
+You MAY include this mod in modpacks, both public and private, provided that:
+- The modpack does not generate revenue through paywalls or exclusive access
+- The mod is not modified or rehosted separately
+
+## 3. Personal Modification
+
+You MAY modify this software for personal, non-commercial use only.
+You may NOT share, distribute, or publish any modifications.
+
+## 4. No Commercial Use
+
+You may NOT use this software, in whole or in part, for any commercial purpose
+without explicit written permission from the author.
+
+## 5. Dependency and API Use
+
+Other mod authors MAY:
+- Declare Living Item as a required dependency in their mod configuration
+- Use the public API (interfaces, registries, data components) provided by Living Item
+- Implement their own LivingItemFunction to create custom living items
+
+Other mod authors may NOT:
+- Copy Living Item's source code into their own projects
+- Redistribute Living Item as part of their mod
+
+## 6. No Unauthorized Forks or Derivative Works
+
+- You may NOT create forks, derivative projects, or adaptations of this software
+  without explicit permission from the author.
+- Exception: You MAY fork this repository on GitHub solely for the purpose of
+  submitting pull requests (PRs) to this project.
+
+## 7. Code Reference and Inspiration
+
+- You MAY reference or be inspired by this code for your own projects.
+- You MAY reuse small code snippets in your own projects as long as proper attribution
+  to the original author (777hi) is given.
+- You may NOT copy core architecture, entire files, or substantial code structures
+  without explicit permission from the author.
+- If you are unsure whether your use qualifies as "small reuse," please contact the author.
+
+## 8. Translations
+
+Translations (language resource files) are freely available with no license restrictions
+and may be used, shared, modified, or distributed without limitation.
+
+## 9. Disclaimer of Liability
+
+This software is provided "as is", without any express or implied warranties.
+The author is NOT responsible for any damages, including but not limited to:
+- Software crashes, bugs, or data corruption
+- Security vulnerabilities or unauthorized modifications
+- Performance issues or hardware damage
+- Legal issues arising from misuse of the software
+
+Use at your own risk.
+
+---
+
+For licensing inquiries, please contact via GitHub:
+https://github.com/777hi

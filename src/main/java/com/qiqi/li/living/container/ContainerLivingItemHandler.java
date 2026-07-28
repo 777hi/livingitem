@@ -175,6 +175,16 @@ public class ContainerLivingItemHandler {
             return;
         }
 
+        Map<String, Set<Integer>> functionSlots = new LinkedHashMap<>();
+        for (var entry : grouped.entrySet()) {
+            Set<Integer> slots = new HashSet<>();
+            for (var slotEntry : entry.getValue()) {
+                slots.add(slotEntry.slotIndex());
+            }
+            functionSlots.put(entry.getKey().getFunctionId(), slots);
+        }
+        tick.setFunctionSlots(functionSlots);
+
         // 记录活物品数量和功能调用
         for (var entry : grouped.entrySet()) {
             PerfMetrics.addLivingItem(entry.getKey().getFunctionId(), entry.getValue().size());

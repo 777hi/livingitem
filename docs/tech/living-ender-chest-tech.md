@@ -1,7 +1,7 @@
 # Living Ender Chest (活末影箱) 技术文档
 
-> **文档版本**: 2026.07 v8  
-> **最后更新**: 2026-07-28  
+> **文档版本**: 2026.07 v10  
+> **最后更新**: 2026-07-29  
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -80,8 +80,8 @@
 │  executeTransfer() 触发，通过 LivingEnderChestAccessor 完成。      │
 │                                                                  │
 │  tick() 中仅做路由清理：                                          │
-│    - removeStaleEnderChestRoutes() — 清理末影箱被移走的路由        │
-│    - cleanStaleSourceRoutes() — 清理源物品已消失的路由             │
+│    - validateRoutes(context, activeRegistrarSlots, activeTargetSlots) │
+│      一次性验证注册者/目标/源物品三项有效性                        │
 │                                                                  │
 └──────────────────────────────────────────────────────────────────┘
 
@@ -130,7 +130,7 @@ public record EnderChannelEntry(
     int sourceSlot,                     // 源物品在容器中的槽位索引
     int registrarSlot,                  // 注册此路由的活漏斗所在槽位（用于清理）
     String containerKey,                // 源容器唯一标识 key
-    int targetSlot,                     // 活末影箱所在槽位（-1 表示无关联末影箱）
+    int targetSlot,                     // 活末影箱所在槽位（真实槽位，用于清理关联）
     String registrarContainerKey        // 注册者容器的唯一标识 key（用于跨容器路由清理）
 )
 ```
@@ -149,6 +149,7 @@ private final Map<Integer, ChannelData> channels = new HashMap<>();
 // 反向索引（v5 新增）
 private final Map<BlockPos, List<EnderChannelEntry>> posIndex = new HashMap<>();     // 方块位置 → 路由条目
 private final Map<String, List<EnderChannelEntry>> keyIndex = new HashMap<>();       // 容器 key → 路由条目
+private final Map<String, List<EnderChannelEntry>> registrarKeyIndex = new HashMap<>(); // 注册者容器 key → 路由条目（v9 新增）
 
 // 延迟同步（v6 新增）
 private final Set<Integer> dirtyChannels = new HashSet<>();                          // 本 tick 内被修改的频道集合
@@ -156,29 +157,30 @@ private final Set<Integer> dirtyChannels = new HashSet<>();                     
 
 **反向索引**（v5 新增）：
 
-路由注册/移除时同步维护 `posIndex` 和 `keyIndex` 两个反向索引，清理时直接查询相关路由，不需要遍历所有频道：
+路由注册/移除时同步维护 `posIndex`、`keyIndex` 和 `registrarKeyIndex` 三个反向索引，清理时直接查询相关路由，不需要遍历所有频道：
 
 | 索引 | 键 | 用途 |
 |------|-----|------|
 | `posIndex` | `BlockPos` | 按方块位置快速查找相关路由 |
 | `keyIndex` | `String`（容器 key） | 按容器标识快速查找相关路由（玩家背包等无 BlockPos 的场景） |
+| `registrarKeyIndex` | `String`（注册者容器 key） | 按注册者容器标识快速查找相关路由（v9 新增） |
 
-**性能优化**：`cleanStaleSourceRoutes()` 使用反向索引后，时间复杂度从 O(所有路由) 优化到 O(相关路由)。
+**性能优化**：`validateRoutes()` 使用反向索引后，时间复杂度从 O(所有频道) 优化到 O(相关路由)。
 
 **关键方法**：
 
 | 方法 | 职责 |
 |------|------|
-| `insert(channel, entry)` | 注册路由条目（去重），同步更新反向索引 |
+| `offer(channel, entry)` | 注册路由条目（去重），同步更新反向索引 |
 | `contains(channel, entry)` | 检查条目是否已存在（快速路径） |
 | `peek(channel, filterData)` | 轮询查看路由条目（不移除），支持物品过滤 |
+| `peek(channel, filterData, preferredItemType)` | 贪心查看：优先返回匹配偏好类型的条目（v10 新增） |
+| `poll(channel)` | 从头部取出路由条目 |
+| `poll(channel, preferredItemType)` | 贪心取出：优先取出匹配偏好类型的条目（v10 新增） |
+| `reoffer(channel, entry)` | 将条目放回尾部（源物品还有剩余时） |
 | `remove(channel, entry)` | 移除指定路由条目，同步更新反向索引 |
 | `removeByPositionAndSlot(channel, pos, slot)` | 移除指定位置+槽位的路由 |
-| `removeStaleRoutes(pos, activeSlots)` | 按方块位置清理失效路由 |
-| `removeStaleRoutes(containerKey, activeSlots)` | 按容器 key 清理失效路由 |
-| `removeStaleEnderChestRoutes(containerKey, activeSlots)` | 清理源末影箱被移走的路由 |
-| `removeStaleRoutesByRegistrarKey(containerKey, activeSlots)` | 按注册者容器 key 清理跨容器路由 |
-| `cleanStaleSourceRoutes(ctx)` | 清理源物品已消失或变化的失效路由（使用反向索引优化） |
+| `validateRoutes(context, activeRegistrarSlots, activeTargetSlots)` | 统一路由验证：一次遍历完成注册者/目标/源物品三项检查（v9 新增，替代旧版 5 个独立清理方法） |
 | `onChunkUnload(level, chunkPos)` | 区块卸载时清理该区块所有相关路由 |
 | `flushDirtyChannels()` | 延迟同步：遍历 dirty 频道统一发包后清空（由 `ContainerLivingItemHandler.processContext()` 在 tick 末尾调用） |
 
@@ -290,10 +292,10 @@ if (target.unwrap() instanceof LivingEnderChestAccessor enderChest) {
         // 直连模式 → 直接传输
         return SlotAccessor.transfer(source, target, amount);
     }
-    // 路由模式 → 注册路由
+    // 路由模式 → 注册路由（传入 targetSlot 用于清理关联）
     ItemStack srcStack = ctx.getItem(sourceSlot);
     if (!srcStack.isEmpty() && !LivingItemManager.isLivingItem(srcStack)) {
-        enderChest.registerRoute(srcStack, ctx, sourceSlot, hostSlot);
+        enderChest.registerRoute(srcStack, ctx, sourceSlot, hostSlot, targetSlot);
     }
     return true;
 }
@@ -318,7 +320,7 @@ LivingHopperFunction.executeTransfer()
                      ))
 ```
 
-**targetSlot = -1 的设计**：跨容器场景下活末影箱不在当前容器中，将 `targetSlot` 设为 `-1` 避免路由与活末影箱的具体槽位绑定，防止容器刷新时路由被误清理。
+**targetSlot 设计**：路由条目记录活末影箱所在的真实槽位，用于 `validateRoutes()` 判断活末影箱是否被移走。跨容器场景下活末影箱不在当前容器中，`CrossContainerTransfer` 传入实际的 `targetSlot`。
 
 ---
 
@@ -340,25 +342,55 @@ LivingHopperFunction.executeTransfer()
           └─ 提取失败 → 路由条目保留（下次重试）
 ```
 
-### 5.2 轮询调度
+### 5.2 轮询调度与贪心提取
 
-`EnderChannelRegistry` 使用轮询指针 `nextIndex` 保证同一频道内的路由条目被公平调度：
+`EnderChannelRegistry` 使用 `Deque` 的 `poll`/`reoffer` 实现轮询公平调度：取出头部 → 验证 → 有效则提取，源还有物品则放回尾部。
+
+**默认轮询行为**：铁锭、金锭交替提取，保证公平。
+
+**贪心提取策略**（v10 新增）：当输出槽已有物品时，优先提取相同类型的物品（可堆叠），避免轮询到不同类型导致传输停止。
+
+```
+场景：push端铁锭+金锭，pull端输出槽已有铁锭
+
+轮询模式（旧）：
+  Tick 1: 提取铁锭 → 输出槽=铁锭
+  Tick 2: 轮询到金锭 → 无法堆叠 → 传输停止 ❌
+  （必须拿走铁锭才能继续）
+
+贪心模式（新）：
+  Tick 1: 提取铁锭 → 输出槽=铁锭
+  Tick 2: 偏好铁锭 → 继续提取铁锭 → 堆叠 ✅
+  Tick 3: 铁锭满了/没了 → 回退轮询 → 提取金锭
+```
+
+实现方式：
+
+1. `LivingHopperFunction.executeTransfer()` 创建 source accessor 后，检查 target 槽位物品类型
+2. 如果 target 槽有物品，将物品注册名设置到 `LivingEnderChestAccessor.preferredItemType`
+3. `EnderChannelRegistry.peek(channel, filterData, preferredItemType)` 优先返回匹配偏好类型的条目
+4. `EnderChannelRegistry.poll(channel, preferredItemType)` 优先取出匹配偏好类型的条目
+5. 找不到匹配条目时，回退到正常轮询（头部条目）
 
 ```java
-public EnderChannelEntry peek(int channel, FilterState filter) {
-    ChannelData data = channels.get(channel);
-    if (data == null || data.entries.isEmpty()) return null;
-
-    int startIndex = data.nextIndex;
-    for (int i = 0; i < data.entries.size(); i++) {
-        int idx = (startIndex + i) % data.entries.size();
-        EnderChannelEntry entry = data.entries.get(idx);
-        if (matchesFilter(entry, filter)) {
-            data.nextIndex = (idx + 1) % data.entries.size();  // 推进指针
-            return entry;
-        }
+// LivingHopperFunction.executeTransfer()
+if (source.unwrap() instanceof LivingEnderChestAccessor sourceEnder && !sourceEnder.isDirectMode()) {
+    ItemStack targetStack = ctx.getItem(targetSlot);
+    if (!targetStack.isEmpty()) {
+        sourceEnder.setPreferredItemType(
+            BuiltInRegistries.ITEM.getKey(targetStack.getItem()).toString());
     }
-    return null;
+}
+
+// EnderChannelRegistry.peek()
+public EnderChannelEntry peek(int channel, FilterData filterData, String preferredItemType) {
+    // 1. 优先查找偏好类型
+    if (preferredItemType != null) {
+        EnderChannelEntry preferred = findPreferred(data, filterData, preferredItemType);
+        if (preferred != null) return preferred;
+    }
+    // 2. 找不到 → 回退正常轮询
+    return filterData == null ? data.entries.peekFirst() : ...;
 }
 ```
 
@@ -425,41 +457,53 @@ int channel = enderChestStack.getCount();
 
 ## 9. 路由清理策略
 
-### 9.1 清理触发点
+### 9.1 统一验证方法（v9 重构）
 
-路由清理在 `LivingEnderChestFunction.tick()` 和 `LivingHopperFunction.cleanupStaleRoutes()` 中触发：
+路由清理统一通过 `EnderChannelRegistry.validateRoutes()` 完成，替代旧版 5 个独立清理方法：
 
 ```java
-// LivingEnderChestFunction.tick() — 使用 entries 参数直接获取活末影箱槽位
-@Override
-public void tick(List<SlotEntry> entries, ContainerContext context, TickContext tick, Level level) {
-    if (level.isClientSide) return;
-
-    Set<Integer> activeEnderChestSlots = new HashSet<>();
-    for (SlotEntry entry : entries) {
-        activeEnderChestSlots.add(entry.slotIndex());
-    }
-
-    EnderChannelRegistry registry = EnderChannelRegistry.getInstance();
-    registry.removeStaleEnderChestRoutes(context.getContainerKey(), activeEnderChestSlots);
-    registry.cleanStaleSourceRoutes(context);
-}
-
 // LivingHopperFunction.cleanupStaleRoutes()
-registry.removeStaleRoutes(pos, activeSlots);           // 按方块位置清理
-registry.removeStaleEnderChestRoutes(containerKey, activeSlots);  // 按容器清理末影箱路由
-registry.removeStaleRoutesByRegistrarKey(containerKey, activeSlots);  // 按注册者容器清理
+Set<Integer> activeEnderChestSlots = tick.getFunctionSlots("living_ender_chest");
+registry.validateRoutes(context, activeSlots, activeEnderChestSlots);
+
+// LivingEnderChestFunction.tick()
+Set<Integer> activeHopperSlots = tick.getFunctionSlots("living_hopper");
+registry.validateRoutes(context, activeHopperSlots, activeEnderChestSlots);
 ```
 
-### 9.2 清理类型
+**参数说明**：
 
-| 清理方法 | 触发条件 | 清理对象 |
-|---------|---------|---------|
-| `removeStaleRoutes(pos, activeSlots)` | 源容器中活漏斗被移走 | 该位置下所有槽位不在 activeSlots 中的路由 |
-| `removeStaleRoutes(containerKey, activeSlots)` | 同上，按容器 key | 同上 |
-| `removeStaleEnderChestRoutes(containerKey, activeSlots)` | 活末影箱被移走 | 该容器中末影箱槽位不在 activeSlots 中的路由 |
-| `removeStaleRoutesByRegistrarKey(containerKey, activeSlots)` | 注册者容器中活漏斗被移走 | 注册者不在 activeSlots 中的跨容器路由 |
-| `cleanStaleSourceRoutes(ctx)` | 源物品变化或消失 | 源物品 ID 变化或槽位变空的路由 |
+| 参数 | 含义 | null 行为 |
+|------|------|----------|
+| `context` | 容器上下文，提供容器位置和物品读取 | 不可为 null |
+| `activeRegistrarSlots` | 当前容器中活漏斗所在槽位集合 | null = 跳过注册者检查 |
+| `activeTargetSlots` | 当前容器中活末影箱所在槽位集合 | null = 跳过目标检查 |
+
+**内部流程**：
+
+```
+validateRoutes(context, activeRegistrarSlots, activeTargetSlots)
+    │
+    ├─ 通过 3 个反向索引收集相关路由（posIndex + keyIndex + registrarKeyIndex）
+    ├─ 去重后遍历
+    │
+    ├─ 检查1: 注册者还在吗？  registrarSlot ∈ activeRegistrarSlots?
+    ├─ 检查2: 目标还在吗？    targetSlot ∈ activeTargetSlots?
+    ├─ 检查3: 源物品还在吗？  context.getItem(sourceSlot) 匹配?
+    │
+    └─ 任一不满足 → 删除路由
+```
+
+**槽位来源**：`TickContext.functionSlots` 缓存，由 `processContext()` 分组时一次性填充，功能类 O(1) 读取，无需遍历容器。
+
+### 9.2 清理场景
+
+| 场景 | 触发方 | activeRegistrarSlots | activeTargetSlots | 效果 |
+|------|--------|---------------------|-------------------|------|
+| 活漏斗被拿走 | `LivingEnderChestFunction.tick()` | 活漏斗槽位（可能为空集） | 活末影箱槽位 | 空集 → 所有路由的注册者不在 → 清理 |
+| 活末影箱被拿走 | `LivingHopperFunction.cleanupStaleRoutes()` | 活漏斗槽位 | 活末影箱槽位（可能为空集） | 空集 → 所有路由的目标不在 → 清理 |
+| 源物品消失 | 两者均可 | — | — | 检查3 → 源槽空或类型不匹配 → 清理 |
+| 区块卸载 | `onChunkUnload()` | — | — | 独立方法，不经过 validateRoutes |
 
 ### 9.3 容器隔离清理
 
@@ -474,8 +518,7 @@ registry.removeStaleRoutesByRegistrarKey(containerKey, activeSlots);  // 按注�
 
 路由条目：itemType="钻石", sourcePos=容器B, registrarSlot=3, registrarContainerKey=容器A
 
-容器A区块卸载 → removeStaleRoutesByRegistrarKey("容器A", {})
-  → 清理所有 registrarContainerKey="容器A" 的路由
+容器A区块卸载 → onChunkUnload → 清理所有 registrarContainerKey="容器A" 的路由
 容器B区块卸载 → 不会误删容器A注册的路由
 ```
 
@@ -485,11 +528,11 @@ registry.removeStaleRoutesByRegistrarKey(containerKey, activeSlots);  // 按注�
 
 ### 10.1 源容器区块卸载
 
-当源容器所在的区块被卸载时，`cleanStaleSourceRoutes()` 会检测到源物品不存在（`level.getBlockEntity(pos)` 返回 null），自动清理相关路由。
+当源容器所在的区块被卸载时，`onChunkUnload()` 会清理该区块所有相关路由（通过 `posIndex` 反向索引查找）。
 
 ### 10.2 注册者容器区块卸载
 
-当注册者容器所在的区块被卸载时，`removeStaleRoutesByRegistrarKey()` 会清理所有以该容器为注册者的路由，防止路由泄漏。
+当注册者容器所在的区块被卸载时，`onChunkUnload()` 会清理所有以该容器为注册者的路由（通过 `registrarKeyIndex` 反向索引查找），防止路由泄漏。
 
 ---
 
@@ -590,6 +633,8 @@ ContainerLivingItemHandler.processContext() 末尾
 **问题**：跨容器场景下 `targetSlot` 被设为活末影箱在当前容器中的槽位，容器刷新时路由被误清理。
 
 **修复**：将跨容器场景下的 `targetSlot` 设为 `-1`，避免路由与活末影箱的具体槽位绑定。
+
+> **v9 更新**：此问题已通过 `validateRoutes()` 统一验证方法彻底解决。`targetSlot` 现在始终记录真实槽位，`validateRoutes()` 通过 `activeTargetSlots` 参数判断活末影箱是否还在，不再依赖 `targetSlot >= 0` 的硬编码条件。
 
 ### 12.2 注册者容器路由泄漏
 
@@ -723,6 +768,70 @@ else { registry.reoffer(channel, entry); }  // 放回尾部
 
 ---
 
+### 12.7 v9 架构重构：统一路由验证 + functionSlots 缓存 (2026-07-29)
+
+**问题1：路由注销 API 碎片化**
+
+5 个独立清理方法（`removeStaleRoutes`、`removeStaleEnderChestRoutes`、`removeStaleRoutesByRegistrarKey`、`cleanStaleSourceRoutes`、`removeStaleRoutes(containerKey)`）分属 2 个调用者，存在重复清理（`removeStaleEnderChestRoutes` 被两个函数各调一次），且调用者需自行拼凑调用顺序。
+
+**问题2：活末影箱被拿走后路由不清理**
+
+`registerRoute()` 硬编码 `targetSlot = -1`，导致 `removeStaleEnderChestRoutes` 的条件 `targetSlot >= 0` 永远不满足，活末影箱被拿走后路由残留。放回后旧路由仍在，`contains()` 返回 true，新路由无法注册。
+
+**问题3：活漏斗被拿起到鼠标后路由不清理**
+
+`LivingEnderChestFunction.tick()` 传 `null` 给 `activeRegistrarSlots`，跳过注册者检查，导致活漏斗被拿走后路由残留。
+
+**修复1：`validateRoutes()` 统一验证方法**
+
+替代旧版 5 个方法，一次遍历完成注册者/目标/源物品三项检查。通过 3 个反向索引（posIndex + keyIndex + **registrarKeyIndex** 新增）收集相关路由，去重后遍历。
+
+**修复2：`registerRoute()` 接收 `targetSlot` 参数**
+
+路由条目正确记录活末影箱所在槽位，`validateRoutes()` 通过 `activeTargetSlots` 参数判断活末影箱是否还在。
+
+**修复3：`TickContext.functionSlots` 缓存**
+
+`processContext()` 分组时一次性填充各功能的活跃槽位集合，功能类通过 `tick.getFunctionSlots("living_hopper")` / `tick.getFunctionSlots("living_ender_chest")` O(1) 读取，无需遍历容器。`LivingEnderChestFunction.tick()` 现在也扫描活漏斗槽位，空集 = 所有路由的注册者不在 → 立即清理。
+
+| 维度 | 旧版 | v9 |
+|------|------|-----|
+| API 数量 | 5 个公开方法 | 1 个 `validateRoutes` |
+| 调用次数 | 6 次（含重复） | 2 次（无重复） |
+| 查找方式 | 全频道扫描 ×3 | 反向索引 ×1 |
+| 槽位查找 | 各功能类遍历容器 O(N) | `functionSlots` 缓存 O(1) |
+| 活末影箱被拿走 | 路由残留 | 立即清理 |
+| 活漏斗被拿走 | 路由残留 | 立即清理 |
+
+---
+
+### 12.8 v10 贪心提取策略 (2026-07-29)
+
+**问题：轮询调度不考虑输出槽状态**
+
+多 push 一 pull 场景下（如铁锭+金锭），pull 端轮询提取铁锭后，下一 tick 轮询到金锭，但输出槽有铁锭无法堆叠，传输停止。只有拿走铁锭后才能继续，用户体验差。
+
+**根因**：`poll(channel)` 严格按 Deque 头部取出，`reoffer` 放回尾部，不考虑输出槽已有物品类型。
+
+**修复：`preferredItemType` 偏好提取**
+
+1. `LivingEnderChestAccessor` 新增 `preferredItemType` 字段
+2. `LivingHopperFunction.executeTransfer()` 创建 source accessor 后，检查 target 槽位物品类型并设置偏好
+3. `EnderChannelRegistry.peek(channel, filterData, preferredItemType)` 优先返回匹配偏好类型的条目
+4. `EnderChannelRegistry.poll(channel, preferredItemType)` 优先取出匹配偏好类型的条目
+5. 找不到匹配条目时，回退到正常轮询（头部条目）
+
+**效果**：输出槽有铁锭时，优先继续提取铁锭（可堆叠）；铁锭没了或满了，自然回退到金锭。无需白名单即可实现"贪心堆叠"行为。
+
+| 维度 | 旧版（纯轮询） | v10（贪心提取） |
+|------|----------------|-----------------|
+| 提取策略 | 严格轮询，不考虑输出槽 | 偏好匹配输出槽物品类型 |
+| 铁锭+金锭场景 | 铁锭→金锭（卡住）→停止 | 铁锭→铁锭→...→金锭 |
+| 需要白名单 | 是（才能单独提取指定物品） | 否（默认贪心，白名单仍可用） |
+| 回退行为 | N/A | 偏好类型无匹配时回退轮询 |
+
+---
+
 ## 14. 验证清单
 
 > 重构或架构迁移后，必须逐项验证以下用例。标注 `(→ 12.X)` 的条目来源于历史 bug，不可省略。
@@ -741,6 +850,8 @@ else { registry.reoffer(channel, entry); }  // 放回尾部
 - [ ] 同频道多个源物品轮询公平调度
 - [ ] 频道号=堆叠数，不同堆叠数的活末影箱在不同频道
 - [ ] 路由条目去重：同一源物品不重复注册
+- [ ] 贪心提取：输出槽有铁锭时优先继续提取铁锭，而非轮询到金锭（→ 12.8）
+- [ ] 贪心回退：偏好类型无匹配路由时，回退到正常轮询提取其他类型
 
 ### 14.3 跨容器路由
 
@@ -750,11 +861,13 @@ else { registry.reoffer(channel, entry); }  // 放回尾部
 
 ### 14.4 路由清理
 
-- [ ] 源物品被移走后，路由被清理（cleanStaleSourceRoutes）
-- [ ] 活末影箱被移走后，相关路由被清理（removeStaleEnderChestRoutes）
+- [ ] 源物品被移走后，路由被清理（validateRoutes 检查3：源物品验证）
+- [ ] 活末影箱被移走后，相关路由被清理（validateRoutes 检查2：目标验证）
+- [ ] 活漏斗被拿起到鼠标后，路由被清理（validateRoutes 检查1：注册者验证，空集触发）
 - [ ] 区块卸载时，该区块所有相关路由被清理（onChunkUnload）
-- [ ] 反向索引正确维护：路由注册/移除时 posIndex 和 keyIndex 同步更新
-- [ ] cleanStaleSourceRoutes 使用反向索引，不遍历所有频道
+- [ ] 三个反向索引正确维护：路由注册/移除时 posIndex、keyIndex、registrarKeyIndex 同步更新
+- [ ] validateRoutes 使用反向索引，不遍历所有频道
+- [ ] TickContext.functionSlots 缓存正确填充，功能类 O(1) 读取
 
 ### 14.5 过滤规则
 

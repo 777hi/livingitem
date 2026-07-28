@@ -18,6 +18,7 @@ import com.qiqi.li.network.EnderChannelSyncPacket;
 import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -79,8 +80,11 @@ public final class EnderChannelRegistry {
     /** 反向索引：方块位置 → 路由条目列表 */
     private final Map<BlockPos, List<EnderChannelEntry>> posIndex = new HashMap<>();
 
-    /** 反向索引：容器 key → 路由条目列表 */
+    /** 反向索引：容器 key → 路由条目列表（按 sourcePos/containerKey 索引） */
     private final Map<String, List<EnderChannelEntry>> keyIndex = new HashMap<>();
+
+    /** 反向索引：注册者容器 key → 路由条目列表（按 registrarContainerKey 索引） */
+    private final Map<String, List<EnderChannelEntry>> registrarKeyIndex = new HashMap<>();
 
     /** 条目→频道反向索引：用于 O(1) 查找条目所属频道 */
     private final Map<EnderChannelEntry, Integer> entryToChannel = new HashMap<>();
@@ -207,10 +211,33 @@ public final class EnderChannelRegistry {
      * 遍历频道查找匹配条目，不修改 Deque。
      */
     public EnderChannelEntry peek(int channel, FilterData filterData) {
+        return peek(channel, filterData, null);
+    }
+
+    /**
+     * 查看频道路由条目（不移除），支持黑白名单过滤和偏好物品类型。
+     *
+     * <p>当 {@code preferredItemType} 不为 null 时，优先返回匹配偏好类型的条目；
+     * 找不到匹配条目时，回退到正常轮询（头部条目或过滤匹配条目）。</p>
+     *
+     * <p>这实现了"贪心提取"策略：输出槽已有铁锭时，优先继续提取铁锭（可堆叠），
+     * 而不是轮询到金锭导致传输停止。只有铁锭没了或满了，才会切换到金锭。</p>
+     *
+     * @param channel 频道号
+     * @param filterData 过滤数据（null 表示不过滤）
+     * @param preferredItemType 偏好物品类型（null 表示无偏好，使用正常轮询）
+     * @return 匹配的路由条目，频道为空或无匹配返回 null
+     */
+    public EnderChannelEntry peek(int channel, FilterData filterData, String preferredItemType) {
         ChannelData data = channels.get(channel);
         if (data == null || data.entries.isEmpty()) {
             LOGGER.trace("EnderChannelRegistry: peek channel={}, empty", channel);
             return null;
+        }
+
+        if (preferredItemType != null) {
+            EnderChannelEntry preferred = findPreferred(data, filterData, preferredItemType);
+            if (preferred != null) return preferred;
         }
 
         if (filterData == null) {
@@ -225,6 +252,59 @@ public final class EnderChannelRegistry {
         LOGGER.trace("EnderChannelRegistry: peek channel={}, filter no match, size={}",
             channel, data.entries.size());
         return null;
+    }
+
+    /**
+     * 在频道数据中查找匹配偏好类型的条目。
+     * 优先返回同时满足过滤条件和偏好类型的条目；
+     * 找不到时返回 null（由调用方回退到正常轮询）。
+     */
+    private EnderChannelEntry findPreferred(ChannelData data, FilterData filterData, String preferredItemType) {
+        for (EnderChannelEntry entry : data.entries) {
+            if (entry.itemType().equals(preferredItemType)) {
+                if (filterData == null || ItemFilterComponent.allowsItemType(filterData, entry.itemType())) {
+                    return entry;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 从频道头部取出一个路由条目，支持偏好物品类型。
+     *
+     * <p>当 {@code preferredItemType} 不为 null 时，优先取出匹配偏好类型的条目；
+     * 找不到时回退到正常头部取出。</p>
+     *
+     * @param channel 频道号
+     * @param preferredItemType 偏好物品类型（null 表示无偏好）
+     * @return 取出的条目，频道为空返回 null
+     */
+    public EnderChannelEntry poll(int channel, String preferredItemType) {
+        if (preferredItemType == null) {
+            return poll(channel);
+        }
+
+        ChannelData data = channels.get(channel);
+        if (data == null || data.entries.isEmpty()) return null;
+
+        EnderChannelEntry preferred = null;
+        for (EnderChannelEntry entry : data.entries) {
+            if (entry.itemType().equals(preferredItemType)) {
+                preferred = entry;
+                break;
+            }
+        }
+
+        if (preferred != null) {
+            data.entries.remove(preferred);
+            data.routeKeys.remove(RouteKey.of(preferred));
+            entryToChannel.remove(preferred);
+            removeFromIndex(preferred);
+            return preferred;
+        }
+
+        return poll(channel);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -280,6 +360,9 @@ public final class EnderChannelRegistry {
         } else if (entry.containerKey() != null) {
             keyIndex.computeIfAbsent(entry.containerKey(), k -> new ArrayList<>()).add(entry);
         }
+        if (entry.registrarContainerKey() != null) {
+            registrarKeyIndex.computeIfAbsent(entry.registrarContainerKey(), k -> new ArrayList<>()).add(entry);
+        }
     }
 
     private void removeFromIndex(EnderChannelEntry entry) {
@@ -294,6 +377,13 @@ public final class EnderChannelRegistry {
             if (list != null) {
                 list.remove(entry);
                 if (list.isEmpty()) keyIndex.remove(entry.containerKey());
+            }
+        }
+        if (entry.registrarContainerKey() != null) {
+            List<EnderChannelEntry> list = registrarKeyIndex.get(entry.registrarContainerKey());
+            if (list != null) {
+                list.remove(entry);
+                if (list.isEmpty()) registrarKeyIndex.remove(entry.registrarContainerKey());
             }
         }
     }
@@ -327,31 +417,102 @@ public final class EnderChannelRegistry {
     }
 
     // ═══════════════════════════════════════════════════════════════
-    // 失效路由清理
+    // 统一路由验证
     // ═══════════════════════════════════════════════════════════════
 
-    public void removeStaleRoutes(BlockPos sourcePos, Set<Integer> activeRegistrarSlots) {
-        removeStaleRoutesInternal(route ->
-            Objects.equals(route.sourcePos(), sourcePos)
-            && !activeRegistrarSlots.contains(route.registrarSlot()));
+    /**
+     * 验证与指定容器关联的所有路由，移除失效条目。
+     *
+     * <p>通过反向索引（posIndex/keyIndex/registrarKeyIndex）高效查找相关路由，
+     * 一次遍历完成三项检查：</p>
+     * <ol>
+     *   <li>注册者（活漏斗）是否仍在活跃槽位？</li>
+     *   <li>目标（活末影箱）是否仍在活跃槽位？</li>
+     *   <li>源物品是否仍然有效（非空且类型匹配）？</li>
+     * </ol>
+     *
+     * @param context 容器上下文，用于定位容器和检查源物品
+     * @param activeRegistrarSlots 活跃的活漏斗槽位集合，null 表示跳过注册者检查
+     * @param activeTargetSlots 活跃的活末影箱槽位集合，null 表示跳过目标检查
+     * @return 被移除的路由数量
+     */
+    public int validateRoutes(ContainerContext context, Set<Integer> activeRegistrarSlots, Set<Integer> activeTargetSlots) {
+        Level level = context.getLevel();
+        if (level == null || level.isClientSide) return 0;
+
+        var dim = level.dimension();
+        BlockPos pos = context.getBlockPos();
+        String containerKey = context.getContainerKey();
+
+        Set<EnderChannelEntry> candidates = new HashSet<>();
+
+        if (pos != null) {
+            List<EnderChannelEntry> byPos = posIndex.get(pos);
+            if (byPos != null) candidates.addAll(byPos);
+        }
+        if (containerKey != null) {
+            List<EnderChannelEntry> byKey = keyIndex.get(containerKey);
+            if (byKey != null) candidates.addAll(byKey);
+            List<EnderChannelEntry> byRegistrar = registrarKeyIndex.get(containerKey);
+            if (byRegistrar != null) candidates.addAll(byRegistrar);
+        }
+
+        if (candidates.isEmpty()) return 0;
+
+        List<EnderChannelEntry> toRemove = new ArrayList<>();
+        for (EnderChannelEntry entry : candidates) {
+            if (shouldRemoveRoute(entry, context, dim, pos, containerKey, activeRegistrarSlots, activeTargetSlots)) {
+                toRemove.add(entry);
+            }
+        }
+
+        int removed = 0;
+        for (EnderChannelEntry entry : toRemove) {
+            Integer ch = entryToChannel.get(entry);
+            if (ch != null) {
+                remove(ch, entry);
+                removed++;
+            }
+        }
+
+        if (removed > 0) {
+            LOGGER.debug("EnderChannelRegistry: validateRoutes removed {} stale routes for pos={}, key={}",
+                removed, pos, containerKey);
+        }
+        return removed;
     }
 
-    public void removeStaleRoutes(String containerKey, Set<Integer> activeRegistrarSlots) {
-        removeStaleRoutesInternal(route ->
-            containerKey.equals(route.containerKey())
-            && !activeRegistrarSlots.contains(route.registrarSlot()));
-    }
+    private boolean shouldRemoveRoute(EnderChannelEntry entry,
+                                       ContainerContext context,
+                                       ResourceKey<Level> dim,
+                                       BlockPos pos,
+                                       String containerKey,
+                                       Set<Integer> activeRegistrarSlots,
+                                       Set<Integer> activeTargetSlots) {
+        boolean isRegistrar = containerKey != null && containerKey.equals(entry.registrarContainerKey());
 
-    public void removeStaleEnderChestRoutes(String containerKey, Set<Integer> activeEnderChestSlots) {
-        removeStaleRoutesInternal(route ->
-            containerKey.equals(route.registrarContainerKey())
-            && route.targetSlot() >= 0 && !activeEnderChestSlots.contains(route.targetSlot()));
-    }
+        if (isRegistrar && activeRegistrarSlots != null) {
+            if (!activeRegistrarSlots.contains(entry.registrarSlot())) {
+                return true;
+            }
+        }
 
-    public void removeStaleRoutesByRegistrarKey(String registrarContainerKey, Set<Integer> activeRegistrarSlots) {
-        removeStaleRoutesInternal(route ->
-            registrarContainerKey.equals(route.registrarContainerKey())
-            && !activeRegistrarSlots.contains(route.registrarSlot()));
+        if (isRegistrar && activeTargetSlots != null) {
+            if (entry.targetSlot() >= 0 && !activeTargetSlots.contains(entry.targetSlot())) {
+                return true;
+            }
+        }
+
+        boolean isSource = (pos != null && pos.equals(entry.sourcePos()))
+                        || (containerKey != null && containerKey.equals(entry.containerKey()));
+        if (isSource && entry.sourceDim() != null && entry.sourceDim().equals(dim)) {
+            ItemStack sourceStack = context.getItem(entry.sourceSlot());
+            if (sourceStack.isEmpty() || !isItemTypeMatch(sourceStack, entry)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -394,56 +555,6 @@ public final class EnderChannelRegistry {
         for (int ch : dirty) {
             syncChannelToAll(ch);
         }
-    }
-
-    /**
-     * 清理源物品已被移走或替换的路由（使用反向索引，O(相关路由)）。
-     */
-    public int cleanStaleSourceRoutes(ContainerContext context) {
-        Level level = context.getLevel();
-        if (level == null || level.isClientSide) return 0;
-
-        var dim = level.dimension();
-        BlockPos pos = context.getBlockPos();
-        String containerKey = context.getContainerKey();
-        int cleaned = 0;
-
-        List<EnderChannelEntry> relevantEntries;
-        if (pos != null) {
-            relevantEntries = posIndex.get(pos);
-        } else if (containerKey != null) {
-            relevantEntries = keyIndex.get(containerKey);
-        } else {
-            return 0;
-        }
-
-        if (relevantEntries == null || relevantEntries.isEmpty()) return 0;
-
-        Set<Integer> dirty = new HashSet<>();
-        for (int i = relevantEntries.size() - 1; i >= 0; i--) {
-            EnderChannelEntry entry = relevantEntries.get(i);
-            if (entry.sourceDim() != null && !entry.sourceDim().equals(dim)) continue;
-
-            ItemStack sourceStack = context.getItem(entry.sourceSlot());
-            if (sourceStack.isEmpty() || !isItemTypeMatch(sourceStack, entry)) {
-                Integer ch = entryToChannel.get(entry);
-                if (ch != null) {
-                    remove(ch, entry);
-                    dirty.add(ch);
-                    cleaned++;
-                }
-            }
-        }
-
-        for (int ch : dirty) {
-            syncChannelToAll(ch);
-        }
-
-        if (cleaned > 0) {
-            LOGGER.debug("EnderChannelRegistry: cleaned {} stale source routes for pos={}, key={}",
-                cleaned, pos, containerKey);
-        }
-        return cleaned;
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -552,6 +663,7 @@ public final class EnderChannelRegistry {
         channels.clear();
         posIndex.clear();
         keyIndex.clear();
+        registrarKeyIndex.clear();
         entryToChannel.clear();
     }
 

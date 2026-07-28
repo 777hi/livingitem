@@ -72,6 +72,9 @@ public class LivingEnderChestAccessor implements SlotAccessor {
     /** 直连模式提取轮询指针，记录下次提取的起始槽位 */
     private int nextExtractSlot = 0;
 
+    /** 路由模式偏好物品类型（注册名），用于贪心提取策略 */
+    private String preferredItemType;
+
     private ContainerContext sourceContainerCtx;
     private int sourceSlot;
 
@@ -147,6 +150,18 @@ public class LivingEnderChestAccessor implements SlotAccessor {
     /** 获取频道号（路由模式下 = 堆叠数，直连模式下无意义） */
     public int getChannel() {
         return channel;
+    }
+
+    /**
+     * 设置偏好物品类型（注册名），用于贪心提取策略。
+     *
+     * <p>当输出槽已有物品时，优先提取相同类型的物品（可堆叠），
+     * 避免轮询到不同类型导致传输停止。</p>
+     *
+     * @param itemType 物品注册名（如 "minecraft:iron_ingot"），null 表示无偏好
+     */
+    public void setPreferredItemType(String itemType) {
+        this.preferredItemType = itemType;
     }
 
     /**
@@ -231,7 +246,7 @@ public class LivingEnderChestAccessor implements SlotAccessor {
 
     private ItemStack routeSimulateExtract(int amount) {
         EnderChannelRegistry registry = EnderChannelRegistry.getInstance();
-        EnderChannelEntry entry = registry.peek(channel, filterData);
+        EnderChannelEntry entry = registry.peek(channel, filterData, preferredItemType);
         if (entry == null) return ItemStack.EMPTY;
 
         ServerLevel sourceLevel;
@@ -299,15 +314,15 @@ public class LivingEnderChestAccessor implements SlotAccessor {
             EnderChannelEntry entry;
             if (filterData != null) {
                 // 有过滤条件：先查找匹配条目，再精确移除
-                entry = registry.peek(channel, filterData);
+                entry = registry.peek(channel, filterData, preferredItemType);
                 if (entry == null) {
                     LOGGER.trace("LivingEnderChestAccessor: extract channel={}, filter no match", channel);
                     return ItemStack.EMPTY;
                 }
                 registry.remove(channel, entry);
             } else {
-                // 无过滤条件：直接从头部取出（O(1) 热路径）
-                entry = registry.poll(channel);
+                // 无过滤条件：从队列取出，优先匹配偏好类型
+                entry = registry.poll(channel, preferredItemType);
                 if (entry == null) {
                     LOGGER.trace("LivingEnderChestAccessor: extract channel={}, no entry found", channel);
                     return ItemStack.EMPTY;

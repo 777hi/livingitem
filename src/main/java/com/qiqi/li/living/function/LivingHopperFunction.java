@@ -4,7 +4,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Consumer;
-import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.Item;
@@ -93,7 +92,7 @@ public class LivingHopperFunction implements LivingItemFunction {
             context.syncSlotToClients(slot, stack);
         }
 
-        cleanupStaleRoutes(entries, context, level);
+        cleanupStaleRoutes(entries, context, tick);
     }
 
     private boolean executeTransfer(ContainerContext ctx, Level level, int hostSlot,
@@ -148,6 +147,14 @@ public class LivingHopperFunction implements LivingItemFunction {
             }
         }
 
+        if (source.unwrap() instanceof LivingEnderChestAccessor sourceEnder && !sourceEnder.isDirectMode()) {
+            ItemStack targetStack = ctx.getItem(targetSlot);
+            if (!targetStack.isEmpty()) {
+                sourceEnder.setPreferredItemType(
+                    net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(targetStack.getItem()).toString());
+            }
+        }
+
         if (target.unwrap() instanceof LivingEnderChestAccessor enderChest) {
             if (enderChest.isDirectMode()) {
                 return SlotAccessor.transfer(source, target, Math.min(stackSize, DEFAULT_MAX_TRANSFER));
@@ -162,33 +169,13 @@ public class LivingHopperFunction implements LivingItemFunction {
         return SlotAccessor.transfer(source, target, Math.min(stackSize, DEFAULT_MAX_TRANSFER));
     }
 
-    private void cleanupStaleRoutes(List<SlotEntry> entries, ContainerContext context, Level level) {
+    private void cleanupStaleRoutes(List<SlotEntry> entries, ContainerContext context, TickContext tick) {
         Set<Integer> activeSlots = new HashSet<>();
-        Set<Integer> activeEnderChestSlots = new HashSet<>();
         for (SlotEntry entry : entries) {
             activeSlots.add(entry.slotIndex());
         }
-
-        int containerSize = context.getSize();
-        for (int i = 0; i < containerSize; i++) {
-            ItemStack stack = context.getItem(i);
-            if (LivingEnderChestFunction.isLivingEnderChest(stack)) {
-                activeEnderChestSlots.add(i);
-            }
-        }
-
-        EnderChannelRegistry registry = EnderChannelRegistry.getInstance();
-        BlockPos pos = context.getBlockPos();
-        if (pos != null) {
-            registry.removeStaleRoutes(pos, activeSlots);
-        } else {
-            String containerKey = context.getContainerKey();
-            if (containerKey != null) {
-                registry.removeStaleRoutes(containerKey, activeSlots);
-            }
-        }
-        registry.removeStaleEnderChestRoutes(context.getContainerKey(), activeEnderChestSlots);
-        registry.removeStaleRoutesByRegistrarKey(context.getContainerKey(), activeSlots);
+        Set<Integer> activeEnderChestSlots = tick.getFunctionSlots(LivingEnderChestFunction.ID);
+        EnderChannelRegistry.getInstance().validateRoutes(context, activeSlots, activeEnderChestSlots);
     }
 
     @Override
