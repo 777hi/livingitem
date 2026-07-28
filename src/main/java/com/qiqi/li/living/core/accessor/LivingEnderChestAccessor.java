@@ -1,6 +1,7 @@
 package com.qiqi.li.living.core.accessor;
 
 import com.qiqi.li.living.container.ContainerContext;
+import com.qiqi.li.living.container.ContainerSnapshot;
 import com.qiqi.li.living.data.FilterData;
 import com.qiqi.li.living.function.LivingEnderChestFunction;
 import com.mojang.logging.LogUtils;
@@ -65,6 +66,12 @@ public class LivingEnderChestAccessor implements SlotAccessor {
     /** 预加载的玩家末影箱引用（直连模式下缓存，避免重复查找玩家） */
     private final PlayerEnderChestContainer cachedEnderChest;
 
+    /** 缓存的 IItemHandler 包装（直连模式下，避免每 tick 重复创建 InvWrapper） */
+    private final IItemHandler cachedInvWrapper;
+
+    /** 直连模式提取轮询指针，记录下次提取的起始槽位 */
+    private int nextExtractSlot = 0;
+
     private ContainerContext sourceContainerCtx;
     private int sourceSlot;
 
@@ -81,7 +88,8 @@ public class LivingEnderChestAccessor implements SlotAccessor {
      * @return 如果是活末影箱则返回 Accessor，否则返回 null
      */
     public static SlotAccessor tryCreate(MinecraftServer server, ContainerContext containerCtx, int slot,
-                                          FilterData filterData, Set<Integer> transferredTargetSlots) {
+                                          FilterData filterData, Set<Integer> transferredTargetSlots,
+                                          ContainerSnapshot snapshot) {
         ItemStack stack = containerCtx.getItem(slot);
         if (!LivingEnderChestFunction.isLivingEnderChest(stack)) {
             return null;
@@ -111,6 +119,7 @@ public class LivingEnderChestAccessor implements SlotAccessor {
         this.boundPlayerUuid = null;
         this.directMode = false;
         this.cachedEnderChest = null;
+        this.cachedInvWrapper = null;
     }
 
     public LivingEnderChestAccessor(MinecraftServer server, int channel,
@@ -126,6 +135,7 @@ public class LivingEnderChestAccessor implements SlotAccessor {
         // 预加载玩家末影箱引用，避免每次操作都查找玩家
         ServerPlayer player = server.getPlayerList().getPlayer(boundPlayerUuid);
         this.cachedEnderChest = player != null ? player.getEnderChestInventory() : null;
+        this.cachedInvWrapper = cachedEnderChest != null ? new InvWrapper(cachedEnderChest) : null;
     }
 
     public boolean isDirectMode() {
@@ -181,7 +191,7 @@ public class LivingEnderChestAccessor implements SlotAccessor {
         } else {
             registry.removeByPositionAndSlotFromAllChannels(containerKey, slot);
         }
-        registry.insert(channel, entry);
+        registry.offer(channel, entry);
         LOGGER.debug("LivingEnderChestAccessor: registered route channel={}, item={}, pos={}, key={}, slot={}, count={}",
             channel, itemType, pos, containerKey, slot, sourceStack.getCount());
     }
@@ -203,15 +213,16 @@ public class LivingEnderChestAccessor implements SlotAccessor {
     }
 
     private ItemStack directSimulateExtract(int amount) {
-        if (cachedEnderChest == null) return ItemStack.EMPTY;
+        if (cachedInvWrapper == null) return ItemStack.EMPTY;
 
-        InvWrapper wrapper = new InvWrapper(cachedEnderChest);
-        for (int i = 0; i < wrapper.getSlots(); i++) {
-            ItemStack slotStack = wrapper.getStackInSlot(i);
+        int slots = cachedInvWrapper.getSlots();
+        for (int offset = 0; offset < slots; offset++) {
+            int i = (nextExtractSlot + offset) % slots;
+            ItemStack slotStack = cachedInvWrapper.getStackInSlot(i);
             if (slotStack.isEmpty()) continue;
 
             int toExtract = Math.min(amount, slotStack.getCount());
-            return wrapper.extractItem(i, toExtract, true);
+            return cachedInvWrapper.extractItem(i, toExtract, true);
         }
         return ItemStack.EMPTY;
     }
@@ -252,20 +263,22 @@ public class LivingEnderChestAccessor implements SlotAccessor {
     }
 
     private ItemStack directExtract(int amount) {
-        if (cachedEnderChest == null) {
+        if (cachedInvWrapper == null) {
             LOGGER.debug("LivingEnderChestAccessor: direct extract player offline, uuid={}", boundPlayerUuid);
             return ItemStack.EMPTY;
         }
 
-        InvWrapper wrapper = new InvWrapper(cachedEnderChest);
-        for (int i = 0; i < wrapper.getSlots(); i++) {
-            ItemStack slotStack = wrapper.getStackInSlot(i);
+        int slots = cachedInvWrapper.getSlots();
+        for (int offset = 0; offset < slots; offset++) {
+            int i = (nextExtractSlot + offset) % slots;
+            ItemStack slotStack = cachedInvWrapper.getStackInSlot(i);
             if (slotStack.isEmpty()) continue;
 
             int toExtract = Math.min(amount, slotStack.getCount());
-            ItemStack extracted = wrapper.extractItem(i, toExtract, false);
+            ItemStack extracted = cachedInvWrapper.extractItem(i, toExtract, false);
 
             directRollbackSlot = i;
+            nextExtractSlot = (i + 1) % slots;
 
             LOGGER.debug("LivingEnderChestAccessor: direct extract slot={}, item={}, count={}",
                 i, BuiltInRegistries.ITEM.getKey(extracted.getItem()).toString(), extracted.getCount());
@@ -279,10 +292,22 @@ public class LivingEnderChestAccessor implements SlotAccessor {
         LOGGER.debug("LivingEnderChestAccessor: extract begin channel={}, amount={}", channel, amount);
 
         while (true) {
-            EnderChannelEntry entry = registry.peek(channel, filterData);
-            if (entry == null) {
-                LOGGER.trace("LivingEnderChestAccessor: extract channel={}, no entry found", channel);
-                return ItemStack.EMPTY;
+            EnderChannelEntry entry;
+            if (filterData != null) {
+                // 有过滤条件：先查找匹配条目，再精确移除
+                entry = registry.peek(channel, filterData);
+                if (entry == null) {
+                    LOGGER.trace("LivingEnderChestAccessor: extract channel={}, filter no match", channel);
+                    return ItemStack.EMPTY;
+                }
+                registry.remove(channel, entry);
+            } else {
+                // 无过滤条件：直接从头部取出（O(1) 热路径）
+                entry = registry.poll(channel);
+                if (entry == null) {
+                    LOGGER.trace("LivingEnderChestAccessor: extract channel={}, no entry found", channel);
+                    return ItemStack.EMPTY;
+                }
             }
 
             ServerLevel sourceLevel;
@@ -292,34 +317,30 @@ public class LivingEnderChestAccessor implements SlotAccessor {
                 // 方块容器：通过维度获取世界
                 sourceLevel = server.getLevel(entry.sourceDim());
                 if (sourceLevel == null) {
-                    LOGGER.debug("LivingEnderChestAccessor: extract source dim invalid, remove channel={}, dim={}",
+                    LOGGER.debug("LivingEnderChestAccessor: extract source dim invalid, channel={}, dim={}",
                         channel, entry.sourceDim());
-                    registry.remove(channel, entry);
                     continue;
                 }
             } else {
                 // 玩家背包/末影箱：从 containerKey 解析玩家 UUID，获取玩家所在世界
                 String containerKey = entry.containerKey();
                 if (containerKey == null || !containerKey.startsWith("player_")) {
-                    LOGGER.debug("LivingEnderChestAccessor: extract invalid containerKey, remove channel={}, key={}",
+                    LOGGER.debug("LivingEnderChestAccessor: extract invalid containerKey, channel={}, key={}",
                         channel, containerKey);
-                    registry.remove(channel, entry);
                     continue;
                 }
 
                 UUID playerId = parsePlayerUuid(containerKey);
                 if (playerId == null) {
-                    LOGGER.debug("LivingEnderChestAccessor: extract invalid containerKey, remove channel={}, key={}",
+                    LOGGER.debug("LivingEnderChestAccessor: extract invalid containerKey, channel={}, key={}",
                         channel, containerKey);
-                    registry.remove(channel, entry);
                     continue;
                 }
 
                 ServerPlayer player = server.getPlayerList().getPlayer(playerId);
                 if (player == null) {
-                    LOGGER.debug("LivingEnderChestAccessor: extract player offline, remove channel={}, uuid={}",
+                    LOGGER.debug("LivingEnderChestAccessor: extract player offline, channel={}, uuid={}",
                         channel, playerId);
-                    registry.remove(channel, entry);
                     continue;
                 }
                 sourceLevel = (ServerLevel) player.level();
@@ -328,23 +349,20 @@ public class LivingEnderChestAccessor implements SlotAccessor {
             // 获取 sourceHandler
             IItemHandler sourceHandler = resolveSourceHandler(entry, sourceLevel);
             if (sourceHandler == null) {
-                registry.remove(channel, entry);
                 continue;
             }
 
             ItemStack sourceStack = sourceHandler.getStackInSlot(entry.sourceSlot());
             if (sourceStack.isEmpty()) {
-                LOGGER.debug("LivingEnderChestAccessor: extract source slot empty, remove channel={}, slot={}",
+                LOGGER.debug("LivingEnderChestAccessor: extract source slot empty, channel={}, slot={}",
                     channel, entry.sourceSlot());
-                registry.remove(channel, entry);
                 continue;
             }
 
             String itemId = BuiltInRegistries.ITEM.getKey(sourceStack.getItem()).toString();
             if (!itemId.equals(entry.itemType())) {
-                LOGGER.debug("LivingEnderChestAccessor: extract type mismatch, remove channel={}, expected={}, actual={}",
+                LOGGER.debug("LivingEnderChestAccessor: extract type mismatch, channel={}, expected={}, actual={}",
                     channel, entry.itemType(), itemId);
-                registry.remove(channel, entry);
                 continue;
             }
 
@@ -357,11 +375,15 @@ public class LivingEnderChestAccessor implements SlotAccessor {
             rollbackContainerKey = entry.containerKey();
 
             if (sourceHandler.getStackInSlot(entry.sourceSlot()).isEmpty()) {
-                registry.remove(channel, entry);
+                // 源槽已空，entry 已从队列移除，不 reoffer
+                LOGGER.debug("LivingEnderChestAccessor: extracted channel={}, item={}, count={}, from={}, slot={}, drained",
+                    channel, itemId, toExtract, sourcePos != null ? sourcePos : entry.containerKey(), entry.sourceSlot());
+            } else {
+                // 源槽还有物品，放回队列尾部继续参与轮询
+                registry.reoffer(channel, entry);
+                LOGGER.debug("LivingEnderChestAccessor: extracted channel={}, item={}, count={}, from={}, slot={}, reoffer",
+                    channel, itemId, toExtract, sourcePos != null ? sourcePos : entry.containerKey(), entry.sourceSlot());
             }
-
-            LOGGER.debug("LivingEnderChestAccessor: extracted channel={}, item={}, count={}, from={}, slot={}",
-                channel, itemId, toExtract, sourcePos != null ? sourcePos : entry.containerKey(), entry.sourceSlot());
             return extracted;
         }
     }
@@ -370,14 +392,13 @@ public class LivingEnderChestAccessor implements SlotAccessor {
     public int insert(ItemStack stack) {
         if (!directMode) return 0;
 
-        if (cachedEnderChest == null) {
+        if (cachedInvWrapper == null) {
             LOGGER.debug("LivingEnderChestAccessor: direct insert player offline, uuid={}", boundPlayerUuid);
             return 0;
         }
 
         int originalCount = stack.getCount();
-        InvWrapper wrapper = new InvWrapper(cachedEnderChest);
-        ItemStack remaining = ItemHandlerHelper.insertItem(wrapper, stack.copy(), false);
+        ItemStack remaining = ItemHandlerHelper.insertItem(cachedInvWrapper, stack.copy(), false);
         int inserted = originalCount - remaining.getCount();
         stack.shrink(inserted);
 
@@ -390,23 +411,22 @@ public class LivingEnderChestAccessor implements SlotAccessor {
     public int simulateInsert(ItemStack stack) {
         if (!directMode) return 0;
 
-        if (cachedEnderChest == null) return 0;
+        if (cachedInvWrapper == null) return 0;
 
-        InvWrapper wrapper = new InvWrapper(cachedEnderChest);
-        ItemStack remaining = ItemHandlerHelper.insertItem(wrapper, stack.copy(), true);
+        ItemStack remaining = ItemHandlerHelper.insertItem(cachedInvWrapper, stack.copy(), true);
         return stack.getCount() - remaining.getCount();
     }
 
     @Override
     public void rollback(ItemStack stack) {
         if (directMode && directRollbackSlot >= 0) {
-            if (cachedEnderChest == null) {
+            if (cachedInvWrapper == null) {
                 LOGGER.warn("LivingEnderChestAccessor: direct rollback player offline, uuid={}", boundPlayerUuid);
                 return;
             }
-            ItemStack existing = cachedEnderChest.getItem(directRollbackSlot);
+            ItemStack existing = cachedInvWrapper.getStackInSlot(directRollbackSlot);
             if (existing.isEmpty()) {
-                cachedEnderChest.setItem(directRollbackSlot, stack.copy());
+                cachedInvWrapper.insertItem(directRollbackSlot, stack.copy(), false);
             } else if (ItemStack.isSameItemSameComponents(existing, stack)) {
                 existing.grow(stack.getCount());
             } else {
@@ -481,9 +501,9 @@ public class LivingEnderChestAccessor implements SlotAccessor {
     @Override
     public boolean isEmpty() {
         if (directMode) {
-            if (cachedEnderChest == null) return true;
-            for (int i = 0; i < cachedEnderChest.getContainerSize(); i++) {
-                if (!cachedEnderChest.getItem(i).isEmpty()) return false;
+            if (cachedInvWrapper == null) return true;
+            for (int i = 0; i < cachedInvWrapper.getSlots(); i++) {
+                if (!cachedInvWrapper.getStackInSlot(i).isEmpty()) return false;
             }
             return true;
         }
@@ -493,9 +513,9 @@ public class LivingEnderChestAccessor implements SlotAccessor {
     @Override
     public boolean isFull() {
         if (directMode) {
-            if (cachedEnderChest == null) return true;
-            for (int i = 0; i < cachedEnderChest.getContainerSize(); i++) {
-                ItemStack slotStack = cachedEnderChest.getItem(i);
+            if (cachedInvWrapper == null) return true;
+            for (int i = 0; i < cachedInvWrapper.getSlots(); i++) {
+                ItemStack slotStack = cachedInvWrapper.getStackInSlot(i);
                 if (slotStack.isEmpty() || slotStack.getCount() < slotStack.getMaxStackSize()) {
                     return false;
                 }

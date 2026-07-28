@@ -25,6 +25,7 @@ import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
 import com.qiqi.li.living.LivingItemFunction;
 import com.qiqi.li.living.LivingItemManager;
+import com.qiqi.li.living.core.accessor.EnderChannelRegistry;
 import com.qiqi.li.living.function.LivingWaterBucketFunction;
 import com.qiqi.li.living.perf.PerfMetrics;
 
@@ -182,6 +183,8 @@ public class ContainerLivingItemHandler {
         for (var entry : grouped.entrySet()) {
             entry.getKey().tick(entry.getValue(), context, tick, level);
         }
+
+        EnderChannelRegistry.getInstance().flushDirtyChannels();
 
         // 在函数 tick 之后运行容器级流体数据：
         // 水桶组件已注册水源 → 现在蔓延 + 干涸

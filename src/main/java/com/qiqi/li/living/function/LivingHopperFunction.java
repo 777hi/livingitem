@@ -135,8 +135,8 @@ public class LivingHopperFunction implements LivingItemFunction {
         var server = level.getServer();
         if (server == null) return false;
 
-        SlotAccessor source = SlotAccessorFactory.create(server, ctx, sourceSlot, filter, transferredTargetSlots);
-        SlotAccessor target = SlotAccessorFactory.create(server, ctx, targetSlot, null, transferredTargetSlots);
+        SlotAccessor source = SlotAccessorFactory.create(server, ctx, sourceSlot, filter, transferredTargetSlots, tick.snapshot);
+        SlotAccessor target = SlotAccessorFactory.create(server, ctx, targetSlot, null, transferredTargetSlots, tick.snapshot);
 
         if (source == null || target == null) return false;
 

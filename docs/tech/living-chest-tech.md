@@ -1,6 +1,6 @@
 # Living Chest (活箱子) 技术文档
 
-> **文档版本**: 2026.07 v5  
+> **文档版本**: 2026.07 v6  
 > **最后更新**: 2026-07-28  
 > **适用版本**: Minecraft 1.21.1
 
@@ -25,22 +25,38 @@
 
 ### 1.2 数据流总览图
 
+**核心原则：配置数据归物品，衍生数据归容器。**
+
+活箱子的 NBT 只存"我是谁、我该怎么配置"（`IS_LIVING`、`CONTAINER`），而"我在当前环境下的行为"（是否已满、已用字节数、已用槽位数）由容器级缓存 `ContainerSnapshot` 实时推导。
+
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│                    单层存储架构                                │
+│              配置数据归物品，衍生数据归容器                     │
 │                                                              │
 │  ┌──────────────────────────────────────────────────────┐   │
-│  │  ItemStack (DataComponent)                           │   │
+│  │  ItemStack (DataComponent) ← 配置数据                │   │
 │  │                                                      │   │
 │  │  • IS_LIVING: true          ← 活物品标记             │   │
 │  │  • CONTAINER: ItemContainerContents  ← 27 槽物品数据  │   │
 │  │                                                      │   │
 │  └──────────────────────────────────────────────────────┘   │
+│                          │                                   │
+│                          ▼                                   │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  ContainerSnapshot.ChestSnapshot ← 衍生数据           │   │
+│  │                                                      │   │
+│  │  • usedSlots: int            ← 已用槽位数             │   │
+│  │  • usedBytes: int            ← 已用字节数             │   │
+│  │  • isFull: boolean           ← 槽位是否已满           │   │
+│  │  • isByteFull: boolean       ← 字节是否已满           │   │
+│  │                                                      │   │
+│  │  每 tick 预计算一次，所有活物品共享                     │   │
+│  └──────────────────────────────────────────────────────┘   │
 │                                                              │
 │  ✅ 随物品迁移（放入背包、容器、丢出地面都保留）             │
 │  ✅ 可序列化到存档（通过 DataComponent 系统）                │
 │  ✅ 自动同步到客户端（原版容器同步机制）                     │
-│  ✅ 无外部文件、无 UUID、无缓存一致性问题                    │
+│  ✅ 衍生数据无需持久化（由容器实时推导，无一致性问题）        │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -49,8 +65,9 @@
 | 类名 | 文件位置 | 职责 |
 |------|---------|------|
 | `LivingChestFunction` | `function/LivingChestFunction.java` | 活箱子功能入口，实现 `LivingItemFunction` 接口，提供 insert/extract/canInsert 等 API |
-| `LivingChestAccessor` | `core/accessor/LivingChestAccessor.java` | SlotAccessor 实现，统一活箱子的 extract/insert 接口 |
-| `SlotAccessorFactory` | `core/accessor/SlotAccessorFactory.java` | 工厂类，根据物品类型创建对应的 SlotAccessor |
+| `LivingChestAccessor` | `core/accessor/LivingChestAccessor.java` | SlotAccessor 实现，通过 `ChestSnapshot` 判断空/满状态，统一活箱子的 extract/insert 接口 |
+| `ContainerSnapshot` | `container/ContainerSnapshot.java` | 容器级缓存，每 tick 预计算所有活箱子的 `ChestSnapshot`（usedSlots/usedBytes/isFull/isByteFull） |
+| `SlotAccessorFactory` | `core/accessor/SlotAccessorFactory.java` | 工厂类，根据物品类型创建对应的 SlotAccessor，传递 `ContainerSnapshot` 给 Accessor |
 | `LivingChestAccessPacket` | `network/LivingChestAccessPacket.java` | 存取请求包（客户端→服务端） |
 | `ServerPacketHandler` | `network/ServerPacketHandler.java` | 网络请求处理器 |
 | `ServerPlaceRecipeMixin` | `mixin/ServerPlaceRecipeMixin.java` | Mixin：拦截配方书合成，支持从活箱子提取材料 |
@@ -278,44 +295,89 @@ public static void dropAllItems(ItemStack chestStack, Player player) {
 
 ### 6.1 LivingChestAccessor
 
-活箱子通过 `LivingChestAccessor` 实现 `SlotAccessor` 接口，统一活箱子的 extract/insert 操作：
+活箱子通过 `LivingChestAccessor` 实现 `SlotAccessor` 接口，统一活箱子的 extract/insert 操作。
+
+**v6 架构变更**：`LivingChestAccessor` 不再直接调用 `LivingChestFunction.isStorageEmpty/isStorageFull/isByteFull`，而是通过构造时注入的 `ChestSnapshot` 判断空/满状态：
 
 ```java
-// extract → 从活箱子提取物品
-LivingChestFunction.extractItem(chestStack, targetType, amount);
+// 构造时注入 ChestSnapshot（来自 ContainerSnapshot）
+LivingChestAccessor(ContainerContext ctx, int slot, ItemStack chestStack,
+                    int capacity, Set<Integer> transferredSlots,
+                    ContainerSnapshot.ChestSnapshot chestSnap)
 
-// insert → 向活箱子存入物品
+// extract → 先查 ChestSnapshot 判断是否为空
+if (chestSnap.usedSlots() == 0) return ItemStack.EMPTY;
+LivingChestFunction.extractItem(chestStack, amount);
+
+// insert → 先查 ChestSnapshot 判断是否已满
+if (chestSnap.isFull()) return 0;
 LivingChestFunction.insertItem(chestStack, itemToInsert);
 
-// rollback → 插入失败时退回物品
-LivingChestFunction.insertItem(chestStack, rolledBack);
+// isEmpty / isFull → 直接查 ChestSnapshot
+boolean isEmpty()  → chestSnap.usedSlots() == 0
+boolean isFull()   → chestSnap.isFull() || chestSnap.isByteFull()
 ```
+
+**设计意图**：衍生数据（是否已满、已用槽位数等）归容器级缓存 `ContainerSnapshot`，不归物品 NBT。`ChestSnapshot` 在每 tick 的 `capture()` 阶段预计算一次，所有活漏斗/跨容器传输共享同一份缓存数据，避免每个活物品重复反序列化 `CONTAINER` 组件。
 
 ### 6.2 工厂创建
 
-`SlotAccessorFactory.create()` 在检测到槽位中是活箱子时自动创建 `LivingChestAccessor`：
+`SlotAccessorFactory.create()` 在检测到槽位中是活箱子时，从 `ContainerSnapshot` 获取 `ChestSnapshot` 并创建 `LivingChestAccessor`：
 
 ```java
+// SlotAccessorFactory.create() 签名（v6 新增 snapshot 参数）
+public static SlotAccessor create(MinecraftServer server, ContainerContext ctx, int slot,
+                                   FilterData filterData, Set<Integer> transferredSlots,
+                                   ContainerSnapshot snapshot)
+
+// LivingChestAccessor.tryCreate() 实现
 if (LivingChestFunction.isLivingChest(stack)) {
-    return new LivingChestAccessor(chestStack, slotIndex, context);
+    ContainerSnapshot.ChestSnapshot chestSnap = snapshot.getChestSnapshot(slot);
+    return new LivingChestAccessor(ctx, slot, stack, capacity, transferredSlots, chestSnap);
 }
 ```
+
+### 6.3 跨容器传输中的 ChestSnapshot 使用
+
+`CrossContainerTransfer` 中的活箱子相关方法同样使用 `ChestSnapshot` 替代直接调用 `LivingChestFunction`：
+
+| 方法 | 原调用 | 替换为 |
+|------|--------|--------|
+| `pushFromLivingChestToNeighbor` | `isStorageEmpty(chestStack)` | `tick.snapshot.getChestSnapshot(sourceSlot).usedSlots() == 0` |
+| `pullFromNeighborToLivingChest` | `isStorageFull(chestStack) \|\| isByteFull(chestStack, registries)` | `chestSnap.isFull() \|\| chestSnap.isByteFull()` |
 
 ---
 
 ## 7. 性能优化策略
 
-### 7.1 零 Tick 开销
+### 7.1 容器级缓存（ChestSnapshot）
+
+活箱子的衍生数据（`usedSlots`/`usedBytes`/`isFull`/`isByteFull`）在 `ContainerSnapshot.capture()` 阶段统一预计算，存入 `ChestSnapshot` record。所有活漏斗、跨容器传输、`LivingChestAccessor` 共享同一份缓存数据，避免每个活物品重复反序列化 `CONTAINER` 组件。
+
+```
+TickContext.acquire()
+    └─ ContainerSnapshot.capture()
+        └─ buildAllChestSnapshots()
+            └─ 对每个活箱子槽位：
+                ├─ countUsedSlots(stack)    → usedSlots
+                ├─ getCurrentByteUsage(stack) → usedBytes
+                ├─ usedSlots >= 27          → isFull
+                └─ usedBytes >= 16384       → isByteFull
+```
+
+**性能收益**：假设容器中有 N 个活箱子，旧架构下每个活漏斗传输时都要调用 `isStorageEmpty/isStorageFull/isByteFull`（各需反序列化 `CONTAINER`），最坏情况 O(N×M) 次反序列化（M=活漏斗数）。新架构下仅 O(N) 次反序列化（在 `capture` 阶段），后续全部读缓存。
+
+### 7.2 零 Tick 开销
 
 活箱子在 tick 中不执行任何操作，因为数据已存储在 `CONTAINER` 组件中，无需缓存维护。
 
-### 7.2 懒加载
+### 7.3 懒加载
 
-物品列表只在需要时（insert/extract）从 `CONTAINER` 组件读取，不维护常驻缓存。
+物品列表只在需要时（insert/extract 实际操作）从 `CONTAINER` 组件读取，不维护常驻缓存。空/满判断使用 `ChestSnapshot` 缓存，不触发反序列化。
 
-### 7.3 字节计算优化
+### 7.4 快照一致性说明
 
-字节容量计算仅在 `canInsert()` 检查时触发，而非每次 tick。
+`ChestSnapshot` 是 tick 开始时的快照。如果在同一 tick 内活箱子被 extract 了物品，快照仍显示"有物品"。这在当前架构下不是问题——活漏斗的传输顺序由 `transferredTargetSlots` 互斥保护，最坏情况是 extract 返回空物品（快照误判为非空），此时 `LivingChestFunction.extractItem()` 会返回 `ItemStack.EMPTY`，不会导致数据错误。
 
 ---
 
@@ -351,6 +413,23 @@ Tooltip 中会显示当前字节用量和百分比，如果接近 100% 说明活
 
 ---
 
+## 附录：v6 变更记录 (2026-07-28)
+
+**变更1：衍生数据归容器（ChestSnapshot）**
+
+活箱子的衍生数据（`usedSlots`/`usedBytes`/`isFull`/`isByteFull`）从 `LivingChestFunction` static 方法调用迁移到 `ContainerSnapshot.ChestSnapshot` 容器级缓存。
+
+- `LivingChestAccessor` 新增 `ChestSnapshot chestSnap` 字段，`isEmpty()`/`isFull()`/`extract()`/`insert()`/`simulateExtract()`/`simulateInsert()` 6 个方法中的 `isStorageEmpty`/`isStorageFull`/`isByteFull` 调用替换为 `chestSnap` 查询
+- `SlotAccessorFactory.Provider.create()` 和 `SlotAccessorFactory.create()` 新增 `ContainerSnapshot snapshot` 参数
+- `CrossContainerTransfer.pushFromLivingChestToNeighbor` 和 `pullFromNeighborToLivingChest` 新增 `TickContext tick` 参数，使用 `ChestSnapshot` 替代 `LivingChestFunction` static 调用
+- `LivingEnderChestAccessor.tryCreate()` 签名对齐新增 `ContainerSnapshot snapshot` 参数
+
+**变更2：架构原则确立**
+
+确立"配置数据归物品，衍生数据归容器"的架构原则。活箱子的 `CONTAINER` 组件是配置数据（持久化到 NBT），`ChestSnapshot` 是衍生数据（每 tick 实时推导，不持久化）。
+
+---
+
 ## 附录：v5 变更记录 (2026-07-28)
 
 **变更1：Tooltip 国际化**
@@ -371,7 +450,7 @@ Tooltip 显示从硬编码字符串改为使用 `Component.translatable()` 国�
 
 - [ ] 活箱子拥有 27 槽位虚拟存储
 - [ ] 物品可通过活漏斗插入/提取
-- [ ] 虚拟存储容量受字节限制（默认 65536 字节）
+- [ ] 虚拟存储容量受字节限制（默认 16384 字节）
 - [ ] 超出容量时拒绝插入
 
 ### 与活漏斗交互
@@ -380,6 +459,15 @@ Tooltip 显示从硬编码字符串改为使用 `Component.translatable()` 国�
 - [ ] 活漏斗 target 指向活箱子时，向虚拟存储插入物品
 - [ ] 活箱子间通过活漏斗传输检查过滤规则
 - [ ] 白名单过滤时精确提取目标类型物品
+
+### 容器级缓存（ChestSnapshot）
+
+- [ ] `ContainerSnapshot.capture()` 正确预计算活箱子的 usedSlots/usedBytes/isFull/isByteFull
+- [ ] `LivingChestAccessor.isEmpty()` 使用 ChestSnapshot 判断而非直接调用 LivingChestFunction
+- [ ] `LivingChestAccessor.isFull()` 使用 ChestSnapshot 判断而非直接调用 LivingChestFunction
+- [ ] 跨容器传输中活箱子的空/满判断使用 ChestSnapshot
+- [ ] 同一 tick 内多个活漏斗共享同一份 ChestSnapshot 数据
+- [ ] 快照误判（tick 内状态变化）不会导致数据错误（extract 返回空物品而非崩溃）
 
 ### 字节计算
 

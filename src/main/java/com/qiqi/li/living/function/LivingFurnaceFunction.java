@@ -66,12 +66,13 @@ public class LivingFurnaceFunction implements LivingItemFunction {
             int fuelSlot = SlotResolver.resolve(slot, dir.getDirection("fuel"), containerSize, containerWidth);
             int outputSlot = SlotResolver.resolve(slot, dir.getDirection("output"), containerSize, containerWidth);
 
-            boolean canProgress = checkCanProgress(context, level, inputSlot, fuelSlot, outputSlot, data);
-
             data = tickTransform(context, data, inputSlot, level);
 
+            boolean canProgress = checkCanProgress(context, level, inputSlot, fuelSlot, outputSlot, data);
+
             if (canProgress) {
-                data = tickProgress(data, stack.getCount());
+                int step = 1 + stack.getCount() / 8;
+                data = data.withProgress(data.progress().advanceBy(step));
                 data = tickFuel(context, data, fuelSlot, stack.getCount());
 
                 if (data.progress().isComplete() && data.fuel().isBurning()) {
@@ -105,21 +106,25 @@ public class LivingFurnaceFunction implements LivingItemFunction {
             if (fuelValue <= 0 || LivingItemManager.isLivingItem(fuelStack)) return false;
         }
 
-        return hasMatchingRecipe(level, inputStack, data.transform());
-    }
+        if (!hasMatchingRecipe(level, inputStack, data.transform())) return false;
 
-    private LivingFurnaceData tickProgress(LivingFurnaceData data, int stackCount) {
-        int multiplier = 1 + stackCount / 8;
-        ProgressData progress = data.progress();
-        int newProgress = Math.min(progress.total(), progress.progress() + multiplier);
-        return data.withProgress(new ProgressData(newProgress, progress.total()));
+        String outputItemId = data.transform().cachedOutput();
+        if (!outputItemId.isEmpty()) {
+            ItemStack outputStack = ctx.getItem(outputSlot);
+            String outputKey = outputStack.isEmpty() ? "" : BuiltInRegistries.ITEM.getKey(outputStack.getItem()).toString();
+            if (!data.transform().canAcceptOutput(outputKey, outputStack.getCount(),
+                ctx.getSlotLimit(outputSlot), outputStack.getMaxStackSize())) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private LivingFurnaceData tickFuel(ContainerContext ctx, LivingFurnaceData data, int fuelSlot, int stackCount) {
         FuelData fuel = data.fuel();
         if (fuel.isBurning()) {
-            int multiplier = Math.max(1, stackCount);
-            return data.withFuel(fuel.tick(multiplier));
+            return data.withFuel(fuel.tick(Math.max(1, stackCount)));
         }
 
         if (fuelSlot < 0) return data;
@@ -178,7 +183,7 @@ public class LivingFurnaceFunction implements LivingItemFunction {
     private LivingFurnaceData pauseTick(LivingFurnaceData data) {
         ProgressData progress = data.progress();
         if (progress.progress() > 0) {
-            data = data.withProgress(progress.withProgress(Math.max(0, progress.progress() - 1)));
+            data = data.withProgress(progress.recede());
         }
         FuelData fuel = data.fuel();
         if (fuel.isBurning()) {

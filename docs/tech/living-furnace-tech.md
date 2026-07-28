@@ -1,6 +1,6 @@
 # Living Furnace (活熔炉) 技术文档
 
-> **文档版本**: 2026.07 v4  
+> **文档版本**: 2026.07 v5  
 > **最后更新**: 2026-07-28  
 > **适用版本**: Minecraft 1.21.1
 
@@ -179,12 +179,19 @@ checkCanProgress(ctx, level, inputSlot, fuelSlot, outputSlot, data)
   └─ hasMatchingRecipe() → 返回配方匹配结果
 ```
 
-### 3.2 进度推进 `tickProgress()`
+### 3.2 进度推进
 
-```
-tickProgress(data, stackCount)
-  ├─ multiplier = 1 + stackCount / 8
-  └─ progress = min(total, progress + multiplier)
+进度推进逻辑已收拢到 `ProgressData.advanceBy(amount)` 方法，堆叠加速倍率由 Function 计算：
+
+```java
+// Function 中
+int step = 1 + stackCount / 8;
+data = data.withProgress(data.progress().advanceBy(step));
+
+// ProgressData — 纯数学，不关心游戏规则
+public ProgressData advanceBy(int amount) {
+    return new ProgressData(Math.min(total, progress + amount), total);
+}
 ```
 
 | 堆叠数 | 倍率 | 完成时间 |
@@ -195,9 +202,17 @@ tickProgress(data, stackCount)
 | 32 | 5x | 40 ticks (2s) |
 | 56 | 8x | 25 ticks (1.25s) |
 
-### 3.3 暂停回退 `pauseTick()`
+### 3.3 暂停回退
 
-当活熔炉无法继续处理时（无输入/无燃料/输出满），走暂停路径：
+当活熔炉无法继续处理时（无输入/无燃料/输出满），暂停逻辑调用 `ProgressData.recede()` 和 `FuelData.tick(1)`：
+
+```java
+// ProgressData
+public ProgressData recedeBy(int amount) {
+    return new ProgressData(Math.max(0, progress - amount), total);
+}
+public ProgressData recede() { return recedeBy(1); }
+```
 
 | 状态 | 行为 |
 |------|------|
@@ -212,12 +227,11 @@ tickProgress(data, stackCount)
 
 ```java
 private LivingFurnaceData tickFuel(ContainerContext ctx, LivingFurnaceData data, int fuelSlot, int stackCount) {
-    FuelData fuel = data.fuel();
-    if (fuel.isBurning()) {
-        // 正在燃烧 → 消耗燃料
-        int multiplier = Math.max(1, stackCount);
-        return data.withFuel(fuel.tick(multiplier));
-    }
+        FuelData fuel = data.fuel();
+        if (fuel.isBurning()) {
+            // 正在燃烧 → 消耗燃料（堆叠加速倍率由 Function 计算）
+            return data.withFuel(fuel.tick(Math.max(1, stackCount)));
+        }
 
     // 燃料耗尽 → 尝试消耗新燃料
     ItemStack fuelStack = ctx.getItem(fuelSlot);
@@ -427,28 +441,62 @@ if (recipeHolderOpt.isPresent()) {
 
 **效果**：相同输入物品只查询一次配方，后续 tick 直接使用缓存，大幅降低 CPU 开销。
 
-### 8.6 堆叠加速计算方式 (NEW 2026-07-27)
+### 8.6 堆叠加速计算方式 (v4 2026-07-27, v5 收拢到 Data 类)
 
-活熔炉的堆叠数量影响熔炼速度：
+活熔炉的堆叠数量影响熔炼速度，计算逻辑拆分：Data 类负责纯数学转换，Function 负责游戏规则倍率。
 
-**进度推进**：
+**进度推进**（Function 计算倍率 → `ProgressData.advanceBy(step)`）：
 ```java
-int multiplier = 1 + stackCount / 8;
+int step = 1 + stackCount / 8;
+data = data.withProgress(data.progress().advanceBy(step));
 // 堆叠 1-7 → 1x 速度
 // 堆叠 8-15 → 2x 速度
-// 堆叠 16-23 → 3x 速度
 // ...
 ```
 
-**燃料消耗**：
+**燃料消耗**（Function 计算倍率 → `FuelData.tick(count)`）：
 ```java
-int multiplier = Math.max(1, stackCount);
-// 堆叠 1 → 1x 消耗（正常速度）
-// 堆叠 8 → 8x 消耗（燃料烧得更快）
-// 堆叠 16 → 16x 消耗
+data = data.withFuel(fuel.tick(Math.max(1, stackCount)));
+// 堆叠 1 → 1x 消耗
+// 堆叠 8 → 8x 消耗
+// ...
 ```
 
 **设计意图**：堆叠越多 → 熔炼越快，但燃料消耗也越快，形成平衡。
+
+### 8.7 输出槽满时仍在消耗燃料 (NEW 2026-07-28)
+
+**问题**：`checkCanProgress()` 只检查了输入槽、燃料、配方，未检查输出槽是否可用。当输出槽已满或被不同物品占据时，`canProgress` 仍返回 `true`，每 tick 消耗燃料但 `executeTransform()` 始终失败。
+
+**修复**：
+1. 调换 `tickTransform()` 顺序（移到 `checkCanProgress()` 之前），确保配方缓存可用
+2. 在 `checkCanProgress()` 末尾增加输出槽检查：有不同类型物品 → 返回 false；已满（达堆叠上限）→ 返回 false
+
+### 8.8 数据类纯状态转换收拢 (NEW 2026-07-28)
+
+**背景**：遵循"配置数据归物品，衍生数据归容器"原则，将纯状态转换逻辑从 `LivingFurnaceFunction` 收拢到各 data 类。Data 类只负责"数据怎么变"，Function 负责"游戏规则"（如堆叠加速倍率）。
+
+**新增方法**：
+
+| Data 类 | 方法 | 说明 |
+|---------|------|------|
+| `ProgressData` | `advanceBy(int amount)` | 纯数学推进，`min(total, progress + amount)` |
+| `ProgressData` | `recedeBy(int amount)` | 纯数学回退，`max(0, progress - amount)` |
+| `ProgressData` | `recede()` | 便捷方法，等价于 `recedeBy(1)` |
+| `FuelData` | `tick(int count)` | 已有，`max(0, burnTime - count)` |
+| `TransformData` | `canAcceptOutput(itemId, count, slotLimit, maxStackSize)` | 检查输出槽是否可接受缓存产物 |
+
+**游戏规则仍在 Function 中**：
+```java
+// Function 决定"推进多少"（堆叠加速规则）
+int step = 1 + stackCount / 8;
+data = data.withProgress(data.progress().advanceBy(step));
+
+// Function 决定"消耗多少"（堆叠加速规则）
+data = data.withFuel(fuel.tick(Math.max(1, stackCount)));
+```
+
+**效果**：`ProgressData` 和 `FuelData` 可被任何活物品以任意规则复用，不绑定"堆叠加速"这一特定游戏机制。
 
 ---
 

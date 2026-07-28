@@ -151,7 +151,7 @@ public final class CrossContainerTransfer {
 
         if (LivingChestFunction.isLivingChest(targetStack)) {
             return pullFromNeighborToLivingChest(containerCtx, level, neighborHandler,
-                targetStack, targetSlot, stackSize, maxTransfer, filterData);
+                targetStack, targetSlot, stackSize, maxTransfer, filterData, tick);
         }
 
         if (LivingEnderChestFunction.isLivingEnderChest(targetStack)) {
@@ -163,7 +163,7 @@ public final class CrossContainerTransfer {
         if (server == null) return false;
 
         SlotAccessor target = SlotAccessorFactory.create(server, containerCtx, targetSlot, null,
-            tick.transferredTargetSlots);
+            tick.transferredTargetSlots, tick.snapshot);
         if (target == null || target.isFull()) return false;
 
         int amount = Math.min(stackSize, maxTransfer);
@@ -218,14 +218,14 @@ public final class CrossContainerTransfer {
 
         if (sourceIsChest) {
             return pushFromLivingChestToNeighbor(containerCtx, level, neighborHandler,
-                sourceStack, sourceSlot, stackSize, maxTransfer, filterData);
+                sourceStack, sourceSlot, stackSize, maxTransfer, filterData, tick);
         }
 
         MinecraftServer server = level.getServer();
         if (server == null) return false;
 
         SlotAccessor source = SlotAccessorFactory.create(server, containerCtx, sourceSlot,
-            filterData, tick.transferredTargetSlots);
+            filterData, tick.transferredTargetSlots, tick.snapshot);
         if (source == null) return false;
 
         int amount = Math.min(stackSize, maxTransfer);
@@ -254,7 +254,8 @@ public final class CrossContainerTransfer {
                                                           int sourceSlot,
                                                           int stackSize,
                                                           int maxTransfer,
-                                                          FilterData filterData) {
+                                                          FilterData filterData,
+                                                          TickContext tick) {
         if (level.isClientSide()) return false;
 
         var server = level.getServer();
@@ -263,7 +264,8 @@ public final class CrossContainerTransfer {
         int capacity = LivingChestFunction.getCapacity(containerCtx);
         int transferAmount = Math.min(stackSize, maxTransfer);
 
-        if (LivingChestFunction.isStorageEmpty(chestStack)) {
+        ContainerSnapshot.ChestSnapshot chestSnap = tick.snapshot.getChestSnapshot(sourceSlot);
+        if (chestSnap.usedSlots() == 0) {
             return false;
         }
 
@@ -348,7 +350,8 @@ public final class CrossContainerTransfer {
                                                           int targetSlot,
                                                           int stackSize,
                                                           int maxTransfer,
-                                                          FilterData filterData) {
+                                                          FilterData filterData,
+                                                          TickContext tick) {
         if (level.isClientSide()) return false;
 
         var server = level.getServer();
@@ -356,7 +359,8 @@ public final class CrossContainerTransfer {
 
         int capacity = LivingChestFunction.getCapacity(containerCtx);
 
-        if (LivingChestFunction.isStorageFull(chestStack) || LivingChestFunction.isByteFull(chestStack, server.registryAccess())) {
+        ContainerSnapshot.ChestSnapshot chestSnap = tick.snapshot.getChestSnapshot(targetSlot);
+        if (chestSnap.isFull() || chestSnap.isByteFull()) {
             return false;
         }
 
@@ -428,7 +432,7 @@ public final class CrossContainerTransfer {
             }
 
             registry.removeByPositionAndSlotFromAllChannels(neighborPos, i);
-            registry.insert(channel, entry);
+            registry.offer(channel, entry);
             return true;
         }
 

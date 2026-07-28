@@ -1,6 +1,6 @@
 # Living Ender Chest (活末影箱) 技术文档
 
-> **文档版本**: 2026.07 v5  
+> **文档版本**: 2026.07 v8  
 > **最后更新**: 2026-07-28  
 > **适用版本**: Minecraft 1.21.1
 
@@ -149,6 +149,9 @@ private final Map<Integer, ChannelData> channels = new HashMap<>();
 // 反向索引（v5 新增）
 private final Map<BlockPos, List<EnderChannelEntry>> posIndex = new HashMap<>();     // 方块位置 → 路由条目
 private final Map<String, List<EnderChannelEntry>> keyIndex = new HashMap<>();       // 容器 key → 路由条目
+
+// 延迟同步（v6 新增）
+private final Set<Integer> dirtyChannels = new HashSet<>();                          // 本 tick 内被修改的频道集合
 ```
 
 **反向索引**（v5 新增）：
@@ -177,6 +180,7 @@ private final Map<String, List<EnderChannelEntry>> keyIndex = new HashMap<>();  
 | `removeStaleRoutesByRegistrarKey(containerKey, activeSlots)` | 按注册者容器 key 清理跨容器路由 |
 | `cleanStaleSourceRoutes(ctx)` | 清理源物品已消失或变化的失效路由（使用反向索引优化） |
 | `onChunkUnload(level, chunkPos)` | 区块卸载时清理该区块所有相关路由 |
+| `flushDirtyChannels()` | 延迟同步：遍历 dirty 频道统一发包后清空（由 `ContainerLivingItemHandler.processContext()` 在 tick 末尾调用） |
 
 ### 2.3 ChannelData — 频道数据
 
@@ -553,15 +557,27 @@ public void addToTooltip(Item.TooltipContext context,
 
 ### 11.3 客户端缓存同步
 
-路由信息通过 `EnderChannelSyncPacket`（S2C）从服务端同步到客户端 `EnderChannelClientCache`：
+路由信息通过 `EnderChannelSyncPacket`（S2C）从服务端同步到客户端 `EnderChannelClientCache`。
+
+**v6 延迟同步机制**：
+
+路由变化时不再立即发包，而是标记频道为 dirty，在 tick 末尾统一同步：
 
 ```
 服务端 EnderChannelRegistry.insert/remove
   └─ syncChannelToAll(channel)
-      └─ EnderChannelSyncPacket → 发送给所有在线玩家
-          └─ 客户端 EnderChannelClientCache.update(channel, ...)
-              └─ Tooltip 读取 EnderChannelClientCache.getSnapshot(ch)
+      └─ dirtyChannels.add(channel)              ← 仅标记 dirty，不发包
+
+ContainerLivingItemHandler.processContext() 末尾
+  └─ EnderChannelRegistry.flushDirtyChannels()
+      └─ for each dirty channel:
+          ├─ 构造 EnderChannelSyncPacket
+          └─ 发送给所有在线玩家
+              └─ 客户端 EnderChannelClientCache.update(channel, ...)
+                  └─ Tooltip 读取 EnderChannelClientCache.getSnapshot(ch)
 ```
+
+**为什么需要延迟同步？** 同一个 tick 内，push 端注册路由和 pull 端提取删除路由可能交替发生。如果每次变化都立即同步，客户端会收到"有路由→无路由→有路由"的闪烁序列，导致 Tooltip 闪烁。延迟同步将同一 tick 内的所有变化合并为一次同步（最终状态），消除闪烁。
 
 `EnderChannelClientCache` 使用 `ConcurrentHashMap` 存储，确保网络线程写入和渲染线程读取的线程安全。
 
@@ -580,6 +596,12 @@ public void addToTooltip(Item.TooltipContext context,
 **问题**：注册者容器区块卸载时，跨容器路由未被清理，导致路由泄漏。
 
 **修复**：新增 `registrarContainerKey` 字段和 `removeStaleRoutesByRegistrarKey()` 方法，实现按注册者容器隔离清理。
+
+### 12.3 Tooltip 路由闪烁
+
+**问题**：路由模式下 Tooltip 中路由条目频繁闪烁（消失又出现）。原因是 `syncChannelToAll()` 在每次路由变化时立即发包，同一 tick 内 push 端注册路由和 pull 端提取删除路由交替发生，客户端收到"有路由→无路由"的闪烁序列。
+
+**修复**：引入延迟同步机制。`syncChannelToAll()` 不再立即发包，只标记频道为 dirty；`flushDirtyChannels()` 在 `ContainerLivingItemHandler.processContext()` 的 tick 末尾统一同步所有 dirty 频道。同一 tick 内的所有变化合并为一次同步（最终状态），消除闪烁。
 
 ---
 
@@ -624,6 +646,80 @@ EnderChannelComponent: cleaned N stale routes at tick T
 **变更4：EnderChannelClientCache 线程安全**
 
 客户端缓存使用 `ConcurrentHashMap` 替代普通 `HashMap`，确保网络线程写入和渲染线程读取的线程安全。
+
+---
+
+### 12.4 v6 架构变更 (2026-07-28)
+
+**变更1：延迟同步机制（Deferred Sync）**
+
+`syncChannelToAll()` 不再在每次路由变化时立即发包，只标记频道为 dirty。新增 `flushDirtyChannels()` 方法，由 `ContainerLivingItemHandler.processContext()` 在 tick 末尾统一同步所有 dirty 频道。
+
+修复 Tooltip 路由闪烁问题：同一 tick 内 push 端注册路由和 pull 端提取删除路由交替发生时，延迟同步将所有变化合并为一次同步（最终状态），消除"有路由→无路由"的闪烁序列。
+
+---
+
+### 12.5 v7 架构变更：路由提取指针推进修正 (2026-07-28)
+
+**问题**：无黑白名单时，`routeExtract()` 中 `peek()` 先推进指针再验证条目，失效条目被 `remove()` 时 `nextIndex` 再次调整，导致指针抖动，提取顺序出现"部分随机"现象。
+
+**根因**：`peek()` 和 `remove()` 各自独立修改 `nextIndex`，两步操作非原子：
+
+```
+peek()  →  nextIndex = (oldIndex + 1) % size  （推进）
+remove() →  if idx < nextIndex: nextIndex--    （回退）
+```
+
+失效条目被跳过时，指针经历了"推进→回退"的抖动，相邻条目可能被跳过。
+
+**修复**：新增 `peekEntry()` 和 `advancePointer()` 方法，将"查看"和"推进"分离：
+
+- `peekEntry(channel)` — 返回当前 `nextIndex` 位置的条目，不推进指针
+- `advancePointer(channel)` — 推进 `nextIndex` 到下一个位置
+
+`routeExtract()` 改为：先 `peekEntry()` 查看 → 验证有效性 → 无效则 `remove()`（`nextIndex` 自动修正）→ 有效则 `advancePointer()` + 提取。
+
+**效果**：指针仅在条目验证通过后才推进，失效条目被 remove 时指针自然指向下一个条目，消除抖动。
+
+### 12.6 v8 架构重构：Deque 替代 List+nextIndex (2026-07-28)
+
+**背景**：v7 修复了指针抖动 bug，但 `List<Entry> + nextIndex` 的设计本质上是手动模拟轮询，
+导致 `peekEntry()`/`advancePointer()`/`peek()` 三个方法协作管理一个指针，概念复杂且容易出错。
+
+**重构**：用 `ArrayDeque` 天然实现轮询，消除手动指针管理。
+
+| 改动前 | 改动后 |
+|--------|--------|
+| `List<Entry> + nextIndex` | `Deque<Entry>` |
+| `peekEntry()` + `advancePointer()` | `poll()` 取出头部 |
+| 保留条目 = 不动列表 | `reoffer()` 放回尾部 |
+| 丢弃条目 = `remove()` + 指针调整 | `poll()` 已取出，不还回去 |
+| `contains()` = O(N) 线性扫描 | `RouteKey` HashSet = O(1) |
+| 清理 = 遍历+删除+指针调整 | 收集后删除，不触碰 Deque 迭代器 |
+| `findChannelForEntry()` = O(C×N) | `entryToChannel` = O(1) |
+
+**代码量变化**：~580 行 → ~500 行，消除 `nextIndex`、`findChannelForEntry()`、`removeEntryFromChannel()`。
+
+**安全设计**：热路径（`poll`/`reoffer`/`offer`/`contains`）只做单元素操作，永不触发迭代器的 `ConcurrentModificationException`。
+清理路径（`removeIf`/`removeStaleRoutesInternal`）使用"收集后删除"模式，迭代期间不修改 Deque。
+
+**核心逻辑变更**：
+
+```java
+// 改动前：查看→验证→推进→删除（三步骤）
+entry = registry.peekEntry(channel);    // 看
+if (invalid) { registry.remove(...); continue; }  // 删
+registry.advancePointer(channel);       // 推进
+extract...
+if (sourceEmpty) { registry.remove(...); }  // 删
+
+// 改动后：取出→验证→决定是否还回去（单操作）
+entry = registry.poll(channel);         // 取出（已从队列移除）
+if (invalid) { continue; }              // 丢弃（不还回去）
+extract...
+if (sourceEmpty) { /* 丢弃 */ }         // 不还回去
+else { registry.reoffer(channel, entry); }  // 放回尾部
+```
 
 ---
 
@@ -672,6 +768,7 @@ EnderChannelComponent: cleaned N stale routes at tick T
 - [ ] 高级模式（F3+H）显示每条路由的详细信息
 - [ ] 客户端缓存与服务端同步：路由变化后 Tooltip 立即更新
 - [ ] EnderChannelClientCache 线程安全（ConcurrentHashMap）
+- [ ] 延迟同步：同一 tick 内路由注册+删除不会导致 Tooltip 闪烁（→ 12.3）
 
 ### 14.7 数据持久化
 

@@ -27,4 +27,16 @@ public record ProgressData(int progress, int total) {
     public ProgressData reset() { return new ProgressData(0, total); }
     public boolean isComplete() { return progress >= total && total > 0; }
     public float getProgressRatio() { return total > 0 ? (float) progress / total : 0f; }
+
+    public ProgressData advanceBy(int amount) {
+        return new ProgressData(Math.min(total, progress + amount), total);
+    }
+
+    public ProgressData recedeBy(int amount) {
+        return new ProgressData(Math.max(0, progress - amount), total);
+    }
+
+    public ProgressData recede() {
+        return recedeBy(1);
+    }
 }

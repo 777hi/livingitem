@@ -89,14 +89,15 @@ public class ContainerSnapshot {
 
         for (int slot = 0; slot < containerSize; slot++) {
             if (sourceOf[slot] == -1 && targetOf[slot] == -1) continue;
-            filterOf[slot] = buildFilterForSlot(slot, ctx, containerSize, sourceOf, targetOf);
+            filterOf[slot] = buildFilterForSlot(slot, ctx, containerSize, sourceOf, targetOf, filterOf, new HashSet<>());
         }
 
         return filterOf;
     }
 
     private static FilterData buildFilterForSlot(int mySlot, ContainerContext ctx,
-                                                  int containerSize, int[] sourceOf, int[] targetOf) {
+                                                  int containerSize, int[] sourceOf, int[] targetOf,
+                                                  FilterData[] filterOf, Set<Integer> building) {
         List<String> blacklist = new ArrayList<>();
         List<String> whitelist = new ArrayList<>();
         List<Integer> blacklistSlots = new ArrayList<>();
@@ -119,18 +120,36 @@ public class ContainerSnapshot {
             ItemStack neighborStack = ctx.getItem(i);
             int mode = ItemFilterComponent.normalizeMode(neighborStack.getCount());
 
-            if (neighborTargetSlot == mySlot && neighborSourceSlot >= 0 && neighborSourceSlot < containerSize) {
-                collectFilterItems(ctx, containerSize, sourceOf, targetOf,
-                    neighborSourceSlot, mode, true,
-                    blacklist, blComposites, blTags, blacklistSlots, blTagSlots,
-                    new HashSet<>());
+            if (neighborTargetSlot == mySlot) {
+                if (LivingHopperFunction.isLivingHopper(neighborStack)) {
+                    FilterData neighborFilter = ensureFilterBuilt(i, ctx, containerSize, sourceOf, targetOf, filterOf, building);
+                    mergeFilterData(neighborFilter, true,
+                        blacklist, blComposites, blTags, blacklistSlots, blTagSlots);
+                    mergeFilterData(neighborFilter, false,
+                        whitelist, wlComposites, wlTags, whitelistSlots, wlTagSlots);
+                }
+                if (neighborSourceSlot >= 0 && neighborSourceSlot < containerSize) {
+                    inheritFilter(ctx, containerSize, sourceOf, targetOf,
+                        neighborSourceSlot, mode, true,
+                        blacklist, blComposites, blTags, blacklistSlots, blTagSlots,
+                        filterOf, building, new HashSet<>());
+                }
             }
 
-            if (neighborSourceSlot == mySlot && neighborTargetSlot >= 0 && neighborTargetSlot < containerSize) {
-                collectFilterItems(ctx, containerSize, sourceOf, targetOf,
-                    neighborTargetSlot, mode, false,
-                    whitelist, wlComposites, wlTags, whitelistSlots, wlTagSlots,
-                    new HashSet<>());
+            if (neighborSourceSlot == mySlot) {
+                if (LivingHopperFunction.isLivingHopper(neighborStack)) {
+                    FilterData neighborFilter = ensureFilterBuilt(i, ctx, containerSize, sourceOf, targetOf, filterOf, building);
+                    mergeFilterData(neighborFilter, true,
+                        blacklist, blComposites, blTags, blacklistSlots, blTagSlots);
+                    mergeFilterData(neighborFilter, false,
+                        whitelist, wlComposites, wlTags, whitelistSlots, wlTagSlots);
+                }
+                if (neighborTargetSlot >= 0 && neighborTargetSlot < containerSize) {
+                    inheritFilter(ctx, containerSize, sourceOf, targetOf,
+                        neighborTargetSlot, mode, false,
+                        whitelist, wlComposites, wlTags, whitelistSlots, wlTagSlots,
+                        filterOf, building, new HashSet<>());
+                }
             }
         }
 
@@ -143,12 +162,14 @@ public class ContainerSnapshot {
             blComposites, wlComposites, blTags, wlTags, blTagSlots, wlTagSlots);
     }
 
-    private static void collectFilterItems(ContainerContext ctx, int containerSize,
-                                            int[] sourceOf, int[] targetOf,
-                                            int slot, int mode, boolean isBlacklist,
-                                            List<String> idList, List<String> compositeList,
-                                            List<String> tagList, List<Integer> idSlots,
-                                            List<Integer> tagSlots, Set<Integer> visited) {
+    private static void inheritFilter(ContainerContext ctx, int containerSize,
+                                       int[] sourceOf, int[] targetOf,
+                                       int slot, int mode, boolean isBlacklist,
+                                       List<String> idList, List<String> compositeList,
+                                       List<String> tagList, List<Integer> idSlots,
+                                       List<Integer> tagSlots,
+                                       FilterData[] filterOf, Set<Integer> building,
+                                       Set<Integer> visited) {
         if (slot < 0 || slot >= containerSize || visited.contains(slot)) return;
         visited.add(slot);
 
@@ -156,11 +177,16 @@ public class ContainerSnapshot {
         if (item.isEmpty()) return;
 
         if (LivingHopperFunction.isLivingHopper(item)) {
+            FilterData neighborFilter = ensureFilterBuilt(slot, ctx, containerSize, sourceOf, targetOf, filterOf, building);
+            mergeFilterData(neighborFilter, isBlacklist,
+                idList, compositeList, tagList, idSlots, tagSlots);
             int nextSlot = isBlacklist ? sourceOf[slot] : targetOf[slot];
+            int hopperMode = ItemFilterComponent.normalizeMode(item.getCount());
             if (nextSlot >= 0 && nextSlot < containerSize) {
-                collectFilterItems(ctx, containerSize, sourceOf, targetOf,
-                    nextSlot, mode, isBlacklist,
-                    idList, compositeList, tagList, idSlots, tagSlots, visited);
+                inheritFilter(ctx, containerSize, sourceOf, targetOf,
+                    nextSlot, hopperMode, isBlacklist,
+                    idList, compositeList, tagList, idSlots, tagSlots,
+                    filterOf, building, visited);
             }
             return;
         }
@@ -168,6 +194,60 @@ public class ContainerSnapshot {
         if (LivingItemManager.isLivingItem(item)) return;
 
         addToFilter(mode, item, idList, compositeList, tagList, idSlots, tagSlots, slot);
+    }
+
+    private static FilterData ensureFilterBuilt(int slot, ContainerContext ctx, int containerSize,
+                                                 int[] sourceOf, int[] targetOf,
+                                                 FilterData[] filterOf, Set<Integer> building) {
+        if (!filterOf[slot].equals(FilterData.EMPTY)) {
+            return filterOf[slot];
+        }
+        if (building.contains(slot)) {
+            return FilterData.EMPTY;
+        }
+        building.add(slot);
+        filterOf[slot] = buildFilterForSlot(slot, ctx, containerSize, sourceOf, targetOf, filterOf, building);
+        building.remove(slot);
+        return filterOf[slot];
+    }
+
+    private static void mergeFilterData(FilterData source, boolean isBlacklist,
+                                         List<String> idList, List<String> compositeList,
+                                         List<String> tagList, List<Integer> idSlots,
+                                         List<Integer> tagSlots) {
+        if (isBlacklist) {
+            for (String id : source.blacklist()) {
+                if (!idList.contains(id)) idList.add(id);
+            }
+            for (int s : source.blacklistSlots()) {
+                if (!idSlots.contains(s)) idSlots.add(s);
+            }
+            for (String c : source.blComposites()) {
+                if (!compositeList.contains(c)) compositeList.add(c);
+            }
+            for (String t : source.blTags()) {
+                if (!tagList.contains(t)) tagList.add(t);
+            }
+            for (int s : source.blTagSlots()) {
+                if (!tagSlots.contains(s)) tagSlots.add(s);
+            }
+        } else {
+            for (String id : source.whitelist()) {
+                if (!idList.contains(id)) idList.add(id);
+            }
+            for (int s : source.whitelistSlots()) {
+                if (!idSlots.contains(s)) idSlots.add(s);
+            }
+            for (String c : source.wlComposites()) {
+                if (!compositeList.contains(c)) compositeList.add(c);
+            }
+            for (String t : source.wlTags()) {
+                if (!tagList.contains(t)) tagList.add(t);
+            }
+            for (int s : source.wlTagSlots()) {
+                if (!tagSlots.contains(s)) tagSlots.add(s);
+            }
+        }
     }
 
     private static void addToFilter(int mode, ItemStack stack,

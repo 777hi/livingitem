@@ -54,4 +54,14 @@ public record TransformData(
     }
     public TransformData clearCache() { return new TransformData(inputItem, outputItem, "", 0, "", 1, 0); }
     public boolean hasCache() { return !cachedInput.isEmpty() && cachedResult > 0; }
+
+    public boolean canAcceptOutput(String outputStackItemId, int outputStackCount, int slotLimit, int maxStackSize) {
+        if (cachedOutput.isEmpty()) return true;
+        if (!outputStackItemId.isEmpty()) {
+            if (!outputStackItemId.equals(cachedOutput)) return false;
+            int maxCount = Math.min(slotLimit, maxStackSize);
+            return outputStackCount < maxCount;
+        }
+        return true;
+    }
 }

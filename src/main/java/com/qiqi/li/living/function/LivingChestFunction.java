@@ -268,7 +268,8 @@ public class LivingChestFunction implements LivingItemFunction {
 
     public static void clearStorage(ItemStack chestStack) {
         if (!isLivingChest(chestStack)) return;
-        chestStack.remove(net.minecraft.core.component.DataComponents.CONTAINER);
+        chestStack.set(net.minecraft.core.component.DataComponents.CONTAINER,
+            net.minecraft.world.item.component.ItemContainerContents.EMPTY);
     }
 
     public static void dropAllItems(ItemStack chestStack, Player player) {

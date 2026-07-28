@@ -12,6 +12,7 @@ import com.mojang.logging.LogUtils;
 import net.minecraft.world.item.ItemStack;
 import com.qiqi.li.living.LivingItemManager;
 import com.qiqi.li.living.container.ContainerContext;
+import com.qiqi.li.living.container.ContainerSnapshot;
 import com.qiqi.li.living.data.FilterData;
 import com.qiqi.li.living.function.LivingChestFunction;
 import com.qiqi.li.living.function.LivingEnderChestFunction;
@@ -50,7 +51,8 @@ public final class SlotAccessorFactory {
     @FunctionalInterface
     public interface Provider {
         SlotAccessor create(MinecraftServer server, ContainerContext containerCtx, int slot,
-                           FilterData filterData, Set<Integer> transferredTargetSlots);
+                           FilterData filterData, Set<Integer> transferredTargetSlots,
+                           ContainerSnapshot snapshot);
     }
 
     /** 注册的 Provider 列表（按优先级排序）。 */
@@ -85,7 +87,8 @@ public final class SlotAccessorFactory {
      * @return SlotAccessor（可能为 null，表示该槽位不应被传输）
      */
     public static SlotAccessor create(MinecraftServer server, ContainerContext containerCtx, int slot,
-                                       FilterData filterData, Set<Integer> transferredTargetSlots) {
+                                       FilterData filterData, Set<Integer> transferredTargetSlots,
+                                       ContainerSnapshot snapshot) {
         ItemStack stack = containerCtx.getItem(slot);
 
         // 活物品（非活箱子/活末影箱）不参与传输
@@ -97,7 +100,7 @@ public final class SlotAccessorFactory {
 
         // 遍历注册的 Provider，找到第一个匹配的
         for (Provider provider : PROVIDERS) {
-            SlotAccessor raw = provider.create(server, containerCtx, slot, filterData, transferredTargetSlots);
+            SlotAccessor raw = provider.create(server, containerCtx, slot, filterData, transferredTargetSlots, snapshot);
             if (raw != null) {
                 return new FilteredSlotAccessor(raw, filterData);
             }
@@ -121,7 +124,8 @@ public final class SlotAccessorFactory {
      * 默认 Provider —— 处理普通槽位。
      */
     private static SlotAccessor defaultProvider(MinecraftServer server, ContainerContext containerCtx, int slot,
-                                                 FilterData filterData, Set<Integer> transferredTargetSlots) {
+                                                 FilterData filterData, Set<Integer> transferredTargetSlots,
+                                                 ContainerSnapshot snapshot) {
         return new PlainSlotAccessor(containerCtx, slot, transferredTargetSlots);
     }
 }

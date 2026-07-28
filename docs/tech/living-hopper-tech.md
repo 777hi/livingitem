@@ -430,45 +430,129 @@ allowsByPriority(item):
 
 > **v7 注意**：以上 FilterData 字段由 `ContainerSnapshot.buildAllFilters()` 每 tick 预计算后写回 DataComponent，而非由活漏斗自身构建。存档中可能包含旧数据，但每 tick 会被覆盖为最新值。
 
-#### 2.4.6 链式传递机制
+#### 2.4.6 链式传递机制（双层继承 + 穿透混合模式）
 
-在 v7 架构下，`ContainerSnapshot.buildFilterForSlot()` 为每个活漏斗独立构建过滤规则。当邻居的 source/target 指向另一个活漏斗时，`collectFilterItems()` 会沿链递归查找，直到找到非活物品的过滤源：
+在 v7 架构下，`ContainerSnapshot.buildFilterForSlot()` 为每个活漏斗独立构建过滤规则。链式传递由**两层机制**协同完成：
 
-**递归方向规则**：
-- **黑名单**（邻居的 target 指向我）：沿活漏斗的 **source** 方向递归（查找上游过滤源）
-- **白名单**（邻居的 source 指向我）：沿活漏斗的 **target** 方向递归（查找下游过滤源）
+**第一层：buildFilterForSlot 中的邻居继承**（在遍历邻居时触发）
+
+当邻居活漏斗指向我时，**先继承该活漏斗自身的完整 FilterData（黑白名单全部），再处理其直接 source/target 物品**：
 
 ```
-场景：三段漏斗链
+buildFilterForSlot(mySlot):
+  for each neighbor i:
+    if neighborTargetSlot == mySlot:           ← 邻居向我推送
+      if 邻居是活漏斗:
+        neighborFilter = ensureFilterBuilt(i)   ← 获取邻居的完整累积FilterData
+        mergeFilterData(neighborFilter, 黑名单)  ← 继承邻居的黑名单
+        mergeFilterData(neighborFilter, 白名单)  ← 继承邻居的白名单
+      inheritFilter(neighborSourceSlot, ...)    ← 处理邻居的直接source物品
 
-  [物品A]  [活漏斗1]  [活漏斗2]  [活漏斗3]  [物品B]
-              →→→→→→→→→→→→→→→→→→→→→→→→→→→→→→→→→→
-
-  活漏斗1: source=物品A, target=活漏斗2
-  活漏斗2: source=活漏斗1, target=活漏斗3
-  活漏斗3: source=活漏斗2, target=物品B
-
-  对活漏斗3构建过滤规则：
-    邻居活漏斗2的target指向3 → 黑名单分支
-    → 查找活漏斗2的source(活漏斗1) → 是活漏斗
-    → 沿source方向递归 → 物品A → 加入黑名单 ✓
-
-  对活漏斗1构建过滤规则：
-    邻居活漏斗2的source指向1 → 白名单分支
-    → 查找活漏斗2的target(活漏斗3) → 是活漏斗
-    → 沿target方向递归 → 物品B → 加入白名单 ✓
+    if neighborSourceSlot == mySlot:            ← 邻居从我取物
+      if 邻居是活漏斗:
+        neighborFilter = ensureFilterBuilt(i)
+        mergeFilterData(neighborFilter, 黑名单)
+        mergeFilterData(neighborFilter, 白名单)
+      inheritFilter(neighborTargetSlot, ...)    ← 处理邻居的直接target物品
 ```
 
-**循环防护**：`collectFilterItems()` 使用 `visited` 集合防止互相指向时无限递归。
+**为什么需要双层继承？** 活漏斗链不是"首尾相连"的——每个活漏斗的 source/target 指向的是物品槽位，而不是链上的前/后活漏斗。例如：
 
-> **v7 变更**：旧版通过 `inheritFilter()` 从邻居活漏斗继承名单实现链式传递。新版由 `ContainerSnapshot` 的 `collectFilterItems()` 沿链递归查找过滤源，天然支持链式效果，不再需要继承机制。
+```
+[钻石]  [漏斗1(source=钻石, target=漏斗2)]  [漏斗2(source=铁锭, target=漏斗3)]  [漏斗3]
+```
+
+漏斗2 的 source 指向铁锭（不是漏斗1），target 指向漏斗3。如果只追踪 `sourceOf[漏斗2]`，只会找到铁锭，找不到漏斗1传来的钻石。**必须通过继承漏斗2的完整 FilterData** 才能获得漏斗1传来的累积数据。
+
+**第二层：inheritFilter 中的穿透递归**（处理链上活漏斗的 source/target 方向）
+
+`inheritFilter()` 遇到活漏斗时，先继承其 FilterData，再沿其 source/target 方向穿透继续查找：
+
+```
+inheritFilter(slot, mode, isBlacklist, ...):
+  if slot 越界 or 已访问 → return
+  标记已访问
+
+  item = ctx.getItem(slot)
+  if item 为空 → return
+
+  if item 是活漏斗:
+    1. ensureFilterBuilt(slot) → 获取该活漏斗的完整 FilterData
+    2. mergeFilterData(neighborFilter, isBlacklist, ...) → 合并到当前列表
+    3. nextSlot = isBlacklist ? sourceOf[slot] : targetOf[slot]  ← 穿透方向
+    4. hopperMode = normalizeMode(item.getCount())  ← 用该活漏斗自身的mode
+    5. inheritFilter(nextSlot, hopperMode, isBlacklist, ...)  ← 递归穿透
+    return
+
+  if item 是其他活物品 → return  ← 不穿透
+
+  addToFilter(mode, item, ...)  ← 非活物品，加入过滤规则
+```
+
+**穿透时使用活漏斗自身的 mode**，而非调用者的 mode。这样链上每个活漏斗的过滤精度都被保留：
+
+```
+场景：三段漏斗链（不同过滤模式）
+
+  [钻石]  [漏斗1(堆叠1=ID)]  [漏斗2(堆叠2=NBT)]  [漏斗3]
+              →→→→→→→→→→→→→→→→→→→→→→→→→→→→→→→→→→→→→→
+
+  旧版（穿透模式）：
+    漏斗3 的黑名单 = NBT级(钻石)  ← 只保留漏斗2的模式，丢失漏斗1的ID级
+
+  新版（双层继承 + 穿透）：
+    漏斗3 → buildFilterForSlot:
+      邻居漏斗2的target指向漏斗3 →
+        1. ensureFilterBuilt(漏斗2) → 漏斗2的FilterData已包含[ID(钻石)]
+        2. mergeFilterData(漏斗2的黑名单+白名单) → 漏斗3得到[ID(钻石)] ✅
+        3. inheritFilter(sourceOf[漏斗2]=铁锭, ...) → 额外物品也加入
+    漏斗3 黑名单 = [ID(钻石)] + 铁锭相关规则 ✅
+```
+
+**递归构建与循环防护**：
+- `ensureFilterBuilt()` 的 `building` 集合：检测循环依赖（A→B→A），返回 `FilterData.EMPTY` 阻断
+- `inheritFilter()` 的 `visited` 集合：防止同一链路重复访问
+- 双重防护确保任意拓扑结构下不会无限递归
+
+> **v7 变更**：链式传递经历了三次迭代：(1)"穿透模式"（`collectFilterItems` 沿链递归找非活物品，用邻居mode重新分类）→(2)"继承模式"（`inheritFilter` 只合并邻居FilterData，但漏斗链不是首尾相连导致多跳传递失败）→(3)"双层继承+穿透混合模式"（`buildFilterForSlot` 中先继承邻居活漏斗的完整FilterData，`inheritFilter` 中再沿source/target穿透继续查找），既保留了链上每个活漏斗的过滤精度，又解决了非首尾相连链的多跳传递问题。
+
+#### 2.4.6a 新旧架构链式传递对比
+
+**旧架构（组件模式）**：时序传播，每 tick 传播一跳。
+
+旧架构的 `inheritFilter()` 读取邻居活漏斗**上一 tick 写入的 ComponentState**，因此过滤规则沿链逐 tick 传播：
+
+```
+Tick 1: 漏斗1 构建 → 黑名单=[ID(钻石)]  ← 写入 ComponentState
+Tick 2: 漏斗2 继承漏斗1(上一tick的状态) → 黑名单=[ID(钻石)]  ← 写入 ComponentState
+Tick 3: 漏斗3 继承漏斗2(上一tick的状态) → 黑名单=[ID(钻石)]
+```
+
+旧架构的 `inheritFilter` 还有一个条件：`sourceOf[hostSlot] != slot && targetOf[hostSlot] != slot`，即**只继承非我方向的邻居活漏斗**。这看似限制了传播，但实际上每个活漏斗在 tick 中同时处理黑名单和白名单两个分支，每个分支都会触发继承，因此链上所有方向都能传播。
+
+**新架构（ContainerSnapshot）**：即时传播，1 tick 内递归穿透完成。
+
+新架构的 `inheritFilter()` 在 `ContainerSnapshot.capture()` 阶段递归构建，遇到活漏斗时先继承其 FilterData，再沿 source/target 穿透继续查找，1 tick 内整条链的过滤规则全部构建完成。
+
+| 维度 | 旧架构（时序传播） | 新架构（即时传播） |
+|------|-------------------|-------------------|
+| **传播方式** | 每 tick 读上一 tick 的 ComponentState | 递归穿透，1 tick 内完成 |
+| **N 段链延迟** | N ticks（链越长延迟越大） | 0 ticks（始终即时） |
+| **数据来源** | 邻居的 ComponentState（上一 tick 写入） | ContainerSnapshot 实时递归构建 |
+| **循环风险** | 无（天然隔 tick 隔离） | 需 visited + building 双重防护 |
+| **一致性** | 可能短暂不一致（链中间还没传播到） | 始终一致 |
+| **穿透能力** | 依赖时序累积，每跳只看邻居上一 tick 的结果 | 递归穿透，一次构建完整链 |
+
+**新架构的关键进步**：消除了传播延迟。旧架构中，新放入一个活漏斗后，需要等待 N 个 tick 才能让过滤规则传播到链末端。新架构中，下一个 tick 所有活漏斗就能获得完整的过滤规则。
 
 #### 2.4.7 关键方法
 
 **ContainerSnapshot 中的过滤方法**：
 - `buildAllFilters()` — 容器级预计算入口，遍历所有活漏斗槽位调用 `buildFilterForSlot()`
-- `buildFilterForSlot()` — 为单个活漏斗构建完整 FilterData（包含 ID/NBT/Tag 三级黑白名单 + 槽位映射）
-- `collectFilterItems()` — 沿漏斗链递归收集过滤物品，遇到活漏斗时根据黑/白名单方向继续递归，遇到非活物品时加入过滤规则
+- `buildFilterForSlot()` — 为单个活漏斗构建完整 FilterData。当邻居活漏斗指向我时，先通过 `ensureFilterBuilt()` 继承其完整 FilterData（黑白名单全部），再通过 `inheritFilter()` 处理其直接 source/target 物品
+- `inheritFilter()` — 遇到活漏斗时：先通过 `ensureFilterBuilt()` 获取其 FilterData 并合并（`mergeFilterData`），再沿该活漏斗的 source/target 方向穿透递归（用该活漏斗自身的 mode 分类）；遇到非活物品时通过 `addToFilter()` 加入过滤规则
+- `ensureFilterBuilt()` — 确保指定槽位的 FilterData 已构建，支持递归构建和循环依赖检测
+- `mergeFilterData()` — 将源 FilterData 的黑白名单数据合并到目标列表，去重
 - `addToFilter()` — 根据过滤模式将物品添加到对应数据集，同时记录来源槽位
 
 **ItemFilterComponent 中的判定方法**：
@@ -837,20 +921,22 @@ allowsByPriority(item):
 
 ### 7.6 互相指向防护 (NEW 2026-07-22)
 
-当两个活漏斗互相指向时（A→B 且 B→A），`collectFilterItems()` 使用 `visited` 集合防止无限递归：
+当两个活漏斗互相指向时（A→B 且 B→A），`inheritFilter()` 和 `ensureFilterBuilt()` 协同防止无限递归：
 
 ```
 A→B 且 B→A 时：
   对 A 构建过滤规则：
-    邻居 B 的 target 指向 A → 黑名单分支 → 查找 B 的 source(活漏斗A)
-    → A 已在 visited 中 → 停止递归 → 无过滤规则
+    邻居 B 的 target 指向 A → 黑名单分支 → inheritFilter 遇到活漏斗 B
+    → ensureFilterBuilt(B) → B 在 building 集合中 → 返回 FilterData.EMPTY
+    → 无过滤规则
   对 B 构建过滤规则：
-    邻居 A 的 target 指向 B → 黑名单分支 → 查找 A 的 source(活漏斗B)
-    → B 已在 visited 中 → 停止递归 → 无过滤规则
+    邻居 A 的 target 指向 B → 黑名单分支 → inheritFilter 遇到活漏斗 A
+    → ensureFilterBuilt(A) → A 在 building 集合中 → 返回 FilterData.EMPTY
+    → 无过滤规则
   → 互相指向时双方均无过滤规则，名单物品拿走后自然消失
 ```
 
-> **v7 变更**：旧版通过 `inheritFilter()` 继承邻居名单，互相指向时需要显式检测并跳过。新版由 `collectFilterItems()` 的 `visited` 集合天然避免循环。
+> **v7 变更**：互相指向时由 `ensureFilterBuilt()` 的 `building` 集合检测循环依赖并阻断，`inheritFilter()` 的 `visited` 集合防止同一链路重复访问。双重防护确保无无限递归。
 
 ---
 
@@ -1362,8 +1448,8 @@ public static void postTickSync(ContainerContext ctx, ContainerFluidData fluidDa
 
 **当前实现**：
 - `ContainerSnapshot.capture()` 中新增 `buildAllFilters()`，一次性预计算所有活漏斗的过滤规则
-- `buildFilterForSlot()` 为每个活漏斗构建过滤规则，遇到活漏斗时调用 `collectFilterItems()` 沿链递归
-- `collectFilterItems()` 根据黑/白名单方向选择递归方向：黑名单沿 source 方向、白名单沿 target 方向
+- `buildFilterForSlot()` 为每个活漏斗构建过滤规则，遇到活漏斗时通过 `inheritFilter()` 继承其完整 FilterData
+- `inheritFilter()` 遇到活漏斗时通过 `ensureFilterBuilt()` 获取其 FilterData 并合并，遇到非活物品时通过 `addToFilter()` 加入过滤规则
 - `LivingHopperFunction.tick()` 从 `tick.snapshot.getFilterOf(slot)` 读取过滤规则，写回 `data.withFilter(filter).withTransfer(transfer)`
 - `LivingHopperData` 保留 `FilterData filter` 字段，tooltip 直接从 `data.filter()` 读取
 - 删除 `FilterSyncPacket`、`FilterDisplayCache`、`syncFilterData()`、`LAST_FILTER_CACHE` 等自定义同步机制
@@ -1420,7 +1506,7 @@ LOGGER.info("Cooldown: {} ticks remaining", cooldown);
 
 > **文档维护者**: Living Item Mod Team  
 > **下次更新建议**: 多功能模式（PUSH/PULL/COLLECT/DISTRIBUTE）实现后同步更新第 8 章  
-> **v7 变更**: FilterData 由 ContainerSnapshot 容器级预计算但写回 DataComponent、删除 FilterSyncPacket/FilterDisplayCache 自定义同步机制、核心原则修正为"计算归容器，展示归物品"、新增 collectFilterItems() 沿漏斗链递归传递黑白名单
+> **v7 变更**: FilterData 由 ContainerSnapshot 容器级预计算但写回 DataComponent、删除 FilterSyncPacket/FilterDisplayCache 自定义同步机制、核心原则修正为"计算归容器，展示归物品"、链式传递采用双层继承+穿透混合模式（buildFilterForSlot 先继承邻居活漏斗完整 FilterData，inheritFilter 再沿 source/target 穿透递归）
 
 ---
 
