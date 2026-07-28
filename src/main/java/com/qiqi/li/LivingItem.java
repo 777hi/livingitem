@@ -164,6 +164,8 @@ public class LivingItem {
         for (var level : server.getAllLevels()) {
             processLevelContainers(level);
         }
+
+        com.qiqi.li.living.core.components.ExplosionComponent.tickAll();
     }
 
     private void processLevelContainers(ServerLevel level) {

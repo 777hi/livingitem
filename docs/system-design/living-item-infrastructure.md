@@ -334,6 +334,8 @@ for (var chunkPos : chunkSet) {
 | `minecraft:hopper` | 5 | 1 | INVALIDATE | 仅中间 3 格可宿主 |
 | `ironchests:iron_chest` | 45 | 9 | INVALIDATE | 铁箱子 |
 | `ironchests:diamond_chest` | 108 | 12 | INVALIDATE | 钻石箱子 |
+| `sophisticatedbackpacks:backpack` | 120 | 12 | INVALIDATE | 精妙背包 12×10 |
+| `sophisticatedbackpacks:backpack` | 108 | 12 | INVALIDATE | 精妙背包 12×9 |
 
 **自动生成规则**：
 
@@ -426,11 +428,14 @@ private static int resolveColumns(int slotCount) {
 | 27 | 9 | 27 ÷ 9 = 3 |
 | 54 | 9 | 54 ÷ 9 = 6 |
 | 45 | 9 | 45 ÷ 9 = 5 |
-| 108 | 9 | 108 ÷ 9 = 12（优先 9） |
+| 108 | 9 | 108 ÷ 9 = 12（优先 9，但 108 也是 12 的倍数） |
 | 108 | 12 | 如果注册了 12 列规则 |
 | 50 | 10 | 50 ÷ 10 = 5 |
 | 91 | 13 | 91 ÷ 13 = 7 |
 | 47 | 9 | 47 不能被 9~13 整除，默认 9 |
+| 120 | 10 | 120 ÷ 10 = 12（优先 10，但 120 也是 12 的倍数） |
+
+> **注意**：`resolveColumns()` 从 9 开始递增尝试，因此 108 格会优先推断为 9 列而非 12 列，120 格会优先推断为 10 列而非 12 列。对于 12 列的非标准矩形容器（如精妙背包、钻石箱子），**必须显式注册规则**，否则自动推断会得到错误的列数。
 
 ### 6.2 SimpleContainerContext.getWidth() 的宽解析
 
@@ -453,6 +458,16 @@ public int getWidth() {
 
     return ContainerContext.super.getWidth();  // 默认 9
 }
+```
+
+**规则查找中的容量校验**：
+
+`findContainerRule()` 在通过方块实体 ID 或模糊匹配找到规则后，会额外校验 `rule.containerSize() == getSize()`。这是因为同一方块实体类型可能对应多种容量（如精妙背包的 120 格和 108 格），仅靠 ID 匹配可能返回错误容量的规则。加入容量校验后，不匹配的规则会被跳过，最终回退到 `findOrGenerateRule(getSize())` 按容量查找。
+
+```java
+// SimpleContainerContext.findContainerRule()
+var rule = ContainerCompatibilityConfig.findRule(id);
+if (rule.isPresent() && rule.get().containerSize() == getSize()) return rule;  // 容量匹配才返回
 ```
 
 ### 6.3 SlotResolver — 槽位方向解析

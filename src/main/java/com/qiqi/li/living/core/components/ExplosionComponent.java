@@ -1,23 +1,24 @@
 package com.qiqi.li.living.core.components;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Consumer;
+import java.util.UUID;
 import com.mojang.datafixers.util.Pair;
 import it.unimi.dsi.fastutil.shorts.ShortOpenHashSet;
 import it.unimi.dsi.fastutil.shorts.ShortSet;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.SectionPos;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.core.particles.ParticleTypes;
-import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.server.level.ServerChunkCache;
-import net.minecraft.world.level.lighting.LevelLightEngine;
+import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.damagesource.DamageSource;
@@ -60,21 +61,21 @@ import com.qiqi.li.living.LivingItemManager;
  * ║  └──────┬──────┘                                           ║
  * ║         ▼                                                  ║
  * ║  ┌─────────────┐                                           ║
- * ║  │ 3. 选择模式   │  ≤64个→普通模式  >64个→大当量模式        ║
- * ║  └──┬───────┬──┘                                           ║
- * ║     ▼       ▼                                              ║
- * ║  ┌──────┐ ┌──────────┐                                     ║
- * ║  │普通模式│ │大当量模式 │  两种模式都做三件事：               ║
- * ║  └──┬───┘ └────┬─────┘    ① 破坏方块                       ║
+ * ║  │ 3. 选择模式   │  ≤64→普通  >64→大当量  >3456→超级爆炸  ║
+ * ║  └──┬───┬───┬──┘                                         ║
+ * ║     ▼   ▼   ▼                                            ║
+ * ║  ┌────┐┌────┐┌──────┐                                    ║
+ * ║  │普通 ││大当量││超级爆炸│  三模式都做：①破坏方块 ②伤害实体 ③音效/粒子 ║
+ * ║  └──┬─┘└──┬─┘└──┬───┘                                    ║
  * ║     ▼         ▼          ② 伤害实体（共用）                 ║
  * ║  ┌───────────────┐       ③ 播放音效/粒子                   ║
  * ║  │ 4. 实体伤害     │                                        ║
  * ║  └───────────────┘                                         ║
  * ║                                                            ║
- * ║  两种模式的区别只在"怎么破坏方块"：                          ║
- * ║  - 普通模式：用原版setBlock()，慢但精确                     ║
- * ║    掉落物可选：原版衰减逻辑 / 100%掉落                      ║
- * ║  - 大当量模式：直接改区块数据，快但没掉落物                  ║
+ * ║  三种模式的区别只在"怎么破坏方块"：                          ║
+ * ║  - 普通模式：用原版setBlock()，慢但精确，有掉落物             ║
+ * ║  - 大当量模式：直接改区块Section数据，快但没掉落物            ║
+ * ║  - 超级爆炸模式：每 tick 消除一个区块，从中心向外扩散          ║
  * ║                                                            ║
  * ╚══════════════════════════════════════════════════════════════╝
  */
@@ -85,6 +86,25 @@ public class ExplosionComponent {
 
     private static final float DEFAULT_BASE_RADIUS = 4.0f;
     private static final boolean DEFAULT_VANILLA_DROPS = true;
+    private static final int SUPER_EXPLOSION_THRESHOLD = 54 * 64;
+
+    private static final Map<UUID, SuperExplosionTask> PENDING_SUPER_EXPLOSIONS = new LinkedHashMap<>();
+
+    private static final class SuperExplosionTask {
+        final ServerLevel level;
+        final Vec3 center;
+        final double radius;
+        final List<ChunkPos> sortedChunks;
+        int index;
+
+        SuperExplosionTask(ServerLevel level, Vec3 center, double radius, List<ChunkPos> sortedChunks) {
+            this.level = level;
+            this.center = center;
+            this.radius = radius;
+            this.sortedChunks = sortedChunks;
+            this.index = 0;
+        }
+    }
 
     private ExplosionComponent() {}
 
@@ -121,18 +141,12 @@ public class ExplosionComponent {
             ItemStack stack = containerCtx.getItem(i);
             if (!stack.isEmpty() && stack.is(Items.TNT) && LivingItemManager.isLivingItem(stack)) {
                 totalTntCount += stack.getCount();
+                containerCtx.setItem(i, ItemStack.EMPTY);
             }
         }
         if (totalTntCount <= 0) return false;
 
         double radius = baseRadius * Math.sqrt(totalTntCount);
-
-        for (int i = 0; i < containerSize; i++) {
-            ItemStack stack = containerCtx.getItem(i);
-            if (!stack.isEmpty() && stack.is(Items.TNT) && LivingItemManager.isLivingItem(stack)) {
-                containerCtx.setItem(i, ItemStack.EMPTY);
-            }
-        }
 
         executeExplosion(level, center.x, center.y, center.z, radius, totalTntCount, vanillaDrops);
         return true;
@@ -159,9 +173,15 @@ public class ExplosionComponent {
         if (totalTntCount <= 64) {
             LivingItem.LOGGER.info("使用普通模式 (≤64 TNT)");
             executeNormalExplosion(level, centerX, centerY, centerZ, (float) radius, vanillaDrops);
-        } else {
+        } else if (totalTntCount <= SUPER_EXPLOSION_THRESHOLD) {
             LivingItem.LOGGER.info("使用大当量模式 (>64 TNT)");
             executeHighYieldExplosion(level, centerX, centerY, centerZ, (float) radius);
+        } else {
+            LivingItem.LOGGER.info("使用超级爆炸模式 (>{} TNT)", SUPER_EXPLOSION_THRESHOLD);
+            scheduleSuperExplosion(level, centerX, centerY, centerZ, radius);
+            // 超级爆炸模式下，实体伤害立即生效，区块消除渐进执行
+            applyExplosionDamage(level, centerX, centerY, centerZ, radius);
+            return;
         }
 
         applyExplosionDamage(level, centerX, centerY, centerZ, radius);
@@ -533,30 +553,18 @@ public class ExplosionComponent {
 
         // ── 阶段3：通知客户端 ──
         // 阶段2只改了服务端内存，客户端还不知道方块变了。
-        // blockChanged() → 通知区块管理器这个位置改了
-        // checkBlock()   → 重新计算这个位置的光照
+        // 收集受影响的区块，整区块打包发送，比逐方块通知高效得多。
 
         if (level instanceof ServerLevel serverLevel) {
-            ServerChunkCache chunkCache = serverLevel.getChunkSource();
-            LevelLightEngine lightEngine = chunkCache.getLightEngine();
-
-            for (var entry : sectionUpdates.entrySet()) {
-                SectionPos sectionPos = entry.getKey();
-                ShortSet positions = entry.getValue();
-
-                for (short packedPos : positions) {
-                    int localX = packedPos & 0xF;
-                    int localZ = (packedPos >> 4) & 0xF;
-                    int localY = (packedPos >> 8) & 0xF;
-
-                    BlockPos pos = new BlockPos(
-                        sectionPos.minBlockX() + localX,
-                        sectionPos.minBlockY() + localY,
-                        sectionPos.minBlockZ() + localZ
-                    );
-
-                    chunkCache.blockChanged(pos);
-                    lightEngine.checkBlock(pos);
+            Set<ChunkPos> affectedChunks = new HashSet<>();
+            for (SectionPos sp : sectionUpdates.keySet()) {
+                affectedChunks.add(new ChunkPos(sp.x(), sp.z()));
+            }
+            for (ChunkPos cp : affectedChunks) {
+                LevelChunk chunk = serverLevel.getChunk(cp.x, cp.z);
+                var packet = new ClientboundLevelChunkWithLightPacket(chunk, serverLevel.getLightEngine(), null, null);
+                for (ServerPlayer player : serverLevel.getChunkSource().chunkMap.getPlayers(cp, false)) {
+                    player.connection.send(packet);
                 }
             }
         }
@@ -575,6 +583,121 @@ public class ExplosionComponent {
                     0, 0, 0, 0
                 );
             }
+        }
+    }
+
+    // ══════════════════════════════════════════════
+    //  超级爆炸模式（>3456 TNT）
+    // ══════════════════════════════════════════════
+    //
+    // 超过 54×64 个 TNT 时启用。一次性清除会卡死服务器，
+    // 所以改为逐 tick 渐进消除：每 tick 消除一个区块，
+    // 从爆炸中心逐步向外扩散。
+    //
+    // 分三步：
+    //   1. scheduleSuperExplosion — 收集区块列表，按距离排序，加入调度队列
+    //   2. tickAll — 每 tick 处理一个区块，从队列中取出并删除
+    //   3. deleteChunkContent — 清除单个区块的所有方块和方块实体
+
+    private static void scheduleSuperExplosion(Level level, double centerX, double centerY,
+                                                double centerZ, double radius) {
+        if (!(level instanceof ServerLevel serverLevel)) return;
+
+        int chunkRadius = (int) Math.ceil(radius / 16.0);
+        int centerChunkX = SectionPos.blockToSectionCoord((int) centerX);
+        int centerChunkZ = SectionPos.blockToSectionCoord((int) centerZ);
+
+        List<ChunkPos> chunks = new ArrayList<>();
+        for (int cx = -chunkRadius; cx <= chunkRadius; cx++) {
+            for (int cz = -chunkRadius; cz <= chunkRadius; cz++) {
+                int chunkX = centerChunkX + cx;
+                int chunkZ = centerChunkZ + cz;
+                double chunkCenterX = (chunkX << 4) + 8;
+                double chunkCenterZ = (chunkZ << 4) + 8;
+                double dx = chunkCenterX - centerX;
+                double dz = chunkCenterZ - centerZ;
+                double dist = Math.sqrt(dx * dx + dz * dz);
+                if (dist <= radius) {
+                    chunks.add(new ChunkPos(chunkX, chunkZ));
+                }
+            }
+        }
+
+        chunks.sort(Comparator.comparingDouble((ChunkPos pos) -> {
+            double cx = (pos.x << 4) + 8;
+            double cz = (pos.z << 4) + 8;
+            double dx = cx - centerX;
+            double dz = cz - centerZ;
+            return dx * dx + dz * dz;
+        }).thenComparingInt(pos -> Math.abs(pos.x - centerChunkX) + Math.abs(pos.z - centerChunkZ)));
+
+        Vec3 center = new Vec3(centerX, centerY, centerZ);
+        PENDING_SUPER_EXPLOSIONS.put(UUID.randomUUID(), new SuperExplosionTask(serverLevel, center, radius, chunks));
+
+        LivingItem.LOGGER.info("超级爆炸已调度: 半径={}, 区块数={}, 预计{}tick完成",
+            String.format("%.1f", radius), chunks.size(), chunks.size());
+
+        serverLevel.playSound(null, centerX, centerY, centerZ,
+            SoundEvents.GENERIC_EXPLODE, SoundSource.BLOCKS, 4.0F,
+            (1.0F + (serverLevel.random.nextFloat() - serverLevel.random.nextFloat()) * 0.2F) * 0.7F);
+        serverLevel.sendParticles(ParticleTypes.EXPLOSION_EMITTER, centerX, centerY, centerZ, 1, 0, 0, 0, 0);
+    }
+
+    public static void tickAll() {
+        if (PENDING_SUPER_EXPLOSIONS.isEmpty()) return;
+
+        var it = PENDING_SUPER_EXPLOSIONS.entrySet().iterator();
+        while (it.hasNext()) {
+            var entry = it.next();
+            var task = entry.getValue();
+
+            if (task.index >= task.sortedChunks.size()) {
+                it.remove();
+                LivingItem.LOGGER.info("超级爆炸完成: 共消除{}个区块", task.sortedChunks.size());
+                continue;
+            }
+
+            ChunkPos chunkPos = task.sortedChunks.get(task.index);
+            ServerLevel level = task.level;
+
+            if (level.hasChunk(chunkPos.x, chunkPos.z)) {
+                deleteChunkContent(level, chunkPos);
+            }
+
+            task.index++;
+        }
+    }
+
+    private static void deleteChunkContent(ServerLevel level, ChunkPos chunkPos) {
+        LevelChunk chunk = level.getChunk(chunkPos.x, chunkPos.z);
+        BlockState airState = Blocks.AIR.defaultBlockState();
+
+        for (BlockPos pos : new ArrayList<>(chunk.getBlockEntities().keySet())) {
+            chunk.removeBlockEntity(pos);
+        }
+
+        LevelChunkSection[] sections = chunk.getSections();
+        for (int i = 0; i < sections.length; i++) {
+            LevelChunkSection section = sections[i];
+            if (section == null || section.hasOnlyAir()) continue;
+            for (int x = 0; x < 16; x++) {
+                for (int y = 0; y < 16; y++) {
+                    for (int z = 0; z < 16; z++) {
+                        section.setBlockState(x, y, z, airState, false);
+                    }
+                }
+            }
+        }
+
+        chunk.setUnsaved(true);
+
+        notifyChunkClients(level, chunkPos, chunk);
+    }
+
+    private static void notifyChunkClients(ServerLevel level, ChunkPos chunkPos, LevelChunk chunk) {
+        var packet = new ClientboundLevelChunkWithLightPacket(chunk, level.getLightEngine(), null, null);
+        for (ServerPlayer player : level.getChunkSource().chunkMap.getPlayers(chunkPos, false)) {
+            player.connection.send(packet);
         }
     }
 }

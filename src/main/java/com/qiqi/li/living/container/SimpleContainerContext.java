@@ -147,11 +147,11 @@ public class SimpleContainerContext implements ContainerContext {
                 net.minecraft.core.registries.BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(be.getType());
             if (id != null) {
                 var rule = com.qiqi.li.living.core.config.ContainerCompatibilityConfig.findRule(id);
-                if (rule.isPresent()) return rule;
+                if (rule.isPresent() && rule.get().containerSize() == getSize()) return rule;
 
                 rule = com.qiqi.li.living.core.config.ContainerCompatibilityConfig.findRuleByNamespaceAndKeyword(
                     id.getNamespace(), id.getPath());
-                if (rule.isPresent()) return rule;
+                if (rule.isPresent() && rule.get().containerSize() == getSize()) return rule;
             }
         }
 

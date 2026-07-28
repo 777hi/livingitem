@@ -106,6 +106,34 @@ public final class ContainerCompatibilityConfig {
                 .build()
             );
 
+            register(ResourceLocation.fromNamespaceAndPath("sophisticatedbackpacks", "backpack"), ContainerRule.builder()
+                .containerSize(120)
+                .layoutType(ContainerLayoutType.RECTANGULAR_CUSTOM)
+                .columns(12)
+                .validHostSlots(range(0, 119))
+                .directionMapping(Pos2D.LEFT, -1)
+                .directionMapping(Pos2D.RIGHT, 1)
+                .directionMapping(Pos2D.UP, -12)
+                .directionMapping(Pos2D.DOWN, 12)
+                .edgeBehavior(EdgeBehavior.INVALIDATE)
+                .description("精妙背包 12×10")
+                .build()
+            );
+
+            register(ResourceLocation.fromNamespaceAndPath("sophisticatedbackpacks", "backpack"), ContainerRule.builder()
+                .containerSize(108)
+                .layoutType(ContainerLayoutType.RECTANGULAR_CUSTOM)
+                .columns(12)
+                .validHostSlots(range(0, 107))
+                .directionMapping(Pos2D.LEFT, -1)
+                .directionMapping(Pos2D.RIGHT, 1)
+                .directionMapping(Pos2D.UP, -12)
+                .directionMapping(Pos2D.DOWN, 12)
+                .edgeBehavior(EdgeBehavior.INVALIDATE)
+                .description("精妙背包 12×9")
+                .build()
+            );
+
             LOGGER.info("Initialized {} default container compatibility rules", RULES.size());
         } catch (Exception e) {
             LOGGER.error("Failed to initialize default container rules", e);
