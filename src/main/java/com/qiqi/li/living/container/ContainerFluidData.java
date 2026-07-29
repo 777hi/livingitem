@@ -3,6 +3,7 @@ package com.qiqi.li.living.container;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -155,11 +156,21 @@ public class ContainerFluidData {
     /**
      * 沿水流方向推动物品。
      *
-     * 推送方向：fromSlot → 当前槽位（即水流方向，远离水源）。
+     * 构建 BFS 水流树的下游映射（fromSlot → 子节点列表），
+     * 物品被推到其下游子节点，自然跟随水流的弯曲路径。
      * 按 level 降序处理，外层先推，形成级联效果。
      * 支持堆叠：目标槽位有同类物品时合并。
      */
     private void pushItems(ContainerContext ctx, int containerSize, int width) {
+        Map<Integer, List<Integer>> downstream = new HashMap<>();
+        for (var entry : flows.entrySet()) {
+            int slot = entry.getKey();
+            FlowEntry fe = entry.getValue();
+            if (fe.fromSlot >= 0) {
+                downstream.computeIfAbsent(fe.fromSlot, k -> new ArrayList<>()).add(slot);
+            }
+        }
+
         List<Map.Entry<Integer, FlowEntry>> sorted = new ArrayList<>(flows.entrySet());
         sorted.sort((a, b) -> Integer.compare(b.getValue().level, a.getValue().level));
 
@@ -171,37 +182,34 @@ public class ContainerFluidData {
             ItemStack item = ctx.getItem(slot);
             if (item.isEmpty() || LivingItemManager.isLivingItem(item)) continue;
 
-            int fromSlot = fe.fromSlot;
-            if (fromSlot < 0) continue;
+            List<Integer> children = downstream.get(slot);
+            if (children == null || children.isEmpty()) continue;
 
-            int dx = (slot % width) - (fromSlot % width);
-            int dy = (slot / width) - (fromSlot / width);
-            int step = dy * width + dx;
+            for (int targetSlot : children) {
+                if (targetSlot < 0 || targetSlot >= containerSize) continue;
 
-            int target = slot + step;
-            if (target < 0 || target >= containerSize) continue;
-            if (step == -1 && target % width >= slot % width) continue;
-            if (step == 1 && target % width <= slot % width) continue;
-
-            ItemStack targetItem = ctx.getItem(target);
-            if (targetItem.isEmpty()) {
-                ItemStack moved = item.copy();
-                ctx.setItem(target, moved);
-                ctx.setItem(slot, ItemStack.EMPTY);
-                ctx.syncSlotToClients(target, moved);
-                ctx.syncSlotToClients(slot, ItemStack.EMPTY);
-            } else if (ItemStack.isSameItemSameComponents(item, targetItem)
-                       && targetItem.getCount() < targetItem.getMaxStackSize()) {
-                int space = targetItem.getMaxStackSize() - targetItem.getCount();
-                int toAdd = Math.min(item.getCount(), space);
-                targetItem.grow(toAdd);
-                item.shrink(toAdd);
-                ctx.syncSlotToClients(target, targetItem);
-                if (item.isEmpty()) {
+                ItemStack targetItem = ctx.getItem(targetSlot);
+                if (targetItem.isEmpty()) {
+                    ItemStack moved = item.copy();
+                    ctx.setItem(targetSlot, moved);
                     ctx.setItem(slot, ItemStack.EMPTY);
+                    ctx.syncSlotToClients(targetSlot, moved);
                     ctx.syncSlotToClients(slot, ItemStack.EMPTY);
-                } else {
-                    ctx.syncSlotToClients(slot, item);
+                    break;
+                } else if (ItemStack.isSameItemSameComponents(item, targetItem)
+                           && targetItem.getCount() < targetItem.getMaxStackSize()) {
+                    int space = targetItem.getMaxStackSize() - targetItem.getCount();
+                    int toAdd = Math.min(item.getCount(), space);
+                    targetItem.grow(toAdd);
+                    item.shrink(toAdd);
+                    ctx.syncSlotToClients(targetSlot, targetItem);
+                    if (item.isEmpty()) {
+                        ctx.setItem(slot, ItemStack.EMPTY);
+                        ctx.syncSlotToClients(slot, ItemStack.EMPTY);
+                        break;
+                    } else {
+                        ctx.syncSlotToClients(slot, item);
+                    }
                 }
             }
         }

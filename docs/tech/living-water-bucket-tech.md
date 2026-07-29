@@ -1,7 +1,7 @@
 # Living Water Bucket (活水桶) 技术文档
 
-> **文档版本**: 2026.07 v2  
-> **最后更新**: 2026-07-28  
+> **文档版本**: 2026.07 v3  
+> **最后更新**: 2026-07-29  
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -41,7 +41,7 @@
 - 流动水有 1~7 级，越远级别越高，7 级后干涸
 - 水流推动槽位中的物品沿水流方向移动
 - 活物品（活漏斗、活箱子等）阻挡水流但不会被推动
-- 水桶移除后，水流逐渐干涸（而非立即消失）
+- 水桶移除后，水流立即消失
 
 ### 1.3 关键类和职责
 
@@ -91,9 +91,8 @@ public class ContainerFluidData {
 
     public static class FlowEntry {
         int level;        // 水流级别（0=水源, 1~7=流动）
-        int timer;        // 流动计时器
         boolean isSource; // 是否为水源
-        boolean removed;  // 是否标记移除
+        int fromSlot;     // 水流来源槽位（BFS 父节点，水源为 -1）
     }
 
     private final Map<Integer, FlowEntry> flows = new LinkedHashMap<>();
@@ -160,40 +159,23 @@ public void tick(List<SlotEntry> entries, ContainerContext context, TickContext 
 
 > **v2 变更**：`ContainerFluidData` 现在由 `ContainerSnapshot` 持有引用，通过 `tick.snapshot.getFluidData()` 获取。流体数据在 `TickContext.reset()` 阶段随快照一起捕获，确保活水桶 tick 时能直接读取。
 
-### 3.2 水源蔓延
+### 3.2 BFS 重算机制
 
-水源在 `ContainerFluidData.tick()` 中每 4 ticks 向相邻 4 方向蔓延一次：
-
-```
-tickSource(slot, containerSize, width):
-  for each neighbor in [上, 下, 左, 右]:
-    if neighbor 未被水流覆盖:
-      if neighbor 为空槽:
-        → 创建流动槽位 (level=1, timer=4)
-      if neighbor 有物品（非活物品）:
-        → 尝试推动物品
-        → 物品被推动后，创建流动槽位
-```
-
-### 3.3 流动传播
-
-流动槽位每 4 ticks 检查一次：
+每个 tick 通过 BFS 从所有水源重新计算水流状态，动态适应环境变化：
 
 ```
-tickFlow(slot, flowEntry, containerSize, width):
-  ├─ 槽位中有活物品？→ 标记移除（活物品阻挡水流）
-  │
-  ├─ timer > 0？→ timer--，等待
-  │
-  ├─ 有更低级别的邻居水流？→ 不蔓延（水往低处流）
-  │
-  ├─ level >= 7？→ 标记移除（干涸）
-  │
-  └─ level < 7 → 向空槽位蔓延
-      └─ 创建流动槽位 (level+1, timer=4)
+recalculate(ctx, containerSize, width):
+  1. 收集所有水源槽位（验证槽位仍有活水桶）
+  2. BFS 从水源逐层扩展：
+     - 遇到活物品 → 跳过（不加入队列，水流绕行）
+     - 已有更优流动（level 更低）→ 跳过
+     - 否则 → 创建 FlowEntry(level+1, isSource=false, fromSlot=父节点)
+  3. 替换旧的 flows 映射
 ```
 
-### 3.4 水流级别
+BFS 的天然特性使水流遇到障碍时自动绕行（flood fill），无需专门的拐弯逻辑。
+
+### 3.3 水流级别
 
 ```
 水源 (level=0)
@@ -207,46 +189,47 @@ tickFlow(slot, flowEntry, containerSize, width):
 超过 7 级 → 干涸消失
 ```
 
-### 3.5 干涸机制
+### 3.4 水源移除
 
-水流干涸有两种情况：
-- **级别耗尽**：流动槽位达到 level=7 后，下一 tick 标记移除
-- **水源移除**：活水桶被取走，`removeSource()` 取消水源标记，流动槽位不再有水源补充，逐渐干涸
+水流消失有两种情况：
+- **水源移除**：活水桶被取走，`recalculate()` 中验证水源槽位不再有活水桶，该水源不加入 BFS 队列，不可达的流动立即消失
+- **级别耗尽**：流动槽位达到 level=7 后，BFS 不再向其邻居扩展
 
 ```
-水源被移除 → removeSource(slot)
-  ├─ 该槽位的 isSource 设为 false
-  └─ 后续 tick 中，流动槽位检测到无更低级别邻居
-      └─ level 逐渐增加 → 到达 7 → 干涸
+水源被移除 → recalculate() 中跳过该水源
+  └─ 不可达的流动槽位不在新的 flows 映射中 → 立即消失
 ```
+
+> **v3 变更**：水源移除后不可达的流动立即消失（简单实现），替代了 v2 的逐渐干涸机制。
 
 ---
 
 ## 4. 物品推送
 
-### 4.1 推送触发
+### 4.1 推送机制
 
-当水流蔓延到有物品的槽位时，触发物品推动：
+物品沿 BFS 水流树的**下游子节点**推动，自然跟随水流的弯曲路径：
 
 ```java
-private int pushItem(ContainerContext ctx, int waterSlot, int itemSlot,
-                     int containerSize, int width) {
-    // 1. 计算推动方向（水流方向）
-    int dx = (itemSlot % width) - (waterSlot % width);
-    int dy = (itemSlot / width) - (waterSlot / width);
-    int step = dy * width + dx;
-
-    // 2. 尝试推送到水流方向的下一个槽位
-    int primaryTarget = itemSlot + step;
-    if (primaryTarget 有效 && primaryTarget 为空) {
-        ctx.setItem(primaryTarget, ctx.getItem(itemSlot).copy());
-        ctx.setItem(itemSlot, ItemStack.EMPTY);
-        return primaryTarget;
+private void pushItems(ContainerContext ctx, int containerSize, int width) {
+    // 1. 构建下游映射：fromSlot → 子节点列表
+    Map<Integer, List<Integer>> downstream = new HashMap<>();
+    for (var entry : flows.entrySet()) {
+        int slot = entry.getKey();
+        FlowEntry fe = entry.getValue();
+        if (fe.fromSlot >= 0) {
+            downstream.computeIfAbsent(fe.fromSlot, k -> new ArrayList<>()).add(slot);
+        }
     }
 
-    // 3. 如果正前方被阻挡，寻找最近的空槽位
-    for (所有槽位) {
-        if (空槽位 && 距离更近) → 推送到此槽位
+    // 2. 按 level 降序处理（外层先推，形成级联）
+    sorted.sort((a, b) -> Integer.compare(b.getValue().level, a.getValue().level));
+
+    for (var entry : sorted) {
+        // 3. 遍历当前槽位的下游子节点
+        for (int targetSlot : children) {
+            // 推到第一个空位或可堆叠的位置
+        }
     }
 }
 ```
@@ -255,12 +238,35 @@ private int pushItem(ContainerContext ctx, int waterSlot, int itemSlot,
 
 | 情况 | 行为 |
 |------|------|
-| 正前方空槽位 | 推送到正前方 |
-| 正前方被占用 | 寻找最近的空槽位 |
-| 槽位中是活物品 | 不推动，水流被阻挡 |
-| 容器已满 | 物品留在原地 |
+| 下游子节点为空槽位 | 推送到该槽位 |
+| 下游子节点有同类物品且未满 | 堆叠合并 |
+| 下游子节点被其他物品占用 | 尝试下一个子节点 |
+| 无可用下游子节点 | 物品留在原地 |
+| 槽位中是活物品 | 不推动，水流绕行 |
 
-### 4.3 水流阻挡
+### 4.3 水流拐弯推动
+
+物品沿水流树的下游路径移动，遇到障碍时自然拐弯：
+
+```
+直线推动（旧版）：物品沿 fromSlot→slot 直线方向推一步
+┌───┬───┬───┬───┬───┐
+│ ← │📦 │ 1 │💧│ ■ │  物品只能直走，撞墙停住
+├───┼───┼───┼───┼───┤
+│   │ 3 │ 2 │ 1 │ ■ │
+└───┴───┴───┴───┴───┘
+
+沿水流推动（当前）：物品被推到下游子节点，自然拐弯
+┌───┬───┬───┬───┬───┐
+│   │ 2 │ 1 │💧│ ■ │  物品在(1,1)，下游是(0,1)和(1,2)
+├───┼───┼───┼───┼───┤
+│   │📦→│ 2 │ 1 │ ■ │  物品被推到(1,2)（水流拐弯处）
+├───┼───┼───┼───┼───┤
+│   │ 4 │ 3 │ 2 │ 5 │  下一步→(2,2)→(3,2)→绕过■！
+└───┴───┴───┴───┴───┘
+```
+
+### 4.4 水流阻挡
 
 活物品（活漏斗、活箱子、活熔炉等）会阻挡水流：
 - 水流不会蔓延到活物品所在槽位
@@ -498,7 +504,36 @@ cells.put(menuIndex, new WaterCell(level, direction));
 ```
 
 **状态**：✅ 已修复
+
+**变更7：物品沿水流树下游推动（拐弯推动）**
+
+**问题现象**：物品沿 `fromSlot → slot` 的直线方向推一步，遇到障碍就停住，不会随水流拐弯。
+
+**根本原因**：旧版 `pushItems` 通过计算 `fromSlot` 到 `slot` 的直线方向（dx/dy），然后将物品沿该方向推一步。这是纯几何计算，不关心水流的实际路径。
+
+**修复方案**：利用 BFS 水流树中每个流动条目的 `fromSlot` 字段，构建**下游映射**（`fromSlot → 子节点列表`）。物品被推到其下游子节点，自然跟随水流的弯曲路径。
+
+```java
+// 旧版：直线推动
+int dx = (slot % width) - (fromSlot % width);
+int dy = (slot / width) - (fromSlot / width);
+int step = dy * width + dx;
+int target = slot + step;  // 只能直走
+
+// 新版：沿水流树下游推动
+Map<Integer, List<Integer>> downstream = new HashMap<>();
+for (var entry : flows.entrySet()) {
+    if (fe.fromSlot >= 0) {
+        downstream.computeIfAbsent(fe.fromSlot, k -> new ArrayList<>()).add(slot);
+    }
+}
+List<Integer> children = downstream.get(slot);  // 所有下游子节点
+for (int targetSlot : children) { ... }  // 尝试推到下游
 ```
+
+**效果**：物品遇到障碍时随水流拐弯绕行，而非撞墙停住。
+
+**状态**：✅ 已实现
 
 ---
 
@@ -508,16 +543,25 @@ cells.put(menuIndex, new WaterCell(level, direction));
 
 ### 基础水流
 
-- [ ] 活水桶放置后成为水源，每 4 ticks 向 4 方向蔓延
+- [ ] 活水桶放置后成为水源，BFS 向 4 方向蔓延
 - [ ] 水流最多蔓延 7 格，级别递减
-- [ ] 多个水源时水流级别取最大值
-- [ ] 活水桶被移走后水源消失，水流逐步退去
+- [ ] 多个水源时水流级别取最近水源
+- [ ] 活水桶被移走后水流立即消失
+- [ ] 水流遇到活物品自动绕行
 
 ### 物品推动
 
 - [ ] 水流推动物品沿水流方向移动
+- [ ] 物品随水流拐弯绕行障碍
 - [ ] 物品被推到容器边缘时停止
 - [ ] 多个物品被推动时互不干扰
+- [ ] 同类物品可堆叠合并
+
+### 创造模式兼容
+
+- [ ] INVENTORY 标签页水流贴图正常显示
+- [ ] CATEGORY/HOTBAR 标签页水流贴图正常显示
+- [ ] 物品推动不会产生复制
 
 ### 水源状态
 
