@@ -99,9 +99,9 @@ public class LivingEnderChestAccessor implements SlotAccessor {
         }
         int ch = stack.getCount();
         UUID boundUuid = LivingEnderChestFunction.getBoundPlayerUuid(stack);
-        if (LOGGER.isDebugEnabled()) {
-            LOGGER.debug("LivingEnderChestAccessor.tryCreate: channel={}, slot={}, direct={}", ch, slot, boundUuid != null);
-        }
+        // if (LOGGER.isDebugEnabled()) {
+        //     LOGGER.debug("LivingEnderChestAccessor.tryCreate: channel={}, slot={}, direct={}", ch, slot, boundUuid != null);
+        // }
         if (boundUuid != null) {
             return new LivingEnderChestAccessor(server, ch, transferredTargetSlots, boundUuid);
         } else {

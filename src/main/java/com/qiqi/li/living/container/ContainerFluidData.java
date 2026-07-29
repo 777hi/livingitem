@@ -1,24 +1,33 @@
 package com.qiqi.li.living.container;
 
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Deque;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import com.qiqi.li.living.LivingItemManager;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 
 /**
- * 容器级流体数据 —— 独立于活物品的槽位级水流状态。
+ * 容器级流体数据 —— 参照原版水流平地蔓延逻辑实现。
  *
- * 每个容器持有一份实例，生命周期独立于活水桶：
- * - 活水桶放入 → 注册水源槽位
- * - 活水桶 tick → 水源蔓延
- * - 活水桶移除 → 水源取消，但流动槽位继续干涸
+ * 核心映射：
+ * - ContainerFluidData = 一个区块的水流状态
+ * - 槽位 = 方块位置
+ * - FlowEntry(level=0, isSource=true) = 水源方块
+ * - FlowEntry(level=1~7, isSource=false) = 流动水方块
+ * - 无 FlowEntry = 空气
+ * - 活物品 = 阻挡水流的方块
+ * - 非活物品 = 水中的实体（不阻挡水流，被水流推动）
  *
- * 和原版流体方块的对应关系：
- * - sourceEntry → 水源方块 (level=0)
- * - flowEntry → 流动水方块 (level=1~7)
- * - 无 entry → 空气
- *
- * 此类将在后续红石系统中复用，作为容器级"信号/状态"的存储基础。
+ * 与原版一致的行为：
+ * - 水源向4方向蔓延，level 递增，最远7格
+ * - 每个 tick 通过 BFS 从所有水源重算流动状态
+ * - 水源移除后，不可达的流动立即消失（简单实现）
+ * - 多水源时，每个槽位取最近水源的 level
+ * - 流动水记录 fromSlot（BFS 父节点），物品沿水流方向推动
  */
 public class ContainerFluidData {
 
@@ -30,25 +39,23 @@ public class ContainerFluidData {
 
     public static class FlowEntry {
         int level;
-        int timer;
         boolean isSource;
-        boolean removed;
+        int fromSlot;
 
-        public FlowEntry(int level, int timer, boolean isSource) {
+        public FlowEntry(int level, boolean isSource, int fromSlot) {
             this.level = level;
-            this.timer = timer;
             this.isSource = isSource;
+            this.fromSlot = fromSlot;
         }
 
         public int level() { return level; }
-        public int timer() { return timer; }
         public boolean isSource() { return isSource; }
-
-        void markRemoved() { this.removed = true; }
+        public int fromSlot() { return fromSlot; }
     }
 
     private final Map<Integer, FlowEntry> flows = new LinkedHashMap<>();
     private long lastTickTime;
+    private int tickCounter;
 
     public Map<Integer, FlowEntry> getFlows() {
         return flows;
@@ -69,12 +76,11 @@ public class ContainerFluidData {
     public void registerSource(int slot) {
         FlowEntry existing = flows.get(slot);
         if (existing != null) {
-            if (existing.isSource) return;
             existing.isSource = true;
             existing.level = SOURCE_LEVEL;
-            existing.timer = 0;
+            existing.fromSlot = -1;
         } else {
-            flows.put(slot, new FlowEntry(SOURCE_LEVEL, 0, true));
+            flows.put(slot, new FlowEntry(SOURCE_LEVEL, true, -1));
         }
     }
 
@@ -90,104 +96,115 @@ public class ContainerFluidData {
         int width = ctx.getWidth();
         if (containerSize <= 0 || width <= 0) return;
 
-        Map<Integer, FlowEntry> pending = new LinkedHashMap<>();
+        tickCounter++;
 
-        for (Map.Entry<Integer, FlowEntry> entry : flows.entrySet()) {
+        recalculate(containerSize, width, ctx);
+
+        if (tickCounter % FLOW_STEP_TICKS == 0) {
+            pushItems(ctx, containerSize, width);
+        }
+    }
+
+    /**
+     * BFS 从所有水源重算流动状态。
+     *
+     * 类比原版：每个 tick 重新计算所有流动水的 level，
+     * 确保水源增减、活物品放置/移除后流动状态立即更新。
+     *
+     * - 活物品阻挡水流（类比方块）
+     * - 非活物品不阻挡水流（类比实体，水穿过）
+     * - 每个槽位取最近水源的 level（多水源取最小值）
+     */
+    private void recalculate(int containerSize, int width, ContainerContext ctx) {
+        Map<Integer, FlowEntry> newFlows = new LinkedHashMap<>();
+        Deque<Integer> queue = new ArrayDeque<>();
+
+        for (var entry : flows.entrySet()) {
+            if (entry.getValue().isSource) {
+                int slot = entry.getKey();
+                ItemStack item = ctx.getItem(slot);
+                if (item.is(Items.WATER_BUCKET) && LivingItemManager.isLivingItem(item)) {
+                    newFlows.put(slot, new FlowEntry(SOURCE_LEVEL, true, -1));
+                    queue.add(slot);
+                }
+            }
+        }
+
+        while (!queue.isEmpty()) {
+            int slot = queue.poll();
+            FlowEntry fe = newFlows.get(slot);
+            if (fe.level >= MAX_FLOW_LEVEL) continue;
+
+            int[] neighbors = getNeighbors(slot, containerSize, width);
+            for (int neighbor : neighbors) {
+                if (newFlows.containsKey(neighbor)) continue;
+
+                ItemStack item = ctx.getItem(neighbor);
+                if (LivingItemManager.isLivingItem(item)) continue;
+
+                int newLevel = fe.level + 1;
+                newFlows.put(neighbor, new FlowEntry(newLevel, false, slot));
+                queue.add(neighbor);
+            }
+        }
+
+        flows.clear();
+        flows.putAll(newFlows);
+    }
+
+    /**
+     * 沿水流方向推动物品。
+     *
+     * 推送方向：fromSlot → 当前槽位（即水流方向，远离水源）。
+     * 按 level 降序处理，外层先推，形成级联效果。
+     * 支持堆叠：目标槽位有同类物品时合并。
+     */
+    private void pushItems(ContainerContext ctx, int containerSize, int width) {
+        List<Map.Entry<Integer, FlowEntry>> sorted = new ArrayList<>(flows.entrySet());
+        sorted.sort((a, b) -> Integer.compare(b.getValue().level, a.getValue().level));
+
+        for (var entry : sorted) {
             int slot = entry.getKey();
             FlowEntry fe = entry.getValue();
+            if (fe.isSource) continue;
 
-            if (fe.isSource) {
-                tickSource(ctx, slot, containerSize, width, flows, pending);
-            } else {
-                tickFlow(ctx, slot, fe, containerSize, width, flows, pending);
-            }
-        }
+            ItemStack item = ctx.getItem(slot);
+            if (item.isEmpty() || LivingItemManager.isLivingItem(item)) continue;
 
-        flows.values().removeIf(v -> v.removed);
-        flows.putAll(pending);
-    }
+            int fromSlot = fe.fromSlot;
+            if (fromSlot < 0) continue;
 
-    private void tickSource(ContainerContext ctx, int slot,
-                            int containerSize, int width,
-                            Map<Integer, FlowEntry> current, Map<Integer, FlowEntry> pending) {
-        int[] neighbors = getNeighbors(slot, containerSize, width);
-        for (int neighbor : neighbors) {
-            if (current.containsKey(neighbor) || pending.containsKey(neighbor)) continue;
+            int dx = (slot % width) - (fromSlot % width);
+            int dy = (slot / width) - (fromSlot / width);
+            int step = dy * width + dx;
 
-            ItemStack item = ctx.getItem(neighbor);
-            if (item.isEmpty()) {
-                pending.put(neighbor, new FlowEntry(1, FLOW_STEP_TICKS, false));
-            } else if (LivingItemManager.isLivingItem(item)) {
-            } else {
-                int pushTarget = pushItem(ctx, slot, neighbor, containerSize, width);
-                if (pushTarget >= 0) {
-                    pending.put(neighbor, new FlowEntry(1, FLOW_STEP_TICKS, false));
+            int target = slot + step;
+            if (target < 0 || target >= containerSize) continue;
+            if (step == -1 && target % width >= slot % width) continue;
+            if (step == 1 && target % width <= slot % width) continue;
+
+            ItemStack targetItem = ctx.getItem(target);
+            if (targetItem.isEmpty()) {
+                ItemStack moved = item.copy();
+                ctx.setItem(target, moved);
+                ctx.setItem(slot, ItemStack.EMPTY);
+                ctx.syncSlotToClients(target, moved);
+                ctx.syncSlotToClients(slot, ItemStack.EMPTY);
+            } else if (ItemStack.isSameItemSameComponents(item, targetItem)
+                       && targetItem.getCount() < targetItem.getMaxStackSize()) {
+                int space = targetItem.getMaxStackSize() - targetItem.getCount();
+                int toAdd = Math.min(item.getCount(), space);
+                targetItem.grow(toAdd);
+                item.shrink(toAdd);
+                ctx.syncSlotToClients(target, targetItem);
+                if (item.isEmpty()) {
+                    ctx.setItem(slot, ItemStack.EMPTY);
+                    ctx.syncSlotToClients(slot, ItemStack.EMPTY);
+                } else {
+                    ctx.syncSlotToClients(slot, item);
                 }
             }
         }
-    }
-
-    private void tickFlow(ContainerContext ctx, int slot, FlowEntry fe,
-                          int containerSize, int width,
-                          Map<Integer, FlowEntry> current, Map<Integer, FlowEntry> pending) {
-        ItemStack item = ctx.getItem(slot);
-        if (LivingItemManager.isLivingItem(item)) {
-            fe.markRemoved();
-            return;
-        }
-
-        if (fe.timer > 0) {
-            fe.timer--;
-            return;
-        }
-
-        boolean hasLower = hasLowerLevelNeighbor(slot, fe.level, current, containerSize, width);
-
-        if (!hasLower) {
-            if (fe.level >= MAX_FLOW_LEVEL) {
-                fe.markRemoved();
-                return;
-            }
-            fe.level++;
-            fe.timer = FLOW_STEP_TICKS;
-            return;
-        }
-
-        if (fe.level >= MAX_FLOW_LEVEL) {
-            fe.timer = FLOW_STEP_TICKS;
-            return;
-        }
-
-        fe.timer = FLOW_STEP_TICKS;
-
-        int[] neighbors = getNeighbors(slot, containerSize, width);
-        for (int neighbor : neighbors) {
-            if (current.containsKey(neighbor) || pending.containsKey(neighbor)) continue;
-
-            ItemStack neighborItem = ctx.getItem(neighbor);
-            if (neighborItem.isEmpty()) {
-                pending.put(neighbor, new FlowEntry(fe.level + 1, FLOW_STEP_TICKS, false));
-            } else if (LivingItemManager.isLivingItem(neighborItem)) {
-            } else {
-                int pushTarget = pushItem(ctx, slot, neighbor, containerSize, width);
-                if (pushTarget >= 0) {
-                    pending.put(neighbor, new FlowEntry(fe.level + 1, FLOW_STEP_TICKS, false));
-                }
-            }
-        }
-    }
-
-    private boolean hasLowerLevelNeighbor(int slot, int level,
-                                          Map<Integer, FlowEntry> current,
-                                          int containerSize, int width) {
-        int[] neighbors = getNeighbors(slot, containerSize, width);
-        for (int neighbor : neighbors) {
-            FlowEntry ne = current.get(neighbor);
-            if (ne != null && ne.level < level) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private int[] getNeighbors(int slot, int containerSize, int width) {
@@ -211,51 +228,11 @@ public class ContainerFluidData {
         return result;
     }
 
-    private int pushItem(ContainerContext ctx, int waterSlot, int itemSlot,
-                         int containerSize, int width) {
-        int dx = (itemSlot % width) - (waterSlot % width);
-        int dy = (itemSlot / width) - (waterSlot / width);
-        int step = dy * width + dx;
-
-        int primaryTarget = itemSlot + step;
-        if (primaryTarget >= 0 && primaryTarget < containerSize
-            && !(step == -1 && primaryTarget % width >= itemSlot % width)
-            && !(step == 1 && primaryTarget % width <= itemSlot % width)) {
-            ItemStack targetItem = ctx.getItem(primaryTarget);
-            if (targetItem.isEmpty()) {
-                ctx.setItem(primaryTarget, ctx.getItem(itemSlot).copy());
-                ctx.setItem(itemSlot, ItemStack.EMPTY);
-                return primaryTarget;
-            }
-        }
-
-        int itemCol = itemSlot % width;
-        int itemRow = itemSlot / width;
-        int bestSlot = -1;
-        int bestDist = Integer.MAX_VALUE;
-        for (int s = 0; s < containerSize; s++) {
-            if (s == itemSlot) continue;
-            if (!ctx.getItem(s).isEmpty()) continue;
-            int sCol = s % width;
-            int sRow = s / width;
-            int dist = Math.abs(sCol - itemCol) + Math.abs(sRow - itemRow);
-            if (dist < bestDist) {
-                bestDist = dist;
-                bestSlot = s;
-            }
-        }
-        if (bestSlot >= 0) {
-            ctx.setItem(bestSlot, ctx.getItem(itemSlot).copy());
-            ctx.setItem(itemSlot, ItemStack.EMPTY);
-            return bestSlot;
-        }
-        return -1;
-    }
-
-    public Map<Integer, Integer> exportFlowData() {
-        Map<Integer, Integer> map = new LinkedHashMap<>();
-        for (Map.Entry<Integer, FlowEntry> e : flows.entrySet()) {
-            map.put(e.getKey(), e.getValue().level);
+    public Map<Integer, int[]> exportFlowData() {
+        Map<Integer, int[]> map = new LinkedHashMap<>();
+        for (var e : flows.entrySet()) {
+            FlowEntry fe = e.getValue();
+            map.put(e.getKey(), new int[]{fe.level, fe.fromSlot});
         }
         return map;
     }

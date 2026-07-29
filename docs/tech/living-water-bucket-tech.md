@@ -410,6 +410,94 @@ L1~L7 = 流动水级别
 **变更2：postTickSync 签名优化**
 
 `postTickSync()` 新增 `List<SlotEntry> waterBucketEntries` 参数，从全容器扫描优化为直接遍历已知活水桶条目。调用方从 `ContainerLivingItemHandler.processContext()` 中查找水桶功能分组并传递。
+
+---
+
+## 附录：v3 变更记录 (2026-07-29)
+
+**变更3：BFS 重算机制重构**
+
+`ContainerFluidData.tick()` 从基于 `timer` 倒计时的逐格蔓延，重构为 BFS 重算机制：
+
+- 移除 `FlowEntry` 的 `timer` 和 `removed` 字段，新增 `fromSlot` 记录水流来源槽位
+- 将原 `tick()` 拆分为 `recalculate()`（BFS 从所有水源重算流动状态）和 `pushItems()`（沿水流方向推动物品）
+- 每个 tick 通过 BFS 从所有水源重新计算流动状态，动态适应环境变化
+- 水源移除后不可达的流动立即消失（简单实现）
+- 多水源时每个槽位取最近水源的 level
+- `exportFlowData()` 返回类型从 `Map<Integer, Integer>` 改为 `Map<Integer, int[]>`，包含 `[level, fromSlot]`
+
+**变更4：四方向水流贴图渲染**
+
+水流贴图从任意角度旋转改为四方向映射：
+
+- 新增方向常量 `DIR_DOWN`/`DIR_RIGHT`/`DIR_UP`/`DIR_LEFT`
+- 使用 `fromSlot` 计算真实水流方向，通过 `cardinalDirection(dx, dy)` 映射到四方向
+- 用 `directionToRotation()` 实现 90° 倍数旋转，确保贴图与槽位边界对齐
+- `WaterCell` 从存储 `dx/dy` 改为存储 `direction`
+
+**变更5：创造模式物品复制修复**
+
+**问题现象**：创造模式 INVENTORY 标签页中，物品被水流推动一格后原位置依旧有一份物品，然后两份合并导致复制。概率性发生，生存模式不会出现。
+
+**根本原因**：`pushItems` 修改了 `Inventory` 中的物品后，没有立即同步到客户端。创造模式下，客户端的 `CreativeModeInventoryScreen` 在 `tick()` 中检测到 `ItemPickerMenu.remoteSlots` 与实际物品不一致，然后通过 `handleCreativeModeItemAdd` 发送 `ServerboundSetCreativeModeSlotPacket`，将旧物品状态同步回服务端，覆盖了 `pushItems` 的修改。
+
+```
+时序竞争：
+  1. 服务端 pushItems 将物品从 slot A 推到 slot B
+  2. syncSlotToClients 发包更新客户端 Inventory
+  3. 但 ItemPickerMenu.remoteSlots 没有被更新（SlotWrapper 不受 InventoryMenu 同步影响）
+  4. CreativeModeInventoryScreen.tick() → broadcastChanges() 检测到差异
+  5. 客户端发送 ServerboundSetCreativeModeSlotPacket，将旧物品状态写回服务端
+  6. 服务端收到包后，slot A 被恢复为旧物品 → 物品"复制"了！
+```
+
+**修复方案**：在 `pushItems` 中，每次推动物品后立即调用 `ctx.syncSlotToClients` 同步源槽位和目标槽位到客户端，确保客户端的 `remoteSlots` 及时更新，避免创造模式的回滚机制覆盖修改。
+
+**变更6：创造模式水流贴图 SlotWrapper 兼容（已修复）**
+
+**问题现象**：创造模式 INVENTORY 标签页中，水流贴图完全不显示。
+
+**根本原因**：两层问题叠加导致：
+
+1. **`SlotWrapper.getContainerSlot()` 返回错误索引**：INVENTORY 标签页中，快捷栏槽位被 `SlotWrapper` 包装，`getContainerSlot()` 返回 `InventoryMenu` 的菜单索引（如 36），而 `handlerFlow` 的 key 是 `Inventory` 的逻辑索引（如 0）。通过 `SlotWrapperAccessor` Mixin 获取 `target.getContainerSlot()` 解决了此问题。
+
+2. **`SlotWrapper.index` 全部为 0（核心原因）**：`CreativeModeInventoryScreen.selectTab()` 在 INVENTORY 标签页中直接操作 `this.menu.slots` 列表添加 `SlotWrapper`，**没有调用 `AbstractContainerMenu.addSlot()`**。而 `Slot.index` 字段是在 `addSlot()` 中设置的（`slot.index = this.slots.size()`），直接添加到列表不会更新 `index`。结果所有 `SlotWrapper` 的 `index` 都是默认值 0。
+
+   当 `cells.put(menuSlot.index, ...)` 时，所有 cell 都用 key=0 互相覆盖，最终只剩 1 个 cell，映射到 `getSlot(0)`（第一个 SlotWrapper = crafting result 槽位，位于 -2000, -2000 屏幕外），导致贴图渲染在屏幕外不可见。
+
+```
+调试日志揭示的问题：
+  cells=1  （应该是 38 个，但全部覆盖为 1 个）
+  menuSlotIndex=0, slot.x=-2000, slot.y=-2000  （crafting 槽位在屏幕外）
+```
+
+**修复方案**：
+
+- 新增 `resolveContainerSlot` 方法，对 `SlotWrapper` 通过 `SlotWrapperAccessor.getTarget().getContainerSlot()` 获取真实的容器槽位索引，解决第一层问题
+- 将 `handlerToMenu` 从 `Map<Integer, Slot>` 改为 `Map<Integer, Integer>`（containerSlot → menu.slots 列表的实际索引），使用列表索引 `i` 代替 `slot.index`，解决第二层问题
+
+```java
+// 修复前：使用 slot.index（INVENTORY 标签页下全部为 0）
+Map<Integer, Slot> handlerToMenu = new HashMap<>();
+for (Slot s : screen.getMenu().slots) {
+    if (s.container == bucketContainer) {
+        handlerToMenu.put(resolveContainerSlot(s), s);
+    }
+}
+cells.put(menuSlot.index, new WaterCell(level, direction));
+
+// 修复后：使用 menu.slots 列表的实际索引
+Map<Integer, Integer> handlerToMenuIndex = new HashMap<>();
+for (int i = 0; i < screen.getMenu().slots.size(); i++) {
+    Slot s = screen.getMenu().slots.get(i);
+    if (s.container == bucketContainer) {
+        handlerToMenuIndex.put(resolveContainerSlot(s), i);
+    }
+}
+cells.put(menuIndex, new WaterCell(level, direction));
+```
+
+**状态**：✅ 已修复
 ```
 
 ---

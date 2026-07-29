@@ -138,7 +138,7 @@ public class LivingWaterBucketFunction implements LivingItemFunction {
         StringBuilder sb = new StringBuilder();
         for (var e : flows.entrySet()) {
             if (sb.length() > 0) sb.append(',');
-            sb.append(e.getKey()).append(':').append(e.getValue().level());
+            sb.append(e.getKey()).append(':').append(e.getValue().level()).append(':').append(e.getValue().fromSlot());
         }
         return sb.toString();
     }

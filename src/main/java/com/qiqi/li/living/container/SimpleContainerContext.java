@@ -273,7 +273,7 @@ public class SimpleContainerContext implements ContainerContext {
      */
     ContainerFluidData getOrCreateFluidData() {
         if (fluidData == null) {
-            fluidData = new ContainerFluidData();
+            fluidData = ContainerLivingItemHandler.getFluidData(containerKey);
         }
         return fluidData;
     }

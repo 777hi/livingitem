@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.qiqi.li.client.mixin.SlotWrapperAccessor;
 import com.qiqi.li.living.LivingItemManager;
 import com.qiqi.li.living.data.LivingWaterBucketData;
 import com.qiqi.li.living.data.WaterData;
@@ -20,6 +21,8 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.Container;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.joml.Quaternionf;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -30,11 +33,18 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(AbstractContainerScreen.class)
 public abstract class AbstractContainerScreenMixin {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger("LivingItem/WaterRender");
+
     @Shadow
     protected int leftPos;
 
     @Shadow
     protected int topPos;
+
+    private static final int DIR_DOWN = 0;
+    private static final int DIR_RIGHT = 1;
+    private static final int DIR_UP = 2;
+    private static final int DIR_LEFT = 3;
 
     @Inject(method = "render", at = @At("TAIL"))
     private void onRender(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick,
@@ -73,12 +83,12 @@ public abstract class AbstractContainerScreenMixin {
                 if (cell.level() == 0) {
                     guiGraphics.blit(x, y, 0, 16, 16, waterStill);
                 } else {
-                    float angle = (float) Math.toDegrees(Math.atan2(cell.dy(), cell.dx()));
+                    float angleDeg = directionToRotation(cell.direction());
 
                     PoseStack pose = guiGraphics.pose();
                     pose.pushPose();
                     pose.translate(x + 8, y + 8, 0);
-                    pose.mulPose(new Quaternionf().rotateZ((float) Math.toRadians(angle)));
+                    pose.mulPose(new Quaternionf().rotateZ((float) Math.toRadians(angleDeg)));
                     pose.translate(-8, -8, 0);
                     guiGraphics.blit(0, 0, 0, 16, 16, waterFlow);
                     pose.popPose();
@@ -88,6 +98,16 @@ public abstract class AbstractContainerScreenMixin {
 
         RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
         RenderSystem.disableBlend();
+    }
+
+    private static float directionToRotation(int direction) {
+        return switch (direction) {
+            case DIR_DOWN -> 0.0f;
+            case DIR_RIGHT -> -90.0f;
+            case DIR_UP -> 180.0f;
+            case DIR_LEFT -> 90.0f;
+            default -> 0.0f;
+        };
     }
 
     private List<WaterBucketRender> collectWaterBuckets(AbstractContainerScreen<?> screen) {
@@ -105,37 +125,48 @@ public abstract class AbstractContainerScreenMixin {
             String flowStr = water.flow();
             if (flowStr == null || flowStr.isEmpty()) continue;
 
-            Map<Integer, Integer> handlerFlow = parseFlowData(flowStr);
-            if (handlerFlow.isEmpty()) continue;
-
-            int hostSlot = water.hostSlot();
             int handlerWidth = water.width();
 
+            Map<Integer, int[]> handlerFlow = parseFlowData(flowStr);
+            if (handlerFlow.isEmpty()) continue;
+
             Container bucketContainer = slot.container;
-            Map<Integer, Slot> handlerToMenu = new HashMap<>();
-            for (Slot s : screen.getMenu().slots) {
+            Map<Integer, Integer> handlerToMenuIndex = new HashMap<>();
+            for (int i = 0; i < screen.getMenu().slots.size(); i++) {
+                Slot s = screen.getMenu().slots.get(i);
                 if (s.container == bucketContainer) {
-                    handlerToMenu.put(s.getContainerSlot(), s);
+                    int containerSlot = resolveContainerSlot(s);
+                    handlerToMenuIndex.put(containerSlot, i);
                 }
             }
 
-            int srcHandlerCol = hostSlot % handlerWidth;
-            int srcHandlerRow = hostSlot / handlerWidth;
-
             Map<Integer, WaterCell> cells = new HashMap<>();
-            for (Map.Entry<Integer, Integer> entry : handlerFlow.entrySet()) {
+            int skippedCount = 0;
+            for (var entry : handlerFlow.entrySet()) {
                 int handlerSlot = entry.getKey();
-                int level = entry.getValue();
+                int level = entry.getValue()[0];
+                int fromSlot = entry.getValue()[1];
 
-                Slot menuSlot = handlerToMenu.get(handlerSlot);
-                if (menuSlot == null) continue;
+                Integer menuIndex = handlerToMenuIndex.get(handlerSlot);
+                if (menuIndex == null) {
+                    skippedCount++;
+                    continue;
+                }
 
-                int handlerCol = handlerSlot % handlerWidth;
-                int handlerRow = handlerSlot / handlerWidth;
-                int dx = handlerCol - srcHandlerCol;
-                int dy = handlerRow - srcHandlerRow;
+                int direction;
+                if (level == 0 || fromSlot < 0) {
+                    direction = DIR_DOWN;
+                } else {
+                    int dx = (handlerSlot % handlerWidth) - (fromSlot % handlerWidth);
+                    int dy = (handlerSlot / handlerWidth) - (fromSlot / handlerWidth);
+                    direction = cardinalDirection(dx, dy);
+                }
 
-                cells.put(menuSlot.index, new WaterCell(level, dx, dy));
+                cells.put(menuIndex, new WaterCell(level, direction));
+            }
+
+            if (skippedCount > 0) {
+                LOGGER.debug("[WaterRender] Skipped {} flow entries", skippedCount);
             }
 
             if (!cells.isEmpty()) {
@@ -146,18 +177,62 @@ public abstract class AbstractContainerScreenMixin {
         return buckets;
     }
 
-    private static Map<Integer, Integer> parseFlowData(String data) {
-        Map<Integer, Integer> map = new HashMap<>();
+    private static int resolveContainerSlot(Slot s) {
+        if (s instanceof SlotWrapperAccessor accessor) {
+            return accessor.getTarget().getContainerSlot();
+        }
+        if (s.getClass().getSimpleName().contains("SlotWrapper")) {
+            Slot target = resolveSlotWrapperTarget(s);
+            if (target != null) {
+                return target.getContainerSlot();
+            }
+            LOGGER.warn("[WaterRender] SlotWrapper detected but could NOT resolve target! class={}", s.getClass().getName());
+        }
+        return s.getContainerSlot();
+    }
+
+    private static Slot resolveSlotWrapperTarget(Slot wrapper) {
+        try {
+            for (Class<?> clazz = wrapper.getClass(); clazz != null; clazz = clazz.getSuperclass()) {
+                for (java.lang.reflect.Field f : clazz.getDeclaredFields()) {
+                    if (Slot.class.isAssignableFrom(f.getType())) {
+                        f.setAccessible(true);
+                        Slot target = (Slot) f.get(wrapper);
+                        if (target != null && target != wrapper) {
+                            return target;
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.error("[WaterRender] Reflection fallback failed for SlotWrapper", e);
+        }
+        return null;
+    }
+
+    private static int cardinalDirection(int dx, int dy) {
+        if (Math.abs(dx) >= Math.abs(dy)) {
+            return dx >= 0 ? DIR_RIGHT : DIR_LEFT;
+        } else {
+            return dy >= 0 ? DIR_DOWN : DIR_UP;
+        }
+    }
+
+    private static Map<Integer, int[]> parseFlowData(String data) {
+        Map<Integer, int[]> map = new HashMap<>();
         if (data == null || data.isEmpty()) return map;
         for (String part : data.split(",")) {
             String[] kv = part.split(":");
             if (kv.length >= 2) {
-                map.put(Integer.parseInt(kv[0]), Integer.parseInt(kv[1]));
+                int slot = Integer.parseInt(kv[0]);
+                int level = Integer.parseInt(kv[1]);
+                int fromSlot = kv.length >= 3 ? Integer.parseInt(kv[2]) : -1;
+                map.put(slot, new int[]{level, fromSlot});
             }
         }
         return map;
     }
 
-    private record WaterCell(int level, int dx, int dy) {}
+    private record WaterCell(int level, int direction) {}
     private record WaterBucketRender(Map<Integer, WaterCell> cells, int handlerWidth) {}
 }

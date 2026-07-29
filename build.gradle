@@ -169,6 +169,7 @@ dependencies {
     implementation files("libs/sodium-neoforge-0.8.12+mc1.21.1.jar")
     implementation files("libs/cloth-config-15.0.140-neoforge.jar")
     implementation files("libs/jei-1.21.1-neoforge-19.38.0.366.jar")
+    implementation files("create-1.21.1-6.0.10.jar")
     
     // ==================== 单元测试依赖 (Unit Test Dependencies) ====================
     
