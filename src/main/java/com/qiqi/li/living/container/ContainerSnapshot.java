@@ -5,11 +5,13 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+
+import com.qiqi.li.living.domain.water.ContainerFluidData;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.item.ItemStack;
-import com.qiqi.li.living.LivingItemManager;
-import com.qiqi.li.living.core.SlotResolver;
-import com.qiqi.li.living.core.components.ItemFilterComponent;
+import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.transfer.SlotResolver;
+import com.qiqi.li.living.components.ItemFilterComponent;
 import com.qiqi.li.living.data.FilterData;
 import com.qiqi.li.living.data.LivingHopperData;
 import com.qiqi.li.living.function.LivingChestFunction;

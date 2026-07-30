@@ -4,9 +4,9 @@ import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
 
-import com.qiqi.li.living.LivingItemFunction;
-import com.qiqi.li.living.LivingItemManager;
-import com.qiqi.li.living.core.components.LivingChestTooltipComponent;
+import com.qiqi.li.living.api.LivingItemFunction;
+import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.domain.ender.LivingChestTooltipComponent;
 import com.qiqi.li.living.function.LivingChestFunction;
 import net.minecraft.core.component.DataComponentMap;
 import net.minecraft.core.component.DataComponentType;

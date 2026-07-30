@@ -11,7 +11,7 @@ import net.minecraft.world.item.Items;
 import net.minecraft.network.codec.StreamCodec;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import com.qiqi.li.LivingItem;
-import com.qiqi.li.living.LivingItemManager;
+import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.function.LivingChestFunction;
 import com.qiqi.li.living.function.LivingEnderChestFunction;
 

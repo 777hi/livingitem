@@ -1,6 +1,6 @@
 package com.qiqi.li.client.icon;
 
-import net.minecraft.resources.ResourceLocation;
+import com.qiqi.li.living.api.LivingItemManager;
 import net.minecraft.world.item.Item;
 
 import java.util.List;
@@ -65,7 +65,7 @@ public class LivingIconSpec {
      * 默认使用 LivingItemManager.isLivingItem()，可被覆盖。
      */
     public boolean isLivingItem(net.minecraft.world.item.ItemStack stack) {
-        return com.qiqi.li.living.LivingItemManager.isLivingItem(stack);
+        return LivingItemManager.isLivingItem(stack);
     }
 
     /**

@@ -1,6 +1,6 @@
 package com.qiqi.li.client.mixin;
 
-import com.qiqi.li.client.GuiInteractionHelper;
+import com.qiqi.li.client.input.GuiInteractionHelper;
 import net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen;
 import net.minecraft.client.gui.screens.inventory.EffectRenderingInventoryScreen;
 import net.minecraft.network.chat.Component;

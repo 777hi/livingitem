@@ -309,18 +309,13 @@ TickContextPool（对象池，ThreadLocal 线程安全）
     ├── release(tick)           — 归还到池中（池满则丢弃）
     └── reset(ctx)              — 每次复用前重新扫描容器真实状态
 
-SlotAccessor 存储后端抽象（独立于组件体系，供传输引擎使用）
+SlotAccessor 存储后端抽象（transfer/ 包，供传输引擎使用）
     ├── SlotAccessor          — 接口：simulateExtract/simulateInsert/extract/insert/rollback/isEmpty/isFull/markTransferred/sync + transfer() 模拟优先传输
     │     ├── simulateExtract(amount) — 模拟提取：检查源能提供多少物品，不修改状态，返回物品副本
     │     ├── simulateInsert(stack) — 模拟插入：检查目标能接受多少物品，不修改状态，返回可接受数量
     │     └── transfer(source, target, amount) — 模拟优先模式：simulate→confirm→execute→rollback安全兜底
     │           流程：simulateExtract → simulateInsert → extract → insert → rollback(仅安全兜底+WARN日志)
     ├── PlainSlotAccessor     — 普通槽位：直接读写 ContainerContext（支持 getSlotLimit 感知模组槽位上限）
-    ├── LivingChestAccessor   — 活箱子：通过 LivingChestFunction API 操作虚拟存储（insert/extract/isEmpty/isFull）
-    ├── LivingEnderChestAccessor — 活末影箱双模式访问器
-    │     ├── 路由模式（无绑定玩家）：insert=注册路由（不存物品），extract=查路由表→跳转源容器提取
-    │     ├── 直连模式（有绑定玩家）：直接读写 PlayerEnderChestContainer（构造时预加载引用，离线跳过）
-    │     └── registerRoute() — push端注册路由条目到 EnderChannelRegistry
     ├── NeighborSlotAccessor  — 邻居容器：包装 IItemHandler 槽位，跨容器传输统一接入 SlotAccessor 架构
     │     ├── simulateExtract → handler.extractItem(slot, amount, true)
     │     ├── simulateInsert → ItemHandlerHelper.insertItemStacked(handler, stack.copy(), true)
@@ -328,16 +323,18 @@ SlotAccessor 存储后端抽象（独立于组件体系，供传输引擎使用�
     ├── FilteredSlotAccessor  — 过滤装饰器（Decorator 模式）：为任意 Accessor 添加黑白名单过滤
     │     ├── extract()：提取后检查过滤，不通过则 rollback 退回
     │     └── insert()：插入前检查过滤，不通过则拒绝（返回0）
-    ├── EnderChannelRegistry  — 全局路由表（服务端单例）：频道→路由条目映射
-    │     ├── 轮询公平调度：nextIndex 指针轮流取，每个 push 端机会均等
-    │     ├── 反向索引：posIndex（方块位置→条目）+ keyIndex（容器key→条目）+ registrarKeyIndex（注册者容器key→条目），O(相关路由) 清理
-    │     └── 路由清理：validateRoutes（统一验证，一次遍历完成注册者/目标/源物品三项检查）/ onChunkUnload
-    ├── EnderChannelEntry     — 路由条目 record：itemType + sourceDim + sourcePos + sourceSlot + registrarSlot + containerKey + targetSlot
-    └── SlotAccessorFactory   — 注册式工厂：根据槽位物品类型创建对应访问器 + 自动包装 FilteredSlotAccessor
-          ├── Provider 接口 — 返回 null 表示不匹配，交给下一个 Provider
-          ├── registerProvider(provider) — 注册新 Provider（第三方模组可扩展）
-          ├── create() — 遍历 Provider 列表，活箱子→LivingChestAccessor，活末影箱→LivingEnderChestAccessor，其他活物品→null，普通→PlainSlotAccessor
-          └── createForNeighbor() — 邻居容器→NeighborSlotAccessor + FilteredSlotAccessor
+    ├── SlotAccessorFactory   — 注册式工厂：根据槽位物品类型创建对应访问器 + 自动包装 FilteredSlotAccessor
+    │     ├── Provider 接口 — 返回 null 表示不匹配，交给下一个 Provider
+    │     ├── registerProvider(provider) — 注册新 Provider（第三方模组可扩展）
+    │     ├── create() — 遍历 Provider 列表，活箱子→LivingChestAccessor，活末影箱→LivingEnderChestAccessor，其他活物品→null，普通→PlainSlotAccessor
+    │     └── createForNeighbor() — 邻居容器→NeighborSlotAccessor + FilteredSlotAccessor
+    │
+    └── 领域专属 Accessor（domain/ender/ 包）
+          ├── LivingChestAccessor   — 活箱子：通过 LivingChestFunction API 操作虚拟存储（insert/extract/isEmpty/isFull）
+          └── LivingEnderChestAccessor — 活末影箱双模式访问器
+                ├── 路由模式（无绑定玩家）：insert=注册路由（不存物品），extract=查路由表→跳转源容器提取
+                ├── 直连模式（有绑定玩家）：直接读写 PlayerEnderChestContainer（构造时预加载引用，离线跳过）
+                └── registerRoute() — push端注册路由条目到 EnderChannelRegistry
 
 交互体系（独立于组件，处理GUI中的活物品间交互）
     ├── InteractionEntry   — 交互规则（record：targetItem + triggerItem + button + actionId）
@@ -350,9 +347,10 @@ SlotAccessor 存储后端抽象（独立于组件体系，供传输引擎使用�
 ### 模型层
 
 ```
-core/model/
-    ├── Pos2D       — 不可变 2D 坐标（record），含方向常量（UP/DOWN/LEFT/RIGHT 等）
-    └── SlotMapping — 不可变槽位映射（record），含 12 种预设方向 + NBT 序列化
+model/
+    ├── Pos2D        — 不可变 2D 坐标（record），含方向常量（UP/DOWN/LEFT/RIGHT 等）
+    ├── ResolvedSlots — 解析后的槽位数据
+    └── SlotMapping  — 不可变槽位映射（record），含 12 种预设方向 + NBT 序列化
 ```
 
 ### 客户端图标系统
@@ -610,13 +608,13 @@ SlotAccessorFactory.create() / createForNeighbor()
 | 文件 | 职责 |
 |------|------|
 | `LivingEnderChestFunction` | 活末影箱功能入口：双模式切换、玩家绑定数据管理、Tooltip 显示 |
-| `LivingEnderChestAccessor` | 活末影箱访问器：路由模式（registerRoute + 查路由表跳转提取 + 贪心偏好）+ 直连模式（预加载玩家末影箱引用） |
-| `EnderChannelRegistry` | 全局路由表：频道→路由条目映射 + 反向索引 + 轮询调度 + 贪心提取 + 统一路由验证 |
-| `EnderChannelEntry` | 路由条目 record：物品类型 + 维度 + 位置 + 槽位 + 注册者槽位 + 容器key + 目标槽位 |
+| `LivingEnderChestAccessor` | 活末影箱访问器（domain/ender/）：路由模式（registerRoute + 查路由表跳转提取 + 贪心偏好）+ 直连模式（预加载玩家末影箱引用） |
+| `EnderChannelRegistry` | 全局路由表（domain/ender/）：频道→路由条目映射 + 反向索引 + 轮询调度 + 贪心提取 + 统一路由验证 |
+| `EnderChannelEntry` | 路由条目 record（domain/ender/）：物品类型 + 维度 + 位置 + 槽位 + 注册者槽位 + 容器key + 目标槽位 |
 | `EnderChannelComponent` | 活末影箱频道组件：路由清理（移走末影箱/源物品）+ Tooltip 构建 |
-| `FilteredSlotAccessor` | 过滤装饰器：为任意 SlotAccessor 添加黑白名单过滤（活漏斗侧统一处理，活末影箱无需拥有 ItemFilterComponent） |
-| `NeighborSlotAccessor` | 邻居容器访问器：包装 IItemHandler 槽位，跨容器传输统一接入 |
-| `SlotAccessorFactory` | 工厂：create() + createForNeighbor()，自动包装 FilteredSlotAccessor |
+| `FilteredSlotAccessor` | 过滤装饰器（transfer/）：为任意 SlotAccessor 添加黑白名单过滤（活漏斗侧统一处理，活末影箱无需拥有 ItemFilterComponent） |
+| `NeighborSlotAccessor` | 邻居容器访问器（transfer/）：包装 IItemHandler 槽位，跨容器传输统一接入 |
+| `SlotAccessorFactory` | 工厂（transfer/）：create() + createForNeighbor()，自动包装 FilteredSlotAccessor |
 
 > 📄 详细技术文档见 [living-ender-chest-tech.md](docs/tech/living-ender-chest-tech.md)
 
@@ -631,10 +629,9 @@ src/main/java/com/qiqi/li/
 ├── Config.java                              # NeoForge 配置
 │
 ├── living/
-│   ├── LivingItemManager.java               # 核心管理器：DataComponent 注册、数据读写、功能注册
-│   ├── LivingItemFunction.java              # 功能接口定义（tick + addToTooltip + canApply + getFunctionId）
-│   ├── BaseLivingFunction.java              # 旧架构功能基类（仅 LivingChestFunction 使用）
-│   ├── LivingFunctionData.java              # 旧架构功能数据载体（仅 LivingChestFunction 使用）
+│   ├── api/                                 # ⭐ 公开接口 + 管理器
+│   │   ├── LivingItemFunction.java          # 功能接口定义（tick + addToTooltip + canApply + getFunctionId）
+│   │   └── LivingItemManager.java           # 核心管理器：DataComponent 注册、数据读写、功能注册
 │   │
 │   ├── data/                                # ⭐ DataComponent 数据模型（不可变 Record）
 │   │   ├── LivingTntData.java               # 活TNT 聚合数据（含 ExplosionData）
@@ -653,10 +650,10 @@ src/main/java/com/qiqi/li/
 │   │   ├── DirectionSlotsData.java          # 方向-多槽位映射数据（slots, activeSlotIndex）
 │   │   ├── DirectionTransferData.java       # 方向-传输映射数据（sourceOffset, targetOffset）
 │   │   ├── EnderChannelData.java            # 末影频道数据（channel, boundPlayer, routes）
-│   │   ├── WaterWheelData.java             # 水车应力数据（cwStress, ccwStress, netStress）
+│   │   └── WaterWheelData.java             # 水车应力数据（cwStress, ccwStress, netStress）
 │   │
 │   ├── function/                            # 各活物品功能实现
-│   │   ├── LivingChestFunction.java         # 活箱子：堆叠倍增模型、UUID 管理、物品存取 API（旧架构）
+│   │   ├── LivingChestFunction.java         # 活箱子：堆叠倍增模型、UUID 管理、物品存取 API
 │   │   ├── LivingEnderChestFunction.java    # 活末影箱：双模式（路由/直连）、玩家绑定、频道管理、Tooltip
 │   │   ├── LivingFurnaceFunction.java       # 活熔炉：DataComponent 直接管理 + 无状态工具类调用
 │   │   ├── LivingHopperFunction.java        # 活漏斗：DataComponent 直接管理 + 无状态工具类调用
@@ -665,7 +662,7 @@ src/main/java/com/qiqi/li/
 │   │   ├── LivingWaterWheelFunction.java   # 活水车：力矩计算 + 应力叠加/抵消 + Create 应力输出
 │   │   └── LivingFlintAndSteelFunction.java # 活打火石：交互触发器，无 tick 逻辑
 │   │
-│   ├── container/                           # 容器上下文与处理器
+│   ├── container/                           # 纯容器抽象层（不含业务逻辑）
 │   │   ├── ContainerContext.java            # 组合接口（继承 LivingContainer + SlotInfoProvider + ContainerSync + ContainerIdentity）
 │   │   ├── LivingContainer.java             # 基础物品读写接口
 │   │   ├── SlotInfoProvider.java            # 槽位能力接口
@@ -677,78 +674,68 @@ src/main/java/com/qiqi/li/
 │   │   ├── ContainerChunkCache.java         # 区块级容器缓存（事件驱动维护 + IItemHandler 检测）
 │   │   ├── CrossContainerTransfer.java      # 跨容器传输工具类
 │   │   ├── ContainerSnapshot.java           # 容器快照（预扫描活漏斗连接图，供 ItemFilterComponent 使用）
-│   │   ├── ContainerFluidData.java          # 容器级流体数据（实例绑定，非静态缓存）
-│   │   ├── ContainerStressData.java         # 容器级应力累加器（遍历活水车计算力矩，CW/CCW 叠加抵消）
 │   │   └── StressDataProvider.java          # 接口：BlockEntity 的应力数据读写方法
 │   │
-│   ├── create/                              # ⭐ Create 集成（软依赖，仅 Create 安装时加载）
-│   │   ├── CreateCompat.java               # Create 安装检测（ModList.get().isLoaded）
-│   │   ├── ModCreate.java                  # Create 集成入口：常量定义 + 安全调用
-│   │   ├── CreateIntegration.java          # 应力输出逻辑：白名单过滤 + 方向兼容性检查 + RPM/SU 设置
-│   │   └── LivingItemStressOutput.java     # 接口：Mixin 注入的方法签名
+│   ├── domain/                              # ⭐ 领域模块（按活物品类型聚合，可扩展）
+│   │   ├── ender/                           # 末影箱+活箱子领域
+│   │   │   ├── EnderChannelRegistry.java    # 全局路由表（服务端单例）：频道→路由条目映射 + 反向索引 + 轮询调度
+│   │   │   ├── EnderChannelEntry.java       # 路由条目 record
+│   │   │   ├── EnderChannelClientCache.java # 客户端路由缓存
+│   │   │   ├── LivingChestAccessor.java     # 活箱子 SlotAccessor：通过 LivingChestFunction API 操作虚拟存储
+│   │   │   ├── LivingEnderChestAccessor.java # 活末影箱 SlotAccessor：路由模式 + 直连模式双模式访问器
+│   │   │   ├── LivingChestItemHandler.java  # 活箱子 IItemHandler 实现
+│   │   │   ├── LivingEnderChestItemHandler.java # 活末影箱 IItemHandler 实现
+│   │   │   └── LivingChestTooltipComponent.java # 活箱子 Tooltip 渲染组件
+│   │   └── water/                           # 活水领域（水桶+水车共用）
+│   │       ├── ContainerFluidData.java      # 容器级流体数据（实例绑定，BFS 水流蔓延计算）
+│   │       └── ContainerStressData.java     # 容器级应力累加器（遍历活水车计算力矩，CW/CCW 叠加抵消）
 │   │
-│   ├── chest/                               # 活箱子辅助工具
-│   │   ├── LivingChestStackHandler.java     # UUID 列表工具：标准化、创建、拆分、合并、数据校验
-│   │   ├── LivingChestStackFlags.java       # 线程局部标志：允许跨 UUID 堆叠（GUI 操作期间）
-│   │   └── ChestTransaction.java            # 事务包装器：确保多次操作间原子保存状态
+│   ├── compat/                              # ⭐ 第三方模组兼容层（可扩展）
+│   │   └── create/                          # Create 兼容（软依赖，仅 Create 安装时加载）
+│   │       ├── CreateCompat.java            # Create 安装检测（ModList.get().isLoaded）
+│   │       ├── ModCreate.java               # Create 集成入口：常量定义 + 安全调用
+│   │       ├── CreateIntegration.java       # 应力输出逻辑：白名单过滤 + 方向兼容性检查 + RPM/SU 设置
+│   │       ├── LivingItemStressOutput.java  # 接口：Mixin 注入的方法签名（isSafeForStressInjection + getTheoreticalSpeed）
+│   │       └── CreateMixinPlugin.java       # Mixin 条件加载插件（检测 Create 类是否存在）
 │   │
-│   └── core/
-│       ├── SlotResolver.java                # 槽位解析：基于动态列宽的相对偏移计算（支持非9列容器）
-│       │
-│       ├── accessor/                        # SlotAccessor 存储后端抽象（模拟优先模式）
-│       │   ├── SlotAccessor.java            # 接口：simulateExtract/simulateInsert/extract/insert/rollback + transfer()
-│       │   ├── PlainSlotAccessor.java       # 普通槽位：直接读写 ContainerContext
-│       │   ├── LivingChestAccessor.java     # 活箱子：通过 LivingChestFunction API 操作虚拟存储
-│       │   ├── LivingEnderChestAccessor.java # 活末影箱双模式访问器
-│       │   ├── NeighborSlotAccessor.java    # 邻居容器：模拟优先 + rollback优先放回原槽位
-│       │   ├── FilteredSlotAccessor.java    # 过滤装饰器（Decorator）：黑白名单过滤
-│       │   ├── EnderChannelRegistry.java    # 全局路由表（服务端单例）
-│       │   ├── EnderChannelEntry.java       # 路由条目 record
-│       │   └── SlotAccessorFactory.java     # 注册式工厂：Provider 接口 + registerProvider() + 自动包装过滤
-│       │
-│       ├── model/
-│       │   ├── Pos2D.java                   # 不可变 2D 坐标，方向常量
-│       │   └── SlotMapping.java             # 不可变槽位映射，12 种预设
-│       │
-│       ├── components/                      # 无状态工具类 + 旧架构组件
-│       │   ├── ILivingComponent.java        # 旧架构组件接口（仅 LivingChestFunction 使用）
-│       │   ├── InternalStorageComponent.java # 活箱子核心：UUID 管理、LRU 缓存、磁盘 I/O（旧架构）
-│       │   ├── DirectionModeComponent.java  # 旧架构方向配置组件（SLOTS/TRANSFER 双模式 + ComponentState）
-│       │   ├── ItemTransferComponent.java   # 物品传输逻辑（含跨容器传输触发 + SlotAccessor 调度）
-│       │   ├── ItemFilterComponent.java     # 黑白名单过滤（链式传递 + FilterData 支持）
-│       │   ├── EnderChannelComponent.java   # 活末影箱频道组件（路由清理 + Tooltip）
-│       │   ├── ProgressComponent.java       # 进度工具类（tick/pauseTick/isComplete/reset，支持 ProgressData + ComponentState）
-│       │   ├── FuelConsumeComponent.java    # 燃料工具类（消耗、可用性检查）
-│       │   ├── ItemTransformComponent.java  # 转化工具类（配方匹配、物品转化、配方缓存）
-│       │   ├── ExplosionComponent.java      # 爆炸工具类（引信倒计时、双模式爆炸、流体防爆）
-│       │   └── WaterSpreadComponent.java    # 水流扩散工具类（旧架构，待迁移）
-│       │
-│       ├── orchestrator/                    # 旧架构编排器（仅 LivingChestFunction 使用）
-│       │   ├── LivingOrchestrator.java      # 编排器接口 + 通用辅助方法
-│       │   ├── SimpleOrchestrator.java      # 简单编排器
-│       │   ├── ProgressOrchestrator.java    # 进度编排器
-│       │   ├── FuelProgressOrchestrator.java # 燃料+进度编排器
-│       │   └── Orchestrators.java           # 编排器工厂
-│       │
-│       ├── interaction/
-│       │   ├── InteractionEntry.java        # 交互规则 record（targetItem + triggerItem + button + actionId）
-│       │   ├── InteractionRegistry.java     # 交互注册表（规则查询 + 处理器注册）
-│       │   ├── InteractionHandler.java      # 处理器接口（服务端执行交互逻辑）
-│       │   ├── IgniteHandler.java           # 点燃槽位TNT（活打火石→活TNT）
-│       │   └── IgniteCarriedHandler.java    # 点燃光标TNT（活TNT→活打火石）
-│       │
-│       └── config/
-│           ├── ContainerCompatibilityConfig.java  # 容器兼容性配置（含 columns + findRuleBySize + findOrGenerateRule 自动推断标准布局）
-│           └── TransferStrategy.java               # 传输策略
-│
+│   ├── components/                          # 无状态工具组件
+│   │   ├── ExplosionComponent.java          # 爆炸工具类（引信倒计时、双模式爆炸、流体防爆）
+│   │   └── ItemFilterComponent.java         # 黑白名单过滤（链式传递 + FilterData 支持）
+│   │
+│   ├── transfer/                            # 传输基础设施
+│   │   ├── SlotAccessor.java                # 接口：simulateExtract/simulateInsert/extract/insert/rollback + transfer()
+│   │   ├── PlainSlotAccessor.java           # 普通槽位：直接读写 ContainerContext
+│   │   ├── FilteredSlotAccessor.java        # 过滤装饰器（Decorator）：黑白名单过滤
+│   │   ├── NeighborSlotAccessor.java        # 邻居容器：模拟优先 + rollback优先放回原槽位
+│   │   ├── SlotAccessorFactory.java         # 注册式工厂：Provider 接口 + registerProvider() + 自动包装过滤
+│   │   ├── SlotResolver.java                # 槽位解析：基于动态列宽的相对偏移计算（支持非9列容器）
+│   │   ├── ContainerCompatibilityConfig.java # 容器兼容性配置（含 columns + findRuleBySize + findOrGenerateRule 自动推断标准布局）
+│   │   └── TransferStrategy.java            # 传输策略
+│   │
+│   ├── interaction/                         # GUI交互
+│   │   ├── InteractionEntry.java            # 交互规则 record（targetItem + triggerItem + button + actionId）
+│   │   ├── InteractionRegistry.java         # 交互注册表（规则查询 + 处理器注册）
+│   │   ├── InteractionHandler.java          # 处理器接口（服务端执行交互逻辑）
+│   │   ├── IgniteHandler.java              # 点燃槽位TNT（活打火石→活TNT）
+│   │   └── IgniteCarriedHandler.java        # 点燃光标TNT（活TNT→活打火石）
+│   │
+│   ├── model/                               # 配置/方向模型
+│   │   ├── Pos2D.java                       # 不可变 2D 坐标，方向常量
+│   │   ├── ResolvedSlots.java              # 解析后的槽位数据
+│   │   └── SlotMapping.java                 # 不可变槽位映射，12 种预设
+│   │
+│   ├── mixin/                               # 服务端 Mixin
+│   │   ├── create/                          # Create Mixin（仅 Create 安装时加载，CreateMixinPlugin 控制）
+│   │   │   └── KineticBlockEntityMixin.java # Mixin 到 KineticBlockEntity：应力输出 + 自过期机制 + 白名单过滤
+│   │   ├── AbstractContainerScreenMixin.java # 容器界面 Mixin（注入活按钮 + 交互拦截）
+│   │   ├── BlockEntityMixin.java            # Mixin 到 BlockEntity，添加 stressData 字段（StressDataProvider）
+│   │   ├── ItemStackMixin.java              # 物品堆叠 Mixin（活箱子堆叠操作拦截）
+│   │   └── ServerPlaceRecipeMixin.java      # 配方书 Mixin（活箱子物品注入合成栏）
+│   │
 │   └── perf/                                # 性能监控指标
 │       └── PerfMetrics.java                 # 性能监控：Tick 耗时/活物品数量/功能调用/对象池命中率/传输成功率
 │
 ├── client/
-│   ├── GuiInteractionHelper.java            # ⭐ 客户端GUI交互统一工具（查询规则+解析槽位+序列化光标+发包）
-│   ├── LivingItemInputHandler.java          # 客户端输入处理：WASD 方向配置 + InputSession
-│   ├── LivingItemTooltip.java               # Tooltip 渲染
-│   ├── LivingHopperDecorator.java           # 活漏斗箭头叠加层（IItemDecorator，旋转绘制输入/输出箭头）
 │   ├── gui/
 │   │   └── LivingButton.java                # 活按钮：点击切换 IS_LIVING 标记
 │   ├── icon/                                # ⭐ 活物品图标系统（组件化，声明式配置）
@@ -756,25 +743,38 @@ src/main/java/com/qiqi/li/
 │   │   ├── LivingIconRegistry.java          # 图标注册中心（统一管理所有活物品图标配置和模型注入）
 │   │   ├── GenericLivingModelWrapper.java   # 通用模型包装器（注入自定义 ItemOverrides）
 │   │   ├── GenericContextAwareModel.java    # 通用上下文切换模型（GUI 显示自定义图标，手持显示原版图标）
-│   │   └── GenericLivingItemOverrides.java  # 通用覆盖解析器（根据 Variant.predicate 匹配变体模型）
-│   └── mixin/
-│       ├── BlockEntityMixin.java            # Mixin 到 BlockEntity，添加 stressData 字段（StressDataProvider）
-│       ├── AbstractContainerScreenMixin.java # 容器界面 Mixin（注入活按钮 + 交互拦截）
-│       ├── InventoryScreenMixin.java         # 生存模式背包 Mixin（交互拦截）
-│       ├── CreativeModeInventoryScreenMixin.java # 创造模式背包 Mixin（交互拦截 + SlotWrapper兼容）
-│       ├── SlotWrapperAccessor.java          # SlotWrapper 访问器接口（获取 target 字段）
-│       ├── SpriteIconButtonMixin.java        # 按钮渲染 Mixin
-│       └── ItemRendererWaterWheelMixin.java  # 活水车物品栏 3D 旋转渲染 + 漫反射光照修正
-│
-├── living/mixin/create/                    # ⭐ Create Mixin（仅 Create 安装时加载，CreateMixinPlugin 控制）
-│   ├── KineticBlockEntityMixin.java        # Mixin 到 KineticBlockEntity：应力输出 + 自过期机制 + 白名单过滤
-│   └── CreateMixinPlugin.java              # Mixin 条件加载插件（检测 Create 类是否存在）
+│   │   ├── GenericLivingItemOverrides.java  # 通用覆盖解析器（根据 Variant.predicate 匹配变体模型）
+│   │   ├── RotatingWaterWheelModel.java     # 活水车物品栏 3D 旋转渲染模型
+│   │   └── WaterWheelRenderState.java       # 活水车渲染状态数据
+│   ├── input/                               # 客户端输入处理
+│   │   ├── GuiInteractionHelper.java        # 客户端GUI交互统一工具（查询规则+解析槽位+序列化光标+发包）
+│   │   └── LivingItemInputHandler.java      # 客户端输入处理：WASD 方向配置 + InputSession
+│   ├── render/                              # 客户端渲染
+│   │   ├── LivingChestTooltipRenderer.java  # 活箱子 Tooltip 渲染器
+│   │   ├── LivingHopperDecorator.java       # 活漏斗箭头叠加层（IItemDecorator，旋转绘制输入/输出箭头）
+│   │   └── LivingItemTooltip.java           # Tooltip 渲染
+│   ├── mixin/                               # 客户端 Mixin
+│   │   ├── AbstractContainerScreenMixin.java # 容器界面 Mixin（注入活按钮 + 交互拦截）
+│   │   ├── InventoryScreenMixin.java         # 生存模式背包 Mixin（交互拦截）
+│   │   ├── CreativeModeInventoryScreenMixin.java # 创造模式背包 Mixin（交互拦截 + SlotWrapper兼容）
+│   │   ├── ItemRendererWaterWheelMixin.java  # 活水车物品栏 3D 旋转渲染 + 漫反射光照修正
+│   │   ├── RecipeBookComponentMixin.java     # 配方书 Mixin
+│   │   ├── SlotWrapperAccessor.java          # SlotWrapper 访问器接口（获取 target 字段）
+│   │   └── SpriteIconButtonMixin.java        # 按钮渲染 Mixin
+│   ├── mixinsupport/
+│   │   └── MutableSpriteSpriteIconButton.java # 按钮渲染辅助
+│   └── util/
+│       ├── LivingChestTabState.java          # 活箱子标签页状态
+│       └── PinyinHelper.java                # 拼音工具类
 │
 └── network/
-    ├── GuiInteractionPacket.java            # ⭐ 通用GUI交互包（客户端→服务端：slotIndex + containerSlot + actionId + carriedTag）
+    ├── GuiInteractionPacket.java            # 通用GUI交互包（客户端→服务端：slotIndex + containerSlot + actionId + carriedTag）
     ├── CarriedUpdatePacket.java             # 光标更新包（服务端→客户端：绕过创造模式光标同步限制）
     ├── LivingTagPacket.java                 # 活物品标签切换包（客户端→服务端）
     ├── HopperDirectionPacket.java           # 漏斗方向配置包（客户端→服务端，v2 格式）
+    ├── EnderChannelSyncPacket.java          # 末影箱频道同步包
+    ├── LivingChestAccessPacket.java         # 活箱子访问包
+    ├── SlotDirectionPacket.java             # 槽位方向配置包
     └── ServerPacketHandler.java             # 服务端包处理：更新光标物品 NBT + 同步
 ```
 
@@ -1165,6 +1165,23 @@ src/main/java/com/qiqi/li/
 ### 当前版本: v0.8-alpha
 
 **最近更新** (2026-07-30):
+- ✅ **重构：包结构按领域聚合**（消灭 `core/` 万能垃圾桶，消除 `capability/` 专属小包，`create/` 提升为 `compat/create/`）
+  - `api/` — `LivingItemFunction` + `LivingItemManager` 从 `living/` 根提升
+  - `domain/ender/` — 末影箱+活箱子领域聚合（`EnderChannelRegistry`、`EnderChannelEntry`、`LivingChestAccessor`、`LivingEnderChestAccessor` 等 8 个文件）
+  - `domain/water/` — 活水领域聚合（`ContainerFluidData`、`ContainerStressData` 从 `container/` 移出）
+  - `compat/create/` — Create 兼容层从 `create/` 提升（含 `CreateMixinPlugin`，已更新 mixin JSON 路径）
+  - `transfer/` — 传输基础设施（`SlotAccessor` 体系 + `SlotResolver` + `ContainerCompatibilityConfig`，从 `core/accessor/` + `core/config/` 合并）
+  - `interaction/` — GUI交互从 `core/interaction/` 提升
+  - `model/` — 配置模型从 `core/model/` 提升
+  - `components/` — 无状态工具组件从 `core/components/` 提升（`LivingChestTooltipComponent` 归入 `domain/ender/`）
+  - `container/` — 纯容器抽象（移除业务数据 `ContainerFluidData`/`ContainerStressData`）
+  - `client/render/` — 渲染类从 `client/` 根 + `client/tooltip/` 合并
+  - `client/input/` — 输入处理从 `client/` 根移出
+- ✅ **优化：活水桶和活水车代码审查**
+  - 修复 `ContainerLivingItemHandler` 中 `stressData.calculate()` 缺少第三个参数的编译错误
+  - 移除 `LivingWaterBucketFunction.tick()` 中冗余的 `syncSlotToClients` 调用（`postTickSync` 统一同步）
+  - `LivingWaterBucketFunction.postTickSync()` 添加 flow 变化检测，避免无变化时冗余网络同步
+  - `ContainerLivingItemHandler` 合并两次 `grouped.entrySet()` 遍历为一次
 - ✅ **新增：活水车系统**（`LivingWaterWheelFunction` + `LivingWaterWheelData` + `WaterWheelData` + `ContainerStressData`）
 - ✅ **新增：力矩计算模型**（二维叉积：位置向量 × 水流方向向量，CW/CCW 方向判定，水流强度权重）
 - ✅ **新增：Create 软依赖集成**（`CreateCompat` 检测 + `CreateMixinPlugin` 条件加载 + `ModCreate` 安全调用 + `try-catch` 双重防护）
@@ -1444,4 +1461,4 @@ public class LivingTntFunction implements LivingItemFunction {
 ---
 
 *最后更新: 2026-07-30*
-*状态: Alpha 测试阶段 - DataComponent 直接管理架构迁移已完成（活TNT/活水桶/活熔炉/活漏斗/活末影箱/活水车），活箱子待迁移，跨容器传输已实现，IItemHandler 直接驱动容器读写，兼容抽屉、精妙背包等模组容器，GUI交互系统已就绪，客户端图标系统已组件化，SlotAccessor 模拟优先传输架构已实现，活末影箱双模式（路由/直连）+ Deque 轮询调度 + 反向索引路由清理 + FilteredSlotAccessor 统一过滤，容器位置缓存（拉取模型 + 自清洁）实现零延迟容器发现，双重扫描合并 + Snapshot 懒加载 + 直连模式 InvWrapper 缓存/轮询提取等性能优化，不可变数据模型 + 功能内聚 + 无状态工具类新架构，TickContext 对象池优化，SlotAccessor 注册式工厂，LivingItemFunction 接口职责拆分，活箱子精确字节计算，性能监控指标系统，活水车 Create 软依赖集成（白名单+方向兼容+自过期+3D旋转渲染）*
+*状态: Alpha 测试阶段 - DataComponent 直接管理架构迁移已完成（活TNT/活水桶/活熔炉/活漏斗/活末影箱/活水车），活箱子待迁移，跨容器传输已实现，IItemHandler 直接驱动容器读写，兼容抽屉、精妙背包等模组容器，GUI交互系统已就绪，客户端图标系统已组件化，SlotAccessor 模拟优先传输架构已实现，活末影箱双模式（路由/直连）+ Deque 轮询调度 + 反向索引路由清理 + FilteredSlotAccessor 统一过滤，容器位置缓存（拉取模型 + 自清洁）实现零延迟容器发现，双重扫描合并 + Snapshot 懒加载 + 直连模式 InvWrapper 缓存/轮询提取等性能优化，不可变数据模型 + 功能内聚 + 无状态工具类新架构，TickContext 对象池优化，SlotAccessor 注册式工厂，LivingItemFunction 接口职责拆分，活箱子精确字节计算，性能监控指标系统，活水车 Create 软依赖集成（白名单+方向兼容+自过期+3D旋转渲染），包结构按领域聚合重构（domain/ + compat/ + transfer/ + api/）*

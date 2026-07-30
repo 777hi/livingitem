@@ -4,7 +4,7 @@ import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
-import com.qiqi.li.living.core.model.Pos2D;
+import com.qiqi.li.living.model.Pos2D;
 
 public record DirectionTransferData(Pos2D sourceOffset, Pos2D targetOffset) {
 

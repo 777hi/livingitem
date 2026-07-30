@@ -3,7 +3,7 @@ package com.qiqi.li.living.mixin.create;
 import com.simibubi.create.content.kinetics.base.GeneratingKineticBlockEntity;
 import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
 
-import com.qiqi.li.living.create.LivingItemStressOutput;
+import com.qiqi.li.living.compat.create.LivingItemStressOutput;
 
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -22,6 +22,7 @@ public abstract class KineticBlockEntityMixin implements LivingItemStressOutput 
     private float livingItem$generatedRPM = 0;
     private float livingItem$stressCapacity = 0;
     private boolean livingItem$refreshedThisTick = false;
+    private boolean livingItem$pendingReattach = false;
 
     @Inject(method = "getGeneratedSpeed", at = @At("HEAD"), cancellable = true, remap = false)
     private void livingItem$getGeneratedSpeed(CallbackInfoReturnable<Float> cir) {
@@ -37,13 +38,25 @@ public abstract class KineticBlockEntityMixin implements LivingItemStressOutput 
 
     @Inject(method = "tick", at = @At("HEAD"), remap = false)
     private void livingItem$checkExpiry(CallbackInfo ci) {
+        KineticBlockEntity self = (KineticBlockEntity) (Object) this;
+        if (self.getLevel() == null || self.getLevel().isClientSide) return;
+
+        if (livingItem$pendingReattach) {
+            livingItem$pendingReattach = false;
+            try {
+                self.attachKinetics();
+                self.setChanged();
+                self.sendData();
+            } catch (Exception e) {
+                LOGGER.warn("[LivingItem] Error during delayed reattach on {} at {}",
+                    self.getClass().getSimpleName(), self.getBlockPos(), e);
+            }
+        }
+
         if (livingItem$generatedRPM == 0) {
             livingItem$refreshedThisTick = false;
             return;
         }
-
-        KineticBlockEntity self = (KineticBlockEntity) (Object) this;
-        if (self.getLevel() == null || self.getLevel().isClientSide) return;
 
         if (!livingItem$refreshedThisTick) {
             livingItem$generatedRPM = 0;
@@ -56,7 +69,7 @@ public abstract class KineticBlockEntityMixin implements LivingItemStressOutput 
                     self.detachKinetics();
                     self.setSpeed(0);
                     self.setNetwork(null);
-                    self.attachKinetics();
+                    livingItem$pendingReattach = true;
                     self.setChanged();
                     self.sendData();
                 }
@@ -94,6 +107,10 @@ public abstract class KineticBlockEntityMixin implements LivingItemStressOutput 
         float prev = livingItem$generatedRPM;
         livingItem$generatedRPM = rpm;
 
+        if (rpm != 0) {
+            livingItem$pendingReattach = false;
+        }
+
         if (self.getLevel() == null || self.getLevel().isClientSide) return;
         if (Math.abs(prev - rpm) < 0.01f) return;
 
@@ -102,7 +119,7 @@ public abstract class KineticBlockEntityMixin implements LivingItemStressOutput 
                 self.detachKinetics();
                 self.setSpeed(0);
                 self.setNetwork(null);
-                self.attachKinetics();
+                livingItem$pendingReattach = true;
             } else if (prev == 0 && rpm != 0) {
                 self.setSpeed(rpm);
                 self.setNetwork(self.getBlockPos().asLong());

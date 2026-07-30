@@ -1,8 +1,9 @@
 package com.qiqi.li;
 
 import com.qiqi.li.client.icon.LivingIconRegistry;
-import com.qiqi.li.client.tooltip.LivingChestTooltipRenderer;
-import com.qiqi.li.living.core.components.LivingChestTooltipComponent;
+import com.qiqi.li.client.render.LivingChestTooltipRenderer;
+import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.domain.ender.LivingChestTooltipComponent;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.item.ItemProperties;
 import net.minecraft.resources.ResourceLocation;
@@ -48,11 +49,11 @@ public class LivingItemClient {
         event.enqueueWork(() -> {
             ResourceLocation isLiving = ResourceLocation.fromNamespaceAndPath(LivingItem.MOD_ID, "is_living");
             ItemProperties.register(Items.HOPPER, isLiving, (stack, level, entity, seed) ->
-                com.qiqi.li.living.LivingItemManager.isLivingItem(stack) ? 1.0F : 0.0F);
+                LivingItemManager.isLivingItem(stack) ? 1.0F : 0.0F);
             ItemProperties.register(Items.FURNACE, isLiving, (stack, level, entity, seed) ->
-                com.qiqi.li.living.LivingItemManager.isLivingItem(stack) ? 1.0F : 0.0F);
+                LivingItemManager.isLivingItem(stack) ? 1.0F : 0.0F);
             ItemProperties.register(Items.TNT, isLiving, (stack, level, entity, seed) ->
-                com.qiqi.li.living.LivingItemManager.isLivingItem(stack) ? 1.0F : 0.0F);
+                LivingItemManager.isLivingItem(stack) ? 1.0F : 0.0F);
         });
     }
 

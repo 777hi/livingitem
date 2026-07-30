@@ -1,9 +1,10 @@
 package com.qiqi.li.living.container;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
+
+import com.qiqi.li.living.domain.water.ContainerFluidData;
+import com.qiqi.li.living.transfer.ContainerCompatibilityConfig;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket;
 import net.minecraft.server.level.ServerPlayer;
@@ -118,7 +119,7 @@ public class SimpleContainerContext implements ContainerContext {
             return 9;
         }
 
-        java.util.Optional<com.qiqi.li.living.core.config.ContainerCompatibilityConfig.ContainerRule> rule =
+        java.util.Optional<ContainerCompatibilityConfig.ContainerRule> rule =
             findContainerRule();
         if (rule.isPresent() && rule.get().columns() > 0) {
             return rule.get().columns();
@@ -139,24 +140,24 @@ public class SimpleContainerContext implements ContainerContext {
         return 9;
     }
 
-    private java.util.Optional<com.qiqi.li.living.core.config.ContainerCompatibilityConfig.ContainerRule> findContainerRule() {
+    private java.util.Optional<ContainerCompatibilityConfig.ContainerRule> findContainerRule() {
         if (associatedBlockEntities.isEmpty()) return java.util.Optional.empty();
 
         for (BlockEntity be : associatedBlockEntities) {
             net.minecraft.resources.ResourceLocation id =
                 net.minecraft.core.registries.BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(be.getType());
             if (id != null) {
-                var rule = com.qiqi.li.living.core.config.ContainerCompatibilityConfig.findRule(id);
+                var rule = ContainerCompatibilityConfig.findRule(id);
                 if (rule.isPresent() && rule.get().containerSize() == getSize()) return rule;
 
-                rule = com.qiqi.li.living.core.config.ContainerCompatibilityConfig.findRuleByNamespaceAndKeyword(
+                rule = ContainerCompatibilityConfig.findRuleByNamespaceAndKeyword(
                     id.getNamespace(), id.getPath());
                 if (rule.isPresent() && rule.get().containerSize() == getSize()) return rule;
             }
         }
 
         return java.util.Optional.of(
-            com.qiqi.li.living.core.config.ContainerCompatibilityConfig.findOrGenerateRule(getSize()));
+            ContainerCompatibilityConfig.findOrGenerateRule(getSize()));
     }
 
     @Override

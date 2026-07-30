@@ -7,6 +7,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+
+import com.qiqi.li.living.domain.water.ContainerFluidData;
+import com.qiqi.li.living.domain.water.ContainerStressData;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.entity.player.Inventory;
@@ -23,13 +26,12 @@ import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.items.wrapper.InvWrapper;
 import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
-import com.qiqi.li.living.LivingItemFunction;
-import com.qiqi.li.living.LivingItemManager;
-import com.qiqi.li.living.core.accessor.EnderChannelRegistry;
+import com.qiqi.li.living.api.LivingItemFunction;
+import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.domain.ender.EnderChannelRegistry;
 import com.qiqi.li.living.function.LivingWaterBucketFunction;
 import com.qiqi.li.living.function.LivingWaterWheelFunction;
-import com.qiqi.li.living.create.ModCreate;
-import com.qiqi.li.living.container.StressDataProvider;
+import com.qiqi.li.living.compat.create.ModCreate;
 import com.qiqi.li.living.perf.PerfMetrics;
 
 /**

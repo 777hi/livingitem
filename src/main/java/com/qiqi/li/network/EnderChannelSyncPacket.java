@@ -1,7 +1,7 @@
 package com.qiqi.li.network;
 
-import com.qiqi.li.living.core.accessor.EnderChannelClientCache;
-import com.qiqi.li.living.core.accessor.EnderChannelEntry;
+import com.qiqi.li.living.domain.ender.EnderChannelClientCache;
+import com.qiqi.li.living.domain.ender.EnderChannelEntry;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
@@ -9,7 +9,6 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
-import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 

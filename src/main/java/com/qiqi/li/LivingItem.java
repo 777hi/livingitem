@@ -1,13 +1,14 @@
 package com.qiqi.li;
 
-import net.minecraft.core.BlockPos;
+import com.qiqi.li.living.components.ExplosionComponent;
+import com.qiqi.li.living.domain.ender.EnderChannelRegistry;
+import com.qiqi.li.living.interaction.InteractionEntry;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
 
 import net.minecraft.world.item.Items;
-import net.minecraft.world.level.Level;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.Mod;
@@ -41,23 +42,19 @@ import com.qiqi.li.network.GuiInteractionPacket;
 import com.qiqi.li.network.CarriedUpdatePacket;
 import com.qiqi.li.network.EnderChannelSyncPacket;
 import com.qiqi.li.network.LivingChestAccessPacket;
-import com.qiqi.li.living.LivingItemManager;
-import com.qiqi.li.living.create.ModCreate;
+import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.compat.create.ModCreate;
 import com.qiqi.li.living.function.LivingFurnaceFunction;
 import com.qiqi.li.living.function.LivingHopperFunction;
 import com.qiqi.li.living.function.LivingTntFunction;
 import com.qiqi.li.living.function.LivingFlintAndSteelFunction;
-import com.qiqi.li.living.core.interaction.InteractionRegistry;
-import com.qiqi.li.living.core.interaction.IgniteHandler;
-import com.qiqi.li.living.core.interaction.IgniteCarriedHandler;
-import net.neoforged.neoforge.registries.DeferredBlock;
-import net.neoforged.neoforge.registries.DeferredHolder;
-import net.neoforged.neoforge.registries.DeferredItem;
+import com.qiqi.li.living.interaction.InteractionRegistry;
+import com.qiqi.li.living.interaction.IgniteHandler;
+import com.qiqi.li.living.interaction.IgniteCarriedHandler;
 import net.neoforged.neoforge.registries.DeferredRegister;
-import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
-import com.qiqi.li.living.capability.LivingChestItemHandler;
-import com.qiqi.li.living.capability.LivingEnderChestItemHandler;
+import com.qiqi.li.living.domain.ender.LivingChestItemHandler;
+import com.qiqi.li.living.domain.ender.LivingEnderChestItemHandler;
 
 /**
  * 活物品 Mod 主类。
@@ -130,12 +127,12 @@ public class LivingItem {
         LOGGER.info("Registered ignite_carried interaction handler");
 
         // 注册交互规则：活打火石右键活TNT点燃
-        InteractionRegistry.register(new com.qiqi.li.living.core.interaction.InteractionEntry(
+        InteractionRegistry.register(new InteractionEntry(
             Items.TNT, Items.FLINT_AND_STEEL, 1, "ignite"));
         LOGGER.info("Registered ignite interaction rule");
 
         // 注册交互规则：活TNT右键活打火石点燃（反向）
-        InteractionRegistry.register(new com.qiqi.li.living.core.interaction.InteractionEntry(
+        InteractionRegistry.register(new InteractionEntry(
             Items.FLINT_AND_STEEL, Items.TNT, 1, "ignite_carried"));
         LOGGER.info("Registered ignite_carried interaction rule");
     }
@@ -171,7 +168,7 @@ public class LivingItem {
             processLevelContainers(level);
         }
 
-        com.qiqi.li.living.core.components.ExplosionComponent.tickAll();
+        ExplosionComponent.tickAll();
     }
 
     private void processLevelContainers(ServerLevel level) {
@@ -227,7 +224,7 @@ public class LivingItem {
 
     @SubscribeEvent
     public void onServerStarting(ServerStartingEvent event) {
-        com.qiqi.li.living.core.accessor.EnderChannelRegistry.getInstance()
+        EnderChannelRegistry.getInstance()
             .setServer(event.getServer());
         LOGGER.info("HELLO from server starting");
     }
@@ -257,7 +254,7 @@ public class LivingItem {
     @SubscribeEvent
     public void onChunkUnload(ChunkEvent.Unload event) {
         if (event.getLevel() instanceof ServerLevel serverLevel) {
-            com.qiqi.li.living.core.accessor.EnderChannelRegistry.getInstance()
+            EnderChannelRegistry.getInstance()
                 .onChunkUnload(serverLevel, event.getChunk().getPos());
         }
     }

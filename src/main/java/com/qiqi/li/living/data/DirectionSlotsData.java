@@ -4,11 +4,10 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import com.mojang.serialization.Codec;
-import com.mojang.serialization.DataResult;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
-import com.qiqi.li.living.core.model.Pos2D;
+import com.qiqi.li.living.model.Pos2D;
 
 public record DirectionSlotsData(Map<String, Pos2D> directions, int activeSlotIndex) {
 

@@ -12,12 +12,12 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
-import com.qiqi.li.living.LivingItemFunction;
-import com.qiqi.li.living.LivingItemManager;
+import com.qiqi.li.living.api.LivingItemFunction;
+import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
-import com.qiqi.li.living.core.accessor.EnderChannelClientCache;
-import com.qiqi.li.living.core.accessor.EnderChannelRegistry;
+import com.qiqi.li.living.domain.ender.EnderChannelClientCache;
+import com.qiqi.li.living.domain.ender.EnderChannelRegistry;
 import com.qiqi.li.living.data.EnderChannelData;
 import com.qiqi.li.living.data.LivingEnderChestData;
 

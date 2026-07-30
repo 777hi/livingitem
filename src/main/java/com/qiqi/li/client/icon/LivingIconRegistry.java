@@ -1,6 +1,8 @@
 package com.qiqi.li.client.icon;
 
 import com.qiqi.li.LivingItem;
+import com.qiqi.li.client.render.LivingHopperDecorator;
+import com.qiqi.li.living.compat.create.CreateCompat;
 import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.client.resources.model.ModelResourceLocation;
 import net.minecraft.resources.ResourceLocation;
@@ -49,7 +51,7 @@ public final class LivingIconRegistry {
     public static void registerAll() {
         register(LivingIconSpec.builder(net.minecraft.world.item.Items.HOPPER)
             .addVariant("base", "item/hopper_living", stack -> true)
-            .decorator(new com.qiqi.li.client.LivingHopperDecorator())
+            .decorator(new LivingHopperDecorator())
             .build());
 
         register(LivingIconSpec.builder(net.minecraft.world.item.Items.FURNACE)
@@ -76,7 +78,7 @@ public final class LivingIconRegistry {
             .addVariant("base", "item/ender", stack -> true)
             .build());
 
-        if (com.qiqi.li.living.create.CreateCompat.isLoaded()) {
+        if (CreateCompat.isLoaded()) {
             try {
                 Item waterWheelItem = net.minecraft.core.registries.BuiltInRegistries.ITEM
                     .get(net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("create", "water_wheel"));

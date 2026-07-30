@@ -1,6 +1,6 @@
 package com.qiqi.li.client.mixin;
 
-import com.qiqi.li.client.GuiInteractionHelper;
+import com.qiqi.li.client.input.GuiInteractionHelper;
 import com.qiqi.li.client.util.LivingChestTabState;
 import com.qiqi.li.living.function.LivingChestFunction;
 import com.qiqi.li.network.LivingChestAccessPacket;

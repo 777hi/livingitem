@@ -1,6 +1,6 @@
 package com.qiqi.li.living.mixin;
 
-import com.qiqi.li.living.container.ContainerStressData;
+import com.qiqi.li.living.domain.water.ContainerStressData;
 import com.qiqi.li.living.container.StressDataProvider;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;

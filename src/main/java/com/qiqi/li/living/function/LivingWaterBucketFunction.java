@@ -10,11 +10,11 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
-import com.qiqi.li.living.LivingItemFunction;
-import com.qiqi.li.living.LivingItemManager;
+import com.qiqi.li.living.api.LivingItemFunction;
+import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
-import com.qiqi.li.living.container.ContainerFluidData;
+import com.qiqi.li.living.domain.water.ContainerFluidData;
 import com.qiqi.li.living.data.LivingWaterBucketData;
 import com.qiqi.li.living.data.WaterData;
 

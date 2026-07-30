@@ -7,7 +7,7 @@ import java.util.Map;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.qiqi.li.client.mixin.SlotWrapperAccessor;
-import com.qiqi.li.living.LivingItemManager;
+import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.data.LivingWaterBucketData;
 import com.qiqi.li.living.data.WaterData;
 import com.qiqi.li.living.function.LivingWaterBucketFunction;

@@ -1,7 +1,7 @@
 package com.qiqi.li.network;
 
-import com.qiqi.li.living.core.interaction.InteractionHandler;
-import com.qiqi.li.living.core.interaction.InteractionRegistry;
+import com.qiqi.li.living.interaction.InteractionHandler;
+import com.qiqi.li.living.interaction.InteractionRegistry;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
@@ -13,7 +13,7 @@ import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
-import com.qiqi.li.living.LivingItemManager;
+import com.qiqi.li.living.api.LivingItemManager;
 
 import javax.annotation.Nullable;
 

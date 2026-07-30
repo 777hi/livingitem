@@ -3,11 +3,11 @@ package com.qiqi.li.living.function;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Consumer;
-import com.qiqi.li.LivingItem;
-import com.qiqi.li.living.LivingItemFunction;
-import com.qiqi.li.living.LivingItemManager;
+
+import com.qiqi.li.living.api.LivingItemFunction;
+import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerContext;
-import com.qiqi.li.living.container.ContainerStressData;
+import com.qiqi.li.living.domain.water.ContainerStressData;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.data.LivingWaterWheelData;
 import com.qiqi.li.living.data.WaterWheelData;

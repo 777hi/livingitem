@@ -794,7 +794,7 @@ public class CreateMixinPlugin implements IMixinConfigPlugin {
   "required": false,
   "package": "com.qiqi.li.living.mixin.create",
   "compatibilityLevel": "JAVA_21",
-  "plugin": "com.qiqi.li.living.create.CreateMixinPlugin",
+  "plugin": "com.qiqi.li.living.compat.create.CreateMixinPlugin",
   "mixins": [
     "KineticBlockEntityMixin"
   ],
