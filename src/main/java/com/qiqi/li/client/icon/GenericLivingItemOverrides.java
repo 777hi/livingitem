@@ -31,6 +31,7 @@ public class GenericLivingItemOverrides extends ItemOverrides {
     private final BakedModel vanillaModel;
     private final LivingIconSpec spec;
     private final Map<String, GenericContextAwareModel> contextModelCache = new HashMap<>();
+    private RotatingWaterWheelModel rotatingModelCache;
 
     public GenericLivingItemOverrides(BakedModel vanillaModel, LivingIconSpec spec) {
         super();
@@ -41,7 +42,14 @@ public class GenericLivingItemOverrides extends ItemOverrides {
     @Override
     public BakedModel resolve(BakedModel model, ItemStack stack, @Nullable ClientLevel level,
                               @Nullable LivingEntity entity, int seed) {
+        if (spec.isRotating()) {
+            float rpm = resolveRpm(stack);
+            WaterWheelRenderState.setRPM(rpm);
+            return getOrCreateRotatingModel(stack);
+        }
+
         if (!spec.isLivingItem(stack)) {
+            WaterWheelRenderState.clear();
             return vanillaModel;
         }
 
@@ -52,6 +60,17 @@ public class GenericLivingItemOverrides extends ItemOverrides {
         }
 
         return vanillaModel;
+    }
+
+    private float resolveRpm(ItemStack stack) {
+        return 8f;
+    }
+
+    private RotatingWaterWheelModel getOrCreateRotatingModel(ItemStack stack) {
+        if (rotatingModelCache == null) {
+            rotatingModelCache = new RotatingWaterWheelModel(vanillaModel);
+        }
+        return rotatingModelCache;
     }
 
     /**

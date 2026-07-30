@@ -75,7 +75,6 @@ public class LivingWaterBucketFunction implements LivingItemFunction {
             }
 
             LivingItemManager.setWaterBucketData(stack, data.withWater(water));
-            context.syncSlotToClients(slot, stack);
         }
     }
 
@@ -101,9 +100,8 @@ public class LivingWaterBucketFunction implements LivingItemFunction {
         tooltipAdder.accept(Component.nullToEmpty(""));
         tooltipAdder.accept(Component.translatable("tooltip.livingitem.water_bucket.status"));
         if (count > 0) {
-            tooltipAdder.accept(Component.literal(
-                "水流: " + count + " 格 (最远" + maxLevel + "格)")
-                .withStyle(net.minecraft.ChatFormatting.AQUA));
+            tooltipAdder.accept(Component.translatable("tooltip.livingitem.water_bucket.flow",
+                count, maxLevel).withStyle(net.minecraft.ChatFormatting.AQUA));
         }
     }
 
@@ -126,6 +124,9 @@ public class LivingWaterBucketFunction implements LivingItemFunction {
             if (!isLivingWaterBucket(stack)) continue;
 
             LivingWaterBucketData data = LivingItemManager.getWaterBucketData(stack);
+            String oldFlow = data.water().flow();
+            if (oldFlow.equals(flowStr)) continue;
+
             WaterData water = data.water().withFlow(flowStr);
             LivingItemManager.setWaterBucketData(stack, data.withWater(water));
             ctx.syncSlotToClients(i, stack);

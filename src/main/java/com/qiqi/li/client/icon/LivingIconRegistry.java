@@ -75,6 +75,22 @@ public final class LivingIconRegistry {
         register(LivingIconSpec.builder(net.minecraft.world.item.Items.ENDER_CHEST)
             .addVariant("base", "item/ender", stack -> true)
             .build());
+
+        if (com.qiqi.li.living.create.CreateCompat.isLoaded()) {
+            try {
+                Item waterWheelItem = net.minecraft.core.registries.BuiltInRegistries.ITEM
+                    .get(net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("create", "water_wheel"));
+                if (waterWheelItem != net.minecraft.world.item.Items.AIR) {
+                    register(LivingIconSpec.builder(waterWheelItem)
+                        .addVariant("base", "item/water_wheel", stack -> true)
+                        .rotating()
+                        .build());
+                    LivingItem.LOGGER.info("已注册活水车旋转图标");
+                }
+            } catch (Exception e) {
+                LivingItem.LOGGER.warn("注册活水车图标失败: {}", e.getMessage());
+            }
+        }
     }
 
     /** 注册一个图标配置 */
@@ -92,12 +108,13 @@ public final class LivingIconRegistry {
      */
     public static void onRegisterAdditionalModels(ModelEvent.RegisterAdditional event) {
         for (LivingIconSpec spec : SPECS) {
+            if (spec.isRotating()) continue;
             for (LivingIconSpec.Variant variant : spec.getVariants()) {
                 ModelResourceLocation loc = createVariantModelLocation(variant);
                 event.register(loc);
             }
         }
-        LivingItem.LOGGER.info("已注册 {} 个活物品变体模型", SPECS.stream().mapToInt(s -> s.getVariants().size()).sum());
+        LivingItem.LOGGER.info("已注册 {} 个活物品变体模型", SPECS.stream().filter(s -> !s.isRotating()).mapToInt(s -> s.getVariants().size()).sum());
     }
 
     /**
@@ -132,21 +149,23 @@ public final class LivingIconRegistry {
             return;
         }
 
-        for (LivingIconSpec.Variant variant : spec.getVariants()) {
-            ModelResourceLocation variantLoc = createVariantModelLocation(variant);
-            BakedModel variantModel = event.getModels().get(variantLoc);
+        if (!spec.isRotating()) {
+            for (LivingIconSpec.Variant variant : spec.getVariants()) {
+                ModelResourceLocation variantLoc = createVariantModelLocation(variant);
+                BakedModel variantModel = event.getModels().get(variantLoc);
 
-            if (variantModel == null) {
-                LivingItem.LOGGER.warn("活物品 {} 变体 {} 的模型未找到", spec.getItem(), variant.getName());
-                continue;
+                if (variantModel == null) {
+                    LivingItem.LOGGER.warn("活物品 {} 变体 {} 的模型未找到", spec.getItem(), variant.getName());
+                    continue;
+                }
+
+                VariantModelStore.put(variant, variantModel);
             }
-
-            VariantModelStore.put(variant, variantModel);
         }
 
         event.getModels().put(vanillaLoc, new GenericLivingModelWrapper(vanillaModel, spec));
-        LivingItem.LOGGER.info("已注入活物品 {} 的模型覆盖 ({} 个变体)",
-            spec.getItem(), spec.getVariants().size());
+        LivingItem.LOGGER.info("已注入活物品 {} 的模型覆盖{}",
+            spec.getItem(), spec.isRotating() ? " (旋转模式)" : " (" + spec.getVariants().size() + " 个变体)");
     }
 
     /**

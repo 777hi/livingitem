@@ -235,6 +235,10 @@ public class SimpleContainerContext implements ContainerContext {
         return inventory;
     }
 
+    public List<BlockEntity> getAssociatedBlockEntities() {
+        return associatedBlockEntities;
+    }
+
     @Override
     public BlockPos getBlockPos() {
         if (!associatedBlockPositions.isEmpty()) {

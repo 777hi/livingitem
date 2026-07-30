@@ -1,0 +1,12 @@
+{
+  "required": false,
+  "package": "com.qiqi.li.living.mixin.create",
+  "compatibilityLevel": "JAVA_21",
+  "plugin": "com.qiqi.li.living.create.CreateMixinPlugin",
+  "mixins": [
+    "KineticBlockEntityMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

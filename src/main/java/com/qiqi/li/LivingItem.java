@@ -26,6 +26,7 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 import com.qiqi.li.living.function.LivingChestFunction;
 import com.qiqi.li.living.function.LivingEnderChestFunction;
 import com.qiqi.li.living.function.LivingWaterBucketFunction;
+import com.qiqi.li.living.function.LivingWaterWheelFunction;
 
 import java.util.HashSet;
 import java.util.IdentityHashMap;
@@ -41,6 +42,7 @@ import com.qiqi.li.network.CarriedUpdatePacket;
 import com.qiqi.li.network.EnderChannelSyncPacket;
 import com.qiqi.li.network.LivingChestAccessPacket;
 import com.qiqi.li.living.LivingItemManager;
+import com.qiqi.li.living.create.ModCreate;
 import com.qiqi.li.living.function.LivingFurnaceFunction;
 import com.qiqi.li.living.function.LivingHopperFunction;
 import com.qiqi.li.living.function.LivingTntFunction;
@@ -96,6 +98,7 @@ public class LivingItem {
     }
 
     private void commonSetup(FMLCommonSetupEvent event) {
+        ModCreate.init();
         LivingItemManager.registerFunction(new LivingFurnaceFunction());
         LOGGER.info("Registered living furnace function");
 
@@ -116,6 +119,9 @@ public class LivingItem {
 
         LivingItemManager.registerFunction(new LivingWaterBucketFunction());
         LOGGER.info("Registered living water bucket function");
+
+        LivingItemManager.registerFunction(new LivingWaterWheelFunction());
+        LOGGER.info("Registered living water wheel function");
 
         InteractionRegistry.registerHandler("ignite", new IgniteHandler());
         LOGGER.info("Registered ignite interaction handler");

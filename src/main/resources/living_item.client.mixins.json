@@ -8,7 +8,8 @@
     "InventoryScreenMixin",
     "RecipeBookComponentMixin",
     "SlotWrapperAccessor",
-    "SpriteIconButtonMixin"
+    "SpriteIconButtonMixin",
+    "ItemRendererWaterWheelMixin"
   ],
   "injectors": {
     "defaultRequire": 1

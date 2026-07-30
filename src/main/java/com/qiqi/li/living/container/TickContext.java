@@ -32,6 +32,7 @@ public class TickContext {
     public final Set<String> occupiedSlots = new HashSet<>();
     public final Set<Integer> transferredTargetSlots = new HashSet<>();
     public ContainerFluidData fluidData = ContainerFluidData.EMPTY;
+    public ContainerStressData stressData = ContainerStressData.EMPTY;
 
     private Map<String, Set<Integer>> functionSlots = Collections.emptyMap();
 
@@ -95,6 +96,7 @@ public class TickContext {
         ctx._snapshot = ContainerSnapshot.EMPTY;
         ctx.snapshotBuilt = false;
         ctx.fluidData = ContainerFluidData.EMPTY;
+        ctx.stressData = ContainerStressData.EMPTY;
         return ctx;
     }
 
@@ -115,6 +117,7 @@ public class TickContext {
             fluidData = simpleCtx.getOrCreateFluidData();
         }
         this.fluidData = fluidData;
+        this.stressData = new ContainerStressData();
     }
 
     /**
@@ -128,6 +131,7 @@ public class TickContext {
         snapshotBuilt = false;
         functionSlots = Collections.emptyMap();
         fluidData = ContainerFluidData.EMPTY;
+        stressData = ContainerStressData.EMPTY;
     }
 
     /**

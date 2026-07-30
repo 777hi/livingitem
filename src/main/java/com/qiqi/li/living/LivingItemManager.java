@@ -11,6 +11,7 @@ import com.qiqi.li.living.data.LivingFurnaceData;
 import com.qiqi.li.living.data.LivingHopperData;
 import com.qiqi.li.living.data.LivingTntData;
 import com.qiqi.li.living.data.LivingWaterBucketData;
+import com.qiqi.li.living.data.LivingWaterWheelData;
 import com.qiqi.li.living.data.LivingEnderChestData;
 import com.qiqi.li.living.function.LivingChestFunction;
 import com.qiqi.li.living.function.LivingFurnaceFunction;
@@ -79,6 +80,13 @@ public class LivingItemManager {
                             .networkSynchronized(LivingWaterBucketData.STREAM_CODEC)
                             .build());
 
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingWaterWheelData>> LIVING_WATER_WHEEL_DATA =
+            DATA_COMPONENT_TYPES.register("living_water_wheel_data", () ->
+                    DataComponentType.<LivingWaterWheelData>builder()
+                            .persistent(LivingWaterWheelData.CODEC)
+                            .networkSynchronized(LivingWaterWheelData.STREAM_CODEC)
+                            .build());
+
     public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingEnderChestData>> LIVING_ENDER_CHEST_DATA =
             DATA_COMPONENT_TYPES.register("living_ender_chest_data", () ->
                     DataComponentType.<LivingEnderChestData>builder()
@@ -125,6 +133,7 @@ public class LivingItemManager {
         stack.remove(IS_LIVING.value());
         stack.remove(LIVING_TNT_DATA.value());
         stack.remove(LIVING_WATER_BUCKET_DATA.value());
+        stack.remove(LIVING_WATER_WHEEL_DATA.value());
         stack.remove(LIVING_FURNACE_DATA.value());
         stack.remove(LIVING_HOPPER_DATA.value());
         stack.remove(LIVING_ENDER_CHEST_DATA.value());
@@ -245,5 +254,13 @@ public class LivingItemManager {
      */
     public static void setEnderChestData(ItemStack stack, LivingEnderChestData data) {
         setData(stack, LIVING_ENDER_CHEST_DATA.value(), data, LivingEnderChestData.EMPTY);
+    }
+
+    public static LivingWaterWheelData getWaterWheelData(ItemStack stack) {
+        return getData(stack, LIVING_WATER_WHEEL_DATA.value(), LivingWaterWheelData.EMPTY);
+    }
+
+    public static void setWaterWheelData(ItemStack stack, LivingWaterWheelData data) {
+        setData(stack, LIVING_WATER_WHEEL_DATA.value(), data, LivingWaterWheelData.EMPTY);
     }
 }

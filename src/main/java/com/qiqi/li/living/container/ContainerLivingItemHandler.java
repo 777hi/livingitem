@@ -27,6 +27,9 @@ import com.qiqi.li.living.LivingItemFunction;
 import com.qiqi.li.living.LivingItemManager;
 import com.qiqi.li.living.core.accessor.EnderChannelRegistry;
 import com.qiqi.li.living.function.LivingWaterBucketFunction;
+import com.qiqi.li.living.function.LivingWaterWheelFunction;
+import com.qiqi.li.living.create.ModCreate;
+import com.qiqi.li.living.container.StressDataProvider;
 import com.qiqi.li.living.perf.PerfMetrics;
 
 /**
@@ -75,6 +78,23 @@ public class ContainerLivingItemHandler {
             ContainerFluidData data = entry.getValue();
             return currentTimeMs - data.getLastTickTime() > 120_000;
         });
+    }
+
+    private static void updateStressOutput(SimpleContainerContext ctx, BlockEntity containerBE,
+                                            ContainerStressData stressData) {
+        ModCreate.updateStressOutput(containerBE.getLevel(), containerBE.getBlockPos(), stressData);
+    }
+
+    private static void updatePlayerFeetStressOutput(SimpleContainerContext ctx,
+                                                      ContainerStressData stressData) {
+        Inventory inventory = ctx.getInventory();
+        if (inventory == null) return;
+        Player player = inventory.player;
+        Level level = player.level();
+        if (level.isClientSide) return;
+
+        BlockPos feetPos = player.blockPosition();
+        ModCreate.updateStressOutput(level, feetPos, stressData);
     }
 
     /**
@@ -206,13 +226,41 @@ public class ContainerLivingItemHandler {
         }
 
         List<LivingItemFunction.SlotEntry> waterBucketEntries = List.of();
+        List<LivingItemFunction.SlotEntry> waterWheelEntries = List.of();
         for (var gEntry : grouped.entrySet()) {
-            if (LivingWaterBucketFunction.ID.equals(gEntry.getKey().getFunctionId())) {
+            String fid = gEntry.getKey().getFunctionId();
+            if (LivingWaterBucketFunction.ID.equals(fid)) {
                 waterBucketEntries = gEntry.getValue();
-                break;
+            } else if (LivingWaterWheelFunction.ID.equals(fid)) {
+                waterWheelEntries = gEntry.getValue();
             }
         }
+
         LivingWaterBucketFunction.postTickSync(context, fluidData, waterBucketEntries);
+
+        ContainerStressData stressData = tick.stressData;
+        if (stressData != null && fluidData != null && !fluidData.isEmpty()) {
+            Set<Integer> waterWheelSlots = new HashSet<>();
+            for (var entry : waterWheelEntries) {
+                waterWheelSlots.add(entry.slotIndex());
+            }
+            stressData.calculate(fluidData, context, waterWheelSlots);
+        }
+
+        LivingWaterWheelFunction.postTickSync(context, stressData, waterWheelEntries);
+
+        if (stressData != null && context instanceof SimpleContainerContext simpleCtx) {
+            for (BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {
+                if (be instanceof StressDataProvider provider) {
+                    provider.livingItem$setStressData(stressData);
+                }
+                updateStressOutput(simpleCtx, be, stressData);
+            }
+
+            if (simpleCtx.getAssociatedBlockEntities().isEmpty() && simpleCtx.getInventory() != null) {
+                updatePlayerFeetStressOutput(simpleCtx, stressData);
+            }
+        }
 
         String containerKey = context.getContainerKey();
         if (fluidData != null && fluidData.isEmpty() && containerKey != null) {

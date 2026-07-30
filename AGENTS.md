@@ -23,6 +23,7 @@
 - **活物品图标系统**：组件化的客户端图标框架，声明式配置即可实现活物品图标根据状态动态切换，支持上下文感知（GUI/手持显示不同图标）和 ItemDecorator 叠加层
 - **活箱子系统**：将箱子虚拟化到物品 DataComponent 中，堆叠数 × 27 槽 = 虚拟箱子容量。UUID 映射管理、LRU 缓存、磁盘持久化、漏斗自动传输、跨容器传输、GUI 拆分/合并 UUID 自动分配
 - **活末影箱系统**：无线传输路由器，支持路由模式（共享黑板架构，通过全局路由表跨容器无线传输）和直连模式（绑定玩家末影箱直连）。频道隔离、轮询公平调度、反向索引路由清理、黑白名单统一过滤
+- **活水车系统**：应力产生类活物品，参照机械动力（Create）水车设计。容器内观察水流方向计算力矩，叠加/抵消应力，从容器底部/玩家脚底输出净应力驱动 Create 传动组件旋转。软依赖 Create，不安装时仅计算和显示 Tooltip
 
 ---
 
@@ -51,6 +52,7 @@ LivingItemFunction.tick(entries, context, tick, level) (各功能类自行实现
 │                              FilterData, DirectionTransferData) │
 │  LivingEnderChestFunction → LivingEnderChestData (EnderChannel) │
 │  LivingChestFunction      → InternalStorageComponent (旧架构)   │
+│  LivingWaterWheelFunction → LivingWaterWheelData (WaterWheelData)│
 │                                                                 │
 │  无状态工具类（接收类型化数据 → 返回新数据）：                     │
 │  ProgressComponent  → tick(ProgressData) → ProgressData         │
@@ -94,6 +96,8 @@ LivingItemManager (DataComponent 注册中心)
     │
     └── LIVING_ENDER_CHEST_DATA  → LivingEnderChestData
           └── channel: EnderChannelData (channel, boundPlayer, routes)
+    └── LIVING_WATER_WHEEL_DATA  → LivingWaterWheelData
+          └── wheel: WaterWheelData (cwStress, ccwStress, netStress)
 ```
 
 **数据流转模式（以活熔炉为例）：**
@@ -265,8 +269,10 @@ new InteractionEntry(Items.FLINT_AND_STEEL, Items.TNT, 1, "ignite_carried")
     │     ├── transfer: TransferData (cooldown, maxCooldown)
     │     ├── filter: FilterData (blacklist, whitelist, tags, slots)
     │     └── direction: DirectionTransferData (sourceOffset, targetOffset)
-    └── LivingEnderChestData   — 活末影箱聚合数据
+    ├── LivingEnderChestData   — 活末影箱聚合数据
           └── channel: EnderChannelData (channel, boundPlayer, routes)
+    ├── LivingWaterWheelData  — 活水车聚合数据
+          └── wheel: WaterWheelData (cwStress, ccwStress, netStress)
 
 无状态工具类（接收类型化数据 → 返回新数据，不持有状态）
     ├── ProgressComponent       — 进度计时与暂停（tick/pauseTick/isComplete/reset）
@@ -636,6 +642,7 @@ src/main/java/com/qiqi/li/
 │   │   ├── LivingFurnaceData.java           # 活熔炉聚合数据（含 ProgressData + FuelData + TransformData + DirectionSlotsData）
 │   │   ├── LivingHopperData.java            # 活漏斗聚合数据（含 TransferData + FilterData + DirectionTransferData）
 │   │   ├── LivingEnderChestData.java        # 活末影箱聚合数据（含 EnderChannelData）
+│   │   ├── LivingWaterWheelData.java       # 活水车聚合数据（含 WaterWheelData）
 │   │   ├── ExplosionData.java               # 爆炸数据（ignited, fuseDuration）
 │   │   ├── WaterData.java                   # 水流数据（flow, hostSlot, width）
 │   │   ├── ProgressData.java                # 进度数据（progress, total）
@@ -645,7 +652,8 @@ src/main/java/com/qiqi/li/
 │   │   ├── FilterData.java                  # 过滤数据（blacklist, whitelist, tags, slots）
 │   │   ├── DirectionSlotsData.java          # 方向-多槽位映射数据（slots, activeSlotIndex）
 │   │   ├── DirectionTransferData.java       # 方向-传输映射数据（sourceOffset, targetOffset）
-│   │   └── EnderChannelData.java            # 末影频道数据（channel, boundPlayer, routes）
+│   │   ├── EnderChannelData.java            # 末影频道数据（channel, boundPlayer, routes）
+│   │   ├── WaterWheelData.java             # 水车应力数据（cwStress, ccwStress, netStress）
 │   │
 │   ├── function/                            # 各活物品功能实现
 │   │   ├── LivingChestFunction.java         # 活箱子：堆叠倍增模型、UUID 管理、物品存取 API（旧架构）
@@ -654,6 +662,7 @@ src/main/java/com/qiqi/li/
 │   │   ├── LivingHopperFunction.java        # 活漏斗：DataComponent 直接管理 + 无状态工具类调用
 │   │   ├── LivingTntFunction.java           # 活TNT：DataComponent 直接管理 + 引信倒计时 + 爆炸
 │   │   ├── LivingWaterBucketFunction.java   # 活水桶：DataComponent 直接管理 + 水流扩散
+│   │   ├── LivingWaterWheelFunction.java   # 活水车：力矩计算 + 应力叠加/抵消 + Create 应力输出
 │   │   └── LivingFlintAndSteelFunction.java # 活打火石：交互触发器，无 tick 逻辑
 │   │
 │   ├── container/                           # 容器上下文与处理器
@@ -668,7 +677,15 @@ src/main/java/com/qiqi/li/
 │   │   ├── ContainerChunkCache.java         # 区块级容器缓存（事件驱动维护 + IItemHandler 检测）
 │   │   ├── CrossContainerTransfer.java      # 跨容器传输工具类
 │   │   ├── ContainerSnapshot.java           # 容器快照（预扫描活漏斗连接图，供 ItemFilterComponent 使用）
-│   │   └── ContainerFluidData.java          # 容器级流体数据（实例绑定，非静态缓存）
+│   │   ├── ContainerFluidData.java          # 容器级流体数据（实例绑定，非静态缓存）
+│   │   ├── ContainerStressData.java         # 容器级应力累加器（遍历活水车计算力矩，CW/CCW 叠加抵消）
+│   │   └── StressDataProvider.java          # 接口：BlockEntity 的应力数据读写方法
+│   │
+│   ├── create/                              # ⭐ Create 集成（软依赖，仅 Create 安装时加载）
+│   │   ├── CreateCompat.java               # Create 安装检测（ModList.get().isLoaded）
+│   │   ├── ModCreate.java                  # Create 集成入口：常量定义 + 安全调用
+│   │   ├── CreateIntegration.java          # 应力输出逻辑：白名单过滤 + 方向兼容性检查 + RPM/SU 设置
+│   │   └── LivingItemStressOutput.java     # 接口：Mixin 注入的方法签名
 │   │
 │   ├── chest/                               # 活箱子辅助工具
 │   │   ├── LivingChestStackHandler.java     # UUID 列表工具：标准化、创建、拆分、合并、数据校验
@@ -741,11 +758,17 @@ src/main/java/com/qiqi/li/
 │   │   ├── GenericContextAwareModel.java    # 通用上下文切换模型（GUI 显示自定义图标，手持显示原版图标）
 │   │   └── GenericLivingItemOverrides.java  # 通用覆盖解析器（根据 Variant.predicate 匹配变体模型）
 │   └── mixin/
+│       ├── BlockEntityMixin.java            # Mixin 到 BlockEntity，添加 stressData 字段（StressDataProvider）
 │       ├── AbstractContainerScreenMixin.java # 容器界面 Mixin（注入活按钮 + 交互拦截）
 │       ├── InventoryScreenMixin.java         # 生存模式背包 Mixin（交互拦截）
 │       ├── CreativeModeInventoryScreenMixin.java # 创造模式背包 Mixin（交互拦截 + SlotWrapper兼容）
 │       ├── SlotWrapperAccessor.java          # SlotWrapper 访问器接口（获取 target 字段）
-│       └── SpriteIconButtonMixin.java        # 按钮渲染 Mixin
+│       ├── SpriteIconButtonMixin.java        # 按钮渲染 Mixin
+│       └── ItemRendererWaterWheelMixin.java  # 活水车物品栏 3D 旋转渲染 + 漫反射光照修正
+│
+├── living/mixin/create/                    # ⭐ Create Mixin（仅 Create 安装时加载，CreateMixinPlugin 控制）
+│   ├── KineticBlockEntityMixin.java        # Mixin 到 KineticBlockEntity：应力输出 + 自过期机制 + 白名单过滤
+│   └── CreateMixinPlugin.java              # Mixin 条件加载插件（检测 Create 类是否存在）
 │
 └── network/
     ├── GuiInteractionPacket.java            # ⭐ 通用GUI交互包（客户端→服务端：slotIndex + containerSlot + actionId + carriedTag）
@@ -967,6 +990,25 @@ src/main/java/com/qiqi/li/
 
 项目全面使用 NeoForge 的 `IItemHandler` 能力替代原版 `Container` 接口进行容器读写和物品交互，**无需适配器层**。
 
+### 18. Create 软依赖集成（活水车）
+
+活水车的 Create 兼容采用**三层软依赖**设计，确保不安装 Create 时模组正常运行：
+
+**第一层：加载期隔离**
+- `CreateCompat.isLoaded()` — 运行时检测 Create 是否安装，结果缓存
+- `CreateMixinPlugin` — Mixin 条件加载插件，仅 Create 存在时应用 `KineticBlockEntityMixin`
+- `LivingIconRegistry` — 条件注册活水车图标，仅 Create 安装时激活
+
+**第二层：调用期防护**
+- `ModCreate.updateStressOutput()` — 先检查 `CreateCompat.isLoaded()`，再 `try-catch(NoClassDefFoundError)` 双重防护
+- `CreateIntegration` 不直接 import Create 类（通过 `instanceof LivingItemStressOutput` 接口检查操作 BE）
+
+**第三层：运行时安全**
+- 白名单过滤：仅 `SimpleKineticBlockEntity` 和 `BracketedKineticBlockEntity` 接收应力
+- 方向兼容性检查：注入前检查目标 BE 旋转方向，方向冲突不注入（软侵入，防止 `RotationPropagator` 销毁方块）
+- 自过期机制：`refreshedThisTick` 布尔标记，应力源消失后 1 tick 自动清理
+- `attachKinetics()` 重连：取消应力后自动重新加入邻居网络，恢复原发电机旋转
+
 **为什么用 IItemHandler？**
 - NeoForge 自动为所有原版 Container 方块注册 `IItemHandler` 能力，无需区分方块类型
 - 模组容器（抽屉、精妙背包等）通过 `IItemHandler` 暴露能力，天然兼容
@@ -1040,6 +1082,19 @@ src/main/java/com/qiqi/li/
 - [x] 实体伤害与击退（原版公式）
 - [x] 创造模式/生存模式全兼容
 
+### 活水桶功能
+- [x] 水源注册（活水桶作为水源，向4方向蔓延，level 递增，最远7格）
+- [x] BFS 水流重算（每 tick 从所有水源重算流动状态，水源增减/活物品放置移除后立即更新）
+- [x] 活物品阻挡水流（类比原版方块，水流不穿过活物品）
+- [x] 非活物品不阻挡水流（类比原版实体，水穿过非活物品）
+- [x] 多水源取最近 level（每个槽位取最近水源的 level，多水源取最小值）
+- [x] 水流推动物品（沿 BFS 水流树下游方向推动，按 level 降序处理形成级联效果）
+- [x] 堆叠合并支持（目标槽位有同类物品时合并堆叠）
+- [x] 容器切换重置（容器 key 变化或超过 2 tick 未更新时重置水流状态）
+- [x] 流动状态持久化（`WaterData.flow` 字符串编码：`slot:level:fromSlot` 逗号分隔）
+- [x] Tooltip 显示（水流数量、最大水流级别）
+- [x] 容器级流体数据（`ContainerFluidData` 实例绑定，非静态缓存）
+
 ### 活箱子功能
 - [x] 基于 DataComponent 的直接存储（`CONTAINER` 组件 = `ItemContainerContents`，27 槽）
 - [x] 字节容量限制（`InternalStorageComponent.MAX_STORAGE_BYTES = 16384`，防止 NBT 过大）
@@ -1077,6 +1132,24 @@ src/main/java/com/qiqi/li/
 - [x] 水晶箱子黑白名单适配（`SlotResolver` 使用容器实际宽度计算槽位）
 - [x] 跨容器路由注册修复（`getBasePosForDirection` 大箱子半箱选择逻辑修正）
 
+### 活水车功能
+- [x] 力矩计算模型（二维叉积：位置向量 × 水流方向向量，CW/CCW 方向判定）
+- [x] 水流强度权重（线性权重，水源最强，远端最弱）
+- [x] 堆叠放大 SU 容量（堆叠数 × SU 容量，RPM 不变）
+- [x] 应力叠加与抵消（同向叠加，反向抵消，净应力输出）
+- [x] 容器底部应力输出（净应力从容器底部垂直输出到下方 Create 方块）
+- [x] 玩家脚底应力输出（背包中活水车从玩家脚底输出应力）
+- [x] Create 软依赖集成（`CreateCompat` 检测 + `CreateMixinPlugin` 条件加载 + `try-catch` 双重防护）
+- [x] 白名单过滤（仅 `SimpleKineticBlockEntity` 和 `BracketedKineticBlockEntity` 接收应力）
+- [x] 方向兼容性检查（软侵入：方向冲突不注入，防止 `RotationPropagator` 销毁方块）
+- [x] 自过期机制（`refreshedThisTick` 布尔标记，1 tick 响应，应力源消失后自动清理）
+- [x] 取消应力后恢复原发电机旋转（`attachKinetics()` 重连邻居网络）
+- [x] RPM 方向修正（`-sign(netStress)` 使物品栏旋转与下方齿轮旋转方向一致）
+- [x] 物品栏 3D 旋转渲染（BakedModel + PoseStack 旋转变换，仅在有应力时旋转）
+- [x] 漫反射光照修正（`RenderSystem.setShaderLights()` + `combinedLight` 修改，解决物品贴图过暗）
+- [x] Tooltip 显示（CW/CCW 应力、净应力方向、RPM、SU 容量）
+- [x] 容器破坏/玩家离开后应力自动清理（自过期 + 客户端同步）
+
 ### 容器兼容性
 - [x] 标准矩形容器（27 格箱子、54 格大箱子）
 - [x] 线性容器（5 格漏斗）
@@ -1090,6 +1163,23 @@ src/main/java/com/qiqi/li/
 ## 开发进展
 
 ### 当前版本: v0.8-alpha
+
+**最近更新** (2026-07-30):
+- ✅ **新增：活水车系统**（`LivingWaterWheelFunction` + `LivingWaterWheelData` + `WaterWheelData` + `ContainerStressData`）
+- ✅ **新增：力矩计算模型**（二维叉积：位置向量 × 水流方向向量，CW/CCW 方向判定，水流强度权重）
+- ✅ **新增：Create 软依赖集成**（`CreateCompat` 检测 + `CreateMixinPlugin` 条件加载 + `ModCreate` 安全调用 + `try-catch` 双重防护）
+- ✅ **新增：应力输出逻辑**（`CreateIntegration`：白名单过滤 + 方向兼容性检查 + RPM/SU 设置）
+- ✅ **新增：KineticBlockEntity Mixin**（`KineticBlockEntityMixin`：应力输出 + 自过期机制 + 白名单过滤 + `attachKinetics()` 重连）
+- ✅ **新增：容器底部/玩家脚底应力传递**（`ContainerLivingItemHandler` 扩展，背包中活水车从玩家脚底输出）
+- ✅ **新增：物品栏 3D 旋转渲染**（`ItemRendererWaterWheelMixin`：BakedModel + PoseStack 旋转变换，仅在有应力时旋转）
+- ✅ **新增：漫反射光照修正**（`RenderSystem.setShaderLights()` + `combinedLight` 修改，解决物品贴图过暗）
+- ✅ **新增：BlockEntity Mixin**（`BlockEntityMixin`：添加 `stressData` 字段，`StressDataProvider` 接口实现）
+- ✅ **修复：旋转方向与物品栏不一致**（RPM 公式添加负号 `-sign(netStress)`）
+- ✅ **修复：复杂组件崩溃**（白名单策略，仅允许 `SimpleKineticBlockEntity` 和 `BracketedKineticBlockEntity`）
+- ✅ **修复：方向冲突导致方块销毁**（`isDirectionCompatible()` 软侵入检查，方向相反不注入）
+- ✅ **修复：取消应力后齿轮不恢复**（`attachKinetics()` 重连邻居网络，自动被原发电机接管）
+- ✅ **修复：应力源消失后残留**（`refreshedThisTick` 布尔标记替代时间戳，1 tick 响应 + 客户端同步）
+- ✅ **修复：`validateKinetics()` 60 tick 后应力消失**（移除 `source` 字段依赖，注入 BE 作为旋转源）
 
 **最近更新** (2026-07-27):
 - ✅ 重构：DataComponent 直接管理架构迁移（功能类直接管理类型化 DataComponent，替代 `ComponentState` + `LivingFunctionData` 中转层）
@@ -1257,6 +1347,8 @@ src/main/java/com/qiqi/li/
 - [ ] 黑白名单传递优化（改为一 tick 传递完整条漏斗链，而非逐跳传播）
 
 #### 中优先级
+- [ ] 活水车扩展：大水车变体（`create:large_water_wheel`，更高 RPM/SU）
+- [ ] 活水车扩展：活风车（`create:encased_fan`，观察气流方向产生应力）
 - [ ] 调试命令 `/livingitem info`
 - [ ] 成就系统集成
 - [ ] 音效差异化（不同状态的音效变化）
@@ -1351,5 +1443,5 @@ public class LivingTntFunction implements LivingItemFunction {
 
 ---
 
-*最后更新: 2026-07-28*
-*状态: Alpha 测试阶段 - DataComponent 直接管理架构迁移已完成（活TNT/活水桶/活熔炉/活漏斗/活末影箱），活箱子待迁移，跨容器传输已实现，IItemHandler 直接驱动容器读写，兼容抽屉、精妙背包等模组容器，GUI交互系统已就绪，客户端图标系统已组件化，SlotAccessor 模拟优先传输架构已实现，活末影箱双模式（路由/直连）+ Deque 轮询调度 + 反向索引路由清理 + FilteredSlotAccessor 统一过滤，容器位置缓存（拉取模型 + 自清洁）实现零延迟容器发现，双重扫描合并 + Snapshot 懒加载 + 直连模式 InvWrapper 缓存/轮询提取等性能优化，不可变数据模型 + 功能内聚 + 无状态工具类新架构，TickContext 对象池优化，SlotAccessor 注册式工厂，LivingItemFunction 接口职责拆分，活箱子精确字节计算，性能监控指标系统*
+*最后更新: 2026-07-30*
+*状态: Alpha 测试阶段 - DataComponent 直接管理架构迁移已完成（活TNT/活水桶/活熔炉/活漏斗/活末影箱/活水车），活箱子待迁移，跨容器传输已实现，IItemHandler 直接驱动容器读写，兼容抽屉、精妙背包等模组容器，GUI交互系统已就绪，客户端图标系统已组件化，SlotAccessor 模拟优先传输架构已实现，活末影箱双模式（路由/直连）+ Deque 轮询调度 + 反向索引路由清理 + FilteredSlotAccessor 统一过滤，容器位置缓存（拉取模型 + 自清洁）实现零延迟容器发现，双重扫描合并 + Snapshot 懒加载 + 直连模式 InvWrapper 缓存/轮询提取等性能优化，不可变数据模型 + 功能内聚 + 无状态工具类新架构，TickContext 对象池优化，SlotAccessor 注册式工厂，LivingItemFunction 接口职责拆分，活箱子精确字节计算，性能监控指标系统，活水车 Create 软依赖集成（白名单+方向兼容+自过期+3D旋转渲染）*

@@ -136,7 +136,7 @@ public class ContainerFluidData {
             FlowEntry fe = newFlows.get(slot);
             if (fe.level >= MAX_FLOW_LEVEL) continue;
 
-            int[] neighbors = getNeighbors(slot, containerSize, width);
+            int[] neighbors = ContainerContext.getNeighbors(slot, containerSize, width);
             for (int neighbor : neighbors) {
                 if (newFlows.containsKey(neighbor)) continue;
 
@@ -213,27 +213,6 @@ public class ContainerFluidData {
                 }
             }
         }
-    }
-
-    private int[] getNeighbors(int slot, int containerSize, int width) {
-        int count = 0;
-        boolean left = slot % width > 0;
-        boolean right = (slot + 1) % width != 0;
-        boolean up = slot >= width;
-        boolean down = slot + width < containerSize;
-
-        if (left) count++;
-        if (right) count++;
-        if (up) count++;
-        if (down) count++;
-
-        int[] result = new int[count];
-        int i = 0;
-        if (left) result[i++] = slot - 1;
-        if (right) result[i++] = slot + 1;
-        if (up) result[i++] = slot - width;
-        if (down) result[i++] = slot + width;
-        return result;
     }
 
     public Map<Integer, int[]> exportFlowData() {

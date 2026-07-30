@@ -27,14 +27,17 @@ sourceSets.main.resources {
 }
 
 repositories {
-    // Add here additional repositories if required by some of the dependencies below.
-    
     // NeoForge 官方仓库（Mod依赖）
     maven { url 'https://maven.neoforged.net/releases' }
-    
+
     // Maven Central（用于下载JUnit、Mockito等测试库）
     mavenCentral()
-    
+
+    // Create 模组 Maven 仓库（Create, Ponder, Flywheel）
+    maven { url = "https://maven.createmod.net" }
+    // Registrate Maven 仓库
+    maven { url = "https://maven.ithundxr.dev/snapshots" }
+
     // 本地 libs 目录
     flatDir {
         dirs 'libs'
@@ -158,18 +161,30 @@ dependencies {
     // http://www.gradle.org/docs/current/userguide/artifact_dependencies_tutorial.html
     // http://www.gradle.org/docs/current/userguide/dependency_management.html
 
-    implementation files("libs/tagtooltips-neoforge-1.21.1-1.2.0.jar")
-    implementation files("libs/componentviewer-neoforge-1.3.3+1.21.1.jar")
-    implementation files("libs/CustomSkinLoader_ForgeV3-14.27.jar")
-    implementation files("libs/observable-5.4.4.jar")
-    implementation files("libs/architectury-13.0.8-neoforge.jar")
-    implementation files("libs/kotlinforforge-5.12.0-all.jar")
-    implementation files("libs/spark-1.10.124-neoforge.jar")
-    implementation files("libs/ironchest-1.21-neoforge-16.0.7.jar")
-    implementation files("libs/sodium-neoforge-0.8.12+mc1.21.1.jar")
-    implementation files("libs/cloth-config-15.0.140-neoforge.jar")
-    implementation files("libs/jei-1.21.1-neoforge-19.38.0.366.jar")
-    implementation files("create-1.21.1-6.0.10.jar")
+    // ==================== 开发辅助模组（runtimeOnly：开发时加载，不要求玩家安装） ====================
+    runtimeOnly files("libs/tagtooltips-neoforge-1.21.1-1.2.0.jar")
+    runtimeOnly files("libs/componentviewer-neoforge-1.3.3+1.21.1.jar")
+    runtimeOnly files("libs/CustomSkinLoader_ForgeV3-14.27.jar")
+    runtimeOnly files("libs/observable-5.4.4.jar")
+    runtimeOnly files("libs/spark-1.10.124-neoforge.jar")
+    runtimeOnly files("libs/sodium-neoforge-0.8.12+mc1.21.1.jar")
+    runtimeOnly files("libs/jei-1.21.1-neoforge-19.38.0.366.jar")
+    runtimeOnly files("libs/architectury-13.0.8-neoforge.jar")
+    runtimeOnly files("libs/kotlinforforge-5.12.0-all.jar")
+
+    // ==================== 兼容模组（compileOnly + runtimeOnly：软依赖，开发时加载） ====================
+    compileOnly files("libs/ironchest-1.21-neoforge-16.0.7.jar")
+    runtimeOnly files("libs/ironchest-1.21-neoforge-16.0.7.jar")
+
+    // Create 兼容（compileOnly 编译 + runtimeOnly 开发时加载，玩家可选安装）
+    compileOnly("com.simibubi.create:create-${minecraft_version}:6.0.10-280:slim") { transitive = false }
+    compileOnly("net.createmod.ponder:ponder-neoforge:1.0.82+mc${minecraft_version}")
+    compileOnly("dev.engine-room.flywheel:flywheel-neoforge-api-${minecraft_version}:1.0.6")
+    compileOnly("com.tterrag.registrate:Registrate:MC1.21-1.3.0+67")
+    runtimeOnly("com.simibubi.create:create-${minecraft_version}:6.0.10-280:slim") { transitive = false }
+    runtimeOnly("net.createmod.ponder:ponder-neoforge:1.0.82+mc${minecraft_version}")
+    runtimeOnly("dev.engine-room.flywheel:flywheel-neoforge-api-${minecraft_version}:1.0.6")
+    runtimeOnly("com.tterrag.registrate:Registrate:MC1.21-1.3.0+67")
     
     // ==================== 单元测试依赖 (Unit Test Dependencies) ====================
     

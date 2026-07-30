@@ -44,5 +44,13 @@
   "slot.livingitem.output": "输出",
 
   "tooltip.livingitem.direction.slot": "  §7%s: %s§r",
-  "tooltip.livingitem.direction.transfer": "  §6传输方向: %s → %s (%s)§r"
+  "tooltip.livingitem.direction.transfer": "  §6传输方向: %s → %s (%s)§r",
+
+  "tooltip.livingitem.water_wheel.status": "§a活水车§r",
+  "tooltip.livingitem.water_wheel.no_stress": "  §7无应力§r",
+  "tooltip.livingitem.water_wheel.stress": "  ↻ 顺时针: +%1$s  ↺ 逆时针: -%2$s  净应力: +%3$s",
+  "tooltip.livingitem.water_wheel.balanced": "  ↻ 顺时针: +%1$s  ↺ 逆时针: -%2$s  净应力: 0 (平衡)",
+
+  "tooltip.livingitem.water_bucket.status": "§9活水桶§r",
+  "tooltip.livingitem.water_bucket.flow": "  水流: %1$s 格 (最远%2$s格)"
 }

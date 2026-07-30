@@ -24,10 +24,28 @@ package com.qiqi.li.living.container;
  */
 public interface ContainerContext extends SlotInfoProvider, ContainerSync, ContainerIdentity {
 
-    /**
-     * 检查槽位是否有效。
-     */
     default boolean isValidSlot(int logicalSlot) {
         return logicalSlot >= 0 && logicalSlot < getSize();
+    }
+
+    static int[] getNeighbors(int slot, int containerSize, int width) {
+        int count = 0;
+        boolean left = slot % width > 0;
+        boolean right = (slot + 1) % width != 0;
+        boolean up = slot >= width;
+        boolean down = slot + width < containerSize;
+
+        if (left) count++;
+        if (right) count++;
+        if (up) count++;
+        if (down) count++;
+
+        int[] result = new int[count];
+        int i = 0;
+        if (left) result[i++] = slot - 1;
+        if (right) result[i++] = slot + 1;
+        if (up) result[i++] = slot - width;
+        if (down) result[i++] = slot + width;
+        return result;
     }
 }
