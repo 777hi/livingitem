@@ -2,6 +2,7 @@ package com.qiqi.li;
 
 import com.qiqi.li.client.icon.LivingIconRegistry;
 import com.qiqi.li.client.render.LivingChestTooltipRenderer;
+import com.qiqi.li.client.render.LivingMapTargetRenderer;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.domain.ender.LivingChestTooltipComponent;
 import net.minecraft.client.Minecraft;
@@ -9,6 +10,7 @@ import net.minecraft.client.renderer.item.ItemProperties;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Items;
 import net.neoforged.api.distmarker.Dist;
+import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.EventBusSubscriber;
@@ -36,9 +38,10 @@ import net.neoforged.neoforge.client.event.RegisterClientTooltipComponentFactori
 @EventBusSubscriber(modid = LivingItem.MOD_ID, value = Dist.CLIENT)
 public class LivingItemClient {
 
-    public LivingItemClient(ModContainer container) {
+    public LivingItemClient(IEventBus modEventBus, ModContainer container) {
         container.registerExtensionPoint(IConfigScreenFactory.class, ConfigurationScreen::new);
         LivingIconRegistry.registerAll();
+        modEventBus.addListener(LivingMapTargetRenderer::register);
     }
 
     @SubscribeEvent

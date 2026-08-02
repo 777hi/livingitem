@@ -1,6 +1,8 @@
 package com.qiqi.li;
 
 import com.qiqi.li.living.components.ExplosionComponent;
+import com.qiqi.li.living.domain.map.LivingMapEventHandler;
+import com.qiqi.li.living.domain.map.ItemFrameMapTeleportHandler;
 import com.qiqi.li.living.domain.ender.EnderChannelRegistry;
 import com.qiqi.li.living.interaction.InteractionEntry;
 import net.minecraft.resources.ResourceLocation;
@@ -28,6 +30,7 @@ import com.qiqi.li.living.function.LivingChestFunction;
 import com.qiqi.li.living.function.LivingEnderChestFunction;
 import com.qiqi.li.living.function.LivingWaterBucketFunction;
 import com.qiqi.li.living.function.LivingWaterWheelFunction;
+import com.qiqi.li.living.function.LivingEnderPearlFunction;
 
 import java.util.HashSet;
 import java.util.IdentityHashMap;
@@ -42,6 +45,7 @@ import com.qiqi.li.network.GuiInteractionPacket;
 import com.qiqi.li.network.CarriedUpdatePacket;
 import com.qiqi.li.network.EnderChannelSyncPacket;
 import com.qiqi.li.network.LivingChestAccessPacket;
+import com.qiqi.li.network.LivingMapMetadataPacket;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.compat.create.ModCreate;
 import com.qiqi.li.living.function.LivingFurnaceFunction;
@@ -51,6 +55,8 @@ import com.qiqi.li.living.function.LivingFlintAndSteelFunction;
 import com.qiqi.li.living.interaction.InteractionRegistry;
 import com.qiqi.li.living.interaction.IgniteHandler;
 import com.qiqi.li.living.interaction.IgniteCarriedHandler;
+import com.qiqi.li.living.interaction.MapTeleportHandler;
+import com.qiqi.li.living.interaction.MapTeleportCarriedHandler;
 import net.neoforged.neoforge.registries.DeferredRegister;
 import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
 import com.qiqi.li.living.domain.ender.LivingChestItemHandler;
@@ -120,6 +126,15 @@ public class LivingItem {
         LivingItemManager.registerFunction(new LivingWaterWheelFunction());
         LOGGER.info("Registered living water wheel function");
 
+        LivingItemManager.registerFunction(new LivingEnderPearlFunction());
+        LOGGER.info("Registered living ender pearl function");
+
+        LivingMapEventHandler.register();
+        LOGGER.info("Registered living map event handler");
+
+        ItemFrameMapTeleportHandler.register();
+        LOGGER.info("Registered item frame map teleport handler");
+
         InteractionRegistry.registerHandler("ignite", new IgniteHandler());
         LOGGER.info("Registered ignite interaction handler");
 
@@ -135,6 +150,20 @@ public class LivingItem {
         InteractionRegistry.register(new InteractionEntry(
             Items.FLINT_AND_STEEL, Items.TNT, 1, "ignite_carried"));
         LOGGER.info("Registered ignite_carried interaction rule");
+
+        InteractionRegistry.registerHandler("map_teleport", new MapTeleportHandler());
+        LOGGER.info("Registered map_teleport interaction handler");
+
+        InteractionRegistry.registerHandler("map_teleport_carried", new MapTeleportCarriedHandler());
+        LOGGER.info("Registered map_teleport_carried interaction handler");
+
+        InteractionRegistry.register(new InteractionEntry(
+            Items.FILLED_MAP, Items.ENDER_PEARL, 1, "map_teleport"));
+        LOGGER.info("Registered map_teleport interaction rule");
+
+        InteractionRegistry.register(new InteractionEntry(
+            Items.ENDER_PEARL, Items.FILLED_MAP, 1, "map_teleport_carried"));
+        LOGGER.info("Registered map_teleport_carried interaction rule");
     }
 
     /**
@@ -219,6 +248,7 @@ public class LivingItem {
         registrar.playToServer(GuiInteractionPacket.TYPE, GuiInteractionPacket.STREAM_CODEC, GuiInteractionPacket::handle);
         registrar.playToClient(CarriedUpdatePacket.TYPE, CarriedUpdatePacket.STREAM_CODEC, CarriedUpdatePacket::handle);
         registrar.playToClient(EnderChannelSyncPacket.TYPE, EnderChannelSyncPacket.STREAM_CODEC, EnderChannelSyncPacket::handle);
+        registrar.playToClient(LivingMapMetadataPacket.TYPE, LivingMapMetadataPacket.STREAM_CODEC, LivingMapMetadataPacket::handle);
         registrar.playToServer(LivingChestAccessPacket.TYPE, LivingChestAccessPacket.STREAM_CODEC, LivingChestAccessPacket::handle);
     }
 

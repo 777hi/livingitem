@@ -25,15 +25,78 @@
 
 ## 二、实施路线
 
-| 阶段 | 内容 | 难度 |
-|------|------|------|
-| **Phase 1** | 单个活地图在 GUI 槽位中渲染（1×1） | 🟡 中 |
-| **Phase 2** | 3×3 扩展渲染（纯视觉放大） | 🟡 中 |
-| **Phase 3** | 物品展示框路线（地图渲染 + 传送） | 🟡 中 |
-| **Phase 4** | 活末影珍珠右键传送（GUI / 展示框 / 旗帜） | 🟢 低 |
-| **Phase 5** | 5×5+ 扩展、自动生成相邻地图数据 | 🔴 高 |
+> **实施顺序调整**：先做展示框传送（最快出可玩功能），再做 GUI 渲染（最难）。
+> 活地图是纯被动型活物品——不 tick，状态不变，所有数据从原版 `MapItemSavedData` 读取。
+> 因此活地图**不需要自己的 DataComponent**，只需 `IS_LIVING: true` 标记。
 
-> **建议**：Phase 3 物品展示框路线先做，因为原版 `ItemFrameRenderer` 天然支持地图渲染，不需要任何渲染 Mixin。Phase 1-2 的坐标换算逻辑可直接复用。
+| 阶段 | 内容 | 难度 | 新增文件 |
+|------|------|------|---------|
+| **Phase 0** | 基础设施：活末影珍珠 DataComponent + 活按钮配置 | 🟢 低 | 2 |
+| **Phase 1** | 展示框传送（最小可玩版本） | 🟡 中 | 3 |
+| **Phase 2** | GUI 叠加层渲染（方案 B） | 🔴 高 | 3~4 |
+| **Phase 3** | GUI 右键传送 | 🟡 中 | 1~2 |
+| **Phase 4** | 3×3 扩展渲染（纯视觉放大） | 🟡 中 | 0~1 |
+| **Phase 5** | 5×5+ 扩展、自动生成相邻地图数据 | 🔴 高 | 0~1 |
+
+### Phase 0：基础设施
+
+| 步骤 | 内容 | 产出 |
+|------|------|------|
+| 0.1 | 活按钮配置 | 地图物品 + 末影珍珠可被活按钮激活（只需 `IS_LIVING` 标记） |
+| 0.2 | `LivingEnderPearlData` DataComponent | record，存 `cooldown: int`（唯一需要状态的活物品） |
+| 0.3 | 在 `LivingItemManager` 注册 | `LIVING_ENDER_PEARL_DATA` 组件注册 + 便捷方法 |
+| 0.4 | `LivingEnderPearlFunction` | 活末影珍珠功能类，tick 中递减冷却 |
+
+> **为什么活地图不需要 DataComponent？**
+> 原版地图物品已有 `minecraft:map_id` 组件，活地图只需 `IS_LIVING: true` 标记。
+> 所有地图数据（地形、旗帜、玩家标记）从 `Level.getMapData(mapId)` 读取，
+> 不需要额外存储。活地图是纯被动型活物品——不 tick，状态不变。
+
+### Phase 1：展示框传送（最小可玩版本）
+
+墙上挂活地图，手持活末影珍珠右键传送。
+
+| 步骤 | 内容 | 技术细节 |
+|------|------|---------|
+| 1.1 | 坐标换算工具类 | `MapCoordHelper.java` — hitVec → 地图 UV → 地图像素 → 世界坐标，纯静态方法 |
+| 1.2 | 旗帜命中检测 | `MapCoordHelper.findBannerHit()` — 遍历 `MapItemSavedData.banners`，3 像素半径命中 |
+| 1.3 | 传送执行工具类 | `TeleportHelper.java` — 传送 + 粒子 + 音效 + 摔落伤害 + 消耗珍珠 + 冷却 |
+| 1.4 | ItemFrame Mixin | `ItemFrameMixin.java` — 注入 `interactAt()`，拦截活末影珍珠 + 活地图展示框交互 |
+
+### Phase 2：GUI 叠加层渲染
+
+| 步骤 | 内容 | 技术细节 |
+|------|------|---------|
+| 2.1 | 扫描活地图布局 | `LivingMapLayout.java` — 遍历容器槽位，找到所有活地图的网格位置 |
+| 2.2 | 地图纹理渲染 | `LivingMapRenderer.java` — 从 `MapRenderer.getTextureId(mapId)` 获取动态纹理，画到 GUI |
+| 2.3 | Mixin 渲染入口 | `AbstractContainerScreenMixin` — 在 `render()` 尾部注入叠加层渲染 |
+
+> **选择方案 B（叠加层）而非方案 A（劫持槽位）**：
+> 叠加层和原版槽位渲染完全独立，只需一个注入点，天然支持跨槽位渲染。
+
+### Phase 3：GUI 右键传送
+
+| 步骤 | 内容 | 技术细节 |
+|------|------|---------|
+| 3.1 | 屏幕像素 → 世界坐标 | `MapCoordHelper.screenToWorld()` — 复用像素→世界坐标逻辑 |
+| 3.2 | GUI 交互规则 | 复用 `GuiInteractionPacket` 体系，注册 `MapTeleportInteraction` |
+
+### Phase 4：3×3 扩展渲染
+
+| 步骤 | 内容 | 技术细节 |
+|------|------|---------|
+| 4.1 | BFS 扫描相邻活地图 | `LivingMapLayout.scanExpansion()` — 从中心 BFS，每完整一圈扩展 1 层 |
+| 4.2 | 纯视觉放大 | 修改 `LivingMapRenderer`，根据扩展层数放大中心地图的渲染视野 |
+
+### Phase 5：5×5+ 扩展 + 真实地图拼接（可选）
+
+| 步骤 | 内容 | 技术细节 |
+|------|------|---------|
+| 5.1 | 自动生成相邻地图数据 | 为未打开的活地图分配新 map ID，计算相邻区域 centerX/centerZ |
+| 5.2 | 多地图拼接渲染 | 多个 MapItemSavedData 的 colors 数组拼接成大地图 |
+| 5.3 | 地图数据生命周期 | 拿走活地图后数据保留（原版行为），但不再更新 |
+
+> Phase 5 涉及地图数据生成和生命周期管理，建议等 Phase 1-4 稳定后再考虑。
 
 ---
 
@@ -259,3 +322,61 @@ if (dx * dx + dy * dy <= 3 * 3) {
 | 3×3 扩展 | 需要跨槽位渲染 | 放多个展示框即可 |
 | 多人可见 | 仅自己 | 所有人都能看到 |
 | 实现难度 | 🔴 高 | 🟡 中 |
+
+---
+
+## 十、补充设计细节
+
+### 展示框碰撞箱扩展
+
+原版展示框碰撞箱比方块面小一圈，边缘点击会命中背后方块。
+活地图展示框需要碰撞箱覆盖整个方块面，确保边缘点击也能触发 `interactAt()`。
+
+**实现**：Mixin `ItemFrame`，当展示框内是活地图时，返回覆盖整个方块面的碰撞箱（厚度 1/16，宽高 1×1）。
+
+### 展示框朝向与地图旋转
+
+展示框可挂在 6 个方向（NORTH/SOUTH/EAST/WEST/UP/DOWN），地图可在展示框内旋转（0~3，每次顺时针 90°）。
+
+**朝向**：6 个方向的 UV 换算见第四章坐标换算核心逻辑。
+
+**旋转**：`ItemFrame.getRotation()` 返回 0~3，UV 需要对应变换：
+
+```
+rotation 0 (0°):   (u, v) → (u, v)           不变
+rotation 1 (90°):  (u, v) → (v, 1-u)         顺时针 90°
+rotation 2 (180°): (u, v) → (1-u, 1-v)       180°
+rotation 3 (270°): (u, v) → (1-v, u)         顺时针 270°
+```
+
+**坐标换算完整流程**：
+```
+hitVec → 根据朝向计算 UV (u, v) → 根据旋转变换 UV → × 128 → 地图像素
+  → 检查 colors[index] != 0（未探索不传送）
+  → 旗帜命中检测
+  → 像素→世界坐标换算
+```
+
+### 未探索区域不传送
+
+`MapItemSavedData.colors` 是 `byte[128×128]`，未探索的像素值为 `0`。
+
+```java
+boolean isExplored = mapData.colors[mapY * 128 + mapX] != 0;
+```
+
+传送逻辑：点击位置换算为地图像素后，先检查 `colors[index] != 0`，未探索则不传送（可提示"此处未探索"）。
+
+### MapBanner 数据结构
+
+```java
+public record MapBanner(BlockPos pos, DyeColor color, Component name) {}
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `pos` | BlockPos | 旗帜方块的精确世界坐标 |
+| `color` | DyeColor | 旗帜颜色（16 种） |
+| `name` | Component | 旗帜自定义名称（铁砧命名），未命名时为空 |
+
+**关键**：`pos` 直接是世界坐标，旗帜命中后可直接 `banner.pos() + 0.5` 作为传送目标，不需要像素→世界坐标换算。

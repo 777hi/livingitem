@@ -2,6 +2,7 @@ package com.qiqi.li.client.icon;
 
 import com.qiqi.li.LivingItem;
 import com.qiqi.li.client.render.LivingHopperDecorator;
+import com.qiqi.li.client.render.LivingMapIconDecorator;
 import com.qiqi.li.living.compat.create.CreateCompat;
 import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.client.resources.model.ModelResourceLocation;
@@ -76,6 +77,11 @@ public final class LivingIconRegistry {
 
         register(LivingIconSpec.builder(net.minecraft.world.item.Items.ENDER_CHEST)
             .addVariant("base", "item/ender", stack -> true)
+            .build());
+
+        register(LivingIconSpec.builder(net.minecraft.world.item.Items.FILLED_MAP)
+            .addVariant("base", "item/living_map", stack -> true)
+            .decorator(new LivingMapIconDecorator())
             .build());
 
         if (CreateCompat.isLoaded()) {

@@ -6,10 +6,12 @@
     "AbstractContainerScreenMixin",
     "CreativeModeInventoryScreenMixin",
     "InventoryScreenMixin",
+    "ItemInHandRendererMixin",
     "RecipeBookComponentMixin",
     "SlotWrapperAccessor",
     "SpriteIconButtonMixin",
-    "ItemRendererWaterWheelMixin"
+    "ItemRendererWaterWheelMixin",
+    "MapRendererMixin"
   ],
   "injectors": {
     "defaultRequire": 1
