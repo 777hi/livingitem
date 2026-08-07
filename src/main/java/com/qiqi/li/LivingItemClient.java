@@ -2,7 +2,6 @@ package com.qiqi.li;
 
 import com.qiqi.li.client.icon.LivingIconRegistry;
 import com.qiqi.li.client.render.LivingChestTooltipRenderer;
-import com.qiqi.li.client.render.LivingMapTargetRenderer;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.domain.ender.LivingChestTooltipComponent;
 import net.minecraft.client.Minecraft;
@@ -41,7 +40,6 @@ public class LivingItemClient {
     public LivingItemClient(IEventBus modEventBus, ModContainer container) {
         container.registerExtensionPoint(IConfigScreenFactory.class, ConfigurationScreen::new);
         LivingIconRegistry.registerAll();
-        modEventBus.addListener(LivingMapTargetRenderer::register);
     }
 
     @SubscribeEvent

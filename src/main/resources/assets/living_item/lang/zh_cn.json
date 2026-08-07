@@ -54,12 +54,10 @@
   "tooltip.livingitem.water_bucket.status": "§9活水桶§r",
   "tooltip.livingitem.water_bucket.flow": "  水流: %1$s 格 (最远%2$s格)",
 
-  "tooltip.livingitem.ender_pearl.cooldown": "  §7冷却: §e%d tick§r",
-  "tooltip.livingitem.ender_pearl.ready": "  §a就绪§r",
-
   "chat.livingitem.ender_pearl.teleported_to_banner": "已传送到 %s",
   "chat.livingitem.ender_pearl.teleported_to_target": "已传送到宝藏位置",
   "chat.livingitem.ender_pearl.unexplored": "此区域尚未探索",
   "chat.livingitem.ender_pearl.cross_dimension": "跨维度传送到 %s",
-  "chat.livingitem.ender_pearl.teleported_to_center": "已传送到地图中心"
+  "chat.livingitem.ender_pearl.teleported_to_center": "已传送到地图中心",
+  "chat.livingitem.ender_pearl.insufficient_authority": "跃迁权能不足，无法撕裂位面壁垒"
 }

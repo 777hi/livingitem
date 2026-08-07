@@ -1,7 +1,7 @@
 # Living Map & Living Ender Pearl (活地图 & 活末影珍珠) 技术文档
 
-> **文档版本**: 2026.08 v4  
-> **最后更新**: 2026-08-03  
+> **文档版本**: 2026.08 v8  
+> **最后更新**: 2026-08-08  
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -15,8 +15,9 @@
 8. [展示框地图传送](#8-展示框地图传送)
 9. [展示框地图：客户端光标渲染](#9-展示框地图客户端光标渲染)
 10. [活空地图：远程开图](#10-活空地图远程开图)
-11. [关键类和职责](#11-关键类和职责)
-12. [已知问题与修复记录](#12-已知问题与修复记录)
+11. [骑乘传送与 Sable 飞艇兼容](#11-骑乘传送与-sable-飞艇兼容)
+12. [关键类和职责](#12-关键类和职责)
+13. [已知问题与修复记录](#13-已知问题与修复记录)
 
 ---
 
@@ -54,9 +55,9 @@
 │  │ mapId, centerX,  │         │                          │        │
 │  │ centerZ, dimKey  │         │ 1. 检查活地图+活珍珠      │        │
 │  └──────────────────┘         │ 2. getTargetFromYawPitch │        │
-│          │                    │ 3. 检查是否已探索          │        │
-│          │                    │ 4. TeleportHelper传送     │        │
-│          ▼                    │ 5. 消耗珍珠+冷却+伤害     │        │
+│          │                    │ 3. MapTeleportExecutor    │        │
+│          │                    │    → 旗帜/宝藏/已探索     │        │
+│          ▼                    │    → TeleportHelper传送   │        │
 │  客户端                        └──────────────────────────┘        │
 │  ┌──────────────────┐                                             │
 │  │ LivingMapClient  │                                             │
@@ -86,38 +87,33 @@
 
 ---
 
-## 2. 活末影珍珠：数据与冷却
+## 2. 活末影珍珠：冷却机制
 
-### 2.1 数据结构
+### 2.1 使用原版冷却系统
 
-```java
-// LivingEnderPearlData.java
-public record LivingEnderPearlData(int cooldown) {
-    public static final LivingEnderPearlData DEFAULT = new LivingEnderPearlData(0);
-}
-```
-
-存储在物品的 `LIVING_ENDER_PEARL_DATA` DataComponent 中，仅包含一个字段：
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `cooldown` | int | 冷却倒计时（tick），0 表示可用 |
-
-### 2.2 冷却机制
+活末影珍珠使用 Minecraft 原版的 `player.getCooldowns()` 冷却系统，而非自定义 DataComponent。
 
 ```java
-// LivingEnderPearlFunction.tick() — 每 tick 执行
-if (data.cooldown() > 0) {
-    LivingItemManager.setEnderPearlData(stack, data.withCooldown(data.cooldown() - 1));
-    container.syncSlotToClients(entry.slotIndex(), stack);
-}
+// 检查冷却
+player.getCooldowns().isOnCooldown(Items.ENDER_PEARL)
+
+// 设置冷却
+player.getCooldowns().addCooldown(Items.ENDER_PEARL, 40)
 ```
 
-- 传送后冷却 40 tick（2 秒）
-- 冷却期间 tooltip 显示灰色倒计时
-- 冷却结束后 tooltip 显示绿色"就绪"
+**为什么用原版而非自定义？**
 
-### 2.3 传送消耗
+| 对比项 | 自定义 DataComponent | 原版 ItemCooldowns |
+|--------|---------------------|-------------------|
+| 冷却存储 | 每个物品栈独立 | 按物品类型共享 |
+| tick 逻辑 | 需手动 tick + syncSlotToClients | `Player.tick()` 自动调用 |
+| 客户端显示 | 需自定义 tooltip | 原版扫光动画（sweep）自动显示 |
+| 跨栈冷却 | ❌ 每个珍珠独立冷却 | ✅ 所有末影珍珠共享冷却 |
+| 代码量 | DataComponent + tick + tooltip + sync | 2 行调用 |
+
+原版冷却按 `Items.ENDER_PEARL` 类型，活珍珠和普通珍珠共享冷却，防止绕过冷却。
+
+### 2.2 传送消耗
 
 | 模式 | 消耗 |
 |------|------|
@@ -219,15 +215,21 @@ maxDist = 四条边界距离中的最小正值
   │
   ├─ 检查：目标是否在地图范围内 [0, 128)？
   │
-  ├─ 检查：目标附近是否有旗帜？（5像素半径内）
-  │   ├─ 有 → 传送到旗帜位置
-  │   └─ 无 → 检查目标是否已探索
-  │       ├─ 未探索 → 提示"未探索区域"，取消
-  │       └─ 已探索 → 传送到目标位置
+  ├─ 委托：MapTeleportExecutor.execute()
+  │   ├─ 旗帜命中？→ TeleportHelper.teleportToBanner
+  │   ├─ 红色大叉叉命中？→ TeleportHelper.teleportToMapPosition
+  │   ├─ 未探索？→ 提示"未探索区域"，返回失败
+  │   └─ 已探索？→ TeleportHelper.teleportToMapPosition
   │
-  ├─ 传送：TeleportHelper.teleportToMapPosition
+  ├─ TeleportHelper.executeTeleport（实际传送）
+  │   ├─ 玩家在 Sable 飞艇上？
+  │   │   ├─ 跨维度 → 拒绝，提示"权能不足"
+  │   │   └─ 同维度 → SubLevel 瞬移 + setPos 同步玩家
+  │   ├─ 普通骑乘？
+  │   │   ├─ 跨维度 → 坐骑+玩家分别传送到目标维度，重新骑乘
+  │   │   └─ 同维度 → vehicle.dismountTo 带坐骑一起移动
+  │   ├─ 无骑乘 → 普通传送
   │   ├─ findSafeY → MOTION_BLOCKING 高度图
-  │   ├─ 跨维度传送 / 同维度传送
   │   ├─ 传送粒子效果 + 音效
   │   ├─ 5点坠落伤害
   │   ├─ 消耗珍珠 + 设置冷却
@@ -341,15 +343,15 @@ GUI Overlay 在屏幕2D空间渲染，而地图在3D空间渲染（有透视变�
 ```java
 @Inject(method = "renderMap", at = @At("TAIL"))
 private void renderLivingMapTargetMarker(PoseStack poseStack, MultiBufferSource buffer, ...) {
-    // 1. 检查是否为活地图
+    // 1. 检查是否为活地图（LivingItemManager.isLivingMap）
     // 2. 获取 MapItemSavedData
     // 3. 从 LivingMapClientCache 获取元数据
-    // 4. calcTargetMapPixel → 目标像素坐标
+    // 4. MapCoordHelper.calcClientTarget → 目标像素坐标
     // 5. 检查是否在地图范围内
-    // 6. isBannerDecorationHit → 旗帜命中检测（客户端用 decorations）
-    // 7. findTargetPointHit → 红色大叉叉命中检测
-    // 8. isExplored → 已探索检测
-    // 9. renderMarker → 原版准心纹理 + 四色着色
+    // 6. MapCoordHelper.isBannerDecorationHit → 旗帜命中检测
+    // 7. MapCoordHelper.findTargetPointHit → 红色大叉叉命中检测
+    // 8. MapCoordHelper.isExplored → 已探索检测
+    // 9. LivingMapTargetRenderer.renderMarker → 原版准心纹理 + 四色着色
 }
 ```
 
@@ -574,17 +576,13 @@ int mapY = (int) (v * 128);
   │
   ├─ 检查：UV 是否在 [0, 1] 范围内？像素是否在 [0, 128) 范围内？
   │
-  ├─ 检查：目标附近是否有旗帜？（5像素半径内）
-  │   ├─ 有 → 传送到旗帜位置
-  │   └─ 无 → 检查是否有红色大叉叉？
-  │       ├─ 有 → 传送到宝藏位置
-  │       └─ 无 → 检查目标是否已探索
-  │           ├─ 未探索 → 提示"未探索区域"，取消
-  │           └─ 已探索 → 传送到目标位置
+  ├─ 委托：MapTeleportExecutor.execute()
+  │   ├─ 旗帜命中？→ TeleportHelper.teleportToBanner
+  │   ├─ 红色大叉叉命中？→ TeleportHelper.teleportToMapPosition
+  │   ├─ 未探索？→ 提示"未探索区域"，返回失败
+  │   └─ 已探索？→ TeleportHelper.teleportToMapPosition
   │
-  ├─ 传送：TeleportHelper（复用手持地图传送逻辑）
-  │
-  └─ 安全物品返回：传送前将光标物品放回背包，背包满则掉落至玩家脚下
+  └─ 始终取消事件（无论传送成功与否，防止展示框交互旋转地图）
 ```
 
 ### 8.5 安全物品返回
@@ -778,25 +776,204 @@ public class MapItemMixin {
 
 ---
 
-## 11. 关键类和职责
+## 11. 骑乘传送与 Sable 飞艇兼容
 
-| 类名 | 文件位置 | 职责 |
-|------|---------|------|
-| `MapCoordHelper` | `domain/map/MapCoordHelper.java` | 坐标计算核心：射线-矩形相交、视角映射、像素↔世界坐标转换、旗帜命中检测、hitVec→UV转换 |
-| `LivingMapEventHandler` | `domain/map/LivingMapEventHandler.java` | 事件处理入口：右键传送逻辑、元数据同步包发送 |
-| `ItemFrameMapTeleportHandler` | `domain/map/ItemFrameMapTeleportHandler.java` | 展示框传送：EntityInteractSpecific事件拦截、hitVec→像素坐标、安全物品返回 |
-| `TeleportHelper` | `domain/map/TeleportHelper.java` | 传送执行：安全Y坐标、跨维度传送、粒子/音效、伤害、冷却 |
-| `LivingEnderPearlFunction` | `function/LivingEnderPearlFunction.java` | 活末影珍珠功能：冷却 tick、tooltip、消耗判断 |
-| `LivingEnderPearlData` | `data/LivingEnderPearlData.java` | 活末影珍珠数据组件：cooldown 字段 |
-| `LivingMapMetadataPacket` | `network/LivingMapMetadataPacket.java` | 服务器→客户端网络包：同步地图元数据 |
-| `LivingMapClientCache` | `domain/map/LivingMapClientCache.java` | 客户端缓存：按 mapId 存储 centerX/centerZ/dimension |
-| `ItemInHandRendererMixin` | `client/mixin/ItemInHandRendererMixin.java` | 客户端渲染：注入 renderMap 方法，3D空间中渲染目标标记 |
-| `MapRendererMixin` | `client/mixin/MapRendererMixin.java` | 客户端渲染：注入 MapRenderer.render 方法，展示框地图光标渲染 |
-| `MapItemMixin` | `living/mixin/MapItemMixin.java` | 活空地图：注入 EmptyMapItem.use 方法，根据堆叠数量和朝向在远程位置创建活地图 |
+### 11.1 骑乘传送
+
+传送时根据玩家是否骑乘以及是否跨维度，采用不同策略：
+
+| 场景 | 处理方式 |
+|------|---------|
+| 同维度 + 有坐骑 | `vehicle.dismountTo()` 带坐骑和所有乘客一起移动，`ClientboundPlayerPositionPacket` 同步客户端位置（不用 `teleportTo` 避免踢下船） |
+| 同维度 + 无坐骑 | `player.teleportTo(x, y, z)` |
+| 跨维度 + 有坐骑 | 保存所有乘客 → 全部下船 → `vehicle.changeDimension()` 传送船 → 每个乘客 `changeDimension()` + `startRiding()` 重新上船 |
+| 跨维度 + 无坐骑 | `player.changeDimension(transition)` 跨维度传送 |
+
+**跨维度带坐骑的关键**：`vehicle.dismountTo()` 只在同一维度内移动坐骑，不会改变坐骑维度。因此跨维度时必须分别传送坐骑和玩家到目标维度，再重新建立骑乘关系。
+
+### 11.2 Sable 飞艇传送
+
+Sable（机械动力：航空学）的飞艇使用 SubLevel 投影机制：飞艇方块真实存储在世界极远处的 Plotyard，玩家看到的是通过 `logicalPose()` 投影的位置。
+
+#### 11.2.1 同维度飞艇传送
+
+**核心原则：移动飞艇投影 + 用 `setPos()` 同步玩家位置。**
+
+Sable 有三个关键的 Mixin 机制：
+
+1. **`teleport_players/ServerPlayerMixin`**：Wrap 了 `player.teleportTo(DDD)`，自动调用 `projectOutOfSubLevel()` 把投影坐标反算为 Plotyard 真实坐标。传入世界坐标会被当作投影坐标反算，玩家被传到几千万格外。
+2. **`entities_stick_sublevels/ServerPlayerMixin`**：每 tick 根据 `logicalPose` 和 `lastPose` 的差值自动移动玩家，让玩家"粘"在 SubLevel 上。
+3. **`plot/ClientChunkCacheMixin`**：拦截客户端区块卸载，Plot 区块不允许被卸载（抛出 `UnsupportedOperationException: Cannot drop chunks in plot`）。
+
+因此，**绝对不能调用 `player.teleportTo()`**。必须用 `player.setPos()` 直接设置坐标（绕过 Mixin），否则会触发以下崩溃链：
+
+```
+只移动 logicalPose，不更新玩家位置
+  → SubLevelTrackingSystem.shouldLoad() 判定玩家远离飞艇（距离超过追踪范围）
+  → 发送 ClientboundForgetLevelChunkPacket 卸载区块
+  → 客户端 ClientChunkCacheMixin 拒绝卸载 Plot 区块
+  → UnsupportedOperationException: Cannot drop chunks in plot → 断开连接
+```
+
+**传送流程**：
+
+```
+1. 获取玩家所在的 SubLevel
+2. 用世界坐标计算玩家相对飞艇原点的偏移 offset = playerPos - airshipPos
+3. 计算新飞艇位置 newAirshipPos = destPos - offset
+4. 保存玩家在飞艇局部坐标系中的位置 playerLocal = oldPose.transformPositionInverse(playerPos)
+5. 直接设置 logicalPose（双保险，某些物理管线可能不会更新）
+6. handle.teleport() 通知物理管线
+7. 用新 logicalPose 把 playerLocal 投影回世界坐标 newPlayerPos = newPose.transformPosition(playerLocal)
+8. player.setPos(newPlayerPos) 同步玩家位置（绕过 Sable Mixin）
+9. updateLastPose() 同步上一 tick 姿态
+```
+
+**偏移计算**（世界坐标，适用于无旋转飞艇）：
+
+```java
+double offsetX = player.getX() - airshipPos.x();
+double offsetY = player.getY() - airshipPos.y();
+double offsetZ = player.getZ() - airshipPos.z();
+
+double newAirshipX = destX - offsetX;
+double newAirshipY = destY - offsetY;
+double newAirshipZ = destZ - offsetZ;
+```
+
+**玩家位置同步**（局部坐标投影，适用于有旋转飞艇）：
+
+```java
+// 传送前：玩家在旧飞艇局部坐标系中的位置
+Vector3d playerLocal = oldPose.transformPositionInverse(
+    new Vector3d(player.getX(), player.getY(), player.getZ()));
+
+// 传送后：用新飞艇的 logicalPose 把局部坐标投影回世界坐标
+Vector3d newPlayerPos = newPose.transformPosition(playerLocal);
+player.setPos(newPlayerPos.x(), newPlayerPos.y(), newPlayerPos.z());
+```
+
+**logicalPose 双保险**：参照 `SubLevelSerializer` 的模式，在调用 `handle.teleport()` 之前先直接设置 `logicalPose`。`StaticPhysicsPipeline.teleport()` 会更新 logicalPose，但其他物理管线实现可能不会。直接设置确保 `SubLevelTrackingSystem.shouldLoad()` 始终能正确判断玩家与飞艇的距离。
+
+**为什么不能调用 `player.teleportTo()`**：
+
+| 方法 | Sable Mixin 行为 | 后果 |
+|------|-----------------|------|
+| `player.teleportTo(ServerLevel, x, y, z, ...)` | 触发跨维度逻辑，stopRiding + 移动坐骑实体 | 把 SubLevel 的坐骑实体从 Plotyard 拉到目标坐标，破坏投影关系 |
+| `player.teleportTo(double, double, double)` | WrapMethod 调用 `projectOutOfSubLevel()` 反投影 | 把世界坐标当投影坐标反算，玩家被传到几千万格外 |
+| `player.setPos(double, double, double)` | 无 Mixin 拦截，直接设置坐标 | ✅ 正确：绕过所有 Sable Mixin |
+
+**超远距离传送（>320格）"飞快移动"问题**：Sable 的 `entities_stick_sublevels` 系统根据 `logicalPose` 和 `lastPose` 的差值每 tick 平滑移动玩家。超远距离传送时，`logicalPose` 瞬间变化巨大，但 `lastPose` 仍是旧值，差值导致系统在接下来的 tick 中持续移动玩家，产生"缓动"效果。
+
+**修复**：传送后同步网络姿态和速度，使网络系统认为飞艇已停止移动：
+
+```java
+serverSubLevel.lastNetworkedPose().set(serverSubLevel.logicalPose());
+serverSubLevel.latestLinearVelocity.zero();
+serverSubLevel.latestAngularVelocity.zero();
+serverSubLevel.setLastNetworkedStopped(true);
+```
+
+**站在飞艇上虚空掉落问题**：站在飞艇上（非骑乘坐垫）传送后，客户端仍发送传送前旧坐标的移动包。`ServerboundMovePlayerPacketMixin` 中 `Sable.HELPER.getContaining(level, oldX, oldZ)` 返回 null（飞艇已传送），Mixin 清除 `trackingSubLevel`，玩家脱离飞艇掉入虚空。
+
+**修复**：传送后发送 `ClientboundPlayerPositionPacket` 同步客户端位置，确保客户端后续移动包使用新坐标。
+
+**关键**：必须发送**世界坐标**（`newPlayerPos`），而非 SubLevel 局部坐标（`localPos`）。因为 Sable 的 `LevelPlot`（地块）`plotPos` 固定，传送后 `getContaining(newPlayerPos)` 返回 null（玩家不在 SubLevel 的 plot 范围内），发送局部坐标会导致客户端渲染玩家在 0,0,0 附近，而非飞艇旁。`SubLevelEntityCollision` 基于 `logicalPose` 处理碰撞，玩家可正常站在飞艇方块上：
+
+```java
+player.connection.send(new ClientboundPlayerPositionPacket(
+    newPlayerPos.x, newPlayerPos.y, newPlayerPos.z,
+    player.getYRot(), player.getXRot(),
+    Set.of(), -1
+));
+```
+
+**站立和坐垫均支持**：`Sable.HELPER.getTrackingOrVehicleSubLevel(player)` 覆盖两种情况：
+
+| 状态 | Sable 内部机制 | 返回值 |
+|------|---------------|--------|
+| 站在飞艇上 | `entities_stick_sublevels` tick 系统粘住玩家 | `getTrackingSubLevel()` |
+| 坐在坐垫上 | 玩家骑乘的实体在 SubLevel 内 | `getVehicleSubLevel()` |
+
+两种情况下 `player.getX/Y/Z()` 都是世界投影坐标，偏移计算和 `setPos()` 逻辑完全一致。
+
+#### 11.2.2 跨维度飞艇传送（保守方案：拒绝）
+
+由于以下技术限制，跨维度飞艇传送暂不实现：
+
+1. **SubLevel 绑定 Level**：`logicalPose()` 的坐标是相对于其所属 `ServerLevel` 的，跨维度后坐标无意义
+2. **追踪系统卸载**：`SubLevelTrackingSystem` 检测到玩家不在同维度时，会主动发送移除包，客户端飞艇渲染消失
+3. **客户端渲染**：飞艇的投影渲染依赖客户端 SubLevel 的插值系统，维度切换时无法平滑过渡
+
+当玩家骑乘飞艇尝试跨维度传送时，显示提示：
+
+| 语言 | 文案 |
+|------|------|
+| 中文 | 跃迁权能不足，无法撕裂位面壁垒 |
+| 英文 | Insufficient jump authority, cannot pierce the planar barrier |
+
+翻译键：`chat.livingitem.ender_pearl.insufficient_authority`
+
+### 11.3 Sable 软依赖架构
+
+Sable 是可选依赖，未安装时所有飞艇传送逻辑自动跳过，不影响普通传送功能。采用三层架构：
+
+```
+TeleportHelper
+    │
+    └─ ModSable（安全调用入口）
+        │
+        ├─ SableCompat（依赖检测：ModList.isLoaded("sable")）
+        │
+        └─ SableIntegration（核心逻辑：直接引用 Sable 类）
+```
+
+| 层 | 类 | 职责 | 加载时机 |
+|----|-----|------|---------|
+| 1 | `SableCompat` | 检测 Sable 是否加载 | 始终加载 |
+| 2 | `ModSable` | 安全调用入口，捕获 `NoClassDefFoundError` | 始终加载 |
+| 3 | `SableIntegration` | 直接引用 Sable API 的核心逻辑 | 仅 Sable 已加载时 |
+
+**类加载保护**：`ModSable` 通过 `Class.forName()` 检查 `SableIntegration` 是否可用，并 try-catch `NoClassDefFoundError`。即使 Sable 版本不兼容也不会崩溃，只是自动禁用飞艇传送功能。
+
+### 11.4 构建配置
+
+```groovy
+// Sable 兼容（compileOnly 编译，玩家可选安装）
+compileOnly files("libs/sable-neoforge-1.21.1-2.0.3.jar")
+compileOnly files("libs/sable-companion-common-1.21.1-1.6.0.jar")  // JarJar 嵌套依赖
+```
+
+- `compileOnly`：编译时可用，不打包进发布 jar
+- 不设 `runtimeOnly`：Sable 要求 Flywheel 1.0.6+，但 Create 内置 Flywheel 1.0.4，开发环境会冲突
+- `sable-companion-common`：Sable 使用 JarJar 打包，编译时需单独提取嵌套的 companion jar
 
 ---
 
-## 12. 已知问题与修复记录
+## 12. 关键类和职责
+
+| 类名 | 文件位置 | 职责 |
+|------|---------|------|
+| `MapCoordHelper` | `domain/map/MapCoordHelper.java` | 坐标计算核心：射线-矩形相交、视角映射、像素↔世界坐标转换、旗帜命中检测、hitVec→UV转换、客户端目标计算（`calcClientTarget`） |
+| `MapTeleportExecutor` | `domain/map/MapTeleportExecutor.java` | 传送决策链：统一处理"旗帜→宝藏→已探索区域"的传送优先级和消息发送，消除手持/展示框/容器三处重复逻辑 |
+| `LivingMapEventHandler` | `domain/map/LivingMapEventHandler.java` | 事件处理入口：右键传送事件拦截、元数据同步包发送，传送逻辑委托给 `MapTeleportExecutor` |
+| `ItemFrameMapTeleportHandler` | `domain/map/ItemFrameMapTeleportHandler.java` | 展示框传送：EntityInteractSpecific事件拦截、hitVec→像素坐标，传送逻辑委托给 `MapTeleportExecutor` |
+| `TeleportHelper` | `domain/map/TeleportHelper.java` | 传送执行：安全Y坐标、骑乘传送、跨维度传送、Sable飞艇传送、粒子/音效、伤害、冷却 |
+| `LivingItemManager` | `api/LivingItemManager.java` | 活物品管理：`isLivingItem()`、`isLivingMap()` 等通用判断 |
+| `LivingEnderPearlFunction` | `function/LivingEnderPearlFunction.java` | 活末影珍珠功能：`isLivingEnderPearl()`、`isOnCooldown(player)`、`setCooldown(player)`、`findInInventory(player)`，冷却委托给原版 `player.getCooldowns()` |
+| `LivingMapMetadataPacket` | `network/LivingMapMetadataPacket.java` | 服务器→客户端网络包：同步地图元数据 |
+| `LivingMapClientCache` | `domain/map/LivingMapClientCache.java` | 客户端缓存：按 mapId 存储 centerX/centerZ/dimension |
+| `LivingMapTargetRenderer` | `client/render/LivingMapTargetRenderer.java` | 客户端渲染工具：准心标记渲染（`renderMarker`），供 `ItemInHandRendererMixin` 和 `MapRendererMixin` 共享 |
+| `ItemInHandRendererMixin` | `client/mixin/ItemInHandRendererMixin.java` | 客户端渲染：注入 renderMap 方法，3D空间中渲染目标标记 |
+| `MapRendererMixin` | `client/mixin/MapRendererMixin.java` | 客户端渲染：注入 MapRenderer.render 方法，展示框地图光标渲染 |
+| `MapItemMixin` | `living/mixin/MapItemMixin.java` | 活空地图：注入 EmptyMapItem.use 方法，根据堆叠数量和朝向在远程位置创建活地图 |
+| `ModSable` | `compat/sable/ModSable.java` | Sable 安全调用入口：类加载保护、NoClassDefFoundError 捕获 |
+| `SableCompat` | `compat/sable/SableCompat.java` | Sable 依赖检测：ModList.isLoaded("sable") |
+| `SableIntegration` | `compat/sable/SableIntegration.java` | Sable 核心逻辑：SubLevel 检测、飞艇瞬移、偏移计算 |
+
+---
+
+## 13. 已知问题与修复记录
 
 ### v1 → v2：标记不能覆盖全图
 
@@ -899,3 +1076,195 @@ public class MapItemMixin {
 **问题**：地板/天花板展示框的 V 轴方向与地图纹理 V 轴也相反，但之前只翻转了 U 轴。
 
 **修复**：区分朝向——墙壁翻转 U，地板/天花板翻转 V。
+
+### v16 → v17：骑乘传送与 Sable 飞艇兼容
+
+**问题1**：跨维度传送时 `vehicle.dismountTo()` 把坐骑移到源维度的目标坐标，坐骑和玩家分离。
+
+**修复1**：跨维度时分别传送坐骑和玩家到目标维度，再 `player.startRiding(vehicle)` 重新骑乘。
+
+**问题2**：Sable 飞艇传送后载具消失。`handle.teleport()` 在某些物理管线中不更新 `logicalPose()`，追踪系统判断玩家不在飞艇范围内，发送移除包导致客户端飞艇消失。
+
+**修复2**：参照 `SubLevelSerializer` 模式，在 `handle.teleport()` 前直接设置 `logicalPose`（双保险），传送后使用 `player.teleportTo(ServerLevel, ...)` 完整传送确保区块加载和位置同步。
+
+**问题3**：Sable 飞艇跨维度传送技术限制（SubLevel 绑定 Level、追踪系统卸载、客户端渲染）。
+
+**修复3**：保守方案——跨维度拒绝传送，显示提示「跃迁权能不足，无法撕裂位面壁垒」。
+
+### v17 → v18：代码重构 + 事件取消修复
+
+**问题1**：`calcTargetMapPixel` 重复实现 3 次（服务端 `MapCoordHelper`、客户端 `ItemInHandRendererMixin`、客户端 `LivingMapTargetRenderer`），`renderMarker` 重复实现 2 次，`findPearlInInventory` 重复 3 次，`isLivingMap` 重复 5 次，`MAP_SIZE = 128` 重复 4 次。
+
+**修复1**：提取公共方法——`MapCoordHelper.calcClientTarget()`、`LivingMapTargetRenderer.renderMarker()`、`LivingEnderPearlFunction.findInInventory()`、`LivingItemManager.isLivingMap()`、`MapCoordHelper.MAP_SIZE`。新增 `MapTeleportExecutor` 统一传送决策链，消除手持/展示框/容器三处重复逻辑。总计减少约 160 行重复代码。
+
+**问题2**：手持活地图右键传送失败时（如 Sable 跨维度拒绝），事件未取消，原版地图缩放行为仍然触发。
+
+**修复2**：`LivingMapEventHandler.onRightClickItem` 改为始终取消事件（与展示框传送一致），无论传送成功与否。
+
+**问题3**：展示框传送失败时右键交互传递给展示框，活地图被旋转。
+
+**修复3**：`ItemFrameMapTeleportHandler` 改为检测到活地图+活珍珠组合后始终取消事件，无论传送成功与否。
+
+**问题4**：`LivingMapTargetRenderer` 包含死代码（空 `register()` 方法、未使用的 `getHeldLivingMap()` 和 `calcClientTarget()` 委托）。
+
+**修复4**：清理为纯渲染工具类，仅保留 `renderMarker()` 方法。`ItemInHandRendererMixin` 直接调用 `MapCoordHelper.calcClientTarget()`。
+
+### v18 → v19：冷却系统改用原版 ItemCooldowns
+
+**问题**：自定义 `LivingEnderPearlData` DataComponent 重复实现了原版已有的冷却功能，且每个珍珠独立冷却，玩家可通过切换珍珠栈绕过冷却。
+
+**修复**：删除 `LivingEnderPearlData` 及其注册（`LIVING_ENDER_PEARL_DATA`），改用原版 `player.getCooldowns()` 系统。
+
+| 变更 | 旧实现 | 新实现 |
+|------|--------|--------|
+| 冷却检查 | `isOnCooldown(ItemStack)` | `isOnCooldown(ServerPlayer)` → `player.getCooldowns().isOnCooldown(Items.ENDER_PEARL)` |
+| 设置冷却 | `setCooldown(ItemStack, ticks)` | `setCooldown(ServerPlayer, ticks)` → `player.getCooldowns().addCooldown(Items.ENDER_PEARL, ticks)` |
+| tick 逻辑 | 每 tick 修改 DataComponent + syncSlotToClients | 不需要，`Player.tick()` 自动调用 |
+| 客户端显示 | 自定义 tooltip（灰色倒计时/绿色就绪） | 原版扫光动画（sweep） |
+| 冷却范围 | 每个珍珠独立 | 所有末影珍珠共享（含普通珍珠） |
+
+删除文件：`LivingEnderPearlData.java`。
+
+### v19 → v20：Sable 飞艇超远距离传送"飞快移动" + 站在飞艇上虚空掉落
+
+**问题1**：飞艇超远距离跨地图传送（>320格）时，玩家不是直接传送到目标位置，而是以极快速度飞过去。原因是 `entities_stick_sublevels` Mixin 根据 `logicalPose` 和 `lastPose` 的差值每 tick 平滑移动玩家，超远距离时产生"缓动"效果。
+
+**修复1**：传送后同步 `lastNetworkedPose` 与 `logicalPose`，清零线速度/角速度，标记为已停止。使网络同步系统认为飞艇没有移动，不发送移动包。
+
+```java
+serverSubLevel.lastNetworkedPose().set(serverSubLevel.logicalPose());
+serverSubLevel.latestLinearVelocity.zero();
+serverSubLevel.latestAngularVelocity.zero();
+serverSubLevel.setLastNetworkedStopped(true);
+```
+
+**问题2**：站在飞艇上（非骑乘坐垫）跨地图传送时，玩家掉入虚空不断下落。原因是传送后客户端仍发送旧坐标的移动包，`ServerboundMovePlayerPacketMixin` 中 `Sable.HELPER.getContaining(level, oldX, oldZ)` 返回 null（飞艇已传送），Mixin 清除 `trackingSubLevel`，玩家脱离飞艇。
+
+**修复2**：传送后发送 `ClientboundPlayerPositionPacket` 同步客户端位置，确保客户端后续移动包使用新坐标。参考 Sable 在 `ServerPlayerMixin.sable$adjustTeleportPacket` 中处理骑乘时的做法。
+
+### v20 → v21：站在飞艇上仅传送飞艇不传送玩家
+
+**问题**：站在飞艇上跨地图传送后，玩家留在原地，只有飞艇被传送。v20 使用 SubLevel 局部坐标（`localPos`）发送 `ClientboundPlayerPositionPacket`，但 Sable 的 `LevelPlot`（地块）`plotPos` 是固定的 ChunkPos，不会随 `logicalPose` 移动。传送后 `getContaining(newPlayerPos)` 返回 null（plot 仍在旧位置），客户端收到局部坐标后渲染玩家在 0,0,0 附近，而非飞艇旁。
+
+**修复**：改为发送世界坐标（`newPlayerPos`）而非 SubLevel 局部坐标（`localPos`）。`SubLevelEntityCollision` 基于 `logicalPose` 而非 `plotPos` 处理碰撞，玩家可正常站在飞艇方块上。
+
+```diff
+- Vector3d localPos = serverSubLevel.logicalPose()
+-     .transformPositionInverse(newPlayerPos, new Vector3d());
+- player.connection.send(new ClientboundPlayerPositionPacket(
+-     localPos.x, localPos.y, localPos.z, ...));
++ player.connection.send(new ClientboundPlayerPositionPacket(
++     newPlayerPos.x, newPlayerPos.y, newPlayerPos.z, ...));
+```
+
+**根因分析**：Sable 的 `LevelPlot` 与 `logicalPose` 是两个独立的概念：
+
+| 概念 | 作用 | 传送后是否变化 |
+|------|------|---------------|
+| `logicalPose` | 飞艇在世界中的投影位置 | ✅ 变化（手动设置） |
+| `LevelPlot.plotPos` | 地块的固定 ChunkPos | ❌ 不变（始终在 Plotyard） |
+| `getContaining()` | 基于 `plotPos` 判断玩家是否在 SubLevel 内 | ❌ 返回 null（plot 在旧位置） |
+
+因此，传送后不能依赖 `getContaining()` 来判断位置同步方式，必须直接发送世界坐标。
+
+### v21 → v22：跨维度坐骑传送仅传送坐骑不传送玩家
+
+**问题**：跨维度传送时，原代码只调用 `vehicle.changeDimension(transition)`，未同时传送玩家。`Entity.changeDimension()` 内部会调用 `unRide()` 卸载所有乘客，导致玩家被留在旧维度，只有坐骑被传送到目标维度。
+
+**修复**：在调用 `vehicle.changeDimension()` 之前先 `player.stopRiding()` 干净解除骑乘，然后分别传送坐骑和玩家到目标维度，最后 `player.startRiding(vehicle)` 重新建立骑乘关系。
+
+```java
+if (vehicle != null) {
+    player.stopRiding();
+    vehicle.changeDimension(transition);
+    player.changeDimension(transition);
+    player.startRiding(vehicle);
+}
+```
+
+**为什么用 `changeDimension()` 而非 `teleportTo()`**：1.21.1 引入了 `DimensionTransition` 类作为跨维度传送的标准方式。`changeDimension()` 会正确处理实体在维度间的注册/注销、数据保存/加载等逻辑，比手动 `teleportTo(ServerLevel, ...)` 更可靠。`DimensionTransition.DO_NOTHING` 跳过传送门搜索逻辑，直接传送到精确坐标。
+
+### v22 → v23：多乘客载具传送处理
+
+**问题**：当载具上有多个乘客（如船上有两个玩家），传送时只处理了传送者：
+- 跨维度：`vehicle.changeDimension()` 内部 `unRide()` 会把其他乘客踢下船留在旧维度
+- 同维度：`player.teleportTo()` 内部 `stopRiding()` 只把传送者踢下船，其他乘客也被带到目标位置
+
+**修复**：
+
+**跨维度** — 保存所有乘客，清空后逐个传送并重新骑乘：
+
+```java
+List<Entity> passengers = new ArrayList<>(vehicle.getPassengers());
+for (Entity passenger : passengers) {
+    passenger.stopRiding();
+}
+vehicle.changeDimension(transition);
+for (Entity passenger : passengers) {
+    passenger.changeDimension(transition);
+    passenger.startRiding(vehicle);
+}
+```
+
+**同维度** — `dismountTo()` 本身就能带所有乘客移动，只需用 `ClientboundPlayerPositionPacket` 同步客户端位置，替代会踢人下船的 `teleportTo()`：
+
+```java
+vehicle.dismountTo(destX, destY, destZ);
+player.connection.send(new ClientboundPlayerPositionPacket(
+    destX, destY, destZ, player.getYRot(), player.getXRot(),
+    Set.of(), -1));
+```
+
+### v23 → v24：飞艇上多玩家传送同步
+
+**问题**：飞艇上有多个玩家时，传送只同步了传送者的位置：
+- 坐在坐垫上的玩家：坐垫实体在 SubLevel 内，`logicalPose` 变化后坐垫位置跟着变，骑乘者自动跟随 ✅
+- 站在飞艇上的玩家：依赖 `entities_stick_sublevels` 每 tick 移动，但传送后 `lastPose` 与 `logicalPose` 差值为零，系统不做任何移动，留在原地掉入虚空 ❌
+
+**修复**：在 `SableIntegration.teleportSubLevel()` 中，传送前遍历所有其他玩家，找到同 SubLevel 的，保存其局部坐标；传送后将局部坐标转回世界坐标，同步位置。
+
+```java
+// 传送前：保存飞艇上其他玩家的局部坐标
+Map<ServerPlayer, Vector3d> otherPlayersLocal = new HashMap<>();
+for (ServerPlayer otherPlayer : player.serverLevel().players()) {
+    if (otherPlayer == player) continue;
+    if (Sable.HELPER.getTrackingOrVehicleSubLevel(otherPlayer) == serverSubLevel) {
+        Vector3d local = oldPose.transformPositionInverse(
+            new Vector3d(otherPlayer.getX(), otherPlayer.getY(), otherPlayer.getZ()), new Vector3d());
+        otherPlayersLocal.put(otherPlayer, local);
+    }
+}
+
+// 传送后：同步所有其他玩家的位置
+for (Map.Entry<ServerPlayer, Vector3d> entry : otherPlayersLocal.entrySet()) {
+    Vector3d otherNewPos = serverSubLevel.logicalPose()
+        .transformPosition(entry.getValue(), new Vector3d());
+    otherPlayer.setPos(otherNewPos.x, otherNewPos.y, otherNewPos.z);
+    otherPlayer.connection.send(new ClientboundPlayerPositionPacket(...));
+}
+```
+
+### v24 → v25：站在飞艇上远距离传送"虚空无限下坠"
+
+**问题**：站在飞艇上（不骑乘）远距离跨地图传送时，玩家会经历长时间的虚空下坠，然后才传送成功。坐在飞艇上则瞬间完成。
+
+**根因**：`ServerboundMovePlayerPacketMixin` 的位置变换循环。
+
+传送后的时序：
+1. `teleportSubLevel()` 将 `logicalPose` 移到新位置，`player.setPos()` 设置新坐标，发送 `ClientboundPlayerPositionPacket`
+2. 但 `trackingSubLevel` 未清除
+3. 网络延迟期间，客户端发送移动包（旧坐标）
+4. Mixin 处理：`getContaining(旧x, 旧z)` 返回 SubLevel（plot 在旧位置）
+5. `logicalPose.transformPosition(旧坐标)` → 旧坐标穿过新 logicalPose → 完全错误的位置
+6. `ClientboundPlayerPositionPacket` 到达 → 纠正
+7. 客户端又发移动包 → 又弹飞 → 无限循环
+
+**为什么坐着不触发**：原版骑乘系统不发送 `ServerboundMovePlayerPacket`，Mixin 完全不参与。
+
+**修复**：传送后清除 `trackingSubLevel`，使 Mixin 不再做坐标变换：
+
+```java
+((EntityMovementExtension) player).sable$setTrackingSubLevel(null);
+```
+
+对所有被传送的玩家（传送者 + 飞艇上其他玩家）都需要清除。

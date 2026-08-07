@@ -13,7 +13,6 @@ import com.qiqi.li.living.data.LivingTntData;
 import com.qiqi.li.living.data.LivingWaterBucketData;
 import com.qiqi.li.living.data.LivingWaterWheelData;
 import com.qiqi.li.living.data.LivingEnderChestData;
-import com.qiqi.li.living.data.LivingEnderPearlData;
 import net.minecraft.world.item.Items;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.registries.Registries;
@@ -88,13 +87,6 @@ public class LivingItemManager {
                             .networkSynchronized(LivingEnderChestData.STREAM_CODEC)
                             .build());
 
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingEnderPearlData>> LIVING_ENDER_PEARL_DATA =
-            DATA_COMPONENT_TYPES.register("living_ender_pearl_data", () ->
-                    DataComponentType.<LivingEnderPearlData>builder()
-                            .persistent(LivingEnderPearlData.CODEC)
-                            .networkSynchronized(LivingEnderPearlData.STREAM_CODEC)
-                            .build());
-
     private static final List<LivingItemFunction> FUNCTIONS = new ArrayList<>();
     private static final List<LivingItemFunction> FUNCTIONS_VIEW = Collections.unmodifiableList(FUNCTIONS);
     private static final Map<Item, List<LivingItemFunction>> APPLICABLE_CACHE = new HashMap<>();
@@ -110,6 +102,10 @@ public class LivingItemManager {
 
     public static boolean isLivingItem(ItemStack stack) {
         return !stack.isEmpty() && stack.has(IS_LIVING.value());
+    }
+
+    public static boolean isLivingMap(ItemStack stack) {
+        return stack.is(Items.FILLED_MAP) && isLivingItem(stack);
     }
 
     public static List<LivingItemFunction> getApplicableFunctions(ItemStack stack) {
@@ -138,7 +134,6 @@ public class LivingItemManager {
         stack.remove(LIVING_FURNACE_DATA.value());
         stack.remove(LIVING_HOPPER_DATA.value());
         stack.remove(LIVING_ENDER_CHEST_DATA.value());
-        stack.remove(LIVING_ENDER_PEARL_DATA.value());
     }
 
     public static void setLiving(ItemStack stack, boolean living) {
@@ -264,13 +259,5 @@ public class LivingItemManager {
 
     public static void setWaterWheelData(ItemStack stack, LivingWaterWheelData data) {
         setData(stack, LIVING_WATER_WHEEL_DATA.value(), data, LivingWaterWheelData.EMPTY);
-    }
-
-    public static LivingEnderPearlData getEnderPearlData(ItemStack stack) {
-        return getData(stack, LIVING_ENDER_PEARL_DATA.value(), LivingEnderPearlData.DEFAULT);
-    }
-
-    public static void setEnderPearlData(ItemStack stack, LivingEnderPearlData data) {
-        setData(stack, LIVING_ENDER_PEARL_DATA.value(), data, LivingEnderPearlData.DEFAULT);
     }
 }

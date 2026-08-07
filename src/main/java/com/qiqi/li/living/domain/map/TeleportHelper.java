@@ -3,6 +3,7 @@ package com.qiqi.li.living.domain.map;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ClientboundPlayerPositionPacket;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -11,9 +12,13 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.level.portal.DimensionTransition;
+import com.qiqi.li.living.compat.sable.ModSable;
 import com.qiqi.li.living.function.LivingEnderPearlFunction;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 
 public final class TeleportHelper {
@@ -27,7 +32,7 @@ public final class TeleportHelper {
                                                  ServerLevel targetLevel,
                                                  double worldX, double worldZ,
                                                  ItemStack pearlStack) {
-        if (LivingEnderPearlFunction.isOnCooldown(pearlStack)) return false;
+        if (LivingEnderPearlFunction.isOnCooldown(player)) return false;
 
         BlockPos targetPos = BlockPos.containing(worldX, player.getY(), worldZ);
         int safeY = findSafeY(targetLevel, targetPos);
@@ -37,46 +42,14 @@ public final class TeleportHelper {
         double destY = safeY + 1.0;
         double destZ = worldZ + 0.5;
 
-        boolean crossDim = player.level().dimension() != targetLevel.dimension();
-
-        Entity vehicle = player.getVehicle();
-        if (vehicle != null) {
-            vehicle.dismountTo(destX, destY, destZ);
-        }
-
-        if (crossDim) {
-            player.teleportTo(targetLevel, destX, destY, destZ, Set.of(), player.getYRot(), player.getXRot());
-        } else {
-            player.teleportTo(destX, destY, destZ);
-        }
-        player.resetFallDistance();
-
-        targetLevel.sendParticles(ParticleTypes.PORTAL,
-            destX, destY + 1, destZ,
-            32, 0.5, 1.0, 0.5, 0.5);
-
-        if (crossDim) {
-            sourceLevel.sendParticles(ParticleTypes.PORTAL,
-                player.getX(), player.getY() + 1, player.getZ(),
-                32, 0.5, 1.0, 0.5, 0.5);
-        }
-
-        targetLevel.playSound(null, destX, destY, destZ,
-            SoundEvents.ENDERMAN_TELEPORT, SoundSource.PLAYERS, 1.0f, 1.0f);
-
-        player.hurt(player.damageSources().fall(), FALL_DAMAGE);
-
-        consumePearl(player, pearlStack);
-        LivingEnderPearlFunction.setCooldown(pearlStack, COOLDOWN_TICKS);
-
-        return true;
+        return executeTeleport(player, sourceLevel, targetLevel, destX, destY, destZ, pearlStack);
     }
 
     public static boolean teleportToBanner(ServerPlayer player, ServerLevel sourceLevel,
                                             ServerLevel targetLevel,
                                             BlockPos bannerPos,
                                             ItemStack pearlStack) {
-        if (LivingEnderPearlFunction.isOnCooldown(pearlStack)) return false;
+        if (LivingEnderPearlFunction.isOnCooldown(player)) return false;
 
         int chunkX = bannerPos.getX() >> 4;
         int chunkZ = bannerPos.getZ() >> 4;
@@ -86,17 +59,52 @@ public final class TeleportHelper {
         double destY = bannerPos.getY() + 1.0;
         double destZ = bannerPos.getZ() + 0.5;
 
+        return executeTeleport(player, sourceLevel, targetLevel, destX, destY, destZ, pearlStack);
+    }
+
+    private static boolean executeTeleport(ServerPlayer player, ServerLevel sourceLevel,
+                                            ServerLevel targetLevel,
+                                            double destX, double destY, double destZ,
+                                            ItemStack pearlStack) {
         boolean crossDim = player.level().dimension() != targetLevel.dimension();
 
-        Entity vehicle = player.getVehicle();
-        if (vehicle != null) {
-            vehicle.dismountTo(destX, destY, destZ);
-        }
-
-        if (crossDim) {
-            player.teleportTo(targetLevel, destX, destY, destZ, Set.of(), player.getYRot(), player.getXRot());
+        if (ModSable.isPlayerOnSubLevel(player)) {
+            if (crossDim) {
+                sendInsufficientAuthorityMessage(player);
+                return false;
+            }
+            if (!ModSable.teleportSubLevel(player, destX, destY, destZ)) {
+                return false;
+            }
         } else {
-            player.teleportTo(destX, destY, destZ);
+            Entity vehicle = player.getVehicle();
+            if (crossDim) {
+                DimensionTransition transition = new DimensionTransition(
+                    targetLevel, new Vec3(destX, destY, destZ), Vec3.ZERO,
+                    player.getYRot(), player.getXRot(), DimensionTransition.DO_NOTHING);
+                if (vehicle != null) {
+                    List<Entity> passengers = new ArrayList<>(vehicle.getPassengers());
+                    for (Entity passenger : passengers) {
+                        passenger.stopRiding();
+                    }
+                    vehicle.changeDimension(transition);
+                    for (Entity passenger : passengers) {
+                        passenger.changeDimension(transition);
+                        passenger.startRiding(vehicle);
+                    }
+                } else {
+                    player.changeDimension(transition);
+                }
+            } else {
+                if (vehicle != null) {
+                    vehicle.dismountTo(destX, destY, destZ);
+                    player.connection.send(new ClientboundPlayerPositionPacket(
+                        destX, destY, destZ, player.getYRot(), player.getXRot(),
+                        Set.of(), -1));
+                } else {
+                    player.teleportTo(destX, destY, destZ);
+                }
+            }
         }
         player.resetFallDistance();
 
@@ -116,7 +124,7 @@ public final class TeleportHelper {
         player.hurt(player.damageSources().fall(), FALL_DAMAGE);
 
         consumePearl(player, pearlStack);
-        LivingEnderPearlFunction.setCooldown(pearlStack, COOLDOWN_TICKS);
+        LivingEnderPearlFunction.setCooldown(player, COOLDOWN_TICKS);
 
         return true;
     }
@@ -161,6 +169,12 @@ public final class TeleportHelper {
     public static void sendMapCenterMessage(ServerPlayer player) {
         player.displayClientMessage(
             Component.translatable("chat.livingitem.ender_pearl.teleported_to_center"),
+            true);
+    }
+
+    public static void sendInsufficientAuthorityMessage(ServerPlayer player) {
+        player.displayClientMessage(
+            Component.translatable("chat.livingitem.ender_pearl.insufficient_authority"),
             true);
     }
 }

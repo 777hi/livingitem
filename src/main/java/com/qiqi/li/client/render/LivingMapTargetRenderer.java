@@ -1,170 +1,63 @@
 package com.qiqi.li.client.render;
 
-import com.qiqi.li.living.api.LivingItemManager;
-import com.qiqi.li.living.domain.map.LivingMapClientCache;
-import com.qiqi.li.living.domain.map.MapCoordHelper;
-import net.minecraft.client.DeltaTracker;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.core.component.DataComponents;
-import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
-import net.minecraft.world.item.MapItem;
-import net.minecraft.world.level.saveddata.maps.MapId;
-import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
-import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
+import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.resources.ResourceLocation;
+import org.joml.Matrix4f;
 
-/**
- * 在手持活地图时，渲染传送目标标记（红色十字准星+边框）。
- * <p>
- * 标记位置由玩家视角 yaw/pitch 计算得出，与服务器端传送逻辑一致。
- * 已探索区域显示绿色边框，未探索区域显示红色边框。
- */
-public class LivingMapTargetRenderer {
+public final class LivingMapTargetRenderer {
 
-    private static final int MAP_SIZE = 128;
-    private static final int MARKER_SIZE = 5;
-    private static final int COLOR_RED = 0xFFFF3333;
+    private static final ResourceLocation CROSSHAIR_SPRITE = ResourceLocation.withDefaultNamespace("hud/crosshair");
 
-    public static void register(RegisterGuiLayersEvent event) {
-        // GUI overlay disabled in favor of ItemInHandRendererMixin
-        // which renders the marker in the correct 3D coordinate system.
-        // event.registerAbove(VanillaGuiLayers.CROSSHAIR, LivingItem.id("living_map_target"), LivingMapTargetRenderer::renderOverlay);
-    }
+    private static final int COLOR_BANNER = 0xFFFFAA00;
+    private static final int COLOR_TARGET = 0xFF00DDFF;
+    private static final int COLOR_EXPLORED = 0xFF00FF00;
+    private static final int COLOR_UNEXPLORED = 0xFFFF3333;
 
-    private static void renderOverlay(GuiGraphics gui, DeltaTracker deltaTracker) {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null || mc.level == null) return;
+    private LivingMapTargetRenderer() {}
 
-        ItemStack mapStack = getHeldLivingMap(mc.player);
-        if (mapStack == null) return;
+    public static void renderMarker(Minecraft mc, MultiBufferSource buffer, PoseStack poseStack,
+                                     int mapX, int mapY, boolean explored,
+                                     boolean bannerHit, boolean targetPointHit, int packedLight) {
+        TextureAtlasSprite sprite = mc.getGuiSprites().getSprite(CROSSHAIR_SPRITE);
+        if (sprite == null) return;
 
-        MapId mapId = mapStack.get(DataComponents.MAP_ID);
-        if (mapId == null) return;
+        Matrix4f matrix4f = poseStack.last().pose();
+        VertexConsumer vc = buffer.getBuffer(RenderType.text(sprite.atlasLocation()));
 
-        MapItemSavedData mapData = MapItem.getSavedData(mapId, mc.level);
-        if (mapData == null) return;
+        float x = (float) mapX;
+        float y = (float) mapY;
+        float z = -0.03F;
 
-        int[] target = calcTargetMapPixel(mapId, mapData, mc);
-        if (target == null) return;
+        float halfSize = (bannerHit || targetPointHit) ? 5.0F : 4.0F;
 
-        int targetMapX = target[0];
-        int targetMapY = target[1];
+        float u0 = sprite.getU0();
+        float v0 = sprite.getV0();
+        float u1 = sprite.getU1();
+        float v1 = sprite.getV1();
 
-        if (targetMapX < 0 || targetMapX >= MAP_SIZE || targetMapY < 0 || targetMapY >= MAP_SIZE) return;
-
-        int screenWidth = mc.getWindow().getGuiScaledWidth();
-        int screenHeight = mc.getWindow().getGuiScaledHeight();
-
-        // 与 ItemInHandRenderer 中的地图渲染位置对齐：
-        // 地图纹理 128x128，渲染在屏幕中央
-        float mapScreenSize = Math.min(screenWidth, screenHeight) * 0.75f;
-        float pixelScale = mapScreenSize / MAP_SIZE;
-
-        float mapScreenX = (screenWidth - mapScreenSize) / 2f;
-        float mapScreenY = (screenHeight - mapScreenSize) / 2f;
-
-        float targetScreenX = mapScreenX + targetMapX * pixelScale;
-        float targetScreenY = mapScreenY + targetMapY * pixelScale;
-
-        boolean explored = isExplored(mapData, targetMapX, targetMapY);
-        renderTargetMarker(gui, targetScreenX, targetScreenY, explored);
-    }
-
-    private static void renderTargetMarker(GuiGraphics gui, float x, float y, boolean explored) {
-        int ix = (int) x;
-        int iy = (int) y;
-
-        // 红色十字准星
-        gui.fill(ix - MARKER_SIZE, iy, ix + MARKER_SIZE + 1, iy + 1, COLOR_RED);
-        gui.fill(ix, iy - MARKER_SIZE, ix + 1, iy + MARKER_SIZE + 1, COLOR_RED);
-
-        // 十字中心加粗
-        gui.fill(ix - 1, iy - 1, ix + 2, iy + 2, COLOR_RED);
-
-        // 外框：已探索=绿色，未探索=红色
-        if (explored) {
-            int r = MARKER_SIZE + 2;
-            gui.renderOutline(ix - r, iy - r, r * 2 + 1, r * 2 + 1, 0x8800FF00);
+        int color;
+        if (bannerHit) {
+            color = COLOR_BANNER;
+        } else if (targetPointHit) {
+            color = COLOR_TARGET;
+        } else if (explored) {
+            color = COLOR_EXPLORED;
         } else {
-            int r = MARKER_SIZE + 1;
-            gui.renderOutline(ix - r, iy - r, r * 2 + 1, r * 2 + 1, 0x88FF0000);
+            color = COLOR_UNEXPLORED;
         }
-    }
+        int r = (color >> 16) & 0xFF;
+        int g = (color >> 8) & 0xFF;
+        int b = color & 0xFF;
+        int a = (color >> 24) & 0xFF;
 
-    /**
-     * 根据玩家视角 yaw/pitch 计算目标在地图上的像素坐标。
-     * 与服务器端 MapCoordHelper.getTargetFromYawPitch 逻辑完全一致。
-     */
-    private static int[] calcTargetMapPixel(MapId mapId, MapItemSavedData mapData, Minecraft mc) {
-        int scale = 1 << mapData.scale;
-
-        LivingMapClientCache.MapMetadata metadata = LivingMapClientCache.get(mapId.id());
-        int centerX;
-        int centerZ;
-        boolean sameDimension;
-
-        if (metadata != null) {
-            centerX = metadata.centerX();
-            centerZ = metadata.centerZ();
-            sameDimension = mc.player.level().dimension() == metadata.dimension();
-        } else {
-            centerX = MapCoordHelper.calculateMapCenterCoord(mc.player.getX(), mapData.scale);
-            centerZ = MapCoordHelper.calculateMapCenterCoord(mc.player.getZ(), mapData.scale);
-            sameDimension = true;
-        }
-
-        float yaw = mc.player.getYRot();
-        float pitch = mc.player.getXRot();
-
-        double dx = -Math.sin(Math.toRadians(yaw));
-        double dz = Math.cos(Math.toRadians(yaw));
-
-        double originX, originZ;
-        if (sameDimension) {
-            int playerMapX = (int) ((mc.player.getX() - centerX) / scale) + 64;
-            int playerMapY = (int) ((mc.player.getZ() - centerZ) / scale) + 64;
-            boolean onMap = playerMapX >= 0 && playerMapX < MAP_SIZE && playerMapY >= 0 && playerMapY < MAP_SIZE;
-
-            if (onMap) {
-                originX = mc.player.getX();
-                originZ = mc.player.getZ();
-            } else {
-                originX = centerX;
-                originZ = centerZ;
-            }
-        } else {
-            originX = centerX;
-            originZ = centerZ;
-        }
-
-        double maxDist = MapCoordHelper.calcMaxDistToMapEdge(originX, originZ, dx, dz, centerX, centerZ, scale);
-        double distance = ((90.0 - pitch) / 90.0) * maxDist;
-        distance = Math.max(0, Math.min(distance, maxDist));
-
-        double targetWorldX = originX + dx * distance;
-        double targetWorldZ = originZ + dz * distance;
-
-        int targetMapX = (int) ((targetWorldX - centerX) / scale) + 64;
-        int targetMapY = (int) ((targetWorldZ - centerZ) / scale) + 64;
-
-        return new int[]{targetMapX, targetMapY};
-    }
-
-    private static boolean isExplored(MapItemSavedData mapData, int mapX, int mapY) {
-        if (mapX < 0 || mapX >= MAP_SIZE || mapY < 0 || mapY >= MAP_SIZE) return false;
-        return mapData.colors[mapY * MAP_SIZE + mapX] != 0;
-    }
-
-    private static ItemStack getHeldLivingMap(net.minecraft.world.entity.player.Player player) {
-        ItemStack mainHand = player.getMainHandItem();
-        if (isLivingMap(mainHand)) return mainHand;
-        ItemStack offHand = player.getOffhandItem();
-        if (isLivingMap(offHand)) return offHand;
-        return null;
-    }
-
-    private static boolean isLivingMap(ItemStack stack) {
-        return stack.is(Items.FILLED_MAP) && LivingItemManager.isLivingItem(stack);
+        vc.addVertex(matrix4f, x - halfSize, y + halfSize, z).setColor(r, g, b, a).setUv(u0, v1).setLight(packedLight);
+        vc.addVertex(matrix4f, x + halfSize, y + halfSize, z).setColor(r, g, b, a).setUv(u1, v1).setLight(packedLight);
+        vc.addVertex(matrix4f, x + halfSize, y - halfSize, z).setColor(r, g, b, a).setUv(u1, v0).setLight(packedLight);
+        vc.addVertex(matrix4f, x - halfSize, y - halfSize, z).setColor(r, g, b, a).setUv(u0, v0).setLight(packedLight);
     }
 }

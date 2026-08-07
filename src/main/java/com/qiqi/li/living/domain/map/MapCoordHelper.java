@@ -17,7 +17,7 @@ import net.minecraft.world.phys.Vec3;
 
 public final class MapCoordHelper {
 
-    private static final int MAP_SIZE = 128;
+    public static final int MAP_SIZE = 128;
 
     private MapCoordHelper() {}
 
@@ -286,4 +286,47 @@ public final class MapCoordHelper {
     public record HitResult(double u, double v) {}
 
     public record TargetResult(int mapX, int mapY, double worldX, double worldZ) {}
+
+    public static int[] calcClientTarget(MapItemSavedData mapData, LivingMapClientCache.MapMetadata metadata, net.minecraft.world.entity.player.Player player) {
+        int scale = 1 << mapData.scale;
+        int centerX = metadata.centerX();
+        int centerZ = metadata.centerZ();
+        boolean sameDimension = player.level().dimension() == metadata.dimension();
+
+        float yaw = player.getYRot();
+        float pitch = player.getXRot();
+
+        double dx = -Math.sin(Math.toRadians(yaw));
+        double dz = Math.cos(Math.toRadians(yaw));
+
+        double originX, originZ;
+        if (sameDimension) {
+            int playerMapX = (int) ((player.getX() - centerX) / scale) + 64;
+            int playerMapY = (int) ((player.getZ() - centerZ) / scale) + 64;
+            boolean onMap = playerMapX >= 0 && playerMapX < MAP_SIZE && playerMapY >= 0 && playerMapY < MAP_SIZE;
+
+            if (onMap) {
+                originX = player.getX();
+                originZ = player.getZ();
+            } else {
+                originX = centerX;
+                originZ = centerZ;
+            }
+        } else {
+            originX = centerX;
+            originZ = centerZ;
+        }
+
+        double maxDist = calcMaxDistToMapEdge(originX, originZ, dx, dz, centerX, centerZ, scale);
+        double distance = ((90.0 - pitch) / 90.0) * maxDist;
+        distance = Math.max(0, Math.min(distance, maxDist));
+
+        double targetWorldX = originX + dx * distance;
+        double targetWorldZ = originZ + dz * distance;
+
+        int targetMapX = (int) ((targetWorldX - centerX) / scale) + 64;
+        int targetMapY = (int) ((targetWorldZ - centerZ) / scale) + 64;
+
+        return new int[]{targetMapX, targetMapY};
+    }
 }

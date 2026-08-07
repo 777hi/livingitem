@@ -55,12 +55,10 @@
   "tooltip.livingitem.water_bucket.status": "§9Living Water Bucket§r",
   "tooltip.livingitem.water_bucket.flow": "  Flow: %1$s blocks (max %2$s blocks away)",
 
-  "tooltip.livingitem.ender_pearl.cooldown": "  §7Cooldown: §e%d ticks§r",
-  "tooltip.livingitem.ender_pearl.ready": "  §aReady§r",
-
   "chat.livingitem.ender_pearl.teleported_to_banner": "Teleported to %s",
   "chat.livingitem.ender_pearl.teleported_to_target": "Teleported to treasure location",
   "chat.livingitem.ender_pearl.unexplored": "This area is unexplored",
   "chat.livingitem.ender_pearl.cross_dimension": "Cross-dimension teleported to %s",
-  "chat.livingitem.ender_pearl.teleported_to_center": "Teleported to map center"
+  "chat.livingitem.ender_pearl.teleported_to_center": "Teleported to map center",
+  "chat.livingitem.ender_pearl.insufficient_authority": "Insufficient jump authority, cannot pierce the planar barrier"
 }
