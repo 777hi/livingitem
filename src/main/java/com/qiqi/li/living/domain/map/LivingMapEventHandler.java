@@ -83,7 +83,7 @@ public final class LivingMapEventHandler {
             player, sourceLevel, targetLevel, mapData,
             target.mapX(), target.mapY(),
             target.worldX(), target.worldZ(),
-            null, pearlStack);
+            mapStack, pearlStack);
 
         event.setCanceled(true);
         event.setCancellationResult(InteractionResult.sidedSuccess(sourceLevel.isClientSide()));

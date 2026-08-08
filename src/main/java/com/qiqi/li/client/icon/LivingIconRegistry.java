@@ -1,6 +1,7 @@
 package com.qiqi.li.client.icon;
 
 import com.qiqi.li.LivingItem;
+import com.qiqi.li.client.render.LivingDefaultDecorator;
 import com.qiqi.li.client.render.LivingHopperDecorator;
 import com.qiqi.li.client.render.LivingMapIconDecorator;
 import com.qiqi.li.living.compat.create.CreateCompat;
@@ -13,33 +14,34 @@ import net.neoforged.neoforge.client.event.RegisterItemDecorationsEvent;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 活物品图标注册中心，统一管理所有活物品的图标配置和模型注入。
  *
- * <p>使用方式：在 {@link #registerAll()} 中声明式注册每个活物品的图标配置，
- * 然后在客户端事件中调用对应的处理方法。
+ * <p>图标系统分两层：
+ * <ul>
+ *   <li>模型替换层：有专门图标的活物品（漏斗、熔炉等）通过 LivingIconSpec 替换原版模型</li>
+ *   <li>装饰器叠加层：所有物品通过 LivingDefaultDecorator 叠加 living.png 标记，
+ *       已有专门图标的物品除外</li>
+ * </ul>
  *
  * <p>注册示例：
  * <pre>
- * // 在 registerAll() 中
  * register(LivingIconSpec.builder(Items.FURNACE)
  *     .addVariant("idle", "item/furnace_idle", stack -> !isBurning(stack))
  *     .addVariant("active", "item/furnace_active", stack -> isBurning(stack))
  *     .build());
  * </pre>
- *
- * <p>之前每加一种活物品需要新建 3-4 个 Java 类，现在只需：
- * <ol>
- *   <li>在 registerAll() 中添加一个 LivingIconSpec 声明</li>
- *   <li>准备对应的纹理和模型 JSON 文件</li>
- * </ol>
  */
 public final class LivingIconRegistry {
 
     private static final List<LivingIconSpec> SPECS = new ArrayList<>();
+
+    private static final LivingDefaultDecorator DEFAULT_DECORATOR = new LivingDefaultDecorator();
 
     private LivingIconRegistry() {}
 
@@ -122,11 +124,15 @@ public final class LivingIconRegistry {
                 event.register(loc);
             }
         }
-        LivingItem.LOGGER.info("已注册 {} 个活物品变体模型", SPECS.stream().filter(s -> !s.isRotating()).mapToInt(s -> s.getVariants().size()).sum());
+        LivingItem.LOGGER.info("已注册 {} 个活物品变体模型",
+            SPECS.stream().filter(s -> !s.isRotating()).mapToInt(s -> s.getVariants().size()).sum());
     }
 
     /**
      * 处理 ModelEvent.ModifyBakingResult 事件，注入模型包装器。
+     *
+     * <p>仅为有专门图标的活物品注入模型包装器，不处理默认标记。
+     * 默认标记通过 {@link LivingDefaultDecorator} 在渲染时叠加。
      */
     public static void onModifyBakingResult(ModelEvent.ModifyBakingResult event) {
         for (LivingIconSpec spec : SPECS) {
@@ -136,13 +142,30 @@ public final class LivingIconRegistry {
 
     /**
      * 处理 RegisterItemDecorationsEvent 事件，注册 ItemDecorator 叠加层。
+     *
+     * <p>分两部分：
+     * <ol>
+     *   <li>为有专门装饰器的活物品注册其专属装饰器（如漏斗箭头、地图缩略图）</li>
+     *   <li>为所有没有专门图标的物品注册默认活物品标记装饰器</li>
+     * </ol>
      */
     public static void onRegisterItemDecorations(RegisterItemDecorationsEvent event) {
+        Set<Item> dedicatedItems = new HashSet<>();
         for (LivingIconSpec spec : SPECS) {
+            dedicatedItems.add(spec.getItem());
             if (spec.getDecorator() != null) {
                 event.register(spec.getItem(), spec.getDecorator());
             }
         }
+
+        for (Item item : net.minecraft.core.registries.BuiltInRegistries.ITEM) {
+            if (!dedicatedItems.contains(item)) {
+                event.register(item, DEFAULT_DECORATOR);
+            }
+        }
+
+        LivingItem.LOGGER.info("已为 {} 个物品注册默认活物品标记装饰器 (排除 {} 个有专门图标的物品)",
+            net.minecraft.core.registries.BuiltInRegistries.ITEM.size() - dedicatedItems.size(), dedicatedItems.size());
     }
 
     /**

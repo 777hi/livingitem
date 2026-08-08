@@ -30,19 +30,8 @@ public class MapTeleportCarriedHandler implements InteractionHandler {
         ServerLevel targetLevel = sourceLevel.getServer().getLevel(MapCoordHelper.getMapDimension(mapData));
         if (targetLevel == null) return;
 
-        ItemStack pearlStack;
-        if (player.isCreative()) {
-            pearlStack = LivingEnderPearlFunction.findInInventory(player);
-            if (pearlStack == null) return;
-        } else {
-            ItemStack targetPearl = targetSlot.getItem();
-            if (targetPearl.isEmpty() || !LivingEnderPearlFunction.isLivingEnderPearl(targetPearl)) return;
-            if (LivingEnderPearlFunction.isOnCooldown(player)) return;
-            pearlStack = targetPearl;
-        }
-
-        player.containerMenu.setCarried(ItemStack.EMPTY);
-        safeReturnCarried(player, carried);
+        ItemStack pearlStack = resolvePearlStack(player, targetSlot);
+        if (pearlStack == null) return;
 
         boolean success = TeleportHelper.teleportToMapPosition(
             player, sourceLevel, targetLevel,
@@ -58,10 +47,11 @@ public class MapTeleportCarriedHandler implements InteractionHandler {
         player.containerMenu.broadcastChanges();
     }
 
-    private static void safeReturnCarried(ServerPlayer player, ItemStack carried) {
-        player.getInventory().add(carried);
-        if (!carried.isEmpty()) {
-            player.drop(carried, false);
+    private static ItemStack resolvePearlStack(ServerPlayer player, Slot targetSlot) {
+        if (player.isCreative()) {
+            return LivingEnderPearlFunction.findInInventory(player);
         }
+        ItemStack targetPearl = targetSlot.getItem();
+        return LivingEnderPearlFunction.isLivingEnderPearl(targetPearl) ? targetPearl : null;
     }
 }

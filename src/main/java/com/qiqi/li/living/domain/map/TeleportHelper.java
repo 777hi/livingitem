@@ -3,7 +3,6 @@ package com.qiqi.li.living.domain.map;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.protocol.game.ClientboundPlayerPositionPacket;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -12,14 +11,11 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.level.portal.DimensionTransition;
 import com.qiqi.li.living.compat.sable.ModSable;
 import com.qiqi.li.living.function.LivingEnderPearlFunction;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Set;
 
 public final class TeleportHelper {
 
@@ -51,10 +47,6 @@ public final class TeleportHelper {
                                             ItemStack pearlStack) {
         if (LivingEnderPearlFunction.isOnCooldown(player)) return false;
 
-        int chunkX = bannerPos.getX() >> 4;
-        int chunkZ = bannerPos.getZ() >> 4;
-        targetLevel.getChunk(chunkX, chunkZ);
-
         double destX = bannerPos.getX() + 0.5;
         double destY = bannerPos.getY() + 1.0;
         double destZ = bannerPos.getZ() + 0.5;
@@ -73,6 +65,7 @@ public final class TeleportHelper {
                 sendInsufficientAuthorityMessage(player);
                 return false;
             }
+            ensureChunkLoaded(targetLevel, destX, destZ);
             if (!ModSable.teleportSubLevel(player, destX, destY, destZ)) {
                 return false;
             }
@@ -83,24 +76,14 @@ public final class TeleportHelper {
                     targetLevel, new Vec3(destX, destY, destZ), Vec3.ZERO,
                     player.getYRot(), player.getXRot(), DimensionTransition.DO_NOTHING);
                 if (vehicle != null) {
-                    List<Entity> passengers = new ArrayList<>(vehicle.getPassengers());
-                    for (Entity passenger : passengers) {
-                        passenger.stopRiding();
-                    }
                     vehicle.changeDimension(transition);
-                    for (Entity passenger : passengers) {
-                        passenger.changeDimension(transition);
-                        passenger.startRiding(vehicle);
-                    }
                 } else {
                     player.changeDimension(transition);
                 }
             } else {
+                ensureChunkLoaded(targetLevel, destX, destZ);
                 if (vehicle != null) {
-                    vehicle.dismountTo(destX, destY, destZ);
-                    player.connection.send(new ClientboundPlayerPositionPacket(
-                        destX, destY, destZ, player.getYRot(), player.getXRot(),
-                        Set.of(), -1));
+                    vehicle.teleportTo(destX, destY, destZ);
                 } else {
                     player.teleportTo(destX, destY, destZ);
                 }
@@ -134,11 +117,17 @@ public final class TeleportHelper {
         pearlStack.shrink(1);
     }
 
+    private static void ensureChunkLoaded(ServerLevel level, double x, double z) {
+        int chunkX = (int) x >> 4;
+        int chunkZ = (int) z >> 4;
+        level.getChunk(chunkX, chunkZ);
+    }
+
     private static int findSafeY(ServerLevel level, BlockPos pos) {
         int chunkX = pos.getX() >> 4;
         int chunkZ = pos.getZ() >> 4;
         level.getChunk(chunkX, chunkZ);
-        return level.getHeightmapPos(net.minecraft.world.level.levelgen.Heightmap.Types.MOTION_BLOCKING, pos).getY();
+        return level.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING, pos).getY();
     }
 
     public static void sendBannerTeleportMessage(ServerPlayer player, Component bannerName) {

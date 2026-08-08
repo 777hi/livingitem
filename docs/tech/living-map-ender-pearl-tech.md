@@ -1,6 +1,6 @@
 # Living Map & Living Ender Pearl (活地图 & 活末影珍珠) 技术文档
 
-> **文档版本**: 2026.08 v8  
+> **文档版本**: 2026.08 v9  
 > **最后更新**: 2026-08-08  
 > **适用版本**: Minecraft 1.21.1
 
@@ -220,20 +220,18 @@ maxDist = 四条边界距离中的最小正值
   │   ├─ 红色大叉叉命中？→ TeleportHelper.teleportToMapPosition
   │   ├─ 未探索？→ 提示"未探索区域"，返回失败
   │   └─ 已探索？→ TeleportHelper.teleportToMapPosition
-  │
-  ├─ TeleportHelper.executeTeleport（实际传送）
-  │   ├─ 玩家在 Sable 飞艇上？
-  │   │   ├─ 跨维度 → 拒绝，提示"权能不足"
-  │   │   └─ 同维度 → SubLevel 瞬移 + setPos 同步玩家
-  │   ├─ 普通骑乘？
-  │   │   ├─ 跨维度 → 坐骑+玩家分别传送到目标维度，重新骑乘
-  │   │   └─ 同维度 → vehicle.dismountTo 带坐骑一起移动
-  │   ├─ 无骑乘 → 普通传送
-  │   ├─ findSafeY → MOTION_BLOCKING 高度图
-  │   ├─ 传送粒子效果 + 音效
-  │   ├─ 5点坠落伤害
-  │   ├─ 消耗珍珠 + 设置冷却
-  │   └─ 重置坠落距离
+  │  ├─ TeleportHelper.executeTeleport（实际传送）
+│   ├─ 玩家在 Sable 飞艇上？
+│   │   ├─ 跨维度 → 拒绝，提示"权能不足"
+│   │   └─ 同维度 → ensureChunkLoaded + teleportSubLevel 瞬移飞艇
+│   ├─ 普通骑乘？
+│   │   ├─ 跨维度 → vehicle.changeDimension()（原版内部处理乘客传送和重新骑乘）
+│   │   └─ 同维度 → ensureChunkLoaded + vehicle.teleportTo()（teleportPassengers 自动同步乘客）
+│   ├─ 无骑乘 → ensureChunkLoaded + player.teleportTo()
+│   ├─ 传送粒子效果 + 音效
+│   ├─ 5点坠落伤害
+│   ├─ 消耗珍珠 + 设置冷却
+│   └─ 重置坠落距离
   │
   └─ 跨维度提示（如果目标维度与当前不同）
 ```
@@ -242,11 +240,27 @@ maxDist = 四条边界距离中的最小正值
 
 ```java
 private static int findSafeY(ServerLevel level, BlockPos pos) {
-    return level.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING, pos).getY();
+    level.getChunk(pos.getX() >> 4, pos.getZ() >> 4);
+    int groundY = level.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING, pos).getY();
+
+    if (level.dimensionType().hasCeiling()) {
+        return findSafeYBelowCeiling(level, pos, groundY);  // 地狱等有天花板维度：向下扫描
+    } else {
+        return findSafeYAboveSurface(level, pos, groundY);  // 主世界等无天花板维度：向上扫描
+    }
 }
 ```
 
-使用 Minecraft 原版的 `MOTION_BLOCKING` 高度图，直接获取该 X/Z 列最高的阻挡运动方块的 Y 坐标。石头、泥土、树叶、木板等都算阻挡运动，确保玩家传送到地表而非地底。
+根据维度是否有天花板（`hasCeiling()`）采用不同策略：
+
+**无天花板维度（主世界等）**：`MOTION_BLOCKING` 返回地表高度，从地表向上扫描找到第一个安全位置（跳过岩浆和实心方块）。
+
+**有天花板维度（地狱等）**：`MOTION_BLOCKING` 返回天花板高度（Y≈127），从天花板**向下扫描**找到第一个安全站立位置。安全位置需满足：
+1. 脚部方块不是实心方块，也不是岩浆
+2. 脚部下方是实心方块或岩浆（有地面可站）
+3. 头部方块不是实心方块
+
+**为什么需要区分**：在地狱中，`MOTION_BLOCKING` 返回基岩天花板（Y≈127），不是地板。如果向上扫描，会把玩家传送到天花板上方（Y≈128）；向下扫描则能找到天花板下方的洞穴地面。
 
 ### 4.3 传送优先级
 
@@ -784,12 +798,16 @@ public class MapItemMixin {
 
 | 场景 | 处理方式 |
 |------|---------|
-| 同维度 + 有坐骑 | `vehicle.dismountTo()` 带坐骑和所有乘客一起移动，`ClientboundPlayerPositionPacket` 同步客户端位置（不用 `teleportTo` 避免踢下船） |
-| 同维度 + 无坐骑 | `player.teleportTo(x, y, z)` |
-| 跨维度 + 有坐骑 | 保存所有乘客 → 全部下船 → `vehicle.changeDimension()` 传送船 → 每个乘客 `changeDimension()` + `startRiding()` 重新上船 |
+| 同维度 + 有坐骑 | `ensureChunkLoaded` + `vehicle.teleportTo()`，`teleportPassengers` 自动同步所有乘客位置 |
+| 同维度 + 无坐骑 | `ensureChunkLoaded` + `player.teleportTo(x, y, z)` |
+| 跨维度 + 有坐骑 | `vehicle.changeDimension(transition)`，原版内部自动处理乘客传送和重新骑乘 |
 | 跨维度 + 无坐骑 | `player.changeDimension(transition)` 跨维度传送 |
+| 同维度 + 骑乘飞艇坐垫 | `ensureChunkLoaded` + `ModSable.teleportSubLevel()` 传送整个飞艇，骑行系统自动同步位置 |
+| 同维度 + 站在飞艇上 | 只传送玩家，清除 tracking 后走普通路径 |
 
-**跨维度带坐骑的关键**：`vehicle.dismountTo()` 只在同一维度内移动坐骑，不会改变坐骑维度。因此跨维度时必须分别传送坐骑和玩家到目标维度，再重新建立骑乘关系。
+**跨维度带坐骑的关键**：`Entity.changeDimension()` 内部已经处理了乘客的跨维度传送和重新骑乘（`unRide()` → 乘客递归 `changeDimension()` → 乘客 `startRiding(新载具)`），不需要外部手动管理。手动管理反而会导致乘客被 `changeDimension` 两次，产生重复实体。
+
+**同维度远距离传送的关键**：`Entity.teleportTo()` 内部调用 `moveTo()` + `teleportPassengers()`，`teleportPassengers` 遍历所有乘客调用 `Entity::moveTo`，自动将船上的玩家和动物一起移动到新位置。传送前调用 `ensureChunkLoaded` 确保目标区块已加载。
 
 ### 11.2 Sable 飞艇传送
 
@@ -1268,3 +1286,67 @@ for (Map.Entry<ServerPlayer, Vector3d> entry : otherPlayersLocal.entrySet()) {
 ```
 
 对所有被传送的玩家（传送者 + 飞艇上其他玩家）都需要清除。
+
+### v25 → v26：站在飞艇上只传送玩家，不传送飞艇
+
+**决策**：站在飞艇上传送涉及太多边缘情况（plot 位置固定、tracking 清除时机、`ServerboundMovePlayerPacketMixin` 坐标变换循环等），且站在飞艇上"带着飞艇一起传送"的语义不够直观。简化为：只有骑乘飞艇坐垫时才传送飞艇，站在飞艇上只传送玩家自己。
+
+**修改**：`SableIntegration.isPlayerOnSubLevel()` 从"是否在 SubLevel 上"改为"是否骑乘在 SubLevel 上"：
+
+```java
+static boolean isPlayerOnSubLevel(ServerPlayer player) {
+    SubLevel subLevel = Sable.HELPER.getTrackingOrVehicleSubLevel(player);
+    if (!(subLevel instanceof ServerSubLevel)) return false;
+    if (player.getVehicle() != null) return true;          // 骑乘 → 传送飞艇
+    ((EntityMovementExtension) player).sable$setTrackingSubLevel(null); // 站着 → 清除tracking
+    return false;                                           // 走普通传送
+}
+```
+
+站在飞艇上时清除 `trackingSubLevel` 是必要的，否则 `ServerboundMovePlayerPacketMixin` 会在下一个移动包中把玩家弹回飞艇位置。
+
+### v26 → v27：只有骑乘者随飞艇传送
+
+**决策**：`teleportSubLevel` 中的 `otherPlayersLocal` 逻辑会把飞艇上所有玩家（包括站着的）一起传送。这与 v26 的"站着只传送玩家自己"的决策不一致。简化：只有骑乘坐垫的实体随飞艇传送，站着的留在原地。
+
+**修改**：删除 `SableIntegration.teleportSubLevel()` 中的 `otherPlayersLocal` 收集和同步逻辑（约 30 行），只保留传送者自身的同步。
+
+**骑乘者（坐垫上）怎么传送**：Sable 的坐垫实体在 SubLevel 内，`logicalPose` 变化后坐垫的世界位置自动更新，骑乘者通过原版骑行系统跟随，不需要额外代码。
+
+### v27 → v28：传送逻辑全面修复
+
+**问题1**：跨维度带坐骑传送时，外部手动保存乘客→下车→逐个传送→重新骑乘，但 `Entity.changeDimension()` 内部已经做了同样的事，导致乘客被 `changeDimension` 两次（产生重复实体），且 `vehicle` 变量指向旧维度的已移除实体。
+
+**修复1**：移除外部手动乘客管理，直接调用 `vehicle.changeDimension(transition)`，让原版内部处理乘客传送和重新骑乘。
+
+**问题2**：同维度远距离传送时，`vehicle.dismountTo()` 不加载目标区块，实体可能被移到未加载区块导致"消失"。同时手动发送 `ClientboundPlayerPositionPacket` 同步客户端位置，但 `dismountTo` + 手动发包的顺序可能导致客户端短暂看到玩家在旧位置。
+
+**修复2**：改用 `ensureChunkLoaded` + `vehicle.teleportTo()`。`teleportTo` 内部调用 `moveTo()` + `teleportPassengers()`，`teleportPassengers` 自动遍历所有乘客调用 `moveTo` 同步位置，不需要手动发包。
+
+**问题3**：`teleportToBanner` 手动调用 `targetLevel.getChunk()` 加载区块，但 `executeTeleport` 同维度路径已调用 `ensureChunkLoaded`，重复加载。
+
+**修复3**：移除 `teleportToBanner` 中的冗余区块加载。
+
+**问题4**：Sable 飞艇传送路径没有调用 `ensureChunkLoaded`，虽然 `SableIntegration.teleportSubLevel` 内部加载了区块，但作为防御性编程添加。
+
+**修复4**：在 Sable 路径调用 `teleportSubLevel` 前添加 `ensureChunkLoaded`。
+
+**问题5**：`MapTeleportHandler` 和 `MapTeleportCarriedHandler` 在传送前清空光标物品（`setCarried(EMPTY)`），然后 `safeReturnCarried` 放回背包或掉落。如果传送失败，光标物品已被清空且可能掉落在旧位置。
+
+**修复5**：不再清空光标，直接将光标/槽位中的珍珠引用传给 `TeleportHelper.teleportToMapPosition`。`executeTeleport` 内部的 `consumePearl` 只在传送成功后调用 `pearlStack.shrink(1)`，传送失败时物品不受影响。移除 `safeReturnCarried` 方法。
+
+**问题6**：`MapCoordHelper.isRedXEntry` 没有使用已提取的 `matchEntryPath` 通用方法。
+
+**修复6**：改为 `return matchEntryPath(entry, path -> path.equals("red_x"))`，与 `isBannerType`/`isRedXType` 风格统一。
+
+### v28 → v29：安全Y坐标区分天花板维度
+
+**问题**：`findSafeY` 只使用 `MOTION_BLOCKING + 1`，在地狱中 `MOTION_BLOCKING` 返回基岩天花板（Y≈127），`+1` 后玩家被传送到天花板上方（Y≈128），卡在地狱顶部。
+
+**根因**：`MOTION_BLOCKING` 高度图返回该列最高阻挡运动的方块。在地狱中，基岩天花板（Y≈127）是最高的阻挡方块，不是地板。旧代码不区分天花板维度和无天花板维度，统一向上扫描，导致地狱传送位置在天花板上方。
+
+**修复**：重写 `findSafeY`，根据 `level.dimensionType().hasCeiling()` 区分两种策略：
+- **有天花板维度（地狱）**：从天花板向下扫描，找到第一个脚部安全（非实心、非岩浆）、下方有地面（实心或岩浆）、头部安全（非实心）的位置
+- **无天花板维度（主世界）**：从地表向上扫描，跳过实心方块和岩浆，找到第一个安全站立位置
+
+返回值直接是玩家站立Y坐标，调用方不再 `+1.0`。

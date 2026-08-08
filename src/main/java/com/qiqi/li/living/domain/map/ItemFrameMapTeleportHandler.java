@@ -83,12 +83,12 @@ public final class ItemFrameMapTeleportHandler {
         ItemStack pearlStack = MapTeleportExecutor.resolvePearlStack(player, heldItem);
         if (pearlStack == null) return;
 
-        BlockPos worldPos = MapCoordHelper.mapPixelToWorld(mapData, mapX, mapY);
+        double[] preciseWorldPos = MapCoordHelper.uvToWorldPos(mapData, mapU, mapV);
 
         MapTeleportExecutor.execute(
             player, sourceLevel, targetLevel, mapData,
             mapX, mapY,
-            worldPos.getX(), worldPos.getZ(),
+            preciseWorldPos[0], preciseWorldPos[1],
             frame.getItem(), pearlStack);
     }
 }

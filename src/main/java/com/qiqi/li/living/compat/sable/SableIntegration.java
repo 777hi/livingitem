@@ -13,15 +13,16 @@ import org.joml.Quaterniondc;
 import org.joml.Vector3d;
 import org.joml.Vector3dc;
 
-import java.util.HashMap;
-import java.util.Map;
 import java.util.Set;
 
 public class SableIntegration {
 
     static boolean isPlayerOnSubLevel(ServerPlayer player) {
         SubLevel subLevel = Sable.HELPER.getTrackingOrVehicleSubLevel(player);
-        return subLevel instanceof ServerSubLevel;
+        if (!(subLevel instanceof ServerSubLevel)) return false;
+        if (player.getVehicle() != null) return true;
+        ((EntityMovementExtension) player).sable$setTrackingSubLevel(null);
+        return false;
     }
 
     static boolean teleportSubLevel(ServerPlayer player, double destX, double destY, double destZ) {
@@ -54,17 +55,6 @@ public class SableIntegration {
         Vector3d playerLocal = oldPose.transformPositionInverse(
             new Vector3d(player.getX(), player.getY(), player.getZ()), new Vector3d());
 
-        Map<ServerPlayer, Vector3d> otherPlayersLocal = new HashMap<>();
-        for (ServerPlayer otherPlayer : player.serverLevel().players()) {
-            if (otherPlayer == player) continue;
-            SubLevel otherSubLevel = Sable.HELPER.getTrackingOrVehicleSubLevel(otherPlayer);
-            if (otherSubLevel == serverSubLevel) {
-                Vector3d local = oldPose.transformPositionInverse(
-                    new Vector3d(otherPlayer.getX(), otherPlayer.getY(), otherPlayer.getZ()), new Vector3d());
-                otherPlayersLocal.put(otherPlayer, local);
-            }
-        }
-
         serverSubLevel.logicalPose().position().set(newPos);
         serverSubLevel.logicalPose().orientation().set(orientation);
         handle.teleport(newPos, orientation);
@@ -89,19 +79,6 @@ public class SableIntegration {
             Set.of(), -1
         ));
         ((EntityMovementExtension) player).sable$setTrackingSubLevel(null);
-
-        for (Map.Entry<ServerPlayer, Vector3d> entry : otherPlayersLocal.entrySet()) {
-            ServerPlayer otherPlayer = entry.getKey();
-            Vector3d otherNewPos = serverSubLevel.logicalPose()
-                .transformPosition(entry.getValue(), new Vector3d());
-            otherPlayer.setPos(otherNewPos.x, otherNewPos.y, otherNewPos.z);
-            otherPlayer.connection.send(new ClientboundPlayerPositionPacket(
-                otherNewPos.x, otherNewPos.y, otherNewPos.z,
-                otherPlayer.getYRot(), otherPlayer.getXRot(),
-                Set.of(), -1
-            ));
-            ((EntityMovementExtension) otherPlayer).sable$setTrackingSubLevel(null);
-        }
 
         return true;
     }

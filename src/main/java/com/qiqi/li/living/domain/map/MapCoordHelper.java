@@ -87,6 +87,13 @@ public final class MapCoordHelper {
         return new BlockPos(worldX, 0, worldZ);
     }
 
+    public static double[] uvToWorldPos(MapItemSavedData mapData, double u, double v) {
+        int scale = 1 << mapData.scale;
+        double worldX = mapData.centerX + (u * MAP_SIZE - 64) * scale;
+        double worldZ = mapData.centerZ + (v * MAP_SIZE - 64) * scale;
+        return new double[]{worldX, worldZ};
+    }
+
     @Nullable
     public static MapBanner findBannerHit(MapItemSavedData mapData, int mapX, int mapY) {
         return findBannerHit(mapData, mapX, mapY, mapData.centerX, mapData.centerZ);
@@ -166,23 +173,26 @@ public final class MapCoordHelper {
     }
 
     private static boolean isBannerType(MapDecoration decoration) {
-        return decoration.type().unwrapKey()
-            .map(key -> key.location().getPath().startsWith("banner_"))
-            .orElse(false);
+        return matchDecorationPath(decoration, path -> path.startsWith("banner_"));
     }
 
     private static boolean isRedXType(MapDecoration decoration) {
+        return matchDecorationPath(decoration, path -> path.equals("red_x"));
+    }
+
+    private static boolean matchDecorationPath(MapDecoration decoration, java.util.function.Predicate<String> predicate) {
         return decoration.type().unwrapKey()
-            .map(key -> key.location().getPath().equals("red_x"))
+            .map(key -> predicate.test(key.location().getPath()))
             .orElse(false);
     }
 
-    @Nullable
-    public static double[] getTargetPointWorldPos(ItemStack mapStack, MapItemSavedData mapData, MapDecoration targetDecoration) {
-        MapDecorations mapDecorations = mapStack.getOrDefault(DataComponents.MAP_DECORATIONS, MapDecorations.EMPTY);
-        for (MapDecorations.Entry entry : mapDecorations.decorations().values()) {
-            if (isRedXEntry(entry)) {
-                return new double[]{entry.x(), entry.z()};
+    public static double[] getTargetPointWorldPos(@Nullable ItemStack mapStack, MapItemSavedData mapData, MapDecoration targetDecoration) {
+        if (mapStack != null) {
+            MapDecorations mapDecorations = mapStack.getOrDefault(DataComponents.MAP_DECORATIONS, MapDecorations.EMPTY);
+            for (MapDecorations.Entry entry : mapDecorations.decorations().values()) {
+                if (isRedXEntry(entry)) {
+                    return new double[]{entry.x(), entry.z()};
+                }
             }
         }
 
@@ -195,8 +205,12 @@ public final class MapCoordHelper {
     }
 
     private static boolean isRedXEntry(MapDecorations.Entry entry) {
+        return matchEntryPath(entry, path -> path.equals("red_x"));
+    }
+
+    private static boolean matchEntryPath(MapDecorations.Entry entry, java.util.function.Predicate<String> predicate) {
         return entry.type().unwrapKey()
-            .map(key -> key.location().getPath().equals("red_x"))
+            .map(key -> predicate.test(key.location().getPath()))
             .orElse(false);
     }
 

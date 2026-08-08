@@ -52,18 +52,7 @@ public final class MapTeleportExecutor {
     }
 
     private static double[] resolveTargetPointWorldPos(@Nullable ItemStack mapStack, MapItemSavedData mapData, MapDecoration targetPoint) {
-        if (mapStack != null) {
-            double[] fromComponent = MapCoordHelper.getTargetPointWorldPos(mapStack, mapData, targetPoint);
-            if (fromComponent != null) return fromComponent;
-        }
-
-        int scale = 1 << mapData.scale;
-        float pixelX = (float) targetPoint.x() / 2.0F + 64.0F;
-        float pixelY = (float) targetPoint.y() / 2.0F + 64.0F;
-        return new double[]{
-            mapData.centerX + (pixelX - 64.0F) * scale,
-            mapData.centerZ + (pixelY - 64.0F) * scale
-        };
+        return MapCoordHelper.getTargetPointWorldPos(mapStack, mapData, targetPoint);
     }
 
     public static ItemStack resolvePearlStack(ServerPlayer player, ItemStack heldItem) {
