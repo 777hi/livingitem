@@ -3,6 +3,7 @@ package com.qiqi.li.client.render;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
@@ -59,5 +60,38 @@ public final class LivingMapTargetRenderer {
         vc.addVertex(matrix4f, x + halfSize, y + halfSize, z).setColor(r, g, b, a).setUv(u1, v1).setLight(packedLight);
         vc.addVertex(matrix4f, x + halfSize, y - halfSize, z).setColor(r, g, b, a).setUv(u1, v0).setLight(packedLight);
         vc.addVertex(matrix4f, x - halfSize, y - halfSize, z).setColor(r, g, b, a).setUv(u0, v0).setLight(packedLight);
+    }
+
+    public static void renderMarkerGui(GuiGraphics guiGraphics, float x, float y,
+                                        boolean explored, boolean bannerHit,
+                                        boolean targetPointHit, float pixelSize) {
+        int color;
+        if (bannerHit) {
+            color = COLOR_BANNER;
+        } else if (targetPointHit) {
+            color = COLOR_TARGET;
+        } else if (explored) {
+            color = COLOR_EXPLORED;
+        } else {
+            color = COLOR_UNEXPLORED;
+        }
+
+        int left = (int) x;
+        int top = (int) y;
+        int size = Math.max((int) pixelSize, 2);
+        int right = left + size;
+        int bottom = top + size;
+
+        int thickness = Math.max(1, (int) (pixelSize / 4));
+        if (thickness < 1) thickness = 1;
+
+        int innerColor = (color & 0x00FFFFFF) | 0x60000000;
+
+        guiGraphics.fill(left, top, right, bottom, innerColor);
+
+        guiGraphics.fill(left, top, right, top + thickness, color);
+        guiGraphics.fill(left, bottom - thickness, right, bottom, color);
+        guiGraphics.fill(left, top, left + thickness, bottom, color);
+        guiGraphics.fill(right - thickness, top, right, bottom, color);
     }
 }
