@@ -24,6 +24,7 @@
 - **活箱子系统**：将箱子虚拟化到物品 DataComponent 中，堆叠数 × 27 槽 = 虚拟箱子容量。UUID 映射管理、LRU 缓存、磁盘持久化、漏斗自动传输、跨容器传输、GUI 拆分/合并 UUID 自动分配
 - **活末影箱系统**：无线传输路由器，支持路由模式（共享黑板架构，通过全局路由表跨容器无线传输）和直连模式（绑定玩家末影箱直连）。频道隔离、轮询公平调度、反向索引路由清理、黑白名单统一过滤
 - **活水车系统**：应力产生类活物品，参照机械动力（Create）水车设计。容器内观察水流方向计算力矩，叠加/抵消应力，从容器底部/玩家脚底输出净应力驱动 Create 传动组件旋转。软依赖 Create，不安装时仅计算和显示 Tooltip
+- **活地图传送系统**：手持活末影珍珠右键活地图传送。三种传送场景（手持/展示框/GUI），UV 精确定位 + 旗帜/宝藏优先级 + 未探索区域消耗一组珍珠，跨维度传送 + 载具传送 + Sable 飞艇兼容，GUI 扩展地图渲染 + 十字光标四色标记 + 装饰渲染
 
 ---
 
@@ -53,6 +54,7 @@ LivingItemFunction.tick(entries, context, tick, level) (各功能类自行实现
 │  LivingEnderChestFunction → LivingEnderChestData (EnderChannel) │
 │  LivingChestFunction      → InternalStorageComponent (旧架构)   │
 │  LivingWaterWheelFunction → LivingWaterWheelData (WaterWheelData)│
+│  LivingEnderPearlFunction → (无 DataComponent，纯工具类)       │
 │                                                                 │
 │  无状态工具类（接收类型化数据 → 返回新数据）：                     │
 │  ProgressComponent  → tick(ProgressData) → ProgressData         │
@@ -98,6 +100,12 @@ LivingItemManager (DataComponent 注册中心)
           └── channel: EnderChannelData (channel, boundPlayer, routes)
     └── LIVING_WATER_WHEEL_DATA  → LivingWaterWheelData
           └── wheel: WaterWheelData (cwStress, ccwStress, netStress)
+
+活地图传送系统（无独立 DataComponent，活末影珍珠为纯工具类）
+    ├── LivingEnderPearlFunction — 活末影珍珠工具类（查找/统计/消耗/冷却，无 tick 逻辑）
+    ├── MapTeleportExecutor      — 传送执行器（优先级：旗帜 > 宝藏 > 坐标，未探索消耗16珍珠）
+    ├── TeleportHelper           — 传送工具类（安全Y/跨维度/载具/Sable飞艇/粒子音效/珍珠消耗）
+    └── MapCoordHelper           — 坐标转换工具类（UV↔像素↔世界坐标，旗帜/宝藏命中检测）
 ```
 
 **数据流转模式（以活熔炉为例）：**
@@ -252,6 +260,92 @@ new InteractionEntry(Items.FLINT_AND_STEEL, Items.TNT, 1, "ignite_carried")
 1. 在 `LivingFunctionConfig` 中 `addInteraction(new InteractionEntry(...))`
 2. 注册处理器 `InteractionRegistry.registerHandler("actionId", new XxxHandler())`
 
+### 活地图传送数据流
+
+```
+场景1：手持传送
+玩家手持活末影珍珠 + 右键活地图
+    ↓
+LivingMapEventHandler.onRightClickItem() (PlayerInteractEvent.RightClickItem)
+    ├─ 检查：手持是否为活末影珍珠？
+    ├─ 检查：另一手是否为活地图？
+    ├─ 检查：冷却是否就绪？
+    ├─ 解析 MapId + MapItemSavedData
+    ├─ 计算 UV（基于地图中心 + 玩家朝向偏移）
+    └─ MapTeleportExecutor.execute() → 传送
+
+场景2：展示框传送
+玩家手持活末影珍珠 + 右键展示框上的活地图
+    ↓
+ItemFrameMapTeleportHandler.onEntityInteractSpecific() (EntityInteractSpecific)
+    ├─ 检查：目标是否为 ItemFrame？
+    ├─ 检查：展示框物品是否为活地图？
+    ├─ 检查：手持是否为活末影珍珠（主手/副手）？
+    ├─ 取消原版交互（防止取下展示框物品）
+    ├─ MapCoordHelper.hitVecToMapPixel() — 射线命中点 → UV 坐标
+    └─ MapTeleportExecutor.execute() → 传送
+
+场景3：GUI 传送
+玩家在容器界面手持活末影珍珠 + 右键活地图
+    ↓
+AbstractContainerScreenMixin.mouseClicked() HEAD 注入
+    ├─ 检查：button == 1（右键）？
+    ├─ 检查：手持是否为活末影珍珠？
+    ├─ LivingMapLayout.findGroupAt() — 查找鼠标所在地图组
+    │   └─ 未命中 → living_item$findGroupBySlot() — 按槽位回退查找
+    ├─ LivingMapLayout.computeUV() — 鼠标坐标 → UV 坐标
+    ├─ 单格活地图 → computeSingleSlotUV()
+    └─ 发送 LivingMapGuiTeleportPacket(topLeftSlotIndex, u, v)
+        ↓
+LivingMapGuiTeleportPacket.handle() (服务端)
+    ├─ resolveSlot() — 验证槽位物品仍为活地图
+    ├─ resolvePearlStack() — 查找活末影珍珠（主手/副手/背包）
+    ├─ MapCoordHelper.uvToWorldPos() — UV → 世界坐标
+    └─ MapTeleportExecutor.execute() → 传送
+
+传送执行（MapTeleportExecutor.execute）
+    ↓
+MapCoordHelper.findBannerHit() — 检测旗帜命中
+    ├─ 命中 → TeleportHelper.teleportToBanner() → 传送 + 旗帜名提示
+    └─ 未命中
+        ├─ MapCoordHelper.findTargetPointHit() — 检测宝藏标记命中
+        │   ├─ 命中 → TeleportHelper.teleportToMapPosition() → 传送 + 宝藏提示
+        │   └─ 未命中
+        │       ├─ 已探索 → TeleportHelper.teleportToMapPosition() → 传送
+        │       └─ 未探索
+        │           ├─ 创造模式 → 免费传送
+        │           ├─ 生存 + ≥16珍珠 → consumeFromInventory(16) → 传送
+        │           └─ 生存 + <16珍珠 → 提示"未探索区域" → 失败
+    ↓
+TeleportHelper.executeTeleport()
+    ├─ Sable飞艇检测 → 飞艇上传送/跨维度拒绝
+    ├─ 跨维度 → DimensionTransition + changeDimension（载具先传）
+    ├─ 同维度 + 载具 → 下马→传送→重新骑乘
+    ├─ 同维度 + 无载具 → changeDimension
+    ├─ findSafeY() — 高度图安全检测
+    ├─ 落地伤害 5 点 + 传送粒子 + 音效
+    └─ 珍珠消耗 + 40 tick 冷却
+
+客户端渲染（AbstractContainerScreenMixin.render TAIL）
+    ↓
+living_item$updateMapGroups() — hash 变化时重新扫描
+    └─ LivingMapLayout.scan(menu.slots) — 检测 N×N 活地图组
+    ↓
+LivingMapLayout.findGroupAt() — 缓存 hoveredGroup
+    ↓
+遍历 MapGroup → living_item$renderExpandedMap()
+    ├─ ExpandedMapTexture — 动态纹理（hash 变化时更新）
+    ├─ renderExpandedMapDecorations — 原版装饰缩放渲染
+    └─ hoveredGroup == group → LivingMapTargetRenderer.renderMarkerGui()
+        └─ 四色十字光标（金=旗帜/青=宝藏/绿=已探索/红=未探索）
+
+元数据同步
+    ↓
+LivingMapEventHandler.onPlayerTick() — 每秒检测手持活地图
+    └─ LivingMapMetadataPacket (服务端→客户端) — 地图中心/维度
+        └─ LivingMapClientCache — LRU 缓存（最大64条）
+```
+
 ### 组件体系
 
 ```
@@ -283,7 +377,11 @@ new InteractionEntry(Items.FLINT_AND_STEEL, Items.TNT, 1, "ignite_carried")
     ├── ItemTransferComponent   — 物品传输逻辑（含跨容器传输触发 + SlotAccessor 调度）
     ├── EnderChannelComponent   — 活末影箱频道组件（路由清理 + Tooltip）
     ├── CrossContainerTransfer  — 跨容器传输工具类（方向映射 + 大箱子处理 + 邻居容器查找）
-    └── InternalStorageComponent — 活箱子内部存储（UUID 管理、LRU 缓存、磁盘 I/O）— 旧架构
+    ├── InternalStorageComponent — 活箱子内部存储（UUID 管理、LRU 缓存、磁盘 I/O）— 旧架构
+    └── 活地图传送工具类（domain/map/，无状态）
+        ├── MapTeleportExecutor — 传送执行器（优先级判定 + 未探索消耗 + 跨维度检测）
+        ├── TeleportHelper     — 传送工具类（安全Y/跨维度/载具/Sable飞艇/珍珠消耗/冷却/粒子音效）
+        └── MapCoordHelper     — 坐标转换工具类（UV↔像素↔世界坐标，旗帜/宝藏命中检测）
 
 旧架构组件（ILivingComponent 接口，仅 LivingChestFunction 使用）
     ├── DirectionModeComponent  — 方向/槽位配置（SLOTS/TRANSFER 双模式 + ComponentState）
@@ -618,6 +716,106 @@ SlotAccessorFactory.create() / createForNeighbor()
 
 > 📄 详细技术文档见 [living-ender-chest-tech.md](docs/tech/living-ender-chest-tech.md)
 
+### 活地图传送系统架构
+
+活地图传送系统将**活末影珍珠**作为传送媒介，与**活地图**配合实现精确传送。活末影珍珠不拥有 DataComponent，是一个纯工具类（`LivingEnderPearlFunction`），提供查找/统计/消耗/冷却等静态方法。
+
+```
+三种传送场景
+┌─────────────────────────────────────────────────────────────────────┐
+│                                                                     │
+│  1. 手持传送                                                        │
+│     玩家手持活末影珍珠 + 活地图右键                                   │
+│     LivingMapEventHandler (PlayerInteractEvent.RightClickItem)      │
+│     → 解析手持活地图 → 计算 UV → MapTeleportExecutor.execute()      │
+│                                                                     │
+│  2. 展示框传送                                                       │
+│     玩家手持活末影珍珠 + 右键展示框上的活地图                          │
+│     ItemFrameMapTeleportHandler (EntityInteractSpecific)            │
+│     → hitVec → MapCoordHelper.hitVecToMapPixel() → UV → execute()  │
+│                                                                     │
+│  3. GUI 传送                                                         │
+│     容器界面中活末影珍珠右键活地图                                     │
+│     AbstractContainerScreenMixin.mouseClicked()                     │
+│     → LivingMapLayout.findGroupAt() → computeUV()                   │
+│     → LivingMapGuiTeleportPacket (客户端→服务端)                     │
+│     → MapTeleportExecutor.execute()                                 │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+
+传送执行流程（MapTeleportExecutor.execute）
+    ↓
+MapCoordHelper.findBannerHit(mapData, mapX, mapY)
+    ├─ 命中旗帜 → TeleportHelper.teleportToBanner() → 传送+提示
+    └─ 未命中旗帜
+        ├─ MapCoordHelper.findTargetPointHit(mapData, mapX, mapY)
+        │   ├─ 命中宝藏标记 → TeleportHelper.teleportToMapPosition() → 传送+提示
+        │   └─ 未命中宝藏标记
+        │       ├─ 已探索区域 → TeleportHelper.teleportToMapPosition() → 传送
+        │       └─ 未探索区域
+        │           ├─ 创造模式 → 免费传送
+        │           ├─ 生存模式 + ≥16珍珠 → 消耗16珍珠 → 传送
+        │           └─ 生存模式 + <16珍珠 → 提示"未探索区域"
+    ↓
+TeleportHelper.executeTeleport()
+    ├─ Sable飞艇检测 → 飞艇上传送/跨维度拒绝
+    ├─ 跨维度 → DimensionTransition + changeDimension
+    ├─ 同维度 + 载具 → 下马→传送→重新骑乘
+    ├─ 同维度 + 无载具 → changeDimension
+    ├─ 安全检测 → findSafeY + 落地伤害 + 粒子/音效
+    └─ 珍珠消耗 → 普通传送消耗1颗/未探索消耗16颗 + 40tick冷却
+
+客户端渲染流程
+    ↓
+AbstractContainerScreenMixin.render() TAIL 注入
+    ├─ living_item$updateMapGroups() — hash 变化时重新扫描
+    │   └─ LivingMapLayout.scan(menu.slots) — 检测 N×N 活地图组
+    ├─ LivingMapLayout.findGroupAt() — 缓存 hoveredGroup（O(N)）
+    └─ 遍历 MapGroup → living_item$renderExpandedMap()
+        ├─ ExpandedMapTexture — 动态纹理（hash 变化时更新）
+        ├─ renderExpandedMapDecorations — 原版装饰缩放渲染
+        └─ hoveredGroup == group → LivingMapTargetRenderer.renderMarkerGui()
+            └─ 四色十字光标（金=旗帜/青=宝藏/绿=已探索/红=未探索）
+
+展示框渲染流程
+    ↓
+MapRendererMixin.render() TAIL 注入
+    ├─ 检测玩家手持活末影珍珠 + 准星对准展示框活地图
+    ├─ hitVec → MapCoordHelper.hitVecToMapPixel() → 地图像素坐标
+    └─ LivingMapTargetRenderer.renderMarker() — 展示框十字光标
+
+元数据同步
+    ↓
+LivingMapEventHandler.onPlayerTick() — 每秒检测手持活地图
+    └─ LivingMapMetadataPacket (服务端→客户端) — 地图中心/维度
+        └─ LivingMapClientCache — LRU 缓存（最大64条），解决客户端数据不可靠
+```
+
+**活空地图扩展**：`MapItemMixin` 拦截活空地图使用事件，距离公式 `128 × count²`，朝玩家朝向方向扩展。使用后消耗1张空地图，生成活已填充地图。
+
+**Sable 飞艇兼容**：`compat/sable/` 三层软依赖（`SableCompat.isLoaded()` → `ModSable.isIntegrationAvailable()` → `SableIntegration` try-catch），飞艇上同维度传送移动飞艇本体，跨维度拒绝并提示权限不足。
+
+#### 核心文件
+
+| 文件 | 职责 |
+|------|------|
+| `LivingEnderPearlFunction` | 活末影珍珠工具类：`isLivingEnderPearl`/`findInInventory`/`countInInventory`/`consumeFromInventory`/`isOnCooldown`/`setCooldown`，无 tick 逻辑 |
+| `MapTeleportExecutor` | 传送执行器：优先级判定（旗帜>宝藏>坐标）、未探索消耗、跨维度检测、统一返回 `Result(success, crossDim)` |
+| `TeleportHelper` | 传送工具类：`teleportToMapPosition`/`teleportToBanner`、`executeTeleport`（安全Y/跨维度/载具/Sable飞艇）、珍珠消耗/冷却/粒子音效 |
+| `MapCoordHelper` | 坐标转换工具类：`hitVecToMapPixel`（展示框射线→UV）、`uvToMapX/Y`、`uvToWorldPos`、`findBannerHit`/`findTargetPointHit`/`isExplored`、`getTargetPointWorldPos`/`getMapDimension` |
+| `LivingMapEventHandler` | 手持传送事件处理 + 元数据同步（每秒检测手持活地图，发送 `LivingMapMetadataPacket`） |
+| `ItemFrameMapTeleportHandler` | 展示框传送事件处理（`EntityInteractSpecific` 拦截） |
+| `LivingMapGuiTeleportPacket` | GUI 传送网络包（客户端→服务端：topLeftSlotIndex + u + v） |
+| `LivingMapMetadataPacket` | 地图元数据网络包（服务端→客户端：mapId + centerX + centerZ + dimensionKey） |
+| `LivingMapClientCache` | 客户端地图元数据缓存（LRU，最大64条，解决客户端 `MapItemSavedData` 不可靠问题） |
+| `LivingMapLayout` | GUI 地图布局扫描：`scan()` 检测 N×N 活地图组、`findGroupAt()` 命中检测、`computeUV()` UV 计算 |
+| `ExpandedMapTexture` | 扩展地图动态纹理（128×128 DynamicTexture，hash 变化时更新） |
+| `LivingMapTargetRenderer` | 十字光标渲染器：展示框（`renderMarker`，VertexConsumer）+ GUI（`renderMarkerGui`，GuiGraphics），四色标记 |
+| `LivingMapIconDecorator` | 活地图 IItemDecorator：物品栏中显示地图缩略图 + 边框叠加 |
+| `MapItemMixin` | 活空地图扩展：拦截 `EmptyMapItem.use()`，距离 = 128 × count² |
+| `MapRendererMixin` | 展示框十字光标：`MapRenderer.render()` TAIL 注入 |
+| `ModSable` / `SableCompat` / `SableIntegration` | Sable 飞艇兼容层（三层软依赖） |
+
 ---
 
 ## 核心文件索引
@@ -660,6 +858,7 @@ src/main/java/com/qiqi/li/
 │   │   ├── LivingTntFunction.java           # 活TNT：DataComponent 直接管理 + 引信倒计时 + 爆炸
 │   │   ├── LivingWaterBucketFunction.java   # 活水桶：DataComponent 直接管理 + 水流扩散
 │   │   ├── LivingWaterWheelFunction.java   # 活水车：力矩计算 + 应力叠加/抵消 + Create 应力输出
+│   │   ├── LivingEnderPearlFunction.java   # 活末影珍珠：纯工具类（查找/统计/消耗/冷却），无 tick 逻辑
 │   │   └── LivingFlintAndSteelFunction.java # 活打火石：交互触发器，无 tick 逻辑
 │   │
 │   ├── container/                           # 纯容器抽象层（不含业务逻辑）
@@ -689,14 +888,25 @@ src/main/java/com/qiqi/li/
 │   │   └── water/                           # 活水领域（水桶+水车共用）
 │   │       ├── ContainerFluidData.java      # 容器级流体数据（实例绑定，BFS 水流蔓延计算）
 │   │       └── ContainerStressData.java     # 容器级应力累加器（遍历活水车计算力矩，CW/CCW 叠加抵消）
+│   │   └── map/                             # 活地图传送领域
+│   │       ├── MapTeleportExecutor.java     # 传送执行器（优先级判定 + 未探索消耗 + 跨维度检测）
+│   │       ├── TeleportHelper.java          # 传送工具类（安全Y/跨维度/载具/Sable飞艇/粒子音效/珍珠消耗）
+│   │       ├── MapCoordHelper.java          # 坐标转换工具类（UV↔像素↔世界坐标，旗帜/宝藏命中检测）
+│   │       ├── LivingMapEventHandler.java   # 手持传送事件处理 + 元数据同步
+│   │       ├── ItemFrameMapTeleportHandler.java # 展示框传送事件处理
+│   │       └── LivingMapClientCache.java    # 客户端地图元数据缓存（LRU，最大64条）
 │   │
 │   ├── compat/                              # ⭐ 第三方模组兼容层（可扩展）
-│   │   └── create/                          # Create 兼容（软依赖，仅 Create 安装时加载）
-│   │       ├── CreateCompat.java            # Create 安装检测（ModList.get().isLoaded）
-│   │       ├── ModCreate.java               # Create 集成入口：常量定义 + 安全调用
-│   │       ├── CreateIntegration.java       # 应力输出逻辑：白名单过滤 + 方向兼容性检查 + RPM/SU 设置
-│   │       ├── LivingItemStressOutput.java  # 接口：Mixin 注入的方法签名（isSafeForStressInjection + getTheoreticalSpeed）
-│   │       └── CreateMixinPlugin.java       # Mixin 条件加载插件（检测 Create 类是否存在）
+│   │   ├── create/                          # Create 兼容（软依赖，仅 Create 安装时加载）
+│   │   │   ├── CreateCompat.java            # Create 安装检测（ModList.get().isLoaded）
+│   │   │   ├── ModCreate.java               # Create 集成入口：常量定义 + 安全调用
+│   │   │   ├── CreateIntegration.java       # 应力输出逻辑：白名单过滤 + 方向兼容性检查 + RPM/SU 设置
+│   │   │   ├── LivingItemStressOutput.java  # 接口：Mixin 注入的方法签名（isSafeForStressInjection + getTheoreticalSpeed）
+│   │   │   └── CreateMixinPlugin.java       # Mixin 条件加载插件（检测 Create 类是否存在）
+│   │   └── sable/                           # Sable 飞艇兼容（软依赖，仅 Sable 安装时加载）
+│   │       ├── SableCompat.java             # Sable 安装检测（ModList.get().isLoaded）
+│   │       ├── ModSable.java                # Sable 集成入口：三层软依赖 + 安全调用
+│   │       └── SableIntegration.java        # 飞艇传送逻辑：飞艇上同维度移动飞艇本体，跨维度拒绝
 │   │
 │   ├── components/                          # 无状态工具组件
 │   │   ├── ExplosionComponent.java          # 爆炸工具类（引信倒计时、双模式爆炸、流体防爆）
@@ -727,9 +937,10 @@ src/main/java/com/qiqi/li/
 │   ├── mixin/                               # 服务端 Mixin
 │   │   ├── create/                          # Create Mixin（仅 Create 安装时加载，CreateMixinPlugin 控制）
 │   │   │   └── KineticBlockEntityMixin.java # Mixin 到 KineticBlockEntity：应力输出 + 自过期机制 + 白名单过滤
-│   │   ├── AbstractContainerScreenMixin.java # 容器界面 Mixin（注入活按钮 + 交互拦截）
+│   │   ├── AbstractContainerScreenMixin.java # 容器界面 Mixin（注入活按钮 + 交互拦截 + 活地图扩展渲染）
 │   │   ├── BlockEntityMixin.java            # Mixin 到 BlockEntity，添加 stressData 字段（StressDataProvider）
 │   │   ├── ItemStackMixin.java              # 物品堆叠 Mixin（活箱子堆叠操作拦截）
+│   │   ├── MapItemMixin.java                # 活空地图扩展 Mixin（距离 = 128 × count²）
 │   │   └── ServerPlaceRecipeMixin.java      # 配方书 Mixin（活箱子物品注入合成栏）
 │   │
 │   └── perf/                                # 性能监控指标
@@ -752,12 +963,17 @@ src/main/java/com/qiqi/li/
 │   ├── render/                              # 客户端渲染
 │   │   ├── LivingChestTooltipRenderer.java  # 活箱子 Tooltip 渲染器
 │   │   ├── LivingHopperDecorator.java       # 活漏斗箭头叠加层（IItemDecorator，旋转绘制输入/输出箭头）
+│   │   ├── LivingMapLayout.java             # 活地图布局扫描（N×N 地图组检测 + 命中检测 + UV 计算）
+│   │   ├── LivingMapTargetRenderer.java     # 活地图十字光标渲染器（展示框 + GUI，四色标记）
+│   │   ├── LivingMapIconDecorator.java      # 活地图 IItemDecorator（物品栏缩略图 + 边框叠加）
+│   │   ├── ExpandedMapTexture.java          # 扩展地图动态纹理（128×128 DynamicTexture，hash 更新）
 │   │   └── LivingItemTooltip.java           # Tooltip 渲染
 │   ├── mixin/                               # 客户端 Mixin
-│   │   ├── AbstractContainerScreenMixin.java # 容器界面 Mixin（注入活按钮 + 交互拦截）
+│   │   ├── AbstractContainerScreenMixin.java # 容器界面 Mixin（注入活按钮 + 交互拦截 + 活地图扩展渲染 + 传送）
 │   │   ├── InventoryScreenMixin.java         # 生存模式背包 Mixin（交互拦截）
 │   │   ├── CreativeModeInventoryScreenMixin.java # 创造模式背包 Mixin（交互拦截 + SlotWrapper兼容）
 │   │   ├── ItemRendererWaterWheelMixin.java  # 活水车物品栏 3D 旋转渲染 + 漫反射光照修正
+│   │   ├── MapRendererMixin.java            # 展示框活地图十字光标渲染
 │   │   ├── RecipeBookComponentMixin.java     # 配方书 Mixin
 │   │   ├── SlotWrapperAccessor.java          # SlotWrapper 访问器接口（获取 target 字段）
 │   │   └── SpriteIconButtonMixin.java        # 按钮渲染 Mixin
@@ -775,6 +991,8 @@ src/main/java/com/qiqi/li/
     ├── EnderChannelSyncPacket.java          # 末影箱频道同步包
     ├── LivingChestAccessPacket.java         # 活箱子访问包
     ├── SlotDirectionPacket.java             # 槽位方向配置包
+    ├── LivingMapGuiTeleportPacket.java      # 活地图 GUI 传送包（客户端→服务端：topLeftSlotIndex + u + v）
+    ├── LivingMapMetadataPacket.java         # 活地图元数据包（服务端→客户端：mapId + centerX + centerZ + dimensionKey）
     └── ServerPacketHandler.java             # 服务端包处理：更新光标物品 NBT + 同步
 ```
 
@@ -1150,6 +1368,31 @@ src/main/java/com/qiqi/li/
 - [x] Tooltip 显示（CW/CCW 应力、净应力方向、RPM、SU 容量）
 - [x] 容器破坏/玩家离开后应力自动清理（自过期 + 客户端同步）
 
+### 活地图传送功能
+- [x] 手持传送场景（活末影珍珠 + 活地图右键，`LivingMapEventHandler` 拦截 `PlayerInteractEvent.RightClickItem`）
+- [x] 展示框传送场景（活末影珍珠 + 展示框活地图右键，`ItemFrameMapTeleportHandler` 拦截 `EntityInteractSpecific`）
+- [x] GUI 传送场景（容器界面活末影珍珠右键活地图，`AbstractContainerScreenMixin` 拦截 + `LivingMapGuiTeleportPacket`）
+- [x] UV 精确传送（鼠标点击位置 → UV 坐标 → 地图像素 → 世界坐标，`MapCoordHelper` 坐标转换链）
+- [x] 传送优先级（旗帜 > 宝藏标记 > 精确坐标，`MapTeleportExecutor` 统一执行）
+- [x] 未探索区域传送（消耗 16 颗活末影珍珠，创造模式免费，`UNEXPLORED_PEARL_COST`）
+- [x] 跨维度传送（`DimensionTransition` API，旗帜/宝藏/坐标均支持跨维度）
+- [x] 载具传送（同维度：下马→传送→重新骑乘；跨维度：载具先 `changeDimension`）
+- [x] Sable 飞艇兼容（飞艇上同维度传送移动飞艇，跨维度拒绝 + 权限不足提示）
+- [x] 传送冷却（40 tick，复用原版末影珍珠冷却机制）
+- [x] 传送安全（`findSafeY` 高度图检测 + 落地伤害 5 点 + 传送粒子/音效）
+- [x] 活末影珍珠副手支持（`countInInventory`/`consumeFromInventory` 包含副手槽）
+- [x] 跨维度提示（`MapTeleportExecutor.execute()` 统一发送，无重复提示）
+- [x] 活空地图扩展（`MapItemMixin`：使用活空地图时，距离 = 128 × count²，朝玩家朝向方向扩展）
+- [x] GUI 扩展地图渲染（`LivingMapLayout.scan()` 检测 N×N 活地图组，`ExpandedMapTexture` 动态纹理）
+- [x] GUI 十字光标（`LivingMapTargetRenderer`：金=旗帜，青=宝藏，绿=已探索，红=未探索）
+- [x] GUI 地图装饰渲染（`renderExpandedMapDecorations`：旗帜/玩家标记等原版装饰按比例缩放）
+- [x] 展示框十字光标（`MapRendererMixin`：展示框活地图上渲染十字光标）
+- [x] 活地图图标（`LivingMapIconDecorator`：IItemDecorator，物品栏中显示地图缩略图+边框）
+- [x] 元数据同步包（`LivingMapMetadataPacket`：服务端→客户端，每秒同步地图中心/维度信息）
+- [x] 客户端缓存（`LivingMapClientCache`：LRU 缓存地图元数据，解决客户端数据不可靠问题）
+- [x] Tooltip 拦截（活末影珍珠手持时，悬停扩展地图区域不显示 Tooltip）
+- [x] 渲染性能优化（`hoveredGroup` 缓存，`findGroupAt` 调用从 O(N²) 降为 O(N)）
+
 ### 容器兼容性
 - [x] 标准矩形容器（27 格箱子、54 格大箱子）
 - [x] 线性容器（5 格漏斗）
@@ -1162,14 +1405,34 @@ src/main/java/com/qiqi/li/
 
 ## 开发进展
 
-### 当前版本: v0.8-alpha
+### 当前版本: v0.9-alpha
+
+**最近更新** (2026-08-09):
+- ✅ **新增：活地图传送系统**（`LivingEnderPearlFunction` + `MapTeleportExecutor` + `TeleportHelper` + `MapCoordHelper`）
+- ✅ **新增：三种传送场景**（手持传送 `LivingMapEventHandler` + 展示框传送 `ItemFrameMapTeleportHandler` + GUI 传送 `LivingMapGuiTeleportPacket`）
+- ✅ **新增：UV 精确传送**（鼠标点击 → UV 坐标 → 地图像素 → 世界坐标，`MapCoordHelper` 坐标转换链）
+- ✅ **新增：传送优先级**（旗帜 > 宝藏标记 > 精确坐标，`MapTeleportExecutor` 统一执行）
+- ✅ **新增：未探索区域传送**（消耗 16 颗活末影珍珠，创造模式免费）
+- ✅ **新增：跨维度传送**（`DimensionTransition` API + 载具传送 + Sable 飞艇兼容）
+- ✅ **新增：Sable 飞艇兼容层**（`compat/sable/`：`SableCompat` + `ModSable` + `SableIntegration`，三层软依赖）
+- ✅ **新增：活空地图扩展**（`MapItemMixin`：距离 = 128 × count²，朝玩家朝向方向扩展）
+- ✅ **新增：GUI 扩展地图渲染**（`LivingMapLayout.scan()` 检测 N×N 活地图组 + `ExpandedMapTexture` 动态纹理 + 装饰渲染）
+- ✅ **新增：十字光标渲染**（`LivingMapTargetRenderer`：金=旗帜/青=宝藏/绿=已探索/红=未探索，展示框 + GUI 双模式）
+- ✅ **新增：活地图图标**（`LivingMapIconDecorator`：IItemDecorator，物品栏缩略图 + 边框叠加）
+- ✅ **新增：元数据同步**（`LivingMapMetadataPacket` + `LivingMapClientCache`，解决客户端数据不可靠问题）
+- ✅ **新增：展示框十字光标**（`MapRendererMixin`：`MapRenderer.render()` TAIL 注入）
+- ✅ **修复：跨维度提示重复**（`LivingMapGuiTeleportPacket` 中删除冗余 `sendCrossDimensionMessage` 调用，由 `MapTeleportExecutor.execute()` 统一发送）
+- ✅ **修复：副手活末影珍珠未统计/消耗**（`countInInventory`/`consumeFromInventory` 新增副手槽检查）
+- ✅ **优化：渲染性能**（`hoveredGroup` 缓存，`findGroupAt` 调用从 O(N²) 降为 O(N)）
 
 **最近更新** (2026-07-30):
 - ✅ **重构：包结构按领域聚合**（消灭 `core/` 万能垃圾桶，消除 `capability/` 专属小包，`create/` 提升为 `compat/create/`）
   - `api/` — `LivingItemFunction` + `LivingItemManager` 从 `living/` 根提升
   - `domain/ender/` — 末影箱+活箱子领域聚合（`EnderChannelRegistry`、`EnderChannelEntry`、`LivingChestAccessor`、`LivingEnderChestAccessor` 等 8 个文件）
   - `domain/water/` — 活水领域聚合（`ContainerFluidData`、`ContainerStressData` 从 `container/` 移出）
+  - `domain/map/` — 活地图传送领域聚合（`MapTeleportExecutor`、`TeleportHelper`、`MapCoordHelper`、`LivingMapEventHandler`、`ItemFrameMapTeleportHandler`、`LivingMapClientCache`）
   - `compat/create/` — Create 兼容层从 `create/` 提升（含 `CreateMixinPlugin`，已更新 mixin JSON 路径）
+  - `compat/sable/` — Sable 飞艇兼容层（`SableCompat` + `ModSable` + `SableIntegration`，三层软依赖）
   - `transfer/` — 传输基础设施（`SlotAccessor` 体系 + `SlotResolver` + `ContainerCompatibilityConfig`，从 `core/accessor/` + `core/config/` 合并）
   - `interaction/` — GUI交互从 `core/interaction/` 提升
   - `model/` — 配置模型从 `core/model/` 提升
@@ -1364,6 +1627,8 @@ src/main/java/com/qiqi/li/
 - [ ] 黑白名单传递优化（改为一 tick 传递完整条漏斗链，而非逐跳传播）
 
 #### 中优先级
+- [ ] 活地图扩展：活地图锁定（右键活地图+活红石，锁定地图不再更新）
+- [ ] 活地图扩展：活地图标记（右键活地图+活纸，添加自定义标记点）
 - [ ] 活水车扩展：大水车变体（`create:large_water_wheel`，更高 RPM/SU）
 - [ ] 活水车扩展：活风车（`create:encased_fan`，观察气流方向产生应力）
 - [ ] 调试命令 `/livingitem info`
@@ -1460,5 +1725,5 @@ public class LivingTntFunction implements LivingItemFunction {
 
 ---
 
-*最后更新: 2026-07-30*
-*状态: Alpha 测试阶段 - DataComponent 直接管理架构迁移已完成（活TNT/活水桶/活熔炉/活漏斗/活末影箱/活水车），活箱子待迁移，跨容器传输已实现，IItemHandler 直接驱动容器读写，兼容抽屉、精妙背包等模组容器，GUI交互系统已就绪，客户端图标系统已组件化，SlotAccessor 模拟优先传输架构已实现，活末影箱双模式（路由/直连）+ Deque 轮询调度 + 反向索引路由清理 + FilteredSlotAccessor 统一过滤，容器位置缓存（拉取模型 + 自清洁）实现零延迟容器发现，双重扫描合并 + Snapshot 懒加载 + 直连模式 InvWrapper 缓存/轮询提取等性能优化，不可变数据模型 + 功能内聚 + 无状态工具类新架构，TickContext 对象池优化，SlotAccessor 注册式工厂，LivingItemFunction 接口职责拆分，活箱子精确字节计算，性能监控指标系统，活水车 Create 软依赖集成（白名单+方向兼容+自过期+3D旋转渲染），包结构按领域聚合重构（domain/ + compat/ + transfer/ + api/）*
+*最后更新: 2026-08-09*
+*状态: Alpha 测试阶段 - DataComponent 直接管理架构迁移已完成（活TNT/活水桶/活熔炉/活漏斗/活末影箱/活水车），活箱子待迁移，跨容器传输已实现，IItemHandler 直接驱动容器读写，兼容抽屉、精妙背包等模组容器，GUI交互系统已就绪，客户端图标系统已组件化，SlotAccessor 模拟优先传输架构已实现，活末影箱双模式（路由/直连）+ Deque 轮询调度 + 反向索引路由清理 + FilteredSlotAccessor 统一过滤，容器位置缓存（拉取模型 + 自清洁）实现零延迟容器发现，双重扫描合并 + Snapshot 懒加载 + 直连模式 InvWrapper 缓存/轮询提取等性能优化，不可变数据模型 + 功能内聚 + 无状态工具类新架构，TickContext 对象池优化，SlotAccessor 注册式工厂，LivingItemFunction 接口职责拆分，活箱子精确字节计算，性能监控指标系统，活水车 Create 软依赖集成（白名单+方向兼容+自过期+3D旋转渲染），包结构按领域聚合重构（domain/ + compat/ + transfer/ + api/），活地图传送系统（三种场景+UV精确传送+跨维度+载具+Sable飞艇兼容+GUI扩展渲染+四色十字光标+元数据同步）*

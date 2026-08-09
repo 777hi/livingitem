@@ -3,10 +3,8 @@ package com.qiqi.li.network;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.domain.map.MapCoordHelper;
 import com.qiqi.li.living.domain.map.MapTeleportExecutor;
-import com.qiqi.li.living.domain.map.TeleportHelper;
 import com.qiqi.li.living.function.LivingEnderPearlFunction;
 import net.minecraft.core.component.DataComponents;
-import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
@@ -17,20 +15,14 @@ import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.MapItem;
-import net.minecraft.world.level.saveddata.maps.MapBanner;
-import net.minecraft.world.level.saveddata.maps.MapDecoration;
 import net.minecraft.world.level.saveddata.maps.MapId;
 import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
-import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
-
-import javax.annotation.Nullable;
 
 public record LivingMapGuiTeleportPacket(
     int topLeftSlotIndex,
     float u,
-    float v,
-    @Nullable CompoundTag carriedTag
+    float v
 ) implements CustomPacketPayload {
 
     public static final ResourceLocation ID = ResourceLocation.fromNamespaceAndPath("living_item", "map_gui_teleport");
@@ -45,23 +37,13 @@ public record LivingMapGuiTeleportPacket(
         buf.writeVarInt(pkt.topLeftSlotIndex);
         buf.writeFloat(pkt.u);
         buf.writeFloat(pkt.v);
-        if (pkt.carriedTag != null) {
-            buf.writeBoolean(true);
-            buf.writeNbt(pkt.carriedTag);
-        } else {
-            buf.writeBoolean(false);
-        }
     }
 
     private static LivingMapGuiTeleportPacket decode(FriendlyByteBuf buf) {
         int topLeftSlotIndex = buf.readVarInt();
         float u = buf.readFloat();
         float v = buf.readFloat();
-        CompoundTag carriedTag = null;
-        if (buf.readBoolean()) {
-            carriedTag = buf.readNbt();
-        }
-        return new LivingMapGuiTeleportPacket(topLeftSlotIndex, u, v, carriedTag);
+        return new LivingMapGuiTeleportPacket(topLeftSlotIndex, u, v);
     }
 
     @Override
@@ -74,69 +56,28 @@ public record LivingMapGuiTeleportPacket(
             if (!(context.player() instanceof ServerPlayer player)) return;
 
             AbstractContainerMenu menu = player.containerMenu;
-            boolean isCreative = player.isCreative();
-
-            boolean carriedRestored = false;
-            if (isCreative && packet.carriedTag() != null) {
-                ItemStack carried = ItemStack.parse(player.registryAccess(), packet.carriedTag())
-                    .orElse(ItemStack.EMPTY);
-                if (!carried.isEmpty()) {
-                    menu.setCarried(carried);
-                    carriedRestored = true;
-                }
-            }
 
             Slot topLeftSlot = resolveSlot(menu, packet.topLeftSlotIndex());
-            if (topLeftSlot == null) {
-                if (carriedRestored) menu.setCarried(ItemStack.EMPTY);
-                return;
-            }
+            if (topLeftSlot == null) return;
 
             ItemStack mapStack = topLeftSlot.getItem();
-            if (!LivingItemManager.isLivingMap(mapStack)) {
-                if (carriedRestored) menu.setCarried(ItemStack.EMPTY);
-                return;
-            }
+            if (!LivingItemManager.isLivingMap(mapStack)) return;
 
             MapId mapId = mapStack.get(DataComponents.MAP_ID);
-            if (mapId == null) {
-                if (carriedRestored) menu.setCarried(ItemStack.EMPTY);
-                return;
-            }
+            if (mapId == null) return;
 
             ServerLevel sourceLevel = player.serverLevel();
             MapItemSavedData mapData = MapItem.getSavedData(mapId, sourceLevel);
-            if (mapData == null) {
-                if (carriedRestored) menu.setCarried(ItemStack.EMPTY);
-                return;
-            }
+            if (mapData == null) return;
 
             ServerLevel targetLevel = sourceLevel.getServer().getLevel(MapCoordHelper.getMapDimension(mapData));
-            if (targetLevel == null) {
-                if (carriedRestored) menu.setCarried(ItemStack.EMPTY);
-                return;
-            }
+            if (targetLevel == null) return;
 
             float u = Math.max(0f, Math.min(1f, packet.u()));
             float v = Math.max(0f, Math.min(1f, packet.v()));
 
-            boolean pearlFromCursor = false;
-            ItemStack pearlStack = null;
-
-            ItemStack carried = menu.getCarried();
-            if (LivingEnderPearlFunction.isLivingEnderPearl(carried) && !LivingEnderPearlFunction.isOnCooldown(player)) {
-                pearlStack = carried;
-                pearlFromCursor = true;
-            }
-
-            if (pearlStack == null) {
-                pearlStack = resolvePearlStack(player, menu);
-            }
-
-            if (pearlStack == null) {
-                if (carriedRestored) menu.setCarried(ItemStack.EMPTY);
-                return;
-            }
+            ItemStack pearlStack = resolvePearlStack(player);
+            if (pearlStack == null) return;
 
             int mapX = MapCoordHelper.uvToMapX(u);
             int mapY = MapCoordHelper.uvToMapY(v);
@@ -148,17 +89,6 @@ public record LivingMapGuiTeleportPacket(
                 mapX, mapY,
                 preciseWorldPos[0], preciseWorldPos[1],
                 mapStack, pearlStack);
-
-            if (result.success() && result.crossDim()) {
-                TeleportHelper.sendCrossDimensionMessage(player, targetLevel.dimension());
-            }
-
-            if (isCreative && (carriedRestored || pearlFromCursor)) {
-                ItemStack modifiedCarried = menu.getCarried().copy();
-                menu.setCarried(ItemStack.EMPTY);
-                CompoundTag carriedSyncTag = (CompoundTag) modifiedCarried.saveOptional(player.registryAccess());
-                PacketDistributor.sendToPlayer(player, new CarriedUpdatePacket(carriedSyncTag));
-            }
 
             menu.broadcastChanges();
         });
@@ -175,7 +105,7 @@ public record LivingMapGuiTeleportPacket(
         return null;
     }
 
-    private static ItemStack resolvePearlStack(ServerPlayer player, AbstractContainerMenu menu) {
+    private static ItemStack resolvePearlStack(ServerPlayer player) {
         if (LivingEnderPearlFunction.isOnCooldown(player)) return null;
         if (player.isCreative()) {
             return LivingEnderPearlFunction.findInInventory(player);

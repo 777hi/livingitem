@@ -138,7 +138,7 @@ public final class TeleportHelper {
     private static void consumePearl(ServerPlayer player, ItemStack pearlStack, boolean unexplored) {
         if (player.isCreative()) return;
         if (unexplored) {
-            pearlStack.shrink(MapTeleportExecutor.UNEXPLORED_PEARL_COST);
+            LivingEnderPearlFunction.consumeFromInventory(player, MapTeleportExecutor.UNEXPLORED_PEARL_COST);
         } else {
             pearlStack.shrink(1);
         }

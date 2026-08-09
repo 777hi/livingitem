@@ -103,17 +103,15 @@ public class AbstractContainerScreenMixin extends Screen {
             }
             if (group != null) {
                 float[] uv = LivingMapLayout.computeUV(group, mouseX, mouseY, leftPos, topPos);
-                CompoundTag carriedTag = living_item$resolveCarriedTag();
                 PacketDistributor.sendToServer(new LivingMapGuiTeleportPacket(
-                    group.topLeftSlotIndex(), uv[0], uv[1], carriedTag));
+                    group.topLeftSlotIndex(), uv[0], uv[1]));
                 cir.setReturnValue(true);
                 return;
             }
             if (this.hoveredSlot != null && LivingMapLayout.isSingleLivingMapSlot(this.hoveredSlot)) {
                 float[] uv = LivingMapLayout.computeSingleSlotUV(this.hoveredSlot, mouseX, mouseY, leftPos, topPos);
-                CompoundTag carriedTag = living_item$resolveCarriedTag();
                 PacketDistributor.sendToServer(new LivingMapGuiTeleportPacket(
-                    this.hoveredSlot.index, uv[0], uv[1], carriedTag));
+                    this.hoveredSlot.index, uv[0], uv[1]));
                 cir.setReturnValue(true);
                 return;
             }
@@ -121,26 +119,6 @@ public class AbstractContainerScreenMixin extends Screen {
 
         if (GuiInteractionHelper.tryInteract(this.hoveredSlot, button, this.menu)) {
             cir.setReturnValue(true);
-        }
-
-        if (button == GLFW.GLFW_MOUSE_BUTTON_MIDDLE) {
-            boolean hasLivingChest = false;
-            if (this.hoveredSlot != null) {
-                ItemStack slotStack = this.hoveredSlot.getItem();
-                if (LivingChestFunction.isLivingChest(slotStack)) {
-                    hasLivingChest = true;
-                }
-            }
-            if (!hasLivingChest) {
-                ItemStack cursorStack = this.menu.getCarried();
-                if (LivingChestFunction.isLivingChest(cursorStack)) {
-                    hasLivingChest = true;
-                }
-            }
-            if (hasLivingChest) {
-                cir.setReturnValue(true);
-                return;
-            }
         }
 
         if (button == GLFW.GLFW_MOUSE_BUTTON_1 && hasShiftDown()
@@ -165,6 +143,24 @@ public class AbstractContainerScreenMixin extends Screen {
         }
     }
 
+    @Inject(method = "renderTooltip", at = @At("HEAD"), cancellable = true)
+    private void living_item$suppressTooltipOnExpandedMap(GuiGraphics guiGraphics, int x, int y, CallbackInfo ci) {
+        if (!living_item$hasLivingEnderPearl()) return;
+
+        living_item$updateMapGroups();
+
+        LivingMapLayout.MapGroup group = LivingMapLayout.findGroupAt(
+            living_item$mapGroups, x, y, leftPos, topPos);
+        if (group != null) {
+            ci.cancel();
+            return;
+        }
+
+        if (this.hoveredSlot != null && LivingMapLayout.isSingleLivingMapSlot(this.hoveredSlot)) {
+            ci.cancel();
+        }
+    }
+
     @Inject(method = "render", at = @At("TAIL"))
     private void living_item$renderExpandedMaps(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick, CallbackInfo ci) {
         living_item$updateMapGroups();
@@ -172,13 +168,16 @@ public class AbstractContainerScreenMixin extends Screen {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return;
 
+        LivingMapLayout.MapGroup hoveredGroup = LivingMapLayout.findGroupAt(
+            living_item$mapGroups, mouseX, mouseY, leftPos, topPos);
+
         for (LivingMapLayout.MapGroup group : living_item$mapGroups) {
-            living_item$renderExpandedMap(guiGraphics, mc, group, mouseX, mouseY);
+            living_item$renderExpandedMap(guiGraphics, mc, group, mouseX, mouseY, hoveredGroup);
         }
     }
 
     @Unique
-    private void living_item$renderExpandedMap(GuiGraphics guiGraphics, Minecraft mc, LivingMapLayout.MapGroup group, int mouseX, int mouseY) {
+    private void living_item$renderExpandedMap(GuiGraphics guiGraphics, Minecraft mc, LivingMapLayout.MapGroup group, int mouseX, int mouseY, @Nullable LivingMapLayout.MapGroup hoveredGroup) {
         if (group.mapId() == null) return;
 
         MapItemSavedData mapData = MapItem.getSavedData(group.mapId(), mc.level);
@@ -201,7 +200,7 @@ public class AbstractContainerScreenMixin extends Screen {
 
         living_item$renderExpandedMapDecorations(guiGraphics, mapData, areaX, areaY, areaSize);
 
-        if (living_item$hasLivingEnderPearl()) {
+        if (living_item$hasLivingEnderPearl() && hoveredGroup == group) {
             float[] uv = LivingMapLayout.computeUV(group, mouseX, mouseY, leftPos, topPos);
             int mapX = MapCoordHelper.uvToMapX(uv[0]);
             int mapY = MapCoordHelper.uvToMapY(uv[1]);
@@ -221,37 +220,6 @@ public class AbstractContainerScreenMixin extends Screen {
         }
 
         guiGraphics.pose().popPose();
-    }
-
-    @Inject(method = "renderFloatingItem", at = @At("HEAD"), cancellable = true)
-    private void living_item$hideFloatingPearl(GuiGraphics guiGraphics, ItemStack stack, int x, int y, String text, CallbackInfo ci) {
-        if (LivingEnderPearlFunction.isLivingEnderPearl(stack)) {
-            living_item$updateMapGroups();
-            float cursorX = x + 8;
-            float cursorY = y + 8;
-            for (LivingMapLayout.MapGroup group : living_item$mapGroups) {
-                float relAreaX = group.x() - LivingMapLayout.SLOT_BORDER_OFFSET;
-                float relAreaY = group.y() - LivingMapLayout.SLOT_BORDER_OFFSET;
-                float areaSize = group.n() * LivingMapLayout.SLOT_SIZE;
-                if (cursorX >= relAreaX && cursorX < relAreaX + areaSize
-                    && cursorY >= relAreaY && cursorY < relAreaY + areaSize) {
-                    ci.cancel();
-                    return;
-                }
-            }
-            for (Slot slot : this.menu.slots) {
-                if (LivingMapLayout.isSingleLivingMapSlot(slot)) {
-                    float relSlotX = slot.x - LivingMapLayout.SLOT_BORDER_OFFSET;
-                    float relSlotY = slot.y - LivingMapLayout.SLOT_BORDER_OFFSET;
-                    float slotSize = LivingMapLayout.SLOT_SIZE;
-                    if (cursorX >= relSlotX && cursorX < relSlotX + slotSize
-                        && cursorY >= relSlotY && cursorY < relSlotY + slotSize) {
-                        ci.cancel();
-                        return;
-                    }
-                }
-            }
-        }
     }
 
     @Unique
@@ -319,21 +287,8 @@ public class AbstractContainerScreenMixin extends Screen {
     private boolean living_item$hasLivingEnderPearl() {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return false;
-        if (LivingEnderPearlFunction.isLivingEnderPearl(mc.player.getMainHandItem())
-            || LivingEnderPearlFunction.isLivingEnderPearl(mc.player.getOffhandItem())) {
-            return true;
-        }
-        return LivingEnderPearlFunction.isLivingEnderPearl(this.menu.getCarried());
-    }
-
-    @Unique
-    private CompoundTag living_item$resolveCarriedTag() {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null) return null;
-        if (!(mc.screen instanceof CreativeModeInventoryScreen)) return null;
-        ItemStack carried = menu.getCarried();
-        if (carried.isEmpty()) return null;
-        return (CompoundTag) carried.saveOptional(mc.player.registryAccess());
+        return LivingEnderPearlFunction.isLivingEnderPearl(mc.player.getMainHandItem())
+            || LivingEnderPearlFunction.isLivingEnderPearl(mc.player.getOffhandItem());
     }
 
     @Unique

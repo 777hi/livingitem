@@ -1,6 +1,6 @@
 # Living Map & Living Ender Pearl (活地图 & 活末影珍珠) 技术文档
 
-> **文档版本**: 2026.08 v13  
+> **文档版本**: 2026.08 v14  
 > **最后更新**: 2026-08-09  
 > **适用版本**: Minecraft 1.21.1
 
@@ -117,7 +117,7 @@ player.getCooldowns().addCooldown(Items.ENDER_PEARL, 40)
 
 | 模式 | 已探索区域 | 未探索区域 |
 |------|-----------|-----------|
-| 生存模式 | 消耗 1 个活末影珍珠（`shrink(1)`） | 消耗 16 个活末影珍珠（`shrink(16)`，即一组） |
+| 生存模式 | 消耗 1 个活末影珍珠（`shrink(1)`） | 消耗 16 个活末影珍珠（从整个背包凑齐，`consumeFromInventory`） |
 | 创造模式 | 不消耗 | 不消耗 |
 
 ---
@@ -284,22 +284,35 @@ private static int findSafeY(ServerLevel level, BlockPos pos) {
 
 4. 未探索区域
    → 创造模式：免费传送
-   → 生存模式 + 珍珠堆叠 ≥ 16：消耗整组（16个）活末影珍珠，传送到目标位置
-   → 生存模式 + 珍珠堆叠 < 16：拒绝传送，提示"此区域尚未探索，需要一组（16个）活末影珍珠才能传送"
+   → 生存模式 + 背包珍珠总数 ≥ 16：消耗16个活末影珍珠（从整个背包凑齐），传送到目标位置
+   → 生存模式 + 背包珍珠总数 < 16：拒绝传送，提示"此区域尚未探索，需要一组（16个）活末影珍珠才能传送"
 ```
 
-**未探索区域传送的设计意图**：活空地图远程开图创建的地图，其目标区域在地图上是未探索的。原本通过GUI单活地图传送可以绕过未探索限制（旧机制传送到地图中心），现在统一了4个场景的传送逻辑。消耗一组珍珠作为"强行撕裂空间"的代价，既保留了传送能力，又设置了合理的门槛。
+**未探索区域传送的设计意图**：活空地图远程开图创建的地图，其目标区域在地图上是未探索的。消耗一组珍珠作为"强行撕裂空间"的代价，既保留了传送能力，又设置了合理的门槛。消耗时从整个背包凑齐16个（`LivingEnderPearlFunction.consumeFromInventory`），不要求单个栈满16。
 
-### 4.4 四个传送场景
+### 4.4 三个传送场景
 
-| 场景 | 触发方式 | 目标计算 | 入口类 |
-|------|---------|---------|--------|
-| 手持传送 | 右键活地图 | 视角（yaw/pitch）→射线→像素坐标 | `LivingMapEventHandler` |
-| 展示框传送 | 右键展示框上的活地图 | hitVec→UV→像素坐标 | `ItemFrameMapTeleportHandler` |
-| GUI扩展地图传送 | 右键扩展地图区域 | 鼠标坐标→UV→像素坐标 | `AbstractContainerScreenMixin` → `LivingMapGuiTeleportPacket` |
-| GUI单个活地图传送 | 右键单个活地图槽位 | 鼠标坐标→UV→像素坐标 | `AbstractContainerScreenMixin` → `LivingMapGuiTeleportPacket` |
+三个场景的传送优先级和消耗逻辑共享（最终都调用 `MapTeleportExecutor.execute()`），但**珍珠查找方式不同**：
 
-四个场景最终都调用 `MapTeleportExecutor.execute()`，共享相同的传送优先级和消耗逻辑。
+| 场景 | 触发方式 | 目标计算 | 珍珠查找 | 入口类 |
+|------|---------|---------|---------|--------|
+| 手持传送 | 右键活地图 | 视角（yaw/pitch）→射线→像素坐标 | 整个背包 `findInInventory` | `LivingMapEventHandler` |
+| 展示框传送 | 右键展示框上的活地图 | hitVec→UV→像素坐标 | 主/副手 `resolvePearlStack` | `ItemFrameMapTeleportHandler` |
+| GUI传送 | 右键扩展地图/单个活地图 | 鼠标坐标→UV→像素坐标 | 主/副手 `resolvePearlStack` | `AbstractContainerScreenMixin` → `LivingMapGuiTeleportPacket` |
+
+**为什么查找方式不同**：
+
+- **手持传送**：玩家手持活地图，珍珠只能在背包里，所以遍历整个背包查找
+- **展示框传送**：玩家手持活末影珍珠右键展示框，珍珠必须在手上
+- **GUI传送**：玩家手持活末影珍珠右键地图，珍珠必须在手上
+
+**消耗差异**：
+
+| 消耗场景 | 手持传送 | 展示框/GUI传送 |
+|---------|---------|--------------|
+| 已探索 | 从找到的第一个栈 `shrink(1)` | 从主/副手栈 `shrink(1)` |
+| 未探索 | `consumeFromInventory(player, 16)` 从整个背包凑 | `consumeFromInventory(player, 16)` 从整个背包凑 |
+| 未探索判断 | `countInInventory(player) >= 16` | `countInInventory(player) >= 16` |
 
 ### 4.5 旗帜传送
 
@@ -321,7 +334,7 @@ private static int findSafeY(ServerLevel level, BlockPos pos) {
 | 冷却 | 40 tick (2秒) | 防止频繁传送 |
 | 坠落伤害 | 5.0 | 模拟末影珍珠伤害 |
 | 珍珠消耗（已探索） | 1个 | 生存模式消耗，创造模式不消耗 |
-| 珍珠消耗（未探索） | 16个（一组） | 生存模式消耗整组，创造模式不消耗 |
+| 珍珠消耗（未探索） | 16个（从整个背包凑齐） | 生存模式从背包凑齐16个，创造模式不消耗 |
 | 粒子效果 | PORTAL | 传送点 + 出发点（跨维度时） |
 | 音效 | ENDERMAN_TELEPORT | 传送点 |
 
@@ -1000,7 +1013,7 @@ compileOnly files("libs/sable-companion-common-1.21.1-1.6.0.jar")  // JarJar 嵌
 | `ItemFrameMapTeleportHandler` | `domain/map/ItemFrameMapTeleportHandler.java` | 展示框传送：EntityInteractSpecific事件拦截、hitVec→像素坐标，传送逻辑委托给 `MapTeleportExecutor` |
 | `TeleportHelper` | `domain/map/TeleportHelper.java` | 传送执行：安全Y坐标、骑乘传送、跨维度传送、Sable飞艇传送、粒子/音效、伤害、冷却、珍珠消耗（已探索1个/未探索16个） |
 | `LivingItemManager` | `api/LivingItemManager.java` | 活物品管理：`isLivingItem()`、`isLivingMap()` 等通用判断 |
-| `LivingEnderPearlFunction` | `function/LivingEnderPearlFunction.java` | 活末影珍珠功能：`isLivingEnderPearl()`、`isOnCooldown(player)`、`setCooldown(player)`、`findInInventory(player)`，冷却委托给原版 `player.getCooldowns()` |
+| `LivingEnderPearlFunction` | `function/LivingEnderPearlFunction.java` | 活末影珍珠功能：`isLivingEnderPearl()`、`isOnCooldown(player)`、`setCooldown(player)`、`findInInventory(player)`、`countInInventory(player)`、`consumeFromInventory(player, amount)`，冷却委托给原版 `player.getCooldowns()` |
 | `LivingMapMetadataPacket` | `network/LivingMapMetadataPacket.java` | 服务器→客户端网络包：同步地图元数据 |
 | `LivingMapClientCache` | `domain/map/LivingMapClientCache.java` | 客户端缓存：按 mapId 存储 centerX/centerZ/dimension |
 | `LivingMapTargetRenderer` | `client/render/LivingMapTargetRenderer.java` | 客户端渲染工具：3D准心标记渲染（`renderMarker`，原版准心纹理+四色着色）、GUI十字形光标渲染（`renderMarkerGui`，5像素十字形），供 `ItemInHandRendererMixin`、`MapRendererMixin`、`AbstractContainerScreenMixin` 共享 |
@@ -1774,3 +1787,30 @@ player.changeDimension(transition);            // 替代原来的 player.telepor
 ```
 
 **关键**：`ServerPlayer.changeDimension()` 同维度分支只做 `connection.teleport()` + `connection.resetPosition()`，不会触发维度切换逻辑（不发送 `ClientboundRespawnPacket`），开销极小。
+
+### v34 → v35：光标逻辑清理 + tooltip拦截 + 十字光标修复 + 未探索消耗从背包凑
+
+**问题1**：GUI传送中光标持有活末影珍珠时的同步逻辑复杂且存在bug（`carriedTag` 序列化、`CarriedUpdatePacket` 强制同步等），维护成本高。
+
+**修复**：完全移除光标相关逻辑，简化交互流程：
+
+- `LivingMapGuiTeleportPacket`：删除 `carriedTag` 字段及编解码逻辑，删除 `CarriedUpdatePacket` 同步，`resolvePearlStack` 仅从主/副手查找珍珠
+- `AbstractContainerScreenMixin`：`hasLivingEnderPearl()` 移除 `menu.getCarried()` 检查，删除 `living_item$resolveCarriedTag` 方法，删除 `living_item$hideFloatingPearl` 注入
+- 删除中键+活箱子拦截逻辑（不再需要）
+- GUI传送现在只认主/副手的活末影珍珠，不检查光标
+
+**问题2**：手持活末影珍珠悬浮在扩展地图上时会显示物品tooltip，影响视觉。
+
+**修复**：注入 `renderTooltip` 方法，当手持活末影珍珠且鼠标在扩展地图区域或单个活地图槽位上时，取消tooltip渲染。
+
+**问题3**：多个扩展地图时，每个地图上都会渲染十字光标，而非只在鼠标所在的地图上渲染。
+
+**修复**：在十字光标渲染条件中增加 `findGroupAt(...) == group` 判断，确保只在鼠标实际所在的扩展地图上渲染光标。
+
+**问题4**：未探索区域传送消耗只检查单个栈数量是否≥16，无法从多个栈凑齐16个。
+
+**修复**：
+- `LivingEnderPearlFunction` 新增 `countInInventory(player)` 统计整个背包活末影珍珠总数
+- `LivingEnderPearlFunction` 新增 `consumeFromInventory(player, amount)` 从多个栈依次扣除凑齐指定数量
+- `MapTeleportExecutor.execute()` 未探索判断改为 `countInInventory(player) >= UNEXPLORED_PEARL_COST`
+- `TeleportHelper.consumePearl()` 未探索消耗改为 `consumeFromInventory(player, UNEXPLORED_PEARL_COST)`

@@ -41,7 +41,7 @@ public final class MapTeleportExecutor {
             if (unexplored) {
                 if (player.isCreative()) {
                     success = TeleportHelper.teleportToMapPosition(player, sourceLevel, targetLevel, preciseWorldX, preciseWorldZ, pearlStack, true);
-                } else if (pearlStack.getCount() >= UNEXPLORED_PEARL_COST) {
+                } else if (LivingEnderPearlFunction.countInInventory(player) >= UNEXPLORED_PEARL_COST) {
                     success = TeleportHelper.teleportToMapPosition(player, sourceLevel, targetLevel, preciseWorldX, preciseWorldZ, pearlStack, true);
                 } else {
                     TeleportHelper.sendUnexploredMessage(player);

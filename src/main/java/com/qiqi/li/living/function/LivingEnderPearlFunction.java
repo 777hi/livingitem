@@ -66,4 +66,36 @@ public class LivingEnderPearlFunction implements LivingItemFunction {
         }
         return null;
     }
+
+    public static int countInInventory(ServerPlayer player) {
+        int total = 0;
+        for (ItemStack stack : player.getInventory().items) {
+            if (isLivingEnderPearl(stack)) {
+                total += stack.getCount();
+            }
+        }
+        ItemStack offhand = player.getOffhandItem();
+        if (isLivingEnderPearl(offhand)) {
+            total += offhand.getCount();
+        }
+        return total;
+    }
+
+    public static void consumeFromInventory(ServerPlayer player, int amount) {
+        int remaining = amount;
+        for (ItemStack stack : player.getInventory().items) {
+            if (!isLivingEnderPearl(stack)) continue;
+            int take = Math.min(remaining, stack.getCount());
+            stack.shrink(take);
+            remaining -= take;
+            if (remaining <= 0) break;
+        }
+        if (remaining > 0) {
+            ItemStack offhand = player.getOffhandItem();
+            if (isLivingEnderPearl(offhand)) {
+                int take = Math.min(remaining, offhand.getCount());
+                offhand.shrink(take);
+            }
+        }
+    }
 }
