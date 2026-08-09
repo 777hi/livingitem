@@ -1,6 +1,6 @@
 # Living Map & Living Ender Pearl (活地图 & 活末影珍珠) 技术文档
 
-> **文档版本**: 2026.08 v12  
+> **文档版本**: 2026.08 v13  
 > **最后更新**: 2026-08-09  
 > **适用版本**: Minecraft 1.21.1
 
@@ -226,7 +226,7 @@ maxDist = 四条边界距离中的最小正值
 │   │   └─ 同维度 → ensureChunkLoaded + teleportSubLevel 瞬移飞艇
 │   ├─ 普通骑乘？
 │   │   ├─ 跨维度 → vehicle.changeDimension()（原版内部处理乘客传送和重新骑乘）
-│   │   └─ 同维度 → ensureChunkLoaded + vehicle.teleportTo()（teleportPassengers 自动同步乘客）
+│   │   └─ 同维度 → ensureChunkLoaded + player.changeDimension()（connection.teleport 同步客户端）
 │   ├─ 无骑乘 → ensureChunkLoaded + player.teleportTo()
 │   ├─ 传送粒子效果 + 音效
 │   ├─ 5点坠落伤害
@@ -820,8 +820,8 @@ public class MapItemMixin {
 
 | 场景 | 处理方式 |
 |------|---------|
-| 同维度 + 有坐骑 | `ensureChunkLoaded` + `vehicle.teleportTo()`，`teleportPassengers` 自动同步所有乘客位置 |
-| 同维度 + 无坐骑 | `ensureChunkLoaded` + `player.teleportTo(x, y, z)` |
+| 同维度 + 有坐骑 | `ensureChunkLoaded` + 下马 → `vehicle.teleportTo()` → `player.changeDimension()` → 其他 `ServerPlayer` 乘客 `connection.teleport()` → 重新骑乘 |
+| 同维度 + 无坐骑 | `ensureChunkLoaded` + `player.changeDimension(transition)`（同维度分支调用 `connection.teleport()` 同步客户端位置） |
 | 跨维度 + 有坐骑 | `vehicle.changeDimension(transition)`，原版内部自动处理乘客传送和重新骑乘 |
 | 跨维度 + 无坐骑 | `player.changeDimension(transition)` 跨维度传送 |
 | 同维度 + 骑乘飞艇坐垫 | `ensureChunkLoaded` + `ModSable.teleportSubLevel()` 传送整个飞艇，骑行系统自动同步位置 |
@@ -829,7 +829,7 @@ public class MapItemMixin {
 
 **跨维度带坐骑的关键**：`Entity.changeDimension()` 内部已经处理了乘客的跨维度传送和重新骑乘（`unRide()` → 乘客递归 `changeDimension()` → 乘客 `startRiding(新载具)`），不需要外部手动管理。手动管理反而会导致乘客被 `changeDimension` 两次，产生重复实体。
 
-**同维度远距离传送的关键**：`Entity.teleportTo()` 内部调用 `moveTo()` + `teleportPassengers()`，`teleportPassengers` 遍历所有乘客调用 `Entity::moveTo`，自动将船上的玩家和动物一起移动到新位置。传送前调用 `ensureChunkLoaded` 确保目标区块已加载。
+**同维度远距离传送的关键**：`vehicle.teleportTo()` 的 `teleportPassengers()` 不会为 `ServerPlayer` 乘客发送 `ClientboundPlayerPositionPacket`，导致客户端位置不同步。因此同维度传送必须使用 `player.changeDimension()`（同维度分支内部调用 `connection.teleport()` 发送位置同步包），而非 `player.teleportTo()`。载具传送流程：先下马 → `vehicle.teleportTo()` 传送载具 → `player.changeDimension()` 传送玩家 → 其他 `ServerPlayer` 乘客 `connection.teleport()` 同步位置 → 重新骑乘。
 
 ### 11.2 Sable 飞艇传送
 
@@ -1735,3 +1735,42 @@ private static void consumePearl(ServerPlayer player, ItemStack pearlStack, bool
 **四个场景统一**：手持传送、展示框传送、GUI扩展地图传送、GUI单个活地图传送均通过 `MapTeleportExecutor.execute()` 共享此逻辑，行为一致。
 
 **常量**：`MapTeleportExecutor.UNEXPLORED_PEARL_COST = 16`（末影珍珠最大堆叠数）。
+
+### v33 → v34：同维度载具传送客户端位置不同步导致抽搐
+
+**问题**：同维度骑乘坐骑远距离传送后，玩家处于不断抽搐状态，皮肤发红（受击效果），视角抖动，无法移动和正常操作。
+
+**根因**：`vehicle.teleportTo()` 内部的 `teleportPassengers()` 只调用 `Entity::moveTo` 设置乘客坐标，不会为 `ServerPlayer` 发送 `ClientboundPlayerPositionPacket`。客户端仍持有旧位置，继续基于旧位置发送移动包，服务端不断纠正 → 客户端回弹 → 抽搐。加上后续 `player.hurt()` 的受击效果（红屏+视角抖动），抽搐更加明显。
+
+**为什么跨维度不会出现此问题**：跨维度走 `changeDimension()`，客户端收到 `ClientboundRespawnPacket`（维度切换），整个世界状态重置，不存在"旧位置"冲突。
+
+**原版末影珍珠的做法**：`ThrownEnderpearl.onHit()` 中，即使是同维度也走 `player.changeDimension()`，其 `ServerPlayer` 重写版本在同维度分支调用 `connection.teleport()` + `connection.resetPosition()`，正确发送位置同步包。
+
+**修复**：同维度传送改用 `player.changeDimension()`，载具传送流程改为：
+
+```java
+// 同维度 + 有载具
+List<Entity> passengers = new ArrayList<>(vehicle.getPassengers());
+for (Entity passenger : passengers) {
+    passenger.stopRiding();                    // 1. 所有乘客下马
+}
+vehicle.teleportTo(destX, destY, destZ);       // 2. 传送载具
+DimensionTransition transition = new DimensionTransition(
+    targetLevel, new Vec3(destX, destY, destZ), Vec3.ZERO,
+    player.getYRot(), player.getXRot(), DimensionTransition.DO_NOTHING);
+player.changeDimension(transition);            // 3. 传送玩家（发送 ClientboundPlayerPositionPacket）
+for (Entity passenger : passengers) {
+    if (passenger != player && passenger instanceof ServerPlayer serverPassenger) {
+        serverPassenger.connection.teleport(destX, destY, destZ, ...);  // 4. 其他玩家乘客同步位置
+        serverPassenger.connection.resetPosition();
+    }
+}
+for (Entity passenger : passengers) {
+    passenger.startRiding(vehicle, true);      // 5. 重新骑乘
+}
+
+// 同维度 + 无载具
+player.changeDimension(transition);            // 替代原来的 player.teleportTo()
+```
+
+**关键**：`ServerPlayer.changeDimension()` 同维度分支只做 `connection.teleport()` + `connection.resetPosition()`，不会触发维度切换逻辑（不发送 `ClientboundRespawnPacket`），开销极小。

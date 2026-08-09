@@ -58,6 +58,5 @@
   "chat.livingitem.ender_pearl.teleported_to_target": "已传送到宝藏位置",
   "chat.livingitem.ender_pearl.unexplored": "此区域尚未探索，需要一组（%d个）活末影珍珠才能传送",
   "chat.livingitem.ender_pearl.cross_dimension": "跨维度传送到 %s",
-  "chat.livingitem.ender_pearl.teleported_to_center": "已传送到地图中心",
   "chat.livingitem.ender_pearl.insufficient_authority": "跃迁权能不足，无法撕裂位面壁垒"
 }

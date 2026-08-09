@@ -17,6 +17,9 @@ import net.minecraft.world.level.portal.DimensionTransition;
 import com.qiqi.li.living.compat.sable.ModSable;
 import com.qiqi.li.living.function.LivingEnderPearlFunction;
 
+import java.util.ArrayList;
+import java.util.List;
+
 public final class TeleportHelper {
 
     public static final int COOLDOWN_TICKS = 40;
@@ -83,9 +86,29 @@ public final class TeleportHelper {
             } else {
                 ensureChunkLoaded(targetLevel, destX, destZ);
                 if (vehicle != null) {
+                    List<Entity> passengers = new ArrayList<>(vehicle.getPassengers());
+                    for (Entity passenger : passengers) {
+                        passenger.stopRiding();
+                    }
                     vehicle.teleportTo(destX, destY, destZ);
+                    DimensionTransition transition = new DimensionTransition(
+                        targetLevel, new Vec3(destX, destY, destZ), Vec3.ZERO,
+                        player.getYRot(), player.getXRot(), DimensionTransition.DO_NOTHING);
+                    player.changeDimension(transition);
+                    for (Entity passenger : passengers) {
+                        if (passenger != player && passenger instanceof ServerPlayer serverPassenger) {
+                            serverPassenger.connection.teleport(destX, destY, destZ, serverPassenger.getYRot(), serverPassenger.getXRot());
+                            serverPassenger.connection.resetPosition();
+                        }
+                    }
+                    for (Entity passenger : passengers) {
+                        passenger.startRiding(vehicle, true);
+                    }
                 } else {
-                    player.teleportTo(destX, destY, destZ);
+                    DimensionTransition transition = new DimensionTransition(
+                        targetLevel, new Vec3(destX, destY, destZ), Vec3.ZERO,
+                        player.getYRot(), player.getXRot(), DimensionTransition.DO_NOTHING);
+                    player.changeDimension(transition);
                 }
             }
         }
@@ -156,12 +179,6 @@ public final class TeleportHelper {
         player.displayClientMessage(
             Component.translatable("chat.livingitem.ender_pearl.cross_dimension",
                 Component.translatable("dimension." + dimension.location().getNamespace() + "." + dimension.location().getPath())),
-            true);
-    }
-
-    public static void sendMapCenterMessage(ServerPlayer player) {
-        player.displayClientMessage(
-            Component.translatable("chat.livingitem.ender_pearl.teleported_to_center"),
             true);
     }
 
