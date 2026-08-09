@@ -74,9 +74,10 @@ public record LivingMapGuiTeleportPacket(
             if (!(context.player() instanceof ServerPlayer player)) return;
 
             AbstractContainerMenu menu = player.containerMenu;
+            boolean isCreative = player.isCreative();
 
             boolean carriedRestored = false;
-            if (player.isCreative() && packet.carriedTag() != null) {
+            if (isCreative && packet.carriedTag() != null) {
                 ItemStack carried = ItemStack.parse(player.registryAccess(), packet.carriedTag())
                     .orElse(ItemStack.EMPTY);
                 if (!carried.isEmpty()) {
@@ -119,7 +120,19 @@ public record LivingMapGuiTeleportPacket(
             float u = Math.max(0f, Math.min(1f, packet.u()));
             float v = Math.max(0f, Math.min(1f, packet.v()));
 
-            ItemStack pearlStack = resolvePearlStack(player, menu);
+            boolean pearlFromCursor = false;
+            ItemStack pearlStack = null;
+
+            ItemStack carried = menu.getCarried();
+            if (LivingEnderPearlFunction.isLivingEnderPearl(carried) && !LivingEnderPearlFunction.isOnCooldown(player)) {
+                pearlStack = carried;
+                pearlFromCursor = true;
+            }
+
+            if (pearlStack == null) {
+                pearlStack = resolvePearlStack(player, menu);
+            }
+
             if (pearlStack == null) {
                 if (carriedRestored) menu.setCarried(ItemStack.EMPTY);
                 return;
@@ -140,7 +153,7 @@ public record LivingMapGuiTeleportPacket(
                 TeleportHelper.sendCrossDimensionMessage(player, targetLevel.dimension());
             }
 
-            if (carriedRestored) {
+            if (isCreative && (carriedRestored || pearlFromCursor)) {
                 ItemStack modifiedCarried = menu.getCarried().copy();
                 menu.setCarried(ItemStack.EMPTY);
                 CompoundTag carriedSyncTag = (CompoundTag) modifiedCarried.saveOptional(player.registryAccess());

@@ -27,7 +27,7 @@ public final class TeleportHelper {
     public static boolean teleportToMapPosition(ServerPlayer player, ServerLevel sourceLevel,
                                                  ServerLevel targetLevel,
                                                  double worldX, double worldZ,
-                                                 ItemStack pearlStack) {
+                                                 ItemStack pearlStack, boolean unexplored) {
         if (LivingEnderPearlFunction.isOnCooldown(player)) return false;
 
         BlockPos targetPos = BlockPos.containing(worldX, player.getY(), worldZ);
@@ -38,26 +38,26 @@ public final class TeleportHelper {
         double destY = safeY + 1.0;
         double destZ = worldZ + 0.5;
 
-        return executeTeleport(player, sourceLevel, targetLevel, destX, destY, destZ, pearlStack);
+        return executeTeleport(player, sourceLevel, targetLevel, destX, destY, destZ, pearlStack, unexplored);
     }
 
     public static boolean teleportToBanner(ServerPlayer player, ServerLevel sourceLevel,
                                             ServerLevel targetLevel,
                                             BlockPos bannerPos,
-                                            ItemStack pearlStack) {
+                                            ItemStack pearlStack, boolean unexplored) {
         if (LivingEnderPearlFunction.isOnCooldown(player)) return false;
 
         double destX = bannerPos.getX() + 0.5;
         double destY = bannerPos.getY() + 1.0;
         double destZ = bannerPos.getZ() + 0.5;
 
-        return executeTeleport(player, sourceLevel, targetLevel, destX, destY, destZ, pearlStack);
+        return executeTeleport(player, sourceLevel, targetLevel, destX, destY, destZ, pearlStack, unexplored);
     }
 
     private static boolean executeTeleport(ServerPlayer player, ServerLevel sourceLevel,
                                             ServerLevel targetLevel,
                                             double destX, double destY, double destZ,
-                                            ItemStack pearlStack) {
+                                            ItemStack pearlStack, boolean unexplored) {
         boolean crossDim = player.level().dimension() != targetLevel.dimension();
 
         if (ModSable.isPlayerOnSubLevel(player)) {
@@ -106,15 +106,19 @@ public final class TeleportHelper {
 
         player.hurt(player.damageSources().fall(), FALL_DAMAGE);
 
-        consumePearl(player, pearlStack);
+        consumePearl(player, pearlStack, unexplored);
         LivingEnderPearlFunction.setCooldown(player, COOLDOWN_TICKS);
 
         return true;
     }
 
-    private static void consumePearl(ServerPlayer player, ItemStack pearlStack) {
+    private static void consumePearl(ServerPlayer player, ItemStack pearlStack, boolean unexplored) {
         if (player.isCreative()) return;
-        pearlStack.shrink(1);
+        if (unexplored) {
+            pearlStack.shrink(MapTeleportExecutor.UNEXPLORED_PEARL_COST);
+        } else {
+            pearlStack.shrink(1);
+        }
     }
 
     private static void ensureChunkLoaded(ServerLevel level, double x, double z) {

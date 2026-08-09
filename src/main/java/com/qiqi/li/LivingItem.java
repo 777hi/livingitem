@@ -56,8 +56,6 @@ import com.qiqi.li.living.function.LivingFlintAndSteelFunction;
 import com.qiqi.li.living.interaction.InteractionRegistry;
 import com.qiqi.li.living.interaction.IgniteHandler;
 import com.qiqi.li.living.interaction.IgniteCarriedHandler;
-import com.qiqi.li.living.interaction.MapTeleportHandler;
-import com.qiqi.li.living.interaction.MapTeleportCarriedHandler;
 import net.neoforged.neoforge.registries.DeferredRegister;
 import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
 import com.qiqi.li.living.domain.ender.LivingChestItemHandler;
@@ -151,20 +149,6 @@ public class LivingItem {
         InteractionRegistry.register(new InteractionEntry(
             Items.FLINT_AND_STEEL, Items.TNT, 1, "ignite_carried"));
         LOGGER.info("Registered ignite_carried interaction rule");
-
-        InteractionRegistry.registerHandler("map_teleport", new MapTeleportHandler());
-        LOGGER.info("Registered map_teleport interaction handler");
-
-        InteractionRegistry.registerHandler("map_teleport_carried", new MapTeleportCarriedHandler());
-        LOGGER.info("Registered map_teleport_carried interaction handler");
-
-        InteractionRegistry.register(new InteractionEntry(
-            Items.FILLED_MAP, Items.ENDER_PEARL, 1, "map_teleport"));
-        LOGGER.info("Registered map_teleport interaction rule");
-
-        InteractionRegistry.register(new InteractionEntry(
-            Items.ENDER_PEARL, Items.FILLED_MAP, 1, "map_teleport_carried"));
-        LOGGER.info("Registered map_teleport_carried interaction rule");
     }
 
     /**

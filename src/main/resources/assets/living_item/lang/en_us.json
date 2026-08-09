@@ -57,7 +57,7 @@
 
   "chat.livingitem.ender_pearl.teleported_to_banner": "Teleported to %s",
   "chat.livingitem.ender_pearl.teleported_to_target": "Teleported to treasure location",
-  "chat.livingitem.ender_pearl.unexplored": "This area is unexplored",
+  "chat.livingitem.ender_pearl.unexplored": "This area is unexplored, requires a stack (%d) of living ender pearls to teleport",
   "chat.livingitem.ender_pearl.cross_dimension": "Cross-dimension teleported to %s",
   "chat.livingitem.ender_pearl.teleported_to_center": "Teleported to map center",
   "chat.livingitem.ender_pearl.insufficient_authority": "Insufficient jump authority, cannot pierce the planar barrier"

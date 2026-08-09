@@ -13,6 +13,8 @@ import javax.annotation.Nullable;
 
 public final class MapTeleportExecutor {
 
+    public static final int UNEXPLORED_PEARL_COST = 16;
+
     private MapTeleportExecutor() {}
 
     public static Result execute(ServerPlayer player, ServerLevel sourceLevel, ServerLevel targetLevel,
@@ -24,22 +26,30 @@ public final class MapTeleportExecutor {
         boolean success;
 
         if (banner != null) {
-            success = TeleportHelper.teleportToBanner(player, sourceLevel, targetLevel, banner.pos(), pearlStack);
+            success = TeleportHelper.teleportToBanner(player, sourceLevel, targetLevel, banner.pos(), pearlStack, false);
             if (success) {
                 banner.name().ifPresent(name -> TeleportHelper.sendBannerTeleportMessage(player, name));
             }
         } else if (targetPoint != null) {
             double[] worldPos = resolveTargetPointWorldPos(mapStack, mapData, targetPoint);
-            success = TeleportHelper.teleportToMapPosition(player, sourceLevel, targetLevel, worldPos[0], worldPos[1], pearlStack);
+            success = TeleportHelper.teleportToMapPosition(player, sourceLevel, targetLevel, worldPos[0], worldPos[1], pearlStack, false);
             if (success) {
                 TeleportHelper.sendTargetPointMessage(player);
             }
         } else {
-            if (!MapCoordHelper.isExplored(mapData, mapX, mapY)) {
-                TeleportHelper.sendUnexploredMessage(player);
-                return new Result(false, false);
+            boolean unexplored = !MapCoordHelper.isExplored(mapData, mapX, mapY);
+            if (unexplored) {
+                if (player.isCreative()) {
+                    success = TeleportHelper.teleportToMapPosition(player, sourceLevel, targetLevel, preciseWorldX, preciseWorldZ, pearlStack, true);
+                } else if (pearlStack.getCount() >= UNEXPLORED_PEARL_COST) {
+                    success = TeleportHelper.teleportToMapPosition(player, sourceLevel, targetLevel, preciseWorldX, preciseWorldZ, pearlStack, true);
+                } else {
+                    TeleportHelper.sendUnexploredMessage(player);
+                    return new Result(false, false);
+                }
+            } else {
+                success = TeleportHelper.teleportToMapPosition(player, sourceLevel, targetLevel, preciseWorldX, preciseWorldZ, pearlStack, false);
             }
-            success = TeleportHelper.teleportToMapPosition(player, sourceLevel, targetLevel, preciseWorldX, preciseWorldZ, pearlStack);
         }
 
         boolean crossDim = false;

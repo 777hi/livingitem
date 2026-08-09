@@ -1,5 +1,7 @@
 package com.qiqi.li.client.mixin;
 
+import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.mojang.math.Axis;
 import com.qiqi.li.client.input.GuiInteractionHelper;
 import com.qiqi.li.client.gui.LivingButton;
 import com.qiqi.li.client.render.ExpandedMapTexture;
@@ -19,6 +21,10 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
+import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.client.resources.MapDecorationTextureManager;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.inventory.AbstractContainerMenu;
@@ -30,6 +36,7 @@ import net.minecraft.world.level.saveddata.maps.MapDecoration;
 import net.minecraft.world.level.saveddata.maps.MapId;
 import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
 import net.neoforged.neoforge.network.PacketDistributor;
+import org.joml.Matrix4f;
 import org.lwjgl.glfw.GLFW;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
@@ -40,6 +47,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -87,16 +95,25 @@ public class AbstractContainerScreenMixin extends Screen {
     private void living_item$interceptMouseClicked(double mouseX, double mouseY, int button, CallbackInfoReturnable<Boolean> cir) {
         living_item$updateMapGroups();
 
-        if (living_item$isHoldingLivingEnderPearl()) {
+        if (button == 1 && living_item$hasLivingEnderPearl()) {
             LivingMapLayout.MapGroup group = LivingMapLayout.findGroupAt(
                 living_item$mapGroups, mouseX, mouseY, leftPos, topPos);
+            if (group == null && this.hoveredSlot != null) {
+                group = living_item$findGroupBySlot(this.hoveredSlot);
+            }
             if (group != null) {
-                if (button == 1) {
-                    float[] uv = LivingMapLayout.computeUV(group, mouseX, mouseY, leftPos, topPos);
-                    CompoundTag carriedTag = living_item$resolveCarriedTag();
-                    PacketDistributor.sendToServer(new LivingMapGuiTeleportPacket(
-                        group.topLeftSlotIndex(), uv[0], uv[1], carriedTag));
-                }
+                float[] uv = LivingMapLayout.computeUV(group, mouseX, mouseY, leftPos, topPos);
+                CompoundTag carriedTag = living_item$resolveCarriedTag();
+                PacketDistributor.sendToServer(new LivingMapGuiTeleportPacket(
+                    group.topLeftSlotIndex(), uv[0], uv[1], carriedTag));
+                cir.setReturnValue(true);
+                return;
+            }
+            if (this.hoveredSlot != null && LivingMapLayout.isSingleLivingMapSlot(this.hoveredSlot)) {
+                float[] uv = LivingMapLayout.computeSingleSlotUV(this.hoveredSlot, mouseX, mouseY, leftPos, topPos);
+                CompoundTag carriedTag = living_item$resolveCarriedTag();
+                PacketDistributor.sendToServer(new LivingMapGuiTeleportPacket(
+                    this.hoveredSlot.index, uv[0], uv[1], carriedTag));
                 cir.setReturnValue(true);
                 return;
             }
@@ -143,15 +160,6 @@ public class AbstractContainerScreenMixin extends Screen {
 
     @Inject(method = "mouseReleased", at = @At("HEAD"), cancellable = true)
     private void living_item$interceptMouseReleased(double mouseX, double mouseY, int button, CallbackInfoReturnable<Boolean> cir) {
-        living_item$updateMapGroups();
-
-        if (living_item$isHoldingLivingEnderPearl()) {
-            if (LivingMapLayout.findGroupAt(living_item$mapGroups, mouseX, mouseY, leftPos, topPos) != null) {
-                cir.setReturnValue(true);
-                return;
-            }
-        }
-
         if (GuiInteractionHelper.tryInteract(this.hoveredSlot, button, this.menu)) {
             cir.setReturnValue(true);
         }
@@ -191,7 +199,9 @@ public class AbstractContainerScreenMixin extends Screen {
         guiGraphics.fill(areaX, areaY, areaX + areaSize, areaY + areaSize, 0xFF000000);
         guiGraphics.blit(tex.location, areaX, areaY, 0, 0, areaSize, areaSize, areaSize, areaSize);
 
-        if (living_item$isHoldingLivingEnderPearl()) {
+        living_item$renderExpandedMapDecorations(guiGraphics, mapData, areaX, areaY, areaSize);
+
+        if (living_item$hasLivingEnderPearl()) {
             float[] uv = LivingMapLayout.computeUV(group, mouseX, mouseY, leftPos, topPos);
             int mapX = MapCoordHelper.uvToMapX(uv[0]);
             int mapY = MapCoordHelper.uvToMapY(uv[1]);
@@ -210,6 +220,74 @@ public class AbstractContainerScreenMixin extends Screen {
             }
         }
 
+        guiGraphics.pose().popPose();
+    }
+
+    @Inject(method = "renderFloatingItem", at = @At("HEAD"), cancellable = true)
+    private void living_item$hideFloatingPearl(GuiGraphics guiGraphics, ItemStack stack, int x, int y, String text, CallbackInfo ci) {
+        if (LivingEnderPearlFunction.isLivingEnderPearl(stack)) {
+            living_item$updateMapGroups();
+            float cursorX = x + 8;
+            float cursorY = y + 8;
+            for (LivingMapLayout.MapGroup group : living_item$mapGroups) {
+                float relAreaX = group.x() - LivingMapLayout.SLOT_BORDER_OFFSET;
+                float relAreaY = group.y() - LivingMapLayout.SLOT_BORDER_OFFSET;
+                float areaSize = group.n() * LivingMapLayout.SLOT_SIZE;
+                if (cursorX >= relAreaX && cursorX < relAreaX + areaSize
+                    && cursorY >= relAreaY && cursorY < relAreaY + areaSize) {
+                    ci.cancel();
+                    return;
+                }
+            }
+            for (Slot slot : this.menu.slots) {
+                if (LivingMapLayout.isSingleLivingMapSlot(slot)) {
+                    float relSlotX = slot.x - LivingMapLayout.SLOT_BORDER_OFFSET;
+                    float relSlotY = slot.y - LivingMapLayout.SLOT_BORDER_OFFSET;
+                    float slotSize = LivingMapLayout.SLOT_SIZE;
+                    if (cursorX >= relSlotX && cursorX < relSlotX + slotSize
+                        && cursorY >= relSlotY && cursorY < relSlotY + slotSize) {
+                        ci.cancel();
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    @Unique
+    private void living_item$renderExpandedMapDecorations(GuiGraphics guiGraphics, MapItemSavedData mapData, int areaX, int areaY, int areaSize) {
+        MapDecorationTextureManager decoTextures = Minecraft.getInstance().getMapDecorationTextures();
+        float scale = (float) areaSize / 128;
+        int index = 0;
+
+        guiGraphics.pose().pushPose();
+        guiGraphics.pose().translate(areaX, areaY, 1);
+
+        for (MapDecoration deco : mapData.getDecorations()) {
+            float decoX = ((float) deco.x() / 2.0F + 64.0F) * scale;
+            float decoY = ((float) deco.y() / 2.0F + 64.0F) * scale;
+
+            guiGraphics.pose().pushPose();
+            guiGraphics.pose().translate(decoX, decoY, (float) index * -0.01F);
+            guiGraphics.pose().mulPose(Axis.ZP.rotationDegrees((float) (deco.rot() * 360) / 16.0F));
+            float decoSize = 4.0F * scale;
+            guiGraphics.pose().scale(decoSize, decoSize, 1.0F);
+            guiGraphics.pose().translate(-0.5F, 0.5F, 0.0F);
+
+            TextureAtlasSprite sprite = decoTextures.get(deco);
+            MultiBufferSource.BufferSource bufferSource = guiGraphics.bufferSource();
+            VertexConsumer vc = bufferSource.getBuffer(RenderType.text(sprite.atlasLocation()));
+            Matrix4f matrix = guiGraphics.pose().last().pose();
+            int light = 0xF000F0;
+
+            vc.addVertex(matrix, -1, 1, 0).setColor(-1).setUv(sprite.getU0(), sprite.getV0()).setLight(light);
+            vc.addVertex(matrix, 1, 1, 0).setColor(-1).setUv(sprite.getU1(), sprite.getV0()).setLight(light);
+            vc.addVertex(matrix, 1, -1, 0).setColor(-1).setUv(sprite.getU1(), sprite.getV1()).setLight(light);
+            vc.addVertex(matrix, -1, -1, 0).setColor(-1).setUv(sprite.getU0(), sprite.getV1()).setLight(light);
+
+            guiGraphics.pose().popPose();
+            index++;
+        }
         guiGraphics.pose().popPose();
     }
 
@@ -238,16 +316,20 @@ public class AbstractContainerScreenMixin extends Screen {
     }
 
     @Unique
-    private boolean living_item$isHoldingLivingEnderPearl() {
+    private boolean living_item$hasLivingEnderPearl() {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return false;
-        return LivingEnderPearlFunction.isLivingEnderPearl(mc.player.getMainHandItem())
-            || LivingEnderPearlFunction.isLivingEnderPearl(mc.player.getOffhandItem());
+        if (LivingEnderPearlFunction.isLivingEnderPearl(mc.player.getMainHandItem())
+            || LivingEnderPearlFunction.isLivingEnderPearl(mc.player.getOffhandItem())) {
+            return true;
+        }
+        return LivingEnderPearlFunction.isLivingEnderPearl(this.menu.getCarried());
     }
 
     @Unique
     private CompoundTag living_item$resolveCarriedTag() {
         Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) return null;
         if (!(mc.screen instanceof CreativeModeInventoryScreen)) return null;
         ItemStack carried = menu.getCarried();
         if (carried.isEmpty()) return null;
@@ -266,6 +348,19 @@ public class AbstractContainerScreenMixin extends Screen {
             }
             return tex;
         });
+    }
+
+    @Unique
+    @Nullable
+    private LivingMapLayout.MapGroup living_item$findGroupBySlot(Slot slot) {
+        for (LivingMapLayout.MapGroup group : living_item$mapGroups) {
+            for (int idx : group.slotIndices()) {
+                if (menu.slots.get(idx) == slot) {
+                    return group;
+                }
+            }
+        }
+        return null;
     }
 
     @Inject(method = "init", at = @At("TAIL"))

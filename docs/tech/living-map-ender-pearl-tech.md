@@ -1,7 +1,7 @@
 # Living Map & Living Ender Pearl (活地图 & 活末影珍珠) 技术文档
 
-> **文档版本**: 2026.08 v9  
-> **最后更新**: 2026-08-08  
+> **文档版本**: 2026.08 v12  
+> **最后更新**: 2026-08-09  
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -115,10 +115,10 @@ player.getCooldowns().addCooldown(Items.ENDER_PEARL, 40)
 
 ### 2.2 传送消耗
 
-| 模式 | 消耗 |
-|------|------|
-| 生存模式 | 消耗 1 个活末影珍珠（`shrink(1)`） |
-| 创造模式 | 不消耗 |
+| 模式 | 已探索区域 | 未探索区域 |
+|------|-----------|-----------|
+| 生存模式 | 消耗 1 个活末影珍珠（`shrink(1)`） | 消耗 16 个活末影珍珠（`shrink(16)`，即一组） |
+| 创造模式 | 不消耗 | 不消耗 |
 
 ---
 
@@ -270,22 +270,42 @@ private static int findSafeY(ServerLevel level, BlockPos pos) {
 1. 旗帜命中（5像素半径内）
    → 传送到旗帜精确位置（bannerPos.getY() + 1.0），不走地表高度
    → 旗帜本身需要两格空间，位置安全
+   → 消耗1个活末影珍珠（生存模式）
 
 2. 藏宝图红色大叉叉命中（5像素半径内）
    → 优先从 MAP_DECORATIONS 组件读取精确世界坐标
    → 组件缺失时回退到像素→世界坐标转换
    → 传送到目标位置的地表高度
+   → 消耗1个活末影珍珠（生存模式）
 
-3. 普通区域
-   → 检查是否已探索，未探索则取消
+3. 已探索区域
    → 传送到目标位置的地表高度
+   → 消耗1个活末影珍珠（生存模式）
+
+4. 未探索区域
+   → 创造模式：免费传送
+   → 生存模式 + 珍珠堆叠 ≥ 16：消耗整组（16个）活末影珍珠，传送到目标位置
+   → 生存模式 + 珍珠堆叠 < 16：拒绝传送，提示"此区域尚未探索，需要一组（16个）活末影珍珠才能传送"
 ```
 
-### 4.4 旗帜传送
+**未探索区域传送的设计意图**：活空地图远程开图创建的地图，其目标区域在地图上是未探索的。原本通过GUI单活地图传送可以绕过未探索限制（旧机制传送到地图中心），现在统一了4个场景的传送逻辑。消耗一组珍珠作为"强行撕裂空间"的代价，既保留了传送能力，又设置了合理的门槛。
+
+### 4.4 四个传送场景
+
+| 场景 | 触发方式 | 目标计算 | 入口类 |
+|------|---------|---------|--------|
+| 手持传送 | 右键活地图 | 视角（yaw/pitch）→射线→像素坐标 | `LivingMapEventHandler` |
+| 展示框传送 | 右键展示框上的活地图 | hitVec→UV→像素坐标 | `ItemFrameMapTeleportHandler` |
+| GUI扩展地图传送 | 右键扩展地图区域 | 鼠标坐标→UV→像素坐标 | `AbstractContainerScreenMixin` → `LivingMapGuiTeleportPacket` |
+| GUI单个活地图传送 | 右键单个活地图槽位 | 鼠标坐标→UV→像素坐标 | `AbstractContainerScreenMixin` → `LivingMapGuiTeleportPacket` |
+
+四个场景最终都调用 `MapTeleportExecutor.execute()`，共享相同的传送优先级和消耗逻辑。
+
+### 4.5 旗帜传送
 
 旗帜传送使用 `MapBanner.pos()` 获取精确世界坐标，直接传送到旗帜所在位置（`bannerPos.getY() + 1.0`），不走 `findSafeY` 地表高度。这样旗帜在地底等位置时也能精准到达。
 
-### 4.5 藏宝图红色大叉叉传送
+### 4.6 藏宝图红色大叉叉传送
 
 藏宝图（Explorer Map）的红色大叉叉是 `MapDecorationType` 注册名为 `minecraft:red_x` 的装饰。传送坐标获取分两步：
 
@@ -294,12 +314,14 @@ private static int findSafeY(ServerLevel level, BlockPos pos) {
 
 > **注意**：`red_x` 装饰的 `explorationMapElement()` 返回 `false`，不能用此方法过滤。
 
-### 4.6 传送参数
+### 4.7 传送参数
 
 | 参数 | 值 | 说明 |
 |------|-----|------|
 | 冷却 | 40 tick (2秒) | 防止频繁传送 |
 | 坠落伤害 | 5.0 | 模拟末影珍珠伤害 |
+| 珍珠消耗（已探索） | 1个 | 生存模式消耗，创造模式不消耗 |
+| 珍珠消耗（未探索） | 16个（一组） | 生存模式消耗整组，创造模式不消耗 |
 | 粒子效果 | PORTAL | 传送点 + 出发点（跨维度时） |
 | 音效 | ENDERMAN_TELEPORT | 传送点 |
 
@@ -973,21 +995,26 @@ compileOnly files("libs/sable-companion-common-1.21.1-1.6.0.jar")  // JarJar 嵌
 | 类名 | 文件位置 | 职责 |
 |------|---------|------|
 | `MapCoordHelper` | `domain/map/MapCoordHelper.java` | 坐标计算核心：射线-矩形相交、视角映射、像素↔世界坐标转换、旗帜命中检测、hitVec→UV转换、客户端目标计算（`calcClientTarget`） |
-| `MapTeleportExecutor` | `domain/map/MapTeleportExecutor.java` | 传送决策链：统一处理"旗帜→宝藏→已探索区域"的传送优先级和消息发送，消除手持/展示框/容器三处重复逻辑 |
+| `MapTeleportExecutor` | `domain/map/MapTeleportExecutor.java` | 传送决策链：统一处理"旗帜→宝藏→已探索区域→未探索区域"的传送优先级和消息发送，未探索区域需消耗一组（16个）珍珠，消除手持/展示框/容器三处重复逻辑 |
 | `LivingMapEventHandler` | `domain/map/LivingMapEventHandler.java` | 事件处理入口：右键传送事件拦截、元数据同步包发送，传送逻辑委托给 `MapTeleportExecutor` |
 | `ItemFrameMapTeleportHandler` | `domain/map/ItemFrameMapTeleportHandler.java` | 展示框传送：EntityInteractSpecific事件拦截、hitVec→像素坐标，传送逻辑委托给 `MapTeleportExecutor` |
-| `TeleportHelper` | `domain/map/TeleportHelper.java` | 传送执行：安全Y坐标、骑乘传送、跨维度传送、Sable飞艇传送、粒子/音效、伤害、冷却 |
+| `TeleportHelper` | `domain/map/TeleportHelper.java` | 传送执行：安全Y坐标、骑乘传送、跨维度传送、Sable飞艇传送、粒子/音效、伤害、冷却、珍珠消耗（已探索1个/未探索16个） |
 | `LivingItemManager` | `api/LivingItemManager.java` | 活物品管理：`isLivingItem()`、`isLivingMap()` 等通用判断 |
 | `LivingEnderPearlFunction` | `function/LivingEnderPearlFunction.java` | 活末影珍珠功能：`isLivingEnderPearl()`、`isOnCooldown(player)`、`setCooldown(player)`、`findInInventory(player)`，冷却委托给原版 `player.getCooldowns()` |
 | `LivingMapMetadataPacket` | `network/LivingMapMetadataPacket.java` | 服务器→客户端网络包：同步地图元数据 |
 | `LivingMapClientCache` | `domain/map/LivingMapClientCache.java` | 客户端缓存：按 mapId 存储 centerX/centerZ/dimension |
-| `LivingMapTargetRenderer` | `client/render/LivingMapTargetRenderer.java` | 客户端渲染工具：准心标记渲染（`renderMarker`），供 `ItemInHandRendererMixin` 和 `MapRendererMixin` 共享 |
+| `LivingMapTargetRenderer` | `client/render/LivingMapTargetRenderer.java` | 客户端渲染工具：3D准心标记渲染（`renderMarker`，原版准心纹理+四色着色）、GUI十字形光标渲染（`renderMarkerGui`，5像素十字形），供 `ItemInHandRendererMixin`、`MapRendererMixin`、`AbstractContainerScreenMixin` 共享 |
 | `ItemInHandRendererMixin` | `client/mixin/ItemInHandRendererMixin.java` | 客户端渲染：注入 renderMap 方法，3D空间中渲染目标标记 |
 | `MapRendererMixin` | `client/mixin/MapRendererMixin.java` | 客户端渲染：注入 MapRenderer.render 方法，展示框地图光标渲染 |
 | `MapItemMixin` | `living/mixin/MapItemMixin.java` | 活空地图：注入 EmptyMapItem.use 方法，根据堆叠数量和朝向在远程位置创建活地图 |
 | `ModSable` | `compat/sable/ModSable.java` | Sable 安全调用入口：类加载保护、NoClassDefFoundError 捕获 |
 | `SableCompat` | `compat/sable/SableCompat.java` | Sable 依赖检测：ModList.isLoaded("sable") |
 | `SableIntegration` | `compat/sable/SableIntegration.java` | Sable 核心逻辑：SubLevel 检测、飞艇瞬移、偏移计算 |
+| `ExpandedMapTexture` | `client/render/ExpandedMapTexture.java` | 扩展地图动态纹理：128×128 DynamicTexture 管理，颜色数据更新和哈希检测，资源注册/释放 |
+| `LivingMapLayout` | `client/render/LivingMapLayout.java` | 扩展地图布局：槽位扫描（`scan`）、MapGroup 数据结构、UV 坐标计算（`computeUV`/`computeSingleSlotUV`）、区域命中检测（`findGroupAt`）、单个活地图槽位判断（`isSingleLivingMapSlot`） |
+| `LivingMapGuiTeleportPacket` | `network/LivingMapGuiTeleportPacket.java` | GUI传送网络包：客户端→服务端传送请求，区分创造/生存模式处理光标物品同步 |
+| `CarriedUpdatePacket` | `network/CarriedUpdatePacket.java` | 光标同步网络包：服务端→客户端强制同步光标物品状态，绕过创造模式原版同步限制 |
+| `AbstractContainerScreenMixin` | `client/mixin/AbstractContainerScreenMixin.java` | 容器界面核心Mixin：扩展地图渲染（纹理+装饰）、光标物品隐藏（扩展地图+单个活地图）、交互拦截（右键+活末影珍珠→UV传送）、传送包发送、`findGroupBySlot` 备用查找 |
 
 ---
 
@@ -1350,3 +1377,361 @@ static boolean isPlayerOnSubLevel(ServerPlayer player) {
 - **无天花板维度（主世界）**：从地表向上扫描，跳过实心方块和岩浆，找到第一个安全站立位置
 
 返回值直接是玩家站立Y坐标，调用方不再 `+1.0`。
+
+### v29 → v30：GUI传送堆叠珍珠全部消耗 + 光标遮挡 + 扩展地图装饰
+
+**问题1**：手持堆叠活末影珍珠在GUI中传送时，整组珍珠全部消失。
+
+**根因**：`LivingMapGuiTeleportPacket.handle()` 中，生存模式下也执行了 `carriedRestored = true`（因为客户端 `resolveCarriedTag()` 对非创造模式也发送了 carriedTag），导致：
+1. 服务端从 carriedTag 恢复光标 → `menu.setCarried(carried)` 设置为N个珍珠
+2. `consumePearl()` → `pearlStack.shrink(1)` → 光标变为N-1个
+3. `carriedRestored = true` → `menu.setCarried(ItemStack.EMPTY)` 清空服务端光标
+4. 发送 `CarriedUpdatePacket` 携带N-1个珍珠
+5. `broadcastChanges()` → `synchronizeCarriedToRemote()` 检测到光标从N-1变为EMPTY，发送原版包携带EMPTY
+6. 客户端先收到 `CarriedUpdatePacket`（N-1），再收到原版包（EMPTY），最终光标为空
+
+**修复**：区分创造/非创造模式处理光标状态：
+
+| 模式 | carriedTag | carriedRestored | 光标同步方式 |
+|------|-----------|----------------|-------------|
+| 创造 | 发送（解决创造模式服务端无光标问题） | 可为true | `CarriedUpdatePacket` 强制同步 |
+| 生存 | 不发送（服务端已有正确光标） | 始终false | `broadcastChanges()` 自动同步 |
+
+```java
+// 客户端：只在创造模式下发送 carriedTag
+private CompoundTag living_item$resolveCarriedTag() {
+    if (!(mc.screen instanceof CreativeModeInventoryScreen)) return null;
+    ItemStack carried = menu.getCarried();
+    if (carried.isEmpty()) return null;
+    return (CompoundTag) carried.saveOptional(mc.player.registryAccess());
+}
+
+// 服务端：只在创造模式下恢复光标和发送 CarriedUpdatePacket
+boolean carriedRestored = false;
+if (player.isCreative() && packet.carriedTag() != null) {
+    menu.setCarried(carried);
+    carriedRestored = true;
+}
+// ...传送逻辑...
+if (player.isCreative() && (carriedRestored || pearlFromCursor)) {
+    ItemStack modifiedCarried = menu.getCarried().copy();
+    menu.setCarried(ItemStack.EMPTY);
+    PacketDistributor.sendToPlayer(player, new CarriedUpdatePacket(carriedSyncTag));
+}
+menu.broadcastChanges(); // 生存模式依赖此调用同步消耗后的物品
+```
+
+**问题2**：手持活末影珍珠悬浮在扩展地图区域上时，光标物品图标遮挡地图内容。
+
+**修复**：注入 `AbstractContainerScreen.renderFloatingItem` 方法，当光标物品为活末影珍珠且鼠标位于扩展地图区域时，取消渲染光标物品。
+
+```java
+@Inject(method = "renderFloatingItem", at = @At("HEAD"), cancellable = true)
+private void living_item$hideFloatingPearl(GuiGraphics guiGraphics, ItemStack stack,
+                                            int x, int y, String text, CallbackInfo ci) {
+    if (LivingEnderPearlFunction.isLivingEnderPearl(stack)) {
+        living_item$updateMapGroups();
+        float cursorX = x + 8;  // 光标中心点（已减去 leftPos/topPos 偏移）
+        float cursorY = y + 8;
+        for (LivingMapLayout.MapGroup group : living_item$mapGroups) {
+            float relAreaX = group.x() - LivingMapLayout.SLOT_BORDER_OFFSET;
+            float relAreaY = group.y() - LivingMapLayout.SLOT_BORDER_OFFSET;
+            float areaSize = group.n() * LivingMapLayout.SLOT_SIZE;
+            if (cursorX >= relAreaX && cursorX < relAreaX + areaSize
+                && cursorY >= relAreaY && cursorY < relAreaY + areaSize) {
+                ci.cancel();
+                return;
+            }
+        }
+    }
+}
+```
+
+**坐标系统说明**：`renderFloatingItem` 的 `x`/`y` 参数已在 `render()` 的 `guiGraphics.pose().translate(leftPos, topPos, 0)` 变换之后，是相对于GUI左上角的坐标。`group.x()`/`group.y()` 是槽位相对于容器原点的偏移，也是相对于 `(leftPos, topPos)` 的偏移，因此两者在同一坐标系中可以直接比较。
+
+**问题3**：扩展地图不渲染旗帜、红色大叉等装饰图案。`ExpandedMapTexture` 仅处理了颜色数据（`mapData.colors`），未渲染 `MapDecoration`。
+
+**修复**：新增 `living_item$renderExpandedMapDecorations` 方法，参考原版 `MapRenderer.render()` 的装饰渲染逻辑：
+
+```java
+private void living_item$renderExpandedMapDecorations(GuiGraphics guiGraphics,
+        MapItemSavedData mapData, int areaX, int areaY, int areaSize) {
+    MapDecorationTextureManager decoTextures = Minecraft.getInstance().getMapDecorationTextures();
+    float scale = (float) areaSize / 128;
+
+    guiGraphics.pose().pushPose();
+    guiGraphics.pose().translate(areaX, areaY, 1); // z偏移1，在地图纹理之上
+
+    for (MapDecoration deco : mapData.getDecorations()) {
+        // 地图像素坐标 → 屏幕坐标
+        float decoX = ((float) deco.x() / 2.0F + 64.0F) * scale;
+        float decoY = ((float) deco.y() / 2.0F + 64.0F) * scale;
+
+        guiGraphics.pose().pushPose();
+        guiGraphics.pose().translate(decoX, decoY, index * -0.01F);
+        guiGraphics.pose().mulPose(Axis.ZP.rotationDegrees(deco.rot() * 360 / 16.0F));
+        float decoSize = 4.0F * scale;
+        guiGraphics.pose().scale(decoSize, decoSize, 1.0F);
+        guiGraphics.pose().translate(-0.5F, 0.5F, 0.0F);
+
+        // 使用 VertexConsumer 渲染装饰纹理
+        TextureAtlasSprite sprite = decoTextures.get(deco);
+        VertexConsumer vc = guiGraphics.bufferSource()
+            .getBuffer(RenderType.text(sprite.atlasLocation()));
+        Matrix4f matrix = guiGraphics.pose().last().pose();
+        vc.addVertex(matrix, -1, 1, 0).setColor(-1).setUv(u0, v0).setLight(0xF000F0);
+        // ... 四个顶点 ...
+
+        guiGraphics.pose().popPose();
+    }
+    guiGraphics.pose().popPose();
+}
+```
+
+**渲染要点**：
+
+| 参数 | 原版 MapRenderer | 扩展地图 | 说明 |
+|------|-----------------|---------|------|
+| 坐标变换 | `translate(mapX, mapY, z)` | `translate(areaX, areaY, 1)` | 扩展地图在 PoseStack z=300 基础上偏移+1 |
+| 缩放 | 原版固定大小 | `4.0F * scale` | scale = areaSize / 128，随地图尺寸缩放 |
+| 旋转 | `deco.rot() * 360 / 16` | 同左 | 装饰旋转角度，16级离散 |
+| 纹理 | `MapDecorationTextureManager.get(deco)` | 同左 | 返回 `TextureAtlasSprite`，从图集获取 |
+| 渲染方式 | `VertexConsumer` + `RenderType.text()` | 同左 | 使用文字渲染类型确保透明度正确 |
+| 光照 | `0xF000F0`（全亮） | 同左 | GUI渲染不需要光照计算 |
+
+**装饰像素坐标计算**：`MapDecoration.x()`/`y()` 是字节值（-128~127），原版通过 `x / 2.0 + 64.0` 映射到 [0, 128] 像素坐标范围。扩展地图乘以 `scale` 将像素坐标映射到实际屏幕尺寸。
+
+### v30 → v31：扩展地图左上角传送位置错误 + 光标隐藏坐标bug + 光标形状改为十字形
+
+**问题1**：在扩展地图的左上角（原活地图槽位所在区域），右键传送时传送到地图中心，而非鼠标点击位置对应的实际显示区域位置。
+
+**根因**：`LivingMapLayout.findGroupAt()` 基于鼠标坐标检测扩展地图区域时，在某些边界条件下对左上角区域返回 null。此时点击事件落入 `GuiInteractionHelper.tryInteract()`，匹配 `map_teleport_carried` 交互规则（trigger=ENDER_PEARL, target=FILLED_MAP），触发 `MapTeleportCarriedHandler` 传送到地图中心（`mapData.centerX, mapData.centerZ`），而非使用 UV 坐标精确传送。
+
+**修复**：在 `mouseClicked` 和 `mouseReleased` 中，当 `findGroupAt()` 返回 null 时，添加基于 `hoveredSlot` 的备用查找——通过 `MapGroup.containsSlot(hoveredSlot.index)` 检查当前悬浮槽位是否属于某个扩展地图组：
+
+```java
+// mouseClicked 中
+if (living_item$hasLivingEnderPearl()) {
+    LivingMapLayout.MapGroup group = LivingMapLayout.findGroupAt(
+        living_item$mapGroups, mouseX, mouseY, leftPos, topPos);
+
+    // 备用检查：findGroupAt 返回 null 时，通过 hoveredSlot 查找所属组
+    if (group == null && this.hoveredSlot != null) {
+        group = living_item$findGroupBySlot(this.hoveredSlot.index);
+    }
+
+    if (group != null) {
+        // 精确 UV 传送...
+    }
+}
+
+// mouseReleased 中同样添加备用检查
+if (living_item$hasLivingEnderPearl()) {
+    boolean inExpandedArea = LivingMapLayout.findGroupAt(...) != null;
+    if (!inExpandedArea && this.hoveredSlot != null) {
+        inExpandedArea = living_item$findGroupBySlot(this.hoveredSlot.index) != null;
+    }
+    if (inExpandedArea) { cir.setReturnValue(true); return; }
+}
+```
+
+新增辅助方法 `living_item$findGroupBySlot`：
+
+```java
+@Unique
+@Nullable
+private LivingMapLayout.MapGroup living_item$findGroupBySlot(int slotIndex) {
+    for (LivingMapLayout.MapGroup group : living_item$mapGroups) {
+        if (group.containsSlot(slotIndex)) {
+            return group;
+        }
+    }
+    return null;
+}
+```
+
+**问题2**：`renderFloatingItem` 中光标物品隐藏的坐标比较使用了错误的坐标系——`cursorX/cursorY`（`x + 8`, `y + 8`）是屏幕绝对坐标，而 `relAreaX/relAreaY`（`group.x() - SLOT_BORDER_OFFSET`）是容器相对坐标，两者不在同一坐标系中，导致光标隐藏判断失效。
+
+**修复**：将容器相对坐标转换为屏幕绝对坐标，加上 `leftPos`/`topPos` 偏移：
+
+```diff
+- float relAreaX = group.x() - LivingMapLayout.SLOT_BORDER_OFFSET;
+- float relAreaY = group.y() - LivingMapLayout.SLOT_BORDER_OFFSET;
++ float areaLeft = leftPos + group.x() - LivingMapLayout.SLOT_BORDER_OFFSET;
++ float areaTop = topPos + group.y() - LivingMapLayout.SLOT_BORDER_OFFSET;
+```
+
+> **注意**：v30 文档中关于 `renderFloatingItem` 坐标系的说明有误——`x`/`y` 参数并非"相对于GUI左上角"，而是屏幕绝对坐标。`renderFloatingItem` 在 `render()` 方法中被调用时，`guiGraphics.pose()` 的变换已在 `blitOffset` 处理中恢复，`x`/`y` 直接对应屏幕像素位置。
+
+**问题3**：GUI 扩展地图上的传送光标为 4 像素正方形，视觉上不够直观。
+
+**修复**：将 `LivingMapTargetRenderer.renderMarkerGui` 的光标形状从带边框的实心正方形改为 5 像素组成的十字形：
+
+```
+  ■
+■ ■ ■
+  ■
+```
+
+5 个 `guiGraphics.fill()` 调用分别绘制上、左、中心、右、下，每个方块大小为 `pixelSize × pixelSize`，以鼠标所在的地图像素为中心向四个方向延伸一格。
+
+### v31 → v32：交互拦截精简 + 单个活地图UV传送 + 光标隐藏 + 左上角传送修复
+
+**问题1**：扩展地图的交互拦截逻辑分散在5个注入点中（`mouseClicked`、`mouseReleased`、`renderSlot`、`renderFloatingItem`、`isSlotInExpandedMap`），其中 `isSlotInExpandedMap` 无条件拦截扩展地图区域内的所有点击，导致普通左键移动物品操作也被拦截。
+
+**修复**：精简交互拦截逻辑为3个核心注入点：
+
+| 注入点 | 功能 | 条件 |
+|--------|------|------|
+| `mouseClicked` | 右键+活末影珍珠时拦截扩展地图/单个活地图区域点击，发送UV传送包 | `button == 1 && hasLivingEnderPearl()` |
+| `mouseClicked` | `GuiInteractionHelper.tryInteract` 处理活物品交互 | 始终检查 |
+| `renderFloatingItem` | 活末影珍珠悬浮在扩展地图/单个活地图上时隐藏光标物品 | `isLivingEnderPearl(stack)` |
+
+删除 `isSlotInExpandedMap` 方法和 `renderSlot` 中的无条件拦截，删除 `mouseReleased` 中的扩展地图拦截。左键移动物品操作不再被任何逻辑拦截。
+
+**问题2**：单个活地图（非扩展地图）槽位不支持UV精确传送，右键传送时走 `GuiInteractionHelper` → `MapTeleportCarriedHandler` 传送到地图中心。
+
+**修复**：在 `mouseClicked` 中添加单个活地图槽位的检测和UV传送逻辑：
+
+```java
+if (this.hoveredSlot != null && LivingMapLayout.isSingleLivingMapSlot(this.hoveredSlot)) {
+    float[] uv = LivingMapLayout.computeSingleSlotUV(this.hoveredSlot, mouseX, mouseY, leftPos, topPos);
+    CompoundTag carriedTag = living_item$resolveCarriedTag();
+    PacketDistributor.sendToServer(new LivingMapGuiTeleportPacket(
+        this.hoveredSlot.index, uv[0], uv[1], carriedTag));
+    cir.setReturnValue(true);
+    return;
+}
+```
+
+新增 `LivingMapLayout.computeSingleSlotUV` 方法，将单个槽位内的鼠标坐标转换为 [0,1] 范围的UV坐标：
+
+```java
+public static float[] computeSingleSlotUV(Slot slot, double mouseX, double mouseY, int leftPos, int topPos) {
+    double areaLeft = leftPos + slot.x - SLOT_BORDER_OFFSET;
+    double areaTop = topPos + slot.y - SLOT_BORDER_OFFSET;
+    double areaSize = SLOT_SIZE;
+    float u = (float) ((mouseX - areaLeft) / areaSize);
+    float v = (float) ((mouseY - areaTop) / areaSize);
+    u = Math.max(0f, Math.min(1f, u));
+    v = Math.max(0f, Math.min(1f, v));
+    return new float[]{u, v};
+}
+```
+
+新增 `LivingMapLayout.isSingleLivingMapSlot` 方法，判断槽位是否为单个活地图（已打开的活地图，非空地图）。
+
+**问题3**：手持活末影珍珠悬浮在单个活地图槽位上时，光标物品图标不会隐藏（仅对扩展地图区域做了隐藏）。
+
+**修复**：在 `renderFloatingItem` 注入中添加单个活地图槽位的遍历检查：
+
+```java
+for (Slot slot : this.menu.slots) {
+    if (LivingMapLayout.isSingleLivingMapSlot(slot)) {
+        float relSlotX = slot.x - LivingMapLayout.SLOT_BORDER_OFFSET;
+        float relSlotY = slot.y - LivingMapLayout.SLOT_BORDER_OFFSET;
+        float slotSize = LivingMapLayout.SLOT_SIZE;
+        if (cursorX >= relSlotX && cursorX < relSlotX + slotSize
+            && cursorY >= relSlotY && cursorY < relSlotY + slotSize) {
+            ci.cancel();
+            return;
+        }
+    }
+}
+```
+
+**问题4**：扩展地图左上角（原活地图槽位所在区域）右键传送时，传送到地图中心而非鼠标点击位置。`findGroupAt()` 在某些边界条件下对左上角区域返回 null，导致点击落入 `GuiInteractionHelper.tryInteract()` → `MapTeleportCarriedHandler` 传送到地图中心。
+
+**修复**：在 `mouseClicked` 中，当 `findGroupAt()` 返回 null 时，通过 `hoveredSlot` 备用查找所属扩展地图组：
+
+```java
+LivingMapLayout.MapGroup group = LivingMapLayout.findGroupAt(
+    living_item$mapGroups, mouseX, mouseY, leftPos, topPos);
+if (group == null && this.hoveredSlot != null) {
+    group = living_item$findGroupBySlot(this.hoveredSlot);
+}
+```
+
+新增辅助方法 `living_item$findGroupBySlot`，遍历所有 MapGroup 检查 hoveredSlot 是否属于某个组：
+
+```java
+@Unique
+@Nullable
+private LivingMapLayout.MapGroup living_item$findGroupBySlot(Slot slot) {
+    for (LivingMapLayout.MapGroup group : living_item$mapGroups) {
+        for (int idx : group.slotIndices()) {
+            if (menu.slots.get(idx) == slot) {
+                return group;
+            }
+        }
+    }
+    return null;
+}
+```
+
+**问题5**：删除了 `MapTeleportHandler` 和 `MapTeleportCarriedHandler` 的注册，统一走 `LivingMapGuiTeleportPacket` UV传送逻辑。`GuiInteractionHelper.tryInteract` 仅处理非地图传送的活物品交互。
+
+**交互拦截优先级总结**：
+
+```
+mouseClicked:
+  1. 右键 + 活末影珍珠？
+     ├─ findGroupAt 命中扩展地图？→ UV传送（computeUV）
+     ├─ findGroupBySlot 备用命中？→ UV传送（computeUV）
+     └─ hoveredSlot 是单个活地图？→ UV传送（computeSingleSlotUV）
+  2. GuiInteractionHelper.tryInteract → 活物品交互（非地图传送）
+  3. 其他逻辑（中键活箱子、Shift+左键活箱子快捷存放）
+
+renderFloatingItem:
+  活末影珍珠 + 鼠标在扩展地图/单个活地图区域？→ 取消渲染光标物品
+```
+
+### v32 → v33：未探索区域传送——消耗一组活末影珍珠
+
+**问题**：活空地图远程开图创建的地图，其目标区域在地图上是未探索的。旧机制下GUI单活地图传送可以传送到地图中心（绕过未探索限制），但v32统一了4个场景的传送逻辑后，未探索区域被完全拒绝传送，导致远程开图的地图无法使用传送功能。
+
+**修复**：修改 `MapTeleportExecutor.execute()` 中未探索区域的处理逻辑，允许消耗一组（16个）活末影珍珠传送到未探索区域：
+
+| 模式 | 已探索区域 | 未探索区域 |
+|------|-----------|-----------|
+| 生存模式 | 消耗1个珍珠 | 消耗16个珍珠（一组） |
+| 创造模式 | 不消耗 | 不消耗 |
+
+```java
+// MapTeleportExecutor.execute() 中
+boolean unexplored = !MapCoordHelper.isExplored(mapData, mapX, mapY);
+if (unexplored) {
+    if (player.isCreative()) {
+        // 创造模式免费传送
+        success = TeleportHelper.teleportToMapPosition(..., pearlStack, true);
+    } else if (pearlStack.getCount() >= UNEXPLORED_PEARL_COST) {
+        // 生存模式：消耗一组珍珠传送
+        success = TeleportHelper.teleportToMapPosition(..., pearlStack, true);
+    } else {
+        // 珍珠不足，拒绝传送
+        TeleportHelper.sendUnexploredMessage(player);
+        return new Result(false, false);
+    }
+} else {
+    success = TeleportHelper.teleportToMapPosition(..., pearlStack, false);
+}
+```
+
+**消耗逻辑**：`TeleportHelper.consumePearl` 根据 `unexplored` 参数决定消耗数量：
+
+```java
+private static void consumePearl(ServerPlayer player, ItemStack pearlStack, boolean unexplored) {
+    if (player.isCreative()) return;
+    if (unexplored) {
+        pearlStack.shrink(MapTeleportExecutor.UNEXPLORED_PEARL_COST); // 16
+    } else {
+        pearlStack.shrink(1);
+    }
+}
+```
+
+**提示消息更新**：珍珠不足时提示"此区域尚未探索，需要一组（16个）活末影珍珠才能传送"，告知玩家所需数量。
+
+**四个场景统一**：手持传送、展示框传送、GUI扩展地图传送、GUI单个活地图传送均通过 `MapTeleportExecutor.execute()` 共享此逻辑，行为一致。
+
+**常量**：`MapTeleportExecutor.UNEXPLORED_PEARL_COST = 16`（末影珍珠最大堆叠数）。

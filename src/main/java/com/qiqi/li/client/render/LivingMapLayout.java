@@ -116,6 +116,22 @@ public final class LivingMapLayout {
         return new float[]{u, v};
     }
 
+    public static float[] computeSingleSlotUV(Slot slot, double mouseX, double mouseY, int leftPos, int topPos) {
+        double areaLeft = leftPos + slot.x - SLOT_BORDER_OFFSET;
+        double areaTop = topPos + slot.y - SLOT_BORDER_OFFSET;
+        double areaSize = SLOT_SIZE;
+        float u = (float) ((mouseX - areaLeft) / areaSize);
+        float v = (float) ((mouseY - areaTop) / areaSize);
+        u = Math.max(0f, Math.min(1f, u));
+        v = Math.max(0f, Math.min(1f, v));
+        return new float[]{u, v};
+    }
+
+    public static boolean isSingleLivingMapSlot(Slot slot) {
+        ItemStack stack = slot.getItem();
+        return isOpenedLivingMap(stack);
+    }
+
     private static boolean isOpenedLivingMap(ItemStack stack) {
         return stack.is(Items.FILLED_MAP) && LivingItemManager.isLivingItem(stack) && stack.get(DataComponents.MAP_ID) != null;
     }

@@ -76,22 +76,14 @@ public final class LivingMapTargetRenderer {
             color = COLOR_UNEXPLORED;
         }
 
-        int left = (int) x;
-        int top = (int) y;
-        int size = Math.max((int) pixelSize, 2);
-        int right = left + size;
-        int bottom = top + size;
+        int cx = Math.round(x);
+        int cy = Math.round(y);
+        int arm = Math.max(Math.round(pixelSize), 1);
 
-        int thickness = Math.max(1, (int) (pixelSize / 4));
-        if (thickness < 1) thickness = 1;
-
-        int innerColor = (color & 0x00FFFFFF) | 0x60000000;
-
-        guiGraphics.fill(left, top, right, bottom, innerColor);
-
-        guiGraphics.fill(left, top, right, top + thickness, color);
-        guiGraphics.fill(left, bottom - thickness, right, bottom, color);
-        guiGraphics.fill(left, top, left + thickness, bottom, color);
-        guiGraphics.fill(right - thickness, top, right, bottom, color);
+        guiGraphics.fill(cx, cy - arm, cx + 1, cy, color);
+        guiGraphics.fill(cx - arm, cy, cx, cy + 1, color);
+        guiGraphics.fill(cx, cy, cx + 1, cy + 1, color);
+        guiGraphics.fill(cx + 1, cy, cx + 1 + arm, cy + 1, color);
+        guiGraphics.fill(cx, cy + 1, cx + 1, cy + 1 + arm, color);
     }
 }
