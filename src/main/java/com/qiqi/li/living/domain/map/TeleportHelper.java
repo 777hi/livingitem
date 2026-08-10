@@ -15,6 +15,7 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.level.portal.DimensionTransition;
@@ -53,21 +54,21 @@ public final class TeleportHelper {
         if (LivingEnderPearlFunction.isOnCooldown(player)) return false;
 
         long totalStart = System.nanoTime();
-        long chunkLoadMs = ensureChunkLoaded(targetLevel, worldX, worldZ);
+        ChunkLoadResult loadResult = ensureChunkLoaded(targetLevel, worldX, worldZ);
 
         BlockPos targetPos = BlockPos.containing(worldX, player.getY(), worldZ);
-        int safeY = findSafeY(targetLevel, targetPos);
+        int safeY = findSafeY(loadResult.chunk(), targetPos);
         if (safeY < targetLevel.getMinBuildHeight()) return false;
 
         double destX = worldX + 0.5;
-        double destY = safeY + 1.0;
+        double destY = safeY;
         double destZ = worldZ + 0.5;
 
         boolean result = executeTeleport(player, sourceLevel, targetLevel, destX, destY, destZ, pearlStack, unexplored);
 
         long totalMs = (System.nanoTime() - totalStart) / 1_000_000;
         if (result) {
-            PerfMetrics.recordTeleport(chunkLoadMs, totalMs);
+            PerfMetrics.recordTeleport(loadResult.elapsedMs(), totalMs);
         }
         return result;
     }
@@ -89,7 +90,7 @@ public final class TeleportHelper {
         if (LivingEnderPearlFunction.isOnCooldown(player)) return false;
 
         long totalStart = System.nanoTime();
-        long chunkLoadMs = ensureChunkLoaded(targetLevel, bannerPos.getX(), bannerPos.getZ());
+        ChunkLoadResult loadResult = ensureChunkLoaded(targetLevel, bannerPos.getX(), bannerPos.getZ());
 
         double destX = bannerPos.getX() + 0.5;
         double destY = bannerPos.getY() + 1.0;
@@ -99,7 +100,7 @@ public final class TeleportHelper {
 
         long totalMs = (System.nanoTime() - totalStart) / 1_000_000;
         if (result) {
-            PerfMetrics.recordTeleport(chunkLoadMs, totalMs);
+            PerfMetrics.recordTeleport(loadResult.elapsedMs(), totalMs);
         }
         return result;
     }
@@ -226,28 +227,34 @@ public final class TeleportHelper {
 
     /**
      * 确保目标区块已加载
-     * @return 区块加载耗时（毫秒）
+     * @return ChunkLoadResult 包含已加载的 LevelChunk 和加载耗时
      */
-    private static long ensureChunkLoaded(ServerLevel level, double x, double z) {
+    private static ChunkLoadResult ensureChunkLoaded(ServerLevel level, double x, double z) {
         int chunkX = (int) x >> 4;
         int chunkZ = (int) z >> 4;
         ModLog.TELEPORT.debug("Loading chunk: dim={} pos=({},{})", level.dimension().location(), chunkX, chunkZ);
         long start = System.nanoTime();
-        level.getChunk(chunkX, chunkZ);
+        LevelChunk chunk = level.getChunk(chunkX, chunkZ);
         long elapsed = (System.nanoTime() - start) / 1_000_000;
         if (elapsed > 50) {
             ModLog.TELEPORT.warn("Slow chunk load: dim={} pos=({},{}) elapsed={}ms",
                 level.dimension().location(), chunkX, chunkZ, elapsed);
         }
-        return elapsed;
+        return new ChunkLoadResult(chunk, elapsed);
     }
 
     /**
-     * 寻找安全的地面Y坐标（使用运动阻挡高度图）
-     * @return 安全的地面Y坐标
+     * 获取目标位置的地面Y坐标（玩家脚底Y坐标）
+     * 直接从 LevelChunk 读取高度图，绕过 Level.getHeightmapPos() 的 hasChunk() 检查。
+     * 因为 ensureChunkLoaded 添加的 TicketType.UNKNOWN 仅有 1 tick 超时，
+     * 在同一 tick 内 hasChunk() 可能因 ticket 被清理而返回 false，
+     * 导致 getHeightmapPos() 返回 MinBuildHeight（主世界 -64，即基岩层）。
+     *
+     * 高度图语义：chunk.getHeight(MOTION_BLOCKING, x, z) 返回最高运动阻挡方块的 Y，
+     * +1 后即为第一个非运动阻挡方块的 Y，也就是玩家脚底应站的 Y。
      */
-    private static int findSafeY(ServerLevel level, BlockPos pos) {
-        return level.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING, pos).getY();
+    private static int findSafeY(LevelChunk chunk, BlockPos pos) {
+        return chunk.getHeight(Heightmap.Types.MOTION_BLOCKING, pos.getX() & 15, pos.getZ() & 15) + 1;
     }
 
     /**
@@ -295,4 +302,6 @@ public final class TeleportHelper {
             Component.translatable("chat.livingitem.ender_pearl.insufficient_authority"),
             true);
     }
+
+    private record ChunkLoadResult(LevelChunk chunk, long elapsedMs) {}
 }

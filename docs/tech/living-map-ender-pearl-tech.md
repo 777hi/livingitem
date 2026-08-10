@@ -1,7 +1,7 @@
 # Living Map & Living Ender Pearl (活地图 & 活末影珍珠) 技术文档
 
-> **文档版本**: 2026.08 v17  
-> **最后更新**: 2026-08-10  
+> **文档版本**: 2026.08 v40  
+> **最后更新**: 2026-08-11  
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -216,51 +216,41 @@ maxDist = 四条边界距离中的最小正值
   ├─ 检查：目标是否在地图范围内 [0, 128)？
   │
   ├─ 委托：MapTeleportExecutor.execute()
-  │   ├─ 旗帜命中？→ TeleportHelper.teleportToBanner
-  │   ├─ 红色大叉叉命中？→ TeleportHelper.teleportToMapPosition
-  │   ├─ 未探索？→ 提示"未探索区域"，返回失败
-  │   └─ 已探索？→ TeleportHelper.teleportToMapPosition
-  │  ├─ TeleportHelper.executeTeleport（实际传送）
-│   ├─ 玩家在 Sable 飞艇上？
-│   │   ├─ 跨维度 → 拒绝，提示"权能不足"
-│   │   └─ 同维度 → ensureChunkLoaded + teleportSubLevel 瞬移飞艇
-│   ├─ 普通骑乘？
-│   │   ├─ 跨维度 → vehicle.changeDimension()（原版内部处理乘客传送和重新骑乘）
-│   │   └─ 同维度 → ensureChunkLoaded + player.changeDimension()（connection.teleport 同步客户端）
-│   ├─ 无骑乘 → ensureChunkLoaded + player.teleportTo()
-│   ├─ 传送粒子效果 + 音效
-│   ├─ 5点坠落伤害
-│   ├─ 消耗珍珠 + 设置冷却
-│   └─ 重置坠落距离
+  │   ├─ 旗帜命中？→ TeleportHelper.teleportToBanner（精确旗帜坐标，不走地表高度）
+  │   ├─ 红色大叉叉命中？→ resolveTargetPointWorldPos → TeleportHelper.teleportToMapPosition
+  │   ├─ 未探索？
+  │   │   ├─ 创造模式 → TeleportHelper.teleportToMapPosition（免费传送）
+  │   │   ├─ 生存模式 + 背包珍珠 ≥ 16 → TeleportHelper.teleportToMapPosition（消耗16个）
+  │   │   └─ 生存模式 + 背包珍珠 < 16 → 提示"需要16个活末影珍珠"，返回失败
+  │   └─ 已探索？→ TeleportHelper.teleportToMapPosition（消耗1个）
   │
-  └─ 跨维度提示（如果目标维度与当前不同）
+  └─ TeleportHelper.executeTeleport（实际传送）
+      ├─ 玩家在 Sable 飞艇上？
+      │   ├─ 跨维度 → 拒绝，提示"权能不足"
+      │   └─ 同维度 → ensureChunkLoaded + teleportSubLevel 瞬移飞艇
+      ├─ 普通骑乘？
+      │   ├─ 跨维度 → vehicle.changeDimension()（原版内部处理乘客传送和重新骑乘）
+      │   └─ 同维度 → 乘客下车 → 传送坐骑 → 传送玩家+其他乘客 → 重新骑乘
+      ├─ 无骑乘 → ensureChunkLoaded + player.changeDimension()
+      ├─ 重置坠落距离
+      ├─ 传送粒子效果（PORTAL）+ 音效（ENDERMAN_TELEPORT）
+      ├─ 5点坠落伤害
+      └─ 消耗珍珠 + 设置冷却（40 tick）
 ```
 
-### 4.2 安全Y坐标
+### 4.2 地面Y坐标
 
 ```java
-private static int findSafeY(ServerLevel level, BlockPos pos) {
-    level.getChunk(pos.getX() >> 4, pos.getZ() >> 4);
-    int groundY = level.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING, pos).getY();
-
-    if (level.dimensionType().hasCeiling()) {
-        return findSafeYBelowCeiling(level, pos, groundY);  // 地狱等有天花板维度：向下扫描
-    } else {
-        return findSafeYAboveSurface(level, pos, groundY);  // 主世界等无天花板维度：向上扫描
-    }
+private static int findSafeY(LevelChunk chunk, BlockPos pos) {
+    return chunk.getHeight(Heightmap.Types.MOTION_BLOCKING, pos.getX() & 15, pos.getZ() & 15) + 1;
 }
 ```
 
-根据维度是否有天花板（`hasCeiling()`）采用不同策略：
+直接从 `LevelChunk` 读取 `MOTION_BLOCKING` 高度图，+1 后即为玩家脚底应站的 Y 坐标。
 
-**无天花板维度（主世界等）**：`MOTION_BLOCKING` 返回地表高度，从地表向上扫描找到第一个安全位置（跳过岩浆和实心方块）。
+**为什么直接从 LevelChunk 读取高度图**：`Level.getHeightmapPos()` 内部先调用 `hasChunk()` 检查区块是否已加载，如果 `hasChunk()` 返回 `false`，直接返回 `getMinBuildHeight()`（主世界 -64，即基岩层）。而 `ensureChunkLoaded` 通过 `level.getChunk()` 加载区块时，内部添加的是 `TicketType.UNKNOWN` 类型的 ticket，其超时时间仅 1 tick。在 `ServerChunkCache.tick()` 的 `purgeStaleTickets()` 中，这个 ticket 会被立即清理。如果区块没有其他 ticket 保持加载（如玩家附近的 `PLAYER` ticket），`hasChunk()` 就会返回 `false`，导致高度图返回 -64。直接从 `LevelChunk` 对象读取高度图可以绕过 `hasChunk()` 检查，因为 `ensureChunkLoaded` 返回的 `LevelChunk` 已经包含了正确的高度图数据。
 
-**有天花板维度（地狱等）**：`MOTION_BLOCKING` 返回天花板高度（Y≈127），从天花板**向下扫描**找到第一个安全站立位置。安全位置需满足：
-1. 脚部方块不是实心方块，也不是岩浆
-2. 脚部下方是实心方块或岩浆（有地面可站）
-3. 头部方块不是实心方块
-
-**为什么需要区分**：在地狱中，`MOTION_BLOCKING` 返回基岩天花板（Y≈127），不是地板。如果向上扫描，会把玩家传送到天花板上方（Y≈128）；向下扫描则能找到天花板下方的洞穴地面。
+**为什么不需要扫描逻辑**：高度图数据本身是正确的——主世界返回地表 Y，地狱返回基岩天花板 Y（传送到天花板上方是可接受的，与原版末影珍珠行为一致）。之前出现传送到基岩层的问题，根因不是高度图数据错误，而是 `hasChunk()` 前置检查失败导致返回了兜底值 -64。
 
 ### 4.3 传送优先级
 
@@ -2005,3 +1995,60 @@ public interface SlotWrapperAccessor {
 ```
 
 **调用点**：`mouseClicked` 中发送 `LivingMapGuiTeleportPacket` 时，对 `group.topLeftSlotIndex()` 和 `hoveredSlot` 都调用 `resolveServerSlotIndex`，确保客户端发送的槽位索引与服务端 `InventoryMenu` 一致。
+
+### v39 → v40：跨地图传送首次传送到基岩层
+
+**问题**：跨地图传送到一个很久没有传送过的地图时，玩家会被传送到基岩层（Y=-64），卡在方块里面。后续再传送到同一地图则正常。
+
+**根因**：`Level.getHeightmapPos()` 内部先调用 `hasChunk()` 检查区块是否已加载，如果 `hasChunk()` 返回 `false`，直接返回 `getMinBuildHeight()`（主世界 -64，即基岩层高度）。
+
+```java
+// Level.java
+public int getHeight(Heightmap.Types heightmapType, int x, int z) {
+    if (this.hasChunk(...)) {                          // ← 先检查区块是否"已加载"
+        return this.getChunk(...).getHeight(...) + 1;  // ← 已加载：从区块读取高度图
+    } else {
+        return this.getMinBuildHeight();               // ← 未加载：返回 -64（基岩层！）
+    }
+}
+```
+
+而 `ensureChunkLoaded` 通过 `level.getChunk()` 加载区块时，内部添加的是 `TicketType.UNKNOWN` 类型的 ticket，其超时时间仅 **1 tick**：
+
+```java
+// TicketType.java
+public static final TicketType<ChunkPos> UNKNOWN = create("unknown", Comparator.comparingLong(ChunkPos::toLong), 1);
+//                                                                                                            ↑ timeout = 1 tick
+```
+
+在 `ServerChunkCache.tick()` 的 `purgeStaleTickets()` 中，超时的 ticket 会被立即清理。如果区块没有其他 ticket 保持加载（如玩家附近的 `PLAYER` ticket），`hasChunk()` 就会返回 `false`。
+
+**为什么"第一次传送到基岩层，后续正常"**：
+
+| 次数 | 区块状态 | hasChunk() | getHeightmapPos() 返回 |
+|------|---------|-----------|----------------------|
+| 第一次 | 区块从未加载，`ensureChunkLoaded` 添加 `UNKNOWN` ticket（1 tick 超时） | `false`（ticket 可能已被清理） | `getMinBuildHeight()` = -64 |
+| 后续 | 玩家已传送到目标位置附近，`PLAYER` ticket 保持区块加载 | `true` | 正确的地表高度 |
+
+**修复**：`findSafeY` 直接从 `ensureChunkLoaded` 返回的 `LevelChunk` 对象读取高度图，绕过 `hasChunk()` 检查。高度图数据本身是正确的，不需要扫描逻辑：
+
+```java
+private static int findSafeY(LevelChunk chunk, BlockPos pos) {
+    return chunk.getHeight(Heightmap.Types.MOTION_BLOCKING, pos.getX() & 15, pos.getZ() & 15) + 1;
+}
+```
+
+`ensureChunkLoaded` 改为返回 `ChunkLoadResult` record，包含 `LevelChunk` 和加载耗时：
+
+```java
+private record ChunkLoadResult(LevelChunk chunk, long elapsedMs) {}
+
+private static ChunkLoadResult ensureChunkLoaded(ServerLevel level, double x, double z) {
+    int chunkX = (int) x >> 4;
+    int chunkZ = (int) z >> 4;
+    LevelChunk chunk = level.getChunk(chunkX, chunkZ);
+    return new ChunkLoadResult(chunk, elapsed);
+}
+```
+
+同时修复了 `destY = safeY + 1.0` 的 bug：`findSafeY` 返回的已经是玩家脚底 Y 坐标（`chunk.getHeight() + 1`），不需要再加 1。
