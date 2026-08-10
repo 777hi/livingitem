@@ -95,7 +95,9 @@ public class AbstractContainerScreenMixin extends Screen {
     private void living_item$interceptMouseClicked(double mouseX, double mouseY, int button, CallbackInfoReturnable<Boolean> cir) {
         living_item$updateMapGroups();
 
-        if (button == 1 && living_item$hasLivingEnderPearl()) {
+        boolean hasPearl = living_item$hasLivingEnderPearl();
+
+        if (button == 1 && hasPearl) {
             LivingMapLayout.MapGroup group = LivingMapLayout.findGroupAt(
                 living_item$mapGroups, mouseX, mouseY, leftPos, topPos);
             if (group == null && this.hoveredSlot != null) {
@@ -103,17 +105,22 @@ public class AbstractContainerScreenMixin extends Screen {
             }
             if (group != null) {
                 float[] uv = LivingMapLayout.computeUV(group, mouseX, mouseY, leftPos, topPos);
+                int serverSlotIndex = living_item$resolveServerSlotIndex(group.topLeftSlotIndex());
                 PacketDistributor.sendToServer(new LivingMapGuiTeleportPacket(
-                    group.topLeftSlotIndex(), uv[0], uv[1]));
+                    serverSlotIndex, uv[0], uv[1]));
                 cir.setReturnValue(true);
                 return;
             }
-            if (this.hoveredSlot != null && LivingMapLayout.isSingleLivingMapSlot(this.hoveredSlot)) {
-                float[] uv = LivingMapLayout.computeSingleSlotUV(this.hoveredSlot, mouseX, mouseY, leftPos, topPos);
-                PacketDistributor.sendToServer(new LivingMapGuiTeleportPacket(
-                    this.hoveredSlot.index, uv[0], uv[1]));
-                cir.setReturnValue(true);
-                return;
+            if (this.hoveredSlot != null) {
+                boolean isSingle = LivingMapLayout.isSingleLivingMapSlot(this.hoveredSlot);
+                if (isSingle) {
+                    float[] uv = LivingMapLayout.computeSingleSlotUV(this.hoveredSlot, mouseX, mouseY, leftPos, topPos);
+                    int serverSlotIndex = living_item$resolveServerSlotIndex(this.hoveredSlot);
+                    PacketDistributor.sendToServer(new LivingMapGuiTeleportPacket(
+                        serverSlotIndex, uv[0], uv[1]));
+                    cir.setReturnValue(true);
+                    return;
+                }
             }
         }
 
@@ -292,6 +299,25 @@ public class AbstractContainerScreenMixin extends Screen {
     }
 
     @Unique
+    private int living_item$resolveServerSlotIndex(Slot slot) {
+        if (slot instanceof SlotWrapperAccessor accessor) {
+            return accessor.getTarget().index;
+        }
+        return slot.index;
+    }
+
+    @Unique
+    private int living_item$resolveServerSlotIndex(int clientSlotIndex) {
+        if (clientSlotIndex >= 0 && clientSlotIndex < menu.slots.size()) {
+            Slot slot = menu.slots.get(clientSlotIndex);
+            if (slot instanceof SlotWrapperAccessor accessor) {
+                return accessor.getTarget().index;
+            }
+        }
+        return clientSlotIndex;
+    }
+
+    @Unique
     private ExpandedMapTexture living_item$getOrCreateExpandedTexture(int mapId, MapItemSavedData mapData) {
         return living_item$EXPANDED_TEXTURE_CACHE.compute(mapId, (id, existing) -> {
             if (existing != null && !existing.isClosed()) {
@@ -323,7 +349,6 @@ public class AbstractContainerScreenMixin extends Screen {
         this.living_item$initButtons();
         living_item$mapContentHash = 0;
         living_item$mapGroups = Collections.emptyList();
-        LivingButton.LOGGER.info("AbstractContainerScreenMixin on loaded");
     }
 
     @Inject(method = "removed", at = @At("TAIL"))

@@ -128,8 +128,7 @@ public final class LivingMapLayout {
     }
 
     public static boolean isSingleLivingMapSlot(Slot slot) {
-        ItemStack stack = slot.getItem();
-        return isOpenedLivingMap(stack);
+        return isOpenedLivingMap(slot.getItem());
     }
 
     private static boolean isOpenedLivingMap(ItemStack stack) {

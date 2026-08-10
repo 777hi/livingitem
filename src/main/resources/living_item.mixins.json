@@ -5,6 +5,7 @@
   "mixins": [
     "BlockEntityMixin",
     "MapItemMixin",
+    "MapItemUpdateMixin",
     "ItemStackMixin",
     "ServerPlaceRecipeMixin"
   ],

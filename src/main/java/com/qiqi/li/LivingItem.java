@@ -7,6 +7,7 @@ import com.qiqi.li.living.domain.ender.EnderChannelRegistry;
 import com.qiqi.li.living.interaction.InteractionEntry;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.ChunkPos;
 import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
 
@@ -31,6 +32,8 @@ import com.qiqi.li.living.function.LivingEnderChestFunction;
 import com.qiqi.li.living.function.LivingWaterBucketFunction;
 import com.qiqi.li.living.function.LivingWaterWheelFunction;
 import com.qiqi.li.living.function.LivingEnderPearlFunction;
+import com.qiqi.li.logging.ModLog;
+import com.qiqi.li.living.perf.PerfMetrics;
 
 import java.util.HashSet;
 import java.util.IdentityHashMap;
@@ -190,19 +193,21 @@ public class LivingItem {
         var chunkSet = cache.getCachedChunks(level.dimension());
         if (chunkSet.isEmpty()) return;
 
+        // 收集需要移除的区块，遍历结束后统一移除，避免 ConcurrentModification
+        var toRemove = new java.util.ArrayList<ChunkPos>();
+
         long startNanos = System.nanoTime();
         int processedCount = 0;
 
         for (var chunkPos : chunkSet) {
             if (!level.hasChunk(chunkPos.x, chunkPos.z)) {
-                cache.removeChunk(level.dimension(), chunkPos);
+                toRemove.add(chunkPos);
                 continue;
             }
 
             var chunk = level.getChunk(chunkPos.x, chunkPos.z);
-            var blockEntities = List.copyOf(chunk.getBlockEntities().values());
             boolean hasContainer = false;
-            for (var be : blockEntities) {
+            for (var be : chunk.getBlockEntities().values()) {
                 var pos = be.getBlockPos();
                 IItemHandler handler = level.getCapability(
                     Capabilities.ItemHandler.BLOCK, pos, null);
@@ -214,14 +219,23 @@ public class LivingItem {
                 processedCount++;
             }
             if (!hasContainer) {
-                cache.removeChunk(level.dimension(), chunkPos);
+                toRemove.add(chunkPos);
             }
         }
 
+        // 统一移除不再需要的区块
+        for (var chunkPos : toRemove) {
+            cache.removeChunk(level.dimension(), chunkPos);
+        }
+
         long elapsedMs = (System.nanoTime() - startNanos) / 1_000_000;
-        if (elapsedMs > 10) {
-            LOGGER.warn("[Perf] processLevelContainers dim={} chunks={} containers={} elapsed={}ms",
-                level.dimension(), chunkSet.size(), processedCount, elapsedMs);
+        PerfMetrics.updateCacheSize(cache.getCacheSize(level.dimension()));
+        if (elapsedMs > 50) {
+            ModLog.PERF.warn("processLevelContainers dim={} chunks={} containers={} elapsed={}ms removed={}",
+                level.dimension(), chunkSet.size(), processedCount, elapsedMs, toRemove.size());
+        } else if (elapsedMs > 10) {
+            ModLog.PERF.debug("processLevelContainers dim={} chunks={} containers={} elapsed={}ms removed={}",
+                level.dimension(), chunkSet.size(), processedCount, elapsedMs, toRemove.size());
         }
     }
 

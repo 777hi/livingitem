@@ -28,18 +28,21 @@ public final class ItemFrameMapTeleportHandler {
 
     @SubscribeEvent
     public static void onEntityInteractSpecific(PlayerInteractEvent.EntityInteractSpecific event) {
-        if (!(event.getEntity() instanceof ServerPlayer player)) return;
         if (!(event.getTarget() instanceof ItemFrame frame)) return;
         if (!LivingItemManager.isLivingMap(frame.getItem())) return;
 
-        ItemStack heldItem = player.getMainHandItem();
+        ItemStack heldItem = event.getEntity().getMainHandItem();
         if (!LivingEnderPearlFunction.isLivingEnderPearl(heldItem)) {
-            heldItem = player.getOffhandItem();
+            heldItem = event.getEntity().getOffhandItem();
             if (!LivingEnderPearlFunction.isLivingEnderPearl(heldItem)) return;
         }
 
+        // 客户端和服务端都取消事件，防止原版展示框旋转逻辑执行
         event.setCanceled(true);
-        event.setCancellationResult(InteractionResult.sidedSuccess(player.level().isClientSide()));
+        event.setCancellationResult(InteractionResult.sidedSuccess(event.getLevel().isClientSide()));
+
+        // 传送逻辑仅在服务端执行
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
 
         if (LivingEnderPearlFunction.isOnCooldown(player)) return;
 

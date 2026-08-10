@@ -1,5 +1,7 @@
 package com.qiqi.li.living.container;
 
+import com.qiqi.li.living.perf.PerfMetrics;
+import com.qiqi.li.logging.ModLog;
 import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
 import net.minecraft.core.BlockPos;
@@ -14,8 +16,6 @@ import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.event.level.ChunkEvent;
 import net.neoforged.neoforge.items.IItemHandler;
-import org.slf4j.Logger;
-import com.mojang.logging.LogUtils;
 
 import java.util.Collections;
 import java.util.Map;
@@ -40,7 +40,6 @@ import java.util.Set;
  *   只遍历这些区块中的方块实体。
  */
 public class ContainerChunkCache {
-    private static final Logger LOGGER = LogUtils.getLogger();
     private static final ContainerChunkCache INSTANCE = new ContainerChunkCache();
 
     /** 按维度存储包含容器的区块坐标集合 */
@@ -58,11 +57,9 @@ public class ContainerChunkCache {
      */
     @SubscribeEvent
     public void onChunkLoad(ChunkEvent.Load event) {
-        if (event.getLevel() instanceof ServerLevel level) {
-            ChunkPos pos = event.getChunk().getPos();
-            if (level.hasChunk(pos.x, pos.z)) {
-                scanChunkForContainers(level, level.getChunk(pos.x, pos.z));
-            }
+        if (event.getLevel() instanceof ServerLevel level
+            && event.getChunk() instanceof LevelChunk chunk) {
+            scanChunkForContainers(level, chunk);
         }
     }
 
@@ -149,10 +146,13 @@ public class ContainerChunkCache {
     }
 
     /**
-     * 获取指定维度中包含容器的区块坐标集合。
+     * 获取指定维度中包含容器的区块坐标集合的快照副本。
+     *
+     * 返回副本而非原始集合的视图，确保调用方在遍历时不会被事件回调
+     * （如区块加载/卸载）对底层集合的修改影响，避免 ConcurrentModification。
      *
      * @param dim 维度 Key
-     * @return 不可修改的区块坐标集合；如果该维度没有缓存则返回空集合
+     * @return 区块坐标集合的快照副本；如果该维度没有缓存则返回空集合
      */
     public Set<ChunkPos> getCachedChunks(ResourceKey<Level> dim) {
         Set<ChunkPos> raw = chunkCache.get(dim);
@@ -168,8 +168,21 @@ public class ContainerChunkCache {
     /** 从缓存中移除指定区块（自清洁，由 tick 循环调用） */
     public void removeChunk(ResourceKey<Level> dim, ChunkPos pos) {
         Set<ChunkPos> chunkSet = chunkCache.get(dim);
-        if (chunkSet != null) {
-            chunkSet.remove(pos);
+        if (chunkSet != null && chunkSet.remove(pos)) {
+            PerfMetrics.recordCacheSelfClean();
         }
+    }
+
+    public int getCacheSize(ResourceKey<Level> dim) {
+        Set<ChunkPos> chunkSet = chunkCache.get(dim);
+        return chunkSet == null ? 0 : chunkSet.size();
+    }
+
+    public void logCacheStats() {
+        StringBuilder sb = new StringBuilder("ContainerChunkCache stats:");
+        for (var entry : chunkCache.entrySet()) {
+            sb.append(" ").append(entry.getKey().location()).append("=").append(entry.getValue().size());
+        }
+        ModLog.CONTAINER.debug(sb.toString());
     }
 }

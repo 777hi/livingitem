@@ -4,6 +4,7 @@ import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.domain.map.MapCoordHelper;
 import com.qiqi.li.living.domain.map.MapTeleportExecutor;
 import com.qiqi.li.living.function.LivingEnderPearlFunction;
+import com.qiqi.li.logging.ModLog;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
@@ -58,10 +59,16 @@ public record LivingMapGuiTeleportPacket(
             AbstractContainerMenu menu = player.containerMenu;
 
             Slot topLeftSlot = resolveSlot(menu, packet.topLeftSlotIndex());
-            if (topLeftSlot == null) return;
+            if (topLeftSlot == null) {
+                ModLog.TELEPORT.warn("GUI teleport: resolveSlot returned null for slotIndex={}", packet.topLeftSlotIndex());
+                return;
+            }
 
             ItemStack mapStack = topLeftSlot.getItem();
-            if (!LivingItemManager.isLivingMap(mapStack)) return;
+            if (!LivingItemManager.isLivingMap(mapStack)) {
+                ModLog.TELEPORT.warn("GUI teleport: slot item is not a living map, item={}", mapStack);
+                return;
+            }
 
             MapId mapId = mapStack.get(DataComponents.MAP_ID);
             if (mapId == null) return;
@@ -77,18 +84,27 @@ public record LivingMapGuiTeleportPacket(
             float v = Math.max(0f, Math.min(1f, packet.v()));
 
             ItemStack pearlStack = resolvePearlStack(player);
-            if (pearlStack == null) return;
+            if (pearlStack == null) {
+                ModLog.TELEPORT.warn("GUI teleport: no living ender pearl found, player={}", player.getName().getString());
+                return;
+            }
 
             int mapX = MapCoordHelper.uvToMapX(u);
             int mapY = MapCoordHelper.uvToMapY(v);
 
             double[] preciseWorldPos = MapCoordHelper.uvToWorldPos(mapData, u, v);
 
+            ModLog.TELEPORT.debug("GUI teleport: player={} slot={} uv=({},{}) map=({},{}) world=({},{})",
+                player.getName().getString(), packet.topLeftSlotIndex(), u, v, mapX, mapY,
+                preciseWorldPos[0], preciseWorldPos[1]);
+
             MapTeleportExecutor.Result result = MapTeleportExecutor.execute(
                 player, sourceLevel, targetLevel, mapData,
                 mapX, mapY,
                 preciseWorldPos[0], preciseWorldPos[1],
                 mapStack, pearlStack);
+
+            ModLog.TELEPORT.debug("GUI teleport result: success={}", result.success());
 
             menu.broadcastChanges();
         });

@@ -177,6 +177,47 @@ if (targetSlot == null) {
 
 ---
 
+### 坑9：创造模式 SlotWrapper 导致客户端与服务端槽位索引不匹配
+
+**问题**：创造模式下 GUI 传送活地图时，客户端发送 `slotIndex=0`，服务端 `resolveSlot` 返回 null。
+
+**原因**：创造模式客户端使用 `ItemPickerMenu`，背包槽位被 `SlotWrapper` 包装。`hoveredSlot.index` 是 `ItemPickerMenu` 的槽位索引（如 0 = 背包第一格），但服务端 `InventoryMenu` 的 slot 0 是**合成结果槽**，不是活地图。
+
+**SlotWrapper 机制**：
+```
+客户端 ItemPickerMenu:
+  slot[0] = SlotWrapper(target = InventoryMenu.slot[9])  // 背包第一格
+  slot[1] = SlotWrapper(target = InventoryMenu.slot[10]) // 背包第二格
+  ...
+
+服务端 InventoryMenu:
+  slot[0] = ResultSlot (合成结果)
+  slot[1-4] = CraftingSlot (合成格子)
+  slot[5-8] = ArmorSlot (盔甲)
+  slot[9] = InventorySlot (背包第一格)  ← 客户端 slot[0] 的真实目标
+```
+
+**解决**：通过 Mixin `@Accessor` 暴露 `SlotWrapper.target` 字段，发送网络包前解包获取底层 `InventoryMenu` 的真实索引：
+
+```java
+@Accessor(target = "net.minecraft.world.inventory.SlotWrapper", value = "target")
+public interface SlotWrapperAccessor {
+    Slot getTarget();
+}
+
+// 发送前解包
+private int resolveServerSlotIndex(Slot slot) {
+    if (slot instanceof SlotWrapperAccessor accessor) {
+        return accessor.getTarget().index;  // 底层 InventoryMenu 的索引
+    }
+    return slot.index;  // 非 SlotWrapper 直接用原索引
+}
+```
+
+**教训**：创造模式下任何需要将客户端槽位索引发送到服务端的场景，都必须考虑 `SlotWrapper` 的索引映射问题。
+
+---
+
 ### 坑7：`@Shadow` 对private方法可能无法正确转发
 
 **尝试**：使用 `@Shadow` 访问 `AbstractContainerScreen` 的私有方法 `findSlot`
@@ -248,3 +289,4 @@ private Slot living_item$findSlot(double mouseX, double mouseY) { return null; }
 6. **菜单索引不对应**：创造模式客户端和服务端使用不同的菜单类，需要双索引策略
 7. **`@Shadow` 优先于 `@Invoker`**：private 方法的 `@Shadow` 可能不可靠，优先使用 protected 字段
 8. **`@Invoker`/`@Accessor` 必须声明 abstract**：非抽象 Mixin 类中不能使用带方法体的 `@Invoker`
+9. **SlotWrapper 索引映射**：创造模式 `ItemPickerMenu` 用 `SlotWrapper` 包装背包槽位，发送网络包前必须解包获取底层 `InventoryMenu` 的真实索引

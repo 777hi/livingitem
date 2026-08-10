@@ -60,9 +60,10 @@ public class LivingEnderPearlFunction implements LivingItemFunction {
     public static ItemStack findInInventory(ServerPlayer player) {
         if (isOnCooldown(player)) return null;
         for (ItemStack stack : player.getInventory().items) {
-            if (isLivingEnderPearl(stack)) {
-                return stack;
-            }
+            if (isLivingEnderPearl(stack)) return stack;
+        }
+        for (ItemStack stack : player.getInventory().offhand) {
+            if (isLivingEnderPearl(stack)) return stack;
         }
         return null;
     }
@@ -70,13 +71,10 @@ public class LivingEnderPearlFunction implements LivingItemFunction {
     public static int countInInventory(ServerPlayer player) {
         int total = 0;
         for (ItemStack stack : player.getInventory().items) {
-            if (isLivingEnderPearl(stack)) {
-                total += stack.getCount();
-            }
+            if (isLivingEnderPearl(stack)) total += stack.getCount();
         }
-        ItemStack offhand = player.getOffhandItem();
-        if (isLivingEnderPearl(offhand)) {
-            total += offhand.getCount();
+        for (ItemStack stack : player.getInventory().offhand) {
+            if (isLivingEnderPearl(stack)) total += stack.getCount();
         }
         return total;
     }
@@ -88,14 +86,14 @@ public class LivingEnderPearlFunction implements LivingItemFunction {
             int take = Math.min(remaining, stack.getCount());
             stack.shrink(take);
             remaining -= take;
-            if (remaining <= 0) break;
+            if (remaining <= 0) return;
         }
-        if (remaining > 0) {
-            ItemStack offhand = player.getOffhandItem();
-            if (isLivingEnderPearl(offhand)) {
-                int take = Math.min(remaining, offhand.getCount());
-                offhand.shrink(take);
-            }
+        for (ItemStack stack : player.getInventory().offhand) {
+            if (!isLivingEnderPearl(stack)) continue;
+            int take = Math.min(remaining, stack.getCount());
+            stack.shrink(take);
+            remaining -= take;
+            if (remaining <= 0) return;
         }
     }
 }

@@ -1,7 +1,7 @@
 # Living Map & Living Ender Pearl (活地图 & 活末影珍珠) 技术文档
 
-> **文档版本**: 2026.08 v14  
-> **最后更新**: 2026-08-09  
+> **文档版本**: 2026.08 v17  
+> **最后更新**: 2026-08-10  
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -761,6 +761,25 @@ distance = 128 × n²  （格/blocks）
 | 64 | 524,288 | 约524km |
 
 少量堆叠就近处探索，大量堆叠可远距离开图。
+
+**斜向距离说明**：`128 × n²` 是直线距离（欧几里得距离），与朝向角度无关。斜向时距离分摊到两个轴上，单轴偏移量会缩短：
+
+```
+X方向偏移 = 直线距离 × |sin(yaw)|
+Z方向偏移 = 直线距离 × |cos(yaw)|
+```
+
+以 n=32（直线距离 ≈ 131km）为例：
+
+| 朝向 | yaw | X偏移 | Z偏移 | 直线距离 |
+|------|-----|-------|-------|---------|
+| 北 | 0° | 0 | 131km | 131km |
+| 东北 | 45° | 93km | 93km | 131km |
+| 东 | 90° | 131km | 0 | 131km |
+
+斜向时单轴偏移约为直线距离的 0.707 倍（`1/√2`），但直线距离始终等于 `128 × n²`。`calculateMapCenterCoord` 的网格对齐误差最多 ±64 格，对远距离开图可忽略。
+
+**pitch（俯仰角）不影响远程开图距离**，距离只由堆叠数量决定。这与活地图传送不同——传送中 pitch 控制标记远近（低头近、平视远）。
 
 ### 10.3 目标位置计算
 
@@ -1814,3 +1833,175 @@ player.changeDimension(transition);            // 替代原来的 player.telepor
 - `LivingEnderPearlFunction` 新增 `consumeFromInventory(player, amount)` 从多个栈依次扣除凑齐指定数量
 - `MapTeleportExecutor.execute()` 未探索判断改为 `countInInventory(player) >= UNEXPLORED_PEARL_COST`
 - `TeleportHelper.consumePearl()` 未探索消耗改为 `consumeFromInventory(player, UNEXPLORED_PEARL_COST)`
+
+### v35 → v36：容器区块缓存遍历 ConcurrentModification 导致服务器崩溃
+
+**问题**：频繁传送到未探索区域后，游戏进程崩溃，服务器线程抛出 `NullPointerException`：
+
+```
+java.lang.NullPointerException: Cannot invoke "it.unimi.dsi.fastutil.objects.ObjectArrayList.get(int)" 
+  because "this.wrapped" is null
+    at it.unimi.dsi.fastutil.objects.ObjectOpenHashSet$SetIterator.next(ObjectOpenHashSet.java:575)
+    at java.util.Collections$UnmodifiableCollection$1.next(Collections.java:1080)
+    at com.qiqi.li.LivingItem.processLevelContainers(LivingItem.java:198)
+```
+
+**根因**：`processLevelContainers` 在遍历 `ContainerChunkCache` 的区块集合时，调用了 `cache.removeChunk()` 修改底层 `ObjectOpenHashSet`，触发 fastutil 迭代器的 fail-fast 机制。
+
+具体流程：
+1. `getCachedChunks()` 返回 `Collections.unmodifiableSet(raw)` — 只是底层 `ObjectOpenHashSet` 的只读视图，不是副本
+2. `for (var chunkPos : chunkSet)` 遍历时，迭代器直接操作底层集合的内部数组
+3. 遍历中调用 `cache.removeChunk()` → 修改底层 `ObjectOpenHashSet` → 迭代器检测到结构修改，将内部 `wrapped` 数组置为 null → 下一次 `next()` 调用抛出 NPE
+
+**为什么频繁传送更容易触发**：频繁传送到未探索区域时，区块加载/卸载频繁，`processLevelContainers` 中"区块已卸载"或"区块不再包含容器"的判断更频繁命中，`removeChunk` 调用次数大增。
+
+**修复**：两层防御：
+
+**修复1**：`processLevelContainers` 中延迟移除 — 遍历时收集需要移除的区块到 `toRemove` 列表，遍历结束后统一调用 `cache.removeChunk()`：
+
+```java
+var toRemove = new ArrayList<ChunkPos>();
+
+for (var chunkPos : chunkSet) {
+    if (!level.hasChunk(chunkPos.x, chunkPos.z)) {
+        toRemove.add(chunkPos);  // 不再立即移除
+        continue;
+    }
+    // ... 处理容器 ...
+    if (!hasContainer) {
+        toRemove.add(chunkPos);  // 不再立即移除
+    }
+}
+
+// 遍历结束后统一移除
+for (var chunkPos : toRemove) {
+    cache.removeChunk(level.dimension(), chunkPos);
+}
+```
+
+**修复2**：`ContainerChunkCache.getCachedChunks()` 返回快照副本 — 从 `Collections.unmodifiableSet(raw)` 改为 `new HashSet<>(raw)`，确保即使区块加载/卸载事件在遍历期间修改了底层集合，也不会影响正在进行的遍历：
+
+```java
+public Set<ChunkPos> getCachedChunks(ResourceKey<Level> dim) {
+    Set<ChunkPos> raw = chunkCache.get(dim);
+    if (raw == null || raw.isEmpty()) return Collections.emptySet();
+    return new HashSet<>(raw);  // 快照副本，而非原始集合的视图
+}
+```
+
+**为什么 `Collections.unmodifiableSet()` 不够安全**：它只阻止通过该视图修改集合，但底层集合被其他途径（如事件回调 `onChunkLoad`/`onChunkUnload`）修改时，正在遍历该视图的迭代器仍会崩溃。返回快照副本则完全隔离了遍历与修改。
+
+### v36 → v37：活末影珍珠查找遗漏副手槽位
+
+**问题**：`LivingEnderPearlFunction.findInInventory()` 只遍历 `player.getInventory().items`（主背包 36 格），不检查副手槽位。当活末影珍珠只在副手时，手持传送会静默失败。
+
+**影响范围**：
+
+| 场景 | 珍珠查找方法 | 修复前 | 修复后 |
+|------|------------|--------|--------|
+| 手持传送 | `findInInventory(player)` | ❌ 不检查副手 | ✅ 检查副手 |
+| GUI传送（创造模式） | `findInInventory(player)` | ❌ 不检查副手 | ✅ 检查副手 |
+| GUI传送（生存模式） | `resolvePearlStack(player)` | ✅ 已检查主/副手 | 不变 |
+| 展示框传送 | `resolvePearlStack(player, heldItem)` | ✅ 传入的 heldItem 已检查主/副手 | 不变 |
+
+**修复**：在 `findInInventory` 方法末尾添加副手检查：
+
+```java
+@Nullable
+public static ItemStack findInInventory(ServerPlayer player) {
+    if (isOnCooldown(player)) return null;
+    for (ItemStack stack : player.getInventory().items) {
+        if (isLivingEnderPearl(stack)) {
+            return stack;
+        }
+    }
+    // 修复：主背包未找到时，检查副手
+    ItemStack offhand = player.getOffhandItem();
+    if (isLivingEnderPearl(offhand)) {
+        return offhand;
+    }
+    return null;
+}
+```
+
+**注意**：`countInInventory()` 和 `consumeFromInventory()` 原本已正确检查副手，无需修改。
+
+### v37 → v38：展示框活地图传送时客户端未取消事件导致地图旋转
+
+**问题**：`ItemFrameMapTeleportHandler.onEntityInteractSpecific()` 第一行 `if (!(event.getEntity() instanceof ServerPlayer player)) return;` 导致客户端事件直接返回，不取消事件。客户端的原版展示框交互逻辑正常执行，将活地图旋转 45°。服务端虽然取消了事件，但不会发送纠正包（因为服务端认为交互从未发生），导致客户端-服务端展示框旋转状态不同步。
+
+**触发条件**：玩家手持活末影珍珠右键展示框上的活地图时，传送成功但地图被旋转。在机械动力载具上更容易观察到（载具传送后展示框状态变化更明显）。
+
+**根因**：
+
+```java
+// 修复前：客户端事件直接 return，不取消
+if (!(event.getEntity() instanceof ServerPlayer player)) return;  // ← 客户端直接跳过
+// ... 后续取消事件的代码在客户端不会执行
+event.setCanceled(true);  // ← 只在服务端执行
+```
+
+**修复**：将 `ServerPlayer` 检查移到事件取消之后，确保客户端和服务端都取消事件，防止原版展示框旋转逻辑执行。传送逻辑仅在服务端执行：
+
+```java
+// 修复后：先取消事件（客户端+服务端），再判断服务端执行传送
+if (!(event.getTarget() instanceof ItemFrame frame)) return;
+if (!LivingItemManager.isLivingMap(frame.getItem())) return;
+
+ItemStack heldItem = event.getEntity().getMainHandItem();
+if (!LivingEnderPearlFunction.isLivingEnderPearl(heldItem)) {
+    heldItem = event.getEntity().getOffhandItem();
+    if (!LivingEnderPearlFunction.isLivingEnderPearl(heldItem)) return;
+}
+
+// 客户端和服务端都取消事件，防止原版展示框旋转逻辑执行
+event.setCanceled(true);
+event.setCancellationResult(InteractionResult.sidedSuccess(event.getLevel().isClientSide()));
+
+// 传送逻辑仅在服务端执行
+if (!(event.getEntity() instanceof ServerPlayer player)) return;
+```
+
+### v38 → v39：创造模式 GUI 传送单个活地图失败（SlotWrapper 索引不匹配）
+
+**问题**：创造模式下右键单个活地图无法传送，扩展地图传送正常。服务端日志显示 `resolveSlot returned null for slotIndex=0`。
+
+**根因**：创造模式下客户端使用 `CreativeModeInventoryScreen.ItemPickerMenu`，`hoveredSlot.index` 是 `ItemPickerMenu` 的槽位索引。但服务端的 `player.containerMenu` 是 `InventoryMenu`，两者的槽位索引不对应。例如客户端 slot 0 指向背包第一格，而服务端 `InventoryMenu` 的 slot 0 是合成结果槽。
+
+**为什么扩展地图不受影响**：扩展地图的 `MapGroup.topLeftSlotIndex()` 也是 `ItemPickerMenu` 的索引，同样存在不匹配问题。但扩展地图传送在之前的版本中可能未在创造模式下测试过，或恰好索引对齐。
+
+**SlotWrapper 机制**：`CreativeModeInventoryScreen` 的 `ItemPickerMenu` 中，背包槽位被 `SlotWrapper` 包装。`SlotWrapper` 持有底层 `InventoryMenu` 的 `Slot` 引用（通过 `target` 字段），其 `index` 才是服务端能识别的索引。
+
+**修复**：在 `AbstractContainerScreenMixin` 中添加 `living_item$resolveServerSlotIndex` 方法，发送传送包前解包 `SlotWrapper`：
+
+```java
+@Unique
+private int living_item$resolveServerSlotIndex(Slot slot) {
+    if (slot instanceof SlotWrapperAccessor accessor) {
+        return accessor.getTarget().index;
+    }
+    return slot.index;
+}
+
+@Unique
+private int living_item$resolveServerSlotIndex(int clientSlotIndex) {
+    if (clientSlotIndex >= 0 && clientSlotIndex < menu.slots.size()) {
+        Slot slot = menu.slots.get(clientSlotIndex);
+        if (slot instanceof SlotWrapperAccessor accessor) {
+            return accessor.getTarget().index;
+        }
+    }
+    return clientSlotIndex;
+}
+```
+
+`SlotWrapperAccessor` 是通过 Mixin `@Accessor` 暴露 `SlotWrapper.target` 字段的接口：
+
+```java
+@Accessor(target = "net.minecraft.world.inventory.SlotWrapper", value = "target")
+public interface SlotWrapperAccessor {
+    Slot getTarget();
+}
+```
+
+**调用点**：`mouseClicked` 中发送 `LivingMapGuiTeleportPacket` 时，对 `group.topLeftSlotIndex()` 和 `hoveredSlot` 都调用 `resolveServerSlotIndex`，确保客户端发送的槽位索引与服务端 `InventoryMenu` 一致。
