@@ -1,7 +1,7 @@
 # Living Map & Living Ender Pearl (活地图 & 活末影珍珠) 技术文档
 
-> **文档版本**: 2026.08 v44  
-> **最后更新**: 2026-08-15  
+> **文档版本**: 2026.08 v46  
+> **最后更新**: 2026-08-16  
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -803,31 +803,40 @@ int centerZ = calculateMapCenterCoord(targetZ, 0);
 
 `calculateMapCenterCoord` 确保地图中心对齐到 128 格的整数倍网格，与原版 `MapItemSavedData.createFresh` 的行为一致。
 
-### 10.4 Mixin 实现
+### 10.4 事件实现
 
-通过 Mixin 注入 `EmptyMapItem.use()` 方法，在 HEAD 处拦截：
+通过 NeoForge `PlayerInteractEvent.RightClickItem` 事件拦截活空地图的右键使用：
 
 ```java
-@Mixin(EmptyMapItem.class)
-public class MapItemMixin {
-    @Inject(method = "use", at = @At("HEAD"), cancellable = true)
-    private void onUse(Level level, Player player, InteractionHand hand,
-                       CallbackInfoReturnable<InteractionResultHolder<ItemStack>> cir) {
-        // 1. 仅拦截活空地图
-        if (!LivingItemManager.isLivingItem(stack)) return;
+// LivingMapEventHandler.java
+@SubscribeEvent
+public static void onRightClickItem(PlayerInteractEvent.RightClickItem event) {
+    if (!(event.getEntity() instanceof ServerPlayer player)) return;
+    if (!(player.level() instanceof ServerLevel sourceLevel)) return;
 
-        // 2. 计算远程目标位置
-        // 3. 对齐到地图网格
-        // 4. consume(1) 消耗1个空地图
-        // 5. MapItem.create() 创建活地图
-        // 6. MapItem.renderBiomePreviewMap() 预渲染生物群系轮廓
-        // 7. StructureMapDecorator.addCenterMarker() 标记地图中心
-        // 8. StructureMapDecorator.searchAndMarkStructures() 搜索并标记附近结构
-        // 9. LivingItemManager.setLiving(newMap, true) 标记为活地图
-        // 10. 返回新地图
-    }
+    if (handleLivingMapCreation(event, player, sourceLevel)) return;
+    // ... 传送逻辑
+}
+
+private static boolean handleLivingMapCreation(PlayerInteractEvent.RightClickItem event,
+                                              ServerPlayer player, ServerLevel level) {
+    ItemStack stack = event.getItemStack();
+    if (!(stack.getItem() instanceof EmptyMapItem)) return false;
+    if (!LivingItemManager.isLivingItem(stack)) return false;
+
+    // 1. 计算远程目标位置（基于堆叠数量和朝向）
+    // 2. 对齐到地图网格
+    // 3. consume(1) 消耗1个空地图
+    // 4. MapItem.create() 创建活地图
+    // 5. MapItem.renderBiomePreviewMap() 预渲染生物群系轮廓
+    // 6. StructureMapDecorator.addCenterMarker() 标记地图中心
+    // 7. LivingItemManager.setLiving(newMap, true) 标记为活地图
+    // 8. 返回新地图
+    // 9. 取消事件
 }
 ```
+
+> **兼容性说明**：原实现通过 `MapItemMixin`（`@Inject` 到 `EmptyMapItem.use`）实现活地图创建。现改为 NeoForge 事件系统，消除 Mixin 依赖，提高与其他模组的兼容性。
 
 ### 10.5 与原版行为的差异
 
@@ -860,7 +869,7 @@ public class MapItemMixin {
 #### 标记流程
 
 ```
-创建时（MapItemMixin.onUse）：
+创建时（LivingMapEventHandler.handleLivingMapCreation）：
   addCenterMarker() → 地图中心添加 TARGET_POINT 图标（addTargetDecoration 写入 DataComponent）
 
 运行时（LivingMapEventHandler.onPlayerTick，每秒检查）：
@@ -1088,7 +1097,7 @@ compileOnly files("libs/sable-companion-common-1.21.1-1.6.0.jar")  // JarJar 嵌
 |------|---------|------|
 | `MapCoordHelper` | `domain/map/MapCoordHelper.java` | 坐标计算核心：射线-矩形相交、视角映射、像素↔世界坐标转换、旗帜命中检测、hitVec→UV转换、客户端目标计算（`calcClientTarget`） |
 | `MapTeleportExecutor` | `domain/map/MapTeleportExecutor.java` | 传送决策链：统一处理"旗帜→宝藏→已探索区域→未探索区域"的传送优先级和消息发送，未探索区域需消耗一组（16个）珍珠，消除手持/展示框/容器三处重复逻辑 |
-| `LivingMapEventHandler` | `domain/map/LivingMapEventHandler.java` | 事件处理入口：右键传送事件拦截、元数据同步包发送，传送逻辑委托给 `MapTeleportExecutor` |
+| `LivingMapEventHandler` | `domain/map/LivingMapEventHandler.java` | 事件处理入口：右键传送事件拦截、活空地图创建（`handleLivingMapCreation`）、元数据同步包发送，传送逻辑委托给 `MapTeleportExecutor` |
 | `ItemFrameMapTeleportHandler` | `domain/map/ItemFrameMapTeleportHandler.java` | 展示框传送：EntityInteractSpecific事件拦截、hitVec→像素坐标，传送逻辑委托给 `MapTeleportExecutor` |
 | `TeleportHelper` | `domain/map/TeleportHelper.java` | 传送执行：安全Y坐标、骑乘传送、跨维度传送、Sable飞艇传送、粒子/音效、伤害、冷却、珍珠消耗（已探索1个/未探索16个） |
 | `LivingItemManager` | `api/LivingItemManager.java` | 活物品管理：`isLivingItem()`、`isLivingMap()` 等通用判断 |
@@ -1098,7 +1107,6 @@ compileOnly files("libs/sable-companion-common-1.21.1-1.6.0.jar")  // JarJar 嵌
 | `LivingMapTargetRenderer` | `client/render/LivingMapTargetRenderer.java` | 客户端渲染工具：3D准心标记渲染（`renderMarker`，原版准心纹理+四色着色）、GUI十字形光标渲染（`renderMarkerGui`，5像素十字形），供 `ItemInHandRendererMixin`、`MapRendererMixin`、`AbstractContainerScreenMixin` 共享 |
 | `ItemInHandRendererMixin` | `client/mixin/ItemInHandRendererMixin.java` | 客户端渲染：注入 renderMap 方法，3D空间中渲染目标标记 |
 | `MapRendererMixin` | `client/mixin/MapRendererMixin.java` | 客户端渲染：注入 MapRenderer.render 方法，展示框地图光标渲染 |
-| `MapItemMixin` | `living/mixin/MapItemMixin.java` | 活空地图：注入 EmptyMapItem.use 方法，根据堆叠数量和朝向在远程位置创建活地图 |
 | `StructureMapDecorator` | `living/domain/map/StructureMapDecorator.java` | 远程开图结构标记：中心 TARGET_POINT + 懒标记（玩家靠近时扫描已加载区块） + 模组结构 TARGET_X |
 | `ModSable` | `compat/sable/ModSable.java` | Sable 安全调用入口：类加载保护、NoClassDefFoundError 捕获 |
 | `SableCompat` | `compat/sable/SableCompat.java` | Sable 依赖检测：ModList.isLoaded("sable") |
@@ -2183,7 +2191,7 @@ private static ChunkLoadResult ensureChunkLoaded(ServerLevel level, double x, do
 
 **问题**：活地图远程开图后，地图完全空白，没有任何地形信息。村民交换的探险地图则能显示水域轮廓和海岸线。
 
-**原因**：`MapItemMixin.onUse` 中只调用了 `MapItem.create()` 创建地图，没有调用 `MapItem.renderBiomePreviewMap()` 预渲染生物群系轮廓。`MapItem.create` 创建的 `MapItemSavedData` 的 `colors` 数组默认全为 0（空白），地形数据需要玩家手持地图时通过 `MapItem.update` 逐步填充。
+**原因**：`handleLivingMapCreation` 中只调用了 `MapItem.create()` 创建地图，没有调用 `MapItem.renderBiomePreviewMap()` 预渲染生物群系轮廓。`MapItem.create` 创建的 `MapItemSavedData` 的 `colors` 数组默认全为 0（空白），地形数据需要玩家手持地图时通过 `MapItem.update` 逐步填充。
 
 **修复**：在 `MapItem.create` 之后调用 `MapItem.renderBiomePreviewMap(serverLevel, newMap)`。该方法：
 
@@ -2200,7 +2208,7 @@ private static ChunkLoadResult ensureChunkLoaded(ServerLevel level, double x, do
 
 | 文件 | 改动 |
 |------|------|
-| `MapItemMixin.onUse` | `MapItem.create()` 后新增 `MapItem.renderBiomePreviewMap(serverLevel, newMap)` |
+| `handleLivingMapCreation` | `MapItem.create()` 后新增 `MapItem.renderBiomePreviewMap(serverLevel, newMap)` |
 
 ### v43 → v44：远程开图结构标记（创建时搜索）
 
@@ -2214,7 +2222,7 @@ private static ChunkLoadResult ensureChunkLoaded(ServerLevel level, double x, do
 
 **实现**：重写 `StructureMapDecorator`，从"标签→结构"改为"结构→标签"：
 
-1. **创建时**（`MapItemMixin.onUse`）：只调用 `addCenterMarker()`，不搜索结构，开图秒出
+1. **创建时**（`handleLivingMapCreation`）：只调用 `addCenterMarker()`，不搜索结构，开图秒出
 2. **运行时**（`LivingMapEventHandler.onPlayerTick`）：玩家手持活地图时，每秒检查：
    - 地图是否已扫描过（`SCANNED_MAPS` Set 缓存）
    - 玩家是否在地图覆盖范围内
@@ -2241,5 +2249,44 @@ private static ChunkLoadResult ensureChunkLoaded(ServerLevel level, double x, do
 | 文件 | 改动 |
 |------|------|
 | `StructureMapDecorator` | 重写：移除 `searchAndMarkStructures`/`searchModStructures`，新增 `scanStructuresLazy`/`doScan` |
-| `MapItemMixin.onUse` | 移除 `searchAndMarkStructures` 调用，只保留 `addCenterMarker` |
+| `handleLivingMapCreation` | 移除 `searchAndMarkStructures` 调用，只保留 `addCenterMarker` |
 | `LivingMapEventHandler.onPlayerTick` | 新增 `StructureMapDecorator.scanStructuresLazy` 调用 |
+
+### v45 → v46：Mixin 兼容性优化
+
+**目标**：降低 Mixin 兼容性风险，移除高风险 Mixin，改用 NeoForge API 或低风险替代方案。
+
+**变更**：
+
+| 变更 | 旧实现 | 新实现 | 原因 |
+|------|--------|--------|------|
+| 移除 `MapItemMixin` | `@Inject` 到 `EmptyMapItem.use` | `PlayerInteractEvent.RightClickItem` 事件 | 消除 Mixin 依赖，NeoForge 事件更兼容 |
+| 移除 `MapItemUpdateMixin` | `@Redirect` 替换 `Level.getChunk` | 删除，依赖原版 `MapItem.update` | `@Redirect` 高风险，与暮色森林魔法地图冲突导致服务端卡死；玩家附近区块通常已加载 |
+| 移除 `BlockEntityMixin` | 接口注入 + 字段注入 `livingItem$stressData` | NeoForge `AttachmentType`（`CONTAINER_STRESS_DATA`） | 框架级支持、自动序列化、类型安全，无需 Mixin |
+| `RecipeBookComponentMixin` 3个 `@Redirect` | 替换 `RecipeBookPage` 的 render/tooltip/mouseClick | `RecipeBookPageMixin` 的 `@Inject HEAD cancellable` | `@Redirect` 高风险，`@Inject` 低风险，允许多模组链式共存 |
+
+**Mixin 风险等级**：
+
+| 类型 | 风险 | 说明 |
+|------|------|------|
+| `@Inject` | 低 | 不修改方法签名和返回值，多模组可共存 |
+| `@Redirect` | 高 | 替换整个方法调用，同一调用点只能有一个 Redirect |
+| `@ModifyArg`/`@ModifyReturnValue` | 中 | 修改参数或返回值，可能与其他模组冲突 |
+| `@Mixin(Interface)` | 低 | 接口注入，运行时多态，不修改原类 |
+| `@Shadow @Mutable @Final` | 中 | 修改 final 字段，可能破坏不可变约定 |
+
+**修改文件**：
+
+| 文件 | 改动 |
+|------|------|
+| `MapItemMixin.java` | 删除 |
+| `MapItemUpdateMixin.java` | 删除 |
+| `BlockEntityMixin.java` | 删除 |
+| `StressDataProvider.java` | 删除 |
+| `RecipeBookPageMixin.java` | 新增：3个 `@Inject HEAD cancellable` 替代原 `@Redirect` |
+| `RecipeBookComponentMixin.java` | 移除 3个 `@Redirect` 方法 |
+| `LivingMapEventHandler.java` | 新增 `handleLivingMapCreation` 方法 |
+| `LivingItemManager.java` | 新增 `CONTAINER_STRESS_DATA` AttachmentType 注册 |
+| `ContainerLivingItemHandler.java` | `StressDataProvider` → `be.setData(CONTAINER_STRESS_DATA, ...)` |
+| `living_item.mixins.json` | 移除 `MapItemMixin`、`MapItemUpdateMixin`、`BlockEntityMixin` |
+| `living_item.client.mixins.json` | 新增 `RecipeBookPageMixin` |

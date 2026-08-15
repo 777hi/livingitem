@@ -4,6 +4,20 @@
 
 ---
 
+## 2026-08-16
+
+- ✅ **优化：Mixin 兼容性重构**（移除高风险 Mixin，改用 NeoForge API 或低风险替代方案）
+  - 删除 `MapItemMixin`（`@Inject` 到 `EmptyMapItem.use`）→ 改用 `PlayerInteractEvent.RightClickItem` 事件（`LivingMapEventHandler.handleLivingMapCreation`）
+  - 删除 `MapItemUpdateMixin`（2个 `@Redirect` 替换 `Level.getChunk`）→ 依赖原版 `MapItem.update`（玩家附近区块通常已加载；原 `@Redirect` 与暮色森林魔法地图冲突导致服务端卡死）
+  - 删除 `BlockEntityMixin`（接口注入 + 字段注入 `livingItem$stressData`）→ 改用 NeoForge `AttachmentType`（`LivingItemManager.CONTAINER_STRESS_DATA`，框架级支持、自动序列化、类型安全）
+  - 删除 `StressDataProvider` 接口（不再需要，`be.getData()`/`be.setData()` 替代）
+  - `RecipeBookComponentMixin` 移除 3个 `@Redirect` → 新增 `RecipeBookPageMixin`（3个 `@Inject HEAD cancellable`，低风险，允许多模组链式共存）
+  - `ContainerLivingItemHandler` 应力写入从 `StressDataProvider.livingItem$setStressData()` → `be.setData(CONTAINER_STRESS_DATA, stressData)`
+  - 更新 `living_item.mixins.json`（移除 `MapItemMixin`、`MapItemUpdateMixin`、`BlockEntityMixin`）
+  - 更新 `living_item.client.mixins.json`（新增 `RecipeBookPageMixin`）
+
+---
+
 ## 2026-07-30
 
 - ✅ **重构：包结构按领域聚合**（消灭 `core/` 万能垃圾桶，消除 `capability/` 专属小包，`create/` 提升为 `compat/create/`）
@@ -33,7 +47,7 @@
 - ✅ **新增：容器底部/玩家脚底应力传递**（`ContainerLivingItemHandler` 扩展，背包中活水车从玩家脚底输出）
 - ✅ **新增：物品栏 3D 旋转渲染**（`ItemRendererWaterWheelMixin`：BakedModel + PoseStack 旋转变换，仅在有应力时旋转）
 - ✅ **新增：漫反射光照修正**（`RenderSystem.setShaderLights()` + `combinedLight` 修改，解决物品贴图过暗）
-- ✅ **新增：BlockEntity Mixin**（`BlockEntityMixin`：添加 `stressData` 字段，`StressDataProvider` 接口实现）
+- ✅ **新增：BlockEntity 应力存储**（NeoForge `AttachmentType`：`CONTAINER_STRESS_DATA`，替代原 `BlockEntityMixin` + `StressDataProvider` 接口注入，框架级支持、自动序列化、类型安全）
 - ✅ **修复：旋转方向与物品栏不一致**（RPM 公式添加负号 `-sign(netStress)`）
 - ✅ **修复：复杂组件崩溃**（白名单策略，仅允许 `SimpleKineticBlockEntity` 和 `BracketedKineticBlockEntity`）
 - ✅ **修复：方向冲突导致方块销毁**（`isDirectionCompatible()` 软侵入检查，方向相反不注入）

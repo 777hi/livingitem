@@ -1,7 +1,7 @@
 # Living Water Wheel (活水车) 技术文档
 
-> **文档版本**: 2026.07 v6  
-> **最后更新**: 2026-07-30  
+> **文档版本**: 2026.08 v7  
+> **最后更新**: 2026-08-16  
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -57,8 +57,7 @@
 | `WaterWheelData` | `data/WaterWheelData.java` | 水车应力 record：cwStress/ccwStress/netStress |
 | `LivingWaterWheelData` | `data/LivingWaterWheelData.java` | 活水车数据容器：包含 WaterWheelData |
 | `ContainerStressData` | `container/ContainerStressData.java` | 容器级应力累加器，遍历所有活水车计算力矩 |
-| `StressDataProvider` | `container/StressDataProvider.java` | 接口，定义 BlockEntity 的应力读写方法 |
-| `BlockEntityMixin` | `mixin/BlockEntityMixin.java` | Mixin 到 BlockEntity，添加 stressData 字段 |
+| `CONTAINER_STRESS_DATA` | `api/LivingItemManager.java` | NeoForge `AttachmentType`，给 BlockEntity 附加 `ContainerStressData` 应力数据 |
 
 #### Create 兼容类（软依赖，无 Create 时不加载）
 
@@ -125,11 +124,11 @@ ItemStack
         └─ netStress: int   ← 净应力
 ```
 
-容器 BlockEntity 也通过 Mixin 持有应力数据：
+容器 BlockEntity 也通过 NeoForge `AttachmentType` 持有应力数据：
 
 ```
-BlockEntity (via BlockEntityMixin)
-└── livingItem$stressData: ContainerStressData   ← 容器级应力
+BlockEntity (via AttachmentType)
+└── CONTAINER_STRESS_DATA: ContainerStressData   ← 容器级应力
     ├─ netCWStress: int
     ├─ netCCWStress: int
     └─ netStress: int
@@ -280,24 +279,16 @@ public void calculate(ContainerFluidData fluidData, ContainerContext ctx) {
 
 ### 4.3 BlockEntity 应力存储
 
-通过 Mixin 给所有 `BlockEntity` 添加 `livingItem$stressData` 字段：
+通过 NeoForge `AttachmentType` 给所有 `BlockEntity` 附加 `ContainerStressData`：
 
 ```java
-@Mixin(BlockEntity.class)
-public class BlockEntityMixin implements StressDataProvider {
-    @Unique
-    private ContainerStressData livingItem$stressData = ContainerStressData.EMPTY;
+// LivingItemManager.java
+public static final DeferredRegister<AttachmentType<?>> ATTACHMENT_TYPES =
+    DeferredRegister.create(NeoForgeRegistries.ATTACHMENT_TYPES, LivingItem.MOD_ID);
 
-    @Override
-    public ContainerStressData livingItem$getStressData() {
-        return livingItem$stressData;
-    }
-
-    @Override
-    public void livingItem$setStressData(ContainerStressData data) {
-        this.livingItem$stressData = data;
-    }
-}
+public static final DeferredHolder<AttachmentType<?>, AttachmentType<ContainerStressData>> CONTAINER_STRESS_DATA =
+    ATTACHMENT_TYPES.register("container_stress_data", () ->
+        AttachmentType.builder(() -> ContainerStressData.EMPTY).build());
 ```
 
 每个容器 tick 结束后，`ContainerLivingItemHandler.processContext()` 将应力数据写入关联的 BlockEntity：
@@ -305,9 +296,7 @@ public class BlockEntityMixin implements StressDataProvider {
 ```java
 if (stressData != null && context instanceof SimpleContainerContext simpleCtx) {
     for (BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {
-        if (be instanceof StressDataProvider provider) {
-            provider.livingItem$setStressData(stressData);
-        }
+        be.setData(LivingItemManager.CONTAINER_STRESS_DATA.value(), stressData);
     }
 }
 ```
@@ -356,9 +345,7 @@ if (stressData != null && context instanceof SimpleContainerContext simpleCtx) {
 if (stressData != null && context instanceof SimpleContainerContext simpleCtx) {
     // 1. 容器场景：应力从容器底部输出
     for (BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {
-        if (be instanceof StressDataProvider provider) {
-            provider.livingItem$setStressData(stressData);
-        }
+        be.setData(LivingItemManager.CONTAINER_STRESS_DATA.value(), stressData);
         updateStressOutput(simpleCtx, be, stressData);
     }
 
@@ -1113,9 +1100,8 @@ CreateCompat.isLoaded()        ← Create 已安装
   └── 无需 Create 依赖
 
 第二步：容器 BlockEntity 存储应力  ✅
-  ├── StressDataProvider 接口
-  ├── BlockEntityMixin（添加 stressData 字段）
-  ├── 从 ContainerStressData 同步到 BlockEntity
+  ├── NeoForge AttachmentType（CONTAINER_STRESS_DATA）
+  ├── 从 ContainerStressData 同步到 BlockEntity（be.setData）
   └── 仍无需 Create 依赖
 
 第三步：Create 集成（软依赖）  ✅
