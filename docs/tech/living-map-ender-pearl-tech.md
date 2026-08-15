@@ -1,7 +1,7 @@
 # Living Map & Living Ender Pearl (活地图 & 活末影珍珠) 技术文档
 
-> **文档版本**: 2026.08 v42  
-> **最后更新**: 2026-08-14  
+> **文档版本**: 2026.08 v44  
+> **最后更新**: 2026-08-15  
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -820,8 +820,11 @@ public class MapItemMixin {
         // 3. 对齐到地图网格
         // 4. consume(1) 消耗1个空地图
         // 5. MapItem.create() 创建活地图
-        // 6. LivingItemManager.setLiving(newMap, true) 标记为活地图
-        // 7. 返回新地图
+        // 6. MapItem.renderBiomePreviewMap() 预渲染生物群系轮廓
+        // 7. StructureMapDecorator.addCenterMarker() 标记地图中心
+        // 8. StructureMapDecorator.searchAndMarkStructures() 搜索并标记附近结构
+        // 9. LivingItemManager.setLiving(newMap, true) 标记为活地图
+        // 10. 返回新地图
     }
 }
 ```
@@ -833,6 +836,8 @@ public class MapItemMixin {
 | 开图位置 | 玩家当前位置 | 玩家朝向 × 距离 |
 | 缩放等级 | 固定 scale=0 | 固定 scale=0 |
 | 创建的地图 | 普通地图 | **活地图**（带 IS_LIVING 标记） |
+| 初始外观 | 空白（需手持逐步填充） | **预渲染生物群系轮廓**（水域橙色 + 海岸线棕色） |
+| 结构标记 | 无 | **中心 TARGET_POINT + 懒标记附近结构图标** |
 | 消耗 | consume(1) | consume(1) |
 | 不跨维度 | — | 仅当前维度 |
 
@@ -845,6 +850,57 @@ public class MapItemMixin {
 **为什么不支持缩放等级？**
 
 原版空地图的缩放等级硬编码为 `(byte)0`（见 `EmptyMapItem.use()` 源码），没有 DataComponent 存储 scale。缩放升级需要制图台，升级后地图变为 `FILLED_MAP`，不再是空地图。因此活空地图固定 scale=0。
+
+---
+
+### 10.7 结构标记（StructureMapDecorator）
+
+远程开图创建地图后，`StructureMapDecorator` 负责在地图上标记结构图标。采用**懒标记**策略：创建时只添加中心标记，玩家靠近地图区域时才扫描结构。
+
+#### 标记流程
+
+```
+创建时（MapItemMixin.onUse）：
+  addCenterMarker() → 地图中心添加 TARGET_POINT 图标（addTargetDecoration 写入 DataComponent）
+
+运行时（LivingMapEventHandler.onPlayerTick，每秒检查）：
+  scanStructuresLazy() → 检查 SCANNED_MAPS 缓存 → 检查玩家是否在地图范围内 → doScan()
+  doScan() → 遍历已加载区块 → getAllReferences() → 匹配 structureIconMap → addDecoration()
+```
+
+#### 原版结构标签 → 图标映射
+
+| 结构标签 | 图标类型 |
+|---------|---------|
+| `on_woodland_explorer_maps` | `WOODLAND_MANSION` |
+| `on_ocean_explorer_maps` | `OCEAN_MONUMENT` |
+| `on_trial_chambers_maps` | `TRIAL_CHAMBERS` |
+| `on_desert_village_maps` | `DESERT_VILLAGE` |
+| `on_plains_village_maps` | `PLAINS_VILLAGE` |
+| `on_savanna_village_maps` | `SAVANNA_VILLAGE` |
+| `on_snowy_village_maps` | `SNOWY_VILLAGE` |
+| `on_taiga_village_maps` | `TAIGA_VILLAGE` |
+| `on_jungle_explorer_maps` | `JUNGLE_TEMPLE` |
+| `on_swamp_explorer_maps` | `SWAMP_HUT` |
+
+#### 模组结构
+
+所有没有对应图标的结构默认使用 `TARGET_X` 图标。排除的原版标签：`eye_of_ender_located`、`dolphin_located`、`on_treasure_maps`、`cats_spawn_in`、`cats_spawn_as_black`。
+
+#### 扫描机制
+
+- **触发条件**：玩家手持活地图 + 玩家在地图覆盖范围内 + 地图未扫描过
+- **扫描方式**：遍历地图范围内已加载区块（`getChunkNow()`，不触发加载），每个区块调用 `getAllReferences()` 获取结构引用
+- **图标匹配**：`structureIconMap`（`HashMap<Holder<Structure>, Holder<MapDecorationType>>`），O(1) 查找
+- **去重**：`seenStarts` Set 按结构起始区块位置去重
+- **标记添加**：`MapItemSavedData.addDecoration()` 添加运行时标记（自动同步客户端）
+- **扫描缓存**：`SCANNED_MAPS` Set 按地图 ID 缓存，避免重复扫描
+
+#### 关键特性
+
+- **不触发区块加载**：`getChunkNow()` 只返回已加载区块，未加载的返回 null 跳过
+- **天然兼容模组**：`getAllReferences()` 返回所有结构引用（含模组结构），无需遍历标签
+- **开图秒出**：创建时不搜索结构，只添加中心标记
 
 ---
 
@@ -1043,6 +1099,7 @@ compileOnly files("libs/sable-companion-common-1.21.1-1.6.0.jar")  // JarJar 嵌
 | `ItemInHandRendererMixin` | `client/mixin/ItemInHandRendererMixin.java` | 客户端渲染：注入 renderMap 方法，3D空间中渲染目标标记 |
 | `MapRendererMixin` | `client/mixin/MapRendererMixin.java` | 客户端渲染：注入 MapRenderer.render 方法，展示框地图光标渲染 |
 | `MapItemMixin` | `living/mixin/MapItemMixin.java` | 活空地图：注入 EmptyMapItem.use 方法，根据堆叠数量和朝向在远程位置创建活地图 |
+| `StructureMapDecorator` | `living/domain/map/StructureMapDecorator.java` | 远程开图结构标记：中心 TARGET_POINT + 懒标记（玩家靠近时扫描已加载区块） + 模组结构 TARGET_X |
 | `ModSable` | `compat/sable/ModSable.java` | Sable 安全调用入口：类加载保护、NoClassDefFoundError 捕获 |
 | `SableCompat` | `compat/sable/SableCompat.java` | Sable 依赖检测：ModList.isLoaded("sable") |
 | `SableIntegration` | `compat/sable/SableIntegration.java` | Sable 核心逻辑：SubLevel 检测、飞艇瞬移、偏移计算 |
@@ -2121,3 +2178,68 @@ private static ChunkLoadResult ensureChunkLoaded(ServerLevel level, double x, do
 |------|------|
 | `LivingItem.processLevelContainers` | `level.getChunk()` → `level.getChunkSource().getChunkNow()`，`null` 时加入 `toRemove` |
 | `ContainerChunkCache.rescanChunk` | 同上，`level.hasChunk()` + `level.getChunk()` → `getChunkNow()` |
+
+### v42 → v43：远程开图预渲染生物群系轮廓
+
+**问题**：活地图远程开图后，地图完全空白，没有任何地形信息。村民交换的探险地图则能显示水域轮廓和海岸线。
+
+**原因**：`MapItemMixin.onUse` 中只调用了 `MapItem.create()` 创建地图，没有调用 `MapItem.renderBiomePreviewMap()` 预渲染生物群系轮廓。`MapItem.create` 创建的 `MapItemSavedData` 的 `colors` 数组默认全为 0（空白），地形数据需要玩家手持地图时通过 `MapItem.update` 逐步填充。
+
+**修复**：在 `MapItem.create` 之后调用 `MapItem.renderBiomePreviewMap(serverLevel, newMap)`。该方法：
+
+1. 扫描地图覆盖范围内 128×128 个采样点的生物群系
+2. 判断每个点是否属于水域（`BiomeTags.WATER_ON_MAP_OUTLINES`）
+3. 根据水域分布计算海岸线轮廓
+4. 用 `MapColor.COLOR_ORANGE`（水域）和 `MapColor.COLOR_BROWN`（海岸线）着色写入 `colors` 数组
+
+`renderBiomePreviewMap` 通过 `BiomeManager.getBiome` → `noiseBiomeSource.getNoiseBiome` 获取生物群系，**不需要区块已加载**，从噪声生成器直接计算，因此远距离开图也能立即渲染。
+
+**效果**：远程开图后，地图立即显示水域轮廓（橙色）和海岸线（棕色），与村民探险地图的初始外观一致。后续玩家手持地图靠近时，`MapItem.update` 会逐步填充详细地形颜色（绿色草地、灰色石头、白色雪地等）。
+
+**修改文件**：
+
+| 文件 | 改动 |
+|------|------|
+| `MapItemMixin.onUse` | `MapItem.create()` 后新增 `MapItem.renderBiomePreviewMap(serverLevel, newMap)` |
+
+### v43 → v44：远程开图结构标记（创建时搜索）
+
+**功能**：远程开图后，在地图上标记中心位置和附近结构图标，类似村民探险地图的结构标记。
+
+**问题**：创建时遍历所有结构标签调用 `findNearestMapStructure()`（螺旋搜索 O(radius²)），10+N 个标签导致开图耗时数秒。
+
+### v44 → v45：结构标记改为懒标记（玩家靠近时扫描）
+
+**功能**：同 v44，但改为玩家靠近地图区域时才扫描结构，开图秒出。
+
+**实现**：重写 `StructureMapDecorator`，从"标签→结构"改为"结构→标签"：
+
+1. **创建时**（`MapItemMixin.onUse`）：只调用 `addCenterMarker()`，不搜索结构，开图秒出
+2. **运行时**（`LivingMapEventHandler.onPlayerTick`）：玩家手持活地图时，每秒检查：
+   - 地图是否已扫描过（`SCANNED_MAPS` Set 缓存）
+   - 玩家是否在地图覆盖范围内
+   - 若均满足，扫描地图范围内已加载区块的结构引用
+3. **扫描逻辑**（`doScan`）：
+   - 遍历地图范围内所有区块，`getChunkNow()` 获取已加载区块（不触发加载）
+   - 每个区块调用 `getAllReferences()` 获取结构引用（`Map<Structure, LongSet>`）
+   - 对每个结构，通过 `structureIconMap` 查找对应图标（O(1) HashMap 查找）
+   - 原版结构用对应图标，模组结构用 `TARGET_X`
+   - 调用 `MapItemSavedData.addDecoration()` 添加运行时标记
+
+**优势对比**：
+
+| | v44（标签→结构） | v45（结构→标签） |
+|--|----------------|------------------|
+| 搜索方式 | 每个标签螺旋搜索 | 扫描已加载区块 |
+| 调用次数 | 10+N 次 `findNearestMapStructure` | 区块数次 `getAllReferences` |
+| 触发时机 | 开图时（卡顿） | 玩家靠近时（自然） |
+| 区块加载 | 不需要（但螺旋搜索慢） | 需要（但玩家靠近时已加载） |
+| 模组兼容 | 需遍历所有标签 | 自动（`getAllReferences` 返回所有结构） |
+
+**修改文件**：
+
+| 文件 | 改动 |
+|------|------|
+| `StructureMapDecorator` | 重写：移除 `searchAndMarkStructures`/`searchModStructures`，新增 `scanStructuresLazy`/`doScan` |
+| `MapItemMixin.onUse` | 移除 `searchAndMarkStructures` 调用，只保留 `addCenterMarker` |
+| `LivingMapEventHandler.onPlayerTick` | 新增 `StructureMapDecorator.scanStructuresLazy` 调用 |

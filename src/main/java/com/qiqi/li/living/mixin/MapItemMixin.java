@@ -2,6 +2,7 @@ package com.qiqi.li.living.mixin;
 
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.domain.map.MapCoordHelper;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.stats.Stats;
 import net.minecraft.world.InteractionHand;
@@ -45,6 +46,10 @@ public class MapItemMixin {
 
         ItemStack newMap = MapItem.create(level, centerX, centerZ, (byte)0, true, false);
         LivingItemManager.setLiving(newMap, true);
+
+        if (level instanceof ServerLevel serverLevel) {
+            MapItem.renderBiomePreviewMap(serverLevel, newMap);
+        }
 
         if (stack.isEmpty()) {
             cir.setReturnValue(InteractionResultHolder.consume(newMap));

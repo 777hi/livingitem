@@ -48,6 +48,8 @@ public final class LivingMapEventHandler {
             mapData.centerZ,
             mapData.dimension.location().toString()
         ));
+
+        StructureMapDecorator.scanStructuresLazy(player.serverLevel(), player, mapStack, mapData);
     }
 
     @SubscribeEvent
