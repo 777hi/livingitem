@@ -13,6 +13,7 @@ import com.qiqi.li.living.data.LivingTntData;
 import com.qiqi.li.living.data.LivingWaterBucketData;
 import com.qiqi.li.living.data.LivingWaterWheelData;
 import com.qiqi.li.living.data.LivingEnderChestData;
+import com.qiqi.li.living.domain.water.ContainerStressData;
 import net.minecraft.world.item.Items;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.registries.Registries;
@@ -20,6 +21,7 @@ import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import com.mojang.serialization.Codec;
+import net.neoforged.neoforge.attachment.AttachmentType;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredRegister;
 import org.slf4j.Logger;
@@ -37,6 +39,13 @@ public class LivingItemManager {
 
     public static final DeferredRegister<DataComponentType<?>> DATA_COMPONENT_TYPES =
             DeferredRegister.create(Registries.DATA_COMPONENT_TYPE, com.qiqi.li.LivingItem.MOD_ID);
+
+    public static final DeferredRegister<AttachmentType<?>> ATTACHMENT_TYPES =
+            DeferredRegister.create(net.neoforged.neoforge.registries.NeoForgeRegistries.ATTACHMENT_TYPES, com.qiqi.li.LivingItem.MOD_ID);
+
+    public static final DeferredHolder<AttachmentType<?>, AttachmentType<ContainerStressData>> CONTAINER_STRESS_DATA =
+            ATTACHMENT_TYPES.register("container_stress_data", () ->
+                    AttachmentType.builder(() -> ContainerStressData.EMPTY).build());
 
     public static final DeferredHolder<DataComponentType<?>, DataComponentType<Boolean>> IS_LIVING =
             DATA_COMPONENT_TYPES.register("is_living", () ->

@@ -3,7 +3,6 @@
   "package": "com.qiqi.li.living.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
-    "BlockEntityMixin",
     "MapItemMixin",
     "ItemStackMixin",
     "ServerPlaceRecipeMixin"

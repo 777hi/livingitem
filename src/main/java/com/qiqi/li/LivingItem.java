@@ -96,6 +96,7 @@ public class LivingItem {
         modEventBus.addListener(this::onRegisterCapabilities);
         ITEMS.register(modEventBus);
         LivingItemManager.DATA_COMPONENT_TYPES.register(modEventBus);
+        LivingItemManager.ATTACHMENT_TYPES.register(modEventBus);
         NeoForge.EVENT_BUS.register(this);
         NeoForge.EVENT_BUS.register(ContainerChunkCache.getInstance());
         modEventBus.addListener(this::onRegisterPayloadHandler);

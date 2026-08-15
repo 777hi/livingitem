@@ -253,9 +253,7 @@ public class ContainerLivingItemHandler {
 
         if (stressData != null && context instanceof SimpleContainerContext simpleCtx) {
             for (BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {
-                if (be instanceof StressDataProvider provider) {
-                    provider.livingItem$setStressData(stressData);
-                }
+                be.setData(LivingItemManager.CONTAINER_STRESS_DATA.value(), stressData);
                 updateStressOutput(simpleCtx, be, stressData);
             }
 
