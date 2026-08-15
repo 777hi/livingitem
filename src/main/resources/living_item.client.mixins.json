@@ -8,6 +8,7 @@
     "InventoryScreenMixin",
     "ItemInHandRendererMixin",
     "RecipeBookComponentMixin",
+    "RecipeBookPageMixin",
     "SlotWrapperAccessor",
     "SpriteIconButtonMixin",
     "ItemRendererWaterWheelMixin",

@@ -12,7 +12,6 @@ import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.StateSwitchingButton;
 import net.minecraft.client.gui.components.WidgetSprites;
 import net.minecraft.client.gui.screens.recipebook.RecipeBookComponent;
-import net.minecraft.client.gui.screens.recipebook.RecipeBookPage;
 import net.minecraft.client.gui.screens.recipebook.RecipeBookTabButton;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.nbt.CompoundTag;
@@ -34,7 +33,6 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
@@ -897,88 +895,6 @@ public abstract class RecipeBookComponentMixin {
     @Unique
     private static boolean isHovering(int mouseX, int mouseY, int x, int y, int w, int h) {
         return mouseX >= x && mouseX < x + w && mouseY >= y && mouseY < y + h;
-    }
-
-    // ==================== Redirect 方法（拦截原方法调用） ====================
-
-    /**
-     * 重定向原版配方页面的渲染调用
-     * 
-     * <h3>🎯 目的</h3>
-     * <p>当活箱子标签激活时，<strong>阻止</strong>原版配方的渲染，
-     * 避免两者重叠显示造成视觉混乱。</p>
-     * 
-     * <h3>🔄 工作原理</h3>
-     * <p>Mixin 的 {@code @Redirect} 会替换目标方法调用。此处将
-     * {@code RecipeBookPage.render()} 调用替换为我们的条件判断：</p>
-     * <ul>
-     *   <li>活箱子标签未激活 → 正常调用原方法</li>
-     *   <li>活箱子标签已激活 → 跳过渲染（静默忽略）</li>
-     * </ul>
-     *
-     * @param instance 原版配方页面对象
-     * @param guiGraphics 图形上下文
-     * @param x, y 渲染位置
-     * @param mouseX, mouseY 鼠标坐标
-     * @param partialTick 部分刻度
-     */
-    @Redirect(method = "render", at = @At(
-        value = "INVOKE",
-        target = "Lnet/minecraft/client/gui/screens/recipebook/RecipeBookPage;render(Lnet/minecraft/client/gui/GuiGraphics;IIIIF)V"
-    ))
-    private void redirectRecipeBookPageRender(RecipeBookPage instance, GuiGraphics guiGraphics,
-                                              int x, int y, int mouseX, int mouseY, float partialTick) {
-        if (!LivingChestTabState.isActive()) {
-            instance.render(guiGraphics, x, y, mouseX, mouseY, partialTick);
-        }
-    }
-
-    /**
-     * 重定向原版配方页面的工具提示渲染
-     * 
-     * <h3>🎯 目的</h3>
-     * <p>同上，避免活箱子模式下出现原版配方的悬浮提示。</p>
-     *
-     * @param instance 原版配方页面对象
-     * @param guiGraphics 图形上下文
-     * @param mouseX, mouseY 鼠标坐标
-     */
-    @Redirect(method = "renderTooltip", at = @At(
-        value = "INVOKE",
-        target = "Lnet/minecraft/client/gui/screens/recipebook/RecipeBookPage;renderTooltip(Lnet/minecraft/client/gui/GuiGraphics;II)V"
-    ))
-    private void redirectRecipeBookPageTooltip(RecipeBookPage instance, GuiGraphics guiGraphics, int mouseX, int mouseY) {
-        if (!LivingChestTabState.isActive()) {
-            instance.renderTooltip(guiGraphics, mouseX, mouseY);
-        }
-    }
-
-    /**
-     * 重定向原版配方页面的鼠标点击事件
-     * 
-     * <h3>🎯 目的</h3>
-     * <p>当活箱子标签激活时，<strong>拦截</strong>所有原版配方的点击事件，
-     * 防止误触选择配方或切换页面。</p>
-     * 
-     * <h3>🔒 安全机制</h3>
-     * <p>直接返回 {@code false} 表示"未处理该点击"，但不会传递给原版处理。</p>
-     *
-     * @param instance 原版配方页面对象
-     * @param mouseX, mouseY 鼠标坐标
-     * @param button 鼠标按键（0=左键, 1=右键）
-     * @param x, y, width, height 区域参数
-     * @return 是否消费了该点击事件
-     */
-    @Redirect(method = "mouseClicked", at = @At(
-        value = "INVOKE",
-        target = "Lnet/minecraft/client/gui/screens/recipebook/RecipeBookPage;mouseClicked(DDIIIII)Z"
-    ))
-    private boolean redirectRecipeBookPageMouseClick(RecipeBookPage instance, double mouseX, double mouseY,
-                                                     int button, int x, int y, int width, int height) {
-        if (LivingChestTabState.isActive()) {
-            return false;
-        }
-        return instance.mouseClicked(mouseX, mouseY, button, x, y, width, height);
     }
 
     // ==================== 鼠标事件处理 ====================
