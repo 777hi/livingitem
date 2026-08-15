@@ -13,7 +13,6 @@ import java.util.concurrent.atomic.AtomicLong;
  * <h3>监控子系统</h3>
  * <ul>
  *   <li><b>Container</b>：容器处理耗时、活物品数量、功能调用次数</li>
- *   <li><b>Map</b>：地图更新跳过/已加载区块数</li>
  *   <li><b>Teleport</b>：传送次数、区块加载耗时、总传送耗时</li>
  *   <li><b>Cache</b>：容器区块缓存大小、自清理移除数</li>
  *   <li><b>Pool</b>：TickContext 对象池命中率</li>
@@ -38,10 +37,6 @@ public class PerfMetrics {
 
     // ===== 功能调用 =====
     private static final Map<String, AtomicInteger> functionCalls = new ConcurrentHashMap<>();
-
-    // ===== 地图更新 =====
-    private static final AtomicInteger mapChunksSkipped = new AtomicInteger(0);
-    private static final AtomicInteger mapChunksLoaded = new AtomicInteger(0);
 
     // ===== 传送 =====
     private static final AtomicInteger teleportCount = new AtomicInteger(0);
@@ -102,18 +97,6 @@ public class PerfMetrics {
     public static void recordFunctionCall(String functionId) {
         functionCalls.computeIfAbsent(functionId, k -> new AtomicInteger(0))
                      .incrementAndGet();
-    }
-
-    // ══════════════════════════════════════════════
-    // 地图更新
-    // ══════════════════════════════════════════════
-
-    public static void recordMapChunkSkipped() {
-        mapChunksSkipped.incrementAndGet();
-    }
-
-    public static void recordMapChunkLoaded() {
-        mapChunksLoaded.incrementAndGet();
     }
 
     // ══════════════════════════════════════════════
@@ -183,7 +166,6 @@ public class PerfMetrics {
         ModLog.PERF.info("=== Performance report (last 60s) ===");
 
         printContainerSection();
-        printMapSection();
         printTeleportSection();
         printCacheSection();
         printPoolSection();
@@ -208,17 +190,6 @@ public class PerfMetrics {
             count, avgMs, p99, maxMs, CONTAINER_THRESHOLD_MS, overThreshold);
         ModLog.PERF.info("[LivingItems] {}", formatMap(livingItemCounts));
         ModLog.PERF.info("[FunctionCalls] {}", formatMap(functionCalls));
-    }
-
-    private static void printMapSection() {
-        int skipped = mapChunksSkipped.get();
-        int loaded = mapChunksLoaded.get();
-        int total = skipped + loaded;
-        if (total == 0) return;
-
-        double skipRate = skipped * 100.0 / total;
-        ModLog.PERF.info("[Map] totalQueries={}, skipped={} ({}%), loaded={}",
-            total, skipped, String.format("%.1f", skipRate), loaded);
     }
 
     private static void printTeleportSection() {
@@ -302,8 +273,6 @@ public class PerfMetrics {
         containerOverThreshold.set(0);
         livingItemCounts.clear();
         functionCalls.clear();
-        mapChunksSkipped.set(0);
-        mapChunksLoaded.set(0);
         teleportCount.set(0);
         teleportChunkLoadMs.set(0);
         teleportTotalMs.set(0);
