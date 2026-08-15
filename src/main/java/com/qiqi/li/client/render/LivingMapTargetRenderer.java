@@ -14,8 +14,7 @@ public final class LivingMapTargetRenderer {
 
     private static final ResourceLocation CROSSHAIR_SPRITE = ResourceLocation.withDefaultNamespace("hud/crosshair");
 
-    private static final int COLOR_BANNER = 0xFFFFAA00;
-    private static final int COLOR_TARGET = 0xFF00DDFF;
+    private static final int COLOR_DECO_HIT = 0xFFFFAA00;
     private static final int COLOR_EXPLORED = 0xFF00FF00;
     private static final int COLOR_UNEXPLORED = 0xFFFF3333;
 
@@ -23,7 +22,7 @@ public final class LivingMapTargetRenderer {
 
     public static void renderMarker(Minecraft mc, MultiBufferSource buffer, PoseStack poseStack,
                                      int mapX, int mapY, boolean explored,
-                                     boolean bannerHit, boolean targetPointHit, int packedLight) {
+                                     boolean decoHit, int packedLight) {
         TextureAtlasSprite sprite = mc.getGuiSprites().getSprite(CROSSHAIR_SPRITE);
         if (sprite == null) return;
 
@@ -34,7 +33,7 @@ public final class LivingMapTargetRenderer {
         float y = (float) mapY;
         float z = -0.03F;
 
-        float halfSize = (bannerHit || targetPointHit) ? 5.0F : 4.0F;
+        float halfSize = decoHit ? 5.0F : 4.0F;
 
         float u0 = sprite.getU0();
         float v0 = sprite.getV0();
@@ -42,10 +41,8 @@ public final class LivingMapTargetRenderer {
         float v1 = sprite.getV1();
 
         int color;
-        if (bannerHit) {
-            color = COLOR_BANNER;
-        } else if (targetPointHit) {
-            color = COLOR_TARGET;
+        if (decoHit) {
+            color = COLOR_DECO_HIT;
         } else if (explored) {
             color = COLOR_EXPLORED;
         } else {
@@ -63,13 +60,10 @@ public final class LivingMapTargetRenderer {
     }
 
     public static void renderMarkerGui(GuiGraphics guiGraphics, float x, float y,
-                                        boolean explored, boolean bannerHit,
-                                        boolean targetPointHit, float pixelSize) {
+                                        boolean explored, boolean decoHit, float pixelSize) {
         int color;
-        if (bannerHit) {
-            color = COLOR_BANNER;
-        } else if (targetPointHit) {
-            color = COLOR_TARGET;
+        if (decoHit) {
+            color = COLOR_DECO_HIT;
         } else if (explored) {
             color = COLOR_EXPLORED;
         } else {

@@ -213,8 +213,7 @@ public class AbstractContainerScreenMixin extends Screen {
             int mapY = MapCoordHelper.uvToMapY(uv[1]);
 
             if (mapX >= 0 && mapX < MapCoordHelper.MAP_SIZE && mapY >= 0 && mapY < MapCoordHelper.MAP_SIZE) {
-                boolean bannerHit = MapCoordHelper.isBannerDecorationHit(mapData, mapX, mapY);
-                MapDecoration targetPoint = !bannerHit ? MapCoordHelper.findTargetPointHit(mapData, mapX, mapY) : null;
+                boolean decoHit = MapCoordHelper.isTeleportableDecorationHit(mapData, mapX, mapY);
                 boolean explored = MapCoordHelper.isExplored(mapData, mapX, mapY);
 
                 float pixelSize = (float) areaSize / MapCoordHelper.MAP_SIZE;
@@ -222,7 +221,7 @@ public class AbstractContainerScreenMixin extends Screen {
                 float markerY = areaY + (mapY * pixelSize);
 
                 LivingMapTargetRenderer.renderMarkerGui(guiGraphics, markerX, markerY,
-                    explored, bannerHit, targetPoint != null, pixelSize);
+                    explored, decoHit, pixelSize);
             }
         }
 

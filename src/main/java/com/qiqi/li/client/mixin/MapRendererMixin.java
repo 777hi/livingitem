@@ -12,7 +12,6 @@ import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.decoration.ItemFrame;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.saveddata.maps.MapDecoration;
 import net.minecraft.world.level.saveddata.maps.MapId;
 import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
 import net.minecraft.world.phys.EntityHitResult;
@@ -49,11 +48,10 @@ public class MapRendererMixin {
 
         if (mapX < 0 || mapX >= MapCoordHelper.MAP_SIZE || mapY < 0 || mapY >= MapCoordHelper.MAP_SIZE) return;
 
-        boolean bannerHit = MapCoordHelper.isBannerDecorationHit(mapData, mapX, mapY);
-        MapDecoration targetPoint = !bannerHit ? MapCoordHelper.findTargetPointHit(mapData, mapX, mapY) : null;
+        boolean decoHit = MapCoordHelper.isTeleportableDecorationHit(mapData, mapX, mapY);
         boolean explored = MapCoordHelper.isExplored(mapData, mapX, mapY);
 
-        LivingMapTargetRenderer.renderMarker(mc, buffer, poseStack, mapX, mapY, explored, bannerHit, targetPoint != null, packedLight);
+        LivingMapTargetRenderer.renderMarker(mc, buffer, poseStack, mapX, mapY, explored, decoHit, packedLight);
     }
 
     private static boolean isHoldingLivingEnderPearl(net.minecraft.world.entity.player.Player player) {

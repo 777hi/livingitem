@@ -131,7 +131,7 @@ public final class MapCoordHelper {
         MapDecoration closest = null;
 
         for (MapDecoration decoration : mapData.getDecorations()) {
-            if (!isRedXType(decoration)) continue;
+            if (!isTeleportableType(decoration)) continue;
 
             float decoPixelX = (float) decoration.x() / 2.0F + 64.0F;
             float decoPixelY = (float) decoration.y() / 2.0F + 64.0F;
@@ -149,12 +149,12 @@ public final class MapCoordHelper {
         return closest;
     }
 
-    public static boolean isBannerDecorationHit(MapItemSavedData mapData, int mapX, int mapY) {
+    public static boolean isTeleportableDecorationHit(MapItemSavedData mapData, int mapX, int mapY) {
         double closestDist = Double.MAX_VALUE;
         boolean found = false;
 
         for (MapDecoration decoration : mapData.getDecorations()) {
-            if (!isBannerType(decoration)) continue;
+            if (!isTeleportableType(decoration)) continue;
 
             float decoPixelX = (float) decoration.x() / 2.0F + 64.0F;
             float decoPixelY = (float) decoration.y() / 2.0F + 64.0F;
@@ -172,12 +172,48 @@ public final class MapCoordHelper {
         return found;
     }
 
+    private static final java.util.Set<String> TELEPORTABLE_DECORATION_PATHS = java.util.Set.of(
+        "player",
+        "frame",
+        "red_marker",
+        "blue_marker",
+        "target_x",
+        "target_point",
+        "red_x",
+        "mansion",
+        "monument",
+        "jungle_temple",
+        "swamp_hut",
+        "trial_chambers",
+        "village_desert",
+        "village_plains",
+        "village_savanna",
+        "village_snowy",
+        "village_taiga",
+        "banner_white",
+        "banner_orange",
+        "banner_magenta",
+        "banner_light_blue",
+        "banner_yellow",
+        "banner_lime",
+        "banner_pink",
+        "banner_gray",
+        "banner_light_gray",
+        "banner_cyan",
+        "banner_purple",
+        "banner_blue",
+        "banner_brown",
+        "banner_green",
+        "banner_red",
+        "banner_black"
+    );
+
     private static boolean isBannerType(MapDecoration decoration) {
         return matchDecorationPath(decoration, path -> path.startsWith("banner_"));
     }
 
-    private static boolean isRedXType(MapDecoration decoration) {
-        return matchDecorationPath(decoration, path -> path.equals("red_x"));
+    private static boolean isTeleportableType(MapDecoration decoration) {
+        return matchDecorationPath(decoration, TELEPORTABLE_DECORATION_PATHS::contains);
     }
 
     private static boolean matchDecorationPath(MapDecoration decoration, java.util.function.Predicate<String> predicate) {
@@ -190,7 +226,15 @@ public final class MapCoordHelper {
         if (mapStack != null) {
             MapDecorations mapDecorations = mapStack.getOrDefault(DataComponents.MAP_DECORATIONS, MapDecorations.EMPTY);
             for (MapDecorations.Entry entry : mapDecorations.decorations().values()) {
-                if (isRedXEntry(entry)) {
+                if (isTeleportableEntry(entry)
+                    && entry.type().equals(targetDecoration.type())
+                    && entry.x() == targetDecoration.x()
+                    && entry.z() == targetDecoration.y()) {
+                    return new double[]{entry.x(), entry.z()};
+                }
+            }
+            for (MapDecorations.Entry entry : mapDecorations.decorations().values()) {
+                if (isTeleportableEntry(entry)) {
                     return new double[]{entry.x(), entry.z()};
                 }
             }
@@ -204,8 +248,8 @@ public final class MapCoordHelper {
         return new double[]{worldX, worldZ};
     }
 
-    private static boolean isRedXEntry(MapDecorations.Entry entry) {
-        return matchEntryPath(entry, path -> path.equals("red_x"));
+    private static boolean isTeleportableEntry(MapDecorations.Entry entry) {
+        return matchEntryPath(entry, TELEPORTABLE_DECORATION_PATHS::contains);
     }
 
     private static boolean matchEntryPath(MapDecorations.Entry entry, java.util.function.Predicate<String> predicate) {

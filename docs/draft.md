@@ -1,382 +1,419 @@
 <!-- markdownlint-disable -->
-# 活地图 + 活末影珍珠 设计草稿
 
-> 状态：草稿，待实施
-> 日期：2026-07-25
+# 草稿：活潜影箱 —— 局部演化 + 边界交换模型
 
----
-
-## 一、概述
-
-### 活地图
-
-原版地图开图后必须拿在手上才能查看，但活地图在物品栏里就能看，会将物品栏格子本身当成展示地图的区域。
-
-- 如果活地图周围围一圈没有打开过的活地图，显示区域会扩展到周围（3×3）
-- 再围一圈可扩展到 5×5，以此类推
-
-### 活末影珍珠
-
-- 在容器界面光标拿着活末影珍珠，右键活地图上的位置 → 传送到对应位置
-- 右键物品展示框里的活地图 → 传送
-- 右键活地图上的旗帜标记 → 传送到旗帜位置
+> **日期**: 2026-08-14
+> **状态**: 探讨中，待继续深入
 
 ---
 
-## 二、实施路线
+## 1. 核心洞察：数据演化模型
 
-> **实施顺序调整**：先做展示框传送（最快出可玩功能），再做 GUI 渲染（最难）。
-> 活地图是纯被动型活物品——不 tick，状态不变，所有数据从原版 `MapItemSavedData` 读取。
-> 因此活地图**不需要自己的 DataComponent**，只需 `IS_LIVING: true` 标记。
+活潜影箱本质上是一个物品，存的东西是 DataComponent，也就是数据。每 tick，这些数据根据自身的内部结构和周围的其它数据结构进行动态演化。
 
-| 阶段 | 内容 | 难度 | 新增文件 |
-|------|------|------|---------|
-| **Phase 0** | 基础设施：活末影珍珠 DataComponent + 活按钮配置 | 🟢 低 | 2 |
-| **Phase 1** | 展示框传送（最小可玩版本） | 🟡 中 | 3 |
-| **Phase 2** | GUI 叠加层渲染（方案 B） | 🔴 高 | 3~4 |
-| **Phase 3** | GUI 右键传送 | 🟡 中 | 1~2 |
-| **Phase 4** | 3×3 扩展渲染（纯视觉放大） | 🟡 中 | 0~1 |
-| **Phase 5** | 5×5+ 扩展、自动生成相邻地图数据 | 🔴 高 | 0~1 |
+```
+每个 tick：
+  对于容器中的每个数据（ItemStack + DataComponent）：
+    新状态 = f(自身状态, 邻居状态)
+```
 
-### Phase 0：基础设施
+这就是一个**细胞自动机**。活潜影箱只是一个**包含子细胞的细胞**。
 
-| 步骤 | 内容 | 产出 |
-|------|------|------|
-| 0.1 | 活按钮配置 | 地图物品 + 末影珍珠可被活按钮激活（只需 `IS_LIVING` 标记） |
-| 0.2 | `LivingEnderPearlData` DataComponent | record，存 `cooldown: int`（唯一需要状态的活物品） |
-| 0.3 | 在 `LivingItemManager` 注册 | `LIVING_ENDER_PEARL_DATA` 组件注册 + 便捷方法 |
-| 0.4 | `LivingEnderPearlFunction` | 活末影珍珠功能类，tick 中递减冷却 |
+现有 `ContainerLivingItemHandler.processContext()` 已经在做这件事：
+```
+扫描容器 → 按功能分组 → tick 每组 → 容器级计算 → 同步写回
+```
 
-> **为什么活地图不需要 DataComponent？**
-> 原版地图物品已有 `minecraft:map_id` 组件，活地图只需 `IS_LIVING: true` 标记。
-> 所有地图数据（地形、旗帜、玩家标记）从 `Level.getMapData(mapId)` 读取，
-> 不需要额外存储。活地图是纯被动型活物品——不 tick，状态不变。
-
-### Phase 1：展示框传送（最小可玩版本）
-
-墙上挂活地图，手持活末影珍珠右键传送。
-
-| 步骤 | 内容 | 技术细节 |
-|------|------|---------|
-| 1.1 | 坐标换算工具类 | `MapCoordHelper.java` — hitVec → 地图 UV → 地图像素 → 世界坐标，纯静态方法 |
-| 1.2 | 旗帜命中检测 | `MapCoordHelper.findBannerHit()` — 遍历 `MapItemSavedData.banners`，3 像素半径命中 |
-| 1.3 | 传送执行工具类 | `TeleportHelper.java` — 传送 + 粒子 + 音效 + 摔落伤害 + 消耗珍珠 + 冷却 |
-| 1.4 | ItemFrame Mixin | `ItemFrameMixin.java` — 注入 `interactAt()`，拦截活末影珍珠 + 活地图展示框交互 |
-
-### Phase 2：GUI 叠加层渲染
-
-| 步骤 | 内容 | 技术细节 |
-|------|------|---------|
-| 2.1 | 扫描活地图布局 | `LivingMapLayout.java` — 遍历容器槽位，找到所有活地图的网格位置 |
-| 2.2 | 地图纹理渲染 | `LivingMapRenderer.java` — 从 `MapRenderer.getTextureId(mapId)` 获取动态纹理，画到 GUI |
-| 2.3 | Mixin 渲染入口 | `AbstractContainerScreenMixin` — 在 `render()` 尾部注入叠加层渲染 |
-
-> **选择方案 B（叠加层）而非方案 A（劫持槽位）**：
-> 叠加层和原版槽位渲染完全独立，只需一个注入点，天然支持跨槽位渲染。
-
-### Phase 3：GUI 右键传送
-
-| 步骤 | 内容 | 技术细节 |
-|------|------|---------|
-| 3.1 | 屏幕像素 → 世界坐标 | `MapCoordHelper.screenToWorld()` — 复用像素→世界坐标逻辑 |
-| 3.2 | GUI 交互规则 | 复用 `GuiInteractionPacket` 体系，注册 `MapTeleportInteraction` |
-
-### Phase 4：3×3 扩展渲染
-
-| 步骤 | 内容 | 技术细节 |
-|------|------|---------|
-| 4.1 | BFS 扫描相邻活地图 | `LivingMapLayout.scanExpansion()` — 从中心 BFS，每完整一圈扩展 1 层 |
-| 4.2 | 纯视觉放大 | 修改 `LivingMapRenderer`，根据扩展层数放大中心地图的渲染视野 |
-
-### Phase 5：5×5+ 扩展 + 真实地图拼接（可选）
-
-| 步骤 | 内容 | 技术细节 |
-|------|------|---------|
-| 5.1 | 自动生成相邻地图数据 | 为未打开的活地图分配新 map ID，计算相邻区域 centerX/centerZ |
-| 5.2 | 多地图拼接渲染 | 多个 MapItemSavedData 的 colors 数组拼接成大地图 |
-| 5.3 | 地图数据生命周期 | 拿走活地图后数据保留（原版行为），但不再更新 |
-
-> Phase 5 涉及地图数据生成和生命周期管理，建议等 Phase 1-4 稳定后再考虑。
+活潜影箱只是让演化可以**嵌套**。
 
 ---
 
-## 三、活地图 — GUI 槽位渲染
+## 2. 旧方案的问题：全局视图过度设计
 
-### 核心难点
+旧方案（`ShulkerLogicalSpace` + `BoundaryBridgeMap` + `ExtendedSlotResolver`）试图构建一个**全局的扁平视图**，把多个活潜影箱的内部槽位拼成一个大数组，然后在这个大数组上跑 BFS。
 
-原版物品栏槽位只渲染静态 item sprite（16×16），地图是动态纹理。需要劫持槽位渲染。
+这就像是为了让水从 A 流到 B，先把 A 和 B 拆开拼成一个大水池，再往里倒水。
 
-### 方案 A：劫持槽位渲染（推荐）
+但 Minecraft 原版不是这么做的。原版的水流、红石信号都是**局部更新**——每个方块只看自己的 4 个邻居，根据邻居状态更新自己。区块边界的水流通过**边界交换**传递，不需要全局视图。
 
-```
-物品栏 GUI 渲染槽位时
-  → 检测槽位物品是活地图
-  → 不走正常 ItemRenderer
-  → 从原版 MapItemSavedData 拿地图纹理
-  → 直接画到槽位区域（可放大到 32×32 甚至跨槽位）
-```
+---
 
-需要 Mixin 的地方：
-- `ItemRenderer.renderGuiItem()` — 拦截单个物品渲染
-- `AbstractContainerScreen.renderSlot()` — 或在此层拦截更有控制力
-
-### 方案 B：GUI 叠加层（备选，更简单）
+## 3. 新方案：局部演化 + 边界交换
 
 ```
-在容器 GUI 上方叠加一个自定义渲染层
-  → 检测背包中活地图的布局
-  → 在对应位置绘制大地图
-  → 和槽位渲染分离，互不干扰
+活潜影箱 A 的内部：          活潜影箱 B 的内部：
+  [0] [1] ... [7] [8]         [0] [1] ... [7] [8]
+  [9] [10]... [17][18]        [9] [10]... [17][18]
+  [19] [20]... [26]           [19] [20]... [26]
+
+每 tick：
+  1. A 内部各数据根据自身+邻居演化（局部规则）
+  2. B 内部各数据根据自身+邻居演化（局部规则）
+  3. A 的右边界(8,17,26) ←交换→ B 的左边界(0,9,18)
+     - A[8] 的右邻居 = B[0]
+     - B[0] 的左邻居 = A[8]
+  4. 边界交换后，受影响的细胞再次演化
 ```
 
-### 扩展机制：3×3 → 5×5 → ...
+步骤 3 的"边界交换"就是原版 Minecraft 处理区块边界的方式。不需要全局 BFS，不需要扁平视图。
 
-| 方案 | 描述 | 复杂度 |
-|------|------|--------|
-| **A：真实地图拼接** | 未打开地图自动生成数据（分配新 map ID），拿走地图后数据保留 | 🔴 高 |
-| **B：纯视觉放大** | 仅扩大中心地图的渲染视野，像缩放一样，地图拿走视野缩回 | 🟡 中 |
+---
 
-> 建议 B 先做，因为不涉及地图数据生成，只是渲染层的放大。Phase 5 再考虑 A。
+## 4. 具体实现对比
+
+### 旧方案（全局视图）
 
 ```
-扫描逻辑:
-  找到已打开的活地图（中心）
-  向外 BFS 搜索未打开的活地图
-  每完整一圈 → 扩展 1 层
-  3×3 = 1 圈，5×5 = 2 圈，以此类推
+ShulkerLogicalSpace.build()
+  → 扫描所有活潜影箱
+  → 构建 addressMap[逻辑索引→物理地址]
+  → 构建 BoundaryBridgeMap
+  → 在全局逻辑空间上跑 BFS
 ```
 
-### 地图数据存储
+需要改 ContainerFluidData 的 key（int→long），改 ContainerStressData 的坐标计算，改 ContainerRedstoneData 的邻居查询——**全量改造现有系统**。
 
-```json
-{
-  "living_map": {
-    "map_id": 123,
-    "opened": true
-  }
+### 新方案（局部演化 + 边界交换）
+
+```
+每个活潜影箱独立 tick：
+  1. 创建内部 ContainerContext
+  2. processContext(内部)     ← 完全复用现有逻辑！
+  3. 边界交换                  ← 唯一新增的部分
+```
+
+**ContainerFluidData 不需要改 key！** 每个活潜影箱有自己的 `ContainerFluidData`，key 仍然是 `int`。水流在 A 内部正常 BFS，A 的边界水位通过边界交换传递给 B，B 再根据边界输入重新 BFS。
+
+---
+
+## 5. 边界交换机制
+
+边界交换本质上就是：**让边界槽位能"看到"相邻活潜影箱的对应槽位**。
+
+```java
+// 在 LivingShulkerBoxFunction.tick() 中：
+for (SlotEntry entry : entries) {
+    ItemStack shulkerStack = entry.stack();
+
+    // 1. 内部 tick（复用现有 processContext）
+    IItemHandler innerHandler = new LivingChestItemHandler(shulkerStack);
+    ContainerContext innerCtx = new SimpleContainerContext(innerHandler, ...);
+    ContainerLivingItemHandler.processContext(innerCtx, level);
+
+    // 2. 边界交换
+    exchangeBoundaryData(entry.slotIndex(), shulkerStack, context, tick);
+
+    // 3. 边界交换后，受影响的内部数据再次演化
+    //    （只有边界附近的槽位需要重新计算）
 }
 ```
 
-复用原版 `MapItemSavedData` 系统，不需要自己管理地图数据。
+### 边界交换的内容
 
----
+| 数据类型 | 边界交换内容 | 方式 |
+|---------|------------|------|
+| **红石信号** | 边界槽位的信号强度 | A[8].signal → B[0] 作为外部输入 |
+| **水流** | 边界槽位的水位 | A[8].flowLevel → B[0] 作为边界水源 |
+| **物品** | 活漏斗的输出 | A 内活漏斗指向右 → 物品移到 B[0] |
 
-## 四、活地图 — 物品展示框路线
+红石信号和水流的边界交换是**信息传递**（只读），物品传输是**数据移动**（写操作）。
 
-### 优势
-
-原版 `ItemFrameRenderer` 自动渲染完整大地图（128×128），**不需要任何渲染 Mixin**。比 GUI 路线简单得多。
-
-### 需要 Mixin 的地方
-
-`ItemFrameEntity.interactAt()` — 唯一需要 Mixin 的地方，因为只有它有精确的 `hitVec` 参数。
+### BoundaryExchanger 接口
 
 ```java
-@Inject(method = "interactAt", at = @At("HEAD"), cancellable = true)
-private void onInteractAt(Player player, Vec3 hitVec, InteractionHand hand,
-                          CallbackInfoReturnable<InteractionResult> cir) {
-    // 手持活末影珍珠 + 展示框内是活地图 → 计算坐标 → 传送
+interface BoundaryExchanger {
+    // 红石：读取相邻活潜影箱边界槽位的信号强度
+    int getNeighborSignal(int myInnerSlot, Pos2D direction);
+
+    // 水流：读取相邻活潜影箱边界槽位的水位
+    int getNeighborFlowLevel(int myInnerSlot, Pos2D direction);
+
+    // 物品：向相邻活潜影箱边界槽位推入物品
+    ItemStack pushItemAcrossBoundary(int myInnerSlot, Pos2D direction, ItemStack item);
 }
 ```
 
-### 交互设计
-
-| 场景 | 行为 |
-|------|------|
-| 空手右键 | 正常（旋转物品/取下） |
-| 手持活末影珍珠右键（地图区域内） | 传送 + 消耗珍珠 |
-| 手持活末影珍珠右键（地图边框上） | 正常交互（旋转） |
-| 手持活末影珍珠右键普通物品展示框 | 正常交互 |
-| 手持普通物品右键活地图展示框 | 正常交互 |
+活潜影箱内部的活红石粉、活水桶、活漏斗，在查找邻居时，如果邻居越界，就通过 `BoundaryExchanger` 获取。
 
 ---
 
-## 五、坐标换算核心逻辑
+## 6. 各难点的消解
 
-### 展示框路线：3D 射线 → 世界坐标
+### 6.1 递归 tick 性能
+
+之前担心全局 BFS 在嵌套结构上的性能。现在每个活潜影箱**独立 BFS**，复杂度是 O(内部槽位数)，不随嵌套层数指数增长。
+
+嵌套深度限制仍然需要，但不再是性能炸弹——4 层嵌套 = 4 次独立的 processContext，不是 4^N。
+
+### 6.2 ContainerFluidData key 迁移
+
+**不需要改了！** 每个活潜影箱有自己的 `ContainerFluidData`，key 仍然是 `int`。边界水流通过"边界水源"机制传递——就像原版水流从相邻区块流入时，边界方块充当"虚拟水源"。
+
+### 6.3 不规则逻辑空间
+
+**不需要全局逻辑空间了！** 每个活潜影箱是 9×3 的规则网格，`getNeighbors()` 完全复用现有的 `ContainerContext.getNeighbors()`。边界邻居通过边界交换补充。
+
+"看起来连在一起但逻辑上不相邻"的问题也不存在了——如果两个活潜影箱在父容器中不相邻，它们就不交换边界。
+
+### 6.4 边界穿透一致性
+
+三种穿透统一为一种机制：**边界交换**（`BoundaryExchanger` 接口）。
+
+### 6.5 DataComponent 一致性
+
+`processContext(内部)` 修改的是活潜影箱 ItemStack 的 DataComponent。修改完后，`syncSlotToClients(parentSlot, shulkerStack)` 同步整个活潜影箱到客户端——和现有活箱子/活末影箱的逻辑完全一样。
+
+---
+
+## 7. 仍需深入的问题
+
+### 7.1 边界交换的时序
 
 ```
-3D 点击位置 (hitX, hitY, hitZ)
-  ↓ 物品展示框朝向 + 位置
-地图 UV (0.0~1.0, 0.0~1.0)
-  ↓ × 128
-地图像素 (0~127, 0~127)
-  ↓ MapItemSavedData 中心 + 缩放
-世界坐标 (worldX, worldZ)
+tick 开始：
+  A 内部演化 → A 的边界信号变了
+  B 内部演化 → B 的边界信号变了
+  边界交换 → A 和 B 互相看到对方的新边界
+  但此时 A 和 B 的内部已经演化完了！
 ```
+
+边界信号的变化要**等到下一个 tick 才能传播到内部**。这和原版 Minecraft 的行为一致——跨区块的红石信号也有 1 tick 延迟。
+
+如果要求"同一个 tick 内边界信号立即传播"，就需要迭代直到收敛，但这可能导致无限循环（振荡电路）。
+
+**建议**：接受 1 tick 延迟，和原版行为一致。
+
+### 7.2 水流跨边界的"虚拟水源"
+
+A 的边界槽位有水位 3，B 的对应边界槽位是空的。B 应该把 A 的边界当作"水位 4 的水源"（水流每格 +1 level，A 边界 level=3 意味着从 A 的水源流了 3 格，到 B 边界就是第 4 格）。
+
+但 `ContainerFluidData` 目前只支持"槽位是水源"或"槽位是流动水"。需要在边界槽位注入"虚拟水源"——一个 level=4 的水源。
+
+这需要对 `ContainerFluidData` 做一个小扩展：支持**外部注入的边界水源**。但这是增量修改，不是全量改造。
+
+### 7.3 活漏斗跨边界传输的目标解析
+
+活漏斗在 A 的右边界，输出方向是右。它的输出目标不在 A 内部，而在 B 的左边界。
+
+这需要一个解析器来解析跨边界的目标槽位。但这个解析器只需要在**活漏斗 tick 时**使用，不需要全局构建。
+
+### 7.4 父容器 ↔ 活潜影箱的信号传递
+
+上面讨论的是活潜影箱之间的边界交换。但还有另一种场景：
+
+```
+父容器槽位 5：活红石粉（信号 12）
+父容器槽位 6：活潜影箱 S
+
+S 的左边界 = S 内部槽位 0, 9, 18
+信号从槽位 5 → S 的左边界 → S 内部传播
+```
+
+这需要 `BoundaryExchanger` 也支持"父容器→活潜影箱"和"活潜影箱→父容器"的边界交换。
+
+---
+
+## 8. 新旧方案对比
+
+| | 旧方案（全局视图） | 新方案（局部演化 + 边界交换） |
+|---|---|---|
+| 核心抽象 | `ShulkerLogicalSpace`（全局扁平数组） | `BoundaryExchanger`（边界信息交换接口） |
+| ContainerFluidData | key int→long，全量改造 | 不改 key，新增边界水源注入 |
+| ContainerStressData | 逻辑坐标力矩 | 不改，各活潜影箱独立计算 |
+| ContainerRedstoneData | 全局逻辑空间邻居 | 不改，边界信号通过交换传递 |
+| 递归 tick 性能 | 指数风险 | 线性，每层独立 |
+| 不规则形状 | 需要处理空洞 | 不存在，每个都是 9×3 |
+| 新增文件 | 5 个 | 2-3 个 |
+| 改造现有文件 | 5 个 | 1-2 个 |
+
+**复杂度从"重构地基"降到了"加一扇门"**。
+
+活潜影箱不再是"把多个房间拆成一个大房间"，而是"每个房间自己运转，门打开时交换信息"。这和现实中的芯片封装是一致的——芯片内部独立工作，引脚是和外部交换信息的接口。
+
+---
+
+## 9. 2D↔3D 桥接：世界中的活潜影盒
+
+> 活潜影盒放在世界里，它的 6 个面就是引脚，内部 9×3 网格就是芯片的逻辑层。
+> 原版红石原件连到引脚上，就像焊在 PCB 上的走线。
+
+### 9.1 面到边的映射
+
+活潜影盒有朝向（facing），9×3 网格有 4 条边。根据朝向，4 条边映射到方块的 4 个面：
+
+**朝上（facing=UP）时**——从上方俯视网格：
+
+```
+        北面(north)
+     ┌─────────────┐
+     │ [0] [1]...[8]│  ← top edge → 北面引脚
+西面 │ [9] ...  [17]│ 东面
+(west)│[18]...  [26]│ (east)
+     └─────────────┘
+        南面(south)
+        ↑ bottom edge → 南面引脚
+```
+
+| 网格边 | 对应方块面 | 槽位 |
+|-------|----------|------|
+| top edge (row 0) | 北面 | 0, 1, 2, 3, 4, 5, 6, 7, 8 |
+| bottom edge (row 2) | 南面 | 18, 19, 20, 21, 22, 23, 24, 25, 26 |
+| left edge (col 0) | 西面 | 0, 9, 18 |
+| right edge (col 8) | 东面 | 8, 17, 26 |
+
+**朝东（facing=EAST）时**——从东面看网格：
+
+| 网格边 | 对应方块面 |
+|-------|----------|
+| top edge | 上面(UP) |
+| bottom edge | 下面(DOWN) |
+| left edge | 北面 |
+| right edge | 南面 |
+
+朝向变了，引脚的物理位置跟着变——和现实芯片封装一样，同一个裸片(die)可以有不同的封装(package)和引脚排列。
+
+### 9.2 三个层级的逻辑空间
+
+```
+层级 1：容器内（背包/箱子）
+  - 活潜影盒在 9×6 的背包网格中相邻
+  - 边界交换：A 的右边界 ↔ B 的左边界
+  - 纯 2D，无 3D 交互
+
+层级 2：世界中相邻
+  - 活潜影盒方块在世界中相邻、同朝向
+  - 边界交换：A 的东面引脚 ↔ B 的西面引脚
+  - 仍然是 2D↔2D，但物理位置在 3D 世界
+
+层级 3：2D↔3D 桥接（最惊艳的部分）
+  - 活潜影盒的引脚面 ↔ 原版红石原件
+  - 信号从 3D 世界流入 2D 逻辑空间
+  - 信号从 2D 逻辑空间输出到 3D 世界
+```
+
+### 9.3 2D↔3D 桥接的具体机制
+
+**输入：3D → 2D**
+
+原版红石原件向活潜影盒的某个面提供信号：
 
 ```java
-Vec3 hitPos = hitResult.getLocation();
-BlockPos framePos = frameEntity.getBlockPos();
-Direction facing = frameEntity.getDirection();
-
-// 计算点击位置在 frame 面上的 UV
-double u = 0, v = 0;
-switch (facing) {
-    case NORTH -> { u = hitPos.x - framePos.getX();     v = 1 - (hitPos.y - framePos.getY()); }
-    case SOUTH -> { u = 1 - (hitPos.x - framePos.getX()); v = 1 - (hitPos.y - framePos.getY()); }
-    case EAST  -> { u = hitPos.z - framePos.getZ();     v = 1 - (hitPos.y - framePos.getY()); }
-    case WEST  -> { u = 1 - (hitPos.z - framePos.getZ()); v = 1 - (hitPos.y - framePos.getY()); }
-    case DOWN  -> { u = hitPos.x - framePos.getX();     v = hitPos.z - framePos.getZ(); }
-    case UP    -> { u = hitPos.x - framePos.getX();     v = 1 - (hitPos.z - framePos.getZ()); }
+// LivingShulkerBoxBlockEntity.tick() 中
+for (Direction dir : Direction.values()) {
+    int vanillaSignal = level.getSignal(worldPos.relative(dir), dir);
+    if (vanillaSignal > 0) {
+        int[] boundarySlots = getBoundarySlots(facing, dir);
+        for (int slot : boundarySlots) {
+            innerRedstoneData.setBoundaryInput(slot, vanillaSignal);
+        }
+    }
 }
-
-// frame 内的地图区域: 0.0625~0.9375（即 1/16 ~ 15/16）
-double mapU = (u - 0.0625) / 0.875;
-double mapV = (v - 0.0625) / 0.875;
-
-if (mapU < 0 || mapU > 1 || mapV < 0 || mapV > 1) {
-    return; // 点击在 frame 边框上
-}
-
-// 地图像素坐标
-int mapX = (int)(mapU * 128);
-int mapY = (int)(mapV * 128);
-
-// 世界坐标
-MapItemSavedData mapData = MapItemSavedData.getMapData(mapId, level);
-int scale = 1 << mapData.scale; // 1, 2, 4, 8, 16
-int worldX = mapData.centerX + (mapX - 64) * scale;
-int worldZ = mapData.centerZ + (mapY - 64) * scale;
 ```
 
-### GUI 路线：屏幕像素 → 世界坐标
+**输出：2D → 3D**
 
-类似展示框，但输入是 `(screenX, screenY)` 而非 `hitVec`，需要先换算到槽位内的相对坐标。
-
----
-
-## 六、旗帜标记传送
-
-### 原版机制
-
-原版 `MapItemSavedData` 中已存储旗帜标记：
+活潜影盒的某个面的引脚输出信号给原版红石原件：
 
 ```java
-Map<String, MapBanner> bannerMarkers;  // "颜色@位置" → 旗帜数据
-
-record MapBanner(BlockPos pos, DyeColor color, Component name) {}
-```
-
-数据已经在了，只需要做命中检测。
-
-### 旗帜命中检测
-
-```java
-// 旗帜的世界坐标 → 地图像素坐标
-int bannerPx = (banner.pos().getX() - mapData.centerX) / scale + 64;
-int bannerPy = (banner.pos().getZ() - mapData.centerZ) / scale + 64;
-
-// 命中半径 3 像素
-int dx = clickPx - bannerPx;
-int dy = clickPy - bannerPy;
-if (dx * dx + dy * dy <= 3 * 3) {
-    // 命中旗帜！传送到旗帜位置
-    targetX = banner.pos().getX() + 0.5;
-    targetZ = banner.pos().getZ() + 0.5;
+// LivingShulkerBoxBlock 实现 RedstoneSupplier
+@Override
+public int getSignal(BlockState state, BlockGetter level, BlockPos pos, Direction dir) {
+    LivingShulkerBoxBlockEntity be = ...;
+    int[] boundarySlots = getBoundarySlots(be.getFacing(), dir);
+    int maxSignal = 0;
+    for (int slot : boundarySlots) {
+        maxSignal = Math.max(maxSignal, be.getInnerRedstoneData().getSignal(slot));
+    }
+    return maxSignal;
 }
 ```
 
-### 优先级
+### 9.4 世界中相邻活潜影盒的边界交换
 
-```
-点击位置命中检测优先级:
-  1. 旗帜标记（最优先）
-  2. 普通地图区域（兜底）
-```
-
----
-
-## 七、传送后处理
-
-```
-传送成功后:
-  1. 播放末影珍珠传送粒子效果
-  2. 播放传送音效
-  3. 造成少量摔落伤害（还原原版末影珍珠体验）
-  4. 消耗活末影珍珠（count - 1 或耐久 - 1）
-  5. 设置冷却（防止连续传送）
-  6. 命中旗帜时显示 ActionBar: "已传送到 {旗帜名称}"
-```
-
----
-
-## 八、传送三模式总结
-
-| 模式 | 触发方式 | 传送目标 |
-|------|---------|---------|
-| GUI 右键 | 容器界面中右键活地图 | 点击位置对应的世界坐标 |
-| 展示框右键 | 右键墙上活地图展示框 | 点击位置对应的世界坐标 |
-| 旗帜标记 | 右键活地图上的旗帜标记 | 旗帜所在的世界坐标 |
-
-三个模式共用同一套坐标换算核心逻辑，只是入口不同。旗帜标记模式是展示框模式的子集，多了旗帜命中检测。
-
----
-
-## 九、GUI vs 物品展示框 对比
-
-| 维度 | GUI 槽位 | 物品展示框 |
-|------|---------|-----------|
-| 地图渲染 | 需要 Mixin 劫持 | 原版自动支持 |
-| 点击精度 | GUI → 世界坐标换算 | 3D 射线精确命中 |
-| 3×3 扩展 | 需要跨槽位渲染 | 放多个展示框即可 |
-| 多人可见 | 仅自己 | 所有人都能看到 |
-| 实现难度 | 🔴 高 | 🟡 中 |
-
----
-
-## 十、补充设计细节
-
-### 展示框碰撞箱扩展
-
-原版展示框碰撞箱比方块面小一圈，边缘点击会命中背后方块。
-活地图展示框需要碰撞箱覆盖整个方块面，确保边缘点击也能触发 `interactAt()`。
-
-**实现**：Mixin `ItemFrame`，当展示框内是活地图时，返回覆盖整个方块面的碰撞箱（厚度 1/16，宽高 1×1）。
-
-### 展示框朝向与地图旋转
-
-展示框可挂在 6 个方向（NORTH/SOUTH/EAST/WEST/UP/DOWN），地图可在展示框内旋转（0~3，每次顺时针 90°）。
-
-**朝向**：6 个方向的 UV 换算见第四章坐标换算核心逻辑。
-
-**旋转**：`ItemFrame.getRotation()` 返回 0~3，UV 需要对应变换：
-
-```
-rotation 0 (0°):   (u, v) → (u, v)           不变
-rotation 1 (90°):  (u, v) → (v, 1-u)         顺时针 90°
-rotation 2 (180°): (u, v) → (1-u, 1-v)       180°
-rotation 3 (270°): (u, v) → (1-v, u)         顺时针 270°
-```
-
-**坐标换算完整流程**：
-```
-hitVec → 根据朝向计算 UV (u, v) → 根据旋转变换 UV → × 128 → 地图像素
-  → 检查 colors[index] != 0（未探索不传送）
-  → 旗帜命中检测
-  → 像素→世界坐标换算
-```
-
-### 未探索区域不传送
-
-`MapItemSavedData.colors` 是 `byte[128×128]`，未探索的像素值为 `0`。
+和容器内完全相同的机制，只是邻居检测方式不同：
 
 ```java
-boolean isExplored = mapData.colors[mapY * 128 + mapX] != 0;
+// 容器内：通过槽位索引判断相邻
+boolean isAdjacent = (slotA + 1 == slotB);
+
+// 世界中：通过方块坐标和朝向判断相邻
+boolean isAdjacent = worldPosA.relative(dir) == worldPosB
+                     && facingA == facingB;
 ```
 
-传送逻辑：点击位置换算为地图像素后，先检查 `colors[index] != 0`，未探索则不传送（可提示"此处未探索"）。
+| 场景 | 查找邻居方式 | BoundaryExchanger 实现 |
+|------|------------|---------------------|
+| 容器内 | 槽位 ±1 / ±width | `ContainerBoundaryExchanger` |
+| 世界中 | BlockPos + Direction | `WorldBoundaryExchanger` |
 
-### MapBanner 数据结构
+### 9.5 这意味着什么
+
+**活潜影盒 = 可编程逻辑芯片**
+
+```
+输入引脚（原版红石）→ [2D 逻辑空间（红石+水流+中继器+比较器）] → 输出引脚（原版红石）
+```
+
+在活潜影盒内部搭建任意红石电路，然后把它当做黑盒原件放到 3D 世界中。外部只看到 6 个面的输入输出信号。
+
+**多个活潜影盒 = 多芯片系统**
+
+```
+[芯片A] ←边界交换→ [芯片B] ←边界交换→ [芯片C]
+  ↑                    ↑
+原版红石             原版红石
+```
+
+**嵌套活潜影盒 = 芯片中的芯片（芯核封装）**
+
+**密度提升 27 倍**——一个活潜影盒 = 27 个逻辑槽位 = 27 个"方块"的功能，但只占 1 个方块的空间。
+
+### 9.6 实现关键点
+
+**LivingShulkerBoxBlockEntity**：
 
 ```java
-public record MapBanner(BlockPos pos, DyeColor color, Component name) {}
+public class LivingShulkerBoxBlockEntity extends BlockEntity {
+    private ItemStack shulkerStack; // 包含 DataComponent 的活潜影盒物品
+
+    // 每 tick：
+    // 1. 读取 3D 世界各面的红石输入 → 注入边界
+    // 2. processContext(内部) → 内部演化
+    // 3. 与相邻活潜影盒边界交换
+    // 4. 各面红石输出 → 通知原版红石更新
+}
 ```
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `pos` | BlockPos | 旗帜方块的精确世界坐标 |
-| `color` | DyeColor | 旗帜颜色（16 种） |
-| `name` | Component | 旗帜自定义名称（铁砧命名），未命名时为空 |
+**朝向与引脚映射**：
 
-**关键**：`pos` 直接是世界坐标，旗帜命中后可直接 `banner.pos() + 0.5` 作为传送目标，不需要像素→世界坐标换算。
+```java
+// 给定活潜影盒朝向和方块面，返回对应的边界槽位数组
+static int[] getBoundarySlots(Direction facing, Direction face) {
+    // facing=UP, face=EAST → right edge → {8, 17, 26}
+    // facing=UP, face=NORTH → top edge → {0, 1, 2, 3, 4, 5, 6, 7, 8}
+    // facing=EAST, face=UP → top edge → {0, 1, 2, 3, 4, 5, 6, 7, 8}
+}
+```
+
+**红石双向传播**：
+- 原版红石是拉取式的——红石粉主动查询邻居信号强度
+- 活潜影盒需实现 `BlockState.getSignal()` / `getDirectSignal()`
+- 同时需在 tick 时主动查询周围原版红石变化，作为边界输入
+- 可通过 `Block.neighborChanged()` 触发，或 tick 时主动查询
+
+---
+
+## 10. 待继续探讨
+
+- [x] 边界交换的时序：1 tick 延迟，仿照原版跨区块行为，完全可接受
+- [x] 水流跨边界：直接 `setFlowLevel(边界, aLevel+1)`，不需要虚拟水源概念；暂不实现复杂水流穿透
+- [ ] 父容器 ↔ 活潜影盒的边界交换细节s
+- [ ] BoundaryExchanger 的实现：如何查找相邻活潜影盒
+- [ ] 活漏斗跨边界传输的具体流程
+- [ ] 边界交换后是否需要局部重算（只重算边界附近的槽位）
+- [ ] 嵌套活潜影盒的边界交换：A 内有 B，B 的边界交换是否需要穿透 A 的边界
+- [ ] 世界中活潜影盒的 BlockEntity tick 注册方式
+- [ ] 朝向与引脚映射的完整 6 种 facing 枚举
+- [ ] 原版比较器能否读取活潜影盒的信号（类似读取容器内容物）
+- [ ] 活潜影盒内部的红石信号变化如何通知 3D 世界更新（updateNeighbors）
+- [ ] 对 7.md 的更新：用新方案替换旧方案

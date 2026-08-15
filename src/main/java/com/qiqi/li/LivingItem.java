@@ -193,19 +193,18 @@ public class LivingItem {
         var chunkSet = cache.getCachedChunks(level.dimension());
         if (chunkSet.isEmpty()) return;
 
-        // 收集需要移除的区块，遍历结束后统一移除，避免 ConcurrentModification
         var toRemove = new java.util.ArrayList<ChunkPos>();
 
         long startNanos = System.nanoTime();
         int processedCount = 0;
 
         for (var chunkPos : chunkSet) {
-            if (!level.hasChunk(chunkPos.x, chunkPos.z)) {
+            var chunk = level.getChunkSource().getChunkNow(chunkPos.x, chunkPos.z);
+            if (chunk == null) {
                 toRemove.add(chunkPos);
                 continue;
             }
 
-            var chunk = level.getChunk(chunkPos.x, chunkPos.z);
             boolean hasContainer = false;
             for (var be : chunk.getBlockEntities().values()) {
                 var pos = be.getBlockPos();

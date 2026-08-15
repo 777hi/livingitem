@@ -106,8 +106,9 @@ public class ContainerChunkCache {
 
     private void rescanChunk(ServerLevel level, BlockPos pos) {
         ChunkPos cPos = new ChunkPos(pos);
-        if (level.hasChunk(cPos.x, cPos.z)) {
-            scanChunkForContainers(level, level.getChunk(cPos.x, cPos.z));
+        var chunk = level.getChunkSource().getChunkNow(cPos.x, cPos.z);
+        if (chunk != null) {
+            scanChunkForContainers(level, chunk);
         }
     }
 

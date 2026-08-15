@@ -10,7 +10,6 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.MapItem;
-import net.minecraft.world.level.saveddata.maps.MapDecoration;
 import net.minecraft.world.level.saveddata.maps.MapId;
 import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
 import org.spongepowered.asm.mixin.Final;
@@ -49,10 +48,9 @@ public class ItemInHandRendererMixin {
 
         if (targetMapX < 0 || targetMapX >= MapCoordHelper.MAP_SIZE || targetMapY < 0 || targetMapY >= MapCoordHelper.MAP_SIZE) return;
 
-        boolean bannerHit = MapCoordHelper.isBannerDecorationHit(mapData, targetMapX, targetMapY);
-        MapDecoration targetPoint = !bannerHit ? MapCoordHelper.findTargetPointHit(mapData, targetMapX, targetMapY) : null;
+        boolean decoHit = MapCoordHelper.isTeleportableDecorationHit(mapData, targetMapX, targetMapY);
         boolean explored = MapCoordHelper.isExplored(mapData, targetMapX, targetMapY);
 
-        LivingMapTargetRenderer.renderMarker(this.minecraft, buffer, poseStack, targetMapX, targetMapY, explored, bannerHit, targetPoint != null, packedLight);
+        LivingMapTargetRenderer.renderMarker(this.minecraft, buffer, poseStack, targetMapX, targetMapY, explored, decoHit, packedLight);
     }
 }

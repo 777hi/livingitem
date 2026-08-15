@@ -1,7 +1,7 @@
 # Living Map & Living Ender Pearl (活地图 & 活末影珍珠) 技术文档
 
-> **文档版本**: 2026.08 v40  
-> **最后更新**: 2026-08-11  
+> **文档版本**: 2026.08 v42  
+> **最后更新**: 2026-08-14  
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -262,7 +262,8 @@ private static int findSafeY(LevelChunk chunk, BlockPos pos) {
    → 旗帜本身需要两格空间，位置安全
    → 消耗1个活末影珍珠（生存模式）
 
-2. 藏宝图红色大叉叉命中（5像素半径内）
+2. 可传送图标命中（5像素半径内）
+   → 支持33种图标类型（详见下方"可传送图标类型"）
    → 优先从 MAP_DECORATIONS 组件读取精确世界坐标
    → 组件缺失时回退到像素→世界坐标转换
    → 传送到目标位置的地表高度
@@ -277,6 +278,20 @@ private static int findSafeY(LevelChunk chunk, BlockPos pos) {
    → 生存模式 + 背包珍珠总数 ≥ 16：消耗16个活末影珍珠（从整个背包凑齐），传送到目标位置
    → 生存模式 + 背包珍珠总数 < 16：拒绝传送，提示"此区域尚未探索，需要一组（16个）活末影珍珠才能传送"
 ```
+
+**可传送图标类型（33种）**：
+
+| 类别 | 图标类型 | 传送目标 | 获取方式 |
+|------|---------|---------|---------|
+| 玩家 | `player` | 该玩家实时位置 | 地图范围内其他玩家自动出现 |
+| 物品帧 | `frame` | 物品帧方块位置 | 地图放入物品帧自动出现 |
+| 自定义标记 | `red_marker`, `blue_marker` | 命令设置的固定坐标 | `/give` + 数据包 |
+| 目标标记 | `target_x`, `target_point`, `red_x` | 命令/DataComponent设置的坐标 | 沉船宝箱、命令、数据包 |
+| 结构 | `mansion`, `monument`, `jungle_temple`, `swamp_hut`, `trial_chambers` | 结构生成位置 | 制图师村民交易 |
+| 村庄 | `village_desert`, `village_plains`, `village_savanna`, `village_snowy`, `village_taiga` | 村庄生成位置 | 制图师村民交易 |
+| 旗帜 | `banner_white` ~ `banner_black`（16色） | 旗帜方块精确 BlockPos | 地图范围内放置旗帜自动出现 |
+
+**不可传送图标（2种）**：`player_off_map`、`player_off_limits`——坐标被截断到地图边缘（±128/127），不是真实位置。
 
 **未探索区域传送的设计意图**：活空地图远程开图创建的地图，其目标区域在地图上是未探索的。消耗一组珍珠作为"强行撕裂空间"的代价，既保留了传送能力，又设置了合理的门槛。消耗时从整个背包凑齐16个（`LivingEnderPearlFunction.consumeFromInventory`），不要求单个栈满16。
 
@@ -308,14 +323,16 @@ private static int findSafeY(LevelChunk chunk, BlockPos pos) {
 
 旗帜传送使用 `MapBanner.pos()` 获取精确世界坐标，直接传送到旗帜所在位置（`bannerPos.getY() + 1.0`），不走 `findSafeY` 地表高度。这样旗帜在地底等位置时也能精准到达。
 
-### 4.6 藏宝图红色大叉叉传送
+### 4.6 可传送图标传送
 
-藏宝图（Explorer Map）的红色大叉叉是 `MapDecorationType` 注册名为 `minecraft:red_x` 的装饰。传送坐标获取分两步：
+除旗帜外，所有可传送图标（33种中的非旗帜31种）通过 `MapCoordHelper.findTargetPointHit()` 检测，传送坐标获取分两步：
 
-1. **优先路径**：从物品的 `DataComponents.MAP_DECORATIONS` 组件读取 `red_x` 条目的精确世界坐标（`entry.x()`, `entry.z()`）
+1. **优先路径**：从物品的 `DataComponents.MAP_DECORATIONS` 组件读取匹配条目的精确世界坐标（`entry.x()`, `entry.z()`）
 2. **回退路径**：组件缺失时，从 `MapDecoration` 的像素坐标反推世界坐标（有缩放精度损失）
 
-> **注意**：`red_x` 装饰的 `explorationMapElement()` 返回 `false`，不能用此方法过滤。
+**图标判定逻辑**：`MapCoordHelper.isTeleportableType(decoration)` 检查 decoration 的注册名路径是否在 `TELEPORTABLE_DECORATION_PATHS` 常量集中。该集合包含 33 个路径字符串，排除了 `player_off_map` 和 `player_off_limits`（坐标被截断到地图边缘，不是真实位置）。
+
+> **注意**：`red_x` 等图标的 `explorationMapElement()` 返回 `false`，不能用此方法过滤。必须使用注册名精确匹配。
 
 ### 4.7 传送参数
 
@@ -344,16 +361,15 @@ GUI Overlay 在屏幕2D空间渲染，而地图在3D空间渲染（有透视变�
 
 使用原版准心纹理（`minecraft:hud/crosshair`）通过 `GuiSpriteManager` 获取 sprite，以 `RenderType.text()` 渲染到地图上。
 
-**颜色四档**：
+**颜色三档**：
 
 | 颜色 | 条件 | 说明 |
 |------|------|------|
-| 🟡 金色 `0xFFFFAA00` | 准心命中旗帜 | 旗帜可精准传送 |
-| 🔵 青色 `0xFF00DDFF` | 准心命中红色大叉叉 | 藏宝图宝箱位置 |
+| 🟠 橙色 `0xFFFFAA00` | 准心命中任意可传送图标 | 旗帜/结构/村庄/红X/玩家等 |
 | 🟢 绿色 `0xFF00FF00` | 已探索区域 | 可传送 |
 | 🔴 红色 `0xFFFF3333` | 未探索区域 | 不可传送 |
 
-命中旗帜或红色大叉叉时，准心稍大（halfSize = 5.0 vs 4.0），提供视觉"锁定"反馈。
+命中可传送图标时，准心稍大（halfSize = 5.0 vs 4.0），提供视觉"锁定"反馈。
 
 **渲染参数**：
 - 纹理来源：`GuiSpriteManager.getSprite("minecraft:hud/crosshair")`
@@ -361,19 +377,19 @@ GUI Overlay 在屏幕2D空间渲染，而地图在3D空间渲染（有透视变�
 - 顶点格式：`addVertex().setColor(r,g,b,a).setUv(u,v).setLight(packedLight)`
 - 渲染层级：z = -0.03（略低于地图纹理，避免 z-fighting）
 
-### 5.3 客户端旗帜/宝藏检测
+### 5.3 客户端图标检测
 
 客户端无法使用 `mapData.getBanners()`（数据不传输），改用 `mapData.getDecorations()` 检测：
 
 | 检测方法 | 数据来源 | 过滤条件 | 用途 |
 |---------|---------|---------|------|
-| `isBannerDecorationHit` | `getDecorations()` | 注册名 `startsWith("banner_")` | 客户端准心变色 |
-| `findTargetPointHit` | `getDecorations()` | 注册名 `equals("red_x")` | 客户端准心变色 |
-| `findBannerHit` | `getBanners()` | 遍历所有 MapBanner | 服务端传送（精确世界坐标） |
+| `isTeleportableDecorationHit` | `getDecorations()` | 注册名在 `TELEPORTABLE_DECORATION_PATHS` 中 | 客户端准心变色 |
+| `findTargetPointHit` | `getDecorations()` | 同上，返回5像素半径内最近的匹配 decoration | 服务端传送 |
+| `findBannerHit` | `getBanners()` | 遍历所有 MapBanner | 服务端传送（精确世界坐标，优先级最高） |
+
+**`TELEPORTABLE_DECORATION_PATHS` 常量集**：包含 33 个注册名路径字符串，覆盖所有有真实世界坐标的图标类型。排除了 `player_off_map` 和 `player_off_limits`（坐标被截断到地图边缘）。
 
 **旗帜注册名格式**：`minecraft:banner_<颜色>`（如 `banner_pink`、`banner_white`），注意是 `banner_` 前缀而非 `_banner` 后缀。
-
-**红色大叉叉注册名**：`minecraft:red_x`，注意 `explorationMapElement()` 返回 `false`，不能用此方法过滤。
 
 **客户端旗帜检测需要传入正确的 centerX/centerZ**：客户端 `mapData.centerX/centerZ` 为 0（不准确），必须使用 `LivingMapClientCache` 中的元数据。`findBannerHit` 提供了重载版本 `findBannerHit(mapData, mapX, mapY, centerX, centerZ)` 供客户端使用。
 
@@ -387,10 +403,9 @@ private void renderLivingMapTargetMarker(PoseStack poseStack, MultiBufferSource 
     // 3. 从 LivingMapClientCache 获取元数据
     // 4. MapCoordHelper.calcClientTarget → 目标像素坐标
     // 5. 检查是否在地图范围内
-    // 6. MapCoordHelper.isBannerDecorationHit → 旗帜命中检测
-    // 7. MapCoordHelper.findTargetPointHit → 红色大叉叉命中检测
-    // 8. MapCoordHelper.isExplored → 已探索检测
-    // 9. LivingMapTargetRenderer.renderMarker → 原版准心纹理 + 四色着色
+    // 6. MapCoordHelper.isTeleportableDecorationHit → 可传送图标命中检测
+    // 7. MapCoordHelper.isExplored → 已探索检测
+    // 8. LivingMapTargetRenderer.renderMarker → 原版准心纹理 + 三色着色
 }
 ```
 
@@ -696,12 +711,11 @@ int mapY = MapCoordHelper.uvToMapY(uv.v());
 
 ### 9.4 光标样式
 
-与手持地图标记完全一致：原版准心纹理 + 四色着色 + z=-0.03 偏移。
+与手持地图标记完全一致：原版准心纹理 + 三色着色 + z=-0.03 偏移。
 
 | 颜色 | 条件 | 说明 |
 |------|------|------|
-| 🟡 金色 | 命中旗帜 | 旗帜可精准传送 |
-| 🔵 青色 | 命中红色大叉叉 | 藏宝图宝箱位置 |
+| 🟠 橙色 | 命中任意可传送图标 | 旗帜/结构/村庄/红X/玩家等 |
 | 🟢 绿色 | 已探索区域 | 可传送 |
 | 🔴 红色 | 未探索区域 | 不可传送 |
 
@@ -718,8 +732,8 @@ public class MapRendererMixin {
         // 3. 确认：展示框地图ID == 当前渲染地图ID？
         // 4. hitVec → hitVecToMapPixel → 像素坐标
         // 5. 像素范围检查 [0, 128)
-        // 6. 旗帜/宝藏/已探索 命中检测
-        // 7. renderMarker → 原版准心纹理 + 四色着色
+        // 6. 可传送图标/已探索 命中检测
+        // 7. renderMarker → 原版准心纹理 + 三色着色
     }
 }
 ```
@@ -2052,3 +2066,58 @@ private static ChunkLoadResult ensureChunkLoaded(ServerLevel level, double x, do
 ```
 
 同时修复了 `destY = safeY + 1.0` 的 bug：`findSafeY` 返回的已经是玩家脚底 Y 坐标（`chunk.getHeight() + 1`），不需要再加 1。
+
+### v40 → v41：可传送图标扩展至33种 + 准心颜色统一
+
+**问题1**：传送仅支持旗帜（`banner_*`）和红色大叉叉（`red_x`）两种图标，原版地图的33种图标（结构、村庄、玩家、物品帧等）均不可传送。
+
+**修复1**：`MapCoordHelper` 新增 `TELEPORTABLE_DECORATION_PATHS` 常量集（33个注册名路径），新增 `isTeleportableType(decoration)` 和 `isTeleportableEntry(entry)` 判定方法，替换原来的 `isRedXType`/`isRedXEntry`/`isBannerDecorationHit`。`findTargetPointHit` 现在匹配所有33种可传送图标。
+
+**可传送图标（33种）**：
+
+| 类别 | 图标 | 数量 |
+|------|------|------|
+| 通用 | player, frame, red_marker, blue_marker, target_x, target_point, red_x | 7 |
+| 结构 | mansion, monument, jungle_temple, swamp_hut, trial_chambers | 5 |
+| 村庄 | village_desert, village_plains, village_savanna, village_snowy, village_taiga | 5 |
+| 旗帜 | banner_white ~ banner_black | 16 |
+
+**不可传送图标（2种）**：`player_off_map`、`player_off_limits`——坐标被 `MapItemSavedData` 截断到地图边缘（±128/127），不是真实世界坐标。
+
+**问题2**：准心颜色有4档（金色=旗帜、青色=红X、绿色=已探索、红色=未探索），旗帜和红X用不同颜色区分，但扩展到33种图标后区分颜色意义不大。
+
+**修复2**：合并为3档——橙色（`0xFFFFAA00`，命中任意可传送图标）、绿色（已探索）、红色（未探索）。`LivingMapTargetRenderer` 的 `bannerHit`+`targetPointHit` 参数合并为单个 `decoHit` 参数，`COLOR_BANNER`+`COLOR_TARGET` 合并为 `COLOR_DECO_HIT`。
+
+**修改文件**：
+
+| 文件 | 改动 |
+|------|------|
+| `MapCoordHelper` | 新增 `TELEPORTABLE_DECORATION_PATHS`、`isTeleportableType`、`isTeleportableEntry`、`isTeleportableDecorationHit`，替换 `isRedXType`/`isRedXEntry`/`isBannerDecorationHit` |
+| `LivingMapTargetRenderer` | 合并 `bannerHit`+`targetPointHit` → `decoHit`，合并 `COLOR_BANNER`+`COLOR_TARGET` → `COLOR_DECO_HIT` |
+| `MapRendererMixin` | 适配新 API，移除 `MapDecoration` import |
+| `ItemInHandRendererMixin` | 同上 |
+| `AbstractContainerScreenMixin` | 同上 |
+
+### v41 → v42：修复远距离传送后服务端卡死
+
+**问题**：远距离传送后，服务端完全卡死（无响应约30秒+）。日志显示 `processLevelContainers` 每 tick 耗时 200-600ms，区块数持续增长（46→106），且 `removed=0`（无区块被移除）。
+
+**根因**：`processLevelContainers` 中使用 `level.getChunk(chunkPos.x, chunkPos.z)` 获取区块。`getChunk` 是同步加载调用，会给区块添加 `TicketType.UNKNOWN`（1 tick 超时），阻止区块卸载。这导致：
+
+1. 传送后，旧区块应被卸载
+2. 但 `processLevelContainers` 每 tick 遍历缓存，对每个缓存区块调用 `getChunk`
+3. `getChunk` 重新加载旧区块（添加 1 tick ticket）
+4. 下一个 tick，ticket 过期，区块准备卸载
+5. 但 `processLevelContainers` 又调用 `getChunk` 重新加载
+6. **死循环**：旧区块永远无法卸载，缓存只增不减
+
+远距离传送后新区块大量加载加入缓存，旧区块又无法卸载移除，缓存暴涨，每 tick 处理时间超过 tick 预算（50ms），服务端越来越慢直至卡死。
+
+**修复**：将 `level.getChunk()` 替换为 `level.getChunkSource().getChunkNow()`。`getChunkNow` 只返回已加载的区块，不触发加载、不添加 ticket。区块未加载时返回 null，直接加入 `toRemove` 移除缓存。
+
+**修改文件**：
+
+| 文件 | 改动 |
+|------|------|
+| `LivingItem.processLevelContainers` | `level.getChunk()` → `level.getChunkSource().getChunkNow()`，`null` 时加入 `toRemove` |
+| `ContainerChunkCache.rescanChunk` | 同上，`level.hasChunk()` + `level.getChunk()` → `getChunkNow()` |
