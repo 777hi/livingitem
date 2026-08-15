@@ -5,7 +5,12 @@ import com.qiqi.li.living.function.LivingEnderPearlFunction;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.stats.Stats;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.EmptyMapItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.MapItem;
 import net.minecraft.world.level.saveddata.maps.MapId;
@@ -57,6 +62,8 @@ public final class LivingMapEventHandler {
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
         if (!(player.level() instanceof ServerLevel sourceLevel)) return;
 
+        if (handleLivingMapCreation(event, player, sourceLevel)) return;
+
         ItemStack mapStack = event.getItemStack();
         if (!LivingItemManager.isLivingMap(mapStack)) return;
 
@@ -98,5 +105,46 @@ public final class LivingMapEventHandler {
         ItemStack offHand = player.getOffhandItem();
         if (LivingItemManager.isLivingMap(offHand)) return offHand;
         return null;
+    }
+
+    private static boolean handleLivingMapCreation(PlayerInteractEvent.RightClickItem event,
+                                                    ServerPlayer player, ServerLevel level) {
+        ItemStack stack = event.getItemStack();
+        if (!(stack.getItem() instanceof EmptyMapItem)) return false;
+        if (!LivingItemManager.isLivingItem(stack)) return false;
+
+        InteractionHand hand = event.getHand();
+        int count = stack.getCount();
+        double distance = 128.0 * count * count;
+
+        float yaw = player.getYRot();
+        double dx = -Math.sin(Math.toRadians(yaw));
+        double dz = Math.cos(Math.toRadians(yaw));
+
+        double targetX = player.getX() + dx * distance;
+        double targetZ = player.getZ() + dz * distance;
+
+        int centerX = MapCoordHelper.calculateMapCenterCoord(targetX, 0);
+        int centerZ = MapCoordHelper.calculateMapCenterCoord(targetZ, 0);
+
+        stack.consume(1, player);
+        player.awardStat(Stats.ITEM_USED.get(stack.getItem()));
+        player.level().playSound(null, player, SoundEvents.UI_CARTOGRAPHY_TABLE_TAKE_RESULT, player.getSoundSource(), 1.0F, 1.0F);
+
+        ItemStack newMap = MapItem.create(level, centerX, centerZ, (byte)0, true, false);
+        LivingItemManager.setLiving(newMap, true);
+        MapItem.renderBiomePreviewMap(level, newMap);
+
+        if (stack.isEmpty()) {
+            player.setItemInHand(hand, newMap);
+        } else {
+            if (!player.getInventory().add(newMap.copy())) {
+                player.drop(newMap, false);
+            }
+        }
+
+        event.setCancellationResult(InteractionResult.sidedSuccess(level.isClientSide()));
+        event.setCanceled(true);
+        return true;
     }
 }
