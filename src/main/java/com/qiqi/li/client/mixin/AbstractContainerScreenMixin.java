@@ -1,5 +1,7 @@
 package com.qiqi.li.client.mixin;
 
+import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
 import com.qiqi.li.client.input.GuiInteractionHelper;
@@ -12,6 +14,9 @@ import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.domain.map.MapCoordHelper;
 import com.qiqi.li.living.domain.chest.LivingChestFunction;
 import com.qiqi.li.living.domain.map.LivingEnderPearlFunction;
+import com.qiqi.li.living.domain.water.LivingWaterBucketData;
+import com.qiqi.li.living.domain.water.LivingWaterBucketFunction;
+import com.qiqi.li.living.domain.water.WaterData;
 import com.qiqi.li.network.LivingChestAccessPacket;
 import com.qiqi.li.network.LivingMapGuiTeleportPacket;
 import net.minecraft.client.Minecraft;
@@ -21,12 +26,16 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
+import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.client.resources.MapDecorationTextureManager;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.Container;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
@@ -37,7 +46,10 @@ import net.minecraft.world.level.saveddata.maps.MapId;
 import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
 import net.neoforged.neoforge.network.PacketDistributor;
 import org.joml.Matrix4f;
+import org.joml.Quaternionf;
 import org.lwjgl.glfw.GLFW;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -53,6 +65,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Mixin(AbstractContainerScreen.class)
 public class AbstractContainerScreenMixin extends Screen {
@@ -404,4 +417,221 @@ public class AbstractContainerScreenMixin extends Screen {
         }
         return false;
     }
+
+    // ==================== Water Flow Rendering ====================
+
+    private static final Logger WATER_LOGGER = LoggerFactory.getLogger("LivingItem/WaterRender");
+
+    private static final ConcurrentHashMap<Class<?>, java.lang.reflect.Field[]> SLOT_WRAPPER_FIELD_CACHE = new ConcurrentHashMap<>();
+
+    private static final int DIR_DOWN = 0;
+    private static final int DIR_RIGHT = 1;
+    private static final int DIR_UP = 2;
+    private static final int DIR_LEFT = 3;
+
+    @Inject(method = "render", at = @At("TAIL"))
+    private void living_item$renderWaterFlow(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick,
+                                              CallbackInfo ci) {
+        AbstractContainerScreen<?> self = (AbstractContainerScreen<?>) (Object) this;
+        List<WaterBucketRender> buckets = living_item$collectWaterBuckets(self);
+        if (buckets.isEmpty()) return;
+
+        TextureAtlasSprite waterStill = Minecraft.getInstance()
+            .getTextureAtlas(TextureAtlas.LOCATION_BLOCKS)
+            .apply(ResourceLocation.withDefaultNamespace("block/water_still"));
+
+        TextureAtlasSprite waterFlow = Minecraft.getInstance()
+            .getTextureAtlas(TextureAtlas.LOCATION_BLOCKS)
+            .apply(ResourceLocation.withDefaultNamespace("block/water_flow"));
+
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        RenderSystem.setShader(GameRenderer::getPositionTexShader);
+        RenderSystem.setShaderTexture(0, TextureAtlas.LOCATION_BLOCKS);
+
+        for (WaterBucketRender bucket : buckets) {
+            for (Map.Entry<Integer, WaterCell> entry : bucket.cells().entrySet()) {
+                int menuSlotIndex = entry.getKey();
+                WaterCell cell = entry.getValue();
+
+                Slot slot = self.getMenu().getSlot(menuSlotIndex);
+                if (slot == null) continue;
+
+                int x = leftPos + slot.x;
+                int y = topPos + slot.y;
+
+                float alpha = cell.level() == 0 ? 0.55f : 0.25f + (1.0f - (float) cell.level() / 7.0f) * 0.3f;
+                RenderSystem.setShaderColor(0.25f, 0.5f, 1.0f, alpha);
+
+                if (cell.level() == 0) {
+                    guiGraphics.blit(x, y, 0, 16, 16, waterStill);
+                } else {
+                    float angleDeg = living_item$directionToRotation(cell.direction());
+
+                    PoseStack pose = guiGraphics.pose();
+                    pose.pushPose();
+                    pose.translate(x + 8, y + 8, 0);
+                    pose.mulPose(new Quaternionf().rotateZ((float) Math.toRadians(angleDeg)));
+                    pose.translate(-8, -8, 0);
+                    guiGraphics.blit(0, 0, 0, 16, 16, waterFlow);
+                    pose.popPose();
+                }
+            }
+        }
+
+        RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+        RenderSystem.disableBlend();
+    }
+
+    @Unique
+    private static float living_item$directionToRotation(int direction) {
+        return switch (direction) {
+            case DIR_DOWN -> 0.0f;
+            case DIR_RIGHT -> -90.0f;
+            case DIR_UP -> 180.0f;
+            case DIR_LEFT -> 90.0f;
+            default -> 0.0f;
+        };
+    }
+
+    @Unique
+    private List<WaterBucketRender> living_item$collectWaterBuckets(AbstractContainerScreen<?> screen) {
+        List<WaterBucketRender> buckets = new ArrayList<>();
+
+        for (Slot slot : screen.getMenu().slots) {
+            ItemStack stack = slot.getItem();
+            if (stack.isEmpty()) continue;
+            if (!LivingWaterBucketFunction.isLivingWaterBucket(stack)) continue;
+
+            LivingWaterBucketData bucketData = LivingItemManager.getWaterBucketData(stack);
+            WaterData water = bucketData.water();
+            if (water.equals(WaterData.EMPTY)) continue;
+
+            String flowStr = water.flow();
+            if (flowStr == null || flowStr.isEmpty()) continue;
+
+            int handlerWidth = water.width();
+
+            Map<Integer, int[]> handlerFlow = living_item$parseFlowData(flowStr);
+            if (handlerFlow.isEmpty()) continue;
+
+            Container bucketContainer = slot.container;
+            Map<Integer, Integer> handlerToMenuIndex = new HashMap<>();
+            for (int i = 0; i < screen.getMenu().slots.size(); i++) {
+                Slot s = screen.getMenu().slots.get(i);
+                if (s.container == bucketContainer) {
+                    int containerSlot = living_item$resolveContainerSlot(s);
+                    handlerToMenuIndex.put(containerSlot, i);
+                }
+            }
+
+            Map<Integer, WaterCell> cells = new HashMap<>();
+            int skippedCount = 0;
+            for (var entry : handlerFlow.entrySet()) {
+                int handlerSlot = entry.getKey();
+                int level = entry.getValue()[0];
+                int fromSlot = entry.getValue()[1];
+
+                Integer menuIndex = handlerToMenuIndex.get(handlerSlot);
+                if (menuIndex == null) {
+                    skippedCount++;
+                    continue;
+                }
+
+                int direction;
+                if (level == 0 || fromSlot < 0) {
+                    direction = DIR_DOWN;
+                } else {
+                    int dx = (handlerSlot % handlerWidth) - (fromSlot % handlerWidth);
+                    int dy = (handlerSlot / handlerWidth) - (fromSlot / handlerWidth);
+                    direction = living_item$cardinalDirection(dx, dy);
+                }
+
+                cells.put(menuIndex, new WaterCell(level, direction));
+            }
+
+            if (skippedCount > 0) {
+                WATER_LOGGER.debug("[WaterRender] Skipped {} flow entries", skippedCount);
+            }
+
+            if (!cells.isEmpty()) {
+                buckets.add(new WaterBucketRender(cells, handlerWidth));
+            }
+        }
+
+        return buckets;
+    }
+
+    @Unique
+    private static int living_item$resolveContainerSlot(Slot s) {
+        if (s instanceof SlotWrapperAccessor accessor) {
+            return accessor.getTarget().getContainerSlot();
+        }
+        if (s.getClass().getSimpleName().contains("SlotWrapper")) {
+            Slot target = living_item$resolveSlotWrapperTarget(s);
+            if (target != null) {
+                return target.getContainerSlot();
+            }
+            WATER_LOGGER.warn("[WaterRender] SlotWrapper detected but could NOT resolve target! class={}", s.getClass().getName());
+        }
+        return s.getContainerSlot();
+    }
+
+    @Unique
+    private static Slot living_item$resolveSlotWrapperTarget(Slot wrapper) {
+        try {
+            Class<?> wrapperClass = wrapper.getClass();
+            java.lang.reflect.Field[] fields = SLOT_WRAPPER_FIELD_CACHE.computeIfAbsent(wrapperClass, clazz -> {
+                List<java.lang.reflect.Field> slotFields = new ArrayList<>();
+                for (Class<?> c = clazz; c != null; c = c.getSuperclass()) {
+                    for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+                        if (Slot.class.isAssignableFrom(f.getType())) {
+                            f.setAccessible(true);
+                            slotFields.add(f);
+                        }
+                    }
+                }
+                return slotFields.toArray(new java.lang.reflect.Field[0]);
+            });
+            for (java.lang.reflect.Field f : fields) {
+                Slot target = (Slot) f.get(wrapper);
+                if (target != null && target != wrapper) {
+                    return target;
+                }
+            }
+        } catch (Exception e) {
+            WATER_LOGGER.error("[WaterRender] Reflection fallback failed for SlotWrapper", e);
+        }
+        return null;
+    }
+
+    @Unique
+    private static int living_item$cardinalDirection(int dx, int dy) {
+        if (Math.abs(dx) >= Math.abs(dy)) {
+            return dx >= 0 ? DIR_RIGHT : DIR_LEFT;
+        } else {
+            return dy >= 0 ? DIR_DOWN : DIR_UP;
+        }
+    }
+
+    @Unique
+    private static Map<Integer, int[]> living_item$parseFlowData(String data) {
+        Map<Integer, int[]> map = new HashMap<>();
+        if (data == null || data.isEmpty()) return map;
+        for (String part : data.split(",")) {
+            String[] kv = part.split(":");
+            if (kv.length >= 2) {
+                int slot = Integer.parseInt(kv[0]);
+                int level = Integer.parseInt(kv[1]);
+                int fromSlot = kv.length >= 3 ? Integer.parseInt(kv[2]) : -1;
+                map.put(slot, new int[]{level, fromSlot});
+            }
+        }
+        return map;
+    }
+
+    @Unique
+    private record WaterCell(int level, int direction) {}
+    @Unique
+    private record WaterBucketRender(Map<Integer, WaterCell> cells, int handlerWidth) {}
 }
