@@ -9,11 +9,12 @@ import net.minecraft.world.level.Level;
 import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.api.HasDirection;
+import com.qiqi.li.living.api.HasContainerData;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.model.Pos2D;
 
-public class LivingRedstoneTorchFunction implements LivingItemFunction, HasDirection {
+public class LivingRedstoneTorchFunction implements LivingItemFunction, HasDirection, HasContainerData {
 
     public static final String ID = "living_redstone_torch";
     private static final String[] SLOT_NAMES = {"direction"};
@@ -50,6 +51,21 @@ public class LivingRedstoneTorchFunction implements LivingItemFunction, HasDirec
     @Override
     public boolean updateSlotDirection(ItemStack stack, String slotName, Pos2D direction) {
         return updateTorchDirection(stack, direction);
+    }
+
+    @Override
+    public int getPriority() {
+        return 2;
+    }
+
+    @Override
+    public void tickContainerData(List<SlotEntry> entries, ContainerContext ctx, TickContext tick) {
+        ContainerRedstoneData redstoneData = tick.redstoneData;
+        if (redstoneData == null) {
+            redstoneData = new ContainerRedstoneData(ctx.getSize());
+            tick.redstoneData = redstoneData;
+        }
+        redstoneData.calculate(ctx, tick);
     }
 
     public static Pos2D getInputDirection(Pos2D facing) {

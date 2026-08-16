@@ -1,6 +1,7 @@
 package com.qiqi.li.living.container;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
@@ -8,9 +9,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import com.qiqi.li.living.api.HasContainerData;
 import com.qiqi.li.living.domain.water.ContainerFluidData;
 import com.qiqi.li.living.domain.water.ContainerStressData;
-import com.qiqi.li.living.domain.redstone.ContainerRedstoneData;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.entity.player.Inventory;
@@ -30,10 +31,6 @@ import com.mojang.logging.LogUtils;
 import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.domain.ender.EnderChannelRegistry;
-import com.qiqi.li.living.domain.water.LivingWaterBucketFunction;
-import com.qiqi.li.living.domain.water.LivingWaterWheelFunction;
-import com.qiqi.li.living.domain.redstone.LivingRedstoneFunction;
-import com.qiqi.li.living.domain.redstone.LivingRedstoneTorchFunction;
 import com.qiqi.li.living.compat.create.ModCreate;
 import com.qiqi.li.living.perf.PerfMetrics;
 
@@ -217,11 +214,6 @@ public class ContainerLivingItemHandler {
         }
         tick.setFunctionSlots(functionSlots);
 
-        if (functionSlots.containsKey(LivingRedstoneFunction.ID) || functionSlots.containsKey(LivingRedstoneTorchFunction.ID)) {
-            tick.redstoneData = new ContainerRedstoneData(context.getSize());
-        }
-
-        // 记录活物品数量和功能调用
         for (var entry : grouped.entrySet()) {
             PerfMetrics.addLivingItem(entry.getKey().getFunctionId(), entry.getValue().size());
             PerfMetrics.recordFunctionCall(entry.getKey().getFunctionId());
@@ -233,43 +225,19 @@ public class ContainerLivingItemHandler {
 
         EnderChannelRegistry.getInstance().flushDirtyChannels();
 
-        // 在函数 tick 之后运行容器级流体数据：
-        // 水桶组件已注册水源 → 现在蔓延 + 干涸
-        ContainerFluidData fluidData = tick.fluidData;
-        if (fluidData != null && !fluidData.isEmpty()) {
-            fluidData.setLastTickTime(System.currentTimeMillis());
-            fluidData.tick(context);
-        }
-
-        List<LivingItemFunction.SlotEntry> waterBucketEntries = List.of();
-        List<LivingItemFunction.SlotEntry> waterWheelEntries = List.of();
-        for (var gEntry : grouped.entrySet()) {
-            String fid = gEntry.getKey().getFunctionId();
-            if (LivingWaterBucketFunction.ID.equals(fid)) {
-                waterBucketEntries = gEntry.getValue();
-            } else if (LivingWaterWheelFunction.ID.equals(fid)) {
-                waterWheelEntries = gEntry.getValue();
+        List<Map.Entry<LivingItemFunction, List<LivingItemFunction.SlotEntry>>> hcdEntries = new ArrayList<>();
+        for (var entry : grouped.entrySet()) {
+            if (entry.getKey() instanceof HasContainerData) {
+                hcdEntries.add(entry);
             }
         }
+        hcdEntries.sort(Comparator.comparingInt(e -> ((HasContainerData) e.getKey()).getPriority()));
 
-        LivingWaterBucketFunction.postTickSync(context, fluidData, waterBucketEntries);
+        for (var entry : hcdEntries) {
+            ((HasContainerData) entry.getKey()).tickContainerData(entry.getValue(), context, tick);
+        }
 
         ContainerStressData stressData = tick.stressData;
-        if (stressData != null && fluidData != null && !fluidData.isEmpty()) {
-            Set<Integer> waterWheelSlots = new HashSet<>();
-            for (var entry : waterWheelEntries) {
-                waterWheelSlots.add(entry.slotIndex());
-            }
-            stressData.calculate(fluidData, context, waterWheelSlots);
-        }
-
-        LivingWaterWheelFunction.postTickSync(context, stressData, waterWheelEntries);
-
-        ContainerRedstoneData redstoneData = tick.redstoneData;
-        if (redstoneData != null) {
-            redstoneData.calculate(context, tick);
-        }
-
         if (stressData != null && context instanceof SimpleContainerContext simpleCtx) {
             for (BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {
                 be.setData(LivingItemManager.CONTAINER_STRESS_DATA.value(), stressData);
@@ -281,6 +249,7 @@ public class ContainerLivingItemHandler {
             }
         }
 
+        ContainerFluidData fluidData = tick.fluidData;
         String containerKey = context.getContainerKey();
         if (fluidData != null && fluidData.isEmpty() && containerKey != null) {
             FLUID_DATA_CACHE.remove(containerKey);

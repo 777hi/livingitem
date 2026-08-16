@@ -1,7 +1,7 @@
 # 活物品基础设施系统设计
 
-> **文档版本**: 2026.08 v2  
-> **最后更新**: 2026-08-16  
+> **文档版本**: 2026.08 v3  
+> **最后更新**: 2026-08-17  
 > **适用版本**: Minecraft 1.21.1 + NeoForge 21.1.x
 
 ## 目录
@@ -38,6 +38,8 @@
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │  领域层：domain/hopper/, domain/chest/, domain/ender/, ...       │
+│  ─────────────────────────────────────────────────────────────── │
+│  API 层：LivingItemFunction, HasDirection, HasContainerData     │
 │  ─────────────────────────────────────────────────────────────── │
 │  传输层：SlotAccessor (Plain/LivingChest/EnderChest/Neighbor)    │
 │          + FilterData, FilteredSlotAccessor                      │
@@ -626,6 +628,36 @@ for (var entry : grouped.entrySet()) {
 
 如果逐个调用 `tick`，每个活物品独立推进自己的状态，导致总速度随活物品数量线性增长（N 个活熔炉 = N 倍速度）。按功能分组后，由功能实现自行决定如何分配处理（如活熔炉每 tick 只处理一个），从根本上避免速度翻倍。
 
+**容器级数据计算**：`tick()` 执行完毕后，`processContext` 收集所有实现了 `HasContainerData` 接口的功能类，按优先级排序后依次调用 `tickContainerData()`：
+
+```java
+// 收集 HasContainerData 实现者
+List<Map.Entry<LivingItemFunction, List<SlotEntry>>> hcdEntries = new ArrayList<>();
+for (var entry : grouped.entrySet()) {
+    if (entry.getKey() instanceof HasContainerData) {
+        hcdEntries.add(entry);
+    }
+}
+// 按优先级排序（数字越小越先执行）
+hcdEntries.sort(Comparator.comparingInt(e -> ((HasContainerData) e.getKey()).getPriority()));
+
+// 依次执行容器级数据计算
+for (var entry : hcdEntries) {
+    ((HasContainerData) entry.getKey()).tickContainerData(entry.getValue(), context, tick);
+}
+```
+
+**优先级顺序**：
+
+| 优先级 | 功能类 | 容器级数据计算 |
+|--------|--------|--------------|
+| 0 | `LivingWaterBucketFunction` | 流体蔓延 + postTickSync |
+| 1 | `LivingWaterWheelFunction` | 应力计算 + postTickSync |
+| 2 | `LivingRedstoneFunction` | 红石信号传播 |
+| 2 | `LivingRedstoneTorchFunction` | 红石信号传播（火把独立存在时） |
+
+通过接口化设计，`ContainerLivingItemHandler.processContext()` 不再需要硬编码任何具体功能类的容器级数据计算逻辑。
+
 ### 8.3 TickContext — Tick 级临时状态
 
 [TickContext](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/container/TickContext.java) 的生命周期仅为单次 tick，包含：
@@ -637,6 +669,9 @@ for (var entry : grouped.entrySet()) {
 | `dirtySlots` | 脏槽位集合，tick 内被修改的槽位索引，tick 结束时批量同步 |
 | `snapshot` | 容器快照，预扫描的活漏斗连接图和过滤链 |
 | `fluidData` | 容器关联的流体状态 |
+| `stressData` | 容器关联的应力状态 |
+| `redstoneData` | 容器关联的红石信号状态 |
+| `containerDataStore` | 通用容器级数据存储（`Map<Class<?>, Object>`），新数据类型无需在 TickContext 中新增字段 |
 | `functionSlots` | 功能槽位缓存，processContext 分组时填充，O(1) 读取各功能的活跃槽位集合 |
 
 **对象池复用**：

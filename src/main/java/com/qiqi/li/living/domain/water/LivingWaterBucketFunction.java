@@ -12,13 +12,14 @@ import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
 import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.api.HasContainerData;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.domain.water.ContainerFluidData;
 import com.qiqi.li.living.domain.water.LivingWaterBucketData;
 import com.qiqi.li.living.domain.water.WaterData;
 
-public class LivingWaterBucketFunction implements LivingItemFunction {
+public class LivingWaterBucketFunction implements LivingItemFunction, HasContainerData {
 
     public static final String ID = "living_water_bucket";
 
@@ -108,6 +109,21 @@ public class LivingWaterBucketFunction implements LivingItemFunction {
     @Override
     public Set<DataComponentType<?>> getIgnoredComponentTypes() {
         return Set.of();
+    }
+
+    @Override
+    public int getPriority() {
+        return 0;
+    }
+
+    @Override
+    public void tickContainerData(List<SlotEntry> entries, ContainerContext ctx, TickContext tick) {
+        ContainerFluidData fluidData = tick.fluidData;
+        if (fluidData != null && !fluidData.isEmpty()) {
+            fluidData.setLastTickTime(System.currentTimeMillis());
+            fluidData.tick(ctx);
+        }
+        postTickSync(ctx, fluidData, entries);
     }
 
     public static boolean isLivingWaterBucket(ItemStack stack) {

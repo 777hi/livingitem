@@ -1,8 +1,8 @@
 # Living Item (活物品)
 
 **Minecraft 1.21.1 + NeoForge 21.1.x**
-*最后更新: 2026-08-16*
-*状态: Alpha 测试阶段 - v8 架构重构完成*
+*最后更新: 2026-08-17*
+*状态: Alpha 测试阶段 - v8.1 接口化重构完成*
 
 ---
 
@@ -25,6 +25,8 @@
 - **活末影箱**：无线传输路由器，路由模式（共享黑板）+ 直连模式（绑定玩家末影箱）
 - **活水车**：应力产生类活物品，软依赖 Create，3D 旋转渲染
 - **活地图传送**：活末影珍珠 + 活地图，三种场景 + UV 精确传送 + 跨维度 + 载具 + Sable 飞艇兼容
+- **接口化扩展**：`HasDirection`（WASD 朝向配置）+ `HasContainerData`（容器级数据计算），新增活物品无需修改核心文件
+- **活红石系统**：活红石粉（信号传播）+ 活红石火把（反相器 + 朝向配置）+ 活按钮/活拉杆/活红石灯
 
 ---
 
@@ -47,15 +49,25 @@ LivingItemFunction.tick() (各功能类自行实现 tick 逻辑)
     ├── LivingEnderChestFunction → LivingEnderChestData
     ├── LivingWaterWheelFunction → LivingWaterWheelData
     ├── LivingChestFunction      → InternalStorageComponent (旧架构)
-    └── LivingEnderPearlFunction → (纯工具类，无 DataComponent)
+    ├── LivingEnderPearlFunction → (纯工具类，无 DataComponent)
+    ├── LivingRedstoneFunction   → LivingRedstoneData
+    ├── LivingRedstoneTorchFunction → LivingRedstoneTorchData
+    └── LivingButtonFunction / LivingLeverFunction / LivingRedstoneLampFunction
     ↓
-ContainerContext (组合接口) → TickContext (tick 级临时状态 + 脏槽位批量同步)
+容器级数据计算（HasContainerData 接口，按优先级排序）
+    ├── LivingWaterBucketFunction  (prio 0) — 流体蔓延 + postTickSync
+    ├── LivingWaterWheelFunction   (prio 1) — 应力计算 + postTickSync
+    ├── LivingRedstoneFunction     (prio 2) — 红石信号传播
+    └── LivingRedstoneTorchFunction(prio 2) — 红石信号传播（火把独立时）
+    ↓
+ContainerContext (组合接口) → TickContext (tick 级临时状态 + 脏槽位批量同步 + Map 扩展)
     ↓
 SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 ```
 
 > 📄 基础设施详见 [living-item-infrastructure.md](docs/system-design/living-item-infrastructure.md)
 > 📄 数据模型与设计决策详见 [data-model.md](docs/system-design/data-model.md)
+> 📄 框架重构总结详见 [framework-refactoring.md](docs/framework-refactoring.md)
 
 ---
 
@@ -71,11 +83,13 @@ SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 | **活末影箱** | 路由模式（共享黑板）+ 直连模式（绑定玩家末影箱） | [living-ender-chest-tech.md](docs/tech/living-ender-chest-tech.md) |
 | **活水车** | 力矩计算 + 应力叠加/抵消 + Create 软依赖 | [living-water-wheel-tech.md](docs/tech/living-water-wheel-tech.md) |
 | **活地图传送** | 三种场景 + UV 精确传送 + 跨维度 + 载具 + Sable 飞艇 | [living-map-ender-pearl-tech.md](docs/tech/living-map-ender-pearl-tech.md) |
+| **活红石** | 红石信号传播 + 信号强度计算 + 堆叠数影响 | [living-redstone-tech.md](docs/tech/living-redstone-tech.md) |
 | **活打火石** | 交互触发器，无 tick 逻辑 | [living-flint-and-steel-tech.md](docs/tech/living-flint-and-steel-tech.md) |
 | **GUI交互** | 声明式规则 + 统一拦截 + 创造模式兼容 | [gui-interaction-system.md](docs/system-design/gui-interaction-system.md) |
 | **图标系统** | 三层架构 + 声明式配置 + 上下文切换 | [icon-system.md](docs/system-design/icon-system.md) |
 | **基础设施** | 容器抽象 + 发现缓存 + SlotAccessor + 性能监控 | [living-item-infrastructure.md](docs/system-design/living-item-infrastructure.md) |
 | **数据模型** | DataComponent 体系 + 新旧架构对比 + 设计决策 | [data-model.md](docs/system-design/data-model.md) |
+| **框架重构** | HasDirection + HasContainerData 接口化设计 | [framework-refactoring.md](docs/framework-refactoring.md) |
 
 ---
 
@@ -90,6 +104,8 @@ src/main/java/com/qiqi/li/
 ├── living/
 │   ├── api/                                 # 公开接口 + 管理器
 │   │   ├── LivingItemFunction.java          # 功能接口（tick + tooltip + canApply + getFunctionId）
+│   │   ├── HasDirection.java                # WASD 朝向配置接口
+│   │   ├── HasContainerData.java            # 容器级数据计算接口
 │   │   └── LivingItemManager.java           # 核心管理器：DataComponent 注册、数据读写、功能注册
 │   │
 │   ├── container/                           # 容器抽象层（跨活物品共享基础设施）
@@ -164,6 +180,16 @@ src/main/java/com/qiqi/li/
 │   │       ├── ItemFrameMapTeleportHandler.java #  展示框传送
 │   │       ├── LivingMapClientCache.java     #     客户端地图元数据缓存
 │   │       └── StructureMapDecorator.java    #     结构地图装饰器
+│   │
+│   ├── domain/redstone/                     #   活红石领域
+│   │   ├── LivingRedstoneFunction.java       #     活红石粉功能入口
+│   │   ├── LivingRedstoneTorchFunction.java  #     活红石火把功能入口
+│   │   ├── LivingButtonFunction.java         #     活按钮
+│   │   ├── LivingLeverFunction.java          #     活拉杆
+│   │   ├── LivingRedstoneLampFunction.java   #     活红石灯
+│   │   ├── LivingRedstoneData.java           #     活红石粉数据
+│   │   ├── LivingRedstoneTorchData.java      #     活红石火把数据
+│   │   └── ContainerRedstoneData.java        #     容器级红石信号数据
 │   │
 │   ├── function/                             # 简单活物品功能（无需领域模块）
 │   │   └── LivingFlintAndSteelFunction.java  #   活打火石（交互触发器）
@@ -257,6 +283,7 @@ src/main/java/com/qiqi/li/
 - [x] `TransferPipeline` 统一传输入口
 - [x] `EnderRouteManager` 路由逻辑集中
 - [x] `SlotAccessor` 架构统一所有传输路径
+- [x] 接口化重构：`HasDirection`（WASD 朝向）+ `HasContainerData`（容器级数据计算）
 
 ### GUI交互系统
 - [x] 声明式交互规则（`InteractionEntry` + `InteractionRegistry`）
@@ -266,6 +293,13 @@ src/main/java/com/qiqi/li/
 
 ### 活熔炉 / 活漏斗 / 活TNT / 活水桶 / 活打火石
 - [x] 各功能完整实现（详见对应 tech 文档）
+
+### 活红石
+- [x] 活红石粉：信号传播（BFS，每 2 tick）+ 堆叠数 × 15 信号强度
+- [x] 活红石火把：反相器 + 四方向朝向配置（WASD）
+- [x] 活按钮：触发型信号源
+- [x] 活拉杆：持续型信号源
+- [x] 活红石灯：信号可视化输出
 
 ### 活箱子
 - [x] 堆叠倍增模型 + UUID 映射 + LRU 缓存 + 磁盘持久化
@@ -307,6 +341,12 @@ src/main/java/com/qiqi/li/
 
 ### 当前版本: v0.9-alpha
 
+**最近更新** (2026-08-17):
+- ✅ 重构：接口化设计 — `HasDirection` 接口统一 WASD 朝向配置，`HasContainerData` 接口统一容器级数据计算
+- ✅ 重构：`TickContext` Map 扩展，新增容器级数据类型无需修改 `TickContext` 字段
+- ✅ 优化：新增活物品从修改 6 个文件减少到 2 个文件
+- ✅ 更新：全部文档同步至 v8.1 架构
+
 **最近更新** (2026-08-16):
 - ✅ 重构：包结构重组 — `data/` 删除，`function/` 精简，所有活物品内聚到 `domain/`
 - ✅ 重构：传输管道统一 — `TransferPipeline` 统一传输入口，解耦 `CrossContainerTransfer` 与 `LivingHopperFunction`
@@ -342,6 +382,7 @@ docs/
 │   ├── data-model.md                 #   数据模型与设计决策（DataComponent体系+新旧对比+关键决策）
 │   ├── gui-interaction-system.md     #   GUI交互系统（声明式规则+创造模式兼容）
 │   └── icon-system.md                #   图标系统（三层架构+声明式配置）
+├── framework-refactoring.md          # 框架重构总结（HasDirection + HasContainerData 接口化设计）
 ├── tech/                             # 各活物品技术文档
 │   ├── living-tnt-tech.md
 │   ├── living-water-bucket-tech.md

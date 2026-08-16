@@ -1,13 +1,16 @@
 package com.qiqi.li.living.domain.water;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Consumer;
 
 import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.api.HasContainerData;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.domain.water.ContainerStressData;
+import com.qiqi.li.living.domain.water.ContainerFluidData;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.domain.water.LivingWaterWheelData;
 import com.qiqi.li.living.domain.water.WaterWheelData;
@@ -20,7 +23,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
 
-public class LivingWaterWheelFunction implements LivingItemFunction {
+public class LivingWaterWheelFunction implements LivingItemFunction, HasContainerData {
 
     public static final String ID = "living_water_wheel";
 
@@ -81,6 +84,25 @@ public class LivingWaterWheelFunction implements LivingItemFunction {
     @Override
     public Set<DataComponentType<?>> getIgnoredComponentTypes() {
         return Set.of(LivingItemManager.LIVING_WATER_WHEEL_DATA.value());
+    }
+
+    @Override
+    public int getPriority() {
+        return 1;
+    }
+
+    @Override
+    public void tickContainerData(List<SlotEntry> entries, ContainerContext ctx, TickContext tick) {
+        ContainerFluidData fluidData = tick.fluidData;
+        ContainerStressData stressData = tick.stressData;
+        if (stressData != null && fluidData != null && !fluidData.isEmpty()) {
+            Set<Integer> waterWheelSlots = new HashSet<>();
+            for (var entry : entries) {
+                waterWheelSlots.add(entry.slotIndex());
+            }
+            stressData.calculate(fluidData, ctx, waterWheelSlots);
+        }
+        postTickSync(ctx, stressData, entries);
     }
 
     public static boolean isLivingWaterWheel(ItemStack stack) {

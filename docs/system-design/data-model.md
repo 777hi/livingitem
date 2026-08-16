@@ -1,7 +1,7 @@
 # DataComponent 数据模型与关键设计决策
 
-> **文档版本**: 2026.08 v1
-> **最后更新**: 2026-08-09
+> **文档版本**: 2026.08 v2
+> **最后更新**: 2026-08-17
 > **适用版本**: Minecraft 1.21.1 + NeoForge 21.1.x
 
 ## 目录
@@ -81,7 +81,8 @@ LivingFurnaceData data = LivingItemManager.getData(stack, LIVING_FURNACE_DATA.va
 | 数据模型 | `ComponentState`（可变 NBT 包装器） | Java Record（不可变，`withXxx()` 创建新实例） |
 | 编排方式 | `LivingOrchestrator.orchestrate()` | 功能类自行实现 `tick()` |
 | 组件调用 | `ILivingComponent.tick(context, state)` | 无状态工具类：`ProgressComponent.tick(data) → data` |
-| 方向数据 | `DirectionModeComponent` + `ComponentState` | `DirectionSlotsData` / `DirectionTransferData` Record |
+| 方向配置 | `DirectionModeComponent` + `ComponentState` + 硬编码物品类型判断 | `HasDirection` 接口 + `DirectionSlotsData` / `DirectionTransferData` Record，输入处理器和网络处理器自动识别 |
+| 容器级数据 | 硬编码在 `ContainerLivingItemHandler` 和 `TickContext` 中 | `HasContainerData` 接口，功能类自行声明并按优先级排序执行 |
 | Tooltip | `addToTooltip(CompoundTag, ...)` | `addToTooltip(Item.TooltipContext, ..., ItemStack)` |
 | 同步粒度 | 整个 `LivingFunctionData` 一起同步 | 独立 DataComponent 增量同步 |
 | 类型安全 | 运行时字符串键（`state.getInt("progress")`） | 编译时类型检查（`data.progress()`） |
