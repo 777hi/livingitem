@@ -1,7 +1,7 @@
 # 活物品基础设施系统设计
 
-> **文档版本**: 2026.07 v1  
-> **最后更新**: 2026-07-28  
+> **文档版本**: 2026.08 v2  
+> **最后更新**: 2026-08-16  
 > **适用版本**: Minecraft 1.21.1 + NeoForge 21.1.x
 
 ## 目录
@@ -37,9 +37,10 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│  功能层：LivingFurnaceFunction, LivingHopperFunction, ...        │
+│  领域层：domain/hopper/, domain/chest/, domain/ender/, ...       │
 │  ─────────────────────────────────────────────────────────────── │
 │  传输层：SlotAccessor (Plain/LivingChest/EnderChest/Neighbor)    │
+│          + FilterData, FilteredSlotAccessor                      │
 │  ─────────────────────────────────────────────────────────────── │
 │  容器抽象层：ContainerContext, TickContext, ContainerSnapshot    │
 │  ─────────────────────────────────────────────────────────────── │
@@ -633,6 +634,7 @@ for (var entry : grouped.entrySet()) {
 |------|------|
 | `occupiedSlots` | 槽位互斥集合，防止多个活熔炉处理同一输入槽位 |
 | `transferredTargetSlots` | 级联传输防护，防止同 tick 内漏斗链级联传输 |
+| `dirtySlots` | 脏槽位集合，tick 内被修改的槽位索引，tick 结束时批量同步 |
 | `snapshot` | 容器快照，预扫描的活漏斗连接图和过滤链 |
 | `fluidData` | 容器关联的流体状态 |
 | `functionSlots` | 功能槽位缓存，processContext 分组时填充，O(1) 读取各功能的活跃槽位集合 |
@@ -653,7 +655,41 @@ public void release() {
 }
 ```
 
-### 8.4 ContainerSnapshot — 容器快照
+### 8.4 脏槽位批量同步
+
+`SimpleContainerContext` 与 `TickContext` 协作，实现 tick 内脏槽位的延迟同步。
+
+**问题**：之前每次 `setItem` 后立即调用 `syncSlotToClients` 发送同步包，一个 tick 内同一槽位可能被多次修改，产生冗余网络包。
+
+**方案**：在 `TickContext` 中维护 `dirtySlots` 集合，`syncSlotToClients` 只标记脏，tick 结束时统一发送。
+
+```java
+// SimpleContainerContext.syncSlotToClients()
+@Override
+public void syncSlotToClients(int logicalSlot, ItemStack stack) {
+    if (currentTickContext != null) {
+        currentTickContext.dirtySlots.add(logicalSlot);  // 延迟：只标记脏
+    } else {
+        flushSlotSync(logicalSlot, stack);               // 立即：无 TickContext 时直接发
+    }
+}
+
+// ContainerLivingItemHandler.tick() 中
+TickContext tick = TickContext.acquire(context);
+if (context instanceof SimpleContainerContext simpleCtx) {
+    simpleCtx.setTickContext(tick);
+}
+// ... 处理逻辑 ...
+if (context instanceof SimpleContainerContext simpleCtx2) {
+    simpleCtx2.flushDirtySlots();   // 批量发送
+    simpleCtx2.setTickContext(null);
+}
+tick.release();
+```
+
+**效果**：同一 tick 内同一槽位多次修改只发送一次同步包，减少网络冗余。
+
+### 8.5 ContainerSnapshot — 容器快照
 
 [ContainerSnapshot](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/container/ContainerSnapshot.java) 在 tick 开始时预扫描容器状态，避免传输过程中反复查询。
 
@@ -664,6 +700,8 @@ private final int[] sourceOf;   // sourceOf[slot] = 此槽位活漏斗的 source
 private final int[] targetOf;   // targetOf[slot] = 此槽位活漏斗的 target 指向哪个槽位
 private final FilterData[] filterOf;  // filterOf[slot] = 此槽位继承的过滤规则
 ```
+
+**过滤链构建**：过滤规则构建已委托给 `HopperFilterBuilder`（`domain/hopper/HopperFilterBuilder.java`），`ContainerSnapshot` 在 `capture()` 中调用 `HopperFilterBuilder.buildAll()` 完成预计算。详见活漏斗技术文档。
 
 **过滤链继承**：当多个活漏斗串联时，过滤规则会沿链传递。例如：
 
@@ -695,7 +733,7 @@ private final FilterData[] filterOf;  // filterOf[slot] = 此槽位继承的过�
 
 ### 9.1 设计目标
 
-[SlotAccessor](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/core/accessor/SlotAccessor.java) 将传输引擎与具体存储类型解耦。传输引擎只调用 `extract` 和 `insert`，不关心槽位背后是普通物品、活箱子、活末影箱还是跨容器。
+[SlotAccessor](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/transfer/SlotAccessor.java) 将传输引擎与具体存储类型解耦。传输引擎只调用 `extract` 和 `insert`，不关心槽位背后是普通物品、活箱子、活末影箱还是跨容器。
 
 ### 9.2 接口定义
 
@@ -748,7 +786,7 @@ rollback(leftover)             → 仅当模拟与真实不一致时触发（WAR
 
 ### 9.5 FilteredSlotAccessor — 过滤装饰器
 
-[FilteredSlotAccessor](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/core/accessor/FilteredSlotAccessor.java) 是一个装饰器，包装任意 `SlotAccessor`，在所有操作前检查过滤规则：
+[FilteredSlotAccessor](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/transfer/FilteredSlotAccessor.java) 是一个装饰器，包装任意 `SlotAccessor`，在所有操作前检查过滤规则：
 
 ```java
 public ItemStack extract(int amount, ItemStack filterType) {
@@ -766,7 +804,7 @@ public ItemStack extract(int amount, ItemStack filterType) {
 
 ### 9.6 SlotAccessorFactory — 注册式工厂
 
-[SlotAccessorFactory](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/core/accessor/SlotAccessorFactory.java) 通过注册机制解耦类型判断与创建逻辑：
+[SlotAccessorFactory](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/transfer/SlotAccessorFactory.java) 通过注册机制解耦类型判断与创建逻辑：
 
 ```java
 // 注册 Provider（按优先级从高到低）
@@ -821,23 +859,26 @@ registerProvider(SlotAccessorFactory::defaultProvider); // 优先级 3：普通�
 | 文件 | 路径 | 职责 |
 |------|------|------|
 | `LivingItem.java` | `com.qiqi.li` | Mod 主类，服务端 tick 总入口 |
-| `ContainerLivingItemHandler.java` | `container/` | 容器处理器，统一包装 + 按功能分组执行 |
+| `ContainerLivingItemHandler.java` | `container/` | 容器处理器，统一包装 + 按功能分组执行 + TickContext 生命周期 |
 | `ContainerChunkCache.java` | `container/` | 容器区块缓存，事件驱动的容器发现 |
 | `ContainerContext.java` | `container/` | 组合接口，继承 4 个子接口 |
 | `LivingContainer.java` | `container/` | 基础物品读写接口 |
 | `SlotInfoProvider.java` | `container/` | 槽位能力查询接口 |
 | `ContainerSync.java` | `container/` | 客户端同步接口 |
 | `ContainerIdentity.java` | `container/` | 容器身份标识接口 |
-| `SimpleContainerContext.java` | `container/` | 统一容器上下文实现 |
-| `TickContext.java` | `container/` | Tick 级临时状态 + 对象池 |
-| `ContainerSnapshot.java` | `container/` | 容器快照，预扫描连接图与过滤链 |
-| `ContainerFluidData.java` | `container/` | 容器级流体数据 |
-| `ContainerCompatibilityConfig.java` | `core/config/` | 容器兼容性配置 |
-| `SlotResolver.java` | `core/` | 槽位方向解析器 |
-| `SlotAccessor.java` | `core/accessor/` | 存储后端抽象接口 |
-| `SlotAccessorFactory.java` | `core/accessor/` | 注册式 Accessor 工厂 |
-| `PlainSlotAccessor.java` | `core/accessor/` | 普通槽位访问器 |
-| `FilteredSlotAccessor.java` | `core/accessor/` | 过滤装饰器 |
-| `NeighborSlotAccessor.java` | `core/accessor/` | 邻居容器访问器 |
+| `SimpleContainerContext.java` | `container/` | 统一容器上下文实现 + 脏槽位批量同步 |
+| `TickContext.java` | `container/` | Tick 级临时状态 + 对象池 + 脏槽位集合 |
+| `ContainerSnapshot.java` | `container/` | 容器快照，预扫描连接图（过滤构建委托给 HopperFilterBuilder） |
+| `ContainerCompatibilityConfig.java` | `transfer/` | 容器兼容性配置 |
+| `SlotResolver.java` | `transfer/` | 槽位方向解析器 |
+| `SlotAccessor.java` | `transfer/` | 存储后端抽象接口 |
+| `SlotAccessorFactory.java` | `transfer/` | 注册式 Accessor 工厂 |
+| `PlainSlotAccessor.java` | `transfer/` | 普通槽位访问器 |
+| `FilteredSlotAccessor.java` | `transfer/` | 过滤装饰器 |
+| `NeighborSlotAccessor.java` | `transfer/` | 邻居容器访问器 |
+| `FilterData.java` | `transfer/` | 传输过滤规则数据（跨领域共享） |
 | `PerfMetrics.java` | `perf/` | 性能监控 |
-| `CrossContainerTransfer.java` | `container/` | 跨容器传输工具 |
+| `TransferPipeline.java` | `domain/hopper/` | 统一传输入口 |
+| `HopperFilterBuilder.java` | `domain/hopper/` | 活漏斗过滤链构建（从 ContainerSnapshot 提取） |
+| `CrossContainerTransfer.java` | `domain/hopper/` | 跨容器传输（方向解析 + 大箱子处理） |
+| `EnderRouteManager.java` | `domain/ender/` | 活末影箱路由逻辑集中管理 |

@@ -1,7 +1,7 @@
 # Living Water Bucket (活水桶) 技术文档
 
-> **文档版本**: 2026.07 v3  
-> **最后更新**: 2026-07-29  
+> **文档版本**: 2026.08 v4  
+> **最后更新**: 2026-08-16  
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -47,9 +47,9 @@
 
 | 类名 | 文件位置 | 职责 |
 |------|---------|------|
-| `LivingWaterBucketFunction` | `function/LivingWaterBucketFunction.java` | 活水桶功能入口，管理水源注册和状态同步 |
-| `WaterData` | `data/WaterData.java` | 水源状态 record：位置、容器、流动信息 |
-| `LivingWaterBucketData` | `data/LivingWaterBucketData.java` | 活水桶数据容器：包含 WaterData |
+| `LivingWaterBucketFunction` | `domain/water/LivingWaterBucketFunction.java` | 活水桶功能入口，管理水源注册和状态同步 |
+| `WaterData` | `domain/water/WaterData.java` | 水源状态 record：位置、容器、流动信息 |
+| `LivingWaterBucketData` | `domain/water/LivingWaterBucketData.java` | 活水桶数据容器：包含 WaterData |
 | `ContainerFluidData` | `container/ContainerFluidData.java` | 容器级流体数据，管理水流蔓延和物品推动。由 `ContainerSnapshot` 持有引用，生命周期独立于活水桶 |
 | `ContainerSnapshot` | `container/ContainerSnapshot.java` | 容器快照，持有 `ContainerFluidData` 引用，每 tick 预计算 |
 | `ContainerLivingItemHandler` | `container/ContainerLivingItemHandler.java` | 容器处理器，管理 `ContainerFluidData` 的持久化缓存（`FLUID_DATA_CACHE`） |

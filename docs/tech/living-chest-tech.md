@@ -1,7 +1,7 @@
 # Living Chest (活箱子) 技术文档
 
-> **文档版本**: 2026.07 v6  
-> **最后更新**: 2026-07-28  
+> **文档版本**: 2026.08 v7  
+> **最后更新**: 2026-08-16  
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -64,10 +64,10 @@
 
 | 类名 | 文件位置 | 职责 |
 |------|---------|------|
-| `LivingChestFunction` | `function/LivingChestFunction.java` | 活箱子功能入口，实现 `LivingItemFunction` 接口，提供 insert/extract/canInsert 等 API |
-| `LivingChestAccessor` | `core/accessor/LivingChestAccessor.java` | SlotAccessor 实现，通过 `ChestSnapshot` 判断空/满状态，统一活箱子的 extract/insert 接口 |
+| `LivingChestFunction` | `domain/chest/LivingChestFunction.java` | 活箱子功能入口，实现 `LivingItemFunction` 接口，提供 insert/extract/canInsert 等 API |
+| `LivingChestAccessor` | `domain/chest/LivingChestAccessor.java` | SlotAccessor 实现，通过 `ChestSnapshot` 判断空/满状态，统一活箱子的 extract/insert 接口 |
 | `ContainerSnapshot` | `container/ContainerSnapshot.java` | 容器级缓存，每 tick 预计算所有活箱子的 `ChestSnapshot`（usedSlots/usedBytes/isFull/isByteFull） |
-| `SlotAccessorFactory` | `core/accessor/SlotAccessorFactory.java` | 工厂类，根据物品类型创建对应的 SlotAccessor，传递 `ContainerSnapshot` 给 Accessor |
+| `SlotAccessorFactory` | `transfer/SlotAccessorFactory.java` | 工厂类，根据物品类型创建对应的 SlotAccessor，传递 `ContainerSnapshot` 给 Accessor |
 | `LivingChestAccessPacket` | `network/LivingChestAccessPacket.java` | 存取请求包（客户端→服务端） |
 | `ServerPacketHandler` | `network/ServerPacketHandler.java` | 网络请求处理器 |
 | `ServerPlaceRecipeMixin` | `mixin/ServerPlaceRecipeMixin.java` | Mixin：拦截配方书合成，支持从活箱子提取材料 |

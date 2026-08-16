@@ -1,7 +1,7 @@
 # Living Flint and Steel (活打火石) 技术文档
 
-> **文档版本**: 2026.07 v2  
-> **最后更新**: 2026-07-28  
+> **文档版本**: 2026.08 v3  
+> **最后更新**: 2026-08-16  
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -38,8 +38,8 @@
 
 | 类名 | 文件位置 | 职责 |
 |------|---------|------|
-| `LivingFlintAndSteelFunction` | `function/LivingFlintAndSteelFunction.java` | 活打火石功能入口，空 tick，仅提供 Tooltip |
-| `LivingHopperFunction` | `function/LivingHopperFunction.java` | 活漏斗传输引擎，在 `executeTransfer()` 中检测活打火石→活TNT 组合并触发点火 |
+| `LivingFlintAndSteelFunction` | `domain/tnt/LivingFlintAndSteelFunction.java` | 活打火石功能入口，空 tick，仅提供 Tooltip |
+| `LivingHopperFunction` | `domain/hopper/LivingHopperFunction.java` | 活漏斗传输引擎，在 `TransferPipeline.execute()` 中检测活打火石→活TNT 组合并触发点火 |
 
 ---
 
@@ -47,10 +47,10 @@
 
 ### 2.1 点火触发流程
 
-点火由活漏斗的传输系统在 `executeTransfer()` 中检测。当活漏斗的 source 槽位是活打火石、target 槽位是活 TNT 时，传输系统不执行物品传输，而是触发点火操作：
+点火由活漏斗的传输系统在 `TransferPipeline.execute()` 中检测。当活漏斗的 source 槽位是活打火石、target 槽位是活 TNT 时，传输系统不执行物品传输，而是触发点火操作：
 
 ```
-LivingHopperFunction.executeTransfer()
+TransferPipeline.execute()
   │
   ├─ source 是活打火石 + target 是活 TNT
   │   └─ LivingTntFunction.startFuse(tntStack)  ← 点燃引信

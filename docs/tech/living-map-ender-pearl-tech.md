@@ -1101,7 +1101,7 @@ compileOnly files("libs/sable-companion-common-1.21.1-1.6.0.jar")  // JarJar 嵌
 | `ItemFrameMapTeleportHandler` | `domain/map/ItemFrameMapTeleportHandler.java` | 展示框传送：EntityInteractSpecific事件拦截、hitVec→像素坐标，传送逻辑委托给 `MapTeleportExecutor` |
 | `TeleportHelper` | `domain/map/TeleportHelper.java` | 传送执行：安全Y坐标、骑乘传送、跨维度传送、Sable飞艇传送、粒子/音效、伤害、冷却、珍珠消耗（已探索1个/未探索16个） |
 | `LivingItemManager` | `api/LivingItemManager.java` | 活物品管理：`isLivingItem()`、`isLivingMap()` 等通用判断 |
-| `LivingEnderPearlFunction` | `function/LivingEnderPearlFunction.java` | 活末影珍珠功能：`isLivingEnderPearl()`、`isOnCooldown(player)`、`setCooldown(player)`、`findInInventory(player)`、`countInInventory(player)`、`consumeFromInventory(player, amount)`，冷却委托给原版 `player.getCooldowns()` |
+| `LivingEnderPearlFunction` | `domain/map/LivingEnderPearlFunction.java` | 活末影珍珠功能：`isLivingEnderPearl()`、`isOnCooldown(player)`、`setCooldown(player)`、`findInInventory(player)`、`countInInventory(player)`、`consumeFromInventory(player, amount)`，冷却委托给原版 `player.getCooldowns()` |
 | `LivingMapMetadataPacket` | `network/LivingMapMetadataPacket.java` | 服务器→客户端网络包：同步地图元数据 |
 | `LivingMapClientCache` | `domain/map/LivingMapClientCache.java` | 客户端缓存：按 mapId 存储 centerX/centerZ/dimension |
 | `LivingMapTargetRenderer` | `client/render/LivingMapTargetRenderer.java` | 客户端渲染工具：3D准心标记渲染（`renderMarker`，原版准心纹理+四色着色）、GUI十字形光标渲染（`renderMarkerGui`，5像素十字形），供 `ItemInHandRendererMixin`、`MapRendererMixin`、`AbstractContainerScreenMixin` 共享 |

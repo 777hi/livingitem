@@ -1,7 +1,7 @@
 # Living Furnace (活熔炉) 技术文档
 
-> **文档版本**: 2026.07 v5  
-> **最后更新**: 2026-07-28  
+> **文档版本**: 2026.08 v6  
+> **最后更新**: 2026-08-16  
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -66,13 +66,13 @@
 
 | 类名 | 文件位置 | 职责 |
 |------|---------|------|
-| `LivingFurnaceFunction` | `function/LivingFurnaceFunction.java` | 活熔炉功能入口，实现 `LivingItemFunction` 接口，所有熔炼逻辑集中在此 |
-| `LivingFurnaceData` | `data/LivingFurnaceData.java` | 活熔炉数据容器 record：包含 FuelData、ProgressData、TransformData、DirectionSlotsData |
-| `FuelData` | `data/FuelData.java` | 燃料状态 record：burnTime |
-| `ProgressData` | `data/ProgressData.java` | 进度状态 record：progress + total |
-| `TransformData` | `data/TransformData.java` | 转化状态 record：配方缓存、输入/输出物品 ID |
-| `DirectionSlotsData` | `data/DirectionSlotsData.java` | 方向配置 record：input/fuel/output 的 Pos2D 偏移 |
-| `SlotResolver` | `core/SlotResolver.java` | 相对方向→绝对槽位索引的数学计算 |
+| `LivingFurnaceFunction` | `domain/furnace/LivingFurnaceFunction.java` | 活熔炉功能入口，实现 `LivingItemFunction` 接口，所有熔炼逻辑集中在此 |
+| `LivingFurnaceData` | `domain/furnace/LivingFurnaceData.java` | 活熔炉数据容器 record：包含 FuelData、ProgressData、TransformData、DirectionSlotsData |
+| `FuelData` | `domain/furnace/FuelData.java` | 燃料状态 record：burnTime |
+| `ProgressData` | `domain/furnace/ProgressData.java` | 进度状态 record：progress + total |
+| `TransformData` | `domain/furnace/TransformData.java` | 转化状态 record：配方缓存、输入/输出物品 ID |
+| `DirectionSlotsData` | `domain/furnace/DirectionSlotsData.java` | 方向配置 record：input/fuel/output 的 Pos2D 偏移 |
+| `SlotResolver` | `transfer/SlotResolver.java` | 相对方向→绝对槽位索引的数学计算 |
 
 ### 1.4 存储结构
 
@@ -497,6 +497,35 @@ data = data.withFuel(fuel.tick(Math.max(1, stackCount)));
 ```
 
 **效果**：`ProgressData` 和 `FuelData` 可被任何活物品以任意规则复用，不绑定"堆叠加速"这一特定游戏机制。
+
+### 8.9 SlotAccessor 统一 + 脏槽位批量同步 (NEW 2026-08-16)
+
+**背景**：重构后活熔炉的 `executeTransform` 改用 `SlotAccessor`，支持活箱子作为输入/输出。同步时机统一管理，消除散布各处的手动 `context.syncSlotToClients` 调用。
+
+**变化**：
+
+1. **SlotAccessor 统一**：`executeTransform` 中输入消耗和输出生成通过 `SlotAccessor.extract()` / `SlotAccessor.insert()` 完成，而非直接 `ctx.setItem()`。这使活熔炉天然支持活箱子、活末影箱等虚拟存储作为输入/输出。
+
+2. **脏槽位批量同步**：`SimpleContainerContext.syncSlotToClients()` 在 tick 内只标记脏槽位到 `TickContext.dirtySlots`，tick 结束时由 `ContainerLivingItemHandler` 统一调用 `flushDirtySlots()` 批量发送同步包。同一 tick 内同一槽位多次修改只发送一次同步包。
+
+```java
+// ContainerLivingItemHandler.tick() 中
+TickContext tick = TickContext.acquire(context);
+if (context instanceof SimpleContainerContext simpleCtx) {
+    simpleCtx.setTickContext(tick);
+}
+// ... 各活物品 tick 处理 ...
+if (context instanceof SimpleContainerContext simpleCtx2) {
+    simpleCtx2.flushDirtySlots();   // 批量同步
+    simpleCtx2.setTickContext(null);
+}
+tick.release();
+```
+
+**效果**：
+- 活熔炉支持活箱子作为输入/输出（通过 `LivingChestAccessor`）
+- 网络包发送减少（同一 tick 同一槽位只发一次）
+- 同步时机统一，不再有遗漏 `syncSlotToClients` 的风险
 
 ---
 

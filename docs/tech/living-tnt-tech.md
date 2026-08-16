@@ -1,7 +1,7 @@
 # Living TNT (活TNT) 技术文档
 
-> **文档版本**: 2026.07 v3  
-> **最后更新**: 2026-07-28  
+> **文档版本**: 2026.08 v4  
+> **最后更新**: 2026-08-16  
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -63,11 +63,11 @@
 
 | 类名 | 文件位置 | 职责 |
 |------|---------|------|
-| `LivingTntFunction` | `function/LivingTntFunction.java` | 活TNT功能入口，管理引信倒计时和爆炸触发 |
-| `ExplosionData` | `data/ExplosionData.java` | 引信状态 record：ignited + fuseTimer |
-| `LivingTntData` | `data/LivingTntData.java` | 活TNT数据容器：包含 ExplosionData |
-| `ExplosionComponent` | `core/components/ExplosionComponent.java` | 爆炸执行引擎：破坏方块、伤害实体、粒子音效 |
-| `LivingFlintAndSteelFunction` | `function/LivingFlintAndSteelFunction.java` | 活打火石，提供点火触发标记 |
+| `LivingTntFunction` | `domain/tnt/LivingTntFunction.java` | 活TNT功能入口，管理引信倒计时和爆炸触发 |
+| `ExplosionData` | `domain/tnt/ExplosionData.java` | 引信状态 record：ignited + fuseTimer |
+| `LivingTntData` | `domain/tnt/LivingTntData.java` | 活TNT数据容器：包含 ExplosionData |
+| `ExplosionComponent` | `domain/tnt/ExplosionComponent.java` | 爆炸执行引擎：破坏方块、伤害实体、粒子音效 |
+| `LivingFlintAndSteelFunction` | `domain/tnt/LivingFlintAndSteelFunction.java` | 活打火石，提供点火触发标记 |
 
 ---
 

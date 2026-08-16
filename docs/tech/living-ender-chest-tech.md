@@ -1,7 +1,7 @@
 # Living Ender Chest (活末影箱) 技术文档
 
-> **文档版本**: 2026.07 v10  
-> **最后更新**: 2026-07-29  
+> **文档版本**: 2026.08 v11  
+> **最后更新**: 2026-08-16  
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -58,15 +58,17 @@
 
 | 类名 | 文件位置 | 职责 |
 |------|---------|------|
-| `LivingEnderChestFunction` | `function/LivingEnderChestFunction.java` | 活末影箱功能入口，实现 `LivingItemFunction` 接口，管理玩家绑定数据和路由清理 |
-| `LivingEnderChestAccessor` | `core/accessor/LivingEnderChestAccessor.java` | 活末影箱槽位访问器，实现 registerRoute/extract/rollback，支持路由模式和直连模式 |
-| `EnderChannelRegistry` | `core/accessor/EnderChannelRegistry.java` | 全局路由表单例（服务端），维护频道→路由条目列表的映射，轮询调度，路由清理 |
-| `EnderChannelClientCache` | `core/accessor/EnderChannelClientCache.java` | 客户端路由缓存，存储频道快照供 Tooltip 读取（ConcurrentHashMap，线程安全） |
+| `LivingEnderChestFunction` | `domain/ender/LivingEnderChestFunction.java` | 活末影箱功能入口，实现 `LivingItemFunction` 接口，管理玩家绑定数据和路由清理 |
+| `LivingEnderChestAccessor` | `domain/ender/LivingEnderChestAccessor.java` | 活末影箱槽位访问器，实现 extract/insert/rollback，支持路由模式和直连模式 |
+| `EnderRouteManager` | `domain/ender/EnderRouteManager.java` | 路由逻辑集中管理，路由注册/提取/验证/同通道防护/偏好类型/直连模式 |
+| `EnderChannelRegistry` | `domain/ender/EnderChannelRegistry.java` | 全局路由表单例（服务端），维护频道→路由条目列表的映射，轮询调度，路由清理 |
+| `EnderChannelClientCache` | `domain/ender/EnderChannelClientCache.java` | 客户端路由缓存，存储频道快照供 Tooltip 读取（ConcurrentHashMap，线程安全） |
 | `EnderChannelSyncPacket` | `network/EnderChannelSyncPacket.java` | S2C 同步包，将路由快照从服务端发送到客户端 |
-| `EnderChannelEntry` | `core/accessor/EnderChannelEntry.java` | 路由条目 record，描述源物品的"指针"，支持方块容器和玩家背包两种类型 |
-| `SlotAccessorFactory` | `core/accessor/SlotAccessorFactory.java` | 工厂类，检测到活末影箱时创建 LivingEnderChestAccessor |
-| `CrossContainerTransfer` | `container/CrossContainerTransfer.java` | 跨容器传输工具类，处理相邻容器与活末影箱之间的路由注册和物品拉取 |
-| `LivingHopperFunction` | `function/LivingHopperFunction.java` | 活漏斗功能入口，在 `executeTransfer()` 中检测活末影箱并分发到路由注册/提取逻辑 |
+| `EnderChannelEntry` | `domain/ender/EnderChannelEntry.java` | 路由条目 record，描述源物品的"指针"，支持方块容器和玩家背包两种类型 |
+| `SlotAccessorFactory` | `transfer/SlotAccessorFactory.java` | 工厂类，检测到活末影箱时创建 LivingEnderChestAccessor |
+| `CrossContainerTransfer` | `domain/hopper/CrossContainerTransfer.java` | 跨容器传输工具类，处理相邻容器与活末影箱之间的路由注册和物品拉取 |
+| `TransferPipeline` | `domain/hopper/TransferPipeline.java` | 统一传输入口，通过 EnderRouteManager 注册路由 |
+| `LivingHopperFunction` | `domain/hopper/LivingHopperFunction.java` | 活漏斗功能入口，通过 TransferPipeline 检测活末影箱并分发到路由注册/提取逻辑 |
 
 ### 1.4 组件架构总览
 
@@ -77,7 +79,8 @@
 ├──────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │  活末影箱本身不执行传输逻辑！路由和传输由活漏斗的                    │
-│  executeTransfer() 触发，通过 LivingEnderChestAccessor 完成。      │
+│  TransferPipeline.execute() 触发，通过 LivingEnderChestAccessor   │
+│  和 EnderRouteManager 完成。                                     │
 │                                                                  │
 │  tick() 中仅做路由清理：                                          │
 │    - validateRoutes(context, activeRegistrarSlots, activeTargetSlots) │
@@ -86,12 +89,13 @@
 └──────────────────────────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────────────────────────┐
-│                LivingHopperFunction.executeTransfer()            │
-│                (活漏斗传输引擎 · 分发)                            │
+│                TransferPipeline.execute()                        │
+│                (统一传输入口 · 分发)                              │
 │                                                                  │
 │  ┌─────────────────────────────────────────────────────────┐    │
 │  │  target instanceof LivingEnderChestAccessor?             │    │
-│  │  ├─ YES → push端：registerRoute() → return true          │    │
+│  │  ├─ YES → push端：EnderRouteManager.registerRoute()      │    │
+│  │  │        → return true                                  │    │
 │  │  └─ NO  → 继续                                          │    │
 │  │                                                          │    │
 │  │  source instanceof LivingEnderChestAccessor?             │    │
@@ -100,8 +104,9 @@
 │  └─────────────────────────────────────────────────────────┘    │
 │                                                                  │
 │  ┌──────────────────┐         ┌──────────────────────────────┐  │
-│  │ registerRoute()  │         │ extract()                    │  │
-│  │ "写入路由表"      │         │ "读取路由表 → 跳转 → 提取"   │  │
+│  │ EnderRouteManager│         │ extract()                    │  │
+│  │ .registerRoute() │         │ "读取路由表 → 跳转 → 提取"   │  │
+│  │ "写入路由表"      │         │                              │  │
 │  └────────┬─────────┘         └──────────────┬───────────────┘  │
 │           │                                  │                   │
 │           │     ┌────────────────────┐       │                   │
@@ -283,19 +288,19 @@ if (LivingEnderChestFunction.isLivingEnderChest(stack)) {
 
 ### 4.1 容器内路由注册
 
-当活漏斗的 target 是活末影箱（路由模式）时，在 `executeTransfer()` 中触发：
+当活漏斗的 target 是活末影箱（路由模式）时，在 `TransferPipeline.execute()` 中触发：
 
 ```java
-// LivingHopperFunction.executeTransfer()
+// TransferPipeline.execute()
 if (target.unwrap() instanceof LivingEnderChestAccessor enderChest) {
     if (enderChest.isDirectMode()) {
         // 直连模式 → 直接传输
         return SlotAccessor.transfer(source, target, amount);
     }
-    // 路由模式 → 注册路由（传入 targetSlot 用于清理关联）
+    // 路由模式 → 注册路由（通过 EnderRouteManager）
     ItemStack srcStack = ctx.getItem(sourceSlot);
     if (!srcStack.isEmpty() && !LivingItemManager.isLivingItem(srcStack)) {
-        enderChest.registerRoute(srcStack, ctx, sourceSlot, hostSlot, targetSlot);
+        EnderRouteManager.registerRoute(srcStack, ctx, sourceSlot, hostSlot, targetSlot);
     }
     return true;
 }
@@ -306,8 +311,8 @@ if (target.unwrap() instanceof LivingEnderChestAccessor enderChest) {
 当活漏斗的 source 越界（从相邻容器拉取）、target 是活末影箱时，通过 `CrossContainerTransfer` 处理：
 
 ```
-LivingHopperFunction.executeTransfer()
-  └─ sourceOutOfBounds → CrossContainerTransfer.execute()
+TransferPipeline.execute()
+  └─ sourceOutOfBounds → CrossContainerTransfer
       └─ pullFromNeighbor()
           └─ target 是活末影箱 → pullFromNeighborToLivingEnderChest()
               ├─ 有绑定 UUID → 直连模式提取
@@ -331,7 +336,7 @@ LivingHopperFunction.executeTransfer()
 当活漏斗的 source 是活末影箱（路由模式）时：
 
 ```
-LivingHopperFunction.executeTransfer()
+TransferPipeline.execute()
   └─ source 是 LivingEnderChestAccessor
       └─ enderChest.extract(amount, filterType)
           ├─ 从 EnderChannelRegistry 查找匹配路由
@@ -366,14 +371,14 @@ LivingHopperFunction.executeTransfer()
 
 实现方式：
 
-1. `LivingHopperFunction.executeTransfer()` 创建 source accessor 后，检查 target 槽位物品类型
+1. `TransferPipeline.execute()` 创建 source accessor 后，检查 target 槽位物品类型
 2. 如果 target 槽有物品，将物品注册名设置到 `LivingEnderChestAccessor.preferredItemType`
 3. `EnderChannelRegistry.peek(channel, filterData, preferredItemType)` 优先返回匹配偏好类型的条目
 4. `EnderChannelRegistry.poll(channel, preferredItemType)` 优先取出匹配偏好类型的条目
 5. 找不到匹配条目时，回退到正常轮询（头部条目）
 
 ```java
-// LivingHopperFunction.executeTransfer()
+// TransferPipeline.execute()
 if (source.unwrap() instanceof LivingEnderChestAccessor sourceEnder && !sourceEnder.isDirectMode()) {
     ItemStack targetStack = ctx.getItem(targetSlot);
     if (!targetStack.isEmpty()) {
@@ -401,8 +406,8 @@ public EnderChannelEntry peek(int channel, FilterData filterData, String preferr
 ### 6.1 路由注册
 
 ```
-活漏斗 tick → executeTransfer() → target=活末影箱
-  └─ LivingEnderChestAccessor.registerRoute()
+活漏斗 tick → TransferPipeline.execute() → target=活末影箱
+  └─ EnderRouteManager.registerRoute()
       └─ EnderChannelRegistry.insert(channel, entry)
           ├─ 检查重复（contains）
           └─ 添加到 channels[channel].entries
@@ -411,7 +416,7 @@ public EnderChannelEntry peek(int channel, FilterData filterData, String preferr
 ### 6.2 路由消费
 
 ```
-活漏斗 tick → executeTransfer() → source=活末影箱
+活漏斗 tick → TransferPipeline.execute() → source=活末影箱
   └─ LivingEnderChestAccessor.extract()
       └─ EnderChannelRegistry.peek(channel, filter)
           ├─ 找到匹配路由 → 跳转提取
@@ -776,7 +781,7 @@ else { registry.reoffer(channel, entry); }  // 放回尾部
 
 **问题2：活末影箱被拿走后路由不清理**
 
-`registerRoute()` 硬编码 `targetSlot = -1`，导致 `removeStaleEnderChestRoutes` 的条件 `targetSlot >= 0` 永远不满足，活末影箱被拿走后路由残留。放回后旧路由仍在，`contains()` 返回 true，新路由无法注册。
+`EnderRouteManager.registerRoute()` 硬编码 `targetSlot = -1`，导致 `removeStaleEnderChestRoutes` 的条件 `targetSlot >= 0` 永远不满足，活末影箱被拿走后路由残留。放回后旧路由仍在，`contains()` 返回 true，新路由无法注册。
 
 **问题3：活漏斗被拿起到鼠标后路由不清理**
 
@@ -786,7 +791,7 @@ else { registry.reoffer(channel, entry); }  // 放回尾部
 
 替代旧版 5 个方法，一次遍历完成注册者/目标/源物品三项检查。通过 3 个反向索引（posIndex + keyIndex + **registrarKeyIndex** 新增）收集相关路由，去重后遍历。
 
-**修复2：`registerRoute()` 接收 `targetSlot` 参数**
+**修复2：`EnderRouteManager.registerRoute()` 接收 `targetSlot` 参数**
 
 路由条目正确记录活末影箱所在槽位，`validateRoutes()` 通过 `activeTargetSlots` 参数判断活末影箱是否还在。
 
@@ -816,7 +821,7 @@ else { registry.reoffer(channel, entry); }  // 放回尾部
 **修复：`preferredItemType` 偏好提取**
 
 1. `LivingEnderChestAccessor` 新增 `preferredItemType` 字段
-2. `LivingHopperFunction.executeTransfer()` 创建 source accessor 后，检查 target 槽位物品类型并设置偏好
+2. `TransferPipeline.execute()` 创建 source accessor 后，检查 target 槽位物品类型并设置偏好
 3. `EnderChannelRegistry.peek(channel, filterData, preferredItemType)` 优先返回匹配偏好类型的条目
 4. `EnderChannelRegistry.poll(channel, preferredItemType)` 优先取出匹配偏好类型的条目
 5. 找不到匹配条目时，回退到正常轮询（头部条目）

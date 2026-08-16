@@ -1,7 +1,7 @@
 # Living Hopper (活漏斗) 技术文档
 
-> **文档版本**: 2026.07 v7  
-> **最后更新**: 2026-07-28  
+> **文档版本**: 2026.08 v8  
+> **最后更新**: 2026-08-16  
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -45,10 +45,10 @@
 │  └──────────┬───────────┘  └──────────┬───────────┘             │
 │             │                         │                          │
 │  ┌──────────┴─────────────────────────┴───────────┐             │
-│  │              ItemTransferComponent              │             │
-│  │              (核心传输引擎)                      │             │
+│  │              TransferPipeline                   │             │
+│  │              (统一传输入口)                       │             │
 │  │                                                 │             │
-│  │  • 冷却管理 (cooldown)                          │             │
+│  │  • 容器内传输 + 跨容器传输统一入口               │             │
 │  │  • 前置检查（自环/级联/空/隔离/过滤）            │             │
 │  │  • SlotAccessor 创建 + doTransfer 统一流程      │             │
 │  └──────────────────────┬──────────────────────────┘             │
@@ -74,17 +74,16 @@
 │  │  • 邻居间传输 (transferBetweenNeighbors)       │             │
 │  │  • 大箱子合并处理                               │             │
 │  │  • GUI→世界方向转换                             │             │
-│  │  • 活末影箱路由注册 (pullFromNeighborToLivingEnderChest) │    │
 │  └─────────────────────────────────────────────────┘             │
 │                                                                  │
-│  ┌──────────────────────────────────────────────────┐            │
-│  │                 SlotResolver                      │            │
-│  │                 (槽位解析器)                       │            │
-│  │                                                   │            │
-│  │  • 相对方向 → 绝对槽位索引                         │            │
-│  │  • 9列网格布局计算                                │            │
-│  │  • 边界检查                                       │            │
-│  └──────────────────────────────────────────────────┘            │
+│  ┌──────────────────────┐  ┌──────────────────────────┐         │
+│  │  HopperFilterBuilder │  │     SlotResolver         │         │
+│  │  (过滤链构建)        │  │     (槽位解析器)         │         │
+│  │                      │  │                          │         │
+│  │ • buildAll()         │  │ • 相对方向→绝对槽位索引  │         │
+│  │ • buildForSlot()     │  │ • 9列网格布局计算        │         │
+│  │ • inheritFilter()    │  │ • 边界检查               │         │
+│  └──────────────────────┘  └──────────────────────────┘         │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -92,23 +91,22 @@
 
 | 类名 | 文件位置 | 职责 |
 |------|---------|------|
-| `LivingHopperFunction` | `function/LivingHopperFunction.java` | 活漏斗功能入口，注册组件，配置冷却/堆叠参数 |
-| `ItemTransferComponent` | `core/components/ItemTransferComponent.java` | 核心传输引擎，冷却管理、前置检查、SlotAccessor 调度 |
-| `DirectionModeComponent` | `core/components/DirectionModeComponent.java` | 方向配置，WASD输入解析，槽位偏移管理 |
-| `ItemFilterComponent` | `core/components/ItemFilterComponent.java` | 物品黑白名单过滤，扫描邻居活漏斗自动构建规则 |
-| `CrossContainerTransfer` | `core/components/CrossContainerTransfer.java` | 跨容器传输，GUI→世界方向转换，大箱子处理 |
-| `SlotResolver` | `core/SlotResolver.java` | 相对方向偏移→绝对槽位索引的数学计算 |
-| `ContainerSnapshot` | `container/ContainerSnapshot.java` | 容器级共享缓存，每 tick 预计算 sourceOf/targetOf/filterOf 数组，所有活漏斗共享 |
-| `SlotAccessor` | `core/accessor/SlotAccessor.java` | 槽位访问器接口，统一 extract/insert/rollback/sync 操作 |
-| `PlainSlotAccessor` | `core/accessor/PlainSlotAccessor.java` | 普通槽位访问器，直接读写 ContainerContext |
-| `LivingChestAccessor` | `core/accessor/LivingChestAccessor.java` | 活箱子访问器，通过 LivingChestFunction API 操作虚拟存储 |
-| `SlotAccessorFactory` | `core/accessor/SlotAccessorFactory.java` | 工厂类，根据槽位物品类型创建对应 SlotAccessor 实例 |
-| `ContainerCompatibilityConfig` | `core/config/ContainerCompatibilityConfig.java` | 容器兼容性规则注册表，支持配置不同模组容器的布局参数 |
-| `AdapterRegistry` | `core/adapters/AdapterRegistry.java` | 容器适配器注册表，通过 ServiceLoader 发现外部适配器 |
-| `ContainerAdapter` | `core/adapters/ContainerAdapter.java` | 容器适配器接口，为非标准容器提供自定义槽位解析 |
-| `HopperAdapter` | `core/adapters/HopperAdapter.java` | 漏斗容器适配器，处理 5 格漏斗的线性布局 |
-| `SlotMapping` | `core/model/SlotMapping.java` | 不可变槽位映射模型，12种预设方向 |
-| `Pos2D` | `core/model/Pos2D.java` | 不可变二维坐标，8个方向常量 |
+| `LivingHopperFunction` | `domain/hopper/LivingHopperFunction.java` | 活漏斗功能入口，注册组件，配置冷却/堆叠参数 |
+| `TransferPipeline` | `domain/hopper/TransferPipeline.java` | 统一传输入口，合并容器内传输和跨容器传输逻辑 |
+| `ItemTransferComponent` | _(已合并入 TransferPipeline)_ | 核心传输引擎，冷却管理、前置检查、SlotAccessor 调度 |
+| `DirectionModeComponent` | _(已合并入 TransferPipeline)_ | 方向配置，WASD输入解析，槽位偏移管理 |
+| `ItemFilterComponent` | `components/ItemFilterComponent.java` | 物品黑白名单过滤，扫描邻居活漏斗自动构建规则 |
+| `CrossContainerTransfer` | `domain/hopper/CrossContainerTransfer.java` | 跨容器传输，GUI→世界方向转换，大箱子处理 |
+| `HopperFilterBuilder` | `domain/hopper/HopperFilterBuilder.java` | 活漏斗过滤链构建，从 ContainerSnapshot 提取的领域逻辑 |
+| `SlotResolver` | `transfer/SlotResolver.java` | 相对方向偏移→绝对槽位索引的数学计算 |
+| `ContainerSnapshot` | `container/ContainerSnapshot.java` | 容器级共享缓存，每 tick 预计算 sourceOf/targetOf 数组，过滤构建委托给 HopperFilterBuilder |
+| `SlotAccessor` | `transfer/SlotAccessor.java` | 槽位访问器接口，统一 extract/insert/rollback/sync 操作 |
+| `PlainSlotAccessor` | `transfer/PlainSlotAccessor.java` | 普通槽位访问器，直接读写 ContainerContext |
+| `LivingChestAccessor` | `domain/chest/LivingChestAccessor.java` | 活箱子访问器，通过 LivingChestFunction API 操作虚拟存储 |
+| `SlotAccessorFactory` | `transfer/SlotAccessorFactory.java` | 工厂类，根据槽位物品类型创建对应 SlotAccessor 实例 |
+| `ContainerCompatibilityConfig` | `transfer/ContainerCompatibilityConfig.java` | 容器兼容性规则注册表，支持配置不同模组容器的布局参数 |
+| `SlotMapping` | `model/SlotMapping.java` | 不可变槽位映射模型，12种预设方向 |
+| `Pos2D` | `model/Pos2D.java` | 不可变二维坐标，8个方向常量 |
 
 ---
 
@@ -120,9 +118,10 @@
 
 **组件注册顺序**（按 tick 执行顺序）：
 ```java
-.addComponent(new ItemFilterComponent())      // 1. 先扫描黑白名单
-.addComponent(new DirectionModeComponent())   // 2. 解析方向（默认上传下）
-.addComponent(new ItemTransferComponent())    // 3. 执行传输
+// v8: 组件已合并入 TransferPipeline，注册顺序由 TransferPipeline 内部保证
+// 1. ItemFilterComponent — 扫描黑白名单（仍独立存在）
+// 2. DirectionModeComponent — 解析方向（已合并入 TransferPipeline）
+// 3. TransferPipeline — 统一传输入口
 ```
 
 **关键配置**：
@@ -137,7 +136,9 @@
 - `updateTransferMapping(ItemStack, SlotMapping)` — 更新传输方向（WASD输入后调用）
 - `readDirectionState(ItemStack)` — 读取方向状态
 
-### 2.2 ItemTransferComponent — 核心传输引擎
+### 2.2 TransferPipeline — 统一传输入口
+
+> **v8 变化**：原 `ItemTransferComponent` 和 `DirectionModeComponent` 已合并入 `TransferPipeline`。
 
 实现活漏斗的核心传输逻辑，是整个系统最复杂的组件。
 
@@ -153,15 +154,15 @@ tick()
   ├─ 冷却 > 0 → 递减，return
   ├─ 冷却 == 0 → 继续
   ├─ 前置判断：源槽位为空 → return（不设冷却，等待物品）
-  ├─ executeTransfer() → 执行传输
+  ├─ TransferPipeline.execute() → 执行传输
   └─ 无论成功与否，都设置冷却（防止过滤器拦截时无限循环）
 ```
 
-**executeTransfer() 流程**：
+**TransferPipeline.execute() 流程**：
 
 ```
                     源槽位/目标槽位是否越界？
-                    ├─ 越界 → CrossContainerTransfer.execute()
+                    ├─ 越界 → CrossContainerTransfer (由 TransferPipeline 委托)
                     └─ 未越界 → 继续
                                   │
                     源 == 目标？→ 自环防护，return false
@@ -185,7 +186,7 @@ tick()
                     │    └─ 普通物品 → PlainSlotAccessor
                     └─ source == null 或 target == null → return false
                                   │
-                    target 是活末影箱？→ registerRoute() → return true
+                    target 是活末影箱？→ EnderRouteManager.registerRoute() → return true
                                   │
                     source 是活末影箱？→ doTransfer(source, target, amount)
                                   │
@@ -223,7 +224,7 @@ tick()
 
 这样避免了"提取→检查→退回→旋转"的复杂流程，过滤在查找阶段完成。
 
-### 2.3 DirectionModeComponent — 方向配置
+### 2.3 方向配置（原 DirectionModeComponent，已合并入 TransferPipeline）
 
 活漏斗使用 **TRANSFER 模式**，管理源→目标的传输方向。
 
@@ -277,7 +278,7 @@ tick()
 
 #### 2.4.2 过滤规则构建
 
-过滤规则由 `ContainerSnapshot.buildFilterForSlot()` 方法在每 tick 的 `capture()` 阶段统一预计算，直接读取预计算的 `sourceOf`/`targetOf` 数组，无需重复扫描容器或调用 `SlotResolver`。计算完成后写回 `LivingHopperData.filter`，利用 Minecraft 内置的 DataComponent 同步机制推送到客户端，确保 tooltip 在任何场景下都能显示。
+过滤规则由 `HopperFilterBuilder.buildForSlot()` 方法在每 tick 的 `capture()` 阶段统一预计算（由 `ContainerSnapshot` 委托调用），直接读取预计算的 `sourceOf`/`targetOf` 数组，无需重复扫描容器或调用 `SlotResolver`。计算完成后写回 `LivingHopperData.filter`，利用 Minecraft 内置的 DataComponent 同步机制推送到客户端，确保 tooltip 在任何场景下都能显示。
 
 **过滤规则语义**：
 
@@ -290,10 +291,10 @@ tick()
 - 邻居向我推送物品（target 指向我）→ 我**黑名单**邻居的 source 物品，避免从源重复拉取相同物品
 - 邻居从我取物品（source 指向我）→ 我**白名单**邻居的 target 物品，确保我只拉取邻居需要的物品给它
 
-**buildFilterForSlot() 工作流程**（在 `ContainerSnapshot.capture()` 中调用）：
+**buildFilterForSlot() 工作流程**（在 `HopperFilterBuilder.buildForSlot()` 中实现，由 `ContainerSnapshot.capture()` 委托调用）：
 
 ```java
-// ContainerSnapshot.buildFilterForSlot() — 容器级预计算
+// HopperFilterBuilder.buildForSlot() — 容器级预计算（由 ContainerSnapshot 委托）
 // sourceOf/targetOf 数组已在 capture() 前半段计算完成
 for (int i = 0; i < containerSize; i++) {
     if (i == mySlot) continue;
@@ -428,11 +429,11 @@ allowsByPriority(item):
 
 > **注意**：`mode` 不再作为 NBT 键持久化存储。模式由扫描时读取邻居活漏斗的堆叠数动态计算，不写入状态。
 
-> **v7 注意**：以上 FilterData 字段由 `ContainerSnapshot.buildAllFilters()` 每 tick 预计算后写回 DataComponent，而非由活漏斗自身构建。存档中可能包含旧数据，但每 tick 会被覆盖为最新值。
+> **v8 注意**：以上 FilterData 字段由 `HopperFilterBuilder.buildAll()` 每 tick 预计算后写回 DataComponent，而非由活漏斗自身构建。存档中可能包含旧数据，但每 tick 会被覆盖为最新值。
 
 #### 2.4.6 链式传递机制（双层继承 + 穿透混合模式）
 
-在 v7 架构下，`ContainerSnapshot.buildFilterForSlot()` 为每个活漏斗独立构建过滤规则。链式传递由**两层机制**协同完成：
+在 v8 架构下，`HopperFilterBuilder.buildForSlot()` 为每个活漏斗独立构建过滤规则。链式传递由**两层机制**协同完成：
 
 **第一层：buildFilterForSlot 中的邻居继承**（在遍历邻居时触发）
 
@@ -547,9 +548,9 @@ Tick 3: 漏斗3 继承漏斗2(上一tick的状态) → 黑名单=[ID(钻石)]
 
 #### 2.4.7 关键方法
 
-**ContainerSnapshot 中的过滤方法**：
-- `buildAllFilters()` — 容器级预计算入口，遍历所有活漏斗槽位调用 `buildFilterForSlot()`
-- `buildFilterForSlot()` — 为单个活漏斗构建完整 FilterData。当邻居活漏斗指向我时，先通过 `ensureFilterBuilt()` 继承其完整 FilterData（黑白名单全部），再通过 `inheritFilter()` 处理其直接 source/target 物品
+**HopperFilterBuilder 中的过滤方法**：
+- `buildAll()` — 容器级预计算入口，遍历所有活漏斗槽位调用 `buildForSlot()`
+- `buildForSlot()` — 为单个活漏斗构建完整 FilterData。当邻居活漏斗指向我时，先通过 `ensureFilterBuilt()` 继承其完整 FilterData（黑白名单全部），再通过 `inheritFilter()` 处理其直接 source/target 物品
 - `inheritFilter()` — 遇到活漏斗时：先通过 `ensureFilterBuilt()` 获取其 FilterData 并合并（`mergeFilterData`），再沿该活漏斗的 source/target 方向穿透递归（用该活漏斗自身的 mode 分类）；遇到非活物品时通过 `addToFilter()` 加入过滤规则
 - `ensureFilterBuilt()` — 确保指定槽位的 FilterData 已构建，支持递归构建和循环依赖检测
 - `mergeFilterData()` — 将源 FilterData 的黑白名单数据合并到目标列表，去重
@@ -582,21 +583,13 @@ LivingHopperFunction.tick()                                 [每 tick]
   ├─ 冷却中？→ tick() 递减冷却，return
   │
   ├─ filter = tick.snapshot.getFilterOf(slot)               [直接读容器快照]
-  │   └─ FilterData 已在 ContainerSnapshot.capture() 中预计算
+  │   └─ FilterData 已在 HopperFilterBuilder.buildAll() 中预计算
   │
-  ├─ executeTransfer(context, level, slot, source, target, stackSize, filter, dir, tick)
+  ├─ TransferPipeline.execute(request)                       [统一传输入口]
   │
-  ├─ executeTransfer()                                      [传输执行]
-  │   ├─ 越界？→ CrossContainerTransfer.execute()
-  │   │   ├─ pullFromNeighbor (源越界)
-  │   │   │   ├─ targetIsChest → pullFromNeighborToLivingChest
-  │   │   │   ├─ targetIsEnderChest → pullFromNeighborToLivingEnderChest
-  │   │   │   └─ 普通物品 → 直接拉取 + markSlotTransferred
-  │   │   ├─ pushToNeighbor (目标越界)
-  │   │   │   ├─ sourceIsChest → pushFromLivingChestToNeighbor
-  │   │   │   ├─ sourceIsEnderChest → pushFromLivingEnderChestToNeighbor
-  │   │   │   └─ 普通物品 → 直接推送
-  │   │   └─ transferBetweenNeighbors (都越界)
+  ├─ TransferPipeline.execute()                             [传输执行]
+  │   ├─ 越界？→ CrossContainerTransfer.resolveDirection()
+  │   │         + TransferPipeline.doTransfer()
   │   └─ 未越界 → 前置检查 → SlotAccessor 创建 → doTransfer
   │       ├─ 自环检查 (sourceSlot == targetSlot)
   │       ├─ 级联防护 (transferredTargetSlots 包含 sourceSlot)
@@ -605,7 +598,7 @@ LivingHopperFunction.tick()                                 [每 tick]
   │       ├─ 物品过滤检查 (ItemFilterComponent.allows())
   │       ├─ source = SlotAccessorFactory.create(sourceSlot)
   │       ├─ target = SlotAccessorFactory.create(targetSlot)
-  │       ├─ target 是活末影箱（路由模式）→ registerRoute() → return true
+  │       ├─ target 是活末影箱（路由模式）→ EnderRouteManager.registerRoute() → return true
   │       └─ SlotAccessor.transfer(source, target, amount)
   │           ├─ extract → insert → rollback
   │           └─ markTransferred → sync
@@ -618,12 +611,14 @@ LivingHopperFunction.tick()                                 [每 tick]
       └─ 清理失效的活末影箱路由条目
 ```
 
-**关键变化**（v7 架构优化后）：
-- **核心原则：计算归容器，展示归物品**。`FilterData` 由 `ContainerSnapshot` 容器级预计算（衍生数据），但写回 `LivingHopperData.filter`（DataComponent），利用 Minecraft 内置同步机制推送到客户端
-- `ContainerSnapshot.capture()` 中一次性计算所有活漏斗的 `sourceOf`/`targetOf`/`filterOf`，每 tick 只算一次
+**关键变化**（v8 架构优化后）：
+- **核心原则：计算归容器，展示归物品**。`FilterData` 由 `HopperFilterBuilder` 容器级预计算（衍生数据），但写回 `LivingHopperData.filter`（DataComponent），利用 Minecraft 内置同步机制推送到客户端
+- `ContainerSnapshot.capture()` 中一次性计算所有活漏斗的 `sourceOf`/`targetOf`，过滤构建委托给 `HopperFilterBuilder.buildAll()`，每 tick 只算一次
+- `TransferPipeline` 统一容器内传输和跨容器传输入口，消除 `LivingHopperFunction.executeTransfer` 与 `CrossContainerTransfer.execute` 的双向耦合
+- `EnderRouteManager` 集中管理活末影箱路由注册/提取/验证，`TransferPipeline` 通过 `EnderRouteManager.registerRoute()` 注册路由
 - `LivingHopperFunction.tick()` 从 `tick.snapshot.getFilterOf(slot)` 读取过滤规则，写回 `data.withFilter(filter).withTransfer(transfer)`
 - `LivingHopperData` 保留 `FilterData filter` 字段，tooltip 直接从 `data.filter()` 读取
-- `buildFilterChain`/`addToFilter` 方法位于 `ContainerSnapshot`，作为容器级预计算逻辑
+- `buildFilterChain`/`addToFilter` 方法已提取到 `HopperFilterBuilder`，`ContainerSnapshot` 仅委托调用
 - 新增 `PerfMetrics.recordTransfer()` 性能记录
 
 ### 3.2 SlotAccessor 统一传输流程
@@ -694,13 +689,13 @@ actualCooldown = max(1, baseCooldown - stackSize / 8)
 
 ```java
 // tick() 方法
-executeTransfer(ctx, hostStack.getCount(), maxTransfer);
+TransferPipeline.execute(request);
 // 无论成功与否都设置冷却
 int actualCooldown = calculateCooldown(baseCooldown, hostStack.getCount());
 state.setInt(KEY_COOLDOWN, actualCooldown);
 ```
 
-**原因**：如果过滤器拦截了物品，`executeTransfer` 返回 false。若不设冷却，下一 tick 立即重试，形成无限循环（特别是活箱子预查过滤场景，每 tick 都会重新查询一次）。
+**原因**：如果过滤器拦截了物品，`TransferPipeline.execute` 返回 false。若不设冷却，下一 tick 立即重试，形成无限循环（特别是活箱子预查过滤场景，每 tick 都会重新查询一次）。
 
 **特殊情况**：源槽位为空时**不设冷却**，因为此时没有物品可传输，应该等待新物品加入后立即响应。
 
@@ -825,7 +820,7 @@ GUI右(RIGHT) → 世界西(WEST)   → 旋转后
 
 ### 7.2 过滤规则构建（ContainerSnapshot 预计算 + DataComponent 写回）
 
-过滤规则构建逻辑位于 `ContainerSnapshot.buildFilterForSlot()`，作为容器级预计算的一部分。
+过滤规则构建逻辑位于 `HopperFilterBuilder.buildForSlot()`，作为容器级预计算的一部分（由 `ContainerSnapshot` 委托调用）。
 
 **核心原则：计算归容器，展示归物品**。`FilterData` 是衍生数据（由邻居活漏斗的配置和物品推导），其**计算**归容器（`ContainerSnapshot` 统一预计算），但**展示**借物品的 DataComponent 通道同步到客户端。这样既保留了容器级预计算的性能优势，又确保 tooltip 在任何场景下（光标上、地上、聊天框）都能正常显示。
 
@@ -903,7 +898,7 @@ allowsByPriority(item):
 
 | 传输场景 | 过滤方式 |
 |---------|---------|
-| 同容器内传输（普通→普通/活箱子→普通/普通→活箱子/活箱子→活箱子） | `executeTransfer()` 中检查 `sourceStack` + `LivingChestAccessor.extract()` 预查过滤 |
+| 同容器内传输（普通→普通/活箱子→普通/普通→活箱子/活箱子→活箱子） | `TransferPipeline.execute()` 中检查 `sourceStack` + `LivingChestAccessor.extract()` 预查过滤 |
 | 跨容器拉取 | `pullFromNeighbor()` 遍历时跳过 |
 | 跨容器推送（活箱子） | `pushFromLivingChestToNeighbor()` 中预查过滤 |
 | 跨容器拉取→活箱子 | `pullFromNeighborToLivingChest()` 遍历时跳过 |
@@ -1088,7 +1083,7 @@ result = (baseRow + direction.y) * containerWidth + (baseCol + direction.x)
 
 ### 9.6 跨容器触发
 
-当 `SlotResolver.resolve()` 返回 -1 时，表示槽位超出当前容器范围，触发跨容器传输。此时 `ItemTransferComponent.executeTransfer()` 将控制权交给 `CrossContainerTransfer.execute()`。
+当 `SlotResolver.resolve()` 返回 -1 时，表示槽位超出当前容器范围，触发跨容器传输。此时 `TransferPipeline.execute()` 将控制权交给 `CrossContainerTransfer`。
 
 ---
 
@@ -1158,7 +1153,7 @@ result = (baseRow + direction.y) * containerWidth + (baseCol + direction.x)
 - `transferFromLivingChest()` (~170行)
 - `transferBetweenLivingChests()` (~80行)
 
-**改造后**：`ItemTransferComponent` 从 ~750 行缩减到 ~350 行。新增存储类型只需实现 `SlotAccessor` 接口 + 在工厂类添加一行判断，传输引擎零改动。
+**改造后**：`TransferPipeline` 从 ~750 行缩减到 ~350 行。新增存储类型只需实现 `SlotAccessor` 接口 + 在工厂类添加一行判断，传输引擎零改动。
 
 **相关提交**：2026-07-22
 
@@ -1186,10 +1181,10 @@ result = (baseRow + direction.y) * containerWidth + (baseCol + direction.x)
 
 **问题**：活漏斗 source=跨容器(越界)，target=活末影箱(容器内) 时，无法向频道添加路由。
 
-**根因**：`executeTransfer()` 中越界检查在最前面，source 越界时直接跳转到 `CrossContainerTransfer.execute()`，跳过了 `target instanceof LivingEnderChestAccessor` 的 `registerRoute` 调用。而 `pullFromNeighbor` 只检查了 `targetIsChest`，未检查 `targetIsEnderChest`。
+**根因**：`TransferPipeline.execute()` 中越界检查在最前面，source 越界时直接跳转到 `CrossContainerTransfer`，跳过了 `target instanceof LivingEnderChestAccessor` 的 `EnderRouteManager.registerRoute()` 调用。而 `pullFromNeighbor` 只检查了 `targetIsChest`，未检查 `targetIsEnderChest`。
 
 **修复**：
-1. `CrossContainerTransfer.execute()` 新增 `hostSlot` 参数
+1. `CrossContainerTransfer` 新增 `hostSlot` 参数
 2. `pullFromNeighbor` 新增 `targetIsEnderChest` 检查
 3. 新增 `pullFromNeighborToLivingEnderChest()` 方法，遍历相邻容器物品，构建 `EnderChannelEntry` 并注册到全局路由表
 
@@ -1281,11 +1276,11 @@ result = (baseRow + direction.y) * containerWidth + (baseCol + direction.x)
 
 **背景**：原 `ItemFilterComponent.tick()` 负责扫描邻居活漏斗构建黑白名单，但组件架构下组件间状态传递复杂，且过滤规则需要与传输逻辑紧密配合。
 
-**重构方案**：将过滤链构建逻辑移至 `ContainerSnapshot.buildFilterForSlot()`，在 `capture()` 阶段统一预计算：
+**重构方案**：将过滤链构建逻辑移至 `HopperFilterBuilder.buildForSlot()`，在 `capture()` 阶段统一预计算：
 
-**新增方法**（`ContainerSnapshot`）：
-- `buildAllFilters(ctx, containerSize, sourceOf, targetOf)` — 容器级预计算入口，遍历所有活漏斗槽位
-- `buildFilterForSlot(mySlot, ctx, containerSize, sourceOf, targetOf)` — 为单个活漏斗构建完整 FilterData（包含 ID/NBT/Tag 三个级别的黑名单和白名单，以及对应的槽位映射）
+**新增方法**（`HopperFilterBuilder`）：
+- `buildAll(ctx, containerSize, sourceOf, targetOf)` — 容器级预计算入口，遍历所有活漏斗槽位
+- `buildForSlot(mySlot, ctx, containerSize, sourceOf, targetOf)` — 为单个活漏斗构建完整 FilterData（包含 ID/NBT/Tag 三个级别的黑名单和白名单，以及对应的槽位映射）
 - `addToFilter(mode, stack, idList, compositeList, tagList, idSlots, tagSlots, refSlot)` — 根据过滤模式将物品添加到对应数据集，同时记录来源槽位
 
 **tick 流程变化**：
@@ -1495,7 +1490,7 @@ public static void postTickSync(ContainerContext ctx, ContainerFluidData fluidDa
 
 ### 11.1 关键日志点
 
-`ItemTransferComponent` 中可通过 `LOGGER` 添加日志：
+`TransferPipeline` 中可通过 `LOGGER` 添加日志：
 
 ```java
 // 传输执行

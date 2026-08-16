@@ -1,8 +1,8 @@
-# Living Item Template (活物品模板)
+# Living Item (活物品)
 
 **Minecraft 1.21.1 + NeoForge 21.1.x**
-*最后更新: 2026-08-09*
-*状态: Alpha 测试阶段 - 活地图传送系统已完成*
+*最后更新: 2026-08-16*
+*状态: Alpha 测试阶段 - v8 架构重构完成*
 
 ---
 
@@ -43,13 +43,13 @@ LivingItemFunction.tick() (各功能类自行实现 tick 逻辑)
     ├── LivingTntFunction        → LivingTntData
     ├── LivingWaterBucketFunction→ LivingWaterBucketData
     ├── LivingFurnaceFunction    → LivingFurnaceData
-    ├── LivingHopperFunction     → LivingHopperData
+    ├── LivingHopperFunction     → TransferPipeline (统一传输入口)
     ├── LivingEnderChestFunction → LivingEnderChestData
     ├── LivingWaterWheelFunction → LivingWaterWheelData
     ├── LivingChestFunction      → InternalStorageComponent (旧架构)
     └── LivingEnderPearlFunction → (纯工具类，无 DataComponent)
     ↓
-ContainerContext (组合接口) → TickContext (tick 级临时状态)
+ContainerContext (组合接口) → TickContext (tick 级临时状态 + 脏槽位批量同步)
     ↓
 SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 ```
@@ -66,7 +66,7 @@ SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 | **活TNT** | 引信倒计时 + 爆炸，威力随数量缩放，双模式（普通/大当量） | [living-tnt-tech.md](docs/tech/living-tnt-tech.md) |
 | **活水桶** | 水源注册 + BFS 蔓延 + 水流推动物品 | [living-water-bucket-tech.md](docs/tech/living-water-bucket-tech.md) |
 | **活熔炉** | 配方匹配 + 燃料消耗 + 方向槽位配置 | [living-furnace-tech.md](docs/tech/living-furnace-tech.md) |
-| **活漏斗** | 传输方向 + 黑白名单 + 跨容器传输 + WASD 配置 | [living-hopper-tech.md](docs/tech/living-hopper-tech.md) |
+| **活漏斗** | TransferPipeline 统一传输 + 黑白名单 + 跨容器 + WASD 配置 | [living-hopper-tech.md](docs/tech/living-hopper-tech.md) |
 | **活箱子** | 堆叠倍增 + UUID 映射 + LRU 缓存 + 磁盘持久化 | [living-chest-tech.md](docs/tech/living-chest-tech.md) |
 | **活末影箱** | 路由模式（共享黑板）+ 直连模式（绑定玩家末影箱） | [living-ender-chest-tech.md](docs/tech/living-ender-chest-tech.md) |
 | **活水车** | 力矩计算 + 应力叠加/抵消 + Create 软依赖 | [living-water-wheel-tech.md](docs/tech/living-water-wheel-tech.md) |
@@ -92,49 +92,81 @@ src/main/java/com/qiqi/li/
 │   │   ├── LivingItemFunction.java          # 功能接口（tick + tooltip + canApply + getFunctionId）
 │   │   └── LivingItemManager.java           # 核心管理器：DataComponent 注册、数据读写、功能注册
 │   │
-│   ├── data/                                # DataComponent 数据模型（不可变 Record）
-│   │   ├── LivingTntData.java               #   活TNT（含 ExplosionData）
-│   │   ├── LivingWaterBucketData.java       #   活水桶（含 WaterData）
-│   │   ├── LivingFurnaceData.java           #   活熔炉（含 ProgressData + FuelData + TransformData + DirectionSlotsData）
-│   │   ├── LivingHopperData.java            #   活漏斗（含 TransferData + FilterData + DirectionTransferData）
-│   │   ├── LivingEnderChestData.java        #   活末影箱（含 EnderChannelData）
-│   │   └── LivingWaterWheelData.java       #   活水车（含 WaterWheelData）
-│   │
-│   ├── function/                            # 各活物品功能实现
-│   │   ├── LivingChestFunction.java         #   活箱子（旧架构）
-│   │   ├── LivingEnderChestFunction.java    #   活末影箱：双模式 + 玩家绑定
-│   │   ├── LivingFurnaceFunction.java       #   活熔炉
-│   │   ├── LivingHopperFunction.java        #   活漏斗
-│   │   ├── LivingTntFunction.java           #   活TNT
-│   │   ├── LivingWaterBucketFunction.java   #   活水桶
-│   │   ├── LivingWaterWheelFunction.java   #   活水车
-│   │   ├── LivingEnderPearlFunction.java   #   活末影珍珠（纯工具类）
-│   │   └── LivingFlintAndSteelFunction.java #   活打火石（交互触发器）
-│   │
-│   ├── container/                           # 容器抽象层
+│   ├── container/                           # 容器抽象层（跨活物品共享基础设施）
 │   │   ├── ContainerContext.java            #   组合接口
-│   │   ├── TickContext.java                 #   Tick 级临时状态（对象池复用）
-│   │   ├── SimpleContainerContext.java      #   容器上下文实现
-│   │   ├── ContainerLivingItemHandler.java  #   容器扫描、分组调度
+│   │   ├── TickContext.java                 #   Tick 级临时状态（对象池复用 + 脏槽位集合）
+│   │   ├── SimpleContainerContext.java      #   容器上下文实现（脏槽位批量同步）
+│   │   ├── ContainerLivingItemHandler.java  #   容器扫描、分组调度（TickContext 生命周期管理）
 │   │   ├── ContainerChunkCache.java         #   区块级容器缓存
-│   │   ├── CrossContainerTransfer.java      #   跨容器传输
-│   │   └── ContainerSnapshot.java           #   容器快照
+│   │   ├── ContainerSnapshot.java           #   容器快照（过滤构建委托 HopperFilterBuilder）
+│   │   ├── ContainerSync.java               #   容器同步
+│   │   ├── SlotInfoProvider.java            #   槽位信息提供
+│   │   ├── ContainerIdentity.java           #   容器标识
+│   │   └── LivingContainer.java             #   活容器
 │   │
-│   ├── domain/                              # 领域模块
-│   │   ├── ender/                           #   末影箱+活箱子领域
-│   │   │   ├── EnderChannelRegistry.java    #     全局路由表
-│   │   │   ├── LivingChestAccessor.java     #     活箱子 SlotAccessor
-│   │   │   └── LivingEnderChestAccessor.java #    活末影箱 SlotAccessor
-│   │   ├── water/                           #   活水领域
-│   │   │   ├── ContainerFluidData.java      #     容器级流体数据
-│   │   │   └── ContainerStressData.java     #     容器级应力累加器
-│   │   └── map/                             #   活地图传送领域
-│   │       ├── MapTeleportExecutor.java     #     传送执行器
-│   │       ├── TeleportHelper.java          #     传送工具类
-│   │       ├── MapCoordHelper.java          #     坐标转换工具类
-│   │       ├── LivingMapEventHandler.java   #     手持传送 + 元数据同步
+│   ├── domain/                              # 领域模块（每个活物品内聚到此）
+│   │   ├── hopper/                           #   活漏斗领域
+│   │   │   ├── LivingHopperFunction.java     #     活漏斗功能入口
+│   │   │   ├── TransferPipeline.java         #     统一传输入口（v8 新增）
+│   │   │   ├── CrossContainerTransfer.java   #     跨容器传输（从 container/ 迁入）
+│   │   │   ├── HopperFilterBuilder.java      #     过滤链构建（v8 新增）
+│   │   │   ├── TransferStrategy.java         #     传输策略（从 transfer/ 迁入）
+│   │   │   ├── LivingHopperData.java         #     活漏斗数据（从 data/ 迁入）
+│   │   │   ├── DirectionTransferData.java    #     方向传输数据（从 data/ 迁入）
+│   │   │   └── TransferData.java             #     传输数据（从 data/ 迁入）
+│   │   │
+│   │   ├── chest/                            #   活箱子领域
+│   │   │   ├── LivingChestFunction.java      #     活箱子功能入口（从 function/ 迁入）
+│   │   │   ├── LivingChestAccessor.java      #     活箱子 SlotAccessor（从 domain/ender/ 迁入）
+│   │   │   ├── LivingChestItemHandler.java   #     活箱子 ItemHandler（从 domain/ender/ 迁入）
+│   │   │   └── LivingChestTooltipComponent.java  # Tooltip 组件
+│   │   │
+│   │   ├── ender/                            #   活末影箱领域
+│   │   │   ├── LivingEnderChestFunction.java #     活末影箱功能入口（从 function/ 迁入）
+│   │   │   ├── LivingEnderChestAccessor.java #     活末影箱 SlotAccessor（精简，路由委托 EnderRouteManager）
+│   │   │   ├── LivingEnderChestItemHandler.java  # ItemHandler
+│   │   │   ├── EnderRouteManager.java        #     路由逻辑集中管理（v8 新增）
+│   │   │   ├── EnderChannelRegistry.java     #     全局路由表
+│   │   │   ├── EnderChannelEntry.java        #     路由条目
+│   │   │   ├── EnderChannelClientCache.java  #     客户端缓存
+│   │   │   ├── EnderChannelData.java         #     频道数据（从 data/ 迁入）
+│   │   │   └── LivingEnderChestData.java     #     活末影箱数据（从 data/ 迁入）
+│   │   │
+│   │   ├── furnace/                          #   活熔炉领域
+│   │   │   ├── LivingFurnaceFunction.java    #     活熔炉功能入口（从 function/ 迁入，改用 SlotAccessor）
+│   │   │   ├── LivingFurnaceData.java        #     活熔炉数据（从 data/ 迁入）
+│   │   │   ├── ProgressData.java             #     进度数据（从 data/ 迁入）
+│   │   │   ├── FuelData.java                 #     燃料数据（从 data/ 迁入）
+│   │   │   ├── TransformData.java            #     转换数据（从 data/water/ 迁入）
+│   │   │   └── DirectionSlotsData.java       #     方向槽位数据（从 data/ 迁入）
+│   │   │
+│   │   ├── water/                            #   活水领域
+│   │   │   ├── LivingWaterBucketFunction.java #    活水桶功能入口（从 function/ 迁入）
+│   │   │   ├── LivingWaterWheelFunction.java #     活水车功能入口（从 function/ 迁入）
+│   │   │   ├── ContainerFluidData.java       #     容器级流体数据
+│   │   │   ├── ContainerStressData.java      #     容器级应力累加器
+│   │   │   ├── LivingWaterBucketData.java    #     活水桶数据（从 data/ 迁入）
+│   │   │   ├── WaterData.java                #     水源数据（从 data/ 迁入）
+│   │   │   ├── LivingWaterWheelData.java     #     活水车数据（从 data/ 迁入）
+│   │   │   └── WaterWheelData.java           #     水车应力数据（从 data/ 迁入）
+│   │   │
+│   │   ├── tnt/                              #   活TNT领域
+│   │   │   ├── LivingTntFunction.java        #     活TNT功能入口（从 function/ 迁入）
+│   │   │   ├── LivingTntData.java            #     活TNT数据（从 data/ 迁入）
+│   │   │   └── ExplosionData.java            #     爆炸数据（从 data/ 迁入）
+│   │   │
+│   │   └── map/                              #   活地图传送领域
+│   │       ├── LivingEnderPearlFunction.java #     活末影珍珠（纯工具类）
+│   │       ├── MapTeleportExecutor.java      #     传送执行器
+│   │       ├── TeleportHelper.java           #     传送工具类
+│   │       ├── MapCoordHelper.java           #     坐标转换工具类
+│   │       ├── LivingMapEventHandler.java    #     手持传送 + 元数据同步
 │   │       ├── ItemFrameMapTeleportHandler.java #  展示框传送
-│   │       └── LivingMapClientCache.java    #     客户端地图元数据缓存
+│   │       ├── LivingMapClientCache.java     #     客户端地图元数据缓存
+│   │       └── StructureMapDecorator.java    #     结构地图装饰器
+│   │
+│   ├── function/                             # 简单活物品功能（无需领域模块）
+│   │   └── LivingFlintAndSteelFunction.java  #   活打火石（交互触发器）
 │   │
 │   ├── compat/                              # 第三方模组兼容层
 │   │   ├── create/                          #   Create 兼容（软依赖）
@@ -150,7 +182,9 @@ src/main/java/com/qiqi/li/
 │   │   ├── FilteredSlotAccessor.java        #   过滤装饰器
 │   │   ├── NeighborSlotAccessor.java        #   邻居容器
 │   │   ├── SlotAccessorFactory.java         #   注册式工厂
-│   │   └── SlotResolver.java                #   槽位解析
+│   │   ├── SlotResolver.java                #   槽位解析
+│   │   ├── ContainerCompatibilityConfig.java #  容器兼容性配置
+│   │   └── FilterData.java                  #   过滤数据（从 data/ 迁入，跨领域共享）
 │   │
 │   ├── interaction/                         # GUI交互
 │   │   ├── InteractionEntry.java            #   交互规则 record
@@ -217,7 +251,12 @@ src/main/java/com/qiqi/li/
 - [x] 不可变数据模型（Java Record + `withXxx()`）
 - [x] 活物品隔离（不传输/不熔炼/不作为燃料）
 - [x] TickContext 对象池（ThreadLocal，命中率 ~87%）
+- [x] 脏槽位批量同步机制（`TickContext.dirtySlots`）
 - [x] 性能监控指标系统（`PerfMetrics`）
+- [x] 包结构领域内聚（`domain/` 替代 `data/` + `function/`）
+- [x] `TransferPipeline` 统一传输入口
+- [x] `EnderRouteManager` 路由逻辑集中
+- [x] `SlotAccessor` 架构统一所有传输路径
 
 ### GUI交互系统
 - [x] 声明式交互规则（`InteractionEntry` + `InteractionRegistry`）
@@ -268,6 +307,15 @@ src/main/java/com/qiqi/li/
 
 ### 当前版本: v0.9-alpha
 
+**最近更新** (2026-08-16):
+- ✅ 重构：包结构重组 — `data/` 删除，`function/` 精简，所有活物品内聚到 `domain/`
+- ✅ 重构：传输管道统一 — `TransferPipeline` 统一传输入口，解耦 `CrossContainerTransfer` 与 `LivingHopperFunction`
+- ✅ 重构：活末影箱路由解耦 — `EnderRouteManager` 集中管理路由，`LivingEnderChestAccessor` 精简
+- ✅ 重构：活熔炉同步生命周期统一 — 改用 `SlotAccessor`，支持活箱子作为输入/输出
+- ✅ 新增：`HopperFilterBuilder` 过滤链构建（从 `ContainerSnapshot` 提取）
+- ✅ 新增：脏槽位批量同步机制（`TickContext.dirtySlots` + `SimpleContainerContext.flushDirtySlots()`）
+- ✅ 更新：全部技术文档同步至 v8 架构
+
 **最近更新** (2026-08-09):
 - ✅ 新增：活地图传送系统（三种场景 + UV 精确传送 + 跨维度 + 载具 + Sable 飞艇兼容）
 - ✅ 新增：GUI 扩展地图渲染 + 十字光标 + 展示框十字光标 + 活地图图标
@@ -316,6 +364,7 @@ docs/
 │   └── pinyin-search.md
 └── archive/                          # 存档
     ├── changelog.md                  #   历史更新记录
+    ├── refactoring-report.md         #   v8 重构完成报告
     ├── middleware-design.md
     ├── gui-refactoring.md
     ├── creative-mode-sync-issue.md

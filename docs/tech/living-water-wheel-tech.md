@@ -53,9 +53,9 @@
 
 | 类名 | 文件位置 | 职责 |
 |------|---------|------|
-| `LivingWaterWheelFunction` | `function/LivingWaterWheelFunction.java` | 活水车功能入口，管理应力同步和 Tooltip |
-| `WaterWheelData` | `data/WaterWheelData.java` | 水车应力 record：cwStress/ccwStress/netStress |
-| `LivingWaterWheelData` | `data/LivingWaterWheelData.java` | 活水车数据容器：包含 WaterWheelData |
+| `LivingWaterWheelFunction` | `domain/waterwheel/LivingWaterWheelFunction.java` | 活水车功能入口，管理应力同步和 Tooltip |
+| `WaterWheelData` | `domain/waterwheel/WaterWheelData.java` | 水车应力 record：cwStress/ccwStress/netStress |
+| `LivingWaterWheelData` | `domain/waterwheel/LivingWaterWheelData.java` | 活水车数据容器：包含 WaterWheelData |
 | `ContainerStressData` | `container/ContainerStressData.java` | 容器级应力累加器，遍历所有活水车计算力矩 |
 | `CONTAINER_STRESS_DATA` | `api/LivingItemManager.java` | NeoForge `AttachmentType`，给 BlockEntity 附加 `ContainerStressData` 应力数据 |
 
