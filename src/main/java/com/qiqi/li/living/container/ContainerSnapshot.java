@@ -12,10 +12,10 @@ import net.minecraft.world.item.ItemStack;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.transfer.SlotResolver;
 import com.qiqi.li.living.components.ItemFilterComponent;
-import com.qiqi.li.living.data.FilterData;
-import com.qiqi.li.living.data.LivingHopperData;
-import com.qiqi.li.living.function.LivingChestFunction;
-import com.qiqi.li.living.function.LivingHopperFunction;
+import com.qiqi.li.living.transfer.FilterData;
+import com.qiqi.li.living.domain.hopper.LivingHopperData;
+import com.qiqi.li.living.domain.chest.LivingChestFunction;
+import com.qiqi.li.living.domain.hopper.LivingHopperFunction;
 
 public class ContainerSnapshot {
 
@@ -90,7 +90,9 @@ public class ContainerSnapshot {
         Arrays.fill(filterOf, FilterData.EMPTY);
 
         for (int slot = 0; slot < containerSize; slot++) {
-            if (sourceOf[slot] == -1 && targetOf[slot] == -1) continue;
+            if (sourceOf[slot] == -1 && targetOf[slot] == -1) {
+                if (!LivingHopperFunction.isLivingHopper(ctx.getItem(slot))) continue;
+            }
             filterOf[slot] = buildFilterForSlot(slot, ctx, containerSize, sourceOf, targetOf, filterOf, new HashSet<>());
         }
 

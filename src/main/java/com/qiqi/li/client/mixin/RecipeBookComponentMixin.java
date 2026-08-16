@@ -3,7 +3,7 @@ package com.qiqi.li.client.mixin;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.qiqi.li.client.util.LivingChestTabState;
 import com.qiqi.li.client.util.PinyinHelper;
-import com.qiqi.li.living.function.LivingChestFunction;
+import com.qiqi.li.living.domain.chest.LivingChestFunction;
 import com.qiqi.li.network.LivingChestAccessPacket;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;

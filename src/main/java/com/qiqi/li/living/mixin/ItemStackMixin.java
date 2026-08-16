@@ -1,13 +1,11 @@
 package com.qiqi.li.living.mixin;
 
-import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
 
-import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
-import com.qiqi.li.living.domain.ender.LivingChestTooltipComponent;
-import com.qiqi.li.living.function.LivingChestFunction;
+import com.qiqi.li.living.domain.chest.LivingChestTooltipComponent;
+import com.qiqi.li.living.domain.chest.LivingChestFunction;
 import net.minecraft.core.component.DataComponentMap;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.world.inventory.tooltip.TooltipComponent;
@@ -56,20 +54,13 @@ public abstract class ItemStackMixin {
             return;
         }
 
-        Set<DataComponentType<?>> ignoredTypes = new HashSet<>();
-        for (LivingItemFunction func : LivingItemManager.getApplicableFunctions(stack1)) {
-            ignoredTypes.addAll(func.getIgnoredComponentTypes());
-        }
+        Set<DataComponentType<?>> ignoredTypes = LivingItemManager.getIgnoredComponentTypes(stack1);
         if (ignoredTypes.isEmpty()) return;
 
         DataComponentMap map1 = stack1.getComponents();
         DataComponentMap map2 = stack2.getComponents();
         Set<DataComponentType<?>> types1 = map1.keySet();
         Set<DataComponentType<?>> types2 = map2.keySet();
-        if (types1.size() != types2.size()) {
-            cir.setReturnValue(false);
-            return;
-        }
         for (DataComponentType<?> type : types1) {
             if (ignoredTypes.contains(type)) continue;
             if (!types2.contains(type)) {
@@ -77,6 +68,13 @@ public abstract class ItemStackMixin {
                 return;
             }
             if (!java.util.Objects.equals(map1.get(type), map2.get(type))) {
+                cir.setReturnValue(false);
+                return;
+            }
+        }
+        for (DataComponentType<?> type : types2) {
+            if (ignoredTypes.contains(type)) continue;
+            if (!types1.contains(type)) {
                 cir.setReturnValue(false);
                 return;
             }

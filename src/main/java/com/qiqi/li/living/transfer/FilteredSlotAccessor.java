@@ -1,7 +1,7 @@
 package com.qiqi.li.living.transfer;
 
 import net.minecraft.world.item.ItemStack;
-import com.qiqi.li.living.data.FilterData;
+import com.qiqi.li.living.transfer.FilterData;
 import com.qiqi.li.living.components.ItemFilterComponent;
 
 public class FilteredSlotAccessor implements SlotAccessor {

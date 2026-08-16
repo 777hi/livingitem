@@ -5,7 +5,7 @@ import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.items.wrapper.InvWrapper;
 
-import com.qiqi.li.living.function.LivingEnderChestFunction;
+import com.qiqi.li.living.domain.ender.LivingEnderChestFunction;
 
 public class LivingEnderChestItemHandler implements IItemHandler {
 

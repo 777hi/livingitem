@@ -1,8 +1,8 @@
 package com.qiqi.li.network;
 
-import com.qiqi.li.living.function.LivingChestFunction;
-import com.qiqi.li.living.function.LivingFurnaceFunction;
-import com.qiqi.li.living.function.LivingHopperFunction;
+import com.qiqi.li.living.domain.chest.LivingChestFunction;
+import com.qiqi.li.living.domain.furnace.LivingFurnaceFunction;
+import com.qiqi.li.living.domain.hopper.LivingHopperFunction;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.model.Pos2D;
 import com.qiqi.li.living.model.SlotMapping;

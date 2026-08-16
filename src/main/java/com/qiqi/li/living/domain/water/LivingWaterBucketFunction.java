@@ -1,0 +1,146 @@
+package com.qiqi.li.living.domain.water;
+
+import java.util.List;
+import java.util.Set;
+import java.util.function.Consumer;
+import net.minecraft.core.component.DataComponentType;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.TooltipFlag;
+import net.minecraft.world.level.Level;
+import com.qiqi.li.living.api.LivingItemFunction;
+import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.container.ContainerContext;
+import com.qiqi.li.living.container.TickContext;
+import com.qiqi.li.living.domain.water.ContainerFluidData;
+import com.qiqi.li.living.domain.water.LivingWaterBucketData;
+import com.qiqi.li.living.domain.water.WaterData;
+
+public class LivingWaterBucketFunction implements LivingItemFunction {
+
+    public static final String ID = "living_water_bucket";
+
+    @Override
+    public boolean canApply(ItemStack stack) {
+        return stack.is(Items.WATER_BUCKET) && LivingItemManager.isLivingItem(stack);
+    }
+
+    @Override
+    public String getFunctionId() { return ID; }
+
+    @Override
+    public void tick(List<SlotEntry> entries, ContainerContext context, TickContext tick, Level level) {
+        if (level.isClientSide) return;
+
+        for (SlotEntry entry : entries) {
+            int slot = entry.slotIndex();
+            if (slot < 0 || slot >= context.getSize()) continue;
+
+            ItemStack stack = entry.stack();
+            LivingWaterBucketData data = LivingItemManager.getWaterBucketData(stack);
+            WaterData water = data.water();
+
+            long gameTime = level.getGameTime();
+            String containerKey = context.getContainerKey();
+            int containerWidth = context.getWidth();
+
+            boolean needsReset = false;
+            if (water.lastTick() >= 0 && gameTime - water.lastTick() > 2) {
+                needsReset = true;
+            }
+            if (containerKey != null && !containerKey.equals(water.containerKey())) {
+                needsReset = true;
+            }
+            if (water.hostSlot() >= 0 && water.hostSlot() != slot) {
+                needsReset = true;
+            }
+
+            ContainerFluidData fluidData = tick.fluidData;
+
+            if (needsReset && fluidData != null && water.hostSlot() >= 0) {
+                fluidData.removeSource(water.hostSlot());
+            }
+
+            water = new WaterData(
+                gameTime, slot, slot % Math.max(1, containerWidth),
+                slot / Math.max(1, containerWidth), Math.max(1, containerWidth),
+                containerKey != null ? containerKey : water.containerKey(),
+                water.flow()
+            );
+
+            if (fluidData != null) {
+                fluidData.registerSource(slot);
+            }
+
+            LivingItemManager.setWaterBucketData(stack, data.withWater(water));
+        }
+    }
+
+    @Override
+    public void addToTooltip(Item.TooltipContext context,
+                             Consumer<Component> tooltipAdder,
+                             TooltipFlag flag,
+                             ItemStack stack) {
+        LivingWaterBucketData data = LivingItemManager.getWaterBucketData(stack);
+        String flow = data.water().flow();
+        int count = 0;
+        int maxLevel = 0;
+        if (!flow.isEmpty()) {
+            for (String part : flow.split(",")) {
+                String[] kv = part.split(":");
+                if (kv.length >= 2) {
+                    count++;
+                    int lvl = Integer.parseInt(kv[1]);
+                    if (lvl > maxLevel) maxLevel = lvl;
+                }
+            }
+        }
+        tooltipAdder.accept(Component.nullToEmpty(""));
+        tooltipAdder.accept(Component.translatable("tooltip.livingitem.water_bucket.status"));
+        if (count > 0) {
+            tooltipAdder.accept(Component.translatable("tooltip.livingitem.water_bucket.flow",
+                count, maxLevel).withStyle(net.minecraft.ChatFormatting.AQUA));
+        }
+    }
+
+    @Override
+    public Set<DataComponentType<?>> getIgnoredComponentTypes() {
+        return Set.of();
+    }
+
+    public static boolean isLivingWaterBucket(ItemStack stack) {
+        return stack.is(Items.WATER_BUCKET) && LivingItemManager.isLivingItem(stack);
+    }
+
+    public static void postTickSync(ContainerContext ctx, ContainerFluidData fluidData,
+        List<SlotEntry> waterBucketEntries) {
+        if (waterBucketEntries.isEmpty()) return;
+        String flowStr = buildFlowString(fluidData);
+        for (SlotEntry entry : waterBucketEntries) {
+            int i = entry.slotIndex();
+            ItemStack stack = ctx.getItem(i);
+            if (!isLivingWaterBucket(stack)) continue;
+
+            LivingWaterBucketData data = LivingItemManager.getWaterBucketData(stack);
+            String oldFlow = data.water().flow();
+            if (oldFlow.equals(flowStr)) continue;
+
+            WaterData water = data.water().withFlow(flowStr);
+            LivingItemManager.setWaterBucketData(stack, data.withWater(water));
+            ctx.syncSlotToClients(i, stack);
+        }
+    }
+
+    private static String buildFlowString(ContainerFluidData fluidData) {
+        var flows = fluidData.getFlows();
+        if (flows.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder();
+        for (var e : flows.entrySet()) {
+            if (sb.length() > 0) sb.append(',');
+            sb.append(e.getKey()).append(':').append(e.getValue().level()).append(':').append(e.getValue().fromSlot());
+        }
+        return sb.toString();
+    }
+}

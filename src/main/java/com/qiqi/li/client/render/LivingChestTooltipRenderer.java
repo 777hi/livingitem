@@ -1,6 +1,6 @@
 package com.qiqi.li.client.render;
 
-import com.qiqi.li.living.domain.ender.LivingChestTooltipComponent;
+import com.qiqi.li.living.domain.chest.LivingChestTooltipComponent;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.inventory.tooltip.ClientTooltipComponent;

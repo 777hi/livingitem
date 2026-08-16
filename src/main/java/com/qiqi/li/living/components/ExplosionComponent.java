@@ -109,8 +109,8 @@ public class ExplosionComponent {
     private ExplosionComponent() {}
 
     public static boolean startFuseOnStack(ItemStack tntStack) {
-        com.qiqi.li.living.data.LivingTntData data = LivingItemManager.getTntData(tntStack);
-        com.qiqi.li.living.data.ExplosionData explosion = data.explosion();
+        com.qiqi.li.living.domain.tnt.LivingTntData data = LivingItemManager.getTntData(tntStack);
+        com.qiqi.li.living.domain.tnt.ExplosionData explosion = data.explosion();
         if (!explosion.ignited()) {
             explosion = explosion.ignite();
             LivingItemManager.setTntData(tntStack, data.withExplosion(explosion));

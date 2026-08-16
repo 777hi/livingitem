@@ -1,7 +1,7 @@
 package com.qiqi.li.living.domain.map;
 
 import com.qiqi.li.living.compat.sable.ModSable;
-import com.qiqi.li.living.function.LivingEnderPearlFunction;
+import com.qiqi.li.living.domain.map.LivingEnderPearlFunction;
 import com.qiqi.li.living.perf.PerfMetrics;
 import com.qiqi.li.logging.ModLog;
 import net.minecraft.core.BlockPos;

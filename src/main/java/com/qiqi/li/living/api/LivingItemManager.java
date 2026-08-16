@@ -3,16 +3,18 @@ package com.qiqi.li.living.api;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
-import com.qiqi.li.living.data.LivingFurnaceData;
-import com.qiqi.li.living.data.LivingHopperData;
-import com.qiqi.li.living.data.LivingTntData;
-import com.qiqi.li.living.data.LivingWaterBucketData;
-import com.qiqi.li.living.data.LivingWaterWheelData;
-import com.qiqi.li.living.data.LivingEnderChestData;
+import com.qiqi.li.living.domain.furnace.LivingFurnaceData;
+import com.qiqi.li.living.domain.hopper.LivingHopperData;
+import com.qiqi.li.living.domain.tnt.LivingTntData;
+import com.qiqi.li.living.domain.water.LivingWaterBucketData;
+import com.qiqi.li.living.domain.water.LivingWaterWheelData;
+import com.qiqi.li.living.domain.ender.LivingEnderChestData;
 import com.qiqi.li.living.domain.water.ContainerStressData;
 import net.minecraft.world.item.Items;
 import net.minecraft.core.component.DataComponentType;
@@ -133,6 +135,16 @@ public class LivingItemManager {
         List<LivingItemFunction> result = Collections.unmodifiableList(applicable);
         APPLICABLE_CACHE.put(item, result);
         return result;
+    }
+
+    public static Set<DataComponentType<?>> getIgnoredComponentTypes(ItemStack stack) {
+        if (!isLivingItem(stack)) return Set.of();
+
+        Set<DataComponentType<?>> types = new HashSet<>();
+        for (LivingItemFunction func : getApplicableFunctions(stack)) {
+            types.addAll(func.getIgnoredComponentTypes());
+        }
+        return types;
     }
 
     public static void clearLivingData(ItemStack stack) {

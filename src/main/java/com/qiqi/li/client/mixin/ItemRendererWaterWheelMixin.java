@@ -6,8 +6,8 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.compat.create.CreateCompat;
 import com.qiqi.li.living.compat.create.ModCreate;
-import com.qiqi.li.living.data.LivingWaterWheelData;
-import com.qiqi.li.living.data.WaterWheelData;
+import com.qiqi.li.living.domain.water.LivingWaterWheelData;
+import com.qiqi.li.living.domain.water.WaterWheelData;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.entity.ItemRenderer;
@@ -25,8 +25,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(ItemRenderer.class)
 public class ItemRendererWaterWheelMixin {
 
-    private static final ThreadLocal<ItemStack> RENDERING_ITEM = new ThreadLocal<>();
-    private static final ThreadLocal<Boolean> NEED_RESTORE_LIGHTING = ThreadLocal.withInitial(() -> false);
+    private ItemStack livingItem$renderingItem = null;
+    private boolean livingItem$needRestoreLighting = false;
 
     private static final Vector3f FRONT_LIGHT_0 = new Vector3f(0.0f, 0.0f, 1.0f);
     private static final Vector3f FRONT_LIGHT_1 = new Vector3f(-1.0f, 0.0f, 0.0f);
@@ -35,16 +35,16 @@ public class ItemRendererWaterWheelMixin {
     private void captureItem(ItemStack itemStack, ItemDisplayContext displayContext, boolean leftHand,
                              PoseStack poseStack, MultiBufferSource bufferSource, int combinedLight,
                              int combinedOverlay, BakedModel p_model, CallbackInfo ci) {
-        RENDERING_ITEM.set(itemStack);
+        livingItem$renderingItem = itemStack;
     }
 
     @Inject(method = "render", at = @At("RETURN"))
     private void clearItem(CallbackInfo ci) {
-        if (NEED_RESTORE_LIGHTING.get()) {
+        if (livingItem$needRestoreLighting) {
             Lighting.setupForFlatItems();
-            NEED_RESTORE_LIGHTING.set(false);
+            livingItem$needRestoreLighting = false;
         }
-        RENDERING_ITEM.remove();
+        livingItem$renderingItem = null;
     }
 
     @Redirect(
@@ -56,7 +56,7 @@ public class ItemRendererWaterWheelMixin {
     )
     private BakedModel redirectHandleCameraTransforms(PoseStack poseStack, BakedModel model,
                                                       ItemDisplayContext context, boolean applyLeftHandTransform) {
-        ItemStack itemStack = RENDERING_ITEM.get();
+        ItemStack itemStack = livingItem$renderingItem;
         if (CreateCompat.isLoaded() && isWaterWheel(itemStack) && isGuiContext(context)) {
             if (!LivingItemManager.isLivingItem(itemStack)) {
                 return net.neoforged.neoforge.client.ClientHooks.handleCameraTransforms(
@@ -64,7 +64,7 @@ public class ItemRendererWaterWheelMixin {
             }
 
             RenderSystem.setShaderLights(FRONT_LIGHT_0, FRONT_LIGHT_1);
-            NEED_RESTORE_LIGHTING.set(true);
+            livingItem$needRestoreLighting = true;
 
             LivingWaterWheelData wheelData = LivingItemManager.getWaterWheelData(itemStack);
             WaterWheelData wd = wheelData.wheel();

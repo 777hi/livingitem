@@ -1,6 +1,8 @@
 package com.qiqi.li.living.transfer;
 
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.items.ItemHandlerHelper;
 
@@ -10,15 +12,24 @@ import net.neoforged.neoforge.items.ItemHandlerHelper;
  * <p>用于跨容器传输场景，将邻居容器的 {@link IItemHandler} 槽位
  * 统一为 {@link SlotAccessor} 接口，使跨容器传输也能复用
  * {@link FilteredSlotAccessor} 过滤和统一的传输逻辑。</p>
+ *
+ * <p>提取/插入后，{@link #sync()} 会调用邻居方块实体的 {@code setChanged()}，
+ * 遵循 NeoForge 约定：修改 IItemHandler 后必须通知所属 BlockEntity，
+ * 确保方块实体状态一致（如 Create 机械冲压机的工作槽位被清空后，
+ * 冲压机能感知到变化并正确同步给客户端）。</p>
  */
 public class NeighborSlotAccessor implements SlotAccessor {
 
     private final IItemHandler handler;
     private final int slot;
+    private final Level level;
+    private final BlockPos pos;
 
-    public NeighborSlotAccessor(IItemHandler handler, int slot) {
+    public NeighborSlotAccessor(IItemHandler handler, int slot, Level level, BlockPos pos) {
         this.handler = handler;
         this.slot = slot;
+        this.level = level;
+        this.pos = pos;
     }
 
     @Override
@@ -81,7 +92,11 @@ public class NeighborSlotAccessor implements SlotAccessor {
 
     @Override
     public void sync() {
-        // 邻居容器没有同步需求，空实现
+        if (level != null && pos != null && !level.isClientSide) {
+            if (level.getBlockEntity(pos) instanceof net.minecraft.world.level.block.entity.BlockEntity be) {
+                be.setChanged();
+            }
+        }
     }
 
     public IItemHandler getHandler() {

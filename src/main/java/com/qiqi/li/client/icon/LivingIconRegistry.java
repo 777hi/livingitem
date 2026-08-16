@@ -59,15 +59,15 @@ public final class LivingIconRegistry {
 
         register(LivingIconSpec.builder(net.minecraft.world.item.Items.FURNACE)
             .addVariant("idle", "item/furnace_idle",
-                stack -> !com.qiqi.li.living.function.LivingFurnaceFunction.isBurning(stack))
+                stack -> !com.qiqi.li.living.domain.furnace.LivingFurnaceFunction.isBurning(stack))
             .addVariant("active", "item/furnace_active",
-                stack -> com.qiqi.li.living.function.LivingFurnaceFunction.isBurning(stack))
+                stack -> com.qiqi.li.living.domain.furnace.LivingFurnaceFunction.isBurning(stack))
             .build());
 
         register(LivingIconSpec.builder(net.minecraft.world.item.Items.TNT)
             .addVariant("lit", "item/tnt_lit",
                 stack -> {
-                    int timer = com.qiqi.li.living.function.LivingTntFunction.getFuseTimer(stack);
+                    int timer = com.qiqi.li.living.domain.tnt.LivingTntFunction.getFuseTimer(stack);
                     return timer > 0 && timer % 10 == 0;
                 })
             .addVariant("idle", "item/tnt_idle", stack -> true)

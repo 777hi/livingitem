@@ -11,7 +11,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.function.Predicate;
 
-import com.qiqi.li.living.data.FilterData;
+import com.qiqi.li.living.transfer.FilterData;
 import com.qiqi.li.living.components.ItemFilterComponent;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.network.EnderChannelSyncPacket;

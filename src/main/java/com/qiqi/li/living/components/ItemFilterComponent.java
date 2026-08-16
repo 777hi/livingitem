@@ -46,27 +46,27 @@ public final class ItemFilterComponent {
         return tags;
     }
 
-    public static boolean allows(com.qiqi.li.living.data.FilterData filterData, ItemStack item) {
+    public static boolean allows(com.qiqi.li.living.transfer.FilterData filterData, ItemStack item) {
         if (filterData == null || item.isEmpty()) return true;
-        if (filterData.equals(com.qiqi.li.living.data.FilterData.EMPTY)) return true;
+        if (filterData.equals(com.qiqi.li.living.transfer.FilterData.EMPTY)) return true;
         return allowsByPriority(new FilterSets(filterData), item);
     }
 
-    public static boolean allowsItemType(com.qiqi.li.living.data.FilterData filterData, String itemId) {
+    public static boolean allowsItemType(com.qiqi.li.living.transfer.FilterData filterData, String itemId) {
         if (filterData == null) return true;
-        if (filterData.equals(com.qiqi.li.living.data.FilterData.EMPTY)) return true;
+        if (filterData.equals(com.qiqi.li.living.transfer.FilterData.EMPTY)) return true;
         return allowsItemTypeByPriority(new FilterSets(filterData), itemId);
     }
 
-    public static boolean hasFilterRules(com.qiqi.li.living.data.FilterData filterData) {
+    public static boolean hasFilterRules(com.qiqi.li.living.transfer.FilterData filterData) {
         if (filterData == null) return false;
-        if (filterData.equals(com.qiqi.li.living.data.FilterData.EMPTY)) return false;
+        if (filterData.equals(com.qiqi.li.living.transfer.FilterData.EMPTY)) return false;
         return new FilterSets(filterData).hasAnyRules();
     }
 
-    public static void appendFilterTooltip(com.qiqi.li.living.data.FilterData filterData,
+    public static void appendFilterTooltip(com.qiqi.li.living.transfer.FilterData filterData,
                                             Consumer<Component> tooltipAdder) {
-        if (filterData == null || filterData.equals(com.qiqi.li.living.data.FilterData.EMPTY)) return;
+        if (filterData == null || filterData.equals(com.qiqi.li.living.transfer.FilterData.EMPTY)) return;
 
         FilterSets fs = new FilterSets(filterData);
         Map<String, Integer> idSlots = listToSlotMap(filterData.blacklist(), filterData.blacklistSlots());
@@ -98,7 +98,7 @@ public final class ItemFilterComponent {
         final Set<String> blTags;
         final Set<String> wlTags;
 
-        FilterSets(com.qiqi.li.living.data.FilterData data) {
+        FilterSets(com.qiqi.li.living.transfer.FilterData data) {
             blacklist = new HashSet<>(data.blacklist());
             whitelist = new HashSet<>(data.whitelist());
             blComposites = new HashSet<>(data.blComposites());

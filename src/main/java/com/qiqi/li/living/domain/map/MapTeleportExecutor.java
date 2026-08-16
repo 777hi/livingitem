@@ -1,6 +1,6 @@
 package com.qiqi.li.living.domain.map;
 
-import com.qiqi.li.living.function.LivingEnderPearlFunction;
+import com.qiqi.li.living.domain.map.LivingEnderPearlFunction;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;

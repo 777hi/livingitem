@@ -27,11 +27,11 @@ import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
-import com.qiqi.li.living.function.LivingChestFunction;
-import com.qiqi.li.living.function.LivingEnderChestFunction;
-import com.qiqi.li.living.function.LivingWaterBucketFunction;
-import com.qiqi.li.living.function.LivingWaterWheelFunction;
-import com.qiqi.li.living.function.LivingEnderPearlFunction;
+import com.qiqi.li.living.domain.chest.LivingChestFunction;
+import com.qiqi.li.living.domain.ender.LivingEnderChestFunction;
+import com.qiqi.li.living.domain.water.LivingWaterBucketFunction;
+import com.qiqi.li.living.domain.water.LivingWaterWheelFunction;
+import com.qiqi.li.living.domain.map.LivingEnderPearlFunction;
 import com.qiqi.li.logging.ModLog;
 import com.qiqi.li.living.perf.PerfMetrics;
 
@@ -52,16 +52,16 @@ import com.qiqi.li.network.LivingMapMetadataPacket;
 import com.qiqi.li.network.LivingMapGuiTeleportPacket;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.compat.create.ModCreate;
-import com.qiqi.li.living.function.LivingFurnaceFunction;
-import com.qiqi.li.living.function.LivingHopperFunction;
-import com.qiqi.li.living.function.LivingTntFunction;
+import com.qiqi.li.living.domain.furnace.LivingFurnaceFunction;
+import com.qiqi.li.living.domain.hopper.LivingHopperFunction;
+import com.qiqi.li.living.domain.tnt.LivingTntFunction;
 import com.qiqi.li.living.function.LivingFlintAndSteelFunction;
 import com.qiqi.li.living.interaction.InteractionRegistry;
 import com.qiqi.li.living.interaction.IgniteHandler;
 import com.qiqi.li.living.interaction.IgniteCarriedHandler;
 import net.neoforged.neoforge.registries.DeferredRegister;
 import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
-import com.qiqi.li.living.domain.ender.LivingChestItemHandler;
+import com.qiqi.li.living.domain.chest.LivingChestItemHandler;
 import com.qiqi.li.living.domain.ender.LivingEnderChestItemHandler;
 
 /**

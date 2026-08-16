@@ -4,8 +4,8 @@ import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.ContainerSnapshot;
 import com.qiqi.li.living.transfer.FilteredSlotAccessor;
 import com.qiqi.li.living.transfer.SlotAccessor;
-import com.qiqi.li.living.data.FilterData;
-import com.qiqi.li.living.function.LivingEnderChestFunction;
+import com.qiqi.li.living.transfer.FilterData;
+import com.qiqi.li.living.domain.ender.LivingEnderChestFunction;
 import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -394,6 +394,10 @@ public class LivingEnderChestAccessor implements SlotAccessor {
             rollbackSlot = entry.sourceSlot();
             rollbackContainerKey = entry.containerKey();
 
+            if (sourcePos != null) {
+                notifySourceChanged(sourceLevel, sourcePos);
+            }
+
             if (sourceHandler.getStackInSlot(entry.sourceSlot()).isEmpty()) {
                 // 源槽已空，entry 已从队列移除，不 reoffer
                 if (LOGGER.isDebugEnabled()) {
@@ -490,6 +494,7 @@ public class LivingEnderChestAccessor implements SlotAccessor {
                 return;
             }
             handler.insertItem(rollbackSlot, stack, false);
+            notifySourceChanged(level, rollbackPos);
         } else if (rollbackContainerKey != null && rollbackContainerKey.startsWith("player_")) {
             UUID playerId = parsePlayerUuid(rollbackContainerKey);
             if (playerId == null) {
@@ -613,6 +618,17 @@ public class LivingEnderChestAccessor implements SlotAccessor {
      */
     private static IItemHandler getHandler(Level level, BlockPos pos, BlockEntity be) {
         return level.getCapability(Capabilities.ItemHandler.BLOCK, pos, null);
+    }
+
+    /**
+     * 通知源方块实体 inventory 已变更（遵循 NeoForge 约定）。
+     */
+    private static void notifySourceChanged(ServerLevel level, BlockPos pos) {
+        if (pos != null && level.isLoaded(pos)) {
+            if (level.getBlockEntity(pos) instanceof BlockEntity be) {
+                be.setChanged();
+            }
+        }
     }
 
     /**

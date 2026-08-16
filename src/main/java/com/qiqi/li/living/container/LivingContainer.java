@@ -8,7 +8,7 @@ import net.minecraft.world.item.ItemStack;
  * <p>这是容器能力体系的最小接口，所有其他容器接口都继承它。
  * 功能类如果只需要读写物品，依赖此接口即可。</p>
  *
- * <p>典型使用者：{@link com.qiqi.li.living.function.LivingChestFunction}</p>
+ * <p>典型使用者：{@link com.qiqi.li.living.domain.chest.LivingChestFunction}</p>
  */
 public interface LivingContainer {
 

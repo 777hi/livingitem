@@ -4,13 +4,14 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.qiqi.li.client.mixin.SlotWrapperAccessor;
 import com.qiqi.li.living.api.LivingItemManager;
-import com.qiqi.li.living.data.LivingWaterBucketData;
-import com.qiqi.li.living.data.WaterData;
-import com.qiqi.li.living.function.LivingWaterBucketFunction;
+import com.qiqi.li.living.domain.water.LivingWaterBucketData;
+import com.qiqi.li.living.domain.water.WaterData;
+import com.qiqi.li.living.domain.water.LivingWaterBucketFunction;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
@@ -34,6 +35,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class AbstractContainerScreenMixin {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("LivingItem/WaterRender");
+
+    private static final ConcurrentHashMap<Class<?>, java.lang.reflect.Field[]> SLOT_WRAPPER_FIELD_CACHE = new ConcurrentHashMap<>();
 
     @Shadow
     protected int leftPos;
@@ -193,15 +196,23 @@ public abstract class AbstractContainerScreenMixin {
 
     private static Slot resolveSlotWrapperTarget(Slot wrapper) {
         try {
-            for (Class<?> clazz = wrapper.getClass(); clazz != null; clazz = clazz.getSuperclass()) {
-                for (java.lang.reflect.Field f : clazz.getDeclaredFields()) {
-                    if (Slot.class.isAssignableFrom(f.getType())) {
-                        f.setAccessible(true);
-                        Slot target = (Slot) f.get(wrapper);
-                        if (target != null && target != wrapper) {
-                            return target;
+            Class<?> wrapperClass = wrapper.getClass();
+            java.lang.reflect.Field[] fields = SLOT_WRAPPER_FIELD_CACHE.computeIfAbsent(wrapperClass, clazz -> {
+                List<java.lang.reflect.Field> slotFields = new ArrayList<>();
+                for (Class<?> c = clazz; c != null; c = c.getSuperclass()) {
+                    for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+                        if (Slot.class.isAssignableFrom(f.getType())) {
+                            f.setAccessible(true);
+                            slotFields.add(f);
                         }
                     }
+                }
+                return slotFields.toArray(new java.lang.reflect.Field[0]);
+            });
+            for (java.lang.reflect.Field f : fields) {
+                Slot target = (Slot) f.get(wrapper);
+                if (target != null && target != wrapper) {
+                    return target;
                 }
             }
         } catch (Exception e) {

@@ -5,7 +5,7 @@ import java.util.Map;
 import java.util.Set;
 
 import com.qiqi.li.living.container.ContainerContext;
-import com.qiqi.li.living.function.LivingWaterWheelFunction;
+import com.qiqi.li.living.domain.water.LivingWaterWheelFunction;
 
 import net.minecraft.world.item.ItemStack;
 

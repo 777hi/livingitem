@@ -29,8 +29,8 @@ import com.mojang.logging.LogUtils;
 import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.domain.ender.EnderChannelRegistry;
-import com.qiqi.li.living.function.LivingWaterBucketFunction;
-import com.qiqi.li.living.function.LivingWaterWheelFunction;
+import com.qiqi.li.living.domain.water.LivingWaterBucketFunction;
+import com.qiqi.li.living.domain.water.LivingWaterWheelFunction;
 import com.qiqi.li.living.compat.create.ModCreate;
 import com.qiqi.li.living.perf.PerfMetrics;
 

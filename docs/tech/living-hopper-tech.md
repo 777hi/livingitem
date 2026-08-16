@@ -839,7 +839,11 @@ FilterData[] filterOf = buildAllFilters(ctx, containerSize, sourceOf, targetOf);
 
 // buildAllFilters() 遍历所有活漏斗槽位，为每个活漏斗构建过滤规则
 for (int slot = 0; slot < containerSize; slot++) {
-    if (sourceOf[slot] == -1 && targetOf[slot] == -1) continue;
+    if (sourceOf[slot] == -1 && targetOf[slot] == -1) {
+        // 非活漏斗直接跳过；活漏斗即使 source/target 都越界（角落位置），
+        // 仍需构建 filter，因为其他漏斗可能连接到它
+        if (!LivingHopperFunction.isLivingHopper(ctx.getItem(slot))) continue;
+    }
     filterOf[slot] = buildFilterForSlot(slot, ctx, containerSize, sourceOf, targetOf);
 }
 
@@ -937,6 +941,35 @@ A→B 且 B→A 时：
 ```
 
 > **v7 变更**：互相指向时由 `ensureFilterBuilt()` 的 `building` 集合检测循环依赖并阻断，`inheritFilter()` 的 `visited` 集合防止同一链路重复访问。双重防护确保无无限递归。
+
+### 7.7 角落活漏斗过滤修复 (NEW 2026-08-16)
+
+**问题**：当活漏斗 a 位于容器角落位置、其 source 和 target 方向都越界时（如左上角的 `LEFT→UP`），`buildAllFilters()` 中的跳过逻辑 `if (sourceOf[slot] == -1 && targetOf[slot] == -1) continue` 会错误地跳过 a，导致 `filterOf[a]` 永远为 `EMPTY`。即使其他活漏斗 b 连接到 a（如 `sourceOf[b] == a`），b 的黑白名单也无法传递给 a。
+
+**根因**：跳过条件把"非活漏斗"和"活漏斗但 source/target 都越界"混为一谈。非活漏斗确实不需要 filter，但角落活漏斗即使自身 source/target 都越界，仍然可能被其他漏斗连接，需要构建 filter。
+
+**修复**：在 `sourceOf == -1 && targetOf == -1` 时，额外检查该槽位是否为活漏斗：
+
+```java
+if (sourceOf[slot] == -1 && targetOf[slot] == -1) {
+    if (!LivingHopperFunction.isLivingHopper(ctx.getItem(slot))) continue;
+}
+```
+
+**场景示例**：
+
+```
+┌───┬───┬───┐
+│ a │ b │   │   a: LEFT→UP  → sourceOf[0]=-1, targetOf[0]=-1
+├───┼───┼───┤   b: LEFT→RIGHT → sourceOf[1]=0(=a), targetOf[1]=2
+│   │   │   │
+└───┴───┴───┘
+```
+
+| | 修复前 | 修复后 |
+|---|--------|--------|
+| a 的 filter | EMPTY（跳过构建） | 正常构建，继承 b 的规则 |
+| b 的黑白名单能否传到 a | ❌ | ✅ |
 
 ---
 

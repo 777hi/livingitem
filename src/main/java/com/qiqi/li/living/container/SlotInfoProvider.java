@@ -10,8 +10,8 @@ import net.minecraft.world.item.ItemStack;
  *
  * <p>典型使用者：
  * <ul>
- *   <li>{@link com.qiqi.li.living.function.LivingFurnaceFunction} — 检查输出槽空间</li>
- *   <li>{@link com.qiqi.li.living.function.LivingHopperFunction} — 模拟插入目标槽位</li>
+ *   <li>{@link com.qiqi.li.living.domain.furnace.LivingFurnaceFunction} — 检查输出槽空间</li>
+ *   <li>{@link com.qiqi.li.living.domain.hopper.LivingHopperFunction} — 模拟插入目标槽位</li>
  * </ul>
  * </p>
  */

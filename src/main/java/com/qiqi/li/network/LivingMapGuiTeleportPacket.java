@@ -3,7 +3,7 @@ package com.qiqi.li.network;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.domain.map.MapCoordHelper;
 import com.qiqi.li.living.domain.map.MapTeleportExecutor;
-import com.qiqi.li.living.function.LivingEnderPearlFunction;
+import com.qiqi.li.living.domain.map.LivingEnderPearlFunction;
 import com.qiqi.li.logging.ModLog;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.FriendlyByteBuf;

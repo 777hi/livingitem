@@ -3,7 +3,7 @@ package com.qiqi.li;
 import com.qiqi.li.client.icon.LivingIconRegistry;
 import com.qiqi.li.client.render.LivingChestTooltipRenderer;
 import com.qiqi.li.living.api.LivingItemManager;
-import com.qiqi.li.living.domain.ender.LivingChestTooltipComponent;
+import com.qiqi.li.living.domain.chest.LivingChestTooltipComponent;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.item.ItemProperties;
 import net.minecraft.resources.ResourceLocation;

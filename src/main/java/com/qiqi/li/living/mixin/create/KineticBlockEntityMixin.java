@@ -2,6 +2,8 @@ package com.qiqi.li.living.mixin.create;
 
 import com.simibubi.create.content.kinetics.base.GeneratingKineticBlockEntity;
 import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
+import com.simibubi.create.content.kinetics.simpleRelays.SimpleKineticBlockEntity;
+import com.simibubi.create.content.kinetics.simpleRelays.BracketedKineticBlockEntity;
 
 import com.qiqi.li.living.compat.create.LivingItemStressOutput;
 
@@ -23,6 +25,7 @@ public abstract class KineticBlockEntityMixin implements LivingItemStressOutput 
     private float livingItem$stressCapacity = 0;
     private boolean livingItem$refreshedThisTick = false;
     private boolean livingItem$pendingReattach = false;
+    private boolean livingItem$needsSync = false;
 
     @Inject(method = "getGeneratedSpeed", at = @At("HEAD"), cancellable = true, remap = false)
     private void livingItem$getGeneratedSpeed(CallbackInfoReturnable<Float> cir) {
@@ -46,7 +49,10 @@ public abstract class KineticBlockEntityMixin implements LivingItemStressOutput 
             try {
                 self.attachKinetics();
                 self.setChanged();
-                self.sendData();
+                livingItem$needsSync = true;
+            } catch (NullPointerException e) {
+                LOGGER.debug("[LivingItem] NPE during delayed reattach on {} at {} (network not ready): {}",
+                    self.getClass().getSimpleName(), self.getBlockPos(), e.getMessage());
             } catch (Exception e) {
                 LOGGER.warn("[LivingItem] Error during delayed reattach on {} at {}",
                     self.getClass().getSimpleName(), self.getBlockPos(), e);
@@ -71,8 +77,11 @@ public abstract class KineticBlockEntityMixin implements LivingItemStressOutput 
                     self.setNetwork(null);
                     livingItem$pendingReattach = true;
                     self.setChanged();
-                    self.sendData();
+                    livingItem$needsSync = true;
                 }
+            } catch (NullPointerException e) {
+                LOGGER.debug("[LivingItem] NPE during expiry cleanup on {} at {} (network not ready): {}",
+                    self.getClass().getSimpleName(), self.getBlockPos(), e.getMessage());
             } catch (Exception e) {
                 LOGGER.warn("[LivingItem] Error during expiry cleanup on {} at {}",
                     self.getClass().getSimpleName(), self.getBlockPos(), e);
@@ -80,6 +89,23 @@ public abstract class KineticBlockEntityMixin implements LivingItemStressOutput 
         }
 
         livingItem$refreshedThisTick = false;
+    }
+
+    @Inject(method = "tick", at = @At("TAIL"), remap = false)
+    private void livingItem$deferredSync(CallbackInfo ci) {
+        if (!livingItem$needsSync) return;
+        livingItem$needsSync = false;
+        KineticBlockEntity self = (KineticBlockEntity) (Object) this;
+        if (self.getLevel() == null || self.getLevel().isClientSide) return;
+        try {
+            self.sendData();
+        } catch (NullPointerException e) {
+            LOGGER.debug("[LivingItem] NPE during deferred sync on {} at {} (level unloaded?): {}",
+                self.getClass().getSimpleName(), self.getBlockPos(), e.getMessage());
+        } catch (Exception e) {
+            LOGGER.warn("[LivingItem] Error during deferred sync on {} at {}",
+                self.getClass().getSimpleName(), self.getBlockPos(), e);
+        }
     }
 
     @Inject(method = "calculateAddedStressCapacity", at = @At("HEAD"), cancellable = true, remap = false)
@@ -140,11 +166,10 @@ public abstract class KineticBlockEntityMixin implements LivingItemStressOutput 
                 }
             }
             self.setChanged();
-            self.sendData();
+            livingItem$needsSync = true;
         } catch (NullPointerException e) {
-            LOGGER.warn("[LivingItem] Failed to set RPM on {} at {}: {}",
+            LOGGER.debug("[LivingItem] NPE setting RPM on {} at {} (network not ready): {}",
                 self.getClass().getSimpleName(), self.getBlockPos(), e.getMessage());
-            livingItem$generatedRPM = 0;
         } catch (Exception e) {
             LOGGER.warn("[LivingItem] Unexpected error setting RPM on {} at {}",
                 self.getClass().getSimpleName(), self.getBlockPos(), e);
@@ -172,6 +197,9 @@ public abstract class KineticBlockEntityMixin implements LivingItemStressOutput 
             self.getOrCreateNetwork().updateCapacityFor(self, capacity);
             self.getOrCreateNetwork().updateStressFor(self, self.calculateStressApplied());
             self.getOrCreateNetwork().updateStress();
+        } catch (NullPointerException e) {
+            LOGGER.debug("[LivingItem] NPE updating stress capacity on {} at {} (network not ready): {}",
+                self.getClass().getSimpleName(), self.getBlockPos(), e.getMessage());
         } catch (Exception e) {
             LOGGER.warn("[LivingItem] Error updating stress capacity on {} at {}",
                 self.getClass().getSimpleName(), self.getBlockPos(), e);
@@ -186,14 +214,8 @@ public abstract class KineticBlockEntityMixin implements LivingItemStressOutput 
     @Override
     public boolean livingItem$isSafeForStressInjection() {
         KineticBlockEntity self = (KineticBlockEntity) (Object) this;
-        String className = self.getClass().getName();
-        if (className.startsWith("com.simibubi.create.content.kinetics.simpleRelays.SimpleKineticBlockEntity")) {
-            return true;
-        }
-        if (className.startsWith("com.simibubi.create.content.kinetics.simpleRelays.BracketedKineticBlockEntity")) {
-            return true;
-        }
-        return false;
+        return self instanceof SimpleKineticBlockEntity
+            || self instanceof BracketedKineticBlockEntity;
     }
 
     @Override

@@ -12,8 +12,8 @@ import net.minecraft.network.codec.StreamCodec;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import com.qiqi.li.LivingItem;
 import com.qiqi.li.living.api.LivingItemManager;
-import com.qiqi.li.living.function.LivingChestFunction;
-import com.qiqi.li.living.function.LivingEnderChestFunction;
+import com.qiqi.li.living.domain.chest.LivingChestFunction;
+import com.qiqi.li.living.domain.ender.LivingEnderChestFunction;
 
 /**
  * 活物品标签切换网络包。

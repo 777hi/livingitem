@@ -5,8 +5,10 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 
-import com.qiqi.li.living.domain.ender.LivingChestAccessor;
+import com.qiqi.li.living.domain.chest.LivingChestAccessor;
 import com.qiqi.li.living.domain.ender.LivingEnderChestAccessor;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.items.IItemHandler;
 
 import com.mojang.logging.LogUtils;
@@ -14,9 +16,9 @@ import net.minecraft.world.item.ItemStack;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.ContainerSnapshot;
-import com.qiqi.li.living.data.FilterData;
-import com.qiqi.li.living.function.LivingChestFunction;
-import com.qiqi.li.living.function.LivingEnderChestFunction;
+import com.qiqi.li.living.transfer.FilterData;
+import com.qiqi.li.living.domain.chest.LivingChestFunction;
+import com.qiqi.li.living.domain.ender.LivingEnderChestFunction;
 import net.minecraft.server.MinecraftServer;
 import org.slf4j.Logger;
 
@@ -116,8 +118,9 @@ public final class SlotAccessorFactory {
      * 为邻居容器创建 SlotAccessor（不使用注册机制，直接创建）。
      */
     public static SlotAccessor createForNeighbor(IItemHandler handler, int slot,
-                                                  FilterData filterData) {
-        SlotAccessor raw = new NeighborSlotAccessor(handler, slot);
+                                                  FilterData filterData,
+                                                  Level level, BlockPos neighborPos) {
+        SlotAccessor raw = new NeighborSlotAccessor(handler, slot, level, neighborPos);
         return new FilteredSlotAccessor(raw, filterData);
     }
 
