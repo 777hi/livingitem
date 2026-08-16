@@ -15,12 +15,7 @@ import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
-import com.qiqi.li.living.domain.hopper.CrossContainerTransfer;
 import com.qiqi.li.living.transfer.SlotResolver;
-import com.qiqi.li.living.transfer.SlotAccessor;
-import com.qiqi.li.living.transfer.SlotAccessorFactory;
-import com.qiqi.li.living.domain.ender.LivingEnderChestAccessor;
-import com.qiqi.li.living.domain.chest.LivingChestFunction;
 import com.qiqi.li.living.domain.ender.LivingEnderChestFunction;
 import com.qiqi.li.living.perf.PerfMetrics;
 import com.qiqi.li.living.model.Pos2D;
@@ -101,73 +96,11 @@ public class LivingHopperFunction implements LivingItemFunction {
                                      int stackSize, FilterData filter,
                                      DirectionTransferData dir,
                                      TickContext tick) {
-        int containerSize = ctx.getSize();
-
-        boolean sourceOutOfBounds = sourceSlot < 0 || sourceSlot >= containerSize;
-        boolean targetOutOfBounds = targetSlot < 0 || targetSlot >= containerSize;
-
-        if (sourceOutOfBounds || targetOutOfBounds) {
-            return CrossContainerTransfer.execute(
-                ctx,
-                ResolvedSlots.ofTransfer(
-                    sourceSlot, targetSlot, dir.sourceOffset(), dir.targetOffset()),
-                level, filter,
-                stackSize, DEFAULT_MAX_TRANSFER, hostSlot, tick);
-        }
-
-        if (sourceSlot == targetSlot) return false;
-
-        Set<Integer> transferredTargetSlots = tick.transferredTargetSlots;
-        if (transferredTargetSlots != null && transferredTargetSlots.contains(sourceSlot)) {
-            return false;
-        }
-
-        ItemStack sourceStack = ctx.getItem(sourceSlot);
-        if (sourceStack.isEmpty()) return false;
-
-        boolean isStorageContainer = LivingChestFunction.isLivingChest(sourceStack)
-            || LivingEnderChestFunction.isLivingEnderChest(sourceStack);
-
-        if (LivingItemManager.isLivingItem(sourceStack) && !isStorageContainer) return false;
-
-        if (!isStorageContainer && !ItemFilterComponent.allows(filter, sourceStack)) return false;
-
-        var server = level.getServer();
-        if (server == null) return false;
-
-        SlotAccessor source = SlotAccessorFactory.create(server, ctx, sourceSlot, filter, transferredTargetSlots, tick.getSnapshot());
-        SlotAccessor target = SlotAccessorFactory.create(server, ctx, targetSlot, null, transferredTargetSlots, tick.getSnapshot());
-
-        if (source == null || target == null) return false;
-
-        if (source.unwrap() instanceof LivingEnderChestAccessor sourceEnder
-            && target.unwrap() instanceof LivingEnderChestAccessor targetEnder) {
-            if (!sourceEnder.isDirectMode() && !targetEnder.isDirectMode()
-                && sourceEnder.getChannel() == targetEnder.getChannel()) {
-                return false;
-            }
-        }
-
-        if (source.unwrap() instanceof LivingEnderChestAccessor sourceEnder && !sourceEnder.isDirectMode()) {
-            ItemStack targetStack = ctx.getItem(targetSlot);
-            if (!targetStack.isEmpty()) {
-                sourceEnder.setPreferredItemType(
-                    net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(targetStack.getItem()).toString());
-            }
-        }
-
-        if (target.unwrap() instanceof LivingEnderChestAccessor enderChest) {
-            if (enderChest.isDirectMode()) {
-                return SlotAccessor.transfer(source, target, Math.min(stackSize, DEFAULT_MAX_TRANSFER));
-            }
-            ItemStack srcStack = ctx.getItem(sourceSlot);
-            if (!srcStack.isEmpty() && !LivingItemManager.isLivingItem(srcStack)) {
-                enderChest.registerRoute(srcStack, ctx, sourceSlot, hostSlot, targetSlot);
-            }
-            return true;
-        }
-
-        return SlotAccessor.transfer(source, target, Math.min(stackSize, DEFAULT_MAX_TRANSFER));
+        return TransferPipeline.execute(
+            ctx, level, hostSlot, sourceSlot, targetSlot,
+            stackSize, DEFAULT_MAX_TRANSFER, filter,
+            ResolvedSlots.ofTransfer(sourceSlot, targetSlot, dir.sourceOffset(), dir.targetOffset()),
+            dir, tick);
     }
 
     private void cleanupStaleRoutes(List<SlotEntry> entries, ContainerContext context, TickContext tick) {
