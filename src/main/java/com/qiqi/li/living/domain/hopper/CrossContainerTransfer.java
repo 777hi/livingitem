@@ -28,14 +28,12 @@ package com.qiqi.li.living.domain.hopper;
 
 import java.util.List;
 import java.util.Set;
-import java.util.UUID;
 
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.domain.chest.LivingChestFunction;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.ChestBlock;
@@ -44,15 +42,11 @@ import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.ChestType;
 import net.minecraft.world.level.block.state.properties.DirectionProperty;
 import com.qiqi.li.living.api.LivingItemManager;
-import com.qiqi.li.living.domain.ender.EnderChannelEntry;
-import com.qiqi.li.living.domain.ender.EnderChannelRegistry;
-import com.qiqi.li.living.domain.ender.LivingEnderChestAccessor;
 import com.qiqi.li.living.transfer.SlotAccessor;
 import com.qiqi.li.living.transfer.SlotAccessorFactory;
 import com.qiqi.li.living.model.Pos2D;
 import com.qiqi.li.living.model.ResolvedSlots;
 import com.qiqi.li.living.transfer.FilterData;
-import com.qiqi.li.living.components.ItemFilterComponent;
 import com.qiqi.li.living.domain.ender.LivingEnderChestFunction;
 import net.minecraft.server.MinecraftServer;
 import net.neoforged.neoforge.capabilities.Capabilities;
@@ -156,8 +150,9 @@ public final class CrossContainerTransfer {
         }
 
         if (LivingEnderChestFunction.isLivingEnderChest(targetStack)) {
-            return pullFromNeighborToLivingEnderChest(containerCtx, level, neighborHandler,
-                basePos, sourceWorldDir, targetStack, targetSlot, stackSize, maxTransfer, filterData, hostSlot);
+            return com.qiqi.li.living.domain.ender.EnderRouteManager.resolveCrossContainerTarget(
+                containerCtx, level, neighborHandler, neighborPos,
+                targetStack, targetSlot, stackSize, maxTransfer, filterData, hostSlot);
         }
 
         MinecraftServer server = level.getServer();
@@ -352,91 +347,6 @@ public final class CrossContainerTransfer {
             SlotAccessor source = SlotAccessorFactory.createForNeighbor(neighborHandler, i, filterData, level, neighborPos);
             if (SlotAccessor.transfer(source, target, amount)) {
                 return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * 从相邻容器拉取物品并注册到活末影箱路由
-     */
-    private static boolean pullFromNeighborToLivingEnderChest(ContainerContext containerCtx,
-                                                               Level level,
-                                                               IItemHandler neighborHandler,
-                                                               BlockPos basePos,
-                                                               Direction sourceWorldDir,
-                                                               ItemStack enderChestStack,
-                                                               int targetSlot,
-                                                               int stackSize,
-                                                               int maxTransfer,
-                                                               FilterData filterData,
-                                                               int hostSlot) {
-        if (level.isClientSide()) return false;
-
-        var server = level.getServer();
-        if (server == null) return false;
-
-        UUID boundUuid = LivingEnderChestFunction.getBoundPlayerUuid(enderChestStack);
-        BlockPos neighborPos = basePos.relative(sourceWorldDir);
-
-        if (boundUuid != null) {
-            return pullFromNeighborToDirectEnderChest(server, neighborHandler,
-                boundUuid, stackSize, maxTransfer, filterData, level, neighborPos);
-        }
-        int channel = enderChestStack.getCount();
-        var registry = EnderChannelRegistry.getInstance();
-
-        for (int i = 0; i < neighborHandler.getSlots(); i++) {
-            ItemStack sourceStack = neighborHandler.getStackInSlot(i);
-            if (sourceStack.isEmpty() || LivingItemManager.isLivingItem(sourceStack)) continue;
-
-            if (filterData != null && !ItemFilterComponent.allows(filterData, sourceStack)) continue;
-
-            String itemType = BuiltInRegistries.ITEM.getKey(sourceStack.getItem()).toString();
-            var entry = new EnderChannelEntry(
-                itemType, level.dimension(), neighborPos, i, hostSlot, null, targetSlot,
-                containerCtx.getContainerKey());
-
-            if (registry.contains(channel, entry)) {
-                return true;
-            }
-
-            registry.removeByPositionAndSlotFromAllChannels(neighborPos, i);
-            registry.offer(channel, entry);
-            return true;
-        }
-
-        return false;
-    }
-
-    private static boolean pullFromNeighborToDirectEnderChest(MinecraftServer server,
-                                                                IItemHandler neighborHandler,
-                                                                UUID boundUuid,
-                                                                int stackSize,
-                                                                int maxTransfer,
-                                                                FilterData filterData,
-                                                                Level level,
-                                                                BlockPos neighborPos) {
-        var player = server.getPlayerList().getPlayer(boundUuid);
-        if (player == null) return false;
-
-        var enderChest = player.getEnderChestInventory();
-        IItemHandler enderHandler = new net.neoforged.neoforge.items.wrapper.InvWrapper(enderChest);
-
-        int amount = Math.min(stackSize, maxTransfer);
-
-        for (int i = 0; i < neighborHandler.getSlots(); i++) {
-            ItemStack sourceStack = neighborHandler.getStackInSlot(i);
-            if (sourceStack.isEmpty() || LivingItemManager.isLivingItem(sourceStack)) continue;
-
-            SlotAccessor source = SlotAccessorFactory.createForNeighbor(neighborHandler, i, filterData, level, neighborPos);
-
-            for (int j = 0; j < enderHandler.getSlots(); j++) {
-                SlotAccessor target = SlotAccessorFactory.createForNeighbor(enderHandler, j, null, null, null);
-                if (SlotAccessor.transfer(source, target, amount)) {
-                    return true;
-                }
             }
         }
 
