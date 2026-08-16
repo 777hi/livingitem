@@ -32,6 +32,7 @@ public class TickContext {
     // 可变字段（对象池复用需要）
     public final Set<String> occupiedSlots = new HashSet<>();
     public final Set<Integer> transferredTargetSlots = new HashSet<>();
+    public final Set<Integer> dirtySlots = new HashSet<>();
     public ContainerFluidData fluidData = ContainerFluidData.EMPTY;
     public ContainerStressData stressData = ContainerStressData.EMPTY;
 
@@ -107,6 +108,7 @@ public class TickContext {
     void reset(ContainerContext ctx) {
         occupiedSlots.clear();
         transferredTargetSlots.clear();
+        dirtySlots.clear();
 
         this.ctx = ctx;
         this._snapshot = ContainerSnapshot.EMPTY;
@@ -127,6 +129,7 @@ public class TickContext {
     void clear() {
         occupiedSlots.clear();
         transferredTargetSlots.clear();
+        dirtySlots.clear();
         ctx = null;
         _snapshot = ContainerSnapshot.EMPTY;
         snapshotBuilt = false;

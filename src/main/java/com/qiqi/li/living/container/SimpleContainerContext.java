@@ -40,6 +40,15 @@ public class SimpleContainerContext implements ContainerContext {
     private final Level overrideLevel;
 
     private ContainerFluidData fluidData;
+    private TickContext currentTickContext;
+
+    public void setTickContext(TickContext tick) {
+        this.currentTickContext = tick;
+    }
+
+    public TickContext getTickContext() {
+        return currentTickContext;
+    }
 
     /**
      * 为玩家背包创建容器上下文。
@@ -272,6 +281,21 @@ public class SimpleContainerContext implements ContainerContext {
 
     @Override
     public void syncSlotToClients(int logicalSlot, ItemStack stack) {
+        if (currentTickContext != null) {
+            currentTickContext.dirtySlots.add(logicalSlot);
+        } else {
+            flushSlotSync(logicalSlot, stack);
+        }
+    }
+
+    void flushDirtySlots() {
+        for (int slot : currentTickContext.dirtySlots) {
+            flushSlotSync(slot, getItem(slot));
+        }
+        currentTickContext.dirtySlots.clear();
+    }
+
+    private void flushSlotSync(int logicalSlot, ItemStack stack) {
         if (inventory != null) {
             syncPlayerInventory(inventory, logicalSlot, stack);
         } else {

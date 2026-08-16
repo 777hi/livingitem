@@ -174,6 +174,10 @@ public class ContainerLivingItemHandler {
         // 从对象池获取 TickContext（复用减少 GC 压力）
         TickContext tick = TickContext.acquire(context);
 
+        if (context instanceof SimpleContainerContext simpleCtx) {
+            simpleCtx.setTickContext(tick);
+        }
+
         Map<LivingItemFunction, List<LivingItemFunction.SlotEntry>> grouped = new LinkedHashMap<>();
 
         for (int i = 0; i < context.getSize(); i++) {
@@ -188,6 +192,9 @@ public class ContainerLivingItemHandler {
         }
 
         if (grouped.isEmpty()) {
+            if (context instanceof SimpleContainerContext simpleCtx) {
+                simpleCtx.setTickContext(null);
+            }
             tick.release();
             long elapsedMs = (System.nanoTime() - startNanos) / 1_000_000;
             PerfMetrics.recordTick(elapsedMs);
@@ -271,6 +278,11 @@ public class ContainerLivingItemHandler {
         if (cleanupCounter >= CLEANUP_INTERVAL) {
             cleanupCounter = 0;
             cleanupStaleFluidData(System.currentTimeMillis());
+        }
+
+        if (context instanceof SimpleContainerContext simpleCtx2) {
+            simpleCtx2.flushDirtySlots();
+            simpleCtx2.setTickContext(null);
         }
 
         tick.release();

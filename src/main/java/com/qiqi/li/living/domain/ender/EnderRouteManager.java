@@ -6,6 +6,8 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
+import com.mojang.logging.LogUtils;
+import org.slf4j.Logger;
 import java.util.UUID;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.transfer.SlotAccessor;
@@ -31,6 +33,8 @@ import com.qiqi.li.living.transfer.SlotAccessor;
  * </ul>
  */
 public final class EnderRouteManager {
+
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     private EnderRouteManager() {}
 
@@ -75,7 +79,7 @@ public final class EnderRouteManager {
 
         ItemStack srcStack = ctx.getItem(sourceSlot);
         if (!srcStack.isEmpty() && !com.qiqi.li.living.api.LivingItemManager.isLivingItem(srcStack)) {
-            enderChest.registerRoute(srcStack, ctx, sourceSlot, hostSlot, targetSlot);
+            registerRoute(enderChest.getChannel(), srcStack, ctx, sourceSlot, hostSlot, targetSlot);
         }
         return Decision.HANDLED;
     }
@@ -121,6 +125,48 @@ public final class EnderRouteManager {
         if (!(source.unwrap() instanceof LivingEnderChestAccessor sourceEnder)) return false;
         if (sourceEnder.isDirectMode()) return false;
         return sourceEnder.getChannel() == targetEnder.getChannel();
+    }
+
+    /**
+     * 注册路由条目 —— 记录源物品的类型和位置，不实际存储物品。
+     *
+     * <p>从 {@code LivingEnderChestAccessor.registerRoute} 迁移而来，
+     * 使路由注册逻辑归属于路由管理器。</p>
+     *
+     * @param channel 频道号
+     * @param sourceStack 源物品栈
+     * @param containerCtx 当前容器上下文
+     * @param slot 源物品槽位
+     * @param registrarSlot 注册者槽位
+     * @param targetSlot 目标槽位
+     */
+    private static void registerRoute(int channel, ItemStack sourceStack,
+                                       ContainerContext containerCtx, int slot,
+                                       int registrarSlot, int targetSlot) {
+        if (sourceStack.isEmpty()) return;
+
+        Level level = containerCtx.getLevel();
+        BlockPos pos = containerCtx.getBlockPos();
+        String containerKey = containerCtx.getContainerKey();
+
+        if (level == null || level.isClientSide) return;
+        if (pos == null && containerKey == null) return;
+
+        String itemType = BuiltInRegistries.ITEM.getKey(sourceStack.getItem()).toString();
+        EnderChannelEntry entry = new EnderChannelEntry(
+            itemType, level.dimension(), pos, slot, registrarSlot, containerKey, targetSlot, containerKey);
+
+        EnderChannelRegistry registry = EnderChannelRegistry.getInstance();
+        if (registry.contains(channel, entry)) return;
+
+        if (pos != null) {
+            registry.removeByPositionAndSlotFromAllChannels(pos, slot);
+        } else {
+            registry.removeByPositionAndSlotFromAllChannels(containerKey, slot);
+        }
+        registry.offer(channel, entry);
+        LOGGER.debug("EnderRouteManager: registered route channel={}, item={}, pos={}, key={}, slot={}",
+            channel, itemType, pos, containerKey, slot);
     }
 
     /**

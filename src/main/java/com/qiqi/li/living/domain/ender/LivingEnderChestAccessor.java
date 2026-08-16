@@ -165,55 +165,6 @@ public class LivingEnderChestAccessor implements SlotAccessor {
         this.preferredItemType = itemType;
     }
 
-    /**
-     * 注册路由条目 —— 记录源物品的类型和位置，不实际存储物品。
-     *
-     * <p>由 {@code ItemTransferComponent.executeTransfer()} 在目标为活末影箱时调用。</p>
-     *
-     * @param sourceStack 源物品栈
-     * @param containerCtx 当前容器上下文
-     * @param slot 源物品槽位
-     */
-    public void registerRoute(ItemStack sourceStack, ContainerContext containerCtx, int slot, int registrarSlot, int targetSlot) {
-        if (sourceStack.isEmpty()) {
-            LOGGER.warn("LivingEnderChestAccessor: registerRoute called with empty stack, channel={}", channel);
-            return;
-        }
-
-        Level level = containerCtx.getLevel();
-        BlockPos pos = containerCtx.getBlockPos();
-        String containerKey = containerCtx.getContainerKey();
-
-        if (level == null || level.isClientSide) {
-            LOGGER.warn("LivingEnderChestAccessor: registerRoute invalid level, channel={}", channel);
-            return;
-        }
-
-        if (pos == null && containerKey == null) {
-            LOGGER.warn("LivingEnderChestAccessor: registerRoute no pos and no containerKey, channel={}", channel);
-            return;
-        }
-
-        String itemType = BuiltInRegistries.ITEM.getKey(sourceStack.getItem()).toString();
-        EnderChannelEntry entry = new EnderChannelEntry(
-            itemType, level.dimension(), pos, slot, registrarSlot, containerKey, targetSlot, containerKey);
-
-        EnderChannelRegistry registry = EnderChannelRegistry.getInstance();
-        // 快速路径：如果当前频道已存在相同条目，跳过（绝大多数tick走这里）
-        if (registry.contains(channel, entry)) {
-            return;
-        }
-        // 频道可能已改变，清理所有频道中同位置+槽位的旧路由
-        if (pos != null) {
-            registry.removeByPositionAndSlotFromAllChannels(pos, slot);
-        } else {
-            registry.removeByPositionAndSlotFromAllChannels(containerKey, slot);
-        }
-        registry.offer(channel, entry);
-        LOGGER.debug("LivingEnderChestAccessor: registered route channel={}, item={}, pos={}, key={}, slot={}, count={}",
-            channel, itemType, pos, containerKey, slot, sourceStack.getCount());
-    }
-
     @Override
     public ItemStack extract(int amount, ItemStack filterType) {
         if (directMode) {
