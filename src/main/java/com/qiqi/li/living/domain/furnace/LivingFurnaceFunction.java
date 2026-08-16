@@ -18,6 +18,7 @@ import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.common.extensions.IItemExtension;
 import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.api.HasDirection;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.transfer.SlotResolver;
@@ -28,10 +29,11 @@ import com.qiqi.li.living.domain.furnace.LivingFurnaceData;
 import com.qiqi.li.living.domain.furnace.ProgressData;
 import com.qiqi.li.living.domain.furnace.TransformData;
 
-public class LivingFurnaceFunction implements LivingItemFunction {
+public class LivingFurnaceFunction implements LivingItemFunction, HasDirection {
 
     public static final String ID = "living_furnace";
     private static final int DEFAULT_COOKING_TIME = 200;
+    private static final String[] SLOT_NAMES = {"input", "output", "fuel"};
 
     public static final DirectionSlotsData DEFAULT_DIRECTION = DirectionSlotsData.DEFAULT_FURNACE;
 
@@ -348,12 +350,23 @@ public class LivingFurnaceFunction implements LivingItemFunction {
         return DEFAULT_DIRECTION;
     }
 
-    public static boolean updateSlotDirection(ItemStack furnaceStack, String slotName, Pos2D direction) {
-        if (furnaceStack == null || furnaceStack.isEmpty() || slotName == null || direction == null) return false;
-        LivingFurnaceData data = LivingItemManager.getFurnaceData(furnaceStack);
+    @Override
+    public int getDirectionKeyCount() {
+        return 3;
+    }
+
+    @Override
+    public String[] getDirectionSlotNames() {
+        return SLOT_NAMES;
+    }
+
+    @Override
+    public boolean updateSlotDirection(ItemStack stack, String slotName, Pos2D direction) {
+        if (stack == null || stack.isEmpty() || slotName == null || direction == null) return false;
+        LivingFurnaceData data = LivingItemManager.getFurnaceData(stack);
         DirectionSlotsData dir = data.direction();
         dir = dir.withDirection(slotName, direction);
-        LivingItemManager.setFurnaceData(furnaceStack, data.withDirection(dir));
+        LivingItemManager.setFurnaceData(stack, data.withDirection(dir));
         return true;
     }
 

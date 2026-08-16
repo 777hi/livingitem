@@ -7,6 +7,7 @@ import java.util.Set;
 
 import com.qiqi.li.living.domain.water.ContainerFluidData;
 import com.qiqi.li.living.domain.water.ContainerStressData;
+import com.qiqi.li.living.domain.redstone.ContainerRedstoneData;
 import com.qiqi.li.living.perf.PerfMetrics;
 
 /**
@@ -35,6 +36,7 @@ public class TickContext {
     public final Set<Integer> dirtySlots = new HashSet<>();
     public ContainerFluidData fluidData = ContainerFluidData.EMPTY;
     public ContainerStressData stressData = ContainerStressData.EMPTY;
+    public ContainerRedstoneData redstoneData = null;
 
     private Map<String, Set<Integer>> functionSlots = Collections.emptyMap();
 
@@ -121,6 +123,7 @@ public class TickContext {
         }
         this.fluidData = fluidData;
         this.stressData = new ContainerStressData();
+        this.redstoneData = null;
     }
 
     /**
@@ -136,6 +139,7 @@ public class TickContext {
         functionSlots = Collections.emptyMap();
         fluidData = ContainerFluidData.EMPTY;
         stressData = ContainerStressData.EMPTY;
+        redstoneData = null;
     }
 
     /**

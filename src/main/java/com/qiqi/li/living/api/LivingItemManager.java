@@ -16,6 +16,8 @@ import com.qiqi.li.living.domain.water.LivingWaterBucketData;
 import com.qiqi.li.living.domain.water.LivingWaterWheelData;
 import com.qiqi.li.living.domain.ender.LivingEnderChestData;
 import com.qiqi.li.living.domain.water.ContainerStressData;
+import com.qiqi.li.living.domain.redstone.LivingRedstoneData;
+import com.qiqi.li.living.domain.redstone.LivingRedstoneTorchData;
 import net.minecraft.world.item.Items;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.registries.Registries;
@@ -98,6 +100,20 @@ public class LivingItemManager {
                             .networkSynchronized(LivingEnderChestData.STREAM_CODEC)
                             .build());
 
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingRedstoneData>> LIVING_REDSTONE_DATA =
+            DATA_COMPONENT_TYPES.register("living_redstone_data", () ->
+                    DataComponentType.<LivingRedstoneData>builder()
+                            .persistent(LivingRedstoneData.CODEC)
+                            .networkSynchronized(LivingRedstoneData.STREAM_CODEC)
+                            .build());
+
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingRedstoneTorchData>> LIVING_REDSTONE_TORCH_DATA =
+            DATA_COMPONENT_TYPES.register("living_redstone_torch_data", () ->
+                    DataComponentType.<LivingRedstoneTorchData>builder()
+                            .persistent(LivingRedstoneTorchData.CODEC)
+                            .networkSynchronized(LivingRedstoneTorchData.STREAM_CODEC)
+                            .build());
+
     private static final List<LivingItemFunction> FUNCTIONS = new ArrayList<>();
     private static final List<LivingItemFunction> FUNCTIONS_VIEW = Collections.unmodifiableList(FUNCTIONS);
     private static final Map<Item, List<LivingItemFunction>> APPLICABLE_CACHE = new HashMap<>();
@@ -155,6 +171,8 @@ public class LivingItemManager {
         stack.remove(LIVING_FURNACE_DATA.value());
         stack.remove(LIVING_HOPPER_DATA.value());
         stack.remove(LIVING_ENDER_CHEST_DATA.value());
+        stack.remove(LIVING_REDSTONE_DATA.value());
+        stack.remove(LIVING_REDSTONE_TORCH_DATA.value());
     }
 
     public static void setLiving(ItemStack stack, boolean living) {
@@ -280,5 +298,21 @@ public class LivingItemManager {
 
     public static void setWaterWheelData(ItemStack stack, LivingWaterWheelData data) {
         setData(stack, LIVING_WATER_WHEEL_DATA.value(), data, LivingWaterWheelData.EMPTY);
+    }
+
+    public static LivingRedstoneData getRedstoneData(ItemStack stack) {
+        return getData(stack, LIVING_REDSTONE_DATA.value(), LivingRedstoneData.DEFAULT);
+    }
+
+    public static void setRedstoneData(ItemStack stack, LivingRedstoneData data) {
+        setData(stack, LIVING_REDSTONE_DATA.value(), data, LivingRedstoneData.DEFAULT);
+    }
+
+    public static LivingRedstoneTorchData getRedstoneTorchData(ItemStack stack) {
+        return getData(stack, LIVING_REDSTONE_TORCH_DATA.value(), LivingRedstoneTorchData.DEFAULT);
+    }
+
+    public static void setRedstoneTorchData(ItemStack stack, LivingRedstoneTorchData data) {
+        setData(stack, LIVING_REDSTONE_TORCH_DATA.value(), data, LivingRedstoneTorchData.DEFAULT);
     }
 }

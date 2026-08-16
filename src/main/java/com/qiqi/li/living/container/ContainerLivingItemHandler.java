@@ -10,6 +10,7 @@ import java.util.Set;
 
 import com.qiqi.li.living.domain.water.ContainerFluidData;
 import com.qiqi.li.living.domain.water.ContainerStressData;
+import com.qiqi.li.living.domain.redstone.ContainerRedstoneData;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.entity.player.Inventory;
@@ -31,6 +32,8 @@ import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.domain.ender.EnderChannelRegistry;
 import com.qiqi.li.living.domain.water.LivingWaterBucketFunction;
 import com.qiqi.li.living.domain.water.LivingWaterWheelFunction;
+import com.qiqi.li.living.domain.redstone.LivingRedstoneFunction;
+import com.qiqi.li.living.domain.redstone.LivingRedstoneTorchFunction;
 import com.qiqi.li.living.compat.create.ModCreate;
 import com.qiqi.li.living.perf.PerfMetrics;
 
@@ -214,6 +217,10 @@ public class ContainerLivingItemHandler {
         }
         tick.setFunctionSlots(functionSlots);
 
+        if (functionSlots.containsKey(LivingRedstoneFunction.ID) || functionSlots.containsKey(LivingRedstoneTorchFunction.ID)) {
+            tick.redstoneData = new ContainerRedstoneData(context.getSize());
+        }
+
         // 记录活物品数量和功能调用
         for (var entry : grouped.entrySet()) {
             PerfMetrics.addLivingItem(entry.getKey().getFunctionId(), entry.getValue().size());
@@ -257,6 +264,11 @@ public class ContainerLivingItemHandler {
         }
 
         LivingWaterWheelFunction.postTickSync(context, stressData, waterWheelEntries);
+
+        ContainerRedstoneData redstoneData = tick.redstoneData;
+        if (redstoneData != null) {
+            redstoneData.calculate(context, tick);
+        }
 
         if (stressData != null && context instanceof SimpleContainerContext simpleCtx) {
             for (BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {

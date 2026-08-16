@@ -1,9 +1,10 @@
 package com.qiqi.li.network;
 
 import com.qiqi.li.living.domain.chest.LivingChestFunction;
-import com.qiqi.li.living.domain.furnace.LivingFurnaceFunction;
 import com.qiqi.li.living.domain.hopper.LivingHopperFunction;
+import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.api.HasDirection;
 import com.qiqi.li.living.model.Pos2D;
 import com.qiqi.li.living.model.SlotMapping;
 import net.minecraft.nbt.CompoundTag;
@@ -57,8 +58,8 @@ public class ServerPacketHandler {
         if (player == null || player.containerMenu == null) return;
 
         ItemStack carried = player.containerMenu.getCarried();
-        if (carried.isEmpty() || !carried.is(net.minecraft.world.item.Items.FURNACE)) {
-            LOGGER.warn("Player {} has no furnace on cursor", player.getName().getString());
+        if (carried.isEmpty()) {
+            LOGGER.warn("Player {} has no item on cursor", player.getName().getString());
             return;
         }
 
@@ -68,8 +69,14 @@ public class ServerPacketHandler {
         }
 
         Pos2D direction = new Pos2D(payload.directionX(), payload.directionY());
-        boolean success = LivingFurnaceFunction.updateSlotDirection(
-            carried, payload.slotName(), direction);
+        boolean success = false;
+
+        for (LivingItemFunction func : LivingItemManager.getApplicableFunctions(carried)) {
+            if (func instanceof HasDirection dir) {
+                success = dir.updateSlotDirection(carried, payload.slotName(), direction);
+                break;
+            }
+        }
 
         if (!success) {
             LOGGER.warn("Failed to update slot direction for player {}: slot={} dir={}",
@@ -81,7 +88,7 @@ public class ServerPacketHandler {
         player.connection.send(new ClientboundContainerSetSlotPacket(
             -1, stateId, -1, carried.copy()));
 
-        LOGGER.debug("Updated furnace slot direction for player {}: {} = {}",
+        LOGGER.debug("Updated slot direction for player {}: {} = {}",
             player.getName().getString(), payload.slotName(), direction.getSymbol());
     }
 

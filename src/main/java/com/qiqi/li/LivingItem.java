@@ -55,6 +55,8 @@ import com.qiqi.li.living.compat.create.ModCreate;
 import com.qiqi.li.living.domain.furnace.LivingFurnaceFunction;
 import com.qiqi.li.living.domain.hopper.LivingHopperFunction;
 import com.qiqi.li.living.domain.tnt.LivingTntFunction;
+import com.qiqi.li.living.domain.redstone.LivingRedstoneFunction;
+import com.qiqi.li.living.domain.redstone.LivingRedstoneTorchFunction;
 import com.qiqi.li.living.function.LivingFlintAndSteelFunction;
 import com.qiqi.li.living.interaction.InteractionRegistry;
 import com.qiqi.li.living.interaction.IgniteHandler;
@@ -128,6 +130,12 @@ public class LivingItem {
 
         LivingItemManager.registerFunction(new LivingWaterWheelFunction());
         LOGGER.info("Registered living water wheel function");
+
+        LivingItemManager.registerFunction(new LivingRedstoneFunction());
+        LOGGER.info("Registered living redstone function");
+
+        LivingItemManager.registerFunction(new LivingRedstoneTorchFunction());
+        LOGGER.info("Registered living redstone torch function");
 
         LivingItemManager.registerFunction(new LivingEnderPearlFunction());
         LOGGER.info("Registered living ender pearl function");
