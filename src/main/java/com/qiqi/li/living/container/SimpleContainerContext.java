@@ -181,13 +181,13 @@ public class SimpleContainerContext implements ContainerContext {
         handler.extractItem(logicalSlot, Integer.MAX_VALUE, false);
         ItemStack remaining = handler.insertItem(logicalSlot, toInsert, false);
         if (!remaining.isEmpty() && isArmorSlot(inventory, logicalSlot)) {
-            // 活漏斗绕过盔甲槽限制，直接设置物品（方块放头上等趣味玩法）
             inventory.armor.set(logicalSlot - 36, toInsert);
             syncSlotToClients(logicalSlot, toInsert);
         } else if (!remaining.isEmpty()) {
             LOGGER.warn("SimpleContainerContext.setItem: {} items of {} 未能插入槽位 {}",
                 remaining.getCount(), toInsert.getItem(), logicalSlot);
         }
+        notifyBlockEntitiesChanged();
     }
 
     @Override
@@ -262,6 +262,12 @@ public class SimpleContainerContext implements ContainerContext {
             return inventory.player.level();
         }
         return null;
+    }
+
+    private void notifyBlockEntitiesChanged() {
+        for (BlockEntity be : associatedBlockEntities) {
+            be.setChanged();
+        }
     }
 
     @Override
