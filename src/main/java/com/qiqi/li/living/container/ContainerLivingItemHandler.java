@@ -8,6 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 import com.qiqi.li.living.api.HasContainerData;
 import com.qiqi.li.living.domain.water.ContainerFluidData;
@@ -74,7 +75,8 @@ public class ContainerLivingItemHandler {
 
     public static void removeFluidDataByPos(BlockPos pos) {
         String regex = ".*_" + pos.getX() + "_" + pos.getY() + "_" + pos.getZ() + "(_\\d+_\\d+_\\d+)?$";
-        FLUID_DATA_CACHE.keySet().removeIf(key -> key.matches(regex));
+        Pattern pattern = Pattern.compile(regex);
+        FLUID_DATA_CACHE.keySet().removeIf(key -> pattern.matcher(key).matches());
     }
 
     /**
@@ -176,8 +178,7 @@ public class ContainerLivingItemHandler {
             return;
         }
 
-        // 从对象池获取 TickContext（复用减少 GC 压力）
-        TickContext tick = TickContext.acquire(context);
+        TickContext tick = new TickContext(context);
 
         if (context instanceof SimpleContainerContext simpleCtx) {
             simpleCtx.setTickContext(tick);
@@ -200,7 +201,6 @@ public class ContainerLivingItemHandler {
             if (context instanceof SimpleContainerContext simpleCtx) {
                 simpleCtx.setTickContext(null);
             }
-            tick.release();
             long elapsedMs = (System.nanoTime() - startNanos) / 1_000_000;
             PerfMetrics.recordTick(elapsedMs);
             if (PerfMetrics.shouldReport()) {
@@ -270,8 +270,6 @@ public class ContainerLivingItemHandler {
             simpleCtx2.flushDirtySlots();
             simpleCtx2.setTickContext(null);
         }
-
-        tick.release();
 
         long elapsedMs = (System.nanoTime() - startNanos) / 1_000_000;
 

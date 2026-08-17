@@ -145,6 +145,7 @@ public class LivingItemManager {
     public static void registerFunction(LivingItemFunction function) {
         LOGGER.info("Registering living item function: {}", function.getFunctionId());
         FUNCTIONS.add(function);
+        APPLICABLE_CACHE.clear();
     }
 
     public static List<LivingItemFunction> getAllFunctions() {
@@ -187,6 +188,13 @@ public class LivingItemManager {
         return types;
     }
 
+    /**
+     * 清除活物品的所有功能数据。
+     *
+     * <p><b>注意：</b>新增 {@link LivingItemFunction} 时，如果该功能有自己的
+     * {@link net.minecraft.core.component.DataComponentType}，必须在此方法中
+     * 添加对应的 {@code stack.remove()} 调用，否则旧数据会残留在物品上。</p>
+     */
     public static void clearLivingData(ItemStack stack) {
         stack.remove(IS_LIVING.value());
         stack.remove(LIVING_TNT_DATA.value());

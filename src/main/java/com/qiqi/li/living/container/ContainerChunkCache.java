@@ -45,6 +45,9 @@ public class ContainerChunkCache {
     /** 按维度存储包含容器的区块坐标集合 */
     private final Map<ResourceKey<Level>, Set<ChunkPos>> chunkCache = new Object2ObjectOpenHashMap<>();
 
+    /** 每个维度上次清理的时间戳（gameTime），用于定期清理已卸载的区块 */
+    private final Map<ResourceKey<Level>, Long> lastCleanupTick = new Object2ObjectOpenHashMap<>();
+
     private ContainerChunkCache() {}
 
     /** 获取单例实例 */
@@ -165,6 +168,7 @@ public class ContainerChunkCache {
     /** 清空所有缓存（用于服务端关闭或维度卸载等场景） */
     public void clear() {
         chunkCache.clear();
+        lastCleanupTick.clear();
     }
 
     /** 从缓存中移除指定区块（自清洁，由 tick 循环调用） */
@@ -172,6 +176,42 @@ public class ContainerChunkCache {
         Set<ChunkPos> chunkSet = chunkCache.get(dim);
         if (chunkSet != null && chunkSet.remove(pos)) {
             PerfMetrics.recordCacheSelfClean();
+        }
+    }
+
+    /**
+     * 定期清理缓存中已不再加载的区块。
+     *
+     * 与 onChunkUnload 不同，此方法作为兜底机制，防止因异步卸载时序问题
+     * 导致已卸载区块残留在缓存中。每隔 intervalTicks 执行一次清理。
+     *
+     * @param level         服务端世界
+     * @param intervalTicks 清理间隔（tick）
+     */
+    public void cleanupStaleEntries(ServerLevel level, int intervalTicks) {
+        ResourceKey<Level> dim = level.dimension();
+        long gameTime = level.getGameTime();
+
+        Long lastCleanup = lastCleanupTick.get(dim);
+        if (lastCleanup != null && gameTime - lastCleanup < intervalTicks) {
+            return;
+        }
+        lastCleanupTick.put(dim, gameTime);
+
+        Set<ChunkPos> chunkSet = chunkCache.get(dim);
+        if (chunkSet == null || chunkSet.isEmpty()) return;
+
+        var toRemove = new java.util.ArrayList<ChunkPos>();
+        for (ChunkPos pos : chunkSet) {
+            if (level.getChunkSource().getChunkNow(pos.x, pos.z) == null) {
+                toRemove.add(pos);
+            }
+        }
+        for (ChunkPos pos : toRemove) {
+            chunkSet.remove(pos);
+        }
+        if (!toRemove.isEmpty()) {
+            ModLog.CONTAINER.debug("cleanupStaleEntries removed {} chunks in {}", toRemove.size(), dim.location());
         }
     }
 

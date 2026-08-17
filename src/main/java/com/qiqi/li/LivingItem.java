@@ -246,7 +246,8 @@ public class LivingItem {
         for (var chunkPos : chunkSet) {
             var chunk = level.getChunkSource().getChunkNow(chunkPos.x, chunkPos.z);
             if (chunk == null) {
-                toRemove.add(chunkPos);
+                // 不立即移除：区块可能正在加载中，FULL future 尚未完成
+                // 由 onChunkUnload 事件 + 定期清理负责移除
                 continue;
             }
 
@@ -281,6 +282,9 @@ public class LivingItem {
             ModLog.PERF.debug("processLevelContainers dim={} chunks={} containers={} elapsed={}ms removed={}",
                 level.dimension(), chunkSet.size(), processedCount, elapsedMs, toRemove.size());
         }
+
+        // 定期清理：每 6000 ticks（约 5 分钟）清理一次真正不再加载的区块
+        cache.cleanupStaleEntries(level, 6000);
     }
 
     private void onRegisterPayloadHandler(RegisterPayloadHandlersEvent event) {

@@ -4,6 +4,19 @@
 
 ---
 
+## 2026-08-17
+
+- ✅ **修复：区块重新加载后活物品不工作**（离开区块一定时间后返回，容器中活物品停止 tick；重新进入游戏恢复正常）
+  - **根因**：`processLevelContainers` 使用 `getChunkNow()` 获取区块，当 `FULL` 状态的 `CompletableFuture` 尚未完成时返回 null，导致区块被 `toRemove` 从缓存中移除。区块从磁盘完整重新加载时存在 `ChunkEvent.Load`（触发缓存加入）与 `ServerTickEvent.Post`（触发缓存遍历）之间的时序窗口，加载后同一 tick 内被意外清除。
+  - **为什么短时间内回来正常**：短时间内区块未完全卸载，`getChunkNow` 仍返回有效值，不会被移除。
+  - **修复**：
+    - `LivingItem.processLevelContainers`：`getChunkNow` 返回 null 时不再立即移除，只跳过本次处理，保留到下次 tick
+    - `ContainerChunkCache.cleanupStaleEntries`：新增定期清理方法，每 6000 ticks（约 5 分钟）清理一次真正已卸载的区块，作为兜底机制防止内存泄漏
+    - `ContainerChunkCache.clear()`：同步清理 `lastCleanupTick` 时间戳
+  - **清理机制三层保障**：`onChunkUnload`（即时移除）→ `!hasContainer` 检查（自清洁）→ `cleanupStaleEntries`（兜底清理）
+
+---
+
 ## 2026-08-16
 
 - ✅ **优化：Mixin 兼容性重构**（移除高风险 Mixin，改用 NeoForge API 或低风险替代方案）

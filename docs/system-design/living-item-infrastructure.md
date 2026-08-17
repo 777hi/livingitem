@@ -1,6 +1,6 @@
 # 活物品基础设施系统设计
 
-> **文档版本**: 2026.08 v6  
+> **文档版本**: 2026.08 v7  
 > **最后更新**: 2026-08-17  
 > **适用版本**: Minecraft 1.21.1 + NeoForge 21.1.x
 
@@ -212,6 +212,28 @@ private static boolean hasContainerOrItemHandler(ServerLevel level, BlockPos pos
 ```
 
 这天然支持所有原版容器和任何通过 `Capabilities.ItemHandler.BLOCK` 注册能力的模组容器。
+
+**缓存清理机制**（三层保障）：
+
+| 层级 | 机制 | 触发时机 | 作用 |
+|------|------|---------|------|
+| 1 | `onChunkUnload` | 区块卸载时 | 主要清理机制，即时从缓存移除 |
+| 2 | `!hasContainer` 检查 | 每 tick 遍历 | 自清洁，容器消失时移除（如方块破坏） |
+| 3 | `cleanupStaleEntries` | 每 6000 ticks（约 5 分钟） | 兜底清理，移除已卸载但事件遗漏的区块 |
+
+**兜底清理的必要性**：
+
+`processLevelContainers` 中曾使用 `getChunkNow()` 返回 null 时立即移除区块缓存。但 `getChunkNow()` 内部通过 `GenerationChunkHolder.getChunkIfPresent(ChunkStatus.FULL)` 检查状态，而 `FULL` 状态的 `CompletableFuture` 可能与 `ChunkEvent.Load` 存在时序窗口：
+
+```
+tick N:
+  ChunkStatusTasks.full() 执行 → ChunkEvent.Load → onChunkLoad → 缓存加入 ✅
+  full() 返回 → FULL future 完成 → ChunkHolder 状态更新
+  ServerTickEvent.Post → processLevelContainers → getChunkNow()
+    ↑ 若 future 尚未完成，返回 null → toRemove 移除缓存 ❌
+```
+
+**修复**（2026-08-17）：`getChunkNow` 返回 null 时不再立即移除，只跳过本次处理。区块由 `onChunkUnload` 正常移除，`cleanupStaleEntries` 作为兜底定期清理残留。
 
 ### 3.3 大箱子去重
 

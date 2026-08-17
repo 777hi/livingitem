@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicLongArray;
 
 /**
  * 性能监控指标 —— 收集、记录、分析模组运行时的性能数据。
@@ -15,7 +16,6 @@ import java.util.concurrent.atomic.AtomicLong;
  *   <li><b>Container</b>：容器处理耗时、活物品数量、功能调用次数</li>
  *   <li><b>Teleport</b>：传送次数、区块加载耗时、总传送耗时</li>
  *   <li><b>Cache</b>：容器区块缓存大小、自清理移除数</li>
- *   <li><b>Pool</b>：TickContext 对象池命中率</li>
  *   <li><b>Transfer</b>：活漏斗传输成功/失败次数</li>
  * </ul>
  *
@@ -49,10 +49,6 @@ public class PerfMetrics {
     private static final AtomicInteger cacheSelfCleanRemoves = new AtomicInteger(0);
     private static final AtomicInteger cacheCurrentSize = new AtomicInteger(0);
 
-    // ===== 对象池 =====
-    private static final AtomicLong poolHits = new AtomicLong(0);
-    private static final AtomicLong poolMisses = new AtomicLong(0);
-
     // ===== 传输 =====
     private static final AtomicLong transferSuccess = new AtomicLong(0);
     private static final AtomicLong transferFail = new AtomicLong(0);
@@ -63,12 +59,12 @@ public class PerfMetrics {
 
     // ===== P99 估算（环形缓冲区） =====
     private static final int P99_BUFFER_SIZE = 1024;
-    private static final long[] p99Buffer = new long[P99_BUFFER_SIZE];
+    private static final AtomicLongArray p99Buffer = new AtomicLongArray(P99_BUFFER_SIZE);
     private static final AtomicInteger p99Index = new AtomicInteger(0);
 
     static {
         for (int i = 0; i < P99_BUFFER_SIZE; i++) {
-            p99Buffer[i] = -1;
+            p99Buffer.set(i, -1);
         }
     }
 
@@ -86,7 +82,7 @@ public class PerfMetrics {
             containerOverThreshold.incrementAndGet();
         }
         int idx = p99Index.getAndIncrement() & (P99_BUFFER_SIZE - 1);
-        p99Buffer[idx] = elapsedMs;
+        p99Buffer.set(idx, elapsedMs);
     }
 
     public static void addLivingItem(String functionId, int count) {
@@ -126,18 +122,6 @@ public class PerfMetrics {
     }
 
     // ══════════════════════════════════════════════
-    // 对象池
-    // ══════════════════════════════════════════════
-
-    public static void recordPoolHit(boolean hit) {
-        if (hit) {
-            poolHits.incrementAndGet();
-        } else {
-            poolMisses.incrementAndGet();
-        }
-    }
-
-    // ══════════════════════════════════════════════
     // 传输
     // ══════════════════════════════════════════════
 
@@ -168,7 +152,6 @@ public class PerfMetrics {
         printContainerSection();
         printTeleportSection();
         printCacheSection();
-        printPoolSection();
         printTransferSection();
 
         ModLog.PERF.info("=== End of report ===");
@@ -211,15 +194,6 @@ public class PerfMetrics {
         ModLog.PERF.info("[Cache] currentSize={}, selfCleanRemoves={}", size, removes);
     }
 
-    private static void printPoolSection() {
-        long total = poolHits.get() + poolMisses.get();
-        if (total == 0) return;
-
-        double hitRate = poolHits.get() * 100.0 / total;
-        ModLog.PERF.info("[ObjectPool] hitRate={}%, hits={}, misses={}",
-            String.format("%.1f", hitRate), poolHits.get(), poolMisses.get());
-    }
-
     private static void printTransferSection() {
         long total = transferSuccess.get() + transferFail.get();
         if (total == 0) return;
@@ -241,8 +215,9 @@ public class PerfMetrics {
         long[] sorted = new long[validCount];
         int idx = 0;
         for (int i = 0; i < P99_BUFFER_SIZE; i++) {
-            if (p99Buffer[i] >= 0 && idx < validCount) {
-                sorted[idx++] = p99Buffer[i];
+            long val = p99Buffer.get(i);
+            if (val >= 0 && idx < validCount) {
+                sorted[idx++] = val;
             }
         }
         if (idx == 0) return 0;
@@ -279,12 +254,10 @@ public class PerfMetrics {
         teleportMaxMs.set(0);
         teleportSlowChunkLoads.set(0);
         cacheSelfCleanRemoves.set(0);
-        poolHits.set(0);
-        poolMisses.set(0);
         transferSuccess.set(0);
         transferFail.set(0);
         for (int i = 0; i < P99_BUFFER_SIZE; i++) {
-            p99Buffer[i] = -1;
+            p99Buffer.set(i, -1);
         }
         p99Index.set(0);
     }
