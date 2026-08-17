@@ -74,7 +74,7 @@ public final class TransferPipeline {
         if (!isStorageContainer(sourceStack)
             && !ItemFilterComponent.allows(filter, sourceStack)) return false;
 
-        Container hostContainer = CrossContainerTransfer.getNeighborContainer(level, ctx.getBlockPos());
+        Container hostContainer = ContainerContext.getContainer(level, ctx.getBlockPos());
         if (hostContainer != null && !hostContainer.canTakeItem(hostContainer, sourceSlot, sourceStack)) {
             return false;
         }

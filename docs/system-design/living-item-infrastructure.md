@@ -1,6 +1,6 @@
 # 活物品基础设施系统设计
 
-> **文档版本**: 2026.08 v5  
+> **文档版本**: 2026.08 v6  
 > **最后更新**: 2026-08-17  
 > **适用版本**: Minecraft 1.21.1 + NeoForge 21.1.x
 
@@ -473,6 +473,20 @@ if (hostContainer != null) {
 
 **降级策略**：如果邻居/宿主容器未实现 `Container` 接口（如纯 `IItemHandler` 的模组），则跳过过滤，回退到纯 `IItemHandler` 模式——保持原有行为不变。
 
+### 5.6 IItemHandler.insertItem 槽位参数不可靠问题
+
+**问题**：仅靠 `canTakeItem`/`canPlaceItem` 检查还不够。即使 `canPlaceItem(targetSlot, stack)` 返回 `true`，实际执行 `IItemHandler.insertItem(targetSlot, stack, false)` 时，物品仍可能被写入其他槽位。这是因为 `IItemHandler.insertItem` 的 `slot` 参数在 API 层面只是"建议"，许多模组容器实现会忽略它。
+
+**解决方案**：在 `SimpleContainerContext` 的物品写入路径中，当 `Container` 接口可用时，直接使用 `Container.setItem(slot, stack)` 而非 `IItemHandler.insertItem(slot, stack, false)`。详见 [7.2 物品写入策略](#72-物品写入策略container-优先-iitemhandler-兜底)。
+
+**影响范围**：
+| 传输类型 | 是否受影响 | 原因 |
+|----------|:---:|------|
+| 容器内传输 | ✅ 受影响 | 精确指定目标槽位，必须槽位精确写入 |
+| 跨容器传输 | ❌ 不受影响 | 遍历所有槽位逐个尝试，物品落入第一个可用槽位是预期行为 |
+
+**相关修复**：`SimpleContainerContext.setItem()` 和 `simulateInsertItem()` 均已采用 `Container` 优先策略（2026-08-17）。
+
 ---
 
 ## 6. 容器大小自动解析
@@ -601,13 +615,29 @@ new SimpleContainerContext(handler, inventory);
 new SimpleContainerContext(handler, positions, blockEntities);
 ```
 
-### 7.2 玩家盔甲槽绕过
+### 7.2 物品写入策略：Container 优先，IItemHandler 兜底
 
-玩家背包的盔甲槽位（slot 36-39）有严格限制——只能放入对应类型的盔甲。活物品需要绕过这个限制：
+`setItem` 和 `simulateInsertItem` 采用**双层写入策略**：优先使用原版 `Container` 接口做精确槽位写入，`Container` 不可用时回退到 `IItemHandler`。
+
+**设计动机**：Forge `IItemHandler.insertItem(int slot, ItemStack stack, boolean simulate)` 的 `slot` 参数在 API 契约上只是"建议"。许多模组容器的 `IItemHandler` 实现会忽略 `slot` 参数，按"第一个可用槽位"插入，导致容器内传输时物品进入错误的槽位。
+
+而 `Container.setItem(int slot, ItemStack stack)` 是 Minecraft 原版接口，100% 精确槽位写入，不存在歧义。
 
 ```java
 @Override
 public void setItem(int logicalSlot, ItemStack stack) {
+    // ...边界检查...
+    ItemStack toInsert = stack.copy();
+
+    // 优先：Container 精确槽位写入
+    Container container = ContainerContext.getContainer(getLevel(), getBlockPos());
+    if (container != null && logicalSlot < container.getContainerSize()) {
+        container.setItem(logicalSlot, toInsert);
+        notifyBlockEntitiesChanged();
+        return;
+    }
+
+    // 兜底：IItemHandler（slot 参数可能被忽略）
     handler.extractItem(logicalSlot, Integer.MAX_VALUE, false);
     ItemStack remaining = handler.insertItem(logicalSlot, toInsert, false);
     if (!remaining.isEmpty() && isArmorSlot(inventory, logicalSlot)) {
@@ -615,12 +645,43 @@ public void setItem(int logicalSlot, ItemStack stack) {
         inventory.armor.set(logicalSlot - 36, toInsert);
         syncSlotToClients(logicalSlot, toInsert);
     }
+    notifyBlockEntitiesChanged();
 }
 ```
 
+```java
+@Override
+public int simulateInsertItem(int slot, ItemStack stack) {
+    // 优先：Container 接口 + 手动容量计算
+    Container container = ContainerContext.getContainer(getLevel(), getBlockPos());
+    if (container != null && slot < container.getContainerSize()) {
+        if (!container.canPlaceItem(slot, stack)) return 0;
+        ItemStack existing = container.getItem(slot);
+        int slotLimit = container.getMaxStackSize();
+        if (existing.isEmpty()) {
+            return Math.min(stack.getCount(), Math.min(slotLimit, stack.getMaxStackSize()));
+        }
+        if (ItemStack.isSameItemSameComponents(existing, stack)) {
+            int space = Math.min(slotLimit, existing.getMaxStackSize()) - existing.getCount();
+            return Math.min(stack.getCount(), Math.max(0, space));
+        }
+        return 0;
+    }
+    // 兜底：IItemHandler 模拟（slot 参数可能被忽略）
+    ItemStack remaining = handler.insertItem(slot, stack.copy(), true);
+    return stack.getCount() - remaining.getCount();
+}
+```
+
+**为什么不能只用 `IItemHandler`**：`IItemHandler` 是 NeoForge 的能力接口，设计目标是"让自动化（漏斗、管道）能访问容器"，而不是"精确控制每个槽位"。自动化设备通常遍历所有槽位找到合适的目标，不关心具体槽位编号。但活漏斗的容器内传输需要精确指定源/目标槽位，因此必须依赖 `Container` 接口。
+
+### 7.3 玩家盔甲槽绕过
+
+玩家背包的盔甲槽位（slot 36-39）有严格限制——只能放入对应类型的盔甲。当 `IItemHandler.insertItem` 拒绝写入盔甲槽时，`setItem` 的兜底路径会检测 `remaining` 并直接通过 `inventory.armor.set()` 写入，绕过限制。
+
 这允许活漏斗将物品传输到盔甲槽位（如"方块放头上"等趣味玩法）。
 
-### 7.3 客户端同步实现
+### 7.4 客户端同步实现
 
 同步分两种路径：
 

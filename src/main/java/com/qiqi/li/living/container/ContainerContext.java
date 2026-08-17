@@ -1,5 +1,9 @@
 package com.qiqi.li.living.container;
 
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.Container;
+import net.minecraft.world.level.Level;
+
 /**
  * 容器上下文 —— 活物品功能与容器之间的完整交互接口。
  *
@@ -47,5 +51,11 @@ public interface ContainerContext extends SlotInfoProvider, ContainerSync, Conta
         if (up) result[i++] = slot - width;
         if (down) result[i++] = slot + width;
         return result;
+    }
+
+    static Container getContainer(Level level, BlockPos pos) {
+        if (pos == null) return null;
+        if (level.getBlockEntity(pos) instanceof Container c) return c;
+        return null;
     }
 }

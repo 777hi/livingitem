@@ -112,7 +112,7 @@ public final class CrossContainerTransfer {
     private static boolean tryPullFromNeighbor(IItemHandler neighborHandler, BlockPos neighborPos,
                                                 Level level, FilterData filter,
                                                 SlotAccessor target, int amount) {
-        Container container = getNeighborContainer(level, neighborPos);
+        Container container = ContainerContext.getContainer(level, neighborPos);
         for (int i = 0; i < neighborHandler.getSlots(); i++) {
             ItemStack stack = neighborHandler.getStackInSlot(i);
             if (stack.isEmpty() || LivingItemManager.isLivingItem(stack)) continue;
@@ -130,8 +130,11 @@ public final class CrossContainerTransfer {
     private static boolean tryPushToNeighbor(IItemHandler neighborHandler, BlockPos neighborPos,
                                               Level level, SlotAccessor source,
                                               int amount, ItemStack filterItem) {
-        Container container = getNeighborContainer(level, neighborPos);
+        Container container = ContainerContext.getContainer(level, neighborPos);
         for (int i = 0; i < neighborHandler.getSlots(); i++) {
+            ItemStack neighborStack = neighborHandler.getStackInSlot(i);
+            if (!neighborStack.isEmpty() && !neighborStack.is(filterItem.getItem())
+                && neighborStack.getCount() >= neighborHandler.getSlotLimit(i)) continue;
             if (container != null && !container.canPlaceItem(i, filterItem)) continue;
             SlotAccessor target = SlotAccessorFactory.createForNeighbor(neighborHandler, i, null, level, neighborPos);
             if (SlotAccessor.transfer(source, target, amount)) return true;
@@ -231,52 +234,6 @@ public final class CrossContainerTransfer {
 
         BlockPos neighborPos = basePos.relative(targetWorldDir);
 
-        if (sourceIsChest || sourceIsEnderChest) {
-            return pushFromLivingStorageToNeighbor(containerCtx, level, neighborHandler,
-                sourceSlot, stackSize, maxTransfer, filterData, tick, neighborPos);
-        }
-
-        MinecraftServer server = level.getServer();
-        if (server == null) return false;
-
-        SlotAccessor source = SlotAccessorFactory.create(server, containerCtx, sourceSlot,
-            filterData, tick.transferredTargetSlots, tick.getSnapshot());
-        if (source == null) return false;
-
-        int amount = Math.min(stackSize, maxTransfer);
-        Container neighborContainer = getNeighborContainer(level, neighborPos);
-
-        for (int i = 0; i < neighborHandler.getSlots(); i++) {
-            ItemStack neighborStack = neighborHandler.getStackInSlot(i);
-            if (!neighborStack.isEmpty() && !neighborStack.is(sourceStack.getItem())
-                && neighborStack.getCount() >= neighborHandler.getSlotLimit(i)) continue;
-
-            if (neighborContainer != null && !neighborContainer.canPlaceItem(i, sourceStack)) continue;
-
-            SlotAccessor target = SlotAccessorFactory.createForNeighbor(neighborHandler, i, null, level, neighborPos);
-            if (SlotAccessor.transfer(source, target, amount)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * 从活箱子/活末影箱提取物品并推送到相邻容器。
-     * 通过模拟提取获取物品类型，用于 canPlaceItem 过滤。
-     */
-    private static boolean pushFromLivingStorageToNeighbor(ContainerContext containerCtx,
-                                                            Level level,
-                                                            IItemHandler neighborHandler,
-                                                            int sourceSlot,
-                                                            int stackSize,
-                                                            int maxTransfer,
-                                                            FilterData filterData,
-                                                            TickContext tick,
-                                                            BlockPos neighborPos) {
-        if (level.isClientSide()) return false;
-
         MinecraftServer server = level.getServer();
         if (server == null) return false;
 
@@ -319,8 +276,7 @@ public final class CrossContainerTransfer {
         BlockPos sourceNeighborPos = sourceBasePos.relative(sourceWorldDir);
         BlockPos targetNeighborPos = targetBasePos.relative(targetWorldDir);
 
-        Container sourceContainer = getNeighborContainer(level, sourceNeighborPos);
-        Container targetContainer = getNeighborContainer(level, targetNeighborPos);
+        Container sourceContainer = ContainerContext.getContainer(level, sourceNeighborPos);
 
         for (int i = 0; i < sourceHandler.getSlots(); i++) {
             ItemStack sourceStack = sourceHandler.getStackInSlot(i);
@@ -328,12 +284,7 @@ public final class CrossContainerTransfer {
             if (sourceContainer != null && !sourceContainer.canTakeItem(sourceContainer, i, sourceStack)) continue;
 
             SlotAccessor source = SlotAccessorFactory.createForNeighbor(sourceHandler, i, filterData, level, sourceNeighborPos);
-
-            for (int j = 0; j < targetHandler.getSlots(); j++) {
-                if (targetContainer != null && !targetContainer.canPlaceItem(j, sourceStack)) continue;
-                SlotAccessor target = SlotAccessorFactory.createForNeighbor(targetHandler, j, null, level, targetNeighborPos);
-                if (SlotAccessor.transfer(source, target, amount)) return true;
-            }
+            if (tryPushToNeighbor(targetHandler, targetNeighborPos, level, source, amount, sourceStack)) return true;
         }
 
         return false;
@@ -435,13 +386,5 @@ public final class CrossContainerTransfer {
         }
         return level.getCapability(
             Capabilities.ItemHandler.BLOCK, neighborPos, direction.getOpposite());
-    }
-
-    static Container getNeighborContainer(Level level, BlockPos neighborPos) {
-        if (neighborPos == null) return null;
-        if (level.getBlockEntity(neighborPos) instanceof Container container) {
-            return container;
-        }
-        return null;
     }
 }

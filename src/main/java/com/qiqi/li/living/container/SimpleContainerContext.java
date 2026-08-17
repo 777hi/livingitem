@@ -8,6 +8,7 @@ import com.qiqi.li.living.transfer.ContainerCompatibilityConfig;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.Container;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
@@ -187,6 +188,14 @@ public class SimpleContainerContext implements ContainerContext {
             return;
         }
         ItemStack toInsert = stack.copy();
+
+        Container container = ContainerContext.getContainer(getLevel(), getBlockPos());
+        if (container != null && logicalSlot < container.getContainerSize()) {
+            container.setItem(logicalSlot, toInsert);
+            notifyBlockEntitiesChanged();
+            return;
+        }
+
         handler.extractItem(logicalSlot, Integer.MAX_VALUE, false);
         ItemStack remaining = handler.insertItem(logicalSlot, toInsert, false);
         if (!remaining.isEmpty() && isArmorSlot(inventory, logicalSlot)) {
@@ -227,6 +236,26 @@ public class SimpleContainerContext implements ContainerContext {
             int maxStack = Math.min(slotLimit, stack.getMaxStackSize());
             return Math.min(stack.getCount(), maxStack);
         }
+
+        Container container = ContainerContext.getContainer(getLevel(), getBlockPos());
+        if (container != null && slot < container.getContainerSize()) {
+            if (!container.canPlaceItem(slot, stack)) {
+                return 0;
+            }
+            ItemStack existing = container.getItem(slot);
+            int slotLimit = container.getMaxStackSize();
+            if (existing.isEmpty()) {
+                int maxStack = Math.min(slotLimit, stack.getMaxStackSize());
+                return Math.min(stack.getCount(), maxStack);
+            }
+            if (ItemStack.isSameItemSameComponents(existing, stack)) {
+                int maxStack = Math.min(slotLimit, existing.getMaxStackSize());
+                int space = maxStack - existing.getCount();
+                return Math.min(stack.getCount(), Math.max(0, space));
+            }
+            return 0;
+        }
+
         ItemStack remaining = handler.insertItem(slot, stack.copy(), true);
         return stack.getCount() - remaining.getCount();
     }

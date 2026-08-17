@@ -1,6 +1,6 @@
 # Living Hopper (活漏斗) 技术文档
 
-> **文档版本**: 2026.08 v9  
+> **文档版本**: 2026.08 v10  
 > **最后更新**: 2026-08-17  
 > **适用版本**: Minecraft 1.21.1
 
@@ -1524,6 +1524,68 @@ if (hostContainer != null) {
 
 **相关提交**：2026-08-17
 
+### 10.24 已修复：IItemHandler.insertItem 槽位参数不可靠导致容器内传输物品错位 (NEW 2026-08-17)
+
+**问题**：容器内传输时，物品没有被传输到指定目标槽位，而是按槽位顺序（0→1→2→...）被放置。例如活漏斗配置源槽位=0、目标槽位=5，但物品最终出现在槽位 0 而非槽位 5。
+
+**根因**：Forge `IItemHandler.insertItem(int slot, ItemStack stack, boolean simulate)` 的 `slot` 参数在 API 契约上只是"建议"。许多模组容器的 `IItemHandler` 实现会：
+
+- 完全忽略 `slot` 参数，按"第一个可用槽位"插入
+- 有自己的内部路由逻辑（如机器类容器自动将物品路由到输入槽）
+- 静默将物品路由到正确槽位，不报错
+
+**容器内传输链路**中，`PlainSlotAccessor.insert()` → `SimpleContainerContext.setItem()` → `handler.insertItem(logicalSlot, toInsert, false)`，`logicalSlot` 被忽略，物品进入了错误的槽位。
+
+而跨容器传输不受影响，因为 `tryPushToNeighbor` 遍历所有槽位，逐个尝试插入，最终物品出现在第一个可用槽位是预期行为。
+
+**修复**：在 `SimpleContainerContext.setItem()` 和 `simulateInsertItem()` 中，当 `Container` 接口可用时，优先使用原版 `Container.setItem(slot, stack)` 做精确槽位写入。`Container` 是 Minecraft 原版接口，`setItem` 是 100% 精确槽位写入，不存在歧义。
+
+```java
+// SimpleContainerContext.setItem() — 修复后
+Container container = ContainerContext.getContainer(getLevel(), getBlockPos());
+if (container != null && logicalSlot < container.getContainerSize()) {
+    container.setItem(logicalSlot, toInsert);  // 精确槽位写入
+    notifyBlockEntitiesChanged();
+    return;  // Container 可用 → 直接返回，不走 IItemHandler
+}
+// Container 不可用 → 回退到 IItemHandler（兜底）
+handler.extractItem(logicalSlot, Integer.MAX_VALUE, false);
+ItemStack remaining = handler.insertItem(logicalSlot, toInsert, false);
+```
+
+```java
+// SimpleContainerContext.simulateInsertItem() — 修复后
+Container container = ContainerContext.getContainer(getLevel(), getBlockPos());
+if (container != null && slot < container.getContainerSize()) {
+    if (!container.canPlaceItem(slot, stack)) return 0;
+    ItemStack existing = container.getItem(slot);
+    // 手动计算可插入数量（空槽位 / 同物品堆叠）
+    ...
+    return result;
+}
+// Container 不可用 → 回退到 IItemHandler 模拟
+ItemStack remaining = handler.insertItem(slot, stack.copy(), true);
+return stack.getCount() - remaining.getCount();
+```
+
+**修复效果**：
+
+```
+修复前：
+  PlainSlotAccessor.insert(slot=5)
+    → handler.insertItem(5, stack, false)
+    → slot=5 被忽略，物品进了 slot=0 ❌
+
+修复后：
+  PlainSlotAccessor.insert(slot=5)
+    → container.setItem(5, stack)
+    → 精确写入 slot=5 ✅
+```
+
+**降级策略**：当 `Container` 不可用时（极少数仅暴露 `IItemHandler` 能力的模组容器），回退到原有 `IItemHandler` 路径作为兜底。
+
+**相关提交**：2026-08-17
+
 ---
 
 ## 11. 调试指南
@@ -1558,6 +1620,7 @@ LOGGER.info("Cooldown: {} ticks remaining", cooldown);
 | 过滤链始终为空 | ContainerSnapshot 跳过 DEFAULT | `capture()` 是否跳过了未配置方向的活漏斗 |
 | 玩家背包中活漏斗崩溃 | `getNeighborContainer` NPE | `getBlockPos()` 返回 null 时是否安全处理 |
 | 跨模组容器物品复制 | 未过滤不可交互槽位 | `Container.canTakeItem/canPlaceItem` 检查是否生效 |
+| 容器内传输物品错位 | `IItemHandler.insertItem` 忽略 slot 参数 | `SimpleContainerContext.setItem` 是否优先使用了 `Container.setItem` |
 
 ### 11.3 方向调试
 
