@@ -18,7 +18,7 @@ public class ContainerRedstoneData {
 
     public ContainerRedstoneData(int size) {
         this.signalStrength = new int[size];
-        this.tickCounter = 0;
+        this.tickCounter = 1;
     }
 
     public int getSignal(int slot) {
@@ -78,15 +78,25 @@ public class ContainerRedstoneData {
             int currentSignal = signalStrength[current];
             if (currentSignal <= 1) continue;
 
+            boolean isTorch = torchSlots.contains(current);
+            int torchInputSlot = -1;
+            if (isTorch) {
+                ItemStack torchStack = context.getItem(current);
+                LivingRedstoneTorchData torchData = LivingItemManager.getRedstoneTorchData(torchStack);
+                Pos2D inputDir = LivingRedstoneTorchFunction.getInputDirection(torchData.direction());
+                torchInputSlot = resolveSlot(current, inputDir, size, width);
+            }
+
             int[] neighbors = ContainerContext.getNeighbors(current, size, width);
             for (int neighbor : neighbors) {
                 if (visited[neighbor]) continue;
                 if (!dustSlots.contains(neighbor)) continue;
+                if (isTorch && neighbor == torchInputSlot) continue;
 
                 ItemStack neighborStack = context.getItem(neighbor);
                 if (neighborStack.isEmpty()) continue;
 
-                int newSignal = currentSignal - 1;
+                int newSignal = isTorch ? currentSignal : currentSignal - 1;
                 int cap = neighborStack.getCount() * 15;
                 newSignal = Math.min(newSignal, cap);
 

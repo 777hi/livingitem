@@ -2,9 +2,14 @@ package com.qiqi.li.living.domain.redstone;
 
 import java.util.List;
 import java.util.Set;
+import java.util.function.Consumer;
+import net.minecraft.ChatFormatting;
 import net.minecraft.core.component.DataComponentType;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
 import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
@@ -33,6 +38,31 @@ public class LivingRedstoneFunction implements LivingItemFunction, HasContainerD
     @Override
     public Set<DataComponentType<?>> getIgnoredComponentTypes() {
         return Set.of();
+    }
+
+    @Override
+    public void addToTooltip(Item.TooltipContext context,
+                             Consumer<Component> tooltipAdder,
+                             TooltipFlag flag,
+                             ItemStack stack) {
+        LivingRedstoneData data = LivingItemManager.getRedstoneData(stack);
+
+        tooltipAdder.accept(Component.nullToEmpty(""));
+        tooltipAdder.accept(Component.translatable("tooltip.livingitem.redstone.title"));
+
+        if (data.isPowered()) {
+            tooltipAdder.accept(Component.literal("  ")
+                .append(Component.translatable("tooltip.livingitem.redstone.signal"))
+                .append(Component.literal(": " + data.signalStrength()))
+                .withStyle(ChatFormatting.RED));
+        } else {
+            tooltipAdder.accept(Component.translatable("tooltip.livingitem.redstone.no_signal")
+                .withStyle(ChatFormatting.DARK_GRAY));
+        }
+
+        tooltipAdder.accept(Component.translatable("tooltip.livingitem.redstone.max_signal")
+            .append(Component.literal(": " + (stack.getCount() * 15)))
+            .withStyle(ChatFormatting.GRAY));
     }
 
     @Override

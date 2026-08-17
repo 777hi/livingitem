@@ -34,6 +34,21 @@
   "tooltip.livingitem.tnt.status": "§c活TNT§r",
   "tooltip.livingitem.flint_and_steel.status": "§e活打火石§r",
 
+  "tooltip.livingitem.redstone.title": "§c活红石粉§r",
+  "tooltip.livingitem.redstone.signal": "  §7信号",
+  "tooltip.livingitem.redstone.no_signal": "  §7无信号",
+  "tooltip.livingitem.redstone.max_signal": "  §7最大信号",
+
+  "tooltip.livingitem.redstone_torch.title": "§c活红石火把§r",
+  "tooltip.livingitem.redstone_torch.facing": "  §7朝向",
+  "tooltip.livingitem.redstone_torch.direction.up": "上",
+  "tooltip.livingitem.redstone_torch.direction.down": "下",
+  "tooltip.livingitem.redstone_torch.direction.left": "左",
+  "tooltip.livingitem.redstone_torch.direction.right": "右",
+  "tooltip.livingitem.redstone_torch.lit": "  §c§l点亮",
+  "tooltip.livingitem.redstone_torch.unlit": "  §8熄灭",
+  "tooltip.livingitem.redstone_torch.output": "  §7输出信号",
+
   "tooltip.livingitem.ender_chest.status": "§d活末影箱§r",
   "tooltip.livingitem.ender_chest.bound_player": "  §b绑定: %s§r",
   "tooltip.livingitem.ender_chest.channel": "  §7频道: §e%d§r",

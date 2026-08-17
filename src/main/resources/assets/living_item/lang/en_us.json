@@ -35,6 +35,21 @@
   "tooltip.livingitem.tnt.status": "§cLiving TNT§r",
   "tooltip.livingitem.flint_and_steel.status": "§eLiving Flint & Steel§r",
 
+  "tooltip.livingitem.redstone.title": "§cLiving Redstone§r",
+  "tooltip.livingitem.redstone.signal": "  §7Signal",
+  "tooltip.livingitem.redstone.no_signal": "  §7No Signal",
+  "tooltip.livingitem.redstone.max_signal": "  §7Max Signal",
+
+  "tooltip.livingitem.redstone_torch.title": "§cLiving Redstone Torch§r",
+  "tooltip.livingitem.redstone_torch.facing": "  §7Facing",
+  "tooltip.livingitem.redstone_torch.direction.up": "Up",
+  "tooltip.livingitem.redstone_torch.direction.down": "Down",
+  "tooltip.livingitem.redstone_torch.direction.left": "Left",
+  "tooltip.livingitem.redstone_torch.direction.right": "Right",
+  "tooltip.livingitem.redstone_torch.lit": "  §c§lLIT",
+  "tooltip.livingitem.redstone_torch.unlit": "  §8UNLIT",
+  "tooltip.livingitem.redstone_torch.output": "  §7Output",
+
   "tooltip.livingitem.ender_chest.status": "§dLiving Ender Chest§r",
   "tooltip.livingitem.ender_chest.bound_player": "  §bBound: %s§r",
   "tooltip.livingitem.ender_chest.channel": "  §7Channel: §e%d§r",
