@@ -1,6 +1,7 @@
 package com.qiqi.li.living.domain.hopper;
 
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.world.Container;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import com.qiqi.li.living.api.LivingItemManager;
@@ -73,6 +74,11 @@ public final class TransferPipeline {
         if (!isStorageContainer(sourceStack)
             && !ItemFilterComponent.allows(filter, sourceStack)) return false;
 
+        Container hostContainer = CrossContainerTransfer.getNeighborContainer(level, ctx.getBlockPos());
+        if (hostContainer != null && !hostContainer.canTakeItem(hostContainer, sourceSlot, sourceStack)) {
+            return false;
+        }
+
         MinecraftServer server = level.getServer();
         if (server == null) return false;
 
@@ -83,11 +89,20 @@ public final class TransferPipeline {
 
         if (source == null || target == null) return false;
 
+        int transferAmount = Math.min(stackSize, maxTransfer);
+
+        if (hostContainer != null) {
+            ItemStack simulated = source.simulateExtract(transferAmount);
+            if (!simulated.isEmpty() && !hostContainer.canPlaceItem(targetSlot, simulated)) {
+                return false;
+            }
+        }
+
         EnderRouteManager.Decision decision = EnderRouteManager.resolveTarget(
             source, target, ctx, level, sourceSlot, targetSlot, hostSlot, stackSize, maxTransfer);
 
         return switch (decision) {
-            case NOT_ENDER_CHEST -> SlotAccessor.transfer(source, target, Math.min(stackSize, maxTransfer));
+            case NOT_ENDER_CHEST -> SlotAccessor.transfer(source, target, transferAmount);
             case REJECTED -> false;
             case HANDLED -> true;
         };

@@ -153,11 +153,10 @@ public interface SlotAccessor {
             return false;
         }
 
-        if (inserted < extracted.getCount()) {
+        if (extracted.getCount() > 0) {
             ItemStack leftover = extracted.copy();
-            leftover.setCount(extracted.getCount() - inserted);
-            ROLLBACK_LOGGER.warn("SlotAccessor rollback: partial insert simulated={} actual={} (source={}, target={}, item={})",
-                canAccept, inserted, source.getClass().getSimpleName(), target.getClass().getSimpleName(),
+            ROLLBACK_LOGGER.warn("SlotAccessor rollback: partial insert simulated={} actual={} leftover={} (source={}, target={}, item={})",
+                canAccept, inserted, leftover.getCount(), source.getClass().getSimpleName(), target.getClass().getSimpleName(),
                 extracted.getItem());
             source.rollback(leftover);
         }

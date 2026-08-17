@@ -1,6 +1,6 @@
 # 活物品基础设施系统设计
 
-> **文档版本**: 2026.08 v3  
+> **文档版本**: 2026.08 v4  
 > **最后更新**: 2026-08-17  
 > **适用版本**: Minecraft 1.21.1 + NeoForge 21.1.x
 
@@ -403,6 +403,54 @@ ContainerCompatibilityConfig.register(
         .build()
 );
 ```
+
+### 5.5 Container 接口槽位过滤 — 模拟玩家操作
+
+**问题背景**：部分模组容器的 `IItemHandler` 实现可能暴露不可交互的槽位（如配置槽、幽灵槽、升级槽）。这些槽位在玩家 GUI 中不可见/不可操作，但通过 `IItemHandler` 遍历时可能被访问到，导致活漏斗复制物品等异常行为。
+
+**解决方案**：在传输路径中引入 `Container` 接口的 `canTakeItem` 和 `canPlaceItem` 检查，模拟玩家操作逻辑。
+
+**Container 接口**：`net.minecraft.world.Container` 是 Minecraft 原版接口，所有容器方块实体都必须实现它才能让玩家 GUI 正常工作。`canTakeItem` 和 `canPlaceItem` 是玩家 GUI 用来判断槽位是否可操作的底层方法，可靠性远高于各模组自由实现的 `IItemHandler`。
+
+**过滤位置**：两条传输路径均已添加过滤：
+
+| 传输路径 | 文件 | `canTakeItem` | `canPlaceItem` |
+|----------|------|:---:|:---:|
+| 跨容器传输 | `CrossContainerTransfer` | ✅ 源槽 | ✅ 目标槽 |
+| 容器内传输 | `TransferPipeline` | ✅ 源槽 | ✅ 目标槽 |
+
+**跨容器传输** — 在 `pullFromNeighbor`、`pushToNeighbor`、`pullFromNeighborToLivingChest`、`transferBetweenNeighbors` 四个方法中，遍历邻居 `IItemHandler` 槽位时，先通过 `getNeighborContainer` 获取邻居的 `Container` 接口，再调用 `canTakeItem`/`canPlaceItem` 过滤：
+
+```java
+// CrossContainerTransfer.pullFromNeighbor() 中的过滤逻辑
+Container neighborContainer = getNeighborContainer(level, neighborPos);
+for (int i = 0; i < neighborHandler.getSlots(); i++) {
+    if (neighborContainer != null && !neighborContainer.canTakeItem(neighborContainer, i, sourceStack)) {
+        continue;  // 跳过玩家不可取的槽位
+    }
+    // ... 正常传输逻辑 ...
+}
+```
+
+**容器内传输** — 在 `TransferPipeline.executeInContainer()` 中，提取前检查 `canTakeItem`，放入前通过模拟提取检查 `canPlaceItem`：
+
+```java
+// TransferPipeline.executeInContainer() — 提取前检查
+Container hostContainer = getHostContainer(ctx);
+if (hostContainer != null && !hostContainer.canTakeItem(hostContainer, sourceSlot, sourceStack)) {
+    return false;
+}
+
+// 放入前检查（模拟提取目标物品后验证）
+if (hostContainer != null) {
+    ItemStack simulated = source.simulateExtract(Math.min(stackSize, maxTransfer));
+    if (!simulated.isEmpty() && !hostContainer.canPlaceItem(targetSlot, simulated)) {
+        return false;
+    }
+}
+```
+
+**降级策略**：如果邻居/宿主容器未实现 `Container` 接口（如纯 `IItemHandler` 的模组），则跳过过滤，回退到纯 `IItemHandler` 模式——保持原有行为不变。
 
 ---
 
@@ -809,6 +857,8 @@ rollback(leftover)             → 仅当模拟与真实不一致时触发（WAR
 - 模拟操作不修改任何状态，可以安全地探测传输可行性
 - `rollback` 仅作为安全兜底：如果模拟与真实不一致，说明存在 bug
 
+**上层 `Container` 接口过滤**：在进入 `SlotAccessor.transfer()` 之前，`TransferPipeline` 和 `CrossContainerTransfer` 会先通过 `Container.canTakeItem`/`canPlaceItem` 过滤不可交互的槽位（详见 [5.5 Container 接口槽位过滤](#55-container-接口槽位过滤--模拟玩家操作)）。这层过滤在模拟之前执行，避免无效的模拟开销。
+
 ### 9.4 Accessor 实现类型
 
 | 实现 | 适用场景 |
@@ -816,7 +866,7 @@ rollback(leftover)             → 仅当模拟与真实不一致时触发（WAR
 | `PlainSlotAccessor` | 普通容器槽位，直接读写 `ContainerContext` |
 | `LivingChestAccessor` | 活箱子，通过 `LivingChestFunction` API 操作虚拟存储 |
 | `LivingEnderChestAccessor` | 活末影箱，路由模式（查路由表）或直连模式（直接读写玩家末影箱） |
-| `NeighborSlotAccessor` | 邻居容器，包装 `IItemHandler` 槽位用于跨容器传输 |
+| `NeighborSlotAccessor` | 邻居容器，包装 `IItemHandler` 槽位用于跨容器传输。配合 `CrossContainerTransfer` 的 `Container` 接口过滤，仅访问玩家可交互的槽位 |
 | `FilteredSlotAccessor` | 装饰器，在所有操作前检查过滤规则 |
 
 ### 9.5 FilteredSlotAccessor — 过滤装饰器
@@ -913,7 +963,7 @@ registerProvider(SlotAccessorFactory::defaultProvider); // 优先级 3：普通�
 | `NeighborSlotAccessor.java` | `transfer/` | 邻居容器访问器 |
 | `FilterData.java` | `transfer/` | 传输过滤规则数据（跨领域共享） |
 | `PerfMetrics.java` | `perf/` | 性能监控 |
-| `TransferPipeline.java` | `domain/hopper/` | 统一传输入口 |
+| `TransferPipeline.java` | `domain/hopper/` | 统一传输入口，含容器内传输的 `Container` 接口槽位过滤 |
 | `HopperFilterBuilder.java` | `domain/hopper/` | 活漏斗过滤链构建（从 ContainerSnapshot 提取） |
-| `CrossContainerTransfer.java` | `domain/hopper/` | 跨容器传输（方向解析 + 大箱子处理） |
+| `CrossContainerTransfer.java` | `domain/hopper/` | 跨容器传输，含 `Container` 接口槽位过滤（方向解析 + 大箱子处理） |
 | `EnderRouteManager.java` | `domain/ender/` | 活末影箱路由逻辑集中管理 |
