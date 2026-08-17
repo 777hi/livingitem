@@ -18,6 +18,9 @@ import com.qiqi.li.living.domain.ender.LivingEnderChestData;
 import com.qiqi.li.living.domain.water.ContainerStressData;
 import com.qiqi.li.living.domain.redstone.LivingRedstoneData;
 import com.qiqi.li.living.domain.redstone.LivingRedstoneTorchData;
+import com.qiqi.li.living.domain.redstone.LivingButtonData;
+import com.qiqi.li.living.domain.redstone.LivingLeverData;
+import com.qiqi.li.living.domain.redstone.LivingRedstoneLampData;
 import net.minecraft.world.item.Items;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.registries.Registries;
@@ -114,6 +117,27 @@ public class LivingItemManager {
                             .networkSynchronized(LivingRedstoneTorchData.STREAM_CODEC)
                             .build());
 
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingButtonData>> LIVING_BUTTON_DATA =
+            DATA_COMPONENT_TYPES.register("living_button_data", () ->
+                    DataComponentType.<LivingButtonData>builder()
+                            .persistent(LivingButtonData.CODEC)
+                            .networkSynchronized(LivingButtonData.STREAM_CODEC)
+                            .build());
+
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingLeverData>> LIVING_LEVER_DATA =
+            DATA_COMPONENT_TYPES.register("living_lever_data", () ->
+                    DataComponentType.<LivingLeverData>builder()
+                            .persistent(LivingLeverData.CODEC)
+                            .networkSynchronized(LivingLeverData.STREAM_CODEC)
+                            .build());
+
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingRedstoneLampData>> LIVING_REDSTONE_LAMP_DATA =
+            DATA_COMPONENT_TYPES.register("living_redstone_lamp_data", () ->
+                    DataComponentType.<LivingRedstoneLampData>builder()
+                            .persistent(LivingRedstoneLampData.CODEC)
+                            .networkSynchronized(LivingRedstoneLampData.STREAM_CODEC)
+                            .build());
+
     private static final List<LivingItemFunction> FUNCTIONS = new ArrayList<>();
     private static final List<LivingItemFunction> FUNCTIONS_VIEW = Collections.unmodifiableList(FUNCTIONS);
     private static final Map<Item, List<LivingItemFunction>> APPLICABLE_CACHE = new HashMap<>();
@@ -173,6 +197,9 @@ public class LivingItemManager {
         stack.remove(LIVING_ENDER_CHEST_DATA.value());
         stack.remove(LIVING_REDSTONE_DATA.value());
         stack.remove(LIVING_REDSTONE_TORCH_DATA.value());
+        stack.remove(LIVING_BUTTON_DATA.value());
+        stack.remove(LIVING_LEVER_DATA.value());
+        stack.remove(LIVING_REDSTONE_LAMP_DATA.value());
     }
 
     public static void setLiving(ItemStack stack, boolean living) {
@@ -314,5 +341,29 @@ public class LivingItemManager {
 
     public static void setRedstoneTorchData(ItemStack stack, LivingRedstoneTorchData data) {
         setData(stack, LIVING_REDSTONE_TORCH_DATA.value(), data, LivingRedstoneTorchData.DEFAULT);
+    }
+
+    public static LivingButtonData getButtonData(ItemStack stack) {
+        return getData(stack, LIVING_BUTTON_DATA.value(), LivingButtonData.DEFAULT);
+    }
+
+    public static void setButtonData(ItemStack stack, LivingButtonData data) {
+        setData(stack, LIVING_BUTTON_DATA.value(), data, LivingButtonData.DEFAULT);
+    }
+
+    public static LivingLeverData getLeverData(ItemStack stack) {
+        return getData(stack, LIVING_LEVER_DATA.value(), LivingLeverData.DEFAULT);
+    }
+
+    public static void setLeverData(ItemStack stack, LivingLeverData data) {
+        setData(stack, LIVING_LEVER_DATA.value(), data, LivingLeverData.DEFAULT);
+    }
+
+    public static LivingRedstoneLampData getLampData(ItemStack stack) {
+        return getData(stack, LIVING_REDSTONE_LAMP_DATA.value(), LivingRedstoneLampData.DEFAULT);
+    }
+
+    public static void setLampData(ItemStack stack, LivingRedstoneLampData data) {
+        setData(stack, LIVING_REDSTONE_LAMP_DATA.value(), data, LivingRedstoneLampData.DEFAULT);
     }
 }

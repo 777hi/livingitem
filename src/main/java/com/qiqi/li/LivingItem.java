@@ -57,10 +57,15 @@ import com.qiqi.li.living.domain.hopper.LivingHopperFunction;
 import com.qiqi.li.living.domain.tnt.LivingTntFunction;
 import com.qiqi.li.living.domain.redstone.LivingRedstoneFunction;
 import com.qiqi.li.living.domain.redstone.LivingRedstoneTorchFunction;
+import com.qiqi.li.living.domain.redstone.LivingButtonFunction;
+import com.qiqi.li.living.domain.redstone.LivingLeverFunction;
+import com.qiqi.li.living.domain.redstone.LivingRedstoneLampFunction;
 import com.qiqi.li.living.function.LivingFlintAndSteelFunction;
 import com.qiqi.li.living.interaction.InteractionRegistry;
 import com.qiqi.li.living.interaction.IgniteHandler;
 import com.qiqi.li.living.interaction.IgniteCarriedHandler;
+import com.qiqi.li.living.interaction.ButtonPressHandler;
+import com.qiqi.li.living.interaction.LeverToggleHandler;
 import net.neoforged.neoforge.registries.DeferredRegister;
 import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
 import com.qiqi.li.living.domain.chest.LivingChestItemHandler;
@@ -137,6 +142,15 @@ public class LivingItem {
         LivingItemManager.registerFunction(new LivingRedstoneTorchFunction());
         LOGGER.info("Registered living redstone torch function");
 
+        LivingItemManager.registerFunction(new LivingButtonFunction());
+        LOGGER.info("Registered living button function");
+
+        LivingItemManager.registerFunction(new LivingLeverFunction());
+        LOGGER.info("Registered living lever function");
+
+        LivingItemManager.registerFunction(new LivingRedstoneLampFunction());
+        LOGGER.info("Registered living redstone lamp function");
+
         LivingItemManager.registerFunction(new LivingEnderPearlFunction());
         LOGGER.info("Registered living ender pearl function");
 
@@ -161,6 +175,28 @@ public class LivingItem {
         InteractionRegistry.register(new InteractionEntry(
             Items.FLINT_AND_STEEL, Items.TNT, 1, "ignite_carried"));
         LOGGER.info("Registered ignite_carried interaction rule");
+
+        // 注册按钮按压处理器和交互规则
+        InteractionRegistry.registerHandler("button_press", new ButtonPressHandler());
+        InteractionRegistry.register(new InteractionEntry(Items.STONE_BUTTON, null, 1, "button_press"));
+        InteractionRegistry.register(new InteractionEntry(Items.POLISHED_BLACKSTONE_BUTTON, null, 1, "button_press"));
+        InteractionRegistry.register(new InteractionEntry(Items.OAK_BUTTON, null, 1, "button_press"));
+        InteractionRegistry.register(new InteractionEntry(Items.SPRUCE_BUTTON, null, 1, "button_press"));
+        InteractionRegistry.register(new InteractionEntry(Items.BIRCH_BUTTON, null, 1, "button_press"));
+        InteractionRegistry.register(new InteractionEntry(Items.JUNGLE_BUTTON, null, 1, "button_press"));
+        InteractionRegistry.register(new InteractionEntry(Items.ACACIA_BUTTON, null, 1, "button_press"));
+        InteractionRegistry.register(new InteractionEntry(Items.CHERRY_BUTTON, null, 1, "button_press"));
+        InteractionRegistry.register(new InteractionEntry(Items.DARK_OAK_BUTTON, null, 1, "button_press"));
+        InteractionRegistry.register(new InteractionEntry(Items.MANGROVE_BUTTON, null, 1, "button_press"));
+        InteractionRegistry.register(new InteractionEntry(Items.BAMBOO_BUTTON, null, 1, "button_press"));
+        InteractionRegistry.register(new InteractionEntry(Items.CRIMSON_BUTTON, null, 1, "button_press"));
+        InteractionRegistry.register(new InteractionEntry(Items.WARPED_BUTTON, null, 1, "button_press"));
+        LOGGER.info("Registered button press interaction rules");
+
+        // 注册拉杆切换处理器和交互规则
+        InteractionRegistry.registerHandler("lever_toggle", new LeverToggleHandler());
+        InteractionRegistry.register(new InteractionEntry(Items.LEVER, null, 1, "lever_toggle"));
+        LOGGER.info("Registered lever toggle interaction rule");
     }
 
     /**

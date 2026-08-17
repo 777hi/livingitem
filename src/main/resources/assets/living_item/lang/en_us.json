@@ -50,6 +50,24 @@
   "tooltip.livingitem.redstone_torch.unlit": "  §8UNLIT",
   "tooltip.livingitem.redstone_torch.output": "  §7Output",
 
+  "tooltip.livingitem.button.title": "§6Living Button§r",
+  "tooltip.livingitem.button.type": "  §7Type",
+  "tooltip.livingitem.button.type.wood": "Wood",
+  "tooltip.livingitem.button.type.stone": "Stone",
+  "tooltip.livingitem.button.pressed": "  §c§lPRESSED",
+  "tooltip.livingitem.button.unpressed": "  §8Unpressed",
+  "tooltip.livingitem.button.pulse": "  §7Pulse",
+  "tooltip.livingitem.button.max_signal": "  §7Max Signal",
+
+  "tooltip.livingitem.lever.title": "§eLiving Lever§r",
+  "tooltip.livingitem.lever.powered": "  §c§lPOWERED",
+  "tooltip.livingitem.lever.unpowered": "  §8Unpowered",
+  "tooltip.livingitem.lever.max_signal": "  §7Max Signal",
+
+  "tooltip.livingitem.lamp.title": "§6Living Redstone Lamp§r",
+  "tooltip.livingitem.lamp.lit": "  §6§lLIT",
+  "tooltip.livingitem.lamp.unlit": "  §8Unlit",
+
   "tooltip.livingitem.ender_chest.status": "§dLiving Ender Chest§r",
   "tooltip.livingitem.ender_chest.bound_player": "  §bBound: %s§r",
   "tooltip.livingitem.ender_chest.channel": "  §7Channel: §e%d§r",

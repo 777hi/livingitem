@@ -45,7 +45,7 @@ public abstract class InventoryScreenMixin extends EffectRenderingInventoryScree
 
     @Inject(method = "mouseClicked", at = @At("HEAD"), cancellable = true)
     private void living_item$interceptMouseClicked(double mouseX, double mouseY, int button, CallbackInfoReturnable<Boolean> cir) {
-        if (GuiInteractionHelper.tryInteract(this.hoveredSlot, button, this.menu)) {
+        if (GuiInteractionHelper.tryInteract(this.hoveredSlot, button, false, this.menu)) {
             cir.setReturnValue(true);
         }
 
@@ -66,7 +66,7 @@ public abstract class InventoryScreenMixin extends EffectRenderingInventoryScree
 
     @Inject(method = "mouseReleased", at = @At("HEAD"), cancellable = true)
     private void living_item$interceptMouseReleased(double mouseX, double mouseY, int button, CallbackInfoReturnable<Boolean> cir) {
-        if (GuiInteractionHelper.tryInteract(this.hoveredSlot, button, this.menu)) {
+        if (GuiInteractionHelper.tryInteract(this.hoveredSlot, button, true, this.menu)) {
             cir.setReturnValue(true);
         }
     }

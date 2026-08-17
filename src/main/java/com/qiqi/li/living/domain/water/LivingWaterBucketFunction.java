@@ -59,6 +59,7 @@ public class LivingWaterBucketFunction implements LivingItemFunction, HasContain
             }
 
             ContainerFluidData fluidData = tick.fluidData;
+            if (fluidData == ContainerFluidData.EMPTY) continue;
 
             if (needsReset && fluidData != null && water.hostSlot() >= 0) {
                 fluidData.removeSource(water.hostSlot());
@@ -119,6 +120,7 @@ public class LivingWaterBucketFunction implements LivingItemFunction, HasContain
     @Override
     public void tickContainerData(List<SlotEntry> entries, ContainerContext ctx, TickContext tick) {
         ContainerFluidData fluidData = tick.fluidData;
+        if (fluidData == ContainerFluidData.EMPTY) return;
         if (fluidData != null && !fluidData.isEmpty()) {
             fluidData.setLastTickTime(System.currentTimeMillis());
             fluidData.tick(ctx);

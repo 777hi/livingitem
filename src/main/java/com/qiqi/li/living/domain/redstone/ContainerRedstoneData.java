@@ -14,11 +14,14 @@ public class ContainerRedstoneData {
     private static final int PROPAGATION_INTERVAL = 2;
 
     private int[] signalStrength;
+
     private int tickCounter;
+    private boolean processedThisTick;
 
     public ContainerRedstoneData(int size) {
         this.signalStrength = new int[size];
         this.tickCounter = 1;
+        this.processedThisTick = false;
     }
 
     public int getSignal(int slot) {
@@ -40,6 +43,8 @@ public class ContainerRedstoneData {
     }
 
     public void calculate(ContainerContext context, TickContext tick) {
+        if (processedThisTick) return;
+        processedThisTick = true;
         tickCounter++;
         if (tickCounter % PROPAGATION_INTERVAL != 0) return;
 
@@ -48,8 +53,12 @@ public class ContainerRedstoneData {
 
         Set<Integer> torchSlots = tick.getFunctionSlots(LivingRedstoneTorchFunction.ID);
         Set<Integer> dustSlots = tick.getFunctionSlots(LivingRedstoneFunction.ID);
+        Set<Integer> buttonSlots = tick.getFunctionSlots(LivingButtonFunction.ID);
+        Set<Integer> leverSlots = tick.getFunctionSlots(LivingLeverFunction.ID);
+        Set<Integer> lampSlots = tick.getFunctionSlots(LivingRedstoneLampFunction.ID);
 
-        if (torchSlots.isEmpty() && dustSlots.isEmpty()) return;
+        if (torchSlots.isEmpty() && dustSlots.isEmpty()
+            && buttonSlots.isEmpty() && leverSlots.isEmpty() && lampSlots.isEmpty()) return;
 
         if (signalStrength.length != size) {
             signalStrength = new int[size];
@@ -66,6 +75,34 @@ public class ContainerRedstoneData {
 
             LivingRedstoneTorchData data = LivingItemManager.getRedstoneTorchData(stack);
             if (data.isLit()) {
+                int signal = stack.getCount() * 15;
+                signalStrength[slot] = signal;
+                queue.add(slot);
+                visited[slot] = true;
+            }
+        }
+
+        for (int slot : buttonSlots) {
+            if (slot < 0 || slot >= size) continue;
+            ItemStack stack = context.getItem(slot);
+            if (stack.isEmpty()) continue;
+
+            LivingButtonData data = LivingItemManager.getButtonData(stack);
+            if (data.pressed()) {
+                int signal = stack.getCount() * 15;
+                signalStrength[slot] = signal;
+                queue.add(slot);
+                visited[slot] = true;
+            }
+        }
+
+        for (int slot : leverSlots) {
+            if (slot < 0 || slot >= size) continue;
+            ItemStack stack = context.getItem(slot);
+            if (stack.isEmpty()) continue;
+
+            LivingLeverData data = LivingItemManager.getLeverData(stack);
+            if (data.powered()) {
                 int signal = stack.getCount() * 15;
                 signalStrength[slot] = signal;
                 queue.add(slot);
@@ -138,6 +175,45 @@ public class ContainerRedstoneData {
             if (data.signalStrength() != signal || data.isPowered() != (signal > 0)) {
                 LivingItemManager.setRedstoneData(stack, data.withSignal(signal).withPowered(signal > 0));
                 context.syncSlotToClients(slot, stack);
+            }
+        }
+
+        for (int slot : lampSlots) {
+            if (slot < 0 || slot >= size) continue;
+            ItemStack stack = context.getItem(slot);
+            if (stack.isEmpty()) continue;
+
+            boolean hasSignal = false;
+            int[] neighbors = ContainerContext.getNeighbors(slot, size, width);
+            for (int neighbor : neighbors) {
+                if (signalStrength[neighbor] > 0) {
+                    hasSignal = true;
+                    break;
+                }
+            }
+
+            LivingRedstoneLampData data = LivingItemManager.getLampData(stack);
+            if (data.lit() != hasSignal) {
+                LivingItemManager.setLampData(stack, data.withLit(hasSignal));
+                context.syncSlotToClients(slot, stack);
+            }
+        }
+
+        for (int slot : buttonSlots) {
+            if (slot < 0 || slot >= size) continue;
+            ItemStack stack = context.getItem(slot);
+            if (stack.isEmpty()) continue;
+
+            LivingButtonData data = LivingItemManager.getButtonData(stack);
+            if (data.pressed() && data.pulseTimer() > 0) {
+                int newTimer = data.pulseTimer() - 2;
+                if (newTimer <= 0) {
+                    LivingItemManager.setButtonData(stack, data.withPressed(false).withPulseTimer(0));
+                    context.syncSlotToClients(slot, stack);
+                } else {
+                    LivingItemManager.setButtonData(stack, data.withPulseTimer(newTimer));
+                    context.syncSlotToClients(slot, stack);
+                }
             }
         }
     }

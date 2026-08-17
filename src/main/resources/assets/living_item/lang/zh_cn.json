@@ -49,6 +49,24 @@
   "tooltip.livingitem.redstone_torch.unlit": "  §8熄灭",
   "tooltip.livingitem.redstone_torch.output": "  §7输出信号",
 
+  "tooltip.livingitem.button.title": "§6活按钮§r",
+  "tooltip.livingitem.button.type": "  §7类型",
+  "tooltip.livingitem.button.type.wood": "木",
+  "tooltip.livingitem.button.type.stone": "石",
+  "tooltip.livingitem.button.pressed": "  §c§l按下",
+  "tooltip.livingitem.button.unpressed": "  §8未按下",
+  "tooltip.livingitem.button.pulse": "  §7脉冲",
+  "tooltip.livingitem.button.max_signal": "  §7最大信号",
+
+  "tooltip.livingitem.lever.title": "§e活拉杆§r",
+  "tooltip.livingitem.lever.powered": "  §c§l激活",
+  "tooltip.livingitem.lever.unpowered": "  §8未激活",
+  "tooltip.livingitem.lever.max_signal": "  §7最大信号",
+
+  "tooltip.livingitem.lamp.title": "§6活红石灯§r",
+  "tooltip.livingitem.lamp.lit": "  §6§l点亮",
+  "tooltip.livingitem.lamp.unlit": "  §8熄灭",
+
   "tooltip.livingitem.ender_chest.status": "§d活末影箱§r",
   "tooltip.livingitem.ender_chest.bound_player": "  §b绑定: %s§r",
   "tooltip.livingitem.ender_chest.channel": "  §7频道: §e%d§r",

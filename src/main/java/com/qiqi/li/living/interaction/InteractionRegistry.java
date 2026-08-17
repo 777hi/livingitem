@@ -67,13 +67,14 @@ public class InteractionRegistry {
      * @param button  鼠标按键（0=左键, 1=右键, 2=中键）
      * @return 匹配的交互条目，无匹配返回 null
      */
-    public static InteractionEntry findInteraction(ItemStack trigger, ItemStack target, int button) {
+    public static InteractionEntry findInteraction(ItemStack trigger, ItemStack target, int button, boolean onRelease) {
         for (InteractionEntry entry : ENTRIES) {
             if (entry.button() != button) continue;
+            if (entry.onRelease() != onRelease) continue;
             if (!entry.matchesTarget(target)) continue;
             if (!LivingItemManager.isLivingItem(target)) continue;
             if (!entry.matchesTrigger(trigger)) continue;
-            if (!LivingItemManager.isLivingItem(trigger)) continue;
+            if (entry.triggerItem() != null && !LivingItemManager.isLivingItem(trigger)) continue;
             return entry;
         }
         return null;

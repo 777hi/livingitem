@@ -72,6 +72,11 @@ public class ContainerLivingItemHandler {
         }
     }
 
+    public static void removeFluidDataByPos(BlockPos pos) {
+        String regex = ".*_" + pos.getX() + "_" + pos.getY() + "_" + pos.getZ() + "(_\\d+_\\d+_\\d+)?$";
+        FLUID_DATA_CACHE.keySet().removeIf(key -> key.matches(regex));
+    }
+
     /**
      * 清理过期的流体数据（超过 STALE_THRESHOLD 毫秒未访问的条目）。
      */

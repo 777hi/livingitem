@@ -33,7 +33,16 @@ import net.minecraft.world.item.Items;
  */
 public class ContainerFluidData {
 
-    public static final ContainerFluidData EMPTY = new ContainerFluidData();
+    public static final ContainerFluidData EMPTY = new ContainerFluidData() {
+        @Override
+        public void registerSource(int slot) { }
+        @Override
+        public void removeSource(int slot) { }
+        @Override
+        public void setLastTickTime(long time) { }
+        @Override
+        public void tick(ContainerContext ctx) { }
+    };
 
     public static final int SOURCE_LEVEL = 0;
     public static final int MAX_FLOW_LEVEL = 7;

@@ -44,13 +44,13 @@ public final class GuiInteractionHelper {
      * @param menu        当前菜单
      * @return true 表示匹配到交互规则并已发送网络包，调用方应取消原版行为
      */
-    public static boolean tryInteract(Slot hoveredSlot, int button, AbstractContainerMenu menu) {
+    public static boolean tryInteract(Slot hoveredSlot, int button, boolean onRelease, AbstractContainerMenu menu) {
         if (hoveredSlot == null) return false;
 
         ItemStack target = hoveredSlot.getItem();
         ItemStack trigger = menu.getCarried();
 
-        InteractionEntry entry = InteractionRegistry.findInteraction(trigger, target, button);
+        InteractionEntry entry = InteractionRegistry.findInteraction(trigger, target, button, onRelease);
         if (entry == null) return false;
 
         int containerSlot = resolveContainerSlot(hoveredSlot);

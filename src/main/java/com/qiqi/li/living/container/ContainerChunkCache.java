@@ -99,6 +99,7 @@ public class ContainerChunkCache {
     public void onBlockBreak(BlockEvent.BreakEvent event) {
         if (event.getLevel() instanceof ServerLevel level) {
             if (hasContainerOrItemHandler(level, event.getPos())) {
+                ContainerLivingItemHandler.removeFluidDataByPos(event.getPos());
                 rescanChunk(level, event.getPos());
             }
         }
