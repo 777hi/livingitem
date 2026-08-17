@@ -1,6 +1,6 @@
 # 活物品基础设施系统设计
 
-> **文档版本**: 2026.08 v4  
+> **文档版本**: 2026.08 v5  
 > **最后更新**: 2026-08-17  
 > **适用版本**: Minecraft 1.21.1 + NeoForge 21.1.x
 
@@ -419,31 +419,52 @@ ContainerCompatibilityConfig.register(
 | 跨容器传输 | `CrossContainerTransfer` | ✅ 源槽 | ✅ 目标槽 |
 | 容器内传输 | `TransferPipeline` | ✅ 源槽 | ✅ 目标槽 |
 
-**跨容器传输** — 在 `pullFromNeighbor`、`pushToNeighbor`、`pullFromNeighborToLivingChest`、`transferBetweenNeighbors` 四个方法中，遍历邻居 `IItemHandler` 槽位时，先通过 `getNeighborContainer` 获取邻居的 `Container` 接口，再调用 `canTakeItem`/`canPlaceItem` 过滤：
+**跨容器传输** — 邻居槽位遍历已提取为两个核心 helper 方法，所有传输方法复用：
 
 ```java
-// CrossContainerTransfer.pullFromNeighbor() 中的过滤逻辑
-Container neighborContainer = getNeighborContainer(level, neighborPos);
-for (int i = 0; i < neighborHandler.getSlots(); i++) {
-    if (neighborContainer != null && !neighborContainer.canTakeItem(neighborContainer, i, sourceStack)) {
-        continue;  // 跳过玩家不可取的槽位
+// CrossContainerTransfer — 拉取方向：遍历邻居槽位，过滤后创建 source，transfer 到 target
+private static boolean tryPullFromNeighbor(IItemHandler handler, BlockPos pos, Level level,
+    FilterData filter, SlotAccessor target, int amount) {
+    Container container = getNeighborContainer(level, pos);
+    for (int i = 0; i < handler.getSlots(); i++) {
+        ItemStack stack = handler.getStackInSlot(i);
+        if (stack.isEmpty() || LivingItemManager.isLivingItem(stack)) continue;
+        if (container != null && !container.canTakeItem(container, i, stack)) continue;
+        SlotAccessor source = SlotAccessorFactory.createForNeighbor(handler, i, filter, level, pos);
+        if (SlotAccessor.transfer(source, target, amount)) return true;
     }
-    // ... 正常传输逻辑 ...
+    return false;
+}
+
+// 推送方向：遍历邻居槽位，过滤后创建 target，从 source transfer
+private static boolean tryPushToNeighbor(IItemHandler handler, BlockPos pos, Level level,
+    SlotAccessor source, int amount, ItemStack filterItem) {
+    Container container = getNeighborContainer(level, pos);
+    for (int i = 0; i < handler.getSlots(); i++) {
+        if (container != null && !container.canPlaceItem(i, filterItem)) continue;
+        SlotAccessor target = SlotAccessorFactory.createForNeighbor(handler, i, null, level, pos);
+        if (SlotAccessor.transfer(source, target, amount)) return true;
+    }
+    return false;
 }
 ```
+
+**调用方**：`tryPullFromNeighbor` 被 `pullFromNeighbor` 和 `pullFromNeighborToLivingChest` 复用；`tryPushToNeighbor` 被 `pushToNeighbor` 和 `pushFromLivingStorageToNeighbor`（合并了 `pushFromLivingChestToNeighbor` + `pushFromLivingEnderChestToNeighbor`）复用。`pushToNeighbor` 额外增加了一层"满槽跳过"优化（槽位已满且物品不同 → 跳过）。
 
 **容器内传输** — 在 `TransferPipeline.executeInContainer()` 中，提取前检查 `canTakeItem`，放入前通过模拟提取检查 `canPlaceItem`：
 
 ```java
 // TransferPipeline.executeInContainer() — 提取前检查
-Container hostContainer = getHostContainer(ctx);
+Container hostContainer = CrossContainerTransfer.getNeighborContainer(level, ctx.getBlockPos());
 if (hostContainer != null && !hostContainer.canTakeItem(hostContainer, sourceSlot, sourceStack)) {
     return false;
 }
 
+int transferAmount = Math.min(stackSize, maxTransfer);
+
 // 放入前检查（模拟提取目标物品后验证）
 if (hostContainer != null) {
-    ItemStack simulated = source.simulateExtract(Math.min(stackSize, maxTransfer));
+    ItemStack simulated = source.simulateExtract(transferAmount);
     if (!simulated.isEmpty() && !hostContainer.canPlaceItem(targetSlot, simulated)) {
         return false;
     }
@@ -963,7 +984,7 @@ registerProvider(SlotAccessorFactory::defaultProvider); // 优先级 3：普通�
 | `NeighborSlotAccessor.java` | `transfer/` | 邻居容器访问器 |
 | `FilterData.java` | `transfer/` | 传输过滤规则数据（跨领域共享） |
 | `PerfMetrics.java` | `perf/` | 性能监控 |
-| `TransferPipeline.java` | `domain/hopper/` | 统一传输入口，含容器内传输的 `Container` 接口槽位过滤 |
+| `TransferPipeline.java` | `domain/hopper/` | 统一传输入口，含容器内传输的 `Container` 接口槽位过滤，复用 `CrossContainerTransfer.getNeighborContainer` |
 | `HopperFilterBuilder.java` | `domain/hopper/` | 活漏斗过滤链构建（从 ContainerSnapshot 提取） |
-| `CrossContainerTransfer.java` | `domain/hopper/` | 跨容器传输，含 `Container` 接口槽位过滤（方向解析 + 大箱子处理） |
+| `CrossContainerTransfer.java` | `domain/hopper/` | 跨容器传输，含 `Container` 接口槽位过滤 + `tryPullFromNeighbor`/`tryPushToNeighbor` 核心 helper + 方向解析 + 大箱子处理 |
 | `EnderRouteManager.java` | `domain/ender/` | 活末影箱路由逻辑集中管理 |

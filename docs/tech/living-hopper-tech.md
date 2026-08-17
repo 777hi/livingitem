@@ -1,7 +1,7 @@
 # Living Hopper (活漏斗) 技术文档
 
-> **文档版本**: 2026.08 v8  
-> **最后更新**: 2026-08-16  
+> **文档版本**: 2026.08 v9  
+> **最后更新**: 2026-08-17  
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -161,45 +161,36 @@ tick()
 **TransferPipeline.execute() 流程**：
 
 ```
-                    源槽位/目标槽位是否越界？
-                    ├─ 越界 → CrossContainerTransfer (由 TransferPipeline 委托)
-                    └─ 未越界 → 继续
-                                  │
-                    源 == 目标？→ 自环防护，return false
-                                  │
-                    源是被传输过的？→ 级联防护，return false
-                                  │
-                    源为空？→ return false
-                                  │
-                    源是活物品（非活箱子）？→ 隔离，return false
-                                  │
-                    源是普通物品？→ 物品过滤检查
-                                  │
-                    创建 SlotAccessor
-                    ├─ source = SlotAccessorFactory.create(sourceSlot)
-                    │    └─ 活箱子 → LivingChestAccessor
-                    │    └─ 活末影箱 → LivingEnderChestAccessor
-                    │    └─ 普通物品 → PlainSlotAccessor
-                    ├─ target = SlotAccessorFactory.create(targetSlot)
-                    │    └─ 活箱子 → LivingChestAccessor
-                    │    └─ 活末影箱 → LivingEnderChestAccessor
-                    │    └─ 普通物品 → PlainSlotAccessor
-                    └─ source == null 或 target == null → return false
-                                  │
-                    target 是活末影箱？→ EnderRouteManager.registerRoute() → return true
-                                  │
-                    source 是活末影箱？→ doTransfer(source, target, amount)
-                                  │
-                    doTransfer(source, target, amount)
-                    ├─ source.isEmpty() || target.isFull() → return false
-                    ├─ extracted = source.extract(amount, filterType)
-                    ├─ extracted.isEmpty() → return false
-                    ├─ inserted = target.insert(extracted)
-                    ├─ inserted <= 0 → source.rollback(extracted), return false
-                    ├─ 多余物品 → source.rollback(remaining)
-                    ├─ target.markTransferred()
-                    ├─ source.sync()
-                    └─ target.sync()
+TransferPipeline.execute(ctx, level, hostSlot, sourceSlot, targetSlot, ...)
+  │
+  ├─ 越界判定（sourceSlot/targetSlot < 0 或 >= containerSize）
+  │   └─ 越界 → CrossContainerTransfer.execute() → 跨容器传输
+  │
+  └─ 未越界 → executeInContainer()
+      │
+      ├─ [1] 自环防护：sourceSlot == targetSlot → return false
+      ├─ [2] 级联防护：transferredTargetSlots 包含 sourceSlot → return false
+      ├─ [3] 空源检查：sourceStack.isEmpty() → return false
+      ├─ [4] 活物品隔离：isTransferableSource(sourceStack) 检查
+      │   └─ 活物品且非存储容器（活箱子/活末影箱）→ return false
+      ├─ [5] 物品过滤：非存储容器的普通物品 → ItemFilterComponent.allows(filter, sourceStack)
+      │   └─ 不通过 → return false
+      ├─ [6] Container 模拟玩家取出：getNeighborContainer(level, ctx.getBlockPos())
+      │   └─ hostContainer.canTakeItem(sourceSlot, sourceStack) → return false
+      │   └─ 注意：玩家背包 getBlockPos() 返回 null，getNeighborContainer 安全返回 null，跳过此检查
+      ├─ [7] 创建 SlotAccessor：
+      │   ├─ source = SlotAccessorFactory.create(sourceSlot, filter)
+      │   └─ target = SlotAccessorFactory.create(targetSlot, null)
+      │   └─ source == null || target == null → return false
+      ├─ [8] transferAmount = Math.min(stackSize, maxTransfer)
+      ├─ [9] Container 模拟玩家放入：source.simulateExtract(transferAmount)
+      │   └─ hostContainer.canPlaceItem(targetSlot, simulated) → return false
+      ├─ [10] 末影箱路由决策：EnderRouteManager.resolveTarget(source, target, ...)
+      │   ├─ NOT_ENDER_CHEST → SlotAccessor.transfer(source, target, transferAmount)
+      │   ├─ REJECTED → false
+      │   └─ HANDLED → true（路由注册/提取已由 EnderRouteManager 完成）
+      │
+      └─ 返回传输结果（true/false）
 ```
 
 **SlotAccessor 统一传输模型**：
@@ -588,20 +579,26 @@ LivingHopperFunction.tick()                                 [每 tick]
   ├─ TransferPipeline.execute(request)                       [统一传输入口]
   │
   ├─ TransferPipeline.execute()                             [传输执行]
-  │   ├─ 越界？→ CrossContainerTransfer.resolveDirection()
-  │   │         + TransferPipeline.doTransfer()
-  │   └─ 未越界 → 前置检查 → SlotAccessor 创建 → doTransfer
-  │       ├─ 自环检查 (sourceSlot == targetSlot)
-  │       ├─ 级联防护 (transferredTargetSlots 包含 sourceSlot)
-  │       ├─ 源槽位为空？→ return false
-  │       ├─ 源是活物品（非存储容器）？→ return false
-  │       ├─ 物品过滤检查 (ItemFilterComponent.allows())
-  │       ├─ source = SlotAccessorFactory.create(sourceSlot)
-  │       ├─ target = SlotAccessorFactory.create(targetSlot)
-  │       ├─ target 是活末影箱（路由模式）→ EnderRouteManager.registerRoute() → return true
-  │       └─ SlotAccessor.transfer(source, target, amount)
-  │           ├─ extract → insert → rollback
-  │           └─ markTransferred → sync
+  │   ├─ 越界？→ CrossContainerTransfer.execute()           [跨容器传输]
+  │   │         └─ 详见第 6 章
+  │   └─ 未越界 → executeInContainer()                       [容器内传输]
+  │       ├─ [1] 自环防护 (sourceSlot == targetSlot)
+  │       ├─ [2] 级联防护 (transferredTargetSlots 包含 sourceSlot)
+  │       ├─ [3] 源槽位为空？→ return false
+  │       ├─ [4] 源是活物品（非存储容器）？→ return false
+  │       ├─ [5] 物品过滤检查 (ItemFilterComponent.allows())
+  │       ├─ [6] Container 模拟玩家取出 (canTakeItem)
+  │       ├─ [7] source = SlotAccessorFactory.create(sourceSlot)
+  │       ├─ [8] target = SlotAccessorFactory.create(targetSlot)
+  │       ├─ [9] transferAmount = Math.min(stackSize, maxTransfer)
+  │       ├─ [10] Container 模拟玩家放入 (simulateExtract + canPlaceItem)
+  │       ├─ [11] EnderRouteManager.resolveTarget() 决策
+  │       │   ├─ NOT_ENDER_CHEST → SlotAccessor.transfer(source, target, transferAmount)
+  │       │   │   ├─ extract → insert → rollback
+  │       │   │   └─ markTransferred → sync
+  │       │   ├─ REJECTED → false
+  │       │   └─ HANDLED → true
+  │       └─ 返回传输结果
   │
   ├─ 传输成功？→ 设置冷却 (max(1, 8 - stackCount/8))
   │
@@ -611,7 +608,16 @@ LivingHopperFunction.tick()                                 [每 tick]
       └─ 清理失效的活末影箱路由条目
 ```
 
-**关键变化**（v8 架构优化后）：
+**关键变化**（v8 → v9）：
+
+**v9 变化**（2026-08-17）：
+- **Container 接口模拟玩家操作**：`executeInContainer()` 新增 `Container.canTakeItem()` 和 `Container.canPlaceItem()` 检查（步骤 [6] 和 [10]），通过 `CrossContainerTransfer.getNeighborContainer()` 获取容器实例，利用原版 Container 接口模拟玩家取出/放入逻辑，过滤不可交互的槽位（如幽灵槽、输出槽等），解决跨模组容器兼容性问题
+- **`getNeighborContainer` 空安全**：添加 `neighborPos == null` 检查，修复玩家背包场景下 `getBlockPos()` 返回 null 导致的 NPE 崩溃
+- **`transferAmount` 变量提取**：`Math.min(stackSize, maxTransfer)` 从 3 次重复计算减少为 1 次
+- **末影箱决策统一**：`EnderRouteManager.resolveTarget()` 返回 `Decision` 枚举（`NOT_ENDER_CHEST` / `REJECTED` / `HANDLED`），`TransferPipeline` 通过 `switch` 分流，替代了分散的 `registerRoute` + `doTransfer` 调用
+- **`isTransferableSource()` / `isStorageContainer()` 辅助方法**：提取活物品隔离判断为独立方法，提升可读性
+
+**v8 变化**（2026-08-16）：
 - **核心原则：计算归容器，展示归物品**。`FilterData` 由 `HopperFilterBuilder` 容器级预计算（衍生数据），但写回 `LivingHopperData.filter`（DataComponent），利用 Minecraft 内置同步机制推送到客户端
 - `ContainerSnapshot.capture()` 中一次性计算所有活漏斗的 `sourceOf`/`targetOf`，过滤构建委托给 `HopperFilterBuilder.buildAll()`，每 tick 只算一次
 - `TransferPipeline` 统一容器内传输和跨容器传输入口，消除 `LivingHopperFunction.executeTransfer` 与 `CrossContainerTransfer.execute` 的双向耦合
@@ -785,23 +791,16 @@ GUI右(RIGHT) → 世界西(WEST)   → 旋转后
    - 上方/左侧边界 → 以 LEFT 半箱为基准
    - 下方/右侧边界 → 以 RIGHT 半箱为基准
 
-### 6.5 活箱子在跨容器中的过滤
+### 6.5 活箱子/活末影箱在跨容器中的过滤
 
-跨容器传输中涉及活箱子时，同样采用"预查 + 类型提取"策略：
+跨容器传输中涉及活箱子/活末影箱时，两者统一使用 `pushFromLivingStorageToNeighbor()` 方法：
 
-- **pushFromLivingChestToNeighbor**：活箱子→相邻容器
-  - `getMergedStorage()` → 过滤查找 → `extractItem(targetType)`
+- **pushFromLivingStorageToNeighbor**：活箱子/活末影箱→相邻容器
+  - 创建 `SlotAccessor` → `simulateExtract()` 获取物品类型用于 `canPlaceItem` 过滤
+  - 委托 `tryPushToNeighbor()` 遍历邻居槽位并执行 `SlotAccessor.transfer()`
 - **pullFromNeighborToLivingChest**：相邻容器→活箱子
   - 在遍历相邻容器物品时直接过滤跳过
-
-### 6.6 活末影箱在跨容器中的支持
-
-跨容器传输中对活末影箱的支持：
-
-- **pushFromLivingEnderChestToNeighbor**：活末影箱→相邻容器
-  - 创建 `LivingEnderChestAccessor` → `extract()` → `tryInsert(neighborHandler)`
-  - 提取失败时 `rollback()` 退回物品
-- **pullFromNeighborToLivingEnderChest**：相邻容器→活末影箱 (NEW 2026-07-22)
+- **pullFromNeighborToLivingEnderChest**：相邻容器→活末影箱
   - 遍历相邻容器物品 → 构建 `EnderChannelEntry` → `registry.insert()`
   - 不实际提取物品，只注册路由条目，物品始终留在源容器中
 
@@ -898,10 +897,11 @@ allowsByPriority(item):
 
 | 传输场景 | 过滤方式 |
 |---------|---------|
-| 同容器内传输（普通→普通/活箱子→普通/普通→活箱子/活箱子→活箱子） | `TransferPipeline.execute()` 中检查 `sourceStack` + `LivingChestAccessor.extract()` 预查过滤 |
-| 跨容器拉取 | `pullFromNeighbor()` 遍历时跳过 |
-| 跨容器推送（活箱子） | `pushFromLivingChestToNeighbor()` 中预查过滤 |
-| 跨容器拉取→活箱子 | `pullFromNeighborToLivingChest()` 遍历时跳过 |
+| 同容器内传输 | `executeInContainer()` 步骤 [5]：`ItemFilterComponent.allows(filter, sourceStack)` |
+| 跨容器拉取（普通→当前容器） | `tryPullFromNeighbor()` 遍历时跳过 `LivingItemManager.isLivingItem(stack)` |
+| 跨容器拉取→活箱子 | `pullFromNeighborToLivingChest()` 中 `FilteredSlotAccessor` 自动过滤 |
+| 跨容器推送（活箱子/活末影箱→邻居） | `pushFromLivingStorageToNeighbor()` 中 `SlotAccessorFactory.create(..., filter)` 传递过滤 |
+| 跨容器邻居间直接传输 | `transferBetweenNeighbors()` 中 `SlotAccessorFactory.createForNeighbor(..., filter)` 传递过滤 |
 
 ### 7.5 活箱子过滤的特殊处理
 
@@ -1484,6 +1484,46 @@ public static void postTickSync(ContainerContext ctx, ContainerFluidData fluidDa
 
 **核心认知**："配置数据归物品，衍生数据归容器"说的是**计算归属**，不是**存储归属**。FilterData 的**计算**归容器（ContainerSnapshot 预计算），但**展示**仍然可以借助物品的 DataComponent 通道同步到客户端。不重复造轮子。
 
+### 10.23 已优化：容器内传输逻辑重构 + Container 接口兼容 (NEW 2026-08-17)
+
+**背景**：活漏斗容器内传输逻辑（`executeInContainer`）存在以下问题：
+1. 跨模组容器（如 reserve_storage）的 `IItemHandler` 可能暴露不可交互的槽位（幽灵槽），导致物品复制
+2. 玩家背包 `getBlockPos()` 返回 null，`getNeighborContainer` 未做空检查导致 NPE
+3. `Math.min(stackSize, maxTransfer)` 在代码中重复计算 3 次
+4. 末影箱路由决策分散在 `registerRoute` + `doTransfer` 两处调用
+
+**重构内容**：
+
+| 改动 | 文件 | 说明 |
+|------|------|------|
+| Container 接口过滤 | `TransferPipeline.java` | 新增 `Container.canTakeItem()` 和 `Container.canPlaceItem()` 检查（步骤 [6] 和 [10]），模拟玩家操作逻辑，过滤不可交互槽位 |
+| `getNeighborContainer` 空安全 | `CrossContainerTransfer.java` | 添加 `neighborPos == null` 检查，玩家背包等场景安全返回 null |
+| `transferAmount` 变量提取 | `TransferPipeline.java` | `Math.min(stackSize, maxTransfer)` 从 3 次减少到 1 次 |
+| 末影箱决策统一 | `TransferPipeline.java` | `EnderRouteManager.resolveTarget()` 返回 `Decision` 枚举，通过 `switch` 分流 |
+| 辅助方法提取 | `TransferPipeline.java` | `isTransferableSource()` / `isStorageContainer()` 独立方法 |
+| 跨容器 helper 合并 | `CrossContainerTransfer.java` | `pushFromLivingChestToNeighbor` + `pushFromLivingEnderChestToNeighbor` → `pushFromLivingStorageToNeighbor` |
+| 邻居遍历提取 | `CrossContainerTransfer.java` | `tryPullFromNeighbor` / `tryPushToNeighbor` 两个核心 helper，所有传输方法复用 |
+
+**Container 接口过滤原理**：
+
+```java
+// 步骤 [6]：取出前模拟玩家操作
+Container hostContainer = CrossContainerTransfer.getNeighborContainer(level, ctx.getBlockPos());
+if (hostContainer != null && !hostContainer.canTakeItem(hostContainer, sourceSlot, sourceStack)) {
+    return false;  // 不可取出的槽位（如幽灵槽、输出槽）被过滤
+}
+
+// 步骤 [10]：放入前模拟玩家操作
+if (hostContainer != null) {
+    ItemStack simulated = source.simulateExtract(transferAmount);
+    if (!simulated.isEmpty() && !hostContainer.canPlaceItem(targetSlot, simulated)) {
+        return false;  // 不可放入的槽位被过滤
+    }
+}
+```
+
+**相关提交**：2026-08-17
+
 ---
 
 ## 11. 调试指南
@@ -1516,6 +1556,8 @@ LOGGER.info("Cooldown: {} ticks remaining", cooldown);
 | 活末影箱路由不注册 | 跨容器越界分支跳过 | target 是否在越界分支前被检查 |
 | 黑白名单不生效但功能正常 | data 局部变量未更新 | `data.withFilter()` 后是否更新了 `data` 变量 |
 | 过滤链始终为空 | ContainerSnapshot 跳过 DEFAULT | `capture()` 是否跳过了未配置方向的活漏斗 |
+| 玩家背包中活漏斗崩溃 | `getNeighborContainer` NPE | `getBlockPos()` 返回 null 时是否安全处理 |
+| 跨模组容器物品复制 | 未过滤不可交互槽位 | `Container.canTakeItem/canPlaceItem` 检查是否生效 |
 
 ### 11.3 方向调试
 

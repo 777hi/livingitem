@@ -34,8 +34,8 @@ public class LivingHopperFunction implements LivingItemFunction {
 
     public static final String ID = "living_hopper";
     private static final Logger LOGGER = LogUtils.getLogger();
-    private static final int DEFAULT_COOLDOWN = 8;
-    private static final int DEFAULT_MAX_TRANSFER = 64;
+    static final int DEFAULT_COOLDOWN = 8;
+    static final int DEFAULT_MAX_TRANSFER = 64;
 
     @Override
     public boolean canApply(ItemStack stack) {
@@ -83,7 +83,8 @@ public class LivingHopperFunction implements LivingItemFunction {
                 transfer = transfer.withCooldown(actualCooldown);
             }
 
-            data = data.withTransfer(transfer).withFilter(filter);
+            ResolvedSlotData slotInfo = new ResolvedSlotData(slot, sourceSlot, targetSlot, containerSize, containerWidth);
+            data = data.withTransfer(transfer).withFilter(filter).withSlotInfo(slotInfo);
             LivingItemManager.setHopperData(stack, data);
             context.syncSlotToClients(slot, stack);
         }
@@ -141,6 +142,120 @@ public class LivingHopperFunction implements LivingItemFunction {
         FilterData filter = data.filter();
         if (filter != null && !filter.equals(FilterData.EMPTY)) {
             ItemFilterComponent.appendFilterTooltip(filter, tooltipAdder);
+        }
+
+        if (flag.isAdvanced()) {
+            appendAdvancedTooltip(tooltipAdder, stack, data, dir, transfer);
+        }
+    }
+
+    private void appendAdvancedTooltip(Consumer<Component> tooltipAdder,
+                                        ItemStack stack,
+                                        LivingHopperData data,
+                                        DirectionTransferData dir,
+                                        TransferData transfer) {
+        int stackCount = stack.getCount();
+        int actualCooldown = Math.max(1, DEFAULT_COOLDOWN - stackCount / 8);
+        double rate = 20.0 / actualCooldown;
+        int filterMode = ItemFilterComponent.normalizeMode(stackCount);
+        ResolvedSlotData slotInfo = data.slotInfo();
+
+        tooltipAdder.accept(Component.nullToEmpty(""));
+        tooltipAdder.accept(Component.translatable("tooltip.livingitem.hopper.advanced.title")
+            .withStyle(net.minecraft.ChatFormatting.DARK_GRAY, net.minecraft.ChatFormatting.ITALIC));
+
+        tooltipAdder.accept(Component.translatable(
+            "tooltip.livingitem.hopper.advanced.stack",
+            stackCount, actualCooldown, String.format("%.1f", rate))
+            .withStyle(net.minecraft.ChatFormatting.GRAY));
+
+        String modeStr = switch (filterMode) {
+            case ItemFilterComponent.MODE_COMPONENT -> "NBT";
+            case ItemFilterComponent.MODE_TAG -> "Tag";
+            default -> "ID";
+        };
+        tooltipAdder.accept(Component.translatable(
+            "tooltip.livingitem.hopper.advanced.filter_mode", modeStr)
+            .withStyle(net.minecraft.ChatFormatting.GRAY));
+
+        tooltipAdder.accept(Component.translatable(
+            "tooltip.livingitem.hopper.advanced.max_transfer", DEFAULT_MAX_TRANSFER)
+            .withStyle(net.minecraft.ChatFormatting.GRAY));
+
+        if (slotInfo.isValid()) {
+            appendSlotInfo(tooltipAdder, slotInfo, dir);
+        }
+
+        if (transfer.isOnCooldown()) {
+            tooltipAdder.accept(Component.translatable(
+                "tooltip.livingitem.hopper.advanced.cooldown_detail",
+                transfer.cooldown(), actualCooldown)
+                .withStyle(net.minecraft.ChatFormatting.GRAY));
+        } else {
+            tooltipAdder.accept(Component.translatable(
+                "tooltip.livingitem.hopper.advanced.ready")
+                .withStyle(net.minecraft.ChatFormatting.GRAY));
+        }
+
+        boolean hasRules = data.filter() != null && !data.filter().equals(FilterData.EMPTY);
+        tooltipAdder.accept(Component.translatable(
+            "tooltip.livingitem.hopper.advanced.has_filter",
+            hasRules ? Component.translatable("tooltip.livingitem.hopper.advanced.yes")
+                .withStyle(net.minecraft.ChatFormatting.GREEN)
+                : Component.translatable("tooltip.livingitem.hopper.advanced.no")
+                .withStyle(net.minecraft.ChatFormatting.RED))
+            .withStyle(net.minecraft.ChatFormatting.GRAY));
+    }
+
+    private void appendSlotInfo(Consumer<Component> tooltipAdder,
+                                 ResolvedSlotData slotInfo,
+                                 DirectionTransferData dir) {
+        tooltipAdder.accept(Component.nullToEmpty(""));
+        tooltipAdder.accept(Component.translatable("tooltip.livingitem.hopper.advanced.container.title")
+            .withStyle(net.minecraft.ChatFormatting.DARK_GRAY));
+
+        tooltipAdder.accept(Component.translatable(
+            "tooltip.livingitem.hopper.advanced.container.size",
+            slotInfo.containerSize(), slotInfo.containerWidth(),
+            slotInfo.containerSize() / slotInfo.containerWidth())
+            .withStyle(net.minecraft.ChatFormatting.GRAY));
+
+        tooltipAdder.accept(Component.translatable(
+            "tooltip.livingitem.hopper.advanced.container.host",
+            slotInfo.hostSlot(),
+            slotInfo.hostSlot() / slotInfo.containerWidth(),
+            slotInfo.hostSlot() % slotInfo.containerWidth())
+            .withStyle(net.minecraft.ChatFormatting.GRAY));
+
+        String srcSymbol = dir.sourceOffset().getSymbol();
+        String tgtSymbol = dir.targetOffset().getSymbol();
+
+        if (slotInfo.sourceOutOfBounds()) {
+            tooltipAdder.accept(Component.translatable(
+                "tooltip.livingitem.hopper.advanced.slot.cross",
+                srcSymbol, slotInfo.sourceSlot())
+                .withStyle(net.minecraft.ChatFormatting.DARK_PURPLE));
+        } else {
+            tooltipAdder.accept(Component.translatable(
+                "tooltip.livingitem.hopper.advanced.slot.in_container",
+                srcSymbol, slotInfo.sourceSlot(),
+                slotInfo.sourceSlot() / slotInfo.containerWidth(),
+                slotInfo.sourceSlot() % slotInfo.containerWidth())
+                .withStyle(net.minecraft.ChatFormatting.GRAY));
+        }
+
+        if (slotInfo.targetOutOfBounds()) {
+            tooltipAdder.accept(Component.translatable(
+                "tooltip.livingitem.hopper.advanced.slot.cross",
+                tgtSymbol, slotInfo.targetSlot())
+                .withStyle(net.minecraft.ChatFormatting.DARK_PURPLE));
+        } else {
+            tooltipAdder.accept(Component.translatable(
+                "tooltip.livingitem.hopper.advanced.slot.in_container",
+                tgtSymbol, slotInfo.targetSlot(),
+                slotInfo.targetSlot() / slotInfo.containerWidth(),
+                slotInfo.targetSlot() % slotInfo.containerWidth())
+                .withStyle(net.minecraft.ChatFormatting.GRAY));
         }
     }
 

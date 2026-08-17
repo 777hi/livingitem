@@ -438,6 +438,7 @@ public final class CrossContainerTransfer {
     }
 
     static Container getNeighborContainer(Level level, BlockPos neighborPos) {
+        if (neighborPos == null) return null;
         if (level.getBlockEntity(neighborPos) instanceof Container container) {
             return container;
         }
