@@ -80,7 +80,7 @@ public class LivingButtonFunction implements LivingItemFunction, HasContainerDat
         }
 
         tooltipAdder.accept(Component.translatable("tooltip.livingitem.button.max_signal")
-            .append(Component.literal(": " + (stack.getCount() * 15)))
+            .append(Component.literal(": " + ContainerRedstoneData.getSignalCap(stack.getCount())))
             .withStyle(ChatFormatting.GRAY));
     }
 

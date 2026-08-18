@@ -60,12 +60,16 @@ import com.qiqi.li.living.domain.redstone.LivingRedstoneTorchFunction;
 import com.qiqi.li.living.domain.redstone.LivingButtonFunction;
 import com.qiqi.li.living.domain.redstone.LivingLeverFunction;
 import com.qiqi.li.living.domain.redstone.LivingRedstoneLampFunction;
+import com.qiqi.li.living.domain.redstone.LivingRepeaterFunction;
+import com.qiqi.li.living.domain.redstone.LivingComparatorFunction;
 import com.qiqi.li.living.function.LivingFlintAndSteelFunction;
 import com.qiqi.li.living.interaction.InteractionRegistry;
 import com.qiqi.li.living.interaction.IgniteHandler;
 import com.qiqi.li.living.interaction.IgniteCarriedHandler;
 import com.qiqi.li.living.interaction.ButtonPressHandler;
 import com.qiqi.li.living.interaction.LeverToggleHandler;
+import com.qiqi.li.living.interaction.RepeaterCycleHandler;
+import com.qiqi.li.living.interaction.ComparatorToggleHandler;
 import net.neoforged.neoforge.registries.DeferredRegister;
 import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
 import com.qiqi.li.living.domain.chest.LivingChestItemHandler;
@@ -151,6 +155,12 @@ public class LivingItem {
         LivingItemManager.registerFunction(new LivingRedstoneLampFunction());
         LOGGER.info("Registered living redstone lamp function");
 
+        LivingItemManager.registerFunction(new LivingRepeaterFunction());
+        LOGGER.info("Registered living repeater function");
+
+        LivingItemManager.registerFunction(new LivingComparatorFunction());
+        LOGGER.info("Registered living comparator function");
+
         LivingItemManager.registerFunction(new LivingEnderPearlFunction());
         LOGGER.info("Registered living ender pearl function");
 
@@ -197,6 +207,14 @@ public class LivingItem {
         InteractionRegistry.registerHandler("lever_toggle", new LeverToggleHandler());
         InteractionRegistry.register(new InteractionEntry(Items.LEVER, null, 1, "lever_toggle"));
         LOGGER.info("Registered lever toggle interaction rule");
+
+        InteractionRegistry.registerHandler("repeater_cycle", new RepeaterCycleHandler());
+        InteractionRegistry.register(new InteractionEntry(Items.REPEATER, null, 1, "repeater_cycle"));
+        LOGGER.info("Registered repeater cycle interaction rule");
+
+        InteractionRegistry.registerHandler("comparator_toggle", new ComparatorToggleHandler());
+        InteractionRegistry.register(new InteractionEntry(Items.COMPARATOR, null, 1, "comparator_toggle"));
+        LOGGER.info("Registered comparator toggle interaction rule");
     }
 
     /**

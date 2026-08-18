@@ -19,14 +19,14 @@ import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.model.Pos2D;
 
-public class LivingRedstoneTorchFunction implements LivingItemFunction, HasDirection, HasContainerData {
+public class LivingRepeaterFunction implements LivingItemFunction, HasDirection, HasContainerData {
 
-    public static final String ID = "living_redstone_torch";
+    public static final String ID = "living_repeater";
     private static final String[] SLOT_NAMES = {"direction"};
 
     @Override
     public boolean canApply(ItemStack stack) {
-        return stack.is(Items.REDSTONE_TORCH) && LivingItemManager.isLivingItem(stack);
+        return stack.is(Items.REPEATER) && LivingItemManager.isLivingItem(stack);
     }
 
     @Override
@@ -48,27 +48,38 @@ public class LivingRedstoneTorchFunction implements LivingItemFunction, HasDirec
                              Consumer<Component> tooltipAdder,
                              TooltipFlag flag,
                              ItemStack stack) {
-        LivingRedstoneTorchData data = LivingItemManager.getRedstoneTorchData(stack);
+        LivingRepeaterData data = LivingItemManager.getRepeaterData(stack);
+        int signalCap = ContainerRedstoneData.getSignalCap(stack.getCount());
 
         tooltipAdder.accept(Component.nullToEmpty(""));
-        tooltipAdder.accept(Component.translatable("tooltip.livingitem.redstone_torch.title"));
+        tooltipAdder.accept(Component.translatable("tooltip.livingitem.repeater.title"));
 
         tooltipAdder.accept(Component.literal("  ")
-            .append(Component.translatable("tooltip.livingitem.redstone_torch.facing"))
+            .append(Component.translatable("tooltip.livingitem.repeater.facing"))
             .append(Component.literal(": "))
-            .append(Component.translatable("tooltip.livingitem.redstone_torch.direction." + directionKey(data.direction())))
+            .append(Component.translatable("tooltip.livingitem.repeater.direction." + directionKey(data.direction())))
             .withStyle(ChatFormatting.GRAY));
 
-        if (data.isLit()) {
-            tooltipAdder.accept(Component.translatable("tooltip.livingitem.redstone_torch.lit")
+        tooltipAdder.accept(Component.literal("  ")
+            .append(Component.translatable("tooltip.livingitem.repeater.delay"))
+            .append(Component.literal(": " + data.delay() + " (" + (data.delay() * 2) + " ticks)"))
+            .withStyle(ChatFormatting.GRAY));
+
+        if (data.powered()) {
+            tooltipAdder.accept(Component.translatable("tooltip.livingitem.repeater.powered")
                 .withStyle(ChatFormatting.RED, ChatFormatting.BOLD));
+            if (data.delayTimer() > 0) {
+                tooltipAdder.accept(Component.translatable("tooltip.livingitem.repeater.delay_timer")
+                    .append(Component.literal(": " + data.delayTimer()))
+                    .withStyle(ChatFormatting.GRAY));
+            }
         } else {
-            tooltipAdder.accept(Component.translatable("tooltip.livingitem.redstone_torch.unlit")
+            tooltipAdder.accept(Component.translatable("tooltip.livingitem.repeater.unpowered")
                 .withStyle(ChatFormatting.DARK_GRAY));
         }
 
-        tooltipAdder.accept(Component.translatable("tooltip.livingitem.redstone_torch.max_signal")
-            .append(Component.literal(": " + ContainerRedstoneData.getSignalCap(stack.getCount())))
+        tooltipAdder.accept(Component.translatable("tooltip.livingitem.repeater.max_signal")
+            .append(Component.literal(": " + signalCap))
             .withStyle(ChatFormatting.GRAY));
     }
 
@@ -77,7 +88,7 @@ public class LivingRedstoneTorchFunction implements LivingItemFunction, HasDirec
         if (dir.equals(Pos2D.DOWN)) return "down";
         if (dir.equals(Pos2D.LEFT)) return "left";
         if (dir.equals(Pos2D.RIGHT)) return "right";
-        return "up";
+        return "right";
     }
 
     @Override
@@ -92,7 +103,7 @@ public class LivingRedstoneTorchFunction implements LivingItemFunction, HasDirec
 
     @Override
     public boolean updateSlotDirection(ItemStack stack, String slotName, Pos2D direction) {
-        return updateTorchDirection(stack, direction);
+        return updateRepeaterDirection(stack, direction);
     }
 
     @Override
@@ -115,13 +126,21 @@ public class LivingRedstoneTorchFunction implements LivingItemFunction, HasDirec
         if (facing.equals(Pos2D.DOWN)) return Pos2D.UP;
         if (facing.equals(Pos2D.LEFT)) return Pos2D.RIGHT;
         if (facing.equals(Pos2D.RIGHT)) return Pos2D.LEFT;
-        return Pos2D.DOWN;
+        return Pos2D.LEFT;
     }
 
-    public static boolean updateTorchDirection(ItemStack torchStack, Pos2D direction) {
-        if (torchStack == null || torchStack.isEmpty() || direction == null) return false;
-        LivingRedstoneTorchData data = LivingItemManager.getRedstoneTorchData(torchStack);
-        LivingItemManager.setRedstoneTorchData(torchStack, data.withDirection(direction));
+    public static boolean updateRepeaterDirection(ItemStack stack, Pos2D direction) {
+        if (stack == null || stack.isEmpty() || direction == null) return false;
+        LivingRepeaterData data = LivingItemManager.getRepeaterData(stack);
+        LivingItemManager.setRepeaterData(stack, data.withDirection(direction));
+        return true;
+    }
+
+    public static boolean cycleDelay(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return false;
+        LivingRepeaterData data = LivingItemManager.getRepeaterData(stack);
+        int newDelay = data.delay() >= 4 ? 1 : data.delay() + 1;
+        LivingItemManager.setRepeaterData(stack, data.withDelay(newDelay));
         return true;
     }
 }

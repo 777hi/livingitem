@@ -61,7 +61,7 @@ public class LivingRedstoneFunction implements LivingItemFunction, HasContainerD
         }
 
         tooltipAdder.accept(Component.translatable("tooltip.livingitem.redstone.max_signal")
-            .append(Component.literal(": " + (stack.getCount() * 15)))
+            .append(Component.literal(": " + ContainerRedstoneData.getSignalCap(stack.getCount())))
             .withStyle(ChatFormatting.GRAY));
     }
 

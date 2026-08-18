@@ -510,7 +510,7 @@ data = data.withFuel(fuel.tick(Math.max(1, stackCount)));
 
 ```java
 // ContainerLivingItemHandler.tick() 中
-TickContext tick = TickContext.acquire(context);
+TickContext tick = new TickContext(context);
 if (context instanceof SimpleContainerContext simpleCtx) {
     simpleCtx.setTickContext(tick);
 }

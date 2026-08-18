@@ -82,4 +82,17 @@ public interface LivingItemFunction {
     default Set<DataComponentType<?>> getIgnoredComponentTypes() {
         return Set.of();
     }
+
+    /**
+     * 【比较器输出】获取活比较器检测此物品时的输出值（可选）。
+     *
+     * <p>默认返回 0，表示活比较器不检测此活物品。
+     * 覆盖此方法可以自定义检测值（如熔炉进度、水桶水量等）。</p>
+     *
+     * @param stack 物品
+     * @return 比较器输出值（0-15 范围），0 表示不检测
+     */
+    default int getComparatorOutput(ItemStack stack) {
+        return 0;
+    }
 }

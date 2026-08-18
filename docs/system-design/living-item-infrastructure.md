@@ -826,21 +826,10 @@ for (var entry : hcdEntries) {
 | `containerDataStore` | 通用容器级数据存储（`Map<Class<?>, Object>`），新数据类型无需在 TickContext 中新增字段 |
 | `functionSlots` | 功能槽位缓存，processContext 分组时填充，O(1) 读取各功能的活跃槽位集合 |
 
-**对象池复用**：
+**生命周期**：
 
-TickContext 通过 `ThreadLocal` 对象池复用，减少 GC 压力：
-
-```java
-private static final ThreadLocal<TickContextPool> POOL = ThreadLocal.withInitial(TickContextPool::new);
-
-public static TickContext acquire(ContainerContext ctx) {
-    return POOL.get().acquire(ctx);  // 池中有则复用，否则创建新实例
-}
-
-public void release() {
-    POOL.get().release(this);  // 归还到池中（池满则丢弃，最多缓存 4 个）
-}
-```
+TickContext 是短生命周期对象，每次 tick 创建新实例，tick 结束后自然丢弃。
+JVM 年轻代 GC 可高效回收此类短生命周期对象，无需池化。
 
 ### 8.4 脏槽位批量同步
 
@@ -862,7 +851,7 @@ public void syncSlotToClients(int logicalSlot, ItemStack stack) {
 }
 
 // ContainerLivingItemHandler.tick() 中
-TickContext tick = TickContext.acquire(context);
+TickContext tick = new TickContext(context);
 if (context instanceof SimpleContainerContext simpleCtx) {
     simpleCtx.setTickContext(tick);
 }
@@ -871,7 +860,6 @@ if (context instanceof SimpleContainerContext simpleCtx2) {
     simpleCtx2.flushDirtySlots();   // 批量发送
     simpleCtx2.setTickContext(null);
 }
-tick.release();
 ```
 
 **效果**：同一 tick 内同一槽位多次修改只发送一次同步包，减少网络冗余。
@@ -1024,7 +1012,6 @@ registerProvider(SlotAccessorFactory::defaultProvider); // 优先级 3：普通�
 | Tick 耗时 | 处理容器的平均/P99/最大耗时 |
 | 活物品数量 | 每种活物品的总数 |
 | 功能调用 | 每种功能被调用的次数 |
-| 对象池 | TickContext 对象池命中率 |
 | 传输 | 活漏斗传输成功/失败次数 |
 
 ### 10.2 性能优化策略汇总
@@ -1034,7 +1021,6 @@ registerProvider(SlotAccessorFactory::defaultProvider); // 优先级 3：普通�
 | ContainerChunkCache | 容器发现 | 避免全量扫描所有区块 |
 | 惰性检测 | 末影箱处理 | 无活物品时跳过，避免无效 InvWrapper 创建 |
 | 按功能分组 | processContext | 避免 N 倍速度翻倍 |
-| TickContext 对象池 | TickContext | 复用实例，减少 GC |
 | 反向索引 | EnderChannelRegistry | 路由清理 O(路由总数) → O(相关路由) |
 | 延迟同步 | EnderChannelRegistry | tick 末尾统一发包，减少网络抖动 |
 | 贪心提取 | EnderChannelRegistry | 输出槽有物品时优先提取同类型（可堆叠），避免轮询到不同类型导致传输停止 |
@@ -1056,7 +1042,7 @@ registerProvider(SlotAccessorFactory::defaultProvider); // 优先级 3：普通�
 | `ContainerSync.java` | `container/` | 客户端同步接口 |
 | `ContainerIdentity.java` | `container/` | 容器身份标识接口 |
 | `SimpleContainerContext.java` | `container/` | 统一容器上下文实现 + 脏槽位批量同步 |
-| `TickContext.java` | `container/` | Tick 级临时状态 + 对象池 + 脏槽位集合 |
+| `TickContext.java` | `container/` | Tick 级临时状态 + 脏槽位集合 |
 | `ContainerSnapshot.java` | `container/` | 容器快照，预扫描连接图（过滤构建委托给 HopperFilterBuilder） |
 | `ContainerCompatibilityConfig.java` | `transfer/` | 容器兼容性配置 |
 | `SlotResolver.java` | `transfer/` | 槽位方向解析器 |

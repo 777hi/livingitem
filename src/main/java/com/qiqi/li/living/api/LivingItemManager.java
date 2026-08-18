@@ -21,6 +21,8 @@ import com.qiqi.li.living.domain.redstone.LivingRedstoneTorchData;
 import com.qiqi.li.living.domain.redstone.LivingButtonData;
 import com.qiqi.li.living.domain.redstone.LivingLeverData;
 import com.qiqi.li.living.domain.redstone.LivingRedstoneLampData;
+import com.qiqi.li.living.domain.redstone.LivingRepeaterData;
+import com.qiqi.li.living.domain.redstone.LivingComparatorData;
 import net.minecraft.world.item.Items;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.registries.Registries;
@@ -138,6 +140,20 @@ public class LivingItemManager {
                             .networkSynchronized(LivingRedstoneLampData.STREAM_CODEC)
                             .build());
 
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingRepeaterData>> LIVING_REPEATER_DATA =
+            DATA_COMPONENT_TYPES.register("living_repeater_data", () ->
+                    DataComponentType.<LivingRepeaterData>builder()
+                            .persistent(LivingRepeaterData.CODEC)
+                            .networkSynchronized(LivingRepeaterData.STREAM_CODEC)
+                            .build());
+
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingComparatorData>> LIVING_COMPARATOR_DATA =
+            DATA_COMPONENT_TYPES.register("living_comparator_data", () ->
+                    DataComponentType.<LivingComparatorData>builder()
+                            .persistent(LivingComparatorData.CODEC)
+                            .networkSynchronized(LivingComparatorData.STREAM_CODEC)
+                            .build());
+
     private static final List<LivingItemFunction> FUNCTIONS = new ArrayList<>();
     private static final List<LivingItemFunction> FUNCTIONS_VIEW = Collections.unmodifiableList(FUNCTIONS);
     private static final Map<Item, List<LivingItemFunction>> APPLICABLE_CACHE = new HashMap<>();
@@ -208,6 +224,8 @@ public class LivingItemManager {
         stack.remove(LIVING_BUTTON_DATA.value());
         stack.remove(LIVING_LEVER_DATA.value());
         stack.remove(LIVING_REDSTONE_LAMP_DATA.value());
+        stack.remove(LIVING_REPEATER_DATA.value());
+        stack.remove(LIVING_COMPARATOR_DATA.value());
     }
 
     public static void setLiving(ItemStack stack, boolean living) {
@@ -373,5 +391,21 @@ public class LivingItemManager {
 
     public static void setLampData(ItemStack stack, LivingRedstoneLampData data) {
         setData(stack, LIVING_REDSTONE_LAMP_DATA.value(), data, LivingRedstoneLampData.DEFAULT);
+    }
+
+    public static LivingRepeaterData getRepeaterData(ItemStack stack) {
+        return getData(stack, LIVING_REPEATER_DATA.value(), LivingRepeaterData.DEFAULT);
+    }
+
+    public static void setRepeaterData(ItemStack stack, LivingRepeaterData data) {
+        setData(stack, LIVING_REPEATER_DATA.value(), data, LivingRepeaterData.DEFAULT);
+    }
+
+    public static LivingComparatorData getComparatorData(ItemStack stack) {
+        return getData(stack, LIVING_COMPARATOR_DATA.value(), LivingComparatorData.DEFAULT);
+    }
+
+    public static void setComparatorData(ItemStack stack, LivingComparatorData data) {
+        setData(stack, LIVING_COMPARATOR_DATA.value(), data, LivingComparatorData.DEFAULT);
     }
 }

@@ -102,11 +102,11 @@
 - ✅ 修复：`LivingWaterBucketData.DEFAULT` → `LivingWaterBucketData.EMPTY`
 - ✅ 修复：`ExplosionData.ignite()` 无参重载方法（默认 80 刻引信）
 - ✅ 兼容：`ProgressComponent` 实现 `ILivingComponent` 接口 + `ComponentState` 适配器方法，保持旧编排器编译兼容
-- ✅ **优化：TickContext 对象池**（`TickContextPool` 复用 tick 实例，减少 GC 压力，ThreadLocal 线程安全，命中率 ~87%）
+- ✅ **优化：TickContext 对象池**（`TickContextPool` 复用 tick 实例——已废弃，大负载场景下池化收益为负，改为每次 tick 创建新实例，由 JVM 年轻代 GC 回收）
 - ✅ **优化：SlotAccessor 注册式工厂**（`SlotAccessorFactory.registerProvider()` 开放扩展，第三方模组可注册自定义 Accessor）
 - ✅ **优化：LivingItemFunction 接口职责拆分**（5 个逻辑模块：匹配/标识/Tick/Tooltip/组件过滤，可选方法默认空实现）
 - ✅ **优化：活箱子精确字节计算**（`LivingChestFunction.calculateExactByteUsage()` 替代粗糙估算，NBT 序列化获取真实大小，Tooltip 显示百分比）
-- ✅ **新增：性能监控指标系统**（`PerfMetrics` 收集 Tick 耗时/活物品数量/功能调用/对象池命中率/传输成功率，每 60 秒自动打印报告）
+- ✅ **新增：性能监控指标系统**（`PerfMetrics` 收集 Tick 耗时/活物品数量/功能调用/传输成功率，每 60 秒自动打印报告）
 
 ## 2026-07-24
 

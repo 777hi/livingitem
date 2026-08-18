@@ -355,7 +355,7 @@ if (LivingChestFunction.isLivingChest(stack)) {
 活箱子的衍生数据（`usedSlots`/`usedBytes`/`isFull`/`isByteFull`）在 `ContainerSnapshot.capture()` 阶段统一预计算，存入 `ChestSnapshot` record。所有活漏斗、跨容器传输、`LivingChestAccessor` 共享同一份缓存数据，避免每个活物品重复反序列化 `CONTAINER` 组件。
 
 ```
-TickContext.acquire()
+new TickContext(context)
     └─ ContainerSnapshot.capture()
         └─ buildAllChestSnapshots()
             └─ 对每个活箱子槽位：
