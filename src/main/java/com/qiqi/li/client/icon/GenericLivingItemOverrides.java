@@ -31,6 +31,7 @@ public class GenericLivingItemOverrides extends ItemOverrides {
     private final BakedModel vanillaModel;
     private final LivingIconSpec spec;
     private final Map<String, GenericContextAwareModel> contextModelCache = new HashMap<>();
+    private final Map<String, DirectionalLivingModel> directionalModelCache = new HashMap<>();
     private RotatingWaterWheelModel rotatingModelCache;
 
     public GenericLivingItemOverrides(BakedModel vanillaModel, LivingIconSpec spec) {
@@ -50,11 +51,20 @@ public class GenericLivingItemOverrides extends ItemOverrides {
 
         if (!spec.isLivingItem(stack)) {
             WaterWheelRenderState.clear();
+            TorchRenderState.clear();
             return vanillaModel;
+        }
+
+        if (spec.isDirectional()) {
+            int rotation = resolveDirectionRotation(stack);
+            TorchRenderState.setRotation(rotation);
         }
 
         for (LivingIconSpec.Variant variant : spec.getVariants()) {
             if (variant.getPredicate().test(stack)) {
+                if (spec.isDirectional()) {
+                    return getOrCreateDirectionalModel(variant);
+                }
                 return getOrCreateContextModel(variant);
             }
         }
@@ -64,6 +74,17 @@ public class GenericLivingItemOverrides extends ItemOverrides {
 
     private float resolveRpm(ItemStack stack) {
         return 8f;
+    }
+
+    private int resolveDirectionRotation(ItemStack stack) {
+        com.qiqi.li.living.domain.redstone.LivingRedstoneTorchData data =
+            com.qiqi.li.living.api.LivingItemManager.getRedstoneTorchData(stack);
+        com.qiqi.li.living.model.Pos2D dir = data.direction();
+        if (dir.equals(com.qiqi.li.living.model.Pos2D.UP)) return 0;
+        if (dir.equals(com.qiqi.li.living.model.Pos2D.RIGHT)) return -90;
+        if (dir.equals(com.qiqi.li.living.model.Pos2D.DOWN)) return 180;
+        if (dir.equals(com.qiqi.li.living.model.Pos2D.LEFT)) return 90;
+        return 0;
     }
 
     private RotatingWaterWheelModel getOrCreateRotatingModel(ItemStack stack) {
@@ -85,6 +106,11 @@ public class GenericLivingItemOverrides extends ItemOverrides {
         return contextModelCache.computeIfAbsent(variant.getName(),
             name -> new GenericContextAwareModel(
                 resolveVariantModel(variant), vanillaModel));
+    }
+
+    private DirectionalLivingModel getOrCreateDirectionalModel(LivingIconSpec.Variant variant) {
+        return directionalModelCache.computeIfAbsent(variant.getName(),
+            name -> new DirectionalLivingModel(getOrCreateContextModel(variant)));
     }
 
     /**

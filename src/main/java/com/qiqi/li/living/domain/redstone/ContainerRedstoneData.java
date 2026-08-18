@@ -14,12 +14,14 @@ public class ContainerRedstoneData {
     private static final int PROPAGATION_INTERVAL = 2;
 
     private int[] signalStrength;
+    private int[] prevSignalStrength;
 
     private int tickCounter;
     private boolean processedThisTick;
 
     public ContainerRedstoneData(int size) {
         this.signalStrength = new int[size];
+        this.prevSignalStrength = new int[size];
         this.tickCounter = 1;
         this.processedThisTick = false;
     }
@@ -41,6 +43,9 @@ public class ContainerRedstoneData {
     }
 
     private void reset() {
+        int[] temp = prevSignalStrength;
+        prevSignalStrength = signalStrength;
+        signalStrength = temp;
         for (int i = 0; i < signalStrength.length; i++) {
             signalStrength[i] = 0;
         }
@@ -70,23 +75,32 @@ public class ContainerRedstoneData {
 
         if (signalStrength.length != size) {
             signalStrength = new int[size];
+            prevSignalStrength = new int[size];
         }
         reset();
 
-        Queue<Integer> queue = new ArrayDeque<>();
-        boolean[] visited = new boolean[size];
-
-        for (int slot : torchSlots) {
+        // ===== Phase 0: countdown delays, detect power-off using prevSignalStrength =====
+        for (int slot : repeaterSlots) {
             if (slot < 0 || slot >= size) continue;
             ItemStack stack = context.getItem(slot);
             if (stack.isEmpty()) continue;
 
-            LivingRedstoneTorchData data = LivingItemManager.getRedstoneTorchData(stack);
-            if (data.isLit()) {
-                int signal = getSignalCap(stack.getCount());
-                signalStrength[slot] = signal;
-                queue.add(slot);
-                visited[slot] = true;
+            LivingRepeaterData data = LivingItemManager.getRepeaterData(stack);
+            if (!data.powered()) continue;
+
+            Pos2D inputDir = LivingRepeaterFunction.getInputDirection(data.direction());
+            int inputSlot = resolveSlot(slot, inputDir, size, width);
+            boolean hasInput = inputSlot >= 0 && prevSignalStrength[inputSlot] > 0;
+
+            if (!hasInput) {
+                data = data.withPowered(false).withDelayTimer(0);
+                LivingItemManager.setRepeaterData(stack, data);
+                context.syncSlotToClients(slot, stack);
+            } else if (data.delayTimer() > 0) {
+                int newTimer = data.delayTimer() - 1;
+                data = data.withDelayTimer(newTimer);
+                LivingItemManager.setRepeaterData(stack, data);
+                context.syncSlotToClients(slot, stack);
             }
         }
 
@@ -96,11 +110,40 @@ public class ContainerRedstoneData {
             if (stack.isEmpty()) continue;
 
             LivingButtonData data = LivingItemManager.getButtonData(stack);
-            if (data.pressed()) {
-                int signal = getSignalCap(stack.getCount());
-                signalStrength[slot] = signal;
+            if (data.pressed() && data.pulseTimer() > 0) {
+                int newTimer = data.pulseTimer() - 2;
+                if (newTimer <= 0) {
+                    LivingItemManager.setButtonData(stack, data.withPressed(false).withPulseTimer(0));
+                    context.syncSlotToClients(slot, stack);
+                } else {
+                    LivingItemManager.setButtonData(stack, data.withPulseTimer(newTimer));
+                    context.syncSlotToClients(slot, stack);
+                }
+            }
+        }
+
+        // ===== Phase 1: collect all signal sources =====
+        Queue<Integer> queue = new ArrayDeque<>();
+
+        for (int slot : torchSlots) {
+            if (slot < 0 || slot >= size) continue;
+            ItemStack stack = context.getItem(slot);
+            if (stack.isEmpty()) continue;
+            LivingRedstoneTorchData data = LivingItemManager.getRedstoneTorchData(stack);
+            if (data.isLit()) {
+                signalStrength[slot] = getSignalCap(stack.getCount());
                 queue.add(slot);
-                visited[slot] = true;
+            }
+        }
+
+        for (int slot : buttonSlots) {
+            if (slot < 0 || slot >= size) continue;
+            ItemStack stack = context.getItem(slot);
+            if (stack.isEmpty()) continue;
+            LivingButtonData data = LivingItemManager.getButtonData(stack);
+            if (data.pressed()) {
+                signalStrength[slot] = getSignalCap(stack.getCount());
+                queue.add(slot);
             }
         }
 
@@ -108,33 +151,58 @@ public class ContainerRedstoneData {
             if (slot < 0 || slot >= size) continue;
             ItemStack stack = context.getItem(slot);
             if (stack.isEmpty()) continue;
-
             LivingLeverData data = LivingItemManager.getLeverData(stack);
             if (data.powered()) {
-                int signal = getSignalCap(stack.getCount());
-                signalStrength[slot] = signal;
+                signalStrength[slot] = getSignalCap(stack.getCount());
                 queue.add(slot);
-                visited[slot] = true;
             }
         }
 
+        for (int slot : repeaterSlots) {
+            if (slot < 0 || slot >= size) continue;
+            ItemStack stack = context.getItem(slot);
+            if (stack.isEmpty()) continue;
+            LivingRepeaterData data = LivingItemManager.getRepeaterData(stack);
+            if (data.powered() && data.delayTimer() == 0) {
+                signalStrength[slot] = getSignalCap(stack.getCount());
+                queue.add(slot);
+            }
+        }
+
+        for (int slot : comparatorSlots) {
+            if (slot < 0 || slot >= size) continue;
+            ItemStack stack = context.getItem(slot);
+            if (stack.isEmpty()) continue;
+            LivingComparatorData data = LivingItemManager.getComparatorData(stack);
+            int output = computeComparatorOutput(slot, data, size, width, context);
+            if (output > 0) {
+                signalStrength[slot] = output;
+                queue.add(slot);
+            }
+        }
+
+        // ===== Phase 2: iterative propagation until stable =====
         while (!queue.isEmpty()) {
             int current = queue.poll();
             int currentSignal = signalStrength[current];
             if (currentSignal <= 1) continue;
 
             boolean isTorch = torchSlots.contains(current);
-            boolean isButton = buttonSlots.contains(current);
-            boolean isLever = leverSlots.contains(current);
-            boolean isSource = isTorch || isButton || isLever;
+            boolean isSource = isTorch || buttonSlots.contains(current)
+                || leverSlots.contains(current);
+
+            Pos2D outDir = getOutputDirection(current, repeaterSlots, comparatorSlots, context);
 
             int[] neighbors = ContainerContext.getNeighbors(current, size, width);
             for (int neighbor : neighbors) {
-                if (visited[neighbor]) continue;
                 ItemStack neighborStack = context.getItem(neighbor);
                 if (neighborStack.isEmpty()) continue;
+                if (!isRedstoneComponent(neighbor, dustSlots, repeaterSlots, comparatorSlots)) continue;
 
-                if (!dustSlots.contains(neighbor)) continue;
+                if (outDir != null) {
+                    int expected = resolveSlot(current, outDir, size, width);
+                    if (neighbor != expected) continue;
+                }
 
                 if (isTorch) {
                     ItemStack torchStack = context.getItem(current);
@@ -145,45 +213,35 @@ public class ContainerRedstoneData {
                 }
 
                 int newSignal = isSource ? currentSignal : currentSignal - 1;
-
                 int cap = getSignalCap(neighborStack.getCount());
                 newSignal = Math.min(newSignal, cap);
 
                 if (newSignal > signalStrength[neighbor]) {
                     signalStrength[neighbor] = newSignal;
+                    queue.add(neighbor);
                 }
-
-                visited[neighbor] = true;
-                queue.add(neighbor);
             }
         }
 
+        // ===== Phase 3: re-check inputs for components that may have received new signals =====
         for (int slot : repeaterSlots) {
             if (slot < 0 || slot >= size) continue;
             ItemStack stack = context.getItem(slot);
             if (stack.isEmpty()) continue;
 
             LivingRepeaterData data = LivingItemManager.getRepeaterData(stack);
+            if (data.powered() && data.delayTimer() == 0) continue;
+
             Pos2D inputDir = LivingRepeaterFunction.getInputDirection(data.direction());
             int inputSlot = resolveSlot(slot, inputDir, size, width);
-            boolean hasInputSignal = inputSlot >= 0 && signalStrength[inputSlot] > 0;
+            boolean hasInput = inputSlot >= 0 && signalStrength[inputSlot] > 0;
 
-            if (hasInputSignal && !data.powered()) {
+            if (hasInput && !data.powered()) {
                 LivingItemManager.setRepeaterData(stack, data.withPowered(true).withDelayTimer(data.delay()));
                 context.syncSlotToClients(slot, stack);
-            } else if (!hasInputSignal && data.powered()) {
+            } else if (!hasInput && data.powered()) {
                 LivingItemManager.setRepeaterData(stack, data.withPowered(false).withDelayTimer(0));
                 context.syncSlotToClients(slot, stack);
-            } else if (data.powered() && data.delayTimer() > 0) {
-                int newTimer = data.delayTimer() - 1;
-                LivingItemManager.setRepeaterData(stack, data.withDelayTimer(newTimer));
-                context.syncSlotToClients(slot, stack);
-
-                if (newTimer == 0) {
-                    outputRepeaterSignal(stack, slot, repeaterSlots, dustSlots, size, width, context);
-                }
-            } else if (data.powered() && data.delayTimer() == 0) {
-                outputRepeaterSignal(stack, slot, repeaterSlots, dustSlots, size, width, context);
             }
         }
 
@@ -193,94 +251,25 @@ public class ContainerRedstoneData {
             if (stack.isEmpty()) continue;
 
             LivingComparatorData data = LivingItemManager.getComparatorData(stack);
-            Pos2D inputDir = LivingComparatorFunction.getInputDirection(data.direction());
-            int inputASlot = resolveSlot(slot, inputDir, size, width);
-            int signalA = inputASlot >= 0 ? signalStrength[inputASlot] : 0;
-
-            int[] sideSlots = getPerpendicularNeighbors(slot, data.direction(), size, width);
-            int signalB = 0;
-            for (int side : sideSlots) {
-                if (side >= 0) {
-                    signalB = Math.max(signalB, signalStrength[side]);
-                }
-            }
-
-            int output;
-            if (data.subtractMode()) {
-                output = Math.max(0, signalA - signalB);
-            } else {
-                output = signalA >= signalB ? signalA : 0;
-            }
-
-            int cap = getSignalCap(stack.getCount());
-            output = Math.min(output, cap);
-
+            int output = computeComparatorOutput(slot, data, size, width, context);
             boolean newPowered = output > 0;
             if (data.powered() != newPowered) {
                 LivingItemManager.setComparatorData(stack, data.withPowered(newPowered));
                 context.syncSlotToClients(slot, stack);
             }
-
-            if (output > 0) {
-                signalStrength[slot] = output;
-
-                Queue<Integer> cmpQueue = new ArrayDeque<>();
-                boolean[] cmpVisited = new boolean[size];
-                cmpQueue.add(slot);
-                cmpVisited[slot] = true;
-
-                while (!cmpQueue.isEmpty()) {
-                    int current = cmpQueue.poll();
-                    int currentSignal = signalStrength[current];
-                    if (currentSignal <= 1) continue;
-
-                    Pos2D outDir = null;
-                    if (comparatorSlots.contains(current)) {
-                        ItemStack cs = context.getItem(current);
-                        LivingComparatorData cd = LivingItemManager.getComparatorData(cs);
-                        outDir = cd.direction();
-                    }
-
-                    int[] neis = ContainerContext.getNeighbors(current, size, width);
-                    for (int neighbor : neis) {
-                        if (cmpVisited[neighbor]) continue;
-                        ItemStack ns = context.getItem(neighbor);
-                        if (ns.isEmpty()) continue;
-                        if (!dustSlots.contains(neighbor)) continue;
-
-                        if (outDir != null) {
-                            int expectedNeighbor = resolveSlot(current, outDir, size, width);
-                            if (neighbor != expectedNeighbor) continue;
-                        }
-
-                        int newSignal = currentSignal - 1;
-                        int cap2 = getSignalCap(ns.getCount());
-                        newSignal = Math.min(newSignal, cap2);
-
-                        if (newSignal > signalStrength[neighbor]) {
-                            signalStrength[neighbor] = newSignal;
-                        }
-
-                        cmpVisited[neighbor] = true;
-                        cmpQueue.add(neighbor);
-                    }
-                }
-            }
         }
 
+        // ===== Phase 4: update display states =====
         for (int slot : torchSlots) {
             if (slot < 0 || slot >= size) continue;
             ItemStack stack = context.getItem(slot);
             if (stack.isEmpty()) continue;
 
             LivingRedstoneTorchData data = LivingItemManager.getRedstoneTorchData(stack);
-            Pos2D facing = data.direction();
-            Pos2D inputDir = LivingRedstoneTorchFunction.getInputDirection(facing);
-
+            Pos2D inputDir = LivingRedstoneTorchFunction.getInputDirection(data.direction());
             int inputSlot = resolveSlot(slot, inputDir, size, width);
-            boolean hasInputSignal = inputSlot >= 0 && signalStrength[inputSlot] > 0;
-
-            boolean newLit = !hasInputSignal;
+            boolean hasInput = inputSlot >= 0 && signalStrength[inputSlot] > 0;
+            boolean newLit = !hasInput;
             if (data.isLit() != newLit) {
                 LivingItemManager.setRedstoneTorchData(stack, data.withLit(newLit));
                 context.syncSlotToClients(slot, stack);
@@ -320,73 +309,51 @@ public class ContainerRedstoneData {
                 context.syncSlotToClients(slot, stack);
             }
         }
-
-        for (int slot : buttonSlots) {
-            if (slot < 0 || slot >= size) continue;
-            ItemStack stack = context.getItem(slot);
-            if (stack.isEmpty()) continue;
-
-            LivingButtonData data = LivingItemManager.getButtonData(stack);
-            if (data.pressed() && data.pulseTimer() > 0) {
-                int newTimer = data.pulseTimer() - 2;
-                if (newTimer <= 0) {
-                    LivingItemManager.setButtonData(stack, data.withPressed(false).withPulseTimer(0));
-                    context.syncSlotToClients(slot, stack);
-                } else {
-                    LivingItemManager.setButtonData(stack, data.withPulseTimer(newTimer));
-                    context.syncSlotToClients(slot, stack);
-                }
-            }
-        }
     }
 
-    private void outputRepeaterSignal(ItemStack stack, int slot, Set<Integer> repeaterSlots,
-            Set<Integer> dustSlots, int size, int width, ContainerContext context) {
-        int cap = getSignalCap(stack.getCount());
-        if (signalStrength == null || signalStrength.length != size) return;
-        signalStrength[slot] = cap;
+    private boolean isRedstoneComponent(int slot, Set<Integer> dustSlots,
+            Set<Integer> repeaterSlots, Set<Integer> comparatorSlots) {
+        return dustSlots.contains(slot) || repeaterSlots.contains(slot) || comparatorSlots.contains(slot);
+    }
 
-        Queue<Integer> repQueue = new ArrayDeque<>();
-        boolean[] repVisited = new boolean[size];
-        repQueue.add(slot);
-        repVisited[slot] = true;
+    private Pos2D getOutputDirection(int slot, Set<Integer> repeaterSlots,
+            Set<Integer> comparatorSlots, ContainerContext context) {
+        if (repeaterSlots.contains(slot)) {
+            ItemStack stack = context.getItem(slot);
+            LivingRepeaterData data = LivingItemManager.getRepeaterData(stack);
+            return data.direction();
+        }
+        if (comparatorSlots.contains(slot)) {
+            ItemStack stack = context.getItem(slot);
+            LivingComparatorData data = LivingItemManager.getComparatorData(stack);
+            return data.direction();
+        }
+        return null;
+    }
 
-        while (!repQueue.isEmpty()) {
-            int current = repQueue.poll();
-            int currentSignal = signalStrength[current];
-            if (currentSignal <= 1) continue;
+    private int computeComparatorOutput(int slot, LivingComparatorData data,
+            int size, int width, ContainerContext context) {
+        Pos2D inputDir = LivingComparatorFunction.getInputDirection(data.direction());
+        int inputASlot = resolveSlot(slot, inputDir, size, width);
+        int signalA = inputASlot >= 0 ? signalStrength[inputASlot] : 0;
 
-            Pos2D outDir = null;
-            if (repeaterSlots.contains(current)) {
-                ItemStack rs = context.getItem(current);
-                LivingRepeaterData rd = LivingItemManager.getRepeaterData(rs);
-                outDir = rd.direction();
-            }
-
-            int[] neis = ContainerContext.getNeighbors(current, size, width);
-            for (int neighbor : neis) {
-                if (repVisited[neighbor]) continue;
-                ItemStack ns = context.getItem(neighbor);
-                if (ns.isEmpty()) continue;
-                if (!dustSlots.contains(neighbor)) continue;
-
-                if (outDir != null) {
-                    int expectedNeighbor = resolveSlot(current, outDir, size, width);
-                    if (neighbor != expectedNeighbor) continue;
-                }
-
-                int newSignal = currentSignal - 1;
-                int cap2 = getSignalCap(ns.getCount());
-                newSignal = Math.min(newSignal, cap2);
-
-                if (newSignal > signalStrength[neighbor]) {
-                    signalStrength[neighbor] = newSignal;
-                }
-
-                repVisited[neighbor] = true;
-                repQueue.add(neighbor);
+        int[] sideSlots = getPerpendicularNeighbors(slot, data.direction(), size, width);
+        int signalB = 0;
+        for (int side : sideSlots) {
+            if (side >= 0) {
+                signalB = Math.max(signalB, signalStrength[side]);
             }
         }
+
+        int output;
+        if (data.subtractMode()) {
+            output = Math.max(0, signalA - signalB);
+        } else {
+            output = signalA >= signalB ? signalA : 0;
+        }
+
+        int cap = getSignalCap(context.getItem(slot).getCount());
+        return Math.min(output, cap);
     }
 
     private static int resolveSlot(int slot, Pos2D dir, int size, int width) {

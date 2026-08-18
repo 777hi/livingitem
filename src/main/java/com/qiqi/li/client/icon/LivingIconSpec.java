@@ -45,20 +45,23 @@ public class LivingIconSpec {
     private final net.neoforged.neoforge.client.IItemDecorator decorator;
 
     private final boolean rotating;
+    private final boolean directional;
 
     private LivingIconSpec(Item item, List<Variant> variants,
                            net.neoforged.neoforge.client.IItemDecorator decorator,
-                           boolean rotating) {
+                           boolean rotating, boolean directional) {
         this.item = item;
         this.variants = variants;
         this.decorator = decorator;
         this.rotating = rotating;
+        this.directional = directional;
     }
 
     public Item getItem() { return item; }
     public List<Variant> getVariants() { return variants; }
     public net.neoforged.neoforge.client.IItemDecorator getDecorator() { return decorator; }
     public boolean isRotating() { return rotating; }
+    public boolean isDirectional() { return directional; }
 
     /**
      * 判断给定的 ItemStack 是否为活物品。
@@ -112,6 +115,7 @@ public class LivingIconSpec {
         private final java.util.ArrayList<Variant> variants = new java.util.ArrayList<>();
         private net.neoforged.neoforge.client.IItemDecorator decorator;
         private boolean rotating;
+        private boolean directional;
 
         private Builder(Item item) {
             this.item = item;
@@ -151,11 +155,16 @@ public class LivingIconSpec {
             return this;
         }
 
+        public Builder directional() {
+            this.directional = true;
+            return this;
+        }
+
         public LivingIconSpec build() {
             if (variants.isEmpty()) {
                 throw new IllegalStateException("至少需要添加一个变体");
             }
-            return new LivingIconSpec(item, List.copyOf(variants), decorator, rotating);
+            return new LivingIconSpec(item, List.copyOf(variants), decorator, rotating, directional);
         }
     }
 }

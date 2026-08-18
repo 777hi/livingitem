@@ -83,6 +83,13 @@ public final class LivingIconRegistry {
             .addVariant("off", "item/redstone_lamp", stack -> true)
             .build());
 
+        register(LivingIconSpec.builder(net.minecraft.world.item.Items.REDSTONE_TORCH)
+            .addVariant("on", "item/redstone_torch",
+                stack -> com.qiqi.li.living.api.LivingItemManager.getRedstoneTorchData(stack).isLit())
+            .addVariant("off", "item/redstone_torch_off", stack -> true)
+            .directional()
+            .build());
+
         register(LivingIconSpec.builder(net.minecraft.world.item.Items.ENDER_CHEST)
             .addVariant("base", "item/ender", stack -> true)
             .build());
