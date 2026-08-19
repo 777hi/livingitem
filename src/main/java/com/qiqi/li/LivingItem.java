@@ -7,6 +7,7 @@ import com.qiqi.li.living.domain.ender.EnderChannelRegistry;
 import com.qiqi.li.living.interaction.InteractionEntry;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.RandomizableContainer;
 import net.minecraft.world.level.ChunkPos;
 import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
@@ -62,6 +63,7 @@ import com.qiqi.li.living.domain.redstone.LivingLeverFunction;
 import com.qiqi.li.living.domain.redstone.LivingRedstoneLampFunction;
 import com.qiqi.li.living.domain.redstone.LivingRepeaterFunction;
 import com.qiqi.li.living.domain.redstone.LivingComparatorFunction;
+import com.qiqi.li.living.domain.redstone.LivingRedstoneBlockFunction;
 import com.qiqi.li.living.function.LivingFlintAndSteelFunction;
 import com.qiqi.li.living.interaction.InteractionRegistry;
 import com.qiqi.li.living.interaction.IgniteHandler;
@@ -160,6 +162,9 @@ public class LivingItem {
 
         LivingItemManager.registerFunction(new LivingComparatorFunction());
         LOGGER.info("Registered living comparator function");
+
+        LivingItemManager.registerFunction(new LivingRedstoneBlockFunction());
+        LOGGER.info("Registered living redstone block function");
 
         LivingItemManager.registerFunction(new LivingEnderPearlFunction());
         LOGGER.info("Registered living ender pearl function");
@@ -272,6 +277,11 @@ public class LivingItem {
             boolean hasContainer = false;
             for (var be : chunk.getBlockEntities().values()) {
                 var pos = be.getBlockPos();
+
+                if (be instanceof RandomizableContainer rc && rc.getLootTable() != null) {
+                    continue;
+                }
+
                 IItemHandler handler = level.getCapability(
                     Capabilities.ItemHandler.BLOCK, pos, null);
                 if (handler == null) continue;

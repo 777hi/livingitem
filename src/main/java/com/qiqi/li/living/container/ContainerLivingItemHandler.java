@@ -25,6 +25,7 @@ import net.minecraft.world.level.block.ChestBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.ChestType;
+import net.minecraft.world.RandomizableContainer;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.items.wrapper.InvWrapper;
@@ -214,12 +215,6 @@ public class ContainerLivingItemHandler {
             return;
         }
 
-        TickContext tick = new TickContext(context);
-
-        if (context instanceof SimpleContainerContext simpleCtx) {
-            simpleCtx.setTickContext(tick);
-        }
-
         Map<LivingItemFunction, List<LivingItemFunction.SlotEntry>> grouped = new LinkedHashMap<>();
 
         for (int i = 0; i < context.getSize(); i++) {
@@ -234,15 +229,19 @@ public class ContainerLivingItemHandler {
         }
 
         if (grouped.isEmpty()) {
-            if (context instanceof SimpleContainerContext simpleCtx) {
-                simpleCtx.setTickContext(null);
-            }
             long elapsedMs = (System.nanoTime() - startNanos) / 1_000_000;
             PerfMetrics.recordTick(elapsedMs);
+            PerfMetrics.recordPhase("scan", elapsedMs);
             if (PerfMetrics.shouldReport()) {
                 PerfMetrics.printReport();
             }
             return;
+        }
+
+        TickContext tick = new TickContext(context);
+
+        if (context instanceof SimpleContainerContext simpleCtx) {
+            simpleCtx.setTickContext(tick);
         }
 
         Map<String, Set<Integer>> functionSlots = new LinkedHashMap<>();
@@ -260,11 +259,20 @@ public class ContainerLivingItemHandler {
             PerfMetrics.recordFunctionCall(entry.getKey().getFunctionId());
         }
 
+        long scanEndNanos = System.nanoTime();
+        PerfMetrics.recordPhase("scan", (scanEndNanos - startNanos) / 1_000_000);
+
         for (var entry : grouped.entrySet()) {
             entry.getKey().tick(entry.getValue(), context, tick, level);
         }
 
+        long funcTickEndNanos = System.nanoTime();
+        PerfMetrics.recordPhase("func_tick", (funcTickEndNanos - scanEndNanos) / 1_000_000);
+
         EnderChannelRegistry.getInstance().flushDirtyChannels();
+
+        long flushChEndNanos = System.nanoTime();
+        PerfMetrics.recordPhase("flush_channels", (flushChEndNanos - funcTickEndNanos) / 1_000_000);
 
         List<Map.Entry<LivingItemFunction, List<LivingItemFunction.SlotEntry>>> hcdEntries = new ArrayList<>();
         for (var entry : grouped.entrySet()) {
@@ -277,6 +285,9 @@ public class ContainerLivingItemHandler {
         for (var entry : hcdEntries) {
             ((HasContainerData) entry.getKey()).tickContainerData(entry.getValue(), context, tick);
         }
+
+        long containerDataEndNanos = System.nanoTime();
+        PerfMetrics.recordPhase("container_data", (containerDataEndNanos - flushChEndNanos) / 1_000_000);
 
         ContainerStressData stressData = tick.stressData;
         if (stressData != null && context instanceof SimpleContainerContext simpleCtx) {
@@ -304,12 +315,18 @@ public class ContainerLivingItemHandler {
             cleanupStaleRedstoneData(currentTimeMs);
         }
 
+        long stressEndNanos = System.nanoTime();
+        PerfMetrics.recordPhase("stress", (stressEndNanos - containerDataEndNanos) / 1_000_000);
+
         if (context instanceof SimpleContainerContext simpleCtx2) {
             simpleCtx2.flushDirtySlots();
             simpleCtx2.setTickContext(null);
         }
 
-        long elapsedMs = (System.nanoTime() - startNanos) / 1_000_000;
+        long flushSlotsEndNanos = System.nanoTime();
+        PerfMetrics.recordPhase("flush_slots", (flushSlotsEndNanos - stressEndNanos) / 1_000_000);
+
+        long elapsedMs = (flushSlotsEndNanos - startNanos) / 1_000_000;
 
         // 记录 tick 耗时
         PerfMetrics.recordTick(elapsedMs);
@@ -352,12 +369,22 @@ public class ContainerLivingItemHandler {
             for (BlockPos cp : doubleChestPos) {
                 positions.add(cp);
                 BlockEntity halfBe = level.getBlockEntity(cp);
-                if (halfBe != null) blockEntities.add(halfBe);
+                if (halfBe != null) {
+                    if (halfBe instanceof RandomizableContainer rc && rc.getLootTable() != null) {
+                        return false;
+                    }
+                    blockEntities.add(halfBe);
+                }
             }
         } else {
             positions.add(pos);
             BlockEntity be = level.getBlockEntity(pos);
-            if (be != null) blockEntities.add(be);
+            if (be != null) {
+                if (be instanceof RandomizableContainer rc && rc.getLootTable() != null) {
+                    return false;
+                }
+                blockEntities.add(be);
+            }
         }
 
         ContainerContext context = new SimpleContainerContext(handler, null, positions, blockEntities, level);

@@ -86,10 +86,12 @@ public class ContainerRedstoneData {
         Set<Integer> lampSlots = tick.getFunctionSlots(LivingRedstoneLampFunction.ID);
         Set<Integer> repeaterSlots = tick.getFunctionSlots(LivingRepeaterFunction.ID);
         Set<Integer> comparatorSlots = tick.getFunctionSlots(LivingComparatorFunction.ID);
+        Set<Integer> redstoneBlockSlots = tick.getFunctionSlots(LivingRedstoneBlockFunction.ID);
 
         boolean hasAny = !torchSlots.isEmpty() || !dustSlots.isEmpty()
             || !buttonSlots.isEmpty() || !leverSlots.isEmpty() || !lampSlots.isEmpty()
-            || !repeaterSlots.isEmpty() || !comparatorSlots.isEmpty();
+            || !repeaterSlots.isEmpty() || !comparatorSlots.isEmpty()
+            || !redstoneBlockSlots.isEmpty();
         if (!hasAny) return;
 
         if (edgeGrid == null || edgeGrid.width != width || edgeGrid.height != height) {
@@ -100,7 +102,7 @@ public class ContainerRedstoneData {
 
         phase0CountdownDelays(repeaterSlots, buttonSlots, size, context);
         Queue<Integer> queue = phase1CollectSources(torchSlots, buttonSlots, leverSlots,
-            repeaterSlots, comparatorSlots, dustSlots, size, width, context);
+            repeaterSlots, comparatorSlots, dustSlots, redstoneBlockSlots, size, width, context);
         phase2Propagation(queue, dustSlots, repeaterSlots, comparatorSlots,
             torchSlots, lampSlots, size, width, context);
         phase3RecheckInputs(repeaterSlots, comparatorSlots, size, context);
@@ -116,17 +118,26 @@ public class ContainerRedstoneData {
 
             LivingRepeaterData data = LivingItemManager.getRepeaterData(stack);
             if (!data.powered()) continue;
+            if (data.delayTimer() == 0) continue;
 
             int inputDir = edgeIndex(data.direction().opposite());
             boolean hasInput = prevEdgeGrid.get(slot, inputDir) > 0;
 
-            if (!hasInput) {
-                data = data.withPowered(false).withDelayTimer(0);
+            if (data.delayTimer() > 0) {
+                if (!hasInput) {
+                    data = data.withPowered(false).withDelayTimer(0);
+                } else {
+                    data = data.withDelayTimer(data.delayTimer() - 1);
+                }
                 LivingItemManager.setRepeaterData(stack, data);
                 context.syncSlotToClients(slot, stack);
-            } else if (data.delayTimer() > 0) {
-                int newTimer = data.delayTimer() - 1;
-                data = data.withDelayTimer(newTimer);
+            } else {
+                int newTimer = data.delayTimer() + 1;
+                if (newTimer == 0) {
+                    data = data.withPowered(false).withDelayTimer(0);
+                } else {
+                    data = data.withDelayTimer(newTimer);
+                }
                 LivingItemManager.setRepeaterData(stack, data);
                 context.syncSlotToClients(slot, stack);
             }
@@ -153,7 +164,7 @@ public class ContainerRedstoneData {
 
     private Queue<Integer> phase1CollectSources(Set<Integer> torchSlots, Set<Integer> buttonSlots,
             Set<Integer> leverSlots, Set<Integer> repeaterSlots, Set<Integer> comparatorSlots,
-            Set<Integer> dustSlots, int size, int width, ContainerContext context) {
+            Set<Integer> dustSlots, Set<Integer> redstoneBlockSlots, int size, int width, ContainerContext context) {
         Queue<Integer> queue = new ArrayDeque<>();
 
         for (int slot : torchSlots) {
@@ -221,7 +232,7 @@ public class ContainerRedstoneData {
             ItemStack stack = context.getItem(slot);
             if (stack.isEmpty()) continue;
             LivingRepeaterData data = LivingItemManager.getRepeaterData(stack);
-            if (!data.powered() || data.delayTimer() != 0) continue;
+            if (!data.powered() || data.delayTimer() > 0) continue;
 
             int cap = getSignalCap(stack.getCount());
             int outDir = edgeIndex(data.direction());
@@ -248,6 +259,23 @@ public class ContainerRedstoneData {
                 edgeGrid.set(slot, outDir, output);
                 if (neighbor >= 0 && dustSlots.contains(neighbor)) {
                     queue.add(neighbor);
+                }
+            }
+        }
+
+        for (int slot : redstoneBlockSlots) {
+            if (slot < 0 || slot >= size) continue;
+            ItemStack stack = context.getItem(slot);
+            if (stack.isEmpty()) continue;
+
+            int cap = getSignalCap(stack.getCount());
+            for (int dir = 0; dir < 4; dir++) {
+                int neighbor = resolveSlot(slot, dir, size, width);
+                if (cap > edgeGrid.get(slot, dir)) {
+                    edgeGrid.set(slot, dir, cap);
+                    if (neighbor >= 0 && dustSlots.contains(neighbor)) {
+                        queue.add(neighbor);
+                    }
                 }
             }
         }
@@ -295,7 +323,7 @@ public class ContainerRedstoneData {
             if (stack.isEmpty()) continue;
 
             LivingRepeaterData data = LivingItemManager.getRepeaterData(stack);
-            if (data.powered() && data.delayTimer() == 0) continue;
+            if (data.powered() && data.delayTimer() > 0) continue;
 
             int inputDir = edgeIndex(data.direction().opposite());
             boolean hasInput = edgeGrid.get(slot, inputDir) > 0;
@@ -303,8 +331,11 @@ public class ContainerRedstoneData {
             if (hasInput && !data.powered()) {
                 LivingItemManager.setRepeaterData(stack, data.withPowered(true).withDelayTimer(data.delay()));
                 context.syncSlotToClients(slot, stack);
-            } else if (!hasInput && data.powered()) {
-                LivingItemManager.setRepeaterData(stack, data.withPowered(false).withDelayTimer(0));
+            } else if (hasInput && data.powered() && data.delayTimer() < 0) {
+                LivingItemManager.setRepeaterData(stack, data.withDelayTimer(0));
+                context.syncSlotToClients(slot, stack);
+            } else if (!hasInput && data.powered() && data.delayTimer() == 0) {
+                LivingItemManager.setRepeaterData(stack, data.withDelayTimer(-data.delay()));
                 context.syncSlotToClients(slot, stack);
             }
         }

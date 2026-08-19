@@ -47,8 +47,11 @@ public class SimpleContainerContext implements ContainerContext {
 
     public void setTickContext(TickContext tick) {
         this.currentTickContext = tick;
-        if (tick != null && redstoneData != null) {
-            redstoneData.resetProcessedFlag();
+        if (tick != null) {
+            ContainerRedstoneData rd = getOrCreateRedstoneData();
+            if (rd != null) {
+                rd.resetProcessedFlag();
+            }
         }
     }
 

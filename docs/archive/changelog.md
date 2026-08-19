@@ -4,6 +4,51 @@
 
 ---
 
+## 2026-08-19
+
+- ✅ **修复：活中继器延迟计数器不减少**（活红石中继器的延迟计数器每 tick 被重置，导致永远无法输出信号）
+  - **根因**：`SimpleContainerContext` 实例每 tick 重建，其内部的 `redstoneData` 字段始终为 null，`getOrCreateRedstoneData()` 每 tick 创建新实例。这导致 `edgeGrid` / `prevEdgeGrid`（边信号状态）和 `tickCounter`（延迟计数器）每 tick 丢失，中继器功能无法正常工作。
+  - **修复**：
+    - `ContainerLivingItemHandler`：新增 `REDSTONE_DATA_CACHE` 静态缓存（`LinkedHashMap`），通过 `containerKey` 关联，确保 `edgeGrid` / `prevEdgeGrid` / `tickCounter` 跨 tick 持久化
+    - `SimpleContainerContext.getOrCreateRedstoneData()`：改为从 `ContainerLivingItemHandler.getRedstoneData()` 获取数据，而非新建实例
+    - `ContainerRedstoneData`：新增 `lastTickTime` 字段，在 `calculate()` 中更新，支持过期清理
+    - `ContainerChunkCache.onBlockBreak`：新增 `removeRedstoneDataByPos()` 调用，事件驱动清理
+    - `ContainerLivingItemHandler.cleanupStaleRedstoneData()`：每 120 秒清理一次 120 秒内未访问的红石数据
+  - **清理机制**：事件驱动清理（`removeRedstoneDataByPos`）→ 定期过期清理（`cleanupStaleRedstoneData`）→ 容器销毁清理（`removeRedstoneData`）
+
+- ✅ **修复：区块重新加载后活物品不工作（残留问题）**（2026-08-17 的修复未完全解决，离开区块一定时间后返回容器中活物品仍停止 tick）
+  - **残留根因**：`ChunkEvent.Load` 在 `MinecraftServer.waitUntilNextTick()` 的 `runAllTasks()` 中触发，而 `processLevelContainers` 在 `ServerTickEvent.Post` 中执行（早于 `runAllTasks`）。`onChunkUnload` 立即从缓存中移除区块 → `ChunkEvent.Load` 来不及在同一 tick 加回缓存 → `processLevelContainers` 找不到该区块。
+  - **修复**：
+    - `ContainerChunkCache.onChunkUnload`：不再从缓存中移除区块，改为由 `cleanupStaleEntries` 统一清理
+    - `ContainerChunkCache.cleanupStaleEntries`：首次调用时仅初始化 `lastCleanup` 时间戳并返回，避免立即清理刚卸载、即将重新加载的区块
+  - **修复后流程**：卸载 → 缓存保留 → 重新加载 → 下一 tick 正常处理（最多延迟 1 tick）
+
+- ✅ **修复：活中继器输入端有信号但显示无信号**（红石火把等信号源正常输出，但中继器始终显示"unpowered"，无法检测到输入信号）
+  - **根因**：`SimpleContainerContext` 实例每 tick 重新创建，`setTickContext()` 中 `resetProcessedFlag()` 的调用被 `redstoneData != null` 条件守卫。由于新实例的 `redstoneData` 字段始终为 null，`resetProcessedFlag()` 永远不会被调用。`ContainerRedstoneData.processedThisTick` 在第一 tick 后被设为 true 后永不重置，导致 `calculate()` 从第二 tick 起直接返回，完全跳过红石计算。
+  - **修复**：
+    - `SimpleContainerContext.setTickContext()`：改为主动调用 `getOrCreateRedstoneData()` 从静态缓存获取已持久化的 `ContainerRedstoneData` 实例，再调用 `resetProcessedFlag()`，确保每一 tick 开始时 `processedThisTick` 被正确重置为 false
+  - **相关知识**：`calculate()` 是一次性处理所有红石类型（火把、中继器、比较器、红石粉、灯、按钮、拉杆）的综合方法，`processedThisTick` 标志的作用是防止多个 `HasContainerData` 函数在同一 tick 重复调用 `calculate()`，而非区分不同红石类型的处理顺序。因此调整各功能 `getPriority()` 的方案并不对症——真正的问题在于该标志从未被重置。
+
+- ✅ **修复：活中继器不能延迟熄灭**（输入信号消失后应延迟对应时间再停止输出，而非立即熄灭）
+  - **根因**：`phase0CountdownDelays` 中 `!hasInput` 分支立即将 `powered` 设为 false 且 `delayTimer` 归零，`phase3RecheckInputs` 中 `!hasInput && data.powered()` 分支同理。中继器只有"上升沿延迟"（ON_DELAY），没有"下降沿延迟"（OFF_DELAY）。
+  - **修复**：利用 `delayTimer` 的正负号区分两种延迟方向，无需修改 `LivingRepeaterData` 记录结构：
+    - `delayTimer > 0`：ON_DELAY（等待开启，不输出信号）
+    - `delayTimer = 0`：ON（正常输出）
+    - `delayTimer < 0`：OFF_DELAY（等待关闭，**继续输出信号**）
+  - **具体变更**：
+    - `phase0CountdownDelays`：`delayTimer > 0` 时递减（ON_DELAY 倒计时），`delayTimer < 0` 时递增趋近于 0（OFF_DELAY 倒计时）。ON_DELAY 期间若输入消失则取消（`powered=false`）；OFF_DELAY 归零时转为 OFF（`powered=false`）
+    - `phase1CollectSources` 中继器输出条件：`delayTimer() != 0` → `delayTimer() > 0`，确保 OFF_DELAY（`delayTimer < 0`）期间继续输出信号
+    - `phase3RecheckInputs`：新增三种过渡——`hasInput && powered && delayTimer < 0`（OFF_DELAY 期间输入恢复，取消延迟回到 ON）；`!hasInput && powered && delayTimer == 0`（ON 状态下输入消失，启动 OFF_DELAY，`delayTimer = -delay`）
+    - `LivingRepeaterFunction.addToTooltip`：OFF_DELAY 期间用 `Math.abs()` 显示正数
+
+- ✅ **新增：活红石块**（`Items.REDSTONE_BLOCK`）
+  - 常亮信号源，向四个方向输出信号强度 15（受堆叠数衰减），无状态数据
+  - 新增 `LivingRedstoneBlockFunction`：实现 `LivingItemFunction` + `HasContainerData`，`canApply` 匹配 `Items.REDSTONE_BLOCK`
+  - `ContainerRedstoneData.phase1CollectSources`：新增 `redstoneBlockSlots` 参数，红石块始终向 4 方向写边信号
+  - 无 DataComponent：红石块无状态，无需持久化数据
+
+---
+
 ## 2026-08-17
 
 - ✅ **修复：区块重新加载后活物品不工作**（离开区块一定时间后返回，容器中活物品停止 tick；重新进入游戏恢复正常）
@@ -14,6 +59,7 @@
     - `ContainerChunkCache.cleanupStaleEntries`：新增定期清理方法，每 6000 ticks（约 5 分钟）清理一次真正已卸载的区块，作为兜底机制防止内存泄漏
     - `ContainerChunkCache.clear()`：同步清理 `lastCleanupTick` 时间戳
   - **清理机制三层保障**：`onChunkUnload`（即时移除）→ `!hasContainer` 检查（自清洁）→ `cleanupStaleEntries`（兜底清理）
+  - **注意**：此修复在 2026-08-19 发现残留问题——`onChunkUnload` 即时移除与 `ChunkEvent.Load` 晚触发之间存在时序窗口，见 2026-08-19 记录。
 
 ---
 

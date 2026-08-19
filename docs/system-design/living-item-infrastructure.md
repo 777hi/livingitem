@@ -1,7 +1,7 @@
 # 活物品基础设施系统设计
 
-> **文档版本**: 2026.08 v7  
-> **最后更新**: 2026-08-17  
+> **文档版本**: 2026.08 v8  
+> **最后更新**: 2026-08-19  
 > **适用版本**: Minecraft 1.21.1 + NeoForge 21.1.x
 
 ## 目录
@@ -822,7 +822,7 @@ for (var entry : hcdEntries) {
 | `snapshot` | 容器快照，预扫描的活漏斗连接图和过滤链 |
 | `fluidData` | 容器关联的流体状态 |
 | `stressData` | 容器关联的应力状态 |
-| `redstoneData` | 容器关联的红石信号状态 |
+| `redstoneData` | 容器关联的红石信号状态（延迟获取，从 `ContainerLivingItemHandler.REDSTONE_DATA_CACHE` 静态缓存中按 `containerKey` 获取持久化实例，确保 `edgeGrid`/`prevEdgeGrid`/`tickCounter` 跨 tick 保留） |
 | `containerDataStore` | 通用容器级数据存储（`Map<Class<?>, Object>`），新数据类型无需在 TickContext 中新增字段 |
 | `functionSlots` | 功能槽位缓存，processContext 分组时填充，O(1) 读取各功能的活跃槽位集合 |
 

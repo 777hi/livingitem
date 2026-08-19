@@ -2,7 +2,7 @@
 
 # Living Redstone (活红石) 技术文档
 
-> **文档版本**: 2026.08 v3
+> **文档版本**: 2026.08 v5
 > **最后更新**: 2026-08-19
 > **适用版本**: Minecraft 1.21.1
 
@@ -144,10 +144,12 @@ public class ContainerRedstoneData {
     private EdgeGrid prevEdgeGrid;      // 上一帧边信号（用于断电检测）
     private int tickCounter;            // tick 计数器（用于传播间隔）
     private boolean processedThisTick;  // 当前 tick 是否已计算
+    private long lastTickTime;          // 最后访问时间戳（用于过期清理）
 
     public ContainerRedstoneData(int size) { ... }
     public int getSignal(int slot) { ... }
     public void calculate(ContainerContext context, TickContext tick) { ... }
+    public void resetProcessedFlag() { ... }
 }
 ```
 
@@ -156,8 +158,11 @@ public class ContainerRedstoneData {
 | `edgeGrid` | EdgeGrid | 当前帧边信号网格，存储所有槽位间边的信号值 |
 | `prevEdgeGrid` | EdgeGrid | 上一帧边信号，Phase 0 用于中继器断电检测 |
 | `tickCounter` | int | 自增计数器，每 2 tick 触发一次 calculate() |
-| `processedThisTick` | boolean | 同一 tick 内多个 Function 触发时，保证只计算一次 |
+| `processedThisTick` | boolean | 同一 tick 内多个 Function 触发时，保证只计算一次。每 tick 开始时由 `SimpleContainerContext.setTickContext()` 重置 |
+| `lastTickTime` | long | 最后访问时间戳，`ContainerLivingItemHandler.cleanupStaleRedstoneData()` 每 120 秒清理超过 120 秒未访问的条目 |
 | `PROPAGATION_INTERVAL` | int (static) | 传播间隔 = 2 tick，与原版红石更新频率一致 |
+
+**持久化机制**：`ContainerRedstoneData` 实例通过 `ContainerLivingItemHandler.REDSTONE_DATA_CACHE`（`LinkedHashMap<String, ContainerRedstoneData>`）静态缓存持久化，以 `containerKey` 为键。`SimpleContainerContext` 每 tick 重建，但其 `getOrCreateRedstoneData()` 从缓存获取同一实例，确保 `edgeGrid`、`prevEdgeGrid`、`tickCounter` 等关键状态跨 tick 保留。`resetProcessedFlag()` 在每 tick 开始时由 `setTickContext()` 调用，确保 `processedThisTick` 被正确重置。
 
 ### 2.3.1 EdgeGrid — 共享边信号网格
 
@@ -304,6 +309,10 @@ ItemStack (minecraft:redstone)
     ├─ signalStrength: int                       ← 当前信号强度
     └─ isPowered: boolean                        ← 是否激活
 
+ItemStack (minecraft:redstone_block)
+├── IS_LIVING: true                              ← 活物品标记
+└── （无额外数据）                                ← 常亮信号源，无需状态数据
+
 ItemStack (minecraft:redstone_torch)
 ├── IS_LIVING: true
 └── LIVING_REDSTONE_TORCH_DATA: LivingRedstoneTorchData
@@ -361,16 +370,29 @@ calculate(context, tick):
 **Phase 0 — 倒计时 + 断电检测**：
 ```
 遍历中继器：
+  if !powered → skip
+  if delayTimer == 0 → skip（无需倒计时）
   inputDir = edgeIndex(data.direction().opposite())  // 输入方向边
   hasInput = prevEdgeGrid.get(slot, inputDir) > 0  // 用上一帧边信号
 
-  if !hasInput → powered = false, delayTimer = 0（立即断电）
-  else if delayTimer > 0 → delayTimer--（继续倒计时）
+  if delayTimer > 0（ON_DELAY，等待开启）：
+    if !hasInput → powered = false, delayTimer = 0（取消延迟）
+    else → delayTimer--（继续倒计时）
+  else（delayTimer < 0，OFF_DELAY，等待关闭）：
+    delayTimer++（向 0 递增）
+    if delayTimer == 0 → powered = false（延迟结束，关闭）
 
 遍历按钮：
   if pressed && pulseTimer > 0 → pulseTimer -= 2
   if pulseTimer <= 0 → pressed = false
 ```
+
+**delayTimer 语义**：利用正负号区分两种延迟方向，无需修改数据记录结构：
+| delayTimer | 状态 | 输出信号 | 说明 |
+|-----------|------|---------|------|
+| > 0 | ON_DELAY | 否 | 输入已出现，等待延迟后开启输出 |
+| = 0 | ON | 是 | 正常输出信号 |
+| < 0 | OFF_DELAY | **是** | 输入已消失，等待延迟后关闭输出（期间继续输出） |
 
 **Phase 1 — 收集信号源**：
 ```
@@ -396,7 +418,7 @@ calculate(context, tick):
       if 邻居是红石粉 → 邻居入队
 
 遍历中继器：
-  if !powered || delayTimer != 0 → skip
+  if !powered || delayTimer > 0 → skip
   cap = getSignalCap(count)
   outDir = edgeIndex(data.direction())      // 仅输出方向
   if cap > edgeGrid.get(slot, outDir)：
@@ -410,6 +432,13 @@ calculate(context, tick):
   if output > edgeGrid.get(slot, outDir)：
     edgeGrid.set(slot, outDir, output)
     if 邻居是红石粉 → 邻居入队
+
+遍历红石块：
+  cap = getSignalCap(count)
+  for 4 方向 dir：
+    if cap > edgeGrid.get(slot, dir)：
+      edgeGrid.set(slot, dir, cap)
+      if 邻居是红石粉 → 邻居入队
 
 返回 BFS 队列（仅含红石粉）
 ```
@@ -438,11 +467,14 @@ while queue not empty:
 **Phase 3 — 重新检测输入**：
 ```
 遍历中继器：
-  if powered && delayTimer == 0 → 跳过（已在 Phase 1 输出）
+  if powered && delayTimer > 0 → 跳过（ON_DELAY 进行中，由 Phase 0 处理）
   inputDir = edgeIndex(data.direction().opposite())
   hasInput = edgeGrid.get(slot, inputDir) > 0  // 用当前帧边信号
-  if hasInput && !powered → powered = true, delayTimer = delay
-  if !hasInput && powered → powered = false, delayTimer = 0
+
+  // 四种过渡：
+  if hasInput && !powered → powered = true, delayTimer = delay（OFF → ON_DELAY）
+  if hasInput && powered && delayTimer < 0 → delayTimer = 0（OFF_DELAY → ON，输入恢复）
+  if !hasInput && powered && delayTimer == 0 → delayTimer = -delay（ON → OFF_DELAY）
 
 遍历比较器：
   output = computeComparatorOutput()
@@ -782,11 +814,11 @@ newSignal = min(邻居信号 - 1, getSignalCap(自身堆叠数))
 
 ### 8.1 HasContainerData 接口
 
-活红石系统通过 `HasContainerData` 接口融入容器级数据计算流程：
+活红石系统通过 `HasContainerData` 接口融入容器级数据计算流程。所有红石功能类（红石粉、火把、中继器、比较器、按钮、拉杆、灯）均实现此接口，各自在 `tickContainerData()` 中调用 `redstoneData.calculate()`：
 
 ```java
-// LivingRedstoneFunction
-public class LivingRedstoneFunction implements LivingItemFunction, HasContainerData {
+// LivingRepeaterFunction（及其他红石功能类）
+public class LivingRepeaterFunction implements LivingItemFunction, HasContainerData {
 
     @Override
     public int getPriority() {
@@ -795,17 +827,24 @@ public class LivingRedstoneFunction implements LivingItemFunction, HasContainerD
 
     @Override
     public void tickContainerData(List<SlotEntry> entries, ContainerContext ctx, TickContext tick) {
-        ContainerRedstoneData redstoneData = tick.redstoneData;
-        if (redstoneData == null) {
-            redstoneData = new ContainerRedstoneData(ctx.getSize());
-            tick.redstoneData = redstoneData;
-        }
+        ContainerRedstoneData redstoneData = tick.getOrCreateRedstoneData(ctx);
         redstoneData.calculate(ctx, tick);
     }
 }
 ```
 
-`LivingRedstoneTorchFunction` 同样实现了 `HasContainerData`（优先级 2），确保火把独立存在时也能触发信号传播。
+**关键设计**：`calculate()` 内部有 `processedThisTick` 去重守卫，确保同一 tick 内多个红石功能类调用时只执行一次计算。`ContainerRedstoneData` 实例通过 `ContainerLivingItemHandler.REDSTONE_DATA_CACHE` 静态缓存持久化，`SimpleContainerContext.setTickContext()` 在每 tick 开始时调用 `resetProcessedFlag()` 重置去重标志。
+
+**数据获取链路**：
+```
+tick.getOrCreateRedstoneData(ctx)
+  → TickContext.redstoneData 为 null 时
+    → SimpleContainerContext.getOrCreateRedstoneData()
+      → SimpleContainerContext.redstoneData 为 null 时
+        → ContainerLivingItemHandler.getRedstoneData(containerKey)
+          → REDSTONE_DATA_CACHE.computeIfAbsent(containerKey, ...)
+          → 返回持久化的 ContainerRedstoneData 实例
+```
 
 ### 8.2 容器级数据计算流程
 

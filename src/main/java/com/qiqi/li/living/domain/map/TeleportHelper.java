@@ -171,10 +171,7 @@ public final class TeleportHelper {
                         passenger.startRiding(vehicle, true);
                     }
                 } else {
-                    DimensionTransition transition = new DimensionTransition(
-                        targetLevel, new Vec3(destX, destY, destZ), Vec3.ZERO,
-                        player.getYRot(), player.getXRot(), DimensionTransition.DO_NOTHING);
-                    player.changeDimension(transition);
+                    player.teleportTo(destX, destY, destZ);
                 }
             }
         }

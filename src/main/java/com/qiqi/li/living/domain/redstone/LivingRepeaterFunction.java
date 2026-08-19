@@ -72,6 +72,10 @@ public class LivingRepeaterFunction implements LivingItemFunction, HasDirection,
                 tooltipAdder.accept(Component.translatable("tooltip.livingitem.repeater.delay_timer")
                     .append(Component.literal(": " + data.delayTimer()))
                     .withStyle(ChatFormatting.GRAY));
+            } else if (data.delayTimer() < 0) {
+                tooltipAdder.accept(Component.translatable("tooltip.livingitem.repeater.delay_timer")
+                    .append(Component.literal(": " + Math.abs(data.delayTimer())))
+                    .withStyle(ChatFormatting.GRAY));
             }
         } else {
             tooltipAdder.accept(Component.translatable("tooltip.livingitem.repeater.unpowered")

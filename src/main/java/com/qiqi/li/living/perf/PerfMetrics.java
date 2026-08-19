@@ -53,6 +53,15 @@ public class PerfMetrics {
     private static final AtomicLong transferSuccess = new AtomicLong(0);
     private static final AtomicLong transferFail = new AtomicLong(0);
 
+    // ===== processContext 分阶段耗时 =====
+    private static final Map<String, PhaseStats> phaseStats = new ConcurrentHashMap<>();
+
+    private static class PhaseStats {
+        final AtomicLong totalMs = new AtomicLong(0);
+        final AtomicLong maxMs = new AtomicLong(0);
+        final AtomicInteger count = new AtomicInteger(0);
+    }
+
     // ===== 报告控制 =====
     private static final long REPORT_INTERVAL_MS = 60_000;
     private static volatile long lastReportTime = System.currentTimeMillis();
@@ -134,6 +143,17 @@ public class PerfMetrics {
     }
 
     // ══════════════════════════════════════════════
+    // processContext 分阶段耗时
+    // ══════════════════════════════════════════════
+
+    public static void recordPhase(String phase, long elapsedMs) {
+        PhaseStats stats = phaseStats.computeIfAbsent(phase, k -> new PhaseStats());
+        stats.totalMs.addAndGet(elapsedMs);
+        stats.count.incrementAndGet();
+        stats.maxMs.accumulateAndGet(elapsedMs, Math::max);
+    }
+
+    // ══════════════════════════════════════════════
     // 报告
     // ══════════════════════════════════════════════
 
@@ -173,6 +193,17 @@ public class PerfMetrics {
             count, avgMs, p99, maxMs, CONTAINER_THRESHOLD_MS, overThreshold);
         ModLog.PERF.info("[LivingItems] {}", formatMap(livingItemCounts));
         ModLog.PERF.info("[FunctionCalls] {}", formatMap(functionCalls));
+
+        if (!phaseStats.isEmpty()) {
+            StringBuilder sb = new StringBuilder("[Phases]");
+            phaseStats.forEach((phase, stats) -> {
+                int n = stats.count.get();
+                if (n == 0) return;
+                sb.append(" ").append(phase).append(": avg=").append(stats.totalMs.get() / n)
+                  .append("ms max=").append(stats.maxMs.get()).append("ms calls=").append(n);
+            });
+            ModLog.PERF.info(sb.toString());
+        }
     }
 
     private static void printTeleportSection() {
@@ -256,6 +287,7 @@ public class PerfMetrics {
         cacheSelfCleanRemoves.set(0);
         transferSuccess.set(0);
         transferFail.set(0);
+        phaseStats.clear();
         for (int i = 0; i < P99_BUFFER_SIZE; i++) {
             p99Buffer.set(i, -1);
         }

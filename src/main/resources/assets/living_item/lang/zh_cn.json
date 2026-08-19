@@ -92,6 +92,9 @@
   "tooltip.livingitem.comparator.unpowered": "  §8无输出",
   "tooltip.livingitem.comparator.max_signal": "  §7最大信号",
 
+  "tooltip.livingitem.redstone_block.title": "§c活红石块§r",
+  "tooltip.livingitem.redstone_block.max_signal": "  §7最大信号",
+
   "tooltip.livingitem.ender_chest.status": "§d活末影箱§r",
   "tooltip.livingitem.ender_chest.bound_player": "  §b绑定: %s§r",
   "tooltip.livingitem.ender_chest.channel": "  §7频道: §e%d§r",

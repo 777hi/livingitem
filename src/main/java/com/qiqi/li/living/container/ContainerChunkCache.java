@@ -67,19 +67,19 @@ public class ContainerChunkCache {
     }
 
     /**
-     * 区块卸载事件 —— 从缓存中移除该区块。
+     * 区块卸载事件 —— 不立即从缓存中移除。
+     *
+     * 为什么不在卸载时移除：
+     *   ChunkEvent.Load 在 waitUntilNextTick() 的 runAllTasks() 中触发，
+     *   而 processLevelContainers 在 ServerTickEvent.Post 中执行（早于 runAllTasks）。
+     *   如果卸载时移除，重新加载时 ChunkEvent.Load 来不及在同一 tick 加回缓存，
+     *   导致 processLevelContainers 找不到该区块。
+     *
+     * 改为由 cleanupStaleEntries 定期清理已卸载的区块（兜底机制）。
      */
     @SubscribeEvent
     public void onChunkUnload(ChunkEvent.Unload event) {
-        if (event.getLevel() instanceof ServerLevel level) {
-            ResourceKey<Level> dim = level.dimension();
-            ChunkPos pos = event.getChunk().getPos();
-
-            Set<ChunkPos> chunkSet = chunkCache.get(dim);
-            if (chunkSet != null) {
-                chunkSet.remove(pos);
-            }
-        }
+        // 不立即移除，由 cleanupStaleEntries 负责清理
     }
 
     /**
@@ -194,7 +194,11 @@ public class ContainerChunkCache {
         long gameTime = level.getGameTime();
 
         Long lastCleanup = lastCleanupTick.get(dim);
-        if (lastCleanup != null && gameTime - lastCleanup < intervalTicks) {
+        if (lastCleanup == null) {
+            lastCleanupTick.put(dim, gameTime);
+            return;
+        }
+        if (gameTime - lastCleanup < intervalTicks) {
             return;
         }
         lastCleanupTick.put(dim, gameTime);
