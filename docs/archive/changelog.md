@@ -6,6 +6,23 @@
 
 ## 2026-08-19
 
+- ✅ **优化：传送区块加载从 ChunkStatus.FULL 降为 LIGHT**（远距离传送到未探索区域时 MSPT 峰值 16200ms → 大幅降低）
+  - **根因**：`ensureChunkLoaded` 使用 `level.getChunk(chunkX, chunkZ)`（默认 `ChunkStatus.FULL`），要求区块经历完整 11 个生成阶段。`FULL` 的 `ChunkPyramid` 依赖链中 `STRUCTURE_STARTS` 半径 8，导致 `ChunkGenerationTask` 需覆盖 17×17 = 289 个区块。主线程通过 `managedBlock()` → `LockSupport.parkNanos()` 阻塞等待（spark 报告 205.84%），同时 `FULL` 阶段的 `runPostLoad()` 在新生成区块上触发大量 mod 事件（`twilightforest` 22.82%、`sable` 66.17%）。
+  - **修复**：`findSafeY` 仅需 `MOTION_BLOCKING` 高度图，该数据在 `LIGHT` 阶段即已就绪。将 `ensureChunkLoaded` 改为 `level.getChunk(chunkX, chunkZ, ChunkStatus.LIGHT, true)`，跳过 `SPAWN`（出生点生成）和 `FULL`（ProtoChunk→LevelChunk 转换 + `runPostLoad()`）两个阶段。`ChunkLoadResult` 和 `findSafeY` 参数类型从 `LevelChunk` 改为 `ChunkAccess`（`LIGHT` 返回 `ImposterProtoChunk`）。
+  - **修改文件**：`TeleportHelper.java`
+
+- ✅ **优化：零区块加载传送——ChunkGenerator.getBaseHeight 替代 ChunkStatus.LIGHT**
+  - **根因**：v47 的 `ChunkStatus.LIGHT` 仍依赖 `STRUCTURE_STARTS` 半径 8（`LIGHT` → `FEATURES` → ... → `STRUCTURE_STARTS`），仍需 289 个区块的生成任务。spark 报告 `parkNanos` 3.89% self = 3760ms 纯阻塞等待。`ChunkStatus` 体系中任何能提供高度图的状态都必须经过 `LIGHT`，无法绕过 289 区块依赖。
+  - **修复**：完全绕过区块加载，使用 `ChunkGenerator.getBaseHeight(x, z, MOTION_BLOCKING, level, randomState)` 从噪声密度函数直接计算地表高度。`NoiseBasedChunkGenerator.getBaseHeight()` 内部调用 `iterateNoiseColumn()` 遍历噪声柱，在第一个不透明方块处停止并返回 Y+1，耗时 < 1ms。移除 `ensureChunkLoaded`、`findSafeY`、`ChunkLoadResult` 方法和相关 import。`teleportToBanner` 也移除 `ensureChunkLoaded`（`changeDimension`/`teleportTo` 内部通过 `POST_TELEPORT` ticket 异步加载）。子位面传送保留 `ensureChunkForSubLevel`。
+  - **修改文件**：`TeleportHelper.java`
+
+- ✅ **修复：未打开战利品容器触发战利品表生成导致 processLevelContainers 耗时过高**
+  - **根因**：`processLevelContainers` 遍历所有世界容器时，`RandomizableContainerBlockEntity.getItem()` 内部调用 `unpackLootTable()`，触发战利品生成。战利品表（如 `minecraft:chests/shipwreck_map`）中的 `ExplorationMapFunction` 搜索结构，在未探索区域耗时极高。
+  - **修复**：
+    - `LivingItem.processLevelContainers()`：遍历时跳过 `RandomizableContainer` 且 `lootTable != null`（未打开）的容器
+    - `ContainerLivingItemHandler.processContainerAt()`：同上，添加战利品容器过滤逻辑
+  - **修改文件**：`LivingItem.java`、`ContainerLivingItemHandler.java`
+
 - ✅ **修复：活中继器延迟计数器不减少**（活红石中继器的延迟计数器每 tick 被重置，导致永远无法输出信号）
   - **根因**：`SimpleContainerContext` 实例每 tick 重建，其内部的 `redstoneData` 字段始终为 null，`getOrCreateRedstoneData()` 每 tick 创建新实例。这导致 `edgeGrid` / `prevEdgeGrid`（边信号状态）和 `tickCounter`（延迟计数器）每 tick 丢失，中继器功能无法正常工作。
   - **修复**：

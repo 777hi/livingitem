@@ -235,6 +235,8 @@ tick N:
 
 **修复**（2026-08-17）：`getChunkNow` 返回 null 时不再立即移除，只跳过本次处理。区块由 `onChunkUnload` 正常移除，`cleanupStaleEntries` 作为兜底定期清理残留。
 
+**优化**（2026-08-19）：遍历世界容器时跳过未打开的战利品容器（`RandomizableContainer` 且 `lootTable != null`），避免 `getItem()` 内部 `unpackLootTable()` 触发战利品表生成。战利品表（如 `minecraft:chests/shipwreck_map`）中的 `ExplorationMapFunction` 搜索结构，在未探索区域耗时极高。
+
 ### 3.3 大箱子去重
 
 大箱子（`ChestBlock`）在 NeoForge 中，左右两半返回**同一个 `IItemHandler` 实例**。因此去重策略分两层：

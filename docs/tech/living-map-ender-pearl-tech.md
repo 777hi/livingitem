@@ -1,7 +1,7 @@
 # Living Map & Living Ender Pearl (活地图 & 活末影珍珠) 技术文档
 
-> **文档版本**: 2026.08 v46  
-> **最后更新**: 2026-08-16  
+> **文档版本**: 2026.08 v48  
+> **最后更新**: 2026-08-19  
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -225,13 +225,14 @@ maxDist = 四条边界距离中的最小正值
   │   └─ 已探索？→ TeleportHelper.teleportToMapPosition（消耗1个）
   │
   └─ TeleportHelper.executeTeleport（实际传送）
+      ├─ TeleportHelper.teleportToMapPosition 中 getSafeYFromNoise 获取地表高度（零区块加载）
       ├─ 玩家在 Sable 飞艇上？
       │   ├─ 跨维度 → 拒绝，提示"权能不足"
-      │   └─ 同维度 → ensureChunkLoaded + teleportSubLevel 瞬移飞艇
+      │   └─ 同维度 → ensureChunkForSubLevel + teleportSubLevel 瞬移飞艇
       ├─ 普通骑乘？
       │   ├─ 跨维度 → vehicle.changeDimension()（原版内部处理乘客传送和重新骑乘）
       │   └─ 同维度 → 乘客下车 → 传送坐骑 → 传送玩家+其他乘客 → 重新骑乘
-      ├─ 无骑乘 → ensureChunkLoaded + player.changeDimension()
+      ├─ 无骑乘 → player.changeDimension() / player.teleportTo()（内部 POST_TELEPORT ticket 异步加载）
       ├─ 重置坠落距离
       ├─ 传送粒子效果（PORTAL）+ 音效（ENDERMAN_TELEPORT）
       ├─ 5点坠落伤害
@@ -241,16 +242,22 @@ maxDist = 四条边界距离中的最小正值
 ### 4.2 地面Y坐标
 
 ```java
-private static int findSafeY(LevelChunk chunk, BlockPos pos) {
-    return chunk.getHeight(Heightmap.Types.MOTION_BLOCKING, pos.getX() & 15, pos.getZ() & 15) + 1;
+private static int getSafeYFromNoise(ServerLevel level, int x, int z) {
+    ChunkGenerator generator = level.getChunkSource().getGenerator();
+    RandomState randomState = level.getChunkSource().randomState();
+    return generator.getBaseHeight(x, z, Heightmap.Types.MOTION_BLOCKING, level, randomState);
 }
 ```
 
-直接从 `LevelChunk` 读取 `MOTION_BLOCKING` 高度图，+1 后即为玩家脚底应站的 Y 坐标。
+**零区块加载**：`ChunkGenerator.getBaseHeight()` 直接从噪声密度函数计算地表高度，不加载任何区块。
 
-**为什么直接从 LevelChunk 读取高度图**：`Level.getHeightmapPos()` 内部先调用 `hasChunk()` 检查区块是否已加载，如果 `hasChunk()` 返回 `false`，直接返回 `getMinBuildHeight()`（主世界 -64，即基岩层）。而 `ensureChunkLoaded` 通过 `level.getChunk()` 加载区块时，内部添加的是 `TicketType.UNKNOWN` 类型的 ticket，其超时时间仅 1 tick。在 `ServerChunkCache.tick()` 的 `purgeStaleTickets()` 中，这个 ticket 会被立即清理。如果区块没有其他 ticket 保持加载（如玩家附近的 `PLAYER` ticket），`hasChunk()` 就会返回 `false`，导致高度图返回 -64。直接从 `LevelChunk` 对象读取高度图可以绕过 `hasChunk()` 检查，因为 `ensureChunkLoaded` 返回的 `LevelChunk` 已经包含了正确的高度图数据。
+对于 `NoiseBasedChunkGenerator`，内部调用 `iterateNoiseColumn(level, random, x, z, null, type.isOpaque())`，从世界顶部向下遍历噪声柱，在第一个不透明方块处停止并返回 `Y + 1`（即玩家脚底应站的 Y）。这与区块生成时的地形高度计算使用相同的密度函数。
 
-**为什么不需要扫描逻辑**：高度图数据本身是正确的——主世界返回地表 Y，地狱返回基岩天花板 Y（传送到天花板上方是可接受的，与原版末影珍珠行为一致）。之前出现传送到基岩层的问题，根因不是高度图数据错误，而是 `hasChunk()` 前置检查失败导致返回了兜底值 -64。
+**精度**：噪声高度不包含地表装饰（树木、结构等），在极端情况下与实际地形可能偏差 1-5 格。但偏差通常可接受，且可通过传送后的摔落/攀爬自动修正。
+
+**超平坦世界**：`FlatLevelSource.getBaseHeight()` 直接返回超平坦预设的固定高度，无需噪声计算。
+
+**旗帜传送**：旗帜传送已知确切 Y 坐标（`bannerPos.getY() + 1`），不需要高度计算，也不调用 `getSafeYFromNoise`。`changeDimension`/`teleportTo` 内部通过 `POST_TELEPORT` ticket 异步加载区块。
 
 ### 4.3 传送优先级
 
@@ -2290,3 +2297,92 @@ private static ChunkLoadResult ensureChunkLoaded(ServerLevel level, double x, do
 | `ContainerLivingItemHandler.java` | `StressDataProvider` → `be.setData(CONTAINER_STRESS_DATA, ...)` |
 | `living_item.mixins.json` | 移除 `MapItemMixin`、`MapItemUpdateMixin`、`BlockEntityMixin` |
 | `living_item.client.mixins.json` | 新增 `RecipeBookPageMixin` |
+
+### v46 → v47：传送区块加载优化——ChunkStatus.FULL → LIGHT
+
+**问题**：远距离传送到未探索区域时，`ensureChunkLoaded` 使用 `level.getChunk(chunkX, chunkZ)`（默认 `ChunkStatus.FULL`），导致 MSPT 峰值达 16200ms（16.2 秒），服务端完全卡死。
+
+**根因分析**：
+
+1. **`level.getChunk()` 默认要求 `FULL` 状态**：`Level.getChunk(int, int)` 内部调用 `getChunk(x, z, ChunkStatus.FULL, true)`，要求区块经历完整的 11 个生成阶段（EMPTY → STRUCTURE_STARTS → ... → FULL）。
+
+2. **`FULL` 状态的依赖半径过大**：`ChunkPyramid.GENERATION_PYRAMID` 中，`STRUCTURE_REFERENCES` 需 `STRUCTURE_STARTS` 半径 8，`BIOMES`/`NOISE`/`SURFACE`/`CARVERS`/`FEATURES` 均需 `STRUCTURE_STARTS` 半径 8。`getAccumulatedRadiusOf(ChunkStatus.EMPTY)` 返回 8，意味着 `ChunkGenerationTask` 创建的 `StaticCache2D` 覆盖 **17×17 = 289 个区块**。
+
+3. **主线程阻塞等待**：`ServerChunkCache.getChunk()` 中的 `mainThreadProcessor.managedBlock(completablefuture::isDone)` 通过 `LockSupport.parkNanos()` 挂起主线程（spark 报告 205.84%），等待异步 chunk generation 工作线程完成全部 289 个区块的生成。
+
+4. **传送实际只需 `MOTION_BLOCKING` 高度图**：`findSafeY` 通过 `chunk.getHeight(Heightmap.Types.MOTION_BLOCKING, ...)` 获取地表 Y 坐标，该高度图在 `LIGHT` 阶段（`ChunkStatusTasks.light()`）即已构建完成，不需要等到 `FULL` 阶段。
+
+**修复**：将 `ensureChunkLoaded` 的区块加载状态从 `ChunkStatus.FULL` 降为 `ChunkStatus.LIGHT`：
+
+```java
+// 修复前：等待 FULL 状态（289 个区块 + SPAWN + runPostLoad）
+LevelChunk chunk = level.getChunk(chunkX, chunkZ);
+
+// 修复后：等待 LIGHT 状态（跳过 SPAWN 和 FULL 阶段）
+ChunkAccess chunk = level.getChunk(chunkX, chunkZ, ChunkStatus.LIGHT, true);
+```
+
+**`FULL` vs `LIGHT` 的区别**：
+
+| 阶段 | FULL | LIGHT | 说明 |
+|------|------|-------|------|
+| EMPTY → LIGHT | ✅ | ✅ | 地形生成、结构、光照（共同路径） |
+| SPAWN | ✅ | ❌ 跳过 | 生成出生点（地狱门搜索等），传送不需要 |
+| FULL | ✅ | ❌ 跳过 | ProtoChunk→LevelChunk 转换 + `runPostLoad()`（安装方块实体、触发 NeoForge 事件） |
+
+**副作用处理**：`ChunkStatus.LIGHT` 返回 `ChunkAccess`（`ImposterProtoChunk`），而非 `LevelChunk`。`findSafeY` 和 `ChunkLoadResult` 的类型从 `LevelChunk` 改为 `ChunkAccess`。`ChunkAccess.getHeight()` 与 `LevelChunk.getHeight()` 行为一致，均可正确读取 `MOTION_BLOCKING` 高度图。
+
+**注意**：`LIGHT` 仍依赖 `STRUCTURE_STARTS` 半径 8（通过 `FEATURES` → `CARVERS` → `SURFACE` → `NOISE` → `BIOMES` → `STRUCTURE_REFERENCES` 链），因此 `StaticCache2D` 半径仍为 8（289 个区块）。优化效果来自跳过 `SPAWN` 和 `FULL` 两个阶段，其中 `FULL` 阶段的 `runPostLoad()` 是新生成区块首次触发大量 mod 事件之处（如 `twilightforest` 22.82%、`sable` 66.17% 等）。
+
+**修改文件**：
+
+| 文件 | 改动 |
+|------|------|
+| `TeleportHelper.java` | `ensureChunkLoaded`：`level.getChunk(chunkX, chunkZ)` → `level.getChunk(chunkX, chunkZ, ChunkStatus.LIGHT, true)`；`ChunkLoadResult` 参数类型 `LevelChunk` → `ChunkAccess`；`findSafeY` 参数类型 `LevelChunk` → `ChunkAccess`；新增 `ChunkStatus` import |
+
+### v47 → v48：零区块加载传送——ChunkGenerator.getBaseHeight
+
+**问题**：v47 优化后 spark 报告中 `ensureChunkLoaded` 仍占 4.17%（~4170ms），其中 `parkNanos` 3.89% self = 3760ms 纯阻塞等待。原因是 `LIGHT` 仍依赖 `STRUCTURE_STARTS` 半径 8（`LIGHT` → `FEATURES` → `CARVERS` → `SURFACE` → `NOISE` → `BIOMES` → `STRUCTURE_REFERENCES` → `STRUCTURE_STARTS`），仍需 289 个区块的生成任务。
+
+**根因**：`ChunkStatus` 体系中，任何能提供高度图的状态都必须经过 `LIGHT` 阶段（`ChunkStatusTasks.light()` 负责构建高度图），而 `LIGHT` 的依赖链强制要求 `STRUCTURE_STARTS` 半径 8。无法通过降低 `ChunkStatus` 绕过 289 区块依赖。
+
+**方案**：完全绕过区块加载，使用 `ChunkGenerator.getBaseHeight()` 从噪声直接计算地表高度。
+
+`NoiseBasedChunkGenerator.getBaseHeight()` 内部调用 `iterateNoiseColumn(level, random, x, z, null, type.isOpaque())`，对于 `MOTION_BLOCKING`（`isOpaque() = true`），从世界顶部向下遍历噪声柱，在第一个不透明方块处停止并返回 `Y + 1`（即玩家脚底应站的 Y）。这与区块生成时的地形高度计算使用相同的密度函数，精度在 1-5 格以内。
+
+**修复**：
+
+```java
+// 修复前：加载 289 个区块，主线程阻塞等待（parkNanos 3760ms）
+ChunkLoadResult loadResult = ensureChunkLoaded(targetLevel, worldX, worldZ);
+int safeY = findSafeY(loadResult.chunk(), targetPos);
+
+// 修复后：零区块加载，直接从噪声计算（< 1ms）
+int safeY = getSafeYFromNoise(targetLevel, (int) worldX, (int) worldZ);
+
+private static int getSafeYFromNoise(ServerLevel level, int x, int z) {
+    ChunkGenerator generator = level.getChunkSource().getGenerator();
+    RandomState randomState = level.getChunkSource().randomState();
+    return generator.getBaseHeight(x, z, Heightmap.Types.MOTION_BLOCKING, level, randomState);
+}
+```
+
+**`getBaseHeight` vs `getHeight` 对比**：
+
+| 特性 | `getBaseHeight` (噪声) | `getHeight` (高度图) |
+|------|------------------------|---------------------|
+| 区块加载 | 0 个区块 | 289 个区块 |
+| 耗时 | ~0.01ms (DensityFunction 计算) | 3760ms (主线程阻塞) |
+| 精度 | 噪声理论值，不含地表装饰 | 精确值，含结构/树木/地表 |
+| 偏差 | 1-5 格（树木、地表修饰） | 0 格 |
+| 超平坦 | `FlatLevelSource` 直接返回固定高度 | 同 |
+
+**`teleportToBanner` 也受影响**：旗帜传送已知确切 Y 坐标，无需任何高度计算。移除 `ensureChunkLoaded` 调用，`changeDimension`/`teleportTo` 内部通过 `POST_TELEPORT` ticket 异步加载区块。
+
+**副作用处理**：移除 `ensureChunkLoaded`、`findSafeY`、`ChunkLoadResult` 方法和相关 import（`ChunkAccess`、`ChunkStatus`）。新增 `getSafeYFromNoise` 和 `ensureChunkForSubLevel`（子位面传送不经过 `POST_TELEPORT` 机制，仍需同步加载）。
+
+**修改文件**：
+
+| 文件 | 改动 |
+|------|------|
+| `TeleportHelper.java` | 移除 `ensureChunkLoaded`、`findSafeY`、`ChunkLoadResult`；新增 `getSafeYFromNoise`（`ChunkGenerator.getBaseHeight`）、`ensureChunkForSubLevel`；`teleportToMapPosition` 和 `teleportToBanner` 不再调用阻塞加载 |
