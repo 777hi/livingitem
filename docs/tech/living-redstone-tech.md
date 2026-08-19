@@ -2,8 +2,8 @@
 
 # Living Redstone (活红石) 技术文档
 
-> **文档版本**: 2026.08 v2
-> **最后更新**: 2026-08-18
+> **文档版本**: 2026.08 v3
+> **最后更新**: 2026-08-19
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -23,21 +23,23 @@
 
 ### 1.1 什么是活红石？
 
-活红石系统在 2D 容器网格（如 9×6 背包、9×3 箱子）中实现了原版红石信号传播的等价逻辑。活红石粉传递信号，活红石火把作为信号源和反相器，信号强度受堆叠数量影响。
+活红石系统在 2D 容器网格（如 9×6 背包、9×3 箱子）中实现了原版红石信号传播的等价逻辑。采用**边信号模型**：信号存储于相邻槽位间的共享边上，活红石粉通过 BFS 传播信号，活红石火把/中继器/比较器作为信号源直接向边写入信号，信号强度受堆叠数量影响。
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                    活红石 信号传播流程                             │
+│                    活红石 边信号传播流程                           │
 │                                                                  │
-│  ┌──────────────────┐    信号源     ┌──────────────────┐        │
+│  ┌──────────────────┐    写边       ┌──────────────────┐        │
 │  │ 活红石火把（点亮） │ ──────────→  │ 活红石粉（介质）  │        │
-│  │ cap = 信号上限    │              │ 每格 -1 传播     │        │
+│  │ cap = 信号上限    │  set(slot,   │ 读4边max → 衰减1  │        │
+│  │ 排除输入边(3边出) │   RIGHT, 15) │ 写4边 → 邻居入队  │        │
 │  └──────────────────┘              └────────┬─────────┘        │
 │                                            │ BFS 传播           │
 │                                            ▼                    │
 │                              ┌──────────────────────────┐      │
 │                              │ ContainerRedstoneData     │      │
 │                              │   .calculate()            │      │
+│                              │   EdgeGrid + 共享边       │      │
 │                              │   每 2 tick 执行一次       │      │
 │                              └────────┬─────────────────┘      │
 │                                       │                         │
@@ -45,12 +47,13 @@
 │              ▼                        ▼                  ▼     │
 │        ┌──────────┐           ┌──────────┐       ┌──────────┐ │
 │        │ 活红石粉  │           │ 活中继器  │       │ 活比较器  │ │
-│        │ 更新信号  │           │ 延迟输出  │       │ 比较/减法 │ │
+│        │ 更新信号  │           │ Phase1源  │       │ Phase1源  │ │
+│        │ 4边max   │           │ 写方向边  │       │ 写方向边  │ │
 │        └──────────┘           └──────────┘       └──────────┘ │
 │              ▼                        ▼                  ▼     │
 │        ┌──────────┐           ┌──────────┐       ┌──────────┐ │
 │        │ 活红石灯  │           │ 活按钮    │       │ 活拉杆    │ │
-│        │ 亮/灭    │           │ 长按输出  │       │ 切换输出  │ │
+│        │ anyOfSlot │           │ 长按输出  │       │ 切换输出  │ │
 │        └──────────┘           └──────────┘       └──────────┘ │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -66,7 +69,8 @@
 | `LivingRedstoneLampFunction` | `domain/redstone/LivingRedstoneLampFunction.java` | 活红石灯功能，信号消费者 |
 | `LivingRepeaterFunction` | `domain/redstone/LivingRepeaterFunction.java` | 活中继器功能，延迟 + 单向 + 信号刷新 |
 | `LivingComparatorFunction` | `domain/redstone/LivingComparatorFunction.java` | 活比较器功能，比较/减法 + 物品检测 |
-| `ContainerRedstoneData` | `domain/redstone/ContainerRedstoneData.java` | 容器级红石信号数据，BFS 传播算法 |
+| `ContainerRedstoneData` | `domain/redstone/ContainerRedstoneData.java` | 容器级红石信号数据，边信号 BFS 传播算法 |
+| `EdgeGrid` | `domain/redstone/ContainerRedstoneData.java` | 共享边信号网格，内嵌类 |
 | `LivingRedstoneData` | `domain/redstone/LivingRedstoneData.java` | 活红石粉物品级数据：信号强度 + 是否激活 |
 | `LivingRedstoneTorchData` | `domain/redstone/LivingRedstoneTorchData.java` | 活红石火把物品级数据：朝向 + 是否点亮 |
 | `LivingButtonData` | `domain/redstone/LivingButtonData.java` | 活按钮数据：是否按下 |
@@ -136,8 +140,10 @@ public record LivingRedstoneTorchData(
 public class ContainerRedstoneData {
     private static final int PROPAGATION_INTERVAL = 2;  // 每 2 tick 传播一次
 
-    private int[] signalStrength;   // 每个槽位的信号强度
-    private int tickCounter;        // tick 计数器（用于传播间隔）
+    private EdgeGrid edgeGrid;          // 当前帧边信号网格
+    private EdgeGrid prevEdgeGrid;      // 上一帧边信号（用于断电检测）
+    private int tickCounter;            // tick 计数器（用于传播间隔）
+    private boolean processedThisTick;  // 当前 tick 是否已计算
 
     public ContainerRedstoneData(int size) { ... }
     public int getSignal(int slot) { ... }
@@ -147,9 +153,49 @@ public class ContainerRedstoneData {
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `signalStrength[]` | int[] | 每个槽位当前信号强度，长度为容器槽位数 |
-| `tickCounter` | int | 自增计数器，每 2 tick 触发一次 `calculate()` |
+| `edgeGrid` | EdgeGrid | 当前帧边信号网格，存储所有槽位间边的信号值 |
+| `prevEdgeGrid` | EdgeGrid | 上一帧边信号，Phase 0 用于中继器断电检测 |
+| `tickCounter` | int | 自增计数器，每 2 tick 触发一次 calculate() |
+| `processedThisTick` | boolean | 同一 tick 内多个 Function 触发时，保证只计算一次 |
 | `PROPAGATION_INTERVAL` | int (static) | 传播间隔 = 2 tick，与原版红石更新频率一致 |
+
+### 2.3.1 EdgeGrid — 共享边信号网格
+
+信号存储在**边**上，而非槽位上。相邻槽位共享同一条边：
+
+```
+对于 W×H 的槽位网格：
+  hEdges[height * (width + 1)] — 水平边（含左右边界）
+  vEdges[(height + 1) * width] — 垂直边（含上下边界）
+
+槽位 (r,c) 的 4 条边：
+  LEFT  → hEdges[r * (W+1) + c]
+  RIGHT → hEdges[r * (W+1) + (c+1)]
+  UP    → vEdges[r * W + c]
+  DOWN  → vEdges[(r+1) * W + c]
+```
+
+**共享边示例**：槽位 (0,0) 的 RIGHT 边 = 槽位 (0,1) 的 LEFT 边，是同一个数组条目。因此 A 写自己的 RIGHT 边，B 读自己的 LEFT 边自动拿到同一个值，无需显式同步。
+
+**边界边**：容器边缘的边（如最左列 LEFT 边、最右列 RIGHT 边）也存储，为跨容器信号传输预留。
+
+**高度计算**：`height = (size + width - 1) / width`（向上取整），兼容最后一行不满的容器（如玩家背包 41 槽 = 9×5 最后一行仅 5 槽）。
+
+**边常量**：
+```java
+E_UP = 0, E_DOWN = 1, E_LEFT = 2, E_RIGHT = 3
+opposite(dir) = dir ^ 1  // 0↔1, 2↔3
+edgeIndex(Pos2D) → 将 Pos2D 方向转为边索引
+```
+
+**EdgeGrid API**：
+| 方法 | 作用 |
+|------|------|
+| `get(slot, dir)` | 读槽位某方向的边，边界返回 0 |
+| `set(slot, dir, value)` | 写槽位某方向的边，边界无操作 |
+| `maxOfSlot(slot)` | 4 边最大值 |
+| `anyOfSlot(slot)` | 任一边 > 0 |
+| `zero()` | 清零所有边 |
 
 ### 2.4 LivingButtonData — 活按钮物品数据
 
@@ -288,81 +334,200 @@ ItemStack (minecraft:comparator)
 
 信号传播由 `ContainerRedstoneData.calculate()` 执行，每 **2 tick** 触发一次（与原版红石更新频率一致）。传播由 `LivingRedstoneFunction` 和 `LivingRedstoneTorchFunction` 的 `tickContainerData()` 方法触发，两者均通过 `HasContainerData` 接口（优先级 2）被容器处理器调用。
 
-### 3.2 BFS 传播算法
+### 3.2 五阶段边信号传播算法
+
+`calculate()` 拆分为 5 个阶段，基于边信号模型：
 
 ```
 calculate(context, tick):
-  1. tickCounter++，若 tickCounter % 2 != 0 → 直接返回（跳过）
-  2. 获取容器中所有活红石火把槽位 → torchSlots
-  3. 获取容器中所有活红石粉槽位 → dustSlots
-  4. 获取容器中所有活中继器槽位 → repeaterSlots
-  5. 获取容器中所有活比较器槽位 → comparatorSlots
-  6. 若所有槽位都为空 → 直接返回
-  7. 重置 signalStrength[] 数组为全 0
-  8. 初始化 BFS 队列 + visited[]
-  9. 遍历所有火把/按钮/拉杆槽位：
-     a. 若点亮/按下/激活 → 信号 = getSignalCap(count)，入队
-  10. 初始 BFS 遍历（仅红石粉）：
-     a. 从队列取出当前槽位
-     b. 若当前信号 ≤ 1 → 跳过
-     c. 获取四方向邻居
-     d. 对每个邻居：
-        - 若邻居不是活红石粉 → 跳过
-        - 若邻居已被访问 → 跳过
-        - 新信号 = min(当前信号 - 1, getSignalCap(邻居堆叠数))
-        - 取最大值写入 signalStrength[邻居]
-        - 标记已访问，入队
-  11. 中继器处理（独立 visited 数组）：
-     a. 检查输入端（后方）是否有 signal > 0
-     b. 有信号 → delayTimer = delay
-     c. 每红石刻 delayTimer--
-     d. delayTimer == 0 → 输出 cap = getSignalCap(count)，沿输出方向传播
-     e. 中继器输出不衰减（信号刷新），后续每格 -1
-     f. 输入信号消失 → 立即归零 delayTimer 和输出
-  12. 比较器处理（独立 visited 数组）：
-     a. 读取输入端 A（后方）信号
-     b. 读取侧边最大信号 B
-     c. 比较模式：A ≥ B → 输出 A，否则 0
-     d. 减法模式：输出 A - B（最少 0）
-     e. 输出上限 = getSignalCap(count)
-  13. 遍历所有火把槽位，更新反相器状态
-  14. 遍历所有红石灯槽位，更新亮/灭状态
-  15. 遍历所有红石粉槽位，同步信号强度到客户端
+  1. processedThisTick 去重检查
+  2. tickCounter++，若 tickCounter % 2 != 0 → 直接返回（跳过）
+  3. 收集所有红石组件槽位（torch/dust/button/lever/lamp/repeater/comparator）
+  4. 若全部为空 → 直接返回
+  5. 重置：swap edgeGrid ↔ prevEdgeGrid，清零 edgeGrid
+
+  phase0CountdownDelays()    — 倒计时 + 断电检测（用 prevEdgeGrid 的边）
+  phase1CollectSources()     — 信号源直接写边，红石粉邻居入队
+  phase2Propagation()        — BFS 传播（仅红石粉入队）
+  phase3RecheckInputs()      — 重新检测级联输入（中继器/比较器）
+  phase4UpdateDisplay()      — 更新物品显示状态（火把/灯/红石粉）
 ```
+
+**与旧模型（槽位信号）的核心区别**：
+- 信号存储在**共享边**上，A 的 RIGHT 边 = B 的 LEFT 边，无需显式同步
+- 信号源**不入队**，直接写边；BFS 队列**仅包含红石粉**
+- 每个组件通过**读写特定边**实现方向性输入/输出
+
+**Phase 0 — 倒计时 + 断电检测**：
+```
+遍历中继器：
+  inputDir = edgeIndex(data.direction().opposite())  // 输入方向边
+  hasInput = prevEdgeGrid.get(slot, inputDir) > 0  // 用上一帧边信号
+
+  if !hasInput → powered = false, delayTimer = 0（立即断电）
+  else if delayTimer > 0 → delayTimer--（继续倒计时）
+
+遍历按钮：
+  if pressed && pulseTimer > 0 → pulseTimer -= 2
+  if pulseTimer <= 0 → pressed = false
+```
+
+**Phase 1 — 收集信号源**：
+```
+信号源直接向自己的边写入信号，不进入队列。
+只有红石粉邻居才入队。
+
+遍历火把：
+  if !isLit → skip
+  cap = getSignalCap(count)
+  skipDir = edgeIndex(data.direction().opposite())  // 不输出到输入边
+  for 4 方向 dir：
+    if dir == skipDir → continue（排除输入边）
+    if cap > edgeGrid.get(slot, dir)：
+      edgeGrid.set(slot, dir, cap)          // 写自己该方向的边
+      if 邻居是红石粉 → 邻居入队
+
+遍历按钮/拉杆：
+  if 未激活 → skip
+  cap = getSignalCap(count)
+  for 4 方向 dir：
+    if cap > edgeGrid.get(slot, dir)：
+      edgeGrid.set(slot, dir, cap)
+      if 邻居是红石粉 → 邻居入队
+
+遍历中继器：
+  if !powered || delayTimer != 0 → skip
+  cap = getSignalCap(count)
+  outDir = edgeIndex(data.direction())      // 仅输出方向
+  if cap > edgeGrid.get(slot, outDir)：
+    edgeGrid.set(slot, outDir, cap)
+    if 邻居是红石粉 → 邻居入队
+
+遍历比较器：
+  output = computeComparatorOutput()
+  if output <= 0 → skip
+  outDir = edgeIndex(data.direction())
+  if output > edgeGrid.get(slot, outDir)：
+    edgeGrid.set(slot, outDir, output)
+    if 邻居是红石粉 → 邻居入队
+
+返回 BFS 队列（仅含红石粉）
+```
+
+**Phase 2 — BFS 传播**：
+```
+while queue not empty:
+  current = queue.poll()
+  if 不是红石粉 → continue
+
+  maxInput = edgeGrid.maxOfSlot(current)  // 4 边取最大值
+  if maxInput <= 1 → continue
+
+  output = min(maxInput - 1, getSignalCap(自身堆叠数))
+
+  for 4 方向 dir：
+    neighbor = resolveSlot(current, dir)
+    isTarget = neighbor 是红石目标（粉/中继器/比较器/火把/灯）
+    if !isTarget && neighbor 存在 → continue
+
+    if output > edgeGrid.get(current, dir)：
+      edgeGrid.set(current, dir, output)    // 写自己的边
+      if 邻居是红石粉 → 邻居入队
+```
+
+**Phase 3 — 重新检测输入**：
+```
+遍历中继器：
+  if powered && delayTimer == 0 → 跳过（已在 Phase 1 输出）
+  inputDir = edgeIndex(data.direction().opposite())
+  hasInput = edgeGrid.get(slot, inputDir) > 0  // 用当前帧边信号
+  if hasInput && !powered → powered = true, delayTimer = delay
+  if !hasInput && powered → powered = false, delayTimer = 0
+
+遍历比较器：
+  output = computeComparatorOutput()
+  powered = (output > 0)
+```
+
+**Phase 4 — 更新显示状态**：
+```
+遍历火把：
+  inputDir = edgeIndex(data.direction().opposite())
+  hasInput = edgeGrid.get(slot, inputDir) > 0
+  newLit = !hasInput  // 反相：有输入→熄灭
+  if isLit != newLit → 更新同步
+
+遍历红石粉：
+  maxSignal = edgeGrid.maxOfSlot(slot)
+  if signalStrength != maxSignal || isPowered != (maxSignal > 0) → 更新同步
+
+遍历红石灯：
+  hasSignal = edgeGrid.anyOfSlot(slot)
+  if lit != hasSignal → 更新同步
+```
+
+**设计要点**：
+- **共享边**：源写自己的边，目标通过共享边自动读到，无需 `neighbor * 4 + opposite(dir)` 这种间接映射
+- **BFS 仅红石粉**：队列只包含红石粉，信号源和终端不参与传播循环
+- **边界边持久化**：容器边缘边也存储信号值，为跨容器信号传输预留接口
+- **向上取整高度**：`(size + width - 1) / width` 兼容非满行容器（如玩家背包 41 槽）
 
 ### 3.3 邻居计算
 
 ```java
-// ContainerContext.getNeighbors(slot, containerSize, width)
-// 返回四方向邻居（上下左右），自动处理边界
+// ContainerRedstoneData.resolveSlot(slot, dir, size, width)
+// 返回指定方向的邻居槽位索引，越界返回 -1
+// 注意：resolveSlot 仅用于判断"邻居是否存在"和"邻居类型"，
+// 信号值本身通过 EdgeGrid 的共享边获取，无需通过邻居索引
 
-static int[] getNeighbors(int slot, int containerSize, int width) {
-    // 左：slot - 1（若 slot 不在最左列）
-    // 右：slot + 1（若 slot 不在最右列）
-    // 上：slot - width（若 slot 不在第一行）
-    // 下：slot + width（若 slot 不在最后一行）
+private static int resolveSlot(int slot, int dir, int size, int width) {
+    int col = slot % width;
+    int row = slot / width;
+    switch (dir) {
+        case E_UP:    row--; break;
+        case E_DOWN:  row++; break;
+        case E_LEFT:  col--; break;
+        case E_RIGHT: col++; break;
+    }
+    if (col < 0 || col >= width || row < 0) return -1;
+    int result = row * width + col;
+    return result < size ? result : -1;
 }
 ```
 
 ### 3.4 信号传播示例
 
 ```
-9×6 容器中的信号传播（假设所有红石粉堆叠数为 1）：
+9×4 容器中的信号传播（假设所有红石粉堆叠数为 1）：
 
 初始状态：
-  [火把] [粉] [粉] [粉] [  ] [  ] [  ] [  ] [  ]
-  [  ]   [  ] [  ] [  ] [  ] [  ] [  ] [  ] [  ]
-  ...
+  [火把] [粉A] [粉B] [粉C] [  ] [  ] [  ] [  ] [  ]
+  [  ]   [  ]  [  ]  [  ]  [  ] [  ] [  ] [  ] [  ]
 
-BFS 传播后：
-  [火把] [粉] [粉] [粉] [  ] [  ] [  ] [  ] [  ]
-   15    14   13   12   0    0    0    0    0
-  [  ]   [  ] [  ] [  ] [  ] [  ] [  ] [  ] [  ]
-   0     0    0    0    0    0    0    0    0
-  ...
+Phase 1：火把写自己的 RIGHT 边 = 15
+          粉A 的 LEFT 边（共享边）自动 = 15
+          粉A 入队
 
-每条红石粉接收信号 = min(邻居信号 - 1, getSignalCap(堆叠数))
+Phase 2 BFS：
+  粉A：maxInput = 15（来自 LEFT 边）
+       output = min(15-1, 15) = 14
+       写 RIGHT 边 = 14，粉B 的 LEFT 边自动 = 14
+       粉B 入队
+  粉B：maxInput = 14
+       output = min(14-1, 15) = 13
+       写 RIGHT 边 = 13，粉C 的 LEFT 边自动 = 13
+       粉C 入队
+  粉C：maxInput = 13
+       output = 12
+       写 RIGHT 边 = 12
+       邻居为空，不继续
+
+最终结果（每条红石粉读 4 边 max）：
+  [火把] [粉A] [粉B] [粉C] [  ] [  ] [  ] [  ] [  ]
+   15    14    13    12    0    0    0    0    0
 ```
+
+**关键**：信号值存储在边上，粉A 读自己的 LEFT 边直接拿到火把写的值，不需要通过邻居槽位索引再查一次数组。
 
 ---
 
@@ -377,11 +542,20 @@ BFS 传播后：
 | 信号源 | 点亮时输出 `count × 15` 强度信号，向所有方向传播 |
 | 反相器 | 输入端有信号 → 熄灭（不输出）；输入端无信号 → 点亮（输出） |
 
-输入端 = 朝向的**反方向**，即：
-- 朝上 → 输入端在下方
-- 朝下 → 输入端在上方
-- 朝左 → 输入端在右方
-- 朝右 → 输入端在左方
+输入端 = 朝向的**反方向**，通过 `Pos2D.opposite()` 计算：
+
+```java
+// Pos2D.opposite() — 框架原语
+public Pos2D opposite() {
+    if (this == UP)    return DOWN;
+    if (this == DOWN)  return UP;
+    if (this == LEFT)  return RIGHT;
+    if (this == RIGHT) return LEFT;
+    return this.negate();
+}
+```
+
+调用方式：`data.direction().opposite()`，不再需要各 Function 类中重复定义的 `getInputDirection()`。
 
 ### 4.2 朝向配置
 
@@ -397,26 +571,19 @@ D → 朝右
 ```
 
 ```java
-// LivingRedstoneTorchFunction
-public static Pos2D getInputDirection(Pos2D facing) {
-    if (facing.equals(Pos2D.UP))    return Pos2D.DOWN;
-    if (facing.equals(Pos2D.DOWN))  return Pos2D.UP;
-    if (facing.equals(Pos2D.LEFT))  return Pos2D.RIGHT;
-    if (facing.equals(Pos2D.RIGHT)) return Pos2D.LEFT;
-    return Pos2D.DOWN;
-}
+// 不再需要！已由 Pos2D.opposite() 替代
+// LivingRedstoneTorchFunction 中：
+//   inputDir = data.direction().opposite()
 ```
 
 ### 4.3 反相器逻辑
 
 ```
-calculate() 中火把状态更新：
+Phase 4 中火把状态更新：
 
 for each torch slot:
-    facing = torchData.direction()
-    inputDir = getInputDirection(facing)
-    inputSlot = resolveSlot(slot, inputDir)
-    hasInputSignal = inputSlot 存在且 signalStrength[inputSlot] > 0
+    inputDir = edgeIndex(data.direction().opposite())
+    hasInputSignal = edgeGrid.get(slot, inputDir) > 0  // 读输入边
 
     newLit = !hasInputSignal  // 反相：有输入 → 熄灭，无输入 → 点亮
 
@@ -439,22 +606,27 @@ for each torch slot:
 
 ### 5.2 核心逻辑
 
-```
-1. 输入端（后方）检测：
-   - 检查后方槽位是否有 signal > 0
-   - 有信号 → powered = true, delayTimer = delay
-   - 无信号 → powered = false, delayTimer = 0, 停止输出
+活中继器的处理分布在 Phase 0、Phase 1 和 Phase 3 中：
 
-2. 延迟计时：
-   - 每红石刻（2 game tick）delayTimer--
-   - delayTimer == 0 → 输出信号
-
-3. 信号输出：
-   - 输出 cap = getSignalCap(count)（满信号刷新）
-   - 沿输出方向传播，第一跳不衰减
-   - 后续每格 -1，上限受 getSignalCap 约束
-   - 使用独立 visited 数组，不与初始 BFS 冲突
 ```
+Phase 0（倒计时 + 断电）：
+  1. 检测输入边（后方）prevEdgeGrid.get(slot, inputDir) > 0
+  2. hasInput → 继续倒计时
+  3. !hasInput → 立即断电（powered = false, delayTimer = 0）
+
+Phase 1（作为信号源输出）：
+  1. powered && delayTimer == 0 → 向输出方向边写入信号
+  2. 输出值 = getSignalCap(count)（自己的堆叠数满信号）
+  3. 若输出方向邻居是红石粉 → 邻居入队
+
+Phase 3（重新检测输入）：
+  1. 已被 Phase 1 输出的中继器跳过
+  2. 其他中继器：检测 edgeGrid.get(slot, inputDir) > 0
+  3. hasInput && !powered → powered = true, delayTimer = delay
+  4. !hasInput && powered → powered = false, delayTimer = 0
+```
+
+**关键变化**：中继器不再参与 Phase 2 BFS 传播。它在 Phase 1 作为信号源直接向输出边写入信号，红石粉在 Phase 2 通过 BFS 传播该信号。这简化了中继器的处理逻辑，使其与火把、按钮、拉杆等信号源行为一致。
 
 ### 5.3 延迟档位
 
@@ -527,9 +699,34 @@ A < B → 输出 0
 
 ### 6.5 信号输出
 
-- 输出信号沿输出方向传播
-- 使用独立 visited 数组，不与初始 BFS 冲突
-- 输出上限 = `getSignalCap(count)`
+活比较器的处理分布在 Phase 1 和 Phase 3 中：
+
+```
+Phase 1（作为信号源输出）：
+  output = computeComparatorOutput()
+  if output > 0 → 向输出方向边写入 output
+  if 输出方向邻居是红石粉 → 邻居入队
+
+Phase 3（重新检测输入）：
+  output = computeComparatorOutput()
+  powered = (output > 0)
+```
+
+**computeComparatorOutput() 逻辑**：
+```java
+int inputDir = edgeIndex(data.direction().opposite());  // 后方输入边
+int signalA = edgeGrid.get(slot, inputDir);              // 后方信号
+
+int[] sideDirs = perpendicularEdges(inputDir);           // 侧边（垂直于后方）
+int signalB = max(edgeGrid.get(slot, sideDirs[0]),
+                  edgeGrid.get(slot, sideDirs[1]));      // 侧边最大信号
+
+// 比较模式：A >= B → A，否则 0
+// 减法模式：A - B（最少 0）
+int output = subtractMode ? max(0, A - B) : (A >= B ? A : 0);
+```
+
+与中继器一样，比较器在 Phase 1 作为信号源直接写边，不参与 Phase 2 BFS 传播。
 
 ---
 
@@ -639,13 +836,14 @@ ContainerLivingItemHandler.processContext()
 
 | 物品 | 功能 | 实现 |
 |------|------|------|
-| 活红石粉 | 信号传播介质，每格 -1，getSignalCap 上限 | `LivingRedstoneFunction` |
-| 活红石火把 | 信号源 + 反相器 + 四方向朝向 | `LivingRedstoneTorchFunction` |
-| 活按钮 | 右键长按持续输出信号 | `LivingButtonFunction` + `ButtonPressHandler` |
-| 活拉杆 | 右键切换开关状态 | `LivingLeverFunction` + `LeverToggleHandler` |
-| 活红石灯 | 信号消费者，亮/灭可视化 | `LivingRedstoneLampFunction` |
-| 活中继器 | 延迟 + 单向 + 信号刷新 + 右键调档位 | `LivingRepeaterFunction` + `RepeaterCycleHandler` |
-| 活比较器 | 比较/减法 + 物品检测 + 右键切换模式 | `LivingComparatorFunction` + `ComparatorToggleHandler` |
+| 活红石粉 | 信号传播介质，读4边max → 衰减1 → 写4边，getSignalCap 上限 | `LivingRedstoneFunction` |
+| 活红石火把 | 信号源 + 反相器 + 四方向朝向 + 3边输出排除输入边 | `LivingRedstoneTorchFunction` |
+| 活按钮 | 右键长按持续输出信号，4边写边 | `LivingButtonFunction` + `ButtonPressHandler` |
+| 活拉杆 | 右键切换开关状态，4边写边 | `LivingLeverFunction` + `LeverToggleHandler` |
+| 活红石灯 | 信号消费者，anyOfSlot 亮/灭可视化 | `LivingRedstoneLampFunction` |
+| 活中继器 | 延迟 + 单向 + 信号刷新 + Phase1 写方向边 | `LivingRepeaterFunction` + `RepeaterCycleHandler` |
+| 活比较器 | 比较/减法 + 物品检测 + Phase1 写方向边 | `LivingComparatorFunction` + `ComparatorToggleHandler` |
+| 边信号模型 | EdgeGrid 共享边 + 边界边预留 + 五阶段 BFS | `ContainerRedstoneData` |
 
 ### 计划中（P3）
 

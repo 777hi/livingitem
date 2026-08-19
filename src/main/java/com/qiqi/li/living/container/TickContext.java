@@ -66,6 +66,21 @@ public class TickContext {
     }
 
     /**
+     * 获取或创建容器红石数据。
+     * 优先从持久化的 {@link SimpleContainerContext} 获取，确保 edgeGrid 跨 tick 保持。
+     */
+    public ContainerRedstoneData getOrCreateRedstoneData(ContainerContext context) {
+        if (redstoneData == null) {
+            if (context instanceof SimpleContainerContext simpleCtx) {
+                redstoneData = simpleCtx.getOrCreateRedstoneData();
+            } else {
+                redstoneData = new ContainerRedstoneData(context.getSize());
+            }
+        }
+        return redstoneData;
+    }
+
+    /**
      * 获取指定功能的活跃槽位集合（只读）。
      * 由 {@link ContainerLivingItemHandler} 在分组后填充，功能类可直接读取，
      * 无需再遍历整个容器查找其他功能的槽位。

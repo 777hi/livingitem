@@ -246,3 +246,32 @@ src/main/java/com/qiqi/li/living/
 但这个转变不应该提前设计——应该**等第 3 个活物品暴露了重复模式后再提取**。现在活水桶和活水车只有 2 个数据点，还不足以确定哪些是真正的共同模式、哪些只是巧合的相似。等活红石或活熔岩桶加入后，重复模式会自然浮现，那时候提取的原语才是真正有用的。
 
 **一句话**：好框架不是设计出来的，是从重复中长出来的。当前的"整齐文件夹"阶段是必要的——它是未来领域原语的素材来源。
+
+---
+
+## 2026.08.18 更新：活红石领域的第一批原语提取
+
+活红石系统 7 个核心物品全部实现后，发现了以下重复模式并完成了提取：
+
+### 已提取的原语
+
+| 原语 | 位置 | 提取前 | 提取后 |
+|------|------|--------|--------|
+| `Pos2D.opposite()` | `model/Pos2D.java` | 3 个 Function 类各有一份 `getInputDirection()`（8行×3） | 1 个框架方法，调用方写 `data.direction().opposite()` |
+| Phase 方法拆分 | `ContainerRedstoneData.java` | `calculate()` 一个方法 200+ 行，每阶段重复 for 循环 | 拆分为 5 个私有方法：`phase0CountdownDelays()` / `phase1CollectSources()` / `phase2IterativePropagation()` / `phase3RecheckInputs()` / `phase4UpdateDisplay()` |
+| `prevSignalStrength` | `ContainerRedstoneData.java` | 中继器断电检测无法区分"还没算"和"真的没信号" | 引入上一帧信号缓存，Phase 0 用上一帧判断断电，Phase 2 算新信号 |
+
+### 暂不提取（等更多数据点）
+
+| 候选原语 | 当前重复数 | 暂不提取的原因 |
+|---------|-----------|---------------|
+| `tickContainerData` 去重 | 7 份 | 49 行重复不值得修改框架调度逻辑 |
+| `RedstoneComponent` 接口 | 每 Phase 2-4 个 for 循环 | 当前无新增组件需求，接口设计风险高，先用私有方法分割 |
+| `GridSimulator` 通用传播引擎 | 2 个域（活水、活红石） | 语义不同（水流 level vs 信号 strength），等第 3 个域出现再提取 |
+| `ContainerData<T>` 通用模式 | 3 个域 | 涉及 TickContext 修改，影响面大，等更多 ContainerData 出现 |
+
+### 关键经验
+
+1. **从重复中提取，不从想象中设计**：`opposite()` 是 3 份重复代码逼出来的，`prevSignalStrength` 是时序 bug 逼出来的
+2. **轻量优于重量**：不创建 `RedstoneComponent` 接口，而是用 5 个私有方法。零风险，且为未来接口化提供原型
+3. **框架层 vs 领域层**：`Pos2D.opposite()` 是框架层原语（通用），Phase 方法是领域层原语（仅红石域）。分清楚这两层是关键

@@ -11,6 +11,7 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 import com.qiqi.li.living.api.HasContainerData;
+import com.qiqi.li.living.domain.redstone.ContainerRedstoneData;
 import com.qiqi.li.living.domain.water.ContainerFluidData;
 import com.qiqi.li.living.domain.water.ContainerStressData;
 import net.minecraft.core.BlockPos;
@@ -52,6 +53,7 @@ public class ContainerLivingItemHandler {
     public static final Logger LOGGER = LogUtils.getLogger();
 
     private static final Map<String, ContainerFluidData> FLUID_DATA_CACHE = new LinkedHashMap<>();
+    private static final Map<String, ContainerRedstoneData> REDSTONE_DATA_CACHE = new LinkedHashMap<>();
     private static final int CLEANUP_INTERVAL = 1200;
     private static int cleanupCounter;
 
@@ -85,6 +87,40 @@ public class ContainerLivingItemHandler {
     private static void cleanupStaleFluidData(long currentTimeMs) {
         FLUID_DATA_CACHE.entrySet().removeIf(entry -> {
             ContainerFluidData data = entry.getValue();
+            return currentTimeMs - data.getLastTickTime() > 120_000;
+        });
+    }
+
+    /**
+     * 获取或创建容器持久化红石数据。
+     * 返回 null 表示容器不支持红石数据（如没有 containerKey）。
+     */
+    public static ContainerRedstoneData getRedstoneData(String containerKey) {
+        if (containerKey == null) return null;
+        return REDSTONE_DATA_CACHE.computeIfAbsent(containerKey, k -> new ContainerRedstoneData(0));
+    }
+
+    /**
+     * 清理指定容器的红石数据（容器销毁时调用）。
+     */
+    public static void removeRedstoneData(String containerKey) {
+        if (containerKey != null) {
+            REDSTONE_DATA_CACHE.remove(containerKey);
+        }
+    }
+
+    public static void removeRedstoneDataByPos(BlockPos pos) {
+        String regex = ".*_" + pos.getX() + "_" + pos.getY() + "_" + pos.getZ() + "(_\\d+_\\d+_\\d+)?$";
+        Pattern pattern = Pattern.compile(regex);
+        REDSTONE_DATA_CACHE.keySet().removeIf(key -> pattern.matcher(key).matches());
+    }
+
+    /**
+     * 清理过期的红石数据（超过 STALE_THRESHOLD 毫秒未访问的条目）。
+     */
+    private static void cleanupStaleRedstoneData(long currentTimeMs) {
+        REDSTONE_DATA_CACHE.entrySet().removeIf(entry -> {
+            ContainerRedstoneData data = entry.getValue();
             return currentTimeMs - data.getLastTickTime() > 120_000;
         });
     }
@@ -263,7 +299,9 @@ public class ContainerLivingItemHandler {
         cleanupCounter++;
         if (cleanupCounter >= CLEANUP_INTERVAL) {
             cleanupCounter = 0;
-            cleanupStaleFluidData(System.currentTimeMillis());
+            long currentTimeMs = System.currentTimeMillis();
+            cleanupStaleFluidData(currentTimeMs);
+            cleanupStaleRedstoneData(currentTimeMs);
         }
 
         if (context instanceof SimpleContainerContext simpleCtx2) {

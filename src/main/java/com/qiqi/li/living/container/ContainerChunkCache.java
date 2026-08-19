@@ -103,6 +103,7 @@ public class ContainerChunkCache {
         if (event.getLevel() instanceof ServerLevel level) {
             if (hasContainerOrItemHandler(level, event.getPos())) {
                 ContainerLivingItemHandler.removeFluidDataByPos(event.getPos());
+                ContainerLivingItemHandler.removeRedstoneDataByPos(event.getPos());
                 rescanChunk(level, event.getPos());
             }
         }

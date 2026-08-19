@@ -1,6 +1,7 @@
 package com.qiqi.li.living.domain.redstone;
 
 import java.util.ArrayDeque;
+import java.util.Arrays;
 import java.util.Queue;
 import java.util.Set;
 import net.minecraft.world.item.ItemStack;
@@ -13,16 +14,31 @@ public class ContainerRedstoneData {
 
     private static final int PROPAGATION_INTERVAL = 2;
 
-    private int[] signalStrength;
-    private int[] prevSignalStrength;
+    private static final int E_UP = 0;
+    private static final int E_DOWN = 1;
+    private static final int E_LEFT = 2;
+    private static final int E_RIGHT = 3;
+
+    private final int slotCount;
+    private EdgeGrid edgeGrid;
+    private EdgeGrid prevEdgeGrid;
 
     private int tickCounter;
     private boolean processedThisTick;
+    private long lastTickTime;
 
     public ContainerRedstoneData(int size) {
-        this.signalStrength = new int[size];
-        this.prevSignalStrength = new int[size];
+        this.slotCount = size;
         this.tickCounter = 1;
+        this.processedThisTick = false;
+        this.lastTickTime = System.currentTimeMillis();
+    }
+
+    public long getLastTickTime() {
+        return lastTickTime;
+    }
+
+    public void resetProcessedFlag() {
         this.processedThisTick = false;
     }
 
@@ -31,7 +47,8 @@ public class ContainerRedstoneData {
     }
 
     public int getSignal(int slot) {
-        return slot >= 0 && slot < signalStrength.length ? signalStrength[slot] : 0;
+        if (edgeGrid == null) return 0;
+        return edgeGrid.maxOfSlot(slot);
     }
 
     public int getTickCounter() {
@@ -39,26 +56,28 @@ public class ContainerRedstoneData {
     }
 
     public int getSize() {
-        return signalStrength.length;
+        return slotCount;
     }
 
     private void reset() {
-        int[] temp = prevSignalStrength;
-        prevSignalStrength = signalStrength;
-        signalStrength = temp;
-        for (int i = 0; i < signalStrength.length; i++) {
-            signalStrength[i] = 0;
+        EdgeGrid temp = prevEdgeGrid;
+        prevEdgeGrid = edgeGrid;
+        edgeGrid = temp;
+        if (edgeGrid != null) {
+            edgeGrid.zero();
         }
     }
 
     public void calculate(ContainerContext context, TickContext tick) {
         if (processedThisTick) return;
         processedThisTick = true;
+        lastTickTime = System.currentTimeMillis();
         tickCounter++;
         if (tickCounter % PROPAGATION_INTERVAL != 0) return;
 
         int size = context.getSize();
         int width = context.getWidth();
+        int height = (size + width - 1) / width;
 
         Set<Integer> torchSlots = tick.getFunctionSlots(LivingRedstoneTorchFunction.ID);
         Set<Integer> dustSlots = tick.getFunctionSlots(LivingRedstoneFunction.ID);
@@ -73,13 +92,23 @@ public class ContainerRedstoneData {
             || !repeaterSlots.isEmpty() || !comparatorSlots.isEmpty();
         if (!hasAny) return;
 
-        if (signalStrength.length != size) {
-            signalStrength = new int[size];
-            prevSignalStrength = new int[size];
+        if (edgeGrid == null || edgeGrid.width != width || edgeGrid.height != height) {
+            edgeGrid = new EdgeGrid(width, height);
+            prevEdgeGrid = new EdgeGrid(width, height);
         }
         reset();
 
-        // ===== Phase 0: countdown delays, detect power-off using prevSignalStrength =====
+        phase0CountdownDelays(repeaterSlots, buttonSlots, size, context);
+        Queue<Integer> queue = phase1CollectSources(torchSlots, buttonSlots, leverSlots,
+            repeaterSlots, comparatorSlots, dustSlots, size, width, context);
+        phase2Propagation(queue, dustSlots, repeaterSlots, comparatorSlots,
+            torchSlots, lampSlots, size, width, context);
+        phase3RecheckInputs(repeaterSlots, comparatorSlots, size, context);
+        phase4UpdateDisplay(torchSlots, dustSlots, lampSlots, size, context);
+    }
+
+    private void phase0CountdownDelays(Set<Integer> repeaterSlots, Set<Integer> buttonSlots,
+            int size, ContainerContext context) {
         for (int slot : repeaterSlots) {
             if (slot < 0 || slot >= size) continue;
             ItemStack stack = context.getItem(slot);
@@ -88,9 +117,8 @@ public class ContainerRedstoneData {
             LivingRepeaterData data = LivingItemManager.getRepeaterData(stack);
             if (!data.powered()) continue;
 
-            Pos2D inputDir = LivingRepeaterFunction.getInputDirection(data.direction());
-            int inputSlot = resolveSlot(slot, inputDir, size, width);
-            boolean hasInput = inputSlot >= 0 && prevSignalStrength[inputSlot] > 0;
+            int inputDir = edgeIndex(data.direction().opposite());
+            boolean hasInput = prevEdgeGrid.get(slot, inputDir) > 0;
 
             if (!hasInput) {
                 data = data.withPowered(false).withDelayTimer(0);
@@ -121,8 +149,11 @@ public class ContainerRedstoneData {
                 }
             }
         }
+    }
 
-        // ===== Phase 1: collect all signal sources =====
+    private Queue<Integer> phase1CollectSources(Set<Integer> torchSlots, Set<Integer> buttonSlots,
+            Set<Integer> leverSlots, Set<Integer> repeaterSlots, Set<Integer> comparatorSlots,
+            Set<Integer> dustSlots, int size, int width, ContainerContext context) {
         Queue<Integer> queue = new ArrayDeque<>();
 
         for (int slot : torchSlots) {
@@ -130,9 +161,20 @@ public class ContainerRedstoneData {
             ItemStack stack = context.getItem(slot);
             if (stack.isEmpty()) continue;
             LivingRedstoneTorchData data = LivingItemManager.getRedstoneTorchData(stack);
-            if (data.isLit()) {
-                signalStrength[slot] = getSignalCap(stack.getCount());
-                queue.add(slot);
+            if (!data.isLit()) continue;
+
+            int cap = getSignalCap(stack.getCount());
+            int skipDir = edgeIndex(data.direction().opposite());
+
+            for (int dir = 0; dir < 4; dir++) {
+                if (dir == skipDir) continue;
+                int neighbor = resolveSlot(slot, dir, size, width);
+                if (cap > edgeGrid.get(slot, dir)) {
+                    edgeGrid.set(slot, dir, cap);
+                    if (neighbor >= 0 && dustSlots.contains(neighbor)) {
+                        queue.add(neighbor);
+                    }
+                }
             }
         }
 
@@ -141,9 +183,17 @@ public class ContainerRedstoneData {
             ItemStack stack = context.getItem(slot);
             if (stack.isEmpty()) continue;
             LivingButtonData data = LivingItemManager.getButtonData(stack);
-            if (data.pressed()) {
-                signalStrength[slot] = getSignalCap(stack.getCount());
-                queue.add(slot);
+            if (!data.pressed()) continue;
+
+            int cap = getSignalCap(stack.getCount());
+            for (int dir = 0; dir < 4; dir++) {
+                int neighbor = resolveSlot(slot, dir, size, width);
+                if (cap > edgeGrid.get(slot, dir)) {
+                    edgeGrid.set(slot, dir, cap);
+                    if (neighbor >= 0 && dustSlots.contains(neighbor)) {
+                        queue.add(neighbor);
+                    }
+                }
             }
         }
 
@@ -152,9 +202,17 @@ public class ContainerRedstoneData {
             ItemStack stack = context.getItem(slot);
             if (stack.isEmpty()) continue;
             LivingLeverData data = LivingItemManager.getLeverData(stack);
-            if (data.powered()) {
-                signalStrength[slot] = getSignalCap(stack.getCount());
-                queue.add(slot);
+            if (!data.powered()) continue;
+
+            int cap = getSignalCap(stack.getCount());
+            for (int dir = 0; dir < 4; dir++) {
+                int neighbor = resolveSlot(slot, dir, size, width);
+                if (cap > edgeGrid.get(slot, dir)) {
+                    edgeGrid.set(slot, dir, cap);
+                    if (neighbor >= 0 && dustSlots.contains(neighbor)) {
+                        queue.add(neighbor);
+                    }
+                }
             }
         }
 
@@ -163,9 +221,16 @@ public class ContainerRedstoneData {
             ItemStack stack = context.getItem(slot);
             if (stack.isEmpty()) continue;
             LivingRepeaterData data = LivingItemManager.getRepeaterData(stack);
-            if (data.powered() && data.delayTimer() == 0) {
-                signalStrength[slot] = getSignalCap(stack.getCount());
-                queue.add(slot);
+            if (!data.powered() || data.delayTimer() != 0) continue;
+
+            int cap = getSignalCap(stack.getCount());
+            int outDir = edgeIndex(data.direction());
+            int neighbor = resolveSlot(slot, outDir, size, width);
+            if (cap > edgeGrid.get(slot, outDir)) {
+                edgeGrid.set(slot, outDir, cap);
+                if (neighbor >= 0 && dustSlots.contains(neighbor)) {
+                    queue.add(neighbor);
+                }
             }
         }
 
@@ -174,56 +239,56 @@ public class ContainerRedstoneData {
             ItemStack stack = context.getItem(slot);
             if (stack.isEmpty()) continue;
             LivingComparatorData data = LivingItemManager.getComparatorData(stack);
-            int output = computeComparatorOutput(slot, data, size, width, context);
-            if (output > 0) {
-                signalStrength[slot] = output;
-                queue.add(slot);
-            }
-        }
+            int output = computeComparatorOutput(slot, data);
+            if (output <= 0) continue;
 
-        // ===== Phase 2: iterative propagation until stable =====
-        while (!queue.isEmpty()) {
-            int current = queue.poll();
-            int currentSignal = signalStrength[current];
-            if (currentSignal <= 1) continue;
-
-            boolean isTorch = torchSlots.contains(current);
-            boolean isSource = isTorch || buttonSlots.contains(current)
-                || leverSlots.contains(current);
-
-            Pos2D outDir = getOutputDirection(current, repeaterSlots, comparatorSlots, context);
-
-            int[] neighbors = ContainerContext.getNeighbors(current, size, width);
-            for (int neighbor : neighbors) {
-                ItemStack neighborStack = context.getItem(neighbor);
-                if (neighborStack.isEmpty()) continue;
-                if (!isRedstoneComponent(neighbor, dustSlots, repeaterSlots, comparatorSlots)) continue;
-
-                if (outDir != null) {
-                    int expected = resolveSlot(current, outDir, size, width);
-                    if (neighbor != expected) continue;
-                }
-
-                if (isTorch) {
-                    ItemStack torchStack = context.getItem(current);
-                    LivingRedstoneTorchData torchData = LivingItemManager.getRedstoneTorchData(torchStack);
-                    Pos2D inputDir = LivingRedstoneTorchFunction.getInputDirection(torchData.direction());
-                    int inputSlot = resolveSlot(current, inputDir, size, width);
-                    if (neighbor == inputSlot) continue;
-                }
-
-                int newSignal = isSource ? currentSignal : currentSignal - 1;
-                int cap = getSignalCap(neighborStack.getCount());
-                newSignal = Math.min(newSignal, cap);
-
-                if (newSignal > signalStrength[neighbor]) {
-                    signalStrength[neighbor] = newSignal;
+            int outDir = edgeIndex(data.direction());
+            int neighbor = resolveSlot(slot, outDir, size, width);
+            if (output > edgeGrid.get(slot, outDir)) {
+                edgeGrid.set(slot, outDir, output);
+                if (neighbor >= 0 && dustSlots.contains(neighbor)) {
                     queue.add(neighbor);
                 }
             }
         }
 
-        // ===== Phase 3: re-check inputs for components that may have received new signals =====
+        return queue;
+    }
+
+    private void phase2Propagation(Queue<Integer> queue, Set<Integer> dustSlots,
+            Set<Integer> repeaterSlots, Set<Integer> comparatorSlots,
+            Set<Integer> torchSlots, Set<Integer> lampSlots,
+            int size, int width, ContainerContext context) {
+        while (!queue.isEmpty()) {
+            int current = queue.poll();
+            if (!dustSlots.contains(current)) continue;
+
+            ItemStack stack = context.getItem(current);
+            if (stack.isEmpty()) continue;
+
+            int maxInput = edgeGrid.maxOfSlot(current);
+            if (maxInput <= 1) continue;
+
+            int output = Math.min(maxInput - 1, getSignalCap(stack.getCount()));
+
+            for (int dir = 0; dir < 4; dir++) {
+                int neighbor = resolveSlot(current, dir, size, width);
+                boolean isTarget = neighbor >= 0 && isRedstoneTarget(neighbor, dustSlots,
+                    repeaterSlots, comparatorSlots, torchSlots, lampSlots);
+                if (!isTarget && neighbor >= 0) continue;
+
+                if (output > edgeGrid.get(current, dir)) {
+                    edgeGrid.set(current, dir, output);
+                    if (neighbor >= 0 && dustSlots.contains(neighbor)) {
+                        queue.add(neighbor);
+                    }
+                }
+            }
+        }
+    }
+
+    private void phase3RecheckInputs(Set<Integer> repeaterSlots, Set<Integer> comparatorSlots,
+            int size, ContainerContext context) {
         for (int slot : repeaterSlots) {
             if (slot < 0 || slot >= size) continue;
             ItemStack stack = context.getItem(slot);
@@ -232,9 +297,8 @@ public class ContainerRedstoneData {
             LivingRepeaterData data = LivingItemManager.getRepeaterData(stack);
             if (data.powered() && data.delayTimer() == 0) continue;
 
-            Pos2D inputDir = LivingRepeaterFunction.getInputDirection(data.direction());
-            int inputSlot = resolveSlot(slot, inputDir, size, width);
-            boolean hasInput = inputSlot >= 0 && signalStrength[inputSlot] > 0;
+            int inputDir = edgeIndex(data.direction().opposite());
+            boolean hasInput = edgeGrid.get(slot, inputDir) > 0;
 
             if (hasInput && !data.powered()) {
                 LivingItemManager.setRepeaterData(stack, data.withPowered(true).withDelayTimer(data.delay()));
@@ -251,24 +315,25 @@ public class ContainerRedstoneData {
             if (stack.isEmpty()) continue;
 
             LivingComparatorData data = LivingItemManager.getComparatorData(stack);
-            int output = computeComparatorOutput(slot, data, size, width, context);
+            int output = computeComparatorOutput(slot, data);
             boolean newPowered = output > 0;
             if (data.powered() != newPowered) {
                 LivingItemManager.setComparatorData(stack, data.withPowered(newPowered));
                 context.syncSlotToClients(slot, stack);
             }
         }
+    }
 
-        // ===== Phase 4: update display states =====
+    private void phase4UpdateDisplay(Set<Integer> torchSlots, Set<Integer> dustSlots,
+            Set<Integer> lampSlots, int size, ContainerContext context) {
         for (int slot : torchSlots) {
             if (slot < 0 || slot >= size) continue;
             ItemStack stack = context.getItem(slot);
             if (stack.isEmpty()) continue;
 
             LivingRedstoneTorchData data = LivingItemManager.getRedstoneTorchData(stack);
-            Pos2D inputDir = LivingRedstoneTorchFunction.getInputDirection(data.direction());
-            int inputSlot = resolveSlot(slot, inputDir, size, width);
-            boolean hasInput = inputSlot >= 0 && signalStrength[inputSlot] > 0;
+            int inputDir = edgeIndex(data.direction().opposite());
+            boolean hasInput = edgeGrid.get(slot, inputDir) > 0;
             boolean newLit = !hasInput;
             if (data.isLit() != newLit) {
                 LivingItemManager.setRedstoneTorchData(stack, data.withLit(newLit));
@@ -281,10 +346,10 @@ public class ContainerRedstoneData {
             ItemStack stack = context.getItem(slot);
             if (stack.isEmpty()) continue;
 
-            int signal = signalStrength[slot];
+            int maxSignal = edgeGrid.maxOfSlot(slot);
             LivingRedstoneData data = LivingItemManager.getRedstoneData(stack);
-            if (data.signalStrength() != signal || data.isPowered() != (signal > 0)) {
-                LivingItemManager.setRedstoneData(stack, data.withSignal(signal).withPowered(signal > 0));
+            if (data.signalStrength() != maxSignal || data.isPowered() != (maxSignal > 0)) {
+                LivingItemManager.setRedstoneData(stack, data.withSignal(maxSignal).withPowered(maxSignal > 0));
                 context.syncSlotToClients(slot, stack);
             }
         }
@@ -294,15 +359,7 @@ public class ContainerRedstoneData {
             ItemStack stack = context.getItem(slot);
             if (stack.isEmpty()) continue;
 
-            boolean hasSignal = false;
-            int[] neighbors = ContainerContext.getNeighbors(slot, size, width);
-            for (int neighbor : neighbors) {
-                if (signalStrength[neighbor] > 0) {
-                    hasSignal = true;
-                    break;
-                }
-            }
-
+            boolean hasSignal = edgeGrid.anyOfSlot(slot);
             LivingRedstoneLampData data = LivingItemManager.getLampData(stack);
             if (data.lit() != hasSignal) {
                 LivingItemManager.setLampData(stack, data.withLit(hasSignal));
@@ -311,38 +368,20 @@ public class ContainerRedstoneData {
         }
     }
 
-    private boolean isRedstoneComponent(int slot, Set<Integer> dustSlots,
-            Set<Integer> repeaterSlots, Set<Integer> comparatorSlots) {
-        return dustSlots.contains(slot) || repeaterSlots.contains(slot) || comparatorSlots.contains(slot);
+    private boolean isRedstoneTarget(int slot, Set<Integer> dustSlots, Set<Integer> repeaterSlots,
+            Set<Integer> comparatorSlots, Set<Integer> torchSlots, Set<Integer> lampSlots) {
+        return dustSlots.contains(slot) || repeaterSlots.contains(slot)
+            || comparatorSlots.contains(slot) || torchSlots.contains(slot) || lampSlots.contains(slot);
     }
 
-    private Pos2D getOutputDirection(int slot, Set<Integer> repeaterSlots,
-            Set<Integer> comparatorSlots, ContainerContext context) {
-        if (repeaterSlots.contains(slot)) {
-            ItemStack stack = context.getItem(slot);
-            LivingRepeaterData data = LivingItemManager.getRepeaterData(stack);
-            return data.direction();
-        }
-        if (comparatorSlots.contains(slot)) {
-            ItemStack stack = context.getItem(slot);
-            LivingComparatorData data = LivingItemManager.getComparatorData(stack);
-            return data.direction();
-        }
-        return null;
-    }
+    private int computeComparatorOutput(int slot, LivingComparatorData data) {
+        int inputDir = edgeIndex(data.direction().opposite());
+        int signalA = edgeGrid.get(slot, inputDir);
 
-    private int computeComparatorOutput(int slot, LivingComparatorData data,
-            int size, int width, ContainerContext context) {
-        Pos2D inputDir = LivingComparatorFunction.getInputDirection(data.direction());
-        int inputASlot = resolveSlot(slot, inputDir, size, width);
-        int signalA = inputASlot >= 0 ? signalStrength[inputASlot] : 0;
-
-        int[] sideSlots = getPerpendicularNeighbors(slot, data.direction(), size, width);
+        int[] sideDirs = perpendicularEdges(inputDir);
         int signalB = 0;
-        for (int side : sideSlots) {
-            if (side >= 0) {
-                signalB = Math.max(signalB, signalStrength[side]);
-            }
+        for (int sideDir : sideDirs) {
+            signalB = Math.max(signalB, edgeGrid.get(slot, sideDir));
         }
 
         int output;
@@ -352,31 +391,110 @@ public class ContainerRedstoneData {
             output = signalA >= signalB ? signalA : 0;
         }
 
-        int cap = getSignalCap(context.getItem(slot).getCount());
-        return Math.min(output, cap);
+        return output;
     }
 
-    private static int resolveSlot(int slot, Pos2D dir, int size, int width) {
+    private static int[] perpendicularEdges(int dir) {
+        if (dir == E_UP || dir == E_DOWN) {
+            return new int[] {E_LEFT, E_RIGHT};
+        } else {
+            return new int[] {E_UP, E_DOWN};
+        }
+    }
+
+    private static int resolveSlot(int slot, int dir, int size, int width) {
         int col = slot % width;
         int row = slot / width;
-        int newCol = col + dir.x();
-        int newRow = row + dir.y();
+        int newCol = col;
+        int newRow = row;
+        switch (dir) {
+            case E_UP:    newRow = row - 1; break;
+            case E_DOWN:  newRow = row + 1; break;
+            case E_LEFT:  newCol = col - 1; break;
+            case E_RIGHT: newCol = col + 1; break;
+            default: return -1;
+        }
         if (newCol < 0 || newCol >= width || newRow < 0) return -1;
         int result = newRow * width + newCol;
         return result < size ? result : -1;
     }
 
-    private static int[] getPerpendicularNeighbors(int slot, Pos2D direction, int size, int width) {
-        if (direction.x() == 0) {
-            return new int[] {
-                resolveSlot(slot, Pos2D.LEFT, size, width),
-                resolveSlot(slot, Pos2D.RIGHT, size, width)
-            };
+    private static int edgeIndex(Pos2D dir) {
+        if (dir.x() == 0) {
+            return dir.y() < 0 ? E_UP : E_DOWN;
         } else {
-            return new int[] {
-                resolveSlot(slot, Pos2D.UP, size, width),
-                resolveSlot(slot, Pos2D.DOWN, size, width)
-            };
+            return dir.x() < 0 ? E_LEFT : E_RIGHT;
+        }
+    }
+
+    /**
+     * 共享边网格：相邻槽位之间的边只有一条，两个槽位读写同一数组条目。
+     * 边界边也存储，为跨容器信号传输预留。
+     *
+     * 对于 W×H 的槽位网格，每行有 W+1 条水平边，每列有 H+1 条垂直边：
+     *   hEdges[height * (width + 1)] — 水平边（含左右边界）
+     *   vEdges[(height + 1) * width] — 垂直边（含上下边界）
+     *
+     * 槽位 (r,c) 的边：
+     *   LEFT  → hEdges[r * (W+1) + c]
+     *   RIGHT → hEdges[r * (W+1) + (c+1)]
+     *   UP    → vEdges[r * W + c]
+     *   DOWN  → vEdges[(r+1) * W + c]
+     */
+    private static class EdgeGrid {
+        final int width;
+        final int height;
+        final int[] hEdges;
+        final int[] vEdges;
+
+        EdgeGrid(int width, int height) {
+            this.width = width;
+            this.height = height;
+            this.hEdges = new int[height * (width + 1)];
+            this.vEdges = new int[(height + 1) * width];
+        }
+
+        int get(int slot, int dir) {
+            int r = slot / width;
+            int c = slot % width;
+            switch (dir) {
+                case E_UP:    return vEdges[r * width + c];
+                case E_DOWN:  return vEdges[(r + 1) * width + c];
+                case E_LEFT:  return hEdges[r * (width + 1) + c];
+                case E_RIGHT: return hEdges[r * (width + 1) + (c + 1)];
+                default: return 0;
+            }
+        }
+
+        void set(int slot, int dir, int value) {
+            int r = slot / width;
+            int c = slot % width;
+            switch (dir) {
+                case E_UP:    vEdges[r * width + c] = value; break;
+                case E_DOWN:  vEdges[(r + 1) * width + c] = value; break;
+                case E_LEFT:  hEdges[r * (width + 1) + c] = value; break;
+                case E_RIGHT: hEdges[r * (width + 1) + (c + 1)] = value; break;
+            }
+        }
+
+        int maxOfSlot(int slot) {
+            int max = 0;
+            for (int dir = 0; dir < 4; dir++) {
+                max = Math.max(max, get(slot, dir));
+            }
+            return max;
+        }
+
+        boolean anyOfSlot(int slot) {
+            for (int dir = 0; dir < 4; dir++) {
+                if (get(slot, dir) > 0) return true;
+            }
+            return false;
+        }
+
+        void zero() {
+            Arrays.fill(hEdges, 0);
+            Arrays.fill(vEdges, 0);
         }
     }
 }

@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.qiqi.li.living.domain.water.ContainerFluidData;
+import com.qiqi.li.living.domain.redstone.ContainerRedstoneData;
 import com.qiqi.li.living.transfer.ContainerCompatibilityConfig;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket;
@@ -41,10 +42,14 @@ public class SimpleContainerContext implements ContainerContext {
     private final Level overrideLevel;
 
     private ContainerFluidData fluidData;
+    private ContainerRedstoneData redstoneData;
     private TickContext currentTickContext;
 
     public void setTickContext(TickContext tick) {
         this.currentTickContext = tick;
+        if (tick != null && redstoneData != null) {
+            redstoneData.resetProcessedFlag();
+        }
     }
 
     public TickContext getTickContext() {
@@ -340,6 +345,13 @@ public class SimpleContainerContext implements ContainerContext {
             fluidData = ContainerLivingItemHandler.getFluidData(containerKey);
         }
         return fluidData;
+    }
+
+    public ContainerRedstoneData getOrCreateRedstoneData() {
+        if (redstoneData == null) {
+            redstoneData = ContainerLivingItemHandler.getRedstoneData(containerKey);
+        }
+        return redstoneData;
     }
 
     private void syncPlayerInventory(Inventory inv, int logicalSlot, ItemStack stack) {

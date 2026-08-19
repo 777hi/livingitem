@@ -95,6 +95,21 @@ public record Pos2D(int x, int y) {
     }
 
     /**
+     * 获取相反方向。
+     * 对于 4 个基本方向，返回对应的常量（非 new 对象）。
+     * 对于其他方向，回退到 {@link #negate()}。
+     *
+     * @return 相反方向的 Pos2D
+     */
+    public Pos2D opposite() {
+        if (this == UP) return DOWN;
+        if (this == DOWN) return UP;
+        if (this == LEFT) return RIGHT;
+        if (this == RIGHT) return LEFT;
+        return negate();
+    }
+
+    /**
      * 判断是否为基本方向（上下左右）。
      *
      * @return 如果是 UP/DOWN/LEFT/RIGHT 返回 true

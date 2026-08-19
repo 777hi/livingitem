@@ -66,11 +66,7 @@ public class LivingRedstoneLampFunction implements LivingItemFunction, HasContai
 
     @Override
     public void tickContainerData(List<SlotEntry> entries, ContainerContext ctx, TickContext tick) {
-        ContainerRedstoneData redstoneData = tick.redstoneData;
-        if (redstoneData == null) {
-            redstoneData = new ContainerRedstoneData(ctx.getSize());
-            tick.redstoneData = redstoneData;
-        }
+        ContainerRedstoneData redstoneData = tick.getOrCreateRedstoneData(ctx);
         redstoneData.calculate(ctx, tick);
     }
 }

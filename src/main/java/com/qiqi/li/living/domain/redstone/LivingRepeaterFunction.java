@@ -113,20 +113,8 @@ public class LivingRepeaterFunction implements LivingItemFunction, HasDirection,
 
     @Override
     public void tickContainerData(List<SlotEntry> entries, ContainerContext ctx, TickContext tick) {
-        ContainerRedstoneData redstoneData = tick.redstoneData;
-        if (redstoneData == null) {
-            redstoneData = new ContainerRedstoneData(ctx.getSize());
-            tick.redstoneData = redstoneData;
-        }
+        ContainerRedstoneData redstoneData = tick.getOrCreateRedstoneData(ctx);
         redstoneData.calculate(ctx, tick);
-    }
-
-    public static Pos2D getInputDirection(Pos2D facing) {
-        if (facing.equals(Pos2D.UP)) return Pos2D.DOWN;
-        if (facing.equals(Pos2D.DOWN)) return Pos2D.UP;
-        if (facing.equals(Pos2D.LEFT)) return Pos2D.RIGHT;
-        if (facing.equals(Pos2D.RIGHT)) return Pos2D.LEFT;
-        return Pos2D.LEFT;
     }
 
     public static boolean updateRepeaterDirection(ItemStack stack, Pos2D direction) {
