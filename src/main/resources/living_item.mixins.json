@@ -4,9 +4,7 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "ItemStackMixin",
-    "ServerPlaceRecipeMixin",
-    "EntitySetPosRawMixin",
-    "ChunkMapMixin"
+    "ServerPlaceRecipeMixin"
   ],
   "injectors": {
     "defaultRequire": 1

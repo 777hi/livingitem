@@ -38,13 +38,6 @@ public class PerfMetrics {
     // ===== 功能调用 =====
     private static final Map<String, AtomicInteger> functionCalls = new ConcurrentHashMap<>();
 
-    // ===== 传送 =====
-    private static final AtomicInteger teleportCount = new AtomicInteger(0);
-    private static final AtomicLong teleportChunkLoadMs = new AtomicLong(0);
-    private static final AtomicLong teleportTotalMs = new AtomicLong(0);
-    private static final AtomicLong teleportMaxMs = new AtomicLong(0);
-    private static final AtomicInteger teleportSlowChunkLoads = new AtomicInteger(0);
-
     // ===== 容器区块缓存 =====
     private static final AtomicInteger cacheSelfCleanRemoves = new AtomicInteger(0);
     private static final AtomicInteger cacheCurrentSize = new AtomicInteger(0);
@@ -105,20 +98,6 @@ public class PerfMetrics {
     }
 
     // ══════════════════════════════════════════════
-    // 传送
-    // ══════════════════════════════════════════════
-
-    public static void recordTeleport(long chunkLoadMs, long totalMs) {
-        teleportCount.incrementAndGet();
-        teleportChunkLoadMs.addAndGet(chunkLoadMs);
-        teleportTotalMs.addAndGet(totalMs);
-        teleportMaxMs.accumulateAndGet(totalMs, Math::max);
-        if (chunkLoadMs > 50) {
-            teleportSlowChunkLoads.incrementAndGet();
-        }
-    }
-
-    // ══════════════════════════════════════════════
     // 容器区块缓存
     // ══════════════════════════════════════════════
 
@@ -170,7 +149,6 @@ public class PerfMetrics {
         ModLog.PERF.info("=== Performance report (last 60s) ===");
 
         printContainerSection();
-        printTeleportSection();
         printCacheSection();
         printTransferSection();
 
@@ -204,19 +182,6 @@ public class PerfMetrics {
             });
             ModLog.PERF.info(sb.toString());
         }
-    }
-
-    private static void printTeleportSection() {
-        int count = teleportCount.get();
-        if (count == 0) return;
-
-        long avgChunkMs = teleportChunkLoadMs.get() / count;
-        long avgTotalMs = teleportTotalMs.get() / count;
-        long maxMs = teleportMaxMs.get();
-        int slowLoads = teleportSlowChunkLoads.get();
-
-        ModLog.PERF.info("[Teleport] count={}, avgChunkLoad={}ms, avgTotal={}ms, max={}ms, slowChunkLoads={}",
-            count, avgChunkMs, avgTotalMs, maxMs, slowLoads);
     }
 
     private static void printCacheSection() {
@@ -279,11 +244,7 @@ public class PerfMetrics {
         containerOverThreshold.set(0);
         livingItemCounts.clear();
         functionCalls.clear();
-        teleportCount.set(0);
-        teleportChunkLoadMs.set(0);
-        teleportTotalMs.set(0);
-        teleportMaxMs.set(0);
-        teleportSlowChunkLoads.set(0);
+
         cacheSelfCleanRemoves.set(0);
         transferSuccess.set(0);
         transferFail.set(0);
