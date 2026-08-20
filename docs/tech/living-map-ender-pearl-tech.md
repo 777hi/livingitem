@@ -1,7 +1,7 @@
 # Living Map & Living Ender Pearl (活地图 & 活末影珍珠) 技术文档
 
-> **文档版本**: 2026.08 v48  
-> **最后更新**: 2026-08-19  
+> **文档版本**: 2026.08 v49  
+> **最后更新**: 2026-08-20  
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -2386,3 +2386,72 @@ private static int getSafeYFromNoise(ServerLevel level, int x, int z) {
 | 文件 | 改动 |
 |------|------|
 | `TeleportHelper.java` | 移除 `ensureChunkLoaded`、`findSafeY`、`ChunkLoadResult`；新增 `getSafeYFromNoise`（`ChunkGenerator.getBaseHeight`）、`ensureChunkForSubLevel`；`teleportToMapPosition` 和 `teleportToBanner` 不再调用阻塞加载 |
+
+### v48 → v49：手持传送客户端事件取消修复——消除方块预测额外延迟
+
+**问题**：经过大量测试确认，所有服务端优化（零区块加载、EntitySetPosRawMixin、异步预热、视距临时调整）对减少传送后空白等待收效甚微，但手持传送的空白等待时间**显著长于**展示框传送和物品栏传送。说明问题根因不在服务端，而在客户端。
+
+**根因分析**：
+
+三种传送方式的客户端事件处理存在关键差异：
+
+| 传送方式 | 事件/网络包 | 客户端事件取消 | 方块预测 |
+|---------|-----------|:---:|:---:|
+| 手持传送 | `PlayerInteractEvent.RightClickItem` | ❌ 未取消 | ✅ 进入 `startPrediction` |
+| 展示框传送 | `PlayerInteractEvent.EntityInteractSpecific` | ✅ 已取消 | ❌ 不进入 |
+| 物品栏传送 | `LivingMapGuiTeleportPacket`（自定义包） | 不涉及事件 | ❌ 不涉及 |
+
+**手持传送的客户端事件流程**：
+
+1. 玩家右键 → `Minecraft.startUseItem()` → `MultiPlayerGameMode.useItem()` → `startPrediction()`
+2. `startPrediction()` 调用 `level.getBlockStatePredictionHandler().startPredicting()`，递增预测序列号，设置 `isPredicting = true`
+3. 客户端发送 `ServerboundUseItemPacket`（携带序列号）
+4. 服务端处理传送 → 在下一个 tick 发送 `ClientboundPlayerPositionPacket`（传送位置）+ `ClientboundChunksAroundBeginPacket` + `ClientboundLevelChunkWithLightPacket`（区块数据）
+5. 服务端 `handleUseItem` 调用了 `ackBlockChangesUpTo(sequence)` → 在同一个 tick 发送 `ClientboundBlockChangedAckPacket`（携带序列号）
+6. 客户端收到 `ClientboundBlockChangedAckPacket` → `endPredictionsUpTo(sequence)` → 遍历预测记录恢复方块状态
+
+**为什么展示框传送不受影响**：`handleInteract` 不调用 `ackBlockChangesUpTo()`，服务端不发送 `ClientboundBlockChangedAckPacket`，客户端不进入方块预测状态恢复流程。
+
+**为什么物品栏传送不受影响**：`LivingMapGuiTeleportPacket` 通过 `context.enqueueWork()` 在服务端直接执行传送，不经过 `handleUseItem`/`handleInteract` 等包处理流程，完全不走客户端方块预测系统。
+
+**方块预测系统的额外开销**：
+
+1. **序列号同步**：`ServerboundUseItemPacket` 携带序列号，服务端记录后回传 `ClientboundBlockChangedAckPacket`
+2. **确认回包**：服务端在传送后的 tick 中发送 `ClientboundBlockChangedAckPacket`，与区块数据包混合发送，可能干扰客户端区块数据接收顺序
+3. **客户端状态恢复**：`endPredictionsUpTo(sequence)` 遍历 `serverVerifiedStates` 预测记录，调用 `level.syncBlockState()` 逐个恢复方块状态
+
+虽然手持传送本身不修改方块（预测记录为空），但 `startPrediction`/`endPredictionsUpTo` 的进入和退出流程、`ClientboundBlockChangedAckPacket` 的额外网络往返，仍可能干扰客户端对传送位置和区块数据的正常处理。
+
+**修复**：在 `LivingMapEventHandler.onRightClickItem` 中，**在客户端也取消事件**，与展示框传送 `ItemFrameMapTeleportHandler` 的处理方式一致：
+
+```java
+// 修复前：客户端直接 return，事件未取消
+if (!(event.getEntity() instanceof ServerPlayer player)) return;
+// ... 后续取消事件的代码在客户端不会执行
+
+// 修复后：先检查是否为活地图（客户端/服务端均可执行），再取消事件
+ItemStack mapStack = event.getItemStack();
+boolean isLivingMap = LivingItemManager.isLivingMap(mapStack);
+boolean isLivingEmptyMap = (mapStack.getItem() instanceof EmptyMapItem) && LivingItemManager.isLivingItem(mapStack);
+if (!isLivingMap && !isLivingEmptyMap) return;
+
+// 客户端和服务端都取消事件，防止客户端进入方块预测/item use 流程
+event.setCanceled(true);
+event.setCancellationResult(InteractionResult.sidedSuccess(event.getLevel().isClientSide()));
+
+// 传送逻辑仅在服务端执行
+if (!(event.getEntity() instanceof ServerPlayer player)) return;
+```
+
+**关键变化**：
+
+1. **活地图检查提前**：在 `ServerPlayer` 判断之前，先通过 `LivingItemManager.isLivingMap()` 判断是否为活地图。此检查在客户端和服务端均可执行（不依赖 `ServerPlayer`）
+2. **客户端也取消事件**：`event.setCanceled(true)` + `sidedSuccess(event.getLevel().isClientSide())` 在客户端返回 `SUCCESS`，让 `MultiPlayerGameMode.useItem()` 提前退出
+3. **不进入 startPrediction**：事件被取消后，`CommonHooks.onItemRightClick()` 返回 `CONSUME`，`MultiPlayerGameMode.useItem()` 直接返回 `SUCCESS`，不进入 `startPrediction()` 方块预测流程
+4. **不发送 ClientboundBlockChangedAckPacket**：客户端 `startPrediction` 未执行 → `ServerboundUseItemPacket` 的序列号为 0 → 服务端 `ackBlockChangesUpTo(0)` 不影响已确认的序列号 → 不发送确认包
+
+**修改文件**：
+
+| 文件 | 改动 |
+|------|------|
+| `LivingMapEventHandler.java` | `onRightClickItem`：活地图检查从 `ServerPlayer` 判断之后移到之前；在客户端也取消事件；`handleLivingMapCreation` 移除冗余的事件取消代码 |

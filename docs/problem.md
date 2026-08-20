@@ -231,3 +231,33 @@ ironchest (v1.21-neoforge-16.0.7)
 fabric_block_view_api_v2 (v1.0.10+9afaaf8c19)
 spark and spark-viewer are free & open source on GitHub.
 Copyright © 2018-2026 lucko & other spark contributors.
+
+---
+
+## 根因分析：手持传送为什么比展示框/物品栏传送慢
+
+### 问题现象
+
+经过大量测试，所有服务端优化（零区块加载、EntitySetPosRawMixin、异步预热、视距临时调整）收效甚微，但**手持传送的空白等待时间显著长于展示框传送和物品栏传送**。
+
+### 根因
+
+三种传送方式的客户端事件处理存在关键差异：
+
+| 传送方式 | 客户端事件 | 事件取消 | 方块预测 |
+|---------|----------|:---:|:---:|
+| 手持传送 | `PlayerInteractEvent.RightClickItem` | ❌ 未取消 | ✅ 进入 `startPrediction` |
+| 展示框传送 | `PlayerInteractEvent.EntityInteractSpecific` | ✅ 已取消 | ❌ 不进入 |
+| 物品栏传送 | `LivingMapGuiTeleportPacket`（自定义包） | 不涉及事件 | ❌ 不涉及 |
+
+**方块预测（BlockStatePredictionHandler）**：Minecraft 1.19+ 引入的客户端预测机制。当玩家挖/放方块时，客户端立即显示结果（不等服务器确认），服务器确认后通过 `ClientboundBlockChangedAckPacket` 清理预测记录。
+
+手持传送时，`LivingMapEventHandler.onRightClickItem` 中客户端事件未被取消，`MultiPlayerGameMode.useItem()` 继续执行，进入 `startPrediction()` 流程。虽然传送不修改方块，但预测系统引入了额外的序列号同步、`ClientboundBlockChangedAckPacket` 回包、`endPredictionsUpTo()` 状态恢复，干扰了客户端对传送位置和区块数据的正常处理。
+
+### 修复
+
+在 `LivingMapEventHandler.onRightClickItem` 中，**在客户端也取消事件**：活地图检查移到 `ServerPlayer` 判断之前，客户端和服务端都执行 `event.setCanceled(true)`。
+
+### 效果
+
+用户实测："好许多了"。手持传送的空白等待时间与展示框传送、物品栏传送基本一致。

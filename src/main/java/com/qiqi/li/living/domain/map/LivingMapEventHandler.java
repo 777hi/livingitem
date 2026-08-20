@@ -59,13 +59,23 @@ public final class LivingMapEventHandler {
 
     @SubscribeEvent
     public static void onRightClickItem(PlayerInteractEvent.RightClickItem event) {
+        ItemStack mapStack = event.getItemStack();
+
+        boolean isLivingMap = LivingItemManager.isLivingMap(mapStack);
+        boolean isLivingEmptyMap = (mapStack.getItem() instanceof EmptyMapItem) && LivingItemManager.isLivingItem(mapStack);
+
+        if (!isLivingMap && !isLivingEmptyMap) return;
+
+        event.setCanceled(true);
+        event.setCancellationResult(InteractionResult.sidedSuccess(event.getLevel().isClientSide()));
+
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
         if (!(player.level() instanceof ServerLevel sourceLevel)) return;
 
-        if (handleLivingMapCreation(event, player, sourceLevel)) return;
-
-        ItemStack mapStack = event.getItemStack();
-        if (!LivingItemManager.isLivingMap(mapStack)) return;
+        if (isLivingEmptyMap) {
+            handleLivingMapCreation(event, player, sourceLevel);
+            return;
+        }
 
         MapId mapId = mapStack.get(DataComponents.MAP_ID);
         if (mapId == null) return;
@@ -83,19 +93,14 @@ public final class LivingMapEventHandler {
 
         if (target.mapX() < 0 || target.mapX() >= MapCoordHelper.MAP_SIZE
             || target.mapY() < 0 || target.mapY() >= MapCoordHelper.MAP_SIZE) {
-            event.setCanceled(true);
-            event.setCancellationResult(InteractionResult.sidedSuccess(sourceLevel.isClientSide()));
             return;
         }
 
-        MapTeleportExecutor.Result result = MapTeleportExecutor.execute(
+        MapTeleportExecutor.execute(
             player, sourceLevel, targetLevel, mapData,
             target.mapX(), target.mapY(),
             target.worldX(), target.worldZ(),
             mapStack, pearlStack);
-
-        event.setCanceled(true);
-        event.setCancellationResult(InteractionResult.sidedSuccess(sourceLevel.isClientSide()));
     }
 
     @Nullable
@@ -143,8 +148,6 @@ public final class LivingMapEventHandler {
             }
         }
 
-        event.setCancellationResult(InteractionResult.sidedSuccess(level.isClientSide()));
-        event.setCanceled(true);
         return true;
     }
 }
