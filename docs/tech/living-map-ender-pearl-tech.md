@@ -1,6 +1,6 @@
 # Living Map & Living Ender Pearl (活地图 & 活末影珍珠) 技术文档
 
-> **文档版本**: 2026.08 v50  
+> **文档版本**: 2026.08 v51  
 > **最后更新**: 2026-08-20  
 > **适用版本**: Minecraft 1.21.1
 
@@ -2370,7 +2370,7 @@ if (!(event.getEntity() instanceof ServerPlayer player)) return;
 
 ### v49 → v50：代码清理——移除过度优化
 
-**背景**：v48→v49 定位到客户端事件取消是手持传送空白等待的**唯一根因**。v46→v48 期间引入的大量服务端优化（零区块加载、EntitySetPosRawMixin、异步预热、视距调整）对问题无实质帮助——物品栏传送和展示框传送在此优化前就已流畅。
+**背景**：v48→v49 定位到客户端事件取消是手持传送空白等待的根因。v46→v48 期间引入的大量服务端优化（零区块加载、EntitySetPosRawMixin、异步预热、视距调整）对问题无实质帮助。
 
 **移除的项目**：
 
@@ -2385,8 +2385,6 @@ if (!(event.getEntity() instanceof ServerPlayer player)) return;
 | `ensureChunkForSubLevel` | 子位面 `getChunk`（`ModSable.teleportSubLevel` 内部处理） |
 | `PerfMetrics.recordTeleport` | 传送性能指标统计 |
 
-**保留的核心优化**：仅 `LivingMapEventHandler.onRightClickItem` 中客户端事件取消——阻断 `startPrediction` 方块预测流程。
-
 **修改文件**：
 
 | 文件 | 改动 |
@@ -2396,3 +2394,52 @@ if (!(event.getEntity() instanceof ServerPlayer player)) return;
 | `ChunkMapMixin.java` | 删除 |
 | `PerfMetrics.java` | 移除 5 个传送 Atomic 字段、`recordTeleport`、`printTeleportSection` |
 | `living_item.mixins.json` | 移除 `EntitySetPosRawMixin`、`ChunkMapMixin` 条目 |
+
+**⚠️ v51 更正**：v48→v49 的"客户端事件取消是根因"结论**不正确**。后续测试发现，将活地图放在副手或主手时，物品栏传送和展示框传送也都会经历漫长空白等待——与传送方式无关，只与手上是否拿着要传送的地图有关。真正根因见 v50→v51。
+
+---
+
+### v50 → v51：真正的根因——原版 MapItem.update() 同步阻塞
+
+**问题发现**：经过大量测试，最终定位到一个关键现象：
+
+> 将活地图放在副手或主手时，**物品栏传送和展示框传送**也都会经历漫长的空白等待。和传送方式没有关系，只和手上是否拿着**要传送的那张地图**有关。拿其他活地图不影响。
+
+这推翻了之前"客户端事件取消是根因"的结论，指向一个更根本的问题：**手持地图时，原版 Minecraft 做了什么？**
+
+**根因**：原版 `MapItem.inventoryTick()` 每 tick 调用 `MapItem.update()`，后者在 [MapItem.java:113](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/libs/src/neoforge-21.1.230-merged/net/minecraft/world/item/MapItem.java#L113) 调用 `level.getChunk()`——**同步阻塞等待区块生成至 FULL 状态**。
+
+完整因果链：
+
+```
+玩家手持地图
+  → 每 tick 触发 MapItem.inventoryTick()
+    → 调用 MapItem.update() 更新地图颜色数据
+      → update() 遍历地图范围，调用 level.getChunk() 获取每个区块
+        → level.getChunk() 同步阻塞，等待区块生成至 FULL 状态
+          → 传送到未探索区域后，目标区块全部未加载
+            → update() 逐个阻塞加载这些区块
+              → 服务端主线程被阻塞，无法向客户端发送区块数据包
+                → 客户端长时间空白等待
+```
+
+**为什么拿其他地图不卡顿？** 其他地图可能已锁定（`mapitemsaveddata.locked = true`），`inventoryTick()` 中的 `update()` 调用条件 `!mapitemsaveddata.locked` 不满足，跳过更新。
+
+**修复方案**：传送后跳过若干 tick 的 `MapItem.update()` 调用，让区块加载系统先完成玩家周围区块的生成，再恢复地图更新。
+
+**新增文件**：
+
+| 文件 | 说明 |
+|------|------|
+| `MapUpdateSkipHelper.java` | 基于服务端 tick 计数的冷却追踪，`markTeleported()` 标记传送完成，`shouldSkip()` 判断是否应跳过更新 |
+| `MapItemMixin.java` | 注入 `MapItem.inventoryTick()`，传送后 40 tick（2秒）内取消方法执行 |
+
+**修改文件**：
+
+| 文件 | 改动 |
+|------|------|
+| `TeleportHelper.java` | `executeTeleport()` 中调用 `MapUpdateSkipHelper.markTeleported(player)` |
+| `LivingMapEventHandler.java` | 回退 `TickTask` 延迟执行，恢复为直接调用 `MapTeleportExecutor.execute()` |
+| `living_item.mixins.json` | 新增 `MapItemMixin` 条目 |
+
+**40 tick 冷却时间的选择**：玩家视距 8 chunk 时，`ChunkMap.updateChunkTracking()` 在传送后添加约 289 个区块的 `PLAYER` ticket。服务端 tick 内处理这些区块生成需要约 2 秒。40 tick = 2 秒足以让玩家周围区块加载完毕，之后恢复 `update()` 时区块已缓存，不会阻塞。

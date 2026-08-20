@@ -96,10 +96,10 @@ public final class LivingMapEventHandler {
             return;
         }
 
+        // 直接执行传送；MapItemMixin 会在传送后跳过 MapItem.update() 的阻塞调用
         MapTeleportExecutor.execute(
             player, sourceLevel, targetLevel, mapData,
-            target.mapX(), target.mapY(),
-            target.worldX(), target.worldZ(),
+            target.mapX(), target.mapY(), target.worldX(), target.worldZ(),
             mapStack, pearlStack);
     }
 

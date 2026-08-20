@@ -148,6 +148,10 @@ public final class TeleportHelper {
                 }
             }
         }
+        // 标记玩家刚传送完成，跳过若干 tick 的 MapItem.update() 调用
+        // 避免 update() 中 level.getChunk() 同步阻塞主线程导致客户端空白等待
+        MapUpdateSkipHelper.markTeleported(player);
+
         // 重置摔落距离，避免传送后误判摔落伤害
         player.resetFallDistance();
 

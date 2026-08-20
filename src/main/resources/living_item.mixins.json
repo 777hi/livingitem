@@ -4,6 +4,7 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "ItemStackMixin",
+    "MapItemMixin",
     "ServerPlaceRecipeMixin"
   ],
   "injectors": {
