@@ -5,7 +5,8 @@
   "mixins": [
     "ItemStackMixin",
     "ServerPlaceRecipeMixin",
-    "EntitySetPosRawMixin"
+    "EntitySetPosRawMixin",
+    "ChunkMapMixin"
   ],
   "injectors": {
     "defaultRequire": 1
