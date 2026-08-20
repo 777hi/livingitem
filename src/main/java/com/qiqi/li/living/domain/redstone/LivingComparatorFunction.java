@@ -127,16 +127,17 @@ public class LivingComparatorFunction implements LivingItemFunction, HasDirectio
         return true;
     }
 
-    public static int readComparatorOutput(ItemStack stack) {
+    public static int readComparatorOutput(ItemStack stack, int maxSignal) {
         if (stack.isEmpty()) return 0;
 
         if (LivingItemManager.isLivingItem(stack)) {
             for (LivingItemFunction func : LivingItemManager.getApplicableFunctions(stack)) {
                 int output = func.getComparatorOutput(stack);
-                if (output > 0) return output;
+                if (output > 0) return Math.min(output, maxSignal);
             }
             return 0;
         }
-        return stack.getCount();
+        int maxStackSize = stack.getMaxStackSize();
+        return maxStackSize > 0 ? Math.max(1, Math.round((float) stack.getCount() / maxStackSize * maxSignal)) : 0;
     }
 }

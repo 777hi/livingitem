@@ -105,8 +105,9 @@ public class ContainerRedstoneData {
             repeaterSlots, comparatorSlots, dustSlots, redstoneBlockSlots, size, width, context);
         phase2Propagation(queue, dustSlots, repeaterSlots, comparatorSlots,
             torchSlots, lampSlots, size, width, context);
-        phase3RecheckInputs(repeaterSlots, comparatorSlots, size, context);
-        phase4UpdateDisplay(torchSlots, dustSlots, lampSlots, size, context);
+        phase3RecheckInputs(repeaterSlots, comparatorSlots, size, width, context);
+        phase4UpdateDisplay(torchSlots, dustSlots, lampSlots, buttonSlots, leverSlots,
+            repeaterSlots, comparatorSlots, redstoneBlockSlots, size, width, context);
     }
 
     private void phase0CountdownDelays(Set<Integer> repeaterSlots, Set<Integer> buttonSlots,
@@ -250,7 +251,7 @@ public class ContainerRedstoneData {
             ItemStack stack = context.getItem(slot);
             if (stack.isEmpty()) continue;
             LivingComparatorData data = LivingItemManager.getComparatorData(stack);
-            int output = computeComparatorOutput(slot, data);
+            int output = computeComparatorOutput(slot, data, context, size, width);
             if (output <= 0) continue;
 
             int outDir = edgeIndex(data.direction());
@@ -316,7 +317,7 @@ public class ContainerRedstoneData {
     }
 
     private void phase3RecheckInputs(Set<Integer> repeaterSlots, Set<Integer> comparatorSlots,
-            int size, ContainerContext context) {
+            int size, int width, ContainerContext context) {
         for (int slot : repeaterSlots) {
             if (slot < 0 || slot >= size) continue;
             ItemStack stack = context.getItem(slot);
@@ -346,17 +347,24 @@ public class ContainerRedstoneData {
             if (stack.isEmpty()) continue;
 
             LivingComparatorData data = LivingItemManager.getComparatorData(stack);
-            int output = computeComparatorOutput(slot, data);
+            int output = computeComparatorOutput(slot, data, context, size, width);
             boolean newPowered = output > 0;
             if (data.powered() != newPowered) {
                 LivingItemManager.setComparatorData(stack, data.withPowered(newPowered));
                 context.syncSlotToClients(slot, stack);
             }
+
+            int outDir = edgeIndex(data.direction());
+            if (output != edgeGrid.get(slot, outDir)) {
+                edgeGrid.set(slot, outDir, output);
+            }
         }
     }
 
     private void phase4UpdateDisplay(Set<Integer> torchSlots, Set<Integer> dustSlots,
-            Set<Integer> lampSlots, int size, ContainerContext context) {
+            Set<Integer> lampSlots, Set<Integer> buttonSlots, Set<Integer> leverSlots,
+            Set<Integer> repeaterSlots, Set<Integer> comparatorSlots, Set<Integer> redstoneBlockSlots,
+            int size, int width, ContainerContext context) {
         for (int slot : torchSlots) {
             if (slot < 0 || slot >= size) continue;
             ItemStack stack = context.getItem(slot);
@@ -378,9 +386,14 @@ public class ContainerRedstoneData {
             if (stack.isEmpty()) continue;
 
             int maxSignal = edgeGrid.maxOfSlot(slot);
+            byte conn = computeDustConnections(slot, size, width, context,
+                buttonSlots, leverSlots, repeaterSlots, comparatorSlots,
+                torchSlots, dustSlots, lampSlots, redstoneBlockSlots);
             LivingRedstoneData data = LivingItemManager.getRedstoneData(stack);
-            if (data.signalStrength() != maxSignal || data.isPowered() != (maxSignal > 0)) {
-                LivingItemManager.setRedstoneData(stack, data.withSignal(maxSignal).withPowered(maxSignal > 0));
+            if (data.signalStrength() != maxSignal || data.isPowered() != (maxSignal > 0)
+                || data.connections() != conn) {
+                LivingItemManager.setRedstoneData(stack,
+                    data.withSignal(maxSignal).withPowered(maxSignal > 0).withConnections(conn));
                 context.syncSlotToClients(slot, stack);
             }
         }
@@ -399,20 +412,59 @@ public class ContainerRedstoneData {
         }
     }
 
+    private byte computeDustConnections(int slot, int size, int width, ContainerContext context,
+            Set<Integer> buttonSlots, Set<Integer> leverSlots, Set<Integer> repeaterSlots,
+            Set<Integer> comparatorSlots, Set<Integer> torchSlots, Set<Integer> dustSlots,
+            Set<Integer> lampSlots, Set<Integer> redstoneBlockSlots) {
+        byte conn = 0;
+        for (int dir = 0; dir < 4; dir++) {
+            int neighbor = resolveSlot(slot, dir, size, width);
+            if (neighbor >= 0 && (buttonSlots.contains(neighbor) || leverSlots.contains(neighbor)
+                || repeaterSlots.contains(neighbor) || comparatorSlots.contains(neighbor)
+                || torchSlots.contains(neighbor) || dustSlots.contains(neighbor)
+                || lampSlots.contains(neighbor) || redstoneBlockSlots.contains(neighbor))) {
+                conn |= (1 << dir);
+            }
+        }
+        return conn;
+    }
+
     private boolean isRedstoneTarget(int slot, Set<Integer> dustSlots, Set<Integer> repeaterSlots,
             Set<Integer> comparatorSlots, Set<Integer> torchSlots, Set<Integer> lampSlots) {
         return dustSlots.contains(slot) || repeaterSlots.contains(slot)
             || comparatorSlots.contains(slot) || torchSlots.contains(slot) || lampSlots.contains(slot);
     }
 
-    private int computeComparatorOutput(int slot, LivingComparatorData data) {
+    private int computeComparatorOutput(int slot, LivingComparatorData data,
+            ContainerContext context, int size, int width) {
         int inputDir = edgeIndex(data.direction().opposite());
         int signalA = edgeGrid.get(slot, inputDir);
+
+        ItemStack comparatorStack = context.getItem(slot);
+        int signalCap = getSignalCap(comparatorStack.getCount());
+
+        if (signalA == 0) {
+            int backSlot = resolveSlot(slot, inputDir, size, width);
+            if (backSlot >= 0) {
+                ItemStack backStack = context.getItem(backSlot);
+                signalA = LivingComparatorFunction.readComparatorOutput(backStack, signalCap);
+            }
+        }
 
         int[] sideDirs = perpendicularEdges(inputDir);
         int signalB = 0;
         for (int sideDir : sideDirs) {
-            signalB = Math.max(signalB, edgeGrid.get(slot, sideDir));
+            int edgeSignal = edgeGrid.get(slot, sideDir);
+            if (edgeSignal > 0) {
+                signalB = Math.max(signalB, edgeSignal);
+            } else {
+                int sideSlot = resolveSlot(slot, sideDir, size, width);
+                if (sideSlot >= 0) {
+                    ItemStack sideStack = context.getItem(sideSlot);
+                    int sideOutput = LivingComparatorFunction.readComparatorOutput(sideStack, signalCap);
+                    signalB = Math.max(signalB, sideOutput);
+                }
+            }
         }
 
         int output;

@@ -2,8 +2,8 @@
 
 # Living Redstone (活红石) 技术文档
 
-> **文档版本**: 2026.08 v5
-> **最后更新**: 2026-08-19
+> **文档版本**: 2026.08 v6
+> **最后更新**: 2026-08-21
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -358,7 +358,7 @@ calculate(context, tick):
   phase0CountdownDelays()    — 倒计时 + 断电检测（用 prevEdgeGrid 的边）
   phase1CollectSources()     — 信号源直接写边，红石粉邻居入队
   phase2Propagation()        — BFS 传播（仅红石粉入队）
-  phase3RecheckInputs()      — 重新检测级联输入（中继器/比较器）
+  phase3RecheckInputs()      — 重新检测级联输入（中继器/比较器），比较器写回边网格
   phase4UpdateDisplay()      — 更新物品显示状态（火把/灯/红石粉）
 ```
 
@@ -720,10 +720,14 @@ A < B → 输出 0
 
 ### 6.4 物品检测
 
-活比较器可读取侧边物品的信号值：
+活比较器可读取后方/侧边物品的信号值。当对应方向的边网格信号为 0 时，回退到读取物品：
 
-- **非活物品** → 返回堆叠数（原版行为）
-- **活物品** → 通过 `LivingItemFunction.getComparatorOutput(ItemStack)` 自定义输出
+- **非活物品** → 按堆叠充满度比例计算：
+  ```
+  信号 = round( (堆叠数 / 最大堆叠数) × 比较器信号上限 )，至少为 1
+  ```
+  其中 `比较器信号上限 = getSignalCap(比较器自身堆叠数)`，通过 `readComparatorOutput(stack, maxSignal)` 传入。
+- **活物品** → 通过 `LivingItemFunction.getComparatorOutput(ItemStack)` 自定义输出，上限为比较器信号上限
   - 默认返回 0（不检测）
   - 可覆盖实现自定义检测（如熔炉进度、TNT 引信时间）
 
@@ -739,9 +743,10 @@ Phase 1（作为信号源输出）：
   if output > 0 → 向输出方向边写入 output
   if 输出方向邻居是红石粉 → 邻居入队
 
-Phase 3（重新检测输入）：
+Phase 3（重新检测输入，Phase 2 粉尘传播后）：
   output = computeComparatorOutput()
   powered = (output > 0)
+  向输出方向边写入 output（确保 Phase 2 后更新的输入能反映到边网格）
 ```
 
 **computeComparatorOutput() 逻辑**：
@@ -749,16 +754,28 @@ Phase 3（重新检测输入）：
 int inputDir = edgeIndex(data.direction().opposite());  // 后方输入边
 int signalA = edgeGrid.get(slot, inputDir);              // 后方信号
 
+// 边网格无信号时，回退到读取后方物品
+if (signalA == 0) {
+    signalA = LivingComparatorFunction.readComparatorOutput(backStack, signalCap);
+}
+
 int[] sideDirs = perpendicularEdges(inputDir);           // 侧边（垂直于后方）
 int signalB = max(edgeGrid.get(slot, sideDirs[0]),
                   edgeGrid.get(slot, sideDirs[1]));      // 侧边最大信号
+
+// 侧边网格无信号时，回退到读取侧边物品
+for (int sideDir : sideDirs) {
+    if (edgeGrid.get(slot, sideDir) == 0) {
+        signalB = max(signalB, readComparatorOutput(sideStack, signalCap));
+    }
+}
 
 // 比较模式：A >= B → A，否则 0
 // 减法模式：A - B（最少 0）
 int output = subtractMode ? max(0, A - B) : (A >= B ? A : 0);
 ```
 
-与中继器一样，比较器在 Phase 1 作为信号源直接写边，不参与 Phase 2 BFS 传播。
+与中继器一样，比较器在 Phase 1 作为信号源直接写边，不参与 Phase 2 BFS 传播。但 Phase 3 会重新计算并写回边网格，确保依赖 Phase 2 粉尘传播的信号（如后方是红石粉）能正确反映到输出。
 
 ---
 
@@ -881,7 +898,7 @@ ContainerLivingItemHandler.processContext()
 | 活拉杆 | 右键切换开关状态，4边写边 | `LivingLeverFunction` + `LeverToggleHandler` |
 | 活红石灯 | 信号消费者，anyOfSlot 亮/灭可视化 | `LivingRedstoneLampFunction` |
 | 活中继器 | 延迟 + 单向 + 信号刷新 + Phase1 写方向边 | `LivingRepeaterFunction` + `RepeaterCycleHandler` |
-| 活比较器 | 比较/减法 + 物品检测 + Phase1 写方向边 | `LivingComparatorFunction` + `ComparatorToggleHandler` |
+| 活比较器 | 比较/减法 + 物品检测 + 边网格回退读取 + Phase1/Phase3 写方向边 | `LivingComparatorFunction` + `ComparatorToggleHandler` |
 | 边信号模型 | EdgeGrid 共享边 + 边界边预留 + 五阶段 BFS | `ContainerRedstoneData` |
 
 ### 计划中（P3）

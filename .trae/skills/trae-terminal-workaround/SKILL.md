@@ -87,8 +87,10 @@ Need to run a shell command?
 │   └── NO → Try Strategy 1 (semicolon separator)
 │       ├── Works? → Done
 │       └── Fails? → Try Strategy 4 (script file)
-├── Is it a build/compile command?
-│   └── Try Strategy 1 first, then Strategy 4
+├── Is it a build/compile command (gradlew, maven, etc.)?
+│   └── Use Strategy 5 (clean PowerShell) — always for conda terminals
+├── Is it calling a .bat/.cmd file?
+│   └── Use Strategy 5 (clean PowerShell) — avoids conda conflict
 └── Need interactive shell?
     └── Use Strategy 3 (external terminal)
 ```
@@ -101,10 +103,38 @@ Need to run a shell command?
 | 2. Tool API | High | Medium | File ops only | Moving/copying files |
 | 3. External | High | Manual | All commands | Interactive debugging |
 | 4. Script file | Medium | Slow | All commands | Complex multi-step operations |
+| 5. Clean PS | **High** | Fast | Build/compile | gradlew/maven/.bat in conda |
+
+### Strategy 5: Clean PowerShell (No Conda Profile)
+
+When the TRAE terminal is a **conda-activated PowerShell** (e.g., `(base) PS ...`), running cmd batch files (like `gradlew.bat`) triggers a second bug: **"Terminate batch job (Y/N)?"** hang.
+
+**Root Cause**: Conda's `conda-hook.ps1` injects cmd batch processing logic into PowerShell. When `gradlew.bat` (a cmd batch file) runs inside this environment, Ctrl+C signal handling breaks, and the hidden `cmd.exe` subprocess enters an interactive prompt that PowerShell can't respond to, causing an infinite loop of `Terminate batch job (Y/N)?`.
+
+**Symptoms**:
+- Build commands (like `.\gradlew build`) hang with repeated "Terminate batch job (Y/N)?"
+- `conda deactivate` also gets stuck with `CondaError: KeyboardInterrupt`
+- The prompt appears even when no Ctrl+C was pressed (timeout/internal signal)
+
+**Solution**: Spawn a **clean PowerShell without conda profile**:
+
+```
+Write-Output "x"; powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Set-Location 'G:\project\path'; .\gradlew build --no-daemon"
+```
+
+This is the **only reliable way** to run gradle/Minecraft builds from within the TRAE IDE when conda is active. The `-NoProfile` flag skips all profile scripts (including conda-hook), giving a pristine PowerShell session.
+
+**When to use**:
+- Running `gradlew build` or any `.bat`-based build tool
+- Any command that internally invokes `cmd.exe` subprocesses
+- `conda deactivate` itself is stuck — use `-NoProfile` to bypass entirely
+
+**Note**: This strategy combines Strategy 1 (semicolon) + Strategy 5 (clean profile). The `Write-Output "x";` prefix handles the `TRAE_USER_CLOUDIDE_TOKEN_BLOB` injection, while `-NoProfile` handles the conda conflict.
 
 ## Important Notes
 
-- This is a **TRAE IDE bug**, not a user configuration issue
-- The bug may be fixed in future TRAE updates — if commands start working without workarounds, this skill can be retired
+- The `TRAE_USER_CLOUDIDE_TOKEN_BLOB` injection is a **TRAE IDE bug**, not a user configuration issue
+- The conda + cmd batch conflict is a **separate issue** specific to conda-activated PowerShell terminals
+- Both bugs may be fixed in future TRAE updates — if commands start working without workarounds, this skill can be retired
 - When reporting issues, mention the `TRAE_USER_CLOUDIDE_TOKEN_BLOB` injection specifically
 - The token value changes between sessions, so the exact error message will vary

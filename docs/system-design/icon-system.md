@@ -1,7 +1,7 @@
 # 活物品图标系统设计
 
-> **文档版本**: 2026.08 v2
-> **最后更新**: 2026-08-20
+> **文档版本**: 2026.08 v3
+> **最后更新**: 2026-08-21
 > **适用版本**: Minecraft 1.21.1 + NeoForge 21.1.x
 
 ## 目录
@@ -14,6 +14,8 @@
   - [4. 新增活物品图标](#4-新增活物品图标)
   - [5. 当前支持的活物品图标](#5-当前支持的活物品图标)
     - [5.1 Builder 可用选项](#51-builder-可用选项)
+    - [5.2 模型文件策略](#52-模型文件策略)
+    - [5.3 DirectionalLivingModel 变换顺序](#53-directionallivingmodel-变换顺序)
   - [关键文件](#关键文件)
 
 ---
@@ -86,7 +88,7 @@ register(LivingIconSpec.builder(Items.REPEATER)
     .addVariant("1tick", "item/repeater_1tick", stack -> getDelay(stack) == 1 && !isPowered(stack))
     // ... 更多变体
     .directional()     // 根据物品方向数据旋转图标
-    .guiScale(1.15f)   // GUI 中放大 15%
+    .guiScale(1.0f)    // GUI 缩放比例（1.0 = 原始大小）
     .build());
 
 // 活红石火把：方向感知（默认大小）
@@ -120,9 +122,9 @@ register(LivingIconSpec.builder(Items.REDSTONE_TORCH)
 | 活箱子 | `base` | `chest_living.png` | 无 |
 | 活红石灯 | `on` / `off` | `redstone_lamp_on.png` / `redstone_lamp.png` | 信号点亮切换 |
 | 活红石火把 | `on` / `off` | `redstone_torch.png` / `redstone_torch_off.png` | 方向旋转 + 点亮切换 |
-| 活拉杆 | `on` / `off` | `lever.png` / `lever_on.png` | 拉下/弹起状态切换 |
-| 活中继器 | `1tick` ~ `4tick_on`（8种） | `repeater_Xtick.png` | 方向旋转 + 延迟档位 + 供电状态 |
-| 活比较器 | `compare` / `compare_on` / `subtract` / `subtract_on` | `comparator_*.png` | 方向旋转 + 模式切换 + 供电状态 |
+| 活拉杆 | `on` / `off` | 复用原版 `minecraft:block/lever` / `minecraft:block/lever_on` 模型 | 拉下/弹起状态切换 |
+| 活中继器 | `1tick` ~ `4tick_on`（8种） | 复用原版 `minecraft:block/repeater_Xtick` / `repeater_Xtick_on` 模型 | 方向旋转 + 延迟档位 + 供电状态 |
+| 活比较器 | `compare` / `compare_on` / `subtract` / `subtract_on` | 复用原版 `minecraft:block/comparator` / `comparator_on` / `comparator_subtract` / `comparator_on_subtract` 模型 | 方向旋转 + 模式切换（subtract 前端火把常亮） + 供电状态 |
 | 活末影箱 | `base` | `ender.png` | 无 |
 | 活地图 | `base` | `living_map.png` | 地图缩略图装饰器 |
 | 活水车 | `base` | `water_wheel.png` | 3D 旋转动画（Create 兼容） |
@@ -136,6 +138,47 @@ register(LivingIconSpec.builder(Items.REDSTONE_TORCH)
 | `.directional()` | 启用方向感知旋转（根据物品数据旋转图标） | 关闭 |
 | `.guiScale(float)` | 设置 GUI 中的缩放比例 | 1.0 |
 | `.rotating()` | 启用 3D 旋转渲染（用于活水车等） | 关闭 |
+
+### 5.2 模型文件策略
+
+模型 JSON 文件可引用两种父模型：
+
+**2D 平面图标**（用于扁平物品）：
+```json
+{
+  "parent": "item/generated",
+  "textures": {
+    "layer0": "living_item:item/hopper_living"
+  }
+}
+```
+
+**3D 方块模型**（用于方块实体物品，如中继器、比较器）：
+```json
+{
+  "parent": "minecraft:block/comparator_subtract",
+  "display": {
+    "gui": {
+      "rotation": [90, 0, 0]
+    }
+  }
+}
+```
+
+直接引用原版方块模型，无需自绘纹理。缩放和方向旋转由 `guiScale()` 和 `directional()` 在代码层统一处理，不在 JSON 中硬编码。
+
+### 5.3 DirectionalLivingModel 变换顺序
+
+`DirectionalLivingModel` 在 **JSON transform 之前** 应用缩放和 Z 轴旋转：
+
+```java
+// 正确顺序：先缩放/旋转，再应用 JSON 的 display 变换
+poseStack.scale(guiScale, guiScale, 1.0f);       // 1. 缩放
+poseStack.mulPose(Axis.ZP.rotationDegrees(r));    // 2. 方向旋转
+inner.applyTransform(context, poseStack, ...);     // 3. JSON display 变换
+```
+
+**为什么是这个顺序**：方块模型的 JSON 中通常有 `"rotation": [90, 0, 0]`（X 轴旋转 90°），这会改变 PoseStack 坐标系。如果在 JSON transform 之后再旋转，`Axis.ZP` 就不再是屏幕垂直轴。先旋转再应用 JSON transform 确保方向旋转始终在屏幕空间中正确执行。**这对 2D 平面模型无影响（无 JSON 旋转），对 3D 方块模型至关重要。**
 
 ---
 
