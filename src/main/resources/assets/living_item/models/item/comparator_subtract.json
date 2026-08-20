@@ -1,0 +1,8 @@
+{
+  "parent": "minecraft:block/comparator_subtract",
+  "display": {
+    "gui": {
+      "rotation": [90, 0, 0]
+    }
+  }
+}

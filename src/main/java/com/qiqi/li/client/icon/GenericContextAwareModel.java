@@ -31,16 +31,26 @@ public class GenericContextAwareModel implements BakedModel {
 
     private final BakedModel livingModel;
     private final BakedModel vanillaModel;
+    private final float guiScale;
 
     public GenericContextAwareModel(BakedModel livingModel, BakedModel vanillaModel) {
+        this(livingModel, vanillaModel, 1.0f);
+    }
+
+    public GenericContextAwareModel(BakedModel livingModel, BakedModel vanillaModel, float guiScale) {
         this.livingModel = livingModel;
         this.vanillaModel = vanillaModel;
+        this.guiScale = guiScale;
     }
 
     @Override
     public BakedModel applyTransform(ItemDisplayContext context, PoseStack poseStack, boolean applyLeftHandTransform) {
         if (context == ItemDisplayContext.GUI) {
-            return livingModel.applyTransform(context, poseStack, applyLeftHandTransform);
+            livingModel.applyTransform(context, poseStack, applyLeftHandTransform);
+            if (guiScale != 1.0f) {
+                poseStack.scale(guiScale, guiScale, 1.0f);
+            }
+            return this;
         }
         return vanillaModel.applyTransform(context, poseStack, applyLeftHandTransform);
     }

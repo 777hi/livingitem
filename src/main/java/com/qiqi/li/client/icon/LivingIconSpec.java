@@ -46,15 +46,17 @@ public class LivingIconSpec {
 
     private final boolean rotating;
     private final boolean directional;
+    private final float guiScale;
 
     private LivingIconSpec(Item item, List<Variant> variants,
                            net.neoforged.neoforge.client.IItemDecorator decorator,
-                           boolean rotating, boolean directional) {
+                           boolean rotating, boolean directional, float guiScale) {
         this.item = item;
         this.variants = variants;
         this.decorator = decorator;
         this.rotating = rotating;
         this.directional = directional;
+        this.guiScale = guiScale;
     }
 
     public Item getItem() { return item; }
@@ -62,6 +64,7 @@ public class LivingIconSpec {
     public net.neoforged.neoforge.client.IItemDecorator getDecorator() { return decorator; }
     public boolean isRotating() { return rotating; }
     public boolean isDirectional() { return directional; }
+    public float getGuiScale() { return guiScale; }
 
     /**
      * 判断给定的 ItemStack 是否为活物品。
@@ -116,6 +119,7 @@ public class LivingIconSpec {
         private net.neoforged.neoforge.client.IItemDecorator decorator;
         private boolean rotating;
         private boolean directional;
+        private float guiScale = 1.0f;
 
         private Builder(Item item) {
             this.item = item;
@@ -160,11 +164,22 @@ public class LivingIconSpec {
             return this;
         }
 
+        /**
+         * 设置 GUI 中的缩放比例。
+         *
+         * @param scale 缩放因子，默认 1.0，大于 1 放大，小于 1 缩小
+         * @return 此建造者
+         */
+        public Builder guiScale(float scale) {
+            this.guiScale = scale;
+            return this;
+        }
+
         public LivingIconSpec build() {
             if (variants.isEmpty()) {
                 throw new IllegalStateException("至少需要添加一个变体");
             }
-            return new LivingIconSpec(item, List.copyOf(variants), decorator, rotating, directional);
+            return new LivingIconSpec(item, List.copyOf(variants), decorator, rotating, directional, guiScale);
         }
     }
 }

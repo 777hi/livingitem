@@ -1,0 +1,8 @@
+{
+  "parent": "minecraft:block/repeater_3tick",
+  "display": {
+    "gui": {
+      "rotation": [90, 0, 0]
+    }
+  }
+}

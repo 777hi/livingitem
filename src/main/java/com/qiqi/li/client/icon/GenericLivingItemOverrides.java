@@ -44,8 +44,16 @@ public class GenericLivingItemOverrides extends ItemOverrides {
     public BakedModel resolve(BakedModel model, ItemStack stack, @Nullable ClientLevel level,
                               @Nullable LivingEntity entity, int seed) {
         if (spec.isRotating()) {
-            float rpm = resolveRpm(stack);
-            WaterWheelRenderState.setRPM(rpm);
+            if (com.qiqi.li.living.compat.create.CreateCompat.isLoaded()
+                && com.qiqi.li.living.api.LivingItemManager.isLivingItem(stack)) {
+                com.qiqi.li.living.domain.water.LivingWaterWheelData data =
+                    com.qiqi.li.living.api.LivingItemManager.getWaterWheelData(stack);
+                com.qiqi.li.living.domain.water.WaterWheelData wd = data.wheel();
+                int netStress = wd.netStress();
+                float rpm = netStress == 0 ? 0
+                    : Math.signum(netStress) * com.qiqi.li.living.compat.create.ModCreate.BASE_RPM;
+                WaterWheelRenderState.setRPM(rpm);
+            }
             return getOrCreateRotatingModel(stack);
         }
 
@@ -72,14 +80,21 @@ public class GenericLivingItemOverrides extends ItemOverrides {
         return vanillaModel;
     }
 
-    private float resolveRpm(ItemStack stack) {
-        return 8f;
-    }
-
     private int resolveDirectionRotation(ItemStack stack) {
-        com.qiqi.li.living.domain.redstone.LivingRedstoneTorchData data =
-            com.qiqi.li.living.api.LivingItemManager.getRedstoneTorchData(stack);
-        com.qiqi.li.living.model.Pos2D dir = data.direction();
+        com.qiqi.li.living.model.Pos2D dir;
+        if (stack.is(net.minecraft.world.item.Items.REPEATER)) {
+            com.qiqi.li.living.domain.redstone.LivingRepeaterData data =
+                com.qiqi.li.living.api.LivingItemManager.getRepeaterData(stack);
+            dir = data.direction();
+        } else if (stack.is(net.minecraft.world.item.Items.COMPARATOR)) {
+            com.qiqi.li.living.domain.redstone.LivingComparatorData data =
+                com.qiqi.li.living.api.LivingItemManager.getComparatorData(stack);
+            dir = data.direction();
+        } else {
+            com.qiqi.li.living.domain.redstone.LivingRedstoneTorchData data =
+                com.qiqi.li.living.api.LivingItemManager.getRedstoneTorchData(stack);
+            dir = data.direction();
+        }
         if (dir.equals(com.qiqi.li.living.model.Pos2D.UP)) return 0;
         if (dir.equals(com.qiqi.li.living.model.Pos2D.RIGHT)) return -90;
         if (dir.equals(com.qiqi.li.living.model.Pos2D.DOWN)) return 180;
@@ -105,12 +120,16 @@ public class GenericLivingItemOverrides extends ItemOverrides {
     private GenericContextAwareModel getOrCreateContextModel(LivingIconSpec.Variant variant) {
         return contextModelCache.computeIfAbsent(variant.getName(),
             name -> new GenericContextAwareModel(
-                resolveVariantModel(variant), vanillaModel));
+                resolveVariantModel(variant), vanillaModel, spec.getGuiScale()));
     }
 
     private DirectionalLivingModel getOrCreateDirectionalModel(LivingIconSpec.Variant variant) {
         return directionalModelCache.computeIfAbsent(variant.getName(),
-            name -> new DirectionalLivingModel(getOrCreateContextModel(variant)));
+            name -> {
+                var ctxModel = new GenericContextAwareModel(
+                    resolveVariantModel(variant), vanillaModel, 1.0f);
+                return new DirectionalLivingModel(ctxModel, spec.getGuiScale());
+            });
     }
 
     /**

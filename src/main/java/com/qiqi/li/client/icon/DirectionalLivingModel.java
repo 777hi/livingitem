@@ -17,27 +17,36 @@ import javax.annotation.Nullable;
 import java.util.List;
 
 /**
- * 方向感知模型，在 GUI 中对内部模型施加 Z 轴旋转。
+ * 方向感知模型，在 GUI 中对内部模型施加 Z 轴旋转和缩放。
  *
  * <p>与漏斗装饰器相同的旋转模式，只是作用于模型层而非叠加层。
  */
 public class DirectionalLivingModel implements BakedModel {
 
     private final BakedModel inner;
+    private final float guiScale;
 
     public DirectionalLivingModel(BakedModel inner) {
+        this(inner, 1.0f);
+    }
+
+    public DirectionalLivingModel(BakedModel inner, float guiScale) {
         this.inner = inner;
+        this.guiScale = guiScale;
     }
 
     @Override
     public BakedModel applyTransform(ItemDisplayContext context, PoseStack poseStack, boolean applyLeftHandTransform) {
-        inner.applyTransform(context, poseStack, applyLeftHandTransform);
         if (context == ItemDisplayContext.GUI) {
+            if (guiScale != 1.0f) {
+                poseStack.scale(guiScale, guiScale, 1.0f);
+            }
             int rotation = TorchRenderState.getRotation();
             if (rotation != 0) {
                 poseStack.mulPose(Axis.ZP.rotationDegrees(rotation));
             }
         }
+        inner.applyTransform(context, poseStack, applyLeftHandTransform);
         return this;
     }
 
@@ -53,7 +62,7 @@ public class DirectionalLivingModel implements BakedModel {
 
     @Override public boolean useAmbientOcclusion() { return inner.useAmbientOcclusion(); }
     @Override public boolean isGui3d() { return inner.isGui3d(); }
-    @Override public boolean usesBlockLight() { return inner.usesBlockLight(); }
+    @Override public boolean usesBlockLight() { return false; }
     @Override public boolean isCustomRenderer() { return inner.isCustomRenderer(); }
     @Override public TextureAtlasSprite getParticleIcon() { return inner.getParticleIcon(); }
     @Override public TextureAtlasSprite getParticleIcon(ModelData data) { return inner.getParticleIcon(data); }

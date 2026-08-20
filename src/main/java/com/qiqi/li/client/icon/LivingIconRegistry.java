@@ -5,6 +5,8 @@ import com.qiqi.li.client.render.LivingDefaultDecorator;
 import com.qiqi.li.client.render.LivingHopperDecorator;
 import com.qiqi.li.client.render.LivingMapIconDecorator;
 import com.qiqi.li.living.compat.create.CreateCompat;
+import com.qiqi.li.living.domain.redstone.LivingComparatorData;
+import com.qiqi.li.living.domain.redstone.LivingRepeaterData;
 import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.client.resources.model.ModelResourceLocation;
 import net.minecraft.resources.ResourceLocation;
@@ -88,6 +90,83 @@ public final class LivingIconRegistry {
                 stack -> com.qiqi.li.living.api.LivingItemManager.getRedstoneTorchData(stack).isLit())
             .addVariant("off", "item/redstone_torch_off", stack -> true)
             .directional()
+            .build());
+
+        register(LivingIconSpec.builder(net.minecraft.world.item.Items.REPEATER)
+            .addVariant("1tick", "item/repeater_1tick",
+                stack -> {
+                    LivingRepeaterData d = com.qiqi.li.living.api.LivingItemManager.getRepeaterData(stack);
+                    return d.delay() == 1 && !d.powered();
+                })
+            .addVariant("1tick_on", "item/repeater_1tick_on",
+                stack -> {
+                    LivingRepeaterData d = com.qiqi.li.living.api.LivingItemManager.getRepeaterData(stack);
+                    return d.delay() == 1 && d.powered();
+                })
+            .addVariant("2tick", "item/repeater_2tick",
+                stack -> {
+                    LivingRepeaterData d = com.qiqi.li.living.api.LivingItemManager.getRepeaterData(stack);
+                    return d.delay() == 2 && !d.powered();
+                })
+            .addVariant("2tick_on", "item/repeater_2tick_on",
+                stack -> {
+                    LivingRepeaterData d = com.qiqi.li.living.api.LivingItemManager.getRepeaterData(stack);
+                    return d.delay() == 2 && d.powered();
+                })
+            .addVariant("3tick", "item/repeater_3tick",
+                stack -> {
+                    LivingRepeaterData d = com.qiqi.li.living.api.LivingItemManager.getRepeaterData(stack);
+                    return d.delay() == 3 && !d.powered();
+                })
+            .addVariant("3tick_on", "item/repeater_3tick_on",
+                stack -> {
+                    LivingRepeaterData d = com.qiqi.li.living.api.LivingItemManager.getRepeaterData(stack);
+                    return d.delay() == 3 && d.powered();
+                })
+            .addVariant("4tick", "item/repeater_4tick",
+                stack -> {
+                    LivingRepeaterData d = com.qiqi.li.living.api.LivingItemManager.getRepeaterData(stack);
+                    return d.delay() == 4 && !d.powered();
+                })
+            .addVariant("4tick_on", "item/repeater_4tick_on",
+                stack -> {
+                    LivingRepeaterData d = com.qiqi.li.living.api.LivingItemManager.getRepeaterData(stack);
+                    return d.delay() == 4 && d.powered();
+                })
+            .directional()
+            .guiScale(1.0f)
+            .build());
+
+        register(LivingIconSpec.builder(net.minecraft.world.item.Items.COMPARATOR)
+            .addVariant("compare", "item/comparator_compare",
+                stack -> {
+                    LivingComparatorData d = com.qiqi.li.living.api.LivingItemManager.getComparatorData(stack);
+                    return !d.subtractMode() && !d.powered();
+                })
+            .addVariant("compare_on", "item/comparator_compare_on",
+                stack -> {
+                    LivingComparatorData d = com.qiqi.li.living.api.LivingItemManager.getComparatorData(stack);
+                    return !d.subtractMode() && d.powered();
+                })
+            .addVariant("subtract", "item/comparator_subtract",
+                stack -> {
+                    LivingComparatorData d = com.qiqi.li.living.api.LivingItemManager.getComparatorData(stack);
+                    return d.subtractMode() && !d.powered();
+                })
+            .addVariant("subtract_on", "item/comparator_subtract_on",
+                stack -> {
+                    LivingComparatorData d = com.qiqi.li.living.api.LivingItemManager.getComparatorData(stack);
+                    return d.subtractMode() && d.powered();
+                })
+            .directional()
+            .guiScale(1.0f)
+            .build());
+
+        register(LivingIconSpec.builder(net.minecraft.world.item.Items.LEVER)
+            .addVariant("off", "item/lever",
+                stack -> !com.qiqi.li.living.api.LivingItemManager.getLeverData(stack).powered())
+            .addVariant("on", "item/lever_on",
+                stack -> com.qiqi.li.living.api.LivingItemManager.getLeverData(stack).powered())
             .build());
 
         register(LivingIconSpec.builder(net.minecraft.world.item.Items.ENDER_CHEST)
