@@ -184,6 +184,10 @@ public final class LivingIconRegistry {
             .decorator(new LivingRedstoneDecorator())
             .build());
 
+        register(LivingIconSpec.builder(net.minecraft.world.item.Items.REDSTONE_BLOCK)
+            .addVariant("base", "item/redstone_block", stack -> true)
+            .build());
+
         if (CreateCompat.isLoaded()) {
             try {
                 Item waterWheelItem = net.minecraft.core.registries.BuiltInRegistries.ITEM

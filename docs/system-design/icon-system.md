@@ -195,4 +195,4 @@ inner.applyTransform(context, poseStack, ...);     // 3. JSON display 变换
 | `TorchRenderState` | 方向旋转状态（ThreadLocal，存储当前渲染的方向角度） |
 | `RotatingWaterWheelModel` | 活水车物品栏 3D 旋转渲染模型 |
 | `WaterWheelRenderState` | 活水车渲染状态数据（ThreadLocal，存储 RPM） |
-| `LivingRedstoneDecorator` | 活红石粉连接纹理装饰器（根据 connections 位掩码绘制 4 方向红色连接线） |
+| `LivingRedstoneDecorator` | 活红石粉连接纹理装饰器（根据 connections 位掩码绘制 4 方向红色连接线 + 动态着色） |

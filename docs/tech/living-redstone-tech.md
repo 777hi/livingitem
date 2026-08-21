@@ -78,6 +78,7 @@
 | `LivingRedstoneLampData` | `domain/redstone/LivingRedstoneLampData.java` | 活红石灯数据：是否点亮 |
 | `LivingRepeaterData` | `domain/redstone/LivingRepeaterData.java` | 活中继器数据：方向 + 延迟 + 供电 + 计时器 |
 | `LivingComparatorData` | `domain/redstone/LivingComparatorData.java` | 活比较器数据：方向 + 模式 + 供电 |
+| `LivingRedstoneDecorator` | `client/render/LivingRedstoneDecorator.java` | 活红石粉物品栏图标装饰器，绘制连接纹理 + 动态着色 |
 
 ---
 
@@ -356,23 +357,24 @@ ItemStack (minecraft:comparator)
 
 信号传播由 `ContainerRedstoneData.calculate()` 执行，每 **2 tick** 触发一次（与原版红石更新频率一致）。传播由 `LivingRedstoneFunction` 和 `LivingRedstoneTorchFunction` 的 `tickContainerData()` 方法触发，两者均通过 `HasContainerData` 接口（优先级 2）被容器处理器调用。
 
-### 3.2 五阶段边信号传播算法
+### 3.2 六阶段边信号传播算法
 
-`calculate()` 拆分为 5 个阶段，基于边信号模型：
+`calculate()` 拆分为 6 个阶段，基于边信号模型：
 
 ```
 calculate(context, tick):
   1. processedThisTick 去重检查
   2. tickCounter++，若 tickCounter % 2 != 0 → 直接返回（跳过）
-  3. 收集所有红石组件槽位（torch/dust/button/lever/lamp/repeater/comparator）
+  3. 收集所有红石组件槽位（torch/dust/button/lever/lamp/repeater/comparator/redstoneBlock）
   4. 若全部为空 → 直接返回
   5. 重置：swap edgeGrid ↔ prevEdgeGrid，清零 edgeGrid
 
   phase0CountdownDelays()    — 倒计时 + 断电检测（用 prevEdgeGrid 的边）
   phase1CollectSources()     — 信号源直接写边，红石粉邻居入队
   phase2Propagation()        — BFS 传播（仅红石粉入队）
+  phase4PowerConductors()    — 信号源向导电活物品充能，触发第二波 BFS（先于 Phase 3 执行，确保导体信号可被中继器/比较器读取）
   phase3RecheckInputs()      — 重新检测级联输入（中继器/比较器），比较器写回边网格
-  phase4UpdateDisplay()      — 更新物品显示状态（火把/灯/红石粉）
+  phase5UpdateDisplay()      — 更新物品显示状态（火把/灯/红石粉）
 ```
 
 **与旧模型（槽位信号）的核心区别**：
@@ -494,7 +496,109 @@ while queue not empty:
   powered = (output > 0)
 ```
 
-**Phase 4 — 更新显示状态**：
+**Phase 4 — 充能导电活物品**：
+
+```
+phase4PowerConductors(torchSlots, buttonSlots, leverSlots,
+    repeaterSlots, comparatorSlots, dustSlots, redstoneBlockSlots, ...):
+
+  allRedstone = 所有红石组件槽位的并集（用于排除红石组件自身）
+  secondQueue = 空队列
+
+  # 红石粉：按 connections 方向输出，衰减后信号
+  for dustSlots：
+    maxInput = edgeGrid.maxOfSlot(slot)
+    if maxInput <= 1 → continue
+    output = min(maxInput - 1, getSignalCap(count))
+    conn = LivingItemManager.getRedstoneData(stack).connections()
+    for 4 方向 dir：
+      if conn 中 dir 无连接 → continue
+      neighbor = resolveSlot(slot, dir)
+      if neighbor < 0 || allRedstone.contains(neighbor) → continue
+      if !isConductiveBlock(neighbor) → continue
+      # 充能：向导体的所有边写入信号
+      for 4 方向 d2：
+        if output > edgeGrid.get(neighbor, d2)：
+          edgeGrid.set(neighbor, d2, output)
+          if resolveSlot(neighbor, d2) 是红石粉 → secondQueue.add(n2)
+
+  # 火把：除输入方向外全方向输出
+  for torchSlots：
+    if !isLit → continue
+    cap = getSignalCap(count)
+    skipDir = edgeIndex(data.direction().opposite())
+    for 4 方向 dir：
+      if dir == skipDir → continue
+      ... 同上充能逻辑 ...
+
+  # 按钮/拉杆/红石块：全方向输出
+  for buttonSlots/leverSlots/redstoneBlockSlots：
+    if 未激活 → continue
+    cap = getSignalCap(count)
+    for 4 方向 dir：
+      ... 同上充能逻辑 ...
+
+  # 中继器：仅输出方向
+  for repeaterSlots：
+    if !powered || delayTimer > 0 → continue
+    cap = getSignalCap(count)
+    outDir = edgeIndex(data.direction())
+    ... 同上充能逻辑 ...
+
+  # 比较器：仅输出方向，信号为计算结果
+  for comparatorSlots：
+    output = computeComparatorOutput()
+    if output <= 0 → continue
+    outDir = edgeIndex(data.direction())
+    ... 同上充能逻辑 ...
+
+  # 第二波 BFS：充能导体后，相邻红石粉重新传播
+  if secondQueue not empty：
+    phase2Propagation(secondQueue, dustSlots, ...)
+```
+
+**导体判定**（`isConductiveBlock`）：仅活物品可被充能，复用原版 `isRedstoneConductor` 判定导电性：
+
+```java
+private static boolean isConductiveBlock(ItemStack stack) {
+    if (stack.getItem() instanceof BlockItem blockItem) {
+        return LivingItemManager.isLivingItem(stack)
+            && blockItem.getBlock().defaultBlockState()
+                .isRedstoneConductor(EmptyBlockGetter.INSTANCE, BlockPos.ZERO);
+    }
+    return false;
+}
+```
+
+**判定顺序**：`BlockItem` → `isLivingItem` → `isRedstoneConductor`。非活物品即使原版是导体（如普通箱子）也不会被充能。
+
+**充能规则**：导体不衰减信号，红石粉衰减 -1。中继器/比较器通过边缘网格自动读取导体边的信号，无需特殊处理。
+
+| 信号源 | 输出方向 | 信号值 |
+|--------|---------|--------|
+| 红石粉 | connections 方向 | min(maxInput-1, cap) |
+| 火把 | 除输入方向外 3 方向 | cap |
+| 按钮/拉杆 | 4 方向 | cap |
+| 红石块 | 4 方向 | cap |
+| 中继器 | 朝向方向 | cap |
+| 比较器 | 朝向方向 | 计算结果 |
+
+**充能示例**：
+
+```
+[火把(15)] [红石粉A] [活箱子] [红石粉B]
+              conn:      ──充能──→  conn:
+              LEFT+RIGHT  所有边=14  LEFT+RIGHT
+
+Phase 1: 火把 → 边缘[火把, UP]=15
+Phase 2: BFS: 红石粉A 读取 15 → 输出 14 → 边缘[A, RIGHT]=14
+Phase 4: 红石粉A 的 RIGHT 有连接 → 邻居是活箱子（导体）→ 活箱子 所有边=14
+         → 活箱子 RIGHT 邻接红石粉B → 红石粉B 入 secondQueue
+         第二波 BFS: 红石粉B 读取 14 → 输出 13 → 继续传播
+Phase 5: 更新显示
+```
+
+**Phase 5 — 更新显示状态**：
 ```
 遍历火把：
   inputDir = edgeIndex(data.direction().opposite())
@@ -517,6 +621,8 @@ while queue not empty:
 - **BFS 仅红石粉**：队列只包含红石粉，信号源和终端不参与传播循环
 - **边界边持久化**：容器边缘边也存储信号值，为跨容器信号传输预留接口
 - **向上取整高度**：`(size + width - 1) / width` 兼容非满行容器（如玩家背包 41 槽）
+- **导体充能**：Phase 4 通过 `isRedstoneConductor` 自动判定所有 BlockItem 的导电性，不依赖功能注册。中继器/比较器通过共享边缘网格自动读取导体的信号，无需特殊处理
+- **第二波 BFS**：充能导体后触发第二轮 BFS，确保信号穿过导体继续在红石粉中传播
 
 ### 3.3 邻居计算
 
@@ -603,6 +709,35 @@ if (repeaterSlots.contains(neighbor) || comparatorSlots.contains(neighbor)) {
 **示例**：中继器指向右（输出方向 = RIGHT），红石粉在其左侧。红石粉 → 中继器的方向 = RIGHT，与中继器的输出方向匹配 → 连接。红石粉在其上方 → 方向 = UP，与 RIGHT 不匹配 → 不连接。
 
 **DIR_POS 映射**：`dir` 0=上→UP, 1=下→DOWN, 2=左→LEFT, 3=右→RIGHT。
+
+**自动补全连接**（参照原版 `getConnectionState`）：
+
+计算完实际连接后，应用自动补全规则：如果某一整条轴完全没有连接，就把那条轴的两端都补上。`conn == 0`（点状）时跳过补全。
+
+```java
+if (conn != 0) {
+    boolean hasUp = (conn & 1) != 0, hasDown = (conn & 2) != 0;
+    boolean hasLeft = (conn & 4) != 0, hasRight = (conn & 8) != 0;
+
+    boolean noVertical = !hasUp && !hasDown;    // 上下轴无连接
+    boolean noHorizontal = !hasLeft && !hasRight; // 左右轴无连接
+
+    if (!hasLeft && noVertical)  conn |= 4;   // 无上下 → 补左右
+    if (!hasRight && noVertical) conn |= 8;
+    if (!hasUp && noHorizontal)  conn |= 1;   // 无左右 → 补上下
+    if (!hasDown && noHorizontal) conn |= 2;
+}
+```
+
+**自动补全示例**：
+
+| 实际连接 | 补全后 | 形状 |
+|---------|--------|------|
+| UP（仅上方有火把） | UP + DOWN | 直线 |
+| LEFT（仅左边有红石粉） | LEFT + RIGHT | 直线 |
+| UP + LEFT（拐角） | UP + LEFT | 拐角（不变） |
+| UP + RIGHT + LEFT（T形） | UP + RIGHT + LEFT | T形（不变） |
+| 无连接 | 无连接 | 点（不补全） |
 
 ---
 
@@ -955,4 +1090,81 @@ ContainerLivingItemHandler.processContext()
 
 - **活潜影箱集成**：信号穿透活潜影箱边界，实现层次化芯片设计
 - **活铜块联动**：红石信号与电力系统电磁感应耦合
+
+---
+
+## 10. 图标渲染
+
+### 10.1 活红石粉图标
+
+活红石粉在物品栏中的图标由 `LivingRedstoneDecorator`（`IItemDecorator` 实现）负责渲染，由 `LivingIconRegistry` 声明式注册。
+
+**渲染层次**：
+
+```
+┌─────────────────────────────────────────────┐
+│  Layer 0: 基底模型（item/generated）         │
+│  texture: living_item:item/redstone_dust_dot │
+│  → 灰度中心点纹理（无颜色）                    │
+├─────────────────────────────────────────────┤
+│  Layer 1: LivingRedstoneDecorator            │
+│  → 动态着色中心点 + 四方向连接线              │
+│  → 使用 guiGraphics.setColor() 着色           │
+└─────────────────────────────────────────────┘
+```
+
+**纹理文件**：
+
+| 纹理 | 路径 | 说明 |
+|------|------|------|
+| `redstone_dust_dot.png` | `textures/item/` | 中心点，灰度图（无颜色） |
+| `redstone_dust_line0.png` | `textures/item/` | 连接线，灰度图（无颜色），通过旋转覆盖四方向 |
+
+**动态着色机制**：
+
+原版红石粉纹理（`redstone_dust_line0.png`、`redstone_dust_dot.png`）是**【灰度图，不含颜色】**。原版方块通过模型中的 `"tintindex": 0` + `BlockColors` 注册实现着色：
+
+```java
+// 原版 BlockColors 注册（方块渲染管线的着色机制）
+blockcolors.register(
+    (state, level, pos, tintIndex) -> RedStoneWireBlock.getColorForPower(state.getValue(POWER)),
+    Blocks.REDSTONE_WIRE
+);
+```
+
+活红石粉是**物品**，无法使用 `BlockColors` 机制。因此在 `LivingRedstoneDecorator` 中手动实现等价着色：
+
+```java
+// LivingRedstoneDecorator.render() 核心逻辑
+int power = data.signalStrength();
+int color = RedStoneWireBlock.getColorForPower(Mth.clamp(power, 0, 15));
+float r = ((color >> 16) & 0xFF) / 255.0f;
+float g = ((color >> 8) & 0xFF) / 255.0f;
+float b = (color & 0xFF) / 255.0f;
+
+guiGraphics.setColor(r, g, b, 1.0f);  // 设置 shader 颜色，灰度纹理被染成红色
+
+// 绘制中心点
+guiGraphics.blit(DOT_TEXTURE, 0, 0, 0, 0, 16, 16, 16, 16);
+
+// 绘制四方向连接线（单张纹理 + 旋转）
+if (conn & CONN_UP)    drawRotatedLine(guiGraphics, 0);    // 上
+if (conn & CONN_DOWN)  drawRotatedLine(guiGraphics, 180);  // 下
+if (conn & CONN_LEFT)  drawRotatedLine(guiGraphics, 270);  // 左
+if (conn & CONN_RIGHT) drawRotatedLine(guiGraphics, 90);   // 右
+
+guiGraphics.setColor(1.0f, 1.0f, 1.0f, 1.0f);  // 恢复默认颜色
+```
+
+**颜色计算**（`RedStoneWireBlock.getColorForPower`）：
+
+| power | 颜色 | 视觉效果 |
+|-------|------|---------|
+| 0 | 暗红 | 无信号，暗淡 |
+| 7 | 中红 | 中等信号 |
+| 15 | 亮红 | 满信号，最亮 |
+
+**连接线旋转**：只需一张 `redstone_dust_line0.png` 纹理，通过 `PoseStack` Z 轴旋转 0°/90°/180°/270° 覆盖四个方向，避免创建 4 张纹理。
+
+**信号钳制**：`Mth.clamp(power, 0, 15)` 防止超范围值导致 `ArrayIndexOutOfBoundsException`（`getColorForPower` 内部直接 `COLORS[power]`，数组容量仅 16）。
 - **客户端渲染**：信号强度颜色渐变、火把朝向指示器、红石灯亮灭动画
