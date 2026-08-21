@@ -116,6 +116,17 @@ public class ContainerLivingItemHandler {
         REDSTONE_DATA_CACHE.keySet().removeIf(key -> pattern.matcher(key).matches());
     }
 
+    public static ContainerRedstoneData getRedstoneDataByPos(BlockPos pos) {
+        String regex = ".*_" + pos.getX() + "_" + pos.getY() + "_" + pos.getZ() + "(_\\d+_\\d+_\\d+)?$";
+        Pattern pattern = Pattern.compile(regex);
+        for (Map.Entry<String, ContainerRedstoneData> entry : REDSTONE_DATA_CACHE.entrySet()) {
+            if (pattern.matcher(entry.getKey()).matches()) {
+                return entry.getValue();
+            }
+        }
+        return null;
+    }
+
     /**
      * 清理过期的红石数据（超过 STALE_THRESHOLD 毫秒未访问的条目）。
      */

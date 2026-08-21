@@ -338,7 +338,7 @@ public final class CrossContainerTransfer {
         };
     }
 
-    private static Direction getBlockFacing(BlockState state) {
+    public static Direction getBlockFacing(BlockState state) {
         for (DirectionProperty prop : new DirectionProperty[]{
             BlockStateProperties.FACING, BlockStateProperties.HORIZONTAL_FACING}) {
             if (state.hasProperty(prop)) {

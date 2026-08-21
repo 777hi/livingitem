@@ -827,10 +827,9 @@ private static boolean handleLivingMapCreation(PlayerInteractEvent.RightClickIte
     // 3. consume(1) 消耗1个空地图
     // 4. MapItem.create() 创建活地图
     // 5. MapItem.renderBiomePreviewMap() 预渲染生物群系轮廓
-    // 6. StructureMapDecorator.addCenterMarker() 标记地图中心
-    // 7. LivingItemManager.setLiving(newMap, true) 标记为活地图
-    // 8. 返回新地图
-    // 9. 取消事件
+    // 6. LivingItemManager.setLiving(newMap, true) 标记为活地图
+    // 7. 返回新地图
+    // 8. 取消事件
 }
 ```
 
@@ -844,7 +843,7 @@ private static boolean handleLivingMapCreation(PlayerInteractEvent.RightClickIte
 | 缩放等级 | 固定 scale=0 | 固定 scale=0 |
 | 创建的地图 | 普通地图 | **活地图**（带 IS_LIVING 标记） |
 | 初始外观 | 空白（需手持逐步填充） | **预渲染生物群系轮廓**（水域橙色 + 海岸线棕色） |
-| 结构标记 | 无 | **中心 TARGET_POINT + 懒标记附近结构图标** |
+| 结构标记 | 无 | **懒标记附近结构图标** |
 | 消耗 | consume(1) | consume(1) |
 | 不跨维度 | — | 仅当前维度 |
 
@@ -862,15 +861,12 @@ private static boolean handleLivingMapCreation(PlayerInteractEvent.RightClickIte
 
 ### 10.7 结构标记（StructureMapDecorator）
 
-远程开图创建地图后，`StructureMapDecorator` 负责在地图上标记结构图标。采用**懒标记**策略：创建时只添加中心标记，玩家靠近地图区域时才扫描结构。
+远程开图创建地图后，`StructureMapDecorator` 负责在地图上标记结构图标。采用**懒标记**策略：创建时不扫描结构，玩家靠近地图区域时才扫描。
 
 #### 标记流程
 
 ```
-创建时（LivingMapEventHandler.handleLivingMapCreation）：
-  addCenterMarker() → 地图中心添加 TARGET_POINT 图标（addTargetDecoration 写入 DataComponent）
-
-运行时（LivingMapEventHandler.onPlayerTick，每 tick 检查）：
+运行时（LivingMapEventHandler.onPlayerTick，每 20 tick 检查）：
   scanStructuresLazy() → 检查玩家是否在地图范围内 → doScan()
   doScan() → 遍历未扫描的已加载区块 → getAllReferences() → 匹配 structureIconMap → addDecoration()
 ```
@@ -890,15 +886,30 @@ private static boolean handleLivingMapCreation(PlayerInteractEvent.RightClickIte
 | `on_jungle_explorer_maps` | `JUNGLE_TEMPLE` |
 | `on_swamp_explorer_maps` | `SWAMP_HUT` |
 
-#### 模组结构
+#### 无专属图标的结构：按地下/地表区分
 
-所有没有对应图标的结构默认使用 `TARGET_X` 图标。排除的原版标签：`eye_of_ender_located`、`dolphin_located`、`on_treasure_maps`、`cats_spawn_in`、`cats_spawn_as_black`。
+上表未覆盖的结构（含所有模组结构）按**生成阶段**回退到两种通用图标：
+
+| 生成阶段（`Structure.step()`） | 图标 | id 前缀 |
+|------|------|---------|
+| `UNDERGROUND_STRUCTURES` / `STRONGHOLDS` | `RED_X` | `underground_` |
+| 其余全部 | `TARGET_X` | `surface_` |
+
+覆盖示例：要塞、废弃矿井、地牢、远古城市 → `RED_X`；沉船、海底废墟、掠夺者前哨站、废弃传送门 → `TARGET_X`。
+
+**为什么用 `GenerationStep` 判定地下？** 零开销（纯字段读取，在 `ensureIconMappingBuilt` 一次性缓存），且模组结构基本都遵守这个约定。相比读 `StructureStart` 包围盒实际 Y 坐标再对比地表高度，无需额外区块查询，也不受 `getAllReferences()` 只返回起始区块坐标的限制。
+
+**为什么这两个图标？** `RED_X` 与 `TARGET_X` 的 `trackCount` 均为 `false`，不占用地图追踪装饰额度；两者视觉区分明显；且都已在 `MapCoordHelper.TELEPORTABLE_DECORATION_PATHS` 白名单内，可直接点击传送。
+
+#### 结构覆盖范围
+
+`ensureIconMappingBuilt` 遍历 `registry.holders()` **全量**结构，因此**无标签的模组结构也能被标记**（早期实现遍历标签，会漏掉这类结构）。原版结构也不再排除，要塞/沉船/海底废墟/埋藏的宝藏均会标记。
 
 #### 扫描机制
 
 - **触发条件**：玩家手持活地图 + 玩家在地图覆盖范围内
 - **扫描方式**：遍历地图范围内已加载区块（`getChunkNow()`，不触发加载），每个区块调用 `getAllReferences()` 获取结构引用
-- **图标匹配**：`structureIconMap`（`HashMap<Holder<Structure>, Holder<MapDecorationType>>`），O(1) 查找
+- **图标匹配**：`structureIconMap`（`HashMap<Holder<Structure>, Holder<MapDecorationType>>`），O(1) 查找；未命中时查 `undergroundStructureSet` 决定回退图标
 - **去重**：`addDecoration()` 内部按 id 存储（`Map<String, MapDecoration>`），同 id 重复添加自动覆盖，无需额外去重
 - **标记添加**：`MapItemSavedData.addDecoration()` 添加运行时标记（自动同步客户端）
 - **扫描缓存**：`SCANNED_CHUNKS`（`Map<Integer, Set<Long>>`）按地图 ID → 已扫描区块坐标缓存，后续 tick 只扫描新加载的区块，而非一次性扫描后永久跳过
@@ -906,8 +917,8 @@ private static boolean handleLivingMapCreation(PlayerInteractEvent.RightClickIte
 #### 关键特性
 
 - **不触发区块加载**：`getChunkNow()` 只返回已加载区块，未加载的返回 null 跳过
-- **天然兼容模组**：`getAllReferences()` 返回所有结构引用（含模组结构），无需遍历标签
-- **开图秒出**：创建时不搜索结构，只添加中心标记
+- **天然兼容模组**：`getAllReferences()` 返回所有结构引用（含模组结构），配合 registry 全量遍历，无需依赖标签
+- **开图秒出**：创建时不搜索结构
 
 ---
 
@@ -2443,3 +2454,36 @@ if (!(event.getEntity() instanceof ServerPlayer player)) return;
 | `living_item.mixins.json` | 新增 `MapItemMixin` 条目 |
 
 **40 tick 冷却时间的选择**：玩家视距 8 chunk 时，`ChunkMap.updateChunkTracking()` 在传送后添加约 289 个区块的 `PLAYER` ticket。服务端 tick 内处理这些区块生成需要约 2 秒。40 tick = 2 秒足以让玩家周围区块加载完毕，之后恢复 `update()` 时区块已缓存，不会阻塞。
+
+### v51 → v52：地下结构独立图标 + 模组结构覆盖修复
+
+**需求**：给位于地底的结构换一种图标，与地表结构区分。
+
+**图标选型**：原版 `MapDecorationTypes` 共 33 种，已被专属映射占用 10 种。可用于回退的候选中选定 `RED_X`（地下）+ `TARGET_X`（地表）：
+
+| 候选 | 是否采用 | 原因 |
+|------|---------|------|
+| `RED_X` | ✅ 采用（地下） | `trackCount=false` 不占追踪额度，与 `TARGET_X` 视觉区分明显，已在传送白名单内 |
+| `TARGET_X` | ✅ 保留（地表） | 原有回退图标，行为不变 |
+| `TARGET_POINT` | ❌ | 语义上易与旧的地图中心标记混淆 |
+| `RED_MARKER` / `BLUE_MARKER` | ❌ | `trackCount=true`，大量标记会挤占地图追踪装饰额度 |
+| 16 种 `*_BANNER` | ❌ | `MapCoordHelper.isBannerType()` 按 `banner_` 前缀判定，会被误认为旗帜 |
+| `PLAYER` / `FRAME` / `PLAYER_OFF_MAP` / `PLAYER_OFF_LIMITS` | ❌ | 原版专用 |
+
+**地下判定**：采用 `Structure.step()` 生成阶段判定，`UNDERGROUND_STRUCTURES` / `STRONGHOLDS` 视为地下。零运行时开销（在 `ensureIconMappingBuilt` 中一次性缓存到 `undergroundStructureSet`），模组结构基本遵守该约定。
+
+> 备选方案是读 `StructureStart.getBoundingBox()` 的实际 Y 与地表高度对比，但 `getAllReferences()` 只返回起始区块坐标，当前扫描的区块不一定是起始区块，还需额外 `getHeight()` 查询，收益不足。
+
+**顺带修复的覆盖漏洞**：旧 `ensureIconMappingBuilt` 通过**遍历标签**收集模组结构，导致**完全没有标签的模组结构被漏掉**（`doScan` 中走 `else continue` 直接跳过，不显示任何图标）。改为遍历 `registry.holders()` 全量后，无标签模组结构也能正常标记。
+
+**排除名单移除**：`EXCLUDED_TAGS`（`eye_of_ender_located`、`dolphin_located`、`on_treasure_maps`、`cats_spawn_in`、`cats_spawn_as_black`）删除，要塞/沉船/海底废墟/埋藏的宝藏现在均会标记。要塞属地下阶段显示 `RED_X`，其余显示 `TARGET_X`。
+
+**图标优先级**：地下/地表判定**只对无专属图标的结构生效**。试炼密室虽是地下结构，但命中 `structureIconMap` 的 `TRIAL_CHAMBERS` 专属图标，不受影响。
+
+**修改文件**：
+
+| 文件 | 改动 |
+|------|------|
+| `StructureMapDecorator` | 删除 `EXCLUDED_TAGS` 与 `modStructureSet`；新增 `undergroundStructureSet` + `isUndergroundStep()`；`ensureIconMappingBuilt` 改为 registry 全量遍历；`doScan` 按地下/地表选择回退图标，id 前缀改为 `underground_`/`surface_` |
+
+**过时文档清理**：`addCenterMarker()` / `TARGET_POINT` 中心标记在早期版本已从代码中移除（`handleLivingMapCreation` 无此调用），但 §10.4/§10.5/§10.7 仍有残留描述，本次一并清理。

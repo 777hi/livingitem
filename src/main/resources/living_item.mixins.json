@@ -5,7 +5,9 @@
   "mixins": [
     "ItemStackMixin",
     "MapItemMixin",
-    "ServerPlaceRecipeMixin"
+    "ServerPlaceRecipeMixin",
+    "BlockStateBaseMixin",
+    "RedStoneWireBlockMixin"
   ],
   "injectors": {
     "defaultRequire": 1

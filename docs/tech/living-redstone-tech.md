@@ -2,7 +2,7 @@
 
 # Living Redstone (活红石) 技术文档
 
-> **文档版本**: 2026.08 v7
+> **文档版本**: 2026.08 v8
 > **最后更新**: 2026-08-21
 > **适用版本**: Minecraft 1.21.1
 
@@ -169,8 +169,11 @@ public class ContainerRedstoneData {
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `edgeGrid` | EdgeGrid | 当前帧边信号网格，存储所有槽位间边的信号值 |
+| `edgeGrid` | EdgeGrid | 当前帧边信号网格，存储所有槽位间边的信号值（含外部注入信号） |
 | `prevEdgeGrid` | EdgeGrid | 上一帧边信号，Phase 0 用于中继器断电检测 |
+| `boundaryOutput` | int[4] | 仅内部信号产生的边界输出（0-15，4 方向），与 edgeGrid 边界边解耦 |
+| `externalInputs` | int[4] | 外部注入信号强度记录（4 方向），用于反馈循环防护 |
+| `prevBoundaryOutput` | int[4] | 上一帧边界输出信号，用于变化检测避免不必要的方块更新 |
 | `tickCounter` | int | 自增计数器，每 2 tick 触发一次 calculate() |
 | `processedThisTick` | boolean | 同一 tick 内多个 Function 触发时，保证只计算一次。每 tick 开始时由 `SimpleContainerContext.setTickContext()` 重置 |
 | `lastTickTime` | long | 最后访问时间戳，`ContainerLivingItemHandler.cleanupStaleRedstoneData()` 每 120 秒清理超过 120 秒未访问的条目 |
@@ -211,10 +214,10 @@ edgeIndex(Pos2D) → 将 Pos2D 方向转为边索引
 | 方法 | 作用 |
 |------|------|
 | `get(slot, dir)` | 读槽位某方向的边，边界返回 0 |
-| `set(slot, dir, value)` | 写槽位某方向的边，边界无操作 |
+| `set(slot, dir, value)` | 写槽位某方向的边，边界边写入时自动更新 `boundaryOutput[dir]` |
 | `maxOfSlot(slot)` | 4 边最大值 |
 | `anyOfSlot(slot)` | 任一边 > 0 |
-| `zero()` | 清零所有边 |
+| `zero()` | 清零所有边，同时清零 `boundaryOutput[4]` |
 
 ### 2.4 LivingButtonData — 活按钮物品数据
 
@@ -375,6 +378,12 @@ calculate(context, tick):
   phase4PowerConductors()    — 信号源向导电活物品充能，触发第二波 BFS（先于 Phase 3 执行，确保导体信号可被中继器/比较器读取）
   phase3RecheckInputs()      — 重新检测级联输入（中继器/比较器），比较器写回边网格
   phase5UpdateDisplay()      — 更新物品显示状态（火把/灯/红石粉）
+
+  注入点在 Phase 0 之前：
+  injectExternalInputs()     — 读取外部红石信号，注入边界边（复用 CrossContainerTransfer 方向映射）
+  输出通过 Mixin 完成：
+  BlockStateBase.getSignal()           — 读取 getBoundarySignal() 返回边界边信号
+  RedStoneWireBlock.getConnectingSide() — 让红石粉连接容器方块（注入 SIDE 返回值）
 ```
 
 **与旧模型（槽位信号）的核心区别**：
@@ -623,6 +632,141 @@ Phase 5: 更新显示
 - **向上取整高度**：`(size + width - 1) / width` 兼容非满行容器（如玩家背包 41 槽）
 - **导体充能**：Phase 4 通过 `isRedstoneConductor` 自动判定所有 BlockItem 的导电性，不依赖功能注册。中继器/比较器通过共享边缘网格自动读取导体的信号，无需特殊处理
 - **第二波 BFS**：充能导体后触发第二轮 BFS，确保信号穿过导体继续在红石粉中传播
+
+### 3.2.1 容器内外红石交互
+
+容器内红石信号可与外部世界红石双向交互，实现"外部红石粉 → 容器内红石粉"和"容器内红石粉 → 外部红石粉"的信号传递。
+
+#### 核心数据结构
+
+```
+ContainerRedstoneData
+├── edgeGrid              — 边信号网格（含外部注入信号，用于内部传播）
+├── boundaryOutput[4]     — 仅内部信号产生的边界输出（0-15，4 方向）
+├── externalInputs[4]     — 外部注入信号强度记录（4 方向）
+├── prevBoundaryOutput[4] — 上一帧边界输出信号（用于变化检测）
+└── prevEdgeGrid           — 上一帧边信号（用于断电检测）
+```
+
+**关键设计**：`edgeGrid` 边界边和 `boundaryOutput` 是两个独立的数据通道：
+
+| 数据 | 内容 | 用途 |
+|------|------|------|
+| `edgeGrid` 边界边 | 外部信号 + 内部信号 | 内部信号**传播** |
+| `boundaryOutput[4]` | 仅内部信号 | 对外**输出** |
+
+#### 输入：外部信号注入（injectExternalInputs）
+
+在 `calculate()` 开始时（Phase 0 之前），读取容器四周的红石信号：
+
+```
+injectExternalInputs(context):
+  1. 遍历 4 个世界方向（NORTH/SOUTH/WEST/EAST）
+  2. 读取 neighborPos.relative(worldDir) 的信号强度
+     level.getSignal(pos.relative(worldDir), worldDir)
+  3. 通过 CrossContainerTransfer.worldToGrid() 映射为内部网格方向
+     direction.getOpposite() 修正 Minecraft getSignal 语义反转
+  4. 记录 externalInputs[internalDir] = signal
+  5. injectBoundarySignal(internalDir, signal) 写入 edgeGrid 边界边
+```
+
+**注入边界边**：将外部信号写入 `edgeGrid` 的边界边条目（如最左列 LEFT 边、最右列 RIGHT 边），后续 Phase 1-5 自然感知该信号进行内部传播。
+
+#### 输出：内部信号传出（getBoundarySignal）
+
+容器对外的红石信号输出通过 `getBoundarySignal(dir)` 返回，该值**仅来自内部信号源，不包含外部注入信号**，从根本上切断反馈循环。
+
+**输出路径**：
+
+```
+内部信号源（火把/红石块/红石粉等）
+  → phase1CollectSources / phase2Propagation / phase4PowerConductors
+  → edgeGrid.set(slot, dir, value) 写入边界边
+  → boundaryOutput[dir] 自动更新（EdgeGrid.set 边界边时同步更新）
+  → getBoundarySignal(dir) 返回 boundaryOutput[dir]
+  → BlockStateBaseMixin.onGetSignal（Mixin 注入）
+  → 容器方块对外输出红石信号
+```
+
+**boundaryOutput 更新时机**：
+
+| 阶段 | 更新方式 |
+|------|---------|
+| `phase1CollectSources` | 信号源（火把/按钮/拉杆/中继器/比较器/红石块）写边界边 → `edgeGrid.set()` 自动更新 `boundaryOutput` |
+| `phase2Propagation` | 边界红石粉槽位：从其他 3 条内部边计算 `internalMax`，输出 `internalMax - 1` 更新 `boundaryOutput` |
+| `phase4PowerConductors` | 导电活物品被充能后写边界边 → `edgeGrid.set()` 自动更新 `boundaryOutput` |
+
+#### 反馈循环防护
+
+**问题**：容器输出信号 → 外部线缆收到 → 外部线缆信号又注入容器 → 容器再次输出 → 无限循环。
+
+**解决方案**：信号输入/输出通道分离。
+
+```
+外部输入 → injectExternalInputs → edgeGrid 边界边（只用于传播）
+                                      │
+内部信号源 → edgeGrid.set() → edgeGrid 边界边 + boundaryOutput
+                                      │
+                      boundaryOutput → getBoundarySignal → 方块输出
+                      （外部信号不会出现在这里！）
+```
+
+- `injectExternalInputs` 将外部信号写入 `edgeGrid` 边界边，供内部传播使用
+- 但 `boundaryOutput` 只记录内部信号源的输出，外部信号不会污染
+- `getBoundarySignal()` 直接返回 `boundaryOutput[dir]`，不依赖 `edgeGrid` 边界边
+
+#### 闪烁抑制
+
+**问题**：外部信号注入到 `edgeGrid` 边界边后，`phase2Propagation` 中 `output <= currentEdge` 条件会跳过边界处理，导致 `boundaryOutput` 在帧间反复归零/恢复。
+
+**解决方案**：在 `phase2Propagation` 中，边界方向处理**先于** `output <= currentEdge` 检查：
+
+```java
+for (int dir = 0; dir < 4; dir++) {
+    boolean isBoundary = (dir == UP && r == 0) || ...
+
+    if (isBoundary) {
+        // 始终从其他 3 条内部边计算输出，不受外部信号影响
+        int internalMax = max(edgeGrid.get(current, d)) for d != dir;
+        int internalOutput = min(internalMax - 1, cap);
+        if (internalOutput > 0) boundaryOutput[dir] = max(boundaryOutput[dir], internalOutput);
+        // 不写入 edgeGrid 边界边，保留外部信号供内部传播
+    } else {
+        // 内部方向：正常比较 + 写入
+        if (output <= currentEdge) continue;
+        edgeGrid.set(current, dir, output);
+    }
+}
+```
+
+#### 信号变化通知（notifyBoundaryChange）
+
+检测 `boundaryOutput` 与 `prevBoundaryOutput` 的差异，仅在边界输出信号实际变化时触发 `level.updateNeighborsAt()`，避免不必要的方块更新：
+
+```
+notifyBoundaryChange(context, width, height):
+  for 4 方向 dir:
+    if getBoundarySignal(dir) != prevBoundaryOutput[dir] → changed = true
+    prevBoundaryOutput[dir] = getBoundarySignal(dir)  // 更新历史记录
+
+  if changed:
+    level.updateNeighborsAt(pos, state.getBlock())  // 通知外部方块重新计算
+```
+
+#### 红石粉连接判定（RedStoneWireBlockMixin）
+
+Minecraft 原版红石粉不会主动连接容器方块。通过 `RedStoneWireBlockMixin` 注入 `getConnectingSide` 方法，当邻居是容器方块时强制返回 `RedstoneSide.SIDE`，使外部红石粉能连接到容器读取信号。
+
+#### 方向映射
+
+复用 `CrossContainerTransfer` 的方向映射系统，自动处理容器朝向旋转：
+
+```
+世界方向 → CrossContainerTransfer.worldToGrid(direction.getOpposite(), facing) → 内部网格方向
+内部网格方向 → CrossContainerTransfer.gridToWorld(gridDir, facing) → 世界方向
+```
+
+大箱子（CompoundContainer）左右半箱合并为无缝网格，6 个物理面自然映射为 4 个逻辑边界方向。
 
 ### 3.3 邻居计算
 

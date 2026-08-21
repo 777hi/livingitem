@@ -11,6 +11,7 @@ import net.minecraft.tags.TagKey;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.levelgen.GenerationStep;
 import net.minecraft.world.level.levelgen.structure.Structure;
 import net.minecraft.world.level.saveddata.maps.MapDecorationType;
 import net.minecraft.world.level.saveddata.maps.MapDecorationTypes;
@@ -41,16 +42,8 @@ public final class StructureMapDecorator {
             new TagIconEntry(StructureTags.ON_SWAMP_EXPLORER_MAPS, MapDecorationTypes.SWAMP_HUT)
     );
 
-    private static final Set<TagKey<Structure>> EXCLUDED_TAGS = Set.of(
-            StructureTags.EYE_OF_ENDER_LOCATED,
-            StructureTags.DOLPHIN_LOCATED,
-            StructureTags.ON_TREASURE_MAPS,
-            StructureTags.CATS_SPAWN_IN,
-            StructureTags.CATS_SPAWN_AS_BLACK
-    );
-
     private static Map<Holder<Structure>, Holder<MapDecorationType>> structureIconMap = null;
-    private static Set<Holder<Structure>> modStructureSet = null;
+    private static Set<Holder<Structure>> undergroundStructureSet = null;
 
     private static final Map<Integer, Set<Long>> SCANNED_CHUNKS = new HashMap<>();
 
@@ -83,32 +76,31 @@ public final class StructureMapDecorator {
 
         Registry<Structure> registry = level.registryAccess().registryOrThrow(Registries.STRUCTURE);
         Map<Holder<Structure>, Holder<MapDecorationType>> iconMap = new HashMap<>();
-        Set<Holder<Structure>> modSet = new HashSet<>();
-        Set<TagKey<Structure>> allVanillaTags = new HashSet<>();
+        Set<Holder<Structure>> undergroundSet = new HashSet<>();
 
         for (var entry : VANILLA_TAG_ICONS) {
-            allVanillaTags.add(entry.tag());
             var tag = registry.getTag(entry.tag());
             if (tag.isEmpty()) continue;
             for (var holder : tag.get()) {
                 iconMap.put(holder, entry.icon());
             }
         }
-        allVanillaTags.addAll(EXCLUDED_TAGS);
 
-        for (var tagKey : registry.getTagNames().toList()) {
-            if (allVanillaTags.contains(tagKey)) continue;
-            var tag = registry.getTag(tagKey);
-            if (tag.isEmpty()) continue;
-            for (var holder : tag.get()) {
-                if (!iconMap.containsKey(holder)) {
-                    modSet.add(holder);
-                }
+        // 遍历 registry 全量：没有专属图标的结构（含无标签的模组结构）按生成阶段区分地下/地表
+        for (Holder.Reference<Structure> holder : registry.holders().toList()) {
+            if (iconMap.containsKey(holder)) continue;
+            if (isUndergroundStep(holder.value().step())) {
+                undergroundSet.add(holder);
             }
         }
 
         structureIconMap = Map.copyOf(iconMap);
-        modStructureSet = Set.copyOf(modSet);
+        undergroundStructureSet = Set.copyOf(undergroundSet);
+    }
+
+    private static boolean isUndergroundStep(GenerationStep.Decoration step) {
+        return step == GenerationStep.Decoration.UNDERGROUND_STRUCTURES
+                || step == GenerationStep.Decoration.STRONGHOLDS;
     }
 
     private static void doScan(ServerLevel level, MapItemSavedData data, Set<Long> scannedChunks) {
@@ -145,14 +137,11 @@ public final class StructureMapDecorator {
 
                     Holder<Structure> holder = holderOpt.get();
                     Holder<MapDecorationType> icon = structureIconMap.get(holder);
-                    boolean isMod = false;
+                    String idPrefix = "struct_";
                     if (icon == null) {
-                        if (modStructureSet.contains(holder)) {
-                            icon = MapDecorationTypes.TARGET_X;
-                            isMod = true;
-                        } else {
-                            continue;
-                        }
+                        boolean underground = undergroundStructureSet.contains(holder);
+                        icon = underground ? MapDecorationTypes.RED_X : MapDecorationTypes.TARGET_X;
+                        idPrefix = underground ? "underground_" : "surface_";
                     }
 
                     for (long ref : entry.getValue()) {
@@ -161,7 +150,7 @@ public final class StructureMapDecorator {
                         double z = startChunkPos.getMinBlockZ() + 8;
 
                         String structId = registry.getKey(structure).toString().replace(':', '_');
-                        String id = (isMod ? "mod_" : "struct_") + structId + "_" + ref;
+                        String id = idPrefix + structId + "_" + ref;
 
                         data.addDecoration(icon, level, id, x, z, 0.0, null);
                     }
