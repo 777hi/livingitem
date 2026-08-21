@@ -2,8 +2,8 @@
 
 # Living Redstone (活红石) 技术文档
 
-> **文档版本**: 2026.08 v10
-> **最后更新**: 2026-08-21
+> **文档版本**: 2026.08 v11
+> **最后更新**: 2026-08-22
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -275,7 +275,7 @@ public record LivingRepeaterData(
 ) implements TooltipProvider {
 
     public static final LivingRepeaterData DEFAULT =
-        new LivingRepeaterData(Pos2D.RIGHT, 1, false, 0);
+        new LivingRepeaterData(Pos2D.UP, 1, false, 0);
 
     public LivingRepeaterData withDirection(Pos2D dir) { ... }
     public LivingRepeaterData withDelay(int d) { ... }
@@ -286,7 +286,7 @@ public record LivingRepeaterData(
 
 | 字段 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `direction` | Pos2D | RIGHT | 输出方向，决定信号传播方向 |
+| `direction` | Pos2D | UP | 输出方向，决定信号传播方向 |
 | `delay` | int | 1 | 延迟档位，1-4 红石刻 |
 | `powered` | boolean | false | 输入端是否有信号 |
 | `delayTimer` | int | 0 | 剩余延迟刻数，0 表示就绪，>0 等待中 |
@@ -301,7 +301,7 @@ public record LivingComparatorData(
 ) implements TooltipProvider {
 
     public static final LivingComparatorData DEFAULT =
-        new LivingComparatorData(Pos2D.RIGHT, false, false);
+        new LivingComparatorData(Pos2D.UP, false, false);
 
     public LivingComparatorData withDirection(Pos2D dir) { ... }
     public LivingComparatorData withSubtractMode(boolean sm) { ... }
@@ -311,7 +311,7 @@ public record LivingComparatorData(
 
 | 字段 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `direction` | Pos2D | RIGHT | 输出方向 |
+| `direction` | Pos2D | UP | 输出方向 |
 | `subtractMode` | boolean | false | 比较模式（false）/ 减法模式（true） |
 | `powered` | boolean | false | 输入端是否有信号 |
 
@@ -490,13 +490,17 @@ while queue not empty:
 
   for 4 方向 dir：
     neighbor = resolveSlot(current, dir)
-    isTarget = neighbor 是红石目标（粉/中继器/比较器/火把/灯）
-    if !isTarget && neighbor 存在 → continue
 
     if output > edgeGrid.get(current, dir)：
-      edgeGrid.set(current, dir, output)    // 写自己的边
-      if 邻居是红石粉 → 邻居入队
+      edgeGrid.set(current, dir, output)    // 始终写边（无论邻居是什么）
+      if neighbor 是红石粉 → 邻居入队       // 仅红石粉入队继续传播
 ```
+
+> **设计变更（v11）**：Phase 2 中红石粉始终向 4 个方向的边写入信号，不再检查邻居是否为红石目标。
+> 这允许非红石组件（如活漏斗）通过 `edgeGrid.maxOfSlot()` 读取相邻红石粉的信号，实现红石信号控制。
+
+**活漏斗红石信号控制**：
+活漏斗在 `LivingHopperFunction.tick()` 中通过 `ContainerRedstoneData.getSignal(slot)` 检测槽位 4 条边是否有信号。任意边信号 > 0 时，漏斗被禁用（跳过传输和冷却倒计时），tooltip 显示红色警告。信号消失后自动恢复传输。此机制使用 `edgeGrid.maxOfSlot()` 读取边信号，与 Phase 2 的边写入解耦直接相关。
 
 **Phase 3 — 重新检测输入**：
 ```

@@ -15,11 +15,12 @@ public record LivingHopperData(
     DirectionTransferData direction,
     TransferData transfer,
     FilterData filter,
-    ResolvedSlotData slotInfo
+    ResolvedSlotData slotInfo,
+    boolean disabled
 ) implements TooltipProvider {
 
     public static final LivingHopperData DEFAULT = new LivingHopperData(
-        DirectionTransferData.DEFAULT, TransferData.DEFAULT, FilterData.EMPTY, ResolvedSlotData.EMPTY
+        DirectionTransferData.DEFAULT, TransferData.DEFAULT, FilterData.EMPTY, ResolvedSlotData.EMPTY, false
     );
 
     public static final Codec<LivingHopperData> CODEC = RecordCodecBuilder.create(instance ->
@@ -27,7 +28,8 @@ public record LivingHopperData(
             DirectionTransferData.CODEC.fieldOf("direction").forGetter(LivingHopperData::direction),
             TransferData.CODEC.fieldOf("transfer").forGetter(LivingHopperData::transfer),
             FilterData.CODEC.optionalFieldOf("filter", FilterData.EMPTY).forGetter(LivingHopperData::filter),
-            ResolvedSlotData.CODEC.optionalFieldOf("slot_info", ResolvedSlotData.EMPTY).forGetter(LivingHopperData::slotInfo)
+            ResolvedSlotData.CODEC.optionalFieldOf("slot_info", ResolvedSlotData.EMPTY).forGetter(LivingHopperData::slotInfo),
+            Codec.BOOL.optionalFieldOf("disabled", false).forGetter(LivingHopperData::disabled)
         ).apply(instance, LivingHopperData::new)
     );
 
@@ -36,13 +38,18 @@ public record LivingHopperData(
         TransferData.STREAM_CODEC, LivingHopperData::transfer,
         FilterData.STREAM_CODEC, LivingHopperData::filter,
         ResolvedSlotData.STREAM_CODEC, LivingHopperData::slotInfo,
+        StreamCodec.of(
+            (buf, value) -> buf.writeBoolean(value),
+            buf -> buf.readBoolean()
+        ), LivingHopperData::disabled,
         LivingHopperData::new
     );
 
-    public LivingHopperData withDirection(DirectionTransferData d) { return new LivingHopperData(d, transfer, filter, slotInfo); }
-    public LivingHopperData withTransfer(TransferData t) { return new LivingHopperData(direction, t, filter, slotInfo); }
-    public LivingHopperData withFilter(FilterData f) { return new LivingHopperData(direction, transfer, f, slotInfo); }
-    public LivingHopperData withSlotInfo(ResolvedSlotData s) { return new LivingHopperData(direction, transfer, filter, s); }
+    public LivingHopperData withDirection(DirectionTransferData d) { return new LivingHopperData(d, transfer, filter, slotInfo, disabled); }
+    public LivingHopperData withTransfer(TransferData t) { return new LivingHopperData(direction, t, filter, slotInfo, disabled); }
+    public LivingHopperData withFilter(FilterData f) { return new LivingHopperData(direction, transfer, f, slotInfo, disabled); }
+    public LivingHopperData withSlotInfo(ResolvedSlotData s) { return new LivingHopperData(direction, transfer, filter, s, disabled); }
+    public LivingHopperData withDisabled(boolean d) { return new LivingHopperData(direction, transfer, filter, slotInfo, d); }
 
     @Override
     public void addToTooltip(Item.TooltipContext context, Consumer<Component> tooltipAdder, TooltipFlag flag) {}

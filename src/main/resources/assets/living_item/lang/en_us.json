@@ -23,6 +23,7 @@
   "tooltip.livingitem.transform.no_recipe": "  §7Input: §e%s§7 §8(no recipe)§r",
 
   "tooltip.livingitem.hopper.status": "§aLiving Hopper§r",
+  "tooltip.livingitem.hopper.disabled": "  §c⚠ Disabled by redstone signal§r",
   "tooltip.livingitem.filter.blacklist": "  §cBlacklist:§r",
   "tooltip.livingitem.filter.whitelist": "  §aWhitelist:§r",
   "tooltip.livingitem.filter.mode": "  §7Filter: %s§r",

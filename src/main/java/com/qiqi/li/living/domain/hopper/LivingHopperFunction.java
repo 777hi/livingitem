@@ -26,6 +26,7 @@ import com.qiqi.li.living.domain.hopper.DirectionTransferData;
 import com.qiqi.li.living.transfer.FilterData;
 import com.qiqi.li.living.domain.hopper.LivingHopperData;
 import com.qiqi.li.living.domain.hopper.TransferData;
+import com.qiqi.li.living.domain.redstone.ContainerRedstoneData;
 import com.qiqi.li.living.components.ItemFilterComponent;
 import com.mojang.logging.LogUtils;
 import org.slf4j.Logger;
@@ -55,6 +56,24 @@ public class LivingHopperFunction implements LivingItemFunction {
 
             ItemStack stack = entry.stack();
             LivingHopperData data = LivingItemManager.getHopperData(stack);
+
+            ContainerRedstoneData redstoneData = tick.getOrCreateRedstoneData(context);
+            boolean hasRedstoneSignal = redstoneData.getSignal(slot) > 0;
+
+            if (hasRedstoneSignal) {
+                if (!data.disabled()) {
+                    data = data.withDisabled(true);
+                    LivingItemManager.setHopperData(stack, data);
+                    context.syncSlotToClients(slot, stack);
+                }
+                continue;
+            }
+
+            if (data.disabled()) {
+                data = data.withDisabled(false);
+                LivingItemManager.setHopperData(stack, data);
+                context.syncSlotToClients(slot, stack);
+            }
 
             DirectionTransferData dir = data.direction();
             int containerSize = context.getSize();
@@ -122,6 +141,11 @@ public class LivingHopperFunction implements LivingItemFunction {
 
         tooltipAdder.accept(Component.nullToEmpty(""));
         tooltipAdder.accept(Component.translatable("tooltip.livingitem.hopper.status"));
+
+        if (data.disabled()) {
+            tooltipAdder.accept(Component.translatable("tooltip.livingitem.hopper.disabled")
+                .withStyle(net.minecraft.ChatFormatting.RED));
+        }
 
         DirectionTransferData dir = data.direction();
         tooltipAdder.accept(Component.translatable(

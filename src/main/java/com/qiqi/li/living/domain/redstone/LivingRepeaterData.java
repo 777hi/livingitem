@@ -19,7 +19,7 @@ public record LivingRepeaterData(
     int delayTimer
 ) implements TooltipProvider {
 
-    public static final LivingRepeaterData DEFAULT = new LivingRepeaterData(Pos2D.RIGHT, 1, false, 0);
+    public static final LivingRepeaterData DEFAULT = new LivingRepeaterData(Pos2D.UP, 1, false, 0);
 
     public static final Codec<LivingRepeaterData> CODEC = RecordCodecBuilder.create(instance ->
         instance.group(

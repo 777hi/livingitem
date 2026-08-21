@@ -22,6 +22,7 @@
   "tooltip.livingitem.transform.recipe": "  §7配方: §e%s§7 → §a%s§r",
 
   "tooltip.livingitem.hopper.status": "§a活漏斗§r",
+  "tooltip.livingitem.hopper.disabled": "  §c⚠ 被红石信号禁用§r",
   "tooltip.livingitem.filter.blacklist": "  §c黑名单:§r",
   "tooltip.livingitem.filter.whitelist": "  §a白名单:§r",
   "tooltip.livingitem.filter.mode": "  §7过滤模式: %s§r",

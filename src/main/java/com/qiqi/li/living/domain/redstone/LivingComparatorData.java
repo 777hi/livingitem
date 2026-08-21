@@ -18,7 +18,7 @@ public record LivingComparatorData(
     boolean powered
 ) implements TooltipProvider {
 
-    public static final LivingComparatorData DEFAULT = new LivingComparatorData(Pos2D.RIGHT, false, false);
+    public static final LivingComparatorData DEFAULT = new LivingComparatorData(Pos2D.UP, false, false);
 
     public static final Codec<LivingComparatorData> CODEC = RecordCodecBuilder.create(instance ->
         instance.group(

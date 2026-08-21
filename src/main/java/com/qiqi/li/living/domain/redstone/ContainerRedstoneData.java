@@ -344,14 +344,14 @@ public class ContainerRedstoneData {
 
             for (int dir = 0; dir < 4; dir++) {
                 int neighbor = resolveSlot(current, dir, size, width);
-                boolean isTarget = neighbor >= 0 && isRedstoneTarget(neighbor, dustSlots,
-                    repeaterSlots, comparatorSlots, torchSlots, lampSlots);
-                if (!isTarget && neighbor >= 0) continue;
 
                 int currentEdge = edgeGrid.get(current, dir);
                 if (output <= currentEdge) continue;
                 edgeGrid.set(current, dir, output);
-                if (neighbor >= 0 && dustSlots.contains(neighbor)) {
+
+                boolean isTarget = neighbor >= 0 && isRedstoneTarget(neighbor, dustSlots,
+                    repeaterSlots, comparatorSlots, torchSlots, lampSlots);
+                if (isTarget && dustSlots.contains(neighbor)) {
                     queue.add(neighbor);
                 }
             }
