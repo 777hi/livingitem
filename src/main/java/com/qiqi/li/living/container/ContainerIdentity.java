@@ -2,6 +2,8 @@ package com.qiqi.li.living.container;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
+import java.util.Collections;
+import java.util.List;
 
 /**
  * 容器身份标识 —— 提供容器唯一标识和世界信息。
@@ -48,6 +50,20 @@ public interface ContainerIdentity {
      */
     default BlockPos getBlockPos() {
         return null;
+    }
+
+    /**
+     * 获取容器的所有关联方块位置。
+     *
+     * <p>对于大箱子等由多个方块组成的容器，返回所有关联方块的坐标；
+     * 对于单方块容器，返回只包含一个位置的列表；
+     * 对于非方块容器，返回空列表。</p>
+     *
+     * @return 所有关联方块位置，不会为 null
+     */
+    default List<BlockPos> getAssociatedBlockPositions() {
+        BlockPos pos = getBlockPos();
+        return pos != null ? Collections.singletonList(pos) : Collections.emptyList();
     }
 
     /**

@@ -4,6 +4,7 @@ import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.Queue;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -14,6 +15,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerContext;
+import com.qiqi.li.living.container.ContainerLivingItemHandler;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.domain.hopper.CrossContainerTransfer;
 import com.qiqi.li.living.model.Pos2D;
@@ -28,13 +30,11 @@ public class ContainerRedstoneData {
     private static final int E_RIGHT = 3;
 
     private final int slotCount;
-    private int lastWidth;
-    private int lastHeight;
     private EdgeGrid edgeGrid;
     private EdgeGrid prevEdgeGrid;
-    private final int[] externalInputs = new int[4];
-    private final int[] prevBoundaryOutput = new int[4];
-    private final int[] boundaryOutput = new int[4];
+    private final int[] faceInput = new int[4];
+    private final int[] faceOutput = new int[4];
+    private final int[] prevFaceOutput = new int[4];
 
     private int tickCounter;
     private boolean processedThisTick;
@@ -79,8 +79,7 @@ public class ContainerRedstoneData {
         if (edgeGrid != null) {
             edgeGrid.zero();
         }
-        java.util.Arrays.fill(externalInputs, 0);
-        java.util.Arrays.fill(boundaryOutput, 0);
+        java.util.Arrays.fill(faceInput, 0);
     }
 
     public void calculate(ContainerContext context, TickContext tick) {
@@ -93,8 +92,6 @@ public class ContainerRedstoneData {
         int size = context.getSize();
         int width = context.getWidth();
         int height = (size + width - 1) / width;
-        this.lastWidth = width;
-        this.lastHeight = height;
 
         Set<Integer> torchSlots = tick.getFunctionSlots(LivingRedstoneTorchFunction.ID);
         Set<Integer> dustSlots = tick.getFunctionSlots(LivingRedstoneFunction.ID);
@@ -118,11 +115,12 @@ public class ContainerRedstoneData {
         injectExternalInputs(context);
 
         if (!hasAny) {
+            computeFaceOutput(width, height);
             notifyBoundaryChange(context, width, height);
             return;
         }
 
-        phase0CountdownDelays(repeaterSlots, buttonSlots, size, context);
+        phase0CountdownDelays(repeaterSlots, buttonSlots, size, width, context);
         Queue<Integer> queue = phase1CollectSources(torchSlots, buttonSlots, leverSlots,
             repeaterSlots, comparatorSlots, dustSlots, redstoneBlockSlots, size, width, context);
         seedBoundaryDust(queue, dustSlots, width, height);
@@ -134,11 +132,13 @@ public class ContainerRedstoneData {
         phase3RecheckInputs(repeaterSlots, comparatorSlots, size, width, context);
         phase5UpdateDisplay(torchSlots, dustSlots, lampSlots, buttonSlots, leverSlots,
             repeaterSlots, comparatorSlots, redstoneBlockSlots, size, width, context);
+        computeFaceOutput(width, height);
         notifyBoundaryChange(context, width, height);
     }
 
     private void phase0CountdownDelays(Set<Integer> repeaterSlots, Set<Integer> buttonSlots,
-            int size, ContainerContext context) {
+            int size, int width, ContainerContext context) {
+        int height = (size + width - 1) / width;
         for (int slot : repeaterSlots) {
             if (slot < 0 || slot >= size) continue;
             ItemStack stack = context.getItem(slot);
@@ -149,7 +149,13 @@ public class ContainerRedstoneData {
             if (data.delayTimer() == 0) continue;
 
             int inputDir = edgeIndex(data.direction().opposite());
+            int r = slot / width;
+            int c = slot % width;
             boolean hasInput = prevEdgeGrid.get(slot, inputDir) > 0;
+            if (inputDir == E_UP && r == 0) hasInput = hasInput || faceInput[E_UP] > 0;
+            if (inputDir == E_DOWN && r == height - 1) hasInput = hasInput || faceInput[E_DOWN] > 0;
+            if (inputDir == E_LEFT && c == 0) hasInput = hasInput || faceInput[E_LEFT] > 0;
+            if (inputDir == E_RIGHT && c == width - 1) hasInput = hasInput || faceInput[E_RIGHT] > 0;
 
             if (data.delayTimer() > 0) {
                 if (!hasInput) {
@@ -323,13 +329,18 @@ public class ContainerRedstoneData {
             ItemStack stack = context.getItem(current);
             if (stack.isEmpty()) continue;
 
+            int r = current / width;
+            int c = current % width;
+
             int maxInput = edgeGrid.maxOfSlot(current);
+            if (r == 0) maxInput = Math.max(maxInput, faceInput[E_UP]);
+            if (r == height - 1) maxInput = Math.max(maxInput, faceInput[E_DOWN]);
+            if (c == 0) maxInput = Math.max(maxInput, faceInput[E_LEFT]);
+            if (c == width - 1) maxInput = Math.max(maxInput, faceInput[E_RIGHT]);
+
             if (maxInput <= 1) continue;
 
             int output = Math.min(maxInput - 1, getSignalCap(stack.getCount()));
-
-            int r = current / width;
-            int c = current % width;
 
             for (int dir = 0; dir < 4; dir++) {
                 int neighbor = resolveSlot(current, dir, size, width);
@@ -337,29 +348,11 @@ public class ContainerRedstoneData {
                     repeaterSlots, comparatorSlots, torchSlots, lampSlots);
                 if (!isTarget && neighbor >= 0) continue;
 
-                boolean isBoundary = (dir == E_UP && r == 0) || (dir == E_DOWN && r == height - 1)
-                    || (dir == E_LEFT && c == 0) || (dir == E_RIGHT && c == width - 1);
-
-                if (isBoundary) {
-                    int internalMax = 0;
-                    for (int d = 0; d < 4; d++) {
-                        if (d == dir) continue;
-                        internalMax = Math.max(internalMax, edgeGrid.get(current, d));
-                    }
-                    int internalOutput = Math.min(internalMax - 1, getSignalCap(stack.getCount()));
-                    if (internalOutput > 0) {
-                        boundaryOutput[dir] = Math.max(boundaryOutput[dir], internalOutput);
-                    }
-                    if (neighbor >= 0 && dustSlots.contains(neighbor)) {
-                        queue.add(neighbor);
-                    }
-                } else {
-                    int currentEdge = edgeGrid.get(current, dir);
-                    if (output <= currentEdge) continue;
-                    edgeGrid.set(current, dir, output);
-                    if (neighbor >= 0 && dustSlots.contains(neighbor)) {
-                        queue.add(neighbor);
-                    }
+                int currentEdge = edgeGrid.get(current, dir);
+                if (output <= currentEdge) continue;
+                edgeGrid.set(current, dir, output);
+                if (neighbor >= 0 && dustSlots.contains(neighbor)) {
+                    queue.add(neighbor);
                 }
             }
         }
@@ -367,6 +360,7 @@ public class ContainerRedstoneData {
 
     private void phase3RecheckInputs(Set<Integer> repeaterSlots, Set<Integer> comparatorSlots,
             int size, int width, ContainerContext context) {
+        int height = (size + width - 1) / width;
         for (int slot : repeaterSlots) {
             if (slot < 0 || slot >= size) continue;
             ItemStack stack = context.getItem(slot);
@@ -376,7 +370,7 @@ public class ContainerRedstoneData {
             if (data.powered() && data.delayTimer() > 0) continue;
 
             int inputDir = edgeIndex(data.direction().opposite());
-            boolean hasInput = edgeGrid.get(slot, inputDir) > 0;
+            boolean hasInput = getEffectiveInput(slot, inputDir, width, height) > 0;
 
             if (hasInput && !data.powered()) {
                 LivingItemManager.setRepeaterData(stack, data.withPowered(true).withDelayTimer(data.delay()));
@@ -610,49 +604,66 @@ public class ContainerRedstoneData {
     }
 
     private void injectExternalInputs(ContainerContext context) {
-        BlockPos pos = context.getBlockPos();
         Level level = context.getLevel();
-        if (pos == null || level == null) return;
+        if (level == null) return;
 
-        BlockState state = level.getBlockState(pos);
-        if (state == null) return;
+        List<BlockPos> positions = context.getAssociatedBlockPositions();
+        for (BlockPos pos : positions) {
+            BlockState state = level.getBlockState(pos);
+            if (state == null) continue;
 
-        Direction facing = CrossContainerTransfer.getBlockFacing(state);
-        if (facing == null) return;
+            Direction facing = CrossContainerTransfer.getBlockFacing(state);
+            if (facing == null) continue;
 
-        for (Direction worldDir : Direction.Plane.HORIZONTAL) {
-            BlockPos neighborPos = pos.relative(worldDir);
-            int signal = level.getSignal(neighborPos, worldDir);
-            if (signal > 0) {
-                Pos2D gridDir = CrossContainerTransfer.worldToGrid(worldDir, facing);
-                if (gridDir != null && !gridDir.isNone()) {
-                    int internalDir = edgeIndex(gridDir);
-                    externalInputs[internalDir] = Math.max(externalInputs[internalDir], signal);
-                    injectBoundarySignal(internalDir, signal);
+            for (Direction worldDir : Direction.Plane.HORIZONTAL) {
+                BlockPos neighborPos = pos.relative(worldDir);
+                int signal = level.getSignal(neighborPos, worldDir);
+
+                ContainerRedstoneData neighborData = ContainerLivingItemHandler.getRedstoneDataByPos(neighborPos);
+                if (neighborData != null) {
+                    BlockState neighborState = level.getBlockState(neighborPos);
+                    Direction neighborFacing = CrossContainerTransfer.getBlockFacing(neighborState);
+                    if (neighborFacing != null) {
+                        Pos2D neighborGridDir = CrossContainerTransfer.worldToGrid(worldDir.getOpposite(), neighborFacing);
+                        if (neighborGridDir != null && !neighborGridDir.isNone()) {
+                            int neighborInternalDir = edgeIndex(neighborGridDir);
+                            signal = Math.max(signal, neighborData.getBoundarySignal(neighborInternalDir));
+                        }
+                    }
+                }
+
+                if (signal > 0) {
+                    Pos2D gridDir = CrossContainerTransfer.worldToGrid(worldDir, facing);
+                    if (gridDir != null && !gridDir.isNone()) {
+                        int internalDir = edgeIndex(gridDir);
+                        faceInput[internalDir] = Math.max(faceInput[internalDir], signal);
+                    }
                 }
             }
         }
     }
 
     private void seedBoundaryDust(Queue<Integer> queue, Set<Integer> dustSlots, int width, int height) {
-        if (edgeGrid == null) return;
-        for (int c = 0; c < width; c++) {
-            if (edgeGrid.vEdges[c] > 0) {
+        if (faceInput[E_UP] > 0) {
+            for (int c = 0; c < width; c++) {
                 int slot = c;
                 if (dustSlots.contains(slot)) queue.add(slot);
             }
-            int bottomIdx = height * width + c;
-            if (edgeGrid.vEdges[bottomIdx] > 0) {
+        }
+        if (faceInput[E_DOWN] > 0) {
+            for (int c = 0; c < width; c++) {
                 int slot = (height - 1) * width + c;
                 if (dustSlots.contains(slot)) queue.add(slot);
             }
         }
-        for (int r = 0; r < height; r++) {
-            if (edgeGrid.hEdges[r * (width + 1)] > 0) {
+        if (faceInput[E_LEFT] > 0) {
+            for (int r = 0; r < height; r++) {
                 int slot = r * width;
                 if (dustSlots.contains(slot)) queue.add(slot);
             }
-            if (edgeGrid.hEdges[r * (width + 1) + width] > 0) {
+        }
+        if (faceInput[E_RIGHT] > 0) {
+            for (int r = 0; r < height; r++) {
                 int slot = r * width + (width - 1);
                 if (dustSlots.contains(slot)) queue.add(slot);
             }
@@ -660,65 +671,46 @@ public class ContainerRedstoneData {
     }
 
     private void notifyBoundaryChange(ContainerContext context, int width, int height) {
-        if (edgeGrid == null || prevEdgeGrid == null) return;
-        BlockPos pos = context.getBlockPos();
         Level level = context.getLevel();
-        if (pos == null || level == null || level.isClientSide) return;
+        if (level == null || level.isClientSide) return;
 
         boolean changed = false;
         for (int dir = 0; dir < 4 && !changed; dir++) {
-            int current = getBoundarySignal(dir);
-            if (current != prevBoundaryOutput[dir]) changed = true;
+            if (faceOutput[dir] != prevFaceOutput[dir]) changed = true;
         }
         for (int dir = 0; dir < 4; dir++) {
-            prevBoundaryOutput[dir] = getBoundarySignal(dir);
+            prevFaceOutput[dir] = faceOutput[dir];
         }
         if (changed) {
-            BlockState state = level.getBlockState(pos);
-            if (state != null) {
-                level.updateNeighborsAt(pos, state.getBlock());
+            for (BlockPos pos : context.getAssociatedBlockPositions()) {
+                BlockState state = level.getBlockState(pos);
+                if (state != null) {
+                    level.updateNeighborsAt(pos, state.getBlock());
+                }
             }
         }
     }
 
-    public int getBoundarySignal(int internalDir) {
-        return boundaryOutput[internalDir];
+    private void computeFaceOutput(int width, int height) {
+        java.util.Arrays.fill(faceOutput, 0);
+        if (edgeGrid == null) return;
+
+        for (int c = 0; c < width; c++) {
+            faceOutput[E_UP] = Math.max(faceOutput[E_UP], edgeGrid.vEdges[c]);
+        }
+        for (int c = 0; c < width; c++) {
+            faceOutput[E_DOWN] = Math.max(faceOutput[E_DOWN], edgeGrid.vEdges[height * width + c]);
+        }
+        for (int r = 0; r < height; r++) {
+            faceOutput[E_LEFT] = Math.max(faceOutput[E_LEFT], edgeGrid.hEdges[r * (width + 1)]);
+        }
+        for (int r = 0; r < height; r++) {
+            faceOutput[E_RIGHT] = Math.max(faceOutput[E_RIGHT], edgeGrid.hEdges[r * (width + 1) + width]);
+        }
     }
 
-    void injectBoundarySignal(int internalDir, int signal) {
-        if (edgeGrid == null) return;
-        int height = lastHeight;
-        if (height <= 0) return;
-        switch (internalDir) {
-            case E_UP:
-                for (int c = 0; c < edgeGrid.width; c++) {
-                    if (signal > edgeGrid.vEdges[c]) {
-                        edgeGrid.vEdges[c] = signal;
-                    }
-                }
-                break;
-            case E_DOWN:
-                for (int c = 0; c < edgeGrid.width; c++) {
-                    if (signal > edgeGrid.vEdges[height * edgeGrid.width + c]) {
-                        edgeGrid.vEdges[height * edgeGrid.width + c] = signal;
-                    }
-                }
-                break;
-            case E_LEFT:
-                for (int r = 0; r < height; r++) {
-                    if (signal > edgeGrid.hEdges[r * (edgeGrid.width + 1)]) {
-                        edgeGrid.hEdges[r * (edgeGrid.width + 1)] = signal;
-                    }
-                }
-                break;
-            case E_RIGHT:
-                for (int r = 0; r < height; r++) {
-                    if (signal > edgeGrid.hEdges[r * (edgeGrid.width + 1) + edgeGrid.width]) {
-                        edgeGrid.hEdges[r * (edgeGrid.width + 1) + edgeGrid.width] = signal;
-                    }
-                }
-                break;
-        }
+    public int getBoundarySignal(int internalDir) {
+        return faceOutput[internalDir];
     }
 
     private static boolean isConductiveBlock(ItemStack stack) {
@@ -734,6 +726,7 @@ public class ContainerRedstoneData {
             Set<Integer> lampSlots, Set<Integer> buttonSlots, Set<Integer> leverSlots,
             Set<Integer> repeaterSlots, Set<Integer> comparatorSlots, Set<Integer> redstoneBlockSlots,
             int size, int width, ContainerContext context) {
+        int height = (size + width - 1) / width;
         for (int slot : torchSlots) {
             if (slot < 0 || slot >= size) continue;
             ItemStack stack = context.getItem(slot);
@@ -741,7 +734,7 @@ public class ContainerRedstoneData {
 
             LivingRedstoneTorchData data = LivingItemManager.getRedstoneTorchData(stack);
             int inputDir = edgeIndex(data.direction().opposite());
-            boolean hasInput = edgeGrid.get(slot, inputDir) > 0;
+            boolean hasInput = getEffectiveInput(slot, inputDir, width, height) > 0;
             boolean newLit = !hasInput;
             if (data.isLit() != newLit) {
                 LivingItemManager.setRedstoneTorchData(stack, data.withLit(newLit));
@@ -834,10 +827,22 @@ public class ContainerRedstoneData {
             || comparatorSlots.contains(slot) || torchSlots.contains(slot) || lampSlots.contains(slot);
     }
 
+    private int getEffectiveInput(int slot, int dir, int width, int height) {
+        int edgeSignal = edgeGrid.get(slot, dir);
+        int r = slot / width;
+        int c = slot % width;
+        if (dir == E_UP && r == 0) return Math.max(edgeSignal, faceInput[E_UP]);
+        if (dir == E_DOWN && r == height - 1) return Math.max(edgeSignal, faceInput[E_DOWN]);
+        if (dir == E_LEFT && c == 0) return Math.max(edgeSignal, faceInput[E_LEFT]);
+        if (dir == E_RIGHT && c == width - 1) return Math.max(edgeSignal, faceInput[E_RIGHT]);
+        return edgeSignal;
+    }
+
     private int computeComparatorOutput(int slot, LivingComparatorData data,
             ContainerContext context, int size, int width) {
+        int height = (size + width - 1) / width;
         int inputDir = edgeIndex(data.direction().opposite());
-        int signalA = edgeGrid.get(slot, inputDir);
+        int signalA = getEffectiveInput(slot, inputDir, width, height);
 
         ItemStack comparatorStack = context.getItem(slot);
         int signalCap = getSignalCap(comparatorStack.getCount());
@@ -923,7 +928,7 @@ public class ContainerRedstoneData {
      *   UP    → vEdges[r * W + c]
      *   DOWN  → vEdges[(r+1) * W + c]
      */
-    private class EdgeGrid {
+    private static class EdgeGrid {
         final int width;
         final int height;
         final int[] hEdges;
@@ -952,10 +957,10 @@ public class ContainerRedstoneData {
             int r = slot / width;
             int c = slot % width;
             switch (dir) {
-                case E_UP:    vEdges[r * width + c] = value; if (r == 0)            boundaryOutput[E_UP]    = Math.max(boundaryOutput[E_UP],    value); break;
-                case E_DOWN:  vEdges[(r + 1) * width + c] = value; if (r == height - 1) boundaryOutput[E_DOWN]  = Math.max(boundaryOutput[E_DOWN],  value); break;
-                case E_LEFT:  hEdges[r * (width + 1) + c] = value; if (c == 0)            boundaryOutput[E_LEFT]  = Math.max(boundaryOutput[E_LEFT],  value); break;
-                case E_RIGHT: hEdges[r * (width + 1) + (c + 1)] = value; if (c == width - 1) boundaryOutput[E_RIGHT] = Math.max(boundaryOutput[E_RIGHT], value); break;
+                case E_UP:    vEdges[r * width + c] = value; break;
+                case E_DOWN:  vEdges[(r + 1) * width + c] = value; break;
+                case E_LEFT:  hEdges[r * (width + 1) + c] = value; break;
+                case E_RIGHT: hEdges[r * (width + 1) + (c + 1)] = value; break;
             }
         }
 

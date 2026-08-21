@@ -1,6 +1,7 @@
 package com.qiqi.li.living.container;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import com.qiqi.li.living.domain.water.ContainerFluidData;
@@ -292,6 +293,11 @@ public class SimpleContainerContext implements ContainerContext {
             return associatedBlockPositions.get(0);
         }
         return null;
+    }
+
+    @Override
+    public List<BlockPos> getAssociatedBlockPositions() {
+        return Collections.unmodifiableList(associatedBlockPositions);
     }
 
     @Override

@@ -1116,11 +1116,12 @@ compileOnly files("libs/sable-companion-common-1.21.1-1.6.0.jar")  // JarJar 嵌
 | `LivingMapTargetRenderer` | `client/render/LivingMapTargetRenderer.java` | 客户端渲染工具：3D准心标记渲染（`renderMarker`，原版准心纹理+四色着色）、GUI十字形光标渲染（`renderMarkerGui`，5像素十字形），供 `ItemInHandRendererMixin`、`MapRendererMixin`、`AbstractContainerScreenMixin` 共享 |
 | `ItemInHandRendererMixin` | `client/mixin/ItemInHandRendererMixin.java` | 客户端渲染：注入 renderMap 方法，3D空间中渲染目标标记 |
 | `MapRendererMixin` | `client/mixin/MapRendererMixin.java` | 客户端渲染：注入 MapRenderer.render 方法，展示框地图光标渲染 |
-| `StructureMapDecorator` | `living/domain/map/StructureMapDecorator.java` | 远程开图结构标记：中心 TARGET_POINT + 懒标记（玩家靠近时扫描已加载区块） + 模组结构 TARGET_X |
+| `StructureMapDecorator` | `living/domain/map/StructureMapDecorator.java` | 远程开图结构标记：懒标记（玩家靠近时扫描已加载区块），原版结构按标签映射专属图标，无专属图标的结构按生成阶段回退为 `RED_X`（地下）/ `TARGET_X`（地表） |
 | `ModSable` | `compat/sable/ModSable.java` | Sable 安全调用入口：类加载保护、NoClassDefFoundError 捕获 |
 | `SableCompat` | `compat/sable/SableCompat.java` | Sable 依赖检测：ModList.isLoaded("sable") |
 | `SableIntegration` | `compat/sable/SableIntegration.java` | Sable 核心逻辑：SubLevel 检测、飞艇瞬移、偏移计算 |
-| `ExpandedMapTexture` | `client/render/ExpandedMapTexture.java` | 扩展地图动态纹理：128×128 DynamicTexture 管理，颜色数据更新和哈希检测，资源注册/释放 |
+| `ExpandedMapTexture` | `client/render/ExpandedMapTexture.java` | 扩展地图动态纹理：128×128 DynamicTexture 管理，颜色数据更新和哈希检测，未探索像素填充羊皮纸色（`UNEXPLORED_ABGR`），资源注册/释放 |
+| `LivingMapIconDecorator` | `client/render/LivingMapIconDecorator.java` | 物品栏活地图图标：14×14 缩略图（`IItemDecorator`），四边露出 1px 羊皮纸底图，未探索像素填充羊皮纸色，`blitOffset=200` 压过物品模型 |
 | `LivingMapLayout` | `client/render/LivingMapLayout.java` | 扩展地图布局：槽位扫描（`scan`）、MapGroup 数据结构、UV 坐标计算（`computeUV`/`computeSingleSlotUV`）、区域命中检测（`findGroupAt`）、单个活地图槽位判断（`isSingleLivingMapSlot`） |
 | `LivingMapGuiTeleportPacket` | `network/LivingMapGuiTeleportPacket.java` | GUI传送网络包：客户端→服务端传送请求，区分创造/生存模式处理光标物品同步 |
 | `CarriedUpdatePacket` | `network/CarriedUpdatePacket.java` | 光标同步网络包：服务端→客户端强制同步光标物品状态，绕过创造模式原版同步限制 |
@@ -2487,3 +2488,64 @@ if (!(event.getEntity() instanceof ServerPlayer player)) return;
 | `StructureMapDecorator` | 删除 `EXCLUDED_TAGS` 与 `modStructureSet`；新增 `undergroundStructureSet` + `isUndergroundStep()`；`ensureIconMappingBuilt` 改为 registry 全量遍历；`doScan` 按地下/地表选择回退图标，id 前缀改为 `underground_`/`surface_` |
 
 **过时文档清理**：`addCenterMarker()` / `TARGET_POINT` 中心标记在早期版本已从代码中移除（`handleLivingMapCreation` 无此调用），但 §10.4/§10.5/§10.7 仍有残留描述，本次一并清理。
+
+---
+
+### v52 → v53：物品栏活地图图标改用原版羊皮纸底图 + 未探索区域去黑
+
+**需求**：活地图物品栏图标使用原版方形羊皮纸底图；扩展地图与物品栏缩略图的未探索区域不再显示黑色。
+
+#### 底图选型
+
+原计划复用 `minecraft:item/filled_map` 作为底图，逐像素查证后发现它是**斜卷轴菱形**（与 `map.png` 基本一致），方形缩略图叠上去菱形尖角会外露。改用 `textures/map/map_background.png`（64×64 方形羊皮纸，即地图 GUI 背景）。
+
+**关键限制**：`textures/map/` **不在方块图集内**（`atlases/blocks.json` 只拼接 `block/` 和 `item/`），因此**不能**写进 `living_map.json` 的 `layer0`。最终做法是把该贴图按 4×4 块**平均值降采样**生成一份 16×16 到 `living_item:item/living_map`，保留四周深色毛边。
+
+> 副作用：日后原版若修改 `map_background.png`，本地副本不会自动同步。
+
+**顺带修复**：`living_map.png` 原为 16×16 全透明，导致装饰器提前 return 时（如 `mapData == null`，客户端刚进服地图数据未同步）图标完全隐形。现在会稳定显示一张空白羊皮纸。
+
+> 注意 `living_map.png` **只在 GUI 场景生效** —— `GenericContextAwareModel` 非 GUI 时返回 `vanillaModel`，手持/掉落物场景一直用的是原版卷轴图标。
+
+#### 缩略图被底图遮挡（z 深度）
+
+底图变为不透明后，缩略图被物品模型盖住。根因：`GuiGraphics.renderItem()` 把物品模型渲染在 **z=150**，而装饰器原先调用的 `blit` 重载 `blitOffset` 固定为 0。之前底图全透明所以缩略图能透出来，换成不透明羊皮纸后即被遮挡。
+
+**修复**：改用带 `blitOffset` 的公开重载，传 `THUMB_Z = 200`（与原版堆叠数文字的 `translate(0, 0, 200)` 同层，既压过模型的 150，又不会盖到 tooltip）。
+
+```java
+guiGraphics.blit(iconTexture.location, xOffset + INSET, yOffset + INSET, THUMB_Z,
+    0.0F, 0.0F, THUMB_SIZE, THUMB_SIZE, THUMB_SIZE, THUMB_SIZE);
+```
+
+> 该重载的 `uOffset`/`vOffset` 是 `float`，需传 `0.0F` 而非 `0`。
+
+同时移除了初版添加的底图 `blit`：`GuiGraphics.renderItemDecorations()` 中装饰器在**物品模型之后**调用，羊皮纸已由模型层铺好，再 blit 一次纯属重复。
+
+#### 未探索区域显示黑色
+
+**初判有误**：起初认为黑色来自 `AbstractContainerScreenMixin` 的黑色垫底 `fill(..., 0xFF000000)` 透过透明像素露出，以为只改 `fill` 颜色即可。
+
+**真正根因**：`MapColor.NONE.calculateRGBColor()` 直接 `return 0`（**全透明**，非黑色），而 `GuiGraphics.innerBlit()` 使用 `getPositionTexShader` 且**不启用 alpha 混合**，透明像素被直接写成黑色 —— 垫底色根本透不出来。必须在**像素上传的源头**替换。
+
+```java
+int abgr = MapColor.getColorFromPackedId(mapData.colors[colorIndex]);
+if ((abgr >>> 24) == 0) {
+    abgr = UNEXPLORED_ABGR;   // 0xFF96BED6
+}
+texture.getPixels().setPixelRGBA(x, y, abgr);
+```
+
+**字节序说明**：`0xFF96BED6` 字面看像蓝色，实际是对的。`MapColor.calculateRGBColor()` 返回 `0xFF000000 | 蓝<<16 | 绿<<8 | 红`，即 **ABGR** 而非 RGBA（`setPixelRGBA` 方法名有误导性；原版 `MapRenderer.updateTexture()` 同样直接透传，可交叉印证）。解出来正是羊皮纸内芯色 RGB(214,190,150) —— 该值由逐像素统计 `map_background.png` 内芯区得出（唯一纯色），非目测取值。
+
+**未探索判定**：用 `alpha == 0` 而非比较色值。`calculateRGBColor()` 对 `NONE` 直接返回 0，其余所有颜色都强制带 `0xFF` alpha，故 `alpha == 0` 与"未探索"严格等价。
+
+**修改文件**：
+
+| 文件 | 改动 |
+|------|------|
+| `textures/item/living_map.png` | 从 16×16 全透明改为 `map_background.png` 降采样的方形羊皮纸 |
+| `textures/item/living_map_border.png` | 删除（自绘 1px 灰框，已被羊皮纸边替代） |
+| `LivingMapIconDecorator` | 缩略图 `DynamicTexture` 16×16 → 14×14，降采样 `scale` 由 `128/16` 改为 `128/14`；新增 `THUMB_Z=200`；未探索像素填充羊皮纸色；删除未使用的 `BORDER` 常量 |
+| `ExpandedMapTexture` | 新增 `UNEXPLORED_ABGR` 常量；`uploadTexture()` 替换透明像素 |
+| `AbstractContainerScreenMixin` | 垫底色 `0xFF000000` → `living_item$MAP_BACKDROP_COLOR`（羊皮纸色）。纹理现已全不透明会完全盖住它，保留仅为防止纹理未上传那一帧闪黑 |

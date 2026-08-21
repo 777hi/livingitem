@@ -24,8 +24,19 @@ public class LivingMapIconDecorator implements IItemDecorator {
 
     private static final int MAP_SIZE = 128;
     private static final int ICON_SIZE = 16;
-    private static final int BORDER = 1;
-    private static final ResourceLocation MAP_BORDER = ResourceLocation.fromNamespaceAndPath(LivingItem.MOD_ID, "textures/item/living_map_border.png");
+
+    /** 缩略图相对图标的内缩量，四边各露出 1px 羊皮纸底图 */
+    private static final int INSET = 1;
+    private static final int THUMB_SIZE = ICON_SIZE - INSET * 2;
+
+    /**
+     * 缩略图的 z 深度。
+     *
+     * <p>物品模型由 GuiGraphics.renderItem() 渲染在 z=150，
+     * 底图羊皮纸不透明会遮挡缩略图，因此需要抬高到模型之上。
+     */
+    private static final int THUMB_Z = 200;
+
     private static final Map<Integer, MapIconTexture> TEXTURE_CACHE = new HashMap<>();
 
     @Override
@@ -46,8 +57,9 @@ public class LivingMapIconDecorator implements IItemDecorator {
 
         iconTexture.updateIfNeeded(mapData);
 
-        guiGraphics.blit(iconTexture.location, xOffset, yOffset, 0, 0, ICON_SIZE, ICON_SIZE, ICON_SIZE, ICON_SIZE);
-        guiGraphics.blit(MAP_BORDER, xOffset, yOffset, 0, 0, ICON_SIZE, ICON_SIZE, ICON_SIZE, ICON_SIZE);
+        // 底图羊皮纸由 living_map 模型提供（装饰器在物品模型之后绘制），此处只叠加缩略图
+        guiGraphics.blit(iconTexture.location, xOffset + INSET, yOffset + INSET, THUMB_Z,
+            0.0F, 0.0F, THUMB_SIZE, THUMB_SIZE, THUMB_SIZE, THUMB_SIZE);
         return true;
     }
 
@@ -82,7 +94,7 @@ public class LivingMapIconDecorator implements IItemDecorator {
 
         @Nullable
         static MapIconTexture create(int mapId, MapItemSavedData mapData) {
-            DynamicTexture texture = new DynamicTexture(ICON_SIZE, ICON_SIZE, true);
+            DynamicTexture texture = new DynamicTexture(THUMB_SIZE, THUMB_SIZE, true);
             ResourceLocation loc = ResourceLocation.fromNamespaceAndPath(LivingItem.MOD_ID, "map_icon/" + mapId);
             int hash = computeHash(mapData);
             MapIconTexture iconTex = new MapIconTexture(texture, loc, hash);
@@ -99,18 +111,21 @@ public class LivingMapIconDecorator implements IItemDecorator {
         }
 
         private void uploadTexture(MapItemSavedData mapData) {
-            float scale = (float) MAP_SIZE / ICON_SIZE;
+            float scale = (float) MAP_SIZE / THUMB_SIZE;
 
-            for (int y = 0; y < ICON_SIZE; y++) {
-                for (int x = 0; x < ICON_SIZE; x++) {
+            for (int y = 0; y < THUMB_SIZE; y++) {
+                for (int x = 0; x < THUMB_SIZE; x++) {
                     int srcX = (int) (x * scale);
                     int srcY = (int) (y * scale);
                     srcX = Math.min(srcX, MAP_SIZE - 1);
                     srcY = Math.min(srcY, MAP_SIZE - 1);
 
                     int colorIndex = srcY * MAP_SIZE + srcX;
-                    int rgba = MapColor.getColorFromPackedId(mapData.colors[colorIndex]);
-                    texture.getPixels().setPixelRGBA(x, y, rgba);
+                    int abgr = MapColor.getColorFromPackedId(mapData.colors[colorIndex]);
+                    if ((abgr >>> 24) == 0) {
+                        abgr = ExpandedMapTexture.UNEXPLORED_ABGR;
+                    }
+                    texture.getPixels().setPixelRGBA(x, y, abgr);
                 }
             }
             texture.upload();

@@ -104,6 +104,13 @@ public class AbstractContainerScreenMixin extends Screen {
     @Unique
     private static final Map<Integer, ExpandedMapTexture> living_item$EXPANDED_TEXTURE_CACHE = new HashMap<>();
 
+    /**
+     * 扩展地图的垫底颜色，与 ExpandedMapTexture 的未探索区域填充色保持一致，
+     * 避免纹理尚未上传时闪现黑块。
+     */
+    @Unique
+    private static final int living_item$MAP_BACKDROP_COLOR = 0xFFD6BE96;
+
     @Inject(method = "mouseClicked", at = @At("HEAD"), cancellable = true)
     private void living_item$interceptMouseClicked(double mouseX, double mouseY, int button, CallbackInfoReturnable<Boolean> cir) {
         living_item$updateMapGroups();
@@ -215,7 +222,7 @@ public class AbstractContainerScreenMixin extends Screen {
         guiGraphics.pose().pushPose();
         guiGraphics.pose().translate(0, 0, 300);
 
-        guiGraphics.fill(areaX, areaY, areaX + areaSize, areaY + areaSize, 0xFF000000);
+        guiGraphics.fill(areaX, areaY, areaX + areaSize, areaY + areaSize, living_item$MAP_BACKDROP_COLOR);
         guiGraphics.blit(tex.location, areaX, areaY, 0, 0, areaSize, areaSize, areaSize, areaSize);
 
         living_item$renderExpandedMapDecorations(guiGraphics, mapData, areaX, areaY, areaSize);
