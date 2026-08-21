@@ -52,7 +52,7 @@ public final class StructureMapDecorator {
     private static Map<Holder<Structure>, Holder<MapDecorationType>> structureIconMap = null;
     private static Set<Holder<Structure>> modStructureSet = null;
 
-    private static final Set<Integer> SCANNED_MAPS = new HashSet<>();
+    private static final Map<Integer, Set<Long>> SCANNED_CHUNKS = new HashMap<>();
 
     private StructureMapDecorator() {}
 
@@ -61,15 +61,12 @@ public final class StructureMapDecorator {
         if (mapIdObj == null) return;
         int mapId = mapIdObj.id();
 
-        if (SCANNED_MAPS.contains(mapId)) return;
-
         if (!isPlayerNearMap(player, data)) return;
 
         ensureIconMappingBuilt(level);
 
-        doScan(level, data);
-
-        SCANNED_MAPS.add(mapId);
+        Set<Long> scannedChunks = SCANNED_CHUNKS.computeIfAbsent(mapId, k -> new HashSet<>());
+        doScan(level, data, scannedChunks);
     }
 
     private static boolean isPlayerNearMap(ServerPlayer player, MapItemSavedData data) {
@@ -114,7 +111,7 @@ public final class StructureMapDecorator {
         modStructureSet = Set.copyOf(modSet);
     }
 
-    private static void doScan(ServerLevel level, MapItemSavedData data) {
+    private static void doScan(ServerLevel level, MapItemSavedData data, Set<Long> scannedChunks) {
         int scale = data.scale;
         int centerX = data.centerX;
         int centerZ = data.centerZ;
@@ -127,12 +124,16 @@ public final class StructureMapDecorator {
         int maxCZ = (centerZ + halfRange - 1) >> 4;
 
         Registry<Structure> registry = level.registryAccess().registryOrThrow(Registries.STRUCTURE);
-        Set<Long> seenStarts = new HashSet<>();
 
         for (int cx = minCX; cx <= maxCX; cx++) {
             for (int cz = minCZ; cz <= maxCZ; cz++) {
+                long chunkPos = ChunkPos.asLong(cx, cz);
+                if (scannedChunks.contains(chunkPos)) continue;
+
                 LevelChunk chunk = level.getChunkSource().getChunkNow(cx, cz);
                 if (chunk == null) continue;
+
+                scannedChunks.add(chunkPos);
 
                 Map<Structure, LongSet> refs = chunk.getAllReferences();
                 if (refs.isEmpty()) continue;
@@ -155,8 +156,6 @@ public final class StructureMapDecorator {
                     }
 
                     for (long ref : entry.getValue()) {
-                        if (!seenStarts.add(ref)) continue;
-
                         ChunkPos startChunkPos = new ChunkPos(ref);
                         double x = startChunkPos.getMinBlockX() + 8;
                         double z = startChunkPos.getMinBlockZ() + 8;

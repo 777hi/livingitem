@@ -33,6 +33,7 @@ import com.qiqi.li.living.domain.ender.LivingEnderChestFunction;
 import com.qiqi.li.living.domain.water.LivingWaterBucketFunction;
 import com.qiqi.li.living.domain.water.LivingWaterWheelFunction;
 import com.qiqi.li.living.domain.map.LivingEnderPearlFunction;
+import com.qiqi.li.living.domain.map.LivingMapFunction;
 import com.qiqi.li.logging.ModLog;
 import com.qiqi.li.living.perf.PerfMetrics;
 
@@ -168,6 +169,9 @@ public class LivingItem {
 
         LivingItemManager.registerFunction(new LivingEnderPearlFunction());
         LOGGER.info("Registered living ender pearl function");
+
+        LivingItemManager.registerFunction(new LivingMapFunction());
+        LOGGER.info("Registered living map function");
 
         LivingMapEventHandler.register();
         LOGGER.info("Registered living map event handler");

@@ -412,6 +412,8 @@ public class ContainerRedstoneData {
         }
     }
 
+    private static final Pos2D[] DIR_POS = {Pos2D.UP, Pos2D.DOWN, Pos2D.LEFT, Pos2D.RIGHT};
+
     private byte computeDustConnections(int slot, int size, int width, ContainerContext context,
             Set<Integer> buttonSlots, Set<Integer> leverSlots, Set<Integer> repeaterSlots,
             Set<Integer> comparatorSlots, Set<Integer> torchSlots, Set<Integer> dustSlots,
@@ -419,10 +421,22 @@ public class ContainerRedstoneData {
         byte conn = 0;
         for (int dir = 0; dir < 4; dir++) {
             int neighbor = resolveSlot(slot, dir, size, width);
-            if (neighbor >= 0 && (buttonSlots.contains(neighbor) || leverSlots.contains(neighbor)
-                || repeaterSlots.contains(neighbor) || comparatorSlots.contains(neighbor)
+            if (neighbor < 0) continue;
+
+            if (repeaterSlots.contains(neighbor) || comparatorSlots.contains(neighbor)) {
+                ItemStack ns = context.getItem(neighbor);
+                if (!ns.isEmpty()) {
+                    Pos2D facing = repeaterSlots.contains(neighbor)
+                        ? LivingItemManager.getRepeaterData(ns).direction()
+                        : LivingItemManager.getComparatorData(ns).direction();
+                    Pos2D d = DIR_POS[dir];
+                    if (d.equals(facing) || d.equals(facing.opposite())) {
+                        conn |= (1 << dir);
+                    }
+                }
+            } else if (buttonSlots.contains(neighbor) || leverSlots.contains(neighbor)
                 || torchSlots.contains(neighbor) || dustSlots.contains(neighbor)
-                || lampSlots.contains(neighbor) || redstoneBlockSlots.contains(neighbor))) {
+                || lampSlots.contains(neighbor) || redstoneBlockSlots.contains(neighbor)) {
                 conn |= (1 << dir);
             }
         }

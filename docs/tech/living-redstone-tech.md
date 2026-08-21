@@ -2,7 +2,7 @@
 
 # Living Redstone (活红石) 技术文档
 
-> **文档版本**: 2026.08 v6
+> **文档版本**: 2026.08 v7
 > **最后更新**: 2026-08-21
 > **适用版本**: Minecraft 1.21.1
 
@@ -88,17 +88,27 @@
 ```java
 public record LivingRedstoneData(
     int signalStrength,    // 当前信号强度
-    boolean isPowered      // 是否被信号激活
+    boolean isPowered,     // 是否被信号激活
+    byte connections       // 连接状态（位掩码，4 方向）
 ) implements TooltipProvider {
 
-    public static final LivingRedstoneData DEFAULT = new LivingRedstoneData(0, false);
+    public static final byte CONN_UP    = 1 << 0;  // 0b0001
+    public static final byte CONN_DOWN  = 1 << 1;  // 0b0010
+    public static final byte CONN_LEFT  = 1 << 2;  // 0b0100
+    public static final byte CONN_RIGHT = 1 << 3;  // 0b1000
+
+    public static final LivingRedstoneData DEFAULT = new LivingRedstoneData(0, false, (byte)0);
 
     public LivingRedstoneData withSignal(int strength) {
-        return new LivingRedstoneData(strength, isPowered);
+        return new LivingRedstoneData(strength, isPowered, connections);
     }
 
     public LivingRedstoneData withPowered(boolean powered) {
-        return new LivingRedstoneData(signalStrength, powered);
+        return new LivingRedstoneData(signalStrength, powered, connections);
+    }
+
+    public LivingRedstoneData withConnections(byte connections) {
+        return new LivingRedstoneData(signalStrength, isPowered, connections);
     }
 }
 ```
@@ -107,6 +117,9 @@ public record LivingRedstoneData(
 |------|------|--------|------|
 | `signalStrength` | int | 0 | 当前信号强度 |
 | `isPowered` | boolean | false | 是否被红石信号激活 |
+| `connections` | byte | 0 | 连接状态位掩码，对应 CONN_UP/DOWN/LEFT/RIGHT |
+
+**连接状态位掩码**：每个方向占 1 bit，共 4 个方向。`connections = CONN_UP | CONN_RIGHT` 表示上、右方向有连接。连接状态由 `computeDustConnections` 在 Phase 4 计算，用于 `LivingRedstoneDecorator` 绘制连接纹理。
 
 ### 2.2 LivingRedstoneTorchData — 活红石火把物品数据
 
@@ -491,7 +504,8 @@ while queue not empty:
 
 遍历红石粉：
   maxSignal = edgeGrid.maxOfSlot(slot)
-  if signalStrength != maxSignal || isPowered != (maxSignal > 0) → 更新同步
+  conn = computeDustConnections(slot, ...)  // 计算连接状态
+  if signalStrength != maxSignal || isPowered != (maxSignal > 0) || connections != conn → 更新同步
 
 遍历红石灯：
   hasSignal = edgeGrid.anyOfSlot(slot)
@@ -560,6 +574,35 @@ Phase 2 BFS：
 ```
 
 **关键**：信号值存储在边上，粉A 读自己的 LEFT 边直接拿到火把写的值，不需要通过邻居槽位索引再查一次数组。
+
+### 3.5 连接状态计算（computeDustConnections）
+
+`computeDustConnections` 在 Phase 4 中为每个活红石粉计算 4 方向的连接状态，结果写入 `LivingRedstoneData.connections` 位掩码，供 `LivingRedstoneDecorator` 绘制连接纹理。
+
+**设计原则**：参照原版 `RedStoneWireBlock.shouldConnectTo` 方法，对中继器/比较器进行方向感知连接判断。
+
+**连接规则**：
+
+| 邻居类型 | 连接条件 |
+|---------|---------|
+| 活红石粉、活红石灯、活红石火把、活按钮、活拉杆、活红石块 | 无条件连接 |
+| 活中继器、活比较器 | 仅当红石粉方向与中继器/比较器的输出方向或输入方向（反方向）一致时连接 |
+
+**方向感知逻辑**（参照原版 `shouldConnectTo`）：
+```java
+// 中继器/比较器：仅轴线方向连接
+if (repeaterSlots.contains(neighbor) || comparatorSlots.contains(neighbor)) {
+    Pos2D facing = /* 获取中继器/比较器的方向 */;
+    Pos2D d = DIR_POS[dir];  // 红石粉 → 邻居的方向
+    if (d.equals(facing) || d.equals(facing.opposite())) {
+        conn |= (1 << dir);  // 方向匹配才连接
+    }
+}
+```
+
+**示例**：中继器指向右（输出方向 = RIGHT），红石粉在其左侧。红石粉 → 中继器的方向 = RIGHT，与中继器的输出方向匹配 → 连接。红石粉在其上方 → 方向 = UP，与 RIGHT 不匹配 → 不连接。
+
+**DIR_POS 映射**：`dir` 0=上→UP, 1=下→DOWN, 2=左→LEFT, 3=右→RIGHT。
 
 ---
 

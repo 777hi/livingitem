@@ -1,6 +1,6 @@
 # 活物品图标系统设计
 
-> **文档版本**: 2026.08 v3
+> **文档版本**: 2026.08 v4
 > **最后更新**: 2026-08-21
 > **适用版本**: Minecraft 1.21.1 + NeoForge 21.1.x
 
@@ -120,7 +120,7 @@ register(LivingIconSpec.builder(Items.REDSTONE_TORCH)
 | 活熔炉 | `idle` / `active` | `furnace_idle.png` / `furnace_active.png` | 燃烧状态切换 |
 | 活TNT | `idle` / `lit` | `tnt_idle.png` / `tnt_lit.png` | 引信闪烁动画（每10 tick切换） |
 | 活箱子 | `base` | `chest_living.png` | 无 |
-| 活红石灯 | `on` / `off` | `redstone_lamp_on.png` / `redstone_lamp.png` | 信号点亮切换 |
+| 活红石粉 | `base` | `item/redstone_dust`（`item/generated` 平面纹理） | 连接纹理装饰器（`LivingRedstoneDecorator`） |
 | 活红石火把 | `on` / `off` | `redstone_torch.png` / `redstone_torch_off.png` | 方向旋转 + 点亮切换 |
 | 活拉杆 | `on` / `off` | 复用原版 `minecraft:block/lever` / `minecraft:block/lever_on` 模型 | 拉下/弹起状态切换 |
 | 活中继器 | `1tick` ~ `4tick_on`（8种） | 复用原版 `minecraft:block/repeater_Xtick` / `repeater_Xtick_on` 模型 | 方向旋转 + 延迟档位 + 供电状态 |
@@ -195,3 +195,4 @@ inner.applyTransform(context, poseStack, ...);     // 3. JSON display 变换
 | `TorchRenderState` | 方向旋转状态（ThreadLocal，存储当前渲染的方向角度） |
 | `RotatingWaterWheelModel` | 活水车物品栏 3D 旋转渲染模型 |
 | `WaterWheelRenderState` | 活水车渲染状态数据（ThreadLocal，存储 RPM） |
+| `LivingRedstoneDecorator` | 活红石粉连接纹理装饰器（根据 connections 位掩码绘制 4 方向红色连接线） |

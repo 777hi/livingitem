@@ -870,9 +870,9 @@ private static boolean handleLivingMapCreation(PlayerInteractEvent.RightClickIte
 创建时（LivingMapEventHandler.handleLivingMapCreation）：
   addCenterMarker() → 地图中心添加 TARGET_POINT 图标（addTargetDecoration 写入 DataComponent）
 
-运行时（LivingMapEventHandler.onPlayerTick，每秒检查）：
-  scanStructuresLazy() → 检查 SCANNED_MAPS 缓存 → 检查玩家是否在地图范围内 → doScan()
-  doScan() → 遍历已加载区块 → getAllReferences() → 匹配 structureIconMap → addDecoration()
+运行时（LivingMapEventHandler.onPlayerTick，每 tick 检查）：
+  scanStructuresLazy() → 检查玩家是否在地图范围内 → doScan()
+  doScan() → 遍历未扫描的已加载区块 → getAllReferences() → 匹配 structureIconMap → addDecoration()
 ```
 
 #### 原版结构标签 → 图标映射
@@ -896,12 +896,12 @@ private static boolean handleLivingMapCreation(PlayerInteractEvent.RightClickIte
 
 #### 扫描机制
 
-- **触发条件**：玩家手持活地图 + 玩家在地图覆盖范围内 + 地图未扫描过
+- **触发条件**：玩家手持活地图 + 玩家在地图覆盖范围内
 - **扫描方式**：遍历地图范围内已加载区块（`getChunkNow()`，不触发加载），每个区块调用 `getAllReferences()` 获取结构引用
 - **图标匹配**：`structureIconMap`（`HashMap<Holder<Structure>, Holder<MapDecorationType>>`），O(1) 查找
-- **去重**：`seenStarts` Set 按结构起始区块位置去重
+- **去重**：`addDecoration()` 内部按 id 存储（`Map<String, MapDecoration>`），同 id 重复添加自动覆盖，无需额外去重
 - **标记添加**：`MapItemSavedData.addDecoration()` 添加运行时标记（自动同步客户端）
-- **扫描缓存**：`SCANNED_MAPS` Set 按地图 ID 缓存，避免重复扫描
+- **扫描缓存**：`SCANNED_CHUNKS`（`Map<Integer, Set<Long>>`）按地图 ID → 已扫描区块坐标缓存，后续 tick 只扫描新加载的区块，而非一次性扫描后永久跳过
 
 #### 关键特性
 
