@@ -77,7 +77,7 @@ public final class SlotResolver {
      * @return 目标槽位索引，越界返回 -1
      */
     public static int resolve(int baseSlot, Pos2D direction, int containerSize, int containerWidth) {
-        if (direction == Pos2D.NONE) return -1;
+        if (direction.equals(Pos2D.NONE)) return -1;
 
         int row = baseSlot / containerWidth;
         int col = baseSlot % containerWidth;

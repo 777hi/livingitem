@@ -582,7 +582,7 @@ public class ContainerRedstoneData {
     private boolean checkRepeaterLocked(int slot, LivingRepeaterData data, Set<Integer> repeaterSlots,
             int size, int width, ContainerContext context) {
         Pos2D dir = data.direction();
-        boolean isVertical = dir == Pos2D.UP || dir == Pos2D.DOWN;
+        boolean isVertical = dir.equals(Pos2D.UP) || dir.equals(Pos2D.DOWN);
         int[] perpDirs = isVertical ? new int[]{E_LEFT, E_RIGHT} : new int[]{E_UP, E_DOWN};
 
         for (int perpDir : perpDirs) {
@@ -592,7 +592,7 @@ public class ContainerRedstoneData {
                 if (!neighborStack.isEmpty()) {
                     LivingRepeaterData neighborData = LivingItemManager.getRepeaterData(neighborStack);
                     if (neighborData.powered() && neighborData.delayTimer() == 0
-                            && neighborData.direction() == requiredDir(perpDir)) {
+                            && neighborData.direction().equals(requiredDir(perpDir))) {
                         return true;
                     }
                 }

@@ -320,7 +320,7 @@ public class LivingFurnaceFunction implements LivingItemFunction, HasDirection {
         String[] slotOrder = {"input", "output", "fuel"};
         for (String slotName : slotOrder) {
             Pos2D d = dir.getDirection(slotName);
-            if (d != null && d != Pos2D.NONE) {
+            if (d != null && !d.equals(Pos2D.NONE)) {
                 tooltipAdder.accept(Component.translatable(
                     "tooltip.livingitem.direction.slot",
                     Component.translatable("slot.livingitem." + slotName),

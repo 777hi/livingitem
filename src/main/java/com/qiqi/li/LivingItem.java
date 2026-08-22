@@ -284,7 +284,7 @@ public class LivingItem {
             }
 
             boolean hasContainer = false;
-            for (var be : chunk.getBlockEntities().values()) {
+            for (var be : new java.util.ArrayList<>(chunk.getBlockEntities().values())) {
                 var pos = be.getBlockPos();
 
                 if (be instanceof RandomizableContainer rc && rc.getLootTable() != null) {
