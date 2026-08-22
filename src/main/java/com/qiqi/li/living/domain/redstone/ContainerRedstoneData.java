@@ -146,7 +146,6 @@ public class ContainerRedstoneData {
 
     private void phase0CountdownDelays(Set<Integer> repeaterSlots, Set<Integer> buttonSlots,
             int size, int width, ContainerContext context) {
-        int height = (size + width - 1) / width;
         for (int slot : repeaterSlots) {
             if (slot < 0 || slot >= size) continue;
             ItemStack stack = context.getItem(slot);
@@ -157,21 +156,8 @@ public class ContainerRedstoneData {
             if (!data.powered()) continue;
             if (data.delayTimer() == 0) continue;
 
-            int inputDir = edgeIndex(data.direction().opposite());
-            int r = slot / width;
-            int c = slot % width;
-            boolean hasInput = prevEdgeGrid.get(slot, inputDir) > 0;
-            if (inputDir == E_UP && r == 0) hasInput = hasInput || faceInput[E_UP] > 0;
-            if (inputDir == E_DOWN && r == height - 1) hasInput = hasInput || faceInput[E_DOWN] > 0;
-            if (inputDir == E_LEFT && c == 0) hasInput = hasInput || faceInput[E_LEFT] > 0;
-            if (inputDir == E_RIGHT && c == width - 1) hasInput = hasInput || faceInput[E_RIGHT] > 0;
-
             if (data.delayTimer() > 0) {
-                if (!hasInput) {
-                    data = data.withPowered(false).withDelayTimer(0);
-                } else {
-                    data = data.withDelayTimer(data.delayTimer() - 1);
-                }
+                data = data.withDelayTimer(data.delayTimer() - 1);
                 LivingItemManager.setRepeaterData(stack, data);
                 context.syncSlotToClients(slot, stack);
             } else {
@@ -377,10 +363,10 @@ public class ContainerRedstoneData {
             }
             if (locked) continue;
 
-            if (data.powered() && data.delayTimer() > 0) continue;
-
             int inputDir = edgeIndex(data.direction().opposite());
             boolean hasInput = getEffectiveInput(slot, inputDir, width, height) > 0;
+
+            if (data.powered() && data.delayTimer() > 0) continue;
 
             if (hasInput && !data.powered()) {
                 LivingItemManager.setRepeaterData(stack, data.withPowered(true).withDelayTimer(data.delay()));
@@ -605,7 +591,8 @@ public class ContainerRedstoneData {
                 ItemStack neighborStack = context.getItem(neighbor);
                 if (!neighborStack.isEmpty()) {
                     LivingRepeaterData neighborData = LivingItemManager.getRepeaterData(neighborStack);
-                    if (neighborData.powered() && neighborData.delayTimer() == 0) {
+                    if (neighborData.powered() && neighborData.delayTimer() == 0
+                            && neighborData.direction() == requiredDir(perpDir)) {
                         return true;
                     }
                 }
@@ -851,6 +838,19 @@ public class ContainerRedstoneData {
         } else {
             return dir.x() < 0 ? E_LEFT : E_RIGHT;
         }
+    }
+
+    /**
+     * 锁定方中继器在 perpDir 方向侧面时，它必须朝向被锁定方（即 opposite of perpDir）。
+     */
+    private static Pos2D requiredDir(int perpDir) {
+        return switch (perpDir) {
+            case E_LEFT -> Pos2D.RIGHT;
+            case E_RIGHT -> Pos2D.LEFT;
+            case E_UP -> Pos2D.DOWN;
+            case E_DOWN -> Pos2D.UP;
+            default -> Pos2D.NONE;
+        };
     }
 
     /**
