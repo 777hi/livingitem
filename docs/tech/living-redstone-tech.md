@@ -2,7 +2,7 @@
 
 # Living Redstone (活红石) 技术文档
 
-> **文档版本**: 2026.08 v13
+> **文档版本**: 2026.08 v14
 > **最后更新**: 2026-08-22
 > **适用版本**: Minecraft 1.21.1
 
@@ -160,10 +160,11 @@ public class ContainerRedstoneData {
     private boolean processedThisTick;  // 当前 tick 是否已计算
     private long lastTickTime;          // 最后访问时间戳（用于过期清理）
 
-    public ContainerRedstoneData(int size) { ... }
-    public int getSignal(int slot) { ... }
+    public ContainerRedstoneData() { ... }  // 无参构造，edgeGrid 在首次 calculate() 时按需创建
     public void calculate(ContainerContext context, TickContext tick) { ... }
     public void resetProcessedFlag() { ... }
+    public int getSlotSignal(int slot, int size, int width) { ... }  // 查询槽位有效信号（含外部输入）
+    public int getBoundarySignal(int dir) { ... }  // 查询指定边界面的输出信号
 }
 ```
 
@@ -823,16 +824,146 @@ Minecraft 原版红石粉不会主动连接容器方块。通过 `RedStoneWireBl
 
 #### 跨容器传输
 
-面信号模型天然支持相邻容器间的红石信号传输：
+面信号模型天然支持相邻容器间的红石信号传输。以下详细说明跨容器信号传输的完整数据流。
+
+##### 总览
 
 ```
-Container A 内部红石 → computeFaceOutput → faceOutput[dir] = 15
-  → BlockStateBaseMixin: getSignal(A, worldDir) 返回 15
-  → Container B: injectExternalInputs → faceInput[dir] = 15
-  → Container B 内部组件通过 getEffectiveInput() 读取外部信号
+┌──────────────────────────────────────────────────────────────────────┐
+│                         容器 A                                       │
+│                                                                      │
+│  信号源（火把/红石块/红石粉等）                                        │
+│    │ Phase 1-5 传播                                                  │
+│    ▼                                                                 │
+│  edgeGrid 边界边信号                                                  │
+│    │ computeFaceOutput()                                              │
+│    ▼                                                                 │
+│  faceOutput[4]                                                       │
+│    │ ① notifyBoundaryChange() → level.updateNeighborsAt(pos, block)  │
+│    ▼                                                                 │
+│  ┌─────────────────────────────────────────────────────────────────┐ │
+│  │  外部世界                                                        │ │
+│  │                                                                  │ │
+│  │  红石线收到 neighborChanged 通知，重新计算信号                     │ │
+│  │    │                                                             │ │
+│  │    ▼ 查询 BlockState.getSignal(容器A_pos, direction)               │ │
+│  │  BlockStateBaseMixin 拦截 → 返回 faceOutput[dir]                   │ │
+│  │    │                                                             │ │
+│  │    ▼ 红石线被充能，强度 = faceOutput 值                            │ │
+│  └─────────────────────────────────────────────────────────────────┘ │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────────┐ │
+│  │                         容器 B                                   │ │
+│  │                                                                  │ │
+│  │  ② injectExternalInputs() 读取外部信号                            │ │
+│  │    │ 遍历容器四个水平方向:                                        │ │
+│  │    │                                                             │ │
+│  │    ├── level.getSignal(neighborPos, worldDir)                     │ │
+│  │    │     ├── 邻居是红石线? → 返回线的信号强度                      │ │
+│  │    │     └── 邻居是容器A? → Mixin拦截 → 返回 faceOutput            │ │
+│  │    │                                                             │ │
+│  │    ├── 额外直读：邻居容器A                                        │ │
+│  │    │     ContainerRedstoneData neighborData =                     │ │
+│  │    │         getRedstoneDataByPos(level, neighborPos)             │ │
+│  │    │     if (neighborData != null) {                              │ │
+│  │    │         signal = max(signal,                                 │ │
+│  │    │           neighborData.getBoundarySignal(                     │ │
+│  │    │             worldToGrid(worldDir.getOpposite(),               │ │
+│  │    │                        neighborFacing)))                     │ │
+│  │    │     }                                                        │ │
+│  │    │                                                             │ │
+│  │    └── signal > 0?                                               │ │
+│  │          worldToGrid(worldDir, facing) → faceInput[dir] = signal  │ │
+│  │                                                                  │ │
+│  │  ③ faceInput[dir] 被消费:                                        │ │
+│  │    getEffectiveInput(slot, dir)                                   │ │
+│  │      ├── 边界位置? → max(edgeGrid信号, faceInput[dir])            │ │
+│  │      └── 非边界   → edgeGrid信号                                  │ │
+│  │                                                                  │ │
+│  │    被以下组件使用:                                                │ │
+│  │    ├── 火把: 检测输入侧是否被充能 → 决定亮/灭                     │ │
+│  │    ├── 中继器: 检测输入侧信号 → 延迟计数                          │ │
+│  │    └── 比较器: 检测输入侧信号 → 比较/减法模式                     │ │
+│  └─────────────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
-方向映射双向一致，`faceInput` / `faceOutput` 通道分离防止反馈循环。
+##### 方向映射（CrossContainerTransfer.worldToGrid）
+
+容器方块的世界方向 (NORTH/SOUTH/EAST/WEST) 通过 `worldToGrid(worldDir, blockFacing)` 映射为容器网格方向 (UP/DOWN/LEFT/RIGHT)：
+
+```java
+// 根据容器方块 FACING 旋转世界方向，映射到网格方向
+// 容器朝 NORTH: NORTH→DOWN, SOUTH→UP, WEST→RIGHT, EAST→LEFT
+// 容器朝 EAST:  NORTH→RIGHT, SOUTH→LEFT, WEST→DOWN, EAST→UP
+// 以此类推（逆时针旋转 FACING 的 ordinal 次）
+```
+
+**关键细节**：Mixin 中调用 `worldToGrid(direction.getOpposite(), facing)`，用了 `getOpposite()`，因为 `getSignal(pos, direction)` 的 `direction` 是查询者所在的方向，需要反转才能得到信号从容器哪个面输出。同样，`injectExternalInputs` 中直读邻居容器时使用 `worldToGrid(worldDir.getOpposite(), neighborFacing)`，翻转方向以从邻居容器视角读取对应面。
+
+##### 输出路径（容器 A → 世界）
+
+```
+edgeGrid 边界边信号
+  → computeFaceOutput() → 扫描边界边，取每面最大值
+  → faceOutput[UP/DOWN/LEFT/RIGHT]
+  → notifyBoundaryChange() → 比较 faceOutput vs prevFaceOutput
+    → changed → level.updateNeighborsAt(pos, block)
+  → 世界红石线收到 neighborChanged 通知
+  → 红石线调用 BlockState.getSignal(容器pos, direction)
+  → BlockStateBaseMixin.onGetSignal() 拦截
+    → 查 REDSTONE_DATA_CACHE → ContainerRedstoneData
+    → worldToGrid(direction.getOpposite(), facing) → gridDir
+    → 返回 faceOutput[gridDir]
+  → 红石线被充能，强度 = faceOutput 值
+```
+
+##### 输入路径（世界 → 容器 B）
+
+```
+injectExternalInputs() —— 每传播周期调用
+  → 获取容器所有关联方块位置（大箱子遍历两个半箱）
+  → 对每个位置，遍历 4 个水平方向:
+    → level.getSignal(neighborPos, worldDir)  // 原版路径
+    → 额外检查邻居是否为容器:
+      → getRedstoneDataByPos(level, neighborPos)  // 直接读邻居容器数据
+      → neighborData.getBoundarySignal(dir)  // 绕过原版 0-15 截断
+    → worldToGrid(worldDir, facing) → faceInput[dir] = signal
+```
+
+##### 直连场景（两容器紧贴）
+
+```
+  ┌─────────┐          ┌─────────┐
+  │ 容器 A   │          │ 容器 B   │
+  │ 火把 ON  │  faceOut │         │
+  │         │  →→→→→→→ │         │
+  │ 输出→───┼──────────┼───→输入  │
+  │  faceOut│   红石线  │ faceIn  │
+  │  [UP]=15│  =15     │  [DOWN] │
+  │         │          │  =15    │
+  └─────────┘          └─────────┘
+       │                    │
+       │ ① notifyBoundary   │ ② injectExternal
+       │    updateNeighbors │    level.getSignal
+       │                    │    + getBoundarySignal
+       ▼                    ▼
+   红石线收到通知         faceInput[DOWN]=15
+   查询容器A getSignal     边界火把读到输入
+   返回 faceOutput[UP]=15   → 火把灭
+```
+
+两个容器之间不一定需要红石线——`injectExternalInputs` 中会直接读取邻居容器的 `getBoundarySignal()`，所以面对面贴着的两个容器也能直接传输信号。
+
+##### 时序说明
+
+| 操作 | 频率 | 说明 |
+|------|------|------|
+| 内部传播 (6 phase) | 每 2 tick | `calculate()` 触发 |
+| `computeFaceOutput` | 每 2 tick | `calculate()` 末尾 |
+| `notifyBoundaryChange` | 每 2 tick（或 `!hasAny`） | `calculate()` 末尾 |
+| `injectExternalInputs` | 每 2 tick | `calculate()` 开头 |
+| Mixin `getSignal` 拦截 | 每次世界查询时 | `BlockStateBaseMixin` |
 
 ##### 跨容器直读机制（超限信号传输）
 

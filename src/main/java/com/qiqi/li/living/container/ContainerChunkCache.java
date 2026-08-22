@@ -15,7 +15,6 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.event.level.ChunkEvent;
-import net.neoforged.neoforge.items.IItemHandler;
 
 import java.util.Collections;
 import java.util.Map;
@@ -47,6 +46,16 @@ public class ContainerChunkCache {
 
     /** 每个维度上次清理的时间戳（gameTime），用于定期清理已卸载的区块 */
     private final Map<ResourceKey<Level>, Long> lastCleanupTick = new Object2ObjectOpenHashMap<>();
+
+    /**
+     * 待重扫区块队列（按维度）。
+     *
+     * <p>方块放置/破坏事件触发时，目标位置的 BlockEntity 可能尚未完成初始化
+     * （不少模组容器的 ItemHandler 依赖 BE 内部字段，在 {@code onLoad()} 或读 NBT 后才可用），
+     * 此刻查询 capability 会返回 null，导致重扫扫不到刚放下的容器。
+     * 因此把重扫推迟到下一 tick，由 {@link #flushPendingRescans} 执行。</p>
+     */
+    private final Map<ResourceKey<Level>, Set<ChunkPos>> pendingRescans = new Object2ObjectOpenHashMap<>();
 
     private ContainerChunkCache() {}
 
@@ -83,45 +92,53 @@ public class ContainerChunkCache {
     }
 
     /**
-     * 方块放置事件 —— 如果放置的是容器方块（或 IItemHandler 方块），重新扫描该区块。
+     * 方块放置事件 —— 安排该区块在下一 tick 重扫。
+     *
+     * <p>不在此处判断是否为容器方块：{@code EntityPlaceEvent} 触发时 BlockEntity
+     * 可能还没就绪，capability 查询会返回 null 从而误判为非容器。
+     * 是否真的有容器交由 {@link #scanChunkForContainers} 在下一 tick 判定。</p>
      */
     @SubscribeEvent
     public void onBlockPlace(BlockEvent.EntityPlaceEvent event) {
         if (event.getLevel() instanceof ServerLevel level) {
-            if (hasContainerOrItemHandler(level, event.getPos())) {
-                rescanChunk(level, event.getPos());
-            }
+            schedulePendingRescan(level, event.getPos());
         }
     }
 
     /**
-     * 方块破坏事件 —— 如果破坏的是容器方块（或 IItemHandler 方块），重新扫描该区块。
-     * 即使破坏后该区块仍有其他容器，重新扫描也能正确更新缓存。
+     * 方块破坏事件 —— 清理该位置的容器级数据，并安排区块在下一 tick 重扫。
+     *
+     * <p>同样不做 capability 前置判断：破坏时 capability 可能已失效，
+     * 前置守卫会导致缓存残留失效条目。</p>
      */
     @SubscribeEvent
     public void onBlockBreak(BlockEvent.BreakEvent event) {
         if (event.getLevel() instanceof ServerLevel level) {
-            if (hasContainerOrItemHandler(level, event.getPos())) {
-                ContainerLivingItemHandler.removeDataByPos(level, event.getPos());
-                rescanChunk(level, event.getPos());
-            }
+            ContainerLivingItemHandler.removeDataByPos(level, event.getPos());
+            schedulePendingRescan(level, event.getPos());
         }
     }
 
-    private void rescanChunk(ServerLevel level, BlockPos pos) {
-        ChunkPos cPos = new ChunkPos(pos);
-        var chunk = level.getChunkSource().getChunkNow(cPos.x, cPos.z);
-        if (chunk != null) {
-            scanChunkForContainers(level, chunk);
-        }
+    private void schedulePendingRescan(ServerLevel level, BlockPos pos) {
+        pendingRescans.computeIfAbsent(level.dimension(), k -> new ObjectOpenHashSet<>())
+                      .add(new ChunkPos(pos));
     }
 
     /**
-     * 检查指定位置是否有容器（通过 IItemHandler 能力）。
-     * NeoForge 自动为所有原版 Container 方块注册该能力，模组方块也通过此能力暴露物品交互。
+     * 执行本 tick 累积的延后重扫（由 tick 循环在处理容器前调用）。
+     *
+     * @param level 服务端世界
      */
-    private static boolean hasContainerOrItemHandler(ServerLevel level, BlockPos pos) {
-        return level.getCapability(Capabilities.ItemHandler.BLOCK, pos, null) != null;
+    public void flushPendingRescans(ServerLevel level) {
+        Set<ChunkPos> pending = pendingRescans.remove(level.dimension());
+        if (pending == null || pending.isEmpty()) return;
+
+        for (ChunkPos cPos : pending) {
+            LevelChunk chunk = level.getChunkSource().getChunkNow(cPos.x, cPos.z);
+            if (chunk != null) {
+                scanChunkForContainers(level, chunk);
+            }
+        }
     }
 
     /**
@@ -169,6 +186,7 @@ public class ContainerChunkCache {
     public void clear() {
         chunkCache.clear();
         lastCleanupTick.clear();
+        pendingRescans.clear();
     }
 
     /** 从缓存中移除指定区块（自清洁，由 tick 循环调用） */

@@ -1,7 +1,7 @@
 # Living TNT (活TNT) 技术文档
 
-> **文档版本**: 2026.08 v4  
-> **最后更新**: 2026-08-16  
+> **文档版本**: 2026.08 v5  
+> **最后更新**: 2026-08-22  
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -27,12 +27,15 @@
 ┌──────────────────────────────────────────────────────────────────┐
 │                    活TNT 工作流程                                 │
 │                                                                  │
-│  ┌──────────────┐    点火     ┌──────────────────┐              │
-│  │ 活打火石      │ ────────→  │ 活TNT (引信点燃)  │              │
-│  │ (source)      │   (活漏斗) │ fuseTimer = 80    │              │
-│  └──────────────┘            └────────┬─────────┘              │
-│                                       │ 每 tick                  │
-│                                       ▼ fuseTimer--             │
+│  ┌──────────────┐    点火        ┌──────────────────┐           │
+│  │ 活打火石      │ ────────→     │ 活TNT (引信点燃)  │           │
+│  │ (source)      │   (活漏斗)     │ fuseTimer = 80    │           │
+│  └──────────────┘               └────────┬─────────┘           │
+│                                          │ 每 tick              │
+│  ┌──────────────┐                        │                      │
+│  │ 活红石信号    │ ──→ 红石信号检测 ──→   │                      │
+│  │ getSlotSignal │   (信号>0则点燃)      │                      │
+│  └──────────────┘                        ▼ fuseTimer--          │
 │                              ┌──────────────────┐              │
 │                              │ fuseTimer == 0?  │              │
 │                              └────────┬─────────┘              │
@@ -63,11 +66,12 @@
 
 | 类名 | 文件位置 | 职责 |
 |------|---------|------|
-| `LivingTntFunction` | `domain/tnt/LivingTntFunction.java` | 活TNT功能入口，管理引信倒计时和爆炸触发 |
+| `LivingTntFunction` | `domain/tnt/LivingTntFunction.java` | 活TNT功能入口，管理引信倒计时和爆炸触发，实现 `HasContainerData` 以支持红石信号点燃 |
 | `ExplosionData` | `domain/tnt/ExplosionData.java` | 引信状态 record：ignited + fuseTimer |
 | `LivingTntData` | `domain/tnt/LivingTntData.java` | 活TNT数据容器：包含 ExplosionData |
 | `ExplosionComponent` | `domain/tnt/ExplosionComponent.java` | 爆炸执行引擎：破坏方块、伤害实体、粒子音效 |
 | `LivingFlintAndSteelFunction` | `domain/tnt/LivingFlintAndSteelFunction.java` | 活打火石，提供点火触发标记 |
+| `ContainerRedstoneData` | `domain/redstone/ContainerRedstoneData.java` | 容器级红石数据，提供 `getSlotSignal()` 供 TNT 检测红石信号 |
 
 ---
 
@@ -110,7 +114,16 @@ ItemStack
 
 ## 3. 引信机制
 
-### 3.1 点火触发
+### 3.1 点火方式
+
+活TNT支持两种点火方式：
+
+| 方式 | 触发条件 | 说明 |
+|------|---------|------|
+| 活打火石 | 活漏斗 source=打火石, target=TNT | 传统点火路径 |
+| 红石信号 | 活TNT所在槽位收到红石信号（>0） | 可与活红石系统联动 |
+
+### 3.2 打火石点火
 
 点火由活漏斗的传输系统在检测到 source=活打火石、target=活TNT 时触发：
 
@@ -124,7 +137,75 @@ public static boolean startFuse(ItemStack tntStack) {
 }
 ```
 
-### 3.2 Tick 倒计时
+### 3.3 红石信号点火
+
+活TNT通过实现 `HasContainerData` 接口融入容器级红石计算流程。当槽位收到红石信号时自动点燃：
+
+```java
+public class LivingTntFunction implements LivingItemFunction, HasContainerData {
+
+    // 优先级 1：在红石数据计算（优先级 2）之前执行
+    @Override
+    public int getPriority() {
+        return 1;
+    }
+
+    // 触发红石数据计算
+    @Override
+    public void tickContainerData(List<SlotEntry> entries, ContainerContext ctx, TickContext tick) {
+        ContainerRedstoneData redstoneData = tick.getOrCreateRedstoneData(ctx);
+        redstoneData.calculate(ctx, tick);
+    }
+
+    @Override
+    public void tick(List<SlotEntry> entries, ContainerContext context, TickContext tick, Level level) {
+        if (level.isClientSide) return;
+
+        ContainerRedstoneData redstoneData = tick.getOrCreateRedstoneData(context);
+        int size = context.getSize();
+        int width = context.getWidth();
+
+        for (SlotEntry entry : entries) {
+            int slot = entry.slotIndex();
+            ItemStack stack = entry.stack();
+            LivingTntData data = LivingItemManager.getTntData(stack);
+            ExplosionData explosion = data.explosion();
+
+            // 红石信号点火（仅对未点燃的 TNT）
+            if (!explosion.ignited()) {
+                int signal = redstoneData.getSlotSignal(slot, size, width);
+                if (signal > 0) {
+                    explosion = explosion.ignite();
+                    LivingItemManager.setTntData(stack, data.withExplosion(explosion));
+                    context.syncSlotToClients(slot, stack);
+                    continue;
+                }
+                continue;
+            }
+
+            // ... 已点燃则继续倒计时逻辑 ...
+        }
+    }
+}
+```
+
+**`getSlotSignal()` 方法**：查询槽位有效信号，同时检查边网格内部信号和 `faceInput` 外部输入信号。边界位置的 TNT 可以通过容器面接收外部红石信号。
+
+**红石信号链路**：
+
+```
+容器内信号源（火把/红石块/红石粉）
+  → Phase 1-5 传播 → edgeGrid 边信号
+  → 或 外部信号注入 → faceInput[dir]
+  → getSlotSignal(slot, size, width)
+    ├── edgeGrid.maxOfSlot(slot)  // 内部 4 边最大值
+    ├── 边界位置额外检查 faceInput[dir]  // 外部输入
+    └── 返回 max(内部信号, 外部信号)
+  → signal > 0 → explosion.ignite()
+  → 同步到客户端
+```
+
+### 3.4 Tick 倒计时
 
 ```java
 @Override
@@ -151,7 +232,7 @@ public void tick(List<SlotEntry> entries, ContainerContext context, TickContext 
 }
 ```
 
-### 3.3 引信参数
+### 3.5 引信参数
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|

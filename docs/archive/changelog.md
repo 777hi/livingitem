@@ -4,6 +4,54 @@
 
 ---
 
+## 2026-08-22
+
+- ✅ **新增：活TNT红石信号点燃**（活TNT收到红石信号自动点燃，无需打火石）
+  - **实现**：`LivingTntFunction` 新增 `HasContainerData` 接口实现，`tick()` 中通过 `ContainerRedstoneData.getSlotSignal()` 检测槽位红石信号，信号 > 0 时自动点燃 TNT
+  - `getPriority()` 返回 1，确保红石数据在 TNT tick 之前计算完毕
+  - `tickContainerData()` 调用 `redstoneData.calculate()` 触发红石信号传播
+  - `getSlotSignal(slot, size, width)` 同时检查 `edgeGrid.maxOfSlot()` 和边界 `faceInput`，确保跨容器信号也能点燃 TNT
+  - **修改文件**：`LivingTntFunction.java`
+
+- ✅ **新增：ContainerRedstoneData.getSlotSignal() 方法**
+  - 查询槽位有效信号，合并内部边信号和外部 `faceInput` 信号
+  - 边界槽位额外检查对应面的 `faceInput`，支持跨容器及外部世界信号检测
+  - 供 `LivingTntFunction`、漏斗等消费方使用
+  - **修改文件**：`ContainerRedstoneData.java`
+
+- ✅ **优化：ContainerRedstoneData 无参构造**（移除 `size` 参数）
+  - `edgeGrid` 在首次 `calculate()` 时按需创建，无需构造时预先分配
+  - 移除 `slotCount` 字段（不再需要）
+  - 所有创建位置同步更新为无参构造
+  - **修改文件**：`ContainerRedstoneData.java`、`ContainerLivingItemHandler.java`、`TickContext.java`
+
+- ✅ **修复：容器输出信号不消失**（容器内信号源移除后，容器外仍残留旧信号）
+  - **根因**：`reset()` 中 `edgeGrid` 与 `prevEdgeGrid` 交换后，新的 `edgeGrid` 继承旧数据。`edgeGrid.zero()` 被移除后，旧边信号泄漏到当前帧
+  - **修复**：`reset()` 中重新加入 `edgeGrid.zero()` 调用，确保每次传播重算前边网格从零开始
+  - **修改文件**：`ContainerRedstoneData.java`
+
+- ✅ **修复：processLevelContainers 并发修改崩溃**（TNT 爆炸时修改方块实体导致迭代崩溃）
+  - **根因**：`processLevelContainers` 遍历 `chunk.getBlockEntities().values()` 时，TNT 爆炸的 `setBlock()` 修改了同一集合，触发 `ConcurrentModificationException`
+  - **修复**：遍历前创建快照 `new ArrayList<>(chunk.getBlockEntities().values())`，避免迭代期间集合被修改
+  - **修改文件**：`LivingItem.java`
+
+- ✅ **文档：跨容器红石信号传输数据流详解**
+  - 新增完整数据流图：输出路径（容器→世界）和输入路径（世界→容器）的逐步说明
+  - 新增 `CrossContainerTransfer.worldToGrid()` 方向映射说明
+  - 新增 `BlockStateBaseMixin` 拦截机制说明
+  - 新增 `injectExternalInputs` 直读邻居容器 `getBoundarySignal()` 的时序说明
+  - 文档版本更新至 v14
+  - **修改文件**：`docs/tech/living-redstone-tech.md`
+
+- ✅ **文档：活TNT红石点燃功能文档更新**
+  - 新增 3.3 红石信号点火章节
+  - 更新数据流总览图，加入红石信号点燃路径
+  - 更新关键类表，新增 `ContainerRedstoneData` 引用
+  - 文档版本更新至 v5
+  - **修改文件**：`docs/tech/living-tnt-tech.md`
+
+---
+
 ## 2026-08-19
 
 - ✅ **优化：传送区块加载从 ChunkStatus.FULL 降为 LIGHT**（远距离传送到未探索区域时 MSPT 峰值 16200ms → 大幅降低）

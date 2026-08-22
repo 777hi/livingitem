@@ -263,6 +263,10 @@ public class LivingItem {
 
     private void processLevelContainers(ServerLevel level) {
         var cache = ContainerChunkCache.getInstance();
+
+        // 先消费上一 tick 累积的重扫请求，确保刚放置的容器（含延迟初始化的模组容器）已入缓存
+        cache.flushPendingRescans(level);
+
         var chunkSet = cache.getCachedChunks(level.dimension());
         if (chunkSet.isEmpty()) return;
 
