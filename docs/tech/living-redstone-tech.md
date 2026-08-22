@@ -40,8 +40,7 @@
 │                              │ ContainerRedstoneData     │      │
 │                              │   .calculate()            │      │
 │                              │   EdgeGrid + 共享边       │      │
-│                              │   每 tick 输出 + 通知      │      │
-│                              │   每 2 tick 重算传播       │      │
+│                              │   每 2 tick 传播 + 输出   │      │
 │                              └────────┬─────────────────┘      │
 │                                       │                         │
 │              ┌────────────────────────┼──────────────────┐     │
@@ -173,12 +172,12 @@ public class ContainerRedstoneData {
 | `edgeGrid` | EdgeGrid | 当前帧边信号网格，存储所有槽位间边的信号值（纯内部信号） |
 | `prevEdgeGrid` | EdgeGrid | 上一帧边信号，Phase 0 用于中继器断电检测 |
 | `faceInput[4]` | int[4] | 外部注入信号强度（4 方向），仅用于组件状态检测（火把烧毁/中继器输入/比较器等），不参与红石粉传播 |
-| `faceOutput[4]` | int[4] | 内部信号在 4 个边界面的输出信号，扫描 edgeGrid 边界边得出，每 tick 更新 |
-| `prevFaceOutput[4]` | int[4] | 上一帧 faceOutput，用于变化检测避免不必要的方块更新，每 tick 比较 |
-| `tickCounter` | int | 自增计数器，每 2 tick 触发一次传播重算，每 tick 均执行 faceOutput 计算与通知 |
+| `faceOutput[4]` | int[4] | 内部信号在 4 个边界面的输出信号，扫描 edgeGrid 边界边得出，传播 tick 更新 |
+| `prevFaceOutput[4]` | int[4] | 上一帧 faceOutput，用于变化检测避免不必要的方块更新 |
+| `tickCounter` | int | 自增计数器，偶数 tick 触发传播重算，奇数 tick 直接返回 |
 | `processedThisTick` | boolean | 同一 tick 内多个 Function 触发时，保证只计算一次。每 tick 开始时由 `SimpleContainerContext.setTickContext()` 重置 |
 | `lastTickTime` | long | 最后访问时间戳，`ContainerLivingItemHandler.cleanupStaleRedstoneData()` 每 120 秒清理超过 120 秒未访问的条目 |
-| `PROPAGATION_INTERVAL` | int (static) | 传播间隔 = 2 tick。注意：仅传播重算按此间隔，faceOutput 计算和通知每 tick 执行 |
+| `PROPAGATION_INTERVAL` | int (static) | 传播间隔 = 2 tick。`injectExternalInputs`、`computeFaceOutput`、`notifyBoundaryChange` 均在传播 tick 执行 |
 
 **持久化机制**：`ContainerRedstoneData` 实例通过 `ContainerLivingItemHandler.REDSTONE_DATA_CACHE`（`LinkedHashMap<String, ContainerRedstoneData>`）静态缓存持久化，以 `containerKey` 为键。`SimpleContainerContext` 每 tick 重建，但其 `getOrCreateRedstoneData()` 从缓存获取同一实例，确保 `edgeGrid`、`prevEdgeGrid`、`tickCounter` 等关键状态跨 tick 保留。`resetProcessedFlag()` 在每 tick 开始时由 `setTickContext()` 调用，确保 `processedThisTick` 被正确重置。
 
@@ -359,16 +358,19 @@ ItemStack (minecraft:comparator)
 
 ### 3.1 触发时机
 
-信号传播由 `ContainerRedstoneData.calculate()` 执行，**每 tick** 都会被调用。内部逻辑分为两个层级：
+信号传播由 `ContainerRedstoneData.calculate()` 执行，每 **2 tick** 触发一次全量传播重算。内部逻辑分为两个层级：
 
-- **每 tick**：刷新 `faceInput`（外部信号），计算 `faceOutput`（边界输出），检测变化并通知邻居方块更新
-- **每 2 tick**（传播间隔）：额外的 6 阶段传播重算（`edgeGrid` 重置 + BFS + 组件状态更新）
+- **传播 tick（偶数 tick）**：`injectExternalInputs` → `reset` → 6 阶段传播 → `computeFaceOutput` → `notifyBoundaryChange`
+- **非传播 tick（奇数 tick）**：直接返回，不做任何操作。`edgeGrid` 不变，`faceOutput` 必然不变，无需重复计算
+- **无红石物品时**：立即 `edgeGrid.zero()` → `computeFaceOutput`（全 0）→ `notifyBoundaryChange`（通知世界信号消失）
 
 `calculate()` 由 `LivingRedstoneFunction` 和 `LivingRedstoneTorchFunction` 的 `tickContainerData()` 方法触发，两者均通过 `HasContainerData` 接口（优先级 2）被容器处理器调用。当容器内无任何红石物品时，`ContainerLivingItemHandler.processContext()` 也会调用 `calculate()` 以清零残留信号。
 
+**非传播 tick 直接返回**：`tickCounter % 2 != 0` 时不做任何操作，`injectExternalInputs`、`computeFaceOutput`、`notifyBoundaryChange` 均只在传播 tick 执行。因为非传播 tick 上 `edgeGrid` 不变，`faceOutput` 必然不变，执行这些操作是冗余的。
+
 ### 3.2 六阶段边信号传播算法
 
-`calculate()` 拆分为 6 个阶段，基于边信号模型。**每 tick 都执行** `faceInput` 刷新、`faceOutput` 计算和 `notifyBoundaryChange`，但 6 阶段传播重算仅在偶数 tick 执行：
+`calculate()` 拆分为 6 个阶段，基于边信号模型。**6 阶段传播重算仅在偶数 tick 执行**，非传播 tick 直接返回：
 
 ```
 calculate(context, tick):
@@ -377,18 +379,16 @@ calculate(context, tick):
   3. 收集所有红石组件槽位（torch/dust/button/lever/lamp/repeater/comparator/redstoneBlock）
   4. 若 edgeGrid 与容器尺寸不匹配 → 重建
 
-  5. faceInput 刷新：injectExternalInputs(context)  ← 每 tick 执行
+  5. 若全部为空 → edgeGrid.zero() → computeFaceOutput → notifyBoundaryChange → 返回
+     （无红石物品时立即清零信号并通知邻居）
 
-  6. 若全部为空 → edgeGrid.zero() → computeFaceOutput → notifyBoundaryChange → 返回
-     （无红石物品时清零信号并通知邻居）
-
-  7. 若 tickCounter % 2 != 0 → computeFaceOutput → notifyBoundaryChange → 返回
-     （非传播 tick：保留当前 edgeGrid，仅更新输出和通知）
+  6. 若 tickCounter % 2 != 0 → 直接返回
+     （非传播 tick：edgeGrid 不变，无需任何操作）
 
   ——— 以下仅在传播 tick（偶数 tick）执行 ———
 
-  8. 重置：swap edgeGrid ↔ prevEdgeGrid，清零 edgeGrid
-  9. injectExternalInputs(context)  ← reset 后重新注入（reset 清零了 faceInput）
+  7. 重置：swap edgeGrid ↔ prevEdgeGrid，清零 edgeGrid
+  8. faceInput 刷新：injectExternalInputs(context)
 
   phase0CountdownDelays()    — 倒计时 + 断电检测（用 prevEdgeGrid 的边）
   phase1CollectSources()     — 信号源直接写边，红石粉邻居入队
@@ -397,13 +397,13 @@ calculate(context, tick):
   phase3RecheckInputs()      — 重新检测级联输入（中继器/比较器），比较器写回边网格
   phase5UpdateDisplay()      — 更新物品显示状态（火把/灯/红石粉）
 
-  10. computeFaceOutput(width, height)   ← 每 tick 执行
-  11. notifyBoundaryChange(context, ...)  ← 每 tick 执行（变化时才通知世界）
+  9. computeFaceOutput(width, height)
+  10. notifyBoundaryChange(context, ...)  （变化时才通知世界）
 
   输出通过 Mixin 完成：
-  BlockStateBase.getSignal()           — 弱信号：红石粉可读（返回 getBoundarySignal()）
-  BlockStateBase.getDirectSignal()     — 强信号：中继器/比较器/火把可读（返回 getBoundarySignal()）
-  RedStoneWireBlock.getConnectingSide() — 让红石粉连接容器方块（注入 SIDE 返回值）
+  BlockStateBase.getSignal()           — 弱信号（返回 getBoundarySignal()）
+  BlockStateBase.getDirectSignal()     — 强信号（返回 getBoundarySignal()）
+  RedStoneWireBlock.getConnectingSide() — 让红石粉连接容器方块
 ```
 
 **与旧模型（槽位信号）的核心区别**：
@@ -741,7 +741,7 @@ getEffectiveInput(slot, dir, width, height):
 
 #### 输出：内部信号传出（computeFaceOutput）
 
-**每 tick** 执行 `computeFaceOutput`，扫描 edgeGrid 边界边：
+传播 tick 结束时执行 `computeFaceOutput`，扫描 edgeGrid 边界边：
 
 ```
 computeFaceOutput(width, height):

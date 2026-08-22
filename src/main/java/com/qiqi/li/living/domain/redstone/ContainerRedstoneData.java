@@ -42,7 +42,7 @@ public class ContainerRedstoneData {
 
     public ContainerRedstoneData(int size) {
         this.slotCount = size;
-        this.tickCounter = 1;
+        this.tickCounter = 1; // 初始化为奇数，首次调用后递增到偶数，确保首次不跳过传播
         this.processedThisTick = false;
         this.lastTickTime = System.currentTimeMillis();
     }
@@ -110,9 +110,6 @@ public class ContainerRedstoneData {
             prevEdgeGrid = new EdgeGrid(width, height);
         }
 
-        java.util.Arrays.fill(faceInput, 0);
-        injectExternalInputs(context);
-
         if (!hasAny) {
             if (edgeGrid != null) edgeGrid.zero();
             computeFaceOutput(width, height);
@@ -121,8 +118,6 @@ public class ContainerRedstoneData {
         }
 
         if (tickCounter % PROPAGATION_INTERVAL != 0) {
-            computeFaceOutput(width, height);
-            notifyBoundaryChange(context, width, height);
             return;
         }
 
@@ -442,19 +437,8 @@ public class ContainerRedstoneData {
             int output = Math.min(maxInput - 1, getSignalCap(stack.getCount()));
             for (int dir = 0; dir < 4; dir++) {
                 if ((conn & (1 << dir)) == 0) continue;
-                int neighbor = resolveSlot(slot, dir, size, width);
-                if (neighbor < 0 || allRedstone.contains(neighbor)) continue;
-                if (!isConductiveBlock(context.getItem(neighbor))) continue;
-
-                for (int d2 = 0; d2 < 4; d2++) {
-                    if (output > edgeGrid.get(neighbor, d2)) {
-                        edgeGrid.set(neighbor, d2, output);
-                        int n2 = resolveSlot(neighbor, d2, size, width);
-                        if (n2 >= 0 && dustSlots.contains(n2)) {
-                            secondQueue.add(n2);
-                        }
-                    }
-                }
+                powerConductiveNeighbor(slot, output, dir, allRedstone, dustSlots,
+                    size, width, context, secondQueue);
             }
         }
 
@@ -467,22 +451,10 @@ public class ContainerRedstoneData {
 
             int cap = getSignalCap(stack.getCount());
             int skipDir = edgeIndex(data.direction().opposite());
-
             for (int dir = 0; dir < 4; dir++) {
                 if (dir == skipDir) continue;
-                int neighbor = resolveSlot(slot, dir, size, width);
-                if (neighbor < 0 || allRedstone.contains(neighbor)) continue;
-                if (!isConductiveBlock(context.getItem(neighbor))) continue;
-
-                for (int d2 = 0; d2 < 4; d2++) {
-                    if (cap > edgeGrid.get(neighbor, d2)) {
-                        edgeGrid.set(neighbor, d2, cap);
-                        int n2 = resolveSlot(neighbor, d2, size, width);
-                        if (n2 >= 0 && dustSlots.contains(n2)) {
-                            secondQueue.add(n2);
-                        }
-                    }
-                }
+                powerConductiveNeighbor(slot, cap, dir, allRedstone, dustSlots,
+                    size, width, context, secondQueue);
             }
         }
 
@@ -495,19 +467,8 @@ public class ContainerRedstoneData {
 
             int cap = getSignalCap(stack.getCount());
             for (int dir = 0; dir < 4; dir++) {
-                int neighbor = resolveSlot(slot, dir, size, width);
-                if (neighbor < 0 || allRedstone.contains(neighbor)) continue;
-                if (!isConductiveBlock(context.getItem(neighbor))) continue;
-
-                for (int d2 = 0; d2 < 4; d2++) {
-                    if (cap > edgeGrid.get(neighbor, d2)) {
-                        edgeGrid.set(neighbor, d2, cap);
-                        int n2 = resolveSlot(neighbor, d2, size, width);
-                        if (n2 >= 0 && dustSlots.contains(n2)) {
-                            secondQueue.add(n2);
-                        }
-                    }
-                }
+                powerConductiveNeighbor(slot, cap, dir, allRedstone, dustSlots,
+                    size, width, context, secondQueue);
             }
         }
 
@@ -520,19 +481,8 @@ public class ContainerRedstoneData {
 
             int cap = getSignalCap(stack.getCount());
             for (int dir = 0; dir < 4; dir++) {
-                int neighbor = resolveSlot(slot, dir, size, width);
-                if (neighbor < 0 || allRedstone.contains(neighbor)) continue;
-                if (!isConductiveBlock(context.getItem(neighbor))) continue;
-
-                for (int d2 = 0; d2 < 4; d2++) {
-                    if (cap > edgeGrid.get(neighbor, d2)) {
-                        edgeGrid.set(neighbor, d2, cap);
-                        int n2 = resolveSlot(neighbor, d2, size, width);
-                        if (n2 >= 0 && dustSlots.contains(n2)) {
-                            secondQueue.add(n2);
-                        }
-                    }
-                }
+                powerConductiveNeighbor(slot, cap, dir, allRedstone, dustSlots,
+                    size, width, context, secondQueue);
             }
         }
 
@@ -543,19 +493,8 @@ public class ContainerRedstoneData {
 
             int cap = getSignalCap(stack.getCount());
             for (int dir = 0; dir < 4; dir++) {
-                int neighbor = resolveSlot(slot, dir, size, width);
-                if (neighbor < 0 || allRedstone.contains(neighbor)) continue;
-                if (!isConductiveBlock(context.getItem(neighbor))) continue;
-
-                for (int d2 = 0; d2 < 4; d2++) {
-                    if (cap > edgeGrid.get(neighbor, d2)) {
-                        edgeGrid.set(neighbor, d2, cap);
-                        int n2 = resolveSlot(neighbor, d2, size, width);
-                        if (n2 >= 0 && dustSlots.contains(n2)) {
-                            secondQueue.add(n2);
-                        }
-                    }
-                }
+                powerConductiveNeighbor(slot, cap, dir, allRedstone, dustSlots,
+                    size, width, context, secondQueue);
             }
         }
 
@@ -568,19 +507,8 @@ public class ContainerRedstoneData {
 
             int cap = getSignalCap(stack.getCount());
             int outDir = edgeIndex(data.direction());
-            int neighbor = resolveSlot(slot, outDir, size, width);
-            if (neighbor < 0 || allRedstone.contains(neighbor)) continue;
-            if (!isConductiveBlock(context.getItem(neighbor))) continue;
-
-            for (int d2 = 0; d2 < 4; d2++) {
-                if (cap > edgeGrid.get(neighbor, d2)) {
-                    edgeGrid.set(neighbor, d2, cap);
-                    int n2 = resolveSlot(neighbor, d2, size, width);
-                    if (n2 >= 0 && dustSlots.contains(n2)) {
-                        secondQueue.add(n2);
-                    }
-                }
-            }
+            powerConductiveNeighbor(slot, cap, outDir, allRedstone, dustSlots,
+                size, width, context, secondQueue);
         }
 
         for (int slot : comparatorSlots) {
@@ -592,24 +520,31 @@ public class ContainerRedstoneData {
             if (output <= 0) continue;
 
             int outDir = edgeIndex(data.direction());
-            int neighbor = resolveSlot(slot, outDir, size, width);
-            if (neighbor < 0 || allRedstone.contains(neighbor)) continue;
-            if (!isConductiveBlock(context.getItem(neighbor))) continue;
-
-            for (int d2 = 0; d2 < 4; d2++) {
-                if (output > edgeGrid.get(neighbor, d2)) {
-                    edgeGrid.set(neighbor, d2, output);
-                    int n2 = resolveSlot(neighbor, d2, size, width);
-                    if (n2 >= 0 && dustSlots.contains(n2)) {
-                        secondQueue.add(n2);
-                    }
-                }
-            }
+            powerConductiveNeighbor(slot, output, outDir, allRedstone, dustSlots,
+                size, width, context, secondQueue);
         }
 
         if (!secondQueue.isEmpty()) {
             phase2Propagation(secondQueue, dustSlots, repeaterSlots, comparatorSlots,
                 torchSlots, new HashSet<>(), size, width, context);
+        }
+    }
+
+    private void powerConductiveNeighbor(int slot, int signal, int dir, Set<Integer> allRedstone,
+            Set<Integer> dustSlots, int size, int width, ContainerContext context,
+            Queue<Integer> secondQueue) {
+        int neighbor = resolveSlot(slot, dir, size, width);
+        if (neighbor < 0 || allRedstone.contains(neighbor)) return;
+        if (!isConductiveBlock(context.getItem(neighbor))) return;
+
+        for (int d2 = 0; d2 < 4; d2++) {
+            if (signal > edgeGrid.get(neighbor, d2)) {
+                edgeGrid.set(neighbor, d2, signal);
+                int n2 = resolveSlot(neighbor, d2, size, width);
+                if (n2 >= 0 && dustSlots.contains(n2)) {
+                    secondQueue.add(n2);
+                }
+            }
         }
     }
 
@@ -653,33 +588,6 @@ public class ContainerRedstoneData {
         }
     }
 
-    private void seedBoundaryDust(Queue<Integer> queue, Set<Integer> dustSlots, int width, int height) {
-        if (faceInput[E_UP] > 0) {
-            for (int c = 0; c < width; c++) {
-                int slot = c;
-                if (dustSlots.contains(slot)) queue.add(slot);
-            }
-        }
-        if (faceInput[E_DOWN] > 0) {
-            for (int c = 0; c < width; c++) {
-                int slot = (height - 1) * width + c;
-                if (dustSlots.contains(slot)) queue.add(slot);
-            }
-        }
-        if (faceInput[E_LEFT] > 0) {
-            for (int r = 0; r < height; r++) {
-                int slot = r * width;
-                if (dustSlots.contains(slot)) queue.add(slot);
-            }
-        }
-        if (faceInput[E_RIGHT] > 0) {
-            for (int r = 0; r < height; r++) {
-                int slot = r * width + (width - 1);
-                if (dustSlots.contains(slot)) queue.add(slot);
-            }
-        }
-    }
-
     private boolean checkRepeaterLocked(int slot, LivingRepeaterData data, Set<Integer> repeaterSlots,
             int size, int width, ContainerContext context) {
         Pos2D dir = data.direction();
@@ -705,13 +613,8 @@ public class ContainerRedstoneData {
         Level level = context.getLevel();
         if (level == null || level.isClientSide) return;
 
-        boolean changed = false;
-        for (int dir = 0; dir < 4 && !changed; dir++) {
-            if (faceOutput[dir] != prevFaceOutput[dir]) changed = true;
-        }
-        for (int dir = 0; dir < 4; dir++) {
-            prevFaceOutput[dir] = faceOutput[dir];
-        }
+        boolean changed = !Arrays.equals(faceOutput, prevFaceOutput);
+        System.arraycopy(faceOutput, 0, prevFaceOutput, 0, 4);
         if (changed) {
             for (BlockPos pos : context.getAssociatedBlockPositions()) {
                 BlockState state = level.getBlockState(pos);
