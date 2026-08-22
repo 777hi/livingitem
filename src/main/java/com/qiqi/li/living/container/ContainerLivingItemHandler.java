@@ -240,6 +240,18 @@ public class ContainerLivingItemHandler {
         }
 
         if (grouped.isEmpty()) {
+            if (context instanceof SimpleContainerContext simpleCtx) {
+                String key = simpleCtx.getContainerKey();
+                if (key != null && REDSTONE_DATA_CACHE.containsKey(key)) {
+                    ContainerRedstoneData rd = REDSTONE_DATA_CACHE.get(key);
+                    if (rd != null) {
+                        TickContext tick = new TickContext(context);
+                        simpleCtx.setTickContext(tick);
+                        rd.calculate(context, tick);
+                    }
+                }
+            }
+
             long elapsedMs = (System.nanoTime() - startNanos) / 1_000_000;
             PerfMetrics.recordTick(elapsedMs);
             PerfMetrics.recordPhase("scan", elapsedMs);

@@ -2,7 +2,7 @@
 
 # Living Redstone (活红石) 技术文档
 
-> **文档版本**: 2026.08 v12
+> **文档版本**: 2026.08 v13
 > **最后更新**: 2026-08-22
 > **适用版本**: Minecraft 1.21.1
 
@@ -40,7 +40,8 @@
 │                              │ ContainerRedstoneData     │      │
 │                              │   .calculate()            │      │
 │                              │   EdgeGrid + 共享边       │      │
-│                              │   每 2 tick 执行一次       │      │
+│                              │   每 tick 输出 + 通知      │      │
+│                              │   每 2 tick 重算传播       │      │
 │                              └────────┬─────────────────┘      │
 │                                       │                         │
 │              ┌────────────────────────┼──────────────────┐     │
@@ -171,13 +172,13 @@ public class ContainerRedstoneData {
 |------|------|------|
 | `edgeGrid` | EdgeGrid | 当前帧边信号网格，存储所有槽位间边的信号值（纯内部信号） |
 | `prevEdgeGrid` | EdgeGrid | 上一帧边信号，Phase 0 用于中继器断电检测 |
-| `faceInput[4]` | int[4] | 外部注入信号强度（4 方向），仅用于 BFS 传播，不污染 edgeGrid |
-| `faceOutput[4]` | int[4] | 内部信号在 4 个边界面的输出信号，扫描 edgeGrid 边界边得出 |
-| `prevFaceOutput[4]` | int[4] | 上一帧 faceOutput，用于变化检测避免不必要的方块更新 |
-| `tickCounter` | int | 自增计数器，每 2 tick 触发一次 calculate() |
+| `faceInput[4]` | int[4] | 外部注入信号强度（4 方向），仅用于组件状态检测（火把烧毁/中继器输入/比较器等），不参与红石粉传播 |
+| `faceOutput[4]` | int[4] | 内部信号在 4 个边界面的输出信号，扫描 edgeGrid 边界边得出，每 tick 更新 |
+| `prevFaceOutput[4]` | int[4] | 上一帧 faceOutput，用于变化检测避免不必要的方块更新，每 tick 比较 |
+| `tickCounter` | int | 自增计数器，每 2 tick 触发一次传播重算，每 tick 均执行 faceOutput 计算与通知 |
 | `processedThisTick` | boolean | 同一 tick 内多个 Function 触发时，保证只计算一次。每 tick 开始时由 `SimpleContainerContext.setTickContext()` 重置 |
 | `lastTickTime` | long | 最后访问时间戳，`ContainerLivingItemHandler.cleanupStaleRedstoneData()` 每 120 秒清理超过 120 秒未访问的条目 |
-| `PROPAGATION_INTERVAL` | int (static) | 传播间隔 = 2 tick，与原版红石更新频率一致 |
+| `PROPAGATION_INTERVAL` | int (static) | 传播间隔 = 2 tick。注意：仅传播重算按此间隔，faceOutput 计算和通知每 tick 执行 |
 
 **持久化机制**：`ContainerRedstoneData` 实例通过 `ContainerLivingItemHandler.REDSTONE_DATA_CACHE`（`LinkedHashMap<String, ContainerRedstoneData>`）静态缓存持久化，以 `containerKey` 为键。`SimpleContainerContext` 每 tick 重建，但其 `getOrCreateRedstoneData()` 从缓存获取同一实例，确保 `edgeGrid`、`prevEdgeGrid`、`tickCounter` 等关键状态跨 tick 保留。`resetProcessedFlag()` 在每 tick 开始时由 `setTickContext()` 调用，确保 `processedThisTick` 被正确重置。
 
@@ -358,29 +359,47 @@ ItemStack (minecraft:comparator)
 
 ### 3.1 触发时机
 
-信号传播由 `ContainerRedstoneData.calculate()` 执行，每 **2 tick** 触发一次（与原版红石更新频率一致）。传播由 `LivingRedstoneFunction` 和 `LivingRedstoneTorchFunction` 的 `tickContainerData()` 方法触发，两者均通过 `HasContainerData` 接口（优先级 2）被容器处理器调用。
+信号传播由 `ContainerRedstoneData.calculate()` 执行，**每 tick** 都会被调用。内部逻辑分为两个层级：
+
+- **每 tick**：刷新 `faceInput`（外部信号），计算 `faceOutput`（边界输出），检测变化并通知邻居方块更新
+- **每 2 tick**（传播间隔）：额外的 6 阶段传播重算（`edgeGrid` 重置 + BFS + 组件状态更新）
+
+`calculate()` 由 `LivingRedstoneFunction` 和 `LivingRedstoneTorchFunction` 的 `tickContainerData()` 方法触发，两者均通过 `HasContainerData` 接口（优先级 2）被容器处理器调用。当容器内无任何红石物品时，`ContainerLivingItemHandler.processContext()` 也会调用 `calculate()` 以清零残留信号。
 
 ### 3.2 六阶段边信号传播算法
 
-`calculate()` 拆分为 6 个阶段，基于边信号模型：
+`calculate()` 拆分为 6 个阶段，基于边信号模型。**每 tick 都执行** `faceInput` 刷新、`faceOutput` 计算和 `notifyBoundaryChange`，但 6 阶段传播重算仅在偶数 tick 执行：
 
 ```
 calculate(context, tick):
   1. processedThisTick 去重检查
-  2. tickCounter++，若 tickCounter % 2 != 0 → 直接返回（跳过）
+  2. tickCounter++
   3. 收集所有红石组件槽位（torch/dust/button/lever/lamp/repeater/comparator/redstoneBlock）
-  4. 若全部为空 → 直接返回
-  5. 重置：swap edgeGrid ↔ prevEdgeGrid，清零 edgeGrid
+  4. 若 edgeGrid 与容器尺寸不匹配 → 重建
+
+  5. faceInput 刷新：injectExternalInputs(context)  ← 每 tick 执行
+
+  6. 若全部为空 → edgeGrid.zero() → computeFaceOutput → notifyBoundaryChange → 返回
+     （无红石物品时清零信号并通知邻居）
+
+  7. 若 tickCounter % 2 != 0 → computeFaceOutput → notifyBoundaryChange → 返回
+     （非传播 tick：保留当前 edgeGrid，仅更新输出和通知）
+
+  ——— 以下仅在传播 tick（偶数 tick）执行 ———
+
+  8. 重置：swap edgeGrid ↔ prevEdgeGrid，清零 edgeGrid
+  9. injectExternalInputs(context)  ← reset 后重新注入（reset 清零了 faceInput）
 
   phase0CountdownDelays()    — 倒计时 + 断电检测（用 prevEdgeGrid 的边）
   phase1CollectSources()     — 信号源直接写边，红石粉邻居入队
-  phase2Propagation()        — BFS 传播（仅红石粉入队）
-  phase4PowerConductors()    — 信号源向导电活物品充能，触发第二波 BFS（先于 Phase 3 执行，确保导体信号可被中继器/比较器读取）
+  phase2Propagation()        — BFS 传播（仅红石粉入队，faceInput 不再参与）
+  phase4PowerConductors()    — 信号源向导电活物品充能，触发第二波 BFS
   phase3RecheckInputs()      — 重新检测级联输入（中继器/比较器），比较器写回边网格
   phase5UpdateDisplay()      — 更新物品显示状态（火把/灯/红石粉）
 
-  注入点在 Phase 0 之前：
-  injectExternalInputs()     — 读取外部红石信号，注入边界边（复用 CrossContainerTransfer 方向映射）
+  10. computeFaceOutput(width, height)   ← 每 tick 执行
+  11. notifyBoundaryChange(context, ...)  ← 每 tick 执行（变化时才通知世界）
+
   输出通过 Mixin 完成：
   BlockStateBase.getSignal()           — 弱信号：红石粉可读（返回 getBoundarySignal()）
   BlockStateBase.getDirectSignal()     — 强信号：中继器/比较器/火把可读（返回 getBoundarySignal()）
@@ -476,13 +495,7 @@ while queue not empty:
   current = queue.poll()
   if 不是红石粉 → continue
 
-  r = current / width, c = current % width
-
-  maxInput = edgeGrid.maxOfSlot(current)  // 4 内部边取最大值
-  if r == 0:          maxInput = max(maxInput, faceInput[E_UP])     // 上边界含外部信号
-  if r == height - 1: maxInput = max(maxInput, faceInput[E_DOWN])   // 下边界含外部信号
-  if c == 0:          maxInput = max(maxInput, faceInput[E_LEFT])   // 左边界含外部信号
-  if c == width - 1:  maxInput = max(maxInput, faceInput[E_RIGHT])  // 右边界含外部信号
+  maxInput = edgeGrid.maxOfSlot(current)  // 仅 4 条内部边取最大值（faceInput 不再参与）
 
   if maxInput <= 1 → continue
 
@@ -496,8 +509,7 @@ while queue not empty:
       if neighbor 是红石粉 → 邻居入队       // 仅红石粉入队继续传播
 ```
 
-> **设计变更（v11）**：Phase 2 中红石粉始终向 4 个方向的边写入信号，不再检查邻居是否为红石目标。
-> 这允许非红石组件（如活漏斗）通过 `edgeGrid.maxOfSlot()` 读取相邻红石粉的信号，实现红石信号控制。
+> **设计变更（v12）**：Phase 2 中 `maxInput` 不再纳入 `faceInput`。外部信号仅通过 `getEffectiveInput()` 影响组件状态检测（火把烧毁、中继器输入、比较器输入等），不参与红石粉 BFS 传播。这从根本上打破了容器输出信号 → 外部世界 → 外部信号重新注入 → 内部传播的反馈回路。
 
 **活漏斗红石信号控制**：
 活漏斗在 `LivingHopperFunction.tick()` 中通过 `ContainerRedstoneData.getSignal(slot)` 检测槽位 4 条边是否有信号。任意边信号 > 0 时，漏斗被禁用（跳过传输和冷却倒计时），tooltip 显示红色警告。信号消失后自动恢复传输。此机制使用 `edgeGrid.maxOfSlot()` 读取边信号，与 Phase 2 的边写入解耦直接相关。
@@ -679,8 +691,8 @@ ContainerRedstoneData
 | 数据 | 内容 | 用途 |
 |------|------|------|
 | `edgeGrid` | 纯内部信号 | 内部槽位间信号传播 |
-| `faceInput[4]` | 外部注入信号 | BFS 边界槽位补充输入 |
-| `faceOutput[4]` | 内部信号输出 | 对外暴露（getBoundarySignal） |
+| `faceInput[4]` | 外部注入信号 | 组件状态检测（火把烧毁/中继器输入/比较器输入等） |
+| `faceOutput[4]` | 内部信号输出 | 对外暴露（getBoundarySignal），每 tick 更新 |
 
 #### 输入：外部信号注入（injectExternalInputs）
 
@@ -700,24 +712,36 @@ injectExternalInputs(context):
 
 **关键变化**：外部信号**不再写入 edgeGrid**，仅存储在 `faceInput[4]` 中。`edgeGrid` 保持纯内部信号，从根本上避免外部信号污染输出。
 
-#### 内部传播：BFS 融入外部信号
+#### 外部信号用途：组件状态检测（getEffectiveInput）
 
-在 `phase2Propagation` 中，边界槽位的 `maxInput` 计算额外纳入 `faceInput`：
+外部信号（`faceInput`）**不再参与红石粉 BFS 传播**，仅通过 `getEffectiveInput()` 影响组件状态检测：
 
 ```
-边界红石粉槽位：
-  maxInput = edgeGrid.maxOfSlot(slot)   // 3 条内部边
-  + faceInput[dir]  // 补充外部信号
-
-非边界槽位：
-  maxInput = edgeGrid.maxOfSlot(slot)   // 4 条内部边（正常）
+getEffectiveInput(slot, dir, width, height):
+  edgeVal = edgeGrid.get(slot, dir)  // 优先使用内部边信号
+  if edgeVal > 0 → return edgeVal
+  
+  // 内部边无信号，检查边界外部信号
+  if slot 在边界 && dir 指向该面 → return faceInput[dir]
+  return 0
 ```
 
-`seedBoundaryDust` 也改为检查 `faceInput[dir] > 0`，将边界红石粉槽位加入 BFS 队列。
+`getEffectiveInput()` 被以下组件使用：
+
+| 组件 | Phase | 用途 |
+|------|-------|------|
+| 中继器 | Phase 0 (倒计时) | 边界中继器检测输入是否持续 |
+| 中继器 | Phase 3 (重新检测) | 判断中继器是否被供电 |
+| 火把 | Phase 4 (充能导体) | 判断火把是否应该烧毁 |
+| 火把 | Phase 5 (更新显示) | 更新火把 lit 显示状态 |
+| 比较器 | computeComparatorOutput | 比较器主输入信号检测 |
+| 红石灯 | Phase 5 (更新显示) | 边界红石灯是否点亮 |
+
+**关键**：`seedBoundaryDust` 方法已被移除。外部信号不再将边界红石粉加入 BFS 队列，从根本上切断了外部信号重新注入内部传播的路径。
 
 #### 输出：内部信号传出（computeFaceOutput）
 
-Phase 5 结束后，新增 `computeFaceOutput` 阶段：
+**每 tick** 执行 `computeFaceOutput`，扫描 edgeGrid 边界边：
 
 ```
 computeFaceOutput(width, height):
@@ -744,17 +768,25 @@ computeFaceOutput(width, height):
 
 #### 反馈循环防护
 
-**面信号模型的天然优势**：输入和输出是完全分离的两个通道。
+**v12 改进**：通过三层机制彻底打破反馈循环：
 
 ```
-外部输入 → faceInput[4]（仅用于 BFS 传播）
+外部输入 → faceInput[4] → getEffectiveInput() → 组件状态检测（仅此用途）
+                              │
+                              ✗ 不再参与 phase2Propagation（maxInput 不含 faceInput）
+                              ✗ 不再调用 seedBoundaryDust（方法已移除）
                               │
 内部信号源 → edgeGrid（纯内部） → computeFaceOutput → faceOutput[4] → 对外输出
                               │
-          faceInput 不会影响 faceOutput！
+          faceInput 无法再驱动 edgeGrid 传播！
 ```
 
-不再需要之前复杂的 `injectBoundarySignal` 绕过 `set()`、`boundaryOutput` 与 `edgeGrid` 边界边解耦等机制。`EdgeGrid` 回归**静态内部类**，`set()` 方法回归**纯数组写入**。
+**三层防护**：
+1. `seedBoundaryDust` 移除：外部信号不再将边界红石粉加入 BFS 队列
+2. `phase2Propagation` 中 `maxInput` 不再包含 `faceInput`：外部信号无法影响红石粉传播
+3. `edgeGrid` 保持纯内部信号：`faceInput` 永不写入 `edgeGrid`
+
+**信号消失时序**：当内部信号源被移除后，下一个传播 tick 会重新计算 edgeGrid（清零后无信号源写入），faceOutput 变为 0，notifyBoundaryChange 检测到变化并通知世界。外部世界可能仍残留一 tick 的旧信号，但该信号无法通过 faceInput 重新注入 edgeGrid 传播，反馈回路被切断。
 
 #### 信号变化通知（notifyBoundaryChange）
 
@@ -797,10 +829,10 @@ Minecraft 原版红石粉不会主动连接容器方块。通过 `RedStoneWireBl
 Container A 内部红石 → computeFaceOutput → faceOutput[dir] = 15
   → BlockStateBaseMixin: getSignal(A, worldDir) 返回 15
   → Container B: injectExternalInputs → faceInput[dir] = 15
-  → seedBoundaryDust → BFS → Container B 内部传播
+  → Container B 内部组件通过 getEffectiveInput() 读取外部信号
 ```
 
-方向映射双向一致，`faceInput` / `faceOutput` 通道分离天然防止反馈循环。
+方向映射双向一致，`faceInput` / `faceOutput` 通道分离防止反馈循环。
 
 ##### 跨容器直读机制（超限信号传输）
 
@@ -832,22 +864,21 @@ injectExternalInputs(context):
 
 **效果**：堆叠 4 活红石火把（信号上限 16）放在容器 A 边界 → `faceOutput[RIGHT] = 16` → 相邻容器 B 直读 → `faceInput[LEFT] = 16` → 容器 B 内部红石粉获得 16 强度信号，超限传输成功。
 
-##### 相邻容器边界反馈环特性
+##### 相邻容器边界反馈环（v12 已修复）
 
-当两个相邻容器的相邻边界上都有活红石粉时，会形成自然的信号衰减反馈环：
-
+**v12 之前**：相邻容器边界的红石粉会形成衰减反馈环：
 ```
 容器 A 边界红石粉（信号 15） → faceOutput[RIGHT] = 14（衰减 -1）
   → 容器 B 直读 faceOutput → faceInput[LEFT] = 14
   → 容器 B 边界红石粉获得 14 强度 → faceOutput[LEFT] = 13（衰减 -1）
   → 容器 A 直读 faceOutput → faceInput[RIGHT] = 13
   → 容器 A 边界红石粉获得 13 强度 → faceOutput[RIGHT] = 12
-  → ... 循环衰减，每 tick 信号 -1
+  → ... 循环衰减
 ```
 
-**原因**：面信号模型下，容器的 `faceOutput` 被相邻容器读取为 `faceInput`，经红石粉衰减 -1 后输出为 `faceOutput-1`，形成衰减反馈环。
+**v12 修复**：由于 `faceInput` 不再参与红石粉 BFS 传播（`phase2Propagation` 的 `maxInput` 不含 `faceInput`，`seedBoundaryDust` 已移除），相邻容器边界的红石粉**不会**从对方容器的 `faceOutput` 获取信号并重新传播。反馈环已被彻底切断。
 
-**处理**：此现象为面信号模型与跨容器直读机制的自然结果，**保留为特性**而非 bug。实际使用中，相邻容器边界通常不会同时放置红石粉（一端是信号源如中继器/火把，另一端是红石粉），因此反馈环不会触发。若确实需要在相邻容器边界放置红石粉，信号会自然衰减至 0，不会造成死循环或性能问题。
+容器间的信号传输仍然正常工作——信号源（火把/中继器/红石块等）在 Phase 1 直接写边，红石粉在 Phase 2 传播，最终通过 `faceOutput` 输出到相邻容器。相邻容器的组件通过 `getEffectiveInput()` 读取外部信号，但外部信号不会重新驱动红石粉传播。
 
 ### 3.3 邻居计算
 
@@ -1314,6 +1345,24 @@ ContainerLivingItemHandler.processContext()
 
 火把的 WASD 朝向配置通过 `HasDirection` 接口自动集成到输入处理和网络处理中，无需修改 `LivingItemInputHandler` 或 `ServerPacketHandler`。
 
+### 8.4 僵尸数据清理（v12 修复）
+
+**背景**：当容器内所有红石物品被移除后，`ContainerRedstoneData` 缓存中的 `faceOutput` 可能残留旧信号值，导致外部世界持续读取到已经不存在的红石信号。
+
+**v12 修复**：
+1. `ContainerLivingItemHandler.processContext()` 中，当 `grouped.isEmpty()`（无任何红石物品）时，移除 `rd.getSize() > 0` 的无效守卫条件（该条件因 `ContainerRedstoneData(0)` 初始化 `slotCount=0` 而永远为 `false`），直接调用 `calculate()` 触发清零逻辑
+2. `calculate()` 中 `hasAny=false` 分支执行 `edgeGrid.zero()` → `computeFaceOutput`（全 0）→ `notifyBoundaryChange`（通知邻居信号消失）
+
+**流程**：
+```
+容器内所有红石物品被移除
+  → processContext() 检测 grouped.isEmpty()
+  → 获取缓存的 ContainerRedstoneData
+  → rd.calculate(context, tick)  // hasAny=false
+  → edgeGrid.zero() → faceOutput = 0 → notifyBoundaryChange
+  → 世界邻居收到更新，重新读取信号 → 0 ✓
+```
+
 ---
 
 ## 9. 实施状态
@@ -1329,7 +1378,7 @@ ContainerLivingItemHandler.processContext()
 | 活红石灯 | 信号消费者，anyOfSlot 亮/灭可视化 | `LivingRedstoneLampFunction` |
 | 活中继器 | 延迟 + 单向 + 信号刷新 + Phase1 写方向边 | `LivingRepeaterFunction` + `RepeaterCycleHandler` |
 | 活比较器 | 比较/减法 + 物品检测 + 边网格回退读取 + Phase1/Phase3 写方向边 | `LivingComparatorFunction` + `ComparatorToggleHandler` |
-| 边信号模型 | EdgeGrid 共享边 + 边界边预留 + 五阶段 BFS | `ContainerRedstoneData` |
+| 边信号模型 | EdgeGrid 共享边 + 边界边预留 + 六阶段 BFS + 面信号模型 + 僵尸数据清理 | `ContainerRedstoneData` |
 
 ### 计划中（P3）
 

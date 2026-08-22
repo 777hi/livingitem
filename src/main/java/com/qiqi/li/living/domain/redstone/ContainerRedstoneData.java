@@ -87,7 +87,6 @@ public class ContainerRedstoneData {
         processedThisTick = true;
         lastTickTime = System.currentTimeMillis();
         tickCounter++;
-        if (tickCounter % PROPAGATION_INTERVAL != 0) return;
 
         int size = context.getSize();
         int width = context.getWidth();
@@ -110,20 +109,29 @@ public class ContainerRedstoneData {
             edgeGrid = new EdgeGrid(width, height);
             prevEdgeGrid = new EdgeGrid(width, height);
         }
-        reset();
 
+        java.util.Arrays.fill(faceInput, 0);
         injectExternalInputs(context);
 
         if (!hasAny) {
+            if (edgeGrid != null) edgeGrid.zero();
             computeFaceOutput(width, height);
             notifyBoundaryChange(context, width, height);
             return;
         }
 
+        if (tickCounter % PROPAGATION_INTERVAL != 0) {
+            computeFaceOutput(width, height);
+            notifyBoundaryChange(context, width, height);
+            return;
+        }
+
+        reset();
+        injectExternalInputs(context);
+
         phase0CountdownDelays(repeaterSlots, buttonSlots, size, width, context);
         Queue<Integer> queue = phase1CollectSources(torchSlots, buttonSlots, leverSlots,
             repeaterSlots, comparatorSlots, dustSlots, redstoneBlockSlots, size, width, context);
-        seedBoundaryDust(queue, dustSlots, width, height);
         phase2Propagation(queue, dustSlots, repeaterSlots, comparatorSlots,
             torchSlots, lampSlots, size, width, context);
         phase4PowerConductors(torchSlots, buttonSlots, leverSlots,
@@ -322,7 +330,6 @@ public class ContainerRedstoneData {
             Set<Integer> repeaterSlots, Set<Integer> comparatorSlots,
             Set<Integer> torchSlots, Set<Integer> lampSlots,
             int size, int width, ContainerContext context) {
-        int height = (size + width - 1) / width;
         while (!queue.isEmpty()) {
             int current = queue.poll();
             if (!dustSlots.contains(current)) continue;
@@ -330,14 +337,7 @@ public class ContainerRedstoneData {
             ItemStack stack = context.getItem(current);
             if (stack.isEmpty()) continue;
 
-            int r = current / width;
-            int c = current % width;
-
             int maxInput = edgeGrid.maxOfSlot(current);
-            if (r == 0) maxInput = Math.max(maxInput, faceInput[E_UP]);
-            if (r == height - 1) maxInput = Math.max(maxInput, faceInput[E_DOWN]);
-            if (c == 0) maxInput = Math.max(maxInput, faceInput[E_LEFT]);
-            if (c == width - 1) maxInput = Math.max(maxInput, faceInput[E_RIGHT]);
 
             if (maxInput <= 1) continue;
 

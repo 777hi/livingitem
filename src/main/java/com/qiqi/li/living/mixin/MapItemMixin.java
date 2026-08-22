@@ -1,5 +1,6 @@
 package com.qiqi.li.living.mixin;
 
+import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.domain.map.MapUpdateSkipHelper;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
@@ -16,8 +17,14 @@ public class MapItemMixin {
 
     @Inject(method = "inventoryTick", at = @At("HEAD"), cancellable = true)
     private void onInventoryTick(ItemStack stack, Level level, Entity entity, int itemSlot, boolean isSelected, CallbackInfo ci) {
-        if (entity instanceof ServerPlayer player && MapUpdateSkipHelper.shouldSkip(player)) {
-            ci.cancel();
+        if (entity instanceof ServerPlayer player) {
+            if (LivingItemManager.isLivingMap(stack)) {
+                ci.cancel();
+                return;
+            }
+            if (MapUpdateSkipHelper.shouldSkip(player)) {
+                ci.cancel();
+            }
         }
     }
 }
