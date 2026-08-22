@@ -2,7 +2,7 @@ package com.qiqi.li.living.api;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -156,7 +156,7 @@ public class LivingItemManager {
 
     private static final List<LivingItemFunction> FUNCTIONS = new ArrayList<>();
     private static final List<LivingItemFunction> FUNCTIONS_VIEW = Collections.unmodifiableList(FUNCTIONS);
-    private static final Map<Item, List<LivingItemFunction>> APPLICABLE_CACHE = new HashMap<>();
+    private static final Map<Item, List<LivingItemFunction>> APPLICABLE_CACHE = new ConcurrentHashMap<>();
 
     public static void registerFunction(LivingItemFunction function) {
         LOGGER.info("Registering living item function: {}", function.getFunctionId());

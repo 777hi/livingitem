@@ -25,12 +25,12 @@ import java.util.concurrent.atomic.AtomicLongArray;
  */
 public class PerfMetrics {
 
-    // ===== Container 处理耗时 =====
-    private static final AtomicLong containerTickTotalMs = new AtomicLong(0);
+    // ===== Container 处理耗时（以纳秒累计，避免单容器耗时不足 1ms 时整数除法归零） =====
+    private static final AtomicLong containerTickTotalNanos = new AtomicLong(0);
     private static final AtomicInteger containerTickCount = new AtomicInteger(0);
-    private static final AtomicLong containerTickMaxMs = new AtomicLong(0);
+    private static final AtomicLong containerTickMaxNanos = new AtomicLong(0);
     private static final AtomicInteger containerOverThreshold = new AtomicInteger(0);
-    private static final int CONTAINER_THRESHOLD_MS = 5;
+    private static final long CONTAINER_THRESHOLD_NANOS = 5_000_000L;
 
     // ===== 活物品数量 =====
     private static final Map<String, AtomicInteger> livingItemCounts = new ConcurrentHashMap<>();
@@ -50,8 +50,8 @@ public class PerfMetrics {
     private static final Map<String, PhaseStats> phaseStats = new ConcurrentHashMap<>();
 
     private static class PhaseStats {
-        final AtomicLong totalMs = new AtomicLong(0);
-        final AtomicLong maxMs = new AtomicLong(0);
+        final AtomicLong totalNanos = new AtomicLong(0);
+        final AtomicLong maxNanos = new AtomicLong(0);
         final AtomicInteger count = new AtomicInteger(0);
     }
 
@@ -76,15 +76,15 @@ public class PerfMetrics {
     // Container 处理
     // ══════════════════════════════════════════════
 
-    public static void recordTick(long elapsedMs) {
-        containerTickTotalMs.addAndGet(elapsedMs);
+    public static void recordTick(long elapsedNanos) {
+        containerTickTotalNanos.addAndGet(elapsedNanos);
         containerTickCount.incrementAndGet();
-        containerTickMaxMs.accumulateAndGet(elapsedMs, Math::max);
-        if (elapsedMs > CONTAINER_THRESHOLD_MS) {
+        containerTickMaxNanos.accumulateAndGet(elapsedNanos, Math::max);
+        if (elapsedNanos > CONTAINER_THRESHOLD_NANOS) {
             containerOverThreshold.incrementAndGet();
         }
         int idx = p99Index.getAndIncrement() & (P99_BUFFER_SIZE - 1);
-        p99Buffer.set(idx, elapsedMs);
+        p99Buffer.set(idx, elapsedNanos);
     }
 
     public static void addLivingItem(String functionId, int count) {
@@ -125,11 +125,11 @@ public class PerfMetrics {
     // processContext 分阶段耗时
     // ══════════════════════════════════════════════
 
-    public static void recordPhase(String phase, long elapsedMs) {
+    public static void recordPhase(String phase, long elapsedNanos) {
         PhaseStats stats = phaseStats.computeIfAbsent(phase, k -> new PhaseStats());
-        stats.totalMs.addAndGet(elapsedMs);
+        stats.totalNanos.addAndGet(elapsedNanos);
         stats.count.incrementAndGet();
-        stats.maxMs.accumulateAndGet(elapsedMs, Math::max);
+        stats.maxNanos.accumulateAndGet(elapsedNanos, Math::max);
     }
 
     // ══════════════════════════════════════════════
@@ -161,14 +161,13 @@ public class PerfMetrics {
         int count = containerTickCount.get();
         if (count == 0) return;
 
-        long totalMs = containerTickTotalMs.get();
-        long maxMs = containerTickMaxMs.get();
-        long avgMs = totalMs / count;
+        long avgNanos = containerTickTotalNanos.get() / count;
         int overThreshold = containerOverThreshold.get();
-        long p99 = computeP99();
 
-        ModLog.PERF.info("[Container] calls={}, avg={}ms, P99={}ms, max={}ms, overThreshold={}ms={}",
-            count, avgMs, p99, maxMs, CONTAINER_THRESHOLD_MS, overThreshold);
+        ModLog.PERF.info("[Container] calls={}, avg={}, P99={}, max={}, over{}={}",
+            count, formatNanos(avgNanos), formatNanos(computeP99()),
+            formatNanos(containerTickMaxNanos.get()),
+            formatNanos(CONTAINER_THRESHOLD_NANOS), overThreshold);
         ModLog.PERF.info("[LivingItems] {}", formatMap(livingItemCounts));
         ModLog.PERF.info("[FunctionCalls] {}", formatMap(functionCalls));
 
@@ -177,11 +176,21 @@ public class PerfMetrics {
             phaseStats.forEach((phase, stats) -> {
                 int n = stats.count.get();
                 if (n == 0) return;
-                sb.append(" ").append(phase).append(": avg=").append(stats.totalMs.get() / n)
-                  .append("ms max=").append(stats.maxMs.get()).append("ms calls=").append(n);
+                sb.append(" ").append(phase)
+                  .append(": avg=").append(formatNanos(stats.totalNanos.get() / n))
+                  .append(" max=").append(formatNanos(stats.maxNanos.get()))
+                  .append(" calls=").append(n);
             });
             ModLog.PERF.info(sb.toString());
         }
+    }
+
+    /** 纳秒格式化：不足 1ms 显示微秒，避免整数除法把亚毫秒耗时显示为 0 */
+    private static String formatNanos(long nanos) {
+        if (nanos < 1_000_000L) {
+            return String.format("%.1fus", nanos / 1_000.0);
+        }
+        return String.format("%.2fms", nanos / 1_000_000.0);
     }
 
     private static void printCacheSection() {
@@ -238,9 +247,9 @@ public class PerfMetrics {
     }
 
     private static void reset() {
-        containerTickTotalMs.set(0);
+        containerTickTotalNanos.set(0);
         containerTickCount.set(0);
-        containerTickMaxMs.set(0);
+        containerTickMaxNanos.set(0);
         containerOverThreshold.set(0);
         livingItemCounts.clear();
         functionCalls.clear();

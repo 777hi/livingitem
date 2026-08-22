@@ -24,7 +24,7 @@ public abstract class BlockStateBaseMixin {
         if (!(level instanceof Level realLevel)) return;
         if (realLevel.isClientSide) return;
 
-        ContainerRedstoneData data = ContainerLivingItemHandler.getRedstoneDataByPos(pos);
+        ContainerRedstoneData data = ContainerLivingItemHandler.getRedstoneDataByPos(realLevel, pos);
         if (data == null) return;
 
         BlockState state = realLevel.getBlockState(pos);

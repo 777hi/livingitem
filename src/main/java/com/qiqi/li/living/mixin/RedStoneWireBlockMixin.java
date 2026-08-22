@@ -24,7 +24,7 @@ public abstract class RedStoneWireBlockMixin {
         if (realLevel.isClientSide) return;
 
         BlockPos neighborPos = pos.relative(direction);
-        if (ContainerLivingItemHandler.getRedstoneDataByPos(neighborPos) != null) {
+        if (ContainerLivingItemHandler.getRedstoneDataByPos(realLevel, neighborPos) != null) {
             cir.setReturnValue(RedstoneSide.SIDE);
         }
     }

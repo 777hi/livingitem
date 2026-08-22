@@ -1,7 +1,6 @@
 package com.qiqi.li.living.container;
 
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
@@ -33,8 +32,6 @@ public class TickContext {
     public ContainerFluidData fluidData = ContainerFluidData.EMPTY;
     public ContainerStressData stressData = ContainerStressData.EMPTY;
     public ContainerRedstoneData redstoneData = null;
-
-    private final Map<Class<?>, Object> containerDataStore = new HashMap<>();
 
     private Map<String, Set<Integer>> functionSlots = Collections.emptyMap();
 
@@ -74,7 +71,7 @@ public class TickContext {
             if (context instanceof SimpleContainerContext simpleCtx) {
                 redstoneData = simpleCtx.getOrCreateRedstoneData();
             } else {
-                redstoneData = new ContainerRedstoneData(context.getSize());
+                redstoneData = new ContainerRedstoneData();
             }
         }
         return redstoneData;
@@ -98,14 +95,5 @@ public class TickContext {
      */
     public void setFunctionSlots(Map<String, Set<Integer>> functionSlots) {
         this.functionSlots = functionSlots;
-    }
-
-    @SuppressWarnings("unchecked")
-    public <T> T getContainerData(Class<T> type) {
-        return (T) containerDataStore.get(type);
-    }
-
-    public <T> void setContainerData(Class<T> type, T data) {
-        containerDataStore.put(type, data);
     }
 }

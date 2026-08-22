@@ -29,7 +29,6 @@ public class ContainerRedstoneData {
     private static final int E_LEFT = 2;
     private static final int E_RIGHT = 3;
 
-    private final int slotCount;
     private EdgeGrid edgeGrid;
     private EdgeGrid prevEdgeGrid;
     private final int[] faceInput = new int[4];
@@ -40,8 +39,7 @@ public class ContainerRedstoneData {
     private boolean processedThisTick;
     private long lastTickTime;
 
-    public ContainerRedstoneData(int size) {
-        this.slotCount = size;
+    public ContainerRedstoneData() {
         this.tickCounter = 1; // 初始化为奇数，首次调用后递增到偶数，确保首次不跳过传播
         this.processedThisTick = false;
         this.lastTickTime = System.currentTimeMillis();
@@ -64,21 +62,28 @@ public class ContainerRedstoneData {
         return edgeGrid.maxOfSlot(slot);
     }
 
-    public int getTickCounter() {
-        return tickCounter;
-    }
+    public int getSlotSignal(int slot, int size, int width) {
+        if (edgeGrid == null) return 0;
+        int height = (size + width - 1) / width;
 
-    public int getSize() {
-        return slotCount;
+        int maxSignal = edgeGrid.maxOfSlot(slot);
+
+        int r = slot / width;
+        int c = slot % width;
+
+        if (r == 0) maxSignal = Math.max(maxSignal, faceInput[E_UP]);
+        if (r == height - 1) maxSignal = Math.max(maxSignal, faceInput[E_DOWN]);
+        if (c == 0) maxSignal = Math.max(maxSignal, faceInput[E_LEFT]);
+        if (c == width - 1) maxSignal = Math.max(maxSignal, faceInput[E_RIGHT]);
+
+        return maxSignal;
     }
 
     private void reset() {
         EdgeGrid temp = prevEdgeGrid;
         prevEdgeGrid = edgeGrid;
         edgeGrid = temp;
-        if (edgeGrid != null) {
-            edgeGrid.zero();
-        }
+        edgeGrid.zero();
         java.util.Arrays.fill(faceInput, 0);
     }
 
@@ -564,7 +569,7 @@ public class ContainerRedstoneData {
                 BlockPos neighborPos = pos.relative(worldDir);
                 int signal = level.getSignal(neighborPos, worldDir);
 
-                ContainerRedstoneData neighborData = ContainerLivingItemHandler.getRedstoneDataByPos(neighborPos);
+                ContainerRedstoneData neighborData = ContainerLivingItemHandler.getRedstoneDataByPos(level, neighborPos);
                 if (neighborData != null) {
                     BlockState neighborState = level.getBlockState(neighborPos);
                     Direction neighborFacing = CrossContainerTransfer.getBlockFacing(neighborState);

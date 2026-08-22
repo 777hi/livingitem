@@ -196,10 +196,10 @@ public final class ContainerCompatibilityConfig {
 
     /**
      * 根据槽位数推断列数。
-     * 尝试 9~13 列，找到能整除的列宽；否则默认 9 列。
+     * 从 min(slotCount, 13) 列向下尝试，找到能整除的列宽；否则默认 9 列。
      */
     private static int resolveColumns(int slotCount) {
-        for (int w = 9; w <= 13; w++) {
+        for (int w = Math.min(slotCount, 13); w >= 1; w--) {
             if (slotCount % w == 0) return w;
         }
         return 9;

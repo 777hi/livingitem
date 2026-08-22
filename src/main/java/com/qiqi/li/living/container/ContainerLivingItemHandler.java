@@ -2,13 +2,13 @@ package com.qiqi.li.living.container;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Pattern;
 
 import com.qiqi.li.living.api.HasContainerData;
 import com.qiqi.li.living.domain.redstone.ContainerRedstoneData;
@@ -16,6 +16,7 @@ import com.qiqi.li.living.domain.water.ContainerFluidData;
 import com.qiqi.li.living.domain.water.ContainerStressData;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.PlayerEnderChestContainer;
@@ -55,31 +56,75 @@ public class ContainerLivingItemHandler {
 
     private static final Map<String, ContainerFluidData> FLUID_DATA_CACHE = new LinkedHashMap<>();
     private static final Map<String, ContainerRedstoneData> REDSTONE_DATA_CACHE = new LinkedHashMap<>();
+
+    /**
+     * 位置 → 缓存键 反向索引。
+     *
+     * <p>供 mixin 热路径（{@code BlockStateBase.getSignal}、
+     * {@code RedStoneWireBlock.getConnectingSide}）以 O(1) 定位容器数据，
+     * 替代按坐标正则遍历全表的做法。</p>
+     */
+    private static final Map<PosKey, String> POS_TO_CACHE_KEY = new HashMap<>();
+
     private static final int CLEANUP_INTERVAL = 1200;
     private static int cleanupCounter;
+
+    /** 维度 + 坐标，作为位置索引的键（含维度，避免跨维度同坐标冲突） */
+    private record PosKey(ResourceKey<Level> dim, BlockPos pos) {}
+
+    /**
+     * 构建容器数据的缓存键。
+     *
+     * <p>在 {@code containerKey} 前拼接维度，避免主世界与下界同坐标的两个容器
+     * 共用同一条流体/红石数据。{@code containerKey} 自身格式保持不变，
+     * 以兼容 {@code EnderChannelRegistry} 对其的解析。</p>
+     *
+     * @return 缓存键，容器无 containerKey 时返回 null
+     */
+    private static String cacheKey(ContainerContext ctx) {
+        String key = ctx.getContainerKey();
+        if (key == null) return null;
+        Level level = ctx.getLevel();
+        if (level == null) return key;
+        return level.dimension().location() + "|" + key;
+    }
+
+    /** 为容器关联的所有方块位置建立反向索引 */
+    private static void indexPositions(ContainerContext ctx, String cacheKey) {
+        Level level = ctx.getLevel();
+        if (level == null) return;
+        ResourceKey<Level> dim = level.dimension();
+        for (BlockPos pos : ctx.getAssociatedBlockPositions()) {
+            POS_TO_CACHE_KEY.put(new PosKey(dim, pos.immutable()), cacheKey);
+        }
+    }
 
     /**
      * 获取或创建容器持久化流体数据。
      * 返回 null 表示容器不支持流体数据（如没有 containerKey）。
      */
-    public static ContainerFluidData getFluidData(String containerKey) {
-        if (containerKey == null) return null;
-        return FLUID_DATA_CACHE.computeIfAbsent(containerKey, k -> new ContainerFluidData());
+    public static ContainerFluidData getFluidData(ContainerContext ctx) {
+        String key = cacheKey(ctx);
+        if (key == null) return null;
+
+        ContainerFluidData existing = FLUID_DATA_CACHE.get(key);
+        if (existing != null) return existing;
+
+        ContainerFluidData created = new ContainerFluidData();
+        FLUID_DATA_CACHE.put(key, created);
+        indexPositions(ctx, key);
+        return created;
     }
 
     /**
-     * 清理指定容器的流体数据（容器销毁时调用）。
+     * 清理指定位置容器的流体与红石数据（容器方块被破坏时调用）。
      */
-    public static void removeFluidData(String containerKey) {
-        if (containerKey != null) {
-            FLUID_DATA_CACHE.remove(containerKey);
-        }
-    }
-
-    public static void removeFluidDataByPos(BlockPos pos) {
-        String regex = ".*_" + pos.getX() + "_" + pos.getY() + "_" + pos.getZ() + "(_\\d+_\\d+_\\d+)?$";
-        Pattern pattern = Pattern.compile(regex);
-        FLUID_DATA_CACHE.keySet().removeIf(key -> pattern.matcher(key).matches());
+    public static void removeDataByPos(Level level, BlockPos pos) {
+        String key = POS_TO_CACHE_KEY.remove(new PosKey(level.dimension(), pos.immutable()));
+        if (key == null) return;
+        FLUID_DATA_CACHE.remove(key);
+        REDSTONE_DATA_CACHE.remove(key);
+        POS_TO_CACHE_KEY.values().removeIf(key::equals);
     }
 
     /**
@@ -96,35 +141,23 @@ public class ContainerLivingItemHandler {
      * 获取或创建容器持久化红石数据。
      * 返回 null 表示容器不支持红石数据（如没有 containerKey）。
      */
-    public static ContainerRedstoneData getRedstoneData(String containerKey) {
-        if (containerKey == null) return null;
-        return REDSTONE_DATA_CACHE.computeIfAbsent(containerKey, k -> new ContainerRedstoneData(0));
+    public static ContainerRedstoneData getRedstoneData(ContainerContext ctx) {
+        String key = cacheKey(ctx);
+        if (key == null) return null;
+
+        ContainerRedstoneData existing = REDSTONE_DATA_CACHE.get(key);
+        if (existing != null) return existing;
+
+        ContainerRedstoneData created = new ContainerRedstoneData();
+        REDSTONE_DATA_CACHE.put(key, created);
+        indexPositions(ctx, key);
+        return created;
     }
 
-    /**
-     * 清理指定容器的红石数据（容器销毁时调用）。
-     */
-    public static void removeRedstoneData(String containerKey) {
-        if (containerKey != null) {
-            REDSTONE_DATA_CACHE.remove(containerKey);
-        }
-    }
-
-    public static void removeRedstoneDataByPos(BlockPos pos) {
-        String regex = ".*_" + pos.getX() + "_" + pos.getY() + "_" + pos.getZ() + "(_\\d+_\\d+_\\d+)?$";
-        Pattern pattern = Pattern.compile(regex);
-        REDSTONE_DATA_CACHE.keySet().removeIf(key -> pattern.matcher(key).matches());
-    }
-
-    public static ContainerRedstoneData getRedstoneDataByPos(BlockPos pos) {
-        String regex = ".*_" + pos.getX() + "_" + pos.getY() + "_" + pos.getZ() + "(_\\d+_\\d+_\\d+)?$";
-        Pattern pattern = Pattern.compile(regex);
-        for (Map.Entry<String, ContainerRedstoneData> entry : REDSTONE_DATA_CACHE.entrySet()) {
-            if (pattern.matcher(entry.getKey()).matches()) {
-                return entry.getValue();
-            }
-        }
-        return null;
+    /** 按位置 O(1) 查询红石数据，供 mixin 热路径调用 */
+    public static ContainerRedstoneData getRedstoneDataByPos(Level level, BlockPos pos) {
+        String key = POS_TO_CACHE_KEY.get(new PosKey(level.dimension(), pos));
+        return key == null ? null : REDSTONE_DATA_CACHE.get(key);
     }
 
     /**
@@ -135,6 +168,20 @@ public class ContainerLivingItemHandler {
             ContainerRedstoneData data = entry.getValue();
             return currentTimeMs - data.getLastTickTime() > 120_000;
         });
+    }
+
+    /** 清理已失去主缓存条目的位置索引 */
+    private static void cleanupStalePosIndex() {
+        POS_TO_CACHE_KEY.values().removeIf(
+            key -> !FLUID_DATA_CACHE.containsKey(key) && !REDSTONE_DATA_CACHE.containsKey(key));
+    }
+
+    /** 清空全部容器级缓存（服务端关闭时调用，避免跨存档残留） */
+    public static void clearAllCaches() {
+        FLUID_DATA_CACHE.clear();
+        REDSTONE_DATA_CACHE.clear();
+        POS_TO_CACHE_KEY.clear();
+        cleanupCounter = 0;
     }
 
     private static void updateStressOutput(SimpleContainerContext ctx, BlockEntity containerBE,
@@ -240,21 +287,22 @@ public class ContainerLivingItemHandler {
         }
 
         if (grouped.isEmpty()) {
+            // 容器内已无活物品，但可能残留边界红石信号，需再跑一次传播使其归零
             if (context instanceof SimpleContainerContext simpleCtx) {
-                String key = simpleCtx.getContainerKey();
-                if (key != null && REDSTONE_DATA_CACHE.containsKey(key)) {
-                    ContainerRedstoneData rd = REDSTONE_DATA_CACHE.get(key);
-                    if (rd != null) {
-                        TickContext tick = new TickContext(context);
-                        simpleCtx.setTickContext(tick);
-                        rd.calculate(context, tick);
-                    }
+                String key = cacheKey(simpleCtx);
+                ContainerRedstoneData rd = key == null ? null : REDSTONE_DATA_CACHE.get(key);
+                if (rd != null) {
+                    TickContext tick = new TickContext(context);
+                    simpleCtx.setTickContext(tick);
+                    rd.calculate(context, tick);
+                    simpleCtx.flushDirtySlots();
+                    simpleCtx.setTickContext(null);
                 }
             }
 
-            long elapsedMs = (System.nanoTime() - startNanos) / 1_000_000;
-            PerfMetrics.recordTick(elapsedMs);
-            PerfMetrics.recordPhase("scan", elapsedMs);
+            long elapsedNanos = System.nanoTime() - startNanos;
+            PerfMetrics.recordPhase("scan", elapsedNanos);
+            PerfMetrics.recordTick(elapsedNanos);
             if (PerfMetrics.shouldReport()) {
                 PerfMetrics.printReport();
             }
@@ -283,19 +331,19 @@ public class ContainerLivingItemHandler {
         }
 
         long scanEndNanos = System.nanoTime();
-        PerfMetrics.recordPhase("scan", (scanEndNanos - startNanos) / 1_000_000);
+        PerfMetrics.recordPhase("scan", scanEndNanos - startNanos);
 
         for (var entry : grouped.entrySet()) {
             entry.getKey().tick(entry.getValue(), context, tick, level);
         }
 
         long funcTickEndNanos = System.nanoTime();
-        PerfMetrics.recordPhase("func_tick", (funcTickEndNanos - scanEndNanos) / 1_000_000);
+        PerfMetrics.recordPhase("func_tick", funcTickEndNanos - scanEndNanos);
 
         EnderChannelRegistry.getInstance().flushDirtyChannels();
 
         long flushChEndNanos = System.nanoTime();
-        PerfMetrics.recordPhase("flush_channels", (flushChEndNanos - funcTickEndNanos) / 1_000_000);
+        PerfMetrics.recordPhase("flush_channels", flushChEndNanos - funcTickEndNanos);
 
         List<Map.Entry<LivingItemFunction, List<LivingItemFunction.SlotEntry>>> hcdEntries = new ArrayList<>();
         for (var entry : grouped.entrySet()) {
@@ -310,7 +358,7 @@ public class ContainerLivingItemHandler {
         }
 
         long containerDataEndNanos = System.nanoTime();
-        PerfMetrics.recordPhase("container_data", (containerDataEndNanos - flushChEndNanos) / 1_000_000);
+        PerfMetrics.recordPhase("container_data", containerDataEndNanos - flushChEndNanos);
 
         ContainerStressData stressData = tick.stressData;
         if (stressData != null && context instanceof SimpleContainerContext simpleCtx) {
@@ -325,9 +373,11 @@ public class ContainerLivingItemHandler {
         }
 
         ContainerFluidData fluidData = tick.fluidData;
-        String containerKey = context.getContainerKey();
-        if (fluidData != null && fluidData.isEmpty() && containerKey != null) {
-            FLUID_DATA_CACHE.remove(containerKey);
+        if (fluidData != null && fluidData.isEmpty()) {
+            String fluidKey = cacheKey(context);
+            if (fluidKey != null) {
+                FLUID_DATA_CACHE.remove(fluidKey);
+            }
         }
 
         cleanupCounter++;
@@ -336,10 +386,11 @@ public class ContainerLivingItemHandler {
             long currentTimeMs = System.currentTimeMillis();
             cleanupStaleFluidData(currentTimeMs);
             cleanupStaleRedstoneData(currentTimeMs);
+            cleanupStalePosIndex();
         }
 
         long stressEndNanos = System.nanoTime();
-        PerfMetrics.recordPhase("stress", (stressEndNanos - containerDataEndNanos) / 1_000_000);
+        PerfMetrics.recordPhase("stress", stressEndNanos - containerDataEndNanos);
 
         if (context instanceof SimpleContainerContext simpleCtx2) {
             simpleCtx2.flushDirtySlots();
@@ -347,12 +398,9 @@ public class ContainerLivingItemHandler {
         }
 
         long flushSlotsEndNanos = System.nanoTime();
-        PerfMetrics.recordPhase("flush_slots", (flushSlotsEndNanos - stressEndNanos) / 1_000_000);
+        PerfMetrics.recordPhase("flush_slots", flushSlotsEndNanos - stressEndNanos);
 
-        long elapsedMs = (flushSlotsEndNanos - startNanos) / 1_000_000;
-
-        // 记录 tick 耗时
-        PerfMetrics.recordTick(elapsedMs);
+        PerfMetrics.recordTick(flushSlotsEndNanos - startNanos);
 
         // 检查是否需要打印报告
         if (PerfMetrics.shouldReport()) {

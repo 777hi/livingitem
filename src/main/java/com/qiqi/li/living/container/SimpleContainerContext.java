@@ -351,14 +351,14 @@ public class SimpleContainerContext implements ContainerContext {
      */
     ContainerFluidData getOrCreateFluidData() {
         if (fluidData == null) {
-            fluidData = ContainerLivingItemHandler.getFluidData(containerKey);
+            fluidData = ContainerLivingItemHandler.getFluidData(this);
         }
         return fluidData;
     }
 
     public ContainerRedstoneData getOrCreateRedstoneData() {
         if (redstoneData == null) {
-            redstoneData = ContainerLivingItemHandler.getRedstoneData(containerKey);
+            redstoneData = ContainerLivingItemHandler.getRedstoneData(this);
         }
         return redstoneData;
     }

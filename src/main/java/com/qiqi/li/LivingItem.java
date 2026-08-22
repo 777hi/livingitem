@@ -22,6 +22,7 @@ import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
+import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.neoforge.event.level.ChunkEvent;
 import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.capabilities.Capabilities;
@@ -337,6 +338,20 @@ public class LivingItem {
         EnderChannelRegistry.getInstance()
             .setServer(event.getServer());
         LOGGER.info("HELLO from server starting");
+    }
+
+    /**
+     * 服务端关闭 —— 清空全部进程级静态缓存。
+     *
+     * <p>单人游戏中「退出存档 → 进入另一个存档」不会重启 JVM，
+     * 若不清理会把上一个世界的路由表、区块缓存与容器级数据带入新世界。</p>
+     */
+    @SubscribeEvent
+    public void onServerStopped(ServerStoppedEvent event) {
+        EnderChannelRegistry.getInstance().clearAll();
+        ContainerChunkCache.getInstance().clear();
+        ContainerLivingItemHandler.clearAllCaches();
+        LOGGER.info("Cleared living item caches on server stop");
     }
 
     private void onRegisterCapabilities(RegisterCapabilitiesEvent event) {

@@ -12,13 +12,15 @@ import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
 import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.api.HasContainerData;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.components.ExplosionComponent;
+import com.qiqi.li.living.domain.redstone.ContainerRedstoneData;
 import com.qiqi.li.living.domain.tnt.ExplosionData;
 import com.qiqi.li.living.domain.tnt.LivingTntData;
 
-public class LivingTntFunction implements LivingItemFunction {
+public class LivingTntFunction implements LivingItemFunction, HasContainerData {
 
     public static final String ID = "living_tnt";
 
@@ -34,15 +36,28 @@ public class LivingTntFunction implements LivingItemFunction {
     public void tick(List<SlotEntry> entries, ContainerContext context, TickContext tick, Level level) {
         if (level.isClientSide) return;
 
+        ContainerRedstoneData redstoneData = tick.getOrCreateRedstoneData(context);
+        int size = context.getSize();
+        int width = context.getWidth();
+
         for (SlotEntry entry : entries) {
             int slot = entry.slotIndex();
-            if (slot < 0 || slot >= context.getSize()) continue;
+            if (slot < 0 || slot >= size) continue;
 
             ItemStack stack = entry.stack();
             LivingTntData data = LivingItemManager.getTntData(stack);
             ExplosionData explosion = data.explosion();
 
-            if (!explosion.ignited()) continue;
+            if (!explosion.ignited()) {
+                int signal = redstoneData.getSlotSignal(slot, size, width);
+                if (signal > 0) {
+                    explosion = explosion.ignite();
+                    LivingItemManager.setTntData(stack, data.withExplosion(explosion));
+                    context.syncSlotToClients(slot, stack);
+                    continue;
+                }
+                continue;
+            }
 
             explosion = explosion.tick();
 
@@ -96,5 +111,16 @@ public class LivingTntFunction implements LivingItemFunction {
         if (data.explosion().ignited()) return false;
         LivingItemManager.setTntData(tntStack, data.withExplosion(data.explosion().ignite(80)));
         return true;
+    }
+
+    @Override
+    public int getPriority() {
+        return 1;
+    }
+
+    @Override
+    public void tickContainerData(List<SlotEntry> entries, ContainerContext ctx, TickContext tick) {
+        ContainerRedstoneData redstoneData = tick.getOrCreateRedstoneData(ctx);
+        redstoneData.calculate(ctx, tick);
     }
 }

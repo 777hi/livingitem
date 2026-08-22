@@ -1,8 +1,8 @@
 # Living Item (活物品)
 
 **Minecraft 1.21.1 + NeoForge 21.1.x**
-*最后更新: 2026-08-17*
-*状态: Alpha 测试阶段 - v8.1 接口化重构完成*
+*最后更新: 2026-08-22*
+*状态: Alpha 测试阶段 - v8.1 接口化重构完成 + 框架审查修复*
 
 ---
 
@@ -26,7 +26,7 @@
 - **活水车**：应力产生类活物品，软依赖 Create，3D 旋转渲染
 - **活地图传送**：活末影珍珠 + 活地图，三种场景 + UV 精确传送 + 跨维度 + 载具 + Sable 飞艇兼容
 - **接口化扩展**：`HasDirection`（WASD 朝向配置）+ `HasContainerData`（容器级数据计算），新增活物品无需修改核心文件
-- **活红石系统**：活红石粉（信号传播）+ 活红石火把（反相器 + 朝向配置）+ 活按钮/活拉杆/活红石灯
+- **活红石系统**：活红石粉（信号传播）+ 活红石火把（反相器）+ 活按钮/活拉杆/活红石灯 + 活中继器/活比较器/活红石块，支持与世界红石双向互通
 
 ---
 
@@ -53,6 +53,7 @@ LivingItemFunction.tick() (各功能类自行实现 tick 逻辑)
     ├── LivingRedstoneFunction   → LivingRedstoneData
     ├── LivingRedstoneTorchFunction → LivingRedstoneTorchData
     └── LivingButtonFunction / LivingLeverFunction / LivingRedstoneLampFunction
+        LivingRepeaterFunction / LivingComparatorFunction / LivingRedstoneBlockFunction
     ↓
 容器级数据计算（HasContainerData 接口，按优先级排序）
     ├── LivingWaterBucketFunction  (prio 0) — 流体蔓延 + postTickSync
@@ -60,10 +61,13 @@ LivingItemFunction.tick() (各功能类自行实现 tick 逻辑)
     ├── LivingRedstoneFunction     (prio 2) — 红石信号传播
     └── LivingRedstoneTorchFunction(prio 2) — 红石信号传播（火把独立时）
     ↓
-ContainerContext (组合接口) → TickContext (tick 级临时状态 + 脏槽位批量同步 + Map 扩展)
+ContainerContext (组合接口) → TickContext (tick 级临时状态 + 脏槽位批量同步)
     ↓
 SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 ```
+
+> 容器级流体/红石数据由 `ContainerLivingItemHandler` 以「维度+containerKey」为键跨 tick 持久化，
+> 并维护「位置 → 缓存键」反向索引供 mixin 热路径 O(1) 查询。
 
 > 📄 基础设施详见 [living-item-infrastructure.md](docs/system-design/living-item-infrastructure.md)
 > 📄 数据模型与设计决策详见 [data-model.md](docs/system-design/data-model.md)
@@ -110,9 +114,9 @@ src/main/java/com/qiqi/li/
 │   │
 │   ├── container/                           # 容器抽象层（跨活物品共享基础设施）
 │   │   ├── ContainerContext.java            #   组合接口
-│   │   ├── TickContext.java                 #   Tick 级临时状态（对象池复用 + 脏槽位集合）
+│   │   ├── TickContext.java                 #   Tick 级临时状态（每 tick 新建 + 脏槽位集合）
 │   │   ├── SimpleContainerContext.java      #   容器上下文实现（脏槽位批量同步）
-│   │   ├── ContainerLivingItemHandler.java  #   容器扫描、分组调度（TickContext 生命周期管理）
+│   │   ├── ContainerLivingItemHandler.java  #   容器扫描、分组调度、容器级数据缓存（含位置反向索引）
 │   │   ├── ContainerChunkCache.java         #   区块级容器缓存
 │   │   ├── ContainerSnapshot.java           #   容器快照（过滤构建委托 HopperFilterBuilder）
 │   │   ├── ContainerSync.java               #   容器同步
@@ -173,6 +177,7 @@ src/main/java/com/qiqi/li/
 │   │   │
 │   │   └── map/                              #   活地图传送领域
 │   │       ├── LivingEnderPearlFunction.java #     活末影珍珠（纯工具类）
+│   │       ├── LivingMapFunction.java        #     活空地图
 │   │       ├── MapTeleportExecutor.java      #     传送执行器
 │   │       ├── TeleportHelper.java           #     传送工具类
 │   │       ├── MapCoordHelper.java           #     坐标转换工具类
@@ -187,9 +192,17 @@ src/main/java/com/qiqi/li/
 │   │   ├── LivingButtonFunction.java         #     活按钮
 │   │   ├── LivingLeverFunction.java          #     活拉杆
 │   │   ├── LivingRedstoneLampFunction.java   #     活红石灯
+│   │   ├── LivingRepeaterFunction.java       #     活中继器
+│   │   ├── LivingComparatorFunction.java     #     活比较器
+│   │   ├── LivingRedstoneBlockFunction.java  #     活红石块
 │   │   ├── LivingRedstoneData.java           #     活红石粉数据
 │   │   ├── LivingRedstoneTorchData.java      #     活红石火把数据
-│   │   └── ContainerRedstoneData.java        #     容器级红石信号数据
+│   │   ├── LivingButtonData.java             #     活按钮数据
+│   │   ├── LivingLeverData.java              #     活拉杆数据
+│   │   ├── LivingRedstoneLampData.java       #     活红石灯数据
+│   │   ├── LivingRepeaterData.java           #     活中继器数据
+│   │   ├── LivingComparatorData.java         #     活比较器数据
+│   │   └── ContainerRedstoneData.java        #     容器级红石信号数据（EdgeGrid + 边界信号）
 │   │
 │   ├── function/                             # 简单活物品功能（无需领域模块）
 │   │   └── LivingFlintAndSteelFunction.java  #   活打火石（交互触发器）
@@ -222,9 +235,11 @@ src/main/java/com/qiqi/li/
 │   │   └── SlotMapping.java                 #   不可变槽位映射
 │   │
 │   ├── mixin/                               # 服务端 Mixin
-│   │   ├── AbstractContainerScreenMixin.java #  容器界面（活按钮+交互+活地图渲染）
 │   │   ├── ItemStackMixin.java              #   活箱子堆叠操作拦截
 │   │   ├── MapItemMixin.java                #   活空地图扩展
+│   │   ├── ServerPlaceRecipeMixin.java      #   配方放置拦截
+│   │   ├── BlockStateBaseMixin.java         #   容器边界红石信号输出
+│   │   ├── RedStoneWireBlockMixin.java      #   红石线连接到活容器
 │   │   └── create/                          #   Create Mixin（条件加载）
 │   │
 │   └── perf/                                # 性能监控
@@ -259,7 +274,9 @@ src/main/java/com/qiqi/li/
     ├── CarriedUpdatePacket.java             #   光标更新包
     ├── LivingTagPacket.java                 #   活物品标签切换包
     ├── HopperDirectionPacket.java           #   漏斗方向配置包
+    ├── SlotDirectionPacket.java             #   通用槽位方向配置包
     ├── EnderChannelSyncPacket.java          #   末影箱频道同步包
+    ├── LivingChestAccessPacket.java         #   活箱子访问包
     ├── LivingMapGuiTeleportPacket.java      #   活地图 GUI 传送包
     ├── LivingMapMetadataPacket.java         #   活地图元数据包
     └── ServerPacketHandler.java             #   服务端包处理
@@ -276,9 +293,11 @@ src/main/java/com/qiqi/li/
 - [x] 多活物品并行处理（按功能分组）
 - [x] 不可变数据模型（Java Record + `withXxx()`）
 - [x] 活物品隔离（不传输/不熔炼/不作为燃料）
-- [x] TickContext 对象池（ThreadLocal，命中率 ~87%）
 - [x] 脏槽位批量同步机制（`TickContext.dirtySlots`）
-- [x] 性能监控指标系统（`PerfMetrics`）
+- [x] 性能监控指标系统（`PerfMetrics`，纳秒精度）
+- [x] 容器级数据位置反向索引（`POS_TO_CACHE_KEY`，mixin 热路径 O(1) 查询）
+- [x] 容器数据缓存键含维度（跨维度同坐标容器隔离）
+- [x] 服务端关闭统一清理静态缓存（跨存档隔离）
 - [x] 包结构领域内聚（`domain/` 替代 `data/` + `function/`）
 - [x] `TransferPipeline` 统一传输入口
 - [x] `EnderRouteManager` 路由逻辑集中
@@ -295,11 +314,15 @@ src/main/java/com/qiqi/li/
 - [x] 各功能完整实现（详见对应 tech 文档）
 
 ### 活红石
-- [x] 活红石粉：信号传播（BFS，每 2 tick）+ 堆叠数 × 15 信号强度
+- [x] 活红石粉：信号传播（BFS，每 2 tick）+ 堆叠数影响信号上限
 - [x] 活红石火把：反相器 + 四方向朝向配置（WASD）
 - [x] 活按钮：触发型信号源
 - [x] 活拉杆：持续型信号源
 - [x] 活红石灯：信号可视化输出
+- [x] 活中继器：延迟 + 单向导通
+- [x] 活比较器：读取活物品状态（`LivingItemFunction.getComparatorOutput`）
+- [x] 活红石块：恒定信号源
+- [x] 容器边界信号双向互通（`BlockStateBaseMixin` + `RedStoneWireBlockMixin`）
 
 ### 活箱子
 - [x] 堆叠倍增模型 + UUID 映射 + LRU 缓存 + 磁盘持久化
@@ -341,9 +364,18 @@ src/main/java/com/qiqi/li/
 
 ### 当前版本: v0.9-alpha
 
+**最近更新** (2026-08-22):
+- ✅ 修复：容器级数据缓存键补齐维度，消除跨维度同坐标容器串数据
+- ✅ 修复：`grouped.isEmpty()` 分支门禁失效（`getSize()` 恒为 0），残留边界红石信号现可正确归零
+- ✅ 优化：新增位置→缓存键反向索引，mixin 热路径（`getSignal` / `getConnectingSide`）从正则全表扫描降为 O(1)
+- ✅ 修复：`APPLICABLE_CACHE` 改用 `ConcurrentHashMap`，消除单人游戏双线程并发写风险
+- ✅ 新增：`ServerStoppedEvent` 统一清理静态缓存，避免跨存档状态残留
+- ✅ 优化：`PerfMetrics` 全面改用纳秒累计，修复亚毫秒耗时被整数除法归零的问题
+- ✅ 清理：删除 `TickContext` 未使用的泛型扩展点
+
 **最近更新** (2026-08-17):
 - ✅ 重构：接口化设计 — `HasDirection` 接口统一 WASD 朝向配置，`HasContainerData` 接口统一容器级数据计算
-- ✅ 重构：`TickContext` Map 扩展，新增容器级数据类型无需修改 `TickContext` 字段
+- ✅ 重构：`TickContext` 每 tick 新建（对象小、生命周期短，JVM 年轻代可高效回收）
 - ✅ 优化：新增活物品从修改 6 个文件减少到 2 个文件
 - ✅ 更新：全部文档同步至 v8.1 架构
 
