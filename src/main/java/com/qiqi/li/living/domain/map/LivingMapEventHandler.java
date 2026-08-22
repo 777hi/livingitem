@@ -18,19 +18,42 @@ import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 import com.qiqi.li.network.LivingMapMetadataPacket;
 
 import javax.annotation.Nullable;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
 
 public final class LivingMapEventHandler {
+
+    /**
+     * 已发送给各玩家的地图元数据快照，key 为玩家 UUID，value 为最近一次发送的包。
+     * <p>MapItemSavedData 的 centerX/centerZ/dimension/scale 均为 final，同一 mapId 的
+     * 元数据恒定不变，因此只在内容变化（切换地图、跨维度）时才需要发送。
+     */
+    private static final Map<UUID, LivingMapMetadataPacket> lastSentMetadata = new HashMap<>();
 
     private LivingMapEventHandler() {}
 
     public static void register() {
         NeoForge.EVENT_BUS.register(LivingMapEventHandler.class);
+    }
+
+    @SubscribeEvent
+    public static void onServerStopped(ServerStoppedEvent event) {
+        lastSentMetadata.clear();
+        StructureMapDecorator.reset();
+    }
+
+    @SubscribeEvent
+    public static void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
+        lastSentMetadata.remove(event.getEntity().getUUID());
     }
 
     @SubscribeEvent
@@ -47,12 +70,16 @@ public final class LivingMapEventHandler {
         MapItemSavedData mapData = MapItem.getSavedData(mapId, player.serverLevel());
         if (mapData == null) return;
 
-        PacketDistributor.sendToPlayer(player, new LivingMapMetadataPacket(
+        LivingMapMetadataPacket packet = new LivingMapMetadataPacket(
             mapId.id(),
             mapData.centerX,
             mapData.centerZ,
             mapData.dimension.location().toString()
-        ));
+        );
+        if (!packet.equals(lastSentMetadata.get(player.getUUID()))) {
+            lastSentMetadata.put(player.getUUID(), packet);
+            PacketDistributor.sendToPlayer(player, packet);
+        }
 
         StructureMapDecorator.scanStructuresLazy(player.serverLevel(), player, mapStack, mapData);
     }

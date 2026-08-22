@@ -111,6 +111,34 @@ public class AbstractContainerScreenMixin extends Screen {
     @Unique
     private static final int living_item$MAP_BACKDROP_COLOR = 0xFFD6BE96;
 
+    /**
+     * 扩展地图底图的 z 深度。物品模型 z=150、原版堆叠数文字 z=200，需高于两者。
+     */
+    @Unique
+    private static final int living_item$MAP_BASE_Z = 300;
+
+    /**
+     * 装饰图标相对底图的 z 抬升量。
+     * <p>GUI 坐标系 z 越大越靠前，而 RenderType.text 带 LEQUAL 深度测试，
+     * 底图已写入 z=300，因此装饰必须整体抬到底图之上，且预留足够余量容纳
+     * MapItemSavedData.TRACKED_DECORATION_LIMIT(256) 个装饰的层间步进。
+     */
+    @Unique
+    private static final int living_item$DECORATION_Z_OFFSET = 2;
+
+    /**
+     * 装饰之间的 z 步进（正向递增，后绘制的更靠前），对齐原版 MapRenderer 的 0.001 量级。
+     * 256 个装饰共占 0.256，不会溢出 living_item$DECORATION_Z_OFFSET 的余量。
+     */
+    @Unique
+    private static final float living_item$DECORATION_Z_STEP = 0.001F;
+
+    /**
+     * GUI 十字准心的 z 深度，需高于底图与所有装饰图标。
+     */
+    @Unique
+    private static final int living_item$MARKER_Z = 4;
+
     @Inject(method = "mouseClicked", at = @At("HEAD"), cancellable = true)
     private void living_item$interceptMouseClicked(double mouseX, double mouseY, int button, CallbackInfoReturnable<Boolean> cir) {
         living_item$updateMapGroups();
@@ -220,7 +248,7 @@ public class AbstractContainerScreenMixin extends Screen {
         int areaSize = group.n() * LivingMapLayout.SLOT_SIZE;
 
         guiGraphics.pose().pushPose();
-        guiGraphics.pose().translate(0, 0, 300);
+        guiGraphics.pose().translate(0, 0, living_item$MAP_BASE_Z);
 
         guiGraphics.fill(areaX, areaY, areaX + areaSize, areaY + areaSize, living_item$MAP_BACKDROP_COLOR);
         guiGraphics.blit(tex.location, areaX, areaY, 0, 0, areaSize, areaSize, areaSize, areaSize);
@@ -241,7 +269,7 @@ public class AbstractContainerScreenMixin extends Screen {
                 float markerY = areaY + (mapY * pixelSize);
 
                 LivingMapTargetRenderer.renderMarkerGui(guiGraphics, markerX, markerY,
-                    explored, decoHit, pixelSize);
+                    explored, decoHit, pixelSize, living_item$MARKER_Z);
             }
         }
 
@@ -255,14 +283,14 @@ public class AbstractContainerScreenMixin extends Screen {
         int index = 0;
 
         guiGraphics.pose().pushPose();
-        guiGraphics.pose().translate(areaX, areaY, 1);
+        guiGraphics.pose().translate(areaX, areaY, living_item$DECORATION_Z_OFFSET);
 
         for (MapDecoration deco : mapData.getDecorations()) {
             float decoX = ((float) deco.x() / 2.0F + 64.0F) * scale;
             float decoY = ((float) deco.y() / 2.0F + 64.0F) * scale;
 
             guiGraphics.pose().pushPose();
-            guiGraphics.pose().translate(decoX, decoY, (float) index * -0.01F);
+            guiGraphics.pose().translate(decoX, decoY, (float) index * living_item$DECORATION_Z_STEP);
             guiGraphics.pose().mulPose(Axis.ZP.rotationDegrees((float) (deco.rot() * 360) / 16.0F));
             float decoSize = 4.0F * scale;
             guiGraphics.pose().scale(decoSize, decoSize, 1.0F);

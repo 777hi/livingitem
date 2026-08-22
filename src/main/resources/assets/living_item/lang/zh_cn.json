@@ -78,6 +78,7 @@
   "tooltip.livingitem.repeater.powered": "  §c§l有输入信号",
   "tooltip.livingitem.repeater.unpowered": "  §8无输入信号",
   "tooltip.livingitem.repeater.delay_timer": "  §7延迟计时器",
+  "tooltip.livingitem.repeater.locked": "  §6§l已锁定",
   "tooltip.livingitem.repeater.max_signal": "  §7最大信号",
 
   "tooltip.livingitem.comparator.title": "§6活比较器§r",

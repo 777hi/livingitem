@@ -41,8 +41,6 @@ public class ItemInHandRendererMixin {
         if (metadata == null) return;
 
         int[] target = MapCoordHelper.calcClientTarget(mapData, metadata, this.minecraft.player);
-        if (target == null) return;
-
         int targetMapX = target[0];
         int targetMapY = target[1];
 

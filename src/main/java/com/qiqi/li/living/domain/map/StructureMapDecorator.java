@@ -49,6 +49,22 @@ public final class StructureMapDecorator {
 
     private StructureMapDecorator() {}
 
+    /**
+     * 清空全部静态缓存，必须在服务器停止时调用。
+     * <p>三个缓存都持有与单个存档绑定的数据：
+     * <ul>
+     *   <li>{@code structureIconMap}/{@code undergroundStructureSet} 持有 {@link Holder} 引用，
+     *       其 equals 依赖 ResourceKey 的引用相等，跨存档复用会导致查找全部失效（图标退化为靶心），
+     *       同时强引用旧 Registry 阻止其被回收。</li>
+     *   <li>{@code SCANNED_CHUNKS} 的 key 是单调递增且永不复用的 mapId，不清理会无界增长。</li>
+     * </ul>
+     */
+    public static void reset() {
+        structureIconMap = null;
+        undergroundStructureSet = null;
+        SCANNED_CHUNKS.clear();
+    }
+
     public static void scanStructuresLazy(ServerLevel level, ServerPlayer player, ItemStack mapStack, MapItemSavedData data) {
         MapId mapIdObj = mapStack.get(DataComponents.MAP_ID);
         if (mapIdObj == null) return;
@@ -94,8 +110,10 @@ public final class StructureMapDecorator {
             }
         }
 
-        structureIconMap = Map.copyOf(iconMap);
+        // undergroundStructureSet 必须先赋值：structureIconMap 非 null 是构建完成的判定条件，
+        // 若顺序颠倒会出现 structureIconMap 已就绪而 undergroundStructureSet 仍为 null 的窗口
         undergroundStructureSet = Set.copyOf(undergroundSet);
+        structureIconMap = Map.copyOf(iconMap);
     }
 
     private static boolean isUndergroundStep(GenerationStep.Decoration step) {

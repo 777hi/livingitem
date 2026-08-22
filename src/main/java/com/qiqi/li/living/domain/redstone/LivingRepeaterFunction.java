@@ -82,6 +82,11 @@ public class LivingRepeaterFunction implements LivingItemFunction, HasDirection,
                 .withStyle(ChatFormatting.DARK_GRAY));
         }
 
+        if (data.locked()) {
+            tooltipAdder.accept(Component.translatable("tooltip.livingitem.repeater.locked")
+                .withStyle(ChatFormatting.GOLD));
+        }
+
         tooltipAdder.accept(Component.translatable("tooltip.livingitem.repeater.max_signal")
             .append(Component.literal(": " + signalCap))
             .withStyle(ChatFormatting.GRAY));

@@ -12,10 +12,12 @@ import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.api.HasDirection;
 import com.qiqi.li.living.domain.hopper.LivingHopperFunction;
 import com.qiqi.li.living.domain.hopper.DirectionTransferData;
+import com.qiqi.li.living.domain.map.LivingMapClientCache;
 import com.qiqi.li.living.model.Pos2D;
 import com.qiqi.li.living.model.SlotMapping;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
 import com.qiqi.li.LivingItem;
@@ -61,6 +63,14 @@ public class LivingItemInputHandler {
     /** 当前活跃的输入会话 */
     private static InputSession currentSession = null;
     private static DirectionSession directionSession = null;
+
+    /**
+     * 断开连接时清空活地图元数据缓存，避免切换存档/服务器后残留旧 mapId 的中心坐标。
+     */
+    @SubscribeEvent
+    public static void onClientLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
+        LivingMapClientCache.clear();
+    }
 
     /**
      * 监听字符输入事件。

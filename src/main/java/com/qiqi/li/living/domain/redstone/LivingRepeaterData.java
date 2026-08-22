@@ -16,17 +16,19 @@ public record LivingRepeaterData(
     Pos2D direction,
     int delay,
     boolean powered,
-    int delayTimer
+    int delayTimer,
+    boolean locked
 ) implements TooltipProvider {
 
-    public static final LivingRepeaterData DEFAULT = new LivingRepeaterData(Pos2D.UP, 1, false, 0);
+    public static final LivingRepeaterData DEFAULT = new LivingRepeaterData(Pos2D.UP, 1, false, 0, false);
 
     public static final Codec<LivingRepeaterData> CODEC = RecordCodecBuilder.create(instance ->
         instance.group(
             Pos2D.CODEC.fieldOf("direction").forGetter(LivingRepeaterData::direction),
             Codec.INT.fieldOf("delay").forGetter(LivingRepeaterData::delay),
             Codec.BOOL.fieldOf("powered").forGetter(LivingRepeaterData::powered),
-            Codec.INT.fieldOf("delay_timer").forGetter(LivingRepeaterData::delayTimer)
+            Codec.INT.fieldOf("delay_timer").forGetter(LivingRepeaterData::delayTimer),
+            Codec.BOOL.optionalFieldOf("locked", false).forGetter(LivingRepeaterData::locked)
         ).apply(instance, LivingRepeaterData::new)
     );
 
@@ -35,23 +37,28 @@ public record LivingRepeaterData(
         ByteBufCodecs.INT, LivingRepeaterData::delay,
         ByteBufCodecs.BOOL, LivingRepeaterData::powered,
         ByteBufCodecs.INT, LivingRepeaterData::delayTimer,
+        ByteBufCodecs.BOOL, LivingRepeaterData::locked,
         LivingRepeaterData::new
     );
 
     public LivingRepeaterData withDirection(Pos2D dir) {
-        return new LivingRepeaterData(dir, delay, powered, delayTimer);
+        return new LivingRepeaterData(dir, delay, powered, delayTimer, locked);
     }
 
     public LivingRepeaterData withDelay(int newDelay) {
-        return new LivingRepeaterData(direction, newDelay, powered, delayTimer);
+        return new LivingRepeaterData(direction, newDelay, powered, delayTimer, locked);
     }
 
     public LivingRepeaterData withPowered(boolean p) {
-        return new LivingRepeaterData(direction, delay, p, delayTimer);
+        return new LivingRepeaterData(direction, delay, p, delayTimer, locked);
     }
 
     public LivingRepeaterData withDelayTimer(int timer) {
-        return new LivingRepeaterData(direction, delay, powered, timer);
+        return new LivingRepeaterData(direction, delay, powered, timer, locked);
+    }
+
+    public LivingRepeaterData withLocked(boolean l) {
+        return new LivingRepeaterData(direction, delay, powered, delayTimer, l);
     }
 
     @Override

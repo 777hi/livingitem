@@ -79,21 +79,27 @@ public class LivingEnderPearlFunction implements LivingItemFunction {
         return total;
     }
 
-    public static void consumeFromInventory(ServerPlayer player, int amount) {
+    /**
+     * 从背包（主背包 + 副手）中消耗指定数量的活末影珍珠。
+     *
+     * @return 实际消耗的数量。背包不足时小于 {@code amount}，调用方需据此判断扣费是否完整
+     */
+    public static int consumeFromInventory(ServerPlayer player, int amount) {
         int remaining = amount;
         for (ItemStack stack : player.getInventory().items) {
             if (!isLivingEnderPearl(stack)) continue;
             int take = Math.min(remaining, stack.getCount());
             stack.shrink(take);
             remaining -= take;
-            if (remaining <= 0) return;
+            if (remaining <= 0) return amount;
         }
         for (ItemStack stack : player.getInventory().offhand) {
             if (!isLivingEnderPearl(stack)) continue;
             int take = Math.min(remaining, stack.getCount());
             stack.shrink(take);
             remaining -= take;
-            if (remaining <= 0) return;
+            if (remaining <= 0) return amount;
         }
+        return amount - remaining;
     }
 }

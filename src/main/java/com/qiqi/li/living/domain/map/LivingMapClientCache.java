@@ -34,10 +34,9 @@ public final class LivingMapClientCache {
         return cache.get(mapId);
     }
 
-    public static void remove(int mapId) {
-        cache.remove(mapId);
-    }
-
+    /**
+     * 清空缓存，在客户端断开连接时调用，避免切换存档/服务器后残留旧 mapId 的中心坐标。
+     */
     public static void clear() {
         cache.clear();
     }

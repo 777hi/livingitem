@@ -191,8 +191,15 @@ public final class TeleportHelper {
     private static void consumePearl(ServerPlayer player, ItemStack pearlStack, boolean unexplored) {
         if (player.isCreative()) return;
         if (unexplored) {
-            // 未探索传送：从背包中消耗指定数量珍珠
-            LivingEnderPearlFunction.consumeFromInventory(player, MapTeleportExecutor.UNEXPLORED_PEARL_COST);
+            // 未探索传送：从背包中消耗指定数量珍珠。
+            // 前置检查在 MapTeleportExecutor 中完成，但此后经历了 changeDimension 与 hurt(fall)，
+            // 期间背包可能被外部修改（其他 mod 监听伤害事件、玩家死亡掉落），故需校验实扣数量
+            int cost = MapTeleportExecutor.UNEXPLORED_PEARL_COST;
+            int consumed = LivingEnderPearlFunction.consumeFromInventory(player, cost);
+            if (consumed < cost) {
+                ModLog.TELEPORT.warn("Unexplored teleport underpaid: player={} expected={} consumed={}",
+                    player.getGameProfile().getName(), cost, consumed);
+            }
         } else {
             // 普通传送：消耗1个手持珍珠
             pearlStack.shrink(1);

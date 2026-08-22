@@ -51,7 +51,7 @@
 │          ▼                              ▼                           │
 │  ┌──────────────────┐         ┌──────────────────────────┐        │
 │  │ LivingMapMetadata│         │ LivingMapEventHandler    │        │
-│  │ Packet (每秒1次)  │         │ .onRightClickItem        │        │
+│  │ Packet (变化时发) │         │ .onRightClickItem        │        │
 │  │ mapId, centerX,  │         │                          │        │
 │  │ centerZ, dimKey  │         │ 1. 检查活地图+活珍珠      │        │
 │  └──────────────────┘         │ 2. getTargetFromYawPitch │        │
@@ -439,11 +439,11 @@ public record LivingMapMetadataPacket(
 
 ```java
 // LivingMapEventHandler.onPlayerTick()
-// 每秒1次（player.tickCount % 20 == 0）
-// 仅当玩家手持活地图时发送
+// 每秒检查1次（player.tickCount % 20 == 0）
+// 仅当玩家手持活地图，且包内容与上次发送的不同时才发送
 ```
 
-低频同步（每秒1次），流量极小。客户端收到后缓存到 `LivingMapClientCache`，每帧渲染时直接读取缓存，无网络延迟。
+`MapItemSavedData` 的 `centerX`/`centerZ`/`dimension`/`scale` 全为 `final`，同一 mapId 的元数据恒定不变，因此按玩家 UUID 缓存上次发送的包，只在换图或跨维度时才真正发送。稳态下零流量。客户端收到后缓存到 `LivingMapClientCache`，每帧渲染时直接读取缓存，无网络延迟。
 
 ### 6.4 客户端缓存
 
@@ -1104,19 +1104,19 @@ compileOnly files("libs/sable-companion-common-1.21.1-1.6.0.jar")  // JarJar 嵌
 
 | 类名 | 文件位置 | 职责 |
 |------|---------|------|
-| `MapCoordHelper` | `domain/map/MapCoordHelper.java` | 坐标计算核心：射线-矩形相交、视角映射、像素↔世界坐标转换、旗帜命中检测、hitVec→UV转换、客户端目标计算（`calcClientTarget`） |
+| `MapCoordHelper` | `domain/map/MapCoordHelper.java` | 坐标计算核心：射线-矩形相交、视角映射、像素↔世界坐标转换、旗帜命中检测、hitVec→UV转换。私有 `calcTarget` 是准心与落点的唯一真源，服务端 `getTargetFromYawPitch` 与客户端 `calcClientTarget` 均委派给它 |
 | `MapTeleportExecutor` | `domain/map/MapTeleportExecutor.java` | 传送决策链：统一处理"旗帜→宝藏→已探索区域→未探索区域"的传送优先级和消息发送，未探索区域需消耗一组（16个）珍珠，消除手持/展示框/容器三处重复逻辑 |
-| `LivingMapEventHandler` | `domain/map/LivingMapEventHandler.java` | 事件处理入口：右键传送事件拦截、活空地图创建（`handleLivingMapCreation`）、元数据同步包发送，传送逻辑委托给 `MapTeleportExecutor` |
+| `LivingMapEventHandler` | `domain/map/LivingMapEventHandler.java` | 事件处理入口：右键传送事件拦截、活空地图创建（`handleLivingMapCreation`）、元数据同步包发送（仅内容变化时发）、`ServerStoppedEvent` 触发 `StructureMapDecorator.reset()`，传送逻辑委托给 `MapTeleportExecutor` |
 | `ItemFrameMapTeleportHandler` | `domain/map/ItemFrameMapTeleportHandler.java` | 展示框传送：EntityInteractSpecific事件拦截、hitVec→像素坐标，传送逻辑委托给 `MapTeleportExecutor` |
-| `TeleportHelper` | `domain/map/TeleportHelper.java` | 传送执行：安全Y坐标、骑乘传送、跨维度传送、Sable飞艇传送、粒子/音效、伤害、冷却、珍珠消耗（已探索1个/未探索16个） |
+| `TeleportHelper` | `domain/map/TeleportHelper.java` | 传送执行：安全Y坐标、骑乘传送、跨维度传送、Sable飞艇传送、粒子/音效、伤害、冷却、珍珠消耗（已探索1个/未探索16个，实扣不足时写 warn 日志） |
 | `LivingItemManager` | `api/LivingItemManager.java` | 活物品管理：`isLivingItem()`、`isLivingMap()` 等通用判断 |
-| `LivingEnderPearlFunction` | `domain/map/LivingEnderPearlFunction.java` | 活末影珍珠功能：`isLivingEnderPearl()`、`isOnCooldown(player)`、`setCooldown(player)`、`findInInventory(player)`、`countInInventory(player)`、`consumeFromInventory(player, amount)`，冷却委托给原版 `player.getCooldowns()` |
+| `LivingEnderPearlFunction` | `domain/map/LivingEnderPearlFunction.java` | 活末影珍珠功能：`isLivingEnderPearl()`、`isOnCooldown(player)`、`setCooldown(player)`、`findInInventory(player)`、`countInInventory(player)`、`consumeFromInventory(player, amount)`（返回实际消耗数），冷却委托给原版 `player.getCooldowns()` |
 | `LivingMapMetadataPacket` | `network/LivingMapMetadataPacket.java` | 服务器→客户端网络包：同步地图元数据 |
-| `LivingMapClientCache` | `domain/map/LivingMapClientCache.java` | 客户端缓存：按 mapId 存储 centerX/centerZ/dimension |
-| `LivingMapTargetRenderer` | `client/render/LivingMapTargetRenderer.java` | 客户端渲染工具：3D准心标记渲染（`renderMarker`，原版准心纹理+四色着色）、GUI十字形光标渲染（`renderMarkerGui`，5像素十字形），供 `ItemInHandRendererMixin`、`MapRendererMixin`、`AbstractContainerScreenMixin` 共享 |
+| `LivingMapClientCache` | `domain/map/LivingMapClientCache.java` | 客户端缓存：按 mapId 存储 centerX/centerZ/dimension，LRU 上限 64，断开连接时 `clear()` |
+| `LivingMapTargetRenderer` | `client/render/LivingMapTargetRenderer.java` | 客户端渲染工具：3D准心标记渲染（`renderMarker`，原版准心纹理）、GUI十字形光标渲染（`renderMarkerGui`，5像素十字形，z=4 压过装饰），颜色由共用的 `pickColor` 按"已探索/图标命中"三色决定，供 `ItemInHandRendererMixin`、`MapRendererMixin`、`AbstractContainerScreenMixin` 共享 |
 | `ItemInHandRendererMixin` | `client/mixin/ItemInHandRendererMixin.java` | 客户端渲染：注入 renderMap 方法，3D空间中渲染目标标记 |
 | `MapRendererMixin` | `client/mixin/MapRendererMixin.java` | 客户端渲染：注入 MapRenderer.render 方法，展示框地图光标渲染 |
-| `StructureMapDecorator` | `living/domain/map/StructureMapDecorator.java` | 远程开图结构标记：懒标记（玩家靠近时扫描已加载区块），原版结构按标签映射专属图标，无专属图标的结构按生成阶段回退为 `RED_X`（地下）/ `TARGET_X`（地表） |
+| `StructureMapDecorator` | `living/domain/map/StructureMapDecorator.java` | 远程开图结构标记：懒标记（玩家靠近时扫描已加载区块），原版结构按标签映射专属图标，无专属图标的结构按生成阶段回退为 `RED_X`（地下）/ `TARGET_X`（地表）。`reset()` 清空图标映射与已扫描区块集，必须在服务器停止时调用 |
 | `ModSable` | `compat/sable/ModSable.java` | Sable 安全调用入口：类加载保护、NoClassDefFoundError 捕获 |
 | `SableCompat` | `compat/sable/SableCompat.java` | Sable 依赖检测：ModList.isLoaded("sable") |
 | `SableIntegration` | `compat/sable/SableIntegration.java` | Sable 核心逻辑：SubLevel 检测、飞艇瞬移、偏移计算 |
@@ -1177,7 +1177,7 @@ compileOnly files("libs/sable-companion-common-1.21.1-1.6.0.jar")  // JarJar 嵌
 
 **问题**：自定义线条标记与原版风格不一致。
 
-**修复**：改用 `GuiSpriteManager.getSprite("minecraft:hud/crosshair")` 获取原版准心 sprite，通过 `RenderType.text(sprite.atlasLocation())` 渲染。顶点颜色着色实现四色区分。
+**修复**：改用 `GuiSpriteManager.getSprite("minecraft:hud/crosshair")` 获取原版准心 sprite，通过 `RenderType.text(sprite.atlasLocation())` 渲染。顶点颜色着色实现状态区分（当前为三色，见 `LivingMapTargetRenderer.pickColor`）。
 
 ### v9 → v10：客户端旗帜/宝藏检测不工作
 
@@ -2549,3 +2549,122 @@ texture.getPixels().setPixelRGBA(x, y, abgr);
 | `LivingMapIconDecorator` | 缩略图 `DynamicTexture` 16×16 → 14×14，降采样 `scale` 由 `128/16` 改为 `128/14`；新增 `THUMB_Z=200`；未探索像素填充羊皮纸色；删除未使用的 `BORDER` 常量 |
 | `ExpandedMapTexture` | 新增 `UNEXPLORED_ABGR` 常量；`uploadTexture()` 替换透明像素 |
 | `AbstractContainerScreenMixin` | 垫底色 `0xFF000000` → `living_item$MAP_BACKDROP_COLOR`（羊皮纸色）。纹理现已全不透明会完全盖住它，保留仅为防止纹理未上传那一帧闪黑 |
+
+---
+
+### v53 → v54：全量代码审查修复
+
+一轮系统性审查，覆盖 `living/domain/map/` 与 `client/render/` 全部实现，共修复 12 项。以下按严重程度记录，重点是前三项功能性缺陷。
+
+#### 54.1 扩展地图装饰 z 步进方向错误（装饰数 >100 时图标消失）
+
+**现象**：扩展地图上的图标"像分两层显示"，部分不显示，边缘图标被底图切掉一角。时好时坏。
+
+**根因**：三处 z 叠加后余量不足，且步进方向反了。
+
+| 层 | 代码 | 绝对 z |
+|----|------|--------|
+| 底图 `blit` | `translate(0,0,300)` | 300 |
+| 装饰基准 | `translate(areaX, areaY, 1)` | 301 |
+| 单个装饰 | `translate(..., index * -0.01F)` | 301 − index×0.01 |
+
+`RenderType.text` 自带 `LEQUAL_DEPTH_TEST`，底图已把 z=300 写入深度缓冲。于是：
+
+- index 0–99：z ∈ (300, 301]，正常
+- index 100：z = 300.00，与底图同深度，z-fighting
+- index >100：z < 300，**被深度测试剔除**
+
+`MapItemSavedData.TRACKED_DECORATION_LIMIT = 256`，装饰数超过 100 就开始丢图标。探索进度决定装饰数量，这正是"时好时坏"的来源。
+
+**易误判点**：GUI 坐标系中 **z 越大越靠前**（物品 z=150、堆叠数 z=200、tooltip z=400）。`MapRenderer` 用 `-0.001F` 是因为它在 `translate(0,0,-0.01F)` 后的**倒转坐标系**里工作，那里负值才是朝观察者。直接照搬符号到 GUI 坐标系必然反向。
+
+**修复**：改为正向递增，并把基准余量从 1 提到 2。
+
+```java
+private static final int living_item$MAP_BASE_Z = 300;
+private static final int living_item$DECORATION_Z_OFFSET = 2;
+private static final float living_item$DECORATION_Z_STEP = 0.001F;
+
+// 装饰基准：整体抬到底图之上，预留余量
+guiGraphics.pose().translate(areaX, areaY, living_item$DECORATION_Z_OFFSET);
+// 单个装饰：正向递增，256 个仅占 0.256，稳定落在 (302, 302.256]
+guiGraphics.pose().translate(decoX, decoY, (float) index * living_item$DECORATION_Z_STEP);
+```
+
+同时 `LivingMapTargetRenderer.renderMarkerGui` 原用 `fill` 的 5 参重载（z 固定 0），绝对 z = 300 与底图同深度。改为传入 `MARKER_Z = 4`，压在装饰之上。
+
+#### 54.2 静态图标缓存跨存档不重置
+
+`StructureMapDecorator` 的三个静态字段一次构建后永不重建：
+
+```java
+private static Map<Holder<Structure>, Holder<MapDecorationType>> structureIconMap = null;
+private static Set<Holder<Structure>> undergroundStructureSet = null;
+private static final Map<Integer, Set<Long>> SCANNED_CHUNKS = new HashMap<>();
+```
+
+**两重危害**：
+
+1. **图标查找静默失效**。`Holder.Reference.equals` 用 `getKey() ==` 引用相等，而 `ResourceKey.VALUES` 是 weakValues 缓存。退出存档后旧 `ResourceKey` 若被 GC，重进存档时会 intern 出新对象 → 全部 `containsKey` miss → 所有结构退化为 `TARGET_X`，且 id 前缀一律错标 `surface_`。若未被 GC 则看似正常，故此 bug 表现随机。
+2. **内存泄漏**。`Holder` 强引用整个旧 `Registry`，阻止其回收。`SCANNED_CHUNKS` 的 key 是 vanilla 单调递增且永不复用的 `MapId.id()`，scale=4 时单张地图可攒 16384 个 boxed `Long`，全项目此前无任何清理入口。
+
+**修复**：新增 `reset()`，由 `LivingMapEventHandler` 监听 `ServerStoppedEvent` 触发。
+
+顺带修正了 `ensureIconMappingBuilt` 末尾的赋值顺序 —— `structureIconMap != null` 是构建完成的判定条件，必须**最后**赋值，否则存在 `structureIconMap` 已就绪而 `undergroundStructureSet` 仍为 null 的窗口。
+
+#### 54.3 未探索传送的珍珠扣费 TOCTOU
+
+`consumeFromInventory` 原为 `void`，背包不足时走完两个循环直接结束，已 `shrink` 的部分不回滚，调用方无从知晓。
+
+问题在于检查与扣款之间隔了两个可被外部干预的操作：
+
+```
+countInInventory >= 16  ←── MapTeleportExecutor 的前置检查
+      ↓
+changeDimension          ←── 跨维度
+      ↓
+hurt(fall, 5.0)          ←── 其他 mod 可监听此事件改背包；玩家可能死亡掉落
+      ↓
+consumeFromInventory(16) ←── 此时背包可能已不足 16
+```
+
+**修复**：改为返回实际消耗数，`TeleportHelper.consumePearl` 校验并告警。
+
+```java
+int consumed = LivingEnderPearlFunction.consumeFromInventory(player, cost);
+if (consumed < cost) {
+    ModLog.TELEPORT.warn("Unexplored teleport underpaid: player={} expected={} consumed={}",
+        player.getGameProfile().getName(), cost, consumed);
+}
+```
+
+选择告警而非回滚：此时玩家已完成传送，回滚珍珠等于免费传送，反而更糟。留日志便于事后追查。
+
+#### 54.4 双端准心公式合并为单一真源
+
+`getTargetFromYawPitch`（服务端，决定落点）与 `calcClientTarget`（客户端，决定准心显示）原为两份独立实现，方向向量、origin 选择、`maxDist`、distance 钳制、像素换算共 8 段逐条对应。任一侧改动漏改另一侧就会出现"准心指向 A、传送到 B"。
+
+**修复**：提取私有 `calcTarget(player, scale, centerX, centerZ, sameDimension)`，两个公开方法都委派给它。差异只剩中心数据来源（服务端读 `mapData`，客户端读同步来的元数据）与返回类型。
+
+注意服务端版原先调用 `isPlayerOnMap(mapData, player)`（接收 `ServerPlayer`），合并后改用内联的边界判断以兼容客户端 `Player`。两者计算完全一致。
+
+#### 54.5 其余修复
+
+| 项 | 文件 | 改动 |
+|----|------|------|
+| 元数据包每秒冗余重发 | `LivingMapEventHandler` | `MapItemSavedData` 的 `centerX`/`centerZ`/`dimension`/`scale` 全为 `final`，同一 mapId 内容恒定，原先每秒发一次 100% 冗余。改为按 UUID 缓存上次发送的包，仅内容变化（换图、跨维度）时发送；玩家离线与服务器停止时清理缓存 |
+| 同构方法重复 | `MapCoordHelper` | `isTeleportableDecorationHit` 改为 `findTargetPointHit(...) != null`。原实现逐行复制前者，其中的 `closestDist` 追踪对布尔结果毫无影响，是纯冗余状态 |
+| 死代码 | `MapCoordHelper` / `LivingMapClientCache` | 删除零调用的 `mapPixelToWorld`、`remove`；`findBannerHit` 四参重载降为 private |
+| `clear()` 接入 | `LivingItemInputHandler` | `LivingMapClientCache.clear()` 原本零调用。接入 `ClientPlayerNetworkEvent.LoggingOut`，避免切换存档/服务器后残留旧 mapId 的中心坐标 |
+| 重复分支 | `MapTeleportExecutor` | 创造模式与珍珠≥16 两分支实参字符级完全一致（消耗差异已由 `consumePearl` 内的 `isCreative` 短路处理），合并为 `player.isCreative() \|\| countInInventory(...) >= COST`。短路顺序保证创造模式不做多余的背包遍历 |
+| 颜色逻辑重复 | `LivingMapTargetRenderer` | `renderMarker` 与 `renderMarkerGui` 的三色 if/else 完全同构，提取 `pickColor(explored, decoHit)` |
+| 全限定名 | `MapCoordHelper` | `java.util.Set`、`java.util.function.Predicate`、`Player` 共 5 处改为 import |
+| 不可达判空 | `ItemInHandRendererMixin` | `calcClientTarget` 永不返回 null，删除 `if (target == null) return;` |
+| 距离比较开方 | `MapCoordHelper` | `Math.sqrt` 改为平方比较，新增 `HIT_RADIUS_SQ = 5.0 * 5.0`。两处命中判定（图标、旗帜）同步改造。注意 `closestDist` 也须一并改为平方值，否则最近判定失效 |
+
+#### 54.6 审查中排除的两个误报
+
+| 疑点 | 排除理由 |
+|------|----------|
+| `MapUpdateSkipHelper.cooldowns` 玩家离线不清理 | key 为玩家 UUID，数量有界；`shouldSkip` 命中过期时自动 `remove`，存在自愈路径。非泄漏 |
+| 扩展地图渲染"分层"是渲染顺序问题 | 实为 54.1 的深度测试剔除。与绘制顺序无关，改顺序无效 |

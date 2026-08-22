@@ -1,11 +1,14 @@
 package com.qiqi.li.living.domain.map;
 
 import javax.annotation.Nullable;
+import java.util.Set;
+import java.util.function.Predicate;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.item.ItemStack;
@@ -80,13 +83,6 @@ public final class MapCoordHelper {
         return mapData.colors[mapY * MAP_SIZE + mapX] != 0;
     }
 
-    public static BlockPos mapPixelToWorld(MapItemSavedData mapData, int mapX, int mapY) {
-        int scale = 1 << mapData.scale;
-        int worldX = mapData.centerX + (mapX - 64) * scale;
-        int worldZ = mapData.centerZ + (mapY - 64) * scale;
-        return new BlockPos(worldX, 0, worldZ);
-    }
-
     public static double[] uvToWorldPos(MapItemSavedData mapData, double u, double v) {
         int scale = 1 << mapData.scale;
         double worldX = mapData.centerX + (u * MAP_SIZE - 64) * scale;
@@ -100,12 +96,12 @@ public final class MapCoordHelper {
     }
 
     @Nullable
-    public static MapBanner findBannerHit(MapItemSavedData mapData, int mapX, int mapY, int centerX, int centerZ) {
+    private static MapBanner findBannerHit(MapItemSavedData mapData, int mapX, int mapY, int centerX, int centerZ) {
         var banners = mapData.getBanners();
         if (banners == null || banners.isEmpty()) return null;
 
         int scale = 1 << mapData.scale;
-        double closestDist = Double.MAX_VALUE;
+        double closestDistSq = Double.MAX_VALUE;
         MapBanner closest = null;
 
         for (MapBanner banner : banners) {
@@ -114,10 +110,10 @@ public final class MapCoordHelper {
 
             int dx = mapX - bannerPx;
             int dy = mapY - bannerPy;
-            double dist = Math.sqrt(dx * dx + dy * dy);
+            double distSq = dx * dx + dy * dy;
 
-            if (dist <= 5 && dist < closestDist) {
-                closestDist = dist;
+            if (distSq <= HIT_RADIUS_SQ && distSq < closestDistSq) {
+                closestDistSq = distSq;
                 closest = banner;
             }
         }
@@ -125,9 +121,14 @@ public final class MapCoordHelper {
         return closest;
     }
 
+    /**
+     * 命中判定半径（地图像素），以平方值存储以避免开方。
+     */
+    private static final double HIT_RADIUS_SQ = 5.0 * 5.0;
+
     @Nullable
     public static MapDecoration findTargetPointHit(MapItemSavedData mapData, int mapX, int mapY) {
-        double closestDist = Double.MAX_VALUE;
+        double closestDistSq = Double.MAX_VALUE;
         MapDecoration closest = null;
 
         for (MapDecoration decoration : mapData.getDecorations()) {
@@ -138,10 +139,10 @@ public final class MapCoordHelper {
 
             float dx = mapX - decoPixelX;
             float dy = mapY - decoPixelY;
-            double dist = Math.sqrt(dx * dx + dy * dy);
+            double distSq = dx * dx + dy * dy;
 
-            if (dist <= 5.0 && dist < closestDist) {
-                closestDist = dist;
+            if (distSq <= HIT_RADIUS_SQ && distSq < closestDistSq) {
+                closestDistSq = distSq;
                 closest = decoration;
             }
         }
@@ -150,29 +151,10 @@ public final class MapCoordHelper {
     }
 
     public static boolean isTeleportableDecorationHit(MapItemSavedData mapData, int mapX, int mapY) {
-        double closestDist = Double.MAX_VALUE;
-        boolean found = false;
-
-        for (MapDecoration decoration : mapData.getDecorations()) {
-            if (!isTeleportableType(decoration)) continue;
-
-            float decoPixelX = (float) decoration.x() / 2.0F + 64.0F;
-            float decoPixelY = (float) decoration.y() / 2.0F + 64.0F;
-
-            float dx = mapX - decoPixelX;
-            float dy = mapY - decoPixelY;
-            double dist = Math.sqrt(dx * dx + dy * dy);
-
-            if (dist <= 5.0 && dist < closestDist) {
-                closestDist = dist;
-                found = true;
-            }
-        }
-
-        return found;
+        return findTargetPointHit(mapData, mapX, mapY) != null;
     }
 
-    private static final java.util.Set<String> TELEPORTABLE_DECORATION_PATHS = java.util.Set.of(
+    private static final Set<String> TELEPORTABLE_DECORATION_PATHS = Set.of(
         "player",
         "frame",
         "red_marker",
@@ -216,7 +198,7 @@ public final class MapCoordHelper {
         return matchDecorationPath(decoration, TELEPORTABLE_DECORATION_PATHS::contains);
     }
 
-    private static boolean matchDecorationPath(MapDecoration decoration, java.util.function.Predicate<String> predicate) {
+    private static boolean matchDecorationPath(MapDecoration decoration, Predicate<String> predicate) {
         return decoration.type().unwrapKey()
             .map(key -> predicate.test(key.location().getPath()))
             .orElse(false);
@@ -252,7 +234,7 @@ public final class MapCoordHelper {
         return matchEntryPath(entry, TELEPORTABLE_DECORATION_PATHS::contains);
     }
 
-    private static boolean matchEntryPath(MapDecorations.Entry entry, java.util.function.Predicate<String> predicate) {
+    private static boolean matchEntryPath(MapDecorations.Entry entry, Predicate<String> predicate) {
         return entry.type().unwrapKey()
             .map(key -> predicate.test(key.location().getPath()))
             .orElse(false);
@@ -278,35 +260,49 @@ public final class MapCoordHelper {
         return mapData.dimension;
     }
 
-    public static TargetResult getTargetFromYawPitch(MapItemSavedData mapData, ServerPlayer player) {
-        int scale = 1 << mapData.scale;
-
+    /**
+     * 由玩家视角朝向推算地图上的目标点，服务端与客户端共用同一份公式。
+     * <p>此方法是准心显示与实际传送落点的唯一真源，两端必须走这里，
+     * 否则会出现"准心指向 A、传送到 B"的错位。
+     *
+     * @param scale         地图缩放倍数（{@code 1 << mapData.scale}）
+     * @param centerX       地图中心世界 X（服务端取 mapData，客户端取同步来的元数据）
+     * @param centerZ       地图中心世界 Z
+     * @param sameDimension 玩家当前维度是否与地图记录的维度一致
+     */
+    private static TargetResult calcTarget(Player player, int scale, int centerX, int centerZ, boolean sameDimension) {
         float yaw = player.getYRot();
         float pitch = player.getXRot();
 
         double dx = -Math.sin(Math.toRadians(yaw));
         double dz = Math.cos(Math.toRadians(yaw));
 
-        double originX, originZ;
-        if (isPlayerOnMap(mapData, player) && player.level().dimension() == mapData.dimension) {
-            originX = player.getX();
-            originZ = player.getZ();
-        } else {
-            originX = mapData.centerX;
-            originZ = mapData.centerZ;
-        }
+        // 玩家在图内且同维度时以玩家为起点，否则退回地图中心
+        int playerMapX = (int) ((player.getX() - centerX) / scale) + 64;
+        int playerMapY = (int) ((player.getZ() - centerZ) / scale) + 64;
+        boolean onMap = sameDimension
+                && playerMapX >= 0 && playerMapX < MAP_SIZE
+                && playerMapY >= 0 && playerMapY < MAP_SIZE;
 
-        double maxDist = calcMaxDistToMapEdge(originX, originZ, dx, dz, mapData.centerX, mapData.centerZ, scale);
+        double originX = onMap ? player.getX() : centerX;
+        double originZ = onMap ? player.getZ() : centerZ;
+
+        double maxDist = calcMaxDistToMapEdge(originX, originZ, dx, dz, centerX, centerZ, scale);
         double distance = ((90.0 - pitch) / 90.0) * maxDist;
         distance = Math.max(0, Math.min(distance, maxDist));
 
         double targetWorldX = originX + dx * distance;
         double targetWorldZ = originZ + dz * distance;
 
-        int targetMapX = (int) ((targetWorldX - mapData.centerX) / scale) + 64;
-        int targetMapY = (int) ((targetWorldZ - mapData.centerZ) / scale) + 64;
+        int targetMapX = (int) ((targetWorldX - centerX) / scale) + 64;
+        int targetMapY = (int) ((targetWorldZ - centerZ) / scale) + 64;
 
         return new TargetResult(targetMapX, targetMapY, targetWorldX, targetWorldZ);
+    }
+
+    public static TargetResult getTargetFromYawPitch(MapItemSavedData mapData, ServerPlayer player) {
+        return calcTarget(player, 1 << mapData.scale, mapData.centerX, mapData.centerZ,
+                player.level().dimension() == mapData.dimension);
     }
 
     public static int calculateMapCenterCoord(double playerCoord, int scale) {
@@ -345,46 +341,10 @@ public final class MapCoordHelper {
 
     public record TargetResult(int mapX, int mapY, double worldX, double worldZ) {}
 
-    public static int[] calcClientTarget(MapItemSavedData mapData, LivingMapClientCache.MapMetadata metadata, net.minecraft.world.entity.player.Player player) {
-        int scale = 1 << mapData.scale;
-        int centerX = metadata.centerX();
-        int centerZ = metadata.centerZ();
-        boolean sameDimension = player.level().dimension() == metadata.dimension();
-
-        float yaw = player.getYRot();
-        float pitch = player.getXRot();
-
-        double dx = -Math.sin(Math.toRadians(yaw));
-        double dz = Math.cos(Math.toRadians(yaw));
-
-        double originX, originZ;
-        if (sameDimension) {
-            int playerMapX = (int) ((player.getX() - centerX) / scale) + 64;
-            int playerMapY = (int) ((player.getZ() - centerZ) / scale) + 64;
-            boolean onMap = playerMapX >= 0 && playerMapX < MAP_SIZE && playerMapY >= 0 && playerMapY < MAP_SIZE;
-
-            if (onMap) {
-                originX = player.getX();
-                originZ = player.getZ();
-            } else {
-                originX = centerX;
-                originZ = centerZ;
-            }
-        } else {
-            originX = centerX;
-            originZ = centerZ;
-        }
-
-        double maxDist = calcMaxDistToMapEdge(originX, originZ, dx, dz, centerX, centerZ, scale);
-        double distance = ((90.0 - pitch) / 90.0) * maxDist;
-        distance = Math.max(0, Math.min(distance, maxDist));
-
-        double targetWorldX = originX + dx * distance;
-        double targetWorldZ = originZ + dz * distance;
-
-        int targetMapX = (int) ((targetWorldX - centerX) / scale) + 64;
-        int targetMapY = (int) ((targetWorldZ - centerZ) / scale) + 64;
-
-        return new int[]{targetMapX, targetMapY};
+    public static int[] calcClientTarget(MapItemSavedData mapData, LivingMapClientCache.MapMetadata metadata, Player player) {
+        TargetResult result = calcTarget(player, 1 << mapData.scale,
+                metadata.centerX(), metadata.centerZ(),
+                player.level().dimension() == metadata.dimension());
+        return new int[]{result.mapX(), result.mapY()};
     }
 }

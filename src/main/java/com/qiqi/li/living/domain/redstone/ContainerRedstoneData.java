@@ -145,6 +145,7 @@ public class ContainerRedstoneData {
             if (stack.isEmpty()) continue;
 
             LivingRepeaterData data = LivingItemManager.getRepeaterData(stack);
+            if (data.locked()) continue;
             if (!data.powered()) continue;
             if (data.delayTimer() == 0) continue;
 
@@ -367,6 +368,15 @@ public class ContainerRedstoneData {
             if (stack.isEmpty()) continue;
 
             LivingRepeaterData data = LivingItemManager.getRepeaterData(stack);
+
+            boolean locked = checkRepeaterLocked(slot, data, repeaterSlots, size, width, context);
+            if (data.locked() != locked) {
+                data = data.withLocked(locked);
+                LivingItemManager.setRepeaterData(stack, data);
+                context.syncSlotToClients(slot, stack);
+            }
+            if (locked) continue;
+
             if (data.powered() && data.delayTimer() > 0) continue;
 
             int inputDir = edgeIndex(data.direction().opposite());
@@ -668,6 +678,27 @@ public class ContainerRedstoneData {
                 if (dustSlots.contains(slot)) queue.add(slot);
             }
         }
+    }
+
+    private boolean checkRepeaterLocked(int slot, LivingRepeaterData data, Set<Integer> repeaterSlots,
+            int size, int width, ContainerContext context) {
+        Pos2D dir = data.direction();
+        boolean isVertical = dir == Pos2D.UP || dir == Pos2D.DOWN;
+        int[] perpDirs = isVertical ? new int[]{E_LEFT, E_RIGHT} : new int[]{E_UP, E_DOWN};
+
+        for (int perpDir : perpDirs) {
+            int neighbor = resolveSlot(slot, perpDir, size, width);
+            if (neighbor >= 0 && repeaterSlots.contains(neighbor)) {
+                ItemStack neighborStack = context.getItem(neighbor);
+                if (!neighborStack.isEmpty()) {
+                    LivingRepeaterData neighborData = LivingItemManager.getRepeaterData(neighborStack);
+                    if (neighborData.powered() && neighborData.delayTimer() == 0) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     private void notifyBoundaryChange(ContainerContext context, int width, int height) {

@@ -79,6 +79,7 @@
   "tooltip.livingitem.repeater.powered": "  §c§lPOWERED",
   "tooltip.livingitem.repeater.unpowered": "  §8Unpowered",
   "tooltip.livingitem.repeater.delay_timer": "  §7Delay Timer",
+  "tooltip.livingitem.repeater.locked": "  §6§lLOCKED",
   "tooltip.livingitem.repeater.max_signal": "  §7Max Signal",
 
   "tooltip.livingitem.comparator.title": "§6Living Comparator§r",

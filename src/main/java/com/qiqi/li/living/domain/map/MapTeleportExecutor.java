@@ -39,9 +39,10 @@ public final class MapTeleportExecutor {
         } else {
             boolean unexplored = !MapCoordHelper.isExplored(mapData, mapX, mapY);
             if (unexplored) {
-                if (player.isCreative()) {
-                    success = TeleportHelper.teleportToMapPosition(player, sourceLevel, targetLevel, preciseWorldX, preciseWorldZ, pearlStack, true);
-                } else if (LivingEnderPearlFunction.countInInventory(player) >= UNEXPLORED_PEARL_COST) {
+                // 创造模式免费（consumePearl 内按 isCreative 短路），生存模式需背包中有足量珍珠。
+                // 短路顺序保证创造模式不做多余的背包遍历
+                if (player.isCreative()
+                        || LivingEnderPearlFunction.countInInventory(player) >= UNEXPLORED_PEARL_COST) {
                     success = TeleportHelper.teleportToMapPosition(player, sourceLevel, targetLevel, preciseWorldX, preciseWorldZ, pearlStack, true);
                 } else {
                     TeleportHelper.sendUnexploredMessage(player);

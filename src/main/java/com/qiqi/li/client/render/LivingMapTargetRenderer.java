@@ -20,6 +20,14 @@ public final class LivingMapTargetRenderer {
 
     private LivingMapTargetRenderer() {}
 
+    /**
+     * 按命中状态选择准心颜色，3D 与 GUI 两条渲染路径共用。
+     */
+    private static int pickColor(boolean explored, boolean decoHit) {
+        if (decoHit) return COLOR_DECO_HIT;
+        return explored ? COLOR_EXPLORED : COLOR_UNEXPLORED;
+    }
+
     public static void renderMarker(Minecraft mc, MultiBufferSource buffer, PoseStack poseStack,
                                      int mapX, int mapY, boolean explored,
                                      boolean decoHit, int packedLight) {
@@ -40,14 +48,7 @@ public final class LivingMapTargetRenderer {
         float u1 = sprite.getU1();
         float v1 = sprite.getV1();
 
-        int color;
-        if (decoHit) {
-            color = COLOR_DECO_HIT;
-        } else if (explored) {
-            color = COLOR_EXPLORED;
-        } else {
-            color = COLOR_UNEXPLORED;
-        }
+        int color = pickColor(explored, decoHit);
         int r = (color >> 16) & 0xFF;
         int g = (color >> 8) & 0xFF;
         int b = color & 0xFF;
@@ -59,25 +60,23 @@ public final class LivingMapTargetRenderer {
         vc.addVertex(matrix4f, x - halfSize, y - halfSize, z).setColor(r, g, b, a).setUv(u0, v0).setLight(packedLight);
     }
 
+    /**
+     * GUI 场景的十字准心。
+     *
+     * @param z 绘制深度，需高于扩展地图底图与装饰图标，否则会被 LEQUAL 深度测试剔除
+     */
     public static void renderMarkerGui(GuiGraphics guiGraphics, float x, float y,
-                                        boolean explored, boolean decoHit, float pixelSize) {
-        int color;
-        if (decoHit) {
-            color = COLOR_DECO_HIT;
-        } else if (explored) {
-            color = COLOR_EXPLORED;
-        } else {
-            color = COLOR_UNEXPLORED;
-        }
+                                        boolean explored, boolean decoHit, float pixelSize, int z) {
+        int color = pickColor(explored, decoHit);
 
         int cx = Math.round(x);
         int cy = Math.round(y);
         int arm = Math.max(Math.round(pixelSize), 1);
 
-        guiGraphics.fill(cx, cy - arm, cx + 1, cy, color);
-        guiGraphics.fill(cx - arm, cy, cx, cy + 1, color);
-        guiGraphics.fill(cx, cy, cx + 1, cy + 1, color);
-        guiGraphics.fill(cx + 1, cy, cx + 1 + arm, cy + 1, color);
-        guiGraphics.fill(cx, cy + 1, cx + 1, cy + 1 + arm, color);
+        guiGraphics.fill(cx, cy - arm, cx + 1, cy, z, color);
+        guiGraphics.fill(cx - arm, cy, cx, cy + 1, z, color);
+        guiGraphics.fill(cx, cy, cx + 1, cy + 1, z, color);
+        guiGraphics.fill(cx + 1, cy, cx + 1 + arm, cy + 1, z, color);
+        guiGraphics.fill(cx, cy + 1, cx + 1, cy + 1 + arm, z, color);
     }
 }
