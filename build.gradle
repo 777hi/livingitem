@@ -128,6 +128,12 @@ neoForge {
             sourceSet(sourceSets.main)
         }
     }
+
+    // 单元测试支持：让测试代码运行在 FML 环境中，可引用 Minecraft 类
+    unitTest {
+        enable()
+        testedMod = mods."${mod_id}"
+    }
 }
 
 // Sets up a dependency configuration called 'localRuntime'.
@@ -194,56 +200,32 @@ dependencies {
     compileOnly files("libs/sable-companion-common-1.21.1-1.6.0.jar")
     
     // ==================== 单元测试依赖 (Unit Test Dependencies) ====================
-    
-    // JUnit 5 - 测试框架核心
+
+    // JUnit 5 - 测试框架核心（junit-jupiter 聚合包含 api / params / engine）
     testImplementation platform('org.junit:junit-bom:5.10.2')
     testImplementation 'org.junit.jupiter:junit-jupiter'
-    testImplementation 'org.junit.jupiter:junit-jupiter-api'
-    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine'
-    
-    // JUnit Platform Launcher（运行测试必需）
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-    
+
     // Mockito - Mock框架（用于模拟依赖对象）
     testImplementation 'org.mockito:mockito-core:5.8.0'
     testImplementation 'org.mockito:mockito-junit-jupiter:5.8.0'
 }
 
-// 🔧 让测试代码能够访问 Minecraft/NeoForge 的核心类
-// 这对于 Mod 开发至关重要，因为测试需要访问游戏API
-configurations {
-    testImplementation.extendsFrom implementation
-}
-
-// 🔧 排除需要 Minecraft API 的测试文件（NeoForge 特殊限制）
-sourceSets {
-    test {
-        java {
-            exclude '**/InternalStorageComponentTest.java'
-            exclude '**/ChestTransactionTest.java'
-            exclude '**/LivingChestFunctionTest.java'
-        }
-    }
-}
-
 test {
     // 使用 JUnit 5 平台
     useJUnitPlatform()
-    
-    // 🔧 排除需要 Minecraft API 的测试文件（NeoForge 特殊限制）
-    exclude '**/InternalStorageComponentTest.class'
-    exclude '**/ChestTransactionTest.class'
-    exclude '**/LivingChestFunctionTest.class'
-    
+
     // 显示测试输出（便于调试）
     testLogging {
         events "passed", "skipped", "failed"
         exceptionFormat "full"
         showStandardStreams = true
     }
-    
-    // 设置 JVM 参数（如果需要）
-    jvmArgs = ['-Xmx1G']
+
+    // 设置 JVM 参数
+    // 注意：必须用 += 追加而非 = 赋值，否则会覆盖 MDG 为 FML 引导注入的
+    // --add-opens 等参数，导致测试 JVM 启动失败
+    jvmArgs += ['-Xmx1G', '--add-opens=java.base/java.lang.invoke=ALL-UNNAMED']
 }
 
 // This block of code expands all declared replace properties in the specified resource targets.

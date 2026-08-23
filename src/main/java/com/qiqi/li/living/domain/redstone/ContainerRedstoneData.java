@@ -881,6 +881,7 @@ public class ContainerRedstoneData {
         }
 
         int get(int slot, int dir) {
+            if (slot < 0 || slot >= width * height) return 0;
             int r = slot / width;
             int c = slot % width;
             switch (dir) {
@@ -893,6 +894,7 @@ public class ContainerRedstoneData {
         }
 
         void set(int slot, int dir, int value) {
+            if (slot < 0 || slot >= width * height) return;
             int r = slot / width;
             int c = slot % width;
             switch (dir) {

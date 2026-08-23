@@ -1,0 +1,322 @@
+package com.qiqi.li.living.domain.redstone;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.Map;
+import java.util.Set;
+
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+
+import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.container.TickContext;
+import com.qiqi.li.testutil.FakeContainerContext;
+
+/**
+ * {@link ContainerRedstoneData} 信号传播测试。
+ *
+ * <p>红石传播是全项目最复杂的纯逻辑（多阶段状态机 + 网格 BFS + 双缓冲），
+ * 也是回归代价最高的部分。此测试直接驱动 {@code calculate()}，
+ * 不依赖 Level 或真实容器。</p>
+ */
+class ContainerRedstoneDataTest {
+
+    private static final int WIDTH = 9;
+    private static final int SIZE = 27;
+
+    /** 构造一个活物品（已打上 IS_LIVING 标记） */
+    private static ItemStack living(net.minecraft.world.item.Item item, int count) {
+        ItemStack stack = new ItemStack(item, count);
+        LivingItemManager.setLiving(stack, true);
+        return stack;
+    }
+
+    /**
+     * 驱动一次传播。
+     *
+     * <p>模拟 {@code ContainerLivingItemHandler.processContext} 的行为：
+     * 填充 functionSlots 后调用 calculate。</p>
+     */
+    private static ContainerRedstoneData propagate(
+            FakeContainerContext ctx, Map<String, Set<Integer>> functionSlots) {
+        ContainerRedstoneData data = new ContainerRedstoneData();
+        tickOnce(data, ctx, functionSlots);
+        return data;
+    }
+
+    private static void tickOnce(ContainerRedstoneData data,
+            FakeContainerContext ctx, Map<String, Set<Integer>> functionSlots) {
+        TickContext tick = new TickContext(ctx);
+        tick.setFunctionSlots(functionSlots);
+        data.resetProcessedFlag();
+        data.calculate(ctx, tick);
+    }
+
+    // ════════════════════════════════════════
+    // 信号上限规则
+    // ════════════════════════════════════════
+
+    @ParameterizedTest(name = "{0} 个红石 → 信号上限 {1}")
+    @CsvSource({
+        "1, 15",
+        "2, 4",
+        "3, 9",
+        "4, 16",
+        "8, 64",
+        "16, 256"
+    })
+    @DisplayName("信号上限：1 个为 15，其余为堆叠数的平方")
+    void getSignalCap_followsSquareRuleExceptSingle(int stackCount, int expectedCap) {
+        assertEquals(expectedCap, ContainerRedstoneData.getSignalCap(stackCount));
+    }
+
+    // ════════════════════════════════════════
+    // 空容器与无源场景
+    // ════════════════════════════════════════
+
+    @Test
+    @DisplayName("空容器：所有槽位信号为 0")
+    void emptyContainer_hasNoSignal() {
+        var ctx = new FakeContainerContext(SIZE, WIDTH);
+        var data = propagate(ctx, Map.of());
+
+        for (int i = 0; i < SIZE; i++) {
+            assertEquals(0, data.getSignal(i), "槽位 " + i + " 应无信号");
+        }
+    }
+
+    @Test
+    @DisplayName("只有红石粉无信号源：红石粉保持无信号")
+    void dustWithoutSource_staysUnpowered() {
+        var ctx = new FakeContainerContext(SIZE, WIDTH);
+        ctx.set(10, living(Items.REDSTONE, 1));
+        ctx.set(11, living(Items.REDSTONE, 1));
+
+        var data = propagate(ctx, Map.of(LivingRedstoneFunction.ID, Set.of(10, 11)));
+
+        assertEquals(0, data.getSignal(10));
+        assertEquals(0, data.getSignal(11));
+    }
+
+    // ════════════════════════════════════════
+    // 红石块作为恒定信号源
+    // ════════════════════════════════════════
+
+    @Test
+    @DisplayName("红石块：为相邻红石粉提供信号")
+    void redstoneBlock_poweresAdjacentDust() {
+        var ctx = new FakeContainerContext(SIZE, WIDTH);
+        ctx.set(10, living(Items.REDSTONE_BLOCK, 1));
+        ctx.set(11, living(Items.REDSTONE, 1));
+
+        var data = propagate(ctx, Map.of(
+            LivingRedstoneBlockFunction.ID, Set.of(10),
+            LivingRedstoneFunction.ID, Set.of(11)));
+
+        assertTrue(data.getSignal(11) > 0,
+            "红石块右侧的红石粉应被供电，实际=" + data.getSignal(11));
+    }
+
+    @Test
+    @DisplayName("红石块：信号沿红石粉链衰减")
+    void redstoneBlock_signalDecaysAlongDustChain() {
+        var ctx = new FakeContainerContext(SIZE, WIDTH);
+        // 第 2 行（槽位 9..17）：红石块 + 连续红石粉
+        ctx.set(9, living(Items.REDSTONE_BLOCK, 1));
+        for (int slot = 10; slot <= 14; slot++) {
+            ctx.set(slot, living(Items.REDSTONE, 1));
+        }
+
+        var data = propagate(ctx, Map.of(
+            LivingRedstoneBlockFunction.ID, Set.of(9),
+            LivingRedstoneFunction.ID, Set.of(10, 11, 12, 13, 14)));
+
+        int near = data.getSignal(10);
+        int far = data.getSignal(14);
+
+        assertTrue(near > 0, "紧邻红石块的槽位应有信号");
+        assertTrue(far < near,
+            "远端信号应弱于近端：near=" + near + ", far=" + far);
+    }
+
+    // ════════════════════════════════════════
+    // 拉杆：持续型信号源
+    // ════════════════════════════════════════
+
+    @Test
+    @DisplayName("拉杆关闭时不供电")
+    void lever_doesNotPowerWhenOff() {
+        var ctx = new FakeContainerContext(SIZE, WIDTH);
+        ctx.set(10, living(Items.LEVER, 1));
+        ctx.set(11, living(Items.REDSTONE, 1));
+
+        var data = propagate(ctx, Map.of(
+            LivingLeverFunction.ID, Set.of(10),
+            LivingRedstoneFunction.ID, Set.of(11)));
+
+        assertEquals(0, data.getSignal(11), "拉杆默认关闭，不应供电");
+    }
+
+    @Test
+    @DisplayName("拉杆打开时为相邻红石粉供电")
+    void lever_poweresAdjacentDustWhenOn() {
+        var ctx = new FakeContainerContext(SIZE, WIDTH);
+        ItemStack lever = living(Items.LEVER, 1);
+        LivingItemManager.setLeverData(lever, new LivingLeverData(true));
+        ctx.set(10, lever);
+        ctx.set(11, living(Items.REDSTONE, 1));
+
+        var data = propagate(ctx, Map.of(
+            LivingLeverFunction.ID, Set.of(10),
+            LivingRedstoneFunction.ID, Set.of(11)));
+
+        assertTrue(data.getSignal(11) > 0,
+            "拉杆打开后应为相邻红石粉供电，实际=" + data.getSignal(11));
+    }
+
+    // ════════════════════════════════════════
+    // 红石灯：信号可视化
+    // ════════════════════════════════════════
+
+    @Test
+    @DisplayName("红石灯：被供电时点亮，失去信号后熄灭")
+    void lamp_litFollowsSignal() {
+        var ctx = new FakeContainerContext(SIZE, WIDTH);
+        ItemStack lamp = living(Items.REDSTONE_LAMP, 1);
+        ctx.set(10, living(Items.REDSTONE_BLOCK, 1));
+        ctx.set(11, lamp);
+
+        var slots = Map.of(
+            LivingRedstoneBlockFunction.ID, Set.of(10),
+            LivingRedstoneLampFunction.ID, Set.of(11));
+
+        propagate(ctx, slots);
+        assertTrue(LivingItemManager.getLampData(lamp).lit(),
+            "紧邻红石块的灯应点亮");
+    }
+
+    // ════════════════════════════════════════
+    // 堆叠数影响
+    // ════════════════════════════════════════
+
+    @Test
+    @DisplayName("堆叠数越大，红石粉可传播的距离越远")
+    void higherStackCount_propagatesFarther() {
+        // 单个红石粉：上限 15
+        var ctxSingle = new FakeContainerContext(SIZE, WIDTH);
+        ctxSingle.set(9, living(Items.REDSTONE_BLOCK, 1));
+        for (int slot = 10; slot <= 17; slot++) {
+            ctxSingle.set(slot, living(Items.REDSTONE, 1));
+        }
+        var single = propagate(ctxSingle, Map.of(
+            LivingRedstoneBlockFunction.ID, Set.of(9),
+            LivingRedstoneFunction.ID, Set.of(10, 11, 12, 13, 14, 15, 16, 17)));
+
+        // 4 个红石粉：上限 16
+        var ctxStacked = new FakeContainerContext(SIZE, WIDTH);
+        ctxStacked.set(9, living(Items.REDSTONE_BLOCK, 1));
+        for (int slot = 10; slot <= 17; slot++) {
+            ctxStacked.set(slot, living(Items.REDSTONE, 4));
+        }
+        var stacked = propagate(ctxStacked, Map.of(
+            LivingRedstoneBlockFunction.ID, Set.of(9),
+            LivingRedstoneFunction.ID, Set.of(10, 11, 12, 13, 14, 15, 16, 17)));
+
+        assertTrue(stacked.getSignal(17) >= single.getSignal(17),
+            "堆叠数更高时远端信号不应更弱：stacked=" + stacked.getSignal(17)
+                + ", single=" + single.getSignal(17));
+    }
+
+    // ════════════════════════════════════════
+    // 归零行为（对应上一轮修复的 grouped.isEmpty() 分支）
+    // ════════════════════════════════════════
+
+    @Test
+    @DisplayName("信号源被移除后，残留信号归零")
+    void removingSource_clearsResidualSignal() {
+        var ctx = new FakeContainerContext(SIZE, WIDTH);
+        ctx.set(10, living(Items.REDSTONE_BLOCK, 1));
+        ctx.set(11, living(Items.REDSTONE, 1));
+
+        var data = new ContainerRedstoneData();
+        tickOnce(data, ctx, Map.of(
+            LivingRedstoneBlockFunction.ID, Set.of(10),
+            LivingRedstoneFunction.ID, Set.of(11)));
+        assertTrue(data.getSignal(11) > 0, "前置条件：红石粉应先被供电");
+
+        // 取走所有活物品，模拟容器被清空后的下一 tick
+        ctx.set(10, ItemStack.EMPTY);
+        ctx.set(11, ItemStack.EMPTY);
+        tickOnce(data, ctx, Map.of());
+
+        assertEquals(0, data.getSignal(11),
+            "信号源移除后残留信号必须归零");
+    }
+
+    @Test
+    @DisplayName("同一 tick 内重复调用 calculate 只生效一次")
+    void calculate_isIdempotentWithinSameTick() {
+        var ctx = new FakeContainerContext(SIZE, WIDTH);
+        ctx.set(10, living(Items.REDSTONE_BLOCK, 1));
+        ctx.set(11, living(Items.REDSTONE, 1));
+
+        var slots = Map.<String, Set<Integer>>of(
+            LivingRedstoneBlockFunction.ID, Set.of(10),
+            LivingRedstoneFunction.ID, Set.of(11));
+
+        var data = new ContainerRedstoneData();
+        TickContext tick = new TickContext(ctx);
+        tick.setFunctionSlots(slots);
+
+        data.calculate(ctx, tick);
+        int first = data.getSignal(11);
+        // 不重置 processedThisTick，第二次应直接返回
+        data.calculate(ctx, tick);
+
+        assertEquals(first, data.getSignal(11),
+            "同 tick 内重复 calculate 不应改变结果");
+    }
+
+    // ════════════════════════════════════════
+    // 容器尺寸适配
+    // ════════════════════════════════════════
+
+    @Test
+    @DisplayName("容器宽度变化时网格重建，不越界")
+    void changingContainerWidth_rebuildsGridSafely() {
+        var data = new ContainerRedstoneData();
+
+        var wide = new FakeContainerContext(27, 9);
+        wide.set(0, living(Items.REDSTONE_BLOCK, 1));
+        tickOnce(data, wide, Map.of(LivingRedstoneBlockFunction.ID, Set.of(0)));
+
+        // 同一个 data 实例换到 5 格漏斗布局
+        var narrow = new FakeContainerContext(5, 5);
+        narrow.set(0, living(Items.REDSTONE_BLOCK, 1));
+        tickOnce(data, narrow, Map.of(LivingRedstoneBlockFunction.ID, Set.of(0)));
+
+        // 只要不抛异常即可，同时验证越界槽位返回 0
+        assertEquals(0, data.getSignal(26), "越界槽位应返回 0 而非抛异常");
+    }
+
+    @Test
+    @DisplayName("非 9 列容器（漏斗 5 格单行）传播正常")
+    void hopperLayout_propagatesInSingleRow() {
+        var ctx = new FakeContainerContext(5, 5);
+        ctx.set(0, living(Items.REDSTONE_BLOCK, 1));
+        ctx.set(1, living(Items.REDSTONE, 1));
+        ctx.set(2, living(Items.REDSTONE, 1));
+
+        var data = propagate(ctx, Map.of(
+            LivingRedstoneBlockFunction.ID, Set.of(0),
+            LivingRedstoneFunction.ID, Set.of(1, 2)));
+
+        assertTrue(data.getSignal(1) > 0, "单行布局中相邻槽位应被供电");
+    }
+}

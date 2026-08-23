@@ -2,7 +2,7 @@
   "required": true,
   "package": "com.qiqi.li.client.mixin",
   "compatibilityLevel": "JAVA_21",
-  "mixins": [
+  "client": [
     "AbstractContainerScreenMixin",
     "CreativeModeInventoryScreenMixin",
     "InventoryScreenMixin",

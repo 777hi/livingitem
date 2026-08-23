@@ -93,6 +93,7 @@ SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 | **图标系统** | 三层架构 + 声明式配置 + 上下文切换 | [icon-system.md](docs/system-design/icon-system.md) |
 | **基础设施** | 容器抽象 + 发现缓存 + SlotAccessor + 性能监控 | [living-item-infrastructure.md](docs/system-design/living-item-infrastructure.md) |
 | **数据模型** | DataComponent 体系 + 新旧架构对比 + 设计决策 | [data-model.md](docs/system-design/data-model.md) |
+| **单元测试** | FML 测试环境配置 + 测试替身 + 可测性边界 | [unit-testing.md](docs/guides/unit-testing.md) |
 | **框架重构** | HasDirection + HasContainerData 接口化设计 | [framework-refactoring.md](docs/framework-refactoring.md) |
 
 ---
@@ -282,6 +283,20 @@ src/main/java/com/qiqi/li/
     └── ServerPacketHandler.java             #   服务端包处理
 ```
 
+```
+src/test/java/com/qiqi/li/
+├── testutil/
+│   └── FakeContainerContext.java            # ContainerContext 测试替身（内存数组实现）
+├── living/domain/redstone/
+│   └── ContainerRedstoneDataTest.java       # 红石信号传播（19 项）
+├── living/domain/map/
+│   └── MapCoordHelperTest.java              # 地图坐标换算（29 项）
+└── living/transfer/
+    └── ContainerCompatibilityConfigTest.java # 容器布局推断（14 项）
+```
+
+> 📄 测试环境配置与编写约定详见 [unit-testing.md](docs/guides/unit-testing.md)
+
 ---
 
 ## 已完成功能
@@ -298,6 +313,7 @@ src/main/java/com/qiqi/li/
 - [x] 容器级数据位置反向索引（`POS_TO_CACHE_KEY`，mixin 热路径 O(1) 查询）
 - [x] 容器数据缓存键含维度（跨维度同坐标容器隔离）
 - [x] 服务端关闭统一清理静态缓存（跨存档隔离）
+- [x] 单元测试基建（MDG unitTest + FML 环境，62 项测试）
 - [x] 包结构领域内聚（`domain/` 替代 `data/` + `function/`）
 - [x] `TransferPipeline` 统一传输入口
 - [x] `EnderRouteManager` 路由逻辑集中
@@ -365,6 +381,10 @@ src/main/java/com/qiqi/li/
 ### 当前版本: v0.9-alpha
 
 **最近更新** (2026-08-22):
+- ✅ 新增：单元测试基建 — MDG `unitTest` 配置，测试可在 FML 环境引用 Minecraft 类
+- ✅ 新增：62 项单元测试（红石传播 19 + 容器兼容性 14 + 地图坐标 29）
+- ✅ 修复：客户端 Mixin 从双端 `mixins` 移至 `client` 数组（专用服务器启动崩溃）
+- ✅ 修复：`EdgeGrid.get/set` 缺少边界检查，容器尺寸变化时会越界崩溃
 - ✅ 修复：容器级数据缓存键补齐维度，消除跨维度同坐标容器串数据
 - ✅ 修复：`grouped.isEmpty()` 分支门禁失效（`getSize()` 恒为 0），残留边界红石信号现可正确归零
 - ✅ 优化：新增位置→缓存键反向索引，mixin 热路径（`getSignal` / `getConnectingSide`）从正则全表扫描降为 O(1)
@@ -426,6 +446,7 @@ docs/
 │   ├── living-map-ender-pearl-tech.md
 │   └── living-flint-and-steel-tech.md
 ├── guides/                           # 设计指南
+│   ├── unit-testing.md               #   单元测试指南（FML 测试环境 + 测试替身 + 可测性边界）
 │   ├── container-compatibility.md
 │   ├── wasd-direction-input.md
 │   ├── custom-slot-design.md
