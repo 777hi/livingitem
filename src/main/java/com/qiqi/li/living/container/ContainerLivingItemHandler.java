@@ -110,6 +110,17 @@ public class ContainerLivingItemHandler {
         ContainerFluidData existing = FLUID_DATA_CACHE.get(key);
         if (existing != null) return existing;
 
+        if (ctx instanceof SimpleContainerContext simpleCtx) {
+            for (BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {
+                ContainerFluidData persisted = be.getData(LivingItemManager.CONTAINER_FLUID_DATA);
+                if (persisted != null && persisted != ContainerFluidData.EMPTY && !persisted.isEmpty()) {
+                    FLUID_DATA_CACHE.put(key, persisted);
+                    indexPositions(ctx, key);
+                    return persisted;
+                }
+            }
+        }
+
         ContainerFluidData created = new ContainerFluidData();
         FLUID_DATA_CACHE.put(key, created);
         indexPositions(ctx, key);
@@ -373,6 +384,13 @@ public class ContainerLivingItemHandler {
         }
 
         ContainerFluidData fluidData = tick.fluidData;
+        if (fluidData != null && !fluidData.isEmpty()) {
+            if (context instanceof SimpleContainerContext simpleCtx) {
+                for (BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {
+                    be.setData(LivingItemManager.CONTAINER_FLUID_DATA.value(), fluidData);
+                }
+            }
+        }
         if (fluidData != null && fluidData.isEmpty()) {
             String fluidKey = cacheKey(context);
             if (fluidKey != null) {

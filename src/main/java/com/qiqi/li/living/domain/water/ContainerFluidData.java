@@ -218,6 +218,7 @@ public class ContainerFluidData {
                         ctx.syncSlotToClients(slot, ItemStack.EMPTY);
                         break;
                     } else {
+                        ctx.setItem(slot, item);
                         ctx.syncSlotToClients(slot, item);
                     }
                 }

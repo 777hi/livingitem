@@ -16,6 +16,7 @@ import com.qiqi.li.living.domain.water.LivingWaterBucketData;
 import com.qiqi.li.living.domain.water.LivingWaterWheelData;
 import com.qiqi.li.living.domain.ender.LivingEnderChestData;
 import com.qiqi.li.living.domain.water.ContainerStressData;
+import com.qiqi.li.living.domain.water.ContainerFluidData;
 import com.qiqi.li.living.domain.redstone.LivingRedstoneData;
 import com.qiqi.li.living.domain.redstone.LivingRedstoneTorchData;
 import com.qiqi.li.living.domain.redstone.LivingButtonData;
@@ -55,6 +56,10 @@ public class LivingItemManager {
     public static final DeferredHolder<AttachmentType<?>, AttachmentType<ContainerStressData>> CONTAINER_STRESS_DATA =
             ATTACHMENT_TYPES.register("container_stress_data", () ->
                     AttachmentType.builder(() -> ContainerStressData.EMPTY).build());
+
+    public static final DeferredHolder<AttachmentType<?>, AttachmentType<ContainerFluidData>> CONTAINER_FLUID_DATA =
+            ATTACHMENT_TYPES.register("container_fluid_data", () ->
+                    AttachmentType.builder(() -> ContainerFluidData.EMPTY).build());
 
     public static final DeferredHolder<DataComponentType<?>, DataComponentType<Boolean>> IS_LIVING =
             DATA_COMPONENT_TYPES.register("is_living", () ->

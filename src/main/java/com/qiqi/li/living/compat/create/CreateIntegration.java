@@ -33,7 +33,7 @@ public class CreateIntegration {
         float suCapacity = 0;
         if (stressData != null && !stressData.isEmpty()) {
             int netStress = stressData.getNetStress();
-            rpm = -Math.signum(netStress) * ModCreate.BASE_RPM;
+            rpm = Math.signum(netStress) * ModCreate.BASE_RPM;
             suCapacity = Math.abs(netStress) * ModCreate.BASE_SU_CAPACITY;
         }
 

@@ -120,8 +120,8 @@ public class LivingWaterBucketFunction implements LivingItemFunction, HasContain
     @Override
     public void tickContainerData(List<SlotEntry> entries, ContainerContext ctx, TickContext tick) {
         ContainerFluidData fluidData = tick.fluidData;
-        if (fluidData == ContainerFluidData.EMPTY) return;
-        if (fluidData != null && !fluidData.isEmpty()) {
+        if (fluidData == null || fluidData == ContainerFluidData.EMPTY) return;
+        if (!fluidData.isEmpty()) {
             fluidData.setLastTickTime(System.currentTimeMillis());
             fluidData.tick(ctx);
         }
@@ -135,7 +135,7 @@ public class LivingWaterBucketFunction implements LivingItemFunction, HasContain
     public static void postTickSync(ContainerContext ctx, ContainerFluidData fluidData,
         List<SlotEntry> waterBucketEntries) {
         if (waterBucketEntries.isEmpty()) return;
-        String flowStr = buildFlowString(fluidData);
+        String flowStr = fluidData != null ? buildFlowString(fluidData) : "";
         for (SlotEntry entry : waterBucketEntries) {
             int i = entry.slotIndex();
             ItemStack stack = ctx.getItem(i);

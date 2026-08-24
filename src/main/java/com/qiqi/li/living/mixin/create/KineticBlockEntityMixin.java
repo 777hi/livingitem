@@ -42,7 +42,7 @@ public abstract class KineticBlockEntityMixin implements LivingItemStressOutput 
     @Inject(method = "tick", at = @At("HEAD"), remap = false)
     private void livingItem$checkExpiry(CallbackInfo ci) {
         KineticBlockEntity self = (KineticBlockEntity) (Object) this;
-        if (self.getLevel() == null || self.getLevel().isClientSide) return;
+        if (self.getLevel() == null || self.getLevel().isClientSide || self.isRemoved()) return;
 
         if (livingItem$pendingReattach) {
             livingItem$pendingReattach = false;
@@ -96,7 +96,7 @@ public abstract class KineticBlockEntityMixin implements LivingItemStressOutput 
         if (!livingItem$needsSync) return;
         livingItem$needsSync = false;
         KineticBlockEntity self = (KineticBlockEntity) (Object) this;
-        if (self.getLevel() == null || self.getLevel().isClientSide) return;
+        if (self.getLevel() == null || self.getLevel().isClientSide || self.isRemoved()) return;
         try {
             self.sendData();
         } catch (NullPointerException e) {
@@ -126,7 +126,7 @@ public abstract class KineticBlockEntityMixin implements LivingItemStressOutput 
             return;
         }
 
-        if (self.getLevel() != null && !self.getLevel().isClientSide) {
+        if (self.getLevel() != null && !self.getLevel().isClientSide && !self.isRemoved()) {
             livingItem$refreshedThisTick = true;
         }
 
@@ -137,7 +137,7 @@ public abstract class KineticBlockEntityMixin implements LivingItemStressOutput 
             livingItem$pendingReattach = false;
         }
 
-        if (self.getLevel() == null || self.getLevel().isClientSide) return;
+        if (self.getLevel() == null || self.getLevel().isClientSide || self.isRemoved()) return;
         if (Math.abs(prev - rpm) < 0.01f) return;
 
         try {
@@ -188,7 +188,7 @@ public abstract class KineticBlockEntityMixin implements LivingItemStressOutput 
         livingItem$stressCapacity = capacity;
 
         KineticBlockEntity self = (KineticBlockEntity) (Object) this;
-        if (self.getLevel() == null || self.getLevel().isClientSide) return;
+        if (self.getLevel() == null || self.getLevel().isClientSide || self.isRemoved()) return;
         if (Math.abs(prev - capacity) < 0.01f) return;
         if (livingItem$generatedRPM == 0) return;
         if (!self.hasNetwork()) return;

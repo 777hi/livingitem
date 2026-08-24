@@ -44,7 +44,10 @@ public class TickContext {
 
         ContainerFluidData fluidData = ContainerFluidData.EMPTY;
         if (ctx instanceof SimpleContainerContext simpleCtx) {
-            fluidData = simpleCtx.getOrCreateFluidData();
+            ContainerFluidData fetched = simpleCtx.getOrCreateFluidData();
+            if (fetched != null) {
+                fluidData = fetched;
+            }
         }
         this.fluidData = fluidData;
         this.stressData = new ContainerStressData();
