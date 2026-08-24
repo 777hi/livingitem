@@ -16,6 +16,7 @@ import net.minecraft.world.item.Items;
 
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.TickContext;
+import com.qiqi.li.living.model.Pos2D;
 import com.qiqi.li.testutil.FakeContainerContext;
 
 /**
@@ -281,6 +282,75 @@ class ContainerRedstoneDataTest {
 
         assertEquals(first, data.getSignal(11),
             "同 tick 内重复 calculate 不应改变结果");
+    }
+
+    // ════════════════════════════════════════
+    // 传播节拍（每 game tick 一次）
+    // ════════════════════════════════════════
+
+    /**
+     * 传播不跳帧：任意 game tick 都执行完整传播。
+     *
+     * <p>早期实现每 2 tick 才传播一次（先是容器私有 tickCounter，后改为
+     * {@code getGameTime() % 2}），这使容器内的时间分辨率被限制在 2 tick，
+     * 最快振荡周期只能到 4 tick。实测传播开销在满载 54 格容器下约 9μs，
+     * 不足单 tick 预算的 0.02%，因此取消跳帧换取 1 tick 分辨率。</p>
+     */
+    @Test
+    @DisplayName("任意 game tick 都执行传播，不跳帧")
+    void propagation_runsOnEveryGameTick() {
+        var slots = Map.<String, Set<Integer>>of(
+            LivingRedstoneBlockFunction.ID, Set.of(10),
+            LivingRedstoneFunction.ID, Set.of(11));
+
+        for (long gameTime : new long[]{100, 101}) {
+            var ctx = new FakeContainerContext(SIZE, WIDTH).withGameTime(gameTime);
+            ctx.set(10, living(Items.REDSTONE_BLOCK, 1));
+            ctx.set(11, living(Items.REDSTONE, 1));
+            var data = new ContainerRedstoneData();
+            tickOnce(data, ctx, slots);
+            assertTrue(data.getSignal(11) > 0,
+                "game tick " + gameTime + " 应正常传播");
+        }
+    }
+
+    /**
+     * 中继器延迟以 game tick 计数，档位 N = 2N game tick。
+     *
+     * <p>保持原版「1 红石刻 = 2 game tick」语义：一档中继器延迟 2 tick，
+     * 因此充能后需再经过 2 次传播才输出。</p>
+     */
+    @Test
+    @DisplayName("一档中继器延迟 2 game tick 后才输出")
+    void repeater_delayCountsInGameTicks() {
+        var ctx = new FakeContainerContext(SIZE, WIDTH).withGameTime(100);
+        ctx.set(9, living(Items.REDSTONE_BLOCK, 1));
+        ItemStack repeater = living(Items.REPEATER, 1);
+        LivingItemManager.setRepeaterData(repeater,
+            LivingRepeaterData.DEFAULT.withDirection(Pos2D.RIGHT));
+        ctx.set(10, repeater);
+        ctx.set(11, living(Items.REDSTONE, 1));
+
+        var slots = Map.<String, Set<Integer>>of(
+            LivingRedstoneBlockFunction.ID, Set.of(9),
+            LivingRepeaterFunction.ID, Set.of(10),
+            LivingRedstoneFunction.ID, Set.of(11));
+
+        var data = new ContainerRedstoneData();
+
+        // 第 1 次传播：检测到输入，充能，delayTimer = 1 档 × 2 = 2
+        tickOnce(data, ctx, slots);
+        assertEquals(2, LivingItemManager.getRepeaterData(ctx.getItem(10)).delayTimer(),
+            "一档中继器充能后 delayTimer 应为 2 game tick");
+
+        // 第 2、3 次传播递减计时器，第 3 次归零后中继器开始输出
+        tickOnce(data, ctx, slots);
+        tickOnce(data, ctx, slots);
+        assertEquals(0, LivingItemManager.getRepeaterData(ctx.getItem(10)).delayTimer(),
+            "经过 2 game tick 后计时器应归零");
+
+        tickOnce(data, ctx, slots);
+        assertTrue(data.getSignal(11) > 0, "延迟结束后中继器应向前方输出信号");
     }
 
     // ════════════════════════════════════════

@@ -3,7 +3,6 @@ package com.qiqi.li.living.domain.redstone;
 import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.Queue;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import net.minecraft.core.BlockPos;
@@ -22,12 +21,37 @@ import com.qiqi.li.living.model.Pos2D;
 
 public class ContainerRedstoneData {
 
-    private static final int PROPAGATION_INTERVAL = 2;
+    /**
+     * 中继器一个档位对应的 game tick 数。
+     *
+     * <p>原版「1 红石刻 = 2 game tick」，档位 N 的中继器延迟 2N game tick。
+     * 本系统每 game tick 传播一次，因此充能时需把档位换算为 game tick 数。</p>
+     */
+    private static final int TICKS_PER_REPEATER_STEP = 2;
 
     private static final int E_UP = 0;
     private static final int E_DOWN = 1;
     private static final int E_LEFT = 2;
     private static final int E_RIGHT = 3;
+
+    // ── 槽位类型位掩码 ──
+    // 传播热路径上每格要做十几次「邻居是什么元件」的判定。
+    // 用 Set<Integer>.contains 会带来装箱 + 哈希查找，改为按槽位索引的位图。
+    private static final int BIT_DUST = 1;
+    private static final int BIT_TORCH = 1 << 1;
+    private static final int BIT_BUTTON = 1 << 2;
+    private static final int BIT_LEVER = 1 << 3;
+    private static final int BIT_LAMP = 1 << 4;
+    private static final int BIT_REPEATER = 1 << 5;
+    private static final int BIT_COMPARATOR = 1 << 6;
+    private static final int BIT_BLOCK = 1 << 7;
+
+    /** 所有红石元件（不含红石灯）——导电方块供电时需跳过这些槽位 */
+    private static final int MASK_REDSTONE = BIT_DUST | BIT_TORCH | BIT_BUTTON
+        | BIT_LEVER | BIT_REPEATER | BIT_COMPARATOR | BIT_BLOCK;
+
+    /** 每个槽位的元件类型位图，每次 calculate 开头重建 */
+    private int[] slotMask = new int[0];
 
     private EdgeGrid edgeGrid;
     private EdgeGrid prevEdgeGrid;
@@ -35,12 +59,10 @@ public class ContainerRedstoneData {
     private final int[] faceOutput = new int[4];
     private final int[] prevFaceOutput = new int[4];
 
-    private int tickCounter;
     private boolean processedThisTick;
     private long lastTickTime;
 
     public ContainerRedstoneData() {
-        this.tickCounter = 1; // 初始化为奇数，首次调用后递增到偶数，确保首次不跳过传播
         this.processedThisTick = false;
         this.lastTickTime = System.currentTimeMillis();
     }
@@ -87,11 +109,40 @@ public class ContainerRedstoneData {
         java.util.Arrays.fill(faceInput, 0);
     }
 
+    /** 重建槽位类型位图。每 tick 一次，之后所有类型判定走 O(1) 数组访问。 */
+    private void buildSlotMask(int size, Set<Integer> dustSlots, Set<Integer> torchSlots,
+            Set<Integer> buttonSlots, Set<Integer> leverSlots, Set<Integer> lampSlots,
+            Set<Integer> repeaterSlots, Set<Integer> comparatorSlots, Set<Integer> redstoneBlockSlots) {
+        if (slotMask.length != size) {
+            slotMask = new int[size];
+        } else {
+            Arrays.fill(slotMask, 0);
+        }
+        markSlots(dustSlots, BIT_DUST, size);
+        markSlots(torchSlots, BIT_TORCH, size);
+        markSlots(buttonSlots, BIT_BUTTON, size);
+        markSlots(leverSlots, BIT_LEVER, size);
+        markSlots(lampSlots, BIT_LAMP, size);
+        markSlots(repeaterSlots, BIT_REPEATER, size);
+        markSlots(comparatorSlots, BIT_COMPARATOR, size);
+        markSlots(redstoneBlockSlots, BIT_BLOCK, size);
+    }
+
+    private void markSlots(Set<Integer> slots, int bit, int size) {
+        for (int slot : slots) {
+            if (slot >= 0 && slot < size) slotMask[slot] |= bit;
+        }
+    }
+
+    /** 槽位是否属于给定类型集合（mask 为若干 BIT_ 的或） */
+    private boolean is(int slot, int mask) {
+        return slot >= 0 && slot < slotMask.length && (slotMask[slot] & mask) != 0;
+    }
+
     public void calculate(ContainerContext context, TickContext tick) {
         if (processedThisTick) return;
         processedThisTick = true;
         lastTickTime = System.currentTimeMillis();
-        tickCounter++;
 
         int size = context.getSize();
         int width = context.getWidth();
@@ -122,9 +173,12 @@ public class ContainerRedstoneData {
             return;
         }
 
-        if (tickCounter % PROPAGATION_INTERVAL != 0) {
-            return;
-        }
+        // 传播节拍对齐全局游戏时钟：每 game tick 传播一次。
+        // 元件延迟（中继器 delayTimer、按钮 pulseTimer）统一以 game tick 计数，
+        // 中继器充能时按 TICKS_PER_REPEATER_STEP 换算档位，保持原版红石刻语义。
+
+        buildSlotMask(size, dustSlots, torchSlots, buttonSlots, leverSlots,
+            lampSlots, repeaterSlots, comparatorSlots, redstoneBlockSlots);
 
         reset();
         injectExternalInputs(context);
@@ -132,14 +186,12 @@ public class ContainerRedstoneData {
         phase0CountdownDelays(repeaterSlots, buttonSlots, size, width, context);
         Queue<Integer> queue = phase1CollectSources(torchSlots, buttonSlots, leverSlots,
             repeaterSlots, comparatorSlots, dustSlots, redstoneBlockSlots, size, width, context);
-        phase2Propagation(queue, dustSlots, repeaterSlots, comparatorSlots,
-            torchSlots, lampSlots, size, width, context);
+        phase2Propagation(queue, size, width, context);
         phase4PowerConductors(torchSlots, buttonSlots, leverSlots,
             repeaterSlots, comparatorSlots, dustSlots, redstoneBlockSlots,
             size, width, context);
         phase3RecheckInputs(repeaterSlots, comparatorSlots, size, width, context);
-        phase5UpdateDisplay(torchSlots, dustSlots, lampSlots, buttonSlots, leverSlots,
-            repeaterSlots, comparatorSlots, redstoneBlockSlots, size, width, context);
+        phase5UpdateDisplay(torchSlots, dustSlots, lampSlots, size, width, context);
         computeFaceOutput(width, height);
         notifyBoundaryChange(context, width, height);
     }
@@ -179,7 +231,7 @@ public class ContainerRedstoneData {
 
             LivingButtonData data = LivingItemManager.getButtonData(stack);
             if (data.pressed() && data.pulseTimer() > 0) {
-                int newTimer = data.pulseTimer() - 2;
+                int newTimer = data.pulseTimer() - 1;
                 if (newTimer <= 0) {
                     LivingItemManager.setButtonData(stack, data.withPressed(false).withPulseTimer(0));
                     context.syncSlotToClients(slot, stack);
@@ -211,7 +263,7 @@ public class ContainerRedstoneData {
                 int neighbor = resolveSlot(slot, dir, size, width);
                 if (cap > edgeGrid.get(slot, dir)) {
                     edgeGrid.set(slot, dir, cap);
-                    if (neighbor >= 0 && dustSlots.contains(neighbor)) {
+                    if (is(neighbor, BIT_DUST)) {
                         queue.add(neighbor);
                     }
                 }
@@ -230,7 +282,7 @@ public class ContainerRedstoneData {
                 int neighbor = resolveSlot(slot, dir, size, width);
                 if (cap > edgeGrid.get(slot, dir)) {
                     edgeGrid.set(slot, dir, cap);
-                    if (neighbor >= 0 && dustSlots.contains(neighbor)) {
+                    if (is(neighbor, BIT_DUST)) {
                         queue.add(neighbor);
                     }
                 }
@@ -249,7 +301,7 @@ public class ContainerRedstoneData {
                 int neighbor = resolveSlot(slot, dir, size, width);
                 if (cap > edgeGrid.get(slot, dir)) {
                     edgeGrid.set(slot, dir, cap);
-                    if (neighbor >= 0 && dustSlots.contains(neighbor)) {
+                    if (is(neighbor, BIT_DUST)) {
                         queue.add(neighbor);
                     }
                 }
@@ -268,7 +320,7 @@ public class ContainerRedstoneData {
             int neighbor = resolveSlot(slot, outDir, size, width);
             if (cap > edgeGrid.get(slot, outDir)) {
                 edgeGrid.set(slot, outDir, cap);
-                if (neighbor >= 0 && dustSlots.contains(neighbor)) {
+                if (is(neighbor, BIT_DUST)) {
                     queue.add(neighbor);
                 }
             }
@@ -286,7 +338,7 @@ public class ContainerRedstoneData {
             int neighbor = resolveSlot(slot, outDir, size, width);
             if (output > edgeGrid.get(slot, outDir)) {
                 edgeGrid.set(slot, outDir, output);
-                if (neighbor >= 0 && dustSlots.contains(neighbor)) {
+                if (is(neighbor, BIT_DUST)) {
                     queue.add(neighbor);
                 }
             }
@@ -302,7 +354,7 @@ public class ContainerRedstoneData {
                 int neighbor = resolveSlot(slot, dir, size, width);
                 if (cap > edgeGrid.get(slot, dir)) {
                     edgeGrid.set(slot, dir, cap);
-                    if (neighbor >= 0 && dustSlots.contains(neighbor)) {
+                    if (is(neighbor, BIT_DUST)) {
                         queue.add(neighbor);
                     }
                 }
@@ -312,13 +364,11 @@ public class ContainerRedstoneData {
         return queue;
     }
 
-    private void phase2Propagation(Queue<Integer> queue, Set<Integer> dustSlots,
-            Set<Integer> repeaterSlots, Set<Integer> comparatorSlots,
-            Set<Integer> torchSlots, Set<Integer> lampSlots,
+    private void phase2Propagation(Queue<Integer> queue,
             int size, int width, ContainerContext context) {
         while (!queue.isEmpty()) {
             int current = queue.poll();
-            if (!dustSlots.contains(current)) continue;
+            if (!is(current, BIT_DUST)) continue;
 
             ItemStack stack = context.getItem(current);
             if (stack.isEmpty()) continue;
@@ -336,9 +386,7 @@ public class ContainerRedstoneData {
                 if (output <= currentEdge) continue;
                 edgeGrid.set(current, dir, output);
 
-                boolean isTarget = neighbor >= 0 && isRedstoneTarget(neighbor, dustSlots,
-                    repeaterSlots, comparatorSlots, torchSlots, lampSlots);
-                if (isTarget && dustSlots.contains(neighbor)) {
+                if (is(neighbor, BIT_DUST)) {
                     queue.add(neighbor);
                 }
             }
@@ -355,7 +403,7 @@ public class ContainerRedstoneData {
 
             LivingRepeaterData data = LivingItemManager.getRepeaterData(stack);
 
-            boolean locked = checkRepeaterLocked(slot, data, repeaterSlots, size, width, context);
+            boolean locked = checkRepeaterLocked(slot, data, size, width, context);
             if (data.locked() != locked) {
                 data = data.withLocked(locked);
                 LivingItemManager.setRepeaterData(stack, data);
@@ -369,13 +417,15 @@ public class ContainerRedstoneData {
             if (data.powered() && data.delayTimer() > 0) continue;
 
             if (hasInput && !data.powered()) {
-                LivingItemManager.setRepeaterData(stack, data.withPowered(true).withDelayTimer(data.delay()));
+                LivingItemManager.setRepeaterData(stack,
+                    data.withPowered(true).withDelayTimer(data.delay() * TICKS_PER_REPEATER_STEP));
                 context.syncSlotToClients(slot, stack);
             } else if (hasInput && data.powered() && data.delayTimer() < 0) {
                 LivingItemManager.setRepeaterData(stack, data.withDelayTimer(0));
                 context.syncSlotToClients(slot, stack);
             } else if (!hasInput && data.powered() && data.delayTimer() == 0) {
-                LivingItemManager.setRepeaterData(stack, data.withDelayTimer(-data.delay()));
+                LivingItemManager.setRepeaterData(stack,
+                    data.withDelayTimer(-data.delay() * TICKS_PER_REPEATER_STEP));
                 context.syncSlotToClients(slot, stack);
             }
         }
@@ -404,15 +454,6 @@ public class ContainerRedstoneData {
             Set<Integer> leverSlots, Set<Integer> repeaterSlots, Set<Integer> comparatorSlots,
             Set<Integer> dustSlots, Set<Integer> redstoneBlockSlots,
             int size, int width, ContainerContext context) {
-        Set<Integer> allRedstone = new HashSet<>();
-        allRedstone.addAll(torchSlots);
-        allRedstone.addAll(buttonSlots);
-        allRedstone.addAll(leverSlots);
-        allRedstone.addAll(repeaterSlots);
-        allRedstone.addAll(comparatorSlots);
-        allRedstone.addAll(dustSlots);
-        allRedstone.addAll(redstoneBlockSlots);
-
         Queue<Integer> secondQueue = new ArrayDeque<>();
 
         for (int slot : dustSlots) {
@@ -428,8 +469,7 @@ public class ContainerRedstoneData {
             int output = Math.min(maxInput - 1, getSignalCap(stack.getCount()));
             for (int dir = 0; dir < 4; dir++) {
                 if ((conn & (1 << dir)) == 0) continue;
-                powerConductiveNeighbor(slot, output, dir, allRedstone, dustSlots,
-                    size, width, context, secondQueue);
+                powerConductiveNeighbor(slot, output, dir, size, width, context, secondQueue);
             }
         }
 
@@ -444,8 +484,7 @@ public class ContainerRedstoneData {
             int skipDir = edgeIndex(data.direction().opposite());
             for (int dir = 0; dir < 4; dir++) {
                 if (dir == skipDir) continue;
-                powerConductiveNeighbor(slot, cap, dir, allRedstone, dustSlots,
-                    size, width, context, secondQueue);
+                powerConductiveNeighbor(slot, cap, dir, size, width, context, secondQueue);
             }
         }
 
@@ -458,8 +497,7 @@ public class ContainerRedstoneData {
 
             int cap = getSignalCap(stack.getCount());
             for (int dir = 0; dir < 4; dir++) {
-                powerConductiveNeighbor(slot, cap, dir, allRedstone, dustSlots,
-                    size, width, context, secondQueue);
+                powerConductiveNeighbor(slot, cap, dir, size, width, context, secondQueue);
             }
         }
 
@@ -472,8 +510,7 @@ public class ContainerRedstoneData {
 
             int cap = getSignalCap(stack.getCount());
             for (int dir = 0; dir < 4; dir++) {
-                powerConductiveNeighbor(slot, cap, dir, allRedstone, dustSlots,
-                    size, width, context, secondQueue);
+                powerConductiveNeighbor(slot, cap, dir, size, width, context, secondQueue);
             }
         }
 
@@ -484,8 +521,7 @@ public class ContainerRedstoneData {
 
             int cap = getSignalCap(stack.getCount());
             for (int dir = 0; dir < 4; dir++) {
-                powerConductiveNeighbor(slot, cap, dir, allRedstone, dustSlots,
-                    size, width, context, secondQueue);
+                powerConductiveNeighbor(slot, cap, dir, size, width, context, secondQueue);
             }
         }
 
@@ -498,8 +534,7 @@ public class ContainerRedstoneData {
 
             int cap = getSignalCap(stack.getCount());
             int outDir = edgeIndex(data.direction());
-            powerConductiveNeighbor(slot, cap, outDir, allRedstone, dustSlots,
-                size, width, context, secondQueue);
+            powerConductiveNeighbor(slot, cap, outDir, size, width, context, secondQueue);
         }
 
         for (int slot : comparatorSlots) {
@@ -511,28 +546,25 @@ public class ContainerRedstoneData {
             if (output <= 0) continue;
 
             int outDir = edgeIndex(data.direction());
-            powerConductiveNeighbor(slot, output, outDir, allRedstone, dustSlots,
-                size, width, context, secondQueue);
+            powerConductiveNeighbor(slot, output, outDir, size, width, context, secondQueue);
         }
 
         if (!secondQueue.isEmpty()) {
-            phase2Propagation(secondQueue, dustSlots, repeaterSlots, comparatorSlots,
-                torchSlots, new HashSet<>(), size, width, context);
+            phase2Propagation(secondQueue, size, width, context);
         }
     }
 
-    private void powerConductiveNeighbor(int slot, int signal, int dir, Set<Integer> allRedstone,
-            Set<Integer> dustSlots, int size, int width, ContainerContext context,
-            Queue<Integer> secondQueue) {
+    private void powerConductiveNeighbor(int slot, int signal, int dir,
+            int size, int width, ContainerContext context, Queue<Integer> secondQueue) {
         int neighbor = resolveSlot(slot, dir, size, width);
-        if (neighbor < 0 || allRedstone.contains(neighbor)) return;
+        if (neighbor < 0 || is(neighbor, MASK_REDSTONE)) return;
         if (!isConductiveBlock(context.getItem(neighbor))) return;
 
         for (int d2 = 0; d2 < 4; d2++) {
             if (signal > edgeGrid.get(neighbor, d2)) {
                 edgeGrid.set(neighbor, d2, signal);
                 int n2 = resolveSlot(neighbor, d2, size, width);
-                if (n2 >= 0 && dustSlots.contains(n2)) {
+                if (is(n2, BIT_DUST)) {
                     secondQueue.add(n2);
                 }
             }
@@ -579,7 +611,7 @@ public class ContainerRedstoneData {
         }
     }
 
-    private boolean checkRepeaterLocked(int slot, LivingRepeaterData data, Set<Integer> repeaterSlots,
+    private boolean checkRepeaterLocked(int slot, LivingRepeaterData data,
             int size, int width, ContainerContext context) {
         Pos2D dir = data.direction();
         boolean isVertical = dir.equals(Pos2D.UP) || dir.equals(Pos2D.DOWN);
@@ -587,7 +619,7 @@ public class ContainerRedstoneData {
 
         for (int perpDir : perpDirs) {
             int neighbor = resolveSlot(slot, perpDir, size, width);
-            if (neighbor >= 0 && repeaterSlots.contains(neighbor)) {
+            if (is(neighbor, BIT_REPEATER)) {
                 ItemStack neighborStack = context.getItem(neighbor);
                 if (!neighborStack.isEmpty()) {
                     LivingRepeaterData neighborData = LivingItemManager.getRepeaterData(neighborStack);
@@ -649,9 +681,7 @@ public class ContainerRedstoneData {
     }
 
     private void phase5UpdateDisplay(Set<Integer> torchSlots, Set<Integer> dustSlots,
-            Set<Integer> lampSlots, Set<Integer> buttonSlots, Set<Integer> leverSlots,
-            Set<Integer> repeaterSlots, Set<Integer> comparatorSlots, Set<Integer> redstoneBlockSlots,
-            int size, int width, ContainerContext context) {
+            Set<Integer> lampSlots, int size, int width, ContainerContext context) {
         int height = (size + width - 1) / width;
         for (int slot : torchSlots) {
             if (slot < 0 || slot >= size) continue;
@@ -674,9 +704,7 @@ public class ContainerRedstoneData {
             if (stack.isEmpty()) continue;
 
             int maxSignal = edgeGrid.maxOfSlot(slot);
-            byte conn = computeDustConnections(slot, size, width, context,
-                buttonSlots, leverSlots, repeaterSlots, comparatorSlots,
-                torchSlots, dustSlots, lampSlots, redstoneBlockSlots);
+            byte conn = computeDustConnections(slot, size, width, context);
             LivingRedstoneData data = LivingItemManager.getRedstoneData(stack);
             if (data.signalStrength() != maxSignal || data.isPowered() != (maxSignal > 0)
                 || data.connections() != conn) {
@@ -702,19 +730,16 @@ public class ContainerRedstoneData {
 
     private static final Pos2D[] DIR_POS = {Pos2D.UP, Pos2D.DOWN, Pos2D.LEFT, Pos2D.RIGHT};
 
-    private byte computeDustConnections(int slot, int size, int width, ContainerContext context,
-            Set<Integer> buttonSlots, Set<Integer> leverSlots, Set<Integer> repeaterSlots,
-            Set<Integer> comparatorSlots, Set<Integer> torchSlots, Set<Integer> dustSlots,
-            Set<Integer> lampSlots, Set<Integer> redstoneBlockSlots) {
+    private byte computeDustConnections(int slot, int size, int width, ContainerContext context) {
         byte conn = 0;
         for (int dir = 0; dir < 4; dir++) {
             int neighbor = resolveSlot(slot, dir, size, width);
             if (neighbor < 0) continue;
 
-            if (repeaterSlots.contains(neighbor) || comparatorSlots.contains(neighbor)) {
+            if (is(neighbor, BIT_REPEATER | BIT_COMPARATOR)) {
                 ItemStack ns = context.getItem(neighbor);
                 if (!ns.isEmpty()) {
-                    Pos2D facing = repeaterSlots.contains(neighbor)
+                    Pos2D facing = is(neighbor, BIT_REPEATER)
                         ? LivingItemManager.getRepeaterData(ns).direction()
                         : LivingItemManager.getComparatorData(ns).direction();
                     Pos2D d = DIR_POS[dir];
@@ -722,9 +747,8 @@ public class ContainerRedstoneData {
                         conn |= (1 << dir);
                     }
                 }
-            } else if (buttonSlots.contains(neighbor) || leverSlots.contains(neighbor)
-                || torchSlots.contains(neighbor) || dustSlots.contains(neighbor)
-                || lampSlots.contains(neighbor) || redstoneBlockSlots.contains(neighbor)) {
+            } else if (is(neighbor, BIT_BUTTON | BIT_LEVER | BIT_TORCH
+                    | BIT_DUST | BIT_LAMP | BIT_BLOCK)) {
                 conn |= (1 << dir);
             }
         }
@@ -745,12 +769,6 @@ public class ContainerRedstoneData {
         }
 
         return conn;
-    }
-
-    private boolean isRedstoneTarget(int slot, Set<Integer> dustSlots, Set<Integer> repeaterSlots,
-            Set<Integer> comparatorSlots, Set<Integer> torchSlots, Set<Integer> lampSlots) {
-        return dustSlots.contains(slot) || repeaterSlots.contains(slot)
-            || comparatorSlots.contains(slot) || torchSlots.contains(slot) || lampSlots.contains(slot);
     }
 
     private int getEffectiveInput(int slot, int dir, int width, int height) {

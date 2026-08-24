@@ -40,7 +40,7 @@
 │                              │ ContainerRedstoneData     │      │
 │                              │   .calculate()            │      │
 │                              │   EdgeGrid + 共享边       │      │
-│                              │   每 2 tick 传播 + 输出   │      │
+│                              │   每 tick 传播 + 输出     │      │
 │                              └────────┬─────────────────┘      │
 │                                       │                         │
 │              ┌────────────────────────┼──────────────────┐     │
@@ -152,11 +152,11 @@ public record LivingRedstoneTorchData(
 
 ```java
 public class ContainerRedstoneData {
-    private static final int PROPAGATION_INTERVAL = 2;  // 每 2 tick 传播一次
+    private static final int TICKS_PER_REPEATER_STEP = 2;  // 中继器 1 档 = 2 game tick
 
     private EdgeGrid edgeGrid;          // 当前帧边信号网格
     private EdgeGrid prevEdgeGrid;      // 上一帧边信号（用于断电检测）
-    private int tickCounter;            // tick 计数器（用于传播间隔）
+    private int[] slotMask;             // 槽位元件类型位图（热路径去装箱）
     private boolean processedThisTick;  // 当前 tick 是否已计算
     private long lastTickTime;          // 最后访问时间戳（用于过期清理）
 
@@ -173,14 +173,19 @@ public class ContainerRedstoneData {
 | `edgeGrid` | EdgeGrid | 当前帧边信号网格，存储所有槽位间边的信号值（纯内部信号） |
 | `prevEdgeGrid` | EdgeGrid | 上一帧边信号，Phase 0 用于中继器断电检测 |
 | `faceInput[4]` | int[4] | 外部注入信号强度（4 方向），仅用于组件状态检测（火把烧毁/中继器输入/比较器等），不参与红石粉传播 |
-| `faceOutput[4]` | int[4] | 内部信号在 4 个边界面的输出信号，扫描 edgeGrid 边界边得出，传播 tick 更新 |
+| `faceOutput[4]` | int[4] | 内部信号在 4 个边界面的输出信号，扫描 edgeGrid 边界边得出，每 tick 更新 |
 | `prevFaceOutput[4]` | int[4] | 上一帧 faceOutput，用于变化检测避免不必要的方块更新 |
-| `tickCounter` | int | 自增计数器，偶数 tick 触发传播重算，奇数 tick 直接返回 |
+| `slotMask` | int[] | 每槽位的元件类型位图（`BIT_DUST`/`BIT_TORCH`/…），每 tick 由 `buildSlotMask()` 重建。传播热路径的类型判定走 O(1) 数组访问，替代 `Set<Integer>.contains` 的装箱 + 哈希 |
 | `processedThisTick` | boolean | 同一 tick 内多个 Function 触发时，保证只计算一次。每 tick 开始时由 `SimpleContainerContext.setTickContext()` 重置 |
 | `lastTickTime` | long | 最后访问时间戳，`ContainerLivingItemHandler.cleanupStaleRedstoneData()` 每 120 秒清理超过 120 秒未访问的条目 |
-| `PROPAGATION_INTERVAL` | int (static) | 传播间隔 = 2 tick。`injectExternalInputs`、`computeFaceOutput`、`notifyBoundaryChange` 均在传播 tick 执行 |
+| `TICKS_PER_REPEATER_STEP` | int (static) | 中继器档位到 game tick 的换算系数。档位 N 充能时 `delayTimer = N × 2`，保持原版「1 红石刻 = 2 game tick」语义 |
 
-**持久化机制**：`ContainerRedstoneData` 实例通过 `ContainerLivingItemHandler.REDSTONE_DATA_CACHE`（`LinkedHashMap<String, ContainerRedstoneData>`）静态缓存持久化，以 `containerKey` 为键。`SimpleContainerContext` 每 tick 重建，但其 `getOrCreateRedstoneData()` 从缓存获取同一实例，确保 `edgeGrid`、`prevEdgeGrid`、`tickCounter` 等关键状态跨 tick 保留。`resetProcessedFlag()` 在每 tick 开始时由 `setTickContext()` 调用，确保 `processedThisTick` 被正确重置。
+> **时间分辨率 = 1 game tick**。早期实现每 2 tick 才传播一次（先用容器私有 `tickCounter`，
+> 后改为 `getGameTime() % 2`），这把容器内最快振荡周期限制在 4 tick。
+> 实测满载 54 格容器单次传播约 4.9μs（不足单 tick 预算的 0.01%），
+> 因此取消跳帧，改为每 tick 传播，元件延迟统一以 game tick 计数。
+
+**持久化机制**：`ContainerRedstoneData` 实例通过 `ContainerLivingItemHandler.REDSTONE_DATA_CACHE`（`LinkedHashMap<String, ContainerRedstoneData>`）静态缓存持久化，以 `containerKey` 为键。`SimpleContainerContext` 每 tick 重建，但其 `getOrCreateRedstoneData()` 从缓存获取同一实例，确保 `edgeGrid`、`prevEdgeGrid` 等关键状态跨 tick 保留。`resetProcessedFlag()` 在每 tick 开始时由 `setTickContext()` 调用，确保 `processedThisTick` 被正确重置。
 
 ### 2.3.1 EdgeGrid — 共享边信号网格
 
@@ -959,10 +964,10 @@ injectExternalInputs() —— 每传播周期调用
 
 | 操作 | 频率 | 说明 |
 |------|------|------|
-| 内部传播 (6 phase) | 每 2 tick | `calculate()` 触发 |
-| `computeFaceOutput` | 每 2 tick | `calculate()` 末尾 |
-| `notifyBoundaryChange` | 每 2 tick（或 `!hasAny`） | `calculate()` 末尾 |
-| `injectExternalInputs` | 每 2 tick | `calculate()` 开头 |
+| 内部传播 (6 phase) | 每 tick | `calculate()` 触发 |
+| `computeFaceOutput` | 每 tick | `calculate()` 末尾 |
+| `notifyBoundaryChange` | 每 tick | `calculate()` 末尾 |
+| `injectExternalInputs` | 每 tick | `calculate()` 开头 |
 | Mixin `getSignal` 拦截 | 每次世界查询时 | `BlockStateBaseMixin` |
 
 ##### 跨容器直读机制（超限信号传输）

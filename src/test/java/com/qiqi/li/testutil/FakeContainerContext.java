@@ -4,6 +4,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
+
+import org.mockito.Mockito;
 
 import com.qiqi.li.living.container.ContainerContext;
 
@@ -18,12 +21,16 @@ import com.qiqi.li.living.container.ContainerContext;
  * FakeContainerContext ctx = new FakeContainerContext(27, 9);
  * ctx.set(4, new ItemStack(Items.REDSTONE));
  * </pre>
+ *
+ * <p>如需驱动依赖全局时钟的逻辑（如红石传播的节拍对齐），
+ * 用 {@link #withGameTime(long)} 提供一个可控 game time 的 mock Level。</p>
  */
 public class FakeContainerContext implements ContainerContext {
 
     private final ItemStack[] slots;
     private final int width;
     private final String containerKey;
+    private Level level;
 
     /** 记录所有 syncSlotToClients 调用的槽位，供断言同步行为 */
     public final List<Integer> syncedSlots = new ArrayList<>();
@@ -41,10 +48,26 @@ public class FakeContainerContext implements ContainerContext {
         }
     }
 
+    /**
+     * 设置一个返回指定 game time 的 mock Level，便于测试依赖全局时钟的逻辑。
+     * 偶数 game time 时红石传播会真正执行，奇数时跳帧。
+     */
+    public FakeContainerContext withGameTime(long gameTime) {
+        Level mock = Mockito.mock(Level.class);
+        Mockito.when(mock.getGameTime()).thenReturn(gameTime);
+        this.level = mock;
+        return this;
+    }
+
     /** 放入物品并返回 this，便于链式构建测试场景 */
     public FakeContainerContext set(int slot, ItemStack stack) {
         slots[slot] = stack;
         return this;
+    }
+
+    @Override
+    public Level getLevel() {
+        return level;
     }
 
     @Override
