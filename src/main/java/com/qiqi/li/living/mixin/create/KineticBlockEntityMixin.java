@@ -39,6 +39,44 @@ public abstract class KineticBlockEntityMixin implements LivingItemStressOutput 
         }
     }
 
+    @Inject(method = "onChunkUnloaded", at = @At("HEAD"), remap = false)
+    private void livingItem$onChunkUnloaded(CallbackInfo ci) {
+        KineticBlockEntity self = (KineticBlockEntity) (Object) this;
+        if (self.getLevel() == null || self.getLevel().isClientSide) return;
+
+        if (livingItem$generatedRPM != 0) {
+            livingItem$refreshedThisTick = true;
+
+            if (self.hasNetwork()) {
+                try {
+                    self.getOrCreateNetwork().remove(self);
+                } catch (NullPointerException e) {
+                    LOGGER.debug("[LivingItem] NPE removing from network on chunk unload at {}: {}",
+                        self.getBlockPos(), e.getMessage());
+                } catch (Exception e) {
+                    LOGGER.warn("[LivingItem] Error removing from network on chunk unload at {}",
+                        self.getBlockPos(), e);
+                }
+            }
+
+            try {
+                self.detachKinetics();
+            } catch (NullPointerException e) {
+                LOGGER.debug("[LivingItem] NPE detaching kinetics on chunk unload at {}: {}",
+                    self.getBlockPos(), e.getMessage());
+            } catch (Exception e) {
+                LOGGER.warn("[LivingItem] Error detaching kinetics on chunk unload at {}",
+                    self.getBlockPos(), e);
+            }
+
+            livingItem$generatedRPM = 0;
+            livingItem$stressCapacity = 0;
+            livingItem$refreshedThisTick = false;
+            livingItem$pendingReattach = false;
+            livingItem$needsSync = false;
+        }
+    }
+
     @Inject(method = "tick", at = @At("HEAD"), remap = false)
     private void livingItem$checkExpiry(CallbackInfo ci) {
         KineticBlockEntity self = (KineticBlockEntity) (Object) this;
