@@ -27,6 +27,7 @@ import com.qiqi.li.living.domain.redstone.LivingComparatorData;
 import com.qiqi.li.living.domain.redstone.LivingCutCopperData;
 import com.qiqi.li.living.domain.redstone.LivingGrateData;
 import com.qiqi.li.living.domain.redstone.LivingCopperBulbData;
+import com.qiqi.li.living.domain.redstone.LivingCopperSignalData;
 import net.minecraft.world.item.Items;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.registries.Registries;
@@ -183,6 +184,13 @@ public class LivingItemManager {
                             .networkSynchronized(LivingCopperBulbData.STREAM_CODEC)
                             .build());
 
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingCopperSignalData>> LIVING_COPPER_SIGNAL =
+            DATA_COMPONENT_TYPES.register("living_copper_signal", () ->
+                    DataComponentType.<LivingCopperSignalData>builder()
+                            .persistent(LivingCopperSignalData.CODEC)
+                            .networkSynchronized(LivingCopperSignalData.STREAM_CODEC)
+                            .build());
+
     private static final List<LivingItemFunction> FUNCTIONS = new ArrayList<>();
     private static final List<LivingItemFunction> FUNCTIONS_VIEW = Collections.unmodifiableList(FUNCTIONS);
     private static final Map<Item, List<LivingItemFunction>> APPLICABLE_CACHE = new ConcurrentHashMap<>();
@@ -258,6 +266,7 @@ public class LivingItemManager {
         stack.remove(LIVING_CUT_COPPER_DATA.value());
         stack.remove(LIVING_GRATE_DATA.value());
         stack.remove(LIVING_COPPER_BULB_DATA.value());
+        stack.remove(LIVING_COPPER_SIGNAL.value());
     }
 
     public static void setLiving(ItemStack stack, boolean living) {
@@ -463,5 +472,13 @@ public class LivingItemManager {
 
     public static void setCopperBulbData(ItemStack stack, LivingCopperBulbData data) {
         setData(stack, LIVING_COPPER_BULB_DATA.value(), data, LivingCopperBulbData.DEFAULT);
+    }
+
+    public static LivingCopperSignalData getCopperSignal(ItemStack stack) {
+        return getData(stack, LIVING_COPPER_SIGNAL.value(), LivingCopperSignalData.DEFAULT);
+    }
+
+    public static void setCopperSignal(ItemStack stack, LivingCopperSignalData data) {
+        setData(stack, LIVING_COPPER_SIGNAL.value(), data, LivingCopperSignalData.DEFAULT);
     }
 }

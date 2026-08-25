@@ -99,6 +99,8 @@
   "tooltip.livingitem.redstone_block.max_signal": "  §7Max Signal",
 
   "tooltip.livingitem.copper.title": "§6Living Copper§r",
+  "tooltip.livingitem.copper.signal": "  §7Signal",
+  "tooltip.livingitem.copper.max_signal": "  §7Max Signal",
   "tooltip.livingitem.copper.type": "  §7Type",
   "tooltip.livingitem.copper.channel": "  §7Channel",
   "tooltip.livingitem.copper.chiseled_hint": "  §bH/V signals isolated (Overpass)§r",

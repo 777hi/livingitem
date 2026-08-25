@@ -35,7 +35,7 @@ import com.mojang.logging.LogUtils;
 import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.domain.ender.EnderChannelRegistry;
-import com.qiqi.li.living.compat.create.ModCreate;
+import com.qiqi.li.living.compat.create.StressOutputManager;
 import com.qiqi.li.living.perf.PerfMetrics;
 
 /**
@@ -197,7 +197,7 @@ public class ContainerLivingItemHandler {
 
     private static void updateStressOutput(SimpleContainerContext ctx, BlockEntity containerBE,
                                             ContainerStressData stressData) {
-        ModCreate.updateStressOutput(containerBE.getLevel(), containerBE.getBlockPos(), stressData);
+        StressOutputManager.apply(containerBE.getLevel(), containerBE.getBlockPos(), stressData);
     }
 
     private static void updatePlayerFeetStressOutput(SimpleContainerContext ctx,
@@ -209,7 +209,7 @@ public class ContainerLivingItemHandler {
         if (level.isClientSide) return;
 
         BlockPos feetPos = player.blockPosition();
-        ModCreate.updateStressOutput(level, feetPos, stressData);
+        StressOutputManager.apply(level, feetPos, stressData);
     }
 
     /**

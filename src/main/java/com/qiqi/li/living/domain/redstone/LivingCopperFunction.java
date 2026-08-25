@@ -47,21 +47,19 @@ public class LivingCopperFunction implements LivingItemFunction, HasContainerDat
                              TooltipFlag flag,
                              ItemStack stack) {
         var item = stack.getItem();
-        int oxidation = getOxidationLevel(item);
-        String typeName = getTypeName(item);
 
         tooltipAdder.accept(Component.nullToEmpty(""));
         tooltipAdder.accept(Component.translatable("tooltip.livingitem.copper.title")
             .withStyle(ChatFormatting.GOLD));
 
+        LivingCopperSignalData sigData = LivingItemManager.getCopperSignal(stack);
         tooltipAdder.accept(Component.literal("  ")
-            .append(Component.translatable("tooltip.livingitem.copper.type"))
-            .append(Component.literal(": " + typeName))
-            .withStyle(ChatFormatting.YELLOW));
+            .append(Component.translatable("tooltip.livingitem.copper.signal"))
+            .append(Component.literal(": " + sigData.signalStrength()))
+            .withStyle(sigData.signalStrength() > 0 ? ChatFormatting.RED : ChatFormatting.DARK_GRAY));
 
-        tooltipAdder.accept(Component.literal("  ")
-            .append(Component.translatable("tooltip.livingitem.copper.channel"))
-            .append(Component.literal(": " + (char)('A' + oxidation)))
+        tooltipAdder.accept(Component.translatable("tooltip.livingitem.copper.max_signal")
+            .append(Component.literal(": " + ContainerRedstoneData.getSignalCap(stack.getCount())))
             .withStyle(ChatFormatting.GRAY));
 
         if (isChiseled(item)) {
@@ -70,24 +68,6 @@ public class LivingCopperFunction implements LivingItemFunction, HasContainerDat
                 .append(Component.translatable("tooltip.livingitem.copper.direction"))
                 .append(Component.literal(": " + data.direction().getSymbol()))
                 .withStyle(ChatFormatting.GREEN));
-        }
-        if (isCut(item)) {
-            tooltipAdder.accept(Component.translatable("tooltip.livingitem.copper.chiseled_hint")
-                .withStyle(ChatFormatting.AQUA));
-        }
-        if (isGrate(item)) {
-            LivingGrateData data = LivingItemManager.getGrateData(stack);
-            tooltipAdder.accept(Component.literal("  ")
-                .append(Component.translatable("tooltip.livingitem.copper.grate_output"))
-                .append(Component.literal(": " + data.output()))
-                .withStyle(data.output() ? ChatFormatting.RED : ChatFormatting.DARK_GRAY));
-        }
-        if (isBulb(item)) {
-            LivingCopperBulbData data = LivingItemManager.getCopperBulbData(stack);
-            tooltipAdder.accept(Component.literal("  ")
-                .append(Component.translatable("tooltip.livingitem.copper.bulb_state"))
-                .append(Component.literal(": " + (data.lit() ? "ON" : "OFF")))
-                .withStyle(data.lit() ? ChatFormatting.RED : ChatFormatting.DARK_GRAY));
         }
     }
 

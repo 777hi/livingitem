@@ -248,7 +248,7 @@ public class LivingItem {
     private final Set<String> reusableKeySet = new HashSet<>();
 
     @SubscribeEvent
-    public void onServerTick(ServerTickEvent.Post event) {
+    public void onServerTick(ServerTickEvent.Pre event) {
         var server = event.getServer();
 
         for (var player : server.getPlayerList().getPlayers()) {

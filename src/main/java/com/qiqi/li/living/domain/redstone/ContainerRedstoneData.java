@@ -961,20 +961,10 @@ public class ContainerRedstoneData {
             if (stack.isEmpty()) continue;
 
             int maxSignal = edgeGrid.maxOfSlot(slot);
-            if (is(slot, BIT_GRATE)) {
-                LivingGrateData data = LivingItemManager.getGrateData(stack);
-                if (data.output() != (maxSignal > 0)) {
-                    LivingItemManager.setGrateData(stack, data.withOutput(maxSignal > 0));
-                    context.syncSlotToClients(slot, stack);
-                }
-            }
-            if (is(slot, BIT_BULB)) {
-                LivingCopperBulbData data = LivingItemManager.getCopperBulbData(stack);
-                boolean hasSignal = edgeGrid.anyOfSlot(slot);
-                if (data.lit() != hasSignal) {
-                    LivingItemManager.setCopperBulbData(stack, data.withLit(hasSignal));
-                    context.syncSlotToClients(slot, stack);
-                }
+            LivingCopperSignalData sigData = LivingItemManager.getCopperSignal(stack);
+            if (sigData.signalStrength() != maxSignal) {
+                LivingItemManager.setCopperSignal(stack, sigData.withSignal(maxSignal));
+                context.syncSlotToClients(slot, stack);
             }
         }
     }

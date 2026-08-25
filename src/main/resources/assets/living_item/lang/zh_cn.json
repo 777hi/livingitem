@@ -98,6 +98,8 @@
   "tooltip.livingitem.redstone_block.max_signal": "  §7最大信号",
 
   "tooltip.livingitem.copper.title": "§6活铜§r",
+  "tooltip.livingitem.copper.signal": "  §7红电信号",
+  "tooltip.livingitem.copper.max_signal": "  §7最大红电信号",
   "tooltip.livingitem.copper.type": "  §7类型",
   "tooltip.livingitem.copper.channel": "  §7频道",
   "tooltip.livingitem.copper.chiseled_hint": "  §b水平/垂直线号隔离 (立交桥)§r",
