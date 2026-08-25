@@ -79,12 +79,14 @@ public class ContainerChunkCache {
      * 区块卸载事件 —— 不立即从缓存中移除。
      *
      * 为什么不在卸载时移除：
-     *   ChunkEvent.Load 在 waitUntilNextTick() 的 runAllTasks() 中触发，
-     *   而 processLevelContainers 在 ServerTickEvent.Post 中执行（早于 runAllTasks）。
-     *   如果卸载时移除，重新加载时 ChunkEvent.Load 来不及在同一 tick 加回缓存，
-     *   导致 processLevelContainers 找不到该区块。
+     *   processLevelContainers 在 ServerTickEvent.Pre 中执行，
+     *   而 ChunkEvent.Load 在 ServerLevel.tick() 中触发（晚于 Pre）。
+     *   如果卸载时移除，重新加载后 processLevelContainers 在同一个 tick 的 Pre 阶段
+     *   找不到该区块，需要等到下一个 tick 才能处理。
+     *   保留在缓存中的区块会在 processLevelContainers 中通过 getChunkNow()
+     *   自行检测并移除，因此不需要在卸载事件中主动清理。
      *
-     * 改为由 cleanupStaleEntries 定期清理已卸载的区块（兜底机制）。
+     * 兜底：cleanupStaleEntries 定期清理真正已卸载的区块。
      */
     @SubscribeEvent
     public void onChunkUnload(ChunkEvent.Unload event) {

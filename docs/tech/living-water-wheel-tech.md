@@ -1,6 +1,6 @@
 # Living Water Wheel (活水车) 技术文档
 
-> **文档版本**: 2026.08 v10  
+> **文档版本**: 2026.08 v11  
 > **最后更新**: 2026-08-27  
 > **适用版本**: Minecraft 1.21.1
 
@@ -1654,3 +1654,148 @@ ServerTickEvent.Pre → LivingItem.onServerTick()
 - [x] 修复：deferredSync 延迟同步导致客户端空状态（改为即时 sendData()）
 - [x] 修复：ServerTickEvent.Pre 确保容器处理在方块实体 tick 之前执行
 - [x] 修复：移除 applyStress 中多余的 isRemoved() 检查
+
+---
+
+### 9.22 抗卸载韧性审查：对比 Create 原版动力源机制
+
+> **注意**：以下分析基于对 Create 6.0.10 源码的逆向阅读理解，可能存在疏漏或误读。结论仅供参考，不应被视为绝对无误的判定。
+
+**背景**：活水车和活水桶在早期版本中存在"不抗卸载"的问题——区块卸载后重进，活水车莫名其妙不转。经过多轮修复（`onChunkUnloaded` 注入、`StressStateMachine` 自过期、`ServerTickEvent.Pre` 时序调整），当前代码已基本稳定。但仍有必要从 Create 原版动力源的机制出发，审视我们的修复是否必要、是否过度、以及是否还有潜在风险。
+
+#### 9.22.1 Create 原版动力源的生命周期
+
+**区块卸载时**：Create 原版**不主动清理**动力源。关键代码路径：
+
+```
+SmartBlockEntity.onChunkUnloaded()
+  → chunkUnloaded = true       // 标记为"区块卸载"
+
+SmartBlockEntity.setRemoved()
+  → if (!chunkUnloaded) remove()   // chunkUnloaded=true → 跳过 remove()!
+  → invalidate()                    // 仅卸载 behavior，不清理网络
+```
+
+所有状态（`speed`、`stress`、`capacity`、`network` ID、`source`）通过 NBT 序列化保存到磁盘。Create 的设计哲学是：**卸载时保留一切，重载时从 NBT 恢复**。
+
+**区块重载时**：通过 `initialize()` 静默恢复：
+
+```
+KineticBlockEntity.read()          // 从 NBT 恢复 speed/stress/capacity/network/source
+KineticBlockEntity.initialize()    // 区块加载完成后同步调用
+  → getOrCreateNetwork()           // 重建网络（同一个 ID）
+  → network.initFromTE(...)        // 恢复网络容量/应力状态
+  → network.addSilently(...)       // 静默加回网络（不触发重算）
+KineticBlockEntity.tick()          // 第一个 tick
+  → attachKinetics()               // 重新连接邻居
+  → validateKinetics()             // 验证源 BE 仍然存在
+```
+
+对于 `GeneratingKineticBlockEntity`（水车、风车等），还有 `reActivateSource` 标记，在 `tick()` 中调用 `updateGeneratedRotation()` 重新计算转速。
+
+**动力源被破坏时**：**立即、彻底**清理：
+
+```
+KineticBlockEntity.remove()
+  → getOrCreateNetwork().remove(this)   // 从 sources + members 中移除
+  → detachKinetics()                     // 断开旋转传播
+  → super.remove()
+
+KineticNetwork.remove(KineticBlockEntity be)
+  → sources.remove(be)                   // 从源列表移除
+  → members.remove(be)                   // 从成员列表移除
+  → be.updateFromNetwork(0, 0, 0)        // 清零 BE 的状态
+  → 若 members 为空 → 注销整个网络
+  → 否则 → 标记一个剩余成员 networkDirty = true → 触发网络重算
+```
+
+**网络自清理机制**：`KineticNetwork.calculateCapacity()` 和 `calculateStress()` 在遍历时自动跳过无效 BE：
+
+```java
+// 遍历 sources/members 时自动清理
+if (be.getLevel().getBlockEntity(be.getBlockPos()) != be) {
+    iterator.remove();  // BE 已不在世界中 → 自动移除
+    continue;
+}
+```
+
+#### 9.22.2 我们的架构与 Create 原版的根本差异
+
+| 方面 | Create 原版动力源 | 活水车 |
+|------|-----------------|--------|
+| 转速来源 | 方块实体自身决定（`getGeneratedSpeed()` 读取世界状态） | 由容器中的物品计算得出，注入到下方方块实体 |
+| 恢复时机 | `initialize()` 阶段即可恢复（区块加载时同步调用） | 依赖 `processLevelContainers()` 在 tick 事件中重新计算 |
+| 网络归属 | 动力源方块实体**就是**网络成员 | 下方方块实体（轴/齿轮）是网络成员，但它本身不是自主动力源 |
+| 状态存储 | NBT 序列化（`speed`/`stress`/`capacity`/`network`） | 容器 Attachment（`ContainerStressData`）+ 下方 BE 的 NBT |
+
+**核心矛盾**：我们的"动力源逻辑"不在方块实体上，而在容器处理循环中。这使得区块重载后，下方方块实体无法像 Create 原版动力源那样在 `initialize()` 中自主恢复转速——它必须等容器处理循环跑完才知道自己的转速。
+
+#### 9.22.3 现有修复的必要性分析
+
+**修复 A：`onChunkUnloaded` 注入 → 主动清理网络**
+
+```java
+// StressStateMachine.onChunkUnloaded()
+self.getOrCreateNetwork().remove(self);   // 从网络移除
+self.detachKinetics();                     // 断开旋转传播
+rpm = 0; capacity = 0;                     // 清零状态
+```
+
+**Create 原版做法**：卸载时不清理，靠 NBT 序列化保留。
+
+**我们的必要性**：**可能仍然必要**。原因在于，如果不清零 `rpm`，我们的 Mixin 覆写的 `getGeneratedSpeed()` 会返回非零值，`isSource()` 返回 `true`。当区块重载后，Create 的 `initialize()` 会从 NBT 恢复 `speed` 字段（非零），而 `getGeneratedSpeed()` 也非零，`validateKinetics()` 不会清理这个 BE。但此时容器处理还没跑，这个 BE 的转速是**上一次的残留值**，不是当前容器内容的真实反映。
+
+如果不清零，最坏情况：区块重载后，下方的轴/齿轮会以残留转速旋转 1 tick，然后容器处理重新计算应力并覆盖。这 1 tick 的残留转速可能导致：
+- 应力网络瞬间出现不准确的应力值
+- 如果残留转速方向与重新计算的方向不同，可能触发方向冲突检测
+
+**但另一方面**，Create 原版在卸载时也不清理，重载后 `initialize()` 恢复的状态同样是"上一次的残留值"。Create 原版动力源依赖 `updateGeneratedRotation()` 在第一个 tick 中重新计算覆盖。我们的差异在于：我们的重新计算有 1 tick 延迟（见下文修复 B 分析）。
+
+**结论**：`onChunkUnloaded` 清理可能是**防御性正确**的做法，但未必是唯一正确的做法。如果未来能将容器处理移到 `ServerTickEvent.Post` 并解决时序问题，或许可以模仿 Create 原版的"不清理"策略。
+
+**修复 B：`ServerTickEvent.Pre` 中的容器处理**
+
+当前时序：
+```
+ServerTickEvent.Pre → processLevelContainers() → chunk 不在缓存（尚未加载）
+ServerLevel.tick() → 区块加载 → ChunkEvent.Load → chunk 加入缓存
+KineticBlockEntity.tick() → rpm=0 → 空转
+
+下一个 tick:
+ServerTickEvent.Pre → processLevelContainers() → chunk 在缓存 → 处理 → 应力恢复
+```
+
+这导致了 **1 tick（50ms）的应力真空期**。Create 原版没有这个延迟，因为 `initialize()` 在区块加载过程中同步调用。
+
+**可能无法消除**：要将容器处理移到 `initialize()` 阶段，需要容器数据（物品栏内容）在 `initialize()` 时就可用。但 `ContainerChunkCache` 依赖 `ServerLevel` 的能力系统查询 `IItemHandler`，这在区块加载的早期阶段可能不可用。此外，水流 BFS 计算需要完整的物品栏状态，而物品栏可能在 `initialize()` 之后才完全就绪。
+
+**修复 C：`removeDataByPos()` 中的应力清零**
+
+当前行为：容器被破坏时，`removeDataByPos()` 清理缓存，但下方 BE 的应力靠 `StressStateMachine` 自过期（1 tick 后）清理。
+
+**可能的改进**：在 `removeDataByPos()` 中显式调用 `StressOutputManager.apply(level, pos, ContainerStressData.EMPTY)`。
+
+**必要性存疑**：Create 原版在动力源被破坏时确实立即清理（`remove()` → `network.remove(this)`），但我们的"动力源"（容器）和"网络成员"（下方 BE）是分离的。下方 BE 仍然存在，只是不再接收应力。`StressStateMachine` 的自过期在 1 tick 内就能处理，且 `KineticNetwork` 的自动清理机制也能兜底。1 tick 的幽灵应力不太可能造成实际影响。
+
+#### 9.22.4 仍可能存在的潜在风险
+
+以下风险点是基于代码分析推测的，**未经实际测试验证**，可能根本不会触发：
+
+1. **1 tick 真空期 + 网络重组**：区块重载后第 1 tick，下方 BE 的 rpm=0，`getGeneratedSpeed()` 返回 0。如果该 BE 恰好是一个网络中的关键节点（如齿轮箱），其 rpm 归零可能导致 Create 的 `RotationPropagator` 触发网络重组。当下一个 tick 应力恢复时，网络需要重新建立连接。这个过程中，如果网络中有变速结构（大小齿轮、变速器），方向变化可能导致方块销毁。不过，当前代码中 `StressStateMachine.applyStress()` 在 rpm=0 时不会调用 `attachKinetics()`，所以网络重组应该不会发生。
+
+2. **`getChunkNow()` 在异步加载中返回 null**：`processLevelContainers` 使用 `getChunkNow()` 检查区块是否加载。如果区块正在异步加载中，`getChunkNow()` 可能返回 null，导致区块被从缓存中移除。虽然 `ChunkEvent.Load` 会在同 tick 内重新加回，但如果 `ChunkEvent.Load` 在更早的 tick 已经触发过（区块"逻辑上已加载"但数据还在异步传输），则没有事件能重新加回。不过，`ChunkEvent.Load` 是在区块**完全加载完成后**才触发的，此时 `getChunkNow()` 应该返回非 null，所以这个场景在实际中几乎不可能发生。
+
+3. **容器被破坏后下方 BE 的 `isSource()` 状态**：当容器被破坏时，下方 BE 的 `getGeneratedSpeed()` 仍返回旧的 rpm（因为 `StressStateMachine` 还没自过期），`isSource()` 返回 true。如果恰好在这一 tick 内网络重算（因为另一个成员触发了 `networkDirty`），下方 BE 会被当作源计入应力计算。但 `refreshedThisTick` 为 false，自过期将在同一 tick 触发。除非网络重算发生在自过期之前，且重算结果被用于某个关键判定（如超载检测），否则不会有实际影响。
+
+4. **跨区块网络的一致性**：如果活水车驱动了一个跨越多个区块的 Create 网络，且只有容器的区块被卸载/重载，其他区块中的网络成员可能在 1 tick 真空期内看到应力消失。Create 的 `validateKinetics()` 会周期性地清理失去源的 BE（`removeSource()` + `detachKinetics()`），但验证频率由配置控制（`kineticValidationFrequency`，默认可能较高），可能在 1 tick 内不会触发。
+
+#### 9.22.5 总结
+
+**当前代码的抗卸载能力评估**：经过多轮修复，抗卸载机制已相当健壮。`onChunkUnloaded` 清理 + `StressStateMachine` 自过期 + NBT 持久化形成了多层防护。1 tick 的应力真空期是架构固有的限制，50ms 的延迟肉眼不可见，不太可能造成实际游戏体验问题。
+
+**与 Create 原版的差异**：我们的架构决定了我们无法完全模仿 Create 原版的"不清理"策略。Create 原版动力源的转速由方块实体自身决定，可以在 `initialize()` 中恢复；而我们的转速依赖容器处理循环，必须等待 tick 事件。
+
+**建议**：当前代码已达到合理的安全水平，不建议进行大规模重构。如果未来出现新的抗卸载问题，优先排查方向应为：
+1. 区块重载后 `processLevelContainers` 是否确实在运行（检查缓存状态）
+2. `StressOutputManager.apply()` 是否被正确调用（检查应力数据是否非空）
+3. 下方 BE 的 `initialize()` 是否恢复了旧的转速（检查 NBT 序列化内容）
