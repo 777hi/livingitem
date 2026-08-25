@@ -97,6 +97,14 @@
   "tooltip.livingitem.redstone_block.title": "§c活红石块§r",
   "tooltip.livingitem.redstone_block.max_signal": "  §7最大信号",
 
+  "tooltip.livingitem.copper.title": "§6活铜§r",
+  "tooltip.livingitem.copper.type": "  §7类型",
+  "tooltip.livingitem.copper.channel": "  §7频道",
+  "tooltip.livingitem.copper.chiseled_hint": "  §b水平/垂直线号隔离 (立交桥)§r",
+  "tooltip.livingitem.copper.direction": "  §7方向",
+  "tooltip.livingitem.copper.grate_output": "  §7输出",
+  "tooltip.livingitem.copper.bulb_state": "  §7状态",
+
   "tooltip.livingitem.ender_chest.status": "§d活末影箱§r",
   "tooltip.livingitem.ender_chest.bound_player": "  §b绑定: %s§r",
   "tooltip.livingitem.ender_chest.channel": "  §7频道: §e%d§r",

@@ -98,6 +98,14 @@
   "tooltip.livingitem.redstone_block.title": "§cLiving Redstone Block§r",
   "tooltip.livingitem.redstone_block.max_signal": "  §7Max Signal",
 
+  "tooltip.livingitem.copper.title": "§6Living Copper§r",
+  "tooltip.livingitem.copper.type": "  §7Type",
+  "tooltip.livingitem.copper.channel": "  §7Channel",
+  "tooltip.livingitem.copper.chiseled_hint": "  §bH/V signals isolated (Overpass)§r",
+  "tooltip.livingitem.copper.direction": "  §7Direction",
+  "tooltip.livingitem.copper.grate_output": "  §7Output",
+  "tooltip.livingitem.copper.bulb_state": "  §7State",
+
   "tooltip.livingitem.ender_chest.status": "§dLiving Ender Chest§r",
   "tooltip.livingitem.ender_chest.bound_player": "  §bBound: %s§r",
   "tooltip.livingitem.ender_chest.channel": "  §7Channel: §e%d§r",

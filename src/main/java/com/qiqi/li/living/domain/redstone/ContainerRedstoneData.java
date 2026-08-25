@@ -45,10 +45,15 @@ public class ContainerRedstoneData {
     private static final int BIT_REPEATER = 1 << 5;
     private static final int BIT_COMPARATOR = 1 << 6;
     private static final int BIT_BLOCK = 1 << 7;
+    private static final int BIT_COPPER = 1 << 8;
+    private static final int BIT_CHISELED = 1 << 9;
+    private static final int BIT_CUT = 1 << 10;
+    private static final int BIT_GRATE = 1 << 11;
+    private static final int BIT_BULB = 1 << 12;
 
     /** 所有红石元件（不含红石灯）——导电方块供电时需跳过这些槽位 */
     private static final int MASK_REDSTONE = BIT_DUST | BIT_TORCH | BIT_BUTTON
-        | BIT_LEVER | BIT_REPEATER | BIT_COMPARATOR | BIT_BLOCK;
+        | BIT_LEVER | BIT_REPEATER | BIT_COMPARATOR | BIT_BLOCK | BIT_COPPER;
 
     /** 每个槽位的元件类型位图，每次 calculate 开头重建 */
     private int[] slotMask = new int[0];
@@ -112,7 +117,9 @@ public class ContainerRedstoneData {
     /** 重建槽位类型位图。每 tick 一次，之后所有类型判定走 O(1) 数组访问。 */
     private void buildSlotMask(int size, Set<Integer> dustSlots, Set<Integer> torchSlots,
             Set<Integer> buttonSlots, Set<Integer> leverSlots, Set<Integer> lampSlots,
-            Set<Integer> repeaterSlots, Set<Integer> comparatorSlots, Set<Integer> redstoneBlockSlots) {
+            Set<Integer> repeaterSlots, Set<Integer> comparatorSlots, Set<Integer> redstoneBlockSlots,
+            Set<Integer> copperSlots, Set<Integer> chiseledSlots, Set<Integer> cutSlots,
+            Set<Integer> grateSlots, Set<Integer> bulbSlots) {
         if (slotMask.length != size) {
             slotMask = new int[size];
         } else {
@@ -126,6 +133,11 @@ public class ContainerRedstoneData {
         markSlots(repeaterSlots, BIT_REPEATER, size);
         markSlots(comparatorSlots, BIT_COMPARATOR, size);
         markSlots(redstoneBlockSlots, BIT_BLOCK, size);
+        markSlots(copperSlots, BIT_COPPER, size);
+        markSlots(chiseledSlots, BIT_CHISELED, size);
+        markSlots(cutSlots, BIT_CUT, size);
+        markSlots(grateSlots, BIT_GRATE, size);
+        markSlots(bulbSlots, BIT_BULB, size);
     }
 
     private void markSlots(Set<Integer> slots, int bit, int size) {
@@ -137,6 +149,43 @@ public class ContainerRedstoneData {
     /** 槽位是否属于给定类型集合（mask 为若干 BIT_ 的或） */
     private boolean is(int slot, int mask) {
         return slot >= 0 && slot < slotMask.length && (slotMask[slot] & mask) != 0;
+    }
+
+    private Set<Integer> copperSubset(Set<Integer> copperSlots, ContainerContext context,
+            java.util.function.Predicate<net.minecraft.world.item.Item> predicate) {
+        Set<Integer> result = new java.util.HashSet<>();
+        for (int slot : copperSlots) {
+            ItemStack stack = context.getItem(slot);
+            if (!stack.isEmpty() && predicate.test(stack.getItem())) {
+                result.add(slot);
+            }
+        }
+        return result;
+    }
+
+    private boolean canConnect(int slot, int neighbor, int size, int width, ContainerContext context) {
+        if (neighbor < 0 || neighbor >= size) return false;
+        ItemStack neighborStack = context.getItem(neighbor);
+        if (neighborStack.isEmpty()) return false;
+
+        boolean slotIsCopper = is(slot, BIT_COPPER);
+        boolean neighborIsCopper = is(neighbor, BIT_COPPER);
+        boolean neighborIsDust = is(neighbor, BIT_DUST);
+
+        if (!slotIsCopper && neighborIsCopper) return true;
+        if (slotIsCopper && neighborIsDust) return true;
+
+        if (slotIsCopper && neighborIsCopper) {
+            return getOxidationLevel(slot, context) == getOxidationLevel(neighbor, context);
+        }
+
+        return true;
+    }
+
+    private int getOxidationLevel(int slot, ContainerContext context) {
+        ItemStack stack = context.getItem(slot);
+        if (stack.isEmpty()) return -1;
+        return LivingCopperFunction.getOxidationLevel(stack.getItem());
     }
 
     public void calculate(ContainerContext context, TickContext tick) {
@@ -156,11 +205,12 @@ public class ContainerRedstoneData {
         Set<Integer> repeaterSlots = tick.getFunctionSlots(LivingRepeaterFunction.ID);
         Set<Integer> comparatorSlots = tick.getFunctionSlots(LivingComparatorFunction.ID);
         Set<Integer> redstoneBlockSlots = tick.getFunctionSlots(LivingRedstoneBlockFunction.ID);
+        Set<Integer> copperSlots = tick.getFunctionSlots(LivingCopperFunction.ID);
 
         boolean hasAny = !torchSlots.isEmpty() || !dustSlots.isEmpty()
             || !buttonSlots.isEmpty() || !leverSlots.isEmpty() || !lampSlots.isEmpty()
             || !repeaterSlots.isEmpty() || !comparatorSlots.isEmpty()
-            || !redstoneBlockSlots.isEmpty();
+            || !redstoneBlockSlots.isEmpty() || !copperSlots.isEmpty();
         if (edgeGrid == null || edgeGrid.width != width || edgeGrid.height != height) {
             edgeGrid = new EdgeGrid(width, height);
             prevEdgeGrid = new EdgeGrid(width, height);
@@ -177,21 +227,29 @@ public class ContainerRedstoneData {
         // 元件延迟（中继器 delayTimer、按钮 pulseTimer）统一以 game tick 计数，
         // 中继器充能时按 TICKS_PER_REPEATER_STEP 换算档位，保持原版红石刻语义。
 
+        Set<Integer> chiseledSlots = copperSubset(copperSlots, context, LivingCopperFunction::isChiseled);
+        Set<Integer> cutSlots = copperSubset(copperSlots, context, LivingCopperFunction::isCut);
+        Set<Integer> grateSlots = copperSubset(copperSlots, context, LivingCopperFunction::isGrate);
+        Set<Integer> bulbSlots = copperSubset(copperSlots, context, LivingCopperFunction::isBulb);
+
         buildSlotMask(size, dustSlots, torchSlots, buttonSlots, leverSlots,
-            lampSlots, repeaterSlots, comparatorSlots, redstoneBlockSlots);
+            lampSlots, repeaterSlots, comparatorSlots, redstoneBlockSlots,
+            copperSlots, chiseledSlots, cutSlots, grateSlots, bulbSlots);
 
         reset();
         injectExternalInputs(context);
 
         phase0CountdownDelays(repeaterSlots, buttonSlots, size, width, context);
         Queue<Integer> queue = phase1CollectSources(torchSlots, buttonSlots, leverSlots,
-            repeaterSlots, comparatorSlots, dustSlots, redstoneBlockSlots, size, width, context);
+            repeaterSlots, comparatorSlots, dustSlots, redstoneBlockSlots, grateSlots, bulbSlots,
+            size, width, context);
         phase2Propagation(queue, size, width, context);
         phase4PowerConductors(torchSlots, buttonSlots, leverSlots,
-            repeaterSlots, comparatorSlots, dustSlots, redstoneBlockSlots,
+            repeaterSlots, comparatorSlots, dustSlots, redstoneBlockSlots, copperSlots,
             size, width, context);
-        phase3RecheckInputs(repeaterSlots, comparatorSlots, size, width, context);
-        phase5UpdateDisplay(torchSlots, dustSlots, lampSlots, size, width, context);
+        phase3RecheckInputs(repeaterSlots, comparatorSlots, grateSlots, bulbSlots,
+            size, width, context);
+        phase5UpdateDisplay(torchSlots, dustSlots, lampSlots, copperSlots, size, width, context);
         computeFaceOutput(width, height);
         notifyBoundaryChange(context, width, height);
     }
@@ -245,7 +303,8 @@ public class ContainerRedstoneData {
 
     private Queue<Integer> phase1CollectSources(Set<Integer> torchSlots, Set<Integer> buttonSlots,
             Set<Integer> leverSlots, Set<Integer> repeaterSlots, Set<Integer> comparatorSlots,
-            Set<Integer> dustSlots, Set<Integer> redstoneBlockSlots, int size, int width, ContainerContext context) {
+            Set<Integer> dustSlots, Set<Integer> redstoneBlockSlots, Set<Integer> grateSlots,
+            Set<Integer> bulbSlots, int size, int width, ContainerContext context) {
         Queue<Integer> queue = new ArrayDeque<>();
 
         for (int slot : torchSlots) {
@@ -263,7 +322,7 @@ public class ContainerRedstoneData {
                 int neighbor = resolveSlot(slot, dir, size, width);
                 if (cap > edgeGrid.get(slot, dir)) {
                     edgeGrid.set(slot, dir, cap);
-                    if (is(neighbor, BIT_DUST)) {
+                    if (is(neighbor, BIT_DUST | BIT_COPPER)) {
                         queue.add(neighbor);
                     }
                 }
@@ -282,7 +341,7 @@ public class ContainerRedstoneData {
                 int neighbor = resolveSlot(slot, dir, size, width);
                 if (cap > edgeGrid.get(slot, dir)) {
                     edgeGrid.set(slot, dir, cap);
-                    if (is(neighbor, BIT_DUST)) {
+                    if (is(neighbor, BIT_DUST | BIT_COPPER)) {
                         queue.add(neighbor);
                     }
                 }
@@ -301,7 +360,7 @@ public class ContainerRedstoneData {
                 int neighbor = resolveSlot(slot, dir, size, width);
                 if (cap > edgeGrid.get(slot, dir)) {
                     edgeGrid.set(slot, dir, cap);
-                    if (is(neighbor, BIT_DUST)) {
+                    if (is(neighbor, BIT_DUST | BIT_COPPER)) {
                         queue.add(neighbor);
                     }
                 }
@@ -320,7 +379,7 @@ public class ContainerRedstoneData {
             int neighbor = resolveSlot(slot, outDir, size, width);
             if (cap > edgeGrid.get(slot, outDir)) {
                 edgeGrid.set(slot, outDir, cap);
-                if (is(neighbor, BIT_DUST)) {
+                if (is(neighbor, BIT_DUST | BIT_COPPER)) {
                     queue.add(neighbor);
                 }
             }
@@ -338,7 +397,7 @@ public class ContainerRedstoneData {
             int neighbor = resolveSlot(slot, outDir, size, width);
             if (output > edgeGrid.get(slot, outDir)) {
                 edgeGrid.set(slot, outDir, output);
-                if (is(neighbor, BIT_DUST)) {
+                if (is(neighbor, BIT_DUST | BIT_COPPER)) {
                     queue.add(neighbor);
                 }
             }
@@ -354,7 +413,45 @@ public class ContainerRedstoneData {
                 int neighbor = resolveSlot(slot, dir, size, width);
                 if (cap > edgeGrid.get(slot, dir)) {
                     edgeGrid.set(slot, dir, cap);
-                    if (is(neighbor, BIT_DUST)) {
+                    if (is(neighbor, BIT_DUST | BIT_COPPER)) {
+                        queue.add(neighbor);
+                    }
+                }
+            }
+        }
+
+        for (int slot : grateSlots) {
+            if (slot < 0 || slot >= size) continue;
+            ItemStack stack = context.getItem(slot);
+            if (stack.isEmpty()) continue;
+            LivingGrateData data = LivingItemManager.getGrateData(stack);
+            if (!data.output()) continue;
+
+            int cap = getSignalCap(stack.getCount());
+            for (int dir = 0; dir < 4; dir++) {
+                int neighbor = resolveSlot(slot, dir, size, width);
+                if (cap > edgeGrid.get(slot, dir)) {
+                    edgeGrid.set(slot, dir, cap);
+                    if (is(neighbor, BIT_DUST | BIT_COPPER)) {
+                        queue.add(neighbor);
+                    }
+                }
+            }
+        }
+
+        for (int slot : bulbSlots) {
+            if (slot < 0 || slot >= size) continue;
+            ItemStack stack = context.getItem(slot);
+            if (stack.isEmpty()) continue;
+            LivingCopperBulbData data = LivingItemManager.getCopperBulbData(stack);
+            if (!data.lit()) continue;
+
+            int cap = getSignalCap(stack.getCount());
+            for (int dir = 0; dir < 4; dir++) {
+                int neighbor = resolveSlot(slot, dir, size, width);
+                if (cap > edgeGrid.get(slot, dir)) {
+                    edgeGrid.set(slot, dir, cap);
+                    if (is(neighbor, BIT_DUST | BIT_COPPER)) {
                         queue.add(neighbor);
                     }
                 }
@@ -368,32 +465,84 @@ public class ContainerRedstoneData {
             int size, int width, ContainerContext context) {
         while (!queue.isEmpty()) {
             int current = queue.poll();
-            if (!is(current, BIT_DUST)) continue;
 
-            ItemStack stack = context.getItem(current);
-            if (stack.isEmpty()) continue;
+            if (is(current, BIT_DUST)) {
+                ItemStack stack = context.getItem(current);
+                if (stack.isEmpty()) continue;
 
-            int maxInput = edgeGrid.maxOfSlot(current);
+                int maxInput = edgeGrid.maxOfSlot(current);
+                if (maxInput <= 1) continue;
 
-            if (maxInput <= 1) continue;
+                int output = Math.min(maxInput - 1, getSignalCap(stack.getCount()));
 
-            int output = Math.min(maxInput - 1, getSignalCap(stack.getCount()));
+                for (int dir = 0; dir < 4; dir++) {
+                    int neighbor = resolveSlot(current, dir, size, width);
+                    int currentEdge = edgeGrid.get(current, dir);
+                    if (output <= currentEdge) continue;
+                    edgeGrid.set(current, dir, output);
 
-            for (int dir = 0; dir < 4; dir++) {
-                int neighbor = resolveSlot(current, dir, size, width);
+                    if (is(neighbor, BIT_DUST | BIT_COPPER)) {
+                        queue.add(neighbor);
+                    }
+                }
+                continue;
+            }
 
-                int currentEdge = edgeGrid.get(current, dir);
-                if (output <= currentEdge) continue;
-                edgeGrid.set(current, dir, output);
+            if (is(current, BIT_COPPER)) {
+                ItemStack stack = context.getItem(current);
+                if (stack.isEmpty()) continue;
 
-                if (is(neighbor, BIT_DUST)) {
-                    queue.add(neighbor);
+                int maxInput = edgeGrid.maxOfSlot(current);
+                int cap = getSignalCap(stack.getCount());
+                int output = Math.min(maxInput, cap);
+
+                if (is(current, BIT_CHISELED)) {
+                    int maxHInput = Math.max(
+                        edgeGrid.get(current, E_LEFT), edgeGrid.get(current, E_RIGHT));
+                    int maxVInput = Math.max(
+                        edgeGrid.get(current, E_UP), edgeGrid.get(current, E_DOWN));
+                    int outputH = Math.min(maxHInput, cap);
+                    int outputV = Math.min(maxVInput, cap);
+
+                    propagateDir(current, E_LEFT, outputH, size, width, context, queue);
+                    propagateDir(current, E_RIGHT, outputH, size, width, context, queue);
+                    propagateDir(current, E_UP, outputV, size, width, context, queue);
+                    propagateDir(current, E_DOWN, outputV, size, width, context, queue);
+                    continue;
+                }
+
+                if (is(current, BIT_CUT)) {
+                    ItemStack cutStack = context.getItem(current);
+                    LivingCutCopperData data = LivingItemManager.getCutCopperData(cutStack);
+                    int allowedDir = edgeIndex(data.direction());
+                    propagateDir(current, allowedDir, output, size, width, context, queue);
+                    continue;
+                }
+
+                for (int dir = 0; dir < 4; dir++) {
+                    propagateDir(current, dir, output, size, width, context, queue);
                 }
             }
         }
     }
 
+    private void propagateDir(int slot, int dir, int signal, int size, int width,
+            ContainerContext context, Queue<Integer> queue) {
+        int neighbor = resolveSlot(slot, dir, size, width);
+        if (neighbor < 0) return;
+        if (!canConnect(slot, neighbor, size, width, context)) return;
+
+        int currentEdge = edgeGrid.get(slot, dir);
+        if (signal <= currentEdge) return;
+        edgeGrid.set(slot, dir, signal);
+
+        if (is(neighbor, BIT_DUST | BIT_COPPER)) {
+            queue.add(neighbor);
+        }
+    }
+
     private void phase3RecheckInputs(Set<Integer> repeaterSlots, Set<Integer> comparatorSlots,
+            Set<Integer> grateSlots, Set<Integer> bulbSlots,
             int size, int width, ContainerContext context) {
         int height = (size + width - 1) / width;
         for (int slot : repeaterSlots) {
@@ -448,11 +597,59 @@ public class ContainerRedstoneData {
                 edgeGrid.set(slot, outDir, output);
             }
         }
+
+        for (int slot : grateSlots) {
+            if (slot < 0 || slot >= size) continue;
+            ItemStack stack = context.getItem(slot);
+            if (stack.isEmpty()) continue;
+
+            LivingGrateData data = LivingItemManager.getGrateData(stack);
+            boolean hasInput = edgeGrid.anyOfSlot(slot);
+            boolean changed = false;
+
+            if (hasInput && !data.lastInput()) {
+                data = data.withOutput(!data.output());
+                changed = true;
+            }
+            if (hasInput != data.lastInput()) {
+                data = data.withLastInput(hasInput);
+                changed = true;
+            }
+
+            if (changed) {
+                LivingItemManager.setGrateData(stack, data);
+                context.syncSlotToClients(slot, stack);
+            }
+        }
+
+        for (int slot : bulbSlots) {
+            if (slot < 0 || slot >= size) continue;
+            ItemStack stack = context.getItem(slot);
+            if (stack.isEmpty()) continue;
+
+            LivingCopperBulbData data = LivingItemManager.getCopperBulbData(stack);
+            boolean hasInput = edgeGrid.anyOfSlot(slot);
+            boolean changed = false;
+
+            if (hasInput && !data.prevInput()) {
+                data = data.withLit(!data.lit());
+                changed = true;
+            }
+            if (hasInput != data.prevInput()) {
+                data = data.withPrevInput(hasInput);
+                changed = true;
+            }
+
+            if (changed) {
+                LivingItemManager.setCopperBulbData(stack, data);
+                context.syncSlotToClients(slot, stack);
+            }
+        }
     }
 
     private void phase4PowerConductors(Set<Integer> torchSlots, Set<Integer> buttonSlots,
             Set<Integer> leverSlots, Set<Integer> repeaterSlots, Set<Integer> comparatorSlots,
-            Set<Integer> dustSlots, Set<Integer> redstoneBlockSlots,
+            Set<Integer> dustSlots, Set<Integer> redstoneBlockSlots, Set<Integer> copperSlots,
             int size, int width, ContainerContext context) {
         Queue<Integer> secondQueue = new ArrayDeque<>();
 
@@ -547,6 +744,37 @@ public class ContainerRedstoneData {
 
             int outDir = edgeIndex(data.direction());
             powerConductiveNeighbor(slot, output, outDir, size, width, context, secondQueue);
+        }
+
+        for (int slot : copperSlots) {
+            if (slot < 0 || slot >= size) continue;
+            ItemStack stack = context.getItem(slot);
+            if (stack.isEmpty()) continue;
+
+            int maxInput = edgeGrid.maxOfSlot(slot);
+            if (maxInput <= 0) continue;
+
+            int cap = getSignalCap(stack.getCount());
+            int output = Math.min(maxInput, cap);
+
+            if (is(slot, BIT_CHISELED)) {
+                int maxHInput = Math.max(
+                    edgeGrid.get(slot, E_LEFT), edgeGrid.get(slot, E_RIGHT));
+                int maxVInput = Math.max(
+                    edgeGrid.get(slot, E_UP), edgeGrid.get(slot, E_DOWN));
+                powerConductiveNeighbor(slot, Math.min(maxHInput, cap), E_LEFT, size, width, context, secondQueue);
+                powerConductiveNeighbor(slot, Math.min(maxHInput, cap), E_RIGHT, size, width, context, secondQueue);
+                powerConductiveNeighbor(slot, Math.min(maxVInput, cap), E_UP, size, width, context, secondQueue);
+                powerConductiveNeighbor(slot, Math.min(maxVInput, cap), E_DOWN, size, width, context, secondQueue);
+            } else if (is(slot, BIT_CUT)) {
+                LivingCutCopperData data = LivingItemManager.getCutCopperData(stack);
+                int allowedDir = edgeIndex(data.direction());
+                powerConductiveNeighbor(slot, output, allowedDir, size, width, context, secondQueue);
+            } else {
+                for (int dir = 0; dir < 4; dir++) {
+                    powerConductiveNeighbor(slot, output, dir, size, width, context, secondQueue);
+                }
+            }
         }
 
         if (!secondQueue.isEmpty()) {
@@ -681,7 +909,7 @@ public class ContainerRedstoneData {
     }
 
     private void phase5UpdateDisplay(Set<Integer> torchSlots, Set<Integer> dustSlots,
-            Set<Integer> lampSlots, int size, int width, ContainerContext context) {
+            Set<Integer> lampSlots, Set<Integer> copperSlots, int size, int width, ContainerContext context) {
         int height = (size + width - 1) / width;
         for (int slot : torchSlots) {
             if (slot < 0 || slot >= size) continue;
@@ -726,6 +954,29 @@ public class ContainerRedstoneData {
                 context.syncSlotToClients(slot, stack);
             }
         }
+
+        for (int slot : copperSlots) {
+            if (slot < 0 || slot >= size) continue;
+            ItemStack stack = context.getItem(slot);
+            if (stack.isEmpty()) continue;
+
+            int maxSignal = edgeGrid.maxOfSlot(slot);
+            if (is(slot, BIT_GRATE)) {
+                LivingGrateData data = LivingItemManager.getGrateData(stack);
+                if (data.output() != (maxSignal > 0)) {
+                    LivingItemManager.setGrateData(stack, data.withOutput(maxSignal > 0));
+                    context.syncSlotToClients(slot, stack);
+                }
+            }
+            if (is(slot, BIT_BULB)) {
+                LivingCopperBulbData data = LivingItemManager.getCopperBulbData(stack);
+                boolean hasSignal = edgeGrid.anyOfSlot(slot);
+                if (data.lit() != hasSignal) {
+                    LivingItemManager.setCopperBulbData(stack, data.withLit(hasSignal));
+                    context.syncSlotToClients(slot, stack);
+                }
+            }
+        }
     }
 
     private static final Pos2D[] DIR_POS = {Pos2D.UP, Pos2D.DOWN, Pos2D.LEFT, Pos2D.RIGHT};
@@ -748,7 +999,7 @@ public class ContainerRedstoneData {
                     }
                 }
             } else if (is(neighbor, BIT_BUTTON | BIT_LEVER | BIT_TORCH
-                    | BIT_DUST | BIT_LAMP | BIT_BLOCK)) {
+                    | BIT_DUST | BIT_LAMP | BIT_BLOCK | BIT_COPPER)) {
                 conn |= (1 << dir);
             }
         }

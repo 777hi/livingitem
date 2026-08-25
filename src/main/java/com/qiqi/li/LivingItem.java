@@ -66,6 +66,7 @@ import com.qiqi.li.living.domain.redstone.LivingRedstoneLampFunction;
 import com.qiqi.li.living.domain.redstone.LivingRepeaterFunction;
 import com.qiqi.li.living.domain.redstone.LivingComparatorFunction;
 import com.qiqi.li.living.domain.redstone.LivingRedstoneBlockFunction;
+import com.qiqi.li.living.domain.redstone.LivingCopperFunction;
 import com.qiqi.li.living.function.LivingFlintAndSteelFunction;
 import com.qiqi.li.living.interaction.InteractionRegistry;
 import com.qiqi.li.living.interaction.IgniteHandler;
@@ -167,6 +168,9 @@ public class LivingItem {
 
         LivingItemManager.registerFunction(new LivingRedstoneBlockFunction());
         LOGGER.info("Registered living redstone block function");
+
+        LivingItemManager.registerFunction(new LivingCopperFunction());
+        LOGGER.info("Registered living copper function");
 
         LivingItemManager.registerFunction(new LivingEnderPearlFunction());
         LOGGER.info("Registered living ender pearl function");

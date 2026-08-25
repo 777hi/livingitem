@@ -24,6 +24,9 @@ import com.qiqi.li.living.domain.redstone.LivingLeverData;
 import com.qiqi.li.living.domain.redstone.LivingRedstoneLampData;
 import com.qiqi.li.living.domain.redstone.LivingRepeaterData;
 import com.qiqi.li.living.domain.redstone.LivingComparatorData;
+import com.qiqi.li.living.domain.redstone.LivingCutCopperData;
+import com.qiqi.li.living.domain.redstone.LivingGrateData;
+import com.qiqi.li.living.domain.redstone.LivingCopperBulbData;
 import net.minecraft.world.item.Items;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.registries.Registries;
@@ -159,6 +162,27 @@ public class LivingItemManager {
                             .networkSynchronized(LivingComparatorData.STREAM_CODEC)
                             .build());
 
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingCutCopperData>> LIVING_CUT_COPPER_DATA =
+            DATA_COMPONENT_TYPES.register("living_cut_copper_data", () ->
+                    DataComponentType.<LivingCutCopperData>builder()
+                            .persistent(LivingCutCopperData.CODEC)
+                            .networkSynchronized(LivingCutCopperData.STREAM_CODEC)
+                            .build());
+
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingGrateData>> LIVING_GRATE_DATA =
+            DATA_COMPONENT_TYPES.register("living_grate_data", () ->
+                    DataComponentType.<LivingGrateData>builder()
+                            .persistent(LivingGrateData.CODEC)
+                            .networkSynchronized(LivingGrateData.STREAM_CODEC)
+                            .build());
+
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingCopperBulbData>> LIVING_COPPER_BULB_DATA =
+            DATA_COMPONENT_TYPES.register("living_copper_bulb_data", () ->
+                    DataComponentType.<LivingCopperBulbData>builder()
+                            .persistent(LivingCopperBulbData.CODEC)
+                            .networkSynchronized(LivingCopperBulbData.STREAM_CODEC)
+                            .build());
+
     private static final List<LivingItemFunction> FUNCTIONS = new ArrayList<>();
     private static final List<LivingItemFunction> FUNCTIONS_VIEW = Collections.unmodifiableList(FUNCTIONS);
     private static final Map<Item, List<LivingItemFunction>> APPLICABLE_CACHE = new ConcurrentHashMap<>();
@@ -231,6 +255,9 @@ public class LivingItemManager {
         stack.remove(LIVING_REDSTONE_LAMP_DATA.value());
         stack.remove(LIVING_REPEATER_DATA.value());
         stack.remove(LIVING_COMPARATOR_DATA.value());
+        stack.remove(LIVING_CUT_COPPER_DATA.value());
+        stack.remove(LIVING_GRATE_DATA.value());
+        stack.remove(LIVING_COPPER_BULB_DATA.value());
     }
 
     public static void setLiving(ItemStack stack, boolean living) {
@@ -412,5 +439,29 @@ public class LivingItemManager {
 
     public static void setComparatorData(ItemStack stack, LivingComparatorData data) {
         setData(stack, LIVING_COMPARATOR_DATA.value(), data, LivingComparatorData.DEFAULT);
+    }
+
+    public static LivingCutCopperData getCutCopperData(ItemStack stack) {
+        return getData(stack, LIVING_CUT_COPPER_DATA.value(), LivingCutCopperData.DEFAULT);
+    }
+
+    public static void setCutCopperData(ItemStack stack, LivingCutCopperData data) {
+        setData(stack, LIVING_CUT_COPPER_DATA.value(), data, LivingCutCopperData.DEFAULT);
+    }
+
+    public static LivingGrateData getGrateData(ItemStack stack) {
+        return getData(stack, LIVING_GRATE_DATA.value(), LivingGrateData.DEFAULT);
+    }
+
+    public static void setGrateData(ItemStack stack, LivingGrateData data) {
+        setData(stack, LIVING_GRATE_DATA.value(), data, LivingGrateData.DEFAULT);
+    }
+
+    public static LivingCopperBulbData getCopperBulbData(ItemStack stack) {
+        return getData(stack, LIVING_COPPER_BULB_DATA.value(), LivingCopperBulbData.DEFAULT);
+    }
+
+    public static void setCopperBulbData(ItemStack stack, LivingCopperBulbData data) {
+        setData(stack, LIVING_COPPER_BULB_DATA.value(), data, LivingCopperBulbData.DEFAULT);
     }
 }
