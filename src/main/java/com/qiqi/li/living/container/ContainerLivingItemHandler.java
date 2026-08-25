@@ -356,6 +356,17 @@ public class ContainerLivingItemHandler {
         long flushChEndNanos = System.nanoTime();
         PerfMetrics.recordPhase("flush_channels", flushChEndNanos - funcTickEndNanos);
 
+        boolean hasWaterBucket = false;
+        for (var entry : grouped.entrySet()) {
+            if ("living_water_bucket".equals(entry.getKey().getFunctionId())) {
+                hasWaterBucket = true;
+                break;
+            }
+        }
+        if (!hasWaterBucket && tick.fluidData != null && tick.fluidData != ContainerFluidData.EMPTY) {
+            tick.fluidData.getFlows().clear();
+        }
+
         List<Map.Entry<LivingItemFunction, List<LivingItemFunction.SlotEntry>>> hcdEntries = new ArrayList<>();
         for (var entry : grouped.entrySet()) {
             if (entry.getKey() instanceof HasContainerData) {

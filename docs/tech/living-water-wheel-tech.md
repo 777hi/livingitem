@@ -1,7 +1,7 @@
 # Living Water Wheel (活水车) 技术文档
 
-> **文档版本**: 2026.08 v8  
-> **最后更新**: 2026-08-25  
+> **文档版本**: 2026.08 v9  
+> **最后更新**: 2026-08-27  
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -1545,6 +1545,47 @@ if (prev != 0 && rpm == 0) {
 - 网络状态异常（残留条目与活跃条目不一致）
 - 变速结构爆炸（Create 内部校验失败）
 
+### 9.20 活水桶移除后水流数据残留导致虚假应力
+
+**现象**：活水桶被取走后，活水车依旧显示净应力（Tooltip 有值），且移动到不同槽位净应力还会变化，仿佛水流数据依旧存在。同时容器下方的齿轮可能不旋转，但旁边齿轮仍在转（且无应力）。
+
+**根因**：水流数据缓存在 `FLUID_DATA_CACHE` 中，清除的唯一入口是 `ContainerFluidData.recalculate()`，而 `recalculate()` 只在 `LivingWaterBucketFunction.tickContainerData()` 中被调用。当活水桶被取走：
+
+```
+processContext() 扫描容器
+  → grouped 中没有 LivingWaterBucketFunction（水桶已不在）
+  → hcdEntries 没有它
+  → tickContainerData() 不被调用
+  → recalculate() 不执行
+  → FLUID_DATA_CACHE 中的旧水流数据一直残留
+  → LivingWaterWheelFunction.tickContainerData() 仍被调用
+  → 用残留水流数据计算应力 → 虚假应力
+```
+
+**为何 `recalculate()` 不在水车侧调用**：水流数据是共享资源，被多个水桶和水车共同使用，职责归属在水桶功能（`LivingWaterBucketFunction`）而非水车功能。水车只读水流数据，不负责其生命周期。
+
+**为何之前没发现**：水流数据有 120 秒超时清理，但 120 秒内虚假应力一直存在，且每 tick 都在计算。
+
+**修复**：在 `ContainerLivingItemHandler.processContext()` 中，`hcdEntries` 循环之前，检查 `grouped` 中是否有活水桶条目。如果没有，直接清除水流数据：
+
+```java
+// 在 hcdEntries 循环之前
+boolean hasWaterBucket = false;
+for (var entry : grouped.entrySet()) {
+    if ("living_water_bucket".equals(entry.getKey().getFunctionId())) {
+        hasWaterBucket = true;
+        break;
+    }
+}
+if (!hasWaterBucket && tick.fluidData != null && tick.fluidData != ContainerFluidData.EMPTY) {
+    tick.fluidData.getFlows().clear();
+}
+```
+
+**效果**：`LivingWaterWheelFunction.tickContainerData()` 计算时看到空水流 → 产出零应力 → `CreateIntegration.updateStressOutput()` 注入 `rpm=0` → 齿轮应力正确清零，Tooltip 显示无应力。
+
+**涉及文件**：`ContainerLivingItemHandler.java`
+
 ---
 
 ## 附录：Tick 时序
@@ -1552,36 +1593,42 @@ if (prev != 0 && rpm == 0) {
 ```
 ContainerLivingItemHandler.processContext()
   │
-  ├─ 1. 分组活物品（按功能 ID 分组）
+  ├─ 1. 扫描容器，按功能 ID 分组活物品 → grouped
   │
-  ├─ 2. 调用各功能的 tick()
-  │     ├─ LivingWaterBucketFunction.tick() → 注册水源
-  │     ├─ LivingWaterWheelFunction.tick() → （空操作，应力在步骤3后计算）
+  ├─ 2. 创建 TickContext（含 fluidData 缓存、stressData 容器）
+  │
+  ├─ 3. 调用各功能的 tick()（按扫描顺序）
+  │     ├─ LivingWaterBucketFunction.tick() → 注册/移除水源
+  │     ├─ LivingWaterWheelFunction.tick() → （空操作）
   │     └─ 其他功能...
   │
-  ├─ 3. ContainerFluidData.tick()
-  │     ├─ recalculate() → BFS 水流蔓延
-  │     └─ pushItems() → 沿水流推动物品
+  ├─ 3.5 **新增**：若无活水桶条目，清除水流数据
+  │     → 防止活水桶移除后水流数据残留
   │
-  ├─ 4. LivingWaterBucketFunction.postTickSync() → 同步水流到水桶物品
+  ├─ 4. 按优先级调用 tickContainerData()（HasContainerData 接口）
+  │     ├─ [优先级 0] LivingWaterBucketFunction
+  │     │     ├─ ContainerFluidData.tick()
+  │     │     │     ├─ recalculate() → BFS 水流蔓延
+  │     │     │     └─ pushItems() → 沿水流推动物品
+  │     │     └─ postTickSync() → 同步水流到水桶物品
+  │     │
+  │     └─ [优先级 1] LivingWaterWheelFunction
+  │           ├─ ContainerStressData.calculate() → 计算每个水车的力矩
+  │           └─ postTickSync() → 同步应力到水车物品
   │
-  ├─ 5. ContainerStressData.calculate() → 计算每个水车的力矩
+  ├─ 5. 写入 BlockEntity 应力数据（Attachment 持久化）
   │
-  ├─ 6. LivingWaterWheelFunction.postTickSync() → 同步应力到水车物品
-  │
-  ├─ 7. 写入 BlockEntity 应力数据  ← 第二步
-  │
-  ├─ 8. ModCreate.updateStressOutput() → 容器底部/玩家脚底输出应力  ← 第三步
+  ├─ 6. ModCreate.updateStressOutput() → 容器底部/玩家脚底输出应力
   │     ├─ CreateCompat.isLoaded() → 检测 Create
   │     ├─ CreateIntegration.updateStressOutput() → 找到下方 BE
   │     ├─ isSafeKineticBE() → 白名单过滤
-  │     ├─ isDirectionCompatible() → 方向兼容性检查（软侵入）
-  │     ├─ RPM = -sign(netStress) × 8（负号修正方向，大小固定）
+  │     ├─ isDirectionCompatible() → 方向兼容性检查
+  │     ├─ RPM = sign(netStress) × 8（方向固定，大小固定）
   │     ├─ SU = |netStress| × 32（堆叠增加 SU 容量）
   │     ├─ LivingItemStressOutput.livingItem$setGeneratedRPM() → 设置 RPM + refreshedThisTick
   │     └─ LivingItemStressOutput.livingItem$setStressCapacity() → 设置 SU 容量 + 更新网络
   │
-  └─ 9. 清理 + 释放 TickContext
+  └─ 7. 清理 + 释放 TickContext
 ```
 
 ---
@@ -1617,8 +1664,8 @@ ContainerLivingItemHandler.processContext()
 - [x] 物品栏 3D 渲染：非活物品水车不受影响
 - [x] 物品栏 3D 渲染：渲染后光照正确恢复
 - [x] 软依赖：无 Create 时活物品模组正常运行
-- [x] 软依赖：安装 Create 后自动激活活水车功能
-- [x] Create 集成：区块卸载时正确清理网络连接（onChunkUnloaded 注入）
-- [x] Create 集成：区块重载后应力不翻倍
-- [x] Create 集成：变速结构在区块卸载重载后稳定不爆炸
-- [x] Create 集成：自过期/取消应力时 `sources.remove()` 正确执行（isSource 返回 true）
+- [x] 活水桶移除后水流数据立即清除（无虚假应力）
+- [x] 水流数据残留修复：无活水桶时自动清除 FLUID_DATA_CACHE
+- [x] 区块卸载后应力翻倍修复（onChunkUnloaded 注入）
+- [x] 区块卸载后变速结构爆炸修复（网络清理顺序修正）
+- [x] 自过期/取消应力时 `sources.remove()` 正确执行（isSource 返回 true）
