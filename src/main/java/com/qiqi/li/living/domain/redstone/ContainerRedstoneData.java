@@ -497,6 +497,14 @@ public class ContainerRedstoneData {
                 int output = Math.min(maxInput, cap);
 
                 if (is(current, BIT_CHISELED)) {
+                    ItemStack chiseledStack = context.getItem(current);
+                    LivingCutCopperData data = LivingItemManager.getCutCopperData(chiseledStack);
+                    int allowedDir = edgeIndex(data.direction());
+                    propagateDir(current, allowedDir, output, size, width, context, queue);
+                    continue;
+                }
+
+                if (is(current, BIT_CUT)) {
                     int maxHInput = Math.max(
                         edgeGrid.get(current, E_LEFT), edgeGrid.get(current, E_RIGHT));
                     int maxVInput = Math.max(
@@ -508,14 +516,6 @@ public class ContainerRedstoneData {
                     propagateDir(current, E_RIGHT, outputH, size, width, context, queue);
                     propagateDir(current, E_UP, outputV, size, width, context, queue);
                     propagateDir(current, E_DOWN, outputV, size, width, context, queue);
-                    continue;
-                }
-
-                if (is(current, BIT_CUT)) {
-                    ItemStack cutStack = context.getItem(current);
-                    LivingCutCopperData data = LivingItemManager.getCutCopperData(cutStack);
-                    int allowedDir = edgeIndex(data.direction());
-                    propagateDir(current, allowedDir, output, size, width, context, queue);
                     continue;
                 }
 
@@ -758,6 +758,10 @@ public class ContainerRedstoneData {
             int output = Math.min(maxInput, cap);
 
             if (is(slot, BIT_CHISELED)) {
+                LivingCutCopperData data = LivingItemManager.getCutCopperData(stack);
+                int allowedDir = edgeIndex(data.direction());
+                powerConductiveNeighbor(slot, output, allowedDir, size, width, context, secondQueue);
+            } else if (is(slot, BIT_CUT)) {
                 int maxHInput = Math.max(
                     edgeGrid.get(slot, E_LEFT), edgeGrid.get(slot, E_RIGHT));
                 int maxVInput = Math.max(
@@ -766,10 +770,6 @@ public class ContainerRedstoneData {
                 powerConductiveNeighbor(slot, Math.min(maxHInput, cap), E_RIGHT, size, width, context, secondQueue);
                 powerConductiveNeighbor(slot, Math.min(maxVInput, cap), E_UP, size, width, context, secondQueue);
                 powerConductiveNeighbor(slot, Math.min(maxVInput, cap), E_DOWN, size, width, context, secondQueue);
-            } else if (is(slot, BIT_CUT)) {
-                LivingCutCopperData data = LivingItemManager.getCutCopperData(stack);
-                int allowedDir = edgeIndex(data.direction());
-                powerConductiveNeighbor(slot, output, allowedDir, size, width, context, secondQueue);
             } else {
                 for (int dir = 0; dir < 4; dir++) {
                     powerConductiveNeighbor(slot, output, dir, size, width, context, secondQueue);

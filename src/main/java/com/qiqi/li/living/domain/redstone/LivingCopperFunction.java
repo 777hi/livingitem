@@ -65,15 +65,15 @@ public class LivingCopperFunction implements LivingItemFunction, HasContainerDat
             .withStyle(ChatFormatting.GRAY));
 
         if (isChiseled(item)) {
-            tooltipAdder.accept(Component.translatable("tooltip.livingitem.copper.chiseled_hint")
-                .withStyle(ChatFormatting.AQUA));
-        }
-        if (isCut(item)) {
             LivingCutCopperData data = LivingItemManager.getCutCopperData(stack);
             tooltipAdder.accept(Component.literal("  ")
                 .append(Component.translatable("tooltip.livingitem.copper.direction"))
                 .append(Component.literal(": " + data.direction().getSymbol()))
                 .withStyle(ChatFormatting.GREEN));
+        }
+        if (isCut(item)) {
+            tooltipAdder.accept(Component.translatable("tooltip.livingitem.copper.chiseled_hint")
+                .withStyle(ChatFormatting.AQUA));
         }
         if (isGrate(item)) {
             LivingGrateData data = LivingItemManager.getGrateData(stack);
@@ -163,8 +163,8 @@ public class LivingCopperFunction implements LivingItemFunction, HasContainerDat
 
     private static String getTypeName(Item item) {
         if (isBaseCopper(item)) return "Cable";
-        if (isChiseled(item)) return "Overpass";
-        if (isCut(item)) return "Diode";
+        if (isChiseled(item)) return "Diode";
+        if (isCut(item)) return "Overpass";
         if (isGrate(item)) return "Divider";
         if (isBulb(item)) return "T Flip-Flop";
         return "Copper";

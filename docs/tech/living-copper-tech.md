@@ -2,7 +2,7 @@
 
 # Living Copper (活铜) 技术文档
 
-> **文档版本**: 2026.08 v1
+> **文档版本**: 2026.08 v2
 > **最后更新**: 2026-08-25
 > **适用版本**: Minecraft 1.21.1
 
@@ -25,8 +25,8 @@
 核心特性：
 - **无损传输**：铜块转发信号不衰减，`output = maxInput`（红石粉 `output = maxInput - 1`）
 - **锈蚀频道隔离**：仅同锈蚀等级的铜块之间互相导通，不同锈蚀等级互不干扰
-- **雕文铜块立交桥**：水平/垂直信号独立传播，可交叉而不串扰
-- **切制铜块二极管**：单向导通，信号仅沿指定方向传输
+- **雕文铜块二极管**：单向导通，信号仅沿指定方向传输
+- **切制铜块立交桥**：水平/垂直信号独立传播，可交叉而不串扰
 - **铜格栅分频器**：输入信号周期翻倍（上升沿翻转）
 - **铜灯 T 触发器**：上升沿翻转 lit 状态并保持
 
@@ -44,8 +44,8 @@
 │              ▼                        ▼                  ▼          │
 │        ┌──────────┐           ┌──────────┐       ┌──────────┐      │
 │        │ 雕文铜块  │           │ 切制铜块  │       │ 普通铜块  │      │
-│        │ 立交桥    │           │ 二极管    │       │ 四向线缆  │      │
-│        │ H/V 隔离  │           │ 单向导通  │       │ 无损转发  │      │
+│        │ 二极管    │           │ 立交桥    │       │ 四向线缆  │      │
+│        │ 单向导通  │           │ H/V 隔离  │       │ 无损转发  │      │
 │        └──────────┘           └──────────┘       └──────────┘      │
 │                                                                      │
 │  ┌──────────────────┐        ┌──────────────────┐                   │
@@ -61,7 +61,7 @@
 | 类名 | 文件位置 | 职责 |
 |------|---------|------|
 | `LivingCopperFunction` | `domain/redstone/LivingCopperFunction.java` | 活铜块功能入口，实现 `HasContainerData`，触发容器级信号计算 |
-| `LivingCutCopperData` | `domain/redstone/LivingCutCopperData.java` | 切制铜块物品级数据：导通方向 |
+| `LivingCutCopperData` | `domain/redstone/LivingCutCopperData.java` | 雕文铜块物品级数据：导通方向 |
 | `LivingGrateData` | `domain/redstone/LivingGrateData.java` | 铜格栅物品级数据：上一帧输入 + 输出状态 |
 | `LivingCopperBulbData` | `domain/redstone/LivingCopperBulbData.java` | 铜灯物品级数据：点亮状态 + 上一帧输入 |
 | `ContainerRedstoneData` | `domain/redstone/ContainerRedstoneData.java` | 容器级红石信号数据（含铜块传播逻辑） |
@@ -96,15 +96,15 @@ public class LivingCopperFunction implements LivingItemFunction, HasContainerDat
     // 静态类型判定
     public static boolean isUnwaxedCopperBlock(Item)  // 全部未涂蜡铜块
     public static boolean isBaseCopper(Item)          // 普通铜块 (Cable)
-    public static boolean isChiseled(Item)            // 雕文铜块 (Overpass)
-    public static boolean isCut(Item)                 // 切制铜块 (Diode)
+    public static boolean isChiseled(Item)            // 雕文铜块 (Diode)
+    public static boolean isCut(Item)                 // 切制铜块 (Overpass)
     public static boolean isGrate(Item)               // 铜格栅 (Divider)
     public static boolean isBulb(Item)                // 铜灯 (T Flip-Flop)
     public static int getOxidationLevel(Item)         // 锈蚀等级 0-3
 }
 ```
 
-### 2.2 LivingCutCopperData — 切制铜块二极管数据
+### 2.2 LivingCutCopperData — 雕文铜块二极管数据
 
 ```java
 public record LivingCutCopperData(
@@ -170,8 +170,8 @@ public record LivingCopperBulbData(
 
 ```java
 private static final int BIT_COPPER   = 1 << 8;   // 活铜块（信号层）
-private static final int BIT_CHISELED = 1 << 9;   // 雕文铜块（立交桥）
-private static final int BIT_CUT      = 1 << 10;  // 切制铜块（二极管）
+private static final int BIT_CHISELED = 1 << 9;   // 雕文铜块（二极管）
+private static final int BIT_CUT      = 1 << 10;  // 切制铜块（立交桥）
 private static final int BIT_GRATE    = 1 << 11;  // 铜格栅（分频器）
 private static final int BIT_BULB     = 1 << 12;  // 铜灯（T触发器）
 ```
@@ -306,8 +306,14 @@ while queue not empty:
     cap = getSignalCap(count)
     output = min(maxInput, cap)                  // 不衰减！
 
-    // ── 雕文铜块：水平/垂直隔离 ──
+    // ── 雕文铜块：单向导通 ──
     if is(current, BIT_CHISELED):
+      allowedDir = edgeIndex(data.direction())
+      propagateDir(current, allowedDir, output, ...)  // 仅允许方向
+      continue
+
+    // ── 切制铜块：水平/垂直隔离 ──
+    if is(current, BIT_CUT):
       maxHInput = max(edgeGrid.get(current, LEFT), edgeGrid.get(current, RIGHT))
       maxVInput = max(edgeGrid.get(current, UP), edgeGrid.get(current, DOWN))
       outputH = min(maxHInput, cap)
@@ -316,12 +322,6 @@ while queue not empty:
       propagateDir(current, RIGHT, outputH, ...)
       propagateDir(current, UP, outputV, ...)     // 垂直信号仅垂直传播
       propagateDir(current, DOWN, outputV, ...)
-      continue
-
-    // ── 切制铜块：单向导通 ──
-    if is(current, BIT_CUT):
-      allowedDir = edgeIndex(data.direction())
-      propagateDir(current, allowedDir, output, ...)  // 仅允许方向
       continue
 
     // ── 普通铜块：四向无损转发 ──
@@ -342,8 +342,8 @@ propagateDir(slot, dir, signal, queue):
 
 **关键设计**：
 - 普通铜块 `output = min(maxInput, cap)` 无损转发，不执行 `-1`
-- 雕文铜块将水平/垂直方向的信号分开处理，各方向仅取该方向的最大值
-- 切制铜块读取 `LivingCutCopperData.direction` 仅允许指定方向
+- 雕文铜块读取 `LivingCutCopperData.direction` 仅允许指定方向
+- 切制铜块将水平/垂直方向的信号分开处理，各方向仅取该方向的最大值
 - `canConnect` 在 `propagateDir` 中执行，确保锈蚀频道隔离
 
 ### 3.6 Phase 3 — 重新检测输入（铜格栅 + 铜灯）
@@ -395,19 +395,19 @@ for slot in copperSlots:
   cap = getSignalCap(count)
   output = min(maxInput, cap)
 
-  // 雕文铜块：水平/垂直分别充能
+  // 雕文铜块：仅方向充能
   if is(slot, BIT_CHISELED):
+    allowedDir = edgeIndex(data.direction())
+    powerConductiveNeighbor(slot, output, allowedDir, ...)
+
+  // 切制铜块：水平/垂直分别充能
+  else if is(slot, BIT_CUT):
     maxHInput = max(edgeGrid.get(slot, LEFT), edgeGrid.get(slot, RIGHT))
     maxVInput = max(edgeGrid.get(slot, UP), edgeGrid.get(slot, DOWN))
     powerConductiveNeighbor(slot, min(maxHInput, cap), LEFT, ...)
     powerConductiveNeighbor(slot, min(maxHInput, cap), RIGHT, ...)
     powerConductiveNeighbor(slot, min(maxVInput, cap), UP, ...)
     powerConductiveNeighbor(slot, min(maxVInput, cap), DOWN, ...)
-
-  // 切制铜块：仅方向充能
-  else if is(slot, BIT_CUT):
-    allowedDir = edgeIndex(data.direction())
-    powerConductiveNeighbor(slot, output, allowedDir, ...)
 
   // 普通铜块：四向充能
   else:
@@ -464,9 +464,22 @@ else if (is(neighbor, BIT_BUTTON | BIT_LEVER | BIT_TORCH
 
 **tooltip**：显示类型 `Cable` 和频道字母 `A/B/C/D`
 
-### 4.2 雕文铜块 (Overpass) — 立交桥
+### 4.2 雕文铜块 (Diode) — 二极管【原：4.3 切制铜块】
 
 **对应物品**：Chiseled Copper / Exposed Chiseled Copper / Weathered Chiseled Copper / Oxidized Chiseled Copper
+
+**行为**：
+- 单向导通，信号仅沿 `LivingCutCopperData.direction` 方向传输
+- 不接收反方向信号
+- 不向反方向转发信号
+
+**方向控制**：`direction` 存储在 `LIVING_CUT_COPPER_DATA` DataComponent 中，默认 `UP`，可通过 WASD 方向输入修改。
+
+**tooltip**：显示类型 `Diode`、频道字母和导通方向符号
+
+### 4.3 切制铜块 (Overpass) — 立交桥【原：4.2 雕文铜块】
+
+**对应物品**：Cut Copper / Exposed Cut Copper / Weathered Cut Copper / Oxidized Cut Copper
 
 **行为**：
 - 水平/垂直信号完全隔离
@@ -487,19 +500,6 @@ else if (is(neighbor, BIT_BUTTON | BIT_LEVER | BIT_TORCH
 ```
 
 **tooltip**：显示类型 `Overpass`、频道字母和提示文字
-
-### 4.3 切制铜块 (Diode) — 二极管
-
-**对应物品**：Cut Copper / Exposed Cut Copper / Weathered Cut Copper / Oxidized Cut Copper
-
-**行为**：
-- 单向导通，信号仅沿 `LivingCutCopperData.direction` 方向传输
-- 不接收反方向信号
-- 不向反方向转发信号
-
-**方向控制**：`direction` 存储在 `LIVING_CUT_COPPER_DATA` DataComponent 中，默认 `UP`，可通过 WASD 方向输入修改。
-
-**tooltip**：显示类型 `Diode`、频道字母和导通方向符号
 
 ### 4.4 铜格栅 (Divider) — 分频器
 
@@ -579,8 +579,8 @@ else if (is(neighbor, BIT_BUTTON | BIT_LEVER | BIT_TORCH
 
 ```java
 is(slot, BIT_COPPER)          → true  // 是铜块（任意子类型）
-is(slot, BIT_CHISELED)        → true  // 是雕文铜块
-is(slot, BIT_COPPER | BIT_CUT) → true  // 是铜块且是切制铜块
+is(slot, BIT_CHISELED)        → true  // 是雕文铜块（二极管）
+is(slot, BIT_COPPER | BIT_CUT) → true  // 是铜块且是切制铜块（立交桥）
 ```
 
 ---
@@ -592,8 +592,8 @@ is(slot, BIT_COPPER | BIT_CUT) → true  // 是铜块且是切制铜块
 | 特性 | 状态 | 说明 |
 |------|------|------|
 | 普通铜块无损线缆 | ✅ | 四向无损转发，锈蚀频道隔离 |
-| 雕文铜块立交桥 | ✅ | 水平/垂直信号独立传播 |
-| 切制铜块二极管 | ✅ | 单向导通，方向存储于 DataComponent |
+| 雕文铜块二极管 | ✅ | 单向导通，方向存储于 DataComponent |
+| 切制铜块立交桥 | ✅ | 水平/垂直信号独立传播 |
 | 铜格栅分频器 | ✅ | 上升沿翻转，Phase 3 状态更新 |
 | 铜灯 T 触发器 | ✅ | 上升沿翻转 lit，Phase 3 状态更新 |
 | 红石-铜块互通 | ✅ | canConnect 规则支持跨层注入 |
@@ -606,7 +606,7 @@ is(slot, BIT_COPPER | BIT_CUT) → true  // 是铜块且是切制铜块
 
 | 特性 | 状态 | 说明 |
 |------|------|------|
-| 切制铜块方向切换交互 | ⏳ | WASD 方向输入修改导通方向 |
+| 雕文铜块方向切换交互 | ⏳ | WASD 方向输入修改导通方向 |
 | 铜块物品栏装饰器渲染 | ⏳ | 类似 LivingRedstoneDecorator 的铜块视觉 |
 | 铜块连接纹理 | ⏳ | 铜块之间的连接状态可视化 |
 | 跨容器铜块信号 | ⏳ | 铜块信号通过容器边界传播 |
