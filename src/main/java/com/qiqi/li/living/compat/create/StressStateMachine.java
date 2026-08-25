@@ -31,7 +31,6 @@ public class StressStateMachine {
     private float capacity;
     private boolean refreshedThisTick;
     private boolean pendingReattach;
-    private boolean needsSync;
 
     public float getRPM() {
         return rpm;
@@ -46,14 +45,14 @@ public class StressStateMachine {
     }
 
     public void tick(KineticBlockEntity self) {
-        if (self.getLevel() == null || self.getLevel().isClientSide || self.isRemoved()) return;
+        if (self.getLevel() == null || self.getLevel().isClientSide) return;
 
         if (pendingReattach) {
             pendingReattach = false;
             try {
                 self.attachKinetics();
                 self.setChanged();
-                needsSync = true;
+                self.sendData();
             } catch (NullPointerException e) {
                 LOGGER.debug("[StressState] NPE during delayed reattach on {} at {}: {}",
                     self.getClass().getSimpleName(), self.getBlockPos(), e.getMessage());
@@ -79,7 +78,7 @@ public class StressStateMachine {
                     self.setNetwork(null);
                     pendingReattach = true;
                     self.setChanged();
-                    needsSync = true;
+                    self.sendData();
                 }
             } catch (NullPointerException e) {
                 LOGGER.debug("[StressState] NPE during expiry cleanup on {} at {}: {}",
@@ -93,21 +92,6 @@ public class StressStateMachine {
         }
 
         refreshedThisTick = false;
-    }
-
-    public void deferredSync(KineticBlockEntity self) {
-        if (!needsSync) return;
-        needsSync = false;
-        if (self.getLevel() == null || self.getLevel().isClientSide || self.isRemoved()) return;
-        try {
-            self.sendData();
-        } catch (NullPointerException e) {
-            LOGGER.debug("[StressState] NPE during deferred sync on {} at {}: {}",
-                self.getClass().getSimpleName(), self.getBlockPos(), e.getMessage());
-        } catch (Exception e) {
-            LOGGER.warn("[StressState] Error during deferred sync on {} at {}",
-                self.getClass().getSimpleName(), self.getBlockPos(), e);
-        }
     }
 
     public void onChunkUnloaded(KineticBlockEntity self) {
@@ -142,7 +126,6 @@ public class StressStateMachine {
         capacity = 0;
         refreshedThisTick = false;
         pendingReattach = false;
-        needsSync = false;
     }
 
     public void applyStress(KineticBlockEntity self, float newRpm, float newCap) {
@@ -154,7 +137,7 @@ public class StressStateMachine {
             return;
         }
 
-        if (self.getLevel() != null && !self.getLevel().isClientSide && !self.isRemoved()) {
+        if (self.getLevel() != null && !self.getLevel().isClientSide) {
             refreshedThisTick = true;
         }
 
@@ -164,7 +147,7 @@ public class StressStateMachine {
             pendingReattach = false;
         }
 
-        if (self.getLevel() == null || self.getLevel().isClientSide || self.isRemoved()) {
+        if (self.getLevel() == null || self.getLevel().isClientSide) {
             rpm = newRpm;
             capacity = newCap;
             return;
@@ -202,7 +185,7 @@ public class StressStateMachine {
                 capacity = newCap;
             }
             self.setChanged();
-            needsSync = true;
+            self.sendData();
         } catch (NullPointerException e) {
             LOGGER.debug("[StressState] NPE applying stress on {} at {}: {}",
                 self.getClass().getSimpleName(), self.getBlockPos(), e.getMessage());

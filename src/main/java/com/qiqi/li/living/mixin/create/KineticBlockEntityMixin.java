@@ -33,11 +33,6 @@ public abstract class KineticBlockEntityMixin implements LivingItemStressOutput 
         stressState.tick((KineticBlockEntity) (Object) this);
     }
 
-    @Inject(method = "tick", at = @At("TAIL"), remap = false)
-    private void livingItem$deferredSync(CallbackInfo ci) {
-        stressState.deferredSync((KineticBlockEntity) (Object) this);
-    }
-
     @Inject(method = "calculateAddedStressCapacity", at = @At("HEAD"), cancellable = true, remap = false)
     private void livingItem$calculateAddedStressCapacity(CallbackInfoReturnable<Float> cir) {
         if (stressState.isActive()) {

@@ -4,6 +4,43 @@
 
 ---
 
+## 2026-08-27
+
+- ✅ **重构：活水车应力状态机提取**（`StressStateMachine` 纯 Java 类，从 `KineticBlockEntityMixin` 中提取）
+  - 将原 Mixin 内联的 `livingItem$generatedRPM`、`livingItem$stressCapacity`、`livingItem$refreshedThisTick`、`livingItem$pendingReattach` 字段管理迁移到 `StressStateMachine`
+  - 状态机可独立测试，不依赖 Mixin 框架
+  - `applyStress(rpm, cap)` 统一入口：同时设置 RPM 和 SU 容量，消除 `setGeneratedRPM` 必须在 `setStressCapacity` 之前调用的隐式依赖
+  - `getGeneratedSpeed()` 改为纯 getter（移除副作用——原先在 getter 中清零 RPM 和 capacity）
+  - **修改文件**：`StressStateMachine.java`（新建）、`KineticBlockEntityMixin.java`（简化）
+
+- ✅ **重构：应力输出入口合并**（`StressOutputManager` 替代 `ModCreate` + `CreateIntegration`）
+  - 将常量定义（`BASE_RPM`、`BASE_SU_CAPACITY`）、Create 检测、白名单过滤、方向兼容性检查合并到一个类
+  - 直接 import Create 类型（`StressOutputManager` 在 `compat/create` 包中，Create 已确认加载），简化 `instanceof` 检查
+  - 调用方从 `ModCreate.updateStressOutput()` → `StressOutputManager.apply()`
+  - **修改文件**：`StressOutputManager.java`（新建）、`ContainerLivingItemHandler.java`（更新调用方）
+
+- ✅ **修复：`deferredSync` 延迟同步导致客户端空状态**
+  - **根因**：重构引入 `needsSync` 标记 + `deferredSync` TAIL 注入模式，将 `sendData()` 从 `applyStress()` 延迟到 `tick()` TAIL。但 `tick()` HEAD 先执行清理逻辑，`deferredSync` 发送的是可能被清理后的状态
+  - `ServerTickEvent.Post` 模式下，`applyStress()` 在 `tick()` 之后执行，`tick()` HEAD 发现 `refreshedThisTick=false` 触发清理，`deferredSync` 发送空状态。接着 `applyStress()` 设置 `needsSync=true`，但 `tick()` 已结束，`needsSync` 永远得不到处理
+  - **修复**：在 `applyStress()` 和 `tick()` 中直接调用 `self.sendData()`，移除 `needsSync` 字段、`deferredSync` 方法和 TAIL 注入
+  - **修改文件**：`StressStateMachine.java`（移除 `needsSync`、`deferredSync`）、`KineticBlockEntityMixin.java`（移除 TAIL 注入）
+
+- ✅ **修复：`applyStress` 中多余的 `isRemoved()` 检查**
+  - 移除 `applyStress()` 中 `self.isRemoved()` 检查，与工作版本对齐，避免生命周期过渡期状态被跳过
+  - 移除 `tick()` 中 `self.isRemoved()` 守卫，与工作版本对齐
+  - **修改文件**：`StressStateMachine.java`
+
+- ✅ **文档：活水车技术文档更新至 v10**
+  - 更新类职责表（新增 `StressStateMachine`、`StressOutputManager`）
+  - 更新软依赖架构图（反映新统一入口和即时 `sendData()`）
+  - 新增 `StressStateMachine` 和精简后的 `KineticBlockEntityMixin` 代码文档
+  - 新增 9.21 踩坑记录：`deferredSync` 延迟同步导致客户端空状态
+  - 更新 Tick 时序图（反映 `ServerTickEvent.Pre` 和 `StressOutputManager`）
+  - 更新验证清单
+  - **修改文件**：`docs/tech/living-water-wheel-tech.md`
+
+---
+
 ## 2026-08-22
 
 - ✅ **新增：活TNT红石信号点燃**（活TNT收到红石信号自动点燃，无需打火石）
