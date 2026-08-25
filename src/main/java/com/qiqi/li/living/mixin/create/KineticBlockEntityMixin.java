@@ -103,13 +103,11 @@ public abstract class KineticBlockEntityMixin implements LivingItemStressOutput 
         }
 
         if (!livingItem$refreshedThisTick) {
-            livingItem$generatedRPM = 0;
-            livingItem$stressCapacity = 0;
-
             try {
                 if (self instanceof GeneratingKineticBlockEntity gen) {
                     gen.updateGeneratedRotation();
                 } else {
+                    livingItem$refreshedThisTick = true;
                     self.detachKinetics();
                     self.setSpeed(0);
                     self.setNetwork(null);
@@ -124,6 +122,8 @@ public abstract class KineticBlockEntityMixin implements LivingItemStressOutput 
                 LOGGER.warn("[LivingItem] Error during expiry cleanup on {} at {}",
                     self.getClass().getSimpleName(), self.getBlockPos(), e);
             }
+            livingItem$generatedRPM = 0;
+            livingItem$stressCapacity = 0;
         }
 
         livingItem$refreshedThisTick = false;
@@ -169,14 +169,19 @@ public abstract class KineticBlockEntityMixin implements LivingItemStressOutput 
         }
 
         float prev = livingItem$generatedRPM;
-        livingItem$generatedRPM = rpm;
 
         if (rpm != 0) {
             livingItem$pendingReattach = false;
         }
 
-        if (self.getLevel() == null || self.getLevel().isClientSide || self.isRemoved()) return;
-        if (Math.abs(prev - rpm) < 0.01f) return;
+        if (self.getLevel() == null || self.getLevel().isClientSide || self.isRemoved()) {
+            livingItem$generatedRPM = rpm;
+            return;
+        }
+        if (Math.abs(prev - rpm) < 0.01f) {
+            livingItem$generatedRPM = rpm;
+            return;
+        }
 
         try {
             if (prev != 0 && rpm == 0) {
@@ -184,23 +189,28 @@ public abstract class KineticBlockEntityMixin implements LivingItemStressOutput 
                 self.setSpeed(0);
                 self.setNetwork(null);
                 livingItem$pendingReattach = true;
-            } else if (prev == 0 && rpm != 0) {
-                self.setSpeed(rpm);
-                self.setNetwork(self.getBlockPos().asLong());
-                self.attachKinetics();
-                if (self.hasNetwork()) {
-                    self.getOrCreateNetwork().updateCapacityFor(self, livingItem$stressCapacity);
-                    self.getOrCreateNetwork().updateStressFor(self, self.calculateStressApplied());
-                    self.getOrCreateNetwork().updateStress();
-                }
+                livingItem$generatedRPM = 0;
+                livingItem$stressCapacity = 0;
             } else {
-                self.detachKinetics();
-                self.setSpeed(rpm);
-                self.attachKinetics();
-                if (self.hasNetwork()) {
-                    self.getOrCreateNetwork().updateCapacityFor(self, livingItem$stressCapacity);
-                    self.getOrCreateNetwork().updateStressFor(self, self.calculateStressApplied());
-                    self.getOrCreateNetwork().updateStress();
+                livingItem$generatedRPM = rpm;
+                if (prev == 0 && rpm != 0) {
+                    self.setSpeed(rpm);
+                    self.setNetwork(self.getBlockPos().asLong());
+                    self.attachKinetics();
+                    if (self.hasNetwork()) {
+                        self.getOrCreateNetwork().updateCapacityFor(self, livingItem$stressCapacity);
+                        self.getOrCreateNetwork().updateStressFor(self, self.calculateStressApplied());
+                        self.getOrCreateNetwork().updateStress();
+                    }
+                } else {
+                    self.detachKinetics();
+                    self.setSpeed(rpm);
+                    self.attachKinetics();
+                    if (self.hasNetwork()) {
+                        self.getOrCreateNetwork().updateCapacityFor(self, livingItem$stressCapacity);
+                        self.getOrCreateNetwork().updateStressFor(self, self.calculateStressApplied());
+                        self.getOrCreateNetwork().updateStress();
+                    }
                 }
             }
             self.setChanged();

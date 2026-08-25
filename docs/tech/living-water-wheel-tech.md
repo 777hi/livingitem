@@ -1,7 +1,7 @@
 # Living Water Wheel (活水车) 技术文档
 
-> **文档版本**: 2026.08 v7  
-> **最后更新**: 2026-08-16  
+> **文档版本**: 2026.08 v8  
+> **最后更新**: 2026-08-25  
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -572,36 +572,42 @@ public abstract class KineticBlockEntityMixin implements LivingItemStressOutput 
 
     @Inject(method = "tick", at = @At("HEAD"), remap = false)
     private void livingItem$checkExpiry(CallbackInfo ci) {
+        KineticBlockEntity self = (KineticBlockEntity) (Object) this;
+        if (self.getLevel() == null || self.getLevel().isClientSide || self.isRemoved()) return;
+
+        if (livingItem$pendingReattach) {                     // 延迟重连：等待网络就绪
+            livingItem$pendingReattach = false;
+            try {
+                self.attachKinetics();
+                self.setChanged();
+                livingItem$needsSync = true;
+            } catch (Exception e) { ... }
+        }
+
         if (livingItem$generatedRPM == 0) {
             livingItem$refreshedThisTick = false;
             return;
         }
 
-        KineticBlockEntity self = (KineticBlockEntity) (Object) this;
-        if (self.getLevel() == null || self.getLevel().isClientSide) return;
-
-        if (!livingItem$refreshedThisTick) {                 // 应力源已消失，立即清理
-            livingItem$generatedRPM = 0;
-            livingItem$stressCapacity = 0;
-
+        if (!livingItem$refreshedThisTick) {                  // 应力源已消失，立即清理
             try {
                 if (self instanceof GeneratingKineticBlockEntity gen) {
                     gen.updateGeneratedRotation();
                 } else {
+                    livingItem$refreshedThisTick = true;      // 确保 isSource() 返回 true
                     self.detachKinetics();
                     self.setSpeed(0);
-                    self.setNetwork(null);
-                    self.attachKinetics();                  // 重连邻居网络
+                    self.setNetwork(null);                    // network.remove() 正确移除
+                    livingItem$pendingReattach = true;
                     self.setChanged();
-                    self.sendData();                          // 同步客户端
+                    livingItem$needsSync = true;
                 }
-            } catch (Exception e) {
-                LOGGER.warn("[LivingItem] Error during expiry cleanup on {} at {}",
-                    self.getClass().getSimpleName(), self.getBlockPos(), e);
-            }
+            } catch (Exception e) { ... }
+            livingItem$generatedRPM = 0;                      // 最后再清零，保证上面 network.remove() 时 isSource() 返回 true
+            livingItem$stressCapacity = 0;
         }
 
-        livingItem$refreshedThisTick = false;                // 重置标记，下 tick 重新检测
+        livingItem$refreshedThisTick = false;                 // 重置标记，下 tick 重新检测
     }
 
     @Inject(method = "calculateAddedStressCapacity", at = @At("HEAD"), cancellable = true, remap = false)
@@ -622,52 +628,59 @@ public abstract class KineticBlockEntityMixin implements LivingItemStressOutput 
             return;
         }
 
-        if (self.getLevel() != null && !self.getLevel().isClientSide) {
+        if (self.getLevel() != null && !self.getLevel().isClientSide && !self.isRemoved()) {
             livingItem$refreshedThisTick = true;             // 标记本 tick 有应力源
         }
 
         float prev = livingItem$generatedRPM;
-        livingItem$generatedRPM = rpm;
 
-        if (self.getLevel() == null || self.getLevel().isClientSide) return;
-        if (Math.abs(prev - rpm) < 0.01f) return;           // 无变化跳过
+        if (rpm != 0) {
+            livingItem$pendingReattach = false;
+        }
+
+        if (self.getLevel() == null || self.getLevel().isClientSide || self.isRemoved()) {
+            livingItem$generatedRPM = rpm;
+            return;
+        }
+        if (Math.abs(prev - rpm) < 0.01f) {                  // 无变化跳过
+            livingItem$generatedRPM = rpm;
+            return;
+        }
 
         try {
             if (prev != 0 && rpm == 0) {
+                // livingItem$generatedRPM 仍是 prev（非零），确保 isSource() 返回 true
                 self.detachKinetics();
                 self.setSpeed(0);
-                self.setNetwork(null);
-                self.attachKinetics();                      // 重连邻居网络
-            } else if (prev == 0 && rpm != 0) {
-                self.setSpeed(rpm);
-                self.setNetwork(self.getBlockPos().asLong());
-                self.attachKinetics();
-                if (self.hasNetwork()) {                     // 立即更新网络应力
-                    self.getOrCreateNetwork().updateCapacityFor(self, livingItem$stressCapacity);
-                    self.getOrCreateNetwork().updateStressFor(self, self.calculateStressApplied());
-                    self.getOrCreateNetwork().updateStress();
-                }
+                self.setNetwork(null);                       // network.remove() 正确移除
+                livingItem$pendingReattach = true;
+                livingItem$generatedRPM = 0;                  // 最后再清零
+                livingItem$stressCapacity = 0;
             } else {
-                self.detachKinetics();
-                self.setSpeed(rpm);
-                self.attachKinetics();
-                if (self.hasNetwork()) {
-                    self.getOrCreateNetwork().updateCapacityFor(self, livingItem$stressCapacity);
-                    self.getOrCreateNetwork().updateStressFor(self, self.calculateStressApplied());
-                    self.getOrCreateNetwork().updateStress();
+                livingItem$generatedRPM = rpm;
+                if (prev == 0 && rpm != 0) {
+                    self.setSpeed(rpm);
+                    self.setNetwork(self.getBlockPos().asLong());
+                    self.attachKinetics();
+                    if (self.hasNetwork()) {                  // 立即更新网络应力
+                        self.getOrCreateNetwork().updateCapacityFor(self, livingItem$stressCapacity);
+                        self.getOrCreateNetwork().updateStressFor(self, self.calculateStressApplied());
+                        self.getOrCreateNetwork().updateStress();
+                    }
+                } else {
+                    self.detachKinetics();
+                    self.setSpeed(rpm);
+                    self.attachKinetics();
+                    if (self.hasNetwork()) {
+                        self.getOrCreateNetwork().updateCapacityFor(self, livingItem$stressCapacity);
+                        self.getOrCreateNetwork().updateStressFor(self, self.calculateStressApplied());
+                        self.getOrCreateNetwork().updateStress();
+                    }
                 }
             }
             self.setChanged();
-            self.sendData();                                 // 同步客户端
-        } catch (NullPointerException e) {
-            LOGGER.warn("[LivingItem] Failed to set RPM on {} at {}: {}",
-                self.getClass().getSimpleName(), self.getBlockPos(), e.getMessage());
-            livingItem$generatedRPM = 0;
-        } catch (Exception e) {
-            LOGGER.warn("[LivingItem] Unexpected error setting RPM on {} at {}",
-                self.getClass().getSimpleName(), self.getBlockPos(), e);
-            livingItem$generatedRPM = 0;
-        }
+            livingItem$needsSync = true;                      // 延迟同步客户端（tick TAIL）
+        } catch (NullPointerException e) { ... }
     }
 
     @Override
@@ -714,7 +727,9 @@ public abstract class KineticBlockEntityMixin implements LivingItemStressOutput 
 | 方法 | 注入目标 | 作用 |
 |------|---------|------|
 | `livingItem$getGeneratedSpeed` | `getGeneratedSpeed()` | 让 Create 认为该 BE 是旋转源，返回固定 RPM（±8）；含自过期检测 |
-| `livingItem$checkExpiry` | `tick()` | 自过期机制：每 tick 检查 `refreshedThisTick`，未刷新则清理应力 |
+| `livingItem$onChunkUnloaded` | `onChunkUnloaded()` | 区块卸载时清理网络连接，防止残留实体导致应力翻倍和变速结构爆炸 |
+| `livingItem$checkExpiry` | `tick()` HEAD | 自过期机制：每 tick 检查 `refreshedThisTick`，未刷新则清理应力 |
+| `livingItem$deferredSync` | `tick()` TAIL | 延迟同步：在 tick 末尾安全发送客户端数据 |
 | `livingItem$calculateAddedStressCapacity` | `calculateAddedStressCapacity()` | 让 Create 认为该 BE 提供应力容量，动态返回 SU |
 | `livingItem$setGeneratedRPM` | 新增方法 | 外部调用设置 RPM，含白名单过滤、自过期标记、网络更新 |
 | `livingItem$setStressCapacity` | 新增方法 | 外部调用设置 SU 容量，变更时立即更新网络应力 |
@@ -726,7 +741,10 @@ public abstract class KineticBlockEntityMixin implements LivingItemStressOutput 
 prev=0, rpm≠0  → 从静止到旋转：setSpeed + setNetwork + attachKinetics
 prev≠0, rpm=0  → 从旋转到静止：detachKinetics → setSpeed(0) → setNetwork(null) → attachKinetics（重连邻居网络）
 prev≠0, rpm≠0  → 速度变化：detachKinetics + setSpeed + attachKinetics
+chunkUnloaded  → 区块卸载：network.remove(self) + detachKinetics + 清零所有状态
 ```
+
+> **关键原则**：在调用 `setNetwork(null)`（内部调 `network.remove()`）时，必须确保 `getGeneratedSpeed()` 返回非零值，让 `isSource()` 返回 true，否则 `sources.remove(be)` 会被跳过，block entity 残留在网络 `sources` 中，导致应力翻倍和网络异常。为此，`setNetwork(null)` 之前需设 `refreshedThisTick = true`，且 `generatedRPM` 清零操作必须在 `setNetwork(null)` 之后。
 
 > **注意**：`prev≠0, rpm=0` 时必须**先 detach 再 setSpeed(0)**。如果先 `setSpeed(0)` 再 `detach`，`detachKinetics()` 内部调用 `RotationPropagator.handleRemoved()` 时发现 speed==0 会直接返回，导致下游齿轮不会收到"源已移除"的通知，继续空转。清理后必须调用 `attachKinetics()` 重连邻居网络，否则已被其他发电机带动的齿轮会完全停止。
 
@@ -1303,7 +1321,7 @@ RenderSystem.setShaderLights(
   1. setGeneratedRPM() 被调用 → refreshedThisTick = true
   2. tick() 开始 → 检查 refreshedThisTick
      ├── true（有应力源）→ 重置为 false，下 tick 继续检测
-     └── false（应力源已消失）→ 立即清理 RPM/SU + detachKinetics + sendData
+     └── false（应力源已消失）→ 立即清理 RPM/SU + detachKinetics + setNetwork(null) + deferredSync
   3. getGeneratedSpeed() 被调用 → 检查 refreshedThisTick
      ├── false → 清零 RPM/SU，返回默认值
      └── true → 返回注入的 RPM
@@ -1311,8 +1329,10 @@ RenderSystem.setShaderLights(
 
 **优势**：
 - 响应速度从 2 tick 提升到 1 tick
-- `tick()` 中清理时调用 `sendData()` 同步客户端
+- `tick()` 中清理时通过 `deferredSync`（tick TAIL）安全同步客户端
 - `getGeneratedSpeed()` 中也有兜底检测，双重保障
+
+> **注意**：清理时，`generatedRPM` 和 `stressCapacity` 的清零操作必须在 `setNetwork(null)` 之后，且 `setNetwork(null)` 前需设 `refreshedThisTick = true`，确保 `network.remove()` 内部的 `isSource()` 返回 true，`sources.remove(be)` 被正确调用。详见 9.19。
 
 ### 9.14 复杂组件崩溃与白名单策略
 
@@ -1419,6 +1439,112 @@ private static boolean isDirectionCompatible(BlockEntity be, float injectedRPM) 
 - 齿轮旋转且方向一致 → 正常注入，叠加应力
 - 齿轮旋转且方向相反 → **跳过注入**，清零残留 RPM，不干扰原有旋转
 
+### 9.18 区块卸载后应力翻倍和变速结构爆炸
+
+**现象**：含活水车的区块卸载重进后，应力翻倍（原本三万变七万，两次变 14 万）。卸载区块还可能爆掉网络里的变速结构（大小齿轮相接处、变速器爆炸）。
+
+**根因**：`SmartBlockEntity.setRemoved()` 中，当 `chunkUnloaded = true`（区块卸载）时，`remove()` 方法**不会被调用**：
+
+```java
+// SmartBlockEntity.java
+public final void setRemoved() {
+    super.setRemoved();
+    if (!chunkUnloaded)  // 卸载时跳过
+        remove();
+    invalidate();
+}
+```
+
+这意味着 `KineticBlockEntity.remove()`（包含 `network.remove(this)` 和 `detachKinetics()`）不会在区块卸载时执行。导致：
+
+1. **应力翻倍**：旧 block entity 残留在网络 `sources` 中，区块重载时新 block entity 又被加入同一网络，`calculateCapacity()` 遍历 `sources` 时同一个位置被计数两次
+2. **变速结构爆炸**：网络中的残留 block entity 造成状态不一致，`getGeneratedSpeed()` 返回 0（`refreshedThisTick=false`），`isSource()` 返回 false，但 block entity 仍在 `sources` 中，触发 Create 内部异常
+
+**修复**：在 `KineticBlockEntityMixin` 中新增 `onChunkUnloaded` 注入，在区块卸载时强制执行网络清理：
+
+```java
+@Inject(method = "onChunkUnloaded", at = @At("HEAD"), remap = false)
+private void livingItem$onChunkUnloaded(CallbackInfo ci) {
+    KineticBlockEntity self = (KineticBlockEntity) (Object) this;
+    if (self.getLevel() == null || self.getLevel().isClientSide) return;
+
+    if (livingItem$generatedRPM != 0) {
+        livingItem$refreshedThisTick = true;  // 确保 isSource() 返回 true
+
+        if (self.hasNetwork()) {
+            self.getOrCreateNetwork().remove(self);  // 从网络正确移除
+        }
+
+        self.detachKinetics();  // 从旋转传播中分离
+
+        livingItem$generatedRPM = 0;
+        livingItem$stressCapacity = 0;
+        livingItem$refreshedThisTick = false;
+        livingItem$pendingReattach = false;
+        livingItem$needsSync = false;
+    }
+}
+```
+
+**关键细节**：`network.remove(self)` 内部调用 `isSource()` → `getGeneratedSpeed()`。必须先设 `refreshedThisTick = true`，确保 `getGeneratedSpeed()` 返回实际 RPM（非零），从而 `isSource()` 返回 true，`sources.remove(be)` 被正确调用。`generatedRPM` 和 `stressCapacity` 的清零必须在 `network.remove()` 和 `detachKinetics()` 之后。
+
+### 9.19 `isSource()` 返回 false 导致 `sources.remove()` 被跳过（通用问题）
+
+**现象**：与 9.18 相同根因，但发生在**非区块卸载**场景——`checkExpiry` 自过期清理和 `setGeneratedRPM(rpm=0)` 主动取消应力时，`sources.remove(be)` 同样被跳过。
+
+**根因**：三处代码路径都有相同的 bug 模式——在调用 `setNetwork(null)`（内部调 `network.remove()`）之前，`generatedRPM` 已被清零或 `refreshedThisTick` 为 false，导致 `getGeneratedSpeed()` 返回 0，`isSource()` 返回 false，`sources.remove(be)` 被跳过：
+
+| 代码路径 | 触发条件 | 问题 |
+|---------|---------|------|
+| `checkExpiry` | tick 时 `refreshedThisTick=false` | `generatedRPM` 先清零，再调 `setNetwork(null)` |
+| `setGeneratedRPM(rpm=0)` | 主动取消应力 | `generatedRPM = rpm`（即 0）在 `setNetwork(null)` 之前执行 |
+| `onChunkUnloaded` | 区块卸载 | `refreshedThisTick` 为 false，`getGeneratedSpeed()` 副作用清零 RPM |
+
+**修复**：统一原则——`setNetwork(null)` 之前确保 `getGeneratedSpeed()` 返回非零值：
+
+**`checkExpiry` 修复**：先设 `refreshedThisTick = true`，再调 `setNetwork(null)`，最后再清零 `generatedRPM`：
+
+```java
+// 修复后
+if (!livingItem$refreshedThisTick) {
+    try {
+        if (self instanceof GeneratingKineticBlockEntity gen) {
+            gen.updateGeneratedRotation();
+        } else {
+            livingItem$refreshedThisTick = true;  // 确保 isSource() 返回 true
+            self.detachKinetics();
+            self.setSpeed(0);
+            self.setNetwork(null);               // network.remove() 正确移除
+            livingItem$pendingReattach = true;
+            self.setChanged();
+            livingItem$needsSync = true;
+        }
+    } catch ...
+    livingItem$generatedRPM = 0;                // 最后再清零
+    livingItem$stressCapacity = 0;
+}
+```
+
+**`setGeneratedRPM(rpm=0)` 修复**：`generatedRPM` 保留原值（非零）直到 `setNetwork(null)` 之后：
+
+```java
+// 修复后
+if (prev != 0 && rpm == 0) {
+    // livingItem$generatedRPM 仍是 prev（非零），refreshedThisTick 已是 true
+    self.detachKinetics();
+    self.setSpeed(0);
+    self.setNetwork(null);              // isSource() 返回 true，正确移除
+    livingItem$pendingReattach = true;
+    livingItem$generatedRPM = 0;        // 最后再清零
+    livingItem$stressCapacity = 0;
+}
+```
+
+**核心原则**：在调用 `network.remove()` 时，`getGeneratedSpeed()` 必须返回非零值，否则 `KineticNetwork.remove()` 中的 `sources.remove(be)` 被跳过，block entity 残留在网络 `sources` 中，导致：
+- 应力翻倍（`calculateCapacity()` 重复计数）
+- 网络状态异常（残留条目与活跃条目不一致）
+- 变速结构爆炸（Create 内部校验失败）
+
 ---
 
 ## 附录：Tick 时序
@@ -1492,3 +1618,7 @@ ContainerLivingItemHandler.processContext()
 - [x] 物品栏 3D 渲染：渲染后光照正确恢复
 - [x] 软依赖：无 Create 时活物品模组正常运行
 - [x] 软依赖：安装 Create 后自动激活活水车功能
+- [x] Create 集成：区块卸载时正确清理网络连接（onChunkUnloaded 注入）
+- [x] Create 集成：区块重载后应力不翻倍
+- [x] Create 集成：变速结构在区块卸载重载后稳定不爆炸
+- [x] Create 集成：自过期/取消应力时 `sources.remove()` 正确执行（isSource 返回 true）
