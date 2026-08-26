@@ -1,7 +1,7 @@
 # 活物品基础设施系统设计
 
-> **文档版本**: 2026.08 v8  
-> **最后更新**: 2026-08-19  
+> **文档版本**: 2026.08 v9  
+> **最后更新**: 2026-08-26  
 > **适用版本**: Minecraft 1.21.1 + NeoForge 21.1.x
 
 ## 目录
@@ -892,7 +892,7 @@ private final FilterData[] filterOf;  // filterOf[slot] = 此槽位继承的过�
 
 ### 8.5 ContainerFluidData — 容器流体数据
 
-[ContainerFluidData](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/container/ContainerFluidData.java) 管理容器级流体状态（活水桶的水流），独立于活物品的槽位级状态。
+[ContainerFluidData](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/domain/water/ContainerFluidData.java) 管理容器级流体状态（活水桶的水流），独立于活物品的槽位级状态。
 
 **核心概念**：
 
@@ -900,7 +900,28 @@ private final FilterData[] filterOf;  // filterOf[slot] = 此槽位继承的过�
 - `flowEntry`（level=1~7）对应流动水方块
 - 无 entry 对应空气
 - 水流按 `FLOW_STEP_TICKS`（4 tick）间隔蔓延
-- 水流遇到物品会推动物品到相邻空槽位
+- 水流遇到物品会推动物品到下游槽位
+
+**水流蔓延**：BFS 从水源槽位开始，逐层向外扩展，遇到活物品（障碍物）停止。每层的 `fromSlot` 记录上游来源，形成水流树。
+
+**物品推动（pushItems）**：
+
+物品沿水流方向（从上游到下游）被推动。处理顺序按 level **升序**（离水源近的先处理），确保物品逐层向外移动，与水流方向一致。
+
+| 步骤 | 说明 |
+|------|------|
+| 1. 构建 downstream 映射 | `fromSlot → [子节点列表]`，表示水流方向 |
+| 2. 按 level 升序排序 | 先处理 level=1（离水源最近），后处理 level=7 |
+| 3. 逐槽位推动 | 对每个有物品的非水源槽位，尝试推到下游子节点 |
+| 4. 堆叠合并 | 目标槽位有同类物品且未满时合并，否则移到空槽位 |
+| 5. 每源每 tick 一次 | 部分合并后立即 break，避免用过期数量继续合并 |
+
+**安全约束**：
+
+- 不推入水源槽位（活水桶所在）
+- 不推入活物品槽位（活漏斗/活熔炉等）
+- 使用 `moved` 集合避免同一物品被级联推动两次
+- 通过 `ctx.setItem()` 统一走 `IItemHandler` 路径，确保大箱子读写一致
 
 **生命周期**：活水桶放入 → 注册水源槽位 → 水源蔓延 → 活水桶移除 → 水源取消，但流动槽位继续干涸。过期条目的清理阈值是 120 秒未访问。
 
@@ -1028,6 +1049,10 @@ registerProvider(SlotAccessorFactory::defaultProvider); // 优先级 3：普通�
 | 贪心提取 | EnderChannelRegistry | 输出槽有物品时优先提取同类型（可堆叠），避免轮询到不同类型导致传输停止 |
 | IdentityHashMap 去重 | 大箱子 | 避免同一 IItemHandler 被处理两次 |
 | InvWrapper 缓存 | LivingEnderChestAccessor | 直连模式避免每 tick 重复创建 |
+| 瞬态数据服务端缓存 | LivingWaterBucketFunction | WaterData 瞬态字段存入 BUCKET_STATES Map，不再每 tick 写 DataComponent，消除玩家背包场景下的网络同步开销 |
+| handler 统一读写 | SimpleContainerContext.setItem() | 移除 container.setItem() 路径，统一走 IItemHandler，确保大箱子读写一致，消除物品复制 bug |
+| BUCKET_STATES 周期清理 | LivingWaterBucketFunction | cleanupStaleEntries() 清理 120s 未访问的瞬态缓存条目，防止内存泄漏 |
+| 双时间尺度 | BucketState(lastAccessMs, lastGameTick) | lastAccessMs 用 System.currentTimeMillis() 供缓存清理，lastGameTick 用 gameTime 供 needsReset 检测 |
 
 ---
 
@@ -1055,6 +1080,10 @@ registerProvider(SlotAccessorFactory::defaultProvider); // 优先级 3：普通�
 | `NeighborSlotAccessor.java` | `transfer/` | 邻居容器访问器 |
 | `FilterData.java` | `transfer/` | 传输过滤规则数据（跨领域共享） |
 | `PerfMetrics.java` | `perf/` | 性能监控 |
+| `ContainerMonitor.java` | `debug/` | 容器监控系统，检测物品复制/丢失/活物品覆盖 |
+| `ContainerMonitorCommand.java` | `debug/` | `/living_monitor` 命令注册 |
+| `ContainerFluidData.java` | `domain/water/` | 容器流体数据，BFS 水流蔓延 + 物品推动 |
+| `LivingWaterBucketFunction.java` | `domain/water/` | 活水桶功能类，瞬态数据服务端缓存优化 |
 | `TransferPipeline.java` | `domain/hopper/` | 统一传输入口，含容器内传输的 `Container` 接口槽位过滤，复用 `CrossContainerTransfer.getNeighborContainer` |
 | `HopperFilterBuilder.java` | `domain/hopper/` | 活漏斗过滤链构建（从 ContainerSnapshot 提取） |
 | `CrossContainerTransfer.java` | `domain/hopper/` | 跨容器传输，含 `Container` 接口槽位过滤 + `tryPullFromNeighbor`/`tryPushToNeighbor` 核心 helper + 方向解析 + 大箱子处理 |

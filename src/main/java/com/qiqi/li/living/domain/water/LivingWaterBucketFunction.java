@@ -40,7 +40,7 @@ public class LivingWaterBucketFunction implements LivingItemFunction, HasContain
 
     private static final long STALE_THRESHOLD_MS = 120_000;
 
-    private record BucketState(long lastTick, int hostSlot, String containerKey) {}
+    private record BucketState(long lastAccessMs, long lastGameTick, int hostSlot, String containerKey) {}
 
     private static final Map<String, BucketState> BUCKET_STATES = new HashMap<>();
 
@@ -52,8 +52,9 @@ public class LivingWaterBucketFunction implements LivingItemFunction, HasContain
         BUCKET_STATES.clear();
     }
 
-    static void cleanupStaleEntries(long currentTimeMs) {
-        // handled by ContainerLivingItemHandler's periodic cleanup
+    public static void cleanupStaleEntries(long currentTimeMs) {
+        BUCKET_STATES.entrySet().removeIf(e ->
+            currentTimeMs - e.getValue().lastAccessMs > STALE_THRESHOLD_MS);
     }
 
     @Override
@@ -69,6 +70,7 @@ public class LivingWaterBucketFunction implements LivingItemFunction, HasContain
         if (level.isClientSide) return;
 
         long gameTime = level.getGameTime();
+        long nowMs = System.currentTimeMillis();
         String containerKey = context.getContainerKey();
         int containerWidth = context.getWidth();
         ContainerFluidData fluidData = tick.fluidData;
@@ -80,12 +82,12 @@ public class LivingWaterBucketFunction implements LivingItemFunction, HasContain
             String key = containerKey != null ? trackingKey(containerKey, slot) : null;
             BucketState prev = key != null ? BUCKET_STATES.get(key) : null;
 
-            long prevLastTick = prev != null ? prev.lastTick : -1L;
+            long prevGameTick = prev != null ? prev.lastGameTick : -1L;
             int prevHostSlot = prev != null ? prev.hostSlot : -1;
             String prevContainerKey = prev != null ? prev.containerKey : null;
 
             boolean needsReset = false;
-            if (prevLastTick >= 0 && gameTime - prevLastTick > 2) {
+            if (prevGameTick >= 0 && gameTime - prevGameTick > 2) {
                 needsReset = true;
             }
             if (containerKey != null && !containerKey.equals(prevContainerKey)) {
@@ -96,7 +98,7 @@ public class LivingWaterBucketFunction implements LivingItemFunction, HasContain
             }
 
             if (key != null) {
-                BUCKET_STATES.put(key, new BucketState(gameTime, slot,
+                BUCKET_STATES.put(key, new BucketState(nowMs, gameTime, slot,
                     containerKey != null ? containerKey : ""));
             }
 
@@ -166,18 +168,38 @@ public class LivingWaterBucketFunction implements LivingItemFunction, HasContain
         List<SlotEntry> waterBucketEntries) {
         if (waterBucketEntries.isEmpty()) return;
         String flowStr = fluidData != null ? buildFlowString(fluidData) : "";
+        int containerWidth = ctx.getWidth();
+        String containerKey = ctx.getContainerKey();
         for (SlotEntry entry : waterBucketEntries) {
             int i = entry.slotIndex();
             ItemStack stack = ctx.getItem(i);
             if (!isLivingWaterBucket(stack)) continue;
 
             LivingWaterBucketData data = LivingItemManager.getWaterBucketData(stack);
-            String oldFlow = data.water().flow();
-            if (oldFlow.equals(flowStr)) continue;
+            WaterData oldWater = data.water();
+            String oldFlow = oldWater.flow();
 
-            WaterData water = data.water().withFlow(flowStr);
-            LivingItemManager.setWaterBucketData(stack, data.withWater(water));
-            ctx.syncSlotToClients(i, stack);
+            WaterData newWater;
+            if (!oldFlow.equals(flowStr)) {
+                newWater = oldWater.withFlow(flowStr);
+            } else {
+                newWater = oldWater;
+            }
+
+            int newWidth = Math.max(1, containerWidth);
+            if (newWater.width() != newWidth
+                || newWater.hostSlot() != i
+                || !containerKey.equals(newWater.containerKey())) {
+                int col = i % newWidth;
+                int row = i / newWidth;
+                newWater = newWater.withPosition(i, col, row, newWidth,
+                    containerKey != null ? containerKey : "");
+            }
+
+            if (newWater != oldWater) {
+                LivingItemManager.setWaterBucketData(stack, data.withWater(newWater));
+                ctx.syncSlotToClients(i, stack);
+            }
         }
     }
 

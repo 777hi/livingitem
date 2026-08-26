@@ -4,9 +4,11 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerContext;
 import net.minecraft.world.item.ItemStack;
@@ -168,8 +170,15 @@ public class ContainerFluidData {
      *
      * 构建 BFS 水流树的下游映射（fromSlot → 子节点列表），
      * 物品被推到其下游子节点，自然跟随水流的弯曲路径。
-     * 按 level 降序处理，外层先推，形成级联效果。
+     * 按 level 升序处理，离水源近的先推，物品沿水流方向逐层向外移动。
      * 支持堆叠：目标槽位有同类物品时合并。
+     *
+     * 安全约束：
+     * - 不推入水源槽位（活水桶所在）
+     * - 不推入活物品槽位
+     * - 不推入已有非空非堆叠物品的槽位
+     * - 堆叠合并通过 ctx.setItem() 确保容器变更通知
+     * - 使用 moved 标记避免同一物品被级联推动两次
      */
     private void pushItems(ContainerContext ctx, int containerSize, int width) {
         Map<Integer, List<Integer>> downstream = new HashMap<>();
@@ -182,12 +191,15 @@ public class ContainerFluidData {
         }
 
         List<Map.Entry<Integer, FlowEntry>> sorted = new ArrayList<>(flows.entrySet());
-        sorted.sort((a, b) -> Integer.compare(b.getValue().level, a.getValue().level));
+        sorted.sort((a, b) -> Integer.compare(a.getValue().level, b.getValue().level));
+
+        Set<Integer> moved = new HashSet<>();
 
         for (var entry : sorted) {
             int slot = entry.getKey();
             FlowEntry fe = entry.getValue();
             if (fe.isSource) continue;
+            if (moved.contains(slot)) continue;
 
             ItemStack item = ctx.getItem(slot);
             if (item.isEmpty() || LivingItemManager.isLivingItem(item)) continue;
@@ -198,28 +210,39 @@ public class ContainerFluidData {
             for (int targetSlot : children) {
                 if (targetSlot < 0 || targetSlot >= containerSize) continue;
 
+                FlowEntry targetFlow = flows.get(targetSlot);
+                if (targetFlow != null && targetFlow.isSource) continue;
+
                 ItemStack targetItem = ctx.getItem(targetSlot);
+                if (LivingItemManager.isLivingItem(targetItem)) continue;
+
                 if (targetItem.isEmpty()) {
-                    ItemStack moved = item.copy();
-                    ctx.setItem(targetSlot, moved);
+                    ctx.setItem(targetSlot, item.copy());
                     ctx.setItem(slot, ItemStack.EMPTY);
-                    ctx.syncSlotToClients(targetSlot, moved);
+                    ctx.syncSlotToClients(targetSlot, ctx.getItem(targetSlot));
                     ctx.syncSlotToClients(slot, ItemStack.EMPTY);
+                    moved.add(targetSlot);
                     break;
                 } else if (ItemStack.isSameItemSameComponents(item, targetItem)
                            && targetItem.getCount() < targetItem.getMaxStackSize()) {
                     int space = targetItem.getMaxStackSize() - targetItem.getCount();
                     int toAdd = Math.min(item.getCount(), space);
-                    targetItem.grow(toAdd);
-                    item.shrink(toAdd);
-                    ctx.syncSlotToClients(targetSlot, targetItem);
-                    if (item.isEmpty()) {
+                    ItemStack newTarget = targetItem.copy();
+                    newTarget.grow(toAdd);
+                    ctx.setItem(targetSlot, newTarget);
+                    ctx.syncSlotToClients(targetSlot, newTarget);
+                    if (item.getCount() == toAdd) {
                         ctx.setItem(slot, ItemStack.EMPTY);
                         ctx.syncSlotToClients(slot, ItemStack.EMPTY);
+                        moved.add(targetSlot);
                         break;
                     } else {
-                        ctx.setItem(slot, item);
-                        ctx.syncSlotToClients(slot, item);
+                        ItemStack remaining = item.copy();
+                        remaining.shrink(toAdd);
+                        ctx.setItem(slot, remaining);
+                        ctx.syncSlotToClients(slot, remaining);
+                        moved.add(targetSlot);
+                        break;
                     }
                 }
             }

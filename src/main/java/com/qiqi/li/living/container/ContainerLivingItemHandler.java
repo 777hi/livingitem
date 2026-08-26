@@ -286,6 +286,9 @@ public class ContainerLivingItemHandler {
             return;
         }
 
+        String monitorKey = context.getContainerKey();
+        com.qiqi.li.living.debug.ContainerMonitor.beforeProcess(monitorKey, context);
+
         Map<LivingItemFunction, List<LivingItemFunction.SlotEntry>> grouped = new LinkedHashMap<>();
 
         for (int i = 0; i < context.getSize(); i++) {
@@ -418,6 +421,7 @@ public class ContainerLivingItemHandler {
             cleanupStaleFluidData(currentTimeMs);
             cleanupStaleRedstoneData(currentTimeMs);
             cleanupStalePosIndex();
+            LivingWaterBucketFunction.cleanupStaleEntries(currentTimeMs);
         }
 
         long stressEndNanos = System.nanoTime();
@@ -432,6 +436,8 @@ public class ContainerLivingItemHandler {
         PerfMetrics.recordPhase("flush_slots", flushSlotsEndNanos - stressEndNanos);
 
         PerfMetrics.recordTick(flushSlotsEndNanos - startNanos);
+
+        com.qiqi.li.living.debug.ContainerMonitor.afterProcess(monitorKey, context);
 
         // 检查是否需要打印报告
         if (PerfMetrics.shouldReport()) {

@@ -198,13 +198,6 @@ public class SimpleContainerContext implements ContainerContext {
         }
         ItemStack toInsert = stack.copy();
 
-        Container container = ContainerContext.getContainer(getLevel(), getBlockPos());
-        if (container != null && logicalSlot < container.getContainerSize()) {
-            container.setItem(logicalSlot, toInsert);
-            notifyBlockEntitiesChanged();
-            return;
-        }
-
         handler.extractItem(logicalSlot, Integer.MAX_VALUE, false);
         ItemStack remaining = handler.insertItem(logicalSlot, toInsert, false);
         if (!remaining.isEmpty() && isArmorSlot(inventory, logicalSlot)) {
