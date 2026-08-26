@@ -73,10 +73,17 @@ public class StressStateMachine {
                     gen.updateGeneratedRotation();
                 } else {
                     refreshedThisTick = true;
+                    if (self.hasNetwork()) {
+                        try {
+                            self.getOrCreateNetwork().remove(self);
+                        } catch (Exception e2) {
+                            LOGGER.debug("[StressState] Error removing from network on expiry at {}: {}",
+                                self.getBlockPos(), e2.getMessage());
+                        }
+                    }
                     self.detachKinetics();
                     self.setSpeed(0);
                     self.setNetwork(null);
-                    pendingReattach = true;
                     self.setChanged();
                     self.sendData();
                 }
@@ -163,10 +170,17 @@ public class StressStateMachine {
 
         try {
             if (prev != 0 && newRpm == 0) {
+                if (self.hasNetwork()) {
+                    try {
+                        self.getOrCreateNetwork().remove(self);
+                    } catch (Exception e) {
+                        LOGGER.debug("[StressState] Error removing from network on stress clear at {}: {}",
+                            self.getBlockPos(), e.getMessage());
+                    }
+                }
                 self.detachKinetics();
                 self.setSpeed(0);
                 self.setNetwork(null);
-                pendingReattach = true;
                 rpm = 0;
                 capacity = 0;
             } else {

@@ -1799,3 +1799,75 @@ ServerTickEvent.Pre → processLevelContainers() → chunk 在缓存 → 处理 
 1. 区块重载后 `processLevelContainers` 是否确实在运行（检查缓存状态）
 2. `StressOutputManager.apply()` 是否被正确调用（检查应力数据是否非空）
 3. 下方 BE 的 `initialize()` 是否恢复了旧的转速（检查 NBT 序列化内容）
+
+### 9.23 齿轮旋转但无应力输出 + 应力消失后邻居齿轮空转
+
+**现象**：
+1. 活水车产生净应力输出到容器下方的齿轮后，齿轮只会旋转，但没有实际应力输出（邻居齿轮不转或转但无应力）。
+2. 容器内没有净应力时，容器下方的齿轮会停止转动，但齿轮旁的其它齿轮依旧在转动，没有实际应力输出。
+
+**根因**：两个问题同源——`KineticBlockEntityMixin` 缺少对 `calculateStressApplied()` 的 Mixin 注入，以及 `applyStress(rpm=0)` 清理路径未正确从网络中移除 BE。
+
+#### 9.23.1 缺少 `calculateStressApplied()` Mixin
+
+Create 的 `KineticNetwork` 维护两个映射：
+- **`sources`**：应力源（`isSource() == true`），提供 SU 容量
+- **`members`**：所有 BE，贡献应力消耗（stress impact）
+
+当活水车注入应力使齿轮成为 source 时：
+- `getGeneratedSpeed()` 被 Mixin 覆盖 → 返回注入的 RPM ✅ → `isSource() == true` ✅
+- `calculateAddedStressCapacity()` 被 Mixin 覆盖 → 返回注入的 SU 容量 ✅
+- **`calculateStressApplied()` 没有被覆盖** → 返回齿轮自身的 impact（通常为 0）❌
+
+`StressStateMachine.updateNetwork()` 调用：
+```java
+self.getOrCreateNetwork().updateStressFor(self, self.calculateStressApplied());
+```
+
+齿轮的 `calculateStressApplied()` 返回 `BlockStressValues.getImpact()` = 0（齿轮不是应力消耗者），所以 `members` 中齿轮的应力消耗为 0。邻居齿轮通过 `RotationPropagator` 获得了转速（视觉旋转），但网络中 source 齿轮的 `calculateStressApplied()` 返回 0，导致 `calculateStress()` 算出的总消耗为 0，网络认为"无应力消耗"，不触发 `overStressed` 检查，也不传播应力信息给邻居。
+
+**本质**：活水车注入的齿轮应该是一个**纯应力源**（只提供容量，不消耗应力），但 `calculateStressApplied()` 返回了原始值而非 0，导致网络应力计算异常。
+
+**修复**：在 `KineticBlockEntityMixin` 中新增 `calculateStressApplied()` 注入：
+
+```java
+@Inject(method = "calculateStressApplied", at = @At("HEAD"), cancellable = true, remap = false)
+private void livingItem$calculateStressApplied(CallbackInfoReturnable<Float> cir) {
+    if (stressState.isActive()) {
+        cir.setReturnValue(0f);  // 活水车注入的 BE 是纯应力源，不消耗应力
+    }
+}
+```
+
+#### 9.23.2 `applyStress(rpm=0)` 清理路径未从网络移除
+
+当 `applyStress(self, 0, 0)` 被调用时（应力消失），原代码走 `prev != 0 && newRpm == 0` 分支：
+
+```java
+// 修复前
+self.detachKinetics();
+self.setSpeed(0);
+self.setNetwork(null);   // ← setNetwork(null) 内部调 network.remove(this)
+pendingReattach = true;   // ← 下一 tick 重新 attachKinetics！
+```
+
+两个问题：
+1. **`pendingReattach = true`**：下一 tick `StressStateMachine.tick()` 会执行 `self.attachKinetics()`，将速度为 0 的 BE 重新加入动力学网络，可能触发邻居重新寻找 source
+2. **`setNetwork(null)` 在 `detachKinetics()` 之后**：`detachKinetics()` → `RotationPropagator.handleRemoved()` 会通知邻居"源已移除"，但此时 BE 还在网络中（`setNetwork(null)` 尚未执行），邻居的 `propagateMissingSource()` 可能产生不一致状态
+
+**修复**：在 `detachKinetics()` 之前先从网络中移除，且不再设置 `pendingReattach`：
+
+```java
+// 修复后
+if (self.hasNetwork()) {
+    self.getOrCreateNetwork().remove(self);  // 先从网络移除
+}
+self.detachKinetics();                      // 再通知邻居
+self.setSpeed(0);
+self.setNetwork(null);                      // 清除网络引用
+// 不再设置 pendingReattach
+```
+
+同样修复 `tick()` 中的自过期清理路径（`!refreshedThisTick` 分支），在 `detachKinetics()` 之前先从网络移除，并移除 `pendingReattach`。
+
+**涉及文件**：`KineticBlockEntityMixin.java`（新增 `calculateStressApplied` 注入）、`StressStateMachine.java`（修复清理路径）

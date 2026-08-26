@@ -40,6 +40,13 @@ public abstract class KineticBlockEntityMixin implements LivingItemStressOutput 
         }
     }
 
+    @Inject(method = "calculateStressApplied", at = @At("HEAD"), cancellable = true, remap = false)
+    private void livingItem$calculateStressApplied(CallbackInfoReturnable<Float> cir) {
+        if (stressState.isActive()) {
+            cir.setReturnValue(0f);
+        }
+    }
+
     @Override
     public void livingItem$applyStress(float rpm, float capacity) {
         stressState.applyStress((KineticBlockEntity) (Object) this, rpm, capacity);
