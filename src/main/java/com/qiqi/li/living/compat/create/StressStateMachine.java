@@ -16,10 +16,8 @@ import org.slf4j.LoggerFactory;
  *
  * <pre>
  *   INACTIVE ──apply(rpm≠0)──→ ACTIVE
- *   ACTIVE   ──apply(rpm=0)──→ REATTACHING
- *   ACTIVE   ──expired───────→ REATTACHING (via tick)
- *   REATTACHING ──tick───────→ INACTIVE (reattach neighbors)
- *   REATTACHING ──apply(rpm≠0)──→ ACTIVE (cancel reattach)
+ *   ACTIVE   ──apply(rpm=0)──→ INACTIVE (detach + clear)
+ *   ACTIVE   ──expired───────→ INACTIVE (via tick, detach + clear)
  *   ACTIVE   ──chunkUnload───→ INACTIVE (forced cleanup)
  * </pre>
  */
@@ -30,7 +28,6 @@ public class StressStateMachine {
     private float rpm;
     private float capacity;
     private boolean refreshedThisTick;
-    private boolean pendingReattach;
 
     public float getRPM() {
         return rpm;
@@ -46,21 +43,6 @@ public class StressStateMachine {
 
     public void tick(KineticBlockEntity self) {
         if (self.getLevel() == null || self.getLevel().isClientSide) return;
-
-        if (pendingReattach) {
-            pendingReattach = false;
-            try {
-                self.attachKinetics();
-                self.setChanged();
-                self.sendData();
-            } catch (NullPointerException e) {
-                LOGGER.debug("[StressState] NPE during delayed reattach on {} at {}: {}",
-                    self.getClass().getSimpleName(), self.getBlockPos(), e.getMessage());
-            } catch (Exception e) {
-                LOGGER.warn("[StressState] Error during delayed reattach on {} at {}",
-                    self.getClass().getSimpleName(), self.getBlockPos(), e);
-            }
-        }
 
         if (rpm == 0) {
             refreshedThisTick = false;
@@ -132,7 +114,6 @@ public class StressStateMachine {
         rpm = 0;
         capacity = 0;
         refreshedThisTick = false;
-        pendingReattach = false;
     }
 
     public void applyStress(KineticBlockEntity self, float newRpm, float newCap) {
@@ -149,10 +130,6 @@ public class StressStateMachine {
         }
 
         float prev = rpm;
-
-        if (newRpm != 0) {
-            pendingReattach = false;
-        }
 
         if (self.getLevel() == null || self.getLevel().isClientSide) {
             rpm = newRpm;

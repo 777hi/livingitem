@@ -53,6 +53,8 @@ public class GenericLivingItemOverrides extends ItemOverrides {
                 float rpm = netStress == 0 ? 0
                     : Math.signum(netStress) * com.qiqi.li.living.compat.create.ModCreate.BASE_RPM;
                 WaterWheelRenderState.setRPM(rpm);
+            } else {
+                WaterWheelRenderState.clear();
             }
             return getOrCreateRotatingModel(stack);
         }
