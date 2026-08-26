@@ -188,6 +188,8 @@ public final class LivingIconRegistry {
             .addVariant("base", "item/redstone_block", stack -> true)
             .build());
 
+        registerCopperIcons();
+
         if (CreateCompat.isLoaded()) {
             try {
                 Item waterWheelItem = net.minecraft.core.registries.BuiltInRegistries.ITEM
@@ -203,6 +205,57 @@ public final class LivingIconRegistry {
                 LivingItem.LOGGER.warn("注册活水车图标失败: {}", e.getMessage());
             }
         }
+    }
+
+    private static void registerCopperIcons() {
+        registerCopperBlock(net.minecraft.world.item.Items.COPPER_BLOCK, "item/copper_block");
+        registerCopperBlock(net.minecraft.world.item.Items.EXPOSED_COPPER, "item/exposed_copper");
+        registerCopperBlock(net.minecraft.world.item.Items.WEATHERED_COPPER, "item/weathered_copper");
+        registerCopperBlock(net.minecraft.world.item.Items.OXIDIZED_COPPER, "item/oxidized_copper");
+        registerCopperBlock(net.minecraft.world.item.Items.WAXED_COPPER_BLOCK, "item/waxed_copper_block");
+        registerCopperBlock(net.minecraft.world.item.Items.WAXED_EXPOSED_COPPER, "item/waxed_exposed_copper");
+        registerCopperBlock(net.minecraft.world.item.Items.WAXED_WEATHERED_COPPER, "item/waxed_weathered_copper");
+        registerCopperBlock(net.minecraft.world.item.Items.WAXED_OXIDIZED_COPPER, "item/waxed_oxidized_copper");
+
+        registerCopperBlock(net.minecraft.world.item.Items.CHISELED_COPPER, "item/chiseled_copper");
+        registerCopperBlock(net.minecraft.world.item.Items.EXPOSED_CHISELED_COPPER, "item/exposed_chiseled_copper");
+        registerCopperBlock(net.minecraft.world.item.Items.WEATHERED_CHISELED_COPPER, "item/weathered_chiseled_copper");
+        registerCopperBlock(net.minecraft.world.item.Items.OXIDIZED_CHISELED_COPPER, "item/oxidized_chiseled_copper");
+        registerCopperBlock(net.minecraft.world.item.Items.WAXED_CHISELED_COPPER, "item/waxed_chiseled_copper");
+        registerCopperBlock(net.minecraft.world.item.Items.WAXED_EXPOSED_CHISELED_COPPER, "item/waxed_exposed_chiseled_copper");
+        registerCopperBlock(net.minecraft.world.item.Items.WAXED_WEATHERED_CHISELED_COPPER, "item/waxed_weathered_chiseled_copper");
+        registerCopperBlock(net.minecraft.world.item.Items.WAXED_OXIDIZED_CHISELED_COPPER, "item/waxed_oxidized_chiseled_copper");
+
+        registerCopperBlock(net.minecraft.world.item.Items.CUT_COPPER, "item/cut_copper");
+        registerCopperBlock(net.minecraft.world.item.Items.EXPOSED_CUT_COPPER, "item/exposed_cut_copper");
+        registerCopperBlock(net.minecraft.world.item.Items.WEATHERED_CUT_COPPER, "item/weathered_cut_copper");
+        registerCopperBlock(net.minecraft.world.item.Items.OXIDIZED_CUT_COPPER, "item/oxidized_cut_copper");
+        registerCopperBlock(net.minecraft.world.item.Items.WAXED_CUT_COPPER, "item/waxed_cut_copper");
+        registerCopperBlock(net.minecraft.world.item.Items.WAXED_EXPOSED_CUT_COPPER, "item/waxed_exposed_cut_copper");
+        registerCopperBlock(net.minecraft.world.item.Items.WAXED_WEATHERED_CUT_COPPER, "item/waxed_weathered_cut_copper");
+        registerCopperBlock(net.minecraft.world.item.Items.WAXED_OXIDIZED_CUT_COPPER, "item/waxed_oxidized_cut_copper");
+
+        registerCopperBlock(net.minecraft.world.item.Items.COPPER_GRATE, "item/copper_grate");
+        registerCopperBlock(net.minecraft.world.item.Items.EXPOSED_COPPER_GRATE, "item/exposed_copper_grate");
+        registerCopperBlock(net.minecraft.world.item.Items.WEATHERED_COPPER_GRATE, "item/weathered_copper_grate");
+        registerCopperBlock(net.minecraft.world.item.Items.OXIDIZED_COPPER_GRATE, "item/oxidized_copper_grate");
+        registerCopperBlock(net.minecraft.world.item.Items.WAXED_COPPER_GRATE, "item/waxed_copper_grate");
+        registerCopperBlock(net.minecraft.world.item.Items.WAXED_EXPOSED_COPPER_GRATE, "item/waxed_exposed_copper_grate");
+        registerCopperBlock(net.minecraft.world.item.Items.WAXED_WEATHERED_COPPER_GRATE, "item/waxed_weathered_copper_grate");
+        registerCopperBlock(net.minecraft.world.item.Items.WAXED_OXIDIZED_COPPER_GRATE, "item/waxed_oxidized_copper_grate");
+
+        registerCopperBlock(net.minecraft.world.item.Items.COPPER_BULB, "item/copper_bulb");
+        registerCopperBlock(net.minecraft.world.item.Items.EXPOSED_COPPER_BULB, "item/exposed_copper_bulb");
+        registerCopperBlock(net.minecraft.world.item.Items.WEATHERED_COPPER_BULB, "item/weathered_copper_bulb");
+        registerCopperBlock(net.minecraft.world.item.Items.OXIDIZED_COPPER_BULB, "item/oxidized_copper_bulb");
+        registerCopperBlock(net.minecraft.world.item.Items.WAXED_COPPER_BULB, "item/waxed_copper_bulb");
+        registerCopperBlock(net.minecraft.world.item.Items.WAXED_EXPOSED_COPPER_BULB, "item/waxed_exposed_copper_bulb");
+        registerCopperBlock(net.minecraft.world.item.Items.WAXED_WEATHERED_COPPER_BULB, "item/waxed_weathered_copper_bulb");
+        registerCopperBlock(net.minecraft.world.item.Items.WAXED_OXIDIZED_COPPER_BULB, "item/waxed_oxidized_copper_bulb");
+    }
+
+    private static void registerCopperBlock(Item item, String texture) {
+        register(LivingIconSpec.builder(item).addVariant("base", texture, stack -> true).build());
     }
 
     /** 注册一个图标配置 */
