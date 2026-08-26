@@ -46,7 +46,7 @@ public class StressOutputManager {
         int netStress = 0;
         if (stressData != null && !stressData.isEmpty()) {
             netStress = stressData.getNetStress();
-            rpm = Math.signum(netStress) * BASE_RPM;
+            rpm = -Math.signum(netStress) * BASE_RPM;
             suCapacity = Math.abs(netStress) * BASE_SU_CAPACITY;
         }
 

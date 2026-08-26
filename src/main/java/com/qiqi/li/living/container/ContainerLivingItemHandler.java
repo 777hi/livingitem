@@ -36,6 +36,7 @@ import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.domain.ender.EnderChannelRegistry;
 import com.qiqi.li.living.compat.create.StressOutputManager;
+import com.qiqi.li.living.domain.water.LivingWaterBucketFunction;
 import com.qiqi.li.living.perf.PerfMetrics;
 
 /**
@@ -192,6 +193,7 @@ public class ContainerLivingItemHandler {
         FLUID_DATA_CACHE.clear();
         REDSTONE_DATA_CACHE.clear();
         POS_TO_CACHE_KEY.clear();
+        LivingWaterBucketFunction.clearAllCaches();
         cleanupCounter = 0;
     }
 

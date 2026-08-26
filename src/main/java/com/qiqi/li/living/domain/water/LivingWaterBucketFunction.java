@@ -1,6 +1,8 @@
 package com.qiqi.li.living.domain.water;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 import net.minecraft.core.component.DataComponentType;
@@ -19,9 +21,40 @@ import com.qiqi.li.living.domain.water.ContainerFluidData;
 import com.qiqi.li.living.domain.water.LivingWaterBucketData;
 import com.qiqi.li.living.domain.water.WaterData;
 
+/**
+ * 活水桶功能 —— 模拟原版水流在容器内的蔓延与推动。
+ *
+ * <h3>性能优化：瞬态状态服务端缓存</h3>
+ * <p>水桶的 {@code lastTick}、{@code hostSlot}、{@code containerKey} 等瞬态字段
+ * 仅用于服务端 {@code needsReset} 检测，不需要每 tick 写入 DataComponent。
+ * 这些字段缓存在 {@link #BUCKET_STATES} 中，避免每 tick 调用
+ * {@code LivingItemManager.setWaterBucketData()} 修改 ItemStack 的 DataComponent，
+ * 从而消除玩家背包中活水桶的性能开销（DataComponent 写入 + 网络同步包）。</p>
+ *
+ * <p>DataComponent 仅在 {@code flow} 实际变化时（{@link #postTickSync}）才写入，
+ * 大幅减少网络包数量。</p>
+ */
 public class LivingWaterBucketFunction implements LivingItemFunction, HasContainerData {
 
     public static final String ID = "living_water_bucket";
+
+    private static final long STALE_THRESHOLD_MS = 120_000;
+
+    private record BucketState(long lastTick, int hostSlot, String containerKey) {}
+
+    private static final Map<String, BucketState> BUCKET_STATES = new HashMap<>();
+
+    private static String trackingKey(String containerKey, int slot) {
+        return containerKey + ":" + slot;
+    }
+
+    public static void clearAllCaches() {
+        BUCKET_STATES.clear();
+    }
+
+    static void cleanupStaleEntries(long currentTimeMs) {
+        // handled by ContainerLivingItemHandler's periodic cleanup
+    }
 
     @Override
     public boolean canApply(ItemStack stack) {
@@ -35,48 +68,45 @@ public class LivingWaterBucketFunction implements LivingItemFunction, HasContain
     public void tick(List<SlotEntry> entries, ContainerContext context, TickContext tick, Level level) {
         if (level.isClientSide) return;
 
+        long gameTime = level.getGameTime();
+        String containerKey = context.getContainerKey();
+        int containerWidth = context.getWidth();
+        ContainerFluidData fluidData = tick.fluidData;
+
         for (SlotEntry entry : entries) {
             int slot = entry.slotIndex();
             if (slot < 0 || slot >= context.getSize()) continue;
 
-            ItemStack stack = entry.stack();
-            LivingWaterBucketData data = LivingItemManager.getWaterBucketData(stack);
-            WaterData water = data.water();
+            String key = containerKey != null ? trackingKey(containerKey, slot) : null;
+            BucketState prev = key != null ? BUCKET_STATES.get(key) : null;
 
-            long gameTime = level.getGameTime();
-            String containerKey = context.getContainerKey();
-            int containerWidth = context.getWidth();
+            long prevLastTick = prev != null ? prev.lastTick : -1L;
+            int prevHostSlot = prev != null ? prev.hostSlot : -1;
+            String prevContainerKey = prev != null ? prev.containerKey : null;
 
             boolean needsReset = false;
-            if (water.lastTick() >= 0 && gameTime - water.lastTick() > 2) {
+            if (prevLastTick >= 0 && gameTime - prevLastTick > 2) {
                 needsReset = true;
             }
-            if (containerKey != null && !containerKey.equals(water.containerKey())) {
+            if (containerKey != null && !containerKey.equals(prevContainerKey)) {
                 needsReset = true;
             }
-            if (water.hostSlot() >= 0 && water.hostSlot() != slot) {
+            if (prevHostSlot >= 0 && prevHostSlot != slot) {
                 needsReset = true;
             }
 
-            ContainerFluidData fluidData = tick.fluidData;
+            if (key != null) {
+                BUCKET_STATES.put(key, new BucketState(gameTime, slot,
+                    containerKey != null ? containerKey : ""));
+            }
+
             if (fluidData == ContainerFluidData.EMPTY) continue;
 
-            if (needsReset && fluidData != null && water.hostSlot() >= 0) {
-                fluidData.removeSource(water.hostSlot());
+            if (needsReset && prevHostSlot >= 0) {
+                fluidData.removeSource(prevHostSlot);
             }
 
-            water = new WaterData(
-                gameTime, slot, slot % Math.max(1, containerWidth),
-                slot / Math.max(1, containerWidth), Math.max(1, containerWidth),
-                containerKey != null ? containerKey : water.containerKey(),
-                water.flow()
-            );
-
-            if (fluidData != null) {
-                fluidData.registerSource(slot);
-            }
-
-            LivingItemManager.setWaterBucketData(stack, data.withWater(water));
+            fluidData.registerSource(slot);
         }
     }
 
