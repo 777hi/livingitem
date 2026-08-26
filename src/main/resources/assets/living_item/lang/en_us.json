@@ -104,7 +104,8 @@
   "tooltip.livingitem.copper.type": "  §7Type",
   "tooltip.livingitem.copper.channel": "  §7Channel",
   "tooltip.livingitem.copper.chiseled_hint": "  §bH/V signals isolated (Overpass)§r",
-  "tooltip.livingitem.copper.direction": "  §7Direction",
+  "tooltip.livingitem.copper.input_dir": "  §7Input Dir",
+  "tooltip.livingitem.copper.output_dir": "  §7Output Dir",
   "tooltip.livingitem.copper.grate_output": "  §7Output",
   "tooltip.livingitem.copper.bulb_state": "  §7State",
 

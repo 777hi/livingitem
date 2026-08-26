@@ -2,8 +2,8 @@
 
 # Living Copper (活铜) 技术文档
 
-> **文档版本**: 2026.08 v2
-> **最后更新**: 2026-08-25
+> **文档版本**: 2026.08 v3
+> **最后更新**: 2026-08-26
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -25,7 +25,7 @@
 核心特性：
 - **无损传输**：铜块转发信号不衰减，`output = maxInput`（红石粉 `output = maxInput - 1`）
 - **锈蚀频道隔离**：仅同锈蚀等级的铜块之间互相导通，不同锈蚀等级互不干扰
-- **雕文铜块二极管**：单向导通，信号仅沿指定方向传输
+- **雕文铜块二极管**：输入/输出双方向独立设置，信号仅从输入方向接收、向输出方向传输
 - **切制铜块立交桥**：水平/垂直信号独立传播，可交叉而不串扰
 - **铜格栅分频器**：输入信号周期翻倍（上升沿翻转）
 - **铜灯 T 触发器**：上升沿翻转 lit 状态并保持
@@ -45,7 +45,7 @@
 │        ┌──────────┐           ┌──────────┐       ┌──────────┐      │
 │        │ 雕文铜块  │           │ 切制铜块  │       │ 普通铜块  │      │
 │        │ 二极管    │           │ 立交桥    │       │ 四向线缆  │      │
-│        │ 单向导通  │           │ H/V 隔离  │       │ 无损转发  │      │
+│        │ 输入/输出 │           │ H/V 隔离  │       │ 无损转发  │      │
 │        └──────────┘           └──────────┘       └──────────┘      │
 │                                                                      │
 │  ┌──────────────────┐        ┌──────────────────┐                   │
@@ -60,8 +60,8 @@
 
 | 类名 | 文件位置 | 职责 |
 |------|---------|------|
-| `LivingCopperFunction` | `domain/redstone/LivingCopperFunction.java` | 活铜块功能入口，实现 `HasContainerData`，触发容器级信号计算 |
-| `LivingCutCopperData` | `domain/redstone/LivingCutCopperData.java` | 雕文铜块物品级数据：导通方向 |
+| `LivingCopperFunction` | `domain/redstone/LivingCopperFunction.java` | 活铜块功能入口，实现 `HasContainerData` + `HasDirection`，触发容器级信号计算 |
+| `LivingCutCopperData` | `domain/redstone/LivingCutCopperData.java` | 雕文铜块物品级数据：输入方向 + 输出方向 |
 | `LivingGrateData` | `domain/redstone/LivingGrateData.java` | 铜格栅物品级数据：上一帧输入 + 输出状态 |
 | `LivingCopperBulbData` | `domain/redstone/LivingCopperBulbData.java` | 铜灯物品级数据：点亮状态 + 上一帧输入 |
 | `ContainerRedstoneData` | `domain/redstone/ContainerRedstoneData.java` | 容器级红石信号数据（含铜块传播逻辑） |
@@ -86,12 +86,17 @@
 ### 2.1 LivingCopperFunction — 功能入口
 
 ```java
-public class LivingCopperFunction implements LivingItemFunction, HasContainerData {
+public class LivingCopperFunction implements LivingItemFunction, HasContainerData, HasDirection {
 
     public static final String ID = "living_copper";
 
     public boolean canApply(ItemStack stack)  // 仅未涂蜡铜块
     public void tickContainerData(...)         // 触发 ContainerRedstoneData.calculate()
+
+    // HasDirection 接口
+    public int getDirectionKeyCount()          // 2（输入方向 + 输出方向）
+    public String[] getDirectionSlotNames()    // ["input", "output"]
+    public boolean updateSlotDirection(...)    // WASD 更新输入/输出方向
 
     // 静态类型判定
     public static boolean isUnwaxedCopperBlock(Item)  // 全部未涂蜡铜块
@@ -108,19 +113,22 @@ public class LivingCopperFunction implements LivingItemFunction, HasContainerDat
 
 ```java
 public record LivingCutCopperData(
-    Pos2D direction    // 导通方向（默认 UP）
+    Pos2D inputDir,    // 输入方向（默认 DOWN）
+    Pos2D outputDir    // 输出方向（默认 UP）
 ) implements TooltipProvider {
 
     public static final LivingCutCopperData DEFAULT =
-        new LivingCutCopperData(Pos2D.UP);
+        new LivingCutCopperData(Pos2D.DOWN, Pos2D.UP);
 
-    public LivingCutCopperData withDirection(Pos2D direction) { ... }
+    public LivingCutCopperData withInputDir(Pos2D inputDir) { ... }
+    public LivingCutCopperData withOutputDir(Pos2D outputDir) { ... }
 }
 ```
 
 | 字段 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `direction` | Pos2D | UP | 信号导通方向，仅此方向允许信号通过 |
+| `inputDir` | Pos2D | DOWN | 信号输入方向，仅从此方向接收信号 |
+| `outputDir` | Pos2D | UP | 信号输出方向，仅向此方向转发信号 |
 
 ### 2.3 LivingGrateData — 铜格栅分频器数据
 
@@ -189,12 +197,13 @@ ItemStack (minecraft:copper_block)
 
 ItemStack (minecraft:chiseled_copper)
 ├── IS_LIVING: true
-└── （无额外数据，Overpass 类型无需状态）
+└── LIVING_CUT_COPPER_DATA: LivingCutCopperData
+    ├─ inputDir: Pos2D                         ← 输入方向
+    └─ outputDir: Pos2D                        ← 输出方向
 
 ItemStack (minecraft:cut_copper)
 ├── IS_LIVING: true
-└── LIVING_CUT_COPPER_DATA: LivingCutCopperData
-    └─ direction: Pos2D                          ← 导通方向
+└── （无额外数据，Overpass 类型无需状态）
 
 ItemStack (minecraft:copper_grate)
 ├── IS_LIVING: true
@@ -306,10 +315,13 @@ while queue not empty:
     cap = getSignalCap(count)
     output = min(maxInput, cap)                  // 不衰减！
 
-    // ── 雕文铜块：单向导通 ──
+    // ── 雕文铜块：输入/输出双方向 ──
     if is(current, BIT_CHISELED):
-      allowedDir = edgeIndex(data.direction())
-      propagateDir(current, allowedDir, output, ...)  // 仅允许方向
+      inputEdge = edgeIndex(data.inputDir())
+      outputEdge = edgeIndex(data.outputDir())
+      chiseledInput = edgeGrid.get(current, inputEdge)  // 仅从输入方向取信号
+      chiseledOutput = min(chiseledInput, cap)
+      propagateDir(current, outputEdge, chiseledOutput, ...)  // 仅向输出方向传播
       continue
 
     // ── 切制铜块：水平/垂直隔离 ──
@@ -342,7 +354,7 @@ propagateDir(slot, dir, signal, queue):
 
 **关键设计**：
 - 普通铜块 `output = min(maxInput, cap)` 无损转发，不执行 `-1`
-- 雕文铜块读取 `LivingCutCopperData.direction` 仅允许指定方向
+- 雕文铜块读取 `LivingCutCopperData.inputDir` 和 `outputDir`，仅从输入方向接收信号、仅向输出方向转发
 - 切制铜块将水平/垂直方向的信号分开处理，各方向仅取该方向的最大值
 - `canConnect` 在 `propagateDir` 中执行，确保锈蚀频道隔离
 
@@ -395,10 +407,13 @@ for slot in copperSlots:
   cap = getSignalCap(count)
   output = min(maxInput, cap)
 
-  // 雕文铜块：仅方向充能
+  // 雕文铜块：仅输出方向充能，仅取输入方向信号
   if is(slot, BIT_CHISELED):
-    allowedDir = edgeIndex(data.direction())
-    powerConductiveNeighbor(slot, output, allowedDir, ...)
+    inputEdge = edgeIndex(data.inputDir())
+    outputEdge = edgeIndex(data.outputDir())
+    chiseledInput = edgeGrid.get(slot, inputEdge)
+    chiseledOutput = min(chiseledInput, cap)
+    powerConductiveNeighbor(slot, chiseledOutput, outputEdge, ...)
 
   // 切制铜块：水平/垂直分别充能
   else if is(slot, BIT_CUT):
@@ -464,18 +479,28 @@ else if (is(neighbor, BIT_BUTTON | BIT_LEVER | BIT_TORCH
 
 **tooltip**：显示类型 `Cable` 和频道字母 `A/B/C/D`
 
-### 4.2 雕文铜块 (Diode) — 二极管【原：4.3 切制铜块】
+### 4.2 雕文铜块 (Diode) — 输入/输出双方向二极管
 
 **对应物品**：Chiseled Copper / Exposed Chiseled Copper / Weathered Chiseled Copper / Oxidized Chiseled Copper
 
 **行为**：
-- 单向导通，信号仅沿 `LivingCutCopperData.direction` 方向传输
-- 不接收反方向信号
-- 不向反方向转发信号
+- 信号仅从 `inputDir` 方向接收，仅向 `outputDir` 方向转发
+- 输入/输出方向独立设置，支持任意方向组合（4×4=16 种）
+- 不接收非输入方向的信号
+- 不向非输出方向转发信号
 
-**方向控制**：`direction` 存储在 `LIVING_CUT_COPPER_DATA` DataComponent 中，默认 `UP`，可通过 WASD 方向输入修改。
+**方向控制**：`inputDir` 和 `outputDir` 存储在 `LIVING_CUT_COPPER_DATA` DataComponent 中，默认 `inputDir=DOWN, outputDir=UP`（下传上）。通过 WASD 方向输入修改：第 1 键设置输入方向，第 2 键设置输出方向。
 
-**tooltip**：显示类型 `Diode`、频道字母和导通方向符号
+**方向组合示例**：
+```
+  输入=↓ 输出=↑  →  下传上（默认）
+  输入=← 输出=→  →  左传右
+  输入=↑ 输出=↓  →  上传下
+  输入=← 输出=↑  →  左传上（拐角导通）
+  输入=↓ 输出=→  →  下传右（拐角导通）
+```
+
+**tooltip**：显示红电信号强度、最大红电信号强度、输入方向符号、输出方向符号
 
 ### 4.3 切制铜块 (Overpass) — 立交桥【原：4.2 雕文铜块】
 
@@ -592,7 +617,7 @@ is(slot, BIT_COPPER | BIT_CUT) → true  // 是铜块且是切制铜块（立交
 | 特性 | 状态 | 说明 |
 |------|------|------|
 | 普通铜块无损线缆 | ✅ | 四向无损转发，锈蚀频道隔离 |
-| 雕文铜块二极管 | ✅ | 单向导通，方向存储于 DataComponent |
+| 雕文铜块二极管 | ✅ | 输入/输出双方向独立设置，WASD 2键配置 |
 | 切制铜块立交桥 | ✅ | 水平/垂直信号独立传播 |
 | 铜格栅分频器 | ✅ | 上升沿翻转，Phase 3 状态更新 |
 | 铜灯 T 触发器 | ✅ | 上升沿翻转 lit，Phase 3 状态更新 |
@@ -606,7 +631,6 @@ is(slot, BIT_COPPER | BIT_CUT) → true  // 是铜块且是切制铜块（立交
 
 | 特性 | 状态 | 说明 |
 |------|------|------|
-| 雕文铜块方向切换交互 | ⏳ | WASD 方向输入修改导通方向 |
 | 铜块物品栏装饰器渲染 | ⏳ | 类似 LivingRedstoneDecorator 的铜块视觉 |
 | 铜块连接纹理 | ⏳ | 铜块之间的连接状态可视化 |
 | 跨容器铜块信号 | ⏳ | 铜块信号通过容器边界传播 |

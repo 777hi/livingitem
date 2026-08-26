@@ -103,7 +103,8 @@
   "tooltip.livingitem.copper.type": "  §7类型",
   "tooltip.livingitem.copper.channel": "  §7频道",
   "tooltip.livingitem.copper.chiseled_hint": "  §b水平/垂直线号隔离 (立交桥)§r",
-  "tooltip.livingitem.copper.direction": "  §7方向",
+  "tooltip.livingitem.copper.input_dir": "  §7输入方向",
+  "tooltip.livingitem.copper.output_dir": "  §7输出方向",
   "tooltip.livingitem.copper.grate_output": "  §7输出",
   "tooltip.livingitem.copper.bulb_state": "  §7状态",
 

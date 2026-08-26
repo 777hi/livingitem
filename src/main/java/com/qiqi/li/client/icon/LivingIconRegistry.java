@@ -1,6 +1,7 @@
 package com.qiqi.li.client.icon;
 
 import com.qiqi.li.LivingItem;
+import com.qiqi.li.client.render.LivingChiseledCopperDecorator;
 import com.qiqi.li.client.render.LivingDefaultDecorator;
 import com.qiqi.li.client.render.LivingHopperDecorator;
 import com.qiqi.li.client.render.LivingMapIconDecorator;
@@ -217,14 +218,14 @@ public final class LivingIconRegistry {
         registerCopperBlock(net.minecraft.world.item.Items.WAXED_WEATHERED_COPPER, "item/waxed_weathered_copper");
         registerCopperBlock(net.minecraft.world.item.Items.WAXED_OXIDIZED_COPPER, "item/waxed_oxidized_copper");
 
-        registerCopperBlock(net.minecraft.world.item.Items.CHISELED_COPPER, "item/chiseled_copper");
-        registerCopperBlock(net.minecraft.world.item.Items.EXPOSED_CHISELED_COPPER, "item/exposed_chiseled_copper");
-        registerCopperBlock(net.minecraft.world.item.Items.WEATHERED_CHISELED_COPPER, "item/weathered_chiseled_copper");
-        registerCopperBlock(net.minecraft.world.item.Items.OXIDIZED_CHISELED_COPPER, "item/oxidized_chiseled_copper");
-        registerCopperBlock(net.minecraft.world.item.Items.WAXED_CHISELED_COPPER, "item/waxed_chiseled_copper");
-        registerCopperBlock(net.minecraft.world.item.Items.WAXED_EXPOSED_CHISELED_COPPER, "item/waxed_exposed_chiseled_copper");
-        registerCopperBlock(net.minecraft.world.item.Items.WAXED_WEATHERED_CHISELED_COPPER, "item/waxed_weathered_chiseled_copper");
-        registerCopperBlock(net.minecraft.world.item.Items.WAXED_OXIDIZED_CHISELED_COPPER, "item/waxed_oxidized_chiseled_copper");
+        registerChiseledCopper(net.minecraft.world.item.Items.CHISELED_COPPER, "item/chiseled_copper");
+        registerChiseledCopper(net.minecraft.world.item.Items.EXPOSED_CHISELED_COPPER, "item/exposed_chiseled_copper");
+        registerChiseledCopper(net.minecraft.world.item.Items.WEATHERED_CHISELED_COPPER, "item/weathered_chiseled_copper");
+        registerChiseledCopper(net.minecraft.world.item.Items.OXIDIZED_CHISELED_COPPER, "item/oxidized_chiseled_copper");
+        registerChiseledCopper(net.minecraft.world.item.Items.WAXED_CHISELED_COPPER, "item/waxed_chiseled_copper");
+        registerChiseledCopper(net.minecraft.world.item.Items.WAXED_EXPOSED_CHISELED_COPPER, "item/waxed_exposed_chiseled_copper");
+        registerChiseledCopper(net.minecraft.world.item.Items.WAXED_WEATHERED_CHISELED_COPPER, "item/waxed_weathered_chiseled_copper");
+        registerChiseledCopper(net.minecraft.world.item.Items.WAXED_OXIDIZED_CHISELED_COPPER, "item/waxed_oxidized_chiseled_copper");
 
         registerCopperBlock(net.minecraft.world.item.Items.CUT_COPPER, "item/cut_copper");
         registerCopperBlock(net.minecraft.world.item.Items.EXPOSED_CUT_COPPER, "item/exposed_cut_copper");
@@ -256,6 +257,13 @@ public final class LivingIconRegistry {
 
     private static void registerCopperBlock(Item item, String texture) {
         register(LivingIconSpec.builder(item).addVariant("base", texture, stack -> true).build());
+    }
+
+    private static void registerChiseledCopper(Item item, String texture) {
+        register(LivingIconSpec.builder(item)
+            .addVariant("base", texture, stack -> true)
+            .decorator(new LivingChiseledCopperDecorator())
+            .build());
     }
 
     /** 注册一个图标配置 */

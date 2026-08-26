@@ -499,8 +499,12 @@ public class ContainerRedstoneData {
                 if (is(current, BIT_CHISELED)) {
                     ItemStack chiseledStack = context.getItem(current);
                     LivingCutCopperData data = LivingItemManager.getCutCopperData(chiseledStack);
-                    int allowedDir = edgeIndex(data.direction());
-                    propagateDir(current, allowedDir, output, size, width, context, queue);
+                    int inputEdge = edgeIndex(data.inputDir());
+                    int outputEdge = edgeIndex(data.outputDir());
+                    int chiseledInput = edgeGrid.get(current, inputEdge);
+                    int chiseledCap = getSignalCap(chiseledStack.getCount());
+                    int chiseledOutput = Math.min(chiseledInput, chiseledCap);
+                    propagateDir(current, outputEdge, chiseledOutput, size, width, context, queue);
                     continue;
                 }
 
@@ -759,8 +763,12 @@ public class ContainerRedstoneData {
 
             if (is(slot, BIT_CHISELED)) {
                 LivingCutCopperData data = LivingItemManager.getCutCopperData(stack);
-                int allowedDir = edgeIndex(data.direction());
-                powerConductiveNeighbor(slot, output, allowedDir, size, width, context, secondQueue);
+                int inputEdge = edgeIndex(data.inputDir());
+                int outputEdge = edgeIndex(data.outputDir());
+                int chiseledInput = edgeGrid.get(slot, inputEdge);
+                int chiseledCap = getSignalCap(stack.getCount());
+                int chiseledOutput = Math.min(chiseledInput, chiseledCap);
+                powerConductiveNeighbor(slot, chiseledOutput, outputEdge, size, width, context, secondQueue);
             } else if (is(slot, BIT_CUT)) {
                 int maxHInput = Math.max(
                     edgeGrid.get(slot, E_LEFT), edgeGrid.get(slot, E_RIGHT));

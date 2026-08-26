@@ -14,10 +14,12 @@ import net.minecraft.world.level.Level;
 import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.api.HasContainerData;
+import com.qiqi.li.living.api.HasDirection;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
+import com.qiqi.li.living.model.Pos2D;
 
-public class LivingCopperFunction implements LivingItemFunction, HasContainerData {
+public class LivingCopperFunction implements LivingItemFunction, HasContainerData, HasDirection {
 
     public static final String ID = "living_copper";
 
@@ -65,8 +67,12 @@ public class LivingCopperFunction implements LivingItemFunction, HasContainerDat
         if (isChiseled(item)) {
             LivingCutCopperData data = LivingItemManager.getCutCopperData(stack);
             tooltipAdder.accept(Component.literal("  ")
-                .append(Component.translatable("tooltip.livingitem.copper.direction"))
-                .append(Component.literal(": " + data.direction().getSymbol()))
+                .append(Component.translatable("tooltip.livingitem.copper.input_dir"))
+                .append(Component.literal(": " + data.inputDir().getSymbol()))
+                .withStyle(ChatFormatting.GREEN));
+            tooltipAdder.accept(Component.literal("  ")
+                .append(Component.translatable("tooltip.livingitem.copper.output_dir"))
+                .append(Component.literal(": " + data.outputDir().getSymbol()))
                 .withStyle(ChatFormatting.GREEN));
         }
     }
@@ -148,5 +154,32 @@ public class LivingCopperFunction implements LivingItemFunction, HasContainerDat
         if (isGrate(item)) return "Divider";
         if (isBulb(item)) return "T Flip-Flop";
         return "Copper";
+    }
+
+    private static final String[] CHISELED_SLOT_NAMES = {"input", "output"};
+
+    @Override
+    public int getDirectionKeyCount() {
+        return 2;
+    }
+
+    @Override
+    public String[] getDirectionSlotNames() {
+        return CHISELED_SLOT_NAMES;
+    }
+
+    @Override
+    public boolean updateSlotDirection(ItemStack stack, String slotName, Pos2D direction) {
+        LivingCutCopperData data = LivingItemManager.getCutCopperData(stack);
+        switch (slotName) {
+            case "input":
+                LivingItemManager.setCutCopperData(stack, data.withInputDir(direction));
+                return true;
+            case "output":
+                LivingItemManager.setCutCopperData(stack, data.withOutputDir(direction));
+                return true;
+            default:
+                return false;
+        }
     }
 }
