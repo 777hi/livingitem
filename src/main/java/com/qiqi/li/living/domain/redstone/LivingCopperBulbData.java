@@ -12,31 +12,35 @@ import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.component.TooltipProvider;
 
 public record LivingCopperBulbData(
-    boolean lit,
+    int recordedSignal,
     boolean prevInput
 ) implements TooltipProvider {
 
-    public static final LivingCopperBulbData DEFAULT = new LivingCopperBulbData(false, false);
+    public static final LivingCopperBulbData DEFAULT = new LivingCopperBulbData(0, false);
 
     public static final Codec<LivingCopperBulbData> CODEC = RecordCodecBuilder.create(instance ->
         instance.group(
-            Codec.BOOL.fieldOf("lit").forGetter(LivingCopperBulbData::lit),
+            Codec.INT.fieldOf("recorded_signal").forGetter(LivingCopperBulbData::recordedSignal),
             Codec.BOOL.fieldOf("prev_input").forGetter(LivingCopperBulbData::prevInput)
         ).apply(instance, LivingCopperBulbData::new)
     );
 
     public static final StreamCodec<RegistryFriendlyByteBuf, LivingCopperBulbData> STREAM_CODEC = StreamCodec.composite(
-        ByteBufCodecs.BOOL, LivingCopperBulbData::lit,
+        ByteBufCodecs.INT, LivingCopperBulbData::recordedSignal,
         ByteBufCodecs.BOOL, LivingCopperBulbData::prevInput,
         LivingCopperBulbData::new
     );
 
-    public LivingCopperBulbData withLit(boolean lit) {
-        return new LivingCopperBulbData(lit, prevInput);
+    public LivingCopperBulbData withRecordedSignal(int recordedSignal) {
+        return new LivingCopperBulbData(recordedSignal, prevInput);
     }
 
     public LivingCopperBulbData withPrevInput(boolean prevInput) {
-        return new LivingCopperBulbData(lit, prevInput);
+        return new LivingCopperBulbData(recordedSignal, prevInput);
+    }
+
+    public boolean isLit() {
+        return recordedSignal > 0;
     }
 
     @Override

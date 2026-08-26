@@ -241,7 +241,7 @@ public class ContainerRedstoneData {
 
         phase0CountdownDelays(repeaterSlots, buttonSlots, size, width, context);
         Queue<Integer> queue = phase1CollectSources(torchSlots, buttonSlots, leverSlots,
-            repeaterSlots, comparatorSlots, dustSlots, redstoneBlockSlots, grateSlots, bulbSlots,
+            repeaterSlots, comparatorSlots, dustSlots, redstoneBlockSlots, grateSlots,
             size, width, context);
         phase2Propagation(queue, size, width, context);
         phase4PowerConductors(torchSlots, buttonSlots, leverSlots,
@@ -304,7 +304,7 @@ public class ContainerRedstoneData {
     private Queue<Integer> phase1CollectSources(Set<Integer> torchSlots, Set<Integer> buttonSlots,
             Set<Integer> leverSlots, Set<Integer> repeaterSlots, Set<Integer> comparatorSlots,
             Set<Integer> dustSlots, Set<Integer> redstoneBlockSlots, Set<Integer> grateSlots,
-            Set<Integer> bulbSlots, int size, int width, ContainerContext context) {
+            int size, int width, ContainerContext context) {
         Queue<Integer> queue = new ArrayDeque<>();
 
         for (int slot : torchSlots) {
@@ -426,25 +426,6 @@ public class ContainerRedstoneData {
             if (stack.isEmpty()) continue;
             LivingGrateData data = LivingItemManager.getGrateData(stack);
             if (!data.output()) continue;
-
-            int cap = getSignalCap(stack.getCount());
-            for (int dir = 0; dir < 4; dir++) {
-                int neighbor = resolveSlot(slot, dir, size, width);
-                if (cap > edgeGrid.get(slot, dir)) {
-                    edgeGrid.set(slot, dir, cap);
-                    if (is(neighbor, BIT_DUST | BIT_COPPER)) {
-                        queue.add(neighbor);
-                    }
-                }
-            }
-        }
-
-        for (int slot : bulbSlots) {
-            if (slot < 0 || slot >= size) continue;
-            ItemStack stack = context.getItem(slot);
-            if (stack.isEmpty()) continue;
-            LivingCopperBulbData data = LivingItemManager.getCopperBulbData(stack);
-            if (!data.lit()) continue;
 
             int cap = getSignalCap(stack.getCount());
             for (int dir = 0; dir < 4; dir++) {
@@ -636,7 +617,14 @@ public class ContainerRedstoneData {
             boolean changed = false;
 
             if (hasInput && !data.prevInput()) {
-                data = data.withLit(!data.lit());
+                if (data.recordedSignal() == 0) {
+                    int maxInput = edgeGrid.maxOfSlot(slot);
+                    int cap = getSignalCap(stack.getCount());
+                    int recorded = Math.min(maxInput, cap);
+                    data = data.withRecordedSignal(recorded);
+                } else {
+                    data = data.withRecordedSignal(0);
+                }
                 changed = true;
             }
             if (hasInput != data.prevInput()) {

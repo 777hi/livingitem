@@ -245,14 +245,22 @@ public final class LivingIconRegistry {
         registerCopperBlock(net.minecraft.world.item.Items.WAXED_WEATHERED_COPPER_GRATE, "item/waxed_weathered_copper_grate");
         registerCopperBlock(net.minecraft.world.item.Items.WAXED_OXIDIZED_COPPER_GRATE, "item/waxed_oxidized_copper_grate");
 
-        registerCopperBlock(net.minecraft.world.item.Items.COPPER_BULB, "item/copper_bulb");
-        registerCopperBlock(net.minecraft.world.item.Items.EXPOSED_COPPER_BULB, "item/exposed_copper_bulb");
-        registerCopperBlock(net.minecraft.world.item.Items.WEATHERED_COPPER_BULB, "item/weathered_copper_bulb");
-        registerCopperBlock(net.minecraft.world.item.Items.OXIDIZED_COPPER_BULB, "item/oxidized_copper_bulb");
-        registerCopperBlock(net.minecraft.world.item.Items.WAXED_COPPER_BULB, "item/waxed_copper_bulb");
-        registerCopperBlock(net.minecraft.world.item.Items.WAXED_EXPOSED_COPPER_BULB, "item/waxed_exposed_copper_bulb");
-        registerCopperBlock(net.minecraft.world.item.Items.WAXED_WEATHERED_COPPER_BULB, "item/waxed_weathered_copper_bulb");
-        registerCopperBlock(net.minecraft.world.item.Items.WAXED_OXIDIZED_COPPER_BULB, "item/waxed_oxidized_copper_bulb");
+        registerCopperBulb(net.minecraft.world.item.Items.COPPER_BULB, "item/copper_bulb", "item/copper_bulb_lit");
+        registerCopperBulb(net.minecraft.world.item.Items.EXPOSED_COPPER_BULB, "item/exposed_copper_bulb", "item/exposed_copper_bulb_lit");
+        registerCopperBulb(net.minecraft.world.item.Items.WEATHERED_COPPER_BULB, "item/weathered_copper_bulb", "item/weathered_copper_bulb_lit");
+        registerCopperBulb(net.minecraft.world.item.Items.OXIDIZED_COPPER_BULB, "item/oxidized_copper_bulb", "item/oxidized_copper_bulb_lit");
+        registerCopperBulb(net.minecraft.world.item.Items.WAXED_COPPER_BULB, "item/waxed_copper_bulb", "item/waxed_copper_bulb_lit");
+        registerCopperBulb(net.minecraft.world.item.Items.WAXED_EXPOSED_COPPER_BULB, "item/waxed_exposed_copper_bulb", "item/waxed_exposed_copper_bulb_lit");
+        registerCopperBulb(net.minecraft.world.item.Items.WAXED_WEATHERED_COPPER_BULB, "item/waxed_weathered_copper_bulb", "item/waxed_weathered_copper_bulb_lit");
+        registerCopperBulb(net.minecraft.world.item.Items.WAXED_OXIDIZED_COPPER_BULB, "item/waxed_oxidized_copper_bulb", "item/waxed_oxidized_copper_bulb_lit");
+    }
+
+    private static void registerCopperBulb(Item item, String textureOff, String textureOn) {
+        register(LivingIconSpec.builder(item)
+            .addVariant("lit", textureOn,
+                stack -> com.qiqi.li.living.api.LivingItemManager.getCopperBulbData(stack).isLit())
+            .addVariant("unlit", textureOff, stack -> true)
+            .build());
     }
 
     private static void registerCopperBlock(Item item, String texture) {

@@ -75,6 +75,23 @@ public class LivingCopperFunction implements LivingItemFunction, HasContainerDat
                 .append(Component.literal(": " + data.outputDir().getSymbol()))
                 .withStyle(ChatFormatting.GREEN));
         }
+
+        if (isBulb(item)) {
+            LivingCopperBulbData bulbData = LivingItemManager.getCopperBulbData(stack);
+            tooltipAdder.accept(Component.literal("  ")
+                .append(Component.translatable("tooltip.livingitem.copper.bulb_recorded"))
+                .append(Component.literal(": " + bulbData.recordedSignal()))
+                .withStyle(bulbData.recordedSignal() > 0 ? ChatFormatting.YELLOW : ChatFormatting.DARK_GRAY));
+        }
+    }
+
+    @Override
+    public int getComparatorOutput(ItemStack stack) {
+        if (isBulb(stack.getItem())) {
+            LivingCopperBulbData data = LivingItemManager.getCopperBulbData(stack);
+            return data.recordedSignal();
+        }
+        return 0;
     }
 
     @Override
@@ -152,7 +169,7 @@ public class LivingCopperFunction implements LivingItemFunction, HasContainerDat
         if (isChiseled(item)) return "Diode";
         if (isCut(item)) return "Overpass";
         if (isGrate(item)) return "Divider";
-        if (isBulb(item)) return "T Flip-Flop";
+        if (isBulb(item)) return "Signal Memory";
         return "Copper";
     }
 

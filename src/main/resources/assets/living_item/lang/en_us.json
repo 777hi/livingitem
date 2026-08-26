@@ -108,6 +108,7 @@
   "tooltip.livingitem.copper.output_dir": "  §7Output Dir",
   "tooltip.livingitem.copper.grate_output": "  §7Output",
   "tooltip.livingitem.copper.bulb_state": "  §7State",
+  "tooltip.livingitem.copper.bulb_recorded": "  §7Recorded",
 
   "tooltip.livingitem.ender_chest.status": "§dLiving Ender Chest§r",
   "tooltip.livingitem.ender_chest.bound_player": "  §bBound: %s§r",

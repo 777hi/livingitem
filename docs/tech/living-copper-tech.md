@@ -2,8 +2,8 @@
 
 # Living Copper (活铜) 技术文档
 
-> **文档版本**: 2026.08 v3
-> **最后更新**: 2026-08-26
+> **文档版本**: 2026.08 v4
+> **最后更新**: 2026-08-27
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -28,7 +28,7 @@
 - **雕文铜块二极管**：输入/输出双方向独立设置，信号仅从输入方向接收、向输出方向传输
 - **切制铜块立交桥**：水平/垂直信号独立传播，可交叉而不串扰
 - **铜格栅分频器**：输入信号周期翻倍（上升沿翻转）
-- **铜灯 T 触发器**：上升沿翻转 lit 状态并保持
+- **铜灯信号记忆**：上升沿记录输入信号强度，再次收到信号时熄灭清除，可被比较器读取
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -49,9 +49,9 @@
 │        └──────────┘           └──────────┘       └──────────┘      │
 │                                                                      │
 │  ┌──────────────────┐        ┌──────────────────┐                   │
-│  │ 铜格栅（分频器）  │        │ 铜灯（T触发器）   │                   │
-│  │ 上升沿翻转output  │        │ 上升沿翻转lit     │                   │
-│  │ Phase1 输出信号   │        │ Phase1 输出信号   │                   │
+│  │ 铜格栅（分频器）  │        │ 铜灯（信号记忆）   │                   │
+│  │ 上升沿翻转output  │        │ 上升沿记录信号     │                   │
+│  │ Phase1 输出信号   │        │ 比较器可读取       │                   │
 │  └──────────────────┘        └──────────────────┘                   │
 └──────────────────────────────────────────────────────────────────────┘
 ```
@@ -104,7 +104,7 @@ public class LivingCopperFunction implements LivingItemFunction, HasContainerDat
     public static boolean isChiseled(Item)            // 雕文铜块 (Diode)
     public static boolean isCut(Item)                 // 切制铜块 (Overpass)
     public static boolean isGrate(Item)               // 铜格栅 (Divider)
-    public static boolean isBulb(Item)                // 铜灯 (T Flip-Flop)
+    public static boolean isBulb(Item)                // 铜灯 (Signal Memory)
     public static int getOxidationLevel(Item)         // 锈蚀等级 0-3
 }
 ```
@@ -151,25 +151,26 @@ public record LivingGrateData(
 | `lastInput` | boolean | false | 上一帧是否有输入信号，用于上升沿检测 |
 | `output` | boolean | false | 当前输出状态，上升沿时翻转 |
 
-### 2.4 LivingCopperBulbData — 铜灯 T 触发器数据
+### 2.4 LivingCopperBulbData — 铜灯信号记忆数据
 
 ```java
 public record LivingCopperBulbData(
-    boolean lit,        // 是否点亮
-    boolean prevInput   // 上一帧输入信号状态
+    int recordedSignal,     // 记录的信号强度 (0=未记录, 1-15=已记录)
+    boolean prevInput       // 上一帧输入信号状态
 ) implements TooltipProvider {
 
     public static final LivingCopperBulbData DEFAULT =
-        new LivingCopperBulbData(false, false);
+        new LivingCopperBulbData(0, false);
 
-    public LivingCopperBulbData withLit(boolean lit) { ... }
+    public LivingCopperBulbData withRecordedSignal(int recordedSignal) { ... }
     public LivingCopperBulbData withPrevInput(boolean prevInput) { ... }
+    public boolean isLit() { return recordedSignal > 0; }
 }
 ```
 
 | 字段 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `lit` | boolean | false | 当前点亮状态，上升沿时翻转 |
+| `recordedSignal` | int | 0 | 记录的信号强度，0 表示未记录（熄灭），>0 表示已记录（点亮） |
 | `prevInput` | boolean | false | 上一帧输入信号状态，用于上升沿检测 |
 
 ### 2.5 槽位类型位掩码
@@ -181,7 +182,7 @@ private static final int BIT_COPPER   = 1 << 8;   // 活铜块（信号层）
 private static final int BIT_CHISELED = 1 << 9;   // 雕文铜块（二极管）
 private static final int BIT_CUT      = 1 << 10;  // 切制铜块（立交桥）
 private static final int BIT_GRATE    = 1 << 11;  // 铜格栅（分频器）
-private static final int BIT_BULB     = 1 << 12;  // 铜灯（T触发器）
+private static final int BIT_BULB     = 1 << 12;  // 铜灯（信号记忆）
 ```
 
 `MASK_REDSTONE` 已扩展为包含 `BIT_COPPER`，确保导电方块充能时跳过铜块槽位。
@@ -214,7 +215,7 @@ ItemStack (minecraft:copper_grate)
 ItemStack (minecraft:copper_bulb)
 ├── IS_LIVING: true
 └── LIVING_COPPER_BULB_DATA: LivingCopperBulbData
-    ├─ lit: boolean                              ← 点亮状态
+    ├─ recordedSignal: int                     ← 记录的信号强度 (0=未记录)
     └─ prevInput: boolean                        ← 上一帧输入
 ```
 
@@ -280,16 +281,7 @@ for slot in grateSlots:
       if 邻居是红石粉或铜块 → 邻居入队
 ```
 
-**铜灯 (Bulb)**：当 `data.lit() == true` 时，向 4 方向输出信号：
-```
-for slot in bulbSlots:
-  if !data.lit() → skip
-  cap = getSignalCap(count)
-  for 4 方向 dir:
-    if cap > edgeGrid.get(slot, dir):
-      edgeGrid.set(slot, dir, cap)
-      if 邻居是红石粉或铜块 → 邻居入队
-```
+**铜灯 (Bulb)**：铜灯不再是信号源，不向 4 方向输出信号。铜灯仅记录输入信号强度，供比较器读取。
 
 所有信号源（火把/按钮/拉杆/中继器/比较器/红石块）的邻居入队条件已从 `BIT_DUST` 扩展为 `BIT_DUST | BIT_COPPER`。
 
@@ -377,13 +369,18 @@ for slot in grateSlots:
     context.syncSlotToClients(slot, stack)
 ```
 
-**铜灯 (Bulb) — T 触发器**：
+**铜灯 (Bulb) — 信号记忆**：
 ```
 for slot in bulbSlots:
   hasInput = edgeGrid.anyOfSlot(slot)  // 任意边有信号
 
   if hasInput && !data.prevInput():     // 上升沿
-    data = data.withLit(!data.lit())    // 翻转 lit
+    if data.recordedSignal() == 0:      // 未记录 → 记录当前输入信号强度
+      maxInput = edgeGrid.maxOfSlot(slot)
+      cap = getSignalCap(count)
+      data = data.withRecordedSignal(min(maxInput, cap))
+    else:                               // 已记录 → 熄灭清除
+      data = data.withRecordedSignal(0)
 
   data = data.withPrevInput(hasInput)   // 更新上一帧输入
 
@@ -392,8 +389,11 @@ for slot in bulbSlots:
     context.syncSlotToClients(slot, stack)
 ```
 
+**比较器读取**：铜灯实现了 `LivingCopperFunction.getComparatorOutput()`，返回 `data.recordedSignal()`。活比较器在比较模式下可读取铜灯记录的信号强度。
+
 **时序说明**：
-- 分频器和 T 触发器在 Phase 3 更新状态，下一 tick 的 Phase 1 作为信号源输出
+- 分频器在 Phase 3 更新状态，下一 tick 的 Phase 1 作为信号源输出
+- 铜灯在 Phase 3 记录/清除信号强度，可被比较器在下一 tick 读取
 - 这保证了 1 tick 的输入→输出延迟，与中继器/比较器的 Phase 3 → 下一 tick Phase 1 模式一致
 
 ### 3.7 Phase 4 — 充能导电活物品（铜块相关）
@@ -443,12 +443,10 @@ for slot in copperSlots:
       data = data.withOutput(maxSignal > 0)
       syncSlotToClients(slot, stack)
 
-  // 铜灯：同步 lit 状态
+  // 铜灯：同步 recordedSignal 显示状态
   if is(slot, BIT_BULB):
-    hasSignal = edgeGrid.anyOfSlot(slot)
-    if data.lit() != hasSignal:
-      data = data.withLit(hasSignal)
-      syncSlotToClients(slot, stack)
+    // 铜灯的显示状态由 recordedSignal 决定，Phase 3 已处理
+    // Phase 5 仅同步铜信号强度（与其他铜块一致）
 ```
 
 ### 3.9 红石粉连接铜块
@@ -546,25 +544,33 @@ else if (is(neighbor, BIT_BUTTON | BIT_LEVER | BIT_TORCH
 
 **tooltip**：显示类型 `Divider`、频道字母和当前 output 状态
 
-### 4.5 铜灯 (T Flip-Flop) — T 触发器
+### 4.5 铜灯 (Signal Memory) — 信号记忆
 
 **对应物品**：Copper Bulb / Exposed Copper Bulb / Weathered Copper Bulb / Oxidized Copper Bulb
 
 **行为**：
-- 上升沿（`!prevInput && hasInput`）时翻转 `lit` 状态
-- `lit` 状态保持到下一个上升沿
-- Phase 3 更新状态，下一 tick Phase 1 输出信号
+- 上升沿（`!prevInput && hasInput`）时：
+  - 若 `recordedSignal == 0`（未记录）：记录当前输入信号强度 `min(maxInput, cap)`
+  - 若 `recordedSignal > 0`（已记录）：熄灭，清除记录的信号（`recordedSignal = 0`）
+- 记录的信号强度受最大红电信号限制
+- 铜灯不向周围输出信号，仅记录信号供比较器读取
+- Phase 3 更新状态，下一 tick 比较器可读取
+
+**比较器读取**：
+- `LivingCopperFunction.getComparatorOutput()` 返回 `recordedSignal`
+- 活比较器在比较模式下可读取铜灯记录的信号强度
 
 **时序示例**：
 ```
-  tick:  0  1  2  3  4  5  6  7  8  9
-  input: 0  1  0  0  1  0  0  1  0  0
-  lit:   0  1  1  1  0  0  0  1  1  1
-              ↑        ↑        ↑
-          上升沿翻转 上升沿翻转 上升沿翻转
+  tick:       0  1  2  3  4  5  6  7  8  9
+  input:      0  1  0  0  1  0  0  1  0  0
+  recorded:   0  S  S  S  0  0  0  S  S  S
+                  ↑           ↑        ↑
+              上升沿记录   上升沿清除  上升沿记录
+  (S = 输入信号强度)
 ```
 
-**tooltip**：显示类型 `T Flip-Flop`、频道字母和当前 ON/OFF 状态
+**tooltip**：显示红电信号强度、最大红电信号强度、记录的信号强度
 
 ---
 
@@ -620,7 +626,7 @@ is(slot, BIT_COPPER | BIT_CUT) → true  // 是铜块且是切制铜块（立交
 | 雕文铜块二极管 | ✅ | 输入/输出双方向独立设置，WASD 2键配置 |
 | 切制铜块立交桥 | ✅ | 水平/垂直信号独立传播 |
 | 铜格栅分频器 | ✅ | 上升沿翻转，Phase 3 状态更新 |
-| 铜灯 T 触发器 | ✅ | 上升沿翻转 lit，Phase 3 状态更新 |
+| 铜灯信号记忆 | ✅ | 上升沿记录/清除信号强度，Phase 3 状态更新 |
 | 红石-铜块互通 | ✅ | canConnect 规则支持跨层注入 |
 | 铜块充能导体 | ✅ | Phase 4 铜块作为强信号源 |
 | 容器面信号输出 | ✅ | 铜块信号参与 faceOutput 计算 |
