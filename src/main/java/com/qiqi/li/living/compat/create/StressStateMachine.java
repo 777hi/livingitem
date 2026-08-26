@@ -185,6 +185,7 @@ public class StressStateMachine {
                 capacity = 0;
             } else {
                 rpm = newRpm;
+                capacity = newCap;
                 if (prev == 0 && newRpm != 0) {
                     self.setSpeed(newRpm);
                     self.setNetwork(self.getBlockPos().asLong());
@@ -196,7 +197,6 @@ public class StressStateMachine {
                     self.attachKinetics();
                     updateNetwork(self, newCap);
                 }
-                capacity = newCap;
             }
             self.setChanged();
             self.sendData();
@@ -213,9 +213,10 @@ public class StressStateMachine {
     private void updateNetwork(KineticBlockEntity self, float cap) {
         if (!self.hasNetwork()) return;
         try {
-            self.getOrCreateNetwork().updateCapacityFor(self, cap);
-            self.getOrCreateNetwork().updateStressFor(self, self.calculateStressApplied());
-            self.getOrCreateNetwork().updateStress();
+            var network = self.getOrCreateNetwork();
+            network.updateCapacityFor(self, cap);
+            network.updateStressFor(self, self.calculateStressApplied());
+            network.updateStress();
         } catch (NullPointerException e) {
             LOGGER.debug("[StressState] NPE updating network on {} at {}: {}",
                 self.getClass().getSimpleName(), self.getBlockPos(), e.getMessage());

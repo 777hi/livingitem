@@ -1,7 +1,7 @@
 # Living Water Wheel (活水车) 技术文档
 
-> **文档版本**: 2026.08 v11  
-> **最后更新**: 2026-08-27  
+> **文档版本**: 2026.08 v12  
+> **最后更新**: 2026-08-26  
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -69,6 +69,7 @@
 | `LivingItemStressOutput` | `compat/create/LivingItemStressOutput.java` | 接口，定义 Mixin 注入的方法签名（`livingItem$applyStress`） |
 | `CreateMixinPlugin` | `compat/create/CreateMixinPlugin.java` | Mixin 条件加载插件，仅 Create 安装时应用 Mixin |
 | `KineticBlockEntityMixin` | `mixin/create/KineticBlockEntityMixin.java` | Mixin 到 KineticBlockEntity，委托 `StressStateMachine` 管理应力状态，实现 `LivingItemStressOutput` 接口 |
+| `SmartBlockEntityMixin` | `mixin/create/SmartBlockEntityMixin.java` | Mixin 到 SmartBlockEntity，拦截 `onChunkUnloaded` 转发到 `LivingItemStressOutput`，避免 Mixin 目标方法不存在导致整个类失效 |
 
 #### 渲染类（客户端，软依赖 Create）
 
@@ -1871,3 +1872,85 @@ self.setNetwork(null);                      // 清除网络引用
 同样修复 `tick()` 中的自过期清理路径（`!refreshedThisTick` 分支），在 `detachKinetics()` 之前先从网络移除，并移除 `pendingReattach`。
 
 **涉及文件**：`KineticBlockEntityMixin.java`（新增 `calculateStressApplied` 注入）、`StressStateMachine.java`（修复清理路径）
+
+### 9.24 Mixin 目标方法不存在导致整个 Mixin 类失效——齿轮旋转但无应力输出
+
+**现象**：
+齿轮被活水车注入应力后，只有旋转动画，但护目镜不显示应力信息，邻居齿轮也不受应力驱动。日志中 `updateNetwork BEFORE` 显示 `genSpeed=0.0, isSource=false, calcCap=0.0`，即使 `StressStateMachine` 内部 `rpm=-8.0, capacity=2944.0` 已正确设置。
+
+**根因**：`KineticBlockEntityMixin` 中注入了 `onChunkUnloaded` 方法，但该方法**不在 `KineticBlockEntity` 中**，而在其父类 `SmartBlockEntity` 中。Mixin 框架在类加载时验证所有 `@Inject` 目标，找不到 `onChunkUnloaded` 就抛出 `InvalidInjectionException`，**拒绝应用整个 Mixin 类**。
+
+```
+Mixin apply for mod living_item failed: @Inject annotation on livingItem$onChunkUnloaded 
+could not find any targets matching 'onChunkUnloaded' in KineticBlockEntity.
+```
+
+这导致 `KineticBlockEntityMixin` 中的**所有注入全部失效**：
+- `getGeneratedSpeed()` → 始终返回 0 → `isSource() == false`
+- `calculateAddedStressCapacity()` → 返回齿轮默认值 0 → 网络无应力容量
+- `calculateStressApplied()` → 未被覆盖 → 网络应力计算异常
+- `tick()` → 自过期机制失效 → 应力永不清除
+
+齿轮的 `setSpeed()` 仍被 `StressStateMachine.applyStress()` 调用，所以齿轮有旋转动画（`speed` 字段被设置），但 `getGeneratedSpeed()` 返回 0，所以 `KineticNetwork` 不认为它是应力源，`sources` 映射为空，网络容量为 0。
+
+#### 9.24.1 为什么难以发现
+
+1. **Mixin 失败日志被淹没**：Mixin 框架在启动时打印了 `WARN` 级别的失败日志，但在大量 mod 加载的日志中容易被忽略
+2. **部分功能仍正常**：`StressStateMachine` 是独立的 Java 对象（非 Mixin 注入），其 `applyStress()` 仍能调用 `setSpeed()`/`setNetwork()`/`attachKinetics()`，所以齿轮有旋转动画，看起来"部分工作"
+3. **日志误导**：`StressStateMachine` 的日志显示 `rpm=-8.0, capacity=2944.0`，看起来值正确，但实际上 `self.getGeneratedSpeed()` 和 `self.isSource()` 调用的是**原始方法**（Mixin 未生效），返回 0/false
+
+#### 9.24.2 修复方案
+
+**核心修复**：将 `onChunkUnloaded` 注入从 `KineticBlockEntityMixin` 移出，新建 `SmartBlockEntityMixin` 注入到父类 `SmartBlockEntity`：
+
+```java
+// SmartBlockEntityMixin.java — 新建
+@Mixin(SmartBlockEntity.class)
+public abstract class SmartBlockEntityMixin {
+    @Inject(method = "onChunkUnloaded", at = @At("HEAD"), remap = false)
+    private void livingItem$onChunkUnloaded(CallbackInfo ci) {
+        if ((Object) this instanceof KineticBlockEntity kbe) {
+            if (kbe instanceof LivingItemStressOutput stressOutput) {
+                stressOutput.livingItem$onChunkUnloaded();
+            }
+        }
+    }
+}
+```
+
+在 `living_item.mixins-create.json` 中注册新 Mixin：
+```json
+"mixins": [
+    "KineticBlockEntityMixin",
+    "SmartBlockEntityMixin"
+]
+```
+
+在 `LivingItemStressOutput` 接口中新增方法：
+```java
+void livingItem$onChunkUnloaded();
+```
+
+在 `KineticBlockEntityMixin` 中实现该方法，委托给 `StressStateMachine.onChunkUnloaded()`。
+
+**附带修复**（在排查过程中发现并修复）：
+
+1. **`capacity` 赋值时序错误**：`applyStress()` 中 `capacity = newCap` 在 `setNetwork()` 之后赋值，但 `setNetwork()` 内部调用 `network.add(this)` → `calculateAddedStressCapacity()`，此时 Mixin 返回 `stressState.getCapacity()` 还是 0。修复：将 `capacity = newCap` 移到 `setNetwork()` 之前。
+
+2. **`lastCapacityProvided` / `lastStressApplied` 未被设置**：Mixin 在 `@Inject HEAD` + `cancellable` 取消了原始方法，导致 `KineticBlockEntity` 的这两个字段不会被赋值。它们在 `initialize()` → `network.initFromTE()` 和 NBT 序列化中使用。修复：添加 `@Shadow` 字段并在 Mixin 中显式赋值。
+
+3. **`isSource()` 注入缺失**：原代码依赖 `getGeneratedSpeed() != 0` 判断 `isSource()`，但单独注入 `isSource()` 更可靠，避免 `getGeneratedSpeed()` 注入失效时连带 `isSource()` 也失效。
+
+**涉及文件**：
+- `KineticBlockEntityMixin.java`（移除 `onChunkUnloaded` 注入，添加 `@Shadow`、`isSource` 注入、`livingItem$onChunkUnloaded` 实现）
+- `SmartBlockEntityMixin.java`（新建，注入 `SmartBlockEntity.onChunkUnloaded`）
+- `LivingItemStressOutput.java`（新增 `livingItem$onChunkUnloaded()` 接口方法）
+- `living_item.mixins-create.json`（注册 `SmartBlockEntityMixin`）
+- `StressStateMachine.java`（修复 `capacity` 赋值时序）
+- `StressOutputManager.java`（修正 RPM 符号 `-Math.signum`，日志降级为 `debug`）
+
+**教训**：
+1. **Mixin 目标方法必须存在于目标类中**（包括父类方法也不行，除非用 `remap` 或目标父类）。如果方法在父类中，应新建 Mixin 注入父类，或在子类 Mixin 中用 `@Inject(method = "onChunkUnloaded", at = @At("HEAD"))` + 确保子类有 `@Override` 声明
+2. **Mixin 类中任何一个注入失败都会导致整个类失效**——这是最危险的特性，因为其他看似无关的注入也会被连带取消
+3. **启动时检查 Mixin 应用日志**：搜索 `Mixin apply.*failed` 或 `InvalidInjectionException`，不要只关注运行时日志
+4. **`@Shadow` 字段必须显式赋值**：当 Mixin 用 `cancellable = true` 取消原始方法时，原始方法中的字段赋值（如 `this.lastCapacityProvided = capacity`）不会执行，必须在 Mixin 中手动赋值

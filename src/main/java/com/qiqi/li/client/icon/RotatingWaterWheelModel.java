@@ -31,8 +31,9 @@ public class RotatingWaterWheelModel implements BakedModel {
             float rpm = WaterWheelRenderState.getRpm();
             float time = net.minecraft.client.Minecraft.getInstance().level.getGameTime()
                 + net.minecraft.client.Minecraft.getInstance().getTimer().getGameTimeDeltaPartialTick(true);
+            float direction = rpm >= 0 ? 1f : -1f;
             float angle = (time * 8f * 3f / 10) % 360;
-            float radians = angle / 180f * (float) Math.PI;
+            float radians = direction * angle / 180f * (float) Math.PI;
             poseStack.translate(0.5f, 0.5f, 0.5f);
             poseStack.mulPose(new Quaternionf().rotateX(radians));
             poseStack.translate(-0.5f, -0.5f, -0.5f);

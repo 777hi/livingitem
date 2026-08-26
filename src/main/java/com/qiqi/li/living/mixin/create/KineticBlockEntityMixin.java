@@ -5,6 +5,7 @@ import com.qiqi.li.living.compat.create.LivingItemStressOutput;
 import com.qiqi.li.living.compat.create.StressStateMachine;
 
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -12,6 +13,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(KineticBlockEntity.class)
 public abstract class KineticBlockEntityMixin implements LivingItemStressOutput {
+
+    @Shadow(remap = false)
+    protected float lastCapacityProvided;
+
+    @Shadow(remap = false)
+    protected float lastStressApplied;
 
     private final StressStateMachine stressState = new StressStateMachine();
 
@@ -23,9 +30,12 @@ public abstract class KineticBlockEntityMixin implements LivingItemStressOutput 
         }
     }
 
-    @Inject(method = "onChunkUnloaded", at = @At("HEAD"), remap = false)
-    private void livingItem$onChunkUnloaded(CallbackInfo ci) {
-        stressState.onChunkUnloaded((KineticBlockEntity) (Object) this);
+    @Inject(method = "isSource", at = @At("HEAD"), cancellable = true, remap = false)
+    private void livingItem$isSource(CallbackInfoReturnable<Boolean> cir) {
+        float rpm = stressState.getRPM();
+        if (rpm != 0) {
+            cir.setReturnValue(true);
+        }
     }
 
     @Inject(method = "tick", at = @At("HEAD"), remap = false)
@@ -36,13 +46,16 @@ public abstract class KineticBlockEntityMixin implements LivingItemStressOutput 
     @Inject(method = "calculateAddedStressCapacity", at = @At("HEAD"), cancellable = true, remap = false)
     private void livingItem$calculateAddedStressCapacity(CallbackInfoReturnable<Float> cir) {
         if (stressState.isActive()) {
-            cir.setReturnValue(stressState.getCapacity());
+            float cap = stressState.getCapacity();
+            lastCapacityProvided = cap;
+            cir.setReturnValue(cap);
         }
     }
 
     @Inject(method = "calculateStressApplied", at = @At("HEAD"), cancellable = true, remap = false)
     private void livingItem$calculateStressApplied(CallbackInfoReturnable<Float> cir) {
         if (stressState.isActive()) {
+            lastStressApplied = 0f;
             cir.setReturnValue(0f);
         }
     }
@@ -80,5 +93,10 @@ public abstract class KineticBlockEntityMixin implements LivingItemStressOutput 
     @Override
     public float livingItem$getTheoreticalSpeed() {
         return ((KineticBlockEntity) (Object) this).getTheoreticalSpeed();
+    }
+
+    @Override
+    public void livingItem$onChunkUnloaded() {
+        stressState.onChunkUnloaded((KineticBlockEntity) (Object) this);
     }
 }

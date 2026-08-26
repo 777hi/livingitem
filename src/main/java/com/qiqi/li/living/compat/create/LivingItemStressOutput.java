@@ -15,4 +15,6 @@ public interface LivingItemStressOutput {
     boolean livingItem$isSafeForStressInjection();
 
     float livingItem$getTheoreticalSpeed();
+
+    void livingItem$onChunkUnloaded();
 }

@@ -50,7 +50,7 @@ public class StressOutputManager {
             suCapacity = Math.abs(netStress) * BASE_SU_CAPACITY;
         }
 
-        LOGGER.info("[StressOutput] at {}: netStress={}, rpm={}, suCapacity={}, beType={}",
+        LOGGER.debug("[StressOutput] at {}: netStress={}, rpm={}, suCapacity={}, beType={}",
             belowPos, netStress, rpm, suCapacity, be.getClass().getSimpleName());
 
         if (rpm != 0 && !isDirectionCompatible(stressOutput, rpm)) {

@@ -4,7 +4,8 @@
   "compatibilityLevel": "JAVA_21",
   "plugin": "com.qiqi.li.living.compat.create.CreateMixinPlugin",
   "mixins": [
-    "KineticBlockEntityMixin"
+    "KineticBlockEntityMixin",
+    "SmartBlockEntityMixin"
   ],
   "injectors": {
     "defaultRequire": 1
