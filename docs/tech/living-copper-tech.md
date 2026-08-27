@@ -27,7 +27,7 @@
 - **锈蚀频道隔离**：仅同锈蚀等级的铜块之间互相导通，不同锈蚀等级互不干扰
 - **雕文铜块二极管**：输入/输出双方向独立设置，信号仅从输入方向接收、向输出方向传输
 - **切制铜块立交桥**：水平/垂直信号独立传播，可交叉而不串扰
-- **铜格栅分频器**：输入信号周期翻倍（上升沿翻转）
+- **铜格栅加法器**：红石→红电桥接，所有输入边红石信号相加，向同锈蚀铜原件输出
 - **铜灯信号记忆**：上升沿记录输入信号强度，再次收到信号时熄灭清除，可被比较器读取
 
 ```
@@ -49,9 +49,9 @@
 │        └──────────┘           └──────────┘       └──────────┘      │
 │                                                                      │
 │  ┌──────────────────┐        ┌──────────────────┐                   │
-│  │ 铜格栅（分频器）  │        │ 铜灯（信号记忆）   │                   │
-│  │ 上升沿翻转output  │        │ 上升沿记录信号     │                   │
-│  │ Phase1 输出信号   │        │ 比较器可读取       │                   │
+│  │ 铜格栅（加法器）  │        │ 铜灯（信号记忆）   │                   │
+│  │ 红石→红电桥接     │        │ 上升沿记录信号     │                   │
+│  │ 4边信号求和       │        │ 比较器可读取       │                   │
 │  └──────────────────┘        └──────────────────┘                   │
 └──────────────────────────────────────────────────────────────────────┘
 ```
@@ -62,7 +62,7 @@
 |------|---------|------|
 | `LivingCopperFunction` | `domain/redstone/LivingCopperFunction.java` | 活铜块功能入口，实现 `HasContainerData` + `HasDirection`，触发容器级信号计算 |
 | `LivingCutCopperData` | `domain/redstone/LivingCutCopperData.java` | 雕文铜块物品级数据：输入方向 + 输出方向 |
-| `LivingGrateData` | `domain/redstone/LivingGrateData.java` | 铜格栅物品级数据：上一帧输入 + 输出状态 |
+| `LivingGrateData` | `domain/redstone/LivingGrateData.java` | 铜格栅物品级数据：信号和 |
 | `LivingCopperBulbData` | `domain/redstone/LivingCopperBulbData.java` | 铜灯物品级数据：点亮状态 + 上一帧输入 |
 | `ContainerRedstoneData` | `domain/redstone/ContainerRedstoneData.java` | 容器级红石信号数据（含铜块传播逻辑） |
 
@@ -103,7 +103,7 @@ public class LivingCopperFunction implements LivingItemFunction, HasContainerDat
     public static boolean isBaseCopper(Item)          // 普通铜块 (Cable)
     public static boolean isChiseled(Item)            // 雕文铜块 (Diode)
     public static boolean isCut(Item)                 // 切制铜块 (Overpass)
-    public static boolean isGrate(Item)               // 铜格栅 (Divider)
+    public static boolean isGrate(Item)               // 铜格栅 (Adder)
     public static boolean isBulb(Item)                // 铜灯 (Signal Memory)
     public static int getOxidationLevel(Item)         // 锈蚀等级 0-3
 }
@@ -130,26 +130,23 @@ public record LivingCutCopperData(
 | `inputDir` | Pos2D | DOWN | 信号输入方向，仅从此方向接收信号 |
 | `outputDir` | Pos2D | UP | 信号输出方向，仅向此方向转发信号 |
 
-### 2.3 LivingGrateData — 铜格栅分频器数据
+### 2.3 LivingGrateData — 铜格栅加法器数据
 
 ```java
 public record LivingGrateData(
-    boolean lastInput,  // 上一帧输入信号状态
-    boolean output      // 当前输出状态
+    int sumSignal       // 所有输入边红石信号之和
 ) implements TooltipProvider {
 
     public static final LivingGrateData DEFAULT =
-        new LivingGrateData(false, false);
+        new LivingGrateData(0);
 
-    public LivingGrateData withLastInput(boolean lastInput) { ... }
-    public LivingGrateData withOutput(boolean output) { ... }
+    public LivingGrateData withSumSignal(int sumSignal) { ... }
 }
 ```
 
 | 字段 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `lastInput` | boolean | false | 上一帧是否有输入信号，用于上升沿检测 |
-| `output` | boolean | false | 当前输出状态，上升沿时翻转 |
+| `sumSignal` | int | 0 | 4条边红石信号之和，受 signalCap 上限 |
 
 ### 2.4 LivingCopperBulbData — 铜灯信号记忆数据
 
@@ -181,7 +178,7 @@ public record LivingCopperBulbData(
 private static final int BIT_COPPER   = 1 << 8;   // 活铜块（信号层）
 private static final int BIT_CHISELED = 1 << 9;   // 雕文铜块（二极管）
 private static final int BIT_CUT      = 1 << 10;  // 切制铜块（立交桥）
-private static final int BIT_GRATE    = 1 << 11;  // 铜格栅（分频器）
+private static final int BIT_GRATE    = 1 << 11;  // 铜格栅（加法器）
 private static final int BIT_BULB     = 1 << 12;  // 铜灯（信号记忆）
 ```
 
@@ -270,15 +267,17 @@ canConnect(slot, neighbor, context):
 
 Phase 1 中两类铜块作为信号源参与：
 
-**铜格栅 (Grate)**：当 `data.output() == true` 时，向 4 方向输出信号：
+**铜格栅 (Grate)**：当 `data.sumSignal() > 0` 时，向 4 方向同锈蚀铜原件输出信号：
 ```
 for slot in grateSlots:
-  if !data.output() → skip
-  cap = getSignalCap(count)
+  if data.sumSignal() <= 0 → skip
   for 4 方向 dir:
-    if cap > edgeGrid.get(slot, dir):
-      edgeGrid.set(slot, dir, cap)
-      if 邻居是红石粉或铜块 → 邻居入队
+    neighbor = resolveSlot(slot, dir)
+    if 邻居不是铜原件 → skip
+    if 锈蚀等级不同 → skip
+    if data.sumSignal() > edgeGrid.get(slot, dir):
+      edgeGrid.set(slot, dir, data.sumSignal())
+      邻居入队
 ```
 
 **铜灯 (Bulb)**：铜灯不再是信号源，不向 4 方向输出信号。铜灯仅记录输入信号强度，供比较器读取。
@@ -311,15 +310,15 @@ while queue not empty:
     if is(current, BIT_CHISELED):
       inputEdge = edgeIndex(data.inputDir())
       outputEdge = edgeIndex(data.outputDir())
-      chiseledInput = edgeGrid.get(current, inputEdge)  // 仅从输入方向取信号
+      chiseledInput = getEffectiveInput(current, inputEdge)  // 从输入方向取信号（含跨容器faceInput）
       chiseledOutput = min(chiseledInput, cap)
       propagateDir(current, outputEdge, chiseledOutput, ...)  // 仅向输出方向传播
       continue
 
     // ── 切制铜块：水平/垂直隔离 ──
     if is(current, BIT_CUT):
-      maxHInput = max(edgeGrid.get(current, LEFT), edgeGrid.get(current, RIGHT))
-      maxVInput = max(edgeGrid.get(current, UP), edgeGrid.get(current, DOWN))
+      maxHInput = max(getEffectiveInput(current, LEFT), getEffectiveInput(current, RIGHT))
+      maxVInput = max(getEffectiveInput(current, UP), getEffectiveInput(current, DOWN))
       outputH = min(maxHInput, cap)
       outputV = min(maxVInput, cap)
       propagateDir(current, LEFT, outputH, ...)   // 水平信号仅水平传播
@@ -354,18 +353,18 @@ propagateDir(slot, dir, signal, queue):
 
 Phase 3 新增铜格栅和铜灯的状态更新逻辑：
 
-**铜格栅 (Grate) — 分频器**：
+**铜格栅 (Grate) — 加法器**：
 ```
 for slot in grateSlots:
-  hasInput = edgeGrid.anyOfSlot(slot)  // 任意边有信号
+  sum = 0
+  for 4 方向 dir:
+    neighbor = resolveSlot(slot, dir)
+    if 邻居是铜原件 → skip  // 只读红石信号，不读铜信号
+    sum += edgeGrid.get(slot, dir)
+  result = min(sum, getSignalCap(count))
 
-  if hasInput && !data.lastInput():     // 上升沿
-    data = data.withOutput(!data.output())  // 翻转输出
-
-  data = data.withLastInput(hasInput)   // 更新上一帧输入
-
-  if changed:
-    LivingItemManager.setGrateData(stack, data)
+  if data.sumSignal() != result:
+    LivingItemManager.setGrateData(stack, data.withSumSignal(result))
     context.syncSlotToClients(slot, stack)
 ```
 
@@ -392,7 +391,7 @@ for slot in bulbSlots:
 **比较器读取**：铜灯实现了 `LivingCopperFunction.getComparatorOutput()`，返回 `data.recordedSignal()`。活比较器在比较模式下可读取铜灯记录的信号强度。
 
 **时序说明**：
-- 分频器在 Phase 3 更新状态，下一 tick 的 Phase 1 作为信号源输出
+- 加法器在 Phase 3 更新 sumSignal，下一 tick 的 Phase 1 作为信号源输出
 - 铜灯在 Phase 3 记录/清除信号强度，可被比较器在下一 tick 读取
 - 这保证了 1 tick 的输入→输出延迟，与中继器/比较器的 Phase 3 → 下一 tick Phase 1 模式一致
 
@@ -407,18 +406,18 @@ for slot in copperSlots:
   cap = getSignalCap(count)
   output = min(maxInput, cap)
 
-  // 雕文铜块：仅输出方向充能，仅取输入方向信号
+  // 雕文铜块：仅输出方向充能，仅取输入方向信号（含跨容器faceInput）
   if is(slot, BIT_CHISELED):
     inputEdge = edgeIndex(data.inputDir())
     outputEdge = edgeIndex(data.outputDir())
-    chiseledInput = edgeGrid.get(slot, inputEdge)
+    chiseledInput = getEffectiveInput(slot, inputEdge)
     chiseledOutput = min(chiseledInput, cap)
     powerConductiveNeighbor(slot, chiseledOutput, outputEdge, ...)
 
-  // 切制铜块：水平/垂直分别充能
+  // 切制铜块：水平/垂直分别充能（含跨容器faceInput）
   else if is(slot, BIT_CUT):
-    maxHInput = max(edgeGrid.get(slot, LEFT), edgeGrid.get(slot, RIGHT))
-    maxVInput = max(edgeGrid.get(slot, UP), edgeGrid.get(slot, DOWN))
+    maxHInput = max(getEffectiveInput(slot, LEFT), getEffectiveInput(slot, RIGHT))
+    maxVInput = max(getEffectiveInput(slot, UP), getEffectiveInput(slot, DOWN))
     powerConductiveNeighbor(slot, min(maxHInput, cap), LEFT, ...)
     powerConductiveNeighbor(slot, min(maxHInput, cap), RIGHT, ...)
     powerConductiveNeighbor(slot, min(maxVInput, cap), UP, ...)
@@ -436,12 +435,7 @@ Phase 5 新增铜格栅和铜灯的显示同步：
 
 ```
 for slot in copperSlots:
-  // 铜格栅：同步 output 状态
-  if is(slot, BIT_GRATE):
-    maxSignal = edgeGrid.maxOfSlot(slot)
-    if data.output() != (maxSignal > 0):
-      data = data.withOutput(maxSignal > 0)
-      syncSlotToClients(slot, stack)
+  // 铜格栅：同步 sumSignal 状态（Phase 3 已更新，无需额外同步）
 
   // 铜灯：同步 recordedSignal 显示状态
   if is(slot, BIT_BULB):
@@ -524,25 +518,27 @@ else if (is(neighbor, BIT_BUTTON | BIT_LEVER | BIT_TORCH
 
 **tooltip**：显示类型 `Overpass`、频道字母和提示文字
 
-### 4.4 铜格栅 (Divider) — 分频器
+### 4.4 铜格栅 (Adder) — 红石→红电桥接加法器
 
 **对应物品**：Copper Grate / Exposed Copper Grate / Weathered Copper Grate / Oxidized Copper Grate
 
 **行为**：
-- 输入信号周期翻倍
-- 上升沿（`!lastInput && hasInput`）时翻转 `output`
-- Phase 3 更新状态，下一 tick Phase 1 输出信号
+- 只接收红石信号（红石粉、红石块、火把等），不接收铜电缆信号
+- 4条边的红石信号相加，受 signalCap 上限
+- 向4方向输出到同锈蚀状态的铜原件
+- Phase 3 计算求和，下一 tick Phase 1 输出信号
 
-**时序示例**：
+**信号流**：
 ```
-  tick:  0  1  2  3  4  5  6  7  8  9
-  input: 0  1  1  0  0  1  1  0  0  1
-  output:0  0  1  1  1  1  0  0  0  0
-              ↑           ↑
-           上升沿翻转   上升沿翻转
+红石信号A ──→ ┐
+              ├── [铜格栅] ──→ 铜电缆（同锈蚀）
+红石信号B ──→ ┘
+        sumSignal = min(A + B, signalCap)
 ```
 
-**tooltip**：显示类型 `Divider`、频道字母和当前 output 状态
+**隔离**：铜→格栅方向阻断（`propagateDir` 中 `is(neighbor, BIT_GRATE) return`），防止铜信号回灌
+
+**tooltip**：显示类型 `Adder`、频道字母和当前 sumSignal
 
 ### 4.5 铜灯 (Signal Memory) — 信号记忆
 
@@ -604,6 +600,33 @@ else if (is(neighbor, BIT_BUTTON | BIT_LEVER | BIT_TORCH
 → getBoundarySignal(dir) → Mixin 注入 → 容器方块对外输出红石信号
 ```
 
+**跨容器信号读取规则**：
+
+活铜块遵循与活红石系统相同的设计原则——**仅方向性元件可读取 faceInput**：
+
+| 铜块类型 | 有方向？ | 读取 faceInput？ | 读取方式 |
+|---------|---------|----------------|---------|
+| 雕文铜块 | ✅ inputDir/outputDir | ✅ | `getEffectiveInput(slot, inputEdge)` — 仅从 inputDir 方向读取 |
+| 切制铜块 | ✅ H/V 方向区分 | ✅ | H/V 方向分别 `getEffectiveInput()` |
+| 普通铜块 | ❌ 全向 | ❌ | `edgeGrid.maxOfSlot()` — 仅接收内部邻居信号 |
+| 铜格栅 | ❌ 无方向 | ❌ | 不读 faceInput |
+| 铜灯 | ❌ 无方向 | ❌ | 不读 faceInput |
+
+`getEffectiveInput(slot, dir)` 在槽位位于容器边界且该方向对应边界时，取 `max(edgeGrid.get(slot, dir), faceInput[dir])`，否则仅取 `edgeGrid.get(slot, dir)`。
+
+**跨容器桥接示例**：
+```
+[容器A]                    [容器B]
+  铜块 → 雕文铜块 ───→ 雕文铜块 → 铜块
+         inputDir=左      inputDir=左
+         outputDir=右     outputDir=右
+         │                ▲
+         └─faceOutput──→faceInput─┘
+              跨容器传输
+```
+
+雕文铜块/切制铜块作为跨容器信号"桥接器"，从 faceInput 读取外部信号再通过内部铜网络传播。普通铜块、铜格栅、铜灯不直接读取跨容器信号，需经方向性铜块中转。
+
 ### 5.4 位掩码集成
 
 铜块在 `slotMask` 位图中同时拥有 `BIT_COPPER` 父类型和子类型位（`BIT_CHISELED` 等），支持双重判定：
@@ -625,11 +648,12 @@ is(slot, BIT_COPPER | BIT_CUT) → true  // 是铜块且是切制铜块（立交
 | 普通铜块无损线缆 | ✅ | 四向无损转发，锈蚀频道隔离 |
 | 雕文铜块二极管 | ✅ | 输入/输出双方向独立设置，WASD 2键配置 |
 | 切制铜块立交桥 | ✅ | 水平/垂直信号独立传播 |
-| 铜格栅分频器 | ✅ | 上升沿翻转，Phase 3 状态更新 |
+| 铜格栅加法器 | ✅ | 红石→红电桥接，4边信号求和，Phase 3 更新 |
 | 铜灯信号记忆 | ✅ | 上升沿记录/清除信号强度，Phase 3 状态更新 |
 | 红石-铜块互通 | ✅ | canConnect 规则支持跨层注入 |
 | 铜块充能导体 | ✅ | Phase 4 铜块作为强信号源 |
 | 容器面信号输出 | ✅ | 铜块信号参与 faceOutput 计算 |
+| 跨容器铜块信号 | ✅ | 雕文/切制铜块通过 getEffectiveInput 读取 faceInput |
 | Tooltip 显示 | ✅ | 类型、频道、方向、状态等 |
 | 涂蜡铜块排除 | ✅ | 涂蜡铜块不适用活铜功能 |
 
@@ -639,4 +663,3 @@ is(slot, BIT_COPPER | BIT_CUT) → true  // 是铜块且是切制铜块（立交
 |------|------|------|
 | 铜块物品栏装饰器渲染 | ⏳ | 类似 LivingRedstoneDecorator 的铜块视觉 |
 | 铜块连接纹理 | ⏳ | 铜块之间的连接状态可视化 |
-| 跨容器铜块信号 | ⏳ | 铜块信号通过容器边界传播 |

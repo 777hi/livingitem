@@ -243,10 +243,10 @@ public class ContainerRedstoneData {
         Queue<Integer> queue = phase1CollectSources(torchSlots, buttonSlots, leverSlots,
             repeaterSlots, comparatorSlots, dustSlots, redstoneBlockSlots, grateSlots,
             size, width, context);
-        phase2Propagation(queue, size, width, context);
+        phase2Propagation(queue, size, width, height, context);
         phase4PowerConductors(torchSlots, buttonSlots, leverSlots,
             repeaterSlots, comparatorSlots, dustSlots, redstoneBlockSlots, copperSlots,
-            size, width, context);
+            size, width, height, context);
         phase3RecheckInputs(repeaterSlots, comparatorSlots, grateSlots, bulbSlots,
             size, width, context);
         phase5UpdateDisplay(torchSlots, dustSlots, lampSlots, copperSlots, size, width, context);
@@ -425,16 +425,17 @@ public class ContainerRedstoneData {
             ItemStack stack = context.getItem(slot);
             if (stack.isEmpty()) continue;
             LivingGrateData data = LivingItemManager.getGrateData(stack);
-            if (!data.output()) continue;
+            if (data.sumSignal() <= 0) continue;
 
-            int cap = getSignalCap(stack.getCount());
             for (int dir = 0; dir < 4; dir++) {
                 int neighbor = resolveSlot(slot, dir, size, width);
-                if (cap > edgeGrid.get(slot, dir)) {
-                    edgeGrid.set(slot, dir, cap);
-                    if (is(neighbor, BIT_DUST | BIT_COPPER)) {
-                        queue.add(neighbor);
-                    }
+                if (neighbor < 0 || neighbor >= size) continue;
+                if (!is(neighbor, BIT_COPPER)) continue;
+                if (getOxidationLevel(slot, context) != getOxidationLevel(neighbor, context)) continue;
+
+                if (data.sumSignal() > edgeGrid.get(slot, dir)) {
+                    edgeGrid.set(slot, dir, data.sumSignal());
+                    queue.add(neighbor);
                 }
             }
         }
@@ -443,7 +444,7 @@ public class ContainerRedstoneData {
     }
 
     private void phase2Propagation(Queue<Integer> queue,
-            int size, int width, ContainerContext context) {
+            int size, int width, int height, ContainerContext context) {
         while (!queue.isEmpty()) {
             int current = queue.poll();
 
@@ -470,6 +471,8 @@ public class ContainerRedstoneData {
             }
 
             if (is(current, BIT_COPPER)) {
+                if (is(current, BIT_GRATE)) continue;
+
                 ItemStack stack = context.getItem(current);
                 if (stack.isEmpty()) continue;
 
@@ -482,7 +485,7 @@ public class ContainerRedstoneData {
                     LivingCutCopperData data = LivingItemManager.getCutCopperData(chiseledStack);
                     int inputEdge = edgeIndex(data.inputDir());
                     int outputEdge = edgeIndex(data.outputDir());
-                    int chiseledInput = edgeGrid.get(current, inputEdge);
+                    int chiseledInput = getEffectiveInput(current, inputEdge, width, height);
                     int chiseledCap = getSignalCap(chiseledStack.getCount());
                     int chiseledOutput = Math.min(chiseledInput, chiseledCap);
                     propagateDir(current, outputEdge, chiseledOutput, size, width, context, queue);
@@ -491,9 +494,11 @@ public class ContainerRedstoneData {
 
                 if (is(current, BIT_CUT)) {
                     int maxHInput = Math.max(
-                        edgeGrid.get(current, E_LEFT), edgeGrid.get(current, E_RIGHT));
+                        getEffectiveInput(current, E_LEFT, width, height),
+                        getEffectiveInput(current, E_RIGHT, width, height));
                     int maxVInput = Math.max(
-                        edgeGrid.get(current, E_UP), edgeGrid.get(current, E_DOWN));
+                        getEffectiveInput(current, E_UP, width, height),
+                        getEffectiveInput(current, E_DOWN, width, height));
                     int outputH = Math.min(maxHInput, cap);
                     int outputV = Math.min(maxVInput, cap);
 
@@ -515,6 +520,7 @@ public class ContainerRedstoneData {
             ContainerContext context, Queue<Integer> queue) {
         int neighbor = resolveSlot(slot, dir, size, width);
         if (neighbor < 0) return;
+        if (is(neighbor, BIT_GRATE)) return;
         if (!canConnect(slot, neighbor, size, width, context)) return;
 
         int currentEdge = edgeGrid.get(slot, dir);
@@ -588,21 +594,18 @@ public class ContainerRedstoneData {
             ItemStack stack = context.getItem(slot);
             if (stack.isEmpty()) continue;
 
+            int sum = 0;
+            for (int dir = 0; dir < 4; dir++) {
+                int neighbor = resolveSlot(slot, dir, size, width);
+                if (neighbor >= 0 && neighbor < size && is(neighbor, BIT_COPPER)) continue;
+                sum += edgeGrid.get(slot, dir);
+            }
+            int cap = getSignalCap(stack.getCount());
+            int result = Math.min(sum, cap);
+
             LivingGrateData data = LivingItemManager.getGrateData(stack);
-            boolean hasInput = edgeGrid.anyOfSlot(slot);
-            boolean changed = false;
-
-            if (hasInput && !data.lastInput()) {
-                data = data.withOutput(!data.output());
-                changed = true;
-            }
-            if (hasInput != data.lastInput()) {
-                data = data.withLastInput(hasInput);
-                changed = true;
-            }
-
-            if (changed) {
-                LivingItemManager.setGrateData(stack, data);
+            if (data.sumSignal() != result) {
+                LivingItemManager.setGrateData(stack, data.withSumSignal(result));
                 context.syncSlotToClients(slot, stack);
             }
         }
@@ -642,7 +645,7 @@ public class ContainerRedstoneData {
     private void phase4PowerConductors(Set<Integer> torchSlots, Set<Integer> buttonSlots,
             Set<Integer> leverSlots, Set<Integer> repeaterSlots, Set<Integer> comparatorSlots,
             Set<Integer> dustSlots, Set<Integer> redstoneBlockSlots, Set<Integer> copperSlots,
-            int size, int width, ContainerContext context) {
+            int size, int width, int height, ContainerContext context) {
         Queue<Integer> secondQueue = new ArrayDeque<>();
 
         for (int slot : dustSlots) {
@@ -740,6 +743,7 @@ public class ContainerRedstoneData {
 
         for (int slot : copperSlots) {
             if (slot < 0 || slot >= size) continue;
+            if (is(slot, BIT_GRATE)) continue;
             ItemStack stack = context.getItem(slot);
             if (stack.isEmpty()) continue;
 
@@ -753,15 +757,17 @@ public class ContainerRedstoneData {
                 LivingCutCopperData data = LivingItemManager.getCutCopperData(stack);
                 int inputEdge = edgeIndex(data.inputDir());
                 int outputEdge = edgeIndex(data.outputDir());
-                int chiseledInput = edgeGrid.get(slot, inputEdge);
+                int chiseledInput = getEffectiveInput(slot, inputEdge, width, height);
                 int chiseledCap = getSignalCap(stack.getCount());
                 int chiseledOutput = Math.min(chiseledInput, chiseledCap);
                 powerConductiveNeighbor(slot, chiseledOutput, outputEdge, size, width, context, secondQueue);
             } else if (is(slot, BIT_CUT)) {
                 int maxHInput = Math.max(
-                    edgeGrid.get(slot, E_LEFT), edgeGrid.get(slot, E_RIGHT));
+                    getEffectiveInput(slot, E_LEFT, width, height),
+                    getEffectiveInput(slot, E_RIGHT, width, height));
                 int maxVInput = Math.max(
-                    edgeGrid.get(slot, E_UP), edgeGrid.get(slot, E_DOWN));
+                    getEffectiveInput(slot, E_UP, width, height),
+                    getEffectiveInput(slot, E_DOWN, width, height));
                 powerConductiveNeighbor(slot, Math.min(maxHInput, cap), E_LEFT, size, width, context, secondQueue);
                 powerConductiveNeighbor(slot, Math.min(maxHInput, cap), E_RIGHT, size, width, context, secondQueue);
                 powerConductiveNeighbor(slot, Math.min(maxVInput, cap), E_UP, size, width, context, secondQueue);
@@ -774,7 +780,7 @@ public class ContainerRedstoneData {
         }
 
         if (!secondQueue.isEmpty()) {
-            phase2Propagation(secondQueue, size, width, context);
+            phase2Propagation(secondQueue, size, width, height, context);
         }
     }
 

@@ -97,7 +97,7 @@
   "tooltip.livingitem.redstone_block.title": "§c活红石块§r",
   "tooltip.livingitem.redstone_block.max_signal": "  §7最大信号",
 
-  "tooltip.livingitem.copper.title": "§6活铜§r",
+  "tooltip.livingitem.copper.title": "§6活铜块儿们§r",
   "tooltip.livingitem.copper.signal": "  §7红电信号",
   "tooltip.livingitem.copper.max_signal": "  §7最大红电信号",
   "tooltip.livingitem.copper.type": "  §7类型",
@@ -106,6 +106,7 @@
   "tooltip.livingitem.copper.input_dir": "  §7输入方向",
   "tooltip.livingitem.copper.output_dir": "  §7输出方向",
   "tooltip.livingitem.copper.grate_output": "  §7输出",
+  "tooltip.livingitem.copper.grate_sum": "  §7信号和",
   "tooltip.livingitem.copper.bulb_state": "  §7状态",
   "tooltip.livingitem.copper.bulb_recorded": "  §7记录信号",
 

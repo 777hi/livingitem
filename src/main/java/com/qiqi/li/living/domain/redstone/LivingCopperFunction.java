@@ -83,6 +83,14 @@ public class LivingCopperFunction implements LivingItemFunction, HasContainerDat
                 .append(Component.literal(": " + bulbData.recordedSignal()))
                 .withStyle(bulbData.recordedSignal() > 0 ? ChatFormatting.YELLOW : ChatFormatting.DARK_GRAY));
         }
+
+        if (isGrate(item)) {
+            LivingGrateData grateData = LivingItemManager.getGrateData(stack);
+            tooltipAdder.accept(Component.literal("  ")
+                .append(Component.translatable("tooltip.livingitem.copper.grate_sum"))
+                .append(Component.literal(": " + grateData.sumSignal()))
+                .withStyle(grateData.sumSignal() > 0 ? ChatFormatting.YELLOW : ChatFormatting.DARK_GRAY));
+        }
     }
 
     @Override
@@ -168,7 +176,7 @@ public class LivingCopperFunction implements LivingItemFunction, HasContainerDat
         if (isBaseCopper(item)) return "Cable";
         if (isChiseled(item)) return "Diode";
         if (isCut(item)) return "Overpass";
-        if (isGrate(item)) return "Divider";
+        if (isGrate(item)) return "Adder";
         if (isBulb(item)) return "Signal Memory";
         return "Copper";
     }

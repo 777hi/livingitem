@@ -98,7 +98,7 @@
   "tooltip.livingitem.redstone_block.title": "§cLiving Redstone Block§r",
   "tooltip.livingitem.redstone_block.max_signal": "  §7Max Signal",
 
-  "tooltip.livingitem.copper.title": "§6Living Copper§r",
+  "tooltip.livingitem.copper.title": "§6Living Copper Blocks§r",
   "tooltip.livingitem.copper.signal": "  §7Signal",
   "tooltip.livingitem.copper.max_signal": "  §7Max Signal",
   "tooltip.livingitem.copper.type": "  §7Type",
@@ -107,6 +107,7 @@
   "tooltip.livingitem.copper.input_dir": "  §7Input Dir",
   "tooltip.livingitem.copper.output_dir": "  §7Output Dir",
   "tooltip.livingitem.copper.grate_output": "  §7Output",
+  "tooltip.livingitem.copper.grate_sum": "  §7Signal Sum",
   "tooltip.livingitem.copper.bulb_state": "  §7State",
   "tooltip.livingitem.copper.bulb_recorded": "  §7Recorded",
 
