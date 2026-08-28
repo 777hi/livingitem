@@ -310,15 +310,15 @@ while queue not empty:
     if is(current, BIT_CHISELED):
       inputEdge = edgeIndex(data.inputDir())
       outputEdge = edgeIndex(data.outputDir())
-      chiseledInput = getEffectiveInput(current, inputEdge)  // 从输入方向取信号（含跨容器faceInput）
+      chiseledInput = edgeGrid.get(current, inputEdge)  // 从输入方向取信号
       chiseledOutput = min(chiseledInput, cap)
       propagateDir(current, outputEdge, chiseledOutput, ...)  // 仅向输出方向传播
       continue
 
     // ── 切制铜块：水平/垂直隔离 ──
     if is(current, BIT_CUT):
-      maxHInput = max(getEffectiveInput(current, LEFT), getEffectiveInput(current, RIGHT))
-      maxVInput = max(getEffectiveInput(current, UP), getEffectiveInput(current, DOWN))
+      maxHInput = max(edgeGrid.get(current, LEFT), edgeGrid.get(current, RIGHT))
+      maxVInput = max(edgeGrid.get(current, UP), edgeGrid.get(current, DOWN))
       outputH = min(maxHInput, cap)
       outputV = min(maxVInput, cap)
       propagateDir(current, LEFT, outputH, ...)   // 水平信号仅水平传播
@@ -406,18 +406,18 @@ for slot in copperSlots:
   cap = getSignalCap(count)
   output = min(maxInput, cap)
 
-  // 雕文铜块：仅输出方向充能，仅取输入方向信号（含跨容器faceInput）
+  // 雕文铜块：仅输出方向充能，仅取输入方向信号
   if is(slot, BIT_CHISELED):
     inputEdge = edgeIndex(data.inputDir())
     outputEdge = edgeIndex(data.outputDir())
-    chiseledInput = getEffectiveInput(slot, inputEdge)
+    chiseledInput = edgeGrid.get(slot, inputEdge)
     chiseledOutput = min(chiseledInput, cap)
     powerConductiveNeighbor(slot, chiseledOutput, outputEdge, ...)
 
-  // 切制铜块：水平/垂直分别充能（含跨容器faceInput）
+  // 切制铜块：水平/垂直分别充能
   else if is(slot, BIT_CUT):
-    maxHInput = max(getEffectiveInput(slot, LEFT), getEffectiveInput(slot, RIGHT))
-    maxVInput = max(getEffectiveInput(slot, UP), getEffectiveInput(slot, DOWN))
+    maxHInput = max(edgeGrid.get(slot, LEFT), edgeGrid.get(slot, RIGHT))
+    maxVInput = max(edgeGrid.get(slot, UP), edgeGrid.get(slot, DOWN))
     powerConductiveNeighbor(slot, min(maxHInput, cap), LEFT, ...)
     powerConductiveNeighbor(slot, min(maxHInput, cap), RIGHT, ...)
     powerConductiveNeighbor(slot, min(maxVInput, cap), UP, ...)
@@ -597,35 +597,11 @@ else if (is(neighbor, BIT_BUTTON | BIT_LEVER | BIT_TORCH
 
 ```
 内部铜块信号 → edgeGrid 边界边 → computeFaceOutput → faceOutput[dir]
-→ getBoundarySignal(dir) → Mixin 注入 → 容器方块对外输出红石信号
+→ getBoundarySignal(dir) → Mixin 注入 → 容器方块对外红石信号
 ```
 
-**跨容器信号读取规则**：
-
-活铜块遵循与活红石系统相同的设计原则——**仅方向性元件可读取 faceInput**：
-
-| 铜块类型 | 有方向？ | 读取 faceInput？ | 读取方式 |
-|---------|---------|----------------|---------|
-| 雕文铜块 | ✅ inputDir/outputDir | ✅ | `getEffectiveInput(slot, inputEdge)` — 仅从 inputDir 方向读取 |
-| 切制铜块 | ✅ H/V 方向区分 | ✅ | H/V 方向分别 `getEffectiveInput()` |
-| 普通铜块 | ❌ 全向 | ❌ | `edgeGrid.maxOfSlot()` — 仅接收内部邻居信号 |
-| 铜格栅 | ❌ 无方向 | ❌ | 不读 faceInput |
-| 铜灯 | ❌ 无方向 | ❌ | 不读 faceInput |
-
-`getEffectiveInput(slot, dir)` 在槽位位于容器边界且该方向对应边界时，取 `max(edgeGrid.get(slot, dir), faceInput[dir])`，否则仅取 `edgeGrid.get(slot, dir)`。
-
-**跨容器桥接示例**：
-```
-[容器A]                    [容器B]
-  铜块 → 雕文铜块 ───→ 雕文铜块 → 铜块
-         inputDir=左      inputDir=左
-         outputDir=右     outputDir=右
-         │                ▲
-         └─faceOutput──→faceInput─┘
-              跨容器传输
-```
-
-雕文铜块/切制铜块作为跨容器信号"桥接器"，从 faceInput 读取外部信号再通过内部铜网络传播。普通铜块、铜格栅、铜灯不直接读取跨容器信号，需经方向性铜块中转。
+> 活铜块**不读取跨容器信号**（faceInput）。跨容器信号传输仅由方向性活红石元件（中继器/比较器/火把）负责。
+> 铜块的信号来源仅限容器内部邻居。
 
 ### 5.4 位掩码集成
 
@@ -653,7 +629,7 @@ is(slot, BIT_COPPER | BIT_CUT) → true  // 是铜块且是切制铜块（立交
 | 红石-铜块互通 | ✅ | canConnect 规则支持跨层注入 |
 | 铜块充能导体 | ✅ | Phase 4 铜块作为强信号源 |
 | 容器面信号输出 | ✅ | 铜块信号参与 faceOutput 计算 |
-| 跨容器铜块信号 | ✅ | 雕文/切制铜块通过 getEffectiveInput 读取 faceInput |
+| 跨容器铜块信号 | ❌ 不实现 | 铜块不读取 faceInput，跨容器传输由方向性红石元件负责 |
 | Tooltip 显示 | ✅ | 类型、频道、方向、状态等 |
 | 涂蜡铜块排除 | ✅ | 涂蜡铜块不适用活铜功能 |
 

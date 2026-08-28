@@ -485,7 +485,7 @@ public class ContainerRedstoneData {
                     LivingCutCopperData data = LivingItemManager.getCutCopperData(chiseledStack);
                     int inputEdge = edgeIndex(data.inputDir());
                     int outputEdge = edgeIndex(data.outputDir());
-                    int chiseledInput = getEffectiveInput(current, inputEdge, width, height);
+                    int chiseledInput = edgeGrid.get(current, inputEdge);
                     int chiseledCap = getSignalCap(chiseledStack.getCount());
                     int chiseledOutput = Math.min(chiseledInput, chiseledCap);
                     propagateDir(current, outputEdge, chiseledOutput, size, width, context, queue);
@@ -494,11 +494,11 @@ public class ContainerRedstoneData {
 
                 if (is(current, BIT_CUT)) {
                     int maxHInput = Math.max(
-                        getEffectiveInput(current, E_LEFT, width, height),
-                        getEffectiveInput(current, E_RIGHT, width, height));
+                        edgeGrid.get(current, E_LEFT),
+                        edgeGrid.get(current, E_RIGHT));
                     int maxVInput = Math.max(
-                        getEffectiveInput(current, E_UP, width, height),
-                        getEffectiveInput(current, E_DOWN, width, height));
+                        edgeGrid.get(current, E_UP),
+                        edgeGrid.get(current, E_DOWN));
                     int outputH = Math.min(maxHInput, cap);
                     int outputV = Math.min(maxVInput, cap);
 
@@ -757,17 +757,17 @@ public class ContainerRedstoneData {
                 LivingCutCopperData data = LivingItemManager.getCutCopperData(stack);
                 int inputEdge = edgeIndex(data.inputDir());
                 int outputEdge = edgeIndex(data.outputDir());
-                int chiseledInput = getEffectiveInput(slot, inputEdge, width, height);
+                int chiseledInput = edgeGrid.get(slot, inputEdge);
                 int chiseledCap = getSignalCap(stack.getCount());
                 int chiseledOutput = Math.min(chiseledInput, chiseledCap);
                 powerConductiveNeighbor(slot, chiseledOutput, outputEdge, size, width, context, secondQueue);
             } else if (is(slot, BIT_CUT)) {
                 int maxHInput = Math.max(
-                    getEffectiveInput(slot, E_LEFT, width, height),
-                    getEffectiveInput(slot, E_RIGHT, width, height));
+                    edgeGrid.get(slot, E_LEFT),
+                    edgeGrid.get(slot, E_RIGHT));
                 int maxVInput = Math.max(
-                    getEffectiveInput(slot, E_UP, width, height),
-                    getEffectiveInput(slot, E_DOWN, width, height));
+                    edgeGrid.get(slot, E_UP),
+                    edgeGrid.get(slot, E_DOWN));
                 powerConductiveNeighbor(slot, Math.min(maxHInput, cap), E_LEFT, size, width, context, secondQueue);
                 powerConductiveNeighbor(slot, Math.min(maxHInput, cap), E_RIGHT, size, width, context, secondQueue);
                 powerConductiveNeighbor(slot, Math.min(maxVInput, cap), E_UP, size, width, context, secondQueue);
