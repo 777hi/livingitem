@@ -43,7 +43,12 @@ public class GeneratorState {
         this.coilConfigKey = configKey;
 
         channels.clear();
-        for (int d = 0; d < 4; d++) dirChannel[d] = -1;
+        // 全部方向映射重置（防形态切换后的旧下标残留越界）
+        for (int d = 0; d < 4; d++) {
+            dirChannel[d] = -1;
+            dirDirectPath[d] = 0;
+            dirVirtualPath[d] = 0;
+        }
 
         for (int c = 0; c < groups.length; c++) {
             ChannelState channel = new ChannelState();

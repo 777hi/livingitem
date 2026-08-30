@@ -143,5 +143,6 @@
   "tooltip.livingitem.waxed_copper.regularity": "  §7规律度",
   "tooltip.livingitem.waxed_copper.unlock": "  §7解锁度",
   "tooltip.livingitem.waxed_copper.no_signal": "  §8检测中…",
-  "tooltip.livingitem.waxed_copper.wave_title": "  §5── 波形（16t，左旧右新）──§r"
+  "tooltip.livingitem.waxed_copper.wave_title": "  §5── 波形（16t，左旧右新）──§r",
+  "tooltip.livingitem.waxed_copper.formula_title": "── 发电量 ──"
 }

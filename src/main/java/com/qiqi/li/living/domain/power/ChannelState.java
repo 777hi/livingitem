@@ -77,7 +77,42 @@ public class ChannelState {
         risingTicks.addLast(tick);
         while (risingTicks.size() > MAX_RISING) risingTicks.pollFirst();
         recomputeRegularity();
-        recountPhaseDomains();
+        recountPhaseDomains(tick);
+    }
+
+    /** 相位新鲜度门槛：静默超过 128t（2× 最大偏好周期）的路自动退出相位域（防幻影 n） */
+    private static final long STALE_PHASE_TICKS = 128;
+
+    /**
+     * 相位域重算（每次上升沿触发）：按整数量子周期分域，
+     * 域内以上升沿 mod 周期的偏移去重——同相合并，n = 域内不同偏移数。
+     * 参与条件：周期可用 + 波形窗口非静默（16t 内有信号）+ 上升沿新鲜（≤128t，
+     * 防幻影 n——输入撤除后相位资格冻结导致的虚高）。
+     */
+    /** 每 tick 由 glue 调用（无上升沿也重算——撤路后 n 自动衰减，防幻影） */
+    void recountPhaseDomains(long currentTick) {
+        Map<Integer, List<PathState>> domains = new HashMap<>();
+        for (PathState p : paths) {
+            // 参与条件：周期可用 + 波形未静默（16t 内有信号）+ 上升沿新鲜（≤128t）
+            if (!p.hasUsablePhase() || p.waveBits() == 0) continue;
+            if (currentTick - p.lastEventTick() > STALE_PHASE_TICKS) continue;
+            domains.computeIfAbsent(p.roundedPeriod(), key -> new ArrayList<>()).add(p);
+        }
+        for (List<PathState> domain : domains.values()) {
+            int period = domain.get(0).roundedPeriod();
+            long base = Long.MAX_VALUE;
+            for (PathState p : domain) {
+                base = Math.min(base, p.lastRisingTick());
+            }
+            Set<Integer> offsets = new HashSet<>();
+            for (PathState p : domain) {
+                offsets.add((int) ((p.lastRisingTick() - base) % period));
+            }
+            int n = offsets.size();
+            for (PathState p : domain) {
+                p.setDomainN(n);
+            }
+        }
     }
 
     /**
@@ -130,33 +165,5 @@ public class ChannelState {
             best = Math.max(best, Math.max(0.0, 1.0 - rel));
         }
         regularity = best;
-    }
-
-    /**
-     * 相位域分组：按整数量子周期分域（仅 {@link PathState#hasUsablePhase()} 的路），
-     * 域内以上升沿 mod 周期的偏移去重——同相合并，n = 域内不同偏移数。
-     */
-    private void recountPhaseDomains() {
-        Map<Integer, List<PathState>> domains = new HashMap<>();
-        for (PathState p : paths) {
-            if (p.hasUsablePhase()) {
-                domains.computeIfAbsent(p.roundedPeriod(), key -> new ArrayList<>()).add(p);
-            }
-        }
-        for (List<PathState> domain : domains.values()) {
-            int period = domain.get(0).roundedPeriod();
-            long base = Long.MAX_VALUE;
-            for (PathState p : domain) {
-                base = Math.min(base, p.lastRisingTick());
-            }
-            Set<Integer> offsets = new HashSet<>();
-            for (PathState p : domain) {
-                offsets.add((int) ((p.lastRisingTick() - base) % period));
-            }
-            int n = offsets.size();
-            for (PathState p : domain) {
-                p.setDomainN(n);
-            }
-        }
     }
 }

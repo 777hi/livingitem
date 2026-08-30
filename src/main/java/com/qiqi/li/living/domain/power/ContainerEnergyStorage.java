@@ -91,8 +91,10 @@ public class ContainerEnergyStorage implements IEnergyStorage {
         if (toExtract <= 0) return 0;
         IItemHandler items = resolveItems(be.getLevel(), be.getBlockPos(), null);
         if (items == null) return 0;
+        var power = ContainerLivingItemHandler.getPowerDataByPos(be.getLevel(), be.getBlockPos());
         return (int) (extract(items,
-            (long) toExtract * 1000L, simulate, be::setChanged) / 1000L);
+            (long) toExtract * 1000L, simulate,
+            power != null ? power::markExternalMutation : null) / 1000L);
     }
 
     @Override
@@ -100,8 +102,11 @@ public class ContainerEnergyStorage implements IEnergyStorage {
         if (toReceive <= 0) return 0;
         IItemHandler items = resolveItems(be.getLevel(), be.getBlockPos(), null);
         if (items == null) return 0;
+        var power = ContainerLivingItemHandler.getPowerDataByPos(be.getLevel(), be.getBlockPos());
         return (int) (receive(items,
-            (long) toReceive * 1000L, simulate, be::setChanged) / 1000L);
+            (long) toReceive * 1000L, simulate,
+            power != null ? () -> { be.setChanged(); power.markExternalMutation(); } : be::setChanged
+        ) / 1000L);
     }
 
     @Override

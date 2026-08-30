@@ -106,6 +106,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
                 if (ch < 0) continue;
                 ChannelState channel = gen.channel(ch);
                 int pathIdx = gen.dirDirectPath(dir);
+                if (pathIdx >= channel.pathCount()) continue;   // 配置切换瞬间的防御
                 int delta = channel.onPathValue(pathIdx, now, edges[dir]);
                 if (delta != 0) {
                     credit(powerData, channel, pathIdx, gen.preferredPeriod(), delta);
@@ -113,6 +114,11 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
                 sum += channel.path(pathIdx).lastValue();
             }
             directValue[slot] = sum;
+        }
+
+        // ── 相位域每 tick 重算（无上升沿也要重算——否则撤路后 n 冻结成幻影值）──
+        for (var e : active.entrySet()) {
+            e.getValue().primaryChannel().recountPhaseDomains(now);
         }
 
         // ── 检测仪表盘写回（阶段五）：检测值 → DataComponent → 槽位同步 ──
@@ -135,8 +141,20 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         // ── 发电直存（§3.6 v17.5）：本 tick 发电量按剩余容量比例分配入铜灯堆 ──
         // 无铜灯 → 电凭空消失（显性浪费）。铜灯是唯一储存，容器只是铜灯的架子。
         long generatedRe = powerData.drainGeneratedRe();
-        if (generatedRe > 0 && distributeToBulbs(generatedRe, entries)
-                && ctx instanceof com.qiqi.li.living.container.SimpleContainerContext simpleCtx) {
+        boolean bankChanged = false;
+        if (generatedRe > 0) {
+            bankChanged = distributeToBulbs(generatedRe, entries);
+        }
+        // 外部异步路径（IEnergyStorage 取电/充电）改了铜灯 → 补槽位同步（客户端 NBT 陈旧问题）
+        boolean externalMutated = powerData.consumeExternalMutation();
+        if (externalMutated) {
+            for (SlotEntry entry : entries) {
+                if (isWaxedBulb(entry.stack().getItem())) {
+                    ctx.syncSlotToClients(entry.slotIndex(), entry.stack());
+                }
+            }
+        }
+        if ((bankChanged || externalMutated) && ctx instanceof com.qiqi.li.living.container.SimpleContainerContext simpleCtx) {
             // 铜灯电量变更 → 标记容器数据已改（否则不落盘存档）
             for (net.minecraft.world.level.block.entity.BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {
                 be.setChanged();
@@ -214,10 +232,11 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         }
         int r = (int) Math.round(channel.regularity() * 1000);
 
-        // 波形窗口：全部直连路（dir 0..3 顺序，16-bit 滚动窗口）
+        // 波形窗口：4 条直连路，按方向序（0=↑ 1=↓ 2=← 3=→，与 tooltip 行标签一一对应）
         List<Integer> waves = new ArrayList<>();
-        for (int i = 0; i < channel.pathCount(); i++) {
-            waves.add(channel.path(i).waveBits());
+        for (int d = 0; d < 4; d++) {
+            int pathIdx = gen.dirDirectPath(d);
+            waves.add(pathIdx < channel.pathCount() ? channel.path(pathIdx).waveBits() : 0);
         }
 
         if (bestN <= 0) {
@@ -466,9 +485,14 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             long q = data.chargeMilliFe();
             long cap = LivingWaxedBulbData.totalCapacityMilliFe(stack.getCount());
             boolean full = q >= cap;
+            // 不足 1 FE 时显示两位小数（mFE 粒度可见，便于观察充放）
+            String qStr = q >= 1000 ? String.valueOf(q / 1000)
+                : String.format("%.2f", q / 1000.0);
+            String capStr = cap >= 1000 ? String.valueOf(cap / 1000)
+                : String.format("%.2f", cap / 1000.0);
             tooltipAdder.accept(Component.literal("  ")
                 .append(Component.translatable("tooltip.livingitem.waxed_copper.battery"))
-                .append(Component.literal(": " + q / 1000 + " / " + cap / 1000 + " FE"
+                .append(Component.literal(": " + qStr + " / " + capStr + " FE"
                     + (full ? "（已满）" : "")))
                 .withStyle(q > 0 ? ChatFormatting.YELLOW : ChatFormatting.DARK_GRAY));
         }

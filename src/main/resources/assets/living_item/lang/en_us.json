@@ -144,5 +144,6 @@
   "tooltip.livingitem.waxed_copper.regularity": "  §7Regularity",
   "tooltip.livingitem.waxed_copper.unlock": "  §7Unlock",
   "tooltip.livingitem.waxed_copper.no_signal": "  §8Detecting…",
-  "tooltip.livingitem.waxed_copper.wave_title": "  §5── Waveform (16t, old left → new right) ──§r"
+  "tooltip.livingitem.waxed_copper.wave_title": "  §5── Waveform (16t, old left → new right) ──§r",
+  "tooltip.livingitem.waxed_copper.formula_title": "── Power Output ──"
 }
