@@ -16,7 +16,8 @@
 8. [Tick 执行模型](#8-tick-执行模型)
 9. [SlotAccessor 存储后端抽象](#9-slotaccessor-存储后端抽象)
 10. [性能监控](#10-性能监控)
-11. [关键文件索引](#11-关键文件索引)
+11. [Tooltip 渲染机制](#11-tooltip-渲染机制客户端)
+12. [关键文件索引](#12-关键文件索引)
 
 ---
 
@@ -1056,7 +1057,52 @@ registerProvider(SlotAccessorFactory::defaultProvider); // 优先级 3：普通�
 
 ---
 
-## 11. 关键文件索引
+## 11. Tooltip 渲染机制（客户端）
+
+Tooltip 是**客户端渲染**的。理解这条链路，才能解释「tooltip 显示的信息不在 NBT 里」
+以及「哪些数据能显示、哪些不能」。
+
+### 11.1 数据链路
+
+```
+服务端 tick：修改 DataComponent → context.syncSlotToClients(slot, stack)
+    ↓ 槽位同步包（ClientboundContainerSetSlotPacket，含全部 networkSynchronized 组件）
+客户端：物品副本更新
+    ↓ 玩家悬停
+ItemTooltipEvent（NeoForge 客户端事件，见 client/render/LivingItemTooltip.java）
+    ↓ 各功能 addToTooltip(...) 读取客户端副本 + 实时计算
+渲染
+```
+
+### 11.2 信息的三类来源
+
+| 来源 | 例子 | 是否需要存储 |
+|---|---|---|
+| **纯实时计算** | 耦合管径（物品类型查表）、偏好周期（= 堆叠数）、宽带态（count==1） | 否——物品身份与堆叠数的纯函数，渲染时现算 |
+| **DataComponent**（NBT + 网络双通道） | 铜灯电量 `chargeMilliFe` | 组件注册时成对声明：`persistent(CODEC)` 写 NBT，`networkSynchronized(STREAM_CODEC)` 同步客户端——**两条独立管道** |
+| **服务端内存态** | `ContainerPowerData` 的周期估计/规律度/解锁度 | 不同步也不持久——**当前 tooltip 显示不了**，需阶段五 telemetry 写回组件 |
+
+### 11.3 关键结论
+
+1. **客户端能读什么，取决于什么被同步**：组件有 `networkSynchronized` 就能显示；
+   `ContainerPowerData` 这类服务端内存态永远显示不了，除非显式写回组件；
+2. **NBT 持久化与网络同步是两条独立管道**：「不在 NBT 里」不影响显示，
+   「没有 networkSynchronized」才影响；
+3. **服务端改组件后必须 syncSlotToClients**：漏了它，客户端副本是旧的，tooltip 显示旧值
+   （原版 `broadcastChanges()` 的 `ItemStack.matches()` 检测不到自定义组件变化，见 §2.4）；
+4. **`Item.TooltipContext` 当前传 `EMPTY`**（LivingItemTooltip.java）——tooltip 里查不了
+   世界状态，因此「检测数据写回组件」是唯一正路，而不是在 tooltip 里反查世界。
+
+### 11.4 与电力层 telemetry 的关系
+
+阶段五的 tooltip 仪表盘（检测周期/相数/解锁度/功率）即按此机制实现：
+服务端事件驱动算出的检测值 → 写回该槽位物品的小型 DataComponent
+（参照 `LivingGrateData.sumSignal` 模式）→ `syncSlotToClients` → 客户端 tooltip 读取。
+只在数值变化时同步，无额外开销。
+
+---
+
+## 12. 关键文件索引
 
 | 文件 | 路径 | 职责 |
 |------|------|------|

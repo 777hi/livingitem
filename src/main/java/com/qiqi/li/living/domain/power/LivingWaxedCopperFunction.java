@@ -65,7 +65,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
 
         ContainerRedstoneData redstone = tick.getOrCreateRedstoneData(ctx);
         if (redstone == null) {
-            powerData.endTick();
+            powerData.endTick(0);
             return;
         }
 
@@ -89,7 +89,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             oxidation.put(slot, getOxidationLevel(stack.getItem()));
         }
         if (active.isEmpty()) {
-            powerData.endTick();
+            powerData.endTick(0);
             return;
         }
 
@@ -118,23 +118,33 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         // ── Pass 2：感应耦合（分层辐射 + 不回传 + 加权守恒） ──
         couple(active, oxidation, directValue, size, width, now, powerData);
 
-        // ── 容器池结算（§3.6 v17.5）：剩余电按剩余容量比例存入铜灯堆，无铜灯清零 ──
-        settleBulbs(powerData, entries);
+        // ── 发电直存（§3.6 v17.5）：本 tick 发电量按剩余容量比例分配入铜灯堆 ──
+        // 无铜灯 → 电凭空消失（显性浪费）。铜灯是唯一储存，容器只是铜灯的架子。
+        long generatedRe = powerData.drainGeneratedRe();
+        if (generatedRe > 0 && distributeToBulbs(generatedRe, entries)
+                && ctx instanceof com.qiqi.li.living.container.SimpleContainerContext simpleCtx) {
+            // 铜灯电量变更 → 标记容器数据已改（否则不落盘存档）
+            for (net.minecraft.world.level.block.entity.BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {
+                be.setChanged();
+            }
+        }
 
-        powerData.endTick();
+        powerData.endTick(generatedRe);
     }
 
     /**
-     * 容器池结算（§3.6 v17.5）：发电剩余按「剩余容量比例」存入各铜灯堆
+     * 发电直存（§3.6 v17.5）：本 tick 发电量按「剩余容量比例」分配入各铜灯堆
      * （充电不限率，每盏 q += share/count 向下取整，零头保守丢弃）；
-     * 无铜灯 → 池清零（显性浪费）；铜灯全满 → 池清零（电池已满）。
-     * 池常态为空，无需持久化——电全部住在铜灯 DataComponent 里。
+     * 无铜灯 → 电凭空消失（显性浪费）；铜灯全满 → 弃（电池已满）。
+     * 电全部住在铜灯 DataComponent 里，随物品走、随 NBT 持久化。
+     *
+     * @param generatedRe 本 tick 发电量（RE，来自 {@code drainGeneratedRe()}）
+     * @return true 表示有铜灯实际充入了电量（需 setChanged 落盘）
      */
-    static void settleBulbs(ContainerPowerData powerData, List<SlotEntry> entries) {
-        long pool = powerData.getPoolMilliFe();
-        if (pool <= 0) {
-            powerData.setPoolMilliFe(0);
-            return;
+    static boolean distributeToBulbs(long generatedRe, List<SlotEntry> entries) {
+        long mfe = Math.round(generatedRe * PowerMath.RE_TO_FE * 1000.0);
+        if (mfe <= 0) {
+            return false;
         }
 
         record BulbRef(ItemStack stack, int count, long remaining) {}
@@ -151,13 +161,12 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         }
 
         if (bulbs.isEmpty()) {
-            powerData.setPoolMilliFe(0);   // 无存储 → 电凭空消失（显性浪费）
-            return;
+            return false;   // 无存储 → 电凭空消失（显性浪费）
         }
 
         long distributed = 0;
         for (BulbRef ref : bulbs) {
-            long share = pool * ref.remaining() / totalRemaining;
+            long share = mfe * ref.remaining() / totalRemaining;
             long perLamp = share / ref.count();
             if (perLamp <= 0) continue;
             LivingWaxedBulbData data = LivingItemManager.getWaxedBulbData(ref.stack());
@@ -166,7 +175,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             LivingItemManager.setWaxedBulbData(ref.stack(), data.withChargeMilliFe(newQ));
             distributed += (newQ - data.chargeMilliFe()) * ref.count();
         }
-        powerData.setPoolMilliFe(pool - distributed);   // 零头与满溢 → 清零（电池已满/损耗）
+        return distributed > 0;   // 零头与满溢 → 弃（电池已满/损耗）
     }
 
     /** 单路跳变 → 合因子 → RE 入账 */

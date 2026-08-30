@@ -136,11 +136,11 @@ class ContainerPowerDataTest {
     void ledger_emaAndFeConversion() {
         ContainerPowerData data = new ContainerPowerData();
         data.onEventEnergy(512000);
-        data.endTick();
+        data.endTick(data.drainGeneratedRe());
         // EMA = 512000 × 0.125 = 64000 RE/t → FE = 64000 × 1/16 = 4000
         assertEquals(4000, data.getEmaPowerFe());
 
-        data.endTick();                               // 本 tick 无事件 → EMA 衰减
+        data.endTick(data.drainGeneratedRe());        // 本 tick 无发电 → EMA 衰减
         // 64000 × 0.875 = 56000 RE/t → FE = 3500
         assertEquals(3500, data.getEmaPowerFe());
     }

@@ -9,11 +9,12 @@ import java.util.Map;
  * <p>纯 Java 类，零 Minecraft 依赖（事件与数值全部由 glue 层喂入），
  * 可直接用 JUnit 驱动（见 {@code ContainerPowerDataTest}）。</p>
  *
- * <h3>记账模型（§3.10，事件驱动）</h3>
+ * <h3>记账模型（§3.6/§3.10 v17.5，事件驱动）</h3>
  * <ul>
- *   <li>跳变即能量事件：RE 直接累加，无功率流中间态；</li>
+ *   <li>跳变即能量事件：RE 累加为本 tick 发电量；tick 末由 glue 分配入铜灯
+ *       （无铜灯则弃——发电必须被消费或储存）；</li>
  *   <li>EMA 平滑出「当前功率」读数（RE/t），对外经 K 换算为 FE；</li>
- *   <li>tick 计数器自维护（{@link #endTick()} 每 tick 递增），事件时间戳即由此而来。</li>
+ *   <li>**无容器池**：铜灯是唯一储存，容器只是铜灯的架子（§3.6 v17.5）。</li>
  * </ul>
  */
 public class ContainerPowerData {
@@ -23,13 +24,11 @@ public class ContainerPowerData {
 
     private final Map<Integer, GeneratorState> generators = new HashMap<>();
 
-    private long reThisTick;
+    /** 本 tick 发电量（RE），由 glue 在 tick 末 drain 后分配入铜灯 */
+    private long generatedReThisTick;
     private double emaPowerRe;
     private long tickCounter;
     private long lastTickTime = System.currentTimeMillis();
-
-    /** 容器池（收集器，mFE 定点）：发电入池、用电侧先取、tick 末剩余入铜灯/清零。不持久化 */
-    private long poolMilliFe;
 
     public GeneratorState getOrCreateGenerator(int slot) {
         return generators.computeIfAbsent(slot, key -> new GeneratorState());
@@ -44,29 +43,29 @@ public class ContainerPowerData {
         return tickCounter;
     }
 
-    /** 记录一次跳变产出的能量（RE）：入 EMA 源 + 入容器池（K 换算） */
+    /** 记录一次跳变产出的能量（RE）：累加为本 tick 发电量 */
     public void onEventEnergy(long re) {
         if (re <= 0) return;
-        reThisTick += re;
-        poolMilliFe += Math.round(re * PowerMath.RE_TO_FE * 1000.0);
+        generatedReThisTick += re;
         lastTickTime = System.currentTimeMillis();
     }
 
-    public long getPoolMilliFe() {
-        return poolMilliFe;
-    }
-
-    public void setPoolMilliFe(long poolMilliFe) {
-        this.poolMilliFe = Math.max(0, poolMilliFe);
+    /**
+     * 取走本 tick 累计发电量（RE），供 glue 按剩余容量比例分配入铜灯。
+     */
+    public long drainGeneratedRe() {
+        long v = generatedReThisTick;
+        generatedReThisTick = 0;
+        return v;
     }
 
     /**
-     * 每 tick 末尾调用（由 glue 的 {@code tickContainerData} 驱动）：
-     * EMA 更新 + tick 计数推进。
+     * 每 tick 末尾调用（glue 在分配入灯之后）：EMA 更新 + tick 计数推进。
+     *
+     * @param generatedRe 本 tick 发电量（RE），即 {@link #drainGeneratedRe()} 的返回值
      */
-    public void endTick() {
-        emaPowerRe += (reThisTick - emaPowerRe) * EMA_ALPHA;
-        reThisTick = 0;
+    public void endTick(long generatedRe) {
+        emaPowerRe += (generatedRe - emaPowerRe) * EMA_ALPHA;
         tickCounter++;
         lastTickTime = System.currentTimeMillis();
     }

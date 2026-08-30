@@ -1,6 +1,7 @@
 package com.qiqi.li.living.domain.power;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -10,18 +11,64 @@ import org.junit.jupiter.api.Test;
 
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.neoforged.neoforge.items.IItemHandler;
+import net.neoforged.neoforge.items.IItemHandlerModifiable;
 
 import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
 
 /**
- * 阶段四储能测试 —— 容器池（收集器）+ 涂蜡铜灯（纯容器）。
+ * 阶段四储能测试 —— 铜灯 = 唯一储存（无容器池）+ 对外取电（模组兼容面）。
  *
  * <p>模型语义见 docs/红电系统.md §3.6（v17.5）：
- * 发电入池 → 用电侧先取池 → tick 末剩余按剩余容量比例存入铜灯 → 无铜灯清零。
- * 电量按「每盏」存（q），拆分/合并/搬运天然守恒。</p>
+ * 发电直存（按剩余容量比例分配入各铜灯堆）→ 无铜灯则电凭空消失；
+ * 用电侧直接从铜灯取电。电量按「每盏」存（q），拆分/合并/搬运天然守恒。</p>
  */
 class WaxedCopperStorageTest {
+
+    /** 测试用物品访问器——模拟「只暴露 IItemHandler 的模组容器」（不实现 Container） */
+    private static class FakeHandler implements IItemHandlerModifiable {
+        final ItemStack[] slots;
+
+        FakeHandler(ItemStack... slots) {
+            this.slots = slots;
+        }
+
+        @Override
+        public int getSlots() {
+            return slots.length;
+        }
+
+        @Override
+        public ItemStack getStackInSlot(int slot) {
+            return slots[slot];
+        }
+
+        @Override
+        public void setStackInSlot(int slot, ItemStack stack) {
+            slots[slot] = stack;
+        }
+
+        @Override
+        public ItemStack insertItem(int slot, ItemStack stack, boolean simulate) {
+            return stack;   // 不支持插入（测试不涉及）
+        }
+
+        @Override
+        public ItemStack extractItem(int slot, int amount, boolean simulate) {
+            return ItemStack.EMPTY;
+        }
+
+        @Override
+        public int getSlotLimit(int slot) {
+            return 64;
+        }
+
+        @Override
+        public boolean isItemValid(int slot, ItemStack stack) {
+            return true;
+        }
+    }
 
     private static ItemStack bulb(int count) {
         ItemStack stack = new ItemStack(Items.WAXED_COPPER_BULB, count);
@@ -36,108 +83,125 @@ class WaxedCopperStorageTest {
     }
 
     @Test
-    @DisplayName("池结算：剩余电按剩余容量比例存入铜灯堆，池清零")
-    void settle_distributesIntoBulbs() {
-        ContainerPowerData power = new ContainerPowerData();
-        power.setPoolMilliFe(64_000);
+    @DisplayName("发电直存：1024 RE → 64000 mFE 按剩余容量比例存入 16 盏堆（每盏 4000）")
+    void distribute_intoBulbs() {
         ItemStack stack = bulb(16);   // 容量 16 × 100_000 = 1_600_000 mFE
 
-        LivingWaxedCopperFunction.settleBulbs(power,
+        boolean changed = LivingWaxedCopperFunction.distributeToBulbs(1024,
             List.of(new LivingItemFunction.SlotEntry(0, stack),
                 new LivingItemFunction.SlotEntry(1, generator(4))));
 
-        // share = 64000（唯一有剩余容量的堆），perLamp = 64000/16 = 4000
+        assertTrue(changed);
+        // mfe = 1024 × 62.5 = 64000，share = 64000（唯一堆），perLamp = 64000/16 = 4000
         assertEquals(4000, LivingItemManager.getWaxedBulbData(stack).chargeMilliFe());
-        assertEquals(0, power.getPoolMilliFe());
     }
 
     @Test
-    @DisplayName("无铜灯：池清零（电凭空消失——发电必须被消费或储存）")
-    void settle_noBulbs_discards() {
-        ContainerPowerData power = new ContainerPowerData();
-        power.setPoolMilliFe(64_000);
-
-        LivingWaxedCopperFunction.settleBulbs(power,
+    @DisplayName("无铜灯：发电弃（电凭空消失——发电必须被消费或储存）")
+    void distribute_noBulbs_discards() {
+        boolean changed = LivingWaxedCopperFunction.distributeToBulbs(1024,
             List.of(new LivingItemFunction.SlotEntry(0, generator(4))));
 
-        assertEquals(0, power.getPoolMilliFe());
-        assertTrue(power.getEmaPowerRe() >= 0);
+        assertTrue(!changed);
     }
 
     @Test
-    @DisplayName("铜灯已满：池清零（显性浪费，tooltip 显示已满）")
-    void settle_fullBulb_discards() {
-        ContainerPowerData power = new ContainerPowerData();
-        power.setPoolMilliFe(64_000);
+    @DisplayName("铜灯已满：弃（显性浪费，tooltip 显示已满）")
+    void distribute_fullBulb_discards() {
         ItemStack stack = bulb(16);
         LivingItemManager.setWaxedBulbData(stack,
             new LivingWaxedBulbData(PowerMath.BULB_UNIT_CAPACITY_MFE));   // 每盏已满
 
-        LivingWaxedCopperFunction.settleBulbs(power,
+        boolean changed = LivingWaxedCopperFunction.distributeToBulbs(1024,
             List.of(new LivingItemFunction.SlotEntry(0, stack),
                 new LivingItemFunction.SlotEntry(1, generator(4))));
 
+        assertTrue(!changed);
         assertEquals(PowerMath.BULB_UNIT_CAPACITY_MFE,
             LivingItemManager.getWaxedBulbData(stack).chargeMilliFe());
-        assertEquals(0, power.getPoolMilliFe());
     }
 
     @Test
-    @DisplayName("取电：池优先 → 缺口逐堆扣铜灯（每盏等量），守恒")
-    void extract_poolFirstThenBulbs() {
-        ContainerPowerData power = new ContainerPowerData();
-        power.setPoolMilliFe(50_000);
+    @DisplayName("取电（模组容器场景）：纯 IItemHandler 访问器，逐堆扣铜灯")
+    void extract_moddedContainer_viaItemHandler() {
         ItemStack b1 = bulb(16);
         LivingItemManager.setWaxedBulbData(b1, new LivingWaxedBulbData(4_000));   // 堆总量 64000
         ItemStack b2 = bulb(8);
         LivingItemManager.setWaxedBulbData(b2, new LivingWaxedBulbData(1_000));   // 堆总量 8000
+        IItemHandler handler = new FakeHandler(generator(4), b1, b2);   // 非容器的模组容器
 
-        // 池 50_000 ≥ 请求 30_000 → 只动池
-        long got1 = ContainerEnergyStorage.extract(power, List.of(b1, b2), 30_000, false);
+        // 请求 30_000 mFE：堆1 顺序扣 30_000（每盏 1875）→ 恰好
+        long got1 = ContainerEnergyStorage.extract(handler, 30_000, false, null);
         assertEquals(30_000, got1);
-        assertEquals(20_000, power.getPoolMilliFe());
-        assertEquals(4_000, LivingItemManager.getWaxedBulbData(b1).chargeMilliFe());
+        assertEquals(4_000 - 1_875, LivingItemManager.getWaxedBulbData(b1).chargeMilliFe());
+        assertEquals(1_000, LivingItemManager.getWaxedBulbData(b2).chargeMilliFe());
 
-        // 请求 60_000：池 20_000 + 堆1 顺序扣 40_000（每盏 2500）→ 恰好满足
-        long got2 = ContainerEnergyStorage.extract(power, List.of(b1, b2), 60_000, false);
-        assertEquals(60_000, got2);
-        assertEquals(0, power.getPoolMilliFe());
-        assertEquals(4_000 - 2_500, LivingItemManager.getWaxedBulbData(b1).chargeMilliFe());
+        // 请求 50_000 mFE：堆1 余 3375×16 = 54000 → 扣 3375/16 → 每盏 1687（floor）+ b2 补
+        long got2 = ContainerEnergyStorage.extract(handler, 50_000, false, null);
+        assertTrue(got2 > 0);
+        assertEquals(0, LivingItemManager.getWaxedBulbData(b1).chargeMilliFe());
+        assertEquals(0, LivingItemManager.getWaxedBulbData(b2).chargeMilliFe());
+        assertTrue(got2 <= 50_000);
     }
 
     @Test
     @DisplayName("超取：请求超过总储能 → 只拿到现有量，各处不为负")
     void extract_clampedToAvailable() {
-        ContainerPowerData power = new ContainerPowerData();
-        power.setPoolMilliFe(10_000);
         ItemStack b1 = bulb(8);
         LivingItemManager.setWaxedBulbData(b1, new LivingWaxedBulbData(2_000));   // 堆总量 16000
+        IItemHandler handler = new FakeHandler(b1);
 
-        long got = ContainerEnergyStorage.extract(power, List.of(b1), 100_000, false);
-        assertEquals(10_000 + 16_000, got);
-        assertEquals(0, power.getPoolMilliFe());
+        long got = ContainerEnergyStorage.extract(handler, 100_000, false, null);
+        assertEquals(16_000, got);
         assertEquals(0, LivingItemManager.getWaxedBulbData(b1).chargeMilliFe());
     }
 
     @Test
     @DisplayName("模拟抽取：不修改任何状态")
     void extract_simulateLeavesStateIntact() {
-        ContainerPowerData power = new ContainerPowerData();
-        power.setPoolMilliFe(50_000);
         ItemStack b1 = bulb(16);
         LivingItemManager.setWaxedBulbData(b1, new LivingWaxedBulbData(4_000));
+        IItemHandler handler = new FakeHandler(b1);
 
-        long got = ContainerEnergyStorage.extract(power, List.of(b1), 60_000, true);
-        assertEquals(60_000, got);   // 受请求上限约束（可用量 114_000 > 60_000）
-        assertEquals(50_000, power.getPoolMilliFe());
+        long got = ContainerEnergyStorage.extract(handler, 60_000, true, null);
+        assertEquals(60_000, got);   // 受请求上限约束（可用量 64_000 > 60_000）
         assertEquals(4_000, LivingItemManager.getWaxedBulbData(b1).chargeMilliFe());
     }
 
     @Test
-    @DisplayName("发电入池：RE 事件按 K 换算进池（512000 RE → 32000 FE = 32_000_000 mFE）")
-    void eventEnergy_flowsIntoPool() {
+    @DisplayName("onChanged 回调：有实际扣减才触发（落盘信号）")
+    void extract_onChangedCallback() {
+        ItemStack b1 = bulb(16);
+        LivingItemManager.setWaxedBulbData(b1, new LivingWaxedBulbData(4_000));
+        IItemHandler handler = new FakeHandler(b1);
+
+        final int[] calls = {0};
+        ContainerEnergyStorage.extract(handler, 40, false, () -> calls[0]++);
+        assertEquals(1, calls[0]);
+
+        ContainerEnergyStorage.extract(handler, 40, true, () -> calls[0]++);   // simulate 不触发
+        assertEquals(1, calls[0]);
+    }
+
+    @Test
+    @DisplayName("发电量累计：RE 事件累加 + drain 清零")
+    void generatedRe_accumulateAndDrain() {
         ContainerPowerData power = new ContainerPowerData();
         power.onEventEnergy(512_000);
-        assertEquals(32_000_000, power.getPoolMilliFe());
+        power.onEventEnergy(48_000);
+        assertEquals(560_000, power.drainGeneratedRe());
+        assertEquals(0, power.drainGeneratedRe());   // 已清空
+    }
+
+    @Test
+    @DisplayName("EMA 功率：本 tick 发电量驱动，K=1/16 换算")
+    void ema_powerTracking() {
+        ContainerPowerData power = new ContainerPowerData();
+        power.onEventEnergy(512_000);
+        power.endTick(power.drainGeneratedRe());
+        assertEquals(4000, power.getEmaPowerFe());   // 512000 × 0.125 = 64000 RE/t → 4000 FE/t
+
+        power.endTick(power.drainGeneratedRe());     // 本 tick 无发电 → EMA 衰减
+        assertEquals(3500, power.getEmaPowerFe());   // 64000 × 0.875 = 56000 RE/t → 3500 FE/t
     }
 }

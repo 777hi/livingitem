@@ -2,7 +2,6 @@
   "itemGroup.living_item": "Example Mod Tab",
   "block.living_item.example_block": "Example Block",
   "item.living_item.example_item": "Example Item",
-
   "living_item.configuration.title": "Living Item Configs",
   "living_item.configuration.section.living_item.common.toml": "Living Item Configs",
   "living_item.configuration.section.living_item.common.toml.title": "Living Item Configs",
@@ -10,7 +9,6 @@
   "living_item.configuration.logDirtBlock": "Log Dirt Block",
   "living_item.configuration.magicNumberIntroduction": "Magic Number Text",
   "living_item.configuration.magicNumber": "Magic Number",
-
   "tooltip.livingitem.title": "--- Living Item ---",
   "tooltip.livingitem.furnace.status": "§aLiving Furnace§r",
   "tooltip.livingitem.progress": "  §7Progress: §a%d%%§7 (§e%.1fs§7/§a%.1fs§7)§r",
@@ -21,7 +19,6 @@
   "tooltip.livingitem.transform.processing": "  §7Status: §eProcessing...§r",
   "tooltip.livingitem.transform.recipe": "  §7Recipe: §e%s§7 → §a%s§r",
   "tooltip.livingitem.transform.no_recipe": "  §7Input: §e%s§7 §8(no recipe)§r",
-
   "tooltip.livingitem.hopper.status": "§aLiving Hopper§r",
   "tooltip.livingitem.hopper.disabled": "  §c⚠ Disabled by redstone signal§r",
   "tooltip.livingitem.filter.blacklist": "  §cBlacklist:§r",
@@ -35,12 +32,10 @@
   "tooltip.livingitem.chest.uuid_lost": "§c  UUID lost! Use /livingchest recover to restore§r",
   "tooltip.livingitem.tnt.status": "§cLiving TNT§r",
   "tooltip.livingitem.flint_and_steel.status": "§eLiving Flint & Steel§r",
-
   "tooltip.livingitem.redstone.title": "§cLiving Redstone§r",
   "tooltip.livingitem.redstone.signal": "  §7Signal",
   "tooltip.livingitem.redstone.no_signal": "  §7No Signal",
   "tooltip.livingitem.redstone.max_signal": "  §7Max Signal",
-
   "tooltip.livingitem.redstone_torch.title": "§cLiving Redstone Torch§r",
   "tooltip.livingitem.redstone_torch.facing": "  §7Facing",
   "tooltip.livingitem.redstone_torch.direction.up": "Up",
@@ -50,7 +45,6 @@
   "tooltip.livingitem.redstone_torch.lit": "  §c§lLIT",
   "tooltip.livingitem.redstone_torch.unlit": "  §8UNLIT",
   "tooltip.livingitem.redstone_torch.max_signal": "  §7Max Signal",
-
   "tooltip.livingitem.button.title": "§6Living Button§r",
   "tooltip.livingitem.button.type": "  §7Type",
   "tooltip.livingitem.button.type.wood": "Wood",
@@ -59,16 +53,13 @@
   "tooltip.livingitem.button.unpressed": "  §8Unpressed",
   "tooltip.livingitem.button.pulse": "  §7Pulse",
   "tooltip.livingitem.button.max_signal": "  §7Max Signal",
-
   "tooltip.livingitem.lever.title": "§eLiving Lever§r",
   "tooltip.livingitem.lever.powered": "  §c§lPOWERED",
   "tooltip.livingitem.lever.unpowered": "  §8Unpowered",
   "tooltip.livingitem.lever.max_signal": "  §7Max Signal",
-
   "tooltip.livingitem.lamp.title": "§6Living Redstone Lamp§r",
   "tooltip.livingitem.lamp.lit": "  §6§lLIT",
   "tooltip.livingitem.lamp.unlit": "  §8Unlit",
-
   "tooltip.livingitem.repeater.title": "§6Living Repeater§r",
   "tooltip.livingitem.repeater.facing": "  §7Facing",
   "tooltip.livingitem.repeater.direction.up": "Up",
@@ -81,7 +72,6 @@
   "tooltip.livingitem.repeater.delay_timer": "  §7Delay Timer",
   "tooltip.livingitem.repeater.locked": "  §6§lLOCKED",
   "tooltip.livingitem.repeater.max_signal": "  §7Max Signal",
-
   "tooltip.livingitem.comparator.title": "§6Living Comparator§r",
   "tooltip.livingitem.comparator.facing": "  §7Facing",
   "tooltip.livingitem.comparator.direction.up": "Up",
@@ -94,10 +84,8 @@
   "tooltip.livingitem.comparator.powered": "  §c§lPOWERED",
   "tooltip.livingitem.comparator.unpowered": "  §8Unpowered",
   "tooltip.livingitem.comparator.max_signal": "  §7Max Signal",
-
   "tooltip.livingitem.redstone_block.title": "§cLiving Redstone Block§r",
   "tooltip.livingitem.redstone_block.max_signal": "  §7Max Signal",
-
   "tooltip.livingitem.copper.title": "§6Living Copper Blocks§r",
   "tooltip.livingitem.copper.signal": "  §7Signal",
   "tooltip.livingitem.copper.max_signal": "  §7Max Signal",
@@ -110,19 +98,15 @@
   "tooltip.livingitem.copper.grate_sum": "  §7Signal Sum",
   "tooltip.livingitem.copper.bulb_state": "  §7State",
   "tooltip.livingitem.copper.bulb_recorded": "  §7Recorded",
-
   "tooltip.livingitem.ender_chest.status": "§dLiving Ender Chest§r",
   "tooltip.livingitem.ender_chest.bound_player": "  §bBound: %s§r",
   "tooltip.livingitem.ender_chest.channel": "  §7Channel: §e%d§r",
   "tooltip.livingitem.ender_chest.routes": "  §7Routes: §e%d§7/§a%d§r",
-
   "slot.livingitem.input": "Input",
   "slot.livingitem.fuel": "Fuel",
   "slot.livingitem.output": "Output",
-
   "tooltip.livingitem.direction.slot": "  §7%s: %s§r",
   "tooltip.livingitem.direction.transfer": "  §6Transfer: %s -> %s (%s)§r",
-
   "tooltip.livingitem.hopper.advanced.title": "§8§o--- Hopper Details ---§r",
   "tooltip.livingitem.hopper.advanced.stack": "  §7Stack: %d (Cooldown: %d ticks, Rate: %s/s)§r",
   "tooltip.livingitem.hopper.advanced.offsets": "  §7Offsets: src %s, dst %s§r",
@@ -138,20 +122,21 @@
   "tooltip.livingitem.hopper.advanced.has_filter": "  §7Filter Rules: %s§r",
   "tooltip.livingitem.hopper.advanced.yes": "§aYes§r",
   "tooltip.livingitem.hopper.advanced.no": "§cNo§r",
-
   "tooltip.livingitem.water_wheel.status": "§aLiving Water Wheel§r",
   "tooltip.livingitem.water_wheel.no_stress": "  §7No Stress§r",
   "tooltip.livingitem.water_wheel.stress": "  ↻ CW: +%1$s  ↺ CCW: -%2$s  Net: +%3$s",
   "tooltip.livingitem.water_wheel.balanced": "  ↻ CW: +%1$s  ↺ CCW: -%2$s  Net: 0 (balanced)",
-
   "tooltip.livingitem.water_bucket.status": "§9Living Water Bucket§r",
   "tooltip.livingitem.water_bucket.flow": "  Flow: %1$s blocks (max %2$s blocks away)",
-
   "tooltip.livingitem.map.range": "  §7Remote map range: §a%s §7blocks",
-
   "chat.livingitem.ender_pearl.teleported_to_banner": "Teleported to %s",
   "chat.livingitem.ender_pearl.teleported_to_target": "Teleported to treasure location",
   "chat.livingitem.ender_pearl.unexplored": "This area is unexplored, requires a stack (%d) of living ender pearls to teleport",
   "chat.livingitem.ender_pearl.cross_dimension": "Cross-dimension teleported to %s",
-  "chat.livingitem.ender_pearl.insufficient_authority": "Insufficient jump authority, cannot pierce the planar barrier"
+  "chat.livingitem.ender_pearl.insufficient_authority": "Insufficient jump authority, cannot pierce the planar barrier",
+  "tooltip.livingitem.waxed_copper.title": "§6Living Waxed Copper (Red-Electric)§r",
+  "tooltip.livingitem.waxed_copper.coupling": "  §7Induction Coupling",
+  "tooltip.livingitem.waxed_copper.preferred_period": "  §bPreferred Period",
+  "tooltip.livingitem.waxed_copper.broadband": "  §dBroadband (untuned)§r",
+  "tooltip.livingitem.waxed_copper.battery": "  §7Charge"
 }

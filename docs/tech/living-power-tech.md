@@ -190,22 +190,30 @@ unlock = eff × regularity
 ### 3.8 储能实现（阶段四，§3.6 v17.5）
 
 **数据**：`LivingWaxedBulbData(chargeMilliFe)`——每盏电量，1/1000 FE 定点
-（充电分配的零头精度），随物品 NBT 持久化。容器池 `poolMilliFe` 在
-`ContainerPowerData` 上，瞬时值不持久化。
+（充电分配的零头精度），随物品 NBT 持久化。**无容器池**——
+发电量在 `ContainerPowerData` 上按 tick 累计（RE），tick 末直存入铜灯。
 
-**池结算**（`settleBulbs`，每容器 tick 末）：
+**发电直存**（`distributeToBulbs`，每容器 tick 末）：
 ```
-池 ≤ 0 → 无事
-无铜灯堆 / 铜灯全满 → 池清零（显性浪费 / 电池已满）
+本 tick 发电量 × K → mFE
+无铜灯堆 / 铜灯全满 → 弃（显性浪费 / 电池已满）
 否则：按各堆剩余容量比例分配，每盏 q += share/count（向下取整，零头丢弃）
-结算后池清零
 ```
 
 **对外取电**（`ContainerEnergyStorage`，实现 NeoForge `IEnergyStorage`）：
 ```
-请求 X mFE：先扣池现值 → 缺口逐堆扣铜灯（槽位顺序，每盏等量，向下取整）
-方块级接口只出不进（canReceive=false）——发电是池的唯一来源，限流归用电侧
+请求 X mFE：直接逐堆扣铜灯（槽位顺序，每盏等量，向下取整）
+方块级接口只出不进（canReceive=false）——发电是唯一来源，限流归用电侧
 ```
+
+**物品访问（模组兼容的关键修复）**：
+取电的铜灯扫描统一走 `ItemHandler.BLOCK` 兼容面（原版容器由 NeoForge 自动注册、
+模组容器自行注册）——与容器内 tick 机制**同一条兼容面**。曾用
+`be instanceof Container` 单腿扫描，导致模组容器（不实现 Container）的灯
+够不到对外取电路径——「发电/存储走兼容层、对外取电没走」的裂缝已修复。
+取电扣减灯电量后调 `be.setChanged()` 落盘（结算路径同样补上）。
+双箱合并 handler 由能力自动覆盖（旧「双箱另半限制」随之解除）；
+随机战利品容器（未开箱）按 tick 机制同款规则跳过。
 
 **能力注册（宽注册 + 让位 + 物品双向）**：
 
@@ -242,6 +250,12 @@ unlock = eff × regularity
 **单位容量**：`PowerMath.BULB_UNIT_CAPACITY_FE = 100`（每盏 100 FE）——
 与 K 并列的第二个标定常数，实测后可调。
 
+**Tooltip 仪表盘（阶段五预告）**：检测周期/相数/解锁度/功率等服务端内存态
+**不在 NBT 也不在网络同步里**，tooltip 直接读不到——按
+[living-item-infrastructure.md §11 Tooltip 渲染机制](../system-design/living-item-infrastructure.md#11-tooltip-渲染机制客户端)
+的结论，唯一正路是「检测值写回小型 DataComponent → syncSlotToClients → 客户端读取」，
+且 provider 纪律禁止在 tooltip 里反查世界状态。
+
 ---
 
 ## 4. 记账模型（RE / FE）
@@ -275,7 +289,7 @@ K = 1/16 时数值与「单次能量 = |Δ| × 合因子 × (P/16)」的原始�
 | `PowerMathTest` | 5 | 耦合管径、调谐效率曲线、合因子地板/天花板、K 换算 |
 | `ContainerPowerDataTest` | 6 | 单路锁相、三相 6t 部分解锁（3^1.5）、五相 5t 满相（×25）、杂讯排除、同相合并、EMA 账本 |
 | `CoilGroupingTest` | 4 | 铜块全向、雕文 V/H 双通道、切制单方向、配置变化重建 |
-| `WaxedCopperStorageTest` | 7 | 池结算分配、无铜灯清零、满溢、池优先取电、超取 clamp、模拟不改态、RE 入池换算 |
+| `WaxedCopperStorageTest` | 9 | 发电直存分配、无铜灯弃、满溢、模组容器取电（IItemHandler）、超取 clamp、模拟不改态、onChanged 落盘信号、发电量累计、EMA 功率 |
 | `BulbItemEnergyStorageTest` | 6 | 双向充放、容量 clamp、simulate、拆分守恒、线性读数 |
 | `WaxedCopperOscillatorIT` | 1 | 全链路集成：拉杆振荡器（4t）→ 红石传播 → 发电采样 → EMA 收敛 |
 | `WaxedCopperCouplingIT` | 1 | 耦合链集成：A 直连 → B 一跳 → C 两跳，中继不回传 |
@@ -295,7 +309,7 @@ K = 1/16 时数值与「单次能量 = |Δ| × 合因子 × (P/16)」的原始�
 | Step 9 相位质量合因子 | ✅ | n 去重 + 调谐×规律解锁平方 |
 | Step 10 感应拓扑（线圈分组） | ✅ | 铜块/雕文/切制/格栅通道划分 + 切制方向组件 |
 | Step 11 感应耦合与谐振链 | ✅（v1 同频转发） | 加权守恒分配 + 不回传；分频转发待 v2 |
-| Step 12 涂蜡铜灯储能 | ✅ | 池结算 + 按盏电量 DataComponent |
+| Step 12 涂蜡铜灯储能 | ✅ | 发电直存 + 按盏电量 DataComponent（无池） |
 | Step 13 IEnergyStorage | ✅（技术验证通过） | 原版容器 BE 注册，游戏内待实测 |
 | Step 14 活避雷针 | ⏳ 阶段四后 | 供需分配 |
 | Tooltip 仪表盘 | ⏳ 阶段五 | telemetry DataComponent + sync |
@@ -309,5 +323,6 @@ K = 1/16 时数值与「单次能量 = |Δ| × 合因子 × (P/16)」的原始�
 | 规律度只看时间不看幅度 | 占空比渐变的波形被误判为完全规律 | v2 值级窗口比对（§3.8） |
 | 耦合同频转发 | 谐振链 2:1 分频配方不可用，链上发电机需同周期调谐 | v2 分频转发（周期 ×2 再发射） |
 | 耦合每节点最多中继一次 | 多源汇聚节点的后续接收只计能量不转发 | 保守设计，观察后再定 |
+| 非 BE 容器不支持 | 充电宝搬入非 BE 容器时暂不可对外取电（发电本就需要 BE） | 有需求再补 Block 级注册 |
 | 发电机移除后 EMA 冻结 | 功率读数不清零（数据过期清理兜底） | 观察后再定 |
 | 事件 tick 计数随容器活跃度冻结 | 容器卸载期间周期被拉长 → 重锁 | 符合直觉，保留 |

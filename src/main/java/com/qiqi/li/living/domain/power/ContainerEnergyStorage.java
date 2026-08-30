@@ -1,28 +1,31 @@
 package com.qiqi.li.living.domain.power;
 
-import java.util.ArrayList;
-import java.util.List;
+import javax.annotation.Nullable;
 
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.world.Container;
+import net.minecraft.world.WorldlyContainerHolder;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.RandomizableContainer;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.energy.IEnergyStorage;
+import net.neoforged.neoforge.items.IItemHandler;
+import net.neoforged.neoforge.items.wrapper.InvWrapper;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerLivingItemHandler;
-
-import javax.annotation.Nullable;
 
 /**
  * 容器红电对外能量接口（§3.6 v17.5）。
  *
- * <p>取电顺序：先扣容器池现值，缺口按各铜灯堆存量逐堆扣（槽位顺序，每盏等量）。
- * 只出不进（canReceive = false）——发电是唯一能量来源，
- * 限流职责归用电侧（电池无限流）。</p>
+ * <p>取电：直接从容器内的铜灯逐堆扣（每盏等量，向下取整）——
+ * 无容器池，铜灯是唯一储存。只出不进（canReceive = false）：
+ * 发电是唯一能量来源，限流职责归用电侧。</p>
  *
- * <p>池常态为空（每容器 tick 末结算入铜灯），因此实际取电几乎全部来自铜灯——
- * 这正是「铜灯 = 唯一储存」的设计语义。</p>
+ * <p>物品访问统一走 {@code ItemHandler.BLOCK} 兼容面（原版容器由 NeoForge 自动注册、
+ * 模组容器自行注册），与容器内 tick 机制同源——模组容器能发电的地方就能取电。
+ * 随机战利品容器（未开箱）按 tick 机制同款规则跳过。</p>
  */
 public class ContainerEnergyStorage implements IEnergyStorage {
 
@@ -35,21 +38,22 @@ public class ContainerEnergyStorage implements IEnergyStorage {
     /**
      * 宽注册 provider 判定链（§3.6 v17.5，全部缓存安全）：
      * <ol>
-     *   <li>非 Container BE → null（类型固定属性，方块替换自动失效）</li>
+     *   <li>随机战利品容器（未开箱）→ null（与 tick 机制同款跳过，类型稳定）</li>
      *   <li>直接实现 IEnergyStorage 的 BE → null（让位，零重入成本）</li>
      *   <li>重入保护下查询 EnergyStorage.BLOCK：已有主人（模组机器自身储能）→
      *       null（让位——注册期定死的稳定属性）</li>
-     *   <li>返回实例（内部自适应：无灯无池 → 电量 0，永不 null 切换 → 零失效隐患）</li>
+     *   <li>返回实例（内部自适应：无灯 → 电量 0，永不 null 切换 → 零失效隐患）</li>
      * </ol>
      */
     public static IEnergyStorage resolveProvider(BlockEntity be, @Nullable Direction side) {
-        if (!(be instanceof Container)) return null;              // 非容器，类型稳定
+        if (be instanceof RandomizableContainer rc && rc.getLootTable() != null) return null;
         if (be instanceof IEnergyStorage) return null;            // 直接实现者让位
-        if (be.getLevel() == null) return null;
+        Level level = be.getLevel();
+        if (level == null) return null;
         if (DEFER_QUERY.get()) return null;                       // 重入保护：内层查询摘除自己
         DEFER_QUERY.set(true);
         try {
-            var existing = be.getLevel().getCapability(
+            var existing = level.getCapability(
                 Capabilities.EnergyStorage.BLOCK, be.getBlockPos(), side);
             if (existing != null) return null;                    // 已有主人 → 让位
         } finally {
@@ -60,65 +64,35 @@ public class ContainerEnergyStorage implements IEnergyStorage {
 
     private static final ThreadLocal<Boolean> DEFER_QUERY = ThreadLocal.withInitial(() -> false);
 
-    private record Storage(ContainerPowerData power, List<ItemStack> bulbs) {}
+    // ── 物品访问解析（模组兼容面） ──
 
-    private Storage resolve() {
-        if (be.getLevel() == null) return null;
-        ContainerPowerData power =
-            ContainerLivingItemHandler.getPowerDataByPos(be.getLevel(), be.getBlockPos());
-        if (power == null) return null;
-        List<ItemStack> bulbs = new ArrayList<>();
-        if (be instanceof Container container) {
-            for (int i = 0; i < container.getContainerSize(); i++) {
-                ItemStack stack = container.getItem(i);
-                if (!stack.isEmpty() && LivingWaxedCopperFunction.isWaxedBulb(stack.getItem())) {
-                    bulbs.add(stack);
-                }
-            }
+    /**
+     * 解析容器物品访问器：ItemHandler.BLOCK 能力优先（原版自动注册 + 模组自行注册），
+     * WorldlyContainerHolder 次之，最后 InvWrapper 兜底（原版 Container）。
+     * 统一走兼容面 → 双箱合并 handler、模组容器、sided 语义全部继承。
+     */
+    private static IItemHandler resolveItems(Level level, BlockPos pos, @Nullable Direction side) {
+        var handler = level.getCapability(Capabilities.ItemHandler.BLOCK, pos, side);
+        if (handler != null) return handler;
+        var state = level.getBlockState(pos);
+        if (state.getBlock() instanceof WorldlyContainerHolder holder) {
+            return new InvWrapper(holder.getContainer(state, level, pos));
         }
-        return new Storage(power, bulbs);
+        if (level.getBlockEntity(pos) instanceof net.minecraft.world.Container container) {
+            return new InvWrapper(container);
+        }
+        return null;
     }
+
+    // ── IEnergyStorage ──
 
     @Override
     public int extractEnergy(int toExtract, boolean simulate) {
         if (toExtract <= 0) return 0;
-        Storage storage = resolve();
-        if (storage == null) return 0;
-        return (int) (extract(storage.power(), storage.bulbs(),
-            (long) toExtract * 1000L, simulate) / 1000L);
-    }
-
-    /**
-     * 取电核心（mFE）：池优先 → 铜灯逐堆（槽位顺序，每盏等量，向下取整，零头保守丢弃）。
-     *
-     * @return 实际取出的 mFE
-     */
-    static long extract(ContainerPowerData power, List<ItemStack> bulbs, long wantMilliFe, boolean simulate) {
-        long got = 0;
-
-        long pool = power.getPoolMilliFe();
-        long takePool = Math.min(pool, wantMilliFe);
-        if (takePool > 0 && !simulate) {
-            power.setPoolMilliFe(pool - takePool);
-        }
-        got += takePool;
-
-        long remaining = wantMilliFe - got;
-        for (ItemStack stack : bulbs) {
-            if (remaining <= 0) break;
-            int count = stack.getCount();
-            long q = LivingItemManager.getWaxedBulbData(stack).chargeMilliFe();
-            long takeTotal = Math.min(q * count, remaining);
-            long perLamp = takeTotal / count;
-            if (perLamp <= 0) continue;
-            if (!simulate) {
-                LivingItemManager.setWaxedBulbData(stack,
-                    LivingItemManager.getWaxedBulbData(stack).withChargeMilliFe(q - perLamp));
-            }
-            got += perLamp * count;
-            remaining -= perLamp * count;
-        }
-        return got;
+        IItemHandler items = resolveItems(be.getLevel(), be.getBlockPos(), null);
+        if (items == null) return 0;
+        return (int) (extract(items,
+            (long) toExtract * 1000L, simulate, be::setChanged) / 1000L);
     }
 
     @Override
@@ -138,23 +112,66 @@ public class ContainerEnergyStorage implements IEnergyStorage {
 
     @Override
     public int getEnergyStored() {
-        Storage storage = resolve();
-        if (storage == null) return 0;
-        long m = storage.power().getPoolMilliFe();
-        for (ItemStack stack : storage.bulbs()) {
-            m += LivingItemManager.getWaxedBulbData(stack).totalChargeMilliFe(stack.getCount());
+        IItemHandler items = resolveItems(be.getLevel(), be.getBlockPos(), null);
+        if (items == null) return 0;
+        long m = 0;
+        for (int i = 0; i < items.getSlots(); i++) {
+            ItemStack stack = items.getStackInSlot(i);
+            if (isBulb(stack)) {
+                m += LivingItemManager.getWaxedBulbData(stack).totalChargeMilliFe(stack.getCount());
+            }
         }
         return (int) (m / 1000L);
     }
 
     @Override
     public int getMaxEnergyStored() {
-        Storage storage = resolve();
-        if (storage == null) return 0;
-        long m = storage.power().getPoolMilliFe();
-        for (ItemStack stack : storage.bulbs()) {
-            m += LivingWaxedBulbData.totalCapacityMilliFe(stack.getCount());
+        IItemHandler items = resolveItems(be.getLevel(), be.getBlockPos(), null);
+        if (items == null) return 0;
+        long m = 0;
+        for (int i = 0; i < items.getSlots(); i++) {
+            ItemStack stack = items.getStackInSlot(i);
+            if (isBulb(stack)) {
+                m += LivingWaxedBulbData.totalCapacityMilliFe(stack.getCount());
+            }
         }
         return (int) (m / 1000L);
+    }
+
+    private static boolean isBulb(ItemStack stack) {
+        return !stack.isEmpty() && LivingWaxedCopperFunction.isWaxedBulb(stack.getItem());
+    }
+
+    // ── 取电核心（mFE）──
+
+    /**
+     * 取电：逐堆扣铜灯（每盏等量，向下取整，零头保守丢弃）。
+     * 有实际扣减时回调 {@code onChanged}（落盘持久化）。
+     */
+    static long extract(IItemHandler items,
+                        long wantMilliFe, boolean simulate, @Nullable Runnable onChanged) {
+        long got = 0;
+        long remaining = wantMilliFe;
+
+        boolean changed = false;
+        for (int i = 0; i < items.getSlots() && remaining > 0; i++) {
+            ItemStack stack = items.getStackInSlot(i);
+            if (!isBulb(stack)) continue;
+            int count = stack.getCount();
+            long q = LivingItemManager.getWaxedBulbData(stack).chargeMilliFe();
+            long takeTotal = Math.min(q * count, remaining);
+            long perLamp = takeTotal / count;
+            if (perLamp <= 0) continue;
+            if (!simulate) {
+                LivingItemManager.setWaxedBulbData(stack,
+                    LivingItemManager.getWaxedBulbData(stack).withChargeMilliFe(q - perLamp));
+                changed = true;
+            }
+            got += perLamp * count;
+            remaining -= perLamp * count;
+        }
+
+        if (changed && onChanged != null && !simulate) onChanged.run();
+        return got;
     }
 }

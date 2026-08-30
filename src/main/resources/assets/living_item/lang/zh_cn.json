@@ -2,7 +2,6 @@
   "itemGroup.living_item": "活物品标签栏",
   "block.living_item.example_block": "示例方块",
   "item.living_item.example_item": "示例物品",
-
   "living_item.configuration.title": "活物品配置",
   "living_item.configuration.section.living_item.common.toml": "活物品配置",
   "living_item.configuration.section.living_item.common.toml.title": "活物品配置",
@@ -10,7 +9,6 @@
   "living_item.configuration.logDirtBlock": "记录泥土方块",
   "living_item.configuration.magicNumberIntroduction": "魔法数字文本",
   "living_item.configuration.magicNumber": "魔法数字",
-
   "tooltip.livingitem.title": "--- 活物品 ---",
   "tooltip.livingitem.furnace.status": "§a活熔炉§r",
   "tooltip.livingitem.progress": "  §7进度: §a%d%%§7 (§e%.1fs§7/§a%.1fs§7)§r",
@@ -20,7 +18,6 @@
   "tooltip.livingitem.transform.ready": "  §7状态: §a就绪§r",
   "tooltip.livingitem.transform.processing": "  §7状态: §e处理中...§r",
   "tooltip.livingitem.transform.recipe": "  §7配方: §e%s§7 → §a%s§r",
-
   "tooltip.livingitem.hopper.status": "§a活漏斗§r",
   "tooltip.livingitem.hopper.disabled": "  §c⚠ 被红石信号禁用§r",
   "tooltip.livingitem.filter.blacklist": "  §c黑名单:§r",
@@ -34,12 +31,10 @@
   "tooltip.livingitem.chest.uuid_lost": "§c  UUID已丢失！请使用 /livingchest recover 指令找回§r",
   "tooltip.livingitem.tnt.status": "§c活TNT§r",
   "tooltip.livingitem.flint_and_steel.status": "§e活打火石§r",
-
   "tooltip.livingitem.redstone.title": "§c活红石粉§r",
   "tooltip.livingitem.redstone.signal": "  §7信号",
   "tooltip.livingitem.redstone.no_signal": "  §7无信号",
   "tooltip.livingitem.redstone.max_signal": "  §7最大信号",
-
   "tooltip.livingitem.redstone_torch.title": "§c活红石火把§r",
   "tooltip.livingitem.redstone_torch.facing": "  §7朝向",
   "tooltip.livingitem.redstone_torch.direction.up": "上",
@@ -49,7 +44,6 @@
   "tooltip.livingitem.redstone_torch.lit": "  §c§l点亮",
   "tooltip.livingitem.redstone_torch.unlit": "  §8熄灭",
   "tooltip.livingitem.redstone_torch.max_signal": "  §7最大信号",
-
   "tooltip.livingitem.button.title": "§6活按钮§r",
   "tooltip.livingitem.button.type": "  §7类型",
   "tooltip.livingitem.button.type.wood": "木",
@@ -58,16 +52,13 @@
   "tooltip.livingitem.button.unpressed": "  §8未按下",
   "tooltip.livingitem.button.pulse": "  §7脉冲",
   "tooltip.livingitem.button.max_signal": "  §7最大信号",
-
   "tooltip.livingitem.lever.title": "§e活拉杆§r",
   "tooltip.livingitem.lever.powered": "  §c§l激活",
   "tooltip.livingitem.lever.unpowered": "  §8未激活",
   "tooltip.livingitem.lever.max_signal": "  §7最大信号",
-
   "tooltip.livingitem.lamp.title": "§6活红石灯§r",
   "tooltip.livingitem.lamp.lit": "  §6§l点亮",
   "tooltip.livingitem.lamp.unlit": "  §8熄灭",
-
   "tooltip.livingitem.repeater.title": "§6活中继器§r",
   "tooltip.livingitem.repeater.facing": "  §7朝向",
   "tooltip.livingitem.repeater.direction.up": "上",
@@ -80,7 +71,6 @@
   "tooltip.livingitem.repeater.delay_timer": "  §7延迟计时器",
   "tooltip.livingitem.repeater.locked": "  §6§l已锁定",
   "tooltip.livingitem.repeater.max_signal": "  §7最大信号",
-
   "tooltip.livingitem.comparator.title": "§6活比较器§r",
   "tooltip.livingitem.comparator.facing": "  §7朝向",
   "tooltip.livingitem.comparator.direction.up": "上",
@@ -93,10 +83,8 @@
   "tooltip.livingitem.comparator.powered": "  §c§l有输出",
   "tooltip.livingitem.comparator.unpowered": "  §8无输出",
   "tooltip.livingitem.comparator.max_signal": "  §7最大信号",
-
   "tooltip.livingitem.redstone_block.title": "§c活红石块§r",
   "tooltip.livingitem.redstone_block.max_signal": "  §7最大信号",
-
   "tooltip.livingitem.copper.title": "§6活铜块儿们§r",
   "tooltip.livingitem.copper.signal": "  §7红电信号",
   "tooltip.livingitem.copper.max_signal": "  §7最大红电信号",
@@ -109,19 +97,15 @@
   "tooltip.livingitem.copper.grate_sum": "  §7信号和",
   "tooltip.livingitem.copper.bulb_state": "  §7状态",
   "tooltip.livingitem.copper.bulb_recorded": "  §7记录信号",
-
   "tooltip.livingitem.ender_chest.status": "§d活末影箱§r",
   "tooltip.livingitem.ender_chest.bound_player": "  §b绑定: %s§r",
   "tooltip.livingitem.ender_chest.channel": "  §7频道: §e%d§r",
   "tooltip.livingitem.ender_chest.routes": "  §7路由: §e%d§7/§a%d§r",
-
   "slot.livingitem.input": "输入",
   "slot.livingitem.fuel": "燃料",
   "slot.livingitem.output": "输出",
-
   "tooltip.livingitem.direction.slot": "  §7%s: %s§r",
   "tooltip.livingitem.direction.transfer": "  §6传输方向: %s → %s (%s)§r",
-
   "tooltip.livingitem.hopper.advanced.title": "§8§o--- 活漏斗详细信息 ---§r",
   "tooltip.livingitem.hopper.advanced.stack": "  §7堆叠数: %d (冷却: %d ticks, 速率: %s 次/秒)§r",
   "tooltip.livingitem.hopper.advanced.offsets": "  §7偏移: 源 %s, 目标 %s§r",
@@ -137,20 +121,21 @@
   "tooltip.livingitem.hopper.advanced.has_filter": "  §7过滤规则: %s§r",
   "tooltip.livingitem.hopper.advanced.yes": "§a是§r",
   "tooltip.livingitem.hopper.advanced.no": "§c否§r",
-
   "tooltip.livingitem.water_wheel.status": "§a活水车§r",
   "tooltip.livingitem.water_wheel.no_stress": "  §7无应力§r",
   "tooltip.livingitem.water_wheel.stress": "  ↻ 顺时针: +%1$s  ↺ 逆时针: -%2$s  净应力: +%3$s",
   "tooltip.livingitem.water_wheel.balanced": "  ↻ 顺时针: +%1$s  ↺ 逆时针: -%2$s  净应力: 0 (平衡)",
-
   "tooltip.livingitem.water_bucket.status": "§9活水桶§r",
   "tooltip.livingitem.water_bucket.flow": "  水流: %1$s 格 (最远%2$s格)",
-
   "tooltip.livingitem.map.range": "  §7远程开图距离: §a%s §7格",
-
   "chat.livingitem.ender_pearl.teleported_to_banner": "已传送到 %s",
   "chat.livingitem.ender_pearl.teleported_to_target": "已传送到宝藏位置",
   "chat.livingitem.ender_pearl.unexplored": "此区域尚未探索，需要一组（%d个）活末影珍珠才能传送",
   "chat.livingitem.ender_pearl.cross_dimension": "跨维度传送到 %s",
-  "chat.livingitem.ender_pearl.insufficient_authority": "跃迁权能不足，无法撕裂位面壁垒"
+  "chat.livingitem.ender_pearl.insufficient_authority": "跃迁权能不足，无法撕裂位面壁垒",
+  "tooltip.livingitem.waxed_copper.title": "§6活涂蜡铜块（红电）§r",
+  "tooltip.livingitem.waxed_copper.coupling": "  §7感应耦合管径",
+  "tooltip.livingitem.waxed_copper.preferred_period": "  §b偏好周期",
+  "tooltip.livingitem.waxed_copper.broadband": "  §d宽带接收（堆 1 叠不挑频率）§r",
+  "tooltip.livingitem.waxed_copper.battery": "  §7电量"
 }
