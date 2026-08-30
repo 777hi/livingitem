@@ -28,6 +28,9 @@ public class ContainerPowerData {
     private long tickCounter;
     private long lastTickTime = System.currentTimeMillis();
 
+    /** 容器池（收集器，mFE 定点）：发电入池、用电侧先取、tick 末剩余入铜灯/清零。不持久化 */
+    private long poolMilliFe;
+
     public GeneratorState getOrCreateGenerator(int slot) {
         return generators.computeIfAbsent(slot, key -> new GeneratorState());
     }
@@ -41,11 +44,20 @@ public class ContainerPowerData {
         return tickCounter;
     }
 
-    /** 记录一次跳变产出的能量（RE） */
+    /** 记录一次跳变产出的能量（RE）：入 EMA 源 + 入容器池（K 换算） */
     public void onEventEnergy(long re) {
         if (re <= 0) return;
         reThisTick += re;
+        poolMilliFe += Math.round(re * PowerMath.RE_TO_FE * 1000.0);
         lastTickTime = System.currentTimeMillis();
+    }
+
+    public long getPoolMilliFe() {
+        return poolMilliFe;
+    }
+
+    public void setPoolMilliFe(long poolMilliFe) {
+        this.poolMilliFe = Math.max(0, poolMilliFe);
     }
 
     /**

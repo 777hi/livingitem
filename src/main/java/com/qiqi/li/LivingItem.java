@@ -26,6 +26,12 @@ import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.neoforge.event.level.ChunkEvent;
 import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.capabilities.Capabilities;
+import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
+import net.neoforged.neoforge.capabilities.ICapabilityProvider;
+import net.neoforged.neoforge.energy.IEnergyStorage;
+import net.minecraft.core.Direction;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
@@ -384,6 +390,20 @@ public class LivingItem {
             },
             Items.ENDER_CHEST
         );
+
+        // ── 红电对外能量接口（§3.6 v17.5）：宽注册 + 让位 + 铜灯通用电池 ──
+        // 宽注册：全部 BlockEntityType（provider 内部三层判定：非容器/直接实现者/已有主人 → 让位）
+        net.neoforged.neoforge.capabilities.ICapabilityProvider<BlockEntity, Direction, IEnergyStorage> blockEnergyProvider =
+            (be, side) -> com.qiqi.li.living.domain.power.ContainerEnergyStorage.resolveProvider(be, side);
+        for (var beType : BuiltInRegistries.BLOCK_ENTITY_TYPE) {
+            event.registerBlockEntity(Capabilities.EnergyStorage.BLOCK, beType, blockEnergyProvider);
+        }
+
+        // ── 铜灯物品 = 通用电池（双向：电池槽放电 + 充能槽充电，§3.6） ──
+        event.registerItem(Capabilities.EnergyStorage.ITEM,
+            (stack, context) -> new com.qiqi.li.living.domain.power.BulbItemEnergyStorage(stack),
+            Items.WAXED_COPPER_BULB, Items.WAXED_EXPOSED_COPPER_BULB,
+            Items.WAXED_WEATHERED_COPPER_BULB, Items.WAXED_OXIDIZED_COPPER_BULB);
 
         LOGGER.info("Registered living item capabilities");
     }

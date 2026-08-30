@@ -27,6 +27,16 @@ public final class PowerMath {
     public static final double RE_TO_FE = 1.0 / 16.0;
 
     /**
+     * 涂蜡铜灯单位容量（每盏，FE）——与 K 并列的第二个标定常数。
+     *
+     * <p>容量涌现为线性「每盏 C × count」：与信号上限（堆叠数²）同用堆叠旋钮，
+     * 无查表；平方容量在拆分时坍缩毁电，故取线性（§3.6 v17.5）。</p>
+     */
+    public static final long BULB_UNIT_CAPACITY_FE = 100;
+    /** 每盏容量（1/1000 FE 定点，充电分配用） */
+    public static final long BULB_UNIT_CAPACITY_MFE = BULB_UNIT_CAPACITY_FE * 1000;
+
+    /**
      * 锈蚀 → 感应耦合管径（§3.5）。
      *
      * <p>未锈蚀 1.0 ＞ 斑驳 0.7 ＞ 风化 0.5 ＞ 氧化 0.35。

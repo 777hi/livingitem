@@ -2,7 +2,7 @@
 
 # Living Power (活涂蜡铜块 · 红电发电) 技术文档
 
-> **文档版本**: v2
+> **文档版本**: v3
 > **最后更新**: 2026-08-30
 > **适用版本**: Minecraft 1.21.1
 > **规划文档**: [红电系统.md](../红电系统.md)（v17.4，双因子模型）
@@ -187,6 +187,61 @@ unlock = eff × regularity
 **绕过涂蜡绝缘**直接把信号泄给邻居。修复：`isConductiveBlock` 排除涂蜡家族——
 涂蜡方块既不被充能也不发射，电力层信号只走感应耦合。
 
+### 3.8 储能实现（阶段四，§3.6 v17.5）
+
+**数据**：`LivingWaxedBulbData(chargeMilliFe)`——每盏电量，1/1000 FE 定点
+（充电分配的零头精度），随物品 NBT 持久化。容器池 `poolMilliFe` 在
+`ContainerPowerData` 上，瞬时值不持久化。
+
+**池结算**（`settleBulbs`，每容器 tick 末）：
+```
+池 ≤ 0 → 无事
+无铜灯堆 / 铜灯全满 → 池清零（显性浪费 / 电池已满）
+否则：按各堆剩余容量比例分配，每盏 q += share/count（向下取整，零头丢弃）
+结算后池清零
+```
+
+**对外取电**（`ContainerEnergyStorage`，实现 NeoForge `IEnergyStorage`）：
+```
+请求 X mFE：先扣池现值 → 缺口逐堆扣铜灯（槽位顺序，每盏等量，向下取整）
+方块级接口只出不进（canReceive=false）——发电是池的唯一来源，限流归用电侧
+```
+
+**能力注册（宽注册 + 让位 + 物品双向）**：
+
+```
+① BE 宽注册：遍历 BuiltInRegistries.BLOCK_ENTITY_TYPE 全部注册
+   provider 判定链（全部缓存安全，零 invalidateCapabilities）：
+     a. be instanceof Container？           否 → null（非容器，类型稳定）
+     b. be instanceof IEnergyStorage？      是 → null（直接实现者让位，零成本）
+     c. 重入保护下查询 EnergyStorage.BLOCK：
+        已有主人（模组机器自身储能）→ null（让位，注册期定死的稳定属性）
+     d. 返回 ContainerEnergyStorage 实例（内部自适应：无灯无池 → 电量 0）
+② 铜灯物品注册：EnergyStorage.ITEM × 4 个涂蜡铜灯
+   （BulbItemEnergyStorage：双向通用电池，见下）
+```
+
+- 能力链语义：同方块多方注册为**列表**，查询按序取**首个非 null**——
+  让位机制保证「无主容器才由红电接管」，不劫持模组机器自身储能；
+- 让位查询需**重入保护**（ThreadLocal）：内层查询会再次遇到我们的 provider，
+  保护使其返回 null 被链跳过；
+- 为什么不做「有灯才返回实例」的 null 切换：`BlockEntity.setChanged()` 不触发
+  能力缓存失效，玩家/漏斗放入第一盏灯的时机无法集中收集失效调用——
+  实例内自适应（`getEnergyStored()=0` 表达空）则零失效隐患。
+
+**铜灯物品 = 通用电池（双向，`BulbItemEnergyStorage`）**：
+
+```
+电池槽（放电）：机器从灯抽取（每盏等量扣）✅
+充能槽（充电）：外部电源给灯充能（每盏等量加，受每盏容量 C 限制）✅
+   —— 跨系统能量等量转换，守恒无套利
+无出身论：外部充的电与红电发的电混为一个 q，不分来源
+方块级接口仍只出不进（发电是池的唯一来源）——双向开放的是铜灯物品
+```
+
+**单位容量**：`PowerMath.BULB_UNIT_CAPACITY_FE = 100`（每盏 100 FE）——
+与 K 并列的第二个标定常数，实测后可调。
+
 ---
 
 ## 4. 记账模型（RE / FE）
@@ -220,6 +275,8 @@ K = 1/16 时数值与「单次能量 = |Δ| × 合因子 × (P/16)」的原始�
 | `PowerMathTest` | 5 | 耦合管径、调谐效率曲线、合因子地板/天花板、K 换算 |
 | `ContainerPowerDataTest` | 6 | 单路锁相、三相 6t 部分解锁（3^1.5）、五相 5t 满相（×25）、杂讯排除、同相合并、EMA 账本 |
 | `CoilGroupingTest` | 4 | 铜块全向、雕文 V/H 双通道、切制单方向、配置变化重建 |
+| `WaxedCopperStorageTest` | 7 | 池结算分配、无铜灯清零、满溢、池优先取电、超取 clamp、模拟不改态、RE 入池换算 |
+| `BulbItemEnergyStorageTest` | 6 | 双向充放、容量 clamp、simulate、拆分守恒、线性读数 |
 | `WaxedCopperOscillatorIT` | 1 | 全链路集成：拉杆振荡器（4t）→ 红石传播 → 发电采样 → EMA 收敛 |
 | `WaxedCopperCouplingIT` | 1 | 耦合链集成：A 直连 → B 一跳 → C 两跳，中继不回传 |
 
@@ -238,8 +295,8 @@ K = 1/16 时数值与「单次能量 = |Δ| × 合因子 × (P/16)」的原始�
 | Step 9 相位质量合因子 | ✅ | n 去重 + 调谐×规律解锁平方 |
 | Step 10 感应拓扑（线圈分组） | ✅ | 铜块/雕文/切制/格栅通道划分 + 切制方向组件 |
 | Step 11 感应耦合与谐振链 | ✅（v1 同频转发） | 加权守恒分配 + 不回传；分频转发待 v2 |
-| Step 12 涂蜡铜灯储能 | ⏳ 阶段四 | 容器级电池池 |
-| Step 13 IEnergyStorage | ⏳ 阶段四 | 需技术验证（容器级能力注册） |
+| Step 12 涂蜡铜灯储能 | ✅ | 池结算 + 按盏电量 DataComponent |
+| Step 13 IEnergyStorage | ✅（技术验证通过） | 原版容器 BE 注册，游戏内待实测 |
 | Step 14 活避雷针 | ⏳ 阶段四后 | 供需分配 |
 | Tooltip 仪表盘 | ⏳ 阶段五 | telemetry DataComponent + sync |
 

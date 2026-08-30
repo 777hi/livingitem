@@ -192,6 +192,12 @@ public class ContainerLivingItemHandler {
         return key == null ? null : REDSTONE_DATA_CACHE.get(key);
     }
 
+    /** 按位置 O(1) 查询红电数据（电力层，供对外能量接口调用） */
+    public static com.qiqi.li.living.domain.power.ContainerPowerData getPowerDataByPos(Level level, BlockPos pos) {
+        String key = POS_TO_CACHE_KEY.get(new PosKey(level.dimension(), pos));
+        return key == null ? null : POWER_DATA_CACHE.get(key);
+    }
+
     /**
      * 清理过期的红石数据（超过 STALE_THRESHOLD 毫秒未访问的条目）。
      */

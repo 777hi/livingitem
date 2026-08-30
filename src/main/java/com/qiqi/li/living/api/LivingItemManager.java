@@ -198,6 +198,13 @@ public class LivingItemManager {
                             .networkSynchronized(com.qiqi.li.living.domain.power.LivingWaxedCutData.STREAM_CODEC)
                             .build());
 
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<com.qiqi.li.living.domain.power.LivingWaxedBulbData>> LIVING_WAXED_BULB_DATA =
+            DATA_COMPONENT_TYPES.register("living_waxed_bulb_data", () ->
+                    DataComponentType.<com.qiqi.li.living.domain.power.LivingWaxedBulbData>builder()
+                            .persistent(com.qiqi.li.living.domain.power.LivingWaxedBulbData.CODEC)
+                            .networkSynchronized(com.qiqi.li.living.domain.power.LivingWaxedBulbData.STREAM_CODEC)
+                            .build());
+
     private static final List<LivingItemFunction> FUNCTIONS = new ArrayList<>();
     private static final List<LivingItemFunction> FUNCTIONS_VIEW = Collections.unmodifiableList(FUNCTIONS);
     private static final Map<Item, List<LivingItemFunction>> APPLICABLE_CACHE = new ConcurrentHashMap<>();
@@ -478,6 +485,17 @@ public class LivingItemManager {
                                        com.qiqi.li.living.domain.power.LivingWaxedCutData data) {
         setData(stack, LIVING_WAXED_CUT_DATA.value(), data,
                 com.qiqi.li.living.domain.power.LivingWaxedCutData.DEFAULT);
+    }
+
+    public static com.qiqi.li.living.domain.power.LivingWaxedBulbData getWaxedBulbData(ItemStack stack) {
+        return getData(stack, LIVING_WAXED_BULB_DATA.value(),
+                com.qiqi.li.living.domain.power.LivingWaxedBulbData.DEFAULT);
+    }
+
+    public static void setWaxedBulbData(ItemStack stack,
+                                        com.qiqi.li.living.domain.power.LivingWaxedBulbData data) {
+        setData(stack, LIVING_WAXED_BULB_DATA.value(), data,
+                com.qiqi.li.living.domain.power.LivingWaxedBulbData.DEFAULT);
     }
 
     public static void setGrateData(ItemStack stack, LivingGrateData data) {

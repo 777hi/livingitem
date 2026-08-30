@@ -118,7 +118,55 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         // ── Pass 2：感应耦合（分层辐射 + 不回传 + 加权守恒） ──
         couple(active, oxidation, directValue, size, width, now, powerData);
 
+        // ── 容器池结算（§3.6 v17.5）：剩余电按剩余容量比例存入铜灯堆，无铜灯清零 ──
+        settleBulbs(powerData, entries);
+
         powerData.endTick();
+    }
+
+    /**
+     * 容器池结算（§3.6 v17.5）：发电剩余按「剩余容量比例」存入各铜灯堆
+     * （充电不限率，每盏 q += share/count 向下取整，零头保守丢弃）；
+     * 无铜灯 → 池清零（显性浪费）；铜灯全满 → 池清零（电池已满）。
+     * 池常态为空，无需持久化——电全部住在铜灯 DataComponent 里。
+     */
+    static void settleBulbs(ContainerPowerData powerData, List<SlotEntry> entries) {
+        long pool = powerData.getPoolMilliFe();
+        if (pool <= 0) {
+            powerData.setPoolMilliFe(0);
+            return;
+        }
+
+        record BulbRef(ItemStack stack, int count, long remaining) {}
+        List<BulbRef> bulbs = new ArrayList<>();
+        long totalRemaining = 0;
+        for (SlotEntry entry : entries) {
+            ItemStack stack = entry.stack();
+            if (stack.isEmpty() || !isWaxedBulb(stack.getItem())) continue;
+            long rem = LivingWaxedBulbData.totalCapacityMilliFe(stack.getCount())
+                - LivingItemManager.getWaxedBulbData(stack).totalChargeMilliFe(stack.getCount());
+            if (rem <= 0) continue;   // 该堆已满
+            bulbs.add(new BulbRef(stack, stack.getCount(), rem));
+            totalRemaining += rem;
+        }
+
+        if (bulbs.isEmpty()) {
+            powerData.setPoolMilliFe(0);   // 无存储 → 电凭空消失（显性浪费）
+            return;
+        }
+
+        long distributed = 0;
+        for (BulbRef ref : bulbs) {
+            long share = pool * ref.remaining() / totalRemaining;
+            long perLamp = share / ref.count();
+            if (perLamp <= 0) continue;
+            LivingWaxedBulbData data = LivingItemManager.getWaxedBulbData(ref.stack());
+            long newQ = Math.min(PowerMath.BULB_UNIT_CAPACITY_MFE,
+                data.chargeMilliFe() + perLamp);
+            LivingItemManager.setWaxedBulbData(ref.stack(), data.withChargeMilliFe(newQ));
+            distributed += (newQ - data.chargeMilliFe()) * ref.count();
+        }
+        powerData.setPoolMilliFe(pool - distributed);   // 零头与满溢 → 清零（电池已满/损耗）
     }
 
     /** 单路跳变 → 合因子 → RE 入账 */
@@ -295,9 +343,15 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
                 .withStyle(ChatFormatting.DARK_AQUA));
         }
         if (isWaxedBulb(item)) {
+            LivingWaxedBulbData data = LivingItemManager.getWaxedBulbData(stack);
+            long q = data.chargeMilliFe();
+            long cap = LivingWaxedBulbData.totalCapacityMilliFe(stack.getCount());
+            boolean full = q >= cap;
             tooltipAdder.accept(Component.literal("  ")
                 .append(Component.translatable("tooltip.livingitem.waxed_copper.battery"))
-                .withStyle(ChatFormatting.YELLOW));
+                .append(Component.literal(": " + q / 1000 + " / " + cap / 1000 + " FE"
+                    + (full ? "（已满）" : "")))
+                .withStyle(q > 0 ? ChatFormatting.YELLOW : ChatFormatting.DARK_GRAY));
         }
     }
 
