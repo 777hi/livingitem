@@ -277,7 +277,7 @@ NeoForge 生态存在**两代能量能力**，类型签名不同 → 互不可�
    取消活化 = 普通物品，电量保留但不参与能源系统（重新活化即恢复）；
 3. **结算/取电落盘**：改灯电量后调 `be.setChanged()`（此前不落盘，重进世界回档）。
 
-**Tooltip 仪表盘（阶段五预告）**：检测周期/相数/解锁度/功率等服务端内存态
+**Tooltip 仪表盘（阶段五，已实现）**：检测周期/相数/解锁度/功率等服务端内存态
 **不在 NBT 也不在网络同步里**，tooltip 直接读不到——按
 [living-item-infrastructure.md §11 Tooltip 渲染机制](../system-design/living-item-infrastructure.md#11-tooltip-渲染机制客户端)
 的结论，唯一正路是「检测值写回小型 DataComponent → syncSlotToClients → 客户端读取」，
@@ -339,7 +339,7 @@ K = 1/16 时数值与「单次能量 = |Δ| × 合因子 × (P/16)」的原始�
 | Step 12 涂蜡铜灯储能 | ✅ | 发电直存 + 按盏电量 DataComponent（无池） |
 | Step 13 IEnergyStorage | ✅（技术验证通过） | 原版容器 BE 注册，游戏内待实测 |
 | Step 14 活避雷针 | ⏳ 阶段四后 | 供需分配 |
-| Tooltip 仪表盘 | ⏳ 阶段五 | telemetry DataComponent + sync |
+| Tooltip 仪表盘 | ✅ | `LivingWaxedGeneratorData` 检测值写回 + 槽位同步 + 双语渲染 |
 
 ---
 

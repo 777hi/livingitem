@@ -198,6 +198,13 @@ public class LivingItemManager {
                             .networkSynchronized(com.qiqi.li.living.domain.power.LivingWaxedCutData.STREAM_CODEC)
                             .build());
 
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<com.qiqi.li.living.domain.power.LivingWaxedGeneratorData>> LIVING_GENERATOR_DATA =
+            DATA_COMPONENT_TYPES.register("living_generator_data", () ->
+                    DataComponentType.<com.qiqi.li.living.domain.power.LivingWaxedGeneratorData>builder()
+                            .persistent(com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.CODEC)
+                            .networkSynchronized(com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.STREAM_CODEC)
+                            .build());
+
     public static final DeferredHolder<DataComponentType<?>, DataComponentType<com.qiqi.li.living.domain.power.LivingWaxedBulbData>> LIVING_WAXED_BULB_DATA =
             DATA_COMPONENT_TYPES.register("living_waxed_bulb_data", () ->
                     DataComponentType.<com.qiqi.li.living.domain.power.LivingWaxedBulbData>builder()
@@ -485,6 +492,17 @@ public class LivingItemManager {
                                        com.qiqi.li.living.domain.power.LivingWaxedCutData data) {
         setData(stack, LIVING_WAXED_CUT_DATA.value(), data,
                 com.qiqi.li.living.domain.power.LivingWaxedCutData.DEFAULT);
+    }
+
+    public static com.qiqi.li.living.domain.power.LivingWaxedGeneratorData getGeneratorData(ItemStack stack) {
+        return getData(stack, LIVING_GENERATOR_DATA.value(),
+                com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.DEFAULT);
+    }
+
+    public static void setGeneratorData(ItemStack stack,
+                                        com.qiqi.li.living.domain.power.LivingWaxedGeneratorData data) {
+        setData(stack, LIVING_GENERATOR_DATA.value(), data,
+                com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.DEFAULT);
     }
 
     public static com.qiqi.li.living.domain.power.LivingWaxedBulbData getWaxedBulbData(ItemStack stack) {

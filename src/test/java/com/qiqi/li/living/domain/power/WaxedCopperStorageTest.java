@@ -76,6 +76,11 @@ class WaxedCopperStorageTest {
         return stack;
     }
 
+    /** 50% 占空比整周期方波（period 为奇数时高电平 period/2 取整） */
+    private static int square(int tick, int phase, int period, int high) {
+        return Math.floorMod(tick - phase, period) < period / 2 ? high : 0;
+    }
+
     private static ItemStack generator(int count) {
         ItemStack stack = new ItemStack(Items.WAXED_COPPER_BLOCK, count);
         LivingItemManager.setLiving(stack, true);
@@ -243,6 +248,36 @@ class WaxedCopperStorageTest {
         long got = ContainerEnergyStorage.extract(handler, 100_000, false, null);
         assertEquals(0, got);
         assertEquals(4_000, LivingItemManager.getWaxedBulbData(stack).chargeMilliFe());
+    }
+
+    @Test
+    @DisplayName("仪表盘快照：检测周期/相数/规律度/解锁度（完美调谐）")
+    void telemetry_perfectTuning() {
+        GeneratorState gen = new GeneratorState();
+        gen.setPreferredPeriodFromStack(4);
+        ChannelState channel = gen.primaryChannel();
+        channel.addPath();
+
+        for (int t = 0; t < 14; t++) {
+            channel.onPathValue(0, t, square(t, 0, 4, 4096));
+        }
+
+        var telemetry = LivingWaxedCopperFunction.buildTelemetry(gen, 4);
+        assertEquals(4, telemetry.detectedPeriod());
+        assertEquals(1, telemetry.phaseCount());
+        assertEquals(1000, telemetry.regularityPermille());
+        assertEquals(1000, telemetry.unlockPermille());   // 效率 1 × 规律 1
+    }
+
+    @Test
+    @DisplayName("仪表盘快照：无信号 → 全零（检测中）")
+    void telemetry_noSignal() {
+        GeneratorState gen = new GeneratorState();
+        gen.setPreferredPeriodFromStack(4);
+        var telemetry = LivingWaxedCopperFunction.buildTelemetry(gen, 4);
+        assertEquals(0, telemetry.detectedPeriod());
+        assertEquals(0, telemetry.phaseCount());
+        assertEquals(0, telemetry.unlockPermille());
     }
 
     @Test

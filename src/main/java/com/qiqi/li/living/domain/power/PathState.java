@@ -11,6 +11,10 @@ public class PathState {
 
     private int lastValue;
     private long lastEventTick = -1;
+    /** 16-bit 滚动窗口：bit0 = 最新 tick 的「值>0」，每 tick 左移一位（F3+H 波形显示用） */
+    private int waveBits;
+    /** 上次跳变幅度（|Δ|，信号单位——公式展示用） */
+    private int lastDelta;
 
     private long lastRisingTick = -1;
     private long prevRisingTick = -1;
@@ -25,6 +29,9 @@ public class PathState {
      * @return 有符号变化量（0 = 无变化）；上升沿为正、下降沿为负
      */
     public int recordValue(long tick, int value) {
+        // 波形窗口：glue 每 tick 喂值 → 每 tick 左移一位（时间对齐）
+        waveBits = ((waveBits << 1) | (value > 0 ? 1 : 0)) & 0xFFFF;
+
         if (lastEventTick < 0) {
             // 首次见到该路：建立基线，不计跳变
             lastValue = value;
@@ -34,6 +41,9 @@ public class PathState {
         int delta = value - lastValue;
         if (delta == 0) return 0;
 
+        if (delta > 0) {
+            lastDelta = Math.abs(delta);
+        }
         if (delta > 0) {
             if (lastRisingTick >= 0) {
                 long interval = tick - lastRisingTick;
@@ -88,6 +98,16 @@ public class PathState {
 
     public int domainN() {
         return domainN;
+    }
+
+    /** 16-bit 滚动波形窗口（bit0 = 最新 tick 的「值>0」） */
+    public int waveBits() {
+        return waveBits;
+    }
+
+    /** 上次跳变幅度（|Δ|，信号单位） */
+    public int lastDelta() {
+        return lastDelta;
     }
 
     void setDomainN(int domainN) {

@@ -137,5 +137,11 @@
   "tooltip.livingitem.waxed_copper.coupling": "  §7感应耦合管径",
   "tooltip.livingitem.waxed_copper.preferred_period": "  §b偏好周期",
   "tooltip.livingitem.waxed_copper.broadband": "  §d宽带接收（堆 1 叠不挑频率）§r",
-  "tooltip.livingitem.waxed_copper.battery": "  §7电量"
+  "tooltip.livingitem.waxed_copper.battery": "  §7电量",
+  "tooltip.livingitem.waxed_copper.detected_period": "  §7检测周期",
+  "tooltip.livingitem.waxed_copper.phase_count": "  §7相数",
+  "tooltip.livingitem.waxed_copper.regularity": "  §7规律度",
+  "tooltip.livingitem.waxed_copper.unlock": "  §7解锁度",
+  "tooltip.livingitem.waxed_copper.no_signal": "  §8检测中…",
+  "tooltip.livingitem.waxed_copper.wave_title": "  §5── 波形（16t，左旧右新）──§r"
 }

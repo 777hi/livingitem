@@ -214,6 +214,7 @@ src/main/java/com/qiqi/li/
 │   │   ├── GeneratorState.java              #     单台发电机状态（线圈分组 + 方向映射）
 │   │   ├── LivingWaxedCutData.java          #     涂蜡切制组件（单线圈感应方向）
 │   │   ├── LivingWaxedBulbData.java         #     涂蜡铜灯组件（按盏电量，1/1000 FE 定点）
+│   │   ├── LivingWaxedGeneratorData.java    #     发电机仪表盘组件（检测值快照，纯展示）
 │   │   ├── BulbItemEnergyStorage.java       #     铜灯物品能量（通用电池：双向，每盏等量充放）
 │   │   ├── ContainerEnergyStorage.java      #     对外 IEnergyStorage（宽注册+让位，池优先→逐堆扣灯）
 │   │   └── ContainerPowerData.java          #     容器级红电账本（RE 事件 + EMA 功率 + 容器池）
@@ -374,6 +375,7 @@ src/test/java/com/qiqi/li/
 - [x] 对外能量接口：**宽注册**（全部 BlockEntityType）+ **让位**（直接实现者/已有主人 → 退位，重入保护查询）
 - [x] 铜灯物品 = 通用电池（双向：电池槽放电 + 充能槽充电，无出身论）
 - [x] 集成测试：拉杆振荡器（4t）+ 耦合链（A 直连 → B 一跳 → C 两跳）
+- [x] Tooltip 仪表盘：检测值写回组件 + 槽位同步 + 客户端渲染（双语）
 
 ### 活箱子
 - [x] 堆叠倍增模型 + UUID 映射 + LRU 缓存 + 磁盘持久化
@@ -427,8 +429,9 @@ src/test/java/com/qiqi/li/
   + 储能：铜灯 = 唯一储存（发电直存、无容器池），容量 = count×C 线性涌现
   + 对外能量：**宽注册+让位**（全部 BE 类型，三层判定不劫持已有能源）
   + 铜灯物品 = 通用电池（双向：放电 + 外部充电，跨系统能量等量转换）
-- ✅ 新增：30 项电力层测试（数学 5 + 状态机 6 + 线圈分组 4 + 储能 9 + 电池 6 + 集成 2），
-  全量 95 项测试通过
+- ✅ 新增：表现层 —— Tooltip 仪表盘（检测值写回组件 → 槽位同步 → 客户端渲染，双语 key）
+- ✅ 新增：34 项电力层测试（数学 5 + 状态机 6 + 线圈分组 4 + 储能 9 + 电池 6 + 仪表 2 + 集成 2），
+  全量 102 项测试通过
 - 📄 技术文档：[living-power-tech.md](docs/tech/living-power-tech.md)
 
 **最近更新** (2026-08-25):
