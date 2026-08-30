@@ -97,7 +97,11 @@ public class ContainerEnergyStorage implements IEnergyStorage {
 
     @Override
     public int receiveEnergy(int toReceive, boolean simulate) {
-        return 0;   // 只出不进：发电是唯一能量来源
+        if (toReceive <= 0) return 0;
+        IItemHandler items = resolveItems(be.getLevel(), be.getBlockPos(), null);
+        if (items == null) return 0;
+        return (int) (receive(items,
+            (long) toReceive * 1000L, simulate, be::setChanged) / 1000L);
     }
 
     @Override
@@ -107,7 +111,7 @@ public class ContainerEnergyStorage implements IEnergyStorage {
 
     @Override
     public boolean canReceive() {
-        return false;
+        return true;   // 外部电源可对容器充电（充入各铜灯堆）
     }
 
     @Override
@@ -139,7 +143,79 @@ public class ContainerEnergyStorage implements IEnergyStorage {
     }
 
     private static boolean isBulb(ItemStack stack) {
-        return !stack.isEmpty() && LivingWaxedCopperFunction.isWaxedBulb(stack.getItem());
+        // 仅活化的涂蜡铜灯参与能源系统（取消活化 = 普通物品，电量保留但不进出）
+        return !stack.isEmpty() && LivingItemManager.isLivingItem(stack)
+            && LivingWaxedCopperFunction.isWaxedBulb(stack.getItem());
+    }
+
+    // ── 充电核心（mFE）──
+
+    /**
+     * 充电：外部来的电按「剩余容量比例」分配入各铜灯堆
+     * （每盏 q += share/count 向下取整，零头保守丢弃），受每盏容量 C 上限。
+     * 有实际充入时回调 {@code onChanged}（落盘持久化）。
+     */
+    static long receive(IItemHandler items,
+                        long wantMilliFe, boolean simulate, @Nullable Runnable onChanged) {
+        int slots = items.getSlots();
+        long[] remaining = new long[slots];
+        long totalRemaining = 0;
+        for (int i = 0; i < slots; i++) {
+            ItemStack stack = items.getStackInSlot(i);
+            if (!isBulb(stack)) continue;
+            remaining[i] = PowerMath.BULB_UNIT_CAPACITY_MFE * stack.getCount()
+                - LivingItemManager.getWaxedBulbData(stack).totalChargeMilliFe(stack.getCount());
+            totalRemaining += remaining[i];
+        }
+        if (totalRemaining <= 0) return 0;   // 全满
+
+        // 整 FE 量化：机器支付多少 FE，铜灯就收多少 mFE×1000——杜绝取整零头凭空造电
+        long accept = Math.min(wantMilliFe, totalRemaining);
+        accept -= accept % 1000;
+        if (accept <= 0) return 0;
+
+        // 按剩余容量比例分配（两遍式：先算各堆份额，再统一落账）
+        long distributed = 0;
+        boolean changed = false;
+        for (int i = 0; i < slots; i++) {
+            if (remaining[i] <= 0) continue;
+            long share = accept * remaining[i] / totalRemaining;
+            ItemStack stack = items.getStackInSlot(i);
+            int count = stack.getCount();
+            long perLamp = share / count;
+            if (perLamp <= 0) continue;
+            if (!simulate) {
+                LivingItemManager.setWaxedBulbData(stack,
+                    LivingItemManager.getWaxedBulbData(stack).withChargeMilliFe(
+                        LivingItemManager.getWaxedBulbData(stack).chargeMilliFe() + perLamp));
+                changed = true;
+            }
+            distributed += perLamp * count;
+        }
+
+        // 零头回收：各堆按盏取整的残余，1 mFE 逐灯补入有空间的灯（不凭空产生、不浪费）
+        long leftover = accept - distributed;
+        while (leftover > 0) {
+            boolean progressed = false;
+            for (int i = 0; i < slots && leftover > 0; i++) {
+                ItemStack stack = items.getStackInSlot(i);
+                if (!isBulb(stack)) continue;
+                long q = LivingItemManager.getWaxedBulbData(stack).chargeMilliFe();
+                if (q >= PowerMath.BULB_UNIT_CAPACITY_MFE) continue;
+                if (!simulate) {
+                    LivingItemManager.setWaxedBulbData(stack,
+                        LivingItemManager.getWaxedBulbData(stack).withChargeMilliFe(q + 1));
+                    changed = true;
+                }
+                distributed++;
+                leftover--;
+                progressed = true;
+            }
+            if (!progressed) break;
+        }
+
+        if (changed && onChanged != null && !simulate) onChanged.run();
+        return distributed;   // = accept（整 FE），与机器支付严格相等
     }
 
     // ── 取电核心（mFE）──

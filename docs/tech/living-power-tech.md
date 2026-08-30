@@ -200,10 +200,11 @@ unlock = eff × regularity
 否则：按各堆剩余容量比例分配，每盏 q += share/count（向下取整，零头丢弃）
 ```
 
-**对外取电**（`ContainerEnergyStorage`，实现 NeoForge `IEnergyStorage`）：
+**对外取电 / 充电**（`ContainerEnergyStorage`，实现 NeoForge `IEnergyStorage`）：
 ```
-请求 X mFE：直接逐堆扣铜灯（槽位顺序，每盏等量，向下取整）
-方块级接口只出不进（canReceive=false）——发电是唯一来源，限流归用电侧
+取电：请求 X mFE → 直接逐堆扣铜灯（槽位顺序，每盏等量，向下取整）
+充电：外部电源推电 → 按剩余容量比例充入各铜灯堆（受每盏容量 C 上限）
+   —— 跨系统能量等量转换（外部 100 FE 进灯 ↔ 红电侧取 100 FE），守恒无套利
 ```
 
 **物品访问（模组兼容的关键修复）**：
@@ -247,8 +248,34 @@ unlock = eff × regularity
 方块级接口仍只出不进（发电是池的唯一来源）——双向开放的是铜灯物品
 ```
 
-**单位容量**：`PowerMath.BULB_UNIT_CAPACITY_FE = 100`（每盏 100 FE）——
-与 K 并列的第二个标定常数，实测后可调。
+**能量生态兼容路线（两套能量 API）**：
+
+NeoForge 生态存在**两代能量能力**，类型签名不同 → 互不可见，需分别注册：
+
+| 世代 | 能力 | 类型 | 单位 | 状态 |
+|---|---|---|---|---|
+| 旧（1.21.1 线，21.1.230） | `EnergyStorage.BLOCK` | `IEnergyStorage` | int | **我们的实现** ✓ 生态主流 |
+| 新（1.21.6+ 线，Transfer API） | `Energy.BLOCK` | `EnergyHandler`（`net.neoforged.neoforge.transfer`） | long + 事务模型 | 未注册 → Pipez 等新 API 模组查不到我们 |
+
+- 新 API 的设计动机：`long` 单位、**事务模型**（操作在 `TransactionContext` 内暂存、
+  `commit()` 才生效，支持嵌套回滚）、物品/流体/能量三套接口统一；
+- Pipez 能量管道（master 线）使用新 API → 查询我们返回 null → 不兼容的根因（已确认）；
+- **兼容路线**：短期 FE-only（Mekanism 电缆已验证 ✓）；中期软依赖 Mekanism 能力适配
+  （注册 `Capabilities.Energy.BLOCK` 的 EnergyHandler 包装器，Pipez 能量管即通）；
+  长期随 NeoForge 升级全面补 EnergyHandler 形态（内部逻辑复用，仅换接口签名）。
+
+**Mekanism = 能量生态的枢纽**：其通用电缆内置 FE / RF（Redstone Flux）/ EU / J 等
+几乎所有主流电力单位的转换——**我们对接 FE 一项，就自动接入整个转换网络**。
+这是「只实现 FE、其余交给枢纽」路线的实证支撑。
+
+**实测修复（游戏内反馈）**：
+1. **充电刷电（NBT 确认）**：充电分配的按盏取整零头 + 返回值 floor——
+   每次外部充电最多凭空产生 ~1 FE。修复：接收量**整 FE 量化**
+   （`accept -= accept % 1000`，机器付多少、灯收多少，分毫不差），
+   分配零头 1 mFE 逐灯回收（不凭空产生也不浪费）；
+2. **取消活化的灯依旧被取电**：`isBulb` 补 `isLivingItem` 检查——
+   取消活化 = 普通物品，电量保留但不参与能源系统（重新活化即恢复）；
+3. **结算/取电落盘**：改灯电量后调 `be.setChanged()`（此前不落盘，重进世界回档）。
 
 **Tooltip 仪表盘（阶段五预告）**：检测周期/相数/解锁度/功率等服务端内存态
 **不在 NBT 也不在网络同步里**，tooltip 直接读不到——按
@@ -324,5 +351,7 @@ K = 1/16 时数值与「单次能量 = |Δ| × 合因子 × (P/16)」的原始�
 | 耦合同频转发 | 谐振链 2:1 分频配方不可用，链上发电机需同周期调谐 | v2 分频转发（周期 ×2 再发射） |
 | 耦合每节点最多中继一次 | 多源汇聚节点的后续接收只计能量不转发 | 保守设计，观察后再定 |
 | 非 BE 容器不支持 | 充电宝搬入非 BE 容器时暂不可对外取电（发电本就需要 BE） | 有需求再补 Block 级注册 |
+| **Pipez 能量管道不兼容** | Pipez（master 线）使用新 Transfer API 的 `Energy.BLOCK`（EnergyHandler 类型），非 FE 的 `EnergyStorage.BLOCK` | 用 Mekanism 电缆取电；中期软依赖注册 EnergyHandler 适配（见能量生态兼容路线） |
+| 充电量化零头 | 剩余容量 < 1 FE 的部分不接收（整 FE 量化） | 保守方向（杜绝凭空造电），量级 ≤ 1 FE |
 | 发电机移除后 EMA 冻结 | 功率读数不清零（数据过期清理兜底） | 观察后再定 |
 | 事件 tick 计数随容器活跃度冻结 | 容器卸载期间周期被拉长 → 重锁 | 符合直觉，保留 |

@@ -184,6 +184,68 @@ class WaxedCopperStorageTest {
     }
 
     @Test
+    @DisplayName("充电：外部电按剩余容量比例充入各灯堆（受每盏容量 C 上限）")
+    void receive_distributesByRemainingCapacity() {
+        ItemStack b1 = bulb(16);   // 空，剩余 1_600_000
+        ItemStack b2 = bulb(16);
+        LivingItemManager.setWaxedBulbData(b2, new LivingWaxedBulbData(50_000));   // 剩余 800_000
+        IItemHandler handler = new FakeHandler(b1, b2);
+
+        // 剩余容量比例 b1:b2 = 2:1 → 30_000 mFE 中 b1 收 20_000（每盏 1250）、b2 收 10_000（每盏 625）
+        long got = ContainerEnergyStorage.receive(handler, 30_000, false, null);
+        assertEquals(30_000, got);
+        assertEquals(1_250, LivingItemManager.getWaxedBulbData(b1).chargeMilliFe());
+        assertEquals(50_000 + 625, LivingItemManager.getWaxedBulbData(b2).chargeMilliFe());
+    }
+
+    @Test
+    @DisplayName("充电 clamp：全满 → 接受 0")
+    void receive_fullBulbs_acceptZero() {
+        ItemStack b1 = bulb(16);
+        LivingItemManager.setWaxedBulbData(b1,
+            new LivingWaxedBulbData(PowerMath.BULB_UNIT_CAPACITY_MFE));
+        IItemHandler handler = new FakeHandler(b1);
+
+        assertEquals(0, ContainerEnergyStorage.receive(handler, 50_000, false, null));
+    }
+
+    @Test
+    @DisplayName("充电 simulate：不改状态")
+    void receive_simulateLeavesStateIntact() {
+        ItemStack b1 = bulb(16);
+        IItemHandler handler = new FakeHandler(b1);
+
+        assertEquals(30_000, ContainerEnergyStorage.receive(handler, 30_000, true, null));
+        assertEquals(0, LivingItemManager.getWaxedBulbData(b1).chargeMilliFe());
+    }
+
+    @Test
+    @DisplayName("充电量化：剩余容量非整 FE 的零头不接收（杜绝凭空造电）")
+    void receive_quantizedToWholeFe() {
+        ItemStack b1 = bulb(16);
+        // 每盏剩余 1 mFE → 总剩余 16 mFE < 1 FE → 整 FE 量化后接收 0
+        LivingItemManager.setWaxedBulbData(b1,
+            new LivingWaxedBulbData(PowerMath.BULB_UNIT_CAPACITY_MFE - 1));
+        IItemHandler handler = new FakeHandler(b1);
+
+        assertEquals(0, ContainerEnergyStorage.receive(handler, 1000_000, false, null));
+        assertEquals(PowerMath.BULB_UNIT_CAPACITY_MFE - 1,
+            LivingItemManager.getWaxedBulbData(b1).chargeMilliFe());
+    }
+
+    @Test
+    @DisplayName("取消活化的铜灯不参与能源系统（电量保留但不进出）")
+    void deactivatedBulb_excluded() {
+        ItemStack stack = new ItemStack(Items.WAXED_COPPER_BULB, 16);   // 未打 IS_LIVING
+        LivingItemManager.setWaxedBulbData(stack, new LivingWaxedBulbData(4_000));
+        IItemHandler handler = new FakeHandler(stack);
+
+        long got = ContainerEnergyStorage.extract(handler, 100_000, false, null);
+        assertEquals(0, got);
+        assertEquals(4_000, LivingItemManager.getWaxedBulbData(stack).chargeMilliFe());
+    }
+
+    @Test
     @DisplayName("发电量累计：RE 事件累加 + drain 清零")
     void generatedRe_accumulateAndDrain() {
         ContainerPowerData power = new ContainerPowerData();
