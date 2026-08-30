@@ -29,14 +29,18 @@ public class ContainerRedstoneData {
      */
     private static final int TICKS_PER_REPEATER_STEP = 2;
 
-    private static final int E_UP = 0;
-    private static final int E_DOWN = 1;
-    private static final int E_LEFT = 2;
-    private static final int E_RIGHT = 3;
-
     // ── 槽位类型位掩码 ──
     // 传播热路径上每格要做十几次「邻居是什么元件」的判定。
     // 用 Set<Integer>.contains 会带来装箱 + 哈希查找，改为按槽位索引的位图。
+    // EDGE_* 常量公开供电力层（domain/power）使用。
+    public static final int EDGE_UP = 0;
+    public static final int EDGE_DOWN = 1;
+    public static final int EDGE_LEFT = 2;
+    public static final int EDGE_RIGHT = 3;
+    private static final int E_UP = EDGE_UP;
+    private static final int E_DOWN = EDGE_DOWN;
+    private static final int E_LEFT = EDGE_LEFT;
+    private static final int E_RIGHT = EDGE_RIGHT;
     private static final int BIT_DUST = 1;
     private static final int BIT_TORCH = 1 << 1;
     private static final int BIT_BUTTON = 1 << 2;
@@ -82,6 +86,26 @@ public class ContainerRedstoneData {
 
     public static int getSignalCap(int stackCount) {
         return stackCount == 1 ? 15 : stackCount * stackCount;
+    }
+
+    /** 边方向数（电力层逐方向采样用，见 domain/power） */
+    public static final int EDGE_COUNT = 4;
+
+    /** 读取该槽位指定方向的当前边信号（电力层事件采样用） */
+    public int getEdgeValue(int slot, int dir) {
+        return edgeGrid == null ? 0 : edgeGrid.get(slot, dir);
+    }
+
+    /** 填充该槽位四个方向的当前边信号（out 长度 ≥ {@link #EDGE_COUNT}） */
+    public void getEdgeValues(int slot, int[] out) {
+        for (int dir = 0; dir < EDGE_COUNT && dir < out.length; dir++) {
+            out[dir] = edgeGrid == null ? 0 : edgeGrid.get(slot, dir);
+        }
+    }
+
+    /** 读取该槽位指定方向的上一 tick 边信号 */
+    public int getPrevEdgeValue(int slot, int dir) {
+        return prevEdgeGrid == null ? 0 : prevEdgeGrid.get(slot, dir);
     }
 
     public int getSignal(int slot) {
@@ -903,9 +927,13 @@ public class ContainerRedstoneData {
 
     private static boolean isConductiveBlock(ItemStack stack) {
         if (stack.getItem() instanceof BlockItem blockItem) {
-            return LivingItemManager.isLivingItem(stack)
-                && blockItem.getBlock().defaultBlockState()
-                    .isRedstoneConductor(EmptyBlockGetter.INSTANCE, BlockPos.ZERO);
+            if (!LivingItemManager.isLivingItem(stack)) return false;
+            // 涂蜡 = 绝缘（§3.2）：不参与信号层的充能/发射，电力层走感应耦合
+            if (com.qiqi.li.living.domain.power.LivingWaxedCopperFunction.isWaxedCopperBlock(stack.getItem())) {
+                return false;
+            }
+            return blockItem.getBlock().defaultBlockState()
+                .isRedstoneConductor(EmptyBlockGetter.INSTANCE, BlockPos.ZERO);
         }
         return false;
     }
@@ -1076,7 +1104,8 @@ public class ContainerRedstoneData {
         }
     }
 
-    private static int resolveSlot(int slot, int dir, int size, int width) {
+    /** 解析网格相邻槽位（0=UP 1=DOWN 2=LEFT 3=RIGHT），越界/换行返回 -1。供电力层耦合邻接使用 */
+    public static int resolveSlot(int slot, int dir, int size, int width) {
         int col = slot % width;
         int row = slot / width;
         int newCol = col;

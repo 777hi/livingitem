@@ -44,6 +44,7 @@ public class SimpleContainerContext implements ContainerContext {
 
     private ContainerFluidData fluidData;
     private ContainerRedstoneData redstoneData;
+    private com.qiqi.li.living.domain.power.ContainerPowerData powerData;
     private TickContext currentTickContext;
 
     public void setTickContext(TickContext tick) {
@@ -354,6 +355,16 @@ public class SimpleContainerContext implements ContainerContext {
             redstoneData = ContainerLivingItemHandler.getRedstoneData(this);
         }
         return redstoneData;
+    }
+
+    /**
+     * 获取或创建容器红电数据（电力层账本，跨 tick 持久）。
+     */
+    public com.qiqi.li.living.domain.power.ContainerPowerData getOrCreatePowerData() {
+        if (powerData == null) {
+            powerData = ContainerLivingItemHandler.getPowerData(this);
+        }
+        return powerData;
     }
 
     private void syncPlayerInventory(Inventory inv, int logicalSlot, ItemStack stack) {

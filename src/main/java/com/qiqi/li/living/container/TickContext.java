@@ -32,6 +32,7 @@ public class TickContext {
     public ContainerFluidData fluidData = ContainerFluidData.EMPTY;
     public ContainerStressData stressData = ContainerStressData.EMPTY;
     public ContainerRedstoneData redstoneData = null;
+    public com.qiqi.li.living.domain.power.ContainerPowerData powerData = null;
 
     private Map<String, Set<Integer>> functionSlots = Collections.emptyMap();
 
@@ -78,6 +79,21 @@ public class TickContext {
             }
         }
         return redstoneData;
+    }
+
+    /**
+     * 获取或创建容器红电数据（电力层账本）。
+     * 优先从持久化的 {@link SimpleContainerContext} 获取，确保事件状态跨 tick 保持。
+     */
+    public com.qiqi.li.living.domain.power.ContainerPowerData getOrCreatePowerData(ContainerContext context) {
+        if (powerData == null) {
+            if (context instanceof SimpleContainerContext simpleCtx) {
+                powerData = simpleCtx.getOrCreatePowerData();
+            } else {
+                powerData = new com.qiqi.li.living.domain.power.ContainerPowerData();
+            }
+        }
+        return powerData;
     }
 
     /**

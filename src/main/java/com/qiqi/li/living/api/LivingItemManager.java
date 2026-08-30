@@ -191,6 +191,13 @@ public class LivingItemManager {
                             .networkSynchronized(LivingCopperSignalData.STREAM_CODEC)
                             .build());
 
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<com.qiqi.li.living.domain.power.LivingWaxedCutData>> LIVING_WAXED_CUT_DATA =
+            DATA_COMPONENT_TYPES.register("living_waxed_cut_data", () ->
+                    DataComponentType.<com.qiqi.li.living.domain.power.LivingWaxedCutData>builder()
+                            .persistent(com.qiqi.li.living.domain.power.LivingWaxedCutData.CODEC)
+                            .networkSynchronized(com.qiqi.li.living.domain.power.LivingWaxedCutData.STREAM_CODEC)
+                            .build());
+
     private static final List<LivingItemFunction> FUNCTIONS = new ArrayList<>();
     private static final List<LivingItemFunction> FUNCTIONS_VIEW = Collections.unmodifiableList(FUNCTIONS);
     private static final Map<Item, List<LivingItemFunction>> APPLICABLE_CACHE = new ConcurrentHashMap<>();
@@ -460,6 +467,17 @@ public class LivingItemManager {
 
     public static LivingGrateData getGrateData(ItemStack stack) {
         return getData(stack, LIVING_GRATE_DATA.value(), LivingGrateData.DEFAULT);
+    }
+
+    public static com.qiqi.li.living.domain.power.LivingWaxedCutData getWaxedCutData(ItemStack stack) {
+        return getData(stack, LIVING_WAXED_CUT_DATA.value(),
+                com.qiqi.li.living.domain.power.LivingWaxedCutData.DEFAULT);
+    }
+
+    public static void setWaxedCutData(ItemStack stack,
+                                       com.qiqi.li.living.domain.power.LivingWaxedCutData data) {
+        setData(stack, LIVING_WAXED_CUT_DATA.value(), data,
+                com.qiqi.li.living.domain.power.LivingWaxedCutData.DEFAULT);
     }
 
     public static void setGrateData(ItemStack stack, LivingGrateData data) {

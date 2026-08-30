@@ -1,7 +1,7 @@
 # Living Item (活物品)
 
 **Minecraft 1.21.1 + NeoForge 21.1.x**
-*最后更新: 2026-08-22*
+*最后更新: 2026-08-30*
 *状态: Alpha 测试阶段 - v8.1 接口化重构完成 + 框架审查修复*
 
 ---
@@ -88,6 +88,7 @@ SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 | **活水车** | 力矩计算 + 应力叠加/抵消 + Create 软依赖 | [living-water-wheel-tech.md](docs/tech/living-water-wheel-tech.md) |
 | **活地图传送** | 三种场景 + UV 精确传送 + 跨维度 + 载具 + Sable 飞艇 | [living-map-ender-pearl-tech.md](docs/tech/living-map-ender-pearl-tech.md) |
 | **活红石** | 红石信号传播 + BFS 算法 + 反相器 + 堆叠数影响 | [living-redstone-tech.md](docs/tech/living-redstone-tech.md) |
+| **活涂蜡铜块（红电发电）** | 双因子感应发电 + 事件驱动记账 + RE/FE 单位制 | [living-power-tech.md](docs/tech/living-power-tech.md) |
 | **活打火石** | 交互触发器，无 tick 逻辑 | [living-flint-and-steel-tech.md](docs/tech/living-flint-and-steel-tech.md) |
 | **GUI交互** | 声明式规则 + 统一拦截 + 创造模式兼容 | [gui-interaction-system.md](docs/system-design/gui-interaction-system.md) |
 | **图标系统** | 三层架构 + 声明式配置 + 上下文切换 | [icon-system.md](docs/system-design/icon-system.md) |
@@ -205,6 +206,15 @@ src/main/java/com/qiqi/li/
 │   │   ├── LivingComparatorData.java         #     活比较器数据
 │   │   └── ContainerRedstoneData.java        #     容器级红石信号数据（EdgeGrid + 边界信号）
 │   │
+│   ├── domain/power/                        #   红电发电领域（活涂蜡铜块）
+│   │   ├── LivingWaxedCopperFunction.java    #     涂蜡发电机功能入口（priority=3，逐方向感应采样）
+│   │   ├── PowerMath.java                   #     发电数学（合因子/调谐效率/耦合管径/RE→FE）
+│   │   ├── PathState.java                   #     单路波形状态（周期 EMA + 相位资格）
+│   │   ├── ChannelState.java                #     线圈通道（相位域分组计 n + 规律度）
+│   │   ├── GeneratorState.java              #     单台发电机状态（线圈分组 + 方向映射）
+│   │   ├── LivingWaxedCutData.java          #     涂蜡切制组件（单线圈感应方向）
+│   │   └── ContainerPowerData.java          #     容器级红电账本（RE 事件 + EMA 功率）
+│   │
 │   ├── function/                             # 简单活物品功能（无需领域模块）
 │   │   └── LivingFlintAndSteelFunction.java  #   活打火石（交互触发器）
 │   │
@@ -289,6 +299,12 @@ src/test/java/com/qiqi/li/
 │   └── FakeContainerContext.java            # ContainerContext 测试替身（内存数组实现）
 ├── living/domain/redstone/
 │   └── ContainerRedstoneDataTest.java       # 红石信号传播（19 项）
+├── living/domain/power/
+│   ├── PowerMathTest.java                   # 发电数学（5 项）
+│   ├── ContainerPowerDataTest.java          # 相位质量状态机（6 项）
+│   ├── CoilGroupingTest.java                # 线圈分组（4 项）
+│   ├── WaxedCopperOscillatorIT.java         # 振荡器→发电全链路集成（1 项）
+│   └── WaxedCopperCouplingIT.java           # 耦合链集成：多跳中继+防回环（1 项）
 ├── living/domain/map/
 │   └── MapCoordHelperTest.java              # 地图坐标换算（29 项）
 └── living/transfer/
@@ -340,6 +356,17 @@ src/test/java/com/qiqi/li/
 - [x] 活红石块：恒定信号源
 - [x] 容器边界信号双向互通（`BlockStateBaseMixin` + `RedStoneWireBlockMixin`）
 
+### 红电发电（活涂蜡铜块 · 阶段一~三）
+- [x] 双因子模型落地：合因子 = n^(1+解锁度)，解锁度 = 调谐效率 × 规律度
+- [x] RE 自然单位记账（跳变即能量事件 + EMA 功率），K=1/16 边界换算
+- [x] 事件驱动采样：`priority=3` 晚于红石，edgeGrid 逐方向喂值
+- [x] 相位域分组计 n（同周期+同偏移合并，杂讯路不进域）
+- [x] 规律度：上升沿间隔 best-shift 一致度（事件驱动，O(1) 增量）
+- [x] 感应拓扑：线圈分组（铜块全向 / 雕文 V+H 双通道 / 切制单方向 WASD 配置）
+- [x] 感应耦合：相邻发电机管径加权分配 + 不回传防环 + 多跳中继（分层重算）
+- [x] 绝缘修复：涂蜡铜块排除出红石「充能导体」（杜绝信号泄漏绕过绝缘）
+- [x] 集成测试：拉杆振荡器（4t）+ 耦合链（A 直连 → B 一跳 → C 两跳）
+
 ### 活箱子
 - [x] 堆叠倍增模型 + UUID 映射 + LRU 缓存 + 磁盘持久化
 - [x] 漏斗自动传输 + 跨容器传输
@@ -379,6 +406,18 @@ src/test/java/com/qiqi/li/
 ## 开发进展
 
 ### 当前版本: v0.9-alpha
+
+**最近更新** (2026-08-30):
+- ✅ 新增：红电发电阶段一~三 —— `domain/power` 包
+  （`PowerMath` / `PathState` / `ChannelState` / `GeneratorState` / `ContainerPowerData`），
+  双因子模型落地：合因子 = n^(1+解锁度)，解锁度 = 调谐效率 × 规律度
+- ✅ 新增：`LivingWaxedCopperFunction`（priority=3，晚于红石）——涂蜡全家族 20 件活化，
+  逐方向采样 edgeGrid 事件，跳变即能量事件入账（RE 自然单位，K=1/16 边界换算）
+- ✅ 新增：阶段三 —— 感应拓扑（线圈分组：铜块全向/雕文 V+H/切制单方向）
+  + 感应耦合（管径加权守恒、不回传防环、多跳中继）
+  + 绝缘修复（涂蜡排除出充能导体，杜绝信号泄漏）
+- ✅ 新增：17 项电力层测试（数学 5 + 状态机 6 + 线圈分组 4 + 集成 2），全量 80 项测试通过
+- 📄 技术文档：[living-power-tech.md](docs/tech/living-power-tech.md)
 
 **最近更新** (2026-08-25):
 - ✅ 提升：红石传播时间分辨率从 2 tick 改为 **1 game tick**，取消跳帧。

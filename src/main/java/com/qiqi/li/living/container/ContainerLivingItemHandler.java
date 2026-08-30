@@ -57,6 +57,7 @@ public class ContainerLivingItemHandler {
 
     private static final Map<String, ContainerFluidData> FLUID_DATA_CACHE = new LinkedHashMap<>();
     private static final Map<String, ContainerRedstoneData> REDSTONE_DATA_CACHE = new LinkedHashMap<>();
+    private static final Map<String, com.qiqi.li.living.domain.power.ContainerPowerData> POWER_DATA_CACHE = new LinkedHashMap<>();
 
     /**
      * 位置 → 缓存键 反向索引。
@@ -136,6 +137,7 @@ public class ContainerLivingItemHandler {
         if (key == null) return;
         FLUID_DATA_CACHE.remove(key);
         REDSTONE_DATA_CACHE.remove(key);
+        POWER_DATA_CACHE.remove(key);
         POS_TO_CACHE_KEY.values().removeIf(key::equals);
     }
 
@@ -166,6 +168,24 @@ public class ContainerLivingItemHandler {
         return created;
     }
 
+    /**
+     * 获取或创建容器持久化红电数据（电力层账本）。
+     * 返回 null 表示容器不支持（如没有 containerKey）。
+     */
+    public static com.qiqi.li.living.domain.power.ContainerPowerData getPowerData(ContainerContext ctx) {
+        String key = cacheKey(ctx);
+        if (key == null) return null;
+
+        com.qiqi.li.living.domain.power.ContainerPowerData existing = POWER_DATA_CACHE.get(key);
+        if (existing != null) return existing;
+
+        com.qiqi.li.living.domain.power.ContainerPowerData created =
+            new com.qiqi.li.living.domain.power.ContainerPowerData();
+        POWER_DATA_CACHE.put(key, created);
+        indexPositions(ctx, key);
+        return created;
+    }
+
     /** 按位置 O(1) 查询红石数据，供 mixin 热路径调用 */
     public static ContainerRedstoneData getRedstoneDataByPos(Level level, BlockPos pos) {
         String key = POS_TO_CACHE_KEY.get(new PosKey(level.dimension(), pos));
@@ -182,16 +202,28 @@ public class ContainerLivingItemHandler {
         });
     }
 
+    /**
+     * 清理过期的红电数据（超过阈值毫秒未访问的条目）。
+     */
+    private static void cleanupStalePowerData(long currentTimeMs) {
+        POWER_DATA_CACHE.entrySet().removeIf(entry -> {
+            com.qiqi.li.living.domain.power.ContainerPowerData data = entry.getValue();
+            return currentTimeMs - data.getLastTickTime() > 120_000;
+        });
+    }
+
     /** 清理已失去主缓存条目的位置索引 */
     private static void cleanupStalePosIndex() {
         POS_TO_CACHE_KEY.values().removeIf(
-            key -> !FLUID_DATA_CACHE.containsKey(key) && !REDSTONE_DATA_CACHE.containsKey(key));
+            key -> !FLUID_DATA_CACHE.containsKey(key) && !REDSTONE_DATA_CACHE.containsKey(key)
+                && !POWER_DATA_CACHE.containsKey(key));
     }
 
     /** 清空全部容器级缓存（服务端关闭时调用，避免跨存档残留） */
     public static void clearAllCaches() {
         FLUID_DATA_CACHE.clear();
         REDSTONE_DATA_CACHE.clear();
+        POWER_DATA_CACHE.clear();
         POS_TO_CACHE_KEY.clear();
         LivingWaterBucketFunction.clearAllCaches();
         cleanupCounter = 0;
@@ -420,6 +452,7 @@ public class ContainerLivingItemHandler {
             long currentTimeMs = System.currentTimeMillis();
             cleanupStaleFluidData(currentTimeMs);
             cleanupStaleRedstoneData(currentTimeMs);
+            cleanupStalePowerData(currentTimeMs);
             cleanupStalePosIndex();
             LivingWaterBucketFunction.cleanupStaleEntries(currentTimeMs);
         }

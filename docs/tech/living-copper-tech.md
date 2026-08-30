@@ -631,7 +631,7 @@ is(slot, BIT_COPPER | BIT_CUT) → true  // 是铜块且是切制铜块（立交
 | 容器面信号输出 | ✅ | 铜块信号参与 faceOutput 计算 |
 | 跨容器铜块信号 | ❌ 不实现 | 铜块不读取 faceInput，跨容器传输由方向性红石元件负责 |
 | Tooltip 显示 | ✅ | 类型、频道、方向、状态等 |
-| 涂蜡铜块排除 | ✅ | 涂蜡铜块不适用活铜功能 |
+| 涂蜡铜块排除 | ✅ | 涂蜡铜块不适用活铜功能（其电力层见 [living-power-tech.md](living-power-tech.md)） |
 
 ### 6.2 待实现
 
