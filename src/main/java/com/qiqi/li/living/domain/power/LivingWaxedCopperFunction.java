@@ -3,8 +3,10 @@ package com.qiqi.li.living.domain.power;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Queue;
 import java.util.Set;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
@@ -20,13 +22,16 @@ import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.domain.redstone.ContainerRedstoneData;
 import com.qiqi.li.living.model.Pos2D;
+import com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.DomainSnapshot;
 
 /**
  * 活涂蜡铜块 —— 电力层发电机 / 电池（§3.4、§3.5、§3.6）。
  *
- * <p>涂蜡 = 绝缘 = 不参与信号层；通过感应邻居红电信号的<b>变化</b>发电。
- * 锈蚀四档 = 感应耦合管径（{@link PowerMath#coupling}），
- * 堆叠数 = 偏好周期（调谐旋钮），形态 = 线圈分组（{@code configureCoils}）。</p>
+ * <p>v3（铜块网络传播）：振荡器检测上升沿 → 通过同氧化等级的相邻铜块网络传播
+ * {@link PhaseEvent} → 发电机接收事件 → 域内计 n 算合因子。
+ * 不同锈蚀等级（新鲜/暴露/锈蚀/氧化）形成彼此隔离的铜块网络，
+ * 玩家需要搭建铜块路径从振荡器连接到发电机才能实现 >4 相输入。
+ * 涂蜡 = 绝缘 = 不参与信号层。</p>
  *
  * <p>调度：{@code getPriority()} = 3，必须晚于红石层（priority 2）——
  * 电力采样依赖红石已算完的 edgeGrid / prevEdgeGrid 双缓冲。</p>
@@ -34,9 +39,6 @@ import com.qiqi.li.living.model.Pos2D;
 public class LivingWaxedCopperFunction implements LivingItemFunction, HasContainerData, HasDirection {
 
     public static final String ID = "living_waxed_copper";
-
-    /** 感应耦合最大转发层数（层 0 = 直连辐射；耦合深度越大衰减越重） */
-    private static final int MAX_COUPLING_LAYERS = 3;
 
     @Override
     public boolean canApply(ItemStack stack) {
@@ -70,58 +72,103 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         }
 
         int size = ctx.getSize();
-        int width = ctx.getWidth();
+        int containerWidth = ctx.getWidth();
+        if (containerWidth <= 0) containerWidth = 9; // fallback
         long now = powerData.currentTick();
 
-        // ── 收集发电机（铜灯跳过）+ 形状配置 ──
+        // ── 收集发电机（铜灯跳过）──
         Map<Integer, GeneratorState> active = new HashMap<>();
-        Map<Integer, Integer> oxidation = new HashMap<>();
         for (SlotEntry entry : entries) {
             ItemStack stack = entry.stack();
-            if (stack.isEmpty() || isWaxedBulb(stack.getItem())) continue;   // 铜灯 = 电池（阶段四）
-
+            if (stack.isEmpty() || isWaxedBulb(stack.getItem())) continue;
             int slot = entry.slotIndex();
             if (slot < 0 || slot >= size) continue;
             GeneratorState gen = powerData.getOrCreateGenerator(slot);
             gen.setPreferredPeriodFromStack(stack.getCount());
-            configureCoils(gen, stack);
             active.put(slot, gen);
-            oxidation.put(slot, getOxidationLevel(stack.getItem()));
         }
         if (active.isEmpty()) {
             powerData.endTick(0);
             return;
         }
 
-        // ── Pass 1：直连采样（edgeGrid 逐方向 → 直连路） ──
-        int[] edges = new int[ContainerRedstoneData.EDGE_COUNT];
-        double[] directValue = new double[size];
+        // ── 铜块网络传播：每台发电机 BFS 遍历同氧化等级铜块网络 ──
+        // 边信号跟踪器持久化在 ContainerPowerData 中（跨 tick 跟踪周期）
+
         for (var e : active.entrySet()) {
-            int slot = e.getKey();
+            int genSlot = e.getKey();
             GeneratorState gen = e.getValue();
-            redstone.getEdgeValues(slot, edges);
-            double sum = 0;
-            for (int dir = 0; dir < ContainerRedstoneData.EDGE_COUNT; dir++) {
-                int ch = gen.dirChannel(dir);
-                if (ch < 0) continue;
-                ChannelState channel = gen.channel(ch);
-                int pathIdx = gen.dirDirectPath(dir);
-                if (pathIdx >= channel.pathCount()) continue;   // 配置切换瞬间的防御
-                int delta = channel.onPathValue(pathIdx, now, edges[dir]);
-                if (delta != 0) {
-                    credit(powerData, channel, pathIdx, gen.preferredPeriod(), delta);
+            ChannelState channel = gen.channel();
+            int pref = gen.preferredPeriod();
+
+            // 获取发电机的氧化等级
+            ItemStack genStack = ctx.getItem(genSlot);
+            int genOxidation = getOxidationLevel(genStack.getItem());
+
+            // BFS：找同氧化等级网络中所有有边信号的槽位
+            Set<Integer> visited = new HashSet<>();
+            Queue<Integer> queue = new LinkedList<>();
+            queue.add(genSlot);
+            visited.add(genSlot);
+
+            while (!queue.isEmpty()) {
+                int current = queue.poll();
+                int row = current / containerWidth;
+                int col = current % containerWidth;
+
+                // 检查该槽位的 4 条边
+                for (int dir = 0; dir < ContainerRedstoneData.EDGE_COUNT; dir++) {
+                    int signal = redstone.getEdgeValue(current, dir);
+                    int prevSignal = redstone.getPrevEdgeValue(current, dir);
+                    if (signal == prevSignal) continue;
+
+                    int delta = signal - prevSignal;
+                    int absDelta = Math.abs(delta);
+
+                    if (delta > 0) {
+                        // 上升沿：从持久化 tracker 获取周期信息
+                        long edgeKey = ((long) current << 2) | dir;
+                        SignalTracker tracker = powerData.getOrCreateEdgeTracker(edgeKey);
+                        tracker.onRisingEdge(now, absDelta);
+                        if (tracker.period() > 0) {
+                            channel.onPhaseEvent(new PhaseEvent(
+                                (int) edgeKey, tracker.period(),
+                                tracker.offset(), absDelta, now), pref);
+                        }
+                    }
                 }
-                sum += channel.path(pathIdx).lastValue();
+
+                // 遍历四个方向找同氧化等级的铜块邻居
+                int[][] dirs = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
+                for (int[] d : dirs) {
+                    int nr = row + d[0];
+                    int nc = col + d[1];
+                    if (nr < 0 || nc < 0 || nc >= containerWidth) continue;
+                    int neighbor = nr * containerWidth + nc;
+                    if (neighbor < 0 || neighbor >= size) continue;
+                    if (visited.contains(neighbor)) continue;
+                    ItemStack neighborStack = ctx.getItem(neighbor);
+                    if (neighborStack.isEmpty()) continue;
+                    if (!isWaxedCopperBlock(neighborStack.getItem())) continue;
+                    if (isWaxedBulb(neighborStack.getItem())) continue; // 铜灯不导电
+                    if (getOxidationLevel(neighborStack.getItem()) != genOxidation) continue;
+                    visited.add(neighbor);
+                    queue.add(neighbor);
+                }
             }
-            directValue[slot] = sum;
+
+            channel.tickCleanup(now, pref);
+
+            // ── 能量入账：每 tick 每发电机一次，从最佳域计算 ──
+            double factor = channel.bestFactor(pref);
+            int period = channel.bestPeriod(pref);
+            if (factor > 0 && period > 0) {
+                long re = PowerMath.eventEnergyRe(factor, period);
+                if (re > 0) powerData.onEventEnergy(re);
+            }
         }
 
-        // ── 相位域每 tick 重算（无上升沿也要重算——否则撤路后 n 冻结成幻影值）──
-        for (var e : active.entrySet()) {
-            e.getValue().primaryChannel().recountPhaseDomains(now);
-        }
-
-        // ── 检测仪表盘写回（阶段五）：检测值 → DataComponent → 槽位同步 ──
+        // ── 检测仪表盘写回 ──
         for (var e : active.entrySet()) {
             int slot = e.getKey();
             GeneratorState gen = e.getValue();
@@ -136,18 +183,13 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             }
         }
 
-        // ── Pass 2：感应耦合（分层辐射 + 不回传 + 加权守恒） ──
-        couple(active, oxidation, directValue, size, width, now, powerData);
-
-        // ── 发电直存（§3.6 v17.5）：本 tick 发电量按剩余容量比例分配入铜灯堆 ──
-        // 无铜灯 → 电凭空消失（显性浪费）。铜灯是唯一储存，容器只是铜灯的架子。
+        // ── 发电直存（§3.6 v17.5）──
         long generatedRe = powerData.drainGeneratedRe();
         boolean bankChanged = false;
         if (generatedRe > 0) {
             bankChanged = distributeToBulbs(generatedRe, entries);
         }
         if (bankChanged && ctx instanceof com.qiqi.li.living.container.SimpleContainerContext simpleCtx) {
-            // 铜灯电量变更 → 标记容器数据已改（否则不落盘存档）
             for (net.minecraft.world.level.block.entity.BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {
                 be.setChanged();
             }
@@ -156,20 +198,101 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         powerData.endTick(generatedRe);
     }
 
+    // ── 振荡器信号跟踪 ──
+
     /**
-     * 发电直存（§3.6 v17.5）：本 tick 发电量按「剩余容量比例」分配入各铜灯堆
-     * （充电不限率，每盏 q += share/count 向下取整，零头保守丢弃）；
-     * 无铜灯 → 电凭空消失（显性浪费）；铜灯全满 → 弃（电池已满）。
-     * 电全部住在铜灯 DataComponent 里，随物品走、随 NBT 持久化。
+     * 单槽位振荡器信号跟踪器 —— 检测上升沿、估计周期和偏移。
+     */
+    public static class SignalTracker {
+        private int lastValue;
+        private long lastRisingTick = -1;
+        private long prevRisingTick = -1;
+        private double periodTicks;
+        private int intervalsSeen;
+        private int lastDelta;
+
+        /** 记录一次值变化（用于检测上升沿，外部已判定 delta > 0 才调用） */
+        public void onRisingEdge(long tick, int delta) {
+            lastDelta = delta;
+            if (lastRisingTick >= 0) {
+                long interval = tick - lastRisingTick;
+                if (interval > 0) {
+                    periodTicks = intervalsSeen == 0
+                        ? interval
+                        : periodTicks + (interval - periodTicks) * 0.5;
+                    intervalsSeen++;
+                }
+                prevRisingTick = lastRisingTick;
+            }
+            lastRisingTick = tick;
+        }
+
+        /** 周期估计（tick）；少于 2 个间隔则 0 */
+        public int period() {
+            if (intervalsSeen < 1 || periodTicks < 1.5) return 0;
+            return (int) Math.round(periodTicks);
+        }
+
+        /** 在当前周期内的相位偏移（0 ~ period-1） */
+        public int offset() {
+            if (period() <= 0 || lastRisingTick < 0) return 0;
+            return (int) (lastRisingTick % period());
+        }
+
+        /** 上次跳变幅度 */
+        public int lastDelta() {
+            return lastDelta;
+        }
+    }
+
+    // ── 仪表盘构建 ──
+
+    /**
+     * 从发电机状态构建检测仪表盘快照（纯逻辑，可单测）。
+     */
+    static LivingWaxedGeneratorData buildTelemetry(
+            GeneratorState gen, int stackCount, int coilForm, ContainerPowerData powerData) {
+        ChannelState channel = gen.channel();
+        int pref = gen.preferredPeriod();
+        int bestPeriod = channel.bestPeriod(pref);
+        int bestN = channel.bestN(pref);
+        int bestDelta = channel.bestDelta();
+        double effDeltaSum = channel.bestEffDeltaSum(pref);
+
+        // 全部域快照（F3+H 显示用）
+        List<DomainSnapshot> domainSnapshots = new ArrayList<>();
+        for (var e : channel.domains().entrySet()) {
+            ChannelState.PhaseDomain d = e.getValue();
+            List<Integer> deltas = new ArrayList<>(d.deltaByOffset().values());
+            domainSnapshots.add(new DomainSnapshot(
+                d.period(), d.n(), d.maxDelta(), d.effDeltaSum(), deltas));
+        }
+
+        long emaFe = powerData != null ? powerData.getEmaPowerFe() : 0;
+
+        if (bestN <= 0) {
+            return new LivingWaxedGeneratorData(
+                0, 0, 0, 0, 0, coilForm, emaFe, domainSnapshots);
+        }
+        double eff = PowerMath.tuningEfficiency(
+            Math.abs(bestPeriod - pref), pref);
+        double unlock = Math.min(1.0, eff * bestN / pref);
+        int unlockPermille = (int) Math.round(unlock * 1000);
+        int effDeltaSumPermille = (int) Math.round(effDeltaSum * 1000);
+        return new LivingWaxedGeneratorData(
+            bestPeriod, bestN, unlockPermille, bestDelta, effDeltaSumPermille,
+            coilForm, emaFe, domainSnapshots);
+    }
+
+    /**
+     * 发电直存（§3.6 v17.5）：本 tick 发电量按「剩余容量比例」分配入各铜灯堆。
      *
      * @param generatedRe 本 tick 发电量（RE，来自 {@code drainGeneratedRe()}）
      * @return true 表示有铜灯实际充入了电量（需 setChanged 落盘）
      */
     static boolean distributeToBulbs(long generatedRe, List<SlotEntry> entries) {
         long mfe = Math.round(generatedRe * PowerMath.RE_TO_FE * 1000.0);
-        if (mfe <= 0) {
-            return false;
-        }
+        if (mfe <= 0) return false;
 
         record BulbRef(ItemStack stack, int count, long remaining) {}
         List<BulbRef> bulbs = new ArrayList<>();
@@ -179,14 +302,11 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             if (stack.isEmpty() || !isWaxedBulb(stack.getItem())) continue;
             long rem = LivingWaxedBulbData.totalCapacityMilliFe(stack.getCount())
                 - LivingItemManager.getWaxedBulbData(stack).totalChargeMilliFe(stack.getCount());
-            if (rem <= 0) continue;   // 该堆已满
+            if (rem <= 0) continue;
             bulbs.add(new BulbRef(stack, stack.getCount(), rem));
             totalRemaining += rem;
         }
-
-        if (bulbs.isEmpty()) {
-            return false;   // 无存储 → 电凭空消失（显性浪费）
-        }
+        if (bulbs.isEmpty()) return false;
 
         long distributed = 0;
         for (BulbRef ref : bulbs) {
@@ -199,225 +319,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             LivingItemManager.setWaxedBulbData(ref.stack(), data.withChargeMilliFe(newQ));
             distributed += (newQ - data.chargeMilliFe()) * ref.count();
         }
-        return distributed > 0;   // 零头与满溢 → 弃（电池已满/损耗）
-    }
-
-    /**
-     * 从发电机状态构建检测仪表盘快照（纯逻辑，可单测）。
-     * 主输入路 = 相数 n 最大的可用路（并列取周期长者）。
-     */
-    static com.qiqi.li.living.domain.power.LivingWaxedGeneratorData buildTelemetry(
-            GeneratorState gen, int stackCount, int coilForm, ContainerPowerData powerData) {
-        ChannelState channel = gen.primaryChannel();
-        int bestN = 0;
-        int bestPeriod = 0;
-        int bestDelta = 0;
-        for (int i = 0; i < channel.pathCount(); i++) {
-            PathState p = channel.path(i);
-            if (!p.hasUsablePhase()) continue;
-            int n = p.domainN();
-            if (n > bestN || (n == bestN && p.roundedPeriod() > bestPeriod)) {
-                bestN = n;
-                bestPeriod = p.roundedPeriod();
-                bestDelta = p.lastDelta();
-            }
-        }
-        // 波形窗口：4 条直连路，按方向序（0=↑ 1=↓ 2=← 3=→，与 tooltip 行标签一一对应）
-        List<Integer> waves = new ArrayList<>();
-        for (int d = 0; d < 4; d++) {
-            int pathIdx = gen.dirDirectPath(d);
-            waves.add(pathIdx < channel.pathCount() ? channel.path(pathIdx).waveBits() : 0);
-        }
-
-        // 全部路径快照（F3+H 高级显示用）：按通道组织
-        List<com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.PathSnapshot> paths = new ArrayList<>();
-        for (int c = 0; c < gen.channelCount(); c++) {
-            ChannelState ch = gen.channel(c);
-            for (int d = 0; d < 4; d++) {
-                if (gen.dirChannel(d) != c) continue;
-                // 直连路
-                int dpIdx = gen.dirDirectPath(d);
-                if (dpIdx < ch.pathCount()) {
-                    PathState p = ch.path(dpIdx);
-                    paths.add(new com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.PathSnapshot(
-                        c, d, true, p.waveBits(), p.lastDelta(), p.roundedPeriod()));
-                }
-                // 感应路
-                int vpIdx = gen.dirVirtualPath(d);
-                if (vpIdx < ch.pathCount()) {
-                    PathState p = ch.path(vpIdx);
-                    paths.add(new com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.PathSnapshot(
-                        c, d, false, p.waveBits(), p.lastDelta(), p.roundedPeriod()));
-                }
-            }
-        }
-
-        long emaFe = powerData != null ? powerData.getEmaPowerFe() : 0;
-
-        if (bestN <= 0) {
-            return new com.qiqi.li.living.domain.power.LivingWaxedGeneratorData(
-                0, 0, 0, 0, waves, coilForm, emaFe, paths);
-        }
-        double eff = PowerMath.tuningEfficiency(
-            Math.abs(bestPeriod - gen.preferredPeriod()), gen.preferredPeriod());
-        double unlock = Math.min(1.0, eff * bestN / gen.preferredPeriod());
-        int unlockPermille = (int) Math.round(unlock * 1000);
-        return new com.qiqi.li.living.domain.power.LivingWaxedGeneratorData(
-            bestPeriod, bestN, unlockPermille, bestDelta, waves, coilForm, emaFe, paths);
-    }
-
-    /** 单路跳变 → 合因子 → RE 入账 */
-    private static void credit(ContainerPowerData powerData, ChannelState channel, int pathIdx,
-                               int preferredPeriod, int delta) {
-        double factor = channel.factorFor(pathIdx, preferredPeriod, Math.abs(delta));
-        long re = PowerMath.eventEnergyRe(factor,
-            channel.path(pathIdx).periodTicks());
-        powerData.onEventEnergy(re);
-    }
-
-    /**
-     * 感应耦合（§3.5）：相邻发电机按管径 c 加权分配直连振荡，
-     * 分层转发（≤ {@value MAX_COUPLING_LAYERS} 层，不回传来源方向杜绝自激回环），
-     * 分叉守恒：share = c_T / Σc_下游。
-     *
-     * <p>v1 为同频转发；分频（周期 ×2）转发待实现（见 living-power-tech.md 已知限制）。</p>
-     */
-    private static void couple(Map<Integer, GeneratorState> active, Map<Integer, Integer> oxidation,
-                               double[] directValue, int size, int width, long now,
-                               ContainerPowerData powerData) {
-        Map<Integer, double[]> receivedDir = new HashMap<>();      // 节点 → 各方向收到的感应值
-        Map<Integer, Double> relay = new HashMap<>();              // 本层待辐射值
-        Map<Integer, Set<Integer>> sources = new HashMap<>();      // 节点的感应来源（禁止回传）
-        Set<Integer> enqueued = new HashSet<>();
-        Set<Integer> relayed = new HashSet<>();                    // 已辐射（每节点最多辐射两次：root + 中继）
-
-        // 层 0：直连辐射源（直连复合值非零的发电机）
-        for (var e : active.entrySet()) {
-            if (directValue[e.getKey()] != 0) {
-                relay.put(e.getKey(), directValue[e.getKey()]);
-                enqueued.add(e.getKey());
-            }
-        }
-
-        for (int layer = 0; layer <= MAX_COUPLING_LAYERS && !relay.isEmpty(); layer++) {
-            Map<Integer, Double> layerReceived = new HashMap<>();
-            Map<Integer, Set<Integer>> layerSources = new HashMap<>();
-            Set<Integer> nextEnqueue = new HashSet<>();
-
-            for (var e : relay.entrySet()) {
-                int s = e.getKey();
-                if (relayed.contains(s)) continue;
-                relayed.add(s);
-                double relayV = e.getValue();
-                if (relayV == 0) continue;
-
-                // 候选下游：相邻发电机，排除来源方向（不回传）
-                List<Integer> targets = new ArrayList<>();
-                List<Integer> targetDirs = new ArrayList<>();
-                double cSum = 0;
-                for (int dir = 0; dir < ContainerRedstoneData.EDGE_COUNT; dir++) {
-                    int tSlot = ContainerRedstoneData.resolveSlot(s, dir, size, width);
-                    if (tSlot < 0 || !active.containsKey(tSlot)) continue;
-                    Set<Integer> from = sources.get(s);
-                    if (from != null && from.contains(tSlot)) continue;
-                    targets.add(tSlot);
-                    targetDirs.add(dir);
-                    cSum += PowerMath.coupling(oxidation.get(tSlot));
-                }
-                if (targets.isEmpty() || cSum <= 0) continue;
-
-                for (int i = 0; i < targets.size(); i++) {
-                    int tSlot = targets.get(i);
-                    double v = relayV * PowerMath.coupling(oxidation.get(tSlot)) / cSum;
-                    int tDir = opposite(targetDirs.get(i));
-                    receivedDir.computeIfAbsent(tSlot, k -> new double[4])[tDir] += v;
-                    layerReceived.merge(tSlot, v, Double::sum);
-                    layerSources.computeIfAbsent(tSlot, k -> new HashSet<>()).add(s);
-                }
-            }
-
-            // 层末：新接收节点入队中继（值 = 自身直连 + 首次接收量；同层多源先合并）
-            for (var e : layerReceived.entrySet()) {
-                int t = e.getKey();
-                if (enqueued.contains(t)) continue;   // 已入过队（root 或中继）→ 不重复中继
-                enqueued.add(t);
-                nextEnqueue.add(t);
-                relay.put(t, directValue[t] + e.getValue());
-                sources.put(t, layerSources.get(t));
-            }
-            // 已入队但未辐射的节点继续留在队列（relay map 即队列）
-            for (Integer t : List.copyOf(relay.keySet())) {
-                if (!relayed.contains(t) && !nextEnqueue.contains(t) && enqueued.contains(t)) {
-                    nextEnqueue.add(t);
-                }
-            }
-            relay.keySet().retainAll(nextEnqueue);
-            // 补齐 sources 引用（中继节点用自己的来源集）
-            for (Integer t : relay.keySet()) {
-                sources.computeIfAbsent(t, k -> new HashSet<>());
-            }
-        }
-
-        // ── 结算：虚拟路每 tick 都要喂（0 也是有效电平，否则波形停格测不到跳变）──
-        // 只喂有发电机邻居的方向
-        for (var e : active.entrySet()) {
-            int slot = e.getKey();
-            GeneratorState gen = e.getValue();
-            double[] dirs = receivedDir.get(slot);
-            for (int d = 0; d < ContainerRedstoneData.EDGE_COUNT; d++) {
-                int neighbor = ContainerRedstoneData.resolveSlot(slot, d, size, width);
-                if (neighbor < 0 || !active.containsKey(neighbor)) continue;
-                int ch = gen.dirChannel(d);
-                if (ch < 0) continue;
-                ChannelState channel = gen.channel(ch);
-                int idx = gen.dirVirtualPath(d);
-                int value = dirs == null ? 0 : (int) Math.round(dirs[d]);
-                int delta = channel.onPathValue(idx, now, value);
-                if (delta != 0) {
-                    credit(powerData, channel, idx, gen.preferredPeriod(), delta);
-                }
-            }
-        }
-    }
-
-    /** 反方向：UP↔DOWN、LEFT↔RIGHT（常量按 0,1,2,3 相邻排列，异或 1 即反向） */
-    private static int opposite(int dir) {
-        return dir ^ 1;
-    }
-
-    /** 从物品取线圈形态（用于 telemetry 和 tooltip 显示） */
-    private static int getCoilForm(Item item) {
-        if (isWaxedChiseled(item)) return com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.FORM_CHISELED;
-        if (isWaxedCut(item)) return com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.FORM_CUT;
-        if (isWaxedGrate(item)) return com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.FORM_GRATE;
-        return com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.FORM_BLOCK;
-    }
-
-    // ── 线圈分组（§3.4 感应拓扑）──
-
-    /** 形状决定通道划分；配置指纹不变时不重建（保护波形状态） */
-    static void configureCoils(GeneratorState gen, ItemStack stack) {
-        Item item = stack.getItem();
-        if (isWaxedChiseled(item)) {
-            gen.configureCoilsIfChanged(20_000, new int[][]{
-                {ContainerRedstoneData.EDGE_UP, ContainerRedstoneData.EDGE_DOWN},       // V 线圈
-                {ContainerRedstoneData.EDGE_LEFT, ContainerRedstoneData.EDGE_RIGHT}});  // H 线圈
-        } else if (isWaxedCut(item)) {
-            int dir = dirIndex(LivingItemManager.getWaxedCutData(stack).senseDir());
-            gen.configureCoilsIfChanged(30_000 + dir, new int[][]{{dir}});
-        } else {   // 铜块 / 格栅（格栅频率过滤待定，v1 同全向）
-            gen.configureCoilsIfChanged(10_000, new int[][]{
-                {ContainerRedstoneData.EDGE_UP, ContainerRedstoneData.EDGE_DOWN,
-                 ContainerRedstoneData.EDGE_LEFT, ContainerRedstoneData.EDGE_RIGHT}});
-        }
-    }
-
-    /** Pos2D → 边方向索引（非四正方向回退 UP） */
-    static int dirIndex(Pos2D dir) {
-        if (Pos2D.DOWN.equals(dir)) return ContainerRedstoneData.EDGE_DOWN;
-        if (Pos2D.LEFT.equals(dir)) return ContainerRedstoneData.EDGE_LEFT;
-        if (Pos2D.RIGHT.equals(dir)) return ContainerRedstoneData.EDGE_RIGHT;
-        return ContainerRedstoneData.EDGE_UP;
+        return distributed > 0;
     }
 
     // ── Tooltip ──
@@ -474,19 +376,20 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
                     .append(Component.literal(": " + t.unlockPermille() / 10 + "%"))
                     .withStyle(ChatFormatting.GRAY));
 
-                // ── 发电量公式（v2）──
-                double factor = PowerMath.combinedFactor(t.lastDelta(), t.phaseCount(), t.unlockPermille() / 1000.0);
+                // ── 发电量公式（v3）──
+                double effDeltaSum = t.effDeltaSumPermille() / 1000.0;
+                double factor = PowerMath.combinedFactor(effDeltaSum, t.phaseCount(), t.unlockPermille() / 1000.0);
                 double rePerEvent = factor * (t.detectedPeriod() / 16.0);
                 tooltipAdder.accept(Component.literal("  ")
                     .append(Component.translatable("tooltip.livingitem.waxed_copper.power_output"))
                     .append(Component.literal(" = " + String.format("%.0f", rePerEvent) + " RE"))
                     .withStyle(ChatFormatting.GRAY));
                 tooltipAdder.accept(Component.literal("    ")
-                    .append(Component.literal("log₂|Δ|"))
-                    .append(Component.literal(": " + String.format("%.1f", Math.log(t.lastDelta()) / Math.log(2))))
-                    .append(Component.literal("  ×  "))
-                    .append(Component.translatable("tooltip.livingitem.waxed_copper.formula_n"))
-                    .append(Component.literal(": " + t.phaseCount() + "^(1+" + String.format("%.2f", t.unlockPermille() / 1000.0) + ")"))
+                    .append(Component.literal("Σ√|Δ|"))
+                    .append(Component.literal(": " + String.format("%.1f", effDeltaSum)))
+                    .append(Component.literal("  ^(1+"))
+                    .append(Component.literal(String.format("%.2f", t.unlockPermille() / 1000.0)))
+                    .append(Component.literal(")"))
                     .append(Component.literal("  ×  "))
                     .append(Component.translatable("tooltip.livingitem.waxed_copper.formula_p"))
                     .append(Component.literal(": " + t.detectedPeriod() + "/16"))
@@ -497,42 +400,24 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
                     .withStyle(ChatFormatting.DARK_GRAY));
             }
 
-            // ── F3+H 高级模式：全部路径波形 + 通道信息 ──
-            if (flag.isAdvanced() && !t.paths().isEmpty()) {
-                // 按通道分组显示
-                int maxCh = t.paths().stream().mapToInt(
-                    com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.PathSnapshot::channelIdx).max().orElse(0) + 1;
-                for (int c = 0; c < maxCh; c++) {
-                    int ch = c;
-                    var chPaths = t.paths().stream().filter(p -> p.channelIdx() == ch).toList();
-                    if (chPaths.isEmpty()) continue;
-                    // 通道标题：方向列表
-                    StringBuilder dirs = new StringBuilder();
-                    for (var p : chPaths) {
-                        String dStr = DIR_SYMBOLS[p.direction()];
-                        if (dirs.indexOf(dStr) < 0) dirs.append(dStr);
-                    }
-                    tooltipAdder.accept(Component.translatable("tooltip.livingitem.waxed_copper.wave_channel",
-                            c, dirs.toString(), chPaths.size() / 2)
+            // ── F3+H 高级模式：全部域快照 ──
+            if (flag.isAdvanced() && !t.domains().isEmpty()) {
+                for (var ds : t.domains()) {
+                    tooltipAdder.accept(Component.literal("  ")
+                        .append(Component.literal("P=" + ds.period() + "t"))
+                        .append(Component.literal("  n=" + ds.n()))
+                        .append(Component.literal("  Σ√|Δ|=" + String.format("%.1f", ds.effDeltaSum())))
+                        .append(Component.literal("  max|Δ|=" + ds.maxDelta()))
                         .withStyle(ChatFormatting.DARK_PURPLE));
-                    // 每条路径
-                    for (var p : chPaths) {
-                        String dirSym = DIR_SYMBOLS[p.direction()];
-                        String typeKey = p.isDirect()
-                            ? "tooltip.livingitem.waxed_copper.path_direct"
-                            : "tooltip.livingitem.waxed_copper.path_induction";
-                        String waveStr = formatWaveBits(p.waveBits());
-                        boolean silent = p.waveBits() == 0;
-                        String info = "  " + dirSym + " "
-                            + Component.translatable(typeKey).getString()
-                            + " " + (silent ? "（静默）" : waveStr);
-                        // 非静默路追加周期和跳变
-                        if (!silent) {
-                            info += "  |Δ|=" + p.lastDelta() + "  P=" + p.period() + "t";
-                        }
-                        tooltipAdder.accept(Component.literal(info)
-                            .withStyle(silent ? ChatFormatting.DARK_GRAY : ChatFormatting.LIGHT_PURPLE));
+                    // 各偏移的 |Δ|
+                    int offset = 0;
+                    StringBuilder sb = new StringBuilder("    ");
+                    for (int d : ds.deltas()) {
+                        sb.append("[").append(offset).append("]=").append(d).append(" ");
+                        offset++;
                     }
+                    tooltipAdder.accept(Component.literal(sb.toString())
+                        .withStyle(ChatFormatting.LIGHT_PURPLE));
                 }
                 // 原始值汇总
                 tooltipAdder.accept(Component.translatable("tooltip.livingitem.waxed_copper.raw_values",
@@ -556,10 +441,9 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         // ── 铜灯电量 ──
         if (isWaxedBulb(item)) {
             LivingWaxedBulbData data = LivingItemManager.getWaxedBulbData(stack);
-            long q = data.chargeMilliFe() * stack.getCount();          // 堆总量
+            long q = data.chargeMilliFe() * stack.getCount();
             long cap = LivingWaxedBulbData.totalCapacityMilliFe(stack.getCount());
             boolean full = q >= cap;
-            // 不足 1 FE 时显示两位小数（mFE 粒度可见，便于观察充放）
             String qStr = q >= 1000 ? String.valueOf(q / 1000)
                 : String.format("%.2f", q / 1000.0);
             String capStr = cap >= 1000 ? String.valueOf(cap / 1000)
@@ -572,18 +456,6 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         }
     }
 
-    /** 方向符号（0=↑ 1=↓ 2=← 3=→） */
-    private static final String[] DIR_SYMBOLS = {"↑", "↓", "←", "→"};
-
-    /** 32-bit 波形 → 32 字符字符串（bit31=32t 前，bit0=最新） */
-    private static String formatWaveBits(int bits) {
-        StringBuilder sb = new StringBuilder(32);
-        for (int b = 31; b >= 0; b--) {
-            sb.append(((bits >> b) & 1) != 0 ? '█' : '·');
-        }
-        return sb.toString();
-    }
-
     /** 从物品取形态翻译键 */
     private static String formTranslationKey(Item item) {
         if (isWaxedChiseled(item)) return "tooltip.livingitem.waxed_copper.form.chiseled";
@@ -592,7 +464,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         return "tooltip.livingitem.waxed_copper.form.block";
     }
 
-    // ── WASD 方向配置（涂蜡切制的感应方向）──
+    // ── WASD 方向配置（涂蜡切制的感应方向，v3 保留骨架）──
 
     private static final String[] CUT_SLOT_NAMES = {"sense"};
 
@@ -614,6 +486,14 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
     }
 
     // ── 静态工具方法 ──
+
+    /** 从物品取线圈形态（用于 telemetry 和 tooltip 显示） */
+    static int getCoilForm(Item item) {
+        if (isWaxedChiseled(item)) return LivingWaxedGeneratorData.FORM_CHISELED;
+        if (isWaxedCut(item)) return LivingWaxedGeneratorData.FORM_CUT;
+        if (isWaxedGrate(item)) return LivingWaxedGeneratorData.FORM_GRATE;
+        return LivingWaxedGeneratorData.FORM_BLOCK;
+    }
 
     /** 全部涂蜡铜块家族（发电机体 + 电池），共 20 件 */
     public static boolean isWaxedCopperBlock(Item item) {

@@ -7,12 +7,15 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * 红电数学工具测试 —— 公式 v2：(log₂|Δ| × n)^(1+u) × P。
+ * 红电数学工具测试 —— 公式 v3：Σ√|Δ_i|，合因子 = (eff_δ_sum)^(1+u)。
  */
 class PowerMathTest {
 
     private static final double EPS = 1e-9;
-    private static final int HIGH = 4096;  // log₂=12
+    // √4096 = 64（单路最大信号 |Δ| 的 eff_δ_sum）
+    private static final double EFF_DELTA_SINGLE = Math.sqrt(4096);
+    // 5 路 √4096 求和 = 320
+    private static final double EFF_DELTA_FIVE = 5 * Math.sqrt(4096);
 
     @Test
     @DisplayName("耦合管径：未锈蚀 1.0 → 氧化 0.35，越界 clamp")
@@ -43,14 +46,14 @@ class PowerMathTest {
     }
 
     @Test
-    @DisplayName("合因子 = (log₂|Δ| × n)^(1+u)：地板 12n，天花板 (12n)²")
+    @DisplayName("合因子 = (eff_δ_sum)^(1+u)：地板 64¹=64，天花板 64²=4096")
     void combinedFactor_unlockExponent() {
-        assertEquals(12.0, PowerMath.combinedFactor(HIGH, 1, 0.0), EPS);
-        assertEquals(144.0, PowerMath.combinedFactor(HIGH, 1, 1.0), EPS);
-        assertEquals(60.0, PowerMath.combinedFactor(HIGH, 5, 0.0), EPS);
-        assertEquals(3600.0, PowerMath.combinedFactor(HIGH, 5, 1.0), EPS);
-        assertEquals(Math.pow(60, 1.5), PowerMath.combinedFactor(HIGH, 5, 0.5), 1e-9);
-        assertEquals(0.0, PowerMath.combinedFactor(HIGH, 0, 1.0), EPS);
+        assertEquals(64.0, PowerMath.combinedFactor(EFF_DELTA_SINGLE, 1, 0.0), EPS);
+        assertEquals(4096.0, PowerMath.combinedFactor(EFF_DELTA_SINGLE, 1, 1.0), EPS);
+        assertEquals(320.0, PowerMath.combinedFactor(EFF_DELTA_FIVE, 5, 0.0), EPS);
+        assertEquals(102400.0, PowerMath.combinedFactor(EFF_DELTA_FIVE, 5, 1.0), EPS);
+        assertEquals(Math.pow(320, 1.5), PowerMath.combinedFactor(EFF_DELTA_FIVE, 5, 0.5), 1e-9);
+        assertEquals(0.0, PowerMath.combinedFactor(EFF_DELTA_SINGLE, 0, 1.0), EPS);
     }
 
     @Test

@@ -1,6 +1,7 @@
 package com.qiqi.li.living.domain.power;
 
 import java.util.List;
+import java.util.ArrayList;
 import java.util.function.Consumer;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
@@ -13,7 +14,7 @@ import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.component.TooltipProvider;
 
 /**
- * 涂蜡发电机的检测仪表盘数据（v2）。
+ * 涂蜡发电机的检测仪表盘数据（v3 —— 相位事件总线）。
  *
  * <p>服务端事件驱动算出的检测值（周期/相数/解锁度）写回本组件，
  * 经槽位同步到客户端，tooltip 直接读取——**不在 NBT 语义之外、不查世界状态**。</p>
@@ -22,13 +23,13 @@ import net.minecraft.world.item.component.TooltipProvider;
  */
 public record LivingWaxedGeneratorData(
     int detectedPeriod,      // 检测周期（tick），0 = 无信号/检测中
-    int phaseCount,          // 相数 n（主输入路的周期域）
+    int phaseCount,          // 相数 n（最佳域）
     int unlockPermille,      // 解锁度 u = 调谐效率 × (n/偏好周期)，× 1000（0..1000）
-    int lastDelta,           // 主输入路上次跳变幅度（|Δ|，信号单位）
-    List<Integer> waves,     // 4 条直连路 32-bit 滚动波形窗口（bit31 = 32t 前，bit0 = 最新）
+    int lastDelta,           // 最佳域的最大 |Δ|（显示用）
+    int effDeltaSumPermille, // Σ√|Δ_i| × 1000（定点显示，用于公式展示）
     int coilForm,            // 线圈形态：0=铜块 1=雕文 2=切制 3=格栅
     long emaPowerFe,         // EMA 功率（FE/t，取整）
-    List<PathSnapshot> paths // 全部路径快照（F3+H 高级显示用）
+    List<DomainSnapshot> domains  // 全部域快照（F3+H 高级显示用）
 ) implements TooltipProvider {
 
     /** 线圈形态常量 */
@@ -38,7 +39,7 @@ public record LivingWaxedGeneratorData(
     public static final int FORM_GRATE = 3;
 
     public static final LivingWaxedGeneratorData DEFAULT =
-        new LivingWaxedGeneratorData(0, 0, 0, 0, List.of(), FORM_BLOCK, 0, List.of());
+        new LivingWaxedGeneratorData(0, 0, 0, 0, 0, FORM_BLOCK, 0, List.of());
 
     public static final Codec<LivingWaxedGeneratorData> CODEC = RecordCodecBuilder.create(instance ->
         instance.group(
@@ -46,10 +47,10 @@ public record LivingWaxedGeneratorData(
             Codec.INT.fieldOf("phase_count").forGetter(LivingWaxedGeneratorData::phaseCount),
             Codec.INT.fieldOf("unlock_permille").forGetter(LivingWaxedGeneratorData::unlockPermille),
             Codec.INT.fieldOf("last_delta").forGetter(LivingWaxedGeneratorData::lastDelta),
-            Codec.INT.listOf().fieldOf("waves").forGetter(LivingWaxedGeneratorData::waves),
+            Codec.INT.fieldOf("eff_delta_sum_permille").forGetter(LivingWaxedGeneratorData::effDeltaSumPermille),
             Codec.INT.fieldOf("coil_form").forGetter(LivingWaxedGeneratorData::coilForm),
             Codec.LONG.fieldOf("ema_power_fe").forGetter(LivingWaxedGeneratorData::emaPowerFe),
-            PathSnapshot.CODEC.listOf().fieldOf("paths").forGetter(LivingWaxedGeneratorData::paths)
+            DomainSnapshot.CODEC.listOf().fieldOf("domains").forGetter(LivingWaxedGeneratorData::domains)
         ).apply(instance, LivingWaxedGeneratorData::new)
     );
 
@@ -61,11 +62,11 @@ public record LivingWaxedGeneratorData(
                 int pc = ByteBufCodecs.VAR_INT.decode(buf);
                 int up = ByteBufCodecs.VAR_INT.decode(buf);
                 int ld = ByteBufCodecs.VAR_INT.decode(buf);
-                var w = ByteBufCodecs.VAR_INT.apply(ByteBufCodecs.list()).decode(buf);
+                int es = ByteBufCodecs.VAR_INT.decode(buf);
                 int cf = ByteBufCodecs.VAR_INT.decode(buf);
                 long epf = ByteBufCodecs.VAR_LONG.decode(buf);
-                var ps = PathSnapshot.STREAM_CODEC.apply(ByteBufCodecs.list()).decode(buf);
-                return new LivingWaxedGeneratorData(dp, pc, up, ld, w, cf, epf, ps);
+                var ds = DomainSnapshot.STREAM_CODEC.apply(ByteBufCodecs.list()).decode(buf);
+                return new LivingWaxedGeneratorData(dp, pc, up, ld, es, cf, epf, ds);
             }
 
             @Override
@@ -74,10 +75,10 @@ public record LivingWaxedGeneratorData(
                 ByteBufCodecs.VAR_INT.encode(buf, v.phaseCount);
                 ByteBufCodecs.VAR_INT.encode(buf, v.unlockPermille);
                 ByteBufCodecs.VAR_INT.encode(buf, v.lastDelta);
-                ByteBufCodecs.VAR_INT.apply(ByteBufCodecs.list()).encode(buf, v.waves);
+                ByteBufCodecs.VAR_INT.encode(buf, v.effDeltaSumPermille);
                 ByteBufCodecs.VAR_INT.encode(buf, v.coilForm);
                 ByteBufCodecs.VAR_LONG.encode(buf, v.emaPowerFe);
-                PathSnapshot.STREAM_CODEC.apply(ByteBufCodecs.list()).encode(buf, v.paths);
+                DomainSnapshot.STREAM_CODEC.apply(ByteBufCodecs.list()).encode(buf, v.domains);
             }
         };
 
@@ -86,43 +87,39 @@ public record LivingWaxedGeneratorData(
     }
 
     /**
-     * 单条路径快照（F3+H 高级显示用）。
+     * 单域快照（F3+H 高级显示用）。
      *
-     * @param channelIdx 所属通道索引
-     * @param direction  方向（0=UP 1=DOWN 2=LEFT 3=RIGHT）
-     * @param isDirect   直连路（true）或感应路（false）
-     * @param waveBits   32-bit 滚动波形
-     * @param lastDelta  最近跳变幅度
-     * @param period     该路周期估计（tick）
+     * @param period       域周期（tick）
+     * @param n            相数（不同偏移数）
+     * @param maxDelta     域内最大 |Δ|
+     * @param effDeltaSum  Σ√|Δ_i|（实际值，非 permille）
+     * @param deltas       各偏移的 |Δ|，按偏移升序（偏移 0 的 |Δ| 在数组首）
      */
-    public record PathSnapshot(
-        int channelIdx,
-        int direction,
-        boolean isDirect,
-        int waveBits,
-        int lastDelta,
-        int period
+    public record DomainSnapshot(
+        int period,
+        int n,
+        int maxDelta,
+        double effDeltaSum,
+        List<Integer> deltas
     ) {
-        public static final Codec<PathSnapshot> CODEC = RecordCodecBuilder.create(instance ->
+        public static final Codec<DomainSnapshot> CODEC = RecordCodecBuilder.create(instance ->
             instance.group(
-                Codec.INT.fieldOf("ch").forGetter(PathSnapshot::channelIdx),
-                Codec.INT.fieldOf("dir").forGetter(PathSnapshot::direction),
-                Codec.BOOL.fieldOf("direct").forGetter(PathSnapshot::isDirect),
-                Codec.INT.fieldOf("wave").forGetter(PathSnapshot::waveBits),
-                Codec.INT.fieldOf("delta").forGetter(PathSnapshot::lastDelta),
-                Codec.INT.fieldOf("period").forGetter(PathSnapshot::period)
-            ).apply(instance, PathSnapshot::new)
+                Codec.INT.fieldOf("period").forGetter(DomainSnapshot::period),
+                Codec.INT.fieldOf("n").forGetter(DomainSnapshot::n),
+                Codec.INT.fieldOf("max_delta").forGetter(DomainSnapshot::maxDelta),
+                Codec.DOUBLE.fieldOf("eff_delta_sum").forGetter(DomainSnapshot::effDeltaSum),
+                Codec.INT.listOf().fieldOf("deltas").forGetter(DomainSnapshot::deltas)
+            ).apply(instance, DomainSnapshot::new)
         );
 
-        public static final StreamCodec<RegistryFriendlyByteBuf, PathSnapshot> STREAM_CODEC =
+        public static final StreamCodec<RegistryFriendlyByteBuf, DomainSnapshot> STREAM_CODEC =
             StreamCodec.composite(
-                ByteBufCodecs.VAR_INT, PathSnapshot::channelIdx,
-                ByteBufCodecs.VAR_INT, PathSnapshot::direction,
-                ByteBufCodecs.BOOL, PathSnapshot::isDirect,
-                ByteBufCodecs.VAR_INT, PathSnapshot::waveBits,
-                ByteBufCodecs.VAR_INT, PathSnapshot::lastDelta,
-                ByteBufCodecs.VAR_INT, PathSnapshot::period,
-                PathSnapshot::new
+                ByteBufCodecs.VAR_INT, DomainSnapshot::period,
+                ByteBufCodecs.VAR_INT, DomainSnapshot::n,
+                ByteBufCodecs.VAR_INT, DomainSnapshot::maxDelta,
+                ByteBufCodecs.DOUBLE, DomainSnapshot::effDeltaSum,
+                ByteBufCodecs.VAR_INT.apply(ByteBufCodecs.list()), DomainSnapshot::deltas,
+                DomainSnapshot::new
             );
     }
 }

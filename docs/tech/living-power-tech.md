@@ -2,10 +2,10 @@
 
 # Living Power (活涂蜡铜块 · 红电发电) 技术文档
 
-> **文档版本**: v3.3（公式 v2：log₂|Δ|，移除规律度）
-> **最后更新**: 2026-08-31
+> **文档版本**: v4.0（公式 v3：√|Δ| 求和 + 铜块网络传播）
+> **最后更新**: 2026-09-01
 > **适用版本**: Minecraft 1.21.1
-> **规划文档**: [红电系统.md](../红电系统.md)（v17.6，公式 v2）
+> **规划文档**: [红电系统.md](../红电系统.md)（v17.7，公式 v3）
 
 ## 目录
 1. [架构概览](#1-架构概览)
@@ -21,40 +21,42 @@
 
 ## 1. 架构概览
 
-活涂蜡铜块是电力层的载体：涂蜡 = 绝缘 = 不参与信号层，通过感应邻居红电信号的
-**变化**发电。设计哲学是「构造几条规则，剩下的交给涌现」——
+活涂蜡铜块是电力层的载体：涂蜡 = 绝缘 = 不参与信号层。
+发电机通过**铜块网络**检测同氧化等级铜块传播的相位事件来发电。
+设计哲学是「构造几条规则，剩下的交给涌现」——
 公式里唯一的常数是边界汇率 `K = 1/16`，其余全部由建造涌现。
 
-### 1.1 公式 v2
+### 1.1 公式 v3（铜块网络传播）
 
 ```
-eff_δ           = log₂(|Δ|)                          // 信号幅度压缩
-解锁度 u         = 调谐效率 × (n / 偏好周期)           // [0, 1]
+eff_δ_sum        = Σ√|Δ_i|                        // 各边信号 |Δ| 的 √ 求和
+解锁度 u         = 调谐效率 × (n / 偏好周期)       // [0, 1]
 调谐效率         = (1 + cos θ) / 2，θ = (tick误差 / 偏好周期) × 2π
-合因子           = (eff_δ × n)^(1+u)                  // 不含 P
+合因子           = (eff_δ_sum)^(1+u)               // 不含 P
 单次跳变能量(RE) = 合因子 × P
 FE               = RE × K，K = 1/16
 ```
 
 | 要素 | 来源 | 涌现方式 |
 |---|---|---|
-| eff_δ = log₂(\|Δ\|) | 邻居边信号的 tick 间变化，经 log₂ 压缩 | 信号源堆叠数²，高信号不再碾压 |
-| n（相数） | 多路输入按周期域去重 | 布线（同相合并，不跨域累加） |
+| √|Δ_i| 求和 | 铜块网络中各边信号的上升沿幅度，经 √ 压缩后求和 | 信号源堆叠数²，√ 压缩后差异缩小 |
+| n（相数） | 同周期域内不同偏移量去重 | 布线（同相合并，不跨域累加） |
 | 调谐效率 | 输入周期 vs 偏好周期 | 堆叠数 = 调谐旋钮 |
 | 解锁度 u | eff × n / 偏好周期 | 相数越多解锁度越高，建造难度也越高 |
-| 拓扑（形态） | 线圈分组（阶段三） | 听什么、不听什么 |
+| 铜块网络 | 同氧化等级铜块 BFS 遍历 | 不同锈蚀等级形成独立网络，需布线连接 |
 
 ### 1.2 关键类与职责
 
 | 类名 | 位置 | 职责 |
 |------|------|------|
-| `LivingWaxedCopperFunction` | `domain/power/` | 功能入口：`canApply`（涂蜡全家族 20 件）、`getPriority()=3`、逐方向事件采样 |
-| `PowerMath` | `domain/power/` | 纯函数：合因子、调谐效率、耦合管径、RE 记账、K 换算 |
-| `PathState` | `domain/power/` | 单路波形状态：值、上升沿、周期 EMA、相位资格判定 |
-| `ChannelState` | `domain/power/` | 线圈通道：相位域分组计 n、合因子 |
-| `GeneratorState` | `domain/power/` | 单台发电机状态：偏好周期（= 堆叠数）、线圈分组与方向映射 |
-| `LivingWaxedCutData` | `domain/power/` | 涂蜡切制 DataComponent：单线圈感应方向（WASD 1 键配置） |
-| `ContainerPowerData` | `domain/power/` | 容器级账本：RE 事件累加、EMA 功率、tick 计数 |
+| `LivingWaxedCopperFunction` | `domain/power/` | 功能入口：`canApply`（涂蜡全家族 20 件）、`getPriority()=3`、铜块网络 BFS + 边信号检测 |
+| `PowerMath` | `domain/power/` | 纯函数：合因子、调谐效率、√|Δ| 求和、RE 记账、K 换算 |
+| `PhaseEvent` | `domain/power/` | 相位事件记录：sourceId、period、offset、delta、tick |
+| `ChannelState` | `domain/power/` | 通道状态：相位域分组计 n、eff_δ_sum 计算、合因子 |
+| `PhaseDomain` | `domain/power/`（ChannelState 内部类） | 周期域：按 period 分域，offset 去重，Δ 跟踪 |
+| `SignalTracker` | `domain/power/`（LivingWaxedCopperFunction 内部类） | 上升沿跟踪器：间隔 EMA 估计周期、偏移量计算 |
+| `GeneratorState` | `domain/power/` | 单台发电机状态：偏好周期（= 堆叠数）、单通道事件接收 |
+| `ContainerPowerData` | `domain/power/` | 容器级账本：RE 事件累加、EMA 功率、tick 计数、边信号跟踪器持久化 |
 
 除 `LivingWaxedCopperFunction` 外全部为**纯 Java 类**（零 MC 依赖），可直接 JUnit 驱动。
 
@@ -64,9 +66,12 @@ FE               = RE × K，K = 1/16
 processContext() 每 game tick：
   ├─ priority 2：红石 calculate()（edgeGrid 双缓冲刷新）
   └─ priority 3：LivingWaxedCopperFunction.tickContainerData()
-       ├─ 逐发电机逐方向采样 edgeGrid 值 → ChannelState.onPathValue()
-       ├─ 跳变发生 → 合因子 → RE = 合因子 × P → onEventEnergy()
-       └─ endTick()（EMA 更新 + tick 计数推进）
+       ├─ 收集发电机槽位
+       ├─ 每台发电机从自身出发 BFS 遍历同氧化等级铜块网络
+       ├─ 对每个遍历到的铜块，检查 4 条边的 edgeGrid 信号变化
+       ├─ 上升沿 → 持久化 SignalTracker 获取周期 → PhaseEvent → ChannelState
+       ├─ 域内去重计 n，eff_δ_sum = Σ√|Δ_i|
+       └─ 最佳域合因子 → RE → onEventEnergy() → endTick()
 ```
 
 > ⚠️ **priority 必须保持 3**：电力采样依赖红石（priority 2）已算完的 edgeGrid。
@@ -76,223 +81,143 @@ processContext() 每 game tick：
 
 ## 2. 数据结构
 
-### 2.1 PathState —— 单路波形状态
+### 2.1 PhaseEvent —— 相位事件
 
-一条物理信号路径（v1 = 发电机的一个邻居方向；阶段三加入共享转发路径）。
+一条边信号上升沿触发的事件，由 `SignalTracker` 根据历史上升沿间隔计算周期后生成。
 
 | 字段 | 说明 |
 |---|---|
-| `lastValue` / `lastEventTick` | 上次值与时间（首次喂值仅建基线，不计跳变） |
-| `lastRisingTick` / `prevRisingTick` | 最近两次上升沿（周期与相位的锚点） |
-| `periodTicks` | 周期估计 = 上升沿间隔 EMA（α = 0.5）；0 = 未知 |
-| `domainN` | 所属周期域的去重相数（0 = 未入域） |
+| `sourceId` | 事件源唯一标识（edgeKey = (slot << 2) \| dir） |
+| `period` | 上升沿间隔 EMA 估计的周期（tick） |
+| `offset` | 相位偏移（相对于域内最早上升沿的 mod 周期） |
+| `delta` | 跳变幅度 \|Δ\|（信号值变化量） |
+| `tick` | 事件发生的 tick 计数 |
 
-关键判定 `hasUsablePhase()`：≥2 个上升沿间隔，且最近一个间隔与周期估计一致
-（±1 tick）——**抖动 / 乱按的路被挡在相位域之外**，只贡献幅度、不抬升 n。
+### 2.2 SignalTracker —— 上升沿跟踪器
 
-### 2.2 ChannelState —— 线圈通道
+为每条边信号维护的持久化跟踪器（跨 tick 保存在 `ContainerPowerData` 中）。
+
+| 方法 | 说明 |
+|---|---|
+| `onRisingEdge(tick, delta)` | 记录上升沿时间和幅度，更新间隔 EMA |
+| `period()` | 返回当前估计周期（≥2 个间隔后有效） |
+| `offset()` | 返回相对于首次上升沿的偏移量 |
+
+### 2.3 ChannelState —— 通道状态
+
+单台发电机的信号接收通道，管理相位域。
 
 | 成员 | 说明 |
 |---|---|
-| `paths` | 通道内的路（v1 固定 4 条 = 四个邻居方向） |
-| `risingTicks` | 通道合并上升沿序列（≤9 条，强制单调，乱序防御） |
+| `domains` | period → PhaseDomain 映射 |
+| `onPhaseEvent(event, pref)` | 接收事件，路由到对应域 |
+| `tickCleanup(now, pref)` | 清理过期域（>128 tick 无事件） |
+| `bestFactor(pref)` | 返回最佳域的合因子 |
+| `bestPeriod(pref)` | 返回最佳域的周期 |
 
-### 2.3 GeneratorState / ContainerPowerData
+### 2.4 PhaseDomain —— 周期域
+
+| 成员 | 说明 |
+|---|---|
+| `period` | 域周期（tick） |
+| `offsets` | 已观察到的不同偏移量集合（去重 = 相数 n） |
+| `deltaByOffset` | offset → \|Δ\| 映射（用于 √|Δ| 求和） |
+| `lastEventTick` | 最近一次事件 tick |
+| `n()` | 返回去重后的相数 |
+| `effDeltaSum()` | 返回 Σ√\|Δ_i\|（各不同偏移的 √|Δ| 求和） |
+
+### 2.5 GeneratorState / ContainerPowerData
 
 | 成员 | 说明 |
 |---|---|
 | `preferredPeriod` | = 堆叠数 clamp [0,64]；<2 即宽带态 |
-| `channels` | 线圈通道列表（v1 单通道；阶段三按形态拆分） |
+| `channel()` | 单通道事件接收 |
 | `onEventEnergy(re)` | 跳变即能量事件：RE 直接累加，无功率流中间态 |
 | `endTick()` | 每 tick 末尾：EMA 更新（α=0.125）+ tick 计数 |
 | `getEmaPowerFe()` | EMA 功率 × K 换算为 FE/t |
+| `getOrCreateEdgeTracker(edgeKey)` | 持久化边信号跟踪器，跨 tick 跟踪周期 |
 
 ---
 
 ## 3. 核心算法
 
-### 3.1 周期估计（PathState）
-
-上升沿间隔的 EMA（α = 0.5）。任意稳定上升沿序列的相邻间隔恒等于周期，
-**与占空比无关**。`roundedPeriod()`：周期 < 1.5 tick 视为未知
-（1 tick「周期」即直流，不参与域）。
-
-### 3.2 相位域分组与 n（ChannelState.recountPhaseDomains）
+### 3.1 铜块网络传播（BFS）
 
 ```
-① 过滤：仅 hasUsablePhase 的路参与
-② 分域：按 roundedPeriod 分组（整数 tick 量子化）
-③ 域内去重：offset = (lastRising − base) mod period，base = 域内最早上升沿
-   n = 不同偏移数（同相合并，不奖励）
-④ 跨域不累加：每路的 n 只属于自己的周期域，事件用本域的 n
+每 tick，每台发电机：
+  ① 获取自身氧化等级
+  ② BFS 从自身出发遍历同氧化等级铜块：
+     - 四个方向（上下左右）检查同氧化等级铜块
+     - 铜灯（泡）不导电，跳过
+     - 非铜块物品跳过
+  ③ 对每个遍历到的铜块槽位，检查 4 条边：
+     - 读 edgeGrid[slot][dir] vs prevEdgeGrid[slot][dir]
+     - 信号无变化 → 跳过
+     - 上升沿（delta > 0）→ SignalTracker.onRisingEdge()
+     - 周期已知 → PhaseEvent → ChannelState.onPhaseEvent()
+  ④ tickCleanup 清理过期域
+  ⑤ 取最佳域 → 合因子 → RE 能量入账
 ```
 
-### 3.3 相位域重算（ChannelState.recountPhaseDomains）
-
-重算时机：每次检测到上升沿（通道合并上升沿序列新增条目时）。
+### 3.2 周期估计（SignalTracker）
 
 ```
-① 过滤：仅 hasUsablePhase 的路参与（周期可用 + 窗口非静默 + 上升沿新鲜 ≤128t）
-② 分域：按 roundedPeriod 分组（整数 tick 量子化）
-③ 域内去重：offset = (lastRising − base) mod period，base = 域内最早上升沿
-   n = 不同偏移数（同相合并，不奖励）
-④ 跨域不累加：每路的 n 只属于自己的周期域，事件用本域的 n
+上升沿间隔 EMA（α = 0.5）：
+  间隔 = 本次上升沿 tick - 上次上升沿 tick
+  periodEMA = periodEMA + (间隔 - periodEMA) * 0.5
+  需要 ≥2 个间隔才开始输出周期（防止单次误判）
 ```
 
-上升沿新鲜判定（≤128t）：防止输入撤除后相位资格冻结导致的幻影 n 虚高。
-
-### 3.4 合因子（ChannelState.factorFor）
+### 3.3 相位域分组与 n（PhaseDomain）
 
 ```
-不可用路（!hasUsablePhase）        → 0（杂讯不产出）
-n = max(1, domainN)
-eff    = tuningEfficiency(|period − pref|, pref)    （pref < 2 → 0，宽带）
-unlock = eff × n / pref    （[0, 1]）
-合因子  = (eff_δ × n)^(1+unlock)，eff_δ = log₂(|Δ|)
+① 按 period 整数分域（不同周期各自独立）
+② 域内 offset 去重：
+   offset = (event.tick − baseTick) mod period
+   baseTick = 域内第一个事件 tick
+③ n = 不同偏移量个数（同偏移合并不算多次）
+④ eff_δ_sum = Σ√|Δ_i|（各偏移的 |Δ| 分别 √ 后求和）
 ```
 
-单路 n=1 时合因子简化为 eff_δ^1 — 调谐的奖励与多相绑定。
-|Δ| 经 log₂ 压缩后，高堆叠信号不再碾压，布局质量成为主导。
-
-### 3.5 线圈分组（GeneratorState.configureCoilsIfChanged）
-
-形态决定通道划分与方向映射，每方向贡献直连 + 感应两条路径：
-
-| 形态 | 通道划分 | 方向映射 |
-|---|---|---|
-| 涂蜡铜块 / 格栅 | 1 通道 | 4 向全入 |
-| 涂蜡雕文 | 2 通道 | V={UP,DOWN}、H={LEFT,RIGHT} 轴间隔离 |
-| 涂蜡切制 | 1 通道 | 仅 `senseDir` 方向（`LivingWaxedCutData`，默认 UP） |
-
-配置指纹（形状 + 切制方向）变化时才重建通道（波形状态重置，重新起振）。
-
-### 3.6 感应耦合（LivingWaxedCopperFunction.couple，§3.5）
-
-相邻发电机按管径 c 分配直连振荡，**分层辐射 + 不回传 + 加权守恒**：
+### 3.4 合因子计算（ChannelState.bestFactor）
 
 ```
-层 0：直连复合值非零的发电机成为辐射源，relay = directValue
-层 h：节点 S 辐射 relay[S] 给相邻发电机 T（排除 sources[S]，不回传）
-      贡献 v = relay[S] × c_T / Σc_下游（分叉守恒）
-      T 首次接收 → 入队 relay[T] = directValue[T] + 已接收（可继续中继）
-深度 ≤ 3 层；每 tick 从直连值重算整个 DAG，无跨 tick 累积 → 结构性无环
+遍历所有域，取合因子最大的域：
+  n = domain.n()
+  eff_δ_sum = domain.effDeltaSum()
+  tuningEff = tuningEfficiency(|period − pref|, pref)
+  unlock = tuningEff × n / pref
+  合因子 = eff_δ_sum^(1 + unlock)
+  能量(RE) = 合因子 × period
 ```
 
-- 每方向收到的感应值喂入该方向的**感应路**（GeneratorState.dirVirtualPath），
-  与直连路同待遇：锁相、进相位域、参与 n 计算；
-- 每节点最多辐射两次（root 一次 + 中继一次），超出部分只计能量不转发（保守）；
-- **分频（周期 ×2）转发未实现**：v1 为同频转发，谐振链 2:1 分频配方待 v2。
+### 3.5 氧化等级网络隔离
 
-### 3.7 绝缘修复（isConductiveBlock 排除涂蜡）
+| 氧化等级 | 物品 | 网络 |
+|---------|------|------|
+| 0（新鲜） | `waxed_copper_block` | 只连通新鲜铜块 |
+| 1（暴露） | `waxed_exposed_copper` | 只连通暴露铜块 |
+| 2（锈蚀） | `waxed_weathered_copper` | 只连通锈蚀铜块 |
+| 3（氧化） | `waxed_oxidized_copper` | 只连通氧化铜块 |
 
-红石层原有的「充能导体」机制会把涂蜡铜块当导电方块充能并向所有边发射信号，
-**绕过涂蜡绝缘**直接把信号泄给邻居。修复：`isConductiveBlock` 排除涂蜡家族——
-涂蜡方块既不被充能也不发射，电力层信号只走感应耦合。
+- 不同氧化等级**不互通**，必须用同种铜块搭建网络
+- 铜灯（泡）**不参与网络传播**，仅作为储能
+- 涂蜡铜块雕刻/切制/格栅按相同氧化等级计入网络
 
-### 3.8 储能实现（阶段四，§3.6 v17.5）
-
-**数据**：`LivingWaxedBulbData(chargeMilliFe)`——每盏电量，1/1000 FE 定点
-（充电分配的零头精度），随物品 NBT 持久化。**无容器池**——
-发电量在 `ContainerPowerData` 上按 tick 累计（RE），tick 末直存入铜灯。
-
-**发电直存**（`distributeToBulbs`，每容器 tick 末）：
-```
-本 tick 发电量 × K → mFE
-无铜灯堆 / 铜灯全满 → 弃（显性浪费 / 电池已满）
-否则：按各堆剩余容量比例分配，每盏 q += share/count（向下取整，零头丢弃）
-```
-
-**对外取电 / 充电**（`ContainerEnergyStorage`，实现 NeoForge `IEnergyStorage`）：
-```
-取电：请求 X mFE → 逐堆扣铜灯（每盏等量，余数跨 FE 边界时向上取整，
-      避免灯里有电但外部抽不出整 FE，代价最多 count−1 mFE/次）
-充电：外部电源推电 → 按剩余容量比例充入各铜灯堆（受每盏容量 C 上限）
-   —— 跨系统能量等量转换（外部 100 FE 进灯 ↔ 红电侧取 100 FE），守恒无套利
-```
-
-**物品访问（模组兼容的关键修复）**：
-取电的铜灯扫描统一走 `ItemHandler.BLOCK` 兼容面（原版容器由 NeoForge 自动注册、
-模组容器自行注册）——与容器内 tick 机制**同一条兼容面**。曾用
-`be instanceof Container` 单腿扫描，导致模组容器（不实现 Container）的灯
-够不到对外取电路径——「发电/存储走兼容层、对外取电没走」的裂缝已修复。
-取电/充电扣减灯电量后均调 `be.setChanged()` 落盘（回调对称，无延迟链）。
-双箱合并 handler 由能力自动覆盖（旧「双箱另半限制」随之解除）；
-随机战利品容器（未开箱）按 tick 机制同款规则跳过。
-
-**能力注册（显式注册 + 让位 + 物品双向）**：
+### 3.6 能量入账（每 tick 每发电机一次）
 
 ```
-① BE 显式注册：10 种原版容器 BE（箱子/陷阱箱/木桶/潜影盒/漏斗/熔炉×3/发射器/投掷器）
-   —— 活物品只在 BE 容器里 tick（发现机制锚定 BE），模组容器由自身 BE 类型覆盖，
-   非容器 BE 注册了也永远不会命中，故不做全注册表宽注册
-   provider 判定链（全部缓存安全，零 invalidateCapabilities）：
-     a. 随机战利品容器（未开箱）？      是 → null（与 tick 机制同款跳过）
-     b. be instanceof IEnergyStorage？  是 → null（直接实现者让位，零成本）
-     c. 重入保护下查询 EnergyStorage.BLOCK：
-        已有主人（模组机器自身储能）→ null（让位，注册期定死的稳定属性）
-     d. 返回 ContainerEnergyStorage 实例（内部自适应：无灯 → 电量 0）
-② 铜灯物品注册：EnergyStorage.ITEM × 4 个涂蜡铜灯
-   （BulbItemEnergyStorage：双向通用电池，见下）
+每 tick 末，每台发电机从最佳域取合因子：
+  factor = channel.bestFactor(pref)
+  period = channel.bestPeriod(pref)
+  if factor > 0 && period > 0:
+    re = PowerMath.eventEnergyRe(factor, period)
+    powerData.onEventEnergy(re)
 ```
 
-- 能力链语义：同方块多方注册为**列表**，查询按序取**首个非 null**——
-  让位机制保证「无主容器才由红电接管」，不劫持模组机器自身储能；
-- 让位查询需**重入保护**（ThreadLocal）：内层查询会再次遇到我们的 provider，
-  保护使其返回 null 被链跳过；
-- 为什么不做「有灯才返回实例」的 null 切换：`BlockEntity.setChanged()` 不触发
-  能力缓存失效，玩家/漏斗放入第一盏灯的时机无法集中收集失效调用——
-  实例内自适应（`getEnergyStored()=0` 表达空）则零失效隐患。
-
-**铜灯物品 = 通用电池（双向，`BulbItemEnergyStorage`）**：
-
-```
-电池槽（放电）：机器从灯抽取（每盏等量扣）✅
-充能槽（充电）：外部电源给灯充能（每盏等量加，受每盏容量 C 限制）✅
-   —— 跨系统能量等量转换，守恒无套利
-无出身论：外部充的电与红电发的电混为一个 q，不分来源
-方块级与物品级均双向（canReceive=true）：容器充电槽可推电入铜灯堆
-```
-
-**能量生态兼容路线（两套能量 API）**：
-
-NeoForge 生态存在**两代能量能力**，类型签名不同 → 互不可见，需分别注册：
-
-| 世代 | 能力 | 类型 | 单位 | 状态 |
-|---|---|---|---|---|
-| 旧（1.21.1 线，21.1.230） | `EnergyStorage.BLOCK` | `IEnergyStorage` | int | **我们的实现** ✓ 生态主流 |
-| 新（1.21.6+ 线，Transfer API） | `Energy.BLOCK` | `EnergyHandler`（`net.neoforged.neoforge.transfer`） | long + 事务模型 | 未注册 → Pipez 等新 API 模组查不到我们 |
-
-- 新 API 的设计动机：`long` 单位、**事务模型**（操作在 `TransactionContext` 内暂存、
-  `commit()` 才生效，支持嵌套回滚）、物品/流体/能量三套接口统一；
-- Pipez 能量管道（master 线）使用新 API → 查询我们返回 null → 不兼容的根因（已确认）；
-- **兼容路线**：短期 FE-only（Mekanism 电缆已验证 ✓）；中期软依赖 Mekanism 能力适配
-  （注册 `Capabilities.Energy.BLOCK` 的 EnergyHandler 包装器，Pipez 能量管即通）；
-  长期随 NeoForge 升级全面补 EnergyHandler 形态（内部逻辑复用，仅换接口签名）。
-
-**Mekanism = 能量生态的枢纽**：其通用电缆内置 FE / RF（Redstone Flux）/ EU / J 等
-几乎所有主流电力单位的转换——**我们对接 FE 一项，就自动接入整个转换网络**。
-这是「只实现 FE、其余交给枢纽」路线的实证支撑。
-
-**实测修复（游戏内反馈）**：
-1. **充电刷电（NBT 确认）**：充电分配的按盏取整零头 + 返回值 floor——
-   每次外部充电最多凭空产生 ~1 FE。修复：接收量**整 FE 量化**
-   （`accept -= accept % 1000`，机器付多少、灯收多少，分毫不差），
-   分配零头 1 mFE 逐灯回收（不凭空产生也不浪费）；
-2. **取消活化的灯依旧被取电**：`isBulb` 补 `isLivingItem` 检查——
-   取消活化 = 普通物品，电量保留但不参与能源系统（重新活化即恢复）；
-3. **取电抽不出整 FE（Mekanism 无限循环）**：`extract()` 里 `perLamp = takeTotal / count`
-   的整数除法吞掉余数，导致 49 盏 q=41 时 `extractEnergy(1)` 返回 0 FE（灯里有电
-   但外部抽不出）。修复：余数跨 FE 边界时向上取整 `perLamp`，确保 `extractEnergy`
-   返回的 FE 与 `getEnergyStored()` 一致；
-4. **回调对称（取电延迟链 → 当场落盘）**：取电回调原为 `power::markExternalMutation`
-   依赖延迟链，充电回调为 `be::setChanged` 当场落盘。修复：取电/充电统一为
-   `be::setChanged`，删除 `externalMutation` 机制，消除刷电方向崩溃窗口。
-
-**Tooltip 仪表盘（阶段五，已实现）**：检测周期/相数/解锁度/功率等服务端内存态
-**不在 NBT 也不在网络同步里**，tooltip 直接读不到——按
-[living-item-infrastructure.md §11 Tooltip 渲染机制](../system-design/living-item-infrastructure.md#11-tooltip-渲染机制客户端)
-的结论，唯一正路是「检测值写回小型 DataComponent → syncSlotToClients → 客户端读取」，
-且 provider 纪律禁止在 tooltip 里反查世界状态。
+- 每 tick 每发电机只入账一次（从最佳域取）
+- 最佳域 = 合因子最大的域（自然选择最优周期）
+- 能量直接累加到 `ContainerPowerData`，tick 末统一分配
 
 ---
 
@@ -310,10 +235,10 @@ NeoForge 生态存在**两代能量能力**，类型签名不同 → 互不可�
 
 ## 5. 与红石系统的集成
 
-- `ContainerRedstoneData` 新增逐方向访问器 `getEdgeValue(slot, dir)` /
+- 铜块网络传播依赖 `ContainerRedstoneData` 的逐方向访问器 `getEdgeValue(slot, dir)` /
   `getPrevEdgeValue(slot, dir)` 与 `EDGE_COUNT = 4`；
-- 信号源写边**无条件**（只有 BFS 入队才分 dust/copper），涂蜡槽位天然可采样，
-  传播层零改动；
+- 信号源写边**无条件**（涂蜡槽位天然可采样），传播层零改动；
+- 发电机 BFS 只读边信号，不写任何信号；
 - 容器级缓存完整镜像红石协议：`ContainerLivingItemHandler.POWER_DATA_CACHE` +
   过期清理（120s）+ `clearAllCaches`（ServerStoppedEvent）+ 位置反向索引。
 
@@ -323,17 +248,13 @@ NeoForge 生态存在**两代能量能力**，类型签名不同 → 互不可�
 
 | 测试文件 | 项数 | 覆盖 |
 |---|---|---|
-| `PowerMathTest` | 5 | 耦合管径、调谐效率曲线、合因子地板/天花板、K 换算 |
-| `ContainerPowerDataTest` | 6 | 单路锁相、三相 6t 部分解锁（3^1.5）、五相 5t 满相（×25）、杂讯排除、同相合并、EMA 账本 |
-| `CoilGroupingTest` | 4 | 铜块全向、雕文 V/H 双通道、切制单方向、配置变化重建 |
-| `WaxedCopperStorageTest` | 16 | 发电直存分配、无铜灯弃、满溢、模组容器取电（IItemHandler）、超取 clamp、模拟不改态、onChanged 落盘信号、充电比例分配、满收 0、整 FE 量化、取消活化排除、telemetry 检测值 ×2、发电量累计、EMA 功率 |
+| `PowerMathTest` | 5 | 调谐效率曲线、合因子计算、√|Δ| 求和、K 换算 |
+| `ContainerPowerDataTest` | 6+ | 单路锁相、三相 6t 部分解锁、五相 5t 满相、杂讯排除、同相合并、EMA 账本 |
+| `WaxedCopperStorageTest` | 16 | 发电直存分配、无铜灯弃、满溢、模组容器取电、充电、容量 clamp、超取、取消活化排除、EMA 功率 |
 | `BulbItemEnergyStorageTest` | 6 | 双向充放、容量 clamp、simulate、拆分守恒、线性读数 |
-| `WaxedCopperOscillatorIT` | 1 | 全链路集成：拉杆振荡器（4t）→ 红石传播 → 发电采样 → EMA 收敛 |
-| `WaxedCopperCouplingIT` | 1 | 耦合链集成：A 直连 → B 一跳 → C 两跳，中继不回传 |
 
 用例数值直接取自 [红电波形分析表.md](../红电波形分析表.md) 的手工演算，
-实现与文档互为验证。集成测试通过 `TickContext` 的公开字段预注入容器级数据
-（模拟生产环境 `SimpleContainerContext` 的持久化）。
+实现与文档互为验证。
 
 ---
 
@@ -342,13 +263,12 @@ NeoForge 生态存在**两代能量能力**，类型签名不同 → 互不可�
 | 规划步骤 | 状态 | 说明 |
 |---|---|---|
 | Step 7 记账（事件 + RE + EMA） | ✅ | `ContainerPowerData` |
-| Step 8 基础幅度 | ✅ | edgeGrid 逐方向采样 |
-| Step 9 相位质量合因子 | ✅ | n 去重 + 调谐×规律解锁平方 |
-| Step 10 感应拓扑（线圈分组） | ✅ | 铜块/雕文/切制/格栅通道划分 + 切制方向组件 |
-| Step 11 感应耦合与谐振链 | ✅（v1 同频转发） | 加权守恒分配 + 不回传；分频转发待 v2 |
-| Step 12 涂蜡铜灯储能 | ✅ | 发电直存 + 按盏电量 DataComponent（无池） |
-| Step 13 IEnergyStorage | ✅（技术验证通过） | 原版容器 BE 注册，游戏内待实测 |
-| Step 14 活避雷针 | ⏳ 阶段四后 | 供需分配 |
+| Step 8 铜块网络传播 | ✅ | BFS 遍历同氧化等级铜块，边信号检测 |
+| Step 9 相位域合因子 | ✅ | √|Δ| 求和、域内去重 n、调谐解锁 |
+| Step 10 氧化等级网络隔离 | ✅ | 新鲜/暴露/锈蚀/氧化互不连通 |
+| Step 11 铜灯储能 | ✅ | 发电直存 + 按盏电量 DataComponent（无池） |
+| Step 12 IEnergyStorage | ✅（技术验证通过） | 原版容器 BE 注册，游戏内待实测 |
+| Step 13 活避雷针 | ⏳ 阶段四后 | 供需分配 |
 | Tooltip 仪表盘 | ✅ | `LivingWaxedGeneratorData` 检测值写回 + 槽位同步 + 双语渲染 |
 
 ---
@@ -357,12 +277,10 @@ NeoForge 生态存在**两代能量能力**，类型签名不同 → 互不可�
 
 | 限制 | 影响 | 计划 |
 |---|---|---|
-| 规律度（已移除） | 实际信号几乎都是规律的，无需独立因子 | v2 已移除 |
-| 耦合同频转发 | 谐振链 2:1 分频配方不可用，链上发电机需同周期调谐 | v2 分频转发（周期 ×2 再发射） |
-| 耦合每节点最多中继一次 | 多源汇聚节点的后续接收只计能量不转发 | 保守设计，观察后再定 |
 | 非 BE 容器不支持 | 充电宝搬入非 BE 容器时暂不可对外取电（发电本就需要 BE） | 有需求再补 Block 级注册 |
-| **Pipez 能量管道不兼容** | Pipez（master 线）使用新 Transfer API 的 `Energy.BLOCK`（EnergyHandler 类型），非 FE 的 `EnergyStorage.BLOCK` | 用 Mekanism 电缆取电；中期软依赖注册 EnergyHandler 适配（见能量生态兼容路线） |
+| **Pipez 能量管道不兼容** | Pipez（master 线）使用新 Transfer API 的 `Energy.BLOCK`（EnergyHandler 类型），非 FE 的 `EnergyStorage.BLOCK` | 用 Mekanism 电缆取电；中期软依赖注册 EnergyHandler 适配 |
 | 充电量化零头 | 剩余容量 < 1 FE 的部分不接收（整 FE 量化） | 保守方向（杜绝凭空造电），量级 ≤ 1 FE |
 | 发电机移除后 EMA 冻结 | 功率读数不清零（数据过期清理兜底） | 观察后再定 |
 | 事件 tick 计数随容器活跃度冻结 | 容器卸载期间周期被拉长 → 重锁 | 符合直觉，保留 |
 | 取电跨 FE 边界向上取整 | 每次取电最多多拿 count−1 mFE（49 盏时 ≤ 0.048 FE） | 设计取舍，观察后再定 |
+| 铜灯不导电 | 铜灯不能作为网络传播中继节点 | 设计如此，铜灯仅作储能 |

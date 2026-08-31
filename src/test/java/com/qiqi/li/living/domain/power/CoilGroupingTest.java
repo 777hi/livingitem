@@ -10,11 +10,12 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
 import com.qiqi.li.living.api.LivingItemManager;
-import com.qiqi.li.living.model.Pos2D;
 
 /**
- * 线圈分组测试 —— 形态 = 感应拓扑（§3.4）：
- * 铜块 1 组×4 向、雕文 2 组（V/H 隔离）、切制 1 组×1 向。
+ * 线圈形态检测测试（v3 —— 相位事件总线）。
+ *
+ * <p>验证 {@link LivingWaxedCopperFunction#getCoilForm} 正确识别各形态，
+ * 以及 {@link GeneratorState} 简化后单通道的正常工作。</p>
  */
 class CoilGroupingTest {
 
@@ -25,65 +26,59 @@ class CoilGroupingTest {
     }
 
     @Test
-    @DisplayName("涂蜡铜块：1 通道 × 4 向，每方向直连+感应共 8 路")
-    void baseCopper_fullOverpass() {
-        GeneratorState gen = new GeneratorState();
-        LivingWaxedCopperFunction.configureCoils(gen, living(Items.WAXED_COPPER_BLOCK, 1));
-
-        assertEquals(1, gen.channelCount());
-        for (int d = 0; d < 4; d++) {
-            assertEquals(0, gen.dirChannel(d));
-        }
-        assertEquals(8, gen.channel(0).pathCount());
+    @DisplayName("涂蜡铜块：FORM_BLOCK")
+    void baseCopper_formBlock() {
+        assertEquals(LivingWaxedGeneratorData.FORM_BLOCK,
+            LivingWaxedCopperFunction.getCoilForm(Items.WAXED_COPPER_BLOCK));
+        assertEquals(LivingWaxedGeneratorData.FORM_BLOCK,
+            LivingWaxedCopperFunction.getCoilForm(Items.WAXED_EXPOSED_COPPER));
+        assertEquals(LivingWaxedGeneratorData.FORM_BLOCK,
+            LivingWaxedCopperFunction.getCoilForm(Items.WAXED_WEATHERED_COPPER));
+        assertEquals(LivingWaxedGeneratorData.FORM_BLOCK,
+            LivingWaxedCopperFunction.getCoilForm(Items.WAXED_OXIDIZED_COPPER));
     }
 
     @Test
-    @DisplayName("涂蜡雕文：2 通道（V={UP,DOWN}，H={LEFT,RIGHT}）轴间隔离")
-    void chiseled_dualAxis() {
-        GeneratorState gen = new GeneratorState();
-        LivingWaxedCopperFunction.configureCoils(gen, living(Items.WAXED_CHISELED_COPPER, 1));
-
-        assertEquals(2, gen.channelCount());
-        assertEquals(0, gen.dirChannel(0));   // UP → V
-        assertEquals(0, gen.dirChannel(1));   // DOWN → V
-        assertEquals(1, gen.dirChannel(2));   // LEFT → H
-        assertEquals(1, gen.dirChannel(3));   // RIGHT → H
-        assertEquals(4, gen.channel(0).pathCount());
-        assertEquals(4, gen.channel(1).pathCount());
+    @DisplayName("涂蜡雕文：FORM_CHISELED")
+    void chiseled_formChiseled() {
+        assertEquals(LivingWaxedGeneratorData.FORM_CHISELED,
+            LivingWaxedCopperFunction.getCoilForm(Items.WAXED_CHISELED_COPPER));
     }
 
     @Test
-    @DisplayName("涂蜡切制：1 通道 × 1 向（WASD 配置），其余方向不感知")
-    void cut_singleDirection() {
-        ItemStack stack = living(Items.WAXED_CUT_COPPER, 1);
-        LivingItemManager.setWaxedCutData(stack, new LivingWaxedCutData(Pos2D.RIGHT));
-
-        GeneratorState gen = new GeneratorState();
-        LivingWaxedCopperFunction.configureCoils(gen, stack);
-
-        assertEquals(1, gen.channelCount());
-        assertEquals(0, gen.dirChannel(3));   // RIGHT 感知
-        assertEquals(-1, gen.dirChannel(0));  // UP 不感知
-        assertEquals(-1, gen.dirChannel(1));
-        assertEquals(-1, gen.dirChannel(2));
-        assertEquals(2, gen.channel(0).pathCount());   // 1 直连 + 1 感应
+    @DisplayName("涂蜡切制：FORM_CUT")
+    void cut_formCut() {
+        assertEquals(LivingWaxedGeneratorData.FORM_CUT,
+            LivingWaxedCopperFunction.getCoilForm(Items.WAXED_CUT_COPPER));
     }
 
     @Test
-    @DisplayName("配置变化时重建通道（波形状态重置，重新起振）")
-    void configChange_rebuildsChannels() {
+    @DisplayName("涂蜡格栅：FORM_GRATE")
+    void grate_formGrate() {
+        assertEquals(LivingWaxedGeneratorData.FORM_GRATE,
+            LivingWaxedCopperFunction.getCoilForm(Items.WAXED_COPPER_GRATE));
+    }
+
+    @Test
+    @DisplayName("GeneratorState 单通道：接收事件、分域、清理")
+    void generatorState_singleChannel() {
         GeneratorState gen = new GeneratorState();
-        ItemStack stack = living(Items.WAXED_CUT_COPPER, 1);
+        gen.setPreferredPeriodFromStack(4);
 
-        LivingItemManager.setWaxedCutData(stack, new LivingWaxedCutData(Pos2D.RIGHT));
-        LivingWaxedCopperFunction.configureCoils(gen, stack);
-        gen.channel(0).onPathValue(0, 0, 100);
-        gen.channel(0).path(0).recordValue(1, 100);
+        // 默认无域
+        assertTrue(gen.channel().domains().isEmpty());
 
-        LivingItemManager.setWaxedCutData(stack, new LivingWaxedCutData(Pos2D.LEFT));
-        LivingWaxedCopperFunction.configureCoils(gen, stack);
+        // 接收事件后创建域
+        gen.channel().onPhaseEvent(new PhaseEvent(0, 4, 0, 4096, 0), gen.preferredPeriod());
+        assertEquals(1, gen.channel().domains().size());
+        assertEquals(4, gen.channel().bestPeriod(4));
 
-        assertEquals(0.0, gen.channel(0).path(0).periodTicks(), 1e-9);
-        assertTrue(!gen.channel(0).path(0).hasUsablePhase());
+        // 清理（不超时，域保留）
+        gen.channel().tickCleanup(10, 4);
+        assertEquals(1, gen.channel().domains().size());
+
+        // 超时后清理
+        gen.channel().tickCleanup(100, 4);
+        assertTrue(gen.channel().domains().isEmpty());
     }
 }

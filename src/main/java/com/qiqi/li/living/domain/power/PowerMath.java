@@ -3,12 +3,12 @@ package com.qiqi.li.living.domain.power;
 /**
  * 红电发电数学工具 —— 全部纯函数，零 Minecraft 依赖（可单测）。
  *
- * <p>公式（v2）：</p>
+ * <p>公式（v3 —— 相位事件总线）：</p>
  * <pre>
- *   eff_δ           = log₂(|Δ|)                          // 信号幅度压缩
+ *   eff_δ_sum       = Σ√|Δ_i|                            // 各不同偏移的 √|Δ| 求和
  *   解锁度 u         = 调谐效率 × (n / 偏好周期)           // [0, 1]
  *   调谐效率         = (1 + cos θ) / 2，θ = (tick误差 / 偏好周期) × 2π
- *   合因子           = (eff_δ × n)^(1+u)                  // 不含 P
+ *   合因子           = (eff_δ_sum)^(1+u)                  // 不含 P
  *   单次跳变能量(RE) = 合因子 × P
  *   FE               = RE × K，K = 1/16
  * </pre>
@@ -69,20 +69,19 @@ public final class PowerMath {
     }
 
     /**
-     * 合因子 = (log₂(|Δ|) × n)^(1 + u)，u = 解锁度。
+     * 合因子 = (eff_δ_sum)^(1+u)，u = 解锁度。
      *
-     * <p>u=0（失谐/宽带）→ 线性 log₂|Δ| × n（保底）；
-     * u=1（完美调谐 + n=偏好周期）→ 平方 (log₂|Δ| × n)²（天花板）。</p>
+     * <p>u=0（失谐/宽带）→ 线性 eff_δ_sum（保底）；
+     * u=1（完美调谐 + n=偏好周期）→ 平方 (eff_δ_sum)²（天花板）。</p>
      *
-     * @param delta  |Δ|，信号跳变幅度
-     * @param n      相数（同周期域内互不同相的路数）
-     * @param unlock 解锁度 [0, 1]
+     * @param effDeltaSum Σ√|Δ_i|，各不同偏移的 √|Δ| 求和
+     * @param n           相数（同周期域内互不同相的路数，仅用于 u 计算）
+     * @param unlock      解锁度 [0, 1]
      */
-    public static double combinedFactor(int delta, int n, double unlock) {
-        if (delta <= 0 || n <= 0) return 0;
-        double effDelta = Math.max(0, Math.log(delta) / Math.log(2));
+    public static double combinedFactor(double effDeltaSum, int n, double unlock) {
+        if (effDeltaSum <= 0 || n <= 0) return 0;
         double u = Math.max(0.0, Math.min(1.0, unlock));
-        return Math.pow(effDelta * n, 1.0 + u);
+        return Math.pow(effDeltaSum, 1.0 + u);
     }
 
     /**

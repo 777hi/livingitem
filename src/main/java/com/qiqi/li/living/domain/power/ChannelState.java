@@ -1,100 +1,181 @@
 package com.qiqi.li.living.domain.power;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 /**
- * 线圈通道 —— 一组输入路的合成感应（形态 = 线圈分组，见 §3.4）。
+ * 线圈通道 —— 相位事件域管理器（v3 —— 相位事件总线）。
  *
- * <p>通道内各路按「相位域」分组计 n（同周期 + 同相位偏移合并），
- * 合因子 = (log₂|Δ| × n)^(1 + 解锁度)，解锁度 = 调谐效率 × (n / 偏好周期)。</p>
+ * <p>从铜块网络接收 {@link PhaseEvent}，按周期分域，域内按偏移去重计 n，
+ * 各偏移的 √|Δ| 求和计 eff_δ_sum。
+ * 合因子 = (eff_δ_sum)^(1+u)，u = 调谐效率 × (n / 偏好周期)。</p>
  */
 public class ChannelState {
 
-    private final List<PathState> paths = new ArrayList<>();
+    /** 相位域：period → PhaseDomain */
+    private final Map<Integer, PhaseDomain> domains = new HashMap<>();
 
-    /** 新增一路输入，返回其状态（调用方按路径序号喂值） */
-    public PathState addPath() {
-        PathState p = new PathState();
-        paths.add(p);
-        return p;
-    }
-
-    public int pathCount() {
-        return paths.size();
-    }
-
-    public PathState path(int index) {
-        return paths.get(index);
-    }
+    // ── 最近一次事件缓存（给 Telemetry 用）──
+    private int lastEventPeriod;
+    private int lastEventN;
+    private int lastEventDelta;
+    private long lastEventTick = -1;
 
     /**
-     * 某路发生值变化（每 tick 由 glue 喂入，事件驱动）。
+     * 接收一次相位事件。
      *
-     * @return 有符号变化量（0 = 无变化）
+     * @param event           相位事件
+     * @param preferredPeriod 发电机偏好周期（堆叠数）
      */
-    public int onPathValue(int pathIndex, long tick, int value) {
-        PathState path = paths.get(pathIndex);
-        int delta = path.recordValue(tick, value);
-        if (delta == 0) return 0;
-        if (delta > 0) onRising(tick);
-        return delta;
+    public void onPhaseEvent(PhaseEvent event, int preferredPeriod) {
+        PhaseDomain domain = domains.computeIfAbsent(event.period(), PhaseDomain::new);
+        domain.addOffset(event.offset(), event.delta());
+        domain.lastEventTick = event.tick();
+
+        lastEventPeriod = event.period();
+        lastEventN = domain.n();
+        lastEventDelta = event.delta();
+        lastEventTick = event.tick();
     }
 
     /**
-     * 该路当前一次跳变适用的合因子 (log₂|Δ| × n)^(1+u)。
-     * 不可用路返回 0（杂讯不产出）。
+     * 取指定周期域的合因子。
+     *
+     * @param period          域周期
+     * @param preferredPeriod 发电机偏好周期
+     * @return 合因子，域不存在或 n=0 则返回 0
      */
-    public double factorFor(int pathIndex, int preferredPeriod, int delta) {
-        PathState path = paths.get(pathIndex);
-        if (!path.hasUsablePhase()) return 0;
-        int n = Math.max(1, path.domainN());
+    public double factorFor(int period, int preferredPeriod) {
+        PhaseDomain domain = domains.get(period);
+        if (domain == null || domain.n() == 0) return 0;
         double eff = PowerMath.tuningEfficiency(
-            Math.abs(path.periodTicks() - preferredPeriod), preferredPeriod);
-        double unlock = n <= 0 ? 0 : Math.min(1.0, eff * n / preferredPeriod);
-        return PowerMath.combinedFactor(delta, n, unlock);
+            Math.abs(period - preferredPeriod), preferredPeriod);
+        double unlock = Math.min(1.0, eff * domain.n() / preferredPeriod);
+        return PowerMath.combinedFactor(domain.effDeltaSum(), domain.n(), unlock);
     }
-
-    /** 上升沿：更新相位域重算（O(常数)） */
-    private void onRising(long tick) {
-        recountPhaseDomains(tick);
-    }
-
-    /** 相位新鲜度门槛：静默超过 128t（2× 最大偏好周期）的路自动退出相位域（防幻影 n） */
-    private static final long STALE_PHASE_TICKS = 128;
 
     /**
-     * 相位域重算（每次上升沿触发）：按整数量子周期分域，
-     * 域内以上升沿 mod 周期的偏移去重——同相合并，n = 域内不同偏移数。
-     * 参与条件：周期可用 + 波形窗口非静默（16t 内有信号）+ 上升沿新鲜（≤128t，
-     * 防幻影 n——输入撤除后相位资格冻结导致的虚高）。
+     * 取最佳域的合因子（用于 Telemetry：n 最大，同 n 取周期最近）。
+     *
+     * @param preferredPeriod 发电机偏好周期
+     * @return 合因子，无域则 0
      */
-    /** 每 tick 由 glue 调用（无上升沿也重算——撤路后 n 自动衰减，防幻影） */
-    void recountPhaseDomains(long currentTick) {
-        Map<Integer, List<PathState>> domains = new HashMap<>();
-        for (PathState p : paths) {
-            if (!p.hasUsablePhase() || p.waveBits() == 0) continue;
-            if (currentTick - p.lastEventTick() > STALE_PHASE_TICKS) continue;
-            domains.computeIfAbsent(p.roundedPeriod(), key -> new ArrayList<>()).add(p);
+    public double bestFactor(int preferredPeriod) {
+        PhaseDomain best = bestDomain(preferredPeriod);
+        if (best == null) return 0;
+        double eff = PowerMath.tuningEfficiency(
+            Math.abs(best.period - preferredPeriod), preferredPeriod);
+        double unlock = Math.min(1.0, eff * best.n() / preferredPeriod);
+        return PowerMath.combinedFactor(best.effDeltaSum(), best.n(), unlock);
+    }
+
+    /** 取最佳域（n 最大，同 n 取周期最近偏好周期） */
+    public PhaseDomain bestDomain(int preferredPeriod) {
+        PhaseDomain best = null;
+        int bestN = -1;
+        int bestDist = Integer.MAX_VALUE;
+        for (var e : domains.entrySet()) {
+            PhaseDomain d = e.getValue();
+            if (d.n() == 0) continue;
+            int dist = Math.abs(d.period - preferredPeriod);
+            if (d.n() > bestN || (d.n() == bestN && dist < bestDist)) {
+                best = d;
+                bestN = d.n();
+                bestDist = dist;
+            }
         }
-        for (List<PathState> domain : domains.values()) {
-            int period = domain.get(0).roundedPeriod();
-            long base = Long.MAX_VALUE;
-            for (PathState p : domain) {
-                base = Math.min(base, p.lastRisingTick());
-            }
-            Set<Integer> offsets = new HashSet<>();
-            for (PathState p : domain) {
-                offsets.add((int) ((p.lastRisingTick() - base) % period));
-            }
-            int n = offsets.size();
-            for (PathState p : domain) {
-                p.setDomainN(n);
-            }
+        return best;
+    }
+
+    /** 最佳域的周期；无域则 0 */
+    public int bestPeriod(int preferredPeriod) {
+        PhaseDomain d = bestDomain(preferredPeriod);
+        return d == null ? 0 : d.period;
+    }
+
+    /** 最佳域的相数 n；无域则 0 */
+    public int bestN(int preferredPeriod) {
+        PhaseDomain d = bestDomain(preferredPeriod);
+        return d == null ? 0 : d.n();
+    }
+
+    /** 最佳域的最大 |Δ|（用于 Telemetry 显示）；无域则 0 */
+    public int bestDelta() {
+        return lastEventDelta;
+    }
+
+    /** 最佳域的 eff_δ_sum */
+    public double bestEffDeltaSum(int preferredPeriod) {
+        PhaseDomain d = bestDomain(preferredPeriod);
+        return d == null ? 0 : d.effDeltaSum();
+    }
+
+    /**
+     * 清理过期域：超过 2 倍偏好周期 tick 未收到事件的域自动移除。
+     *
+     * @param currentTick     当前游戏 tick
+     * @param preferredPeriod 发电机偏好周期
+     */
+    public void tickCleanup(long currentTick, int preferredPeriod) {
+        int timeout = Math.max(32, preferredPeriod * 2);  // 至少 32 tick
+        domains.values().removeIf(d -> currentTick - d.lastEventTick > timeout);
+    }
+
+    /** 全部域只读视图（F3+H 显示用） */
+    public Map<Integer, PhaseDomain> domains() {
+        return java.util.Collections.unmodifiableMap(domains);
+    }
+
+    // ── PhaseDomain 内部类 ──
+
+    /**
+     * 单个相位域 —— 同一周期内所有振荡器的相位集合。
+     *
+     * <p>域内按偏移去重：同周期同偏移的多个振荡器合并为 1 路，
+     * |Δ| 取该偏移的最大值。</p>
+     */
+    public static class PhaseDomain {
+        final int period;
+        final Set<Integer> offsets = new HashSet<>();
+        final Map<Integer, Integer> deltaByOffset = new HashMap<>();
+        long lastEventTick;
+
+        PhaseDomain(int period) {
+            this.period = period;
+        }
+
+        void addOffset(int offset, int delta) {
+            offsets.add(offset);
+            deltaByOffset.merge(offset, delta, Math::max);
+        }
+
+        /** 域内不同偏移数（= 相数 n） */
+        public int n() {
+            return offsets.size();
+        }
+
+        /** 域内最大 |Δ| */
+        public int maxDelta() {
+            return deltaByOffset.values().stream().mapToInt(Integer::intValue).max().orElse(0);
+        }
+
+        /** Σ√|Δ_i|：各偏移的 √|Δ| 求和 */
+        public double effDeltaSum() {
+            return deltaByOffset.values().stream()
+                .mapToDouble(Math::sqrt)
+                .sum();
+        }
+
+        /** 域周期（tick） */
+        public int period() {
+            return period;
+        }
+
+        /** 各偏移的 |Δ| 映射（F3+H 显示用） */
+        public Map<Integer, Integer> deltaByOffset() {
+            return java.util.Collections.unmodifiableMap(deltaByOffset);
         }
     }
 }

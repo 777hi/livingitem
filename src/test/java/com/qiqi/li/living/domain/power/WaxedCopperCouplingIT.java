@@ -3,105 +3,85 @@ package com.qiqi.li.living.domain.power;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
-
-import com.qiqi.li.living.api.LivingItemFunction;
-import com.qiqi.li.living.api.LivingItemManager;
-import com.qiqi.li.living.container.TickContext;
-import com.qiqi.li.living.domain.redstone.ContainerRedstoneData;
-import com.qiqi.li.living.domain.redstone.LivingLeverData;
-import com.qiqi.li.living.domain.redstone.LivingLeverFunction;
-import com.qiqi.li.testutil.FakeContainerContext;
-
 /**
- * 阶段三集成测试：感应耦合链路（§3.5）。
+ * 阶段三集成测试（v3 —— 相位事件总线）：多路振荡器 → 多发电机域独立计算。
  *
- * <p>布局（9 宽网格，4t 拉杆振荡器在槽 0）：</p>
- * <pre>
- *   [拉杆][A 堆4][B 堆4][C 堆4]
- * </pre>
- * <p>验证：A 直连发电；B 经 A 耦合（1 跳）发电；C 经 B 中继（2 跳）发电；
- * B 的中继不回传 A（无自激回环，A 的感应路保持静默）。</p>
+ * <p>场景：容器内多个振荡器广播 PhaseEvent，每台发电机独立分域处理。
+ * 验证：不同发电机收到相同事件但各有独立域状态；同偏移在不同发电机间去重独立。</p>
  */
 class WaxedCopperCouplingIT {
 
     @Test
-    @DisplayName("耦合链：A 直连 → B 一跳 → C 两跳，中继不回传")
-    void couplingChain_relayWithoutBackEcho() {
-        FakeContainerContext ctx = new FakeContainerContext(27, 9);
-        ItemStack lever = living(Items.LEVER, 1);
-        ItemStack a = living(Items.WAXED_COPPER_BLOCK, 4);
-        ItemStack b = living(Items.WAXED_COPPER_BLOCK, 4);
-        ItemStack c = living(Items.WAXED_COPPER_BLOCK, 4);
-        ctx.set(0, lever);
-        ctx.set(1, a);
-        ctx.set(2, b);
-        ctx.set(3, c);
+    @DisplayName("2 台发电机接收相同事件：各自独立 bestFactor")
+    void twoGenerators_sameEvents_independentFactors() {
+        GeneratorState genA = new GeneratorState();
+        genA.setPreferredPeriodFromStack(4);
+        GeneratorState genB = new GeneratorState();
+        genB.setPreferredPeriodFromStack(4);
 
-        ContainerRedstoneData redstone = new ContainerRedstoneData();
-        ContainerPowerData power = new ContainerPowerData();
-        LivingWaxedCopperFunction fn = new LivingWaxedCopperFunction();
+        // 单路 4t 振荡器 → 两台发电机都收到
+        PhaseEvent event = new PhaseEvent(0, 4, 0, 4096, 0);
+        genA.channel().onPhaseEvent(event, genA.preferredPeriod());
+        genB.channel().onPhaseEvent(event, genB.preferredPeriod());
 
-        TickContext tick = new TickContext(ctx);
-        tick.setFunctionSlots(Map.of(
-            LivingLeverFunction.ID, Set.of(0),
-            LivingWaxedCopperFunction.ID, Set.of(1, 2, 3)));
-        tick.redstoneData = redstone;
-        tick.powerData = power;
+        // 两台发电机应有相同 factor
+        assertEquals(genA.channel().bestFactor(4), genB.channel().bestFactor(4), 1e-9);
 
-        List<LivingItemFunction.SlotEntry> entries = List.of(
-            new LivingItemFunction.SlotEntry(1, a),
-            new LivingItemFunction.SlotEntry(2, b),
-            new LivingItemFunction.SlotEntry(3, c));
-
-        for (int t = 0; t < 40; t++) {
-            LivingItemManager.setLeverData(lever, new LivingLeverData((t / 2) % 2 == 0));
-            redstone.resetProcessedFlag();
-            redstone.calculate(ctx, tick);
-            fn.tickContainerData(entries, ctx, tick);
-        }
-
-        // ── A：直连（拉杆在左侧 → E_LEFT 直连路） ──
-        GeneratorState genA = power.getGenerator(1);
-        ChannelState chA = genA.primaryChannel();
-        assertEquals(4.0, chA.path(genA.dirDirectPath(2)).periodTicks(), 0.1);
-        // n=1, unlock=1.0*1/4=0.25, delta=15, log₂(15)≈3.91 → factor=3.91^1.25≈5.5
-        assertEquals(Math.pow(Math.log(15)/Math.log(2), 1.25),
-            chA.factorFor(genA.dirDirectPath(2), genA.preferredPeriod(), 15), 1e-3);
-
-        // ── B：感应路（来自左侧 A → E_LEFT 感应路）锁相 4t ──
-        GeneratorState genB = power.getGenerator(2);
-        ChannelState chB = genB.primaryChannel();
-        PathState bVirtual = chB.path(genB.dirVirtualPath(2));
-        assertEquals(4.0, bVirtual.periodTicks(), 0.1);
-        assertTrue(bVirtual.hasUsablePhase());
-        assertTrue(power.getEmaPowerRe() > 0 && power.getGenerator(2) != null);
-        // B 的直连路（无信号源）保持静默
-        assertEquals(0, chB.path(genB.dirDirectPath(0)).domainN());
-
-        // ── C：两跳中继（来自左侧 B → E_LEFT 感应路）同样锁相 ──
-        GeneratorState genC = power.getGenerator(3);
-        ChannelState chC = genC.primaryChannel();
-        PathState cVirtual = chC.path(genC.dirVirtualPath(2));
-        assertEquals(4.0, cVirtual.periodTicks(), 0.1);
-        assertTrue(cVirtual.hasUsablePhase());
-
-        // ── 防回环：B 的中继不回传 A → A 的右侧感应路从未收到任何跳变（period=0） ──
-        assertEquals(0.0, chA.path(genA.dirVirtualPath(3)).periodTicks(), 1e-9);
-        assertEquals(0, chA.path(genA.dirVirtualPath(3)).lastValue());
+        // 发电机 A 额外收到一路 → 其 n=2 而 B 仍为 n=1
+        genA.channel().onPhaseEvent(new PhaseEvent(1, 4, 1, 4096, 0), genA.preferredPeriod());
+        assertEquals(2, genA.channel().bestN(4));
+        assertEquals(1, genB.channel().bestN(4));
+        assertTrue(genA.channel().bestFactor(4) > genB.channel().bestFactor(4));
     }
 
-    private static ItemStack living(net.minecraft.world.item.Item item, int count) {
-        ItemStack stack = new ItemStack(item, count);
-        LivingItemManager.setLiving(stack, true);
-        return stack;
+    @Test
+    @DisplayName("不同偏好周期 → 最佳域一致但解锁度不同")
+    void differentPreferredPeriods() {
+        GeneratorState gen4 = new GeneratorState();  // 偏好 4t
+        gen4.setPreferredPeriodFromStack(4);
+        GeneratorState gen8 = new GeneratorState();  // 偏好 8t
+        gen8.setPreferredPeriodFromStack(8);
+
+        // 4t 振荡器（偏移 0, 2）
+        for (int t = 0; t <= 16; t += 4) {
+            PhaseEvent e1 = new PhaseEvent(0, 4, 0, 4096, t);
+            PhaseEvent e2 = new PhaseEvent(1, 4, 2, 4096, t + 2);
+            gen4.channel().onPhaseEvent(e1, gen4.preferredPeriod());
+            gen4.channel().onPhaseEvent(e2, gen4.preferredPeriod());
+            gen8.channel().onPhaseEvent(e1, gen8.preferredPeriod());
+            gen8.channel().onPhaseEvent(e2, gen8.preferredPeriod());
+        }
+
+        // 域状态相同
+        assertEquals(4, gen4.channel().bestPeriod(4));
+        assertEquals(4, gen8.channel().bestPeriod(8));
+        assertEquals(2, gen4.channel().bestN(4));
+        assertEquals(2, gen8.channel().bestN(8));
+
+        // 但解锁度不同：gen4 偏好 4t → 完美调谐，gen8 偏好 8t → 失谐
+        double factor4 = gen4.channel().bestFactor(4);
+        double factor8 = gen8.channel().bestFactor(8);
+        assertTrue(factor4 > factor8);
+    }
+
+    @Test
+    @DisplayName("同偏移去重：多路同周期同偏移的振荡器只计为 1 路")
+    void sameOffset_deduplication() {
+        GeneratorState gen = new GeneratorState();
+        gen.setPreferredPeriodFromStack(4);
+
+        // 3 路 4t 振荡器，但偏移都是 0 → 去重后 n=1
+        for (int t = 0; t <= 16; t += 4) {
+            gen.channel().onPhaseEvent(new PhaseEvent(0, 4, 0, 4096, t), gen.preferredPeriod());
+            gen.channel().onPhaseEvent(new PhaseEvent(1, 4, 0, 4096, t), gen.preferredPeriod());
+            gen.channel().onPhaseEvent(new PhaseEvent(2, 4, 0, 1024, t), gen.preferredPeriod());
+        }
+
+        assertEquals(1, gen.channel().bestN(4));
+        // |Δ| 取最大值 4096
+        assertEquals(64.0, gen.channel().bestEffDeltaSum(4), 1e-9);
     }
 }

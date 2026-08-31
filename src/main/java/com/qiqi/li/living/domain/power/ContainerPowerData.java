@@ -2,6 +2,7 @@ package com.qiqi.li.living.domain.power;
 
 import java.util.HashMap;
 import java.util.Map;
+import com.qiqi.li.living.domain.power.LivingWaxedCopperFunction.SignalTracker;
 
 /**
  * 容器级红电数据 —— 与 {@code ContainerRedstoneData} 并列的电力层账本。
@@ -24,6 +25,12 @@ public class ContainerPowerData {
 
     private final Map<Integer, GeneratorState> generators = new HashMap<>();
 
+    /** 振荡器信号跟踪器：slot → SignalTracker（按槽位跟踪，用于网络传播） */
+    private final Map<Integer, SignalTracker> signalTrackers = new HashMap<>();
+
+    /** 铜块网络边信号跟踪器：edgeKey = (slot << 2) | dir → SignalTracker（跨 tick 持久） */
+    private final Map<Long, SignalTracker> edgeTrackers = new HashMap<>();
+
     /** 本 tick 发电量（RE），由 glue 在 tick 末 drain 后分配入铜灯 */
     private long generatedReThisTick;
 
@@ -37,6 +44,19 @@ public class ContainerPowerData {
 
     public GeneratorState getGenerator(int slot) {
         return generators.get(slot);
+    }
+
+    public SignalTracker getOrCreateSignalTracker(int slot) {
+        return signalTrackers.computeIfAbsent(slot, key -> new SignalTracker());
+    }
+
+    public SignalTracker getSignalTracker(int slot) {
+        return signalTrackers.get(slot);
+    }
+
+    /** 获取或创建铜块网络边信号跟踪器 */
+    public SignalTracker getOrCreateEdgeTracker(long edgeKey) {
+        return edgeTrackers.computeIfAbsent(edgeKey, k -> new SignalTracker());
     }
 
     /** 当前内部 tick 计数（事件时间戳用） */

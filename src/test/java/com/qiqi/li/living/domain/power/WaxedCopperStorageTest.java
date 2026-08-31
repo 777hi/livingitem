@@ -251,15 +251,15 @@ class WaxedCopperStorageTest {
     }
 
     @Test
-    @DisplayName("仪表盘快照：检测周期/相数/规律度/解锁度（完美调谐）")
+    @DisplayName("仪表盘快照：检测周期/相数/解锁度/effDeltaSum（完美调谐）")
     void telemetry_perfectTuning() {
         GeneratorState gen = new GeneratorState();
         gen.setPreferredPeriodFromStack(4);
-        ChannelState channel = gen.primaryChannel();
-        channel.addPath();
+        ChannelState channel = gen.channel();
 
-        for (int t = 0; t < 14; t++) {
-            channel.onPathValue(0, t, square(t, 0, 4, 4096));
+        // 模拟 4t 振荡器，|Δ| = 4096
+        for (int t = 0; t <= 16; t += 4) {
+            channel.onPhaseEvent(new PhaseEvent(0, 4, t % 4, 4096, t), gen.preferredPeriod());
         }
 
         var telemetry = LivingWaxedCopperFunction.buildTelemetry(gen, 4,
@@ -267,6 +267,7 @@ class WaxedCopperStorageTest {
         assertEquals(4, telemetry.detectedPeriod());
         assertEquals(1, telemetry.phaseCount());
         assertEquals(250, telemetry.unlockPermille());   // eff=1.0 × n=1 / pref=4 = 0.25 → 250
+        assertEquals(64000, telemetry.effDeltaSumPermille());   // √4096 = 64.0 → 64000‰
     }
 
     @Test
@@ -279,6 +280,7 @@ class WaxedCopperStorageTest {
         assertEquals(0, telemetry.detectedPeriod());
         assertEquals(0, telemetry.phaseCount());
         assertEquals(0, telemetry.unlockPermille());
+        assertEquals(0, telemetry.effDeltaSumPermille());
     }
 
     @Test
