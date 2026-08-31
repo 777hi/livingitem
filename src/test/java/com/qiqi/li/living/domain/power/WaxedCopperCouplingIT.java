@@ -73,7 +73,9 @@ class WaxedCopperCouplingIT {
         GeneratorState genA = power.getGenerator(1);
         ChannelState chA = genA.primaryChannel();
         assertEquals(4.0, chA.path(genA.dirDirectPath(2)).periodTicks(), 0.1);
-        assertEquals(1.0, chA.factorFor(genA.dirDirectPath(2), genA.preferredPeriod()), 1e-9);
+        // n=1, unlock=1.0*1/4=0.25, delta=15, log₂(15)≈3.91 → factor=3.91^1.25≈5.5
+        assertEquals(Math.pow(Math.log(15)/Math.log(2), 1.25),
+            chA.factorFor(genA.dirDirectPath(2), genA.preferredPeriod(), 15), 1e-3);
 
         // ── B：感应路（来自左侧 A → E_LEFT 感应路）锁相 4t ──
         GeneratorState genB = power.getGenerator(2);

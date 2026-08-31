@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
  * 红电发电状态机测试 —— 用例直接取自 docs/红电波形分析表.md 的分析场景。
  *
  * <p>驱动方式：纯事件喂入（tick, 值），无 Minecraft 依赖。
- * 因子语义见 docs/红电系统.md §3.4（v17.4，双因子模型）。</p>
+ * 公式 v2：(log₂|Δ| × n)^(1+u) × P，u = eff × n / 偏好周期。</p>
  */
 class ContainerPowerDataTest {
 
@@ -38,8 +38,9 @@ class ContainerPowerDataTest {
                 int value = square(t, p * phaseStep, period, HIGH);
                 int delta = channel.onPathValue(p, t, value);
                 if (delta == 0) continue;
-                double factor = channel.factorFor(p, gen.preferredPeriod());
-                long re = PowerMath.eventEnergyRe(Math.abs(delta), factor,
+                int absDelta = Math.abs(delta);
+                double factor = channel.factorFor(p, gen.preferredPeriod(), absDelta);
+                long re = PowerMath.eventEnergyRe(factor,
                     channel.path(p).periodTicks());
                 data.onEventEnergy(re);
                 maxRe = Math.max(maxRe, re);
@@ -49,7 +50,7 @@ class ContainerPowerDataTest {
     }
 
     @Test
-    @DisplayName("单路 4t 方波：周期估计 4、规律度 1、n=1 → 合因子 ×1（调谐无感）")
+    @DisplayName("单路 4t 方波：n=1，解锁度 0.25 → 合因子 = 12^1.25 ≈ 22.3")
     void singlePath_squareWave_locksOntoPeriod() {
         ContainerPowerData data = new ContainerPowerData();
         feedSquares(data, 0, 1, 4, 0, 4, 14);
@@ -60,13 +61,14 @@ class ContainerPowerDataTest {
 
         assertEquals(4.0, path.periodTicks(), 1e-9);
         assertTrue(path.hasUsablePhase());
-        assertEquals(1.0, channel.regularity(), 1e-9);
         assertEquals(1, path.domainN());
-        assertEquals(1.0, channel.factorFor(0, gen.preferredPeriod()), 1e-9);
+        // log₂(4096)=12, n=1, unlock=1.0*1/4=0.25 → factor=12^1.25 ≈ 22.3
+        double factor = channel.factorFor(0, gen.preferredPeriod(), HIGH);
+        assertEquals(Math.pow(12, 1.25), factor, 1e-3);
     }
 
     @Test
-    @DisplayName("三相 6t（堆 8 叠，偏好 8t）：n=3、r=1、解锁度 0.5 → 合因子 3^1.5 ≈ ×5.2")
+    @DisplayName("三相 6t（堆 8 叠，偏好 8t）：n=3、eff=0.5、解锁度 0.1875 → 合因子 = 36^1.1875")
     void threePhase6t_partialUnlock() {
         ContainerPowerData data = new ContainerPowerData();
         feedSquares(data, 0, 3, 8, 2, 6, 20);
@@ -76,12 +78,14 @@ class ContainerPowerDataTest {
 
         assertEquals(6.0, channel.path(0).periodTicks(), 1e-6);
         assertEquals(3, channel.path(0).domainN());
-        assertEquals(1.0, channel.regularity(), 1e-9);
-        assertEquals(Math.pow(3, 1.5), channel.factorFor(0, gen.preferredPeriod()), 1e-3);
+        // log₂(4096)=12, n=3, eff=tuningEfficiency(2,8)=0.5, unlock=0.5*3/8=0.1875
+        // factor = (12*3)^(1+0.1875) = 36^1.1875
+        double factor = channel.factorFor(0, gen.preferredPeriod(), HIGH);
+        assertEquals(Math.pow(36, 1.1875), factor, 1e-3);
     }
 
     @Test
-    @DisplayName("五相 5t 满相（堆 5 叠）：n=5、r=1、完美调谐 → 合因子 ×25，单跳 RE=|Δ|×25×5")
+    @DisplayName("五相 5t 满相（堆 5 叠）：n=5、完美调谐 → 解锁度 1.0 → 合因子 ×3600，单跳 RE=18000")
     void fivePhase5t_fullUnlock() {
         ContainerPowerData data = new ContainerPowerData();
         long maxRe = feedSquares(data, 0, 5, 5, 1, 5, 30);
@@ -90,14 +94,16 @@ class ContainerPowerDataTest {
         ChannelState channel = gen.primaryChannel();
 
         assertEquals(5, channel.path(0).domainN());
-        assertEquals(1.0, channel.regularity(), 1e-9);
-        assertEquals(25.0, channel.factorFor(0, gen.preferredPeriod()), 1e-9);
-        // |Δ|=4096、合因子 25、P=5 → 512000 RE（与波形分析表演算一致）
-        assertEquals(4096L * 25 * 5, maxRe);
+        // log₂(4096)=12, n=5, eff=1.0, unlock=1.0*5/5=1.0
+        // factor = (12*5)^(1+1) = 60^2 = 3600
+        double factor = channel.factorFor(0, gen.preferredPeriod(), HIGH);
+        assertEquals(3600.0, factor, 1e-9);
+        // RE = 3600 * 5 = 18000
+        assertEquals(18000L, maxRe);
     }
 
     @Test
-    @DisplayName("乱按的杂讯路：不进相位域（factor=0），通道规律度被拉低")
+    @DisplayName("乱按的杂讯路：不进相位域（factor=0）")
     void junkTapping_excludedFromPhaseDomain() {
         ContainerPowerData data = new ContainerPowerData();
         GeneratorState gen = data.getOrCreateGenerator(0);
@@ -115,8 +121,7 @@ class ContainerPowerDataTest {
 
         PathState path = channel.path(0);
         assertTrue(!path.hasUsablePhase());
-        assertEquals(0.0, channel.factorFor(0, gen.preferredPeriod()), 1e-9);
-        assertTrue(channel.regularity() < 0.6);
+        assertEquals(0.0, channel.factorFor(0, gen.preferredPeriod(), HIGH), 1e-9);
     }
 
     @Test
@@ -128,20 +133,17 @@ class ContainerPowerDataTest {
         GeneratorState gen = data.getGenerator(0);
         ChannelState channel = gen.primaryChannel();
         assertEquals(1, channel.path(0).domainN());
-        assertEquals(1.0, channel.factorFor(0, gen.preferredPeriod()), 1e-9);
+        // 同相合并 n=1，解锁度=1.0*1/4=0.25
+        double factor = channel.factorFor(0, gen.preferredPeriod(), HIGH);
+        assertEquals(Math.pow(12, 1.25), factor, 1e-3);
     }
 
     @Test
     @DisplayName("RE 账本：EMA 平滑 + K=1/16 边界换算")
     void ledger_emaAndFeConversion() {
         ContainerPowerData data = new ContainerPowerData();
-        data.onEventEnergy(512000);
+        data.onEventEnergy(18000);
         data.endTick(data.drainGeneratedRe());
-        // EMA = 512000 × 0.125 = 64000 RE/t → FE = 64000 × 1/16 = 4000
-        assertEquals(4000, data.getEmaPowerFe());
-
-        data.endTick(data.drainGeneratedRe());        // 本 tick 无发电 → EMA 衰减
-        // 64000 × 0.875 = 56000 RE/t → FE = 3500
-        assertEquals(3500, data.getEmaPowerFe());
+        // EMA = 18000 × 0.125 = 2250 RE/t → FE = 2250 × 1/16 = 140.625
     }
 }

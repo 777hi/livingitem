@@ -127,7 +127,8 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             GeneratorState gen = e.getValue();
             ItemStack stack = ctx.getItem(slot);
             if (stack.isEmpty()) continue;
-            var telemetry = buildTelemetry(gen, stack.getCount());
+            int cf = getCoilForm(stack.getItem());
+            var telemetry = buildTelemetry(gen, stack.getCount(), cf, powerData);
             var current = LivingItemManager.getGeneratorData(stack);
             if (!current.equals(telemetry)) {
                 LivingItemManager.setGeneratorData(stack, telemetry);
@@ -206,7 +207,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
      * 主输入路 = 相数 n 最大的可用路（并列取周期长者）。
      */
     static com.qiqi.li.living.domain.power.LivingWaxedGeneratorData buildTelemetry(
-            GeneratorState gen, int stackCount) {
+            GeneratorState gen, int stackCount, int coilForm, ContainerPowerData powerData) {
         ChannelState channel = gen.primaryChannel();
         int bestN = 0;
         int bestPeriod = 0;
@@ -221,8 +222,6 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
                 bestDelta = p.lastDelta();
             }
         }
-        int r = (int) Math.round(channel.regularity() * 1000);
-
         // 波形窗口：4 条直连路，按方向序（0=↑ 1=↓ 2=← 3=→，与 tooltip 行标签一一对应）
         List<Integer> waves = new ArrayList<>();
         for (int d = 0; d < 4; d++) {
@@ -230,21 +229,48 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             waves.add(pathIdx < channel.pathCount() ? channel.path(pathIdx).waveBits() : 0);
         }
 
+        // 全部路径快照（F3+H 高级显示用）：按通道组织
+        List<com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.PathSnapshot> paths = new ArrayList<>();
+        for (int c = 0; c < gen.channelCount(); c++) {
+            ChannelState ch = gen.channel(c);
+            for (int d = 0; d < 4; d++) {
+                if (gen.dirChannel(d) != c) continue;
+                // 直连路
+                int dpIdx = gen.dirDirectPath(d);
+                if (dpIdx < ch.pathCount()) {
+                    PathState p = ch.path(dpIdx);
+                    paths.add(new com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.PathSnapshot(
+                        c, d, true, p.waveBits(), p.lastDelta(), p.roundedPeriod()));
+                }
+                // 感应路
+                int vpIdx = gen.dirVirtualPath(d);
+                if (vpIdx < ch.pathCount()) {
+                    PathState p = ch.path(vpIdx);
+                    paths.add(new com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.PathSnapshot(
+                        c, d, false, p.waveBits(), p.lastDelta(), p.roundedPeriod()));
+                }
+            }
+        }
+
+        long emaFe = powerData != null ? powerData.getEmaPowerFe() : 0;
+
         if (bestN <= 0) {
-            return new com.qiqi.li.living.domain.power.LivingWaxedGeneratorData(0, 0, r, 0, 0, waves);
+            return new com.qiqi.li.living.domain.power.LivingWaxedGeneratorData(
+                0, 0, 0, 0, waves, coilForm, emaFe, paths);
         }
         double eff = PowerMath.tuningEfficiency(
             Math.abs(bestPeriod - gen.preferredPeriod()), gen.preferredPeriod());
-        int unlock = (int) Math.round(eff * channel.regularity() * 1000);
+        double unlock = Math.min(1.0, eff * bestN / gen.preferredPeriod());
+        int unlockPermille = (int) Math.round(unlock * 1000);
         return new com.qiqi.li.living.domain.power.LivingWaxedGeneratorData(
-            bestPeriod, bestN, r, unlock, bestDelta, waves);
+            bestPeriod, bestN, unlockPermille, bestDelta, waves, coilForm, emaFe, paths);
     }
 
     /** 单路跳变 → 合因子 → RE 入账 */
     private static void credit(ContainerPowerData powerData, ChannelState channel, int pathIdx,
                                int preferredPeriod, int delta) {
-        double factor = channel.factorFor(pathIdx, preferredPeriod);
-        long re = PowerMath.eventEnergyRe(Math.abs(delta), factor,
+        double factor = channel.factorFor(pathIdx, preferredPeriod, Math.abs(delta));
+        long re = PowerMath.eventEnergyRe(factor,
             channel.path(pathIdx).periodTicks());
         powerData.onEventEnergy(re);
     }
@@ -359,6 +385,14 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         return dir ^ 1;
     }
 
+    /** 从物品取线圈形态（用于 telemetry 和 tooltip 显示） */
+    private static int getCoilForm(Item item) {
+        if (isWaxedChiseled(item)) return com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.FORM_CHISELED;
+        if (isWaxedCut(item)) return com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.FORM_CUT;
+        if (isWaxedGrate(item)) return com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.FORM_GRATE;
+        return com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.FORM_BLOCK;
+    }
+
     // ── 线圈分组（§3.4 感应拓扑）──
 
     /** 形状决定通道划分；配置指纹不变时不重建（保护波形状态） */
@@ -396,9 +430,14 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         var item = stack.getItem();
         int oxidation = getOxidationLevel(item);
 
+        // ── 标题行：形态 + 名称 ──
         tooltipAdder.accept(Component.nullToEmpty(""));
-        tooltipAdder.accept(Component.translatable("tooltip.livingitem.waxed_copper.title")
+        String formKey = formTranslationKey(item);
+        tooltipAdder.accept(Component.translatable("tooltip.livingitem.waxed_copper.title",
+                Component.translatable(formKey))
             .withStyle(ChatFormatting.GOLD));
+
+        // ── 耦合管径 ──
         tooltipAdder.accept(Component.literal("  ")
             .append(Component.translatable("tooltip.livingitem.waxed_copper.coupling"))
             .append(Component.literal(": " + String.format("%.2f", PowerMath.coupling(oxidation))))
@@ -409,58 +448,101 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             int pref = stack.getCount();
             boolean hasSignal = t.detectedPeriod() > 0;
 
-            if (hasSignal) {
-                // ── 发电量公式（§3.4）：发电 = |Δ| × n^(1+解锁度) × (P/16) ──
-                double factor = PowerMath.combinedFactor(t.phaseCount(), t.unlockPermille() / 1000.0);
-                double rePerEvent = t.lastDelta() * factor * (t.detectedPeriod() / 16.0);
-                tooltipAdder.accept(Component.translatable("tooltip.livingitem.waxed_copper.formula_title")
-                    .withStyle(ChatFormatting.GOLD));
-                tooltipAdder.accept(Component.literal("  发电 = |Δ|" + t.lastDelta()
-                    + " × " + t.phaseCount() + "^" + String.format("%.1f", 1 + t.unlockPermille() / 1000.0)
-                    + " × (" + t.detectedPeriod() + "/16)"
-                    + " = " + String.format("%.0f", rePerEvent) + " RE")
+            // ── EMA 功率（FE/t）──
+            if (t.emaPowerFe() > 0) {
+                tooltipAdder.accept(Component.literal("  ")
+                    .append(Component.translatable("tooltip.livingitem.waxed_copper.ema_power"))
+                    .append(Component.literal(": " + t.emaPowerFe() + " FE/t"))
                     .withStyle(ChatFormatting.YELLOW));
-                tooltipAdder.accept(Component.literal("  |Δ|=" + t.lastDelta()
-                    + "  n=" + t.phaseCount() + "  r=" + t.regularityPermille() / 10 + "%"
-                    + "  解锁=" + t.unlockPermille() / 10 + "%")
-                    .withStyle(ChatFormatting.GRAY));
+            }
 
-                // ── 调谐对照 ──
+            if (hasSignal) {
+                // ── 检测信息 ──
                 boolean tuned = Math.abs(t.detectedPeriod() - pref) <= 1;
                 tooltipAdder.accept(Component.literal("  ")
                     .append(Component.translatable("tooltip.livingitem.waxed_copper.detected_period"))
                     .append(Component.literal(": " + t.detectedPeriod() + " tick"))
                     .append(Component.literal(tuned ? " ✓" : " (偏好 " + pref + ")")
                         .withStyle(tuned ? ChatFormatting.GREEN : ChatFormatting.RED)));
+
+                // ── 相数 · 解锁度 ──
+                tooltipAdder.accept(Component.literal("  ")
+                    .append(Component.translatable("tooltip.livingitem.waxed_copper.phase_count"))
+                    .append(Component.literal(": " + t.phaseCount()))
+                    .append(Component.literal("  |  "))
+                    .append(Component.translatable("tooltip.livingitem.waxed_copper.unlock"))
+                    .append(Component.literal(": " + t.unlockPermille() / 10 + "%"))
+                    .withStyle(ChatFormatting.GRAY));
+
+                // ── 发电量公式（v2）──
+                double factor = PowerMath.combinedFactor(t.lastDelta(), t.phaseCount(), t.unlockPermille() / 1000.0);
+                double rePerEvent = factor * (t.detectedPeriod() / 16.0);
+                tooltipAdder.accept(Component.literal("  ")
+                    .append(Component.translatable("tooltip.livingitem.waxed_copper.power_output"))
+                    .append(Component.literal(" = " + String.format("%.0f", rePerEvent) + " RE"))
+                    .withStyle(ChatFormatting.GRAY));
+                tooltipAdder.accept(Component.literal("    ")
+                    .append(Component.literal("log₂|Δ|"))
+                    .append(Component.literal(": " + String.format("%.1f", Math.log(t.lastDelta()) / Math.log(2))))
+                    .append(Component.literal("  ×  "))
+                    .append(Component.translatable("tooltip.livingitem.waxed_copper.formula_n"))
+                    .append(Component.literal(": " + t.phaseCount() + "^(1+" + String.format("%.2f", t.unlockPermille() / 1000.0) + ")"))
+                    .append(Component.literal("  ×  "))
+                    .append(Component.translatable("tooltip.livingitem.waxed_copper.formula_p"))
+                    .append(Component.literal(": " + t.detectedPeriod() + "/16"))
+                    .withStyle(ChatFormatting.DARK_GRAY));
             } else {
                 tooltipAdder.accept(Component.literal("  ")
                     .append(Component.translatable("tooltip.livingitem.waxed_copper.no_signal"))
                     .withStyle(ChatFormatting.DARK_GRAY));
             }
 
-            // ── F3+H 高级模式：每路波形 + 检测内部值 ──
-            if (flag.isAdvanced()) {
-                tooltipAdder.accept(Component.translatable("tooltip.livingitem.waxed_copper.wave_title")
-                    .withStyle(ChatFormatting.DARK_PURPLE));
-                String[] dirs = {"↑", "↓", "←", "→"};
-                for (int d = 0; d < 4 && d < t.waves().size(); d++) {
-                    int bits = t.waves().get(d);
-                    StringBuilder wave = new StringBuilder();
-                    for (int b = 15; b >= 0; b--) {
-                        wave.append(((bits >> b) & 1) != 0 ? '█' : '·');
+            // ── F3+H 高级模式：全部路径波形 + 通道信息 ──
+            if (flag.isAdvanced() && !t.paths().isEmpty()) {
+                // 按通道分组显示
+                int maxCh = t.paths().stream().mapToInt(
+                    com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.PathSnapshot::channelIdx).max().orElse(0) + 1;
+                for (int c = 0; c < maxCh; c++) {
+                    int ch = c;
+                    var chPaths = t.paths().stream().filter(p -> p.channelIdx() == ch).toList();
+                    if (chPaths.isEmpty()) continue;
+                    // 通道标题：方向列表
+                    StringBuilder dirs = new StringBuilder();
+                    for (var p : chPaths) {
+                        String dStr = DIR_SYMBOLS[p.direction()];
+                        if (dirs.indexOf(dStr) < 0) dirs.append(dStr);
                     }
-                    boolean silent = bits == 0;
-                    tooltipAdder.accept(Component.literal("  " + dirs[d] + " "
-                        + (silent ? "（静默）" : wave.toString()))
-                        .withStyle(silent ? ChatFormatting.DARK_GRAY : ChatFormatting.LIGHT_PURPLE));
+                    tooltipAdder.accept(Component.translatable("tooltip.livingitem.waxed_copper.wave_channel",
+                            c, dirs.toString(), chPaths.size() / 2)
+                        .withStyle(ChatFormatting.DARK_PURPLE));
+                    // 每条路径
+                    for (var p : chPaths) {
+                        String dirSym = DIR_SYMBOLS[p.direction()];
+                        String typeKey = p.isDirect()
+                            ? "tooltip.livingitem.waxed_copper.path_direct"
+                            : "tooltip.livingitem.waxed_copper.path_induction";
+                        String waveStr = formatWaveBits(p.waveBits());
+                        boolean silent = p.waveBits() == 0;
+                        String info = "  " + dirSym + " "
+                            + Component.translatable(typeKey).getString()
+                            + " " + (silent ? "（静默）" : waveStr);
+                        // 非静默路追加周期和跳变
+                        if (!silent) {
+                            info += "  |Δ|=" + p.lastDelta() + "  P=" + p.period() + "t";
+                        }
+                        tooltipAdder.accept(Component.literal(info)
+                            .withStyle(silent ? ChatFormatting.DARK_GRAY : ChatFormatting.LIGHT_PURPLE));
+                    }
                 }
-                tooltipAdder.accept(Component.literal("  P=" + t.detectedPeriod()
-                    + "t  n=" + t.phaseCount()
-                    + "  r=" + t.regularityPermille() / 10 + "%"
-                    + "  unlock=" + t.unlockPermille() / 10 + "%")
+                // 原始值汇总
+                tooltipAdder.accept(Component.translatable("tooltip.livingitem.waxed_copper.raw_values",
+                        t.detectedPeriod(), t.phaseCount(),
+                        t.unlockPermille() / 10,
+                        t.emaPowerFe() * 1000)
                     .withStyle(ChatFormatting.DARK_GRAY));
             }
         }
+        // ── 偏好周期 / 宽带 ──
         if (stack.getCount() >= 2) {
             tooltipAdder.accept(Component.literal("  ")
                 .append(Component.translatable("tooltip.livingitem.waxed_copper.preferred_period"))
@@ -471,6 +553,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
                 .append(Component.translatable("tooltip.livingitem.waxed_copper.broadband"))
                 .withStyle(ChatFormatting.DARK_AQUA));
         }
+        // ── 铜灯电量 ──
         if (isWaxedBulb(item)) {
             LivingWaxedBulbData data = LivingItemManager.getWaxedBulbData(stack);
             long q = data.chargeMilliFe() * stack.getCount();          // 堆总量
@@ -487,6 +570,26 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
                     + (full ? "（已满）" : "")))
                 .withStyle(q > 0 ? ChatFormatting.YELLOW : ChatFormatting.DARK_GRAY));
         }
+    }
+
+    /** 方向符号（0=↑ 1=↓ 2=← 3=→） */
+    private static final String[] DIR_SYMBOLS = {"↑", "↓", "←", "→"};
+
+    /** 32-bit 波形 → 32 字符字符串（bit31=32t 前，bit0=最新） */
+    private static String formatWaveBits(int bits) {
+        StringBuilder sb = new StringBuilder(32);
+        for (int b = 31; b >= 0; b--) {
+            sb.append(((bits >> b) & 1) != 0 ? '█' : '·');
+        }
+        return sb.toString();
+    }
+
+    /** 从物品取形态翻译键 */
+    private static String formTranslationKey(Item item) {
+        if (isWaxedChiseled(item)) return "tooltip.livingitem.waxed_copper.form.chiseled";
+        if (isWaxedCut(item)) return "tooltip.livingitem.waxed_copper.form.cut";
+        if (isWaxedGrate(item)) return "tooltip.livingitem.waxed_copper.form.grate";
+        return "tooltip.livingitem.waxed_copper.form.block";
     }
 
     // ── WASD 方向配置（涂蜡切制的感应方向）──

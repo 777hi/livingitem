@@ -262,11 +262,11 @@ class WaxedCopperStorageTest {
             channel.onPathValue(0, t, square(t, 0, 4, 4096));
         }
 
-        var telemetry = LivingWaxedCopperFunction.buildTelemetry(gen, 4);
+        var telemetry = LivingWaxedCopperFunction.buildTelemetry(gen, 4,
+            com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.FORM_BLOCK, null);
         assertEquals(4, telemetry.detectedPeriod());
         assertEquals(1, telemetry.phaseCount());
-        assertEquals(1000, telemetry.regularityPermille());
-        assertEquals(1000, telemetry.unlockPermille());   // 效率 1 × 规律 1
+        assertEquals(250, telemetry.unlockPermille());   // eff=1.0 × n=1 / pref=4 = 0.25 → 250
     }
 
     @Test
@@ -274,7 +274,8 @@ class WaxedCopperStorageTest {
     void telemetry_noSignal() {
         GeneratorState gen = new GeneratorState();
         gen.setPreferredPeriodFromStack(4);
-        var telemetry = LivingWaxedCopperFunction.buildTelemetry(gen, 4);
+        var telemetry = LivingWaxedCopperFunction.buildTelemetry(gen, 4,
+            com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.FORM_BLOCK, null);
         assertEquals(0, telemetry.detectedPeriod());
         assertEquals(0, telemetry.phaseCount());
         assertEquals(0, telemetry.unlockPermille());

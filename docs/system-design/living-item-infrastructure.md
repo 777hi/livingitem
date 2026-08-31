@@ -1080,7 +1080,7 @@ ItemTooltipEvent（NeoForge 客户端事件，见 client/render/LivingItemToolti
 |---|---|---|
 | **纯实时计算** | 耦合管径（物品类型查表）、偏好周期（= 堆叠数）、宽带态（count==1） | 否——物品身份与堆叠数的纯函数，渲染时现算 |
 | **DataComponent**（NBT + 网络双通道） | 铜灯电量 `chargeMilliFe` | 组件注册时成对声明：`persistent(CODEC)` 写 NBT，`networkSynchronized(STREAM_CODEC)` 同步客户端——**两条独立管道** |
-| **服务端内存态** | `ContainerPowerData` 的周期估计/规律度/解锁度 | 不同步也不持久——**当前 tooltip 显示不了**，需阶段五 telemetry 写回组件 |
+| **服务端内存态** | `ContainerPowerData` 的周期估计/解锁度/合因子 | 不同步也不持久——**当前 tooltip 显示不了**，需阶段五 telemetry 写回组件 |
 
 ### 11.3 关键结论
 

@@ -3,12 +3,14 @@ package com.qiqi.li.living.domain.power;
 /**
  * 红电发电数学工具 —— 全部纯函数，零 Minecraft 依赖（可单测）。
  *
- * <p>公式来源：docs/红电系统.md §3.4（v17.4，双因子模型）：</p>
+ * <p>公式（v2）：</p>
  * <pre>
- *   单次跳变能量(RE) = |Δsignal| × n^(1+解锁度) × P
- *   解锁度           = 调谐效率 × 波形规律度
+ *   eff_δ           = log₂(|Δ|)                          // 信号幅度压缩
+ *   解锁度 u         = 调谐效率 × (n / 偏好周期)           // [0, 1]
  *   调谐效率         = (1 + cos θ) / 2，θ = (tick误差 / 偏好周期) × 2π
- *   FE               = RE × K，K = 1/16（全 mod 唯一标尺常量）
+ *   合因子           = (eff_δ × n)^(1+u)                  // 不含 P
+ *   单次跳变能量(RE) = 合因子 × P
+ *   FE               = RE × K，K = 1/16
  * </pre>
  *
  * <p>RE 为内部自然单位（零常数），K 只在边界（电池 / IEnergyStorage）出现一次。</p>
@@ -21,8 +23,7 @@ public final class PowerMath {
     /**
      * RE → FE 边界换算常量（全 mod 唯一标尺）。
      *
-     * <p>K = 1/16 时数值与「单次能量 = |Δ| × 合因子 × (P/16)」的原始设计完全一致。
-     * 电池容量 / IEnergyStorage 定稿后如需整体调产量，只改这一个数。</p>
+     * <p>K = 1/16，电池容量 / IEnergyStorage 定稿后如需整体调产量，只改这一个数。</p>
      */
     public static final double RE_TO_FE = 1.0 / 16.0;
 
@@ -55,7 +56,7 @@ public final class PowerMath {
      * 调谐效率 = (1 + cos θ) / 2，θ = (tick误差 / 偏好周期) × 2π。
      *
      * <p>完美匹配 → 1，完全反相 → 0；结果 clamp [0,1]。
-     * 偏好周期 &lt; 2（宽带堆 1 叠）时直接返回 0（效率固定，见 §3.4 因子二）。</p>
+     * 偏好周期 &lt; 2（宽带堆 1 叠）时直接返回 0（效率固定）。</p>
      *
      * @param tickError       |输入周期 − 偏好周期|
      * @param preferredPeriod 发电机偏好周期（= 堆叠数）
@@ -68,26 +69,31 @@ public final class PowerMath {
     }
 
     /**
-     * 相位质量合因子 = n^(1 + 解锁度)，解锁度 = 调谐效率 × 波形规律度。
+     * 合因子 = (log₂(|Δ|) × n)^(1 + u)，u = 解锁度。
      *
-     * <p>解锁度 0（失谐 / 杂讯 / 宽带）→ 线性 n（布线保底）；
-     * 解锁度 1（完美调谐 + 稳定时钟）→ 平方 n²（涌现天花板）。</p>
+     * <p>u=0（失谐/宽带）→ 线性 log₂|Δ| × n（保底）；
+     * u=1（完美调谐 + n=偏好周期）→ 平方 (log₂|Δ| × n)²（天花板）。</p>
+     *
+     * @param delta  |Δ|，信号跳变幅度
+     * @param n      相数（同周期域内互不同相的路数）
+     * @param unlock 解锁度 [0, 1]
      */
-    public static double combinedFactor(int n, double unlock) {
-        if (n <= 0) return 0;
+    public static double combinedFactor(int delta, int n, double unlock) {
+        if (delta <= 0 || n <= 0) return 0;
+        double effDelta = Math.max(0, Math.log(delta) / Math.log(2));
         double u = Math.max(0.0, Math.min(1.0, unlock));
-        return Math.pow(n, 1.0 + u);
+        return Math.pow(effDelta * n, 1.0 + u);
     }
 
     /**
-     * 单次跳变能量（RE）= |Δ| × 合因子 × P。
+     * 单次跳变能量（RE）= 合因子 × P。
      *
-     * <p>自然单位公式，零硬常数。P = 跳变所在路径的周期估计（tick）；
+     * <p>P = 跳变所在路径的周期估计（tick）；
      * 任何一项非正（杂讯路径 / 静止）都不产出。</p>
      */
-    public static long eventEnergyRe(double delta, double factor, double periodTicks) {
-        if (delta <= 0 || factor <= 0 || periodTicks <= 0) return 0;
-        return Math.round(delta * factor * periodTicks);
+    public static long eventEnergyRe(double factor, double periodTicks) {
+        if (factor <= 0 || periodTicks <= 0) return 0;
+        return Math.round(factor * periodTicks);
     }
 
     /** RE → FE（边界换算，K = {@link #RE_TO_FE}） */

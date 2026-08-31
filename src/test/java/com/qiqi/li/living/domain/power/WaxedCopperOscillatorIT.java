@@ -68,9 +68,10 @@ class WaxedCopperOscillatorIT {
         assertEquals(4.0, left.periodTicks(), 0.1);
         assertTrue(left.hasUsablePhase());
         assertEquals(1, left.domainN());
-        assertTrue(channel.regularity() > 0.95);
-        // n=1 → 合因子恒 ×1（调谐无感），但锁相与规律度必须成立
-        assertEquals(1.0, channel.factorFor(gen.dirDirectPath(2), gen.preferredPeriod()), 1e-9);
+        // n=1, unlock=eff*1/4, eff=tuningEfficiency(|4-4|,4)=1.0 → unlock=0.25
+        // factor=(log₂(15)*1)^(1+0.25) ≈ 3.91^1.25 ≈ 5.5
+        double factor = channel.factorFor(gen.dirDirectPath(2), gen.preferredPeriod(), 15);
+        assertEquals(Math.pow(Math.log(15)/Math.log(2), 1.25), factor, 1e-3);
         // 稳态 30 RE/t（每 4t 两次跳变、每次 15×1×4），EMA 40 tick 已收敛
         assertTrue(power.getEmaPowerRe() > 25);
         assertTrue(power.getEmaPowerFe() >= 1);
