@@ -2,8 +2,8 @@
 
 # Living Power (活涂蜡铜块 · 红电发电) 技术文档
 
-> **文档版本**: v3
-> **最后更新**: 2026-08-30
+> **文档版本**: v3.1（代码审查后同步：注册方式、canReceive、测试计数、已知限制）
+> **最后更新**: 2026-08-29
 > **适用版本**: Minecraft 1.21.1
 > **规划文档**: [红电系统.md](../红电系统.md)（v17.4，双因子模型）
 
@@ -216,16 +216,18 @@ unlock = eff × regularity
 双箱合并 handler 由能力自动覆盖（旧「双箱另半限制」随之解除）；
 随机战利品容器（未开箱）按 tick 机制同款规则跳过。
 
-**能力注册（宽注册 + 让位 + 物品双向）**：
+**能力注册（显式注册 + 让位 + 物品双向）**：
 
 ```
-① BE 宽注册：遍历 BuiltInRegistries.BLOCK_ENTITY_TYPE 全部注册
+① BE 显式注册：10 种原版容器 BE（箱子/陷阱箱/木桶/潜影盒/漏斗/熔炉×3/发射器/投掷器）
+   —— 活物品只在 BE 容器里 tick（发现机制锚定 BE），模组容器由自身 BE 类型覆盖，
+   非容器 BE 注册了也永远不会命中，故不做全注册表宽注册
    provider 判定链（全部缓存安全，零 invalidateCapabilities）：
-     a. be instanceof Container？           否 → null（非容器，类型稳定）
-     b. be instanceof IEnergyStorage？      是 → null（直接实现者让位，零成本）
+     a. 随机战利品容器（未开箱）？      是 → null（与 tick 机制同款跳过）
+     b. be instanceof IEnergyStorage？  是 → null（直接实现者让位，零成本）
      c. 重入保护下查询 EnergyStorage.BLOCK：
         已有主人（模组机器自身储能）→ null（让位，注册期定死的稳定属性）
-     d. 返回 ContainerEnergyStorage 实例（内部自适应：无灯无池 → 电量 0）
+     d. 返回 ContainerEnergyStorage 实例（内部自适应：无灯 → 电量 0）
 ② 铜灯物品注册：EnergyStorage.ITEM × 4 个涂蜡铜灯
    （BulbItemEnergyStorage：双向通用电池，见下）
 ```
@@ -245,7 +247,7 @@ unlock = eff × regularity
 充能槽（充电）：外部电源给灯充能（每盏等量加，受每盏容量 C 限制）✅
    —— 跨系统能量等量转换，守恒无套利
 无出身论：外部充的电与红电发的电混为一个 q，不分来源
-方块级接口仍只出不进（发电是池的唯一来源）——双向开放的是铜灯物品
+方块级与物品级均双向（canReceive=true）：容器充电槽可推电入铜灯堆
 ```
 
 **能量生态兼容路线（两套能量 API）**：
@@ -316,7 +318,7 @@ K = 1/16 时数值与「单次能量 = |Δ| × 合因子 × (P/16)」的原始�
 | `PowerMathTest` | 5 | 耦合管径、调谐效率曲线、合因子地板/天花板、K 换算 |
 | `ContainerPowerDataTest` | 6 | 单路锁相、三相 6t 部分解锁（3^1.5）、五相 5t 满相（×25）、杂讯排除、同相合并、EMA 账本 |
 | `CoilGroupingTest` | 4 | 铜块全向、雕文 V/H 双通道、切制单方向、配置变化重建 |
-| `WaxedCopperStorageTest` | 9 | 发电直存分配、无铜灯弃、满溢、模组容器取电（IItemHandler）、超取 clamp、模拟不改态、onChanged 落盘信号、发电量累计、EMA 功率 |
+| `WaxedCopperStorageTest` | 16 | 发电直存分配、无铜灯弃、满溢、模组容器取电（IItemHandler）、超取 clamp、模拟不改态、onChanged 落盘信号、充电比例分配、满收 0、整 FE 量化、取消活化排除、telemetry 检测值 ×2、发电量累计、EMA 功率 |
 | `BulbItemEnergyStorageTest` | 6 | 双向充放、容量 clamp、simulate、拆分守恒、线性读数 |
 | `WaxedCopperOscillatorIT` | 1 | 全链路集成：拉杆振荡器（4t）→ 红石传播 → 发电采样 → EMA 收敛 |
 | `WaxedCopperCouplingIT` | 1 | 耦合链集成：A 直连 → B 一跳 → C 两跳，中继不回传 |
@@ -355,3 +357,4 @@ K = 1/16 时数值与「单次能量 = |Δ| × 合因子 × (P/16)」的原始�
 | 充电量化零头 | 剩余容量 < 1 FE 的部分不接收（整 FE 量化） | 保守方向（杜绝凭空造电），量级 ≤ 1 FE |
 | 发电机移除后 EMA 冻结 | 功率读数不清零（数据过期清理兜底） | 观察后再定 |
 | 事件 tick 计数随容器活跃度冻结 | 容器卸载期间周期被拉长 → 重锁 | 符合直觉，保留 |
+| **取电侧异常待查** | 容器内铜灯总量 > 2 FE（2000 mFE）时，Mekanism 电缆取电出现「外部电池电量上涨而灯 NBT 不减」的异常；≤ 2 FE 无异常（q=56×35=1960 不复现，q=56×36=2016 复现） | 已按用户指示暂缓；下次排查建议从「外部电池读数来源（是否在重复读同一池/缓存）」入手 |

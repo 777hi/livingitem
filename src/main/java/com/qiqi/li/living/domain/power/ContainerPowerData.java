@@ -27,8 +27,6 @@ public class ContainerPowerData {
     /** 本 tick 发电量（RE），由 glue 在 tick 末 drain 后分配入铜灯 */
     private long generatedReThisTick;
 
-    /** 外部（IEnergyStorage 异步路径）改动了铜灯组件 → 需要槽位同步 */
-    private boolean externalMutation;
     private double emaPowerRe;
     private long tickCounter;
     private long lastTickTime = System.currentTimeMillis();
@@ -44,19 +42,6 @@ public class ContainerPowerData {
     /** 当前内部 tick 计数（事件时间戳用） */
     public long currentTick() {
         return tickCounter;
-    }
-
-    /** 标记：外部路径改动了铜灯组件（需同步到客户端） */
-    public void markExternalMutation() {
-        externalMutation = true;
-        lastTickTime = System.currentTimeMillis();
-    }
-
-    /** 消费外部变更标记 */
-    public boolean consumeExternalMutation() {
-        boolean v = externalMutation;
-        externalMutation = false;
-        return v;
     }
 
     /** 记录一次跳变产出的能量（RE）：累加为本 tick 发电量 */

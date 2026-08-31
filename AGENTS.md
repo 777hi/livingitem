@@ -216,8 +216,8 @@ src/main/java/com/qiqi/li/
 │   │   ├── LivingWaxedBulbData.java         #     涂蜡铜灯组件（按盏电量，1/1000 FE 定点）
 │   │   ├── LivingWaxedGeneratorData.java    #     发电机仪表盘组件（检测值快照，纯展示）
 │   │   ├── BulbItemEnergyStorage.java       #     铜灯物品能量（通用电池：双向，每盏等量充放）
-│   │   ├── ContainerEnergyStorage.java      #     对外 IEnergyStorage（宽注册+让位，池优先→逐堆扣灯）
-│   │   └── ContainerPowerData.java          #     容器级红电账本（RE 事件 + EMA 功率 + 容器池）
+│   │   ├── ContainerEnergyStorage.java      #     对外 IEnergyStorage（原版容器 BE 显式注册+让位；取电逐堆扣灯/充电比例分配）
+│   │   └── ContainerPowerData.java          #     容器级红电账本（RE 事件 + EMA 功率，无池）
 │   │
 │   ├── function/                             # 简单活物品功能（无需领域模块）
 │   │   └── LivingFlintAndSteelFunction.java  #   活打火石（交互触发器）
@@ -307,7 +307,7 @@ src/test/java/com/qiqi/li/
 │   ├── PowerMathTest.java                   # 发电数学（5 项）
 │   ├── ContainerPowerDataTest.java          # 相位质量状态机（6 项）
 │   ├── CoilGroupingTest.java                # 线圈分组（4 项）
-│   ├── WaxedCopperStorageTest.java          # 储能（7 项）
+│   ├── WaxedCopperStorageTest.java          # 储能（16 项，含 telemetry 2 项）
 │   ├── BulbItemEnergyStorageTest.java       # 铜灯通用电池（6 项）
 │   ├── WaxedCopperOscillatorIT.java         # 振荡器→发电全链路集成（1 项）
 │   └── WaxedCopperCouplingIT.java           # 耦合链集成：多跳中继+防回环（1 项）
@@ -372,7 +372,7 @@ src/test/java/com/qiqi/li/
 - [x] 感应耦合：相邻发电机管径加权分配 + 不回传防环 + 多跳中继（分层重算）
 - [x] 绝缘修复：涂蜡铜块排除出红石「充能导体」（杜绝信号泄漏绕过绝缘）
 - [x] 储能：铜灯 = 唯一储存（发电直存、无容器池），容量 = count×C 线性涌现
-- [x] 对外能量接口：**宽注册**（全部 BlockEntityType）+ **让位**（直接实现者/已有主人 → 退位，重入保护查询）
+- [x] 对外能量接口：**显式注册**（10 种原版容器 BE）+ **让位**（直接实现者/已有主人 → 退位，重入保护查询）
 - [x] 铜灯物品 = 通用电池（双向：电池槽放电 + 充能槽充电，无出身论）
 - [x] 集成测试：拉杆振荡器（4t）+ 耦合链（A 直连 → B 一跳 → C 两跳）
 - [x] Tooltip 仪表盘：检测值写回组件 + 槽位同步 + 客户端渲染（双语）
@@ -427,10 +427,10 @@ src/test/java/com/qiqi/li/
   + 感应耦合（管径加权守恒、不回传防环、多跳中继）
   + 绝缘修复（涂蜡排除出充能导体，杜绝信号泄漏）
   + 储能：铜灯 = 唯一储存（发电直存、无容器池），容量 = count×C 线性涌现
-  + 对外能量：**宽注册+让位**（全部 BE 类型，三层判定不劫持已有能源）
+  + 对外能量：**显式注册+让位**（10 种原版容器 BE，三层判定不劫持已有能源；方块级双向 canReceive=true）
   + 铜灯物品 = 通用电池（双向：放电 + 外部充电，跨系统能量等量转换）
 - ✅ 新增：表现层 —— Tooltip 仪表盘（检测值写回组件 → 槽位同步 → 客户端渲染，双语 key）
-- ✅ 新增：34 项电力层测试（数学 5 + 状态机 6 + 线圈分组 4 + 储能 9 + 电池 6 + 仪表 2 + 集成 2），
+- ✅ 新增：39 项电力层测试（数学 5 + 状态机 6 + 线圈分组 4 + 储能 16（含仪表 2）+ 电池 6 + 集成 2），
   全量 102 项测试通过
 - 📄 技术文档：[living-power-tech.md](docs/tech/living-power-tech.md)
 

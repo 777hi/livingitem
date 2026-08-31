@@ -14,7 +14,6 @@ import net.neoforged.neoforge.energy.IEnergyStorage;
 import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.items.wrapper.InvWrapper;
 import com.qiqi.li.living.api.LivingItemManager;
-import com.qiqi.li.living.container.ContainerLivingItemHandler;
 
 /**
  * 容器红电对外能量接口（§3.6 v17.5）。
@@ -91,10 +90,8 @@ public class ContainerEnergyStorage implements IEnergyStorage {
         if (toExtract <= 0) return 0;
         IItemHandler items = resolveItems(be.getLevel(), be.getBlockPos(), null);
         if (items == null) return 0;
-        var power = ContainerLivingItemHandler.getPowerDataByPos(be.getLevel(), be.getBlockPos());
         return (int) (extract(items,
-            (long) toExtract * 1000L, simulate,
-            power != null ? power::markExternalMutation : null) / 1000L);
+            (long) toExtract * 1000L, simulate, be::setChanged) / 1000L);
     }
 
     @Override
@@ -102,11 +99,8 @@ public class ContainerEnergyStorage implements IEnergyStorage {
         if (toReceive <= 0) return 0;
         IItemHandler items = resolveItems(be.getLevel(), be.getBlockPos(), null);
         if (items == null) return 0;
-        var power = ContainerLivingItemHandler.getPowerDataByPos(be.getLevel(), be.getBlockPos());
         return (int) (receive(items,
-            (long) toReceive * 1000L, simulate,
-            power != null ? () -> { be.setChanged(); power.markExternalMutation(); } : be::setChanged
-        ) / 1000L);
+            (long) toReceive * 1000L, simulate, be::setChanged) / 1000L);
     }
 
     @Override
@@ -226,7 +220,8 @@ public class ContainerEnergyStorage implements IEnergyStorage {
     // ── 取电核心（mFE）──
 
     /**
-     * 取电：逐堆扣铜灯（每盏等量，向下取整，零头保守丢弃）。
+     * 取电：逐堆扣铜灯（每盏等量，余数跨 FE 边界时向上取整以避免灯里有电但抽不出整 FE，
+     * 代价为每次取电最多多拿 {@code count−1} mFE）。
      * 有实际扣减时回调 {@code onChanged}（落盘持久化）。
      */
     static long extract(IItemHandler items,
@@ -242,6 +237,15 @@ public class ContainerEnergyStorage implements IEnergyStorage {
             long q = LivingItemManager.getWaxedBulbData(stack).chargeMilliFe();
             long takeTotal = Math.min(q * count, remaining);
             long perLamp = takeTotal / count;
+            // 余数跨 FE 边界时向上取整，避免灯里有电但外部抽不出整 FE
+            long remainder = takeTotal % count;
+            if (remainder != 0 && perLamp < q) {
+                long gotFloor = perLamp * count;
+                long gotCeil = (perLamp + 1) * count;
+                if (gotFloor / 1000 < gotCeil / 1000) {
+                    perLamp++;
+                }
+            }
             if (perLamp <= 0) continue;
             if (!simulate) {
                 LivingItemManager.setWaxedBulbData(stack,

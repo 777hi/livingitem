@@ -145,16 +145,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         if (generatedRe > 0) {
             bankChanged = distributeToBulbs(generatedRe, entries);
         }
-        // 外部异步路径（IEnergyStorage 取电/充电）改了铜灯 → 补槽位同步（客户端 NBT 陈旧问题）
-        boolean externalMutated = powerData.consumeExternalMutation();
-        if (externalMutated) {
-            for (SlotEntry entry : entries) {
-                if (isWaxedBulb(entry.stack().getItem())) {
-                    ctx.syncSlotToClients(entry.slotIndex(), entry.stack());
-                }
-            }
-        }
-        if ((bankChanged || externalMutated) && ctx instanceof com.qiqi.li.living.container.SimpleContainerContext simpleCtx) {
+        if (bankChanged && ctx instanceof com.qiqi.li.living.container.SimpleContainerContext simpleCtx) {
             // 铜灯电量变更 → 标记容器数据已改（否则不落盘存档）
             for (net.minecraft.world.level.block.entity.BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {
                 be.setChanged();
@@ -482,7 +473,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         }
         if (isWaxedBulb(item)) {
             LivingWaxedBulbData data = LivingItemManager.getWaxedBulbData(stack);
-            long q = data.chargeMilliFe();
+            long q = data.chargeMilliFe() * stack.getCount();          // 堆总量
             long cap = LivingWaxedBulbData.totalCapacityMilliFe(stack.getCount());
             boolean full = q >= cap;
             // 不足 1 FE 时显示两位小数（mFE 粒度可见，便于观察充放）
