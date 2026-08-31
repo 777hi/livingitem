@@ -164,7 +164,10 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             int period = channel.bestPeriod(pref);
             if (factor > 0 && period > 0) {
                 long re = PowerMath.eventEnergyRe(factor, period);
-                if (re > 0) powerData.onEventEnergy(re);
+                if (re > 0) {
+                    gen.onEventEnergy(re);          // per-generator EMA
+                    powerData.onEventEnergy(re);    // container total for distribution
+                }
             }
         }
 
@@ -181,6 +184,12 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
                 LivingItemManager.setGeneratorData(stack, telemetry);
                 ctx.syncSlotToClients(slot, stack);
             }
+        }
+
+        // ── 每台发电机推进 EMA（per-generator EMA）──
+        long totalGeneratedRe = 0;
+        for (var e : active.entrySet()) {
+            totalGeneratedRe += e.getValue().drainAndEndTick();
         }
 
         // ── 发电直存（§3.6 v17.5）──
@@ -268,11 +277,13 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
                 d.period(), d.n(), d.maxDelta(), d.effDeltaSum(), deltas));
         }
 
-        long emaFe = powerData != null ? powerData.getEmaPowerFe() : 0;
+        // 每个发电机独立 EMA 功率 + 容器总功率
+        long emaFe = gen.getEmaPowerFe();
+        long containerEmaFe = powerData != null ? powerData.getEmaPowerFe() : 0;
 
         if (bestN <= 0) {
             return new LivingWaxedGeneratorData(
-                0, 0, 0, 0, 0, coilForm, emaFe, domainSnapshots);
+                0, 0, 0, 0, 0, coilForm, emaFe, containerEmaFe, domainSnapshots);
         }
         double eff = PowerMath.tuningEfficiency(
             Math.abs(bestPeriod - pref), pref);
@@ -281,7 +292,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         int effDeltaSumPermille = (int) Math.round(effDeltaSum * 1000);
         return new LivingWaxedGeneratorData(
             bestPeriod, bestN, unlockPermille, bestDelta, effDeltaSumPermille,
-            coilForm, emaFe, domainSnapshots);
+            coilForm, emaFe, containerEmaFe, domainSnapshots);
     }
 
     /**
@@ -350,6 +361,18 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             int pref = stack.getCount();
             boolean hasSignal = t.detectedPeriod() > 0;
 
+            // ── 偏好周期 / 宽带（紧跟在标题后）──
+            if (pref >= 2) {
+                tooltipAdder.accept(Component.literal("  ")
+                    .append(Component.translatable("tooltip.livingitem.waxed_copper.preferred_period"))
+                    .append(Component.literal(": " + pref + " tick"))
+                    .withStyle(ChatFormatting.AQUA));
+            } else {
+                tooltipAdder.accept(Component.literal("  ")
+                    .append(Component.translatable("tooltip.livingitem.waxed_copper.broadband"))
+                    .withStyle(ChatFormatting.DARK_AQUA));
+            }
+
             // ── EMA 功率（FE/t）──
             if (t.emaPowerFe() > 0) {
                 tooltipAdder.accept(Component.literal("  ")
@@ -359,84 +382,62 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             }
 
             if (hasSignal) {
-                // ── 检测信息 ──
+                // ── 检测周期 · 相数 · 解锁度（合并为一行）──
                 boolean tuned = Math.abs(t.detectedPeriod() - pref) <= 1;
                 tooltipAdder.accept(Component.literal("  ")
                     .append(Component.translatable("tooltip.livingitem.waxed_copper.detected_period"))
-                    .append(Component.literal(": " + t.detectedPeriod() + " tick"))
-                    .append(Component.literal(tuned ? " ✓" : " (偏好 " + pref + ")")
-                        .withStyle(tuned ? ChatFormatting.GREEN : ChatFormatting.RED)));
-
-                // ── 相数 · 解锁度 ──
-                tooltipAdder.accept(Component.literal("  ")
-                    .append(Component.translatable("tooltip.livingitem.waxed_copper.phase_count"))
-                    .append(Component.literal(": " + t.phaseCount()))
-                    .append(Component.literal("  |  "))
-                    .append(Component.translatable("tooltip.livingitem.waxed_copper.unlock"))
-                    .append(Component.literal(": " + t.unlockPermille() / 10 + "%"))
+                    .append(Component.literal(": " + t.detectedPeriod() + "t"))
+                    .append(Component.literal(tuned ? " §a✓" : " §c(偏好" + pref + "t)"))
+                    .append(Component.literal("  §7n=" + t.phaseCount()))
+                    .append(Component.literal("  §7解锁" + t.unlockPermille() / 10 + "%"))
                     .withStyle(ChatFormatting.GRAY));
 
-                // ── 发电量公式（v3）──
+                // ── 发电量公式（v3，一行）──
                 double effDeltaSum = t.effDeltaSumPermille() / 1000.0;
                 double factor = PowerMath.combinedFactor(effDeltaSum, t.phaseCount(), t.unlockPermille() / 1000.0);
-                double rePerEvent = factor * (t.detectedPeriod() / 16.0);
+                double fePerEvent = factor * (t.detectedPeriod() / 16.0);
                 tooltipAdder.accept(Component.literal("  ")
                     .append(Component.translatable("tooltip.livingitem.waxed_copper.power_output"))
-                    .append(Component.literal(" = " + String.format("%.0f", rePerEvent) + " RE"))
+                    .append(Component.literal(" = " + String.format("%.0f", fePerEvent) + " FE"))
+                    .append(Component.literal("  §8(Σ√|Δ|=" + String.format("%.1f", effDeltaSum)))
+                    .append(Component.literal(" ^(1+" + String.format("%.2f", t.unlockPermille() / 1000.0) + ")"))
+                    .append(Component.literal(" × " + t.detectedPeriod() + "/16)"))
                     .withStyle(ChatFormatting.GRAY));
-                tooltipAdder.accept(Component.literal("    ")
-                    .append(Component.literal("Σ√|Δ|"))
-                    .append(Component.literal(": " + String.format("%.1f", effDeltaSum)))
-                    .append(Component.literal("  ^(1+"))
-                    .append(Component.literal(String.format("%.2f", t.unlockPermille() / 1000.0)))
-                    .append(Component.literal(")"))
-                    .append(Component.literal("  ×  "))
-                    .append(Component.translatable("tooltip.livingitem.waxed_copper.formula_p"))
-                    .append(Component.literal(": " + t.detectedPeriod() + "/16"))
-                    .withStyle(ChatFormatting.DARK_GRAY));
             } else {
                 tooltipAdder.accept(Component.literal("  ")
                     .append(Component.translatable("tooltip.livingitem.waxed_copper.no_signal"))
                     .withStyle(ChatFormatting.DARK_GRAY));
             }
 
-            // ── F3+H 高级模式：全部域快照 ──
-            if (flag.isAdvanced() && !t.domains().isEmpty()) {
-                for (var ds : t.domains()) {
+            // ── F3+H 高级模式：容器总功率 + 各域快照 ──
+            if (flag.isAdvanced()) {
+                // 容器总功率
+                if (t.containerEmaPowerFe() > 0) {
                     tooltipAdder.accept(Component.literal("  ")
-                        .append(Component.literal("P=" + ds.period() + "t"))
-                        .append(Component.literal("  n=" + ds.n()))
-                        .append(Component.literal("  Σ√|Δ|=" + String.format("%.1f", ds.effDeltaSum())))
-                        .append(Component.literal("  max|Δ|=" + ds.maxDelta()))
-                        .withStyle(ChatFormatting.DARK_PURPLE));
-                    // 各偏移的 |Δ|
-                    int offset = 0;
-                    StringBuilder sb = new StringBuilder("    ");
-                    for (int d : ds.deltas()) {
-                        sb.append("[").append(offset).append("]=").append(d).append(" ");
-                        offset++;
-                    }
-                    tooltipAdder.accept(Component.literal(sb.toString())
-                        .withStyle(ChatFormatting.LIGHT_PURPLE));
+                        .append(Component.translatable("tooltip.livingitem.waxed_copper.container_power"))
+                        .append(Component.literal(": " + t.containerEmaPowerFe() + " FE/t"))
+                        .withStyle(ChatFormatting.DARK_GRAY));
                 }
-                // 原始值汇总
-                tooltipAdder.accept(Component.translatable("tooltip.livingitem.waxed_copper.raw_values",
-                        t.detectedPeriod(), t.phaseCount(),
-                        t.unlockPermille() / 10,
-                        t.emaPowerFe() * 1000)
-                    .withStyle(ChatFormatting.DARK_GRAY));
+                // 各域快照（紧凑格式）
+                for (var ds : t.domains()) {
+                    StringBuilder sb = new StringBuilder();
+                    sb.append("  §5P=").append(ds.period()).append("t")
+                      .append("  n=").append(ds.n())
+                      .append("  Σ√|Δ|=").append(String.format("%.1f", ds.effDeltaSum()))
+                      .append("  max|Δ|=").append(ds.maxDelta());
+                    tooltipAdder.accept(Component.literal(sb.toString())
+                        .withStyle(ChatFormatting.DARK_PURPLE));
+                    // 各偏移的 |Δ|（inline 展示）
+                    if (!ds.deltas().isEmpty()) {
+                        StringBuilder sb2 = new StringBuilder("    ");
+                        for (int i = 0; i < ds.deltas().size(); i++) {
+                            sb2.append("[").append(i).append("]=").append(ds.deltas().get(i)).append(" ");
+                        }
+                        tooltipAdder.accept(Component.literal(sb2.toString())
+                            .withStyle(ChatFormatting.LIGHT_PURPLE));
+                    }
+                }
             }
-        }
-        // ── 偏好周期 / 宽带 ──
-        if (stack.getCount() >= 2) {
-            tooltipAdder.accept(Component.literal("  ")
-                .append(Component.translatable("tooltip.livingitem.waxed_copper.preferred_period"))
-                .append(Component.literal(": " + stack.getCount() + " tick"))
-                .withStyle(ChatFormatting.AQUA));
-        } else {
-            tooltipAdder.accept(Component.literal("  ")
-                .append(Component.translatable("tooltip.livingitem.waxed_copper.broadband"))
-                .withStyle(ChatFormatting.DARK_AQUA));
         }
         // ── 铜灯电量 ──
         if (isWaxedBulb(item)) {

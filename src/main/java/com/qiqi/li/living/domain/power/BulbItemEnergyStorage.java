@@ -30,12 +30,28 @@ public class BulbItemEnergyStorage implements IEnergyStorage {
     @Override
     public int extractEnergy(int toExtract, boolean simulate) {
         if (toExtract <= 0) return 0;
+        long totalCharge = chargeMilliFe() * stack.getCount();
+        if (totalCharge <= 0) return 0;
+
+        // 不足 1 FE 的零头：清空，返回 0
+        if (totalCharge < 1000L) {
+            if (!simulate) {
+                setChargeMilliFe(0);
+            }
+            return 0;
+        }
+
         long want = (long) toExtract * 1000L;
-        long take = Math.min(chargeMilliFe() * stack.getCount(), want);
+        long take = Math.min(totalCharge, want);
         long perLamp = take / stack.getCount();
         if (perLamp <= 0) return 0;
         if (!simulate) {
-            setChargeMilliFe(chargeMilliFe() - perLamp);
+            long newCharge = chargeMilliFe() - perLamp;
+            // 清空不足 1 FE 的零头，避免取不干净
+            if (newCharge * stack.getCount() < 1000L) {
+                newCharge = 0;
+            }
+            setChargeMilliFe(newCharge);
         }
         return (int) (perLamp * stack.getCount() / 1000L);
     }

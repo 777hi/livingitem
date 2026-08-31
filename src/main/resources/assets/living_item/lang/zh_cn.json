@@ -155,5 +155,6 @@
   "tooltip.livingitem.waxed_copper.wave_channel": "  §5── 通道 %d（%s，%d 路）──§r",
   "tooltip.livingitem.waxed_copper.path_direct": "直连",
   "tooltip.livingitem.waxed_copper.path_induction": "感应",
-  "tooltip.livingitem.waxed_copper.raw_values": "  P=%dt  n=%d  unlock=%d%%  EMA=%d mFE/t"
+  "tooltip.livingitem.waxed_copper.raw_values": "  P=%dt  n=%d  unlock=%d%%  EMA=%d mFE/t",
+  "tooltip.livingitem.waxed_copper.container_power": "容器总功率"
 }

@@ -28,7 +28,8 @@ public record LivingWaxedGeneratorData(
     int lastDelta,           // 最佳域的最大 |Δ|（显示用）
     int effDeltaSumPermille, // Σ√|Δ_i| × 1000（定点显示，用于公式展示）
     int coilForm,            // 线圈形态：0=铜块 1=雕文 2=切制 3=格栅
-    long emaPowerFe,         // EMA 功率（FE/t，取整）
+    long emaPowerFe,         // 本机 EMA 功率（FE/t，取整）
+    long containerEmaPowerFe,// 容器总 EMA 功率（FE/t，取整）
     List<DomainSnapshot> domains  // 全部域快照（F3+H 高级显示用）
 ) implements TooltipProvider {
 
@@ -39,7 +40,7 @@ public record LivingWaxedGeneratorData(
     public static final int FORM_GRATE = 3;
 
     public static final LivingWaxedGeneratorData DEFAULT =
-        new LivingWaxedGeneratorData(0, 0, 0, 0, 0, FORM_BLOCK, 0, List.of());
+        new LivingWaxedGeneratorData(0, 0, 0, 0, 0, FORM_BLOCK, 0, 0, List.of());
 
     public static final Codec<LivingWaxedGeneratorData> CODEC = RecordCodecBuilder.create(instance ->
         instance.group(
@@ -50,6 +51,7 @@ public record LivingWaxedGeneratorData(
             Codec.INT.fieldOf("eff_delta_sum_permille").forGetter(LivingWaxedGeneratorData::effDeltaSumPermille),
             Codec.INT.fieldOf("coil_form").forGetter(LivingWaxedGeneratorData::coilForm),
             Codec.LONG.fieldOf("ema_power_fe").forGetter(LivingWaxedGeneratorData::emaPowerFe),
+            Codec.LONG.fieldOf("container_ema_power_fe").forGetter(LivingWaxedGeneratorData::containerEmaPowerFe),
             DomainSnapshot.CODEC.listOf().fieldOf("domains").forGetter(LivingWaxedGeneratorData::domains)
         ).apply(instance, LivingWaxedGeneratorData::new)
     );
@@ -65,8 +67,9 @@ public record LivingWaxedGeneratorData(
                 int es = ByteBufCodecs.VAR_INT.decode(buf);
                 int cf = ByteBufCodecs.VAR_INT.decode(buf);
                 long epf = ByteBufCodecs.VAR_LONG.decode(buf);
+                long cepf = ByteBufCodecs.VAR_LONG.decode(buf);
                 var ds = DomainSnapshot.STREAM_CODEC.apply(ByteBufCodecs.list()).decode(buf);
-                return new LivingWaxedGeneratorData(dp, pc, up, ld, es, cf, epf, ds);
+                return new LivingWaxedGeneratorData(dp, pc, up, ld, es, cf, epf, cepf, ds);
             }
 
             @Override
@@ -78,6 +81,7 @@ public record LivingWaxedGeneratorData(
                 ByteBufCodecs.VAR_INT.encode(buf, v.effDeltaSumPermille);
                 ByteBufCodecs.VAR_INT.encode(buf, v.coilForm);
                 ByteBufCodecs.VAR_LONG.encode(buf, v.emaPowerFe);
+                ByteBufCodecs.VAR_LONG.encode(buf, v.containerEmaPowerFe);
                 DomainSnapshot.STREAM_CODEC.apply(ByteBufCodecs.list()).encode(buf, v.domains);
             }
         };

@@ -156,5 +156,6 @@
   "tooltip.livingitem.waxed_copper.wave_channel": "  §5── Channel %d（%s，%d paths）──§r",
   "tooltip.livingitem.waxed_copper.path_direct": "Direct",
   "tooltip.livingitem.waxed_copper.path_induction": "Induction",
-  "tooltip.livingitem.waxed_copper.raw_values": "  P=%dt  n=%d  unlock=%d%%  EMA=%d mFE/t"
+  "tooltip.livingitem.waxed_copper.raw_values": "  P=%dt  n=%d  unlock=%d%%  EMA=%d mFE/t",
+  "tooltip.livingitem.waxed_copper.container_power": "Container Total Power"
 }
