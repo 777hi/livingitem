@@ -198,6 +198,13 @@ public class LivingItemManager {
                             .networkSynchronized(com.qiqi.li.living.domain.power.LivingWaxedCutData.STREAM_CODEC)
                             .build());
 
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<com.qiqi.li.living.domain.power.LivingWaxedChiseledData>> LIVING_WAXED_CHISELED_DATA =
+            DATA_COMPONENT_TYPES.register("living_waxed_chiseled_data", () ->
+                    DataComponentType.<com.qiqi.li.living.domain.power.LivingWaxedChiseledData>builder()
+                            .persistent(com.qiqi.li.living.domain.power.LivingWaxedChiseledData.CODEC)
+                            .networkSynchronized(com.qiqi.li.living.domain.power.LivingWaxedChiseledData.STREAM_CODEC)
+                            .build());
+
     public static final DeferredHolder<DataComponentType<?>, DataComponentType<com.qiqi.li.living.domain.power.LivingWaxedGeneratorData>> LIVING_GENERATOR_DATA =
             DATA_COMPONENT_TYPES.register("living_generator_data", () ->
                     DataComponentType.<com.qiqi.li.living.domain.power.LivingWaxedGeneratorData>builder()
@@ -492,6 +499,17 @@ public class LivingItemManager {
                                        com.qiqi.li.living.domain.power.LivingWaxedCutData data) {
         setData(stack, LIVING_WAXED_CUT_DATA.value(), data,
                 com.qiqi.li.living.domain.power.LivingWaxedCutData.DEFAULT);
+    }
+
+    public static com.qiqi.li.living.domain.power.LivingWaxedChiseledData getWaxedChiseledData(ItemStack stack) {
+        return getData(stack, LIVING_WAXED_CHISELED_DATA.value(),
+                com.qiqi.li.living.domain.power.LivingWaxedChiseledData.DEFAULT);
+    }
+
+    public static void setWaxedChiseledData(ItemStack stack,
+                                            com.qiqi.li.living.domain.power.LivingWaxedChiseledData data) {
+        setData(stack, LIVING_WAXED_CHISELED_DATA.value(), data,
+                com.qiqi.li.living.domain.power.LivingWaxedChiseledData.DEFAULT);
     }
 
     public static com.qiqi.li.living.domain.power.LivingWaxedGeneratorData getGeneratorData(ItemStack stack) {

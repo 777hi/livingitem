@@ -13,10 +13,13 @@ import net.minecraft.world.item.component.TooltipProvider;
 import com.qiqi.li.living.model.Pos2D;
 
 /**
- * 涂蜡切制铜块 —— 单线圈感应方向（§3.4 感应拓扑）。
+ * 涂蜡切制铜块 —— 双轴独立感应（§3.4 感应拓扑）。
  *
- * <p>切制 = 1 线圈 × 1 向：只读取 {@code senseDir} 方向的边信号，
- * 其余方向的杂讯进不来。WASD 配置（HasDirection，1 键）。</p>
+ * <p>切制 = 2 线圈 H/V 隔离：水平和垂直方向各自独立 BFS，
+ * 信号互不干扰，功率相加。无方向配置（WASD 键数为 0）。</p>
+ *
+ * <p>保留此数据组件仅用于向后兼容，实际逻辑由
+ * {@link LivingWaxedCopperFunction#runBfs} 的 axisFilter 参数控制。</p>
  */
 public record LivingWaxedCutData(
     Pos2D senseDir

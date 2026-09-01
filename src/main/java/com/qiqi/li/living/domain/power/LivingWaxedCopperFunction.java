@@ -94,79 +94,53 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
 
         // ── 铜块网络传播：每台发电机 BFS 遍历同氧化等级铜块网络 ──
         // 边信号跟踪器持久化在 ContainerPowerData 中（跨 tick 跟踪周期）
+        // 形态决定 BFS 拓扑（§3.4 感应拓扑）：
+        //   铜块/格栅：全向 4 方向，单通道
+        //   雕文：仅输入方向检测 + 仅输出方向传播，单通道
+        //   切制：水平/垂直各一次 BFS，独立双通道，能量相加
 
         for (var e : active.entrySet()) {
             int genSlot = e.getKey();
             GeneratorState gen = e.getValue();
-            ChannelState channel = gen.channel();
             int pref = gen.preferredPeriod();
 
-            // 获取发电机的氧化等级
             ItemStack genStack = ctx.getItem(genSlot);
             int genOxidation = getOxidationLevel(genStack.getItem());
+            int coilForm = getCoilForm(genStack.getItem());
 
-            // BFS：找同氧化等级网络中所有有边信号的槽位
-            Set<Integer> visited = new HashSet<>();
-            Queue<Integer> queue = new LinkedList<>();
-            queue.add(genSlot);
-            visited.add(genSlot);
-
-            while (!queue.isEmpty()) {
-                int current = queue.poll();
-                int row = current / containerWidth;
-                int col = current % containerWidth;
-
-                // 检查该槽位的 4 条边
-                for (int dir = 0; dir < ContainerRedstoneData.EDGE_COUNT; dir++) {
-                    int signal = redstone.getEdgeValue(current, dir);
-                    int prevSignal = redstone.getPrevEdgeValue(current, dir);
-                    if (signal == prevSignal) continue;
-
-                    int delta = signal - prevSignal;
-                    int absDelta = Math.abs(delta);
-
-                    if (delta > 0) {
-                        // 上升沿：从持久化 tracker 获取周期信息
-                        long edgeKey = ((long) current << 2) | dir;
-                        SignalTracker tracker = powerData.getOrCreateEdgeTracker(edgeKey);
-                        tracker.onRisingEdge(now, absDelta);
-                        if (tracker.period() > 0) {
-                            channel.onPhaseEvent(new PhaseEvent(
-                                (int) edgeKey, tracker.period(),
-                                tracker.offset(), absDelta, now), pref);
-                        }
-                    }
+            switch (coilForm) {
+                case LivingWaxedGeneratorData.FORM_CHISELED -> {
+                    // 雕文：定向 BFS，单通道（主通道 channel(0)）
+                    var chiseledData = LivingItemManager.getWaxedChiseledData(genStack);
+                    Pos2D inputDir = chiseledData.inputDir();
+                    Pos2D outputDir = chiseledData.outputDir();
+                    ChannelState ch = gen.channel(0);
+                    runBfs(genSlot, genOxidation, ch, pref, powerData, redstone,
+                        ctx, size, containerWidth, now, pos2dToEdgeDir(inputDir), outputDir, -1);
+                    ch.tickCleanup(now, pref);
+                    accountEnergy(gen, ch, pref, powerData);
                 }
+                case LivingWaxedGeneratorData.FORM_CUT -> {
+                    // 切制：双轴独立 BFS，水平→channel(0)，垂直→channel(1)
+                    ChannelState chH = gen.channel(0);
+                    runBfs(genSlot, genOxidation, chH, pref, powerData, redstone,
+                        ctx, size, containerWidth, now, -1, null, 0); // 仅水平
+                    chH.tickCleanup(now, pref);
+                    accountEnergy(gen, chH, pref, powerData);
 
-                // 遍历四个方向找同氧化等级的铜块邻居
-                int[][] dirs = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
-                for (int[] d : dirs) {
-                    int nr = row + d[0];
-                    int nc = col + d[1];
-                    if (nr < 0 || nc < 0 || nc >= containerWidth) continue;
-                    int neighbor = nr * containerWidth + nc;
-                    if (neighbor < 0 || neighbor >= size) continue;
-                    if (visited.contains(neighbor)) continue;
-                    ItemStack neighborStack = ctx.getItem(neighbor);
-                    if (neighborStack.isEmpty()) continue;
-                    if (!isWaxedCopperBlock(neighborStack.getItem())) continue;
-                    if (isWaxedBulb(neighborStack.getItem())) continue; // 铜灯不导电
-                    if (getOxidationLevel(neighborStack.getItem()) != genOxidation) continue;
-                    visited.add(neighbor);
-                    queue.add(neighbor);
+                    ChannelState chV = gen.channel(1);
+                    runBfs(genSlot, genOxidation, chV, pref, powerData, redstone,
+                        ctx, size, containerWidth, now, -1, null, 1); // 仅垂直
+                    chV.tickCleanup(now, pref);
+                    accountEnergy(gen, chV, pref, powerData);
                 }
-            }
-
-            channel.tickCleanup(now, pref);
-
-            // ── 能量入账：每 tick 每发电机一次，从最佳域计算 ──
-            double factor = channel.bestFactor(pref);
-            int period = channel.bestPeriod(pref);
-            if (factor > 0 && period > 0) {
-                long re = PowerMath.eventEnergyRe(factor, period);
-                if (re > 0) {
-                    gen.onEventEnergy(re);          // per-generator EMA
-                    powerData.onEventEnergy(re);    // container total for distribution
+                default -> {
+                    // 铜块 / 格栅：全向 BFS，单通道（主通道 channel(0)）
+                    ChannelState ch = gen.channel(0);
+                    runBfs(genSlot, genOxidation, ch, pref, powerData, redstone,
+                        ctx, size, containerWidth, now, -1, null, -1);
+                    ch.tickCleanup(now, pref);
+                    accountEnergy(gen, ch, pref, powerData);
                 }
             }
         }
@@ -205,6 +179,122 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         }
 
         powerData.endTick(generatedRe);
+    }
+
+    // ── 铜块网络传播：BFS 辅助方法 ──
+
+    /**
+     * 将 Pos2D 方向映射为 ContainerRedstoneData 的边方向索引。
+     * UP=(0,-1) → 0, DOWN=(0,1) → 1, LEFT=(-1,0) → 2, RIGHT=(1,0) → 3
+     */
+    private static int pos2dToEdgeDir(Pos2D dir) {
+        if (dir == Pos2D.UP) return ContainerRedstoneData.EDGE_UP;
+        if (dir == Pos2D.DOWN) return ContainerRedstoneData.EDGE_DOWN;
+        if (dir == Pos2D.LEFT) return ContainerRedstoneData.EDGE_LEFT;
+        if (dir == Pos2D.RIGHT) return ContainerRedstoneData.EDGE_RIGHT;
+        // fallback: 选 UP 方向
+        return ContainerRedstoneData.EDGE_UP;
+    }
+
+    /**
+     * 单次 BFS：从发电机槽位出发，遍历同氧化等级铜块网络，
+     * 检测边信号上升沿并注入到 {@code channel}。
+     *
+     * @param genSlot        发电机所在槽位
+     * @param genOxidation   发电机氧化等级（限制网络连通性）
+     * @param channel        目标通道
+     * @param pref           偏好周期
+     * @param powerData      容器电力数据（持久化 tracker）
+     * @param redstone       红石数据（边信号双缓冲）
+     * @param ctx            容器上下文
+     * @param size           容器总槽位数
+     * @param containerWidth 容器宽度（列数）
+     * @param now            当前 tick
+     * @param edgeDirFilter  仅检测该方向的边（-1=全部方向）；雕文用
+     * @param expandDirFilter 仅扩展到该 Pos2D 方向（null=全部方向）；雕文用
+     * @param axisFilter     限制扩展轴（-1=全部，0=仅水平，1=仅垂直）；切制用
+     */
+    private static void runBfs(
+            int genSlot, int genOxidation, ChannelState channel, int pref,
+            ContainerPowerData powerData, ContainerRedstoneData redstone,
+            ContainerContext ctx, int size, int containerWidth, long now,
+            int edgeDirFilter, Pos2D expandDirFilter, int axisFilter) {
+
+        Set<Integer> visited = new HashSet<>();
+        Queue<Integer> queue = new LinkedList<>();
+        queue.add(genSlot);
+        visited.add(genSlot);
+
+        while (!queue.isEmpty()) {
+            int current = queue.poll();
+            int row = current / containerWidth;
+            int col = current % containerWidth;
+
+            // 检查该槽位的边信号（可受方向过滤）
+            for (int dir = 0; dir < ContainerRedstoneData.EDGE_COUNT; dir++) {
+                if (edgeDirFilter >= 0 && dir != edgeDirFilter) continue;
+                int signal = redstone.getEdgeValue(current, dir);
+                int prevSignal = redstone.getPrevEdgeValue(current, dir);
+                if (signal == prevSignal) continue;
+                int delta = signal - prevSignal;
+                int absDelta = Math.abs(delta);
+                if (delta > 0) {
+                    long edgeKey = ((long) current << 2) | dir;
+                    SignalTracker tracker = powerData.getOrCreateEdgeTracker(edgeKey);
+                    tracker.onRisingEdge(now, absDelta);
+                    if (tracker.period() > 0) {
+                        channel.onPhaseEvent(new PhaseEvent(
+                            (int) edgeKey, tracker.period(),
+                            tracker.offset(), absDelta, now), pref);
+                    }
+                }
+            }
+
+            // 遍历四个方向找同氧化等级的铜块邻居
+            // dirs: {row, col} → up, down, left, right
+            int[][] dirs = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
+            for (int[] d : dirs) {
+                // 轴过滤：切制水平/垂直隔离
+                // axisFilter=0（水平轴）：只允许列变化（左右），d[1] != 0
+                // axisFilter=1（垂直轴）：只允许行变化（上下），d[0] != 0
+                if (axisFilter == 0 && d[1] == 0) continue;
+                if (axisFilter == 1 && d[0] == 0) continue;
+                // 方向过滤：雕文只向输出方向扩展
+                if (expandDirFilter != null) {
+                    int dr = d[0] - expandDirFilter.y(); // row 方向
+                    int dc = d[1] - expandDirFilter.x(); // col 方向
+                    if (dr != 0 || dc != 0) continue;
+                }
+                int nr = row + d[0];
+                int nc = col + d[1];
+                if (nr < 0 || nc < 0 || nc >= containerWidth) continue;
+                int neighbor = nr * containerWidth + nc;
+                if (neighbor < 0 || neighbor >= size) continue;
+                if (visited.contains(neighbor)) continue;
+                ItemStack neighborStack = ctx.getItem(neighbor);
+                if (neighborStack.isEmpty()) continue;
+                if (!isWaxedCopperBlock(neighborStack.getItem())) continue;
+                if (isWaxedBulb(neighborStack.getItem())) continue; // 铜灯不导电
+                if (getOxidationLevel(neighborStack.getItem()) != genOxidation) continue;
+                visited.add(neighbor);
+                queue.add(neighbor);
+            }
+        }
+    }
+
+    /**
+     * 从通道最佳域计算能量并记入发电机和容器。
+     */
+    private static void accountEnergy(GeneratorState gen, ChannelState channel, int pref, ContainerPowerData powerData) {
+        double factor = channel.bestFactor(pref);
+        int period = channel.bestPeriod(pref);
+        if (factor > 0 && period > 0) {
+            long re = PowerMath.eventEnergyRe(factor, period);
+            if (re > 0) {
+                gen.onEventEnergy(re);
+                powerData.onEventEnergy(re);
+            }
+        }
     }
 
     // ── 振荡器信号跟踪 ──
@@ -268,13 +358,11 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         int bestDelta = channel.bestDelta();
         double effDeltaSum = channel.bestEffDeltaSum(pref);
 
-        // 全部域快照（F3+H 显示用）
+        // 全部域快照（F3+H 显示用），包含双通道
         List<DomainSnapshot> domainSnapshots = new ArrayList<>();
-        for (var e : channel.domains().entrySet()) {
-            ChannelState.PhaseDomain d = e.getValue();
-            List<Integer> deltas = new ArrayList<>(d.deltaByOffset().values());
-            domainSnapshots.add(new DomainSnapshot(
-                d.period(), d.n(), d.maxDelta(), d.effDeltaSum(), deltas));
+        collectDomains(channel, domainSnapshots);
+        if (coilForm == LivingWaxedGeneratorData.FORM_CUT) {
+            collectDomains(gen.channel(1), domainSnapshots);
         }
 
         // 每个发电机独立 EMA 功率 + 容器总功率
@@ -293,6 +381,16 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         return new LivingWaxedGeneratorData(
             bestPeriod, bestN, unlockPermille, bestDelta, effDeltaSumPermille,
             coilForm, emaFe, containerEmaFe, domainSnapshots);
+    }
+
+    /** 收集通道的全部域快照到 list */
+    private static void collectDomains(ChannelState ch, List<DomainSnapshot> out) {
+        for (var e : ch.domains().entrySet()) {
+            ChannelState.PhaseDomain d = e.getValue();
+            List<Integer> deltas = new ArrayList<>(d.deltaByOffset().values());
+            out.add(new DomainSnapshot(
+                d.period(), d.n(), d.maxDelta(), d.effDeltaSum(), deltas));
+        }
     }
 
     /**
@@ -465,25 +563,37 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         return "tooltip.livingitem.waxed_copper.form.block";
     }
 
-    // ── WASD 方向配置（涂蜡切制的感应方向，v3 保留骨架）──
+    // ── WASD 方向配置（涂蜡雕文的输入/输出方向，信号层同款 2 键配置）──
 
-    private static final String[] CUT_SLOT_NAMES = {"sense"};
+    private static final String[] CHISELED_SLOT_NAMES = {"input", "output"};
 
     @Override
     public int getDirectionKeyCount() {
-        return 1;
+        return 2;
     }
 
     @Override
     public String[] getDirectionSlotNames() {
-        return CUT_SLOT_NAMES;
+        return CHISELED_SLOT_NAMES;
     }
 
     @Override
     public boolean updateSlotDirection(ItemStack stack, String slotName, Pos2D direction) {
-        if (!"sense".equals(slotName) || !isWaxedCut(stack.getItem())) return false;
-        LivingItemManager.setWaxedCutData(stack, new LivingWaxedCutData(direction));
-        return true;
+        if (!isWaxedChiseled(stack.getItem())) return false;
+        var data = LivingItemManager.getWaxedChiseledData(stack);
+        switch (slotName) {
+            case "input" -> {
+                LivingItemManager.setWaxedChiseledData(stack, data.withInputDir(direction));
+                return true;
+            }
+            case "output" -> {
+                LivingItemManager.setWaxedChiseledData(stack, data.withOutputDir(direction));
+                return true;
+            }
+            default -> {
+                return false;
+            }
+        }
     }
 
     // ── 静态工具方法 ──
@@ -516,13 +626,13 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             || item == Items.WAXED_WEATHERED_COPPER || item == Items.WAXED_OXIDIZED_COPPER;
     }
 
-    /** 涂蜡雕文（2 线圈 H/V 隔离） */
+    /** 涂蜡雕文（1 线圈 × 1 向，输入/输出双方向 WASD 配置） */
     public static boolean isWaxedChiseled(Item item) {
         return item == Items.WAXED_CHISELED_COPPER || item == Items.WAXED_EXPOSED_CHISELED_COPPER
             || item == Items.WAXED_WEATHERED_CHISELED_COPPER || item == Items.WAXED_OXIDIZED_CHISELED_COPPER;
     }
 
-    /** 涂蜡切制（1 线圈 × 1 向，无干扰） */
+    /** 涂蜡切制（2 线圈 H/V 隔离） */
     public static boolean isWaxedCut(Item item) {
         return item == Items.WAXED_CUT_COPPER || item == Items.WAXED_EXPOSED_CUT_COPPER
             || item == Items.WAXED_WEATHERED_CUT_COPPER || item == Items.WAXED_OXIDIZED_CUT_COPPER;

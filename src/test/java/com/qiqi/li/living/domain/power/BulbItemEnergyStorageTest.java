@@ -90,11 +90,11 @@ class BulbItemEnergyStorageTest {
     @DisplayName("容量与读数：getEnergyStored / getMaxEnergyStored 随 count 线性")
     void storedAndMax_linearInCount() {
         ItemStack stack = bulb(16);
-        LivingItemManager.setWaxedBulbData(stack, new LivingWaxedBulbData(50_000));
+        LivingItemManager.setWaxedBulbData(stack, new LivingWaxedBulbData(500_000));
 
         BulbItemEnergyStorage storage = new BulbItemEnergyStorage(stack);
-        assertEquals(800, storage.getEnergyStored());        // 50_000 × 16 / 1000
-        assertEquals(1_600, storage.getMaxEnergyStored());   // 100_000 × 16 / 1000
+        assertEquals(8000, storage.getEnergyStored());        // 500_000 × 16 / 1000
+        assertEquals(16000, storage.getMaxEnergyStored());   // 1_000_000 × 16 / 1000
         assertTrue(storage.canExtract());
         assertTrue(storage.canReceive());
     }

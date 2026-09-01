@@ -33,7 +33,7 @@ public final class PowerMath {
      * <p>容量涌现为线性「每盏 C × count」：与信号上限（堆叠数²）同用堆叠旋钮，
      * 无查表；平方容量在拆分时坍缩毁电，故取线性（§3.6 v17.5）。</p>
      */
-    public static final long BULB_UNIT_CAPACITY_FE = 100;
+    public static final long BULB_UNIT_CAPACITY_FE = 1000;
     /** 每盏容量（1/1000 FE 定点，充电分配用） */
     public static final long BULB_UNIT_CAPACITY_MFE = BULB_UNIT_CAPACITY_FE * 1000;
 

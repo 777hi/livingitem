@@ -27,7 +27,7 @@ public record LivingWaxedGeneratorData(
     int unlockPermille,      // 解锁度 u = 调谐效率 × (n/偏好周期)，× 1000（0..1000）
     int lastDelta,           // 最佳域的最大 |Δ|（显示用）
     int effDeltaSumPermille, // Σ√|Δ_i| × 1000（定点显示，用于公式展示）
-    int coilForm,            // 线圈形态：0=铜块 1=雕文 2=切制 3=格栅
+    int coilForm,            // 线圈形态：0=铜块 1=雕文(输入/输出定向WASD) 2=切制(H/V隔离) 3=格栅
     long emaPowerFe,         // 本机 EMA 功率（FE/t，取整）
     long containerEmaPowerFe,// 容器总 EMA 功率（FE/t，取整）
     List<DomainSnapshot> domains  // 全部域快照（F3+H 高级显示用）
