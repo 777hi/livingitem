@@ -2,6 +2,7 @@ package com.qiqi.li.living.domain.hopper;
 
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 import net.minecraft.core.component.DataComponentType;
@@ -16,6 +17,7 @@ import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.transfer.SlotResolver;
+import com.qiqi.li.living.domain.ender.EnderChannelKey;
 import com.qiqi.li.living.domain.ender.LivingEnderChestFunction;
 import com.qiqi.li.living.perf.PerfMetrics;
 import com.qiqi.li.living.model.Pos2D;
@@ -129,7 +131,9 @@ public class LivingHopperFunction implements LivingItemFunction {
             activeSlots.add(entry.slotIndex());
         }
         Set<Integer> activeEnderChestSlots = tick.getFunctionSlots(LivingEnderChestFunction.ID);
-        EnderChannelRegistry.getInstance().validateRoutes(context, activeSlots, activeEnderChestSlots);
+        // 末影箱槽位 → 当前频道键，使 validateRoutes 能识别堆叠数变化导致的模式切换
+        Map<Integer, EnderChannelKey> targetKeysBySlot = EnderChannelKey.ofSlots(context, activeEnderChestSlots);
+        EnderChannelRegistry.getInstance().validateRoutes(context, activeSlots, targetKeysBySlot);
     }
 
     @Override

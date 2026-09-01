@@ -1,13 +1,17 @@
 # Living Ender Chest (活末影箱) 技术文档
 
-> **文档版本**: 2026.08 v11  
-> **最后更新**: 2026-08-16  
+> **文档版本**: 2026.09 v12  
+> **最后更新**: 2026-09-01  
 > **适用版本**: Minecraft 1.21.1
+>
+> **v12 重大变更**：频道标识由 `int` 升级为复合键 `EnderChannelKey`（归属玩家 + 堆叠数），
+> 工作机制由「双模式」扩展为「三态」（直连 / 专属频道 / 公共频道）。
+> 详见 §12.9。
 
 ## 目录
 1. [架构概览](#1-架构概览)
 2. [核心数据结构](#2-核心数据结构)
-3. [双模式工作机制](#3-双模式工作机制)
+3. [三态工作机制](#3-三态工作机制)
 4. [Push 端流程（注册路由）](#4-push-端流程注册路由)
 5. [Pull 端流程（无线提取）](#5-pull-端流程无线提取)
 6. [路由生命周期](#6-路由生命周期)
@@ -200,16 +204,35 @@ private static class ChannelData {
 
 ---
 
-## 3. 双模式工作机制
+## 3. 三态工作机制
 
 ### 3.1 模式概述
 
-活末影箱支持两种工作模式，通过**玩家绑定机制**自动切换：
+活末影箱支持三种工作模式，由**绑定状态**与**堆叠数**共同决定：
 
 | 模式 | 触发条件 | 数据流向 | 路由表 |
 |------|---------|---------|--------|
-| **路由模式** | 无绑定玩家 | 通过全局路由表跨容器无线传输 | ✅ 使用 |
-| **直连模式** | 有绑定玩家 | 直接读写绑定玩家的末影箱背包 | ❌ 跳过 |
+| **直连模式** | 绑定玩家 且 堆叠数 = 1 | 直接读写绑定玩家的末影箱背包 | ❌ 绕过 |
+| **专属频道** | 绑定玩家 且 堆叠数 ≥ 2 | 经全局路由表无线传输，频道键带玩家归属 | ✅ 使用 |
+| **公共频道** | 未绑定玩家 | 经全局路由表无线传输，频道键仅由堆叠数决定 | ✅ 使用 |
+
+判定逻辑统一收敛到 `EnderChannelKey`：
+
+```java
+EnderChannelKey key = EnderChannelKey.of(stack);   // (绑定UUID, 堆叠数)
+key.isDirect()          // 绑定 && count == 1  → 直连模式
+key.isPrivateChannel()  // 绑定 && count >= 2  → 专属频道
+key.isPublic()          // 未绑定              → 公共频道
+```
+
+**模式切换**：玩家拆分/合并活末影箱堆叠即可切换模式 —— 这是本 mod「堆叠数即配置旋钮」
+一贯设计的延伸（对比：活箱子堆叠数 × 27 槽、红石堆叠数影响信号强度）。
+
+> ⚠️ **直连与路由的物理后果不同，切换会让行为发生跳变。**
+> 直连模式下物品**真的被搬进**玩家末影箱背包；路由模式下物品**留在源容器**，只注册指针。
+> 因此把绑定的活末影箱从 2 个拆成 1 个，漏斗的行为会从「注册指针」变成「真搬物品」。
+> 这是符合设计意图的（拆堆即改配置），但玩家必须能从 Tooltip 看出当前处于哪种模式，
+> 详见 [§11 Tooltip 显示](#11-tooltip-显示)。
 
 ### 3.2 玩家绑定机制
 
@@ -245,20 +268,42 @@ public record LivingEnderChestData(EnderChannelData channel) implements TooltipP
 
 ### 3.3 访问器工厂分发
 
-`SlotAccessorFactory.create()` 根据绑定状态创建不同类型的 `LivingEnderChestAccessor`：
+`LivingEnderChestAccessor.tryCreate()` 从物品栈解析频道键，模式判定由规范构造器统一完成：
 
 ```java
-if (LivingEnderChestFunction.isLivingEnderChest(stack)) {
-    int ch = stack.getCount();
-    UUID boundUuid = LivingEnderChestFunction.getBoundPlayerUuid(stack);
-    if (boundUuid != null) {
-        // 直连模式：传入绑定 UUID
-        return new LivingEnderChestAccessor(server, ch, filterData, transferredTargetSlots, boundUuid);
-    }
-    // 路由模式：无绑定 UUID
-    return new LivingEnderChestAccessor(server, ch, filterData, transferredTargetSlots);
+ItemStack stack = containerCtx.getItem(slot);
+if (!LivingEnderChestFunction.isLivingEnderChest(stack)) return null;
+
+EnderChannelKey key = EnderChannelKey.of(stack);   // (绑定UUID, 堆叠数)
+return new LivingEnderChestAccessor(server, key, filterData, transferredTargetSlots, key.owner());
+```
+
+构造器内部按三态分派：
+
+```java
+this.directMode = boundPlayerUuid != null && channelKey.count() == 1;
+
+if (directMode) {
+    // 直连模式：过滤交由 FilteredSlotAccessor，路由表不参与
+    this.filterData = null;
+    // 预加载玩家末影箱引用，避免每次操作都查找玩家
+    ServerPlayer player = server.getPlayerList().getPlayer(boundPlayerUuid);
+    this.cachedEnderChest  = player != null ? player.getEnderChestInventory() : null;
+    this.cachedInvWrapper  = cachedEnderChest != null ? new InvWrapper(cachedEnderChest) : null;
+} else {
+    // 路由模式（公共频道 / 玩家专属频道）：filterData 必须保留，用于路由表预过滤
+    this.filterData = filterData;
+    this.cachedEnderChest = null;
+    this.cachedInvWrapper = null;
 }
 ```
+
+> **v12 修复：`filterData` 在绑定分支被丢弃**
+>
+> v11 里「绑定 = 直连」，构造器把 `filterData` 硬设为 `null`，过滤交给 `FilteredSlotAccessor`。
+> 三态模型下绑定的末影箱可能处于**专属频道**（路由模式），过滤要靠
+> `registry.peek(key, filterData, ...)` 预过滤。若不保留 `filterData`，
+> 黑白名单在专属频道里完全失效。
 
 ### 3.4 直连模式数据流
 
@@ -442,21 +487,49 @@ public EnderChannelEntry peek(int channel, FilterData filterData, String preferr
 
 ## 8. 频道隔离
 
-### 8.1 频道定义
+### 8.1 频道定义（v12 复合键）
 
-频道号 = 活末影箱物品的堆叠数量：
+频道标识 = `EnderChannelKey`（归属玩家 + 堆叠数）：
 
 ```java
-int channel = enderChestStack.getCount();
+public record EnderChannelKey(@Nullable UUID owner, int count) {
+
+    /** 绑定玩家且堆叠数 = 1 → 直连模式（不参与路由表） */
+    public boolean isDirect()         { return owner != null && count == 1; }
+    /** 绑定玩家且堆叠数 ≥ 2 → 玩家专属频道 */
+    public boolean isPrivateChannel() { return owner != null && count >= 2; }
+    /** 未绑定玩家 → 公共频道 */
+    public boolean isPublic()         { return owner == null; }
+
+    public static EnderChannelKey of(ItemStack stack) {
+        UUID bound = LivingEnderChestFunction.getBoundPlayerUuid(stack);
+        return new EnderChannelKey(bound, stack.getCount());
+    }
+}
 ```
 
-不同堆叠数的活末影箱属于不同频道，路由互不干扰。
+| 形态 | 键 | 说明 |
+|------|-----|------|
+| 公共频道 | `(null, N)` | 未绑定玩家，堆叠数即频道号 |
+| 玩家专属频道 | `(uuid, N≥2)` | 绑定玩家且堆叠数 ≥ 2，走路由表 |
+| 直连模式 | `(uuid, 1)` | 绑定玩家且堆叠数 = 1，**不进入路由表** |
 
-### 8.2 频道用途
+### 8.2 频道是命名空间，不是权限
+
+**关键语义**：绑定信息存放在物品的 DataComponent 中并**跟随物品流转**，
+因此「谁持有活末影箱，谁就能接入该物品指向的频道」。
+
+- 玩家 A 持有绑定了玩家 B 的活末影箱 → 同样可以使用 B 的专属频道
+- 频道之间互不干扰，但**不存在持有者鉴权**（这是刻意的设计选择）
+
+这带来一个重要简化：**路由快照沿用广播策略**，不需要定向投递，
+也不需要玩家登录时的全量快照补偿。详见 [§11.3](#113-客户端缓存同步)。
+
+### 8.3 频道用途
 
 - 同一频道内的活末影箱共享路由表
-- 不同频道的活末影箱完全隔离
-- 玩家可以通过堆叠/拆分活末影箱来切换频道
+- 不同频道完全隔离：`(A, 2)`、`(B, 2)`、`(公共, 2)` 三者互不相通
+- 玩家可以通过堆叠/拆分活末影箱切换频道；绑定后还可在「直连 ↔ 专属频道」之间切换
 
 ---
 
@@ -467,13 +540,19 @@ int channel = enderChestStack.getCount();
 路由清理统一通过 `EnderChannelRegistry.validateRoutes()` 完成，替代旧版 5 个独立清理方法：
 
 ```java
-// LivingHopperFunction.cleanupStaleRoutes()
-Set<Integer> activeEnderChestSlots = tick.getFunctionSlots("living_ender_chest");
-registry.validateRoutes(context, activeSlots, activeEnderChestSlots);
-
 // LivingEnderChestFunction.tick()
-Set<Integer> activeHopperSlots = tick.getFunctionSlots("living_hopper");
-registry.validateRoutes(context, activeHopperSlots, activeEnderChestSlots);
+Set<Integer> activeEnderChestSlots = new HashSet<>();
+for (SlotEntry entry : entries) {
+    activeEnderChestSlots.add(entry.slotIndex());
+}
+Set<Integer> activeHopperSlots = tick.getFunctionSlots(LivingHopperFunction.ID);
+Map<Integer, EnderChannelKey> targetKeysBySlot = EnderChannelKey.ofSlots(context, activeEnderChestSlots);
+registry.validateRoutes(context, activeHopperSlots, targetKeysBySlot);
+
+// LivingHopperFunction.cleanupStaleRoutes()
+Set<Integer> activeEnderChestSlots = tick.getFunctionSlots(LivingEnderChestFunction.ID);
+Map<Integer, EnderChannelKey> targetKeysBySlot = EnderChannelKey.ofSlots(context, activeEnderChestSlots);
+registry.validateRoutes(context, activeSlots, targetKeysBySlot);
 ```
 
 **参数说明**：
@@ -482,22 +561,76 @@ registry.validateRoutes(context, activeHopperSlots, activeEnderChestSlots);
 |------|------|----------|
 | `context` | 容器上下文，提供容器位置和物品读取 | 不可为 null |
 | `activeRegistrarSlots` | 当前容器中活漏斗所在槽位集合 | null = 跳过注册者检查 |
-| `activeTargetSlots` | 当前容器中活末影箱所在槽位集合 | null = 跳过目标检查 |
+| `targetKeysBySlot` | 活末影箱槽位 → **当前频道键** | null = 跳过目标检查 |
 
-**内部流程**：
+> **null 与空集语义不同**（由 `EnderChannelKey.ofSlots()` 严格区分）：
+> `slots == null` → 返回 `null`（调用方未提供信息，跳过检查）；
+> `slots` 为空集 → 返回空 Map（容器内确实没有活末影箱，目标检查判定全部失效）。
+
+**内部流程（v12）**：
 
 ```
-validateRoutes(context, activeRegistrarSlots, activeTargetSlots)
+validateRoutes(context, activeRegistrarSlots, targetKeysBySlot)
     │
     ├─ 通过 3 个反向索引收集相关路由（posIndex + keyIndex + registrarKeyIndex）
     ├─ 去重后遍历
     │
     ├─ 检查1: 注册者还在吗？  registrarSlot ∈ activeRegistrarSlots?
-    ├─ 检查2: 目标还在吗？    targetSlot ∈ activeTargetSlots?
+    ├─ 检查2: 目标还在，且频道键未变？                      ← v12 加强
+    │         targetKeysBySlot.get(targetSlot) == entryToChannel.get(entry)?
     ├─ 检查3: 源物品还在吗？  context.getItem(sourceSlot) 匹配?
     │
     └─ 任一不满足 → 删除路由
 ```
+
+### 9.1.1 检查 2 为什么必须比对频道键（v12 新增）
+
+玩家拆分/合并活末影箱堆叠会改变堆叠数，进而改变频道键甚至切换工作模式。
+v11 的检查 2 只判断「槽位上还有没有活末影箱」，察觉不到频道键变化：
+
+```
+容器 [槽0 活漏斗 → 槽1] [槽1: 绑定玩家A的活末影箱 ×3] [邻居源箱子有钻石]
+
+tick 1..N   活漏斗 push → entry 进 (A,3) 频道
+            entry = {itemType:钻石, registrarSlot:0, targetSlot:1, ...}
+
+玩家操作    槽1 拆成 count=1（拿走 2 个）→ 现在是直连模式
+
+tick N+1    检查1 注册者在?   registrarSlot=0 ∈ {0}   ✅ 通过
+            检查2 目标在?     targetSlot=1 ∈ {1}      ✅ 通过   ← v11 漏在这里
+            检查3 源物品在?   源箱子还有钻石           ✅ 通过
+            → 不删。entry 永久停留在 (A,3)。
+```
+
+**后果链**：
+
+1. `(A,3)` 频道永久挂着指向源箱子的路由，`cleanupChannel()` 因 entries 非空永不回收
+2. 玩家日后在同一容器再放一个 count=3 的绑定末影箱 + pull 漏斗 →
+   **它立刻开始抽源箱子的钻石**，玩家以为「新频道从零开始」，实际继承了遗留指针
+3. 不是绝对永久：源箱子被拆时 `removeByPositionAndSlotFromAllChannels` 会扫全频道清掉它，
+   但触发条件不可控
+
+v12 的检查 2 同时覆盖「末影箱被移走」与「末影箱频道键变化」两种情况：
+
+```java
+if (isRegistrar && targetKeysBySlot != null && entry.targetSlot() >= 0) {
+    EnderChannelKey currentKey = targetKeysBySlot.get(entry.targetSlot());
+    if (currentKey == null || !currentKey.equals(entryToChannel.get(entry))) {
+        return true;   // 移走，或频道键已变化 → 清理
+    }
+}
+```
+
+**已验证的边界情况**：
+
+| 场景 | 结论 |
+|------|------|
+| 跨容器：末影箱不在注册者容器？ | 不会。`CrossContainerTransfer.pullFromNeighbor()` 的 target 恒取自 `containerCtx`，即注册者容器 |
+| 拆出的一半去了别的容器？ | 被覆盖。反向索引按**源/注册者容器**索引，旧 entry 只会在原容器被检查到 |
+| 合成方向（count 小变大） | 被覆盖。原容器 tick 时 `targetKeys.get(slot)` 与新键不符 → 删，下一 tick 在新频道重注册 |
+| 容器里两个同频道末影箱，漏斗只指其中一个 | 不误伤。按 `targetSlot` 精确比对，另一个槽位不受影响 |
+| 末影箱拿走又放回（同一 tick） | 删了重建。物品没丢（路由只是指针），仅多一次抖动 |
+| 跨容器 pull 端「莫名断供」 | 共享黑板架构的固有特性（push 端消失即断供），非 v12 引入，不需处理 |
 
 **槽位来源**：`TickContext.functionSlots` 缓存，由 `processContext()` 分组时一次性填充，功能类 O(1) 读取，无需遍历容器。
 
@@ -535,6 +668,19 @@ validateRoutes(context, activeRegistrarSlots, activeTargetSlots)
 
 当源容器所在的区块被卸载时，`onChunkUnload()` 会清理该区块所有相关路由（通过 `posIndex` 反向索引查找）。
 
+> **取物阶段的兜底守卫（不加载区块）**：即便路由条目因时序原因残留在路由表中，
+> `LivingEnderChestAccessor` 在 `routeExtract` / `routeSimulateExtract` 取物前会先调用
+> `resolveSourceHandler()` 检查 `sourceLevel.isLoaded(sourcePos)`
+> （`LivingEnderChestAccessor.java:557` 与 `:238`）。若源区块未加载：
+> - 取物直接跳过（`return ItemStack.EMPTY` / `return null`）；
+> - 该路由条目被视作无效，**从队列移除且不再 `reoffer`**，物品保留在源容器中；
+> - 源区块重新加载、其容器再次 tick 时，会因源槽仍有物品而**重新注册路由**，传输自动恢复。
+>
+> **关键约束**：活物品体系全程不执行任何 `forceLoad` / 区块 ticket。
+> 活末影箱的路由传输**只在「源容器与目标容器的区块同时处于已加载状态」的 tick 才能完成**。
+> 若要让远距离、无人值守的传输持续工作，必须由外部手段（玩家在附近、出生点区块、
+> 区块加载器类模组）保持两端区块加载——系统本身不负责加载区块。
+
 ### 10.2 注册者容器区块卸载
 
 当注册者容器所在的区块被卸载时，`onChunkUnload()` 会清理所有以该容器为注册者的路由（通过 `registrarKeyIndex` 反向索引查找），防止路由泄漏。
@@ -545,11 +691,22 @@ validateRoutes(context, activeRegistrarSlots, activeTargetSlots)
 
 ### 11.1 显示内容
 
+v12 起 Tooltip 按三态分别显示，**必须明确标注当前模式** —— 直连与路由的物理后果不同，
+玩家需要一眼看出自己处于哪种模式。
+
 | 状态 | 显示内容 |
 |------|---------|
-| 有绑定玩家 | "绑定玩家: xxx"（紫色加粗） |
-| 路由模式 | "频道: N" + "路由: X条/共Y条" |
+| **直连模式**（绑定 + 堆叠 1） | "绑定: xxx"（紫加粗） + "模式: 直连玩家末影箱"（青色） |
+| **专属频道**（绑定 + 堆叠 ≥ 2） | "绑定: xxx"（紫加粗） + "绑定频道: N" + "路由: X条" |
+| **公共频道**（未绑定） | "公共频道: N" + "路由: X条" |
 | 高级模式（F3+H） | 每条路由的详细信息（物品类型、位置、槽位） |
+
+> **措辞说明**：使用「绑定频道」而非「专属频道」，避免玩家误解为「别人看不到」。
+> 频道是命名空间而非权限（见 §8.2）。
+
+> **v12 变更**：移除了原来的「路由: X条/共Y条」中的「共Y条」。
+> 该数字是全服所有频道（含其他玩家的专属频道）的路由总和，对玩家是纯噪音，
+> 且会随他人建频道而波动。
 
 ### 11.2 实现
 
@@ -628,6 +785,23 @@ ContainerLivingItemHandler.processContext() 末尾
 **为什么需要延迟同步？** 同一个 tick 内，push 端注册路由和 pull 端提取删除路由可能交替发生。如果每次变化都立即同步，客户端会收到"有路由→无路由→有路由"的闪烁序列，导致 Tooltip 闪烁。延迟同步将同一 tick 内的所有变化合并为一次同步（最终状态），消除闪烁。
 
 `EnderChannelClientCache` 使用 `ConcurrentHashMap` 存储，确保网络线程写入和渲染线程读取的线程安全。
+
+**v12 变更1：沿用广播，不做定向投递**
+
+专属频道是命名空间而非权限（§8.2），其路由不视为隐私信息，
+因此 `flushDirtyChannels()` 仍广播给所有在线玩家，保持「构造 1 个包 + 发 N 次」的开销。
+这避免了定向投递带来的一系列问题：
+
+- 不需要 `PlayerEvent.PlayerLoggedIn` 全量快照补偿
+- 不存在「owner 离线期间频道清空包发不出去 → 重连后客户端缓存陈旧」的离线黑洞
+
+**v12 变更2：客户端缓存淘汰**
+
+频道键空间为「堆叠数 1~64 × (玩家数 + 1)」，长在线客户端会持续累积快照。
+`EnderChannelClientCache.update()` 在 `channelSize == 0` 时**移除**条目而非覆盖成空快照。
+
+> v11 及之前 `EnderChannelClientCache.clear()` / `removeChannel()` 全项目零调用者，
+> 缓存只增不减；v12 补上了淘汰路径。
 
 ---
 
@@ -837,16 +1011,99 @@ else { registry.reoffer(channel, entry); }  // 放回尾部
 
 ---
 
+### 12.9 v12 架构变更：频道键复合化与三态模型 (2026-09-01)
+
+**背景**
+
+v11 及之前，频道就是一个 `int`（= 活末影箱堆叠数），工作模式是二元的：
+`boundUuid != null` → 直连模式（完全绕过路由表，堆叠数无意义）；否则 → 路由模式。
+这导致绑定玩家的活末影箱**无法使用频道机制** —— 一旦绑定就永久直连，
+「堆叠数 = 频道号」这套玩法对绑定物品完全失效。
+
+**需求**：绑定玩家的活末影箱，堆叠数 = 1 时直连玩家末影箱；堆叠数 ≥ 2 时使用玩家专属频道。
+
+**变更1：新增 `EnderChannelKey` 复合键**
+
+```java
+public record EnderChannelKey(@Nullable UUID owner, int count) {}
+```
+
+`owner == null` 表示公共频道。牵连改动：
+
+| 位置 | v11 | v12 |
+|------|-----|-----|
+| `EnderChannelRegistry.channels` | `Map<Integer, ChannelData>` | `Map<EnderChannelKey, ChannelData>` |
+| `EnderChannelRegistry.entryToChannel` | `Map<EnderChannelEntry, Integer>` | `Map<EnderChannelEntry, EnderChannelKey>` |
+| `EnderChannelRegistry.dirtyChannels` | `Set<Integer>` | `Set<EnderChannelKey>` |
+| `EnderChannelSyncPacket.channel` | `int` | `EnderChannelKey` |
+| `EnderChannelClientCache` 缓存键 | `int` | `EnderChannelKey` |
+| `LivingEnderChestAccessor.getChannel()` | `int` | `getChannelKey()` → `EnderChannelKey` |
+| `validateRoutes` 第三参数 | `Set<Integer> activeTargetSlots` | `Map<Integer, EnderChannelKey> targetKeysBySlot` |
+
+**协议编码**：`writeBoolean(hasOwner)` +（可选）`writeUUID` + `writeVarInt(count)`。
+无状态、无句柄表 —— 客户端可独立从 DataComponent + `getCount()` 算出同样的键，
+因此服务端无需下发「键的计算方式」。
+
+> 曾考虑「服务端维护 key → int 句柄映射，包里仍传 int」以实现零协议改动，
+> 但该方案要求客户端维护与服务端**分配顺序完全一致**的句柄表，
+> 客户端未见过的频道无法算出句柄，故排除。
+
+**变更2：三态模型**
+
+| 模式 | 条件 | 路由表 |
+|------|------|--------|
+| 直连模式 | 绑定 && count == 1 | ❌ 绕过 |
+| 专属频道 | 绑定 && count >= 2 | ✅ 使用 |
+| 公共频道 | 未绑定 | ✅ 使用 |
+
+**变更3：修复 `filterData` 在绑定分支被丢弃**
+
+v11 的绑定分支把 `filterData` 硬设为 `null`（因为「绑定 = 直连」，过滤交给 `FilteredSlotAccessor`）。
+三态下绑定的末影箱可能处于专属频道（路由模式），必须保留 `filterData`
+供 `registry.peek(key, filterData, ...)` 预过滤，否则黑白名单在专属频道失效。
+
+**变更4：`validateRoutes` 检查 2 增加频道键比对**
+
+修复堆叠数变化导致的路由泄漏，详见 [§9.1.1](#911-检查-2-为什么必须比对频道键v12-新增)。
+
+**变更5：移除 `totalRoutes`**
+
+原「路由: X条/共Y条」中的「共Y条」是全服所有频道（含他人专属频道）的总和，
+对玩家是噪音且会随他人操作波动。Tooltip 改为只显示本频道条数。
+
+**变更6：删除零调用者的死代码**
+
+`getChannels()` / `getActiveChannelCount()` / `getChannelSnapshot()` /
+`getEntries()` / `getChannelSize()` / `getTotalRouteCount()` /
+`ChannelSnapshot` record 全项目无外部调用者，一并删除，
+避免为复合键改造增加无谓的表面积。
+
+**变更7：客户端缓存补淘汰路径**
+
+`EnderChannelClientCache.update()` 在 `channelSize == 0` 时移除条目。
+v11 及之前 `clear()` / `removeChannel()` 全项目零调用者，缓存只增不减。
+
+**刻意保留的设计（不要"顺手优化"掉）**
+
+- **同步沿用广播**：专属频道是命名空间而非权限（§8.2），路由不视为隐私。
+  定向投递会引入离线黑洞与登录补偿问题，收益为零。
+- **不做持有者鉴权**：绑定信息跟随物品流转，谁持有谁就能接入该频道。
+
+---
+
 ## 14. 验证清单
 
 > 重构或架构迁移后，必须逐项验证以下用例。标注 `(→ 12.X)` 的条目来源于历史 bug，不可省略。
 
-### 14.1 双模式切换
+### 14.1 三态切换
 
-- [ ] 未绑定玩家时为路由模式，堆叠数=频道号
-- [ ] 绑定玩家后切换为直连模式，直接读写玩家末影箱
+- [ ] 未绑定玩家 → 公共频道，堆叠数 = 频道号
+- [ ] 绑定玩家 + 堆叠数 1 → 直连模式，直接读写玩家末影箱
+- [ ] 绑定玩家 + 堆叠数 ≥ 2 → 专属频道，走路由表且与其他玩家频道隔离
 - [ ] 直连模式下玩家离线时跳过传输
-- [ ] 解绑后恢复路由模式
+- [ ] **专属频道在玩家离线时仍能工作**（物品不进玩家背包，只注册指针）(→ v12 关键收益)
+- [ ] 解绑后恢复公共频道
+- [ ] 拆/合堆叠可切换模式，且 Tooltip 正确反映当前模式 (→ §3.1)
 
 ### 14.2 路由模式
 

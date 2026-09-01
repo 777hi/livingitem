@@ -2,6 +2,7 @@ package com.qiqi.li.living.domain.ender;
 
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -44,7 +45,11 @@ public class LivingEnderChestFunction implements LivingItemFunction {
         }
 
         Set<Integer> activeHopperSlots = tick.getFunctionSlots(LivingHopperFunction.ID);
-        EnderChannelRegistry.getInstance().validateRoutes(context, activeHopperSlots, activeEnderChestSlots);
+
+        // 槽位 → 当前频道键。玩家拆分/合并堆叠会改变频道键甚至切换工作模式，
+        // validateRoutes 据此清理旧频道下的遗留路由，避免路由泄漏。
+        Map<Integer, EnderChannelKey> targetKeysBySlot = EnderChannelKey.ofSlots(context, activeEnderChestSlots);
+        EnderChannelRegistry.getInstance().validateRoutes(context, activeHopperSlots, targetKeysBySlot);
     }
 
     @Override
@@ -55,6 +60,9 @@ public class LivingEnderChestFunction implements LivingItemFunction {
         LivingEnderChestData data = LivingItemManager.getEnderChestData(stack);
         EnderChannelData channel = data.channel();
 
+        // 频道键由绑定 UUID + 堆叠数决定，客户端可独立算出（DataComponent 随物品同步）
+        EnderChannelKey key = EnderChannelKey.of(stack);
+
         tooltipAdder.accept(Component.nullToEmpty(""));
         tooltipAdder.accept(Component.translatable("tooltip.livingitem.ender_chest.status"));
 
@@ -63,31 +71,41 @@ public class LivingEnderChestFunction implements LivingItemFunction {
             tooltipAdder.accept(Component.translatable(
                 "tooltip.livingitem.ender_chest.bound_player", name)
                 .withStyle(style -> style.withColor(0xDD44FF).withBold(true)));
-        } else {
-            int ch = stack.getCount();
-            var snapshot = EnderChannelClientCache.getSnapshot(ch);
+        }
 
-            tooltipAdder.accept(Component.translatable(
-                "tooltip.livingitem.ender_chest.channel", ch)
-                .withStyle(style -> style.withColor(0xCC66FF)));
-            tooltipAdder.accept(Component.translatable(
-                "tooltip.livingitem.ender_chest.routes", snapshot.channelSize(), snapshot.totalRoutes())
-                .withStyle(style -> style.withColor(0xAA88FF)));
+        if (key.isDirect()) {
+            // 直连模式：直接读写绑定玩家的末影箱背包，不经过路由表
+            tooltipAdder.accept(Component.translatable("tooltip.livingitem.ender_chest.direct_mode")
+                .withStyle(style -> style.withColor(0x33E6C4)));
+            return;
+        }
 
-            if (snapshot.channelSize() > 0 && flag.isAdvanced()) {
-                for (var entry : snapshot.entries()) {
-                    String locStr;
-                    if (entry.sourcePos() != null) {
-                        locStr = entry.sourcePos().toShortString();
-                    } else if (entry.dimKey() != null) {
-                        locStr = entry.dimKey();
-                    } else {
-                        locStr = "???";
-                    }
-                    tooltipAdder.accept(Component.literal(
-                        "  " + entry.itemType() + " @" + locStr + " slot=" + entry.sourceSlot())
-                        .withStyle(style -> style.withColor(0x9966CC).withItalic(true)));
+        // 路由模式：玩家专属频道（已绑定且堆叠数 ≥ 2）或公共频道（未绑定）
+        var snapshot = EnderChannelClientCache.getSnapshot(key);
+
+        String channelKey = key.isPrivateChannel()
+            ? "tooltip.livingitem.ender_chest.private_channel"
+            : "tooltip.livingitem.ender_chest.channel";
+        tooltipAdder.accept(Component.translatable(channelKey, key.count())
+            .withStyle(style -> style.withColor(0xCC66FF)));
+
+        tooltipAdder.accept(Component.translatable(
+            "tooltip.livingitem.ender_chest.routes", snapshot.channelSize())
+            .withStyle(style -> style.withColor(0xAA88FF)));
+
+        if (snapshot.channelSize() > 0 && flag.isAdvanced()) {
+            for (var entry : snapshot.entries()) {
+                String locStr;
+                if (entry.sourcePos() != null) {
+                    locStr = entry.sourcePos().toShortString();
+                } else if (entry.dimKey() != null) {
+                    locStr = entry.dimKey();
+                } else {
+                    locStr = "???";
                 }
+                tooltipAdder.accept(Component.literal(
+                    "  " + entry.itemType() + " @" + locStr + " slot=" + entry.sourceSlot())
+                    .withStyle(style -> style.withColor(0x9966CC).withItalic(true)));
             }
         }
     }

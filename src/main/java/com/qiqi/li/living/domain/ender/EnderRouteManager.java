@@ -21,9 +21,17 @@ import com.qiqi.li.living.transfer.SlotAccessor;
  * <ul>
  *   <li><b>同通道防护</b> —— 路由模式下同频道活末影箱之间禁止传输</li>
  *   <li><b>偏好类型设置</b> —— 输出槽已有物品时，设置源末影箱的偏好类型</li>
- *   <li><b>直连模式处理</b> —— 有绑定玩家时直接传输到玩家末影箱</li>
- *   <li><b>路由注册</b> —— 无绑定玩家时注册路由条目到全局路由表</li>
+ *   <li><b>直连模式处理</b> —— 绑定玩家且堆叠数为 1 时，直接读写该玩家的末影箱</li>
+ *   <li><b>路由注册</b> —— 其余情况（公共频道 / 玩家专属频道）注册路由条目到全局路由表</li>
  * </ul>
+ *
+ * <h3>v12 三态分发</h3>
+ * <p>决策依据统一为 {@link EnderChannelKey#of(ItemStack)} 解析出的频道键：</p>
+ * <pre>
+ *   key.isDirect()         (绑定 &amp;&amp; count == 1)  → 直连玩家末影箱
+ *   key.isPrivateChannel() (绑定 &amp;&amp; count &gt;= 2)  → 专属频道，走路由表
+ *   key.isPublic()         (未绑定)                → 公共频道，走路由表
+ * </pre>
  *
  * <h3>返回值语义</h3>
  * <ul>
@@ -52,7 +60,7 @@ public final class EnderRouteManager {
      *   <li>同通道防护 → REJECTED</li>
      *   <li>偏好类型设置 → 设置源末影箱偏好</li>
      *   <li>直连模式 → 执行传输 → HANDLED</li>
-     *   <li>路由模式 → 注册路由 → HANDLED</li>
+     *   <li>公共频道 / 专属频道 → 注册路由 → HANDLED</li>
      * </ol>
      *
      * @return 决策结果，NOT_ENDER_CHEST 表示目标不是活末影箱
@@ -79,7 +87,7 @@ public final class EnderRouteManager {
 
         ItemStack srcStack = ctx.getItem(sourceSlot);
         if (!srcStack.isEmpty() && !com.qiqi.li.living.api.LivingItemManager.isLivingItem(srcStack)) {
-            registerRoute(enderChest.getChannel(), srcStack, ctx, sourceSlot, hostSlot, targetSlot);
+            registerRoute(enderChest.getChannelKey(), srcStack, ctx, sourceSlot, hostSlot, targetSlot);
         }
         return Decision.HANDLED;
     }
@@ -88,7 +96,7 @@ public final class EnderRouteManager {
      * 解析活末影箱目标决策（跨容器传输场景）。
      *
      * <p>源在邻居容器中，目标为容器内的活末影箱。
-     * 路由模式下直接注册路由条目到全局路由表。</p>
+     * 仅直连模式直接插入玩家末影箱，其余情况注册路由条目到全局路由表。</p>
      *
      * @return true 表示已处理（路由注册或直连传输），false 表示无可用源
      */
@@ -105,26 +113,31 @@ public final class EnderRouteManager {
         MinecraftServer server = level.getServer();
         if (server == null) return false;
 
-        UUID boundUuid = LivingEnderChestFunction.getBoundPlayerUuid(enderChestStack);
+        EnderChannelKey key = EnderChannelKey.of(enderChestStack);
 
-        if (boundUuid != null) {
+        if (key.isDirect()) {
+            UUID boundUuid = key.owner();
+            if (boundUuid == null) return false;
             return directInsertFromNeighbor(server, neighborHandler, boundUuid,
                 stackSize, maxTransfer, filterData, level, neighborPos);
         }
 
-        int channel = enderChestStack.getCount();
-        return registerRouteFromNeighbor(channel, neighborHandler, neighborPos,
+        return registerRouteFromNeighbor(key, neighborHandler, neighborPos,
             level, containerCtx, targetSlot, filterData, hostSlot);
     }
 
     /**
      * 同通道防护：路由模式下，同频道的两个活末影箱之间禁止传输。
+     *
+     * <p>频道键为 (归属玩家, 堆叠数) 复合键，因此玩家 A 的专属频道 2、玩家 B 的专属频道 2、
+     * 公共频道 2 三者互不相同，只有完全相同的键才会触发防护。直连模式不参与防护
+     * （其数据不经过路由表）。</p>
      */
     private static boolean isSameChannelGuard(SlotAccessor source, LivingEnderChestAccessor targetEnder) {
         if (targetEnder.isDirectMode()) return false;
         if (!(source.unwrap() instanceof LivingEnderChestAccessor sourceEnder)) return false;
         if (sourceEnder.isDirectMode()) return false;
-        return sourceEnder.getChannel() == targetEnder.getChannel();
+        return sourceEnder.getChannelKey().equals(targetEnder.getChannelKey());
     }
 
     /**
@@ -133,14 +146,14 @@ public final class EnderRouteManager {
      * <p>从 {@code LivingEnderChestAccessor.registerRoute} 迁移而来，
      * 使路由注册逻辑归属于路由管理器。</p>
      *
-     * @param channel 频道号
-     * @param sourceStack 源物品栈
-     * @param containerCtx 当前容器上下文
-     * @param slot 源物品槽位
+     * @param key           频道键（公共频道或玩家专属频道）
+     * @param sourceStack   源物品栈
+     * @param containerCtx  当前容器上下文
+     * @param slot          源物品槽位
      * @param registrarSlot 注册者槽位
-     * @param targetSlot 目标槽位
+     * @param targetSlot    目标槽位
      */
-    private static void registerRoute(int channel, ItemStack sourceStack,
+    private static void registerRoute(EnderChannelKey key, ItemStack sourceStack,
                                        ContainerContext containerCtx, int slot,
                                        int registrarSlot, int targetSlot) {
         if (sourceStack.isEmpty()) return;
@@ -157,16 +170,16 @@ public final class EnderRouteManager {
             itemType, level.dimension(), pos, slot, registrarSlot, containerKey, targetSlot, containerKey);
 
         EnderChannelRegistry registry = EnderChannelRegistry.getInstance();
-        if (registry.contains(channel, entry)) return;
+        if (registry.contains(key, entry)) return;
 
         if (pos != null) {
             registry.removeByPositionAndSlotFromAllChannels(pos, slot);
         } else {
             registry.removeByPositionAndSlotFromAllChannels(containerKey, slot);
         }
-        registry.offer(channel, entry);
-        LOGGER.debug("EnderRouteManager: registered route channel={}, item={}, pos={}, key={}, slot={}",
-            channel, itemType, pos, containerKey, slot);
+        registry.offer(key, entry);
+        LOGGER.debug("EnderRouteManager: registered route key={}, item={}, pos={}, slot={}",
+            key, itemType, pos, slot);
     }
 
     /**
@@ -187,9 +200,9 @@ public final class EnderRouteManager {
     }
 
     /**
-     * 从邻居容器注册路由到全局路由表（路由模式）。
+     * 从邻居容器注册路由到全局路由表（公共频道 / 玩家专属频道）。
      */
-    private static boolean registerRouteFromNeighbor(int channel,
+    private static boolean registerRouteFromNeighbor(EnderChannelKey key,
                                                       net.neoforged.neoforge.items.IItemHandler neighborHandler,
                                                       BlockPos neighborPos,
                                                       Level level,
@@ -210,12 +223,12 @@ public final class EnderRouteManager {
                 itemType, level.dimension(), neighborPos, i, hostSlot, null, targetSlot,
                 containerCtx.getContainerKey());
 
-            if (registry.contains(channel, entry)) {
+            if (registry.contains(key, entry)) {
                 return true;
             }
 
             registry.removeByPositionAndSlotFromAllChannels(neighborPos, i);
-            registry.offer(channel, entry);
+            registry.offer(key, entry);
             return true;
         }
 

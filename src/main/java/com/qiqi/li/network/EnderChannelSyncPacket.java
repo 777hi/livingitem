@@ -2,6 +2,7 @@ package com.qiqi.li.network;
 
 import com.qiqi.li.living.domain.ender.EnderChannelClientCache;
 import com.qiqi.li.living.domain.ender.EnderChannelEntry;
+import com.qiqi.li.living.domain.ender.EnderChannelKey;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
@@ -11,11 +12,20 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
+/**
+ * S2C 路由快照同步包。
+ *
+ * <p>v12 起频道标识由 {@code int} 升级为 {@link EnderChannelKey}（归属玩家 + 堆叠数），
+ * 以支持玩家专属频道。编码采用「布尔标志 + UUID + VarInt」，无状态、无句柄表，
+ * 服务端与客户端各自独立计算频道键即可对齐。</p>
+ *
+ * <p>频道键是命名空间而非权限，专属频道路由不视为隐私，因此本包仍广播给所有在线玩家。</p>
+ */
 public record EnderChannelSyncPacket(
-    int channel,
+    EnderChannelKey channel,
     int channelSize,
-    int totalRoutes,
     List<EnderChannelClientCache.EntryDisplay> entries
 ) implements CustomPacketPayload {
 
@@ -27,7 +37,7 @@ public record EnderChannelSyncPacket(
         EnderChannelSyncPacket::decode
     );
 
-    public static EnderChannelSyncPacket fromRegistry(int channel, int channelSize, int totalRoutes,
+    public static EnderChannelSyncPacket fromRegistry(EnderChannelKey channel, int channelSize,
                                                        List<EnderChannelEntry> rawEntries) {
         List<EnderChannelClientCache.EntryDisplay> displays = new ArrayList<>(rawEntries.size());
         for (EnderChannelEntry e : rawEntries) {
@@ -38,13 +48,12 @@ public record EnderChannelSyncPacket(
                 e.sourceSlot()
             ));
         }
-        return new EnderChannelSyncPacket(channel, channelSize, totalRoutes, displays);
+        return new EnderChannelSyncPacket(channel, channelSize, displays);
     }
 
     private static void encode(FriendlyByteBuf buf, EnderChannelSyncPacket pkt) {
-        buf.writeVarInt(pkt.channel);
+        writeChannelKey(buf, pkt.channel);
         buf.writeVarInt(pkt.channelSize);
-        buf.writeVarInt(pkt.totalRoutes);
         buf.writeVarInt(pkt.entries.size());
         for (EnderChannelClientCache.EntryDisplay e : pkt.entries) {
             buf.writeUtf(e.itemType());
@@ -65,9 +74,8 @@ public record EnderChannelSyncPacket(
     }
 
     private static EnderChannelSyncPacket decode(FriendlyByteBuf buf) {
-        int channel = buf.readVarInt();
+        EnderChannelKey channel = readChannelKey(buf);
         int channelSize = buf.readVarInt();
-        int totalRoutes = buf.readVarInt();
         int entryCount = buf.readVarInt();
         List<EnderChannelClientCache.EntryDisplay> entries = new ArrayList<>(entryCount);
         for (int i = 0; i < entryCount; i++) {
@@ -77,7 +85,25 @@ public record EnderChannelSyncPacket(
             int sourceSlot = buf.readVarInt();
             entries.add(new EnderChannelClientCache.EntryDisplay(itemType, dimKey, sourcePos, sourceSlot));
         }
-        return new EnderChannelSyncPacket(channel, channelSize, totalRoutes, entries);
+        return new EnderChannelSyncPacket(channel, channelSize, entries);
+    }
+
+    /** 频道键编码：hasOwner 标志 +（可选）UUID + 堆叠数 VarInt。 */
+    private static void writeChannelKey(FriendlyByteBuf buf, EnderChannelKey key) {
+        UUID owner = key.owner();
+        if (owner != null) {
+            buf.writeBoolean(true);
+            buf.writeUUID(owner);
+        } else {
+            buf.writeBoolean(false);
+        }
+        buf.writeVarInt(key.count());
+    }
+
+    private static EnderChannelKey readChannelKey(FriendlyByteBuf buf) {
+        UUID owner = buf.readBoolean() ? buf.readUUID() : null;
+        int count = buf.readVarInt();
+        return new EnderChannelKey(owner, count);
     }
 
     @Override
@@ -90,7 +116,6 @@ public record EnderChannelSyncPacket(
             EnderChannelClientCache.update(
                 packet.channel,
                 packet.channelSize,
-                packet.totalRoutes,
                 packet.entries
             );
         });

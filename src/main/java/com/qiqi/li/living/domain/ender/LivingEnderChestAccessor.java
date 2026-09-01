@@ -23,20 +23,35 @@ import net.neoforged.neoforge.items.ItemHandlerHelper;
 import net.neoforged.neoforge.items.wrapper.InvWrapper;
 import org.slf4j.Logger;
 
+import javax.annotation.Nullable;
 import java.util.Set;
 import java.util.UUID;
 
 /**
- * 活末影箱槽位访问器 —— 支持路由模式和直连模式。
+ * 活末影箱槽位访问器 —— 支持直连模式与两种路由模式。
  *
- * <h3>路由模式</h3>（无绑定玩家）
+ * <h3>v12 三态模型</h3>
+ * <table>
+ *   <tr><th>模式</th><th>触发条件</th><th>数据流向</th><th>路由表</th></tr>
+ *   <tr><td><b>直连模式</b></td><td>绑定玩家 且 堆叠数 = 1</td>
+ *       <td>直接读写绑定玩家的末影箱背包</td><td>❌ 绕过</td></tr>
+ *   <tr><td><b>专属频道</b></td><td>绑定玩家 且 堆叠数 ≥ 2</td>
+ *       <td>经全局路由表无线传输，频道键带玩家归属</td><td>✅ 使用</td></tr>
+ *   <tr><td><b>公共频道</b></td><td>未绑定玩家</td>
+ *       <td>经全局路由表无线传输，频道键仅由堆叠数决定</td><td>✅ 使用</td></tr>
+ * </table>
+ *
+ * <p>工作模式完全由 {@link EnderChannelKey}（绑定 UUID + 堆叠数）决定，
+ * 玩家通过拆分/合并堆叠即可切换 —— 这是本 mod「堆叠数即配置旋钮」一贯设计的延伸。</p>
+ *
+ * <h3>路由模式（公共频道 / 专属频道）</h3>
  * 活末影箱不存储任何物品，只是一个路由器：
  * <ul>
  *   <li><strong>insert（Push）</strong>：不实际存储物品，只注册路由条目到全局路由表</li>
  *   <li><strong>extract（Pull）</strong>：查路由表 → 跳转到源容器 → 提取物品 → 返回</li>
  * </ul>
  *
- * <h3>直连模式</h3>（有绑定玩家）
+ * <h3>直连模式</h3>
  * 直接读写绑定玩家的末影箱背包：
  * <ul>
  *   <li><strong>insert（Push）</strong>：直接插入到玩家末影箱背包</li>
@@ -45,35 +60,37 @@ import java.util.UUID;
  * </ul>
  *
  * <h3>黑白名单过滤</h3>
- * <p>直连模式的过滤由 {@link FilteredSlotAccessor} 统一处理。
- * 路由模式的 {@code filterData} 仅用于路由表预过滤（{@code registry.peek()}），
- * 避免提取不匹配的物品类型。</p>
- *
- * <h3>频道隔离</h3>
- * 路由模式下：堆叠数 = 频道号。直连模式下：频道号无意义。
+ * <p>直连模式的过滤由 {@link FilteredSlotAccessor} 统一处理，因此 {@link #filterData} 置空。
+ * 路由模式（含专属频道）的 {@code filterData} 用于路由表预过滤（{@code registry.peek()}），
+ * 避免提取不匹配的物品类型 —— <b>必须保留，不可置空</b>。</p>
  */
 public class LivingEnderChestAccessor implements SlotAccessor {
 
     private static final Logger LOGGER = LogUtils.getLogger();
 
-    private final int channel;
+    private final EnderChannelKey channelKey;
     private final MinecraftServer server;
-    /** 路由模式下用于路由表预过滤（直连模式下为 null，由 FilteredSlotAccessor 处理） */
+    /** 路由模式下用于路由表预过滤；直连模式下为 null，由 FilteredSlotAccessor 处理 */
+    @Nullable
     private final FilterData filterData;
     private final Set<Integer> transferredTargetSlots;
+    @Nullable
     private final UUID boundPlayerUuid;
     private final boolean directMode;
 
-    /** 预加载的玩家末影箱引用（直连模式下缓存，避免重复查找玩家） */
+    /** 预加载的玩家末影箱引用（仅直连模式缓存，避免重复查找玩家） */
+    @Nullable
     private final PlayerEnderChestContainer cachedEnderChest;
 
-    /** 缓存的 IItemHandler 包装（直连模式下，避免每 tick 重复创建 InvWrapper） */
+    /** 缓存的 IItemHandler 包装（仅直连模式，避免每 tick 重复创建 InvWrapper） */
+    @Nullable
     private final IItemHandler cachedInvWrapper;
 
     /** 直连模式提取轮询指针，记录下次提取的起始槽位 */
     private int nextExtractSlot = 0;
 
     /** 路由模式偏好物品类型（注册名），用于贪心提取策略 */
+    @Nullable
     private String preferredItemType;
 
     private ContainerContext sourceContainerCtx;
@@ -89,68 +106,79 @@ public class LivingEnderChestAccessor implements SlotAccessor {
     /**
      * 尝试创建 LivingEnderChestAccessor（用于注册式工厂）。
      *
+     * <p>频道键与工作模式均从物品栈解析：绑定 UUID 取自 DataComponent，堆叠数取自
+     * {@code stack.getCount()}。{@code filterData} 在所有模式下统一透传，
+     * 由构造器根据最终模式决定是否保留。</p>
+     *
      * @return 如果是活末影箱则返回 Accessor，否则返回 null
      */
+    @Nullable
     public static SlotAccessor tryCreate(MinecraftServer server, ContainerContext containerCtx, int slot,
-                                          FilterData filterData, Set<Integer> transferredTargetSlots,
+                                          @Nullable FilterData filterData, Set<Integer> transferredTargetSlots,
                                           ContainerSnapshot snapshot) {
         ItemStack stack = containerCtx.getItem(slot);
         if (!LivingEnderChestFunction.isLivingEnderChest(stack)) {
             return null;
         }
-        int ch = stack.getCount();
-        UUID boundUuid = LivingEnderChestFunction.getBoundPlayerUuid(stack);
-        // if (LOGGER.isDebugEnabled()) {
-        //     LOGGER.debug("LivingEnderChestAccessor.tryCreate: channel={}, slot={}, direct={}", ch, slot, boundUuid != null);
-        // }
-        if (boundUuid != null) {
-            return new LivingEnderChestAccessor(server, ch, transferredTargetSlots, boundUuid);
+        EnderChannelKey key = EnderChannelKey.of(stack);
+        return new LivingEnderChestAccessor(server, key, filterData, transferredTargetSlots, key.owner());
+    }
+
+    /**
+     * 规范构造器。
+     *
+     * @param server                服务端实例
+     * @param channelKey            频道键（归属玩家 + 堆叠数）
+     * @param filterData            黑白名单过滤数据，直连模式下被丢弃
+     * @param transferredTargetSlots 本 tick 已传输的目标槽位集合
+     * @param boundPlayerUuid       绑定玩家 UUID，null 表示未绑定
+     */
+    public LivingEnderChestAccessor(MinecraftServer server, EnderChannelKey channelKey,
+                                     @Nullable FilterData filterData,
+                                     Set<Integer> transferredTargetSlots,
+                                     @Nullable UUID boundPlayerUuid) {
+        this.server = server;
+        this.channelKey = channelKey;
+        this.transferredTargetSlots = transferredTargetSlots;
+        this.boundPlayerUuid = boundPlayerUuid;
+        this.directMode = boundPlayerUuid != null && channelKey.count() == 1;
+
+        if (directMode) {
+            // 直连模式：过滤交由 FilteredSlotAccessor，路由表不参与
+            this.filterData = null;
+            // 预加载玩家末影箱引用，避免每次操作都查找玩家
+            ServerPlayer player = server.getPlayerList().getPlayer(boundPlayerUuid);
+            this.cachedEnderChest = player != null ? player.getEnderChestInventory() : null;
+            this.cachedInvWrapper = cachedEnderChest != null ? new InvWrapper(cachedEnderChest) : null;
         } else {
-            return new LivingEnderChestAccessor(server, ch, filterData, transferredTargetSlots);
+            // 路由模式（公共频道 / 玩家专属频道）：filterData 必须保留，用于路由表预过滤
+            this.filterData = filterData;
+            this.cachedEnderChest = null;
+            this.cachedInvWrapper = null;
         }
     }
 
-    public LivingEnderChestAccessor(MinecraftServer server, int channel,
+    /** 路由模式便捷构造器（无过滤）。 */
+    public LivingEnderChestAccessor(MinecraftServer server, EnderChannelKey channelKey,
                                      Set<Integer> transferredTargetSlots) {
-        this(server, channel, null, transferredTargetSlots);
+        this(server, channelKey, null, transferredTargetSlots, null);
     }
 
-    public LivingEnderChestAccessor(MinecraftServer server, int channel,
-                                     FilterData filterData,
+    /** 路由模式便捷构造器（带过滤）。 */
+    public LivingEnderChestAccessor(MinecraftServer server, EnderChannelKey channelKey,
+                                     @Nullable FilterData filterData,
                                      Set<Integer> transferredTargetSlots) {
-        this.server = server;
-        this.channel = channel;
-        this.filterData = filterData;
-        this.transferredTargetSlots = transferredTargetSlots;
-        this.boundPlayerUuid = null;
-        this.directMode = false;
-        this.cachedEnderChest = null;
-        this.cachedInvWrapper = null;
+        this(server, channelKey, filterData, transferredTargetSlots, null);
     }
 
-    public LivingEnderChestAccessor(MinecraftServer server, int channel,
-                                     Set<Integer> transferredTargetSlots,
-                                     UUID boundPlayerUuid) {
-        this.server = server;
-        this.channel = channel;
-        this.filterData = null;
-        this.transferredTargetSlots = transferredTargetSlots;
-        this.boundPlayerUuid = boundPlayerUuid;
-        this.directMode = boundPlayerUuid != null;
-
-        // 预加载玩家末影箱引用，避免每次操作都查找玩家
-        ServerPlayer player = server.getPlayerList().getPlayer(boundPlayerUuid);
-        this.cachedEnderChest = player != null ? player.getEnderChestInventory() : null;
-        this.cachedInvWrapper = cachedEnderChest != null ? new InvWrapper(cachedEnderChest) : null;
-    }
-
+    /** 是否为直连模式（绑定玩家且堆叠数 = 1）。 */
     public boolean isDirectMode() {
         return directMode;
     }
 
-    /** 获取频道号（路由模式下 = 堆叠数，直连模式下无意义） */
-    public int getChannel() {
-        return channel;
+    /** 获取频道键（直连模式下该键不参与路由表操作）。 */
+    public EnderChannelKey getChannelKey() {
+        return channelKey;
     }
 
     /**
@@ -161,7 +189,7 @@ public class LivingEnderChestAccessor implements SlotAccessor {
      *
      * @param itemType 物品注册名（如 "minecraft:iron_ingot"），null 表示无偏好
      */
-    public void setPreferredItemType(String itemType) {
+    public void setPreferredItemType(@Nullable String itemType) {
         this.preferredItemType = itemType;
     }
 
@@ -198,7 +226,7 @@ public class LivingEnderChestAccessor implements SlotAccessor {
 
     private ItemStack routeSimulateExtract(int amount) {
         EnderChannelRegistry registry = EnderChannelRegistry.getInstance();
-        EnderChannelEntry entry = registry.peek(channel, filterData, preferredItemType);
+        EnderChannelEntry entry = registry.peek(channelKey, filterData, preferredItemType);
         if (entry == null) return ItemStack.EMPTY;
 
         ServerLevel sourceLevel;
@@ -259,24 +287,24 @@ public class LivingEnderChestAccessor implements SlotAccessor {
     private ItemStack routeExtract(int amount) {
         EnderChannelRegistry registry = EnderChannelRegistry.getInstance();
         if (LOGGER.isDebugEnabled()) {
-            LOGGER.debug("LivingEnderChestAccessor: extract begin channel={}, amount={}", channel, amount);
+            LOGGER.debug("LivingEnderChestAccessor: extract begin key={}, amount={}", channelKey, amount);
         }
 
         while (true) {
             EnderChannelEntry entry;
             if (filterData != null) {
                 // 有过滤条件：先查找匹配条目，再精确移除
-                entry = registry.peek(channel, filterData, preferredItemType);
+                entry = registry.peek(channelKey, filterData, preferredItemType);
                 if (entry == null) {
-                    LOGGER.trace("LivingEnderChestAccessor: extract channel={}, filter no match", channel);
+                    LOGGER.trace("LivingEnderChestAccessor: extract key={}, filter no match", channelKey);
                     return ItemStack.EMPTY;
                 }
-                registry.remove(channel, entry);
+                registry.remove(channelKey, entry);
             } else {
                 // 无过滤条件：从队列取出，优先匹配偏好类型
-                entry = registry.poll(channel, preferredItemType);
+                entry = registry.poll(channelKey, preferredItemType);
                 if (entry == null) {
-                    LOGGER.trace("LivingEnderChestAccessor: extract channel={}, no entry found", channel);
+                    LOGGER.trace("LivingEnderChestAccessor: extract key={}, no entry found", channelKey);
                     return ItemStack.EMPTY;
                 }
             }
@@ -288,30 +316,30 @@ public class LivingEnderChestAccessor implements SlotAccessor {
                 // 方块容器：通过维度获取世界
                 sourceLevel = server.getLevel(entry.sourceDim());
                 if (sourceLevel == null) {
-                    LOGGER.debug("LivingEnderChestAccessor: extract source dim invalid, channel={}, dim={}",
-                        channel, entry.sourceDim());
+                    LOGGER.debug("LivingEnderChestAccessor: extract source dim invalid, key={}, dim={}",
+                        channelKey, entry.sourceDim());
                     continue;
                 }
             } else {
                 // 玩家背包/末影箱：从 containerKey 解析玩家 UUID，获取玩家所在世界
                 String containerKey = entry.containerKey();
                 if (containerKey == null || !containerKey.startsWith("player_")) {
-                    LOGGER.debug("LivingEnderChestAccessor: extract invalid containerKey, channel={}, key={}",
-                        channel, containerKey);
+                    LOGGER.debug("LivingEnderChestAccessor: extract invalid containerKey, key={}, key={}",
+                        channelKey, containerKey);
                     continue;
                 }
 
                 UUID playerId = parsePlayerUuid(containerKey);
                 if (playerId == null) {
-                    LOGGER.debug("LivingEnderChestAccessor: extract invalid containerKey, channel={}, key={}",
-                        channel, containerKey);
+                    LOGGER.debug("LivingEnderChestAccessor: extract invalid containerKey, key={}, entryKey={}",
+                        channelKey, containerKey);
                     continue;
                 }
 
                 ServerPlayer player = server.getPlayerList().getPlayer(playerId);
                 if (player == null) {
-                    LOGGER.debug("LivingEnderChestAccessor: extract player offline, channel={}, uuid={}",
-                        channel, playerId);
+                    LOGGER.debug("LivingEnderChestAccessor: extract player offline, key={}, uuid={}",
+                        channelKey, playerId);
                     continue;
                 }
                 sourceLevel = (ServerLevel) player.level();
@@ -325,15 +353,15 @@ public class LivingEnderChestAccessor implements SlotAccessor {
 
             ItemStack sourceStack = sourceHandler.getStackInSlot(entry.sourceSlot());
             if (sourceStack.isEmpty()) {
-                LOGGER.debug("LivingEnderChestAccessor: extract source slot empty, channel={}, slot={}",
-                    channel, entry.sourceSlot());
+                LOGGER.debug("LivingEnderChestAccessor: extract source slot empty, key={}, slot={}",
+                    channelKey, entry.sourceSlot());
                 continue;
             }
 
             String itemId = BuiltInRegistries.ITEM.getKey(sourceStack.getItem()).toString();
             if (!itemId.equals(entry.itemType())) {
-                LOGGER.debug("LivingEnderChestAccessor: extract type mismatch, channel={}, expected={}, actual={}",
-                    channel, entry.itemType(), itemId);
+                LOGGER.debug("LivingEnderChestAccessor: extract type mismatch, key={}, expected={}, actual={}",
+                    channelKey, entry.itemType(), itemId);
                 continue;
             }
 
@@ -352,15 +380,15 @@ public class LivingEnderChestAccessor implements SlotAccessor {
             if (sourceHandler.getStackInSlot(entry.sourceSlot()).isEmpty()) {
                 // 源槽已空，entry 已从队列移除，不 reoffer
                 if (LOGGER.isDebugEnabled()) {
-                    LOGGER.debug("LivingEnderChestAccessor: extracted channel={}, item={}, count={}, from={}, slot={}, drained",
-                        channel, itemId, toExtract, sourcePos != null ? sourcePos : entry.containerKey(), entry.sourceSlot());
+                    LOGGER.debug("LivingEnderChestAccessor: extracted key={}, item={}, count={}, from={}, slot={}, drained",
+                        channelKey, itemId, toExtract, sourcePos != null ? sourcePos : entry.containerKey(), entry.sourceSlot());
                 }
             } else {
                 // 源槽还有物品，放回队列尾部继续参与轮询
-                registry.reoffer(channel, entry);
+                registry.reoffer(channelKey, entry);
                 if (LOGGER.isDebugEnabled()) {
-                    LOGGER.debug("LivingEnderChestAccessor: extracted channel={}, item={}, count={}, from={}, slot={}, reoffer",
-                        channel, itemId, toExtract, sourcePos != null ? sourcePos : entry.containerKey(), entry.sourceSlot());
+                    LOGGER.debug("LivingEnderChestAccessor: extracted key={}, item={}, count={}, from={}, slot={}, reoffer",
+                        channelKey, itemId, toExtract, sourcePos != null ? sourcePos : entry.containerKey(), entry.sourceSlot());
                 }
             }
             return extracted;
@@ -420,28 +448,28 @@ public class LivingEnderChestAccessor implements SlotAccessor {
         }
 
         if (rollbackDim == null) {
-            LOGGER.warn("LivingEnderChestAccessor: rollback no saved dim, channel={}", channel);
+            LOGGER.warn("LivingEnderChestAccessor: rollback no saved dim, key={}", channelKey);
             return;
         }
 
         ServerLevel level = server.getLevel(rollbackDim);
         if (level == null) {
-            LOGGER.warn("LivingEnderChestAccessor: rollback invalid dim, channel={}", channel);
+            LOGGER.warn("LivingEnderChestAccessor: rollback invalid dim, key={}", channelKey);
             return;
         }
 
         if (rollbackPos != null) {
             if (!level.isLoaded(rollbackPos)) {
-                LOGGER.warn("LivingEnderChestAccessor: rollback target unloaded, channel={}, pos={}",
-                    channel, rollbackPos);
+                LOGGER.warn("LivingEnderChestAccessor: rollback target unloaded, key={}, pos={}",
+                    channelKey, rollbackPos);
                 return;
             }
 
             BlockEntity be = level.getBlockEntity(rollbackPos);
             IItemHandler handler = getHandler(level, rollbackPos, be);
             if (handler == null) {
-                LOGGER.warn("LivingEnderChestAccessor: rollback target not container, channel={}, pos={}",
-                    channel, rollbackPos);
+                LOGGER.warn("LivingEnderChestAccessor: rollback target not container, key={}, pos={}",
+                    channelKey, rollbackPos);
                 return;
             }
             handler.insertItem(rollbackSlot, stack, false);
@@ -449,15 +477,15 @@ public class LivingEnderChestAccessor implements SlotAccessor {
         } else if (rollbackContainerKey != null && rollbackContainerKey.startsWith("player_")) {
             UUID playerId = parsePlayerUuid(rollbackContainerKey);
             if (playerId == null) {
-                LOGGER.warn("LivingEnderChestAccessor: rollback invalid containerKey, channel={}, key={}",
-                    channel, rollbackContainerKey);
+                LOGGER.warn("LivingEnderChestAccessor: rollback invalid containerKey, key={}, entryKey={}",
+                    channelKey, rollbackContainerKey);
                 return;
             }
 
             ServerPlayer player = server.getPlayerList().getPlayer(playerId);
             if (player == null) {
-                LOGGER.warn("LivingEnderChestAccessor: rollback player offline, channel={}, uuid={}",
-                    channel, playerId);
+                LOGGER.warn("LivingEnderChestAccessor: rollback player offline, key={}, uuid={}",
+                    channelKey, playerId);
                 return;
             }
 
@@ -471,11 +499,11 @@ public class LivingEnderChestAccessor implements SlotAccessor {
                 handler.insertItem(rollbackSlot, stack, false);
             }
         } else {
-            LOGGER.warn("LivingEnderChestAccessor: rollback no saved position or containerKey, channel={}", channel);
+            LOGGER.warn("LivingEnderChestAccessor: rollback no saved position or containerKey, key={}", channelKey);
             return;
         }
-        LOGGER.debug("LivingEnderChestAccessor: rollback channel={}, item={}, count={}, pos={}, slot={}",
-            channel, stack.getHoverName().getString(), stack.getCount(), rollbackPos, rollbackSlot);
+        LOGGER.debug("LivingEnderChestAccessor: rollback key={}, item={}, count={}, pos={}, slot={}",
+            channelKey, stack.getHoverName().getString(), stack.getCount(), rollbackPos, rollbackSlot);
     }
 
     @Override
@@ -521,21 +549,22 @@ public class LivingEnderChestAccessor implements SlotAccessor {
      *
      * @return IItemHandler 实例，如果无法解析则返回 null（调用方负责清理路由）
      */
+    @Nullable
     private IItemHandler resolveSourceHandler(EnderChannelEntry entry, ServerLevel sourceLevel) {
         BlockPos sourcePos = entry.sourcePos();
 
         if (sourcePos != null) {
             if (!sourceLevel.isLoaded(sourcePos)) {
-                LOGGER.debug("LivingEnderChestAccessor: extract source unloaded, remove channel={}, pos={}",
-                    channel, sourcePos);
+                LOGGER.debug("LivingEnderChestAccessor: extract source unloaded, remove key={}, pos={}",
+                    channelKey, sourcePos);
                 return null;
             }
 
             BlockEntity be = sourceLevel.getBlockEntity(sourcePos);
             IItemHandler handler = getHandler(sourceLevel, sourcePos, be);
             if (handler == null) {
-                LOGGER.debug("LivingEnderChestAccessor: extract source not container, remove channel={}, pos={}",
-                    channel, sourcePos);
+                LOGGER.debug("LivingEnderChestAccessor: extract source not container, remove key={}, pos={}",
+                    channelKey, sourcePos);
             }
             return handler;
         } else {
@@ -544,8 +573,7 @@ public class LivingEnderChestAccessor implements SlotAccessor {
 
             UUID playerId = parsePlayerUuid(containerKey);
             if (playerId == null) {
-                LOGGER.debug("LivingEnderChestAccessor: extract invalid containerKey, channel={}, key={}",
-                    channel, containerKey);
+                LOGGER.debug("LivingEnderChestAccessor: extract invalid containerKey, key={}", channelKey);
                 return null;
             }
 
@@ -557,7 +585,7 @@ public class LivingEnderChestAccessor implements SlotAccessor {
             } else {
                 IItemHandler handler = player.getCapability(Capabilities.ItemHandler.ENTITY);
                 if (handler == null) {
-                    LOGGER.debug("LivingEnderChestAccessor: extract player has no ItemHandler, channel={}", channel);
+                    LOGGER.debug("LivingEnderChestAccessor: extract player has no ItemHandler, key={}", channelKey);
                 }
                 return handler;
             }
@@ -567,6 +595,7 @@ public class LivingEnderChestAccessor implements SlotAccessor {
     /**
      * 从方块位置获取 IItemHandler，统一通过 NeoForge 能力获取。
      */
+    @Nullable
     private static IItemHandler getHandler(Level level, BlockPos pos, BlockEntity be) {
         return level.getCapability(Capabilities.ItemHandler.BLOCK, pos, null);
     }
@@ -594,7 +623,8 @@ public class LivingEnderChestAccessor implements SlotAccessor {
      * @param containerKey 容器唯一标识 key
      * @return 玩家 UUID，解析失败返回 null
      */
-    private static UUID parsePlayerUuid(String containerKey) {
+    @Nullable
+    private static UUID parsePlayerUuid(@Nullable String containerKey) {
         if (containerKey == null || !containerKey.startsWith("player_")) return null;
         try {
             if (containerKey.endsWith("_ender_chest")) {
