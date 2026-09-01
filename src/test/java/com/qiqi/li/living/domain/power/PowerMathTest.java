@@ -18,17 +18,6 @@ class PowerMathTest {
     private static final double EFF_DELTA_FIVE = 5 * Math.sqrt(4096);
 
     @Test
-    @DisplayName("耦合管径：未锈蚀 1.0 → 氧化 0.35，越界 clamp")
-    void coupling_followsRustLadder() {
-        assertEquals(1.0, PowerMath.coupling(0), EPS);
-        assertEquals(0.7, PowerMath.coupling(1), EPS);
-        assertEquals(0.5, PowerMath.coupling(2), EPS);
-        assertEquals(0.35, PowerMath.coupling(3), EPS);
-        assertEquals(1.0, PowerMath.coupling(-5), EPS);
-        assertEquals(0.35, PowerMath.coupling(9), EPS);
-    }
-
-    @Test
     @DisplayName("调谐效率：完美匹配 1.0，差 1 tick@4t（90°）为 0.5，反相为 0")
     void tuningEfficiency_cosineCurve() {
         assertEquals(1.0, PowerMath.tuningEfficiency(0, 4), 1e-9);

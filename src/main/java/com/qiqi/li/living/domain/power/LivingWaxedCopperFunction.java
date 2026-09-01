@@ -448,11 +448,16 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
                 Component.translatable(formKey))
             .withStyle(ChatFormatting.GOLD));
 
-        // ── 耦合管径 ──
-        tooltipAdder.accept(Component.literal("  ")
-            .append(Component.translatable("tooltip.livingitem.waxed_copper.coupling"))
-            .append(Component.literal(": " + String.format("%.2f", PowerMath.coupling(oxidation))))
-            .withStyle(ChatFormatting.GRAY));
+        // ── 雕文输入/输出方向（仅涂蜡雕文）──
+        if (isWaxedChiseled(item)) {
+            var chiseledData = LivingItemManager.getWaxedChiseledData(stack);
+            String inputSym = chiseledData.inputDir().getSymbol();
+            String outputSym = chiseledData.outputDir().getSymbol();
+            tooltipAdder.accept(Component.translatable(
+                    "tooltip.livingitem.waxed_copper.chiseled_dir",
+                    inputSym, outputSym)
+                .withStyle(ChatFormatting.GRAY));
+        }
 
         if (!isWaxedBulb(item)) {
             var t = LivingItemManager.getGeneratorData(stack);
@@ -650,7 +655,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             || item == Items.WAXED_WEATHERED_COPPER_BULB || item == Items.WAXED_OXIDIZED_COPPER_BULB;
     }
 
-    /** 锈蚀档位 0~3（决定耦合管径，见 {@link PowerMath#coupling}） */
+    /** 锈蚀档位 0~3（用于铜块网络分组，同等级才互通） */
     public static int getOxidationLevel(Item item) {
         if (item == Items.WAXED_COPPER_BLOCK || item == Items.WAXED_CHISELED_COPPER
             || item == Items.WAXED_CUT_COPPER || item == Items.WAXED_COPPER_GRATE

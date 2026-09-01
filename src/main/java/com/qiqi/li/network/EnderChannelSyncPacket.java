@@ -8,6 +8,8 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.util.ArrayList;
@@ -37,18 +39,42 @@ public record EnderChannelSyncPacket(
         EnderChannelSyncPacket::decode
     );
 
-    public static EnderChannelSyncPacket fromRegistry(EnderChannelKey channel, int channelSize,
+    public static EnderChannelSyncPacket fromRegistry(MinecraftServer server, EnderChannelKey channel, int channelSize,
                                                        List<EnderChannelEntry> rawEntries) {
         List<EnderChannelClientCache.EntryDisplay> displays = new ArrayList<>(rawEntries.size());
         for (EnderChannelEntry e : rawEntries) {
+            String playerName = null;
+            String ck = e.containerKey();
+            if (ck != null && ck.startsWith("player_") && server != null) {
+                UUID pid = parsePlayerUuid(ck);
+                if (pid != null) {
+                    ServerPlayer p = server.getPlayerList().getPlayer(pid);
+                    if (p != null) playerName = p.getGameProfile().getName();
+                }
+            }
             displays.add(new EnderChannelClientCache.EntryDisplay(
                 e.itemType(),
                 e.sourceDim() != null ? e.sourceDim().location().toString() : null,
                 e.sourcePos(),
-                e.sourceSlot()
+                e.sourceSlot(),
+                e.containerKey(),
+                playerName
             ));
         }
         return new EnderChannelSyncPacket(channel, channelSize, displays);
+    }
+
+    /** 从 "player_<uuid>" / "player_<uuid>_ender_chest" 解析玩家 UUID，失败返回 null。 */
+    private static UUID parsePlayerUuid(String containerKey) {
+        String s = containerKey.substring("player_".length());
+        if (s.endsWith("_ender_chest")) {
+            s = s.substring(0, s.length() - "_ender_chest".length());
+        }
+        try {
+            return UUID.fromString(s);
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
     }
 
     private static void encode(FriendlyByteBuf buf, EnderChannelSyncPacket pkt) {
@@ -70,6 +96,18 @@ public record EnderChannelSyncPacket(
                 buf.writeBoolean(false);
             }
             buf.writeVarInt(e.sourceSlot());
+            if (e.containerKey() != null) {
+                buf.writeBoolean(true);
+                buf.writeUtf(e.containerKey());
+            } else {
+                buf.writeBoolean(false);
+            }
+            if (e.playerName() != null) {
+                buf.writeBoolean(true);
+                buf.writeUtf(e.playerName());
+            } else {
+                buf.writeBoolean(false);
+            }
         }
     }
 
@@ -83,7 +121,9 @@ public record EnderChannelSyncPacket(
             String dimKey = buf.readBoolean() ? buf.readUtf() : null;
             BlockPos sourcePos = buf.readBoolean() ? buf.readBlockPos() : null;
             int sourceSlot = buf.readVarInt();
-            entries.add(new EnderChannelClientCache.EntryDisplay(itemType, dimKey, sourcePos, sourceSlot));
+            String containerKey = buf.readBoolean() ? buf.readUtf() : null;
+            String playerName = buf.readBoolean() ? buf.readUtf() : null;
+            entries.add(new EnderChannelClientCache.EntryDisplay(itemType, dimKey, sourcePos, sourceSlot, containerKey, playerName));
         }
         return new EnderChannelSyncPacket(channel, channelSize, entries);
     }

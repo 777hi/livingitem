@@ -295,6 +295,10 @@ public class LivingItemManager {
         stack.remove(LIVING_GRATE_DATA.value());
         stack.remove(LIVING_COPPER_BULB_DATA.value());
         stack.remove(LIVING_COPPER_SIGNAL.value());
+        stack.remove(LIVING_WAXED_CUT_DATA.value());
+        stack.remove(LIVING_WAXED_CHISELED_DATA.value());
+        stack.remove(LIVING_GENERATOR_DATA.value());
+        stack.remove(LIVING_WAXED_BULB_DATA.value());
     }
 
     public static void setLiving(ItemStack stack, boolean living) {

@@ -704,6 +704,28 @@ v12 起 Tooltip 按三态分别显示，**必须明确标注当前模式** —�
 > **措辞说明**：使用「绑定频道」而非「专属频道」，避免玩家误解为「别人看不到」。
 > 频道是命名空间而非权限（见 §8.2）。
 
+### 11.2 高级模式路由明细（F3+H）
+
+开启高级提示后，每条路由额外显示一行明细，格式统一为：
+
+```
+物品类型 @ <位置> slot=<源槽位>
+```
+
+`<位置>` 按路由来源分两种：
+
+| 来源 | `<位置>` 格式 | 示例 |
+|------|-------------|------|
+| 方块容器 | `<维度> <坐标>`（维度来自 `dimKey`，坐标为 `BlockPos.toShortString()`） | `minecraft:overworld X:12, Y:64, Z:-8` |
+| 玩家背包 / 末影箱 | `<维度> player <玩家名>`（玩家名由服务端同步时按 UUID 解析，离线则回退 UUID） | `minecraft:overworld player Steve` |
+
+- **维度必显**：活末影箱路由可跨维度，因此高级明细始终包含维度键（早期版本方块容器只显示坐标、缺维度，后续已修正）。
+- **玩家名服务端解析**：`EntryDisplay.playerName` 由 `EnderChannelSyncPacket.fromRegistry` 在服务端用
+  `MinecraftServer.getPlayerList().getPlayer(uuid)` 解析后下发；玩家离线时解析为 `null`，
+  客户端回退到 `containerKey` 中的 UUID 字符串。
+- `containerKey`（`"player_<uuid>"` / `"player_<uuid>_ender_chest"`）仍随包下发，
+  用于客户端判定条目类型为玩家容器，以及离线时的 UUID 兜底显示。
+
 > **v12 变更**：移除了原来的「路由: X条/共Y条」中的「共Y条」。
 > 该数字是全服所有频道（含其他玩家的专属频道）的路由总和，对玩家是纯噪音，
 > 且会随他人建频道而波动。

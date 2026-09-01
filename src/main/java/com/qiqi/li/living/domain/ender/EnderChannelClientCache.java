@@ -28,7 +28,9 @@ public class EnderChannelClientCache {
         String itemType,
         @Nullable String dimKey,
         @Nullable BlockPos sourcePos,
-        int sourceSlot
+        int sourceSlot,
+        @Nullable String containerKey,
+        @Nullable String playerName
     ) {}
 
     public record ChannelSnapshot(

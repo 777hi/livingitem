@@ -38,21 +38,6 @@ public final class PowerMath {
     public static final long BULB_UNIT_CAPACITY_MFE = BULB_UNIT_CAPACITY_FE * 1000;
 
     /**
-     * 锈蚀 → 感应耦合管径（§3.5）。
-     *
-     * <p>未锈蚀 1.0 ＞ 斑驳 0.7 ＞ 风化 0.5 ＞ 氧化 0.35。
-     * 管径决定发电机之间感应能量的分配份额，锈蚀是路由材料而非等级。</p>
-     */
-    public static double coupling(int oxidationLevel) {
-        return switch (Math.max(0, Math.min(3, oxidationLevel))) {
-            case 0 -> 1.0;
-            case 1 -> 0.7;
-            case 2 -> 0.5;
-            default -> 0.35;
-        };
-    }
-
-    /**
      * 调谐效率 = (1 + cos θ) / 2，θ = (tick误差 / 偏好周期) × 2π。
      *
      * <p>完美匹配 → 1，完全反相 → 0；结果 clamp [0,1]。

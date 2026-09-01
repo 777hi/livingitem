@@ -131,7 +131,7 @@ public final class EnderChannelRegistry {
             int channelSize = data == null ? 0 : data.entries.size();
             List<EnderChannelEntry> entryList = data == null ? List.of() : List.copyOf(data.entries);
 
-            EnderChannelSyncPacket packet = EnderChannelSyncPacket.fromRegistry(key, channelSize, entryList);
+            EnderChannelSyncPacket packet = EnderChannelSyncPacket.fromRegistry(server, key, channelSize, entryList);
 
             for (ServerPlayer player : server.getPlayerList().getPlayers()) {
                 PacketDistributor.sendToPlayer(player, packet);

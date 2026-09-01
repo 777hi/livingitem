@@ -97,7 +97,14 @@ public class LivingEnderChestFunction implements LivingItemFunction {
             for (var entry : snapshot.entries()) {
                 String locStr;
                 if (entry.sourcePos() != null) {
-                    locStr = entry.sourcePos().toShortString();
+                    // 方块容器：维度 + 坐标（高级模式需显式标注维度，路由可跨维度）
+                    String dim = entry.dimKey() != null ? entry.dimKey() : "?";
+                    locStr = dim + " " + entry.sourcePos().toShortString();
+                } else if (entry.containerKey() != null && entry.containerKey().startsWith("player_")) {
+                    // 玩家背包 / 末影箱：优先显示玩家名，离线则回退到 UUID（维度附在前面）
+                    String dim = entry.dimKey() != null ? entry.dimKey() + " " : "";
+                    String name = entry.playerName() != null ? entry.playerName() : parsePlayerId(entry.containerKey());
+                    locStr = dim + "player " + name;
                 } else if (entry.dimKey() != null) {
                     locStr = entry.dimKey();
                 } else {
@@ -108,6 +115,17 @@ public class LivingEnderChestFunction implements LivingItemFunction {
                     .withStyle(style -> style.withColor(0x9966CC).withItalic(true)));
             }
         }
+    }
+
+    /**
+     * 从玩家容器 key（"player_&lt;uuid&gt;" 或 "player_&lt;uuid&gt;_ender_chest"）中提取玩家 UUID 字符串。
+     */
+    private static String parsePlayerId(String containerKey) {
+        String s = containerKey.substring("player_".length());
+        if (s.endsWith("_ender_chest")) {
+            s = s.substring(0, s.length() - "_ender_chest".length());
+        }
+        return s;
     }
 
     public static boolean isLivingEnderChest(ItemStack stack) {

@@ -141,7 +141,6 @@
   "tooltip.livingitem.waxed_copper.form.chiseled": "Chiseled",
   "tooltip.livingitem.waxed_copper.form.cut": "Cut",
   "tooltip.livingitem.waxed_copper.form.grate": "Grate",
-  "tooltip.livingitem.waxed_copper.coupling": "  §7Induction Coupling",
   "tooltip.livingitem.waxed_copper.ema_power": "  §eEMA Power",
   "tooltip.livingitem.waxed_copper.preferred_period": "  §bPreferred Period",
   "tooltip.livingitem.waxed_copper.broadband": "  §dBroadband (untuned)§r",
@@ -159,5 +158,6 @@
   "tooltip.livingitem.waxed_copper.path_direct": "Direct",
   "tooltip.livingitem.waxed_copper.path_induction": "Induction",
   "tooltip.livingitem.waxed_copper.raw_values": "  P=%dt  n=%d  unlock=%d%%  EMA=%d mFE/t",
-  "tooltip.livingitem.waxed_copper.container_power": "Container Total Power"
+  "tooltip.livingitem.waxed_copper.container_power": "Container Total Power",
+  "tooltip.livingitem.waxed_copper.chiseled_dir": "  §7Sense: IN%s OUT%s"
 }

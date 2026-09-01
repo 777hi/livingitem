@@ -140,7 +140,6 @@
   "tooltip.livingitem.waxed_copper.form.chiseled": "雕文",
   "tooltip.livingitem.waxed_copper.form.cut": "切制",
   "tooltip.livingitem.waxed_copper.form.grate": "格栅",
-  "tooltip.livingitem.waxed_copper.coupling": "  §7感应耦合管径",
   "tooltip.livingitem.waxed_copper.ema_power": "  §eEMA 功率",
   "tooltip.livingitem.waxed_copper.preferred_period": "  §b偏好周期",
   "tooltip.livingitem.waxed_copper.broadband": "  §d宽带接收（堆 1 叠不挑频率）§r",
@@ -158,5 +157,6 @@
   "tooltip.livingitem.waxed_copper.path_direct": "直连",
   "tooltip.livingitem.waxed_copper.path_induction": "感应",
   "tooltip.livingitem.waxed_copper.raw_values": "  P=%dt  n=%d  unlock=%d%%  EMA=%d mFE/t",
-  "tooltip.livingitem.waxed_copper.container_power": "容器总功率"
+  "tooltip.livingitem.waxed_copper.container_power": "容器总功率",
+  "tooltip.livingitem.waxed_copper.chiseled_dir": "  §7感应方向：输入%s 输出%s"
 }
