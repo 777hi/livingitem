@@ -249,16 +249,25 @@ public final class LivingIconRegistry {
         registerCopperBulb(net.minecraft.world.item.Items.EXPOSED_COPPER_BULB, "item/exposed_copper_bulb", "item/exposed_copper_bulb_lit");
         registerCopperBulb(net.minecraft.world.item.Items.WEATHERED_COPPER_BULB, "item/weathered_copper_bulb", "item/weathered_copper_bulb_lit");
         registerCopperBulb(net.minecraft.world.item.Items.OXIDIZED_COPPER_BULB, "item/oxidized_copper_bulb", "item/oxidized_copper_bulb_lit");
-        registerCopperBulb(net.minecraft.world.item.Items.WAXED_COPPER_BULB, "item/waxed_copper_bulb", "item/waxed_copper_bulb_lit");
-        registerCopperBulb(net.minecraft.world.item.Items.WAXED_EXPOSED_COPPER_BULB, "item/waxed_exposed_copper_bulb", "item/waxed_exposed_copper_bulb_lit");
-        registerCopperBulb(net.minecraft.world.item.Items.WAXED_WEATHERED_COPPER_BULB, "item/waxed_weathered_copper_bulb", "item/waxed_weathered_copper_bulb_lit");
-        registerCopperBulb(net.minecraft.world.item.Items.WAXED_OXIDIZED_COPPER_BULB, "item/waxed_oxidized_copper_bulb", "item/waxed_oxidized_copper_bulb_lit");
+        registerWaxedCopperBulb(net.minecraft.world.item.Items.WAXED_COPPER_BULB, "item/waxed_copper_bulb", "item/waxed_copper_bulb_lit");
+        registerWaxedCopperBulb(net.minecraft.world.item.Items.WAXED_EXPOSED_COPPER_BULB, "item/waxed_exposed_copper_bulb", "item/waxed_exposed_copper_bulb_lit");
+        registerWaxedCopperBulb(net.minecraft.world.item.Items.WAXED_WEATHERED_COPPER_BULB, "item/waxed_weathered_copper_bulb", "item/waxed_weathered_copper_bulb_lit");
+        registerWaxedCopperBulb(net.minecraft.world.item.Items.WAXED_OXIDIZED_COPPER_BULB, "item/waxed_oxidized_copper_bulb", "item/waxed_oxidized_copper_bulb_lit");
     }
 
     private static void registerCopperBulb(Item item, String textureOff, String textureOn) {
         register(LivingIconSpec.builder(item)
             .addVariant("lit", textureOn,
                 stack -> com.qiqi.li.living.api.LivingItemManager.getCopperBulbData(stack).isLit())
+            .addVariant("unlit", textureOff, stack -> true)
+            .build());
+    }
+
+    /** 涂蜡铜灯（电力层）：有电量 → 点亮图标 */
+    private static void registerWaxedCopperBulb(Item item, String textureOff, String textureOn) {
+        register(LivingIconSpec.builder(item)
+            .addVariant("lit", textureOn,
+                stack -> com.qiqi.li.living.api.LivingItemManager.getWaxedBulbData(stack).chargeMilliFe() > 0)
             .addVariant("unlit", textureOff, stack -> true)
             .build());
     }
