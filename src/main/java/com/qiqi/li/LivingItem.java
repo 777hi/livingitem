@@ -35,8 +35,12 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
+import com.qiqi.li.living.container.ContainerSnapshot;
+import com.qiqi.li.living.domain.chest.ChestSnapshotProvider;
 import com.qiqi.li.living.domain.chest.LivingChestFunction;
 import com.qiqi.li.living.domain.ender.LivingEnderChestFunction;
+import com.qiqi.li.living.domain.hopper.HopperSnapshotProvider;
+import com.qiqi.li.living.domain.redstone.RedstoneSnapshotProvider;
 import com.qiqi.li.living.domain.water.LivingWaterBucketFunction;
 import com.qiqi.li.living.domain.water.LivingWaterWheelFunction;
 import com.qiqi.li.living.domain.map.LivingEnderPearlFunction;
@@ -187,6 +191,11 @@ public class LivingItem {
 
         LivingItemManager.registerFunction(new LivingMapFunction());
         LOGGER.info("Registered living map function");
+
+        // 注册容器快照贡献者（注册驱动，解除 container 包对 domain 类的依赖）
+        ContainerSnapshot.registerProvider(new HopperSnapshotProvider());
+        ContainerSnapshot.registerProvider(new ChestSnapshotProvider());
+        ContainerSnapshot.registerProvider(new RedstoneSnapshotProvider());
 
         LivingMapEventHandler.register();
         LOGGER.info("Registered living map event handler");

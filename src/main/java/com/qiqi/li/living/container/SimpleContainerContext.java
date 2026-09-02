@@ -209,6 +209,7 @@ public class SimpleContainerContext implements ContainerContext {
                 remaining.getCount(), toInsert.getItem(), logicalSlot);
         }
         notifyBlockEntitiesChanged();
+        ContainerLivingItemHandler.bumpContainerRevision(this);
     }
 
     @Override
@@ -318,6 +319,8 @@ public class SimpleContainerContext implements ContainerContext {
 
     @Override
     public void syncSlotToClients(int logicalSlot, ItemStack stack) {
+        // 就地修改 DataComponent（方向配置、状态等）会使快照失效，先 bump 修订计数
+        ContainerLivingItemHandler.bumpContainerRevision(this);
         if (currentTickContext != null) {
             currentTickContext.dirtySlots.add(logicalSlot);
         } else {

@@ -9,6 +9,7 @@ import net.minecraft.world.level.Level;
 import org.mockito.Mockito;
 
 import com.qiqi.li.living.container.ContainerContext;
+import com.qiqi.li.living.container.ContainerLivingItemHandler;
 
 /**
  * 内存容器上下文 —— 单元测试用的 {@link ContainerContext} 替身。
@@ -62,6 +63,8 @@ public class FakeContainerContext implements ContainerContext {
     /** 放入物品并返回 this，便于链式构建测试场景 */
     public FakeContainerContext set(int slot, ItemStack stack) {
         slots[slot] = stack;
+        // 模拟生产契约：物品变动必须使跨 tick 快照缓存失效
+        ContainerLivingItemHandler.bumpContainerRevision(this);
         return this;
     }
 
@@ -90,6 +93,8 @@ public class FakeContainerContext implements ContainerContext {
     public void setItem(int logicalSlot, ItemStack stack) {
         if (logicalSlot < 0 || logicalSlot >= slots.length) return;
         slots[logicalSlot] = stack;
+        // 模拟生产契约：物品变动必须使跨 tick 快照缓存失效
+        ContainerLivingItemHandler.bumpContainerRevision(this);
     }
 
     @Override
@@ -109,6 +114,9 @@ public class FakeContainerContext implements ContainerContext {
 
     @Override
     public void syncSlotToClients(int logicalSlot, ItemStack stack) {
+        // 模拟生产契约：DataComponent 状态变化（走 syncSlotToClients，而非 setItem）
+        // 同样必须使跨 tick 快照缓存失效
+        ContainerLivingItemHandler.bumpContainerRevision(this);
         syncedSlots.add(logicalSlot);
     }
 }

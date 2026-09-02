@@ -15,6 +15,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.ContainerLivingItemHandler;
+import com.qiqi.li.living.container.ContainerSnapshot;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.domain.hopper.CrossContainerTransfer;
 import com.qiqi.li.living.model.Pos2D;
@@ -41,26 +42,30 @@ public class ContainerRedstoneData {
     private static final int E_DOWN = EDGE_DOWN;
     private static final int E_LEFT = EDGE_LEFT;
     private static final int E_RIGHT = EDGE_RIGHT;
-    private static final int BIT_DUST = 1;
-    private static final int BIT_TORCH = 1 << 1;
-    private static final int BIT_BUTTON = 1 << 2;
-    private static final int BIT_LEVER = 1 << 3;
-    private static final int BIT_LAMP = 1 << 4;
-    private static final int BIT_REPEATER = 1 << 5;
-    private static final int BIT_COMPARATOR = 1 << 6;
-    private static final int BIT_BLOCK = 1 << 7;
-    private static final int BIT_COPPER = 1 << 8;
-    private static final int BIT_CHISELED = 1 << 9;
-    private static final int BIT_CUT = 1 << 10;
-    private static final int BIT_GRATE = 1 << 11;
-    private static final int BIT_BULB = 1 << 12;
+    static final int BIT_DUST = 1;
+    static final int BIT_TORCH = 1 << 1;
+    static final int BIT_BUTTON = 1 << 2;
+    static final int BIT_LEVER = 1 << 3;
+    static final int BIT_LAMP = 1 << 4;
+    static final int BIT_REPEATER = 1 << 5;
+    static final int BIT_COMPARATOR = 1 << 6;
+    static final int BIT_BLOCK = 1 << 7;
+    static final int BIT_COPPER = 1 << 8;
+    static final int BIT_CHISELED = 1 << 9;
+    static final int BIT_CUT = 1 << 10;
+    static final int BIT_GRATE = 1 << 11;
+    static final int BIT_BULB = 1 << 12;
 
     /** 所有红石元件（不含红石灯）——导电方块供电时需跳过这些槽位 */
     private static final int MASK_REDSTONE = BIT_DUST | BIT_TORCH | BIT_BUTTON
         | BIT_LEVER | BIT_REPEATER | BIT_COMPARATOR | BIT_BLOCK | BIT_COPPER;
 
-    /** 每个槽位的元件类型位图，每次 calculate 开头重建 */
+    /** 每个槽位的元件类型位图，每次 calculate 开头从快照重建 */
     private int[] slotMask = new int[0];
+
+    /** 本 tick 容器快照（位图与氧化等级来源），calculate 开头绑定 */
+    private ContainerSnapshot currentSnapshot;
+    private ContainerContext currentCtx;
 
     private EdgeGrid edgeGrid;
     private EdgeGrid prevEdgeGrid;
@@ -70,6 +75,19 @@ public class ContainerRedstoneData {
 
     private boolean processedThisTick;
     private long lastTickTime;
+
+    // ── 稳态跳过（steady-state skip）相关状态：跨 tick 持久 ──
+    // 物品修订计数与外部输入签名都不变、且无在途倒计时定时器时，本 tick 传播结果
+    // 与上一 tick 完全一致，可复用 edgeGrid 直接跳过整段 calculate，省去 BFS 等开销。
+    // 跳过是安全的：物品变更会 bump 修订计数（rev 变），邻居/原版红石变化会改变外部输入
+    // 签名；唯一不受这两者驱动的逐 tick 演化是中继器 delayTimer / 按钮 pulseTimer 倒计时，
+    // 故用 lastHadActiveTimers 作保险——只要有倒计时在跑就强制重算。
+    private boolean everCalculated = false;
+    private long lastRev = -1;
+    private int lastExternalSig = 0;
+    private boolean lastHadActiveTimers = false;
+    /** 稳态跳过次数（性能观测 / 测试可见） */
+    public int steadySkipCount = 0;
 
     public ContainerRedstoneData() {
         this.processedThisTick = false;
@@ -135,33 +153,24 @@ public class ContainerRedstoneData {
         prevEdgeGrid = edgeGrid;
         edgeGrid = temp;
         edgeGrid.zero();
-        java.util.Arrays.fill(faceInput, 0);
+        // 注意：faceInput 的清零已移入 injectExternalInputs（calculate 开头提前采样外部输入时用），
+        // 此处不再清零，避免提前采样得到的 faceInput 在传播前被冲掉。
     }
 
-    /** 重建槽位类型位图。每 tick 一次，之后所有类型判定走 O(1) 数组访问。 */
-    private void buildSlotMask(int size, Set<Integer> dustSlots, Set<Integer> torchSlots,
-            Set<Integer> buttonSlots, Set<Integer> leverSlots, Set<Integer> lampSlots,
-            Set<Integer> repeaterSlots, Set<Integer> comparatorSlots, Set<Integer> redstoneBlockSlots,
-            Set<Integer> copperSlots, Set<Integer> chiseledSlots, Set<Integer> cutSlots,
-            Set<Integer> grateSlots, Set<Integer> bulbSlots) {
+    /**
+     * 从容器快照重建槽位类型位图。物品未变更时快照被框架跨 tick 缓存，
+     * 本方法仅做 O(size) 的数组拷贝，不再每 tick 扫描物品。
+     */
+    private void buildSlotMask(ContainerSnapshot snap, int size) {
         if (slotMask.length != size) {
             slotMask = new int[size];
         } else {
             Arrays.fill(slotMask, 0);
         }
-        markSlots(dustSlots, BIT_DUST, size);
-        markSlots(torchSlots, BIT_TORCH, size);
-        markSlots(buttonSlots, BIT_BUTTON, size);
-        markSlots(leverSlots, BIT_LEVER, size);
-        markSlots(lampSlots, BIT_LAMP, size);
-        markSlots(repeaterSlots, BIT_REPEATER, size);
-        markSlots(comparatorSlots, BIT_COMPARATOR, size);
-        markSlots(redstoneBlockSlots, BIT_BLOCK, size);
-        markSlots(copperSlots, BIT_COPPER, size);
-        markSlots(chiseledSlots, BIT_CHISELED, size);
-        markSlots(cutSlots, BIT_CUT, size);
-        markSlots(grateSlots, BIT_GRATE, size);
-        markSlots(bulbSlots, BIT_BULB, size);
+        int[] mask = snap.getRedstoneMaskOf();
+        for (int s = 0; s < size && s < mask.length; s++) {
+            slotMask[s] = mask[s];
+        }
     }
 
     private void markSlots(Set<Integer> slots, int bit, int size) {
@@ -200,16 +209,24 @@ public class ContainerRedstoneData {
         if (slotIsCopper && neighborIsDust) return true;
 
         if (slotIsCopper && neighborIsCopper) {
-            return getOxidationLevel(slot, context) == getOxidationLevel(neighbor, context);
+            return getOxidationLevel(slot) == getOxidationLevel(neighbor);
         }
 
         return true;
     }
 
-    private int getOxidationLevel(int slot, ContainerContext context) {
-        ItemStack stack = context.getItem(slot);
-        if (stack.isEmpty()) return -1;
-        return LivingCopperFunction.getOxidationLevel(stack.getItem());
+    private int getOxidationLevel(int slot) {
+        // 优先读实时物品：氧化等级可能因天气等就地变化，经 syncSlotToClients 已 bump 修订计数；
+        // 直接读物品可绝对避免缓存滞后。快照 capOf 作为备用（亦供电力层稳态使用）。
+        if (currentCtx != null) {
+            ItemStack stack = currentCtx.getItem(slot);
+            if (!stack.isEmpty()) return LivingCopperFunction.getOxidationLevel(stack.getItem());
+        }
+        if (currentSnapshot != null && slot >= 0 && slot < currentSnapshot.getCapOf().length) {
+            int lvl = currentSnapshot.getCapOf(slot);
+            if (lvl >= 0) return lvl;
+        }
+        return -1;
     }
 
     public void calculate(ContainerContext context, TickContext tick) {
@@ -220,6 +237,27 @@ public class ContainerRedstoneData {
         int size = context.getSize();
         int width = context.getWidth();
         int height = (size + width - 1) / width;
+
+        // ── 稳态跳过判定（放最前，尽量早返回省开销）──
+        // 先采样外部输入（便宜：邻居世界信号 + 相邻活容器边界信号）算签名；
+        // 物品修订计数与外部签名都不变、且无在途倒计时定时器时，本 tick 传播结果与上 tick
+        // 完全一致，可直接复用 edgeGrid 跳过整段 calculate（含 BFS）。
+        // 安全性：物品变更会 bump 修订计数（rev 变），邻居/原版红石变化会改变外部输入签名；
+        // 唯一不受这两者驱动的逐 tick 演化是中继器 delayTimer / 按钮 pulseTimer 倒计时，
+        // 故用 lastHadActiveTimers 作保险——只要有倒计时在跑就强制重算，绝不冻结时序。
+        long rev = ContainerLivingItemHandler.getContainerRevision(context);
+        injectExternalInputs(context);
+        int externalSig = java.util.Arrays.hashCode(faceInput);
+
+        if (everCalculated && rev == lastRev && externalSig == lastExternalSig && !lastHadActiveTimers) {
+            steadySkipCount++;
+            return;
+        }
+
+        // 取（或构建）本 tick 容器快照；物品未变更时框架返回跨 tick 缓存的同一实例。
+        // 红电位图与铜氧化等级均来自快照，calculate 内不再扫描物品。
+        this.currentCtx = context;
+        this.currentSnapshot = tick.getSnapshot();
 
         Set<Integer> torchSlots = tick.getFunctionSlots(LivingRedstoneTorchFunction.ID);
         Set<Integer> dustSlots = tick.getFunctionSlots(LivingRedstoneFunction.ID);
@@ -244,6 +282,7 @@ public class ContainerRedstoneData {
             if (edgeGrid != null) edgeGrid.zero();
             computeFaceOutput(width, height);
             notifyBoundaryChange(context, width, height);
+            recordSteadyState(context, externalSig, false);
             return;
         }
 
@@ -251,17 +290,13 @@ public class ContainerRedstoneData {
         // 元件延迟（中继器 delayTimer、按钮 pulseTimer）统一以 game tick 计数，
         // 中继器充能时按 TICKS_PER_REPEATER_STEP 换算档位，保持原版红石刻语义。
 
-        Set<Integer> chiseledSlots = copperSubset(copperSlots, context, LivingCopperFunction::isChiseled);
-        Set<Integer> cutSlots = copperSubset(copperSlots, context, LivingCopperFunction::isCut);
         Set<Integer> grateSlots = copperSubset(copperSlots, context, LivingCopperFunction::isGrate);
         Set<Integer> bulbSlots = copperSubset(copperSlots, context, LivingCopperFunction::isBulb);
 
-        buildSlotMask(size, dustSlots, torchSlots, buttonSlots, leverSlots,
-            lampSlots, repeaterSlots, comparatorSlots, redstoneBlockSlots,
-            copperSlots, chiseledSlots, cutSlots, grateSlots, bulbSlots);
+        buildSlotMask(tick.getSnapshot(), size);
 
         reset();
-        injectExternalInputs(context);
+        // 外部输入已在方法开头（稳态判定前）采样，faceInput 此时已就绪，无需再调。
 
         phase0CountdownDelays(repeaterSlots, buttonSlots, size, width, context);
         Queue<Integer> queue = phase1CollectSources(torchSlots, buttonSlots, leverSlots,
@@ -276,6 +311,37 @@ public class ContainerRedstoneData {
         phase5UpdateDisplay(torchSlots, dustSlots, lampSlots, copperSlots, size, width, context);
         computeFaceOutput(width, height);
         notifyBoundaryChange(context, width, height);
+        recordSteadyState(context, externalSig, computeActiveTimers(repeaterSlots, buttonSlots, context));
+    }
+
+    /**
+     * 记录稳态判定所需的上一 tick 状态，供下次 calculate 决定是否跳过。
+     *
+     * <p>注意：lastRev 必须取<b>本次实算结束后</b>的修订计数，而非方法开头的采样值——
+     * 传播过程中 phase5/phase3 经 syncSlotToClients 会 bump 修订计数（生产契约：
+     * 就地变更走 syncSlotToClients(bump)），若记开头采样值会导致 lastRev 落后一拍，
+     * 下一拍开头采到的 rev 永远与之不等，稳态跳过几乎无法触发。</p>
+     */
+    private void recordSteadyState(ContainerContext context, int externalSig, boolean activeTimers) {
+        lastRev = ContainerLivingItemHandler.getContainerRevision(context);
+        lastExternalSig = externalSig;
+        lastHadActiveTimers = activeTimers;
+        everCalculated = true;
+    }
+
+    /** 本 tick 是否有在途倒计时定时器（中继器 delayTimer / 按钮 pulseTimer），需要强制重算以推进时序 */
+    private boolean computeActiveTimers(Set<Integer> repeaterSlots, Set<Integer> buttonSlots, ContainerContext context) {
+        for (int slot : repeaterSlots) {
+            ItemStack s = context.getItem(slot);
+            if (s.isEmpty()) continue;
+            if (LivingItemManager.getRepeaterData(s).delayTimer() > 0) return true;
+        }
+        for (int slot : buttonSlots) {
+            ItemStack s = context.getItem(slot);
+            if (s.isEmpty()) continue;
+            if (LivingItemManager.getButtonData(s).pulseTimer() > 0) return true;
+        }
+        return false;
     }
 
     private void phase0CountdownDelays(Set<Integer> repeaterSlots, Set<Integer> buttonSlots,
@@ -343,7 +409,7 @@ public class ContainerRedstoneData {
 
             for (int dir = 0; dir < 4; dir++) {
                 if (dir == skipDir) continue;
-                int neighbor = resolveSlot(slot, dir, size, width);
+                int neighbor = ContainerContext.resolveNeighbor(slot, dir, size, width);
                 if (cap > edgeGrid.get(slot, dir)) {
                     edgeGrid.set(slot, dir, cap);
                     if (is(neighbor, BIT_DUST | BIT_COPPER)) {
@@ -362,7 +428,7 @@ public class ContainerRedstoneData {
 
             int cap = getSignalCap(stack.getCount());
             for (int dir = 0; dir < 4; dir++) {
-                int neighbor = resolveSlot(slot, dir, size, width);
+                int neighbor = ContainerContext.resolveNeighbor(slot, dir, size, width);
                 if (cap > edgeGrid.get(slot, dir)) {
                     edgeGrid.set(slot, dir, cap);
                     if (is(neighbor, BIT_DUST | BIT_COPPER)) {
@@ -381,7 +447,7 @@ public class ContainerRedstoneData {
 
             int cap = getSignalCap(stack.getCount());
             for (int dir = 0; dir < 4; dir++) {
-                int neighbor = resolveSlot(slot, dir, size, width);
+                int neighbor = ContainerContext.resolveNeighbor(slot, dir, size, width);
                 if (cap > edgeGrid.get(slot, dir)) {
                     edgeGrid.set(slot, dir, cap);
                     if (is(neighbor, BIT_DUST | BIT_COPPER)) {
@@ -400,7 +466,7 @@ public class ContainerRedstoneData {
 
             int cap = getSignalCap(stack.getCount());
             int outDir = edgeIndex(data.direction());
-            int neighbor = resolveSlot(slot, outDir, size, width);
+            int neighbor = ContainerContext.resolveNeighbor(slot, outDir, size, width);
             if (cap > edgeGrid.get(slot, outDir)) {
                 edgeGrid.set(slot, outDir, cap);
                 if (is(neighbor, BIT_DUST | BIT_COPPER)) {
@@ -418,7 +484,7 @@ public class ContainerRedstoneData {
             if (output <= 0) continue;
 
             int outDir = edgeIndex(data.direction());
-            int neighbor = resolveSlot(slot, outDir, size, width);
+            int neighbor = ContainerContext.resolveNeighbor(slot, outDir, size, width);
             if (output > edgeGrid.get(slot, outDir)) {
                 edgeGrid.set(slot, outDir, output);
                 if (is(neighbor, BIT_DUST | BIT_COPPER)) {
@@ -434,7 +500,7 @@ public class ContainerRedstoneData {
 
             int cap = getSignalCap(stack.getCount());
             for (int dir = 0; dir < 4; dir++) {
-                int neighbor = resolveSlot(slot, dir, size, width);
+                int neighbor = ContainerContext.resolveNeighbor(slot, dir, size, width);
                 if (cap > edgeGrid.get(slot, dir)) {
                     edgeGrid.set(slot, dir, cap);
                     if (is(neighbor, BIT_DUST | BIT_COPPER)) {
@@ -452,10 +518,10 @@ public class ContainerRedstoneData {
             if (data.sumSignal() <= 0) continue;
 
             for (int dir = 0; dir < 4; dir++) {
-                int neighbor = resolveSlot(slot, dir, size, width);
+                int neighbor = ContainerContext.resolveNeighbor(slot, dir, size, width);
                 if (neighbor < 0 || neighbor >= size) continue;
                 if (!is(neighbor, BIT_COPPER)) continue;
-                if (getOxidationLevel(slot, context) != getOxidationLevel(neighbor, context)) continue;
+                if (getOxidationLevel(slot) != getOxidationLevel(neighbor)) continue;
 
                 if (data.sumSignal() > edgeGrid.get(slot, dir)) {
                     edgeGrid.set(slot, dir, data.sumSignal());
@@ -482,7 +548,7 @@ public class ContainerRedstoneData {
                 int output = Math.min(maxInput - 1, getSignalCap(stack.getCount()));
 
                 for (int dir = 0; dir < 4; dir++) {
-                    int neighbor = resolveSlot(current, dir, size, width);
+                    int neighbor = ContainerContext.resolveNeighbor(current, dir, size, width);
                     int currentEdge = edgeGrid.get(current, dir);
                     if (output <= currentEdge) continue;
                     edgeGrid.set(current, dir, output);
@@ -542,7 +608,7 @@ public class ContainerRedstoneData {
 
     private void propagateDir(int slot, int dir, int signal, int size, int width,
             ContainerContext context, Queue<Integer> queue) {
-        int neighbor = resolveSlot(slot, dir, size, width);
+        int neighbor = ContainerContext.resolveNeighbor(slot, dir, size, width);
         if (neighbor < 0) return;
         if (is(neighbor, BIT_GRATE)) return;
         if (!canConnect(slot, neighbor, size, width, context)) return;
@@ -617,7 +683,7 @@ public class ContainerRedstoneData {
 
             int sum = 0;
             for (int dir = 0; dir < 4; dir++) {
-                int neighbor = resolveSlot(slot, dir, size, width);
+                int neighbor = ContainerContext.resolveNeighbor(slot, dir, size, width);
                 if (neighbor >= 0 && neighbor < size && is(neighbor, BIT_COPPER)) continue;
                 sum += inputAt(slot, dir, size, width);
             }
@@ -809,7 +875,7 @@ public class ContainerRedstoneData {
 
     private void powerConductiveNeighbor(int slot, int signal, int dir,
             int size, int width, ContainerContext context, Queue<Integer> secondQueue) {
-        int neighbor = resolveSlot(slot, dir, size, width);
+        int neighbor = ContainerContext.resolveNeighbor(slot, dir, size, width);
         if (neighbor < 0) return;
         // 不向其它红石「元件」直接写输出边——元件自行从其输入算输出；
         // 导体（dust / copper）与红石导体方块则应被充能并继续传播。
@@ -825,7 +891,7 @@ public class ContainerRedstoneData {
         for (int d2 = 0; d2 < 4; d2++) {
             if (signal > edgeGrid.get(neighbor, d2)) {
                 edgeGrid.set(neighbor, d2, signal);
-                int n2 = resolveSlot(neighbor, d2, size, width);
+                int n2 = ContainerContext.resolveNeighbor(neighbor, d2, size, width);
                 if (n2 >= 0 && is(n2, BIT_DUST | BIT_COPPER)) {
                     secondQueue.add(n2);
                 }
@@ -834,6 +900,10 @@ public class ContainerRedstoneData {
     }
 
     private void injectExternalInputs(ContainerContext context) {
+        // 每次采样前清零：faceInput 为「本 tick 外部输入」的临时累积，必须在填充前清空，
+        // 否则会带着上一 tick 的残留值（calculate 开头已提前调用一次用于稳态判定）。
+        java.util.Arrays.fill(faceInput, 0);
+
         Level level = context.getLevel();
         if (level == null) return;
 
@@ -880,7 +950,7 @@ public class ContainerRedstoneData {
         int[] perpDirs = isVertical ? new int[]{E_LEFT, E_RIGHT} : new int[]{E_UP, E_DOWN};
 
         for (int perpDir : perpDirs) {
-            int neighbor = resolveSlot(slot, perpDir, size, width);
+            int neighbor = ContainerContext.resolveNeighbor(slot, perpDir, size, width);
             if (is(neighbor, BIT_REPEATER)) {
                 ItemStack neighborStack = context.getItem(neighbor);
                 if (!neighborStack.isEmpty()) {
@@ -1013,7 +1083,7 @@ public class ContainerRedstoneData {
     private byte computeDustConnections(int slot, int size, int width, ContainerContext context) {
         byte conn = 0;
         for (int dir = 0; dir < 4; dir++) {
-            int neighbor = resolveSlot(slot, dir, size, width);
+            int neighbor = ContainerContext.resolveNeighbor(slot, dir, size, width);
             if (neighbor < 0) continue;
 
             if (is(neighbor, BIT_REPEATER | BIT_COMPARATOR)) {
@@ -1060,7 +1130,7 @@ public class ContainerRedstoneData {
      * 取 {@code faceInput[dir]}。</p>
      */
     private int inputAt(int slot, int dir, int size, int width) {
-        int neighbor = resolveSlot(slot, dir, size, width);
+        int neighbor = ContainerContext.resolveNeighbor(slot, dir, size, width);
         if (neighbor < 0) return faceInput[dir];
         return edgeGrid.get(neighbor, oppositeDir(dir));
     }
@@ -1101,7 +1171,7 @@ public class ContainerRedstoneData {
         int signalCap = getSignalCap(comparatorStack.getCount());
 
         if (signalA == 0) {
-            int backSlot = resolveSlot(slot, inputDir, size, width);
+            int backSlot = ContainerContext.resolveNeighbor(slot, inputDir, size, width);
             if (backSlot >= 0) {
                 ItemStack backStack = context.getItem(backSlot);
                 signalA = LivingComparatorFunction.readComparatorOutput(backStack, signalCap);
@@ -1115,7 +1185,7 @@ public class ContainerRedstoneData {
             if (edgeSignal > 0) {
                 signalB = Math.max(signalB, edgeSignal);
             } else {
-                int sideSlot = resolveSlot(slot, sideDir, size, width);
+                int sideSlot = ContainerContext.resolveNeighbor(slot, sideDir, size, width);
                 if (sideSlot >= 0) {
                     ItemStack sideStack = context.getItem(sideSlot);
                     int sideOutput = LivingComparatorFunction.readComparatorOutput(sideStack, signalCap);
@@ -1140,24 +1210,6 @@ public class ContainerRedstoneData {
         } else {
             return new int[] {E_UP, E_DOWN};
         }
-    }
-
-    /** 解析网格相邻槽位（0=UP 1=DOWN 2=LEFT 3=RIGHT），越界/换行返回 -1。供电力层耦合邻接使用 */
-    public static int resolveSlot(int slot, int dir, int size, int width) {
-        int col = slot % width;
-        int row = slot / width;
-        int newCol = col;
-        int newRow = row;
-        switch (dir) {
-            case E_UP:    newRow = row - 1; break;
-            case E_DOWN:  newRow = row + 1; break;
-            case E_LEFT:  newCol = col - 1; break;
-            case E_RIGHT: newCol = col + 1; break;
-            default: return -1;
-        }
-        if (newCol < 0 || newCol >= width || newRow < 0) return -1;
-        int result = newRow * width + newCol;
-        return result < size ? result : -1;
     }
 
     private static int edgeIndex(Pos2D dir) {

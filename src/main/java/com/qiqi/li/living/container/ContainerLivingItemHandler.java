@@ -68,6 +68,17 @@ public class ContainerLivingItemHandler {
      */
     private static final Map<PosKey, String> POS_TO_CACHE_KEY = new HashMap<>();
 
+    /**
+     * 容器修订计数 —— 物品内容（含 DataComponent 变更）自增，跨 tick 持久。
+     * 框架据此判断容器快照是否需重建：修订不变则直接复用跨 tick 缓存的快照。
+     */
+    private static final Map<String, Long> CONTAINER_REVISION = new HashMap<>();
+
+    /** 容器快照跨 tick 缓存：key=缓存键，value=构建时的修订计数 + 不可变快照。 */
+    private static final Map<String, CachedSnapshot> SNAPSHOT_CACHE = new HashMap<>();
+
+    private record CachedSnapshot(long revision, ContainerSnapshot snapshot) {}
+
     private static final int CLEANUP_INTERVAL = 1200;
     private static int cleanupCounter;
 
@@ -87,7 +98,7 @@ public class ContainerLivingItemHandler {
         String key = ctx.getContainerKey();
         if (key == null) return null;
         Level level = ctx.getLevel();
-        if (level == null) return key;
+        if (level == null || level.dimension() == null) return key;
         return level.dimension().location() + "|" + key;
     }
 
@@ -96,6 +107,7 @@ public class ContainerLivingItemHandler {
         Level level = ctx.getLevel();
         if (level == null) return;
         ResourceKey<Level> dim = level.dimension();
+        if (dim == null) return; // 无维度信息（如单元测试 mock）时跳过位置索引
         for (BlockPos pos : ctx.getAssociatedBlockPositions()) {
             POS_TO_CACHE_KEY.put(new PosKey(dim, pos.immutable()), cacheKey);
         }
@@ -199,6 +211,43 @@ public class ContainerLivingItemHandler {
     }
 
     /**
+     * 读取容器当前修订计数（物品内容版本号）。无 containerKey 的上下文返回 0。
+     */
+    public static long getContainerRevision(ContainerContext ctx) {
+        String key = cacheKey(ctx);
+        if (key == null) return 0L;
+        return CONTAINER_REVISION.getOrDefault(key, 0L);
+    }
+
+    /**
+     * 自增容器修订计数。物品被 {@code setItem} 替换、或经 {@code syncSlotToClients}
+     * 就地修改 DataComponent（方向配置、状态等）后调用，使快照缓存失效。
+     */
+    public static void bumpContainerRevision(ContainerContext ctx) {
+        String key = cacheKey(ctx);
+        if (key == null) return;
+        CONTAINER_REVISION.merge(key, 1L, Long::sum);
+    }
+
+    /**
+     * 取（或构建并缓存）容器快照。仅当修订计数相对上次构建发生变化时才重建，
+     * 否则复用跨 tick 缓存的同一快照，避免每个 tick 重复扫描全部物品。
+     *
+     * <p>快照内的流体数据持有跨 tick 持久对象引用，其字段被就地更新，
+     * 因此即便快照按修订计数缓存，流体状态仍反映当前值。</p>
+     */
+    public static ContainerSnapshot getCachedSnapshot(ContainerContext ctx, long revision,
+                                                      ContainerFluidData fluidData, TickContext tick) {
+        String key = cacheKey(ctx);
+        if (key == null) return ContainerSnapshot.capture(ctx, tick, fluidData);
+        CachedSnapshot cached = SNAPSHOT_CACHE.get(key);
+        if (cached != null && cached.revision() == revision) return cached.snapshot();
+        ContainerSnapshot snap = ContainerSnapshot.capture(ctx, tick, fluidData);
+        SNAPSHOT_CACHE.put(key, new CachedSnapshot(revision, snap));
+        return snap;
+    }
+
+    /**
      * 清理过期的红石数据（超过 STALE_THRESHOLD 毫秒未访问的条目）。
      */
     private static void cleanupStaleRedstoneData(long currentTimeMs) {
@@ -218,9 +267,15 @@ public class ContainerLivingItemHandler {
         });
     }
 
-    /** 清理已失去主缓存条目的位置索引 */
+    /** 清理已失去主缓存条目的位置索引，并回收其快照/修订计数（随数据缓存生命周期） */
     private static void cleanupStalePosIndex() {
         POS_TO_CACHE_KEY.values().removeIf(
+            key -> !FLUID_DATA_CACHE.containsKey(key) && !REDSTONE_DATA_CACHE.containsKey(key)
+                && !POWER_DATA_CACHE.containsKey(key));
+        SNAPSHOT_CACHE.keySet().removeIf(
+            key -> !FLUID_DATA_CACHE.containsKey(key) && !REDSTONE_DATA_CACHE.containsKey(key)
+                && !POWER_DATA_CACHE.containsKey(key));
+        CONTAINER_REVISION.keySet().removeIf(
             key -> !FLUID_DATA_CACHE.containsKey(key) && !REDSTONE_DATA_CACHE.containsKey(key)
                 && !POWER_DATA_CACHE.containsKey(key));
     }
@@ -231,6 +286,8 @@ public class ContainerLivingItemHandler {
         REDSTONE_DATA_CACHE.clear();
         POWER_DATA_CACHE.clear();
         POS_TO_CACHE_KEY.clear();
+        CONTAINER_REVISION.clear();
+        SNAPSHOT_CACHE.clear();
         LivingWaterBucketFunction.clearAllCaches();
         cleanupCounter = 0;
     }

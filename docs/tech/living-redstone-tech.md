@@ -1552,6 +1552,39 @@ ContainerLivingItemHandler.processContext()
   → 世界邻居收到更新，重新读取信号 → 0 ✓
 ```
 
+### 8.5 稳态跳过优化（性能）
+
+**背景**：红电系统里绝大多数 tick 都是稳态——开关电路点亮后长时间不变。原实现每 tick 无脑跑完整六阶段传播（phase0 倒计时 → phase1 收集源 → phase2 BFS → phase4 充能 → phase3 重检 → phase5 显示），即使容器内红石物品与外部输入都毫无变化也照算。这是红电最大的常驻 CPU 开销，多容器各自 20Hz tick 时积少成多。
+
+**机制（纯性能优化，语义不变）**：`calculate()` 开头采样三个状态，三者**同时成立**就早退跳过整段传播、直接复用上一拍算好的 `edgeGrid`，信号与逐 tick 重算完全一致：
+
+```
+每 tick 开头采样 →
+  ① 物品修订计数不变   rev == lastRev
+  ② 外部输入签名不变   externalSig == lastExternalSig（Arrays.hashCode(faceInput)）
+  ③ 无在途倒计时       !lastHadActiveTimers（中继器 delayTimer / 按钮 pulseTimer 在跑则为 true）
+  ├─ 三道闸门全成立 → 跳过：复用 edgeGrid，steadySkipCount++
+  └─ 任一不成立     → 照常重算（不跳过）
+```
+
+- `externalSig` 来自 `faceInput`（含原版世界信号 + 相邻活容器 `getBoundarySignal`），`faceInput` 清零已移入 `injectExternalInputs` 开头，以便提前采样。
+- 跳过分支**不调 `syncSlotToClients`**，故 `rev` 稳定，进入稳态后可连续多拍一直跳过、无抖动。
+- 出口经 `recordSteadyState` 持久化 `lastRev / lastExternalSig / lastHadActiveTimers / everCalculated`（跨 tick 字段，挂在 `ContainerRedstoneData` 实例上）。
+
+**为什么安全（不会冻结变化的电路）**：
+- 物品内容变更走 `setItem`/`syncSlotToClients` 必 bump 修订计数 → 第 ① 道闸打破 → 当拍强制重算。
+- 邻居红石或原版世界信号变化 → `faceInput` 变化 → `externalSig` 变化 → 第 ② 道闸打破。
+- 唯一不受前两者驱动的逐 tick 演化是定时器倒计时（中继器/按钮），由第 ③ 道闸 `lastHadActiveTimers` 兜底——倒计时在跑时本拍必重算，绝不冻结时序；归零进入稳态后才允许跳过。
+
+**代价与风险（用复杂度换常驻性能）**：
+- 多 5 个跨 tick 状态字段（`everCalculated / lastRev / lastExternalSig / lastHadActiveTimers / steadySkipCount`），bug 面更大。
+- **rev-bump 坑（已实现并修复）**：`recordSteadyState` 最初记录方法开头采样的 `rev`，但传播过程中 phase5/phase3 经 `syncSlotToClients` 会 bump 修订计数，导致 `lastRev` 落后一拍、下一拍开头采到的 `rev` 永远与之不等，稳态跳过几乎无法触发。修复为在重算出口**重采样重算后的** `getContainerRevision(context)`，与下一拍开头采样对齐。这是典型的"差一拍"隐蔽 bug。
+- **调试不透明**：稳态时 `calculate` 主体不执行，内部日志/断点不触发，排"为什么信号没更新"时易误判。
+- **只对稳态有效**：电路活跃变化期间几乎从不触发，收益完全集中在静止电路（常驻省电，非"让复杂电路变快"）。
+- **极端残留风险**：`externalSig` 用 `Arrays.hashCode` 比对，理论哈希碰撞会误跳一拍显示陈旧信号，概率极低且下一拍输入再变即自愈。
+
+**验证**：`ContainerRedstoneDataTest` 新增 `steadyState_skipsWhenUnchanged`（物品不变连跳 2 tick、移除末端 rev 变强制重算）、`steadyState_noSkipWhileRepeaterCountingDown`（倒计时期间恒 0 跳过、归零后稳态才跳 1）；全量测试 135 例 0 失败。
+
 ---
 
 ## 9. 实施状态

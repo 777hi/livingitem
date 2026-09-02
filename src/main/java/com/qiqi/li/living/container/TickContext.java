@@ -55,12 +55,13 @@ public class TickContext {
     }
 
     /**
-     * 获取容器快照（延迟构建）。
-     * 仅在首次访问时调用 {@link ContainerSnapshot#capture}，避免对闲置容器产生开销。
+     * 获取容器快照（延迟构建 + 跨 tick 缓存）。
+     * 仅当容器修订计数相对上次构建变化时才重建，否则复用缓存的同一快照。
      */
     public ContainerSnapshot getSnapshot() {
         if (!snapshotBuilt) {
-            _snapshot = ContainerSnapshot.capture(ctx, fluidData);
+            long rev = ContainerLivingItemHandler.getContainerRevision(ctx);
+            _snapshot = ContainerLivingItemHandler.getCachedSnapshot(ctx, rev, fluidData, this);
             snapshotBuilt = true;
         }
         return _snapshot;

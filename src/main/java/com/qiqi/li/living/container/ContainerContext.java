@@ -32,6 +32,36 @@ public interface ContainerContext extends SlotInfoProvider, ContainerSync, Conta
         return logicalSlot >= 0 && logicalSlot < getSize();
     }
 
+    /** 方向编码：与红电 EDGE_* 一致（0=上 1=下 2=左 3=右） */
+    int E_UP = 0;
+    int E_DOWN = 1;
+    int E_LEFT = 2;
+    int E_RIGHT = 3;
+
+    /**
+     * 解析网格相邻槽位（dir 取 {@link #E_UP}/{@link #E_DOWN}/{@link #E_LEFT}/{@link #E_RIGHT}），
+     * 越界或换行返回 -1。
+     *
+     * <p>非分配版本，供热路径（红电逐方向传播、流体逐方向扩散）按方向调用，
+     * 替代原先各 domain 自行实现的同义解析器（如红电私有的 resolveSlot），统一到框架层。</p>
+     */
+    static int resolveNeighbor(int slot, int dir, int size, int width) {
+        int col = slot % width;
+        int row = slot / width;
+        int newCol = col;
+        int newRow = row;
+        switch (dir) {
+            case E_UP:    newRow = row - 1; break;
+            case E_DOWN:  newRow = row + 1; break;
+            case E_LEFT:  newCol = col - 1; break;
+            case E_RIGHT: newCol = col + 1; break;
+            default: return -1;
+        }
+        if (newCol < 0 || newCol >= width || newRow < 0) return -1;
+        int result = newRow * width + newCol;
+        return result < size ? result : -1;
+    }
+
     static int[] getNeighbors(int slot, int containerSize, int width) {
         int count = 0;
         boolean left = slot % width > 0;
@@ -46,10 +76,10 @@ public interface ContainerContext extends SlotInfoProvider, ContainerSync, Conta
 
         int[] result = new int[count];
         int i = 0;
-        if (left) result[i++] = slot - 1;
-        if (right) result[i++] = slot + 1;
-        if (up) result[i++] = slot - width;
-        if (down) result[i++] = slot + width;
+        if (left) result[i++] = resolveNeighbor(slot, E_LEFT, containerSize, width);
+        if (right) result[i++] = resolveNeighbor(slot, E_RIGHT, containerSize, width);
+        if (up) result[i++] = resolveNeighbor(slot, E_UP, containerSize, width);
+        if (down) result[i++] = resolveNeighbor(slot, E_DOWN, containerSize, width);
         return result;
     }
 
