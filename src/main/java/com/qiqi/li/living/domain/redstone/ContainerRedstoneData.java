@@ -126,6 +126,30 @@ public class ContainerRedstoneData {
         return prevEdgeGrid == null ? 0 : prevEdgeGrid.get(slot, dir);
     }
 
+    // ── 测试专用 seam：直接注入边信号，绕过完整传播 ──
+    // 供电力层单测（NetworkTraversalTest）构造振荡器上升沿，直接驱动
+    // LivingWaxedCopperFunction.tickContainerData 以验证「按网络组件遍历」重构。
+    // 默认网格 9×1（与 size=9 的测试容器匹配）；若 edgeGrid 已被真实传播创建则沿用其尺寸。
+
+    /** 测试专用：写入某槽某方向的当前 tick 边信号 */
+    public void setEdgeForTest(int slot, int dir, int value) {
+        ensureTestGrid();
+        edgeGrid.set(slot, dir, value);
+    }
+
+    /** 测试专用：写入某槽某方向的上一 tick 边信号（用于制造上升沿 delta>0） */
+    public void setPrevEdgeForTest(int slot, int dir, int value) {
+        ensureTestGrid();
+        prevEdgeGrid.set(slot, dir, value);
+    }
+
+    private void ensureTestGrid() {
+        if (edgeGrid == null) {
+            edgeGrid = new EdgeGrid(9, 1);
+            prevEdgeGrid = new EdgeGrid(9, 1);
+        }
+    }
+
     public int getSignal(int slot) {
         if (edgeGrid == null) return 0;
         return edgeGrid.maxOfSlot(slot);

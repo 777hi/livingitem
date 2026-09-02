@@ -169,6 +169,24 @@ public class ChannelState {
         }
     }
 
+    /** 深拷贝另一通道的全部相位域与最近事件缓存（供同组件发电机共享历史） */
+    public void copyFrom(ChannelState other) {
+        domains.clear();
+        for (var e : other.domains.entrySet()) {
+            PhaseDomain src = e.getValue();
+            PhaseDomain dst = new PhaseDomain(src.period);
+            for (var o : src.offsets.entrySet()) {
+                dst.offsets.put(o.getKey(), new OffsetState(o.getValue().lastSeenTick, o.getValue().maxDelta));
+            }
+            dst.lastEventTick = src.lastEventTick;
+            domains.put(e.getKey(), dst);
+        }
+        lastEventPeriod = other.lastEventPeriod;
+        lastEventN = other.lastEventN;
+        lastEventDelta = other.lastEventDelta;
+        lastEventTick = other.lastEventTick;
+    }
+
     /** 全部域只读视图（F3+H 显示用） */
     public Map<Integer, PhaseDomain> domains() {
         return Collections.unmodifiableMap(domains);

@@ -1,13 +1,11 @@
 package com.qiqi.li.living.domain.power;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Queue;
-import java.util.Set;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.Item;
@@ -40,6 +38,10 @@ import com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.DomainSnapshot;
 public class LivingWaxedCopperFunction implements LivingItemFunction, HasContainerData, HasDirection {
 
     public static final String ID = "living_waxed_copper";
+
+    /** BFS 方向偏移：EDGE_UP/DOWN/LEFT/RIGHT 对应的 (行,列) 增量 */
+    private static final int[] DIR_ROW = {-1, 1, 0, 0};
+    private static final int[] DIR_COL = {0, 0, -1, 1};
 
     @Override
     public boolean canApply(ItemStack stack) {
@@ -101,56 +103,54 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             return;
         }
 
-        // ── 铜块网络传播：每台发电机 BFS 遍历同氧化等级铜块网络 ──
-        // 边信号跟踪器持久化在 ContainerPowerData 中（跨 tick 跟踪周期）
-        // 形态决定 BFS 拓扑（§3.4 感应拓扑）：
-        //   铜块/格栅：全向 4 方向，单通道
-        //   雕文：仅输入方向检测 + 仅输出方向传播，单通道
-        //   切制：水平/垂直各一次 BFS，独立双通道，能量相加
+        // ── 铜块网络传播：按网络组件遍历，而非逐发电机 ──
+        // 同氧化等级连通块内的多台发电机共享同一张边集，逐发电机各跑一次 BFS 是 G 倍冗余。
+        // 改为：每台发电机按形态归入 (TopoKey, rep, channelIdx) 组件，每组件仅锚点跑一次
+        // runBfs，其余发电机 copyFrom 锚点的 ChannelState（相位历史随之同步，O(域) 极廉价）。
+        // accountEnergy 仍逐发电机调用，用各自 pref 读共享域 —— 逐发电机 pref 敏感保留。
+
+        // 每 tick 每 TopoKey 建一次组件 rep 表（≤54 槽，O(N) 可忽略）
+        Map<TopoKey, int[]> repCache = new HashMap<>();
+        // 组件标识 → 该组件内的发电机槽位列表
+        Map<ComponentId, List<Integer>> groups = new LinkedHashMap<>();
 
         for (var e : active.entrySet()) {
             int genSlot = e.getKey();
-            GeneratorState gen = e.getValue();
-            int pref = gen.preferredPeriod();
+            ItemStack genStack = ctx.getItem(genSlot);
+            for (ChannelSpec spec : topoKeysFor(genStack)) {
+                int rep = repOf(spec.topo(), genSlot, repCache, ctx, size, containerWidth);
+                groups.computeIfAbsent(new ComponentId(spec.topo(), rep, spec.channelIdx()),
+                    k -> new ArrayList<>()).add(genSlot);
+            }
+        }
 
+        // 每组件只算一次：锚点 BFS + tickCleanup(maxPref)，其余 copyFrom
+        for (var en : groups.entrySet()) {
+            ComponentId cid = en.getKey();
+            List<Integer> members = en.getValue();
+            int anchorSlot = members.get(0);
+            GeneratorState anchor = active.get(anchorSlot);
+            ChannelState shared = anchor.channel(cid.channelIdx());
+            int maxPref = 0;
+            for (int s : members) maxPref = Math.max(maxPref, active.get(s).preferredPeriod());
+
+            runBfs(anchorSlot, cid.topo(), shared, anchor.preferredPeriod(),
+                powerData, redstone, ctx, size, containerWidth, now);
+            shared.tickCleanup(now, maxPref);
+            for (int i = 1; i < members.size(); i++) {
+                active.get(members.get(i)).channel(cid.channelIdx()).copyFrom(shared);
+            }
+        }
+
+        // 逐发电机结算能量（用各自 pref 读共享/复制后的 ChannelState）
+        for (var e : active.entrySet()) {
+            int genSlot = e.getKey();
+            GeneratorState gen = e.getValue();
             ItemStack genStack = ctx.getItem(genSlot);
             int genOxidation = getOxidationLevel(genStack.getItem());
-            int coilForm = getCoilForm(genStack.getItem());
-
-            switch (coilForm) {
-                case LivingWaxedGeneratorData.FORM_CHISELED -> {
-                    // 雕文：定向 BFS，单通道（主通道 channel(0)）
-                    var chiseledData = LivingItemManager.getWaxedChiseledData(genStack);
-                    Pos2D inputDir = chiseledData.inputDir();
-                    Pos2D outputDir = chiseledData.outputDir();
-                    ChannelState ch = gen.channel(0);
-                    runBfs(genSlot, genOxidation, ch, pref, powerData, redstone,
-                        ctx, size, containerWidth, now, pos2dToEdgeDir(inputDir), outputDir, -1);
-                    ch.tickCleanup(now, pref);
-                    accountEnergy(gen, ch, pref, powerData, baseReByOx, genOxidation);
-                }
-                case LivingWaxedGeneratorData.FORM_CUT -> {
-                    // 切制：双轴独立 BFS，水平→channel(0)，垂直→channel(1)
-                    ChannelState chH = gen.channel(0);
-                    runBfs(genSlot, genOxidation, chH, pref, powerData, redstone,
-                        ctx, size, containerWidth, now, -1, null, 0); // 仅水平
-                    chH.tickCleanup(now, pref);
-                    accountEnergy(gen, chH, pref, powerData, baseReByOx, genOxidation);
-
-                    ChannelState chV = gen.channel(1);
-                    runBfs(genSlot, genOxidation, chV, pref, powerData, redstone,
-                        ctx, size, containerWidth, now, -1, null, 1); // 仅垂直
-                    chV.tickCleanup(now, pref);
-                    accountEnergy(gen, chV, pref, powerData, baseReByOx, genOxidation);
-                }
-                default -> {
-                    // 铜块 / 格栅：全向 BFS，单通道（主通道 channel(0)）
-                    ChannelState ch = gen.channel(0);
-                    runBfs(genSlot, genOxidation, ch, pref, powerData, redstone,
-                        ctx, size, containerWidth, now, -1, null, -1);
-                    ch.tickCleanup(now, pref);
-                    accountEnergy(gen, ch, pref, powerData, baseReByOx, genOxidation);
-                }
+            for (ChannelSpec spec : topoKeysFor(genStack)) {
+                accountEnergy(gen, gen.channel(spec.channelIdx()), gen.preferredPeriod(),
+                    powerData, baseReByOx, genOxidation);
             }
         }
 
@@ -216,42 +216,39 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
     }
 
     /**
-     * 单次 BFS：从发电机槽位出发，遍历同氧化等级铜块网络，
+     * 单次 BFS：从发电机槽位出发，遍历同氧化等级铜块网络（拓扑由 {@code topo} 决定），
      * 检测边信号上升沿并注入到 {@code channel}。
      *
-     * @param genSlot        发电机所在槽位
-     * @param genOxidation   发电机氧化等级（限制网络连通性）
-     * @param channel        目标通道
-     * @param pref           偏好周期
-     * @param powerData      容器电力数据（持久化 tracker）
-     * @param redstone       红石数据（边信号双缓冲）
-     * @param ctx            容器上下文
-     * @param size           容器总槽位数
+     * @param genSlot  发电机所在槽位（作为 BFS 起点；同组件任意槽位可达性相同）
+     * @param topo     连通拓扑键（氧化级 + 形态 + 轴/方向过滤）
+     * @param channel  目标通道
+     * @param pref     偏好周期（onPhaseEvent 实际忽略 pref，域仅按 period 分桶）
+     * @param powerData 容器电力数据（持久化 tracker）
+     * @param redstone 红石数据（边信号双缓冲）
+     * @param ctx      容器上下文
+     * @param size     容器总槽位数
      * @param containerWidth 容器宽度（列数）
-     * @param now            当前 tick
-     * @param edgeDirFilter  仅检测该方向的边（-1=全部方向）；雕文用
-     * @param expandDirFilter 仅扩展到该 Pos2D 方向（null=全部方向）；雕文用
-     * @param axisFilter     限制扩展轴（-1=全部，0=仅水平，1=仅垂直）；切制用
+     * @param now      当前 tick
      */
     private static void runBfs(
-            int genSlot, int genOxidation, ChannelState channel, int pref,
+            int genSlot, TopoKey topo, ChannelState channel, int pref,
             ContainerPowerData powerData, ContainerRedstoneData redstone,
-            ContainerContext ctx, int size, int containerWidth, long now,
-            int edgeDirFilter, Pos2D expandDirFilter, int axisFilter) {
+            ContainerContext ctx, int size, int containerWidth, long now) {
 
-        Set<Integer> visited = new HashSet<>();
-        Queue<Integer> queue = new LinkedList<>();
-        queue.add(genSlot);
-        visited.add(genSlot);
+        boolean[] visited = new boolean[size];
+        int[] queue = new int[size];
+        int head = 0, tail = 0;
+        queue[tail++] = genSlot;
+        visited[genSlot] = true;
 
-        while (!queue.isEmpty()) {
-            int current = queue.poll();
+        while (head < tail) {
+            int current = queue[head++];
             int row = current / containerWidth;
             int col = current % containerWidth;
 
-            // 检查该槽位的边信号（可受方向过滤）
+            // 检查该槽位的边信号（雕文仅检测输入方向）
             for (int dir = 0; dir < ContainerRedstoneData.EDGE_COUNT; dir++) {
-                if (edgeDirFilter >= 0 && dir != edgeDirFilter) continue;
+                if (topo.inEdge() >= 0 && dir != topo.inEdge()) continue;
                 int signal = redstone.getEdgeValue(current, dir);
                 int prevSignal = redstone.getPrevEdgeValue(current, dir);
                 if (signal == prevSignal) continue;
@@ -269,37 +266,105 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
                 }
             }
 
-            // 遍历四个方向找同氧化等级的铜块邻居
-            // dirs: {row, col} → up, down, left, right
-            int[][] dirs = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
-            for (int[] d : dirs) {
-                // 轴过滤：切制水平/垂直隔离
-                // axisFilter=0（水平轴）：只允许列变化（左右），d[1] != 0
-                // axisFilter=1（垂直轴）：只允许行变化（上下），d[0] != 0
-                if (axisFilter == 0 && d[1] == 0) continue;
-                if (axisFilter == 1 && d[0] == 0) continue;
-                // 方向过滤：雕文只向输出方向扩展
-                if (expandDirFilter != null) {
-                    int dr = d[0] - expandDirFilter.y(); // row 方向
-                    int dc = d[1] - expandDirFilter.x(); // col 方向
-                    if (dr != 0 || dc != 0) continue;
-                }
-                int nr = row + d[0];
-                int nc = col + d[1];
-                if (nr < 0 || nc < 0 || nc >= containerWidth) continue;
-                int neighbor = nr * containerWidth + nc;
-                if (neighbor < 0 || neighbor >= size) continue;
-                if (visited.contains(neighbor)) continue;
-                ItemStack neighborStack = ctx.getItem(neighbor);
-                if (neighborStack.isEmpty()) continue;
-                if (!isWaxedCopperBlock(neighborStack.getItem())) continue;
-                if (isWaxedBulb(neighborStack.getItem())) continue; // 铜灯不导电
-                if (getOxidationLevel(neighborStack.getItem()) != genOxidation) continue;
-                visited.add(neighbor);
-                queue.add(neighbor);
+            // 遍历四方向找同氧化等级的铜块邻居（拓扑由 topo 决定）
+            for (int dir = 0; dir < ContainerRedstoneData.EDGE_COUNT; dir++) {
+                int neighbor = traversableNeighbor(ctx, size, containerWidth, current, dir, topo);
+                if (neighbor < 0) continue;
+                if (visited[neighbor]) continue;
+                visited[neighbor] = true;
+                queue[tail++] = neighbor;
             }
         }
     }
+
+    /**
+     * 从 current 沿 dir 是否可达同氧化级铜块邻居；可达返回邻居槽位，否则 -1。
+     * 已包含轴过滤（切制 H/V）、输出方向过滤（雕文）、氧化级过滤。
+     * runBfs 与组件分组共用，避免两套邻接逻辑分叉。
+     */
+    private static int traversableNeighbor(ContainerContext ctx, int size, int width,
+            int current, int dir, TopoKey topo) {
+        if (topo.axis() == 0 && (dir == ContainerRedstoneData.EDGE_UP || dir == ContainerRedstoneData.EDGE_DOWN)) return -1;
+        if (topo.axis() == 1 && (dir == ContainerRedstoneData.EDGE_LEFT || dir == ContainerRedstoneData.EDGE_RIGHT)) return -1;
+        if (topo.outEdge() >= 0 && dir != topo.outEdge()) return -1;
+        int row = current / width;
+        int col = current % width;
+        int nr = row + DIR_ROW[dir];
+        int nc = col + DIR_COL[dir];
+        if (nr < 0 || nc < 0 || nc >= width) return -1;
+        int neighbor = nr * width + nc;
+        if (neighbor < 0 || neighbor >= size) return -1;
+        ItemStack ns = ctx.getItem(neighbor);
+        if (ns.isEmpty()) return -1;
+        if (!isWaxedCopperBlock(ns.getItem())) return -1;
+        if (isWaxedBulb(ns.getItem())) return -1; // 铜灯不导电
+        if (getOxidationLevel(ns.getItem()) != topo.oxidation()) return -1;
+        return neighbor;
+    }
+
+    /** 一台发电机的通道拓扑规格（可能 1 或 2 个，切制 H/V 各一） */
+    private static List<ChannelSpec> topoKeysFor(ItemStack stack) {
+        int ox = getOxidationLevel(stack.getItem());
+        int cf = getCoilForm(stack.getItem());
+        if (cf == LivingWaxedGeneratorData.FORM_CHISELED) {
+            var cd = LivingItemManager.getWaxedChiseledData(stack);
+            int inEdge = pos2dToEdgeDir(cd.inputDir());
+            int outEdge = pos2dToEdgeDir(cd.outputDir());
+            return List.of(new ChannelSpec(new TopoKey(ox, cf, -1, inEdge, outEdge), 0));
+        } else if (cf == LivingWaxedGeneratorData.FORM_CUT) {
+            return List.of(
+                new ChannelSpec(new TopoKey(ox, cf, 0, -1, -1), 0),
+                new ChannelSpec(new TopoKey(ox, cf, 1, -1, -1), 1));
+        } else {
+            return List.of(new ChannelSpec(new TopoKey(ox, cf, -1, -1, -1), 0));
+        }
+    }
+
+    /**
+     * 每 tick 每 TopoKey 建一次组件 rep 表；返回 slot 所属组件 rep（组件内最小槽位）。
+     * rep 稳定（= 最小铜块槽位），保证跨 tick 同一网络映射到同一 ChannelState 实例。
+     */
+    private static int repOf(TopoKey topo, int slot, Map<TopoKey, int[]> cache,
+            ContainerContext ctx, int size, int width) {
+        int[] arr = cache.get(topo);
+        if (arr == null) {
+            arr = new int[size];
+            Arrays.fill(arr, -1);
+            int[] comp = new int[size];
+            int[] q = new int[size];
+            for (int s = 0; s < size; s++) {
+                if (arr[s] != -1) continue;
+                ItemStack st = ctx.getItem(s);
+                if (st.isEmpty() || !isWaxedCopperBlock(st.getItem()) || isWaxedBulb(st.getItem())) continue;
+                if (getOxidationLevel(st.getItem()) != topo.oxidation()) continue;
+                // 收集该组件全部槽位（弱连通）
+                int cn = 0, h = 0, t = 0;
+                q[t++] = s; arr[s] = s; comp[cn++] = s;
+                while (h < t) {
+                    int cur = q[h++];
+                    for (int dir = 0; dir < ContainerRedstoneData.EDGE_COUNT; dir++) {
+                        int nb = traversableNeighbor(ctx, size, width, cur, dir, topo);
+                        if (nb < 0 || arr[nb] != -1) continue;
+                        arr[nb] = s; comp[cn++] = nb; q[t++] = nb;
+                    }
+                }
+                int rep = s;
+                for (int i = 0; i < cn; i++) rep = Math.min(rep, comp[i]);
+                for (int i = 0; i < cn; i++) arr[comp[i]] = rep;
+            }
+            cache.put(topo, arr);
+        }
+        return arr[slot];
+    }
+
+    /** 连通拓扑键：决定 BFS 的连通性与边检测方向。同键 = 同一铜块网络组件 */
+    private record TopoKey(int oxidation, int coilForm, int axis, int inEdge, int outEdge) {}
+
+    /** 一台发电机的一个通道规格：拓扑 + 通道索引（0=水平/主，1=垂直） */
+    private record ChannelSpec(TopoKey topo, int channelIdx) {}
+
+    /** 组件标识：(拓扑, rep, 通道索引) */
+    private record ComponentId(TopoKey topo, int rep, int channelIdx) {}
 
     /**
      * 从通道最佳域计算能量并记入发电机和容器。
