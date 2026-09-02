@@ -2,8 +2,8 @@
 
 # Living Redstone (活红石) 技术文档
 
-> **文档版本**: 2026.08 v14
-> **最后更新**: 2026-08-22
+> **文档版本**: 2026.09 v15
+> **最后更新**: 2026-09-02
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -23,7 +23,9 @@
 
 ### 1.1 什么是活红石？
 
-活红石系统在 2D 容器网格（如 9×6 背包、9×3 箱子）中实现了原版红石信号传播的等价逻辑。采用**边信号模型**：信号存储于相邻槽位间的共享边上，活红石粉通过 BFS 传播信号，活红石火把/中继器/比较器作为信号源直接向边写入信号，信号强度受堆叠数量影响。
+活红石系统在 2D 容器网格（如 9×6 背包、9×3 箱子）中实现了原版红石信号传播的等价逻辑。采用**边信号模型**：信号存储于每条边上，每个槽位拥有**自己朝 4 个方向发出的 4 条出边**（`edges[slot*4+dir]`），活红石粉通过 BFS 传播信号，活红石火把/中继器/比较器作为信号源直接向自己的出边写入信号，信号强度受堆叠数量影响。
+
+> **v15 边模型重构**：旧版为「共享边」模型（相邻两槽共用同一条 `hEdges`/`vEdges` 数组条目，A 的 RIGHT 边 = B 的 LEFT 边）。新版改为「每槽自有出边」模型——边归**发出方**所有，某槽读某方向输入时读的是**邻居的对应出边**（`inputAt(slot,dir)=edgeGrid.get(neighbor,oppositeDir(dir))`）。详见 §2.3.1 与 §3.2.1.1。
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
@@ -39,7 +41,7 @@
 │                              ┌──────────────────────────┐      │
 │                              │ ContainerRedstoneData     │      │
 │                              │   .calculate()            │      │
-│                              │   EdgeGrid + 共享边       │      │
+│                              │   EdgeGrid + 每槽自有出边  │      │
 │                              │   每 tick 传播 + 输出     │      │
 │                              └────────┬─────────────────┘      │
 │                                       │                         │
@@ -70,7 +72,7 @@
 | `LivingRepeaterFunction` | `domain/redstone/LivingRepeaterFunction.java` | 活中继器功能，延迟 + 单向 + 信号刷新 |
 | `LivingComparatorFunction` | `domain/redstone/LivingComparatorFunction.java` | 活比较器功能，比较/减法 + 物品检测 |
 | `ContainerRedstoneData` | `domain/redstone/ContainerRedstoneData.java` | 容器级红石信号数据，边信号 BFS 传播算法 |
-| `EdgeGrid` | `domain/redstone/ContainerRedstoneData.java` | 共享边信号网格，内嵌类 |
+| `EdgeGrid` | `domain/redstone/ContainerRedstoneData.java` | 每槽自有出边信号网格，内嵌类（v15 起 `edges[slot*4+dir]`） |
 | `LivingRedstoneData` | `domain/redstone/LivingRedstoneData.java` | 活红石粉物品级数据：信号强度 + 是否激活 |
 | `LivingRedstoneTorchData` | `domain/redstone/LivingRedstoneTorchData.java` | 活红石火把物品级数据：朝向 + 是否点亮 |
 | `LivingButtonData` | `domain/redstone/LivingButtonData.java` | 活按钮数据：是否按下 |
@@ -187,25 +189,36 @@ public class ContainerRedstoneData {
 
 **持久化机制**：`ContainerRedstoneData` 实例通过 `ContainerLivingItemHandler.REDSTONE_DATA_CACHE`（`LinkedHashMap<String, ContainerRedstoneData>`）静态缓存持久化，以 `containerKey` 为键。`SimpleContainerContext` 每 tick 重建，但其 `getOrCreateRedstoneData()` 从缓存获取同一实例，确保 `edgeGrid`、`prevEdgeGrid` 等关键状态跨 tick 保留。`resetProcessedFlag()` 在每 tick 开始时由 `setTickContext()` 调用，确保 `processedThisTick` 被正确重置。
 
-### 2.3.1 EdgeGrid — 共享边信号网格
+### 2.3.1 EdgeGrid — 每槽自有出边信号网格
 
-信号存储在**边**上，而非槽位上。相邻槽位共享同一条边：
+信号存储在**边**上，而非槽位上。v15 起从共享边模型改为**每槽自有出边**模型：
 
 ```
-对于 W×H 的槽位网格：
-  hEdges[height * (width + 1)] — 水平边（含左右边界）
-  vEdges[(height + 1) * width] — 垂直边（含上下边界）
+对于 W×H 的槽位网格（slotCount = W×H）：
+  edges[slotCount * 4] — 每槽 4 条出边，连续排布
+  edges[slot * 4 + dir] — 槽位 slot 朝 dir 方向【发出】的边信号
 
-槽位 (r,c) 的 4 条边：
-  LEFT  → hEdges[r * (W+1) + c]
-  RIGHT → hEdges[r * (W+1) + (c+1)]
-  UP    → vEdges[r * W + c]
-  DOWN  → vEdges[(r+1) * W + c]
+  dir: E_UP=0, E_DOWN=1, E_LEFT=2, E_RIGHT=3
 ```
 
-**共享边示例**：槽位 (0,0) 的 RIGHT 边 = 槽位 (0,1) 的 LEFT 边，是同一个数组条目。因此 A 写自己的 RIGHT 边，B 读自己的 LEFT 边自动拿到同一个值，无需显式同步。
+**出边归发出方所有**：源槽用 `set(slot, dir, v)` 写**自己**朝 `dir` 方向发出的边；某槽读 `dir` 方向输入时，读的是**邻居的对应出边**：
 
-**边界边**：容器边缘的边（如最左列 LEFT 边、最右列 RIGHT 边）也存储，为跨容器信号传输预留。
+```
+inputAt(slot, dir):
+  neighbor = resolveSlot(slot, dir)
+  if neighbor < 0 → return faceInput[dir]        // 边界外转外部注入
+  return edgeGrid.get(neighbor, oppositeDir(dir)) // 邻居朝本槽方向的出边
+```
+
+**共享边 vs 每槽出边（v15 变更要点）**：
+
+| 维度 | 旧·共享边 | 新·每槽出边 |
+|------|-----------|-------------|
+| 存储 | `hEdges[height*(W+1)]` + `vEdges[(H+1)*W]` | `edges[slotCount*4]` |
+| A→B 边 | A 的 RIGHT 边 = B 的 LEFT 边（同一数组项） | `edges[A*4+RIGHT]` 与 `edges[B*4+LEFT]` 是**两个独立项** |
+| 写值方 | A、B 都可能写同一共享项（谁最后写谁赢） | 只有发出方写自己的出边 |
+| 读输入 | `edgeGrid.get(slot, dir)`（共享项） | `inputAt(slot, dir)`（邻居出边） |
+| 外部边界 | 存储边界边行/列 | 边界槽位的对应出边即面边界（`computeFaceOutput` 见 §3.2.1） |
 
 **高度计算**：`height = (size + width - 1) / width`（向上取整），兼容最后一行不满的容器（如玩家背包 41 槽 = 9×5 最后一行仅 5 槽）。
 
@@ -219,11 +232,13 @@ edgeIndex(Pos2D) → 将 Pos2D 方向转为边索引
 **EdgeGrid API**（静态内部类，纯内部信号传播）：
 | 方法 | 作用 |
 |------|------|
-| `get(slot, dir)` | 读槽位某方向的边，边界返回 0 |
-| `set(slot, dir, value)` | 写槽位某方向的边（纯内部，不涉及外部交互） |
-| `maxOfSlot(slot)` | 4 边最大值 |
-| `anyOfSlot(slot)` | 任一边 > 0 |
-| `zero()` | 清零所有边 |
+| `get(slot, dir)` | 读槽位朝 `dir` 发出的出边（**注意：是本槽的出边，非入边**），越界返回 0 |
+| `set(slot, dir, value)` | 写槽位朝 `dir` 发出的出边（纯内部，不涉及外部交互） |
+| `maxOfSlot(slot)` | 4 条出边最大值（用于显示/面输出） |
+| `anyOfSlot(slot)` | 任一出边 > 0 |
+| `zero()` | 清零所有出边 |
+
+> **读输入一律走 `inputAt`**：所有「读某槽某方向受到的信号」都收敛到 `inputAt/maxInputOfSlot/anyInputOfSlot` 抽象助手（§3.2.1.1），内部在旧模型下 `inputAt ≡ get(slot,dir)`，新模型下 `inputAt = get(neighbor,oppositeDir(dir))`。无线/电力层通过 `getEdgeValue(slot,dir)` 读到的也是**本槽出边**，重构后值更纯净（不再混入邻居反向写回）。
 
 ### 2.4 LivingButtonData — 活按钮物品数据
 
@@ -413,9 +428,9 @@ calculate(context, tick):
 ```
 
 **与旧模型（槽位信号）的核心区别**：
-- 信号存储在**共享边**上，A 的 RIGHT 边 = B 的 LEFT 边，无需显式同步
-- 信号源**不入队**，直接写边；BFS 队列**仅包含红石粉**
-- 每个组件通过**读写特定边**实现方向性输入/输出
+- 信号存储在**每槽自有出边**上（`edges[slot*4+dir]`），A 朝 B 发出 → `edges[A*4+RIGHT]`，B 读入 → `inputAt(B,LEFT)=edges[A*4+RIGHT]`，无需显式同步
+- 信号源**不入队**，直接写自己的出边；BFS 队列**仅包含红石粉**
+- 每个组件通过**写自己的出边 / 读邻居出边**实现方向性输入/输出
 
 **Phase 0 — 倒计时 + 断电检测**：
 ```
@@ -535,6 +550,9 @@ while queue not empty:
 遍历比较器：
   output = computeComparatorOutput()
   powered = (output > 0)
+  // v15：比较器出边的写值已移至 Phase 4（powerConductiveNeighbor 前直接 set，
+  // 可抬可压），此处不再用 Phase 3 的 != 兜底——旧共享边模型下该兜底会误压
+  // 下游粉的 -1 衰减信号。详见 §3.2.1.1 与 §6.5。
 ```
 
 **Phase 4 — 充能导电活物品**：
@@ -589,9 +607,12 @@ phase4PowerConductors(torchSlots, buttonSlots, leverSlots,
   # 比较器：仅输出方向，信号为计算结果
   for comparatorSlots：
     output = computeComparatorOutput()
-    if output <= 0 → continue
     outDir = edgeIndex(data.direction())
-    ... 同上充能逻辑 ...
+    # v15：直接在 powerConductiveNeighbor 前 set 本槽出边（可抬可压），
+    # 替代原 Phase 3 的 != 兜底。关闭时出边归零 → 下游粉下一 tick 自然衰减。
+    edgeGrid.set(slot, outDir, output)
+    if output <= 0 → continue
+    ... 同上充能逻辑（把 output 灌入下游导体/粉）...
 
   # 第二波 BFS：充能导体后，相邻红石粉重新传播
   if secondQueue not empty：
@@ -659,27 +680,51 @@ Phase 5: 更新显示
 
 **Phase 5 之后 — 计算面输出（computeFaceOutput）**：
 ```
-扫描 edgeGrid 的 4 条边界边，取每边最大值作为 faceOutput：
-  faceOutput[E_UP]    = max(vEdges[0 .. width-1])
-  faceOutput[E_DOWN]  = max(vEdges[height*width .. height*width+width-1])
-  faceOutput[E_LEFT]  = max(hEdges[0, width+1, 2*(width+1)...])
-  faceOutput[E_RIGHT] = max(hEdges[width, 2*width+1, ...])
+每槽自有出边模型下，朝外的面信号 = 边界槽位朝该方向发出的出边最大值：
+  faceOutput[E_UP]    = max( slot 在顶行 c ∈ [0,W) 的 edges[c*4+E_UP] )
+  faceOutput[E_DOWN]  = max( slot 在底行 c ∈ [0,W) 的 edges[(H-1)*W+c)*4+E_DOWN] )
+  faceOutput[E_LEFT]  = max( slot 在左列 r ∈ [0,H) 的 edges[r*W*4+E_LEFT] )
+  faceOutput[E_RIGHT] = max( slot 在右列 r ∈ [0,H) 的 edges[(r*W+W-1)*4+E_RIGHT] )
 
 仅包含内部信号（edgeGrid 不再存储外部信号），
 避免外部信号被误输出导致反馈循环。
 ```
 
 **设计要点**：
-- **共享边**：源写自己的边，目标通过共享边自动读到，无需 `neighbor * 4 + opposite(dir)` 这种间接映射
+- **每槽自有出边（v15 起）**：源写自己的出边 `set(slot,dir,v)`，目标读输入走 `inputAt(slot,dir)=get(neighbor,oppositeDir(dir))`，二者在旧共享边模型下语义等价、新模型下各自独立。详见 §3.2.1.1
 - **BFS 仅红石粉**：队列只包含红石粉，信号源和终端不参与传播循环
-- **边界边持久化**：容器边缘边也存储信号值，为跨容器信号传输预留接口
+- **边界出边即面边界**：边界槽位朝外的出边（`edges[slot*4+边界dir]`）即面信号来源，`computeFaceOutput` 扫描这些出边得出 `faceOutput`
 - **向上取整高度**：`(size + width - 1) / width` 兼容非满行容器（如玩家背包 41 槽）
-- **导体充能**：Phase 4 通过 `isRedstoneConductor` 自动判定所有 BlockItem 的导电性，不依赖功能注册。中继器/比较器通过共享边缘网格自动读取导体的信号，无需特殊处理
+- **导体充能**：Phase 4 通过 `isRedstoneConductor` 自动判定所有 BlockItem 的导电性，不依赖功能注册。中继器/比较器通过邻居出边自动读取导体的信号，无需特殊处理
 - **第二波 BFS**：充能导体后触发第二轮 BFS，确保信号穿过导体继续在红石粉中传播
 
 ### 3.2.1 容器内外红石交互（面信号模型）
 
 容器内红石信号可与外部世界红石双向交互。采用**面信号模型**：容器的 4 个水平面各有一个输入通道和一个输出通道，对标原版 `getSignal(face)` 语义。
+
+#### 3.2.1.1 边模型重构（v15：共享边 → 每槽自有出边）
+
+v15 把 EdgeGrid 从「相邻两槽共用一条 `hEdges`/`vEdges`」重构为「每槽拥有自己朝 4 方向发出的 4 条出边 `edges[slot*4+dir]`」。这是纯存储层重构，传播算法与元件行为不变。
+
+**重构动机（共享边模型的局限）**：
+- 同一物理边由两个端点共享，谁最后写谁赢，无法区分「A 发给 B」与「B 反向发给 A」；
+- 比较器/中继器读输出方向边时，会读到下游粉经共享边**反向写回**的 -1 衰减信号，迫使 phase3 用 `!=` 兜底去纠正，逻辑耦合脆弱；
+- 电力层 `runBfs` 读 `getEdgeValue(current,dir)` 时，共享边值混合了双向写入，语义不纯。
+
+**重构策略（增量抽象层）**：分两步，行为全程由测试护驾。
+1. **Step A — 引入 input 抽象层**：所有「读某槽某方向受到的信号」收敛到 `inputAt/maxInputOfSlot/anyInputOfSlot` 助手。抽象层内部在共享边模型下 `inputAt(slot,dir) ≡ edgeGrid.get(slot,dir)`，在新模型下 `inputAt(slot,dir) = edgeGrid.get(neighbor, oppositeDir(dir))`——调用方无需感知。Step A 合入后全测试绿，证明行为等价。
+2. **Step B — 翻 EdgeGrid 存储**：`hEdges`/`vEdges` → `edges[slot*4+dir]`，`get/set` 改为返回本槽出边。写方（信号源、propagateDir、powerConductiveNeighbor）本就写「自己朝 dir 发出的出边」，无需改动；读方已全部走 inputAt。Step B 合入后信号层 + 电力层测试全绿。
+
+**读写语义对照**：
+```
+写（发出方）：  edgeGrid.set(slot, dir, v)      → edges[slot*4+dir] = v
+读输入：        inputAt(slot, dir)              → edges[neighbor*4 + oppositeDir(dir)]
+                （neighbor<0 时回退 faceInput[dir]）
+读本槽出边：    getEdgeValue(slot, dir)         → edges[slot*4+dir]   （电力层上升沿采样用）
+面输出：        computeFaceOutput 扫描边界槽位出边
+```
+
+**配套清理（v15）**：比较器出边的写值从 phase3 的 `!=` 兜底移至 phase4（`powerConductiveNeighbor` 前直接 `set` 本槽出边，可抬可压）。原因：共享边下 `!=` 会误压下游粉 -1 衰减信号；每槽出边下该出边只归比较器自己所有，不再有污染，且 phase4 直接 set 能保证关闭时出边归零、下游粉自然衰减。详见 §6.5。
 
 #### 核心数据结构
 
@@ -751,11 +796,11 @@ getEffectiveInput(slot, dir, width, height):
 
 ```
 computeFaceOutput(width, height):
-  扫描 edgeGrid 的 4 条边界边，取每边最大值：
-    faceOutput[E_UP]    = max(vEdges[0 .. width-1])
-    faceOutput[E_DOWN]  = max(vEdges[height*width .. height*width+width-1])
-    faceOutput[E_LEFT]  = max(hEdges[0, width+1, 2*(width+1)...])
-    faceOutput[E_RIGHT] = max(hEdges[width, 2*width+1, ...])
+  扫描边界槽位的出边，取每面最大值：
+    faceOutput[E_UP]    = max(顶行槽位 edges[slot*4+E_UP])
+    faceOutput[E_DOWN]  = max(底行槽位 edges[slot*4+E_DOWN])
+    faceOutput[E_LEFT]  = max(左列槽位 edges[slot*4+E_LEFT])
+    faceOutput[E_RIGHT] = max(右列槽位 edges[slot*4+E_RIGHT])
 
   仅包含内部信号（edgeGrid 不存储外部信号），
   避免外部信号被误输出导致反馈循环。
@@ -1022,7 +1067,7 @@ injectExternalInputs(context):
 // ContainerRedstoneData.resolveSlot(slot, dir, size, width)
 // 返回指定方向的邻居槽位索引，越界返回 -1
 // 注意：resolveSlot 仅用于判断"邻居是否存在"和"邻居类型"，
-// 信号值本身通过 EdgeGrid 的共享边获取，无需通过邻居索引
+// 信号值本身通过 EdgeGrid 的每槽出边获取（inputAt 读邻居出边），无需通过邻居索引
 
 private static int resolveSlot(int slot, int dir, int size, int width) {
     int col = slot % width;
@@ -1048,18 +1093,18 @@ private static int resolveSlot(int slot, int dir, int size, int width) {
   [火把] [粉A] [粉B] [粉C] [  ] [  ] [  ] [  ] [  ]
   [  ]   [  ]  [  ]  [  ]  [  ] [  ] [  ] [  ] [  ]
 
-Phase 1：火把写自己的 RIGHT 边 = 15
-          粉A 的 LEFT 边（共享边）自动 = 15
+Phase 1：火把写自己的 RIGHT 出边 = 15
+          粉A 经 inputAt(LEFT) 从火把出边读到 15
           粉A 入队
 
 Phase 2 BFS：
-  粉A：maxInput = 15（来自 LEFT 边）
+  粉A：maxInput = 15（来自火把出边，经 inputAt 读入）
        output = min(15-1, 15) = 14
-       写 RIGHT 边 = 14，粉B 的 LEFT 边自动 = 14
+       写 RIGHT 出边 = 14，粉B 经 inputAt(LEFT) 读到 14
        粉B 入队
   粉B：maxInput = 14
        output = min(14-1, 15) = 13
-       写 RIGHT 边 = 13，粉C 的 LEFT 边自动 = 13
+       写 RIGHT 出边 = 13，粉C 经 inputAt(LEFT) 读到 13
        粉C 入队
   粉C：maxInput = 13
        output = 12
@@ -1071,7 +1116,7 @@ Phase 2 BFS：
    15    14    13    12    0    0    0    0    0
 ```
 
-**关键**：信号值存储在边上，粉A 读自己的 LEFT 边直接拿到火把写的值，不需要通过邻居槽位索引再查一次数组。
+**关键**：信号值存储在出边上，粉A 经 `inputAt(LEFT)` 直接读火把的出边拿到 15，不需要通过邻居槽位索引再查一次数组。
 
 ### 3.5 连接状态计算（computeDustConnections）
 
@@ -1332,19 +1377,27 @@ A < B → 输出 0
 
 ### 6.5 信号输出
 
-活比较器的处理分布在 Phase 1 和 Phase 3 中：
+活比较器的处理分布在 Phase 1 和 Phase 4 中（v15 起出边写值从 Phase 3 的 `!=` 兜底移入 Phase 4）：
 
 ```
-Phase 1（作为信号源输出）：
+Phase 1（作为信号源输出，仅抬高）：
   output = computeComparatorOutput()
-  if output > 0 → 向输出方向边写入 output
+  if output > 0 → 向输出方向出边写入 output（仅当更高时，guard: output > 当前）
   if 输出方向邻居是红石粉 → 邻居入队
 
 Phase 3（重新检测输入，Phase 2 粉尘传播后）：
   output = computeComparatorOutput()
   powered = (output > 0)
-  向输出方向边写入 output（确保 Phase 2 后更新的输入能反映到边网格）
+  // 只更新 powered 状态，不再写边（出边写值见 Phase 4）
+
+Phase 4（充能导电活物品，抬/压都处理）：
+  output = computeComparatorOutput()
+  outDir = edgeIndex(data.direction())
+  edgeGrid.set(slot, outDir, output)        // 直接同步本槽出边（可抬可压）
+  if output > 0 → powerConductiveNeighbor 灌下游导体/粉
 ```
+
+> **为什么出边必须在 Phase 4 同步（而非仅 Phase 1 抬高）**：若只在 Phase 1 用 `>` 抬高，比较器关闭（output=0）时出边不会归零，下游粉下一 tick 仍读到高 `maxInput` 而卡死。Phase 4 的 `set(slot, outDir, output)` 既抬高也压低，关闭时出边归零，下游粉经 `maxInput` 自然衰减。旧模型的 Phase 3 `!=` 兜底做同样的事，但在共享边模型下会误压下游粉的 -1 衰减信号，故 v15 改为 Phase 4 直接 set 本槽出边后删除。
 
 **computeComparatorOutput() 逻辑**：
 ```java
@@ -1514,7 +1567,7 @@ ContainerLivingItemHandler.processContext()
 | 活红石灯 | 信号消费者，anyOfSlot 亮/灭可视化 | `LivingRedstoneLampFunction` |
 | 活中继器 | 延迟 + 单向 + 信号刷新 + Phase1 写方向边 | `LivingRepeaterFunction` + `RepeaterCycleHandler` |
 | 活比较器 | 比较/减法 + 物品检测 + 边网格回退读取 + Phase1/Phase3 写方向边 | `LivingComparatorFunction` + `ComparatorToggleHandler` |
-| 边信号模型 | EdgeGrid 共享边 + 边界边预留 + 六阶段 BFS + 面信号模型 + 僵尸数据清理 | `ContainerRedstoneData` |
+| 边信号模型 | EdgeGrid 每槽自有出边（v15）+ 边界出边即面边界 + 六阶段 BFS + 面信号模型 + 僵尸数据清理 | `ContainerRedstoneData` |
 
 ### 计划中（P3）
 

@@ -476,7 +476,7 @@ public class ContainerRedstoneData {
                 ItemStack stack = context.getItem(current);
                 if (stack.isEmpty()) continue;
 
-                int maxInput = edgeGrid.maxOfSlot(current);
+                int maxInput = maxInputOfSlot(current, size, width);
                 if (maxInput <= 1) continue;
 
                 int output = Math.min(maxInput - 1, getSignalCap(stack.getCount()));
@@ -500,7 +500,7 @@ public class ContainerRedstoneData {
                 ItemStack stack = context.getItem(current);
                 if (stack.isEmpty()) continue;
 
-                int maxInput = edgeGrid.maxOfSlot(current);
+                int maxInput = maxInputOfSlot(current, size, width);
                 int cap = getSignalCap(stack.getCount());
                 int output = Math.min(maxInput, cap);
 
@@ -509,7 +509,7 @@ public class ContainerRedstoneData {
                     LivingCutCopperData data = LivingItemManager.getCutCopperData(chiseledStack);
                     int inputEdge = edgeIndex(data.inputDir());
                     int outputEdge = edgeIndex(data.outputDir());
-                    int chiseledInput = edgeGrid.get(current, inputEdge);
+                    int chiseledInput = inputAt(current, inputEdge, size, width);
                     int chiseledCap = getSignalCap(chiseledStack.getCount());
                     int chiseledOutput = Math.min(chiseledInput, chiseledCap);
                     propagateDir(current, outputEdge, chiseledOutput, size, width, context, queue);
@@ -518,11 +518,11 @@ public class ContainerRedstoneData {
 
                 if (is(current, BIT_CUT)) {
                     int maxHInput = Math.max(
-                        edgeGrid.get(current, E_LEFT),
-                        edgeGrid.get(current, E_RIGHT));
+                        inputAt(current, E_LEFT, size, width),
+                        inputAt(current, E_RIGHT, size, width));
                     int maxVInput = Math.max(
-                        edgeGrid.get(current, E_UP),
-                        edgeGrid.get(current, E_DOWN));
+                        inputAt(current, E_UP, size, width),
+                        inputAt(current, E_DOWN, size, width));
                     int outputH = Math.min(maxHInput, cap);
                     int outputV = Math.min(maxVInput, cap);
 
@@ -576,7 +576,7 @@ public class ContainerRedstoneData {
             if (locked) continue;
 
             int inputDir = edgeIndex(data.direction().opposite());
-            boolean hasInput = getEffectiveInput(slot, inputDir, width, height) > 0;
+            boolean hasInput = getEffectiveInput(slot, inputDir, size, width) > 0;
 
             if (data.powered() && data.delayTimer() > 0) continue;
 
@@ -606,11 +606,8 @@ public class ContainerRedstoneData {
                 LivingItemManager.setComparatorData(stack, data.withPowered(newPowered));
                 context.syncSlotToClients(slot, stack);
             }
-
-            int outDir = edgeIndex(data.direction());
-            if (output != edgeGrid.get(slot, outDir)) {
-                edgeGrid.set(slot, outDir, output);
-            }
+            // 比较器出边的写值已统一由 phase4（powerConductiveNeighbor 前直接 set）负责，
+            // 此处不再用 != 兜底——旧共享边模型下该兜底会误压下游粉的 -1 衰减信号。
         }
 
         for (int slot : grateSlots) {
@@ -622,7 +619,7 @@ public class ContainerRedstoneData {
             for (int dir = 0; dir < 4; dir++) {
                 int neighbor = resolveSlot(slot, dir, size, width);
                 if (neighbor >= 0 && neighbor < size && is(neighbor, BIT_COPPER)) continue;
-                sum += edgeGrid.get(slot, dir);
+                sum += inputAt(slot, dir, size, width);
             }
             int cap = getSignalCap(stack.getCount());
             int result = Math.min(sum, cap);
@@ -640,12 +637,12 @@ public class ContainerRedstoneData {
             if (stack.isEmpty()) continue;
 
             LivingCopperBulbData data = LivingItemManager.getCopperBulbData(stack);
-            boolean hasInput = edgeGrid.anyOfSlot(slot);
+            boolean hasInput = anyInputOfSlot(slot, size, width);
             boolean changed = false;
 
             if (hasInput && !data.prevInput()) {
                 if (data.recordedSignal() == 0) {
-                    int maxInput = edgeGrid.maxOfSlot(slot);
+                    int maxInput = maxInputOfSlot(slot, size, width);
                     int cap = getSignalCap(stack.getCount());
                     int recorded = Math.min(maxInput, cap);
                     data = data.withRecordedSignal(recorded);
@@ -679,7 +676,7 @@ public class ContainerRedstoneData {
 
             LivingRedstoneData data = LivingItemManager.getRedstoneData(stack);
             byte conn = data.connections();
-            int maxInput = edgeGrid.maxOfSlot(slot);
+            int maxInput = maxInputOfSlot(slot, size, width);
             if (maxInput <= 1) continue;
 
             int output = Math.min(maxInput - 1, getSignalCap(stack.getCount()));
@@ -759,9 +756,11 @@ public class ContainerRedstoneData {
             if (stack.isEmpty()) continue;
             LivingComparatorData data = LivingItemManager.getComparatorData(stack);
             int output = computeComparatorOutput(slot, data, context, size, width);
-            if (output <= 0) continue;
-
             int outDir = edgeIndex(data.direction());
+            // 直接同步本槽出边（可抬可压），替代原 phase3 的 != 兜底：
+            // 比较器关闭时出边归零，下游粉下一 tick 经 maxInput 自然衰减，不再残留高电平。
+            edgeGrid.set(slot, outDir, output);
+            if (output <= 0) continue;
             powerConductiveNeighbor(slot, output, outDir, size, width, context, secondQueue);
         }
 
@@ -771,7 +770,7 @@ public class ContainerRedstoneData {
             ItemStack stack = context.getItem(slot);
             if (stack.isEmpty()) continue;
 
-            int maxInput = edgeGrid.maxOfSlot(slot);
+            int maxInput = maxInputOfSlot(slot, size, width);
             if (maxInput <= 0) continue;
 
             int cap = getSignalCap(stack.getCount());
@@ -781,17 +780,17 @@ public class ContainerRedstoneData {
                 LivingCutCopperData data = LivingItemManager.getCutCopperData(stack);
                 int inputEdge = edgeIndex(data.inputDir());
                 int outputEdge = edgeIndex(data.outputDir());
-                int chiseledInput = edgeGrid.get(slot, inputEdge);
+                int chiseledInput = inputAt(slot, inputEdge, size, width);
                 int chiseledCap = getSignalCap(stack.getCount());
                 int chiseledOutput = Math.min(chiseledInput, chiseledCap);
                 powerConductiveNeighbor(slot, chiseledOutput, outputEdge, size, width, context, secondQueue);
             } else if (is(slot, BIT_CUT)) {
                 int maxHInput = Math.max(
-                    edgeGrid.get(slot, E_LEFT),
-                    edgeGrid.get(slot, E_RIGHT));
+                    inputAt(slot, E_LEFT, size, width),
+                    inputAt(slot, E_RIGHT, size, width));
                 int maxVInput = Math.max(
-                    edgeGrid.get(slot, E_UP),
-                    edgeGrid.get(slot, E_DOWN));
+                    inputAt(slot, E_UP, size, width),
+                    inputAt(slot, E_DOWN, size, width));
                 powerConductiveNeighbor(slot, Math.min(maxHInput, cap), E_LEFT, size, width, context, secondQueue);
                 powerConductiveNeighbor(slot, Math.min(maxHInput, cap), E_RIGHT, size, width, context, secondQueue);
                 powerConductiveNeighbor(slot, Math.min(maxVInput, cap), E_UP, size, width, context, secondQueue);
@@ -916,17 +915,18 @@ public class ContainerRedstoneData {
         java.util.Arrays.fill(faceOutput, 0);
         if (edgeGrid == null) return;
 
+        // 每槽自有出边模型下，朝外的面信号 = 边界槽位朝该方向发出的出边最大值。
         for (int c = 0; c < width; c++) {
-            faceOutput[E_UP] = Math.max(faceOutput[E_UP], edgeGrid.vEdges[c]);
+            faceOutput[E_UP] = Math.max(faceOutput[E_UP], edgeGrid.get(c, E_UP));
         }
         for (int c = 0; c < width; c++) {
-            faceOutput[E_DOWN] = Math.max(faceOutput[E_DOWN], edgeGrid.vEdges[height * width + c]);
+            faceOutput[E_DOWN] = Math.max(faceOutput[E_DOWN], edgeGrid.get((height - 1) * width + c, E_DOWN));
         }
         for (int r = 0; r < height; r++) {
-            faceOutput[E_LEFT] = Math.max(faceOutput[E_LEFT], edgeGrid.hEdges[r * (width + 1)]);
+            faceOutput[E_LEFT] = Math.max(faceOutput[E_LEFT], edgeGrid.get(r * width, E_LEFT));
         }
         for (int r = 0; r < height; r++) {
-            faceOutput[E_RIGHT] = Math.max(faceOutput[E_RIGHT], edgeGrid.hEdges[r * (width + 1) + width]);
+            faceOutput[E_RIGHT] = Math.max(faceOutput[E_RIGHT], edgeGrid.get(r * width + (width - 1), E_RIGHT));
         }
     }
 
@@ -957,7 +957,7 @@ public class ContainerRedstoneData {
 
             LivingRedstoneTorchData data = LivingItemManager.getRedstoneTorchData(stack);
             int inputDir = edgeIndex(data.direction().opposite());
-            boolean hasInput = getEffectiveInput(slot, inputDir, width, height) > 0;
+            boolean hasInput = getEffectiveInput(slot, inputDir, size, width) > 0;
             boolean newLit = !hasInput;
             if (data.isLit() != newLit) {
                 LivingItemManager.setRedstoneTorchData(stack, data.withLit(newLit));
@@ -970,7 +970,7 @@ public class ContainerRedstoneData {
             ItemStack stack = context.getItem(slot);
             if (stack.isEmpty()) continue;
 
-            int maxSignal = edgeGrid.maxOfSlot(slot);
+            int maxSignal = maxInputOfSlot(slot, size, width);
             byte conn = computeDustConnections(slot, size, width, context);
             LivingRedstoneData data = LivingItemManager.getRedstoneData(stack);
             if (data.signalStrength() != maxSignal || data.isPowered() != (maxSignal > 0)
@@ -986,7 +986,7 @@ public class ContainerRedstoneData {
             ItemStack stack = context.getItem(slot);
             if (stack.isEmpty()) continue;
 
-            boolean hasSignal = edgeGrid.anyOfSlot(slot);
+            boolean hasSignal = anyInputOfSlot(slot, size, width);
             LivingRedstoneLampData data = LivingItemManager.getLampData(stack);
             if (data.lit() != hasSignal) {
                 LivingItemManager.setLampData(stack, data.withLit(hasSignal));
@@ -999,7 +999,7 @@ public class ContainerRedstoneData {
             ItemStack stack = context.getItem(slot);
             if (stack.isEmpty()) continue;
 
-            int maxSignal = edgeGrid.maxOfSlot(slot);
+            int maxSignal = maxInputOfSlot(slot, size, width);
             LivingCopperSignalData sigData = LivingItemManager.getCopperSignal(stack);
             if (sigData.signalStrength() != maxSignal) {
                 LivingItemManager.setCopperSignal(stack, sigData.withSignal(maxSignal));
@@ -1051,22 +1051,51 @@ public class ContainerRedstoneData {
         return conn;
     }
 
-    private int getEffectiveInput(int slot, int dir, int width, int height) {
-        int edgeSignal = edgeGrid.get(slot, dir);
-        int r = slot / width;
-        int c = slot % width;
-        if (dir == E_UP && r == 0) return Math.max(edgeSignal, faceInput[E_UP]);
-        if (dir == E_DOWN && r == height - 1) return Math.max(edgeSignal, faceInput[E_DOWN]);
-        if (dir == E_LEFT && c == 0) return Math.max(edgeSignal, faceInput[E_LEFT]);
-        if (dir == E_RIGHT && c == width - 1) return Math.max(edgeSignal, faceInput[E_RIGHT]);
-        return edgeSignal;
+    /**
+     * 本槽从 dir 方向收到的「输入」= 该方向邻居朝本槽的出边。
+     *
+     * <p>重构抽象层（共享边 → 每槽出边）：当前仍走共享边，故
+     * {@code edgeGrid.get(neighbor, oppositeDir(dir))} 等价于旧 {@code edgeGrid.get(slot, dir)}；
+     * 翻存储（Step B）后此实现即成为「读邻居出边」，调用点无需再改。越界（容器边界外）
+     * 取 {@code faceInput[dir]}。</p>
+     */
+    private int inputAt(int slot, int dir, int size, int width) {
+        int neighbor = resolveSlot(slot, dir, size, width);
+        if (neighbor < 0) return faceInput[dir];
+        return edgeGrid.get(neighbor, oppositeDir(dir));
+    }
+
+    private int maxInputOfSlot(int slot, int size, int width) {
+        int max = 0;
+        for (int dir = 0; dir < 4; dir++) max = Math.max(max, inputAt(slot, dir, size, width));
+        return max;
+    }
+
+    private boolean anyInputOfSlot(int slot, int size, int width) {
+        for (int dir = 0; dir < 4; dir++) if (inputAt(slot, dir, size, width) > 0) return true;
+        return false;
+    }
+
+    private static int oppositeDir(int dir) {
+        return switch (dir) {
+            case E_UP -> E_DOWN;
+            case E_DOWN -> E_UP;
+            case E_LEFT -> E_RIGHT;
+            case E_RIGHT -> E_LEFT;
+            default -> dir;
+        };
+    }
+
+    /** 本槽某方向收到的输入（含边界外 faceInput），见 {@link #inputAt} */
+    private int getEffectiveInput(int slot, int dir, int size, int width) {
+        return inputAt(slot, dir, size, width);
     }
 
     private int computeComparatorOutput(int slot, LivingComparatorData data,
             ContainerContext context, int size, int width) {
         int height = (size + width - 1) / width;
         int inputDir = edgeIndex(data.direction().opposite());
-        int signalA = getEffectiveInput(slot, inputDir, width, height);
+        int signalA = getEffectiveInput(slot, inputDir, size, width);
 
         ItemStack comparatorStack = context.getItem(slot);
         int signalCap = getSignalCap(comparatorStack.getCount());
@@ -1082,7 +1111,7 @@ public class ContainerRedstoneData {
         int[] sideDirs = perpendicularEdges(inputDir);
         int signalB = 0;
         for (int sideDir : sideDirs) {
-            int edgeSignal = edgeGrid.get(slot, sideDir);
+            int edgeSignal = inputAt(slot, sideDir, size, width);
             if (edgeSignal > 0) {
                 signalB = Math.max(signalB, edgeSignal);
             } else {
@@ -1153,75 +1182,57 @@ public class ContainerRedstoneData {
     }
 
     /**
-     * 共享边网格：相邻槽位之间的边只有一条，两个槽位读写同一数组条目。
-     * 边界边也存储，为跨容器信号传输预留。
-     *
-     * 对于 W×H 的槽位网格，每行有 W+1 条水平边，每列有 H+1 条垂直边：
-     *   hEdges[height * (width + 1)] — 水平边（含左右边界）
-     *   vEdges[(height + 1) * width] — 垂直边（含上下边界）
-     *
-     * 槽位 (r,c) 的边：
-     *   LEFT  → hEdges[r * (W+1) + c]
-     *   RIGHT → hEdges[r * (W+1) + (c+1)]
-     *   UP    → vEdges[r * W + c]
-     *   DOWN  → vEdges[(r+1) * W + c]
+     * 每槽 4 条出边模型：edges[slot * 4 + dir] 表示该槽位朝 dir 方向【发出】的边信号。
+     * 与旧共享边模型（相邻两槽共用同一条 hEdges/vEdges）不同，现在的边归【发出方】所有：
+     *  - 写：源槽用 set(slot, dir, v) 写自己的出边；
+     *  - 读：某槽读 dir 方向输入时，读的是邻居的对应出边 inputAt(slot,dir)=edgeGrid.get(neighbor,oppositeDir(dir))。
+     * 边界外（neighbor<0）由 inputAt 转 faceInput[dir] 兜底。
+     * reset() 每 tick 交换 edgeGrid/prevEdgeGrid 并清零，prevEdgeGrid 同名存储上一 tick 的发出边。
      */
     private static class EdgeGrid {
         final int width;
         final int height;
-        final int[] hEdges;
-        final int[] vEdges;
+        final int[] edges;
 
         EdgeGrid(int width, int height) {
             this.width = width;
             this.height = height;
-            this.hEdges = new int[height * (width + 1)];
-            this.vEdges = new int[(height + 1) * width];
+            this.edges = new int[width * height * 4];
         }
 
         int get(int slot, int dir) {
             if (slot < 0 || slot >= width * height) return 0;
-            int r = slot / width;
-            int c = slot % width;
-            switch (dir) {
-                case E_UP:    return vEdges[r * width + c];
-                case E_DOWN:  return vEdges[(r + 1) * width + c];
-                case E_LEFT:  return hEdges[r * (width + 1) + c];
-                case E_RIGHT: return hEdges[r * (width + 1) + (c + 1)];
-                default: return 0;
-            }
+            if (dir < 0 || dir >= 4) return 0;
+            return edges[slot * 4 + dir];
         }
 
         void set(int slot, int dir, int value) {
             if (slot < 0 || slot >= width * height) return;
-            int r = slot / width;
-            int c = slot % width;
-            switch (dir) {
-                case E_UP:    vEdges[r * width + c] = value; break;
-                case E_DOWN:  vEdges[(r + 1) * width + c] = value; break;
-                case E_LEFT:  hEdges[r * (width + 1) + c] = value; break;
-                case E_RIGHT: hEdges[r * (width + 1) + (c + 1)] = value; break;
-            }
+            if (dir < 0 || dir >= 4) return;
+            edges[slot * 4 + dir] = value;
         }
 
         int maxOfSlot(int slot) {
+            if (slot < 0 || slot >= width * height) return 0;
+            int base = slot * 4;
             int max = 0;
             for (int dir = 0; dir < 4; dir++) {
-                max = Math.max(max, get(slot, dir));
+                max = Math.max(max, edges[base + dir]);
             }
             return max;
         }
 
         boolean anyOfSlot(int slot) {
+            if (slot < 0 || slot >= width * height) return false;
+            int base = slot * 4;
             for (int dir = 0; dir < 4; dir++) {
-                if (get(slot, dir) > 0) return true;
+                if (edges[base + dir] > 0) return true;
             }
             return false;
         }
 
         void zero() {
-            Arrays.fill(hEdges, 0);
-            Arrays.fill(vEdges, 0);
+            Arrays.fill(edges, 0);
         }
     }
 }

@@ -433,4 +433,53 @@ class ContainerRedstoneDataTest {
             "比较器输出应沿粉链传播到第二格(粉14)，修复前只能传一格，实际="
                 + data.getSignal(14));
     }
+
+    /**
+     * 回归：比较器关闭后，下游粉链必须自然衰减归零（不能卡在高电平）。
+     *
+     * <p>布局（9 列第 2 行）：拉杆(10,朝比较器后方) → 比较器(11,朝右) → 粉(12) → 粉(13) → 粉(14)。</p>
+     *
+     * <p>背景：边模型重构时，比较器出边的写值从 phase3 的 {@code !=} 兜底改为
+     * phase4 中 powerConductiveNeighbor 前直接 set（可抬可压）。若只抬不压，
+     * 比较器关闭时出边不会归零，下游粉链下一 tick 仍读到高 maxInput 而卡死。
+     * 本测试锁定「关闭 → 出边归零 → 粉链衰减归零」行为。</p>
+     */
+    @Test
+    @DisplayName("比较器关闭后下游粉链自然衰减归零")
+    void comparator_turnsOff_downstreamDustDecaysToZero() {
+        var ctx = new FakeContainerContext(SIZE, WIDTH);
+        ItemStack lever = living(Items.LEVER, 1);
+        LivingItemManager.setLeverData(lever, new LivingLeverData(true));
+        ctx.set(10, lever);
+        ItemStack comparator = living(Items.COMPARATOR, 1);
+        LivingItemManager.setComparatorData(comparator,
+            LivingComparatorData.DEFAULT.withDirection(Pos2D.RIGHT));
+        ctx.set(11, comparator);
+        ctx.set(12, living(Items.REDSTONE, 1));
+        ctx.set(13, living(Items.REDSTONE, 1));
+        ctx.set(14, living(Items.REDSTONE, 1));
+
+        var slots = Map.<String, Set<Integer>>of(
+            LivingLeverFunction.ID, Set.of(10),
+            LivingComparatorFunction.ID, Set.of(11),
+            LivingRedstoneFunction.ID, Set.of(12, 13, 14));
+
+        var data = new ContainerRedstoneData();
+        tickOnce(data, ctx, slots);
+        assertTrue(data.getSignal(14) > 0, "前置条件：开启时粉链末端应有信号");
+
+        // 关闭拉杆（比较器失去后方输入）
+        LivingItemManager.setLeverData(lever, new LivingLeverData(false));
+        ctx.set(10, lever);
+
+        // 反复传播足够多 tick，让衰减从比较器出边一路传到链末端
+        for (int t = 0; t < 20; t++) {
+            tickOnce(data, ctx, slots);
+        }
+
+        assertEquals(0, data.getSignal(11), "比较器出边应归零");
+        assertEquals(0, data.getSignal(12), "下游粉应衰减归零");
+        assertEquals(0, data.getSignal(13), "下游粉应衰减归零");
+        assertEquals(0, data.getSignal(14), "下游粉应衰减归零");
+    }
 }
