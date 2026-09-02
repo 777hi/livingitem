@@ -84,4 +84,87 @@ public final class PowerMath {
     public static long reToFe(long re) {
         return Math.round(re * RE_TO_FE);
     }
+
+    // ── 网络级共振（不同锈蚟级之间的「和声」，见 living-power-tech.md §3.7）──
+    //
+    // 块级感应是「铜块采样边信号」，网络级共振是「锈蚟级之间互相感应」——同一套
+    // 机制抬高一个维度。声部单位是**锈蚟级**（不是 BFS 连通块）：同锈蚟级的多个
+    // 连通块出力直接相加。这一点不只是简化，更是 R ≤ OXIDATION_LEVELS 的结构性
+    // 前提——否则把同一锈蚟级拆成多个小簇即可刷 N，退化为 N×(N-1) 膨胀。
+
+    /**
+     * 共振指数：容器总发电量乘 R 的该次方。
+     *
+     * <p>实测调产量时只改这一个数（2.0 → 1.5 可把满共振从 ×16 降到 ×8）。
+     * 与 K、C 一样属于标定常数，但**不参与**公式内部结构（改它只缩放强度，
+     * 不改变任何边界性质）。</p>
+     */
+    public static final double RESONANCE_EXPONENT = 2.0;
+
+    /** 锈蚟级数（= 共振声部上限，也就是 R 的结构性上界） */
+    public static final int OXIDATION_LEVELS = 4;
+
+    /**
+     * 平衡度 s = 几何平均 ÷ 算术平均（AM-GM）。
+     *
+     * <p>各声部出力全部相等时 s = 1；一个独大时 s → 0。尺度无关——只关心各声部
+     * 的比例，不关心绝对值（1000/1000 与 1/1 同样共振）。</p>
+     *
+     * @param values 各锈蚟级的出力（只取正值参与；非正值视为该声部不存在）
+     * @return [0, 1]；有效声部数 ≤ 1 时返回 1（无失衡可言）
+     */
+    public static double balanceFactor(double[] values) {
+        if (values == null || values.length == 0) return 1.0;
+        double logSum = 0.0;
+        double sum = 0.0;
+        int n = 0;
+        for (double v : values) {
+            if (v <= 0.0) continue;
+            logSum += Math.log(v);
+            sum += v;
+            n++;
+        }
+        if (n <= 1) return 1.0;
+        double am = sum / n;
+        if (am <= 0.0) return 0.0;
+        double gm = Math.exp(logSum / n);
+        double s = gm / am;
+        return Math.max(0.0, Math.min(1.0, s));
+    }
+
+    /**
+     * 共振倍率 {@code R = 1 + (N − 1) × s}。
+     *
+     * <p>N = 有出力的锈蚟级数。s=1（各网出力相等）时 R = N；s→0（一个独大）时
+     * R → 1。恒有 {@code R ∈ [1, N] ⊆ [1, OXIDATION_LEVELS]}：下限 1 保证共振
+     * 永远不会「扣发电量」，上界由锈蚟级数结构性封顶，不可能失控。</p>
+     *
+     * @param powerByOxidation 各锈蚟级的出力（长度 ≤ {@link #OXIDATION_LEVELS}）
+     */
+    public static double resonanceFactor(double[] powerByOxidation) {
+        if (powerByOxidation == null || powerByOxidation.length == 0) return 1.0;
+        int n = 0;
+        for (double v : powerByOxidation) {
+            if (v > 0.0) n++;
+        }
+        if (n <= 1) return 1.0;
+        // 结构性上界：声部数不可能超过锈蚟级数
+        n = Math.min(n, OXIDATION_LEVELS);
+        double s = balanceFactor(powerByOxidation);
+        double r = 1.0 + (n - 1) * s;
+        return Math.max(1.0, Math.min(n, r));
+    }
+
+    /**
+     * 共振增益 = R^{@link #RESONANCE_EXPONENT}，作用于容器本 tick 的**基础**发电量。
+     *
+     * <p>⚠️ 铁律：入参必须是「共振前」的各锈蚟级出力。若喂入乘过增益的值，会形成
+     * {@code 增益↑ → 出力↑ → 增益↑} 的回代环。调用方
+     * {@link ContainerPowerData} 的 EMA 只跟踪基础出力，整条链路为纯前馈。</p>
+     */
+    public static double resonanceGain(double[] powerByOxidation) {
+        double r = resonanceFactor(powerByOxidation);
+        if (r <= 1.0) return 1.0;
+        return Math.pow(r, RESONANCE_EXPONENT);
+    }
 }

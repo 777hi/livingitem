@@ -159,5 +159,9 @@
   "tooltip.livingitem.waxed_copper.path_induction": "Induction",
   "tooltip.livingitem.waxed_copper.raw_values": "  P=%dt  n=%d  unlock=%d%%  EMA=%d mFE/t",
   "tooltip.livingitem.waxed_copper.container_power": "Container Total Power",
+  "tooltip.livingitem.waxed_copper.resonance": "  §6Network Resonance",
+  "tooltip.livingitem.waxed_copper.resonance_balance": "§aBalance",
+  "tooltip.livingitem.waxed_copper.resonance_voices": "§7Voices",
+  "tooltip.livingitem.waxed_copper.resonance_none_single": "  §8No resonance (1 voice only; need ≥2 oxidation levels)",
   "tooltip.livingitem.waxed_copper.chiseled_dir": "  §7Sense: IN%s OUT%s"
 }

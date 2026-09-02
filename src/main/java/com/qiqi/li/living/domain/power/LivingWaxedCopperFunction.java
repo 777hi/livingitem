@@ -13,6 +13,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
 import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
@@ -65,8 +66,14 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         ContainerPowerData powerData = tick.getOrCreatePowerData(ctx);
         if (powerData == null) return;
 
+        // 各锈蚟级本 tick 基础出力累加器（共振用，§3.7）。
+        // 声部单位是锈蚟级：同锈蚟级的多个连通块在此自然相加。
+        final long[] baseReByOx = new long[PowerMath.OXIDATION_LEVELS];
+
         ContainerRedstoneData redstone = tick.getOrCreateRedstoneData(ctx);
         if (redstone == null) {
+            // 仍需推进共振 EMA，否则停止发电的锈蚟级不会衰减
+            powerData.updateOxidationEma(baseReByOx);
             powerData.endTick(0);
             return;
         }
@@ -88,6 +95,8 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             active.put(slot, gen);
         }
         if (active.isEmpty()) {
+            // 仍需推进共振 EMA，否则拆除的锈蚟级会一直被算作活跃声部
+            powerData.updateOxidationEma(baseReByOx);
             powerData.endTick(0);
             return;
         }
@@ -118,7 +127,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
                     runBfs(genSlot, genOxidation, ch, pref, powerData, redstone,
                         ctx, size, containerWidth, now, pos2dToEdgeDir(inputDir), outputDir, -1);
                     ch.tickCleanup(now, pref);
-                    accountEnergy(gen, ch, pref, powerData);
+                    accountEnergy(gen, ch, pref, powerData, baseReByOx, genOxidation);
                 }
                 case LivingWaxedGeneratorData.FORM_CUT -> {
                     // 切制：双轴独立 BFS，水平→channel(0)，垂直→channel(1)
@@ -126,13 +135,13 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
                     runBfs(genSlot, genOxidation, chH, pref, powerData, redstone,
                         ctx, size, containerWidth, now, -1, null, 0); // 仅水平
                     chH.tickCleanup(now, pref);
-                    accountEnergy(gen, chH, pref, powerData);
+                    accountEnergy(gen, chH, pref, powerData, baseReByOx, genOxidation);
 
                     ChannelState chV = gen.channel(1);
                     runBfs(genSlot, genOxidation, chV, pref, powerData, redstone,
                         ctx, size, containerWidth, now, -1, null, 1); // 仅垂直
                     chV.tickCleanup(now, pref);
-                    accountEnergy(gen, chV, pref, powerData);
+                    accountEnergy(gen, chV, pref, powerData, baseReByOx, genOxidation);
                 }
                 default -> {
                     // 铜块 / 格栅：全向 BFS，单通道（主通道 channel(0)）
@@ -140,7 +149,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
                     runBfs(genSlot, genOxidation, ch, pref, powerData, redstone,
                         ctx, size, containerWidth, now, -1, null, -1);
                     ch.tickCleanup(now, pref);
-                    accountEnergy(gen, ch, pref, powerData);
+                    accountEnergy(gen, ch, pref, powerData, baseReByOx, genOxidation);
                 }
             }
         }
@@ -166,8 +175,18 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             totalGeneratedRe += e.getValue().drainAndEndTick();
         }
 
+        // ── 网络级共振：不同锈蚟级之间的「和声」（见 living-power-tech.md §3.7）──
+        // 单遍前馈：只用本 tick 的基础出力 baseReByOx 推进 EMA，再取增益套用一次。
+        // 增益绝不回灌 baseReByOx，因此「A 增益↑ → A 出力↑ → A 增益再↑」的
+        // 回代环在结构上不存在（这是本机制唯一的安全红线）。
+        powerData.updateOxidationEma(baseReByOx);
+        double resonanceGain = powerData.resonanceGain();
+
         // ── 发电直存（§3.6 v17.5）──
         long generatedRe = powerData.drainGeneratedRe();
+        if (resonanceGain > 1.0 && generatedRe > 0) {
+            generatedRe = Math.round(generatedRe * resonanceGain);
+        }
         boolean bankChanged = false;
         if (generatedRe > 0) {
             bankChanged = distributeToBulbs(generatedRe, entries);
@@ -284,8 +303,17 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
 
     /**
      * 从通道最佳域计算能量并记入发电机和容器。
+     *
+     * <p>同时按锈蚟级累加**基础**出力到 {@code baseReByOx}，供网络级共振使用
+     * （见 living-power-tech.md §3.7）。这里累的是共振前的值——共振增益只在
+     * tick 末统一套用一次，绝不回灌。</p>
+     *
+     * @param baseReByOx 各锈蚟级基础出力累加器（可为 null，表示不统计共振）
+     * @param oxidation  该发电机所属锈蚟级（0~3）
      */
-    private static void accountEnergy(GeneratorState gen, ChannelState channel, int pref, ContainerPowerData powerData) {
+    private static void accountEnergy(GeneratorState gen, ChannelState channel, int pref,
+                                      ContainerPowerData powerData,
+                                      long[] baseReByOx, int oxidation) {
         double factor = channel.bestFactor(pref);
         int period = channel.bestPeriod(pref);
         if (factor > 0 && period > 0) {
@@ -293,6 +321,9 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             if (re > 0) {
                 gen.onEventEnergy(re);
                 powerData.onEventEnergy(re);
+                if (baseReByOx != null && oxidation >= 0 && oxidation < baseReByOx.length) {
+                    baseReByOx[oxidation] += re;
+                }
             }
         }
     }
@@ -369,9 +400,18 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         long emaFe = gen.getEmaPowerFe();
         long containerEmaFe = powerData != null ? powerData.getEmaPowerFe() : 0;
 
+        // 网络级共振（容器级，§3.6.1）：只读 powerData 的 EMA 基础值，绝不回灌
+        double resonanceGain = powerData != null ? powerData.resonanceGain() : 1.0;
+        double resonanceBalance = powerData != null ? powerData.resonanceBalance() : 0.0;
+        int activeVoices = powerData != null ? powerData.activeOxidationLevels() : 0;
+        List<Long> voicePower = (powerData != null)
+            ? toVoicePowerList(powerData.getEmaPowerByOxidation())
+            : List.of(0L, 0L, 0L, 0L);
+
         if (bestN <= 0) {
             return new LivingWaxedGeneratorData(
-                0, 0, 0, 0, 0, coilForm, emaFe, containerEmaFe, domainSnapshots);
+                0, 0, 0, 0, 0, coilForm, emaFe, containerEmaFe, domainSnapshots,
+                resonanceGain, resonanceBalance, activeVoices, voicePower);
         }
         double eff = PowerMath.tuningEfficiency(
             Math.abs(bestPeriod - pref), pref);
@@ -380,7 +420,15 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         int effDeltaSumPermille = (int) Math.round(effDeltaSum * 1000);
         return new LivingWaxedGeneratorData(
             bestPeriod, bestN, unlockPermille, bestDelta, effDeltaSumPermille,
-            coilForm, emaFe, containerEmaFe, domainSnapshots);
+            coilForm, emaFe, containerEmaFe, domainSnapshots,
+            resonanceGain, resonanceBalance, activeVoices, voicePower);
+    }
+
+    /** double[] (各声部基础出力 EMA) → List<Long>（RE/t，诊断展示用） */
+    private static List<Long> toVoicePowerList(double[] ema) {
+        List<Long> out = new ArrayList<>(ema.length);
+        for (double v : ema) out.add(Math.round(v));
+        return out;
     }
 
     /** 收集通道的全部域快照到 list */
@@ -476,6 +524,9 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
                     .withStyle(ChatFormatting.DARK_AQUA));
             }
 
+            // ── 网络级共振（容器级，§3.6.1）──
+            renderResonanceTooltip(tooltipAdder, t, flag);
+
             // ── EMA 功率（FE/t）──
             if (t.emaPowerFe() > 0) {
                 tooltipAdder.accept(Component.literal("  ")
@@ -558,6 +609,48 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
                     + (full ? "（已满）" : "")))
                 .withStyle(q > 0 ? ChatFormatting.YELLOW : ChatFormatting.DARK_GRAY));
         }
+    }
+
+    /**
+     * 渲染网络级共振的 tooltip 行（容器级，§3.6.1）。
+     *
+     * <p>共振是容器级信息，因此推到每台发电机的仪表盘组件里统一显示——
+     * 同一容器内的任一发电机 tooltip 都能看到当前的共振增益 / 平衡度 / 声部数。</p>
+     */
+    private static void renderResonanceTooltip(
+            java.util.function.Consumer<Component> tooltipAdder,
+            LivingWaxedGeneratorData t, TooltipFlag flag) {
+        int voices = t.activeVoices();
+        if (voices >= 2) {
+            double gain = t.resonanceGain();
+            int balPct = (int) Math.round(t.resonanceBalance() * 100);
+            // 满共振（R=4 → gain=16）用金色高亮，其余用青色
+            double maxGain = Math.pow(PowerMath.OXIDATION_LEVELS, PowerMath.RESONANCE_EXPONENT);
+            ChatFormatting gainFmt = gain >= maxGain - 1e-6 ? ChatFormatting.GOLD : ChatFormatting.AQUA;
+            tooltipAdder.accept(Component.literal("  ")
+                .append(Component.translatable("tooltip.livingitem.waxed_copper.resonance").withStyle(ChatFormatting.GOLD))
+                .append(Component.literal(" ×" + String.format("%.0f", gain)).withStyle(gainFmt))
+                .append(Component.literal("  "))
+                .append(Component.translatable("tooltip.livingitem.waxed_copper.resonance_balance").withStyle(ChatFormatting.GREEN))
+                .append(Component.literal(" " + balPct + "%").withStyle(ChatFormatting.GREEN))
+                .append(Component.literal("  "))
+                .append(Component.translatable("tooltip.livingitem.waxed_copper.resonance_voices").withStyle(ChatFormatting.GRAY))
+                .append(Component.literal(" " + voices + "/" + PowerMath.OXIDATION_LEVELS).withStyle(ChatFormatting.GRAY)));
+            if (flag.isAdvanced()) {
+                // 各声部基础出力（RE/t，EMA）—— 诊断「哪一级是短板」
+                var vp = t.voicePower();
+                String[] names = {"未锈", "暴露", "风化", "氧化"};
+                StringBuilder sb = new StringBuilder("  §8声部出力");
+                for (int i = 0; i < vp.size() && i < names.length; i++) {
+                    if (vp.get(i) > 0) sb.append(" [").append(names[i]).append("]=").append(vp.get(i));
+                }
+                tooltipAdder.accept(Component.literal(sb.toString()).withStyle(ChatFormatting.DARK_GRAY));
+            }
+        } else if (voices == 1) {
+            tooltipAdder.accept(Component.translatable("tooltip.livingitem.waxed_copper.resonance_none_single")
+                .withStyle(ChatFormatting.DARK_GRAY));
+        }
+        // voices == 0：容器无任何发电，不显示共振行
     }
 
     /** 从物品取形态翻译键 */
