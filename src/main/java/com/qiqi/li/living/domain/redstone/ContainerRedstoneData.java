@@ -811,14 +811,23 @@ public class ContainerRedstoneData {
     private void powerConductiveNeighbor(int slot, int signal, int dir,
             int size, int width, ContainerContext context, Queue<Integer> secondQueue) {
         int neighbor = resolveSlot(slot, dir, size, width);
-        if (neighbor < 0 || is(neighbor, MASK_REDSTONE)) return;
-        if (!isConductiveBlock(context.getItem(neighbor))) return;
+        if (neighbor < 0) return;
+        // 不向其它红石「元件」直接写输出边——元件自行从其输入算输出；
+        // 导体（dust / copper）与红石导体方块则应被充能并继续传播。
+        // 注意：原早退掩码 MASK_REDSTONE 含 BIT_DUST / BIT_COPPER，会把比较器/中继器
+        // 经粉链输出的信号掐在网络外，导致「输出只能传一格」。改为只挡元件位。
+        if (is(neighbor, BIT_TORCH | BIT_BUTTON | BIT_LEVER
+                | BIT_REPEATER | BIT_COMPARATOR | BIT_BLOCK)) return;
+        ItemStack nStack = context.getItem(neighbor);
+        if (nStack.isEmpty()) return;
+        boolean conductor = is(neighbor, BIT_DUST | BIT_COPPER) || isConductiveBlock(nStack);
+        if (!conductor) return;
 
         for (int d2 = 0; d2 < 4; d2++) {
             if (signal > edgeGrid.get(neighbor, d2)) {
                 edgeGrid.set(neighbor, d2, signal);
                 int n2 = resolveSlot(neighbor, d2, size, width);
-                if (is(n2, BIT_DUST)) {
+                if (n2 >= 0 && is(n2, BIT_DUST | BIT_COPPER)) {
                     secondQueue.add(n2);
                 }
             }

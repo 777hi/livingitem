@@ -389,4 +389,48 @@ class ContainerRedstoneDataTest {
 
         assertTrue(data.getSignal(1) > 0, "单行布局中相邻槽位应被供电");
     }
+
+    // ════════════════════════════════════════
+    // 比较器输出传播（对应本轮修复的「只能传一格」bug）
+    // ════════════════════════════════════════
+
+    /**
+     * 修复回归：比较器后方经红石粉链输入时，输出必须沿粉链传播超过一格。
+     *
+     * <p>布局（9 列第 2 行，槽位 9..17）：
+     * 红石块(9) → 粉(10) → 粉(11) → 比较器(12,朝右) → 粉(13) → 粉(14)</p>
+     *
+     * <p>根因：phase1 把比较器当源收集时，其输出依赖后方输入（粉 11），
+     * 而粉链要在 phase2 才传播，故 phase1 误判输出为 0 并跳过入队；
+     * phase3/phase4 重算输出却未把下游粉链并入传播（{@code powerConductiveNeighbor}
+     * 早退掩码含 BIT_DUST/BIT_COPPER），导致输出只亮紧邻一格。</p>
+     */
+    @Test
+    @DisplayName("比较器后方经粉链输入：输出传播超过一格")
+    void comparator_rearFedByDust_propagatesPastOneBlock() {
+        var ctx = new FakeContainerContext(SIZE, WIDTH);
+        ctx.set(9, living(Items.REDSTONE_BLOCK, 1));
+        ctx.set(10, living(Items.REDSTONE, 1));
+        ctx.set(11, living(Items.REDSTONE, 1));
+        ItemStack comparator = living(Items.COMPARATOR, 1);
+        LivingItemManager.setComparatorData(comparator,
+            LivingComparatorData.DEFAULT.withDirection(Pos2D.RIGHT));
+        ctx.set(12, comparator);
+        ctx.set(13, living(Items.REDSTONE, 1));
+        ctx.set(14, living(Items.REDSTONE, 1));
+
+        var slots = Map.<String, Set<Integer>>of(
+            LivingRedstoneBlockFunction.ID, Set.of(9),
+            LivingRedstoneFunction.ID, Set.of(10, 11, 13, 14),
+            LivingComparatorFunction.ID, Set.of(12));
+
+        var data = propagate(ctx, slots);
+
+        assertTrue(data.getSignal(13) > 0,
+            "比较器紧邻输出格(粉13)应被供电，实际=" + data.getSignal(13));
+        // 关键断言：再往后一格(粉14)也必须被供电；修复前只能传一格，此格为 0
+        assertTrue(data.getSignal(14) > 0,
+            "比较器输出应沿粉链传播到第二格(粉14)，修复前只能传一格，实际="
+                + data.getSignal(14));
+    }
 }
