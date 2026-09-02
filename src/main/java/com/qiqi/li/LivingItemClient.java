@@ -1,12 +1,17 @@
 package com.qiqi.li;
 
+import com.mojang.datafixers.util.Either;
 import com.qiqi.li.client.icon.LivingIconRegistry;
 import com.qiqi.li.client.render.LivingChestTooltipRenderer;
+import com.qiqi.li.client.render.LivingWaxedCopperTooltipRenderer;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.domain.chest.LivingChestTooltipComponent;
+import com.qiqi.li.living.domain.power.LivingWaxedCopperFunction;
+import com.qiqi.li.living.domain.power.LivingWaxedCopperTooltipComponent;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.item.ItemProperties;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
@@ -17,6 +22,7 @@ import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.neoforge.client.event.ModelEvent;
 import net.neoforged.neoforge.client.event.RegisterItemDecorationsEvent;
+import net.neoforged.neoforge.client.event.RenderTooltipEvent;
 import net.neoforged.neoforge.client.gui.ConfigurationScreen;
 import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
 import net.neoforged.neoforge.client.event.RegisterClientTooltipComponentFactoriesEvent;
@@ -76,5 +82,26 @@ public class LivingItemClient {
     @SubscribeEvent
     static void onRegisterTooltipComponentFactories(RegisterClientTooltipComponentFactoriesEvent event) {
         event.register(LivingChestTooltipComponent.class, LivingChestTooltipRenderer::new);
+        event.register(LivingWaxedCopperTooltipComponent.class, LivingWaxedCopperTooltipRenderer::new);
+    }
+
+    /**
+     * 活涂蜡发电机的仪器面板：追加到 tooltip 末尾，仅 F3+H 高级模式显示。
+     *
+     * <p>刻意不走 {@code ItemStack.getTooltipImage()}——NeoForge 会把那个组件插在
+     * 索引 1（紧跟物品名之后），而仪器面板属于进阶诊断信息，应当置底。</p>
+     */
+    @SubscribeEvent
+    static void onGatherTooltipComponents(RenderTooltipEvent.GatherComponents event) {
+        ItemStack stack = event.getItemStack();
+        if (stack.isEmpty()) return;
+        if (!LivingItemManager.isLivingItem(stack)) return;
+        if (!LivingWaxedCopperFunction.isWaxedCopperBlock(stack.getItem())) return;
+        if (LivingWaxedCopperFunction.isWaxedBulb(stack.getItem())) return;
+        if (!Minecraft.getInstance().options.advancedItemTooltips) return;
+
+        var data = LivingItemManager.getGeneratorData(stack);
+        event.getTooltipElements().add(
+            Either.right(LivingWaxedCopperTooltipComponent.from(data)));
     }
 }

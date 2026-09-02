@@ -512,7 +512,10 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             int pref = stack.getCount();
             boolean hasSignal = t.detectedPeriod() > 0;
 
-            // ── 偏好周期 / 宽带（紧跟在标题后）──
+            // ══ 核心（常显）：最关键的读数 ══
+            renderSection(tooltipAdder, "tooltip.livingitem.waxed_copper.section.core");
+
+            // ── 偏好周期 / 宽带 ──
             if (pref >= 2) {
                 tooltipAdder.accept(Component.literal("  ")
                     .append(Component.translatable("tooltip.livingitem.waxed_copper.preferred_period"))
@@ -524,9 +527,6 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
                     .withStyle(ChatFormatting.DARK_AQUA));
             }
 
-            // ── 网络级共振（容器级，§3.6.1）──
-            renderResonanceTooltip(tooltipAdder, t, flag);
-
             // ── EMA 功率（FE/t）──
             if (t.emaPowerFe() > 0) {
                 tooltipAdder.accept(Component.literal("  ")
@@ -535,37 +535,50 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
                     .withStyle(ChatFormatting.YELLOW));
             }
 
-            if (hasSignal) {
-                // ── 检测周期 · 相数 · 解锁度（合并为一行）──
-                boolean tuned = Math.abs(t.detectedPeriod() - pref) <= 1;
-                tooltipAdder.accept(Component.literal("  ")
-                    .append(Component.translatable("tooltip.livingitem.waxed_copper.detected_period"))
-                    .append(Component.literal(": " + t.detectedPeriod() + "t"))
-                    .append(Component.literal(tuned ? " §a✓" : " §c(偏好" + pref + "t)"))
-                    .append(Component.literal("  §7n=" + t.phaseCount()))
-                    .append(Component.literal("  §7解锁" + t.unlockPermille() / 10 + "%"))
-                    .withStyle(ChatFormatting.GRAY));
+            // ── 网络级共振（容器级，§3.6.1）：收益核心，靠前显示 ──
+            renderResonanceTooltip(tooltipAdder, t);
 
-                // ── 发电量公式（v3，一行）──
-                double effDeltaSum = t.effDeltaSumPermille() / 1000.0;
-                double factor = PowerMath.combinedFactor(effDeltaSum, t.phaseCount(), t.unlockPermille() / 1000.0);
-                double fePerEvent = factor * (t.detectedPeriod() / 16.0);
-                tooltipAdder.accept(Component.literal("  ")
-                    .append(Component.translatable("tooltip.livingitem.waxed_copper.power_output"))
-                    .append(Component.literal(" = " + String.format("%.0f", fePerEvent) + " FE"))
-                    .append(Component.literal("  §8(Σ√|Δ|=" + String.format("%.1f", effDeltaSum)))
-                    .append(Component.literal(" ^(1+" + String.format("%.2f", t.unlockPermille() / 1000.0) + ")"))
-                    .append(Component.literal(" × " + t.detectedPeriod() + "/16)"))
-                    .withStyle(ChatFormatting.GRAY));
-            } else {
+            // ── 状态：无信号时一句「检测中」──
+            if (!hasSignal) {
                 tooltipAdder.accept(Component.literal("  ")
                     .append(Component.translatable("tooltip.livingitem.waxed_copper.no_signal"))
                     .withStyle(ChatFormatting.DARK_GRAY));
             }
 
-            // ── F3+H 高级模式：容器总功率 + 各域快照 ──
+            // ══ 以下为进阶诊断信息，仅 F3+H 高级模式显示 ══
             if (flag.isAdvanced()) {
-                // 容器总功率
+                renderSection(tooltipAdder, "tooltip.livingitem.waxed_copper.section.settlement");
+
+                if (hasSignal) {
+                    // ── 检测周期 · 相数 · 解锁度（合并为一行）──
+                    boolean tuned = Math.abs(t.detectedPeriod() - pref) <= 1;
+                    tooltipAdder.accept(Component.literal("  ")
+                        .append(Component.translatable("tooltip.livingitem.waxed_copper.detected_period"))
+                        .append(Component.literal(": " + t.detectedPeriod() + "t"))
+                        .append(Component.literal(tuned ? " §a✓" : " §c(偏好" + pref + "t)"))
+                        .append(Component.literal("  §7n=" + t.phaseCount()))
+                        .append(Component.literal("  §7解锁" + t.unlockPermille() / 10 + "%"))
+                        .withStyle(ChatFormatting.GRAY));
+
+                    // ── 发电量公式（v3，一行）──
+                    double effDeltaSum = t.effDeltaSumPermille() / 1000.0;
+                    double factor = PowerMath.combinedFactor(effDeltaSum, t.phaseCount(), t.unlockPermille() / 1000.0);
+                    double fePerEvent = factor * (t.detectedPeriod() / 16.0);
+                    tooltipAdder.accept(Component.literal("  ")
+                        .append(Component.translatable("tooltip.livingitem.waxed_copper.power_output"))
+                        .append(Component.literal(" = " + String.format("%.0f", fePerEvent) + " FE"))
+                        .append(Component.literal("  §8(Σ√|Δ|=" + String.format("%.1f", effDeltaSum)))
+                        .append(Component.literal(" ^(1+" + String.format("%.2f", t.unlockPermille() / 1000.0) + ")"))
+                        .append(Component.literal(" × " + t.detectedPeriod() + "/16)"))
+                        .withStyle(ChatFormatting.GRAY));
+                }
+
+                // ── 共振公式（与发电量公式并列，§3.6.1）──
+                renderResonanceFormula(tooltipAdder, t);
+
+                // ── 网络（容器级）：诊断细节，置底 ──
+                renderSection(tooltipAdder, "tooltip.livingitem.waxed_copper.section.network");
+
                 if (t.containerEmaPowerFe() > 0) {
                     tooltipAdder.accept(Component.literal("  ")
                         .append(Component.translatable("tooltip.livingitem.waxed_copper.container_power"))
@@ -619,7 +632,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
      */
     private static void renderResonanceTooltip(
             java.util.function.Consumer<Component> tooltipAdder,
-            LivingWaxedGeneratorData t, TooltipFlag flag) {
+            LivingWaxedGeneratorData t) {
         int voices = t.activeVoices();
         if (voices >= 2) {
             double gain = t.resonanceGain();
@@ -636,21 +649,43 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
                 .append(Component.literal("  "))
                 .append(Component.translatable("tooltip.livingitem.waxed_copper.resonance_voices").withStyle(ChatFormatting.GRAY))
                 .append(Component.literal(" " + voices + "/" + PowerMath.OXIDATION_LEVELS).withStyle(ChatFormatting.GRAY)));
-            if (flag.isAdvanced()) {
-                // 各声部基础出力（RE/t，EMA）—— 诊断「哪一级是短板」
-                var vp = t.voicePower();
-                String[] names = {"未锈", "暴露", "风化", "氧化"};
-                StringBuilder sb = new StringBuilder("  §8声部出力");
-                for (int i = 0; i < vp.size() && i < names.length; i++) {
-                    if (vp.get(i) > 0) sb.append(" [").append(names[i]).append("]=").append(vp.get(i));
-                }
-                tooltipAdder.accept(Component.literal(sb.toString()).withStyle(ChatFormatting.DARK_GRAY));
-            }
         } else if (voices == 1) {
             tooltipAdder.accept(Component.translatable("tooltip.livingitem.waxed_copper.resonance_none_single")
                 .withStyle(ChatFormatting.DARK_GRAY));
         }
         // voices == 0：容器无任何发电，不显示共振行
+        // 各声部出力的具体数值由底部仪器面板的柱状图呈现，此处不再重复文字
+    }
+
+    /**
+     * 分区分隔线：{@code ─── 小标题 ───────}。
+     *
+     * <p>用 U+2500 方框绘制横线（已确认在原版字体的位图字形表内，不会渲染成豆腐块）。</p>
+     */
+    private static void renderSection(java.util.function.Consumer<Component> tooltipAdder, String titleKey) {
+        tooltipAdder.accept(Component.literal("  §8─── ")
+            .append(Component.translatable(titleKey).withStyle(ChatFormatting.DARK_PURPLE))
+            .append(Component.literal(" §8─────────────")));
+    }
+
+    /**
+     * 共振公式行（§3.6.1），与发电量公式并列展示：
+     * {@code 共振 = Σbase × R²   (s=1.00  R=1+3×1.00=4.00)}
+     *
+     * <p>代入本容器的实际平衡度 s 与声部数 N，让玩家看懂倍率是怎么算出来的。</p>
+     */
+    private static void renderResonanceFormula(
+            java.util.function.Consumer<Component> tooltipAdder, LivingWaxedGeneratorData t) {
+        int voices = t.activeVoices();
+        if (voices < 1) return;
+        double s = t.resonanceBalance();
+        double r = 1.0 + (voices - 1) * s;
+        tooltipAdder.accept(Component.literal("  ")
+            .append(Component.translatable("tooltip.livingitem.waxed_copper.resonance_output").withStyle(ChatFormatting.GOLD))
+            .append(Component.literal(" §7= Σbase × R²  "))
+            .append(Component.literal("§8(s=" + String.format("%.2f", s)
+                + "  R=1+" + (voices - 1) + "×" + String.format("%.2f", s)
+                + "=" + String.format("%.2f", r) + ")")));
     }
 
     /** 从物品取形态翻译键 */

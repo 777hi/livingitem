@@ -99,9 +99,9 @@ processContext() 每 game tick：
 
 | 方法 | 说明 |
 |---|---|
-| `onRisingEdge(tick, delta)` | 记录上升沿时间和幅度，更新间隔 EMA |
-| `period()` | 返回当前估计周期（≥2 个间隔后有效） |
-| `offset()` | 返回相对于首次上升沿的偏移量 |
+| `onRisingEdge(tick, delta)` | 记录上升沿时间与幅度，按间隔 EMA 估计周期（详见 §3.2） |
+| `period()` | 返回当前估计周期（≥1 个间隔 / 2 个上升沿后有效，否则 0=检测中） |
+| `offset()` | 返回上升沿在周期内的相位：`lastRisingTick mod period`（0~P-1） |
 
 ### 2.3 ChannelState —— 通道状态
 
@@ -161,23 +161,78 @@ processContext() 每 game tick：
 
 ### 3.2 周期估计（SignalTracker）
 
+周期为**盲测**得到：跟踪器不读取偏好周期 `pref`，而是纯粹测量「相邻两次上升沿之间的间隔」来反推真实周期 P（参见 §1.3 数据流 / `SignalTracker.onRisingEdge`）。
+
 ```
 上升沿间隔 EMA（α = 0.5）：
   间隔 = 本次上升沿 tick - 上次上升沿 tick
-  periodEMA = periodEMA + (间隔 - periodEMA) * 0.5
-  需要 ≥2 个间隔才开始输出周期（防止单次误判）
+  if 这是第 1 个间隔:  periodEMA = 间隔            // 直接采用，不做平均
+  else:                periodEMA += (间隔 - periodEMA) * 0.5
 ```
+
+`period()` 输出守卫：`intervalsSeen >= 1 && periodEMA >= 1.5` 才返回 `round(periodEMA)`，否则返回 0（即 tooltip 的「检测中」）。`periodEMA < 1.5` 过滤极短抖动，避免把噪声当成周期。
+
+`offset()` = `lastRisingTick % period()`，即最后一次上升沿在周期内的相位（0 ~ P-1）。它是后续各发电机间相位差 Δ 与「相数 n」的源头（见 §3.3）。
+
+#### 为什么长周期会「慢慢」找到
+瓶颈不在算法，而在**样本稀疏**：一个周期只产生一次上升沿，所以跟踪器每 P tick 才能拿到一个间隔样本。
+
+- 第 1 个上升沿：只记时间，无间隔 → `period() = 0`
+- 第 2 个上升沿（再过 P tick）：产生第 1 个间隔 → `period()` 首次非零
+- 之后每个 P tick 更新一次，EMA 逐步收敛
+
+因此即便 P 很大（100+ tick），算法也能找到——它只是「测间隔、做平均」，对周期无上限；代价是样本更稀、收敛更慢。例如 P=130 时，第一个周期值约在 t≈130 tick 出现，再累积 2~3 个样本（每个再等 130 tick）才稳定，体感上即十几秒后 tooltip 才锁定周期。
+
+#### α 的意义
+α=0.5 收敛较快（2~3 个样本即贴到真实 P），同时平滑掉信号周期的轻微抖动，使 tooltip 周期读数稳定不跳变。需要更快锁定可略增 α，需要更强抗抖可略减 α（代价是收敛更慢）。
 
 ### 3.3 相位域分组与 n（PhaseDomain）
 
 ```
 ① 按 period 整数分域（不同周期各自独立）
 ② 域内 offset 去重：
-   offset = (event.tick − baseTick) mod period
-   baseTick = 域内第一个事件 tick
+   offset = event.tick mod period（= 上升沿在周期内的相位，来自 SignalTracker.offset()）
+   同一 offset 的事件合并、不同 offset 各自独立
 ③ n = 不同偏移量个数（同偏移合并不算多次）
 ④ eff_δ_sum = Σ√|Δ_i|（各偏移的 |Δ| 分别 √ 后求和）
 ```
+
+#### 3.3.1 网络涌现多相（n 可突破单块上限）
+
+`runBfs` 从发电机槽位出发扫描**整个同锈蚀级涂蜡铜块网络**，而非仅发电机自身。网络上每个被充能的铜块槽位、其每个方向（共 4 个 dir）都对应一个独立的 `SignalTracker`（`edgeKey = (slot<<2)|dir`）。因此「参与相位的边数」= 网络中被充能的 (slot,dir) 条数，而非「红石信号源数」。
+
+- **单块硬上限 n≤4**：孤立涂蜡铜块只有 4 个 dir，最多 4 个相位源。
+- **集群打破上限**：网络规模（铜块数 × 4 dir）越大，可被独立充能并各自记相位的边越多，n 可远大于 4——少数红石输入经网络传播后可涌现为多相。这是红石传播延迟 + 网络拓扑 + 每边独立相位检测三条规则自然组合的产物，无任何规则专门设计「放大输入」。
+- **边界**：若网络中多条边**同步**上升（同一 tick 相位相同），其 `offset = tick mod period` 相等，`deltaByOffset.merge` 合并为同一 bucket → n 塌缩为 1，无增益。真实多相增益要求拓扑天然制造不同相位（不同传播距离 / 延迟）。
+
+##### 3.3.1.1 相位错开的真实来源（先澄清一个误区）
+
+> **铜块之间的「逐格传播延迟」并不存在。** `phase2Propagation`
+> （`ContainerRedstoneData.java:470`）是标准 BFS，但整个 `while(!queue.isEmpty())`
+> 在**同一次 `calculate()` 调用、即同一个 game tick 内走完**：铜块与红石粉的边信号
+> 在同 tick 内全部算出，邻居通过 `queue.add` 同 tick 续跑。因此铜块网络自身传播
+> **没有跨 tick 的逐格延迟**，所有连通边在同一 tick 被充能。
+
+真正让网络中不同边在 `lastRisingTick`（全局 tick 时钟）上错开、从而产生多个不同
+`offset = lastRisingTick mod period` 的，只有以下两类来源：
+
+1. **中继器的档位延迟**（`ContainerRedstoneData.java:30`、`:585`）——
+   唯一真实的跨 tick 延迟。中继器收到输入后置
+   `delayTimer = delay() × TICKS_PER_REPEATER_STEP`（每红石刻 = 2 game tick），
+   每 tick 在 `phase0CountdownDelays` 倒数，数完前输出边不上升。
+   信号经过 N 个中继器 → 比直连路径晚 `2N` 个 tick 到达下游铜块 → 下游边
+   `lastRisingTick` 整体平移 → offset 改变。
+2. **各路输入的固有相位差**——正如 4 路信号「信号间隔 = 0/1/2/3、持续时长 =
+   4/3/2/1」，4 路本身就是在全局时钟上错相的周期信号，于不同 tick 上升。
+
+`runBfs`（`LivingWaxedCopperFunction.java:236`）对网络上每条被充能的 (slot,dir) 边
+独立记 `lastRisingTick`，`SignalTracker.offset()` 取 `lastRisingTick mod period`。
+两类来源叠加（错相输入 ≈ 4 个 offset + 不同中继器数量的路径再分裂出若干错开到达
+tick + 网络不同位置边各自采样），`PhaseDomain` 去重后即得 n=7 乃至更大的多相值。
+
+> 推论：若网络是「纯铜块 + 同步输入、无任何中继器」，所有边将在同一 tick 上升
+> → offset 全部相等 → n 塌缩为 1。多相涌现依赖**错相输入**或**中继器档位延迟**
+> 制造到达时刻差，而非铜块传播本身。
 
 ### 3.4 合因子计算（ChannelState.bestFactor）
 
