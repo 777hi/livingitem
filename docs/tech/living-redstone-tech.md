@@ -2,8 +2,8 @@
 
 # Living Redstone (活红石) 技术文档
 
-> **文档版本**: 2026.09 v15
-> **最后更新**: 2026-09-02
+> **文档版本**: 2026.09 v16
+> **最后更新**: 2026-09-03
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -1427,6 +1427,11 @@ int output = subtractMode ? max(0, A - B) : (A >= B ? A : 0);
 
 与中继器一样，比较器在 Phase 1 作为信号源直接写边，不参与 Phase 2 BFS 传播。但 Phase 3 会重新计算并写回边网格，确保依赖 Phase 2 粉尘传播的信号（如后方是红石粉）能正确反映到输出。
 
+> **设计变更（v16）：比较器/中继器链改为「迭代到稳定」**
+> 现象：活比较器首尾相连时，链只能亮若干级、再往后一级彻底无信号（"第 4 个就死"）。
+> 根因：元件输出依赖上游元件出边，但 `powerConductiveNeighbor` 对元件位直接 return（不把下游元件入队），链式传播只能靠 Phase 4 内 `for (slot : comparatorSlots/repeaterSlots)` 单遍遍历顺序推进；而这两组槽位是 `HashSet`（哈希桶序，与几何方向无关），于是链的推进长度 = 桶序碰巧与几何吻合的长度，且 `reset()` 每 tick 清零使断链永不自愈。
+> 修复：Phase 4 的元件计算外包一层 `for (iter = 0; iter < size+2; iter++)` 迭代到稳定——每遍对中继器/比较器算 `output` 并与上一 tick 的 `edgeGrid.get` 比较，仅变化才 `set` 并置 `changed`、变化则 `powerConductiveNeighbor` 把下游入队；无变化即 `break`。稳态无依赖变化时一轮即停（零额外开销），链式依赖逐轮收敛自愈。中继器 `output` 内联为 `(powered && delayTimer<=0) ? getSignalCap(count) : 0`，不再依赖调用点 `delayTimer<=0` 检查。回归测试：`ContainerRedstoneDataTest.bugA_comparatorChain_forward_allLit` / `bugA_comparatorChain_reverse_allLit`（≥4 级双向链全亮）。
+
 ---
 
 ## 7. 堆叠数与信号强度
@@ -1579,6 +1584,7 @@ ContainerLivingItemHandler.processContext()
 **代价与风险（用复杂度换常驻性能）**：
 - 多 5 个跨 tick 状态字段（`everCalculated / lastRev / lastExternalSig / lastHadActiveTimers / steadySkipCount`），bug 面更大。
 - **rev-bump 坑（已实现并修复）**：`recordSteadyState` 最初记录方法开头采样的 `rev`，但传播过程中 phase5/phase3 经 `syncSlotToClients` 会 bump 修订计数，导致 `lastRev` 落后一拍、下一拍开头采到的 `rev` 永远与之不等，稳态跳过几乎无法触发。修复为在重算出口**重采样重算后的** `getContainerRevision(context)`，与下一拍开头采样对齐。这是典型的"差一拍"隐蔽 bug。
+- **修订计数停滞坑（Bug B，已实现并修复）**：`bumpContainerRevision` 只被 `SimpleContainerContext.setItem` / `syncSlotToClients` 调用 = 仅本模组**自身**写入路径计数。原版玩家点击、漏斗、掉落物拾取直接改底层容器、完全绕开这些包装方法 → 修订计数停滞 → 第 ① 道闸 `rev==lastRev` 永不打破、快照缓存永不重建 → 容器内信号层集体"死掉"（只有外接跨容器信号改变 `externalSig` 第 ② 道闸时才暂时活过来）。修复：`ContainerLivingItemHandler.processContext` 在每 tick 槽位扫描后调用 `syncContentRevision(ctx)`，用「内容签名」（逐槽位 `Item.getId + 数量`，空槽参与混合，O(槽位)）兜底——内容变化则 `bumpContainerRevision`。只比对 id+数量（DataComponent 变更仅本模组发起、已走 `syncSlotToClients`，无需覆盖）。`cleanupStalePosIndex` / `clearAllCaches` 同步清理签名映射。回归测试：`bugB_contentChangedViaVanillaPath_bumpsRevision` / `bugB_vanillaRemoval_reflectedAfterSyncContentRevision`；配套 `FakeContainerContext.rawSet` 模拟原版直写（不 bump）。
 - **调试不透明**：稳态时 `calculate` 主体不执行，内部日志/断点不触发，排"为什么信号没更新"时易误判。
 - **只对稳态有效**：电路活跃变化期间几乎从不触发，收益完全集中在静止电路（常驻省电，非"让复杂电路变快"）。
 - **极端残留风险**：`externalSig` 用 `Arrays.hashCode` 比对，理论哈希碰撞会误跳一拍显示陈旧信号，概率极低且下一拍输入再变即自愈。

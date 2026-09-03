@@ -43,6 +43,9 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
     private static final int[] DIR_ROW = {-1, 1, 0, 0};
     private static final int[] DIR_COL = {0, 0, -1, 1};
 
+    /** 遥测快照有效数字位数：EMA 类读数量化到 3 位，稳态下钉死值以降低脏写频率（量化降脏化优化） */
+    private static final int TELEMETRY_SIG_FIGS = 3;
+
     @Override
     public boolean canApply(ItemStack stack) {
         if (!LivingItemManager.isLivingItem(stack)) return false;
@@ -466,8 +469,8 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         long containerEmaFe = powerData != null ? powerData.getEmaPowerFe() : 0;
 
         // 网络级共振（容器级，§3.6.1）：只读 powerData 的 EMA 基础值，绝不回灌
-        double resonanceGain = powerData != null ? powerData.resonanceGain() : 1.0;
-        double resonanceBalance = powerData != null ? powerData.resonanceBalance() : 0.0;
+        double resonanceGain = powerData != null ? PowerMath.quantize(powerData.resonanceGain(), TELEMETRY_SIG_FIGS) : 1.0;
+        double resonanceBalance = powerData != null ? PowerMath.quantize(powerData.resonanceBalance(), TELEMETRY_SIG_FIGS) : 0.0;
         int activeVoices = powerData != null ? powerData.activeOxidationLevels() : 0;
         List<Long> voicePower = (powerData != null)
             ? toVoicePowerList(powerData.getEmaPowerByOxidation())
@@ -502,7 +505,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             ChannelState.PhaseDomain d = e.getValue();
             List<Integer> deltas = new ArrayList<>(d.deltaByOffset().values());
             out.add(new DomainSnapshot(
-                d.period(), d.n(), d.maxDelta(), d.effDeltaSum(), deltas));
+                d.period(), d.n(), d.maxDelta(), PowerMath.quantize(d.effDeltaSum(), TELEMETRY_SIG_FIGS), deltas));
         }
     }
 

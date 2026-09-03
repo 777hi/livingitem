@@ -1,6 +1,7 @@
 package com.qiqi.li.living.domain.power;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -243,5 +244,54 @@ class NetworkTraversalTest {
         assertEquals(0, oxidized.channel().bestN(PREF), "氧化铜(不同网络)不应收到任何相位事件");
         assertTrue(fresh.getEmaPowerRe() > 0, "新鲜铜应发电");
         assertEquals(0.0, oxidized.getEmaPowerRe(), 1e-9, "氧化铜不应发电");
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // 5) 量化遥测降低稳态脏写频率（服务器场景优化）
+    // ════════════════════════════════════════════════════════════════
+
+    @Test
+    @DisplayName("多声部稳态：遥测量化后不再每 tick 脏写发电机槽位")
+    void quantizedTelemetry_doesNotDirtyInSteadyState() {
+        // 两个声部：氧化 0（pref=4）与氧化 3（pref=8），基础功率不同 → 平衡度 s<1，
+        // 共振增益 / 平衡度 EMA 渐近收敛（若未量化会每 tick 微动 → 每 tick 脏写）。
+        ItemStack[] slots = new ItemStack[SIZE];
+        slots[0] = living(Items.WAXED_COPPER_BLOCK, 4);        // 声部 0
+        slots[1] = living(Items.WAXED_OXIDIZED_COPPER, 8);     // 声部 3
+        IItemHandler handler = new FakeHandler(slots);
+        SimpleContainerContext ctx = new SimpleContainerContext(handler, new ArrayList<>(), new ArrayList<>());
+        ContainerRedstoneData redstone = ctx.getOrCreateRedstoneData();
+
+        List<LivingItemFunction.SlotEntry> entries = new ArrayList<>();
+        entries.add(new LivingItemFunction.SlotEntry(0, slots[0]));
+        entries.add(new LivingItemFunction.SlotEntry(1, slots[1]));
+
+        int dir = ContainerRedstoneData.EDGE_UP;
+        TickContext lastTick = null;
+        // 跑足够多 tick 让共振 EMA 完全收敛（EMA_ALPHA=0.125，~40 tick 到 99%；跑 100 保险）
+        for (int t = 0; t <= 100; t++) {
+            int v = (Math.floorMod(t, PERIOD) < PERIOD / 2) ? HIGH : 0;
+            int pv = (Math.floorMod(t - 1, PERIOD) < PERIOD / 2) ? HIGH : 0;
+            redstone.setPrevEdgeForTest(0, dir, pv);
+            redstone.setEdgeForTest(0, dir, v);
+            redstone.setPrevEdgeForTest(1, dir, pv);
+            redstone.setEdgeForTest(1, dir, v);
+
+            TickContext tick = new TickContext(ctx);
+            function.tickContainerData(entries, ctx, tick);
+            lastTick = tick;
+        }
+
+        // 前置：场景确实在多声部共振稳态（否则「不脏写」会平凡成立，失去意义）
+        var gd = LivingItemManager.getGeneratorData(ctx.getItem(0));
+        assertEquals(2, gd.activeVoices(), "应有两个活跃声部（共振生效）");
+        assertTrue(gd.emaPowerFe() > 0, "应有发电量");
+        assertTrue(gd.resonanceGain() > 1.0, "共振增益应 > 1（多声部共振）");
+
+        // 收敛后稳态：遥测被量化钉死 → 发电机槽位不再每 tick 标脏
+        assertFalse(lastTick.dirtySlots.contains(0),
+            "稳态下声部 0 槽位不应每 tick 脏写：dirtySlots=" + lastTick.dirtySlots);
+        assertFalse(lastTick.dirtySlots.contains(1),
+            "稳态下声部 3 槽位不应每 tick 脏写：dirtySlots=" + lastTick.dirtySlots);
     }
 }

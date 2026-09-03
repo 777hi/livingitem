@@ -68,6 +68,18 @@ public class FakeContainerContext implements ContainerContext {
         return this;
     }
 
+    /**
+     * 直写底层槽位、<b>不</b>触发修订计数（模拟原版玩家点击 / 漏斗 / 掉落物拾取
+     * 等途径，它们直接改底层容器而绕开本模组的 {@code setItem}/{@code syncSlotToClients}）。
+     *
+     * <p>用于回归「容器修订计数停滞」类 bug：内容已变但 rev 不增，稳态跳过永不打破，
+     * 容器内信号层集体死掉。</p>
+     */
+    public FakeContainerContext rawSet(int slot, ItemStack stack) {
+        slots[slot] = stack;
+        return this;
+    }
+
     @Override
     public Level getLevel() {
         return level;

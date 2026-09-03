@@ -828,30 +828,56 @@ public class ContainerRedstoneData {
             }
         }
 
-        for (int slot : repeaterSlots) {
-            if (slot < 0 || slot >= size) continue;
-            ItemStack stack = context.getItem(slot);
-            if (stack.isEmpty()) continue;
-            LivingRepeaterData data = LivingItemManager.getRepeaterData(stack);
-            if (!data.powered() || data.delayTimer() > 0) continue;
+        // ── 元件（中继器 / 比较器）输出：迭代到稳定 ──
+        // 元件输出依赖上游元件的输出边。单次遍历只能按集合迭代顺序推进，而
+        // comparatorSlots / repeaterSlots 是 HashSet（哈希桶序，与几何方向无关），
+        // 于是「比较器首尾相连」这类链式连接会被随机截断；又因 reset() 每 tick
+        // 清零、且 powerConductiveNeighbor 不把元件当导体入队，断掉的那一级
+        // 永远不会自愈（表现为「链到第 N 个就死」）。
+        // 改为重复计算直到无边变化：无依赖变化时一轮即停，稳态零额外开销。
+        int maxElementIterations = size + 2;
+        for (int iter = 0; iter < maxElementIterations; iter++) {
+            boolean changed = false;
 
-            int cap = getSignalCap(stack.getCount());
-            int outDir = edgeIndex(data.direction());
-            powerConductiveNeighbor(slot, cap, outDir, size, width, context, secondQueue);
-        }
+            for (int slot : repeaterSlots) {
+                if (slot < 0 || slot >= size) continue;
+                ItemStack stack = context.getItem(slot);
+                if (stack.isEmpty()) continue;
+                LivingRepeaterData data = LivingItemManager.getRepeaterData(stack);
 
-        for (int slot : comparatorSlots) {
-            if (slot < 0 || slot >= size) continue;
-            ItemStack stack = context.getItem(slot);
-            if (stack.isEmpty()) continue;
-            LivingComparatorData data = LivingItemManager.getComparatorData(stack);
-            int output = computeComparatorOutput(slot, data, context, size, width);
-            int outDir = edgeIndex(data.direction());
-            // 直接同步本槽出边（可抬可压），替代原 phase3 的 != 兜底：
-            // 比较器关闭时出边归零，下游粉下一 tick 经 maxInput 自然衰减，不再残留高电平。
-            edgeGrid.set(slot, outDir, output);
-            if (output <= 0) continue;
-            powerConductiveNeighbor(slot, output, outDir, size, width, context, secondQueue);
+                int output = (data.powered() && data.delayTimer() <= 0)
+                    ? getSignalCap(stack.getCount()) : 0;
+                int outDir = edgeIndex(data.direction());
+                int prev = edgeGrid.get(slot, outDir);
+                if (prev != output) {
+                    edgeGrid.set(slot, outDir, output);
+                    changed = true;
+                }
+                if (output > 0) {
+                    powerConductiveNeighbor(slot, output, outDir, size, width, context, secondQueue);
+                }
+            }
+
+            for (int slot : comparatorSlots) {
+                if (slot < 0 || slot >= size) continue;
+                ItemStack stack = context.getItem(slot);
+                if (stack.isEmpty()) continue;
+                LivingComparatorData data = LivingItemManager.getComparatorData(stack);
+                int output = computeComparatorOutput(slot, data, context, size, width);
+                int outDir = edgeIndex(data.direction());
+                // 直接同步本槽出边（可抬可压），替代原 phase3 的 != 兜底：
+                // 比较器关闭时出边归零，下游粉下一 tick 经 maxInput 自然衰减，不再残留高电平。
+                int prev = edgeGrid.get(slot, outDir);
+                if (prev != output) {
+                    edgeGrid.set(slot, outDir, output);
+                    changed = true;
+                }
+                if (output > 0) {
+                    powerConductiveNeighbor(slot, output, outDir, size, width, context, secondQueue);
+                }
+            }
+
+            if (!changed) break;
         }
 
         for (int slot : copperSlots) {

@@ -2,8 +2,8 @@
 
 # Living Power (活涂蜡铜块 · 红电发电) 技术文档
 
-> **文档版本**: v4.0（公式 v3：√|Δ| 求和 + 铜块网络传播）
-> **最后更新**: 2026-09-01
+> **文档版本**: v4.2（公式 v3：√|Δ| 求和 + 铜块网络按组件遍历 + 遥测量化降脏化）
+> **最后更新**: 2026-09-03
 > **适用版本**: Minecraft 1.21.1
 > **规划文档**: [红电系统.md](../红电系统.md)（v17.7，公式 v3）
 
@@ -43,13 +43,13 @@ FE               = RE × K，K = 1/16
 | n（相数） | 同周期域内不同偏移量去重 | 布线（同相合并，不跨域累加） |
 | 调谐效率 | 输入周期 vs 偏好周期 | 堆叠数 = 调谐旋钮 |
 | 解锁度 u | eff × n / 偏好周期 | 相数越多解锁度越高，建造难度也越高 |
-| 铜块网络 | 同氧化等级铜块 BFS 遍历 | 不同锈蚀等级形成独立网络，需布线连接 |
+| 铜块网络 | 按网络组件遍历（TopoKey + rep 锚点 BFS + copyFrom 共享） | 不同锈蚀级形成独立网络，同组件多机共享相位历史 |
 
 ### 1.2 关键类与职责
 
 | 类名 | 位置 | 职责 |
 |------|------|------|
-| `LivingWaxedCopperFunction` | `domain/power/` | 功能入口：`canApply`（涂蜡全家族 20 件）、`getPriority()=3`、铜块网络 BFS + 边信号检测 |
+| `LivingWaxedCopperFunction` | `domain/power/` | 功能入口：`canApply`（涂蜡全家族 20 件）、`getPriority()=3`、铜块网络按组件遍历 + 边信号检测 |
 | `PowerMath` | `domain/power/` | 纯函数：合因子、调谐效率、√|Δ| 求和、RE 记账、K 换算 |
 | `PhaseEvent` | `domain/power/` | 相位事件记录：sourceId、period、offset、delta、tick |
 | `ChannelState` | `domain/power/` | 通道状态：相位域分组计 n、eff_δ_sum 计算、合因子 |
@@ -66,12 +66,12 @@ FE               = RE × K，K = 1/16
 processContext() 每 game tick：
   ├─ priority 2：红石 calculate()（edgeGrid 双缓冲刷新）
   └─ priority 3：LivingWaxedCopperFunction.tickContainerData()
-       ├─ 收集发电机槽位
-       ├─ 每台发电机从自身出发 BFS 遍历同氧化等级铜块网络
-       ├─ 对每个遍历到的铜块，检查 4 条边的 edgeGrid 信号变化
-       ├─ 上升沿 → 持久化 SignalTracker 获取周期 → PhaseEvent → ChannelState
-       ├─ 域内去重计 n，eff_δ_sum = Σ√|Δ_i|
-       └─ 最佳域合因子 → RE → onEventEnergy() → endTick()
+       ├─ 收集发电机槽位（铜灯跳过）
+       ├─ 按网络组件遍历：每台发电机按形态归入组件 ComponentId = (TopoKey, rep, channelIdx)
+       ├─ 每组件仅锚点（最小槽位 rep）跑一次 BFS，检测边信号 → PhaseEvent → ChannelState
+       ├─ 其余发电机 copyFrom 锚点 ChannelState（相位历史深拷贝同步，O(域) 极廉价）
+       ├─ 上升沿 → 持久化 SignalTracker 获取周期 → ChannelState.onPhaseEvent()
+       └─ 逐发电机 accountEnergy：用各自 pref 从共享/复制域取最佳 → RE → endTick()
 ```
 
 > ⚠️ **priority 必须保持 3**：电力采样依赖红石（priority 2）已算完的 edgeGrid。
@@ -141,22 +141,31 @@ processContext() 每 game tick：
 
 ## 3. 核心算法
 
-### 3.1 铜块网络传播（BFS）
+### 3.1 铜块网络传播（按网络组件遍历）
 
 ```
-每 tick，每台发电机：
-  ① 获取自身氧化等级
-  ② BFS 从自身出发遍历同氧化等级铜块：
+每 tick，铜块网络传播**按「网络组件」遍历**，而非逐发电机各跑一次 BFS：
+
+  ① 收集发电机，每台按形态归入组件 ComponentId = (TopoKey, rep, channelIdx)
+       - TopoKey = (氧化级, 线圈形态, 轴, 入边, 出边)：决定 BFS 连通性与边检测方向
+       - rep = 组件内最小铜块槽位（稳定锚点，保证跨 tick 同一网络映射到同一 ChannelState）
+  ② 每组件仅锚点（rep 槽位）跑一次 BFS 遍历同氧化等级铜块：
      - 四个方向（上下左右）检查同氧化等级铜块
      - 铜灯（泡）不导电，跳过
      - 非铜块物品跳过
-  ③ 对每个遍历到的铜块槽位，检查 4 条边：
+  ③ 锚点对遍历到的每个铜块槽位，检查 4 条边：
      - 读 edgeGrid[slot][dir] vs prevEdgeGrid[slot][dir]
      - 信号无变化 → 跳过
      - 上升沿（delta > 0）→ SignalTracker.onRisingEdge()
      - 周期已知 → PhaseEvent → ChannelState.onPhaseEvent()
-  ④ tickCleanup 清理过期域
-  ⑤ 取最佳域 → 合因子 → RE 能量入账
+  ④ 同组件其余发电机 ChannelState.copyFrom(锚点)（相位历史深拷贝同步，O(域) 极廉价）
+  ⑤ tickCleanup(maxPref) 清理过期域；逐发电机 accountEnergy 取最佳域 → 合因子 → RE
+
+> **重构要点**：旧实现每台发电机各自 BFS 遍历同一氧化级连通块（同边集被扫 G 次，
+> G 倍冗余）。现同 (TopoKey, rep, channelIdx) 组件只让锚点跑一次 BFS，其余 `copyFrom`
+> 复用结果。`copyFrom` 安全的前提是 `ChannelState.onPhaseEvent(event, pref)` 中 `pref`
+> 完全不参与分域（域仅按 `event.period()` 分桶），故同网络多机共享同一 ChannelState 实例
+> 100% 安全；调谐偏好仅在读取时 `bestFactor/bestPeriod(pref)` 各自选型，逐机 pref 敏感保留。
 ```
 
 ### 3.2 周期估计（SignalTracker）
@@ -199,7 +208,7 @@ processContext() 每 game tick：
 
 #### 3.3.1 网络涌现多相（n 可突破单块上限）
 
-`runBfs` 从发电机槽位出发扫描**整个同锈蚀级涂蜡铜块网络**，而非仅发电机自身。网络上每个被充能的铜块槽位、其每个方向（共 4 个 dir）都对应一个独立的 `SignalTracker`（`edgeKey = (slot<<2)|dir`）。因此「参与相位的边数」= 网络中被充能的 (slot,dir) 条数，而非「红石信号源数」。
+`runBfs` 从组件锚点（rep 槽位）出发扫描**整个同锈蚀级涂蜡铜块网络**，而非仅单台发电机；同组件其余发电机通过 `copyFrom` 复用该次遍历结果。网络上每个被充能的铜块槽位、其每个方向（共 4 个 dir）都对应一个独立的 `SignalTracker`（`edgeKey = (slot<<2)|dir`）。因此「参与相位的边数」= 网络中被充能的 (slot,dir) 条数，而非「红石信号源数」。
 
 - **单块硬上限 n≤4**：孤立涂蜡铜块只有 4 个 dir，最多 4 个相位源。
 - **集群打破上限**：网络规模（铜块数 × 4 dir）越大，可被独立充能并各自记相位的边越多，n 可远大于 4——少数红石输入经网络传播后可涌现为多相。这是红石传播延迟 + 网络拓扑 + 每边独立相位检测三条规则自然组合的产物，无任何规则专门设计「放大输入」。
@@ -225,7 +234,7 @@ processContext() 每 game tick：
 2. **各路输入的固有相位差**——正如 4 路信号「信号间隔 = 0/1/2/3、持续时长 =
    4/3/2/1」，4 路本身就是在全局时钟上错相的周期信号，于不同 tick 上升。
 
-`runBfs`（`LivingWaxedCopperFunction.java:236`）对网络上每条被充能的 (slot,dir) 边
+`runBfs`（`LivingWaxedCopperFunction.java:233`）对网络上每条被充能的 (slot,dir) 边
 独立记 `lastRisingTick`，`SignalTracker.offset()` 取 `lastRisingTick mod period`。
 两类来源叠加（错相输入 ≈ 4 个 offset + 不同中继器数量的路径再分裂出若干错开到达
 tick + 网络不同位置边各自采样），`PhaseDomain` 去重后即得 n=7 乃至更大的多相值。
@@ -404,7 +413,8 @@ tick + 网络不同位置边各自采样），`PhaseDomain` 去重后即得 n=7 
 - 铜块网络传播依赖 `ContainerRedstoneData` 的逐方向访问器 `getEdgeValue(slot, dir)` /
   `getPrevEdgeValue(slot, dir)` 与 `EDGE_COUNT = 4`；
 - 信号源写边**无条件**（涂蜡槽位天然可采样），传播层零改动；
-- 发电机 BFS 只读边信号，不写任何信号；
+- 发电机按网络组件遍历只读边信号（锚点 BFS + 其余 copyFrom 共享），不写任何信号；
+- 遥测写回节流（量化降脏化）：仪表盘 `LivingWaxedGeneratorData` 写回前，对共振增益 `resonanceGain` / 平衡度 `resonanceBalance` / 域快照 `effDeltaSum` 三个 EMA 类 double 量化到 3 位有效数字（`PowerMath.quantize`）。稳态下这些读数被「钉」在固定值 → `equals` 变 true → 跳过脏写，复用现有 `dirtySlots` 批处理，不另造轮子。针对服务器场景（多发电容器同时被打开 × 多玩家）降低每 tick 同步量。
 - 容器级缓存完整镜像红石协议：`ContainerLivingItemHandler.POWER_DATA_CACHE` +
   过期清理（120s）+ `clearAllCaches`（ServerStoppedEvent）+ 位置反向索引。
 
@@ -429,7 +439,7 @@ tick + 网络不同位置边各自采样），`PhaseDomain` 去重后即得 n=7 
 | 规划步骤 | 状态 | 说明 |
 |---|---|---|
 | Step 7 记账（事件 + RE + EMA） | ✅ | `ContainerPowerData` |
-| Step 8 铜块网络传播 | ✅ | BFS 遍历同氧化等级铜块，边信号检测 |
+| Step 8 铜块网络传播 | ✅ | 按网络组件遍历（锚点 BFS + 其余 copyFrom），边信号检测 |
 | Step 9 相位域合因子 | ✅ | √|Δ| 求和、域内去重 n、调谐解锁 |
 | Step 10 氧化等级网络隔离 | ✅ | 新鲜/暴露/锈蚀/氧化互不连通 |
 | Step 11 铜灯储能 | ✅ | 发电直存 + 按盏电量 DataComponent（无池） |

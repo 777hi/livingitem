@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -15,6 +16,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.container.ContainerLivingItemHandler;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.model.Pos2D;
 import com.qiqi.li.testutil.FakeContainerContext;
@@ -553,5 +555,189 @@ class ContainerRedstoneDataTest {
         assertEquals(0, data.getSignal(12), "下游粉应衰减归零");
         assertEquals(0, data.getSignal(13), "下游粉应衰减归零");
         assertEquals(0, data.getSignal(14), "下游粉应衰减归零");
+    }
+
+    // ════════════════════════════════════════
+    // 多 tick 稳态：稳态跳过不得掐死容器内部信号源
+    // ════════════════════════════════════════
+
+    @Test
+    @DisplayName("多 tick 稳态：红石块持续为相邻红石粉供能（稳态跳过不得熄灭）")
+    void redstoneBlock_powersAdjacentDust_acrossSteadyTicks() {
+        var ctx = new FakeContainerContext(SIZE, WIDTH);
+        ctx.set(10, living(Items.REDSTONE_BLOCK, 1));
+        ctx.set(11, living(Items.REDSTONE, 1));
+
+        var slots = Map.<String, Set<Integer>>of(
+            LivingRedstoneBlockFunction.ID, Set.of(10),
+            LivingRedstoneFunction.ID, Set.of(11));
+
+        ContainerRedstoneData data = new ContainerRedstoneData();
+        tickOnce(data, ctx, slots);
+        int first = data.getSignal(11);
+
+        for (int t = 0; t < 10; t++) {
+            tickOnce(data, ctx, slots);
+        }
+
+        assertEquals(15, first, "首 tick 红石块应为相邻红石粉供能 15");
+        assertEquals(15, data.getSignal(11),
+            "稳态跳过后红石块仍应持续供能（跳过次数=" + data.steadySkipCount + "）");
+    }
+
+    // ════════════════════════════════════════
+    // Bug A 回归：比较器首尾相连（链式）传播
+    // ════════════════════════════════════════
+
+    /**
+     * 回归 Bug A：活红石比较器首尾相连，至少传 4 级而不衰减到 0。
+     *
+     * <p>布局（9 列第 2 行）：红石块(9) → 粉(10) → 粉(11) → 比较器(12,右) →
+     * 比较器(13,右) → 比较器(14,右) → 比较器(15,右) → 粉(16)。</p>
+     *
+     * <p>根因：元件输出依赖上游元件出边，而 {@code comparatorSlots} 是 HashSet
+     * （哈希桶序，与几何无关），单遍遍历会按随机顺序截断链；又因 {@code reset()}
+     * 每 tick 清零、且 {@code powerConductiveNeighbor} 不把元件当导体入队，
+     * 断掉的那一级永不自愈（表现为「链到第 4 个就死」）。修复改为迭代到稳定。</p>
+     */
+    @Test
+    @DisplayName("Bug A 回归：比较器正向链式（≥4 级）全部点亮")
+    void bugA_comparatorChain_forward_allLit() {
+        var ctx = new FakeContainerContext(SIZE, WIDTH);
+        ctx.set(9, living(Items.REDSTONE_BLOCK, 1));
+        ctx.set(10, living(Items.REDSTONE, 1));
+        ctx.set(11, living(Items.REDSTONE, 1));
+        for (int slot = 12; slot <= 15; slot++) {
+            ItemStack c = living(Items.COMPARATOR, 1);
+            LivingItemManager.setComparatorData(c,
+                LivingComparatorData.DEFAULT.withDirection(Pos2D.RIGHT));
+            ctx.set(slot, c);
+        }
+        ctx.set(16, living(Items.REDSTONE, 1));
+
+        var slots = Map.<String, Set<Integer>>of(
+            LivingRedstoneBlockFunction.ID, Set.of(9),
+            LivingRedstoneFunction.ID, Set.of(10, 11, 16),
+            LivingComparatorFunction.ID, Set.of(12, 13, 14, 15));
+
+        var data = propagate(ctx, slots);
+
+        // 链末端粉(16) 被第 4 个比较器(15) 供能 → 整条链都通
+        assertTrue(data.getSignal(16) > 0,
+            "第 4 个比较器应输出并点亮末端粉，修复前此处为 0，实际="
+                + data.getSignal(16));
+        // 中间每级比较器也应点亮其下游
+        assertTrue(data.getSignal(12) > 0 && data.getSignal(15) > 0,
+            "链式首尾比较器均应输出");
+    }
+
+    /**
+     * 回归 Bug A：反向链（比较器朝左）同样全部点亮，确认不依赖几何方向。
+     *
+     * <p>布局：粉(10) → 比较器(11,左) → 比较器(12,左) → 比较器(13,左) →
+     * 比较器(14,左) → 粉(15) → 粉(16) → 红石块(17)。</p>
+     */
+    @Test
+    @DisplayName("Bug A 回归：比较器反向链式（≥4 级）全部点亮")
+    void bugA_comparatorChain_reverse_allLit() {
+        var ctx = new FakeContainerContext(SIZE, WIDTH);
+        ctx.set(17, living(Items.REDSTONE_BLOCK, 1));
+        ctx.set(16, living(Items.REDSTONE, 1));
+        ctx.set(15, living(Items.REDSTONE, 1));
+        for (int slot = 11; slot <= 14; slot++) {
+            ItemStack c = living(Items.COMPARATOR, 1);
+            LivingItemManager.setComparatorData(c,
+                LivingComparatorData.DEFAULT.withDirection(Pos2D.LEFT));
+            ctx.set(slot, c);
+        }
+        ctx.set(10, living(Items.REDSTONE, 1));
+
+        var slots = Map.<String, Set<Integer>>of(
+            LivingRedstoneBlockFunction.ID, Set.of(17),
+            LivingRedstoneFunction.ID, Set.of(15, 16, 10),
+            LivingComparatorFunction.ID, Set.of(11, 12, 13, 14));
+
+        var data = propagate(ctx, slots);
+
+        assertTrue(data.getSignal(10) > 0,
+            "反向链末端粉(10) 应被第 4 个比较器(11) 供能，修复前为 0，实际="
+                + data.getSignal(10));
+        assertTrue(data.getSignal(11) > 0 && data.getSignal(14) > 0,
+            "反向链式首尾比较器均应输出");
+    }
+
+    // ════════════════════════════════════════
+    // Bug B 回归：容器修订计数停滞 → 信号层「集体死掉」
+    // ════════════════════════════════════════
+
+    /**
+     * 回归 Bug B：内容经原版途径变更（不经 {@code setItem}，不 bump 修订计数）
+     * 时，{@link ContainerLivingItemHandler#syncContentRevision} 用内容签名兜底
+     * bump 修订计数，使稳态跳过被打破、信号层重新工作。
+     *
+     * <p>根因：{@code bumpContainerRevision} 只被本模组的 {@code setItem} /
+     * {@code syncSlotToClients} 调用；原版玩家点击、漏斗、掉落物拾取直接改底层容器，
+     * 完全绕开 → 修订计数停滞 → 稳态跳过永不打破、快照缓存永不重建，容器内信号层
+     * 像「全死了一样」，只有外接跨容器信号改变 {@code externalSig} 时才暂时活过来。</p>
+     */
+    @Test
+    @DisplayName("Bug B 回归：原版途径改内容后，内容签名兜底 bump 修订计数")
+    void bugB_contentChangedViaVanillaPath_bumpsRevision() {
+        // 唯一 containerKey，避免与同 JVM 内其它测试共享静态修订计数映射
+        var ctx = new FakeContainerContext(SIZE, WIDTH,
+            "bugB_" + UUID.randomUUID());
+
+        // 首次写入经 set()（会 bump），建立基线签名
+        ctx.set(0, living(Items.REDSTONE, 1));
+        ContainerLivingItemHandler.syncContentRevision(ctx);
+        long baseline = ContainerLivingItemHandler.getContainerRevision(ctx);
+
+        // 后续 tick 内容不变 → 不应再 bump
+        ContainerLivingItemHandler.syncContentRevision(ctx);
+        assertEquals(baseline, ContainerLivingItemHandler.getContainerRevision(ctx),
+            "内容不变时 syncContentRevision 不应 bump 修订计数");
+
+        // 模拟原版途径：直接改底层容器，不经 setItem（不 bump 修订计数）
+        ctx.rawSet(0, ItemStack.EMPTY);
+
+        // 修复前：rev 不变 → 稳态跳过永不打破（信号层集体死掉）。
+        // 修复后：syncContentRevision 经内容签名检出变化 → bump。
+        ContainerLivingItemHandler.syncContentRevision(ctx);
+        assertTrue(ContainerLivingItemHandler.getContainerRevision(ctx) > baseline,
+            "原版途径改内容后，syncContentRevision 必须兜底 bump 修订计数");
+    }
+
+    /**
+     * 回归 Bug B（集成视角）：原版途径移除信号源后，配合每 tick 的
+     * {@code syncContentRevision} 兜底，稳态跳过应被打破、残留信号归零。
+     *
+     * <p>等价的生产路径是 {@code ContainerLivingItemHandler.processContext} 在槽位扫描后
+     * 调用 {@code syncContentRevision}；此处直接调用同一方法以驱动真实红石层。</p>
+     */
+    @Test
+    @DisplayName("Bug B 回归：原版途径移除信号源后，稳态跳过失效、信号归零")
+    void bugB_vanillaRemoval_reflectedAfterSyncContentRevision() {
+        var ctx = new FakeContainerContext(SIZE, WIDTH,
+            "bugB_integration_" + UUID.randomUUID());
+        ctx.set(10, living(Items.REDSTONE_BLOCK, 1));
+        ctx.set(11, living(Items.REDSTONE, 1));
+
+        var slots = Map.<String, Set<Integer>>of(
+            LivingRedstoneBlockFunction.ID, Set.of(10),
+            LivingRedstoneFunction.ID, Set.of(11));
+
+        var data = new ContainerRedstoneData();
+        tickOnce(data, ctx, slots);
+        assertTrue(data.getSignal(11) > 0, "前置：红石块应为相邻红石粉供能");
+
+        // 模拟原版途径移除红石块（不经 setItem → 不 bump 修订计数）
+        ctx.rawSet(10, ItemStack.EMPTY);
+
+        // 生产路径每 tick 调用 syncContentRevision 兜底
+        ContainerLivingItemHandler.syncContentRevision(ctx);
+        tickOnce(data, ctx, slots);
+
+        assertEquals(0, data.getSignal(11),
+            "原版途径移除信号源后，稳态跳过应被打破、残留信号必须归零");
     }
 }

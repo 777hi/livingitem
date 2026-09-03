@@ -85,6 +85,24 @@ public final class PowerMath {
         return Math.round(re * RE_TO_FE);
     }
 
+    /**
+     * 把浮点值量化到指定有效数字位数（用于遥测快照，降低稳态下的「脏写」频率）。
+     *
+     * <p>EMA 类读数（共振增益 / 平衡度）会无限逼近目标值、每 tick 仍有一丢丢变化，
+     * 若直接写进 DataComponent 会导致 {@code equals} 永远不等 → 每 tick 都标脏同步。
+     * 量化到 2~3 位有效数字后，稳态值会「钉」在一个固定数上不再变，从而跳过脏写。
+     * 复用现有 {@code dirtySlots} 批处理，不另造轮子。</p>
+     *
+     * @param value            待量化值（0 / NaN / Inf 原样返回）
+     * @param significantFigures 有效数字位数（如 3 → 12.345 → 12.3；0.001234 → 0.00123）
+     */
+    public static double quantize(double value, int significantFigures) {
+        if (value == 0.0 || Double.isNaN(value) || Double.isInfinite(value)) return value;
+        int exp = (int) Math.floor(Math.log10(Math.abs(value)));
+        double factor = Math.pow(10, significantFigures - 1 - exp);
+        return Math.round(value * factor) / factor;
+    }
+
     // ── 网络级共振（不同锈蚟级之间的「和声」，见 living-power-tech.md §3.7）──
     //
     // 块级感应是「铜块采样边信号」，网络级共振是「锈蚟级之间互相感应」——同一套

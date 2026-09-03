@@ -20,6 +20,7 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.PlayerEnderChestContainer;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.ChestBlock;
@@ -73,6 +74,18 @@ public class ContainerLivingItemHandler {
      * 框架据此判断容器快照是否需重建：修订不变则直接复用跨 tick 缓存的快照。
      */
     private static final Map<String, Long> CONTAINER_REVISION = new HashMap<>();
+
+    /**
+     * 容器内容签名（逐槽位 物品 id + 数量）。
+     *
+     * <p>{@link #bumpContainerRevision} 只被 {@link SimpleContainerContext} 的写入方法
+     * （{@code setItem} / {@code syncSlotToClients}）调用，也就是只有<b>模组自身</b>的
+     * 写入路径会计数。原版途径（玩家点击、漏斗、掉落物拾取等）直接修改底层容器，
+     * 完全绕开这些包装方法 → 修订计数停滞 → 稳态跳过永不打破、快照缓存永不重建，
+     * 表现为「容器内信号层全部停止工作，只有外接信号时才活过来」。
+     * 此处用每 tick 已有的槽位扫描顺带算签名兜底，见 {@link #syncContentRevision}。</p>
+     */
+    private static final Map<String, Integer> CONTAINER_CONTENT_SIG = new HashMap<>();
 
     /** 容器快照跨 tick 缓存：key=缓存键，value=构建时的修订计数 + 不可变快照。 */
     private static final Map<String, CachedSnapshot> SNAPSHOT_CACHE = new HashMap<>();
@@ -230,6 +243,40 @@ public class ContainerLivingItemHandler {
     }
 
     /**
+     * 用内容签名兜底容器修订计数：内容变化则 bump，使稳态跳过与快照缓存失效。
+     *
+     * <p>必须在每 tick 的槽位扫描之后、{@code TickContext} 创建之前调用，
+     * 这样本 tick 就能看到最新的物品与重算结果。开销 O(槽位数)。</p>
+     *
+     * <p>只比对「物品 id + 数量」：自定义 DataComponent 的变更只可能由本模组发起，
+     * 而那些路径已经走了 {@code syncSlotToClients}（会 bump），无需在此重复覆盖。</p>
+     */
+    public static void syncContentRevision(ContainerContext ctx) {
+        String key = cacheKey(ctx);
+        if (key == null) return;
+        int sig = computeContentSignature(ctx);
+        Integer prev = CONTAINER_CONTENT_SIG.put(key, sig);
+        if (prev == null || prev.intValue() != sig) {
+            bumpContainerRevision(ctx);
+        }
+    }
+
+    /** 容器内容签名：逐槽位混入 物品 id 与数量（空槽参与混合，保证槽位移动也能检出） */
+    private static int computeContentSignature(ContainerContext ctx) {
+        int h = 1;
+        int size = ctx.getSize();
+        for (int i = 0; i < size; i++) {
+            ItemStack s = ctx.getItem(i);
+            if (s == null || s.isEmpty()) {
+                h = h * 31;
+            } else {
+                h = h * 31 + Item.getId(s.getItem()) * 31 + s.getCount();
+            }
+        }
+        return h;
+    }
+
+    /**
      * 取（或构建并缓存）容器快照。仅当修订计数相对上次构建发生变化时才重建，
      * 否则复用跨 tick 缓存的同一快照，避免每个 tick 重复扫描全部物品。
      *
@@ -278,6 +325,9 @@ public class ContainerLivingItemHandler {
         CONTAINER_REVISION.keySet().removeIf(
             key -> !FLUID_DATA_CACHE.containsKey(key) && !REDSTONE_DATA_CACHE.containsKey(key)
                 && !POWER_DATA_CACHE.containsKey(key));
+        CONTAINER_CONTENT_SIG.keySet().removeIf(
+            key -> !FLUID_DATA_CACHE.containsKey(key) && !REDSTONE_DATA_CACHE.containsKey(key)
+                && !POWER_DATA_CACHE.containsKey(key));
     }
 
     /** 清空全部容器级缓存（服务端关闭时调用，避免跨存档残留） */
@@ -287,6 +337,7 @@ public class ContainerLivingItemHandler {
         POWER_DATA_CACHE.clear();
         POS_TO_CACHE_KEY.clear();
         CONTAINER_REVISION.clear();
+        CONTAINER_CONTENT_SIG.clear();
         SNAPSHOT_CACHE.clear();
         LivingWaterBucketFunction.clearAllCaches();
         cleanupCounter = 0;
@@ -396,6 +447,12 @@ public class ContainerLivingItemHandler {
                 }
             }
         }
+
+        // 原版途径（玩家点击 / 漏斗 / 掉落物）直接改底层容器，不走 SimpleContainerContext
+        // 的写入方法 → 修订计数不会变。若放任不管，稳态跳过永不打破、快照缓存永不重建，
+        // 容器内的信号层会「集体死掉」（只有外接信号改变 externalSig 时才暂时活过来）。
+        // 借这次已有的全槽扫描顺带校验内容签名，变化则 bump。必须早于 TickContext 创建。
+        syncContentRevision(context);
 
         if (grouped.isEmpty()) {
             // 容器内已无活物品，但可能残留边界红石信号，需再跑一次传播使其归零
