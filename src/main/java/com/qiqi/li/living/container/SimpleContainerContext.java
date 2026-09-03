@@ -426,13 +426,25 @@ public class SimpleContainerContext implements ContainerContext {
         }
         if (level == null || level.isClientSide) return;
 
+        // 收集本容器关联的 Container 实例，用于验证 slot.container 归属
+        java.util.HashSet<Container> myContainers = new java.util.HashSet<>();
+        for (BlockEntity be : associatedBlockEntities) {
+            if (be instanceof Container c) {
+                myContainers.add(c);
+            }
+        }
+        if (myContainers.isEmpty()) return;
+
         for (ServerPlayer serverPlayer : level.getServer().getPlayerList().getPlayers()) {
             AbstractContainerMenu menu = serverPlayer.containerMenu;
             if (menu == serverPlayer.inventoryMenu) continue;
 
             for (int i = 0; i < menu.slots.size(); i++) {
                 Slot slot = menu.slots.get(i);
-                if (slot.getContainerSlot() == logicalSlot && slot.container != serverPlayer.getInventory()) {
+                // 必须同时匹配：槽位索引 + 容器归属，防止跨容器虚影
+                if (slot.getContainerSlot() == logicalSlot
+                    && slot.container != serverPlayer.getInventory()
+                    && myContainers.contains(slot.container)) {
                     int stateId = menu.incrementStateId();
                     menu.remoteSlots.set(i, stack.copy());
                     serverPlayer.connection.send(

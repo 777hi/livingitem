@@ -20,6 +20,8 @@ import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.SimpleContainerContext;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.domain.redstone.ContainerRedstoneData;
+import com.qiqi.li.living.domain.runtime.ContainerRuntimeCache;
+import com.qiqi.li.living.domain.runtime.LivingItemRuntimeData;
 import com.qiqi.li.living.domain.power.PhaseEvent;
 
 /**
@@ -283,10 +285,12 @@ class NetworkTraversalTest {
         }
 
         // 前置：场景确实在多声部共振稳态（否则「不脏写」会平凡成立，失去意义）
-        var gd = LivingItemManager.getGeneratorData(ctx.getItem(0));
-        assertEquals(2, gd.activeVoices(), "应有两个活跃声部（共振生效）");
-        assertTrue(gd.emaPowerFe() > 0, "应有发电量");
-        assertTrue(gd.resonanceGain() > 1.0, "共振增益应 > 1（多声部共振）");
+        // 遥测数据已写入运行时缓存，不再写入 DataComponent
+        var gd = ContainerRuntimeCache.get(ctx.getContainerKey(), 0);
+        assertTrue(gd.isGenerator(), "应有发电机遥测数据（运行时缓存）");
+        assertEquals(2, gd.generatorTelemetry().activeVoices(), "应有两个活跃声部（共振生效）");
+        assertTrue(gd.generatorTelemetry().emaPowerFe() > 0, "应有发电量");
+        assertTrue(gd.generatorTelemetry().resonanceGain() > 1.0, "共振增益应 > 1（多声部共振）");
 
         // 收敛后稳态：遥测被量化钉死 → 发电机槽位不再每 tick 标脏
         assertFalse(lastTick.dirtySlots.contains(0),

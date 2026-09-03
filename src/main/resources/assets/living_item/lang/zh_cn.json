@@ -18,6 +18,7 @@
   "tooltip.livingitem.transform.ready": "  §7状态: §a就绪§r",
   "tooltip.livingitem.transform.processing": "  §7状态: §e处理中...§r",
   "tooltip.livingitem.transform.recipe": "  §7配方: §e%s§7 → §a%s§r",
+  "tooltip.livingitem.transform.no_recipe": "  §7输入: §e%s§7 §8(无配方)§r",
   "tooltip.livingitem.hopper.status": "§a活漏斗§r",
   "tooltip.livingitem.hopper.disabled": "  §c⚠ 被红石信号禁用§r",
   "tooltip.livingitem.filter.blacklist": "  §c黑名单:§r",

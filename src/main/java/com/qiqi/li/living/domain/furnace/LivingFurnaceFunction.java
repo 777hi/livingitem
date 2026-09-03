@@ -28,6 +28,9 @@ import com.qiqi.li.living.domain.furnace.FuelData;
 import com.qiqi.li.living.domain.furnace.LivingFurnaceData;
 import com.qiqi.li.living.domain.furnace.ProgressData;
 import com.qiqi.li.living.domain.furnace.TransformData;
+import com.qiqi.li.living.domain.runtime.ContainerRuntimeCache;
+import com.qiqi.li.living.domain.runtime.LivingItemRuntimeData;
+import com.qiqi.li.living.domain.runtime.LivingItemClientCache;
 
 public class LivingFurnaceFunction implements LivingItemFunction, HasDirection {
 
@@ -55,11 +58,23 @@ public class LivingFurnaceFunction implements LivingItemFunction, HasDirection {
 
             ItemStack stack = entry.stack();
             LivingFurnaceData data = LivingItemManager.getFurnaceData(stack);
+            String containerKey = context.getContainerKey();
+
+            // 从运行时缓存读取瞬态数据（不影响物品堆叠的 DataComponent）
+            LivingItemRuntimeData cached = ContainerRuntimeCache.get(containerKey, slot);
+            if (cached.isFurnace()) {
+                var fr = cached.furnace();
+                data = data.withProgress(new ProgressData(fr.progress(), data.progress().total()))
+                           .withFuel(new FuelData(fr.burnTime()))
+                           .withTransform(fr.transform() != null ? fr.transform() : TransformData.EMPTY);
+            }
 
             DirectionSlotsData dir = data.direction();
+            boolean directionChanged = false;
             if (dir.directions().isEmpty()) {
                 dir = DEFAULT_DIRECTION;
                 data = data.withDirection(dir);
+                directionChanged = true;
             }
             int containerSize = context.getSize();
             int containerWidth = context.getWidth();
@@ -87,8 +102,20 @@ public class LivingFurnaceFunction implements LivingItemFunction, HasDirection {
                 data = pauseTick(data);
             }
 
-            LivingItemManager.setFurnaceData(stack, data);
-            context.syncSlotToClients(slot, stack);
+            // 写入运行时缓存（progress、fuel、transform），不写入 DataComponent
+            ContainerRuntimeCache.update(containerKey, slot,
+                LivingItemRuntimeData.forFurnace(
+                    data.progress().progress(), data.progress().total(),
+                    data.fuel().burnTime(), data.transform()));
+
+            // 仅当方向数据变化时写入 DataComponent，避免运行时数据影响物品堆叠
+            if (directionChanged) {
+                LivingItemManager.setFurnaceData(stack, data
+                    .withProgress(ProgressData.DEFAULT)
+                    .withFuel(FuelData.DEFAULT)
+                    .withTransform(TransformData.EMPTY));
+                context.syncSlotToClients(slot, stack);
+            }
         }
     }
 
@@ -276,6 +303,24 @@ public class LivingFurnaceFunction implements LivingItemFunction, HasDirection {
                              TooltipFlag flag,
                              ItemStack stack) {
         LivingFurnaceData data = LivingItemManager.getFurnaceData(stack);
+
+        // 从客户端缓存读取运行时数据（不影响物品堆叠）
+        LivingItemRuntimeData runtimeData = LivingItemClientCache.getCurrentTooltipData();
+        FuelData runtimeFuel;
+        ProgressData runtimeProgress;
+        TransformData runtimeTransform;
+        if (runtimeData.isFurnace()) {
+            var fr = runtimeData.furnace();
+            runtimeFuel = new FuelData(fr.burnTime());
+            runtimeProgress = new ProgressData(fr.progress(), fr.total() > 0 ? fr.total() : data.progress().total());
+            runtimeTransform = fr.transform() != null ? fr.transform() : data.transform();
+        } else {
+            runtimeFuel = data.fuel();
+            runtimeProgress = data.progress();
+            runtimeTransform = data.transform();
+        }
+        // 合并运行时数据到 DataComponent 数据用于 tooltip 显示
+        data = data.withFuel(runtimeFuel).withProgress(runtimeProgress).withTransform(runtimeTransform);
 
         tooltipAdder.accept(Component.nullToEmpty(""));
         tooltipAdder.accept(Component.translatable("tooltip.livingitem.furnace.status"));

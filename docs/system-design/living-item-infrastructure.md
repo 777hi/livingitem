@@ -883,7 +883,25 @@ if (context instanceof SimpleContainerContext simpleCtx2) {
 
 **效果**：同一 tick 内同一槽位多次修改只发送一次同步包，减少网络冗余。
 
-### 8.5 ContainerSnapshot — 容器快照
+### 8.5 跨容器虚影防护 — syncWorldContainer 容器归属验证
+
+`flushSlotSync` 对世界容器走 `syncWorldContainer`，它遍历所有玩家当前打开的菜单，按 `slot.getContainerSlot() == logicalSlot` 匹配槽位并发送同步包。
+
+**原问题**：只匹配槽位索引，未验证 `slot.container` 是否属于当前容器。当容器 A 的活物品 tick 同步时，玩家若正打开容器 B，B 的同索引槽位会收到 A 的物品栈，客户端显示为无法拿取的虚影。
+
+**修复**：在匹配条件中增加 `myContainers.contains(slot.container)` 验证，`myContainers` 从 `associatedBlockEntities` 中收集所有实现了 `Container` 接口的方块实体，确保同步包只发送给真正属于本容器的槽位。
+
+```java
+// 修复前：只匹配槽位索引
+if (slot.getContainerSlot() == logicalSlot && slot.container != serverPlayer.getInventory())
+
+// 修复后：同时匹配槽位索引 + 容器归属
+if (slot.getContainerSlot() == logicalSlot
+    && slot.container != serverPlayer.getInventory()
+    && myContainers.contains(slot.container))
+```
+
+### 8.6 ContainerSnapshot — 容器快照
 
 [ContainerSnapshot](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/container/ContainerSnapshot.java) 在 tick 开始时预扫描容器状态，避免传输过程中反复查询。
 
@@ -907,7 +925,7 @@ private final FilterData[] filterOf;  // filterOf[slot] = 此槽位继承的过�
 
 过滤链使用 `visited` 集合防止循环引用。
 
-### 8.5 ContainerFluidData — 容器流体数据
+### 8.7 ContainerFluidData — 容器流体数据
 
 [ContainerFluidData](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/domain/water/ContainerFluidData.java) 管理容器级流体状态（活水桶的水流），独立于活物品的槽位级状态。
 

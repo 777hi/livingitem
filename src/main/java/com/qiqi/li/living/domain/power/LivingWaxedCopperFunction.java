@@ -20,6 +20,9 @@ import com.qiqi.li.living.api.HasDirection;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.domain.redstone.ContainerRedstoneData;
+import com.qiqi.li.living.domain.runtime.ContainerRuntimeCache;
+import com.qiqi.li.living.domain.runtime.LivingItemClientCache;
+import com.qiqi.li.living.domain.runtime.LivingItemRuntimeData;
 import com.qiqi.li.living.model.Pos2D;
 import com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.DomainSnapshot;
 
@@ -157,7 +160,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             }
         }
 
-        // ── 检测仪表盘写回 ──
+        // ── 检测仪表盘写回（运行时缓存，不写入 DataComponent，不影响物品堆叠）──
         for (var e : active.entrySet()) {
             int slot = e.getKey();
             GeneratorState gen = e.getValue();
@@ -165,11 +168,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             if (stack.isEmpty()) continue;
             int cf = getCoilForm(stack.getItem());
             var telemetry = buildTelemetry(gen, stack.getCount(), cf, powerData);
-            var current = LivingItemManager.getGeneratorData(stack);
-            if (!current.equals(telemetry)) {
-                LivingItemManager.setGeneratorData(stack, telemetry);
-                ctx.syncSlotToClients(slot, stack);
-            }
+            ContainerRuntimeCache.update(ctx.getContainerKey(), slot, LivingItemRuntimeData.forGenerator(telemetry));
         }
 
         // ── 每台发电机推进 EMA（per-generator EMA）──
@@ -576,7 +575,14 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         }
 
         if (!isWaxedBulb(item)) {
-            var t = LivingItemManager.getGeneratorData(stack);
+            // 优先从运行时缓存读取遥测数据（不影响物品堆叠），回退到 DataComponent
+            LivingItemRuntimeData runtimeData = LivingItemClientCache.getCurrentTooltipData();
+            LivingWaxedGeneratorData t;
+            if (runtimeData.isGenerator()) {
+                t = runtimeData.generatorTelemetry();
+            } else {
+                t = LivingItemManager.getGeneratorData(stack);
+            }
             int pref = stack.getCount();
             boolean hasSignal = t.detectedPeriod() > 0;
 

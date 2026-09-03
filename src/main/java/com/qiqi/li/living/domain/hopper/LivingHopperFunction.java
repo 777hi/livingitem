@@ -30,6 +30,9 @@ import com.qiqi.li.living.domain.hopper.LivingHopperData;
 import com.qiqi.li.living.domain.hopper.TransferData;
 import com.qiqi.li.living.domain.redstone.ContainerRedstoneData;
 import com.qiqi.li.living.components.ItemFilterComponent;
+import com.qiqi.li.living.domain.runtime.ContainerRuntimeCache;
+import com.qiqi.li.living.domain.runtime.LivingItemRuntimeData;
+import com.qiqi.li.living.domain.runtime.LivingItemClientCache;
 import com.mojang.logging.LogUtils;
 import org.slf4j.Logger;
 
@@ -58,6 +61,14 @@ public class LivingHopperFunction implements LivingItemFunction {
 
             ItemStack stack = entry.stack();
             LivingHopperData data = LivingItemManager.getHopperData(stack);
+            String containerKey = context.getContainerKey();
+
+            // 从运行时缓存读取瞬态数据（不影响物品堆叠的 DataComponent）
+            LivingItemRuntimeData cached = ContainerRuntimeCache.get(containerKey, slot);
+            int cooldown = cached.isHopper() ? cached.hopper().cooldown() : 0;
+            ResolvedSlotData slotInfo = cached.isHopper() && cached.hopper().slotInfo() != null
+                ? cached.hopper().slotInfo() : ResolvedSlotData.EMPTY;
+            data = data.withTransfer(new TransferData(cooldown)).withSlotInfo(slotInfo);
 
             ContainerRedstoneData redstoneData = tick.getOrCreateRedstoneData(context);
             boolean hasRedstoneSignal = redstoneData.getSignal(slot) > 0;
@@ -65,7 +76,9 @@ public class LivingHopperFunction implements LivingItemFunction {
             if (hasRedstoneSignal) {
                 if (!data.disabled()) {
                     data = data.withDisabled(true);
-                    LivingItemManager.setHopperData(stack, data);
+                    // 写入 DataComponent 时重置运行时字段，不影响物品堆叠
+                    LivingItemManager.setHopperData(stack,
+                        data.withTransfer(TransferData.DEFAULT).withSlotInfo(ResolvedSlotData.EMPTY));
                     context.syncSlotToClients(slot, stack);
                 }
                 continue;
@@ -73,7 +86,8 @@ public class LivingHopperFunction implements LivingItemFunction {
 
             if (data.disabled()) {
                 data = data.withDisabled(false);
-                LivingItemManager.setHopperData(stack, data);
+                LivingItemManager.setHopperData(stack,
+                    data.withTransfer(TransferData.DEFAULT).withSlotInfo(ResolvedSlotData.EMPTY));
                 context.syncSlotToClients(slot, stack);
             }
 
@@ -87,8 +101,9 @@ public class LivingHopperFunction implements LivingItemFunction {
             TransferData transfer = data.transfer();
             if (transfer.isOnCooldown()) {
                 transfer = transfer.tick();
-                LivingItemManager.setHopperData(stack, data.withTransfer(transfer));
-                context.syncSlotToClients(slot, stack);
+                // 只更新运行时缓存，不写入 DataComponent
+                ContainerRuntimeCache.update(containerKey, slot,
+                    LivingItemRuntimeData.forHopper(transfer.cooldown(), slotInfo));
                 continue;
             }
 
@@ -104,10 +119,10 @@ public class LivingHopperFunction implements LivingItemFunction {
                 transfer = transfer.withCooldown(actualCooldown);
             }
 
-            ResolvedSlotData slotInfo = new ResolvedSlotData(slot, sourceSlot, targetSlot, containerSize, containerWidth);
-            data = data.withTransfer(transfer).withFilter(filter).withSlotInfo(slotInfo);
-            LivingItemManager.setHopperData(stack, data);
-            context.syncSlotToClients(slot, stack);
+            slotInfo = new ResolvedSlotData(slot, sourceSlot, targetSlot, containerSize, containerWidth);
+            // 只更新运行时缓存（cooldown、slotInfo），不写入 DataComponent
+            ContainerRuntimeCache.update(containerKey, slot,
+                LivingItemRuntimeData.forHopper(transfer.cooldown(), slotInfo));
         }
 
         cleanupStaleRoutes(entries, context, tick);
@@ -143,6 +158,21 @@ public class LivingHopperFunction implements LivingItemFunction {
                              ItemStack stack) {
         LivingHopperData data = LivingItemManager.getHopperData(stack);
 
+        // 从客户端缓存读取运行时数据（不影响物品堆叠）
+        LivingItemRuntimeData runtimeData = LivingItemClientCache.getCurrentTooltipData();
+        TransferData transfer;
+        ResolvedSlotData slotInfo;
+        if (runtimeData.isHopper()) {
+            transfer = new TransferData(runtimeData.hopper().cooldown());
+            slotInfo = runtimeData.hopper().slotInfo() != null
+                ? runtimeData.hopper().slotInfo() : ResolvedSlotData.EMPTY;
+        } else {
+            transfer = data.transfer();
+            slotInfo = data.slotInfo();
+        }
+        // 合并运行时数据到 DataComponent 数据用于 tooltip 显示
+        data = data.withTransfer(transfer).withSlotInfo(slotInfo);
+
         tooltipAdder.accept(Component.nullToEmpty(""));
         tooltipAdder.accept(Component.translatable("tooltip.livingitem.hopper.status"));
 
@@ -160,7 +190,6 @@ public class LivingHopperFunction implements LivingItemFunction {
                 findMappingName(dir.sourceOffset(), dir.targetOffset()))
         ).withStyle(net.minecraft.ChatFormatting.GOLD));
 
-        TransferData transfer = data.transfer();
         if (transfer.isOnCooldown()) {
             tooltipAdder.accept(Component.literal(
                 "\u51b7\u5374\u4e2d: " + transfer.cooldown() + " ticks")

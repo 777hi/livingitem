@@ -197,6 +197,10 @@ src/main/java/com/qiqi/li/
 │   │   ├── LivingRepeaterFunction.java       #     活中继器
 │   │   ├── LivingComparatorFunction.java     #     活比较器
 │   │   ├── LivingRedstoneBlockFunction.java  #     活红石块
+│   │   ├── LivingCopperFunction.java         #     活铜块（锈蚀等级即导通性）
+│   │   ├── RedstonePropagation.java          #     传播算法核心（BFS + 稳态跳过）
+│   │   ├── RedstoneSnapshotProvider.java     #     红石槽位快照提供器
+│   │   ├── SteadyState.java                  #     稳态值对象（跳过整段 calculate 的判据）
 │   │   ├── LivingRedstoneData.java           #     活红石粉数据
 │   │   ├── LivingRedstoneTorchData.java      #     活红石火把数据
 │   │   ├── LivingButtonData.java             #     活按钮数据
@@ -204,6 +208,10 @@ src/main/java/com/qiqi/li/
 │   │   ├── LivingRedstoneLampData.java       #     活红石灯数据
 │   │   ├── LivingRepeaterData.java           #     活中继器数据
 │   │   ├── LivingComparatorData.java         #     活比较器数据
+│   │   ├── LivingCopperBulbData.java         #     活铜灯数据
+│   │   ├── LivingCopperSignalData.java       #     活铜块信号数据
+│   │   ├── LivingCutCopperData.java          #     活切制铜块数据
+│   │   ├── LivingGrateData.java              #     活铜格栅数据
 │   │   └── ContainerRedstoneData.java        #     容器级红石信号数据（EdgeGrid + 边界信号）
 │   │
 │   ├── domain/power/                        #   红电发电领域（活涂蜡铜块）
@@ -213,8 +221,11 @@ src/main/java/com/qiqi/li/
 │   │   ├── ChannelState.java                #     线圈通道（相位域分组计 n + 规律度）
 │   │   ├── GeneratorState.java              #     单台发电机状态（线圈分组 + 方向映射）
 │   │   ├── LivingWaxedCutData.java          #     涂蜡切制组件（单线圈感应方向）
+│   │   ├── LivingWaxedChiseledData.java     #     涂蜡雕文组件（V+H 双通道）
 │   │   ├── LivingWaxedBulbData.java         #     涂蜡铜灯组件（按盏电量，1/1000 FE 定点）
 │   │   ├── LivingWaxedGeneratorData.java    #     发电机仪表盘组件（检测值快照，纯展示）
+│   │   ├── LivingWaxedCopperTooltipComponent.java # Tooltip 组件（仪表盘渲染）
+│   │   ├── PhaseEvent.java                  #     相位事件 record（周期 + 偏移量）
 │   │   ├── BulbItemEnergyStorage.java       #     铜灯物品能量（通用电池：双向，每盏等量充放）
 │   │   ├── ContainerEnergyStorage.java      #     对外 IEnergyStorage（原版容器 BE 显式注册+让位；取电逐堆扣灯/充电比例分配）
 │   │   └── ContainerPowerData.java          #     容器级红电账本（RE 事件 + EMA 功率，无池）
@@ -257,6 +268,10 @@ src/main/java/com/qiqi/li/
 │   │   ├── RedStoneWireBlockMixin.java      #   红石线连接到活容器
 │   │   └── create/                          #   Create Mixin（条件加载）
 │   │
+│   ├── debug/                               # 调试工具（默认关闭，命令启用）
+│   │   ├── ContainerMonitor.java            #   容器物品复制/丢失检测
+│   │   └── ContainerMonitorCommand.java     #   /living_monitor 命令
+│   │
 │   └── perf/                                # 性能监控
 │       └── PerfMetrics.java                 #   Tick 耗时/活物品数量/对象池命中率
 │
@@ -276,12 +291,21 @@ src/main/java/com/qiqi/li/
 │   │   ├── LivingMapTargetRenderer.java     #   十字光标渲染器
 │   │   ├── LivingMapIconDecorator.java      #   活地图 IItemDecorator
 │   │   ├── ExpandedMapTexture.java          #   扩展地图动态纹理
+│   │   ├── LivingItemTooltip.java           #   Tooltip 渲染
+│   │   ├── LivingDefaultDecorator.java      #   默认图标叠加层
 │   │   ├── LivingHopperDecorator.java       #   活漏斗箭头叠加层
-│   │   └── LivingItemTooltip.java           #   Tooltip 渲染
+│   │   ├── LivingChiseledCopperDecorator.java # 活雕文铜块箭头叠加层
+│   │   ├── LivingRedstoneDecorator.java     #   活红石粉连线叠加层
+│   │   ├── LivingChestTooltipRenderer.java  #   活箱子 Tooltip 渲染
+│   │   └── LivingWaxedCopperTooltipRenderer.java # 红电仪表盘 Tooltip 渲染
+│   ├── util/                                # 客户端工具
+│   │   ├── PinyinHelper.java                #   中文拼音检索（搜索框用）
+│   │   └── LivingChestTabState.java         #   活箱子页签状态
 │   └── mixin/                               # 客户端 Mixin
 │       ├── AbstractContainerScreenMixin.java #  容器界面
 │       ├── InventoryScreenMixin.java         #  生存模式背包
 │       ├── CreativeModeInventoryScreenMixin.java # 创造模式背包
+│       ├── RecipeBookComponentMixin.java     #  配方书自定义布局（全项目最大文件）
 │       └── MapRendererMixin.java            #  展示框十字光标
 │
 └── network/                                 # 网络包
@@ -300,22 +324,29 @@ src/main/java/com/qiqi/li/
 ```
 src/test/java/com/qiqi/li/
 ├── testutil/
-│   └── FakeContainerContext.java            # ContainerContext 测试替身（内存数组实现）
+│   └── FakeContainerContext.java              # ContainerContext 测试替身（内存数组实现）
+├── living/container/
+│   └── SimpleContainerContextTest.java        # 容器上下文脏槽同步（25 项）
 ├── living/domain/redstone/
-│   └── ContainerRedstoneDataTest.java       # 红石信号传播（19 项）
+│   └── ContainerRedstoneDataTest.java         # 红石信号传播（24 项）
 ├── living/domain/power/
-│   ├── PowerMathTest.java                   # 发电数学（5 项）
-│   ├── ContainerPowerDataTest.java          # 相位质量状态机（6 项）
-│   ├── CoilGroupingTest.java                # 线圈分组（4 项）
-│   ├── WaxedCopperStorageTest.java          # 储能（16 项，含 telemetry 2 项）
-│   ├── BulbItemEnergyStorageTest.java       # 铜灯通用电池（6 项）
-│   ├── WaxedCopperOscillatorIT.java         # 振荡器→发电全链路集成（1 项）
-│   └── WaxedCopperCouplingIT.java           # 耦合链集成：多跳中继+防回环（1 项）
+│   ├── PowerMathTest.java                     # 发电数学（4 项）
+│   ├── ContainerPowerDataTest.java            # 相位质量状态机（6 项）
+│   ├── ChannelStateTest.java                  # 线圈通道状态（5 项）
+│   ├── CoilGroupingTest.java                  # 线圈分组（5 项）
+│   ├── NetworkResonanceTest.java              # 铜块网络共振（18 项）
+│   ├── NetworkTraversalTest.java              # 铜块网络遍历（4 项）
+│   ├── WaxedCopperStorageTest.java            # 储能（16 项，含 telemetry 2 项）
+│   ├── BulbItemEnergyStorageTest.java         # 铜灯通用电池（6 项）
+│   ├── WaxedCopperOscillatorIT.java           # 振荡器→发电全链路集成（5 项）
+│   └── WaxedCopperCouplingIT.java             # 耦合链集成：多跳中继+防回环（3 项）
 ├── living/domain/map/
-│   └── MapCoordHelperTest.java              # 地图坐标换算（29 项）
+│   └── MapCoordHelperTest.java                # 地图坐标换算（16 项）
 └── living/transfer/
-    └── ContainerCompatibilityConfigTest.java # 容器布局推断（14 项）
+    └── ContainerCompatibilityConfigTest.java  # 容器布局推断（9 项）
 ```
+
+**合计 146 项**（141 `@Test` + 5 `@ParameterizedTest`）
 
 > 📄 测试环境配置与编写约定详见 [unit-testing.md](docs/guides/unit-testing.md)
 
@@ -335,7 +366,7 @@ src/test/java/com/qiqi/li/
 - [x] 容器级数据位置反向索引（`POS_TO_CACHE_KEY`，mixin 热路径 O(1) 查询）
 - [x] 容器数据缓存键含维度（跨维度同坐标容器隔离）
 - [x] 服务端关闭统一清理静态缓存（跨存档隔离）
-- [x] 单元测试基建（MDG unitTest + FML 环境，62 项测试）
+- [x] 单元测试基建（MDG unitTest + FML 环境，146 项测试）
 - [x] 包结构领域内聚（`domain/` 替代 `data/` + `function/`）
 - [x] `TransferPipeline` 统一传输入口
 - [x] `EnderRouteManager` 路由逻辑集中
