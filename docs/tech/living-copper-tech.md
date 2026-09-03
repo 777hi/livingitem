@@ -2,8 +2,8 @@
 
 # Living Copper (活铜) 技术文档
 
-> **文档版本**: 2026.08 v4
-> **最后更新**: 2026-08-27
+> **文档版本**: 2026.09 v5
+> **最后更新**: 2026-09-03
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -237,6 +237,8 @@ Set<Integer> bulbSlots = copperSubset(copperSlots, context, LivingCopperFunction
 ```
 
 所有子类型共享 `BIT_COPPER` 父类型，同时各自拥有专属位掩码（`BIT_CHISELED` 等），实现**父类型判定 + 子类型特化**的双层类型系统。
+
+> **v17 结构重构**：本节描述的 `canConnect`、`propagateDir`、`powerConductiveNeighbor`、`computeDustConnections`、`getOxidationLevel` 等方法原位于 `ContainerRedstoneData`，v17 已随 Phase 提取整体移至 `RedstonePropagation` 类。行为语义不变，仅调用位置改变。
 
 ### 3.3 锈蚀频道隔离（canConnect）
 

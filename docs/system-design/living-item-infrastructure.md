@@ -510,7 +510,7 @@ if (hostContainer != null) {
 | 容器内传输 | ✅ 受影响 | 精确指定目标槽位，必须槽位精确写入 |
 | 跨容器传输 | ❌ 不受影响 | 遍历所有槽位逐个尝试，物品落入第一个可用槽位是预期行为 |
 
-**相关修复**：`SimpleContainerContext.setItem()` 和 `simulateInsertItem()` 均已采用 `Container` 优先策略（2026-08-17）。
+**相关修复**：`SimpleContainerContext.setItem()` 的**写入**自 2026-08-17 起统一走 `IItemHandler`（**移除** `Container.setItem` 优先写入，避免大箱子左右两半双记账导致物品复制）；`simulateInsertItem()` 仍读 `Container` 仅用于容量计算。详见 §7.2。
 
 ---
 
@@ -640,37 +640,35 @@ new SimpleContainerContext(handler, inventory);
 new SimpleContainerContext(handler, positions, blockEntities);
 ```
 
-### 7.2 物品写入策略：Container 优先，IItemHandler 兜底
+### 7.2 物品写入策略：统一走 IItemHandler（2026-08-17 起移除 Container 优先写入）
 
-`setItem` 和 `simulateInsertItem` 采用**双层写入策略**：优先使用原版 `Container` 接口做精确槽位写入，`Container` 不可用时回退到 `IItemHandler`。
+`setItem` 的**写入**统一只走 `IItemHandler`，**不再**经原版 `Container` 接口做精确槽位写入。`simulateInsertItem` 仍会读 `Container` 仅用于**容量计算**（只读，安全），写回仍走 IItemHandler。
 
-**设计动机**：Forge `IItemHandler.insertItem(int slot, ItemStack stack, boolean simulate)` 的 `slot` 参数在 API 契约上只是"建议"。许多模组容器的 `IItemHandler` 实现会忽略 `slot` 参数，按"第一个可用槽位"插入，导致容器内传输时物品进入错误的槽位。
+**为什么放弃 Container 优先写入（2026-08-17 修正）**：大箱子（ChestBlock）左右两半在 NeoForge 下返回**同一个 `IItemHandler` 实例**，但各自是独立的 `Container`。若经 `Container.setItem` 写入，同一物理物品可能被两半的 `Container` 分别记账，引发**物品复制 bug**。改为统一走 IItemHandler 后，读写都收敛到共享的那一个 handler，大箱子两端读写一致，复制 bug 消除（详见 §10.2 性能表 "handler 统一读写" 一行）。
 
-而 `Container.setItem(int slot, ItemStack stack)` 是 Minecraft 原版接口，100% 精确槽位写入，不存在歧义。
+> ⚠️ 历史坑：本文档早期版本（及 §5.6）曾描述 `setItem` 采用 "Container 优先、IItemHandler 兜底" 的**写入**策略——那是 2026-08-17 **修正前**的设计，**不要据此重新加回 `Container.setItem` 写入路径**，否则复制 bug 复发。
+
+**实际实现（与代码一致）**：
 
 ```java
 @Override
 public void setItem(int logicalSlot, ItemStack stack) {
-    // ...边界检查...
+    if (logicalSlot < 0 || logicalSlot >= handler.getSlots()) return;
     ItemStack toInsert = stack.copy();
 
-    // 优先：Container 精确槽位写入
-    Container container = ContainerContext.getContainer(getLevel(), getBlockPos());
-    if (container != null && logicalSlot < container.getContainerSize()) {
-        container.setItem(logicalSlot, toInsert);
-        notifyBlockEntitiesChanged();
-        return;
-    }
-
-    // 兜底：IItemHandler（slot 参数可能被忽略）
+    // 统一走 IItemHandler：先抽空再写入（slot 为建议值，模组容器可能忽略）
     handler.extractItem(logicalSlot, Integer.MAX_VALUE, false);
     ItemStack remaining = handler.insertItem(logicalSlot, toInsert, false);
     if (!remaining.isEmpty() && isArmorSlot(inventory, logicalSlot)) {
-        // 活漏斗绕过盔甲槽限制，直接设置物品
+        // 活漏斗绕过盔甲槽限制，直接设置物品（盔甲非 BlockEntity Container，走此兜底）
         inventory.armor.set(logicalSlot - 36, toInsert);
         syncSlotToClients(logicalSlot, toInsert);
+    } else if (!remaining.isEmpty()) {
+        LOGGER.warn("SimpleContainerContext.setItem: {} items of {} 未能插入槽位 {}",
+            remaining.getCount(), toInsert.getItem(), logicalSlot);
     }
     notifyBlockEntitiesChanged();
+    ContainerLivingItemHandler.bumpContainerRevision(this);
 }
 ```
 
@@ -698,7 +696,7 @@ public int simulateInsertItem(int slot, ItemStack stack) {
 }
 ```
 
-**为什么不能只用 `IItemHandler`**：`IItemHandler` 是 NeoForge 的能力接口，设计目标是"让自动化（漏斗、管道）能访问容器"，而不是"精确控制每个槽位"。自动化设备通常遍历所有槽位找到合适的目标，不关心具体槽位编号。但活漏斗的容器内传输需要精确指定源/目标槽位，因此必须依赖 `Container` 接口。
+**为什么接受 IItemHandler-only 写入（权衡）**：`IItemHandler.insertItem` 的 `slot` 参数在 API 契约上只是"建议"，部分模组容器会忽略它、按"第一个可用槽位"插入——即容器内精确写入在模组容器上**不保证落入指定槽位**。这是为消除大箱子复制 bug 主动接受的代价；可靠性由传输层兜底：`Container.canTakeItem/canPlaceItem` 过滤不可交互槽位（§5.5）+ 模拟优先（`SlotAccessor.transfer` 先 `simulateInsert` 探容量再真实写入，§9.3），使正常流程下 `insertItem` 必全量落入、`remaining` 为空（见下方注）。
 
 ### 7.3 玩家盔甲槽绕过
 
@@ -825,7 +823,7 @@ for (var entry : hcdEntries) {
 | `snapshot` | 容器快照，预扫描的活漏斗连接图和过滤链 |
 | `fluidData` | 容器关联的流体状态 |
 | `stressData` | 容器关联的应力状态 |
-| `redstoneData` | 容器关联的红石信号状态（延迟获取，从 `ContainerLivingItemHandler.REDSTONE_DATA_CACHE` 静态缓存中按 `containerKey` 获取持久化实例，确保 `edgeGrid`/`prevEdgeGrid`/`tickCounter` 跨 tick 保留） |
+| `redstoneData` | 容器关联的红石信号状态（延迟获取，从 `ContainerLivingItemHandler.CONTAINER_DATA` 静态缓存的聚合条目中按 `containerKey` 取 `redstone` 字段持久化实例，确保 `edgeGrid`/`prevEdgeGrid`/`tickCounter` 跨 tick 保留） |
 | `containerDataStore` | 通用容器级数据存储（`Map<Class<?>, Object>`），新数据类型无需在 TickContext 中新增字段 |
 | `functionSlots` | 功能槽位缓存，processContext 分组时填充，O(1) 读取各功能的活跃槽位集合 |
 

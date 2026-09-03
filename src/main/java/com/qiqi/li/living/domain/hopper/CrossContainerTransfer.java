@@ -37,15 +37,14 @@ import net.minecraft.core.Direction;
 import net.minecraft.world.Container;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.ChestBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
-import net.minecraft.world.level.block.state.properties.ChestType;
 import net.minecraft.world.level.block.state.properties.DirectionProperty;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.transfer.SlotAccessor;
 import com.qiqi.li.living.transfer.SlotAccessorFactory;
 import com.qiqi.li.living.model.Pos2D;
+import com.qiqi.li.living.util.DoubleChestPositions;
 import com.qiqi.li.living.model.ResolvedSlots;
 import com.qiqi.li.living.transfer.FilterData;
 import com.qiqi.li.living.domain.ender.LivingEnderChestFunction;
@@ -80,7 +79,7 @@ public final class CrossContainerTransfer {
         Direction blockFacing = getBlockFacing(blockState);
         if (blockFacing == null) return false;
 
-        List<BlockPos> chestPositions = findDoubleChestPositions(level, containerPos);
+        List<BlockPos> chestPositions = DoubleChestPositions.find(level, containerPos);
 
         BlockPos sourceBasePos = getBasePosForDirection(containerPos, resolvedSlots.sourceOffset(), chestPositions);
         BlockPos targetBasePos = getBasePosForDirection(containerPos, resolvedSlots.targetOffset(), chestPositions);
@@ -359,24 +358,6 @@ public final class CrossContainerTransfer {
             return defaultPos;
         }
         return useLeft ? chestPositions.get(0) : chestPositions.get(1);
-    }
-
-    private static List<BlockPos> findDoubleChestPositions(Level level, BlockPos pos) {
-        BlockState state = level.getBlockState(pos);
-        if (!(state.getBlock() instanceof ChestBlock)) {
-            return List.of();
-        }
-        ChestType chestType = state.getValue(ChestBlock.TYPE);
-        if (chestType == ChestType.SINGLE) {
-            return List.of();
-        }
-        Direction connectedDir = ChestBlock.getConnectedDirection(state);
-        BlockPos otherPos = pos.relative(connectedDir);
-        if (chestType == ChestType.LEFT) {
-            return List.of(pos, otherPos);
-        } else {
-            return List.of(otherPos, pos);
-        }
     }
 
     private static IItemHandler getNeighborHandler(Level level, BlockPos basePos, Direction direction, List<BlockPos> chestPositions) {

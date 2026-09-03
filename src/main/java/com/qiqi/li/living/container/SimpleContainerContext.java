@@ -329,6 +329,7 @@ public class SimpleContainerContext implements ContainerContext {
     }
 
     void flushDirtySlots() {
+        if (currentTickContext == null) return;
         for (int slot : currentTickContext.dirtySlots) {
             flushSlotSync(slot, getItem(slot));
         }

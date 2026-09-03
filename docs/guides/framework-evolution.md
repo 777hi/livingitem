@@ -258,7 +258,7 @@ src/main/java/com/qiqi/li/living/
 | 原语 | 位置 | 提取前 | 提取后 |
 |------|------|--------|--------|
 | `Pos2D.opposite()` | `model/Pos2D.java` | 3 个 Function 类各有一份 `getInputDirection()`（8行×3） | 1 个框架方法，调用方写 `data.direction().opposite()` |
-| Phase 方法拆分 | `ContainerRedstoneData.java` | `calculate()` 一个方法 200+ 行，每阶段重复 for 循环 | 拆分为 5 个私有方法：`phase0CountdownDelays()` / `phase1CollectSources()` / `phase2IterativePropagation()` / `phase3RecheckInputs()` / `phase4UpdateDisplay()` |
+| Phase 方法提取 | `ContainerRedstoneData.java` → `RedstonePropagation.java` | `calculate()` 一个方法 200+ 行，每阶段重复 for 循环 | 拆分为 6 个 phase 方法，v17 进一步提取到专用类 `RedstonePropagation`，`calculate()` 仅编排调用 |
 | `prevSignalStrength` | `ContainerRedstoneData.java` | 中继器断电检测无法区分"还没算"和"真的没信号" | 引入上一帧信号缓存，Phase 0 用上一帧判断断电，Phase 2 算新信号 |
 
 ### 暂不提取（等更多数据点）

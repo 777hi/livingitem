@@ -217,7 +217,7 @@ processContext() 每 game tick：
 ##### 3.3.1.1 相位错开的真实来源（先澄清一个误区）
 
 > **铜块之间的「逐格传播延迟」并不存在。** `phase2Propagation`
-> （`ContainerRedstoneData.java:470`）是标准 BFS，但整个 `while(!queue.isEmpty())`
+> （`RedstonePropagation.java`）是标准 BFS，但整个 `while(!queue.isEmpty())`
 > 在**同一次 `calculate()` 调用、即同一个 game tick 内走完**：铜块与红石粉的边信号
 > 在同 tick 内全部算出，邻居通过 `queue.add` 同 tick 续跑。因此铜块网络自身传播
 > **没有跨 tick 的逐格延迟**，所有连通边在同一 tick 被充能。
