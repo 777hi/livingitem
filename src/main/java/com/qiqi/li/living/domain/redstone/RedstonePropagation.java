@@ -796,7 +796,7 @@ class RedstonePropagation {
 
     private int inputAt(int slot, int dir) {
         int neighbor = ContainerContext.resolveNeighbor(slot, dir, size, width);
-        if (neighbor < 0) return faceInput[dir];
+        if (neighbor < 0) return 0; // 边界：非定向元件（红石粉/灯/铜块等）不接收外部信号
         return edgeGrid.get(neighbor, oppositeDir(dir));
     }
 
@@ -812,7 +812,9 @@ class RedstonePropagation {
     }
 
     private int getEffectiveInput(int slot, int dir) {
-        return inputAt(slot, dir);
+        int neighbor = ContainerContext.resolveNeighbor(slot, dir, size, width);
+        if (neighbor < 0) return faceInput[dir]; // 边界：定向元件（中继器/比较器/火把）读取外部信号
+        return edgeGrid.get(neighbor, oppositeDir(dir));
     }
 
     // ═══════════════════════════════════════════════════════════════

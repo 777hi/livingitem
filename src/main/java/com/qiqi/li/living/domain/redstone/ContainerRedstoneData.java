@@ -139,19 +139,7 @@ public class ContainerRedstoneData {
 
     public int getSlotSignal(int slot, int size, int width) {
         if (edgeGrid == null) return 0;
-        int height = (size + width - 1) / width;
-
-        int maxSignal = edgeGrid.maxOfSlot(slot);
-
-        int r = slot / width;
-        int c = slot % width;
-
-        if (r == 0) maxSignal = Math.max(maxSignal, faceInput[E_UP]);
-        if (r == height - 1) maxSignal = Math.max(maxSignal, faceInput[E_DOWN]);
-        if (c == 0) maxSignal = Math.max(maxSignal, faceInput[E_LEFT]);
-        if (c == width - 1) maxSignal = Math.max(maxSignal, faceInput[E_RIGHT]);
-
-        return maxSignal;
+        return edgeGrid.maxOfSlot(slot);
     }
 
     private void reset() {
@@ -358,18 +346,30 @@ public class ContainerRedstoneData {
         if (edgeGrid == null) return;
 
         // 每槽自有出边模型下，朝外的面信号 = 边界槽位朝该方向发出的出边最大值。
+        // 铜块（红电信号）不参与跨容器传输，跳过铜槽位的边界边。
         for (int c = 0; c < width; c++) {
+            if (isCopperSlot(c)) continue;
             faceOutput[E_UP] = Math.max(faceOutput[E_UP], edgeGrid.get(c, E_UP));
         }
         for (int c = 0; c < width; c++) {
-            faceOutput[E_DOWN] = Math.max(faceOutput[E_DOWN], edgeGrid.get((height - 1) * width + c, E_DOWN));
+            int slot = (height - 1) * width + c;
+            if (isCopperSlot(slot)) continue;
+            faceOutput[E_DOWN] = Math.max(faceOutput[E_DOWN], edgeGrid.get(slot, E_DOWN));
         }
         for (int r = 0; r < height; r++) {
-            faceOutput[E_LEFT] = Math.max(faceOutput[E_LEFT], edgeGrid.get(r * width, E_LEFT));
+            int slot = r * width;
+            if (isCopperSlot(slot)) continue;
+            faceOutput[E_LEFT] = Math.max(faceOutput[E_LEFT], edgeGrid.get(slot, E_LEFT));
         }
         for (int r = 0; r < height; r++) {
-            faceOutput[E_RIGHT] = Math.max(faceOutput[E_RIGHT], edgeGrid.get(r * width + (width - 1), E_RIGHT));
+            int slot = r * width + (width - 1);
+            if (isCopperSlot(slot)) continue;
+            faceOutput[E_RIGHT] = Math.max(faceOutput[E_RIGHT], edgeGrid.get(slot, E_RIGHT));
         }
+    }
+
+    private boolean isCopperSlot(int slot) {
+        return slot >= 0 && slot < slotMask.length && (slotMask[slot] & BIT_COPPER) != 0;
     }
 
     public int getBoundarySignal(int internalDir) {
@@ -392,14 +392,12 @@ public class ContainerRedstoneData {
     /**
      * 本槽从 dir 方向收到的「输入」= 该方向邻居朝本槽的出边。
      *
-     * <p>重构抽象层（共享边 → 每槽出边）：当前仍走共享边，故
-     * {@code edgeGrid.get(neighbor, oppositeDir(dir))} 等价于旧 {@code edgeGrid.get(slot, dir)}；
-     * 翻存储（Step B）后此实现即成为「读邻居出边」，调用点无需再改。越界（容器边界外）
-     * 取 {@code faceInput[dir]}。</p>
+     * <p>此方法仅用于非定向元件的输入查询（TNT 等），边界外返回 0。
+     * 定向元件（中继器/比较器/火把）使用 {@link RedstonePropagation#getEffectiveInput} 读取外部信号。</p>
      */
     private int inputAt(int slot, int dir, int size, int width) {
         int neighbor = ContainerContext.resolveNeighbor(slot, dir, size, width);
-        if (neighbor < 0) return faceInput[dir];
+        if (neighbor < 0) return 0; // 边界：非定向元件不接收外部信号
         return edgeGrid.get(neighbor, oppositeDir(dir));
     }
 

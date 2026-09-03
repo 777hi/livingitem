@@ -59,21 +59,23 @@ class ContainerCompatibilityConfigTest {
     }
 
     /**
-     * 列数推断：{@code resolveColumns} 从 min(size,13) 向下找第一个能整除的宽度。
+     * 列数推断：{@code resolveColumns} 按加权启发式从常见宽度优先匹配。
      *
-     * <p>注意 40 → 13,12,11 都不能整除，10 可以，因此是 10 列而非直觉上的 8 列；
-     * 这类"非 9 列"结果正是需要锁定的行为。</p>
+     * <p>候选宽度排序：9, 10, 12, 13, 8, 7, 6, 11, 5, 4, 3, 2, 1。
+     * 36 → 9（36%9=0，9 优先于 12），
+     * 40 → 10（40%10=0，10 优先于 8），
+     * 96 → 12（96%12=0，12 优先于 8）。</p>
      */
     @ParameterizedTest(name = "{0} 格容器 → 推断 {1} 列")
     @CsvSource({
-        "36, 12",
+        "36, 9",
         "40, 10",
         "81, 9",
         "96, 12",
         "121, 11",
         "7, 7"
     })
-    @DisplayName("未注册尺寸：按 min(size,13) 向下取第一个整除的列宽")
+    @DisplayName("未注册尺寸：按加权启发式从常见宽度优先匹配")
     void findOrGenerateRule_unregisteredSize_inferesColumns(int size, int expectedColumns) {
         var rule = ContainerCompatibilityConfig.findOrGenerateRule(size);
         assertEquals(expectedColumns, rule.columns());

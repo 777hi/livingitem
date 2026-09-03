@@ -139,25 +139,25 @@ public class SimpleContainerContext implements ContainerContext {
             return 9;
         }
 
+        // Tier 1: 已注册规则（按 BE 类型匹配）
         java.util.Optional<ContainerCompatibilityConfig.ContainerRule> rule =
             findContainerRule();
-        if (rule.isPresent() && rule.get().columns() > 0) {
+        if (rule.isPresent()) {
             return rule.get().columns();
         }
 
+        // Tier 2: 已知容器类型直接推断
         int size = getSize();
-        if (size > 0 && size % 9 != 0) {
-            return guessWidth(size);
+        for (BlockEntity be : associatedBlockEntities) {
+            if (be.getLevel() == null) continue;
+            Container container = ContainerContext.getContainer(be.getLevel(), be.getBlockPos());
+            if (container == null) continue;
+            int cols = ContainerCompatibilityConfig.resolveColumns(size, container);
+            if (cols > 0) return cols;
         }
 
-        return ContainerContext.super.getWidth();
-    }
-
-    private static int guessWidth(int size) {
-        for (int w = 9; w >= 1; w--) {
-            if (size % w == 0) return w;
-        }
-        return 9;
+        // Tier 3: 加权启发式（回退）
+        return ContainerCompatibilityConfig.resolveColumns(size, null);
     }
 
     private java.util.Optional<ContainerCompatibilityConfig.ContainerRule> findContainerRule() {
@@ -176,8 +176,7 @@ public class SimpleContainerContext implements ContainerContext {
             }
         }
 
-        return java.util.Optional.of(
-            ContainerCompatibilityConfig.findOrGenerateRule(getSize()));
+        return java.util.Optional.empty();
     }
 
     @Override
@@ -433,7 +432,7 @@ public class SimpleContainerContext implements ContainerContext {
 
             for (int i = 0; i < menu.slots.size(); i++) {
                 Slot slot = menu.slots.get(i);
-                if (slot.getItem() == stack && slot.getContainerSlot() == logicalSlot) {
+                if (slot.getContainerSlot() == logicalSlot && slot.container != serverPlayer.getInventory()) {
                     int stateId = menu.incrementStateId();
                     menu.remoteSlots.set(i, stack.copy());
                     serverPlayer.connection.send(

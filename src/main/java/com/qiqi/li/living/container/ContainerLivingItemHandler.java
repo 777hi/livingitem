@@ -408,146 +408,62 @@ public class ContainerLivingItemHandler {
         String monitorKey = context.getContainerKey();
         com.qiqi.li.living.debug.ContainerMonitor.beforeProcess(monitorKey, context);
 
+        // 阶段 1：扫描容器全部槽位，将活物品按功能分组，同时校验内容签名
         Map<LivingItemFunction, List<LivingItemFunction.SlotEntry>> grouped = scanAndGroupLivingItems(context);
-
-        // 原版途径（玩家点击 / 漏斗 / 掉落物）直接改底层容器，不走 SimpleContainerContext
-        // 的写入方法 → 修订计数不会变。若放任不管，稳态跳过永不打破、快照缓存永不重建，
-        // 容器内的信号层会「集体死掉」（只有外接信号改变 externalSig 时才暂时活过来）。
-        // 借这次已有的全槽扫描顺带校验内容签名，变化则 bump。必须早于 TickContext 创建。
         syncContentRevision(context);
 
+        // 空容器：仅残留红石归零
         if (grouped.isEmpty()) {
-            // 容器内已无活物品，但可能残留边界红石信号，需再跑一次传播使其归零
-            if (context instanceof SimpleContainerContext simpleCtx) {
-                String key = cacheKey(simpleCtx);
-                ContainerRedstoneData rd = null;
-                if (key != null) {
-                    ContainerEntry re = CONTAINER_DATA.get(key);
-                    rd = re == null ? null : re.redstone;
-                }
-                if (rd != null) {
-                    TickContext tick = new TickContext(context);
-                    simpleCtx.setTickContext(tick);
-                    try {
-                        rd.calculate(context, tick);
-                    } finally {
-                        simpleCtx.flushDirtySlots();
-                        simpleCtx.setTickContext(null);
-                    }
-                }
-            }
-
-            long elapsedNanos = System.nanoTime() - startNanos;
-            PerfMetrics.recordPhase("scan", elapsedNanos);
-            PerfMetrics.recordTick(elapsedNanos);
-            if (PerfMetrics.shouldReport()) {
-                PerfMetrics.printReport();
-            }
+            handleEmptyContainer(context, startNanos, monitorKey);
             return;
         }
 
+        // 准备 TickContext（功能 tick 与环境交互的上下文）
         TickContext tick = new TickContext(context);
-
         if (context instanceof SimpleContainerContext simpleCtx) {
             simpleCtx.setTickContext(tick);
         }
 
-        long stressEndNanos = System.nanoTime();
+        long scanEndNanos = System.nanoTime();
+        PerfMetrics.recordPhase("scan", scanEndNanos - startNanos);
+
+        long stressEndNanos;
         try {
-            Map<String, Set<Integer>> functionSlots = new LinkedHashMap<>();
-            for (var entry : grouped.entrySet()) {
-                Set<Integer> slots = new HashSet<>();
-                for (var slotEntry : entry.getValue()) {
-                    slots.add(slotEntry.slotIndex());
-                }
-                functionSlots.put(entry.getKey().getFunctionId(), slots);
-            }
-            tick.setFunctionSlots(functionSlots);
-
-            for (var entry : grouped.entrySet()) {
-                PerfMetrics.addLivingItem(entry.getKey().getFunctionId(), entry.getValue().size());
-                PerfMetrics.recordFunctionCall(entry.getKey().getFunctionId());
-            }
-
-            long scanEndNanos = System.nanoTime();
-            PerfMetrics.recordPhase("scan", scanEndNanos - startNanos);
-
-            for (var entry : grouped.entrySet()) {
-                entry.getKey().tick(entry.getValue(), context, tick, level);
-            }
+            // 阶段 2：功能 tick（按优先级执行各功能的 tick 逻辑）
+            tickFunctionSlots(grouped, tick);
+            runFunctionTicks(grouped, context, tick, level);
 
             long funcTickEndNanos = System.nanoTime();
             PerfMetrics.recordPhase("func_tick", funcTickEndNanos - scanEndNanos);
 
-            EnderChannelRegistry.getInstance().flushDirtyChannels();
+            // 阶段 3：EnderChannel 脏通道刷新 + 水桶冗余流清理
+            flushEnderChannels(tick, grouped);
 
             long flushChEndNanos = System.nanoTime();
             PerfMetrics.recordPhase("flush_channels", flushChEndNanos - funcTickEndNanos);
 
-            boolean hasWaterBucket = false;
-            for (var entry : grouped.entrySet()) {
-                if ("living_water_bucket".equals(entry.getKey().getFunctionId())) {
-                    hasWaterBucket = true;
-                    break;
-                }
-            }
-            if (!hasWaterBucket && tick.fluidData != null && tick.fluidData != ContainerFluidData.EMPTY) {
-                tick.fluidData.getFlows().clear();
-            }
-
+            // 阶段 4：容器级数据（红石、流体等按优先级传播）
             runContainerDataTicks(grouped, context, tick);
 
             long containerDataEndNanos = System.nanoTime();
             PerfMetrics.recordPhase("container_data", containerDataEndNanos - flushChEndNanos);
 
-            ContainerStressData stressData = tick.stressData;
-            if (stressData != null && context instanceof SimpleContainerContext simpleCtx) {
-                for (BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {
-                    be.setData(LivingItemManager.CONTAINER_STRESS_DATA.value(), stressData);
-                    updateStressOutput(simpleCtx, be, stressData);
-                }
-
-                if (simpleCtx.getAssociatedBlockEntities().isEmpty() && simpleCtx.getInventory() != null) {
-                    updatePlayerFeetStressOutput(simpleCtx, stressData);
-                }
-            }
-
-            ContainerFluidData fluidData = tick.fluidData;
-            if (fluidData != null && !fluidData.isEmpty()) {
-                if (context instanceof SimpleContainerContext simpleCtx) {
-                    for (BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {
-                        be.setData(LivingItemManager.CONTAINER_FLUID_DATA.value(), fluidData);
-                    }
-                }
-            }
-            if (fluidData != null && fluidData.isEmpty()) {
-                String fluidKey = cacheKey(context);
-                if (fluidKey != null) {
-                    ContainerEntry fe = CONTAINER_DATA.get(fluidKey);
-                    if (fe != null) fe.fluid = null;
-                }
-            }
-
-            cleanupCounter++;
-            if (cleanupCounter >= CLEANUP_INTERVAL) {
-                cleanupCounter = 0;
-                long currentTimeMs = System.currentTimeMillis();
-                cleanupStaleData(currentTimeMs);
-                cleanupStalePosIndex();
-                LivingWaterBucketFunction.cleanupStaleEntries(currentTimeMs);
-            }
+            // 阶段 5：写回 BlockEntity（应力 + 流体）与过期清理
+            writebackBlockEntities(context, tick);
+            incrementCleanup();
 
             stressEndNanos = System.nanoTime();
             PerfMetrics.recordPhase("stress", stressEndNanos - containerDataEndNanos);
         } finally {
             // 无论功能 tick / 容器级数据 / 写回是否抛异常，都同步脏槽到客户端并清掉 stale
             // TickContext：否则异常时客户端物品显示错位，且下一 tick 残留旧上下文（P1-6）。
-            if (context instanceof SimpleContainerContext simpleCtx2) {
-                simpleCtx2.flushDirtySlots();
-                simpleCtx2.setTickContext(null);
+            if (context instanceof SimpleContainerContext simpleCtx) {
+                simpleCtx.flushDirtySlots();
+                simpleCtx.setTickContext(null);
             }
         }
 
+        // 阶段 6：脏槽刷新（from finally）后的 perf 收尾
         long flushSlotsEndNanos = System.nanoTime();
         PerfMetrics.recordPhase("flush_slots", flushSlotsEndNanos - stressEndNanos);
 
@@ -555,9 +471,141 @@ public class ContainerLivingItemHandler {
 
         com.qiqi.li.living.debug.ContainerMonitor.afterProcess(monitorKey, context);
 
-        // 检查是否需要打印报告
         if (PerfMetrics.shouldReport()) {
             PerfMetrics.printReport();
+        }
+    }
+
+    /**
+     * 容器内无活物品时，仅需让残留红石信号归零。
+     * 若容器有红石数据且已计算过，再跑一次 {@link ContainerRedstoneData#calculate} 使其归零。
+     */
+    private static void handleEmptyContainer(ContainerContext context, long startNanos, String monitorKey) {
+        if (context instanceof SimpleContainerContext simpleCtx) {
+            String key = cacheKey(simpleCtx);
+            ContainerRedstoneData rd = null;
+            if (key != null) {
+                ContainerEntry re = CONTAINER_DATA.get(key);
+                rd = re == null ? null : re.redstone;
+            }
+            if (rd != null) {
+                TickContext tick = new TickContext(context);
+                simpleCtx.setTickContext(tick);
+                try {
+                    rd.calculate(context, tick);
+                } finally {
+                    simpleCtx.flushDirtySlots();
+                    simpleCtx.setTickContext(null);
+                }
+            }
+        }
+
+        long elapsedNanos = System.nanoTime() - startNanos;
+        PerfMetrics.recordPhase("scan", elapsedNanos);
+        PerfMetrics.recordTick(elapsedNanos);
+        if (PerfMetrics.shouldReport()) {
+            PerfMetrics.printReport();
+        }
+    }
+
+    /**
+     * 将扫描结果的功能槽位集合写入 TickContext，并记录 PerfMetrics 统计。
+     */
+    private static void tickFunctionSlots(
+            Map<LivingItemFunction, List<LivingItemFunction.SlotEntry>> grouped,
+            TickContext tick) {
+        Map<String, Set<Integer>> functionSlots = new LinkedHashMap<>();
+        for (var entry : grouped.entrySet()) {
+            Set<Integer> slots = new HashSet<>();
+            for (var slotEntry : entry.getValue()) {
+                slots.add(slotEntry.slotIndex());
+            }
+            functionSlots.put(entry.getKey().getFunctionId(), slots);
+        }
+        tick.setFunctionSlots(functionSlots);
+
+        for (var entry : grouped.entrySet()) {
+            PerfMetrics.addLivingItem(entry.getKey().getFunctionId(), entry.getValue().size());
+            PerfMetrics.recordFunctionCall(entry.getKey().getFunctionId());
+        }
+    }
+
+    /**
+     * 执行各功能的 tick 逻辑（按优先级）。
+     * 每个功能只调用一次 tick，传入其管理的所有活物品槽位。
+     */
+    private static void runFunctionTicks(
+            Map<LivingItemFunction, List<LivingItemFunction.SlotEntry>> grouped,
+            ContainerContext context, TickContext tick, Level level) {
+        for (var entry : grouped.entrySet()) {
+            entry.getKey().tick(entry.getValue(), context, tick, level);
+        }
+    }
+
+    /**
+     * 刷新 EnderChannel 脏通道，并清理无活水桶容器中的冗余流数据。
+     */
+    private static void flushEnderChannels(TickContext tick,
+                                            Map<LivingItemFunction, List<LivingItemFunction.SlotEntry>> grouped) {
+        EnderChannelRegistry.getInstance().flushDirtyChannels();
+
+        // 若容器内没有活水桶，清除流体数据中的冗余流（避免残留流一直动画）
+        boolean hasWaterBucket = false;
+        for (var entry : grouped.entrySet()) {
+            if ("living_water_bucket".equals(entry.getKey().getFunctionId())) {
+                hasWaterBucket = true;
+                break;
+            }
+        }
+        if (!hasWaterBucket && tick.fluidData != null && tick.fluidData != ContainerFluidData.EMPTY) {
+            tick.fluidData.getFlows().clear();
+        }
+    }
+
+    /**
+     * 将应力与流体数据写回 BlockEntity（或玩家脚底），并清理空流体缓存。
+     */
+    private static void writebackBlockEntities(ContainerContext context, TickContext tick) {
+        ContainerStressData stressData = tick.stressData;
+        if (stressData != null && context instanceof SimpleContainerContext simpleCtx) {
+            for (BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {
+                be.setData(LivingItemManager.CONTAINER_STRESS_DATA.value(), stressData);
+                updateStressOutput(simpleCtx, be, stressData);
+            }
+
+            if (simpleCtx.getAssociatedBlockEntities().isEmpty() && simpleCtx.getInventory() != null) {
+                updatePlayerFeetStressOutput(simpleCtx, stressData);
+            }
+        }
+
+        ContainerFluidData fluidData = tick.fluidData;
+        if (fluidData != null && !fluidData.isEmpty()) {
+            if (context instanceof SimpleContainerContext simpleCtx) {
+                for (BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {
+                    be.setData(LivingItemManager.CONTAINER_FLUID_DATA.value(), fluidData);
+                }
+            }
+        }
+        if (fluidData != null && fluidData.isEmpty()) {
+            String fluidKey = cacheKey(context);
+            if (fluidKey != null) {
+                ContainerEntry fe = CONTAINER_DATA.get(fluidKey);
+                if (fe != null) fe.fluid = null;
+            }
+        }
+    }
+
+    /**
+     * 递增清理计数器，达到间隔时执行过期数据清理。
+     */
+    private static void incrementCleanup() {
+        cleanupCounter++;
+        if (cleanupCounter >= CLEANUP_INTERVAL) {
+            cleanupCounter = 0;
+            long currentTimeMs = System.currentTimeMillis();
+            cleanupStaleData(currentTimeMs);
+            cleanupStalePosIndex();
+            LivingWaterBucketFunction.cleanupStaleEntries(currentTimeMs);
         }
     }
 

@@ -751,53 +751,62 @@ ServerTickEvent.Post
 
 ### 8.2 processContext — 按功能分组执行
 
-[ContainerLivingItemHandler.processContext](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/container/ContainerLivingItemHandler.java) 采用两阶段设计：
+[ContainerLivingItemHandler.processContext](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/container/ContainerLivingItemHandler.java) 采用六阶段设计：
 
-**阶段 1 — 扫描**：遍历容器中所有物品，将活物品按功能类型分组收集。
+```
+processContext(context, level)
+  ├─ 阶段 1：扫描（scanAndGroupLivingItems + syncContentRevision）
+  │   ├─ 遍历全槽位，按功能类型分组收集活物品
+  │   └─ 校验内容签名，必要时 bump 修订计数（防稳态死锁）
+  │
+  ├─ [空容器分支：handleEmptyContainer]
+  │   └─ grouped 为空时，仅让残留红石信号归零后提前返回
+  │
+  ├─ 阶段 2：功能 tick（tickFunctionSlots + runFunctionTicks）
+  │   ├─ 将功能槽位集合写入 TickContext
+  │   └─ 对每种功能只调用一次 tick()，传入该组所有活物品
+  │
+  ├─ 阶段 3：EnderChannel 刷新（flushEnderChannels）
+  │   ├─ 刷新脏通道
+  │   └─ 清理无活水桶容器中的冗余流数据
+  │
+  ├─ 阶段 4：容器级数据（runContainerDataTicks）
+  │   └─ 收集 HasContainerData 实现者，按优先级排序后依次执行
+  │
+  ├─ 阶段 5：写回 BlockEntity（writebackBlockEntities + incrementCleanup）
+  │   ├─ 应力与流体数据写回关联的 BlockEntity（或玩家脚底）
+  │   └─ 达到清理间隔时执行过期数据清理
+  │
+  └─ [finally] 脏槽同步 + TickContext 清理（flushDirtySlots + setTickContext(null)）
+```
 
-**阶段 2 — 执行**：对每种功能只调用一次 `tick()`，传入该容器中所有拥有此功能的活物品列表。
+**阶段 1 — 扫描**：遍历容器中所有物品，将活物品按功能类型分组收集，同时校验内容签名以打破稳态跳过死锁。
 
 ```java
-// 阶段 1：按功能分组
-Map<LivingItemFunction, List<LivingItemFunction.SlotEntry>> grouped = new LinkedHashMap<>();
-for (int i = 0; i < context.getSize(); i++) {
-    ItemStack stack = context.getItem(i);
-    if (LivingItemManager.isLivingItem(stack)) {
-        var functions = LivingItemManager.getApplicableFunctions(stack);
-        for (var function : functions) {
-            grouped.computeIfAbsent(function, k -> new ArrayList<>())
-                    .add(new LivingItemFunction.SlotEntry(i, stack));
-        }
-    }
-}
+Map<LivingItemFunction, List<LivingItemFunction.SlotEntry>> grouped = scanAndGroupLivingItems(context);
+syncContentRevision(context);
 
-// 阶段 2：按功能调用
-for (var entry : grouped.entrySet()) {
-    entry.getKey().tick(entry.getValue(), context, tick, level);
+if (grouped.isEmpty()) {
+    handleEmptyContainer(context, startNanos, monitorKey);
+    return;
 }
+```
+
+**阶段 2 — 功能 tick**：对每种功能只调用一次 `tick()`，传入该容器中所有拥有此功能的活物品列表。
+
+```java
+tickFunctionSlots(grouped, tick);           // 写入 TickContext 缓存
+runFunctionTicks(grouped, context, tick, level);  // 逐功能执行 tick
 ```
 
 **为什么按功能分组而不是逐个调用？**
 
 如果逐个调用 `tick`，每个活物品独立推进自己的状态，导致总速度随活物品数量线性增长（N 个活熔炉 = N 倍速度）。按功能分组后，由功能实现自行决定如何分配处理（如活熔炉每 tick 只处理一个），从根本上避免速度翻倍。
 
-**容器级数据计算**：`tick()` 执行完毕后，`processContext` 收集所有实现了 `HasContainerData` 接口的功能类，按优先级排序后依次调用 `tickContainerData()`：
+**阶段 4 — 容器级数据计算**：`tick()` 执行完毕后，收集所有实现了 `HasContainerData` 接口的功能类，按优先级排序后依次调用 `tickContainerData()`：
 
 ```java
-// 收集 HasContainerData 实现者
-List<Map.Entry<LivingItemFunction, List<SlotEntry>>> hcdEntries = new ArrayList<>();
-for (var entry : grouped.entrySet()) {
-    if (entry.getKey() instanceof HasContainerData) {
-        hcdEntries.add(entry);
-    }
-}
-// 按优先级排序（数字越小越先执行）
-hcdEntries.sort(Comparator.comparingInt(e -> ((HasContainerData) e.getKey()).getPriority()));
-
-// 依次执行容器级数据计算
-for (var entry : hcdEntries) {
-    ((HasContainerData) entry.getKey()).tickContainerData(entry.getValue(), context, tick);
-}
+runContainerDataTicks(grouped, context, tick);
 ```
 
 **优先级顺序**：
@@ -810,6 +819,15 @@ for (var entry : hcdEntries) {
 | 2 | `LivingRedstoneTorchFunction` | 红石信号传播（火把独立存在时） |
 
 通过接口化设计，`ContainerLivingItemHandler.processContext()` 不再需要硬编码任何具体功能类的容器级数据计算逻辑。
+
+**阶段 5 — 写回**：将应力与流体数据写入关联的 BlockEntity：
+
+```java
+writebackBlockEntities(context, tick);
+incrementCleanup();
+```
+
+**空容器处理**：当容器内无任何活物品时，`handleEmptyContainer` 检查是否有残留红石数据，若有则再跑一次 `calculate()` 使信号归零，避免信号层"集体死掉"。
 
 ### 8.3 TickContext — Tick 级临时状态
 

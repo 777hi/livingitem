@@ -2,6 +2,17 @@ package com.qiqi.li.living.transfer;
 
 import com.qiqi.li.living.model.Pos2D;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.Container;
+import net.minecraft.world.level.block.entity.BarrelBlockEntity;
+import net.minecraft.world.level.block.entity.BlastFurnaceBlockEntity;
+import net.minecraft.world.level.block.entity.BrewingStandBlockEntity;
+import net.minecraft.world.level.block.entity.ChestBlockEntity;
+import net.minecraft.world.level.block.entity.DispenserBlockEntity;
+import net.minecraft.world.level.block.entity.DropperBlockEntity;
+import net.minecraft.world.level.block.entity.FurnaceBlockEntity;
+import net.minecraft.world.level.block.entity.HopperBlockEntity;
+import net.minecraft.world.level.block.entity.ShulkerBoxBlockEntity;
+import net.minecraft.world.level.block.entity.SmokerBlockEntity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -195,14 +206,58 @@ public final class ContainerCompatibilityConfig {
     }
 
     /**
-     * 根据槽位数推断列数。
-     * 从 min(slotCount, 13) 列向下尝试，找到能整除的列宽；否则默认 9 列。
+     * 根据槽位数和容器对象推断列数。
+     * <p>
+     * 三层策略：
+     * <ol>
+     *   <li><b>已知容器类型</b> — 用 instanceof 判断原版容器，直接返回确定列数</li>
+     *   <li><b>加权启发式</b> — 按真实模组容器分布排序候选宽度，优先常见宽度</li>
+     * </ol>
+     *
+     * @param slotCount 容器槽位数
+     * @param container 容器对象（nullable），用于类型推断
+     * @return 推断的列数
+     */
+    public static int resolveColumns(int slotCount, Container container) {
+        // Tier 2: 已知容器类型直接推断
+        if (container != null) {
+            int typeColumns = resolveColumnsFromContainer(container);
+            if (typeColumns > 0) return typeColumns;
+        }
+        // Tier 3: 加权启发式
+        return resolveColumns(slotCount);
+    }
+
+    /**
+     * 根据原版容器类型推断列数。
+     *
+     * @return 列数，未知类型返回 -1
+     */
+    private static int resolveColumnsFromContainer(Container container) {
+        if (container instanceof ChestBlockEntity) return 9;
+        if (container instanceof HopperBlockEntity) return 1;
+        if (container instanceof DispenserBlockEntity || container instanceof DropperBlockEntity) return 3;
+        if (container instanceof FurnaceBlockEntity ||
+            container instanceof BlastFurnaceBlockEntity ||
+            container instanceof SmokerBlockEntity) return 1;
+        if (container instanceof BrewingStandBlockEntity) return 1;
+        if (container instanceof ShulkerBoxBlockEntity) return 9;
+        if (container instanceof BarrelBlockEntity) return 9;
+        return -1; // 未知类型
+    }
+
+    /**
+     * 加权启发式列数推断。
+     * <p>
+     * 按真实模组容器分布排序候选宽度，优先常见宽度：
+     * 9（原版标准）→ 10 → 12 → 13 → 8 → 7 → 6 → 11 → 5 → 4 → 3 → 2 → 1。
      */
     private static int resolveColumns(int slotCount) {
-        for (int w = Math.min(slotCount, 13); w >= 1; w--) {
-            if (slotCount % w == 0) return w;
+        int[] commonWidths = {9, 10, 12, 13, 8, 7, 6, 11, 5, 4, 3, 2, 1};
+        for (int w : commonWidths) {
+            if (slotCount >= w && slotCount % w == 0) return w;
         }
-        return 9;
+        return 1;
     }
 
     public static Optional<ContainerRule> findRuleByNamespaceAndKeyword(String namespace, String path) {
