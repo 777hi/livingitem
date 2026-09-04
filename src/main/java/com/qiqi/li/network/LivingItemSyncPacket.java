@@ -92,13 +92,13 @@ public record LivingItemSyncPacket(
         ByteBufCodecs.VAR_INT.encode(buf, g.effDeltaSumPermille());
         ByteBufCodecs.VAR_INT.encode(buf, g.coilForm());
         ByteBufCodecs.VAR_LONG.encode(buf, g.emaPowerFe());
-        ByteBufCodecs.VAR_LONG.encode(buf, g.containerEmaPowerFe());
+        ByteBufCodecs.VAR_LONG.encode(buf, g.levelEmaPowerFe());
         com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.DomainSnapshot.STREAM_CODEC
             .apply(ByteBufCodecs.list()).encode(regBuf, g.domains());
         ByteBufCodecs.DOUBLE.encode(buf, g.resonanceGain());
         ByteBufCodecs.DOUBLE.encode(buf, g.resonanceBalance());
-        ByteBufCodecs.VAR_INT.encode(buf, g.activeVoices());
-        ByteBufCodecs.VAR_LONG.apply(ByteBufCodecs.list()).encode(buf, g.voicePower());
+        ByteBufCodecs.VAR_INT.encode(buf, g.activeLevels());
+        ByteBufCodecs.VAR_LONG.apply(ByteBufCodecs.list()).encode(buf, g.levelPower());
     }
 
     private static void encodeHopper(FriendlyByteBuf buf, HopperRuntime h) {

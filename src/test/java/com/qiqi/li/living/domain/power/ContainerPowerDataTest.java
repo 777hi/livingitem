@@ -36,11 +36,10 @@ class ContainerPowerDataTest {
                     channel.onPhaseEvent(
                         new PhaseEvent(p, period, t % period, HIGH, t),
                         gen.preferredPeriod());
-                    // 能量入账
+                    // 能量入账（v18：容器级无总账，只算数值用于断言）
                     double factor = channel.factorFor(period, gen.preferredPeriod());
                     if (factor > 0) {
                         long re = PowerMath.eventEnergyRe(factor, period);
-                        data.onEventEnergy(re);
                         maxRe = Math.max(maxRe, re);
                     }
                 }
@@ -154,13 +153,12 @@ class ContainerPowerDataTest {
     }
 
     @Test
-    @DisplayName("RE 账本：EMA 平滑 + K=1/16 边界换算")
+    @DisplayName("锈级 EMA 账本（v18）：平滑 + K=1/16 边界换算，按锈级读取")
     void ledger_emaAndFeConversion() {
         ContainerPowerData data = new ContainerPowerData();
-        data.onEventEnergy(18000);
-        data.endTick(data.drainGeneratedRe());
-        // EMA = 18000 × 0.125 = 2250 RE/t → FE = 2250 × 1/16 = 140.625
-        // 验证 getEmaPowerFe 取整
-        assertTrue(data.getEmaPowerFe() > 0);
+        data.updateOxidationEma(new long[]{18000, 0, 0, 0});
+        // EMA = 18000 × 0.125 = 2250 RE/t → FE = 2250 × 1/16 = 140.625 → 取整
+        assertTrue(data.getLevelEmaPowerFe(0) > 0);
+        assertEquals(0, data.getLevelEmaPowerFe(1));
     }
 }

@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
  * 网络级共振测试（§3.7）——不同锈蚟级之间的「和声」。
  *
  * <p>公式：{@code s = GM/AM}，{@code R = 1 + (N−1)×s}，{@code 增益 = R^exp}。
- * 声部单位是<strong>锈蚟级</strong>（不是 BFS 连通块），同锈蚟级的多个连通块
+ * 锈级共振单位是<strong>锈蚟级</strong>（不是 BFS 连通块），同锈蚟级的多个连通块
  * 出力相加——这是 {@code R ≤ 4} 的结构性前提。</p>
  *
  * <p>本类的核心是<strong>安全性</strong>：共振只读「共振前」的基础出力，
@@ -51,7 +51,7 @@ class NetworkResonanceTest {
     // ── 共振倍率 R ──
 
     @Test
-    @DisplayName("孤网（单声部）：R = 1，无共振")
+    @DisplayName("孤网（单锈级）：R = 1，无共振")
     void resonance_singleVoice_isOne() {
         assertEquals(1.0, PowerMath.resonanceFactor(new double[]{500}), EPS);
         assertEquals(1.0, PowerMath.resonanceFactor(new double[]{0, 0, 500, 0}), EPS);
@@ -82,7 +82,7 @@ class NetworkResonanceTest {
     }
 
     @Test
-    @DisplayName("零值不计入声部数 N：2 级发电 + 2 级空 → N = 2")
+    @DisplayName("零值不计入锈级数 N：2 级发电 + 2 级空 → N = 2")
     void resonance_zerosExcludedFromVoiceCount() {
         // 与 [100,100] 完全等价（两个空锈蚟级不得拖低平衡度）
         assertEquals(PowerMath.resonanceFactor(new double[]{100, 100}),
@@ -108,9 +108,9 @@ class NetworkResonanceTest {
     }
 
     @Test
-    @DisplayName("声部数超过锈蚟级数时被截断（防御：拆簇刷 N）")
+    @DisplayName("锈级数超过锈蚟级数时被截断（防御：拆簇刷 N）")
     void resonance_voiceCountCappedAtOxidationLevels() {
-        // 防御性输入：即便传入 8 个声部，N 也被截断到 4
+        // 防御性输入：即便传入 8 个锈级，N 也被截断到 4
         double r = PowerMath.resonanceFactor(new double[]{10, 10, 10, 10, 10, 10, 10, 10});
         assertTrue(r <= PowerMath.OXIDATION_LEVELS + EPS, "R 应被截断到 ≤ 4，实际 " + r);
     }
@@ -139,7 +139,7 @@ class NetworkResonanceTest {
         double totalWeak = baseWeak * gainWeak;
 
         assertTrue(totalWeak < totalPerfect,
-            "硬塞弱声部应拉低总出力：" + totalWeak + " 应 < " + totalPerfect);
+            "硬塞弱锈级应拉低总出力：" + totalWeak + " 应 < " + totalPerfect);
         // 参考值：2700 vs ~1538
         assertEquals(2700.0, totalPerfect, 1.0);
         assertEquals(1538.0, totalWeak, 2.0);
@@ -231,33 +231,33 @@ class NetworkResonanceTest {
     // ── tooltip 数据落库（buildTelemetry 把容器级共振推到每件发电机组件）──
 
     @Test
-    @DisplayName("buildTelemetry：4 声部满共振 → 增益 16、平衡度 1、声部 4、各声部出力≈2700")
+    @DisplayName("buildTelemetry：4 锈级满共振 → 增益 16、平衡度 1、锈级 4、各锈级出力≈2700")
     void telemetry_fullResonance() {
         ContainerPowerData pd = new ContainerPowerData();
         for (int i = 0; i < 300; i++) pd.updateOxidationEma(new long[]{2700, 2700, 2700, 2700});
         LivingWaxedGeneratorData t = LivingWaxedCopperFunction.buildTelemetry(
-            new GeneratorState(), 1, LivingWaxedGeneratorData.FORM_BLOCK, pd);
-        assertEquals(4, t.activeVoices());
+            new GeneratorState(), 1, LivingWaxedGeneratorData.FORM_BLOCK, 0, pd);
+        assertEquals(4, t.activeLevels());
         assertEquals(16.0, t.resonanceGain(), LOOSE);
         assertEquals(1.0, t.resonanceBalance(), LOOSE);
-        assertEquals(4, t.voicePower().size());
-        for (long v : t.voicePower()) assertEquals(2700, v);
+        assertEquals(4, t.levelPower().size());
+        for (long v : t.levelPower()) assertEquals(2700, v);
     }
 
     @Test
-    @DisplayName("buildTelemetry：单声部 → 增益 1、声部 1、无共振加成")
+    @DisplayName("buildTelemetry：单锈级 → 增益 1、锈级 1、无共振加成")
     void telemetry_singleVoice() {
         ContainerPowerData pd = new ContainerPowerData();
         for (int i = 0; i < 300; i++) pd.updateOxidationEma(new long[]{2700, 0, 0, 0});
         LivingWaxedGeneratorData t = LivingWaxedCopperFunction.buildTelemetry(
-            new GeneratorState(), 1, LivingWaxedGeneratorData.FORM_BLOCK, pd);
-        assertEquals(1, t.activeVoices());
+            new GeneratorState(), 1, LivingWaxedGeneratorData.FORM_BLOCK, 0, pd);
+        assertEquals(1, t.activeLevels());
         assertEquals(1.0, t.resonanceGain(), EPS);
-        // voicePower 始终长度 = 锈蚟级数（4），空声部为 0
-        assertEquals(4, t.voicePower().size());
-        assertEquals(2700, t.voicePower().get(0));
-        assertEquals(0, t.voicePower().get(1));
-        assertEquals(0, t.voicePower().get(2));
-        assertEquals(0, t.voicePower().get(3));
+        // levelPower 始终长度 = 锈蚟级数（4），空锈级为 0
+        assertEquals(4, t.levelPower().size());
+        assertEquals(2700, t.levelPower().get(0));
+        assertEquals(0, t.levelPower().get(1));
+        assertEquals(0, t.levelPower().get(2));
+        assertEquals(0, t.levelPower().get(3));
     }
 }

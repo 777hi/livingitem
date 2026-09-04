@@ -20,9 +20,10 @@ import com.qiqi.li.living.api.LivingItemManager;
 /**
  * 阶段四储能测试 —— 铜灯 = 唯一储存（无容器池）+ 对外取电（模组兼容面）。
  *
- * <p>模型语义见 docs/红电系统.md §3.6（v17.5）：
- * 发电直存（按剩余容量比例分配入各铜灯堆）→ 无铜灯则电凭空消失；
- * 用电侧直接从铜灯取电。电量按「每盏」存（q），拆分/合并/搬运天然守恒。</p>
+ * <p>模型语义见 docs/红电系统.md §3.6（v18）：
+ * 发电直存按锈级专属通道分配（k 锈级发电只入 k 锈级铜灯堆，
+ * 无同色灯则该锈级弃）；用电侧直接从铜灯取电。
+ * 电量按「每盏」存（q），拆分/合并/搬运天然守恒。</p>
  */
 class WaxedCopperStorageTest {
 
@@ -76,6 +77,13 @@ class WaxedCopperStorageTest {
         return stack;
     }
 
+    /** 氧化锈级的涂蜡铜灯（锈级 3）——锈级专属通道用例 */
+    private static ItemStack bulbOxidized(int count) {
+        ItemStack stack = new ItemStack(Items.WAXED_OXIDIZED_COPPER_BULB, count);
+        LivingItemManager.setLiving(stack, true);
+        return stack;
+    }
+
     /** 50% 占空比整周期方波（period 为奇数时高电平 period/2 取整） */
     private static int square(int tick, int phase, int period, int high) {
         return Math.floorMod(tick - phase, period) < period / 2 ? high : 0;
@@ -92,7 +100,7 @@ class WaxedCopperStorageTest {
     void distribute_intoBulbs() {
         ItemStack stack = bulb(16);   // 容量 16 × 100_000 = 1_600_000 mFE
 
-        boolean changed = LivingWaxedCopperFunction.distributeToBulbs(1024,
+        boolean changed = LivingWaxedCopperFunction.distributeToBulbs(1024, 0,
             List.of(new LivingItemFunction.SlotEntry(0, stack),
                 new LivingItemFunction.SlotEntry(1, generator(4))));
 
@@ -102,9 +110,58 @@ class WaxedCopperStorageTest {
     }
 
     @Test
+    @DisplayName("锈级专属通道（v18）：错色灯不收，只有同锈级灯充电")
+    void distribute_channelIsolation_wrongColorBulbSkipped() {
+        ItemStack freshBulb = bulb(16);                                        // 锈级 0（新鲜）
+        ItemStack oxidizedBulb = bulbOxidized(16);                             // 锈级 3（氧化）
+        LivingItemManager.setWaxedBulbData(oxidizedBulb,
+            new LivingWaxedBulbData(PowerMath.BULB_UNIT_CAPACITY_MFE));        // 氧化灯已满
+
+        // 锈级 0 发电 1024 RE：氧化灯（满 + 错色）都不该收，新鲜灯收全部
+        boolean changed = LivingWaxedCopperFunction.distributeToBulbs(1024, 0,
+            List.of(new LivingItemFunction.SlotEntry(0, oxidizedBulb),
+                new LivingItemFunction.SlotEntry(1, freshBulb)));
+
+        assertTrue(changed);
+        assertEquals(4000, LivingItemManager.getWaxedBulbData(freshBulb).chargeMilliFe());
+        assertEquals(PowerMath.BULB_UNIT_CAPACITY_MFE,
+            LivingItemManager.getWaxedBulbData(oxidizedBulb).chargeMilliFe());
+    }
+
+    @Test
+    @DisplayName("锈级专属通道（v18）：本锈级无同色灯 → 整锈级弃（电凭空消失）")
+    void distribute_channelIsolation_noMatchingBulbDiscards() {
+        ItemStack freshBulb = bulb(16);   // 锈级 0
+
+        // 锈级 3（氧化）发电：容器里只有新鲜灯（错色）→ 弃
+        boolean changed = LivingWaxedCopperFunction.distributeToBulbs(1024, 3,
+            List.of(new LivingItemFunction.SlotEntry(0, freshBulb)));
+
+        assertTrue(!changed);
+        assertEquals(0, LivingItemManager.getWaxedBulbData(freshBulb).chargeMilliFe());
+    }
+
+    @Test
+    @DisplayName("锈级专属通道（v18）：各锈级电独立分账（同容器四色不串账）")
+    void distribute_channelIsolation_perLevelLedger() {
+        ItemStack fresh = bulb(16);           // 锈级 0
+        ItemStack oxidized = bulbOxidized(16); // 锈级 3
+        List<LivingItemFunction.SlotEntry> entries = List.of(
+            new LivingItemFunction.SlotEntry(0, fresh),
+            new LivingItemFunction.SlotEntry(1, oxidized));
+
+        // 锈级 0 发 512 RE，锈级 3 发 1024 RE：各入各色，互不稀释
+        assertTrue(LivingWaxedCopperFunction.distributeToBulbs(512, 0, entries));
+        assertTrue(LivingWaxedCopperFunction.distributeToBulbs(1024, 3, entries));
+
+        assertEquals(2000, LivingItemManager.getWaxedBulbData(fresh).chargeMilliFe());
+        assertEquals(4000, LivingItemManager.getWaxedBulbData(oxidized).chargeMilliFe());
+    }
+
+    @Test
     @DisplayName("无铜灯：发电弃（电凭空消失——发电必须被消费或储存）")
     void distribute_noBulbs_discards() {
-        boolean changed = LivingWaxedCopperFunction.distributeToBulbs(1024,
+        boolean changed = LivingWaxedCopperFunction.distributeToBulbs(1024, 0,
             List.of(new LivingItemFunction.SlotEntry(0, generator(4))));
 
         assertTrue(!changed);
@@ -117,7 +174,7 @@ class WaxedCopperStorageTest {
         LivingItemManager.setWaxedBulbData(stack,
             new LivingWaxedBulbData(PowerMath.BULB_UNIT_CAPACITY_MFE));   // 每盏已满
 
-        boolean changed = LivingWaxedCopperFunction.distributeToBulbs(1024,
+        boolean changed = LivingWaxedCopperFunction.distributeToBulbs(1024, 0,
             List.of(new LivingItemFunction.SlotEntry(0, stack),
                 new LivingItemFunction.SlotEntry(1, generator(4))));
 
@@ -263,7 +320,7 @@ class WaxedCopperStorageTest {
         }
 
         var telemetry = LivingWaxedCopperFunction.buildTelemetry(gen, 4,
-            com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.FORM_BLOCK, null);
+            com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.FORM_BLOCK, 0, null);
         assertEquals(4, telemetry.detectedPeriod());
         assertEquals(1, telemetry.phaseCount());
         assertEquals(250, telemetry.unlockPermille());   // eff=1.0 × n=1 / pref=4 = 0.25 → 250
@@ -276,7 +333,7 @@ class WaxedCopperStorageTest {
         GeneratorState gen = new GeneratorState();
         gen.setPreferredPeriodFromStack(4);
         var telemetry = LivingWaxedCopperFunction.buildTelemetry(gen, 4,
-            com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.FORM_BLOCK, null);
+            com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.FORM_BLOCK, 0, null);
         assertEquals(0, telemetry.detectedPeriod());
         assertEquals(0, telemetry.phaseCount());
         assertEquals(0, telemetry.unlockPermille());
@@ -284,24 +341,15 @@ class WaxedCopperStorageTest {
     }
 
     @Test
-    @DisplayName("发电量累计：RE 事件累加 + drain 清零")
-    void generatedRe_accumulateAndDrain() {
+    @DisplayName("锈级 EMA 功率（v18）：updateOxidationEma 驱动，K=1/16 换算，按锈级读取")
+    void ema_levelPowerTracking() {
         ContainerPowerData power = new ContainerPowerData();
-        power.onEventEnergy(512_000);
-        power.onEventEnergy(48_000);
-        assertEquals(560_000, power.drainGeneratedRe());
-        assertEquals(0, power.drainGeneratedRe());   // 已清空
-    }
+        // 锈级 0 发电 512_000 RE，其余锈级 0
+        power.updateOxidationEma(new long[]{512_000, 0, 0, 0});
+        assertEquals(4000, power.getLevelEmaPowerFe(0));   // 512000 × 0.125 = 64000 RE/t → 4000 FE/t
+        assertEquals(0, power.getLevelEmaPowerFe(3));
 
-    @Test
-    @DisplayName("EMA 功率：本 tick 发电量驱动，K=1/16 换算")
-    void ema_powerTracking() {
-        ContainerPowerData power = new ContainerPowerData();
-        power.onEventEnergy(512_000);
-        power.endTick(power.drainGeneratedRe());
-        assertEquals(4000, power.getEmaPowerFe());   // 512000 × 0.125 = 64000 RE/t → 4000 FE/t
-
-        power.endTick(power.drainGeneratedRe());     // 本 tick 无发电 → EMA 衰减
-        assertEquals(3500, power.getEmaPowerFe());   // 64000 × 0.875 = 56000 RE/t → 3500 FE/t
+        power.updateOxidationEma(new long[]{0, 0, 0, 0});   // 本 tick 无发电 → EMA 衰减
+        assertEquals(3500, power.getLevelEmaPowerFe(0));    // 64000 × 0.875 = 56000 RE/t → 3500 FE/t
     }
 }

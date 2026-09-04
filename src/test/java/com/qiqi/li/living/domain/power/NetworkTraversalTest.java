@@ -183,9 +183,9 @@ class NetworkTraversalTest {
 
         // (2') DomainSnapshot 的 n/period 相等（用户显式要求）
         var ta = LivingWaxedCopperFunction.buildTelemetry(a, PREF,
-            LivingWaxedGeneratorData.FORM_BLOCK, two.power);
+            LivingWaxedGeneratorData.FORM_BLOCK, 0, two.power);
         var tb = LivingWaxedCopperFunction.buildTelemetry(b, PREF,
-            LivingWaxedGeneratorData.FORM_BLOCK, two.power);
+            LivingWaxedGeneratorData.FORM_BLOCK, 0, two.power);
         assertEquals(ta.domains().size(), tb.domains().size(), "域数量应相等");
         for (int i = 0; i < ta.domains().size(); i++) {
             assertEquals(ta.domains().get(i).period(), tb.domains().get(i).period(), "域周期应相等");
@@ -197,12 +197,12 @@ class NetworkTraversalTest {
         assertEquals(a.getEmaPowerRe(), b.getEmaPowerRe(), 1e-9, "两机 EMA 功率应相同");
 
         // (3) 总发电量 = 单机 × 组件内发电机数（共享边未被 G 倍重复计入）
-        // 用 RE 域（无取整）做精确等式；EMA 线性，2 机每 tick 输入 = 单机 ×2。
-        double singleEmaRe = one.power.getEmaPowerRe();
-        double twoEmaRe = two.power.getEmaPowerRe();
+        // v18 容器总账已拆，改用锈级 EMA 验证：EMA 线性，2 机每 tick 输入 = 单机 ×2。
+        double singleEmaRe = one.power.getLevelEmaPowerRe(0);
+        double twoEmaRe = two.power.getLevelEmaPowerRe(0);
         assertTrue(singleEmaRe > 0, "单机应有发电量");
         assertEquals(2.0 * singleEmaRe, twoEmaRe, 1e-6,
-            "同连通块 2 机总发电量应 = 单机 ×2（共享边不重复计 G 倍）");
+            "同连通块 2 机锈级总发电量应 = 单机 ×2（共享边不重复计 G 倍）");
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -253,13 +253,13 @@ class NetworkTraversalTest {
     // ════════════════════════════════════════════════════════════════
 
     @Test
-    @DisplayName("多声部稳态：遥测量化后不再每 tick 脏写发电机槽位")
+    @DisplayName("多锈级稳态：遥测量化后不再每 tick 脏写发电机槽位")
     void quantizedTelemetry_doesNotDirtyInSteadyState() {
-        // 两个声部：氧化 0（pref=4）与氧化 3（pref=8），基础功率不同 → 平衡度 s<1，
+        // 两个锈级：氧化 0（pref=4）与氧化 3（pref=8），基础功率不同 → 平衡度 s<1，
         // 共振增益 / 平衡度 EMA 渐近收敛（若未量化会每 tick 微动 → 每 tick 脏写）。
         ItemStack[] slots = new ItemStack[SIZE];
-        slots[0] = living(Items.WAXED_COPPER_BLOCK, 4);        // 声部 0
-        slots[1] = living(Items.WAXED_OXIDIZED_COPPER, 8);     // 声部 3
+        slots[0] = living(Items.WAXED_COPPER_BLOCK, 4);        // 锈级 0
+        slots[1] = living(Items.WAXED_OXIDIZED_COPPER, 8);     // 锈级 3
         IItemHandler handler = new FakeHandler(slots);
         SimpleContainerContext ctx = new SimpleContainerContext(handler, new ArrayList<>(), new ArrayList<>());
         ContainerRedstoneData redstone = ctx.getOrCreateRedstoneData();
@@ -284,18 +284,18 @@ class NetworkTraversalTest {
             lastTick = tick;
         }
 
-        // 前置：场景确实在多声部共振稳态（否则「不脏写」会平凡成立，失去意义）
+        // 前置：场景确实在多锈级共振稳态（否则「不脏写」会平凡成立，失去意义）
         // 遥测数据已写入运行时缓存，不再写入 DataComponent
         var gd = ContainerRuntimeCache.get(ctx.getContainerKey(), 0);
         assertTrue(gd.isGenerator(), "应有发电机遥测数据（运行时缓存）");
-        assertEquals(2, gd.generatorTelemetry().activeVoices(), "应有两个活跃声部（共振生效）");
+        assertEquals(2, gd.generatorTelemetry().activeLevels(), "应有两个活跃锈级（共振生效）");
         assertTrue(gd.generatorTelemetry().emaPowerFe() > 0, "应有发电量");
-        assertTrue(gd.generatorTelemetry().resonanceGain() > 1.0, "共振增益应 > 1（多声部共振）");
+        assertTrue(gd.generatorTelemetry().resonanceGain() > 1.0, "共振增益应 > 1（多锈级共振）");
 
         // 收敛后稳态：遥测被量化钉死 → 发电机槽位不再每 tick 标脏
         assertFalse(lastTick.dirtySlots.contains(0),
-            "稳态下声部 0 槽位不应每 tick 脏写：dirtySlots=" + lastTick.dirtySlots);
+            "稳态下锈级 0 槽位不应每 tick 脏写：dirtySlots=" + lastTick.dirtySlots);
         assertFalse(lastTick.dirtySlots.contains(1),
-            "稳态下声部 3 槽位不应每 tick 脏写：dirtySlots=" + lastTick.dirtySlots);
+            "稳态下锈级 3 槽位不应每 tick 脏写：dirtySlots=" + lastTick.dirtySlots);
     }
 }

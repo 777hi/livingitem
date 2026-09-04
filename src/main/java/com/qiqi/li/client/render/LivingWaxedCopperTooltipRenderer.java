@@ -11,7 +11,7 @@ import net.minecraft.network.chat.Component;
  * 活涂蜡发电机的「仪器面板」tooltip 渲染器（§3.6.1 可视化）。
  *
  * <p>左半区是<strong>相位示波器</strong>：按相数 n 画出 n 条相位错开的正弦波（覆盖约 2 个周期），
- * 反映这台发电机看到的多相交变信号形状；右半区是<strong>声部柱状图</strong>：
+ * 反映这台发电机看到的多相交变信号形状；右半区是<strong>锈级柱状图</strong>：
  * 四个锈蚟级的基础出力 EMA，用四种铜锈色区分，一眼看出哪一级是共振短板。</p>
  *
  * <p>面板只在 F3+H 高级模式出现（由
@@ -30,7 +30,7 @@ public class LivingWaxedCopperTooltipRenderer implements ClientTooltipComponent 
     private static final int LABEL_COLOR = 0xFF8A8A9A;
 
     /** 四种锈蚀等级的铜色：未锈 / 暴露 / 风化 / 氧化 */
-    private static final int[] VOICE_COLORS = {0xFFE08A4B, 0xFFC07050, 0xFF6FA287, 0xFF4AA8A8};
+    private static final int[] LEVEL_COLORS = {0xFFE08A4B, 0xFFC07050, 0xFF6FA287, 0xFF4AA8A8};
 
     /** 多相波形的相位配色：相 0 高亮青，其余逐级变暗，便于区分各相 */
     private static final int[] PHASE_COLORS = {
@@ -51,17 +51,17 @@ public class LivingWaxedCopperTooltipRenderer implements ClientTooltipComponent 
 
     private final int phaseCount;
     private final int period;
-    private final List<Long> voicePower;
-    private final int activeVoices;
+    private final List<Long> levelPower;
+    private final int activeLevels;
     private final boolean empty;
 
     public LivingWaxedCopperTooltipRenderer(LivingWaxedCopperTooltipComponent component) {
         this.phaseCount = component.phaseCount();
         this.period = component.period();
-        this.voicePower = component.voicePower();
-        this.activeVoices = component.activeVoices();
-        // 无信号（周期未检出）且无声部出力时，面板没有可显示内容
-        this.empty = period <= 0 && maxOf(voicePower) <= 0;
+        this.levelPower = component.levelPower();
+        this.activeLevels = component.activeLevels();
+        // 无信号（周期未检出）且无锈级出力时，面板没有可显示内容
+        this.empty = period <= 0 && maxOf(levelPower) <= 0;
     }
 
     @Override
@@ -85,12 +85,12 @@ public class LivingWaxedCopperTooltipRenderer implements ClientTooltipComponent 
         guiGraphics.fill(x + PANEL_W - 1, y, x + PANEL_W, y + PANEL_H, BORDER_COLOR);
 
         renderScope(guiGraphics, x, y);
-        renderVoiceBars(guiGraphics, x, y);
+        renderLevelBars(guiGraphics, x, y);
 
         String scopeLabel = "相位 P=" + period + "t n=" + phaseCount;
         guiGraphics.drawString(font, Component.literal(scopeLabel),
             x + SCOPE_X, y + PANEL_H - 11, LABEL_COLOR, false);
-        guiGraphics.drawString(font, Component.literal("声部 " + activeVoices + "/4"),
+        guiGraphics.drawString(font, Component.literal("锈级 " + activeLevels + "/4"),
             x + BAR_X - 2, y + PANEL_H - 11, LABEL_COLOR, false);
     }
 
@@ -127,18 +127,18 @@ public class LivingWaxedCopperTooltipRenderer implements ClientTooltipComponent 
         }
     }
 
-    /** 右半区：四声部出力柱状图（用四种锈蚀铜色） */
-    private void renderVoiceBars(GuiGraphics g, int x, int y) {
+    /** 右半区：四锈级出力柱状图（用四种锈蚀铜色） */
+    private void renderLevelBars(GuiGraphics g, int x, int y) {
         int baseline = y + SCOPE_Y + SCOPE_H;
-        long maxV = maxOf(voicePower);
+        long maxV = maxOf(levelPower);
         if (maxV <= 0) return;
 
-        for (int i = 0; i < voicePower.size() && i < VOICE_COLORS.length; i++) {
-            long v = voicePower.get(i);
+        for (int i = 0; i < levelPower.size() && i < LEVEL_COLORS.length; i++) {
+            long v = levelPower.get(i);
             if (v <= 0) continue;
             int h = Math.max(2, (int) Math.round(v * (double) (SCOPE_H - 2) / maxV));
             int bx = x + BAR_X + i * (BAR_W + BAR_GAP);
-            g.fill(bx, baseline - h, bx + BAR_W, baseline, VOICE_COLORS[i]);
+            g.fill(bx, baseline - h, bx + BAR_W, baseline, LEVEL_COLORS[i]);
         }
     }
 

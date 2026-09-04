@@ -29,12 +29,12 @@ public record LivingWaxedGeneratorData(
     int effDeltaSumPermille, // Σ√|Δ_i| × 1000（定点显示，用于公式展示）
     int coilForm,            // 线圈形态：0=铜块 1=雕文(输入/输出定向WASD) 2=切制(H/V隔离) 3=格栅
     long emaPowerFe,         // 本机 EMA 功率（FE/t，取整）
-    long containerEmaPowerFe,// 容器总 EMA 功率（FE/t，取整）
+    long levelEmaPowerFe,    // 本锈级 EMA 功率（FE/t，取整；v18 取代旧容器总功率）
     List<DomainSnapshot> domains,  // 全部域快照（F3+H 高级显示用）
     double resonanceGain,    // 网络级共振增益 R^2（容器级，见 §3.6.1）；1.0=无共振
-    double resonanceBalance, // 平衡度 s ∈ [0,1]（各声部基础出力接近程度）
-    int activeVoices,        // 活跃声部数 N（1~4；0=无发电）
-    List<Long> voicePower    // 各锈蚟级基础出力 EMA（RE/t，长度=OXIDATION_LEVELS），诊断用
+    double resonanceBalance, // 平衡度 s ∈ [0,1]（各锈级基础出力接近程度）
+    int activeLevels,        // 活跃锈级数 N（1~4；0=无发电）
+    List<Long> levelPower    // 各锈蚟级基础出力 EMA（RE/t，长度=OXIDATION_LEVELS），诊断用
 ) implements TooltipProvider {
 
     /** 线圈形态常量 */
@@ -56,12 +56,12 @@ public record LivingWaxedGeneratorData(
             Codec.INT.fieldOf("eff_delta_sum_permille").forGetter(LivingWaxedGeneratorData::effDeltaSumPermille),
             Codec.INT.fieldOf("coil_form").forGetter(LivingWaxedGeneratorData::coilForm),
             Codec.LONG.fieldOf("ema_power_fe").forGetter(LivingWaxedGeneratorData::emaPowerFe),
-            Codec.LONG.fieldOf("container_ema_power_fe").forGetter(LivingWaxedGeneratorData::containerEmaPowerFe),
+            Codec.LONG.fieldOf("level_ema_power_fe").forGetter(LivingWaxedGeneratorData::levelEmaPowerFe),
             DomainSnapshot.CODEC.listOf().fieldOf("domains").forGetter(LivingWaxedGeneratorData::domains),
             Codec.DOUBLE.fieldOf("resonance_gain").forGetter(LivingWaxedGeneratorData::resonanceGain),
             Codec.DOUBLE.fieldOf("resonance_balance").forGetter(LivingWaxedGeneratorData::resonanceBalance),
-            Codec.INT.fieldOf("active_voices").forGetter(LivingWaxedGeneratorData::activeVoices),
-            Codec.LONG.listOf().fieldOf("voice_power").forGetter(LivingWaxedGeneratorData::voicePower)
+            Codec.INT.fieldOf("active_levels").forGetter(LivingWaxedGeneratorData::activeLevels),
+            Codec.LONG.listOf().fieldOf("level_power").forGetter(LivingWaxedGeneratorData::levelPower)
         ).apply(instance, LivingWaxedGeneratorData::new)
     );
 
@@ -94,12 +94,12 @@ public record LivingWaxedGeneratorData(
                 ByteBufCodecs.VAR_INT.encode(buf, v.effDeltaSumPermille);
                 ByteBufCodecs.VAR_INT.encode(buf, v.coilForm);
                 ByteBufCodecs.VAR_LONG.encode(buf, v.emaPowerFe);
-                ByteBufCodecs.VAR_LONG.encode(buf, v.containerEmaPowerFe);
+                ByteBufCodecs.VAR_LONG.encode(buf, v.levelEmaPowerFe);
                 DomainSnapshot.STREAM_CODEC.apply(ByteBufCodecs.list()).encode(buf, v.domains);
                 ByteBufCodecs.DOUBLE.encode(buf, v.resonanceGain);
                 ByteBufCodecs.DOUBLE.encode(buf, v.resonanceBalance);
-                ByteBufCodecs.VAR_INT.encode(buf, v.activeVoices);
-                ByteBufCodecs.VAR_LONG.apply(ByteBufCodecs.list()).encode(buf, v.voicePower);
+                ByteBufCodecs.VAR_INT.encode(buf, v.activeLevels);
+                ByteBufCodecs.VAR_LONG.apply(ByteBufCodecs.list()).encode(buf, v.levelPower);
             }
         };
 

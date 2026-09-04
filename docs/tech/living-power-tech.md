@@ -2,10 +2,10 @@
 
 # Living Power (活涂蜡铜块 · 红电发电) 技术文档
 
-> **文档版本**: v4.2（公式 v3：√|Δ| 求和 + 铜块网络按组件遍历 + 遥测量化降脏化）
-> **最后更新**: 2026-09-03
+> **文档版本**: v4.4（v18：铜灯锈级专属通道 + 锈级纯度增益归属 + 拆容器总账 EMA；术语「声部」→「锈级」）
+> **最后更新**: 2026-09-05
 > **适用版本**: Minecraft 1.21.1
-> **规划文档**: [红电系统.md](../红电系统.md)（v17.7，公式 v3）
+> **规划文档**: [红电系统.md](../红电系统.md)（v18，公式 v3）
 
 ## 目录
 1. [架构概览](#1-架构概览)
@@ -56,7 +56,7 @@ FE               = RE × K，K = 1/16
 | `PhaseDomain` | `domain/power/`（ChannelState 内部类） | 周期域：按 period 分域，offset 去重，Δ 跟踪 |
 | `SignalTracker` | `domain/power/`（LivingWaxedCopperFunction 内部类） | 上升沿跟踪器：间隔 EMA 估计周期、偏移量计算 |
 | `GeneratorState` | `domain/power/` | 单台发电机状态：偏好周期（= 堆叠数）、单通道事件接收 |
-| `ContainerPowerData` | `domain/power/` | 容器级账本：RE 事件累加、EMA 功率、tick 计数、边信号跟踪器持久化 |
+| `ContainerPowerData` | `domain/power/` | 容器级账本：RE 事件累加、EMA 功率、tick 计数、边信号跟踪器持久化、按锈级基础 EMA（共振 + v18 分账） |
 
 除 `LivingWaxedCopperFunction` 外全部为**纯 Java 类**（零 MC 依赖），可直接 JUnit 驱动。
 
@@ -134,8 +134,12 @@ processContext() 每 game tick：
 | `channel()` | 单通道事件接收 |
 | `onEventEnergy(re)` | 跳变即能量事件：RE 直接累加，无功率流中间态 |
 | `endTick()` | 每 tick 末尾：EMA 更新（α=0.125）+ tick 计数 |
-| `getEmaPowerFe()` | EMA 功率 × K 换算为 FE/t |
+| `getEmaPowerFe()` | EMA 功率 × K 换算为 FE/t（per-generator / 按锈级两个口径，v18 拆除容器总账） |
 | `getOrCreateEdgeTracker(edgeKey)` | 持久化边信号跟踪器，跨 tick 跟踪周期 |
+| `emaPowerByOxidation` | 4 槽按锈级的基础 EMA（共振口径 + 锈级功率读数，只吃 `baseReByOx[k]`） |
+| `updateOxidationEma` | EMA 推进 + 归零截断（`EMA_EPSILON = 1e-6`） |
+| `getLevelEmaPowerFe(oxidation)` | 指定锈级的 EMA 功率读数（v18，取代旧容器总功率） |
+| `activeOxidationLevels()` | 活跃锈级数 N（1~4；0 = 无任何发电） |
 
 ---
 
@@ -277,24 +281,26 @@ tick + 网络不同位置边各自采样），`PhaseDomain` 去重后即得 n=7 
   if factor > 0 && period > 0:
     re = PowerMath.eventEnergyRe(factor, period)
     powerData.onEventEnergy(re)
+    baseReByOx[发电机锈级] += re          // v18：按锈级累加，共振与直存的分账基础
 ```
 
 - 每 tick 每发电机只入账一次（从最佳域取）
 - 最佳域 = 合因子最大的域（自然选择最优周期）
-- 能量直接累加到 `ContainerPowerData`，tick 末统一分配
+- 能量累加到 `ContainerPowerData` 的总账（EMA 读数口径）+ 按锈级的 `baseReByOx`；
+  tick 末共振增益按锈级套用后，逐锈级分配入同色铜灯（§3.7 / 锈级专属通道）
 
 ### 3.7 网络级共振（不同锈蚟级之间的「和声」）
 
 块级感应是「铜块采样边信号」，网络级共振是「锈蚟级之间互相感应」——
 **同一套机制抬高一个维度**。这也让 §3.5 的「氧化等级网络隔离」从单纯的消极隔离，
-变成有积极意义的机制：锈蚟级不再只是「互不连通」，而是**和弦里的声部**。
+变成有积极意义的机制：锈蚟级不再只是「互不连通」，而是**和弦里的锈级**。
 
-#### 声部单位是「锈蚟级」，不是 BFS 连通块
+#### 锈级单位是「锈蚟级」，不是 BFS 连通块
 
-同一锈蚟级内的多个互不相连的连通块，其出力**直接相加**后作为一个声部参与共振；
+同一锈蚟级内的多个互不相连的连通块，其出力**直接相加**后作为一个锈级参与共振；
 只有不同锈蚟级之间才谈共振。
 
-> ⚠️ 这不只是简化，而是 **`R ≤ 4` 的结构性前提**。若按连通块计声部，玩家把同一
+> ⚠️ 这不只是简化，而是 **`R ≤ 4` 的结构性前提**。若按连通块计锈级，玩家把同一
 > 锈蚟级拆成若干小簇即可刷高 N，退化为曾导致避雷针共振模型被废弃的 N×(N−1) 膨胀。
 
 #### 公式
@@ -310,8 +316,8 @@ tick + 网络不同位置边各自采样），`PhaseDomain` 去重后即得 n=7 
 
 | 要素 | 说明 |
 |---|---|
-| 平衡度 s | 各声部出力的接近程度；尺度无关（只关心比例，不关心绝对值） |
-| 声部数 N | 有出力的锈蚟级数；零出力的级不计入 |
+| 平衡度 s | 各锈级出力的接近程度；尺度无关（只关心比例，不关心绝对值） |
+| 锈级数 N | 有出力的锈蚟级数；零出力的级不计入 |
 | exp = 2 | `PowerMath.RESONANCE_EXPONENT`，**唯一的强度标定旋钮** |
 
 #### 边界性质（结构性，非靠常数压住）
@@ -321,7 +327,7 @@ tick + 网络不同位置边各自采样），`PhaseDomain` 去重后即得 n=7 
 | 下限 R ≥ 1 | 共振永不「扣发电量」，最差就是不共振 |
 | 孤网 R = 1 | 只建一种锈蚟级拿不到任何加成 |
 | 满共振 R = 4 | 4 个锈蚟级出力全相等，增益 ×16 |
-| 上界 R ≤ 4 | 声部数被锈蚟级数硬顶死，不可能失控 |
+| 上界 R ≤ 4 | 锈级数被锈蚟级数硬顶死，不可能失控 |
 | 无回代 | 单遍前馈（见下方铁律），不存在指数发散 |
 
 #### 三条铁律（安全红线）
@@ -332,7 +338,7 @@ tick + 网络不同位置边各自采样），`PhaseDomain` 去重后即得 n=7 
 2. **每锈蚟级 EMA 只跟踪基础出力。** `ContainerPowerData.updateOxidationEma()`
    的入参必须是 `baseReByOx`（共振前）。若喂入乘过增益的值即形成回代环。
 3. **EMA 必须截断归零。** 指数衰减数学上达不到 0；不截断则停止发电的锈蚟级会以
-   极小非零值被永久算作活跃声部，把平衡度永久压死且无法自愈。
+   极小非零值被永久算作活跃锈级，把平衡度永久压死且无法自愈。
    `ContainerPowerData.EMA_EPSILON = 1e-6`（浮点卫生常数，非平衡常数），
    典型量级约 155 tick 归零。
 
@@ -345,13 +351,17 @@ tick + 网络不同位置边各自采样），`PhaseDomain` 去重后即得 n=7 
 ② powerData.updateOxidationEma(baseRe)      // 只吃基础值
 ③ gain = powerData.resonanceGain()          // = R^exp，只读 EMA
 
-④ generatedRe = powerData.drainGeneratedRe()
-   if (gain > 1 && generatedRe > 0) generatedRe = round(generatedRe × gain)
-⑤ 照旧分配入铜灯（§3.6 v17.5）
+④ 各锈级实发（v18 锈级纯度归属）：
+   voiceRe[k] = gain > 1 ? round(baseRe[k] × gain) : baseRe[k]
+⑤ 逐锈级分配入同锈级铜灯（§3.6 v18 锈级专属通道）：
+   voiceRe[k] → 按剩余容量比例直存 getOxidationLevel(bulb) == k 的灯堆
+   → k 锈级无同色灯则该锈级弃
 ```
 
 注意 `gain` 由**平滑的 EMA** 算出（避免逐 tick 跳变导致闪烁），
-但作用在**本 tick 的实际基础出力**上。
+但作用在**本 tick 的实际基础出力**上。`Σ voiceRe[k]` 与旧口径
+`round(Σ baseRe[k] × gain)` 数值上可能差 ±1 RE（逐级舍入 vs 总量舍入），
+以逐级舍入为准——保证每个锈级的账目自洽。
 
 #### 场景对照（总量 400 的几种分配）
 
@@ -367,7 +377,7 @@ tick + 网络不同位置边各自采样），`PhaseDomain` 去重后即得 n=7 
 | [100,100,100,1] | 4 | 0.420 | 2.26 | 5.11 | **1538** |
 
 **「凑数」不划算**：3 级各 100（总 2700）> 3 级各 100 外挂一个 1 的第 4 级
-（总 1538）。硬塞弱声部会拉低总出力，钻空子自动失效，无需额外的失衡惩罚项。
+（总 1538）。硬塞弱锈级会拉低总出力，钻空子自动失效，无需额外的失衡惩罚项。
 
 #### 强度校准
 
@@ -391,7 +401,8 @@ tick + 网络不同位置边各自采样），`PhaseDomain` 去重后即得 n=7 
 | `ContainerPowerData.emaPowerByOxidation` | 4 槽按锈蚟级的基础 EMA |
 | `ContainerPowerData.updateOxidationEma` | EMA 推进 + 归零截断 |
 | `LivingWaxedCopperFunction.accountEnergy` | 按锈蚟级累加基础出力 |
-| `LivingWaxedCopperFunction.tickContainerData` | tick 末单遍套用增益 |
+| `LivingWaxedCopperFunction.tickContainerData` | tick 末单遍套用增益（v18：逐锈级 `voiceRe[k] = round(baseReByOx[k] × gain)`） |
+| `LivingWaxedCopperFunction.distributeToBulbs` | v18：直存时按 `getOxidationLevel(bulb) == k` 过滤灯堆 |
 | `NetworkResonanceTest` | 16 项（含回代安全、上界、EMA 衰减） |
 
 ---
@@ -443,6 +454,7 @@ tick + 网络不同位置边各自采样），`PhaseDomain` 去重后即得 n=7 
 | Step 9 相位域合因子 | ✅ | √|Δ| 求和、域内去重 n、调谐解锁 |
 | Step 10 氧化等级网络隔离 | ✅ | 新鲜/暴露/锈蚀/氧化互不连通 |
 | Step 11 铜灯储能 | ✅ | 发电直存 + 按盏电量 DataComponent（无池） |
+| Step 11.5 锈级专属通道 | 📝 设计定稿（v18） | k 锈级灯只收 k 锈级发电（含增益），实现待做 |
 | Step 12 IEnergyStorage | ✅（技术验证通过） | 原版容器 BE 注册，游戏内待实测 |
 | Step 13 活避雷针 | ⏳ 阶段四后 | 供需分配 |
 | Tooltip 仪表盘 | ✅ | `LivingWaxedGeneratorData` 检测值写回 + 槽位同步 + 双语渲染 |

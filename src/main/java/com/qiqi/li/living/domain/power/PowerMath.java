@@ -106,7 +106,7 @@ public final class PowerMath {
     // ── 网络级共振（不同锈蚟级之间的「和声」，见 living-power-tech.md §3.7）──
     //
     // 块级感应是「铜块采样边信号」，网络级共振是「锈蚟级之间互相感应」——同一套
-    // 机制抬高一个维度。声部单位是**锈蚟级**（不是 BFS 连通块）：同锈蚟级的多个
+    // 机制抬高一个维度。锈级共振单位是**锈蚟级**（不是 BFS 连通块）：同锈蚟级的多个
     // 连通块出力直接相加。这一点不只是简化，更是 R ≤ OXIDATION_LEVELS 的结构性
     // 前提——否则把同一锈蚟级拆成多个小簇即可刷 N，退化为 N×(N-1) 膨胀。
 
@@ -119,17 +119,17 @@ public final class PowerMath {
      */
     public static final double RESONANCE_EXPONENT = 2.0;
 
-    /** 锈蚟级数（= 共振声部上限，也就是 R 的结构性上界） */
+    /** 锈蚟级数（= 活跃锈级上限，也就是 R 的结构性上界） */
     public static final int OXIDATION_LEVELS = 4;
 
     /**
      * 平衡度 s = 几何平均 ÷ 算术平均（AM-GM）。
      *
-     * <p>各声部出力全部相等时 s = 1；一个独大时 s → 0。尺度无关——只关心各声部
+     * <p>各锈级出力全部相等时 s = 1；一个独大时 s → 0。尺度无关——只关心各锈级
      * 的比例，不关心绝对值（1000/1000 与 1/1 同样共振）。</p>
      *
-     * @param values 各锈蚟级的出力（只取正值参与；非正值视为该声部不存在）
-     * @return [0, 1]；有效声部数 ≤ 1 时返回 1（无失衡可言）
+     * @param values 各锈蚟级的出力（只取正值参与；非正值视为该锈级不存在）
+     * @return [0, 1]；有效锈级数 ≤ 1 时返回 1（无失衡可言）
      */
     public static double balanceFactor(double[] values) {
         if (values == null || values.length == 0) return 1.0;
@@ -166,7 +166,7 @@ public final class PowerMath {
             if (v > 0.0) n++;
         }
         if (n <= 1) return 1.0;
-        // 结构性上界：声部数不可能超过锈蚟级数
+        // 结构性上界：锈级数不可能超过锈蚟级数
         n = Math.min(n, OXIDATION_LEVELS);
         double s = balanceFactor(powerByOxidation);
         double r = 1.0 + (n - 1) * s;
