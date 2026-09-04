@@ -64,6 +64,7 @@ import com.qiqi.li.network.EnderChannelSyncPacket;
 import com.qiqi.li.network.LivingChestAccessPacket;
 import com.qiqi.li.network.LivingMapMetadataPacket;
 import com.qiqi.li.network.LivingMapGuiTeleportPacket;
+import com.qiqi.li.network.LivingItemSyncPacket;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.compat.create.ModCreate;
 import com.qiqi.li.living.domain.furnace.LivingFurnaceFunction;
@@ -365,6 +366,8 @@ public class LivingItem {
         registrar.playToClient(LivingMapMetadataPacket.TYPE, LivingMapMetadataPacket.STREAM_CODEC, LivingMapMetadataPacket::handle);
         registrar.playToServer(LivingMapGuiTeleportPacket.TYPE, LivingMapGuiTeleportPacket.STREAM_CODEC, LivingMapGuiTeleportPacket::handle);
         registrar.playToServer(LivingChestAccessPacket.TYPE, LivingChestAccessPacket.STREAM_CODEC, LivingChestAccessPacket::handle);
+        // 服务端 → 客户端：下发容器运行时数据（由 ContainerRuntimeCache.flushToClients 发送）
+        registrar.playToClient(LivingItemSyncPacket.TYPE, LivingItemSyncPacket.STREAM_CODEC, LivingItemSyncPacket::handle);
     }
 
     @SubscribeEvent

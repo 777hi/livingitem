@@ -136,6 +136,7 @@
   "chat.livingitem.ender_pearl.unexplored": "This area is unexplored, requires a stack (%d) of living ender pearls to teleport",
   "chat.livingitem.ender_pearl.cross_dimension": "Cross-dimension teleported to %s",
   "chat.livingitem.ender_pearl.insufficient_authority": "Insufficient jump authority, cannot pierce the planar barrier",
+  "chat.livingitem.ender_pearl.soft_connection": "Vehicle is rope-linked to another structure, cannot jump",
   "tooltip.livingitem.waxed_copper.title": "§6[%s] Living Waxed Copper (Red-Electric)§r",
   "tooltip.livingitem.waxed_copper.form.block": "Block",
   "tooltip.livingitem.waxed_copper.form.chiseled": "Chiseled",
@@ -170,8 +171,6 @@
   "tooltip.livingitem.waxed_copper.chiseled_dir": "  §7Sense: IN%s OUT%s",
 
   "command.livingitem.not_looking_at_container": "§cYou must look at a container block to register§r",
-  "command.livingitem.container_size_mismatch": "§cContainer size %d does not match %d§r",
-  "command.livingitem.container_size_override": "§eContainer size manually set to %d (skipped %d validation)§r",
   "command.livingitem.container_already_registered": "§cContainer %s already registered§r",
   "command.livingitem.container_registered": "§aRegistered container §e%s§a: %d slots (%d cols × %d rows)§r",
   "command.livingitem.no_rules": "§7No container rules registered§r",

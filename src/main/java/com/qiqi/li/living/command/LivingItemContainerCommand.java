@@ -29,14 +29,16 @@ import net.neoforged.neoforge.event.RegisterCommandsEvent;
  *
  * <p>指令树：</p>
  * <ul>
- *   <li>{@code /livingitem container register <width> <height>}
- *     — 注册玩家准心指向的容器，槽位数 = width × height</li>
- *   <li>{@code /livingitem container register <width> <height> <size>}
- *     — 手动指定槽位数（自动检测不准时纠错）</li>
- *   <li>{@code /livingitem container register <width> <height> <containerId>}
- *     — 注册指定容器 ID，槽位数 = width × height</li>
- *   <li>{@code /livingitem container register <width> <height> <size> <containerId>}
- *     — 全手动指定：槽位数 + 容器 ID</li>
+ *   <li>{@code /livingitem container register <columns>}
+ *     — 自动检测槽位数和容器 ID，注册玩家准心指向的容器</li>
+ *   <li>{@code /livingitem container register <columns> <size>}
+ *     — 手动指定槽位数，容器 ID 自动检测</li>
+ *   <li>{@code /livingitem container register <columns> <containerId>}
+ *     — 手动指定容器 ID，槽位数自动检测</li>
+ *   <li>{@code /livingitem container register <columns> <size> <containerId>}
+ *     — 全手动指定：列数 + 槽位数 + 容器 ID</li>
+ *   <li>{@code /livingitem container inspect}
+ *     — 查看当前准心指向容器的规则信息</li>
  *   <li>{@code /livingitem container list}
  *     — 列出所有已注册的容器规则</li>
  *   <li>{@code /livingitem container remove <containerId>}
@@ -45,8 +47,8 @@ import net.neoforged.neoforge.event.RegisterCommandsEvent;
  *     — 从配置文件重新加载</li>
  * </ul>
  * <p>
- * <b>核心设计：</b>玩家可手动输入槽位数 {@code size} 纠错，不受自动检测结果干扰。
- * 当 {@code size != width × height} 时，系统跳过容器大小验证，适配不规则布局。
+ * <b>核心设计：</b>去掉了 <code>height</code> 参数，无需关心容器是否为矩形。
+ * 玩家只需指定列数 {@code columns}，槽位数可选。
  * </p>
  */
 @EventBusSubscriber
@@ -55,41 +57,39 @@ public class LivingItemContainerCommand {
     private static final SimpleCommandExceptionType NOT_LOOKING_AT_CONTAINER =
         new SimpleCommandExceptionType(Component.translatable("command.livingitem.not_looking_at_container"));
 
-    private static final SimpleCommandExceptionType CONTAINER_SIZE_MISMATCH =
-        new SimpleCommandExceptionType(Component.translatable("command.livingitem.container_size_mismatch"));
-
     @SubscribeEvent
     public static void onRegisterCommands(RegisterCommandsEvent event) {
         CommandDispatcher<CommandSourceStack> dispatcher = event.getDispatcher();
 
         // register 子指令树：
-        //   register <width> <height>                    → auto-detect, size=w*h
-        //   register <width> <height> <size>               → auto-detect, use given size
-        //   register <width> <height> <containerId>        → auto-detect, size=w*h
-        //   register <width> <height> <size> <containerId> → use given size & containerId
+        //   register <columns>                    → auto-detect size & id
+        //   register <columns> <size>               → given size, auto id
+        //   register <columns> <containerId>        → auto size, given id
+        //   register <columns> <size> <containerId> → given size & id
         dispatcher.register(
             Commands.literal("livingitem")
                 .requires(source -> source.hasPermission(2))
                 .then(Commands.literal("container")
                     .then(Commands.literal("register")
-                        .then(Commands.argument("width", IntegerArgumentType.integer(1, 54))
-                            .then(Commands.argument("height", IntegerArgumentType.integer(1, 54))
-                                // /livingitem container register <w> <h>
-                                .executes(ctx -> registerTargetContainer(ctx, false, false))
-                                // /livingitem container register <w> <h> <size>
-                                .then(Commands.argument("size", IntegerArgumentType.integer(1, 256))
-                                    .executes(ctx -> registerTargetContainer(ctx, false, true))
-                                    // /livingitem container register <w> <h> <size> <containerId>
-                                    .then(Commands.argument("containerId", ResourceLocationArgument.id())
-                                        .executes(ctx -> registerTargetContainer(ctx, true, true))
-                                    )
-                                )
-                                // /livingitem container register <w> <h> <containerId>
+                        .then(Commands.argument("columns", IntegerArgumentType.integer(1, 54))
+                            // /livingitem container register <columns>
+                            .executes(ctx -> registerTargetContainer(ctx, false, false))
+                            // /livingitem container register <columns> <size>
+                            .then(Commands.argument("size", IntegerArgumentType.integer(1, 256))
+                                .executes(ctx -> registerTargetContainer(ctx, false, true))
+                                // /livingitem container register <columns> <size> <containerId>
                                 .then(Commands.argument("containerId", ResourceLocationArgument.id())
-                                    .executes(ctx -> registerTargetContainer(ctx, true, false))
+                                    .executes(ctx -> registerTargetContainer(ctx, true, true))
                                 )
                             )
+                            // /livingitem container register <columns> <containerId>
+                            .then(Commands.argument("containerId", ResourceLocationArgument.id())
+                                .executes(ctx -> registerTargetContainer(ctx, true, false))
+                            )
                         )
+                    )
+                    .then(Commands.literal("inspect")
+                        .executes(LivingItemContainerCommand::inspectContainer)
                     )
                     .then(Commands.literal("list")
                         .executes(LivingItemContainerCommand::listRules)
@@ -116,17 +116,7 @@ public class LivingItemContainerCommand {
                                                 boolean hasExplicitId, boolean hasExplicitSize)
             throws CommandSyntaxException {
         CommandSourceStack source = ctx.getSource();
-        int width = IntegerArgumentType.getInteger(ctx, "width");
-        int height = IntegerArgumentType.getInteger(ctx, "height");
-
-        // 确定槽位数：玩家手动指定 > 自动计算
-        int size;
-        int gridSize = width * height;
-        if (hasExplicitSize) {
-            size = IntegerArgumentType.getInteger(ctx, "size");
-        } else {
-            size = gridSize;
-        }
+        int columns = IntegerArgumentType.getInteger(ctx, "columns");
 
         // 获取玩家准心指向的方块
         BlockHitResult hitResult = getPlayerPOVHitResult(source);
@@ -136,6 +126,14 @@ public class LivingItemContainerCommand {
 
         if (!(be instanceof Container container)) {
             throw NOT_LOOKING_AT_CONTAINER.create();
+        }
+
+        // 确定槽位数：玩家手动指定 > 自动检测
+        int size;
+        if (hasExplicitSize) {
+            size = IntegerArgumentType.getInteger(ctx, "size");
+        } else {
+            size = container.getContainerSize();
         }
 
         // 容器 ID：手动指定 > 自动检测
@@ -149,39 +147,75 @@ public class LivingItemContainerCommand {
         // 检查是否已注册
         if (ContainerCompatibilityConfig.findRule(containerId).isPresent()) {
             source.sendFailure(Component.translatable(
-                "command.livingitem.container_already_registered", containerId));
+                "command.livingitem.container_already_registered", containerId.toString()));
             return 0;
         }
 
-        // 仅在 size == gridSize 时验证实际容器大小，否则跳过（玩家手动纠错）
-        if (size == gridSize) {
-            int actualSize = container.getContainerSize();
-            if (actualSize != size) {
-                source.sendFailure(Component.translatable(
-                    "command.livingitem.container_size_mismatch",
-                    actualSize, size));
-                return 0;
-            }
-        } else {
-            // 玩家手动指定了不同槽位数，说明自动检测不准，跳过验证
-            source.sendSuccess(() -> Component.translatable(
-                "command.livingitem.container_size_override",
-                size, gridSize), false);
-        }
-
         // 注册并保存
-        var rule = buildRule(containerId, size, width);
+        var rule = buildRule(containerId, size, columns);
         ContainerRuleConfig.addAndSave(containerId, rule);
 
-        int rows = size / width;
+        int rows = size / columns;
         source.sendSuccess(() -> Component.translatable(
             "command.livingitem.container_registered",
-            containerId, size, width, rows), true);
+            containerId.toString(), size, columns, rows), true);
+        return 1;
+    }
+
+    /** 查看当前准心指向容器的规则信息 */
+    static int inspectContainer(CommandContext<CommandSourceStack> ctx)
+            throws CommandSyntaxException {
+        CommandSourceStack source = ctx.getSource();
+
+        // 获取玩家准心指向的方块
+        BlockHitResult hitResult = getPlayerPOVHitResult(source);
+        BlockPos pos = hitResult.getBlockPos();
+        Level level = source.getLevel();
+        BlockEntity be = level.getBlockEntity(pos);
+
+        if (!(be instanceof Container container)) {
+            throw NOT_LOOKING_AT_CONTAINER.create();
+        }
+
+        ResourceLocation containerId = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(be.getType());
+        int actualSize = container.getContainerSize();
+
+        source.sendSuccess(() -> Component.literal(
+            String.format("§e%s§r", containerId)), false);
+
+        source.sendSuccess(() -> Component.literal(
+            String.format("  §7槽位: §f%d§r", actualSize)), false);
+
+        // 查找已注册规则
+        var existingRule = ContainerCompatibilityConfig.findRule(containerId);
+        if (existingRule.isPresent()) {
+            var rule = existingRule.get();
+            int rows = rule.containerSize() / rule.columns();
+            source.sendSuccess(() -> Component.literal(
+                String.format("  §7列数: §f%d (%d行)§r", rule.columns(), rows)), false);
+            source.sendSuccess(() -> Component.literal(
+                String.format("  §7布局: §f%s§r", rule.layoutType())), false);
+            source.sendSuccess(() -> Component.literal(
+                String.format("  §7边界: §f%s§r", rule.edgeBehavior())), false);
+            source.sendSuccess(() -> Component.literal(
+                String.format("  §7跨实体: §f%s§r", rule.crossBlockEntitySupport() ? "是" : "否")), false);
+            source.sendSuccess(() -> Component.literal(
+                String.format("  §7描述: §f%s§r", rule.description())), false);
+        } else {
+            source.sendSuccess(() -> Component.literal(
+                "  §7状态: §c未注册§r"), false);
+
+            // 显示自动推断的列数
+            int inferredColumns = ContainerCompatibilityConfig.resolveColumns(actualSize, container);
+            source.sendSuccess(() -> Component.literal(
+                String.format("  §7推断列数: §f%d§r  §8(输入 /livingitem container register %d 注册)§r",
+                    inferredColumns, inferredColumns)), false);
+        }
         return 1;
     }
 
     /** 列出所有已注册的容器规则 */
-    private static int listRules(CommandContext<CommandSourceStack> ctx) {
+    static int listRules(CommandContext<CommandSourceStack> ctx) {
         CommandSourceStack source = ctx.getSource();
         var rules = ContainerCompatibilityConfig.getAllRules();
 
@@ -206,24 +240,24 @@ public class LivingItemContainerCommand {
     }
 
     /** 移除指定容器规则 */
-    private static int removeRule(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+    static int removeRule(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
         CommandSourceStack source = ctx.getSource();
         ResourceLocation containerId = ResourceLocationArgument.getId(ctx, "containerId");
 
         boolean removed = ContainerRuleConfig.removeAndSave(containerId);
         if (removed) {
             source.sendSuccess(() -> Component.translatable(
-                "command.livingitem.container_removed", containerId), true);
+                "command.livingitem.container_removed", containerId.toString()), true);
             return 1;
         } else {
             source.sendFailure(Component.translatable(
-                "command.livingitem.container_not_found", containerId));
+                "command.livingitem.container_not_found", containerId.toString()));
             return 0;
         }
     }
 
     /** 从配置文件重新加载 */
-    private static int reloadRules(CommandContext<CommandSourceStack> ctx) {
+    static int reloadRules(CommandContext<CommandSourceStack> ctx) {
         CommandSourceStack source = ctx.getSource();
         ContainerRuleConfig.load();
         source.sendSuccess(() -> Component.translatable(
@@ -264,6 +298,8 @@ public class LivingItemContainerCommand {
     /**
      * 构建标准矩形容器规则。
      * <p>自动生成方向映射、槽位范围等。</p>
+     *
+     * @param columns 容器列数（即一行有多少个槽位）
      */
     private static com.qiqi.li.living.transfer.ContainerCompatibilityConfig.ContainerRule buildRule(
             ResourceLocation containerId, int size, int columns) {

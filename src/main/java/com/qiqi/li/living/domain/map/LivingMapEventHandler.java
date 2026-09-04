@@ -15,9 +15,12 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.MapItem;
 import net.minecraft.world.level.saveddata.maps.MapId;
 import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
+import net.minecraft.network.protocol.game.ClientboundMapItemDataPacket;
+import net.minecraft.world.level.saveddata.maps.MapDecoration;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerContainerEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
@@ -26,7 +29,9 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import com.qiqi.li.network.LivingMapMetadataPacket;
 
 import javax.annotation.Nullable;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -54,6 +59,61 @@ public final class LivingMapEventHandler {
     @SubscribeEvent
     public static void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
         lastSentMetadata.remove(event.getEntity().getUUID());
+    }
+
+    /**
+     * 容器打开时，将容器内所有已展开的活地图的完整数据主动推送给客户端。
+     *
+     * <p>原版同步链（ServerPlayer.doTick → 遍历玩家背包 → getUpdatePacket）只覆盖
+     * 玩家自己背包中的地图；容器里的地图永远不会注册 HoldingPlayer，退出存档重进后
+     * 客户端 ClientLevel.mapData 为空，GUI 扩展地图渲染拿不到 MapItemSavedData 而空白。
+     * 此处直接构造全量 ClientboundMapItemDataPacket（完整 128×128 colors + 装饰），
+     * 客户端 handleMapItemData 会 createForClient + overrideMapData 建立数据。
+     *
+     * <p>服务端 MapItemSavedData 统一存储于 overworld 的 DataStorage（ServerLevel.getMapData），
+     * 任意维度的玩家取数据均无问题。玩家背包中的地图由原版 doTick 同步，无需处理。
+     */
+    @SubscribeEvent
+    public static void onContainerOpen(PlayerContainerEvent.Open event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
+
+        for (ItemStack stack : collectContainerLivingMaps(event.getContainer())) {
+            MapId mapId = stack.get(DataComponents.MAP_ID);
+            if (mapId == null) continue;
+
+            MapItemSavedData mapData = MapItem.getSavedData(mapId, player.serverLevel());
+            if (mapData == null) continue;
+
+            player.connection.send(createFullMapPacket(mapId, mapData));
+        }
+    }
+
+    /**
+     * 收集容器菜单槽位中的全部已展开活地图（去重：同 mapId 只发一次）。
+     */
+    private static List<ItemStack> collectContainerLivingMaps(net.minecraft.world.inventory.AbstractContainerMenu menu) {
+        Map<Integer, ItemStack> unique = new HashMap<>();
+        for (var slot : menu.slots) {
+            ItemStack stack = slot.getItem();
+            if (!LivingItemManager.isLivingMap(stack)) continue;
+
+            MapId mapId = stack.get(DataComponents.MAP_ID);
+            if (mapId == null) continue;
+            unique.putIfAbsent(mapId.id(), stack);
+        }
+        return new ArrayList<>(unique.values());
+    }
+
+    /**
+     * 构造全量地图数据包：完整 128×128 颜色 + 全部装饰。
+     */
+    private static ClientboundMapItemDataPacket createFullMapPacket(MapId mapId, MapItemSavedData mapData) {
+        byte[] colors = mapData.colors.clone();
+        MapItemSavedData.MapPatch fullPatch = new MapItemSavedData.MapPatch(0, 0, 128, 128, colors);
+        List<MapDecoration> decorations = new ArrayList<>();
+        mapData.getDecorations().forEach(decorations::add);
+        return new ClientboundMapItemDataPacket(
+            mapId, mapData.scale, mapData.locked, decorations, fullPatch);
     }
 
     @SubscribeEvent

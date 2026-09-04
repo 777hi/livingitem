@@ -346,7 +346,10 @@ src/test/java/com/qiqi/li/
     └── ContainerCompatibilityConfigTest.java  # 容器布局推断（9 项）
 ```
 
-**合计 146 项**（141 `@Test` + 5 `@ParameterizedTest`）
+**合计 146 个测试方法**（141 `@Test` + 5 `@ParameterizedTest`）；
+`./gradlew test` 实际执行 **169 个用例**——参数化测试会展开成多例，
+`SimpleContainerContextTest` 另有 6 个 `@Nested` 内部类。
+全绿基线：`169 passed / 0 failed / 0 skipped`（2026-09-04 验证）。
 
 > 📄 测试环境配置与编写约定详见 [unit-testing.md](docs/guides/unit-testing.md)
 

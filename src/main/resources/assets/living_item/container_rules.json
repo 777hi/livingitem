@@ -8,10 +8,6 @@
     {"containerId": "minecraft:hopper", "containerSize": 5, "columns": 5, "description": "原版漏斗"},
     {"containerId": "minecraft:dispenser", "containerSize": 9, "columns": 3, "description": "原版发射器"},
     {"containerId": "minecraft:dropper", "containerSize": 9, "columns": 3, "description": "原版投掷器"},
-    {"containerId": "minecraft:furnace", "containerSize": 3, "columns": 3, "description": "原版熔炉"},
-    {"containerId": "minecraft:blast_furnace", "containerSize": 3, "columns": 3, "description": "原版高炉"},
-    {"containerId": "minecraft:smoker", "containerSize": 3, "columns": 3, "description": "原版烟熏炉"},
-    {"containerId": "minecraft:brewing_stand", "containerSize": 5, "columns": 5, "description": "原版酿造台"},
 
     {"containerId": "ironchests:iron_chest", "containerSize": 45, "columns": 9, "description": "铁箱子-铁"},
     {"containerId": "ironchests:copper_chest", "containerSize": 36, "columns": 9, "description": "铁箱子-铜"},
@@ -19,32 +15,7 @@
     {"containerId": "ironchests:gold_chest", "containerSize": 63, "columns": 9, "description": "铁箱子-金"},
     {"containerId": "ironchests:diamond_chest", "containerSize": 72, "columns": 9, "description": "铁箱子-钻石"},
     {"containerId": "ironchests:crystal_chest", "containerSize": 108, "columns": 12, "description": "铁箱子-水晶"},
-    {"containerId": "ironchests:obsidian_chest", "containerSize": 144, "columns": 12, "description": "铁箱子-黑曜石"},
+    {"containerId": "ironchests:obsidian_chest", "containerSize": 108, "columns": 12, "description": "铁箱子-黑曜石"}
 
-    {"containerId": "sophisticatedstorage:chest", "containerSize": 27, "columns": 9, "description": "精妙存储-基础箱子"},
-    {"containerId": "sophisticatedstorage:limited_barrel_1", "containerSize": 16, "columns": 8, "description": "精妙存储-受限桶1"},
-    {"containerId": "sophisticatedstorage:limited_barrel_2", "containerSize": 32, "columns": 8, "description": "精妙存储-受限桶2"},
-    {"containerId": "sophisticatedstorage:limited_barrel_3", "containerSize": 48, "columns": 12, "description": "精妙存储-受限桶3"},
-    {"containerId": "sophisticatedstorage:limited_barrel_4", "containerSize": 64, "columns": 8, "description": "精妙存储-受限桶4"},
-    {"containerId": "sophisticatedstorage:barrel", "containerSize": 27, "columns": 9, "description": "精妙存储-桶"},
-    {"containerId": "sophisticatedstorage:iron_chest", "containerSize": 54, "columns": 9, "description": "精妙存储-铁箱子"},
-    {"containerId": "sophisticatedstorage:gold_chest", "containerSize": 81, "columns": 9, "description": "精妙存储-金箱子"},
-    {"containerId": "sophisticatedstorage:diamond_chest", "containerSize": 108, "columns": 12, "description": "精妙存储-钻石箱子"},
-    {"containerId": "sophisticatedstorage:netherite_chest", "containerSize": 120, "columns": 12, "description": "精妙存储-下界合金箱子"},
-
-    {"containerId": "storagedrawers:oak_full_drawers_1", "containerSize": 4, "columns": 4, "description": "存储抽屉-橡木1"},
-    {"containerId": "storagedrawers:oak_full_drawers_2", "containerSize": 8, "columns": 4, "description": "存储抽屉-橡木2"},
-    {"containerId": "storagedrawers:oak_full_drawers_4", "containerSize": 12, "columns": 4, "description": "存储抽屉-橡木4"},
-
-    {"containerId": "sophisticatedbackpacks:backpack", "containerSize": 108, "columns": 12, "description": "精妙背包-基础"},
-    {"containerId": "sophisticatedbackpacks:iron_backpack", "containerSize": 111, "columns": 12, "description": "精妙背包-铁"},
-    {"containerId": "sophisticatedbackpacks:gold_backpack", "containerSize": 114, "columns": 12, "description": "精妙背包-金"},
-    {"containerId": "sophisticatedbackpacks:diamond_backpack", "containerSize": 117, "columns": 12, "description": "精妙背包-钻石"},
-    {"containerId": "sophisticatedbackpacks:netherite_backpack", "containerSize": 120, "columns": 12, "description": "精妙背包-下界合金"},
-
-    {"containerId": "travelersbackpack:travelers_backpack", "containerSize": 54, "columns": 9, "description": "旅行者背包"},
-
-    {"containerId": "functionalstorage:storage_controller", "containerSize": 4, "columns": 4, "description": "功能存储-控制器"},
-    {"containerId": "functionalstorage:storage_controller_slave", "containerSize": 8, "columns": 4, "description": "功能存储-从控制器"}
   ]
 }

@@ -107,6 +107,12 @@ public final class TeleportHelper {
                 sendInsufficientAuthorityMessage(player);
                 return false;
             }
+            // 绳索 / 关节等软连接的另一端不会随刚体传送，物理约束会被瞬间拉出巨大冲量
+            // 导致绳索弹飞、结构解体或卡死，因此直接拒绝
+            if (ModSable.hasSoftConnection(player)) {
+                sendSoftConnectionMessage(player);
+                return false;
+            }
             if (!ModSable.teleportSubLevel(player, destX, destY, destZ)) {
                 return false;
             }
@@ -249,6 +255,15 @@ public final class TeleportHelper {
     public static void sendInsufficientAuthorityMessage(ServerPlayer player) {
         player.displayClientMessage(
             Component.translatable("chat.livingitem.ender_pearl.insufficient_authority"),
+            true);
+    }
+
+    /**
+     * 发送软连接阻止传送消息（载具通过绳索/关节与其他结构相连时显示）
+     */
+    public static void sendSoftConnectionMessage(ServerPlayer player) {
+        player.displayClientMessage(
+            Component.translatable("chat.livingitem.ender_pearl.soft_connection"),
             true);
     }
 

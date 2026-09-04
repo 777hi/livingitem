@@ -1064,6 +1064,25 @@ player.connection.send(new ClientboundPlayerPositionPacket(
 
 翻译键：`chat.livingitem.ender_pearl.insufficient_authority`
 
+#### 11.2.3 软连接拦截（绳索/关节连接的载具拒绝传送）
+
+**背景**：传送只移动玩家所在的单个 SubLevel 刚体。载具通过绳索/关节与**另一个 SubLevel** 相连时，另一端不随传送移动，Jolt 物理约束下一帧被拉出巨大冲量——绳索弹飞、结构解体或物理卡死。
+
+**拦截位置**：`TeleportHelper.executeTeleport()` 子位面分支内，`teleportSubLevel` 之前。命中时 `sendSoftConnectionMessage` 提示后返回 false（不消耗珍珠、不进冷却）。
+
+**双重判据**（`SableIntegration.hasSoftConnection`）：
+
+| 判据 | API | 覆盖 |
+|------|-----|------|
+| 连接链 | `SubLevelHelper.getConnectedChain()` 长度 > 1 | 方块实体跨 SubLevel 连接（关节等） |
+| 绳索相交 | `physicsSystem.getArbitraryObjects()` 中 `RopePhysicsObject` 包围盒 vs 载具 `boundingBox()`（膨胀 1 格容错） | 绳索 |
+
+**为何用几何相交而非读 attachment**：`startAttachmentSubLevel` 为 protected，且 END 端 attachment 只存在于物理引擎内部，Java 层拿不到。几何判据保守（绳子恰好飘过载具旁也会拒绝），对“传坏”而言安全方向正确。
+
+**已知局限**：`getConnectedChain` 依赖各 mod 实现 `sable$getConnectionDependencies()`（Sable 源码无实现类，默认 null），关节判据当前可能恒 false，绳索判据是主防线。若 Aeronautics 改变绳子实现（不走 `SubLevelPhysicsSystem.addObject` 注册），检测会静默失效——诊断日志（`living_item.teleport` 的 `[SoftConnection]` 前缀，INFO 仅拦截时输出）用于快速定位。
+
+**玩家提示**：翻译键 `chat.livingitem.ender_pearl.soft_connection`（中文「载具通过绳索与其他结构相连，无法跃迁」/ 英文「Vehicle is rope-linked to another structure, cannot jump」）。
+
 ### 11.3 Sable 软依赖架构
 
 Sable 是可选依赖，未安装时所有飞艇传送逻辑自动跳过，不影响普通传送功能。采用三层架构：
@@ -1106,9 +1125,9 @@ compileOnly files("libs/sable-companion-common-1.21.1-1.6.0.jar")  // JarJar 嵌
 |------|---------|------|
 | `MapCoordHelper` | `domain/map/MapCoordHelper.java` | 坐标计算核心：射线-矩形相交、视角映射、像素↔世界坐标转换、旗帜命中检测、hitVec→UV转换。私有 `calcTarget` 是准心与落点的唯一真源，服务端 `getTargetFromYawPitch` 与客户端 `calcClientTarget` 均委派给它 |
 | `MapTeleportExecutor` | `domain/map/MapTeleportExecutor.java` | 传送决策链：统一处理"旗帜→宝藏→已探索区域→未探索区域"的传送优先级和消息发送，未探索区域需消耗一组（16个）珍珠，消除手持/展示框/容器三处重复逻辑 |
-| `LivingMapEventHandler` | `domain/map/LivingMapEventHandler.java` | 事件处理入口：右键传送事件拦截、活空地图创建（`handleLivingMapCreation`）、元数据同步包发送（仅内容变化时发）、`ServerStoppedEvent` 触发 `StructureMapDecorator.reset()`，传送逻辑委托给 `MapTeleportExecutor` |
+| `LivingMapEventHandler` | `domain/map/LivingMapEventHandler.java` | 事件处理入口：右键传送事件拦截、活空地图创建（`handleLivingMapCreation`）、元数据同步包发送（仅内容变化时发）、容器打开时推送全量地图数据包（`onContainerOpen`，修复重进存档后容器地图渲染消失）、`ServerStoppedEvent` 触发 `StructureMapDecorator.reset()`，传送逻辑委托给 `MapTeleportExecutor` |
 | `ItemFrameMapTeleportHandler` | `domain/map/ItemFrameMapTeleportHandler.java` | 展示框传送：EntityInteractSpecific事件拦截、hitVec→像素坐标，传送逻辑委托给 `MapTeleportExecutor` |
-| `TeleportHelper` | `domain/map/TeleportHelper.java` | 传送执行：安全Y坐标、骑乘传送、跨维度传送、Sable飞艇传送、粒子/音效、伤害、冷却、珍珠消耗（已探索1个/未探索16个，实扣不足时写 warn 日志） |
+| `TeleportHelper` | `domain/map/TeleportHelper.java` | 传送执行：安全Y坐标、骑乘传送、跨维度传送、Sable飞艇传送、软连接拦截（绳索/关节连接拒绝传送）、粒子/音效、伤害、冷却、珍珠消耗（已探索1个/未探索16个，实扣不足时写 warn 日志） |
 | `LivingItemManager` | `api/LivingItemManager.java` | 活物品管理：`isLivingItem()`、`isLivingMap()` 等通用判断 |
 | `LivingEnderPearlFunction` | `domain/map/LivingEnderPearlFunction.java` | 活末影珍珠功能：`isLivingEnderPearl()`、`isOnCooldown(player)`、`setCooldown(player)`、`findInInventory(player)`、`countInInventory(player)`、`consumeFromInventory(player, amount)`（返回实际消耗数），冷却委托给原版 `player.getCooldowns()` |
 | `LivingMapMetadataPacket` | `network/LivingMapMetadataPacket.java` | 服务器→客户端网络包：同步地图元数据 |
@@ -1117,9 +1136,9 @@ compileOnly files("libs/sable-companion-common-1.21.1-1.6.0.jar")  // JarJar 嵌
 | `ItemInHandRendererMixin` | `client/mixin/ItemInHandRendererMixin.java` | 客户端渲染：注入 renderMap 方法，3D空间中渲染目标标记 |
 | `MapRendererMixin` | `client/mixin/MapRendererMixin.java` | 客户端渲染：注入 MapRenderer.render 方法，展示框地图光标渲染 |
 | `StructureMapDecorator` | `living/domain/map/StructureMapDecorator.java` | 远程开图结构标记：懒标记（玩家靠近时扫描已加载区块），原版结构按标签映射专属图标，无专属图标的结构按生成阶段回退为 `RED_X`（地下）/ `TARGET_X`（地表）。`reset()` 清空图标映射与已扫描区块集，必须在服务器停止时调用 |
-| `ModSable` | `compat/sable/ModSable.java` | Sable 安全调用入口：类加载保护、NoClassDefFoundError 捕获 |
+| `ModSable` | `compat/sable/ModSable.java` | Sable 安全调用入口：类加载保护、NoClassDefFoundError 捕获、`hasSoftConnection` 容错包装 |
 | `SableCompat` | `compat/sable/SableCompat.java` | Sable 依赖检测：ModList.isLoaded("sable") |
-| `SableIntegration` | `compat/sable/SableIntegration.java` | Sable 核心逻辑：SubLevel 检测、飞艇瞬移、偏移计算 |
+| `SableIntegration` | `compat/sable/SableIntegration.java` | Sable 核心逻辑：SubLevel 检测、飞艇瞬移、偏移计算、软连接检测（连接链 + 绳索包围盒相交） |
 | `ExpandedMapTexture` | `client/render/ExpandedMapTexture.java` | 扩展地图动态纹理：128×128 DynamicTexture 管理，颜色数据更新和哈希检测，未探索像素填充羊皮纸色（`UNEXPLORED_ABGR`），资源注册/释放 |
 | `LivingMapIconDecorator` | `client/render/LivingMapIconDecorator.java` | 物品栏活地图图标：14×14 缩略图（`IItemDecorator`），四边露出 1px 羊皮纸底图，未探索像素填充羊皮纸色，`blitOffset=200` 压过物品模型 |
 | `LivingMapLayout` | `client/render/LivingMapLayout.java` | 扩展地图布局：槽位扫描（`scan`）、MapGroup 数据结构、UV 坐标计算（`computeUV`/`computeSingleSlotUV`）、区域命中检测（`findGroupAt`）、单个活地图槽位判断（`isSingleLivingMapSlot`） |
@@ -2668,3 +2687,26 @@ if (consumed < cost) {
 |------|----------|
 | `MapUpdateSkipHelper.cooldowns` 玩家离线不清理 | key 为玩家 UUID，数量有界；`shouldSkip` 命中过期时自动 `remove`，存在自愈路径。非泄漏 |
 | 扩展地图渲染"分层"是渲染顺序问题 | 实为 54.1 的深度测试剔除。与绘制顺序无关，改顺序无效 |
+
+### v54 → v55：重进存档后容器内活地图渲染消失
+
+**问题**：退出存档重进后，箱子等容器里展开的活地图渲染消失，必须把地图放进玩家背包才显示。
+
+**根因**：原版地图同步链 `ServerPlayer.doTick()` 只遍历**玩家背包**的 `isComplex()` 物品并调 `MapItemSavedData.getUpdatePacket()`。容器里的地图永远不注册 HoldingPlayer，客户端 `ClientLevel.mapData` 为空 → `AbstractContainerScreenMixin` 渲染入口 `MapItem.getSavedData()` 返回 null 直接跳过。
+
+**修复**：`LivingMapEventHandler.onContainerOpen` 监听 `PlayerContainerEvent.Open`（服务端 `openMenu` 时 post），收集菜单槽位中的活地图（mapId 去重），构造**全量** `ClientboundMapItemDataPacket`（完整 128×128 colors patch + 全部装饰）直接发送。客户端 `handleMapItemData` 自动 `createForClient + overrideMapData` 建立数据，打开容器 1-2 帧内出现渲染，无需任何客户端改动。
+
+**要点**：
+- 服务端 `MapItemSavedData` 统一存 overworld `DataStorage`（任意维度 `getMapData` 均可取），跨维度玩家无影响
+- 玩家背包中的地图仍由原版 doTick 同步，无需处理
+- 不能用 `tickCarriedBy` 注册 HoldingPlayer 的原因：doTick 只遍历玩家背包，注册了也没人调 getUpdatePacket，必须直发全量包
+
+### v55 → v56：绳索连接的航空学载具传送拉爆物理
+
+**问题**：航空学通过绳索连接的结构（气球+吊篮等）传送后绳索弹飞、结构解体或物理卡死。
+
+**根因**：`SableIntegration.teleportSubLevel` 只传送玩家所在的一个 SubLevel 刚体。绳索是独立 `RopePhysicsObject`，两端 attachment 分别绑在两个 SubLevel 上；只 teleport 一端，Jolt 约束下一帧被拉出巨大冲量。
+
+**修复**：传送前 `ModSable.hasSoftConnection` 检测软连接，命中即拒绝传送并提示（不消耗珍珠、不进冷却）。判据与已知局限详见 §11.2.3。实机验证通过。
+
+**修改文件**：`SableIntegration`（hasSoftConnection + 诊断日志）、`ModSable`（容错包装）、`TeleportHelper`（拦截 + `sendSoftConnectionMessage`）、语言文件（`soft_connection` 中英文）。

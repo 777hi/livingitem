@@ -96,10 +96,10 @@ MOD版本和玩家配置文件的格式是相同的，可以直接复制内容�
 
 | 指令 | 说明 |
 |------|------|
-| `/livingitem container register <width> <height>` | 注册准心指向的容器，槽位数=width×height |
-| `/livingitem container register <width> <height> <size>` | 手动指定槽位数（自动检测不准时纠错） |
-| `/livingitem container register <width> <height> <containerId>` | 注册指定容器 ID |
-| `/livingitem container register <width> <height> <size> <containerId>` | 全手动指定 |
+| `/livingitem container register <columns>` | 注册准心指向的容器，自动检测槽位数和容器 ID |
+| `/livingitem container register <columns> <size>` | 手动指定槽位数（自动检测不准时纠错） |
+| `/livingitem container register <columns> <containerId>` | 手动指定容器 ID |
+| `/livingitem container register <columns> <size> <containerId>` | 全手动指定 |
 | `/livingitem container list` | 列出所有已注册的规则 |
 | `/livingitem container remove <containerId>` | 移除指定规则 |
 | `/livingitem container reload` | 从配置文件重新加载 |
@@ -108,15 +108,15 @@ MOD版本和玩家配置文件的格式是相同的，可以直接复制内容�
 
 ```bash
 # 场景1：标准用法
-/livingitem container register 9 3
+/livingitem container register 9
 # → 准心指向箱子，自动检测容器 ID 和槽位数
 
 # 场景2：自动检测不准，手动纠错
-/livingitem container register 9 6 54
+/livingitem container register 9 54
 # → 手动指定槽位数为 54，跳过自动检测结果
 
 # 场景3：全手动指定
-/livingitem container register 12 9 108 mymod:big_chest
+/livingitem container register 12 108 mymod:big_chest
 # → 指定容器 ID 为 mymod:big_chest，108 槽位，12 列
 ```
 
@@ -171,8 +171,8 @@ MOD版本和玩家配置文件的格式是相同的，可以直接复制内容�
 
 使用指令手动指定：
 ```bash
-/livingitem container register 9 6 54
-# 手动指定 54 槽位，9 列，6 行
+/livingitem container register 9 54
+# 手动指定 54 槽位，9 列
 ```
 
 ### Q: 配置文件的规则可以手动编辑吗？

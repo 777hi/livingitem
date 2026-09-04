@@ -53,4 +53,22 @@ public class ModSable {
             return false;
         }
     }
+
+    /**
+     * 检测玩家所在载具是否存在软连接（绳索 / 关节）。
+     *
+     * <p>Sable 未加载或集成不可用时返回 false（无软连接），交由原版传送路径处理。
+     */
+    public static boolean hasSoftConnection(ServerPlayer player) {
+        if (!SableCompat.isLoaded()) return false;
+        if (!isIntegrationAvailable()) return false;
+        try {
+            return SableIntegration.hasSoftConnection(player);
+        } catch (NoClassDefFoundError e) {
+            integrationAvailable = false;
+            integrationChecked = false;
+            LOGGER.error("[ModSable] Failed to check soft connection, treating as none", e);
+            return false;
+        }
+    }
 }
