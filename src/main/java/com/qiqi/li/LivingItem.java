@@ -5,6 +5,7 @@ import com.qiqi.li.living.domain.map.LivingMapEventHandler;
 import com.qiqi.li.living.domain.map.ItemFrameMapTeleportHandler;
 import com.qiqi.li.living.domain.ender.EnderChannelRegistry;
 import com.qiqi.li.living.interaction.InteractionEntry;
+import com.qiqi.li.living.transfer.ContainerRuleConfig;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.RandomizableContainer;
@@ -131,6 +132,12 @@ public class LivingItem {
     }
 
     private void commonSetup(FMLCommonSetupEvent event) {
+        // 初始化容器规则配置目录
+        ContainerRuleConfig.init(net.neoforged.fml.loading.FMLPaths.CONFIGDIR.get());
+
+        // 加载容器规则：模组自带（项目级）→ 玩家本地（配置目录）
+        ContainerRuleConfig.load();
+
         ModCreate.init();
         LivingItemManager.registerFunction(new LivingFurnaceFunction());
         LOGGER.info("Registered living furnace function");

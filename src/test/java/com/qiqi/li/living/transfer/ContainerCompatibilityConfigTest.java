@@ -33,44 +33,46 @@ class ContainerCompatibilityConfigTest {
     }
 
     @Test
-    @DisplayName("漏斗 5 格：线性布局，仅中间 3 格可作宿主")
-    void hopperRule_onlyMiddleThreeSlotsAreValidHosts() {
+    @DisplayName("漏斗 5 格：标准矩形布局，所有槽位均可作宿主（配置文件自动生成）")
+    void hopperRule_allSlotsAreValidHosts() {
         var hopper = ContainerCompatibilityConfig.findRule(
             net.minecraft.resources.ResourceLocation
                 .fromNamespaceAndPath("minecraft", "hopper")).orElseThrow();
 
-        assertEquals(ContainerLayoutType.LINEAR, hopper.layoutType());
-        assertFalse(hopper.isValidHostSlot(0), "槽位 0 不可作宿主");
-        assertTrue(hopper.isValidHostSlot(1));
-        assertTrue(hopper.isValidHostSlot(2));
-        assertTrue(hopper.isValidHostSlot(3));
-        assertFalse(hopper.isValidHostSlot(4), "槽位 4 不可作宿主");
+        assertEquals(ContainerLayoutType.RECTANGULAR_STANDARD, hopper.layoutType());
+        assertEquals(5, hopper.containerSize());
+        for (int i = 0; i < 5; i++) {
+            assertTrue(hopper.isValidHostSlot(i), "槽位 " + i + " 可作宿主");
+        }
     }
 
     @Test
-    @DisplayName("大箱子 54 格：边界环绕 + 支持跨方块实体")
-    void doubleChestRule_wrapsAtEdgeAndSupportsCrossBlockEntity() {
+    @DisplayName("大箱子 54 格：标准矩形布局，INVALIDATE 边界（配置文件自动生成）")
+    void doubleChestRule_standardRectangularLayout() {
         var doubleChest = ContainerCompatibilityConfig.findRule(
             net.minecraft.resources.ResourceLocation
                 .fromNamespaceAndPath("minecraft", "double_chest")).orElseThrow();
 
-        assertEquals(ContainerCompatibilityConfig.EdgeBehavior.WRAP, doubleChest.edgeBehavior());
-        assertTrue(doubleChest.crossBlockEntitySupport());
+        assertEquals(ContainerCompatibilityConfig.EdgeBehavior.INVALIDATE, doubleChest.edgeBehavior());
+        assertEquals(ContainerLayoutType.RECTANGULAR_STANDARD, doubleChest.layoutType());
+        assertEquals(9, doubleChest.columns());
     }
 
     /**
      * 列数推断：{@code resolveColumns} 按加权启发式从常见宽度优先匹配。
      *
      * <p>候选宽度排序：9, 10, 12, 13, 8, 7, 6, 11, 5, 4, 3, 2, 1。
-     * 36 → 9（36%9=0，9 优先于 12），
      * 40 → 10（40%10=0，10 优先于 8），
+     * 90 → 9（90%9=0，9 优先于 10），
      * 96 → 12（96%12=0，12 优先于 8）。</p>
+     *
+     * <p>注意：使用故意避开模组自带规则的尺寸，确保走自动生成路径。</p>
      */
     @ParameterizedTest(name = "{0} 格容器 → 推断 {1} 列")
     @CsvSource({
-        "36, 9",
         "40, 10",
-        "81, 9",
+        "90, 9",
+        "99, 9",
         "96, 12",
         "121, 11",
         "7, 7"

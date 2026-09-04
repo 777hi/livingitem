@@ -415,7 +415,7 @@ tick + 网络不同位置边各自采样），`PhaseDomain` 去重后即得 n=7 
 - 信号源写边**无条件**（涂蜡槽位天然可采样），传播层零改动；
 - 发电机按网络组件遍历只读边信号（锚点 BFS + 其余 copyFrom 共享），不写任何信号；
 - 遥测写回节流（量化降脏化）：仪表盘 `LivingWaxedGeneratorData` 写回前，对共振增益 `resonanceGain` / 平衡度 `resonanceBalance` / 域快照 `effDeltaSum` 三个 EMA 类 double 量化到 3 位有效数字（`PowerMath.quantize`）。稳态下这些读数被「钉」在固定值 → `equals` 变 true → 跳过脏写，复用现有 `dirtySlots` 批处理，不另造轮子。针对服务器场景（多发电容器同时被打开 × 多玩家）降低每 tick 同步量。
-- 容器级缓存完整镜像红石协议：`ContainerLivingItemHandler.POWER_DATA_CACHE` +
+- 容器级缓存完整镜像红石协议：`ContainerLivingItemHandler.CONTAINER_DATA`（`Map<String, ContainerEntry>`，嵌套 `power` 字段）+
   过期清理（120s）+ `clearAllCaches`（ServerStoppedEvent）+ 位置反向索引。
 
 ---

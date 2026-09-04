@@ -1474,7 +1474,7 @@ if (prev != 0 && rpm == 0) {
 
 **现象**：活水桶被取走后，活水车依旧显示净应力（Tooltip 有值），且移动到不同槽位净应力还会变化，仿佛水流数据依旧存在。同时容器下方的齿轮可能不旋转，但旁边齿轮仍在转（且无应力）。
 
-**根因**：水流数据缓存在 `FLUID_DATA_CACHE` 中，清除的唯一入口是 `ContainerFluidData.recalculate()`，而 `recalculate()` 只在 `LivingWaterBucketFunction.tickContainerData()` 中被调用。当活水桶被取走：
+**根因**：水流数据缓存在 `CONTAINER_DATA` 嵌套 `fluid` 字段中，清除的唯一入口是 `ContainerFluidData.recalculate()`，而 `recalculate()` 只在 `LivingWaterBucketFunction.tickContainerData()` 中被调用。当活水桶被取走：
 
 ```
 processContext() 扫描容器
@@ -1482,7 +1482,7 @@ processContext() 扫描容器
   → hcdEntries 没有它
   → tickContainerData() 不被调用
   → recalculate() 不执行
-  → FLUID_DATA_CACHE 中的旧水流数据一直残留
+  → CONTAINER_DATA 中的旧水流数据（fluid 字段）一直残留
   → LivingWaterWheelFunction.tickContainerData() 仍被调用
   → 用残留水流数据计算应力 → 虚假应力
 ```
@@ -1644,7 +1644,7 @@ ServerTickEvent.Pre → LivingItem.onServerTick()
 - [x] 物品栏 3D 渲染：渲染后光照正确恢复
 - [x] 软依赖：无 Create 时活物品模组正常运行
 - [x] 活水桶移除后水流数据立即清除（无虚假应力）
-- [x] 水流数据残留修复：无活水桶时自动清除 FLUID_DATA_CACHE
+- [x] 水流数据残留修复：无活水桶时自动清除 CONTAINER_DATA 中的 fluid 字段
 - [x] 区块卸载后应力翻倍修复（onChunkUnloaded 注入）
 - [x] 区块卸载后变速结构爆炸修复（网络清理顺序修正）
 - [x] 自过期/取消应力时 `sources.remove()` 正确执行（isSource 返回 true）

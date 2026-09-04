@@ -167,5 +167,16 @@
   "tooltip.livingitem.waxed_copper.resonance_balance": "§aBalance",
   "tooltip.livingitem.waxed_copper.resonance_voices": "§7Voices",
   "tooltip.livingitem.waxed_copper.resonance_none_single": "  §8No resonance (1 voice only; need ≥2 oxidation levels)",
-  "tooltip.livingitem.waxed_copper.chiseled_dir": "  §7Sense: IN%s OUT%s"
+  "tooltip.livingitem.waxed_copper.chiseled_dir": "  §7Sense: IN%s OUT%s",
+
+  "command.livingitem.not_looking_at_container": "§cYou must look at a container block to register§r",
+  "command.livingitem.container_size_mismatch": "§cContainer size %d does not match %d§r",
+  "command.livingitem.container_size_override": "§eContainer size manually set to %d (skipped %d validation)§r",
+  "command.livingitem.container_already_registered": "§cContainer %s already registered§r",
+  "command.livingitem.container_registered": "§aRegistered container §e%s§a: %d slots (%d cols × %d rows)§r",
+  "command.livingitem.no_rules": "§7No container rules registered§r",
+  "command.livingitem.rules_header": "§aRegistered container rules (%d):§r",
+  "command.livingitem.container_removed": "§aRemoved container rule §e%s§r",
+  "command.livingitem.container_not_found": "§cContainer rule not found: §e%s§r",
+  "command.livingitem.rules_reloaded": "§aReloaded container rules from config§r"
 }

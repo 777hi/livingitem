@@ -189,7 +189,7 @@ public class ContainerRedstoneData {
 > 实测满载 54 格容器单次传播约 4.9μs（不足单 tick 预算的 0.01%），
 > 因此取消跳帧，改为每 tick 传播，元件延迟统一以 game tick 计数。
 
-**持久化机制**：`ContainerRedstoneData` 实例通过 `ContainerLivingItemHandler.REDSTONE_DATA_CACHE`（`LinkedHashMap<String, ContainerRedstoneData>`）静态缓存持久化，以 `containerKey` 为键。`SimpleContainerContext` 每 tick 重建，但其 `getOrCreateRedstoneData()` 从缓存获取同一实例，确保 `edgeGrid`、`prevEdgeGrid` 等关键状态跨 tick 保留。`resetProcessedFlag()` 在每 tick 开始时由 `setTickContext()` 调用，确保 `processedThisTick` 被正确重置。
+**持久化机制**：`ContainerRedstoneData` 实例通过 `ContainerLivingItemHandler.CONTAINER_DATA`（`Map<String, ContainerEntry>`，嵌套 `redstone` 字段）静态缓存持久化，以 `containerKey` 为键。`SimpleContainerContext` 每 tick 重建，但其 `getRedstoneData()` 从缓存获取同一实例，确保 `edgeGrid`、`prevEdgeGrid` 等关键状态跨 tick 保留。`resetProcessedFlag()` 在每 tick 开始时由 `setTickContext()` 调用，确保 `processedThisTick` 被正确重置。
 
 ### 2.3.1 EdgeGrid — 每槽自有出边信号网格
 
@@ -981,7 +981,7 @@ edgeGrid 边界边信号
   → 世界红石线收到 neighborChanged 通知
   → 红石线调用 BlockState.getSignal(容器pos, direction)
   → BlockStateBaseMixin.onGetSignal() 拦截
-    → 查 REDSTONE_DATA_CACHE → ContainerRedstoneData
+    → 查 CONTAINER_DATA（ContainerEntry.redstone）→ ContainerRedstoneData
     → worldToGrid(direction.getOpposite(), facing) → gridDir
     → 返回 faceOutput[gridDir]
   → 红石线被充能，强度 = faceOutput 值
@@ -1524,7 +1524,7 @@ public class LivingRepeaterFunction implements LivingItemFunction, HasContainerD
 }
 ```
 
-**关键设计**：`calculate()` 内部有 `processedThisTick` 去重守卫，确保同一 tick 内多个红石功能类调用时只执行一次计算。`ContainerRedstoneData` 实例通过 `ContainerLivingItemHandler.REDSTONE_DATA_CACHE` 静态缓存持久化，`SimpleContainerContext.setTickContext()` 在每 tick 开始时调用 `resetProcessedFlag()` 重置去重标志。
+**关键设计**：`calculate()` 内部有 `processedThisTick` 去重守卫，确保同一 tick 内多个红石功能类调用时只执行一次计算。`ContainerRedstoneData` 实例通过 `ContainerLivingItemHandler.CONTAINER_DATA`（嵌套 `redstone` 字段）静态缓存持久化，`SimpleContainerContext.setTickContext()` 在每 tick 开始时调用 `resetProcessedFlag()` 重置去重标志。
 
 **数据获取链路**：
 ```
@@ -1533,7 +1533,7 @@ tick.getOrCreateRedstoneData(ctx)
     → SimpleContainerContext.getOrCreateRedstoneData()
       → SimpleContainerContext.redstoneData 为 null 时
         → ContainerLivingItemHandler.getRedstoneData(containerKey)
-          → REDSTONE_DATA_CACHE.computeIfAbsent(containerKey, ...)
+          → CONTAINER_DATA.computeIfAbsent(containerKey, ...).redstone
           → 返回持久化的 ContainerRedstoneData 实例
 ```
 

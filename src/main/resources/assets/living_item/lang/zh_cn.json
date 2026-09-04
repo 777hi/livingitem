@@ -167,5 +167,16 @@
   "tooltip.livingitem.waxed_copper.resonance_balance": "§a平衡度",
   "tooltip.livingitem.waxed_copper.resonance_voices": "§7声部",
   "tooltip.livingitem.waxed_copper.resonance_none_single": "  §8网络共振：无（仅 1 声部，需 ≥2 种锈蚀级才有和声）",
-  "tooltip.livingitem.waxed_copper.chiseled_dir": "  §7感应方向：输入%s 输出%s"
+  "tooltip.livingitem.waxed_copper.chiseled_dir": "  §7感应方向：输入%s 输出%s",
+
+  "command.livingitem.not_looking_at_container": "§c你必须看着一个容器方块才能注册§r",
+  "command.livingitem.container_size_mismatch": "§c容器槽位数 %d 与 %d 不匹配§r",
+  "command.livingitem.container_size_override": "§e容器槽位数手动指定为 %d（跳过 %d 验证）§r",
+  "command.livingitem.container_already_registered": "§c容器 %s 已经注册§r",
+  "command.livingitem.container_registered": "§a已注册容器 §e%s§a: %d 槽位 (%d列×%d行)§r",
+  "command.livingitem.no_rules": "§7暂无已注册的容器规则§r",
+  "command.livingitem.rules_header": "§a已注册的容器规则 (%d):§r",
+  "command.livingitem.container_removed": "§a已移除容器规则 §e%s§r",
+  "command.livingitem.container_not_found": "§c未找到容器规则 §e%s§r",
+  "command.livingitem.rules_reloaded": "§a已从配置文件重新加载容器规则§r"
 }

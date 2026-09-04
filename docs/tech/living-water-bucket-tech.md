@@ -52,7 +52,7 @@
 | `LivingWaterBucketData` | `domain/water/LivingWaterBucketData.java` | 活水桶数据容器：包含 WaterData |
 | `ContainerFluidData` | `container/ContainerFluidData.java` | 容器级流体数据，管理水流蔓延和物品推动。由 `ContainerSnapshot` 持有引用，生命周期独立于活水桶 |
 | `ContainerSnapshot` | `container/ContainerSnapshot.java` | 容器快照，持有 `ContainerFluidData` 引用，每 tick 预计算 |
-| `ContainerLivingItemHandler` | `container/ContainerLivingItemHandler.java` | 容器处理器，管理 `ContainerFluidData` 的持久化缓存（`FLUID_DATA_CACHE`） |
+| `ContainerLivingItemHandler` | `container/ContainerLivingItemHandler.java` | 容器处理器，管理 `ContainerFluidData` 的持久化缓存（`CONTAINER_DATA` 嵌套 `fluid` 字段） |
 
 ---
 
@@ -411,7 +411,7 @@ L1~L7 = 流动水级别
 
 `ContainerFluidData` 现在由 `ContainerSnapshot` 持有引用，通过 `tick.snapshot.getFluidData()` 获取。流体数据在 `TickContext.reset()` 阶段随快照一起捕获，确保活水桶 tick 时能直接读取。
 
-`ContainerFluidData` 的持久化缓存（`FLUID_DATA_CACHE`）仍由 `ContainerLivingItemHandler` 管理，按 `containerKey` 索引。容器销毁时调用 `removeFluidData()` 清理，超过 120 秒未访问的条目自动清理。
+`ContainerFluidData` 的持久化缓存（`CONTAINER_DATA` 嵌套 `fluid` 字段）仍由 `ContainerLivingItemHandler` 管理，按 `containerKey` 索引。容器销毁时调用 `removeFluidData()` 清理，超过 120 秒未访问的条目自动清理。
 
 **变更2：postTickSync 签名优化**
 
@@ -572,7 +572,7 @@ for (int targetSlot : children) { ... }  // 尝试推到下游
 ### 容器级流体数据
 
 - [ ] ContainerFluidData 由 ContainerSnapshot 持有，通过 tick.snapshot.getFluidData() 获取
-- [ ] FLUID_DATA_CACHE 持久化缓存按 containerKey 索引
+- [ ] 流体数据持久化缓存（CONTAINER_DATA 嵌套 fluid 字段）按 containerKey 索引
 - [ ] 容器销毁时 removeFluidData() 清理缓存
 - [ ] 超过 120 秒未访问的缓存条目自动清理
 

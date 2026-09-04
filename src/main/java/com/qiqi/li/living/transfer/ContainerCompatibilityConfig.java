@@ -21,22 +21,22 @@ import java.util.*;
 /**
  * 容器兼容性配置 —— 为不同容器类型定义槽位解析规则。
  *
- * 职责：
- * 1. 注册每种容器类型的解析规则（ContainerRule）
- * 2. 根据容器 ID 查找对应的规则
+ * <p>职责：</p>
+ * <ol>
+ *   <li>注册每种容器类型的解析规则（ContainerRule）</li>
+ *   <li>根据容器 ID 查找对应的规则</li>
+ * </ol>
  *
- * 内置规则：
- * - minecraft:chest（27 格箱子）：标准 9 列矩形，越界无效
- * - minecraft:double_chest（54 格大箱子）：标准 9 列矩形，越界环绕
- * - minecraft:hopper（5 格漏斗）：线性布局，仅中间 3 格可宿主
- * - ironchests:iron_chest（45 格铁箱）：标准 9 列矩形
+ * <p>规则来源：</p>
+ * <ul>
+ *   <li>模组自带规则随 jar 打包发布，位于 {@code assets/living_item/container_rules.json}</li>
+ *   <li>玩家通过指令 {@code /livingitem container register} 注册的规则存储在配置目录</li>
+ * </ul>
  *
- * 扩展方式：
- * - 通过 register() 方法注册自定义规则
- * - 通过 loadFromJson() 从 JSON 文件加载（预留接口）
- *
- * 规则匹配流程：
+ * <p>规则匹配流程：</p>
+ * <pre>
  *   identifyContainer() → ResourceLocation → findRule() → ContainerRule
+ * </pre>
  */
 public final class ContainerCompatibilityConfig {
 
@@ -45,115 +45,16 @@ public final class ContainerCompatibilityConfig {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ContainerCompatibilityConfig.class);
 
-    static {
-        initializeDefaultRules();
-    }
-
     private ContainerCompatibilityConfig() {}
-
-    /** 初始化内置的容器兼容性规则 */
-    private static void initializeDefaultRules() {
-        try {
-            register(ResourceLocation.fromNamespaceAndPath("minecraft", "chest"), ContainerRule.builder()
-                .containerSize(27)
-                .layoutType(ContainerLayoutType.RECTANGULAR_STANDARD)
-                .validHostSlots(range(0, 26))
-                .directionMapping(Pos2D.LEFT, -1)
-                .directionMapping(Pos2D.RIGHT, 1)
-                .directionMapping(Pos2D.UP, -9)
-                .directionMapping(Pos2D.DOWN, 9)
-                .edgeBehavior(EdgeBehavior.INVALIDATE)
-                .build()
-            );
-
-            register(ResourceLocation.fromNamespaceAndPath("minecraft", "double_chest"), ContainerRule.builder()
-                .containerSize(54)
-                .layoutType(ContainerLayoutType.RECTANGULAR_STANDARD)
-                .validHostSlots(range(0, 53))
-                .directionMapping(Pos2D.LEFT, -1)
-                .directionMapping(Pos2D.RIGHT, 1)
-                .directionMapping(Pos2D.UP, -9)
-                .directionMapping(Pos2D.DOWN, 9)
-                .edgeBehavior(EdgeBehavior.WRAP)
-                .crossBlockEntitySupport(true)
-                .build()
-            );
-
-            register(ResourceLocation.fromNamespaceAndPath("minecraft", "hopper"), ContainerRule.builder()
-                .containerSize(5)
-                .layoutType(ContainerLayoutType.LINEAR)
-                .validHostSlots(Arrays.asList(1, 2, 3))
-                .directionMapping(Pos2D.LEFT, -1)
-                .directionMapping(Pos2D.RIGHT, 1)
-                .directionMapping(Pos2D.UP, -1)
-                .directionMapping(Pos2D.DOWN, -1)
-                .edgeBehavior(EdgeBehavior.INVALIDATE)
-                .build()
-            );
-
-            register(ResourceLocation.fromNamespaceAndPath("ironchests", "iron_chest"), ContainerRule.builder()
-                .containerSize(45)
-                .layoutType(ContainerLayoutType.RECTANGULAR_STANDARD)
-                .columns(9)
-                .validHostSlots(range(0, 44))
-                .directionMapping(Pos2D.LEFT, -1)
-                .directionMapping(Pos2D.RIGHT, 1)
-                .directionMapping(Pos2D.UP, -9)
-                .directionMapping(Pos2D.DOWN, 9)
-                .edgeBehavior(EdgeBehavior.INVALIDATE)
-                .build()
-            );
-
-            register(ResourceLocation.fromNamespaceAndPath("ironchests", "diamond_chest"), ContainerRule.builder()
-                .containerSize(108)
-                .layoutType(ContainerLayoutType.RECTANGULAR_STANDARD)
-                .columns(12)
-                .validHostSlots(range(0, 107))
-                .directionMapping(Pos2D.LEFT, -1)
-                .directionMapping(Pos2D.RIGHT, 1)
-                .directionMapping(Pos2D.UP, -12)
-                .directionMapping(Pos2D.DOWN, 12)
-                .edgeBehavior(EdgeBehavior.INVALIDATE)
-                .build()
-            );
-
-            register(ResourceLocation.fromNamespaceAndPath("sophisticatedbackpacks", "backpack"), ContainerRule.builder()
-                .containerSize(120)
-                .layoutType(ContainerLayoutType.RECTANGULAR_CUSTOM)
-                .columns(12)
-                .validHostSlots(range(0, 119))
-                .directionMapping(Pos2D.LEFT, -1)
-                .directionMapping(Pos2D.RIGHT, 1)
-                .directionMapping(Pos2D.UP, -12)
-                .directionMapping(Pos2D.DOWN, 12)
-                .edgeBehavior(EdgeBehavior.INVALIDATE)
-                .description("精妙背包 12×10")
-                .build()
-            );
-
-            register(ResourceLocation.fromNamespaceAndPath("sophisticatedbackpacks", "backpack"), ContainerRule.builder()
-                .containerSize(108)
-                .layoutType(ContainerLayoutType.RECTANGULAR_CUSTOM)
-                .columns(12)
-                .validHostSlots(range(0, 107))
-                .directionMapping(Pos2D.LEFT, -1)
-                .directionMapping(Pos2D.RIGHT, 1)
-                .directionMapping(Pos2D.UP, -12)
-                .directionMapping(Pos2D.DOWN, 12)
-                .edgeBehavior(EdgeBehavior.INVALIDATE)
-                .description("精妙背包 12×9")
-                .build()
-            );
-
-            LOGGER.info("Initialized {} default container compatibility rules", RULES.size());
-        } catch (Exception e) {
-            LOGGER.error("Failed to initialize default container rules", e);
-        }
-    }
 
     /** 注册容器规则 */
     public static void register(ResourceLocation containerId, ContainerRule rule) {
         RULES.put(containerId, rule);
+    }
+
+    /** 移除容器规则 */
+    public static boolean remove(ResourceLocation containerId) {
+        return RULES.remove(containerId) != null;
     }
 
     /** 根据容器 ID 查找规则 */
@@ -246,13 +147,12 @@ public final class ContainerCompatibilityConfig {
         return -1; // 未知类型
     }
 
-    /**
-     * 加权启发式列数推断。
+    /** 加权启发式列数推断。</para>
      * <p>
      * 按真实模组容器分布排序候选宽度，优先常见宽度：
      * 9（原版标准）→ 10 → 12 → 13 → 8 → 7 → 6 → 11 → 5 → 4 → 3 → 2 → 1。
-     */
-    private static int resolveColumns(int slotCount) {
+     * </summary> */
+    public static int resolveColumns(int slotCount) {
         int[] commonWidths = {9, 10, 12, 13, 8, 7, 6, 11, 5, 4, 3, 2, 1};
         for (int w : commonWidths) {
             if (slotCount >= w && slotCount % w == 0) return w;
@@ -284,8 +184,9 @@ public final class ContainerCompatibilityConfig {
         return Collections.unmodifiableSet(RULES.entrySet());
     }
 
-    /** 从 JSON 文件加载规则（预留接口） */
-    public static void loadFromJson(String jsonPath) {
+    /** 从 JSON 配置文件加载规则 */
+    public static void loadFromConfig() {
+        ContainerRuleConfig.load();
     }
 
     /** 生成整数范围列表 */
