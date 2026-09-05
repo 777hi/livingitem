@@ -580,7 +580,7 @@ class ContainerRedstoneDataTest {
             tickOnce(data, ctx, slots);
         }
 
-        assertEquals(15, first, "首 tick 红石块应为相邻红石粉供能 15");
+        assertEquals(15, first, "首 tick 红石块应为相邻红石粉供能 15（只设输入边，不覆盖出边，衰减从粉→粉开始）");
         assertEquals(15, data.getSignal(11),
             "稳态跳过后红石块仍应持续供能（跳过次数=" + data.steadySkipCount + "）");
     }

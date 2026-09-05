@@ -671,9 +671,38 @@ class RedstonePropagation {
                 | ContainerRedstoneData.BIT_COMPARATOR | ContainerRedstoneData.BIT_BLOCK)) return;
         ItemStack nStack = context.getItem(neighbor);
         if (nStack.isEmpty()) return;
-        boolean conductor = is(neighbor, ContainerRedstoneData.BIT_DUST | ContainerRedstoneData.BIT_COPPER)
-            || ContainerRedstoneData.isConductiveBlock(nStack);
-        if (!conductor) return;
+
+        // ── 红石粉：不是导电方块，只设输入边 + 入队让 phase2 算出边 ──
+        // 若把全部 4 条边都设为 signal，会覆盖 phase2 算出的衰减值，
+        // 导致下游粉读到未衰减的满信号。只设输入边则 phase2 重新处理时，
+        // 因 output <= 输入边而跳过，出边维持正确衰减值。
+        if (is(neighbor, ContainerRedstoneData.BIT_DUST)) {
+            if (signal > 0) {
+                int inputEdge = oppositeDir(dir);
+                if (signal > edgeGrid.get(neighbor, inputEdge)) {
+                    edgeGrid.set(neighbor, inputEdge, signal);
+                }
+                secondQueue.add(neighbor);
+            }
+            return;
+        }
+
+        // ── 雕纹铜块（二极管）与切制铜块（立交桥）：不是导电方块，只设输入边 ──
+        // 方向性由 phase4 铜块处理决定。设置全部 4 条边会破坏方向性：
+        // 雕纹铜块只应从输入方向接收信号，切制铜块的水平/垂直通道应分离。
+        if (is(neighbor, ContainerRedstoneData.BIT_CHISELED | ContainerRedstoneData.BIT_CUT)) {
+            if (signal > 0) {
+                int inputEdge = oppositeDir(dir);
+                if (signal > edgeGrid.get(neighbor, inputEdge)) {
+                    edgeGrid.set(neighbor, inputEdge, signal);
+                }
+            }
+            return;
+        }
+
+        // ── 导电方块 / 基础铜块（导线）：全部 4 边充能 ──
+        if (!is(neighbor, ContainerRedstoneData.BIT_COPPER)
+            && !ContainerRedstoneData.isConductiveBlock(nStack)) return;
 
         for (int d2 = 0; d2 < 4; d2++) {
             if (signal > edgeGrid.get(neighbor, d2)) {

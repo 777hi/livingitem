@@ -2,8 +2,8 @@
 
 # Living Redstone (活红石) 技术文档
 
-> **文档版本**: 2026.09 v17
-> **最后更新**: 2026-09-03
+> **文档版本**: 2026.09 v18
+> **最后更新**: 2026-09-05
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -579,12 +579,7 @@ phase4PowerConductors(torchSlots, buttonSlots, leverSlots,
       if conn 中 dir 无连接 → continue
       neighbor = resolveSlot(slot, dir)
       if neighbor < 0 || allRedstone.contains(neighbor) → continue
-      if !isConductiveBlock(neighbor) → continue
-      # 充能：向导体的所有边写入信号
-      for 4 方向 d2：
-        if output > edgeGrid.get(neighbor, d2)：
-          edgeGrid.set(neighbor, d2, output)
-          if resolveSlot(neighbor, d2) 是红石粉 → secondQueue.add(n2)
+      powerConductiveNeighbor(slot, output, dir, secondQueue)
 
   # 火把：除输入方向外全方向输出
   for torchSlots：
@@ -593,21 +588,21 @@ phase4PowerConductors(torchSlots, buttonSlots, leverSlots,
     skipDir = edgeIndex(data.direction().opposite())
     for 4 方向 dir：
       if dir == skipDir → continue
-      ... 同上充能逻辑 ...
+      powerConductiveNeighbor(slot, cap, dir, secondQueue)
 
   # 按钮/拉杆/红石块：全方向输出
   for buttonSlots/leverSlots/redstoneBlockSlots：
     if 未激活 → continue
     cap = getSignalCap(count)
     for 4 方向 dir：
-      ... 同上充能逻辑 ...
+      powerConductiveNeighbor(slot, cap, dir, secondQueue)
 
   # 中继器：仅输出方向
   for repeaterSlots：
     if !powered || delayTimer > 0 → continue
     cap = getSignalCap(count)
     outDir = edgeIndex(data.direction())
-    ... 同上充能逻辑 ...
+    powerConductiveNeighbor(slot, cap, outDir, secondQueue)
 
   # 比较器：仅输出方向，信号为计算结果
   for comparatorSlots：
@@ -617,7 +612,40 @@ phase4PowerConductors(torchSlots, buttonSlots, leverSlots,
     # 替代原 Phase 3 的 != 兜底。关闭时出边归零 → 下游粉下一 tick 自然衰减。
     edgeGrid.set(slot, outDir, output)
     if output <= 0 → continue
-    ... 同上充能逻辑（把 output 灌入下游导体/粉）...
+    powerConductiveNeighbor(slot, output, outDir, secondQueue)
+
+  # ── powerConductiveNeighbor 实现 ──
+  def powerConductiveNeighbor(slot, signal, dir, secondQueue):
+    neighbor = resolveSlot(slot, dir)
+    if neighbor < 0 → return
+    if neighbor 是火把/按钮/拉杆/中继器/比较器/红石块 → return
+    if neighbor 为空 → return
+
+    # 红石粉：不是导电方块，只设输入边 + 入队让 phase2 算出边
+    if neighbor 是红石粉：
+      if signal > 0:
+        inputEdge = opposite(dir)
+        if signal > edgeGrid.get(neighbor, inputEdge):
+          edgeGrid.set(neighbor, inputEdge, signal)
+        secondQueue.add(neighbor)
+      return
+
+    # 雕纹铜块（二极管）与切制铜块（立交桥）：不是导电方块，只设输入边
+    # 方向性由 phase4 铜块处理决定。设置全部 4 条边会破坏方向性。
+    if neighbor 是雕纹铜块 或 切制铜块：
+      if signal > 0:
+        inputEdge = opposite(dir)
+        if signal > edgeGrid.get(neighbor, inputEdge):
+          edgeGrid.set(neighbor, inputEdge, signal)
+      return
+
+    # 导电方块 / 基础铜块（导线）：全部 4 边充能
+    if neighbor 不是基础铜块 且 不是导电方块 → return
+    for d2 in 0..3:
+      if signal > edgeGrid.get(neighbor, d2):
+        edgeGrid.set(neighbor, d2, signal)
+        n2 = resolveSlot(neighbor, d2)
+        if n2 是红石粉或铜导线 → secondQueue.add(n2)
 
   # 第二波 BFS：充能导体后，相邻红石粉重新传播
   if secondQueue not empty：
@@ -639,7 +667,10 @@ private static boolean isConductiveBlock(ItemStack stack) {
 
 **判定顺序**：`BlockItem` → `isLivingItem` → `isRedstoneConductor`。非活物品即使原版是导体（如普通箱子）也不会被充能。
 
-**充能规则**：导体不衰减信号，红石粉衰减 -1。中继器/比较器通过边缘网格自动读取导体边的信号，无需特殊处理。
+**充能规则**：
+- 普通导电方块（原版 `isRedstoneConductor` 为 true 的活物品）：信号写入该方块的**全部 4 条边**，不衰减，模拟方块被强充能后向四周输出
+- **红石粉不是导电方块**：不充能其全部 4 条边。仅设粉朝向源的那条边（输入边，`oppositeDir(dir)`），然后入队让 phase2Propagation 重新处理。phase2 中因 `output <= 输入边` 而跳过输入边，但出边会被正确设为衰减值，下游粉读到正确的衰减信号
+- **雕纹铜块（二极管）与切制铜块（立交桥）不是导电方块**：仅设输入边，不入队。方向性由 phase4 铜块处理决定。设置全部 4 条边会破坏方向性——雕纹铜块只应从输入方向接收信号，切制铜块的水平/垂直通道应分离
 
 | 信号源 | 输出方向 | 信号值 |
 |--------|---------|--------|
@@ -663,7 +694,25 @@ Phase 4: 红石粉A 的 RIGHT 有连接 → 邻居是活箱子（导体）→ �
          → 活箱子 RIGHT 邻接红石粉B → 红石粉B 入 secondQueue
          第二波 BFS: 红石粉B 读取 14 → 输出 13 → 继续传播
 Phase 5: 更新显示
+
+[比较器(15)] [红石粉A] [红石粉B]
+               输入边=15  出边=14
+
+Phase 1: 比较器 → 边缘[比较器, RIGHT]=15
+Phase 2: BFS: 红石粉A 读取 15 → 输出 14 → 边缘[A, RIGHT]=14
+Phase 4: 比较器 → powerConductiveNeighbor(比较器, 15, RIGHT, secondQueue):
+         邻居 = 红石粉A → 只设输入边(LEFT)=15 → 红石粉A 入 secondQueue
+         第二波 BFS: 红石粉A 重新处理：
+           maxInput = max(15, 14, ...) = 15
+           output = 14
+           LEFT(15) ≥ 14 → 跳过（不覆盖输入边）
+           RIGHT(14) < 14 → 不覆盖（相等）
+           → 红石粉A 出边: LEFT=15, RIGHT=14, ...
+           → 红石粉B 读取 14 → 输出 13
+         结果: 比较器→粉A(15)→粉B(14) ✅ 衰减从粉→粉开始
 ```
+
+> **v18 变更**：修复活红石比较器输出到红石粉时信号不衰减的问题。`powerConductiveNeighbor` 不再把红石粉的全部 4 条边都设为信号值，改为只设输入边（`oppositeDir(dir)`）然后入队让 phase2 算出边。参见 §6.5 比较器信号输出。
 
 **Phase 5 — 更新显示状态**：
 ```
@@ -1414,6 +1463,10 @@ Phase 4（充能导电活物品，抬/压都处理）：
   outDir = edgeIndex(data.direction())
   edgeGrid.set(slot, outDir, output)        // 直接同步本槽出边（可抬可压）
   if output > 0 → powerConductiveNeighbor 灌下游导体/粉
+    // v18：powerConductiveNeighbor 对红石粉不再设全部 4 条边，
+    // 改为只设输入边（oppositeDir(dir)）然后入队让 phase2 算出边。
+    // 衰减只在红石粉之间发生，源→粉边界不衰减。
+    // 参见 §4 充能规则。
 ```
 
 > **为什么出边必须在 Phase 4 同步（而非仅 Phase 1 抬高）**：若只在 Phase 1 用 `>` 抬高，比较器关闭（output=0）时出边不会归零，下游粉下一 tick 仍读到高 `maxInput` 而卡死。Phase 4 的 `set(slot, outDir, output)` 既抬高也压低，关闭时出边归零，下游粉经 `maxInput` 自然衰减。旧模型的 Phase 3 `!=` 兜底做同样的事，但在共享边模型下会误压下游粉的 -1 衰减信号，故 v15 改为 Phase 4 直接 set 本槽出边后删除。
