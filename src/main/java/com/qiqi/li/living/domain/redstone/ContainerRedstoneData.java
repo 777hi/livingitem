@@ -91,38 +91,55 @@ public class ContainerRedstoneData {
     /** 边方向数（电力层逐方向采样用，见 domain/power） */
     public static final int EDGE_COUNT = 4;
 
-    /** 读取该槽位指定方向的当前边信号（电力层事件采样用） */
-    public int getEdgeValue(int slot, int dir) {
-        return edgeGrid == null ? 0 : edgeGrid.get(slot, dir);
+    /**
+     * 电力层专用：读取该槽位从 dir 方向**接收到**的入边信号
+     * （= dir 方向邻居朝本槽发出的出边，边界外返回 0）。
+     *
+     * <p>v15 每槽自有出边模型下，边归发出方所有：涂蜡铜块（绝缘，信号层不为其写边）
+     * 的采样不能读自己的出边——没有任何传播路径会写它。旧「共享边」模型下，
+     * 信号源写源-涂蜡槽共享的那条边，{@code getEdgeValue(涂蜡槽, dir)} 天然能读到；
+     * v15 之后等价语义是读**邻居朝本槽的出边**，即本方法。保持「涂蜡只感应、
+     * 不发射」的绝缘铁律，传播层零改动。</p>
+     */
+    public int getIncomingEdgeValue(int slot, int dir) {
+        if (edgeGrid == null) return 0;
+        int neighbor = ContainerContext.resolveNeighbor(
+            slot, dir, edgeGrid.width * edgeGrid.height, edgeGrid.width);
+        if (neighbor < 0) return 0;
+        return edgeGrid.get(neighbor, oppositeDir(dir));
     }
 
-    /** 填充该槽位四个方向的当前边信号（out 长度 ≥ {@link #EDGE_COUNT}） */
-    public void getEdgeValues(int slot, int[] out) {
-        for (int dir = 0; dir < EDGE_COUNT && dir < out.length; dir++) {
-            out[dir] = edgeGrid == null ? 0 : edgeGrid.get(slot, dir);
-        }
-    }
-
-    /** 读取该槽位指定方向的上一 tick 边信号 */
-    public int getPrevEdgeValue(int slot, int dir) {
-        return prevEdgeGrid == null ? 0 : prevEdgeGrid.get(slot, dir);
+    /** 电力层专用：读取该槽位上一 tick 从 dir 方向接收到的入边信号 */
+    public int getPrevIncomingEdgeValue(int slot, int dir) {
+        if (prevEdgeGrid == null) return 0;
+        int neighbor = ContainerContext.resolveNeighbor(
+            slot, dir, prevEdgeGrid.width * prevEdgeGrid.height, prevEdgeGrid.width);
+        if (neighbor < 0) return 0;
+        return prevEdgeGrid.get(neighbor, oppositeDir(dir));
     }
 
     // ── 测试专用 seam：直接注入边信号，绕过完整传播 ──
     // 供电力层单测（NetworkTraversalTest）构造振荡器上升沿，直接驱动
     // LivingWaxedCopperFunction.tickContainerData 以验证「按网络组件遍历」重构。
     // 默认网格 9×1（与 size=9 的测试容器匹配）；若 edgeGrid 已被真实传播创建则沿用其尺寸。
+    // 注入的是「邻居朝 slot 发出的出边」（与 getIncomingEdgeValue 同一入边语义）。
 
-    /** 测试专用：写入某槽某方向的当前 tick 边信号 */
-    public void setEdgeForTest(int slot, int dir, int value) {
+    /** 测试专用：写入某槽某方向接收到的当前 tick 入边信号 */
+    public void setIncomingEdgeForTest(int slot, int dir, int value) {
         ensureTestGrid();
-        edgeGrid.set(slot, dir, value);
+        int neighbor = ContainerContext.resolveNeighbor(
+            slot, dir, edgeGrid.width * edgeGrid.height, edgeGrid.width);
+        if (neighbor < 0) return;
+        edgeGrid.set(neighbor, oppositeDir(dir), value);
     }
 
-    /** 测试专用：写入某槽某方向的上一 tick 边信号（用于制造上升沿 delta>0） */
-    public void setPrevEdgeForTest(int slot, int dir, int value) {
+    /** 测试专用：写入某槽某方向接收到的上一 tick 入边信号（用于制造上升沿 delta>0） */
+    public void setPrevIncomingEdgeForTest(int slot, int dir, int value) {
         ensureTestGrid();
-        prevEdgeGrid.set(slot, dir, value);
+        int neighbor = ContainerContext.resolveNeighbor(
+            slot, dir, prevEdgeGrid.width * prevEdgeGrid.height, prevEdgeGrid.width);
+        if (neighbor < 0) return;
+        prevEdgeGrid.set(neighbor, oppositeDir(dir), value);
     }
 
     private void ensureTestGrid() {
@@ -199,6 +216,15 @@ public class ContainerRedstoneData {
         int externalSig = java.util.Arrays.hashCode(faceInput);
 
         if (steady.canSkip(rev, externalSig, steady.hadActiveTimers())) {
+            // 稳态跳过承诺「本 tick 结果与上 tick 完全一致」——但 prevEdgeGrid 停留在
+            // 上一次实算的快照（可能已是多个 tick 前）。电力层靠 cur/prev 对比检测
+            // 上升沿，若不同步，每个跳过 tick 都会把陈旧 prev 当出新的跳变（重复上升沿，
+            // 周期估计被压碎为 1）。跳过时把 cur 按值同步进 prev，跳变检测自然归零。
+            if (edgeGrid != null && prevEdgeGrid != null
+                && edgeGrid.width == prevEdgeGrid.width
+                && edgeGrid.height == prevEdgeGrid.height) {
+                System.arraycopy(edgeGrid.edges, 0, prevEdgeGrid.edges, 0, edgeGrid.edges.length);
+            }
             steady = steady.withSkip();
             steadySkipCount = steady.skipCount();
             return;

@@ -1,7 +1,7 @@
 # Living Chest (活箱子) 技术文档
 
-> **文档版本**: 2026.08 v7  
-> **最后更新**: 2026-08-16  
+> **文档版本**: 2026.09 v7.1  
+> **最后更新**: 2026-09-05  
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -270,7 +270,62 @@ public static void dropAllItems(ItemStack chestStack, Player player) {
 
 ## 5. 配方书集成
 
-### 5.1 合成材料提取
+### 5.1 客户端材料表（stackedContents）注入
+
+原版配方书用 `RecipeBookComponent.stackedContents` 统计"玩家现在有多少材料"，
+以此决定哪些配方显示为可合成。**原版有且仅有两条重建这张表的路径**：
+
+```
+路径 A  initVisuals()                    ← 打开配方书 / 切换可见性时调用
+          stackedContents.clear()
+          inventory.fillStackedContents()
+          menu.fillCraftSlotsStackedContents()
+          updateCollections(false)
+
+路径 B  updateStackedContents()          ← 背包变动计数变化 / 点击槽位时调用
+          （同上三步）
+          updateCollections(false)
+```
+
+`RecipeBookComponentMixin` 在**两条路径**的 `updateCollections(Z)V` 调用前各注入一次，
+把背包里所有活箱子的内容 `accountStack` 进去：
+
+| 注入方法 | 注入点 | 作用 |
+|---------|--------|------|
+| `beforeInitVisualsCollections` | `initVisuals` → `INVOKE updateCollections` | 覆盖"刚打开配方书" |
+| `beforeUpdateCollections` | `updateStackedContents` → `INVOKE updateCollections` | 覆盖"背包变动后" |
+| `accountLivingChestItems` | （公共 helper，被上面两者调用） | 遍历活箱子 `accountStack` |
+
+> ⚠️ **两条路径缺一不可**。只注入路径 B 会导致"打开配方书时活箱子材料不被识别，
+> 必须手动做点什么触发一次 `updateStackedContents()` 才恢复"。
+
+其余 `updateCollections` 调用点（切标签、搜索、切筛选、`recipesUpdated`）都**不重建**
+材料表，只是复用，因此无需注入。
+
+### 5.2 为什么不需要额外的刷新机制
+
+活箱子内容变化时配方书会自动更新，**无需模组自己轮询**。完整链路：
+
+```
+服务端改写活箱子 CONTAINER 组件
+  ↓ AbstractContainerMenu.triggerSlotListeners()
+    用 ItemStack.matches(lastStack, stack) 判定 → CONTAINER 变了 → 不相等
+  ↓ 发包 → 客户端 Slot.set → Inventory.setItem → timesChanged++
+  ↓ RecipeBookComponent.tick() 检测到计数变化 → 走路径 B → 注入生效
+```
+
+延迟约 1–3 tick。**这里有两个前提，都已验证成立**：
+
+1. `ItemStack.matches` **没有被 `ItemStackMixin` 改写** —— 该 Mixin 只动了
+   `isSameItemSameComponents`（活物品间能否堆叠）和 `getTooltipImage`（tooltip 图标）。
+2. 活箱子必须在**当前打开菜单的槽位里**（`broadcastChanges` 只遍历 menu slots）。
+   玩家背包槽位始终包含在内，而配方书也只扫玩家背包，所以对合成功能没有影响。
+
+> ℹ️ 曾实现过一个「每 10 tick 采样活箱子内容指纹、变化则强制刷新」的保底机制，
+> 后经验证确认原版链路更快（1–3 tick vs ≤10 tick）且已覆盖主流场景，
+> 该机制属于冗余且引入了 4 个状态字段，已移除。**保持无状态是这个 Mixin 正确的原因**。
+
+### 5.3 合成材料提取（服务端）
 
 `ServerPlaceRecipeMixin` 拦截配方书合成操作，支持从活箱子提取合成材料：
 
@@ -281,13 +336,16 @@ public static void dropAllItems(ItemStack chestStack, Player player) {
   └─ 从活箱子提取材料 → 完成合成
 ```
 
-### 5.2 活箱子标签页
+### 5.4 活箱子标签页
 
 `RecipeBookComponentMixin` 在配方书 GUI 中添加活箱子标签页：
 - 显示活箱子中所有物品的网格排列
 - 支持拼音搜索（全拼/首字母/混合匹配）
 - 支持翻页浏览
 - 点击物品执行存取操作
+
+> 标签页的激活态（`LivingChestTabState`）在 `initVisuals` 时被重置为未激活，
+> 即打开配方书始终默认停留在原版标签页（合成/熔炉），这是**有意保持原版行为**。
 
 ---
 
@@ -394,6 +452,30 @@ new TickContext(context)
 **问题**：配方书标签页在翻页时显示的物品列表不刷新。
 
 **修复**：在 `RecipeBookComponentMixin` 中每次翻页时重新读取活箱子物品列表。
+
+### 8.3 打开配方书时活箱子材料不被识别（2026-09-05）
+
+**现象**：打开配方书（默认停在原版合成标签页）时，活箱子里有材料、也能合成的配方
+显示为"不可合成"；必须先切到活箱子标签页、再切回合成页，才恢复正常。
+
+**根因**：原版重建 `stackedContents` 有两条路径——`initVisuals()`（打开配方书时）和
+`updateStackedContents()`（背包变动时）。Mixin 只注入了后者，于是"刚打开配方书"
+这一刻走的是 `initVisuals()`，活箱子物品从未被计入材料表。之后任何触发
+`updateStackedContents()` 的操作（背包变动、点击槽位）都会让它"神奇地恢复正常"，
+这正是"切一下标签页就好了"的真实原因——与活箱子标签页本身无关。
+
+**修复**：
+1. 新增 `beforeInitVisualsCollections`，在 `initVisuals` 的 `updateCollections(Z)V`
+   调用前同样注入 `accountLivingChestItems()`，两条路径都覆盖。
+2. 抽出公共 helper `accountLivingChestItems()` 供两条路径复用。
+   改动净 +2 个注入点、**0 个新状态字段**——原版同步链路已负责内容变化后的刷新。
+
+**验证清单**：
+- [ ] 背包只放活箱子（材料全在箱子里）→ 打开配方书，配方直接显示为可合成
+- [ ] 不做任何额外操作，直接点击可合成的配方 → 能正常合成
+- [ ] 关闭再打开配方书 → 依旧直接可合成（不需要切标签页）
+- [ ] 活漏斗持续往活箱子里塞材料 → 配方书可合成状态在 1–3 tick 内自动更新
+- [ ] 从活箱子取出材料后 → 配方书可合成状态自动回落
 
 ---
 

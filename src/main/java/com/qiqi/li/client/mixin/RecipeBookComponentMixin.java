@@ -1099,8 +1099,49 @@ public abstract class RecipeBookComponentMixin {
         target = "Lnet/minecraft/client/gui/screens/recipebook/RecipeBookComponent;updateCollections(Z)V"
     ))
     private void beforeUpdateCollections(CallbackInfo ci) {
-        List<ItemStack> contents = collectLivingChestItems();
-        for (ItemStack chestItem : contents) {
+        accountLivingChestItems();
+    }
+
+    /**
+     * 在配方书初始化视觉元素、即将刷新材料表时注入
+     *
+     * <h3>📍 注入点</h3>
+     * <p>{@code initVisuals()} 中 {@code updateCollections(false)} 调用之前</p>
+     *
+     * <h3>🐞 修复的问题</h3>
+     * <p>原版有<strong>两条</strong>重建 {@code stackedContents} 的路径：</p>
+     * <pre>
+     * initVisuals()            ← 打开配方书 / 切换可见性时调用
+     *   stackedContents.clear()
+     *   背包 fillStackedContents()
+     *   menu.fillCraftSlotsStackedContents()
+     *   updateCollections(false)     ← 之前没注入，活箱子材料丢失！
+     *
+     * updateStackedContents()  ← 背包变动 / 点击槽位时调用
+     *   （同上三步）
+     *   updateCollections(false)     ← 已注入（见 beforeUpdateCollections）
+     * </pre>
+     * <p>只注入后者会导致「刚打开配方书时活箱子材料不被识别，必须做点什么触发一次
+     * {@code updateStackedContents()} 才恢复」。这里补上 {@code initVisuals} 这一条路径。</p>
+     *
+     * @param ci 回调信息
+     */
+    @Inject(method = "initVisuals", at = @At(
+        value = "INVOKE",
+        target = "Lnet/minecraft/client/gui/screens/recipebook/RecipeBookComponent;updateCollections(Z)V"
+    ))
+    private void beforeInitVisualsCollections(CallbackInfo ci) {
+        accountLivingChestItems();
+    }
+
+    /**
+     * 把玩家背包中所有活箱子的内容计入材料表
+     *
+     * <p>抽成公共方法，供 {@code initVisuals} 与 {@code updateStackedContents} 两条路径复用。</p>
+     */
+    @Unique
+    private void accountLivingChestItems() {
+        for (ItemStack chestItem : collectLivingChestItems()) {
             if (!chestItem.isEmpty()) {
                 this.stackedContents.accountStack(chestItem);
             }

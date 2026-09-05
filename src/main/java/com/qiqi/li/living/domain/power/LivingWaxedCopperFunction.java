@@ -111,53 +111,52 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
 
         // ── 铜块网络传播：按网络组件遍历，而非逐发电机 ──
         // 同氧化等级连通块内的多台发电机共享同一张边集，逐发电机各跑一次 BFS 是 G 倍冗余。
-        // 改为：每台发电机按形态归入 (TopoKey, rep, channelIdx) 组件，每组件仅锚点跑一次
-        // runBfs，其余发电机 copyFrom 锚点的 ChannelState（相位历史随之同步，O(域) 极廉价）。
+        // 组件 = (锈级, rep)（v19：连通性唯一维度 = 氧化等级，形态个性全部迁移到解读规则），
+        // 每组件仅锚点跑一次 runBfs，其余发电机 copyFrom 锚点的 ChannelState
+        // （相位历史随之同步，O(域) 极廉价）。
         // accountEnergy 仍逐发电机调用，用各自 pref 读共享域 —— 逐发电机 pref 敏感保留。
 
-        // 每 tick 每 TopoKey 建一次组件 rep 表（≤54 槽，O(N) 可忽略）
-        Map<TopoKey, int[]> repCache = new HashMap<>();
-        // 组件标识 → 该组件内的发电机槽位列表
-        Map<ComponentId, List<Integer>> groups = new LinkedHashMap<>();
+        // 每 tick 每锈级建一次组件 rep 表（≤54 槽，O(N) 可忽略）
+        Map<Integer, int[]> repCache = new HashMap<>();
+        // 组件标识（锈级 + rep）→ 该组件内的发电机槽位列表
+        Map<NetworkKey, List<Integer>> groups = new LinkedHashMap<>();
 
         for (var e : active.entrySet()) {
             int genSlot = e.getKey();
-            ItemStack genStack = ctx.getItem(genSlot);
-            for (ChannelSpec spec : topoKeysFor(genStack)) {
-                int rep = repOf(spec.topo(), genSlot, repCache, ctx, size, containerWidth);
-                groups.computeIfAbsent(new ComponentId(spec.topo(), rep, spec.channelIdx()),
-                    k -> new ArrayList<>()).add(genSlot);
-            }
+            int ox = getOxidationLevel(ctx.getItem(genSlot).getItem());
+            int rep = repOf(ox, genSlot, repCache, ctx, size, containerWidth);
+            groups.computeIfAbsent(new NetworkKey(ox, rep), k -> new ArrayList<>()).add(genSlot);
         }
 
         // 每组件只算一次：锚点 BFS + tickCleanup(maxPref)，其余 copyFrom
         for (var en : groups.entrySet()) {
-            ComponentId cid = en.getKey();
+            NetworkKey key = en.getKey();
             List<Integer> members = en.getValue();
             int anchorSlot = members.get(0);
             GeneratorState anchor = active.get(anchorSlot);
-            ChannelState shared = anchor.channel(cid.channelIdx());
+            ChannelState shared = anchor.channel();
             int maxPref = 0;
             for (int s : members) maxPref = Math.max(maxPref, active.get(s).preferredPeriod());
 
-            runBfs(anchorSlot, cid.topo(), shared, anchor.preferredPeriod(),
+            runBfs(anchorSlot, key.oxidation(), shared, anchor.preferredPeriod(),
                 powerData, redstone, ctx, size, containerWidth, now);
             shared.tickCleanup(now, maxPref);
             for (int i = 1; i < members.size(); i++) {
-                active.get(members.get(i)).channel(cid.channelIdx()).copyFrom(shared);
+                active.get(members.get(i)).channel().copyFrom(shared);
             }
         }
 
-        // 逐发电机结算能量（用各自 pref 读共享/复制后的 ChannelState）
+        // ── 相位解读 pass（v19）：三形态元件解读输入信号，派生相位写注册表 ──
+        // 置于结算之前：解读注入的驻波上升沿（下一 tick 经 BFS 注入）与真实采样同权入账。
+        phaseInterpretation(active, ctx, size, containerWidth, powerData, now);
+
+        // 逐发电机结算能量（用各自 pref 读共享/复制后的 ChannelState；跳变门控见 accountEnergy）
         for (var e : active.entrySet()) {
             int genSlot = e.getKey();
             GeneratorState gen = e.getValue();
             ItemStack genStack = ctx.getItem(genSlot);
             int genOxidation = getOxidationLevel(genStack.getItem());
-            for (ChannelSpec spec : topoKeysFor(genStack)) {
-                accountEnergy(gen, gen.channel(spec.channelIdx()), gen.preferredPeriod(),
-                    baseReByOx, genOxidation);
-            }
+            accountEnergy(gen, gen.channel(), gen.preferredPeriod(), baseReByOx, genOxidation, now);
         }
 
         // ── 检测仪表盘写回（运行时缓存，不写入 DataComponent，不影响物品堆叠）──
@@ -223,14 +222,18 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
     }
 
     /**
-     * 单次 BFS：从发电机槽位出发，遍历同氧化等级铜块网络（拓扑由 {@code topo} 决定），
-     * 检测边信号上升沿并注入到 {@code channel}。
+     * 单次 BFS：从发电机槽位出发，遍历同氧化等级铜块网络，
+     * 检测边信号上升/下降沿并注入到 {@code channel}，同时注入访问槽位的派生驻波。
+     *
+     * <p>v19（拓扑统一 + 相位解读）：网络连通性只由氧化等级决定（形态不再约束
+     * 连通与采样方向——三形态的个性全部迁移到「解读规则」上）；下降沿喂入独立的
+     * 裂相跟踪器（切制解读用）；派生驻波按 {@code now ≡ offset (mod P)} 视为上升沿。</p>
      *
      * @param genSlot  发电机所在槽位（作为 BFS 起点；同组件任意槽位可达性相同）
-     * @param topo     连通拓扑键（氧化级 + 形态 + 轴/方向过滤）
+     * @param oxidation 锈蚀等级（网络连通性唯一维度）
      * @param channel  目标通道
      * @param pref     偏好周期（onPhaseEvent 实际忽略 pref，域仅按 period 分桶）
-     * @param powerData 容器电力数据（持久化 tracker）
+     * @param powerData 容器电力数据（持久化 tracker + 派生注册表）
      * @param redstone 红石数据（边信号双缓冲）
      * @param ctx      容器上下文
      * @param size     容器总槽位数
@@ -238,7 +241,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
      * @param now      当前 tick
      */
     private static void runBfs(
-            int genSlot, TopoKey topo, ChannelState channel, int pref,
+            int genSlot, int oxidation, ChannelState channel, int pref,
             ContainerPowerData powerData, ContainerRedstoneData redstone,
             ContainerContext ctx, int size, int containerWidth, long now) {
 
@@ -250,19 +253,17 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
 
         while (head < tail) {
             int current = queue[head++];
-            int row = current / containerWidth;
-            int col = current % containerWidth;
 
-            // 检查该槽位的边信号（雕文仅检测输入方向）
+            // 检查该槽位的边信号（v15 每槽自有出边模型：涂蜡槽绝缘，采样读「入边」
+            // = 邻居朝本槽的出边）
             for (int dir = 0; dir < ContainerRedstoneData.EDGE_COUNT; dir++) {
-                if (topo.inEdge() >= 0 && dir != topo.inEdge()) continue;
-                int signal = redstone.getEdgeValue(current, dir);
-                int prevSignal = redstone.getPrevEdgeValue(current, dir);
+                int signal = redstone.getIncomingEdgeValue(current, dir);
+                int prevSignal = redstone.getPrevIncomingEdgeValue(current, dir);
                 if (signal == prevSignal) continue;
                 int delta = signal - prevSignal;
                 int absDelta = Math.abs(delta);
+                long edgeKey = edgeKey(current, dir);
                 if (delta > 0) {
-                    long edgeKey = ((long) current << 2) | dir;
                     SignalTracker tracker = powerData.getOrCreateEdgeTracker(edgeKey);
                     tracker.onRisingEdge(now, absDelta);
                     if (tracker.period() > 0) {
@@ -270,12 +271,24 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
                             (int) edgeKey, tracker.period(),
                             tracker.offset(), absDelta, now), pref);
                     }
+                } else {
+                    // 下降沿 → 裂相器（切制）的解读输入：独立命名空间的下降沿跟踪器
+                    SignalTracker falling = powerData.getOrCreateEdgeTracker(FALLING_BIT | edgeKey);
+                    falling.onRisingEdge(now, absDelta);
                 }
             }
 
-            // 遍历四方向找同氧化等级的铜块邻居（拓扑由 topo 决定）
+            // 注入该槽位注册表中的派生驻波（上一 tick 解读，本 tick 到达上升沿则同权入账）
+            for (DerivedPhase dp : powerData.getRegistry(current)) {
+                if (dp.period() > 0 && Math.floorMod(now, dp.period()) == dp.offset()) {
+                    channel.onPhaseEvent(new PhaseEvent(
+                        derivedSourceId(current, dp), dp.period(), dp.offset(), dp.delta(), now), pref);
+                }
+            }
+
+            // 遍历四方向找同氧化等级的铜块邻居
             for (int dir = 0; dir < ContainerRedstoneData.EDGE_COUNT; dir++) {
-                int neighbor = traversableNeighbor(ctx, size, containerWidth, current, dir, topo);
+                int neighbor = traversableNeighbor(ctx, size, containerWidth, current, dir, oxidation);
                 if (neighbor < 0) continue;
                 if (visited[neighbor]) continue;
                 visited[neighbor] = true;
@@ -286,14 +299,11 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
 
     /**
      * 从 current 沿 dir 是否可达同氧化级铜块邻居；可达返回邻居槽位，否则 -1。
-     * 已包含轴过滤（切制 H/V）、输出方向过滤（雕文）、氧化级过滤。
+     * v19：网络连通性只由氧化等级决定（形态不再约束连通——个性迁移到解读规则）。
      * runBfs 与组件分组共用，避免两套邻接逻辑分叉。
      */
     private static int traversableNeighbor(ContainerContext ctx, int size, int width,
-            int current, int dir, TopoKey topo) {
-        if (topo.axis() == 0 && (dir == ContainerRedstoneData.EDGE_UP || dir == ContainerRedstoneData.EDGE_DOWN)) return -1;
-        if (topo.axis() == 1 && (dir == ContainerRedstoneData.EDGE_LEFT || dir == ContainerRedstoneData.EDGE_RIGHT)) return -1;
-        if (topo.outEdge() >= 0 && dir != topo.outEdge()) return -1;
+            int current, int dir, int oxidation) {
         int row = current / width;
         int col = current % width;
         int nr = row + DIR_ROW[dir];
@@ -305,35 +315,17 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         if (ns.isEmpty()) return -1;
         if (!isWaxedCopperBlock(ns.getItem())) return -1;
         if (isWaxedBulb(ns.getItem())) return -1; // 铜灯不导电
-        if (getOxidationLevel(ns.getItem()) != topo.oxidation()) return -1;
+        if (getOxidationLevel(ns.getItem()) != oxidation) return -1;
         return neighbor;
     }
 
-    /** 一台发电机的通道拓扑规格（可能 1 或 2 个，切制 H/V 各一） */
-    private static List<ChannelSpec> topoKeysFor(ItemStack stack) {
-        int ox = getOxidationLevel(stack.getItem());
-        int cf = getCoilForm(stack.getItem());
-        if (cf == LivingWaxedGeneratorData.FORM_CHISELED) {
-            var cd = LivingItemManager.getWaxedChiseledData(stack);
-            int inEdge = pos2dToEdgeDir(cd.inputDir());
-            int outEdge = pos2dToEdgeDir(cd.outputDir());
-            return List.of(new ChannelSpec(new TopoKey(ox, cf, -1, inEdge, outEdge), 0));
-        } else if (cf == LivingWaxedGeneratorData.FORM_CUT) {
-            return List.of(
-                new ChannelSpec(new TopoKey(ox, cf, 0, -1, -1), 0),
-                new ChannelSpec(new TopoKey(ox, cf, 1, -1, -1), 1));
-        } else {
-            return List.of(new ChannelSpec(new TopoKey(ox, cf, -1, -1, -1), 0));
-        }
-    }
-
     /**
-     * 每 tick 每 TopoKey 建一次组件 rep 表；返回 slot 所属组件 rep（组件内最小槽位）。
+     * 每 tick 每锈级建一次组件 rep 表；返回 slot 所属组件 rep（组件内最小槽位）。
      * rep 稳定（= 最小铜块槽位），保证跨 tick 同一网络映射到同一 ChannelState 实例。
      */
-    private static int repOf(TopoKey topo, int slot, Map<TopoKey, int[]> cache,
+    private static int repOf(int oxidation, int slot, Map<Integer, int[]> cache,
             ContainerContext ctx, int size, int width) {
-        int[] arr = cache.get(topo);
+        int[] arr = cache.get(oxidation);
         if (arr == null) {
             arr = new int[size];
             Arrays.fill(arr, -1);
@@ -343,14 +335,14 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
                 if (arr[s] != -1) continue;
                 ItemStack st = ctx.getItem(s);
                 if (st.isEmpty() || !isWaxedCopperBlock(st.getItem()) || isWaxedBulb(st.getItem())) continue;
-                if (getOxidationLevel(st.getItem()) != topo.oxidation()) continue;
+                if (getOxidationLevel(st.getItem()) != oxidation) continue;
                 // 收集该组件全部槽位（弱连通）
                 int cn = 0, h = 0, t = 0;
                 q[t++] = s; arr[s] = s; comp[cn++] = s;
                 while (h < t) {
                     int cur = q[h++];
                     for (int dir = 0; dir < ContainerRedstoneData.EDGE_COUNT; dir++) {
-                        int nb = traversableNeighbor(ctx, size, width, cur, dir, topo);
+                        int nb = traversableNeighbor(ctx, size, width, cur, dir, oxidation);
                         if (nb < 0 || arr[nb] != -1) continue;
                         arr[nb] = s; comp[cn++] = nb; q[t++] = nb;
                     }
@@ -359,22 +351,175 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
                 for (int i = 0; i < cn; i++) rep = Math.min(rep, comp[i]);
                 for (int i = 0; i < cn; i++) arr[comp[i]] = rep;
             }
-            cache.put(topo, arr);
+            cache.put(oxidation, arr);
         }
         return arr[slot];
     }
 
-    /** 连通拓扑键：决定 BFS 的连通性与边检测方向。同键 = 同一铜块网络组件 */
-    private record TopoKey(int oxidation, int coilForm, int axis, int inEdge, int outEdge) {}
+    /** 组件标识：氧化等级 + 组件内最小铜块槽位（v19：连通性唯一维度 = 氧化等级） */
+    private record NetworkKey(int oxidation, int rep) {}
 
-    /** 一台发电机的一个通道规格：拓扑 + 通道索引（0=水平/主，1=垂直） */
-    private record ChannelSpec(TopoKey topo, int channelIdx) {}
+    /** 边跟踪器键：(slot << 2) | dir */
+    private static long edgeKey(int slot, int dir) {
+        return ((long) slot << 2) | dir;
+    }
 
-    /** 组件标识：(拓扑, rep, 通道索引) */
-    private record ComponentId(TopoKey topo, int rep, int channelIdx) {}
+    /** 下降沿跟踪器命名空间位（与上升沿跟踪器同表，位隔离） */
+    private static final long FALLING_BIT = 1L << 32;
+
+    // ── 相位解读 pass（v19 相位解读三元件）──
+
+    /**
+     * 三形态相位元件各解读输入信号，派生相位写注册表。
+     *
+     * <p>解读是「驻波」语义：输入 = 稳定的周期波形（边跟踪器的锁相状态 /
+     * 邻居注册表的驻波条目），派生输出同样是驻波——每 tick 重算自己的条目；
+     * 注入侧在 {@code now ≡ offset (mod P)} 的 tick 视为上升沿入账。</p>
+     *
+     * <p><b>组合与防环（结构性，无检测代码）</b>：元件间组合只经移相链
+     * （雕文读输入方向邻居的注册表）；加法器只读自己的真实边（不读注册表）、
+     * 裂相器无外部输入。因此依赖图是「链」而非「环」——移相环的每个成员的
+     * 输入边都是蜡-蜡死边（无种子），注册表永远为空，环自熄；不存在
+     * 「互读导致偏移每 tick 自增跑满」的通路。</p>
+     *
+     * <p><b>活性</b>：输入源停跳超过 {@link PowerMath#aliveWindow} 后，
+     * 对应解读停止、驻波经 {@link ContainerPowerData#pruneRegistry} 修剪——死源不发电。</p>
+     *
+     * <p><b>两阶段提交</b>：先全部算入草稿、再统一写回——解读过程中读取的
+     * 邻居注册表一律是上一 tick 的状态，与槽位处理顺序无关。</p>
+     */
+    private static void phaseInterpretation(Map<Integer, GeneratorState> active,
+            ContainerContext ctx, int size, int width, ContainerPowerData powerData, long now) {
+        powerData.pruneRegistry(now);
+
+        Map<Integer, List<DerivedPhase>> draft = new HashMap<>();
+        for (var e : active.entrySet()) {
+            int slot = e.getKey();
+            ItemStack stack = ctx.getItem(slot);
+            int cf = getCoilForm(stack.getItem());
+            switch (cf) {
+                case LivingWaxedGeneratorData.FORM_CHISELED ->
+                    interpretShifter(slot, stack, ctx, size, width, powerData, now, draft);
+                case LivingWaxedGeneratorData.FORM_CUT ->
+                    interpretSplitter(slot, powerData, now, draft);
+                case LivingWaxedGeneratorData.FORM_GRATE ->
+                    interpretAdder(slot, powerData, now, draft);
+                default -> { } // 基座铜块 / 铜灯：只会「读」不会「造」
+            }
+        }
+        for (var e : draft.entrySet()) {
+            powerData.setRegistry(e.getKey(), e.getValue());
+        }
+    }
+
+    /**
+     * 雕文 = 移相器：读信号的「位置」。
+     *
+     * <p>解读规则：对输入方向上的每一路锁相波形 (P, φ, δ)（真实边 + 输入方向
+     * 邻居的注册表驻波），派生 (P, (φ+1) mod P, δ)——驻波整体延迟 1 tick。
+     * k 台首尾相连（后者的输入方向指向前者）= 任意偏移延迟线，解锁奇数偏移制造
+     * （中继器延迟全是偶数 tick）。环自熄：环上成员的输入边都是蜡-蜡死边，无种子。</p>
+     */
+    private static void interpretShifter(int slot, ItemStack stack, ContainerContext ctx,
+            int size, int width, ContainerPowerData powerData, long now,
+            Map<Integer, List<DerivedPhase>> draft) {
+        var data = LivingItemManager.getWaxedChiseledData(stack);
+        int inEdge = pos2dToEdgeDir(data.inputDir());
+        List<DerivedPhase> out = new ArrayList<>();
+
+        // 输入一：输入方向边上的真实波形（锁相状态，活性窗口内）
+        SignalTracker t = powerData.getEdgeTracker(edgeKey(slot, inEdge));
+        if (t != null && t.period() > 0
+                && now - t.lastRisingTick() <= PowerMath.aliveWindow(t.period())) {
+            out.add(new DerivedPhase(t.period(), Math.floorMod(t.offset() + 1, t.period()),
+                t.lastDelta(), DerivedPhase.KIND_SHIFT, now));
+        }
+
+        // 输入二：输入方向邻居的注册表驻波（移相链的组合入口）
+        int neighbor = ContainerContext.resolveNeighbor(slot, inEdge, size, width);
+        if (neighbor >= 0) {
+            for (DerivedPhase dp : powerData.getRegistry(neighbor)) {
+                out.add(new DerivedPhase(dp.period(), Math.floorMod(dp.offset() + 1, dp.period()),
+                    dp.delta(), DerivedPhase.KIND_SHIFT, now));
+            }
+        }
+
+        if (!out.isEmpty()) draft.put(slot, out);
+    }
+
+    /**
+     * 切制 = 裂相器：读信号的「另一半」。
+     *
+     * <p>解读规则：每条边的下降沿波形（独立跟踪器）直接登记为派生相位——
+     * 一个方波贡献 2 个反相相位（上升沿 φ 由全网真实采样、下降沿 φ_f 由裂相器
+     * 补齐）。非对称波形的 φ_f ≠ φ + P/2（涌现）。P=2 时钟 + 1 台切制 → n=2 满相。
+     * 裂相不是延迟：偏移取下降沿自身位置，从下一个周期起注入。</p>
+     */
+    private static void interpretSplitter(int slot, ContainerPowerData powerData, long now,
+            Map<Integer, List<DerivedPhase>> draft) {
+        List<DerivedPhase> out = new ArrayList<>();
+        for (int dir = 0; dir < ContainerRedstoneData.EDGE_COUNT; dir++) {
+            SignalTracker t = powerData.getEdgeTracker(FALLING_BIT | edgeKey(slot, dir));
+            if (t != null && t.period() > 0
+                    && now - t.lastRisingTick() <= PowerMath.aliveWindow(t.period())) {
+                out.add(new DerivedPhase(t.period(), t.offset(),
+                    t.lastDelta(), DerivedPhase.KIND_SPLIT, now));
+            }
+        }
+        if (!out.isEmpty()) draft.put(slot, out);
+    }
+
+    /**
+     * 格栅 = 相位加法器：读信号间的「关系」。
+     *
+     * <p>解读规则：汇集 4 条边的真实锁相波形，按周期分桶；对含 ≥2 路的桶派生
+     * (P, Σφᵢ mod P, min δᵢ)——信号层「多路幅度求和」的电力层镜像（相位求和）。
+     * 去重诚实：和已存在于域内则无增益；同相位双输入 → 2φ「翻倍」可算。</p>
+     *
+     * <p>v1 不读注册表（组合经移相链实现）：加法器若互读邻居驻波，两只对摆且
+     * 各有真实输入时会互相把对方的和吸进自己的和，偏移沿加法子群逐 tick 自增
+     * 跑满——结构上掐断这条唯一的成环通路。</p>
+     */
+    private static void interpretAdder(int slot, ContainerPowerData powerData, long now,
+            Map<Integer, List<DerivedPhase>> draft) {
+        Map<Integer, List<int[]>> byPeriod = new HashMap<>(); // period → [offset, delta]
+        for (int dir = 0; dir < ContainerRedstoneData.EDGE_COUNT; dir++) {
+            SignalTracker t = powerData.getEdgeTracker(edgeKey(slot, dir));
+            if (t == null || t.period() <= 0) continue;
+            if (now - t.lastRisingTick() > PowerMath.aliveWindow(t.period())) continue;
+            byPeriod.computeIfAbsent(t.period(), k -> new ArrayList<>())
+                .add(new int[] {t.offset(), t.lastDelta()});
+        }
+        List<DerivedPhase> out = new ArrayList<>();
+        for (var e : byPeriod.entrySet()) {
+            List<int[]> phases = e.getValue();
+            if (phases.size() < 2) continue; // 单路无可加
+            int period = e.getKey();
+            int sum = 0;
+            int minDelta = Integer.MAX_VALUE;
+            for (int[] p : phases) {
+                sum = Math.floorMod(sum + p[0], period);
+                minDelta = Math.min(minDelta, p[1]);
+            }
+            out.add(new DerivedPhase(period, sum, minDelta, DerivedPhase.KIND_ADD, now));
+        }
+        if (!out.isEmpty()) draft.put(slot, out);
+    }
+
+    /** 派生驻波的事件源 id（仅信息用途：域按周期分桶、偏移去重） */
+    private static int derivedSourceId(int slot, DerivedPhase dp) {
+        return (slot << 3) | dp.kind();
+    }
 
     /**
      * 从通道最佳域计算能量并记入发电机（v18：容器级无总账，改走 baseReByOx 按锈级累加）。
+     *
+     * <p><b>跳变门控（v19）</b>：只从「本 tick 有跳变」的最佳域入账，
+     * 能量 = 合因子 × P × 本 tick 跳变路数。回归「跳变即能量事件」——
+     * 域活着但本 tick 无上升沿 → 产出 0。修复旧「每 tick 无条件入账合因子×P」的
+     * 两个问题：① 平均功率 = 合因子×P 随周期线性增长，慢时钟无代价碾压快时钟
+     * （频率中性化反转，整数倍谐波调谐效率恰为 1.0 时可无限放大）；
+     * ② 振荡器停机后域存活窗口（max(32, 2×P) tick）内照常白拿发电量。</p>
      *
      * <p>同时按锈蚟级累加**基础**出力到 {@code baseReByOx}，供网络级共振与
      * 锈级功率读数使用（见 living-power-tech.md §3.7）。这里累的是共振前的值——
@@ -382,13 +527,16 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
      *
      * @param baseReByOx 各锈蚟级基础出力累加器（可为 null，表示不统计共振）
      * @param oxidation  该发电机所属锈蚟级（0~3）
+     * @param now        当前 tick（跳变门控的判定基准）
      */
-    private static void accountEnergy(GeneratorState gen, ChannelState channel, int pref,
-                                      long[] baseReByOx, int oxidation) {
-        double factor = channel.bestFactor(pref);
-        int period = channel.bestPeriod(pref);
+    static void accountEnergy(GeneratorState gen, ChannelState channel, int pref,
+                                      long[] baseReByOx, int oxidation, long now) {
+        ChannelState.PhaseDomain active = channel.bestActiveDomain(pref, now);
+        if (active == null) return;
+        double factor = channel.factorOf(active, pref);
+        int period = active.period();
         if (factor > 0 && period > 0) {
-            long re = PowerMath.eventEnergyRe(factor, period);
+            long re = PowerMath.eventEnergyRe(factor, period) * active.jumpCount(now);
             if (re > 0) {
                 gen.onEventEnergy(re);
                 if (baseReByOx != null && oxidation >= 0 && oxidation < baseReByOx.length) {
@@ -443,6 +591,11 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         public int lastDelta() {
             return lastDelta;
         }
+
+        /** 最近一次上升沿的 tick（-1 = 尚无）；派生解读的活性判定用（v19） */
+        public long lastRisingTick() {
+            return lastRisingTick;
+        }
     }
 
     // ── 仪表盘构建 ──
@@ -461,12 +614,9 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         int bestDelta = channel.bestDelta();
         double effDeltaSum = channel.bestEffDeltaSum(pref);
 
-        // 全部域快照（F3+H 显示用），包含双通道
+        // 全部域快照（F3+H 显示用；v19 单通道——切制双通道已随相位解读重构退役）
         List<DomainSnapshot> domainSnapshots = new ArrayList<>();
         collectDomains(channel, domainSnapshots);
-        if (coilForm == LivingWaxedGeneratorData.FORM_CUT) {
-            collectDomains(gen.channel(1), domainSnapshots);
-        }
 
         // 每个发电机独立 EMA 功率 + 本锈级功率（v18：容器总账 EMA 已拆除，
         // 容器级读数 = 该发电机所属锈级的 EMA，玩家看 tooltip 就知道本锈级发多少）

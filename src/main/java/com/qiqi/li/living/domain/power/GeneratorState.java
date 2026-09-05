@@ -9,8 +9,9 @@ package com.qiqi.li.living.domain.power;
  * <p>v17.7：新增 per-generator EMA 功率跟踪，使不同锈蚀/不同信号的发电机
  * 在 tooltip 中显示各自独立的功率读数。</p>
  *
- * <p>v18.0：为切制（H/V 隔离）引入双通道 {@link #channelSecondary}，
- * 通过 {@link #channel(int)} 按轴索引访问：0=水平(主通道)，1=垂直(副通道)。</p>
+ * <p>v19：切制 H/V 双通道（v18.0 引入的 {@code channelSecondary}）随「形态 =
+ * 相位解读元件」重构退役——同周期偏移本就归同一个相位域，裂相相位进同一通道；
+ * 通道重新回归单实例。</p>
  */
 public class GeneratorState {
 
@@ -20,11 +21,8 @@ public class GeneratorState {
     /** 偏好周期 = 堆叠数（§3.4 因子二）；0 表示未设置（<2 即宽带态） */
     private int preferredPeriod;
 
-    /** 主通道（水平轴 / 全向）—— 接收铜块网络的全部相位事件 */
+    /** 相位事件接收通道 —— 接收铜块网络的全部相位事件（真实采样 + 派生注入） */
     private final ChannelState channelPrimary = new ChannelState();
-
-    /** 副通道（垂直轴）—— 切制 H/V 隔离用，其余形态不用 */
-    private final ChannelState channelSecondary = new ChannelState();
 
     /** 本 tick 发电量（RE） */
     private long generatedReThisTick;
@@ -32,15 +30,7 @@ public class GeneratorState {
     /** 本发电机的 EMA 功率（RE/t） */
     private double emaPowerRe;
 
-    /**
-     * 按轴索引取通道。
-     * @param axis 0=水平（主通道，铜块/雕文/格栅也用此），1=垂直（副通道，仅切制用）
-     */
-    public ChannelState channel(int axis) {
-        return axis == 0 ? channelPrimary : channelSecondary;
-    }
-
-    /** 主通道（等价于 {@code channel(0)}） */
+    /** 相位事件接收通道 */
     public ChannelState channel() {
         return channelPrimary;
     }

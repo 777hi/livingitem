@@ -1,8 +1,8 @@
 # Living Item (活物品)
 
 **Minecraft 1.21.1 + NeoForge 21.1.x**
-*最后更新: 2026-08-30*
-*状态: Alpha 测试阶段 - v8.1 接口化重构完成 + 框架审查修复*
+*最后更新: 2026-09-05*
+*状态: Alpha 测试阶段 - v8.1 接口化重构完成 + 红电相位解读三元件（v19.1）*
 
 ---
 
@@ -215,13 +215,13 @@ src/main/java/com/qiqi/li/
 │   │   └── ContainerRedstoneData.java        #     容器级红石信号数据（EdgeGrid + 边界信号）
 │   │
 │   ├── domain/power/                        #   红电发电领域（活涂蜡铜块）
-│   │   ├── LivingWaxedCopperFunction.java    #     涂蜡发电机功能入口（priority=3，逐方向感应采样）
-│   │   ├── PowerMath.java                   #     发电数学（合因子/调谐效率/耦合管径/RE→FE）
-│   │   ├── PathState.java                   #     单路波形状态（周期 EMA + 相位资格）
-│   │   ├── ChannelState.java                #     线圈通道（相位域分组计 n + 规律度）
-│   │   ├── GeneratorState.java              #     单台发电机状态（线圈分组 + 方向映射）
-│   │   ├── LivingWaxedCutData.java          #     涂蜡切制组件（单线圈感应方向）
-│   │   ├── LivingWaxedChiseledData.java     #     涂蜡雕文组件（V+H 双通道）
+│   │   ├── LivingWaxedCopperFunction.java    #     涂蜡发电机功能入口（priority=3；BFS 采样 + 相位解读 pass + 跳变门控记账）
+│   │   ├── PowerMath.java                   #     发电数学（合因子/调谐效率/存活窗口/RE→FE）
+│   │   ├── ChannelState.java                #     相位域分组计 n + 跳变门控（bestActiveDomain）
+│   │   ├── GeneratorState.java              #     单台发电机状态（单通道 + per-generator EMA）
+│   │   ├── DerivedPhase.java                #     派生相位 record（v19.1 相位解读驻波：周期/偏移/幅度/形态）
+│   │   ├── LivingWaxedCutData.java          #     涂蜡切制组件（遗留兼容字段，逻辑不读取）
+│   │   ├── LivingWaxedChiseledData.java     #     涂蜡雕文组件（inputDir=移相读取方向；outputDir 遗留兼容）
 │   │   ├── LivingWaxedBulbData.java         #     涂蜡铜灯组件（按盏电量，1/1000 FE 定点）
 │   │   ├── LivingWaxedGeneratorData.java    #     发电机仪表盘组件（检测值快照，纯展示）
 │   │   ├── LivingWaxedCopperTooltipComponent.java # Tooltip 组件（仪表盘渲染）
@@ -330,12 +330,14 @@ src/test/java/com/qiqi/li/
 ├── living/domain/redstone/
 │   └── ContainerRedstoneDataTest.java         # 红石信号传播（24 项）
 ├── living/domain/power/
-│   ├── PowerMathTest.java                     # 发电数学（4 项）
+│   ├── PowerMathTest.java                     # 发电数学（5 项）
 │   ├── ContainerPowerDataTest.java            # 相位质量状态机（6 项）
-│   ├── ChannelStateTest.java                  # 线圈通道状态（5 项）
-│   ├── CoilGroupingTest.java                  # 线圈分组（5 项）
+│   ├── AccountingGateTest.java                # 跳变门控记账（4 项：零产出/冻结/去重/中性化）
+│   ├── PhaseInterpretationTest.java           # 相位解读三元件（8 项：移相/链/环自熄/死源/裂相/加法）
+│   ├── ChannelStateTest.java                  # 相位域偏移活性（5 项）
+│   ├── CoilGroupingTest.java                  # 形态识别 + 单通道（5 项）
 │   ├── NetworkResonanceTest.java              # 铜块网络共振（18 项）
-│   ├── NetworkTraversalTest.java              # 铜块网络遍历（4 项）
+│   ├── NetworkTraversalTest.java              # 铜块网络遍历（6 项，含 E2E 真实传播）
 │   ├── WaxedCopperStorageTest.java            # 储能（16 项，含 telemetry 2 项）
 │   ├── BulbItemEnergyStorageTest.java         # 铜灯通用电池（6 项）
 │   ├── WaxedCopperOscillatorIT.java           # 振荡器→发电全链路集成（5 项）
@@ -346,10 +348,8 @@ src/test/java/com/qiqi/li/
     └── ContainerCompatibilityConfigTest.java  # 容器布局推断（9 项）
 ```
 
-**合计 146 个测试方法**（141 `@Test` + 5 `@ParameterizedTest`）；
-`./gradlew test` 实际执行 **169 个用例**——参数化测试会展开成多例，
-`SimpleContainerContextTest` 另有 6 个 `@Nested` 内部类。
-全绿基线：`169 passed / 0 failed / 0 skipped`（2026-09-04 验证）。
+**合计测试用例 183 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
+全绿基线：`183 passed / 0 failed / 0 skipped`（2026-09-05 验证）。
 
 > 📄 测试环境配置与编写约定详见 [unit-testing.md](docs/guides/unit-testing.md)
 
@@ -402,7 +402,11 @@ src/test/java/com/qiqi/li/
 - [x] 事件驱动采样：`priority=3` 晚于红石，edgeGrid 逐方向喂值
 - [x] 相位域分组计 n（同周期+同偏移合并，杂讯路不进域）
 - [x] 规律度：上升沿间隔 best-shift 一致度（事件驱动，O(1) 增量）
-- [x] 感应拓扑：线圈分组（铜块全向 / 雕文 V+H 双通道 / 切制单方向 WASD 配置）
+- [x] 相位解读三元件（v19.1）：雕文移相器（派生 φ+1，可链式 = 任意偏移延迟线）/
+  切制裂相器（下降沿反相解读，一个方波 2 个反相相位）/
+  格栅相位加法器（同周期多路 Σφᵢ mod P 求和）+ 派生相位注册表（两阶段提交 + 活性修剪 + 环自熄）
+- [x] 记账跳变门控（v19.1）：入账只看「本 tick 有跳变」的最佳域，能量 = 合因子 × P × 跳变路数——
+  修复频率中性化反转（慢时钟按 P 线性碾压）与停机虚能量
 - [x] 感应耦合：相邻发电机管径加权分配 + 不回传防环 + 多跳中继（分层重算）
 - [x] 绝缘修复：涂蜡铜块排除出红石「充能导体」（杜绝信号泄漏绕过绝缘）
 - [x] 储能：铜灯 = 唯一储存（发电直存、无容器池），容量 = count×C 线性涌现
@@ -450,6 +454,22 @@ src/test/java/com/qiqi/li/
 ## 开发进展
 
 ### 当前版本: v0.9-alpha
+
+**最近更新** (2026-09-05):
+- ✅ 新增：**记账跳变门控**——入账只看「本 tick 有跳变」的最佳域，能量 = 合因子 × P × 跳变路数
+  （按 offset 去重）。修复旧「每 tick 无条件入账 ×P」的频率中性化反转
+  （慢时钟按 P 线性碾压快时钟，整数倍谐波可无限放大）与停机虚能量（域存活窗口内白拿）
+- ✅ 新增：**相位解读三元件**（形态从「听什么」到「造什么」，普通铜块退役为纯基准）——
+  雕文 = 移相器（派生 φ+1，可链式 = 任意偏移延迟线，解锁奇数偏移制造）/
+  切制 = 裂相器（下降沿反相解读，一个方波 2 个反相相位，P=2 满相可达）/
+  格栅 = 相位加法器（同周期多路 Σφᵢ mod P 求和，加法子群涌现）
+- ✅ 新增：派生相位注册表（`DerivedPhase` + 两阶段提交 + 存活窗口修剪 +
+  移相环无种子自熄——结构性防环，无检测代码）
+- ✅ 重构：拓扑统一至锈级单维度（TopoKey 的 axis/inEdge/outEdge 退役，
+  切制 H/V 双通道拆除，`channelSecondary` 删除）
+- ✅ 新增：AccountingGateTest（4 项）+ PhaseInterpretationTest（8 项），
+  全量 183 用例全绿
+- 📄 技术文档：living-power-tech.md §3.8 / 红电系统.md v19.1 修订
 
 **最近更新** (2026-08-30):
 - ✅ 新增：红电发电阶段一~三 —— `domain/power` 包

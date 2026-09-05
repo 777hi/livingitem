@@ -38,6 +38,20 @@ public final class PowerMath {
     public static final long BULB_UNIT_CAPACITY_MFE = BULB_UNIT_CAPACITY_FE * 1000;
 
     /**
+     * 波形存活窗口（tick，v19 相位解读元件用）。
+     *
+     * <p>输入源停跳超过此时长，其在派生注册表 / 解读判定中的「驻波」视为熄灭。
+     * 与 {@code ChannelState.tickCleanup} 的域超时同口径：max(32, 2×周期)，
+     * 夹在 [32, 1200]——长周期波形在心跳间隙内不得被误判熄灭。</p>
+     *
+     * @param period 波形周期（tick）
+     */
+    public static long aliveWindow(int period) {
+        long w = (long) Math.max(32, period) * 2L;
+        return Math.min(1200, Math.max(32, w));
+    }
+
+    /**
      * 调谐效率 = (1 + cos θ) / 2，θ = (tick误差 / 偏好周期) × 2π。
      *
      * <p>完美匹配 → 1，完全反相 → 0；结果 clamp [0,1]。

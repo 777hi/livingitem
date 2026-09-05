@@ -1,6 +1,8 @@
 package com.qiqi.li.living.domain.power;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import com.qiqi.li.living.domain.power.LivingWaxedCopperFunction.SignalTracker;
 
@@ -48,6 +50,15 @@ public class ContainerPowerData {
     private final Map<Long, SignalTracker> edgeTrackers = new HashMap<>();
 
     /**
+     * 派生相位注册表：slot → 该槽位相位元件的驻波条目（跨 tick 持久，v19 相位解读三元件）。
+     *
+     * <p>注入：电力层 BFS 访问到该槽位时，{@code now ≡ offset (mod period)} 的驻波
+     * 视为上升沿注入通道；解读：三形态元件每 tick 重算自己的条目（读上一 tick 的
+     * 全表——两阶段提交，无槽位处理顺序依赖）。失活驻波由 {@link #pruneRegistry} 修剪。</p>
+     */
+    private final Map<Integer, List<DerivedPhase>> phaseRegistry = new HashMap<>();
+
+    /**
      * 各锈蚟级的**基础**出力 EMA（共振 + 锈级功率读数共用，见 living-power-tech.md §3.7）。
      *
      * <p>⚠️ 只跟踪共振前的基础出力。若喂入乘过共振增益的值，会形成
@@ -82,6 +93,44 @@ public class ContainerPowerData {
     /** 获取或创建铜块网络边信号跟踪器 */
     public SignalTracker getOrCreateEdgeTracker(long edgeKey) {
         return edgeTrackers.computeIfAbsent(edgeKey, k -> new SignalTracker());
+    }
+
+    /** 只读获取边信号跟踪器（无则 null——派生解读的活性查询用，不造空条目） */
+    public SignalTracker getEdgeTracker(long edgeKey) {
+        return edgeTrackers.get(edgeKey);
+    }
+
+    // ── 派生相位注册表（v19 相位解读三元件）──
+
+    /** 读某槽位的注册表驻波条目（无则空列表） */
+    public List<DerivedPhase> getRegistry(int slot) {
+        return phaseRegistry.getOrDefault(slot, List.of());
+    }
+
+    /** 覆写某槽位的注册表驻波条目（空列表 = 清除） */
+    public void setRegistry(int slot, List<DerivedPhase> entries) {
+        if (entries == null || entries.isEmpty()) phaseRegistry.remove(slot);
+        else phaseRegistry.put(slot, entries);
+    }
+
+    /**
+     * 全表修剪：清除超过存活窗口未再派生的驻波。
+     *
+     * <p>输入源停跳（或元件被替换成非相位元件）后，其派生驻波若不修剪，
+     * 会经由注入持续刷新域内偏移的 lastSeenTick → 域永不超时 → 死源长期发电。
+     * 存活窗口与域超时同口径（{@link PowerMath#aliveWindow}）。</p>
+     */
+    public void pruneRegistry(long now) {
+        var it = phaseRegistry.entrySet().iterator();
+        while (it.hasNext()) {
+            var e = it.next();
+            List<DerivedPhase> kept = new ArrayList<>(e.getValue().size());
+            for (DerivedPhase dp : e.getValue()) {
+                if (now - dp.updatedTick() <= PowerMath.aliveWindow(dp.period())) kept.add(dp);
+            }
+            if (kept.isEmpty()) it.remove();
+            else e.setValue(kept);
+        }
     }
 
     /** 当前内部 tick 计数（事件时间戳用） */

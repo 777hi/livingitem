@@ -2,7 +2,7 @@
 
 # Living Redstone (活红石) 技术文档
 
-> **文档版本**: 2026.09 v18
+> **文档版本**: 2026.09 v19
 > **最后更新**: 2026-09-05
 > **适用版本**: Minecraft 1.21.1
 
@@ -240,7 +240,7 @@ edgeIndex(Pos2D) → 将 Pos2D 方向转为边索引
 | `anyOfSlot(slot)` | 任一出边 > 0 |
 | `zero()` | 清零所有出边 |
 
-> **读输入一律走 `inputAt`**：所有「读某槽某方向受到的信号」都收敛到 `inputAt/maxInputOfSlot/anyInputOfSlot` 抽象助手（§3.2.1.1），内部在旧模型下 `inputAt ≡ get(slot,dir)`，新模型下 `inputAt = get(neighbor,oppositeDir(dir))`。无线/电力层通过 `getEdgeValue(slot,dir)` 读到的也是**本槽出边**，重构后值更纯净（不再混入邻居反向写回）。
+> **读输入一律走 `inputAt`**：所有「读某槽某方向受到的信号」都收敛到 `inputAt/maxInputOfSlot/anyInputOfSlot` 抽象助手（§3.2.1.1），旧模型下 `inputAt ≡ get(slot,dir)`，新模型下 `inputAt = get(neighbor,oppositeDir(dir))`。电力层（涂蜡铜块发电机）通过 `getIncomingEdgeValue(slot,dir)` 读取的也是**入边**（邻居朝本槽的出边）——涂蜡槽是绝缘体，信号层从不为其写边，读自己的出边恒为 0（2026-09-05 修复的 v15 回归：电力层失去全部信号源）；边界外入边返回 0，涂蜡块不感应容器外红石（外部信号走 `faceInput`，从不写入 edgeGrid，与旧版行为一致）。
 
 ### 2.4 LivingButtonData — 活按钮物品数据
 
@@ -566,7 +566,6 @@ while queue not empty:
 phase4PowerConductors(torchSlots, buttonSlots, leverSlots,
     repeaterSlots, comparatorSlots, dustSlots, redstoneBlockSlots, ...):
 
-  allRedstone = 所有红石组件槽位的并集（用于排除红石组件自身）
   secondQueue = 空队列
 
   # 红石粉：按 connections 方向输出，衰减后信号
@@ -577,8 +576,6 @@ phase4PowerConductors(torchSlots, buttonSlots, leverSlots,
     conn = LivingItemManager.getRedstoneData(stack).connections()
     for 4 方向 dir：
       if conn 中 dir 无连接 → continue
-      neighbor = resolveSlot(slot, dir)
-      if neighbor < 0 || allRedstone.contains(neighbor) → continue
       powerConductiveNeighbor(slot, output, dir, secondQueue)
 
   # 火把：除输入方向外全方向输出
@@ -639,6 +636,10 @@ phase4PowerConductors(torchSlots, buttonSlots, leverSlots,
           edgeGrid.set(neighbor, inputEdge, signal)
       return
 
+    # 活铜格栅（加法器）与活铜灯（信号记忆）：不是导线，跳过强充能
+    # 它们有独立的功能逻辑（phase1/phase3），不应被强充能穿透。
+    if neighbor 是活铜格栅 或 活铜灯 → return
+
     # 导电方块 / 基础铜块（导线）：全部 4 边充能
     if neighbor 不是基础铜块 且 不是导电方块 → return
     for d2 in 0..3:
@@ -671,6 +672,7 @@ private static boolean isConductiveBlock(ItemStack stack) {
 - 普通导电方块（原版 `isRedstoneConductor` 为 true 的活物品）：信号写入该方块的**全部 4 条边**，不衰减，模拟方块被强充能后向四周输出
 - **红石粉不是导电方块**：不充能其全部 4 条边。仅设粉朝向源的那条边（输入边，`oppositeDir(dir)`），然后入队让 phase2Propagation 重新处理。phase2 中因 `output <= 输入边` 而跳过输入边，但出边会被正确设为衰减值，下游粉读到正确的衰减信号
 - **雕纹铜块（二极管）与切制铜块（立交桥）不是导电方块**：仅设输入边，不入队。方向性由 phase4 铜块处理决定。设置全部 4 条边会破坏方向性——雕纹铜块只应从输入方向接收信号，切制铜块的水平/垂直通道应分离
+- **活铜格栅（加法器）与活铜灯（信号记忆）不是导线**：直接跳过强充能。它们有独立的功能逻辑（格栅的加法器求和、铜灯的信号记录），不应被强充能穿透
 
 | 信号源 | 输出方向 | 信号值 |
 |--------|---------|--------|

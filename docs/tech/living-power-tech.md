@@ -2,10 +2,10 @@
 
 # Living Power (活涂蜡铜块 · 红电发电) 技术文档
 
-> **文档版本**: v4.4（v18：铜灯锈级专属通道 + 锈级纯度增益归属 + 拆容器总账 EMA；术语「声部」→「锈级」）
+> **文档版本**: v5.0（v19：记账跳变门控 + 相位解读三元件——雕文移相 / 切制裂相 / 格栅加法；拓扑统一至锈级单维度；切制 H/V 双通道退役）
 > **最后更新**: 2026-09-05
 > **适用版本**: Minecraft 1.21.1
-> **规划文档**: [红电系统.md](../红电系统.md)（v18，公式 v3）
+> **规划文档**: [红电系统.md](../红电系统.md)（v19，公式 v3）
 
 ## 目录
 1. [架构概览](#1-架构概览)
@@ -157,8 +157,8 @@ processContext() 每 game tick：
      - 四个方向（上下左右）检查同氧化等级铜块
      - 铜灯（泡）不导电，跳过
      - 非铜块物品跳过
-  ③ 锚点对遍历到的每个铜块槽位，检查 4 条边：
-     - 读 edgeGrid[slot][dir] vs prevEdgeGrid[slot][dir]
+  ③ 锚点对遍历到的每个铜块槽位，检查 4 条边（**入边**，见 §5）：
+     - 读 getIncomingEdgeValue(slot, dir) vs getPrevIncomingEdgeValue(slot, dir)
      - 信号无变化 → 跳过
      - 上升沿（delta > 0）→ SignalTracker.onRisingEdge()
      - 周期已知 → PhaseEvent → ChannelState.onPhaseEvent()
@@ -272,22 +272,31 @@ tick + 网络不同位置边各自采样），`PhaseDomain` 去重后即得 n=7 
 - 铜灯（泡）**不参与网络传播**，仅作为储能
 - 涂蜡铜块雕刻/切制/格栅按相同氧化等级计入网络
 
-### 3.6 能量入账（每 tick 每发电机一次）
+### 3.6 能量入账（跳变门控，v19）
 
 ```
-每 tick 末，每台发电机从最佳域取合因子：
-  factor = channel.bestFactor(pref)
-  period = channel.bestPeriod(pref)
-  if factor > 0 && period > 0:
-    re = PowerMath.eventEnergyRe(factor, period)
-    powerData.onEventEnergy(re)
-    baseReByOx[发电机锈级] += re          // v18：按锈级累加，共振与直存的分账基础
+每 tick 末，每台发电机从「本 tick 有跳变」的最佳域取合因子：
+  active = channel.bestActiveDomain(pref, now)     // 只在本 tick 有跳变的域中选（n 最大、同 n 周期最近）
+  if active == null: 产出 0（域活着但本 tick 无上升沿 → 不入账）
+  factor = channel.factorOf(active, pref)
+  re = PowerMath.eventEnergyRe(factor, active.period()) × active.jumpCount(now)
+  powerData.onEventEnergy(re)
+  baseReByOx[发电机锈级] += re                     // 按锈级累加，共振与直存的分账基础
 ```
 
-- 每 tick 每发电机只入账一次（从最佳域取）
-- 最佳域 = 合因子最大的域（自然选择最优周期）
-- 能量累加到 `ContainerPowerData` 的总账（EMA 读数口径）+ 按锈级的 `baseReByOx`；
-  tick 末共振增益按锈级套用后，逐锈级分配入同色铜灯（§3.7 / 锈级专属通道）
+- **跳变门控（v19）**：记账回归「跳变即能量事件」——能量 = 合因子 × P × 本 tick
+  跳变路数（跳变按 offset 去重，同一振荡器被两条边看到只算 1 跳）。
+  修复旧「每 tick 无条件入账合因子×P」的两个问题：
+  1. **频率中性化反转**：旧口径下平均功率 = 合因子×P，随周期线性增长——慢时钟
+     无代价碾压快时钟（整数倍谐波调谐效率恰为 1.0，可无限放大，4t 与 68t 差 17 倍）；
+     门控后 4t 跳 3 次 × (F×4) = 12t 跳 1 次 × (F×12)，中性化恢复。
+  2. **停机虚能量**：域存活窗口（max(32, 2×P) tick）内照常白拿——门控后停机即停。
+- 域的历史状态（n / eff_δ_sum）仍反映全部存活相位，门控只决定「本 tick 有没有
+  真实跳变可入账」，不改变域的质量评估口径。
+- 只记上升沿（下降沿由裂相器单独解读，见 §3.9）：文档旧「每周期跳 2 次」的 ×2
+  常数按此折半，由 K=1/16 吸收。
+- tick 末共振增益按锈级套用后，逐锈级分配入同色铜灯（§3.7 / 锈级专属通道）。
+- EMA 读数随门控变为脉冲推进（事件 tick 抬升、间隔衰减），对外经遥测量化展示。
 
 ### 3.7 网络级共振（不同锈蚟级之间的「和声」）
 
@@ -407,6 +416,37 @@ tick + 网络不同位置边各自采样），`PhaseDomain` 去重后即得 n=7 
 
 ---
 
+### 3.8 相位解读三元件（v19：雕文移相 / 切制裂相 / 格栅加法）
+
+**普通铜块发电机的基准约束：单通道、每 tick 只从「本 tick 有跳变」的最佳域入账。**
+三形态各自「解读」输入信号、派生新相位贡献给网络——每个派生相位占一个真实元件
+槽位（「每条相线真实建造」演化为「每个派生相位真实占用」），n ≤ P 与解锁度公式
+不动，无数值倍率。
+
+| 形态 | 解读的是什么 | 规则 | 玩法 |
+|---|---|---|---|
+| **雕文 = 移相器** | 信号的「位置」 | 对输入方向上的每路锁相波形 (P, φ, δ)（真实边 + 输入方向邻居的注册表驻波），派生 (P, (φ+1) mod P, δ) | k 台首尾相连 = 任意偏移延迟线，**解锁奇数偏移制造**（中继器延迟全是偶数 tick） |
+| **切制 = 裂相器** | 信号的「另一半」 | 每条边的下降沿波形（独立跟踪器）直接登记为派生相位 (P, φ_f, \|Δ\|) | 一个方波贡献 2 个反相相位；P=2 时钟 + 1 台切制 → n=2 满相 |
+| **格栅 = 相位加法器** | 信号间的「关系」 | 汇集 4 条边的真实锁相波形按周期分桶，对 ≥2 路的桶派生 (P, Σφᵢ mod P, min δᵢ) | 多路相位合并出新相位；去重诚实（和撞已有相位不虚增 n） |
+
+**基建（派生相位注册表）**：
+
+- `ContainerPowerData.phaseRegistry`：slot → `List<DerivedPhase(period, offset, delta, kind, updatedTick)>`，跨 tick 持久；
+- **注入**：BFS 访问到槽位时，`now ≡ offset (mod P)` 的驻波视为上升沿注入通道——与真实采样同权、走同一套跳变门控与 offset 去重；
+- **两阶段提交**：解读先写草稿、统一写回——读取的邻居注册表一律是上一 tick 状态，无槽位处理顺序依赖；
+- **活性**：输入源停跳超过 `PowerMath.aliveWindow`（= 域超时口径 max(32, 2×P) 夹 [32,1200]）→ 解读停止 → 驻波经 `pruneRegistry` 修剪——死源不发电；
+- **防环（结构性，无检测代码）**：组合只经移相链（雕文读输入方向邻居）；加法器只读自己的真实边、裂相器无外部输入。移相环的每个成员的输入边都是蜡-蜡死边（无种子）→ 注册表恒空、环自熄——不存在「互读导致偏移自增跑满」的通路。
+
+**拓扑统一（v19）**：网络连通性唯一维度 = 氧化等级（`TopoKey` 的 axis/inEdge/outEdge
+全部退役，切制 H/V 双通道拆除）——三形态的个性全部迁移到「解读规则」上，
+基座铜块退役为纯基准（只会「读」不会「造」）。
+
+**测试**：`AccountingGateTest`（4 项：无跳变零产出、停机冻结、offset 去重、4t vs 12t
+中性化）+ `PhaseInterpretationTest`（8 项：移相/移相链/环自熄/死源熄灭/裂相/加法/
+去重诚实）。
+
+---
+
 ## 4. 记账模型（RE / FE）
 
 | 单位 | 用途 | 特点 |
@@ -421,9 +461,16 @@ tick + 网络不同位置边各自采样），`PhaseDomain` 去重后即得 n=7 
 
 ## 5. 与红石系统的集成
 
-- 铜块网络传播依赖 `ContainerRedstoneData` 的逐方向访问器 `getEdgeValue(slot, dir)` /
-  `getPrevEdgeValue(slot, dir)` 与 `EDGE_COUNT = 4`；
-- 信号源写边**无条件**（涂蜡槽位天然可采样），传播层零改动；
+- 铜块网络传播依赖 `ContainerRedstoneData` 的电力层访问器 `getIncomingEdgeValue(slot, dir)` /
+  `getPrevIncomingEdgeValue(slot, dir)` 与 `EDGE_COUNT = 4`；
+  **入边语义（v15 适配）**：边归发出方所有，涂蜡槽（绝缘，信号层从不为其写边）读
+  「dir 方向邻居朝本槽发出的出边」——与旧共享边模型下 `getEdgeValue(涂蜡槽)` 的可采信号
+  精确等价。读自己的出边在新模型下恒为 0（2026-09-05 修复的回归根因）；
+- 边界外（涂蜡块贴容器边）入边返回 0，与旧版一致——外部世界信号走 `faceInput`，从不写入
+  edgeGrid，涂蜡块不感应容器外红石（保持旧行为）；
+- 信号源写边**无条件**（涂蜡槽位天然可采样——源直接写自己的出边朝向涂蜡槽），传播层零改动；
+- 稳态跳过路径：`calculate` 跳过时把 `edgeGrid` 按值同步进 `prevEdgeGrid`（跳过承诺
+  「结果与上 tick 一致」），否则跳过 tick 会把陈旧 prev 误判为新上升沿、压碎周期估计；
 - 发电机按网络组件遍历只读边信号（锚点 BFS + 其余 copyFrom 共享），不写任何信号；
 - 遥测写回节流（量化降脏化）：仪表盘 `LivingWaxedGeneratorData` 写回前，对共振增益 `resonanceGain` / 平衡度 `resonanceBalance` / 域快照 `effDeltaSum` 三个 EMA 类 double 量化到 3 位有效数字（`PowerMath.quantize`）。稳态下这些读数被「钉」在固定值 → `equals` 变 true → 跳过脏写，复用现有 `dirtySlots` 批处理，不另造轮子。针对服务器场景（多发电容器同时被打开 × 多玩家）降低每 tick 同步量。
 - 容器级缓存完整镜像红石协议：`ContainerLivingItemHandler.CONTAINER_DATA`（`Map<String, ContainerEntry>`，嵌套 `power` 字段）+
@@ -437,6 +484,14 @@ tick + 网络不同位置边各自采样），`PhaseDomain` 去重后即得 n=7 
 |---|---|---|
 | `PowerMathTest` | 5 | 调谐效率曲线、合因子计算、√|Δ| 求和、K 换算 |
 | `ContainerPowerDataTest` | 6+ | 单路锁相、三相 6t 部分解锁、五相 5t 满相、杂讯排除、同相合并、EMA 账本 |
+| `AccountingGateTest` | 4 | **v19 跳变门控**：无跳变 tick 零产出、停机冻结、offset 去重、4t vs 12t 谐波中性化 |
+| `PhaseInterpretationTest` | 8 | **v19 相位解读三元件**：移相、移相链（奇数偏移）、移相环自熄、死源熄灭、裂相、加法求和、去重诚实 |
+| `ChannelStateTest` | 5 | 偏移活性剪枝（拆振荡器 n 回落）、稳态不误剪、长周期跨心跳存活 |
+| `CoilGroupingTest` | 5 | 形态识别 + 单通道状态机 |
+| `NetworkTraversalTest` | 6 | copyFrom 深拷贝、同组件共享历史、能量可加、锈级隔离、E2E 真实传播 |
+| `NetworkResonanceTest` | 18 | 网络级共振（含回代安全、上界、EMA 衰减） |
+| `WaxedCopperCouplingIT` | 3 | 多跳耦合链集成 |
+| `WaxedCopperOscillatorIT` | 5 | 振荡器→发电全链路 |
 | `WaxedCopperStorageTest` | 16 | 发电直存分配、无铜灯弃、满溢、模组容器取电、充电、容量 clamp、超取、取消活化排除、EMA 功率 |
 | `BulbItemEnergyStorageTest` | 6 | 双向充放、容量 clamp、simulate、拆分守恒、线性读数 |
 
@@ -449,12 +504,13 @@ tick + 网络不同位置边各自采样），`PhaseDomain` 去重后即得 n=7 
 
 | 规划步骤 | 状态 | 说明 |
 |---|---|---|
-| Step 7 记账（事件 + RE + EMA） | ✅ | `ContainerPowerData` |
-| Step 8 铜块网络传播 | ✅ | 按网络组件遍历（锚点 BFS + 其余 copyFrom），边信号检测 |
+| Step 7 记账（事件 + RE + EMA） | ✅ | `ContainerPowerData`；**v19 跳变门控**（§3.6） |
+| Step 8 铜块网络传播 | ✅ | 按网络组件遍历（锚点 BFS + 其余 copyFrom），边信号检测；**v19 拓扑统一至锈级单维度** |
 | Step 9 相位域合因子 | ✅ | √|Δ| 求和、域内去重 n、调谐解锁 |
 | Step 10 氧化等级网络隔离 | ✅ | 新鲜/暴露/锈蚀/氧化互不连通 |
 | Step 11 铜灯储能 | ✅ | 发电直存 + 按盏电量 DataComponent（无池） |
 | Step 11.5 锈级专属通道 | 📝 设计定稿（v18） | k 锈级灯只收 k 锈级发电（含增益），实现待做 |
+| **v19 相位解读三元件** | ✅ | 雕文移相 / 切制裂相 / 格栅加法 + 派生相位注册表（§3.8） |
 | Step 12 IEnergyStorage | ✅（技术验证通过） | 原版容器 BE 注册，游戏内待实测 |
 | Step 13 活避雷针 | ⏳ 阶段四后 | 供需分配 |
 | Tooltip 仪表盘 | ✅ | `LivingWaxedGeneratorData` 检测值写回 + 槽位同步 + 双语渲染 |

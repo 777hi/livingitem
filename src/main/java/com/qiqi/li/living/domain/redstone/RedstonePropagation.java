@@ -24,6 +24,8 @@ class RedstonePropagation {
     private static final int E_LEFT = ContainerRedstoneData.EDGE_LEFT;
     private static final int E_RIGHT = ContainerRedstoneData.EDGE_RIGHT;
     private static final Pos2D[] DIR_POS = {Pos2D.UP, Pos2D.DOWN, Pos2D.LEFT, Pos2D.RIGHT};
+    private static final int[] PERP_VER = {E_LEFT, E_RIGHT};
+    private static final int[] PERP_HOR = {E_UP, E_DOWN};
 
     // ── 传播状态引用（由构造器注入，与 ContainerRedstoneData 共享同一可变实例）──
     private final ContainerRedstoneData.EdgeGrid edgeGrid;
@@ -700,6 +702,10 @@ class RedstonePropagation {
             return;
         }
 
+        // ── 活铜格栅（加法器）与活铜灯（信号记忆）：不是导线，跳过强充能 ──
+        // 它们有独立的功能逻辑（phase1/phase3），不应被强充能穿透。
+        if (is(neighbor, ContainerRedstoneData.BIT_GRATE | ContainerRedstoneData.BIT_BULB)) return;
+
         // ── 导电方块 / 基础铜块（导线）：全部 4 边充能 ──
         if (!is(neighbor, ContainerRedstoneData.BIT_COPPER)
             && !ContainerRedstoneData.isConductiveBlock(nStack)) return;
@@ -717,7 +723,7 @@ class RedstonePropagation {
 
     private boolean checkRepeaterLocked(int slot, LivingRepeaterData data) {
         boolean isVertical = data.direction().equals(Pos2D.UP) || data.direction().equals(Pos2D.DOWN);
-        int[] perpDirs = isVertical ? new int[]{E_LEFT, E_RIGHT} : new int[]{E_UP, E_DOWN};
+        int[] perpDirs = isVertical ? PERP_VER : PERP_HOR;
 
         for (int perpDir : perpDirs) {
             int neighbor = ContainerContext.resolveNeighbor(slot, perpDir, size, width);
@@ -761,18 +767,18 @@ class RedstonePropagation {
         }
 
         if (conn != 0) {
-            boolean hasUp = (conn & 1) != 0;
-            boolean hasDown = (conn & 2) != 0;
-            boolean hasLeft = (conn & 4) != 0;
-            boolean hasRight = (conn & 8) != 0;
+            boolean hasUp = (conn & LivingRedstoneData.CONN_UP) != 0;
+            boolean hasDown = (conn & LivingRedstoneData.CONN_DOWN) != 0;
+            boolean hasLeft = (conn & LivingRedstoneData.CONN_LEFT) != 0;
+            boolean hasRight = (conn & LivingRedstoneData.CONN_RIGHT) != 0;
 
             boolean noVertical = !hasUp && !hasDown;
             boolean noHorizontal = !hasLeft && !hasRight;
 
-            if (!hasLeft && noVertical) conn |= 4;
-            if (!hasRight && noVertical) conn |= 8;
-            if (!hasUp && noHorizontal) conn |= 1;
-            if (!hasDown && noHorizontal) conn |= 2;
+            if (!hasLeft && noVertical) conn |= LivingRedstoneData.CONN_LEFT;
+            if (!hasRight && noVertical) conn |= LivingRedstoneData.CONN_RIGHT;
+            if (!hasUp && noHorizontal) conn |= LivingRedstoneData.CONN_UP;
+            if (!hasDown && noHorizontal) conn |= LivingRedstoneData.CONN_DOWN;
         }
 
         return conn;
@@ -912,11 +918,7 @@ class RedstonePropagation {
     }
 
     static int[] perpendicularEdges(int dir) {
-        if (dir == E_UP || dir == E_DOWN) {
-            return new int[] {E_LEFT, E_RIGHT};
-        } else {
-            return new int[] {E_UP, E_DOWN};
-        }
+        return (dir == E_UP || dir == E_DOWN) ? PERP_VER : PERP_HOR;
     }
 
     static Pos2D requiredDir(int perpDir) {

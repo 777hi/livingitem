@@ -2,6 +2,7 @@ package com.qiqi.li.living.domain.power;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -19,7 +20,11 @@ import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.SimpleContainerContext;
 import com.qiqi.li.living.container.TickContext;
+import com.qiqi.li.living.container.ContainerSnapshot;
 import com.qiqi.li.living.domain.redstone.ContainerRedstoneData;
+import com.qiqi.li.living.domain.redstone.LivingLeverFunction;
+import com.qiqi.li.living.domain.redstone.LivingRedstoneBlockFunction;
+import com.qiqi.li.living.domain.redstone.RedstoneSnapshotProvider;
 import com.qiqi.li.living.domain.runtime.ContainerRuntimeCache;
 import com.qiqi.li.living.domain.runtime.LivingItemRuntimeData;
 import com.qiqi.li.living.domain.power.PhaseEvent;
@@ -105,15 +110,17 @@ class NetworkTraversalTest {
         }
 
         // 注入边所在槽：BFS 会从锚点(槽 0)出发访问到该槽并检测到上升沿。
-        // 单机 → 槽 0 自身；双机 → 槽 1（锚点遍历到邻居时访问）。
+        // 入边语义（v15 每槽自有出边）：写入「邻居朝该槽发出的出边」——
+        // 注入 slot 沿 RIGHT 的邻居的 LEFT 出边（9×1 单行网格，UP/DOWN 无邻居）。
+        // 单机 → 槽 0（邻居=槽 1）；双机 → 槽 1（邻居=槽 2，空槽亦可承载出边）。
         int edgeSlot = numGens == 1 ? 0 : 1;
-        int edgeDir = ContainerRedstoneData.EDGE_UP;
+        int edgeDir = ContainerRedstoneData.EDGE_RIGHT;
 
         for (int t = 0; t <= ticks; t++) {
             int v = (Math.floorMod(t, PERIOD) < PERIOD / 2) ? HIGH : 0;
             int pv = (Math.floorMod(t - 1, PERIOD) < PERIOD / 2) ? HIGH : 0;
-            redstone.setPrevEdgeForTest(edgeSlot, edgeDir, pv);
-            redstone.setEdgeForTest(edgeSlot, edgeDir, v);
+            redstone.setPrevIncomingEdgeForTest(edgeSlot, edgeDir, pv);
+            redstone.setIncomingEdgeForTest(edgeSlot, edgeDir, v);
 
             TickContext tick = new TickContext(ctx);
             function.tickContainerData(entries, ctx, tick);
@@ -226,12 +233,13 @@ class NetworkTraversalTest {
         entries.add(new LivingItemFunction.SlotEntry(1, slots[1]));
 
         // 只在槽 0（新鲜铜）注入上升沿：氧化铜(槽 1)应完全收不到
-        int edgeDir = ContainerRedstoneData.EDGE_UP;
+        // 入边语义：写槽 0 的右邻居(槽 1)朝槽 0 的 LEFT 出边（9×1 网格无 UP/DOWN 邻居）
+        int edgeDir = ContainerRedstoneData.EDGE_RIGHT;
         for (int t = 0; t <= 40; t++) {
             int v = (Math.floorMod(t, PERIOD) < PERIOD / 2) ? HIGH : 0;
             int pv = (Math.floorMod(t - 1, PERIOD) < PERIOD / 2) ? HIGH : 0;
-            redstone.setPrevEdgeForTest(0, edgeDir, pv);
-            redstone.setEdgeForTest(0, edgeDir, v);
+            redstone.setPrevIncomingEdgeForTest(0, edgeDir, pv);
+            redstone.setIncomingEdgeForTest(0, edgeDir, v);
 
             TickContext tick = new TickContext(ctx);
             function.tickContainerData(entries, ctx, tick);
@@ -268,16 +276,17 @@ class NetworkTraversalTest {
         entries.add(new LivingItemFunction.SlotEntry(0, slots[0]));
         entries.add(new LivingItemFunction.SlotEntry(1, slots[1]));
 
-        int dir = ContainerRedstoneData.EDGE_UP;
+        int dir = ContainerRedstoneData.EDGE_RIGHT;
         TickContext lastTick = null;
         // 跑足够多 tick 让共振 EMA 完全收敛（EMA_ALPHA=0.125，~40 tick 到 99%；跑 100 保险）
         for (int t = 0; t <= 100; t++) {
             int v = (Math.floorMod(t, PERIOD) < PERIOD / 2) ? HIGH : 0;
             int pv = (Math.floorMod(t - 1, PERIOD) < PERIOD / 2) ? HIGH : 0;
-            redstone.setPrevEdgeForTest(0, dir, pv);
-            redstone.setEdgeForTest(0, dir, v);
-            redstone.setPrevEdgeForTest(1, dir, pv);
-            redstone.setEdgeForTest(1, dir, v);
+            redstone.setPrevIncomingEdgeForTest(0, dir, pv);
+            redstone.setIncomingEdgeForTest(0, dir, v);
+            // 槽 1 的右邻居（槽 2）朝槽 1 的 LEFT 出边
+            redstone.setPrevIncomingEdgeForTest(1, dir, pv);
+            redstone.setIncomingEdgeForTest(1, dir, v);
 
             TickContext tick = new TickContext(ctx);
             function.tickContainerData(entries, ctx, tick);
@@ -297,5 +306,69 @@ class NetworkTraversalTest {
             "稳态下锈级 0 槽位不应每 tick 脏写：dirtySlots=" + lastTick.dirtySlots);
         assertFalse(lastTick.dirtySlots.contains(1),
             "稳态下锈级 3 槽位不应每 tick 脏写：dirtySlots=" + lastTick.dirtySlots);
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // 6) 端到端回归：真实传播 calculate → 电力采样（v15 边模型回归守卫）
+    // ════════════════════════════════════════════════════════════════
+    //
+    // 背景：v15 把 EdgeGrid 从共享边改为「每槽自有出边」后，涂蜡槽（绝缘，信号层
+    // 从不为其写边）读自己的出边永远为 0，电力层彻底失去信号——而现有测试全部经
+    // setIncomingEdgeForTest 直接注入边，恰好绕过真实传播，回归未被抓住。本测试
+    // 不注入任何边，走「红石 calculate 真实传播 → 电力层逐方向采样」全链路。
+    //
+    // 场景：拉杆振荡器（4t 方波：ON 2 tick → OFF 2 tick，上升沿间隔 4t）与
+    // 涂蜡铜块发电机相邻，中间无红石粉——拉杆作为信号源直接写自己的出边
+    // （朝涂蜡槽方向），电力层采样涂蜡槽的入边应能检测到 4t 周期上升沿并发电。
+    // 稳态跳过路径同样被覆盖：拉杆 OFF/ON 持续期间 calculate 会进入跳过分支，
+    // 验证 prevEdgeGrid 同步修复（否则跳过 tick 重复产生假上升沿压碎周期估计）。
+
+    @Test
+    @DisplayName("E2E：拉杆振荡器 → 真实传播 → 涂蜡发电机锁相 4t 并发电")
+    void endToEnd_realPropagation_powersGenerator() {
+        // 网格 9×1：槽 0 拉杆（振荡器），槽 1 涂蜡铜块发电机（pref=4）
+        ItemStack[] slots = new ItemStack[SIZE];
+        ItemStack lever = living(Items.LEVER, 1);
+        ItemStack genStack = living(Items.WAXED_COPPER_BLOCK, 4);
+        slots[0] = lever;
+        slots[1] = genStack;
+        IItemHandler handler = new FakeHandler(slots);
+        SimpleContainerContext ctx = new SimpleContainerContext(handler, new ArrayList<>(), new ArrayList<>());
+        ContainerRedstoneData redstone = ctx.getOrCreateRedstoneData();
+
+        // 电力层 entries（发电机）
+        List<LivingItemFunction.SlotEntry> entries = new ArrayList<>();
+        entries.add(new LivingItemFunction.SlotEntry(1, genStack));
+
+        // 红石功能槽位（拉杆；涂蜡铜块是绝缘体不参与信号层，无需注册）
+        var leverSlots = java.util.Set.of(0);
+        // 快照贡献者按类去重，重复注册安全
+        ContainerSnapshot.registerProvider(new RedstoneSnapshotProvider());
+
+        int TOTAL = 48;   // 4t 周期 × 12 个完整周期
+        for (int t = 0; t < TOTAL; t++) {
+            // 振荡器：4t 方波（ON 2t → OFF 2t），上升沿间隔 4t
+            boolean powered = (Math.floorMod(t, 4) < 2);
+            LivingItemManager.setLeverData(lever, new com.qiqi.li.living.domain.redstone.LivingLeverData(powered));
+            // 生产契约：DataComponent 就地变更必须 bump 修订计数，否则稳态跳过判定失明
+            ctx.syncSlotToClients(0, lever);
+
+            // ① 信号层：真实传播（calculate 全链路：源写边 + 双缓冲 + 稳态跳过判定）
+            TickContext tick = new TickContext(ctx);
+            tick.setFunctionSlots(java.util.Map.of(LivingLeverFunction.ID, leverSlots));
+            redstone.resetProcessedFlag();
+            redstone.calculate(ctx, tick);
+
+            // ② 电力层：采样涂蜡槽入边（真实 edgeGrid，无任何测试注入）
+            function.tickContainerData(entries, ctx, tick);
+        }
+
+        ContainerPowerData power = ctx.getOrCreatePowerData();
+        GeneratorState gen = power.getGenerator(1);
+        assertTrue(gen != null, "应有发电机状态");
+        assertEquals(4, gen.channel().bestPeriod(4), "发电机应锁相 4t（拉杆方波上升沿间隔）");
+        assertEquals(1, gen.channel().bestN(4), "单路信号 n=1");
+        assertTrue(gen.getEmaPowerRe() > 0,
+            "端到端发电量应 > 0（真实传播 + 电力采样全链路），实际=" + gen.getEmaPowerRe());
     }
 }
