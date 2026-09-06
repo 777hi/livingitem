@@ -83,6 +83,14 @@ public class TickContext {
     }
 
     /**
+     * 获取感知端口（v19.1 架构演进 ②）：电力层与跨层消费者读取信号层的唯一接口。
+     * 依赖收窄到接口——edgeGrid 的边模型后续重构只改端口实现。
+     */
+    public com.qiqi.li.living.domain.redstone.RedstoneSensor getSensor(ContainerContext context) {
+        return getOrCreateRedstoneData(context);
+    }
+
+    /**
      * 获取或创建容器红电数据（电力层账本）。
      * 优先从持久化的 {@link SimpleContainerContext} 获取，确保事件状态跨 tick 保持。
      */

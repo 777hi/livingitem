@@ -200,7 +200,7 @@ class WaxedGeneratorFeedChainTest {
             redstone.calculate(ctx, tick);
 
             // 诊断：发电机左向入边（= 粉 11 朝右的出边）是否振荡
-            int incoming = redstone.getIncomingEdgeValue(genSlot,
+            int incoming = redstone.sensedSignal(genSlot,
                 ContainerRedstoneData.EDGE_LEFT);
             if (incoming > 0) sawEdgeHigh = true;
             else sawEdgeLow = true;
@@ -518,7 +518,7 @@ class WaxedGeneratorFeedChainTest {
                 // 注入雕文本体 (13, c.edge) 方向的入边 = 邻居朝雕文的出边
                 redstone.setPrevIncomingEdgeForTest(13, c.edge(), prev);
                 redstone.setIncomingEdgeForTest(13, c.edge(), cur);
-                int readback = redstone.getIncomingEdgeValue(13, c.edge());
+                int readback = redstone.sensedSignal(13, c.edge());
                 if (readback > 0) sawRising = true;
                 function.tickContainerData(entries(ctx, 13), ctx, tick);
                 if (t >= 8 && !sawRising && c.name().equals("DOWN")) {

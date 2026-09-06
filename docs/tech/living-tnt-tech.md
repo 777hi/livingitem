@@ -173,7 +173,7 @@ public class LivingTntFunction implements LivingItemFunction, HasContainerData {
 
             // 红石信号点火（仅对未点燃的 TNT）
             if (!explosion.ignited()) {
-                int signal = redstoneData.getSlotSignal(slot, size, width);
+                int signal = tick.getSensor(context).maxSensedSignal(slot);
                 if (signal > 0) {
                     explosion = explosion.ignite();
                     LivingItemManager.setTntData(stack, data.withExplosion(explosion));
@@ -189,18 +189,16 @@ public class LivingTntFunction implements LivingItemFunction, HasContainerData {
 }
 ```
 
-**`getSlotSignal()` 方法**：查询槽位有效信号，同时检查边网格内部信号和 `faceInput` 外部输入信号。边界位置的 TNT 可以通过容器面接收外部红石信号。
+**`RedstoneSensor.maxSensedSignal()` 方法（v19.1）**：通过感知端口 `TickContext.getSensor()` 读取槽位**四方向入边**的最大值（= 邻居朝 TNT 发出的出边）。
+
+> **v19.1 语义修正**：v15 出边模型下，TNT 是非红石组件——信号层从不为它写边，旧实现 `maxOfSlot`（读自身出边）恒 0，红石信号点燃永久失效。修正后与电力层涂蜡采样同语义（读邻居出边）。边界（邻居越界）返回 0：TNT 不感应容器外信号。
 
 **红石信号链路**：
 
 ```
 容器内信号源（火把/红石块/红石粉）
   → Phase 1-5 传播 → edgeGrid 边信号
-  → 或 外部信号注入 → faceInput[dir]
-  → getSlotSignal(slot, size, width)
-    ├── edgeGrid.maxOfSlot(slot)  // 内部 4 边最大值
-    ├── 边界位置额外检查 faceInput[dir]  // 外部输入
-    └── 返回 max(内部信号, 外部信号)
+  → RedstoneSensor.maxSensedSignal(slot)  // 四方向入边最大值
   → signal > 0 → explosion.ignite()
   → 同步到客户端
 ```

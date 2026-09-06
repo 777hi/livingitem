@@ -19,7 +19,7 @@ import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.domain.hopper.CrossContainerTransfer;
 import com.qiqi.li.living.model.Pos2D;
 
-public class ContainerRedstoneData {
+public class ContainerRedstoneData implements RedstoneSensor {
 
     // ── 槽位类型位掩码 ──
     // 传播热路径上每格要做十几次「邻居是什么元件」的判定。
@@ -98,7 +98,8 @@ public class ContainerRedstoneData {
      * v15 之后等价语义是读**邻居朝本槽的出边**，即本方法。保持「涂蜡只感应、
      * 不发射」的绝缘铁律，传播层零改动。</p>
      */
-    public int getIncomingEdgeValue(int slot, int dir) {
+    @Override
+    public int sensedSignal(int slot, int dir) {
         if (edgeGrid == null) return 0;
         int neighbor = ContainerContext.resolveNeighbor(
             slot, dir, edgeGrid.width * edgeGrid.height, edgeGrid.width);
@@ -107,7 +108,8 @@ public class ContainerRedstoneData {
     }
 
     /** 电力层专用：读取该槽位上一 tick 从 dir 方向接收到的入边信号 */
-    public int getPrevIncomingEdgeValue(int slot, int dir) {
+    @Override
+    public int prevSensedSignal(int slot, int dir) {
         if (prevEdgeGrid == null) return 0;
         int neighbor = ContainerContext.resolveNeighbor(
             slot, dir, prevEdgeGrid.width * prevEdgeGrid.height, prevEdgeGrid.width);
@@ -154,23 +156,22 @@ public class ContainerRedstoneData {
      * 导致漏斗锁定 / TNT 点燃失效。现改为读**四方向入边**的最大值
      * （= 邻居朝本槽发出的出边），与电力层采样同语义。</p>
      */
-    public int getSignal(int slot) {
-        return maxIncomingSignal(slot);
-    }
-
-    /** 同 {@link #getSignal(int)}（size/width 参数仅为兼容保留，读取用 edgeGrid 自身维度） */
-    public int getSlotSignal(int slot, int size, int width) {
-        return getSignal(slot);
-    }
-
-    /** 四方向入边的最大值（= 邻居朝本槽发出的出边的最大值） */
-    private int maxIncomingSignal(int slot) {
+    /**
+     * 四方向入边最大值（接口 {@link RedstoneSensor#maxSensedSignal} 的实现）。
+     */
+    @Override
+    public int maxSensedSignal(int slot) {
         if (edgeGrid == null) return 0;
         int max = 0;
         for (int dir = 0; dir < EDGE_COUNT; dir++) {
-            max = Math.max(max, getIncomingEdgeValue(slot, dir));
+            max = Math.max(max, sensedSignal(slot, dir));
         }
         return max;
+    }
+
+    /** 便捷别名（既有测试与读取方使用），语义同 {@link #maxSensedSignal}。 */
+    public int getSignal(int slot) {
+        return maxSensedSignal(slot);
     }
 
     private void reset() {

@@ -70,8 +70,7 @@ public class LivingHopperFunction implements LivingItemFunction {
                 ? cached.hopper().slotInfo() : ResolvedSlotData.EMPTY;
             data = data.withTransfer(new TransferData(cooldown)).withSlotInfo(slotInfo);
 
-            ContainerRedstoneData redstoneData = tick.getOrCreateRedstoneData(context);
-            boolean hasRedstoneSignal = redstoneData.getSignal(slot) > 0;
+                boolean hasRedstoneSignal = tick.getSensor(context).maxSensedSignal(slot) > 0;
 
             if (hasRedstoneSignal) {
                 if (!data.disabled()) {

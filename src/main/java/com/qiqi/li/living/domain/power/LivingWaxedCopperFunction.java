@@ -20,6 +20,7 @@ import com.qiqi.li.living.api.HasDirection;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.domain.redstone.ContainerRedstoneData;
+import com.qiqi.li.living.domain.redstone.RedstoneSensor;
 import com.qiqi.li.living.domain.runtime.ContainerRuntimeCache;
 import com.qiqi.li.living.domain.runtime.LivingItemClientCache;
 import com.qiqi.li.living.domain.runtime.LivingItemRuntimeData;
@@ -86,8 +87,8 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         // 锈级共振单位是锈蚟级：同锈蚟级的多个连通块在此自然相加。
         final long[] baseReByOx = new long[PowerMath.OXIDATION_LEVELS];
 
-        ContainerRedstoneData redstone = tick.getOrCreateRedstoneData(ctx);
-        if (redstone == null) {
+        RedstoneSensor sensor = tick.getSensor(ctx);
+        if (sensor == null) {
             // 仍需推进共振 EMA，否则停止发电的锈蚟级不会衰减
             powerData.updateOxidationEma(baseReByOx);
             powerData.endTick();
@@ -147,7 +148,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             for (int s : members) maxPref = Math.max(maxPref, active.get(s).preferredPeriod());
 
             runBfs(anchorSlot, key.oxidation(), shared, anchor.preferredPeriod(),
-                powerData, redstone, ctx, size, containerWidth, now);
+                powerData, sensor, ctx, size, containerWidth, now);
             shared.tickCleanup(now, maxPref);
             for (int i = 1; i < members.size(); i++) {
                 active.get(members.get(i)).channel().copyFrom(shared);
@@ -168,7 +169,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         }
 
         if (DEBUG_SENSING) {
-            debugLogSensing(ctx, redstone, powerData, active, now);
+            debugLogSensing(ctx, sensor, powerData, active, now);
         }
 
         // ── 检测仪表盘写回（运行时缓存，不写入 DataComponent，不影响物品堆叠）──
@@ -254,7 +255,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
      */
     private static void runBfs(
             int genSlot, int oxidation, ChannelState channel, int pref,
-            ContainerPowerData powerData, ContainerRedstoneData redstone,
+            ContainerPowerData powerData, RedstoneSensor sensor,
             ContainerContext ctx, int size, int containerWidth, long now) {
 
         boolean[] visited = new boolean[size];
@@ -274,8 +275,8 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             // = 邻居朝本槽的出边）
             for (int dir = 0; dir < ContainerRedstoneData.EDGE_COUNT; dir++) {
                 if (chiseledInEdge >= 0 && dir != chiseledInEdge) continue;
-                int signal = redstone.getIncomingEdgeValue(current, dir);
-                int prevSignal = redstone.getPrevIncomingEdgeValue(current, dir);
+                int signal = sensor.sensedSignal(current, dir);
+                int prevSignal = sensor.prevSensedSignal(current, dir);
                 if (signal == prevSignal) continue;
                 int delta = signal - prevSignal;
                 int absDelta = Math.abs(delta);
@@ -403,7 +404,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
      * 4 向入边值、各边跟踪器锁相状态、通道最佳域与 EMA——用于在真实游戏里区分
      * 「入边恒 0（信号层没写到涂蜡邻居的出边）」还是「入边振荡但通道不锁相」。
      */
-    private static void debugLogSensing(ContainerContext ctx, ContainerRedstoneData redstone,
+    private static void debugLogSensing(ContainerContext ctx, RedstoneSensor sensor,
             ContainerPowerData powerData, Map<Integer, GeneratorState> active, long now) {
         if (now % 20 != 0) return;
         for (var e : active.entrySet()) {
@@ -411,7 +412,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             GeneratorState gen = e.getValue();
             StringBuilder edges = new StringBuilder();
             for (int dir = 0; dir < ContainerRedstoneData.EDGE_COUNT; dir++) {
-                int v = redstone.getIncomingEdgeValue(slot, dir);
+                int v = sensor.sensedSignal(slot, dir);
                 SignalTracker t = powerData.getEdgeTracker(((long) slot << 2) | dir);
                 edges.append("[dir").append(dir).append("]v=").append(v)
                     .append("/P=").append(t == null ? "-" : String.valueOf(t.period()));

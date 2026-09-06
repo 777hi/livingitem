@@ -49,7 +49,7 @@ public class LivingTntFunction implements LivingItemFunction, HasContainerData {
             ExplosionData explosion = data.explosion();
 
             if (!explosion.ignited()) {
-                int signal = redstoneData.getSlotSignal(slot, size, width);
+                int signal = tick.getSensor(context).maxSensedSignal(slot);
                 if (signal > 0) {
                     explosion = explosion.ignite();
                     LivingItemManager.setTntData(stack, data.withExplosion(explosion));

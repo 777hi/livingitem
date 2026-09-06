@@ -1718,3 +1718,13 @@ LOGGER.info("Cooldown: {} ticks remaining", cooldown);
 - [ ] 活末影箱被移走后，相关路由被清理
 - [ ] 区块卸载时，相关路由被清理
 - [ ] 注册者容器区块卸载时，跨容器路由被清理（→ 12.2 末影箱文档）
+
+---
+
+## 13. 红石信号锁定（v10 → v19.1 语义修正）
+
+**行为**：活漏斗任意一条边收到红石信号 > 0 时被**禁用**（跳过传输和冷却倒计时），tooltip 显示红色警告「⚠ 被红石信号禁用」；信号消失后自动恢复传输。
+
+**读取语义（v19.1 修正）**：`LivingHopperFunction.tick` 通过 `TickContext.getSensor(context).maxSensedSignal(slot)` 读取**四方向入边**的最大值（= 邻居朝漏斗发出的出边）。
+
+> **v15 出边模型回归**：漏斗是非红石组件——信号层从不为它写边，槽位自身出边恒 0。旧实现 `getSignal` 读自身出边（`maxOfSlot`）在 v15 后**恒 0**，红石锁定永久失效（信号源改为「电力层涂蜡采样」同款入边语义后修复）。同款修复同时覆盖活 TNT 的点燃检测（见 [living-tnt-tech.md](living-tnt-tech.md)）。

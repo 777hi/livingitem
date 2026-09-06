@@ -93,6 +93,7 @@ SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 | **GUI交互** | 声明式规则 + 统一拦截 + 创造模式兼容 | [gui-interaction-system.md](docs/system-design/gui-interaction-system.md) |
 | **图标系统** | 三层架构 + 声明式配置 + 上下文切换 | [icon-system.md](docs/system-design/icon-system.md) |
 | **Tooltip 系统** | 双层渲染架构 + 运行时缓存同步 + 显示口径（窗口均值/mFE） | [tooltip-system.md](docs/system-design/tooltip-system.md) |
+| **红电架构演进** | SensorPort 感知端口 + 事件流/元件接口化路线（信号层⇄电力层解耦） | [redstone-evolution-roadmap.md](docs/system-design/redstone-evolution-roadmap.md) |
 | **基础设施** | 容器抽象 + 发现缓存 + SlotAccessor + 性能监控 | [living-item-infrastructure.md](docs/system-design/living-item-infrastructure.md) |
 | **数据模型** | DataComponent 体系 + 新旧架构对比 + 设计决策 | [data-model.md](docs/system-design/data-model.md) |
 | **单元测试** | FML 测试环境配置 + 测试替身 + 可测性边界 | [unit-testing.md](docs/guides/unit-testing.md) |
@@ -200,6 +201,7 @@ src/main/java/com/qiqi/li/
 │   │   ├── LivingRedstoneBlockFunction.java  #     活红石块
 │   │   ├── LivingCopperFunction.java         #     活铜块（锈蚀等级即导通性）
 │   │   ├── RedstonePropagation.java          #     传播算法核心（BFS，逐 tick 全量重算）
+│   │   ├── RedstoneSensor.java               #     感知端口接口（电力层/漏斗/TNT 读信号的唯一入口，v19.1）
 │   │   ├── RedstoneSnapshotProvider.java     #     红石槽位快照提供器
 │   │   ├── LivingRedstoneData.java           #     活红石粉数据
 │   │   ├── LivingRedstoneTorchData.java      #     活红石火把数据
@@ -500,6 +502,9 @@ src/test/java/com/qiqi/li/
 - ✅ 修复：**涂蜡雕文感应方向恒为上方**——`pos2dToEdgeDir` 用引用比较（`== Pos2D.X`），
   而 Pos2D 经组件序列化/反序列化后是值相等的新实例 → 所有配置过的方向全部落入
   fallback 恒 UP（只有上方信号被感应）；改值比较（x/y 判断）根治
+- ✅ 重构：**RedstoneSensor 感知端口**——电力层采样/漏斗锁定/TNT 点燃的信号读取
+  收口到统一接口（依赖收窄到接口，edgeGrid 边模型后续重构只改端口实现）；
+  演进路线（事件流/元件接口化）沉淀至 redstone-evolution-roadmap.md
 - 📄 技术文档：living-power-tech.md §3.8 / 红电系统.md v19.1 修订
 
 **最近更新** (2026-08-30):
@@ -583,7 +588,8 @@ docs/
 │   ├── data-model.md                 #   数据模型与设计决策（DataComponent体系+新旧对比+关键决策）
 │   ├── gui-interaction-system.md     #   GUI交互系统（声明式规则+创造模式兼容）
 │   ├── icon-system.md                #   图标系统（三层架构+声明式配置）
-│   └── tooltip-system.md             #   Tooltip系统（双层渲染+运行时缓存+显示口径）
+│   ├── tooltip-system.md             #   Tooltip系统（双层渲染+运行时缓存+显示口径）
+│   └── redstone-evolution-roadmap.md #   红电架构演进路线（SensorPort+事件流+元件接口化）
 ├── framework-refactoring.md          # 框架重构总结（HasDirection + HasContainerData 接口化设计）
 ├── tech/                             # 各活物品技术文档
 │   ├── living-tnt-tech.md
