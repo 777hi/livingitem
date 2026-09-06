@@ -91,14 +91,14 @@ public record LivingItemSyncPacket(
         ByteBufCodecs.VAR_INT.encode(buf, g.lastDelta());
         ByteBufCodecs.VAR_INT.encode(buf, g.effDeltaSumPermille());
         ByteBufCodecs.VAR_INT.encode(buf, g.coilForm());
-        ByteBufCodecs.VAR_LONG.encode(buf, g.emaPowerFe());
-        ByteBufCodecs.VAR_LONG.encode(buf, g.levelEmaPowerFe());
+        ByteBufCodecs.VAR_LONG.encode(buf, g.emaPowerMilliFe());
+        ByteBufCodecs.VAR_LONG.encode(buf, g.levelEmaPowerMilliFe());
         com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.DomainSnapshot.STREAM_CODEC
             .apply(ByteBufCodecs.list()).encode(regBuf, g.domains());
         ByteBufCodecs.DOUBLE.encode(buf, g.resonanceGain());
         ByteBufCodecs.DOUBLE.encode(buf, g.resonanceBalance());
         ByteBufCodecs.VAR_INT.encode(buf, g.activeLevels());
-        ByteBufCodecs.VAR_LONG.apply(ByteBufCodecs.list()).encode(buf, g.levelPower());
+        ByteBufCodecs.VAR_LONG.apply(ByteBufCodecs.list()).encode(buf, g.levelPowerMilliFe());
     }
 
     private static void encodeHopper(FriendlyByteBuf buf, HopperRuntime h) {

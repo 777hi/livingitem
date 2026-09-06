@@ -25,6 +25,7 @@ import com.qiqi.li.living.domain.runtime.LivingItemClientCache;
 import com.qiqi.li.living.domain.runtime.LivingItemRuntimeData;
 import com.qiqi.li.living.model.Pos2D;
 import com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.DomainSnapshot;
+import com.qiqi.li.logging.ModLog;
 
 /**
  * 活涂蜡铜块 —— 电力层发电机 / 电池（§3.4、§3.5、§3.6）。
@@ -48,6 +49,13 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
 
     /** 遥测快照有效数字位数：EMA 类读数量化到 3 位，稳态下钉死值以降低脏写频率（量化降脏化优化） */
     private static final int TELEMETRY_SIG_FIGS = 3;
+
+    /**
+     * 感应诊断开关（-Dlivingitem.debug.sensing=true 启用）：
+     * 每 20 tick 打印每台发电机的 4 向入边值 / 跟踪器锁相状态 / 通道状态，
+     * 用于定位「游戏内涂蜡发电机不发电」时断点在写边侧还是读侧。
+     */
+    private static final boolean DEBUG_SENSING = Boolean.getBoolean("livingitem.debug.sensing");
 
     @Override
     public boolean canApply(ItemStack stack) {
@@ -159,6 +167,10 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             accountEnergy(gen, gen.channel(), gen.preferredPeriod(), baseReByOx, genOxidation, now);
         }
 
+        if (DEBUG_SENSING) {
+            debugLogSensing(ctx, redstone, powerData, active, now);
+        }
+
         // ── 检测仪表盘写回（运行时缓存，不写入 DataComponent，不影响物品堆叠）──
         for (var e : active.entrySet()) {
             int slot = e.getKey();
@@ -254,9 +266,14 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         while (head < tail) {
             int current = queue[head++];
 
+            // 雕文 = 移相器（v19.1）：发电采样面与信号层二极管镜像——只感应输入方向。
+            // 相位解读（interpretShifter）也只读输入方向，两层语义一致。
+            int chiseledInEdge = chiseledInputEdge(ctx, current);
+
             // 检查该槽位的边信号（v15 每槽自有出边模型：涂蜡槽绝缘，采样读「入边」
             // = 邻居朝本槽的出边）
             for (int dir = 0; dir < ContainerRedstoneData.EDGE_COUNT; dir++) {
+                if (chiseledInEdge >= 0 && dir != chiseledInEdge) continue;
                 int signal = redstone.getIncomingEdgeValue(current, dir);
                 int prevSignal = redstone.getPrevIncomingEdgeValue(current, dir);
                 if (signal == prevSignal) continue;
@@ -364,11 +381,48 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         return ((long) slot << 2) | dir;
     }
 
+    /**
+     * 雕文槽位的发电采样方向（仅感应输入方向，镜像信号层二极管语义）；非雕文返回 -1（全向）。
+     */
+    private static int chiseledInputEdge(ContainerContext ctx, int slot) {
+        ItemStack stack = ctx.getItem(slot);
+        if (stack.isEmpty() || !isWaxedChiseled(stack.getItem())) return -1;
+        return pos2dToEdgeDir(LivingItemManager.getWaxedChiseledData(stack).inputDir());
+    }
+
     /** 下降沿跟踪器命名空间位（与上升沿跟踪器同表，位隔离） */
     private static final long FALLING_BIT = 1L << 32;
 
-    // ── 相位解读 pass（v19 相位解读三元件）──
+    /**
+     * 感应诊断日志（-Dlivingitem.debug.sensing=true）：每 20 tick 打印每台发电机的
+     * 4 向入边值、各边跟踪器锁相状态、通道最佳域与 EMA——用于在真实游戏里区分
+     * 「入边恒 0（信号层没写到涂蜡邻居的出边）」还是「入边振荡但通道不锁相」。
+     */
+    private static void debugLogSensing(ContainerContext ctx, ContainerRedstoneData redstone,
+            ContainerPowerData powerData, Map<Integer, GeneratorState> active, long now) {
+        if (now % 20 != 0) return;
+        for (var e : active.entrySet()) {
+            int slot = e.getKey();
+            GeneratorState gen = e.getValue();
+            StringBuilder edges = new StringBuilder();
+            for (int dir = 0; dir < ContainerRedstoneData.EDGE_COUNT; dir++) {
+                int v = redstone.getIncomingEdgeValue(slot, dir);
+                SignalTracker t = powerData.getEdgeTracker(((long) slot << 2) | dir);
+                edges.append("[dir").append(dir).append("]v=").append(v)
+                    .append("/P=").append(t == null ? "-" : String.valueOf(t.period()));
+                if (dir < ContainerRedstoneData.EDGE_COUNT - 1) edges.append(' ');
+            }
+            ChannelState ch = gen.channel();
+            int pref = gen.preferredPeriod();
+            ModLog.CONTAINER.info("[涂蜡感知] {} slot={} pref={} bestP={} n={} Σ√|Δ|={} emaFe={} | {}",
+                ctx.getContainerKey(), slot, pref,
+                ch.bestPeriod(pref), ch.bestN(pref),
+                String.format("%.1f", ch.bestEffDeltaSum(pref)),
+                gen.getEmaPowerFe(), edges);
+        }
+    }
 
+    // ── 相位解读 pass（v19 相位解读三元件）──
     /**
      * 三形态相位元件各解读输入信号，派生相位写注册表。
      *
@@ -618,17 +672,16 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         List<DomainSnapshot> domainSnapshots = new ArrayList<>();
         collectDomains(channel, domainSnapshots);
 
-        // 每个发电机独立 EMA 功率 + 本锈级功率（v18：容器总账 EMA 已拆除，
-        // 容器级读数 = 该发电机所属锈级的 EMA，玩家看 tooltip 就知道本锈级发多少）
-        long emaFe = gen.getEmaPowerFe();
-        long levelEmaFe = powerData != null ? powerData.getLevelEmaPowerFe(oxidation) : 0;
+        // 每个发电机独立显示均值功率（窗口均值，无逐 tick 纹波；毫 FE 定点）+ 本锈级显示功率
+        long emaFe = gen.getDisplayEmaPowerMilliFe();
+        long levelEmaFe = powerData != null ? powerData.getLevelDisplayEmaPowerMilliFe(oxidation) : 0;
 
         // 网络级共振（容器级，§3.6.1）：只读 powerData 的 EMA 基础值，绝不回灌
         double resonanceGain = powerData != null ? PowerMath.quantize(powerData.resonanceGain(), TELEMETRY_SIG_FIGS) : 1.0;
         double resonanceBalance = powerData != null ? PowerMath.quantize(powerData.resonanceBalance(), TELEMETRY_SIG_FIGS) : 0.0;
         int activeLevels = powerData != null ? powerData.activeOxidationLevels() : 0;
         List<Long> levelPower = (powerData != null)
-            ? toLevelPowerList(powerData.getEmaPowerByOxidation())
+            ? toLevelPowerMilliFeList(powerData.getDisplayEmaByOxidationMilliFe())
             : List.of(0L, 0L, 0L, 0L);
 
         if (bestN <= 0) {
@@ -647,11 +700,18 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             resonanceGain, resonanceBalance, activeLevels, levelPower);
     }
 
-    /** double[] (各锈级基础出力 EMA) → List<Long>（RE/t，诊断展示用） */
-    private static List<Long> toLevelPowerList(double[] ema) {
-        List<Long> out = new ArrayList<>(ema.length);
-        for (double v : ema) out.add(Math.round(v));
+    /** long[]（各锈级显示均值功率，毫 FE 定点）→ List<Long>（锈级柱状图数据源） */
+    private static List<Long> toLevelPowerMilliFeList(long[] milliFe) {
+        List<Long> out = new ArrayList<>(milliFe.length);
+        for (long v : milliFe) out.add(v);
         return out;
+    }
+
+    /** 毫 FE 定点 → 人类可读功率串（≥1 FE 显示整数，否则两位小数） */
+    static String formatMilliFe(long milliFe) {
+        return milliFe >= 1000
+            ? String.valueOf(milliFe / 1000)
+            : String.format("%.2f", milliFe / 1000.0);
     }
 
     /** 收集通道的全部域快照到 list */
@@ -725,14 +785,16 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
                 Component.translatable(formKey))
             .withStyle(ChatFormatting.GOLD));
 
-        // ── 雕文输入/输出方向（仅涂蜡雕文）──
+        // ── 形态功能说明（三变体差异）──
+        tooltipAdder.accept(Component.translatable(formDescKey(item))
+            .withStyle(ChatFormatting.GRAY));
+
+        // ── 雕文感应方向（仅涂蜡雕文；v19.1 只感应输入方向）──
         if (isWaxedChiseled(item)) {
             var chiseledData = LivingItemManager.getWaxedChiseledData(stack);
-            String inputSym = chiseledData.inputDir().getSymbol();
-            String outputSym = chiseledData.outputDir().getSymbol();
             tooltipAdder.accept(Component.translatable(
                     "tooltip.livingitem.waxed_copper.chiseled_dir",
-                    inputSym, outputSym)
+                    chiseledData.inputDir().getSymbol())
                 .withStyle(ChatFormatting.GRAY));
         }
 
@@ -764,10 +826,10 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             }
 
             // ── EMA 功率（FE/t）──
-            if (t.emaPowerFe() > 0) {
+            if (t.emaPowerMilliFe() > 0) {
                 tooltipAdder.accept(Component.literal("  ")
                     .append(Component.translatable("tooltip.livingitem.waxed_copper.ema_power"))
-                    .append(Component.literal(": " + t.emaPowerFe() + " FE/t"))
+                    .append(Component.literal(": " + formatMilliFe(t.emaPowerMilliFe()) + " FE/t"))
                     .withStyle(ChatFormatting.YELLOW));
             }
 
@@ -815,10 +877,10 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
                 // ── 网络（容器级）：诊断细节，置底 ──
                 renderSection(tooltipAdder, "tooltip.livingitem.waxed_copper.section.network");
 
-                if (t.levelEmaPowerFe() > 0) {
+                if (t.levelEmaPowerMilliFe() > 0) {
                     tooltipAdder.accept(Component.literal("  ")
                         .append(Component.translatable("tooltip.livingitem.waxed_copper.level_power"))
-                        .append(Component.literal(": " + t.levelEmaPowerFe() + " FE/t"))
+                        .append(Component.literal(": " + formatMilliFe(t.levelEmaPowerMilliFe()) + " FE/t"))
                         .withStyle(ChatFormatting.DARK_GRAY));
                 }
                 // 各域快照（紧凑格式）
@@ -930,6 +992,14 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
                 + "=" + String.format("%.2f", r) + ")")));
     }
 
+    /** 从物品取形态功能说明翻译键（三变体差异说明，v19.1） */
+    private static String formDescKey(Item item) {
+        if (isWaxedChiseled(item)) return "tooltip.livingitem.waxed_copper.form_desc.chiseled";
+        if (isWaxedCut(item)) return "tooltip.livingitem.waxed_copper.form_desc.cut";
+        if (isWaxedGrate(item)) return "tooltip.livingitem.waxed_copper.form_desc.grate";
+        return "tooltip.livingitem.waxed_copper.form_desc.block";
+    }
+
     /** 从物品取形态翻译键 */
     private static String formTranslationKey(Item item) {
         if (isWaxedChiseled(item)) return "tooltip.livingitem.waxed_copper.form.chiseled";
@@ -940,11 +1010,11 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
 
     // ── WASD 方向配置（涂蜡雕文的输入/输出方向，信号层同款 2 键配置）──
 
-    private static final String[] CHISELED_SLOT_NAMES = {"input", "output"};
+    private static final String[] CHISELED_SLOT_NAMES = {"input"};
 
     @Override
     public int getDirectionKeyCount() {
-        return 2;
+        return 1;
     }
 
     @Override
@@ -956,19 +1026,11 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
     public boolean updateSlotDirection(ItemStack stack, String slotName, Pos2D direction) {
         if (!isWaxedChiseled(stack.getItem())) return false;
         var data = LivingItemManager.getWaxedChiseledData(stack);
-        switch (slotName) {
-            case "input" -> {
-                LivingItemManager.setWaxedChiseledData(stack, data.withInputDir(direction));
-                return true;
-            }
-            case "output" -> {
-                LivingItemManager.setWaxedChiseledData(stack, data.withOutputDir(direction));
-                return true;
-            }
-            default -> {
-                return false;
-            }
+        if ("input".equals(slotName)) {
+            LivingItemManager.setWaxedChiseledData(stack, data.withInputDir(direction));
+            return true;
         }
+        return false;
     }
 
     // ── 静态工具方法 ──

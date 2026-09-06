@@ -103,12 +103,26 @@ public class ContainerRuntimeCache {
         player.connection.send(packet);
     }
 
+    /**
+     * 判断玩家菜单里是否包含「该容器关联的 Container 实例」。
+     *
+     * <p><b>大箱子（v19.1 修复）</b>：原版大箱菜单的槽位容器是
+     * {@link net.minecraft.world.CompoundContainer CompoundContainer}(左半 BE, 右半 BE)，
+     * **不是 BE 本身**——旧逻辑 {@code containerInstances.contains(slot.container)}
+     * 对大箱永远不匹配 → 同步包从不发给打开大箱的玩家 → 客户端遥测缓存为空 →
+     * tooltip 永远显示 0/无数据（单箱菜单容器就是 BE 本体，故正常）。
+     * 用 CompoundContainer 自带的 {@code contains(Container)} 匹配关联 BE。</p>
+     */
     private static boolean isViewingContainer(ServerPlayer player, Collection<Container> containerInstances) {
         AbstractContainerMenu menu = player.containerMenu;
         if (menu == player.inventoryMenu) return false;
         for (Slot slot : menu.slots) {
-            if (containerInstances.contains(slot.container)) {
-                return true;
+            Container menuContainer = slot.container;
+            if (containerInstances.contains(menuContainer)) return true;
+            if (menuContainer instanceof net.minecraft.world.CompoundContainer compound) {
+                for (Container be : containerInstances) {
+                    if (compound.contains(be)) return true;
+                }
             }
         }
         return false;

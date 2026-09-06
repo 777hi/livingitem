@@ -8,7 +8,12 @@ import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.domain.chest.LivingChestTooltipComponent;
 import com.qiqi.li.living.domain.power.LivingWaxedCopperFunction;
 import com.qiqi.li.living.domain.power.LivingWaxedCopperTooltipComponent;
+import com.qiqi.li.living.domain.power.LivingWaxedGeneratorData;
+import com.qiqi.li.living.domain.runtime.LivingItemClientCache;
+import com.qiqi.li.living.domain.runtime.LivingItemRuntimeData;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.world.inventory.Slot;
 import net.minecraft.client.renderer.item.ItemProperties;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
@@ -90,6 +95,10 @@ public class LivingItemClient {
      *
      * <p>刻意不走 {@code ItemStack.getTooltipImage()}——NeoForge 会把那个组件插在
      * 索引 1（紧跟物品名之后），而仪器面板属于进阶诊断信息，应当置底。</p>
+     *
+     * <p>数据源（v19.1）：发电遥测走运行时缓存 + 网络同步，**不写 DataComponent**——
+     * 这里若读组件会拿到全 0，波形图与锈级柱状图整块消失（ItemTooltipEvent 的
+     * ThreadLocal 在本事件触发前已清空，需按悬停槽位自行定位）。</p>
      */
     @SubscribeEvent
     static void onGatherTooltipComponents(RenderTooltipEvent.GatherComponents event) {
@@ -100,8 +109,22 @@ public class LivingItemClient {
         if (LivingWaxedCopperFunction.isWaxedBulb(stack.getItem())) return;
         if (!Minecraft.getInstance().options.advancedItemTooltips) return;
 
-        var data = LivingItemManager.getGeneratorData(stack);
         event.getTooltipElements().add(
-            Either.right(LivingWaxedCopperTooltipComponent.from(data)));
+            Either.right(LivingWaxedCopperTooltipComponent.from(generatorDataFor(stack))));
+    }
+
+    /**
+     * 发电机仪表盘数据：优先运行时缓存（按悬停槽位定位），回退 DataComponent 兜底。
+     */
+    private static LivingWaxedGeneratorData generatorDataFor(ItemStack stack) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.screen instanceof AbstractContainerScreen<?> containerScreen) {
+            Slot hoveredSlot = containerScreen.getSlotUnderMouse();
+            if (hoveredSlot != null && hoveredSlot.getItem() == stack) {
+                var runtimeData = LivingItemClientCache.get(hoveredSlot.getContainerSlot());
+                if (runtimeData.isGenerator()) return runtimeData.generatorTelemetry();
+            }
+        }
+        return LivingItemManager.getGeneratorData(stack);
     }
 }

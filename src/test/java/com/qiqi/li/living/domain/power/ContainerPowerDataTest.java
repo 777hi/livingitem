@@ -153,12 +153,26 @@ class ContainerPowerDataTest {
     }
 
     @Test
-    @DisplayName("锈级 EMA 账本（v18）：平滑 + K=1/16 边界换算，按锈级读取")
+    @DisplayName("锈级 EMA 账本（v18）：平滑 + K=1/16 边界换算，按锈级读取；显示窗口（v19.1）结算后读数一致")
     void ledger_emaAndFeConversion() {
         ContainerPowerData data = new ContainerPowerData();
-        data.updateOxidationEma(new long[]{18000, 0, 0, 0});
-        // EMA = 18000 × 0.125 = 2250 RE/t → FE = 2250 × 1/16 = 140.625 → 取整
-        assertTrue(data.getLevelEmaPowerFe(0) > 0);
-        assertEquals(0, data.getLevelEmaPowerFe(1));
+        // 喂满一个显示窗口（32 tick）：记账 EMA 收敛中、显示均值 = 窗口内均值
+        for (int i = 0; i < ContainerPowerData.DISPLAY_WINDOW_TICKS; i++) {
+            data.updateOxidationEma(new long[]{18000, 0, 0, 0});
+        }
+        // 记账 EMA 口径（快响应）：首个窗口后 EMA ≈ 18000 × (1 - 0.875^32) ≈ 17858
+        assertTrue(data.getLevelEmaPowerRe(0) > 0);
+        assertEquals(0.0, data.getLevelEmaPowerRe(1));
+        // 显示均值口径（tooltip / 柱状图）：窗口全为 18000 → 均值恰为 18000 → mFE = 1125000
+        assertEquals(18000.0, data.getLevelDisplayEmaPowerRe(0), 1e-9,
+            "稳态恒定输入下窗口均值应恰为输入值（零纹波）");
+        assertEquals(1125000, data.getLevelDisplayEmaPowerMilliFe(0));
+        assertEquals(0, data.getLevelDisplayEmaPowerMilliFe(1));
+
+        // 停机自愈：清零输入后再喂满一个窗口，显示均值应归零
+        for (int i = 0; i < ContainerPowerData.DISPLAY_WINDOW_TICKS; i++) {
+            data.updateOxidationEma(new long[]{0, 0, 0, 0});
+        }
+        assertEquals(0.0, data.getLevelDisplayEmaPowerRe(0), 1e-9, "停机一个窗口后显示均值应归零");
     }
 }

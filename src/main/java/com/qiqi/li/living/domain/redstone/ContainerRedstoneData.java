@@ -146,14 +146,31 @@ public class ContainerRedstoneData {
         }
     }
 
+    /**
+     * 槽位收到的最大信号（供漏斗锁定等非红石组件的跨层查询）。
+     *
+     * <p>v15 每槽自有出边模型修正：漏斗/TNT 等非红石组件不出现在传播路径里，
+     * 信号层从不为它们写边——旧实现 {@code maxOfSlot}（读自己发出的出边）恒 0，
+     * 导致漏斗锁定 / TNT 点燃失效。现改为读**四方向入边**的最大值
+     * （= 邻居朝本槽发出的出边），与电力层采样同语义。</p>
+     */
     public int getSignal(int slot) {
-        if (edgeGrid == null) return 0;
-        return edgeGrid.maxOfSlot(slot);
+        return maxIncomingSignal(slot);
     }
 
+    /** 同 {@link #getSignal(int)}（size/width 参数仅为兼容保留，读取用 edgeGrid 自身维度） */
     public int getSlotSignal(int slot, int size, int width) {
+        return getSignal(slot);
+    }
+
+    /** 四方向入边的最大值（= 邻居朝本槽发出的出边的最大值） */
+    private int maxIncomingSignal(int slot) {
         if (edgeGrid == null) return 0;
-        return edgeGrid.maxOfSlot(slot);
+        int max = 0;
+        for (int dir = 0; dir < EDGE_COUNT; dir++) {
+            max = Math.max(max, getIncomingEdgeValue(slot, dir));
+        }
+        return max;
     }
 
     private void reset() {

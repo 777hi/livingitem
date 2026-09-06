@@ -139,6 +139,35 @@ class PhaseInterpretationTest {
     }
 
     @Test
+    @DisplayName("移相器只感应输入方向：非输入方向的振荡不发电、不派生")
+    void shifter_ignoresNonInputDirections() {
+        // 雕文在槽 4，inputDir=LEFT；振荡粉贴在 RIGHT 侧（非输入方向）
+        ItemStack[] slots = new ItemStack[9];
+        slots[3] = living(Items.REDSTONE, 1);   // 输入侧邻居（左侧，无注入）
+        slots[4] = chiseledAimed(com.qiqi.li.living.model.Pos2D.LEFT);
+        slots[5] = living(Items.REDSTONE, 1);   // RIGHT 侧邻居
+        List<LivingItemFunction.SlotEntry> entries = new ArrayList<>();
+        for (int idx : new int[] {3, 4, 5}) entries.add(new LivingItemFunction.SlotEntry(idx, slots[idx]));
+
+        SimpleContainerContext ctx = new SimpleContainerContext(
+            new FakeHandler(slots), new ArrayList<>(), new ArrayList<>());
+        ContainerRedstoneData redstone = ctx.getOrCreateRedstoneData();
+        // 只往雕文的 RIGHT 边注入 4t 方波（非输入方向）
+        for (long t = 0; t < 40; t++) {
+            redstone.setPrevIncomingEdgeForTest(4, ContainerRedstoneData.EDGE_RIGHT,
+                square((int) t - 1, 0, PERIOD));
+            redstone.setIncomingEdgeForTest(4, ContainerRedstoneData.EDGE_RIGHT,
+                square((int) t, 0, PERIOD));
+            function.tickContainerData(entries, ctx, new TickContext(ctx));
+        }
+
+        ContainerPowerData power = ctx.getOrCreatePowerData();
+        assertTrue(power.getRegistry(4).isEmpty(), "非输入方向的信号不得派生任何相位");
+        assertEquals(0, power.getGenerator(4).channel().bestN(4), "发电采样面应为输入方向单边，n=0");
+        assertEquals(0.0, power.getGenerator(4).getEmaPowerRe(), 1e-9, "不应发电");
+    }
+
+    @Test
     @DisplayName("移相链：两台首尾相连 → φ=0/1/2，n=3（奇数偏移可造）")
     void shifterChain_twoLinks_n3() {
         ItemStack[] slots = new ItemStack[SIZE];

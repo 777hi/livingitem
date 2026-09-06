@@ -71,6 +71,19 @@ public class ContainerPowerData {
      */
     private final double[] emaPowerByOxidation = new double[PowerMath.OXIDATION_LEVELS];
 
+    /**
+     * 各锈蚟级的**显示均值**（v19.1：tooltip「本锈级功率」、锈级柱状图，
+     * 以及**网络级共振的读数口径**——平衡度 s / 共振增益 / 活跃锈级数）。
+     *
+     * <p>跳变门控记账是脉冲式的，快 EMA 对高频信号有峰谷纹波 → 平衡度与增益
+     * 逐 tick 波动、tooltip 闪烁。共振读数用 32 tick 固定窗口均值：稳态零纹波。
+     * 三条铁律结构不变——窗口只吃基础出力（单遍前馈、无回灌），且结算即精确
+     * 归零（比 EMA_EPSILON 截断更干净，停发锈级 32 tick 内自愈）。</p>
+     */
+    private final double[] displayEmaByOxidation = new double[PowerMath.OXIDATION_LEVELS];
+    private final double[] displayWindowAcc = new double[PowerMath.OXIDATION_LEVELS];
+    private int displayWindowTicks;
+
     private long tickCounter;
     private long lastTickTime = System.currentTimeMillis();
 
@@ -161,6 +174,31 @@ public class ContainerPowerData {
         return Math.round(getLevelEmaPowerRe(oxidation) * PowerMath.RE_TO_FE);
     }
 
+    // ── 显示均值读数（v19.1：tooltip「本锈级功率」/ 锈级柱状图专用，无逐 tick 纹波）──
+
+    /** 显示均值窗口长度（tick）——与 {@link #updateOxidationEma} 的结算周期一致 */
+    public static final int DISPLAY_WINDOW_TICKS = 32;
+
+    /** 指定锈级的显示均值功率（RE/t，浮点）。 */
+    public double getLevelDisplayEmaPowerRe(int oxidation) {
+        if (oxidation < 0 || oxidation >= displayEmaByOxidation.length) return 0.0;
+        return displayEmaByOxidation[oxidation];
+    }
+
+    /** 指定锈级的显示均值功率换算为毫 FE（mFE 定点，K 换算 ×1000） */
+    public long getLevelDisplayEmaPowerMilliFe(int oxidation) {
+        return Math.round(getLevelDisplayEmaPowerRe(oxidation) * PowerMath.RE_TO_FE * 1000.0);
+    }
+
+    /** 各锈蚟级显示均值功率副本（毫 FE 定点，tooltip 锈级柱状图数据源） */
+    public long[] getDisplayEmaByOxidationMilliFe() {
+        long[] out = new long[displayEmaByOxidation.length];
+        for (int i = 0; i < out.length; i++) {
+            out[i] = Math.round(displayEmaByOxidation[i] * PowerMath.RE_TO_FE * 1000.0);
+        }
+        return out;
+    }
+
     // ── 网络级共振（见 living-power-tech.md §3.7）──
 
     /**
@@ -180,32 +218,54 @@ public class ContainerPowerData {
             // 指数衰减达不到 0，必须截断，否则停发的锈蚟级会被永久算作活跃锈级
             if (emaPowerByOxidation[i] < EMA_EPSILON) emaPowerByOxidation[i] = 0.0;
         }
+
+        // 显示均值窗口推进（v19.1：32 tick 固定窗口均值，tooltip 消纹波）
+        for (int i = 0; i < displayEmaByOxidation.length; i++) {
+            double v = (baseReThisTick != null && i < baseReThisTick.length)
+                ? (double) baseReThisTick[i] : 0.0;
+            displayWindowAcc[i] += v;
+        }
+        displayWindowTicks++;
+        if (displayWindowTicks >= DISPLAY_WINDOW_TICKS) {
+            for (int i = 0; i < displayEmaByOxidation.length; i++) {
+                displayEmaByOxidation[i] = displayWindowAcc[i] / (double) DISPLAY_WINDOW_TICKS;
+                displayWindowAcc[i] = 0.0;
+            }
+            displayWindowTicks = 0;
+        }
     }
 
     /**
      * 共振倍率 R ∈ [1, 4]（= {@link PowerMath#resonanceFactor}）。
      *
-     * <p>只读 {@link #emaPowerByOxidation}（基础值），不读本 tick 已乘过增益的
-     * 发电量——这是「禁回代」铁律的落地点。</p>
+     * <p>v19.1：读数口径从快记账 EMA 切到**显示窗口均值**——跳变门控下快 EMA 锯齿
+     * 波动会让平衡度/增益逐 tick 闪烁。窗口只吃基础出力（{@link #updateOxidationEma}
+     * 的入参），不读本 tick 已乘过增益的发电量——「禁回代」铁律的落地点不变；
+     * 增益由平滑值算出、作用在本 tick 基础出力上（v18 设计语义）。</p>
      */
     public double resonanceFactor() {
-        return PowerMath.resonanceFactor(emaPowerByOxidation);
+        return PowerMath.resonanceFactor(displayEmaByOxidation);
     }
 
     /** 共振增益 R^{@link PowerMath#RESONANCE_EXPONENT}，作用于本 tick 基础发电量 */
     public double resonanceGain() {
-        return PowerMath.resonanceGain(emaPowerByOxidation);
+        return PowerMath.resonanceGain(displayEmaByOxidation);
     }
 
     /** 平衡度 s ∈ [0, 1]（各锈级出力的接近程度，tooltip 诊断用） */
     public double resonanceBalance() {
-        return PowerMath.balanceFactor(emaPowerByOxidation);
+        return PowerMath.balanceFactor(displayEmaByOxidation);
     }
 
-    /** 当前有出力的锈蚟级数 N（活跃锈级数，1~4；0 表示无任何发电） */
+    /**
+     * 当前有出力的锈蚟级数 N（活跃锈级数，1~4；0 表示无任何发电）。
+     *
+     * <p>v19.1：读显示窗口均值——结算即精确归零，停发锈级 32 tick 内自愈，
+     * 无需 EMA_EPSILON 截断（铁律 3 由结算清零天然满足）。</p>
+     */
     public int activeOxidationLevels() {
         int n = 0;
-        for (double v : emaPowerByOxidation) {
+        for (double v : displayEmaByOxidation) {
             if (v > 0.0) n++;
         }
         return n;

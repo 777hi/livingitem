@@ -298,7 +298,7 @@ class NetworkTraversalTest {
         var gd = ContainerRuntimeCache.get(ctx.getContainerKey(), 0);
         assertTrue(gd.isGenerator(), "应有发电机遥测数据（运行时缓存）");
         assertEquals(2, gd.generatorTelemetry().activeLevels(), "应有两个活跃锈级（共振生效）");
-        assertTrue(gd.generatorTelemetry().emaPowerFe() > 0, "应有发电量");
+        assertTrue(gd.generatorTelemetry().emaPowerMilliFe() > 0, "应有发电量");
         assertTrue(gd.generatorTelemetry().resonanceGain() > 1.0, "共振增益应 > 1（多锈级共振）");
 
         // 收敛后稳态：遥测被量化钉死 → 发电机槽位不再每 tick 标脏

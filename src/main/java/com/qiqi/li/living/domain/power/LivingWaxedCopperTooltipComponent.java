@@ -11,13 +11,13 @@ import net.minecraft.world.inventory.tooltip.TooltipComponent;
  *
  * @param phaseCount   相数 n（多相交变信号；示波器左半区据此画 n 条相位错开的正弦波）
  * @param period       检测周期 P（tick）；0 表示无信号/检测中
- * @param levelPower   各锈蚟级基础出力 EMA（RE/t），长度 = {@code PowerMath.OXIDATION_LEVELS}
+ * @param levelPowerMilliFe 各锈蚟级显示均值功率（毫 FE 定点），长度 = {@code PowerMath.OXIDATION_LEVELS}
  * @param activeLevels 活跃锈级数 N（1~4；0 表示无发电）
  */
 public record LivingWaxedCopperTooltipComponent(
     int phaseCount,
     int period,
-    List<Long> levelPower,
+    List<Long> levelPowerMilliFe,
     int activeLevels
 ) implements TooltipComponent {
 
@@ -27,6 +27,6 @@ public record LivingWaxedCopperTooltipComponent(
      */
     public static LivingWaxedCopperTooltipComponent from(LivingWaxedGeneratorData t) {
         return new LivingWaxedCopperTooltipComponent(
-            t.phaseCount(), t.detectedPeriod(), t.levelPower(), t.activeLevels());
+            t.phaseCount(), t.detectedPeriod(), t.levelPowerMilliFe(), t.activeLevels());
     }
 }

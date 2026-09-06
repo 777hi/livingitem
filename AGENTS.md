@@ -92,6 +92,7 @@ SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 | **活打火石** | 交互触发器，无 tick 逻辑 | [living-flint-and-steel-tech.md](docs/tech/living-flint-and-steel-tech.md) |
 | **GUI交互** | 声明式规则 + 统一拦截 + 创造模式兼容 | [gui-interaction-system.md](docs/system-design/gui-interaction-system.md) |
 | **图标系统** | 三层架构 + 声明式配置 + 上下文切换 | [icon-system.md](docs/system-design/icon-system.md) |
+| **Tooltip 系统** | 双层渲染架构 + 运行时缓存同步 + 显示口径（窗口均值/mFE） | [tooltip-system.md](docs/system-design/tooltip-system.md) |
 | **基础设施** | 容器抽象 + 发现缓存 + SlotAccessor + 性能监控 | [living-item-infrastructure.md](docs/system-design/living-item-infrastructure.md) |
 | **数据模型** | DataComponent 体系 + 新旧架构对比 + 设计决策 | [data-model.md](docs/system-design/data-model.md) |
 | **单元测试** | FML 测试环境配置 + 测试替身 + 可测性边界 | [unit-testing.md](docs/guides/unit-testing.md) |
@@ -471,6 +472,24 @@ src/test/java/com/qiqi/li/
 - ✅ 移除：红石稳态跳过优化（v19.1）——三闸门模型吞掉火把振荡器的「翻转后果 tick」
   后靠 rev/sig/timer 不变自维持死锁，游戏内振荡线路集体静止（SteadyState 删除，
   calculate 恢复逐 tick 全量重算；回归守卫 torchNotRing_oscillates）
+- ✅ 修复：**大箱子 tooltip 不显示遥测**——原版大箱菜单容器是 CompoundContainer(be1,be2)
+  而非 BE 本体，`ContainerRuntimeCache.isViewingContainer` 按实例匹配永远失败 →
+  LivingItemSyncPacket 从不发给打开大箱的玩家 → 客户端遥测缓存为空（发电本身正常，
+  铜灯正常充电；改用 CompoundContainer.contains(be) 匹配）
+- ✅ 修复：**高频振荡下 tooltip FE/t 高频闪烁**——跳变门控记账是脉冲式的，快 EMA
+  纹波超过量化精度；显示读数改用「与偏好周期对齐的窗口均值」（GeneratorState 窗口 =
+  ceil(32/pref)×pref，ContainerPowerData 32t 固定窗口；稳态零纹波，记账 EMA 不动）
+- ✅ 修复：**F3+H 仪器面板（波形图/锈级柱状图）消失**——面板挂载点仍在读
+  DataComponent，而发电遥测已改走运行时缓存+网络同步；改按悬停槽位定位运行时缓存
+- ✅ 修复：**小功率发电（<1 FE/t）EMA 不显示**——显示均值链路改毫 FE（mFE）定点：
+  窗口均值去 long 整除、遥测字段 emaPowerMilliFe/levelEmaPowerMilliFe/levelPowerMilliFe
+  （codec 同步改名），tooltip 功率行两位小数显示（如 0.94 FE/t）
+- ✅ 修复：**高频下共振平衡度/增益闪烁**——共振读数口径（平衡度 s、增益 R²、活跃锈级数 N）
+  从快记账 EMA 切到显示窗口均值（32t，零纹波）；三条铁律结构不变（窗口只吃基础值、
+  单遍前馈、结算即精确归零），首个窗口（32t）为共振建立期
+- ✅ 修复：**活漏斗锁定/活 TNT 点燃失效**——v15 出边模型下漏斗/TNT（非红石组件）
+  槽位的出边恒 0，`getSignal`/`getSlotSignal` 读自身出边永远拿不到信号；
+  改读四方向入边（邻居朝本槽的出边，与电力层采样同语义）
 - 📄 技术文档：living-power-tech.md §3.8 / 红电系统.md v19.1 修订
 
 **最近更新** (2026-08-30):
@@ -553,7 +572,8 @@ docs/
 │   ├── living-item-infrastructure.md #   活物品基础设施（容器抽象+发现缓存+SlotAccessor+性能监控）
 │   ├── data-model.md                 #   数据模型与设计决策（DataComponent体系+新旧对比+关键决策）
 │   ├── gui-interaction-system.md     #   GUI交互系统（声明式规则+创造模式兼容）
-│   └── icon-system.md                #   图标系统（三层架构+声明式配置）
+│   ├── icon-system.md                #   图标系统（三层架构+声明式配置）
+│   └── tooltip-system.md             #   Tooltip系统（双层渲染+运行时缓存+显示口径）
 ├── framework-refactoring.md          # 框架重构总结（HasDirection + HasContainerData 接口化设计）
 ├── tech/                             # 各活物品技术文档
 │   ├── living-tnt-tech.md

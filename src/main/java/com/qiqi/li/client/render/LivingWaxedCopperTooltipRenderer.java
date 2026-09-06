@@ -58,7 +58,7 @@ public class LivingWaxedCopperTooltipRenderer implements ClientTooltipComponent 
     public LivingWaxedCopperTooltipRenderer(LivingWaxedCopperTooltipComponent component) {
         this.phaseCount = component.phaseCount();
         this.period = component.period();
-        this.levelPower = component.levelPower();
+        this.levelPower = component.levelPowerMilliFe();
         this.activeLevels = component.activeLevels();
         // 无信号（周期未检出）且无锈级出力时，面板没有可显示内容
         this.empty = period <= 0 && maxOf(levelPower) <= 0;

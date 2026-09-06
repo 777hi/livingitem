@@ -222,10 +222,10 @@ public final class LivingIconRegistry {
         registerChiseledCopper(net.minecraft.world.item.Items.EXPOSED_CHISELED_COPPER, "item/exposed_chiseled_copper");
         registerChiseledCopper(net.minecraft.world.item.Items.WEATHERED_CHISELED_COPPER, "item/weathered_chiseled_copper");
         registerChiseledCopper(net.minecraft.world.item.Items.OXIDIZED_CHISELED_COPPER, "item/oxidized_chiseled_copper");
-        registerChiseledCopper(net.minecraft.world.item.Items.WAXED_CHISELED_COPPER, "item/waxed_chiseled_copper");
-        registerChiseledCopper(net.minecraft.world.item.Items.WAXED_EXPOSED_CHISELED_COPPER, "item/waxed_exposed_chiseled_copper");
-        registerChiseledCopper(net.minecraft.world.item.Items.WAXED_WEATHERED_CHISELED_COPPER, "item/waxed_weathered_chiseled_copper");
-        registerChiseledCopper(net.minecraft.world.item.Items.WAXED_OXIDIZED_CHISELED_COPPER, "item/waxed_oxidized_chiseled_copper");
+        registerWaxedChiseledCopper(net.minecraft.world.item.Items.WAXED_CHISELED_COPPER, "item/waxed_chiseled_copper");
+        registerWaxedChiseledCopper(net.minecraft.world.item.Items.WAXED_EXPOSED_CHISELED_COPPER, "item/waxed_exposed_chiseled_copper");
+        registerWaxedChiseledCopper(net.minecraft.world.item.Items.WAXED_WEATHERED_CHISELED_COPPER, "item/waxed_weathered_chiseled_copper");
+        registerWaxedChiseledCopper(net.minecraft.world.item.Items.WAXED_OXIDIZED_CHISELED_COPPER, "item/waxed_oxidized_chiseled_copper");
 
         registerCopperBlock(net.minecraft.world.item.Items.CUT_COPPER, "item/cut_copper");
         registerCopperBlock(net.minecraft.world.item.Items.EXPOSED_CUT_COPPER, "item/exposed_cut_copper");
@@ -280,6 +280,14 @@ public final class LivingIconRegistry {
         register(LivingIconSpec.builder(item)
             .addVariant("base", texture, stack -> true)
             .decorator(new LivingChiseledCopperDecorator())
+            .build());
+    }
+
+    /** 涂蜡雕文（电力层移相器）：叠加输入方向箭头（v19.1，只感应输入方向） */
+    private static void registerWaxedChiseledCopper(Item item, String texture) {
+        register(LivingIconSpec.builder(item)
+            .addVariant("base", texture, stack -> true)
+            .decorator(new com.qiqi.li.client.render.LivingWaxedChiseledDecorator())
             .build());
     }
 

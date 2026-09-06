@@ -178,8 +178,11 @@ class NetworkResonanceTest {
         for (int i = 0; i < 300; i++) {
             data.updateOxidationEma(base);
             // 每 tick 都按增益放大发电量，但这个值不写回 EMA
+            // （v19.1：增益读显示窗口均值——首个窗口（32t）建立期内增益为 1，之后应 > 1）
             double gain = data.resonanceGain();
-            assertTrue(gain > 1.0);
+            if (i >= ContainerPowerData.DISPLAY_WINDOW_TICKS) {
+                assertTrue(gain > 1.0, "首个显示窗口建立后应有共振增益，i=" + i + " gain=" + gain);
+            }
         }
         // EMA 应收敛到基础值 40/40，而不是被增益放大后的值
         double[] ema = data.getEmaPowerByOxidation();
@@ -240,8 +243,9 @@ class NetworkResonanceTest {
         assertEquals(4, t.activeLevels());
         assertEquals(16.0, t.resonanceGain(), LOOSE);
         assertEquals(1.0, t.resonanceBalance(), LOOSE);
-        assertEquals(4, t.levelPower().size());
-        for (long v : t.levelPower()) assertEquals(2700, v);
+        assertEquals(4, t.levelPowerMilliFe().size());
+        // 显示均值口径为毫 FE 定点：2700 RE/t × K=1/16 × 1000 = 168750 mFE
+        for (long v : t.levelPowerMilliFe()) assertEquals(168750, v);
     }
 
     @Test
@@ -254,10 +258,11 @@ class NetworkResonanceTest {
         assertEquals(1, t.activeLevels());
         assertEquals(1.0, t.resonanceGain(), EPS);
         // levelPower 始终长度 = 锈蚟级数（4），空锈级为 0
-        assertEquals(4, t.levelPower().size());
-        assertEquals(2700, t.levelPower().get(0));
-        assertEquals(0, t.levelPower().get(1));
-        assertEquals(0, t.levelPower().get(2));
-        assertEquals(0, t.levelPower().get(3));
+        assertEquals(4, t.levelPowerMilliFe().size());
+        // 显示均值口径为毫 FE 定点：2700 RE/t × K=1/16 × 1000 = 168750 mFE
+        assertEquals(168750, t.levelPowerMilliFe().get(0));
+        assertEquals(0, t.levelPowerMilliFe().get(1));
+        assertEquals(0, t.levelPowerMilliFe().get(2));
+        assertEquals(0, t.levelPowerMilliFe().get(3));
     }
 }

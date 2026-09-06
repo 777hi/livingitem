@@ -393,6 +393,48 @@ class ContainerRedstoneDataTest {
     }
 
     // ════════════════════════════════════════
+    // 跨层信号查询回归（漏斗锁定 / TNT 点燃的读取路径）
+    // ════════════════════════════════════════
+    //
+    // v15 出边模型回归：漏斗/TNT 是非红石组件，信号层从不为它们写边——
+    // 旧 getSignal/getSlotSignal 读「自己发出的出边」恒 0，锁定/点燃永久失效。
+    // 正确语义 = 读四方向入边（邻居朝本槽的出边），与电力层采样同源。
+
+    @Test
+    @DisplayName("跨层信号查询：getSignal 读四方向入边（邻居出边），而非自身出边")
+    void crossLayerSignal_readsIncomingEdges() {
+        var ctx = new FakeContainerContext(SIZE, WIDTH);
+        ctx.set(10, living(Items.LEVER, 1));
+        ctx.set(11, living(Items.HOPPER, 1));   // 漏斗（非红石组件，模拟消费者）
+
+        var slots = Map.<String, Set<Integer>>of(LivingLeverFunction.ID, Set.of(10));
+        var data = new ContainerRedstoneData();
+
+        tickOnce(data, ctx, slots);
+
+        // 拉杆闭合：拉杆（槽 10）朝漏斗（槽 11）的出边应有信号 → 漏斗入边 > 0
+        // （拉杆默认 OFF，用中继器注入不可行——直接断言 OFF 时为 0，为 ON 语义留 E2E）
+        assertEquals(0, data.getSignal(11), "拉杆 OFF 时漏斗入边应为 0");
+
+        // 用测试 seam 直接验证读取语义：把「拉杆朝漏斗的出边」注入后，漏斗应能读到
+        redstone_seam_setOutgoing(data, 10, ContainerRedstoneData.EDGE_RIGHT, 15);
+        assertTrue(data.getSignal(11) > 0,
+            "邻居（拉杆）朝漏斗发出的出边 = 漏斗的入边，getSignal 必须能读到（漏斗锁定/TNT 点燃的依赖）");
+    }
+
+    /** 测试辅助：写入某槽某方向的「出边」（= 该方向邻居的入边） */
+    private static void redstone_seam_setOutgoing(ContainerRedstoneData data, int fromSlot, int dir, int value) {
+        // 通过 setIncomingEdgeForTest 的逆映射：incoming(slot=from+1, dir=RIGHT) 写 edgeGrid[from][RIGHT]
+        // 这里直接用现成 seam：入边语义写法——源槽 fromSlot 朝 dir 的出边 = 槽 (fromSlot+1) 从 opposite 方向的入边
+        var opposite = dir == ContainerRedstoneData.EDGE_RIGHT ? ContainerRedstoneData.EDGE_LEFT
+            : dir == ContainerRedstoneData.EDGE_LEFT ? ContainerRedstoneData.EDGE_RIGHT
+            : dir == ContainerRedstoneData.EDGE_UP ? ContainerRedstoneData.EDGE_DOWN
+            : ContainerRedstoneData.EDGE_UP;
+        int neighbor = fromSlot + (dir == ContainerRedstoneData.EDGE_RIGHT ? 1 : -1);
+        data.setIncomingEdgeForTest(neighbor, opposite, value);
+    }
+
+    // ════════════════════════════════════════
     // 容器尺寸适配
     // ════════════════════════════════════════
 
