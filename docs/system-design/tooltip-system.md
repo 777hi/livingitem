@@ -105,7 +105,7 @@ processContext（每容器每 tick）
 - 运行时缓存按 `containerKey`（稳定位置身份，如 `chest_x1_y1_z1_x2_y2_z2`）+ `slot`（**容器绝对槽位索引**，大箱为 0–53 全箱索引）存储；
 - `update` 标脏，`flushToClients` 每容器 tick 末尾调用一次（发完即清脏）。
 
-### 3.2 大箱子匹配（CompoundContainer）
+### 3.2 大箱子匹配（CompoundContainer）与玩家背包直发
 
 **原版大箱子的菜单容器不是 BE 本体**：`ChestBlock.MENU_PROVIDER_COMBINER` 用 `new CompoundContainer(左半BE, 右半BE)` 构建双箱菜单——玩家菜单槽位的 `slot.container` 是 CompoundContainer，`containerInstances.contains(slot.container)`（containerInstances = 两个 ChestBlockEntity）**永远匹配失败**。
 
@@ -122,9 +122,20 @@ if (menuContainer instanceof CompoundContainer compound) {
 }
 ```
 
-### 3.3 客户端：单键缓存模型
+**玩家背包的发送**：背包无 BE 实例可匹配（`containerInstances` 为空），且背包菜单就是 `player.inventoryMenu` 本体——**遥测包改为直发背包主人**（key = `player_UUID` → 从 key 提取 UUID → `getPlayerList().getPlayer(uuid)`），不依赖菜单匹配，也不受 `inventoryMenu` 排除影响。
 
-`LivingItemClientCache` 只保存**最近一次收到的快照**（`currentContainerKey + slotData`）——玩家同一时间只开一个容器。悬停定位用 `getContainerSlot()`（**容器内索引**），与大箱 54 槽全箱索引一致。
+### 3.3 客户端：双缓存模型（通用 + 玩家背包）
+
+`LivingItemClientCache` 按包来源分两份缓存（v19.1）：
+
+| 缓存 | 数据来源 | 读取场景 |
+|---|---|---|
+| **通用缓存**（`update` / `get`） | BE 容器的同步包（单箱/大箱/木桶等） | 容器 GUI 悬停 |
+| **player 缓存**（`updatePlayer` / `getPlayer`） | `player_UUID` 键的同步包 | 玩家背包 GUI / 创造模式物品栏 tab |
+
+分两份的原因：玩家背包的遥测包**直发本人**（服务端无法知道玩家是否打开背包 GUI，故无条件直发）——若与 BE 容器包共用一份缓存，玩家开着箱子时自己的背包包会**覆盖箱子数据**（串台）。独立缓存后互不干扰。
+
+**玩家背包的悬停定位**：`InventoryScreen` / `CreativeModeInventoryScreen` 的槽位 `getContainerSlot()` = **Inventory 索引 0-35**（`PlayerInvWrapper` 的槽位索引与 Inventory 索引一一对应）——与服务端同步包的 slot 语义完全对齐。特殊 GUI（创造模式物品栏 tab 等）槽位索引与 Inventory 不对齐时，按**物品引用匹配**兜底：`inv.getItem(i) == stack` → `getPlayer(i)`（引用必然相等，因为 GUI 显示的就是真实背包物品）。
 
 ---
 
@@ -189,7 +200,9 @@ EMA 类 double 读数（共振增益 / 平衡度 / 域快照 effDeltaSum）写�
 5. **显示口径用 mFE 定点**——K=1/16 下整数 FE 会吞掉 <0.5 FE/t 的读数；新增功率类字段一律毫 FE 定点（long），格式化统一走 `formatMilliFe`；
 6. **窗口对齐偏好周期**——显示窗口取周期整倍数，否则均值纹波不可消除；窗口内均值以 double 结算，禁止 long 整除；
 7. **量化降脏是稳态优化**——高频场景下量化 3 位仍会跨档（窗口均值已消除主纹波，残余可接受）；不要为了钉死值加大量化损失；
-8. **`getContainerSlot()` 才是容器绝对索引**——大箱 54 槽全箱索引，与功能层的 `SlotEntry.slotIndex` 同语义；不要用菜单显示行号。
+8. **`getContainerSlot()` 才是容器绝对索引**——大箱 54 槽全箱索引，与功能层的 `SlotEntry.slotIndex` 同语义；不要用菜单显示行号；
+9. **玩家背包与 BE 容器的遥测缓存必须分离**——背包包直发本人、存独立 player 缓存，否则玩家开箱子时自己的背包包会覆盖箱子的 tooltip 数据（串台）；
+10. **创造模式 GUI（CreativeModeInventoryScreen）槽位索引与 Inventory 不对齐**——悬停定位失败时按**物品引用**在 `player.getInventory()` 中兜底匹配（GUI 显示的就是真实背包物品，引用必然相等）；
 
 ---
 

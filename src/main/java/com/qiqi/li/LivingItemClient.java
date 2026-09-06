@@ -121,8 +121,24 @@ public class LivingItemClient {
         if (mc.screen instanceof AbstractContainerScreen<?> containerScreen) {
             Slot hoveredSlot = containerScreen.getSlotUnderMouse();
             if (hoveredSlot != null && hoveredSlot.getItem() == stack) {
-                var runtimeData = LivingItemClientCache.get(hoveredSlot.getContainerSlot());
+                // 玩家背包 GUI 的遥测在独立 player 缓存（服务端背包包直发本人）
+                var runtimeData = mc.screen instanceof net.minecraft.client.gui.screens.inventory.InventoryScreen
+                    || mc.screen instanceof net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen
+                    ? LivingItemClientCache.getPlayer(hoveredSlot.getContainerSlot())
+                    : LivingItemClientCache.get(hoveredSlot.getContainerSlot());
                 if (runtimeData.isGenerator()) return runtimeData.generatorTelemetry();
+            }
+        }
+        // 兜底：特殊 GUI（创造模式物品栏 tab 等）槽位索引与 Inventory 不对齐时，
+        // 按物品引用在玩家背包中定位
+        if (mc.player != null) {
+            var inv = mc.player.getInventory();
+            for (int i = 0; i < inv.getContainerSize(); i++) {
+                if (inv.getItem(i) == stack) {
+                    var runtimeData = LivingItemClientCache.getPlayer(i);
+                    if (runtimeData.isGenerator()) return runtimeData.generatorTelemetry();
+                    break;
+                }
             }
         }
         return LivingItemManager.getGeneratorData(stack);

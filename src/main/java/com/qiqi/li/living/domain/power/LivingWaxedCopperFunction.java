@@ -225,12 +225,12 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
      * UP=(0,-1) → 0, DOWN=(0,1) → 1, LEFT=(-1,0) → 2, RIGHT=(1,0) → 3
      */
     private static int pos2dToEdgeDir(Pos2D dir) {
-        if (dir == Pos2D.UP) return ContainerRedstoneData.EDGE_UP;
-        if (dir == Pos2D.DOWN) return ContainerRedstoneData.EDGE_DOWN;
-        if (dir == Pos2D.LEFT) return ContainerRedstoneData.EDGE_LEFT;
-        if (dir == Pos2D.RIGHT) return ContainerRedstoneData.EDGE_RIGHT;
-        // fallback: 选 UP 方向
-        return ContainerRedstoneData.EDGE_UP;
+        // v19.1：值比较而非引用比较——Pos2D 经序列化/反序列化后是值相等的新实例，
+        // 引用比较会让配置过的方向全部落入 fallback（恒 UP）。
+        if (dir.x() == 0) {
+            return dir.y() < 0 ? ContainerRedstoneData.EDGE_UP : ContainerRedstoneData.EDGE_DOWN;
+        }
+        return dir.x() < 0 ? ContainerRedstoneData.EDGE_LEFT : ContainerRedstoneData.EDGE_RIGHT;
     }
 
     /**
@@ -384,6 +384,11 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
     /**
      * 雕文槽位的发电采样方向（仅感应输入方向，镜像信号层二极管语义）；非雕文返回 -1（全向）。
      */
+    /** 测试可见：Pos2D → 边方向的映射（值比较，序列化实例安全） */
+    static int chiseledInputEdgeForTest(Pos2D dir) {
+        return pos2dToEdgeDir(dir);
+    }
+
     private static int chiseledInputEdge(ContainerContext ctx, int slot) {
         ItemStack stack = ctx.getItem(slot);
         if (stack.isEmpty() || !isWaxedChiseled(stack.getItem())) return -1;
@@ -414,11 +419,16 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             }
             ChannelState ch = gen.channel();
             int pref = gen.preferredPeriod();
-            ModLog.CONTAINER.info("[涂蜡感知] {} slot={} pref={} bestP={} n={} Σ√|Δ|={} emaFe={} | {}",
+            String inputDirStr = "";
+            ItemStack genStack = ctx.getItem(slot);
+            if (isWaxedChiseled(genStack.getItem())) {
+                inputDirStr = " inputDir=" + LivingItemManager.getWaxedChiseledData(genStack).inputDir().getSymbol();
+            }
+            ModLog.CONTAINER.info("[涂蜡感知] {} slot={} pref={} bestP={} n={} Σ√|Δ|={} emaFe={}{} | {}",
                 ctx.getContainerKey(), slot, pref,
                 ch.bestPeriod(pref), ch.bestN(pref),
                 String.format("%.1f", ch.bestEffDeltaSum(pref)),
-                gen.getEmaPowerFe(), edges);
+                gen.getEmaPowerFe(), inputDirStr, edges);
         }
     }
 

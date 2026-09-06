@@ -22,6 +22,9 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class ContainerRuntimeCache {
 
+    /** 玩家背包容器键前缀（buildContainerKey 的 inventory 分支） */
+    public static final String PLAYER_KEY_PREFIX = "player_";
+
     private static final Map<String, Map<Integer, LivingItemRuntimeData>> store = new ConcurrentHashMap<>();
     private static final Set<String> dirtyContainers = ConcurrentHashMap.newKeySet();
 
@@ -82,7 +85,23 @@ public class ContainerRuntimeCache {
 
             var packet = new LivingItemSyncPacket(containerKey, snapshot);
 
-            // 遍历所有在线玩家，找到打开了该容器的玩家
+            // 玩家背包（key = "player_" + UUID）：遥测直发背包主人本人。
+            // 背包无 BE 实例可匹配（旧逻辑 containerInstances 为空 → 永远不发 →
+            // 背包 tooltip 全 0），且背包菜单就是 inventoryMenu 本身，无法走菜单匹配。
+            // 直发本人也避免与 BE 容器缓存在客户端互相覆盖。
+            if (containerKey.startsWith(PLAYER_KEY_PREFIX)) {
+                try {
+                    var uuid = java.util.UUID.fromString(
+                        containerKey.substring(PLAYER_KEY_PREFIX.length()));
+                    var owner = level.getServer().getPlayerList().getPlayer(uuid);
+                    if (owner != null) owner.connection.send(packet);
+                } catch (IllegalArgumentException ignored) {
+                    // key 非 UUID 形态（防御），跳过
+                }
+                continue;
+            }
+
+            // BE 容器：遍历所有在线玩家，找到打开了该容器的玩家
             for (ServerPlayer player : level.getServer().getPlayerList().getPlayers()) {
                 if (isViewingContainer(player, containerInstances)) {
                     player.connection.send(packet);

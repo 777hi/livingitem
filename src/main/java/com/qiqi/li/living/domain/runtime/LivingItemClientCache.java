@@ -18,6 +18,9 @@ public class LivingItemClientCache {
     private static String currentContainerKey = "";
     private static Map<Integer, LivingItemRuntimeData> slotData = Map.of();
 
+    /** 玩家背包遥测（独立槽，避免与 BE 容器的通用缓存互相覆盖串台） */
+    private static Map<Integer, LivingItemRuntimeData> playerSlotData = Map.of();
+
     /** 当前 tooltip 渲染的运行时数据（由 {@code LivingItemTooltip} 设置）。 */
     private static final ThreadLocal<LivingItemRuntimeData> currentTooltipData = new ThreadLocal<>();
 
@@ -34,6 +37,16 @@ public class LivingItemClientCache {
      */
     public static LivingItemRuntimeData get(int slot) {
         return slotData.getOrDefault(slot, LivingItemRuntimeData.EMPTY);
+    }
+
+    /** 写入玩家背包遥测（key = "player_UUID" 的同步包专用） */
+    public static void updatePlayer(Map<Integer, LivingItemRuntimeData> data) {
+        playerSlotData = new HashMap<>(data);
+    }
+
+    /** 获取玩家背包中指定槽位的遥测（悬停槽位 containerSlot = Inventory 索引 0-35，与服务端对齐） */
+    public static LivingItemRuntimeData getPlayer(int slot) {
+        return playerSlotData.getOrDefault(slot, LivingItemRuntimeData.EMPTY);
     }
 
     /**
@@ -66,6 +79,7 @@ public class LivingItemClientCache {
     public static void clear() {
         currentContainerKey = "";
         slotData = Map.of();
+        playerSlotData = Map.of();
         clearCurrentTooltipData();
     }
 

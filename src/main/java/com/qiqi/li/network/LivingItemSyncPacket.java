@@ -226,7 +226,11 @@ public record LivingItemSyncPacket(
 
     public static void handle(LivingItemSyncPacket packet, IPayloadContext context) {
         context.enqueueWork(() -> {
-            LivingItemClientCache.update(packet.containerKey, packet.slotData);
+            if (packet.containerKey().startsWith("player_")) {
+                LivingItemClientCache.updatePlayer(packet.slotData);
+            } else {
+                LivingItemClientCache.update(packet.containerKey, packet.slotData);
+            }
         });
     }
 }

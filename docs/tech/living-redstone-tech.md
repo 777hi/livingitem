@@ -528,7 +528,9 @@ while queue not empty:
 > **设计变更（v12）**：Phase 2 中 `maxInput` 不再纳入 `faceInput`。外部信号仅通过 `getEffectiveInput()` 影响组件状态检测（火把烧毁、中继器输入、比较器输入等），不参与红石粉 BFS 传播。这从根本上打破了容器输出信号 → 外部世界 → 外部信号重新注入 → 内部传播的反馈回路。
 
 **活漏斗红石信号控制**：
-活漏斗在 `LivingHopperFunction.tick()` 中通过 `ContainerRedstoneData.getSignal(slot)` 检测槽位 4 条边是否有信号。任意边信号 > 0 时，漏斗被禁用（跳过传输和冷却倒计时），tooltip 显示红色警告。信号消失后自动恢复传输。此机制使用 `edgeGrid.maxOfSlot()` 读取边信号，与 Phase 2 的边写入解耦直接相关。
+活漏斗在 `LivingHopperFunction.tick()` 中通过 `ContainerRedstoneData.getSignal(slot)` 检测槽位 4 条边是否有信号。任意边信号 > 0 时，漏斗被禁用（跳过传输和冷却倒计时），tooltip 显示红色警告。信号消失后自动恢复传输。
+
+**读取语义（v19.1 修正）**：v15 出边模型下，漏斗/TNT 是非红石组件——信号层从不为它们写边，槽位自身出边恒 0。`getSignal`/`getSlotSignal` 改读**四方向入边**的最大值（= 邻居朝本槽发出的出边），与电力层涂蜡采样同语义。旧实现 `edgeGrid.maxOfSlot()`（读自身出边）在 v15 后恒 0，曾导致漏斗锁定 / TNT 点燃永久失效。活 TNT 的点燃检测（`getSlotSignal`）同款修复。
 
 **Phase 3 — 重新检测输入**：
 ```

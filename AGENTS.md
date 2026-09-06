@@ -295,6 +295,7 @@ src/main/java/com/qiqi/li/
 │   │   ├── LivingDefaultDecorator.java      #   默认图标叠加层
 │   │   ├── LivingHopperDecorator.java       #   活漏斗箭头叠加层
 │   │   ├── LivingChiseledCopperDecorator.java # 活雕文铜块箭头叠加层
+│   │   ├── LivingWaxedChiseledDecorator.java  #   活涂蜡雕文输入方向箭头（电力层移相器，v19.1）
 │   │   ├── LivingRedstoneDecorator.java     #   活红石粉连线叠加层
 │   │   ├── LivingChestTooltipRenderer.java  #   活箱子 Tooltip 渲染
 │   │   └── LivingWaxedCopperTooltipRenderer.java # 红电仪表盘 Tooltip 渲染
@@ -484,12 +485,21 @@ src/test/java/com/qiqi/li/
 - ✅ 修复：**小功率发电（<1 FE/t）EMA 不显示**——显示均值链路改毫 FE（mFE）定点：
   窗口均值去 long 整除、遥测字段 emaPowerMilliFe/levelEmaPowerMilliFe/levelPowerMilliFe
   （codec 同步改名），tooltip 功率行两位小数显示（如 0.94 FE/t）
+- ✅ 修复：**玩家背包里 tooltip 不显示遥测**——背包容器的遥测包被 isViewingContainer
+  的空实例匹配/inventoryMenu 排除双重拦截，从不发送；改为「player_」前缀 key 直发本人 +
+  客户端独立 player 缓存（与 BE 容器缓存分离，防串台），InventoryScreen/面板挂载点分流读取
+- ✅ 修复：**创造模式背包 tooltip 不显示**——CreativeModeInventoryScreen 的菜单槽
+  结构特殊（槽位索引与 Inventory 不对齐），悬停定位失败；补「物品引用匹配玩家背包」
+  兜底（wrapper 索引 = Inventory 索引，引用必然相等），覆盖创造模式与特殊 mod GUI
 - ✅ 修复：**高频下共振平衡度/增益闪烁**——共振读数口径（平衡度 s、增益 R²、活跃锈级数 N）
   从快记账 EMA 切到显示窗口均值（32t，零纹波）；三条铁律结构不变（窗口只吃基础值、
   单遍前馈、结算即精确归零），首个窗口（32t）为共振建立期
 - ✅ 修复：**活漏斗锁定/活 TNT 点燃失效**——v15 出边模型下漏斗/TNT（非红石组件）
   槽位的出边恒 0，`getSignal`/`getSlotSignal` 读自身出边永远拿不到信号；
   改读四方向入边（邻居朝本槽的出边，与电力层采样同语义）
+- ✅ 修复：**涂蜡雕文感应方向恒为上方**——`pos2dToEdgeDir` 用引用比较（`== Pos2D.X`），
+  而 Pos2D 经组件序列化/反序列化后是值相等的新实例 → 所有配置过的方向全部落入
+  fallback 恒 UP（只有上方信号被感应）；改值比较（x/y 判断）根治
 - 📄 技术文档：living-power-tech.md §3.8 / 红电系统.md v19.1 修订
 
 **最近更新** (2026-08-30):
