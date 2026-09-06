@@ -73,7 +73,6 @@
 | `LivingComparatorFunction` | `domain/redstone/LivingComparatorFunction.java` | 活比较器功能，比较/减法 + 物品检测 |
 | `ContainerRedstoneData` | `domain/redstone/ContainerRedstoneData.java` | 容器级红石信号数据，`calculate()` 编排 6 个 phase |
 | `RedstonePropagation` | `domain/redstone/RedstonePropagation.java` | 6 个 phase 方法与辅助方法（`propagateDir`/`computeDustConnections`/`computeComparatorOutput`/`checkRepeaterLocked` 等），持有共享 mutable 引用，用完即弃（v17 从 `ContainerRedstoneData` 提取） |
-| `SteadyState` | `domain/redstone/SteadyState.java` | 稳态跳过状态值对象（`revision`/`externalSig`/`hadActiveTimers`/`everCalculated`/`skipCount`/`lastTickTime`），`calculate()` 内原子更新（v17 从散落字段收拢） |
 | `EdgeGrid` | `domain/redstone/ContainerRedstoneData.java` | 每槽自有出边信号网格，内嵌类（v15 起 `edges[slot*4+dir]`，v17 改为包级可见供 `RedstonePropagation` 访问） |
 | `LivingRedstoneData` | `domain/redstone/LivingRedstoneData.java` | 活红石粉物品级数据：信号强度 + 是否激活 |
 | `LivingRedstoneTorchData` | `domain/redstone/LivingRedstoneTorchData.java` | 活红石火把物品级数据：朝向 + 是否点亮 |
@@ -393,28 +392,20 @@ ItemStack (minecraft:comparator)
 
 ### 3.2 六阶段边信号传播算法
 
-`calculate()` 拆分为 6 个阶段，基于边信号模型。**v17 结构重构**：6 个 phase 方法已从 `ContainerRedstoneData` 提取到 `RedstonePropagation` 类，`calculate()` 创建 `RedstonePropagation` 实例后依次调用各 phase。**6 阶段传播重算仅在偶数 tick 执行**，非传播 tick 直接返回：
+`calculate()` 拆分为 6 个阶段，基于边信号模型。**v17 结构重构**：6 个 phase 方法已从 `ContainerRedstoneData` 提取到 `RedstonePropagation` 类，`calculate()` 创建 `RedstonePropagation` 实例后依次调用各 phase。传播每 game tick 执行一次（v17.2 起 1 tick 分辨率）：
 
 ```
 calculate(context, tick):
   1. processedThisTick 去重检查
-  2. tickCounter++
-  3. 收集所有红石组件槽位（torch/dust/button/lever/lamp/repeater/comparator/redstoneBlock）
-  4. 若 edgeGrid 与容器尺寸不匹配 → 重建
+  2. lastTickTime 心跳刷新（容器缓存过期清理用）
+  3. faceInput 刷新：injectExternalInputs(context)（须先于 reset() 的双缓冲交换）
+  4. 取容器快照；若 edgeGrid 与容器尺寸不匹配 → 重建
 
   5. 若全部为空 → edgeGrid.zero() → computeFaceOutput → notifyBoundaryChange → 返回
      （无红石物品时立即清零信号并通知邻居）
 
-  6. 若 tickCounter % 2 != 0 → 直接返回
-     （非传播 tick：edgeGrid 不变，无需任何操作）
-
-  ——— 以下仅在传播 tick（偶数 tick）执行 ———
-
-  7. 重置：swap edgeGrid ↔ prevEdgeGrid，清零 edgeGrid
-  8. faceInput 刷新：injectExternalInputs(context)
-  9. 稳态跳过判定：若 steady.canSkip(rev, externalSig, activeTimers) → 跳过 10-15，直接到 16
-
-  10. RedstonePropagation prop = new RedstonePropagation(edgeGrid, slotMask, faceInput, ...)
+  6. 重置：swap edgeGrid ↔ prevEdgeGrid，清零 edgeGrid
+  9. RedstonePropagation prop = new RedstonePropagation(edgeGrid, slotMask, faceInput, ...)
   prop.phase0CountdownDelays()    — 倒计时 + 断电检测（用 prevEdgeGrid 的边）
   prop.phase1CollectSources()     — 信号源直接写边，红石粉邻居入队
   prop.phase2Propagation()        — BFS 传播（仅红石粉入队，faceInput 不再参与）
@@ -422,9 +413,8 @@ calculate(context, tick):
   prop.phase3RecheckInputs()      — 重新检测级联输入（中继器/比较器），比较器写回边网格
   prop.phase5UpdateDisplay()      — 更新物品显示状态（火把/灯/红石粉）
 
-  11. computeFaceOutput(width, height)
-  12. notifyBoundaryChange(context, ...)  （变化时才通知世界）
-  13. steady.withRecord(...) 持久化稳态状态
+  computeFaceOutput(width, height)
+  notifyBoundaryChange(context, ...)  （变化时才通知世界）
 
   输出通过 Mixin 完成：
   BlockStateBase.getSignal()           — 弱信号（返回 getBoundarySignal()）
@@ -791,20 +781,13 @@ ContainerRedstoneData
 ├── faceOutput[4]         — 每面的内部输出信号（扫描 edgeGrid 边界边得出）
 ├── prevFaceOutput[4]     — 上一帧面输出（用于变化检测）
 ├── prevEdgeGrid           — 上一帧边信号（用于断电检测）
-└── steady                — SteadyState 值对象（稳态跳过状态，v17 从散落字段收拢）
+└── lastTickTime          — 心跳时间戳（容器缓存过期清理用）
 
 RedstonePropagation（v17 提取，用完即弃）
 ├── 持有 edgeGrid / slotMask / faceInput 等共享 mutable 引用
 ├── phase0 ~ phase5 方法
 └── 辅助方法（propagateDir / powerConductiveNeighbor / computeDustConnections 等）
 
-SteadyState（v17 新增，不可变 record）
-├── revision              — 上次重算时的物品修订计数
-├── externalSig           — 上次重算时的外部输入签名
-├── hadActiveTimers       — 上次重算时有无在途倒计时
-├── everCalculated        — 是否至少重算过一次
-├── skipCount             — 累计跳过次数
-└── lastTickTime          — 上次重算时间戳
 ```
 
 **面信号模型核心思想**：`edgeGrid` 回归纯粹的内部传播角色，`faceInput` / `faceOutput` 作为容器面的抽象，对标原版的 `getSignal(face)`：
@@ -1631,39 +1614,35 @@ ContainerLivingItemHandler.processContext()
   → 世界邻居收到更新，重新读取信号 → 0 ✓
 ```
 
-### 8.5 稳态跳过优化（性能）
+### 8.5 稳态跳过优化（已移除，v19.1）
 
-**背景**：红电系统里绝大多数 tick 都是稳态——开关电路点亮后长时间不变。原实现每 tick 无脑跑完整六阶段传播（phase0 倒计时 → phase1 收集源 → phase2 BFS → phase4 充能 → phase3 重检 → phase5 显示），即使容器内红石物品与外部输入都毫无变化也照算。这是红电最大的常驻 CPU 开销，多容器各自 20Hz tick 时积少成多。
+**结论**：该优化已在 v19.1 **整体移除**，`SteadyState` 类删除，`calculate()` 恢复逐 tick 全量六阶段传播。
 
-**机制（纯性能优化，语义不变）**：`calculate()` 开头采样三个状态，三者**同时成立**就早退跳过整段传播、直接复用上一拍算好的 `edgeGrid`，信号与逐 tick 重算完全一致：
+**移除原因（游戏内实测：火把反相环振荡全部静止）**——三闸门模型有一个结构性漏洞：
+它假设「传播是输入（rev / externalSig / 定时器）的纯函数」，但**火把的 lit 是内部状态**：
 
-```
-每 tick 开头采样 →
-  ① 物品修订计数不变   rev == steady.revision()
-  ② 外部输入签名不变   externalSig == steady.externalSig()（Arrays.hashCode(faceInput)）
-  ③ 无在途倒计时       !steady.hadActiveTimers()（中继器 delayTimer / 按钮 pulseTimer 在跑则为 true）
-  ├─ 三道闸门全成立 → 跳过：复用 edgeGrid，skipCount++
-  └─ 任一不成立     → 照常重算（不跳过）
-```
+1. 火把在 phase5 翻转 lit（`syncSlotToClients` bump rev）→ 实算出口 `withRecord`
+   重采样 rev，**把这次翻转吸收进稳态快照**；
+2. 翻转的**后果**（新 lit 驱动的输出写入 edgeGrid、传播到下游、引发下一轮翻转）
+   要到**下一拍** phase1/phase2 才发生——而下一拍开头采样 rev 与快照相等、
+   外部签名相等、火把环无中继器/按钮（hadActiveTimers=false）→ 三闸全过 → **跳过**；
+3. 跳过拍吞掉了后果的生效 tick，此后电路再无任何 rev/sig/timer 变化 →
+   跳过**自我维持**，振荡永久冻结。
 
-- `externalSig` 来自 `faceInput`（含原版世界信号 + 相邻活容器 `getBoundarySignal`），`faceInput` 清零已移入 `injectExternalInputs` 开头，以便提前采样。
-- 跳过分支**不调 `syncSlotToClients`**，故 `rev` 稳定，进入稳态后可连续多拍一直跳过、无抖动。
-- 出口经 `steady.withRecord(...)` 创建新的 `SteadyState` 实例，持久化重算后的状态（v17 起收拢为不可变值对象，原子更新，杜绝字段遗漏）。
+这不是火把特有的问题：任何「内部状态 + 状态驱动的输出」类元件（未来的活塞、
+时钟等）都会踩同一类坑。要修对判据，就必须为每一类状态演化来源加闸门——
+在红石这种逐 tick 高敏感场景里，等价于重新实现一个「这拍会不会变」的预测器，
+脆弱且不断新增漏报面。
 
-**为什么安全（不会冻结变化的电路）**：
-- 物品内容变更走 `setItem`/`syncSlotToClients` 必 bump 修订计数 → 第 ① 道闸打破 → 当拍强制重算。
-- 邻居红石或原版世界信号变化 → `faceInput` 变化 → `externalSig` 变化 → 第 ② 道闸打破。
-- 唯一不受前两者驱动的逐 tick 演化是定时器倒计时（中继器/按钮），由第 ③ 道闸 `steady.hadActiveTimers()` 兜底——倒计时在跑时本拍必重算，绝不冻结时序；归零进入稳态后才允许跳过。
+**性能复盘**：该优化省下的是稳态电路的全量 BFS——在槽位位图优化后，满载 54 格
+传播仅约 4.9μs，稳态更低；20Hz × 多容器的常驻开销在微秒量级，可忽略。
+用微秒级收益赌每一类状态元件的正确性，不值。历史上该优化还先后踩过
+rev-bump 差一拍、修订计数停滞（原版直写绕过 bump，需内容签名兜底）、
+跳过拍 prevEdgeGrid 不同步压碎电力层周期估计三个坑——修复成本已超过收益。
 
-**代价与风险（用复杂度换常驻性能）**：
-- 多一个 `SteadyState` record 值对象，跨 tick 状态由散落 5 个字段收拢为 1 个不可变实例，bug 面反而缩小。
-- **rev-bump 坑（已实现并修复）**：`steady.withRecord(...)` 最初用方法开头采样的 `rev`，但传播过程中 phase5/phase3 经 `syncSlotToClients` 会 bump 修订计数，导致 `steady.revision()` 落后一拍、下一拍开头采到的 `rev` 永远与之不等，稳态跳过几乎无法触发。修复为在重算出口**重采样重算后的** `getContainerRevision(context)`，与下一拍开头采样对齐。这是典型的"差一拍"隐蔽 bug。
-- **修订计数停滞坑（Bug B，已实现并修复）**：`bumpContainerRevision` 只被 `SimpleContainerContext.setItem` / `syncSlotToClients` 调用 = 仅本模组**自身**写入路径计数。原版玩家点击、漏斗、掉落物拾取直接改底层容器、完全绕开这些包装方法 → 修订计数停滞 → 第 ① 道闸 `rev==lastRev` 永不打破、快照缓存永不重建 → 容器内信号层集体"死掉"（只有外接跨容器信号改变 `externalSig` 第 ② 道闸时才暂时活过来）。修复：`ContainerLivingItemHandler.processContext` 在每 tick 槽位扫描后调用 `syncContentRevision(ctx)`，用「内容签名」（逐槽位 `Item.getId + 数量`，空槽参与混合，O(槽位)）兜底——内容变化则 `bumpContainerRevision`。只比对 id+数量（DataComponent 变更仅本模组发起、已走 `syncSlotToClients`，无需覆盖）。`cleanupStalePosIndex` / `clearAllCaches` 同步清理签名映射。回归测试：`bugB_contentChangedViaVanillaPath_bumpsRevision` / `bugB_vanillaRemoval_reflectedAfterSyncContentRevision`；配套 `FakeContainerContext.rawSet` 模拟原版直写（不 bump）。
-- **调试不透明**：稳态时 `calculate` 主体不执行，内部日志/断点不触发，排"为什么信号没更新"时易误判。
-- **只对稳态有效**：电路活跃变化期间几乎从不触发，收益完全集中在静止电路（常驻省电，非"让复杂电路变快"）。
-- **极端残留风险**：`externalSig` 用 `Arrays.hashCode` 比对，理论哈希碰撞会误跳一拍显示陈旧信号，概率极低且下一拍输入再变即自愈。
-
-**验证**：`ContainerRedstoneDataTest` 新增 `steadyState_skipsWhenUnchanged`（物品不变连跳 2 tick、移除末端 rev 变强制重算）、`steadyState_noSkipWhileRepeaterCountingDown`（倒计时期间恒 0 跳过、归零后稳态才跳 1）；全量测试 144 例 0 失败。
+**回归守卫**：`ContainerRedstoneDataTest.torchNotRing_oscillates`——
+火把 + 红石粉环（1 个反相器 + 环路延迟）跑 12 tick，断言 lit 两种状态都出现
+（振荡未冻结）。原两个稳态跳过用例随优化一并删除。
 
 ---
 
@@ -1682,7 +1661,6 @@ ContainerLivingItemHandler.processContext()
 | 活比较器 | 比较/减法 + 物品检测 + 边网格回退读取 + Phase1/Phase3 写方向边 | `LivingComparatorFunction` + `ComparatorToggleHandler` |
 | 边信号模型 | EdgeGrid 每槽自有出边（v15）+ 边界出边即面边界 + 六阶段 BFS + 面信号模型 + 僵尸数据清理 | `ContainerRedstoneData` |
 | Phase 方法提取 | 6 个 phase 及辅助方法提取到 `RedstonePropagation`，`calculate()` 编排调用（v17） | `RedstonePropagation` |
-| 稳态跳过优化 | `SteadyState` 值对象收拢跨 tick 状态，`canSkip` 三闸门早退（v17） | `SteadyState` |
 
 ### 计划中（P3）
 

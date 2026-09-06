@@ -198,9 +198,8 @@ src/main/java/com/qiqi/li/
 │   │   ├── LivingComparatorFunction.java     #     活比较器
 │   │   ├── LivingRedstoneBlockFunction.java  #     活红石块
 │   │   ├── LivingCopperFunction.java         #     活铜块（锈蚀等级即导通性）
-│   │   ├── RedstonePropagation.java          #     传播算法核心（BFS + 稳态跳过）
+│   │   ├── RedstonePropagation.java          #     传播算法核心（BFS，逐 tick 全量重算）
 │   │   ├── RedstoneSnapshotProvider.java     #     红石槽位快照提供器
-│   │   ├── SteadyState.java                  #     稳态值对象（跳过整段 calculate 的判据）
 │   │   ├── LivingRedstoneData.java           #     活红石粉数据
 │   │   ├── LivingRedstoneTorchData.java      #     活红石火把数据
 │   │   ├── LivingButtonData.java             #     活按钮数据
@@ -469,6 +468,9 @@ src/test/java/com/qiqi/li/
   切制 H/V 双通道拆除，`channelSecondary` 删除）
 - ✅ 新增：AccountingGateTest（4 项）+ PhaseInterpretationTest（8 项），
   全量 183 用例全绿
+- ✅ 移除：红石稳态跳过优化（v19.1）——三闸门模型吞掉火把振荡器的「翻转后果 tick」
+  后靠 rev/sig/timer 不变自维持死锁，游戏内振荡线路集体静止（SteadyState 删除，
+  calculate 恢复逐 tick 全量重算；回归守卫 torchNotRing_oscillates）
 - 📄 技术文档：living-power-tech.md §3.8 / 红电系统.md v19.1 修订
 
 **最近更新** (2026-08-30):

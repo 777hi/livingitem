@@ -1,7 +1,7 @@
 # Living Map & Living Ender Pearl (活地图 & 活末影珍珠) 技术文档
 
-> **文档版本**: 2026.08 v51  
-> **最后更新**: 2026-08-20  
+> **文档版本**: 2026.09 v57  
+> **最后更新**: 2026-09-05  
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -2710,3 +2710,17 @@ if (consumed < cost) {
 **修复**：传送前 `ModSable.hasSoftConnection` 检测软连接，命中即拒绝传送并提示（不消耗珍珠、不进冷却）。判据与已知局限详见 §11.2.3。实机验证通过。
 
 **修改文件**：`SableIntegration`（hasSoftConnection + 诊断日志）、`ModSable`（容错包装）、`TeleportHelper`（拦截 + `sendSoftConnectionMessage`）、语言文件（`soft_connection` 中英文）。
+
+### v56 → v57：高视距频繁传送卡死（区块生成风暴）
+
+**问题**：暮色森林中手持活地图频繁传送（4 次/13 秒）到未探索区域后，服务端无响应。spark 报告显示 `Timed out waiting for world statistics`，客户端正常。
+
+**根因**：服务端视距为 32（`Changing view distance to 32, from 10`），每次传送到未探索区域需生成 **(32×2+1)² = 4225 个区块**。3 次连续未探索传送叠加，区块生成量远超服务端处理能力，主线程被区块生成任务阻塞，无法向客户端发送区块数据包，导致客户端空白等待 → 服务端完全无响应。
+
+**为何 v50→v51 的 `MapUpdateSkipHelper` 不能解决**：`MapUpdateSkipHelper` 只跳过 `MapItem.update()` 的区块加载，而区块生成风暴发生在**区块加载之前**的 `ChunkMap.scheduleChunkGeneration()` 阶段。视距 32 下 4225 个区块的生成任务远超 40 tick 冷却窗口能覆盖的范围。
+
+**确切结论**：**非 living_item 自身 bug，是视距过高导致的原版区块生成过载**。living_item 的 `processLevelContainers` 处理所有容器（含暮色森林自然生成的）平均耗时 <10ms，无性能警告。
+
+**验证**：将视距从 32 调低后，同样频繁传送不再卡死。
+
+**后续建议**：可考虑在传送时临时降低服务端视距（类似早期 v48 试验的 `ChunkMapMixin` 方案），但 v50 已回退此优化。当前推荐方案是用户自行控制视距设置。

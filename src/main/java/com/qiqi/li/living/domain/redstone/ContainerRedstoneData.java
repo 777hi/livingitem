@@ -66,18 +66,15 @@ public class ContainerRedstoneData {
 
     private boolean processedThisTick;
 
-    /** 稳态跳过状态（跨 tick 持久），封装在不可变值对象中 */
-    private SteadyState steady = SteadyState.initial();
-
-    /** 稳态跳过次数（性能观测 / 测试可见），与 {@code steady.skipCount()} 同步 */
-    public int steadySkipCount = 0;
+    /** 心跳时间戳（容器缓存 120s 过期清理用；每次 calculate 刷新） */
+    private long lastTickTime = System.currentTimeMillis();
 
     public ContainerRedstoneData() {
         this.processedThisTick = false;
     }
 
     public long getLastTickTime() {
-        return steady.lastTickTime();
+        return lastTickTime;
     }
 
     public void resetProcessedFlag() {
@@ -199,36 +196,14 @@ public class ContainerRedstoneData {
     public void calculate(ContainerContext context, TickContext tick) {
         if (processedThisTick) return;
         processedThisTick = true;
+        lastTickTime = System.currentTimeMillis();
 
         int size = context.getSize();
         int width = context.getWidth();
         int height = (size + width - 1) / width;
 
-        // ── 稳态跳过判定（放最前，尽量早返回省开销）──
-        // 先采样外部输入（便宜：邻居世界信号 + 相邻活容器边界信号）算签名；
-        // 物品修订计数与外部签名都不变、且无在途倒计时定时器时，本 tick 传播结果与上 tick
-        // 完全一致，可直接复用 edgeGrid 跳过整段 calculate（含 BFS）。
-        // 安全性：物品变更会 bump 修订计数（rev 变），邻居/原版红石变化会改变外部输入签名；
-        // 唯一不受这两者驱动的逐 tick 演化是中继器 delayTimer / 按钮 pulseTimer 倒计时，
-        // 故用 hadActiveTimers 作保险——只要有倒计时在跑就强制重算，绝不冻结时序。
-        long rev = ContainerLivingItemHandler.getContainerRevision(context);
+        // 外部输入采样（faceInput 供定向元件读外部信号；必须在 reset() 的双缓冲交换之前完成）
         injectExternalInputs(context);
-        int externalSig = java.util.Arrays.hashCode(faceInput);
-
-        if (steady.canSkip(rev, externalSig, steady.hadActiveTimers())) {
-            // 稳态跳过承诺「本 tick 结果与上 tick 完全一致」——但 prevEdgeGrid 停留在
-            // 上一次实算的快照（可能已是多个 tick 前）。电力层靠 cur/prev 对比检测
-            // 上升沿，若不同步，每个跳过 tick 都会把陈旧 prev 当出新的跳变（重复上升沿，
-            // 周期估计被压碎为 1）。跳过时把 cur 按值同步进 prev，跳变检测自然归零。
-            if (edgeGrid != null && prevEdgeGrid != null
-                && edgeGrid.width == prevEdgeGrid.width
-                && edgeGrid.height == prevEdgeGrid.height) {
-                System.arraycopy(edgeGrid.edges, 0, prevEdgeGrid.edges, 0, edgeGrid.edges.length);
-            }
-            steady = steady.withSkip();
-            steadySkipCount = steady.skipCount();
-            return;
-        }
 
         // 取（或构建）本 tick 容器快照；物品未变更时框架返回跨 tick 缓存的同一实例。
         // 红电位图与铜氧化等级均来自快照，calculate 内不再扫描物品。
@@ -258,8 +233,6 @@ public class ContainerRedstoneData {
             if (edgeGrid != null) edgeGrid.zero();
             computeFaceOutput(width, height);
             notifyBoundaryChange(context, width, height);
-            steady = steady.withRecord(ContainerLivingItemHandler.getContainerRevision(context), externalSig, false);
-            steadySkipCount = steady.skipCount();
             return;
         }
 
@@ -288,28 +261,11 @@ public class ContainerRedstoneData {
         prop.phase5UpdateDisplay(torchSlots, dustSlots, lampSlots, copperSlots);
         computeFaceOutput(width, height);
         notifyBoundaryChange(context, width, height);
-        steady = steady.withRecord(ContainerLivingItemHandler.getContainerRevision(context), externalSig, computeActiveTimers(repeaterSlots, buttonSlots, context));
-        steadySkipCount = steady.skipCount();
-    }
-
-    /** 本 tick 是否有在途倒计时定时器（中继器 delayTimer / 按钮 pulseTimer），需要强制重算以推进时序 */
-    private boolean computeActiveTimers(Set<Integer> repeaterSlots, Set<Integer> buttonSlots, ContainerContext context) {
-        for (int slot : repeaterSlots) {
-            ItemStack s = context.getItem(slot);
-            if (s.isEmpty()) continue;
-            if (LivingItemManager.getRepeaterData(s).delayTimer() > 0) return true;
-        }
-        for (int slot : buttonSlots) {
-            ItemStack s = context.getItem(slot);
-            if (s.isEmpty()) continue;
-            if (LivingItemManager.getButtonData(s).pulseTimer() > 0) return true;
-        }
-        return false;
     }
 
     private void injectExternalInputs(ContainerContext context) {
         // 每次采样前清零：faceInput 为「本 tick 外部输入」的临时累积，必须在填充前清空，
-        // 否则会带着上一 tick 的残留值（calculate 开头已提前调用一次用于稳态判定）。
+        // 否则会带着上一 tick 的残留值（calculate 开头已提前调用一次，先于 reset() 的双缓冲交换）。
         java.util.Arrays.fill(faceInput, 0);
 
         Level level = context.getLevel();

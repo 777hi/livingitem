@@ -356,75 +356,40 @@ class ContainerRedstoneDataTest {
     }
 
     // ════════════════════════════════════════
-    // 稳态跳过（steady-state skip）
+    // 内部状态演化回归（稳态跳过已于 v19.1 移除——它把火把振荡器的
+    // 「翻转后果 tick」吞掉后靠三闸门自维持死锁，振荡线路全部静止）
     // ════════════════════════════════════════
 
     @Test
-    @DisplayName("稳态跳过：物品与外部输入不变、无倒计时时 calculate 被跳过且信号不变")
-    void steadyState_skipsWhenUnchanged() {
-        var ctx = new FakeContainerContext(SIZE, WIDTH);
-        ctx.set(4, living(Items.REDSTONE_BLOCK, 1));
-        ctx.set(5, living(Items.REDSTONE, 1));
-        ctx.set(6, living(Items.REDSTONE, 1));
+    @DisplayName("火把反相环：lit 逐 tick 翻转、振荡永不冻结（状态演化回归守卫）")
+    void torchNotRing_oscillates() {
+        // 3×3：火把居中（输入=左），红石粉绕环回到输入侧——1 个反相器 + 环路延迟 = 振荡
+        var ctx = new FakeContainerContext(SIZE, 3);
+        ItemStack torch = living(Items.REDSTONE_TORCH, 1);
+        LivingItemManager.setRedstoneTorchData(torch,
+            LivingItemManager.getRedstoneTorchData(torch).withDirection(Pos2D.RIGHT));
+        ctx.set(4, torch);
+        for (int idx : new int[] {3, 5, 6, 7, 8}) {
+            ctx.set(idx, living(Items.REDSTONE, 1));
+        }
 
         var slots = Map.<String, Set<Integer>>of(
-            LivingRedstoneBlockFunction.ID, Set.of(4),
-            LivingRedstoneFunction.ID, Set.of(5, 6));
+            LivingRedstoneTorchFunction.ID, Set.of(4),
+            LivingRedstoneFunction.ID, Set.of(3, 5, 6, 7, 8));
 
         var data = new ContainerRedstoneData();
+        boolean sawLit = false;
+        boolean sawUnlit = false;
+        for (int t = 0; t < 12; t++) {
+            tickOnce(data, ctx, slots);
+            if (LivingItemManager.getRedstoneTorchData(ctx.getItem(4)).isLit()) sawLit = true;
+            else sawUnlit = true;
+        }
 
-        tickOnce(data, ctx, slots);
-        int sig5First = data.getSignal(5);
-        int sig6First = data.getSignal(6);
-        assertTrue(sig5First > 0 && sig6First > 0, "前置：红石块应点亮粉链");
-
-        // 第 2、3 次：物品与外部输入都不变 → 应跳过（复用 edgeGrid）
-        tickOnce(data, ctx, slots);
-        tickOnce(data, ctx, slots);
-        assertEquals(2, data.steadySkipCount, "物品不变时应跳过 2 次");
-        assertEquals(sig5First, data.getSignal(5), "跳过不应改变信号");
-        assertEquals(sig6First, data.getSignal(6), "跳过不应改变信号");
-
-        // 第 4 次：移除粉链末端（物品变更 → rev 变化）→ 强制重算，跳过计数不再增长
-        ctx.set(6, ItemStack.EMPTY);
-        tickOnce(data, ctx, Map.of(
-            LivingRedstoneBlockFunction.ID, Set.of(4),
-            LivingRedstoneFunction.ID, Set.of(5)));
-        assertEquals(2, data.steadySkipCount, "物品变化后应强制重算，跳过计数不变");
-        assertEquals(0, data.getSignal(6), "移除粉链末端后该格信号应归零");
-        assertEquals(sig5First, data.getSignal(5), "上游粉仍应被点亮");
-    }
-
-    @Test
-    @DisplayName("稳态跳过不冻结时序：中继器倒计时期间仍逐 tick 重算，归零后才跳过")
-    void steadyState_noSkipWhileRepeaterCountingDown() {
-        var ctx = new FakeContainerContext(SIZE, WIDTH).withGameTime(100);
-        ctx.set(9, living(Items.REDSTONE_BLOCK, 1));
-        ItemStack repeater = living(Items.REPEATER, 1);
-        LivingItemManager.setRepeaterData(repeater, LivingRepeaterData.DEFAULT.withDirection(Pos2D.RIGHT));
-        ctx.set(10, repeater);
-        ctx.set(11, living(Items.REDSTONE, 1));
-
-        var slots = Map.<String, Set<Integer>>of(
-            LivingRedstoneBlockFunction.ID, Set.of(9),
-            LivingRepeaterFunction.ID, Set.of(10),
-            LivingRedstoneFunction.ID, Set.of(11));
-
-        var data = new ContainerRedstoneData();
-
-        // 充能与倒计时期间（delayTimer 仍在递减）必须全算，绝不能跳过
-        tickOnce(data, ctx, slots);
-        assertEquals(0, data.steadySkipCount, "首次必全算");
-        tickOnce(data, ctx, slots);
-        assertEquals(0, data.steadySkipCount, "倒计时期间不应跳过");
-        tickOnce(data, ctx, slots);
-        assertEquals(0, data.steadySkipCount, "倒计时期间不应跳过");
-        assertEquals(0, LivingItemManager.getRepeaterData(ctx.getItem(10)).delayTimer(), "计时器应已归零");
-
-        // 归零且输入稳定后进入稳态，下一次才允许跳过，且输出保持
-        tickOnce(data, ctx, slots);
-        assertEquals(1, data.steadySkipCount, "倒计时结束后进入稳态才跳过");
-        assertTrue(data.getSignal(11) > 0, "跳过不应丢失中继器输出");
+        assertTrue(sawLit && sawUnlit,
+            "火把 lit 应逐 tick 翻转（振荡）；只剩一种状态说明状态演化被冻结");
+        assertTrue(data.getSignal(5) > 0 || data.getSignal(3) > 0 || sawUnlit,
+            "环上信号应随振荡变化");
     }
 
     // ════════════════════════════════════════
@@ -582,7 +547,7 @@ class ContainerRedstoneDataTest {
 
         assertEquals(15, first, "首 tick 红石块应为相邻红石粉供能 15（只设输入边，不覆盖出边，衰减从粉→粉开始）");
         assertEquals(15, data.getSignal(11),
-            "稳态跳过后红石块仍应持续供能（跳过次数=" + data.steadySkipCount + "）");
+            "多 tick 后红石块仍应持续供能（逐 tick 全量重算）");
     }
 
     // ════════════════════════════════════════
