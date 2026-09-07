@@ -94,6 +94,7 @@ SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 | **图标系统** | 三层架构 + 声明式配置 + 上下文切换 | [icon-system.md](docs/system-design/icon-system.md) |
 | **Tooltip 系统** | 双层渲染架构 + 运行时缓存同步 + 显示口径（窗口均值/mFE） | [tooltip-system.md](docs/system-design/tooltip-system.md) |
 | **红电架构演进** | SensorPort 感知端口 + 事件流/元件接口化路线（信号层⇄电力层解耦） | [redstone-evolution-roadmap.md](docs/system-design/redstone-evolution-roadmap.md) |
+| **红电不变量测试** | 31 条可执行不变量 + 四层测试方案（属性测试/场景生成/蜕变/运行时监控） | [power-invariants.md](docs/system-design/power-invariants.md) |
 | **基础设施** | 容器抽象 + 发现缓存 + SlotAccessor + 性能监控 | [living-item-infrastructure.md](docs/system-design/living-item-infrastructure.md) |
 | **数据模型** | DataComponent 体系 + 新旧架构对比 + 设计决策 | [data-model.md](docs/system-design/data-model.md) |
 | **单元测试** | FML 测试环境配置 + 测试替身 + 可测性边界 | [unit-testing.md](docs/guides/unit-testing.md) |
@@ -458,6 +459,29 @@ src/test/java/com/qiqi/li/
 
 ### 当前版本: v0.9-alpha
 
+**最近更新** (2026-09-07):
+- ✅ 重组：**活潜影箱从红电系统剥离为独立基础设施**——红电系统.md 第 2 章（Phase 2）
+  整体迁出（原章节留编号存根，§3.x 与外部锚点稳定）；总览/里程碑/风险表/复用表同步更新；
+  idea.md 的活潜影箱创始定义一并合并。新文档 **活潜影箱实现细节.md**（v2.0）：
+  基础设定（兼容**所有活物品**而非当前已实现集合——通用活物品基础设施，随新活物品
+  逐个补充嵌套实现细节）+「最伟大的活物品」愿景 + 创始定义 + 边界连续性/芯片封装
+  （原红电 §2.2~2.7）+ 局部演化+边界交换模型（旧全局视图方案否定）+ 2D↔3D 桥接
+  （世界引脚面）+ 与红电的单向协同说明 + **§8 各活物品嵌套细节台账**（活物品实现
+  时的补充主线：漏斗/红石/熔炉/水桶/TNT/箱子/末影箱/水车/铜块/避雷针逐格待补）
+
+**最近更新** (2026-09-07):
+- ✅ 新增：**红电不变量清单与四层测试方案**（[power-invariants.md](docs/system-design/power-invariants.md)）——
+  把红电系统.md 的每条设计原则翻译成 **31 条可执行不变量**（记账 5 / 相位 6 / 共振 5 /
+  储能 5 / 集成 7 / 显示 3），每条标注断言入口（真实类与方法）与断言草图；
+  附**历史 bug ↔ 不变量映射表**（16 个已修 bug 逐一对应可拦截的不变量，证明
+  「没有一个能靠多测一个场景拦住」）+ 四层测试实施方案：
+  L1 jqwik 属性测试（工具定选 jqwik，自带 shrink；先过 FML 冒烟门）/
+  L2 种子驱动 ScenarioBuilder 场景生成（processContext 生产路径）/
+  L3 蜕变测试（频率×k / 平移 / 复制 / 幅度缩放四关系）/
+  L4 运行时监控（PowerInvariantMonitor 每 tick 断言 + 违反即 ERROR 快照，
+  玩家 = 模糊测试器；前置 distributeToBulbs 返回 boolean→long 小重构）。
+  本轮只交付文档（定稿待实施），代码步骤见文档 §6 路线图
+
 **最近更新** (2026-09-05):
 - ✅ 新增：**记账跳变门控**——入账只看「本 tick 有跳变」的最佳域，能量 = 合因子 × P × 跳变路数
   （按 offset 去重）。修复旧「每 tick 无条件入账 ×P」的频率中性化反转
@@ -589,8 +613,12 @@ docs/
 │   ├── gui-interaction-system.md     #   GUI交互系统（声明式规则+创造模式兼容）
 │   ├── icon-system.md                #   图标系统（三层架构+声明式配置）
 │   ├── tooltip-system.md             #   Tooltip系统（双层渲染+运行时缓存+显示口径）
-│   └── redstone-evolution-roadmap.md #   红电架构演进路线（SensorPort+事件流+元件接口化）
+│   ├── redstone-evolution-roadmap.md #   红电架构演进路线（SensorPort+事件流+元件接口化）
+│   └── power-invariants.md          #   红电不变量清单与四层测试方案（31条可执行断言）
 ├── framework-refactoring.md          # 框架重构总结（HasDirection + HasContainerData 接口化设计）
+├── 红电系统.md                        # 活红石+活铜块+活避雷针规划（v19.2 活潜影箱已剥离）
+├── 活潜影箱实现细节.md                # 活潜影箱独立设计（通用嵌套基础设施，随活物品扩展生长）
+├── idea.md                           # 原始创意笔记（活铜块/电力部分）
 ├── tech/                             # 各活物品技术文档
 │   ├── living-tnt-tech.md
 │   ├── living-water-bucket-tech.md
