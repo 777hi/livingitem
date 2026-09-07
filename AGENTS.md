@@ -460,6 +460,12 @@ src/test/java/com/qiqi/li/
 ### 当前版本: v0.9-alpha
 
 **最近更新** (2026-09-07):
+- ✅ 修复：**活熔炉岩浆桶整桶被吞**——`tickFuel` 消耗燃料只 `shrink(1)`，漏掉 crafting
+  remainder；燃料消耗收拢到 `consumeFuel()`，对齐原版熔炉点燃语义（带残留物的燃料
+  整槽替换为残留物：岩浆桶→空桶；普通燃料扣 1 个、耗尽清空）。回归测试
+  LivingFurnaceFunctionTest（4 项），全量 205 用例全绿（基线 183 + 红电工作区未提交用例）
+
+**最近更新** (2026-09-07):
 - ✅ 重组：**活潜影箱从红电系统剥离为独立基础设施**——红电系统.md 第 2 章（Phase 2）
   整体迁出（原章节留编号存根，§3.x 与外部锚点稳定）；总览/里程碑/风险表/复用表同步更新；
   idea.md 的活潜影箱创始定义一并合并。新文档 **活潜影箱实现细节.md**（v2.0）：
@@ -533,7 +539,7 @@ src/test/java/com/qiqi/li/
 
 **最近更新** (2026-08-30):
 - ✅ 新增：红电发电阶段一~三 —— `domain/power` 包
-  （`PowerMath` / `PathState` / `ChannelState` / `GeneratorState` / `ContainerPowerData`），
+  （`PowerMath` / `ChannelState` / `GeneratorState` / `ContainerPowerData`），
   双因子模型落地：合因子 = n^(1+解锁度)，解锁度 = 调谐效率 × 规律度
 - ✅ 新增：`LivingWaxedCopperFunction`（priority=3，晚于红石）——涂蜡全家族 20 件活化，
   逐方向采样 edgeGrid 事件，跳变即能量事件入账（RE 自然单位，K=1/16 边界换算）

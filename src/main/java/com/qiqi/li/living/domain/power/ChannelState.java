@@ -1,8 +1,10 @@
 package com.qiqi.li.living.domain.power;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -328,6 +330,22 @@ public class ChannelState {
                 out.put(e.getKey(), e.getValue().maxDelta);
             }
             return Collections.unmodifiableMap(out);
+        }
+
+        /**
+         * 域内各相位（offset → maxDelta），**按 offset 升序**。
+         *
+         * <p>凡是要求「顺序」的消费者（相位圆盘、F3+H 文本诊断、域快照序列化）都必须走这里：
+         * {@link #deltaByOffset()} 内部是 HashMap，迭代顺序是哈希序而非 offset 序，
+         * 直接遍历它拿到的顺序不确定——曾因此把 offset 整个丢掉，只传了 δ 值列表给客户端。</p>
+         */
+        public List<Map.Entry<Integer, Integer>> phasesSorted() {
+            List<Map.Entry<Integer, Integer>> out = new ArrayList<>(offsets.size());
+            for (var e : offsets.entrySet()) {
+                out.add(Map.entry(e.getKey(), e.getValue().maxDelta));
+            }
+            out.sort(Map.Entry.<Integer, Integer>comparingByKey());
+            return out;
         }
     }
 

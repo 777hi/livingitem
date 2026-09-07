@@ -237,11 +237,25 @@ private LivingFurnaceData tickFuel(ContainerContext ctx, LivingFurnaceData data,
     ItemStack fuelStack = ctx.getItem(fuelSlot);
     int fuelValue = getFuelValue(fuelStack);
     if (fuelValue > 0 && !LivingItemManager.isLivingItem(fuelStack)) {
-        fuelStack.shrink(1);  // 消耗 1 个燃料物品
-        ctx.setItem(fuelSlot, fuelStack.copy());
+        consumeFuel(ctx, fuelSlot, fuelStack);  // 消耗 1 个燃料物品（带残留物语义）
         return data.withFuel(new FuelData(fuelValue));
     }
     return data;
+}
+```
+
+**合成残留物**（对齐原版 `AbstractFurnaceBlockEntity#serverTick`）：点燃燃料时若燃料带
+crafting remainder，**燃料槽整体替换为残留物**（岩浆桶 → 空桶）；普通燃料只扣 1 个、
+耗尽后清空槽位。
+
+```java
+static void consumeFuel(ContainerContext ctx, int fuelSlot, ItemStack fuelStack) {
+    if (fuelStack.hasCraftingRemainingItem()) {
+        ctx.setItem(fuelSlot, fuelStack.getCraftingRemainingItem());   // 岩浆桶 → 空桶
+        return;
+    }
+    fuelStack.shrink(1);
+    ctx.setItem(fuelSlot, fuelStack.copy());
 }
 ```
 
@@ -526,6 +540,17 @@ tick.release();
 - 活熔炉支持活箱子作为输入/输出（通过 `LivingChestAccessor`）
 - 网络包发送减少（同一 tick 同一槽位只发一次）
 - 同步时机统一，不再有遗漏 `syncSlotToClients` 的风险
+
+### 8.10 岩浆桶整桶被吞 (FIXED 2026-09-07)
+
+**问题**：岩浆桶作为燃料时被整个消耗，没有像原版一样留下空桶。
+
+**原因**：`tickFuel()` 消耗燃料只做了 `shrink(1)`，没有检查燃料的 crafting remainder。
+岩浆桶注册时带 `craftRemainder(BUCKET)`，原版熔炉在点燃瞬间把整个燃料槽替换为残留物
+（`AbstractFurnaceBlockEntity#serverTick`），活熔炉漏掉了这一步。
+
+**修复**：燃料消耗收拢到 `consumeFuel()`：带残留物的燃料整槽替换为残留物（岩浆桶 → 空桶），
+普通燃料扣 1 个、耗尽清空。回归测试 `LivingFurnaceFunctionTest`（4 项）。
 
 ---
 

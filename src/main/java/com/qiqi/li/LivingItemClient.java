@@ -97,7 +97,7 @@ public class LivingItemClient {
      * 索引 1（紧跟物品名之后），而仪器面板属于进阶诊断信息，应当置底。</p>
      *
      * <p>数据源（v19.1）：发电遥测走运行时缓存 + 网络同步，**不写 DataComponent**——
-     * 这里若读组件会拿到全 0，波形图与锈级柱状图整块消失（ItemTooltipEvent 的
+     * 这里若读组件会拿到全 0，相位圆盘与锈级柱状图整块消失（ItemTooltipEvent 的
      * ThreadLocal 在本事件触发前已清空，需按悬停槽位自行定位）。</p>
      */
     @SubscribeEvent

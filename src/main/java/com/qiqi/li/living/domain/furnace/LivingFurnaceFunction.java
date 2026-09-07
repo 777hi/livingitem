@@ -160,12 +160,25 @@ public class LivingFurnaceFunction implements LivingItemFunction, HasDirection {
         ItemStack fuelStack = ctx.getItem(fuelSlot);
         int fuelValue = getFuelValue(fuelStack);
         if (fuelValue > 0 && !LivingItemManager.isLivingItem(fuelStack)) {
-            fuelStack.shrink(1);
-            ctx.setItem(fuelSlot, fuelStack.copy());
+            consumeFuel(ctx, fuelSlot, fuelStack);
             return data.withFuel(new FuelData(fuelValue));
         }
 
         return data;
+    }
+
+    /**
+     * 点燃燃料时消耗 1 个，对齐原版熔炉的合成残留物语义（AbstractFurnaceBlockEntity#serverTick）：
+     * 燃料带合成残留物（岩浆桶）→ 槽位整体替换为残留物（空桶，整槽替换与原版一致）；
+     * 普通燃料 → 扣 1 个，耗尽后槽位清空。
+     */
+    static void consumeFuel(ContainerContext ctx, int fuelSlot, ItemStack fuelStack) {
+        if (fuelStack.hasCraftingRemainingItem()) {
+            ctx.setItem(fuelSlot, fuelStack.getCraftingRemainingItem());
+            return;
+        }
+        fuelStack.shrink(1);
+        ctx.setItem(fuelSlot, fuelStack.copy());
     }
 
     private LivingFurnaceData tickTransform(ContainerContext ctx, LivingFurnaceData data, int inputSlot, Level level) {

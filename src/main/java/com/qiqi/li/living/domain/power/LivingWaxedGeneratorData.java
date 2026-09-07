@@ -114,21 +114,45 @@ public record LivingWaxedGeneratorData(
      * @param n            相数（不同偏移数）
      * @param maxDelta     域内最大 |Δ|
      * @param effDeltaSum  Σ√|Δ_i|（实际值，非 permille）
-     * @param deltas       各偏移的 |Δ|，按偏移升序（偏移 0 的 |Δ| 在数组首）
+     * @param offsets      各相位偏移 φᵢ，**按升序**；与 {@code deltas} 一一对应
+     * @param deltas       各相位的 |Δᵢ|，与 {@code offsets} 同序（同一下标 = 同一路相位）
      */
     public record DomainSnapshot(
         int period,
         int n,
         int maxDelta,
         double effDeltaSum,
+        List<Integer> offsets,
         List<Integer> deltas
     ) {
+        /**
+         * 环形最小相位间隔（tick）：相邻两路相位的最小间距，含跨周期回绕。
+         *
+         * <p>相位圆盘在 n 很大时辐条会挤在一起、读不出精确间距，这个数字是它的兜底读数。
+         * 它同时也是「同相风险」的量化：值越小，说明有两路越接近合并成一路（n 会塌缩）。</p>
+         *
+         * @return 最小间隔（tick）；相位少于 2 路时返回 -1
+         */
+        public int minPhaseGap() {
+            if (period <= 0 || offsets == null || offsets.size() < 2) return -1;
+            int min = Integer.MAX_VALUE;
+            for (int i = 1; i < offsets.size(); i++) {
+                min = Math.min(min, offsets.get(i) - offsets.get(i - 1));
+            }
+            // 跨周期回绕：最后一路 → 下一周期的 0 点 → 第一路
+            min = Math.min(min, offsets.get(0) + period - offsets.get(offsets.size() - 1));
+            return min;
+        }
+
         public static final Codec<DomainSnapshot> CODEC = RecordCodecBuilder.create(instance ->
             instance.group(
                 Codec.INT.fieldOf("period").forGetter(DomainSnapshot::period),
                 Codec.INT.fieldOf("n").forGetter(DomainSnapshot::n),
                 Codec.INT.fieldOf("max_delta").forGetter(DomainSnapshot::maxDelta),
                 Codec.DOUBLE.fieldOf("eff_delta_sum").forGetter(DomainSnapshot::effDeltaSum),
+                // v19.2 起 offsets 是 DomainSnapshot 的必需字段：不做旧 NBT 兼容，
+                // 缺字段直接暴露为格式错误，避免把缺失的真实相位数据静默伪装成无辐条。
+                Codec.INT.listOf().fieldOf("offsets").forGetter(DomainSnapshot::offsets),
                 Codec.INT.listOf().fieldOf("deltas").forGetter(DomainSnapshot::deltas)
             ).apply(instance, DomainSnapshot::new)
         );
@@ -139,8 +163,26 @@ public record LivingWaxedGeneratorData(
                 ByteBufCodecs.VAR_INT, DomainSnapshot::n,
                 ByteBufCodecs.VAR_INT, DomainSnapshot::maxDelta,
                 ByteBufCodecs.DOUBLE, DomainSnapshot::effDeltaSum,
+                ByteBufCodecs.VAR_INT.apply(ByteBufCodecs.list()), DomainSnapshot::offsets,
                 ByteBufCodecs.VAR_INT.apply(ByteBufCodecs.list()), DomainSnapshot::deltas,
                 DomainSnapshot::new
             );
+    }
+
+    /**
+     * 最佳域快照（本 record 顶层 {@code detectedPeriod} / {@code phaseCount} 的来源域）。
+     *
+     * <p>唯一性由构造保证：{@code domains} 来自 {@code ChannelState} 的
+     * {@code period → PhaseDomain} 映射，period 在域集合内唯一，
+     * 因此按 period 匹配有且仅有一个结果，不需要额外的「best」标记字段。</p>
+     *
+     * @return 最佳域；无信号（{@code detectedPeriod ≤ 0}）或无域时返回 {@code null}
+     */
+    public DomainSnapshot bestDomain() {
+        if (detectedPeriod <= 0) return null;
+        for (DomainSnapshot ds : domains) {
+            if (ds.period() == detectedPeriod) return ds;
+        }
+        return null;
     }
 }

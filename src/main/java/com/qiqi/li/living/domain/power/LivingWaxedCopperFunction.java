@@ -725,13 +725,25 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             : String.format("%.2f", milliFe / 1000.0);
     }
 
-    /** 收集通道的全部域快照到 list */
+    /**
+     * 收集通道的全部域快照到 list。
+     *
+     * <p>相位必须走 {@code phasesSorted()} 而非 {@code deltaByOffset().values()}：
+     * 后者是 HashMap 的值视图，顺序为哈希序，且会丢掉 offset 本身——
+     * 客户端因此拿不到相位位置，相位圆盘无从画起。</p>
+     */
     private static void collectDomains(ChannelState ch, List<DomainSnapshot> out) {
         for (var e : ch.domains().entrySet()) {
             ChannelState.PhaseDomain d = e.getValue();
-            List<Integer> deltas = new ArrayList<>(d.deltaByOffset().values());
+            List<Integer> offsets = new ArrayList<>();
+            List<Integer> deltas = new ArrayList<>();
+            for (var phase : d.phasesSorted()) {
+                offsets.add(phase.getKey());
+                deltas.add(phase.getValue());
+            }
             out.add(new DomainSnapshot(
-                d.period(), d.n(), d.maxDelta(), PowerMath.quantize(d.effDeltaSum(), TELEMETRY_SIG_FIGS), deltas));
+                d.period(), d.n(), d.maxDelta(), PowerMath.quantize(d.effDeltaSum(), TELEMETRY_SIG_FIGS),
+                offsets, deltas));
         }
     }
 
@@ -901,13 +913,17 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
                       .append("  n=").append(ds.n())
                       .append("  Σ√|Δ|=").append(String.format("%.1f", ds.effDeltaSum()))
                       .append("  max|Δ|=").append(ds.maxDelta());
+                    int gap = ds.minPhaseGap();
+                    if (gap >= 0) sb.append("  Δφ=").append(gap).append("t");
                     tooltipAdder.accept(Component.literal(sb.toString())
                         .withStyle(ChatFormatting.DARK_PURPLE));
-                    // 各偏移的 |Δ|（inline 展示）
+                    // 各相位「偏移 → |Δ|」配对（按 offset 升序；圆盘读不出精确间距时看这行）
                     if (!ds.deltas().isEmpty()) {
                         StringBuilder sb2 = new StringBuilder("    ");
+                        List<Integer> offs = ds.offsets();
                         for (int i = 0; i < ds.deltas().size(); i++) {
-                            sb2.append("[").append(i).append("]=").append(ds.deltas().get(i)).append(" ");
+                            int off = (offs != null && i < offs.size()) ? offs.get(i) : i;
+                            sb2.append("φ").append(off).append(":").append(ds.deltas().get(i)).append(" ");
                         }
                         tooltipAdder.accept(Component.literal(sb2.toString())
                             .withStyle(ChatFormatting.LIGHT_PURPLE));

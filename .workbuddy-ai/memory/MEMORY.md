@@ -19,6 +19,12 @@
   **没动 `matches`**。
 - **保持无状态是这个 Mixin 正确的原因** —— 需要引入状态字段的优化方案，先质疑它是否真有必要。
 
+## 相位圆盘（v19.2）不变量
+- 合因子是**标量求和** `Σ√|Δᵢ|`，相位只通过 n（去重计数）与调谐效率参与，**不做矢量相加** → 相位图画辐条（spoke），不画箭头（arrow），否则暗示不存在的物理。
+- **相位分布不影响收益**：n 路均匀分布 vs 挤成一坨，`u = eff×n/pref` 与每周期总跳变数完全相同。圆盘的价值是**诊断**（我搭了 4 路为什么 n 只有 3），不是优化目标——别让玩家以为该把相位摆均匀。
+- 相位顺序一律走 `PhaseDomain.phasesSorted()`；`deltaByOffset()` 是 HashMap 值视图（哈希序）且**不含 offset**。
+- 最佳域按 `period == detectedPeriod` 定位即可（period 在域集合内唯一，不需要 best 标记字段）。
+
 ## 电力层架构（v3 铜块网络）
 - `tickContainerData` 按 (TopoKey, rep, channelIdx) 组件遍历：同氧化级连通块内多台发电机共享同一张边集，每组件仅锚点（最小铜块槽位 rep）跑一次 `runBfs`，其余 `ChannelState.copyFrom` 锚点通道，`accountEnergy` 仍逐机调用（各自 pref）。
 - **关键不变量**：`ChannelState.onPhaseEvent(event, pref)` 中 pref 完全不被使用——域只按 `event.period()` 分桶，pref 仅在读时 `bestFactor/bestDomain(pref)` 选域。故同网络内多机共享同一 ChannelState 实例安全。
