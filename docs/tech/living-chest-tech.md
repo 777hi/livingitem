@@ -1,7 +1,7 @@
 # Living Chest (活箱子) 技术文档
 
-> **文档版本**: 2026.09 v7.1  
-> **最后更新**: 2026-09-05  
+> **文档版本**: 2026.09 v7.2  
+> **最后更新**: 2026-09-08  
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -230,20 +230,30 @@ public void tick(List<SlotEntry> entries, ContainerContext context, TickContext 
 
 ### 3.4 取消活化
 
-当活箱子取消活化时，`dropAllItems()` 将箱子内所有物品掉落到玩家位置：
+当活箱子取消活化时，`dropAllItems()` 将箱子内所有物品掉落到玩家位置。
+
+**堆叠倍数返还**（2026-09-08 修复）：堆叠数 N 的活箱子语义上是
+N 个内容完全相同的箱子——`CONTAINER` 组件相同才允许堆叠，且堆叠期间
+存取关闭（`count > 1` 时全部操作拒绝，见 §3.1/§3.2 前置检查），
+该不变量始终成立——因此取消活化必须返还 **N 份内容**，否则 N−1 份凭空蒸发。
+这个场景原版背包即可触达（两个内容相同的活箱子自动堆叠），并非只有模组
+超大容器才会触发。
 
 ```java
 public static void dropAllItems(ItemStack chestStack, Player player) {
-    List<ItemStack> items = getItems(chestStack);
-    Level level = player.level();
-    BlockPos dropPos = player.blockPosition();
+    if (!isLivingChest(chestStack)) return;
 
-    for (ItemStack item : items) {
-        if (!item.isEmpty()) {
-            level.addFreshEntity(new ItemEntity(level, dropPos, item.copy()));
-        }
-    }
+    List<ItemStack> drops = collectDeactivationDrops(chestStack);  // 纯计算
+    // ... 逐堆生成 ItemEntity 掉落 ...
     clearStorage(chestStack);
+}
+
+/** 计算取消活化返还清单（不改组件，可单测） */
+public static List<ItemStack> collectDeactivationDrops(ItemStack chestStack) {
+    if (!isLivingChest(chestStack)) return List.of();
+    int copies = Math.max(1, chestStack.getCount());
+    // 每槽总量 = count × copies，超出物品堆叠上限的拆成多个满堆
+    // 掉落实体数 = ⌈槽位数量 × N / maxStackSize⌉
 }
 ```
 
@@ -453,6 +463,8 @@ new TickContext(context)
 
 **修复**：在 `RecipeBookComponentMixin` 中每次翻页时重新读取活箱子物品列表。
 
+---
+
 ### 8.3 打开配方书时活箱子材料不被识别（2026-09-05）
 
 **现象**：打开配方书（默认停在原版合成标签页）时，活箱子里有材料、也能合成的配方
@@ -476,6 +488,26 @@ new TickContext(context)
 - [ ] 关闭再打开配方书 → 依旧直接可合成（不需要切标签页）
 - [ ] 活漏斗持续往活箱子里塞材料 → 配方书可合成状态在 1–3 tick 内自动更新
 - [ ] 从活箱子取出材料后 → 配方书可合成状态自动回落
+
+### 8.4 堆叠活箱子取消活化只返还一份内容（2026-09-08）
+
+**现象**：两个装着相同物品的活箱子在背包里堆叠成 count=2 后取消活化，
+只掉落一份内容，另一半凭空蒸发。
+
+**根因**：活箱子堆叠的条件是 `CONTAINER` 组件相同（`ItemStackMixin` 按
+组件等价判定可堆叠），且堆叠期间存取关闭（`count > 1` 拒绝一切操作），
+所以「count=N 的堆叠活箱子」语义上是 **N 个各含一份相同内容的箱子**。
+而 `dropAllItems()` 只读取一份 `CONTAINER` 内容掉落，堆叠数被无视。
+该路径原版背包即可触达，并非超大堆叠容器专属。
+
+**修复**：返还清单计算抽成纯函数 `collectDeactivationDrops()`：
+每槽总量 = `slotCount × N`，超出物品堆叠上限的拆成多个满堆掉落。
+`dropAllItems()` 复用该函数。回归测试 `LivingChestFunctionTest`（6 项）。
+
+**验证清单**：
+- [ ] 两个内容相同的活箱子堆叠 → 取消活化 → 掉落两份内容
+- [ ] 单个活箱子取消活化 → 行为与修复前一致（每槽一个掉落实体）
+- [ ] 堆叠箱内 64 满堆 × count=3 → 掉落 3 个满堆实体，无超上限堆
 
 ---
 

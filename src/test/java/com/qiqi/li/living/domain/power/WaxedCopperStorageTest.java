@@ -248,16 +248,16 @@ class WaxedCopperStorageTest {
     @Test
     @DisplayName("充电：外部电按剩余容量比例充入各灯堆（受每盏容量 C 上限）")
     void receive_distributesByRemainingCapacity() {
-        ItemStack b1 = bulb(16);   // 空，剩余 16_000_000
+        ItemStack b1 = bulb(16);   // 空，剩余 160_000_000
         ItemStack b2 = bulb(16);
-        LivingItemManager.setWaxedBulbData(b2, new LivingWaxedBulbData(500_000));   // 剩余 8_000_000
+        LivingItemManager.setWaxedBulbData(b2, new LivingWaxedBulbData(5_000_000));   // 半满，剩余 80_000_000
         IItemHandler handler = new FakeHandler(b1, b2);
 
         // 剩余容量比例 b1:b2 = 2:1 → 30_000 mFE 中 b1 收 20_000（每盏 1250）、b2 收 10_000（每盏 625）
         long got = ContainerEnergyStorage.receive(handler, 30_000, false, null);
         assertEquals(30_000, got);
         assertEquals(1_250, LivingItemManager.getWaxedBulbData(b1).chargeMilliFe());
-        assertEquals(500_000 + 625, LivingItemManager.getWaxedBulbData(b2).chargeMilliFe());
+        assertEquals(5_000_000 + 625, LivingItemManager.getWaxedBulbData(b2).chargeMilliFe());
     }
 
     @Test

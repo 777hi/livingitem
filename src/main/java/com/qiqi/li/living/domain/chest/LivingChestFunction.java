@@ -275,25 +275,50 @@ public class LivingChestFunction implements LivingItemFunction {
     public static void dropAllItems(ItemStack chestStack, Player player) {
         if (!isLivingChest(chestStack)) return;
 
-        List<ItemStack> items = getItems(chestStack);
+        List<ItemStack> drops = collectDeactivationDrops(chestStack);
         Level level = player.level();
         BlockPos dropPos = player.blockPosition();
         int droppedCount = 0;
 
-        for (ItemStack item : items) {
-            if (!item.isEmpty()) {
-                level.addFreshEntity(new ItemEntity(
-                    level, dropPos.getX() + 0.5, dropPos.getY() + 0.5, dropPos.getZ() + 0.5,
-                    item.copy()));
-                droppedCount += item.getCount();
-            }
+        for (ItemStack drop : drops) {
+            level.addFreshEntity(new ItemEntity(
+                level, dropPos.getX() + 0.5, dropPos.getY() + 0.5, dropPos.getZ() + 0.5,
+                drop));
+            droppedCount += drop.getCount();
         }
 
         clearStorage(chestStack);
 
         if (droppedCount > 0) {
-            LivingItemManager.LOGGER.info("活箱子取消活化：掉落 {} 个物品", droppedCount);
+            LivingItemManager.LOGGER.info("活箱子取消活化：堆叠 {} 个，共掉落 {} 个物品",
+                chestStack.getCount(), droppedCount);
         }
+    }
+
+    /**
+     * 计算取消活化时应返还的掉落清单（纯计算，不改组件，可重复调用）。
+     *
+     * <p>堆叠数 N 的活箱子语义上是 N 个内容完全相同的箱子——组件相同才允许堆叠，
+     * 且堆叠期间存取关闭（{@code count > 1} 全部操作拒绝），该不变量始终成立——
+     * 因此取消活化必须返还 N 份内容。每份按槽位原样掉落，
+     * 单堆超出物品堆叠上限的总量拆成多个堆，掉落实体数 = ⌈槽位数量 × N / 堆叠上限⌉。</p>
+     */
+    public static List<ItemStack> collectDeactivationDrops(ItemStack chestStack) {
+        if (!isLivingChest(chestStack)) return List.of();
+
+        List<ItemStack> drops = new ArrayList<>();
+        int copies = Math.max(1, chestStack.getCount());
+
+        for (ItemStack slotItem : getItems(chestStack)) {
+            if (slotItem.isEmpty()) continue;
+            long total = (long) slotItem.getCount() * copies;
+            while (total > 0) {
+                int chunk = (int) Math.min(total, slotItem.getMaxStackSize());
+                drops.add(slotItem.copyWithCount(chunk));
+                total -= chunk;
+            }
+        }
+        return drops;
     }
 
     public static int countUsedSlots(ItemStack stack) {

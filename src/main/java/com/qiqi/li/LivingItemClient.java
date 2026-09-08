@@ -91,14 +91,18 @@ public class LivingItemClient {
     }
 
     /**
-     * 活涂蜡发电机的仪器面板：追加到 tooltip 末尾，仅 F3+H 高级模式显示。
+     * 活涂蜡发电机的仪器面板：追加到所有 tooltip 末尾（不再依赖 F3+H）。
+     *
+     * <p>面板包含相位圆盘、锈级柱状图、展开条三块图形内容，属于发电机核心信息，
+     * 不应被 F3+H 开关挡住。文本层（{@code addToTooltip}）已随 F3+H 切换显示
+     * 数字 / 公式，但图形面板始终可见。</p>
      *
      * <p>刻意不走 {@code ItemStack.getTooltipImage()}——NeoForge 会把那个组件插在
-     * 索引 1（紧跟物品名之后），而仪器面板属于进阶诊断信息，应当置底。</p>
+     * 索引 1（紧跟物品名之后），而仪器面板属于核心信息，应当与文本层一同置底。</p>
      *
-     * <p>数据源（v19.1）：发电遥测走运行时缓存 + 网络同步，**不写 DataComponent**——
-     * 这里若读组件会拿到全 0，相位圆盘与锈级柱状图整块消失（ItemTooltipEvent 的
-     * ThreadLocal 在本事件触发前已清空，需按悬停槽位自行定位）。</p>
+     * <p>数据源：发电遥测走运行时缓存 + 网络同步。若读 DataComponent 会拿到全 0，
+     * 相位圆盘与锈级柱状图整块消失（ItemTooltipEvent 的 ThreadLocal 在本事件触发前
+     * 已清空，需按悬停槽位自行定位）。</p>
      */
     @SubscribeEvent
     static void onGatherTooltipComponents(RenderTooltipEvent.GatherComponents event) {
@@ -107,7 +111,6 @@ public class LivingItemClient {
         if (!LivingItemManager.isLivingItem(stack)) return;
         if (!LivingWaxedCopperFunction.isWaxedCopperBlock(stack.getItem())) return;
         if (LivingWaxedCopperFunction.isWaxedBulb(stack.getItem())) return;
-        if (!Minecraft.getInstance().options.advancedItemTooltips) return;
 
         event.getTooltipElements().add(
             Either.right(LivingWaxedCopperTooltipComponent.from(generatorDataFor(stack))));

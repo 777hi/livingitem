@@ -2,8 +2,8 @@
 
 # Living Power (活涂蜡铜块 · 红电发电) 技术文档
 
-> **文档版本**: v5.0（v19：记账跳变门控 + 相位解读三元件——雕文移相 / 切制裂相 / 格栅加法；拓扑统一至锈级单维度；切制 H/V 双通道退役）
-> **最后更新**: 2026-09-05
+> **文档版本**: v5.1（v19：记账跳变门控 + 相位解读三元件——雕文移相 / 切制裂相 / 格栅加法；拓扑统一至锈级单维度；切制 H/V 双通道退役）
+> **最后更新**: 2026-09-08
 > **适用版本**: Minecraft 1.21.1
 > **规划文档**: [红电系统.md](../红电系统.md)（v19，公式 v3）
 
@@ -16,6 +16,7 @@
 6. [测试](#6-测试)
 7. [实施状态](#7-实施状态)
 8. [已知限制](#8-已知限制)
+9. [附录：完整公式链](#9-附录完整公式链)
 
 ---
 
@@ -198,6 +199,45 @@ processContext() 每 game tick：
 
 #### α 的意义
 α=0.5 收敛较快（2~3 个样本即贴到真实 P），同时平滑掉信号周期的轻微抖动，使 tooltip 周期读数稳定不跳变。需要更快锁定可略增 α，需要更强抗抖可略减 α（代价是收敛更慢）。
+
+#### 虚假周期误读的产生与自愈（EMA 收敛路径）
+
+`SignalTracker` 的周期估计依赖 `lastRisingTick` 记录的「上次上升沿时刻」。当信号中断后恢复时，`lastRisingTick` 保留了中断前的旧时刻，新上升沿会产生一个巨大的间隔，导致 `periodTicks` 从真实值跳到很大的值，再以 α=0.5 的指数衰减逐步收敛回来。
+
+**示例**：信号中断 1000 tick 后恢复（真实周期 P=4）：
+
+```
+第0步:  lastRisingTick=200, 信号中断...
+第1步:  interval=1200-200=1000 → periodTicks=4+(1000-4)×0.5=502   → period()=502
+第2步:  interval=4              → periodTicks=502+(4-502)×0.5=253   → period()=253
+第3步:  interval=4              → periodTicks=253+(4-253)×0.5=128.5 → period()=129
+第4步:  interval=4              → periodTicks=128.5+(4-128.5)×0.5=66.3→ period()=66
+第5步:  interval=4              → periodTicks=66.3+(4-66.3)×0.5=35.1 → period()=35
+第6步:  interval=4              → periodTicks=35.1+(4-35.1)×0.5=19.6 → period()=20
+第7步:  interval=4              → periodTicks=19.6+(4-19.6)×0.5=11.8 → period()=12
+第8步:  interval=4              → periodTicks=11.8+(4-11.8)×0.5=7.9  → period()=8
+第9步:  interval=4              → periodTicks=7.9+(4-7.9)×0.5=5.95  → period()=6
+第10步: interval=4              → periodTicks=5.95+(4-5.95)×0.5=4.98→ period()=5
+第11步: interval=4              → periodTicks=4.98+(4-4.98)×0.5=4.49→ period()=4  ✅ 收敛
+```
+
+**每个中间值都创建一个独立的 `PhaseDomain`**（[ChannelState](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/domain/power/ChannelState.java#L113-L121) 按 `event.period()` 分桶），因此单个 `SignalTracker` 就能产生 10 个虚假域。中断时间越长，收敛路径越长，虚假域越多（中断 5000 tick 时收敛需 18 步，从 247502 一路降到 4）。
+
+**BFS 网络遍历放大效应**：`runBfs` 为网络中被充能的每个 `(slot, dir)` 维护独立的 `SignalTracker`。N 个铜块 → 最多 4N 个跟踪器，每个在收敛过程中独立产生自己的虚假域序列 → tooltip 上出现成百上千的周期记录。
+
+**这些虚假域不影响发电**：[`accountEnergy`](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/domain/power/LivingWaxedCopperFunction.java#L597-L617) 的跳变门控只选「本 tick 有跳变」的最佳域（`bestActiveDomain`），虚假域的 `jumpTick` 不与当前 tick 对齐，不会被选中入账。
+
+**自愈机制**：[`tickCleanup`](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/domain/power/ChannelState.java#L190-L220) 每 tick 清理过期域：
+
+```java
+long timeout = Math.max(preferredPeriod, d.period) * 2L;
+timeout = Math.min(1200, Math.max(32, timeout));
+if (currentTick - d.lastEventTick > timeout) it.remove();
+```
+
+一旦 `SignalTracker` 收敛到真实周期，虚假域不再收到新事件，超时后自动被移除。超时阈值为 `max(32, 2×P)` 夹 [32, 1200] tick，对周期 4 的信号约 32 tick（~1.6 秒）后虚假域消失，对大周期虚假域最长 1200 tick（~60 秒）后自愈。
+
+> **设计权衡**：EMA 平滑（α=0.5）在稳态下提供优秀的抗抖能力，但每次信号中断→恢复时必然产生一段收敛路径。这是「盲测周期」方案的固有特性——跟踪器不读取偏好周期，仅凭上升沿间隔逆向推断，间隔的剧烈变化需要时间消化。虚假域只影响 tooltip 显示，不影响发电结算，且有超时自愈保证，不会留下后遗症。
 
 ### 3.3 相位域分组与 n（PhaseDomain）
 
@@ -439,6 +479,68 @@ tick + 网络不同位置边各自采样），`PhaseDomain` 去重后即得 n=7 
 - **活性**：输入源停跳超过 `PowerMath.aliveWindow`（= 域超时口径 max(32, 2×P) 夹 [32,1200]）→ 解读停止 → 驻波经 `pruneRegistry` 修剪——死源不发电；
 - **防环（结构性，无检测代码）**：组合只经移相链（雕文读输入方向邻居）；加法器只读自己的真实边、裂相器无外部输入。移相环的每个成员的输入边都是蜡-蜡死边（无种子）→ 注册表恒空、环自熄——不存在「互读导致偏移自增跑满」的通路。
 
+#### 三元件采样拓扑对比
+
+三元件各自「读什么、怎么读、读完后构造什么」的差异，直接影响它们在铜块网络中的角色：
+
+| 维度 | 雕文（移相器） | 切制（裂相器） | 格栅（加法器） |
+|---|---|---|---|
+| **方向限制** | 只 1 向（`inputDir`，玩家配置） | 全向（4 条边） | 全向（4 条边） |
+| **读上升/下降沿** | 上升沿 | **下降沿**（独立命名空间 `FALLING_BIT`） | 上升沿 |
+| **读注册表？** | **是**（输入方向邻居的 `phaseRegistry`） | 否 | 否 |
+| **派生条件** | 有输入即有派生 | 有下降沿即有派生 | **同周期 ≥2 路**才派生 |
+| **偏移变化** | φ+1 mod P（延迟 1 tick） | 原样 φ_f（下降沿自身位置） | Σφᵢ mod P（相位求和） |
+| **幅度** | 沿用源 δ | 沿用源 δ | min δᵢ（各路最小值） |
+
+**BFS 采样侧的额外限制**：在 `runBfs` 中，雕文槽位还会额外过滤边信号采样（`chiseledInputEdge` 检查）——BFS 遍历到雕文时只检查 `inputDir` 方向的边信号变化，其他 3 个方向的边信号被跳过，不参与上升沿采样。这使雕文的感应方向与信号层二极管语义一致（涂蜡槽的发电采样面 = 信号层二极管镜像）。
+
+**切制下降沿跟踪器的命名空间隔离**：下降沿跟踪器与上升沿跟踪器同存于 `edgeTrackers` 哈希表，但通过高位掩码 `FALLING_BIT = 1L << 32` 隔离。下降沿事件驱动的 `SignalTracker` 完全独立于上升沿，其周期/偏移/幅度各自独立估计，互不干扰。
+
+#### 跨锈蚀等级的注册表读取
+
+雕文移相器的 `interpretShifter` 在读取邻居注册表时**不检查锈蚀等级**：
+
+```java
+int neighbor = ContainerContext.resolveNeighbor(slot, inEdge, size, width);
+if (neighbor >= 0) {
+    for (DerivedPhase dp : powerData.getRegistry(neighbor)) {  // ← 无锈蚀过滤
+        out.add(new DerivedPhase(dp.period(), (dp.offset()+1) mod P, ...));
+    }
+}
+```
+
+`phaseRegistry` 是容器级共享的（`ContainerPowerData` 的字段，不按锈级分桶），`resolveNeighbor` 只按网格坐标算邻居，不检查物品类型或氧化等级。因此：
+
+- **雕文可以读取任意锈蚀等级邻居的注册表驻波**，无论该邻居是基座铜块、雕文、切制还是格栅——只要邻居槽位在上一 tick 的相位解读中产出了派生相位，雕文就能读到；
+- **BFS 遍历仍然是锈蚀隔离的**（`runBfs` 的邻接检查 `getOxidationLevel(ns.getItem()) != oxidation` 过滤），因此 BFS 注入的边采样和注册表驻波只影响本锈级的 `ChannelState`；
+- **功率（`baseReByOx`）仍然是锈级隔离的**（`accountEnergy` 按锈级累加，`distributeToBulbs` 按锈级分配入灯）。
+
+**数据流示例**：新鲜级雕文 A 的 inputDir 指向暴露级格栅 B
+
+```
+上一 tick:
+  phaseInterpretation 遍历所有发电机（无锈级过滤）
+    → 格栅 B（暴露级）产出派生相位 (P=4, φ=2, δ)
+    → 写入 phaseRegistry[槽位B]
+
+本 tick:
+  phaseInterpretation 再次遍历所有发电机
+    → 雕文 A（新鲜级）调用 interpretShifter
+    → 读 powerData.getRegistry(槽位B) → 拿到 (P=4, φ=2, δ)
+    → 偏移 +1 → 派生 (P=4, φ=3, δ)
+    → 写入 phaseRegistry[槽位A]
+
+下一 tick:
+  新鲜级 BFS 访问雕文 A → 读 phaseRegistry[槽位A]
+    → now ≡ 3 (mod 4) 时注入新鲜级的 ChannelState
+    → 新鲜级发电机获得来自暴露级网络的相位信息
+```
+
+**设计含义**：
+- 雕文可以充当**跨锈蚀等级的相位信息桥**——相位信息（周期、偏移）可以跨越氧化等级边界传播，但电力（RE 能量）仍然是锈级隔离的；
+- 这符合「拓扑统一」的设计原则：网络连通性唯一维度 = 氧化等级（铜块网络本身是锈蚀隔离的），但**相位解读层不在网络拓扑内**，它是信息层面的操作，不是电力层面的路由，因此不锈蚀隔离是合理的；
+- 环自熄仍然成立：环上雕文的输入方向邻居仍是环成员，但环成员的注册表需要种子（真实边信号或跨锈级注入的驻波）。如果环上没有任何成员有真实边信号且没有外部注入，仍然自熄。
+
 **拓扑统一（v19）**：网络连通性唯一维度 = 氧化等级（`TopoKey` 的 axis/inEdge/outEdge
 全部退役，切制 H/V 双通道拆除）——三形态的个性全部迁移到「解读规则」上，
 基座铜块退役为纯基准（只会「读」不会「造」）。
@@ -458,6 +560,11 @@ tick + 网络不同位置边各自采样），`PhaseDomain` 去重后即得 n=7 
 
 边界换算：`FE = RE × K`，`K = 1/16`（`PowerMath.RE_TO_FE`，全 mod 唯一标尺常量）。
 整体调产量只改这一个数，**严禁**把 K 绑到最大周期等设计旋钮上。
+
+储能标定：每盏容量 `C = 10,000 FE`（`PowerMath.BULB_UNIT_CAPACITY_FE`，与 K 并列的
+第二个硬数，2026-09-08 自初版 1,000 上调 ×10——标定依据与决策记录见
+红电系统.md §3.6「容量涌现」；一堆(64) = 640k FE，对齐科技生态基础档电池，
+充电宝物流可用，满溢反馈环仍能触发；q 按 mFE 绝对值存储，扩容无迁移问题）。
 
 ---
 
@@ -525,8 +632,133 @@ tick + 网络不同位置边各自采样），`PhaseDomain` 去重后即得 n=7 
 |---|---|---|
 | 非 BE 容器不支持 | 充电宝搬入非 BE 容器时暂不可对外取电（发电本就需要 BE） | 有需求再补 Block 级注册 |
 | **Pipez 能量管道不兼容** | Pipez（master 线）使用新 Transfer API 的 `Energy.BLOCK`（EnergyHandler 类型），非 FE 的 `EnergyStorage.BLOCK` | 用 Mekanism 电缆取电；中期软依赖注册 EnergyHandler 适配 |
+| **Flux Networks 取电方块（Flux Plug）不取电** | Flux Plug 从不主动拉取邻块电量——它只暴露「可被充入」的电池面等邻块推电（源码+1.20.1 原版 jar 字节码双重验证：拉取 API `receiveFrom`/`canReceiveFrom` 全源码零调用）。我们的容器是标准被动电池面（`canExtract=true`），对「纯被动等待」的 Plug 不可见。存电方块（Flux Point）是推送方，充电正常 | 设计上不跟（「限流职责归用电侧」）；如需兼容可让容器 tick 主动向邻块 `canReceive` 的推电，待需求驱动 |
 | 充电量化零头 | 剩余容量 < 1 FE 的部分不接收（整 FE 量化） | 保守方向（杜绝凭空造电），量级 ≤ 1 FE |
 | 发电机移除后 EMA 冻结 | 功率读数不清零（数据过期清理兜底） | 观察后再定 |
 | 事件 tick 计数随容器活跃度冻结 | 容器卸载期间周期被拉长 → 重锁 | 符合直觉，保留 |
 | 取电跨 FE 边界向上取整 | 每次取电最多多拿 count−1 mFE（49 盏时 ≤ 0.048 FE） | 设计取舍，观察后再定 |
 | 铜灯不导电 | 铜灯不能作为网络传播中继节点 | 设计如此，铜灯仅作储能 |
+
+---
+
+## 9. 附录：完整公式链
+
+从原始边信号到最终实发功率的完整计算链路，每一步均标注对应的代码位置与文档章节。
+
+### 9.1 符号表
+
+| 符号 | 含义 | 来源 |
+|:---:|------|------|
+| P | 检测周期（tick） | 最佳域周期 |
+| n | 相数 | 最佳域相位数 |
+| Δφ | 最小相位间隔（tick） | 最佳域相邻偏移最小差 |
+| |Δᵢ| | 第 i 路相位的信号振幅 | 边信号跳变差值 |
+| Σ√\|Δ\| | 合因子底数 | 各相 √\|Δᵢ\| 之和 |
+| P_pref | 偏好周期（tick） | 物品堆叠数 |
+| eff | 调谐效率 | cos²(θ/2) |
+| u | 解锁度 | eff × n / P_pref |
+| s | 平衡度 | 几何平均 / 算术平均 |
+| N | 活跃锈级数 | 基础出力 > 0 的锈级数 |
+| R | 共振倍率 | 1 + (N-1) × s |
+| gain | 共振增益 | R² |
+
+### 9.2 计算链路
+
+```
+① 边信号 → 相位事件
+   ─────────────────────────────────────────────────────
+   SignalTracker 检测每条边的上升沿:
+   • 周期 Pᵢ = EMA(interval)           [SignalTracker, §3.2]
+   • 偏移 φᵢ = 跳变时刻 % Pᵢ           [SignalTracker, §3.2]
+   • 振幅 |Δᵢ| = 信号强度跳变差值       [SignalTracker, §3.2]
+
+② 相位事件 → 周期域
+   ─────────────────────────────────────────────────────
+   ChannelState 按周期分组:
+   • 同周期 P 的相位聚合为 PhaseDomain
+   • n = 域内相位数                     [PhaseDomain, §2.4]
+   • Σ√|Δ| = Σ√|Δᵢ|                   [PhaseDomain, §2.4]
+   • Δφ = min(相邻偏移差)               [PhaseDomain, §2.4]
+
+③ 选择最佳域
+   ─────────────────────────────────────────────────────
+   bestDomain(pref):
+   • n 最大 → 同 n 取 |P - P_pref| 最小  [ChannelState, §3.4]
+   • 输出: P, n, Σ√|Δ|, Δφ
+
+④ 调谐效率
+   ─────────────────────────────────────────────────────
+   θ = |P - P_pref| / P_pref × 2π       [PowerMath.tuningEfficiency, §3.4]
+   eff = (1 + cos(θ)) / 2               [PowerMath.tuningEfficiency, §3.4]
+   • ΔP = 0 → θ = 0  → cosθ = 1   → eff = 1.00 (完美调谐)
+   • ΔP = 1t (P_pref=4) → θ = π/2 → cosθ = 0   → eff = 0.50
+   • ΔP = 2t (P_pref=4) → θ = π   → cosθ = -1  → eff = 0.00 (完全失谐)
+
+⑤ 解锁度
+   ─────────────────────────────────────────────────────
+   u = min(1.0, eff × n / P_pref)       [ChannelState.factorOf, §3.4]
+   • u ∈ [0, 1]，量化了「n 路相位相对于偏好周期的利用率」
+   • 例: eff=1.00, n=4, P_pref=4 → u = 1.00×4/4 = 1.00
+
+⑥ 合因子
+   ─────────────────────────────────────────────────────
+   combinedFactor = Σ√|Δ| ^ (1+u)       [PowerMath.combinedFactor, §3.4]
+   • u=0 → 线性（保底输出）
+   • u=1 → 平方（调谐满配时最大化振幅差异的收益）
+
+⑦ 单事件能量
+   ─────────────────────────────────────────────────────
+   eventEnergy (FE) = combinedFactor × P / 16    [PowerMath.eventEnergyRe, §3.6]
+   • 因子 P/16 来自 K = RE_TO_FE = 1/16
+   • 每 tick 产出的能量，单位 FE
+
+⑧ 本机功率
+   ─────────────────────────────────────────────────────
+   • 每 tick 实际入账: 单事件 × jumpCount(tick)     [GeneratorState, §3.6]
+   • 窗口均值功率 = 窗口内能量和 / 窗口长度          [GeneratorState, §3.6]
+   • 窗口长度 = max(32, P_pref) 对齐到 P_pref 整数倍 [GeneratorState, §3.6]
+   • 输出: emaPowerMilliFe → 文本层「功率: X.X FE/t」
+
+⑨ 锈级聚合
+   ─────────────────────────────────────────────────────
+   • 同锈级所有发电机的基础出力求和                      [ContainerPowerData, §3.5]
+   • 输出: levelEmaPowerMilliFe → 文本层「锈级: X.X FE/t」
+
+⑩ 平衡度
+   ─────────────────────────────────────────────────────
+   • 统计: 4 个锈级的基础出力 P₀, P₁, P₂, P₃          [PowerMath.balanceFactor, §3.7]
+   • 算术平均 = (P₀+P₁+P₂+P₃) / N, 仅计活跃锈级
+   • 几何平均 = exp((lnP₀+lnP₁+lnP₂+lnP₃) / N)
+   • s = 几何平均 / 算术平均 ∈ [0, 1]                 [PowerMath.balanceFactor, §3.7]
+   • s=1 → 各锈级出力完全相同（完美均衡）
+   • s→0 → 一个锈级独大（其他接近零）
+
+⑪ 共振倍率与增益
+   ─────────────────────────────────────────────────────
+   N = 活跃锈级数（基础出力 > 0 的等级数）               [PowerMath.resonanceFactor, §3.7]
+   R = 1 + (N-1) × s ∈ [1, N]                         [PowerMath.resonanceFactor, §3.7]
+   gain = R²                                           [PowerMath.resonanceGain, §3.7]
+   • N=1 → R=1, gain=1（无共振）
+   • N=4, s=1 → R=4, gain=16（完美共振）
+   • N=4, s=0.5 → R=2.5, gain=6.25
+
+⑫ 最终实发
+   ─────────────────────────────────────────────────────
+   实发功率 = 锈级基础功率 × gain                        [ContainerPowerData, §3.7]
+   • 输出: → 文本层「共振: X.X FE/t」
+
+### 9.3 完整示例（4 锈级完美均衡）
+
+```
+条件: P=4t, n=4, P_pref=4t, Σ√|Δ|=4.5, 四锈级各 1.0 FE/t
+
+调谐: ΔP=0t → θ=0 → cosθ=1 → eff=1.00
+解锁: u = 1.00×4/4 = 1.00
+合因子: 4.5^(1+1.00) = 4.5² = 20.3
+单事件: 20.3×4/16 = 5.06 FE
+本机: 5.06×4/4t = 5.06 FE/t → 窗口均值 5.1 FE/t
+锈级: 1.0×4 = 4.0 FE/t
+平衡度: 算术平均=1.0, 几何平均=1.0 → s=1.00
+共振: R=1+3×1.00=4.00, R²=16.0
+实发: 4.0×16.0 = 64.0 FE/t
+```

@@ -95,6 +95,7 @@ SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 | **Tooltip 系统** | 双层渲染架构 + 运行时缓存同步 + 显示口径（窗口均值/mFE） | [tooltip-system.md](docs/system-design/tooltip-system.md) |
 | **红电架构演进** | SensorPort 感知端口 + 事件流/元件接口化路线（信号层⇄电力层解耦） | [redstone-evolution-roadmap.md](docs/system-design/redstone-evolution-roadmap.md) |
 | **红电不变量测试** | 31 条可执行不变量 + 四层测试方案（属性测试/场景生成/蜕变/运行时监控） | [power-invariants.md](docs/system-design/power-invariants.md) |
+| **超大堆叠审计** | 模组容器堆叠上限 > 64 场景下全部活物品的表现评级（202 处调用点） | [oversized-stack-audit.md](docs/system-design/oversized-stack-audit.md) |
 | **基础设施** | 容器抽象 + 发现缓存 + SlotAccessor + 性能监控 | [living-item-infrastructure.md](docs/system-design/living-item-infrastructure.md) |
 | **数据模型** | DataComponent 体系 + 新旧架构对比 + 设计决策 | [data-model.md](docs/system-design/data-model.md) |
 | **单元测试** | FML 测试环境配置 + 测试替身 + 可测性边界 | [unit-testing.md](docs/guides/unit-testing.md) |
@@ -346,14 +347,16 @@ src/test/java/com/qiqi/li/
 │   ├── BulbItemEnergyStorageTest.java         # 铜灯通用电池（6 项）
 │   ├── WaxedCopperOscillatorIT.java           # 振荡器→发电全链路集成（5 项）
 │   └── WaxedCopperCouplingIT.java             # 耦合链集成：多跳中继+防回环（3 项）
+├── living/domain/chest/
+│   └── LivingChestFunctionTest.java           # 取消活化堆叠倍数返还（6 项）
 ├── living/domain/map/
 │   └── MapCoordHelperTest.java                # 地图坐标换算（16 项）
 └── living/transfer/
     └── ContainerCompatibilityConfigTest.java  # 容器布局推断（9 项）
 ```
 
-**合计测试用例 183 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
-全绿基线：`183 passed / 0 failed / 0 skipped`（2026-09-05 验证）。
+**合计测试用例 211 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
+全绿基线：`211 passed / 0 failed / 0 skipped`（2026-09-08 验证）。
 
 > 📄 测试环境配置与编写约定详见 [unit-testing.md](docs/guides/unit-testing.md)
 
@@ -459,6 +462,47 @@ src/test/java/com/qiqi/li/
 
 ### 当前版本: v0.9-alpha
 
+**最近更新** (2026-09-08):
+- 🎚️ 标定：**铜灯每盏容量 C 1,000 → 10,000 FE**（`PowerMath.BULB_UNIT_CAPACITY_FE`，
+  与 K 并列的第二个硬数，纯储能改动不动 K/发电口径）。依据：① 生态对标——旧值一堆(64)
+  64k FE 低于科技生态最低档单格电池（TE 能量格/IE 电容 LV 约 10 万），新值 640k FE
+  对齐基础档；② 充电宝物流（充满铜灯拔下搬运）旧值下搬 1M FE 需 16 堆超背包，
+  新值 1.6 堆即可用；③ 满溢反馈环保存——典型功率下一堆 0.5~2 小时充满，「已满」
+  信号仍能触发（更激进的 100k 档该信号消失，故不取）。q 按 mFE 绝对值存储，
+  扩容对存量灯白赚头寸、无迁移；int FE 收窄阈值 214 万 → 21.4 万盏（仍远超容器
+  上限，fail-safe）。耦合面：2 处容量相关断言同步修正
+  （BulbItemEnergyStorageTest 满容读数 ×10；WaxedCopperStorageTest 充电比例
+  分配的半满基准重设 5_000_000 保持 2:1 本意），全量 211 用例全绿；
+  标定记录收编 红电系统.md §3.6 / living-power-tech.md §4 /
+  oversized-stack-audit.md §2.8
+- 🔍 调查：**Flux Networks 取电方块（Flux Plug）不能从铜灯容器取电——上游固有设计，非我方缺陷**。
+  该 mod 存电方块（Flux Point，推送方）充电正常；取电方块 Plug 从不主动拉取邻块电量，
+  只暴露「可被充入」的电池面等邻块推电（源码验证：拉取 API
+  `receiveFrom`/`canReceiveFrom` 在 1.21 源码全库零调用，纯死代码；1.20.1 原版 jar
+  字节码交叉验证同样无拉取点 → 非移植丢功能）。我方 `ContainerEnergyStorage`
+  是标准被动电池面（`canExtract=true`），对纯被动等待的 Plug 天然不可见；
+  Mekanism 电缆双向皆主动故全通。结论收编至 living-power-tech.md §8 已知限制表 +
+  红电系统.md §3.11 生态兼容实证；如需兼容 Plug 需让容器主动推电，
+  与「限流职责归用电侧」原则相悖，待需求驱动再议
+- ✅ 修复：**堆叠活箱子取消活化只返还一份内容**——组件相同才可堆叠 + 堆叠期间存取
+  关闭（count>1 拒绝一切操作），故 count=N 的堆叠活箱子语义上是 N 个各含一份
+  相同内容的箱子；而 `dropAllItems` 只掉一份 `CONTAINER` 内容，N−1 份凭空蒸发。
+  该场景**原版背包即可触达**（两个内容相同的活箱子自动堆叠），并非超大堆叠容器
+  专属（超大堆叠审计 §2.4 的「count>1 = 语义开关」结论在掉落路径上的漏网）。
+  修复：返还清单抽成纯函数 `collectDeactivationDrops()`（每槽总量 = count × N，
+  超物品堆叠上限拆满堆），`dropAllItems` 复用。回归测试 LivingChestFunctionTest
+  （6 项），全量 211 用例全绿
+
+**最近更新** (2026-09-07):
+- ✅ 审计：**超大堆叠表现探查**（[oversized-stack-audit.md](docs/system-design/oversized-stack-audit.md)）——
+  模组容器（抽屉等）堆叠上限 > 64 场景下，全库 202 处堆叠敏感调用点逐领域源码分析 +
+  原版语义对照。结论：传输基础设施层干净（统一 min(slotLimit, maxStackSize)，吞吐按
+  模组上限走）；14 项设计内缩放（TNT √count / 熔炉 count 倍速 / 红石 count² 信号上限——
+  原版消费端 j>=15 早退钳制天然饱和 / 铜灯 mFE long 定点）；1 个真实缺陷（超堆叠岩浆桶
+  燃料整槽替换吞 N−1 个——原版同吞但不可达，模组容器使其显形，修复方向待决策）；
+  2 个理论 int 溢出（铜灯对外 int FE 收窄 count>214 万盏 / TNT 累加 >21 亿——均 fail-safe
+  不崩不刷）；2 个吞吐观察项（漏斗单次固定 64 不随目标容量自适应）
+
 **最近更新** (2026-09-07):
 - ✅ 修复：**活熔炉岩浆桶整桶被吞**——`tickFuel` 消耗燃料只 `shrink(1)`，漏掉 crafting
   remainder；燃料消耗收拢到 `consumeFuel()`，对齐原版熔炉点燃语义（带残留物的燃料
@@ -537,75 +581,8 @@ src/test/java/com/qiqi/li/
   演进路线（事件流/元件接口化）沉淀至 redstone-evolution-roadmap.md
 - 📄 技术文档：living-power-tech.md §3.8 / 红电系统.md v19.1 修订
 
-**最近更新** (2026-08-30):
-- ✅ 新增：红电发电阶段一~三 —— `domain/power` 包
-  （`PowerMath` / `ChannelState` / `GeneratorState` / `ContainerPowerData`），
-  双因子模型落地：合因子 = n^(1+解锁度)，解锁度 = 调谐效率 × 规律度
-- ✅ 新增：`LivingWaxedCopperFunction`（priority=3，晚于红石）——涂蜡全家族 20 件活化，
-  逐方向采样 edgeGrid 事件，跳变即能量事件入账（RE 自然单位，K=1/16 边界换算）
-- ✅ 新增：阶段三+四 —— 感应拓扑（线圈分组：铜块全向/雕文 V+H/切制单方向）
-  + 感应耦合（管径加权守恒、不回传防环、多跳中继）
-  + 绝缘修复（涂蜡排除出充能导体，杜绝信号泄漏）
-  + 储能：铜灯 = 唯一储存（发电直存、无容器池），容量 = count×C 线性涌现
-  + 对外能量：**显式注册+让位**（10 种原版容器 BE，三层判定不劫持已有能源；方块级双向 canReceive=true）
-  + 铜灯物品 = 通用电池（双向：放电 + 外部充电，跨系统能量等量转换）
-- ✅ 新增：表现层 —— Tooltip 仪表盘（检测值写回组件 → 槽位同步 → 客户端渲染，双语 key）
-- ✅ 新增：39 项电力层测试（数学 5 + 状态机 6 + 线圈分组 4 + 储能 16（含仪表 2）+ 电池 6 + 集成 2），
-  全量 146 项测试通过
-- 📄 技术文档：[living-power-tech.md](docs/tech/living-power-tech.md)
-
-**最近更新** (2026-08-25):
-- ✅ 提升：红石传播时间分辨率从 2 tick 改为 **1 game tick**，取消跳帧。
-  容器内最快振荡周期从 4 tick 降至 2 tick，为红电系统的高频档位提供基础。
-  中继器/按钮延迟统一以 game tick 计数（中继器档位 N = 2N tick，保持原版红石刻语义）
-- ✅ 优化：传播热路径改用槽位类型位图（`slotMask`），替换 18 处 `Set<Integer>.contains`，
-  消除装箱与每 tick 的临时 `HashSet`。实测单次传播开销降 40~76%
-  （满载 54 格 9.4μs → 4.9μs），1 tick 传播总成本与原 2 tick 持平
-
-**此前更新** (2026-08-22):
-- ✅ 修复：红石传播节拍改为对齐全局游戏时钟，
-  消除因容器加载时机不同导致的跨容器信号错位半拍问题
-- ✅ 新增：单元测试基建 — MDG `unitTest` 配置，测试可在 FML 环境引用 Minecraft 类
-- ✅ 新增：64 项单元测试（红石传播 21 + 容器兼容性 14 + 地图坐标 29）
-- ✅ 修复：客户端 Mixin 从双端 `mixins` 移至 `client` 数组（专用服务器启动崩溃）
-- ✅ 修复：`EdgeGrid.get/set` 缺少边界检查，容器尺寸变化时会越界崩溃
-- ✅ 修复：容器级数据缓存键补齐维度，消除跨维度同坐标容器串数据
-- ✅ 修复：`grouped.isEmpty()` 分支门禁失效（`getSize()` 恒为 0），残留边界红石信号现可正确归零
-- ✅ 优化：新增位置→缓存键反向索引，mixin 热路径（`getSignal` / `getConnectingSide`）从正则全表扫描降为 O(1)
-- ✅ 修复：`APPLICABLE_CACHE` 改用 `ConcurrentHashMap`，消除单人游戏双线程并发写风险
-- ✅ 新增：`ServerStoppedEvent` 统一清理静态缓存，避免跨存档状态残留
-- ✅ 优化：`PerfMetrics` 全面改用纳秒累计，修复亚毫秒耗时被整数除法归零的问题
-- ✅ 清理：删除 `TickContext` 未使用的泛型扩展点
-
-**最近更新** (2026-08-17):
-- ✅ 重构：接口化设计 — `HasDirection` 接口统一 WASD 朝向配置，`HasContainerData` 接口统一容器级数据计算
-- ✅ 重构：`TickContext` 每 tick 新建（对象小、生命周期短，JVM 年轻代可高效回收）
-- ✅ 优化：新增活物品从修改 6 个文件减少到 2 个文件
-- ✅ 更新：全部文档同步至 v8.1 架构
-
-**最近更新** (2026-08-16):
-- ✅ 重构：包结构重组 — `data/` 删除，`function/` 精简，所有活物品内聚到 `domain/`
-- ✅ 重构：传输管道统一 — `TransferPipeline` 统一传输入口，解耦 `CrossContainerTransfer` 与 `LivingHopperFunction`
-- ✅ 重构：活末影箱路由解耦 — `EnderRouteManager` 集中管理路由，`LivingEnderChestAccessor` 精简
-- ✅ 重构：活熔炉同步生命周期统一 — 改用 `SlotAccessor`，支持活箱子作为输入/输出
-- ✅ 新增：`HopperFilterBuilder` 过滤链构建（从 `ContainerSnapshot` 提取）
-- ✅ 新增：脏槽位批量同步机制（`TickContext.dirtySlots` + `SimpleContainerContext.flushDirtySlots()`）
-- ✅ 更新：全部技术文档同步至 v8 架构
-
-**最近更新** (2026-08-09):
-- ✅ 新增：活地图传送系统（三种场景 + UV 精确传送 + 跨维度 + 载具 + Sable 飞艇兼容）
-- ✅ 新增：GUI 扩展地图渲染 + 十字光标 + 展示框十字光标 + 活地图图标
-- ✅ 新增：元数据同步包 + 客户端缓存
-- ✅ 修复：跨维度提示重复（`MapTeleportExecutor.execute()` 统一发送）
-- ✅ 修复：副手活末影珍珠未统计/消耗
-- ✅ 优化：渲染性能（`hoveredGroup` 缓存，O(N²)→O(N)）
-
-**最近更新** (2026-07-30):
-- ✅ 重构：包结构按领域聚合（`domain/` + `compat/` + `transfer/`）
-- ✅ 新增：活水车系统 + Create 软依赖集成
-- ✅ 优化：活水桶和活水车代码审查
-
-> 📄 历史更新记录详见 [changelog.md](docs/archive/changelog.md)
+> 📄 2026-08-30 及更早的更新记录已迁至 [changelog.md](docs/archive/changelog.md)
+> （红电阶段一~四落地、1 game tick 传播、v8/v8.1 重构周期、活水车/活地图/活箱子/活末影箱等全部历史条目）
 
 ---
 
@@ -620,7 +597,8 @@ docs/
 │   ├── icon-system.md                #   图标系统（三层架构+声明式配置）
 │   ├── tooltip-system.md             #   Tooltip系统（双层渲染+运行时缓存+显示口径）
 │   ├── redstone-evolution-roadmap.md #   红电架构演进路线（SensorPort+事件流+元件接口化）
-│   └── power-invariants.md          #   红电不变量清单与四层测试方案（31条可执行断言）
+│   ├── power-invariants.md          #   红电不变量清单与四层测试方案（31条可执行断言）
+│   └── oversized-stack-audit.md     #   超大堆叠审计（模组容器上限>64 的活物品表现）
 ├── framework-refactoring.md          # 框架重构总结（HasDirection + HasContainerData 接口化设计）
 ├── 红电系统.md                        # 活红石+活铜块+活避雷针规划（v19.2 活潜影箱已剥离）
 ├── 活潜影箱实现细节.md                # 活潜影箱独立设计（通用嵌套基础设施，随活物品扩展生长）

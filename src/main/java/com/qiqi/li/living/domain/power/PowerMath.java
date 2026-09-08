@@ -32,8 +32,15 @@ public final class PowerMath {
      *
      * <p>容量涌现为线性「每盏 C × count」：与信号上限（堆叠数²）同用堆叠旋钮，
      * 无查表；平方容量在拆分时坍缩毁电，故取线性（§3.6 v17.5）。</p>
+     *
+     * <p>标定 10,000（2026-09-08，自初版 1,000 上调）：一堆(64) 640k FE，
+     * 对齐科技生态基础档电池（对标 TE 能量格 / IE 电容 LV），让「充电宝物流」
+     * （充满铜灯拔下搬运）可用；同时中期典型产出（几十~几百 FE/t）下
+     * 充满一堆约需 0.5~2 小时，满溢反馈环（提示该上用电侧）仍能触发。
+     * q 按 mFE 绝对值存储，扩容对旧存量灯 = 白赚头寸，无迁移问题；
+     * int FE 收窄上限从 214 万盏降至 21.4 万盏，超大堆叠容器下仍 fail-safe。</p>
      */
-    public static final long BULB_UNIT_CAPACITY_FE = 1000;
+    public static final long BULB_UNIT_CAPACITY_FE = 10_000;
     /** 每盏容量（1/1000 FE 定点，充电分配用） */
     public static final long BULB_UNIT_CAPACITY_MFE = BULB_UNIT_CAPACITY_FE * 1000;
 

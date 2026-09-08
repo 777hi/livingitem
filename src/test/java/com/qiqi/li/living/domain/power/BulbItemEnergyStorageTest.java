@@ -94,7 +94,7 @@ class BulbItemEnergyStorageTest {
 
         BulbItemEnergyStorage storage = new BulbItemEnergyStorage(stack);
         assertEquals(8000, storage.getEnergyStored());        // 500_000 × 16 / 1000
-        assertEquals(16000, storage.getMaxEnergyStored());   // 1_000_000 × 16 / 1000
+        assertEquals(160000, storage.getMaxEnergyStored());   // 10_000_000 × 16 / 1000（每盏 C=10k FE）
         assertTrue(storage.canExtract());
         assertTrue(storage.canReceive());
     }

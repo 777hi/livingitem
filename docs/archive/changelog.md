@@ -4,6 +4,17 @@
 
 ---
 
+## 2026-08-30
+
+- ✅ **新增：红电发电阶段一~三** —— `domain/power` 包（`PowerMath` / `ChannelState` / `GeneratorState` / `ContainerPowerData`），双因子模型落地：合因子 = n^(1+解锁度)，解锁度 = 调谐效率 × 规律度
+- ✅ **新增：`LivingWaxedCopperFunction`（priority=3，晚于红石）** —— 涂蜡全家族 20 件活化，逐方向采样 edgeGrid 事件，跳变即能量事件入账（RE 自然单位，K=1/16 边界换算）
+- ✅ **新增：阶段三+四** —— 感应拓扑（线圈分组：铜块全向/雕文 V+H/切制单方向）+ 感应耦合（管径加权守恒、不回传防环、多跳中继）+ 绝缘修复（涂蜡排除出充能导体，杜绝信号泄漏）+ 储能：铜灯 = 唯一储存（发电直存、无容器池），容量 = count×C 线性涌现 + 对外能量：**显式注册+让位**（10 种原版容器 BE，三层判定不劫持已有能源；方块级双向 canReceive=true）+ 铜灯物品 = 通用电池（双向：放电 + 外部充电，跨系统能量等量转换）
+- ✅ **新增：表现层** —— Tooltip 仪表盘（检测值写回组件 → 槽位同步 → 客户端渲染，双语 key）
+- ✅ **新增：39 项电力层测试**（数学 5 + 状态机 6 + 线圈分组 4 + 储能 16（含仪表 2）+ 电池 6 + 集成 2），全量 146 项测试通过
+- 📄 技术文档：`docs/tech/living-power-tech.md`
+
+---
+
 ## 2026-08-27
 
 - ✅ **重构：活水车应力状态机提取**（`StressStateMachine` 纯 Java 类，从 `KineticBlockEntityMixin` 中提取）
@@ -38,6 +49,13 @@
   - 更新 Tick 时序图（反映 `ServerTickEvent.Pre` 和 `StressOutputManager`）
   - 更新验证清单
   - **修改文件**：`docs/tech/living-water-wheel-tech.md`
+
+---
+
+## 2026-08-25
+
+- ✅ **提升：红石传播时间分辨率从 2 tick 改为 1 game tick**，取消跳帧。容器内最快振荡周期从 4 tick 降至 2 tick，为红电系统的高频档位提供基础。中继器/按钮延迟统一以 game tick 计数（中继器档位 N = 2N tick，保持原版红石刻语义）
+- ✅ **优化：传播热路径改用槽位类型位图（`slotMask`）**，替换 18 处 `Set<Integer>.contains`，消除装箱与每 tick 的临时 `HashSet`。实测单次传播开销降 40~76%（满载 54 格 9.4μs → 4.9μs），1 tick 传播总成本与原 2 tick 持平
 
 ---
 
@@ -86,6 +104,18 @@
   - 更新关键类表，新增 `ContainerRedstoneData` 引用
   - 文档版本更新至 v5
   - **修改文件**：`docs/tech/living-tnt-tech.md`
+- ✅ **修复：红石传播节拍改为对齐全局游戏时钟**，消除因容器加载时机不同导致的跨容器信号错位半拍问题
+- ✅ **新增：单元测试基建** — MDG `unitTest` 配置，测试可在 FML 环境引用 Minecraft 类
+- ✅ **新增：64 项单元测试**（红石传播 21 + 容器兼容性 14 + 地图坐标 29）
+- ✅ **修复：客户端 Mixin 从双端 `mixins` 移至 `client` 数组**（专用服务器启动崩溃）
+- ✅ **修复：`EdgeGrid.get/set` 缺少边界检查**，容器尺寸变化时会越界崩溃
+- ✅ **修复：容器级数据缓存键补齐维度**，消除跨维度同坐标容器串数据
+- ✅ **修复：`grouped.isEmpty()` 分支门禁失效**（`getSize()` 恒为 0），残留边界红石信号现可正确归零
+- ✅ **优化：新增位置→缓存键反向索引**，mixin 热路径（`getSignal` / `getConnectingSide`）从正则全表扫描降为 O(1)
+- ✅ **修复：`APPLICABLE_CACHE` 改用 `ConcurrentHashMap`**，消除单人游戏双线程并发写风险
+- ✅ **新增：`ServerStoppedEvent` 统一清理静态缓存**，避免跨存档状态残留
+- ✅ **优化：`PerfMetrics` 全面改用纳秒累计**，修复亚毫秒耗时被整数除法归零的问题
+- ✅ **清理：删除 `TickContext` 未使用的泛型扩展点**
 
 ---
 
@@ -162,6 +192,10 @@
     - `ContainerChunkCache.clear()`：同步清理 `lastCleanupTick` 时间戳
   - **清理机制三层保障**：`onChunkUnload`（即时移除）→ `!hasContainer` 检查（自清洁）→ `cleanupStaleEntries`（兜底清理）
   - **注意**：此修复在 2026-08-19 发现残留问题——`onChunkUnload` 即时移除与 `ChunkEvent.Load` 晚触发之间存在时序窗口，见 2026-08-19 记录。
+- ✅ **重构：接口化设计** — `HasDirection` 接口统一 WASD 朝向配置，`HasContainerData` 接口统一容器级数据计算
+- ✅ **重构：`TickContext` 每 tick 新建**（对象小、生命周期短，JVM 年轻代可高效回收）
+- ✅ **优化：新增活物品从修改 6 个文件减少到 2 个文件**
+- ✅ **更新：全部文档同步至 v8.1 架构**
 
 ---
 
@@ -176,6 +210,24 @@
   - `ContainerLivingItemHandler` 应力写入从 `StressDataProvider.livingItem$setStressData()` → `be.setData(CONTAINER_STRESS_DATA, stressData)`
   - 更新 `living_item.mixins.json`（移除 `MapItemMixin`、`MapItemUpdateMixin`、`BlockEntityMixin`）
   - 更新 `living_item.client.mixins.json`（新增 `RecipeBookPageMixin`）
+- ✅ **重构：包结构重组** — `data/` 删除，`function/` 精简，所有活物品内聚到 `domain/`
+- ✅ **重构：传输管道统一** — `TransferPipeline` 统一传输入口，解耦 `CrossContainerTransfer` 与 `LivingHopperFunction`
+- ✅ **重构：活末影箱路由解耦** — `EnderRouteManager` 集中管理路由，`LivingEnderChestAccessor` 精简
+- ✅ **重构：活熔炉同步生命周期统一** — 改用 `SlotAccessor`，支持活箱子作为输入/输出
+- ✅ **新增：`HopperFilterBuilder` 过滤链构建**（从 `ContainerSnapshot` 提取）
+- ✅ **新增：脏槽位批量同步机制**（`TickContext.dirtySlots` + `SimpleContainerContext.flushDirtySlots()`）
+- ✅ **更新：全部技术文档同步至 v8 架构**
+
+---
+
+## 2026-08-09
+
+- ✅ **新增：活地图传送系统**（三种场景 + UV 精确传送 + 跨维度 + 载具 + Sable 飞艇兼容）
+- ✅ **新增：GUI 扩展地图渲染 + 十字光标 + 展示框十字光标 + 活地图图标**
+- ✅ **新增：元数据同步包 + 客户端缓存**
+- ✅ **修复：跨维度提示重复**（`MapTeleportExecutor.execute()` 统一发送）
+- ✅ **修复：副手活末影珍珠未统计/消耗**
+- ✅ **优化：渲染性能**（`hoveredGroup` 缓存，O(N²)→O(N)）
 
 ---
 

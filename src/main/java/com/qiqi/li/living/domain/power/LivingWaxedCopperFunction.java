@@ -833,7 +833,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             int pref = stack.getCount();
             boolean hasSignal = t.detectedPeriod() > 0;
 
-            // ══ 核心（常显）：最关键的读数 ══
+            // ══ 核心（常显）：三行数字 ══
             renderSection(tooltipAdder, "tooltip.livingitem.waxed_copper.section.core");
 
             // ── 偏好周期 / 宽带 ──
@@ -848,7 +848,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
                     .withStyle(ChatFormatting.DARK_AQUA));
             }
 
-            // ── EMA 功率（FE/t）──
+            // ── 功率（本机 EMA）──
             if (t.emaPowerMilliFe() > 0) {
                 tooltipAdder.accept(Component.literal("  ")
                     .append(Component.translatable("tooltip.livingitem.waxed_copper.ema_power"))
@@ -856,8 +856,24 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
                     .withStyle(ChatFormatting.YELLOW));
             }
 
-            // ── 网络级共振（容器级，§3.6.1）：收益核心，靠前显示 ──
-            renderResonanceTooltip(tooltipAdder, t);
+            // ── 锈级（共振前基础）──
+            if (t.levelEmaPowerMilliFe() > 0) {
+                tooltipAdder.accept(Component.literal("  ")
+                    .append(Component.translatable("tooltip.livingitem.waxed_copper.level_power"))
+                    .append(Component.literal(": " + formatMilliFe(t.levelEmaPowerMilliFe()) + " FE/t"))
+                    .withStyle(ChatFormatting.GREEN));
+            }
+
+            // ── 共振（实发）──
+            if (t.levelEmaPowerMilliFe() > 0) {
+                long actualMilliFe = t.resonanceGain() > 1.0
+                    ? Math.round(t.levelEmaPowerMilliFe() * t.resonanceGain())
+                    : t.levelEmaPowerMilliFe();
+                ChatFormatting fmt = t.resonanceGain() > 1.0 ? ChatFormatting.GOLD : ChatFormatting.GRAY;
+                tooltipAdder.accept(Component.literal("  ")
+                    .append(Component.translatable("tooltip.livingitem.waxed_copper.resonance").withStyle(ChatFormatting.GOLD))
+                    .append(Component.literal(": " + formatMilliFe(actualMilliFe) + " FE/t").withStyle(fmt)));
+            }
 
             // ── 状态：无信号时一句「检测中」──
             if (!hasSignal) {
@@ -866,68 +882,81 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
                     .withStyle(ChatFormatting.DARK_GRAY));
             }
 
-            // ══ 以下为进阶诊断信息，仅 F3+H 高级模式显示 ══
+            // ══ 以下为进阶诊断公式，仅 F3+H 高级模式显示 ══
             if (flag.isAdvanced()) {
                 renderSection(tooltipAdder, "tooltip.livingitem.waxed_copper.section.settlement");
 
                 if (hasSignal) {
-                    // ── 检测周期 · 相数 · 解锁度（合并为一行）──
-                    boolean tuned = Math.abs(t.detectedPeriod() - pref) <= 1;
-                    tooltipAdder.accept(Component.literal("  ")
-                        .append(Component.translatable("tooltip.livingitem.waxed_copper.detected_period"))
-                        .append(Component.literal(": " + t.detectedPeriod() + "t"))
-                        .append(Component.literal(tuned ? " §a✓" : " §c(偏好" + pref + "t)"))
-                        .append(Component.literal("  §7n=" + t.phaseCount()))
-                        .append(Component.literal("  §7解锁" + t.unlockPermille() / 10 + "%"))
+                    // ── 代数解释 ──
+                    tooltipAdder.accept(Component.literal("  §8u §7解锁度  §8N §7活跃锈级数  §8s §7平衡度")
                         .withStyle(ChatFormatting.GRAY));
 
-                    // ── 发电量公式（v3，一行）──
                     double effDeltaSum = t.effDeltaSumPermille() / 1000.0;
-                    double factor = PowerMath.combinedFactor(effDeltaSum, t.phaseCount(), t.unlockPermille() / 1000.0);
-                    double fePerEvent = factor * (t.detectedPeriod() / 16.0);
-                    tooltipAdder.accept(Component.literal("  ")
-                        .append(Component.translatable("tooltip.livingitem.waxed_copper.power_output"))
-                        .append(Component.literal(" = " + String.format("%.0f", fePerEvent) + " FE"))
-                        .append(Component.literal("  §8(Σ√|Δ|=" + String.format("%.1f", effDeltaSum)))
-                        .append(Component.literal(" ^(1+" + String.format("%.2f", t.unlockPermille() / 1000.0) + ")"))
-                        .append(Component.literal(" × " + t.detectedPeriod() + "/16)"))
+                    double unlock = t.unlockPermille() / 1000.0;
+                    double factor = PowerMath.combinedFactor(effDeltaSum, t.phaseCount(), unlock);
+                    double fePerEvent = factor * t.detectedPeriod() / 16.0;
+                    double powerPerTick = fePerEvent * t.phaseCount() / t.detectedPeriod();
+
+                    // ── 功率公式: 简化 合因子×n/16，颜色区分（§8骨架 §e值）──
+                    tooltipAdder.accept(Component.literal("  §7功率:  §8Σ√|Δ|^(1+u) §e= "
+                        + String.format("%.1f", effDeltaSum) + "^(" + String.format("%.2f", 1.0 + unlock) + ")"
+                        + "  §7×  §8n/16 §e= " + t.phaseCount() + "/16"
+                        + "  §7=  §e" + String.format("%.1f", powerPerTick) + " FE/t")
                         .withStyle(ChatFormatting.GRAY));
+
+                    // ── 共振公式: 简化，颜色区分 ──
+                    if (t.activeLevels() >= 2) {
+                        int levels = t.activeLevels();
+                        double s = t.resonanceBalance();
+                        long actualMilliFe = Math.round(t.levelEmaPowerMilliFe() * t.resonanceGain());
+                        tooltipAdder.accept(Component.literal("  §7共振:  §8(1+(N-1)×s)² §e= (1+" + (levels - 1) + "×"
+                            + String.format("%.2f", s) + ")²"
+                            + "  §7×  §e" + formatMilliFe(t.levelEmaPowerMilliFe())
+                            + "  §7=  §e" + formatMilliFe(actualMilliFe) + " FE/t")
+                            .withStyle(ChatFormatting.GRAY));
+                    } else {
+                        // 单锈级，无共振——直接显示
+                        tooltipAdder.accept(Component.literal("  §7共振:  " + formatMilliFe(t.levelEmaPowerMilliFe()) + " FE/t  §8(单锈级，无共振)")
+                            .withStyle(ChatFormatting.GRAY));
+                    }
                 }
+            }
 
-                // ── 共振公式（与发电量公式并列，§3.6.1）──
-                renderResonanceFormula(tooltipAdder, t);
-
-                // ── 网络（容器级）：诊断细节，置底 ──
+            // ── 网络（容器级）：域快照（仅 F3+H 高级模式）──
+            if (flag.isAdvanced()) {
                 renderSection(tooltipAdder, "tooltip.livingitem.waxed_copper.section.network");
 
-                if (t.levelEmaPowerMilliFe() > 0) {
-                    tooltipAdder.accept(Component.literal("  ")
-                        .append(Component.translatable("tooltip.livingitem.waxed_copper.level_power"))
-                        .append(Component.literal(": " + formatMilliFe(t.levelEmaPowerMilliFe()) + " FE/t"))
-                        .withStyle(ChatFormatting.DARK_GRAY));
-                }
-                // 各域快照（紧凑格式）
-                for (var ds : t.domains()) {
-                    StringBuilder sb = new StringBuilder();
-                    sb.append("  §5P=").append(ds.period()).append("t")
-                      .append("  n=").append(ds.n())
-                      .append("  Σ√|Δ|=").append(String.format("%.1f", ds.effDeltaSum()))
-                      .append("  max|Δ|=").append(ds.maxDelta());
-                    int gap = ds.minPhaseGap();
+                // 最佳域
+                var best = t.bestDomain();
+                if (best != null) {
+                    StringBuilder sb = new StringBuilder("  §5最佳域: P=").append(best.period()).append("t")
+                        .append("  n=").append(best.n())
+                        .append("  Σ√|Δ|=").append(String.format("%.1f", best.effDeltaSum()));
+                    int gap = best.minPhaseGap();
                     if (gap >= 0) sb.append("  Δφ=").append(gap).append("t");
+                    // 相位偏移配对 [phi0:3 phi1:2 ...]
+                    if (!best.deltas().isEmpty()) {
+                        sb.append("  [");
+                        List<Integer> offs = best.offsets();
+                        for (int i = 0; i < best.deltas().size(); i++) {
+                            if (i > 0) sb.append(" ");
+                            int off = (offs != null && i < offs.size()) ? offs.get(i) : i;
+                            sb.append("\u03C6").append(off).append(":").append(best.deltas().get(i));
+                        }
+                        sb.append("]");
+                    }
                     tooltipAdder.accept(Component.literal(sb.toString())
                         .withStyle(ChatFormatting.DARK_PURPLE));
-                    // 各相位「偏移 → |Δ|」配对（按 offset 升序；圆盘读不出精确间距时看这行）
-                    if (!ds.deltas().isEmpty()) {
-                        StringBuilder sb2 = new StringBuilder("    ");
-                        List<Integer> offs = ds.offsets();
-                        for (int i = 0; i < ds.deltas().size(); i++) {
-                            int off = (offs != null && i < offs.size()) ? offs.get(i) : i;
-                            sb2.append("φ").append(off).append(":").append(ds.deltas().get(i)).append(" ");
-                        }
-                        tooltipAdder.accept(Component.literal(sb2.toString())
-                            .withStyle(ChatFormatting.LIGHT_PURPLE));
-                    }
+                }
+
+                // 其他域汇总行
+                int otherCount = 0;
+                for (var ds : t.domains()) {
+                    if (best == null || ds.period() != best.period()) otherCount++;
+                }
+                if (otherCount > 0) {
+                    tooltipAdder.accept(Component.literal("  §8+ 其他 " + otherCount + " 域（虚假周期，收敛中）")
+                        .withStyle(ChatFormatting.DARK_GRAY));
                 }
             }
         }
