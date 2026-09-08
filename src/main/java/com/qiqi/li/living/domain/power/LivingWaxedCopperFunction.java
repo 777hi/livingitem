@@ -445,7 +445,10 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
      * （雕文读输入方向邻居的注册表）；加法器只读自己的真实边（不读注册表）、
      * 裂相器无外部输入。因此依赖图是「链」而非「环」——移相环的每个成员的
      * 输入边都是蜡-蜡死边（无种子），注册表永远为空，环自熄；不存在
-     * 「互读导致偏移每 tick 自增跑满」的通路。</p>
+     * 「互读导致偏移每 tick 自增跑满」的通路。
+     * ⚠️ 移相链的组合入口（雕文读邻居注册表）已于 2026-09-08 暂时关闭
+     * （满相可堆叠涌现，增益超模，见 interpretShifter）——组合语义暂不生效，
+     * 但「链而非环」的结构论证仍然成立，重新启用时无需重审防环。</p>
      *
      * <p><b>活性</b>：输入源停跳超过 {@link PowerMath#aliveWindow} 后，
      * 对应解读停止、驻波经 {@link ContainerPowerData#pruneRegistry} 修剪——死源不发电。</p>
@@ -484,6 +487,10 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
      * 邻居的注册表驻波），派生 (P, (φ+1) mod P, δ)——驻波整体延迟 1 tick。
      * k 台首尾相连（后者的输入方向指向前者）= 任意偏移延迟线，解锁奇数偏移制造
      * （中继器延迟全是偶数 tick）。环自熄：环上成员的输入边都是蜡-蜡死边，无种子。</p>
+     *
+     * <p><b>暂时关闭链式组合（2026-09-08）</b>：邻居注册表读取已停用（见方法体
+     * 内注释）——移相链让任意频率信号堆出满相（n = P），绕过「真多相靠布局」的
+     * 核心设计，增益超模。单级移相（真实边 φ+1）保留，与切制/格栅同口径。</p>
      */
     private static void interpretShifter(int slot, ItemStack stack, ContainerContext ctx,
             int size, int width, ContainerPowerData powerData, long now,
@@ -501,13 +508,17 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         }
 
         // 输入二：输入方向邻居的注册表驻波（移相链的组合入口）
-        int neighbor = ContainerContext.resolveNeighbor(slot, inEdge, size, width);
-        if (neighbor >= 0) {
-            for (DerivedPhase dp : powerData.getRegistry(neighbor)) {
-                out.add(new DerivedPhase(dp.period(), Math.floorMod(dp.offset() + 1, dp.period()),
-                    dp.delta(), DerivedPhase.KIND_SHIFT, now));
-            }
-        }
+        // 【暂时关闭 2026-09-08】移相链（雕文首尾相连）允许任意频率信号堆出任意偏移，
+        // 绕过「真多相要靠布局与时序」的核心设计——单台雕文只要有足够长的链就能凑满相
+        // （n = P），增益封顶只剩材料成本。关闭后雕文与切制/格栅同口径：只读真实边信号，
+        // 单级移相（φ+1）保留、链式组合断开。逻辑保留备将来重新设计增益约束后启用。
+        // int neighbor = ContainerContext.resolveNeighbor(slot, inEdge, size, width);
+        // if (neighbor >= 0) {
+        //     for (DerivedPhase dp : powerData.getRegistry(neighbor)) {
+        //         out.add(new DerivedPhase(dp.period(), Math.floorMod(dp.offset() + 1, dp.period()),
+        //             dp.delta(), DerivedPhase.KIND_SHIFT, now));
+        //     }
+        // }
 
         if (!out.isEmpty()) draft.put(slot, out);
     }
@@ -888,7 +899,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
 
                 if (hasSignal) {
                     // ── 代数解释 ──
-                    tooltipAdder.accept(Component.literal("  §8u §7解锁度  §8N §7活跃锈级数  §8s §7平衡度")
+                    tooltipAdder.accept(Component.literal("  §8Δ §7振幅  §8φ §7相位  §8u §7解锁度  §8N §7活跃锈级数  §8s §7平衡度")
                         .withStyle(ChatFormatting.GRAY));
 
                     double effDeltaSum = t.effDeltaSumPermille() / 1000.0;
@@ -932,21 +943,21 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
                     StringBuilder sb = new StringBuilder("  §5最佳域: P=").append(best.period()).append("t")
                         .append("  n=").append(best.n())
                         .append("  Σ√|Δ|=").append(String.format("%.1f", best.effDeltaSum()));
-                    int gap = best.minPhaseGap();
-                    if (gap >= 0) sb.append("  Δφ=").append(gap).append("t");
-                    // 相位偏移配对 [phi0:3 phi1:2 ...]
-                    if (!best.deltas().isEmpty()) {
-                        sb.append("  [");
-                        List<Integer> offs = best.offsets();
-                        for (int i = 0; i < best.deltas().size(); i++) {
-                            if (i > 0) sb.append(" ");
-                            int off = (offs != null && i < offs.size()) ? offs.get(i) : i;
-                            sb.append("\u03C6").append(off).append(":").append(best.deltas().get(i));
-                        }
-                        sb.append("]");
-                    }
                     tooltipAdder.accept(Component.literal(sb.toString())
                         .withStyle(ChatFormatting.DARK_PURPLE));
+                    // 相位偏移配对单独一行 [φ0:Δ3 φ1:Δ2 ...]
+                    if (!best.deltas().isEmpty()) {
+                        StringBuilder ps = new StringBuilder("  §5[");
+                        List<Integer> offs = best.offsets();
+                        for (int i = 0; i < best.deltas().size(); i++) {
+                            if (i > 0) ps.append(" ");
+                            int off = (offs != null && i < offs.size()) ? offs.get(i) : i;
+                            ps.append("\u03C6").append(off).append(":Δ").append(best.deltas().get(i));
+                        }
+                        ps.append("]");
+                        tooltipAdder.accept(Component.literal(ps.toString())
+                            .withStyle(ChatFormatting.DARK_PURPLE));
+                    }
                 }
 
                 // 其他域汇总行
@@ -1050,6 +1061,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
 
     /** 从物品取形态功能说明翻译键（三变体差异说明，v19.1） */
     private static String formDescKey(Item item) {
+        if (isWaxedBulb(item)) return "tooltip.livingitem.waxed_copper.form_desc.bulb";
         if (isWaxedChiseled(item)) return "tooltip.livingitem.waxed_copper.form_desc.chiseled";
         if (isWaxedCut(item)) return "tooltip.livingitem.waxed_copper.form_desc.cut";
         if (isWaxedGrate(item)) return "tooltip.livingitem.waxed_copper.form_desc.grate";
@@ -1058,6 +1070,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
 
     /** 从物品取形态翻译键 */
     private static String formTranslationKey(Item item) {
+        if (isWaxedBulb(item)) return "tooltip.livingitem.waxed_copper.form.bulb";
         if (isWaxedChiseled(item)) return "tooltip.livingitem.waxed_copper.form.chiseled";
         if (isWaxedCut(item)) return "tooltip.livingitem.waxed_copper.form.cut";
         if (isWaxedGrate(item)) return "tooltip.livingitem.waxed_copper.form.grate";

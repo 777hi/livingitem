@@ -168,21 +168,26 @@ class PhaseInterpretationTest {
     }
 
     @Test
-    @DisplayName("移相链：两台首尾相连 → φ=0/1/2，n=3（奇数偏移可造）")
+    @DisplayName("移相链【已暂时关闭 2026-09-08】：B 不再读 A 的注册表 → 链断，B 无派生")
     void shifterChain_twoLinks_n3() {
         ItemStack[] slots = new ItemStack[SIZE];
         slots[1] = chiseledAimed(Pos2D.LEFT);                       // A：读真实源
-        slots[2] = chiseledAimed(Pos2D.LEFT);                       // B：读 A 的注册表
+        slots[2] = chiseledAimed(Pos2D.LEFT);                       // B：链入口已关（读不到 A 的注册表）
         List<LivingItemFunction.SlotEntry> entries = new ArrayList<>();
         entries.add(new LivingItemFunction.SlotEntry(1, slots[1]));
         entries.add(new LivingItemFunction.SlotEntry(2, slots[2]));
 
         Scenario s = run(slots, entries, 24, 23);
 
+        // 关闭前（链生效）：A 派生 φ=1，B 读 A 的驻波派生 φ=2，全网 n=3——任意信号堆链凑满相，
+        // 增益超模（满相只剩材料成本，绕过「真多相靠布局」）。已暂时停用 interpretShifter 的
+        // 邻居注册表读取；重新启用时恢复如下断言：
+        //   assertEquals(3, ch.bestN(PREF));
+        //   assertEquals(2, s.power.getRegistry(2).get(0).offset());
         ChannelState ch = s.power.getGenerator(1).channel();
-        assertEquals(3, ch.bestN(PREF), "φ=0（真实）+ φ=1（A 派生）+ φ=2（B 派生）→ n=3");
+        assertEquals(2, ch.bestN(PREF), "只剩 A 的真实 φ=0 + A 派生 φ=1 → n=2（链断）");
         assertEquals(1, s.power.getRegistry(1).get(0).offset(), "A 派生 φ=1");
-        assertEquals(2, s.power.getRegistry(2).get(0).offset(), "B 派生 φ=2");
+        assertTrue(s.power.getRegistry(2).isEmpty(), "B 读不到 A 的注册表 → 无派生（链断）");
     }
 
     @Test
