@@ -883,13 +883,13 @@ if (context instanceof SimpleContainerContext simpleCtx2) {
 
 **效果**：同一 tick 内同一槽位多次修改只发送一次同步包，减少网络冗余。
 
-### 8.5 跨容器虚影防护 — syncWorldContainer 容器归属验证
+### 8.5 跨容器虚影防护与大箱匹配 — syncWorldContainer 容器归属验证
 
 `flushSlotSync` 对世界容器走 `syncWorldContainer`，它遍历所有玩家当前打开的菜单，按 `slot.getContainerSlot() == logicalSlot` 匹配槽位并发送同步包。
 
 **原问题**：只匹配槽位索引，未验证 `slot.container` 是否属于当前容器。当容器 A 的活物品 tick 同步时，玩家若正打开容器 B，B 的同索引槽位会收到 A 的物品栈，客户端显示为无法拿取的虚影。
 
-**修复**：在匹配条件中增加 `myContainers.contains(slot.container)` 验证，`myContainers` 从 `associatedBlockEntities` 中收集所有实现了 `Container` 接口的方块实体，确保同步包只发送给真正属于本容器的槽位。
+**修复**：在匹配条件中增加容器归属验证，`myContainers` 从 `associatedBlockEntities` 中收集所有实现了 `Container` 接口的方块实体，确保同步包只发送给真正属于本容器的槽位。
 
 ```java
 // 修复前：只匹配槽位索引
@@ -898,8 +898,14 @@ if (slot.getContainerSlot() == logicalSlot && slot.container != serverPlayer.get
 // 修复后：同时匹配槽位索引 + 容器归属
 if (slot.getContainerSlot() == logicalSlot
     && slot.container != serverPlayer.getInventory()
-    && myContainers.contains(slot.container))
+    && slotBelongsTo(slot.container, myContainers))
 ```
+
+**大箱匹配（2026-09-09 补丁）**：容器归属验证最初是纯实例匹配 `myContainers.contains(slot.container)`，但原版大箱子菜单的槽位容器是 `new CompoundContainer(左半BE, 右半BE)` **包装对象**而非 BE 本体——实例匹配对大箱**永远不命中**，导致活物品 DataComponent 变化的同步包从不发给大箱查看者（症状：活水车旋转动画/Tooltip、活水桶水流 Tooltip 停留在开箱快照，重开界面才恢复；单箱正常）。单箱菜单容器就是 BE 本体，故不受影响。修复为两级匹配（`slotBelongsTo`）：先实例匹配（单箱），再对 `CompoundContainer` 用其自带的 `contains(Container)`（引用相等）逐个匹配关联 BE（大箱）。
+
+> **与 tooltip-system.md §3.2 的关系**：同一 bug 模式在 v19.1 修 `ContainerRuntimeCache.isViewingContainer`（遥测链路）时就出现过，当时只修了遥测一处，此处（组件同步链路）是漏掉的平行断点。教训已提炼为通用规则：「任何『玩家菜单 ↔ 容器实例』匹配必须兼容 `CompoundContainer.contains(be)`」（[tooltip-system.md §7 坑清单第 3 条](tooltip-system.md#7-设计原则与坑清单)）。**新增按玩家菜单匹配容器的代码时，必须检查这两个先例**。
+
+**槽位对齐**：大箱的 IItemHandler（`InvWrapper(CompoundContainer)`，`logicalSlot` 的来源）与菜单 `CompoundContainer` 都经 `ChestBlock.combine → DoubleBlockCombiner` 生成，拼接顺序由 `ChestBlock.TYPE`（LEFT/RIGHT）归一化——无论从哪个半箱查询，`container1` 恒为左半箱，槽位索引天然一致，同步不会左右对调。
 
 ### 8.6 ContainerSnapshot — 容器快照
 

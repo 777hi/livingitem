@@ -441,10 +441,14 @@ public class SimpleContainerContext implements ContainerContext {
 
             for (int i = 0; i < menu.slots.size(); i++) {
                 Slot slot = menu.slots.get(i);
-                // 必须同时匹配：槽位索引 + 容器归属，防止跨容器虚影
+                // 必须同时匹配：槽位索引 + 容器归属，防止跨容器虚影。
+                // 大箱子：菜单槽位容器是 CompoundContainer(左BE, 右BE) 包装对象而非
+                // BE 本体，实例 contains 永远不命中 → 组件同步包从不发给大箱查看者
+                // → 活水车动画/tooltip 停留在开箱快照（v19.1 修 ContainerRuntimeCache
+                // 时漏掉的平行断点，修法与其对齐：用 compound.contains(be) 匹配）
                 if (slot.getContainerSlot() == logicalSlot
                     && slot.container != serverPlayer.getInventory()
-                    && myContainers.contains(slot.container)) {
+                    && slotBelongsTo(slot.container, myContainers)) {
                     int stateId = menu.incrementStateId();
                     menu.remoteSlots.set(i, stack.copy());
                     serverPlayer.connection.send(
@@ -452,5 +456,22 @@ public class SimpleContainerContext implements ContainerContext {
                 }
             }
         }
+    }
+
+    /**
+     * 判断菜单槽位的容器是否属于本容器关联的 Container 实例集合。
+     *
+     * <p>单箱菜单容器即 BE 本体，实例匹配即可；大箱子菜单容器是
+     * {@link net.minecraft.world.CompoundContainer CompoundContainer}(左BE, 右BE)
+     * 包装对象，需用其自带的 {@code contains(Container)} 逐个匹配关联 BE。</p>
+     */
+    private static boolean slotBelongsTo(Container menuContainer, java.util.Set<Container> myContainers) {
+        if (myContainers.contains(menuContainer)) return true;
+        if (menuContainer instanceof net.minecraft.world.CompoundContainer compound) {
+            for (Container c : myContainers) {
+                if (compound.contains(c)) return true;
+            }
+        }
+        return false;
     }
 }

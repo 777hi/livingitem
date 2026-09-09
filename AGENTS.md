@@ -349,14 +349,17 @@ src/test/java/com/qiqi/li/
 │   └── WaxedCopperCouplingIT.java             # 耦合链集成：多跳中继+防回环（3 项）
 ├── living/domain/chest/
 │   └── LivingChestFunctionTest.java           # 取消活化堆叠倍数返还（6 项）
+├── living/domain/furnace/
+│   ├── LivingFurnaceFunctionTest.java         # 燃料消耗合成残留物语义（4 项）
+│   └── FurnaceBurningFlagTest.java            # 燃烧标志组件·图标切换回归（5 项）
 ├── living/domain/map/
 │   └── MapCoordHelperTest.java                # 地图坐标换算（16 项）
 └── living/transfer/
     └── ContainerCompatibilityConfigTest.java  # 容器布局推断（9 项）
 ```
 
-**合计测试用例 211 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
-全绿基线：`211 passed / 0 failed / 0 skipped`（2026-09-08 验证）。
+**合计测试用例 216 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
+全绿基线：`216 passed / 0 failed / 0 skipped`（2026-09-09 验证）。
 
 > 📄 测试环境配置与编写约定详见 [unit-testing.md](docs/guides/unit-testing.md)
 
@@ -461,6 +464,34 @@ src/test/java/com/qiqi/li/
 ## 开发进展
 
 ### 当前版本: v0.9-alpha
+
+**最近更新** (2026-09-09):
+- ✅ 修复：**活水车/活水桶在大箱子中动画与 tooltip 停留在开箱快照**——应力/
+  水流变化后旋转动画不实时播放、改变水流方向后旋转方向不翻转、tooltip 数字不动，
+  必须关闭再重开容器界面才恢复；单箱一切正常。根因双通道失效：主动通道
+  `SimpleContainerContext.syncWorldContainer` 的容器归属匹配是纯实例比较，而原版
+  大箱菜单槽位容器是 `new CompoundContainer(左半BE, 右半BE)` 包装对象——匹配永远
+  不命中，`syncSlotToClients` 的组件同步包从不发给大箱查看者；被动通道原版
+  `broadcastChanges` 又因 `ItemStackMixin` 忽略 `LIVING_WATER_WHEEL_DATA`（堆叠
+  兼容）对这些组件失明。即 v19.1 修 `ContainerRuntimeCache.isViewingContainer`
+  （大箱遥测 tooltip）时漏掉的**平行断点**。修复：归属判断抽成 `slotBelongsTo()`
+  照既有修法补 CompoundContainer.contains(be) 分支；影响面覆盖所有走
+  syncSlotToClients 的活物品数据在大箱中的实时同步（水车应力/水桶水流/熔炉进度等），
+  全量 216 用例全绿；踩坑记录收编 living-water-wheel-tech.md §9.23 +
+  living-item-infrastructure.md §8.5（大箱匹配补丁）+ tooltip-system.md §7 坑清单
+  第 3 条升级为双先例通用规则 + living-water-bucket-tech.md 验证清单补大箱项
+- ✅ 修复：**活熔炉图标不切换 active/idle**——熔炼时图标永远停在 furnace_idle.png。
+  根因：图标谓词 `LivingFurnaceFunction.isBurning(stack)` 读物品 DataComponent，而
+  b064865（09-03「tooltip优化，nbt数据简化」）把 burnTime 迁到了运行时缓存
+  （ContainerRuntimeCache + LivingItemSyncPacket），该链路唯一消费方是 tooltip，
+  客户端 ItemStack 上燃料恒为默认值 → isBurning() 恒 false（活TNT 图标正常是
+  因其数据未迁缓存，反向印证）。修复（方案2，不动运行时缓存架构）：新增轻量布尔
+  组件 `LIVING_FURNACE_BURNING`，tick 在燃烧状态**翻转时**写标志 + syncSlotToClients
+  （稳态零写入零同步；跨容器搬运后过期标志下一 tick 自愈）；`isBurning()` 改读标志；
+  组件进 `getIgnoredComponentTypes()`（该机制第一个真实使用者）——燃烧中/熄灭
+  熔炉仍可堆叠。回归测试 FurnaceBurningFlagTest（5 项：点燃写入/熄灭移除/稳态
+  零同步/自愈/堆叠兼容），全量 216 用例全绿；修复记录收编 living-furnace-tech.md
+  §8.11（§1.4 存储结构、§2.1 tick 示例同步更新为运行时缓存架构现状）
 
 **最近更新** (2026-09-08):
 - ⛔ 暂时关闭：**雕文移相链（读邻居注册表派生相位）**——链式组合允许任意频率信号

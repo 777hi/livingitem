@@ -108,6 +108,16 @@ public class LivingFurnaceFunction implements LivingItemFunction, HasDirection {
                     data.progress().progress(), data.progress().total(),
                     data.fuel().burnTime(), data.transform()));
 
+            // 燃烧标志与图标同步：图标谓词（furnace_active/furnace_idle）只读物品组件，
+            // 而 burnTime 已迁运行时缓存，故在状态变化时写一个轻量布尔组件。
+            // 稳态（持续燃烧/持续熄灭）不写；标志与实际不符时自愈（物品跨容器搬运后
+            // 运行时缓存清零，旧标志可能过期）。
+            boolean nowBurning = data.fuel().isBurning();
+            if (nowBurning != LivingItemManager.isFurnaceBurning(stack)) {
+                LivingItemManager.setFurnaceBurning(stack, nowBurning);
+                context.syncSlotToClients(slot, stack);
+            }
+
             // 仅当方向数据变化时写入 DataComponent，避免运行时数据影响物品堆叠
             if (directionChanged) {
                 LivingItemManager.setFurnaceData(stack, data
@@ -400,8 +410,11 @@ public class LivingFurnaceFunction implements LivingItemFunction, HasDirection {
         return net.minecraft.network.chat.Component.literal(itemId);
     }
 
+    /**
+     * 图标谓词入口：读取燃烧标志组件（burnTime 本体在运行时缓存，客户端不可见）。
+     */
     public static boolean isBurning(ItemStack stack) {
-        return LivingItemManager.getFurnaceData(stack).fuel().isBurning();
+        return LivingItemManager.isFurnaceBurning(stack);
     }
 
     public static DirectionSlotsData getDefaultDirection() {
@@ -430,6 +443,7 @@ public class LivingFurnaceFunction implements LivingItemFunction, HasDirection {
 
     @Override
     public Set<DataComponentType<?>> getIgnoredComponentTypes() {
-        return Set.of();
+        // 燃烧标志是图标用的瞬态状态，两个不同燃烧状态的熔炉仍可堆叠
+        return Set.of(LivingItemManager.LIVING_FURNACE_BURNING.value());
     }
 }

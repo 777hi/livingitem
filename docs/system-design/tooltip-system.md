@@ -251,7 +251,7 @@ EMA 类 double 读数（共振增益 / 平衡度 / 域快照 effDeltaSum）写�
 
 1. **遥测永不写 DataComponent**——运行时展示数据走 `ContainerRuntimeCache` + 网络包；写入组件会引发 NBT 膨胀与逐 tick 同步风暴。同时意味着：**任何 tooltip 代码读组件拿到的都是旧值/全 0**，必须走运行时缓存；
 2. **两个 tooltip 事件的数据获取方式不同**——文本层用 ThreadLocal（桥接器已备好），图形层必须悬停槽位定位（ThreadLocal 在 GatherComponents 前已被 finally 清空）；
-3. **大箱子 = CompoundContainer**——原版双箱菜单容器是合成包装而非 BE 本体，任何「玩家菜单 ↔ 容器实例」匹配必须兼容 `CompoundContainer.contains(be)`；
+3. **大箱子 = CompoundContainer**——原版双箱菜单容器是合成包装而非 BE 本体，任何「玩家菜单 ↔ 容器实例」匹配必须兼容 `CompoundContainer.contains(be)`。该规则已两次被抓现行：v19.1 `ContainerRuntimeCache.isViewingContainer`（遥测链路，§3.2）、2026-09-09 `SimpleContainerContext.syncWorldContainer`（组件同步链路，活水车/水桶在大箱中的动画与 tooltip 停留在开箱快照——修遥测时漏掉的平行断点，详见 living-water-wheel-tech.md §9.23 与 living-item-infrastructure.md §8.5）；
 4. **显示与记账分离**——跳变门控记账是脉冲的，任何面向玩家的功率读数一律用窗口均值，禁止直接读快 EMA；
 5. **显示口径用 mFE 定点**——K=1/16 下整数 FE 会吞掉 <0.5 FE/t 的读数；新增功率类字段一律毫 FE 定点（long），格式化统一走 `formatMilliFe`；
 6. **窗口对齐偏好周期**——显示窗口取周期整倍数，否则均值纹波不可消除；窗口内均值以 double 结算，禁止 long 整除；

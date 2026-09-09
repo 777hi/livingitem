@@ -581,3 +581,4 @@ for (int targetSlot : children) { ... }  // 尝试推到下游
 - [ ] 水流状态在 Tooltip 中正确显示（流向、级别）
 - [ ] postTickSync 使用 waterBucketEntries 参数，不扫描全容器
 - [ ] 水流状态变化后客户端 Tooltip 立即更新
+- [ ] 大箱子（CompoundContainer）中水流 Tooltip 实时更新——`syncSlotToClients` 的容器归属匹配曾对大箱永远失败（菜单槽位容器是 CompoundContainer 包装对象，实例匹配不命中），导致大箱中 tooltip 停留在开箱快照、重开界面才恢复；2026-09-09 已修（`SimpleContainerContext.slotBelongsTo`，详见 living-water-wheel-tech.md §9.23）

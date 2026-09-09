@@ -79,6 +79,14 @@ public class LivingItemManager {
                             .networkSynchronized(LivingFurnaceData.STREAM_CODEC)
                             .build());
 
+    /** 熔炉燃烧标志：燃烧状态翻转时写入，供客户端图标谓词（active/idle）读取 */
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<Boolean>> LIVING_FURNACE_BURNING =
+            DATA_COMPONENT_TYPES.register("living_furnace_burning", () ->
+                    DataComponentType.<Boolean>builder()
+                            .persistent(Codec.BOOL)
+                            .networkSynchronized(ByteBufCodecs.BOOL)
+                            .build());
+
     public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingHopperData>> LIVING_HOPPER_DATA =
             DATA_COMPONENT_TYPES.register("living_hopper_data", () ->
                     DataComponentType.<LivingHopperData>builder()
@@ -282,6 +290,7 @@ public class LivingItemManager {
         stack.remove(LIVING_WATER_BUCKET_DATA.value());
         stack.remove(LIVING_WATER_WHEEL_DATA.value());
         stack.remove(LIVING_FURNACE_DATA.value());
+        stack.remove(LIVING_FURNACE_BURNING.value());
         stack.remove(LIVING_HOPPER_DATA.value());
         stack.remove(LIVING_ENDER_CHEST_DATA.value());
         stack.remove(LIVING_REDSTONE_DATA.value());
@@ -360,6 +369,25 @@ public class LivingItemManager {
      */
     public static void setFurnaceData(ItemStack stack, LivingFurnaceData data) {
         setData(stack, LIVING_FURNACE_DATA.value(), data, LivingFurnaceData.DEFAULT);
+    }
+
+    /**
+     * 便捷方法：读取熔炉燃烧标志（供图标谓词使用）。
+     */
+    public static boolean isFurnaceBurning(ItemStack stack) {
+        Boolean burning = stack.get(LIVING_FURNACE_BURNING.value());
+        return burning != null && burning;
+    }
+
+    /**
+     * 便捷方法：写入熔炉燃烧标志（false 时移除组件，节省 NBT）。
+     */
+    public static void setFurnaceBurning(ItemStack stack, boolean burning) {
+        if (burning) {
+            stack.set(LIVING_FURNACE_BURNING.value(), true);
+        } else {
+            stack.remove(LIVING_FURNACE_BURNING.value());
+        }
     }
 
     /**

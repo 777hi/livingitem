@@ -960,13 +960,23 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
                     }
                 }
 
-                // 其他域汇总行
-                int otherCount = 0;
+                // 其他域：周期 ≤ 最大堆叠数 = 真实多周期信号，> 最大堆叠数 = 虚假周期
+                int maxStack = stack.getMaxStackSize();
+                int convergingCount = 0;
                 for (var ds : t.domains()) {
-                    if (best == null || ds.period() != best.period()) otherCount++;
+                    if (best == null || ds.period() != best.period()) {
+                        if (ds.period() <= maxStack) {
+                            // 周期在偏好范围内，可能是真实的多周期信号
+                            tooltipAdder.accept(Component.literal("  §5P=" + ds.period() + "t  n=" + ds.n()
+                                + "  Σ√|Δ|=" + String.format("%.1f", ds.effDeltaSum()))
+                                .withStyle(ChatFormatting.DARK_PURPLE));
+                        } else {
+                            convergingCount++;
+                        }
+                    }
                 }
-                if (otherCount > 0) {
-                    tooltipAdder.accept(Component.literal("  §8+ 其他 " + otherCount + " 域（虚假周期，收敛中）")
+                if (convergingCount > 0) {
+                    tooltipAdder.accept(Component.literal("  §8+ 其他 " + convergingCount + " 域（虚假周期，收敛中）")
                         .withStyle(ChatFormatting.DARK_GRAY));
                 }
             }

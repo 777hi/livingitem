@@ -1545,6 +1545,29 @@ self.sendData();     // 即时同步 → 状态正确
 
 **涉及文件**：`StressStateMachine.java`（移除 `needsSync` 字段和 `deferredSync` 方法）、`KineticBlockEntityMixin.java`（移除 TAIL 注入）
 
+### 9.23 大箱子中动画/Tooltip 停留在开箱快照（CompoundContainer 匹配断点）
+
+**现象**：活水车放在大箱子里：应力变化后旋转动画不实时播放；改变水流方向后旋转方向不翻转；Tooltip 应力数字不动。必须关闭再重新打开容器界面才恢复正确。活水桶的「水流: N 格」Tooltip 同样中招。单箱一切正常。
+
+**根因**：两个通道同时失效：
+
+1. **主动通道断路（主因）**：应力数据变化的唯一主动同步路径是
+   `LivingWaterWheelFunction.postTickSync → ctx.syncSlotToClients → SimpleContainerContext.syncWorldContainer`。
+   该方法用 `myContainers.contains(slot.container)` **按实例**判断玩家菜单槽位是否属于本容器，`myContainers` 装的是左右两个 `ChestBlockEntity` 半箱本体。但原版打开大箱时，`ChestBlock.getContainer()` 会 **new 一个 `CompoundContainer(左BE, 右BE)` 包装对象**传给 `ChestMenu`，菜单槽位的 `slot.container` 是这个包装对象——实例匹配永远不命中 → 组件同步包从不发给大箱查看者 → 客户端水车物品的 `LIVING_WATER_WHEEL_DATA` 一直停留在开箱那一刻。单箱菜单容器就是 BE 本体，匹配命中，故正常。
+2. **被动通道失明（设计内）**：原版菜单每 tick 的 `broadcastChanges` 用 `ItemStack.matches → isSameItemSameComponents` 检测槽位变化并自动补发，但 `ItemStackMixin` 为让应力不同的活水车可堆叠而拦截了该比较、忽略 `LIVING_WATER_WHEEL_DATA` 组件（`getIgnoredComponentTypes`），原版通道对这些组件变化天然失明，从不补发。
+
+重新打开界面能恢复，是因为菜单重建触发原版全量同步（`broadcastFullState`），无差别发送整个物品堆。
+
+这是 v19.1 修 `ContainerRuntimeCache.isViewingContainer`（大箱遥测 tooltip 不显示）时**漏掉的平行断点**——同一 bug 模式（实例匹配 vs CompoundContainer），当时只修了遥测一处。
+
+**修复**：`syncWorldContainer` 的槽位归属判断照抄 `ContainerRuntimeCache` 的既有修法，抽出 `slotBelongsTo(menuContainer, myContainers)`：先实例匹配（单箱），再对 `CompoundContainer` 用其自带的 `contains(Container)`（引用相等）逐个匹配关联 BE（大箱）。
+
+**槽位对齐依据**：大箱的 IItemHandler（`InvWrapper(CompoundContainer)`，同步包 logicalSlot 的来源）与菜单的 `CompoundContainer` 都经 `ChestBlock.combine → DoubleBlockCombiner` 生成，拼接顺序由 `ChestBlock.TYPE`（LEFT/RIGHT）归一化——无论从哪个半箱查询，`container1` 恒为左半箱，槽位索引天然一致，不会左右对调。
+
+**涉及文件**：`SimpleContainerContext.java`（`syncWorldContainer` + 新增 `slotBelongsTo`）
+
+**影响面**：所有走 `syncSlotToClients` 的活物品数据（水车应力、水桶水流、熔炉/漏斗/TNT/红石等）在大箱中的实时同步全部修复；活水桶 Tooltip 一并修好。
+
 ---
 
 ## 附录：Tick 时序
@@ -1655,6 +1678,7 @@ ServerTickEvent.Pre → LivingItem.onServerTick()
 - [x] 修复：deferredSync 延迟同步导致客户端空状态（改为即时 sendData()）
 - [x] 修复：ServerTickEvent.Pre 确保容器处理在方块实体 tick 之前执行
 - [x] 修复：移除 applyStress 中多余的 isRemoved() 检查
+- [x] 修复：大箱子中动画/Tooltip 停留在开箱快照（syncWorldContainer 的 CompoundContainer 匹配断点，见 9.23）
 
 ---
 

@@ -81,17 +81,18 @@
 ```
 ItemStack
 ├── IS_LIVING: true                          ← 活物品标记
+├── LIVING_FURNACE_BURNING: Boolean          ← 燃烧标志（翻转时写，图标谓词读，堆叠比较忽略）
 └── LIVING_FURNACE_DATA: LivingFurnaceData   ← 功能状态（DataComponent）
     ├─ direction: DirectionSlotsData          ← 方向配置
     │   ├─ input: Pos2D
     │   ├─ fuel: Pos2D
     │   └─ output: Pos2D
-    ├─ fuel: FuelData                         ← 燃料状态
+    ├─ fuel: FuelData                         ← 燃料状态（仅持久化快照；运行时值在 ContainerRuntimeCache）
     │   └─ burnTime: int
-    ├─ progress: ProgressData                 ← 进度状态
+    ├─ progress: ProgressData                 ← 进度状态（同上，运行时值在 ContainerRuntimeCache）
     │   ├─ progress: int
     │   └─ total: int
-    └─ transform: TransformData               ← 转化状态
+    └─ transform: TransformData               ← 转化状态（同上，运行时值在 ContainerRuntimeCache）
         ├─ inputItem: String
         ├─ outputItem: String
         ├─ cachedInput: String
@@ -102,6 +103,11 @@ ItemStack
 ```
 
 > **v4 变更**：存储从 `LIVING_FUNCTION_DATA: CompoundTag` 迁移到独立的 DataComponent（`LivingFurnaceData`），利用 Minecraft 内置的序列化和同步机制。
+>
+> **运行时缓存分工**（b064865）：progress/fuel/transform 的每 tick 变化只写服务端
+> `ContainerRuntimeCache` 并经 `LivingItemSyncPacket` 下发给 tooltip，**不写 DataComponent**
+> （瞬态数据不影响物品堆叠）；`LIVING_FURNACE_BURNING` 是唯一例外——图标谓词在渲染线程
+> 只能读 ItemStack，故燃烧状态翻转时写这个轻量布尔组件（§8.11）。
 
 ---
 
@@ -118,36 +124,41 @@ public void tick(List<SlotEntry> entries, ContainerContext context, TickContext 
         ItemStack stack = entry.stack();
         LivingFurnaceData data = LivingItemManager.getFurnaceData(stack);
 
+        // 0. 从运行时缓存恢复瞬态数据（progress/fuel/transform 不再写 DataComponent）
+        LivingItemRuntimeData cached = ContainerRuntimeCache.get(containerKey, slot);
+        if (cached.isFurnace()) { data = data.mergeRuntime(cached.furnace()); }
+
         // 1. 解析方向 → 计算槽位
         DirectionSlotsData dir = data.direction();
         int inputSlot = SlotResolver.resolve(slot, dir.getDirection("input"), containerSize, containerWidth);
         int fuelSlot = SlotResolver.resolve(slot, dir.getDirection("fuel"), containerSize, containerWidth);
         int outputSlot = SlotResolver.resolve(slot, dir.getDirection("output"), containerSize, containerWidth);
 
-        // 2. 检查是否可以继续熔炼
+        // 2. 更新配方缓存 + 检查是否可以继续熔炼
+        data = tickTransform(context, data, inputSlot, level);
         boolean canProgress = checkCanProgress(context, level, inputSlot, fuelSlot, outputSlot, data);
 
-        // 3. 更新配方缓存
-        data = tickTransform(context, data, inputSlot, level);
-
-        // 4. 推进或回退
+        // 3. 推进或回退
         if (canProgress) {
             data = tickProgress(data, stack.getCount());
             data = tickFuel(context, data, fuelSlot, stack.getCount());
-
             if (data.progress().isComplete() && data.fuel().isBurning()) {
-                boolean success = executeTransform(context, level, data, inputSlot, outputSlot, stack.getCount());
-                if (success) {
-                    data = data.withProgress(data.progress().reset());
-                }
+                if (executeTransform(...)) data = data.withProgress(data.progress().reset());
             }
         } else {
             data = pauseTick(data);
         }
 
-        // 5. 保存状态
-        LivingItemManager.setFurnaceData(stack, data);
-        context.syncSlotToClients(slot, stack);
+        // 4. 写运行时缓存（tooltip 数据源，不写 DataComponent）
+        ContainerRuntimeCache.update(containerKey, slot, LivingItemRuntimeData.forFurnace(...));
+
+        // 5. 燃烧状态翻转 → 写 LIVING_FURNACE_BURNING 标志组件 + 槽位同步（图标切换）
+        boolean nowBurning = data.fuel().isBurning();
+        if (nowBurning != LivingItemManager.isFurnaceBurning(stack)) {
+            LivingItemManager.setFurnaceBurning(stack, nowBurning);
+            context.syncSlotToClients(slot, stack);
+        }
+        // （方向变化时的 DataComponent 写入与同步此处省略）
     }
 }
 ```
@@ -551,6 +562,28 @@ tick.release();
 
 **修复**：燃料消耗收拢到 `consumeFuel()`：带残留物的燃料整槽替换为残留物（岩浆桶 → 空桶），
 普通燃料扣 1 个、耗尽清空。回归测试 `LivingFurnaceFunctionTest`（4 项）。
+
+### 8.11 熔炉图标不切换 active/idle (FIXED 2026-09-09)
+
+**问题**：活熔炉熔炼时，物品图标始终显示 `furnace_idle.png`，不会切到 `furnace_active.png`。
+
+**原因**：图标谓词 `LivingFurnaceFunction.isBurning(stack)` 读物品的 DataComponent，
+而「tooltip优化，nbt数据简化」（b064865，2026-09-03）把 burnTime 从 DataComponent
+迁到了服务端运行时缓存（`ContainerRuntimeCache` + `LivingItemSyncPacket`）——该链路的
+唯一消费方是 tooltip（悬停时经 `LivingItemClientCache` 合并显示），客户端 ItemStack 上的
+`LIVING_FURNACE_DATA` 燃料恒为默认值 → `isBurning()` 恒 false → 图标永远 idle。
+（旁证：活TNT 图标正常，因为 TNT 数据未迁运行时缓存，仍每 tick 写组件+同步。）
+
+**修复**（轻量标志组件，不动运行时缓存架构）：
+- 新增 Boolean 组件 `LIVING_FURNACE_BURNING`（`LivingItemManager` 注册 +
+  `isFurnaceBurning/setFurnaceBurning` 访问器，熄灭即移除组件）
+- `tick()` 在燃烧状态**翻转时**（点燃/熄灭，约每次熔炼才变一次，非每 tick）写标志并
+  `syncSlotToClients`；稳态不写零同步；标志与实际不符时自愈（跨容器搬运后旧标志过期，
+  下一 tick 修正）
+- `isBurning()` 改读标志组件；组件加入 `getIgnoredComponentTypes()`（第一个真实使用者，
+  `ItemStackMixin` 堆叠比较忽略之——燃烧中/熄灭的熔炉仍可堆叠）
+
+回归测试 `FurnaceBurningFlagTest`（5 项：点燃写入/熄灭移除/稳态零同步/自愈/堆叠兼容）。
 
 ---
 
