@@ -67,17 +67,23 @@ public class BulbItemEnergyStorage implements IEnergyStorage {
         if (!simulate) {
             setChargeMilliFe(chargeMilliFe() + perLamp);
         }
-        return (int) (perLamp * stack.getCount() / 1000L);
+        // 2026-09-09 口径修正：返回声明值（= 支付方将扣的账），实充 perLamp×count 可能比声明少
+        // count−1 mFE（按盏向下取整残余）——声明 ≥ 实充，差额损耗向（防往返凭空造电，
+        // 与 ContainerEnergyStorage.receive 同族修复，见 RoundTripConservationIT）。
+        return (int) Math.min(toReceive, (perLamp * stack.getCount() + 999) / 1000L);
     }
 
     @Override
     public int getEnergyStored() {
-        return (int) (chargeMilliFe() * stack.getCount() / 1000L);
+        // int 收窄 clamp（与 ContainerEnergyStorage 同口径）：超大堆叠（count ≥ 2,148 × 1M FE）
+        // 真值越 int 公约 → clamp 语义「至少 21.4 亿 FE」，内部 long 账本无损
+        return (int) Math.min(chargeMilliFe() * stack.getCount() / 1000L, Integer.MAX_VALUE);
     }
 
     @Override
     public int getMaxEnergyStored() {
-        return (int) (PowerMath.BULB_UNIT_CAPACITY_MFE * stack.getCount() / 1000L);
+        return (int) Math.min(PowerMath.BULB_UNIT_CAPACITY_MFE * stack.getCount() / 1000L,
+            Integer.MAX_VALUE);
     }
 
     @Override

@@ -124,7 +124,10 @@ public class ContainerEnergyStorage implements IEnergyStorage {
                 m += LivingItemManager.getWaxedBulbData(stack).totalChargeMilliFe(stack.getCount());
             }
         }
-        return (int) (m / 1000L);
+        // int 收窄 clamp：IEnergyStorage 公约是 int FE（上限 ~21.4 亿），超大堆叠容器
+        // （count ≥ 2,148 盏 × 1M FE）下真值越界——clamp 而非回绕（回绕负数会让
+        // 外部 mod 的容量缺口判定错乱）。语义 = 「至少 21.4 亿 FE」；内部 long 账本无损。
+        return (int) Math.min(m / 1000L, Integer.MAX_VALUE);
     }
 
     @Override
@@ -138,7 +141,7 @@ public class ContainerEnergyStorage implements IEnergyStorage {
                 m += LivingWaxedBulbData.totalCapacityMilliFe(stack.getCount());
             }
         }
-        return (int) (m / 1000L);
+        return (int) Math.min(m / 1000L, Integer.MAX_VALUE);   // 同上：clamp 到 int 公约上限
     }
 
     private static boolean isBulb(ItemStack stack) {
@@ -192,13 +195,20 @@ public class ContainerEnergyStorage implements IEnergyStorage {
             distributed += perLamp * count;
         }
 
-        // 零头回收：各堆按盏取整的残余，1 mFE 逐灯补入有空间的灯（不凭空产生、不浪费）
+        // 零头回收（2026-09-09 修复记账）：每堆一次写入 = 每盏 q+1 → 实际充入 count mFE，
+        // 账面必须同样按 count 计——旧实现按 1 mFE 计账，实充是记账的 count 倍，
+        // 每 tick 按「堆数 × count」凭空造电（RoundTripConservationIT 实测 1000t +2043 FE）。
+        // 完整步进保护：count > leftover 时跳过（一次写入不得越过 accept）；
+        // 不足一个完整步进的残余（< 最小有空间堆的 count，≤63 mFE）保守丢弃——
+        // 与整 FE 量化同一「宁损勿造」方向。
         long leftover = accept - distributed;
         while (leftover > 0) {
             boolean progressed = false;
             for (int i = 0; i < slots && leftover > 0; i++) {
                 ItemStack stack = items.getStackInSlot(i);
                 if (!isBulb(stack)) continue;
+                int count = stack.getCount();
+                if (count > leftover) continue;   // 完整步进保护
                 long q = LivingItemManager.getWaxedBulbData(stack).chargeMilliFe();
                 if (q >= PowerMath.BULB_UNIT_CAPACITY_MFE) continue;
                 if (!simulate) {
@@ -206,15 +216,17 @@ public class ContainerEnergyStorage implements IEnergyStorage {
                         LivingItemManager.getWaxedBulbData(stack).withChargeMilliFe(q + 1));
                     changed = true;
                 }
-                distributed++;
-                leftover--;
+                distributed += count;             // 记账 = 实充（count mFE）
+                leftover -= count;
                 progressed = true;
             }
             if (!progressed) break;
         }
 
         if (changed && onChanged != null && !simulate) onChanged.run();
-        return distributed;   // = accept（整 FE），与机器支付严格相等
+        // 声明口径 = accept（整 FE）：实充 ≤ accept，残余 ≤ 最小堆 count−1 mFE 保守丢弃，
+        // 灯实收恒 ≤ 支付方按返回值记账的量——只许损耗、不许凭空产生。
+        return accept;
     }
 
     // ── 取电核心（mFE）──

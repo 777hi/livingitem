@@ -466,6 +466,40 @@ src/test/java/com/qiqi/li/
 ### 当前版本: v0.9-alpha
 
 **最近更新** (2026-09-09):
+- ✅ 修复：**超大堆叠灯堆对外读数 int 回绕**——C=1M 标定后 count ≥ 2,148 盏
+  （2³¹/1M = 2,147.48）的堆总量越 IEnergyStorage 的 int FE 公约（上限 21.4 亿），
+  `(int)` 强转回绕成负数 → 外部 mod（如 Mek 电缆 `max−stored` 缺口判定）读到
+  巨大正缺口往死里灌的怪行为。修复：两个读数出口（`ContainerEnergyStorage`
+  容器面 + `BulbItemEnergyStorage` 物品面）`Math.min(真值, Integer.MAX_VALUE)`
+  clamp，语义「至少 21.4 亿 FE」；内部 long 账本/充放电/守恒全程无损（本次
+  只治读数出口）。回归测试 BulbItemEnergyStorageTest.oversizedStack_
+  readsClampToIntMax（2,148 盏满堆断言双读数 = Integer.MAX_VALUE），全量 221
+  用例全绿；oversized-stack-audit §2.8 🟠→🟢（已修复）。顺带修正前日文档
+  阈值笔误 2,142 → ≥2,148（四处 + javadoc）
+- 🎚️ 标定：**铜灯每盏容量 C 10,000 → 1,000,000 FE**（`PowerMath.BULB_UNIT_CAPACITY_FE`，
+  标定史 1k→10k→1M，游戏实测「10k 不太够用」驱动）。一堆(64) = 64M FE，对齐
+  科技生态中高档单格电池（Mek 能量立方 / Flux 储存器档位），充电宝物流彻底实用
+  （一盏 = 一个满配方块电池）。耦合面：2 处容量断言修正（BulbItemEnergyStorageTest
+  满容读数 16M；WaxedCopperStorageTest 半满基准 500_000_000 保持 2:1 本意），
+  全量 220 用例全绿。**int 收窄警戒线升级**：对外 IEnergyStorage 是 int FE，
+  单堆读数溢出需 count ≥ 2,148 盏（2³¹/1M = 2,147.48）——原版 64 安全，超大堆叠容器（抽屉类）已可
+  触达（读数回绕，long 内部账本无损，fail-safe），oversized-stack-audit §2.8
+  由「纯理论」升「已可触达」并附修复方向（读数 clamp + 分批，待需求驱动）。
+  标定记录收编 红电系统.md §3.6 / living-power-tech.md §4 / oversized-stack-audit.md §2.8
+- 🐛 修复：**铜灯往返凭空造电（零头回收记账 count 倍放大）**——两个装满铜灯的原版
+  容器用 Mekanism 电缆互传，总电量缓慢上升（实测每 tick 约 2 mFE，1000t ≈ +2043 FE）。
+  排查：翻 Mekanism-1.21.x 源码确认电缆侧教科书守恒（SIMULATE 探测→convertFromAndBack
+  钳制→EXECUTE、网络按返回值记账、FE↔J 双向防增益），锁定我方
+  `ContainerEnergyStorage.receive` 零头回收循环：给灯堆写 `q+1` 实充是
+  count mFE（每盏模型），账面只 `distributed++` 记 1 mFE——实充 = 记账 × count，
+  差额被电缆按返回值记账后全部变成净增益。复现测试 `RoundTripConservationIT`
+  （4 项：Mekanism 传输协议逐条复刻的 1000t 往返仿真——先红后绿；拉侧/推侧
+  单侧诊断定位到推侧；extract 记账契约最小复现）。修复：零头回收按 count 记账 +
+  完整步进保护（count>leftover 跳过，不越过 accept）+ 残余 ≤63 mFE 保守丢弃
+  （宁损勿造）+ `BulbItemEnergyStorage.receive` 声明改 ≥实充（ceil，同族缺陷，
+  直接 EXECUTE 的调用方按返回值记账时旧口径可白拿 count−1 mFE）。全量 220
+  用例全绿（211 + 4 新增 + 数值巧合）；根因与修复记录收编 living-power-tech.md
+  §6 测试表（历史 BUG 注记）
 - ✅ 修复：**活水车/活水桶在大箱子中动画与 tooltip 停留在开箱快照**——应力/
   水流变化后旋转动画不实时播放、改变水流方向后旋转方向不翻转、tooltip 数字不动，
   必须关闭再重开容器界面才恢复；单箱一切正常。根因双通道失效：主动通道

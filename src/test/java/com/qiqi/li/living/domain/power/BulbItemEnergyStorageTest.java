@@ -93,9 +93,24 @@ class BulbItemEnergyStorageTest {
         LivingItemManager.setWaxedBulbData(stack, new LivingWaxedBulbData(500_000));
 
         BulbItemEnergyStorage storage = new BulbItemEnergyStorage(stack);
-        assertEquals(8000, storage.getEnergyStored());        // 500_000 × 16 / 1000
-        assertEquals(160000, storage.getMaxEnergyStored());   // 10_000_000 × 16 / 1000（每盏 C=10k FE）
+        assertEquals(8000, storage.getEnergyStored());          // 500_000 × 16 / 1000
+        assertEquals(16000000, storage.getMaxEnergyStored());  // 1_000_000_000 × 16 / 1000（每盏 C=1M FE）
         assertTrue(storage.canExtract());
         assertTrue(storage.canReceive());
+    }
+
+    @Test
+    @DisplayName("int 读数 clamp：2,148 盏满堆（2.148G FE > int 上限）→ 读数钳 Integer.MAX_VALUE 不回绕")
+    void oversizedStack_readsClampToIntMax() {
+        // 2,148 × 1M FE = 2,148,000,000 > 2,147,483,647（int 公约上限）——超大堆叠容器的可达场景
+        ItemStack stack = bulb(2_148);
+        LivingItemManager.setWaxedBulbData(stack,
+            new LivingWaxedBulbData(PowerMath.BULB_UNIT_CAPACITY_MFE));   // 满堆
+
+        BulbItemEnergyStorage storage = new BulbItemEnergyStorage(stack);
+        // clamp 而非回绕：修复前 (int) 强转得 ≈ -2,146,967,296（符号位顶 1 → 负数，
+        // 外部 mod 的容量缺口判定错乱）；修复后诚实声明「至少 21.4 亿 FE」
+        assertEquals(Integer.MAX_VALUE, storage.getEnergyStored());
+        assertEquals(Integer.MAX_VALUE, storage.getMaxEnergyStored());
     }
 }

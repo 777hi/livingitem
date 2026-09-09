@@ -574,10 +574,13 @@ if (neighbor >= 0) {
 边界换算：`FE = RE × K`，`K = 1/16`（`PowerMath.RE_TO_FE`，全 mod 唯一标尺常量）。
 整体调产量只改这一个数，**严禁**把 K 绑到最大周期等设计旋钮上。
 
-储能标定：每盏容量 `C = 10,000 FE`（`PowerMath.BULB_UNIT_CAPACITY_FE`，与 K 并列的
-第二个硬数，2026-09-08 自初版 1,000 上调 ×10——标定依据与决策记录见
-红电系统.md §3.6「容量涌现」；一堆(64) = 640k FE，对齐科技生态基础档电池，
-充电宝物流可用，满溢反馈环仍能触发；q 按 mFE 绝对值存储，扩容无迁移问题）。
+储能标定：每盏容量 `C = 1,000,000 FE`（`PowerMath.BULB_UNIT_CAPACITY_FE`，与 K 并列的
+第二个硬数；标定史 1,000 → 10,000 → 1,000,000，当前值 2026-09-09 定——决策记录见
+红电系统.md §3.6「容量涌现」；一堆(64) = 64M FE，对齐科技生态中高档单格电池
+（Mek 能量立方 / Flux 储存器档位），充电宝物流彻底实用（一盏 = 一个满配方块电池）；
+q 按 mFE 绝对值存储，扩容无迁移问题。**int 收窄警戒线**：对外 IEnergyStorage 是
+int FE，单堆读数溢出需 count ≥ 2,148 盏（2³¹ / 1M = 2,147.48）——超大堆叠容器（抽屉类）已可触达，
+fail-safe 不崩不刷（详见 oversized-stack-audit.md §2.8），long 内部全程无损）。
 
 ---
 
@@ -616,6 +619,18 @@ if (neighbor >= 0) {
 | `WaxedCopperOscillatorIT` | 5 | 振荡器→发电全链路 |
 | `WaxedCopperStorageTest` | 16 | 发电直存分配、无铜灯弃、满溢、模组容器取电、充电、容量 clamp、超取、取消活化排除、EMA 功率 |
 | `BulbItemEnergyStorageTest` | 6 | 双向充放、容量 clamp、simulate、拆分守恒、线性读数 |
+| `RoundTripConservationIT` | 4 | **往返守恒（2026-09-09）**：箱A灯→电缆→箱B灯 1000t 原样往返断言总能量不增（精确复刻 Mekanism UniversalCable + ForgeStrictEnergyHandler 传输协议：SIMULATE 探测→convertFromAndBack 钳制→EXECUTE、按返回值记账，feConversionRate=2.5）+ 拉侧/推侧单侧拆解诊断 + extract 记账契约最小复现 |
+
+> **历史 BUG：零头回收记账 count 倍放大（2026-09-09 修复）**——
+> `ContainerEnergyStorage.receive` 的零头回收循环给堆写 `q+1`（实充 = 每盏 +1 ×
+> count mFE），但账面 `distributed++` 只记 1 mFE——**实充是记账的 count 倍**，
+> 每 tick 按「写入次数 × 堆 count」凭空造电（Mekanism 电缆按返回值记账，差额
+> 全部变成净增益；实测 1000 tick +2043 FE，与游戏内「两箱铜灯互传总电量缓慢
+> 上升」现象一致）。根因是「每盏 q」数据模型下，任何按堆单次写入的实际效果
+> 都是 count 倍——记账必须同口径。修复：零头回收按 count 记账 + 完整步进保护
+> （`count > leftover` 跳过，不越过 accept）+ 残余 ≤63 mFE 保守丢弃（与整 FE
+> 量化同「宁损勿造」方向）+ `BulbItemEnergyStorage.receive` 返回声明值改为
+> ≥实充（ceil 口径）。测试即上表 `RoundTripConservationIT`（先复现、后守卫）。
 
 用例数值直接取自 [红电波形分析表.md](../红电波形分析表.md) 的手工演算，
 实现与文档互为验证。

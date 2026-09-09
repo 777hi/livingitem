@@ -127,14 +127,20 @@
 
 ### 2.8 红电发电（涂蜡铜） —— ✅ long 定点，量级安全
 
-- 铜灯电量：`LivingWaxedBulbData.chargeMilliFe` 是 **long**，每盏 10,000 FE = 10,000,000 mFE
-  （2026-09-08 标定 ×10，见 living-power-tech.md §4）；`BULB_UNIT_CAPACITY_MFE × count`
-  全程 long（`receiveEnergy:63`），64 堆满电 640,000,000 mFE << long 上限。✅
-- **🟠 int 收窄点**：`getEnergyStored/getMaxEnergyStored` 返回
-  `(int)(mFE × count / 1000)`——`IEnergyStorage` 接口本身是 int FE。溢出需
-  count × 10,000 FE > 21 亿 FE，即 **count > 21.4 万盏**（容量标定 ×10 后阈值
-  自 214 万收窄至此，仍远超模组容器虚拟上限 64，纯理论）。若哪天放开堆叠上限，
-  这两个 `(int)` 是第一爆点。
+- 铜灯电量：`LivingWaxedBulbData.chargeMilliFe` 是 **long**，每盏 1,000,000 FE = 1,000,000,000 mFE
+  （2026-09-09 标定 1M，标定史 1k→10k→1M，见 living-power-tech.md §4）；
+  `BULB_UNIT_CAPACITY_MFE × count` 全程 long（`receiveEnergy:63`），64 堆满电
+  64,000,000,000 mFE << long 上限。✅
+- **🟢 int 收窄点（2026-09-09 已修复：clamp）**：
+  `getEnergyStored/getMaxEnergyStored` 返回 `(int)(mFE × count / 1000)`——
+  `IEnergyStorage` 接口本身是 int FE（上限 21.4 亿 FE）。溢出需
+  count × 1,000,000 FE > 21 亿 FE，即 **count ≥ 2,148 盏**（2³¹/1M = 2,147.48）——
+  原版上限 64 安全（一堆 64M FE），超大堆叠容器（抽屉类，单槽上限可达数千）可触达。
+  修复：两处读数出口（`ContainerEnergyStorage` 容器面 + `BulbItemEnergyStorage`
+  物品面）`Math.min(真值, Integer.MAX_VALUE)` clamp——语义「至少 21.4 亿 FE」，
+  杜绝回绕负数导致外部 mod 容量缺口判定错乱；内部 long 账本全程无损。
+  回归测试 `BulbItemEnergyStorageTest.oversizedStack_readsClampToIntMax`
+  （2,148 盏满堆断言双读数 = Integer.MAX_VALUE）。
 - 发电数学 `PowerMath.combinedFactor`：`effDeltaSum^(1+u)` 是 double，count 只进
   `n`（分组计数的组内个数），超大 n 使 factor 大——但 `eventEnergyRe` 用 long 承接，
   EMA 定点 long，账本层安全。
