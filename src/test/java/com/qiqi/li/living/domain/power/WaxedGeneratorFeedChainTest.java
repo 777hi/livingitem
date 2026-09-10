@@ -79,6 +79,23 @@ class WaxedGeneratorFeedChainTest {
         return s;
     }
 
+    /**
+     * 服务端 Level mock，带递增世界时钟（2026-09-11 换轴配套）：
+     * 相位链路 now = level.getGameTime()（世界轴）——mock 不 stub 时
+     * 恒返回 0，所有跳变挤在 tick 0 → 派生注册表恒空。用 Answer 递增
+     * 模拟真实世界 tick，测试驱动即对齐生产行为。
+     */
+    private static net.minecraft.world.level.Level mockServerLevel() {
+        net.minecraft.world.level.Level level =
+            org.mockito.Mockito.mock(net.minecraft.world.level.Level.class);
+        org.mockito.Mockito.when(level.isClientSide()).thenReturn(false);
+        long[] tick = {0};
+        org.mockito.Mockito.when(level.getGameTime()).thenAnswer(inv -> tick[0]++);
+        org.mockito.Mockito.when(level.getServer())
+            .thenReturn(org.mockito.Mockito.mock(net.minecraft.server.MinecraftServer.class));
+        return level;
+    }
+
     /** 单测试场景句柄 */
     private record Scenario(SimpleContainerContext ctx, ContainerPowerData power,
                             ItemStack lever, int genSlot) {}
@@ -115,6 +132,15 @@ class WaxedGeneratorFeedChainTest {
             entries.add(new LivingItemFunction.SlotEntry(i, slots[i]));
         }
 
+        // 首拍热身（2026-09-09 根修对齐）：真实游戏容器已跑多 tick 才有振荡；
+        // 红石账本首拍 hasEdgeHistory=false 跳过边检测——先空跑一拍建立边历史
+        {
+            TickContext warm = new TickContext(ctx);
+            warm.setFunctionSlots(redSlots);
+            redstone.resetProcessedFlag();
+            redstone.calculate(ctx, warm);
+            function.tickContainerData(entries, ctx, warm);
+        }
         for (int t = 0; t < ticks; t++) {
             boolean powered = (Math.floorMod(t, 4) < 2);
             LivingItemManager.setLeverData(lever, new LivingLeverData(powered));
@@ -193,6 +219,14 @@ class WaxedGeneratorFeedChainTest {
 
         boolean sawEdgeHigh = false;
         boolean sawEdgeLow = false;
+        // 首拍热身（2026-09-09 根修对齐）：先空跑一拍建立边历史（首拍无沿）
+        {
+            TickContext warm = new TickContext(ctx);
+            warm.setFunctionSlots(redSlots);
+            redstone.resetProcessedFlag();
+            redstone.calculate(ctx, warm);
+            function.tickContainerData(entries, ctx, warm);
+        }
         for (int t = 0; t < 48; t++) {
             TickContext tick = new TickContext(ctx);
             tick.setFunctionSlots(redSlots);
@@ -241,6 +275,8 @@ class WaxedGeneratorFeedChainTest {
             new FakeHandler(slots), new ArrayList<>(), new ArrayList<>());
         ContainerSnapshot.registerProvider(new RedstoneSnapshotProvider());
 
+        // 首拍热身（根修对齐）：先空跑一拍建立边历史（首拍无沿，火把环从第二拍起自然起振）
+        ContainerLivingItemHandler.processContext(ctx, null);
         for (int t = 0; t < 48; t++) {
             ContainerLivingItemHandler.processContext(ctx, null);
         }
@@ -277,6 +313,8 @@ class WaxedGeneratorFeedChainTest {
             new FakeHandler(slots), new ArrayList<>(), new ArrayList<>());
         ContainerSnapshot.registerProvider(new RedstoneSnapshotProvider());
 
+        // 首拍热身（根修对齐）：先空跑一拍建立边历史（首拍无沿）
+        ContainerLivingItemHandler.processContext(ctx, null);
         for (int t = 0; t < 48; t++) {
             ContainerLivingItemHandler.processContext(ctx, null);
         }
@@ -297,10 +335,7 @@ class WaxedGeneratorFeedChainTest {
         slots[13] = living(Items.HOPPER, 1);
         slots[1] = new ItemStack(Items.COBBLESTONE, 16);
 
-        net.minecraft.world.level.Level level = org.mockito.Mockito.mock(net.minecraft.world.level.Level.class);
-        org.mockito.Mockito.when(level.isClientSide()).thenReturn(false);
-        org.mockito.Mockito.when(level.getServer())
-            .thenReturn(org.mockito.Mockito.mock(net.minecraft.server.MinecraftServer.class));
+        net.minecraft.world.level.Level level = mockServerLevel();
 
         SimpleContainerContext ctx = new SimpleContainerContext(
             new FakeHandler(slots), null, new ArrayList<>(), new ArrayList<>(), level);
@@ -341,10 +376,7 @@ class WaxedGeneratorFeedChainTest {
         slots[13] = living(Items.HOPPER, 1);
         slots[1] = new ItemStack(Items.COBBLESTONE, 16);
 
-        net.minecraft.world.level.Level level = org.mockito.Mockito.mock(net.minecraft.world.level.Level.class);
-        org.mockito.Mockito.when(level.isClientSide()).thenReturn(false);
-        org.mockito.Mockito.when(level.getServer())
-            .thenReturn(org.mockito.Mockito.mock(net.minecraft.server.MinecraftServer.class));
+        net.minecraft.world.level.Level level = mockServerLevel();
 
         SimpleContainerContext ctx = new SimpleContainerContext(
             new FakeHandler(slots), null, new ArrayList<>(), new ArrayList<>(), level);
@@ -375,10 +407,7 @@ class WaxedGeneratorFeedChainTest {
             slots[sourceSlot] = new ItemStack(Items.COBBLESTONE, 16);
             int targetSlot = hopperSlot + width;      // 漏斗下方（注入目标）
 
-            net.minecraft.world.level.Level level = org.mockito.Mockito.mock(net.minecraft.world.level.Level.class);
-            org.mockito.Mockito.when(level.isClientSide()).thenReturn(false);
-            org.mockito.Mockito.when(level.getServer())
-                .thenReturn(org.mockito.Mockito.mock(net.minecraft.server.MinecraftServer.class));
+            net.minecraft.world.level.Level level = mockServerLevel();
 
             SimpleContainerContext ctx = new SimpleContainerContext(
                 new FakeHandler(slots), null, new ArrayList<>(), new ArrayList<>(), level);
@@ -412,13 +441,10 @@ class WaxedGeneratorFeedChainTest {
 
         net.minecraft.world.entity.player.Player player = org.mockito.Mockito.mock(net.minecraft.world.entity.player.Player.class);
         org.mockito.Mockito.when(player.getStringUUID()).thenReturn("test");
-        net.minecraft.world.level.Level level = org.mockito.Mockito.mock(net.minecraft.world.level.Level.class);
-        org.mockito.Mockito.when(level.isClientSide()).thenReturn(false);
+        net.minecraft.world.level.Level level = mockServerLevel();
         org.mockito.Mockito.when(player.level()).thenReturn(level);
         org.mockito.Mockito.when(player.blockPosition()).thenReturn(net.minecraft.core.BlockPos.ZERO);
         net.minecraft.world.entity.player.Inventory inv = new net.minecraft.world.entity.player.Inventory(player);
-        org.mockito.Mockito.when(level.getServer())
-            .thenReturn(org.mockito.Mockito.mock(net.minecraft.server.MinecraftServer.class));
 
         // 走玩家背包的生产构建路径（buildContext：inventory 分支 → key = player_test）
         SimpleContainerContext ctx = (SimpleContainerContext) ContainerLivingItemHandler.buildContext(
@@ -446,7 +472,7 @@ class WaxedGeneratorFeedChainTest {
         slots[4] = living(Items.WAXED_CHISELED_COPPER, 4);
         SimpleContainerContext ctx = new SimpleContainerContext(
             new FakeHandler(slots), null, new ArrayList<>(), new ArrayList<>(),
-            org.mockito.Mockito.mock(net.minecraft.world.level.Level.class));
+            mockServerLevel());
 
         // 模拟 WASD 配置（SlotDirectionPacket → updateSlotDirection，写在 carried 组件上）
         ItemStack configured = ctx.getItem(4);
@@ -499,7 +525,7 @@ class WaxedGeneratorFeedChainTest {
                 LivingItemManager.getWaxedChiseledData(slots[13]).withInputDir(c.dir()));
             SimpleContainerContext ctx = new SimpleContainerContext(
                 new FakeHandler(slots), null, new ArrayList<>(), new ArrayList<>(),
-                org.mockito.Mockito.mock(net.minecraft.world.level.Level.class));
+                mockServerLevel());
 
             // 预建容器尺寸的 edgeGrid（模拟生产中 calculate 创建的网格），
             // 否则测试 seam 的 9×1 默认网格会让 UP/DOWN 注入越界失效

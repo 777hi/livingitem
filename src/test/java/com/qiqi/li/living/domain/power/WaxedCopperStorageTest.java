@@ -352,4 +352,68 @@ class WaxedCopperStorageTest {
         power.updateOxidationEma(new long[]{0, 0, 0, 0});   // 本 tick 无发电 → EMA 衰减
         assertEquals(3500, power.getLevelEmaPowerFe(0));    // 64000 × 0.875 = 56000 RE/t → 3500 FE/t
     }
+
+    /** 计数版访问器：断言热路径的取物品次数（防回归到多遍扫描） */
+    private static final class CountingHandler extends FakeHandler {
+        int gets;
+
+        CountingHandler(ItemStack... slots) {
+            super(slots);
+        }
+
+        @Override
+        public ItemStack getStackInSlot(int slot) {
+            gets++;
+            return super.getStackInSlot(slot);
+        }
+    }
+
+    @Test
+    @DisplayName("防 long 溢出（2026-09-11）：外部一次请求 2^31-1 FE，份额计算不得退化成零头回收的伪死循环")
+    void receive_hugeExternalRequest_fillsAllBulbs() {
+        ItemStack[] slots = new ItemStack[27];
+        for (int i = 0; i < slots.length; i++) {
+            slots[i] = bulb(64);
+        }
+        CountingHandler handler = new CountingHandler(slots);
+        long capacity = PowerMath.BULB_UNIT_CAPACITY_MFE * 64L * 27L;
+
+        // 等价于 receiveEnergy(Integer.MAX_VALUE, ...)：Flux Networks 在「绕过限制」
+        // 模式下 getLimit() == Long.MAX_VALUE，onCycleStart 每 tick 都按这个量走一遍模拟。
+        long got = ContainerEnergyStorage.receive(handler, Integer.MAX_VALUE * 1000L, false, null);
+
+        // 整 FE 量化：容器全空 → 应收满全部容量
+        assertEquals(capacity, got);
+        // 每一盏都必须充满。修复前 accept×remaining 越过 Long.MAX → share 变乱值
+        // → 本轮只分出去约 6e7 mFE（占比 0.003%），灯几乎没充上，
+        // 而 leftover 被顶到 accept，零头回收循环每轮只扣 count mFE → ~10 亿轮。
+        for (ItemStack stack : slots) {
+            assertEquals(PowerMath.BULB_UNIT_CAPACITY_MFE,
+                LivingItemManager.getWaxedBulbData(stack).chargeMilliFe());
+        }
+        // 热路径：单遍扫描（27 次）之后不再碰容器，零头回收走 stacks[] 数组。
+        // 修复前的 3 遍扫描是 81 次，故上限取 64。
+        assertTrue(handler.gets <= 64, "取物品次数应为常数级（单遍扫描），实际 " + handler.gets);
+    }
+
+    @Test
+    @DisplayName("防 long 溢出（2026-09-11）：大发电量按剩余容量分配，不得凭空造电或静默丢弃")
+    void distributeToBulbs_hugeGeneration_noOverflow() {
+        ItemStack bulbs = bulb(64);   // 64 盏空灯，剩余容量 64 × 1e9 = 6.4e10 mFE
+        List<LivingItemFunction.SlotEntry> entries =
+            List.of(new LivingItemFunction.SlotEntry(0, bulbs));
+
+        // 1e7 RE ⇒ mfe = round(1e7 × 1/16 × 1000) = 6.25e8 mFE，远小于 64 盏的总容量。
+        // 修复前 mfe × remaining = 4e19 越过 Long.MAX → share 变乱值：
+        // 变成负数则本 tick 发电被静默丢弃，变成巨大正数则 newQ 被拉到容量上限（凭空造电）。
+        long voiceRe = 10_000_000L;
+        long expectMfe = Math.round(voiceRe * (1.0 / 16.0) * 1000.0);
+
+        assertTrue(LivingWaxedCopperFunction.distributeToBulbs(voiceRe, 0, entries));
+
+        long expectPerLamp = expectMfe / 64;
+        assertEquals(expectPerLamp, LivingItemManager.getWaxedBulbData(bulbs).chargeMilliFe());
+        // 实充恒 ≤ 应充（宁损勿造）
+        assertTrue(LivingItemManager.getWaxedBulbData(bulbs).totalChargeMilliFe(64) <= expectMfe);
+    }
 }

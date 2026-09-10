@@ -66,6 +66,13 @@ public class ContainerRedstoneData implements RedstoneSensor {
 
     private boolean processedThisTick;
 
+    /**
+     * 本会话是否已至少完成过一次 calculate（2026-09-09 根修：首拍无沿）。
+     * 首拍 prevEdgeGrid 全零 = 「历史未知」而非「上一 tick 全 0」——
+     * 电力层经 {@link #hasEdgeHistory()} 读取，首拍跳过整段边检测。
+     */
+    private boolean hasHistory;
+
     /** 心跳时间戳（容器缓存 120s 过期清理用；每次 calculate 刷新） */
     private long lastTickTime = System.currentTimeMillis();
 
@@ -142,6 +149,10 @@ public class ContainerRedstoneData implements RedstoneSensor {
     }
 
     private void ensureTestGrid() {
+        // 测试 seam 注入 = 声明边历史存在（2026-09-09 首拍无沿根修的配套）：
+        // 这些测试绕过 calculate 直接写 grid，hasHistory 不会经 calculate 置位；
+        // 若不在此声明，runBfs 的首拍无沿防护会把边检测永久跳过（hasEdgeHistory 恒 false）。
+        hasHistory = true;
         if (edgeGrid == null) {
             edgeGrid = new EdgeGrid(9, 1);
             prevEdgeGrid = new EdgeGrid(9, 1);
@@ -172,6 +183,16 @@ public class ContainerRedstoneData implements RedstoneSensor {
     /** 便捷别名（既有测试与读取方使用），语义同 {@link #maxSensedSignal}。 */
     public int getSignal(int slot) {
         return maxSensedSignal(slot);
+    }
+
+    /**
+     * 首拍无沿（RedstoneSensor 根修）：本会话是否已有真实边历史。
+     * 注意本方法在 {@link #calculate} 头部置位——同一 tick 内电力层读到的是
+     * 「本 tick 是否首拍」：首拍 false（跳过边检测），此后恒 true。
+     */
+    @Override
+    public boolean hasEdgeHistory() {
+        return hasHistory;
     }
 
     private void reset() {
@@ -215,6 +236,10 @@ public class ContainerRedstoneData implements RedstoneSensor {
         if (processedThisTick) return;
         processedThisTick = true;
         lastTickTime = System.currentTimeMillis();
+        // 首拍结束后 prevEdgeGrid 才携带真实历史（首拍内它全零 = 历史未知）
+        // 置位放在方法头：本 tick 电力层（priority 3，晚于本 calculate）读
+        // hasEdgeHistory() 拿到 false → 跳过边检测；下 tick 起为 true。
+        hasHistory = true;
 
         int size = context.getSize();
         int width = context.getWidth();

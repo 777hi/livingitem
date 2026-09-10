@@ -119,6 +119,12 @@ class NetworkTraversalTest {
         for (int t = 0; t <= ticks; t++) {
             int v = (Math.floorMod(t, PERIOD) < PERIOD / 2) ? HIGH : 0;
             int pv = (Math.floorMod(t - 1, PERIOD) < PERIOD / 2) ? HIGH : 0;
+            // 首拍热身（2026-09-09 根修对齐）：红石账本首拍 hasEdgeHistory=false，
+            // 边检测整段跳过（真实游戏里容器已跑多 tick 才有振荡，首拍无沿）。
+            // 真实游戏里容器已跑多 tick 才有振荡；测试从 t=0 注入，须先空跑一拍建立边历史。
+            if (t == 0) {
+                function.tickContainerData(entries, ctx, new TickContext(ctx));
+            }
             redstone.setPrevIncomingEdgeForTest(edgeSlot, edgeDir, pv);
             redstone.setIncomingEdgeForTest(edgeSlot, edgeDir, v);
 
@@ -236,6 +242,9 @@ class NetworkTraversalTest {
         // 入边语义：写槽 0 的右邻居(槽 1)朝槽 0 的 LEFT 出边（9×1 网格无 UP/DOWN 邻居）
         int edgeDir = ContainerRedstoneData.EDGE_RIGHT;
         for (int t = 0; t <= 40; t++) {
+            if (t == 0) {   // 首拍热身（根修对齐：首拍无沿，需先建立边历史）
+                function.tickContainerData(entries, ctx, new TickContext(ctx));
+            }
             int v = (Math.floorMod(t, PERIOD) < PERIOD / 2) ? HIGH : 0;
             int pv = (Math.floorMod(t - 1, PERIOD) < PERIOD / 2) ? HIGH : 0;
             redstone.setPrevIncomingEdgeForTest(0, edgeDir, pv);
@@ -280,6 +289,9 @@ class NetworkTraversalTest {
         TickContext lastTick = null;
         // 跑足够多 tick 让共振 EMA 完全收敛（EMA_ALPHA=0.125，~40 tick 到 99%；跑 100 保险）
         for (int t = 0; t <= 100; t++) {
+            if (t == 0) {   // 首拍热身（根修对齐：首拍无沿，需先建立边历史）
+                function.tickContainerData(entries, ctx, new TickContext(ctx));
+            }
             int v = (Math.floorMod(t, PERIOD) < PERIOD / 2) ? HIGH : 0;
             int pv = (Math.floorMod(t - 1, PERIOD) < PERIOD / 2) ? HIGH : 0;
             redstone.setPrevIncomingEdgeForTest(0, dir, pv);

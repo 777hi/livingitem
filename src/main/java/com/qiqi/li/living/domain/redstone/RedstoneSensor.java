@@ -37,4 +37,19 @@ public interface RedstoneSensor {
      * 四方向感知值的最大值（漏斗锁定 / TNT 点燃等「任意边有信号」语义）。
      */
     int maxSensedSignal(int slot);
+
+    /**
+     * {@code prevSensedSignal} 是否携带真实历史（2026-09-09 根修：首拍无沿）。
+     *
+     * <p>红石账本重建（退出重进 / LRU 回收）后的首次 {@code calculate}，
+     * prevEdgeGrid 为全零——不表示「上一 tick 所有边都是 0」，而表示
+     * 「历史未知」。此时稳态高电平边全部伪装成 0→S 上升沿（假沿风暴）。
+     * 电力层据此跳过整段边检测（跟踪与注入都跳），让回填的锁相初值
+     * 存活到首个真实跳变。见 living-power-tech.md §6.5。</p>
+     *
+     * @return false 表示本 tick 是账本首拍，跳变检测一律不可信
+     */
+    default boolean hasEdgeHistory() {
+        return true;
+    }
 }

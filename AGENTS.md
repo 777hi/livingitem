@@ -465,7 +465,55 @@ src/test/java/com/qiqi/li/
 
 ### 当前版本: v0.9-alpha
 
+**最近更新** (2026-09-11):
+- 🐛 修复：**φ 重进漂移第三轮：坐标系换轴（游戏二次实测定位真根因）**——玩家
+  反馈前两轮修复后 tooltip 的 φ 仍重进即变（16 周期 φ=14 → φ=12），三元件
+  （雕文/切制/格栅）基于 φ 的派生随之漂移。真根因：φ = lastRisingTick mod P
+  锚在**容器本地 tickCounter**（重进从 0 起步），而中继器物理相位（delayTimer
+  落盘）重进后续跑——两个原点互不相关，首跳落位随机 → φ 重锚。前两轮防的是
+  「数据被污染」，没发现**坐标系本身重进就换**；旧回填 `base−sinceRise` 跨轴
+  平移在轴差 ΔW 下 φ 平移 (ΔW mod P)。修复（三处）：① 相位时钟换世界轴
+  `resolvePhaseClock`（level.getGameTime()，跨会话连续，与振荡器物理相位
+  同源；Level 不可达回退本地轴保持单测可驱动），capture/restore 同轴适配；
+  ② 回填锚定数学改 **φ 反推锚** `anchor = now − ((now−φ) mod P)`——offset()
+  恒等于快照 φ 且首跳 interval 恰为 P（手算双验证；方向踩坑记录：必须减
+  now 的余数，减传入锚的余数会推向过去同余点使 interval 变 2P）；sinceRise
+  从此只用于活性窗口。③ 测试 mock Level 补递增 getGameTime（未 stub 恒 0
+  → 跳变挤 tick 0 → 派生空，新增 mockServerLevel helper）。新增世界轴快照
+  往返守卫（capture@世界W → restore@W+1000 → φ 不变，旧轴必失败）；两个
+  旧「负锚」断言按新锚定数学重写（负锚是旧平移公式产物，已退役）。全量
+  235 用例全绿；教训链（防污染下游→防污染入口→换坐标系）收编
+  living-power-tech.md §6.5 第三轮复盘小节
+
 **最近更新** (2026-09-09):
+- 🐛 修复：**相位重进洗牌第一轮修复无效（游戏实测复盘）→ 三 bug 根修**——第一轮
+  warmup+PhaseSnapshot 双修复存在覆盖漏洞：① warmup 只拦 PhaseEvent 注入不拦
+  `tracker.onRisingEdge`——首拍假沿把回填平移的负锚覆盖成 0，快照恢复的 φ 当场
+  被毁，周期 EMA 随后被拉偏、相位域散裂（warmup 结束后注入的全是污染数据）；
+  ② `restoreInto` 里 `clearWarmup()` 把剩余防线也拆了；③ `worthSaving` 的「时间轴
+  错乱防御」误拒回填负锚（lastRisingTick<0 是回填合法状态）——窗口内二次退出
+  即丢相位。根修：`RedstoneSensor.hasEdgeHistory()` 接口 +
+  `ContainerRedstoneData` 本会话首次 calculate 置位，`runBfs` 无历史时**整段跳过
+  边检测**（跟踪+注入都跳，假沿从源头不进系统；负锚存活到首个真实跳变，
+  interval=(P−d)−(−d)=P 精确续接）；测试 seam `setIncomingEdgeForTest` 声明
+  历史；`restoreInto` 不再 clearWarmup（宽限与快照互补）；`worthSaving` 只拒
+  未来锚。测试影响：E2E 驱动循环补首拍热身（对齐真实时序），PhaseInterpretation
+  3 处 φ 断言按热身时间轴 +1 修正（相对关系不变）。全量 234 用例全绿；
+  复盘记录收编 living-power-tech.md §6.5（根修复盘小节）
+- ✅ 修复：**退出重进后容器内线路相位洗牌（调相布局失效）**——相位账本是纯内存
+  缓存，账本死亡（LRU 120s 回收 / 退出重进 / 跨存档搬运）后所有振荡器从零重锁，
+  多路相对相位被「重载时刻」重新锚定：玩家调好的满相布局（n=P）不再适配，冗余
+  线路只能缓解。双修复：① **首拍无沿宽限（warmup）**——新账本默认前 8 tick
+  电力层不注入 PhaseEvent（照常跟踪边信号重建周期估计），防「prevEdgeGrid 空 →
+  稳态电平全伪装成上升沿」的假沿风暴；② **PhaseSnapshot 相位快照落盘**——
+  `CONTAINER_PHASE_SNAPSHOT` BE 附件（带 Codec serialize 真正写入存档，全 mod
+  第一个跨会话容器级附件——流体/应力附件均无 Codec 仅会话内存）每 tick 末冻结
+  已锁相边的 (P, φ, sinceRise, δ)，账本重建时平移回填（整数周期下 φ 不变），
+  回填成功跳过 warmup。只存慢变量（锁相结果），快变量（EMA/注册表）从真实
+  跳变重学——改线后旧快照 2~3 周期自愈，无磁盘说谎面。顺带修
+  `SignalTracker.offset()` 负 tick 的 `%` → `floorMod`。测试
+  PhaseSnapshotWarmupTest（5 项），全量 226 用例全绿；收编 living-power-tech.md
+  §6.5（账本重生的相位连续性）+ §6 测试表
 - ✅ 修复：**超大堆叠灯堆对外读数 int 回绕**——C=1M 标定后 count ≥ 2,148 盏
   （2³¹/1M = 2,147.48）的堆总量越 IEnergyStorage 的 int FE 公约（上限 21.4 亿），
   `(int)` 强转回绕成负数 → 外部 mod（如 Mek 电缆 `max−stored` 缺口判定）读到

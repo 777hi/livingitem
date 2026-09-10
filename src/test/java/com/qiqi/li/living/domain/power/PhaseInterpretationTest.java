@@ -85,6 +85,9 @@ class PhaseInterpretationTest {
         SimpleContainerContext ctx = new SimpleContainerContext(
             new FakeHandler(slots), new ArrayList<>(), new ArrayList<>());
         ContainerRedstoneData redstone = ctx.getOrCreateRedstoneData();
+        // 首拍热身（2026-09-09 根修对齐）：真实游戏容器已跑多 tick 才有振荡；
+        // 红石账本首拍 hasEdgeHistory=false 跳过边检测——测试须先空跑一拍建立历史
+        function.tickContainerData(entries, ctx, new TickContext(ctx));
         for (long t = 0; t < totalTicks; t++) {
             if (t <= lastInjectTick) {
                 inject(redstone, 1, ContainerRedstoneData.EDGE_LEFT, t, 0);
@@ -100,6 +103,7 @@ class PhaseInterpretationTest {
         SimpleContainerContext ctx = new SimpleContainerContext(
             new FakeHandler(slots), new ArrayList<>(), new ArrayList<>());
         ContainerRedstoneData redstone = ctx.getOrCreateRedstoneData();
+        function.tickContainerData(entries, ctx, new TickContext(ctx));   // 首拍热身（同上）
         long total = 0;
         for (long t = 0; t < totalTicks; t++) {
             if (t <= lastInjectTick) {
@@ -128,11 +132,12 @@ class PhaseInterpretationTest {
 
         ChannelState ch = s.power.getGenerator(1).channel();
         assertEquals(4, ch.bestPeriod(PREF), "应锁相 4t");
-        assertEquals(2, ch.bestN(PREF), "真实 φ=0 + 派生 φ=1 → n=2");
+        assertEquals(2, ch.bestN(PREF), "真实 φ + 派生 φ+1 → n=2");
 
         List<DerivedPhase> reg = s.power.getRegistry(1);
         assertEquals(1, reg.size(), "移相器应登记 1 条驻波");
-        assertEquals(1, reg.get(0).offset(), "派生偏移 = 源偏移 + 1");
+        // 热身拍后时间轴 +1：首跳 t=1 → 源 φ=1，派生 φ=2（相对关系「派生=源+1」不变）
+        assertEquals(2, reg.get(0).offset(), "派生偏移 = 源偏移 + 1（源 φ=1）");
         assertEquals(PERIOD, reg.get(0).period());
         assertEquals(DerivedPhase.KIND_SHIFT, reg.get(0).kind());
         assertTrue(s.power.getGenerator(1).getEmaPowerRe() > 0, "派生相位应参与发电");
@@ -152,6 +157,8 @@ class PhaseInterpretationTest {
         SimpleContainerContext ctx = new SimpleContainerContext(
             new FakeHandler(slots), new ArrayList<>(), new ArrayList<>());
         ContainerRedstoneData redstone = ctx.getOrCreateRedstoneData();
+        // 首拍热身（根修对齐）：先空跑一拍建立边历史（该测试断言 n=0，热身不注入不破坏语义）
+        function.tickContainerData(entries, ctx, new TickContext(ctx));
         // 只往雕文的 RIGHT 边注入 4t 方波（非输入方向）
         for (long t = 0; t < 40; t++) {
             redstone.setPrevIncomingEdgeForTest(4, ContainerRedstoneData.EDGE_RIGHT,
@@ -185,8 +192,9 @@ class PhaseInterpretationTest {
         //   assertEquals(3, ch.bestN(PREF));
         //   assertEquals(2, s.power.getRegistry(2).get(0).offset());
         ChannelState ch = s.power.getGenerator(1).channel();
-        assertEquals(2, ch.bestN(PREF), "只剩 A 的真实 φ=0 + A 派生 φ=1 → n=2（链断）");
-        assertEquals(1, s.power.getRegistry(1).get(0).offset(), "A 派生 φ=1");
+        assertEquals(2, ch.bestN(PREF), "只剩 A 的真实 φ + A 派生 φ+1 → n=2（链断）");
+        // 热身拍后时间轴 +1：源 φ=1，A 派生 φ=2（相对关系不变）
+        assertEquals(2, s.power.getRegistry(1).get(0).offset(), "A 派生 φ=2（源 φ=1 + 1）");
         assertTrue(s.power.getRegistry(2).isEmpty(), "B 读不到 A 的注册表 → 无派生（链断）");
     }
 
@@ -251,7 +259,8 @@ class PhaseInterpretationTest {
 
         List<DerivedPhase> reg = s.power.getRegistry(1);
         assertEquals(1, reg.size(), "单条边一方波应登记 1 条裂相驻波");
-        assertEquals(2, reg.get(0).offset(), "50% 占空比方波的下降沿在 φ=2");
+        // 热身拍后时间轴 +1：上升沿 φ=1 → 下降沿 φ=3（相对关系「下降沿=上升沿+P/2」不变）
+        assertEquals(3, reg.get(0).offset(), "50% 占空比方波的下降沿（上升沿 φ=1 + 2）");
         assertEquals(DerivedPhase.KIND_SPLIT, reg.get(0).kind());
         assertTrue(s.power.getGenerator(1).getEmaPowerRe() > 0, "裂相相位应参与发电");
     }

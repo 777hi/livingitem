@@ -28,6 +28,12 @@ public class ContainerPowerData {
     /** EMA 平滑系数（约 8 tick 记忆） */
     private static final double EMA_ALPHA = 0.125;
 
+    {
+        // 新账本默认进入采样起步期（首拍无沿宽限）：首个上升沿不锚定相位、不入账。
+        // 相位快照回填路径（restoreFromSnapshot）会显式清零。
+        warmupTicksRemaining = WARMUP_TICKS;
+    }
+
     /**
      * 共振 EMA 的归零阈值（浮点卫生常数，**非**平衡常数）。
      *
@@ -86,6 +92,55 @@ public class ContainerPowerData {
 
     private long tickCounter;
     private long lastTickTime = System.currentTimeMillis();
+
+    /**
+     * 采样起步期标志（2026-09-09 首拍无沿宽限）。
+     *
+     * <p>账本重建（LRU 回收 / 退出重进 / 区块卸载超时）后首 tick，
+     * {@code prevEdgeGrid} 为空 → 稳态电平全部被误判为「0 → 信号」的假上升沿风暴，
+     * 多路相位被重载时刻的拓扑重新锚定（洗牌）。起步期（前 {@link #WARMUP_TICKS}
+     * tick）电力层照常跟踪边信号（重建周期估计）但<strong>不向通道注入相位事件、
+     * 不入账</strong>——多路振荡器的真实跳变到来后自然确立相位，周期估计完整
+     * （每边跟踪器在 warmup 内至少见到 2 次真实跳变即可锁相）。</p>
+     *
+     * <p>注意只影响「电力层的相位/入账」——红石层传播（edgeGrid 重算、火把/中继器
+     * 驱动）不受此标志影响，首个 tick 电网即恢复真实运行。</p>
+     */
+    private int warmupTicksRemaining;
+
+    /** 采样起步期长度：覆盖最短锁相需求（2 次跳变间隔）+ 传播重建余量 */
+    public static final int WARMUP_TICKS = 8;
+
+    /** 是否处于采样起步期（账本重建后的宽限期） */
+    public boolean inWarmup() {
+        return warmupTicksRemaining > 0;
+    }
+
+    /** 起步期计数推进（每 tick 末调用；账本正常存活时恒为 0，零开销） */
+    void advanceWarmup() {
+        if (warmupTicksRemaining > 0) warmupTicksRemaining--;
+    }
+
+    /**
+     * 手动设置起步期剩余 tick（测试 / 快照回填用）。
+     * 回填相位快照后应置 0——快照已带历史相位，无需宽限。
+     */
+    void setWarmupTicks(int ticks) {
+        warmupTicksRemaining = Math.max(0, ticks);
+    }
+
+    /** 清除起步期（相位快照回填后调用——快照已带历史相位，宽限反而白扔发电时间） */
+    public void clearWarmup() {
+        warmupTicksRemaining = 0;
+    }
+
+    /**
+     * 遍历全部边跟踪器（相位快照抓取用，含下降沿命名空间）。
+     * 仅供 {@link PhaseSnapshot#capture}，不暴露内部 Map 引用。
+     */
+    public void forEachEdgeTracker(java.util.function.BiConsumer<Long, SignalTracker> consumer) {
+        edgeTrackers.forEach(consumer);
+    }
 
     public GeneratorState getOrCreateGenerator(int slot) {
         return generators.computeIfAbsent(slot, key -> new GeneratorState());
@@ -151,9 +206,10 @@ public class ContainerPowerData {
         return tickCounter;
     }
 
-    /** 每 tick 末尾调用（glue 在分配入灯之后）：tick 计数推进 + 心跳时间戳 */
+    /** 每 tick 末尾调用（glue 在分配入灯之后）：tick 计数推进 + 心跳时间戳 + 起步期推进 */
     public void endTick() {
         tickCounter++;
+        advanceWarmup();
         lastTickTime = System.currentTimeMillis();
     }
 

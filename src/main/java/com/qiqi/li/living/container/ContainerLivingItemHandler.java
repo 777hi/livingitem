@@ -198,12 +198,39 @@ public class ContainerLivingItemHandler {
     /**
      * 获取或创建容器持久化红电数据（电力层账本）。
      * 返回 null 表示容器不支持（如没有 containerKey）。
+     *
+     * <p>账本首次创建时（退出重进 / LRU 回收后首访），尝试从 BE 附件的
+     * {@code PhaseSnapshot} 回填锁相状态。回填基准时钟取 BE 所在世界的
+     * game time（2026-09-11 换轴：与 capture 同坐标系——快照存的就是退出前
+     * 的世界 tick，同轴回填后 φ 与快照一致，首跳 interval=P 精确续接不再重锚）；
+     * Level 不可达时回退容器本地轴。快照为空（首次使用 / 无振荡器）则保持
+     * 默认 warmup（首拍无沿宽限）。见 PhaseSnapshot javadoc。</p>
      */
     public static com.qiqi.li.living.domain.power.ContainerPowerData getPowerData(ContainerContext ctx) {
         ContainerEntry e = entry(ctx);
         if (e == null) return null;
         if (e.power == null) {
             e.power = new com.qiqi.li.living.domain.power.ContainerPowerData();
+            // 相位快照回填（2026-09-09）：BE 附件里存有退出前的锁相状态则无缝续接
+            if (ctx instanceof SimpleContainerContext simpleCtx) {
+                long base = 0;
+                boolean hasWorldClock = false;
+                for (BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {
+                    com.qiqi.li.living.domain.power.PhaseSnapshot snapshot =
+                        be.getData(LivingItemManager.CONTAINER_PHASE_SNAPSHOT);
+                    if (snapshot == null) continue;
+                    // 世界轴基准（与 capture 同源）：服务端 BE 挂着 Level 才可信
+                    if (!hasWorldClock) {
+                        Level beLevel = be.getLevel();
+                        if (beLevel != null && !beLevel.isClientSide()) {
+                            base = beLevel.getGameTime();
+                            hasWorldClock = true;
+                        }
+                    }
+                    long clock = hasWorldClock ? base : e.power.currentTick();
+                    if (snapshot.restoreInto(e.power, clock) > 0) break;
+                }
+            }
         }
         return e.power;
     }
@@ -606,6 +633,29 @@ public class ContainerLivingItemHandler {
             if (fluidKey != null) {
                 ContainerEntry fe = CONTAINER_DATA.get(fluidKey);
                 if (fe != null) fe.fluid = null;
+            }
+        }
+
+        // 相位快照写回（2026-09-09）：每 tick 末把锁相状态冻结到 BE 附件（带 Codec 落盘）。
+        // 快照只含已锁相且存活窗口内的边（worthSaving 过滤），稳态无振荡器时为 EMPTY——
+        // 零成本。退出重进 / LRU 回收后由 getPowerData 回填，相位无缝续接。
+        // 2026-09-11 换轴：capture 时钟与 tickContainerData 的 resolvePhaseClock 同源
+        // （世界 game time 优先，回退本地轴）——快照必须存与驱动同坐标系的值。
+        com.qiqi.li.living.domain.power.ContainerPowerData powerData = tick.powerData;
+        if (powerData != null && context instanceof SimpleContainerContext simpleCtx
+                && !simpleCtx.getAssociatedBlockEntities().isEmpty()) {
+            long clock = powerData.currentTick();   // 回退轴（无 Level / 测试环境）
+            for (BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {
+                Level beLevel = be.getLevel();
+                if (beLevel != null && !beLevel.isClientSide()) {
+                    clock = beLevel.getGameTime();
+                    break;
+                }
+            }
+            com.qiqi.li.living.domain.power.PhaseSnapshot snapshot =
+                com.qiqi.li.living.domain.power.PhaseSnapshot.capture(powerData, clock);
+            for (BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {
+                be.setData(LivingItemManager.CONTAINER_PHASE_SNAPSHOT.value(), snapshot);
             }
         }
     }

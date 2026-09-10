@@ -622,6 +622,7 @@ fail-safe 不崩不刷（详见 oversized-stack-audit.md §2.8），long 内部�
 | `WaxedCopperStorageTest` | 16 | 发电直存分配、无铜灯弃、满溢、模组容器取电、充电、容量 clamp、超取、取消活化排除、EMA 功率 |
 | `BulbItemEnergyStorageTest` | 6 | 双向充放、容量 clamp、simulate、拆分守恒、线性读数 |
 | `RoundTripConservationIT` | 4 | **往返守恒（2026-09-09）**：箱A灯→电缆→箱B灯 1000t 原样往返断言总能量不增（精确复刻 Mekanism UniversalCable + ForgeStrictEnergyHandler 传输协议：SIMULATE 探测→convertFromAndBack 钳制→EXECUTE、按返回值记账，feConversionRate=2.5）+ 拉侧/推侧单侧拆解诊断 + extract 记账契约最小复现 |
+| `PhaseSnapshotWarmupTest` | 8 | **账本重生相位连续性（2026-09-09~11 三轮）**：新账本默认 warmup / 回填保留宽限 / 快照过滤未锁相与死边 / φ 跨会话平移守恒 / 空快照保持宽限 / 回填锚存活（二次退出不丢相位）/ 首跳 interval=P（φ 反推锚自洽）/ **世界轴快照往返（重进场景直接守卫）**（§6.5） |
 
 > **历史 BUG：零头回收记账 count 倍放大（2026-09-09 修复）**——
 > `ContainerEnergyStorage.receive` 的零头回收循环给堆写 `q+1`（实充 = 每盏 +1 ×
@@ -636,6 +637,105 @@ fail-safe 不崩不刷（详见 oversized-stack-audit.md §2.8），long 内部�
 
 用例数值直接取自 [红电波形分析表.md](../红电波形分析表.md) 的手工演算，
 实现与文档互为验证。
+
+---
+
+## 6.5 账本重生的相位连续性（warmup + PhaseSnapshot，2026-09-09）
+
+**问题**：相位账本（周期估计/φ/EMA/派生注册表）是纯内存缓存，账本死亡路径有三——
+LRU 120s 回收、退出重进（`clearAllCaches`）、跨存档搬运。死亡后两个伤害：
+
+1. **假上升沿风暴**：重载首 tick `prevEdgeGrid` 为空 → 稳态电平全部伪装成
+   「0→信号」的上升沿，多路相位被重载时刻的拓扑重新锚定（洗牌）；
+2. **调相布局失效**：玩家精心调好的多路相对相位（n=P 满相）重进后不再适配，
+   冗余线路只能缓解——肉鸽感的非预期来源。
+
+**修复一：首拍无沿宽限（warmup）**——新账本默认前 8 tick（`WARMUP_TICKS`）
+电力层不注入 `PhaseEvent`、解读 pass 跳过，但**照常跟踪边信号**（周期估计正常
+重建）——假沿不入账，真实跳变到来后自然确立相位。红石层传播不受影响，首个
+tick 电网即恢复真实运行。
+
+**修复二：相位快照落盘（PhaseSnapshot）**——`CONTAINER_PHASE_SNAPSHOT` BE 附件
+（**带 Codec serialize，真正写入存档**——注意流体/应力附件无 Codec 仅会话内存，
+这是全 mod 第一个跨会话的容器级附件）。每 tick 末冻结「已锁相且存活窗口内」的
+边跟踪器 `(P, φ, sinceRise, δ)`；账本重建时回填：`lastRisingTick = 新 tickCounter −
+sinceRise` 平移，整数周期下 φ 不变——**多路相对相位跨会话无缝续接**。
+
+**设计取舍**：
+
+- 只存**慢变量**（锁相结果），不存快变量（EMA/共振窗口/派生注册表）——快变量
+  从真实跳变推导，落盘只会引入「磁盘账本说谎」面；慢变量 2~3 个周期内被真实
+  跳变覆盖自愈（改线/换槽位后旧快照无害）；
+- `SignalTracker.offset()` 改 `floorMod`：回填平移可产生负 `lastRisingTick`，
+  Java `%` 负数语义会让 φ 落到 (−P,0)。
+
+**⚠️ 根修复盘（2026-09-09 第二轮，游戏实测「修了和没修一样」后）**：
+上述 warmup + 快照双修复存在**覆盖漏洞**，实测无效，三个 bug 叠加：
+
+1. **warmup 只拦注入不拦跟踪**（`runBfs` 边检测循环）：首拍假沿照样调
+   `tracker.onRisingEdge(now=0)`——把回填平移的**负锚**覆盖成 0，快照恢复的
+   φ 当场被毁；之后真实跳变的 interval = P−d ≠ P，周期 EMA 被拉偏，相位域
+   散裂。warmup 结束后注入的全是污染数据 → 形同虚设；
+2. **回填 `clearWarmup()` 拆掉防线**：快照回填成功后把唯一剩下的注入闸门也
+   关了，假沿风暴立即入账，雪上加霜；
+3. **`worthSaving` 误拒负锚**：回填后的边在首个真实跳变前（最长 P tick）
+   `lastRisingTick < 0` 被「时间轴错乱防御」拒绝进快照——窗口内二次退出
+   即丢相位。
+
+**根修（三处）**：
+
+- **首拍无沿（治本）**：`RedstoneSensor.hasEdgeHistory()` 接口 +
+  `ContainerRedstoneData` 实现（本会话首次 `calculate` 置位，同 tick 电力层
+  读到 false）。`runBfs` 在无历史时**整段跳过边检测**（`tracker.onRisingEdge`
+  与注入都跳过）——假沿从源头不进系统，回填负锚存活到首个真实跳变，
+  interval = (P−d)−(−d) = P 精确续接。测试 seam（`setIncomingEdgeForTest`）
+  声明历史（绕过 calculate 直写的注入天然自带历史语义）；
+- **`restoreInto` 不再 clearWarmup**：warmup 与快照互补而非互斥——首拍假沿
+  已由 hasEdgeHistory 整段拦下，warmup 剩余几 tick 只防「快照未覆盖的新边」
+  被首几个跳变过早入账；
+- **`worthSaving` 放行负锚**：只拒「未来锚」（lastRisingTick > now）。
+
+**效果（修正后）**：退出重进 / 区块卸载超时 / 长途离开后，发电机在回填后的
+第一个真实跳变即恢复满增益（不再有锁相重建期）；调相布局跨会话稳定——
+肉鸽感只留给真正的重新搭建。
+
+**⚠️ 第三轮修复：坐标系换轴（2026-09-11，游戏二次实测「修了和没修一样」后）**：
+上面两轮修复都真实有效，但玩家实测 φ 仍然重进漂移——病灶在**坐标系**本身：
+
+- φ = `lastRisingTick mod P`，而 `lastRisingTick` 锚在 `ContainerPowerData.tickCounter`
+  ——**容器本地计数，重进从 0 起步**。中继器物理相位（delayTimer 落盘）重进后续跑，
+  但它「续跑到哪」和新 tickCounter「数到哪」是**两套互不相关的原点**——重进耗时、
+  区块加载顺序、tick 对齐误差让两原点错开几 tick → 首个真实跳变落位随机 →
+  φ 重锚（16 周期 φ=14 重进变 φ=12 就是这么来的）→ 三元件派生全漂。
+- 前两轮防的是「相位数据被假沿污染」，没发现**坐标系本身重进就换了**。快照存的
+  φ 是旧坐标系里的值，旧版回填 `base − sinceRise` 平移到新坐标系后，轴差 ΔW
+  让 φ 平移 (ΔW mod P)——首跳一到快照 φ 即作废。
+
+**换轴修复（三处）**：
+
+1. **相位时钟换世界轴**：`resolvePhaseClock`（tickContainerData）——
+   `now = level.getGameTime()`（跨会话连续：存档持久化、重进继续递增，与振荡器
+   物理相位同源同轴）；Level 不可达（纯 Java 单测）回退容器本地计数。
+   capture / restore 全部吃同一时钟（`ContainerLivingItemHandler` 两处适配）；
+2. **回填锚定数学修正**：`restoreInto` 用 **φ 反推锚**
+   `anchor = now − ((now − φ_snapshot) mod P)`——「now 之前最近的 φ 同余点」：
+   offset() 恒等于快照 φ，且下一真实跳变（`now + ((φ−now) mod P)`）的 interval
+   恰为 P（φ 对 + interval 对，手算双验证）。旧版 `base − sinceRise` 只在两轴
+   同轴时成立；sinceRise 从此只用于活性窗口判定，不参与锚定；
+3. **测试 mock 补时钟**：FeedChain 的 mock Level 未 stub `getGameTime()` →
+   恒 0 → 跳变挤在 tick 0；新增 `mockServerLevel()` helper（递增 Answer），
+   测试驱动对齐生产世界轴。
+
+**教训链（三轮）**：① 防污染下游（warmup 拦注入）不够——污染入口（tracker）
+也得拦；② 防污染入口（首拍无沿）不够——**坐标系本身重进会换**；③ 换轴后锚定
+数学必须以**不变量（φ）**为基准反推，不能信跨轴平移量（sinceRise）。
+
+**测试**：`PhaseSnapshotWarmupTest`（8 项：新账本默认宽限 / 回填保留宽限（语义
+修正）/ 快照过滤未锁相与死边 / φ 跨会话平移守恒 / 空快照保持宽限 / **回填锚存活
+（二次退出不丢相位）** / **首跳 interval=P（φ 反推锚自洽）** / **世界轴快照往返
+（capture@世界W → restore@W+1000 → φ 不变——重进场景直接守卫，旧轴下必失败）**）；
+E2E 测试驱动循环补首拍热身——对齐真实时序，其中 seam 注入类由 `ensureTestGrid`
+自动声明历史。全量 235 用例全绿。
 
 ---
 

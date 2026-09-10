@@ -98,7 +98,14 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         int size = ctx.getSize();
         int containerWidth = ctx.getWidth();
         if (containerWidth <= 0) containerWidth = 9; // fallback
-        long now = powerData.currentTick();
+        // 相位时间轴（2026-09-11 第三轮修复：坐标系换轴）——优先世界 game time：
+        // 跨会话连续（存档持久化，重进继续递增），振荡器物理相位本就由世界 tick
+        // 驱动（中继器每 game tick 递减），φ = lastRisingTick mod P 锚在此轴上
+        // 重进前后同坐标系——同一布局的 φ 跨会话恒定。旧轴（容器本地 tickCounter）
+        // 重进归零，重进后首个真实跳变落位随机 → φ 重锚 → 雕文/切制/格栅派生全变
+        // （「修了和没修一样」的教训：前两轮防住了假沿污染，没发现坐标系本身换了）。
+        // Level 不可达（纯 Java 单测 / 无 BE 上下文）回退容器本地计数，保持可测性。
+        long now = resolvePhaseClock(ctx, powerData);
 
         // ── 收集发电机（铜灯跳过）──
         Map<Integer, GeneratorState> active = new HashMap<>();
@@ -219,6 +226,27 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         powerData.endTick();
     }
 
+    // ── 相位时钟（2026-09-11 第三轮修复：坐标系换轴）──
+
+    /**
+     * 解析相位时间轴的当前值：世界 game time 优先，容器本地计数回退。
+     *
+     * <p>φ = lastRisingTick mod P 的锚必须放在<strong>跨会话连续</strong>的时钟上——
+     * 世界 game time 随存档持久化、重进继续递增，与振荡器物理相位（中继器
+     * delayTimer 每 game tick 递减）同源同轴。容器本地 tickCounter 重进归零，
+     * 同一物理跳变在新旧两轴上的读数不同 → φ 重锚 → 三元件派生漂移。</p>
+     *
+     * <p>回退（Level 不可达）：纯 Java 单测与无 BE 上下文用容器本地计数——
+     * 这些环境不跨会话，本地轴的缺陷（重进归零）不触发。</p>
+     */
+    private static long resolvePhaseClock(ContainerContext ctx, ContainerPowerData powerData) {
+        net.minecraft.world.level.Level level = ctx.getLevel();
+        if (level != null && !level.isClientSide) {
+            return level.getGameTime();
+        }
+        return powerData.currentTick();
+    }
+
     // ── 铜块网络传播：BFS 辅助方法 ──
 
     /**
@@ -271,36 +299,49 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             // 相位解读（interpretShifter）也只读输入方向，两层语义一致。
             int chiseledInEdge = chiseledInputEdge(ctx, current);
 
-            // 检查该槽位的边信号（v15 每槽自有出边模型：涂蜡槽绝缘，采样读「入边」
-            // = 邻居朝本槽的出边）
-            for (int dir = 0; dir < ContainerRedstoneData.EDGE_COUNT; dir++) {
-                if (chiseledInEdge >= 0 && dir != chiseledInEdge) continue;
-                int signal = sensor.sensedSignal(current, dir);
-                int prevSignal = sensor.prevSensedSignal(current, dir);
-                if (signal == prevSignal) continue;
-                int delta = signal - prevSignal;
-                int absDelta = Math.abs(delta);
-                long edgeKey = edgeKey(current, dir);
-                if (delta > 0) {
-                    SignalTracker tracker = powerData.getOrCreateEdgeTracker(edgeKey);
-                    tracker.onRisingEdge(now, absDelta);
-                    if (tracker.period() > 0) {
-                        channel.onPhaseEvent(new PhaseEvent(
-                            (int) edgeKey, tracker.period(),
-                            tracker.offset(), absDelta, now), pref);
+            // 根修（2026-09-09）：首拍无沿——红石账本重建后的首个 calculate，
+            // prevEdgeGrid 全零是「历史未知」而非「上一 tick 全 0」，稳态高电平边
+            // 全部伪装成 0→S 假上升沿。此时整段跳过边检测（tracker.onRisingEdge
+            // 也跳过——旧 warmup 只拦注入不拦跟踪，假沿把回填的锁相负锚覆盖成
+            // tick 0，φ 恢复当场被毁，warmup 形同虚设的教训）。回填快照存活到
+            // 首个真实跳变，interval = (P-d)-(-d) = P，无缝续接。
+            boolean firstFrame = !sensor.hasEdgeHistory();
+
+            if (!firstFrame) {
+                // 检查该槽位的边信号（v15 每槽自有出边模型：涂蜡槽绝缘，采样读「入边」
+                // = 邻居朝本槽的出边）
+                for (int dir = 0; dir < ContainerRedstoneData.EDGE_COUNT; dir++) {
+                    if (chiseledInEdge >= 0 && dir != chiseledInEdge) continue;
+                    int signal = sensor.sensedSignal(current, dir);
+                    int prevSignal = sensor.prevSensedSignal(current, dir);
+                    if (signal == prevSignal) continue;
+                    int delta = signal - prevSignal;
+                    int absDelta = Math.abs(delta);
+                    long edgeKey = edgeKey(current, dir);
+                    if (delta > 0) {
+                        SignalTracker tracker = powerData.getOrCreateEdgeTracker(edgeKey);
+                        tracker.onRisingEdge(now, absDelta);
+                        if (!powerData.inWarmup() && tracker.period() > 0) {
+                            channel.onPhaseEvent(new PhaseEvent(
+                                (int) edgeKey, tracker.period(),
+                                tracker.offset(), absDelta, now), pref);
+                        }
+                    } else {
+                        // 下降沿 → 裂相器（切制）的解读输入：独立命名空间的下降沿跟踪器
+                        SignalTracker falling = powerData.getOrCreateEdgeTracker(FALLING_BIT | edgeKey);
+                        falling.onRisingEdge(now, absDelta);
                     }
-                } else {
-                    // 下降沿 → 裂相器（切制）的解读输入：独立命名空间的下降沿跟踪器
-                    SignalTracker falling = powerData.getOrCreateEdgeTracker(FALLING_BIT | edgeKey);
-                    falling.onRisingEdge(now, absDelta);
                 }
             }
 
             // 注入该槽位注册表中的派生驻波（上一 tick 解读，本 tick 到达上升沿则同权入账）
-            for (DerivedPhase dp : powerData.getRegistry(current)) {
-                if (dp.period() > 0 && Math.floorMod(now, dp.period()) == dp.offset()) {
-                    channel.onPhaseEvent(new PhaseEvent(
-                        derivedSourceId(current, dp), dp.period(), dp.offset(), dp.delta(), now), pref);
+            // warmup 期间不注入：注册表本就为空（账本重建），防御性双闸门。
+            if (!powerData.inWarmup()) {
+                for (DerivedPhase dp : powerData.getRegistry(current)) {
+                    if (dp.period() > 0 && Math.floorMod(now, dp.period()) == dp.offset()) {
+                        channel.onPhaseEvent(new PhaseEvent(
+                            derivedSourceId(current, dp), dp.period(), dp.offset(), dp.delta(), now), pref);
+                    }
                 }
             }
 
@@ -459,6 +500,10 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
     private static void phaseInterpretation(Map<Integer, GeneratorState> active,
             ContainerContext ctx, int size, int width, ContainerPowerData powerData, long now) {
         powerData.pruneRegistry(now);
+
+        // 首拍无沿宽限：warmup 期间边跟踪器的锁相尚未确立（首个假沿污染周期估计），
+        // 解读出的派生相位不可信——跳过本 pass，注册表保持空，warmup 结束后自然重建。
+        if (powerData.inWarmup()) return;
 
         Map<Integer, List<DerivedPhase>> draft = new HashMap<>();
         for (var e : active.entrySet()) {
@@ -660,7 +705,9 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         /** 在当前周期内的相位偏移（0 ~ period-1） */
         public int offset() {
             if (period() <= 0 || lastRisingTick < 0) return 0;
-            return (int) (lastRisingTick % period());
+            // floorMod：lastRisingTick 可为负（相位快照回填平移到 tickCounter 起点之前），
+            // Java % 对负数返回负值会让 φ 落到 (−P, 0)——floorMod 保证 [0, P)
+            return Math.floorMod((int) lastRisingTick, period());
         }
 
         /** 上次跳变幅度 */
@@ -671,6 +718,24 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         /** 最近一次上升沿的 tick（-1 = 尚无）；派生解读的活性判定用（v19） */
         public long lastRisingTick() {
             return lastRisingTick;
+        }
+
+        /**
+         * 相位快照回填（2026-09-09；2026-09-11 第三轮：锚由调用方以 φ 反推）。
+         *
+         * <p>锚定数学上移到 {@code PhaseSnapshot.restoreInto}（那里才有 now）：
+         * {@code anchor = now − floorMod(now − φ, P)}——「now 之前最近的 φ 同余点」。
+         * 本方法只负责落值：offset() 即刻等于快照 φ、intervalsSeen 置 1（已锁相
+         * 状态）、下一个真实跳变的 interval 恰为 P。若快照与当前线路不符（离线
+         * 改线/换槽位），错误初值 2~3 个周期内被真实跳变覆盖自愈——磁盘账本
+         * 不会长期说谎。</p>
+         */
+        public void restoreLocked(int periodTicks, int offset, long lastRisingTick, int delta) {
+            this.periodTicks = periodTicks;
+            this.intervalsSeen = 1;
+            this.lastRisingTick = lastRisingTick;   // 调用方已按 φ 反推校正好
+            this.prevRisingTick = lastRisingTick - periodTicks;
+            this.lastDelta = delta;
         }
     }
 
@@ -790,7 +855,13 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
 
         long distributed = 0;
         for (BulbRef ref : bulbs) {
-            long share = mfe * ref.remaining() / totalRemaining;
+            // 份额统一走 PowerMath.mulDivFloor（与容器充电同源，2026-09-11）：
+            // mfe 是全部发电机按锈级累加的值（单机 = 合因子×周期×跳变路数，可到 1e6 RE
+            // ⇒ mfe ~ 6e7），remaining 可达 6.4e10（64 盏空灯）⇒ 直接相乘越过 Long.MAX。
+            // 后果比容器那边更隐蔽：份额为负 → 本 tick 发电被静默丢弃；
+            // 份额变巨大正数 → newQ 被夹到 CAP → **凭空造出上百万 FE**。
+            // mulDivFloor 会把份额夹到 ≤ remaining，perLamp ≤ 每盏剩余容量，两条路都堵死。
+            long share = PowerMath.mulDivFloor(mfe, ref.remaining(), totalRemaining);
             long perLamp = share / ref.count();
             if (perLamp <= 0) continue;
             LivingWaxedBulbData data = LivingItemManager.getWaxedBulbData(ref.stack());

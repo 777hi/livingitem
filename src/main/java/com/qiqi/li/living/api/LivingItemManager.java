@@ -65,6 +65,17 @@ public class LivingItemManager {
             ATTACHMENT_TYPES.register("container_fluid_data", () ->
                     AttachmentType.builder(() -> ContainerFluidData.EMPTY).build());
 
+    /**
+     * 相位快照（2026-09-09 落盘）：红电相位账本的跨会话持久化。
+     * 与流体/应力附件不同，这个带 {@code serialize(Codec)}——真正写入存档，
+     * 退出重进 / 区块卸载超时后锁相状态无缝续接（详见 PhaseSnapshot javadoc）。
+     */
+    public static final DeferredHolder<AttachmentType<?>, AttachmentType<com.qiqi.li.living.domain.power.PhaseSnapshot>> CONTAINER_PHASE_SNAPSHOT =
+            ATTACHMENT_TYPES.register("container_phase_snapshot", () ->
+                    AttachmentType.builder(() -> com.qiqi.li.living.domain.power.PhaseSnapshot.EMPTY)
+                            .serialize(com.qiqi.li.living.domain.power.PhaseSnapshot.CODEC)
+                            .build());
+
     public static final DeferredHolder<DataComponentType<?>, DataComponentType<Boolean>> IS_LIVING =
             DATA_COMPONENT_TYPES.register("is_living", () ->
                     DataComponentType.<Boolean>builder()

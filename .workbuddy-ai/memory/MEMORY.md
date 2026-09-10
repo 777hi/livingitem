@@ -65,3 +65,42 @@
 `--oldpalette` 复现旧配色。改渲染前先跑它量化 before/after，比反复启动游戏截图快得多。
 判对称要**对比四个基点方向的径向范围**，不要用象限像素计数（会把 x==cx 中心列误判到右侧）。
 检查顺序别漏：**圆盘 → 展开条 → 锈级条 → 底部文字行**，后两块最容易漏。
+
+## 性能判读：自埋 PerfMetrics 的覆盖盲区（2026-09-10 血的教训）
+- PerfMetrics 只插桩 `processContext` 内部。**外部 mod 在自己 ServerTickEvent 里直接调我们能力接口**
+  的路径（Flux Networks → `ContainerEnergyStorage.receiveEnergy`）**完全不在计时区间内**。
+- 因此「PerfMetrics 说 living_item 只占 3%」与「spark 说某方法占 98.79%」**不矛盾**，是覆盖盲区。
+  曾据此误判"卡顿与本模组无关"。**交叉验证必须看 spark 节点的绝对毫秒数，不能只看百分比。**
+- 用户的场景描述（"只有传输电力才卡"）比任何采样百分比都值钱 —— **先问场景，再读火焰图**。
+
+## 容器对外能量接口（ContainerEnergyStorage）热路径规约
+- `receive()` 在外部电力 mod 热路径上：**只扫一遍 `getStackInSlot`**，
+  比例分配与零头回收两遍走 `stacks[]` 数组（非铜灯槽位留 null）。别改回"每遍重新取物品"。
+- `isBulb()` 短路顺序固定 `!isEmpty → isWaxedBulb(Item) → isLivingItem(stack)`：
+  Item 引用比较是纳秒级且无内存访问；DataComponent 查询是 `Reference2ObjectArrayMap` 线性扫描 + cache miss。
+  顺序反了会对每个非灯槽位白跑一次组件查询。
+- 本方法**保持无状态**（只比原实现多分配 `stacks[]` 一个数组）。考虑过 ThreadLocal 暂存池消除分配，
+  因引入跨调用状态 + 重入风险而否决 —— 与配方书 Mixin 同一条教训。
+- 语义红线（改性能时不许破坏，RoundTripConservationIT 守着）：整 FE 量化 `accept -= accept % 1000`、
+  完整步进保护（`count > leftover` 跳过）、「宁损勿造」（声明 `accept`、实充 ≤ 记账）。
+- **long 溢出红线（2026-09-11 真凶，别再踩）**：mFE 定点制（1 FE = 1000 mFE）把量级抬了 1000 倍，
+  每盏容量 `BULB_UNIT_CAPACITY_MFE = 1e9`。`receive()` 里 `accept * remaining[i]` 可到 1e23 ≫ Long.MAX。
+  **凡是 `a * b / c` 的份额/比例计算，都要重算溢出边界**，先转 double 算比例再夹 `remaining[i]`。
+  溢出后 `distributed≈0` → `leftover=accept` → 零头回收 `while` 退化成 ~10 亿轮（服务端冻结）。
+  **27 槽时铜灯总数超过约 16 盏就会触发**。
+- **外部 mod 会用 `Integer.MAX_VALUE` 调用**：Flux Networks「绕过限制」模式下
+  `getLimit()` 返回 `Long.MAX_VALUE`，`onCycleStart` 每 tick 按满额跑一遍**模拟**调用。
+  所以 `receiveEnergy` 必须能安全吃下 `Integer.MAX_VALUE`，不能假设请求量很小。
+- `MAX_LEFTOVER_PASSES = 256` 是零头回收循环的防御性上限：合法 leftover ≤ Σ(count−1)，1~2 轮就完；
+  超限说明份额算错，宁可少充也别卡死（少充仍满足实充 ≤ 记账）。**别把这个上限删掉。**
+- `extract()` 无同类溢出：`Math.min(q * count, remaining)` 中 `remaining` 被 `wantMilliFe ≤ 2.1e12` 封顶。
+- **同款第二处已修：`LivingWaxedCopperFunction.distributeToBulbs`**（发电直存）。
+  那里 `mfe` 是全部发电机按锈级累加，`× remaining` 同样会溢出。后果**不会卡死但更危险**：
+  share 为负 → 发电静默丢弃；share 变巨大正数 → `newQ` 被拉到 CAP → **凭空造电**。
+- **新增/修改 mFE 算术时的自检**：该包里凡出现 `a * b / c`（份额、比例、分配），
+  先估算极值再决定要不要转 double。用
+  `grep -n "[a-zA-Z0-9_)] \* [a-zA-Z0-9_(].* / [a-zA-Z0-9_(]" src/.../domain/power/*.java` 扫。
+- 常量现状：`BULB_UNIT_CAPACITY_FE = 1_000_000`、`BULB_UNIT_CAPACITY_MFE = 1e9`（每盏）。
+  **注意 `WaxedCopperStorageTest` 里「容量 16 × 100_000」那句注释是旧值，已过时。**
+- 已知遗留失败（与本次无关）：`WaxedGeneratorFeedChainTest.chiseled_configMatchesSamplingSide`
+  「右侧注入应派生 1 条驻波 expected 1 but was 0」—— 2026-09-09 根修对齐的热身拍改动引入。
