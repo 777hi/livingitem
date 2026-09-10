@@ -16,6 +16,7 @@ import net.minecraft.world.inventory.tooltip.TooltipComponent;
  *
  * @param phaseCount      相数 n（多相交变信号）
  * @param period          检测周期 P（tick）；0 表示无信号/检测中
+ * @param preferredPeriod 偏好周期（堆叠数）
  * @param levelPowerMilliFe 各锈蚟级显示均值功率（毫 FE 定点），长度 = {@code PowerMath.OXIDATION_LEVELS}
  * @param activeLevels    活跃锈级数 N（1~4；0 表示无发电）
  * @param unlockPermille  解锁度 u × 1000（0..1000）——圆盘外弧的填充比例
@@ -26,6 +27,7 @@ import net.minecraft.world.inventory.tooltip.TooltipComponent;
 public record LivingWaxedCopperTooltipComponent(
     int phaseCount,
     int period,
+    int preferredPeriod,
     List<Long> levelPowerMilliFe,
     int activeLevels,
     int unlockPermille,
@@ -44,10 +46,10 @@ public record LivingWaxedCopperTooltipComponent(
      * {@code detectedPeriod} / {@code phaseCount} 的来源域，保证圆盘与数字读数同口径。
      * 旧实现只传 |Δ| 值列表、把 offset 丢掉，是相位图画不出来的根因。</p>
      */
-    public static LivingWaxedCopperTooltipComponent from(LivingWaxedGeneratorData t) {
+    public static LivingWaxedCopperTooltipComponent from(LivingWaxedGeneratorData t, int preferredPeriod) {
         var best = t.bestDomain();
         return new LivingWaxedCopperTooltipComponent(
-            t.phaseCount(), t.detectedPeriod(), t.levelPowerMilliFe(), t.activeLevels(),
+            t.phaseCount(), t.detectedPeriod(), preferredPeriod, t.levelPowerMilliFe(), t.activeLevels(),
             t.unlockPermille(),
             best != null ? best.offsets() : NO_PHASES,
             best != null ? best.deltas() : NO_PHASES,

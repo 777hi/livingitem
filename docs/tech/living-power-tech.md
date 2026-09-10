@@ -90,7 +90,7 @@ processContext() 每 game tick：
 |---|---|
 | `sourceId` | 事件源唯一标识（edgeKey = (slot << 2) \| dir） |
 | `period` | 上升沿间隔 EMA 估计的周期（tick） |
-| `offset` | 相位偏移（相对于域内最早上升沿的 mod 周期） |
+| `offset` | 相位偏移 = `tick mod period`（相对于游戏刻时钟，0~P-1） |
 | `delta` | 跳变幅度 \|Δ\|（信号值变化量） |
 | `tick` | 事件发生的 tick 计数 |
 
@@ -187,6 +187,8 @@ processContext() 每 game tick：
 `period()` 输出守卫：`intervalsSeen >= 1 && periodEMA >= 1.5` 才返回 `round(periodEMA)`，否则返回 0（即 tooltip 的「检测中」）。`periodEMA < 1.5` 过滤极短抖动，避免把噪声当成周期。
 
 `offset()` = `lastRisingTick % period()`，即最后一次上升沿在周期内的相位（0 ~ P-1）。它是后续各发电机间相位差 Δ 与「相数 n」的源头（见 §3.3）。
+
+**φ=0 的基准**：`offset = lastRisingTick % period`，基准是**游戏刻时钟**。当信号上升沿落在 `tick ≡ 0 (mod P)` 的时刻，偏移为 0。两个同周期信号因传播延迟不同，`lastRisingTick` 相差若干 tick → `offset` 不同 → 被 `PhaseDomain` 记为两个独立相位。这也是"中继器制造相位差"（§3.3.1.1.①）的本质原理。
 
 #### 为什么长周期会「慢慢」找到
 瓶颈不在算法，而在**样本稀疏**：一个周期只产生一次上升沿，所以跟踪器每 P tick 才能拿到一个间隔样本。

@@ -113,7 +113,7 @@ public class LivingItemClient {
         if (LivingWaxedCopperFunction.isWaxedBulb(stack.getItem())) return;
 
         event.getTooltipElements().add(
-            Either.right(LivingWaxedCopperTooltipComponent.from(generatorDataFor(stack))));
+            Either.right(LivingWaxedCopperTooltipComponent.from(generatorDataFor(stack), stack.getCount())));
     }
 
     /**
