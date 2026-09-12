@@ -2,7 +2,9 @@
   "required": true,
   "package": "com.qiqi.li.client.mixin",
   "compatibilityLevel": "JAVA_21",
+  "refmap": "living_item.client.refmap.json",
   "client": [
+    "AbstractContainerScreenAccessor",
     "AbstractContainerScreenMixin",
     "CreativeModeInventoryScreenMixin",
     "InventoryScreenMixin",

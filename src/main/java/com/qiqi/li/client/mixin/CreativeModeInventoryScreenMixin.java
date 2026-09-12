@@ -40,6 +40,7 @@ public abstract class CreativeModeInventoryScreenMixin extends EffectRenderingIn
     @Inject(method = "mouseClicked", at = @At("HEAD"), cancellable = true)
     private void living_item$interceptMouseClicked(double mouseX, double mouseY, int button, CallbackInfoReturnable<Boolean> cir) {
         if (GuiInteractionHelper.tryInteract(this.hoveredSlot, button, false, this.menu)) {
+            ((AbstractContainerScreenAccessor) this).setSkipNextRelease(true);
             cir.setReturnValue(true);
         }
     }

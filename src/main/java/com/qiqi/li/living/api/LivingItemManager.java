@@ -26,6 +26,7 @@ import com.qiqi.li.living.domain.redstone.LivingRepeaterData;
 import com.qiqi.li.living.domain.redstone.LivingComparatorData;
 import com.qiqi.li.living.domain.redstone.LivingCutCopperData;
 import com.qiqi.li.living.domain.redstone.LivingGrateData;
+import com.qiqi.li.living.domain.farmland.FarmlandPlantComponent;
 import com.qiqi.li.living.domain.redstone.LivingCopperBulbData;
 import com.qiqi.li.living.domain.redstone.LivingCopperSignalData;
 import net.minecraft.world.item.Items;
@@ -159,6 +160,14 @@ public class LivingItemManager {
                     DataComponentType.<LivingLeverData>builder()
                             .persistent(LivingLeverData.CODEC)
                             .networkSynchronized(LivingLeverData.STREAM_CODEC)
+                            .build());
+
+    /** 活耕地种植数据（作物类型标记 + 生长阶段 + round-robin 产出状态，客户端渲染数据源） */
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<FarmlandPlantComponent>> FARMLAND_PLANT =
+            DATA_COMPONENT_TYPES.register("farmland_plant", () ->
+                    DataComponentType.<FarmlandPlantComponent>builder()
+                            .persistent(FarmlandPlantComponent.CODEC)
+                            .networkSynchronized(FarmlandPlantComponent.STREAM_CODEC)
                             .build());
 
     public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingRedstoneLampData>> LIVING_REDSTONE_LAMP_DATA =
@@ -495,6 +504,14 @@ public class LivingItemManager {
 
     public static void setLeverData(ItemStack stack, LivingLeverData data) {
         setData(stack, LIVING_LEVER_DATA.value(), data, LivingLeverData.DEFAULT);
+    }
+
+    public static FarmlandPlantComponent getFarmlandPlant(ItemStack stack) {
+        return getData(stack, FARMLAND_PLANT.value(), FarmlandPlantComponent.DEFAULT);
+    }
+
+    public static void setFarmlandPlant(ItemStack stack, FarmlandPlantComponent data) {
+        setData(stack, FARMLAND_PLANT.value(), data, FarmlandPlantComponent.DEFAULT);
     }
 
     public static LivingRedstoneLampData getLampData(ItemStack stack) {

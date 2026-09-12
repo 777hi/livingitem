@@ -178,7 +178,6 @@ if (targetSlot == null) {
 ---
 
 ### 坑9：创造模式 SlotWrapper 导致客户端与服务端槽位索引不匹配
-
 **问题**：创造模式下 GUI 传送活地图时，客户端发送 `slotIndex=0`，服务端 `resolveSlot` 返回 null。
 
 **原因**：创造模式客户端使用 `ItemPickerMenu`，背包槽位被 `SlotWrapper` 包装。`hoveredSlot.index` 是 `ItemPickerMenu` 的槽位索引（如 0 = 背包第一格），但服务端 `InventoryMenu` 的 slot 0 是**合成结果槽**，不是活地图。
@@ -215,6 +214,61 @@ private int resolveServerSlotIndex(Slot slot) {
 ```
 
 **教训**：创造模式下任何需要将客户端槽位索引发送到服务端的场景，都必须考虑 `SlotWrapper` 的索引映射问题。
+
+---
+
+### 坑10：按下阶段拦截成功，释放阶段原版 PICKUP 照常执行（手持触发型交互的交换副作用）
+
+**发现场景**（2026-09-12，活耕地三个交互游戏实测）：活锄头右键活泥土、活种子右键活耕地、
+活骨粉右键活耕地——交互本身都生效（泥土变耕地、种子种上、骨粉催熟），但**同一瞬间的原版
+点击行为也执行了**：光标物品与槽位物品交换、或光标物品被放进槽位。实感即「交互没有拦截
+原版逻辑」。
+
+**根因**：原版 `AbstractContainerScreen` 对「光标非空」的物品操作不在按下阶段而在**释放阶段**：
+
+```
+按下（mouseClicked，光标非空）：
+  只置 isQuickCrafting / quickCraftSlots 标志，不产生物品操作
+  （光标为空时才在按下阶段 slotClicked(PICKUP) 拿起物品）
+
+释放（mouseReleased，光标非空）：
+  slotClicked(slot, k, button, ClickType.PICKUP) ← 放置/交换/合并全在这！
+```
+
+我们的交互条目 `onRelease=false` → 拦截发生在按下阶段并 `cir.setReturnValue(true)` 取消了
+按下（此时无副作用，白拦）；释放阶段 `tryInteract(onRelease=true)` 找不到匹配条目 →
+不取消 → 原版 `mouseReleased` 完整执行 → 光标与槽位交换。
+
+**为什么活按钮没暴露**：活按钮是空手自交互，按下取消恰好拦掉了「拿起物品」的按下阶段操作，
+释放阶段光标为空、quickCraft 槽位为空，原版释放无实际动作。**只要出现「手持物品右键活物品」
+的新交互（活锄头/活种子/活骨粉都是），这个坑就会显形**——ignite/ignite_carried 其实一直带着
+这个副作用（打火石与 TNT 交换位置），此前未被察觉。
+
+**解决**：拦截成功置位原版自带的 `skipNextRelease` 字段。该字段是原版为「按下已处理、释放
+需跳过」设计的自我跳过开关（原版 PICKUP 拿起物品后也置位它）：
+
+```java
+@Shadow
+private boolean skipNextRelease;   // AbstractContainerScreen 私有字段
+
+// mouseClicked 拦截成功时：
+if (GuiInteractionHelper.tryInteract(this.hoveredSlot, button, false, this.menu)) {
+    this.skipNextRelease = true;   // 原版 mouseReleased 开头检测到即 return true 跳过
+    cir.setReturnValue(true);
+}
+```
+
+三个 Screen mixin（`AbstractContainerScreenMixin` / `InventoryScreenMixin` /
+`CreativeModeInventoryScreenMixin`）的按下拦截处全部置位。
+
+**服务端时序复核**：按下阶段发包时，原版按下/释放都还没执行过，服务端 `menu.getCarried()`
+反映的就是玩家此刻真实手持的物品——handler 内验证/消耗光标（锄头耐久、骨粉 shrink）安全。
+创造模式虚拟光标仍走既有 carriedTag 通道，不受影响。
+
+**教训**：「按下拦截成功」≠「该次点击已完整接管」。原版的点击语义跨按下/释放两个阶段，
+按下取消后必须处理释放阶段的残留路径——优先复用原版的自我跳过开关
+（`skipNextRelease`），比在释放阶段再做一次匹配拦截（规则必须带 onRelease 变体）简单且
+不依赖客户端重复判定。
 
 ---
 
@@ -290,3 +344,4 @@ private Slot living_item$findSlot(double mouseX, double mouseY) { return null; }
 7. **`@Shadow` 优先于 `@Invoker`**：private 方法的 `@Shadow` 可能不可靠，优先使用 protected 字段
 8. **`@Invoker`/`@Accessor` 必须声明 abstract**：非抽象 Mixin 类中不能使用带方法体的 `@Invoker`
 9. **SlotWrapper 索引映射**：创造模式 `ItemPickerMenu` 用 `SlotWrapper` 包装背包槽位，发送网络包前必须解包获取底层 `InventoryMenu` 的真实索引
+10. **按下拦截必须置位 `skipNextRelease`**：原版对「光标非空」的放置/交换在释放阶段执行，按下阶段取消拦不住它——手持触发型交互（活锄头/活种子/活骨粉）拦截成功时置位原版自我跳过开关，否则交互生效的同时光标与槽位被交换（坑 10）

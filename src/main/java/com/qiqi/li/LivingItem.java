@@ -9,6 +9,7 @@ import com.qiqi.li.living.transfer.ContainerRuleConfig;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.RandomizableContainer;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.level.ChunkPos;
 import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
@@ -88,6 +89,9 @@ import com.qiqi.li.living.interaction.ButtonPressHandler;
 import com.qiqi.li.living.interaction.LeverToggleHandler;
 import com.qiqi.li.living.interaction.RepeaterCycleHandler;
 import com.qiqi.li.living.interaction.ComparatorToggleHandler;
+import com.qiqi.li.living.interaction.TillToFarmlandHandler;
+import com.qiqi.li.living.interaction.PlantCropHandler;
+import com.qiqi.li.living.interaction.BonemealHandler;
 import net.neoforged.neoforge.registries.DeferredRegister;
 import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
 import com.qiqi.li.living.domain.chest.LivingChestItemHandler;
@@ -197,6 +201,9 @@ public class LivingItem {
         LivingItemManager.registerFunction(new LivingEnderPearlFunction());
         LOGGER.info("Registered living ender pearl function");
 
+        LivingItemManager.registerFunction(new com.qiqi.li.living.domain.farmland.LivingFarmlandFunction());
+        LOGGER.info("Registered living farmland function");
+
         LivingItemManager.registerFunction(new LivingMapFunction());
         LOGGER.info("Registered living map function");
 
@@ -256,6 +263,23 @@ public class LivingItem {
         InteractionRegistry.registerHandler("comparator_toggle", new ComparatorToggleHandler());
         InteractionRegistry.register(new InteractionEntry(Items.COMPARATOR, null, 1, "comparator_toggle"));
         LOGGER.info("Registered comparator toggle interaction rule");
+
+        // ── 活耕地：活锄头耕活泥土 + 种植 + 骨粉（docs/idea.md 活耕地设计） ──
+        InteractionRegistry.registerHandler("till_to_farmland", new TillToFarmlandHandler());
+        for (Item hoe : new Item[]{Items.WOODEN_HOE, Items.STONE_HOE, Items.GOLDEN_HOE,
+                Items.IRON_HOE, Items.DIAMOND_HOE, Items.NETHERITE_HOE}) {
+            InteractionRegistry.register(new InteractionEntry(Items.DIRT, hoe, 1, "till_to_farmland"));
+        }
+        LOGGER.info("Registered till_to_farmland interaction rules");
+
+        // 种植：通配自交互（trigger=null，handler 内校验光标为可种植活种子）
+        // 骨粉：精确触发器（活骨粉）——与种植共用 target/button，靠 findInteraction
+        // 的「精确优先于通配」两趟匹配分流（见 InteractionRegistry.findInteraction javadoc）
+        InteractionRegistry.registerHandler("plant_crop", new PlantCropHandler());
+        InteractionRegistry.register(new InteractionEntry(Items.FARMLAND, null, 1, "plant_crop"));
+        InteractionRegistry.registerHandler("bonemeal", new BonemealHandler());
+        InteractionRegistry.register(new InteractionEntry(Items.FARMLAND, Items.BONE_MEAL, 1, "bonemeal"));
+        LOGGER.info("Registered farmland plant/bonemeal interaction rules");
     }
 
     /**

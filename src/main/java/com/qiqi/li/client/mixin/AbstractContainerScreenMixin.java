@@ -89,6 +89,19 @@ public class AbstractContainerScreenMixin extends Screen {
     @Shadow
     protected Slot hoveredSlot;
 
+    /**
+     * 原版「按下后跳过释放处理」标志（mouseClicked 拿起物品时置位，
+     * mouseReleased 开头检测到即 return true 跳过 PICKUP）。
+     *
+     * <p>手持触发型活物品交互（活锄头/活种子/活骨粉右键槽位）必须在拦截成功时置位：
+     * 我们的拦截发生在按下阶段，但原版对「光标非空」的放置/交换发生在释放阶段——
+     * 不置位的话释放阶段不匹配交互条目 → 原版 PICKUP 照常执行 → 交互生效的同时
+     * 光标物品与槽位物品被交换/放置（交互未拦截原版逻辑的实感来源）。
+     * 置位后原版释放阶段自我跳过一次，交互成为该次点击的唯一效果。</p>
+     */
+    @Shadow
+    private boolean skipNextRelease;
+
     @Unique
     private int living_item$previousLeftPos = this.leftPos;
 
@@ -173,6 +186,7 @@ public class AbstractContainerScreenMixin extends Screen {
         }
 
         if (GuiInteractionHelper.tryInteract(this.hoveredSlot, button, false, this.menu)) {
+            this.skipNextRelease = true;   // 见字段 javadoc：防释放阶段原版 PICKUP 二次执行
             cir.setReturnValue(true);
         }
 
@@ -669,4 +683,60 @@ public class AbstractContainerScreenMixin extends Screen {
     private record WaterCell(int level, int direction) {}
     @Unique
     private record WaterBucketRender(Map<Integer, WaterCell> cells, int handlerWidth) {}
+
+    // ==================== Farmland Crop Rendering ====================
+
+    /**
+     * 活耕地的作物生长阶段渲染（docs/idea.md「槽位渲染」统一口径）：
+     * 作物渲染在耕地槽位自身（叠加在耕地图标上方），不依赖周围槽位。
+     * 客户端读 FarmlandPlantComponent（networkSynchronized 随物品同步），
+     * 每帧查 blockstate→模型→粒子图标，无服务端参与。
+     */
+    @Inject(method = "render", at = @At("TAIL"))
+    private void living_item$renderFarmlandCrops(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick,
+                                                 CallbackInfo ci) {
+        AbstractContainerScreen<?> self = (AbstractContainerScreen<?>) (Object) this;
+        for (Slot slot : self.getMenu().slots) {
+            ItemStack stack = slot.getItem();
+            if (stack.isEmpty() || !stack.is(Items.FARMLAND)) continue;
+            if (!LivingItemManager.isLivingItem(stack)) continue;
+
+            com.qiqi.li.living.domain.farmland.FarmlandPlantComponent plant =
+                LivingItemManager.getFarmlandPlant(stack);
+            if (!plant.isPlanted()) continue;
+
+            net.minecraft.world.level.block.Block cropBlock =
+                com.qiqi.li.living.domain.farmland.CropClassifier.getBlockFromSeed(plant.cropSeed());
+            if (cropBlock == null) continue;
+
+            TextureAtlasSprite sprite = com.qiqi.li.client.render.CropTextureResolver
+                .getCropSprite(cropBlock, plant.age());
+            if (sprite == null) continue;
+
+            // 双槽渲染之一：耕地槽自身叠加 16×16 作物小图（跟物品走，顶行也可见，
+            // z 在物品图标之上、堆叠数之下——blitOffset 相对深度，参考水桶渲染取值）
+            guiGraphics.blit(leftPos + slot.x, topPos + slot.y, 100, 16, 16, sprite);
+
+            // 双槽渲染之二：上方生长槽为空时绘制作物当前阶段大图（「土下苗上」的田地感）。
+            // 按坐标匹配（同容器 + 恰在正上方一格）而非索引算术——天然适应箱子/背包/创造
+            // 各布局；「空槽即画」自动覆盖全部状态：生长中显苗、BLOCKED 被占自动隐、
+            // 成熟产出后被真实物品覆盖、取走后显成熟形态。同容器约束防跨容器错位
+            // （箱子顶行耕地不会把苗画到玩家背包槽上）。
+            living_item$renderCropInGrowthSlot(self, guiGraphics, slot, sprite);
+        }
+    }
+
+    @Unique
+    private void living_item$renderCropInGrowthSlot(AbstractContainerScreen<?> self, GuiGraphics guiGraphics,
+                                                    Slot farmlandSlot, TextureAtlasSprite sprite) {
+        for (Slot other : self.getMenu().slots) {
+            if (other == farmlandSlot) continue;
+            if (other.container != farmlandSlot.container) continue;
+            if (other.x != farmlandSlot.x || other.y != farmlandSlot.y - 18) continue;
+            if (!other.getItem().isEmpty()) continue;   // 有物品（含成熟产出）→ 让位真实物品
+
+            guiGraphics.blit(leftPos + other.x, topPos + other.y, 100, 16, 16, sprite);
+            return;
+        }
+    }
 }

@@ -2,6 +2,7 @@
   "required": false,
   "package": "com.qiqi.li.living.mixin.create",
   "compatibilityLevel": "JAVA_21",
+  "refmap": "living_item.mixins-create.refmap.json",
   "plugin": "com.qiqi.li.living.compat.create.CreateMixinPlugin",
   "mixins": [
     "KineticBlockEntityMixin",

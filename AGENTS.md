@@ -25,6 +25,7 @@
 - **活末影箱**：无线传输路由器，路由模式（共享黑板）+ 直连模式（绑定玩家末影箱）
 - **活水车**：应力产生类活物品，软依赖 Create，3D 旋转渲染
 - **活地图传送**：活末影珍珠 + 活地图，三种场景 + UV 精确传送 + 跨维度 + 载具 + Sable 飞艇兼容
+- **活耕地**：GUI 交互获取/种植/骨粉催熟 + 世界轴节拍生长 + round-robin 逐项产出 + 双槽渲染
 - **接口化扩展**：`HasDirection`（WASD 朝向配置）+ `HasContainerData`（容器级数据计算），新增活物品无需修改核心文件
 - **活红石系统**：活红石粉（信号传播）+ 活红石火把（反相器）+ 活按钮/活拉杆/活红石灯 + 活中继器/活比较器/活红石块，支持与世界红石双向互通
 
@@ -87,6 +88,7 @@ SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 | **活末影箱** | 路由模式（共享黑板）+ 直连模式（绑定玩家末影箱） | [living-ender-chest-tech.md](docs/tech/living-ender-chest-tech.md) |
 | **活水车** | 力矩计算 + 应力叠加/抵消 + Create 软依赖 | [living-water-wheel-tech.md](docs/tech/living-water-wheel-tech.md) |
 | **活地图传送** | 三种场景 + UV 精确传送 + 跨维度 + 载具 + Sable 飞艇 | [living-map-ender-pearl-tech.md](docs/tech/living-map-ender-pearl-tech.md) |
+| **活耕地** | GUI 交互获取/种植/骨粉 + 世界轴节拍生长 + round-robin 逐项产出 + 双槽渲染 | [living-farmland-tech.md](docs/tech/living-farmland-tech.md) |
 | **活红石** | 红石信号传播 + BFS 算法 + 反相器 + 堆叠数影响 | [living-redstone-tech.md](docs/tech/living-redstone-tech.md) |
 | **活涂蜡铜块（红电发电）** | 双因子感应发电 + 事件驱动记账 + RE/FE 单位制 | [living-power-tech.md](docs/tech/living-power-tech.md) |
 | **活打火石** | 交互触发器，无 tick 逻辑 | [living-flint-and-steel-tech.md](docs/tech/living-flint-and-steel-tech.md) |
@@ -181,6 +183,11 @@ src/main/java/com/qiqi/li/
 │   │   │   ├── LivingTntData.java            #     活TNT数据（从 data/ 迁入）
 │   │   │   └── ExplosionData.java            #     爆炸数据（从 data/ 迁入）
 │   │   │
+│   │   ├── farmland/                         #   活耕地领域
+│   │   │   ├── LivingFarmlandFunction.java   #     tick 功能入口（生长/产出状态机 + tooltip）
+│   │   │   ├── FarmlandPlantComponent.java   #     种植数据组件（作物标记+age+round-robin 产出）
+│   │   │   └── CropClassifier.java            #     作物分类器（准入三层/maxAge/浆果判定/茎果实 AT）
+│   │   │
 │   │   └── map/                              #   活地图传送领域
 │   │       ├── LivingEnderPearlFunction.java #     活末影珍珠（纯工具类）
 │   │       ├── LivingMapFunction.java        #     活空地图
@@ -257,8 +264,17 @@ src/main/java/com/qiqi/li/
 │   │
 │   ├── interaction/                         # GUI交互
 │   │   ├── InteractionEntry.java            #   交互规则 record
-│   │   ├── InteractionRegistry.java         #   交互注册表
-│   │   └── InteractionHandler.java          #   处理器接口
+│   │   ├── InteractionRegistry.java         #   交互注册表（两趟优先级匹配：精确触发器 > 通配）
+│   │   ├── InteractionHandler.java          #   处理器接口
+│   │   ├── IgniteHandler.java               #   活打火石点燃活TNT
+│   │   ├── IgniteCarriedHandler.java        #   反向点燃（TNT→打火石）
+│   │   ├── ButtonPressHandler.java          #   活按钮按压
+│   │   ├── LeverToggleHandler.java          #   活拉杆切换
+│   │   ├── RepeaterCycleHandler.java        #   活中继器延迟循环
+│   │   ├── ComparatorToggleHandler.java     #   活比较器模式切换
+│   │   ├── TillToFarmlandHandler.java       #   活锄头耕活泥土→活耕地（物品转换型）
+│   │   ├── PlantCropHandler.java            #   活种子种植（通配条目+handler 校验）
+│   │   └── BonemealHandler.java             #   活骨粉催熟（精确触发器条目）
 │   │
 │   ├── model/                               # 配置/方向模型
 │   │   ├── Pos2D.java                       #   不可变 2D 坐标
@@ -295,6 +311,7 @@ src/main/java/com/qiqi/li/
 │   │   ├── LivingMapTargetRenderer.java     #   十字光标渲染器
 │   │   ├── LivingMapIconDecorator.java      #   活地图 IItemDecorator
 │   │   ├── ExpandedMapTexture.java          #   扩展地图动态纹理
+│   │   ├── CropTextureResolver.java         #   作物阶段纹理解析（blockstate→模型→粒子图标）
 │   │   ├── LivingItemTooltip.java           #   Tooltip 渲染
 │   │   ├── LivingDefaultDecorator.java      #   默认图标叠加层
 │   │   ├── LivingHopperDecorator.java       #   活漏斗箭头叠加层
@@ -354,12 +371,14 @@ src/test/java/com/qiqi/li/
 │   └── FurnaceBurningFlagTest.java            # 燃烧标志组件·图标切换回归（5 项）
 ├── living/domain/map/
 │   └── MapCoordHelperTest.java                # 地图坐标换算（16 项）
+├── living/interaction/
+│   └── InteractionRegistryTest.java           # 两趟优先级匹配·通配遮蔽回归守卫（5 项）
 └── living/transfer/
     └── ContainerCompatibilityConfigTest.java  # 容器布局推断（9 项）
 ```
 
-**合计测试用例 216 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
-全绿基线：`216 passed / 0 failed / 0 skipped`（2026-09-09 验证）。
+**合计测试用例 240 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
+全绿基线：`240 passed / 0 failed / 0 skipped`（2026-09-13 验证）。
 
 > 📄 测试环境配置与编写约定详见 [unit-testing.md](docs/guides/unit-testing.md)
 
@@ -454,6 +473,15 @@ src/test/java/com/qiqi/li/
 - [x] 展示框十字光标 + 活地图图标
 - [x] 元数据同步 + 客户端缓存
 
+### 活耕地
+- [x] GUI 交互获取（活锄头耕活泥土，6 锄头变种）+ 种植（种子不消耗，类型标记）+ 骨粉催熟（+2~5，原版公式）
+- [x] 生长状态机：世界轴时间戳节拍（200t，稳态零写入）+ 湿润检测（左/右/下活水流 f=3.0）+ 顶行正常生长/产出挂起
+- [x] round-robin 逐项产出：战利品表首轮冻结进组件、每冷却周期一项 ×堆叠数、标准/浆果双模式
+- [x] 作物准入三层：Block 白名单 + c:seeds 标签 + 甜浆果手动映射；茎作物产出来源 = 果实战利品表（StemBlock.fruit AT）
+- [x] 双槽渲染：耕地槽作物小图 + 上方空生长槽阶段大图（blockstate→模型→粒子图标查表）
+- [x] 技术文档 [living-farmland-tech.md](docs/tech/living-farmland-tech.md)（idea.md 内容转化）+ 遮蔽回归守卫测试（5 项）
+- [ ] ⏳ 游戏实测验证：骨粉催熟跳升 + 上方空槽作物贴图 + 顶行生长（2026-09-13 修复后待验）
+
 ### 容器兼容性
 - [x] IItemHandler 统一容器抽象（原版 + 模组容器）
 - [x] 自动布局推断（`ContainerCompatibilityConfig.findOrGenerateRule`）
@@ -464,6 +492,40 @@ src/test/java/com/qiqi/li/
 ## 开发进展
 
 ### 当前版本: v0.9-alpha
+
+**最近更新** (2026-09-13):
+- ✅ 新增：**活耕地**（设计 idea.md → 技术文档 living-farmland-tech.md v1.0，全量实现 + 两轮实测修复）——
+  获取（活锄头耕活泥土，6 锄头变种规则）/ 种植（活种子右键，**种子不消耗**=类型标记，
+  数量与堆叠数解耦）/ 骨粉催熟（+2~5，Mth.nextInt 双闭=原版公式）/ 生长（世界轴
+  时间戳节拍 200t，湿润左/右/下活水流 f=3.0 vs 干燥 f=1.0，稳态零组件写入）/
+  产出（round-robin 逐项：战利品表 Block.getDrops 首轮冻结进组件 pendingDrops，
+  每冷却周期一项 ×耕地堆叠数到 E_UP 生长槽，标准模式产完重长/浆果模式持续产出）/
+  渲染（双槽：耕地槽 16×16 作物小图 + 上方空槽阶段大图；CropTextureResolver 走
+  blockstate→模型→粒子图标查表，覆盖胡萝卜 8-age→4-stage、下界疣共用模型等原版
+  映射）+ 茎作物产出来源=果实战利品表（StemBlock.fruit AT）+ 甜浆果手动映射
+  （SWEET_BERRIES 非 BlockItem，三层准入全漏）
+- 🐛 修复（交互，09-12 第一轮实测）：**按下拦截后释放阶段原版 PICKUP 二次执行**——
+  原版对「光标非空」的放置/交换发生在 mouseReleased，按下取消拦不住；三个 Screen
+  mixin 拦截成功处置位原版 skipNextRelease 让释放自我跳过。手持触发型交互（锄头/
+  种子/骨粉）交互生效的同时不再与槽位交换；ignite 老交互的打火石换位副作用一并治好。
+  收编 gui-click-interception.md 坑 10 + 经验总结第 10 条
+- 🐛 修复（生长，09-13 第二轮实测）：**活骨粉不能催熟 = 通配条目遮蔽精确条目**——
+  plant_crop（trigger=null）与 bonemeal 同 target/button 注册，findInteraction 注册
+  顺序首配 → 骨粉永远命中 plant_crop，BonemealHandler 死代码。根修：
+  findInteraction 改两趟匹配（精确触发器优先于通配，通配语义=兜底而非抢先）+
+  bonemeal 条目改精确触发器 BONE_MEAL；顺修骨粉 +2~4（RandomSource.nextInt 上界
+  排除）→ +2~5、催熟到 maxAge 即时冻结战利品表（不等下个冷却周期）、创造模式
+  种植跳过可种植性校验（carriedTag 已恢复可校验）。守卫：InteractionRegistryTest
+  （5 项，故意按最坏注册顺序断言精确优先）
+- 🐛 修复（渲染，同轮）：**作物不生长不渲染**——顶行耕地 growthSlot<0 被误算进
+  slotBlocked → 永久 BLOCKED age 恒 0（与规则②矛盾）；修为仅「生长槽存在且被占」
+  才 BLOCKED，顶行正常生长、产出挂起（搬到有生长槽位置自动开始产出）。双槽渲染
+  补上方生长槽大图（坐标匹配 y-18 同容器空槽即画，自动覆盖生长中/BLOCKED/产出/
+  取走全状态）。定界收编 living-farmland-tech.md §11.3/§8.2 +
+  gui-interaction-system.md §5.1 通配遮蔽坑
+- ✅ 文档：**idea.md 完成使命收口**（内容转化进 living-farmland-tech.md 后保留
+  历史指向）；活耕地三交互的实测坑链（释放二次执行/通配遮蔽/顶行 BLOCKED）全部
+  收编。全量 240 用例全绿（235 基线 + InteractionRegistryTest 5 项）
 
 **最近更新** (2026-09-11):
 - 🐛 修复：**φ 重进漂移第三轮：坐标系换轴（游戏二次实测定位真根因）**——玩家
@@ -483,7 +545,12 @@ src/test/java/com/qiqi/li/
   往返守卫（capture@世界W → restore@W+1000 → φ 不变，旧轴必失败）；两个
   旧「负锚」断言按新锚定数学重写（负锚是旧平移公式产物，已退役）。全量
   235 用例全绿；教训链（防污染下游→防污染入口→换坐标系）收编
-  living-power-tech.md §6.5 第三轮复盘小节
+  living-power-tech.md §6.5 第三轮复盘小节。**游戏实测确认（用户验证）**：
+  原版红石线路 + 活红石线路（含跨容器）重进相位稳定 ✓；残留边界——第三方
+  模组红石元件作跨容器信号源时相位仍可能漂移（该元件相位由其 mod 方块
+  内部状态驱动，重进重建时序不受我方控制，无 API 可介入）→ **定界为我方
+  契约边界而非缺陷**（我方保证「信号进入活红石网络后跨会话稳定」），已记
+  living-power-tech.md §8 已知限制表 + 红电系统.md §3.11 生态兼容实证第 4 条
 
 **最近更新** (2026-09-09):
 - 🐛 修复：**相位重进洗牌第一轮修复无效（游戏实测复盘）→ 三 bug 根修**——第一轮
@@ -736,6 +803,7 @@ docs/
 │   ├── living-ender-chest-tech.md
 │   ├── living-water-wheel-tech.md
 │   ├── living-map-ender-pearl-tech.md
+│   ├── living-farmland-tech.md
 │   └── living-flint-and-steel-tech.md
 ├── guides/                           # 设计指南
 │   ├── unit-testing.md               #   单元测试指南（FML 测试环境 + 测试替身 + 可测性边界）

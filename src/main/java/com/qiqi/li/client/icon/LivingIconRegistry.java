@@ -189,6 +189,11 @@ public final class LivingIconRegistry {
             .addVariant("base", "item/redstone_block", stack -> true)
             .build());
 
+        // 活耕地：复用原版耕地顶面纹理（无自定义 PNG，纹理文件由模型引用原版资源）
+        register(LivingIconSpec.builder(net.minecraft.world.item.Items.FARMLAND)
+            .addVariant("base", "item/farmland_living", stack -> true)
+            .build());
+
         registerCopperIcons();
 
         if (CreateCompat.isLoaded()) {

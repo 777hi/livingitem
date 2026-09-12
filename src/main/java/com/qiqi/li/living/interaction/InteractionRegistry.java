@@ -62,22 +62,34 @@ public class InteractionRegistry {
     /**
      * 查询匹配的交互规则。
      *
+     * <p><b>两趟优先级匹配</b>（防「通配遮蔽精确」）：同一目标物品可能同时挂
+     * 通配条目（triggerItem=null，任意光标触发）与精确条目（triggerItem 指定物品）。
+     * 典型事故：活耕地的 plant_crop（通配，任意活种子可种）与 bonemeal（精确，
+     * 活骨粉催熟）同 target/button 注册——若按注册顺序首配，骨粉永远命中先注册的
+     * plant_crop，bonemeal 成为死代码（2026-09-13 游戏实测踩坑）。
+     * 第一趟只找精确条目，第二趟才找通配条目，保证精确触发永不被通配截胡。</p>
+     *
      * @param trigger 光标持有的物品（触发方）
      * @param target  悬浮槽位的物品（目标方）
      * @param button  鼠标按键（0=左键, 1=右键, 2=中键）
      * @return 匹配的交互条目，无匹配返回 null
      */
     public static InteractionEntry findInteraction(ItemStack trigger, ItemStack target, int button, boolean onRelease) {
+        InteractionEntry wildcard = null;
         for (InteractionEntry entry : ENTRIES) {
             if (entry.button() != button) continue;
             if (entry.onRelease() != onRelease) continue;
             if (!entry.matchesTarget(target)) continue;
             if (!LivingItemManager.isLivingItem(target)) continue;
             if (!entry.matchesTrigger(trigger)) continue;
-            if (entry.triggerItem() != null && !LivingItemManager.isLivingItem(trigger)) continue;
-            return entry;
+            if (entry.triggerItem() == null) {
+                if (wildcard == null) wildcard = entry;   // 通配条目记住首个，让位于精确条目
+                continue;
+            }
+            if (!LivingItemManager.isLivingItem(trigger)) continue;
+            return entry;   // 精确条目立即返回
         }
-        return null;
+        return wildcard;
     }
 
     /**
@@ -85,5 +97,14 @@ public class InteractionRegistry {
      */
     public static List<InteractionEntry> getEntries() {
         return List.copyOf(ENTRIES);
+    }
+
+    /**
+     * 清空全部注册（条目 + 处理器）。仅供单元测试隔离使用——
+     * 生产注册发生在 commonSetup，游戏运行期不调用。
+     */
+    static void clearForTest() {
+        ENTRIES.clear();
+        HANDLERS.clear();
     }
 }
