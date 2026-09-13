@@ -93,4 +93,33 @@ public final class CropTextureResolver {
         }
         return null;
     }
+
+    /**
+     * 获取作物在指定 age 的原版染色（-1 = 不染色）。
+     *
+     * <p>南瓜/西瓜的藤蔓纹理是<b>灰度图</b>，原版在世界渲染时靠 BlockColors 按
+     * age 染色（age 0 纯绿 → age 7 橙黄，`ARGB32.color(age*32, 255-age*8, age*4)`，
+     * 纯 age 驱动、忽略 level/pos——null 传入即可正确取色）；直接 blit 精灵图
+     * 不染色会发白（2026-09-13 实测踩坑）。小麦/胡萝卜等是预着色纹理、无注册 → -1。
+     * 茎作物的成熟果实图标走果实方块（预着色）→ 不染色。</p>
+     */
+    public static int getCropTint(Block cropBlock, int age) {
+        if (cropBlock instanceof StemBlock && age >= StemBlock.MAX_AGE) return -1;   // 果实图标不染色
+        BlockState state = stateForAge(cropBlock, age);
+        if (state == null) return -1;
+        // 4 参重载：无注册返回 -1；注册了 age 驱动染色器的茎方块忽略 null level/pos
+        return Minecraft.getInstance().getBlockColors().getColor(state, null, null, 0);
+    }
+
+    /**
+     * 获取物品图标的精灵图（item/generated 模型的粒子图标 = layer0 纹理）。
+     * 用于槽位叠加层 blit（立即模式，绕开 renderItem 的缓冲排序/深度竞争）。
+     */
+    @Nullable
+    public static TextureAtlasSprite getItemSprite(net.minecraft.world.item.ItemStack stack) {
+        BakedModel model = Minecraft.getInstance().getItemRenderer()
+            .getModel(stack, null, null, 0);
+        TextureAtlasSprite sprite = model.getParticleIcon();
+        return isMissing(sprite) ? null : sprite;
+    }
 }

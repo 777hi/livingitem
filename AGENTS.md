@@ -494,7 +494,42 @@ src/test/java/com/qiqi/li/
 ### 当前版本: v0.9-alpha
 
 **最近更新** (2026-09-13):
-- ✅ 新增：**活耕地**（设计 idea.md → 技术文档 living-farmland-tech.md v1.0，全量实现 + 两轮实测修复）——
+- 🎚️ 优化（活耕地，第五轮实测反馈四连）——**种子图标可见**（耕地槽叠加 renderItem
+  固定画在物品层 z=150 与耕地图标同层被覆盖，pose 抬升 z+150 到 300——map 渲染
+  「需高于物品 150/堆叠数 200」同款经验）+ **骨粉简化**（一切行为由生长 tick 决定：
+  骨粉=强制触发一次必定成功的生长 tick，未成熟 +1/成熟触发产出，无变化不消耗；
+  +2~5 双语义已删）+ **种植消耗回归**（消耗与耕地堆叠数等量的活种子，数量不足
+  无法种植；triggerFilter 升级 BiPredicate<trigger,target> 组合过滤，种子数不足
+  不拦截原版交换，canPlantWith 双端共用）+ **湿润传播原版化**（水源相邻活耕地
+  =3 级沿相邻活耕地逐跳 -1，≥1 即湿润 f=3.0——一个水源湿润 4 直接相邻+间接
+  扩散 2 层，参考活红石粉信号传播 BFS 形态；computeMoisture 每 tick 从 fluidData
+  现算派生态；水桶源槽位也算相邻）。技术文档 v1.2 同步
+- 🎚️ 优化（活耕地，第四轮定稿：生长/产出节拍重设计）——**输出不限速**（待输出冻结后
+  每 tick 推进进生长槽，不再 10 秒一项；生长槽被占只阻塞输出不影响生长，BLOCKED
+  age 归零语义删除）+ **概率驱动获取**（成熟不着急滚战利品表，概率 tick 成功才冻结）
+  + **留种**（冻结时 cropSeed 产出项数量 -1 变相自动补种，小麦种子 2→1）+
+  **浆果丛采后回退 age=1**（查证原版 SweetBerryBushBlock：右键采摘后重置 1 保留
+  2/3 进度，产出由概率 tick 模拟自动采摘；isBerryModeCrop → getHarvestResetAge）+
+  **骨粉双语义**（未成熟 +2~5 到 maxAge 即时冻结；已成熟直接触发产出=确保冻结，
+  输出下 tick 送达；组件无变化不消耗骨粉）。配套：耕地槽叠加改**种子物品图标**
+  （renderItem 原版种子纹理，类型一眼区分）+ **湿润图标**（LIVING_FARMLAND_MOIST
+  布尔组件每 tick 检测翻转写入+主动同步，图标 moist/dry 双变体切原版
+  farmland_moist 深色纹理，零新 PNG；进 ignored 组件湿润/干燥可堆叠——燃烧标志
+  同款先例）。状态机/参数表/验证清单全量重写 living-farmland-tech.md v1.1
+- 🎚️ 优化（活耕地，第三轮实测反馈）：**裸通配条目吞掉原版右键操作**——plant_crop
+  的 trigger=null 让客户端拦截活耕地的**所有**右键（空手分堆/拿起/放置全被吞，
+  handler 静默返回时原版点击已取消）；对照活TNT（精确触发器 FLINT_AND_STEEL）
+  从无此问题。修复：`InteractionEntry` 新增 **triggerFilter 谓词**
+  （`Predicate<ItemStack>`），plant_crop 挂 `CropClassifier::isSeedPlantableOnFarmland`
+  ——拦截面从「任意光标」收窄到「可种植种子」，其余光标不匹配不发包，原版操作照常；
+  服务端 handler 校验保留为双重防线。规则收编 gui-interaction-system.md §5.1：
+  特定物品交互→精确触发器；「一类物品」交互→triggerFilter；真·任意光标自交互
+  （按钮/拉杆）才留裸通配。踩坑记录 living-farmland-tech.md §11.7
+- 🐛 修复（活耕地，同轮）：**取消活化残留 farmland_plant 组件**——clearLivingData
+  是取消活化的统一清理点（javadoc 明确要求新功能补 remove），实现时漏了 FARMLAND_PLANT
+  → 取消活化 tooltip 仍显示旧作物、再活化旧状态复活。已补
+  `stack.remove(FARMLAND_PLANT.value())`（§11.8）
+- ✅ 新增：**活耕地**（设计 idea.md → 技术文档 living-farmland-tech.md v1.0，全量实现 + 三轮实测修复）——
   获取（活锄头耕活泥土，6 锄头变种规则）/ 种植（活种子右键，**种子不消耗**=类型标记，
   数量与堆叠数解耦）/ 骨粉催熟（+2~5，Mth.nextInt 双闭=原版公式）/ 生长（世界轴
   时间戳节拍 200t，湿润左/右/下活水流 f=3.0 vs 干燥 f=1.0，稳态零组件写入）/

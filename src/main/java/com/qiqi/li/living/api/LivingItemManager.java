@@ -170,6 +170,19 @@ public class LivingItemManager {
                             .networkSynchronized(FarmlandPlantComponent.STREAM_CODEC)
                             .build());
 
+    /**
+     * 活耕地湿润标志（图标 moist/dry 变体切换数据源）。
+     * tick 在湿润状态翻转时写标志 + syncSlotToClients（稳态零写入零同步）；
+     * 进 {@link LivingItemFunction#getIgnoredComponentTypes}（湿润/干燥耕地可堆叠），
+     * 参考熔炉燃烧标志 LIVING_FURNACE_BURNING 先例。
+     */
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<Boolean>> LIVING_FARMLAND_MOIST =
+            DATA_COMPONENT_TYPES.register("living_farmland_moist", () ->
+                    DataComponentType.<Boolean>builder()
+                            .persistent(Codec.BOOL)
+                            .networkSynchronized(ByteBufCodecs.BOOL)
+                            .build());
+
     public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingRedstoneLampData>> LIVING_REDSTONE_LAMP_DATA =
             DATA_COMPONENT_TYPES.register("living_redstone_lamp_data", () ->
                     DataComponentType.<LivingRedstoneLampData>builder()
@@ -328,6 +341,8 @@ public class LivingItemManager {
         stack.remove(LIVING_WAXED_CHISELED_DATA.value());
         stack.remove(LIVING_GENERATOR_DATA.value());
         stack.remove(LIVING_WAXED_BULB_DATA.value());
+        stack.remove(FARMLAND_PLANT.value());
+        stack.remove(LIVING_FARMLAND_MOIST.value());
     }
 
     public static void setLiving(ItemStack stack, boolean living) {
@@ -512,6 +527,15 @@ public class LivingItemManager {
 
     public static void setFarmlandPlant(ItemStack stack, FarmlandPlantComponent data) {
         setData(stack, FARMLAND_PLANT.value(), data, FarmlandPlantComponent.DEFAULT);
+    }
+
+    /** 活耕地湿润标志（未打标志 = 干燥；图标 moist/dry 变体切换数据源） */
+    public static boolean isFarmlandMoist(ItemStack stack) {
+        return getData(stack, LIVING_FARMLAND_MOIST.value(), Boolean.FALSE);
+    }
+
+    public static void setFarmlandMoist(ItemStack stack, boolean moist) {
+        setData(stack, LIVING_FARMLAND_MOIST.value(), moist, Boolean.FALSE);
     }
 
     public static LivingRedstoneLampData getLampData(ItemStack stack) {

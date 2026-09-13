@@ -182,6 +182,65 @@ inner.applyTransform(context, poseStack, ...);     // 3. JSON display 变换
 
 ---
 
+## 槽位叠加层渲染层级（z 层与深度测试窗口）
+
+容器 GUI 里给物品图标叠加自定义内容（装饰器/覆盖层）时，必须分清**两个渲染窗口**
+与各自的层级语义——活耕地种子图标曾在三个 z 值上表现出三种结果，根因即此
+（2026-09-13，详见 living-farmland-tech.md §8.2/§11.7）。
+
+### 两个窗口
+
+| 窗口 | 深度测试 | 内容 | 时机 |
+|------|---------|------|------|
+| **槽位渲染窗口** | **关闭**（纯绘制顺序，恒可见） | 槽位背景 → 物品模型（名义 z=150）→ IItemDecorator（NeoForge 在 renderItemDecorations 末尾调用，`resetRenderState` 会**重开深度测试**）→ 堆叠数文字（名义 z=200，pose translate）→ 耐久条/冷却覆盖（guiOverlay） | `AbstractContainerScreen.renderSlot` 循环内 |
+| **render TAIL** | **开启**（与世界深度缓冲竞争） | 各类 @TAIL 注入（活水流、活耕地作物贴图、扩展地图等） | render 方法末尾 |
+
+### 名义层级表（GuiGraphics pose z）
+
+| z | 内容 |
+|---|------|
+| 0 | 槽位背景 / 装饰器默认层（`ItemDecoratorHandler.render` 后装饰器自管状态） |
+| 100 | 活水流着色（LivingHopperDecorator 自抬 200 画箭头） |
+| 150 | 物品模型（`renderItem` 固定 translate z=150，flat 模型 `isGui3d=false` 无 guiOffset） |
+| 200 | 堆叠数文字（`renderItemDecorations` 内 pose translate z=200） |
+| 300 | 扩展地图底图（「需高于物品 150 与堆叠数 200」——map 渲染经验值） |
+| 400 | tooltip |
+
+### TAIL 阶段的深度陷阱（种子图标事件复盘）
+
+TAIL 注入时原版已重开深度测试，绘制要**与世界深度缓冲竞争**——玩家正盯着箱子看时，
+箱面离相机很近、深度值很小，名义 z=150/175 的 TAIL 绘制深度判定**输给箱面 → 被吞**；
+z=300 才赢过近处箱面 → 可见。这就是「同一段叠加代码在 z=150/175 不显示、z=300 显示」
+的完整解释（与世界深度竞争，而非与槽位内物品竞争——物品在槽位窗口内画的，从不写深度）。
+
+**TAIL 叠加层的正确姿势**（活耕地种子图标定案）：
+
+```java
+RenderSystem.enableBlend();
+RenderSystem.defaultBlendFunc();
+RenderSystem.disableDepthTest();      // 回到槽位窗口同款语义，不与世界深度竞争
+guiGraphics.blit(x, y, 175, 16, 16, sprite);   // 立即模式（drawWithShader 同步 flush）
+RenderSystem.enableDepthTest();
+RenderSystem.disableBlend();
+```
+
+要点：
+- **立即模式 blit**（innerBlit → drawWithShader 同步 flush，状态在绘制时确定），
+  不要用 `renderItem`（BufferSource 缓冲绘制，flush 时机/状态与 TAIL 不确定）；
+  物品图标纹理取物品模型粒子图标（`getItemRenderer().getModel(stack).getParticleIcon()`
+  = item/generated 的 layer0），见 `CropTextureResolver.getItemSprite`
+- `disableDepthTest` 临时窗口 + nominal z 保留层级语义（175 = 高于物品 150、
+  低于堆叠数 200）；z=300 会盖住堆叠数数字（map 底图不在乎，叠加层在乎）
+- blend 保纹理透明像素（水桶渲染同款先例）；装饰器场景 NeoForge 已代管状态
+  （`resetRenderState`/`restoreGlState`），自抬 z 即可（LivingHopperDecorator 先例）
+
+### 交叉引用
+
+- 活耕地双槽渲染实操：[living-farmland-tech.md §8.2](../tech/living-farmland-tech.md)
+- 深度测试窗口的另一个坑（按下拦截/释放阶段）：[gui-click-interception.md](../guides/gui-click-interception.md)
+
+---
+
 ## 关键文件
 
 | 文件 | 职责 |

@@ -189,9 +189,12 @@ public final class LivingIconRegistry {
             .addVariant("base", "item/redstone_block", stack -> true)
             .build());
 
-        // 活耕地：复用原版耕地顶面纹理（无自定义 PNG，纹理文件由模型引用原版资源）
+        // 活耕地：复用原版耕地顶面纹理（干/湿两态——湿润变体引用原版 farmland_moist，
+        // 零新 PNG；湿标志由 tick 翻转写入 LIVING_FARMLAND_MOIST 组件）
         register(LivingIconSpec.builder(net.minecraft.world.item.Items.FARMLAND)
-            .addVariant("base", "item/farmland_living", stack -> true)
+            .addVariant("moist", "item/farmland_living_moist",
+                stack -> com.qiqi.li.living.api.LivingItemManager.isFarmlandMoist(stack))
+            .addVariant("dry", "item/farmland_living", stack -> true)
             .build());
 
         registerCopperIcons();

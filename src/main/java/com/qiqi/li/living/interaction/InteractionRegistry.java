@@ -83,13 +83,21 @@ public class InteractionRegistry {
             if (!LivingItemManager.isLivingItem(target)) continue;
             if (!entry.matchesTrigger(trigger)) continue;
             if (entry.triggerItem() == null) {
-                if (wildcard == null) wildcard = entry;   // 通配条目记住首个，让位于精确条目
+                if (wildcard == null && passesFilter(entry, trigger, target)) {
+                    wildcard = entry;   // 通配条目记住首个，让位于精确条目
+                }
                 continue;
             }
             if (!LivingItemManager.isLivingItem(trigger)) continue;
+            if (!passesFilter(entry, trigger, target)) continue;
             return entry;   // 精确条目立即返回
         }
         return wildcard;
+    }
+
+    /** 组合级过滤（triggerFilter：trigger, target）——数量/状态类门槛在匹配阶段即拒绝 */
+    private static boolean passesFilter(InteractionEntry entry, ItemStack trigger, ItemStack target) {
+        return entry.triggerFilter() == null || entry.triggerFilter().test(trigger, target);
     }
 
     /**

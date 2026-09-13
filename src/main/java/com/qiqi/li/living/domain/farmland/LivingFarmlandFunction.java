@@ -1,9 +1,12 @@
 package com.qiqi.li.living.domain.farmland;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.function.Consumer;
 import javax.annotation.Nullable;
 import net.minecraft.ChatFormatting;
+import net.minecraft.core.component.DataComponentType;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.item.Item;
@@ -23,17 +26,23 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * 活耕地功能 —— 容器内自动种植生长 + round-robin 逐项产出（docs/idea.md 活耕地设计）。
+ * 活耕地功能 —— 容器内自动种植生长 + round-robin 逐项产出。
  *
- * <p>生长节拍：世界轴时间戳（level.getGameTime()），每 {@link #GROWTH_INTERVAL_TICKS}
- * 一次生长/产出尝试。稳态（未到冷却周期）零组件写入零同步。</p>
- *
- * <p>湿润：左/右/下邻居槽位存在活水流（TickContext.fluidData）→ f=3.0，否则 f=1.0。
- * 概率判定与原版随机刻同公式 nextInt(25/f + 1) == 0。</p>
- *
- * <p>产出：成熟时评估战利品表冻结进 pendingDrops（每轮一次掷骰），
- * 每冷却周期产出一项到生长槽（E_UP 邻居），产出成功同 tick 推进 outputIndex；
- * 浆果模式（甜浆果/茎作物）产完保留成熟、下轮重新评估；标准模式回到 age=0。</p>
+ * <p><b>节拍模型</b>（2026-09-13 第四轮定稿）：
+ * <ul>
+ *   <li><b>输出不限速</b>：成熟后有冻结的待输出内容就每 tick 往生长槽推，
+ *       放得下就出——不再 10 秒一项；生长槽被占时生长照常、战利品在队列里等位</li>
+ *   <li><b>概率驱动产出</b>：成熟且待输出为空时，走带概率的生长 tick
+ *       （湿润 1/9 / 干燥 1/26），判定成功才评估战利品表——成熟不着急获取</li>
+ *   <li><b>留种</b>：冻结时与 cropSeed 相同的产出项数量 -1（最多到 0），
+ *       变相自动补种——种子不再全额掉落</li>
+ *   <li><b>采后回退</b>：浆果丛对齐原版采摘语义（回 age=1，保留 2/3 进度），
+ *       其余作物回 age=0 重新长</li>
+ *   <li><b>生长节拍</b>：世界轴时间戳（level.getGameTime()），稳态零组件写入零同步；
+ *       生长槽被占不影响生长（BLOCKED 语义已精简删除）</li>
+ *   <li><b>湿润标志</b>：每 tick 检测（含未种植耕地），翻转才写
+ *       LIVING_FARMLAND_MOIST + 主动同步——图标 moist/dry 变体切换数据源</li>
+ * </ul></p>
  */
 public class LivingFarmlandFunction implements LivingItemFunction {
 
@@ -41,8 +50,11 @@ public class LivingFarmlandFunction implements LivingItemFunction {
 
     public static final String ID = "living_farmland";
 
-    /** 生长/产出冷却周期（200 ticks ≈ 10 秒），模拟原版随机刻节奏 */
+    /** 概率生长 tick 周期（200 ticks ≈ 10 秒），模拟原版随机刻节奏 */
     public static final int GROWTH_INTERVAL_TICKS = 200;
+
+    /** 湿润传播源等级（与水流相邻的活耕地）：4→3→2→1 逐跳衰减，对齐原版 4 格湿润半径 */
+    public static final int MAX_MOISTURE_LEVEL = 4;
 
     @Override
     public boolean canApply(ItemStack stack) {
@@ -55,6 +67,15 @@ public class LivingFarmlandFunction implements LivingItemFunction {
         return ID;
     }
 
+    /**
+     * 湿润/干燥耕地可堆叠（湿润标志是展示性状态，不影响功能语义）——
+     * 燃烧标志 LIVING_FURNACE_BURNING 同款处理。
+     */
+    @Override
+    public Set<DataComponentType<?>> getIgnoredComponentTypes() {
+        return Set.of(LivingItemManager.LIVING_FARMLAND_MOIST.value());
+    }
+
     @Override
     public void tick(List<SlotEntry> entries, ContainerContext context, TickContext tick, Level level) {
         if (!(level instanceof ServerLevel serverLevel)) return;
@@ -62,13 +83,76 @@ public class LivingFarmlandFunction implements LivingItemFunction {
         int width = context.getWidth();
         long now = level.getGameTime();
 
+        // 湿润传播（原版式）：水源相邻=3 级，沿相邻活耕地每跳 -1（3→2→1，≥1 即湿润）
+        int[] moisture = computeMoisture(context, tick, size, width, entries);
+
         for (SlotEntry entry : entries) {
-            processFarmland(entry.slotIndex(), entry.stack(), context, tick, serverLevel, size, width, now);
+            processFarmland(entry.slotIndex(), entry.stack(), context, tick, serverLevel,
+                size, width, now, moisture[entry.slotIndex()]);
         }
     }
 
+    /**
+     * 湿润传播（2026-09-13 第五轮定稿，原版式水分扩散）：
+     * 与水流相邻（4 向，含水桶源槽位自身）的活耕地 = <b>3 级</b>，湿润沿相邻的
+     * 活耕地传播、每跳 -1（3→2→1），level ≥ 1 即湿润——一个水源可湿润 4 个直接
+     * 相邻耕地 + 间接扩散，大大节省容器槽位占用。参考活红石粉信号传播的 BFS 形态。
+     *
+     * <p>派生态：每 tick 从 fluidData 现算（fluidData 由活水桶 prio 0 容器级数据
+     * 先行算好），无需跨 tick 存储。只有活耕地是传播介质（普通物品/空槽不传）。</p>
+     */
+    private int[] computeMoisture(ContainerContext ctx, TickContext tick, int size, int width,
+                                  List<SlotEntry> entries) {
+        int[] levels = new int[size];
+        if (tick.fluidData == null || tick.fluidData.isEmpty()) return levels;
+        var flows = tick.fluidData.getFlows();
+
+        java.util.Deque<Integer> queue = new java.util.ArrayDeque<>();
+        // 源：与水流相邻的活耕地 = 3 级
+        for (SlotEntry e : entries) {
+            int slot = e.slotIndex();
+            for (int dir : DIRS) {
+                int neighbor = ContainerContext.resolveNeighbor(slot, dir, size, width);
+                if (neighbor >= 0 && flows.containsKey(neighbor)) {
+                    if (levels[slot] < MAX_MOISTURE_LEVEL) {
+                        levels[slot] = MAX_MOISTURE_LEVEL;
+                        queue.add(slot);
+                    }
+                    break;
+                }
+            }
+        }
+        // BFS：湿润沿相邻活耕地传播，每跳 -1
+        while (!queue.isEmpty()) {
+            int s = queue.poll();
+            int next = levels[s] - 1;
+            if (next <= 0) continue;
+            for (int dir : DIRS) {
+                int neighbor = ContainerContext.resolveNeighbor(s, dir, size, width);
+                if (neighbor < 0 || levels[neighbor] >= next) continue;
+                ItemStack stack = ctx.getItem(neighbor);
+                if (!stack.is(Items.FARMLAND) || !LivingItemManager.isLivingItem(stack)) continue;
+                levels[neighbor] = next;
+                queue.add(neighbor);
+            }
+        }
+        return levels;
+    }
+
+    private static final int[] DIRS = {
+        ContainerContext.E_UP, ContainerContext.E_DOWN, ContainerContext.E_LEFT, ContainerContext.E_RIGHT
+    };
+
     private void processFarmland(int slot, ItemStack farmland, ContainerContext ctx, TickContext tick,
-                                 ServerLevel level, int size, int width, long now) {
+                                 ServerLevel level, int size, int width, long now, int moistureLevel) {
+        // 【湿润标志】level ≥ 1 即湿润，翻转才写 + 主动同步（ignored 组件需手动推）。
+        // 未种植耕地也更新——湿润是耕地属性与种植无关。
+        boolean moist = moistureLevel >= 1;
+        if (LivingItemManager.isFarmlandMoist(farmland) != moist) {
+            LivingItemManager.setFarmlandMoist(farmland, moist);
+            ctx.syncSlotToClients(slot, farmland);
+        }
+
         FarmlandPlantComponent plant = LivingItemManager.getFarmlandPlant(farmland);
         if (!plant.isPlanted()) return;
 
@@ -77,113 +161,78 @@ public class LivingFarmlandFunction implements LivingItemFunction {
         if (cropBlock == null) return;
 
         int growthSlot = ContainerContext.resolveNeighbor(slot, ContainerContext.E_UP, size, width);
-
         boolean isMature = plant.isMature();
-        // 规则②：BLOCKED 仅当「生长槽存在且被物品占用」（防把生长槽当储存格）。
-        // 顶行/边缘耕地（growthSlot<0）正常生长，成熟后产出在 tryOutputLoot 的
-        // growthSlot<0 守卫处挂起——旧实现把「无生长槽」误判为永久 BLOCKED
-        // 导致顶行 age 恒 0 永不生长（2026-09-13 游戏实测踩坑）。
-        // 成熟期产出物占据生长槽是系统行为，不触发（规则⑥）。
-        boolean slotBlocked = growthSlot >= 0 && !ctx.getItem(growthSlot).isEmpty();
 
-        if (!isMature && slotBlocked) {
-            if (plant.age() != 0) {
-                updatePlant(ctx, slot, farmland, plant.withAge(0));
-            }
-            return;
+        // 【输出阶段】不限速：有冻结的待输出内容就每 tick 往生长槽推（放得下就出）。
+        // 生长槽被占（玩家物品/未取走的产出）→ 放不进自然等待，生长不受影响。
+        // 顶行耕地（growthSlot<0）无生长槽 → 输出挂起（搬到有生长槽的位置自动续）。
+        if (isMature && growthSlot >= 0 && !plant.pendingDrops().isEmpty()) {
+            FarmlandPlantComponent updated = tryOutputOnce(ctx, growthSlot, farmland, plant, cropBlock);
+            updatePlant(ctx, slot, farmland, updated);
+            plant = updated;
         }
-        // BLOCKED → 槽变空后此分支不再命中，age 从 0 自然继续生长（规则③）
 
-        // 冷却周期未到期 → 零写入直接返回（稳态）
+        // 【概率生长 tick】冷却门（200t 世界轴）——未到期零写入直接返回（稳态）
         if (now - plant.lastGrowthAttemptTick() < GROWTH_INTERVAL_TICKS) return;
         plant = plant.withLastGrowthAttemptTick(now);
 
-        if (isMature) {
-            plant = tryOutputLoot(ctx, level, slot, growthSlot, farmland, plant, cropBlock);
-        } else {
-            plant = tryGrow(ctx, tick, level, slot, plant, size, width);
+        // 概率判定：湿润传播等级 ≥1（含水源相邻的 4 级）→ f=3.0，否则 1.0
+        float f = moistureLevel >= 1 ? 3.0F : 1.0F;
+        if (level.random.nextInt((int) (25.0F / f) + 1) == 0) {
+            plant = forceGrowthTick(plant, cropBlock, level);
         }
 
-        // 挂起态（顶行成熟）等场景下组件可能未变——equals 守卫防无意义写入+同步
+        // equals 守卫：概率失败等场景组件未变，不写不同步
         updatePlant(ctx, slot, farmland, plant);
     }
 
-    /** GROWING：湿润概率判定，成功涨一级 */
-    private FarmlandPlantComponent tryGrow(ContainerContext ctx, TickContext tick, ServerLevel level, int slot,
-                                          FarmlandPlantComponent plant, int size, int width) {
-        float f = isWet(ctx, tick, slot, size, width) ? 3.0F : 1.0F;
-        if (level.random.nextInt((int) (25.0F / f) + 1) == 0) {
-            return plant.withAge(Math.min(plant.age() + 1, plant.maxAge()));
-        }
-        return plant;
-    }
-
     /**
-     * MATURE：冻结/产出/推进/重置。
-     * <p>茎作物产出来源是果实方块的战利品表（stem.fruit，AT 读取），非茎作物用自身。</p>
+     * 输出一轮：把 pendingDrops[outputIndex] 放进生长槽（空放/同种合并），
+     * 成功则推进索引；全部产完按作物回退点重置（浆果丛 age=1 / 其余 age=0）。
+     * 放不下（不同种占据/同种已满）原样返回，下个 tick 重试——输出不限速。
      */
-    private FarmlandPlantComponent tryOutputLoot(ContainerContext ctx, ServerLevel level, int slot,
-                                                 int growthSlot, ItemStack farmland,
+    private FarmlandPlantComponent tryOutputOnce(ContainerContext ctx, int growthSlot, ItemStack farmland,
                                                  FarmlandPlantComponent plant, Block cropBlock) {
-        // Step 0：首次成熟 → 评估完整战利品表并冻结（骨粉催熟即时冻结也走这里）
-        FarmlandPlantComponent frozen = tryFreezeDrops(plant, cropBlock, level);
-        if (frozen != plant) {
-            // 空战利品表场景冻结助手内部直接按模式重置；正常场景返回冻结后的组件
-            return frozen;
-        }
-
-        // Step 1：产出当前项到生长槽
-        if (growthSlot < 0) {
-            // 顶行/边缘耕地无生长槽：保留成熟态+冻结的 pendingDrops 挂起，
-            // 搬到有生长槽的位置后下一个冷却周期自动开始产出
-            return plant;
-        }
-
         int i = plant.outputIndex();
         List<ItemStack> drops = plant.pendingDrops();
         if (i < 0 || i >= drops.size()) {
-            // 索引越界（数据异常）→ 按模式重置自愈
-            return resetByMode(plant.withOutput(-1, List.of()), cropBlock);
+            // 索引越界（数据异常）→ 清空待输出，靠概率阶段重新评估自愈
+            return plant.withOutput(-1, List.of());
         }
 
         ItemStack drop = drops.get(i);
         if (drop.isEmpty()) {
-            // 空产出项 → 跳过推进到下一项
-            plant = plant.withOutput(i + 1, drops);
-            return finishIfDone(plant, cropBlock);
+            // 空产出项（留种减到 0）→ 跳过推进到下一项
+            return finishIfDone(plant.withOutput(i + 1, drops), cropBlock);
         }
 
-        int farmlandCount = farmland.getCount();
-        int outputCount = Math.min(farmlandCount * drop.getCount(), drop.getMaxStackSize());
+        int outputCount = Math.min(farmland.getCount() * drop.getCount(), drop.getMaxStackSize());
         if (outputCount <= 0) return plant;
 
-        ItemStack output = drop.copyWithCount(outputCount);
         ItemStack grown = ctx.getItem(growthSlot);
-
         boolean placed = false;
         if (grown.isEmpty()) {
-            ctx.setItem(growthSlot, output);
+            ctx.setItem(growthSlot, drop.copyWithCount(outputCount));
             placed = true;
-        } else if (ItemStack.isSameItemSameComponents(grown, output)) {
+        } else if (ItemStack.isSameItemSameComponents(grown, drop)) {
             int space = grown.getMaxStackSize() - grown.getCount();
             if (space > 0) {
                 int toAdd = Math.min(outputCount, space);
-                ItemStack merged = grown.copyWithCount(grown.getCount() + toAdd);
-                ctx.setItem(growthSlot, merged);
+                ctx.setItem(growthSlot, grown.copyWithCount(grown.getCount() + toAdd));
                 placed = true;
             }
         }
 
-        if (!placed) return plant;   // 不同种占据/同种已满 → 本轮跳过，保留索引等下周期重试
+        if (!placed) return plant;   // 不同种占据/同种已满 → 下个 tick 重试
 
-        // Step 2：产出成功 → 同 tick 推进；全部产完 → 按模式重置
-        plant = plant.withOutput(i + 1, drops);
-        return finishIfDone(plant, cropBlock);
+        return finishIfDone(plant.withOutput(i + 1, drops), cropBlock);
     }
 
     private FarmlandPlantComponent finishIfDone(FarmlandPlantComponent plant, Block cropBlock) {
         if (plant.outputIndex() >= plant.pendingDrops().size()) {
-            return resetByMode(plant.withOutput(-1, List.of()), cropBlock);
+            // 采后回退：浆果丛对齐原版采摘语义（回 age=1，保留 2/3 进度）；其余回 0 重新长
+            return plant.withAge(CropClassifier.getHarvestResetAge(cropBlock))
+                        .withOutput(-1, List.of());
         }
         return plant;
     }
@@ -191,52 +240,70 @@ public class LivingFarmlandFunction implements LivingItemFunction {
     /**
      * 首次成熟的战利品表评估冻结（round-robin 数据源，每轮一次掷骰）。
      *
-     * <p>公开静态：骨粉催熟到 maxAge 时在交互线程内即时调用，不等下一个冷却周期
-     * （否则玩家催熟后要空转 ≤10 秒才见产出）。茎作物产出来源是果实方块
+     * <p>公开静态：骨粉催熟到 maxAge / 直接触发产出时在交互线程内即时调用——
+     * 冻结后输出阶段（每 tick）自动把物品送进生长槽。茎作物产出来源是果实方块
      * （stem.fruit，AT 读取），非茎作物用自身。</p>
      *
-     * @return 冻结后的组件；已冻结（非首次）返回原实例；产出来源不可解析也返回原实例
-     *         （下个冷却周期重试）；战利品表为空时直接按模式重置的组件。
+     * <p><b>留种</b>：与 cropSeed 相同的产出项数量 -1（最多到 0）——变相自动补种，
+     * 种子不再全额掉落（如小麦种子 2 → 1）。</p>
+     *
+     * @return 冻结后的组件；已有待输出（非首次）返回原实例；产出来源不可解析也返回原实例
+     *         （下个概率周期重试）；留种后全空等极端情况按回退点重置的组件。
      */
     public static FarmlandPlantComponent tryFreezeDrops(FarmlandPlantComponent plant, Block cropBlock,
                                                         ServerLevel level) {
-        if (FarmlandPlantComponent.hasPendingOutput(plant)) return plant;   // 已冻结
+        if (!plant.pendingDrops().isEmpty()) return plant;   // 已有待输出
 
-        Block dropBlock = cropBlock instanceof StemBlock stem
-            ? CropClassifier.getStemFruit(stem)
-            : cropBlock;
-        if (dropBlock == null) {
-            LOGGER.warn("活耕地产出失败：作物 {} 的产出来源方块不可解析，跳过本轮",
-                BuiltInRegistriesBlockKey(cropBlock));
-            return plant;
+        List<ItemStack> drops;
+        if (cropBlock instanceof StemBlock stem) {
+            // 茎作物：产出果实方块物品本身（南瓜块/西瓜块）×耕地堆叠数——
+            // 不滚果实战利品表（2026-09-13 定稿）。西瓜战利品表是 alternatives 结构，
+            // 瓜块分支带 match_tool 精准采集条件、空工具恒不命中 → 只出 3~7 西瓜片；
+            // 南瓜战利品表虽本就掉南瓜块，统一直取果块保证两条茎作物行为一致。
+            Block fruit = CropClassifier.getStemFruit(stem);
+            if (fruit == null) {
+                LOGGER.warn("活耕地产出失败：作物 {} 的果实体不可解析，跳过本轮",
+                    BuiltInRegistriesBlockKey(cropBlock));
+                return plant;
+            }
+            drops = List.of(new ItemStack(fruit.asItem()));
+        } else {
+            BlockState matureState = matureStateFor(cropBlock);
+            if (matureState == null) {
+                LOGGER.warn("活耕地产出失败：作物 {} 无法构造成熟态 BlockState", BuiltInRegistriesBlockKey(cropBlock));
+                return plant;
+            }
+            // 公开静态重载内部自动补齐 BLOCK_STATE/ORIGIN/TOOL 必填参数并走 BLOCK 参数集验证
+            drops = Block.getDrops(matureState, level, net.minecraft.core.BlockPos.ZERO, null);
         }
-        BlockState matureState = matureStateFor(dropBlock);
-        if (matureState == null) {
-            LOGGER.warn("活耕地产出失败：作物 {} 无法构造成熟态 BlockState", BuiltInRegistriesBlockKey(cropBlock));
-            return plant;
+
+        // 留种：与 cropSeed 相同的产出项数量 -1（最多到 0）——变相自动补种
+        Item seed = plant.cropSeed();
+        List<ItemStack> adjusted = new ArrayList<>(drops.size());
+        boolean anyLeft = false;
+        for (ItemStack d : drops) {
+            if (!d.isEmpty() && d.getItem() == seed) {
+                d = d.copyWithCount(Math.max(0, d.getCount() - 1));
+            }
+            if (!d.isEmpty()) anyLeft = true;
+            adjusted.add(d);
         }
-        // 公开静态重载内部自动补齐 BLOCK_STATE/ORIGIN/TOOL 必填参数并走 BLOCK 参数集验证
-        List<ItemStack> drops = Block.getDrops(matureState, level, net.minecraft.core.BlockPos.ZERO, null);
-        if (drops.isEmpty()) {
-            LOGGER.debug("活耕地战利品表为空（作物 {}），直接按模式重置", BuiltInRegistriesBlockKey(cropBlock));
-            if (CropClassifier.isBerryModeCrop(cropBlock)) return plant;   // 浆果：保留成熟等下轮
-            return plant.withAge(0).withOutput(-1, List.of());              // 标准：回 GROWING
+        if (!anyLeft) {
+            // 留种后全空（极端：种子是唯一产出且只掉 1）→ 按回退点重置
+            LOGGER.debug("活耕地战利品表留种后为空（作物 {}），按回退点重置", BuiltInRegistriesBlockKey(cropBlock));
+            return plant.withAge(CropClassifier.getHarvestResetAge(cropBlock))
+                        .withOutput(-1, List.of());
         }
-        return plant.withOutput(0, drops);
+        return plant.withOutput(0, adjusted);
     }
 
-    /** 产完重置：标准模式回 GROWING；浆果模式保留 MATURE（下轮重新评估战利品表） */
-    private FarmlandPlantComponent resetByMode(FarmlandPlantComponent plant, Block cropBlock) {
-        if (CropClassifier.isBerryModeCrop(cropBlock)) {
-            return plant;   // 保留 age = maxAge
-        }
-        return plant.withAge(0);
-    }
-
-    /** 构造成熟态 BlockState（age = maxAge），值域越界返回 null */
+    /** 构造成熟态 BlockState（age = maxAge）。无 age 属性的方块（南瓜/西瓜果实块——
+     * 茎作物的产出来源）默认态即成熟态，直接返回；值域越界返回 null。
+     * 旧实现对无 age 属性返回 null → 茎作物战利品表永远冻结失败、成熟无产物
+     * （2026-09-13 实测踩坑）。 */
     private static BlockState matureStateFor(Block block) {
         IntegerProperty ageProp = agePropertyOf(block);
-        if (ageProp == null) return null;
+        if (ageProp == null) return block.defaultBlockState();
         int maxAge = CropClassifier.getMaxAge(block);
         if (!ageProp.getPossibleValues().contains(maxAge)) return null;
         return block.defaultBlockState().setValue(ageProp, maxAge);
@@ -257,20 +324,24 @@ public class LivingFarmlandFunction implements LivingItemFunction {
         return null;
     }
 
-    /** 湿润检测：左/右/下邻居槽位有活水流（TickContext.fluidData 由容器级数据先行算好） */
-    private boolean isWet(ContainerContext ctx, TickContext tick, int slot, int size, int width) {
-        if (tick.fluidData == null || tick.fluidData.isEmpty()) return false;
-        for (int dir : new int[]{ContainerContext.E_LEFT, ContainerContext.E_RIGHT, ContainerContext.E_DOWN}) {
-            int neighbor = ContainerContext.resolveNeighbor(slot, dir, size, width);
-            if (neighbor >= 0 && tick.fluidData.getFlows().containsKey(neighbor)) {
-                return true;
-            }
+    /**
+     * 生长 tick 判定体（必定成功）：未成熟 → age+1；成熟且待输出为空 →
+     * 冻结实³战利品表。公开静态——容器 tick 的概率门成功后与骨粉（强制触发
+     * 一次生长 tick）共用同一段逻辑：作物一切行为由生长 tick 决定。
+     */
+    public static FarmlandPlantComponent forceGrowthTick(FarmlandPlantComponent plant, Block cropBlock,
+                                                         ServerLevel level) {
+        if (!plant.isMature()) {
+            return plant.withAge(Math.min(plant.age() + 1, plant.maxAge()));
         }
-        return false;
+        if (plant.pendingDrops().isEmpty()) {
+            return tryFreezeDrops(plant, cropBlock, level);
+        }
+        return plant;
     }
 
     private void updatePlant(ContainerContext ctx, int slot, ItemStack stack, FarmlandPlantComponent plant) {
-        // equals 守卫：挂起态（顶行成熟）等场景组件可能未变，不写不同步
+        // equals 守卫：概率失败/输出放不下等场景组件未变，不写不同步
         if (LivingItemManager.getFarmlandPlant(stack).equals(plant)) return;
         LivingItemManager.setFarmlandPlant(stack, plant);
         ctx.syncSlotToClients(slot, stack);

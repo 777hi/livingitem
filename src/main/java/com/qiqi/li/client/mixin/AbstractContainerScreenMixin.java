@@ -711,31 +711,54 @@ public class AbstractContainerScreenMixin extends Screen {
 
             TextureAtlasSprite sprite = com.qiqi.li.client.render.CropTextureResolver
                 .getCropSprite(cropBlock, plant.age());
-            if (sprite == null) continue;
+            int tint = com.qiqi.li.client.render.CropTextureResolver
+                .getCropTint(cropBlock, plant.age());
 
-            // 双槽渲染之一：耕地槽自身叠加 16×16 作物小图（跟物品走，顶行也可见，
-            // z 在物品图标之上、堆叠数之下——blitOffset 相对深度，参考水桶渲染取值）
-            guiGraphics.blit(leftPos + slot.x, topPos + slot.y, 100, 16, 16, sprite);
+            // 双槽渲染之一：耕地槽叠加**种子物品图标**——一眼区分种植的作物类型。
+            // 立即模式 blit（同步绘制）+ 临时关闭深度测试：TAIL 阶段原版已重开深度
+            // 测试，种子会与「玩家面前的箱子表面」的世界深度竞争（z=150/175 被吞、
+            // 300 才可见的根因）——关深度回到槽位渲染窗口同款语义。nominal z=175：
+            // 高于物品模型层 150（不被覆盖）、低于堆叠数文字 200（不盖数字）。
+            // blend 保种子纹理透明像素；物品粒子图标 = item/generated 的 layer0 纹理。
+            TextureAtlasSprite seedSprite = com.qiqi.li.client.render.CropTextureResolver
+                .getItemSprite(new ItemStack(plant.cropSeed()));
+            if (seedSprite != null) {
+                RenderSystem.enableBlend();
+                RenderSystem.defaultBlendFunc();
+                RenderSystem.disableDepthTest();
+                guiGraphics.blit(leftPos + slot.x, topPos + slot.y, 175, 16, 16, seedSprite);
+                RenderSystem.enableDepthTest();
+                RenderSystem.disableBlend();
+            }
 
-            // 双槽渲染之二：上方生长槽为空时绘制作物当前阶段大图（「土下苗上」的田地感）。
+            // 双槽渲染之二：上方生长槽为空时绘制作物当前阶段贴图（「土下苗上」的田地感）。
             // 按坐标匹配（同容器 + 恰在正上方一格）而非索引算术——天然适应箱子/背包/创造
-            // 各布局；「空槽即画」自动覆盖全部状态：生长中显苗、BLOCKED 被占自动隐、
-            // 成熟产出后被真实物品覆盖、取走后显成熟形态。同容器约束防跨容器错位
-            // （箱子顶行耕地不会把苗画到玩家背包槽上）。
-            living_item$renderCropInGrowthSlot(self, guiGraphics, slot, sprite);
+            // 各布局；「空槽即画」自动覆盖全部状态：生长中显苗、成熟产出后被真实物品覆盖、
+            // 取走后显成熟形态。同容器约束防跨容器错位。
+            if (sprite != null) {
+                living_item$renderCropInGrowthSlot(self, guiGraphics, slot, sprite, tint);
+            }
         }
     }
 
     @Unique
     private void living_item$renderCropInGrowthSlot(AbstractContainerScreen<?> self, GuiGraphics guiGraphics,
-                                                    Slot farmlandSlot, TextureAtlasSprite sprite) {
+                                                    Slot farmlandSlot, TextureAtlasSprite sprite, int tint) {
         for (Slot other : self.getMenu().slots) {
             if (other == farmlandSlot) continue;
             if (other.container != farmlandSlot.container) continue;
             if (other.x != farmlandSlot.x || other.y != farmlandSlot.y - 18) continue;
             if (!other.getItem().isEmpty()) continue;   // 有物品（含成熟产出）→ 让位真实物品
 
-            guiGraphics.blit(leftPos + other.x, topPos + other.y, 100, 16, 16, sprite);
+            // 茎方块藤蔓是灰度纹理，需按 age 套原版染色（绿→橙黄）；-1 = 预着色纹理直绘
+            if (tint != -1) {
+                float r = net.minecraft.util.FastColor.ARGB32.red(tint) / 255.0F;
+                float g = net.minecraft.util.FastColor.ARGB32.green(tint) / 255.0F;
+                float b = net.minecraft.util.FastColor.ARGB32.blue(tint) / 255.0F;
+                guiGraphics.blit(leftPos + other.x, topPos + other.y, 100, 16, 16, sprite, r, g, b, 1.0F);
+            } else {
+                guiGraphics.blit(leftPos + other.x, topPos + other.y, 100, 16, 16, sprite);
+            }
             return;
         }
     }

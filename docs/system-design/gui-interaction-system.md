@@ -112,10 +112,13 @@ new InteractionEntry(Items.FLINT_AND_STEEL, Items.TNT, 1, "ignite_carried")
 plant_crop，BonemealHandler 成为死代码（游戏实测「活骨粉不能催熟」）。
 
 新增交互时的规则：**光标是特定物品的交互必须注册精确触发器**
-（`new InteractionEntry(target, 具体物品, button, actionId)`），不要在通配条目的
-handler 里靠 if/else 区分光标——通配条目只该承接「一类光标都可触发」的语义
-（如种植：任意可种植种子），分类逻辑放在 handler 内的校验（如
-`CropClassifier.isSeedPlantableOnFarmland`）。
+（`new InteractionEntry(target, 具体物品, button, actionId)`）；光标是「某一类物品」的
+交互必须提供 **triggerFilter 谓词**把拦截面收窄到该类（如种植：
+`new InteractionEntry(FARMLAND, null, 1, "plant_crop", false,
+CropClassifier::isSeedPlantableOnFarmland)`）；**只有真·任意光标自交互**（按钮按压、
+拉杆切换）才留裸通配。不要在通配 handler 里靠 if/else 区分光标——客户端拦截发生在
+原版逻辑之前，不命中时的静默返回仍吞掉了原版的拿起/放置/分堆操作
+（2026-09-13 实测反馈：活耕地空手右键分堆被拦，加 triggerFilter 后只拦种子）。
 
 回归守卫：`InteractionRegistryTest.preciseEntryBeatsWildcardEvenIfRegisteredLater`
 （故意按最坏注册顺序断言精确优先）。

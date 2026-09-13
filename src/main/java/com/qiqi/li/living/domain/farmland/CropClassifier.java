@@ -81,9 +81,13 @@ public final class CropClassifier {
         return block instanceof StemBlock;
     }
 
-    /** 浆果模式判定：成熟后持续产出（甜浆果丛 + 茎作物） */
-    public static boolean isBerryModeCrop(Block block) {
-        return block instanceof SweetBerryBushBlock || block instanceof StemBlock;
+    /**
+     * 采后回退点（产完重置到的 age）：
+     * 浆果丛对齐原版采摘语义（SweetBerryBushBlock 采后回 age=1，保留 2/3 进度，
+     * 随机刻/概率 tick 从 1 长回 3 再产）；其余作物回 0 重新长。
+     */
+    public static int getHarvestResetAge(Block block) {
+        return block instanceof SweetBerryBushBlock ? 1 : 0;
     }
 
     /**

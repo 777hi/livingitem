@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -33,6 +34,12 @@ class InteractionRegistryTest {
         new InteractionEntry(Items.FARMLAND, null, 1, "plant_crop");
     private static final InteractionEntry PRECISE_BONEMEAL =
         new InteractionEntry(Items.FARMLAND, Items.BONE_MEAL, 1, "bonemeal");
+
+    /** ENTRIES 是类级静态且跨测试累积——每测清空保证各用例独立 */
+    @BeforeEach
+    void setUp() {
+        InteractionRegistry.clearForTest();
+    }
 
     @AfterAll
     static void tearDown() {
@@ -111,5 +118,48 @@ class InteractionRegistryTest {
         ItemStack deadFarmland = new ItemStack(Items.FARMLAND);   // 未打 IS_LIVING
 
         assertNull(InteractionRegistry.findInteraction(boneMeal, deadFarmland, 1, false));
+    }
+
+    @Test
+    @DisplayName("triggerFilter 组合过滤：种子数不足的光标不拦截")
+    void triggerFilterGatesInterception() {
+        // 复刻 plant_crop 生产注册：过滤 = 种子数 ≥ 耕地堆叠数
+        InteractionRegistry.register(new InteractionEntry(Items.FARMLAND, null, 1, "plant_crop",
+            false, (trigger, target) -> PlantCropHandler.canPlantWith(trigger, target)));
+
+        ItemStack farmland = new ItemStack(Items.FARMLAND, 16);
+        LivingItemManager.setLiving(farmland, true);
+
+        ItemStack fewSeeds = new ItemStack(Items.WHEAT_SEEDS, 5);    // 5 < 16
+        LivingItemManager.setLiving(fewSeeds, true);
+        assertNull(InteractionRegistry.findInteraction(fewSeeds, farmland, 1, false),
+            "种子数不足 → 不拦截（原版交换照常）");
+
+        ItemStack enoughSeeds = new ItemStack(Items.WHEAT_SEEDS, 16);
+        LivingItemManager.setLiving(enoughSeeds, true);
+        InteractionEntry matched = InteractionRegistry.findInteraction(enoughSeeds, farmland, 1, false);
+        assertEquals("plant_crop", matched.actionId(),
+            "种子数充足 → 拦截种植");
+    }
+
+    @Test
+    @DisplayName("triggerFilter 对精确条目同样生效（数量门槛）")
+    void triggerFilterAppliesToPreciseEntries() {
+        // 精确条目 + 过滤（模拟骨粉若挂目标状态过滤的通用机制验证）
+        InteractionRegistry.register(new InteractionEntry(Items.FARMLAND, Items.BONE_MEAL, 1, "bonemeal",
+            false, (trigger, target) -> target.getCount() == 1));
+
+        ItemStack boneMeal = new ItemStack(Items.BONE_MEAL);
+        LivingItemManager.setLiving(boneMeal, true);
+
+        ItemStack single = new ItemStack(Items.FARMLAND, 1);
+        LivingItemManager.setLiving(single, true);
+        InteractionEntry matched = InteractionRegistry.findInteraction(boneMeal, single, 1, false);
+        assertEquals("bonemeal", matched.actionId());
+
+        ItemStack stack16 = new ItemStack(Items.FARMLAND, 16);
+        LivingItemManager.setLiving(stack16, true);
+        assertNull(InteractionRegistry.findInteraction(boneMeal, stack16, 1, false),
+            "过滤不命中的精确条目应被拒绝（而非静默吞点击）");
     }
 }

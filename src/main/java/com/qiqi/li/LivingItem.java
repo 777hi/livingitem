@@ -92,6 +92,7 @@ import com.qiqi.li.living.interaction.ComparatorToggleHandler;
 import com.qiqi.li.living.interaction.TillToFarmlandHandler;
 import com.qiqi.li.living.interaction.PlantCropHandler;
 import com.qiqi.li.living.interaction.BonemealHandler;
+import com.qiqi.li.living.domain.farmland.CropClassifier;
 import net.neoforged.neoforge.registries.DeferredRegister;
 import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
 import com.qiqi.li.living.domain.chest.LivingChestItemHandler;
@@ -272,11 +273,12 @@ public class LivingItem {
         }
         LOGGER.info("Registered till_to_farmland interaction rules");
 
-        // 种植：通配自交互（trigger=null，handler 内校验光标为可种植活种子）
-        // 骨粉：精确触发器（活骨粉）——与种植共用 target/button，靠 findInteraction
-        // 的「精确优先于通配」两趟匹配分流（见 InteractionRegistry.findInteraction javadoc）
+        // 种植：通配条目 + triggerFilter 收窄到「可种植种子」——只拦种子光标，
+        // 空手/其他物品右键不拦截（原版拿起/分堆操作不受影响；服务端 handler 仍双重校验）
+        // 骨粉：精确触发器（活骨粉）——两趟优先级匹配分流（见 InteractionRegistry javadoc）
         InteractionRegistry.registerHandler("plant_crop", new PlantCropHandler());
-        InteractionRegistry.register(new InteractionEntry(Items.FARMLAND, null, 1, "plant_crop"));
+        InteractionRegistry.register(new InteractionEntry(Items.FARMLAND, null, 1, "plant_crop",
+            false, PlantCropHandler::canPlantWith));
         InteractionRegistry.registerHandler("bonemeal", new BonemealHandler());
         InteractionRegistry.register(new InteractionEntry(Items.FARMLAND, Items.BONE_MEAL, 1, "bonemeal"));
         LOGGER.info("Registered farmland plant/bonemeal interaction rules");
