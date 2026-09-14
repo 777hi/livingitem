@@ -84,7 +84,7 @@ public class LivingFarmlandFunction implements LivingItemFunction {
         int width = context.getWidth();
         long now = level.getGameTime();
 
-        // 湿润传播（原版式）：水源相邻=3 级，沿相邻活耕地每跳 -1（3→2→1，≥1 即湿润）
+        // 湿润传播（原版式）：水源相邻=源 4 级，沿相邻活耕地每跳 -1（4→3→2→1，≥1 即湿润）
         int[] moisture = computeMoisture(context, tick, size, width, entries);
 
         for (SlotEntry entry : entries) {
@@ -95,8 +95,8 @@ public class LivingFarmlandFunction implements LivingItemFunction {
 
     /**
      * 湿润传播（2026-09-13 第五轮定稿，原版式水分扩散）：
-     * 与水流相邻（4 向，含水桶源槽位自身）的活耕地 = <b>3 级</b>，湿润沿相邻的
-     * 活耕地传播、每跳 -1（3→2→1），level ≥ 1 即湿润——一个水源可湿润 4 个直接
+     * 与水流相邻（4 向，含水桶源槽位自身）的活耕地 = <b>源 4 级</b>，湿润沿相邻的
+     * 活耕地传播、每跳 -1（4→3→2→1），level ≥ 1 即湿润——一个水源可湿润 4 个直接
      * 相邻耕地 + 间接扩散，大大节省容器槽位占用。参考活红石粉信号传播的 BFS 形态。
      *
      * <p>派生态：每 tick 从 fluidData 现算（fluidData 由活水桶 prio 0 容器级数据
@@ -109,7 +109,7 @@ public class LivingFarmlandFunction implements LivingItemFunction {
         var flows = tick.fluidData.getFlows();
 
         java.util.Deque<Integer> queue = new java.util.ArrayDeque<>();
-        // 源：与水流相邻的活耕地 = 3 级
+        // 源：与水流相邻的活耕地 = 源 4 级（MAX_MOISTURE_LEVEL）
         for (SlotEntry e : entries) {
             int slot = e.slotIndex();
             for (int dir : DIRS) {
@@ -161,6 +161,14 @@ public class LivingFarmlandFunction implements LivingItemFunction {
         // 种子指向的方块不可解析（模组卸载）→ 静默跳过，保留数据等待方块回归
         if (cropBlock == null) return;
 
+        // 存量 maxAge 自愈：注册表修正（如旧版兜底 7 → 真实属性上限）后，
+        // 旧组件里冻结的过期 maxAge 按当前注册表重冻结 + age 钳制，不需铲掉重种
+        int currentMaxAge = CropClassifier.getMaxAge(cropBlock);
+        if (plant.maxAge() != currentMaxAge) {
+            plant = plant.withMaxAge(currentMaxAge);
+            updatePlant(ctx, slot, farmland, plant);
+        }
+
         int growthSlot = ContainerContext.resolveNeighbor(slot, ContainerContext.E_UP, size, width);
         boolean isMature = plant.isMature();
 
@@ -190,9 +198,10 @@ public class LivingFarmlandFunction implements LivingItemFunction {
     /**
      * 输出一轮：把 pendingDrops[outputIndex] 放进生长槽（空放/同种合并），
      * 成功则推进索引；全部产完按作物回退点重置（浆果丛 age=1 / 其余 age=0）。
-     * 放不下（不同种占据/同种已满）原样返回，下个 tick 重试——输出不限速。
+     * 放不下（不同种占据/同种剩余空间不足整份）原样返回，下个 tick 重试——
+     * 输出不限速。包级可见：LivingFarmlandFunctionTest 直接驱动（不依赖 Level）。
      */
-    private FarmlandPlantComponent tryOutputOnce(ContainerContext ctx, int growthSlot, ItemStack farmland,
+    static FarmlandPlantComponent tryOutputOnce(ContainerContext ctx, int growthSlot, ItemStack farmland,
                                                  FarmlandPlantComponent plant, Block cropBlock) {
         int i = plant.outputIndex();
         List<ItemStack> drops = plant.pendingDrops();
@@ -217,9 +226,10 @@ public class LivingFarmlandFunction implements LivingItemFunction {
             placed = true;
         } else if (ItemStack.isSameItemSameComponents(grown, drop)) {
             int space = grown.getMaxStackSize() - grown.getCount();
-            if (space > 0) {
-                int toAdd = Math.min(outputCount, space);
-                ctx.setItem(growthSlot, grown.copyWithCount(grown.getCount() + toAdd));
+            // 合并仅当放得下整份产出（部分合并会静默丢弃 outputCount-toAdd 差额，
+            // 2026-09-14 终审实测修复）；放不下就本 tick 等待，与「不同种占据」同一语义
+            if (space >= outputCount) {
+                ctx.setItem(growthSlot, grown.copyWithCount(grown.getCount() + outputCount));
                 placed = true;
             }
         }
@@ -229,7 +239,7 @@ public class LivingFarmlandFunction implements LivingItemFunction {
         return finishIfDone(plant.withOutput(i + 1, drops), cropBlock);
     }
 
-    private FarmlandPlantComponent finishIfDone(FarmlandPlantComponent plant, Block cropBlock) {
+    private static FarmlandPlantComponent finishIfDone(FarmlandPlantComponent plant, Block cropBlock) {
         if (plant.outputIndex() >= plant.pendingDrops().size()) {
             // 采后回退：浆果丛对齐原版采摘语义（回 age=1，保留 2/3 进度）；其余回 0 重新长
             return plant.withAge(CropClassifier.getHarvestResetAge(cropBlock))
@@ -287,13 +297,16 @@ public class LivingFarmlandFunction implements LivingItemFunction {
             drops = Block.getDrops(matureState, level, net.minecraft.core.BlockPos.ZERO, null);
         }
 
-        // 留种：与 cropSeed 相同的产出项数量 -1（最多到 0）——变相自动补种
+        // 留种：与 cropSeed 相同的产出项数量 -1（最多到 0）——变相自动补种。
+        // 总量 -1（只扣第一个非空匹配项）：多池掉同种种子也只扣一份
         Item seed = plant.cropSeed();
         List<ItemStack> adjusted = new ArrayList<>(drops.size());
+        boolean seedDeducted = false;
         boolean anyLeft = false;
         for (ItemStack d : drops) {
-            if (!d.isEmpty() && d.getItem() == seed) {
+            if (!seedDeducted && !d.isEmpty() && d.getItem() == seed) {
                 d = d.copyWithCount(Math.max(0, d.getCount() - 1));
+                seedDeducted = true;
             }
             if (!d.isEmpty()) anyLeft = true;
             adjusted.add(d);
@@ -313,26 +326,11 @@ public class LivingFarmlandFunction implements LivingItemFunction {
      * 旧实现对无 age 属性返回 null → 茎作物战利品表永远冻结失败、成熟无产物
      * （2026-09-13 实测踩坑）。 */
     private static BlockState matureStateFor(Block block) {
-        IntegerProperty ageProp = agePropertyOf(block);
+        IntegerProperty ageProp = CropClassifier.getAgeProperty(block);
         if (ageProp == null) return block.defaultBlockState();
         int maxAge = CropClassifier.getMaxAge(block);
         if (!ageProp.getPossibleValues().contains(maxAge)) return null;
         return block.defaultBlockState().setValue(ageProp, maxAge);
-    }
-
-    /**
-     * 取作物的 AGE 属性。CropBlock.getAgeProperty() 是 protected——
-     * 从 defaultBlockState 的属性表按名字取（属性名就是 "age"），
-     * 覆盖 CropBlock/NetherWart/SweetBerry/Stem 全部作物类型。
-     */
-    @Nullable
-    private static IntegerProperty agePropertyOf(Block block) {
-        for (var prop : block.defaultBlockState().getProperties()) {
-            if (prop instanceof IntegerProperty intProp && prop.getName().equals("age")) {
-                return intProp;
-            }
-        }
-        return null;
     }
 
     /**

@@ -337,6 +337,7 @@ src/main/java/com/qiqi/li/
     ├── HopperDirectionPacket.java           #   漏斗方向配置包
     ├── SlotDirectionPacket.java             #   通用槽位方向配置包
     ├── EnderChannelSyncPacket.java          #   末影箱频道同步包
+    ├── LivingItemSyncPacket.java           #   活物品遥测同步包（运行时缓存→客户端 tooltip）
     ├── LivingChestAccessPacket.java         #   活箱子访问包
     ├── LivingMapGuiTeleportPacket.java      #   活地图 GUI 传送包
     ├── LivingMapMetadataPacket.java         #   活地图元数据包
@@ -352,22 +353,26 @@ src/test/java/com/qiqi/li/
 ├── living/domain/redstone/
 │   └── ContainerRedstoneDataTest.java         # 红石信号传播（24 项）
 ├── living/domain/power/
-│   ├── PowerMathTest.java                     # 发电数学（5 项）
+│   ├── PowerMathTest.java                     # 发电数学（8 项）
 │   ├── ContainerPowerDataTest.java            # 相位质量状态机（6 项）
 │   ├── AccountingGateTest.java                # 跳变门控记账（4 项：零产出/冻结/去重/中性化）
 │   ├── PhaseInterpretationTest.java           # 相位解读三元件（8 项：移相/链/环自熄/死源/裂相/加法）
-│   ├── ChannelStateTest.java                  # 相位域偏移活性（5 项）
+│   ├── ChannelStateTest.java                  # 相位域偏移活性（10 项）
 │   ├── CoilGroupingTest.java                  # 形态识别 + 单通道（5 项）
 │   ├── NetworkResonanceTest.java              # 铜块网络共振（18 项）
-│   ├── NetworkTraversalTest.java              # 铜块网络遍历（6 项，含 E2E 真实传播）
-│   ├── WaxedCopperStorageTest.java            # 储能（16 项，含 telemetry 2 项）
-│   ├── BulbItemEnergyStorageTest.java         # 铜灯通用电池（6 项）
+│   ├── NetworkTraversalTest.java              # 铜块网络遍历（5 项，含 E2E 真实传播）
+│   ├── WaxedCopperStorageTest.java            # 储能（20 项，含 telemetry）
+│   ├── BulbItemEnergyStorageTest.java         # 铜灯通用电池（7 项）
+│   ├── PhaseSnapshotWarmupTest.java           # 相位快照热身（8 项）
+│   ├── RoundTripConservationIT.java           # Mekanism 往返守恒（4 项）
+│   └── WaxedGeneratorFeedChainTest.java      # 发电机喂链（12 项）
 │   ├── WaxedCopperOscillatorIT.java           # 振荡器→发电全链路集成（5 项）
-│   └── WaxedCopperCouplingIT.java             # 耦合链集成：多跳中继+防回环（3 项）
+│   ├── WaxedCopperCouplingIT.java             # 耦合链集成：多跳中继+防回环（3 项）
 ├── living/domain/chest/
 │   └── LivingChestFunctionTest.java           # 取消活化堆叠倍数返还（6 项）
 ├── living/domain/farmland/
-│   └── CropClassifierTest.java               # 作物分类器·火把花/瓶子草/柱状段回归（10 项）
+│   ├── CropClassifierTest.java               # 作物分类器·火把花/瓶子草/柱状段回归（10 项）
+│   └── LivingFarmlandFunctionTest.java      # 输出合并回归·部分合并丢物品守卫（5 项）
 ├── living/domain/furnace/
 │   ├── LivingFurnaceFunctionTest.java         # 燃料消耗合成残留物语义（4 项）
 │   └── FurnaceBurningFlagTest.java            # 燃烧标志组件·图标切换回归（5 项）
@@ -376,13 +381,13 @@ src/test/java/com/qiqi/li/
 ├── living/domain/map/
 │   └── MapCoordHelperTest.java                # 地图坐标换算（16 项）
 ├── living/interaction/
-│   └── InteractionRegistryTest.java           # 两趟优先级匹配·通配遮蔽回归守卫（5 项）
+│   └── InteractionRegistryTest.java           # 两趟优先级匹配·通配遮蔽+triggerFilter 回归守卫（7 项）
 └── living/transfer/
     └── ContainerCompatibilityConfigTest.java  # 容器布局推断（9 项）
 ```
 
-**合计测试用例 257 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
-全绿基线：`247 passed / 0 failed / 0 skipped`（2026-09-14 验证）。
+**合计测试用例 262 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
+全绿基线：`262 passed / 0 failed / 0 skipped`（2026-09-14 终审验证）。
 
 > 📄 测试环境配置与编写约定详见 [unit-testing.md](docs/guides/unit-testing.md)
 
@@ -478,13 +483,13 @@ src/test/java/com/qiqi/li/
 - [x] 元数据同步 + 客户端缓存
 
 ### 活耕地
-- [x] GUI 交互获取（活锄头耕活泥土，6 锄头变种）+ 种植（种子不消耗，类型标记）+ 骨粉催熟（+2~5，原版公式）
-- [x] 生长状态机：世界轴时间戳节拍（200t，稳态零写入）+ 湿润检测（左/右/下活水流 f=3.0）+ 顶行正常生长/产出挂起
-- [x] round-robin 逐项产出：战利品表首轮冻结进组件、每冷却周期一项 ×堆叠数、标准/浆果双模式
-- [x] 作物准入三层：Block 白名单 + c:seeds 标签 + 甜浆果手动映射；茎作物产出来源 = 果实战利品表（StemBlock.fruit AT）
-- [x] 双槽渲染：耕地槽作物小图 + 上方空生长槽阶段大图（blockstate→模型→粒子图标查表）
-- [x] 技术文档 [living-farmland-tech.md](docs/tech/living-farmland-tech.md)（idea.md 内容转化）+ 遮蔽回归守卫测试（5 项）
-- [ ] ⏳ 游戏实测验证：骨粉催熟跳升 + 上方空槽作物贴图 + 顶行生长 + FD 稻米产稻穗/番茄产番茄/西瓜产瓜块 + 火把花产花/瓶子草可种（2026-09-14 修复后待验）
+- [x] GUI 交互获取（活锄头耕活泥土，6 锄头变种）+ 种植（**消耗与耕地堆叠数等量的活种子**，数量不足无法种植）+ 骨粉催熟（**强制一次必定成功的生长 tick**：未成熟 +1/成熟触发产出，无变化不消耗）
+- [x] 生长状态机：世界轴时间戳节拍（200t，稳态零写入）+ 湿润传播（**4 级 BFS：水源相邻=源 4 级，沿相邻活耕地逐跳 -1，≥1 即湿润**）+ 顶行正常生长/产出挂起
+- [x] round-robin 逐项产出：战利品表首轮冻结进组件、每 tick 不限速逐项 ×堆叠数、留种（cropSeed 产出项总量 -1）、标准/浆果双模式、收获形态覆盖（HARVEST_BLOCKS：FD 稻米/番茄/火把花——下部表只掉种子的作物滚覆盖方块表）
+- [x] 作物准入三层：Block 白名单（CropBlock/StemBlock/NetherWart/SweetBerry/PitcherCrop）+ c:seeds 标签 + 甜浆果手动映射；茎作物产出 = 果块直取（stem.fruit AT）；maxAge 读 age 属性真实上限（模组作物兜底）+ 存量组件自愈（注册表修正后重冻结）
+- [x] 双槽渲染：耕地槽种子物品图标叠加 + 上方空生长槽 renderSingleBlock 世界管线阶段大图 + 三种多格模式（DOUBLE_BLOCK_HALF 半部件 / UPPER_CROPS 注册式 / COLUMN_PARTS 柱状属性分段——FD 稻米/KC 水稻/瓶子草全收齐）+ 同帧生长槽认领防双画 + 渲染异常隔离
+- [x] 技术文档 [living-farmland-tech.md](docs/tech/living-farmland-tech.md)（idea.md 内容转化）+ 回归守卫测试（CropClassifierTest 10 项 + LivingFarmlandFunctionTest 5 项 + InteractionRegistryTest 7 项）
+- [x] 游戏实测九轮全过（渲染/产出/交互全正常，2026-09-14 用户确认）；终审修复：部分合并丢物品（合并仅当放得下整份）+ 双重认领 + 模式互斥 + 留种总量 -1 + maxAge 自愈，262 用例全绿
 
 ### 容器兼容性
 - [x] IItemHandler 统一容器抽象（原版 + 模组容器）
@@ -520,6 +525,24 @@ src/test/java/com/qiqi/li/
   拉杆/按钮走 broadcastChanges 兜底）；`LIVING_FARMLAND_MOIST` 顺势统一为不落盘
 
 **最近更新** (2026-09-14):
+- ✅ 终审（活耕地，用户实测九轮全过后全面代码审查：三路并行审计——服务端逻辑/客户端
+  渲染/文档测试一致性）——**唯一确认功能性 bug：部分合并丢物品**：生长槽同种半堆
+  空间不足整份产出时旧实现塞部分即推进索引，`outputCount-toAdd` 差额静默消失
+  （玩家留半堆产物即触发）。修复：合并仅当 space ≥ outputCount，放不下本 tick
+  等待（与「不同种占据」同语义零损失）+ 回归测试 LivingFarmlandFunctionTest
+  （5 项：部分合并等待/整份合并/空槽全放/堆叠上限钳制/边界含等号）。
+  渲染两缺陷：**同帧生长槽双重认领**（同列双耕地隔空行 → 中间槽双画，per-frame
+  认领表先到先得）+ **多格模式无互斥**（上部件与柱状段双注册同槽双画，命中其一
+  即跳过其余）。加固四项：renderSingleBlock 异常隔离（第三方作物颜色处理器 NPE
+  只跳过该槽不崩屏）+ 留种改总量 -1（多池同种子只扣一份）+ 存量 maxAge 自愈
+  （注册表修正后旧组件重冻结+age 钳制，maxAge=7 时代耕地不需铲掉重种）+
+  清洁收尾（注释漂移 3→4、agePropertyOf 去重、重复 import、死代码删除）。
+  设计取舍明示：「留种后全空原样输出」= 种子-only 作物每周期净产 1 种子
+  （防零产出循环的有意行为）；超大堆叠耕地（count>64）因等量种子消耗不可种。
+  文档同步：AGENTS 勾选项三处五轮前旧口径修正（种子消耗/骨粉语义/湿润 4 级
+  BFS）+ 全绿基线 262 + 测试索引 6 处计数修正 + 补列 4 个缺类 + network/ 补
+  LivingItemSyncPacket；技术文档五轮残留清理（§1.1/§1.2/§1.3/§2/§5.2 内部
+  自相矛盾六处）。全量 262 用例全绿
 - 🐛 修复（活耕地，第九轮实测：KC 水稻三格只渲染一格）——**第三种多格作物形态**。
   KC（KaleidoscopeCookery）水稻既非原版半部件（DOUBLE_BLOCK_HALF 两值）也非 FD 的
   两个独立方块，而是**同方块 + IntegerProperty 分段**：`rice_crop` 带 age(0~7)+

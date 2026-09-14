@@ -98,17 +98,18 @@ public record FarmlandPlantComponent(
         return new FarmlandPlantComponent(cropSeed, age, maxAge, lastGrowthAttemptTick, outputIndex, pendingDrops);
     }
 
+    /** maxAge 重冻结 + age 钳制（存量数据自愈：注册表修正后旧组件里的过期 maxAge 痊愈） */
+    public FarmlandPlantComponent withMaxAge(int newMaxAge) {
+        return new FarmlandPlantComponent(cropSeed, Math.min(age, newMaxAge), newMaxAge,
+            lastGrowthAttemptTick, outputIndex, pendingDrops);
+    }
+
     public FarmlandPlantComponent withLastGrowthAttemptTick(long tick) {
         return new FarmlandPlantComponent(cropSeed, age, maxAge, tick, outputIndex, pendingDrops);
     }
 
     public FarmlandPlantComponent withOutput(int outputIndex, List<ItemStack> pendingDrops) {
         return new FarmlandPlantComponent(cropSeed, age, maxAge, lastGrowthAttemptTick, outputIndex, pendingDrops);
-    }
-
-    /** 空列表 + outputIndex=-1 的复位形态（用于重置与未种植守卫判断） */
-    public static boolean hasPendingOutput(FarmlandPlantComponent plant) {
-        return !plant.pendingDrops().isEmpty() && plant.outputIndex() >= 0;
     }
 
     @Override

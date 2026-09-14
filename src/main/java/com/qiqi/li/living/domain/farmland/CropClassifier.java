@@ -24,7 +24,6 @@ import net.minecraft.world.level.block.CropBlock;
 import net.minecraft.world.level.block.NetherWartBlock;
 import net.minecraft.world.level.block.StemBlock;
 import net.minecraft.world.level.block.SweetBerryBushBlock;
-import net.minecraft.world.level.block.state.properties.IntegerProperty;
 import net.neoforged.neoforge.common.Tags;
 
 /**

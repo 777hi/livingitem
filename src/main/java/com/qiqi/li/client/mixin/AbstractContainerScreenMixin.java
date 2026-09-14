@@ -473,6 +473,7 @@ public class AbstractContainerScreenMixin extends Screen {
     // ==================== Water Flow Rendering ====================
 
     private static final Logger WATER_LOGGER = LoggerFactory.getLogger("LivingItem/WaterRender");
+    private static final Logger CROP_RENDER_LOGGER = LoggerFactory.getLogger("LivingItem/CropRender");
 
     private static final ConcurrentHashMap<Class<?>, java.lang.reflect.Field[]> SLOT_WRAPPER_FIELD_CACHE = new ConcurrentHashMap<>();
 
@@ -699,6 +700,9 @@ public class AbstractContainerScreenMixin extends Screen {
     private void living_item$renderFarmlandCrops(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick,
                                                  CallbackInfo ci) {
         AbstractContainerScreen<?> self = (AbstractContainerScreen<?>) (Object) this;
+        // 生长槽认领表：同列两块耕地中间恰隔一空行时，两块都把中间空槽当生长槽
+        // → 同槽双画重叠（2026-09-14 终审修复）——per-frame 先到先得
+        java.util.Set<Slot> claimedGrowthSlots = new java.util.HashSet<>();
         for (Slot slot : self.getMenu().slots) {
             ItemStack stack = slot.getItem();
             if (stack.isEmpty() || !stack.is(Items.FARMLAND)) continue;
@@ -736,7 +740,7 @@ public class AbstractContainerScreenMixin extends Screen {
             // 一格）而非索引算术——天然适应箱子/背包/创造各布局；「空槽即画」自动
             // 覆盖全部状态：生长中显苗、成熟产出后被真实物品覆盖、取走后显成熟形态。
             // 同容器约束防跨容器错位。
-            living_item$renderCropInGrowthSlot(self, guiGraphics, slot, cropBlock, plant.age());
+            living_item$renderCropInGrowthSlot(self, guiGraphics, slot, cropBlock, plant.age(), claimedGrowthSlots);
         }
     }
 
@@ -754,11 +758,14 @@ public class AbstractContainerScreenMixin extends Screen {
     @Unique
     private void living_item$renderCropInGrowthSlot(AbstractContainerScreen<?> self, GuiGraphics guiGraphics,
                                                     Slot farmlandSlot,
-                                                    net.minecraft.world.level.block.Block cropBlock, int age) {
+                                                    net.minecraft.world.level.block.Block cropBlock, int age,
+                                                    java.util.Set<Slot> claimedGrowthSlots) {
         Slot growthSlot = living_item$findSlotAbove(self, farmlandSlot);
         if (growthSlot == null || !growthSlot.getItem().isEmpty()) {
             return;   // 无生长槽（顶行）或被占用（含成熟产出）→ 让位/等待
         }
+        // 同帧已被其它耕地认领的生长槽（同列隔空行双耕地场景）→ 本块让位防双画
+        if (!claimedGrowthSlots.add(growthSlot)) return;
 
         // 下部件：作物当前 age 的方块状态，世界级管线原样渲染
         // （茎逐段生长几何 + age 染色、任意模组模型——无每作物特判）。
@@ -769,6 +776,8 @@ public class AbstractContainerScreenMixin extends Screen {
             living_item$renderBlockState(guiGraphics, leftPos + growthSlot.x, topPos + growthSlot.y, lower);
         }
 
+        // 多格上部件三模式互斥（属性结构本互斥，防御双注册双画）：
+        // 命中其一即跳过其余——半部件/注册式上部件 与 柱状段 不会叠加
         // 两格高上部件：生长槽正上方的空槽渲染上半个模型（纯视觉，不影响 tick）
         BlockState upper = com.qiqi.li.living.domain.farmland.CropClassifier.getUpperCompanion(cropBlock, age);
         if (upper != null) {
@@ -776,6 +785,7 @@ public class AbstractContainerScreenMixin extends Screen {
             if (upperSlot != null && upperSlot.getItem().isEmpty()) {
                 living_item$renderBlockState(guiGraphics, leftPos + upperSlot.x, topPos + upperSlot.y, upper);
             }
+            return;
         }
 
         // 柱状多段作物（第三种多格形态：同方块属性分段，如 KC 水稻 location 三段柱）：
@@ -801,14 +811,22 @@ public class AbstractContainerScreenMixin extends Screen {
         Minecraft mc = Minecraft.getInstance();
         PoseStack pose = guiGraphics.pose();
         pose.pushPose();
-        pose.translate(x, y + 18, 100);          // 块底锚定槽位格底（格距 18px = 16 内容 + 2 边框）——
+        pose.translate(x - 1, y + 18, 100);     // 块底锚定槽位格底（格距 18px = 16 内容 + 2 边框）；左偏 1px 对齐
         pose.scale(18.0F, -18.0F, 18.0F);         // 按 18px 渲染让堆叠方块无缝相连（16px 会有格缝）
         // 强制 cutout RenderType（7 参重载）：默认会转实体渲染变体，其着色器带双光源
         // 漫反射（按法线着色）——作物十字模型法线朝水平方向，漫反射吃掉大半亮度 → 发暗；
         // cutout 无漫反射，亮度纯由 FULL_BRIGHT 光照图决定 → 与物品图标同级全亮
-        mc.getBlockRenderer().renderSingleBlock(state, pose,
-            mc.renderBuffers().bufferSource(), LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY,
-            net.neoforged.neoforge.client.model.data.ModelData.EMPTY, RenderType.cutout());
+        try {
+            mc.getBlockRenderer().renderSingleBlock(state, pose,
+                mc.renderBuffers().bufferSource(), LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY,
+                net.neoforged.neoforge.client.model.data.ModelData.EMPTY, RenderType.cutout());
+        } catch (Exception e) {
+            // 异常隔离：第三方作物的 BlockColors 处理器拿 null level/pos 可能 NPE——
+            // 单作物渲染失败只跳过该槽（2026-09-14 终审加固），不终止整帧渲染循环
+            CROP_RENDER_LOGGER.warn("[CropRender] 方块渲染失败，跳过：{}（{}）",
+                net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(state.getBlock()),
+                e.toString());
+        }
         pose.popPose();
         mc.renderBuffers().bufferSource().endBatch();   // 立即物化
     }
