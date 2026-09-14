@@ -1,9 +1,9 @@
 # Living Farmland (活耕地) 技术文档
 
-> **文档版本**: v1.1
-> **最后更新**: 2026-09-13
+> **文档版本**: v1.5
+> **最后更新**: 2026-09-14
 > **适用版本**: Minecraft 1.21.1
-> **状态**: 已实现，待游戏实测验证（骨粉催熟 + 双槽渲染修复后）
+> **状态**: 已实现，待游戏实测验证（多格作物三模式 + FD/原版产出修复后）
 
 ## 目录
 
@@ -199,7 +199,8 @@ InteractionRegistry.register(new InteractionEntry(Items.FARMLAND, Items.BONE_MEA
 
 ```java
 isSeedPlantableOnFarmland(stack):
-  🥇 Block 白名单：BlockItem 的方块 instanceof CropBlock | StemBlock | NetherWartBlock | SweetBerryBushBlock
+  🥇 Block 白名单：BlockItem 的方块 instanceof CropBlock | StemBlock | NetherWartBlock
+     | SweetBerryBushBlock | PitcherCropBlock
      （或手动映射表命中——甜浆果 SWEET_BERRIES → Blocks.SWEET_BERRY_BUSH）
   🥈 模组标签：stack.is(Tags.Items.SEEDS)   // c:seeds
   🥉 手动注册 API：CropClassifier.registerManualSeed(item, block)（动态扩展点）
@@ -216,6 +217,12 @@ instanceof 会把「种一朵花/一棵树苗/一丛草」全判成作物。
 **甜浆果为什么需要手动映射**：`Items.SWEET_BERRIES` 不是 BlockItem（甜浆果丛在
 原版无物品形态），不在任何种子标签——三层全漏。
 
+**瓶子草为什么需要显式列入白名单（第八轮实测踩坑）**：`PitcherCropBlock`
+**extends DoublePlantBlock 而非 CropBlock**——白名单四个 instanceof 全不中；
+`pitcher_pod` 又不在 c:seeds 标签（标签 JSON 已核对：只有甜菜/西瓜/南瓜/火把花/
+小麦五族）→ 三层准入全漏无法种植。只加 `PitcherCropBlock` 精确类，不用
+`DoublePlantBlock` 兜底（玫瑰/牡丹/向日葵全是 DoublePlantBlock 会误入）。
+
 ### 4.2 maxAge 读取（种植时冻结）
 
 ```java
@@ -223,10 +230,19 @@ CropBlock        → crop.getMaxAge()     // 唯一有方法的原版作物类
 StemBlock        → StemBlock.MAX_AGE        // 7（公开常量，无 getMaxAge 方法）
 NetherWartBlock  → NetherWartBlock.MAX_AGE  // 3
 SweetBerryBushBlock → ...MAX_AGE            // 3
-其他（标签进来的模组作物）→ CropBlock.MAX_AGE 兜底（渲染/产出按实际 blockstate 钳制）
+其他（标签进来的模组作物）→ state 定义里 "age" IntegerProperty 的真实上限
+  （FD 水稻 AGE_3 → 3、BuddingTomato 0~4 → 4；完全无 age 属性才兜底 CropBlock.MAX_AGE）
 ```
 
 **勘误记录**：设计稿的 `StemBlock.getMaxAge()` 方法不存在——只有 `CropBlock` 有。
+
+**⚠️ 兜底 7 的坑（第七轮实测：FD 稻米/番茄苗成熟无产物 + 渲染种子图标）**：
+非 CropBlock 模组作物回落到硬编码 7，而 FD 水稻是 AGE_3、番茄苗 0~4——maxAge=7
+冻结进组件后：生长 tick 把 age 推过值域 → `stateForAge` 值域外返回 null → 渲染走
+兜底（种子物品图标）；`matureStateFor` 同样 null → 战利品表永远冻结失败 → 无产物。
+修复：getMaxAge 增加通用回退——`CropClassifier.getAgeProperty(block)`（common 安全
+的 age 属性查找）取属性真实最大值。**注意**：修复前种下的 FD 作物组件里 maxAge=7
+已冻结，需铲掉重种。
 
 ### 4.3 采后回退点
 
@@ -294,6 +310,9 @@ int[] moisture = computeMoisture(ctx, tick, size, width, entries);
 `LIVING_FURNACE_BURNING` 完全同款先例：稳态零写入零同步 + 翻转主动推）。
 湿润/干燥耕地可堆叠。图标注册 moist（`isFarmlandMoist` 谓词，引用原版
 `block/farmland_moist` 深色纹理）/ dry（默认）两变体，零新 PNG。
+**不落盘**：只有 `networkSynchronized`、无 `persistent`（vanilla `MAP_POST_PROCESSING`
+先例，与 LIVING_FURNACE_BURNING / LIVING_HOPPER_FILTER 同口径）——湿润度每 tick
+可从流体邻接重算，持久化无正确性价值，徒增存档脏写。
 
 ### 5.3 无生长槽（顶行/边缘）语义（2026-09-13 定案）
 
@@ -311,8 +330,14 @@ int[] moisture = computeMoisture(ctx, tick, size, width, entries);
 
 ```java
 // 茎作物：直取果实方块物品（stem.fruit AT）——不滚果实战利品表（见下）
-// 非茎作物：
-BlockState matureState = matureStateFor(cropBlock);   // setValue(AGE, maxAge)
+// 非茎作物：收获形态解析（见下）→ 滚「收获形态方块」的成熟态战利品表
+Block lootSource = cropBlock;
+ResourceLocation harvestId = CropClassifier.getHarvestBlockId(cropBlock);
+if (harvestId != null) {
+    Block harvest = BuiltInRegistries.BLOCK.get(harvestId);
+    if (harvest != Blocks.AIR) lootSource = harvest;   // 模组不在 → 回退自身
+}
+BlockState matureState = matureStateFor(lootSource);   // setValue(AGE, maxAge)
 List<ItemStack> drops = Block.getDrops(matureState, level, BlockPos.ZERO, null);
 plant = plant.withOutput(0, drops);
 ```
@@ -321,6 +346,23 @@ plant = plant.withOutput(0, drops);
 `match_tool` **精准采集**条件、空工具（`TOOL=EMPTY`）恒不命中 → 只出 3~7 西瓜片、
 永远出不了瓜块；南瓜表虽本就掉南瓜块。统一改为直取 `fruit.asItem()` 输出果块本身
 （1 个果块 ×耕地堆叠数），两条茎作物行为一致且不依赖工具参数。
+
+**收获形态解析（第七轮定稿，2026-09-14）**：作物自身战利品表不一定是收获形态——
+FD 下部方块表只掉种子本身（`rice.json` → 稻谷×1、`budding_tomatoes.json` →
+番茄种子×1），滚它会被留种扣成空产出（零产出循环，见 §11.11）。
+`CropClassifier.HARVEST_BLOCKS` 把「作物方块 → 收获形态方块」显式注册，冻结时
+滚覆盖方块的成熟态战利品表：
+
+| 作物（种植入口） | 收获形态方块 | 空工具产出 |
+|---|---|---|
+| `farmersdelight:rice` | `rice_panicles`（上部抽穗 @AGE=3） | 稻穗×1（刀才出稻谷；稻穗≠种子，留种不扣） |
+| `farmersdelight:budding_tomatoes` | `tomatoes`（成熟原地转化的结果藤 @age=3） | 番茄×1~2 + 种子×1（留种恰扣种子）+ 5% 烂番茄 |
+| `minecraft:torchflower_crop` | `torchflower`（成熟态花方块——作物表任何 age 只掉种子×1） | 火把花×1（无种子，留种 no-op） |
+
+其余作物无覆盖 → 滚自身（小麦/胡萝卜/浆果等原版行为不变）。键值按注册名延迟
+解析（UPPER_CROPS 同款软依赖安全），`registerHarvestBlock` 为公开扩展点。
+番茄藤 `VINE_AGE` 属性名就是 `"age"`、`ROPELOGGED` 默认 false——`matureStateFor`
+现有逻辑直接命中两个产出池的 `block_state_property` 条件，无需特判。
 
 **必须用公开静态 `Block.getDrops(state, level, pos, be)`**：内部自动补齐
 `BLOCK_STATE`/`ORIGIN`/`TOOL=EMPTY` 三必填参数并走 `LootContextParamSets.BLOCK`
@@ -334,8 +376,9 @@ plant = plant.withOutput(0, drops);
 
 **留种（2026-09-13 定稿）**：冻结时遍历 drops，与 cropSeed 相同的产出项数量
 **-1（最多到 0，0 则该项跳过）**——变相自动补种，种子不再全额掉落（小麦种子
-2 → 1）。茎作物果实战利品表不含种子 → 不减。减后全空的极端情况（种子是唯一
-产出且只掉 1）按回退点重置。
+2 → 1）。茎作物直取果块不含种子 → 不减。减后全空（种子是唯一产出且只掉 1）
+**原样输出未扣减的产出**——耕地组件本身持久化、产完照常按回退点重长，不依赖
+留种补种；按回退点重置空转只会零产出循环（2026-09-14 修正，见 §11.11）。
 
 **AGE 属性读取**：`CropBlock.getAgeProperty()` 是 protected——统一从
 `defaultBlockState().getProperties()` 按名字 `"age"` 取 `IntegerProperty`，
@@ -377,79 +420,94 @@ outputIndex ≥ pendingDrops.size() → 按回退点重置：
 **历史勘误**：+2~5 用 `Mth.nextInt` 双闭区间（`RandomSource.nextInt(2,5)` 上界
 排除只有 +2~4）；双语义版本（未成熟催熟/成熟直触）已被本简化取代。
 
-## 8. 客户端渲染（双槽）
+## 8. 客户端渲染（双槽 + 世界级管线直绘）
 
 注入点：`AbstractContainerScreenMixin.render @TAIL`（`living_item$renderFarmlandCrops`），
 纯客户端读组件（`networkSynchronized` 随物品同步），无服务端参与。
 
-### 8.1 纹理解析：CropTextureResolver
+### 8.1 通用机制：renderSingleBlock（世界级管线直绘，2026-09-13 定稿）
 
-**主路径 blockstate → 模型 → 粒子图标查表**（原版 GUI 同款链路）：
+作物视觉的**正路线**——`BlockRenderDispatcher.renderSingleBlock(state, pose, buffer,
+FULL_BRIGHT, NO_OVERLAY)` 把任意 BlockState 用完整世界渲染管线画进 GUI：
+
+- blockstate → 烘焙模型（就是世界里的那个模型，含自定义几何——FD 茎的逐段生长、
+  瓶子草上下两段，全是模型本身的内容，**自动呈现中间态**）
+- **BlockColors 染色自动套用**（茎的 age 驱动染色、草系生物群系回退——发白问题从根上消失）
+- 自动路由正确 RenderType（NeoForge `RenderTypeHelper.getEntityRenderType(rt, false)`
+  为 GUI/无 cull 场景适配）
+- 支持 ModelData / ENTITYBLOCK_ANIMATED（带 BEWLR 的方块也能画）
+
+mixin 里的封装（`living_item$renderBlockState`）：
 
 ```java
-BlockState state = stateForAge(block, age);        // setValue(AGE, age)，值域越界 null
-BakedModel model = mc.getBlockRenderer().getBlockModelShaper().getBlockModel(state);
-TextureAtlasSprite sprite = model.getParticleIcon();
+pose.pushPose();
+pose.translate(x, y + 16, 100);       // 块底锚定槽位底部（角落原点模型，非物品中心原点！）
+pose.scale(16.0F, -16.0F, 16.0F);      // 1 方块 = 16px，Y 翻转对齐 GUI
+// 强制 cutout RenderType（7 参重载）：默认会转实体渲染变体，其着色器带双光源
+// 漫反射（按法线着色）——作物十字模型法线朝水平方向，漫反射吃掉大半亮度 → 发暗
+// （2026-09-13 实测踩坑）；cutout 无漫反射，亮度纯由 FULL_BRIGHT 光照图决定
+mc.getBlockRenderer().renderSingleBlock(state, pose,
+    mc.renderBuffers().bufferSource(), LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY,
+    net.neoforged.neoforge.client.model.data.ModelData.EMPTY, RenderType.cutout());
+pose.popPose();
+mc.renderBuffers().bufferSource().endBatch();   // 立即物化
 ```
 
-不硬推导 `block/<name>_stage<age>` 纹理路径——1.21.1 原版数据核对：胡萝卜 blockstate
-是 age 0~7 映射 **4 个模型**（`stage7` 路径不存在）、下界疣 age1/2 共用 stage1。
-查 blockstate 的「状态 → 模型」权威映射天然覆盖，且自动带染色（crop 模型 tint）。
+**锚点勘误（第七轮实测：渲染位置错位半格）**：方块模型是**角落原点**（0,0,0~1,1,1），
+不是物品模型的中心原点——translate 用物品习惯的 `(x+8, y+8)` 会让方块画到
+「槽中心→右下 16px」整体偏移半格。正确配方 `translate(x, y+16, 100)` +
+`scale(16, -16, 16)`：模型 (0,1,0) 顶角 → 槽位左上 (x, y)，(1,0,1) 底角 → 槽位
+右下，恰好铺满槽位且 Y 翻转后正立。
 
-**⚠️ 染色必须显式套用（第六轮实测踩坑）**：粒子图标 blit 不会自动带 crop 模型的
-tintindex 染色——南瓜/西瓜的藤蔓纹理是**灰度图**，原版在世界渲染时靠 BlockColors
-按 age 染色（`ARGB32.color(age*32, 255-age*8, age*4)`：age 0 纯绿 → age 7 橙黄，
-纯 age 驱动、忽略 level/pos，null 传入即可正确取色）。GUI 直绘精灵图不染色 →
-藤蔓发白。修复：`CropTextureResolver.getCropTint(block, age)`——茎方块按 age 取
-`getBlockColors().getColor(state, null, null, 0)`（4 参重载，无注册返回 -1），
-生长槽大图按 -1 分流：染色走 `blit(..., sprite, r, g, b, a)`（positionTexColorShader
-逐顶点色），预着色纹理（小麦/胡萝卜/果实图标）走无色 blit。
-
-**预着色 vs 灰度对照**（1.21.1 BlockColors 核对）：小麦/胡萝卜/马铃薯/甜菜/下界疣/
-甜浆果 = 预着色纹理（无注册）；**瓜茎/attached 茎** = 灰度 + age 染色；草/蕨/树叶
-= 灰度 + 生物群系染色（null level 回退 GrassColor.getDefaultColor）。
-
-- 茎作物成熟态：切**果实方块**的粒子图标（`stem.fruit` AT，与服务端产出来源一致）
-- 兜底：成熟形态 BlockItem 的物品模型图标（非标准作物/缺 age 变体模型）
-- 缺失判定：`TextureAtlasSprite` 无 `isMissing()` 方法——用
-  `contents().name().equals(MissingTextureAtlasSprite.getLocation())` 比较
-
-**渲染调用**：`guiGraphics.blit(x, y, 100, 16, 16, sprite)`（带精灵图对象的重载）。
-探索代理已核实 `innerBlit` 自动 `RenderSystem.setShaderTexture(0, sprite.atlasLocation())`
-+ `setShader(positionTexShader)`——**无需手动绑定图集纹理**（与水桶渲染的外部设置
-差异是水桶需要 blend/着色，作物贴图不透明用默认即可）。z=100：物品模型 z=150 之下、
-但物品模型是在 depth test 关闭窗口画的（无深度写入），TAIL 注入时 z=100/水桶 z=0
-均实测可画。
+**边界**：不渲染 BlockEntity 渲染器（箱子开合动画那类 BEWLR 需走
+`BlockEntityRenderDispatcher.render` 路径——作物无 BE 不受影响）；光照为 GUI 满亮
+（要"真世界光照"可用耕地真实位置的 packedLight）；性能与物品图标渲染同级。
 
 ### 8.2 双槽渲染策略（职责划分：耕地槽=种什么，生长槽=长到哪）
 
 ```
-耕地槽：叠加【种子物品图标】（guiGraphics.renderItem(plant.cropSeed())，
-  原版种子 item 纹理零新资源，物品图标自身大量透明、耕地图标仍可见）
-  → 一眼区分种植的作物类型；跟物品走（顶行/搬运途中/背包乱放都有反馈）
-
-生长槽：按【坐标匹配】找正上方一格（slot.y - 18）的同容器菜单槽，
-  该槽为空时绘制作物当前阶段贴图（blockstate→模型→粒子图标）
-  → 「空槽即画」自动覆盖全部状态：
-     生长中空槽显苗 / 成熟产出后被真实物品覆盖 / 取走后显成熟形态
-  → 同容器约束（slot.container 相等）防跨容器错位
-     （箱子顶行耕地不会把苗画到玩家背包槽上）
-
+耕地槽：叠加【种子物品图标】全尺寸 16×16（粒子图标 blit，原版种子纹理零新资源；
+  立即模式 + disableDepthTest，见下）→ 一眼区分种植的作物类型；跟物品走
+生长槽：按【坐标匹配】找正上方一格（slot.y - 18）的同容器菜单槽，空槽时
+  renderSingleBlock 当下 age 的作物状态 → 「土下苗上」原样呈现；
+  成熟产出后被真实物品覆盖 / 取走后显成熟形态；同容器约束防跨容器错位
 湿润图标：LivingIconSpec 双变体（moist=原版 farmland_moist 深色纹理 /
-dry=默认 farmland），谓词读 LIVING_FARMLAND_MOIST 组件（tick 翻转写入）。
+  dry=默认 farmland），谓词读 LIVING_FARMLAND_MOIST 组件（tick 翻转写入）
 ```
 
-**种子图标的层级修复（第五轮复盘）**：种子叠加最初用 `renderItem`（物品模型层
-z=150）被耕地图标覆盖，pose 抬到 z=175 仍不显示、z=300 才可见——根因是 **TAIL
-阶段深度测试已开启，绘制与世界深度缓冲竞争**（玩家盯着的箱面很近，z<300 的判定
-输给箱面），而非与槽位内物品竞争。修复：立即模式 blit（同步 flush）+
-`RenderSystem.disableDepthTest()` 临时窗口 + nominal z=175（高于物品 150、低于
-堆叠数 200）+ blend 保透明。槽位叠加层的完整层级表与两个渲染窗口的语义收编
+**种子图标的层级修复（第五~八轮迭代史）**：`renderItem`（物品模型层 z=150）被耕地
+图标覆盖 → z=175 仍被吞、z=300 才可见——根因是 **TAIL 阶段深度测试已开启，绘制与
+世界深度缓冲竞争**（玩家盯着的箱面很近，z<300 判定输给箱面）。中间试过半尺寸居中
+避让、重绘堆叠数文字——最终定稿：**全尺寸 16×16 + disableDepthTest，盖住堆叠数
+数字为已知取舍**（类型辨识优先）。槽位叠加层完整层级表与两窗口语义收编
 [icon-system.md「槽位叠加层渲染层级」](../system-design/icon-system.md)。
 
-按坐标匹配而非 `resolveNeighbor` 索引算术：箱子 9 列、背包 9 列、模组容器列数不同、
-创造模式 SlotWrapper——坐标 `y - 18` 是「正上方一格」的布局通用真理，天然适应
-全部容器布局。
+### 8.2.1 多格作物的三种渲染模式（2026-09-14 三模式收齐）
+
+生长槽下部件之上，上部件有三种互斥形态，各自独立注册、逐级尝试：
+
+```
+① 原版半部件（DOUBLE_BLOCK_HALF，瓶子草）：同方块 HALF=UPPER、同 age 同步生长
+   ——getUpperCompanion 自动识别（属性存在即命中），注册表无需条目
+② 注册式独立上部件（FD 水稻 = RiceBlock + 上方 RicePaniclesBlock 两个方块）：
+   UPPER_CROPS 注册表（下部件注册名 → 上部件注册名），成熟才出现
+③ 柱状多段（同方块 + IntegerProperty 分段，如 KC 水稻 location 0=下/1=中/2=上）：
+   COLUMN_PARTS 注册表（作物注册名 → 各段属性覆盖列表），各段从生长槽正上方
+   逐格向上渲染（findSlotAbove 循环推进，空槽才画、到顶/被占自动截断）
+```
+
+模式③的 `getColumnParts`：`stateForAge` 基础上应用各段属性覆盖（属性名 → 值
+字符串经 `Property.getValue` 解析），age 与下部件自动同步；属性缺失的段静默跳过。
+注册名延迟解析（软依赖安全，模组不在时 BuiltInRegistries 解析为 AIR/空表）。
+三种模式各管各的注册集合，同一作物不会同时命中两个（属性结构互斥）。
+
+### 8.3 旧粒子图标路线（已替换，历史背景）
+
+最初的实现走「blockstate → 模型 → 粒子图标查表 + blit」：粒子图标 = 模型 particle
+纹理，能拿到单张贴图但**拿不到模型的几何与染色管线**——胡萝卜 8age→4stage 映射、
+下界疣共用模型、茎灰度纹理发白（需手动 age 染色）、茎无中间态（stage 模型是同纹理
+UV 裁剪）等问题逐个暴露，最终被 renderSingleBlock 整体取代。历史价值：*
+「纹理推导不可靠，必须查 blockstate 权威映射」* 的教训仍适用于任何贴图级方案。
 
 ---
 
@@ -463,6 +521,11 @@ z=150）被耕地图标覆盖，pose 抬到 z=175 仍不显示、z=300 才可见
 | 茎作物（西瓜/南瓜） | 未成熟藤蔓（灰度+age 染色），成熟**果实图标** | **果实方块物品本身**（stem.fruit 直取，不滚表） | 西瓜块/南瓜 | 浆果模式 |
 | 下界疣 | 3 阶段（AGE_3） | 自身战利品表（age=3 条件） | 下界疣×2~4 | 标准→重置 |
 | 甜浆果 | 3 阶段（AGE_3） | 自身战利品表（age=3 条件） | 甜浆果×2~3 | 浆果模式 |
+| FD 稻米 | 生长穗各阶段 + 成熟上槽满穗模型（UPPER_CROPS） | **上部抽穗 `rice_panicles` 战利品表**（HARVEST_BLOCKS 覆盖） | 稻穗×1 | 标准→重置 |
+| FD 番茄 | 各阶段粒子图标（age 0~4） | **结果藤 `tomatoes` 战利品表**（HARVEST_BLOCKS 覆盖） | 番茄×1~2 + 种子（留种扣）+ 5% 烂番茄 | 标准→重置 |
+| 火把花 | 苗（age 0~1）→ 成熟显**花方块模型**（displayStateFor 越界回退） | **花方块 `torchflower` 战利品表**（HARVEST_BLOCKS 覆盖） | 火把花×1 | 标准→重置 |
+| 瓶子草 | 单格苗（age 0~2，top 模型原版就是空几何）→ 双格（age 3~4，DOUBLE_BLOCK_HALF 上部件） | 自身战利品表（age=4 + half=lower 条件） | 瓶子草植株×1 | 标准→重置 |
+| KC 水稻（kaleidoscope_cookery） | **三格柱**（location 属性分段，COLUMN_PARTS 各段同 age 独立模型；age 0~3 两格、4~7 三格——空纹理段自动不可见） | 自身战利品表（location=down 段滚表，我方默认态恰好命中） | 稻穗×N（模组表） | 标准→重置 |
 
 茎作物 `StemBlock.fruit` 是 `private final ResourceKey<Block>`，AT 读取
 （`accesstransformer.cfg`：`public net.minecraft.world.level.block.StemBlock fruit`），
@@ -471,12 +534,12 @@ z=150）被耕地图标覆盖，pose 抬到 z=175 仍不显示、z=300 才可见
 
 ### 9.2 未来扩展（V1 不实现）
 
-- **分阶段作物（FD 番茄 BuddingTomato）**：`BuddingBushBlock` 是 FD 类，
-  无软依赖直接 instanceof 会 `NoClassDefFoundError`——必须 `compat/farmersdelight/`
-  隔离（compat/create 先例）。设计储备：连续 age 映射 + `phaseTransitionAge` 字段
-  （届时随需求加回组件）
-- **两格高作物（FD 水稻等）**：需要独立的上/下半阶段计数与跨槽位渲染 +
-  `CropHeightRegistry` 显式注册表（V1 无高度枚举消费者，单格渲染统一）
+- ~~分阶段作物（FD 番茄）~~ / ~~两格高作物（FD 水稻）~~：**均已落地**（2026-09-14）——
+  番茄走「自身 age 0~4 直接生长 + 冻结时滚结果藤战利品表」（原地转化语义被
+  收获形态覆盖吸收，无需组件过渡字段）；水稻走 `UPPER_CROPS` 上部件注册
+  （成熟才渲染抽穗，纯视觉不参与 tick）。全程零 FD 类引用（注册名延迟解析，
+  软依赖安全），无需 `compat/farmersdelight/` 隔离；任意模组作物扩展靠
+  `registerUpperCrop` / `registerHarvestBlock` 两个注册点
 - **含水耕地（水田）**：「恒湿润」是该槽位自身是水田的环境结果（与水流检测同属
   「环境决定湿润」），不是无条件白给
 - **手动注册 API 扩展**：`CropClassifier.registerManualSeed` 已有雏形，需要时公开
@@ -519,6 +582,7 @@ src/main/java/com/qiqi/li/
 | 测试 | 覆盖 |
 |------|------|
 | `InteractionRegistryTest`（5 项） | 两趟优先级：精确不被通配遮蔽（骨粉→bonemeal）、非精确回退通配（种子→plant_crop）、精确要求活触发器、无匹配 null、非活目标不匹配 |
+| `CropClassifierTest`（10 项） | 火把花 maxAge=2 超属性值域 + displayStateFor 成熟回退花/未成熟照常/超熟钳制、普通作物 displayStateFor 直通无回归、瓶子草准入（Block 白名单）+ maxAge=4 + 成熟态 HALF=LOWER、HARVEST_BLOCKS 原版条目解析、柱状段未注册空表/属性覆盖应用（HALF 翻转+同 age）/属性缺失静默跳过 |
 
 ---
 
@@ -593,9 +657,20 @@ handler 里空手静默返回——交互没发生，但原版操作也已被吞
 ### 11.8 茎作物藤蔓发白（第六轮实测：灰度纹理未套 age 染色）
 
 南瓜/西瓜藤蔓纹理是灰度图，原版靠 BlockColors 的 age 驱动染色器上色（见 §8.1）。
+本坑连同发白问题已由 renderSingleBlock 路线从根上消除（模型自带几何与染色管线）。
 GUI blit 精灵图不会自动应用模型 tintindex 染色 → 藤蔓白色、无状态变化。修复：
 `getCropTint`（BlockColors 4 参重载，null level/pos 对 age 驱动染色器安全）+ 生长槽
-大图按染色分流 `blit(..., sprite, r, g, b, a)`。
+大图按染色分流 `blit(..., sprite, r, g, b, a)`。**后续已被 renderSingleBlock 路线
+整体替代**（模型自带几何与染色，无需手动 tint/裁剪）。
+
+### 11.8.1 茎藤蔓无中间态（第六轮实测：stage 模型同纹理 + UV 裁剪；已由 renderSingleBlock 整体替代）
+
+粒子图标法对茎失效——8 个 stage 模型同引用一张 `pumpkin_stem.png`/`melon_stem.png`，
+粒子图标恒为同一张全图，只有 age 染色在变（「颜色变化正常、没有中间态」）。
+原版生长形态 = 纹理顶部条带逐级展开（stageN UV 高度 `2+2N`，锚定方块底部）。
+修复：`renderStemGrowthStage` 手写 POSITION_TEX_COLOR 顶点（getU0/getV0 浮点 UV
+裁剪 + 染色，立即模式），非茎作物不受影响。**后续已被 renderSingleBlock 路线整体
+替代**（模型几何天然带逐阶段形态）。
 
 ### 11.9 茎作物成熟后没有产物（第六轮实测：果块无 age 属性）
 
@@ -616,6 +691,72 @@ GUI blit 精灵图不会自动应用模型 tintindex 染色 → 藤蔓白色、�
 要求「新增功能必须在此添加 remove，否则旧数据残留」——活耕地实现时漏了。表现：
 取消活化的耕地 tooltip 仍显示旧作物（客户端组件还在），再活化时旧种植状态复活。
 修复：`stack.remove(FARMLAND_PLANT.value())` 补进清理列表。
+
+### 11.11 FD 稻米/番茄成熟后零产出（第七轮实测：下部战利品表只掉种子 + 留种扣空）
+
+稻米/番茄种植后正常生长、正常渲染成熟形态，但成熟后永远没有产出。根因是两段
+逻辑叠加成死循环：① `tryFreezeDrops` 非茎路径滚**下部作物方块自身**的战利品表，
+而 FD 下部表只掉种子本身（`rice.json` → 稻谷×1、`budding_tomatoes.json` →
+番茄种子×1——FD 语义里「挖掉作物」的保底就是种子，真实收获在抽穗/结果藤上）；
+② 留种逻辑对与 cropSeed 相同的产出项数量 -1 → 唯一一叠被扣成 0 → 「留种后全空」
+按回退点重置 → 重长到成熟 → 再扣空 → **无限循环零产出**。
+
+修复（收获形态解析 + 守卫，2026-09-14）：`CropClassifier.HARVEST_BLOCKS` 显式
+注册「作物方块 → 收获形态方块」（稻米 → `rice_panicles`、番茄 → `tomatoes`），
+冻结时滚覆盖方块的成熟态战利品表——空工具下稻穗×1 / 番茄×1~2 + 种子（留种恰扣
+种子、番茄保留），正是 FD 徒手收获的原版语义；键值注册名延迟解析，FD 不在时
+回退自身行为不变。守卫加固：「留种后全空」从重置改为**原样输出未扣减的产出**
+（耕地组件持久化、产完照常重长，重置空转毫无收益）。
+
+教训：**「滚作物自身战利品表」隐含了「自身表 = 收获形态」的假设**——多阶段作物
+（种植入口方块 ≠ 成熟形态方块）不成立。种植入口、成熟渲染、产出来源是三个独立
+关注点，需各自解析（本例分别由 `getBlockFromSeed` / `getUpperCompanion` /
+`HARVEST_BLOCKS` 承担）。
+
+### 11.12 火把花零产出 + 瓶子草无法种植（第八轮实测：原版也有同型怪癖）
+
+**火把花零产出**：原版怪癖——`TorchflowerCropBlock` 的 AGE 属性是 `AGE_1`
+（值域 0~1），但 `getMaxAge()`=2，成熟态 `getStateForAge(2)` 直接返回
+`Blocks.TORCHFLOWER` 花方块（作物方块本身没有 age=2 状态）；且
+torchflower_crop 战利品表**任何 age 都只掉种子×1**（与 FD 下部表完全同型：
+真实收获在花方块表）。我方双断点：`matureStateFor` 值域 [0,1] 不含 2 →
+null → 冻结失败零产出（每概率 tick warn 一次）；渲染 `stateForAge(,2)` null →
+成熟后生长槽空白。修复：HARVEST_BLOCKS 补 `torchflower_crop → torchflower`
+（滚花方块表，每轮产火把花×1）；渲染新增 `displayStateFor`——age 越界且已
+成熟时回退收获形态方块默认态（通用兜底，不限于火把花）。
+
+**瓶子草无法种植**：`PitcherCropBlock` extends `DoublePlantBlock` 而非
+CropBlock，白名单四 instanceof 全不中 + `pitcher_pod` 不在 c:seeds 标签 →
+三层准入全漏。修复：白名单补 `instanceof PitcherCropBlock` 精确类（不能用
+DoublePlantBlock 兜底——玫瑰/牡丹/向日葵全是它的子类）。其余路径零改动：
+maxAge 走 age 属性兜底=4、成熟态 HALF 默认 LOWER 恰好命中战利品表全部
+half=lower 产出池条件、渲染走既有 DOUBLE_BLOCK_HALF 上部件模式（age 0~2 的
+top 模型原版就是空几何，天然不显示；3~4 正常双格）。
+
+教训：**「种植入口 = CropBlock 子类」的假设对双格作物不成立**（原版瓶子草自己
+就不走 CropBlock）；白名单按「能种在耕地上的作物」语义收口，逐类显式列出，
+不用父类兜底。
+
+### 11.13 KC 水稻三格只渲染一格（第九轮实测：第三种多格形态）
+
+KC（KaleidoscopeCookery）水稻成熟形态是**三格柱**，活耕地里第一格渲染正常、
+生长产出全正常，但中/上两格空白。根因：KC 水稻既非原版半部件（DOUBLE_BLOCK_HALF
+只有 LOWER/UPPER 两值）也非 FD 的两个独立方块，而是<b>同一方块 + IntegerProperty
+分段</b>——`rice_crop` 带 `age`(0~7) + `location`(0=下/1=中/2=上) + `waterlogged`，
+种下时三格同时放置（`setPlacedBy`）、各段 age 同步生长（`updateShape` 从下方邻居
+拷贝）、每段每 age 各有独立 cross 模型（blockstate 24 个变体全有真实模型）。
+我方 `stateForAge` 用默认态 location=DOWN 只出第一格，`getUpperCompanion` 两种
+既有模式都不命中 → 中/上段不渲染。
+
+修复：`CropClassifier.COLUMN_PARTS` 注册表（作物注册名 → 各段属性覆盖列表，
+`kaleidoscope_cookery:rice_crop → [{location:1}, {location:2}]`）+ 渲染循环从
+生长槽正上方逐格向上画各段（空槽才画、到顶/被占自动截断）。产出侧零改动——KC
+的 `getDrops` 只在 location=DOWN 段滚战利品表，我方 `matureStateFor` 默认态恰好
+就是 DOWN（「产出正常」的实测印证）。
+
+教训：**多格作物的实现方式至少有三种**（半部件翻转 / 独立上部件方块 / 同方块
+属性分段），互相之间不可推导——渲染要按「属性结构 + 注册表」双轨解析，缺一种
+注册模式就漏一类模组作物。
 
 ---
 
@@ -641,8 +782,18 @@ GUI blit 精灵图不会自动应用模型 tintindex 染色 → 藤蔓白色、�
 - [ ] 种子产出留种 -1：小麦种子 2 → 1（变相自动补种）
 - [ ] 标准模式产完 → 回到生长 0/7 重新长
 - [ ] 西瓜（茎作物）：成熟显示西瓜图标、**产出西瓜块**（果块直取，非西瓜片）
-- [ ] **南瓜/西瓜藤蔓随 age 变色**（绿 → 橙黄，原版 age 染色；不再发白）
-- [ ] **南瓜成熟产出南瓜块、西瓜产出 3~7 西瓜片**（果实战利品表修复验证）
+- [ ] **南瓜/西瓜藤蔓随 age 变色 + 逐级长高**（renderSingleBlock 渲染 stem_growthN
+      真实模型几何：藤从 2px 长到全图 + 绿→橙黄染色）
+- [ ] **FD 稻米成熟后生长槽上方出现满穗稻穗模型**（上部件渲染；上槽被占自动让位）
+- [ ] **FD 稻米成熟后产出稻穗×1/轮**（HARVEST_BLOCKS 滚抽穗表；稻穗≠种子，留种不扣）
+- [ ] **FD 番茄成熟后产出番茄×1~2（偶带烂番茄），种子产出被留种扣除**
+      （滚结果藤 tomatoes 表）
+- [ ] **火把花可种植**，成熟后生长槽显花方块模型，每轮产火把花×1（花方块表覆盖）
+- [ ] **瓶子草（pitcher_pod）可种植**，age 3~4 双格渲染（上槽显上半模型），
+      成熟产瓶子草植株×1；age 0~2 单格苗
+- [ ] 瓶子草（pitcher）上下两段同步生长（DOUBLE_BLOCK_HALF 通用模式）
+- [ ] **南瓜/西瓜成熟均产出果块本身**（茎作物直取 fruit.asItem——西瓜战利品表的
+      瓜块分支带精准采集 match_tool 条件，空工具永远只出西瓜片，见 §6.1）
 - [ ] 甜浆果：产出后回 stage1 贴图，重新长到 stage3 再产（原版采摘回退语义）
 - [ ] **顶行耕地：正常生长**，成熟后 tooltip 已成熟但不产出，
       搬到下方槽位后开始产出
@@ -652,7 +803,8 @@ GUI blit 精灵图不会自动应用模型 tintindex 染色 → 藤蔓白色、�
 
 ### 12.3 渲染
 
-- [ ] **耕地槽叠加种子物品图标**（类型一眼区分，随物品搬运跟随）
+- [ ] **耕地槽显示全尺寸种子图标**（类型一眼区分，随物品搬运跟随；堆叠数数字被
+      覆盖为已知取舍）
 - [ ] **上方空槽显示作物当前阶段贴图**（「土下苗上」）
 - [ ] **湿润图标切换 + 传播**：邻格放活水桶 → 直接相邻耕地变深（3 级），
       相邻耕地的相邻耕地也变深（2→1 级传播）；收走水桶全部恢复浅色

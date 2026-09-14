@@ -269,7 +269,23 @@ TransferPipeline.execute(ctx, level, hostSlot, sourceSlot, targetSlot, ...)
 
 #### 2.4.2 过滤规则构建
 
-过滤规则由 `HopperFilterBuilder.buildForSlot()` 方法在每 tick 的 `capture()` 阶段统一预计算（由 `ContainerSnapshot` 委托调用），直接读取预计算的 `sourceOf`/`targetOf` 数组，无需重复扫描容器或调用 `SlotResolver`。计算完成后写回 `LivingHopperData.filter`，利用 Minecraft 内置的 DataComponent 同步机制推送到客户端，确保 tooltip 在任何场景下都能显示。
+过滤规则由 `HopperFilterBuilder.buildForSlot()` 方法在每 tick 的 `capture()` 阶段统一预计算（由 `ContainerSnapshot` 委托调用），直接读取预计算的 `sourceOf`/`targetOf` 数组，无需重复扫描容器或调用 `SlotResolver`。计算结果由 `LivingHopperFunction.tick()` 与物品上的 `LIVING_HOPPER_FILTER` 组件比对，**仅在规则变化时**回写并 `syncSlotToClients`（稳态零写入；漏斗搬去新容器后旧规则过期，下一 tick 用重建结果自愈），利用 Minecraft 内置的 DataComponent 同步机制推送到客户端，确保 tooltip 在任何场景下都能显示。
+
+> **存储位置沿革**：过滤规则原先存放在 `LivingHopperData.filter` 字段内、每 tick 无条件回写；
+> 「tooltip优化，nbt数据简化」（b064865）删除了回写但 tooltip 仍读旧字段 → 黑白名单显示
+> 永远为空（2026-09-14 修复）。现迁至**独立组件** `LIVING_HOPPER_FILTER`（变化时回写），
+> 并加入 `getIgnoredComponentTypes()`——过滤链是容器环境的派生数据（同一容器里两个漏斗的
+> 规则必然不同），不忽略会破坏漏斗堆叠。`LivingHopperData.filter` 降级为遗留兼容字段
+> （仅为旧存档反序列化保留，逻辑不读取）。回归测试 `HopperFilterSyncTest`（5 项）。
+>
+> **新鲜度**：快照按容器修订计数跨 tick 缓存，物品内容（签名）或组件（显式 bump）一变
+> 即失效重建，过滤链随之更新——机制详见
+> [living-item-infrastructure.md](../system-design/living-item-infrastructure.md) §8.6。
+>
+> **不落盘**：`LIVING_HOPPER_FILTER` 只有 `networkSynchronized`、无 `persistent`
+> （vanilla `MAP_POST_PROCESSING` 先例）——过滤规则是每 tick 可从容器重建的派生数据，
+> 持久化没有正确性价值（玩家能打开 GUI 前，容器必然已 tick 重建过），反而徒增存档
+> 体积与脏写。组件照常随槽位同步包到达客户端，tooltip 展示链路不变。
 
 **过滤规则语义**：
 

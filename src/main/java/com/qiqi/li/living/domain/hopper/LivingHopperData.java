@@ -14,6 +14,7 @@ import com.qiqi.li.living.transfer.FilterData;
 public record LivingHopperData(
     DirectionTransferData direction,
     TransferData transfer,
+    /** 遗留兼容字段（b064865 起逻辑不读取、不再写入）：过滤链迁至独立组件 LIVING_HOPPER_FILTER，由 tick 从快照回写。保留仅为旧存档反序列化兼容 */
     FilterData filter,
     ResolvedSlotData slotInfo,
     boolean disabled

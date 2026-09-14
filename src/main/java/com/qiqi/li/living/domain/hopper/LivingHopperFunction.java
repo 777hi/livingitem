@@ -108,6 +108,15 @@ public class LivingHopperFunction implements LivingItemFunction {
 
             FilterData filter = tick.getSnapshot().getFilterOf(slot);
 
+            // 过滤链回写：黑白名单是容器级派生数据（每 tick 由 HopperFilterBuilder 从
+            // 容器布局+物品重建，不落盘），组件仅用于网络同步给客户端 tooltip
+            // （living-hopper-tech.md §2.4.2）。规则变化时才写组件（稳态零写入）；
+            // 漏斗搬去新容器后旧规则过期，下一 tick 用重建结果自愈。
+            if (!filter.equals(LivingItemManager.getHopperFilter(stack))) {
+                LivingItemManager.setHopperFilter(stack, filter);
+                context.syncSlotToClients(slot, stack);
+            }
+
             boolean transferred = executeTransfer(context, level, slot, sourceSlot, targetSlot,
                 stack.getCount(), filter, dir, tick);
 
@@ -195,7 +204,8 @@ public class LivingHopperFunction implements LivingItemFunction {
                 .withStyle(net.minecraft.ChatFormatting.DARK_GRAY));
         }
 
-        FilterData filter = data.filter();
+        // 过滤链在独立组件 LIVING_HOPPER_FILTER 中（由 tick 从快照回写）
+        FilterData filter = LivingItemManager.getHopperFilter(stack);
         if (filter != null && !filter.equals(FilterData.EMPTY)) {
             ItemFilterComponent.appendFilterTooltip(filter, tooltipAdder);
         }
@@ -253,7 +263,8 @@ public class LivingHopperFunction implements LivingItemFunction {
                 .withStyle(net.minecraft.ChatFormatting.GRAY));
         }
 
-        boolean hasRules = data.filter() != null && !data.filter().equals(FilterData.EMPTY);
+        boolean hasRules = LivingItemManager.getHopperFilter(stack) != null
+            && !LivingItemManager.getHopperFilter(stack).equals(FilterData.EMPTY);
         tooltipAdder.accept(Component.translatable(
             "tooltip.livingitem.hopper.advanced.has_filter",
             hasRules ? Component.translatable("tooltip.livingitem.hopper.advanced.yes")
@@ -344,6 +355,8 @@ public class LivingHopperFunction implements LivingItemFunction {
 
     @Override
     public Set<DataComponentType<?>> getIgnoredComponentTypes() {
-        return Set.of();
+        // 过滤链是容器环境的派生数据（同一容器里两个漏斗的规则必然不同），
+        // 不忽略会破坏漏斗堆叠；堆叠合并后下一 tick 由快照重建自愈
+        return Set.of(LivingItemManager.LIVING_HOPPER_FILTER.value());
     }
 }

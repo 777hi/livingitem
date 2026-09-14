@@ -8,6 +8,7 @@ import javax.annotation.Nullable;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -263,14 +264,23 @@ public class LivingFarmlandFunction implements LivingItemFunction {
             Block fruit = CropClassifier.getStemFruit(stem);
             if (fruit == null) {
                 LOGGER.warn("活耕地产出失败：作物 {} 的果实体不可解析，跳过本轮",
-                    BuiltInRegistriesBlockKey(cropBlock));
+                    getBlockKey(cropBlock));
                 return plant;
             }
             drops = List.of(new ItemStack(fruit.asItem()));
         } else {
-            BlockState matureState = matureStateFor(cropBlock);
+            // 收获形态解析：作物自身战利品表不是收获形态时滚覆盖方块（FD 稻米/番茄——
+            // 下部表只掉种子本身，滚它会被留种扣成空产出零循环）。覆盖方块解析为
+            // AIR（模组不在）→ 回退作物自身，行为不变。
+            Block lootSource = cropBlock;
+            ResourceLocation harvestId = CropClassifier.getHarvestBlockId(cropBlock);
+            if (harvestId != null) {
+                Block harvest = net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(harvestId);
+                if (harvest != net.minecraft.world.level.block.Blocks.AIR) lootSource = harvest;
+            }
+            BlockState matureState = matureStateFor(lootSource);
             if (matureState == null) {
-                LOGGER.warn("活耕地产出失败：作物 {} 无法构造成熟态 BlockState", BuiltInRegistriesBlockKey(cropBlock));
+                LOGGER.warn("活耕地产出失败：作物 {} 无法构造成熟态 BlockState", getBlockKey(lootSource));
                 return plant;
             }
             // 公开静态重载内部自动补齐 BLOCK_STATE/ORIGIN/TOOL 必填参数并走 BLOCK 参数集验证
@@ -289,10 +299,11 @@ public class LivingFarmlandFunction implements LivingItemFunction {
             adjusted.add(d);
         }
         if (!anyLeft) {
-            // 留种后全空（极端：种子是唯一产出且只掉 1）→ 按回退点重置
-            LOGGER.debug("活耕地战利品表留种后为空（作物 {}），按回退点重置", BuiltInRegistriesBlockKey(cropBlock));
-            return plant.withAge(CropClassifier.getHarvestResetAge(cropBlock))
-                        .withOutput(-1, List.of());
+            // 留种后全空（种子是唯一产出且只掉 1）→ 保留未扣减的原产出照常输出：
+            // 耕地组件本身持久化、产完照常按回退点重长，不依赖留种补种；
+            // 重置空转只会零产出循环（2026-09-14 实测踩坑）
+            LOGGER.debug("活耕地战利品表留种后为空（作物 {}），原样输出", getBlockKey(cropBlock));
+            return plant.withOutput(0, drops);
         }
         return plant.withOutput(0, adjusted);
     }
@@ -375,7 +386,7 @@ public class LivingFarmlandFunction implements LivingItemFunction {
     }
 
     /** 注册 id 字符串化辅助（日志用），避免直接依赖 BuiltInRegistries 的 import 冲突 */
-    private static String BuiltInRegistriesBlockKey(Block block) {
+    private static String getBlockKey(Block block) {
         return String.valueOf(net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(block));
     }
 }

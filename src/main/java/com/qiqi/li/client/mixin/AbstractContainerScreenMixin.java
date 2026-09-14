@@ -27,8 +27,10 @@ import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.client.renderer.GameRenderer;
+import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.client.resources.MapDecorationTextureManager;
@@ -40,6 +42,7 @@ import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.item.MapItem;
 import net.minecraft.world.level.saveddata.maps.MapDecoration;
 import net.minecraft.world.level.saveddata.maps.MapId;
@@ -709,11 +712,6 @@ public class AbstractContainerScreenMixin extends Screen {
                 com.qiqi.li.living.domain.farmland.CropClassifier.getBlockFromSeed(plant.cropSeed());
             if (cropBlock == null) continue;
 
-            TextureAtlasSprite sprite = com.qiqi.li.client.render.CropTextureResolver
-                .getCropSprite(cropBlock, plant.age());
-            int tint = com.qiqi.li.client.render.CropTextureResolver
-                .getCropTint(cropBlock, plant.age());
-
             // 双槽渲染之一：耕地槽叠加**种子物品图标**——一眼区分种植的作物类型。
             // 立即模式 blit（同步绘制）+ 临时关闭深度测试：TAIL 阶段原版已重开深度
             // 测试，种子会与「玩家面前的箱子表面」的世界深度竞争（z=150/175 被吞、
@@ -726,40 +724,92 @@ public class AbstractContainerScreenMixin extends Screen {
                 RenderSystem.enableBlend();
                 RenderSystem.defaultBlendFunc();
                 RenderSystem.disableDepthTest();
+                // 全尺寸 16×16 叠加在耕地图标上——最简单方案；会盖住堆叠数数字，
+                // 已知取舍（2026-09-13 定稿）
                 guiGraphics.blit(leftPos + slot.x, topPos + slot.y, 175, 16, 16, seedSprite);
                 RenderSystem.enableDepthTest();
                 RenderSystem.disableBlend();
             }
 
-            // 双槽渲染之二：上方生长槽为空时绘制作物当前阶段贴图（「土下苗上」的田地感）。
-            // 按坐标匹配（同容器 + 恰在正上方一格）而非索引算术——天然适应箱子/背包/创造
-            // 各布局；「空槽即画」自动覆盖全部状态：生长中显苗、成熟产出后被真实物品覆盖、
-            // 取走后显成熟形态。同容器约束防跨容器错位。
-            if (sprite != null) {
-                living_item$renderCropInGrowthSlot(self, guiGraphics, slot, sprite, tint);
-            }
+            // 双槽渲染之二：上方生长槽为空时，用世界级管线绘制作物当前阶段的
+            // 完整方块模型（「土下苗上」的田地感）。按坐标匹配（同容器 + 恰在正上方
+            // 一格）而非索引算术——天然适应箱子/背包/创造各布局；「空槽即画」自动
+            // 覆盖全部状态：生长中显苗、成熟产出后被真实物品覆盖、取走后显成熟形态。
+            // 同容器约束防跨容器错位。
+            living_item$renderCropInGrowthSlot(self, guiGraphics, slot, cropBlock, plant.age());
         }
     }
 
     @Unique
-    private void living_item$renderCropInGrowthSlot(AbstractContainerScreen<?> self, GuiGraphics guiGraphics,
-                                                    Slot farmlandSlot, TextureAtlasSprite sprite, int tint) {
+    private Slot living_item$findSlotAbove(AbstractContainerScreen<?> self, Slot lowerSlot) {
         for (Slot other : self.getMenu().slots) {
-            if (other == farmlandSlot) continue;
-            if (other.container != farmlandSlot.container) continue;
-            if (other.x != farmlandSlot.x || other.y != farmlandSlot.y - 18) continue;
-            if (!other.getItem().isEmpty()) continue;   // 有物品（含成熟产出）→ 让位真实物品
-
-            // 茎方块藤蔓是灰度纹理，需按 age 套原版染色（绿→橙黄）；-1 = 预着色纹理直绘
-            if (tint != -1) {
-                float r = net.minecraft.util.FastColor.ARGB32.red(tint) / 255.0F;
-                float g = net.minecraft.util.FastColor.ARGB32.green(tint) / 255.0F;
-                float b = net.minecraft.util.FastColor.ARGB32.blue(tint) / 255.0F;
-                guiGraphics.blit(leftPos + other.x, topPos + other.y, 100, 16, 16, sprite, r, g, b, 1.0F);
-            } else {
-                guiGraphics.blit(leftPos + other.x, topPos + other.y, 100, 16, 16, sprite);
-            }
-            return;
+            if (other == lowerSlot) continue;
+            if (other.container != lowerSlot.container) continue;
+            if (other.x != lowerSlot.x || other.y != lowerSlot.y - 18) continue;
+            return other;
         }
+        return null;
+    }
+
+    @Unique
+    private void living_item$renderCropInGrowthSlot(AbstractContainerScreen<?> self, GuiGraphics guiGraphics,
+                                                    Slot farmlandSlot,
+                                                    net.minecraft.world.level.block.Block cropBlock, int age) {
+        Slot growthSlot = living_item$findSlotAbove(self, farmlandSlot);
+        if (growthSlot == null || !growthSlot.getItem().isEmpty()) {
+            return;   // 无生长槽（顶行）或被占用（含成熟产出）→ 让位/等待
+        }
+
+        // 下部件：作物当前 age 的方块状态，世界级管线原样渲染
+        // （茎逐段生长几何 + age 染色、任意模组模型——无每作物特判）。
+        // displayStateFor：火把花类「maxAge 超属性值域」怪癖——成熟态越界时
+        // 回退收获形态方块默认态（花方块），否则成熟后生长槽空白
+        BlockState lower = com.qiqi.li.living.domain.farmland.CropClassifier.displayStateFor(cropBlock, age);
+        if (lower != null) {
+            living_item$renderBlockState(guiGraphics, leftPos + growthSlot.x, topPos + growthSlot.y, lower);
+        }
+
+        // 两格高上部件：生长槽正上方的空槽渲染上半个模型（纯视觉，不影响 tick）
+        BlockState upper = com.qiqi.li.living.domain.farmland.CropClassifier.getUpperCompanion(cropBlock, age);
+        if (upper != null) {
+            Slot upperSlot = living_item$findSlotAbove(self, growthSlot);
+            if (upperSlot != null && upperSlot.getItem().isEmpty()) {
+                living_item$renderBlockState(guiGraphics, leftPos + upperSlot.x, topPos + upperSlot.y, upper);
+            }
+        }
+
+        // 柱状多段作物（第三种多格形态：同方块属性分段，如 KC 水稻 location 三段柱）：
+        // 各段从生长槽正上方逐格向上渲染，空槽才画、到顶/被占自动截断
+        for (BlockState part : com.qiqi.li.living.domain.farmland.CropClassifier
+                .getColumnParts(cropBlock, age)) {
+            Slot partSlot = living_item$findSlotAbove(self, growthSlot);
+            if (partSlot == null || !partSlot.getItem().isEmpty()) break;
+            living_item$renderBlockState(guiGraphics, leftPos + partSlot.x, topPos + partSlot.y, part);
+            growthSlot = partSlot;   // 下一段从这段正上方继续
+        }
+    }
+
+    /**
+     * 世界级方块渲染进 GUI（通用机制）：任意 BlockState 走完整世界渲染管线——
+     * blockstate→烘焙模型→BlockColors 染色→RenderType 路由，原样呈现世界外观
+     * （茎逐段生长几何、age 染色、任意模组模型全自动，无每作物特判）。
+     * 立即 endBatch 物化（先于后续立即模式绘制，层级确定）。
+     */
+    @Unique
+    private void living_item$renderBlockState(GuiGraphics guiGraphics, int x, int y,
+                                              BlockState state) {
+        Minecraft mc = Minecraft.getInstance();
+        PoseStack pose = guiGraphics.pose();
+        pose.pushPose();
+        pose.translate(x, y + 18, 100);          // 块底锚定槽位格底（格距 18px = 16 内容 + 2 边框）——
+        pose.scale(18.0F, -18.0F, 18.0F);         // 按 18px 渲染让堆叠方块无缝相连（16px 会有格缝）
+        // 强制 cutout RenderType（7 参重载）：默认会转实体渲染变体，其着色器带双光源
+        // 漫反射（按法线着色）——作物十字模型法线朝水平方向，漫反射吃掉大半亮度 → 发暗；
+        // cutout 无漫反射，亮度纯由 FULL_BRIGHT 光照图决定 → 与物品图标同级全亮
+        mc.getBlockRenderer().renderSingleBlock(state, pose,
+            mc.renderBuffers().bufferSource(), LightTexture.FULL_BRIGHT, OverlayTexture.NO_OVERLAY,
+            net.neoforged.neoforge.client.model.data.ModelData.EMPTY, RenderType.cutout());
+        pose.popPose();
+        mc.renderBuffers().bufferSource().endBatch();   // 立即物化
     }
 }

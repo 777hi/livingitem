@@ -213,6 +213,19 @@ TAIL 注入时原版已重开深度测试，绘制要**与世界深度缓冲竞�
 z=300 才赢过近处箱面 → 可见。这就是「同一段叠加代码在 z=150/175 不显示、z=300 显示」
 的完整解释（与世界深度竞争，而非与槽位内物品竞争——物品在槽位窗口内画的，从不写深度）。
 
+**方块级叠加：renderSingleBlock（世界级管线直绘）**——若叠加的是「方块在
+世界里的样子」而非贴图，用 `BlockRenderDispatcher.renderSingleBlock(state, pose,
+buffer, FULL_BRIGHT, NO_OVERLAY, ModelData.EMPTY, RenderType.cutout())` 走完整
+世界渲染管线（模型几何/BlockColors 染色/RenderType 路由全自动，任意模组方块零
+特判），pose 配方 `translate(x, y+16, 层)`（角落原点模型，块底锚定槽位底部！
+物品中心原点的 x+8/y+8 会错位半格）+ `scale(16, -16, 16)`（1 方块=16px、Y 翻转
+对齐 GUI），画完 `bufferSource.endBatch()`。**RenderType 必须强制 cutout 系**：
+默认会转实体渲染变体、其着色器带双光源漫反射（按法线着色），十字模型法线朝
+水平方向会被漫反射吃掉大半亮度 → 发暗
+立即物化。活耕地生长槽的作物模型即此路线（两格高作物上下两段各画一次）。边界：
+不含 BlockEntity 渲染器（BEWLR 类需走 BE dispatcher）。实体同理：
+`InventoryScreen.renderEntityInInventory*`（原版背包玩家预览同款）+ 客户端假实体。
+
 **TAIL 叠加层的正确姿势**（活耕地种子图标定案）：
 
 ```java
@@ -229,10 +242,16 @@ RenderSystem.disableBlend();
   不要用 `renderItem`（BufferSource 缓冲绘制，flush 时机/状态与 TAIL 不确定）；
   物品图标纹理取物品模型粒子图标（`getItemRenderer().getModel(stack).getParticleIcon()`
   = item/generated 的 layer0），见 `CropTextureResolver.getItemSprite`
-- `disableDepthTest` 临时窗口 + nominal z 保留层级语义（175 = 高于物品 150、
-  低于堆叠数 200）；z=300 会盖住堆叠数数字（map 底图不在乎，叠加层在乎）
+- `disableDepthTest` 临时窗口 + nominal z 保留层级语义（175 = 高于物品 150）
 - blend 保纹理透明像素（水桶渲染同款先例）；装饰器场景 NeoForge 已代管状态
   （`resetRenderState`/`restoreGlState`），自抬 z 即可（LivingHopperDecorator 先例）
+
+**与槽位窗口内内容的相对层级**：立即模式绘制顺序晚于槽位窗口的全部内容
+（物品/堆叠数文字都是缓冲绘制，帧末才 flush）→ TAIL 立即叠加层天然盖住它们。
+要避免盖住堆叠数数字，有两条路：**缩小叠加层/居中避让数字角**、或**按原版同位
+同式重绘该层**（blit 后用 drawString 重绘堆叠数文字）——两者都有视觉代价（半尺寸
+改变构图 / 多一次重绘）。活耕地种子图标最终**接受覆盖数字**（全尺寸叠加，类型辨识
+优先，见 living-farmland-tech.md §8.2 三轮迭代记录）。
 
 ### 交叉引用
 

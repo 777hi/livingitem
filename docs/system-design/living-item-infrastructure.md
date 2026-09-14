@@ -931,6 +931,21 @@ private final FilterData[] filterOf;  // filterOf[slot] = 此槽位继承的过�
 
 过滤链使用 `visited` 集合防止循环引用。
 
+**快照缓存与失效（修订计数）**：快照构建涉及全容器扫描 + 过滤链递归，为避免每 tick
+重复构建做了**跨 tick 缓存**——`TickContext.getSnapshot()` 懒构建，经
+`ContainerLivingItemHandler.getCachedSnapshot()` 按容器**修订计数**复用：修订计数未变
+直接返回上次快照。修订计数由两条路径推进：
+
+1. **内容签名兜底**（`syncContentRevision`，每 tick 阶段 1 调用）：逐槽位混入
+   「物品 id + 数量」计算签名，与上一 tick 不同则 bump——任何物品增删/移动（含漏斗
+   自己的传输、玩家点击）都会打破缓存。
+2. **组件变更显式 bump**（`syncSlotToClients` / `setItem`）：自定义 DataComponent 不在
+   内容签名里（只可能是本模组改的），这些路径手动 bump。
+
+因此快照里的过滤链/连接图始终反映容器现状：布局或货物一变，下一 tick 快照重建、
+漏斗的黑白名单随之更新（漏斗被搬到新容器后旧规则过期，同样在首 tick 重建自愈——
+详见 [living-hopper-tech.md](../tech/living-hopper-tech.md) §2.4.2 存储位置沿革）。
+
 ### 8.7 ContainerFluidData — 容器流体数据
 
 [ContainerFluidData](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/domain/water/ContainerFluidData.java) 管理容器级流体状态（活水桶的水流），独立于活物品的槽位级状态。

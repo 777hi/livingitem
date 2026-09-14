@@ -186,7 +186,7 @@ src/main/java/com/qiqi/li/
 │   │   ├── farmland/                         #   活耕地领域
 │   │   │   ├── LivingFarmlandFunction.java   #     tick 功能入口（生长/产出状态机 + tooltip）
 │   │   │   ├── FarmlandPlantComponent.java   #     种植数据组件（作物标记+age+round-robin 产出）
-│   │   │   └── CropClassifier.java            #     作物分类器（准入三层/maxAge/浆果判定/茎果实 AT）
+│   │   │   └── CropClassifier.java            #     作物分类器（准入三层/maxAge/茎果实 AT/收获形态/上部件注册表）
 │   │   │
 │   │   └── map/                              #   活地图传送领域
 │   │       ├── LivingEnderPearlFunction.java #     活末影珍珠（纯工具类）
@@ -366,9 +366,13 @@ src/test/java/com/qiqi/li/
 │   └── WaxedCopperCouplingIT.java             # 耦合链集成：多跳中继+防回环（3 项）
 ├── living/domain/chest/
 │   └── LivingChestFunctionTest.java           # 取消活化堆叠倍数返还（6 项）
+├── living/domain/farmland/
+│   └── CropClassifierTest.java               # 作物分类器·火把花/瓶子草/柱状段回归（10 项）
 ├── living/domain/furnace/
 │   ├── LivingFurnaceFunctionTest.java         # 燃料消耗合成残留物语义（4 项）
 │   └── FurnaceBurningFlagTest.java            # 燃烧标志组件·图标切换回归（5 项）
+├── living/domain/hopper/
+│   └── HopperFilterSyncTest.java              # 漏斗过滤链回写·黑白名单展示回归（5 项）
 ├── living/domain/map/
 │   └── MapCoordHelperTest.java                # 地图坐标换算（16 项）
 ├── living/interaction/
@@ -377,8 +381,8 @@ src/test/java/com/qiqi/li/
     └── ContainerCompatibilityConfigTest.java  # 容器布局推断（9 项）
 ```
 
-**合计测试用例 240 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
-全绿基线：`240 passed / 0 failed / 0 skipped`（2026-09-13 验证）。
+**合计测试用例 257 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
+全绿基线：`247 passed / 0 failed / 0 skipped`（2026-09-14 验证）。
 
 > 📄 测试环境配置与编写约定详见 [unit-testing.md](docs/guides/unit-testing.md)
 
@@ -480,7 +484,7 @@ src/test/java/com/qiqi/li/
 - [x] 作物准入三层：Block 白名单 + c:seeds 标签 + 甜浆果手动映射；茎作物产出来源 = 果实战利品表（StemBlock.fruit AT）
 - [x] 双槽渲染：耕地槽作物小图 + 上方空生长槽阶段大图（blockstate→模型→粒子图标查表）
 - [x] 技术文档 [living-farmland-tech.md](docs/tech/living-farmland-tech.md)（idea.md 内容转化）+ 遮蔽回归守卫测试（5 项）
-- [ ] ⏳ 游戏实测验证：骨粉催熟跳升 + 上方空槽作物贴图 + 顶行生长（2026-09-13 修复后待验）
+- [ ] ⏳ 游戏实测验证：骨粉催熟跳升 + 上方空槽作物贴图 + 顶行生长 + FD 稻米产稻穗/番茄产番茄/西瓜产瓜块 + 火把花产花/瓶子草可种（2026-09-14 修复后待验）
 
 ### 容器兼容性
 - [x] IItemHandler 统一容器抽象（原版 + 模组容器）
@@ -493,7 +497,84 @@ src/test/java/com/qiqi/li/
 
 ### 当前版本: v0.9-alpha
 
+**最近更新** (2026-09-14):
+- ✅ 修复：**活漏斗黑白名单链 tooltip 显示为空（同款 b064865 后遗症）**——
+  「tooltip优化，nbt数据简化」删除了 tick 里 `data.withFilter(filter)` 的
+  DataComponent 写回，但 tooltip 仍读 `LivingHopperData.filter()` → 恒 EMPTY，
+  黑白名单永远显示无规则（用户实测「nbt里的数据没了」）。**功能链路经排查完好**
+  （过滤本体是快照派生数据：HopperFilterBuilder 每 tick 从容器布局+物品重建，
+  经修订计数失效机制保持新鲜，与 DataComponent 无关）。修复（熔炉燃烧标志同款
+  方案）：过滤链迁至独立组件 `LIVING_HOPPER_FILTER`（FilterData 自带
+  Codec+StreamCodec），tick 在快照重建结果变化时回写 + syncSlotToClients（稳态
+  零写入；搬运后旧规则过期下一 tick 自愈）；tooltip 两处改读新组件；组件进
+  `getIgnoredComponentTypes()`——过滤链是容器环境派生数据（同一容器里两个漏斗的
+  规则必然不同），不忽略会破坏漏斗堆叠；`LivingHopperData.filter` 降级遗留兼容
+  字段。回归测试 HopperFilterSyncTest（5 项：黑名单/白名单语义、稳态零同步、
+  货物移走自愈、堆叠兼容），全量 247 用例全绿；收编 living-hopper-tech.md §2.4.2
+  （存储位置沿革）。**追加（同日）**：`LIVING_HOPPER_FILTER` 与 `LIVING_FURNACE_BURNING`
+  改为**不落盘**（只 `networkSynchronized`，vanilla `MAP_POST_PROCESSING` 先例）——
+  两者都是每 tick 可从运行时状态重建的派生数据，持久化无正确性价值（玩家打开 GUI 前
+  容器必然已 tick），徒增存档体积；组件照常随槽位同步包到客户端，展示链路不变。
+  **再追加（同日审计后）**：全活物品审计确认无第三处同类问题（运行时缓存仅
+  熔炉/漏斗/红电使用；红石家族/水车/水桶/耕地/箱子/地图全部「变化检测写+同步」配对，
+  拉杆/按钮走 broadcastChanges 兜底）；`LIVING_FARMLAND_MOIST` 顺势统一为不落盘
+
+**最近更新** (2026-09-14):
+- 🐛 修复（活耕地，第九轮实测：KC 水稻三格只渲染一格）——**第三种多格作物形态**。
+  KC（KaleidoscopeCookery）水稻既非原版半部件（DOUBLE_BLOCK_HALF 两值）也非 FD 的
+  两个独立方块，而是**同方块 + IntegerProperty 分段**：`rice_crop` 带 age(0~7)+
+  location(0=下/1=中/2=上)+waterlogged，三格同放同长（updateShape 从下方邻居拷贝
+  age）、每段每 age 独立模型。我方 stateForAge 默认态只出第一格（中/上空白），
+  两种既有上部件模式全不命中。修复：**COLUMN_PARTS 注册表**（作物注册名 → 各段
+  属性覆盖列表，getColumnParts 在 stateForAge 基础上应用覆盖、属性缺失段静默跳过）
+  + 渲染循环从生长槽正上方逐格向上画各段（空槽才画、到顶/被占自动截断）；注册名
+  延迟解析软依赖安全。产出侧零改动（KC getDrops 只在 location=down 段滚表，我方
+  默认态恰好命中——「产出正常」的实测印证）。教训：多格作物实现方式至少三种
+  （半部件翻转/独立上部件方块/同方块属性分段），互相不可推导，渲染按「属性结构
+  +注册表」双轨解析。CropClassifierTest 补柱状段 3 项（10 项），全量 257 用例
+  全绿；收编 living-farmland-tech.md v1.5 §8.2.1 三模式收齐 + §9.1 + §11.13
+- 🐛 修复（活耕地，第八轮实测：火把花零产出 + 瓶子草无法种植，原版同型怪癖）——
+  ① **火把花**：原版 TorchflowerCropBlock 的 AGE 属性是 AGE_1（值域 0~1）而
+  getMaxAge()=2，成熟态 getStateForAge(2) 直接变花方块（作物方块没有 age=2 状态）；
+  战利品表任何 age 只掉种子×1（与 FD 下部表同型：真实收获在花方块表）。我方双断点：
+  matureStateFor 值域不含 2 → 冻结失败零产出、stateForAge(,2) null → 成熟渲染空白。
+  修复：HARVEST_BLOCKS 补 torchflower_crop→torchflower（每轮产火把花×1）+
+  **displayStateFor**（渲染专用：age 越界且已成熟 → 回退收获形态方块默认态）。
+  ② **瓶子草**：PitcherCropBlock extends DoublePlantBlock 而非 CropBlock，白名单
+  四 instanceof 全不中 + pitcher_pod 不在 c:seeds 标签 → 三层准入全漏。修复：
+  白名单补 instanceof PitcherCropBlock 精确类（不用 DoublePlantBlock 兜底——
+  玫瑰/牡丹/向日葵全是其子类）；其余路径零改动（maxAge 兜底=4、HALF 默认
+  LOWER 恰好命中产出池条件、age 0~2 的 top 模型原版就是空几何）。教训：
+  「种植入口 = CropBlock 子类」假设对双格作物不成立。新增 CropClassifierTest
+  （7 项，纯逻辑），全量 254 用例全绿；收编 living-farmland-tech.md v1.4
+  §4.1/§6.1/§9.1/§11.12/§12.2/§10.3
+- 🐛 修复（活耕地，第七轮实测：FD 稻米/番茄成熟后零产出）——**下部战利品表只掉
+  种子 + 留种扣空死循环**。根因双叠加：① 冻结实³滚的是种植入口方块自身的战利品
+  表，而 FD 下部表只掉种子本身（rice.json → 稻谷×1、budding_tomatoes.json →
+  番茄种子×1——FD「挖掉作物」的保底就是种子，真实收获在抽穗/结果藤上）；② 留种
+  -1 把唯一一叠扣成 0 → 「留种后全空」按回退点重置 → 重长再扣空无限循环。
+  修复：**收获形态注册表 HARVEST_BLOCKS**（作物方块 → 收获形态方块，CropClassifier
+  新增：稻米→rice_panicles、番茄→tomatoes，注册名延迟解析 FD 缺席回退自身行为
+  不变 + registerHarvestBlock 扩展点）——冻结时滚覆盖方块的成熟态战利品表：
+  稻米每轮产稻穗×1（空工具原版语义，稻穗≠种子留种不扣）、番茄每轮产番茄×1~2 +
+  种子×1（留种恰扣种子）+ 5% 烂番茄；番茄藤 VINE_AGE 属性名就是 "age" +
+  ROPELOGGED 默认 false，matureStateFor 现有逻辑直接命中产出池条件零特判。
+  守卫加固：「留种后全空」从按回退点重置改为**原样输出未扣减产出**（重置空转
+  只会零产出循环）。教训：种植入口/成熟渲染/产出来源是三个独立关注点
+  （getBlockFromSeed / getUpperCompanion / HARVEST_BLOCKS 各自承担），
+  「自身表 = 收获形态」假设对多阶段作物不成立。全量 247 用例全绿；
+  收编 living-farmland-tech.md v1.3 §6.1 收获形态解析 + §11.11 踩坑 +
+  §9.1 FD 两行 + §12.2 验证项
+
 **最近更新** (2026-09-13):
+- ✅ 优化（活耕地，两格高作物上部件渲染）——**FD 稻米成熟后上方渲染满穗稻穗模型**
+  （稻米 = RiceBlock + 上方独立 RicePaniclesBlock 两个方块，上部件无法推导 →
+  CropClassifier 新增 UPPER_CROPS 注册表：字符串查找软依赖安全、FD 缺席自动跳过）
+  + **原版半部件通用模式**（DOUBLE_BLOCK_HALF，瓶子草等：同方块 HALF=UPPER 同 age
+  同步生长常驻）。渲染：主模型画完后解析上部件（getUpperCompanion）→ 生长槽正上方
+  空槽 blit 其粒子图标；上部件槽位被占/顶行自动让位，纯视觉不影响 tick/产出。
+  配套重构：stateForAge 迁入 CropClassifier（common）、findSlotAbove/blitSprite
+  提取复用
 - 🎚️ 优化（活耕地，第五轮实测反馈四连）——**种子图标可见**（耕地槽叠加 renderItem
   固定画在物品层 z=150 与耕地图标同层被覆盖，pose 抬升 z+150 到 300——map 渲染
   「需高于物品 150/堆叠数 200」同款经验）+ **骨粉简化**（一切行为由生长 tick 决定：

@@ -91,11 +91,10 @@ public class LivingItemManager {
                             .networkSynchronized(LivingFurnaceData.STREAM_CODEC)
                             .build());
 
-    /** 熔炉燃烧标志：燃烧状态翻转时写入，供客户端图标谓词（active/idle）读取 */
+    /** 熔炉燃烧标志：燃烧状态翻转时写入，供客户端图标谓词（active/idle）读取。派生数据不落盘（仅网络同步，MAP_POST_PROCESSING 先例） */
     public static final DeferredHolder<DataComponentType<?>, DataComponentType<Boolean>> LIVING_FURNACE_BURNING =
             DATA_COMPONENT_TYPES.register("living_furnace_burning", () ->
                     DataComponentType.<Boolean>builder()
-                            .persistent(Codec.BOOL)
                             .networkSynchronized(ByteBufCodecs.BOOL)
                             .build());
 
@@ -104,6 +103,13 @@ public class LivingItemManager {
                     DataComponentType.<LivingHopperData>builder()
                             .persistent(LivingHopperData.CODEC)
                             .networkSynchronized(LivingHopperData.STREAM_CODEC)
+                            .build());
+
+    /** 漏斗黑白名单过滤链：容器派生数据不落盘（仅网络同步供 tooltip，MAP_POST_PROCESSING 先例），每 tick 由快照重建 */
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<com.qiqi.li.living.transfer.FilterData>> LIVING_HOPPER_FILTER =
+            DATA_COMPONENT_TYPES.register("living_hopper_filter", () ->
+                    DataComponentType.<com.qiqi.li.living.transfer.FilterData>builder()
+                            .networkSynchronized(com.qiqi.li.living.transfer.FilterData.STREAM_CODEC)
                             .build());
 
     public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingTntData>> LIVING_TNT_DATA =
@@ -175,11 +181,11 @@ public class LivingItemManager {
      * tick 在湿润状态翻转时写标志 + syncSlotToClients（稳态零写入零同步）；
      * 进 {@link LivingItemFunction#getIgnoredComponentTypes}（湿润/干燥耕地可堆叠），
      * 参考熔炉燃烧标志 LIVING_FURNACE_BURNING 先例。
+     * 派生数据不落盘（仅网络同步）：湿润度每 tick 从流体邻接重算，持久化无正确性价值。
      */
     public static final DeferredHolder<DataComponentType<?>, DataComponentType<Boolean>> LIVING_FARMLAND_MOIST =
             DATA_COMPONENT_TYPES.register("living_farmland_moist", () ->
                     DataComponentType.<Boolean>builder()
-                            .persistent(Codec.BOOL)
                             .networkSynchronized(ByteBufCodecs.BOOL)
                             .build());
 
@@ -325,6 +331,7 @@ public class LivingItemManager {
         stack.remove(LIVING_FURNACE_DATA.value());
         stack.remove(LIVING_FURNACE_BURNING.value());
         stack.remove(LIVING_HOPPER_DATA.value());
+        stack.remove(LIVING_HOPPER_FILTER.value());
         stack.remove(LIVING_ENDER_CHEST_DATA.value());
         stack.remove(LIVING_REDSTONE_DATA.value());
         stack.remove(LIVING_REDSTONE_TORCH_DATA.value());
@@ -437,6 +444,24 @@ public class LivingItemManager {
      */
     public static void setHopperData(ItemStack stack, LivingHopperData data) {
         setData(stack, LIVING_HOPPER_DATA.value(), data, LivingHopperData.DEFAULT);
+    }
+
+    /**
+     * 便捷方法：读取漏斗过滤链（tooltip 展示用；规则本体由 HopperFilterBuilder 每 tick 派生）。
+     */
+    public static com.qiqi.li.living.transfer.FilterData getHopperFilter(ItemStack stack) {
+        return getData(stack, LIVING_HOPPER_FILTER.value(), com.qiqi.li.living.transfer.FilterData.EMPTY);
+    }
+
+    /**
+     * 便捷方法：写入漏斗过滤链（EMPTY 时移除组件，节省 NBT）。
+     */
+    public static void setHopperFilter(ItemStack stack, com.qiqi.li.living.transfer.FilterData filter) {
+        if (filter == null || filter.equals(com.qiqi.li.living.transfer.FilterData.EMPTY)) {
+            stack.remove(LIVING_HOPPER_FILTER.value());
+        } else {
+            stack.set(LIVING_HOPPER_FILTER.value(), filter);
+        }
     }
 
     /**
