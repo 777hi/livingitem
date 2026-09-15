@@ -1,6 +1,63 @@
 # 开发历史更新记录
 
 > 从 `AGENTS.md` 迁出的历史更新记录，保留完整变更细节供参考。
+>
+> **归档规则**：早于最近 N 天的条目从 `AGENTS.md`「开发进展」迁入本文件（按日期倒序追加）。
+> 归档时**必须校验日期连续性**（本文件最新日期 与 AGENTS.md 最早日期之间不得有空档），
+> 并在 AGENTS.md 节首留指针。
+>
+> ⚠️ **2026-09-16 补录**：`2026-09-01 ~ 09-04` 曾**断档**——该段工作只在 `.workbuddy-ai/memory/`
+> 日工作日志里（而日志按策略 30 天后会被删除），`AGENTS.md` 与本文件都无记录。
+> 本次已从日工作日志补录，特此留痕。
+
+---
+
+## 2026-09-04
+
+- 🐛 **修复：游戏崩溃 —— `living_item_sync` 包方向注册错误** —— 打包 jar 里注册成了 `playToServer`，但它是**服务端 → 客户端**包（`flushToClients`/`sendSnapshotToPlayer` 都在服务端调 `player.connection.send()`，`handle()` 更新客户端缓存 `LivingItemClientCache`），被 NeoForge `NetworkRegistry.checkPacket` 拦截抛 `UnsupportedOperationException: Payload living_item:living_item_sync may not be sent to the client!`。当前源码里该包连注册都没有（调试时被删）。修：`LivingItem` 加 `registrar.playToClient(LivingItemSyncPacket.TYPE, STREAM_CODEC, LivingItemSyncPacket::handle)`（放在 `LivingChestAccessPacket` 之后）
+- ✅ **全包方向审计（防同类复发）** —— 10 个包逐个核对发送点与 `handle()` 归属，结论**只有 `living_item_sync` 一个错**：→服务端 6 个（`LivingTag`/`HopperDirection`/`SlotDirection`/`GuiInteraction`/`LivingMapGuiTeleport`/`LivingChestAccess`，均在 `client/**` 经 `PacketDistributor.sendToServer`）、→客户端 4 个（`CarriedUpdate`/`EnderChannelSync`/`LivingMapMetadata`/`LivingItemSync`）。反编译产物验证 playToClient×4 + playToServer×6 = 10 个注册已进 jar
+- ✅ **测试基线修正** —— `AGENTS.md` 原写「146 项」是**方法数**（141 `@Test` + 5 `@ParameterizedTest`）；实际执行 **169 用例**（参数化展开 +23）。基线 `169 passed / 0 failed / 0 skipped`
+- 📄 排查套路留档：① `grep -n "Exception\|Error\|FATAL" latest.log | tail -30` 直接跳崩溃段；② 崩溃栈**行号要回源码核对**（对得上=jar 与源码结构一致，可放心按源码修）；③ NeoForge 方向报错话术「may not be sent to the client」= 注册成了 `playToServer`；判方向看两点——谁调 `send()`（`player.connection.send` = 服务端发）、`handle()` 更新哪侧缓存
+
+---
+
+## 2026-09-03
+
+- 🐛 **Bug A 修复：比较器链到第 4 个就死** —— 根因三者叠加：`reset()` 每 tick `edgeGrid.zero()`（无跨 tick 累积，链断不自愈）+ `powerConductiveNeighbor` 对元件位（含 `BIT_COMPARATOR`）直接 return（上游比较器不把下游入队）+ `comparatorSlots` 是 `HashSet`（迭代顺序是**哈希桶序而非槽位序**）⇒ 能亮几级 = HashSet 顺序碰巧与链几何吻合的长度，换摆放/方向就变。修：`phase4PowerConductors` 改**迭代到稳定**（`for (iter=0..size+2)`，仅 output 变化才 `edgeGrid.set` + 下游入队，无变化 `break`）。稳态无依赖变化时一轮即停、零额外开销
+- 🐛 **Bug B 修复：无外接信号时容器内信号层全死** —— 根因：`bumpContainerRevision` 只被本模组写入路径（`SimpleContainerContext.setItem` / `syncSlotToClients`）调用，**原版玩家点击/漏斗/掉落物拾取直接改底层容器、绕开它们** ⇒ 修订计数停滞 → `calculate` 稳态跳过永不打破 → 快照缓存永不重建 → 信号层集体死。修：`ContainerLivingItemHandler` 新增 `CONTAINER_CONTENT_SIG`（逐槽位 物品 id+数量 的内容签名，**空槽参与混合**保证槽位移动可检出）+ `computeContentSignature` / `syncContentRevision`，在 `processContext` 槽位扫描后调用（复用已有扫描、零新开销）
+- ✅ **P1-4 落地：7 张静态 Map 合并** —— 六张同键 Map 合成 `Map<String, ContainerEntry>` + 嵌套 `ContainerEntry`（fluid/redstone/power/revision/contentSig/cachedSnapshotRevision/cachedSnapshot）；`cleanupStale{Fluid,Redstone,Power}Data` 三法合一为 `cleanupStaleData`；`clearAllCaches` 7 次 clear 收敛为 2 次；删约 120 行
+- ✅ **P1-5/6 落地** —— `processContext` 主路径 + 空容器分支用 **try/finally** 包住（原先功能 `tick()` 抛异常会跳过 `flushDirtySlots`（客户端脏槽不同步）+ `setTickContext(null)`（stale 上下文泄漏），且 `onServerTick` 无 try/catch 向上抛）；`scanAndGroupLivingItems` / `runContainerDataTicks` 安全提取为私有静态
+- ✅ **代码屎山复查（用户以为很脏，实为文档过时）** —— P0 三处中**两处是误报**：`setItem`「Container 优先 / 丢物品」实际自 2026-08-17 起**故意**统一走 `IItemHandler`（大箱子左右两半共享同一 handler 但各是独立 `Container`，走 `Container.setItem` 会**双记账 → 物品复制 bug**）。**⚠️ 千万别照旧文档 §7.2 的伪代码去补 Container 优先写入，会重新引入复制 bug。** 已改文档并加警告。第三处（`syncWorldContainer` 用 `==` 引用比较匹配槽位）是**真问题**但缠双箱子索引映射，需单独正经修
+- ✅ **自由巡检（资源完整性 + 文档漂移扫描）** —— 修真 bug：`tooltip.livingitem.transform.no_recipe` 在 `zh_cn.json` 缺失（en_us 有）⇒ 中文客户端直接吐原始 key，已补；修复后 en/zh 均 169 key 零差异。排除 4 处误判：8 个 `*_lit.json` 带 BOM（Gson 2.10.1 无条件消费 BOM，不是 bug）、`getLastTickTime` 每 tick 刷新（非「120 秒重置」）、`ContainerMonitor` 首行短路（零开销）、lang 拼接 key 的正则误报
+- ✅ **项目整洁化清理** —— 删 `_lit_broken_backup/`；修 8 个 `*_lit.json` 的 BOM + 混合换行。**关键发现：BOM 从不存在于 git**（`core.autocrlf=true` 把工作树 CRLF 归一为仓库 LF，HEAD 版本头字节无 BOM），只在工作树由某 Windows 工具改写产生且从未 `git add` ⇒ `git diff` 为空是预期、不是改动丢失。同步文档测试索引（146）+ 5 个文档的旧字段名 `*_DATA_CACHE` → `CONTAINER_DATA`。撤销「取消跟踪 `.trae`/`.zcode`」（用户要求保留）
+- ✅ **BOM 深挖结论：不是 bug** —— gson `JsonReader.fillQueue()` 无条件消费 BOM 且**与 lenient 开关无关**，任何解析路径都跳过。**更有价值的副产品**：那 8 个文件**换行是混的**（6 个换行里只 1 个 CRLF），与同目录其余文件（规整 CRLF 无 BOM）不同生成路径 ⇒ **只清文件不找生成源会复发**
+- 📄 技术文档：`living-power-tech.md` v4.2、`living-redstone-tech.md` v15、`living-item-infrastructure.md` §7.2（加「别加回 Container 写入」警告）
+
+---
+
+## 2026-09-02
+
+- ✅ **红电「网络级共振」设计定稿 + 实现完成** —— 锈蚀级 = 共振「**声部**」，共振发生在**网络之间**而非铜块之上（把块级感应机制原样升维）。`N = |{k : ema[k] > 0}| ∈ [1,4]`、`s = (Π Aₖ)^(1/N) ÷ (Σ Aₖ / N)`（几何平均 ÷ 算术平均）、`R = 1 + (N−1)×s ∈ [1,4]`、总发电 = `(Σ baseRe[k]) × R^exp`（`RESONANCE_EXPONENT = 2`，满共振 ×16）。**铁律：共振只读「共振前」基础值、单遍前馈、绝不回代**（否则形成 `R↑→EMA↑→s变→R变` 回代环）；**每锈蚀级 EMA 只跟踪基础出力**。声部单位 = **锈蚀级**（不是 BFS 连通块）——同锈蚀级多个连通块出力**直接相加**，这是 `R ≤ 4` 封顶的结构性前提（否则拆簇即可刷 N，退化为 N×(N−1) 膨胀）。**测试中发现的关键修复**：EMA 指数衰减永不到 0 ⇒ 停发的锈蚀级会永远顶「活跃声部」把 s 压死、共振无自愈 → 加 `EMA_EPSILON = 1e-6` 归零截断。新增 `NetworkResonanceTest`（16 例：GM/AM 标度无关、R² 场景、凑弱网不划算、500 tick 收敛有界、停发声部 EMA 归零自愈）
+- ✅ **活涂蜡铜块 tooltip：共振显示 + 排版分区 + 示波器面板** —— `LivingWaxedGeneratorData` 新增 4 字段（`resonanceGain`/`resonanceBalance`/`activeVoices`/`voicePower`，`buildTelemetry` 从 `ContainerPowerData` **只读** EMA 基础值填充、绝不回灌）；tooltip 分 4 区（`core` 常显 → `resonance` 共鸣概览 → `settlement` F3+H 公式+短板诊断 → `network` 容器级）+ `§8─── 暗紫小标题 ───` 分隔线。新增 `LivingWaxedCopperTooltipComponent`（纯数据 record，零额外同步）+ `LivingWaxedCopperTooltipRenderer`（172×62 深色示波器面板）。**关键发现**：NeoForge `ClientHooks.gatherTooltipComponents` 把 `ItemStack.getTooltipImage()` 返回的组件插在**索引 1**（物品名之后），无法满足「置底」⇒ 改用 `RenderTooltipEvent.GatherComponents` 向 `event.getTooltipElements()` 追加
+- 🐛 **示波器相位波形修复（用户反馈「一直满格看不出波形」）** —— 根因：`phaseDeltas` 取的是 `DomainSnapshot.deltaByOffset().values()`，即「偏移 → |Δ|」的**离散映射**（本质是柱状图数据源、不是随时间变化的连续波形）；网络对称时各偏移 |Δ| 相等 ⇒ 按 `maxDelta` 归一化后每根柱满高。修：左半区改画**多相交变正弦波形**（按相数 n 画 n 条相位错开 `2π·ph/n` 的正弦，横轴覆盖 `SCOPE_CYCLES=2` 个周期），字段 `phaseDeltas` → `phaseCount`。`DomainSnapshot.deltas()` 仍保留（F3+H 文本诊断用）
+- 🐛 **信号层 bug 修复：比较器/中继器输出只能传一格** —— 根因：`powerConductiveNeighbor` 的早退掩码 `MASK_REDSTONE` 含 `BIT_DUST|BIT_COPPER`，把比较器输出进 dust/copper 网络的路掐掉，且其后 `if (is(n2, BIT_DUST)) secondQueue.add(n2)` 是**死代码**（到不了）⇒ 输出只写到比较器自身共享边（紧邻一格亮），下游不入队不续传。修：放宽掩码为仅挡元件位（TORCH/BUTTON/LEVER/REPEATER/COMPARATOR/BLOCK）+ 把 dust/copper 邻居加进 `secondQueue` 二次传播。**幂等**（只增不强、无死循环），中继器同类 bug 一并修复
+- ✅ **信号层边模型重构 v15：共享边 → 每槽自有出边** —— **Step A**（新增 `inputAt`/`maxInputOfSlot`/`anyInputOfSlot`/`oppositeDir` 抽象层，把所有「读某槽某方向受到的信号」调用点全部迁移；`inputAt(slot,dir) = edgeGrid.get(neighbor, oppositeDir(dir))`；迁移后 16 例全绿证明行为等价）；**Step B**（`EdgeGrid` 由 `hEdges[height*(W+1)] + vEdges[(H+1)*W]` 改 `edges[slotCount*4]`，写方无需改动）。配套**删掉 phase3 比较器 `!=` 兜底**（共享边下会误压下游粉的 -1 衰减信号；每槽出边下该边只归比较器自己所有、无污染，且关闭时出边归零 → 下游粉下一 tick 经 `maxInput` 自然衰减，避免「卡在高电平」回归）。`living-redstone-tech.md` 升 v15
+- ✅ **信号层稳态跳过优化（steady-state skip）** —— 物品修订计数 + 外部输入签名（`Arrays.hashCode(faceInput)`）+ 无在途倒计时定时器三者都不变时，复用 edgeGrid 跳过整段 `calculate`（含 BFS）。**关键坑（已修）**：`recordSteadyState` 原先记录方法**开头采样**的 rev，但传播中 phase5/phase3 经 `syncSlotToClients` 会 bump 修订计数 ⇒ `lastRev` 落后一拍、下一拍开头采到的 rev 永远不等、**跳过几乎无法触发**。修：改为重采样**重算后**的 `getContainerRevision`，与下一拍开头采样对齐。安全性不变量：物品变更 bump rev（打破）、邻居/原版红石变化改变 externalSig（打破）、唯一不受两者驱动的逐 tick 演化是定时器倒计时（用 `lastHadActiveTimers` 保险，倒计时在跑就强制重算，绝不冻结时序）
+- ✅ **电力层「按网络组件遍历」重构：回归测试 + 文档同步** —— 新增 `NetworkTraversalTest`（3 例：`copyFrom` 深拷贝独立性 / 同连通块两机共享历史且总发电 = 单机×2 / 相邻不同氧化级互不共享）。**测试 seam（生产小改动）**：`ContainerRedstoneData.setEdgeForTest`/`setPrevEdgeForTest` + `ensureTestGrid()`，供电力层单测绕过完整传播直接注入上升沿驱动 `tickContainerData`（`tickContainerData` 只读 `getEdgeValue`/`getPrevEdgeValue`，原无写边 API）。`living-power-tech.md` 升 v4.1，全量文档把「逐发电机 BFS」改为「按网络组件遍历（锚点 BFS + 其余 copyFrom 共享）」
+- ✅ **活末影箱 tooltip 高级模式增强（F3+H 路由明细）** —— 每条路由显示**维度 + 坐标**；玩家背包注册的路由优先显示玩家名（服务端按 UUID 解析 `getGameProfile().getName()`），离线回退 UUID。约束留档：活物品体系**不 force-load 区块**，路由只在源/目标区块同时加载时完成，源卸载时条目被丢弃、重载后自愈
+- ✅ **涂蜡铜灯发光图标像素修复** —— 4 个 `waxed_*_copper_bulb_lit.png` 黄框完全丢失 + 内部乱码。约定（已确认）：**涂蜡 vs 未涂蜡的唯一区别 = 外圈 60 像素黄框 `(232,160,62,255)`，四种锈蚀级的边框掩码完全相同**；修法 = 内部像素取正确的未涂蜡发光图 + 外圈填黄。破损原图备份于 `_lit_broken_backup/`
+- 📄 技术文档：`living-power-tech.md` v4.1（§3.6.1 / §3.7 共振公式 + 铁律 + 场景表；§3.2 周期估计扩写「盲测 + EMA α=0.5 + 长周期为何慢」；§3.3.1 网络涌现多相 + §3.3.1.1 相位错开的真实来源）、`红电系统.md`（§3.2 过期「耦合强度 1.0/0.7/0.5/0.35」改「共振声部」+ v17.1 弃用警示）、`living-redstone-tech.md` v15、`living-ender-chest-tech.md`
+
+---
+
+## 2026-09-01
+
+- 🔍 **活末影箱「玩家绑定频道」需求 —— 架构分析（分析完成，尚未实现）** —— 需求：绑定玩家的活末影箱，堆叠数 = 1 时直连玩家末影箱；堆叠数 **≥ 2** 时变为该玩家专属频道（阈值用户已拍板，非 >2）。核心结论：本质是**频道键从 `int` 升维为复合键** `EnderChannelKey(@Nullable UUID owner, int count)`（`owner == null` = 公共频道），牵连约 8 个文件
+- ⭐ **用户关键澄清（重大简化）：专属频道是「命名空间隔离」，不是「权限隔离」** —— 原话「公共频道是一块黑板，专属频道就是另一块黑板，其实并不需要防着其它玩家。玩家 a 有玩家 b 的专属活末影箱，也是可以使用的。」⇒ 绑定信息在 DataComponent 里跟着物品走，**谁持有物品谁就能接入那个频道**，不做持有者鉴权。**该澄清直接砍掉了整条同步层改造**：无需定向投递、无需 `PlayerLoggedIn` 全量补偿、无需处理离线黑洞，`flushDirtyChannels` 保持广播即可
+- 🔍 **读码确认的坑（留档待实现时处理）** —— ① `LivingEnderChestAccessor.tryCreate()` 绑定分支把 `filterData` 硬设为 null（旧逻辑「绑定=直连」）⇒ 专属频道是路由模式、过滤要靠 `registry.peek(channel, filterData, ...)`，**不修则黑白名单在专属频道完全失效**；② `EnderChannelRegistry.shouldRemoveRoute()` 只问「槽位上还有没有末影箱」不问「是不是同一个频道键」⇒ 末影箱 count 变化（如 `(A,3)→(A,1)`）后旧频道路由三条检查全通过、**永久残留**（修法：`validateRoutes` 第三参数升级为 `Map<Integer, EnderChannelKey> targetKeysBySlot`）；③ 客户端缓存 `EnderChannelClientCache.clear()`/`removeChannel()` **全项目零调用者**；④ `totalRoutes` 语义会被污染（现在是全服所有频道总和，加专属频道后是噪音且泄漏私有频道规模）⇒ 用户定案**砍掉**，Tooltip 只显示本频道条数
+- ✅ **顺带发现（有利）** —— `EnderChannelRegistry` 的 `getChannels`/`getActiveChannelCount`/`getChannelSnapshot`/`getEntries`/`getChannelSize` **全项目无外部调用者** ⇒ 改签名零成本，可直接删掉前两个
+- ✅ **已验证的边界** —— target 末影箱**永远**在注册者容器内（`CrossContainerTransfer.pullFromNeighbor` 从 `containerCtx` 取 `targetStack`）⇒ 改法覆盖全部路径；拆堆一半去别的容器也被覆盖（反向索引按源/注册者容器索引）
+- 📄 已定案：行为跳变允许（Tooltip 明确标注当前是「直连」还是「专属频道 N」），理由是本 mod 一贯哲学「**堆叠数 = 配置旋钮**」；文档 `living-ender-chest-tech.md` 待升 v12
 
 ---
 

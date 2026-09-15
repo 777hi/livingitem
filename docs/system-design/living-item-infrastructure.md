@@ -1107,6 +1107,12 @@ SlotInteractions.tryInteractFromNeighbor(handler, pos, targetStack, level, filte
 | 扩展成本 | 新增交互 = 1 个实现类 + 1 行注册，**零传输代码改动** |
 | 相关文档 | [living-hopper-tech.md §6.2.1](../tech/living-hopper-tech.md)（三处调用点与扩展方式）、§6.2.2（跨容器能力覆盖矩阵） |
 
+> **边界**：`SlotAccessor` / `SlotInteractions` 只覆盖**容器内**的传输与槽位交互。
+> **物品 ↔ 世界**这条链路完全独立、不经此处——例如「放置活耕地回世界时自动种下自带作物」
+> 走的是 `mixin/BlockItemMixin` + `domain/farmland/LivingFarmlandPlacement`
+> （模拟玩家右键，见 [living-farmland-tech.md §3.5](../tech/living-farmland-tech.md)）。
+> 新增面向世界的物品能力时不要试图往传输层挂。
+
 ---
 
 ## 10. 性能监控

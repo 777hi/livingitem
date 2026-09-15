@@ -691,10 +691,16 @@ public class AbstractContainerScreenMixin extends Screen {
     // ==================== Farmland Crop Rendering ====================
 
     /**
-     * 活耕地的作物生长阶段渲染（docs/idea.md「槽位渲染」统一口径）：
-     * 作物渲染在耕地槽位自身（叠加在耕地图标上方），不依赖周围槽位。
-     * 客户端读 FarmlandPlantComponent（networkSynchronized 随物品同步），
-     * 每帧查 blockstate→模型→粒子图标，无服务端参与。
+     * 活耕地的「生长槽大图」渲染（docs/idea.md「槽位渲染」统一口径）：
+     * 上方生长槽为空时，用世界级管线绘制作物当前阶段的完整方块模型。
+     * 客户端读 FarmlandPlantComponent（networkSynchronized 随物品同步），无服务端参与。
+     *
+     * <p><b>种子图标叠加不在此处</b>——2026-09-16 迁到
+     * {@link com.qiqi.li.client.render.LivingFarmlandSeedDecorator}（IItemDecorator）：
+     * 原实现依赖 {@code leftPos}/{@code topPos}，而 HUD 快捷栏走
+     * {@code Gui.renderHotbar} → {@code renderItemDecorations}，<b>不经过本类</b>，
+     * 导致快捷栏里永远画不出来。生长槽大图无法同样迁移——它需要「同容器正上方一格槽位」
+     * 的邻居关系，而装饰器只拿得到 {@code xOffset/yOffset}。</p>
      */
     @Inject(method = "render", at = @At("TAIL"))
     private void living_item$renderFarmlandCrops(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick,
@@ -716,26 +722,7 @@ public class AbstractContainerScreenMixin extends Screen {
                 com.qiqi.li.living.domain.farmland.CropClassifier.getBlockFromSeed(plant.cropSeed());
             if (cropBlock == null) continue;
 
-            // 双槽渲染之一：耕地槽叠加**种子物品图标**——一眼区分种植的作物类型。
-            // 立即模式 blit（同步绘制）+ 临时关闭深度测试：TAIL 阶段原版已重开深度
-            // 测试，种子会与「玩家面前的箱子表面」的世界深度竞争（z=150/175 被吞、
-            // 300 才可见的根因）——关深度回到槽位渲染窗口同款语义。nominal z=175：
-            // 高于物品模型层 150（不被覆盖）、低于堆叠数文字 200（不盖数字）。
-            // blend 保种子纹理透明像素；物品粒子图标 = item/generated 的 layer0 纹理。
-            TextureAtlasSprite seedSprite = com.qiqi.li.client.render.CropTextureResolver
-                .getItemSprite(new ItemStack(plant.cropSeed()));
-            if (seedSprite != null) {
-                RenderSystem.enableBlend();
-                RenderSystem.defaultBlendFunc();
-                RenderSystem.disableDepthTest();
-                // 全尺寸 16×16 叠加在耕地图标上——最简单方案；会盖住堆叠数数字，
-                // 已知取舍（2026-09-13 定稿）
-                guiGraphics.blit(leftPos + slot.x, topPos + slot.y, 175, 16, 16, seedSprite);
-                RenderSystem.enableDepthTest();
-                RenderSystem.disableBlend();
-            }
-
-            // 双槽渲染之二：上方生长槽为空时，用世界级管线绘制作物当前阶段的
+            // 上方生长槽为空时，用世界级管线绘制作物当前阶段的
             // 完整方块模型（「土下苗上」的田地感）。按坐标匹配（同容器 + 恰在正上方
             // 一格）而非索引算术——天然适应箱子/背包/创造各布局；「空槽即画」自动
             // 覆盖全部状态：生长中显苗、成熟产出后被真实物品覆盖、取走后显成熟形态。

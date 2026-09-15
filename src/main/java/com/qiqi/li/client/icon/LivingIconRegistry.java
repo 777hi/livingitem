@@ -3,6 +3,7 @@ package com.qiqi.li.client.icon;
 import com.qiqi.li.LivingItem;
 import com.qiqi.li.client.render.LivingChiseledCopperDecorator;
 import com.qiqi.li.client.render.LivingDefaultDecorator;
+import com.qiqi.li.client.render.LivingFarmlandSeedDecorator;
 import com.qiqi.li.client.render.LivingHopperDecorator;
 import com.qiqi.li.client.render.LivingMapIconDecorator;
 import com.qiqi.li.client.render.LivingRedstoneDecorator;
@@ -191,10 +192,14 @@ public final class LivingIconRegistry {
 
         // 活耕地：复用原版耕地顶面纹理（干/湿两态——湿润变体引用原版 farmland_moist，
         // 零新 PNG；湿标志由 tick 翻转写入 LIVING_FARMLAND_MOIST 组件）
+        // 装饰器：种子图标叠加（已种植时画所种作物的种子物品图标）。
+        // 走 IItemDecorator 而非容器 Mixin——装饰器在快捷栏/容器 GUI/创造物品栏都会被调用，
+        // 一份代码全覆盖（2026-09-16 从 AbstractContainerScreenMixin 迁入）。
         register(LivingIconSpec.builder(net.minecraft.world.item.Items.FARMLAND)
             .addVariant("moist", "item/farmland_living_moist",
                 stack -> com.qiqi.li.living.api.LivingItemManager.isFarmlandMoist(stack))
             .addVariant("dry", "item/farmland_living", stack -> true)
+            .decorator(new LivingFarmlandSeedDecorator())
             .build());
 
         registerCopperIcons();

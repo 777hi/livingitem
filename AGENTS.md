@@ -1,8 +1,8 @@
 # Living Item (活物品)
 
 **Minecraft 1.21.1 + NeoForge 21.1.x**
-*最后更新: 2026-09-15*
-*状态: Alpha 测试阶段 - v8.1 接口化重构完成 + 红电相位解读三元件（v19.1）+ 注册式槽位交互扩展点（`SlotInteractions`，2026-09-15）*
+*最后更新: 2026-09-16*
+*状态: Alpha 测试阶段 - v8.1 接口化重构完成 + 红电相位解读三元件（v19.1）+ 注册式槽位交互扩展点（`SlotInteractions`，2026-09-15）+ 活耕地放置回世界（`BlockItemMixin`，2026-09-16）*
 
 ---
 
@@ -187,7 +187,8 @@ src/main/java/com/qiqi/li/
 │   │   │   ├── LivingFarmlandFunction.java   #     tick 功能入口（生长/产出状态机 + tooltip）
 │   │   │   ├── FarmlandPlantComponent.java   #     种植数据组件（作物标记+age+round-robin 产出）
 │   │   │   ├── CropClassifier.java           #     作物分类器（准入三层/maxAge/茎果实 AT/收获形态/上部件注册表）
-│   │   │   └── FarmlandBonemealInteraction.java #  槽位交互条目：普通骨粉 × 活耕地 → 施肥（注册进 SlotInteractions）
+│   │   │   ├── FarmlandBonemealInteraction.java #  槽位交互条目：普通骨粉 × 活耕地 → 施肥（注册进 SlotInteractions）
+│   │   │   └── LivingFarmlandPlacement.java  #     放置回世界：模拟玩家右键种一次（软逻辑，异常自吞）
 │   │   │
 │   │   └── map/                              #   活地图传送领域
 │   │       ├── LivingEnderPearlFunction.java #     活末影珍珠（纯工具类）
@@ -289,6 +290,7 @@ src/main/java/com/qiqi/li/
 │   │   ├── ServerPlaceRecipeMixin.java      #   配方放置拦截
 │   │   ├── BlockStateBaseMixin.java         #   容器边界红石信号输出
 │   │   ├── RedStoneWireBlockMixin.java      #   红石线连接到活容器
+│   │   ├── BlockItemMixin.java              #   放置活耕地后自动种下自带作物（consume 前注入）
 │   │   └── create/                          #   Create Mixin（条件加载）
 │   │
 │   ├── debug/                               # 调试工具（默认关闭，命令启用）
@@ -321,6 +323,7 @@ src/main/java/com/qiqi/li/
 │   │   ├── LivingChiseledCopperDecorator.java # 活雕文铜块箭头叠加层
 │   │   ├── LivingWaxedChiseledDecorator.java  #   活涂蜡雕文输入方向箭头（电力层移相器，v19.1）
 │   │   ├── LivingRedstoneDecorator.java     #   活红石粉连线叠加层
+│   │   ├── LivingFarmlandSeedDecorator.java #   活耕地种子图标叠加层（装饰器路径，快捷栏也生效）
 │   │   ├── LivingChestTooltipRenderer.java  #   活箱子 Tooltip 渲染
 │   │   └── LivingWaxedCopperTooltipRenderer.java # 红电仪表盘 Tooltip 渲染
 │   ├── util/                                # 客户端工具
@@ -351,6 +354,8 @@ src/main/java/com/qiqi/li/
 src/test/java/com/qiqi/li/
 ├── testutil/
 │   └── FakeContainerContext.java              # ContainerContext 测试替身（内存数组实现）
+├── client/render/
+│   └── LivingFarmlandSeedDecoratorTest.java   # 种子图标装饰器守卫·普通/未种植/已种植/非耕地（4 项）
 ├── living/container/
 │   └── SimpleContainerContextTest.java        # 容器上下文脏槽同步（25 项）
 ├── living/domain/redstone/
@@ -376,7 +381,8 @@ src/test/java/com/qiqi/li/
 ├── living/domain/farmland/
 │   ├── CropClassifierTest.java               # 作物分类器·火把花/瓶子草/柱状段回归（10 项）
 │   ├── LivingFarmlandFunctionTest.java      # 输出合并回归·部分合并丢物品守卫（5 项）
-│   └── FertilizeTransferTest.java           # 自动施肥·骨粉→活耕地零空转守卫（6 项）
+│   ├── FertilizeTransferTest.java           # 自动施肥·骨粉→活耕地零空转守卫（6 项）
+│   └── LivingFarmlandPlacementTest.java     # 放置回世界·落点/幼苗/客户端/异常不冒泡+端到端接线（5 项）
 ├── living/domain/furnace/
 │   ├── LivingFurnaceFunctionTest.java         # 燃料消耗合成残留物语义（4 项）
 │   └── FurnaceBurningFlagTest.java            # 燃烧标志组件·图标切换回归（5 项）
@@ -392,8 +398,8 @@ src/test/java/com/qiqi/li/
     └── SlotInteractionCargoGateTest.java      # 槽位交互货物准入真值表·活骨粉不施肥（5 项）
 ```
 
-**合计测试用例 288 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
-全绿基线：`288 passed / 0 failed / 0 skipped`（2026-09-15 自动施肥验证）。
+**合计测试用例 297 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
+全绿基线：`297 passed / 0 failed / 0 skipped`（2026-09-16 种子图标装饰器）。
 
 > 📄 测试环境配置与编写约定详见 [unit-testing.md](docs/guides/unit-testing.md)
 
@@ -494,9 +500,10 @@ src/test/java/com/qiqi/li/
 - [x] 生长状态机：世界轴时间戳节拍（200t，稳态零写入）+ 湿润传播（**4 级 BFS：水源相邻=源 4 级，沿相邻活耕地逐跳 -1，≥1 即湿润**）+ 顶行正常生长/产出挂起
 - [x] round-robin 逐项产出：战利品表首轮冻结进组件、每 tick 不限速逐项 ×堆叠数、留种（cropSeed 产出项总量 -1）、标准/浆果双模式、收获形态覆盖（HARVEST_BLOCKS：FD 稻米/番茄/火把花——下部表只掉种子的作物滚覆盖方块表）
 - [x] 作物准入三层：Block 白名单（CropBlock/StemBlock/NetherWart/SweetBerry/PitcherCrop）+ c:seeds 标签 + 甜浆果手动映射；茎作物产出 = 果块直取（stem.fruit AT）；maxAge 读 age 属性真实上限（模组作物兜底）+ 存量组件自愈（注册表修正后重冻结）
-- [x] 双槽渲染：耕地槽种子物品图标叠加 + 上方空生长槽 renderSingleBlock 世界管线阶段大图 + 三种多格模式（DOUBLE_BLOCK_HALF 半部件 / UPPER_CROPS 注册式 / COLUMN_PARTS 柱状属性分段——FD 稻米/KC 水稻/瓶子草全收齐）+ 同帧生长槽认领防双画 + 渲染异常隔离
+- [x] 双槽渲染：耕地槽种子物品图标叠加（**IItemDecorator 装饰器路径**，快捷栏/容器 GUI/创造物品栏共用同一份代码）+ 上方空生长槽 renderSingleBlock 世界管线阶段大图 + 三种多格模式（DOUBLE_BLOCK_HALF 半部件 / UPPER_CROPS 注册式 / COLUMN_PARTS 柱状属性分段——FD 稻米/KC 水稻/瓶子草全收齐）+ 同帧生长槽认领防双画 + 渲染异常隔离
 - [x] 技术文档 [living-farmland-tech.md](docs/tech/living-farmland-tech.md)（idea.md 内容转化）+ 回归守卫测试（CropClassifierTest 10 项 + LivingFarmlandFunctionTest 5 项 + InteractionRegistryTest 7 项）
 - [x] 游戏实测九轮全过（渲染/产出/交互全正常，2026-09-14 用户确认）；终审修复：部分合并丢物品（合并仅当放得下整份）+ 双重认领 + 模式互斥 + 留种总量 -1 + maxAge 自愈，262 用例全绿
+- [x] 放置回世界自动种植（2026-09-16）：已种植活耕地物品放置到世界 → 耕地上直接长出作物。**模拟玩家右键**（`useOn`）而非 `setBlock`，不绕过模组种植校验；软逻辑（种不上/抛异常一律静默）；一律幼苗不保留成熟度
 
 ### 容器兼容性
 - [x] IItemHandler 统一容器抽象（原版 + 模组容器）
@@ -507,7 +514,44 @@ src/test/java/com/qiqi/li/
 
 ## 开发进展
 
+> 📄 **更早的记录**：`2026-09-04` 及更早已迁至 [changelog.md](docs/archive/changelog.md)
+> （按日期倒序；含红电阶段一~四落地、1 game tick 传播、v8/v8.1 重构周期、活水车/活地图/活箱子/活末影箱等全部历史条目）。
+>
+> **归档规则**：早于最近约两周的条目迁入该文件，归档时**必须校验日期连续性**
+> ——「changelog 最新日期」与「本节最早日期」之间**不得有空档**，并同步更新本行指针。
+> ⚠️ `2026-09-01 ~ 09-04` 曾因漏做归档而**断档**（只在 `.workbuddy-ai/memory/` 日工作日志里，
+> 而日志会定期删除），已于 2026-09-16 补录 —— **别再漏**。
+
 ### 当前版本: v0.9-alpha
+
+**最近更新** (2026-09-16):
+- ✅ 修复：**活耕地种子图标在 HUD 快捷栏不渲染**——原实现画在
+  `AbstractContainerScreenMixin.render @TAIL`，硬依赖 `leftPos`/`topPos`（只有
+  `AbstractContainerScreen` 有），而快捷栏走 `Gui.renderHotbar` → `renderSlot` →
+  `GuiGraphics.renderItemDecorations` → `ItemDecoratorHandler`，**从不经过该屏幕**。
+  迁到 `IItemDecorator`（`client/render/LivingFarmlandSeedDecorator`，自抬 z=200）：
+  装饰器在快捷栏/容器 GUI/创造物品栏都会被调用，**一份代码全覆盖、只画一次**；
+  容器 Mixin 里那段重复 blit 已删除（生长槽大图保留——它需要「同容器正上方一格槽位」
+  的邻居关系，装饰器拿不到容器槽表）。新增 `LivingFarmlandSeedDecoratorTest`（4 项），
+  全量 **297 用例全绿**。收编 icon-system.md（三层架构 + §5 表格补活耕地行 + 新增
+  「种子图标改走装饰器路径」小节，含坐标/z/渲染状态三处契约）+ living-farmland-tech.md
+  v1.11 §8.2/§10.1/§10.2/§10.3/§12.3。
+- ✅ 新增：**放置活耕地回世界时自动种下自带作物**——把一块「已种植」的活耕地物品
+  放置到世界里，放置出的耕地上直接长出那株作物。**做法：模拟玩家右键**
+  （构造 `UseOnContext` 调 `ItemStack.useOn`），**不是**自己 `setBlock`——后者会绕过
+  模组在 `canSurvive` / 覆写 `useOn` 里的校验（如「水稻只能在水下种」），种出非法状态。
+  改用 `useOn` 后连 `CropClassifier`、`canBeReplaced` 检查、`is(Blocks.FARMLAND)`
+  检查都不需要了（种子自己的 `canSurvive` 会校验下方是耕地），代码反而更短。
+  入口：`mixin/BlockItemMixin`（`@Mixin(BlockItem.class)`，注入 `place` 的 `consume`
+  **之前**——注在 `@At("RETURN")` 会因空栈 `getComponents()` 返回 EMPTY 而
+  **只在单块放置时静默失效**）+ `domain/farmland/LivingFarmlandPlacement`（约 30 行）。
+  **这是「软逻辑」**（用户定调）：能种上就好，种不上（含抛异常）一律静默、整段
+  try/catch，绝不影响原版放置流程。口径：**一律种成幼苗**（不保留成熟度，用户定调）；
+  多格作物上部件不放置、交给原版长；`pendingDrops` 掉落不丢。新增
+  `LivingFarmlandPlacementTest`（5 项，含「异常不冒泡」红线与**端到端 Mixin 接线**用例），
+  全量 **293 用例全绿**。
+  收编 living-farmland-tech.md v1.10 §3.5 + §10.1/§10.2/§10.3 + §11.16（三坑：
+  `RETURN` 注入 / `isClientSide` 字段不可 mock / 别 `setBlock`）+ §12.1 实测清单。
 
 **最近更新** (2026-09-15):
 - ✅ 新增：**活漏斗自动施肥（骨粉 → 活耕地）**——活漏斗按 WASD 方向传输时，
@@ -969,9 +1013,6 @@ src/test/java/com/qiqi/li/
   收口到统一接口（依赖收窄到接口，edgeGrid 边模型后续重构只改端口实现）；
   演进路线（事件流/元件接口化）沉淀至 redstone-evolution-roadmap.md
 - 📄 技术文档：living-power-tech.md §3.8 / 红电系统.md v19.1 修订
-
-> 📄 2026-08-30 及更早的更新记录已迁至 [changelog.md](docs/archive/changelog.md)
-> （红电阶段一~四落地、1 game tick 传播、v8/v8.1 重构周期、活水车/活地图/活箱子/活末影箱等全部历史条目）
 
 ---
 

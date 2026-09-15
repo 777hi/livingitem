@@ -37,9 +37,9 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  Layer 3: IItemDecorator（可选）                             │  ← 箭头叠加层（仅物品栏）
-│  例: LivingHopperDecorator                                  │
-│      hopper_arrow_in.png / hopper_arrow_out.png             │
+│  Layer 3: IItemDecorator（可选）                             │  ← 叠加层（快捷栏 + 容器 GUI）
+│  例: LivingHopperDecorator（方向箭头）                        │
+│      LivingFarmlandSeedDecorator（活耕地种子图标）            │
 ├─────────────────────────────────────────────────────────────┤
 │  Layer 2: GenericContextAwareModel                           │  ← 上下文切换（GUI vs 手持）
 │  ┌──────────────────┬──────────────────────┐                │
@@ -128,6 +128,7 @@ register(LivingIconSpec.builder(Items.REDSTONE_TORCH)
 | 活末影箱 | `base` | `ender.png` | 无 |
 | 活地图 | `base` | `living_map.png` | 地图缩略图装饰器 |
 | 活水车 | `base` | `water_wheel.png` | 3D 旋转动画（Create 兼容） |
+| 活耕地 | `moist` / `dry` | `item/farmland_living_moist` / `item/farmland_living`（复用原版耕地顶面纹理） | 湿润切换 + 种子图标装饰器（`LivingFarmlandSeedDecorator`，已种植时叠加所种作物的种子图标） |
 
 ### 5.1 Builder 可用选项
 
@@ -188,6 +189,10 @@ inner.applyTransform(context, poseStack, ...);     // 3. JSON display 变换
 与各自的层级语义——活耕地种子图标曾在三个 z 值上表现出三种结果，根因即此
 （2026-09-13，详见 living-farmland-tech.md §8.2/§11.7）。
 
+> **2026-09-16 更新**：种子图标已从 render TAIL **迁到装饰器路径**（槽位渲染窗口）——
+> 原实现依赖 `leftPos/topPos`，而 **HUD 快捷栏不经过 `AbstractContainerScreen`**，
+> 导致快捷栏里画不出来。见下方「种子图标改走装饰器路径」。
+
 ### 两个窗口
 
 | 窗口 | 深度测试 | 内容 | 时机 |
@@ -213,8 +218,34 @@ TAIL 注入时原版已重开深度测试，绘制要**与世界深度缓冲竞�
 z=300 才赢过近处箱面 → 可见。这就是「同一段叠加代码在 z=150/175 不显示、z=300 显示」
 的完整解释（与世界深度竞争，而非与槽位内物品竞争——物品在槽位窗口内画的，从不写深度）。
 
-**方块级叠加：renderSingleBlock（世界级管线直绘）**——若叠加的是「方块在
-世界里的样子」而非贴图，用 `BlockRenderDispatcher.renderSingleBlock(state, pose,
+### 种子图标改走装饰器路径（2026-09-16）
+
+**问题**：种子图标原先画在 `AbstractContainerScreenMixin.render @TAIL`，硬依赖
+`leftPos` / `topPos`——这两个字段**只有 `AbstractContainerScreen` 有**。而 **HUD 快捷栏**
+走 `Gui.renderHotbar` → `Gui.renderSlot` → `GuiGraphics.renderItemDecorations`
+→ `ItemDecoratorHandler`，**从不经过 `AbstractContainerScreen`** ⇒ 快捷栏里永远不画。
+
+**修复**：迁到 `IItemDecorator`（`LivingFarmlandSeedDecorator`）。关键依据：
+`GuiGraphics.renderItemDecorations` 的**最后一行**就是
+`ItemDecoratorHandler.of(stack).render(...)`，且容器 GUI 的 `renderSlotContents` 也调它
+⇒ **一份装饰器代码同时覆盖快捷栏 / 容器 GUI / 创造物品栏 / 副手槽**，只画一次、无重复。
+
+**装饰器的坐标与 z 契约**（容易搞错，务必记住）：
+
+| 维度 | 契约 |
+|------|------|
+| 坐标 | **「在当前 pose 内 `translate(xOffset, yOffset, z)`」**。容器传的是 `slot.x/slot.y`（**未加** `leftPos`——`renderSlot` 已 `translate(leftPos, topPos, 0)`）；快捷栏传绝对坐标（pose 为 identity）。**装饰器绝不能自己再加 `leftPos`** |
+| z 基准 | 容器：`renderSlot` 有 `translate(0,0,100)` ⇒ 装饰器 z=200 → **净 300**；快捷栏：pose 为 identity ⇒ **净 200** |
+| 渲染状态 | `ItemDecoratorHandler` 每次调用前 `resetRenderState()`（**开**深度测试 + 开 blend），返回后 `restoreGlState` ⇒ **装饰器里不要写 `RenderSystem` 调用**，也不能照搬 TAIL 版的 `disableDepthTest()` |
+
+**结论**：装饰器自抬 **z=200** 两侧都可见（容器净 300 —— 正是本页记载「才可见」的值；
+快捷栏净 200 > 物品 150；4 个既有装饰器同款）。全尺寸图标会盖住堆叠数数字——既有取舍。
+
+> **生长槽大图无法同样迁移**：它需要「同容器正上方一格槽位」的邻居关系
+> （`living_item$findSlotAbove`），而装饰器只拿得到 `xOffset/yOffset`、拿不到容器槽表；
+> 快捷栏也没有该结构。故它留在 `AbstractContainerScreenMixin`。
+
+**方块级叠加：renderSingleBlock（世界级管线直绘）**——若叠加的是「方块在世界里的样子」而非贴图，用 `BlockRenderDispatcher.renderSingleBlock(state, pose,
 buffer, FULL_BRIGHT, NO_OVERLAY, ModelData.EMPTY, RenderType.cutout())` 走完整
 世界渲染管线（模型几何/BlockColors 染色/RenderType 路由全自动，任意模组方块零
 特判），pose 配方 `translate(x, y+16, 层)`（角落原点模型，块底锚定槽位底部！
@@ -274,3 +305,4 @@ RenderSystem.disableBlend();
 | `RotatingWaterWheelModel` | 活水车物品栏 3D 旋转渲染模型 |
 | `WaterWheelRenderState` | 活水车渲染状态数据（ThreadLocal，存储 RPM） |
 | `LivingRedstoneDecorator` | 活红石粉连接纹理装饰器（根据 connections 位掩码绘制 4 方向红色连接线 + 动态着色） |
+| `LivingFarmlandSeedDecorator` | 活耕地种子图标装饰器（已种植时在耕地槽叠加所种作物的种子图标；走装饰器路径故快捷栏也生效） |

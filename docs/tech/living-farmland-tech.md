@@ -1,9 +1,9 @@
 # Living Farmland (活耕地) 技术文档
 
-> **文档版本**: v1.9
-> **最后更新**: 2026-09-15
+> **文档版本**: v1.11
+> **最后更新**: 2026-09-16
 > **适用版本**: Minecraft 1.21.1
-> **状态**: 已实现，九轮实测全过 + 终审修复后；自动施肥已收编为注册式槽位交互（跨容器两方向统一，§11.15），2026-09-15 用户实测确认正常
+> **状态**: 已实现，九轮实测全过 + 终审修复后；自动施肥已收编为注册式槽位交互（跨容器两方向统一，§11.15），2026-09-15 用户实测确认正常；放置回世界（§3.5）2026-09-16 新增；种子图标迁到装饰器路径（§8.2，快捷栏现在也渲染）2026-09-16
 
 ## 目录
 
@@ -50,7 +50,7 @@
 |---|------|------|
 | 1 | **种子消耗**（第五轮修订）：种植消耗与耕地堆叠数等量的活种子，数量不足无法种植 | 初版「标记制不消耗」被实测推翻——不消耗则种子无限白嫖产出；等量消耗让「一堆耕地 = 一片田」经济自洽（详见 §3.2） |
 | 2 | **round-robin 逐项产出**：战利品表首轮成熟评估一次冻结进组件，每 tick 不限速产出一项 | 原版战利品表同时产出多种物品（小麦+种子）；「随机抽一种」期望减半且种子库归零（已否决）；「一次全放」一个槽放不下。冻结保证 round-robin 取项稳定（每轮一次掷骰）；合并仅当放得下整份（部分合并会丢差额，2026-09-14 终审修复） |
-| 3 | **双槽渲染**：耕地槽叠加**种子图标**（类型区分）+ 上方空生长槽 renderSingleBlock 世界管线绘制作物阶段大图（阶段反馈） | 玩家实测需求「叠加种子图标方便区分作物」+「上方槽位显示作物」；湿润时耕地图标切原版 farmland_moist 深色纹理（零新 PNG） |
+| 3 | **双槽渲染**：耕地槽叠加**种子图标**（类型区分，走 `IItemDecorator`）+ 上方空生长槽 renderSingleBlock 世界管线绘制作物阶段大图（阶段反馈） | 玩家实测需求「叠加种子图标方便区分作物」+「上方槽位显示作物」；湿润时耕地图标切原版 farmland_moist 深色纹理（零新 PNG）。种子图标 2026-09-16 从容器 Mixin 迁到装饰器路径——原实现依赖 `leftPos/topPos`，**HUD 快捷栏画不出来**（§8.2） |
 | 4 | **BLOCKED 语义删除**：生长槽被占只阻塞输出，生长照常 | 惩罚性 age 归 0 过重；生长与运输解耦更简单 |
 | 5 | **浆果丛采后回退 age=1**（原版采摘语义） | 查证原版 SweetBerryBushBlock：右键采摘后 age 重置 1（非清零/非保留 maxAge）；产出由概率 tick 驱动模拟自动采摘 |
 | 6 | **留种**：冻结时 cropSeed 产出项总量 -1 | 种植消耗等量种子（第五轮），产出中的种子 -1 作为变相自动补种（如小麦种子 2→1）；多池掉同种种子也只扣一份 |
@@ -188,6 +188,39 @@ InteractionRegistry.register(new InteractionEntry(Items.FARMLAND, Items.BONE_MEA
 
 手持物品右键 = 「按下拦截 + `skipNextRelease` 置位」——原版对光标非空的放置/交换
 发生在**释放阶段**，按下取消拦不住它。详见 gui-click-interception.md 坑 10。
+
+### 3.5 放置回世界（模拟玩家右键种一次，2026-09-16）
+
+**语义**：把一块**已种植**的活耕地物品**放置到世界中**时，放置出来的耕地上直接长出那株作物。
+
+**做法：模拟玩家右键，而不是自己塞方块。** `LivingFarmlandPlacement.onPlaced` 构造
+`UseOnContext`（命中面 = 耕地顶面）后调 `ItemStack.useOn` —— 原版 `BlockPlaceContext`
+会自动把落点算到 `farmlandPos.above()`，并完整走**原版与模组自己的**种植校验
+（`canSurvive`、模组覆写的 `useOn`）。
+
+> ⚠️ **不要改成 `CropClassifier.getBlockFromSeed` + `level.setBlock`**。硬塞方块会绕过
+> 模组校验（例如「水稻只能在水下种」），种出非法状态。**兼容性优先于实现便利** ——
+> 用 `useOn` 后连 `CropClassifier`、`canBeReplaced` 检查、`is(Blocks.FARMLAND)` 检查
+> 都不需要了（种子自己的 `canSurvive` 会校验下方是耕地），代码反而更短。
+
+**触发条件**：`isPlantable(stack)` = `Items.FARMLAND` + `IS_LIVING` + `cropSeed != null`。
+非活耕地 / 未种植的活耕地走原版路径，**零行为变化**。
+
+**调用点**：`mixin/BlockItemMixin`（`@Mixin(BlockItem.class)`），注入 `place` 里
+`consume` 调用**之前**（原因见 §11.16）。
+
+**口径与边界**：
+
+| 维度 | 行为 |
+|------|------|
+| 成熟度 | **一律种成幼苗**（用户定调）——物品里的 `age` 不保留 |
+| 失败处理 | **软逻辑**：种不上（条件不满足 / 模组拒绝 / 抛异常）一律静默，只留一条 WARN 日志。整段兜在 try/catch 内——异常冒泡出 `BlockItem.place` 会造成「方块已放、物品未扣」并炸 tick |
+| 未排空产出 | `pendingDrops` 掉落到耕地旁，不凭空消失 |
+| 多格作物 | 上部件 / 柱段**不**由我们放置，交给原版/模组自己长 |
+
+回归测试 `LivingFarmlandPlacementTest`（5 项）：触发条件真值表 / 落点在耕地之上且一律
+age 0 / 客户端不生效 / **异常不冒泡** / **端到端 Mixin 接线**（`BlockItem.place` 全流程，
+同时钉住「必须注入在 `consume` 之前」）。
 
 ---
 
@@ -530,8 +563,9 @@ mc.renderBuffers().bufferSource().endBatch();   // 立即物化
 ### 8.2 双槽渲染策略（职责划分：耕地槽=种什么，生长槽=长到哪）
 
 ```
-耕地槽：叠加【种子物品图标】全尺寸 16×16（粒子图标 blit，原版种子纹理零新资源；
-  立即模式 + disableDepthTest，见下）→ 一眼区分种植的作物类型；跟物品走
+耕地槽：叠加【种子物品图标】全尺寸 16×16（走 IItemDecorator —— LivingFarmlandSeedDecorator，
+  原版种子粒子图标，零新资源）→ 一眼区分种植的作物类型；跟物品走
+  ⚠️ 2026-09-16 从容器 Mixin 迁到装饰器路径：原实现依赖 leftPos/topPos ⇒ 快捷栏画不出来
 生长槽：按【坐标匹配】找正上方一格（slot.y - 18）的同容器菜单槽，空槽时
   renderSingleBlock 当下 age 的作物状态 → 「土下苗上」原样呈现；
   成熟产出后被真实物品覆盖 / 取走后显成熟形态；同容器约束防跨容器错位
@@ -545,6 +579,17 @@ mc.renderBuffers().bufferSource().endBatch();   // 立即物化
 避让、重绘堆叠数文字——最终定稿：**全尺寸 16×16 + disableDepthTest，盖住堆叠数
 数字为已知取舍**（类型辨识优先）。槽位叠加层完整层级表与两窗口语义收编
 [icon-system.md「槽位叠加层渲染层级」](../system-design/icon-system.md)。
+
+**2026-09-16 迁移：快捷栏不渲染的修复**。上面那套「TAIL + `disableDepthTest`」方案
+**只在容器 GUI 生效**——HUD 快捷栏走 `Gui.renderHotbar` → `Gui.renderSlot` →
+`GuiGraphics.renderItemDecorations` → `ItemDecoratorHandler`，**从不经过
+`AbstractContainerScreen`**，而 TAIL 版硬依赖 `leftPos`/`topPos` ⇒ 快捷栏里永远不画。
+已迁到 `IItemDecorator`（`LivingFarmlandSeedDecorator`，自抬 z=200）：装饰器在
+**快捷栏 / 容器 GUI / 创造物品栏 / 副手槽**都会被调用，一份代码全覆盖、只画一次。
+
+装饰器的坐标与 z 契约（三处易错点：容器传的是 `slot.x` 而非 `slot.x+leftPos`、
+容器内 z 有 +100 基准故净 300、`ItemDecoratorHandler` 会重开深度测试故不能写
+`RenderSystem`）详见 [icon-system.md「种子图标改走装饰器路径」](../system-design/icon-system.md)。
 
 ### 8.2.1 多格作物的三种渲染模式（2026-09-14 三模式收齐）
 
@@ -620,7 +665,8 @@ src/main/java/com/qiqi/li/
 │   ├── FarmlandPlantComponent.java     # 种植数据组件（Codec + StreamCodec）
 │   ├── CropClassifier.java             # 作物分类器（准入/maxAge/浆果判定/茎果实）
 │   ├── LivingFarmlandFunction.java     # tick 功能（生长/产出状态机 + tooltip）
-│   └── FarmlandBonemealInteraction.java # 槽位交互：骨粉 → 活耕地 = 施肥（活漏斗自动施肥）
+│   ├── FarmlandBonemealInteraction.java # 槽位交互：骨粉 → 活耕地 = 施肥（活漏斗自动施肥）
+│   └── LivingFarmlandPlacement.java    # 放置回世界：模拟玩家右键种一次（§3.5）
 ├── living/transfer/
 │   ├── SlotInteraction.java            # 槽位交互接口（matches + interact + consumeAmount）
 │   └── SlotInteractions.java           # 槽位交互注册表 + 分发器（三处传输分支唯一入口）
@@ -628,9 +674,12 @@ src/main/java/com/qiqi/li/
 │   ├── TillToFarmlandHandler.java       # 活锄头 → 活耕地（6 锄头规则）
 │   ├── PlantCropHandler.java            # 种植（通配 + handler 校验）
 │   └── BonemealHandler.java             # 骨粉催熟（精确触发器）
+├── living/mixin/
+│   └── BlockItemMixin.java              # 放置活耕地后自动种下自带作物（consume 前注入，§3.5）
 ├── client/render/
-│   └── CropTextureResolver.java         # blockstate→模型→粒子图标解析
-└── client/mixin/AbstractContainerScreenMixin.java  # render @TAIL 双槽渲染
+│   ├── CropTextureResolver.java         # blockstate→模型→粒子图标解析
+│   └── LivingFarmlandSeedDecorator.java # 耕地槽种子图标叠加（IItemDecorator，快捷栏也生效）
+└── client/mixin/AbstractContainerScreenMixin.java  # render @TAIL 生长槽大图渲染
 ```
 
 ### 10.2 注册点
@@ -642,6 +691,8 @@ src/main/java/com/qiqi/li/
 | 交互规则 | 同上 | DIRT×6 锄头（till）、FARMLAND+null（plant）、FARMLAND+BONE_MEAL（bonemeal） |
 | 交互处理器 | 同上 | `registerHandler` × 3（actionId 对应） |
 | 槽位交互（活漏斗自动施肥） | `SlotInteractions` 静态块 | `register(new FarmlandBonemealInteraction())`——内置条目，三处传输分支经分发器自动生效 |
+| Mixin（放置回世界） | `living_item.mixins.json` | `BlockItemMixin` —— `@Mixin(BlockItem.class)`，注入 `place` 的 `consume` **之前**（§11.16） |
+| 装饰器（耕地槽种子图标） | `LivingIconRegistry` FARMLAND spec | `.decorator(new LivingFarmlandSeedDecorator())`——`RegisterItemDecorationsEvent` 注册；走装饰器路径故快捷栏/容器/创造物品栏共用 |
 | AT | `accesstransformer.cfg` | `public net.minecraft.world.level.block.StemBlock fruit` |
 | 图标 | `LivingIconRegistry.registerAll` | FARMLAND → `item/farmland_living`（引用原版 `block/farmland` 顶面纹理，零新 PNG） |
 | lang | `assets/living_item/lang/` | `tooltip.livingitem.farmland.*` ×4（中英） |
@@ -656,6 +707,8 @@ src/main/java/com/qiqi/li/
 | `FertilizeTransferTest`（6 项） | 自动施肥语义（2026-09-15）：未成熟 age+1 扣粉、已冻结零空转不消耗、非活耕地/未种植/非骨粉拒绝；`tryFertilize` 本身不做货物准入（政策在漏斗侧） |
 | `CrossContainerTransferFertilizeTest`（15 项） | 槽位交互分发（2026-09-15）：拉取方向入口（邻居骨粉 → 本容器耕地 age+1 且扣邻居 1 粉、空槽跳过命中后面的粉堆、邻居无粉不误伤、冻结耕地零空转不烧粉、非活/未种植拒绝）+ 已知货物入口（生效真扣 1 粉、冻结不真扣、非骨粉/空目标槽不接管）+ `canInteract` 廉价筛选谓词 + 推送方向（普通骨粉照常插入、活骨粉不入空槽、活骨粉不与同种普通堆合并、活熔炉全拒）+ **活骨粉三个入口全被拒** |
 | `SlotInteractionCargoGateTest`（5 项） | 货物准入唯一定义点 `isEligibleCargo`（2026-09-15 用户定案）：真值表（普通物品/活箱子/活末影箱合法，活骨粉/活熔炉非法）、工厂同口径返回 null、**活骨粉 + 活耕地不施肥不扣货**、普通骨粉端到端无回归 |
+| `LivingFarmlandPlacementTest`（5 项） | 放置回世界（2026-09-16）：`isPlantable` 真值表（非活耕地/活但未种植/已种植/非耕地活物品）、**落点在耕地之上且一律 age 0**（mock Level 捕获 `setBlock`）、客户端不生效、**软逻辑红线——种植抛异常被吞掉不外泄**、**端到端 Mixin 接线**（`BlockItem.place` 全流程 → 作物被种下，同时钉住「必须注入在 `consume` 之前」） |
+| `LivingFarmlandSeedDecoratorTest`（4 项） | 种子图标装饰器守卫（2026-09-16）：普通非活耕地 false / 活耕地未种植 false / 活耕地已种植 true / 非耕地活物品 false。装饰器按 `Item` 注册 ⇒ 会对所有 FARMLAND 调用，守卫必须完整；画面本身交游戏实测 |
 
 ---
 
@@ -906,6 +959,33 @@ KC（KaleidoscopeCookery）水稻成熟形态是**三格柱**，活耕地里第�
 **特殊槽位识别只在 `containerCtx` 一侧生效，邻居侧没有访问器工厂**——面向邻居侧
 特殊槽位的交互已由注册表统一接管（不再逐处硬编码）。
 
+### 11.16 放置回世界的三个坑（2026-09-16，实现期拦截）
+
+**(1) 注入 `@At("RETURN")` 会「只在单块放置时静默失效」**
+`BlockItem.place` 在成功分支**末尾**才 `itemstack.consume(1, player)`；而
+`ItemStack.isEmpty()` 为真时 `getComponents()` 返回 `DataComponentMap.EMPTY`
+（`ItemStack.java:229`）⇒ 单块放置（count 1→0）后组件读不到、`isPlantable` 恒 false；
+**堆叠放置（count>1）却正常**。这种「只在单块时坏」的 bug 极难排查。
+→ 必须锚在 `consume` **之前**（该点全 `BlockItem` 唯一，无需 `ordinal`）。
+
+**(2) 别用 `level.isClientSide` 字段——它是 `public final`，Mockito 读不到**
+`Level.isClientSide` 是**字段**（`Level.java:113`），方法 `isClientSide()` 只是读它。
+字段不可被 mock ⇒ 单测里客户端守卫永远不触发，会出现「测试红但代码看着对」。
+→ 统一用**方法式** `level.isClientSide()`（语义等价，同 `EnderRouteManager`）。
+
+**(3) 别自己 `setBlock`——会绕过模组校验**
+`CropClassifier.getBlockFromSeed` + `stateForAge` + `level.setBlock` 能「种上」，但模组在
+`canSurvive` / 覆写的 `useOn` 里的校验（如「水稻只能在水下种」）**一律不执行**，种出非法状态。
+→ 改用 `ItemStack.useOn(new UseOnContext(...))` 模拟玩家右键（§3.5）。副作用是连
+`CropClassifier`、`canBeReplaced` 检查、`is(Blocks.FARMLAND)` 检查都不需要了，代码更短。
+
+**附带发现**：Create 也 Mixin 了 `BlockItem`
+（`BlockItem.handler$zzk000$create$fixDeployerPlacement`），与本模组共存无冲突。
+
+**教训**：**「能跑通」不等于「走对了路径」**。当一个能力的语义是「模拟玩家的某个动作」时，
+优先找原版对应的**入口方法**（这里是 `useOn`）而不是复刻它的**结果**（`setBlock`）——
+后者会静默绕过所有下游扩展点，兼容性问题要等玩家装了模组才暴露。
+
 ---
 
 ## 12. 验证清单
@@ -920,6 +1000,16 @@ KC（KaleidoscopeCookery）水稻成熟形态是**三格柱**，活耕地里第�
 - [ ] 已冻结的成熟耕地重复右键骨粉 → 无变化不消耗
 - [ ] 非活种子/非活骨粉右键 → 无交互（原版行为）
 - [ ] 已种植耕地再种 → 无反应；取消活化再活化 → 种植数据清空
+
+**放置回世界（§3.5，2026-09-16 新增）**：
+
+- [ ] 已种植活耕地**放置到世界** → 耕地上方出现**幼苗**（age 0，与物品成熟度无关）
+- [ ] **单块放置（count=1）与堆叠放置（count>1）行为一致**（§11.16 坑 1 的回归点）
+- [ ] 未种植活耕地 / 普通非活耕地放置 → 与原版**完全一致**（零行为变化）
+- [ ] 上方被占 / 落点非耕地 → 种不下，**无异常、无崩溃、无日志刷屏**
+- [ ] **模组兼容**：对种植位置有要求的模组作物（如水下水稻）→ 不满足时**种不下**
+      （证明未绕过模组逻辑，§11.16 坑 3）
+- [ ] 带未排空产出的活耕地放置 → 产出掉出，不凭空消失
 
 ### 12.2 生长与产出
 
@@ -967,6 +1057,10 @@ KC（KaleidoscopeCookery）水稻成熟形态是**三格柱**，活耕地里第�
 
 - [ ] **耕地槽显示全尺寸种子图标**（类型一眼区分，随物品搬运跟随；堆叠数数字被
       覆盖为已知取舍）
+- [ ] **种子图标在快捷栏也显示**（2026-09-16 修复点）：把已种植活耕地放进快捷栏
+      （**不打开背包**）→ 应显种子图标；未种植活耕地 / 普通耕地 → 不显
+- [ ] **容器 GUI 无回归**：打开箱子时耕地槽仍显图标，计数数字角与图标边缘正常
+- [ ] 创造物品栏 / 副手槽的活耕地同样显图标；既有装饰器（活漏斗箭头等）不受影响
 - [ ] **上方空槽显示作物当前阶段贴图**（「土下苗上」）
 - [ ] **湿润图标切换 + 传播**：邻格放活水桶 → 直接相邻耕地变深（3 级），
       相邻耕地的相邻耕地也变深（2→1 级传播）；收走水桶全部恢复浅色
