@@ -349,6 +349,40 @@ public class LivingFarmlandFunction implements LivingItemFunction {
         return plant;
     }
 
+    /**
+     * 自动施肥入口（传输管道调用）——货物骨粉 + 目标活耕地 → 触发一次生长 tick。
+     *
+     * <p>与 GUI 活骨粉右键（BonemealHandler）同一语义（forceGrowthTick + equals
+     * 零空转），但<b>口径有意区分</b>（2026-09-15 定稿）：手动 = 活化能力（要活
+     * 骨粉），自动 = 物流集成（普通骨粉即可，骨粉生成器/原版漏斗可直接对接）。
+     * 消耗 = 1 个骨粉/次；无变化（已冻结成熟耕地）不消耗——对着等待输出的耕地
+     * 空转不烧骨粉。</p>
+     *
+     * <p>两处调用（奥卡姆内嵌形态，无专属传输逻辑）：容器内 TransferPipeline
+     * 的施肥 if；跨容器 tryPushToNeighbor 既有槽位循环里的「活耕地槽 = 施肥」
+     * 替换（simulateExtract(1) 试粉 → 生效 → extract(1) 扣粉）。组件同步：同
+     * 容器由管道分支 syncSlotToClients；跨容器由耕地所在容器自身 tick 兜底。</p>
+     *
+     * @return true = 施肥生效（已消耗 1 骨粉 + 耕地组件已更新）
+     */
+    public static boolean tryFertilize(ItemStack farmland, ItemStack bonemeal, ServerLevel level) {
+        if (!farmland.is(Items.FARMLAND) || !LivingItemManager.isLivingItem(farmland)) return false;
+        if (!bonemeal.is(Items.BONE_MEAL) || bonemeal.isEmpty()) return false;
+
+        FarmlandPlantComponent plant = LivingItemManager.getFarmlandPlant(farmland);
+        if (!plant.isPlanted()) return false;
+
+        Block cropBlock = CropClassifier.getBlockFromSeed(plant.cropSeed());
+        if (cropBlock == null) return false;
+
+        FarmlandPlantComponent updated = forceGrowthTick(plant, cropBlock, level);
+        if (updated.equals(plant)) return false;   // 无变化零消耗（BonemealHandler 同款守卫）
+
+        LivingItemManager.setFarmlandPlant(farmland, updated);
+        bonemeal.shrink(1);
+        return true;
+    }
+
     private void updatePlant(ContainerContext ctx, int slot, ItemStack stack, FarmlandPlantComponent plant) {
         // equals 守卫：概率失败/输出放不下等场景组件未变，不写不同步
         if (LivingItemManager.getFarmlandPlant(stack).equals(plant)) return;

@@ -9,6 +9,7 @@ import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.domain.ender.EnderRouteManager;
 import com.qiqi.li.living.domain.ender.LivingEnderChestFunction;
+import com.qiqi.li.living.domain.farmland.LivingFarmlandFunction;
 import com.qiqi.li.living.transfer.FilterData;
 import com.qiqi.li.living.transfer.SlotAccessor;
 import com.qiqi.li.living.transfer.SlotAccessorFactory;
@@ -68,6 +69,22 @@ public final class TransferPipeline {
 
         ItemStack sourceStack = ctx.getItem(sourceSlot);
         if (sourceStack.isEmpty()) return false;
+
+        // 自动施肥（2026-09-15）：货物 = 骨粉 + 目标 = 活耕地 → 消耗 1 粉触发生长 tick
+        // （普通/活骨粉统一放行——物流集成口径，与 GUI 活骨粉右键区分）。活耕地是
+        // 活物品非存储容器，通用插入到此必停，施肥就是它的「插入」语义。equals
+        // 零空转：耕地无变化不消耗 → false 不设冷却。槽位 ItemStack 是容器实时引用，
+        // 组件与数量修改即刻生效，只需主动同步组件变化。
+        ItemStack targetStack = ctx.getItem(targetSlot);
+        if (sourceStack.is(net.minecraft.world.item.Items.BONE_MEAL)
+            && targetStack.is(net.minecraft.world.item.Items.FARMLAND)
+            && LivingItemManager.isLivingItem(targetStack)
+            && level instanceof net.minecraft.server.level.ServerLevel serverLevel
+            && LivingFarmlandFunction.tryFertilize(targetStack, sourceStack, serverLevel)) {
+            ctx.syncSlotToClients(targetSlot, targetStack);
+            ctx.syncSlotToClients(sourceSlot, sourceStack);
+            return true;   // 漏斗 tick 自然设冷却——一次施肥 = 一次传输
+        }
 
         if (!isTransferableSource(sourceStack)) return false;
 

@@ -132,6 +132,18 @@ public final class CrossContainerTransfer {
         Container container = ContainerContext.getContainer(level, neighborPos);
         for (int i = 0; i < neighborHandler.getSlots(); i++) {
             ItemStack neighborStack = neighborHandler.getStackInSlot(i);
+            // 活耕地槽位：骨粉货物改走施肥（与容器内管道 [3.5] 同一语义；其它货物/其它
+            // 目标照旧走通用插入）。getStackInSlot 是 BE 容器实时引用，组件修改即刻
+            // 生效；GUI 同步由耕地所在容器自身 tick 的 updatePlant 兜底。
+            if (filterItem.is(net.minecraft.world.item.Items.BONE_MEAL)
+                && neighborStack.is(net.minecraft.world.item.Items.FARMLAND)
+                && LivingItemManager.isLivingItem(neighborStack)
+                && level instanceof net.minecraft.server.level.ServerLevel serverLevel
+                && com.qiqi.li.living.domain.farmland.LivingFarmlandFunction
+                       .tryFertilize(neighborStack, source.simulateExtract(1), serverLevel)) {
+                source.extract(1, null);   // 施肥生效才扣 1 粉（模拟优先协议）
+                return true;
+            }
             if (!neighborStack.isEmpty() && !neighborStack.is(filterItem.getItem())
                 && neighborStack.getCount() >= neighborHandler.getSlotLimit(i)) continue;
             if (container != null && !container.canPlaceItem(i, filterItem)) continue;

@@ -171,6 +171,16 @@ TransferPipeline.execute(ctx, level, hostSlot, sourceSlot, targetSlot, ...)
       ├─ [1] 自环防护：sourceSlot == targetSlot → return false
       ├─ [2] 级联防护：transferredTargetSlots 包含 sourceSlot → return false
       ├─ [3] 空源检查：sourceStack.isEmpty() → return false
+      ├─ [3.5] **自动施肥**（2026-09-15，活漏斗 × 活耕地联动）：
+      │   └─ 货物 = 骨粉 && 目标槽 = 活耕地（FARMLAND + IS_LIVING）且 level 是 ServerLevel
+      │       ├─ LivingFarmlandFunction.tryFertilize(耕地, 骨粉, level)
+      │       │   ├─ forceGrowthTick（未成熟 +1 / 成熟待输出空 → 冻结产出）
+      │       │   ├─ equals 零空转：耕地无变化 → false 不消耗骨粉（对着已冻结成熟耕地不空转烧粉）
+      │       │   └─ 有变化 → setFarmlandPlant + 骨粉 shrink(1) → true
+      │       └─ true → 双槽 syncSlotToClients（槽位引用已实时生效，仅同步组件/数量变化）
+      │           └─ return true（漏斗 tick 自然设冷却——一次施肥 = 一次传输，节奏对齐 8t 冷却）
+      │   └─ 普通/活骨粉统一放行（自动施肥面向物流集成），与 GUI 活骨粉右键口径有意区分
+      │       （手动=活化能力）；跨容器版内嵌于 tryPushToNeighbor 既有循环（§6.2.1）
       ├─ [4] 活物品隔离：isTransferableSource(sourceStack) 检查
       │   └─ 活物品且非存储容器（活箱子/活末影箱）→ return false
       ├─ [5] 物品过滤：非存储容器的普通物品 → ItemFilterComponent.allows(filter, sourceStack)
@@ -774,8 +784,23 @@ ContainerContext 维护一个 Set<Integer> transferredTargetSlots
 | 模式 | 条件 | 行为 |
 |------|------|------|
 | `pullFromNeighbor` | 源越界，目标未越界 | 从相邻容器拉取物品到当前容器 |
-| `pushToNeighbor` | 目标越界，源未越界 | 从当前容器推送物品到相邻容器 |
-| `transferBetweenNeighbors` | 都越界 | 在两个相邻容器之间直接传输 |
+| `pushToNeighbor` | 目标越界，源未越界 | 从当前容器推送物品到相邻容器（骨粉遇活耕地槽位 = 施肥，见 6.2.1） |
+| `transferBetweenNeighbors` | 都越界 | 在两个相邻容器之间直接传输（骨粉遇活耕地槽位同样施肥——与 push 共用 tryPushToNeighbor） |
+
+### 6.2.1 跨容器施肥（2026-09-15：既有推送循环的自然涌现，零专属逻辑）
+
+施肥方程（货物骨粉 + 目标活耕地）内嵌在 `tryPushToNeighbor` 的既有槽位循环里
+——遇到活耕地槽位时把「插入」换成「施肥」（`source.simulateExtract(1)` 试粉 →
+`tryFertilize` 生效 → `source.extract(1)` 扣粉，模拟优先协议原样），其余货物/
+其余槽位走通用插入不变。**跨容器由此自然覆盖**：`pushToNeighbor` 与
+`transferBetweenNeighbors` 都调 `tryPushToNeighbor`，一处内嵌两路径共用——
+无专属分支、无专属遍历、无 handler 解析（原第一版曾写独立 `tryFertilizeToNeighbor`
+接管整个推送，无耕地邻居时拦断普通货物推送，已按奥卡姆剃刀重构成内嵌形态）。
+
+- 邻居槽活耕地已冻结（equals 零空转）→ 该槽跳过继续迭代（多耕地只有需要的吃粉）；
+  邻居无任何活耕地 → 循环里无槽命中，普通货物推送照常（骨粉入箱，无回归）
+- `getStackInSlot` 是 BE 容器实时引用（InvWrapper 直通），组件修改即刻生效，
+  无需回写 handler；邻居侧 GUI 同步由耕地所在容器自身 tick 的 updatePlant 兜底
 
 ### 6.3 GUI→世界方向转换
 

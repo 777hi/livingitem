@@ -372,7 +372,8 @@ src/test/java/com/qiqi/li/
 │   └── LivingChestFunctionTest.java           # 取消活化堆叠倍数返还（6 项）
 ├── living/domain/farmland/
 │   ├── CropClassifierTest.java               # 作物分类器·火把花/瓶子草/柱状段回归（10 项）
-│   └── LivingFarmlandFunctionTest.java      # 输出合并回归·部分合并丢物品守卫（5 项）
+│   ├── LivingFarmlandFunctionTest.java      # 输出合并回归·部分合并丢物品守卫（5 项）
+│   └── FertilizeTransferTest.java           # 自动施肥·骨粉→活耕地零空转守卫（6 项）
 ├── living/domain/furnace/
 │   ├── LivingFurnaceFunctionTest.java         # 燃料消耗合成残留物语义（4 项）
 │   └── FurnaceBurningFlagTest.java            # 燃烧标志组件·图标切换回归（5 项）
@@ -386,8 +387,8 @@ src/test/java/com/qiqi/li/
     └── ContainerCompatibilityConfigTest.java  # 容器布局推断（9 项）
 ```
 
-**合计测试用例 262 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
-全绿基线：`262 passed / 0 failed / 0 skipped`（2026-09-14 终审验证）。
+**合计测试用例 268 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
+全绿基线：`268 passed / 0 failed / 0 skipped`（2026-09-15 自动施肥验证）。
 
 > 📄 测试环境配置与编写约定详见 [unit-testing.md](docs/guides/unit-testing.md)
 
@@ -422,6 +423,7 @@ src/test/java/com/qiqi/li/
 
 ### 活熔炉 / 活漏斗 / 活TNT / 活水桶 / 活打火石
 - [x] 各功能完整实现（详见对应 tech 文档）
+- [x] 活漏斗自动施肥（2026-09-15）：骨粉货物 + 活耕地目标 → 施肥消耗 1 粉触发生长 tick（普通骨粉即可，equals 零空转，同容器 + 跨容器推送两路径）
 
 ### 活红石
 - [x] 活红石粉：信号传播（BFS，每 game tick）+ 堆叠数影响信号上限
@@ -501,6 +503,23 @@ src/test/java/com/qiqi/li/
 ## 开发进展
 
 ### 当前版本: v0.9-alpha
+
+**最近更新** (2026-09-15):
+- ✅ 新增：**活漏斗自动施肥（骨粉 → 活耕地）**——活漏斗按 WASD 方向传输时，
+  货物是骨粉且目标槽位是活耕地 → 绕开通用插入（活耕地是活物品非存储容器，
+  SlotAccessorFactory 必然 null——通用路径每 tick 空转），改走施肥消耗 1 个
+  骨粉触发一次生长 tick（forceGrowthTick：未成熟 +1 / 成熟待输出空 → 冻结
+  产出）。**触发物口径有意区分**（用户定稿）：手动 = 活化能力（GUI 右键要活
+  骨粉），自动 = 物流集成（**普通骨粉**即可，骨粉生成器/原版漏斗物流可直接
+  对接；活骨粉也放行）。equals 零空转：对着已冻结成熟耕地不烧骨粉。节奏 =
+  漏斗冷却（8t 随堆叠加速，一次施肥 = 一次传输）。实现三处：
+  `LivingFarmlandFunction.tryFertilize`（入口）+ `TransferPipeline.executeInContainer`
+  施肥分支（流程图 [3.5]，置于 isTransferableSource 之前放行骨粉）+
+  `CrossContainerTransfer.pushToNeighbor` 跨容器版（tryFertilizeToNeighbor
+  邻居槽位迭代；getStackInSlot 实时引用改组件即刻生效，无需回写 handler）。
+  回归测试 FertilizeTransferTest（6 项），全量 268 用例全绿；收编
+  living-hopper-tech.md §2.2 流程图 [3.5] + §6.2.1 跨容器施肥小节 +
+  living-farmland-tech.md v1.7 §7.1（口径对照表）+ §12.2 验证项 + §10.3
 
 **最近更新** (2026-09-14):
 - ✅ 修复：**活漏斗黑白名单链 tooltip 显示为空（同款 b064865 后遗症）**——
