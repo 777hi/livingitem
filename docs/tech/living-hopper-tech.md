@@ -104,6 +104,9 @@
 | `PlainSlotAccessor` | `transfer/PlainSlotAccessor.java` | 普通槽位访问器，直接读写 ContainerContext |
 | `LivingChestAccessor` | `domain/chest/LivingChestAccessor.java` | 活箱子访问器，通过 LivingChestFunction API 操作虚拟存储 |
 | `SlotAccessorFactory` | `transfer/SlotAccessorFactory.java` | 工厂类，根据槽位物品类型创建对应 SlotAccessor 实例 |
+| `SlotInteraction` | `transfer/SlotInteraction.java` | 槽位交互接口：「货物 × 目标槽」替代语义（matches 纯谓词 + interact 就地改 target + consumeAmount） |
+| `SlotInteractions` | `transfer/SlotInteractions.java` | 槽位交互注册表 + 分发器（`tryInteract` 已知货物 / `tryInteractFromNeighbor` 拉取方向）+ **货物准入唯一定义点 `isEligibleCargo`**，三处传输分支唯一入口 |
+| `FarmlandBonemealInteraction` | `domain/farmland/FarmlandBonemealInteraction.java` | 内置交互：骨粉 → 活耕地 = 施肥 |
 | `ContainerCompatibilityConfig` | `transfer/ContainerCompatibilityConfig.java` | 容器兼容性规则注册表，支持配置不同模组容器的布局参数 |
 | `SlotMapping` | `model/SlotMapping.java` | 不可变槽位映射模型，12种预设方向 |
 | `Pos2D` | `model/Pos2D.java` | 不可变二维坐标，8个方向常量 |
@@ -171,16 +174,21 @@ TransferPipeline.execute(ctx, level, hostSlot, sourceSlot, targetSlot, ...)
       ├─ [1] 自环防护：sourceSlot == targetSlot → return false
       ├─ [2] 级联防护：transferredTargetSlots 包含 sourceSlot → return false
       ├─ [3] 空源检查：sourceStack.isEmpty() → return false
-      ├─ [3.5] **自动施肥**（2026-09-15，活漏斗 × 活耕地联动）：
-      │   └─ 货物 = 骨粉 && 目标槽 = 活耕地（FARMLAND + IS_LIVING）且 level 是 ServerLevel
-      │       ├─ LivingFarmlandFunction.tryFertilize(耕地, 骨粉, level)
-      │       │   ├─ forceGrowthTick（未成熟 +1 / 成熟待输出空 → 冻结产出）
-      │       │   ├─ equals 零空转：耕地无变化 → false 不消耗骨粉（对着已冻结成熟耕地不空转烧粉）
-      │       │   └─ 有变化 → setFarmlandPlant + 骨粉 shrink(1) → true
-      │       └─ true → 双槽 syncSlotToClients（槽位引用已实时生效，仅同步组件/数量变化）
-      │           └─ return true（漏斗 tick 自然设冷却——一次施肥 = 一次传输，节奏对齐 8t 冷却）
-      │   └─ 普通/活骨粉统一放行（自动施肥面向物流集成），与 GUI 活骨粉右键口径有意区分
-      │       （手动=活化能力）；跨容器版内嵌于 tryPushToNeighbor 既有循环（§6.2.1）
+      ├─ [3.5] **槽位交互分发**（注册式，2026-09-15）：
+      │   └─ SlotInteractions.tryInteract(源Accessor, 货物, 目标槽, level)
+      │       ├─ 遍历注册条目：matches(货物, 目标槽) 命中才接管（纯谓词，无副作用）
+      │       ├─ 模拟优先：simulateExtract(consumeAmount) 试算 → interact 生效 → extract 真扣
+      │       ├─ 内置条目 FarmlandBonemealInteraction（骨粉 → 活耕地 = 施肥）：
+      │       │   ├─ LivingFarmlandFunction.tryFertilize(耕地, 骨粉, level)
+      │       │   │   ├─ forceGrowthTick（未成熟 +1 / 成熟待输出空 → 冻结产出）
+      │       │   │   ├─ equals 零空转：耕地无变化 → false 不消耗骨粉（对着已冻结成熟耕地不空转烧粉）
+      │       │   │   └─ 有变化 → setFarmlandPlant + 骨粉 shrink(1) → true
+      │       ├─ 货物准入：isEligibleCargo（活物品不作货物，活箱子/活末影箱除外）——
+      │       │   施肥属传输语义，故活骨粉（活物品）不施肥；活骨粉的手动用武之地在 GUI 右键
+      │       ├─ 生效 → 双槽 syncSlotToClients（槽位引用已实时生效，仅同步组件/数量变化）
+      │       │   └─ return true（漏斗 tick 自然设冷却——一次交互 = 一次传输，节奏对齐 8t 冷却）
+      │       ├─ 不生效 → 不扣货不设冷却，继续下方通用路径（[4] 起）
+      │       └─ 三处调用点共用本分发器：容器内 / 跨容器推送 / 跨容器拉取（§6.2.1）
       ├─ [4] 活物品隔离：isTransferableSource(sourceStack) 检查
       │   └─ 活物品且非存储容器（活箱子/活末影箱）→ return false
       ├─ [5] 物品过滤：非存储容器的普通物品 → ItemFilterComponent.allows(filter, sourceStack)
@@ -783,24 +791,138 @@ ContainerContext 维护一个 Set<Integer> transferredTargetSlots
 
 | 模式 | 条件 | 行为 |
 |------|------|------|
-| `pullFromNeighbor` | 源越界，目标未越界 | 从相邻容器拉取物品到当前容器 |
-| `pushToNeighbor` | 目标越界，源未越界 | 从当前容器推送物品到相邻容器（骨粉遇活耕地槽位 = 施肥，见 6.2.1） |
-| `transferBetweenNeighbors` | 都越界 | 在两个相邻容器之间直接传输（骨粉遇活耕地槽位同样施肥——与 push 共用 tryPushToNeighbor） |
+| `pullFromNeighbor` | 源越界，目标未越界 | 从相邻容器拉取物品到当前容器（目标槽被槽位交互接管时走交互，见 6.2.1） |
+| `pushToNeighbor` | 目标越界，源未越界 | 从当前容器推送物品到相邻容器（邻居槽被槽位交互接管时走交互，见 6.2.1） |
+| `transferBetweenNeighbors` | 都越界 | 在两个相邻容器之间直接传输（与 push 共用 tryPushToNeighbor） |
 
-### 6.2.1 跨容器施肥（2026-09-15：既有推送循环的自然涌现，零专属逻辑）
+### 6.2.1 槽位交互分发（注册式，2026-09-15）
 
-施肥方程（货物骨粉 + 目标活耕地）内嵌在 `tryPushToNeighbor` 的既有槽位循环里
-——遇到活耕地槽位时把「插入」换成「施肥」（`source.simulateExtract(1)` 试粉 →
-`tryFertilize` 生效 → `source.extract(1)` 扣粉，模拟优先协议原样），其余货物/
-其余槽位走通用插入不变。**跨容器由此自然覆盖**：`pushToNeighbor` 与
-`transferBetweenNeighbors` 都调 `tryPushToNeighbor`，一处内嵌两路径共用——
-无专属分支、无专属遍历、无 handler 解析（原第一版曾写独立 `tryFertilizeToNeighbor`
-接管整个推送，无耕地邻居时拦断普通货物推送，已按奥卡姆剃刀重构成内嵌形态）。
+**「货物 × 目标槽」的替代语义**（骨粉 → 活耕地 = 施肥是最初的一条）统一走注册表
+`SlotInteractions`，三处传输分支只调分发器，**不再各自硬编码方程**：
 
-- 邻居槽活耕地已冻结（equals 零空转）→ 该槽跳过继续迭代（多耕地只有需要的吃粉）；
-  邻居无任何活耕地 → 循环里无槽命中，普通货物推送照常（骨粉入箱，无回归）
-- `getStackInSlot` 是 BE 容器实时引用（InvWrapper 直通），组件修改即刻生效，
-  无需回写 handler；邻居侧 GUI 同步由耕地所在容器自身 tick 的 updatePlant 兜底
+| 场景 | 入口 | 货物是否已知 |
+|------|------|-------------|
+| 容器内 `TransferPipeline.executeInContainer` | `SlotInteractions.tryInteract(源, 货物, 目标槽, level)` | 是（源槽物品） |
+| 跨容器推送 `tryPushToNeighbor` 槽位循环内嵌（顺带覆盖邻居间直传） | 同上 | 是（模拟提取结果） |
+| 跨容器拉取 `pullFromNeighbor` 前置分支 | `SlotInteractions.tryInteractFromNeighbor(邻居handler, 邻居pos, 目标槽, level, filter)` | 否（遍历邻居槽位找匹配货物） |
+
+**协议**（三条，实现在 `SlotInteraction` 接口 javadoc）：
+
+1. **模拟优先**：`simulateExtract(consumeAmount)` 试算 → `interact` 生效 → 才真 `extract` 扣货。
+   交互返回 false（含 equals 零空转）→ **不扣货、不设冷却**，调用方继续走通用路径。
+2. **equals 零空转**：耕地无实际变化（如已冻结的成熟耕地）返回 false → 不烧骨粉。
+3. **只动 target**：实现方就地改目标槽组件；同步由调用方负责。
+
+**货物准入：活物品不作货物（隔离规则，唯一定义点 `SlotInteractions.isEligibleCargo`）**
+
+施肥的语义是「活漏斗用**传输能力**把骨粉送进活耕地」——它属**传输语义**，因此必须受
+漏斗自己的货物规则约束。**活骨粉是活物品 ⇒ 不是合法货物 ⇒ 漏斗不给它施肥**
+（活骨粉的手动用途在 GUI 右键，那里本就要求活化）。
+
+| 场景 | 普通骨粉 | 活骨粉（活物品） |
+|------|---------|----------------|
+| 容器内 → 活耕地 | ✓ 施肥 | ✗ 不接管（`create` 对它返回 null，准入谓词也拒） |
+| 跨容器推送（源在本容器）→ 邻居活耕地 | ✓ 施肥 | ✗ `pushToNeighbor` 入口按隔离规则 `return false` |
+| 跨容器拉取（源在邻居）→ 本容器活耕地 | ✓ 施肥 | ✗ `tryInteractFromNeighbor` 经准入谓词拒绝 |
+| 邻居间直传（源/目标各在一邻居） | ✓ 施肥 | ✗ 源邻居循环跳过活物品 |
+| 活物品 → 邻居空槽/普通槽（任何货物） | — | ✗ 拒绝且不扣货（`interactionOnly` 自守分支） |
+
+**规则表述**：`isEligibleCargo(stack) = !isLivingItem(stack) || 活箱子 || 活末影箱`
+（活箱子/活末影箱是存储容器，本身可被搬运）。它是**唯一定义点**——传输层
+（`TransferPipeline.isTransferableSource` 直接委托）与交互层（`canInteract` /
+`tryInteract` 两个入口）共用，避免隔离规则两处漂移。
+
+**为什么放在交互层入口而不是只靠调用点**（2026-09-15 教训）：调用点顺序是脆弱的——
+容器内路径的交互分发原本在隔离检查**之前**（靠谓词没写活物品检查而「意外放行」），
+一次重构就把它变成 bug。规则收在共享入口后，**任何调用点顺序变更都不会绕过它**。
+`tryPushToNeighbor` 另留一道循环自守（`interactionOnly`）：非合法货物绝不进入通用插入/
+合并，即使未来出现第三个调用方忘了在入口拦。
+
+**源槽访问器怎么拿**：三处都用既有的工厂入口，无需专用变体——
+容器内 `create(...)`（非箱类活物品返回 `null`，正好与准入规则同口径）、
+推送 `create(...)`、拉取 `createForNeighbor(...)`。交互层不再需要「不拦活物品」的访问器
+（那是上一版为「活骨粉放行」加的，随准入收紧一并移除）。
+
+**分配守卫 `canInteract(cargo, target)`**：纯谓词查询（不建 Accessor、无副作用，已内建
+准入）。**真正的分配节省在拉取方向**——`tryInteractFromNeighbor` 用它建 Accessor **之前**
+筛邻居槽，绝大多数组合不匹配，每轮最多省 27 次（邻居槽数）。**容器内路径**
+（`TransferPipeline`）的源槽 Accessor 在交互分发之前就已创建、且下方通用路径要复用同一
+实例，故那里的 `canInteract` 只是廉价早退、不省分配；**推送方向**（`tryPushToNeighbor`）
+的源槽 Accessor 同样由调用方提供，故直接调 `tryInteract`、不再前置谓词。
+
+**过滤口径**：三处交互源槽都带 `FilterData`——黑白名单是漏斗的货物筛选口径，交互同样是
+消耗货物，理应受同一约束（容器内路径原先在过滤检查之前，收编时统一到过滤之后）。
+被过滤的货物在 `simulateExtract` 阶段就返回空栈 → 交互不接管、不扣货、不产生 rollback 抖动。
+
+**为什么拉取方向需要独立入口**：该方向没有「源槽」——源在邻居容器里，货物得自己找，
+所以 `tryInteractFromNeighbor` 对邻居每个槽位先跑 `canInteract` 筛选（纯谓词，纳秒级）
+再走协议。
+
+**为什么三处都必须前置到通用路径之前**（2026-09-15 实测 bug 根因）：活耕地是活物品、
+非存储容器，`SlotAccessorFactory.create` 对非箱类活物品直接返回 `null` → 通用传输
+（`tryPullFromNeighbor` / 通用插入）对活耕地目标槽**必然失败**。漏掉任一处调用点，
+该方向就完全失效——本次就是拉取方向漏了，表现为「跨容器骨粉 → 同容器活耕地」不施肥
+（反向推送正常，详见 living-farmland-tech.md §11.15）。
+
+**扩展方式**（新增交互 = 1 个实现类 + 1 行注册，零传输代码改动）：
+
+```java
+public class MyInteraction implements SlotInteraction {
+    @Override public boolean matches(ItemStack cargo, ItemStack target) {   // 纯谓词
+        return cargo.is(Items.WATER_BUCKET) && target.is(Items.FARMLAND) && LivingItemManager.isLivingItem(target);
+    }
+    @Override public boolean interact(ItemStack cargo, ItemStack target, ServerLevel level) { ... }  // 只改 target
+    // 可选：consumeAmount() 默认 1
+}
+SlotInteractions.register(new MyInteraction());   // 内置条目在 SlotInteractions 静态块注册
+```
+
+**其余要点**（三处共用）：
+
+- 推送方向无专属遍历、无专属 handler 解析（原第一版曾写独立 `tryFertilizeToNeighbor`
+  接管整个推送，无耕地邻居时拦断普通货物推送，已按奥卡姆剃刀重构成内嵌形态）
+- 目标槽已冻结（equals 零空转）→ 不接管、不扣货；邻居无任何匹配目标 → 循环里无槽命中，
+  普通货物推送照常（骨粉入箱，无回归）
+- `getStackInSlot` 是 BE 容器实时引用（InvWrapper 直通），组件修改即刻生效，无需回写
+  handler；推送方向邻居侧 GUI 同步由目标物品所在容器自身 tick 兜底，容器内与拉取方向
+  （目标在本容器）由调用点 `syncSlotToClients` 主动推
+
+### 6.2.2 跨容器能力覆盖矩阵与结构规则（2026-09-15 全量审计）
+
+§11.15 那个 bug 的教训值得上升为结构规则——**「特殊槽位识别只在 containerCtx 一侧生效」**：
+
+| 侧 | 访问器创建入口 | 能识别什么 |
+|----|--------------|-----------|
+| 本容器侧（源或目标都算） | `SlotAccessorFactory.create` | 活箱子/活末影箱（注册式 Provider）；**且先拦掉其它活物品（return null）** |
+| 邻居侧（不论源还是目标） | `SlotAccessorFactory.createForNeighbor` | **只认裸 IItemHandler**——普通插入/提取，不认活箱子/活末影箱/活耕地 |
+
+**覆盖矩阵**（✓ = 已实现；✗ = 不支持，未在任何文档声称，属设计边界）：
+
+| 能力 | 容器内 | 跨容器推送（源本容器） | 跨容器拉取（源在邻居） | 邻居间直传 |
+|------|--------|---------------------|---------------------|-----------|
+| 普通物品传输 | ✓ `executeInContainer` | ✓ `tryPushToNeighbor` | ✓ `tryPullFromNeighbor` | ✓ |
+| 槽位交互（普通骨粉 → 活耕地等） | ✓ [3.5] | ✓ 内嵌循环 | ✓ `tryInteractFromNeighbor` | ✓（共用 push） |
+| 槽位交互（**活物品货物**，如活骨粉） | ✗ 准入拒绝 | ✗ 入口隔离守卫 | ✗ 准入拒绝 | ✗ 源邻居跳过 |
+| 活物品作为**普通货物**被传输 | ✗ | ✗ | ✗ 活物品隔离 | ✗ |
+| 活箱子作**源**（取虚拟存储） | ✓ | ✓（源在本容器，工厂识别） | ✗ 活物品隔离 | ✗ 活物品隔离 |
+| 活箱子作**目标**（写虚拟存储） | ✓ | ✗ 邻居槽不识别 | ✓ `pullFromNeighborToLivingChest` | ✗ |
+| 活末影箱作**源**（按路由提取） | ✓ | ✓（源在本容器，工厂识别） | ✗ 活物品隔离 | ✗ |
+| 活末影箱作**目标**（注册路由） | ✓ | ✗ 邻居槽不识别 | ✓ `resolveCrossContainerTarget` | ✗ |
+
+**读法**：本容器侧的特殊槽位（不论它当源还是当目标）都有支持；邻居侧的特殊槽位
+**默认全不支持**——唯一例外是槽位交互，因为它靠注册表的 `matches` 显式认目标槽，
+而不是靠访问器工厂。这正解释了为什么施肥能在推送方向「自然涌现」而拉取方向必须补分支：
+**它认的是邻居侧，而邻居侧没有工厂。**
+
+**槽位交互的两处调用点已被分发器覆盖**（§6.2.1），新增交互无需再碰传输代码；
+若要新增「邻居侧特殊**存储**」类能力（如把物品推进邻居容器里的活箱子），
+则仍须按「容器内 / 推送 / 拉取」三处点名实现——目前矩阵中那 4 个 ✗ 是既有的、
+未被需求触发的边界（活箱子虚拟存储只对同容器展开）。
+
+**验证方式**：不要靠代码结构推断覆盖范围——`grep -n "SlotInteractions.tryInteract" src/main/java`
+数调用点（应为 3：管道 1 + 跨容器 2），或写方向化单测
+（`CrossContainerTransferFertilizeTest` 两个入口 + 三个方向各覆盖一遍 +
+`SlotInteractionCargoGateTest` 钉住货物准入真值表与「活骨粉不施肥」）。
 
 ### 6.3 GUI→世界方向转换
 

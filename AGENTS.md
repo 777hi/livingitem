@@ -1,8 +1,8 @@
 # Living Item (活物品)
 
 **Minecraft 1.21.1 + NeoForge 21.1.x**
-*最后更新: 2026-09-05*
-*状态: Alpha 测试阶段 - v8.1 接口化重构完成 + 红电相位解读三元件（v19.1）*
+*最后更新: 2026-09-15*
+*状态: Alpha 测试阶段 - v8.1 接口化重构完成 + 红电相位解读三元件（v19.1）+ 注册式槽位交互扩展点（`SlotInteractions`，2026-09-15）*
 
 ---
 
@@ -186,7 +186,8 @@ src/main/java/com/qiqi/li/
 │   │   ├── farmland/                         #   活耕地领域
 │   │   │   ├── LivingFarmlandFunction.java   #     tick 功能入口（生长/产出状态机 + tooltip）
 │   │   │   ├── FarmlandPlantComponent.java   #     种植数据组件（作物标记+age+round-robin 产出）
-│   │   │   └── CropClassifier.java            #     作物分类器（准入三层/maxAge/茎果实 AT/收获形态/上部件注册表）
+│   │   │   ├── CropClassifier.java           #     作物分类器（准入三层/maxAge/茎果实 AT/收获形态/上部件注册表）
+│   │   │   └── FarmlandBonemealInteraction.java #  槽位交互条目：普通骨粉 × 活耕地 → 施肥（注册进 SlotInteractions）
 │   │   │
 │   │   └── map/                              #   活地图传送领域
 │   │       ├── LivingEnderPearlFunction.java #     活末影珍珠（纯工具类）
@@ -258,6 +259,8 @@ src/main/java/com/qiqi/li/
 │   │   ├── FilteredSlotAccessor.java        #   过滤装饰器
 │   │   ├── NeighborSlotAccessor.java        #   邻居容器
 │   │   ├── SlotAccessorFactory.java         #   注册式工厂
+│   │   ├── SlotInteraction.java             #   接口：槽位交互（货物 × 目标槽的替代语义）
+│   │   ├── SlotInteractions.java            #   槽位交互注册表 + 分发器（三处传输分支唯一入口）
 │   │   ├── SlotResolver.java                #   槽位解析
 │   │   ├── ContainerCompatibilityConfig.java #  容器兼容性配置
 │   │   └── FilterData.java                  #   过滤数据（从 data/ 迁入，跨领域共享）
@@ -351,7 +354,7 @@ src/test/java/com/qiqi/li/
 ├── living/container/
 │   └── SimpleContainerContextTest.java        # 容器上下文脏槽同步（25 项）
 ├── living/domain/redstone/
-│   └── ContainerRedstoneDataTest.java         # 红石信号传播（24 项）
+│   └── ContainerRedstoneDataTest.java         # 红石信号传播（29 项）
 ├── living/domain/power/
 │   ├── PowerMathTest.java                     # 发电数学（8 项）
 │   ├── ContainerPowerDataTest.java            # 相位质量状态机（6 项）
@@ -365,9 +368,9 @@ src/test/java/com/qiqi/li/
 │   ├── BulbItemEnergyStorageTest.java         # 铜灯通用电池（7 项）
 │   ├── PhaseSnapshotWarmupTest.java           # 相位快照热身（8 项）
 │   ├── RoundTripConservationIT.java           # Mekanism 往返守恒（4 项）
-│   └── WaxedGeneratorFeedChainTest.java      # 发电机喂链（12 项）
+│   ├── WaxedGeneratorFeedChainTest.java      # 发电机喂链（12 项）
 │   ├── WaxedCopperOscillatorIT.java           # 振荡器→发电全链路集成（5 项）
-│   ├── WaxedCopperCouplingIT.java             # 耦合链集成：多跳中继+防回环（3 项）
+│   └── WaxedCopperCouplingIT.java             # 耦合链集成：多跳中继+防回环（3 项）
 ├── living/domain/chest/
 │   └── LivingChestFunctionTest.java           # 取消活化堆叠倍数返还（6 项）
 ├── living/domain/farmland/
@@ -378,17 +381,19 @@ src/test/java/com/qiqi/li/
 │   ├── LivingFurnaceFunctionTest.java         # 燃料消耗合成残留物语义（4 项）
 │   └── FurnaceBurningFlagTest.java            # 燃烧标志组件·图标切换回归（5 项）
 ├── living/domain/hopper/
-│   └── HopperFilterSyncTest.java              # 漏斗过滤链回写·黑白名单展示回归（5 项）
+│   ├── HopperFilterSyncTest.java              # 漏斗过滤链回写·黑白名单展示回归（5 项）
+│   └── CrossContainerTransferFertilizeTest.java # 跨容器施肥·推送/拉取双入口+活骨粉三入口全拒（15 项）
 ├── living/domain/map/
-│   └── MapCoordHelperTest.java                # 地图坐标换算（16 项）
+│   └── MapCoordHelperTest.java                # 地图坐标换算（29 项）
 ├── living/interaction/
 │   └── InteractionRegistryTest.java           # 两趟优先级匹配·通配遮蔽+triggerFilter 回归守卫（7 项）
 └── living/transfer/
-    └── ContainerCompatibilityConfigTest.java  # 容器布局推断（9 项）
+    ├── ContainerCompatibilityConfigTest.java  # 容器布局推断（14 项）
+    └── SlotInteractionCargoGateTest.java      # 槽位交互货物准入真值表·活骨粉不施肥（5 项）
 ```
 
-**合计测试用例 268 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
-全绿基线：`268 passed / 0 failed / 0 skipped`（2026-09-15 自动施肥验证）。
+**合计测试用例 288 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
+全绿基线：`288 passed / 0 failed / 0 skipped`（2026-09-15 自动施肥验证）。
 
 > 📄 测试环境配置与编写约定详见 [unit-testing.md](docs/guides/unit-testing.md)
 
@@ -520,6 +525,41 @@ src/test/java/com/qiqi/li/
   回归测试 FertilizeTransferTest（6 项），全量 268 用例全绿；收编
   living-hopper-tech.md §2.2 流程图 [3.5] + §6.2.1 跨容器施肥小节 +
   living-farmland-tech.md v1.7 §7.1（口径对照表）+ §12.2 验证项 + §10.3
+  ⚠️ 本条的「活骨粉也放行」与实现三处之说已于同日修正/收编，见下方两条（口径修正 + 注册式分发）
+- ✅ 修复 + 重构：**跨容器施肥「推送生效、拉取失效」**——施肥分支原先只内嵌在
+  推送方向与容器内管道，拉取方向 `pullFromNeighbor` 走通用路径，而
+  `SlotAccessorFactory.create` 对非箱类活物品直接 return null（活耕地正是
+  「活物品 + 非存储容器」）→ 目标槽必然失败，骨粉送不进去也永远不施肥。
+  **修复 + 结构性收编**：方程抽成注册式槽位交互
+  `SlotInteraction` / `SlotInteractions`（内置条目 `FarmlandBonemealInteraction`），
+  三处传输分支只调分发器（`tryInteract` 已知货物 / `tryInteractFromNeighbor`
+  拉取方向）——**今后新增同类交互 = 1 个实现类 + 1 行注册，零传输代码改动**。
+  顺带完成跨容器能力全量审计（`living-hopper-tech.md` §6.2.2 覆盖矩阵 +
+  结构规则「特殊槽位识别只在 containerCtx 一侧生效」）。回归测试
+  `CrossContainerTransferFertilizeTest`（8 项，两个入口各覆盖），全量 276 用例全绿。
+  ⚠️ 该文件于同日口径修正轮扩至 **15 项**（补推送方向隔离守卫 + 活骨粉三入口全拒），见下条
+- ✅ 自查修复：**重构自引入的「活骨粉施肥失效」**——交互源槽起初用
+  `SlotAccessorFactory.create` 拿 Accessor，而它开头就拦非箱类活物品（活骨粉正是），
+  导致 `tryInteract(null, ...)` 恒 false（普通骨粉不受影响，故只测普通骨粉看不出来）。
+  新增 `SlotAccessorFactory.createForInteraction`（不拦活物品，只读源槽自身物品，
+  不展开活箱子虚拟存储），容器内交互改用它；活物品隔离规则本身未动。
+  新增 `SlotInteractionFactoryTest`（4 项）钉住该边界，全量 **280 用例全绿**。
+  ⚠️ 本条的 `createForInteraction` 与 `SlotInteractionFactoryTest` 已于同日随口径修正移除，见下条
+  附带统一：三处交互源槽都带黑白名单过滤（原先容器内路径在过滤检查之前）。
+  新增 `SlotInteractions.canInteract` 廉价筛选谓词（分配 Accessor 之前先筛，
+  避免每次传输尝试白分配两个小对象；拉取方向每轮最多省 27 次），全量 281 用例全绿。
+- ✅ 修正口径（用户定案）：**漏斗只认普通骨粉，活骨粉不施肥**——上一版把「活骨粉也放行」
+  统一到四个方向，方向错了：施肥的语义是「活漏斗用**传输能力**把骨粉送进活耕地」，
+  属传输语义 ⇒ 必须受漏斗自身的货物规则（**活物品不作货物**）约束，不能因为
+  「反正要消耗掉」就开洞。规则收在**唯一定义点** `SlotInteractions.isEligibleCargo`
+  （活物品不作货物，活箱子/活末影箱除外），传输层 `isTransferableSource` 直接委托，
+  交互层两个入口共用——**调用点顺序变更也绕不过**；`tryPushToNeighbor` 另留循环自守
+  （非合法货物绝不进入通用插入/合并）。同时移除已无用途的
+  `SlotAccessorFactory.createForInteraction`（那是为「活骨粉放行」加的）。
+  口径 = **手动要活化、自动要普通**。新增 `SlotInteractionCargoGateTest`（5 项），
+  同期 `CrossContainerTransferFertilizeTest` 由 8 项扩至 15 项、移除
+  `SlotInteractionFactoryTest`（4 项），全量 **288 用例全绿**
+  （测试树与基线数字已按实测同步：`288 passed / 0 failed / 0 skipped`）。
 
 **最近更新** (2026-09-14):
 - ✅ 修复：**活漏斗黑白名单链 tooltip 显示为空（同款 b064865 后遗症）**——

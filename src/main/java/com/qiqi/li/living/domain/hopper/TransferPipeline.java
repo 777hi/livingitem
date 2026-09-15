@@ -4,15 +4,14 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.Container;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
-import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.domain.ender.EnderRouteManager;
 import com.qiqi.li.living.domain.ender.LivingEnderChestFunction;
-import com.qiqi.li.living.domain.farmland.LivingFarmlandFunction;
 import com.qiqi.li.living.transfer.FilterData;
 import com.qiqi.li.living.transfer.SlotAccessor;
 import com.qiqi.li.living.transfer.SlotAccessorFactory;
+import com.qiqi.li.living.transfer.SlotInteractions;
 import com.qiqi.li.living.components.ItemFilterComponent;
 import com.qiqi.li.living.model.ResolvedSlots;
 
@@ -70,20 +69,26 @@ public final class TransferPipeline {
         ItemStack sourceStack = ctx.getItem(sourceSlot);
         if (sourceStack.isEmpty()) return false;
 
-        // 自动施肥（2026-09-15）：货物 = 骨粉 + 目标 = 活耕地 → 消耗 1 粉触发生长 tick
-        // （普通/活骨粉统一放行——物流集成口径，与 GUI 活骨粉右键区分）。活耕地是
-        // 活物品非存储容器，通用插入到此必停，施肥就是它的「插入」语义。equals
-        // 零空转：耕地无变化不消耗 → false 不设冷却。槽位 ItemStack 是容器实时引用，
-        // 组件与数量修改即刻生效，只需主动同步组件变化。
+        MinecraftServer server = level.getServer();
+        if (server == null) return false;
+
+        SlotAccessor source = SlotAccessorFactory.create(server, ctx, sourceSlot, filter,
+            transferredTargetSlots, tick.getSnapshot());
+
+        // 槽位交互分发（注册式，2026-09-15）：货物 + 目标槽命中某条 SlotInteraction
+        // 方程 → 由该交互接管本轮传输（骨粉 → 活耕地 = 施肥；今后新增交互只注册一条，
+        // 本调用点不再改动，见 SlotInteractions）。
+        // 位置在活物品隔离检查之前也无妨：交互层自己先过货物准入（isEligibleCargo，
+        // 活物品不作货物）——施肥是传输语义，故活骨粉（活物品）不会被漏斗施肥；
+        // 目标槽是活耕地时通用插入也必然失败（SlotAccessorFactory.create 对它返回 null）。
+        // canInteract 廉价筛选在前：绝大多数组合不匹配 → 连 Accessor 都不额外分配。
+        // 交互不生效（含 equals 零空转）→ 不扣货不设冷却，继续走下方通用路径。
         ItemStack targetStack = ctx.getItem(targetSlot);
-        if (sourceStack.is(net.minecraft.world.item.Items.BONE_MEAL)
-            && targetStack.is(net.minecraft.world.item.Items.FARMLAND)
-            && LivingItemManager.isLivingItem(targetStack)
-            && level instanceof net.minecraft.server.level.ServerLevel serverLevel
-            && LivingFarmlandFunction.tryFertilize(targetStack, sourceStack, serverLevel)) {
+        if (SlotInteractions.canInteract(sourceStack, targetStack)
+            && SlotInteractions.tryInteract(source, sourceStack, targetStack, level)) {
             ctx.syncSlotToClients(targetSlot, targetStack);
             ctx.syncSlotToClients(sourceSlot, sourceStack);
-            return true;   // 漏斗 tick 自然设冷却——一次施肥 = 一次传输
+            return true;   // 漏斗 tick 自然设冷却——一次交互 = 一次传输
         }
 
         if (!isTransferableSource(sourceStack)) return false;
@@ -96,11 +101,6 @@ public final class TransferPipeline {
             return false;
         }
 
-        MinecraftServer server = level.getServer();
-        if (server == null) return false;
-
-        SlotAccessor source = SlotAccessorFactory.create(server, ctx, sourceSlot, filter,
-            transferredTargetSlots, tick.getSnapshot());
         SlotAccessor target = SlotAccessorFactory.create(server, ctx, targetSlot, null,
             transferredTargetSlots, tick.getSnapshot());
 
@@ -125,9 +125,13 @@ public final class TransferPipeline {
         };
     }
 
+    /**
+     * 活漏斗的货物准入：活物品不作货物，活箱子/活末影箱除外（它们是存储容器）。
+     * 唯一定义点在 {@link SlotInteractions#isEligibleCargo}——传输层与交互层共用，
+     * 避免「隔离规则」两处漂移（2026-09-15）。
+     */
     private static boolean isTransferableSource(ItemStack stack) {
-        if (!LivingItemManager.isLivingItem(stack)) return true;
-        return isStorageContainer(stack);
+        return SlotInteractions.isEligibleCargo(stack);
     }
 
     private static boolean isStorageContainer(ItemStack stack) {

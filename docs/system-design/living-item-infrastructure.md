@@ -1076,6 +1076,37 @@ registerProvider(SlotAccessorFactory::defaultProvider); // 优先级 3：普通�
 3. 所有 Provider 都不匹配时，使用 `defaultProvider`（`PlainSlotAccessor`）
 4. 创建的 Accessor 自动包裹 `FilteredSlotAccessor`
 
+> ⚠️ 第 1 条是跨容器能力的一个关键分界：**邻居侧槽位走 `createForNeighbor`（不查活物品）**，
+> 本容器侧才走 `create`。因此「邻居侧特殊槽位」的替代语义（如骨粉 → 活耕地施肥）
+> 不可能靠访问器工厂涌现，必须由下面的槽位交互注册表接管。
+
+### 9.7 SlotInteractions — 注册式槽位交互
+
+[SlotInteraction](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/transfer/SlotInteraction.java) /
+[SlotInteractions](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/transfer/SlotInteractions.java)
+把「货物 × 目标槽」的**替代语义**（不插入、改做别的动作）抽象成可注册条目，
+是活漏斗传输层继 SlotAccessor 之后的第二个扩展点：
+
+```java
+// 注册（内置条目在 SlotInteractions 静态块）
+SlotInteractions.register(new FarmlandBonemealInteraction());   // 骨粉 → 活耕地 = 施肥
+
+// 两个分发入口 —— 三处传输分支只调这两个，与具体交互无关
+SlotInteractions.canInteract(cargo, targetStack);                                     // 廉价筛选（纯谓词）
+SlotInteractions.tryInteract(sourceAccessor, cargo, targetStack, level);              // 货物已知
+SlotInteractions.tryInteractFromNeighbor(handler, pos, targetStack, level, filter);   // 拉取方向
+```
+
+| 维度 | 说明 |
+|------|------|
+| 协议 | 模拟优先（`simulateExtract(consumeAmount)` → `interact` 生效 → 才真 `extract`）；不生效不扣货不设冷却 |
+| 实现约定 | `matches` 纯谓词；`interact` 只改 target；equals 零空转必须返回 false |
+| **货物准入** | 两个入口都先过 `isEligibleCargo`（**唯一定义点**：活物品不作货物，活箱子/活末影箱除外）。施肥属传输语义 ⇒ **活骨粉（活物品）不施肥**；`TransferPipeline.isTransferableSource` 直接委托同一谓词，规则不会两处漂移 |
+| 调用点 | 容器内 `TransferPipeline.executeInContainer` / 跨容器推送 `tryPushToNeighbor` / 跨容器拉取 `pullFromNeighbor` |
+| 源槽 Accessor | 三处都用既有工厂入口（容器内/推送 `create`、拉取 `createForNeighbor`）；非箱类活物品在 `create` 处返回 null，与准入规则同口径 |
+| 扩展成本 | 新增交互 = 1 个实现类 + 1 行注册，**零传输代码改动** |
+| 相关文档 | [living-hopper-tech.md §6.2.1](../tech/living-hopper-tech.md)（三处调用点与扩展方式）、§6.2.2（跨容器能力覆盖矩阵） |
+
 ---
 
 ## 10. 性能监控
@@ -1176,6 +1207,7 @@ ItemTooltipEvent（NeoForge 客户端事件，见 client/render/LivingItemToolti
 | `SlotResolver.java` | `transfer/` | 槽位方向解析器 |
 | `SlotAccessor.java` | `transfer/` | 存储后端抽象接口 |
 | `SlotAccessorFactory.java` | `transfer/` | 注册式 Accessor 工厂 |
+| `SlotInteraction.java` / `SlotInteractions.java` | `transfer/` | 槽位交互接口 + 注册表/分发器（三处传输分支唯一入口） |
 | `PlainSlotAccessor.java` | `transfer/` | 普通槽位访问器 |
 | `FilteredSlotAccessor.java` | `transfer/` | 过滤装饰器 |
 | `NeighborSlotAccessor.java` | `transfer/` | 邻居容器访问器 |

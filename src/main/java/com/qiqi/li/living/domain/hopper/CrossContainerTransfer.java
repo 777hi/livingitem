@@ -43,6 +43,7 @@ import net.minecraft.world.level.block.state.properties.DirectionProperty;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.transfer.SlotAccessor;
 import com.qiqi.li.living.transfer.SlotAccessorFactory;
+import com.qiqi.li.living.transfer.SlotInteractions;
 import com.qiqi.li.living.model.Pos2D;
 import com.qiqi.li.living.util.DoubleChestPositions;
 import com.qiqi.li.living.model.ResolvedSlots;
@@ -126,24 +127,25 @@ public final class CrossContainerTransfer {
      * 遍历邻居容器的所有槽位，尝试从源 Accessor 推送物品。
      * 通过 Container.canPlaceItem 过滤不可交互槽位，模拟玩家操作。
      */
-    private static boolean tryPushToNeighbor(IItemHandler neighborHandler, BlockPos neighborPos,
-                                              Level level, SlotAccessor source,
-                                              int amount, ItemStack filterItem) {
+    // 包级可见：CrossContainerTransferFertilizeTest 直接驱动（推送方向的交互 + 隔离红线）
+    static boolean tryPushToNeighbor(IItemHandler neighborHandler, BlockPos neighborPos,
+                                      Level level, SlotAccessor source,
+                                      int amount, ItemStack filterItem) {
+        // 循环自守：非合法货物（活物品，非箱类）绝不进入通用插入/合并——活物品隔离的
+        // 兜底防线，不依赖调用方是否已在入口拦过（调用点顺序变更也不破隔离，2026-09-15
+        // 教训）。语义上活物品本来就不是合法货物（唯一定义点 SlotInteractions.isEligibleCargo），
+        // 交互分发同样会拒绝它，这里只保证「不插入」这一步不被绕过。
+        boolean interactionOnly = !SlotInteractions.isEligibleCargo(filterItem);
+
         Container container = ContainerContext.getContainer(level, neighborPos);
         for (int i = 0; i < neighborHandler.getSlots(); i++) {
             ItemStack neighborStack = neighborHandler.getStackInSlot(i);
-            // 活耕地槽位：骨粉货物改走施肥（与容器内管道 [3.5] 同一语义；其它货物/其它
-            // 目标照旧走通用插入）。getStackInSlot 是 BE 容器实时引用，组件修改即刻
-            // 生效；GUI 同步由耕地所在容器自身 tick 的 updatePlant 兜底。
-            if (filterItem.is(net.minecraft.world.item.Items.BONE_MEAL)
-                && neighborStack.is(net.minecraft.world.item.Items.FARMLAND)
-                && LivingItemManager.isLivingItem(neighborStack)
-                && level instanceof net.minecraft.server.level.ServerLevel serverLevel
-                && com.qiqi.li.living.domain.farmland.LivingFarmlandFunction
-                       .tryFertilize(neighborStack, source.simulateExtract(1), serverLevel)) {
-                source.extract(1, null);   // 施肥生效才扣 1 粉（模拟优先协议）
-                return true;
-            }
+            // 槽位交互分发（注册式，2026-09-15）：邻居槽被某条 SlotInteraction 接管
+            // （骨粉 → 活耕地 = 施肥），否则照旧走通用插入。getStackInSlot 是 BE 容器
+            // 实时引用，组件修改即刻生效；GUI 同步由耕地所在容器自身 tick 的
+            // updatePlant 兜底。交互不生效 → 不扣货，继续下方通用插入。
+            if (SlotInteractions.tryInteract(source, filterItem, neighborStack, level)) return true;
+            if (interactionOnly) continue;   // 交互不成立即止：活物品不进通用插入（隔离红线）
             if (!neighborStack.isEmpty() && !neighborStack.is(filterItem.getItem())
                 && neighborStack.getCount() >= neighborHandler.getSlotLimit(i)) continue;
             if (container != null && !container.canPlaceItem(i, filterItem)) continue;
@@ -173,6 +175,18 @@ public final class CrossContainerTransfer {
         int targetSlot = resolvedSlots.targetSlot();
         ItemStack targetStack = containerCtx.getItem(targetSlot);
         BlockPos neighborPos = basePos.relative(sourceWorldDir);
+
+        // 槽位交互分发（注册式，2026-09-15）：目标槽被某条 SlotInteraction 接管
+        // （邻居骨粉 → 本容器活耕地 = 施肥），否则落回通用拉取。
+        // 为什么必须前置：活耕地是活物品、非存储容器，SlotAccessorFactory.create
+        // 对非箱类活物品直接返回 null（下方 target == null 即返回 false），
+        // 通用拉取对它必然失败——交互就是它的「插入」语义。
+        // 2026-09-15 实测 bug：这条分支原先缺失，表现为「跨容器骨粉 → 同容器活耕地」
+        // 不施肥（反向推送正常）。
+        if (SlotInteractions.tryInteractFromNeighbor(neighborHandler, neighborPos, targetStack, level, filterData)) {
+            containerCtx.syncSlotToClients(targetSlot, targetStack);
+            return true;   // 漏斗 tick 自然设冷却——一次交互 = 一次传输
+        }
 
         if (LivingChestFunction.isLivingChest(targetStack)) {
             return pullFromNeighborToLivingChest(containerCtx, level, neighborHandler,
@@ -234,6 +248,10 @@ public final class CrossContainerTransfer {
 
         boolean sourceIsChest = LivingChestFunction.isLivingChest(sourceStack);
         boolean sourceIsEnderChest = LivingEnderChestFunction.isLivingEnderChest(sourceStack);
+        // 活物品不作货物（隔离规则，唯一定义点 SlotInteractions.isEligibleCargo）：
+        // 活骨粉是活物品 ⇒ 不是合法货物 ⇒ 漏斗不给它施肥（施肥属传输语义，见
+        // SlotInteractions 的 isEligibleCargo javadoc）。活骨粉的手动用武之地在
+        // GUI 右键（那里本就要求活化）。
         if (!sourceIsChest && !sourceIsEnderChest && LivingItemManager.isLivingItem(sourceStack)) return false;
 
         Pos2D targetOffset = resolvedSlots.targetOffset();

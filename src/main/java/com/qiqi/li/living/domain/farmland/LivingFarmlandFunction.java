@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Consumer;
-import javax.annotation.Nullable;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.network.chat.Component;
@@ -350,7 +349,7 @@ public class LivingFarmlandFunction implements LivingItemFunction {
     }
 
     /**
-     * 自动施肥入口（传输管道调用）——货物骨粉 + 目标活耕地 → 触发一次生长 tick。
+     * 自动施肥入口 —— 货物骨粉 + 目标活耕地 → 触发一次生长 tick。
      *
      * <p>与 GUI 活骨粉右键（BonemealHandler）同一语义（forceGrowthTick + equals
      * 零空转），但<b>口径有意区分</b>（2026-09-15 定稿）：手动 = 活化能力（要活
@@ -358,10 +357,15 @@ public class LivingFarmlandFunction implements LivingItemFunction {
      * 消耗 = 1 个骨粉/次；无变化（已冻结成熟耕地）不消耗——对着等待输出的耕地
      * 空转不烧骨粉。</p>
      *
-     * <p>两处调用（奥卡姆内嵌形态，无专属传输逻辑）：容器内 TransferPipeline
-     * 的施肥 if；跨容器 tryPushToNeighbor 既有槽位循环里的「活耕地槽 = 施肥」
-     * 替换（simulateExtract(1) 试粉 → 生效 → extract(1) 扣粉）。组件同步：同
-     * 容器由管道分支 syncSlotToClients；跨容器由耕地所在容器自身 tick 兜底。</p>
+     * <p><b>调用链</b>（2026-09-15 收编为注册式扩展点）：本方法只负责施肥语义，
+     * 触发条件与消耗协议在 {@link FarmlandBonemealInteraction}（内置
+     * {@code SlotInteraction} 条目）；分发由 {@code SlotInteractions} 承担，
+     * 三处传输分支（容器内 {@code TransferPipeline}、跨容器推送
+     * {@code tryPushToNeighbor}、跨容器拉取 {@code tryInteractFromNeighbor}）
+     * 只调分发器——<b>今后新增同类交互无需改动任何传输代码</b>。协议统一为
+     * 模拟优先（{@code simulateExtract(1)} 试粉 → 生效 → {@code extract(1)} 扣粉）。
+     * 组件同步：容器内与跨容器拉取（耕地在本容器）由调用方 {@code syncSlotToClients}；
+     * 跨容器推送（耕地在邻居）由耕地所在容器自身 tick 兜底。</p>
      *
      * @return true = 施肥生效（已消耗 1 骨粉 + 耕地组件已更新）
      */

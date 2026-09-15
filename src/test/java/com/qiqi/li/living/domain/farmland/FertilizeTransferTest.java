@@ -107,12 +107,14 @@ class FertilizeTransferTest {
     }
 
     @Test
-    @DisplayName("活骨粉（带 IS_LIVING 的骨粉）同样触发——两种骨粉统一放行")
+    @DisplayName("tryFertilize 本身不区分活/普通骨粉（政策在漏斗侧：SlotInteractions 货物准入拒绝活骨粉）")
     void fertilize_livingBonemeal_alsoWorks() {
         ItemStack farmland = livingFarmland(3, 7);
         ItemStack livingBonemeal = new ItemStack(Items.BONE_MEAL, 16);
         LivingItemManager.setLiving(livingBonemeal, true);
 
+        // 本方法只管施肥语义，不做货物准入——漏斗路径的「活物品不作货物」由
+        // SlotInteractions.isEligibleCargo 统一执行（SlotInteractionCargoGateTest）
         assertTrue(LivingFarmlandFunction.tryFertilize(farmland, livingBonemeal, LEVEL));
         assertEquals(4, LivingItemManager.getFarmlandPlant(farmland).age());
         assertEquals(15, livingBonemeal.getCount());

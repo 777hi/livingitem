@@ -1,9 +1,9 @@
 # Living Farmland (活耕地) 技术文档
 
-> **文档版本**: v1.7
+> **文档版本**: v1.9
 > **最后更新**: 2026-09-15
 > **适用版本**: Minecraft 1.21.1
-> **状态**: 已实现，九轮实测全过 + 终审修复后；自动施肥（活漏斗联动）待实测
+> **状态**: 已实现，九轮实测全过 + 终审修复后；自动施肥已收编为注册式槽位交互（跨容器两方向统一，§11.15），2026-09-15 用户实测确认正常
 
 ## 目录
 
@@ -428,17 +428,29 @@ outputIndex ≥ pendingDrops.size() → 按回退点重置：
 ### 7.1 自动施肥（活漏斗联动，2026-09-15 新增）
 
 **触发**：活漏斗按 WASD 方向传输时，货物是**骨粉**且目标槽位是**活耕地**——
-`TransferPipeline.executeInContainer` 的施肥特殊分支（流程图 [3.5]，详见
-[living-hopper-tech.md §2.2](living-hopper-tech.md)）+ 跨容器版
-`CrossContainerTransfer.pushToNeighbor`（§6.2.1）。
+由注册式槽位交互 `FarmlandBonemealInteraction` 接管（`SlotInteractions` 内置条目，
+2026-09-15 收编：此前方程硬编码在三处传输分支，拉取方向漏写导致单方向失效，
+见 §11.15）。三处调用点统一走 `SlotInteractions` 分发器：
+容器内 `TransferPipeline.executeInContainer`、跨容器推送 `tryPushToNeighbor`、
+跨容器拉取 `tryInteractFromNeighbor`（流程图 [3.5]，详见
+[living-hopper-tech.md §6.2.1](living-hopper-tech.md)）。
 
 **语义**：与 GUI 活骨粉右键共用 `forceGrowthTick` + equals 零空转（无变化不
 消耗），但**触发物口径有意区分**：
 
 | 路径 | 触发物 | 定位 |
 |------|--------|------|
-| GUI 右键（BonemealHandler） | **活**骨粉 | 手动 = 活化能力 |
-| 漏斗传输（tryFertilize） | **普通**骨粉即可（活骨粉也放行） | 自动 = 物流集成——骨粉生成器/原版漏斗物流可直接对接 |
+| GUI 右键（BonemealHandler） | **活**骨粉 | 手动 = 活化能力（右键本就是「活物品使用自己的能力」） |
+| 漏斗传输（`FarmlandBonemealInteraction` → tryFertilize） | **只认普通骨粉** | 自动 = 传输语义——施肥是「漏斗用传输能力把骨粉送进活耕地」，因此受漏斗自己的货物规则约束：**活物品不作货物**（隔离规则），活骨粉不是合法货物 |
+
+> **为什么漏斗不吃活骨粉**（2026-09-15 用户定案，别当 bug 改掉）：
+> 施肥被定义为**漏斗的传输能力**把骨粉送进活耕地——它是传输语义，不是「交互层新增的
+> 消耗通道」。活物品隔离（活物品不被其它活物品当普通物品处理）是漏斗自身的规则，
+> 不能因为「反正要消耗掉」而给它开洞。**手动要活化、自动要普通**，两条链路各自口径清晰。
+>
+> 实现：规则唯一定义点 `SlotInteractions.isEligibleCargo`（活物品不作货物，活箱子/活末影箱
+> 除外），传输层与交互层共用；活骨粉在**四个方向都不施肥**，且不会被当普通货物入槽/合并。
+> 详见 [living-hopper-tech.md §6.2.1](living-hopper-tech.md)。
 
 **节奏与消耗（一次施肥 = 一次传输，与普通传输完全同节奏）**：
 
@@ -456,16 +468,21 @@ outputIndex ≥ pendingDrops.size() → 按回退点重置：
 **骨粉堆就是续航**：源槽的骨粉堆 = 施肥库存，用完自动停（管道空源检查
 自然短路，无报警无残留行为）。
 
-**跨容器（自然涌现）**：施肥方程内嵌在 `tryPushToNeighbor` 的既有槽位循环里
-（遇到活耕地槽位把「插入」换成「施肥」，模拟优先协议原样）——`pushToNeighbor`
-与 `transferBetweenNeighbors` 共用该循环，跨容器与邻居间直传**自动**获得施肥
-能力，零专属逻辑（重构史：第一版的独立接管分支会在无耕地邻居时拦断普通货物
-推送，按奥卡姆剃刀改为内嵌）。邻居槽冻结 → 跳过继续找（多耕地只有需要的
-吃粉）；无活耕地槽 → 骨粉作为普通货物照常入箱。`getStackInSlot` 是 BE 实时
-引用，组件修改即刻生效；GUI 同步由耕地所在容器自身 tick 的 updatePlant 兜底。
+**跨容器（两个方向各有入口，语义同一）**：施肥方程已收编为注册式槽位交互
+`FarmlandBonemealInteraction`（`SlotInteractions` 内置条目）——三处调用点
+（容器内 / 跨容器推送 / 跨容器拉取）都只调分发器，**方程本身零传输代码**。
+推送方向与邻居间直传共用 `tryPushToNeighbor` 的槽位循环；**拉取方向**（源在邻居、
+目标活耕地在本容器）走 `tryInteractFromNeighbor`——这条**必须前置**，因为通用拉取
+对活耕地目标槽必然失败（§11.15）。邻居槽冻结 → 交互返回 false → 不接管继续找
+（多耕地只有需要的吃粉）；无匹配目标槽 → 骨粉作为普通货物照常入箱。
+`getStackInSlot` 是 BE 实时引用，组件修改即刻生效；推送方向 GUI 同步由耕地所在容器
+自身 tick 兜底，容器内与拉取方向（耕地在本容器）由调用点 `syncSlotToClients` 主动推。
 
-回归测试 `FertilizeTransferTest`（6 项）：未成熟 age+1 扣粉 / 已冻结零空转 /
-非活耕地拒绝 / 未种植拒绝 / 非骨粉拒绝 / 活骨粉统一放行。
+回归测试 `FertilizeTransferTest`（6 项）+ `CrossContainerTransferFertilizeTest`（15 项，
+两个分发入口 + 三个方向各覆盖）+ `SlotInteractionCargoGateTest`（5 项，货物准入）：
+未成熟 age+1 扣粉 / 已冻结零空转 / 非活耕地拒绝 / 未种植拒绝 / 非骨粉拒绝 /
+**拉取方向施肥生效 + 跳空槽找粉 + 邻居无粉不误伤 + 冻结不烧粉** /
+**活骨粉（活物品）四方向都不施肥、不入槽、不合并** / 准入真值表。
 
 ## 8. 客户端渲染（双槽 + 世界级管线直绘）
 
@@ -602,7 +619,11 @@ src/main/java/com/qiqi/li/
 ├── living/domain/farmland/
 │   ├── FarmlandPlantComponent.java     # 种植数据组件（Codec + StreamCodec）
 │   ├── CropClassifier.java             # 作物分类器（准入/maxAge/浆果判定/茎果实）
-│   └── LivingFarmlandFunction.java     # tick 功能（生长/产出状态机 + tooltip）
+│   ├── LivingFarmlandFunction.java     # tick 功能（生长/产出状态机 + tooltip）
+│   └── FarmlandBonemealInteraction.java # 槽位交互：骨粉 → 活耕地 = 施肥（活漏斗自动施肥）
+├── living/transfer/
+│   ├── SlotInteraction.java            # 槽位交互接口（matches + interact + consumeAmount）
+│   └── SlotInteractions.java           # 槽位交互注册表 + 分发器（三处传输分支唯一入口）
 ├── living/interaction/
 │   ├── TillToFarmlandHandler.java       # 活锄头 → 活耕地（6 锄头规则）
 │   ├── PlantCropHandler.java            # 种植（通配 + handler 校验）
@@ -620,6 +641,7 @@ src/main/java/com/qiqi/li/
 | 功能 | `LivingItem.commonSetup` | `registerFunction(new LivingFarmlandFunction())` |
 | 交互规则 | 同上 | DIRT×6 锄头（till）、FARMLAND+null（plant）、FARMLAND+BONE_MEAL（bonemeal） |
 | 交互处理器 | 同上 | `registerHandler` × 3（actionId 对应） |
+| 槽位交互（活漏斗自动施肥） | `SlotInteractions` 静态块 | `register(new FarmlandBonemealInteraction())`——内置条目，三处传输分支经分发器自动生效 |
 | AT | `accesstransformer.cfg` | `public net.minecraft.world.level.block.StemBlock fruit` |
 | 图标 | `LivingIconRegistry.registerAll` | FARMLAND → `item/farmland_living`（引用原版 `block/farmland` 顶面纹理，零新 PNG） |
 | lang | `assets/living_item/lang/` | `tooltip.livingitem.farmland.*` ×4（中英） |
@@ -631,7 +653,9 @@ src/main/java/com/qiqi/li/
 | `InteractionRegistryTest`（7 项） | 两趟优先级：精确不被通配遮蔽（骨粉→bonemeal）、非精确回退通配（种子→plant_crop）、精确要求活触发器、无匹配 null、非活目标不匹配、triggerFilter 数量门槛（种子不足不拦截原版交换）、triggerFilter 非种子不匹配 |
 | `CropClassifierTest`（10 项） | 火把花 maxAge=2 超属性值域 + displayStateFor 成熟回退花/未成熟照常/超熟钳制、普通作物 displayStateFor 直通无回归、瓶子草准入（Block 白名单）+ maxAge=4 + 成熟态 HALF=LOWER、HARVEST_BLOCKS 原版条目解析、柱状段未注册空表/属性覆盖应用（HALF 翻转+同 age）/属性缺失静默跳过 |
 | `LivingFarmlandFunctionTest`（5 项） | 输出合并回归（2026-09-14 终审）：部分合并等待不丢物品、整份合并推进、空槽全放、堆叠上限钳制、边界含等号 |
-| `FertilizeTransferTest`（6 项） | 自动施肥（2026-09-15）：未成熟 age+1 扣粉、已冻结零空转不消耗、非活耕地/未种植/非骨粉拒绝、活骨粉统一放行 |
+| `FertilizeTransferTest`（6 项） | 自动施肥语义（2026-09-15）：未成熟 age+1 扣粉、已冻结零空转不消耗、非活耕地/未种植/非骨粉拒绝；`tryFertilize` 本身不做货物准入（政策在漏斗侧） |
+| `CrossContainerTransferFertilizeTest`（15 项） | 槽位交互分发（2026-09-15）：拉取方向入口（邻居骨粉 → 本容器耕地 age+1 且扣邻居 1 粉、空槽跳过命中后面的粉堆、邻居无粉不误伤、冻结耕地零空转不烧粉、非活/未种植拒绝）+ 已知货物入口（生效真扣 1 粉、冻结不真扣、非骨粉/空目标槽不接管）+ `canInteract` 廉价筛选谓词 + 推送方向（普通骨粉照常插入、活骨粉不入空槽、活骨粉不与同种普通堆合并、活熔炉全拒）+ **活骨粉三个入口全被拒** |
+| `SlotInteractionCargoGateTest`（5 项） | 货物准入唯一定义点 `isEligibleCargo`（2026-09-15 用户定案）：真值表（普通物品/活箱子/活末影箱合法，活骨粉/活熔炉非法）、工厂同口径返回 null、**活骨粉 + 活耕地不施肥不扣货**、普通骨粉端到端无回归 |
 
 ---
 
@@ -831,6 +855,57 @@ KC（KaleidoscopeCookery）水稻成熟形态是**三格柱**，活耕地里第�
 瓶子草 age 0~2 GUI 双格渲染（javadoc 已标常驻取舍）；渲染缓存（当前规模无压力，
 需求驱动再议）。
 
+### 11.15 跨容器施肥「推送生效、拉取失效」（2026-09-15 实测：方向不对称的隐藏假设）
+
+**现象**：活漏斗跨容器施肥只在一个方向生效——输出槽（target）是跨容器活耕地、
+输入槽（source）是同容器骨粉 → 正常施肥；反过来输入槽是跨容器骨粉、输出槽是同容器
+活耕地 → **完全不施肥**（把活耕地移走，骨粉又能正常跨容器传输到该槽，证明拉取链路
+本身没坏）。
+
+**根因**：施肥分支只内嵌在推送方向（`tryPushToNeighbor`）与容器内管道
+（`TransferPipeline`），拉取方向 `pullFromNeighbor` 走的是通用路径
+（`tryPullFromNeighbor` + `SlotAccessor.transfer`）——而
+`SlotAccessorFactory.create` 开头就把**非箱类活物品**挡掉（`return null`），
+`target == null` 直接 `return false`。活耕地正是「活物品 + 非存储容器」，
+通用拉取对它**必然失败**：骨粉送不进去，施肥分支也就永远不被考虑。
+
+**为什么推送方向能「自然涌现」而拉取方向不能**：推送方向的邻居槽位由
+`createForNeighbor` 包装（**不查活物品**），所以内嵌的施肥 if 有被执行的
+机会；拉取方向的目标槽位走 `create`（**查活物品 → null**），连循环都进不去。
+同一句「跨容器自动获得施肥能力」在两个方向上不成立——**对称性假设未经代码验证**。
+
+**修复（两步）**：
+
+1. **止血**：`pullFromNeighbor` 增加前置分支（目标槽 = 活耕地 → 遍历邻居找骨粉 →
+   `simulateExtract(1)` 试粉 → 生效才 `extract(1)` 扣粉），与推送/容器内两处同语义；
+   生效时 `containerCtx.syncSlotToClients(targetSlot, farmland)` 主动推组件
+   （耕地在本容器，且其自身 tick 因 equals 守卫不会写回）。
+2. **结构性修复（同日）**：方程收编为注册式槽位交互 `FarmlandBonemealInteraction`
+   （`SlotInteractions` 内置条目），三处传输分支只调分发器
+   （`tryInteract` / `tryInteractFromNeighbor`）——**新增同类交互 = 1 个实现类 + 1 行注册，
+   零传输代码改动**，漏调用点的机会从「每个新交互一次」降为「每个调用点一次」。
+   扩展方式与协议见 [living-hopper-tech.md §6.2.1](living-hopper-tech.md)。
+
+**守卫**：`CrossContainerTransferFertilizeTest`（15 项）——拉取方向 age+1 扣邻居粉、
+空槽跳过命中后面的粉堆、邻居无粉不误伤耕地、冻结耕地零空转不烧粉、非活/未种植拒绝；
+已知货物入口（容器内/推送）生效真扣 1 粉、冻结不真扣、非骨粉/空目标槽不接管；
+推送方向隔离红线；活骨粉三个入口全被拒。
+`SlotInteractionCargoGateTest`（5 项）专测货物准入（活骨粉不施肥 + 真值表）。
+
+**后续修订（同日，用户定案）**：上一版曾把「活骨粉也放行」统一到四个方向，方向错了——
+施肥属**传输语义**，必须受漏斗自身的货物规则（活物品隔离）约束。现已改为
+**漏斗只认普通骨粉**，规则收在唯一定义点 `SlotInteractions.isEligibleCargo`
+（传输层与交互层共用，调用点顺序变更也绕不过），详见 §7.1 与
+[living-hopper-tech.md §6.2.1](living-hopper-tech.md)。
+
+**教训**：把「路径 A 实现了 X」写成「X 已覆盖所有路径」是两类不同的断言。
+涉及**方向 / 分支枚举**的能力（推送⇄拉取、容器内⇄跨容器、上⇄下）必须逐条
+点名验证——本次 `pushToNeighbor` 与 `pullFromNeighbor` 是两份独立实现，
+「一处内嵌两路径共用」只对 `pushToNeighbor` + `transferBetweenNeighbors` 成立。
+结构性规则与全量覆盖矩阵见 [living-hopper-tech.md §6.2.2](living-hopper-tech.md)：
+**特殊槽位识别只在 `containerCtx` 一侧生效，邻居侧没有访问器工厂**——面向邻居侧
+特殊槽位的交互已由注册表统一接管（不再逐处硬编码）。
+
 ---
 
 ## 12. 验证清单
@@ -879,7 +954,13 @@ KC（KaleidoscopeCookery）水稻成熟形态是**三格柱**，活耕地里第�
 - [ ] **骨粉右键已成熟耕地 → 立即触发产出**；重复右键已冻结的不消耗骨粉
 - [ ] **自动施肥**：容器里活漏斗方向指向活耕地、源槽放普通骨粉堆 → 耕地 age
       每 8t +1 直至成熟并开始产出，骨粉逐个消耗；已冻结成熟耕地不烧骨粉；
-      跨容器（漏斗容器与耕地容器相邻）同样生效
+      跨容器（漏斗容器与耕地容器相邻）**两个方向都要试**：
+      ① 输入槽在同容器（骨粉）、输出槽在邻居（活耕地）→ 施肥；
+      ② 输入槽在邻居（骨粉）、输出槽在同容器（活耕地）→ 施肥（§11.15 修复点）
+- [ ] **活骨粉不给漏斗施肥**（准入规则）：源槽放活骨粉 → 四个方向都不施肥、
+      不入槽、不与普通骨粉堆合并（活物品不作货物）；活骨粉改到 GUI 右键用 → 正常催熟
+- [ ] **跨容器拉取施肥后 GUI 即时刷新**：方向 ② 下耕地 tooltip 的 age 立刻 +1
+      （分支内主动 syncSlotToClients，不等 200t 冷却）
 - [ ] **湿润图标**：邻格放活水桶 → 耕地图标变深（farmland_moist）；收走变浅
 
 ### 12.3 渲染

@@ -102,5 +102,53 @@
   `grep -n "[a-zA-Z0-9_)] \* [a-zA-Z0-9_(].* / [a-zA-Z0-9_(]" src/.../domain/power/*.java` 扫。
 - 常量现状：`BULB_UNIT_CAPACITY_FE = 1_000_000`、`BULB_UNIT_CAPACITY_MFE = 1e9`（每盏）。
   **注意 `WaxedCopperStorageTest` 里「容量 16 × 100_000」那句注释是旧值，已过时。**
-- 已知遗留失败（与本次无关）：`WaxedGeneratorFeedChainTest.chiseled_configMatchesSamplingSide`
-  「右侧注入应派生 1 条驻波 expected 1 but was 0」—— 2026-09-09 根修对齐的热身拍改动引入。
+- ~~已知遗留失败：`WaxedGeneratorFeedChainTest.chiseled_configMatchesSamplingSide`~~
+  **2026-09-15 复核已消失**：该用例（雕文配置一致性：配置输入=右后，右侧注入派生、左侧注入忽略）
+  在 `--rerun` 全量跑中 PASSED，`WaxedGeneratorFeedChainTest` 12/12 绿，全量 **288 passed / 0 failed / 0 skipped**。
+  别再引用「已知遗留失败」这个说法（旧的 09-15 日志条目里还留着，以本节为准）。
+- **全量基线（2026-09-15 实测）**：288 用例。核数**只认 `build/test-results/test/*.xml` 的
+  `tests=` 求和**，不要用 `grep -c "@Test"` 数方法——3 个带 `@ParameterizedTest` 的类
+  （ContainerRedstoneDataTest 24→29、MapCoordHelperTest 16→29、ContainerCompatibilityConfigTest 9→14）
+  方法数 ≠ 用例数，按方法数加总会少 23。
+- `./gradlew test` 报 `FROM-CACHE` / `UP-TO-DATE` 时**没有真跑**，加 `--rerun` 才算复核。
+
+## 跨容器传输：方向对称性必须逐条点名验证（2026-09-15 血的教训）
+
+> 📌 本节已固化为用户级技能 `mc-livingitem-transfer-guardrails`
+> （`~/.workbuddy-ai/skills/`）——改 `domain/hopper/**` 或 `transfer/**`、
+> 新增 `SlotInteraction`、或遇到「某方向生效另一方向不生效」时先加载它。
+
+- `CrossContainerTransfer` 的 **`pushToNeighbor` 与 `pullFromNeighbor` 是两份独立实现**，
+  只有 `pushToNeighbor` + `transferBetweenNeighbors` 共用 `tryPushToNeighbor` 循环。
+  「一处内嵌两路径共用」**不覆盖拉取方向**。
+- **`SlotAccessorFactory.create` 开头就把非箱类活物品挡掉（return null）**，而
+  `createForNeighbor` 不查活物品。所以：**推送方向**邻居槽走 `createForNeighbor`，
+  内嵌的特殊分支（如施肥）有执行机会；**拉取方向**目标槽走 `create` → null →
+  通用拉取对任何活物品目标槽**必然失败**，特殊能力必须显式前置分支。
+- 新增任何「活物品目标槽」类能力（施肥/浇水/喂养…）时，**三个方向都要点名**：
+  容器内（`TransferPipeline.executeInContainer`）、跨容器推送（`tryPushToNeighbor`）、
+  跨容器拉取（`pullFromNeighbor`）。
+- **但「货物 × 目标槽」型交互已有注册式扩展点，不要再三处硬编码**（2026-09-15 收编）：
+  实现 `transfer/SlotInteraction`（`matches` 纯谓词 + `interact` 只改 target +
+  `consumeAmount` 默认 1；协议 = 模拟优先 + equals 零空转 + 不生效不扣货）
+  → `SlotInteractions.register(...)`（内置条目放 `SlotInteractions` 静态块）。
+  三处调用点已统一调分发器 `tryInteract`（货物已知）/ `tryInteractFromNeighbor`
+  （拉取方向），**新增交互零传输代码改动**。自检：
+  `grep -c "SlotInteractions.tryInteract" domain/hopper/*.java` 应为 3。
+  只有「邻居侧特殊**存储**」（把物品推进邻居容器里的活箱子）这类才仍需三处点名。
+- **货物准入（隔离规则）唯一定义点 = `SlotInteractions.isEligibleCargo`**
+  （`!isLivingItem || 活箱子 || 活末影箱`）。`TransferPipeline.isTransferableSource` 直接
+  委托它，交互层两个入口共用——**规则收在共享入口，任何调用点顺序变更都绕不过**
+  （曾因容器内交互分发排在隔离检查之前、靠「谓词没写检查」意外放行，一次重排就变 bug）。
+  `tryPushToNeighbor` 另留循环自守 `interactionOnly = !isEligibleCargo(cargo)`。
+- **活骨粉不给漏斗施肥**（用户 2026-09-15 定案，别当 bug 改掉）：施肥的语义是「漏斗用
+  **传输能力**把骨粉送进活耕地」→ 属**传输语义** → 必须受漏斗自身的货物规则约束
+  （活物品不作货物）。口径 = **手动要活化（GUI 右键要活骨粉）、自动要普通（漏斗只认普通骨粉）**。
+  曾以「交互是消耗不是搬运」为由把活骨粉放行到四个方向 + 加了
+  `SlotAccessorFactory.createForInteraction`（不拦活物品），**方向错了，已全部回退并移除**。
+  守卫：`SlotInteractionCargoGateTest`（真值表 + 活骨粉不施肥不扣货）。
+- **判归属**：一件事属于「传输语义」还是「交互语义」决定它受哪套规则约束。
+  拿不准时**问用户**——这是设计决策，不是实现细节。
+- 判定「某能力是否覆盖」不能靠代码结构推断，要么 grep 到三处分支，要么写方向化的单测
+  （辅助方法留包级可见即可直接驱动，见 `CrossContainerTransferFertilizeTest`）。
+

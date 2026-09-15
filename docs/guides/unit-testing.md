@@ -133,9 +133,11 @@ tickOnce(data, ctx, Map.of(
 
 ## 现有测试
 
+> 全量清单（含每类用例数）以 [AGENTS.md](../../AGENTS.md) 的测试树为准，本节仅列可测性示范用的三类。
+
 | 测试类 | 数量 | 覆盖内容 |
 |--------|------|----------|
-| [ContainerRedstoneDataTest](../../src/test/java/com/qiqi/li/living/domain/redstone/ContainerRedstoneDataTest.java) | 19 | 信号上限规则、红石块/拉杆信号源、链式衰减、红石灯点亮、堆叠数影响、信号归零、网格重建 |
+| [ContainerRedstoneDataTest](../../src/test/java/com/qiqi/li/living/domain/redstone/ContainerRedstoneDataTest.java) | 29 | 信号上限规则、红石块/拉杆信号源、链式衰减、红石灯点亮、堆叠数影响、信号归零、网格重建 |
 | [ContainerCompatibilityConfigTest](../../src/test/java/com/qiqi/li/living/transfer/ContainerCompatibilityConfigTest.java) | 14 | 列数推断、宿主槽位、方向偏移、Builder 校验 |
 | [MapCoordHelperTest](../../src/test/java/com/qiqi/li/living/domain/map/MapCoordHelperTest.java) | 29 | UV 换算、展示框朝向×旋转组合、地图中心网格对齐、边界射线距离 |
 
