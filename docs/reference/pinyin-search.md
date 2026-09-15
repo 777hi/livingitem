@@ -1,5 +1,10 @@
 # 🔤 拼音搜索功能文档
 
+> **AI 读这里**：改代码 / 修 bug 直接看 **§技术架构**（文件结构 + 核心组件）、**§性能分析**、**§测试用例**。
+> 「§功能简介 / §使用指南」是**玩家向**说明 —— 除非改匹配规则本身，否则不需要读。
+>
+> 相关文档：[`guides/recipe-book-style.md`](../guides/recipe-book-style.md)（本功能所在的 Mixin 数据流）。
+
 ## 📋 功能概览
 
 **功能名称**: 智能拼音搜索  
@@ -29,50 +34,17 @@
 
 ### **基础用法**
 
-#### 1️⃣ **完整拼音搜索**
-```
-搜索词: zuanshi
-匹配结果: 钻石、钻石剑、钻石镐、钻石斧、钻石铲、钻石锄...
-```
+| 输入类型 | 示例（目标：钻石） | 说明 |
+|---|---|---|
+| 完整拼音 | `zuanshi` | 全拼匹配 |
+| 首字母缩写 | `zs` | 最省输入，推荐 |
+| 部分拼音 | `zuan` / `shi` | 匹配含该音节的物品 |
+| 中文 | `钻石` | 原版行为，仍有效 |
+| 英文 / ID | `diamond` / `mine` | 原版行为，仍有效 |
+| 混合 | `zuan石` / `钻shi` | 拼音与中文混写也能匹配 |
 
-#### 2️⃣ **首字母缩写** ⭐ 推荐
-```
-搜索词: zs
-匹配结果: 所有包含"钻"+"石"的物品（如钻石相关）
-```
-
-#### 3️⃣ **部分拼音**
-```
-搜索词: zuan
-匹配结果: 钻石、钻石头盔、钻石头甲...（所有以"钻"开头的物品）
-```
-
-#### 4️⃣ **传统方式（仍然有效）**
-```
-搜索词: 钻石    → 直接中文匹配
-搜索词: diamond → 英文 ID 匹配
-搜索词: mine    → 部分 ID 匹配
-```
-
-### **高级用法**
-
-#### 🔄 **混合模式**
-```
-搜索词: zuan石   → "zuanshi" 的前半拼音 + 后半中文
-搜索词: 钻shi    → 前半中文 + 后半拼音
-效果: 都能匹配到"钻石"
-```
-
-#### 📦 **常见物品搜索示例**
-
-| 物品 | 完整拼音 | 首字母 | 部分拼音 |
-|------|---------|--------|---------|
-| **钻石** | `zuanshi` | `zs` | `zuan`, `shi` |
-| **铁剑** | `tiejian` | `tj` | `tie`, `jian` |
-| **金苹果** | `jiningguo` | `jng` | `jin`, `ning`, `guo` |
-| **面包** | `mianbao` | `mb` | `mian`, `bao` |
-| **经验瓶** | `jingyanping` | `jyp` | `jing`, `yan`, `ping` |
-| **末影珍珠** | *mo* + *ying* + ... | `myzz` | `mo`, `ying`, `zhen` |
+**常见物品速查**：钻石 `zuanshi`/`zs` · 铁剑 `tiejian`/`tj` · 金苹果 `jiningguo`/`jng` ·
+面包 `mianbao`/`mb` · 经验瓶 `jingyanping`/`jyp` · 末影珍珠 `myzz`
 
 ---
 
@@ -486,10 +458,12 @@ addPinyin('新汉字', "xinhanzi", "xhz");
 
 ## 📚 相关文档
 
-- [Feature-Enhancement-Report.md](docs/Feature-Enhancement-Report.md) - 功能增强总览
-- [Bug-Fix-Report-v2.2.md](docs/Bug-Fix-Report-v2.2.md) - Bug 修复报告
-- [Coordinate-System-Fix.md](docs/Coordinate-System-Fix.md) - 坐标系统修复
-- [RecipeBook-Style-Guide.md](docs/RecipeBook-Style-Guide.md) - 配方书风格指南
+- Feature-Enhancement-Report.md - 功能增强总览
+- Bug-Fix-Report-v2.2.md - Bug 修复报告
+- Coordinate-System-Fix.md - 坐标系统修复
+- RecipeBook-Style-Guide.md - 配方书风格指南
+
+> ⚠️ 上述 4 份报告**文件已删除**（内容已并入其他文档），此处仅保留条目名以维持历史脉络。
 
 ---
 

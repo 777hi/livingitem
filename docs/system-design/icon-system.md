@@ -306,3 +306,14 @@ RenderSystem.disableBlend();
 | `WaterWheelRenderState` | 活水车渲染状态数据（ThreadLocal，存储 RPM） |
 | `LivingRedstoneDecorator` | 活红石粉连接纹理装饰器（根据 connections 位掩码绘制 4 方向红色连接线 + 动态着色） |
 | `LivingFarmlandSeedDecorator` | 活耕地种子图标装饰器（已种植时在耕地槽叠加所种作物的种子图标；走装饰器路径故快捷栏也生效） |
+
+## 纹理约定（涂蜡铜灯图标）
+
+- **涂蜡 vs 未涂蜡的唯一区别 = 外圈 60 像素黄框**，颜色 `(232,160,62,255)`；
+  四种锈蚀等级（copper / exposed / weathered / oxidized）的**边框掩码完全一致**。
+  发光版（lit）同理：内部取未涂蜡发光图，外圈填黄框。
+- item 纹理均为 16×16 PNG（P 调色板与 RGBA 两种都有效）。
+- ⚠️ 改这批图标时**只改内部、保留外圈掩码** —— 四种锈蚀级掩码不一致是已发生过的历史 bug
+  （曾出现 4 个 `waxed_*_copper_bulb_lit.png` 黄框丢失 + 内部乱码，逐像素比对才修好）。
+- 图片处理用隔离 venv：
+  `C:/Users/AI-777hi/.workbuddy-ai/binaries/python/envs/default/Scripts/python.exe`（Pillow 12.3.0）。

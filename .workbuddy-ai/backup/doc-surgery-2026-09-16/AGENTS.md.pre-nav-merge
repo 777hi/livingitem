@@ -88,7 +88,7 @@ SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 | **活末影箱** | 路由模式（共享黑板）+ 直连模式（绑定玩家末影箱） | [living-ender-chest-tech.md](docs/tech/living-ender-chest-tech.md) |
 | **活水车** | 力矩计算 + 应力叠加/抵消 + Create 软依赖 | [living-water-wheel-tech.md](docs/tech/living-water-wheel-tech.md) |
 | **活地图传送** | 三种场景 + UV 精确传送 + 跨维度 + 载具 + Sable 飞艇 | [living-map-ender-pearl-tech.md](docs/tech/living-map-ender-pearl-tech.md) |
-| **活耕地** | GUI 交互获取/种植/骨粉 + **放置回世界模拟右键种植** + 世界轴节拍生长 + round-robin 逐项产出 + 双槽渲染 | [living-farmland-tech.md](docs/tech/living-farmland-tech.md) §3.5 / §8 |
+| **活耕地** | GUI 交互获取/种植/骨粉 + 世界轴节拍生长 + round-robin 逐项产出 + 双槽渲染 | [living-farmland-tech.md](docs/tech/living-farmland-tech.md) |
 | **活红石** | 红石信号传播 + BFS 算法 + 反相器 + 堆叠数影响 | [living-redstone-tech.md](docs/tech/living-redstone-tech.md) |
 | **活涂蜡铜块（红电发电）** | 双因子感应发电 + 事件驱动记账 + RE/FE 单位制 | [living-power-tech.md](docs/tech/living-power-tech.md) |
 | **活打火石** | 交互触发器，无 tick 逻辑 | [living-flint-and-steel-tech.md](docs/tech/living-flint-and-steel-tech.md) |
@@ -96,7 +96,7 @@ SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 | **图标系统** | 三层架构 + 声明式配置 + 上下文切换 | [icon-system.md](docs/system-design/icon-system.md) |
 | **Tooltip 系统** | 双层渲染架构 + 运行时缓存同步 + 显示口径（窗口均值/mFE） | [tooltip-system.md](docs/system-design/tooltip-system.md) |
 | **红电架构演进** | SensorPort 感知端口 + 事件流/元件接口化路线（信号层⇄电力层解耦） | [redstone-evolution-roadmap.md](docs/system-design/redstone-evolution-roadmap.md) |
-| **红电不变量测试** | 35 条可执行不变量（七组） + 四层测试方案（属性测试/场景生成/蜕变/运行时监控） | [power-invariants.md](docs/system-design/power-invariants.md) |
+| **红电不变量测试** | 31 条可执行不变量 + 四层测试方案（属性测试/场景生成/蜕变/运行时监控） | [power-invariants.md](docs/system-design/power-invariants.md) |
 | **超大堆叠审计** | 模组容器堆叠上限 > 64 场景下全部活物品的表现评级（202 处调用点） | [oversized-stack-audit.md](docs/system-design/oversized-stack-audit.md) |
 | **基础设施** | 容器抽象 + 发现缓存 + SlotAccessor + 性能监控 | [living-item-infrastructure.md](docs/system-design/living-item-infrastructure.md) |
 | **数据模型** | DataComponent 体系 + 新旧架构对比 + 设计决策 | [data-model.md](docs/system-design/data-model.md) |
@@ -383,20 +383,60 @@ src/main/java/com/qiqi/li/
 
 ## 文档导航
 
-文档按**层**组织（契约 / 实现 / 指南 / 参考 / 归档）—— 分层定义、体量约束与维护规约见
-[docs/README.md](docs/README.md)（**改文档前先读**）。
+> **先读 [docs/README.md](docs/README.md)** —— 文档系统的**维护规约**（分层与体量约束 / 归档规则 /
+> 新增内容该放哪 / 改完必查清单）。
+> 下面是**该读哪一篇**的路由。完整清单以 `find docs -name "*.md"` 为准（本表只列有路由价值的）。
 
-**该读哪一篇**：见上方「子系统索引」（每个子系统一行，直链到对应文档）。其余常用入口：
-
-| 想做的事 | 读它 |
-|---|---|
-| **看不懂某个名词**（活物品 / 锈级 / 相位域 / 跳变 / 口径…） | [glossary.md](docs/glossary.md)（**术语表，先扫这一页**） |
-| **查「为什么这么定」/ 某口径是否已被取代** | [decisions.md](docs/decisions.md)（决策索引 + 翻转留痕） |
-| 改文档 / 归档 / 校验 | [docs/README.md](docs/README.md) + `python tools/doc_check.py` |
-| 写测试 / 跑全量 / mock `Level` | [unit-testing.md](docs/guides/unit-testing.md) |
-| 找某个源文件 | [file-map.md](docs/reference/file-map.md)（完整文件树，快照） |
-| 查历史变更 | [changelog.md](docs/archive/changelog.md)（按日期倒序） |
-| 红电系统总体设计 | [红电系统.md](docs/system-design/红电系统.md) |
-| 活潜影箱独立设计 | [活潜影箱实现细节.md](docs/reference/活潜影箱实现细节.md) |
-| 自定义槽位 / 配方书 / WASD / GUI 点击拦截 / 容器兼容 / 框架演进 | `docs/guides/` |
-| 红电波形分析 / 方块朝向 / Sable 投影 / 拼音搜索 | `docs/reference/` |
+```
+docs/
+├── README.md                         # ★ 文档系统维护规约（改文档前先读）
+├── idea.md                           #   原始创意笔记（活铜块/电力部分）
+├── problem.md / 置顶评论.md / 7.md     #   草稿（未归位，勿引用）
+│
+├── system-design/                    # 【契约层】不变量 · 协议 · 口径 —— 违反即 bug
+│   ├── living-item-infrastructure.md #   基础设施：容器抽象 + 发现缓存 + SlotAccessor + 性能监控
+│   ├── data-model.md                 #   DataComponent 体系与关键设计决策
+│   ├── icon-system.md                #   图标系统：三层架构 + 声明式配置 + 槽位叠加层渲染层级
+│   ├── tooltip-system.md             #   Tooltip：双层渲染 + 运行时缓存 + 显示口径
+│   ├── gui-interaction-system.md     #   GUI 交互：声明式规则 + 创造模式兼容
+│   ├── power-invariants.md           #   红电不变量清单 + 四层测试方案
+│   ├── redstone-evolution-roadmap.md #   红电架构演进路线（SensorPort / 事件流 / 元件接口化）
+│   ├── oversized-stack-audit.md      #   超大堆叠审计（模组容器上限 > 64 时的表现）
+│   ├── container-monitor.md          #   容器监控（复制/丢失/覆盖检测）
+│   └── power-refactoring-plan.md     #   电力层重构计划
+│
+├── tech/                             # 【实现层】每子系统：链路 · 数据流 · 踩坑 · 实测清单
+│   ├── living-farmland-tech.md       #   活耕地（生长/产出/渲染/放置回世界）
+│   ├── living-hopper-tech.md         #   活漏斗（传输管线 / 跨容器 / 槽位交互分发）
+│   ├── living-redstone-tech.md       #   活红石信号层（边模型 / 传播 / 稳态跳过）
+│   ├── living-power-tech.md          #   红电发电层（相位 / 共振 / 储能）
+│   ├── living-copper-tech.md         #   活铜块
+│   ├── living-chest-tech.md          #   活箱子
+│   ├── living-ender-chest-tech.md    #   活末影箱（频道 / 路由）
+│   ├── living-furnace-tech.md        #   活熔炉
+│   ├── living-water-bucket-tech.md   #   活水桶
+│   ├── living-water-wheel-tech.md    #   活水车
+│   ├── living-tnt-tech.md            #   活TNT
+│   ├── living-map-ender-pearl-tech.md#   活地图 + 活末影珍珠
+│   └── living-flint-and-steel-tech.md#   活打火石
+│
+├── guides/                           # 【指南层】通用做法
+│   ├── unit-testing.md               #   单元测试（FML 测试环境 + 替身 + 可测性边界）
+│   ├── container-compatibility.md    #   容器兼容配置
+│   ├── custom-slot-design.md         #   自定义槽位设计
+│   ├── wasd-direction-input.md       #   WASD 方向输入
+│   ├── recipe-book-style.md          #   配方书风格
+│   ├── gui-click-interception.md     #   GUI 点击拦截
+│   └── framework-evolution.md        #   框架演进
+│
+├── reference/                        # 【参考层】详单快照 / 设计参考（非权威，见各文头部声明）
+│   ├── 红电系统.md                    #   红电总体设计（v19.2）
+│   ├── 红电波形分析表.md              #   波形/因素对照
+│   ├── 活潜影箱实现细节.md            #   活潜影箱独立设计
+│   ├── file-map.md                   #   完整文件树（快照，以 find 为准）
+│   ├── block-facing.md / sable-sublevel-projection.md / pinyin-search.md
+│
+└── archive/                          # 【归档层】冻结历史，不进加载路径
+    ├── changelog.md                  #   历史更新记录（按日期倒序）
+    └── （重构报告 / 设计稿 / 已修问题记录等，见 find 结果）
+```

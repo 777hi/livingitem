@@ -185,6 +185,63 @@ class SomeTest {
 
 1. 优先测**纯逻辑**：多分支状态机、坐标/网格换算、边界推断。这类代码 bug 密度最高、手测最难覆盖。
 2. 对反直觉的现有行为，**先跑一遍确认实际值再写断言**，不要凭公式推算。
+
+---
+
+## 全量测试与复核口径
+
+```bash
+./gradlew test --rerun 2>&1 | grep -aE "FAILED|error:|BUILD"
+```
+
+- ⚠️ **`./gradlew test` 若显示 `FROM-CACHE` / `UP-TO-DATE`，就是没有真跑**（命中构建缓存），
+  报 `BUILD SUCCESSFUL` 也是**假绿**。**复核必须加 `--rerun`。**
+- **数用例只认 `build/test-results/test/*.xml` 的 `tests=` 求和**：
+
+  ```bash
+  grep -ho 'tests="[0-9]*" skipped="[0-9]*" failures="[0-9]*" errors="[0-9]*"' \
+    build/test-results/test/*.xml | awk -F'"' '{t+=$2;f+=$6;e+=$8} END {print t, f, e}'
+  ```
+
+- ⚠️ **别用 `grep -c "@Test"` 数方法数**：带 `@ParameterizedTest` 的类**方法数 ≠ 用例数**
+  （本项目已有 3 个类差 5~13 项；按方法数加总会少 23）。参数化展开后的调用次数才是用例数。
+- 结果文件数 ≠ 源文件数（`SimpleContainerContextTest` 有 `@Nested` 内部类 → 1 个源文件出多个结果文件）。
+- 跑完**核对文档里的测试条数**与实测一致（文档即规范，条数漂移会被当成陈旧信息）。
+
+## Mixin 接线与 mock Level
+
+**单元测试 JVM 里 Mixin 是被应用的**（FML 测试环境；证据：栈里出现
+`BlockItem.handler$zzk000$create$fixDeployerPlacement`）⇒ **可以写端到端用例证明 Mixin 接线**，
+不必等游戏启动：
+
+```java
+((BlockItem) Items.FARMLAND).place(context);        // 触发注入的逻辑
+Mockito.verify(level).setBlock(expectedPos, expectedState, 11);
+```
+
+**mock `Level` 做「放置」的要点**（踩过才通）：
+
+- `BlockPlaceContext.canPlace()` 要求**落点可替换** ⇒ 落点在放置前必须是空气、放置后才是方块
+  ⇒ 用 `thenAnswer` + `AtomicBoolean` 模拟状态迁移；**固定 stub 过不了**。
+- `CropBlock.canSurvive` 还要查光照 ⇒ 必须 stub `getRawBrightness(...) >= 8`。
+- 还需 stub `enabledFeatures()` / `isUnobstructed(...)` → true / `setBlock(...)` → true。
+- `player` 传 `null` 是安全的（`CollisionContext.empty()`；`ItemStack.consume` 对 null 安全）。
+- `popResource` 依赖 `level.random` / gamerules，mock 下会 NPE ⇒ 这类分支交游戏实测。
+
+**`Level.isClientSide` 是 `public final` 字段**（方法 `isClientSide()` 只是读它）。Mockito 只能
+mock 方法 ⇒ 单测里写字段式会让客户端守卫**永远不触发**（表现为「测试红但代码看着完全对」）。
+统一用方法式。
+
+## 测试 seam 与「改传输层必加的用例」
+
+- **测试 seam 约定**：需要被单测直接驱动的内部方法，**留包级可见即可**，不必为测试加 public API
+  （先例：`CrossContainerTransfer.tryPushToNeighbor`、`LivingFarmlandFunction.tryOutputOnce`）。
+- **改传输 / 交互层时必加**：
+  - `isEligibleCargo` 真值表；活物品货物**不入空槽、不与同种普通堆合并**、无交互匹配的活物品全拒
+  - 活物品货物在**每个入口**都被拒（`SlotInteractionCargoGateTest` 形态）
+  - **普通货物与活物品货物各测一遍** —— 只测普通货物会漏掉「准入与访问器工厂同口径」这类 bug
+    （活物品在 `SlotAccessorFactory.create` 处返回 null，与交互分发的拦截点不同）
+  - **方向化单测**：两个分发入口 + 各方向各覆盖一遍（`CrossContainerTransferFertilizeTest` 形态）
    本项目的列数推断和信号上限都有特例。
 3. 断言失败信息里带上实际值（`"实际=" + actual`），否则中文测试名在 Windows 控制台会乱码，
    只能靠失败信息定位。

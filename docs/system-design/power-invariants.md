@@ -28,8 +28,12 @@ EMA 不归零毁共振、雕文方向引用比较……**没有一个是靠「�
 
 ## 1. 不变量总表
 
-31 条，六组。层归属：**L1** = 纯函数属性测试、**L2** = 场景生成断言、
+35 条，七组。层归属：**L1** = 纯函数属性测试、**L2** = 场景生成断言、
 **L3** = 蜕变测试、**L4** = 运行时监控（§4 详述各层）。
+
+> **2026-09-16 增补 G 组（算术安全）**：原表遗漏了一类**不是语义问题、而是 JVM 算术问题**的
+> 不变量 —— 它曾导致**服务端冻结**与**凭空造电**两次真实事故，却因为「看着像性能问题」而长期
+> 只活在项目记忆里。G 组补上，共 **35 条 / 七组**。
 
 | ID | 一句话陈述 | 层 | 可拦截的历史 bug |
 |----|----------|:--:|----------------|
@@ -64,6 +68,10 @@ EMA 不归零毁共振、雕文方向引用比较……**没有一个是靠「�
 | I-F1 | 量化幂等：quantize(quantize(x)) == quantize(x)，相对误差 ≤ 10^(1-sig) | L1 | 稳态脏写泛滥 |
 | I-F2 | 显示零纹波：稳态振荡下显示窗口均值跨结算边界恒定 | L2 | 高频 EMA 闪烁 / 小功率不显示 |
 | I-F3 | 遥测必达：任一查看路径（BE / 大箱 / 背包 / 创造）→ 客户端缓存必被填充 | L2 | 大箱 / 背包 / 创造 tooltip 全 0 |
+| I-G1 | 份额不溢出：`a * b / c` 形式的份额 / 比例计算先转 double 算比例再夹上界；任意输入下无 long 溢出 | L1 | **零头回收退化成 ~10 亿轮 → 服务端冻结**；发电直存份额为负 → 静默丢弃 |
+| I-G2 | 分配总额守恒：`Σ distributed + leftover == accept`，且零头回收在**有界轮数**内结束 | L1/L4 | 份额算错 → 回收循环失控（同上） |
+| I-G3 | 宁损勿造：份额异常时**宁可少充绝不超充**（share 过大必须夹到 `remaining`） | L1 | **凭空造电**（`newQ` 被拉到 CAP） |
+| I-G4 | 请求量上界：入口必须安全吃下外部传入的 `Integer.MAX_VALUE`，不得假设请求量小 | L1/L4 | 外部 mod（Flux Networks「绕过限制」）大额请求触发溢出 |
 
 ---
 
@@ -294,6 +302,48 @@ k 锈级发电无同色灯 → 电量**不落任何池**（无容器池）、不
 （`player_` 前缀直发）+ 创造模式（引用匹配兜底）。
 - 入口：`ContainerRuntimeCache` / `LivingItemClientCache`（既有修复的回归守卫）
 
+### 2.G 算术安全（Arithmetic Safety）—— 定点制下的数值边界
+
+> 来源：2026-09-11 服务端冻结事故 / 2026-09-15 发电直存造电事故
+
+**背景**：mFE 定点制（1 FE = 1000 mFE）把量级抬高 1000 倍，每盏容量
+`BULB_UNIT_CAPACITY_MFE = 1e9` ⇒ `accept * remaining[i]` 可到 **1e23 ≫ Long.MAX**。
+这类溢出**不是语义问题**，所以 A–F 组的语义不变量**一条都拦不住它** —— 必须单独成组。
+
+**I-G1 份额不溢出**
+凡 `a * b / c` 形式的份额 / 比例计算，**先转 double 算比例、再夹到 `remaining`**；
+任意输入（含 `Integer.MAX_VALUE` 请求、满盏 `remaining`）下不得发生 long 溢出。
+- 入口：`ContainerEnergyStorage.receive` / `LivingWaxedCopperFunction.distributeToBulbs`
+- 自检（改这一层必跑）：
+  ```bash
+  grep -n "[a-zA-Z0-9_)] \* [a-zA-Z0-9_(].* / [a-zA-Z0-9_(]" src/main/java/com/qiqi/li/living/domain/power/*.java
+  ```
+- 断言（L1 属性测试）：随机 `(accept, remaining[], count[])` 极值组合下
+  `distributed ≥ 0`、`distributed ≤ accept`、无异常、毫秒级返回。
+- ⚠️ **溢出后果不是「少充一点」**：`distributed ≈ 0` ⇒ `leftover = accept` ⇒ 零头回收 `while`
+  退化成 **~10 亿轮**（服务端冻结）。**27 槽时铜灯总数超过约 16 盏就会触发。**
+
+**I-G2 分配总额守恒**
+`Σ distributed[i] + leftover == accept`；且零头回收在**有界轮数**内结束。
+`MAX_LEFTOVER_PASSES = 256` 是防御上限 —— 合法 leftover ≤ Σ(count−1)，1~2 轮就完；
+超限说明份额算错，**宁可少充也别卡死**（少充仍满足实充 ≤ 记账）。**别删这个上限。**
+
+**I-G3 宁损勿造**
+份额计算异常时宁可少充、绝不超充。`LivingWaxedCopperFunction.distributeToBulbs` 的 `mfe`
+是全部发电机按锈级累加，`× remaining` 同样会溢出；后果**不卡死但更危险**：
+share 为负 → 发电静默丢弃；share 变巨大正数 → `newQ` 被拉到 CAP → **凭空造电**。
+
+**I-G4 请求量上界**
+外部 mod 会用极端值调用：Flux Networks「绕过限制」模式下 `getLimit()` 返回 `Long.MAX_VALUE`，
+`onCycleStart` 每 tick 按满额跑一遍**模拟**调用 ⇒ `receiveEnergy` 必须能安全吃下
+`Integer.MAX_VALUE`，**不能假设请求量很小**。
+- 入口：`ContainerEnergyStorage.receiveEnergy`（对外接口，**不在 PerfMetrics 计时区间内**
+  —— 性能判读的覆盖盲区，见项目记忆「PerfMetrics 的覆盖盲区」）
+
+**既有守护与缺口**：语义红线由 `RoundTripConservationIT` 覆盖（整 FE 量化
+`accept -= accept % 1000`、完整步进保护 `count > leftover` 跳过、「宁损勿造」）；
+**G 组的数值边界目前没有属性测试** —— §4.1 第一层 jqwik 是它的归宿。
+
 ---
 
 ## 3. 历史 bug ↔ 不变量映射
@@ -319,8 +369,11 @@ k 锈级发电无同色灯 → 电量**不落任何池**（无容器池）、不
 | 小功率（<1 FE/t）EMA 不显示（整除归零） | **I-F2**（mFE 精度） | L2 |
 | 共振平衡度/增益逐 tick 闪烁 | **I-F2** + **I-C1** | L2 |
 | 雕文感应方向恒 UP（Pos2D 引用比较） | **I-E7**（序列化安全） | L1 |
+| **零头回收 long 溢出 → 服务端冻结**（27 槽铜灯 >16 盏即触发） | **I-G1** + **I-G2** | L1 |
+| **发电直存份额溢出 → 凭空造电**（`newQ` 被拉到 CAP） | **I-G1** + **I-G3** | L1 |
+| 外部 mod（Flux Networks）传 `Integer.MAX_VALUE` 请求 | **I-G4** | L1/L4 |
 
-反过来说：若这 16 条断言当时已存在，**每一次游戏内发现都会变成
+反过来说：若这 19 条断言当时已存在，**每一次游戏内发现都会变成
 一次自动失败 + 状态快照**，「游戏里发现 → 描述 → 仿真复现」的第一步被完全自动化。
 
 ---

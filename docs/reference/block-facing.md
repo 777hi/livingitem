@@ -332,15 +332,20 @@ public static Direction gridToWorld(Pos2D gridDir, Direction blockFacing) {
 
 ## 7. 项目中的相关代码
 
-| 文件 | 用途 |
-|------|------|
-| `Pos2D.java` | 容器槽位网格的二维方向模型 |
-| `SlotResolver.java` | 基于 Pos2D 的槽位索引解析 |
-| `DirectionModeComponent.java` | 活物品的方向配置组件 |
-| `ContainerLivingItemHandler.java` | 使用 `ChestBlock.getConnectedDirection()` 处理大箱子 |
-| `HybridContainerResolver.java` | 使用 DirectionModeComponent 解析槽位方向 |
-| `ContainerCacheManager.java` | 缓存槽位映射，指纹包含方向配置 |
-| CrossContainerTransfer.java | 跨容器传输核心类，实现 gridToWorld/worldToGrid 方向转换和相邻容器交互 |
+> ⚠️ **本节是快照**（2026-09-16 复核并修正）。原表列出的 `DirectionModeComponent`、
+> `HybridContainerResolver`、`ContainerCacheManager` **三个类在 v8 重构后已不存在**，已删除；
+> `SlotResolver` 实际在 `living/transfer/`（原写 `living/core/`）。
+> 准确清单用 `find src/main -name "*.java"` 或 [file-map.md](file-map.md)。
+
+| 文件 | 路径 | 用途 |
+|------|------|------|
+| `Pos2D.java` | `living/model/` | 容器槽位网格的二维方向模型 |
+| `SlotResolver.java` | `living/transfer/` | 基于 `Pos2D` 的槽位索引解析 |
+| `ContainerLivingItemHandler.java` | `living/container/` | 用 `ChestBlock.getConnectedDirection()` 处理大箱子 |
+| `CrossContainerTransfer.java` | `living/domain/hopper/` | **跨容器传输核心**：实现 `gridToWorld` / `worldToGrid` 方向转换与相邻容器交互（§6.3~6.5 的算法就在这里） |
+
+> 📄 方向转换的**使用场景与调用点**见
+> [living-hopper-tech.md §6.2.2](../tech/living-hopper-tech.md)（跨容器能力覆盖矩阵与结构规则）。
 
 ---
 

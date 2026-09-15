@@ -1,14 +1,8 @@
-好的！让我帮你全面梳理 `RecipeBookComponentMixin.java` 的数据流架构：
-用户想要我梳理 RecipeBookComponentMixin.java 文件的数据流。让我先读取这个文件，然后整理出完整的数据流架构。
+# RecipeBookComponentMixin 数据流架构总览
 
-用户想要我梳理这个文件的数据流。让我继续读取更多内容，然后整理出完整的数据流架构。
-
-好的，用户想要我梳理 RecipeBookComponentMixin.java 的数据流。让我基于已经读取的内容，整理出完整的数据流架构图。
-好的！让我为你全面梳理 `RecipeBookComponentMixin.java` 的**完整数据流架构**：
-
----
-
-# 📊 **RecipeBookComponentMixin 数据流架构总览**
+> 📄 **中文拼音搜索**由本 Mixin 与 `client/util/PinyinHelper.java` 提供：
+> 功能说明、技术架构、性能与测试见 [pinyin-search.md](../reference/pinyin-search.md)。
+> （2026-09-16：删除了文件开头遗留的 AI 对话记录，正文未改动。）
 
 ## 🏗️ **系统架构层次图**
 
@@ -67,7 +61,7 @@
 │  │ └─ WITHDRAW_INVENTORY: 取出物品操作（到背包）                  │   │
 │  └──────────────────────────────────────────────────────────────┘   │
 │  ┌──────────────────────────────────────────────────────────────┐   │
-│  │ LivingChestContentsPacket (服务器 → 客户端)                   │   │
+│  │ LivingChestAccessPacket (服务器 → 客户端)                   │   │
 │  │ └─ itemTags: List<CompoundTag> (最新物品数据)                │   │
 │  │   → LivingChestContentsCache.set(items) 更新缓存              │   │
 │  └──────────────────────────────────────────────────────────────┘   │
@@ -390,10 +384,10 @@
     │                   itemTags.add(chestItem.save(...))
     │
     └── 发送到客户端:
-        PacketDistributor.sendToPlayer(player, LivingChestContentsPacket(itemTags))
+        PacketDistributor.sendToPlayer(player, LivingChestAccessPacket(itemTags))
 
 
-    LivingChestContentsPacket.handle(packet, context)  ← 客户端接收处理
+    LivingChestAccessPacket.handle(packet, context)  ← 客户端接收处理
     ├── 解析物品数据:
     │   items = []
     │   for tag in packet.itemTags:
@@ -410,7 +404,7 @@
 **关键代码位置**:
 - [ServerPacketHandler.java L99-L111](file:///G:\777hi\mc\mymods\livingitem-template-1.21.1\src\main\java\com\qiqi\li\network\ServerPacketHandler.java#L99-L111) - 服务端处理
 - [ServerPacketHandler.java L207-L221](file:///G:\777hi\mc\mymods\livingitem-template-1.21.1\src\main\java\com\qiqi\li\network\ServerPacketHandler.java#L207-L221) - 数据收集发送
-- [LivingChestContentsPacket.java L58-L73](file:///G:\777hi\mc\mymods\livingitem-template-1.21.1\src\main\java\com\qiqi\li\network\LivingChestContentsPacket.java#L58-L73) - 客户端接收
+- [LivingChestAccessPacket.java L58-L73](file:///G:\777hi\mc\mymods\livingitem-template-1.21.1\src\main\java\com\qiqi\li\network\LivingChestAccessPacket.java#L58-L73) - 客户端接收
 
 ---
 
@@ -574,7 +568,7 @@ if (forceRefresh && isDirty()) {
 ```
 RecipeBookComponentMixin
     ├── LivingChestContentsCache (数据源)
-    │   └── 由 LivingChestContentsPacket 更新
+    │   └── 由 LivingChestAccessPacket 更新
     │       └── 由 ServerPacketHandler.sendLivingChestContents() 发送
     │           └── 由 LivingChestAccessPacket.LOAD 触发
     │

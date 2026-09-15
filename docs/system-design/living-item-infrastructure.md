@@ -351,7 +351,7 @@ for (var chunkPos : chunkSet) {
 
 ### 5.2 ContainerCompatibilityConfig — 容器兼容性配置
 
-[ContainerCompatibilityConfig](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/core/config/ContainerCompatibilityConfig.java) 为不同容器类型定义槽位解析规则，主要解决**非标准列数容器**的槽位方向解析问题。
+[ContainerCompatibilityConfig](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/transfer/ContainerCompatibilityConfig.java) 为不同容器类型定义槽位解析规则，主要解决**非标准列数容器**的槽位方向解析问题。
 
 **内置规则**：
 
@@ -583,7 +583,7 @@ if (rule.isPresent() && rule.get().containerSize() == getSize()) return rule;  /
 
 ### 6.3 SlotResolver — 槽位方向解析
 
-[SlotResolver](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/core/SlotResolver.java) 将相对方向偏移转换为容器中的绝对槽位索引。
+[SlotResolver](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/transfer/SlotResolver.java) 将相对方向偏移转换为容器中的绝对槽位索引。
 
 **核心公式**：
 
@@ -1113,6 +1113,24 @@ SlotInteractions.tryInteractFromNeighbor(handler, pos, targetStack, level, filte
 > （模拟玩家右键，见 [living-farmland-tech.md §3.5](../tech/living-farmland-tech.md)）。
 > 新增面向世界的物品能力时不要试图往传输层挂。
 
+### 9.8 Mixin 层约定
+
+- **配置**：服务端 Mixin 登记在 `living_item.mixins.json` 的 `mixins` 数组；客户端在
+  `living_item.client.mixins.json`；Create 兼容在 `living_item.mixins-create.json`（条件加载）。
+  **新增 Mixin 必须登记**，否则静默不生效。
+- **`required: true` + `defaultRequire: 1` 是有意的 fail-fast**：`@At` 锚点或 target 描述符失效时
+  **启动即崩**，好过静默失效 ——「功能悄悄没了」比「起不来」难查得多。
+- **`@At` target 描述符的参数类型写父类型**：如
+  `Lnet/minecraft/world/item/ItemStack;consume(ILnet/minecraft/world/entity/LivingEntity;)V`
+  而非 `Player`（字节码描述符按**声明**类型，不按实参类型）。
+- **注入在别人方法内部 ⇒ 必须 try/catch**：异常冒泡会破坏原版流程
+  （如「方块已放、物品未扣」+ 炸 tick）。非必要功能（「软逻辑」）一律整段兜住 + WARN 日志。
+- **读物品栈要锚在「数据还在」的时刻**：`BlockItem.place` 必须在 `consume` **之前**注入
+  （`@At("RETURN")` 时单块放置已 count=0，空栈 `getComponents()` 返回 `EMPTY` ⇒ 静默失效，
+  堆叠放置却正常）—— 详见 [living-farmland-tech.md §11.16](../tech/living-farmland-tech.md)。
+- **Mixin 的 handler 方法保持无状态**（别加字段存中间结果）：单例 + 可重入场景下会串。
+  项目内既有 Mixin 均无状态，沿用。
+
 ---
 
 ## 10. 性能监控
@@ -1227,3 +1245,13 @@ ItemTooltipEvent（NeoForge 客户端事件，见 client/render/LivingItemToolti
 | `HopperFilterBuilder.java` | `domain/hopper/` | 活漏斗过滤链构建（从 ContainerSnapshot 提取） |
 | `CrossContainerTransfer.java` | `domain/hopper/` | 跨容器传输，含 `Container` 接口槽位过滤 + `tryPullFromNeighbor`/`tryPushToNeighbor` 核心 helper + 方向解析 + 大箱子处理 |
 | `EnderRouteManager.java` | `domain/ender/` | 活末影箱路由逻辑集中管理 |
+
+### 10.1 性能判读：`PerfMetrics` 的覆盖盲区（血的教训）
+
+- `PerfMetrics` **只插桩 `processContext` 内部**。外部 mod 在自己 `ServerTickEvent` 里
+  **直接调我们能力接口**的路径（Flux Networks → `ContainerEnergyStorage.receiveEnergy`）
+  **完全不在计时区间内**。
+- 因此「PerfMetrics 说 living_item 只占 3%」与「spark 说某方法占 98.79%」**不矛盾**，
+  是覆盖盲区 —— 曾据此误判「卡顿与本模组无关」。
+  **交叉验证必须看 spark 节点的绝对毫秒数，不能只看百分比。**
+- 用户的场景描述（「只有传输电力才卡」）比任何采样百分比都值钱 —— **先问场景，再读火焰图**。
