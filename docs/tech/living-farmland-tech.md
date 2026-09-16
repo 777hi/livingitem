@@ -1,9 +1,9 @@
 # Living Farmland (活耕地) 技术文档
 
-> **文档版本**: v1.11
+> **文档版本**: v1.12
 > **最后更新**: 2026-09-16
 > **适用版本**: Minecraft 1.21.1
-> **状态**: 已实现，九轮实测全过 + 终审修复后；自动施肥已收编为注册式槽位交互（跨容器两方向统一，§11.15），2026-09-15 用户实测确认正常；放置回世界（§3.5）2026-09-16 新增；种子图标迁到装饰器路径（§8.2，快捷栏现在也渲染）2026-09-16
+> **状态**: 已实现，九轮实测全过 + 终审修复后；自动施肥已收编为注册式槽位交互（跨容器两方向统一，§11.15），2026-09-15 用户实测确认正常；放置回世界（§3.5）2026-09-16 新增；种子图标迁到装饰器路径（§8.2，快捷栏现在也渲染）2026-09-16；**锄头改为 HOE_TILL 能力判定（兼容模组锄头）+ 可耕土扩展（§3.1）** 2026-09-16
 
 ## 目录
 
@@ -27,13 +27,13 @@
 ### 1.1 什么是活耕地？
 
 活耕地将原版的「耕地 + 作物」二维种植系统**虚拟化到容器网格**。玩家在容器 GUI 内完成
-获取（活锄头耕活泥土）、种植（活种子右键）、催熟（活骨粉）三个动作，之后含活耕地的
+获取（活锄头耕活土）、种植（活种子右键）、催熟（活骨粉）三个动作，之后含活耕地的
 被加载容器每 tick 自动推进作物生长，成熟后逐项产出作物到上方的「生长槽位」。
 
 ```
 活耕地生存链路：
 
-  活泥土 + 活锄头 ──右键──→ 活耕地（GUI 交互转换）
+  活土（泥土/草方块/土径 + 砂土/缠根泥土） + 活锄头 ──右键──→ 活耕地 / 活泥土（§3.1 映射）
   活耕地 + 活种子 ──右键──→ 种植（消耗与耕地堆叠数等量的活种子，数量不足无法种植）
   活耕地 + 活骨粉 ──右键──→ 强制一次必定成功的生长 tick（未成熟 +1 / 成熟触发产出）
                                 │
@@ -143,17 +143,47 @@ LivingFarmlandFunction.tick（每容器 tick）
 三个交互全部走 GUI 交互系统（声明式规则 + 客户端统一拦截 + 服务端处理），注册点在
 `LivingItem.commonSetup`。
 
-### 3.1 活锄头耕活泥土 → 活耕地（物品转换型交互）
+### 3.1 活锄头耕活土 → 活耕地（物品转换型交互）
+
+**锄头判定（2026-09-16 定稿：只认 ItemAbility）** —— `Tillables.isHoeLike`，唯一依据是
 
 ```java
-// 6 种锄头各注册一条精确规则（target=DIRT, trigger=各锄头）
-InteractionRegistry.register(new InteractionEntry(Items.DIRT, Items.WOODEN_HOE, 1, "till_to_farmland"));
-// ... STONE/GOLDEN/IRON/DIAMOND/NETHERITE_HOE 同理
+stack.canPerformAction(ItemAbilities.HOE_TILL)
 ```
 
-`TillToFarmlandHandler`：验证目标 = 活泥土、光标 = 活锄头（生存消耗 1 耐久，创造信任
-客户端）→ 目标槽位**原地替换**为 `Items.FARMLAND`（新 ItemStack，保留堆叠数 +
-`IS_LIVING`）→ broadcastChanges。
+原版 `HoeItem` 经 NeoForge patch 对 HOE_TILL 返回 true（`DEFAULT_HOE_ACTIONS`），
+因此 6 种原版锄头**无需枚举**；重写了 `IItemExtension#canPerformAction` 的**模组锄头**
+（含多工具合一型）自动兼容。未声明该能力的自实现锄头**不**覆盖——刻意的取舍：不做
+`instanceof HoeItem` / 标签 / 配置白名单兜底。
+
+**可耕映射**（`Tillables.TILLED_RESULTS`，对齐原版 `IBlockExtension#getToolModifiedState`
+的 HOE_TILL 分支，以 neoforge-21.1.249 源码为准）：
+
+| 目标（须为活物品） | 产物（保留活标记与堆叠数） |
+|---|---|
+| `dirt` / `grass_block` / `dirt_path` | `farmland` |
+| `coarse_dirt` / `rooted_dirt` | `dirt`（与原版一致，想拿活耕地要再耕一跳） |
+
+原版的两处世界副作用——「目标上方必须是空气」与「缠根泥土掉落垂根」——物品层 GUI 交互
+没有世界上下文，一律不做；`podzol`（灰化土）/ `mycelium`（菌丝）原版不可耕，不纳入。
+
+**注册形态**：一个条目只能表达一个 `targetItem`，故按可耕目标逐条注册**通配条目**，
+锄头侧交给谓词（与 §3.2 种植同构）：
+
+```java
+for (Item tillable : Tillables.tillableTargets()) {
+    InteractionRegistry.register(new InteractionEntry(tillable, null, 1, "till_to_farmland",
+        false, Tillables::canTillWith));   // ← triggerFilter：活物品自查 + HOE_TILL + 可耕
+}
+```
+
+⚠️ 谓词内**必须**自查 `isLivingItem(trigger)`：`findInteraction` 的通配分支不校验
+trigger 的活物品标记（只有精确分支校验），漏了会让非活锄头也被拦截、吞掉原版拿起/分堆
+（同 §11.7 的事故类型）。
+
+`TillToFarmlandHandler`：查表取产物 → 校验光标（生存/创造同一门槛，创造只免耐久消耗）
+→ 目标槽位**原地替换**（新 ItemStack，保留堆叠数 + `IS_LIVING`）→ broadcastChanges。
+不可损坏的模组锄头在 `hurtAndBreak` 内部静默跳过，不会报错。
 
 ### 3.2 种植（通配条目 + triggerFilter 组合过滤 + 种子消耗）
 
@@ -664,6 +694,7 @@ src/main/java/com/qiqi/li/
 ├── living/domain/farmland/
 │   ├── FarmlandPlantComponent.java     # 种植数据组件（Codec + StreamCodec）
 │   ├── CropClassifier.java             # 作物分类器（准入/maxAge/浆果判定/茎果实）
+│   ├── Tillables.java                  # 耕作知识表：锄头判定（HOE_TILL）+ 可耕映射（§3.1）
 │   ├── LivingFarmlandFunction.java     # tick 功能（生长/产出状态机 + tooltip）
 │   ├── FarmlandBonemealInteraction.java # 槽位交互：骨粉 → 活耕地 = 施肥（活漏斗自动施肥）
 │   └── LivingFarmlandPlacement.java    # 放置回世界：模拟玩家右键种一次（§3.5）
@@ -671,7 +702,7 @@ src/main/java/com/qiqi/li/
 │   ├── SlotInteraction.java            # 槽位交互接口（matches + interact + consumeAmount）
 │   └── SlotInteractions.java           # 槽位交互注册表 + 分发器（三处传输分支唯一入口）
 ├── living/interaction/
-│   ├── TillToFarmlandHandler.java       # 活锄头 → 活耕地（6 锄头规则）
+│   ├── TillToFarmlandHandler.java       # 活锄头耕活土 → 活耕地（查 Tillables 映射）
 │   ├── PlantCropHandler.java            # 种植（通配 + handler 校验）
 │   └── BonemealHandler.java             # 骨粉催熟（精确触发器）
 ├── living/mixin/
@@ -688,7 +719,7 @@ src/main/java/com/qiqi/li/
 |------|------|------|
 | 组件 | `LivingItemManager` | `FARMLAND_PLANT` DeferredRegister + `get/setFarmlandPlant` |
 | 功能 | `LivingItem.commonSetup` | `registerFunction(new LivingFarmlandFunction())` |
-| 交互规则 | 同上 | DIRT×6 锄头（till）、FARMLAND+null（plant）、FARMLAND+BONE_MEAL（bonemeal） |
+| 交互规则 | 同上 | 5 种可耕土 × 通配（till，谓词 = 活锄头 HOE_TILL）、FARMLAND+null（plant）、FARMLAND+BONE_MEAL（bonemeal） |
 | 交互处理器 | 同上 | `registerHandler` × 3（actionId 对应） |
 | 槽位交互（活漏斗自动施肥） | `SlotInteractions` 静态块 | `register(new FarmlandBonemealInteraction())`——内置条目，三处传输分支经分发器自动生效 |
 | Mixin（放置回世界） | `living_item.mixins.json` | `BlockItemMixin` —— `@Mixin(BlockItem.class)`，注入 `place` 的 `consume` **之前**（§11.16） |
@@ -709,6 +740,8 @@ src/main/java/com/qiqi/li/
 | `SlotInteractionCargoGateTest`（5 项） | 货物准入唯一定义点 `isEligibleCargo`（2026-09-15 用户定案）：真值表（普通物品/活箱子/活末影箱合法，活骨粉/活熔炉非法）、工厂同口径返回 null、**活骨粉 + 活耕地不施肥不扣货**、普通骨粉端到端无回归 |
 | `LivingFarmlandPlacementTest`（5 项） | 放置回世界（2026-09-16）：`isPlantable` 真值表（非活耕地/活但未种植/已种植/非耕地活物品）、**落点在耕地之上且一律 age 0**（mock Level 捕获 `setBlock`）、客户端不生效、**软逻辑红线——种植抛异常被吞掉不外泄**、**端到端 Mixin 接线**（`BlockItem.place` 全流程 → 作物被种下，同时钉住「必须注入在 `consume` 之前」） |
 | `LivingFarmlandSeedDecoratorTest`（4 项） | 种子图标装饰器守卫（2026-09-16）：普通非活耕地 false / 活耕地未种植 false / 活耕地已种植 true / 非耕地活物品 false。装饰器按 `Item` 注册 ⇒ 会对所有 FARMLAND 调用，守卫必须完整；画面本身交游戏实测 |
+| `TillablesTest`（8 项） | 耕作知识表（2026-09-16）：原版 6 锄头 HOE_TILL 为真、模组锄头（不继承 HoeItem）为真、非锄头/空栈为假；映射逐项（泥土/草方块/土径→耕地，砂土/缠根泥土→泥土）；非可耕（灰化土/菌丝/石头/耕地/空栈）→ null；`canTillWith` 真值表（非活锄头、非活目标、活剑、活石头、空手全假）；可耕集合恰为 5 项且不含灰化土/菌丝 |
+| `TillToFarmlandCompatTest`（8 项） | 跨模组兼容（2026-09-16）：规则层——5 种可耕土×活原版锄头命中、**模组锄头命中**、非活锄头不拦截（通配谓词守活物品门槛）、活剑/活石头/非活目标/空手均不拦；处理器层——活模组锄头耕活泥土×3 → 活耕地×3（保留堆叠与活标记）、砂土 → 活泥土（非耕地）、四类拒绝组合不写入、创造模式同样校验光标 |
 
 ---
 
@@ -986,13 +1019,45 @@ KC（KaleidoscopeCookery）水稻成熟形态是**三格柱**，活耕地里第�
 优先找原版对应的**入口方法**（这里是 `useOn`）而不是复刻它的**结果**（`setBlock`）——
 后者会静默绕过所有下游扩展点，兼容性问题要等玩家装了模组才暴露。
 
+### 11.17 硬编码物品清单 = 跨模组失效（2026-09-16，锄头兼容改造）
+
+**现象**：其它模组的锄头活化后耕不了活泥土——右键毫无反应（客户端根本不拦截）。
+
+**根因（两处，且两侧口径互不一致）**：
+1. 注册侧为 6 种原版锄头各注册一条**精确**规则（`triggerItem` 只接受具体 `Item`），
+   模组锄头不在清单内 ⇒ `findInteraction` 返回 null ⇒ 不发网络包；
+2. 校验侧 `isHoe` 用 `instanceof HoeItem`，自实现工具类的锄头即便过了第一关也被拒。
+   一边枚举 6 个物品、一边判断一个父类——这类「清单 + 类型判断」双写迟早分叉。
+
+**修复**：抽 `Tillables`（锄头判定 + 可耕映射的唯一真源），两侧统一为语义判定
+`canPerformAction(ItemAbilities.HOE_TILL)`——正是 NeoForge 对自定义工具的官方推荐
+（重写 `IItemExtension#canPerformAction`），原版锄头经 patch 自动满足。
+
+**两个附带坑**：
+- **通配条目的活物品自查**：改通配后 `findInteraction` 的通配分支**不**校验 trigger 的
+  活物品标记，必须在谓词里自己查 `isLivingItem(trigger)`，否则非活锄头也被拦截并吞掉
+  原版操作（同 §11.7 事故类型）。
+- **测试期不能 `new Item(new Item.Properties())`**：FML 测试环境里物品注册表已冻结，
+  `Item` 构造的 `createIntrusiveHolder` 抛 `IllegalStateException: Registry is already
+  frozen`，且在**静态初始化期**抛出 ⇒ 表现为整个测试类 `NoClassDefFoundError`
+  （17 个用例全红，看不出真实原因）。模组锄头替身改用 `Mockito.spy(Items.STICK)` +
+  stub `canPerformAction`——其余行为（含 `ItemStack` 构造要用的 `components()`）保持真实。
+
+**教训**：凡是「这个物品属于某一类」的判定，优先找**语义化能力**（ItemAbility / 标签 /
+DataComponent），不要枚举物品清单——清单每多一个模组就失效一次。
+
 ---
 
 ## 12. 验证清单
 
 ### 12.1 交互链路
 
-- [ ] 活锄头右键活泥土 → 泥土变耕地、锄头留手上只掉耐久（6 种锄头逐一）
+- [ ] 活锄头右键活泥土 → 泥土变耕地、锄头留手上只掉耐久
+- [ ] **其它模组锄头活化后同样能耕**（跨模组兼容验证点，2026-09-16）
+- [ ] 活锄头右键活草方块 / 活土径 → 变活耕地
+- [ ] 活锄头右键活砂土 / 活缠根泥土 → 变**活泥土**（不是耕地），再耕一跳才变活耕地
+- [ ] 活锄头右键活灰化土 / 活菌丝 → 无反应（原版不可耕）
+- [ ] 非活锄头 / 活剑右键活泥土 → 不拦截，原版拿起·分堆操作照常
 - [ ] 活种子右键活耕地 → tooltip 显示作物 + 生长 0/N，**消耗与耕地堆叠数等量的种子**
 - [ ] 种子数不足（< 耕地堆叠数）→ 不拦截，原版交换照常
 - [ ] **活骨粉右键活耕地 → 强制生长 tick：未成熟 +1 级 / 成熟触发产出**（本次验证点）

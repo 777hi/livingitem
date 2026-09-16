@@ -151,8 +151,8 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 297 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
-全绿基线：`297 passed / 0 failed / 0 skipped`（2026-09-16 种子图标装饰器）。
+**合计测试用例 313 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
+全绿基线：`313 passed / 0 failed / 0 skipped`（2026-09-16 活锄头跨模组兼容 + 可耕土扩展）。
 > 📄 测试环境配置与编写约定见 [unit-testing.md](docs/guides/unit-testing.md)；
 > 测试文件树见 [file-map.md](docs/reference/file-map.md)「测试文件树」。
 
@@ -247,7 +247,7 @@ src/main/java/com/qiqi/li/
 - [x] 元数据同步 + 客户端缓存
 
 ### 活耕地
-- [x] GUI 交互获取（活锄头耕活泥土，6 锄头变种）+ 种植（**消耗与耕地堆叠数等量的活种子**，数量不足无法种植）+ 骨粉催熟（**强制一次必定成功的生长 tick**：未成熟 +1/成熟触发产出，无变化不消耗）
+- [x] GUI 交互获取（活锄头耕活土，**任何能 HOE_TILL 的锄头含模组锄头**；泥土/草方块/土径→耕地，砂土/缠根泥土→泥土）+ 种植（**消耗与耕地堆叠数等量的活种子**，数量不足无法种植）+ 骨粉催熟（**强制一次必定成功的生长 tick**：未成熟 +1/成熟触发产出，无变化不消耗）
 - [x] 生长状态机：世界轴时间戳节拍（200t，稳态零写入）+ 湿润传播（**4 级 BFS：水源相邻=源 4 级，沿相邻活耕地逐跳 -1，≥1 即湿润**）+ 顶行正常生长/产出挂起
 - [x] round-robin 逐项产出：战利品表首轮冻结进组件、每 tick 不限速逐项 ×堆叠数、留种（cropSeed 产出项总量 -1）、标准/浆果双模式、收获形态覆盖（HARVEST_BLOCKS：FD 稻米/番茄/火把花——下部表只掉种子的作物滚覆盖方块表）
 - [x] 作物准入三层：Block 白名单（CropBlock/StemBlock/NetherWart/SweetBerry/PitcherCrop）+ c:seeds 标签 + 甜浆果手动映射；茎作物产出 = 果块直取（stem.fruit AT）；maxAge 读 age 属性真实上限（模组作物兜底）+ 存量组件自愈（注册表修正后重冻结）
@@ -279,6 +279,25 @@ src/main/java/com/qiqi/li/
 ### 当前版本: v0.9-alpha
 
 **最近更新** (2026-09-16):
+- ✅ 新增：**活锄头跨模组兼容 + 可耕土扩展**——原先「活锄头」是**写死的 6 种原版锄头**
+  （注册侧枚举物品 + 校验侧 `instanceof HoeItem`，两侧口径还不一致），其它模组的锄头
+  活化后**耕不了活泥土**（客户端根本不拦截）。改为语义判定：新增
+  `domain/farmland/Tillables`（唯一真源）—— 锄头只认
+  `canPerformAction(ItemAbilities.HOE_TILL)`（NeoForge 对自定义工具的官方口径：原版
+  锄头经 patch 自动满足，模组锄头重写 `canPerformAction` 即自动兼容；**不做**
+  instanceof / 标签 / 配置兜底）；可耕映射对齐原版 `IBlockExtension#getToolModifiedState`
+  的 HOE_TILL 分支（以 neoforge-21.1.249 源码为准：**泥土/草方块/土径 → 耕地，砂土/
+  缠根泥土 → 泥土**，再耕一跳才变耕地；灰化土/菌丝原版不可耕，不纳入；「上方必须是
+  空气」与「缠根泥土掉垂根」属世界副作用，物品层 GUI 交互不做）。注册处 6 条精确规则
+  → **按可耕目标逐条注册通配条目 + `Tillables::canTillWith` 谓词**（与 plant_crop
+  同构）；谓词内**必须**自查 `isLivingItem(trigger)`——通配分支不校验活物品，漏了会吞
+  掉原版拿起/分堆。handler 改为查表取产物，且创造模式同样校验光标（只免耐久消耗）。
+  新增 `testutil/FakeHoe`（模组锄头替身：⚠️ **测试期物品注册表已冻结，不能 `new Item`**，
+  否则静态初始化抛 `Registry is already frozen` 导致整类 17 用例全红且看不出原因——改用
+  `Mockito.spy(Items.STICK)` + stub `canPerformAction`）+ `TillablesTest`（8 项）+
+  `TillToFarmlandCompatTest`（8 项），全量 **313 用例全绿**。收编
+  living-farmland-tech.md §3.1/§10.1/§10.2/§10.3/§11.17/§12.1 +
+  gui-interaction-system.md 处理器表 + file-map.md。
 - ✅ 修复：**活耕地种子图标在 HUD 快捷栏不渲染**——原实现画在
   `AbstractContainerScreenMixin.render @TAIL`，硬依赖 `leftPos`/`topPos`（只有
   `AbstractContainerScreen` 有），而快捷栏走 `Gui.renderHotbar` → `renderSlot` →

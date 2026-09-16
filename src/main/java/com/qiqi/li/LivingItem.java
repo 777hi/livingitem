@@ -93,6 +93,7 @@ import com.qiqi.li.living.interaction.TillToFarmlandHandler;
 import com.qiqi.li.living.interaction.PlantCropHandler;
 import com.qiqi.li.living.interaction.BonemealHandler;
 import com.qiqi.li.living.domain.farmland.CropClassifier;
+import com.qiqi.li.living.domain.farmland.Tillables;
 import net.neoforged.neoforge.registries.DeferredRegister;
 import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
 import com.qiqi.li.living.domain.chest.LivingChestItemHandler;
@@ -265,11 +266,14 @@ public class LivingItem {
         InteractionRegistry.register(new InteractionEntry(Items.COMPARATOR, null, 1, "comparator_toggle"));
         LOGGER.info("Registered comparator toggle interaction rule");
 
-        // ── 活耕地：活锄头耕活泥土 + 种植 + 骨粉（docs/idea.md 活耕地设计） ──
+        // ── 活耕地：活锄头耕活土 + 种植 + 骨粉（docs/idea.md 活耕地设计） ──
+        // 锄头不枚举：通配条目 + 谓词按 HOE_TILL 能力识别，模组锄头自动兼容。
+        // 可耕目标逐条注册（映射见 Tillables）；谓词把拦截面收窄到「活着的锄头」，
+        // 其余光标一律不拦截，原版拿起/分堆操作不受影响。
         InteractionRegistry.registerHandler("till_to_farmland", new TillToFarmlandHandler());
-        for (Item hoe : new Item[]{Items.WOODEN_HOE, Items.STONE_HOE, Items.GOLDEN_HOE,
-                Items.IRON_HOE, Items.DIAMOND_HOE, Items.NETHERITE_HOE}) {
-            InteractionRegistry.register(new InteractionEntry(Items.DIRT, hoe, 1, "till_to_farmland"));
+        for (Item tillable : Tillables.tillableTargets()) {
+            InteractionRegistry.register(new InteractionEntry(tillable, null, 1, "till_to_farmland",
+                false, Tillables::canTillWith));
         }
         LOGGER.info("Registered till_to_farmland interaction rules");
 

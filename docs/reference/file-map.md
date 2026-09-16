@@ -86,7 +86,8 @@ src/main/java/com/qiqi/li/
 │   │   │   ├── FarmlandPlantComponent.java   #     种植数据组件（作物标记+age+round-robin 产出）
 │   │   │   ├── CropClassifier.java           #     作物分类器（准入三层/maxAge/茎果实 AT/收获形态/上部件注册表）
 │   │   │   ├── FarmlandBonemealInteraction.java #  槽位交互条目：普通骨粉 × 活耕地 → 施肥（注册进 SlotInteractions）
-│   │   │   └── LivingFarmlandPlacement.java  #     放置回世界：模拟玩家右键种一次（软逻辑，异常自吞）
+│   │   │   ├── LivingFarmlandPlacement.java  #     放置回世界：模拟玩家右键种一次（软逻辑，异常自吞）
+│   │   │   └── Tillables.java                #     耕作知识表：锄头判定（HOE_TILL）+ 可耕映射
 │   │   │
 │   │   └── map/                              #   活地图传送领域
 │   │       ├── LivingEnderPearlFunction.java #     活末影珍珠（纯工具类）
@@ -174,7 +175,7 @@ src/main/java/com/qiqi/li/
 │   │   ├── LeverToggleHandler.java          #   活拉杆切换
 │   │   ├── RepeaterCycleHandler.java        #   活中继器延迟循环
 │   │   ├── ComparatorToggleHandler.java     #   活比较器模式切换
-│   │   ├── TillToFarmlandHandler.java       #   活锄头耕活泥土→活耕地（物品转换型）
+│   │   ├── TillToFarmlandHandler.java       #   活锄头耕活土→活耕地（查 Tillables 映射）
 │   │   ├── PlantCropHandler.java            #   活种子种植（通配条目+handler 校验）
 │   │   └── BonemealHandler.java             #   活骨粉催熟（精确触发器条目）
 │   │
@@ -281,6 +282,7 @@ src/test/java/com/qiqi/li/
 ├── living/domain/farmland/
 │   ├── CropClassifierTest.java               # 作物分类器·火把花/瓶子草/柱状段回归（10 项）
 │   ├── LivingFarmlandFunctionTest.java      # 输出合并回归·部分合并丢物品守卫（5 项）
+│   ├── TillablesTest.java                   # 耕作知识表·锄头判定+可耕映射+真值表（8 项）
 │   ├── FertilizeTransferTest.java           # 自动施肥·骨粉→活耕地零空转守卫（6 项）
 │   └── LivingFarmlandPlacementTest.java     # 放置回世界·落点/幼苗/客户端/异常不冒泡+端到端接线（5 项）
 ├── living/domain/furnace/
@@ -292,7 +294,8 @@ src/test/java/com/qiqi/li/
 ├── living/domain/map/
 │   └── MapCoordHelperTest.java                # 地图坐标换算（29 项）
 ├── living/interaction/
-│   └── InteractionRegistryTest.java           # 两趟优先级匹配·通配遮蔽+triggerFilter 回归守卫（7 项）
+│   ├── InteractionRegistryTest.java           # 两趟优先级匹配·通配遮蔽+triggerFilter 回归守卫（7 项）
+│   └── TillToFarmlandCompatTest.java          # 活锄头跨模组兼容·模组锄头命中+处理器产物回归（8 项）
 └── living/transfer/
     ├── ContainerCompatibilityConfigTest.java  # 容器布局推断（14 项）
     └── SlotInteractionCargoGateTest.java      # 槽位交互货物准入真值表·活骨粉不施肥（5 项）

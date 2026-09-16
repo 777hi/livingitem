@@ -141,7 +141,7 @@ CropClassifier::isSeedPlantableOnFarmland)`）；**只有真·任意光标自交
 | `InteractionHandler` | 处理器接口（服务端执行交互逻辑） |
 | `IgniteHandler` | 点燃槽位TNT（活打火石→活TNT） |
 | `IgniteCarriedHandler` | 点燃光标TNT（活TNT→活打火石） |
-| `TillToFarmlandHandler` | 活锄头耕活泥土→活耕地（物品转换型） |
+| `TillToFarmlandHandler` | 活锄头耕活土→活耕地（物品转换型；锄头 = `canPerformAction(HOE_TILL)`，产物查 `Tillables` 映射） |
 | `PlantCropHandler` | 活种子种植（通配条目 + handler 内校验） |
 | `BonemealHandler` | 活骨粉催熟（精确触发器条目） |
 | `GuiInteractionHelper` | 客户端GUI交互统一工具（查询规则+解析槽位+序列化光标+发包） |

@@ -1,42 +1,46 @@
 package com.qiqi.li.living.interaction;
 
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.domain.farmland.Tillables;
 
 /**
- * 活锄头右键活泥土 → 转换为活耕地（物品转换型处理器）。
+ * 活锄头右键活土 → 转换为耕地（物品转换型处理器）。
  *
- * 逻辑（docs/idea.md「获取方式」「交互处理器设计」）：
- *   - 生存模式：验证光标为活锄头（任意锄头变种 + IS_LIVING），消耗 1 点耐久
- *   - 创造模式：光标物品是客户端虚拟的，服务端无法验证，信任客户端（不消耗）
- *   - 目标槽位物品原地替换：Items.DIRT → Items.FARMLAND，保留 IS_LIVING 标记
+ * <p>逻辑（docs/idea.md「获取方式」「交互处理器设计」）：
+ *   - <b>锄头判定</b>：{@link Tillables#canTillWith} —— 光标能执行 HOE_TILL 且是活物品。
+ *     原版锄头与声明了该能力的模组锄头一视同仁，不再枚举物品清单
+ *   - <b>产物</b>：查 {@link Tillables#tilledResultOf} —— 泥土/草方块/土径 → 活耕地，
+ *     砂土/缠根泥土 → 活泥土（可再耕一跳变活耕地）
+ *   - <b>创造模式</b>：不消耗耐久，但光标的锄头校验与生存模式一致（与
+ *     PlantCropHandler 同口径——创造模式光标经 carriedTag 已在服务端恢复，能正常校验）
+ *   - 目标槽位物品原地替换，保留堆叠数与 IS_LIVING 标记</p>
  */
 public class TillToFarmlandHandler implements InteractionHandler {
 
     @Override
     public void handle(ServerPlayer player, Slot targetSlot) {
-        ItemStack dirt = targetSlot.getItem();
-        if (dirt.isEmpty() || !dirt.is(Items.DIRT)) return;
-        if (!LivingItemManager.isLivingItem(dirt)) return;
+        ItemStack source = targetSlot.getItem();
+        Item result = Tillables.tilledResultOf(source);
+        if (result == null) return;
+
+        // 与客户端拦截共用同一门槛（含「双方都是活物品」校验）
+        ItemStack carried = player.containerMenu.getCarried();
+        if (!Tillables.canTillWith(carried, source)) return;
 
         if (!player.isCreative()) {
-            ItemStack carried = player.containerMenu.getCarried();
-            if (carried.isEmpty() || !isHoe(carried) || !LivingItemManager.isLivingItem(carried)) return;
-            carried.hurtAndBreak(1, player, net.minecraft.world.entity.EquipmentSlot.MAINHAND);
+            // 不可损坏的模组锄头在 hurtAndBreak 内部静默跳过，不会报错
+            carried.hurtAndBreak(1, player, EquipmentSlot.MAINHAND);
         }
 
-        // 原地替换物品类型，保留堆叠数与 IS_LIVING 标记
-        ItemStack farmland = new ItemStack(Items.FARMLAND, dirt.getCount());
-        LivingItemManager.setLiving(farmland, true);
-        targetSlot.set(farmland);
+        ItemStack tilled = new ItemStack(result, source.getCount());
+        LivingItemManager.setLiving(tilled, true);
+        targetSlot.set(tilled);
 
         player.containerMenu.broadcastChanges();
-    }
-
-    private static boolean isHoe(ItemStack stack) {
-        return stack.getItem() instanceof net.minecraft.world.item.HoeItem;
     }
 }
