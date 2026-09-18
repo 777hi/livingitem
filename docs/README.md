@@ -135,7 +135,7 @@ python tools/doc_check.py        # 退出码 0 = 通过
 - [ ] **知识归宿检查**：发现某个知识点**只写在工具侧技能或 `MEMORY.md`** → 迁进 `docs/`。
       判据：`grep -rl "<关键词>" docs/` 无命中 = 无归宿。
       （2026-09-16 迁了 3 项：纹理约定 → `icon-system.md`、相位圆盘渲染像素规约 →
-      `tooltip-system.md`、性能判读覆盖盲区 → `living-item-infrastructure.md` §10.1）
+      `tooltip-system.md`、性能判读覆盖盲区 → `living-item-infrastructure.md` §10.3）
 
 **脚本踩坑**：别在 shell 里用 `python -c` 且字符串含**反引号** —— Bash 会把 `` ` `` 当**命令替换**执行掉
 （曾把 `` `find ...` `` 直接替换成实际文件路径）。**把脚本写成文件再跑**（`build/xxx.py`），跑完删。

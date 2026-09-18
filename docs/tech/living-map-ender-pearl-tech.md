@@ -1989,6 +1989,12 @@ public Set<ChunkPos> getCachedChunks(ResourceKey<Level> dim) {
 
 **为什么 `Collections.unmodifiableSet()` 不够安全**：它只阻止通过该视图修改集合，但底层集合被其他途径（如事件回调 `onChunkLoad`/`onChunkUnload`）修改时，正在遍历该视图的迭代器仍会崩溃。返回快照副本则完全隔离了遍历与修改。
 
+> ⚠️ **后续变更（2026-09-18）**：该方法已更名为
+> **`ContainerChunkCache.getProcessableChunks(ServerLevel)`** —— 签名由「维度 Key」改为
+> 「`ServerLevel`」，并在快照之上**新增 ticking 过滤**（只返回 `isPositionTicking` 为真的区块）。
+> 上面这段历史记录里的 `getCachedChunks` / `getCachedChunks(ResourceKey<Level>)` 已不存在。
+> 原因与不变量见 [living-item-infrastructure.md](../system-design/living-item-infrastructure.md) §3.2.1。
+
 ### v36 → v37：活末影珍珠查找遗漏副手槽位
 
 **问题**：`LivingEnderPearlFunction.findInInventory()` 只遍历 `player.getInventory().items`（主背包 36 格），不检查副手槽位。当活末影珍珠只在副手时，手持传送会静默失败。

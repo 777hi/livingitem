@@ -171,7 +171,7 @@ ServerTickEvent.Pre
     ↓
 1. 遍历所有在线玩家 → 处理玩家背包
     ↓
-2. 遍历所有维度 → flushPendingRescans() → ContainerChunkCache.getProcessableChunks(level)
+2. 遍历所有维度 → flushPendingRescans() → ContainerChunkCache.getCachedChunks()
     ↓
 3. 遍历每个含容器区块的方块实体
     ↓
@@ -196,11 +196,6 @@ ServerTickEvent.Pre
 方块放置   → 下一 tick 重新扫描该区块
 方块破坏   → 下一 tick 重新扫描该区块
 ```
-
-**两条独立的判据**（别混）：**发现**（扫描）覆盖**所有已加载区块**（`getChunkNow`）；
-**处理**（读能力 / 读邻居）只针对 **ticking 区块**（`isPositionTicking`，见 §3.2.1）。
-扫描不做 ticking 过滤是**必须的** —— 区块提升到 ticking **没有**对应事件可登记，
-若扫描也过滤，那些"加载后一直没进 ticking 区"的区块就永久发现不到了。
 
 > ⚠️ **红线：区块加载事件回调里禁止任何世界交互。**
 >
@@ -232,177 +227,6 @@ ServerTickEvent.Pre
 （区块加载会成批涌入，视距 12 约 600 个区块，避免能力查询峰值堆到同一 tick）。
 区块没到 FULL（`getChunkNow` 返回 null）就跳过 —— **绝不主动加载区块**；不会漏，
 它真正加载完成时会再触发一次 `ChunkEvent.Load` 重新登记。
-
-> 📌 **同一机制的"温和版"（tick 阶段仍可能发生，不是死锁但代价高）**
->
-> tick 阶段做能力查询不会死锁，但若某个模组的 provider 去查**未加载**的区块，
-> 就会走同一条 `getChunk(requireChunk = true)` —— 主线程**原地等**它生成完。
-> 代价有三层：
-> ① `ChunkPyramid.GENERATION_PYRAMID` 里 `FULL` 的累积依赖是 **`STRUCTURE_STARTS` 半径 8**
-> ⇒ 要凑齐 **17×17 = 289 个区块**，目标区块本身还要跑完整状态链（含特性/结构/光照）；
-> ② 这个 tick 的墙钟时间把上述生成时间全吃进去（专用服务器 `max-tick-time` 默认 1 分钟，
-> 超了被看门狗判崩；单人存档无看门狗，表现为纯卡死）；
-> ③ `TicketType.UNKNOWN` 的 lifespan 是 **1**（`Ticket.timedOut` = `currentTick - createdTick > 1`，
-> `purgeStaleTickets` 每 tick 一次）⇒ 一次性触发留下的票据约 2 tick 后失效、区块被卸载。
-> **但 `DistanceManager.addTicket` 会 `addOrGet` + `setCreatedTick(...)` 续期** ⇒ 连续每 tick
-> 触发就是每 tick 续期、**那个区块被永久保持加载**（不是"反复重生成"；反复重生成只出现在
-> 间歇触发、或容器所在区块来回卸载重载时）。
->
-> 现状：`processLevelContainers` 每 tick 对每个 BE 调 `getCapability`，走这条路径；
-> 已实测的 Create 传送带有 `isLoaded(controller)` 守卫，未加载时直接 return，不会触发。
-> **暂未加额外防护** —— 排查触发条件：spark 火焰图里 `getChunkCacheMiss` / `chunkLoad`
-> 占比异常高时再回来查（注意 `PerfMetrics` 覆盖不到 provider 内部，见 §10.3）。
-
-### 3.2.1 强制加载入口清单（2026-09-18 全量排查）
-
-**判据**：`level.getBlockState(pos)` / `level.getBlockEntity(pos)` /
-`level.getCapability(...BLOCK, pos, ...)` 里的 `pos` 若在**未加载区块**，就走
-`getChunk(requireChunk = true)` ⇒ 强制加载。
-
-⚠️ **能力查询本身就是加载入口** —— `BlockCapability.getCapability` 内部先
-`level.getBlockState(pos)` 再 `getBlockEntity(pos)`，**不需要显式 `getChunk`**。
-
-**为什么这是结构性问题**（`ChunkLevel` 常量）：
-
-| 门槛 | ticket level |
-|---|---|
-| `FULL_CHUNK_LEVEL`（已加载） | **33** |
-| `BLOCK_TICKING_LEVEL`（随机刻） | 32 |
-| `ENTITY_TICKING_LEVEL`（**方块实体 tick**） | **31** |
-
-原版保证：方块实体只在 ≤31 的区块里跑 ⇒ 它的邻居 ≤32 ⇒ **必然已加载，读邻居免费**。
-本框架用 `getChunkNow` 拿的是 **≤33 的"已加载"区（含 32/33 两圈）** ⇒ 容器落在 **33 圈
-（已加载但不 tick 的最外圈）** 时，它的邻居落在 **34+（生成余量圈，未加载）** ⇒ 强制加载。
-**危险带 = 最外一圈区块**（视距 12 时约 625 区块中的 96 个）。
-
-| 入口 | 频率 | 触发前提 |
-|---|---|---|
-| `ContainerRedstoneData.sampleFaceInput`（`getSignal` + `getBlockState`） | 每 tick × 每容器 × 4 水平方向 | 容器含**活红石系**物品（9 个 Function 才调 `calculate`）且落在危险带 |
-| `CrossContainerTransfer.getNeighborHandler`（`getCapability`） | 每 tick × 每个在传输的**活漏斗** | 容器落在危险带 |
-| `ContainerLivingItemHandler.processContainerAt`（`getBlockEntity(另一半)`） | 每 tick × 每个**大箱子** | 大箱子**跨区块边界**（一半在危险带） |
-| `StressOutputManager.apply` / `CreateIntegration`（`getBlockEntity(below)`） | 每 tick × 每个**活水车** | 容器**正下方一格**跨区块边界 |
-| `ExplosionComponent` 阶段1 读方块 + 阶段2/3 `getChunk` | 爆炸时一次 | 爆炸半径越过加载区边界（威力随数量缩放） |
-| `TeleportHelper` / `SableIntegration`（`getChunk` 直调） | 传送时一次 | **有意保留**（传过去前必须先备好目标区块） |
-
-**已做守卫的**：`LivingEnderChestAccessor`（多处 `isLoaded` 前置）、`ContainerEnergyStorage`
-（只读 `be.getBlockPos()` 自身位置，不读邻居）、`flushPendingRescans`（`getChunkNow`）。
-
-> ✅ **方向 A 已实施（2026-09-18）**：`ContainerChunkCache.getProcessableChunks(ServerLevel)`
-> 在处理前过一道 `isPositionTicking`，**上面表里属于本模组自己的 5 个入口全部自动安全** ——
-> 因为 `ChunkMap.prepareTickingChunk` 用 `getChunkRangeFuture(holder, 1, FULL)`，
-> **ticking 区块的 3×3 邻域必然已是 FULL** ⇒ 一格距离的邻居永远已加载，读它免费。
-> 剩余未覆盖：`ExplosionComponent`（半径 >1 格，待定口径，见 §3.2.2）与第三方 provider
-> （`getCapability` 会执行任意模组代码，不可控面）。
-> 回归守卫：`ContainerChunkCacheChunkLoadTest`「只处理 ticking 区」用例。
-
-> ⚠️ **衍生风险：逐圈外扩（未实测；方向 A 后理论上已封死）**。被钉住的区块会触发
-> `ChunkEvent.Load` → 进本类缓存 → 若它里面也有需要读邻居的活物品，就会读**更外一圈**。
-> 但被钉住的是 **33 圈（不 ticking）** ⇒ 方向 A 下不再被处理 ⇒ **不再读它的邻居 ⇒ 链条断掉**。
-> 验证方法：玩家静止不动反复执行 `/living_monitor cache`，观察 `loaded区块` 是否持续增长
-> 或明显超过视距基准（见 §3.2「可观测性」）。
-
-**发生概率 = 100%**（2026-09-18 结论，更正先前"小几率"的判断）：加载区边界随玩家移动扫过世界，
-**任何需要读邻居的活物品容器迟早会被扫进危险带**。所以问题不是"会不会"，而是"多频繁 / 是否持续恶化"：
-玩家在基地内部静止 → 边界远离，不触发；玩家移动（尤其把基地甩在身后）→ 边界扫过基地，
-逐个容器触发一次。
-
-**后果清单**：
-
-| # | 后果 | 持续性 |
-|---|---|---|
-| 1 | 单 tick 卡顿（首读要凑 289 区块足迹；未探索区域是**真生成**） | 每次触发一次 |
-| 2 | 移动中周期性卡顿（沿途每个活物品容器各一次） | 移动期间反复 |
-| 3 | 邻居区块被**永久钉住**（票据每 tick 续期 ⇒ 超出视距仍加载）+ 连带内存、定期保存（存档体积 / 磁盘 IO）、重进存档变慢 | 容器所在区块加载期间 |
-| 4 | **语义漂移**：活物品在"已加载但不 tick"的区块里继续工作（原版 BE 只在 ≤31 跑） | 持续 |
-| 5 | **逐圈外扩**（见上） | 未实测 |
-| 6 | 诊断困难：`PerfMetrics` 看不到 provider 内部（§10.3），要用 spark 看 `getChunkCacheMiss` / `chunkLoad` | — |
-| 7 | **传染**：强制加载是同步的 ⇒ 被加载区块的 `ChunkEvent.Load` 在我们调用栈里被 post ⇒ 其他模组的 Load 处理器此刻运行在"主线程正阻塞在 `managedBlock` 内"的状态，若它们也做世界交互就会撞同一个死锁 | 每次强制加载 |
-
-> 第 7 条不是本模组独有（任何同步加载都会这样），但**我们等于主动制造了这个窗口**。
-> 反过来：修复后的 `onChunkLoad` 只登记坐标 ⇒ 这个嵌套的 Load 事件对我们自己是安全的
-> —— 修复前它还会造成 scan → 加载 → Load → scan 的**递归重入**。
-
-> 📌 **修复方案与状态（2026-09-18）**
->
-> - ✅ **方向 A 已实施 —— 把处理范围从 loaded 区收窄到 ticking 区。**
->   判据由 `getChunkNow() != null` 换成 `chunkSource.isPositionTicking(chunkPos)`，
->   落点是 `ContainerChunkCache.getProcessableChunks(ServerLevel)`（处理侧唯一入口）。
->   差别**恰好只有最外一圈**（33 圈 = 危险带）—— `isPositionTicking` 对应
->   `FullChunkStatus.BLOCK_TICKING`（32）。
->   收益：① 本模组自己的读邻居入口**全部自动安全**（ticking 区块的 3×3 邻域必为 FULL，
->   见上）；② 被钉住的邻居（33 圈）不再被处理 ⇒ **外扩必然在 1 圈处停止**；
->   ③ 顺带消除「活物品在非 tick 区工作」的语义漂移。
->   代价：最外一圈区块里的活物品停摆（玩家看不见那里）。
->   ⚠️ 实现注意：`isPositionTicking` 只查票据距离（**不受 tick 冻结影响**），但区块提升到
->   BLOCK_TICKING 前返回 false ⇒ 刚加载的区块可能晚 1 tick 才开始工作。
->   ⚠️ **扫描（`flushPendingRescans`）不做此过滤** —— 见 §3.2「两条独立的判据」。
-> - ✅ **可观测性已实施**：`ContainerChunkCache.describeCacheStats(ServerLevel)` 输出
->   `缓存区块 / 可处理 / loaded区块 / 视距基准`；调试命令 **`/living_monitor cache`**
->   （同时写日志）。这是判断"钉住 / 外扩"的**唯一直接观测量**。
-> - ⏳ **方向 B（爆炸）待定口径** —— 见 §3.2.2。
-> - ⏳ **方向 C（备选，未采用）**：逐处加 `isLoaded` 守卫，或传输层改用 `BlockCapabilityCache`
->   （NeoForge 官方推荐；其 `getCapability()` 自带 `if (!level.isLoaded(pos)) return null`
->   —— 不强制加载 + 失效自动重查。代价：需按 `(level, pos, side)` 管理生命周期，不能每 tick 新建）。
->   方向 A 已覆盖本模组自己的入口，故暂不引入。
-> - **不可控面（无法消除）**：`getCapability` 会执行**第三方 provider**，它可以伸到任意距离
->   （Create 传送带即一例，它自带 `isLoaded` 守卫）。方向 A 覆盖不了这一面 ——
->   只能记录在案，遇到实测问题再针对性处理。
-
-### 3.2.2 越界爆炸的处理逻辑（2026-09-18，未定案）
-
-**暴露面比"读邻居"大得多**：`radius = DEFAULT_BASE_RADIUS(4.0) × √TNT数`，球体横跨多个区块。
-
-| TNT 数 | 模式 | radius（格） | 球体覆盖区块（水平） |
-|---|---|---|---|
-| 16 | 普通（≤64） | 16 | 3×3 = 9 |
-| 64 | 普通 | 32 | 5×5 = 25 |
-| 128 | 大当量（>64） | 45 | 7×7 = 49 |
-| 1024 | 大当量 | 128 | 17×17 = 289 |
-| 3456 | 超级爆炸（>3456） | 235 | **31×31 = 961** |
-
-未加载区块一旦被 `getBlockState` 读到 ⇒ 强制加载，**每个区块 289 足迹** ⇒ 与爆炸本身的
-O(r³) 叠加，直接打爆 tick。
-
-**口径：爆炸只作用于"当前已加载的世界"—— 未加载区块整块跳过。** 四条理由：
-
-1. 玩家看不见加载区外 ⇒ 跳过不可感知。
-2. **未加载区块被永久改变是更坏的语义** —— 玩家走过去会发现地形莫名被炸/被清空，且会被保存。
-3. **与超级爆炸模式已有行为一致** —— `tickAll` 里就是 `if (level.hasChunk(cp.x, cp.z))
-   deleteChunkContent(...)`。所以这不是"新增限制"，而是**把三个模式的口径统一**。
-4. 原版"不越界"靠的是"中心在 ticking 区 + 半径小（TNT=4）"，不是靠跳过 —— 我们半径大得多，
-   必须显式处理。
-
-**改动点**（共 4 处）：
-
-| # | 位置 | 改法 |
-|---|---|---|
-| 1 | `executeNormalExplosion` 收集循环（`getBlockState` 前） | 按 chunkPos 判定"已加载"，未加载 `continue` |
-| 2 | `executeHighYieldExplosion` 阶段1 收集循环（同上） | 同上 |
-| 3 | 阶段2/3 的 `level.getChunk(...)` | 改 `getChunkSource().getChunkNow(...)` + null 跳过（防御性；阶段1 已保证只有已加载 section 进表） |
-| 4 | 跳过量 | 记 `LivingItem.LOGGER.info`，让"爆炸被截断"可见（否则玩家以为是 bug） |
-
-**判定缓存的写法**（每个区块只判一次，别每方块查一遍）：
-
-```java
-Long2BooleanMap loadedChunks = new Long2BooleanOpenHashMap();
-...
-long cp = ChunkPos.asLong(pos.getX() >> 4, pos.getZ() >> 4);
-if (!loadedChunks.computeIfAbsent(cp, k -> level.hasChunk(ChunkPos.getX(k), ChunkPos.getZ(k)))) {
-    skippedBlocks++;
-    continue;
-}
-```
-
-⚠️ **fastutil 坑**：`Long2BooleanOpenHashMap` 默认 `defaultReturnValue(false)` ⇒ 用 `get()`
-查未判定过的 key 会返回 false（被误当"未加载"）。**必须用 `computeIfAbsent` 或 `containsKey`**。
-
-**已确认安全的路径**（不用改）：`applyExplosionDamage` 的 `level.getEntities(AABB)` —— 1.21 走
-`LevelEntityGetter`（已加载实体索引），**不碰区块**；`scheduleSuperExplosion` 的区块列表是
-纯几何计算（不碰世界）+ `tickAll` 已有 `hasChunk` 守卫。
-
-> 📌 **顺带发现的独立性能隐患**（不属本话题）：`radius = 235` 时收集循环是
-> `(2×235+1)³ ≈ 1.05 亿次` 迭代 —— **即使全部已加载**，这也是主线程上的一次巨长操作。
-> 超级爆炸模式的范式（几何算区块列表 + 每 tick 处理 N 个）正好是解法，可考虑前移。
 
 **内部结构**：
 
@@ -950,7 +774,7 @@ ServerTickEvent.Post
     ↓
 ┌─ 世界容器循环 ──────────────────────────────────────────────────┐
 │ for each level:                                                 │
-│   for each chunk in ContainerChunkCache.getProcessableChunks(level): │
+│   for each chunk in ContainerChunkCache.getCachedChunks():      │
 │     for each BlockEntity in chunk:                              │
 │       processContainerAt(level, pos, handler)                   │
 └─────────────────────────────────────────────────────────────────┘
@@ -1374,17 +1198,6 @@ SlotInteractions.tryInteractFromNeighbor(handler, pos, targetStack, level, filte
 
 ---
 
-### 10.3 性能判读：`PerfMetrics` 的覆盖盲区（血的教训）
-
-- `PerfMetrics` **只插桩 `processContext` 内部**。外部 mod 在自己 `ServerTickEvent` 里
-  **直接调我们能力接口**的路径（Flux Networks → `ContainerEnergyStorage.receiveEnergy`）
-  **完全不在计时区间内**。
-- 因此「PerfMetrics 说 living_item 只占 3%」与「spark 说某方法占 98.79%」**不矛盾**，
-  是覆盖盲区 —— 曾据此误判「卡顿与本模组无关」。
-  **交叉验证必须看 spark 节点的绝对毫秒数，不能只看百分比。**
-- 用户的场景描述（「只有传输电力才卡」）比任何采样百分比都值钱 —— **先问场景，再读火焰图**。
-
-
 ## 11. Tooltip 渲染机制（客户端）
 
 Tooltip 是**客户端渲染**的。理解这条链路，才能解释「tooltip 显示的信息不在 NBT 里」
@@ -1463,3 +1276,13 @@ ItemTooltipEvent（NeoForge 客户端事件，见 client/render/LivingItemToolti
 | `HopperFilterBuilder.java` | `domain/hopper/` | 活漏斗过滤链构建（从 ContainerSnapshot 提取） |
 | `CrossContainerTransfer.java` | `domain/hopper/` | 跨容器传输，含 `Container` 接口槽位过滤 + `tryPullFromNeighbor`/`tryPushToNeighbor` 核心 helper + 方向解析 + 大箱子处理 |
 | `EnderRouteManager.java` | `domain/ender/` | 活末影箱路由逻辑集中管理 |
+
+### 10.1 性能判读：`PerfMetrics` 的覆盖盲区（血的教训）
+
+- `PerfMetrics` **只插桩 `processContext` 内部**。外部 mod 在自己 `ServerTickEvent` 里
+  **直接调我们能力接口**的路径（Flux Networks → `ContainerEnergyStorage.receiveEnergy`）
+  **完全不在计时区间内**。
+- 因此「PerfMetrics 说 living_item 只占 3%」与「spark 说某方法占 98.79%」**不矛盾**，
+  是覆盖盲区 —— 曾据此误判「卡顿与本模组无关」。
+  **交叉验证必须看 spark 节点的绝对毫秒数，不能只看百分比。**
+- 用户的场景描述（「只有传输电力才卡」）比任何采样百分比都值钱 —— **先问场景，再读火焰图**。

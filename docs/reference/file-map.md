@@ -258,7 +258,8 @@ src/test/java/com/qiqi/li/
 ├── client/render/
 │   └── LivingFarmlandSeedDecoratorTest.java   # 种子图标装饰器守卫·普通/未种植/已种植/非耕地（4 项）
 ├── living/container/
-│   └── SimpleContainerContextTest.java        # 容器上下文脏槽同步（25 项）
+│   ├── SimpleContainerContextTest.java        # 容器上下文脏槽同步（25 项）
+│   └── ContainerChunkCacheChunkLoadTest.java  # 区块加载守卫·事件不碰世界/延后重扫不丢/限量/不主动加载/只处理ticking区/可观测性（6 项）
 ├── living/domain/redstone/
 │   └── ContainerRedstoneDataTest.java         # 红石信号传播（29 项）
 ├── living/domain/power/

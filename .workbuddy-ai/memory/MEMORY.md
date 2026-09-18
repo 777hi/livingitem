@@ -15,6 +15,26 @@
   校验脚本 `tools/doc_check.py`（**改完必跑**，6 项检查）。
 - ⚠️ 搬运文档时**搬走不删掉**，且**守恒校验必须逐段判定**（只验第一块曾误删整段）。
 
+## 区块加载事件红线（2026-09-18）
+
+- ⚠️ **`ChunkEvent.Load` 回调里禁止任何世界交互**（`getCapability` / `getBlockEntity` / 读方块状态）。
+  它在区块 FULL 任务**内部**触发；里面的查询会执行第三方能力提供者（Create 传送带 →
+  查别的区块的 BE）→ `ServerChunkCache.getChunk(requireChunk=true)` → `managedBlock`+`join`
+  ⇒ 主线程自等自，**服务端线程冻结**。NeoForge 在该事件 javadoc 里有明确警告。
+- 口诀：**同区块不卡、指向别的区块必卡**（原版 `currentlyLoading` 旁路只覆盖自身）。
+  `level.isLoaded()` 不充分 —— `hasChunk` 只查 ticket level。
+- 修法：事件只登记坐标，扫描推迟到 `ServerTickEvent.Pre`；用 `getChunkNow` 不用 `getChunk`；
+  每 tick 限量。全文 + 事故记录见 [`living-item-infrastructure.md` §3.2](../../docs/system-design/living-item-infrastructure.md)、
+  决策 `D-core-04`、守卫测试 `ContainerChunkCacheChunkLoadTest`。
+- 工具侧方法论文档：技能 `mc-event-callback-safety`（**项目事实以仓库文档为准**）。
+- ⚠️ **发现 ≠ 处理（第二条红线，D-core-05）**：**发现**（扫描哪些区块有容器）覆盖
+  **所有已加载区块**；**处理**（读能力 / 读邻居一格）只针对 **ticking 区**
+  （`isPositionTicking`，ticket ≤32）—— 落在"已加载但不 tick"的最外一圈（33 圈）时，
+  邻居会在未加载的生成余量圈，读邻居触发强制加载（一次凑 289 区块足迹）。
+  入口：`ContainerChunkCache.getProcessableChunks(ServerLevel)`。
+  **扫描侧不能过滤**（区块提升到 ticking 没有对应事件 ⇒ 会永久漏发现）。
+  可观测：`/living_monitor cache`（缓存/可处理/loaded 区块/视距基准）。
+
 ## 纹理 / 环境
 
 - 全文见 [`icon-system.md`「纹理约定」](../../docs/system-design/icon-system.md)：
@@ -65,7 +85,7 @@
   （Flux Networks → `ContainerEnergyStorage.receiveEnergy`）**完全不在计时区间内**。
 - ⇒ 「PerfMetrics 说只占 3%」与「spark 说 98.79%」**不矛盾**；
   **交叉验证必须看 spark 的绝对毫秒数**。**先问场景，再读火焰图**。
-- 全文见 [`living-item-infrastructure.md` §10.1](../../docs/system-design/living-item-infrastructure.md)。
+- 全文见 [`living-item-infrastructure.md` §10.3](../../docs/system-design/living-item-infrastructure.md)。
 
 ## 容器对外能量接口（ContainerEnergyStorage）热路径
 

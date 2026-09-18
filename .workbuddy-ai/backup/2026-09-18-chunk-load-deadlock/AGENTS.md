@@ -151,8 +151,8 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 319 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
-全绿基线：`319 passed / 0 failed / 0 skipped`（2026-09-18 强制加载防护 + 可观测性）。
+**合计测试用例 317 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
+全绿基线：`317 passed / 0 failed / 0 skipped`（2026-09-18 区块加载死锁修复 + 回归守卫）。
 > 📄 测试环境配置与编写约定见 [unit-testing.md](docs/guides/unit-testing.md)；
 > 测试文件树见 [file-map.md](docs/reference/file-map.md)「测试文件树」。
 
@@ -266,7 +266,7 @@ src/main/java/com/qiqi/li/
 ## 开发进展
 
 > 📄 **更早的记录**：早于最近 3 个更新批次的条目已迁至 [changelog.md](docs/archive/changelog.md)
-> （**截至 2026-09-14**；按日期倒序，保留完整变更细节供参考；含红电阶段一~四落地、1 game tick 传播、v8/v8.1 重构周期等全部历史条目）。
+> （按日期倒序，保留完整变更细节供参考；含红电阶段一~四落地、1 game tick 传播、v8/v8.1 重构周期等全部历史条目）。
 >
 > **条目体例**：一条 = **一行结论 + 指针**。结论写「做了什么 + 关键约束/坑」，细节写进对应的
 > `docs/tech/*.md` 或 `docs/system-design/*.md` —— **这里是入口，不是档案**，别在此铺正文。
@@ -279,21 +279,18 @@ src/main/java/com/qiqi/li/
 ### 当前版本: v0.9-alpha
 
 **最近更新** (2026-09-18):
-- ✅ 修复：**Create 跨区块传送带导致服务端线程死锁**（1.3.2 + Create 6.0.10，进世界即卡死：
-  GUI 能动、不能合成/传送、玩家掉虚空）。根因：`ChunkEvent.Load` 回调里做能力查询 →
-  Create 传送带 provider 去查**另一个区块**的 BE → 同步区块加载 → 自等自（同区块不卡，
-  因为原版 `currentlyLoading` 旁路只覆盖正在加载的那个区块）。修复：`onChunkLoad` **只登记
-  坐标**，扫描推迟到 `ServerTickEvent.Pre`（每 tick 限量 64）。详见 §3.2 + `D-core-04`。
-- ✅ 新增：**强制加载防护（处理侧限定 ticking 区）+ 可观测性**。被动路径同样会强制加载：
-  活物品读**相邻一格**（红石 `getSignal` / 活漏斗邻居容器 / 大箱子另一半 / 活水车下方一格），
-  而框架取 **loaded 区（≤33）** ⇒ 容器在"已加载但不 tick"的**最外一圈**时邻居在**未加载**区
-  ⇒ 单次要凑 **289 区块**足迹、且票据续期会把邻居**永久钉住**在视距外。修复：
-  `getProcessableChunks(ServerLevel)` 处理前过 `isPositionTicking`（差别**恰好只有危险带那一圈**；
-  ticking 区块的 **3×3 邻域必为 FULL** ⇒ 本模组入口**可证明安全**、外扩链条被切断）。
-  ⚠️ **扫描不做此过滤**（区块提升到 ticking 没有对应事件）。新增 `describeCacheStats` +
-  调试命令 **`/living_monitor cache`**（缓存/可处理/loaded 区块/视距基准）⇒ 钉住与外扩可测量。
-  详见 §3.2.1 + `D-core-05`。⏳ 未做：**爆炸路径**（§3.2.2）、**第三方 provider 伸远**（不可控面）。
-  顺带修掉 §3.2 两处旧口径与一处错位/重号小节。
+- ✅ 修复：**Create 跨区块传送带导致服务端线程死锁**（living_item 1.3.2 + Create 6.0.10，
+  进世界即卡死：GUI 能动、不能合成、不能 tp、玩家掉虚空）。根因：
+  `ContainerChunkCache.onChunkLoad` 在 `ChunkEvent.Load` 里做能力查询，扫到 Create 传送带时
+  其能力提供者 `BeltBlockEntity.initializeItemHandler()` 会 `level.getBlockEntity(controller)`
+  去查**另一个区块** → 触发同步区块加载 → `managedBlock` + `join` 等一个"只能由主线程自己
+  推进"的 chunk future ⇒ 自等自。同区块传送带不卡，是因为原版 `ChunkHolder.currentlyLoading`
+  旁路只覆盖"正在加载的那个区块本身"；NeoForge 在该事件 javadoc 里已警告"不延迟世界交互
+  会死锁"。修复：`onChunkLoad` **只登记坐标**（唯一 level 调用是纯 getter `dimension()`），
+  扫描一律推迟到 `flushPendingRescans`（tick 阶段），每 tick 限量 64 个、剩余顺延不丢。
+  回归测试 `ContainerChunkCacheChunkLoadTest`（4 项），全量 **317 用例全绿**。收编
+  living-item-infrastructure.md §3.2 + decisions.md `D-core-04` + file-map.md；顺带修掉
+  该节两处旧口径（`ServerTickEvent.Post` → `Pre`、`onChunkUnload` 曾写"即时移除"）。
 
 **最近更新** (2026-09-16):
 - ✅ 新增：**活锄头跨模组兼容 + 可耕土扩展**——原先「活锄头」是**写死的 6 种原版锄头**
@@ -394,6 +391,28 @@ src/main/java/com/qiqi/li/
   同期 `CrossContainerTransferFertilizeTest` 由 8 项扩至 15 项、移除
   `SlotInteractionFactoryTest`（4 项），全量 **288 用例全绿**
   （测试树与基线数字已按实测同步：`288 passed / 0 failed / 0 skipped`）。
+
+**最近更新** (2026-09-14):
+- ✅ 修复：**活漏斗黑白名单链 tooltip 显示为空（同款 b064865 后遗症）**——
+  「tooltip优化，nbt数据简化」删除了 tick 里 `data.withFilter(filter)` 的
+  DataComponent 写回，但 tooltip 仍读 `LivingHopperData.filter()` → 恒 EMPTY，
+  黑白名单永远显示无规则（用户实测「nbt里的数据没了」）。**功能链路经排查完好**
+  （过滤本体是快照派生数据：HopperFilterBuilder 每 tick 从容器布局+物品重建，
+  经修订计数失效机制保持新鲜，与 DataComponent 无关）。修复（熔炉燃烧标志同款
+  方案）：过滤链迁至独立组件 `LIVING_HOPPER_FILTER`（FilterData 自带
+  Codec+StreamCodec），tick 在快照重建结果变化时回写 + syncSlotToClients（稳态
+  零写入；搬运后旧规则过期下一 tick 自愈）；tooltip 两处改读新组件；组件进
+  `getIgnoredComponentTypes()`——过滤链是容器环境派生数据（同一容器里两个漏斗的
+  规则必然不同），不忽略会破坏漏斗堆叠；`LivingHopperData.filter` 降级遗留兼容
+  字段。回归测试 HopperFilterSyncTest（5 项：黑名单/白名单语义、稳态零同步、
+  货物移走自愈、堆叠兼容），全量 247 用例全绿；收编 living-hopper-tech.md §2.4.2
+  （存储位置沿革）。**追加（同日）**：`LIVING_HOPPER_FILTER` 与 `LIVING_FURNACE_BURNING`
+  改为**不落盘**（只 `networkSynchronized`，vanilla `MAP_POST_PROCESSING` 先例）——
+  两者都是每 tick 可从运行时状态重建的派生数据，持久化无正确性价值（玩家打开 GUI 前
+  容器必然已 tick），徒增存档体积；组件照常随槽位同步包到客户端，展示链路不变。
+  **再追加（同日审计后）**：全活物品审计确认无第三处同类问题（运行时缓存仅
+  熔炉/漏斗/红电使用；红石家族/水车/水桶/耕地/箱子/地图全部「变化检测写+同步」配对，
+  拉杆/按钮走 broadcastChanges 兜底）；`LIVING_FARMLAND_MOIST` 顺势统一为不落盘
 
 ## 文档导航
 

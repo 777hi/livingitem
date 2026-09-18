@@ -325,10 +325,18 @@ public class LivingItem {
     private void processLevelContainers(ServerLevel level) {
         var cache = ContainerChunkCache.getInstance();
 
-        // 先消费上一 tick 累积的重扫请求，确保刚放置的容器（含延迟初始化的模组容器）已入缓存
+        // 先消费上一 tick 累积的重扫请求，确保刚放置的容器（含延迟初始化的模组容器）
+        // 与新加载区块里的容器已入缓存。
+        // ⚠️ 这里（ServerTickEvent.Pre）也是唯一允许做能力查询的重扫入口 ——
+        // 区块加载事件里绝不能扫，见 ContainerChunkCache.onChunkLoad 的红线说明。
         cache.flushPendingRescans(level);
 
-        var chunkSet = cache.getCachedChunks(level.dimension());
+        // ⚠️ getProcessableChunks（而非原始缓存）会过滤掉"已加载但不 tick"的最外一圈（33 圈）：
+        // 各活物品逻辑会读相邻一格的方块（红石 getSignal / 活漏斗邻居容器 / 大箱子另一半 /
+        // 活水车下方一格），33 圈的邻居可能落在未加载的生成余量圈 ⇒ 读邻居会强制加载区块。
+        // ticking 区块则**可证明安全**（ChunkMap.prepareTickingChunk 保证其 3×3 邻域已是 FULL）。
+        // 详见 ContainerChunkCache.getProcessableChunks 的说明。
+        var chunkSet = cache.getProcessableChunks(level);
         if (chunkSet.isEmpty()) return;
 
         var toRemove = new java.util.ArrayList<ChunkPos>();

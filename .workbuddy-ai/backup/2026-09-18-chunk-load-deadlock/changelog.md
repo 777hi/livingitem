@@ -80,27 +80,6 @@
 
 ---
 
-- ✅ 修复：**活漏斗黑白名单链 tooltip 显示为空（同款 b064865 后遗症）**——
-  「tooltip优化，nbt数据简化」删除了 tick 里 `data.withFilter(filter)` 的
-  DataComponent 写回，但 tooltip 仍读 `LivingHopperData.filter()` → 恒 EMPTY，
-  黑白名单永远显示无规则（用户实测「nbt里的数据没了」）。**功能链路经排查完好**
-  （过滤本体是快照派生数据：HopperFilterBuilder 每 tick 从容器布局+物品重建，
-  经修订计数失效机制保持新鲜，与 DataComponent 无关）。修复（熔炉燃烧标志同款
-  方案）：过滤链迁至独立组件 `LIVING_HOPPER_FILTER`（FilterData 自带
-  Codec+StreamCodec），tick 在快照重建结果变化时回写 + syncSlotToClients（稳态
-  零写入；搬运后旧规则过期下一 tick 自愈）；tooltip 两处改读新组件；组件进
-  `getIgnoredComponentTypes()`——过滤链是容器环境派生数据（同一容器里两个漏斗的
-  规则必然不同），不忽略会破坏漏斗堆叠；`LivingHopperData.filter` 降级遗留兼容
-  字段。回归测试 HopperFilterSyncTest（5 项：黑名单/白名单语义、稳态零同步、
-  货物移走自愈、堆叠兼容），全量 247 用例全绿；收编 living-hopper-tech.md §2.4.2
-  （存储位置沿革）。**追加（同日）**：`LIVING_HOPPER_FILTER` 与 `LIVING_FURNACE_BURNING`
-  改为**不落盘**（只 `networkSynchronized`，vanilla `MAP_POST_PROCESSING` 先例）——
-  两者都是每 tick 可从运行时状态重建的派生数据，持久化无正确性价值（玩家打开 GUI 前
-  容器必然已 tick），徒增存档体积；组件照常随槽位同步包到客户端，展示链路不变。
-  **再追加（同日审计后）**：全活物品审计确认无第三处同类问题（运行时缓存仅
-  熔炉/漏斗/红电使用；红石家族/水车/水桶/耕地/箱子/地图全部「变化检测写+同步」配对，
-  拉杆/按钮走 broadcastChanges 兜底）；`LIVING_FARMLAND_MOIST` 顺势统一为不落盘
-
 ## 2026-09-13
 
 - ✅ 优化（活耕地，两格高作物上部件渲染）——**FD 稻米成熟后上方渲染满穗稻穗模型**

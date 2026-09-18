@@ -63,6 +63,8 @@
 | D-core-01 | 2026-09-16 | core | **物品 ↔ 世界**（放置 / 交互世界方块）是独立于传输层的第三条链路，入口是 Mixin | 职责分离 | 生效 | | `living-item-infrastructure.md` §9.8 |
 | D-core-02 | 2026-09-16 | core | 项目级规约**必须写在仓库里**；AI 工具侧技能只能做适配层 | 多工具协作 | 生效 | | `docs/README.md` §1 |
 | D-core-03 | 2026-09-16 | core | 文档**主要读者是 AI**：写约束不写叙述、只写代码里推不出来的、数字与路径断言必须可复算 | 读者定位 | 生效 | | `docs/README.md` §1 铁律 |
+| D-core-04 | 2026-09-18 | core | **区块加载事件回调内禁止任何世界交互**（能力查询 / 方块实体查找）；容器发现一律延后到 tick 阶段 | 曾致服务端线程死锁 | 生效 | | `living-item-infrastructure.md` §3.2 |
+| D-core-05 | 2026-09-18 | core | 活物品的**处理**范围限定 **ticking 区**（`isPositionTicking`）；**发现**（扫描）仍覆盖全部已加载区块 | 否则读邻居触发强制加载 | 生效 | | `living-item-infrastructure.md` §3.2.1 |
 | D-hopper-01 | 2026-09-15 | hopper | 活漏斗**只认普通骨粉** —— 活骨粉不给漏斗施肥（四个方向一致） | 施肥属传输语义 | 生效 | ← D-hopper-02 | `living-hopper-tech.md` §6.2.1 |
 | D-hopper-02 | 2026-09-15 | hopper | ~~活骨粉放行到四个方向~~（曾以「交互是消耗不是搬运」为由给隔离规则开洞） | 方向错误 | **已被取代** | → D-hopper-01 | 无（正文已删） |
 | D-farmland-01 | 2026-09-15 | farmland | 施肥方程收编为**注册式槽位交互**（`SlotInteractions`），三处传输分支只调分发器 | 漏调用点降为一次 | 生效 | | `living-item-infrastructure.md` §9.7 |
