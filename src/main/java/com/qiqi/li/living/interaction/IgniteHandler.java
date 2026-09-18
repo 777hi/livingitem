@@ -6,7 +6,7 @@ import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import com.qiqi.li.living.api.LivingItemManager;
-import com.qiqi.li.living.components.ExplosionComponent;
+import com.qiqi.li.living.domain.tnt.ExplosionComponent;
 
 /**
  * 点燃交互处理器 —— 处理活打火石右键活TNT的交互。

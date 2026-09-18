@@ -78,13 +78,9 @@ SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 
 ## 子系统索引
 
-> **下方全部子系统均已实现**（没有列在这里的就是没做）。逐项能力清单 + 实现细节快照见
-> [completed-features.md](docs/reference/completed-features.md)；
-> **能力口径与不变量以各子系统文档为准**，本文只作路由。
-
 | 子系统 | 概述 | 详细文档 |
 |--------|------|----------|
-| **活TNT** | 引信倒计时 + 爆炸，威力随数量缩放，三模式（普通/大当量/超级爆炸）；破坏按区块分帧 + 待炸账本 | [living-tnt-tech.md](docs/tech/living-tnt-tech.md) |
+| **活TNT** | 引信倒计时 + 爆炸，威力随数量缩放，双模式（普通/大当量） | [living-tnt-tech.md](docs/tech/living-tnt-tech.md) |
 | **活水桶** | 水源注册 + BFS 蔓延 + 水流推动物品 | [living-water-bucket-tech.md](docs/tech/living-water-bucket-tech.md) |
 | **活熔炉** | 配方匹配 + 燃料消耗 + 方向槽位配置 | [living-furnace-tech.md](docs/tech/living-furnace-tech.md) |
 | **活漏斗** | TransferPipeline 统一传输 + 黑白名单 + 跨容器 + WASD 配置 | [living-hopper-tech.md](docs/tech/living-hopper-tech.md) |
@@ -155,10 +151,117 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 332 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
-全绿基线：`332 passed / 0 failed / 0 skipped`（2026-09-18 爆炸逐区块分帧 + 待炸账本）。
+**合计测试用例 319 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
+全绿基线：`319 passed / 0 failed / 0 skipped`（2026-09-18 强制加载防护 + 可观测性）。
 > 📄 测试环境配置与编写约定见 [unit-testing.md](docs/guides/unit-testing.md)；
 > 测试文件树见 [file-map.md](docs/reference/file-map.md)「测试文件树」。
+
+## 已完成功能
+
+### 基础设施
+- [x] 活按钮 UI 与物品活化机制
+- [x] DataComponent 数据持久化系统
+- [x] 容器自动扫描与 tick 分发（拉取模型 + 自清洁缓存）
+- [x] 多活物品并行处理（按功能分组）
+- [x] 不可变数据模型（Java Record + `withXxx()`）
+- [x] 活物品隔离（不传输/不熔炼/不作为燃料）
+- [x] 脏槽位批量同步机制（`TickContext.dirtySlots`）
+- [x] 性能监控指标系统（`PerfMetrics`，纳秒精度）
+- [x] 容器级数据位置反向索引（`POS_TO_CACHE_KEY`，mixin 热路径 O(1) 查询）
+- [x] 容器数据缓存键含维度（跨维度同坐标容器隔离）
+- [x] 服务端关闭统一清理静态缓存（跨存档隔离）
+- [x] 单元测试基建（MDG unitTest + FML 环境，146 项测试）
+- [x] 包结构领域内聚（`domain/` 替代 `data/` + `function/`）
+- [x] `TransferPipeline` 统一传输入口
+- [x] `EnderRouteManager` 路由逻辑集中
+- [x] `SlotAccessor` 架构统一所有传输路径
+- [x] 接口化重构：`HasDirection`（WASD 朝向）+ `HasContainerData`（容器级数据计算）
+
+### GUI交互系统
+- [x] 声明式交互规则（`InteractionEntry` + `InteractionRegistry`）
+- [x] 客户端统一拦截（`GuiInteractionHelper.tryInteract()`）
+- [x] 创造模式光标物品同步（`CarriedUpdatePacket`）
+- [x] 创造模式 SlotWrapper 兼容
+
+### 活熔炉 / 活漏斗 / 活TNT / 活水桶 / 活打火石
+- [x] 各功能完整实现（详见对应 tech 文档）
+- [x] 活漏斗自动施肥（2026-09-15）：骨粉货物 + 活耕地目标 → 施肥消耗 1 粉触发生长 tick（普通骨粉即可，equals 零空转，同容器 + 跨容器推送两路径）
+
+### 活红石
+- [x] 活红石粉：信号传播（BFS，每 game tick）+ 堆叠数影响信号上限
+- [x] 活红石火把：反相器 + 四方向朝向配置（WASD）
+- [x] 活按钮：触发型信号源
+- [x] 活拉杆：持续型信号源
+- [x] 活红石灯：信号可视化输出
+- [x] 活中继器：延迟 + 单向导通
+- [x] 活比较器：读取活物品状态（`LivingItemFunction.getComparatorOutput`）
+- [x] 活红石块：恒定信号源
+- [x] 容器边界信号双向互通（`BlockStateBaseMixin` + `RedStoneWireBlockMixin`）
+
+### 红电发电（活涂蜡铜块 · 阶段一~四）
+- [x] 双因子模型落地：合因子 = n^(1+解锁度)，解锁度 = 调谐效率 × 规律度
+- [x] RE 自然单位记账（跳变即能量事件 + EMA 功率），K=1/16 边界换算
+- [x] 事件驱动采样：`priority=3` 晚于红石，edgeGrid 逐方向喂值
+- [x] 相位域分组计 n（同周期+同偏移合并，杂讯路不进域）
+- [x] 规律度：上升沿间隔 best-shift 一致度（事件驱动，O(1) 增量）
+- [x] 相位解读三元件（v19.1）：雕文移相器（派生 φ+1，可链式 = 任意偏移延迟线）/
+  切制裂相器（下降沿反相解读，一个方波 2 个反相相位）/
+  格栅相位加法器（同周期多路 Σφᵢ mod P 求和）+ 派生相位注册表（两阶段提交 + 活性修剪 + 环自熄）
+- [x] 记账跳变门控（v19.1）：入账只看「本 tick 有跳变」的最佳域，能量 = 合因子 × P × 跳变路数——
+  修复频率中性化反转（慢时钟按 P 线性碾压）与停机虚能量
+- [x] 感应耦合：相邻发电机管径加权分配 + 不回传防环 + 多跳中继（分层重算）
+- [x] 绝缘修复：涂蜡铜块排除出红石「充能导体」（杜绝信号泄漏绕过绝缘）
+- [x] 储能：铜灯 = 唯一储存（发电直存、无容器池），容量 = count×C 线性涌现
+- [x] 对外能量接口：**显式注册**（10 种原版容器 BE）+ **让位**（直接实现者/已有主人 → 退位，重入保护查询）
+- [x] 铜灯物品 = 通用电池（双向：电池槽放电 + 充能槽充电，无出身论）
+- [x] 集成测试：拉杆振荡器（4t）+ 耦合链（A 直连 → B 一跳 → C 两跳）
+- [x] Tooltip 仪表盘：检测值写回组件 + 槽位同步 + 客户端渲染（双语）
+
+### 活箱子
+- [x] 堆叠倍增模型 + UUID 映射 + LRU 缓存 + 磁盘持久化
+- [x] 漏斗自动传输 + 跨容器传输
+- [x] GUI 拆分/合并 UUID 自动分配
+- [x] 被动孤儿文件清理
+- [x] 方块放置自动填充
+
+
+### 活末影箱
+- [x] 路由模式（共享黑板）+ 直连模式（绑定玩家末影箱）
+- [x] 频道隔离 + 轮询公平调度
+- [x] 反向索引路由清理 + 统一路由验证
+- [x] 黑白名单统一过滤（`FilteredSlotAccessor`）
+- [x] 跨容器传输架构统一
+
+### 活水车
+- [x] 力矩计算 + 应力叠加/抵消 + Create 软依赖集成
+- [x] 白名单过滤 + 方向兼容性检查 + 自过期机制
+- [x] 物品栏 3D 旋转渲染 + 漫反射光照修正
+
+### 活地图传送
+- [x] 三种传送场景（手持/展示框/GUI）
+- [x] UV 精确传送 + 传送优先级（旗帜>宝藏>坐标）
+- [x] 未探索区域传送（消耗 16 颗珍珠）
+- [x] 跨维度传送 + 载具传送 + Sable 飞艇兼容
+- [x] GUI 扩展地图渲染 + 十字光标（四色标记）
+- [x] 展示框十字光标 + 活地图图标
+- [x] 元数据同步 + 客户端缓存
+
+### 活耕地
+- [x] GUI 交互获取（活锄头耕活土，**任何能 HOE_TILL 的锄头含模组锄头**；泥土/草方块/土径→耕地，砂土/缠根泥土→泥土）+ 种植（**消耗与耕地堆叠数等量的活种子**，数量不足无法种植）+ 骨粉催熟（**强制一次必定成功的生长 tick**：未成熟 +1/成熟触发产出，无变化不消耗）
+- [x] 生长状态机：世界轴时间戳节拍（200t，稳态零写入）+ 湿润传播（**4 级 BFS：水源相邻=源 4 级，沿相邻活耕地逐跳 -1，≥1 即湿润**）+ 顶行正常生长/产出挂起
+- [x] round-robin 逐项产出：战利品表首轮冻结进组件、每 tick 不限速逐项 ×堆叠数、留种（cropSeed 产出项总量 -1）、标准/浆果双模式、收获形态覆盖（HARVEST_BLOCKS：FD 稻米/番茄/火把花——下部表只掉种子的作物滚覆盖方块表）
+- [x] 作物准入三层：Block 白名单（CropBlock/StemBlock/NetherWart/SweetBerry/PitcherCrop）+ c:seeds 标签 + 甜浆果手动映射；茎作物产出 = 果块直取（stem.fruit AT）；maxAge 读 age 属性真实上限（模组作物兜底）+ 存量组件自愈（注册表修正后重冻结）
+- [x] 双槽渲染：耕地槽种子物品图标叠加（**IItemDecorator 装饰器路径**，快捷栏/容器 GUI/创造物品栏共用同一份代码）+ 上方空生长槽 renderSingleBlock 世界管线阶段大图 + 三种多格模式（DOUBLE_BLOCK_HALF 半部件 / UPPER_CROPS 注册式 / COLUMN_PARTS 柱状属性分段——FD 稻米/KC 水稻/瓶子草全收齐）+ 同帧生长槽认领防双画 + 渲染异常隔离
+- [x] 技术文档 [living-farmland-tech.md](docs/tech/living-farmland-tech.md)（idea.md 内容转化）+ 回归守卫测试（CropClassifierTest 10 项 + LivingFarmlandFunctionTest 5 项 + InteractionRegistryTest 7 项）
+- [x] 游戏实测九轮全过（渲染/产出/交互全正常，2026-09-14 用户确认）；终审修复：部分合并丢物品（合并仅当放得下整份）+ 双重认领 + 模式互斥 + 留种总量 -1 + maxAge 自愈，262 用例全绿
+- [x] 放置回世界自动种植（2026-09-16）：已种植活耕地物品放置到世界 → 耕地上直接长出作物。**模拟玩家右键**（`useOn`）而非 `setBlock`，不绕过模组种植校验；软逻辑（种不上/抛异常一律静默）；一律幼苗不保留成熟度
+
+### 容器兼容性
+- [x] IItemHandler 统一容器抽象（原版 + 模组容器）
+- [x] 自动布局推断（`ContainerCompatibilityConfig.findOrGenerateRule`）
+- [x] 大箱子双重去重
+
+---
 
 ## 开发进展
 
@@ -176,23 +279,6 @@ src/main/java/com/qiqi/li/
 ### 当前版本: v0.9-alpha
 
 **最近更新** (2026-09-18):
-- ✅ 重构：**爆炸破坏改为「按区块分帧 + 待炸账本」**（承上：死锁与强制加载防护之后的第三块）。
-  原实现三种模式各写一套"一次性遍历整个球体"，而半径 `= 4.0 × √TNT数`（64 TNT 跨 5×5、
-  3456 TNT 达 **31×31 = 961 区块**）—— 球体一部分可能**未加载**：当场读会强制加载
-  （单次 289 区块足迹 + 主线程阻塞 + 票据钉住 + 传染其他模组），直接跳过又让**语义残缺**
-  （同一场爆炸，玩家站的位置不同、结果不同）。⇒ 采用**原版 TNT 引信模型**「世界只在被观测的
-  地方演化」：三种模式统一为**逐区块**执行，唯一入口
-  `ExplosionComponent.applyToChunk(level, params, chunk)`；爆炸瞬间只登记
-  `ExplosionParams`（参数 + 位图索引映射）+ 声光 + 实体伤害，破坏交给
-  **`ExplosionLedger`（世界级 `SavedData`，参数 + `long[]` 完成位图）** —— 已加载的按预算
-  每 tick ≤32 个区块分帧应用，**未加载的等它自然加载时补上**（`ChunkEvent.Load` 只登记坐标，
-  走 tick 阶段应用，符合两条红线）。顺带修掉两个既有 bug：① 旧
-  `PENDING_SUPER_EXPLOSIONS` 服务端关闭**不清理** ⇒ 单人换存档（不重启 JVM）持有旧
-  `ServerLevel` 内存泄漏；② `tickAll` 每 tick 只处理 1 个区块、且跳过未加载时无条件推进
-  （静默残缺）。新增 `ExplosionParamsTest`（4 项）+ `ExplosionLedgerTest`（9 项），
-  全量 **332 用例全绿**。详见 [living-tnt-tech.md](docs/tech/living-tnt-tech.md) §4.3 +
-  [living-item-infrastructure.md](docs/system-design/living-item-infrastructure.md) §3.2.2 +
-  decisions.md `D-tnt-01`。
 - ✅ 修复：**Create 跨区块传送带导致服务端线程死锁**（1.3.2 + Create 6.0.10，进世界即卡死：
   GUI 能动、不能合成/传送、玩家掉虚空）。根因：`ChunkEvent.Load` 回调里做能力查询 →
   Create 传送带 provider 去查**另一个区块**的 BE → 同步区块加载 → 自等自（同区块不卡，

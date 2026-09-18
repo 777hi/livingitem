@@ -253,6 +253,47 @@ ServerTickEvent.Pre
 > **暂未加额外防护** —— 排查触发条件：spark 火焰图里 `getChunkCacheMiss` / `chunkLoad`
 > 占比异常高时再回来查（注意 `PerfMetrics` 覆盖不到 provider 内部，见 §10.3）。
 
+**内部结构**：
+
+```java
+// 按维度存储包含容器的区块坐标集合
+private final Map<ResourceKey<Level>, Set<ChunkPos>> chunkCache;
+```
+
+**容器检测方式**：通过 NeoForge 能力系统检查方块是否提供 `IItemHandler`：
+
+```java
+private static boolean hasContainerOrItemHandler(ServerLevel level, BlockPos pos) {
+    return level.getCapability(Capabilities.ItemHandler.BLOCK, pos, null) != null;
+}
+```
+
+这天然支持所有原版容器和任何通过 `Capabilities.ItemHandler.BLOCK` 注册能力的模组容器。
+
+**缓存清理机制**（三层保障）：
+
+| 层级 | 机制 | 触发时机 | 作用 |
+|------|------|---------|------|
+| 1 | `onChunkUnload` | 区块卸载时 | **不立即移除**（与 `ChunkEvent.Load` 的时序窗口，见下）；只清 `EnderChannelRegistry` 路由 |
+| 2 | `!hasContainer` 检查 | 每 tick 遍历 | 自清洁，容器消失时移除（如方块破坏） |
+| 3 | `cleanupStaleEntries` | 每 6000 ticks（约 5 分钟） | 兜底清理，移除已卸载但事件遗漏的区块 |
+
+**兜底清理的必要性**：
+
+`processLevelContainers` 中曾使用 `getChunkNow()` 返回 null 时立即移除区块缓存。但 `getChunkNow()` 内部通过 `GenerationChunkHolder.getChunkIfPresent(ChunkStatus.FULL)` 检查状态，而 `FULL` 状态的 `CompletableFuture` 可能与 `ChunkEvent.Load` 存在时序窗口：
+
+```
+tick N:
+  ChunkStatusTasks.full() 执行 → ChunkEvent.Load → onChunkLoad → 缓存加入 ✅
+  full() 返回 → FULL future 完成 → ChunkHolder 状态更新
+  ServerTickEvent.Post → processLevelContainers → getChunkNow()
+    ↑ 若 future 尚未完成，返回 null → toRemove 移除缓存 ❌
+```
+
+**修复**（2026-08-17）：`getChunkNow` 返回 null 时不再立即移除，只跳过本次处理。区块由 `onChunkUnload` 正常移除，`cleanupStaleEntries` 作为兜底定期清理残留。
+
+**优化**（2026-08-19）：遍历世界容器时跳过未打开的战利品容器（`RandomizableContainer` 且 `lootTable != null`），避免 `getItem()` 内部 `unpackLootTable()` 触发战利品表生成。战利品表（如 `minecraft:chests/shipwreck_map`）中的 `ExplorationMapFunction` 搜索结构，在未探索区域耗时极高。
+
 ### 3.2.1 强制加载入口清单（2026-09-18 全量排查）
 
 **判据**：`level.getBlockState(pos)` / `level.getBlockEntity(pos)` /
@@ -348,7 +389,7 @@ ServerTickEvent.Pre
 >   （Create 传送带即一例，它自带 `isLoaded` 守卫）。方向 A 覆盖不了这一面 ——
 >   只能记录在案，遇到实测问题再针对性处理。
 
-### 3.2.2 越界爆炸的处理逻辑（2026-09-18，未定案）
+### 3.2.2 越界爆炸的处理逻辑（2026-09-18，探讨中）
 
 **暴露面比"读邻居"大得多**：`radius = DEFAULT_BASE_RADIUS(4.0) × √TNT数`，球体横跨多个区块。
 
@@ -363,88 +404,198 @@ ServerTickEvent.Pre
 未加载区块一旦被 `getBlockState` 读到 ⇒ 强制加载，**每个区块 289 足迹** ⇒ 与爆炸本身的
 O(r³) 叠加，直接打爆 tick。
 
-**口径：爆炸只作用于"当前已加载的世界"—— 未加载区块整块跳过。** 四条理由：
+#### ❌ 已否决的口径：「未加载区块整块跳过」
 
-1. 玩家看不见加载区外 ⇒ 跳过不可感知。
-2. **未加载区块被永久改变是更坏的语义** —— 玩家走过去会发现地形莫名被炸/被清空，且会被保存。
-3. **与超级爆炸模式已有行为一致** —— `tickAll` 里就是 `if (level.hasChunk(cp.x, cp.z))
-   deleteChunkContent(...)`。所以这不是"新增限制"，而是**把三个模式的口径统一**。
-4. 原版"不越界"靠的是"中心在 ticking 区 + 半径小（TNT=4）"，不是靠跳过 —— 我们半径大得多，
-   必须显式处理。
+曾以"玩家看不见加载区外 + 与超级爆炸模式已有行为一致"为由提出，**2026-09-18 用户否决**：
 
-**改动点**（共 4 处）：
+> 「未加载区块不爆炸的话，**爆炸的语义就残缺了**。」
 
-| # | 位置 | 改法 |
+**否决理由（重新框定问题）**：「残缺」的本质不是少了几个方块，而是
+**爆炸的作用范围由加载状态决定** —— 加载状态是**实现细节**，不该泄漏到游戏语义里。
+同一个 64 TNT 爆炸，玩家站的位置不同 → 结果不同，这是**不可解释的行为**。
+所以目标不是"要不要炸未加载区块"，而是：**让作用范围由物理（半径）决定，同时不阻塞主线程**。
+
+#### 原版先例：TNT 引信在未 tick 区块**冻结**（2026-09-18 用户提出，已核实）
+
+用户观察：「原版 TNT 在未加载区块爆炸，需要玩家靠近加载区块后才会真的爆炸。」**准确**，
+机制比"靠近才爆炸"更精确 —— **引信冻结、随区块持久化、回来续走**：
+
+| 环节 | 机制（已核实源码） |
+|---|---|
+| 实体只在 ticking 区块 tick | `ServerLevel.EntityCallbacks.onTickingStart/End` → `entityTickList.add/remove`；`ServerLevel.tick()` 只遍历该列表 ⇒ 区块不再 entity-ticking 时实体**移出 tick 列表**（不是消失） |
+| 引信值持久化 | `PrimedTnt.addAdditionalSaveData/readAdditionalSaveData` 存 `"fuse"` 到区块 NBT |
+| 玩家回来 | 区块重新 ticking → 实体恢复 → 引信**从冻结处继续** → 真的爆炸 |
+
+**参考价值极大 —— 它给出了"未观测处不演化"的现成语义先例**：
+
+> **世界只在被观测的地方演化；未观测处的演化被推迟到观测时，状态随区块持久化。**
+
+这条原则下，「未加载区块不**立即**爆炸」**不是残缺，而是原版语义** ——
+**前提是状态持久化 + 玩家回来时真的炸**。
+⇒ 这也**修正了先前把"跳过"与"延迟到观测时"混为一谈的错误**：用户否决的是"跳过"（永不发生），
+而原版支持的是"延迟"（最终一定发生）。
+
+**但原版能"免费"做到，我们不能照抄** —— 差异在**账本的位置**：
+
+| | 原版 TNT | 本模组爆炸 |
 |---|---|---|
-| 1 | `executeNormalExplosion` 收集循环（`getBlockState` 前） | 按 chunkPos 判定"已加载"，未加载 `continue` |
-| 2 | `executeHighYieldExplosion` 阶段1 收集循环（同上） | 同上 |
-| 3 | 阶段2/3 的 `level.getChunk(...)` | 改 `getChunkSource().getChunkNow(...)` + null 跳过（防御性；阶段1 已保证只有已加载 section 进表） |
-| 4 | 跳过量 | 记 `LivingItem.LOGGER.info`，让"爆炸被截断"可见（否则玩家以为是 bug） |
+| 账本是什么 | `PrimedTnt` **实体**（fuse 字段） | 活 TNT 的 **DataComponent 引信** |
+| 账本在哪 | **爆炸发生的那一个区块** | 容器所在区块（≠ 爆炸范围） |
+| 爆炸范围 | 半径 4 ⇒ 全在 ticking 区块 + 1 格缓冲内 ⇒ **必然已加载** | 半径可达 235 ⇒ **跨几十上百区块** |
 
-**判定缓存的写法**（每个区块只判一次，别每方块查一遍）：
+⇒ 原版不需要账本机制（实体本身就是账本，且与爆炸范围同区块）；**我们必须额外做一步**：
+一个**全局**的待炸账本。**注意不能把账本挂在爆炸中心的区块上** —— 玩家从半径边缘进入时
+中心可能不在加载区（视距 12 = 192 格 < 半径 235），账本不可见 ⇒ 又变残缺。
 
-```java
-Long2BooleanMap loadedChunks = new Long2BooleanOpenHashMap();
-...
-long cp = ChunkPos.asLong(pos.getX() >> 4, pos.getZ() >> 4);
-if (!loadedChunks.computeIfAbsent(cp, k -> level.hasChunk(ChunkPos.getX(k), ChunkPos.getZ(k)))) {
-    skippedBlocks++;
-    continue;
-}
-```
+#### 三个候选（含原版模型）
 
-⚠️ **fastutil 坑**：`Long2BooleanOpenHashMap` 默认 `defaultReturnValue(false)` ⇒ 用 `get()`
-查未判定过的 key 会返回 false（被误当"未加载"）。**必须用 `computeIfAbsent` 或 `containsKey`**。
+| 方案 | 语义 | 原版先例 | 主线程阻塞 | 加载开销 | 复杂度 |
+|---|---|---|---|---|---|
+| ~~跳过~~ | **残缺** ✗（永不发生） | 无 | 无 | 无 | 极低 |
+| **A. 异步预加载 + 分帧** | 立即完整 ✓ | **无**（原版从不主动生成区块） | 无 ✓ | 未加载区块**会真生成** | 中 |
+| **B. 全局账本 + 自然加载时应用** ⭐ | 延迟完整 ✓ | **有**（= TNT 引信冻结模型） | 无 ✓ | **零**（区块本来就要加载） | 中高（需持久化） |
 
-**已确认安全的路径**（不用改）：`applyExplosionDamage` 的 `level.getEntities(AABB)` —— 1.21 走
-`LevelEntityGetter`（已加载实体索引），**不碰区块**；`scheduleSuperExplosion` 的区块列表是
-纯几何计算（不碰世界）+ `tickAll` 已有 `hasChunk` 守卫。
+**方案 B（推荐，即原版模型）**——「未观测的地形变更推迟到观测时」：
 
-> 📌 **顺带发现的独立性能隐患**（不属本话题）：`radius = 235` 时收集循环是
-> `(2×235+1)³ ≈ 1.05 亿次` 迭代 —— **即使全部已加载**，这也是主线程上的一次巨长操作。
-> 超级爆炸模式的范式（几何算区块列表 + 每 tick 处理 N 个）正好是解法，可考虑前移。
+1. 爆炸时：已加载部分立即处理 + 对未加载部分记一条**参数化**账本
+   「中心 + 半径 + 模式 + 时间戳 + **已完成位图**」（位图 961 bit ≈ 121 字节，**不是**区块坐标清单）
+2. 区块**自然加载**时（`ChunkEvent.Load` 登记 → 下一 tick 应用，**完全符合 §3.2 / §3.2.1 两条红线**）：
+   若该区块落在某条未完成账本范围内且位图未标记 → 应用破坏 → 置位
+3. 持久化：世界级 `SavedData`（参数化 ⇒ 极紧凑）。**必须是全局的** —— 挂中心区块会因
+   玩家从边缘进入而不可见（见上）。
+4. **可见性补偿**：应用破坏时在该位置 `playSound` + 粒子。原版玩家能看到"TNT 还在那儿等着"，
+   我们未观测的破坏没有任何预告 ⇒ 补一次声光，让"地形炸开"在因果上说得通。
 
-**内部结构**：
+**方案 A（备选）**——复用超级爆炸骨架：
 
-```java
-// 按维度存储包含容器的区块坐标集合
-private final Map<ResourceKey<Level>, Set<ChunkPos>> chunkCache;
-```
+1. 几何算受影响区块列表（**纯计算，不碰世界**）
+2. 已加载 → 立即处理；未加载 → `chunkSource.addRegionTicket(...)` 申请**异步**加载
+   （API 已核实为 public，票据带 lifespan 会自动过期；**绝不调 `getChunk(requireChunk=true)`**）
+3. 每 tick 检查 `getChunkNow` 就绪的区块 → 处理 → 出列；完成 / 超时 → `removeRegionTicket` 释放
+4. **必须限速**（每 tick 最多申请 N 个）—— 否则 961 个区块同时排队生成会打爆 worldgen 队列
 
-**容器检测方式**：通过 NeoForge 能力系统检查方块是否提供 `IItemHandler`：
+**推荐 B 的理由**（2026-09-18 修正，先前推荐 A）：
 
-```java
-private static boolean hasContainerOrItemHandler(ServerLevel level, BlockPos pos) {
-    return level.getCapability(Capabilities.ItemHandler.BLOCK, pos, null) != null;
-}
-```
+1. **原版先例** —— 它不是一个"新设计"，而是**把原版已经确立的语义（世界只在观测处演化）
+   应用到爆炸范围上**。玩家对"我回来它才炸"有认知基础。
+2. **零加载开销** —— A 会主动生成几百个区块并**永久留在存档**（玩家可能再也不去）；
+   原版的原则恰恰相反（从不主动生成）。
+3. 引信阶段**已经天然符合原版**（活 TNT 引信在 DataComponent，容器只在 ticking 区被处理
+   ⇒ 引信自动冻结），B 让"爆炸那一刻"也遵循同一模型 ⇒ **整条链路口径统一**。
 
-这天然支持所有原版容器和任何通过 `Capabilities.ItemHandler.BLOCK` 注册能力的模组容器。
+**B 的代价要诚实说明**：需要 `SavedData` + 完成位图 + 与三种破坏方式对接；且"走过去地形才炸开"
+虽然符合原版模型，但原版有"引信还在闪"的预告而我们没有 ⇒ 靠第 4 条的声光补偿。
 
-**缓存清理机制**（三层保障）：
+**推荐**：**方案 B**（原版模型：账本 + 自然加载时应用），A 降为备选 —— 见上方"推荐 B 的理由"。
+若最终选 A，**必须配限速 + 总上限 + 超时**三个安全阀。
 
-| 层级 | 机制 | 触发时机 | 作用 |
-|------|------|---------|------|
-| 1 | `onChunkUnload` | 区块卸载时 | **不立即移除**（与 `ChunkEvent.Load` 的时序窗口，见下）；只清 `EnderChannelRegistry` 路由 |
-| 2 | `!hasContainer` 检查 | 每 tick 遍历 | 自清洁，容器消失时移除（如方块破坏） |
-| 3 | `cleanupStaleEntries` | 每 6000 ticks（约 5 分钟） | 兜底清理，移除已卸载但事件遗漏的区块 |
+> ✅ **方案 B 已实施（2026-09-18）**。落地形态：
+> `ExplosionParams`（参数 + 位图索引映射，`bitIndex ↔ chunkAt` 互逆）+ `ExplosionLedger`
+> （世界级 `SavedData`，参数 + `long[]` 完成位图）+ 唯一破坏入口
+> `ExplosionComponent.applyToChunk(level, params, chunk)`。
+> 三种模式**统一为逐区块执行**（用户认可的方向），立即阶段与延迟阶段走同一个函数
+> ⇒ 同一场爆炸无论区块何时加载，结果一致。
+> 每 tick 预算 `MAX_CHUNKS_PER_TICK = 32`；**未加载区块一律丢弃、靠 `ChunkEvent.Load` 重新登记**
+> （不轮询）；只有"已加载但没进预算"的才 carryOver。
+> 同时修掉两个既有 bug：① 旧 `PENDING_SUPER_EXPLOSIONS` 服务端关闭不清理（内存泄漏）
+> ② `tickAll` 每 tick 只处理 1 个区块且跳过未加载时无条件推进（静默残缺）。
+> 实现细节见 [living-tnt-tech.md](../tech/living-tnt-tech.md) §4.3；守卫测试
+> `ExplosionParamsTest`（4 项）+ `ExplosionLedgerTest`（9 项）。
 
-**兜底清理的必要性**：
+#### 多场爆炸叠加（2026-09-18 推演 + 加固）
 
-`processLevelContainers` 中曾使用 `getChunkNow()` 返回 null 时立即移除区块缓存。但 `getChunkNow()` 内部通过 `GenerationChunkHolder.getChunkIfPresent(ChunkStatus.FULL)` 检查状态，而 `FULL` 状态的 `CompletableFuture` 可能与 `ChunkEvent.Load` 存在时序窗口：
+「上一场没炸完，又引爆了多个不同等级的爆炸」这个场景逐条推演过：
 
-```
-tick N:
-  ChunkStatusTasks.full() 执行 → ChunkEvent.Load → onChunkLoad → 缓存加入 ✅
-  full() 返回 → FULL future 完成 → ChunkHolder 状态更新
-  ServerTickEvent.Post → processLevelContainers → getChunkNow()
-    ↑ 若 future 尚未完成，返回 null → toRemove 移除缓存 ❌
-```
+| 情形 | 结论 |
+|---|---|
+| 重叠区块落在多条条目内 | 对**每条条目各处理一次**。破坏**幂等**（第二次看到的已是空气）⇒ 不会重复掉落、不会报错。守卫：`overlappingEntries_eachAppliedOncePerEntry` |
+| 不同等级 / 不同网格（SUPER 31×31 + NORMAL 3×3） | `bitIndexOf` 按各自 params 独立计算 ⇒ 互不干扰 ✓ |
+| 掉落物归属 | **取决于处理顺序**（先炸的先掉落、后炸的看到空气）。顺序由队列迭代序决定 ⇒ 不确定，但玩家无法观测"本该掉什么" ⇒ 可接受（原版多 TNT 先后爆炸同理） |
+| 预算被多条目瓜分 | 预算是 **flush 级**（不是每条目）⇒ 同时进行 N 场时每场都变慢（公平性问题，非 bug） |
+| 队列积压 | 遍历成本 O(待检查区块数)，但只处理 32 个/tick。积压上限 = 各条目区块数之和 |
 
-**修复**（2026-08-17）：`getChunkNow` 返回 null 时不再立即移除，只跳过本次处理。区块由 `onChunkUnload` 正常移除，`cleanupStaleEntries` 作为兜底定期清理残留。
+**推演中发现并修掉的两个真问题**：
 
-**优化**（2026-08-19）：遍历世界容器时跳过未打开的战利品容器（`RandomizableContainer` 且 `lootTable != null`），避免 `getItem()` 内部 `unpackLootTable()` 触发战利品表生成。战利品表（如 `minecraft:chests/shipwreck_map`）中的 `ExplorationMapFunction` 搜索结构，在未探索区域耗时极高。
+1. ⚠️ **队列整体替换会丢新登记**（已修）。原写法在 flush 结束时 `put(carryOver)` / `remove`
+   整体替换队列 —— 若**同 tick 期间又引爆一场**（`schedule` → `scheduleCheck`），新登记的区块
+   会被一起丢掉；而它们**已经加载**、不会再触发 `ChunkEvent.Load` ⇒ **永远不炸**。
+   改为：遍历**快照** + 只 `remove` 本 tick 处理过的区块，队列永不整体替换。
+   守卫：`newRegistrationsDuringFlushSurvive`。
+2. ⚠️ **账本满时静默丢整场爆炸**（已修）。原写法 `schedule` 超上限直接 `return false`，
+   而调用方忽略返回值 ⇒ 声光与实体伤害已生效、**方块一个没坏** —— 玩家会以为模组坏了。
+   改为：调用方据此**降级为「只炸当前已加载的世界」**（`applyToLoadedChunks`，只用
+   `getChunkNow` 不强制加载）+ WARN 日志。守卫：`schedule_rejectsWhenFull`。
 
+**已知遗留（未处理，非 bug）**：
+- **条目可能长期驻留**：未加载区块若玩家再也不去，条目永不完成 ⇒ 账本里长期占着约 130 字节/条
+  （256 条上限 ≈ 33 KB）。**有意不设过期** —— 过期就等于放弃，与用户否决的"跳过"同性质。
+- **同位置重复引爆不去重**：自动装置连续引爆会产生多条同参数条目。合并是安全的
+  （第二次爆炸看到的是空气），但会改变"掉落物"语义（NORMAL 模式下第二次本该不掉落），
+  故**未实现**。
+
+#### 复审：如果重来，哪里能更优雅（2026-09-18）
+
+**骨架不需要推倒。** 逐个排除了替代方案：
+
+| 替代 | 为什么不行 |
+|---|---|
+| **实体做账本**（最原版：像 `PrimedTnt` 那样把待办挂在实体上） | **可达性缺陷** —— 玩家从爆炸范围边缘进入时，中心区块可能不在加载区（视距 192 < 半径 235）⇒ 实体不在内存 ⇒ 账本不可见 ⇒ 该区块不炸。原版没这问题是因为它的账本（引信）与爆炸范围在**同一个区块** |
+| **异步预加载**（申请 ticket 让区块自己加载出来） | 会**真生成**几百个区块并永久留在存档（玩家可能再也不去）—— 原版从不主动生成区块 |
+| **跳过未加载** | 语义残缺（用户否决） |
+
+⇒ **账本是当前约束下的唯一合理选择**。
+
+**三处可以更优雅（按"值不值得动"排序）**：
+
+1. ⭐ **把"位图 + 独立队列"合并成"每条目一个待办集合"**（最值得，但**建议暂不重构**）。
+   现在描述同一件事的状态有 3 个：`done[]` 位图（持久化真相）+ `pendingChecks`（内存调度）
+   + `remaining`（计数）。改成 `LinkedHashSet<ChunkPos>`（只放"还没炸的区块"）后：
+   - 消除 3 个互逆索引方法（`bitIndex` / `chunkAt` / `bitIndexOf`）
+   - 消除"网格定索引 / 圆定要不要炸"的**双判据**（列表只放要炸的）
+   - 消除 `remaining` 与位图的**双重真相**（`load` 不必重算 —— 这是最容易写错的一处）
+   - `flush` 复杂度从 **O(待检查 × 条目数)** 降到 **O(总待办数)**
+   - 代价：存档从 128 B/条 → 约 7.7 KB/条（961 区块）⇒ 把 `MAX_ENTRIES` 降到 32 即可压回 250 KB
+   - **不重构的理由**：现有 13 项守卫测试覆盖的是位图语义，重写要连带改测试；
+     收益在"代码更少"而非"行为更对" ⇒ 风险 > 收益。**触发条件：要加第四种爆炸模式时一起做**。
+2. **三种模式 → 策略接口**（`shouldBreak(...)` + `dispose(...)`）。收益只在**扩展性**
+   （新增"只烧可燃物"之类只加一个实现类）。当前三种模式稳定 ⇒ **暂不做**，与第 1 条同批。
+3. **`pendingChecks` 与 `ContainerChunkCache.pendingRescans` 同构**（都是"事件里只登记坐标 →
+   tick 阶段处理 → 每 tick 限量 → 未加载丢弃"）。**不抽公共抽象** —— 两者语义不同
+   （`pendingRescans` 是**无状态重扫**、丢了靠下次事件补；`pendingChecks` 是**有状态检查**、
+   丢了永远不炸），抽象要参数化这个差异，成本 > 收益。但**两者的红线与限流参数应保持一致**。
+
+**一处归类问题（✅ 已修 2026-09-18）**：`ExplosionLedger` 是**有状态**的（SavedData），原本却放在
+`components/`，而 AGENTS 与 file-map 都把该目录描述为「**无状态**工具组件」。
+且 TNT 技术文档原本写的是 `domain/tnt/ExplosionComponent.java` —— 说明**最初的领域归属意图就是
+`domain/tnt/`**。
+⇒ 已把 `ExplosionComponent` / `ExplosionParams` / `ExplosionLedger`（含两个测试类）一起迁到
+`domain/tnt/`，与 `LivingTntFunction` / `ExplosionData` / `LivingTntData` 同域。
+`components/` 现在只剩 `ItemFilterComponent`，与「无状态工具组件」的定位一致。
+
+**已排除的一个"看起来更优雅"的改法**：给 `onChunkLoaded` 加内存 `activeDims` 集合，
+让它完全不碰 `level`（纯内存判断，连 `getDataStorage()` 都省掉）。
+**否决理由**：`onChunkLoaded` 里的 `get(level)` 是**首次区块加载时惰性读盘**的唯一入口 ——
+加了 `activeDims` 就必须额外在服务端启动时预热，否则重启后已加载区块永远补不上；
+而它省下的只是 2 次 map 查找（约 50 ns）。**收益不抵复杂度**。
+
+#### 已确认安全的路径（不用改）
+
+`applyExplosionDamage` 的 `level.getEntities(AABB)` —— 1.21 走 `LevelEntityGetter`（已加载实体索引），
+**不碰区块**；`scheduleSuperExplosion` 的区块列表是纯几何计算（不碰世界）。
+
+#### ⚠️ 顺带发现的两个既有问题（与方案无关，但必须一起修）
+
+1. **`PENDING_SUPER_EXPLOSIONS` 服务端关闭不清理** —— `LivingItem.onServerStopped` 清了
+   `EnderChannelRegistry` / `ContainerChunkCache` / `ContainerLivingItemHandler`，**唯独漏了爆炸任务**，
+   且 `ExplosionComponent` 连 `clearAll()` 入口都没有。单机「退出存档 → 进另一个存档」**不重启 JVM**
+   ⇒ 任务持有旧 `ServerLevel` 引用 ⇒ **内存泄漏**（整个旧世界无法 GC）+ 在已关闭的 level 上继续
+   `hasChunk` ⇒ 行为未定义。**任何"跨 tick 状态"方案都会加重它，必须先修。**
+2. **`tickAll` 每 tick 只处理 1 个区块** ⇒ 961 区块要 961 tick（约 48 秒）；且跳过未加载区块时
+   `task.index++` **无条件推进、不重试** ⇒ **现在就是残缺的**（只是静默）。三个模式口径还各不相同。
+
+> 📌 **独立的性能隐患**（同一循环，另行处理）：`radius = 235` 时收集循环是
+> `(2×235+1)³ ≈ 1.05 亿次` 迭代 —— **即使全部已加载**，也是主线程上的一次巨长操作。
+> 超级爆炸的"几何算区块列表 + 分帧"范式正是解法（用户 2026-09-18 认可可前移）。
 ### 3.3 大箱子去重
 
 大箱子（`ChestBlock`）在 NeoForge 中，左右两半返回**同一个 `IItemHandler` 实例**。因此去重策略分两层：

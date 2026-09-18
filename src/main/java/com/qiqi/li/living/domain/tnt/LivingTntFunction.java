@@ -15,7 +15,6 @@ import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.api.HasContainerData;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
-import com.qiqi.li.living.components.ExplosionComponent;
 import com.qiqi.li.living.domain.redstone.ContainerRedstoneData;
 import com.qiqi.li.living.domain.tnt.ExplosionData;
 import com.qiqi.li.living.domain.tnt.LivingTntData;

@@ -35,6 +35,25 @@
   **扫描侧不能过滤**（区块提升到 ticking 没有对应事件 ⇒ 会永久漏发现）。
   可观测：`/living_monitor cache`（缓存/可处理/loaded 区块/视距基准）。
 
+## 爆炸：逐区块分帧 + 待炸账本（D-tnt-01，2026-09-18）
+
+- **破坏唯一入口 `ExplosionComponent.applyToChunk(level, params, chunk)`** —— 三种模式
+  （NORMAL/HIGH_YIELD/SUPER）都按区块执行；立即阶段与延迟阶段走同一个函数
+  ⇒ 同一场爆炸无论区块何时加载，结果一致。
+- `ExplosionLedger`（世界级 `SavedData`）承载"哪些区块还没炸"的**参数 + `long[]` 位图**。
+  每 tick ≤ `MAX_CHUNKS_PER_TICK = 32` 个区块。
+- ⚠️ **未加载区块 → 丢弃**（等 `ChunkEvent.Load` 重新登记，**不能轮询**）；
+  **预算用尽 → carryOver**（已加载的不会再触发 Load，丢了就**永远不炸**）。这两条写反就丢爆炸。
+- ⚠️ **队列只 `remove` 本 tick 处理过的区块，永不整体替换** —— 否则同 tick 新登记的区块被覆盖，
+  而它们已加载、不会再触发 Load ⇒ 永远不炸。
+- ⚠️ `schedule` 返回 false（账本满）时调用方**必须降级**（只炸已加载部分 + WARN），
+  不能忽略 —— 否则声光已播、方块没坏。
+- 多条目重叠：同一区块对每条各处理一次，**破坏幂等**（第二次看到空气）；
+  掉落物归属取决于处理顺序（不可观测）。
+- ⚠️ `ChunkEvent.Load` 只登记坐标（红线）；`ChunkEvent.Load` 提升到 ticking **无事件** ⇒
+  发现侧不能过滤（见 D-core-05）。
+- 全文：`living-tnt-tech.md` §4.3 + `living-item-infrastructure.md` §3.2.2。
+
 ## 纹理 / 环境
 
 - 全文见 [`icon-system.md`「纹理约定」](../../docs/system-design/icon-system.md)：

@@ -1,6 +1,6 @@
 package com.qiqi.li;
 
-import com.qiqi.li.living.components.ExplosionComponent;
+import com.qiqi.li.living.domain.tnt.ExplosionLedger;
 import com.qiqi.li.living.domain.map.LivingMapEventHandler;
 import com.qiqi.li.living.domain.map.ItemFrameMapTeleportHandler;
 import com.qiqi.li.living.domain.ender.EnderChannelRegistry;
@@ -319,7 +319,8 @@ public class LivingItem {
             processLevelContainers(level);
         }
 
-        ExplosionComponent.tickAll();
+        // 待炸账本：按区块分帧推进爆炸破坏（已加载的按预算处理，未加载的等自然加载）
+        ExplosionLedger.flushAll(server);
     }
 
     private void processLevelContainers(ServerLevel level) {
@@ -426,7 +427,28 @@ public class LivingItem {
         EnderChannelRegistry.getInstance().clearAll();
         ContainerChunkCache.getInstance().clear();
         ContainerLivingItemHandler.clearAllCaches();
+        // 待炸账本的**内存调度表**要清（条目本身随存档走，不需要清）。
+        // ⚠️ 单人游戏「退出存档 → 进另一个存档」不重启 JVM：不清会把上一个维度的调度表带过来。
+        ExplosionLedger.clearAllRuntimeState(event.getServer());
         LOGGER.info("Cleared living item caches on server stop");
+    }
+
+    /**
+     * 区块加载事件 —— <b>只登记坐标，绝不碰世界</b>。
+     *
+     * <p>⚠️ 本事件在区块 FULL 任务<b>内部</b>触发，做任何世界交互（能力查询 / 读方块 /
+     * 查方块实体）都可能触发跨模组同步区块加载 ⇒ 主线程自等自。红线说明见
+     * {@link ContainerChunkCache#onChunkLoad}。</p>
+     *
+     * <p>用途：把「待炸账本」里落在该区块的爆炸补上 —— 这是原版 TNT 引信模型
+     * （世界只在被观测的地方演化）在爆炸范围上的落地。真正的破坏在
+     * {@code ServerTickEvent.Pre} 由 {@link ExplosionLedger#flushAll} 执行。</p>
+     */
+    @SubscribeEvent
+    public void onChunkLoad(ChunkEvent.Load event) {
+        if (event.getLevel() instanceof ServerLevel level) {
+            ExplosionLedger.onChunkLoaded(level, event.getChunk().getPos());
+        }
     }
 
     private void onRegisterCapabilities(RegisterCapabilitiesEvent event) {

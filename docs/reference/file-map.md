@@ -79,7 +79,10 @@ src/main/java/com/qiqi/li/
 │   │   ├── tnt/                              #   活TNT领域
 │   │   │   ├── LivingTntFunction.java        #     活TNT功能入口（从 function/ 迁入）
 │   │   │   ├── LivingTntData.java            #     活TNT数据（从 data/ 迁入）
-│   │   │   └── ExplosionData.java            #     爆炸数据（从 data/ 迁入）
+│   │   │   ├── ExplosionData.java            #     爆炸数据（从 data/ 迁入）
+│   │   │   ├── ExplosionComponent.java       #     爆炸执行引擎（逐区块破坏；2026-09-18 从 components/ 迁入）
+│   │   │   ├── ExplosionParams.java          #     爆炸参数 record + 位图索引映射
+│   │   │   └── ExplosionLedger.java          #     待炸账本（世界级 SavedData；未加载区块等自然加载）
 │   │   │
 │   │   ├── farmland/                         #   活耕地领域
 │   │   │   ├── LivingFarmlandFunction.java   #     tick 功能入口（生长/产出状态机 + tooltip）
@@ -150,7 +153,6 @@ src/main/java/com/qiqi/li/
 │   │   └── sable/                           #   Sable 飞艇兼容（软依赖）
 │   │
 │   ├── components/                          # 无状态工具组件
-│   │   ├── ExplosionComponent.java          #   爆炸工具类
 │   │   └── ItemFilterComponent.java         #   黑白名单过滤
 │   │
 │   ├── transfer/                            # 传输基础设施
@@ -260,6 +262,9 @@ src/test/java/com/qiqi/li/
 ├── living/container/
 │   ├── SimpleContainerContextTest.java        # 容器上下文脏槽同步（25 项）
 │   └── ContainerChunkCacheChunkLoadTest.java  # 区块加载守卫·事件不碰世界/延后重扫不丢/限量/不主动加载/只处理ticking区/可观测性（6 项）
+├── living/domain/tnt/
+│   ├── ExplosionParamsTest.java               # 爆炸参数·位图映射可逆/网格外返回-1/affects 判据/网格规模（4 项）
+│   └── ExplosionLedgerTest.java               # 待炸账本·圆外标记/未加载丢弃不轮询/自然加载补炸闭环/分帧预算/多场叠加不覆盖新登记/满额降级/存档往返（9 项）
 ├── living/domain/redstone/
 │   └── ContainerRedstoneDataTest.java         # 红石信号传播（29 项）
 ├── living/domain/power/
