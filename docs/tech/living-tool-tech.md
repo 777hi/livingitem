@@ -311,12 +311,20 @@ if (freshStart) {
 
 | 宿主 | 射线起点 | 客户端怎么知道 | 现状 |
 |---|---|---|---|
-| **方块容器** | 容器方块中心 | ❗ 需 S2C 包（`K2`，不开 GUI 客户端不知道内容） | ✅ 已实现 |
+| **方块容器** | 容器方块中心 | ✅ `K2` 的 S2C 包（2026-09-19 完成，见 §12） | ✅ 已实现 |
 | **玩家背包** | 玩家眼睛 | ✅ 本人已知 | ✅ 已实现 |
-| **掉落物** | 实体位置 | ✅ **免费**（`IS_LIVING` 已 `networkSynchronized`） | ⬜ 需新增 tick 通道（`L-f`） |
+| **掉落物** | **碰撞箱中心** | ✅ **免费**（`itemEntity.getItem()` 走实体同步） | ✅ **已实现**（2026-09-19，见 §11.4） |
 
-方块容器与玩家背包走**现有** `ContainerLivingItemHandler` 管线，**无需新增扫描通道**。
-掉落物形态需另开通道 —— 现有 `processLevelContainers` 只遍历 `getBlockEntities()`。
+**三者共用同一条回放逻辑**：都走 `ContainerLivingItemHandler#processContext`，
+差异只在"射线起点"（`LivingToolFunction#resolveOrigin`）与"写回同步"。
+
+| 宿主 | 扫描通道 | 上下文实现 | 写回同步 |
+|---|---|---|---|
+| 方块容器 | `processLevelContainers`（区块 → 方块实体） | `SimpleContainerContext` | `ClientboundContainerSetSlotPacket` |
+| 玩家背包 | `processContainer`（在线玩家） | `SimpleContainerContext` | 同上（`inventoryMenu`） |
+| 掉落物 | `processItemEntityContainers`（遍历实体） | `ItemEntityContainerContext` | `ClientboundSetEntityDataPacket` |
+| —— | **客户端可见性** | —— | —— |
+| 方块容器 | ❌ 瞎（不开 GUI 拿不到）→ **`K2` 的 `LivingToolHostPacket`** | `LivingToolHostSync` → `LivingToolHostClientCache` | 见 §12 |
 
 ---
 
@@ -366,6 +374,16 @@ src/main/java/com/qiqi/li/living/domain/tools/
 
 src/main/java/com/qiqi/li/client/render/
 └── LivingToolRayRenderer.java       记忆射线可视化（L19/L20，纯客户端）
+
+src/main/java/com/qiqi/li/living/container/
+└── ItemEntityContainerContext.java  掉落物包装成单栈容器（L-f）
+
+src/main/java/com/qiqi/li/living/domain/tools/
+├── LivingToolHostSync.java          服务端：收集活跃容器 + 定向广播（K2）
+└── LivingToolHostClientCache.java   客户端缓存（K2）
+
+src/main/java/com/qiqi/li/network/
+└── LivingToolHostPacket.java        S2C：近处容器里的活工具清单（K2）
 ```
 
 ### 8.2 注册点
@@ -477,6 +495,9 @@ public void equipTool(ItemStack stack) {
 | 时间源 | 用 `gameMode.gameTicks` 会因 tick 空实现而永远是 0 |
 | 写回容器 | 不写回则客户端看到的还是旧耐久 |
 | 装备属性 | 物品附魔给的属性修饰符**不会**自动生效（见 §9.3） |
+| 破坏裂纹 | 停止挖掘时**必须自己清**（原版靠 `gameMode.tick()` 收尾，见 §9.5 的 `L47`） |
+| 实体坐标 | `Entity#position()` 是包围盒**底部**，不是中心；起点取错会让"只挖底面"（见 §9.6） |
+| 扫描判据 | `isEmptyBlock()` 判 `isAir()`，**水不是空气**；非满高方块（半砖）会让起点落在方块内（见 §9.7） |
 
 ### 9.5 为什么 `FakePlayer#tick()` 是空的 —— 以及我们为它付的代价
 
@@ -509,13 +530,56 @@ public void equipTool(ItemStack stack) {
 变成了**长生命周期**对象 —— 于是"不 tick"从"无所谓"升级成**坑源**：
 它身上那些本应由 tick 维护的状态，**永远不会刷新**。
 
-**已经踩到的三个坑，其实是同一件事的三种表现**：
+**已经踩到的四个坑，其实是同一件事的四种表现**：
 
 | 需要 tick 维护的状态 | 症状 | 编号 |
 |---|---|---|
 | 装备属性（`MINING_EFFICIENCY`） | 效率附魔失效 | `L46` |
 | `onGround` | 挖掘慢 5 倍 | `L28` |
 | 破坏进度（`gameMode.tick()`） | 进度不推进 | `L27` |
+| **破坏裂纹的清除** | 停止挖掘时无人清 → **裂纹永久残留** | `L47` |
+
+#### ⚠️ 破坏裂纹为什么必须自己清（`L47`）
+
+原版 `ServerPlayerGameMode#tick()` 里有一段收尾：
+
+```java
+} else if (this.isDestroyingBlock) {
+    BlockState s = this.level.getBlockState(this.destroyPos);
+    if (s.isAir()) {
+        this.level.destroyBlockProgress(this.player.getId(), this.destroyPos, -1);  // ← 清裂纹
+        ...
+    }
+}
+```
+
+**FakePlayer 不 tick ⇒ 这段永远不跑。**
+
+裂纹的客户端渲染（`LevelRenderer`）有两点值得注意：
+
+1. 它是 **10 张固定纹理**（`destroy_stage_*`），渲染时**不检查那个位置现在还是不是方块** ——
+   所以方块没了，裂纹照样画。
+2. 它按 **`breakerId`（实体 id）** 索引（`destroyingBlocks` 是 `Map<Integer, BlockDestructionProgress>`）。
+
+⭐ **第 2 点让问题被放大**：`LivingToolFakePlayer` 是按「维度 + 主人」**共享**的，
+同一个主人的所有活工具**共用一个 `breakerId`** —— 一旦某个工具停止挖掘却不清裂纹，
+就**再也没人会覆盖它**，那片裂纹永久留在世界上。
+
+**修法**：`replayDig` 的**每一条「停」的路径**都走 `stopDigging()`（清裂纹 + 复位进度）：
+
+| 停止原因 | 位置 |
+|---|---|
+| 无挖掘记忆 | `ray == null` |
+| 路径上没有可挖方块（`L7`） | `target == null` |
+| 类型不匹配（`L8`，如去皮后） | `!ray.matches(...)` |
+| 换成新目标（`L23`） | `freshStart && previous != null` |
+| 被模组 / 保护插件取消 | `onLeftClickBlock(...).isCanceled()` |
+| 挖不动（基岩 / 硬度 -1） | `perTick <= 0` |
+
+另有一处**写回侧的坑**：`held` 是「写进度之后」才 `copy()` 的副本，
+完成破坏时只清了 `tool` 的进度 ⇒ 写回槽位的那份**带着残留进度**，
+下一 tick 会误判为「已经挖了很久」而**瞬间破坏**（无裂纹动画）。
+故完成破坏时必须 `setToolProgress(held, null)` 一并清掉。
 
 **结论**：**我们只要 FakePlayer 的「身份」，不要它的「行为」** ——
 保持不 tick、按需手工补状态，是正确取舍（让它真 tick 会引入上表那些副作用）。
@@ -524,6 +588,80 @@ public void equipTool(ItemStack stack) {
 都必须先确认"它会不会自己更新"；不会的就要在统一入口里手工补。
 建议把「定位 + `setPos` + `setOnGround` + `equipTool`」收拢成**一个装配方法**，
 避免以后再需要补第四项时漏掉某处 —— 散落的 setter 是这类 bug 的温床。
+
+---
+
+### 9.6 掉落物射线起点取错 → 只挖底面（`L14=d` 修订，2026-09-19 实测）
+
+**症状**：活工具丢在地上后，射线永远指向**所站的那块方块**（底面）。
+
+**根因**：`Entity#position()` 返回的是碰撞箱的**底部** ——
+`EntityDimensions#makeBoundingBox` 构造的是 `new AABB(x-f, y, z-f, x+f, y+height, z+f)`，
+`y` 就是**底边**。掉落物落地后这个点**正好贴着脚下方块的上表面**，
+而回放的逐格扫描从 `t=0` 开始 ⇒ 第一个格子就命中自己站的那块方块。
+
+**修法**：改用 `getBoundingBox().getCenter()`（抬高 0.125 格），
+并提取为 `ItemEntityContainerContext#rayOrigin(ItemEntity)` 作为**单一真源** ——
+服务端回放与客户端渲染**共用**，保证"画出来的线"和"实际挖的地方"永远一致。
+
+**教训**：**`Entity#position()` 是包围盒底部，不是中心。**
+凡是要"从实体出发"的位置，都得先想清楚该取哪个点（眼睛 / 中心 / 底部），
+而且**两端必须共用同一个取法** —— 否则会出现"可视化是对的、挖掘是错的"这种最难查的不一致。
+
+### 9.7 站在半砖上 / 泡在水里 → 不挖（2026-09-19 实测，含一次诊断修正）
+
+两个现象都表现为"**射线看起来没问题，但就是不挖**"，但**根因不同**。
+
+#### ① 半砖 —— 服务端用「格子级」判据，客户端用「形状级」
+
+| | 判据 | 结果 |
+|---|---|---|
+| **客户端渲染**（`level.clip`） | 射线 × **方块形状**求交 | 半砖形状只占下半 ⇒ 射线从它**上半的空气部分**穿过 ⇒ **穿过** ✅ |
+| **服务端回放**（`scanForTarget`） | 格子是否 `isEmptyBlock` | 半砖那格**不是空气** ⇒ **命中** ❌ |
+
+⇒ 分歧就在这里：**"画出来的线是对的，挖的时候却卡在半砖上"**。
+用户反馈"我看射线没有在半砖内部呀"，指的正是这个 ——
+**视觉上起点确实在半砖上方的空气里**（半砖模型只占下半），
+但它在**格子层面**属于半砖那一格。
+
+**修法**：`scanForTarget` 补上**形状求交**，与客户端 `clip` **同源**：
+
+```java
+// 只有射线【真的穿过该格的形状】才算命中
+if (level.getBlockState(current).getShape(level, current).clip(from, to, current) == null) {
+    continue;
+}
+```
+
+> 📌 **一次诊断修正**：初版把原因归为"起点落在半砖方块内 ⇒ 掉落物缺少黑名单"，
+> 并加了"把起点所在格当宿主跳过"的补丁。用户指出"射线没有在半砖内部"之后重新分析，
+> 才定位到真正的分歧是**判据粒度不同**（格子 vs 形状）。
+> **补丁已撤** —— 直接跳过整格会漏掉那一格里真正的目标；
+> 形状求交既精确、又与客户端一致。
+>
+> ⭐ **教训**：**"可视化"与"判定"必须共用同一套判据。**
+> 客户端用 `level.clip`（形状级），服务端用逐格 `isEmptyBlock`（格子级），
+> 两者天然会分叉 —— 这类 bug 的表现就是"看的和做的不一样"。
+
+#### ② 泡在水里 —— `isEmptyBlock()` 判的是 `isAir()`
+
+**根因**：`Level#isEmptyBlock(pos)` 等价于 `state.isAir()`，而 **水方块不是空气**。
+掉落物浮在水面 / 沉在水下时，射线立刻命中水；穿水时也会被水体挡住。
+
+**修法**：扫描的"可穿过"判据从「非空气」升级为「**非空气、且非纯流体**」：
+
+```java
+private static boolean isOpenSpace(ServerLevel level, BlockPos pos) {
+    BlockState state = level.getBlockState(pos);
+    if (state.isAir()) return true;
+    // 判据用「有流体【且】无碰撞箱」，而不是「有流体」——
+    // 否则会误伤充水方块（waterlogged 台阶 / 楼梯），那些应当是可挖目标
+    return !state.getFluidState().isEmpty() && state.getCollisionShape(level, pos).isEmpty();
+}
+```
+
+`replayDig` / `replayUse` **共用** `scanForTarget`，一处改动两边生效；
+`L42`（允许挖宿主自己）的判据也一并换成 `isOpenSpace`（否则会去挖水）。
 
 ---
 
@@ -552,6 +690,31 @@ public void equipTool(ItemStack stack) {
 - [x] 右键空气 → 清交互记忆
 - [x] 取消活化 → 全部组件被清
 
+**掉落物形态**（`L-f`，2026-09-19 实测通过）：
+
+- [x] 把活工具丢在地上 → 它会继续按记忆回放
+- [x] 掉落物移动 → 射线起点跟随移动（`L10=a`）
+- [x] 破坏成功后耐久正确扣减并同步到客户端
+- [x] 工具挖到耐久耗尽 → 掉落物消失
+
+**容器形态同步**（`K2`，待实测）：
+
+- [ ] 把活工具放进箱子 → 不开 GUI、只按 F3+B → 应看到射线从**箱子中心**射出
+- [ ] 走远超过 32 格 → 射线消失（半径定向）
+- [ ] 走回来 → 射线重新出现
+- [ ] 把活工具取出放进背包 → 容器那条射线消失（整体替换机制）
+- [ ] 换维度 → 不残留上一个维度的射线
+- [ ] 退出存档再进另一个 → 不残留（登录时清缓存）
+- [ ] 大箱子（两格）→ 射线从第一格中心射出，且不会挖掉箱子自己
+
+**射线扫描的边界场景**（2026-09-19 实测通过）：
+
+- [x] 掉在**半砖 / 台阶**上 → 正常挖（`L14=d` 起点取碰撞箱中心 + §9.7 形状求交）
+- [x] 掉进**水里** → 正常挖（§9.7 的 `isOpenSpace`）
+- [x] 掉在普通满高方块上 → 回归正常
+- [x] 站在半砖上、录"挖脚下"的短记忆 → 能挖到半砖
+- [x] 活工具挖到一半、方块被人挖走 → **破坏裂纹立刻消失**（`L47`）
+
 **记忆「难得易忘」规则**（`L43` / `L44` / `L45`，2026-09-19 实测通过）：
 
 - [x] 挖完一个方块 → 记忆形成
@@ -567,10 +730,10 @@ public void equipTool(ItemStack stack) {
 
 | 项 | 说明 |
 |---|---|
-| **`L-f` 掉落物形态** | 需新增掉落物 tick 通道 + 单栈入口 |
+| ~~`L-f` 掉落物形态~~ | ✅ **已实现**（2026-09-19），见 §11.4 |
 | **`L37` 实体攻击** | 左键命中实体时攻击（为活剑铺路） |
 | ~~`L19/L20` 射线可视化~~ | ✅ **已实现**（2026-09-19），见 §11.3 |
-| **`K` 组悬浮渲染** | 待机位（宿主旁）↔ 工作位（射线目标点），御剑 `FormationGeometry` 可作排布参考 |
+| **`K` 组悬浮渲染** | 待机位（宿主旁）↔ 工作位（射线目标点），御剑 `FormationGeometry` 可作排布参考。<br>**前置 `K2` 已完成** ✅ —— 数据同步与渲染管线（§11.3）都已就位，只剩「模型 + 动画」 |
 
 ### 11.1 已实现：交互记忆回放（2026-09-19）
 
@@ -664,11 +827,16 @@ LivingItemInputHandler.onLeftClickEmpty（客户端，且确有记忆时才发�
 | 项 | 结论 |
 |---|---|
 | 接入点 | `RenderLevelStageEvent` @ **`AFTER_ENTITIES`** —— 地形与实体深度已写入，线会被**正确遮挡** |
-| 显示开关 | **`shouldRenderHitBoxes()`**（`L20=f`），即原版 **F3+B**；纯客户端、无需同步 |
+| 显示时机 | **手持 → 始终显示**；其余宿主（背包非手持槽 / 掉落物）→ 仅在 **F3+B** 时显示。<br>⚠️ `L20` 于 2026-09-19 **修订**：手持正是"玩家正在操作、最需要确认记忆方向"的时刻，不该被开关挡住。<br>开关读 `shouldRenderHitBoxes()`，纯客户端、无需同步 |
+| 手持判定 | 用 **引用相等**：`Player#getMainHandItem()` 最终就是 `Inventory#getItem(selected)`，同一个 `ItemStack` 对象 —— 比反查槽位索引可靠 |
 | 颜色 | 挖掘记忆（左键）= 橙红；交互记忆（右键）= 青蓝 |
-| 命中与否 | 本地 `clip`：**命中 → 画到命中点（不透明）**；**落空 → 画到终点（半透明）** ← 落空变暗正是"擦缝过去了"的信号 |
+| 命中与否 | 本地 `clip`：**命中 → 画到命中点（alpha 1.0）**；**落空 → 画到终点（alpha **0.7**）** ← 稍淡即"这条线落空了"的信号 |
+| ⚠️ "落空"是常态 | 记忆录的是「眼睛 → 方块表面」的偏移。玩家录完只要挪动一步，眼睛位置就变 ⇒ 射线终点偏移 ⇒ **本来命中的记忆也会落空**。故落空的线仍须清晰（初版 alpha 0.25 实测太淡）。<br>📌 也解释了为什么"擦缝 MISS"不必靠代码兜底：**可视化本来就把这件事摆给玩家看了** |
 | 正在挖时 | **不画** —— 原版 `destroyBlockProgress()` 已自动显示破坏裂纹（零渲染代码） |
-| 顶点写法 | `RenderType.lines()` + `addVertex(pose,…).setColor(…).setNormal(pose,…)`，与原版 `renderLineBox` 同款 |
+| 画法 | **垂直于视线的四边形「光带」**：`RenderType.debugQuads()`（纯色 / 无纹理 / 支持透明 / 双面可见），顶点 `addVertex(pose,…).setColor(…,…,…,…)` |
+| 粗细 | 半宽 = `clamp(相机到线段中点距离 × 0.0025, 0.015, 0.15)` ⇒ **屏幕上的粗细大致恒定**（≈4px @1080p/FOV70） |
+| ⚠️ 为什么**不**用 `RenderType.lines()` | **OpenGL core profile 下很多驱动只保证 1.0 像素线宽**，调 `LineStateShard` 也可能没效果（实测偏细）。画光带则宽度完全自控、**跨驱动一致** |
+| 横向轴 | `dir × (camera - mid)` ⇒ 光带平面始终"侧对"玩家，任何角度看都是条粗线；退化时（视线与线平行）回退到世界 Y / X 轴 |
 | 坐标 | 事件给的 `PoseStack` 已是**相机相对**，只需 `translate(origin - cameraPos)` |
 | 裁剪 | 距离 ≤ 32 格 + `Frustum#isVisible(AABB)` |
 | flush | 画完**必须** `bufferSource.endBatch(RenderType.lines())`，否则不保证本帧画出来 |
@@ -678,7 +846,7 @@ LivingItemInputHandler.onLeftClickEmpty（客户端，且确有记忆时才发�
 | 宿主 | 起点 | v1 状态 |
 |---|---|---|
 | 玩家（背包 / 主手 / 副手） | 眼睛（`L3=a`） | ✅ |
-| 掉落物 | 实体位置（`L14=d`） | ✅ |
+| 掉落物 | **碰撞箱中心**（`L14=d`） | ✅ |
 | **方块容器** | 容器方块中心（`L14=a`） | ❌ **待 `K2` 的 S2C 包** —— 不开 GUI 时客户端拿不到箱子内容 |
 
 > 背包形态不需单独处理主手/副手：`Inventory#getContainerSize()`（41）已含快捷栏与副手。
@@ -686,6 +854,184 @@ LivingItemInputHandler.onLeftClickEmpty（客户端，且确有记忆时才发�
 ⭐ **顺手为 `K` 组铺好了地基**：本节建立的正是悬浮渲染要用的**全套底层能力** ——
 `RenderLevelStageEvent` 接入、相机相对坐标、世界光照与深度处理、距离 / 视锥裁剪。
 `K` 组此后只需在这个骨架上加「模型 + 动画」，不必再趟一遍渲染管线的坑。
+
+---
+
+### 11.4 已实现：掉落物形态（`L-f`，2026-09-19）
+
+**做法：把掉落物包装成「单栈容器」**，复用现成的 `processContext` 管线 ——
+**没有第二套平行回放实现**。
+
+```
+LivingItem.onServerTick
+  ├── processContainer(玩家背包)           → SimpleContainerContext
+  ├── processLevelContainers(区块方块实体)  → SimpleContainerContext
+  └── processItemEntityContainers(实体)     → ItemEntityContainerContext（新）
+                    ↓
+        ContainerLivingItemHandler.processContext（同一条）
+                    ↓
+        LivingToolFunction.tick → LivingToolReplay.replayDig / replayUse（同一套）
+```
+
+**为什么这条路能走通**：`processContext` 完全不依赖"方块" ——
+凡是 `instanceof SimpleContainerContext` 的分支（红石 / 流体 / 应力 / 相位快照 / tooltip 同步）
+对掉落物**自动跳过**，正是我们要的结果。
+
+| 关注点 | 做法 |
+|---|---|
+| 槽位数 | `getSize() = 1`（`SINGLE_SLOT`） |
+| `getBlockPos()` | 默认 `null` ⇒ 回放侧走"掉落物作起点"分支（`L14=d`） |
+| 射线起点 | `rayOrigin(entity)` = **碰撞箱中心**（⚠️ **不是** `position()`，见 §9.6）；服务端与客户端**共用**此方法 |
+| `getLevel()` | 实体所在世界（FakePlayer 的 `setPos` 与权限判定要用） |
+| 写回同步 | `ClientboundSetEntityDataPacket`（掉落物没有容器菜单） |
+| 扫描方式 | 遍历 `ServerLevel#getAllEntities()`，`instanceof ItemEntity` + `isLivingTool` |
+
+#### ⚠️ 同步的坑：必须"先置空再写回"
+
+`ItemEntity` 的物品走 `SynchedEntityData#set`，内部按 `equals` 判重；
+自定义 DataComponent 的变更不一定能被检出（与容器侧 `ContainerSync` 同一原因）。
+所以 `syncSlotToClients` 里先 `setItem(EMPTY)` 再 `setItem(stack)` ——
+**保证一定被标脏**，再用 `packDirty()` 打包广播。
+两次赋值发生在同一 tick、客户端只会收到最终值，无副作用。
+
+#### ⚠️ 只处理活工具，不处理全部活物品
+
+其它活物品的功能类都假定自己有方块坐标（从 `getBlockPos()` 取），
+扔进掉落物上下文会拿到 `null`。要让更多活物品支持掉落物形态，
+得先给 `LivingItemFunction` 加**宿主能力声明** —— 不在 `L-f` 范围内。
+
+#### ⚠️ 为什么直接遍历实体、不建索引
+
+`ContainerChunkCache` 那套区块级缓存依赖"方块容器位置稳定"；
+掉落物会移动、会被合并、会被卸载，**维护索引失效的成本高于收益**。
+`getAllEntities()` 是 O(实体数) 的浅遍历，绝大多数在 `instanceof` 处短路。
+
+---
+
+## 12. 已实现：`K2` 容器内容 S2C 同步（2026-09-19）
+
+> ✅ 已按本节方案落地。三宿主现在**全部**能在客户端画射线。
+>
+> **最终定案**（相比草案有 3 处简化，均为用户拍板）：
+> ① 同步 `ItemStack`（一次满足射线 / 模型 / 动画三个需求）
+> ② **去掉节流** —— 内容去重后本就是按需发送
+> ③ **状态字段先不加** —— 挖掘靠原版破坏裂纹推断，交互是瞬时动作
+> ④ R = **32**，理由是**必须与原版裂纹广播半径一致**（不是随便取的值）
+
+### 12.1 为什么必须新增一个包
+
+现有 `LivingItemSyncPacket` **不能用**，有两个硬伤：
+
+| 硬伤 | 说明 |
+|---|---|
+| **只发给正在看 GUI 的玩家** | `isViewingContainer(player, containers)` 要求玩家菜单里含该容器 —— 世界渲染需要的是"**路过就能看见**"，不开 GUI 也要看得见 |
+| **不含 ItemStack** | 它同步的是 `LivingItemRuntimeData`（遥测/瞬态），没有物品本体 —— 客户端既画不出记忆、也渲染不了模型 |
+
+### 12.2 三个设计决策
+
+#### ① 同步什么 —— 推荐：位置 + **活工具的 ItemStack 副本**
+
+| 方案 | 内容 | 评价 |
+|---|---|---|
+| a | `BlockPos` + **每个活工具的 `ItemStack`** | ⭐ **推荐** |
+| b | `BlockPos` + 只提取记忆（offset/block）+ 物品 id | 包更小，但 `K` 组渲染模型时还得再补一次 |
+
+**为什么推荐 a**：同步 `ItemStack` **一次满足三个需求**：
+
+| 需求 | 靠什么 |
+|---|---|
+| 射线可视化 | `LIVING_TOOL_MEMORY`（已 `networkSynchronized`）随 ItemStack 一起到 |
+| 悬浮模型渲染 | ItemStack 本体 → `ItemRenderer` 直接渲染 |
+| 动画驱动（`K31=a`） | 未来的 `LIVING_TOOL_ACTION` 做成 network-only 组件，同样随 ItemStack 到 |
+
+**安全**：只同步**活工具**（`isLivingTool` 筛过），**不泄露容器内的其他物品**。
+
+**体积**：活工具 `maxStackSize = 1`（不堆叠），且只在近处 → 条目数是个位数。
+
+#### ② 多久同步一次 —— 推荐：节流 **N tick** + 内容去重
+
+| 方案 | 评价 |
+|---|---|
+| a | 每 tick 全量 —— 太重 |
+| b | **节流 N tick**（建议 **10**，=0.5 秒），且与"上次发给该玩家的内容"比对，**无变化就不发** ⭐ |
+| c | 纯增量（只发变化的那几条） —— 最省，但要处理"移除"，复杂度高 |
+
+**为什么 0.5 秒可接受**：破坏裂纹由原版 `destroyBlockProgress` 广播（不依赖本包），
+记忆录制时工具还在玩家手上（背包形态客户端本来就已知）**⇒ 没有需要零延迟的场景**。
+
+**去重方式**：服务端为每个玩家缓存上次发出的条目列表，逐项 `ItemStack.matches` 比较
+（条目是个位数，开销可忽略）。
+
+#### ③ 发给谁 —— 推荐：**按距离定向**
+
+| 方案 | 评价 |
+|---|---|
+| a | 全服广播 —— ❌ 明确禁止（项目已有教训：`EnderChannelSyncPacket` 全服广播） |
+| b | **只发半径内的在线玩家** ⭐（建议 **R = 32**，与 `LivingToolRayRenderer.MAX_DISTANCE` 对齐） |
+
+**客户端清理**：每次收到包就**整体替换**缓存 —— 不需要处理"移除"逻辑，
+玩家走远 / 换维度 / 世界里已无活工具时收到空（或不发但下包覆盖）即自然清空。
+
+### 12.3 客户端如何「自己推断」动画（`K31` 修订）
+
+> 📌 用户口径：*"客户端只需要知道两点：1. 活工具正在回放记忆 2. 活工具闲着。
+> 其它的动画都从客户端自己推断播放。"*
+
+于是状态从"细分动作（DIG / STRIP / IDLE）"**收缩为 1 bit「忙 / 闲」**，
+`K31=a` 那个 `LIVING_TOOL_ACTION` 组件**直接省掉**。
+
+客户端拿到的只有「忙 / 闲」，剩下的**全部本地推断**：
+
+| 客户端观测 | 推断 | 播放 |
+|---|---|---|
+| 忙 + **该位置有破坏裂纹** | 在**挖掘**（裂纹由原版 `destroyBlockProgress` 广播，**零同步**） | 挖掘挥动，节奏跟**裂纹档位**（`K31=c`） |
+| 忙 + 无裂纹 | 在**交互**（去皮 / 耕地这类一次性动作） | 一次性交互动作 |
+| 闲 | 待机 | 转圈 / 摇晃 / 浮动 |
+
+**朝向**也不需要同步：客户端自己读记忆的 `offset` 向量即可（它本来就同步着）。
+
+⭐ **结论**：动画这一层**只剩 1 bit 需要同步**，其余全是客户端本地计算 + 原版已有广播。
+
+### 12.4 包格式（草案）
+
+```
+varint count
+for each:
+    BlockPos pos            (BlockPos.STREAM_CODEC)
+    varint toolCount
+    for each:
+        ItemStack stack     (ItemStack.STREAM_CODEC, 需 RegistryFriendlyByteBuf)
+        byte state          // 0 = 空闲, 1 = 工作中（见 §12.3）
+```
+
+复用 `LivingItemSyncPacket` 已有的写法：`StreamCodec<FriendlyByteBuf, ...>` 里
+cast 到 `RegistryFriendlyByteBuf`（`ItemStack.STREAM_CODEC` 需要注册表访问）。
+
+> ⚠️ 注意 `ItemStack` **仍然要同步** —— 它不是为了动画，而是为了
+> ① **画记忆射线**（需要 `LIVING_TOOL_MEMORY`）② **渲染悬浮模型**（需要物品本体）。
+> 用户这次简化的是**动画状态**，不是这两项。
+
+### 12.4 文件清单（草案）
+
+| 文件 | 职责 |
+|---|---|
+| `network/LivingToolHostPacket.java` | 新 S2C 包 |
+| `domain/tools/LivingToolHostSync.java` | 服务端：收集活跃容器 + 节流 + 定向广播 |
+| `domain/tools/LivingToolHostClientCache.java` | 客户端缓存（整体替换） |
+| `client/render/LivingToolRayRenderer.java` | 新增容器形态的读取分支 |
+| `LivingItem.java` | 注册包 + 每 tick 调用广播 |
+
+> 命名待定：`Host` / `Presence` / `Float` 均可，先不定死。
+
+### 12.5 边界情况
+
+| 情况 | 处理 |
+|---|---|
+| **大箱子两格** | 同步 `getBlockPos()`（第一格）即可；渲染若需两格可后补 `getAssociatedBlockPositions()` |
+| **跨维度** | 每玩家用他**所在 level** 的列表，包里不必带维度 |
+| **容器被破坏** | 下一轮收集时条目消失 → 该玩家签名变化 → 发新包 → 客户端整体替换 ✅ |
+| **容器内容变了**（耐久 / 记忆） | 每轮收集的都是**当前** ItemStack → 签名变化 → 自动发 ✅ |
+| **玩家刚进维度** | 首轮必发（签名从"无"变成有）✅ |
 
 ---
 

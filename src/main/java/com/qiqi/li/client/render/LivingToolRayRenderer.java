@@ -3,13 +3,17 @@ package com.qiqi.li.client.render;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.container.ItemEntityContainerContext;
+import com.qiqi.li.living.domain.tools.LivingToolHostClientCache;
 import com.qiqi.li.living.domain.tools.LivingToolMemory;
+import com.qiqi.li.network.LivingToolHostPacket;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.culling.Frustum;
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Inventory;
@@ -30,16 +34,28 @@ import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
  * 回放时会 {@code MISS}。我们<b>不做浮点余量兜底</b>，而是把它<b>画出来</b> ——
  * 玩家一眼看出偏了，重录一条即可（设计原则：给玩家「信息与手段」，而不是在代码里兜底）。
  *
+ * <h3>为什么画「光带」而不是「线」</h3>
+ * 候选是 {@code RenderType.lines()} + {@code LineStateShard} 调线宽，但
+ * <b>OpenGL core profile 下很多驱动只保证 1.0 像素线宽</b>，调了也可能没效果。
+ * 改为画一个<b>垂直于视线的四边形光带</b>（{@link RenderType#debugQuads()}：纯色、无纹理、
+ * 支持透明、双面可见）：
+ * <ul>
+ *   <li>宽度完全由我们控制，<b>跨驱动一致</b></li>
+ *   <li>半宽随相机距离线性增长 ⇒ <b>屏幕上的粗细大致恒定</b>（近处不爆粗、远处不消失）</li>
+ * </ul>
+ *
  * <h3>关键设计</h3>
  * <ul>
  *   <li><b>纯客户端</b>：记忆组件已 {@code networkSynchronized}，客户端<b>本地重算射线</b>即可，
  *       服务端不需要同步"命中了哪个方块"。</li>
- *   <li><b>只在 F3+B 时显示</b>（{@code L20=f}）：读 {@code shouldRenderHitBoxes()}，
- *       与原版调试碰撞箱同一个开关，纯客户端判断、无需同步。</li>
+ *   <li><b>显示时机</b>（{@code L20}，2026-09-19 修订）：
+ *       <b>手持</b>的活工具<b>始终</b>显示射线；其余宿主（背包非手持槽 / 掉落物）
+ *       只在 <b>F3+B</b>（原版"显示实体碰撞箱"）时显示。
+ *       开关读 {@code shouldRenderHitBoxes()}，纯客户端判断、无需同步。</li>
  *   <li><b>正在挖的时候不用画</b>：{@code ServerLevel#destroyBlockProgress()} 会让客户端
  *       自动显示破坏裂纹（原版能力，零渲染代码）。本渲染器只管"待机 / 未开始挖"时的目标线。</li>
- *   <li><b>不节流、不广播</b>：每帧现算。命中的方块由本地 {@code clip} 近似
- *       （服务端用逐格扫描 + 黑名单，这里只求"给你看一眼"，不必逐位一致）。</li>
+ *   <li><b>命中与否用透明度区分</b>：命中 → 不透明；整条线落空 → 半透明。
+ *       "变暗"本身就是"这条线擦着缝过去了"的信号。</li>
  * </ul>
  *
  * <h3>宿主覆盖范围（v1）</h3>
@@ -56,6 +72,20 @@ public final class LivingToolRayRenderer {
     /** 渲染距离上限（格）。超出就不画，避免远处的箱子刷屏。 */
     private static final double MAX_DISTANCE = 32.0;
 
+    /**
+     * 光带半宽系数：<b>半宽 ≈ 相机到线段中点的距离 × 本系数</b>。
+     *
+     * <p>这样屏幕上的粗细大致恒定：屏幕像素宽 ≈ 半宽 × 2 × (屏高 / (2·tan(FOV/2)·距离))。
+     * 取 0.0025 时，1080p / FOV 70 下约为 <b>4 像素</b>。</p>
+     */
+    private static final double RIBBON_WIDTH_FACTOR = 0.0025;
+
+    /** 半宽下限（格）—— 贴脸时不至于爆粗，同时保证极近距离也看得见。 */
+    private static final double RIBBON_MIN_HALF_WIDTH = 0.015;
+
+    /** 半宽上限（格）—— 极远处不至于糊成一片。 */
+    private static final double RIBBON_MAX_HALF_WIDTH = 0.15;
+
     /** 挖掘记忆（左键）—— 橙红。 */
     private static final float DIG_R = 1.00F;
     private static final float DIG_G = 0.40F;
@@ -66,11 +96,17 @@ public final class LivingToolRayRenderer {
     private static final float USE_G = 0.85F;
     private static final float USE_B = 1.00F;
 
-    /** 命中方块时的不透明度。 */
+    /** 命中方块时的不透明度（实心）。 */
     private static final float ALPHA_HIT = 1.0F;
 
-    /** 整条线都没打到方块时的不透明度（变暗，提示"这条线落空了"）。 */
-    private static final float ALPHA_MISS = 0.25F;
+    /**
+     * 整条线都没打到方块时的不透明度 —— 比命中略淡，用来提示"这条线落空了"。
+     *
+     * <p>⚠️ 别调得太低：玩家录完记忆后只要挪动一步，眼睛位置就变了，射线从新位置射出、
+     * 终点随之偏移，<b>本来命中的记忆也会变成落空</b>。所以"落空"是常态而非异常，
+     * 仍须清晰可辨（初版用了 0.25，实测太淡看不清）。</p>
+     */
+    private static final float ALPHA_MISS = 0.7F;
 
     private LivingToolRayRenderer() {
     }
@@ -79,7 +115,7 @@ public final class LivingToolRayRenderer {
      * 渲染入口 —— 由 {@code LivingItemClient} 转发 {@link RenderLevelStageEvent}。
      *
      * <p>挂在 {@link RenderLevelStageEvent.Stage#AFTER_ENTITIES}：此时地形与实体的深度已写入，
-     * 射线会被箱子/地形<b>正确遮挡</b>。</p>
+     * 光带会被箱子/地形<b>正确遮挡</b>。</p>
      */
     public static void render(RenderLevelStageEvent event) {
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_ENTITIES) {
@@ -91,10 +127,10 @@ public final class LivingToolRayRenderer {
         if (level == null || mc.player == null) {
             return;
         }
-        // L20=f：复用原版 F3+B 开关（与调试碰撞箱同时显示），纯客户端、无需同步
-        if (!mc.getEntityRenderDispatcher().shouldRenderHitBoxes()) {
-            return;
-        }
+
+        // L20 修订：F3+B 只作为【非手持】的开关。
+        // 手持的活工具始终显示 —— 玩家正在拿着它，最需要确认"我记下的方向对不对"。
+        boolean debugHitBoxes = mc.getEntityRenderDispatcher().shouldRenderHitBoxes();
 
         PoseStack poseStack = event.getPoseStack();
         Vec3 cameraPos = event.getCamera().getPosition();
@@ -102,15 +138,19 @@ public final class LivingToolRayRenderer {
         float partialTick = event.getPartialTick().getGameTimeDeltaPartialTick(false);
 
         MultiBufferSource.BufferSource buffers = mc.renderBuffers().bufferSource();
-        VertexConsumer lines = buffers.getBuffer(RenderType.lines());
+        VertexConsumer ribbon = buffers.getBuffer(RenderType.debugQuads());
 
-        boolean drew = false;
-        drew |= renderPlayerHost(mc, poseStack, lines, level, cameraPos, frustum, partialTick);
-        drew |= renderItemEntityHosts(poseStack, lines, level, cameraPos, frustum);
+        boolean drew = renderPlayerHost(mc, poseStack, ribbon, level, cameraPos, frustum,
+            partialTick, debugHitBoxes);
+
+        if (debugHitBoxes) {
+            drew |= renderItemEntityHosts(poseStack, ribbon, level, cameraPos, frustum);
+            drew |= renderContainerHosts(poseStack, ribbon, level, cameraPos, frustum);
+        }
 
         if (drew) {
-            // 必须显式 flush，否则本帧不保证会画出来（原版调试碰撞箱同样如此）
-            buffers.endBatch(RenderType.lines());
+            // 必须显式 flush，否则本帧不保证会画出来
+            buffers.endBatch(RenderType.debugQuads());
         }
     }
 
@@ -118,42 +158,81 @@ public final class LivingToolRayRenderer {
      * 玩家形态：主手 / 副手 / 背包 —— 射线起点统一为<b>眼睛</b>（{@code L3=a}，与录制端一致）。
      *
      * <p>{@code Inventory} 的 {@code getContainerSize()} 已含快捷栏与副手（41 格），
-     * 遍历一遍就够了，无需单独处理手持。</p>
+     * 遍历一遍即可。</p>
+     *
+     * <p><b>手持 vs 其余</b>（{@code L20} 修订）：主手 / 副手上的活工具<b>始终</b>显示；
+     * 其余槽位只在 F3+B 时显示。</p>
      */
-    private static boolean renderPlayerHost(Minecraft mc, PoseStack poseStack, VertexConsumer lines,
-                                            ClientLevel level, Vec3 cameraPos, Frustum frustum, float partialTick) {
+    private static boolean renderPlayerHost(Minecraft mc, PoseStack poseStack, VertexConsumer ribbon,
+                                            ClientLevel level, Vec3 cameraPos, Frustum frustum,
+                                            float partialTick, boolean debugHitBoxes) {
         Vec3 eye = mc.player.getEyePosition(partialTick);
         Inventory inventory = mc.player.getInventory();
 
+        // 用【引用相等】判定手持：Player#getMainHandItem() 最终就是 Inventory#getItem(selected)，
+        // 拿到的是同一个 ItemStack 对象 —— 比反查槽位索引更可靠、也省掉访问 selected 的麻烦。
+        ItemStack mainHand = mc.player.getMainHandItem();
+        ItemStack offHand = mc.player.getOffhandItem();
+
         boolean drew = false;
         for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
-            drew |= renderStack(poseStack, lines, level, cameraPos, frustum, eye, inventory.getItem(slot));
+            ItemStack stack = inventory.getItem(slot);
+            boolean held = stack == mainHand || stack == offHand;
+            if (!held && !debugHitBoxes) {
+                continue;
+            }
+            drew |= renderStack(poseStack, ribbon, level, cameraPos, frustum, eye, stack);
         }
         return drew;
     }
 
-    /** 掉落物形态：起点 = 实体位置（{@code L14=d}）。 */
-    private static boolean renderItemEntityHosts(PoseStack poseStack, VertexConsumer lines,
+    /**
+     * 掉落物形态：起点 = <b>碰撞箱中心</b>（{@code L14=d}）。
+     *
+     * <p>⚠️ 与服务端回放<b>共用</b> {@link ItemEntityContainerContext#rayOrigin} ——
+     * 直接写 {@code entity.position()} 会拿到碰撞箱底部（贴着脚下方块），
+     * 画出来的线会和实际挖的地方不一致。</p>
+     */
+    private static boolean renderItemEntityHosts(PoseStack poseStack, VertexConsumer ribbon,
                                                  ClientLevel level, Vec3 cameraPos, Frustum frustum) {
         boolean drew = false;
         for (Entity entity : level.entitiesForRendering()) {
             if (entity instanceof ItemEntity itemEntity) {
-                drew |= renderStack(poseStack, lines, level, cameraPos, frustum,
-                    itemEntity.position(), itemEntity.getItem());
+                drew |= renderStack(poseStack, ribbon, level, cameraPos, frustum,
+                    ItemEntityContainerContext.rayOrigin(itemEntity), itemEntity.getItem());
             }
         }
         return drew;
     }
 
     /**
-     * 画一个物品堆叠的全部记忆射线（挖掘 + 交互各一条）。
+     * 方块容器形态：起点 = <b>容器方块中心</b>（{@code L14=a}）。
+     *
+     * <p>数据源是 {@link LivingToolHostClientCache}（由 {@code K2} 的 S2C 包填充）——
+     * <b>不开 GUI 时客户端拿不到箱子内容</b>，只能靠服务端同步。</p>
+     */
+    private static boolean renderContainerHosts(PoseStack poseStack, VertexConsumer ribbon,
+                                                ClientLevel level, Vec3 cameraPos, Frustum frustum) {
+        boolean drew = false;
+        for (LivingToolHostPacket.Entry entry
+                : LivingToolHostClientCache.get(level.dimension().location())) {
+            Vec3 origin = Vec3.atCenterOf(entry.pos());
+            for (ItemStack tool : entry.tools()) {
+                drew |= renderStack(poseStack, ribbon, level, cameraPos, frustum, origin, tool);
+            }
+        }
+        return drew;
+    }
+
+    /**
+     * 画一个物品堆叠的全部记忆光带（挖掘 + 交互各一条）。
      *
      * <p>用「活物品 + 有记忆」当判据，而不是查 {@code ItemAbility} ——
      * 只有活工具会被录制记忆，所以这等价且不需要跨包依赖。</p>
      *
      * @return 是否真的画了东西
      */
-    private static boolean renderStack(PoseStack poseStack, VertexConsumer lines, ClientLevel level,
+    private static boolean renderStack(PoseStack poseStack, VertexConsumer ribbon, ClientLevel level,
                                        Vec3 cameraPos, Frustum frustum, Vec3 origin, ItemStack stack) {
         if (stack.isEmpty() || !LivingItemManager.isLivingItem(stack)) {
             return false;
@@ -168,23 +247,23 @@ public final class LivingToolRayRenderer {
 
         boolean drew = false;
         if (memory.dig() != null) {
-            drew |= renderRay(poseStack, lines, level, cameraPos, frustum, origin, memory.dig(),
+            drew |= renderRay(poseStack, ribbon, level, cameraPos, frustum, origin, memory.dig(),
                 DIG_R, DIG_G, DIG_B);
         }
         if (memory.use() != null) {
-            drew |= renderRay(poseStack, lines, level, cameraPos, frustum, origin, memory.use(),
+            drew |= renderRay(poseStack, ribbon, level, cameraPos, frustum, origin, memory.use(),
                 USE_R, USE_G, USE_B);
         }
         return drew;
     }
 
     /**
-     * 画一条记忆射线。
+     * 画一条记忆光带。
      *
-     * <p>本地 {@code clip} 一次求命中点：<b>命中 → 画到命中点（亮）</b>；
-     * <b>落空 → 画到终点（暗）</b> —— 落空变暗正是"这条线擦着缝过去了"的信号。</p>
+     * <p>本地 {@code clip} 一次求命中点：<b>命中 → 画到命中点（不透明）</b>；
+     * <b>落空 → 画到终点（半透明）</b> —— 落空变暗正是"这条线擦着缝过去了"的信号。</p>
      */
-    private static boolean renderRay(PoseStack poseStack, VertexConsumer lines, ClientLevel level,
+    private static boolean renderRay(PoseStack poseStack, VertexConsumer ribbon, ClientLevel level,
                                      Vec3 cameraPos, Frustum frustum, Vec3 origin,
                                      LivingToolMemory.RayMemory ray,
                                      float red, float green, float blue) {
@@ -201,15 +280,27 @@ public final class LivingToolRayRenderer {
 
         Vec3 delta = tip.subtract(origin);
         double length = delta.length();
-        float nx = 0.0F;
-        float ny = 0.0F;
-        float nz = 1.0F;
-        if (length > 1.0E-6) {
-            // 原版 renderLineBox 同款：用边方向当法线（线宽计算依赖它）
-            nx = (float) (delta.x / length);
-            ny = (float) (delta.y / length);
-            nz = (float) (delta.z / length);
+        if (length < 1.0E-6) {
+            return false;
         }
+        Vec3 dir = delta.scale(1.0 / length);
+
+        // 半宽随距离增长 ⇒ 屏幕粗细大致恒定
+        Vec3 mid = origin.lerp(tip, 0.5);
+        double halfWidth = Mth.clamp(mid.distanceTo(cameraPos) * RIBBON_WIDTH_FACTOR,
+            RIBBON_MIN_HALF_WIDTH, RIBBON_MAX_HALF_WIDTH);
+
+        // 光带的横向轴 = 线方向 × 视线方向 ⇒ 光带平面始终"侧对"玩家，任何角度看都是条粗线
+        Vec3 toCamera = cameraPos.subtract(mid);
+        Vec3 side = dir.cross(toCamera);
+        if (side.lengthSqr() < 1.0E-6) {
+            // 退化：视线与线几乎平行（此时线在屏幕上本就是个点）
+            side = dir.cross(new Vec3(0.0, 1.0, 0.0));
+            if (side.lengthSqr() < 1.0E-6) {
+                side = dir.cross(new Vec3(1.0, 0.0, 0.0));
+            }
+        }
+        side = side.normalize().scale(halfWidth);
 
         float alpha = landed ? ALPHA_HIT : ALPHA_MISS;
 
@@ -217,12 +308,17 @@ public final class LivingToolRayRenderer {
         // 事件给的 PoseStack 已是【相机相对】坐标，故只需平移到线的起点
         poseStack.translate(origin.x - cameraPos.x, origin.y - cameraPos.y, origin.z - cameraPos.z);
         PoseStack.Pose pose = poseStack.last();
-        lines.addVertex(pose, 0.0F, 0.0F, 0.0F)
-            .setColor(red, green, blue, alpha)
-            .setNormal(pose, nx, ny, nz);
-        lines.addVertex(pose, (float) delta.x, (float) delta.y, (float) delta.z)
-            .setColor(red, green, blue, alpha)
-            .setNormal(pose, nx, ny, nz);
+
+        // 四个角（相对起点）：起点两侧 → 终点两侧
+        ribbon.addVertex(pose, (float) -side.x, (float) -side.y, (float) -side.z)
+            .setColor(red, green, blue, alpha);
+        ribbon.addVertex(pose, (float) side.x, (float) side.y, (float) side.z)
+            .setColor(red, green, blue, alpha);
+        ribbon.addVertex(pose, (float) (delta.x + side.x), (float) (delta.y + side.y), (float) (delta.z + side.z))
+            .setColor(red, green, blue, alpha);
+        ribbon.addVertex(pose, (float) (delta.x - side.x), (float) (delta.y - side.y), (float) (delta.z - side.z))
+            .setColor(red, green, blue, alpha);
+
         poseStack.popPose();
 
         return true;

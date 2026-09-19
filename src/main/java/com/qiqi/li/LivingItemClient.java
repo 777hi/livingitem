@@ -2,6 +2,7 @@ package com.qiqi.li;
 
 import com.mojang.datafixers.util.Either;
 import com.qiqi.li.client.icon.LivingIconRegistry;
+import com.qiqi.li.living.domain.tools.LivingToolHostClientCache;
 import com.qiqi.li.client.render.LivingChestTooltipRenderer;
 import com.qiqi.li.client.render.LivingToolRayRenderer;
 import com.qiqi.li.client.render.LivingWaxedCopperTooltipRenderer;
@@ -28,6 +29,7 @@ import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.neoforge.client.event.ModelEvent;
 import net.neoforged.neoforge.client.event.RegisterItemDecorationsEvent;
+import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import net.neoforged.neoforge.client.event.RenderTooltipEvent;
 import net.neoforged.neoforge.client.gui.ConfigurationScreen;
@@ -116,6 +118,18 @@ public class LivingItemClient {
 
         event.getTooltipElements().add(
             Either.right(LivingWaxedCopperTooltipComponent.from(generatorDataFor(stack), stack.getCount())));
+    }
+
+    /**
+     * 登录世界时清空 {@code K2} 的容器同步缓存。
+     *
+     * <p>维度校验只能挡住"同存档换维度"，挡不住"退出存档 → 进另一个存档"
+     * （单人游戏常见，且不重启 JVM）—— 两者可能都是主世界，维度相同。
+     * 不清就会把上一个存档的活工具残留渲染出来。</p>
+     */
+    @SubscribeEvent
+    static void onClientLogin(ClientPlayerNetworkEvent.LoggingIn event) {
+        LivingToolHostClientCache.clear();
     }
 
     /**

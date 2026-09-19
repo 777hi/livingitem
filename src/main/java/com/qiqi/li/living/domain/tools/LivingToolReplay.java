@@ -66,8 +66,15 @@ public final class LivingToolReplay {
     @Nullable
     public static ItemStack replayDig(ItemStack tool, @Nullable LivingToolMemory.RayMemory ray,
                                       Vec3 origin, Set<BlockPos> hostBlocks, ServerLevel level, long now) {
+        // 上一 tick 的挖掘状态：任何「停止 / 换目标」的路径都要据此清理残留的破坏裂纹（L47）
+        LivingToolProgress previous = LivingItemManager.getToolProgress(tool);
+
+        // FakePlayer 提前取（走缓存）：清理裂纹需要它的实体 id ——
+        // 客户端的破坏裂纹是按【实体 id】索引的，不是按方块位置
+        LivingToolFakePlayer fake = LivingToolFakePlayerCache.get(level, LivingItemManager.getToolOwner(tool));
+
         if (ray == null) {
-            LivingItemManager.setToolProgress(tool, null);
+            stopDigging(tool, previous, level, fake);
             return null;
         }
 
@@ -80,14 +87,14 @@ public final class LivingToolReplay {
             // 触发场景：玩家录了「很短」的记忆（典型是挖头顶的方块，眼睛到方块仅约 0.4 格），
             // 回放时终点仍在宿主方块内。玩家主动为之，视为玩法而非异常。
             BlockPos endPos = BlockPos.containing(end);
-            if (hostBlocks.contains(endPos) && !level.isEmptyBlock(endPos)) {
+            if (hostBlocks.contains(endPos) && !isOpenSpace(level, endPos)) {
                 target = endPos;
             }
         }
 
         if (target == null) {
             // L7：路径上没有可挖的方块就停
-            LivingItemManager.setToolProgress(tool, null);
+            stopDigging(tool, previous, level, fake);
             return null;
         }
 
@@ -95,20 +102,25 @@ public final class LivingToolReplay {
 
         if (!ray.matches(state.getBlock())) {
             // L4 / L8：蹲下记过类型但不匹配 → 停（去皮 / 耕地后天然停止正是靠这里）
-            LivingItemManager.setToolProgress(tool, null);
+            stopDigging(tool, previous, level, fake);
             return null;
         }
 
-        // 2) 进度：目标是新的就重置（L23）
-        LivingToolProgress progress = LivingItemManager.getToolProgress(tool);
-        boolean freshStart = progress == null || !progress.isFor(target);
+        // 2) 进度：目标是新的就重置（L23）。
+        //    换目标时旧目标上的裂纹要顺手清掉，否则会永久残留（L47）。
+        boolean freshStart = previous == null || !previous.isFor(target);
+        LivingToolProgress progress;
         if (freshStart) {
+            if (previous != null) {
+                level.destroyBlockProgress(fake.getId(), previous.target(), -1);
+            }
             progress = new LivingToolProgress(target, now);
             LivingItemManager.setToolProgress(tool, progress);
+        } else {
+            progress = previous;
         }
 
-        // 3) 取 FakePlayer 并配置（L26 / L28）
-        LivingToolFakePlayer fake = LivingToolFakePlayerCache.get(level, LivingItemManager.getToolOwner(tool));
+        // 3) 配置 FakePlayer（L26 / L28）
         fake.setPos(origin.x, origin.y, origin.z);
         fake.setOnGround(true);   // L28：不设会被原版判为"离地"→ 速度 /5
         ItemStack held = tool.copy();
@@ -126,7 +138,7 @@ public final class LivingToolReplay {
 
             if (CommonHooks.onLeftClickBlock(fake, target, face,
                     ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK).isCanceled()) {
-                LivingItemManager.setToolProgress(tool, null);
+                stopDigging(tool, progress, level, fake);
                 return null;
             }
             state.attack(level, target, fake);
@@ -139,7 +151,7 @@ public final class LivingToolReplay {
         float perTick = state.getDestroyProgress(fake, level, target);
         if (perTick <= 0.0F) {
             // 挖不动（基岩 / 硬度 -1）
-            LivingItemManager.setToolProgress(tool, null);
+            stopDigging(tool, progress, level, fake);
             return null;
         }
         float total = perTick * (float) (now - progress.startTick() + 1);
@@ -156,8 +168,34 @@ public final class LivingToolReplay {
         gameMode.destroyBlock(target);
         level.destroyBlockProgress(fake.getId(), target, -1);
         LivingItemManager.setToolProgress(tool, null);
+        // ⚠️ held 是「写进度之后」才 copy 的副本，两边的进度必须一起清 ——
+        //    否则写回槽位的是带残留进度的那份，下一 tick 会误判为「已经挖了很久」而瞬间破坏
+        LivingItemManager.setToolProgress(held, null);
 
         return held;   // 调用方负责写回容器（可能已因 F3 损坏为空）
+    }
+
+    /**
+     * 停止挖掘 —— 清掉残留在旧目标上的破坏裂纹，并复位进度组件（{@code L47}）。
+     *
+     * <p>⚠️ <b>为什么必须自己清裂纹</b>：原版靠 {@code ServerPlayerGameMode#tick()} 里
+     * 「正在挖但方块已变空气 → {@code destroyBlockProgress(-1)}」那一段收尾，
+     * 而 <b>FakePlayer 的 {@code tick()} 是空实现</b>（tech 文档 §9.5）。
+     * 少了这一步，只要工具挖到一半、方块被移除（玩家挖走 / 活塞推走 / 变成空气），
+     * <b>破坏裂纹就会永久停在那个位置</b> —— 裂纹是 10 张固定纹理，
+     * 客户端渲染时<b>并不检查</b>那个位置现在还是不是方块。</p>
+     *
+     * <p>本方法在 {@code replayDig} 的<b>每一条「停」的路径</b>上调用：
+     * 无记忆 / 路径上没方块 / 类型不匹配 / 事件被取消 / 挖不动。</p>
+     *
+     * @param previous 上一 tick 的进度（据此定位要清理哪个位置）；{@code null} 表示本来就没在挖
+     */
+    private static void stopDigging(ItemStack tool, @Nullable LivingToolProgress previous,
+                                    ServerLevel level, LivingToolFakePlayer fake) {
+        if (previous != null) {
+            level.destroyBlockProgress(fake.getId(), previous.target(), -1);
+        }
+        LivingItemManager.setToolProgress(tool, null);
     }
 
     /**
@@ -249,21 +287,46 @@ public final class LivingToolReplay {
         }
         Vec3 dir = delta.scale(1.0 / length);
 
-        BlockPos previous = null;
-        for (double t = 0.0; t <= length; t += SCAN_STEP) {
-            BlockPos current = BlockPos.containing(origin.add(dir.scale(t)));
-            if (current.equals(previous)) {
-                continue;   // 还在同一格
-            }
-            previous = current;
+        for (double t = 0.0; t < length; t += SCAN_STEP) {
+            Vec3 from = origin.add(dir.scale(t));
+            Vec3 to = origin.add(dir.scale(Math.min(t + SCAN_STEP, length)));
+            BlockPos current = BlockPos.containing(from);
 
             if (blacklist.contains(current)) {
-                continue;   // 黑名单：直接无视，继续往外找
+                continue;   // 黑名单（宿主自己）：直接无视，继续往外找
             }
-            if (!level.isEmptyBlock(current)) {
-                return current;
+            if (isOpenSpace(level, current)) {
+                continue;   // 空气 / 纯流体：不是挖掘目标
             }
+            // ⭐ 形状求交 —— 只有射线【真的穿过该格的形状】才算命中。
+            //    少了这一步，只按"格子非空气"判定会出错：非满高方块（半砖 / 台阶 / 楼梯）
+            //    只占格子的下半，而射线可能从它的【上半格空气部分】穿过。
+            //    这正是"客户端 clip 画得出线、服务端却当成命中半砖"的分歧来源。
+            //    ⚠️ 这里必须与客户端可视化用同一套判据（客户端走 level.clip = 形状求交）。
+            if (level.getBlockState(current).getShape(level, current).clip(from, to, current) == null) {
+                continue;
+            }
+            return current;
         }
         return null;
+    }
+
+    /**
+     * 该位置对射线而言是否「可穿过」—— 空气，或<b>纯流体</b>（水 / 岩浆）。
+     *
+     * <p>⚠️ <b>不能只用 {@code level.isEmptyBlock()}</b>（它判的是 {@code isAir()}）：
+     * <b>水方块不是空气</b>。掉落物泡在水里时，射线会在 {@code t=0} 就命中水、
+     * 或者在水下被水体挡住，表现为<b>"在水里不挖"</b>。</p>
+     *
+     * <p>判据用「<b>有流体且无碰撞箱</b>」而不是「有流体」，是为了不误伤
+     * <b>充水方块</b>（waterlogged 台阶 / 楼梯）—— 它们同样持有流体状态，
+     * 但有碰撞箱，属于应当可挖的目标。</p>
+     */
+    private static boolean isOpenSpace(ServerLevel level, BlockPos pos) {
+        BlockState state = level.getBlockState(pos);
+        if (state.isAir()) {
+            return true;
+        }
+        return !state.getFluidState().isEmpty() && state.getCollisionShape(level, pos).isEmpty();
     }
 }

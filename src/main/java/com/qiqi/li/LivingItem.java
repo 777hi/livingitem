@@ -9,6 +9,7 @@ import com.qiqi.li.living.transfer.ContainerRuleConfig;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.RandomizableContainer;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.ChunkPos;
 import org.slf4j.Logger;
@@ -56,6 +57,7 @@ import java.util.List;
 import java.util.Set;
 import com.qiqi.li.living.container.ContainerChunkCache;
 import com.qiqi.li.living.container.ContainerLivingItemHandler;
+import com.qiqi.li.living.container.ItemEntityContainerContext;
 import com.qiqi.li.network.LivingTagPacket;
 import com.qiqi.li.network.HopperDirectionPacket;
 import com.qiqi.li.network.SlotDirectionPacket;
@@ -67,6 +69,7 @@ import com.qiqi.li.network.LivingMapMetadataPacket;
 import com.qiqi.li.network.LivingMapGuiTeleportPacket;
 import com.qiqi.li.network.LivingItemSyncPacket;
 import com.qiqi.li.network.ToolMemoryClearPacket;
+import com.qiqi.li.network.LivingToolHostPacket;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.compat.create.ModCreate;
 import com.qiqi.li.living.domain.furnace.LivingFurnaceFunction;
@@ -95,6 +98,7 @@ import com.qiqi.li.living.interaction.PlantCropHandler;
 import com.qiqi.li.living.interaction.BonemealHandler;
 import com.qiqi.li.living.domain.farmland.CropClassifier;
 import com.qiqi.li.living.domain.tools.LivingToolFakePlayerCache;
+import com.qiqi.li.living.domain.tools.LivingToolHostSync;
 import com.qiqi.li.living.domain.tools.LivingToolFunction;
 import com.qiqi.li.living.domain.tools.LivingToolRecorder;
 import com.qiqi.li.living.domain.farmland.Tillables;
@@ -325,10 +329,39 @@ public class LivingItem {
 
         for (var level : server.getAllLevels()) {
             processLevelContainers(level);
+            processItemEntityContainers(level);
+            // K2：必须在容器处理【之后】flush，才能收齐本 tick 的登记
+            LivingToolHostSync.flush(level);
         }
 
         // 待炸账本：按区块分帧推进爆炸破坏（已加载的按预算处理，未加载的等自然加载）
         ExplosionLedger.flushAll(server);
+    }
+
+    /**
+     * 掉落物形态（{@code L-f}）—— 遍历世界中「装着活工具」的掉落物并 tick。
+     *
+     * <p>复用现成的容器 tick 管线（{@link ItemEntityContainerContext} 把掉落物包装成<b>单栈容器</b>），
+     * 因此回放逻辑与容器形态<b>完全同源</b>，没有第二套平行实现。</p>
+     *
+     * <p><b>为什么直接遍历实体、不建索引</b>：{@link ContainerChunkCache} 那套区块级缓存
+     * 依赖"方块容器位置稳定"；而掉落物会移动、会被合并、会被卸载，
+     * 维护索引的失效成本高于收益。{@code getAllEntities()} 是 O(实体数) 的浅遍历，
+     * 绝大多数在 {@code instanceof} 处短路，开销可忽略。</p>
+     *
+     * <p>⚠️ <b>只处理活工具</b>：其它活物品的功能类都假定自己有方块坐标
+     * （从 {@code getBlockPos()} 取），放进掉落物上下文会拿到 {@code null}。
+     * 要让更多活物品支持掉落物形态，得先给 {@code LivingItemFunction} 加宿主能力声明 ——
+     * 属于另一个话题，不在 {@code L-f} 范围内。</p>
+     */
+    private void processItemEntityContainers(ServerLevel level) {
+        for (var entity : level.getAllEntities()) {
+            if (entity instanceof ItemEntity itemEntity
+                    && LivingToolRecorder.isLivingTool(itemEntity.getItem())) {
+                ContainerLivingItemHandler.processContext(
+                    new ItemEntityContainerContext(itemEntity, level), level);
+            }
+        }
     }
 
     private void processLevelContainers(ServerLevel level) {
@@ -417,6 +450,9 @@ public class LivingItem {
         registrar.playToServer(ToolMemoryClearPacket.TYPE, ToolMemoryClearPacket.STREAM_CODEC, ToolMemoryClearPacket::handle);
         // 服务端 → 客户端：下发容器运行时数据（由 ContainerRuntimeCache.flushToClients 发送）
         registrar.playToClient(LivingItemSyncPacket.TYPE, LivingItemSyncPacket.STREAM_CODEC, LivingItemSyncPacket::handle);
+        // 活工具（K2）：近处方块容器里的活工具清单（位置 + ItemStack），
+        // 供客户端渲染记忆射线与（未来的）悬浮模型 —— 不开 GUI 时客户端拿不到箱子内容
+        registrar.playToClient(LivingToolHostPacket.TYPE, LivingToolHostPacket.STREAM_CODEC, LivingToolHostPacket::handle);
     }
 
     @SubscribeEvent
@@ -442,6 +478,8 @@ public class LivingItem {
         ExplosionLedger.clearAllRuntimeState(event.getServer());
         // 活工具的 FakePlayer 缓存（L26）：维度+主人 keyed，跨存档必须清
         LivingToolFakePlayerCache.clear();
+        // 活工具容器同步（K2）：每个玩家的"上次发出内容"，跨存档必须清
+        LivingToolHostSync.clear();
         LOGGER.info("Cleared living item caches on server stop");
     }
 
