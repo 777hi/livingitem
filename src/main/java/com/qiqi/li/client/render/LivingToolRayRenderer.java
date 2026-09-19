@@ -1,5 +1,7 @@
 package com.qiqi.li.client.render;
 
+import java.util.List;
+
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.qiqi.li.living.api.LivingItemManager;
@@ -214,14 +216,33 @@ public final class LivingToolRayRenderer {
     private static boolean renderContainerHosts(PoseStack poseStack, VertexConsumer ribbon,
                                                 ClientLevel level, Vec3 cameraPos, Frustum frustum) {
         boolean drew = false;
-        for (LivingToolHostPacket.Entry entry
-                : LivingToolHostClientCache.get(level.dimension().location())) {
+        List<LivingToolHostPacket.Entry> hosts =
+            LivingToolHostClientCache.get(level.dimension().location());
+        int toolCount = 0;
+        for (LivingToolHostPacket.Entry entry : hosts) {
             Vec3 origin = Vec3.atCenterOf(entry.pos());
-            for (ItemStack tool : entry.tools()) {
-                drew |= renderStack(poseStack, ribbon, level, cameraPos, frustum, origin, tool);
+            for (LivingToolHostPacket.ToolRay tool : entry.tools()) {
+                toolCount++;
+                drew |= renderStackFromTarget(poseStack, ribbon, cameraPos, frustum, origin, tool);
             }
         }
+        if (!hosts.isEmpty()) {
+            logThrottled(hosts.size(), toolCount, drew);
+        }
         return drew;
+    }
+
+    /** 诊断用：每 2 秒最多打一条，避免刷屏。定位后连同调用一起删除。 */
+    private static long lastLogMs;
+
+    private static void logThrottled(int hostCount, int toolCount, boolean drew) {
+        long now = System.currentTimeMillis();
+        if (now - lastLogMs < 2000L) {
+            return;
+        }
+        lastLogMs = now;
+        com.qiqi.li.LivingItem.LOGGER.info("[K2] 渲染：宿主 {} 个 / 工具 {} 件 / 实际绘制 {}",
+            hostCount, toolCount, drew);
     }
 
     /**
@@ -258,10 +279,54 @@ public final class LivingToolRayRenderer {
     }
 
     /**
-     * 画一条记忆光带。
+     * 容器形态：只画<b>记忆射线本身</b>，客户端<b>不做任何几何计算</b>（{@code L48}）。
      *
-     * <p>本地 {@code clip} 一次求命中点：<b>命中 → 画到命中点（不透明）</b>；
-     * <b>落空 → 画到终点（半透明）</b> —— 落空变暗正是"这条线擦着缝过去了"的信号。</p>
+     * <p>与 {@link #renderStack} 的区别：那里本地 {@code clip} 求命中点（起点在空气中，
+     * {@code clip} 天然正确）；这里起点埋在方块里不能 {@code clip}，但<b>也不需要</b> ——
+     * 终点就是记忆终点 {@code origin + offset}，<b>恒定</b>。</p>
+     *
+     * <p>⭐ <b>刻意不截断到目标方块</b>：曾把终点画到目标方块中心，结果射线<b>跟着目标跳</b>
+     * （挖完一格跳下一格），背离 {@code L19}「把记忆画出来、让玩家看出偏没偏」的初衷。
+     * 射进方块的那一段由<b>深度测试</b>免费挡掉，视觉上照样"停在表面"。</p>
+     *
+     * <p>命中与否只影响透明度，由服务端的布尔决定 —— 客户端不推演任何东西。</p>
+     */
+    private static boolean renderStackFromTarget(PoseStack poseStack, VertexConsumer ribbon,
+                                                 Vec3 cameraPos, Frustum frustum, Vec3 origin,
+                                                 LivingToolHostPacket.ToolRay tool) {
+        ItemStack stack = tool.stack();
+        if (stack.isEmpty() || !LivingItemManager.isLivingItem(stack)) {
+            return false;
+        }
+        LivingToolMemory memory = LivingItemManager.getToolMemory(stack);
+        if (memory.isEmpty()) {
+            return false;
+        }
+        if (origin.distanceToSqr(cameraPos) > MAX_DISTANCE * MAX_DISTANCE) {
+            return false;   // 距离裁剪
+        }
+
+        // ⭐ 只画【记忆射线本身】：origin → origin + offset —— 恒定，不随挖掘目标变化
+        boolean drew = false;
+        if (memory.dig() != null) {
+            drew |= drawRibbon(poseStack, ribbon, cameraPos, frustum, origin,
+                memory.dig().endpointFrom(origin), tool.digLanded(), DIG_R, DIG_G, DIG_B);
+        }
+        if (memory.use() != null) {
+            drew |= drawRibbon(poseStack, ribbon, cameraPos, frustum, origin,
+                memory.use().endpointFrom(origin), tool.useLanded(), USE_R, USE_G, USE_B);
+        }
+        return drew;
+    }
+
+    /**
+     * 玩家 / 掉落物形态：起点在空气中 → 本地 {@code clip} 一次求命中点。
+     *
+     * <p><b>命中 → 画到命中点（不透明）</b>；<b>落空 → 画到终点（半透明）</b> ——
+     * 落空变暗正是"这条线擦着缝过去了"的信号。</p>
+     *
+     * <p>⚠️ 只适用于<b>起点在空气中</b>的形态。容器形态起点埋在方块里，
+     * {@code clip} 会立刻自命中 ⇒ 必须走 {@link #renderStackFromTarget}（{@code L47}）。</p>
      */
     private static boolean renderRay(PoseStack poseStack, VertexConsumer ribbon, ClientLevel level,
                                      Vec3 cameraPos, Frustum frustum, Vec3 origin,
@@ -271,14 +336,20 @@ public final class LivingToolRayRenderer {
         BlockHitResult hit = level.clip(new ClipContext(
             origin, end, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, CollisionContext.empty()));
         boolean landed = hit.getType() == HitResult.Type.BLOCK;
-        Vec3 tip = landed ? hit.getLocation() : end;
+        return drawRibbon(poseStack, ribbon, cameraPos, frustum, origin,
+            landed ? hit.getLocation() : end, landed, red, green, blue);
+    }
 
+    /** 画一条光带（{@code start → tip}）：命中实心、落空半透明。 */
+    private static boolean drawRibbon(PoseStack poseStack, VertexConsumer ribbon,
+                                      Vec3 cameraPos, Frustum frustum, Vec3 start, Vec3 tip,
+                                      boolean landed, float red, float green, float blue) {
         // 视锥裁剪（用线段包围盒近似）
-        if (!frustum.isVisible(new AABB(origin, tip))) {
+        if (!frustum.isVisible(new AABB(start, tip))) {
             return false;
         }
 
-        Vec3 delta = tip.subtract(origin);
+        Vec3 delta = tip.subtract(start);
         double length = delta.length();
         if (length < 1.0E-6) {
             return false;
@@ -286,7 +357,7 @@ public final class LivingToolRayRenderer {
         Vec3 dir = delta.scale(1.0 / length);
 
         // 半宽随距离增长 ⇒ 屏幕粗细大致恒定
-        Vec3 mid = origin.lerp(tip, 0.5);
+        Vec3 mid = start.lerp(tip, 0.5);
         double halfWidth = Mth.clamp(mid.distanceTo(cameraPos) * RIBBON_WIDTH_FACTOR,
             RIBBON_MIN_HALF_WIDTH, RIBBON_MAX_HALF_WIDTH);
 
@@ -306,7 +377,7 @@ public final class LivingToolRayRenderer {
 
         poseStack.pushPose();
         // 事件给的 PoseStack 已是【相机相对】坐标，故只需平移到线的起点
-        poseStack.translate(origin.x - cameraPos.x, origin.y - cameraPos.y, origin.z - cameraPos.z);
+        poseStack.translate(start.x - cameraPos.x, start.y - cameraPos.y, start.z - cameraPos.z);
         PoseStack.Pose pose = poseStack.last();
 
         // 四个角（相对起点）：起点两侧 → 终点两侧
@@ -323,4 +394,5 @@ public final class LivingToolRayRenderer {
 
         return true;
     }
+
 }

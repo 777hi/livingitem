@@ -80,17 +80,7 @@ public final class LivingToolReplay {
 
         // 1) 沿记忆射线扫描（终点 = 宿主 + offset），命中第一个「非空气且不在黑名单」的方块
         Vec3 end = ray.endpointFrom(origin);
-        BlockPos target = scanForTarget(origin, end, hostBlocks, level);
-
-        if (target == null) {
-            // 路径上没有外部目标 —— 若射线终点就落在宿主自身，则允许挖自己的家（{@code L42}）。
-            // 触发场景：玩家录了「很短」的记忆（典型是挖头顶的方块，眼睛到方块仅约 0.4 格），
-            // 回放时终点仍在宿主方块内。玩家主动为之，视为玩法而非异常。
-            BlockPos endPos = BlockPos.containing(end);
-            if (hostBlocks.contains(endPos) && !isOpenSpace(level, endPos)) {
-                target = endPos;
-            }
-        }
+        BlockPos target = resolveDigTarget(ray, origin, hostBlocks, level);
 
         if (target == null) {
             // L7：路径上没有可挖的方块就停
@@ -229,7 +219,7 @@ public final class LivingToolReplay {
         }
 
         Vec3 end = ray.endpointFrom(origin);
-        BlockPos target = scanForTarget(origin, end, blacklist, level);
+        BlockPos target = resolveUseTarget(ray, origin, blacklist, level);
         if (target == null) {
             return null;   // L8：没有可交互的方块就停
         }
@@ -278,6 +268,48 @@ public final class LivingToolReplay {
      * @param blacklist 不受影响的方块（当前传的是宿主自身，可按需扩展）
      * @return 目标方块；{@code null} = 路径上无可挖方块（对应 {@code L7} 的"没方块就停"）
      */
+    /**
+     * 求<b>挖掘</b>记忆射线的命中目标 ——
+     * <b>回放与客户端可视化共用的唯一判据来源</b>（{@code L48}）。
+     *
+     * <p>⚠️ <b>客户端不要自己重算</b>：服务端这套判据有「宿主黑名单 / 流体 / 形状求交」三层
+     * （见 {@link #scanForTarget}），在客户端复刻<b>必然逐步走偏</b> —— 已实测踩过一次：
+     * {@code L47} 容器起点埋在方块里，客户端 {@code clip} 立刻自命中 ⇒ 光带缩成一个点。
+     * 改为<b>服务端算完把结果同步给客户端</b>，客户端只负责画。</p>
+     */
+    @Nullable
+    public static BlockPos resolveDigTarget(@Nullable LivingToolMemory.RayMemory ray, Vec3 origin,
+                                            Set<BlockPos> hostBlocks, ServerLevel level) {
+        if (ray == null) {
+            return null;
+        }
+        Vec3 end = ray.endpointFrom(origin);
+        BlockPos target = scanForTarget(origin, end, hostBlocks, level);
+        if (target == null) {
+            // 路径上没有外部目标 —— 若射线终点就落在宿主自身，则允许挖自己的家（{@code L42}）。
+            // 触发场景：玩家录了「很短」的记忆（典型是挖头顶的方块，眼睛到方块仅约 0.4 格），
+            // 回放时终点仍在宿主方块内。玩家主动为之，视为玩法而非异常。
+            BlockPos endPos = BlockPos.containing(end);
+            if (hostBlocks.contains(endPos) && !isOpenSpace(level, endPos)) {
+                target = endPos;
+            }
+        }
+        return target;
+    }
+
+    /**
+     * 求<b>交互</b>记忆射线的命中目标（同 {@link #resolveDigTarget}，但<b>不含</b>
+     * {@code L42} 的"挖自己的家"兜底 —— 交互侧没有这条规则）。
+     */
+    @Nullable
+    public static BlockPos resolveUseTarget(@Nullable LivingToolMemory.RayMemory ray, Vec3 origin,
+                                            Set<BlockPos> hostBlocks, ServerLevel level) {
+        if (ray == null) {
+            return null;
+        }
+        return scanForTarget(origin, ray.endpointFrom(origin), hostBlocks, level);
+    }
+
     @Nullable
     private static BlockPos scanForTarget(Vec3 origin, Vec3 end, Set<BlockPos> blacklist, ServerLevel level) {
         Vec3 delta = end.subtract(origin);

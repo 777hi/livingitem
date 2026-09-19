@@ -5,8 +5,10 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
+import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.network.LivingToolHostPacket;
 
 import net.minecraft.core.BlockPos;
@@ -50,7 +52,7 @@ public final class LivingToolHostSync {
     public static final double RADIUS = 32.0;
 
     /** 本 tick 收集到的「有活工具的容器」；由 {@link #flush} 取走并清空。 */
-    private static final Map<BlockPos, List<ItemStack>> current = new LinkedHashMap<>();
+    private static final Map<BlockPos, List<LivingToolHostPacket.ToolRay>> current = new LinkedHashMap<>();
 
     /** 每个玩家上次发出的条目（用于内容去重）。 */
     private static final Map<UUID, List<LivingToolHostPacket.Entry>> lastSent = new HashMap<>();
@@ -67,13 +69,14 @@ public final class LivingToolHostSync {
      * <p>⚠️ 这里<b>必须 copy</b>：直接存引用会导致服务端后续修改它（如扣耐久）
      * 时，{@link #lastSent} 里那份也跟着变 ⇒ 去重比较失效、永远检测不到变化。</p>
      */
-    public static void report(BlockPos pos, List<ItemStack> tools) {
+    public static void report(BlockPos pos, List<LivingToolHostPacket.ToolRay> tools) {
         if (pos == null || tools == null || tools.isEmpty()) {
             return;
         }
-        List<ItemStack> copy = new ArrayList<>(tools.size());
-        for (ItemStack tool : tools) {
-            copy.add(tool.copy());
+        List<LivingToolHostPacket.ToolRay> copy = new ArrayList<>(tools.size());
+        for (LivingToolHostPacket.ToolRay tool : tools) {
+            copy.add(new LivingToolHostPacket.ToolRay(
+                tool.stack().copy(), tool.digLanded(), tool.useLanded()));
         }
         current.put(pos.immutable(), copy);
     }
@@ -100,6 +103,8 @@ public final class LivingToolHostSync {
             List<LivingToolHostPacket.Entry> mine = filterInRange(all, player);
             if (!same(mine, lastSent.get(player.getUUID()))) {
                 player.connection.send(new LivingToolHostPacket(dimension, mine));
+                com.qiqi.li.LivingItem.LOGGER.info("[K2] 发送 {}/{} 个宿主 给 {}（维度 {}）",
+                    mine.size(), all.size(), player.getName().getString(), dimension);
             }
             next.put(player.getUUID(), mine);
         }
@@ -120,7 +125,7 @@ public final class LivingToolHostSync {
             return List.of();
         }
         List<LivingToolHostPacket.Entry> snapshot = new ArrayList<>(current.size());
-        for (Map.Entry<BlockPos, List<ItemStack>> e : current.entrySet()) {
+        for (Map.Entry<BlockPos, List<LivingToolHostPacket.ToolRay>> e : current.entrySet()) {
             snapshot.add(new LivingToolHostPacket.Entry(e.getKey(), e.getValue()));
         }
         current.clear();
@@ -140,7 +145,14 @@ public final class LivingToolHostSync {
         return out;
     }
 
-    /** 逐项比较（位置 + {@code ItemStack.matches}）。条目是个位数，开销可忽略。 */
+    /**
+     * 逐项比较（位置 + 工具的<b>渲染等价性</b>）。条目是个位数，开销可忽略。
+     *
+     * <p>⚠️ <b>为什么不用 {@code ItemStack.matches}</b>：本包<b>只为渲染服务</b>（画记忆射线），
+     * 但 {@code ItemStack.matches} 会比较<b>全部组件</b>，而容器里的活工具每 tick 都在被
+     * 写入 {@code LIVING_TOOL_PROGRESS}（挖掘进度）与耐久 ⇒ "内容永远在变"、去重彻底失效。
+     * 实测（2026-09-19 日志）确实退化为<b>每 tick 发一个包</b>。</p>
+     */
     private static boolean same(List<LivingToolHostPacket.Entry> a,
                                 List<LivingToolHostPacket.Entry> b) {
         if (b == null || a.size() != b.size()) {
@@ -152,17 +164,39 @@ public final class LivingToolHostSync {
             if (!x.pos().equals(y.pos())) {
                 return false;
             }
-            List<ItemStack> xt = x.tools();
-            List<ItemStack> yt = y.tools();
+            List<LivingToolHostPacket.ToolRay> xt = x.tools();
+            List<LivingToolHostPacket.ToolRay> yt = y.tools();
             if (xt.size() != yt.size()) {
                 return false;
             }
             for (int j = 0; j < xt.size(); j++) {
-                if (!ItemStack.matches(xt.get(j), yt.get(j))) {
+                if (!sameRay(xt.get(j), yt.get(j))) {
                     return false;
                 }
             }
         }
         return true;
+    }
+
+    /** 一把工具的同步条目是否等价 —— 命中布尔 + 渲染关心的物品字段。 */
+    private static boolean sameRay(LivingToolHostPacket.ToolRay a, LivingToolHostPacket.ToolRay b) {
+        return a.digLanded() == b.digLanded()
+            && a.useLanded() == b.useLanded()
+            && sameTool(a.stack(), b.stack());
+    }
+
+    /**
+     * 两把工具是否「渲染等价」—— 只比渲染真正用到的：<b>物品种类 + 记忆</b>。
+     *
+     * <p>耐久、挖掘进度等与渲染无关，比较它们只会带来无意义的重发（见 {@link #same}）。</p>
+     */
+    private static boolean sameTool(ItemStack a, ItemStack b) {
+        if (a.isEmpty() || b.isEmpty()) {
+            return a.isEmpty() && b.isEmpty();
+        }
+        if (a.getItem() != b.getItem()) {
+            return false;
+        }
+        return Objects.equals(LivingItemManager.getToolMemory(a), LivingItemManager.getToolMemory(b));
     }
 }

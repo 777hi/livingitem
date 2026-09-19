@@ -13,6 +13,7 @@ import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.ItemEntityContainerContext;
 import com.qiqi.li.living.container.SimpleContainerContext;
 import com.qiqi.li.living.container.TickContext;
+import com.qiqi.li.network.LivingToolHostPacket;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
@@ -78,9 +79,17 @@ public class LivingToolFunction implements LivingItemFunction {
         // K2：登记「本容器有活工具」，供客户端同步（容器形态的射线可视化 / 未来的悬浮渲染）。
         // 只在【方块容器】形态上报 —— 玩家背包与掉落物客户端本来就知道，无需同步。
         if (hostPos != null) {
-            List<ItemStack> tools = new ArrayList<>(entries.size());
+            List<LivingToolHostPacket.ToolRay> tools = new ArrayList<>(entries.size());
             for (SlotEntry entry : entries) {
-                tools.add(entry.stack());
+                // ⭐ 只同步「打没打中」这个布尔（L48）—— 目标坐标不传：客户端画的是
+                //    记忆射线本身（恒定），传坐标反而会让射线跟着目标跳。
+                //    下面 replayDig / replayUse 会再算一次：扫描很便宜（步进 0.1、几十次
+                //    getBlockState），换来的是回放 API 保持不变、且两侧判据只有一份实现。
+                LivingToolMemory memory = LivingItemManager.getToolMemory(entry.stack());
+                tools.add(new LivingToolHostPacket.ToolRay(
+                    entry.stack(),
+                    LivingToolReplay.resolveDigTarget(memory.dig(), origin, hostBlocks, serverLevel) != null,
+                    LivingToolReplay.resolveUseTarget(memory.use(), origin, hostBlocks, serverLevel) != null));
             }
             LivingToolHostSync.report(hostPos, tools);
         }
