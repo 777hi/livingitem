@@ -74,7 +74,9 @@ public record LivingTagPacket() implements CustomPacketPayload {
                         LivingEnderChestFunction.clearBoundPlayer(carriedItem);
                     }
 
-                    LivingItemManager.setLiving(carriedItem, newLiving);
+                    // 活工具需要主人 UUID（L25）：回放时 FakePlayer 靠它伪装成真实玩家
+                    // 以通过领地 / 保护插件的权限判定。无主人时回退到通用 FakePlayer。
+                    LivingItemManager.setLiving(carriedItem, newLiving, player.getUUID());
 
                     // 活化末影箱时：如果玩家在末影箱 GUI 中，绑定当前玩家
                     if (newLiving && carriedItem.is(Items.ENDER_CHEST)

@@ -1,6 +1,8 @@
 package com.qiqi.li.network;
 
 import com.qiqi.li.living.domain.chest.LivingChestFunction;
+import com.qiqi.li.living.domain.tools.LivingToolMemory;
+import com.qiqi.li.living.domain.tools.LivingToolRecorder;
 import com.qiqi.li.living.domain.hopper.LivingHopperFunction;
 import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
@@ -17,6 +19,35 @@ import org.slf4j.LoggerFactory;
 public class ServerPacketHandler {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ServerPacketHandler.class);
+
+    /**
+     * 清除手持活工具的指定记忆（{@code L13}）。
+     *
+     * <p>来源：客户端 {@code PlayerInteractEvent.LeftClickEmpty}（左键空气）。
+     * 服务端感知不到左键空气，故由客户端发 {@link ToolMemoryClearPacket} 告知。</p>
+     */
+    public static void handleToolMemoryClear(ServerPlayer player, ToolMemoryClearPacket payload) {
+        if (player == null) {
+            return;
+        }
+        if (LivingToolRecorder.isInRecordGrace(player)) {
+            return;   // L44：刚写完记忆，1 秒内的惯性误触不清除
+        }
+
+        ItemStack tool = player.getMainHandItem();
+        if (!LivingToolRecorder.isLivingTool(tool)) {
+            return;
+        }
+
+        LivingToolMemory memory = LivingItemManager.getToolMemory(tool);
+        LivingToolMemory updated = payload.dig() ? memory.withoutDig() : memory.withoutUse();
+        if (updated.equals(memory)) {
+            return;   // 本来就没有这条记忆 → 不必回同步
+        }
+
+        LivingItemManager.setToolMemory(tool, updated);
+        player.inventoryMenu.broadcastChanges();
+    }
 
     public static void handleHopperDirection(ServerPlayer player, HopperDirectionPacket payload) {
         if (player == null || player.containerMenu == null) return;

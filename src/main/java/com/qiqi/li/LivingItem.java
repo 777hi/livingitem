@@ -66,6 +66,7 @@ import com.qiqi.li.network.LivingChestAccessPacket;
 import com.qiqi.li.network.LivingMapMetadataPacket;
 import com.qiqi.li.network.LivingMapGuiTeleportPacket;
 import com.qiqi.li.network.LivingItemSyncPacket;
+import com.qiqi.li.network.ToolMemoryClearPacket;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.compat.create.ModCreate;
 import com.qiqi.li.living.domain.furnace.LivingFurnaceFunction;
@@ -93,6 +94,9 @@ import com.qiqi.li.living.interaction.TillToFarmlandHandler;
 import com.qiqi.li.living.interaction.PlantCropHandler;
 import com.qiqi.li.living.interaction.BonemealHandler;
 import com.qiqi.li.living.domain.farmland.CropClassifier;
+import com.qiqi.li.living.domain.tools.LivingToolFakePlayerCache;
+import com.qiqi.li.living.domain.tools.LivingToolFunction;
+import com.qiqi.li.living.domain.tools.LivingToolRecorder;
 import com.qiqi.li.living.domain.farmland.Tillables;
 import net.neoforged.neoforge.registries.DeferredRegister;
 import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
@@ -134,6 +138,7 @@ public class LivingItem {
         LivingItemManager.ATTACHMENT_TYPES.register(modEventBus);
         NeoForge.EVENT_BUS.register(this);
         NeoForge.EVENT_BUS.register(ContainerChunkCache.getInstance());
+        NeoForge.EVENT_BUS.register(LivingToolRecorder.class);
         modEventBus.addListener(this::onRegisterPayloadHandler);
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
     }
@@ -157,6 +162,9 @@ public class LivingItem {
 
         LivingItemManager.registerFunction(new LivingFlintAndSteelFunction());
         LOGGER.info("Registered living flint & steel function");
+
+        LivingItemManager.registerFunction(new LivingToolFunction());
+        LOGGER.info("Registered living tool function");
 
         LivingItemManager.registerFunction(new LivingChestFunction());
         LOGGER.info("Registered living chest function");
@@ -405,6 +413,8 @@ public class LivingItem {
         registrar.playToClient(LivingMapMetadataPacket.TYPE, LivingMapMetadataPacket.STREAM_CODEC, LivingMapMetadataPacket::handle);
         registrar.playToServer(LivingMapGuiTeleportPacket.TYPE, LivingMapGuiTeleportPacket.STREAM_CODEC, LivingMapGuiTeleportPacket::handle);
         registrar.playToServer(LivingChestAccessPacket.TYPE, LivingChestAccessPacket.STREAM_CODEC, LivingChestAccessPacket::handle);
+        // 活工具：左键空气清除挖掘记忆（服务端感知不到左键空气，需客户端告知）
+        registrar.playToServer(ToolMemoryClearPacket.TYPE, ToolMemoryClearPacket.STREAM_CODEC, ToolMemoryClearPacket::handle);
         // 服务端 → 客户端：下发容器运行时数据（由 ContainerRuntimeCache.flushToClients 发送）
         registrar.playToClient(LivingItemSyncPacket.TYPE, LivingItemSyncPacket.STREAM_CODEC, LivingItemSyncPacket::handle);
     }
@@ -430,6 +440,8 @@ public class LivingItem {
         // 待炸账本的**内存调度表**要清（条目本身随存档走，不需要清）。
         // ⚠️ 单人游戏「退出存档 → 进另一个存档」不重启 JVM：不清会把上一个维度的调度表带过来。
         ExplosionLedger.clearAllRuntimeState(event.getServer());
+        // 活工具的 FakePlayer 缓存（L26）：维度+主人 keyed，跨存档必须清
+        LivingToolFakePlayerCache.clear();
         LOGGER.info("Cleared living item caches on server stop");
     }
 

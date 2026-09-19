@@ -23,6 +23,9 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import com.qiqi.li.LivingItem;
 import com.qiqi.li.network.HopperDirectionPacket;
 import com.qiqi.li.network.SlotDirectionPacket;
+import com.qiqi.li.network.ToolMemoryClearPacket;
+import com.qiqi.li.living.domain.tools.LivingToolRecorder;
+import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 
 /**
  * 活物品客户端输入处理器 —— 处理 WASD 键入配置活漏斗传输方向。
@@ -70,6 +73,33 @@ public class LivingItemInputHandler {
     @SubscribeEvent
     public static void onClientLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
         LivingMapClientCache.clear();
+    }
+
+    /**
+     * 左键空气 → 通知服务端清除活工具的<b>挖掘记忆</b>（{@code L13}）。
+     *
+     * <p>{@code LeftClickEmpty} <b>只在客户端触发</b>（NeoForge 注释：
+     * "The server is not aware of when the client left clicks empty space,
+     * you will need to tell the server yourself."），故必须由客户端发包。</p>
+     *
+     * <p>只在「手持活工具 <b>且确实有挖掘记忆</b>」时才发包 —— 避免无意义的网络流量。</p>
+     */
+    @SubscribeEvent
+    public static void onLeftClickEmpty(PlayerInteractEvent.LeftClickEmpty event) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) {
+            return;
+        }
+
+        ItemStack tool = mc.player.getMainHandItem();
+        if (!LivingToolRecorder.isLivingTool(tool)) {
+            return;
+        }
+        if (!LivingItemManager.getToolMemory(tool).hasDig()) {
+            return;   // 本来就没记忆，不必打扰服务端
+        }
+
+        PacketDistributor.sendToServer(new ToolMemoryClearPacket(true));
     }
 
     /**

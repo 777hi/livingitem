@@ -3,6 +3,7 @@ package com.qiqi.li;
 import com.mojang.datafixers.util.Either;
 import com.qiqi.li.client.icon.LivingIconRegistry;
 import com.qiqi.li.client.render.LivingChestTooltipRenderer;
+import com.qiqi.li.client.render.LivingToolRayRenderer;
 import com.qiqi.li.client.render.LivingWaxedCopperTooltipRenderer;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.domain.chest.LivingChestTooltipComponent;
@@ -27,6 +28,7 @@ import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.neoforge.client.event.ModelEvent;
 import net.neoforged.neoforge.client.event.RegisterItemDecorationsEvent;
+import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import net.neoforged.neoforge.client.event.RenderTooltipEvent;
 import net.neoforged.neoforge.client.gui.ConfigurationScreen;
 import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
@@ -114,6 +116,17 @@ public class LivingItemClient {
 
         event.getTooltipElements().add(
             Either.right(LivingWaxedCopperTooltipComponent.from(generatorDataFor(stack), stack.getCount())));
+    }
+
+    /**
+     * 活工具记忆射线可视化（{@code L19} / {@code L20}）—— 把"活工具打算挖哪"画给玩家看。
+     *
+     * <p>仅 {@code F3+B}（原版"显示实体碰撞箱"开关）开启时绘制；纯客户端本地重算射线，
+     * 服务端不需要同步命中结果。</p>
+     */
+    @SubscribeEvent
+    static void onRenderLevelStage(RenderLevelStageEvent event) {
+        LivingToolRayRenderer.render(event);
     }
 
     /**

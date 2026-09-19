@@ -7,6 +7,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
+import javax.annotation.Nullable;
 import java.util.Set;
 
 import com.qiqi.li.living.domain.furnace.LivingFurnaceData;
@@ -27,10 +29,13 @@ import com.qiqi.li.living.domain.redstone.LivingComparatorData;
 import com.qiqi.li.living.domain.redstone.LivingCutCopperData;
 import com.qiqi.li.living.domain.redstone.LivingGrateData;
 import com.qiqi.li.living.domain.farmland.FarmlandPlantComponent;
+import com.qiqi.li.living.domain.tools.LivingToolMemory;
+import com.qiqi.li.living.domain.tools.LivingToolProgress;
 import com.qiqi.li.living.domain.redstone.LivingCopperBulbData;
 import com.qiqi.li.living.domain.redstone.LivingCopperSignalData;
 import net.minecraft.world.item.Items;
 import net.minecraft.core.component.DataComponentType;
+import net.minecraft.core.UUIDUtil;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.world.item.Item;
@@ -266,6 +271,52 @@ public class LivingItemManager {
                             .networkSynchronized(com.qiqi.li.living.domain.power.LivingWaxedBulbData.STREAM_CODEC)
                             .build());
 
+    /**
+     * 活工具记忆（挖掘记忆 + 交互记忆）。
+     *
+     * <p>必须网络同步：客户端要据此<b>本地重算射线</b>来渲染悬浮模型与动画（{@code K30}），
+     * 服务端因此无需同步"命中了哪个方块"。</p>
+     */
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingToolMemory>> LIVING_TOOL_MEMORY =
+            DATA_COMPONENT_TYPES.register("living_tool_memory", () ->
+                    DataComponentType.<LivingToolMemory>builder()
+                            .persistent(LivingToolMemory.CODEC)
+                            .networkSynchronized(LivingToolMemory.STREAM_CODEC)
+                            .build());
+
+    /**
+     * 活工具挖掘进度（{@code L21}）：当前正在挖的目标 + 世界轴起始 tick。
+     *
+     * <p>组件缺失 = 没在挖。只在<b>开始挖时写一次</b>，之后每 tick 重算进度，不写组件。</p>
+     */
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingToolProgress>> LIVING_TOOL_PROGRESS =
+            DATA_COMPONENT_TYPES.register("living_tool_progress", () ->
+                    DataComponentType.<LivingToolProgress>builder()
+                            .persistent(LivingToolProgress.CODEC)
+                            .networkSynchronized(LivingToolProgress.STREAM_CODEC)
+                            .build());
+
+    /**
+     * 活工具主人 UUID（{@code L25}）。
+     *
+     * <p>用途：回放时 FakePlayer 用它伪装成真实玩家，以通过领地 / 保护插件的权限判定
+     * （Create 的 {@code DeployerGameProfile}、Mekanism 同款技巧 —— 覆写
+     * {@code GameProfile#getId()} 返回主人 UUID）。</p>
+     *
+     * <ul>
+     *   <li>玩家手动活化 → 记录该玩家 UUID</li>
+     *   <li>未来「自动活化物品的活物品」→ 可写入自定义 UUID</li>
+     *   <li><b>组件缺失（null）= 无主人</b> → 回退到通用 FakePlayer</li>
+     * </ul>
+     *
+     * <p>服务端专用，<b>不需要</b>网络同步（客户端不参与回放）。</p>
+     */
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<UUID>> LIVING_TOOL_OWNER =
+            DATA_COMPONENT_TYPES.register("living_tool_owner", () ->
+                    DataComponentType.<UUID>builder()
+                            .persistent(UUIDUtil.CODEC)
+                            .build());
+
     private static final List<LivingItemFunction> FUNCTIONS = new ArrayList<>();
     private static final List<LivingItemFunction> FUNCTIONS_VIEW = Collections.unmodifiableList(FUNCTIONS);
     private static final Map<Item, List<LivingItemFunction>> APPLICABLE_CACHE = new ConcurrentHashMap<>();
@@ -350,11 +401,27 @@ public class LivingItemManager {
         stack.remove(LIVING_WAXED_BULB_DATA.value());
         stack.remove(FARMLAND_PLANT.value());
         stack.remove(LIVING_FARMLAND_MOIST.value());
+        stack.remove(LIVING_TOOL_MEMORY.value());
+        stack.remove(LIVING_TOOL_PROGRESS.value());
+        stack.remove(LIVING_TOOL_OWNER.value());
     }
 
+    /** 切换活化状态（不记录主人）。 */
     public static void setLiving(ItemStack stack, boolean living) {
+        setLiving(stack, living, null);
+    }
+
+    /**
+     * 切换活化状态。
+     *
+     * @param owner 主人 UUID（活工具用，见 {@link #LIVING_TOOL_OWNER}）；null = 不记录
+     */
+    public static void setLiving(ItemStack stack, boolean living, @Nullable UUID owner) {
         if (living) {
             stack.set(IS_LIVING.value(), true);
+            if (owner != null) {
+                setToolOwner(stack, owner);
+            }
             if (stack.is(Items.CHEST) && !stack.has(net.minecraft.core.component.DataComponents.CONTAINER)) {
                 stack.set(net.minecraft.core.component.DataComponents.CONTAINER,
                     net.minecraft.world.item.component.ItemContainerContents.EMPTY);
@@ -552,6 +619,51 @@ public class LivingItemManager {
 
     public static void setFarmlandPlant(ItemStack stack, FarmlandPlantComponent data) {
         setData(stack, FARMLAND_PLANT.value(), data, FarmlandPlantComponent.DEFAULT);
+    }
+
+    /** 便捷方法：获取活工具记忆（挖掘记忆 + 交互记忆）。 */
+    public static LivingToolMemory getToolMemory(ItemStack stack) {
+        return getData(stack, LIVING_TOOL_MEMORY.value(), LivingToolMemory.DEFAULT);
+    }
+
+    /** 便捷方法：设置活工具记忆（等于 DEFAULT 即无记忆时自动移除组件）。 */
+    public static void setToolMemory(ItemStack stack, LivingToolMemory memory) {
+        setData(stack, LIVING_TOOL_MEMORY.value(), memory, LivingToolMemory.DEFAULT);
+    }
+
+    /** 便捷方法：获取活工具挖掘进度；<b>null = 当前没在挖</b>。 */
+    @Nullable
+    public static LivingToolProgress getToolProgress(ItemStack stack) {
+        return stack.get(LIVING_TOOL_PROGRESS.value());
+    }
+
+    /** 便捷方法：写入活工具挖掘进度（null 表示清除，即停止挖掘）。 */
+    public static void setToolProgress(ItemStack stack, @Nullable LivingToolProgress progress) {
+        if (progress == null) {
+            stack.remove(LIVING_TOOL_PROGRESS.value());
+        } else {
+            stack.set(LIVING_TOOL_PROGRESS.value(), progress);
+        }
+    }
+
+    /**
+     * 便捷方法：获取活工具主人 UUID。
+     *
+     * @return 主人 UUID；<b>null 表示无主人</b>（未记录 / 自动活化），
+     *         调用方应回退到通用 FakePlayer
+     */
+    @Nullable
+    public static UUID getToolOwner(ItemStack stack) {
+        return stack.get(LIVING_TOOL_OWNER.value());
+    }
+
+    /** 便捷方法：写入活工具主人 UUID（null 表示清除）。 */
+    public static void setToolOwner(ItemStack stack, @Nullable UUID owner) {
+        if (owner == null) {
+            stack.remove(LIVING_TOOL_OWNER.value());
+        } else {
+            stack.set(LIVING_TOOL_OWNER.value(), owner);
+        }
     }
 
     /** 活耕地湿润标志（未打标志 = 干燥；图标 moist/dry 变体切换数据源） */
