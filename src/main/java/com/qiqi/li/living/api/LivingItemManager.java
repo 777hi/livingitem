@@ -29,6 +29,7 @@ import com.qiqi.li.living.domain.redstone.LivingComparatorData;
 import com.qiqi.li.living.domain.redstone.LivingCutCopperData;
 import com.qiqi.li.living.domain.redstone.LivingGrateData;
 import com.qiqi.li.living.domain.farmland.FarmlandPlantComponent;
+import com.qiqi.li.living.domain.tools.LivingToolAction;
 import com.qiqi.li.living.domain.tools.LivingToolMemory;
 import com.qiqi.li.living.domain.tools.LivingToolProgress;
 import com.qiqi.li.living.domain.redstone.LivingCopperBulbData;
@@ -297,6 +298,36 @@ public class LivingItemManager {
                             .build());
 
     /**
+     * 活工具<b>挖掘预计总 tick</b>（{@code K} 组动画用，<b>仅网络同步、不落盘</b>）。
+     *
+     * <p>只在<b>开始挖一个新目标</b>时写一次 —— 挖掘期间速度恒定，无需每 tick 更新。
+     * 客户端据此决定转圈快慢（挖得越快转得越快）。</p>
+     *
+     * <p>⭐ <b>由服务端算好给过来</b>，客户端不自算（{@code L48}）：
+     * 挖掘速度牵扯 FakePlayer 属性（效率附魔走 {@code MINING_EFFICIENCY}，见 {@code L46}），
+     * 客户端复刻必然不准。</p>
+     *
+     * <p>不 {@code persistent}：纯派生数据，存档重载后会重新算出来。</p>
+     */
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<Integer>> LIVING_TOOL_DIG_TICKS =
+            DATA_COMPONENT_TYPES.register("living_tool_dig_ticks", () ->
+                    DataComponentType.<Integer>builder()
+                            .networkSynchronized(ByteBufCodecs.VAR_INT)
+                            .build());
+
+    /**
+     * 活工具<b>最近一次瞬时动作</b>（{@code K} 组动画用，<b>仅网络同步、不落盘</b>）。
+     *
+     * <p>见 {@link com.qiqi.li.living.domain.tools.LivingToolAction} —— 交互是瞬时的，
+     * 客户端无从得知"刚刚发生了交互"，也拿不到"交互在哪一格"（容器形态起点埋在方块里）。</p>
+     */
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingToolAction>> LIVING_TOOL_LAST_ACTION =
+            DATA_COMPONENT_TYPES.register("living_tool_last_action", () ->
+                    DataComponentType.<LivingToolAction>builder()
+                            .networkSynchronized(LivingToolAction.STREAM_CODEC)
+                            .build());
+
+    /**
      * 活工具主人 UUID（{@code L25}）。
      *
      * <p>用途：回放时 FakePlayer 用它伪装成真实玩家，以通过领地 / 保护插件的权限判定
@@ -403,6 +434,8 @@ public class LivingItemManager {
         stack.remove(LIVING_FARMLAND_MOIST.value());
         stack.remove(LIVING_TOOL_MEMORY.value());
         stack.remove(LIVING_TOOL_PROGRESS.value());
+        stack.remove(LIVING_TOOL_DIG_TICKS.value());
+        stack.remove(LIVING_TOOL_LAST_ACTION.value());
         stack.remove(LIVING_TOOL_OWNER.value());
     }
 
@@ -643,6 +676,44 @@ public class LivingItemManager {
             stack.remove(LIVING_TOOL_PROGRESS.value());
         } else {
             stack.set(LIVING_TOOL_PROGRESS.value(), progress);
+        }
+    }
+
+    /**
+     * 便捷方法：获取挖掘预计总 tick（{@code K} 组动画用）。
+     *
+     * @return 预计 tick 数；{@code null} = 未知（用默认转速）
+     */
+    @Nullable
+    public static Integer getToolDigTicks(ItemStack stack) {
+        return stack.get(LIVING_TOOL_DIG_TICKS.value());
+    }
+
+    /** 便捷方法：写入挖掘预计总 tick（null = 清除）。 */
+    public static void setToolDigTicks(ItemStack stack, @Nullable Integer ticks) {
+        if (ticks == null) {
+            stack.remove(LIVING_TOOL_DIG_TICKS.value());
+        } else {
+            stack.set(LIVING_TOOL_DIG_TICKS.value(), ticks);
+        }
+    }
+
+    /**
+     * 便捷方法：获取最近一次瞬时动作（{@code K} 组动画用）。
+     *
+     * @return 动作记录；{@code null} = 从没发生过
+     */
+    @Nullable
+    public static LivingToolAction getToolLastAction(ItemStack stack) {
+        return stack.get(LIVING_TOOL_LAST_ACTION.value());
+    }
+
+    /** 便捷方法：写入最近一次瞬时动作（null = 清除）。 */
+    public static void setToolLastAction(ItemStack stack, @Nullable LivingToolAction action) {
+        if (action == null) {
+            stack.remove(LIVING_TOOL_LAST_ACTION.value());
+        } else {
+            stack.set(LIVING_TOOL_LAST_ACTION.value(), action);
         }
     }
 

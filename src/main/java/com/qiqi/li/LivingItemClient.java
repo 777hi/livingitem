@@ -4,6 +4,7 @@ import com.mojang.datafixers.util.Either;
 import com.qiqi.li.client.icon.LivingIconRegistry;
 import com.qiqi.li.living.domain.tools.LivingToolHostClientCache;
 import com.qiqi.li.client.render.LivingChestTooltipRenderer;
+import com.qiqi.li.client.render.LivingToolModelRenderer;
 import com.qiqi.li.client.render.LivingToolRayRenderer;
 import com.qiqi.li.client.render.LivingWaxedCopperTooltipRenderer;
 import com.qiqi.li.living.api.LivingItemManager;
@@ -135,12 +136,13 @@ public class LivingItemClient {
     /**
      * 活工具记忆射线可视化（{@code L19} / {@code L20}）—— 把"活工具打算挖哪"画给玩家看。
      *
-     * <p>仅 {@code F3+B}（原版"显示实体碰撞箱"开关）开启时绘制；纯客户端本地重算射线，
-     * 服务端不需要同步命中结果。</p>
+     * <p>时机：<b>手持</b>始终显示，其余宿主仅 {@code F3+B} 时显示（详见渲染器类注释）。
+     * 命中判定的分工见 {@code L48} —— 容器形态由服务端同步布尔，其余本地 {@code clip}。</p>
      */
     @SubscribeEvent
     static void onRenderLevelStage(RenderLevelStageEvent event) {
         LivingToolRayRenderer.render(event);
+        LivingToolModelRenderer.render(event);
     }
 
     /**

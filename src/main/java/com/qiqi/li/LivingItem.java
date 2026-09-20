@@ -100,6 +100,7 @@ import com.qiqi.li.living.domain.farmland.CropClassifier;
 import com.qiqi.li.living.domain.tools.LivingToolFakePlayerCache;
 import com.qiqi.li.living.domain.tools.LivingToolHostSync;
 import com.qiqi.li.living.domain.tools.LivingToolFunction;
+import com.qiqi.li.living.domain.tools.LivingToolAssist;
 import com.qiqi.li.living.domain.tools.LivingToolRecorder;
 import com.qiqi.li.living.domain.farmland.Tillables;
 import net.neoforged.neoforge.registries.DeferredRegister;
@@ -143,6 +144,7 @@ public class LivingItem {
         NeoForge.EVENT_BUS.register(this);
         NeoForge.EVENT_BUS.register(ContainerChunkCache.getInstance());
         NeoForge.EVENT_BUS.register(LivingToolRecorder.class);
+        NeoForge.EVENT_BUS.register(LivingToolAssist.class);
         modEventBus.addListener(this::onRegisterPayloadHandler);
         modContainer.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
     }

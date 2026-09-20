@@ -3,7 +3,9 @@ package com.qiqi.li.living.domain.tools;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
+import java.util.function.Consumer;
 
 import javax.annotation.Nullable;
 
@@ -16,8 +18,11 @@ import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.network.LivingToolHostPacket;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 
@@ -101,19 +106,66 @@ public class LivingToolFunction implements LivingItemFunction {
                 continue;
             }
 
+            // ⭐ 记录本 tick 开始时的"动画状态"（下面用于检测翻转）
+            LivingToolProgress progressBefore = LivingItemManager.getToolProgress(tool);
+            LivingToolAction actionBefore = LivingItemManager.getToolLastAction(tool);
+
             // 挖掘记忆（左键行为）
             ItemStack afterDig = LivingToolReplay.replayDig(tool, memory.dig(), origin, hostBlocks, serverLevel, now);
             if (afterDig != null) {
                 writeBack(context, entry.slotIndex(), tool, afterDig);
-                continue;
+            } else {
+                // 交互记忆（右键行为）—— 与挖掘互斥，避免同一 tick 双写
+                ItemStack afterUse = LivingToolReplay.replayUse(tool, memory.use(), origin, hostBlocks, serverLevel);
+                if (afterUse != null) {
+                    writeBack(context, entry.slotIndex(), tool, afterUse);
+                }
             }
 
-            // 交互记忆（右键行为）—— 与挖掘互斥，避免同一 tick 双写
-            ItemStack afterUse = LivingToolReplay.replayUse(tool, memory.use(), origin, hostBlocks, serverLevel);
-            if (afterUse != null) {
-                writeBack(context, entry.slotIndex(), tool, afterUse);
-            }
+            // ⭐ 动画状态（挖掘进度 / 瞬时动作）的【翻转】必须额外同步一次 —— 见 syncStateFlip 的说明
+            syncStateFlip(context, entry.slotIndex(), tool, progressBefore, actionBefore);
         }
+    }
+
+    /**
+     * 活工具 tooltip —— 显示「模式 + 记忆内容」。
+     *
+     * <p>⭐ <b>为什么这个 tooltip 重要</b>：记忆是<b>隐形</b>的（手持才画射线、容器里还要 F3+B），
+     * 而 {@code A3} 之后<b>"有没有记忆"直接决定这把工具是哪种模式</b>：</p>
+     * <pre>
+     *   无记忆 → 辅助模式（在背包里帮玩家挖）
+     *   有记忆 → 自主模式（自己按记忆干活）
+     * </pre>
+     * <p>不说清楚的话，玩家根本不知道手上这把是「帮手」还是「工人」。</p>
+     */
+    @Override
+    public void addToTooltip(Item.TooltipContext context,
+                             Consumer<Component> tooltipAdder,
+                             TooltipFlag flag,
+                             ItemStack stack) {
+        LivingToolMemory memory = LivingItemManager.getToolMemory(stack);
+
+        tooltipAdder.accept(Component.empty());
+        tooltipAdder.accept(Component.translatable(memory.isEmpty()
+            ? "tooltip.livingitem.tool.mode.assist"
+            : "tooltip.livingitem.tool.mode.auto"));
+
+        addRayLine(tooltipAdder, "tooltip.livingitem.tool.dig", memory.dig());
+        addRayLine(tooltipAdder, "tooltip.livingitem.tool.use", memory.use());
+    }
+
+    /** 一行记忆信息：距离恒有，类型约束（蹲下录的）才附加。 */
+    private static void addRayLine(Consumer<Component> tooltipAdder, String key,
+                                   @Nullable LivingToolMemory.RayMemory ray) {
+        if (ray == null) {
+            return;
+        }
+        Component line = Component.translatable(key, String.format("%.1f", ray.offset().length()));
+        if (ray.block() != null) {
+            line = line.copy().append(
+                Component.translatable("tooltip.livingitem.tool.limited", ray.block().getName()));
+        }
+        tooltipAdder.accept(line);
     }
 
     /**
@@ -155,6 +207,36 @@ public class LivingToolFunction implements LivingItemFunction {
      * <p>破坏会扣耐久，甚至可能因 {@code F3} 损坏为空 —— 必须写回并触发同步，
      * 否则客户端看到的还是旧耐久。</p>
      */
+    /**
+     * 动画状态的<b>翻转</b>（挖掘进度 / 瞬时动作发生变化）时同步一次。
+     *
+     * <p>⭐ <b>为什么必须单独补这一步</b>：{@link #writeBack} 开头有
+     * {@code ItemStack.matches(before, after)} 短路，而
+     * <b>{@code PatchedDataComponentMap.equals()} 检测不到自定义组件的变化</b>（项目已知坑）——
+     * 于是「只改了 {@code LIVING_TOOL_PROGRESS} / {@code LIVING_TOOL_LAST_ACTION}」时
+     * {@code matches} 返回 {@code true}，直接 {@code return}，<b>永远不同步</b>。</p>
+     *
+     * <p>各形态表现不同，正是取决于有没有兜底通道：</p>
+     * <table>
+     *   <tr><th>形态</th><th>兜底通道</th><th>不补这步会怎样</th></tr>
+     *   <tr><td>方块容器</td><td>{@code K2} 每 tick 全量同步</td><td>看得到（侥幸）</td></tr>
+     *   <tr><td>玩家背包</td><td>原版 {@code broadcastChanges()}</td><td>看得到（侥幸）</td></tr>
+     *   <tr><td><b>掉落物</b></td><td><b>无</b></td><td>❌ <b>永远看不到"开始挖 / 停挖 / 刚交互"</b> ⇒ 模型没动画</td></tr>
+     * </table>
+     *
+     * <p>两个组件都是<b>翻转</b>语义（挖掘期间进度内容不变；动作 tick 每次不同），
+     * 故不会每 tick 重复发。</p>
+     */
+    private static void syncStateFlip(ContainerContext context, int slot, ItemStack tool,
+                                      @Nullable LivingToolProgress progressBefore,
+                                      @Nullable LivingToolAction actionBefore) {
+        boolean changed = !Objects.equals(progressBefore, LivingItemManager.getToolProgress(tool))
+            || !Objects.equals(actionBefore, LivingItemManager.getToolLastAction(tool));
+        if (changed) {
+            context.syncSlotToClients(slot, tool);
+        }
+    }
+
     private static void writeBack(ContainerContext context, int slot, ItemStack before, ItemStack after) {
         if (ItemStack.matches(before, after)) {
             return;

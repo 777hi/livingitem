@@ -1,0 +1,226 @@
+package com.qiqi.li.living.domain.tools;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.function.Predicate;
+
+import javax.annotation.Nullable;
+
+import com.qiqi.li.living.api.LivingItemManager;
+
+import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.enchantment.EnchantmentHelper;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.neoforged.neoforge.event.level.BlockDropsEvent;
+
+/**
+ * 活工具<b>辅助玩家挖掘</b>（{@code A3} 支线）—— 背包里的活工具给玩家的挖掘"搭把手"。
+ *
+ * <h3>边界：记忆是「分工开关」（用户定）</h3>
+ * <ul>
+ *   <li><b>有记忆</b> → 它<b>自己</b>干活（{@code L} 组记忆回放），<b>不</b>帮忙</li>
+ *   <li><b>没记忆</b> → 它<b>帮玩家</b>挖（本类）</li>
+ * </ul>
+ *
+ * <h3>⭐ 零 mixin —— 全靠 NeoForge 官方钩子</h3>
+ * 原设计里标着"唯一技术难点"的 {@code B1}（Mixin {@code ServerPlayerGameMode} 拿破坏进度）
+ * <b>整个不需要</b>：原版每 tick 调 {@code getDigSpeed} / {@code hasCorrectToolForDrops}，
+ * 这两个位置正好都有钩子，"玩家正在挖哪一格"它自己会告诉我们，中断 / 换目标天然被处理。
+ *
+ * <table>
+ *   <tr><th>维度</th><th>钩子</th><th>做法</th></tr>
+ *   <tr><td><b>加速</b></td><td>{@link PlayerEvent.BreakSpeed}</td>
+ *       <td>{@code setNewSpeed(原速 + Σ 各活工具速度)}</td></tr>
+ *   <tr><td><b>材质门槛</b></td><td>{@link PlayerEvent.HarvestCheck}</td>
+ *       <td>任意一把活工具挖得动 → {@code setCanHarvest(true)}</td></tr>
+ *   <tr><td><b>附魔归属</b></td><td>{@link BlockDropsEvent}</td>
+ *       <td>用<b>槽位最靠前</b>那把活工具重算掉落与经验（{@code E6}，原始需求原文）</td></tr>
+ *   <tr><td><b>耐久</b></td><td>同上</td>
+ *       <td>每把出过力的都扣 1 点，耐久附魔由 {@code hurtAndBreak} 内部生效（{@code F}）</td></tr>
+ * </table>
+ *
+ * <h3>定案（2026-09-20 用户拍板）</h3>
+ * <ul>
+ *   <li>仅在<b>玩家背包</b>生效；手持普通工具时<b>也帮</b>；创造 / 旁观<b>跳过</b></li>
+ *   <li>多把速度<b>直接相加、不设上限</b> —— 用户口径：
+ *       <i>"玩家背包槽位数量就已经是上限了"</i></li>
+ *   <li>不需要距离限制（只作用于玩家当前目标，天然受限）</li>
+ * </ul>
+ *
+ * <h3>⚠️ 不与玩家"抢手"</h3>
+ * 主手那把会被跳过（它已经在原版的 {@code getDigSpeed} 里算过一次了，重复计算会翻倍）；
+ * 掉落重算也只在<b>玩家自己的工具挖不动</b>时才接管 —— 玩家能挖就完全走原版，不干预。
+ */
+public final class LivingToolAssist {
+
+    private LivingToolAssist() {
+    }
+
+    // ── ① 加速 ──────────────────────────────────────────────────────────────
+
+    /**
+     * 玩家破坏速度计算时触发（原版每 tick 一次）—— 把背包里活工具的速度<b>累加</b>上去。
+     *
+     * <p>速度用 {@link LivingToolFakePlayer} 精算，于是
+     * <b>效率附魔自动生效</b>（它是 {@code MINING_EFFICIENCY} 属性，见 {@code L46}）——
+     * 不需要自己查附魔等级、也不会再次踩"效率不生效"的坑。</p>
+     */
+    @SubscribeEvent
+    public static void onBreakSpeed(PlayerEvent.BreakSpeed event) {
+        if (!isAssistable(event.getEntity())) {
+            return;
+        }
+        ServerPlayer player = (ServerPlayer) event.getEntity();
+        BlockState state = event.getState();
+
+        float bonus = 0.0F;
+        for (ItemStack stack : assistTools(player, s -> s.getDestroySpeed(state) > 1.0F)) {
+            bonus += digSpeed(player, stack, state, event.getPosition().orElse(null));
+        }
+        if (bonus > 0.0F) {
+            event.setNewSpeed(event.getNewSpeed() + bonus);
+        }
+    }
+
+    // ── ② 材质门槛 ──────────────────────────────────────────────────────────
+
+    /**
+     * 玩家判定"能否收获"时触发 —— 只要背包里有<b>任意一把</b>活工具挖得动，就放行。
+     *
+     * <p>注意这里<b>只改"能不能"</b>：掉什么由 ③ 接管。两者分工明确。</p>
+     */
+    @SubscribeEvent
+    public static void onHarvestCheck(PlayerEvent.HarvestCheck event) {
+        if (event.canHarvest() || !isAssistable(event.getEntity())) {
+            return;
+        }
+        ServerPlayer player = (ServerPlayer) event.getEntity();
+        BlockState state = event.getTargetBlock();
+
+        for (ItemStack stack : assistTools(player, s -> s.isCorrectToolForDrops(state))) {
+            event.setCanHarvest(true);
+            return;
+        }
+    }
+
+    // ── ③ 附魔归属 + ④ 耐久 ────────────────────────────────────────────────
+
+    /**
+     * 方块被破坏、掉落已算出但<b>还没进世界</b>时触发 —— 让活工具的附魔接管归属。
+     *
+     * <p><b>玩家优先</b>：玩家自己的工具挖得动就完全走原版、不干预（不抢玩家的手）。</p>
+     *
+     * <p>接管时按 {@code E6}（原始需求原文）取<b>槽位最靠前</b>的那把活工具，
+     * 用它重算掉落与经验 —— 于是时运 / 精准采集自然归属到它。</p>
+     */
+    @SubscribeEvent
+    public static void onBlockDrops(BlockDropsEvent event) {
+        Entity breaker = event.getBreaker();
+        if (!(breaker instanceof ServerPlayer player) || !isAssistable(player)) {
+            return;
+        }
+        BlockState state = event.getState();
+
+        // 玩家自己的工具挖得动 → 尊重原版
+        if (player.getMainHandItem().isCorrectToolForDrops(state)) {
+            return;
+        }
+
+        List<ItemStack> helpers = assistTools(player, s -> s.isCorrectToolForDrops(state));
+        if (helpers.isEmpty()) {
+            return;
+        }
+
+        ServerLevel level = event.getLevel();
+        BlockPos pos = event.getPos();
+        BlockEntity blockEntity = event.getBlockEntity();
+
+        // 用槽位最靠前的那把重算掉落与经验（E6）
+        ItemStack owner = helpers.get(0);
+        List<ItemStack> recalc = Block.getDrops(state, level, pos, blockEntity, player, owner);
+        event.getDrops().clear();
+        for (ItemStack drop : recalc) {
+            event.getDrops().add(new ItemEntity(level,
+                pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, drop));
+        }
+        event.setDroppedExperience(EnchantmentHelper.processBlockExperience(level, owner,
+            state.getExpDrop(level, pos, blockEntity, player, owner)));
+
+        // F：每把出过力的都扣耐久（耐久附魔由 hurtAndBreak 内部生效）
+        for (ItemStack helper : helpers) {
+            helper.hurtAndBreak(1, level, player, item -> { });
+        }
+    }
+
+    // ── 内部 ────────────────────────────────────────────────────────────────
+
+    /** 能不能为这个玩家出力（服务端真实玩家、非创造 / 旁观）。 */
+    private static boolean isAssistable(@Nullable Player player) {
+        return player instanceof ServerPlayer serverPlayer
+            && !serverPlayer.isFakePlayer()
+            && !serverPlayer.isCreative()
+            && !serverPlayer.isSpectator();
+    }
+
+    /**
+     * 遍历玩家背包，收集所有「可出力」的活工具（{@code A1}：仅玩家背包）。
+     *
+     * <p>⚠️ <b>跳过主手那一格</b>：原版 {@code getDigSpeed} 已经把手持工具算进去了，
+     * 再算一次会让"自己持有的活工具"速度翻倍。</p>
+     *
+     * <p>按<b>槽位号升序</b>遍历（{@code E2}），故返回列表的第一项就是"最靠前"的那把。</p>
+     */
+    private static List<ItemStack> assistTools(ServerPlayer player, Predicate<ItemStack> accept) {
+        Inventory inventory = player.getInventory();
+        List<ItemStack> out = new ArrayList<>();
+        for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
+            if (slot == inventory.selected) {
+                continue;   // 主手已由原版计入
+            }
+            ItemStack stack = inventory.getItem(slot);
+            if (isAssistTool(stack) && accept.test(stack)) {
+                out.add(stack);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 是不是「帮忙型」活工具。
+     *
+     * <p>⭐ <b>有记忆的不帮忙</b>（用户定的分工开关）—— 它自己会去干活，两套机制别混。</p>
+     */
+    private static boolean isAssistTool(ItemStack stack) {
+        return LivingToolRecorder.isLivingTool(stack)
+            && LivingItemManager.getToolMemory(stack).isEmpty();
+    }
+
+    /**
+     * 用 {@link LivingToolFakePlayer} 精算这把活工具对该方块的速度。
+     *
+     * <p>走 FakePlayer 而不是自己读 {@code ItemStack#getDestroySpeed} ——
+     * 后者拿不到<b>效率附魔</b>（那是 {@code MINING_EFFICIENCY} 属性效果，需要走属性表，见 {@code L46}）。</p>
+     *
+     * <p>⚠️ 事件回调里已过滤 {@code isFakePlayer()}，故 FakePlayer 自己触发的事件不会再进来，无递归。</p>
+     */
+    private static float digSpeed(ServerPlayer player, ItemStack stack, BlockState state,
+                                  @Nullable BlockPos pos) {
+        LivingToolFakePlayer fake =
+            LivingToolFakePlayerCache.get(player.serverLevel(), player.getUUID());
+        fake.setPos(player.getX(), player.getY(), player.getZ());
+        fake.setOnGround(true);   // L28：不设会被原版判为"离地"→ 速度 /5
+        fake.equipTool(stack.copy());
+        return fake.getDigSpeed(state, pos);
+    }
+}

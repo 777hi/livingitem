@@ -48,24 +48,25 @@ import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
  *
  * <h3>关键设计</h3>
  * <ul>
- *   <li><b>纯客户端</b>：记忆组件已 {@code networkSynchronized}，客户端<b>本地重算射线</b>即可，
- *       服务端不需要同步"命中了哪个方块"。</li>
- *   <li><b>显示时机</b>（{@code L20}，2026-09-19 修订）：
- *       <b>手持</b>的活工具<b>始终</b>显示射线；其余宿主（背包非手持槽 / 掉落物）
- *       只在 <b>F3+B</b>（原版"显示实体碰撞箱"）时显示。
+ *   <li><b>显示时机</b>（{@code L20}）：<b>手持</b>的活工具<b>始终</b>显示射线；
+ *       其余宿主（背包非手持槽 / 掉落物 / 容器）只在 <b>F3+B</b>（原版"显示实体碰撞箱"）时显示。
  *       开关读 {@code shouldRenderHitBoxes()}，纯客户端判断、无需同步。</li>
- *   <li><b>正在挖的时候不用画</b>：{@code ServerLevel#destroyBlockProgress()} 会让客户端
- *       自动显示破坏裂纹（原版能力，零渲染代码）。本渲染器只管"待机 / 未开始挖"时的目标线。</li>
- *   <li><b>命中与否用透明度区分</b>：命中 → 不透明；整条线落空 → 半透明。
- *       "变暗"本身就是"这条线擦着缝过去了"的信号。</li>
+ *   <li><b>客户端不做命中判定</b>（{@code L48}）：命中判据有「宿主黑名单 / 流体 / 形状求交」三层，
+ *       在客户端复刻<b>必然走偏</b>（{@code L47} 已验证）。容器形态的"打没打中"由服务端同步一个
+ *       <b>布尔</b>；玩家 / 掉落物形态起点在空气中，本地 {@code clip} 天然正确。</li>
+ *   <li><b>终点就是记忆本身</b>：{@code origin → origin + offset}，<b>恒定</b>。
+ *       ⚠️ 曾把容器形态的终点画到"目标方块中心"，结果射线<b>跟着目标跳</b>（挖完一格跳下一格），
+ *       背离 {@code L19} 初衷 —— <b>一条会跳的线根本看不出偏没偏</b>。</li>
+ *   <li><b>命中与否用透明度区分</b>：命中 → 不透明；落空 → 半透明。
+ *       ⚠️ 对玩家形态而言"落空"是常态（挪一步眼睛位置就变），故别调太淡。</li>
  * </ul>
  *
- * <h3>宿主覆盖范围（v1）</h3>
+ * <h3>宿主覆盖范围</h3>
  * <table>
- *   <tr><th>宿主</th><th>射线起点</th><th>能否渲染</th></tr>
+ *   <tr><th>宿主</th><th>射线起点</th><th>状态</th></tr>
  *   <tr><td>玩家（背包 / 主手 / 副手）</td><td>眼睛（{@code L3=a}）</td><td>✅</td></tr>
- *   <tr><td>掉落物</td><td>实体位置（{@code L14=d}）</td><td>✅</td></tr>
- *   <tr><td>方块容器</td><td>容器方块中心（{@code L14=a}）</td><td>❌ <b>待 {@code K2} 的 S2C 包</b> ——
+ *   <tr><td>掉落物</td><td><b>碰撞箱中心</b>（{@code L14=d}）</td><td>✅</td></tr>
+ *   <tr><td>方块容器</td><td>容器方块中心（{@code L14=a}）</td><td>✅ 由 {@code K2} 的 S2C 包提供 ——
  *       不开 GUI 时客户端拿不到箱子内容</td></tr>
  * </table>
  */
@@ -218,31 +219,13 @@ public final class LivingToolRayRenderer {
         boolean drew = false;
         List<LivingToolHostPacket.Entry> hosts =
             LivingToolHostClientCache.get(level.dimension().location());
-        int toolCount = 0;
         for (LivingToolHostPacket.Entry entry : hosts) {
             Vec3 origin = Vec3.atCenterOf(entry.pos());
             for (LivingToolHostPacket.ToolRay tool : entry.tools()) {
-                toolCount++;
                 drew |= renderStackFromTarget(poseStack, ribbon, cameraPos, frustum, origin, tool);
             }
         }
-        if (!hosts.isEmpty()) {
-            logThrottled(hosts.size(), toolCount, drew);
-        }
         return drew;
-    }
-
-    /** 诊断用：每 2 秒最多打一条，避免刷屏。定位后连同调用一起删除。 */
-    private static long lastLogMs;
-
-    private static void logThrottled(int hostCount, int toolCount, boolean drew) {
-        long now = System.currentTimeMillis();
-        if (now - lastLogMs < 2000L) {
-            return;
-        }
-        lastLogMs = now;
-        com.qiqi.li.LivingItem.LOGGER.info("[K2] 渲染：宿主 {} 个 / 工具 {} 件 / 实际绘制 {}",
-            hostCount, toolCount, drew);
     }
 
     /**

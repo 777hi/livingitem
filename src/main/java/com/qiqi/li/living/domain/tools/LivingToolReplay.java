@@ -144,6 +144,15 @@ public final class LivingToolReplay {
             stopDigging(tool, progress, level, fake);
             return null;
         }
+
+        if (freshStart) {
+            // K 组动画：本次挖掘的【预计总 tick】—— 挖掘期间速度恒定，故只写这一次。
+            // ⚠️ 两端都要写：held 在步骤 3 就 copy 了，只写 tool 的话写回槽位的那份没有。
+            int digTicks = Math.max(1, (int) Math.ceil(1.0F / perTick));
+            LivingItemManager.setToolDigTicks(tool, digTicks);
+            LivingItemManager.setToolDigTicks(held, digTicks);
+        }
+
         float total = perTick * (float) (now - progress.startTick() + 1);
 
         // 破坏裂纹（0-9 档）—— 服务端广播，客户端自动显示，也是动画节奏来源（K31=c）
@@ -249,25 +258,20 @@ public final class LivingToolReplay {
         UseOnContext context = new UseOnContext(fake, InteractionHand.MAIN_HAND, hit);
         InteractionResult result = held.useOn(context);
 
-        return result.consumesAction() ? held : null;
+        if (!result.consumesAction()) {
+            return null;
+        }
+
+        // K 组动画：交互是【瞬时】动作，没有像 LIVING_TOOL_PROGRESS 那样的持续状态可查，
+        // 客户端也拿不到"交互在哪一格"（容器形态起点埋在方块里，clip 必然自命中），
+        // 故由服务端把「tick + 目标格子」一并写下。
+        // ⚠️ 两端都要写：held 是上面 copy 的副本，写回槽位用的是它。
+        LivingToolAction action = new LivingToolAction(level.getGameTime(), target);
+        LivingItemManager.setToolLastAction(tool, action);
+        LivingItemManager.setToolLastAction(held, action);
+        return held;
     }
 
-    /**
-     * 沿记忆射线逐格扫描，返回第一个「非空气、且不在黑名单」的方块。
-     *
-     * <p><b>为什么不用 {@code level.clip()}</b>：clip 不支持"跳过某些方块"，
-     * 而容器形态下射线起点（宿主方块中心）位于方块内部，clip 必然先命中宿主自己，
-     * 于是需要"移出宿主"之类的补丁。改成逐格扫描后：
-     * <ul>
-     *   <li><b>黑名单直接无视</b> —— 天然支持（本方法的核心）</li>
-     *   <li>起点在方块内也不受影响</li>
-     *   <li>仍然是沿真实路径，<b>不会隔空挖</b></li>
-     * </ul>
-     * 代价是精度略低于 clip（0.1 格步进），对"挖哪一格"的判定完全够用。</p>
-     *
-     * @param blacklist 不受影响的方块（当前传的是宿主自身，可按需扩展）
-     * @return 目标方块；{@code null} = 路径上无可挖方块（对应 {@code L7} 的"没方块就停"）
-     */
     /**
      * 求<b>挖掘</b>记忆射线的命中目标 ——
      * <b>回放与客户端可视化共用的唯一判据来源</b>（{@code L48}）。
@@ -310,6 +314,22 @@ public final class LivingToolReplay {
         return scanForTarget(origin, ray.endpointFrom(origin), hostBlocks, level);
     }
 
+    /**
+     * 沿记忆射线逐格扫描，返回第一个「非空气、且不在黑名单」的方块。
+     *
+     * <p><b>为什么不用 {@code level.clip()}</b>：clip 不支持"跳过某些方块"，
+     * 而容器形态下射线起点（宿主方块中心）位于方块内部，clip 必然先命中宿主自己，
+     * 于是需要"移出宿主"之类的补丁。改成逐格扫描后：
+     * <ul>
+     *   <li><b>黑名单直接无视</b> —— 天然支持（本方法的核心）</li>
+     *   <li>起点在方块内也不受影响</li>
+     *   <li>仍然是沿真实路径，<b>不会隔空挖</b></li>
+     * </ul>
+     * 代价是精度略低于 clip（0.1 格步进），对"挖哪一格"的判定完全够用。</p>
+     *
+     * @param blacklist 不受影响的方块（当前传的是宿主自身，可按需扩展）
+     * @return 目标方块；{@code null} = 路径上无可挖方块（对应 {@code L7} 的"没方块就停"）
+     */
     @Nullable
     private static BlockPos scanForTarget(Vec3 origin, Vec3 end, Set<BlockPos> blacklist, ServerLevel level) {
         Vec3 delta = end.subtract(origin);
