@@ -184,6 +184,16 @@ public final class ContainerCompatibilityConfig {
         return Collections.unmodifiableSet(RULES.entrySet());
     }
 
+    /**
+     * 清空所有已注册规则。
+     *
+     * <p>仅供 {@code ContainerRuleConfig.load()} 重建状态与单元测试使用。
+     * 生产代码调用会丢失内存中的全部规则（需重新 {@code load()} 恢复）。</p>
+     */
+    static void clearAllRules() {
+        RULES.clear();
+    }
+
     /** 从 JSON 配置文件加载规则 */
     public static void loadFromConfig() {
         ContainerRuleConfig.load();

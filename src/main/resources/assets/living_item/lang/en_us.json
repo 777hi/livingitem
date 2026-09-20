@@ -31,6 +31,7 @@
   "tooltip.livingitem.chest.slots": "  §7Storage: §e%d§7/§a%d §7slots§r",
   "tooltip.livingitem.chest.uuid_lost": "§c  UUID lost! Use /livingchest recover to restore§r",
   "tooltip.livingitem.tnt.status": "§cLiving TNT§r",
+  "text.livingitem.living": "Living Item",
   "tooltip.livingitem.flint_and_steel.status": "§eLiving Flint & Steel§r",
   "tooltip.livingitem.tool.mode.assist": "  §7Mode: §bAssist player mining§r",
   "tooltip.livingitem.tool.mode.auto": "  §7Mode: §aAutonomous§r",
@@ -197,5 +198,10 @@
   "command.livingitem.rules_header": "§aRegistered container rules (%d):§r",
   "command.livingitem.container_removed": "§aRemoved container rule §e%s§r",
   "command.livingitem.container_not_found": "§cContainer rule not found: §e%s§r",
-  "command.livingitem.rules_reloaded": "§aReloaded container rules from config§r"
+  "command.livingitem.rules_reloaded": "§aReloaded container rules from config§r",
+  "command.livingitem.container_overrode": "§aOverrode container §e%s§a: %d slots (%d cols × %d rows)§r",
+  "command.livingitem.container_overrode_bundled": "§aOverrode bundled rule §e%s§a: %d slots (%d cols × %d rows)§r\n§7Saved to your config; use §f/livingitem container export §7to export it§r",
+  "command.livingitem.export_done": "§aExported %d effective rule(s)§7 (bundled %d + community %d)§r §7→ §f%s§r\n§7This is a complete snapshot — send it to the mod author to merge into the bundled resource§r",
+  "command.livingitem.export_empty": "§7No rules to export (registry is empty)§r",
+  "command.livingitem.export_failed": "§cExport failed, see log for details§r"
 }

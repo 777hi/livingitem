@@ -1213,18 +1213,23 @@ getWidth()
 
 ### 9.2 ContainerCompatibilityConfig — 配置规则
 
-通过 JSON 配置文件注册其他模组容器的布局参数，无需修改代码：
+通过 JSON 配置文件注册其他模组容器的布局参数，无需修改代码。
+文件为 `assets/living_item/container_rules.json`（内置，随 jar 打包）与
+`config/living_item/container_rules.json`（玩家增量），格式一致：
 
 ```json
 {
-  "rules": {
-    "ironchest:iron_chest": { "columns": 9, "rows": 6 },
-    "sophisticatedstorage:barrel": { "columns": 13, "rows": 5 }
-  }
+  "version": 1,
+  "rules": [
+    {"containerId": "ironchest:iron_chest", "containerSize": 54, "columns": 9, "description": "铁箱子-铁"},
+    {"containerId": "ironchest:diamond_chest", "containerSize": 108, "columns": 12, "description": "铁箱子-钻石"}
+  ]
 }
 ```
 
-支持按容器 ID、命名空间关键词、容器大小三种匹配方式。
+游戏内可用 `/livingitem container register <columns>` 对着容器自动检测 ID 并注册；
+`/livingitem container export` 把玩家增量导出为同格式 JSON，便于合并进内置资源随包发布。
+分层语义与导出通道详见 [`living-item-infrastructure.md` §5.2.1](../system-design/living-item-infrastructure.md)。
 
 ### 9.3 AdapterRegistry — 适配器模式
 

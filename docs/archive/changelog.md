@@ -12,6 +12,60 @@
 
 ---
 
+## 2026-09-15
+- ✅ 新增：**活漏斗自动施肥（骨粉 → 活耕地）**——活漏斗按 WASD 方向传输时，
+  货物是骨粉且目标槽位是活耕地 → 绕开通用插入（活耕地是活物品非存储容器，
+  SlotAccessorFactory 必然 null——通用路径每 tick 空转），改走施肥消耗 1 个
+  骨粉触发一次生长 tick（forceGrowthTick：未成熟 +1 / 成熟待输出空 → 冻结
+  产出）。**触发物口径有意区分**（用户定稿）：手动 = 活化能力（GUI 右键要活
+  骨粉），自动 = 物流集成（**普通骨粉**即可，骨粉生成器/原版漏斗物流可直接
+  对接；活骨粉也放行）。equals 零空转：对着已冻结成熟耕地不烧骨粉。节奏 =
+  漏斗冷却（8t 随堆叠加速，一次施肥 = 一次传输）。实现三处：
+  `LivingFarmlandFunction.tryFertilize`（入口）+ `TransferPipeline.executeInContainer`
+  施肥分支（流程图 [3.5]，置于 isTransferableSource 之前放行骨粉）+
+  `CrossContainerTransfer.pushToNeighbor` 跨容器版（tryFertilizeToNeighbor
+  邻居槽位迭代；getStackInSlot 实时引用改组件即刻生效，无需回写 handler）。
+  回归测试 FertilizeTransferTest（6 项），全量 268 用例全绿；收编
+  living-hopper-tech.md §2.2 流程图 [3.5] + §6.2.1 跨容器施肥小节 +
+  living-farmland-tech.md v1.7 §7.1（口径对照表）+ §12.2 验证项 + §10.3
+  ⚠️ 本条的「活骨粉也放行」与实现三处之说已于同日修正/收编，见下方两条（口径修正 + 注册式分发）
+- ✅ 修复 + 重构：**跨容器施肥「推送生效、拉取失效」**——施肥分支原先只内嵌在
+  推送方向与容器内管道，拉取方向 `pullFromNeighbor` 走通用路径，而
+  `SlotAccessorFactory.create` 对非箱类活物品直接 return null（活耕地正是
+  「活物品 + 非存储容器」）→ 目标槽必然失败，骨粉送不进去也永远不施肥。
+  **修复 + 结构性收编**：方程抽成注册式槽位交互
+  `SlotInteraction` / `SlotInteractions`（内置条目 `FarmlandBonemealInteraction`），
+  三处传输分支只调分发器（`tryInteract` 已知货物 / `tryInteractFromNeighbor`
+  拉取方向）——**今后新增同类交互 = 1 个实现类 + 1 行注册，零传输代码改动**。
+  顺带完成跨容器能力全量审计（`living-hopper-tech.md` §6.2.2 覆盖矩阵 +
+  结构规则「特殊槽位识别只在 containerCtx 一侧生效」）。回归测试
+  `CrossContainerTransferFertilizeTest`（8 项，两个入口各覆盖），全量 276 用例全绿。
+  ⚠️ 该文件于同日口径修正轮扩至 **15 项**（补推送方向隔离守卫 + 活骨粉三入口全拒），见下条
+- ✅ 自查修复：**重构自引入的「活骨粉施肥失效」**——交互源槽起初用
+  `SlotAccessorFactory.create` 拿 Accessor，而它开头就拦非箱类活物品（活骨粉正是），
+  导致 `tryInteract(null, ...)` 恒 false（普通骨粉不受影响，故只测普通骨粉看不出来）。
+  新增 `SlotAccessorFactory.createForInteraction`（不拦活物品，只读源槽自身物品，
+  不展开活箱子虚拟存储），容器内交互改用它；活物品隔离规则本身未动。
+  新增 `SlotInteractionFactoryTest`（4 项）钉住该边界，全量 **280 用例全绿**。
+  ⚠️ 本条的 `createForInteraction` 与 `SlotInteractionFactoryTest` 已于同日随口径修正移除，见下条
+  附带统一：三处交互源槽都带黑白名单过滤（原先容器内路径在过滤检查之前）。
+  新增 `SlotInteractions.canInteract` 廉价筛选谓词（分配 Accessor 之前先筛，
+  避免每次传输尝试白分配两个小对象；拉取方向每轮最多省 27 次），全量 281 用例全绿。
+- ✅ 修正口径（用户定案）：**漏斗只认普通骨粉，活骨粉不施肥**——上一版把「活骨粉也放行」
+  统一到四个方向，方向错了：施肥的语义是「活漏斗用**传输能力**把骨粉送进活耕地」，
+  属传输语义 ⇒ 必须受漏斗自身的货物规则（**活物品不作货物**）约束，不能因为
+  「反正要消耗掉」就开洞。规则收在**唯一定义点** `SlotInteractions.isEligibleCargo`
+  （活物品不作货物，活箱子/活末影箱除外），传输层 `isTransferableSource` 直接委托，
+  交互层两个入口共用——**调用点顺序变更也绕不过**；`tryPushToNeighbor` 另留循环自守
+  （非合法货物绝不进入通用插入/合并）。同时移除已无用途的
+  `SlotAccessorFactory.createForInteraction`（那是为「活骨粉放行」加的）。
+  口径 = **手动要活化、自动要普通**。新增 `SlotInteractionCargoGateTest`（5 项），
+  同期 `CrossContainerTransferFertilizeTest` 由 8 项扩至 15 项、移除
+  `SlotInteractionFactoryTest`（4 项），全量 **288 用例全绿**
+  （测试树与基线数字已按实测同步：`288 passed / 0 failed / 0 skipped`）。
+
+---
+
 ## 2026-09-14
 
 - ✅ 终审（活耕地，用户实测九轮全过后全面代码审查：三路并行审计——服务端逻辑/客户端

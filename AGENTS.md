@@ -1,8 +1,8 @@
 # Living Item (活物品)
 
 **Minecraft 1.21.1 + NeoForge 21.1.x**
-*最后更新: 2026-09-16*
-*状态: Alpha 测试阶段 - v8.1 接口化重构完成 + 红电相位解读三元件（v19.1）+ 注册式槽位交互扩展点（`SlotInteractions`，2026-09-15）+ 活耕地放置回世界（`BlockItemMixin`，2026-09-16）+ Create 跨区块传送带死锁修复（2026-09-18）*
+*最后更新: 2026-09-20*
+*状态: Alpha 测试阶段 - v8.1 接口化重构完成 + 红电相位解读三元件（v19.1）+ 注册式槽位交互扩展点（`SlotInteractions`，2026-09-15）+ 活耕地放置回世界（`BlockItemMixin`，2026-09-16）+ Create 跨区块传送带死锁修复（2026-09-18）+ 容器规则增量语义与开发期导出通道（2026-09-20，含 IronChests 数据勘误）*
 
 ---
 
@@ -106,6 +106,7 @@ SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 | **基础设施** | 容器抽象 + 发现缓存 + SlotAccessor + 性能监控 | [living-item-infrastructure.md](docs/system-design/living-item-infrastructure.md) |
 | **数据模型** | DataComponent 体系 + 新旧架构对比 + 设计决策 | [data-model.md](docs/system-design/data-model.md) |
 | **单元测试** | FML 测试环境配置 + 测试替身 + 可测性边界 | [unit-testing.md](docs/guides/unit-testing.md) |
+| **活TNT测试说明** | **分两区**：群友版（`T-01`~`T-13`，肉眼观察引爆现象，含**铁箱子触发的超级爆炸**）+ 作者自测（`A-01`~`A-12`，需日志/TPS/跑图） | [living-tnt-testing.md](docs/guides/living-tnt-testing.md) |
 | **框架重构** | HasDirection + HasContainerData 接口化设计 | [framework-refactoring.md](docs/archive/framework-refactoring.md) |
 
 ---
@@ -156,15 +157,15 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 332 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
-全绿基线：`332 passed / 0 failed / 0 skipped`（2026-09-18 爆炸逐区块分帧 + 待炸账本）。
+**合计测试用例 343 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
+全绿基线：`343 passed / 0 failed / 0 skipped`（2026-09-20 容器规则全量导出快照 + 社区贡献闭环 + UTF-8 修复）。
 > 📄 测试环境配置与编写约定见 [unit-testing.md](docs/guides/unit-testing.md)；
 > 测试文件树见 [file-map.md](docs/reference/file-map.md)「测试文件树」。
 
 ## 开发进展
 
 > 📄 **更早的记录**：早于最近 3 个更新批次的条目已迁至 [changelog.md](docs/archive/changelog.md)
-> （**截至 2026-09-14**；按日期倒序，保留完整变更细节供参考；含红电阶段一~四落地、1 game tick 传播、v8/v8.1 重构周期等全部历史条目）。
+> （**截至 2026-09-15**；按日期倒序，保留完整变更细节供参考；含红电阶段一~四落地、1 game tick 传播、v8/v8.1 重构周期等全部历史条目）。
 >
 > **条目体例**：一条 = **一行结论 + 指针**。结论写「做了什么 + 关键约束/坑」，细节写进对应的
 > `docs/tech/*.md` 或 `docs/system-design/*.md` —— **这里是入口，不是档案**，别在此铺正文。
@@ -175,6 +176,48 @@ src/main/java/com/qiqi/li/
 > 而日志会定期删除），已于 2026-09-16 补录 —— **别再漏**。
 
 ### 当前版本: v0.9-alpha
+
+**最近更新** (2026-09-20):
+- ✅ 修复：**容器规则数据勘误 + 玩家差异持久化 + 开发期导出通道**。起因「打包后没有配置文件」
+  —— 实为 jar 内 `assets/living_item/container_rules.json` 里 7 条 IronChests 规则**全错**：
+  命名空间写成 `ironchests`（实际 `ironchest`，取自 `IronChestsItems.MODID`）、槽位数 45/36/54/63/72
+  **全是编造**（真值 54/45/81/108/108）、`silver_chest` **该模组不存在** ⇒ 这 7 条**从未生效**。
+  真值取自 `libs/ironchest-1.21-neoforge-16.0.7.jar` 字节码 `IronChestsTypes.<clinit>`。
+  ⇒ 三条机制改动：① `save()` 只写**玩家差异**（新增/覆盖/删除），不再全量回写内置副本；
+  ② 新增 `removed` 字段——**删内置规则必须落盘**，否则 `load()` 会把它「复活」
+  （`load()` 同时改为幂等：先 `resetState()` 再重建）；③ `/livingitem container export`
+  把玩家规则导出为内置资源同格式 JSON，供合并进 `src/main/resources/` 随包发布。
+  **jar 内文件运行时不可写**是 classpath 硬限制 ⇒ 导出是唯一路径，正式环境不参与写入。
+  `register` 同时放开为**允许覆盖**（此前拒绝，导致玩家无法修正错误内置数据），
+  `inspect`/`list` 显示规则来源（内置/玩家覆盖/玩家注册）。新增 `ContainerRuleConfigTest`（9 项），
+  全量 **341 用例全绿**。详见 [living-item-infrastructure.md](docs/system-design/living-item-infrastructure.md)
+  §5.2/§5.2.1/§5.2.2 + [container-compatibility.md](docs/guides/container-compatibility.md)。
+
+**最近更新** (2026-09-20 · 后半):
+- ✅ 文档：**新增《活TNT测试说明》给测试者用** —— [living-tnt-testing.md](docs/guides/living-tnt-testing.md)。
+  18 个编号用例（`T-01`~`T-18`）+ 「提测最小集」。**这是面向测试者的操作说明，不是技术文档**：
+  不含实现细节，只写"怎么做 / 期望看到什么 / 看着像 bug 其实不是"。
+  重点压在三处**只有真机才能验**的行为：① `T-08` 超级爆炸**服务端不冻结**；
+  ② `T-09`/`T-10` **未加载区块走近后补炸**（含存档往返）；③ `T-17`
+  `/living_monitor cache` 观测 `loaded区块` 站桩不动**不增长**。
+  另附「已知的'看着像 bug 其实不是'」表（分帧扩散消失 / 大当量无掉落物 / 声光先于破坏），
+  减少无效反馈。口径以 [living-tnt-tech.md](docs/tech/living-tnt-tech.md) §4.3 为准。
+
+**最近更新** (2026-09-20 · 前半):
+- ✅ 特性：**容器兼容性社区贡献流程打通（文件级覆盖）**。`export` 改为导出**全量生效快照**
+  （内置 + 玩家新增 − 玩家删除，按 ID 排序）而非差异 ⇒ 玩家导出的文件**可直接整文件覆盖**
+  `assets/living_item/container_rules.json`，作者无需逐条摘录或写合并脚本，
+  重新打包即把兼容性发给所有玩家 —— 「玩家共同完善容器兼容性」从设想变为常规机制。
+  配套：`countBundled()`/`countUser()` 统计来源；加载时**重复定义冲突检测**（先到先得 + WARN，
+  `differs()` **只比 `containerSize`/`columns`**，描述措辞不同不算冲突，否则被假冲突淹没）。
+  解析逻辑抽为 `loadRules(Reader, source, label)`（包级可见），使**作者的覆盖加载路径与内置资源加载
+  共用同一套解析+冲突检测**，同时让测试能直接喂入模拟快照验证闭环。
+  ⚠️ **修掉一个真 bug**：`save()`/`export` 用 `FileWriter`（平台默认编码，中文 Windows = GBK），
+  含中文描述的导出文件拿给 UTF-8 环境会 `MalformedInputException` ⇒ **跨平台交换必锁 UTF-8**，
+  三处 IO 全改显式 `StandardCharsets.UTF_8`。
+  `ContainerRuleConfigTest` 扩到 **11 项**（新增「导出快照可原样当作内置资源重新加载，无丢失」
+  与「合并冲突先到先得、描述不同不算冲突」两条闭环守卫），全量 **343 用例全绿**。
+  详见 [living-item-infrastructure.md](docs/system-design/living-item-infrastructure.md) §5.2.2。
 
 **最近更新** (2026-09-18):
 - ✅ 重构：**爆炸破坏改为「按区块分帧 + 待炸账本」**（承上：死锁与强制加载防护之后的第三块）。
@@ -258,59 +301,6 @@ src/main/java/com/qiqi/li/
   收编 living-farmland-tech.md v1.10 §3.5 + §10.1/§10.2/§10.3 + §11.16（三坑：
   `RETURN` 注入 / `isClientSide` 字段不可 mock / 别 `setBlock`）+ §12.1 实测清单。
 
-**最近更新** (2026-09-15):
-- ✅ 新增：**活漏斗自动施肥（骨粉 → 活耕地）**——活漏斗按 WASD 方向传输时，
-  货物是骨粉且目标槽位是活耕地 → 绕开通用插入（活耕地是活物品非存储容器，
-  SlotAccessorFactory 必然 null——通用路径每 tick 空转），改走施肥消耗 1 个
-  骨粉触发一次生长 tick（forceGrowthTick：未成熟 +1 / 成熟待输出空 → 冻结
-  产出）。**触发物口径有意区分**（用户定稿）：手动 = 活化能力（GUI 右键要活
-  骨粉），自动 = 物流集成（**普通骨粉**即可，骨粉生成器/原版漏斗物流可直接
-  对接；活骨粉也放行）。equals 零空转：对着已冻结成熟耕地不烧骨粉。节奏 =
-  漏斗冷却（8t 随堆叠加速，一次施肥 = 一次传输）。实现三处：
-  `LivingFarmlandFunction.tryFertilize`（入口）+ `TransferPipeline.executeInContainer`
-  施肥分支（流程图 [3.5]，置于 isTransferableSource 之前放行骨粉）+
-  `CrossContainerTransfer.pushToNeighbor` 跨容器版（tryFertilizeToNeighbor
-  邻居槽位迭代；getStackInSlot 实时引用改组件即刻生效，无需回写 handler）。
-  回归测试 FertilizeTransferTest（6 项），全量 268 用例全绿；收编
-  living-hopper-tech.md §2.2 流程图 [3.5] + §6.2.1 跨容器施肥小节 +
-  living-farmland-tech.md v1.7 §7.1（口径对照表）+ §12.2 验证项 + §10.3
-  ⚠️ 本条的「活骨粉也放行」与实现三处之说已于同日修正/收编，见下方两条（口径修正 + 注册式分发）
-- ✅ 修复 + 重构：**跨容器施肥「推送生效、拉取失效」**——施肥分支原先只内嵌在
-  推送方向与容器内管道，拉取方向 `pullFromNeighbor` 走通用路径，而
-  `SlotAccessorFactory.create` 对非箱类活物品直接 return null（活耕地正是
-  「活物品 + 非存储容器」）→ 目标槽必然失败，骨粉送不进去也永远不施肥。
-  **修复 + 结构性收编**：方程抽成注册式槽位交互
-  `SlotInteraction` / `SlotInteractions`（内置条目 `FarmlandBonemealInteraction`），
-  三处传输分支只调分发器（`tryInteract` 已知货物 / `tryInteractFromNeighbor`
-  拉取方向）——**今后新增同类交互 = 1 个实现类 + 1 行注册，零传输代码改动**。
-  顺带完成跨容器能力全量审计（`living-hopper-tech.md` §6.2.2 覆盖矩阵 +
-  结构规则「特殊槽位识别只在 containerCtx 一侧生效」）。回归测试
-  `CrossContainerTransferFertilizeTest`（8 项，两个入口各覆盖），全量 276 用例全绿。
-  ⚠️ 该文件于同日口径修正轮扩至 **15 项**（补推送方向隔离守卫 + 活骨粉三入口全拒），见下条
-- ✅ 自查修复：**重构自引入的「活骨粉施肥失效」**——交互源槽起初用
-  `SlotAccessorFactory.create` 拿 Accessor，而它开头就拦非箱类活物品（活骨粉正是），
-  导致 `tryInteract(null, ...)` 恒 false（普通骨粉不受影响，故只测普通骨粉看不出来）。
-  新增 `SlotAccessorFactory.createForInteraction`（不拦活物品，只读源槽自身物品，
-  不展开活箱子虚拟存储），容器内交互改用它；活物品隔离规则本身未动。
-  新增 `SlotInteractionFactoryTest`（4 项）钉住该边界，全量 **280 用例全绿**。
-  ⚠️ 本条的 `createForInteraction` 与 `SlotInteractionFactoryTest` 已于同日随口径修正移除，见下条
-  附带统一：三处交互源槽都带黑白名单过滤（原先容器内路径在过滤检查之前）。
-  新增 `SlotInteractions.canInteract` 廉价筛选谓词（分配 Accessor 之前先筛，
-  避免每次传输尝试白分配两个小对象；拉取方向每轮最多省 27 次），全量 281 用例全绿。
-- ✅ 修正口径（用户定案）：**漏斗只认普通骨粉，活骨粉不施肥**——上一版把「活骨粉也放行」
-  统一到四个方向，方向错了：施肥的语义是「活漏斗用**传输能力**把骨粉送进活耕地」，
-  属传输语义 ⇒ 必须受漏斗自身的货物规则（**活物品不作货物**）约束，不能因为
-  「反正要消耗掉」就开洞。规则收在**唯一定义点** `SlotInteractions.isEligibleCargo`
-  （活物品不作货物，活箱子/活末影箱除外），传输层 `isTransferableSource` 直接委托，
-  交互层两个入口共用——**调用点顺序变更也绕不过**；`tryPushToNeighbor` 另留循环自守
-  （非合法货物绝不进入通用插入/合并）。同时移除已无用途的
-  `SlotAccessorFactory.createForInteraction`（那是为「活骨粉放行」加的）。
-  口径 = **手动要活化、自动要普通**。新增 `SlotInteractionCargoGateTest`（5 项），
-  同期 `CrossContainerTransferFertilizeTest` 由 8 项扩至 15 项、移除
-  `SlotInteractionFactoryTest`（4 项），全量 **288 用例全绿**
-  （测试树与基线数字已按实测同步：`288 passed / 0 failed / 0 skipped`）。
-
-## 协作约定
 
 > 由实际踩坑沉淀的行为准则 —— **每次会话都适用**，不是某个子系统的细节。
 
@@ -359,6 +349,7 @@ src/main/java/com/qiqi/li/
 | **查「为什么这么定」/ 某口径是否已被取代** | [decisions.md](docs/decisions.md)（决策索引 + 翻转留痕） |
 | 改文档 / 归档 / 校验 | [docs/README.md](docs/README.md) + `python tools/doc_check.py` |
 | 写测试 / 跑全量 / mock `Level` | [unit-testing.md](docs/guides/unit-testing.md) |
+| **发版本给群友测活TNT** | [living-tnt-testing.md](docs/guides/living-tnt-testing.md) §1~§6（**转发时只发这半段**） |
 | 找某个源文件 | [file-map.md](docs/reference/file-map.md)（完整文件树，快照） |
 | **查原版 / NeoForge / 第三方模组源码** | **直接搜 `libs/src/`，无需解压** —— `libs/src/neoforge-21.1.249-merged/` 是 ⭐ 首选（版本与 `neo_version` 一致）；第三方模组在 `libs/src/<ModName>/`。详见 [idea.md](docs/idea.md) §2.2.1 |
 | 查历史变更 | [changelog.md](docs/archive/changelog.md)（按日期倒序） |

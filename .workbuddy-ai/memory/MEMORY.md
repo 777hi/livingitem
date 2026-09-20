@@ -6,122 +6,70 @@
 
 ## 文档系统（定位与红线，2026-09-16）
 
-- ⭐ **文档的主要读者是 AI**（用户原话）—— 第一性原理：写**约束**不写叙述、**只写代码里推不出来的**、
+- ⭐ **文档的主要读者是 AI**（用户原话）—— 写**约束**不写叙述、**只写代码里推不出来的**、
   断言必须**可复算**、**索引与正文分离**、**翻转必须留痕**。
-- **人 ↔ AI ↔ 代码 靠文档联系**；目标是「新对话只加载 `AGENTS.md` 就能理解项目」。
-- **改代码必须同步文档**；新能力至少要有：技术文档小节 + AGENTS.md 进展条目 + 子系统索引概述。
-- 配套入口：术语表 [`glossary.md`](../../docs/glossary.md)（43 条）·
-  决策索引 [`decisions.md`](../../docs/decisions.md)（18 条 + supersedes）·
-  校验脚本 `tools/doc_check.py`（**改完必跑**，6 项检查）。
-- ⚠️ 搬运文档时**搬走不删掉**，且**守恒校验必须逐段判定**（只验第一块曾误删整段）。
+- **人 ↔ AI ↔ 代码 靠文档联系**；目标「新对话只加载 `AGENTS.md` 就能理解项目」。
+- **改代码必须同步文档**：技术文档小节 + AGENTS.md 进展条目 + 子系统索引概述（三者齐）。
+- 入口：`glossary.md`（术语）· `decisions.md`（决策 + supersedes 留痕）·
+  `tools/doc_check.py`（**改完必跑**，6 项）。
+- ⚠️ 搬文档**搬走不删掉**，**守恒校验必须逐段判定**（只验第一块曾误删整段）。
+- ⚠️ 入口超 20,000 字符时**先查冗余再动历史**；**不要靠上调预算解决**（2026-09-16 / 09-18 两次都是只清冗余、历史没动）。
 
-## 区块加载事件红线（2026-09-18）
+## 单测：静态注册表必须显式重置（2026-09-20）
 
-- ⚠️ **`ChunkEvent.Load` 回调里禁止任何世界交互**（`getCapability` / `getBlockEntity` / 读方块状态）。
-  它在区块 FULL 任务**内部**触发；里面的查询会执行第三方能力提供者（Create 传送带 →
-  查别的区块的 BE）→ `ServerChunkCache.getChunk(requireChunk=true)` → `managedBlock`+`join`
-  ⇒ 主线程自等自，**服务端线程冻结**。NeoForge 在该事件 javadoc 里有明确警告。
+- ⚠️ Gradle 在**同一 JVM** 跑完所有测试类 ⇒ **静态注册表/静态缓存测试间必须显式 `reset`**。
+  症状隐蔽：日志「加载 0 条」看着像资源读不到，实为 `findRule(id).isPresent() → continue`（已存在被跳过）。
+- **诊断纪律：先写探针验证假设**。当时误判为「classpath 读不到资源」，探针实测
+  `getResourceAsStream` 三种全可读 ⇒ 立即排除，否则会去改正确的 `loadFromResource`。
+  **探针用完即删，不留仓库**。
+- 落点：`ContainerRuleConfig.load()` 内部先调 `resetState()`（清 `RULES` + 三个静态集）保证幂等。
+
+## 区块加载事件红线（2026-09-18 · D-core-04 / D-core-05）
+
+- ⚠️ **`ChunkEvent.Load` 回调里禁止任何世界交互**（`getCapability`/`getBlockEntity`/读方块状态）。
+  它在区块 FULL 任务**内部**触发；内部查询会跑第三方能力提供者（Create 传送带 → 查别的区块的 BE）
+  → `getChunk(requireChunk=true)` → `managedBlock`+`join` ⇒ 主线程自等自，**服务端冻结**。
 - 口诀：**同区块不卡、指向别的区块必卡**（原版 `currentlyLoading` 旁路只覆盖自身）。
-  `level.isLoaded()` 不充分 —— `hasChunk` 只查 ticket level。
-- 修法：事件只登记坐标，扫描推迟到 `ServerTickEvent.Pre`；用 `getChunkNow` 不用 `getChunk`；
-  每 tick 限量。全文 + 事故记录见 [`living-item-infrastructure.md` §3.2](../../docs/system-design/living-item-infrastructure.md)、
-  决策 `D-core-04`、守卫测试 `ContainerChunkCacheChunkLoadTest`。
-- 工具侧方法论文档：技能 `mc-event-callback-safety`（**项目事实以仓库文档为准**）。
-- ⚠️ **发现 ≠ 处理（第二条红线，D-core-05）**：**发现**（扫描哪些区块有容器）覆盖
-  **所有已加载区块**；**处理**（读能力 / 读邻居一格）只针对 **ticking 区**
-  （`isPositionTicking`，ticket ≤32）—— 落在"已加载但不 tick"的最外一圈（33 圈）时，
-  邻居会在未加载的生成余量圈，读邻居触发强制加载（一次凑 289 区块足迹）。
-  入口：`ContainerChunkCache.getProcessableChunks(ServerLevel)`。
-  **扫描侧不能过滤**（区块提升到 ticking 没有对应事件 ⇒ 会永久漏发现）。
-  可观测：`/living_monitor cache`（缓存/可处理/loaded 区块/视距基准）。
+  `level.isLoaded()` 不充分（`hasChunk` 只查 ticket level）。
+- 修法：事件只登记坐标，扫描推迟到 `ServerTickEvent.Pre`；用 `getChunkNow` 不用 `getChunk`；每 tick 限量。
+- ⚠️ **发现 ≠ 处理（D-core-05）**：**发现**覆盖**所有已加载区块**；**处理**只针对 **ticking 区**
+  （`isPositionTicking`，ticket ≤32）。危险带 = 已加载但不 tick 的**最外一圈（33 圈）**，
+  邻居全在未加载区，读邻居触发强制加载（一次凑 289 区块足迹 + 票据续期永久钉住）。
+  **扫描侧不能过滤**（区块提升到 ticking 无事件 ⇒ 永久漏发现）。
+- 入口：`ContainerChunkCache.getProcessableChunks(ServerLevel)`；观测 `/living_monitor cache`。
+- 全文 §3.2 + 守卫测试 `ContainerChunkCacheChunkLoadTest`；工具侧方法论技能 `mc-event-callback-safety`
+  （**项目事实以仓库文档为准**）。
 
-## 爆炸：逐区块分帧 + 待炸账本（D-tnt-01，2026-09-18）
+## 爆炸：逐区块分帧 + 待炸账本（2026-09-18 · D-tnt-01）
 
 - **破坏唯一入口 `ExplosionComponent.applyToChunk(level, params, chunk)`** —— 三种模式
-  （NORMAL/HIGH_YIELD/SUPER）都按区块执行；立即阶段与延迟阶段走同一个函数
-  ⇒ 同一场爆炸无论区块何时加载，结果一致。
-- `ExplosionLedger`（世界级 `SavedData`）承载"哪些区块还没炸"的**参数 + `long[]` 位图**。
-  每 tick ≤ `MAX_CHUNKS_PER_TICK = 32` 个区块。
+  （NORMAL/HIGH_YIELD/SUPER）都按区块执行 ⇒ 同一场爆炸无论区块何时加载，结果一致。
+- `ExplosionLedger`（世界级 `SavedData`）：参数 + `long[]` 完成位图；每 tick ≤ `MAX_CHUNKS_PER_TICK = 32`。
 - ⚠️ **未加载区块 → 丢弃**（等 `ChunkEvent.Load` 重新登记，**不能轮询**）；
-  **预算用尽 → carryOver**（已加载的不会再触发 Load，丢了就**永远不炸**）。这两条写反就丢爆炸。
-- ⚠️ **队列只 `remove` 本 tick 处理过的区块，永不整体替换** —— 否则同 tick 新登记的区块被覆盖，
+  **预算用尽 → carryOver**（已加载的不会再触发 Load，丢了**永远不炸**）。写反即丢爆炸。
+- ⚠️ **队列只 `remove` 本 tick 处理过的区块，永不整体替换** ⇒ 否则同 tick 新登记的区块被覆盖，
   而它们已加载、不会再触发 Load ⇒ 永远不炸。
-- ⚠️ `schedule` 返回 false（账本满）时调用方**必须降级**（只炸已加载部分 + WARN），
-  不能忽略 —— 否则声光已播、方块没坏。
-- 多条目重叠：同一区块对每条各处理一次，**破坏幂等**（第二次看到空气）；
-  掉落物归属取决于处理顺序（不可观测）。
-- ⚠️ `ChunkEvent.Load` 只登记坐标（红线）；`ChunkEvent.Load` 提升到 ticking **无事件** ⇒
-  发现侧不能过滤（见 D-core-05）。
-- 全文：`living-tnt-tech.md` §4.3 + `living-item-infrastructure.md` §3.2.2。
-
-## 纹理 / 环境
-
-- 全文见 [`icon-system.md`「纹理约定」](../../docs/system-design/icon-system.md)：
-  涂蜡铜灯 = 未涂蜡 + **外圈 60px 黄框 `(232,160,62,255)`**，四锈蚀级掩码**完全一致**；
-  改图标**只改内部**，掩码不一致是已发生过的 bug。
-- 图片处理用隔离 venv：`C:/Users/AI-777hi/.workbuddy-ai/binaries/python/envs/default/Scripts/python.exe`（Pillow 12.3.0）。
-
-## 配方书材料表（stackedContents）Mixin
-
-- 重建 `stackedContents` 只有两条路径：`initVisuals()`、`updateStackedContents()`。
-  **两条都要注入**（漏 `initVisuals` ⇒「刚开界面材料不识别，动一下才恢复」）；
-  其余 `updateCollections` 调用点只复用不重建。
-- **内容变化后的刷新靠原版链路，别加轮询/指纹/缓存**（2026-09-05 加过又被移除）：
-  服务端改 CONTAINER → `triggerSlotListeners`（`ItemStack.matches`）→ 发包 → 客户端 `Inventory.setItem`
-  → `timesChanged++` → 客户端 tick，1–3 tick。前提：`ItemStackMixin` **没动 `matches`**。
-- **无状态是这个 Mixin 正确的原因** —— 要引状态字段的优化，先质疑是否必要。
-- 详见 [`guides/recipe-book-style.md`](../../docs/guides/recipe-book-style.md)。
-
-## 相位圆盘（v19.2）不变量
-
-- 合因子 = **标量和** `Σ√|Δᵢ|`（`eff_δ_sum`），再取 `(eff_δ_sum)^(1+u)`；
-  相位只经 n（去重计数）与调谐效率参与，**不做矢量相加** ⇒ 画**辐条**不画箭头。
-- **相位分布不影响收益**（均匀 vs 挤一坨结果相同）；圆盘价值是**诊断**，不是优化目标。
-- 相位顺序一律 `PhaseDomain.phasesSorted()`；`deltaByOffset()` 是 HashMap 值视图（哈希序）且**不含 offset**。
-- 最佳域按 `period == detectedPeriod` 定位（period 在域集合内唯一，无需 best 标记字段）。
-
-## 电力层（v3 铜块网络）
-
-- `tickContainerData` 按 `(TopoKey, rep, channelIdx)` 组件遍历：**每组件仅锚点（最小铜块槽位 rep）跑一次
-  `runBfs`**，其余 `ChannelState.copyFrom`；`accountEnergy` 仍逐机调用。
-- **不变量**：`ChannelState.onPhaseEvent(event, pref)` 中 **pref 完全不被使用**（域只按 `event.period()` 分桶）
-  ⇒ 同网络多机共享同一 ChannelState 实例安全。
-- `ChannelState.copyFrom` 是**深拷贝** —— 改 ChannelState 字段时同步改 copyFrom。
-- 跨 tick 持久化：`SimpleContainerContext` 存进 `ContainerLivingItemHandler` 静态缓存（按 containerKey）；
-  `FakeContainerContext` **不持久化** ⇒ 驱动多 tick 逻辑必须用 SimpleContainerContext。
-- 测试 seam：`ContainerRedstoneData.setEdgeForTest/setPrevEdgeForTest` 注入边信号驱动 `tickContainerData`。
-
-## 相位圆盘渲染（像素对齐）
-
-- 全文（三条规约 + 展开条 / φ=0 / 环厚 / 留白 / 验证工具）见
-  [`tooltip-system.md`「相位圆盘渲染像素对齐规约」](../../docs/system-design/tooltip-system.md)。
-- 速记：**点块以 (px,py) 为几何中心** · **步数取偶数** · **用 `symRound` 不用 `Math.round`**。
-- 改渲染前先跑 `tools/_sim_tooltip.py` 量化 before/after。
-
-## 性能判读：`PerfMetrics` 的覆盖盲区
-
-- `PerfMetrics` 只插桩 `processContext` 内部；**外部 mod 直调我们能力接口**的路径
-  （Flux Networks → `ContainerEnergyStorage.receiveEnergy`）**完全不在计时区间内**。
-- ⇒ 「PerfMetrics 说只占 3%」与「spark 说 98.79%」**不矛盾**；
-  **交叉验证必须看 spark 的绝对毫秒数**。**先问场景，再读火焰图**。
-- 全文见 [`living-item-infrastructure.md` §10.3](../../docs/system-design/living-item-infrastructure.md)。
+- ⚠️ `schedule` 返回 false（账本满）时调用方**必须降级**（只炸已加载 + WARN），不能忽略
+  —— 否则声光已播、方块没坏。
+- 多条目重叠：同一区块对每条各处理一次，**破坏幂等**；掉落物归属取决于处理顺序（不可观测）。
+- 全文 `living-tnt-tech.md` §4.3 + `living-item-infrastructure.md` §3.2.2；
+  给测试者的操作说明 `docs/guides/living-tnt-testing.md`。
 
 ## 容器对外能量接口（ContainerEnergyStorage）热路径
 
 > 详见 [`power-invariants.md` §2.G](../../docs/system-design/power-invariants.md)；以下是红线。
 
 - `receive()`：**只扫一遍 `getStackInSlot`**，比例分配与零头回收走 `stacks[]` 数组。
-  `isBulb()` 短路顺序固定 `!isEmpty → isWaxedBulb(Item) → isLivingItem(stack)`（顺序反了白跑组件查询）。
+  `isBulb()` 短路顺序固定 `!isEmpty → isWaxedBulb(Item) → isLivingItem(stack)`（反了白跑组件查询）。
   **保持无状态**（ThreadLocal 暂存池因跨调用状态 + 重入风险否决）。
 - **语义红线**（`RoundTripConservationIT` 守着）：整 FE 量化 `accept -= accept % 1000`；
   完整步进保护（`count > leftover` 跳过）；「宁损勿造」。
-- **long 溢出红线（真凶）**：mFE 定点制（1 FE = 1000 mFE）+ 每盏 `BULB_UNIT_CAPACITY_MFE = 1e9`
+- **long 溢出红线（真凶）**：mFE 定点（1 FE = 1000 mFE）+ 每盏 `BULB_UNIT_CAPACITY_MFE = 1e9`
   ⇒ `accept * remaining[i]` 可到 1e23 ≫ Long.MAX。**凡 `a * b / c` 先转 double 再夹 `remaining[i]`**。
   溢出后零头回收 `while` 退化成 ~10 亿轮（服务端冻结）；**27 槽铜灯 > 约 16 盏即触发**。
-  同款第二处已修：`LivingWaxedCopperFunction.distributeToBulbs`（后果是**凭空造电**）。
-- 外部 mod 会传 `Integer.MAX_VALUE`（Flux「绕过限制」模式）⇒ 必须安全吃下。
-  `MAX_LEFTOVER_PASSES = 256` 是防御上限，**别删**。`extract()` 无同类溢出。
-- 常量 `BULB_UNIT_CAPACITY_FE = 1_000_000`；`WaxedCopperStorageTest` 里「16 × 100_000」注释已过时。
+  同款第二处已修：`LivingWaxedCopperFunction.distributeToBulbs`（后果**凭空造电**）。
+- 外部 mod 会传 `Integer.MAX_VALUE`（Flux「绕过限制」）⇒ 必须安全吃下；
+  `MAX_LEFTOVER_PASSES = 256` 是防御上限**别删**。`extract()` 无同类溢出。
 
 ## 物品 ↔ 世界：独立于传输层的第三条链路
 
@@ -135,16 +83,6 @@
 - 详见 [`infrastructure` §9.8](../../docs/system-design/living-item-infrastructure.md) /
   [`farmland-tech` §3.5 / §11.16](../../docs/tech/living-farmland-tech.md)。
 
-## 槽位叠加层：优先走 `IItemDecorator`
-
-- **能进 `IItemDecorator` 就别写 `AbstractContainerScreenMixin`** —— 后者依赖 `leftPos/topPos`，而
-  **HUD 快捷栏走 `Gui.renderHotbar` → `renderItemDecorations`，从不经过 `AbstractContainerScreen`**。
-- 三契约：① 坐标 =「当前 pose 内 `translate(xOffset, yOffset, z)`」（容器传 `slot.x`，**未加** `leftPos`）；
-  ② 容器内 z 有 `+100` 基准 ⇒ z=200 → 净 300；③ `ItemDecoratorHandler` 会 `resetRenderState()`（开深度）
-  ⇒ **别写 `RenderSystem`**。
-- 拿不到容器槽表的能力（如「上方一格生长槽大图」）留在 Mixin。
-- 详见 [`icon-system.md`](../../docs/system-design/icon-system.md)。
-
 ## 跨容器传输：方向对称性必须逐条点名验证
 
 - `pushToNeighbor` 与 `pullFromNeighbor` 是**两份独立实现**；「一处内嵌两路径共用」**不覆盖拉取方向**。
@@ -152,5 +90,44 @@
   ⇒ **拉取方向**通用传输对活物品目标槽**必然失败**，特殊能力必须显式前置分支。
 - **货物准入唯一定义点 = `SlotInteractions.isEligibleCargo`**（`!isLivingItem || 活箱子 || 活末影箱`）；
   规则收在共享入口，**调用点顺序变更绕不过它**。**活骨粉不给漏斗施肥**（属**传输语义**）。
-- **判定「某能力是否覆盖」不能靠结构推断**：要么 grep 到三处分支，要么写方向化单测。
+- **判定「某能力是否覆盖」不能靠结构推断**：要么 grep 三处分支，要么写方向化单测。
 - 详见 [`living-hopper-tech.md` §6.2.1 / §6.2.2](../../docs/tech/living-hopper-tech.md)。
+
+## 槽位叠加层 / 配方书 / 相位圆盘 / 纹理（渲染与 Mixin 速记）
+
+- **能进 `IItemDecorator` 就别写 `AbstractContainerScreenMixin`** —— **HUD 快捷栏走
+  `Gui.renderHotbar` → `renderItemDecorations`，从不经过 `AbstractContainerScreen`**。
+  三契约：坐标 =「当前 pose 内 `translate(xOffset, yOffset, z)`」（容器传 `slot.x`，**未加** `leftPos`）；
+  容器内 z 有 `+100` 基准；`ItemDecoratorHandler` 会 `resetRenderState()` ⇒ **别写 `RenderSystem`**。
+  详见 [`icon-system.md`](../../docs/system-design/icon-system.md)。
+- **配方书 `stackedContents` 重建只有两条路径**：`initVisuals()`、`updateStackedContents()`
+  —— **两条都要注入**（漏 `initVisuals` ⇒「刚开界面材料不识别，动一下才恢复」）。
+  **内容变化后的刷新靠原版链路，别加轮询/指纹/缓存**（2026-09-05 加过又被移除）；
+  **无状态是这个 Mixin 正确的原因**。详见 [`guides/recipe-book-style.md`](../../docs/guides/recipe-book-style.md)。
+- **相位圆盘**：合因子 = **标量和** `Σ√|Δᵢ|`（`eff_δ_sum`）再 `^(1+u)`；相位只经 n 与调谐效率参与，
+  **不做矢量相加** ⇒ 画**辐条**不画箭头。**相位分布不影响收益**（圆盘是诊断不是优化目标）。
+  相位顺序一律 `PhaseDomain.phasesSorted()`；`deltaByOffset()` 是 HashMap 值视图且**不含 offset**。
+  渲染速记：**点块以 (px,py) 为几何中心** · **步数取偶数** · **用 `symRound` 不用 `Math.round`**；
+  改渲染前先跑 `tools/_sim_tooltip.py` 量化 before/after。
+  详见 [`tooltip-system.md`](../../docs/system-design/tooltip-system.md)。
+- **纹理**：涂蜡铜灯 = 未涂蜡 + **外圈 60px 黄框 `(232,160,62,255)`**，四锈蚀级掩码**完全一致**；
+  改图标**只改内部**。图片处理用隔离 venv：
+  `C:/Users/AI-777hi/.workbuddy-ai/binaries/python/envs/default/Scripts/python.exe`（Pillow 12.3.0）。
+
+## 电力层（v3 铜块网络）
+
+- `tickContainerData` 按 `(TopoKey, rep, channelIdx)` 组件遍历：**每组件仅锚点跑一次 `runBfs`**，
+  其余 `ChannelState.copyFrom`；`accountEnergy` 仍逐机调用。
+- **不变量**：`ChannelState.onPhaseEvent(event, pref)` 中 **pref 完全不被使用**（域只按 `event.period()` 分桶）
+  ⇒ 同网络多机共享同一 ChannelState 实例安全。`copyFrom` 是**深拷贝**（改字段同步改它）。
+- 跨 tick 持久化：`SimpleContainerContext` 存进 `ContainerLivingItemHandler` 静态缓存（按 containerKey）；
+  `FakeContainerContext` **不持久化** ⇒ 驱动多 tick 逻辑必须用 SimpleContainerContext。
+- 测试 seam：`ContainerRedstoneData.setEdgeForTest/setPrevEdgeForTest`。
+
+## 性能判读：`PerfMetrics` 的覆盖盲区
+
+- `PerfMetrics` 只插桩 `processContext` 内部；**外部 mod 直调我们能力接口**的路径
+  （Flux Networks → `ContainerEnergyStorage.receiveEnergy`）**完全不在计时区间内**。
+- ⇒ 「PerfMetrics 说只占 3%」与「spark 说 98.79%」**不矛盾**；
+  **交叉验证必须看 spark 的绝对毫秒数**。**先问场景，再读火焰图**。
+- 全文见 [`living-item-infrastructure.md` §10.3](../../docs/system-design/living-item-infrastructure.md)。

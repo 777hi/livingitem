@@ -304,5 +304,6 @@ src/test/java/com/qiqi/li/
 │   └── TillToFarmlandCompatTest.java          # 活锄头跨模组兼容·模组锄头命中+处理器产物回归（8 项）
 └── living/transfer/
     ├── ContainerCompatibilityConfigTest.java  # 容器布局推断（14 项）
+    ├── ContainerRuleConfigTest.java           # 玩家差异持久化·覆盖内置+删除不复活+导出全量快照+社区闭环（11 项）
     └── SlotInteractionCargoGateTest.java      # 槽位交互货物准入真值表·活骨粉不施肥（5 项）
 ```

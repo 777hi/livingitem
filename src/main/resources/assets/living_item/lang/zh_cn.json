@@ -31,6 +31,7 @@
   "tooltip.livingitem.chest.slots": "  §7存储: §e%d§7/§a%d §7槽位§r",
   "tooltip.livingitem.chest.uuid_lost": "§c  UUID已丢失！请使用 /livingchest recover 指令找回§r",
   "tooltip.livingitem.tnt.status": "§c活TNT§r",
+  "text.livingitem.living": "活物品",
   "tooltip.livingitem.flint_and_steel.status": "§e活打火石§r",
   "tooltip.livingitem.tool.mode.assist": "  §7模式: §b辅助玩家挖掘§r",
   "tooltip.livingitem.tool.mode.auto": "  §7模式: §a自主挖掘§r",
@@ -197,5 +198,10 @@
   "command.livingitem.rules_header": "§a已注册的容器规则 (%d):§r",
   "command.livingitem.container_removed": "§a已移除容器规则 §e%s§r",
   "command.livingitem.container_not_found": "§c未找到容器规则 §e%s§r",
-  "command.livingitem.rules_reloaded": "§a已从配置文件重新加载容器规则§r"
+  "command.livingitem.rules_reloaded": "§a已从配置文件重新加载容器规则§r",
+  "command.livingitem.container_overrode": "§a已覆盖容器 §e%s§a: %d 槽位 (%d列×%d行)§r",
+  "command.livingitem.container_overrode_bundled": "§a已覆盖内置规则 §e%s§a: %d 槽位 (%d列×%d行)§r\n§7该修改已记入玩家配置，可用 §f/livingitem container export §7导出§r",
+  "command.livingitem.export_done": "§a已导出 %d 条生效规则§7（内置 %d + 社区 %d）§r §7→ §f%s§r\n§7这份文件是完整快照，可直接发给模组作者用于覆盖内置资源、随包发布§r",
+  "command.livingitem.export_empty": "§7没有可导出的规则（注册表为空）§r",
+  "command.livingitem.export_failed": "§c导出失败，请查看日志§r"
 }

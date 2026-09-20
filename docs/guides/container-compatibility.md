@@ -100,9 +100,35 @@ MOD版本和玩家配置文件的格式是相同的，可以直接复制内容�
 | `/livingitem container register <columns> <size>` | 手动指定槽位数（自动检测不准时纠错） |
 | `/livingitem container register <columns> <containerId>` | 手动指定容器 ID |
 | `/livingitem container register <columns> <size> <containerId>` | 全手动指定 |
-| `/livingitem container list` | 列出所有已注册的规则 |
-| `/livingitem container remove <containerId>` | 移除指定规则 |
-| `/livingitem container reload` | 从配置文件重新加载 |
+| `/livingitem container inspect` | 查看准心指向容器的规则（含**来源**：内置 / 玩家覆盖 / 玩家注册） |
+| `/livingitem container list` | 列出所有已注册的规则（`+` = 玩家注册，`*` = 玩家覆盖内置） |
+| `/livingitem container remove <containerId>` | 移除指定规则（删内置规则会记入 `removed`，重启不复活） |
+| `/livingitem container reload` | 从配置文件重新加载（幂等，会重建全部状态） |
+| `/livingitem container export` | **开发期**：导出**全量生效规则快照**到 `config/living_item/exported_rules.json` |
+
+> ⚠️ **`register` 会覆盖已存在的规则**（2026-09-20 起）。此前重复注册会被拒绝，
+> 导致玩家发现内置数据有误时**无法修正**——而内置数据确实可能出错
+> （见 [`living-item-infrastructure.md` §5.2](../system-design/living-item-infrastructure.md) 的 IronChests 勘误）。
+> 覆盖内置规则会记入玩家配置，可用 `export` 导出。
+
+### 社区贡献：文件级覆盖
+
+`export` 导出的**不是差异，而是全量生效快照**（内置 + 玩家新增 − 玩家删除，按 ID 排序）。
+所以那份文件**已经包含作者原有的全部内置条目**，可以直接**整体复制覆盖**：
+
+```
+config/living_item/exported_rules.json
+        ↓  整文件复制粘贴（无需逐条摘录、无需合并脚本）
+src/main/resources/assets/living_item/container_rules.json
+        ↓  ./gradlew build
+兼容性随模组发布给所有玩家
+```
+
+作者侧的注意点：
+
+- **冲突先到先得 + WARN**：合并多份玩家贡献后同一 ID 出现两条不同数值时，
+  保留先出现的一条并打警告；只比 `containerSize`/`columns`，描述措辞不同不算冲突。
+- **编码固定 UTF-8**：`save`/`export`/`load` 三处均显式 UTF-8，跨平台交换不会乱码。
 
 ### 使用示例
 
@@ -141,10 +167,15 @@ MOD版本和玩家配置文件的格式是相同的，可以直接复制内容�
 | 方法 | 说明 |
 |------|------|
 | `init(path)` | 初始化配置目录 |
-| `load()` | 从配置文件加载（首次自动创建默认文件） |
-| `save()` | 保存所有规则到配置文件 |
-| `addAndSave(id, rule)` | 注册并保存 |
-| `removeAndSave(id)` | 移除并保存 |
+| `load()` | 重新加载（幂等：先清空状态，再读内置资源 + 玩家差异） |
+| `save()` | 保存**玩家差异**（新增/覆盖/删除），不回写内置规则 |
+| `addAndSave(id, rule)` | 注册或**覆盖**并保存；返回是否覆盖了已有规则 |
+| `removeAndSave(id)` | 移除并保存（内置规则会记入 `removed`，否则重启复活） |
+| `exportBundledFormat()` | 开发期：导出**全量生效规则快照**（与内置资源同格式，不含 `removed`），返回条数；失败返回 `-1` |
+| `countBundled()` / `countUser()` | 生效规则中来自内置 / 玩家新增的条数（用于 `export` 提示与启动日志） |
+| `isBundledRule(id)` | 该 ID 是否来自内置资源（与是否被覆盖无关） |
+| `isUserModified(id)` | 玩家是否动过它（新增/覆盖/删除） |
+| `isRemovedByUser(id)` | 该 ID 是否被玩家显式删除（重启不复活） |
 
 ### ContainerRule
 

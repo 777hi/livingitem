@@ -45,6 +45,9 @@ import net.neoforged.neoforge.event.RegisterCommandsEvent;
  *     — 移除指定容器规则</li>
  *   <li>{@code /livingitem container reload}
  *     — 从配置文件重新加载</li>
+ *   <li>{@code /livingitem container export}
+ *     — 把玩家注册的增量规则导出为与模组自带资源同格式的 JSON
+ *       （{@code config/living_item/exported_rules.json}，开发期用于合并进随包资源）</li>
  * </ul>
  * <p>
  * <b>核心设计：</b>去掉了 <code>height</code> 参数，无需关心容器是否为矩形。
@@ -102,6 +105,9 @@ public class LivingItemContainerCommand {
                     .then(Commands.literal("reload")
                         .executes(LivingItemContainerCommand::reloadRules)
                     )
+                    .then(Commands.literal("export")
+                        .executes(LivingItemContainerCommand::exportRules)
+                    )
                 )
         );
     }
@@ -144,21 +150,23 @@ public class LivingItemContainerCommand {
             containerId = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(be.getType());
         }
 
-        // 检查是否已注册
-        if (ContainerCompatibilityConfig.findRule(containerId).isPresent()) {
-            source.sendFailure(Component.translatable(
-                "command.livingitem.container_already_registered", containerId.toString()));
-            return 0;
-        }
-
-        // 注册并保存
+        // 注册并保存（已存在则覆盖——内置数据可能有误，玩家实测后应能修正）
         var rule = buildRule(containerId, size, columns);
-        ContainerRuleConfig.addAndSave(containerId, rule);
+        boolean overwrote = ContainerRuleConfig.addAndSave(containerId, rule);
 
         int rows = size / columns;
-        source.sendSuccess(() -> Component.translatable(
-            "command.livingitem.container_registered",
-            containerId.toString(), size, columns, rows), true);
+        if (overwrote) {
+            boolean wasBundled = ContainerRuleConfig.isBundledRule(containerId);
+            source.sendSuccess(() -> Component.translatable(
+                wasBundled
+                    ? "command.livingitem.container_overrode_bundled"
+                    : "command.livingitem.container_overrode",
+                containerId.toString(), size, columns, rows), true);
+        } else {
+            source.sendSuccess(() -> Component.translatable(
+                "command.livingitem.container_registered",
+                containerId.toString(), size, columns, rows), true);
+        }
         return 1;
     }
 
@@ -192,6 +200,8 @@ public class LivingItemContainerCommand {
             var rule = existingRule.get();
             int rows = rule.containerSize() / rule.columns();
             source.sendSuccess(() -> Component.literal(
+                String.format("  §7来源: §f%s§r", describeRuleSource(containerId))), false);
+            source.sendSuccess(() -> Component.literal(
                 String.format("  §7列数: §f%d (%d行)§r", rule.columns(), rows)), false);
             source.sendSuccess(() -> Component.literal(
                 String.format("  §7布局: §f%s§r", rule.layoutType())), false);
@@ -204,6 +214,10 @@ public class LivingItemContainerCommand {
         } else {
             source.sendSuccess(() -> Component.literal(
                 "  §7状态: §c未注册§r"), false);
+            if (ContainerRuleConfig.isRemovedByUser(containerId)) {
+                source.sendSuccess(() -> Component.literal(
+                    "  §7备注: §c已被玩家从内置规则中移除§r"), false);
+            }
 
             // 显示自动推断的列数
             int inferredColumns = ContainerCompatibilityConfig.resolveColumns(actualSize, container);
@@ -212,6 +226,15 @@ public class LivingItemContainerCommand {
                     inferredColumns, inferredColumns)), false);
         }
         return 1;
+    }
+
+    /** 描述一条规则的来源：内置 / 玩家覆盖内置 / 玩家新增 */
+    private static String describeRuleSource(ResourceLocation containerId) {
+        boolean bundled = ContainerRuleConfig.isBundledRule(containerId);
+        boolean userModified = ContainerRuleConfig.isUserModified(containerId);
+        if (bundled && userModified) return "§6玩家覆盖（原为内置）§r";
+        if (bundled) return "§7内置§r";
+        return "§a玩家注册§r";
     }
 
     /** 列出所有已注册的容器规则 */
@@ -231,11 +254,17 @@ public class LivingItemContainerCommand {
             ResourceLocation id = entry.getKey();
             var rule = entry.getValue();
             int rows = rule.containerSize() / rule.columns();
+            boolean bundled = ContainerRuleConfig.isBundledRule(id);
+            boolean userModified = ContainerRuleConfig.isUserModified(id);
+            // 标记来源：* = 玩家动过（新增/覆盖），无标记 = 纯内置
+            String mark = userModified ? (bundled ? "§6*§r" : "§a+§r") : " ";
             source.sendSuccess(() -> Component.literal(
-                String.format("  §e%s§r: %d slots (%d×%d, cols=%d) — %s",
-                    id, rule.containerSize(), rule.columns(), rows,
+                String.format(" %s§e%s§r: %d slots (%d×%d, cols=%d) — %s",
+                    mark, id, rule.containerSize(), rule.columns(), rows,
                     rule.columns(), rule.description())), false);
         }
+        source.sendSuccess(() -> Component.literal(
+            "§8  §a+§8 = 玩家注册   §6*§8 = 玩家覆盖内置§r"), false);
         return 1;
     }
 
@@ -262,6 +291,38 @@ public class LivingItemContainerCommand {
         ContainerRuleConfig.load();
         source.sendSuccess(() -> Component.translatable(
             "command.livingitem.rules_reloaded"), true);
+        return 1;
+    }
+
+    /**
+     * 导出当前全部生效规则，供玩家提交给模组作者以扩展容器兼容性。
+     *
+     * <p>导出 = 内存中生效的规则全集（内置 + 玩家新增 − 玩家删除），是一份
+     * <b>完整快照</b>，与 {@code assets/living_item/container_rules.json} 同格式，
+     * 作者可<b>直接用它对内置资源做文件级覆盖</b>，无需逐条摘录或手工合并。</p>
+     *
+     * <p>典型用途：玩家装了一个模组作者没适配的容器 → 游戏里 register 校准 →
+     * export → 把文件发给作者 → 作者覆盖内置资源重新打包 → 兼容性随包发布给所有人。</p>
+     */
+    static int exportRules(CommandContext<CommandSourceStack> ctx) {
+        CommandSourceStack source = ctx.getSource();
+        int count = ContainerRuleConfig.exportBundledFormat();
+
+        if (count < 0) {
+            source.sendFailure(Component.translatable("command.livingitem.export_failed"));
+            return 0;
+        }
+
+        if (count == 0) {
+            source.sendSuccess(() -> Component.translatable("command.livingitem.export_empty"), false);
+            return 0;
+        }
+
+        int bundled = ContainerRuleConfig.countBundled();
+        int user = ContainerRuleConfig.countUser();
+        String fileName = ContainerRuleConfig.getExportFile().toString();
+        source.sendSuccess(() -> Component.translatable(
+            "command.livingitem.export_done", count, fileName, bundled, user), false);
         return 1;
     }
 

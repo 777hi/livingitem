@@ -9,13 +9,20 @@
     {"containerId": "minecraft:dispenser", "containerSize": 9, "columns": 3, "description": "原版发射器"},
     {"containerId": "minecraft:dropper", "containerSize": 9, "columns": 3, "description": "原版投掷器"},
 
-    {"containerId": "ironchests:iron_chest", "containerSize": 45, "columns": 9, "description": "铁箱子-铁"},
-    {"containerId": "ironchests:copper_chest", "containerSize": 36, "columns": 9, "description": "铁箱子-铜"},
-    {"containerId": "ironchests:silver_chest", "containerSize": 54, "columns": 9, "description": "铁箱子-银"},
-    {"containerId": "ironchests:gold_chest", "containerSize": 63, "columns": 9, "description": "铁箱子-金"},
-    {"containerId": "ironchests:diamond_chest", "containerSize": 72, "columns": 9, "description": "铁箱子-钻石"},
-    {"containerId": "ironchests:crystal_chest", "containerSize": 108, "columns": 12, "description": "铁箱子-水晶"},
-    {"containerId": "ironchests:obsidian_chest", "containerSize": 108, "columns": 12, "description": "铁箱子-黑曜石"}
+    {"containerId": "ironchest:iron_chest", "containerSize": 54, "columns": 9, "description": "铁箱子-铁"},
+    {"containerId": "ironchest:copper_chest", "containerSize": 45, "columns": 9, "description": "铁箱子-铜"},
+    {"containerId": "ironchest:gold_chest", "containerSize": 81, "columns": 9, "description": "铁箱子-金"},
+    {"containerId": "ironchest:diamond_chest", "containerSize": 108, "columns": 12, "description": "铁箱子-钻石"},
+    {"containerId": "ironchest:crystal_chest", "containerSize": 108, "columns": 12, "description": "铁箱子-水晶"},
+    {"containerId": "ironchest:obsidian_chest", "containerSize": 108, "columns": 12, "description": "铁箱子-黑曜石"},
+    {"containerId": "ironchest:dirt_chest", "containerSize": 1, "columns": 1, "description": "铁箱子-泥土"},
 
+    {"containerId": "ironchest:trapped_iron_chest", "containerSize": 54, "columns": 9, "description": "陷阱铁箱子-铁"},
+    {"containerId": "ironchest:trapped_copper_chest", "containerSize": 45, "columns": 9, "description": "陷阱铁箱子-铜"},
+    {"containerId": "ironchest:trapped_gold_chest", "containerSize": 81, "columns": 9, "description": "陷阱铁箱子-金"},
+    {"containerId": "ironchest:trapped_diamond_chest", "containerSize": 108, "columns": 12, "description": "陷阱铁箱子-钻石"},
+    {"containerId": "ironchest:trapped_crystal_chest", "containerSize": 108, "columns": 12, "description": "陷阱铁箱子-水晶"},
+    {"containerId": "ironchest:trapped_obsidian_chest", "containerSize": 108, "columns": 12, "description": "陷阱铁箱子-黑曜石"},
+    {"containerId": "ironchest:trapped_dirt_chest", "containerSize": 1, "columns": 1, "description": "陷阱铁箱子-泥土"}
   ]
 }

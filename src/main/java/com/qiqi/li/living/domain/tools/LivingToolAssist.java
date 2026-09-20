@@ -9,6 +9,7 @@ import javax.annotation.Nullable;
 import com.qiqi.li.living.api.LivingItemManager;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Holder;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
@@ -16,7 +17,9 @@ import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
+import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
@@ -81,15 +84,23 @@ public final class LivingToolAssist {
         if (!isAssistable(event.getEntity())) {
             return;
         }
-        ServerPlayer player = (ServerPlayer) event.getEntity();
+        Player player = event.getEntity();
         BlockState state = event.getState();
 
+        List<ItemStack> helpers = assistTools(player, s -> s.getDestroySpeed(state) > 1.0F);
         float bonus = 0.0F;
-        for (ItemStack stack : assistTools(player, s -> s.getDestroySpeed(state) > 1.0F)) {
+        for (ItemStack stack : helpers) {
             bonus += digSpeed(player, stack, state, event.getPosition().orElse(null));
         }
         if (bonus > 0.0F) {
             event.setNewSpeed(event.getNewSpeed() + bonus);
+        }
+
+        // 客户端记下"现在在挖哪一格"—— 模型的挖掘环据此转场。
+        // 不需要网络同步：客户端本来就在跑同一套事件（见 LivingToolAssistState）。
+        if (player.level().isClientSide && event.getPosition().isPresent()) {
+            LivingToolAssistState.note(event.getPosition().get(),
+                player.level().getGameTime(), event.getNewSpeed());
         }
     }
 
@@ -105,12 +116,11 @@ public final class LivingToolAssist {
         if (event.canHarvest() || !isAssistable(event.getEntity())) {
             return;
         }
-        ServerPlayer player = (ServerPlayer) event.getEntity();
+        Player player = event.getEntity();
         BlockState state = event.getTargetBlock();
 
-        for (ItemStack stack : assistTools(player, s -> s.isCorrectToolForDrops(state))) {
+        if (!assistTools(player, s -> s.isCorrectToolForDrops(state)).isEmpty()) {
             event.setCanHarvest(true);
-            return;
         }
     }
 
@@ -165,12 +175,22 @@ public final class LivingToolAssist {
 
     // ── 内部 ────────────────────────────────────────────────────────────────
 
-    /** 能不能为这个玩家出力（服务端真实玩家、非创造 / 旁观）。 */
+    /**
+     * 能不能为这个玩家出力（非创造 / 旁观）。
+     *
+     * <p>⭐ <b>两端都要放行</b> —— 尤其是<b>客户端</b>：原版
+     * {@code ServerPlayerGameMode#tick} 里 {@code incrementDestroyProgress} 的返回值被<b>丢弃</b>，
+     * 服务端<b>不会自己破坏方块</b>；真正触发破坏的是客户端算完进度后发来的
+     * {@code STOP_DESTROY_BLOCK}。也就是说 ——
+     * <b>破坏的节奏由客户端控制</b>。只加速服务端的话，客户端仍按原速等满时长才松手，
+     * 表现为「门槛与附魔都生效（服务端判定），唯独加速没感觉」（2026-09-20 实测）。</p>
+     */
     private static boolean isAssistable(@Nullable Player player) {
-        return player instanceof ServerPlayer serverPlayer
-            && !serverPlayer.isFakePlayer()
-            && !serverPlayer.isCreative()
-            && !serverPlayer.isSpectator();
+        if (player == null || player.isCreative() || player.isSpectator()) {
+            return false;
+        }
+        // FakePlayer 不是真实玩家；且它会再次触发本事件（self 递归）
+        return !(player instanceof ServerPlayer serverPlayer) || !serverPlayer.isFakePlayer();
     }
 
     /**
@@ -181,7 +201,7 @@ public final class LivingToolAssist {
      *
      * <p>按<b>槽位号升序</b>遍历（{@code E2}），故返回列表的第一项就是"最靠前"的那把。</p>
      */
-    private static List<ItemStack> assistTools(ServerPlayer player, Predicate<ItemStack> accept) {
+    private static List<ItemStack> assistTools(Player player, Predicate<ItemStack> accept) {
         Inventory inventory = player.getInventory();
         List<ItemStack> out = new ArrayList<>();
         for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
@@ -214,13 +234,42 @@ public final class LivingToolAssist {
      *
      * <p>⚠️ 事件回调里已过滤 {@code isFakePlayer()}，故 FakePlayer 自己触发的事件不会再进来，无递归。</p>
      */
-    private static float digSpeed(ServerPlayer player, ItemStack stack, BlockState state,
+    private static float digSpeed(Player player, ItemStack stack, BlockState state,
                                   @Nullable BlockPos pos) {
-        LivingToolFakePlayer fake =
-            LivingToolFakePlayerCache.get(player.serverLevel(), player.getUUID());
-        fake.setPos(player.getX(), player.getY(), player.getZ());
-        fake.setOnGround(true);   // L28：不设会被原版判为"离地"→ 速度 /5
-        fake.equipTool(stack.copy());
-        return fake.getDigSpeed(state, pos);
+        if (player instanceof ServerPlayer serverPlayer) {
+            LivingToolFakePlayer fake =
+                LivingToolFakePlayerCache.get(serverPlayer.serverLevel(), serverPlayer.getUUID());
+            fake.setPos(player.getX(), player.getY(), player.getZ());
+            fake.setOnGround(true);   // L28：不设会被原版判为"离地"→ 速度 /5
+            fake.equipTool(stack.copy());
+            return fake.getDigSpeed(state, pos);
+        }
+        // 客户端：本地算即可 —— 客户端没有 ServerLevel，也就没有 FakePlayer。
+        // 这里只影响"客户端什么时候松手"，最终由服务端二次校验（f1 >= 0.7F）兜底。
+        return localDigSpeed(player, stack, state);
+    }
+
+    /** 客户端侧的活工具速度：基础速度 + 效率附魔（原版 {@code MINING_EFFICIENCY} 同口径）。 */
+    private static float localDigSpeed(Player player, ItemStack stack, BlockState state) {
+        float speed = stack.getDestroySpeed(state);
+        if (speed > 1.0F) {
+            // 原版只在 f > 1.0F 时才叠加效率附魔
+            speed += efficiencyBonus(player, stack);
+        }
+        return speed;
+    }
+
+    /**
+     * 效率附魔的加成值 = <b>等级²</b>。
+     *
+     * <p>原版把它注册成 {@code Enchantments.EFFICIENCY} → {@code Attributes.MINING_EFFICIENCY} 的
+     * <b>属性效果</b>（{@code LevelBasedValue.LevelsSquared}，见 {@code L46}）。
+     * 服务端走 FakePlayer 的装备属性自动拿到；客户端没有那条路，故此处按同口径手工等价实现。</p>
+     */
+    private static float efficiencyBonus(Player player, ItemStack stack) {
+        Holder<Enchantment> efficiency =
+            player.level().registryAccess().holderOrThrow(Enchantments.EFFICIENCY);
+        int level = stack.getEnchantmentLevel(efficiency);
+        return (float) (level * level);
     }
 }

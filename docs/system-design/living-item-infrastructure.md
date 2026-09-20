@@ -711,17 +711,27 @@ for (var chunkPos : chunkSet) {
 
 [ContainerCompatibilityConfig](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/transfer/ContainerCompatibilityConfig.java) 为不同容器类型定义槽位解析规则，主要解决**非标准列数容器**的槽位方向解析问题。
 
-**内置规则**：
+**内置规则**（随 jar 打包，源文件 `src/main/resources/assets/living_item/container_rules.json`）：
 
 | 容器 | 槽位数 | 列数 | 边界行为 | 备注 |
 |------|--------|------|---------|------|
 | `minecraft:chest` | 27 | 9 | INVALIDATE | 标准箱子 |
-| `minecraft:double_chest` | 54 | 9 | WRAP | 大箱子左右环绕 |
-| `minecraft:hopper` | 5 | 1 | INVALIDATE | 仅中间 3 格可宿主 |
-| `ironchests:iron_chest` | 45 | 9 | INVALIDATE | 铁箱子 |
-| `ironchests:diamond_chest` | 108 | 12 | INVALIDATE | 钻石箱子 |
-| `sophisticatedbackpacks:backpack` | 120 | 12 | INVALIDATE | 精妙背包 12×10 |
-| `sophisticatedbackpacks:backpack` | 108 | 12 | INVALIDATE | 精妙背包 12×9 |
+| `minecraft:double_chest` | 54 | 9 | INVALIDATE | 大箱子 |
+| `minecraft:hopper` | 5 | 5 | INVALIDATE | 原版漏斗 |
+| `minecraft:dispenser` / `dropper` | 9 | 3 | INVALIDATE | 发射器 / 投掷器 |
+| `ironchest:iron_chest` | 54 | 9 | INVALIDATE | 铁箱子 |
+| `ironchest:copper_chest` | 45 | 9 | INVALIDATE | 铜箱子 |
+| `ironchest:gold_chest` | 81 | 9 | INVALIDATE | 金箱子 |
+| `ironchest:diamond_chest` | 108 | 12 | INVALIDATE | 钻石箱子 |
+| `ironchest:crystal_chest` | 108 | 12 | INVALIDATE | 水晶箱子 |
+| `ironchest:obsidian_chest` | 108 | 12 | INVALIDATE | 黑曜石箱子 |
+| `ironchest:trapped_*_chest` | 同上 | 同上 | INVALIDATE | 陷阱箱系列，槽位与普通版一致 |
+
+> ⚠️ **2026-09-20 数据勘误**：旧表把铁箱子族写作 `ironchests:`（多一个 s）且槽位数全部编造
+> （45/36/54/63/72），与 IronChests 16.0.7 实际注册名及尺寸均不符，那 7 条规则**从未生效**。
+> 现真值取自该版本字节码 `IronChestsTypes.<clinit>` 的 `size, rowLength` 字段——
+> IRON 54/9、COPPER 45/9、GOLD 81/9、DIAMOND 108/12、CRYSTAL 108/12、OBSIDIAN 108/12。
+> 命名空间常量为 `ironchest`（`IronChestsItems.MODID`），该模组**不存在 silver 箱子**。
 
 **自动生成规则**：
 
@@ -733,6 +743,94 @@ public static ContainerRule findOrGenerateRule(int containerSize) {
         .orElseGet(() -> generateStandardRule(containerSize));
 }
 ```
+
+> ⚠️ **启发式的结构性缺陷**：`resolveColumns(int)` 按 `commonWidths = {9,10,12,13,8,...}` 顺序取
+> **第一个能整除**槽位数的宽度。108 槽时 `108 % 9 == 0` 先命中 ⇒ 一律猜 **9 列**，
+> 而铁箱子族的钻石/水晶/黑曜石箱真值是 **12 列** ⇒ 方向映射（UP/DOWN = `±columns`）整片错位。
+> 这类容器**必须靠内置规则或玩家注册覆盖**，不能依赖推断。
+
+#### 5.2.1 配置分层与开发期导出通道
+
+规则有两个来源，物理位置决定了「能不能随包发布」：
+
+| 位置 | 读 | 写 | 随 jar 打包 | 语义 |
+|------|----|----|------------|------|
+| jar 内 `assets/living_item/container_rules.json` | ✅ | ❌ classpath 只读 | ✅ | 内置规则（项目级） |
+| `config/living_item/container_rules.json` | ✅ | ✅ | ❌ | **玩家差异**（新增 / 覆盖内置 / 删除内置） |
+
+**加载顺序**（后者可覆盖前者）：
+
+1. 内置资源 → 登记 `BUNDLED_IDS`
+2. config 的 `removed` 列表 → 从注册表**删除**这些内置规则（`REMOVED_IDS`）
+3. config 的 `rules` 列表 → **覆盖或新增**（`USER_RULES`）
+
+**增量语义（2026-09-20 起）**：`save()` 只写玩家差异，**不再把内置规则回写成副本**。
+此前全量回写会让 config 变成一份冻结的旧快照——里面那些拷贝永远因「内置优先」而不生效，
+纯噪声，且掩盖了「哪些是玩家真正动过的」。
+
+**三分状态**（`inspect` / `list` 会显示）：
+
+| 状态 | 判定 | `list` 标记 |
+|------|------|------------|
+| 纯内置 | `isBundledRule` 且非 `isUserModified` | 无 |
+| 玩家新增 | 非 `isBundledRule` | `+` 绿 |
+| 玩家覆盖内置 | `isBundledRule` 且 `isUserModified` | `*` 橙 |
+
+⚠️ **`removed` 字段不可省**：`load()` 每次都会先读内置资源，若删除不落盘，
+玩家删掉的内置规则会在下次启动被「复活」。这不是假设——引入 `save()` 增量改造后
+若不补这个字段，`remove` 内置规则会静默失效。（守卫测试：`ContainerRuleConfigTest`）
+
+#### 5.2.2 社区贡献流程（文件级覆盖，2026-09-20）
+
+**导出的是全量生效快照，不是差异**。`exportBundledFormat()` 直接对
+`ContainerCompatibilityConfig.getAllRules()` 取快照（内置 + 玩家新增 − 玩家删除），
+按 ID 排序后写出。因此产物**已包含作者原有的全部内置条目**，
+可以被**直接复制覆盖**到 `src/main/resources/assets/living_item/container_rules.json`，
+不必逐条摘录、也不必手工合并——这正是「文件级复制粘贴」而非「条目级复制粘贴」。
+
+| 文件 | 内容 | 格式 |
+|------|------|------|
+| `config/living_item/container_rules.json` | 玩家差异（`rules` + `removed`） | v2 |
+| `config/living_item/exported_rules.json` | **全量生效规则快照**（不含 `removed`） | v1，与内置资源**逐字段一致** |
+
+```
+游戏内 /livingitem container register <columns>     ← 对着真容器注册，ID 由 getKey() 自动检测
+        ↓  save()
+config/living_item/container_rules.json             ← 只含玩家差异（不打包）
+        ↓  /livingitem container export
+config/living_item/exported_rules.json              ← 全量生效快照，与 assets 完全同格式
+        ↓  文件级复制粘贴（作者操作，无工具依赖）
+src/main/resources/assets/living_item/container_rules.json  ← 重新打包后随模组发布
+```
+
+⚠️ **jar 内文件运行时不可写**是 Java/classpath 的硬限制，「玩家注册自动进包」物理上不存在；
+导出通道是唯一可行路径，且**打包后的正式环境不参与写入**（`exportBundledFormat()` 只读内存状态）。
+
+> **`export` 不导出 `removed`**：删除是玩家本地偏好，不构成对内置资源的修改。
+> 若某条内置规则本身是错的，正确做法是**覆盖**成真值再导出，而不是删掉它。
+> 玩家删掉的内置条目只是不出现在这份快照里（覆盖内置资源后它自然消失）。
+
+**冲突处理：先到先得 + WARN**。作者合并多份玩家贡献后，同一 ID 可能出现两条不同数值的条目。
+`loadFromResource()` 逐条比对，命中重复且**数值不同**时保留先出现的一条并打 WARN
+（`Duplicate container id ... keeping first ... ignoring later ... resolve it manually`），
+加载结束后再补一条汇总 WARN。`differs()` **只比较 `containerSize` 与 `columns`**——
+描述文字措辞不同不算冲突，否则会被大量假冲突淹没。
+
+**编码：全链路显式 UTF-8**。`save()` / `export` / `load()` 三处文件 IO 均显式指定
+`StandardCharsets.UTF_8`。此前用 `FileReader`/`FileWriter` 走平台默认编码，
+在中文 Windows（GBK）上导出的含中文描述文件拿给 UTF-8 环境的作者会直接
+`MalformedInputException` 乱码——跨平台交换文件必须锁定编码。
+
+**可测性接缝**：核心解析抽为包级 `loadRules(Reader, source, label)`，
+`loadFromResource()` 只是它的薄壳。好处有二：
+① 作者覆盖加载与内置资源加载**共用同一套解析 + 冲突检测**，不会出现"两条路径行为不同"；
+② 测试可直接喂入一份模拟快照，验证「作者整文件覆盖内置资源」后的加载语义，
+**无需真的替换 classpath 资源**。守卫用例：`exportedSnapshot_isLoadableAsBundledResource`、
+`mergeConflict_keepsFirstAndWarns`。
+
+> 实战价值：正因为玩家指令走 `BlockEntityType` 的 `getKey()` 自动检测，
+> 玩家随手一注册往往比手写的内置数据更准——2026-09-20 的 `ironchest:` 勘误正是这样发现的。
+> 社区贡献流程把这件偶然变成了常规机制：**玩家共同完善容器兼容性**。
 
 ### 5.3 ContainerRule — 容器规则
 
