@@ -76,19 +76,18 @@ import org.joml.Matrix4f;
  * 所有"要不要干活、挖哪一格、多快挖完"<b>都由服务端决定</b>（{@code L48}），
  * 本类只读结果、只负责画。就算动画播错、漏播、慢半拍，<b>核心功能完全不受影响</b>。
  *
- * <h3>为什么自转绕【薄板法线】</h3>
+ * <h3>自转：绕【薄板法线】</h3>
  * 镐子本质上是一块<b>平面</b>（T 形薄板）。绕什么轴转，决定了看不看得出在转：
  * <ul>
  *   <li>绕<b>柄轴</b>转 —— 对称图形绕对称轴，<b>从侧面几乎看不出来</b> ❌</li>
- *   <li>绕<b>T 平面内的横轴</b>转 —— 工具"<b>横着翻滚</b>"，姿势别扭 ❌（2026-09-20 实测踩过）</li>
+ *   <li>绕<b>T 平面内的横轴</b>转 —— 工具"<b>横着翻滚</b>"，姿势别扭 ❌</li>
  *   <li>绕<b>垂直于 T 平面的轴</b>（= 薄板法线）—— 薄板在自己的平面里旋转，
- *       <b>任何视角都一眼看出在转</b> ✅</li>
+ *       <b>任何视角都一眼看出在转</b> ✅ <b>（采用）</b></li>
  * </ul>
  * 模型空间里柄是 {@code +Y}、薄板躺在 {@code XY} 平面 ⇒ <b>法线恰好是 {@code Z}</b>，
- * 于是自转就是一个 {@code Axis.ZP.rotation(spin)}。
- * 更妙的是它写在 {@code rollRad} 的<b>外侧</b>：自转轴会跟着 rollRad 一起滚 ——
- * 于是环上（{@code rollRad=0}）用板面法线、射线上（{@code rollRad=90°}）自然回落到原来的局部 X，
- * <b>两条路径不用分叉</b>。
+ * 于是自转就是一个 {@code Axis.ZP.rotation(spin)}。它写在 {@code rollRad} 的
+ * <b>内侧</b> ⇒ 自转轴恒为板面法线，且<b>相对模型自身恒定</b>
+ * （不随朝向修正 / 射线方向改变 —— "射线不是自转的参考系"）。
  *
  * <h3>覆盖范围</h3>
  * <table>
@@ -103,43 +102,40 @@ import org.joml.Matrix4f;
 public final class LivingToolModelRenderer {
 
     // ══════════════════════════════════════════════════════════════════════════════
-    //  ⭐ 手感调参指引 —— 全部手感都收在下面这几个常量里，改完直接生效，无需动别处。
+    //  ⭐ 手感调参指引 —— 全部手感都收在下面这些常量里，改完直接生效，无需动别处。
     //
-    //  常量                      现值            调大 / 调小会怎样
-    //  ──────────────────────────────────────────────────────────────────────────────
-    //  MODEL_UPRIGHT_FIX        -45°            模型【立正】修正角（绕贴图法线 Z）。
+    //  ── 模型（所有形态共用）──────────────────────────────────────────────────
+    //  MODEL_UPRIGHT_FIX        -45°            模型【立正】角（贴图斜 45° 的校正）。
     //                                            ⚠️ 换用别的物品模型后朝向不对，只改这一个。
-    //  RAY_ROLL_FIX             +270°           挂在【射线】上的工具额外绕长轴的滚转（只调朝向）。
-    //                                            环上的不用（脸天然垂直于环面）。
-    //  RING_START_ANGLE         +90°            环上工具的起始角（π/2 = 正上方起步）。
-    //                                            改回 0 则单工具会横躺在玩家右侧。
-    //  RING_HEIGHT              1.7 格          待机环环心高度（玩家脚下往上）。
-    //                                            调低 = 半径大时下半环会埋进地面。
-    //  RING_BACK_OFFSET         0.75 格         待机环离玩家背部多远。
-    //                                            调小 = 某些视角下工具会穿透脑袋、挡视线。
-    //  RING_FOLLOW_VIEW          0.0            环法线跟随视角的强度：1 = 始终正对你（但
-    //                                            转视角时整圈会扭）；0 = 固定不扭（★当前）。
-    //  ── 以下三个【已关闭】（2026-09-21 用户要求先回到最简状态观察）────────────
-    //  RING_PSI_SWEEP           360°            环「漂移锚点」单向行程（转满一圈再倒回）。
-    //  RING_PSI_OMEGA             0 rad/tick    ★ 关闭漂移。恢复到 0.0025 即重新启用。
-    //  RING_PSI_VIEW_WEIGHT       0             朝向补偿强度：1 = 工具世界姿态不随转头变。
-    //  RING_ALPHA_AMP              0            ★ 关闭呼吸。α 固定为 BASE。
-    //  RING_ALPHA_OMEGA         0.004 rad/tick  （AMP=0 时无意义）
-    //  ── 当前【唯一在起作用】的环参数 ──────────────────────────────────────────
-    //  RING_ALPHA_BASE           0.0            脸的取向：0 = 切向（插在环上，最立体，
-    //                                            但两端脸相反）；1 = 环法线（所有工具
-    //                                            脸同向，但贴在环面上）。中间是渐变。
+    //
+    //  ── 射线模式（有记忆的工具）──────────────────────────────────────────────
+    //  RAY_ROLL_FIX             +270°           绕长轴的滚转。只调"脸朝哪"，不影响自转轴。
     //  IDLE_MAX_OFFSET          1.5 格          待机位离射线起点的【上限】。
     //                                            调大 = 平时飘得离宿主更远。
     //  IDLE_HALF_SATURATION     3.0 格          走到"上限一半"所需的射线长度。
-    //                                            调小 = 很快就贴近上限（近处就飘得远）。
-    //  SPIN_PERIOD_MIN          4 tick/圈       转圈【最快】档（挖得很快时）。
+    //
+    //  ── 辅助环（无记忆的工具）────────────────────────────────────────────────
+    //  RING_BACK_OFFSET         0.75 格         环心沿【身体后方向】偏移多远。
+    //                                            调小 = 某些视角下工具会穿透脑袋、挡视线。
+    //  RING_HEIGHT              1.7 格          环心沿【身体上方向】偏移多远（脑袋高度）。
+    //                                            调低 = 半径大时下半环会埋进地面。
+    //  RING_ALPHA                0.0            ★脸的取向：0 = 切向（插在环上、最立体、
+    //                                            斧刃整圈统一、但正视只看到【一条线】）；
+    //                                            1 = 环法线（躺在环平面、面朝你、
+    //                                            正视看到【完整形状】、但斧刃各朝各的）。
+    //                                            ⚠️ 想"又立体又能看清"就试 0.3~0.5。
+    //  RING_START_ANGLE         +90°            工具的起始角（π/2 = 从【身体正上方】起步）。
+    //                                            改回 0 则单工具会横躺在玩家右侧。
+    //  RING_RADIUS_*            0.28/0.055/1.10 环半径 = BASE + STEP×工具数，clamp 到 MAX。
+    //  （工具姿态不再有旋钮 —— 三根轴以「圆平面」为参考系一次钉死，
+    //    斧刃自动整圈统一。⚠️ 别再引入"按世界方向统一符号"那种开关。）
+    //
+    //  ── 动画（所有形态共用）──────────────────────────────────────────────────
+    //  SPIN_PERIOD_MIN          4 tick/圈       转圈【最快】档。
     //                                            ⚠️ 别低于 4 —— 60fps 下会走样成倒转/抖动。
     //  SPIN_PERIOD_MAX          20 tick/圈      转圈【最慢】档（挖得很慢时）。
     //  SPIN_PERIOD_DIVISOR      10              挖掘预计 tick ÷ 本值 = 转圈周期。
-    //                                            调小 = 整体转得更快（更快贴到最快档）。
-    //  RETURN_TICKS             8 tick          干完飞回待机位的耗时。
-    //                                            调大 = 更悠哉；调小 = 更利落。
+    //  RETURN_TICKS             8 tick          干完飞回待机位耗时（恒定 ⇒ 越远飞得越快）。
     //  PULSE_TICKS              6 tick          交互脉冲的时长。
     //  PULSE_SCALE              0.15            交互脉冲的力度（+15%）。
     //  MAX_DISTANCE             32 格           ⚠️ 别改！必须与 K2 同步半径、原版裂纹广播半径一致。
@@ -222,101 +218,94 @@ public final class LivingToolModelRenderer {
      */
     private static final float RAY_ROLL_FIX = (float) (Math.PI * 1.5);
 
-    // ── 辅助环（无记忆的活工具）────────────────────────────────────────────
+    // ══════════════════════════════════════════════════════════════════════════
+    //  辅助环（无记忆的活工具）—— 只做三件事
+    //
+    //   ① 位置：环心 = 玩家背后 + 头部高度
+    //   ② 朝向：环法线（唯一决定"转视角时整圈会不会扭"）
+    //   ③ 环内布局 + 工具姿态
+    // ══════════════════════════════════════════════════════════════════════════
+
+    // ── ① 位置 ───────────────────────────────────────────────────────────────
 
     /**
-     * 环的「漂移锚点」<b>单向行程</b>（弧度）—— T 平面绕<b>柄轴</b>朝一个方向最多转多少。
+     * 待机环：环心沿<b>身体后方向</b>偏移多远（格）。
      *
-     * <p>⭐ <b>它解决的是感知问题，不是几何问题</b>（2026-09-21 用户设计）：
-     * 图案原本完全由玩家朝向决定 ⇒ 你会形成"朝北长这样、朝东长那样"的固定印象，
-     * 觉得四个方向"不对称"。让锚点自己缓慢变化后，图案始终在变，
-     * <b>不存在"固定的 A 样子和 B 样子"</b>，四个朝向也就都有机会呈现相同相位。</p>
-     *
-     * <p>{@code 2π} = 转满<b>一整个圈</b>再倒回来（2026-09-21 用户要"转完一圈再反转"）。</p>
-     */
-    private static final float RING_PSI_SWEEP = (float) (Math.PI * 2.0);
-
-    /**
-     * 环上工具「脸」的取向 —— 在【切向 ↔ 环法线】之间插值（{@code 0 ~ 1}）。
-     *
-     * <p>{@code 0} = 脸取<b>切向</b>（沿圆走）：工具<b>"插"在环上</b>，<b>最立体</b>；
-     *    但切向沿环绕圈，<b>直径两端的脸必然相反</b>。</p>
-     *
-     * <p>{@code 1} = 脸取<b>环法线</b>：<b>所有工具的脸朝同一个方向</b>；
-     *    但板面平行于环面，工具变成"贴"在环上。</p>
-     *
-     * <p>⭐ <b>这两条路相差 90°，不是 180°</b> —— 绕柄转 180° 只在切向里翻个面
-     *    （切向 → 反切向），出不了环平面，所以改不了这个取舍。</p>
-     *
-     * <p>⚠️ 2026-09-21：用户要求先关掉时间 / 朝向函数、只留这一个观察基础行为，
-     * 所以它现在是<b>唯一在起作用的环参数</b>。</p>
-     */
-    private static final float RING_ALPHA_BASE = 0.0F;
-
-    /** 环「立体程度」的呼吸幅度。{@code 0} = 固定为 {@code RING_ALPHA_BASE}（关掉呼吸）。 */
-    private static final float RING_ALPHA_AMP = 0.0F;
-
-    /** 环「立体程度」的呼吸频率（弧度 / tick）。{@code AMP=0} 时无意义。 */
-    private static final float RING_ALPHA_OMEGA = 0.004F;
-
-    /**
-     * 环「漂移锚点」中，用多少比例去<b>反向补偿玩家朝向的方位角</b>。
-     * {@code 0} = 不补偿（漂移量与朝向无关）；{@code 1} = 完全补偿。
-     *
-     * <p>⭐ <b>为什么需要它</b>（2026-09-21 用户提出"以玩家朝向为锚点"）：
-     * 让 {@code ψ = f(t) − w·φ}（φ = 朝向方位角），则工具姿态变成<b>相对朝向</b>的量，
-     * 于是<b>它的世界姿态不再随你转头而变</b> —— 环跟着你转，工具却"钉"在世界里，
-     * 四个朝向看起来就一致了。</p>
-     *
-     * <p>⚠️ <b>它只对一部分工具完全成立</b>：柄<b>竖直</b>的（顶部/底部）工具，
-     * 绕柄轴转 ≡ 绕竖直轴转 ⇒ 方位角恰好抵消为 {@code f(t)}，<b>完全与朝向无关</b>；
-     * 柄<b>水平</b>的（侧面）工具，⊥柄平面是竖直的（`span{朝向, 下}`），
-     * 不同朝向下这两个平面<b>正交</b>，无法完全抵消 —— 只能大幅缩小偏差。</p>
-     *
-     * <p>⚠️ 代价：转头时工具会<b>反向自转</b>一下（因为它的柄必须沿径向，而径向在转）。
-     * 调小 {@code w} 可以减弱这个效果。</p>
-     */
-    private static final float RING_PSI_VIEW_WEIGHT = 0.0F;
-
-    /**
-     * 环「漂移锚点」的角频率（弧度 / tick）—— {@code (1−cos)} 的完整周期 = {@code 2π / 本值}。
-     *
-     * <p>⭐ <b>函数形式为 {@code ψ = SWEEP · (1 − cos(ωt)) / 2}</b>，而不是 {@code A·sin(ωt)}：
-     * {@code sin} 是<b>往返</b>的（`0→+A→0→−A→0`），每个四分之一周期就换向 ⇒
-     * 光看单个工具，它一直在"左右晃"，<b>永远转不满一圈</b>。
-     * {@code (1−cos)} 则从 0 <b>单调</b>升到 1、再<b>单调</b>降回 0（全程只在两端各换一次向）⇒
-     * 配上 {@code SWEEP = 2π} 就是"<b>转完一整圈，再反转回来</b>"。</p>
-     *
-     * <p>{@code 0.0025} ⇒ 正转 ≈ 63 秒、反转 ≈ 63 秒，一个来回 ≈ 126 秒。
-     * 设 {@code 0} = 关闭摆动，回到静止图案（<b>2026-09-21 用户要求先关掉观察</b>）。</p>
-     */
-    private static final float RING_PSI_OMEGA = 0.0F;
-
-    /**
-     * 待机环：背在玩家身后多远（格）。
+     * <p>⚠️ 方向是<b>身体的"后"</b>（含俯仰）—— 低头时它斜向上，环跟着身体一起走，
+     * 而不是沿世界竖直方向。</p>
      *
      * <p>⚠️ 别调太小：{@code 0.45} 时某些视角下<b>活工具会穿透玩家脑袋、挡住视线</b>
-     * （2026-09-20 用户实测）。{@code 0.75} 起可避开。</p>
+     * （用户实测）。{@code 0.75} 起可避开。</p>
      */
     private static final double RING_BACK_OFFSET = 0.75;
+
+    /**
+     * 待机环：环心沿<b>身体上方向</b>偏移多远（格）—— 这就是"脑袋"的高度。
+     *
+     * <p>⭐ 取<b>头部高度</b>（≈{@code 1.7}），而不是胸口：环半径最大
+     * {@code RING_RADIUS_MAX = 1.10}，放在胸口时环最低点会低于地面
+     * （{@code 1.0 − 1.10 < 0}），<b>下半部分埋进地底</b>（用户实测）。</p>
+     *
+     * <p>⚠️ 方向是<b>身体的"上"</b>（含俯仰），不是世界竖直。</p>
+     */
+    private static final double RING_HEIGHT = 1.7;
+
+    // ── ② 参考系：玩家身体（不是世界！）──────────────────────────────────────
+
+    /*
+     * ⭐ 2026-09-21 用户规格原文：
+     *   「以玩家身体朝向为基准，在玩家脑袋后面确立一个点。这个点的参考系是玩家身体。
+     *     以该点为圆心画个圆，圆平面平行玩家背面。参考系依旧是玩家身体。」
+     *
+     * 于是【环心 / 圆平面 / 柄 / 斧刃】四件事全部只在【身体坐标系】里定义：
+     *
+     *   forward  身体前（含俯仰）   → 圆平面法线
+     *   right    身体的右           ┐ 张成圆平面
+     *   bodyUp   身体的上（含俯仰） ┘
+     *
+     *   +Y 柄   → 径向（在圆平面内、延长线过圆心）⇒ 放射状
+     *   +X 斧刃 → 圆平面法线 ⇒ ⊥ 圆平面，整圈同一方向
+     *
+     * ⚠️ 曾有一个 {@code RING_FOLLOW_VIEW}（0~1）旋钮，在"跟随视角"和"钉死世界北"
+     *    之间插值 —— 那是【没抓住参考系】时的产物，已删除。参考系只有一个，没有强度。
+     *
+     * ⚠️ "跟随俯仰"被打回过一次，但那版是【半吊子】：位置按【世界水平】偏移、
+     *    只有朝向跟随 ⇒ 两者不匹配，看着像环在"仰倒"。现在位置也走身体坐标，才自洽。
+     */
+
+    /**
+     * 环上工具「脸」（板面法线）的取向 —— 在【切向 ↔ 环法线】之间插值（{@code 0 ~ 1}）。
+     *
+     * <p>⭐ 这是「工具插在环上有多深」的<b>总旋钮</b>，决定<b>正视环面时你看到什么</b>：</p>
+     * <ul>
+     *   <li>{@code 0} = 脸 = <b>切向</b> ⇒ 板面 <b>⊥ 圆平面</b>，工具"插"在环上、最立体；
+     *       斧刃 = ±环法线 ⇒ <b>整圈朝同一方向</b> ✅（= 用户选定的「甲」）。
+     *       ⚠️ 代价：<b>正对圆平面时视线落在板面内 ⇒ 只看到一条线</b>（截图 164822 的样子）。</li>
+     *   <li>{@code 1} = 脸 = <b>环法线</b> ⇒ 板面<b>躺在圆平面内、面朝你</b>
+     *       ⇒ 正对时看到工具的<b>完整形状</b> ✅（= 截图 164850 / 164913 的样子）。
+     *       ⚠️ 代价：斧刃 = 切向 ⇒ <b>绕一圈各朝各的</b>，不再"整圈同一方向"。</li>
+     * </ul>
+     *
+     * <p>📌 <b>中间值</b>（{@code 0.3 ~ 0.5}）= 两者之间：既保留立体感，又能看清工具形状。
+     * 这是一个<b>连动量</b>，不是开关 —— 建议用二分法试。</p>
+     *
+     * <p>📌 <b>历史</b>（2026-09-21 翻提交找回）：它原先叫 {@code RING_ALPHA_BASE}，
+     * 和「随时间漂移」的 {@code ringPsi} 一起被当成"让图案活起来的花活"<b>删掉了</b>。
+     * <b>那是误删</b> —— {@code ringPsi} 确实是花活（已死不复生），
+     * 但 {@code RING_ALPHA} <b>不是</b>：它决定环的<b>基本观感</b>，是刚需旋钮。</p>
+     */
+    private static final float RING_ALPHA = 0.0F;
+
+    // ── ③ 环内布局 ───────────────────────────────────────────────────────────
 
     /**
      * 环上工具的<b>起始角</b>（弧度）—— 从环心<b>正上方</b>起步，再均匀铺开。
      *
      * <p>⚠️ <b>别从 {@code 0}（= 玩家右手边）起步</b>：那样只有一个工具时会<b>横躺在右侧、
-     * 头朝右</b>，看着不像"待命"（2026-09-20 用户实测指正）。从正上方起步 ⇒
+     * 头朝右</b>，看着不像"待命"（用户实测指正）。从正上方起步 ⇒
      * 单工具<b>竖直立于头顶</b>，双工具一上一下，多工具才铺满整圈。</p>
      */
     private static final double RING_START_ANGLE = Math.PI / 2.0;
-
-    /**
-     * 待机环：环心高度（玩家脚下的高度 + 本值）。
-     *
-     * <p>⭐ 取<b>玩家头部高度</b>（≈{@code 1.7}），而不是胸口：环半径最大
-     * {@code RING_RADIUS_MAX = 1.10}，放在胸口时环最低点会低于地面
-     * （{@code 1.0 − 1.10 < 0}），<b>下半部分埋进地底</b>（2026-09-21 用户实测）。</p>
-     */
-    private static final double RING_HEIGHT = 1.7;
 
     /**
      * 环半径 = {@code BASE + STEP × 工具数}，再 clamp 到上限。
@@ -328,27 +317,24 @@ public final class LivingToolModelRenderer {
     private static final double RING_RADIUS_STEP = 0.055;
     private static final double RING_RADIUS_MAX = 1.10;
 
-    /**
-     * 待机环法线<b>跟随玩家视角</b>的强度（{@code 0 ~ 1}）。
-     *
-     * <p>环的朝向、位置、环内基向量<b>全部</b>由法线导出，所以这个开关直接决定
-     * "转视角时整圈工具会不会跟着扭"：</p>
-     *
-     * <ul>
-     *   <li>{@code 1} = 完全跟随 —— 环<b>始终正对着你</b>，但转视角时整圈跟着扭。</li>
-     *   <li>{@code 0} = 完全固定 —— 环<b>不再随视角扭</b>，但也不再正对着你（会变斜）。</li>
-     * </ul>
-     *
-     * <p>⭐ <b>只影响朝向，不影响位置</b>：环心始终在玩家背后（那里用的是视角方向，
-     * 只是平移）。所以 {@code 0} 时得到的是「<b>在背后 + 不扭</b>」，
-     * 而不是「钉在世界某个方位」。</p>
-     *
-     * <p>⚠️ 2026-09-21：用户要求关掉扭转，故当前为 {@code 0}。</p>
-     */
-    private static final float RING_FOLLOW_VIEW = 0.0F;
+    // ── ④ 工具姿态（⭐ 参考系 = 圆平面，不是世界）────────────────────────────
 
-    /** 不跟随视角时，环法线固定取这个方向（世界北 {@code (0,0,-1)}）。 */
-    private static final Vec3 RING_FIXED_NORMAL = new Vec3(0.0, 0.0, -1.0);
+    /*
+     * ⭐ 2026-09-21 用户规格：<b>「以圆平面为参考系」</b>。
+     *
+     * 这个参考系决定了下面三根轴的取值 —— 也是本项目反复踩坑的根源：
+     * 「世界参考系下的同一个方向」在圆平面参考系里<b>不是</b>同一个方向，反之亦然。
+     *
+     *   +Y 柄   → 径向 r̂            ⇒ 柄在圆平面内、延长线过圆心 ⇒ 放射状
+     *   +Z 脸   → 切向 t̂ = n̂ × r̂    ⇒ 板面 ⊥ 圆平面
+     *   +X 斧刃 → 法线 n̂（<b>恒定</b>）⇒ 整圈朝向同一方向 ✅
+     *
+     * ⚠️ <b>不要对 faceZ 做「符号统一」</b>（初版用世界竖直 faceZ.y 当判据翻转它）。
+     * 因为 faceX = dir × faceZ，而 dir 到对面反号 ⇒ <b>翻转 faceZ 会连带翻转 faceX</b>，
+     * 斧刃于是变成"半圈朝前、半圈朝后" —— 正是用户报的「螺旋感 / 右半朝前左半朝后」。
+     *
+     * 📌 faceZ 在对面反向<b>不是镜像</b>，而是绕柄转 180°。接受它，faceX 才自动恒定。
+     */
 
     /**
      * 一次「工作」的记忆，用于<b>飞回</b>。
@@ -359,13 +345,13 @@ public final class LivingToolModelRenderer {
     private static final Map<String, WorkMemo> WORK_MEMO = new HashMap<>();
 
     /**
-     * 上一次有效的待机环法线（水平单位向量）。
+     * 上一次有效的「身体的右」方向（水平单位向量）。
      *
-     * <p>用途：视线接近<b>正上 / 正下</b>时，"视线方向的水平分量"退化为零向量，
+     * <p>用途：视线接近<b>正上 / 正下</b>时 {@code forward × worldUp} 退化为零向量，
      * 此时<b>沿用它</b>而不是退回一个写死的方向 —— 否则环会"啪"地钉到固定一侧
      * （2026-09-20 用户实测）。</p>
      */
-    private static Vec3 lastBackNormal = new Vec3(0.0, 0.0, 1.0);
+    private static Vec3 lastBodyRight = new Vec3(1.0, 0.0, 0.0);
 
     private LivingToolModelRenderer() {
     }
@@ -445,11 +431,15 @@ public final class LivingToolModelRenderer {
     /**
      * 辅助模式（无记忆）的模型：围成「环」放射状排布。
      *
+     * <p>⭐ <b>参考系 = 玩家身体</b>（不是世界）—— 环心、圆平面、工具姿态全部以身体为准。</p>
+     *
      * <table>
-     *   <tr><th>状态</th><th>环心</th><th>环平面</th></tr>
-     *   <tr><td>待机</td><td><b>玩家背部</b>（胸口高度、身后 {@value #RING_BACK_OFFSET} 格）</td>
-     *       <td>竖直，法线 = 玩家朝向（<b>不含俯仰</b> ⇒ 抬头低头环不晃）</td></tr>
-     *   <tr><td>出力中</td><td><b>正在挖的那一格</b></td><td>竖直，法线指向玩家</td></tr>
+     *   <tr><th>状态</th><th>环心</th><th>圆平面</th></tr>
+     *   <tr><td>待机</td><td><b>脑袋后面</b>（沿身体的上 {@value #RING_HEIGHT} 格、
+     *       沿身体的后 {@value #RING_BACK_OFFSET} 格）</td>
+     *       <td>法线 = <b>身体的前</b>（含俯仰）⇒ 平行玩家背面</td></tr>
+     *   <tr><td>出力中</td><td><b>正在挖的那一格</b>（这层是世界参考系）</td>
+     *       <td>竖直，法线指向玩家</td></tr>
      * </table>
      *
      * <p>能对当前目标出力的飞到挖掘环，其余留在背部环 ——
@@ -463,7 +453,7 @@ public final class LivingToolModelRenderer {
         if (assist.isEmpty()) {
             return;
         }
-        Vec3 up = new Vec3(0.0, 1.0, 0.0);
+        Vec3 worldUp = new Vec3(0.0, 1.0, 0.0);
 
         // 分流：能对当前目标出力的去挖掘环
         // ⚠️ 必须先确认【真的在挖】，不能只看 LivingToolAssistState 有没有目标：
@@ -483,113 +473,82 @@ public final class LivingToolModelRenderer {
             }
         }
 
-        // 待机环：玩家背部，法线取玩家朝向的【水平分量】（不含俯仰）⇒ 抬头低头环不晃。
-        // ⚠️ 正因为法线【恒为水平】，下面才能直接把世界 up 当环平面内的第二根轴
-        //    （`normal × up` 不会退化）。若哪天改成跟随俯仰，必须重新构造正交基并处理退化
-        //    —— 2026-09-20 试过一版"跟随俯仰"，观感不好被打回，别重复走。
-        Vec3 look = mc.player.getViewVector(partialTick);
-        Vec3 flat = new Vec3(look.x, 0.0, look.z);
-        // 视线的水平分量（抬头低头不晃）。退化时沿用上一次的有效方向 ——
-        // ⚠️ 不能退回一个写死的方向，那会让环"啪"地钉在固定一侧（2026-09-20 用户实测）。
-        if (flat.lengthSqr() < 1.0E-6) {
-            flat = lastBackNormal.scale(1.0);
+        // ── ① 参考系：玩家身体 ───────────────────────────────────────────────
+        // ⭐ 三根身体轴（定义见类顶部「参考系」说明块）。forward 含俯仰 ⇒ 圆平面也跟着俯仰。
+        // ⚠️ 必须用 getPosition(partialTick)（帧间插值）而不是 position()（tick 级）：
+        //    渲染是每帧跑的，tick 级位置会让环跟着玩家【一顿一顿】地跳（用户实测）。
+        Vec3 forward = mc.player.getViewVector(partialTick).normalize();
+        Vec3 right = forward.cross(worldUp);
+        if (right.lengthSqr() < 1.0E-6) {
+            // 视线正上 / 正下时 forward ∥ worldUp ⇒ 叉积退化。
+            // ⚠️ 沿用上一次的有效方向，不能退回写死方向 —— 那会让环"啪"地钉在固定一侧。
+            right = lastBodyRight;
         } else {
-            flat = flat.normalize();
-            lastBackNormal = flat;
+            right = right.normalize();
+            lastBodyRight = right;
         }
-        // ⭐ 跟随视角的强度（2026-09-21 用户要求"关掉随视角扭转"）：
-        //   1 = 完全跟随（环始终正对着你，但转视角时整圈工具跟着扭）
-        //   0 = 完全固定（环不再随视角扭，但也不再正对着你）
-        //   中间值 = 部分跟随
-        //   两者都是水平单位向量，线性插值后归一化即可；退化时回退到跟随。
-        Vec3 backNormal = RING_FIXED_NORMAL.scale(1.0F - RING_FOLLOW_VIEW)
-            .add(flat.scale(RING_FOLLOW_VIEW));
-        if (backNormal.lengthSqr() < 1.0E-6) {
-            backNormal = flat;
-        }
-        backNormal = backNormal.normalize();
-        // ⚠️ 必须用 getPosition(partialTick)（帧间插值），而不是 position()（tick 级）。
-        //    渲染是每帧跑的，用未插值的位置会让环跟着玩家【一顿一顿】地跳（2026-09-20 用户实测）。
-        // 环心：始终在【玩家背后】—— 用【视角方向】算位置。
-        // ⭐ 位置与朝向必须分开：位置跟随视角只是【平移】，不会造成"扭转"；
-        //    扭转来自【法线】是否跟随（见 RING_FOLLOW_VIEW）。
-        //    ⚠️ 这里若误用 backNormal，法线一固定环心就跟着钉死，环会跑到身前/侧面。
-        Vec3 backCenter = mc.player.getPosition(partialTick)
-            .add(0.0, RING_HEIGHT, 0.0)
-            .subtract(flat.scale(RING_BACK_OFFSET));
-        // ⭐ 脸的取向 α（见 RING_ALPHA_BASE）。AMP = 0 时即为固定值。
-        float ringAlpha = RING_ALPHA_BASE
-            + RING_ALPHA_AMP * (float) Math.sin(now * (double) RING_ALPHA_OMEGA);
-        renderRing(mc, poseStack, buffers, level, cameraPos, backCenter,
-            backNormal.cross(up).normalize(), up, idling,
-            new RingPose(backNormal, ringPsi(now, backNormal), ringAlpha), 0.0F);
+        // 身体的上：⊥ forward 且 ⊥ right ⇒ 含俯仰（低头时它前倾）。这是"身体参考系"的关键。
+        Vec3 bodyUp = right.cross(forward).normalize();
 
-        // 挖掘环：目标方块处，法线指向玩家（环面始终朝着玩家）
+        // ── ② 位置：从脑袋出发，沿【身体】向后 ───────────────────────────────
+        // ⚠️ 高度必须用【世界竖直】，不能用 bodyUp —— 2026-09-21 揪出，这是"工具会转"的元凶之一：
+        //    相机的旋转中心是「玩家 + 世界竖直×眼高」，而 bodyUp 会随俯仰倾斜。
+        //    若环心也用 bodyUp，两者就【不同轴】⇒ 抬头/低头时环心偏离相机轴线（偏角可达 5~7°）
+        //    ⇒ 你与环的相对方向在变 ⇒ 工具看起来在转。
+        //    📌 注意：这里改的只是【环心在哪】；环【内】的基仍用 bodyUp，
+        //       所以"柄以身体为参考系"不受影响。
+        Vec3 center = mc.player.getPosition(partialTick)
+            .add(worldUp.scale(RING_HEIGHT))            // 头部高度（世界竖直 —— 与相机同轴）
+            .subtract(forward.scale(RING_BACK_OFFSET)); // 沿身体向后
+
+        renderRing(mc, poseStack, buffers, level, cameraPos, center,
+            forward, bodyUp, idling, 0.0F);
+
+        // ── ③ 挖掘环：目标方块处 ────────────────────────────────────────────
+        // ⚠️ 法线【也只由 forward 决定】：挖掘的方块总在玩家【前方】，
+        //    所以"指向玩家" = 身体的"后" = −forward（取水平分量，好与 worldUp 正交）。
+        //    审计 2026-09-21：原实现用【cameraPos】算这个方向 —— 第三人称下相机离玩家好几格，
+        //    于是环法线会随相机漂移。相机 ≠ 玩家，那是污染，已改成只用 forward。
         if (targetState != null && !working.isEmpty()) {
-            Vec3 center = Vec3.atCenterOf(targetPos);
-            Vec3 toPlayer = new Vec3(cameraPos.x - center.x, 0.0, cameraPos.z - center.z);
-            Vec3 digNormal = toPlayer.lengthSqr() < 1.0E-6 ? backNormal : toPlayer.normalize();
-            renderRing(mc, poseStack, buffers, level, cameraPos, center,
-                digNormal.cross(up).normalize(), up, working,
-                new RingPose(digNormal, ringPsi(now, digNormal), ringAlpha),
+            Vec3 digCenter = Vec3.atCenterOf(targetPos);
+            Vec3 digNormal = new Vec3(-forward.x, 0.0, -forward.z);
+            // 视线正上 / 正下时水平分量退化，沿用身体的右（水平、与 worldUp 正交）。
+            digNormal = digNormal.lengthSqr() < 1.0E-6 ? right : digNormal.normalize();
+            renderRing(mc, poseStack, buffers, level, cameraPos, digCenter,
+                digNormal, worldUp, working,
                 spinAngle(now, partialTick, ringSpinPeriod(level, targetPos, targetState)));
         }
     }
 
     /**
-     * 环的漂移锚点 = <b>时间行程</b> − <b>朝向补偿</b>。
-     *
-     * @param normal 该环的法线 —— 它的方位角就是要被补偿掉的 {@code φ}
-     * @see #RING_PSI_SWEEP        时间行程（单向转满一圈再倒回）
-     * @see #RING_PSI_VIEW_WEIGHT  朝向补偿强度（{@code 1} = 完全补偿）
-     */
-    private static float ringPsi(long now, Vec3 normal) {
-        float sweep = RING_PSI_SWEEP
-            * (float) ((1.0 - Math.cos(now * (double) RING_PSI_OMEGA)) * 0.5);
-        float azimuth = (float) Math.atan2(normal.x, normal.z);
-        return sweep - RING_PSI_VIEW_WEIGHT * azimuth;
-    }
-
-    /**
-     * 辅助环上一把工具的<b>姿态参数</b>（打包成一个记录）。
-     *
-     * <p>为什么打包：环的参数已经不止一个（法线 / 漂移角 / 脸的取向），
-     * 散在参数列表里既难读，以后<b>每加一个就要改所有调用处</b>。
-     * 打包后加参数只改本记录 + 一处解包即可。</p>
-     *
-     * @param normal 环平面的法线（也就是"垂直于环面"的那个方向）
-     * @param psi    T 平面绕<b>柄轴</b>的漂移角（{@code 0} = 不漂移）
-     * @param alpha  脸的取向：{@code 0} = 切向（沿圆走，最立体）；{@code 1} = 环法线（脸全统一）
-     */
-    private record RingPose(Vec3 normal, float psi, float alpha) {
-    }
-
-    /**
-     * 把一个列表里的工具均匀铺在环上：位置在圆周上，长轴<b>沿半径朝外</b>
+     * 把一个列表里的工具均匀铺在环上。位置在圆周上，长轴<b>沿半径朝外</b>
      * ⇒ 工具<b>头朝外、柄朝圆心</b>，像光芒一样呈放射状。
      *
-     * <p>⚠️ 前提是模型已由 {@link #MODEL_UPRIGHT_FIX} <b>立正</b> —— 否则贴图那 45° 的
-     * 倾斜会盖过这里设的朝向，看起来"怎么摆都不对"（2026-09-20 踩过）。</p>
+     * <p>⚠️ 前提是模型已由 {@link #MODEL_UPRIGHT_FIX} <b>立正</b> ——
+     * 否则贴图那 45° 的倾斜会盖过这里设的朝向，看起来"怎么摆都不对"。</p>
      *
-     * @param right / @param up 环平面内的一组正交基向量
-     * @param pose              环的姿态（法线 / 漂移角 / 脸的取向），见 {@link RingPose}
+     * @param normal 环平面的法线（⊥ 环面）—— 待机环传<b>身体的"前"</b>（含俯仰）
+     * @param up     环平面内的"上"方向 —— 待机环传<b>身体的"上"</b>（含俯仰）。
+     *               ⚠️ 必须与 {@code normal} <b>正交</b>，否则圆周会被压成椭圆
      */
     private static void renderRing(Minecraft mc, PoseStack poseStack, MultiBufferSource buffers,
                                    ClientLevel level, Vec3 cameraPos, Vec3 center,
-                                   Vec3 right, Vec3 up,
-                                   List<ItemStack> tools, RingPose pose, float spinRad) {
+                                   Vec3 normal, Vec3 up,
+                                   List<ItemStack> tools, float spinRad) {
         int n = tools.size();
         if (n == 0) {
             return;
         }
+        // 环平面内的一组正交基。调用方保证 normal ⊥ up（待机环传的是身体三轴，天然正交），
+        // 于是 `normal × up` 给出平面内的第三根轴，且不会退化。
+        Vec3 right = normal.cross(up).normalize();
         double radius = Math.min(RING_RADIUS_BASE + RING_RADIUS_STEP * n, RING_RADIUS_MAX);
         for (int i = 0; i < n; i++) {
             double theta = RING_START_ANGLE + Math.PI * 2.0 * i / n;
             // 位置：均匀分布在圆周上；朝向：沿半径【朝外】——"放射"指的就是这个
             Vec3 radial = right.scale(Math.cos(theta)).add(up.scale(Math.sin(theta)));
-            // 环上用【正交基】定向（传 pose），不再需要 rollRad —— 三根轴已一次钉死
             drawModel(mc, poseStack, buffers, level, cameraPos,
-                center.add(radial.scale(radius)), radial, pose,
+                center.add(radial.scale(radius)), radial, normal,
                 0.0F, spinRad, 1.0F, tools.get(i));
         }
     }
@@ -681,81 +640,49 @@ public final class LivingToolModelRenderer {
     /**
      * 画一个物品模型：位置 + 朝向（{@code +Y} 对齐目标方向）+ 滚转 + 风车自转 + 缩放。
      *
-     * @param ring 仅<b>辅助环</b>用：环的姿态（法线 / 漂移角 / 脸的取向）。
-     *             非 {@code null} 时改用 <b>正交基</b>定向，而不是 {@code yaw/pitch}
-     *             （原因见方法内注释、以及 {@link RingPose}）。
-     *             <b>射线模式</b>（自主）传 {@code null}。
+     * @param ringNormal 仅<b>辅助环</b>用：环平面法线。非 {@code null} 时改用
+     *                   <b>正交基</b>定向（见方法内注释）；<b>射线模式</b>（自主）传 {@code null}。
      */
     private static void drawModel(Minecraft mc, PoseStack poseStack, MultiBufferSource buffers,
                                   ClientLevel level, Vec3 cameraPos, Vec3 pos, Vec3 dir,
-                                  @Nullable RingPose ring,
+                                  @Nullable Vec3 ringNormal,
                                   float rollRad, float spinRad, float scale, ItemStack stack) {
-        // 朝向：把局部 +Y 转到目标方向。
+        // 射线模式的对齐角（环模式不用）——把局部 +Y 转到目标方向：
         //   yaw   绕 Y（转到目标水平角）
         //   pitch 绕 X（把 +Y 倾斜下来）
         float yaw = (float) Mth.atan2(dir.x, dir.z);
         double horizontal = Math.sqrt(dir.x * dir.x + dir.z * dir.z);
         float pitch = (float) Math.atan2(horizontal, dir.y);
 
-        // ⭐ 全局光照（满亮）—— 用户 2026-09-20 定。
-        //    原先是采样世界光照（`LevelRenderer.getLightColor`），但**模型中心一旦落在不透明方块内部**
-        //    （挖掘时瞬现到方块表面，模型有一半埋进去），采样值就是 0 ⇒ **整个模型变黑**。
+        // ⭐ 全局光照（满亮）。
+        //    采样世界光照时，<b>模型中心一旦落在不透明方块内部</b>（挖掘时瞬现到方块表面，
+        //    模型有一半埋进去），采样值就是 0 ⇒ <b>整个模型变黑</b>。
         //    悬浮模型是"表现层"，不该被所在格的遮挡光照吃掉，故统一满亮。
         int light = LightTexture.FULL_BRIGHT;
 
         poseStack.pushPose();
         // 事件给的 PoseStack 已是【相机相对】坐标
         poseStack.translate(pos.x - cameraPos.x, pos.y - cameraPos.y, pos.z - cameraPos.z);
-        if (ring != null) {
-            // 解包：内部继续用原来的三个名字，下面的逻辑一行不用改
-            Vec3 ringNormal = ring.normal();
-            float ringPsi = ring.psi();
-            float ringAlpha = ring.alpha();
-            // ⭐ 环上改用【正交基】定向（2026-09-20 用户实测定）。
-            //   为什么不能用 yaw/pitch：那套解只保证"把 +Y 转到 dir"，
-            //   剩下的滚转自由度是【任意】的 —— 结果 +Z（板面法线）会随工具在环上的位置
-            //   翻来翻去：右半边朝"切向"、左半边朝"切向的反方向"，看着左右两半不一致。
-            //   正交基把三根轴一次钉死：
-            //       +X（横线）    → 见下（默认 = ringNormal，⊥ 环面）
-            //       +Y（柄）      → dir（= 径向）      ⇒ 头朝外、柄朝圆心
-            //       +Z（板面法线）→ ringNormal × dir   ⇒ 【切向】
-            // ① 脸（板面法线）的方向 = 【切向 ↔ 环法线】的插值。
-            //    ⭐ 这两者【都已经垂直于柄】且【互相正交】，所以插值永远安全，无需投影/退化处理。
+        if (ringNormal != null) {
+            // ── 环模式：用【正交基】一次钉死三根轴（★参考系 = 圆平面）───────────
+            //   +Y（柄）  = dir（径向）      ⇒ 头朝外、柄朝圆心
+            //   +Z（脸）  = 切向 ↔ 环法线    ⇒ 由 RING_ALPHA 插值（见常量说明）
+            //   +X（斧刃）= dir × faceZ
             //
-            //    ringAlpha = 0 → 脸 = 切向（沿圆走）
-            //                    ⇒ 工具【"插"在环上】，最立体；但切向沿环绕圈，
-            //                      直径两端的脸必然相反（见文档）。
-            //    ringAlpha = 1 → 脸 = 环法线
-            //                    ⇒ 【所有工具的脸朝同一个方向】；但板面平行于环面，
-            //                      工具变成"贴"在环上。
-            //
-            //    📌 关键点：这两条路之间差【90°，不是 180°】。绕柄转 180° 只会在切向里
-            //       翻个面（切向 → 反切向），仍然出不了环平面 —— 这就是"转 180° 救不了"的原因。
-            Vec3 tangent = ringNormal.cross(dir);      // 切向：沿着圆走的方向
-            Vec3 faceZ = tangent.scale(1.0F - ringAlpha).add(ringNormal.scale(ringAlpha));
-            if (faceZ.lengthSqr() < 1.0E-6) {
-                faceZ = tangent;                        // 理论不会退化，留个兜底
-            }
-            faceZ = faceZ.normalize();
-            // ⭐ 符号统一（"取绝对值"）—— 2026-09-21 用户定。
-            //    问题：切向沿环绕圈，到对面就反号 ⇒ 板的【另一面】朝你 ⇒ 贴图镜像
-            //    ⇒ 斧刃换边 ⇒ 右半圈朝前、左半圈朝后（用户："很不好看"）。
-            //    解法：把符号统一到"朝上"那一侧。判据就是 faceZ 在【世界竖直】上的投影
-            //    （up = (0,1,0)，所以点积恰好等于 faceZ.y，不用真的算点积）。
-            //    效果：左右两半完全一致 ✅。
-            //    代价：正上方 / 正下方那两把各自为政 —— 用户已确认"没关系"。
-            if (faceZ.y < 0.0) {
-                faceZ = faceZ.scale(-1.0);
-            }
-            Vec3 faceX = dir.cross(faceZ);              // 横线：⊥柄 且 ⊥脸
-            // ② 再让整个 T 平面绕【柄轴】漂移 ringPsi（见 RING_PSI_SWEEP）。
-            Vec3 ax = faceX.scale(Math.cos(ringPsi)).add(faceZ.scale(Math.sin(ringPsi)));
-            Vec3 ay = dir;
-            Vec3 az = faceZ.scale(Math.cos(ringPsi)).subtract(faceX.scale(Math.sin(ringPsi)));
+            // ⚠️ 为什么不能用 yaw/pitch：那套解只保证"把 +Y 转到 dir"，
+            //    剩下的滚转自由度是【任意】的 ⇒ 斧刃会随位置乱翻、不统一。
+            Vec3 tangent = ringNormal.cross(dir);    // 切向：沿着圆走的方向
+            // ⭐ 脸的取向 = 切向 ↔ 环法线 的插值（RING_ALPHA）。
+            //    这两者【都已经 ⊥ 柄】且【互相正交】⇒ 插值永远安全，不会退化。
+            Vec3 faceZ = tangent.scale(1.0F - RING_ALPHA).add(ringNormal.scale(RING_ALPHA));
+            faceZ = faceZ.lengthSqr() < 1.0E-6 ? tangent : faceZ.normalize();
+            // ⚠️ 这里【故意不】统一 faceZ 的符号 —— 详见上方「④ 工具姿态」说明块。
+            Vec3 faceX = dir.cross(faceZ);           // 斧刃：⊥柄 且 ⊥脸
+            // 三根轴都是单位且相互正交（normal ⊥ dir、dir ⊥ faceZ），直接拼成旋转矩阵。
             poseStack.mulPose(new Matrix4f(
-                (float) ax.x, (float) ay.x, (float) az.x, 0.0F,
-                (float) ax.y, (float) ay.y, (float) az.y, 0.0F,
-                (float) ax.z, (float) ay.z, (float) az.z, 0.0F,
+                (float) faceX.x, (float) dir.x, (float) faceZ.x, 0.0F,
+                (float) faceX.y, (float) dir.y, (float) faceZ.y, 0.0F,
+                (float) faceX.z, (float) dir.z, (float) faceZ.z, 0.0F,
                 0.0F, 0.0F, 0.0F, 1.0F));
         } else {
             poseStack.mulPose(Axis.YP.rotation(yaw));
