@@ -12,8 +12,7 @@ for n in z.namelist():
         b = z.read(n)
         key = n[len('assets/minecraft/textures/'):]
         van_raw.setdefault(hashlib.md5(b).hexdigest(), []).append(key)
-        im = Image.open(io.BytesIO(b))
-        van_px.setdefault(hashlib.md5(im.convert('RGBA').tobytes()).hexdigest(), []).append(key)
+        van_px.setdefault(hashlib.md5(Image.open(io.BytesIO(b)).convert('RGBA').tobytes()).hexdigest(), []).append(key)
 
 plan, solid = [], []
 for f in sorted(glob.glob(os.path.join(MOD, '**', '*.png'), recursive=True)):
@@ -30,10 +29,9 @@ for f in sorted(glob.glob(os.path.join(MOD, '**', '*.png'), recursive=True)):
 
 print('=== 拟转换（%d 张）===' % len(plan))
 for rel, vk, kind in plan:
-    print('  %-36s -> minecraft:%-30s [%s]' % (rel, vk[:-4], kind))
+    print('  %-38s -> minecraft:%-32s [%s]' % (rel, vk[:-4], kind))
 print('\n=== 排除的纯色图（%d 张，撞原版纯色纹理属巧合）===' % len(solid))
-for s in solid:
-    print('  ', s)
+print(' ', solid)
 
 ref = collections.defaultdict(list)
 for p in glob.glob(os.path.join(ROOT, 'src', '**', '*.*'), recursive=True):
@@ -45,21 +43,29 @@ for p in glob.glob(os.path.join(ROOT, 'src', '**', '*.*'), recursive=True):
         if ('living_item:' + stem) in txt or ('living_item:textures/' + rel) in txt:
             ref[rel].append(os.path.relpath(p, ROOT).replace('\\', '/'))
 
-print('\n=== 引用点统计 ===')
-print('  有引用 %d 张 / 无引用 %d 张' % (len(ref), len([r for r, _, _ in plan if r not in ref])))
+print('\n=== 引用点 ===')
 ext = collections.Counter()
 for rel, files in ref.items():
     for p in files:
         ext[os.path.splitext(p)[1]] += 1
-print('  引用文件类型:', dict(ext))
+print('  引用文件类型分布:', dict(ext))
+print('  有引用 %d 张 / 无引用 %d 张' % (len(ref), len([r for r, _, _ in plan if r not in ref])))
+
+nonjson = [(rel, p) for rel, files in ref.items() for p in files if not p.endswith('.json')]
 print('\n--- ⚠️ 非 JSON 引用（改 JSON 无效）---')
-bad = [(rel, p) for rel, files in ref.items() for p in files if not p.endswith('.json')]
-for rel, p in bad:
-    print('  %-34s <- %s' % (rel, p))
-if not bad:
+for rel, p in nonjson:
+    print('  %-38s <- %s' % (rel, p))
+if not nonjson:
     print('  （无）')
-print('\n--- 无引用的副本（需人工判断）---')
+
+print('\n--- 无引用的副本 ---')
 print(' ', [r for r, _, _ in plan if r not in ref] or '（无）')
-print('\n--- 引用最多的前 8 ---')
+
+print('\n--- 引用次数前 8 ---')
 for rel, files in sorted(ref.items(), key=lambda kv: -len(kv[1]))[:8]:
-    print('  %-36s %d 处' % (rel, len(files)))
+    print('  %-38s %d 处' % (rel, len(files)))
+
+print('\n--- 目标映射（用于改写）---')
+for rel, vk, kind in sorted(plan):
+    if rel in ref:
+        print('  "living_item:%s"  ->  "minecraft:%s"' % (rel[:-4], vk[:-4]))
