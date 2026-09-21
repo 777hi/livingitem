@@ -26,6 +26,15 @@ sourceSets.main.resources {
     exclude("src/generated/**/.cache") // datagen cache files
 }
 
+// 把根目录的 LICENSE.txt 一并打进 jar（META-INF/LICENSE.txt）。
+// 该文件含「第三方资产与商标声明」（Minecraft 纹理版权归 Mojang/Microsoft、
+// 本许可不覆盖），必须随 jar 分发到使用者手里，否则声明形同虚设。
+tasks.named('processResources', ProcessResources).configure {
+    from('LICENSE.txt') {
+        into 'META-INF'
+    }
+}
+
 repositories {
     // NeoForge 官方仓库（Mod依赖）
     maven { url 'https://maven.neoforged.net/releases' }

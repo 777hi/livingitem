@@ -1,70 +1,84 @@
-All Rights Reserved License for Living Item
+Living Item — License Overview
+
+Living Item is released under the MIT License, with one additional condition:
+the mod itself may not be resold.
+
+Copyright (c) 2026 777hi
+https://github.com/777hi
+
+================================================================================
+
+## Code License (MIT)
+
+MIT License
 
 Copyright (c) 2026 777hi
 
-This project is licensed under All Rights Reserved (ARR) with the following exceptions.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-## 1. No Redistribution
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-You may NOT redistribute this software in any form without explicit written permission from the author.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
-## 2. Modpacks
+================================================================================
 
-You MAY include this mod in modpacks, both public and private, provided that:
-- The modpack does not generate revenue through paywalls or exclusive access
-- The mod is not modified or rehosted separately
+## Additional Condition (No Resale)
 
-## 3. Personal Modification
+The rights granted above do not include the right to sell this mod, or a
+modified version of it, as a product in its own right.
 
-You MAY modify this software for personal, non-commercial use only.
-You may NOT share, distribute, or publish any modifications.
+================================================================================
 
-## 4. No Commercial Use
+## Assets License (MIT)
 
-You may NOT use this software, in whole or in part, for any commercial purpose
-without explicit written permission from the author.
+Artwork in this project is licensed under the MIT License above, on the same
+terms.
 
-## 5. Dependency and API Use
+Exception: textures that are derived from, or copied from, Minecraft are not
+licensed here. See the Third-Party Notice below.
 
-Living Item may be used as a mod dependency. Its public API (interfaces, registries,
-data components) may be called and implemented to create custom living items.
+================================================================================
 
-Living Item's code or jar file may NOT be bundled or redistributed within another
-mod's distribution.
+## Third-Party Notice
 
-## 6. No Unauthorized Forks or Derivative Works
+Minecraft — including its name, brand, code, textures, images, models, sounds,
+and any derivatives — is the property of Mojang Studios and Microsoft. All
+rights in it remain with them.
 
-- You may NOT create forks, derivative projects, or adaptations of this software
-  without explicit permission from the author.
-- Exception: You MAY fork this repository on GitHub solely for the purpose of
-  submitting pull requests (PRs) to this project.
+Some textures shipped in this mod are derived from, or are copies of, assets
+from Minecraft, including the copper-family, furnace, hopper, redstone, and TNT
+textures. Those textures are not covered by the MIT License or the Additional
+Condition above, and no rights over them are granted to you by the author. They
+are provided solely for use inside Minecraft, as part of this mod. To reuse any
+of them, obtain permission from Mojang Studios / Microsoft.
 
-## 7. Code Reference and Inspiration
+Names, identifiers, and API surfaces belonging to other mods (including
+NeoForge, Create, and any other mod this project interoperates with) remain the
+property of their respective authors.
 
-- You MAY reference or be inspired by this code for your own projects.
-- You MAY reuse small code snippets in your own projects as long as proper attribution
-  to the original author (777hi) is given.
-- You may NOT copy core architecture, entire files, or substantial code structures
-  without explicit permission from the author.
-- If you are unsure whether your use qualifies as "small reuse," please contact the author.
+Living Item is an independent, unofficial project. It is not affiliated with,
+endorsed by, sponsored by, or approved by Mojang Studios, Microsoft, NeoForged,
+or any other mod author. This license grants no rights in any third-party name
+or trademark, including the name "Living Item" as used to identify the original
+project.
 
-## 8. Translations
+If you are a rights holder and believe this project contains material that
+infringes your rights, please contact the author via GitHub
+(https://github.com/777hi) and it will be removed or replaced promptly.
 
-Translations (language resource files) are freely available with no license restrictions
-and may be used, shared, modified, or distributed without limitation.
+================================================================================
 
-## 9. Disclaimer of Liability
-
-This software is provided "as is", without any express or implied warranties.
-The author is NOT responsible for any damages, including but not limited to:
-- Software crashes, bugs, or data corruption
-- Security vulnerabilities or unauthorized modifications
-- Performance issues or hardware damage
-- Legal issues arising from misuse of the software
-
-Use at your own risk.
-
----
-
-For licensing inquiries, please contact via GitHub:
+For licensing inquiries:
 https://github.com/777hi
