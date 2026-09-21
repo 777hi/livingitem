@@ -13,6 +13,7 @@ import net.minecraft.core.Holder;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
@@ -167,9 +168,18 @@ public final class LivingToolAssist {
         event.setDroppedExperience(EnchantmentHelper.processBlockExperience(level, owner,
             state.getExpDrop(level, pos, blockEntity, player, owner)));
 
-        // F：每把出过力的都扣耐久（耐久附魔由 hurtAndBreak 内部生效）
+        // F：每把出过力的都扣耐久。
+        // ⭐ 走【原版标准入口】hurtAndBreak(amount, entity, slot)，而不是自己拼一个空 lambda。
+        //    它内部依次做三件事，**全都是官方口径** —— 模组只要也守规矩就自动兼容：
+        //      ① Item#damageItem(stack, amount, entity, onBroken)  ← NeoForge 钩子
+        //         （模组的"不毁 / 永恒"类附魔就是在这儿把 amount 改成 0 的）
+        //      ② EnchantmentHelper.processDurabilityChange(...)    ← 原版耐久附魔 + 数据驱动减免
+        //      ③ entity.onEquippedItemBroken(item, slot)           ← 破毁时广播（损坏音效）
+        //    ⚠️ 2026-09-21 修正：原来传的是空 lambda ⇒ 第 ③ 条被跳过，工具挖坏时没声音。
+        //    📌 槽位取 MAINHAND：背包里的工具没有真正的装备位，主手是最接近的语义；
+        //       且该回调只会广播实体事件（音效），不会误动属性 —— 已核源码，安全。
         for (ItemStack helper : helpers) {
-            helper.hurtAndBreak(1, level, player, item -> { });
+            helper.hurtAndBreak(1, player, EquipmentSlot.MAINHAND);
         }
     }
 

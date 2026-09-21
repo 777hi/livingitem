@@ -165,6 +165,11 @@ public final class LivingToolReplay {
         // 6) 完成破坏（L6）—— 内部自动：BreakEvent → canHarvestBlock → mineBlock → 掉落
         ServerPlayerGameMode gameMode = fake.gameMode;
         gameMode.destroyBlock(target);
+        // 通知模组"挖完了"（与上面的 START / ABORT 配对）。
+        // ⚠️ 同 stopDigging 的理由：原版这个事件由客户端包触发，服务端直调不会发。
+        //    face 这里用 UP 近似 —— 它只是事件数据，不参与任何判定（挖掘本身早已完成）。
+        CommonHooks.onLeftClickBlock(fake, target, Direction.UP,
+            ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK);
         level.destroyBlockProgress(fake.getId(), target, -1);
         LivingItemManager.setToolProgress(tool, null);
         // ⚠️ held 是「写进度之后」才 copy 的副本，两边的进度必须一起清 ——
@@ -193,6 +198,13 @@ public final class LivingToolReplay {
                                     ServerLevel level, LivingToolFakePlayer fake) {
         if (previous != null) {
             level.destroyBlockProgress(fake.getId(), previous.target(), -1);
+            // 通知模组"这次挖掘【中断】了"。
+            // ⚠️ 原版是由客户端发 ABORT_DESTROY_BLOCK 包、服务端在包处理里触发该事件；
+            //    而我们走的是"服务端直调"路径，那条【不会自己发】——
+            //    只听 STOP/ABORT 做收尾的模组（进度条、统计、防作弊）会漏掉，故手动补齐。
+            //    与 frashStart 那边的 START 成对（2026-09-21）。
+            CommonHooks.onLeftClickBlock(fake, previous.target(), Direction.UP,
+                ServerboundPlayerActionPacket.Action.ABORT_DESTROY_BLOCK);
         }
         LivingItemManager.setToolProgress(tool, null);
     }
