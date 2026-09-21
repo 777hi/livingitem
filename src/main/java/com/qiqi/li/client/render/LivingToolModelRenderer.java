@@ -17,9 +17,11 @@ import com.qiqi.li.living.domain.tools.LivingToolAction;
 import com.qiqi.li.living.domain.tools.LivingToolAssistState;
 import com.qiqi.li.living.domain.tools.LivingToolHostClientCache;
 import com.qiqi.li.living.domain.tools.LivingToolMemory;
+import com.qiqi.li.living.domain.tools.LivingToolPlayerClientCache;
 import com.qiqi.li.living.domain.tools.LivingToolProgress;
 import com.qiqi.li.living.domain.tools.LivingToolRecorder;
 import com.qiqi.li.network.LivingToolHostPacket;
+import com.qiqi.li.network.LivingToolPlayerPacket;
 
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
@@ -372,7 +374,25 @@ public final class LivingToolModelRenderer {
 
         // ④ 辅助环（无记忆的活工具）—— 围在脑袋后面一圈
         if (!assist.isEmpty()) {
-            renderAssistRing(mc, poseStack, buffers, level, cameraPos, partialTick, assist);
+            renderAssistRing(mc, poseStack, buffers, level, cameraPos, partialTick, now, assist);
+        }
+
+        // ⑤ 其它玩家背包里的活工具（联机可见性 · 最小版：只画背后的待机环）
+        //    数据来自服务端 S2C 广播（LivingToolPlayerSync）；位置 / 朝向读原版实体同步。
+        //    ⚠️ 挖掘环不在最小版范围内（"他正在挖哪一格"没有同步）。
+        for (LivingToolPlayerPacket.Entry entry :
+                LivingToolPlayerClientCache.get(level.dimension().location())) {
+            if (entry.tools().isEmpty()) {
+                continue;
+            }
+            var owner = level.getPlayerByUUID(entry.playerId());
+            if (owner == null || owner == mc.player) {
+                continue;   // 自己那份由上面的本机渲染负责
+            }
+            if (owner.distanceToSqr(cameraPos) > MAX_DISTANCE * MAX_DISTANCE) {
+                continue;
+            }
+            renderBackRing(mc, poseStack, buffers, level, cameraPos, partialTick, owner, entry.tools());
         }
 
         // 清理：本帧没见到的 key 直接丢（工具被取走 / 走出范围）。
@@ -382,24 +402,35 @@ public final class LivingToolModelRenderer {
 
 
     /**
-     * 辅助环：把无记忆的活工具在玩家<b>脑袋后面</b>围成一圈 ——
-     * 它是<b>世界里的物体</b>（会被地形遮挡、有透视），不是贴在屏幕上的东西。
+     * 辅助环：无记忆的活工具围成一圈 —— 它是<b>世界里的物体</b>（会被地形遮挡、有透视），
+     * 不是贴在屏幕上的东西。
      *
-     * <p>⭐ 参考系 = 玩家<b>水平</b>朝向 + 世界竖直。<b>只跟转身，不跟抬头低头</b>：</p>
-     * <ul>
-     *   <li>法线 = <b>水平前方</b>（只看 yaw）⇒ 环平面<b>竖直</b></li>
-     *   <li>环内"上"= <b>世界竖直</b> ⇒ 正上方那把永远在头顶</li>
-     *   <li>环心 = 玩家位置 + 世界竖直 × {@value #RING_HEIGHT} − 水平前方 × {@value #RING_BACK_OFFSET}</li>
-     * </ul>
+     * <p>⭐ <b>按「能不能对当前方块出力」分成两批，<u>两个环可以同时存在</u></b>
+     * （2026-09-21 按历史版本恢复）：</p>
+     *
+     * <table>
+     *   <tr><th>批次</th><th>环心</th><th>法线</th><th>动画</th></tr>
+     *   <tr><td><b>出力</b><br>（对该方块有效的）</td>
+     *       <td><b>目标方块中心</b></td>
+     *       <td><b>指向玩家</b> ⇒ 环面朝着玩家</td>
+     *       <td>风车自转（挖得越快转得越快）</td></tr>
+     *   <tr><td><b>其余</b><br>（对该方块没用的）</td>
+     *       <td>玩家<b>脑袋后面</b></td>
+     *       <td><b>水平前方</b> ⇒ 环平面竖直</td>
+     *       <td>静止</td></tr>
+     * </table>
+     *
+     * <p>⭐ 待机环的参考系 = 玩家<b>水平</b>朝向 + 世界竖直。<b>只跟转身，不跟抬头低头</b>：
+     * 法线取水平前方（只看 yaw）⇒ 环平面竖直；环内"上"取世界竖直 ⇒ 正上方那把永远在头顶。</p>
      *
      * <p>⚠️ <b>法线【不能】用含俯仰的视线方向</b>：那会让环永远正对相机 ⇒ 看起来像贴在屏幕上
      * （怎么转都一样），失去"背在背后的物体"的感觉（用户 2026-09-21 指出）。
      * 代价是抬头低头时会斜看环 ⇒ 环在屏幕上变成椭圆 —— 这正是"真物体"的表现。</p>
      *
-     * <p>柄指向圆心（放射状）；鼓出方向 ⊥ 圆平面（斧头朝你）；板面 ⊥ 圆平面（斧子立着）。</p>
+     * <p>工具姿态：柄指向圆心（放射状）；斧刃 ⊥ 圆平面且朝前。</p>
      */
     private static void renderAssistRing(Minecraft mc, PoseStack poseStack, MultiBufferSource buffers,
-                                         ClientLevel level, Vec3 cameraPos, float partialTick,
+                                         ClientLevel level, Vec3 cameraPos, float partialTick, long now,
                                          List<ItemStack> tools) {
         // ── 参考系：水平前方 + 世界竖直（环是"背在背上的竖直环"）────────────────
         Vec3 look = mc.player.getViewVector(partialTick);
@@ -412,16 +443,86 @@ public final class LivingToolModelRenderer {
             flat = flat.normalize();
             lastRingFlat = flat;
         }
-        // flat ⊥ WORLD_UP ⇒ 叉积恒不退化（只可能 flat 本身为零，已在上方兜底）。
-        Vec3 right = flat.cross(WORLD_UP).normalize();
 
-        // ── 环心：脑袋后面（高度取世界竖直，偏移取水平向后）──────────────────
-        // ⚠️ 用 getPosition(partialTick)（帧间插值）：渲染每帧都跑，tick 级位置会让环一顿一顿地跳。
-        Vec3 center = mc.player.getPosition(partialTick)
+        // ── ① 分组：能对当前方块出力的 → 去方块；其余 → 留背后 ─────────────────
+        // 🔴 判据必须用 gameMode.isDestroying()（"确实按着左键"），**不能**用 BreakSpeed 事件 ——
+        //    那个【只要准心对着方块就每 tick 触发】（不需要按住），会导致"指着哪就在哪转圈"
+        //    （2026-09-20 用户报过的 bug）。
+        BlockPos digTarget = mc.gameMode != null && mc.gameMode.isDestroying()
+            ? LivingToolAssistState.target(now) : null;
+        BlockState digState = digTarget != null ? level.getBlockState(digTarget) : null;
+
+        List<ItemStack> working = new ArrayList<>();
+        List<ItemStack> idling = new ArrayList<>();
+        for (ItemStack stack : tools) {
+            // getDestroySpeed > 1.0 ⇒ 这把工具对【这个方块】有效（1.0 = 徒手速度）⇒ 它能出力。
+            if (digState != null && stack.getDestroySpeed(digState) > 1.0F) {
+                working.add(stack);
+            } else {
+                idling.add(stack);
+            }
+        }
+
+        // ── ② 待机环：脑袋后面（与其它玩家共用同一条路径）─────────────────────
+        if (!idling.isEmpty()) {
+            renderBackRing(mc, poseStack, buffers, level, cameraPos, partialTick, mc.player, idling);
+        }
+
+        // ── ③ 挖掘环：目标方块处，法线指向玩家（环面始终朝着玩家）──────────────
+        if (!working.isEmpty()) {
+            Vec3 center = Vec3.atCenterOf(digTarget);
+            Vec3 toPlayer = new Vec3(cameraPos.x - center.x, 0.0, cameraPos.z - center.z);
+            Vec3 normal = toPlayer.lengthSqr() < 1.0E-6 ? flat : toPlayer.normalize();
+            // 风车自转：转速由"含辅助贡献的破坏速度"换算（复用射线模式那套换算）
+            float speed = Math.max(LivingToolAssistState.digSpeed(), 1.0E-4F);
+            float spinRad = spinAngle(now, partialTick, spinPeriod((int) Math.ceil(1.0 / speed)));
+            drawRing(mc, poseStack, buffers, level, cameraPos, center, normal, working, spinRad);
+        }
+    }
+
+    /**
+     * 在某个玩家<b>背后</b>画待机环（本机玩家与其它玩家<b>共用</b>）。
+     *
+     * <p>参考系 = 该玩家的<b>水平</b>朝向 + 世界竖直（<b>只跟转身，不跟抬头低头</b>）——
+     * 位置与朝向都读 {@code player}（带帧间插值），所以本机 / 远程一视同仁。</p>
+     *
+     * @param player 参考系来源（本机传 {@code mc.player}，联机时传对应的 {@code Player}）
+     */
+    private static void renderBackRing(Minecraft mc, PoseStack poseStack, MultiBufferSource buffers,
+                                       ClientLevel level, Vec3 cameraPos, float partialTick,
+                                       net.minecraft.world.entity.player.Player player,
+                                       List<ItemStack> tools) {
+        Vec3 look = player.getViewVector(partialTick);
+        Vec3 flat = new Vec3(look.x, 0.0, look.z);
+        if (flat.lengthSqr() < 1.0E-6) {
+            // 视线正上 / 正下 ⇒ 水平分量退化为零向量。
+            // 本机玩家沿用上一次的有效值（否则环会"啪"地钉到固定一侧）；
+            // 其它玩家没有历史可选，退回世界北即可（他们的视角本来就不该影响你的画面）。
+            flat = player == mc.player ? lastRingFlat : new Vec3(0.0, 0.0, -1.0);
+        } else {
+            flat = flat.normalize();
+            if (player == mc.player) {
+                lastRingFlat = flat;
+            }
+        }
+        Vec3 center = player.getPosition(partialTick)
             .add(0.0, RING_HEIGHT, 0.0)                 // 世界竖直 ⇒ 高度不随俯仰变
             .subtract(flat.scale(RING_BACK_OFFSET));    // 水平向后 ⇒ 始终在【背后】
+        drawRing(mc, poseStack, buffers, level, cameraPos, center, flat, tools, 0.0F);
+    }
 
-        // ── 环内布局：均匀铺开，从正上方起步 ──────────────────────────────
+    /**
+     * 在指定位置画一圈工具：柄指向圆心（放射状）、斧刃 ⊥ 圆平面且朝前。
+     *
+     * @param center   环心
+     * @param normal   环平面法线（<b>必须水平</b>：环内"上"取世界竖直，靠它保证正交）
+     * @param spinRad  风车自转角（0 = 不转）
+     */
+    private static void drawRing(Minecraft mc, PoseStack poseStack, MultiBufferSource buffers,
+                                 ClientLevel level, Vec3 cameraPos, Vec3 center, Vec3 normal,
+                                 List<ItemStack> tools, float spinRad) {
+        // normal 恒为水平 ⇒ ⊥ WORLD_UP ⇒ 叉积不退化
+        Vec3 right = normal.cross(WORLD_UP).normalize();
         int n = tools.size();
         double radius = Math.min(RING_RADIUS_BASE + RING_RADIUS_STEP * n, RING_RADIUS_MAX);
         for (int i = 0; i < n; i++) {
@@ -434,8 +535,8 @@ public final class LivingToolModelRenderer {
             // ⇒ cosθ > 0 那半圈要再转 180° 抵消符号。只依赖 θ ⇒ 【刚性】，与视角无关。
             //   （2026-09-21 用户实测定：原先取 −flat 是反的 —— 斧刃朝后了。）
             float ringRoll = Math.cos(angle) >= 0.0 ? 0.0F : (float) Math.PI;
-            drawModel(mc, poseStack, buffers, level, cameraPos, pos, dir, flat, ringRoll, 0.0F, 1.0F,
-                tools.get(i));
+            drawModel(mc, poseStack, buffers, level, cameraPos, pos, dir, normal, ringRoll, spinRad,
+                1.0F, tools.get(i));
         }
     }
 

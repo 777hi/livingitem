@@ -70,6 +70,7 @@ import com.qiqi.li.network.LivingMapGuiTeleportPacket;
 import com.qiqi.li.network.LivingItemSyncPacket;
 import com.qiqi.li.network.ToolMemoryClearPacket;
 import com.qiqi.li.network.LivingToolHostPacket;
+import com.qiqi.li.network.LivingToolPlayerPacket;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.compat.create.ModCreate;
 import com.qiqi.li.living.domain.furnace.LivingFurnaceFunction;
@@ -334,6 +335,8 @@ public class LivingItem {
             processItemEntityContainers(level);
             // K2：必须在容器处理【之后】flush，才能收齐本 tick 的登记
             LivingToolHostSync.flush(level);
+            // 联机可见性（最小版）：把各玩家背包里的无记忆活工具广播给附近客户端
+            com.qiqi.li.living.domain.tools.LivingToolPlayerSync.flush(level);
         }
 
         // 待炸账本：按区块分帧推进爆炸破坏（已加载的按预算处理，未加载的等自然加载）
@@ -455,6 +458,9 @@ public class LivingItem {
         // 活工具（K2）：近处方块容器里的活工具清单（位置 + ItemStack），
         // 供客户端渲染记忆射线与（未来的）悬浮模型 —— 不开 GUI 时客户端拿不到箱子内容
         registrar.playToClient(LivingToolHostPacket.TYPE, LivingToolHostPacket.STREAM_CODEC, LivingToolHostPacket::handle);
+        // 联机可见性（最小版）：近处玩家背包里的无记忆活工具清单（UUID + ItemStack），
+        // 供客户端给【其它玩家】画背后的待机环（自己那份不发 —— 本机渲染更实时，且能走挖掘环）
+        registrar.playToClient(LivingToolPlayerPacket.TYPE, LivingToolPlayerPacket.STREAM_CODEC, LivingToolPlayerPacket::handle);
     }
 
     @SubscribeEvent
