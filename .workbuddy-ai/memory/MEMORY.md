@@ -138,6 +138,13 @@
 - **纹理**：涂蜡铜灯 = 未涂蜡 + **外圈 60px 黄框 `(232,160,62,255)`**，四锈蚀级掩码**完全一致**；
   改图标**只改内部**。图片处理用隔离 venv：
   `C:/Users/AI-777hi/.workbuddy-ai/binaries/python/envs/default/Scripts/python.exe`（Pillow 12.3.0）。
+- **去原版化（删冗余纹理副本）时的引用扫描红线（2026-09-22 回归教训）**：
+  ⚠️ 删纹理前必须同时扫两类引用，**Java 字符串里**：
+  ① `living_item:textures/...`（带命名空间）+ `"textures/..."`（命名空间来自 `fromNamespaceAndPath(MOD_ID, ...)` 的第二个参数，**不带前缀**）。
+  ② 模型 JSON 里 `living_item:item/xxx` 或 `minecraft:item/xxx` —— 别忘了原版引用链（minecraft 也会指向被「去原版化」删除的副本）。
+  漏任一项 = **运行时缺失纹理（黑紫占位色）**，如 `LivingRedstoneDecorator.DOT_TEXTURE`
+  指向已删 `living_item:textures/item/redstone_dust_dot.png` ⇒ 整个活红石粉装饰渲染失效。
+  **修法**：删纹理后 grep 全项目 `fromNamespaceAndPath(MOD_ID, "textures/...")`，每个命中要么保留纹理，要么改指原版。
 
 ## 电力层（v3 铜块网络）
 
