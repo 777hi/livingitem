@@ -4,6 +4,38 @@
 > **项目级知识必须写在仓库 `docs/` 里**，本文件只保留「红线速记 + 指针」，避免超限被注入截断。
 > 📌 文档系统规约见 [`docs/README.md`](../../docs/README.md)；改规约改那份文档。
 
+## 🔴 环境红线：G 盘有坏块 ⇒ 「文件/目录莫名消失」的真因（2026-09-22 查明）
+
+- ⚠️ **症状**：工作区文件甚至**整个目录**（`docs/`、`.git`）无故消失，且**找不到任何软件在删**。
+- **真因（已确认的事实，非推测）**：**G 盘所在物理盘有坏块** ——
+  - 系统日志 `disk` 事件 **ID 7**：`The device, \Device\Harddisk1\DR1, has a bad block.`
+    （2026-09-22 22:35:07 连续 10+ 条）
+  - 卷健康：**G 卷 `HealthStatus = Warning`**（E / F / C 均 Healthy）
+  - 盘符映射：**Disk 1（致钛 TiPlus5000 1TB）= E: / F: / G:**
+    ⇒ ⚠️ **E/F/G 是同一块物理盘，备份到 E/F 完全无效**；只有 **C 盘（Disk 0，CT1000P3PSSD8）**
+    是另一块物理盘。
+- **诊断方法**（三条命令，输出写文件再读即可；本环境 PowerShell 工具的 stdout 不返回）：
+  1. 系统日志筛 `disk` / `Ntfs` / `volmgr` 提供者的事件（Level 1~3，近 60 条）⇒ 看 ID 7 坏块
+  2. 列出所有卷的 `HealthStatus` 与剩余空间 ⇒ 看哪个卷 Warning
+  3. 列出分区→物理盘映射（`DiskNumber` + `DriveLetter`）⇒ 确认哪些盘符同盘
+- ⚠️ **已排除**（别再往这些方向查）：
+  - Defender：威胁历史里只有无关项（PCL2.exe / Sunshine.exe / 游戏 exe）
+  - 受控文件夹访问：关闭（=0）
+  - OneDrive：`FileSyncFSCache.db` 里本项目 **0 匹配**、项目文件无重解析点
+  - 清理类软件：进程里无 360 / CCleaner / 火绒等
+  - 并行 AI 工具：memory 无记录、reflog 只有本会话提交
+- ✅ **已做的防护**：
+  - `git config gc.auto 0`（防对象被自动 prune）
+  - `.workbuddy-ai/backup/` 与 `tmp/` 已进 `.gitignore`
+  - **跨盘备份到 C 盘**：`C:\Users\AI-777hi\livingitem-backup-<时间>\`
+    （`livingitem-all.bundle` = 完整历史 231 提交；`worktree-core.tar.gz` = 工作区核心）
+- **应对原则**：
+  1. **发现文件消失先 `git status`**：若是「整目录 deleted」⇒ 大概率坏块，
+     **别急着 `git add -A`**（会把删除一起提交）；先 `git checkout HEAD -- <路径>` 恢复。
+  2. **改完立即提交 + 定期 push**（远程 GitHub 是唯一脱离这块盘的副本）。
+  3. **备份必须跨物理盘**（E/F 与 G 同盘，不算备份）。
+  4. **不要**在没有备份时跑 `chkdsk /f` / `git gc` / `git prune`。
+
 ## 协作：多 AI 工具并行开发 ⇒ 提交别用 `git add -A`（2026-09-22）
 
 - 用户同时用**多个 AI 工具**改同一仓库 ⇒ `git add -A` 会**夹带别的会话未提交的改动**。
