@@ -78,13 +78,13 @@ public final class LivingIconRegistry {
             .addVariant("idle", "item/tnt_idle", stack -> true)
             .build());
 
-        // ⚠️ 实验（2026-09-22）：暂时不覆盖活箱子图标，让它走原版 item/chest 的
-        //    "parent": "builtin/entity" 模型，看能否在物品栏渲染出 3D 箱子。
-        //    成功则 chest.png 可删（并自动跟随材质包）；失败则取消注释回退。
-        //    原理参考：活水车可以「不提供自有模型」直接复用物品自身模型。
-        // register(LivingIconSpec.builder(net.minecraft.world.item.Items.CHEST)
-        //     .addVariant("base", "item/chest", stack -> true)
-        //     .build());
+        // ⚠️ 实验（2026-09-22）结果：原版 builtin/entity 3D 箱子在物品栏里渲染出的是
+        //    普通箱子，没有「活物品」视觉标识 ⇒ 用户在游戏里反馈「图标没有变化」，
+        //    取消注释回退到自定义 16×16 平面图标（chest.png / ender.png）。
+        //    2026-09-22 取消注释回退。
+        register(LivingIconSpec.builder(net.minecraft.world.item.Items.CHEST)
+            .addVariant("base", "item/chest", stack -> true)
+            .build());
 
         register(LivingIconSpec.builder(net.minecraft.world.item.Items.REDSTONE_LAMP)
             .addVariant("on", "item/redstone_lamp_on",

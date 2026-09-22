@@ -18,7 +18,9 @@
     - [5.3 DirectionalLivingModel 变换顺序](#53-directionallivingmodel-变换顺序)
   - [渲染上下文覆盖范围（重要约束）](#渲染上下文覆盖范围重要约束)
   - [槽位叠加层渲染层级（z 层与深度测试窗口）](#槽位叠加层渲染层级z-层与深度测试窗口)
-  - [未决实验（2026-09-22）](#未决实验2026-09-22)
+  - [已完成的实验（2026-09-22）](#已完成的实验2026-09-22)
+    - [活箱子 / 活末影箱走原版 `builtin/entity` 3D 渲染 → 已回退](#活箱子--活末影箱走原版-builtinentity-3d-渲染--已回退)
+    - [活红石粉的「模型层 + 装饰器」染色方案（同期发现 / 验证）](#活红石粉的模型层--装饰器染色方案同期发现--验证)
   - [关键文件](#关键文件)
   - [纹理约定（涂蜡铜灯图标）](#纹理约定涂蜡铜灯图标)
 
@@ -129,7 +131,7 @@ register(LivingIconSpec.builder(Items.REDSTONE_TORCH)
 | 活拉杆 | `on` / `off` | 复用原版 `minecraft:block/lever` / `minecraft:block/lever_on` 模型 | 拉下/弹起状态切换 |
 | 活中继器 | `1tick` ~ `4tick_on`（8种） | 复用原版 `minecraft:block/repeater_Xtick` / `repeater_Xtick_on` 模型 | 方向旋转 + 延迟档位 + 供电状态 |
 | 活比较器 | `compare` / `compare_on` / `subtract` / `subtract_on` | 复用原版 `minecraft:block/comparator` / `comparator_on` / `comparator_subtract` / `comparator_on_subtract` 模型 | 方向旋转 + 模式切换（subtract 前端火把常亮） + 供电状态 |
-| 活末影箱 | `base` | `ender.png`（原版拆开纹理的合成图） | 无。**2026-09-22 起注册已注释（实验）**，同活箱子 |
+| 活末影箱 | `base` | `ender.png`（原版拆开纹理的合成图） | 无 |
 | 活地图 | `base` | `living_map.png` | 地图缩略图装饰器 |
 | 活水车 | `base` | ⚠️ **无自有纹理** —— 变体路径 `item/water_wheel` 对应的模型文件**不存在**，实际复用 Create 的水车模型 | 3D 旋转动画（Create 兼容） |
 | 活耕地 | `moist` / `dry` | `item/farmland_living_moist` / `item/farmland_living`（复用原版耕地顶面纹理） | 湿润切换 + 种子图标装饰器（`LivingFarmlandSeedDecorator`，已种植时叠加所种作物的种子图标） |
@@ -374,36 +376,52 @@ RenderSystem.disableBlend();
 
 ---
 
-## 未决实验（2026-09-22）
+## 已完成的实验（2026-09-22）
 
-### 活箱子 / 活末影箱改走原版 `builtin/entity` 3D 渲染
+### 活箱子 / 活末影箱走原版 `builtin/entity` 3D 渲染 → 已回退
 
 **背景**：这两张图标（`chest.png` / `ender.png`）是**把原版拆开的纹理合成成一张**的产物
 ⇒ 属原版衍生物。用户提出：**有方块实体的方块本来就有办法直接渲染在物品栏里**，
 参考活拉杆/活红石元件 —— 那样**连图标都不需要**。
 
-**已确认的事实（读原版 jar）**：
-
-- 原版 `item/chest.json` 用 **`"parent": "builtin/entity"`**（方块实体渲染路径，`ChestRenderer`），
-  带 `display.gui.rotation [30,45,0]` + `scale 0.625`
-- `minecraft:block/chest.json` 是**空壳**（无 `parent`、`elements` 为空，只有 `particle` 纹理）
-  ⇒ **箱子无法像拉杆那样「继承方块模型」**（拉杆有真实 `block/lever.json`）
-
 **改动（提交 `20d6ab9`）**：`LivingIconRegistry` 中 `Items.CHEST` / `Items.ENDER_CHEST`
-两处 `register(...)` **已注释**（原代码保留在注释里，便于回退）。模型与纹理**暂留未删**。
+两处 `register(...)` **注释掉**，让它们走原版 `builtin/entity` 模型（即 `ChestRenderer`）。
 
-**⚠️ 待游戏内验证**：`builtin/entity` 的模型是 `BuiltinModel`，其 `getOverrides()` 返回
-`ItemOverrides.EMPTY` ⇒ **模组的 override 可能根本不会被调用**（这很可能就是当初改用平面图标的原因）。
+**游戏内实测结果（2026-09-22，用户进游戏测）**：
+3D 箱子**渲染成功**，路径通了；但**与普通箱子外观完全一致**，没有「活物品」的视觉标识。
+用户反馈：「图标没有变化，显示原版的」。
 
-**判据**（`./gradlew runClient` 后看物品栏）：
+**结论（2026-09-22 取消注释回退）**：
+- `builtin/entity` 路径**技术上是通的**，但**丧失了「活」的视觉标识**
+- 若要保留「活」标识，需要叠加层（装饰器画「活」标记小图标），但装饰器**只在 GUI 绘制**
+  ⇒ 掉落物/手持仍无「活」标记，与「模型层 + 装饰器」方案体验相当
+- 既然两种方案的最终体验差异不大，**保留原有的 16×16 平面图标更简单**（自带「活」标识）
+- 因此**取消注释回退**到 `register(LivingIconSpec.builder(CHEST).addVariant("base", "item/chest", ...))`。
+  提交 `a62d4b1`（本会话）
 
-| 现象 | 结论 | 下一步 |
-|---|---|---|
-| 渲染出 3D 箱子 | 路径通了 | 删 `chest.png`/`ender.png`；若要标识「活」状态，加 decorator 叠加层 |
-| 仍为平面图标 / 空白 | override 拦不住 `builtin/entity` | 取消注释回退，或改为给物品注册自定义 BER |
+**副产品观察（重要）**：
+实验期间扫了 `minecraft:item/chest.json`，发现 `parent: "builtin/entity"` 走的是 `ChestRenderer`
+（**不是** `ItemBlockRenderer`）⇒ 它的 `getOverrides()` 是空的，**模组的 override 确实拦不住**
+（与下方最初的猜测一致）。这不是 bug，是原版设计。
 
-⚠️ **注意**：3D 箱子与普通箱子**外观相同**。若测出「和普通箱子没区别」，那是**成功**（3D 通了），
-只是缺「活」的视觉标识 —— 需另加叠加层。
+### 活红石粉的「模型层 + 装饰器」染色方案（同期发现 / 验证）
+
+**问题**：原版 `block/redstone_dust_dot.png` 是**纯白/灰度**（254,254,254 等）—— 原版物品
+`item/redstone` 是已上色的不同纹理（红）。但本模组**去原版化**（2026-09-22）后不再随包分发
+任何 `block/redstone_dust_*` 副本，模型 `item/redstone_dust.json` 改为引用
+`minecraft:block/redstone_dust_dot` 作为 `layer0`（白），由装饰器
+`LivingRedstoneDecorator` 通过 `GuiGraphics.setColor(red)` + blit 同一张白点实现染色。
+
+**回退发现（2026-09-22 用户游戏内测）**：早期实现里装饰器引用的是**模组自己那张已被删的**
+`living_item:item/redstone_dust_dot.png` ⇒ 缺失纹理（黑紫色），叠加在原版红点上面。
+**修复**：装饰器 `DOT_TEXTURE` 改为 `minecraft:block/redstone_dust_dot.png`（白点），
+与模型 `layer0` 引用同一张纹理 ⇒ 模型层画白点 + 装饰器叠染色点 = 可见红点。
+> **教训（去原版化扫描的红线）**：Java 里 `fromNamespaceAndPath(MOD_ID, "textures/...")`
+> 的字符串**不带 `living_item:` 前缀**，按 `living_item:textures/...` 扫是扫不到的。
+> 以后删纹理时必须同时扫 `fromNamespaceAndPath(MOD_ID, ...)` 的所有调用点。
+
+**保留 `redstone_dust_line0.png`**：md5 与原版不同（d02bdd94aa26 vs ad4c7fb1610b，体积 140B vs 125B），
+是去底色优化版（装饰器用 `setColor` 染色时不会混进原版的灰度背景），**保留**。
 
 ---
 

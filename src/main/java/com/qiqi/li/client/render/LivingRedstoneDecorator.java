@@ -16,8 +16,10 @@ import net.neoforged.neoforge.client.IItemDecorator;
 
 public class LivingRedstoneDecorator implements IItemDecorator {
 
+    // ⚠️ 直接引用**原版**的白色点图 —— 本模组不再随包分发该纹理（2026-09-22 去原版化）。
+    //    原版 `block/redstone_dust_dot` 是**纯白/灰度**，靠下面的 setColor 染成信号强度对应的红色。
     private static final ResourceLocation DOT_TEXTURE =
-        ResourceLocation.fromNamespaceAndPath(LivingItem.MOD_ID, "textures/item/redstone_dust_dot.png");
+        ResourceLocation.fromNamespaceAndPath("minecraft", "textures/block/redstone_dust_dot.png");
     private static final ResourceLocation LINE_TEXTURE =
         ResourceLocation.fromNamespaceAndPath(LivingItem.MOD_ID, "textures/item/redstone_dust_line0.png");
 

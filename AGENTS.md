@@ -223,11 +223,18 @@ src/main/java/com/qiqi/li/
   ⇒ 组合后果：可能出现「只有基础层」（如活漏斗只剩中心圆）。
   「全形态一致」的 A/B/C 三方案已记录但**暂不实施**（B/C 需游戏内验证图层混合能否复现 `blit` 叠加）。
   详见 `icon-system.md`「渲染上下文覆盖范围（重要约束）」。
-- 🔬 实验（**未决，待游戏内验证**）：**活箱子/活末影箱暂不注册图标覆盖**，改走原版
-  `builtin/entity` 的 3D 方块实体渲染 —— 目标是像活拉杆那样「复用原版模型、不要图标」。
-  ⚠️ 风险：`BuiltinModel.getOverrides()` 返回 `EMPTY`，override **可能根本不被调用**
-  （很可能就是当初改用平面图标的原因）。两处注册**已注释**（原代码保留在注释里便于回退）。
-  判据与回退见 `icon-system.md`「未决实验（2026-09-22）」。
+- ✅ 游戏内实测（2026-09-22 晚）：**回退** —— 用户反馈 3D 箱子与原版外观无差（失去「活」标识），
+  已取消注释恢复 `register(CHEST/ENDER_CHEST, "item/chest"/"item/ender", ...)`。详见
+  `icon-system.md`「已完成的实验（2026-09-22）」。
+- ⚠️ 回归（2026-09-22）：**活红石粉装饰器叠了缺失纹理** —— 原因：去原版化时删了
+  `textures/item/redstone_dust_dot.png`，但 `LivingRedstoneDecorator.DOT_TEXTURE`
+  仍 `fromNamespaceAndPath(MOD_ID, "textures/item/redstone_dust_dot.png")`，**渲染时
+  变成黑紫占位色**。**修复**：DOT_TEXTURE 改为引用 `minecraft:block/redstone_dust_dot`
+  （白点），与 `models/item/redstone_dust.json` 的 `layer0` 用同一张纹理 ⇒ 模型层画白点
+  + 装饰器 `setColor` 染色 = 可见红色点。`redstone_dust_line0.png` 是去底色优化版（md5
+  与原版不同），保留。
+  ⚠️ **教训（已写进 `icon-system.md`）**：去原版化扫描必须包含 `fromNamespaceAndPath(MOD_ID, ...)`
+  —— 该写法不带 `living_item:` 前缀，按 `living_item:textures/...` 扫是扫不到的。
 
 **最近更新** (2026-09-20):
 - ✅ 修复：**容器规则数据勘误 + 玩家差异持久化 + 开发期导出通道**。起因「打包后没有配置文件」
