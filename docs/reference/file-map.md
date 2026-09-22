@@ -9,7 +9,6 @@
 src/main/java/com/qiqi/li/
 ├── LivingItem.java                          # Mod 主类：tick 入口、网络包注册
 ├── LivingItemClient.java                    # 客户端入口
-├── Config.java                              # NeoForge 配置
 │
 ├── living/
 │   ├── api/                                 # 公开接口 + 管理器

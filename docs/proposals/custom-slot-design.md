@@ -1,5 +1,12 @@
 # 自定义输入/输出/燃料槽位实现方案
 
+> 📐 **提案（未实现）** —— 本文是**设计稿**，描述**计划**，**不是现状**。
+> 2026-09-22 复核：文中提到的类（`SlotPattern` / `MultiSlotResolver` / `SlotSelector` /
+> `SlotConfigManager` / `SlotConfiguration` / `SlotPatternRegistry` / `VisualSlotConfigScreen` /
+> `LivingBigFurnaceFunction` / `LivingSmartFurnaceFunction`）**在仓库中均不存在**。
+> 另：文中「替代 `Direction2D`」——`Direction2D` 也已不存在，现用 `living/model/Pos2D`。
+> ⇒ 读它请当「未来可能怎么做」，**不要**当作现有实现；要做时先复核是否仍适用。
+
 ## 一、现状分析
 
 ### 当前实现方式（固定相对位置）

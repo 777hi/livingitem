@@ -1,5 +1,11 @@
 # 🎮 活漏斗WASD方向输入系统 - 创新设计方案
 
+> 📐 **提案（未实现）** —— 本文是**设计稿**，描述**计划**，**不是现状**。
+> 2026-09-22 复核：文中提到的类（`Direction2D` / `TransferDirection` / `WASDSequenceParser` /
+> `HopperModeController` / `ItemTransferComponent` / `LivingHopperInteractionHandler`）
+> **在仓库中均不存在**。活漏斗当前的方向配置见 `docs/tech/living-hopper-tech.md`。
+> ⇒ 读它请当「未来可能怎么做」，**不要**当作现有实现。
+
 ## 💡 **核心理念**
 
 **"像画箭头一样定义传输方向"**

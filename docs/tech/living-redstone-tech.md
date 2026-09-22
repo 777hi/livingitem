@@ -1702,8 +1702,8 @@ rev-bump 差一拍、修订计数停滞（原版直写绕过 bump，需内容签
 
 | 纹理 | 路径 | 说明 |
 |------|------|------|
-| `redstone_dust_dot.png` | `textures/item/` | 中心点，灰度图（无颜色） |
-| `redstone_dust_line0.png` | `textures/item/` | 连接线，灰度图（无颜色），通过旋转覆盖四方向 |
+| `minecraft:block/redstone_dust_dot` | **原版**（2026-09-22 起） | 中心点，灰度图；装饰器 `setColor` 染色。⚠️ 原先随包的 `textures/item/redstone_dust_dot.png` **已删**（去原版化），装饰器 `DOT_TEXTURE` 改指原版 |
+| `redstone_dust_line0.png` | `textures/item/` | 连接线，灰度图（无颜色），通过旋转覆盖四方向；**保留**（去底色优化版，md5 与原版不同） |
 
 **动态着色机制**：
 

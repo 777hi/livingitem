@@ -124,8 +124,8 @@ register(LivingIconSpec.builder(Items.REDSTONE_TORCH)
 | 活物品 | 变体 | 纹理 | 特效 |
 |--------|------|------|------|
 | 活漏斗 | `base` | `hopper_base.png` | 箭头叠加层（方向旋转） |
-| 活熔炉 | `idle` / `active` | `furnace_idle.png` / `furnace_active.png` | 燃烧状态切换 |
-| 活TNT | `idle` / `lit` | `tnt_idle.png` / `tnt_lit.png` | 引信闪烁动画（每10 tick切换） |
+| 活熔炉 | `idle` / `active` | 模型 `item/furnace_idle` / `item/furnace_active`（`layer0` 引**原版** `minecraft:block/furnace_front` / `furnace_front_on`） | 燃烧状态切换 |
+| 活TNT | `idle` / `lit` | 模型 `item/tnt_idle`（引**原版** `minecraft:block/tnt_side`）/ `item/tnt_lit`（自绘 `tnt_lit.png`） | 引信闪烁动画（每10 tick切换） |
 | 活箱子 | `base` | `item/chest_3d`（`builtin/entity` 3D，**GUI 正面视角 14px**） | 无 |
 | 活红石粉 | `base` | 直接引用 `minecraft:block/redstone_dust_dot` | 连接纹理装饰器（`LivingRedstoneDecorator`） |
 | 活红石火把 | `on` / `off` | `redstone_torch.png` / `redstone_torch_off.png`（自绘） | 方向旋转 + 点亮切换 |
