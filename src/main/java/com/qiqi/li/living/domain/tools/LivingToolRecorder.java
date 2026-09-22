@@ -54,6 +54,15 @@ public final class LivingToolRecorder {
      */
     private static final long RECORD_GRACE_TICKS = 20L;
 
+    /**
+     * 录制射线长度上限（格）—— ⚠️ 与 {@code LivingToolReplay#MAX_SCAN_LENGTH} <b>必须一致</b>。
+     *
+     * <p>录制端就截断，避免录出"超长射线"（回放时逐格扫描是热路径，
+     * 且 {@code getBlockState} 会强制加载区块 —— 见 {@code docs/idea.md} §2.7）。
+     * 正常玩法只有 ~4.5 格，本上限只用于防模组放大 {@code blockInteractionRange}。</p>
+     */
+    private static final double MAX_RAY_LENGTH = 32.0;
+
     /** 玩家最近一次写入记忆的世界轴 tick（服务端内存态，登出 / 停服清理）。 */
     private static final Map<UUID, Long> LAST_RECORD_TICK = new ConcurrentHashMap<>();
 
@@ -290,7 +299,8 @@ public final class LivingToolRecorder {
      */
     private static Vec3 raycastSurface(Player player, Level level, Vec3 eye, BlockPos fallbackPos) {
         Vec3 look = player.getViewVector(1.0F);
-        double reach = player.blockInteractionRange();
+        // ⚠️ 封顶：blockInteractionRange 是属性，模组 / 附魔可能把它放大 ⇒ 会录出超长射线
+        double reach = Math.min(player.blockInteractionRange(), MAX_RAY_LENGTH);
         BlockHitResult hit = level.clip(new ClipContext(
             eye,
             eye.add(look.scale(reach)),

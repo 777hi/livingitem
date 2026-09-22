@@ -50,6 +50,18 @@ public final class LivingToolReplay {
     /** 射线扫描步长（格）。0.1 对"挖哪一格"的判定足够，且性能开销可忽略。 */
     private static final double SCAN_STEP = 0.1;
 
+    /**
+     * 扫描长度上限（格）—— ⚠️ <b>性能护栏</b>。
+     *
+     * <p>逐格扫描是<b>热路径</b>（每 tick、每把工具都跑），循环次数 ≈ {@code 10 × 长度}；
+     * 更糟的是每一步的 {@code getBlockState} 会<b>强制加载未加载的区块</b>（I/O）。
+     * 故长度必须封顶 —— 防 NBT 被改，或模组放大 {@code blockInteractionRange}。</p>
+     *
+     * <p>取 32 是为了与渲染剔除、{@code LivingToolHostSync.RADIUS}、
+     * {@code LivingToolPlayerSync.RADIUS} 全部对齐（见 {@code docs/idea.md} §2.7）。</p>
+     */
+    private static final double MAX_SCAN_LENGTH = 32.0;
+
     private LivingToolReplay() {
     }
 
@@ -398,11 +410,13 @@ public final class LivingToolReplay {
     @Nullable
     private static BlockPos scanForTarget(Vec3 origin, Vec3 end, Set<BlockPos> blacklist, ServerLevel level) {
         Vec3 delta = end.subtract(origin);
-        double length = delta.length();
-        if (length < 1.0E-6) {
+        double rawLength = delta.length();
+        if (rawLength < 1.0E-6) {
             return null;
         }
-        Vec3 dir = delta.scale(1.0 / length);
+        // ⚠️ 方向用【原始长度】归一化（保证是单位向量），只把【扫描距离】封顶。
+        double length = Math.min(rawLength, MAX_SCAN_LENGTH);
+        Vec3 dir = delta.scale(1.0 / rawLength);
 
         for (double t = 0.0; t < length; t += SCAN_STEP) {
             Vec3 from = origin.add(dir.scale(t));
