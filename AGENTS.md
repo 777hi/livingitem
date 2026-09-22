@@ -207,5 +207,6 @@ src/main/java/com/qiqi/li/
 | 查历史变更 | [changelog.md](docs/archive/changelog.md)（按日期倒序） |
 | 红电系统总体设计 | [红电系统.md](docs/system-design/红电系统.md) |
 | 活潜影箱独立设计 | [活潜影箱实现细节.md](docs/reference/活潜影箱实现细节.md) |
-| 自定义槽位 / 配方书 / WASD / GUI 点击拦截 / 容器兼容 / 框架演进 | `docs/guides/` |
+| 配方书 / GUI 点击拦截 / 容器兼容 / 单元测试 / 活TNT测试 | `docs/guides/`（**做法**） |
+| 自定义槽位设计 / WASD 方向输入 | `docs/proposals/`（⚠️ **设计稿，未实现**，读前先看横幅） |
 | 红电波形分析 / 方块朝向 / Sable 投影 / 拼音搜索 | `docs/reference/` |

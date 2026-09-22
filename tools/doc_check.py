@@ -231,6 +231,63 @@ def check_entry_size():
         print(f"5. 入口体量        : OK（{n} / {ENTRY_BUDGET}）")
 
 
+# ---------------------------------------------------------------- 6/7. java symbols
+
+# 只检查「本项目专有命名」的类引用 —— 原版 / 第三方没有 Living* / *Mixin 命名的类，
+# 故误报率极低（2026-09-22 探针：命中 5 处，全是「| X.java | 删除 |」表格写法 ⇒ 已加豁免）。
+JAVA_SYMBOL_RE = re.compile(r"\b(Living[A-Za-z0-9_]*\.java|[A-Z][A-Za-z0-9_]*Mixin\.java)\b")
+# 行级豁免：讲历史/计划的行不算误导（「删除」覆盖「| X.java | 删除 |」这种表格写法）
+JAVA_SKIP_WORDS = ("已删除", "已移除", "未实现", "设计稿", "待建", "不存在", "已废弃", "作废", "删除")
+# 路径级豁免：引用原版 / 第三方源码的文件名，不是本项目文件
+JAVA_SKIP_PATHS = ("libs/src/", "net/minecraft", "net/neoforged", "minecraft/")
+
+
+def check_java_symbols():
+    """文档提到的本项目 Java 文件必须存在（2026-09-22 新增）。
+
+    **为什么需要**：第 1 项只校验 `.md` 链接；而文档大量以**文件名**形式引用 Java 类
+    （`LivingXxx.java`、`FooMixin.java`），这类引用**不受任何机械检查**，只能靠人记性 ——
+    实测漂移过多次（`Config.java`、`LivingButton.java`、`chest_living.png` 都是这么发现的）。
+    用户原则：「文档是帮助我们了解项目的，**不是误导我们的**」。
+
+    判据：文档（**排除 archive / proposals**）里出现的 `Living*.java` / `*Mixin.java`
+    必须能在 `src/**` 找到；讲历史或计划的行（含「删除 / 未实现 / 设计稿…」）豁免。
+    """
+    have = set()
+    for root, _dirs, files in os.walk(os.path.join(ROOT, "src")):
+        for f in files:
+            if f.endswith(".java"):
+                have.add(f)
+
+    docs = [ENTRY]
+    for f in glob.glob(os.path.join(ROOT, "docs", "**", "*.md"), recursive=True):
+        parts = f.replace("\\", "/").split("/")
+        if "archive" in parts or "proposals" in parts:
+            continue
+        docs.append(f)
+
+    bad = []
+    for p in docs:
+        for i, line in enumerate(read(p).split("\n"), 1):
+            if any(w in line for w in JAVA_SKIP_WORDS):
+                continue
+            if any(w in line for w in JAVA_SKIP_PATHS):
+                continue
+            for m in JAVA_SYMBOL_RE.finditer(line):
+                if m.group(1) not in have:
+                    bad.append("%s:%d 提到不存在的 %s" % (rel(p), i, m.group(1)))
+
+    if bad:
+        for b in bad:
+            failures.append("[符号] " + b)
+        print("7. Java 符号真实性 : FAIL（%d 处）" % len(bad))
+        if VERBOSE:
+            for b in bad:
+                print("      " + b)
+    else:
+        print("7. Java 符号真实性 : OK")
+
+
 def check_decisions():
     """决策索引：取代关系必须双向一致（A 说取代 B ⇒ B 必须说被 A 取代）。
     这是让「翻转留痕」不依赖人记性的唯一办法。"""
@@ -280,6 +337,7 @@ def main():
     check_progress_rolling()
     check_entry_size()
     check_decisions()
+    check_java_symbols()
 
     print()
     for w in warnings:
