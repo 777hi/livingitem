@@ -1,6 +1,6 @@
 {
   "parent": "minecraft:item/generated",
   "textures": {
-    "layer0": "living_item:item/oxidized_copper"
+    "layer0": "minecraft:block/oxidized_copper"
   }
 }

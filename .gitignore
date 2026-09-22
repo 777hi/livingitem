@@ -58,3 +58,4 @@ libs/
 .qoderignore
 ### AI 工具备份（勿提交） ###
 .workbuddy-ai/backup/
+.workbuddy-ai/tmp/
