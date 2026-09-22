@@ -1,6 +1,7 @@
 {
   "parent": "minecraft:item/generated",
   "textures": {
-    "layer0": "living_item:item/waxed_oxidized_copper_bulb"
+    "layer0": "minecraft:block/oxidized_copper_bulb",
+    "layer1": "living_item:item/wax_ring"
   }
 }

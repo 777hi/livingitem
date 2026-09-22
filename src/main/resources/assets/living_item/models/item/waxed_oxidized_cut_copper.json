@@ -1,6 +1,7 @@
 {
   "parent": "minecraft:item/generated",
   "textures": {
-    "layer0": "living_item:item/waxed_oxidized_cut_copper"
+    "layer0": "minecraft:block/oxidized_cut_copper",
+    "layer1": "living_item:item/wax_ring"
   }
 }
