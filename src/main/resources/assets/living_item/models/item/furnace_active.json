@@ -1,6 +1,6 @@
 {
   "parent": "minecraft:item/generated",
   "textures": {
-    "layer0": "living_item:item/furnace_active"
+    "layer0": "minecraft:block/furnace_front_on"
   }
 }
