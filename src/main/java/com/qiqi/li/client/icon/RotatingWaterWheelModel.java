@@ -62,7 +62,14 @@ public class RotatingWaterWheelModel implements BakedModel {
     public boolean isGui3d() { return baseModel.isGui3d(); }
 
     @Override
-    public boolean usesBlockLight() { return baseModel.usesBlockLight(); }
+    public boolean usesBlockLight() {
+        // ⚠️ 恒 false —— 与 GenericContextAwareModel / DirectionalLivingModel 保持一致的
+        //    「GUI 图标统一平铺光照（全亮）」约定（见 icon-system.md「GUI 图标光照约定」）。
+        //    原先委托 baseModel：水车是 3D 模型（usesBlockLight=true）⇒ GUI 里走
+        //    Lighting.setupFor3DItems() 的法线漫反射 ⇒ 比周围图标暗（2026-09-22 修正）。
+        //    新加任何 BakedModel 包装类都必须照此返回 false，否则该图标在 GUI 里发暗。
+        return false;
+    }
 
     @Override
     public boolean isCustomRenderer() { return baseModel.isCustomRenderer(); }

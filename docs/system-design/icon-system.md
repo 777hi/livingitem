@@ -303,6 +303,22 @@ if (flag) Lighting.setupFor3DItems();            // 3D 光照：按法线做明�
 ⚠️ 恒 `false` 的安全性：`usesBlockLight()` 在 1.21.1 **只被 `GuiGraphics` 读**；
 掉落物 / 手持 / 世界渲染走各自的光照路径，不读该属性 ⇒ 无副作用。
 
+#### ⚠️ 强制约定：**每个 `BakedModel` 包装类都必须 `usesBlockLight() → false`**
+
+这条规则**曾在三个类里各手写一遍**（2026-09-22 排查时发现水车漏了）⇒ 新加包装类**必须照做**，
+否则那个图标在 GUI 里会发暗（且只有游戏内肉眼能发现）。当前实现清单：
+
+| 类 | `usesBlockLight()` | 说明 |
+|---|---|---|
+| `GenericContextAwareModel` | **`false`** | 普通图标（2D / 方块模型 / `builtin/entity`） |
+| `DirectionalLivingModel` | **`false`** | 方向图标（中继器 / 比较器 / 拉杆 / 红石火把） |
+| `RotatingWaterWheelModel` | **`false`** | 旋转图标（活水车）；原先委托 `baseModel` ⇒ 3D 水车发暗，已修 |
+| `GenericLivingModelWrapper` | 委托 `vanillaModel` | **例外且有意** —— 它是注入 bake 表的那层，`getOverrides()` 返回自定义 overrides ⇒ ItemRenderer 用的是 **resolve 后的模型**，本类自身不参与渲染 ⇒ 委托 vanilla 只为「非活物品」保持原版行为 |
+
+⚠️ 判断某个包装类「要不要改」的方法：**看它会不会成为 `resolve()` 的返回值**。
+`resolve()` 返回 `GenericContextAwareModel` / `DirectionalLivingModel` / `RotatingWaterWheelModel`
+或原版模型 —— 只有**会被返回的**才需要恒 `false`。
+
 ### 路径 B：手绘方块模型（容器内 `renderSingleBlock`）—— 用统一入口
 
 **适用**：图标是**世界方块外观**且需要逐格/多格布局（如活耕地的作物：下部件 + 上部件 +

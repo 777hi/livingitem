@@ -236,6 +236,9 @@ src/main/java/com/qiqi/li/
   ⇒ `GenericContextAwareModel.usesBlockLight()` **恒 false**（该属性 1.21.1 只被 GuiGraphics 读）。
   另抽出 `LivingIconRenderHelper.renderBlockIcon()` 作为「容器内手绘方块模型」图标统一入口
   （FULL_BRIGHT + 强制 cutout + 异常隔离，替换 mixin 私有实现）⇒ **新加图标光照零配置**。
+  ⚠️ **约定：每个 `BakedModel` 包装类都必须 `usesBlockLight() → false`**（原先三个类各手写一遍，
+  活水车漏了 ⇒ 3D 水车在 GUI 里发暗，已修；唯一例外是 `GenericLivingModelWrapper` ——
+  它 resolve 后不参与渲染）。
   详见 `icon-system.md`「GUI 图标光照约定」。
 - ⚠️ 回归（2026-09-22）：**活红石粉装饰器叠了缺失纹理** —— 原因：去原版化时删了
   `textures/item/redstone_dust_dot.png`，但 `LivingRedstoneDecorator.DOT_TEXTURE`

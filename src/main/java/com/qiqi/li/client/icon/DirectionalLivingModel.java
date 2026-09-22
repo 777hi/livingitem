@@ -62,7 +62,7 @@ public class DirectionalLivingModel implements BakedModel {
 
     @Override public boolean useAmbientOcclusion() { return inner.useAmbientOcclusion(); }
     @Override public boolean isGui3d() { return inner.isGui3d(); }
-    @Override public boolean usesBlockLight() { return false; }
+    @Override public boolean usesBlockLight() { return false; }   // GUI 图标统一平铺光照（见 icon-system.md「GUI 图标光照约定」）
     @Override public boolean isCustomRenderer() { return inner.isCustomRenderer(); }
     @Override public TextureAtlasSprite getParticleIcon() { return inner.getParticleIcon(); }
     @Override public TextureAtlasSprite getParticleIcon(ModelData data) { return inner.getParticleIcon(data); }

@@ -51,6 +51,11 @@ public class GenericLivingModelWrapper implements BakedModel {
     public boolean isGui3d() { return vanillaModel.isGui3d(); }
 
     @Override
+    // ⚠️ 此处**有意**委托 vanillaModel（与其它包装类的「恒 false」不同）：
+    //    本类是注入 bake 表的那一层，`getOverrides()` 返回自定义 overrides ⇒
+    //    ItemRenderer 拿到的是 resolve 后的模型（GenericContextAwareModel / 原版），
+    //    本类自身**不作为最终渲染模型** ⇒ 它的 usesBlockLight 不参与 GUI 光照判定。
+    //    委托 vanilla 是为了「非活物品」场景保持原版行为。
     public boolean usesBlockLight() { return vanillaModel.usesBlockLight(); }
 
     @Override
