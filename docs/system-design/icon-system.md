@@ -19,7 +19,7 @@
   - [渲染上下文覆盖范围（重要约束）](#渲染上下文覆盖范围重要约束)
   - [槽位叠加层渲染层级（z 层与深度测试窗口）](#槽位叠加层渲染层级z-层与深度测试窗口)
   - [已完成的实验（2026-09-22）](#已完成的实验2026-09-22)
-    - [活箱子 / 活末影箱走原版 `builtin/entity` 3D 渲染 → 已回退](#活箱子--活末影箱走原版-builtinentity-3d-渲染--已回退)
+    - [活箱子 / 活末影箱走原版 `builtin/entity` 3D 渲染 → ✅ 定稿：正面视角 3D + 默认标记](#活箱子--活末影箱走原版-builtinentity-3d-渲染--定稿正面视角-3d--默认标记)
     - [活红石粉的「模型层 + 装饰器」染色方案（同期发现 / 验证）](#活红石粉的模型层--装饰器染色方案同期发现--验证)
   - [关键文件](#关键文件)
   - [纹理约定（涂蜡铜灯图标）](#纹理约定涂蜡铜灯图标)
@@ -125,13 +125,13 @@ register(LivingIconSpec.builder(Items.REDSTONE_TORCH)
 | 活漏斗 | `base` | `hopper_base.png` | 箭头叠加层（方向旋转） |
 | 活熔炉 | `idle` / `active` | `furnace_idle.png` / `furnace_active.png` | 燃烧状态切换 |
 | 活TNT | `idle` / `lit` | `tnt_idle.png` / `tnt_lit.png` | 引信闪烁动画（每10 tick切换） |
-| 活箱子 | `base` | `chest.png`（原版拆开纹理的合成图） | 无。**2026-09-22 起注册已注释（实验）**，改走原版 `builtin/entity` 3D 渲染，见下方「未决实验」节 |
+| 活箱子 | `base` | `item/chest_3d`（`builtin/entity` 3D，**GUI 正面视角 14px**） | 默认活物品标记（显式挂 `DEFAULT_DECORATOR`） |
 | 活红石粉 | `base` | 直接引用 `minecraft:block/redstone_dust_dot` | 连接纹理装饰器（`LivingRedstoneDecorator`） |
 | 活红石火把 | `on` / `off` | `redstone_torch.png` / `redstone_torch_off.png`（自绘） | 方向旋转 + 点亮切换 |
 | 活拉杆 | `on` / `off` | 复用原版 `minecraft:block/lever` / `minecraft:block/lever_on` 模型 | 拉下/弹起状态切换 |
 | 活中继器 | `1tick` ~ `4tick_on`（8种） | 复用原版 `minecraft:block/repeater_Xtick` / `repeater_Xtick_on` 模型 | 方向旋转 + 延迟档位 + 供电状态 |
 | 活比较器 | `compare` / `compare_on` / `subtract` / `subtract_on` | 复用原版 `minecraft:block/comparator` / `comparator_on` / `comparator_subtract` / `comparator_on_subtract` 模型 | 方向旋转 + 模式切换（subtract 前端火把常亮） + 供电状态 |
-| 活末影箱 | `base` | `ender.png`（原版拆开纹理的合成图） | 无 |
+| 活末影箱 | `base` | `item/ender_3d`（`builtin/entity` 3D，**GUI 正面视角 14px**） | 默认活物品标记（显式挂 `DEFAULT_DECORATOR`） |
 | 活地图 | `base` | `living_map.png` | 地图缩略图装饰器 |
 | 活水车 | `base` | ⚠️ **无自有纹理** —— 变体路径 `item/water_wheel` 对应的模型文件**不存在**，实际复用 Create 的水车模型 | 3D 旋转动画（Create 兼容） |
 | 活耕地 | `moist` / `dry` | `item/farmland_living_moist` / `item/farmland_living`（复用原版耕地顶面纹理） | 湿润切换 + 种子图标装饰器（`LivingFarmlandSeedDecorator`，已种植时叠加所种作物的种子图标） |
@@ -378,31 +378,60 @@ RenderSystem.disableBlend();
 
 ## 已完成的实验（2026-09-22）
 
-### 活箱子 / 活末影箱走原版 `builtin/entity` 3D 渲染 → 已回退
+### 活箱子 / 活末影箱走原版 `builtin/entity` 3D 渲染 → ✅ 定稿：正面视角 3D + 默认标记
 
 **背景**：这两张图标（`chest.png` / `ender.png`）是**把原版拆开的纹理合成成一张**的产物
 ⇒ 属原版衍生物。用户提出：**有方块实体的方块本来就有办法直接渲染在物品栏里**，
 参考活拉杆/活红石元件 —— 那样**连图标都不需要**。
 
-**改动（提交 `20d6ab9`）**：`LivingIconRegistry` 中 `Items.CHEST` / `Items.ENDER_CHEST`
-两处 `register(...)` **注释掉**，让它们走原版 `builtin/entity` 模型（即 `ChestRenderer`）。
+**实验经过（三轮，2026-09-22 一天内）**：
 
-**游戏内实测结果（2026-09-22，用户进游戏测）**：
-3D 箱子**渲染成功**，路径通了；但**与普通箱子外观完全一致**，没有「活物品」的视觉标识。
-用户反馈：「图标没有变化，显示原版的」。
+1. **实验**（提交 `20d6ab9`）：注释掉 `Items.CHEST` / `Items.ENDER_CHEST` 的 `register(...)`
+   ⇒ 不注入 wrapper ⇒ 完全原版：`builtin/entity` → `ChestRenderer`（BEWLR）3D 箱子
+   + `LivingDefaultDecorator` 自动叠加 `living.png`（无 spec 的物品走排除法默认挂标记）。
+2. **误判回退**：用户初报「图标没有变化」，AI 误判为「失去活标识」⇒ 取消注释回退平面图标。
+   实际上**活标识一直在**（`living.png` 叠加），「图标和原版一样」本来就是该方案的预期行为。
+3. **定稿**（用户拍板）：恢复 3D 方案，但要求 **GUI 里显示正面视角、边长约 14px**
+   （与 16×16 图标内容观感一致），而不是原版的 `[30,45,0]` 等距角。
 
-**结论（2026-09-22 取消注释回退）**：
-- `builtin/entity` 路径**技术上是通的**，但**丧失了「活」的视觉标识**
-- 若要保留「活」标识，需要叠加层（装饰器画「活」标记小图标），但装饰器**只在 GUI 绘制**
-  ⇒ 掉落物/手持仍无「活」标记，与「模型层 + 装饰器」方案体验相当
-- 既然两种方案的最终体验差异不大，**保留原有的 16×16 平面图标更简单**（自带「活」标识）
-- 因此**取消注释回退**到 `register(LivingIconSpec.builder(CHEST).addVariant("base", "item/chest", ...))`。
-  提交 `a62d4b1`（本会话）
+**最终实现（三条改动）**：
 
-**副产品观察（重要）**：
-实验期间扫了 `minecraft:item/chest.json`，发现 `parent: "builtin/entity"` 走的是 `ChestRenderer`
-（**不是** `ItemBlockRenderer`）⇒ 它的 `getOverrides()` 是空的，**模组的 override 确实拦不住**
-（与下方最初的猜测一致）。这不是 bug，是原版设计。
+1. **`chest_3d.json` / `ender_3d.json`**（新）：
+   `parent: "builtin/entity"` + `display.gui { rotation [0,0,0], translation [0,1,0], scale [1,1,1] }`。
+   bake 成 `BuiltInModel`（保留自定义 transforms，quads 为空，`isCustomRenderer()=true`）。
+2. **`LivingIconRegistry`**：两个 spec 指向 `item/chest_3d` / `item/ender_3d`，
+   并显式 `.decorator(DEFAULT_DECORATOR)` —— 专属 spec 会使物品进入 `dedicatedItems`
+   而失去默认标记，必须手动挂回。旧 `chest.png` / `ender.png` / 平面 JSON 已删。
+3. **无需改 `GenericContextAwareModel`**：其 `isCustomRenderer()` 委托 `livingModel`
+   ⇒ BuiltInModel 时返回 true ⇒ ItemRenderer 走 BEWLR 而非 quads
+   （⚠️ 走 quads 会画不出东西 —— BuiltInModel.getQuads() 为空）。
+
+**几何依据（读原版 `ChestRenderer` 源码）**：
+
+- 物品渲染（无 level）时 `FACING` **强制 SOUTH**、`Y 旋转 -0°` ⇒ 箱子无旋转；
+  锁扣几何在 **+Z 面**（`lock: addBox(7,-2,14, 2,4,1)`，z 伸到 16）⇒ **正面天然朝相机**
+  ⇒ `rotation [0,0,0]` 就是正面视图（末影箱复用同一渲染器，同结论）
+- 箱体 `addBox(1,0,1,14,10,14)` ⇒ 宽 14 单位 ⇒ `scale 1.0` 时 GUI 里恰好 **14px**
+- 箱体高 14（y 0~14，中心 y=7≠8）⇒ `translation [0,1,0]` 上移 1px 垂直居中
+
+**渲染链路（三层，逐层验证）**：
+
+```
+minecraft:item/chest (原版 BuiltInModel [30,45,0])
+  └ GenericLivingModelWrapper（getOverrides → GenericLivingItemOverrides）
+      └ resolve: 活物品 → GenericContextAwareModel(livingModel=chest_3d BuiltInModel, vanillaModel=原版)
+            ├ isCustomRenderer() = livingModel.isCustomRenderer() = true ⇒ BEWLR（ChestRenderer）
+            ├ applyTransform(GUI)  → livingModel（正面 [0,0,0] scale 1）⇒ 正面 14px 箱子
+            └ applyTransform(其它) → vanillaModel（原版 [30,45,0] 0.625）⇒ 掉落物/手持保持等距 3D
+        resolve: 非活物品 → vanillaModel（原版箱子，等距角）
+```
+
+⚠️ **注意 1.21.1 的判据是 `isCustomRenderer()`**（NeoForge `ItemRenderer.render` 里
+`!p_model.isCustomRenderer()` ⇒ quads 分支 / else ⇒ `IClientItemExtensions.getCustomRenderer()`
+= BEWLR 分支）—— 老版本/memory 里说的 `usesBlockEntity()` 在 1.21.1 **不存在**（编译即报错）。
+
+⚠️ **教训（实验流程）**：第 2 步误判的根因是**没查 `LivingDefaultDecorator` 的排除法注册逻辑**
+就下结论「没有活标识」。判断某物品「有没有 X」之前，先 grep 挂载机制。
 
 ### 活红石粉的「模型层 + 装饰器」染色方案（同期发现 / 验证）
 

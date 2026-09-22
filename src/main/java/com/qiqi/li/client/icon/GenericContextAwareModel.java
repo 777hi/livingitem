@@ -75,7 +75,14 @@ public class GenericContextAwareModel implements BakedModel {
     public boolean usesBlockLight() { return livingModel.usesBlockLight(); }
 
     @Override
-    public boolean isCustomRenderer() { return livingModel.isCustomRenderer(); }
+    public boolean isCustomRenderer() {
+        // ⚠️ 箱子/末影箱方案（2026-09-22）依赖此委托：它们的变体模型是
+        // parent: "builtin/entity"（bake 成 BuiltInModel，isCustomRenderer()=true），
+        // ItemRenderer 据此走 BEWLR（ChestRenderer）画 3D 箱子而不是 quads
+        // （BuiltInModel.getQuads() 为空，走 quads 会画不出东西）。
+        // 对其它普通物品 livingModel 委托返回 false ⇒ 行为不变。
+        return livingModel.isCustomRenderer();
+    }
 
     @Override
     public TextureAtlasSprite getParticleIcon() { return livingModel.getParticleIcon(); }

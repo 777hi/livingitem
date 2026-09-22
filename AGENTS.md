@@ -223,9 +223,13 @@ src/main/java/com/qiqi/li/
   ⇒ 组合后果：可能出现「只有基础层」（如活漏斗只剩中心圆）。
   「全形态一致」的 A/B/C 三方案已记录但**暂不实施**（B/C 需游戏内验证图层混合能否复现 `blit` 叠加）。
   详见 `icon-system.md`「渲染上下文覆盖范围（重要约束）」。
-- ✅ 游戏内实测（2026-09-22 晚）：**回退** —— 用户反馈 3D 箱子与原版外观无差（失去「活」标识），
-  已取消注释恢复 `register(CHEST/ENDER_CHEST, "item/chest"/"item/ender", ...)`。详见
-  `icon-system.md`「已完成的实验（2026-09-22）」。
+- ✅ **箱子/末影箱图标方案定稿**（2026-09-22 晚，三轮：实验 `20d6ab9` → 误判回退 → 用户拍板定稿）：
+  恢复 3D 方案但改 **GUI 正面视角 14px** —— 新 `item/chest_3d` / `item/ender_3d`
+  （`parent: builtin/entity` + `gui rotation [0,0,0] scale [1,1,1] translation [0,1,0]`），
+  spec 显式挂 `DEFAULT_DECORATOR` 保留 `living.png` 活标记；旧 `chest.png`/`ender.png`/平面 JSON **已删**。
+  几何依据：`ChestRenderer` 物品分支强制 FACING=SOUTH（锁扣在 +Z ⇒ 正面天然朝相机）、
+  箱体宽 14 单位 ⇒ scale 1 = 14px。⚠️ 1.21.1 判据是 **`isCustomRenderer()`**（委托 livingModel 已正确），
+  memory 里的 `usesBlockEntity()` 在此版本不存在。详见 `icon-system.md`「已完成的实验」。
 - ⚠️ 回归（2026-09-22）：**活红石粉装饰器叠了缺失纹理** —— 原因：去原版化时删了
   `textures/item/redstone_dust_dot.png`，但 `LivingRedstoneDecorator.DOT_TEXTURE`
   仍 `fromNamespaceAndPath(MOD_ID, "textures/item/redstone_dust_dot.png")`，**渲染时
