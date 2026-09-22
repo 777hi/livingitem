@@ -18,7 +18,9 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
+import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.shapes.VoxelShape;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.common.CommonHooks;
@@ -46,9 +48,6 @@ import net.neoforged.neoforge.common.CommonHooks;
  * （{@code LivingToolFunction} 会比对是否变化再决定是否写回）。
  */
 public final class LivingToolReplay {
-
-    /** 射线扫描步长（格）。0.1 对"挖哪一格"的判定足够，且性能开销可忽略。 */
-    private static final double SCAN_STEP = 0.1;
 
     /**
      * 扫描长度上限（格）—— ⚠️ <b>性能护栏</b>。
@@ -414,32 +413,32 @@ public final class LivingToolReplay {
         if (rawLength < 1.0E-6) {
             return null;
         }
-        // ⚠️ 方向用【原始长度】归一化（保证是单位向量），只把【扫描距离】封顶。
+        // ⚠️ 只截断【扫描距离】，方向仍用【原始长度】归一化（保证单位向量）
         double length = Math.min(rawLength, MAX_SCAN_LENGTH);
         Vec3 dir = delta.scale(1.0 / rawLength);
+        Vec3 to = origin.add(dir.scale(length));
 
-        for (double t = 0.0; t < length; t += SCAN_STEP) {
-            Vec3 from = origin.add(dir.scale(t));
-            Vec3 to = origin.add(dir.scale(Math.min(t + SCAN_STEP, length)));
-            BlockPos current = BlockPos.containing(from);
-
-            if (blacklist.contains(current)) {
-                continue;   // 黑名单（宿主自己）：直接无视，继续往外找
+        // ⭐ 用【原版的体素遍历】(BlockGetter#traverseBlocks)，而不是自己按固定步长采样：
+        //    官方每次循环跳到【下一个格子边界】⇒ 复杂度 = 穿过的格子数；
+        //    自己用固定步长（0.1 格）则同一格会被重复访问约 10 次 —— 慢一个数量级，且不更准。
+        //
+        //    ⭐ tester 返回 null 就继续下一格 ⇒ 黑名单（宿主自己）照样能塞进来，
+        //       所以这次换成官方算法【没有】丢掉我们的特殊需求。
+        return BlockGetter.traverseBlocks(origin, to, level, (lv, pos) -> {
+            if (blacklist.contains(pos)) {
+                return null;   // 宿主自己：直接无视，继续往外找
             }
-            if (isOpenSpace(level, current)) {
-                continue;   // 空气 / 纯流体：不是挖掘目标
+            if (isOpenSpace(lv, pos)) {
+                return null;   // 空气 / 纯流体：不是挖掘目标
             }
             // ⭐ 形状求交 —— 只有射线【真的穿过该格的形状】才算命中。
             //    少了这一步，只按"格子非空气"判定会出错：非满高方块（半砖 / 台阶 / 楼梯）
             //    只占格子的下半，而射线可能从它的【上半格空气部分】穿过。
             //    这正是"客户端 clip 画得出线、服务端却当成命中半砖"的分歧来源。
-            //    ⚠️ 这里必须与客户端可视化用同一套判据（客户端走 level.clip = 形状求交）。
-            if (level.getBlockState(current).getShape(level, current).clip(from, to, current) == null) {
-                continue;
-            }
-            return current;
-        }
-        return null;
+            //    ⚠️ 必须与客户端可视化用同一套判据（客户端走 level.clip = 形状求交）。
+            VoxelShape shape = lv.getBlockState(pos).getShape(lv, pos);
+            return shape.clip(origin, to, pos) != null ? pos.immutable() : null;
+        }, lv -> null);   // 走完全程都没命中 ⇒ null
     }
 
     /**
