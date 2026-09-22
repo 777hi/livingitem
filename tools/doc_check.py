@@ -28,7 +28,7 @@ CHANGELOG = os.path.join(ROOT, "docs", "archive", "changelog.md")
 RESULTS = os.path.join(ROOT, "build", "test-results", "test", "TEST-*.xml")
 
 ENTRY_BUDGET = 20000            # chars, see docs/README.md §1
-ARCHIVE_WARN_GAP_DAYS = 30      # 仅提示，不阻断；see docs/README.md §4
+MAX_PROGRESS_ROWS = 10          # 「开发进展」一行式滚动清单上限；see docs/README.md §4
 
 failures = []
 warnings = []
@@ -168,45 +168,56 @@ def check_test_tree():
         print(f"3. 测试树一致性    : OK（{len(real)} 个测试类）")
 
 
-# ---------------------------------------------------------------- 4. archive continuity
+# ---------------------------------------------------------------- 4. progress rolling
 
-def check_continuity():
-    """归档边界单调性（2026-09-22 修订）。
+def check_progress_rolling():
+    """「开发进展」一行式滚动校验（2026-09-22 修订，取代原归档边界校验）。
 
-    旧规则要求 `changelog 最新日期` → `AGENTS 最早日期` 间隔 **≤1 天**，理由是「不得有空档」。
-    这条规则**假设了"每天都有开发"**，在间歇性开发下必然误报：
-    「隔了 2 天」既可能是没开发、也可能是漏记，**从日期间隔上分辨不出来**。
-    更糟的是它与「保留最近 3 个批次」**互相矛盾** —— 批次相隔 2 天时，迁出最旧的一个
-    就必然产生 2 天空档 ⇒ **永远无法归档**。
+    规约（docs/README.md §4）：AGENTS「开发进展」只放**最近 MAX_PROGRESS_ROWS 条**
+    「一行结论 + 指针」，**完整正文直接写 changelog**；超出上限时删掉最底部一行
+    （正文早已在 changelog ⇒ 无迁移、无守恒校验、无边界判据）。
 
-    ⇒ 不再把日期间隔作为失败条件。只保留真正会丢历史的判据：
-    **边界必须单调** —— changelog 的内容全部早于 AGENTS 的内容（否则归档边界切错：
-    把新批次迁走了，或两边重复）。
-    正文是否搬全由 §4 步骤 5「守恒校验」保证（那才是防丢历史的主手段）。
+    旧「批次制 + 定期归档」的两个毛病（实测）：
+      ① 归档是**有风险的手工操作**（连续迁出 + 守恒校验 + 同日批次合并坑），
+         漏做即**永久丢历史**（`2026-09-01~04` 断档）；
+      ② 实测条目平均 **705 字符**（规约要求「一行结论 + 指针」）⇒ 进展节占入口 **55%**。
+
+    三条判据（全部可复算）：
+      ① 条数 ≤ MAX_PROGRESS_ROWS（防入口膨胀）
+      ② 最新条目日期 == changelog 顶部日期（防「只加了 AGENTS、忘了写 changelog」）
+      ③ 每条都有指针（含 `.md`，防退化成「只有结论」的流水账）
     """
     cl = read(CHANGELOG)
     ag = read(ENTRY)
-    cl_dates = sorted(set(re.findall(r"^## (\d{4}-\d{2}-\d{2})$", cl, re.M)))
-    ag_dates = sorted(set(re.findall(r"\*\*最近更新\*\* \((\d{4}-\d{2}-\d{2})\)", ag)))
-    if not cl_dates or not ag_dates:
-        failures.append("[边界] 找不到 changelog 日期段或 AGENTS 更新批次")
-        print("4. 归档边界        : FAIL（无日期）")
+    rows = re.findall(r"^\| (\d{4}-\d{2}-\d{2}) \| (.+?) \| (.+?) \|$", ag, re.M)
+    if not rows:
+        failures.append("[进展] AGENTS 里找不到一行式清单（`| 日期 | 变更 | 指针 |`）")
+        print("4. 进展滚动        : FAIL（无条目）")
         return
-    newest, oldest = cl_dates[-1], ag_dates[0]
-    gap = (datetime.date.fromisoformat(oldest) - datetime.date.fromisoformat(newest)).days
-    if gap < 1:
-        failures.append(
-            f"[边界] changelog 最新 {newest} 未早于 AGENTS 最早 {oldest} —— "
-            f"归档边界切错（重复或逆序）")
-        print(f"4. 归档边界        : FAIL（{newest} 未早于 {oldest}）")
-    elif gap > ARCHIVE_WARN_GAP_DAYS:
-        # 仅提示：一个月没开发完全正常，但这么长的静默值得确认一次没漏记。
-        warnings.append(
-            f"[边界] changelog 最新 {newest} → AGENTS 最早 {oldest} 相隔 {gap} 天 —— "
-            f"确认这段没有只在 .workbuddy-ai/memory/ 日志里、而没进过 AGENTS/changelog 的工作")
-        print(f"4. 归档边界        : WARN（相隔 {gap} 天，仅提示）")
+
+    problems = []
+    if len(rows) > MAX_PROGRESS_ROWS:
+        problems.append("条数 %d > 上限 %d" % (len(rows), MAX_PROGRESS_ROWS))
+
+    no_ptr = [r[1][:20] for r in rows if ".md" not in r[2]]
+    if no_ptr:
+        problems.append("缺指针 %d 条（如：%s）" % (len(no_ptr), "；".join(no_ptr[:2])))
+
+    cl_dates = re.findall(r"^## (\d{4}-\d{2}-\d{2})$", cl, re.M)
+    if not cl_dates:
+        problems.append("changelog 里找不到日期段")
     else:
-        print(f"4. 归档边界        : OK（{newest} → {oldest}，相隔 {gap} 天）")
+        ag_top = max(r[0] for r in rows)
+        if ag_top != cl_dates[0]:
+            problems.append(
+                "最新条目 %s ≠ changelog 顶部 %s —— 写完 changelog 正文了吗？" % (ag_top, cl_dates[0]))
+
+    if problems:
+        for x in problems:
+            failures.append("[进展] " + x)
+        print("4. 进展滚动        : FAIL（%s）" % "；".join(problems))
+    else:
+        print("4. 进展滚动        : OK（%d/%d 条，最新 %s）" % (len(rows), MAX_PROGRESS_ROWS, cl_dates[0]))
 
 
 # ---------------------------------------------------------------- 5. entry size
@@ -214,7 +225,7 @@ def check_continuity():
 def check_entry_size():
     n = len(read(ENTRY))
     if n > ENTRY_BUDGET:
-        warnings.append(f"[体量] AGENTS.md {n} 字符 > 预算 {ENTRY_BUDGET} —— 该归档一轮了（docs/README.md §4）")
+        warnings.append(f"[体量] AGENTS.md {n} 字符 > 预算 {ENTRY_BUDGET} —— 先查冗余（章节重复），再考虑降级搬 docs/reference/（docs/README.md §1/§5）")
         print(f"5. 入口体量        : WARN（{n} > {ENTRY_BUDGET}）")
     else:
         print(f"5. 入口体量        : OK（{n} / {ENTRY_BUDGET}）")
@@ -266,7 +277,7 @@ def main():
     check_paths()
     check_test_count()
     check_test_tree()
-    check_continuity()
+    check_progress_rolling()
     check_entry_size()
     check_decisions()
 
