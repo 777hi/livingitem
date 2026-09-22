@@ -72,7 +72,25 @@ public class GenericContextAwareModel implements BakedModel {
     public boolean isGui3d() { return livingModel.isGui3d(); }
 
     @Override
-    public boolean usesBlockLight() { return livingModel.usesBlockLight(); }
+    public boolean usesBlockLight() {
+        // ⚠️ 恒 false —— 让**所有活物品图标在 GUI 里走「平铺光照」（全亮、无方向性漫反射）**。
+        //
+        // 机制（1.21.1 `GuiGraphics.renderItem`，唯一的 usesBlockLight() 使用点）：
+        //   boolean flag = !bakedmodel.usesBlockLight();
+        //   if (flag) Lighting.setupForFlatItems();    // 平铺光照 → 各面同亮
+        //   itemRenderer.render(..., 15728880 /* FULL_BRIGHT */, ...);
+        //   if (flag) Lighting.setupFor3DItems();      // 3D 光照 → 按法线做明暗
+        //
+        // ⚠️ 注意：传进去的 packedLight **本来就是 FULL_BRIGHT**（15728880），
+        // 所以「图标发暗」与光照等级无关 —— 真凶是 setupFor3DItems() 的
+        // DIFFUSE_LIGHT_0/1 漫反射：正面朝相机的 3D 图标（BEWLR 箱子、方块模型中继器）
+        // 法线点乘光向量后亮度只剩 ~0.7 甚至更低 ⇒ 明显比 2D 图标暗。
+        //
+        // 恒 false 的影响面：`usesBlockLight()` 在 1.21.1 只被 GuiGraphics 用，
+        // 掉落物/手持/世界渲染走各自的光照路径，不读此属性 ⇒ 无副作用。
+        // ⇒ 新加活物品图标**不必再手改光照**（无论 2D、方块模型还是 builtin/entity）。
+        return false;
+    }
 
     @Override
     public boolean isCustomRenderer() {

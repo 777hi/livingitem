@@ -1,6 +1,6 @@
 # 活物品图标系统设计
 
-> **文档版本**: 2026.09 v5
+> **文档版本**: 2026.09 v6
 > **最后更新**: 2026-09-22
 > **适用版本**: Minecraft 1.21.1 + NeoForge 21.1.x
 
@@ -17,6 +17,7 @@
     - [5.2 模型文件策略](#52-模型文件策略)
     - [5.3 DirectionalLivingModel 变换顺序](#53-directionallivingmodel-变换顺序)
   - [渲染上下文覆盖范围（重要约束）](#渲染上下文覆盖范围重要约束)
+  - [GUI 图标光照约定（⚠️ 新加活物品图标必读）](#gui-图标光照约定-️-新加活物品图标必读)
   - [槽位叠加层渲染层级（z 层与深度测试窗口）](#槽位叠加层渲染层级z-层与深度测试窗口)
   - [已完成的实验（2026-09-22）](#已完成的实验2026-09-22)
     - [活箱子 / 活末影箱走原版 `builtin/entity` 3D 渲染 → ✅ 定稿：正面视角 3D + 默认标记](#活箱子--活末影箱走原版-builtinentity-3d-渲染--定稿正面视角-3d--默认标记)
@@ -125,13 +126,13 @@ register(LivingIconSpec.builder(Items.REDSTONE_TORCH)
 | 活漏斗 | `base` | `hopper_base.png` | 箭头叠加层（方向旋转） |
 | 活熔炉 | `idle` / `active` | `furnace_idle.png` / `furnace_active.png` | 燃烧状态切换 |
 | 活TNT | `idle` / `lit` | `tnt_idle.png` / `tnt_lit.png` | 引信闪烁动画（每10 tick切换） |
-| 活箱子 | `base` | `item/chest_3d`（`builtin/entity` 3D，**GUI 正面视角 14px**） | 默认活物品标记（显式挂 `DEFAULT_DECORATOR`） |
+| 活箱子 | `base` | `item/chest_3d`（`builtin/entity` 3D，**GUI 正面视角 14px**） | 无 |
 | 活红石粉 | `base` | 直接引用 `minecraft:block/redstone_dust_dot` | 连接纹理装饰器（`LivingRedstoneDecorator`） |
 | 活红石火把 | `on` / `off` | `redstone_torch.png` / `redstone_torch_off.png`（自绘） | 方向旋转 + 点亮切换 |
 | 活拉杆 | `on` / `off` | 复用原版 `minecraft:block/lever` / `minecraft:block/lever_on` 模型 | 拉下/弹起状态切换 |
 | 活中继器 | `1tick` ~ `4tick_on`（8种） | 复用原版 `minecraft:block/repeater_Xtick` / `repeater_Xtick_on` 模型 | 方向旋转 + 延迟档位 + 供电状态 |
 | 活比较器 | `compare` / `compare_on` / `subtract` / `subtract_on` | 复用原版 `minecraft:block/comparator` / `comparator_on` / `comparator_subtract` / `comparator_on_subtract` 模型 | 方向旋转 + 模式切换（subtract 前端火把常亮） + 供电状态 |
-| 活末影箱 | `base` | `item/ender_3d`（`builtin/entity` 3D，**GUI 正面视角 14px**） | 默认活物品标记（显式挂 `DEFAULT_DECORATOR`） |
+| 活末影箱 | `base` | `item/ender_3d`（`builtin/entity` 3D，**GUI 正面视角 14px**） | 无 |
 | 活地图 | `base` | `living_map.png` | 地图缩略图装饰器 |
 | 活水车 | `base` | ⚠️ **无自有纹理** —— 变体路径 `item/water_wheel` 对应的模型文件**不存在**，实际复用 Create 的水车模型 | 3D 旋转动画（Create 兼容） |
 | 活耕地 | `moist` / `dry` | `item/farmland_living_moist` / `item/farmland_living`（复用原版耕地顶面纹理） | 湿润切换 + 种子图标装饰器（`LivingFarmlandSeedDecorator`，已种植时叠加所种作物的种子图标） |
@@ -265,6 +266,67 @@ return vanillaModel.applyTransform(context, poseStack, applyLeftHandTransform); 
 
 **决策（2026-09-22）**：**暂不实施**。理由：现状是**有意的取舍**（世界渲染显示原版外观可接受）；
 且方案 B/C 都需**游戏内验证**「`item/generated` 的图层混合能否复现装饰器 `blit` 的叠加效果」。
+
+---
+
+## GUI 图标光照约定（⚠️ 新加活物品图标必读）
+
+**背景**：在 GUI 里渲染 3D 模型当图标时，**光照不会自动正确** —— 历史上每加一个这类图标
+（作物方块模型、箱子/末影箱 BEWLR、方块模型类图标）都要手工处理一次，容易漏
+（2026-09-22 活箱子就漏了 ⇒ 正面视角的箱子明显比周围图标暗）。
+
+**先说结论：现在有两条路径，都已统一，新加图标不必再手改光照。**
+
+### 路径 A：`LivingIconSpec`（item 模型图标）—— 自动全亮
+
+**适用**：图标能表达成 item 模型 —— 2D（`item/generated`）、方块模型（`parent: "minecraft:block/xxx"`）、
+乃至 3D 方块实体（`parent: "builtin/entity"`，走 BEWLR）。
+
+**机制**：`GenericContextAwareModel.usesBlockLight()` **恒返回 `false`**。依据是
+`GuiGraphics.renderItem`（1.21.1 里 `usesBlockLight()` 的**唯一**使用点）：
+
+```java
+this.pose.scale(16.0F, -16.0F, 16.0F);
+boolean flag = !bakedmodel.usesBlockLight();
+if (flag) Lighting.setupForFlatItems();          // 平铺光照：各面同亮（无方向性漫反射）
+itemRenderer.render(..., 15728880 /* = FULL_BRIGHT */, ...);
+if (flag) Lighting.setupFor3DItems();            // 3D 光照：按法线做明暗
+```
+
+> ⚠️ **关键认知（反直觉）**：传进去的 `packedLight` **本来就是 `FULL_BRIGHT`(15728880)** ——
+> 所以「图标发暗」**与光照等级无关**，改 light 参数**没用**。
+> 真凶是 `setupFor3DItems()` 的 `DIFFUSE_LIGHT_0/1`（`Lighting` 里的两个固定光向量，
+> 做 `minecraft_mix_light` 法线漫反射）：正面朝相机的 3D 图标法线点乘后亮度只剩 ~0.7
+> 甚至更低 ⇒ 明显比 2D 图标暗。
+> ⇒ **要「全局光照」就改 `usesBlockLight()`，不是改 light 值。**
+
+⚠️ 恒 `false` 的安全性：`usesBlockLight()` 在 1.21.1 **只被 `GuiGraphics` 读**；
+掉落物 / 手持 / 世界渲染走各自的光照路径，不读该属性 ⇒ 无副作用。
+
+### 路径 B：手绘方块模型（容器内 `renderSingleBlock`）—— 用统一入口
+
+**适用**：图标是**世界方块外观**且需要逐格/多格布局（如活耕地的作物：下部件 + 上部件 +
+柱状多段），无法用单个 item 模型表达。
+
+**入口**：`LivingIconRenderHelper.renderBlockIcon(guiGraphics, state, x, y)`（`client/render/`）。
+
+它内部已经处理好三件事（**别再手抄**）：
+
+| 处理 | 原因 |
+|---|---|
+| `LightTexture.FULL_BRIGHT` | 不传则光照图为 0（世界坐标在 GUI 里无意义）⇒ **全黑** |
+| **强制 `RenderType.cutout()`**（7 参重载） | 默认会转实体渲染变体，其着色器带**双光源漫反射** —— 十字/平面模型法线朝水平方向，亮度被吃掉大半 ⇒ 发暗 |
+| `try/catch` 异常隔离 | 第三方方块的 `BlockColors` 处理器拿 `null` level/pos 可能 NPE ⇒ 单个图标失败不终止整帧 |
+
+几何契约（与调用点约定，改动前先看注释）：块底锚定槽位格底、按 **18px** 渲染
+（16px 会有格缝）、左偏 1px 对齐；`x`/`y` 传**绝对**坐标（调用方自己加 `leftPos/topPos`）。
+
+### 两条路径怎么选
+
+| 需求 | 用 |
+|---|---|
+| 单图标、静态或随数据换图 | **路径 A**（声明式，写 JSON + 注册 spec） |
+| 需要「方块世界外观」且多格布局 / 逐格生长 | **路径 B**（`LivingIconRenderHelper`） |
 
 ---
 
@@ -463,6 +525,7 @@ minecraft:item/chest (原版 BuiltInModel [30,45,0])
 | `GenericLivingModelWrapper` | 通用模型包装器（注入自定义 ItemOverrides） |
 | `GenericContextAwareModel` | 通用上下文切换模型（GUI 显示自定义图标，手持显示原版图标） |
 | `GenericLivingItemOverrides` | 通用覆盖解析器（根据 Variant.predicate 匹配变体模型） |
+| `LivingIconRenderHelper` | **GUI 图标渲染统一光照入口**（FULL_BRIGHT + 强制 cutout + 异常隔离），供「容器内手绘方块模型」类图标使用；见「GUI 图标光照约定」 |
 | `DirectionalLivingModel` | 方向感知模型包装器（在 JSON transform 前应用 Z 轴旋转和缩放，确保屏幕空间正确） |
 | `TorchRenderState` | 方向旋转状态（ThreadLocal，存储当前渲染的方向角度） |
 | `RotatingWaterWheelModel` | 活水车物品栏 3D 旋转渲染模型 |

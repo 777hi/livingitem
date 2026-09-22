@@ -3,6 +3,7 @@ package com.qiqi.li.testutil;
 import java.util.ArrayList;
 import java.util.List;
 
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 
@@ -32,6 +33,7 @@ public class FakeContainerContext implements ContainerContext {
     private final int width;
     private final String containerKey;
     private Level level;
+    private BlockPos blockPos;
 
     /** 记录所有 syncSlotToClients 调用的槽位，供断言同步行为 */
     public final List<Integer> syncedSlots = new ArrayList<>();
@@ -58,6 +60,23 @@ public class FakeContainerContext implements ContainerContext {
         Mockito.when(mock.getGameTime()).thenReturn(gameTime);
         this.level = mock;
         return this;
+    }
+
+    /**
+     * 提供一个方块位置，便于链式构建测试场景。
+     *
+     * <p>跨容器传输（{@code CrossContainerTransfer.execute}）第一步就要
+     * {@code getBlockPos()}（为 null 直接 return false），因此涉及"容器在世界里"
+     * 的用例必须显式提供。默认 null（= 无世界位置的纯内存容器）。</p>
+     */
+    public FakeContainerContext withBlockPos(BlockPos pos) {
+        this.blockPos = pos;
+        return this;
+    }
+
+    @Override
+    public BlockPos getBlockPos() {
+        return blockPos;
     }
 
     /** 放入物品并返回 this，便于链式构建测试场景 */

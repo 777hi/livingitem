@@ -83,6 +83,26 @@ public interface ContainerContext extends SlotInfoProvider, ContainerSync, Conta
         return result;
     }
 
+    /**
+     * 取指定位置的原版容器。
+     *
+     * <p><b>⚠ 大箱子陷阱</b>：本方法返回的是该位置<b>单个方块实体</b>的容器 ——
+     * 大箱子（双箱合并）只会拿到<b>一个半箱（27 槽）</b>，而 {@code IItemHandler}
+     * 能力返回的是<b>合并后的 54 槽</b>。两者的槽位编号体系<b>错位 27 格</b>
+     * （Container 的槽 22 = GUI 的槽 49）。
+     *
+     * <p>因此任何「用本方法读/写某个<b>逻辑槽位</b>」的调用点，都必须先跑
+     * {@code SimpleContainerContext#isSameSlotSpaceAsHandler} 那样的<b>体系一致性探针</b>
+     * （槽位数一致 + 单槽交叉校验）才可安全使用，否则一律回退到 IItemHandler。
+     * 典型受害者见 {@code SimpleContainerContext.simulateInsertItem}
+     * （活漏斗在大箱子里静默不传输，living-hopper-tech.md §10.25）。</p>
+     *
+     * <p><b>为什么不在本方法里直接返回合并容器</b>：合并顺序由各 mod 的
+     * IItemHandler 决定（未必等于 vanilla 的 {@code ChestBlock.getContainer} 顺序），
+     * 猜错会引入<b>新的</b>错位；探针是自适应判据，对三方块 / 四块 / 任意多方块容器
+     * 同样成立，无需知道容器结构。若将来确有场景必须拿到「合并后的原版容器」，
+     * 建议做成注册式扩展点（内置 Chest 实现 + 第三方可注册），而不是在这里特判。</p>
+     */
     static Container getContainer(Level level, BlockPos pos) {
         if (pos == null) return null;
         if (level.getBlockEntity(pos) instanceof Container c) return c;

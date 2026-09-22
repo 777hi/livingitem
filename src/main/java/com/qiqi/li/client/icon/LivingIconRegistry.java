@@ -83,14 +83,10 @@ public final class LivingIconRegistry {
         //    依据：ChestRenderer 物品渲染分支强制 FACING=SOUTH（无 Y 旋转），锁扣在 +Z 面
         //    ⇒ 正面天然朝相机；箱体 addBox(1,0,1,14,10,14) 宽 14 ⇒ scale 1 = 14px，
         //    与 16×16 图标内容观感一致。translation [0,1,0] 用于垂直居中（箱体高 14，上移 1px）。
-        //    专属模型会使物品进入 dedicatedItems 而失去默认活物品标记
-        //    ⇒ 显式挂 DEFAULT_DECORATOR 保留 living.png 叠加。
-        //    ⚠️ 前提：GenericContextAwareModel 必须透传 usesBlockEntity()=true，
-        //    否则 ItemRenderer 走 quads 路径而 BuiltinModel 的 quads 为空 ⇒ GUI 里箱子消失。
-        //    旧平面图标 chest.png / ender.png / chest.json / ender.json 已删（原版衍生物，2026-09-22）。
+        //    专属模型会使物品进入 dedicatedItems，本来就不会再挂默认活物品标记
+        //    （`living.png` 叠加）—— 3D 箱子自身已足够辨识「活」，无需额外标记。
         register(LivingIconSpec.builder(net.minecraft.world.item.Items.CHEST)
             .addVariant("base", "item/chest_3d", stack -> true)
-            .decorator(DEFAULT_DECORATOR)
             .build());
 
         register(LivingIconSpec.builder(net.minecraft.world.item.Items.REDSTONE_LAMP)
@@ -185,9 +181,9 @@ public final class LivingIconRegistry {
 
 // ⚠️ 3D 方案（2026-09-22 定稿）：同箱子 —— BEWLR 持有 EnderChestBlockEntity，
         //    复用 ChestRenderer；物品渲染（无 level）统一 FACING=SOUTH ⇒ 同为正面视角。
+        //    3D 末影箱自身已足够辨识「活」，不再叠加默认标记。
         register(LivingIconSpec.builder(net.minecraft.world.item.Items.ENDER_CHEST)
             .addVariant("base", "item/ender_3d", stack -> true)
-            .decorator(DEFAULT_DECORATOR)
             .build());
 
         register(LivingIconSpec.builder(net.minecraft.world.item.Items.FILLED_MAP)

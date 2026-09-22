@@ -966,7 +966,7 @@ if (hostContainer != null) {
 | 容器内传输 | ✅ 受影响 | 精确指定目标槽位，必须槽位精确写入 |
 | 跨容器传输 | ❌ 不受影响 | 遍历所有槽位逐个尝试，物品落入第一个可用槽位是预期行为 |
 
-**相关修复**：`SimpleContainerContext.setItem()` 的**写入**自 2026-08-17 起统一走 `IItemHandler`（**移除** `Container.setItem` 优先写入，避免大箱子左右两半双记账导致物品复制）；`simulateInsertItem()` 仍读 `Container` 仅用于容量计算。详见 §7.2。
+**相关修复**：`SimpleContainerContext.setItem()` 的**写入**自 2026-08-17 起统一走 `IItemHandler`（**移除** `Container.setItem` 优先写入，避免大箱子左右两半双记账导致物品复制）；`simulateInsertItem()` 的 Container 读取自 2026-09-22 起**先过槽位体系一致性探针**（大箱子下单半箱 27 槽与 handler 54 槽错位 27，读到另一半箱的槽位会让活漏斗静默不传输），不过则回退 IItemHandler。详见 §7.2 与 [living-hopper-tech.md](../tech/living-hopper-tech.md) §10.25。
 
 ---
 
@@ -1098,7 +1098,19 @@ new SimpleContainerContext(handler, positions, blockEntities);
 
 ### 7.2 物品写入策略：统一走 IItemHandler（2026-08-17 起移除 Container 优先写入）
 
-`setItem` 的**写入**统一只走 `IItemHandler`，**不再**经原版 `Container` 接口做精确槽位写入。`simulateInsertItem` 仍会读 `Container` 仅用于**容量计算**（只读，安全），写回仍走 IItemHandler。
+`setItem` 的**写入**统一只走 `IItemHandler`，**不再**经原版 `Container` 接口做精确槽位写入。`simulateInsertItem` 仍会读 `Container`，但自 2026-09-22 起该读取**先过槽位体系一致性探针**（见下方 ⚠️），不过则回退 IItemHandler；写回始终走 IItemHandler。
+
+> ⚠️ 2026-09-22 修正：早期"读 `Container` 只是算容量，只读所以安全"的判断是**错的**。
+> `simulateInsertItem` 除了算容量，还会用 `container.getItem(slot)` 判断"目标槽现有物品能否合并"——
+> 这是**按逻辑槽位**的读，而大箱子下 `ContainerContext.getContainer` 只给出**单个半箱（27 槽）**，
+> 与 handler 的 54 槽**错位 27**（Container 的槽 22 = GUI 的槽 49）⇒ 目标槽明明是空的，却读到
+> 另一半箱对应格里的漏斗 ⇒ 判定不可插入 ⇒ 活漏斗静默不传输（源槽非空所以不设冷却，看着像卡死）。
+>
+> 修复：`SimpleContainerContext.isSameSlotSpaceAsHandler(container, slot)` 两级探针 ——
+> ① 槽位数一致（挡"单体 vs 合并"）② 单槽交叉校验（挡"槽位数相同但合并顺序相反"）；
+> 不过则回退 `handler.insertItem(slot, …, true)` —— 它内部同样转调 `canPlaceItem`/`isItemValid`，
+> 语义不丢，且模拟与真实由此**同源**。判据不假设容器结构，三方块/四块容器通用。
+> 详见 [living-hopper-tech.md](../tech/living-hopper-tech.md) §10.25。
 
 **为什么放弃 Container 优先写入（2026-08-17 修正）**：大箱子（ChestBlock）左右两半在 NeoForge 下返回**同一个 `IItemHandler` 实例**，但各自是独立的 `Container`。若经 `Container.setItem` 写入，同一物理物品可能被两半的 `Container` 分别记账，引发**物品复制 bug**。改为统一走 IItemHandler 后，读写都收敛到共享的那一个 handler，大箱子两端读写一致，复制 bug 消除（详见 §10.2 性能表 "handler 统一读写" 一行）。
 

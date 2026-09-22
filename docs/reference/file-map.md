@@ -297,7 +297,8 @@ src/test/java/com/qiqi/li/
 │   └── FurnaceBurningFlagTest.java            # 燃烧标志组件·图标切换回归（5 项）
 ├── living/domain/hopper/
 │   ├── HopperFilterSyncTest.java              # 漏斗过滤链回写·黑白名单展示回归（5 项）
-│   └── CrossContainerTransferFertilizeTest.java # 跨容器施肥·推送/拉取双入口+活骨粉三入口全拒（15 项）
+│   ├── CrossContainerTransferFertilizeTest.java # 跨容器施肥·推送/拉取双入口+活骨粉三入口全拒（15 项）
+│   └── CrossContainerTransferFaceSelectionTest.java # 多方块容器跨容器面选取·候选排序+推送首选/回退（5 项）
 ├── living/domain/map/
 │   └── MapCoordHelperTest.java                # 地图坐标换算（29 项）
 ├── living/interaction/

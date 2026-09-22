@@ -156,8 +156,9 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 352 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
-全绿基线：`352 passed / 0 failed / 0 skipped`（2026-09-22 光照刷新 + 爆炸受影响区块判据修复）。
+**合计测试用例 357 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
+全绿基线：`357 passed / 0 failed / 0 skipped`（2026-09-22 光照刷新 + 爆炸受影响区块判据修复
++ 大箱子槽位体系探针 §10.25 / 跨容器面选取 §6.4）。
 > 📄 测试环境配置与编写约定见 [unit-testing.md](docs/guides/unit-testing.md)；
 > 测试文件树见 [file-map.md](docs/reference/file-map.md)「测试文件树」。
 
@@ -223,13 +224,19 @@ src/main/java/com/qiqi/li/
   ⇒ 组合后果：可能出现「只有基础层」（如活漏斗只剩中心圆）。
   「全形态一致」的 A/B/C 三方案已记录但**暂不实施**（B/C 需游戏内验证图层混合能否复现 `blit` 叠加）。
   详见 `icon-system.md`「渲染上下文覆盖范围（重要约束）」。
-- ✅ **箱子/末影箱图标方案定稿**（2026-09-22 晚，三轮：实验 `20d6ab9` → 误判回退 → 用户拍板定稿）：
-  恢复 3D 方案但改 **GUI 正面视角 14px** —— 新 `item/chest_3d` / `item/ender_3d`
-  （`parent: builtin/entity` + `gui rotation [0,0,0] scale [1,1,1] translation [0,1,0]`），
-  spec 显式挂 `DEFAULT_DECORATOR` 保留 `living.png` 活标记；旧 `chest.png`/`ender.png`/平面 JSON **已删**。
-  几何依据：`ChestRenderer` 物品分支强制 FACING=SOUTH（锁扣在 +Z ⇒ 正面天然朝相机）、
-  箱体宽 14 单位 ⇒ scale 1 = 14px。⚠️ 1.21.1 判据是 **`isCustomRenderer()`**（委托 livingModel 已正确），
-  memory 里的 `usesBlockEntity()` 在此版本不存在。详见 `icon-system.md`「已完成的实验」。
+- ✅ **箱子/末影箱图标定稿**（2026-09-22 晚，三轮：实验 `20d6ab9` → 误判回退 → 用户拍板）：
+  用 `item/chest_3d` / `item/ender_3d`（`parent: builtin/entity`，`gui rotation [0,0,0] scale [1,1,1]`）
+  ⇒ GUI 显示**正面视角 14px** 3D 箱子（`ChestRenderer` 物品分支强制 FACING=SOUTH、锁扣在 +Z、
+  箱体宽 14 单位）；spec **不挂装饰器**（3D 自身足以辨识「活」）；旧平面图标资源**已删**。
+  ⚠️ 1.21.1 判据是 **`isCustomRenderer()`** 而非 `usesBlockEntity()`（后者此版本不存在）。
+  详见 `icon-system.md`「已完成的实验」。
+- ✅ **GUI 图标光照统一**（2026-09-22 晚，起因 3D 箱子在 GUI 里发暗）：
+  ⚠️ **改 light 值没用** —— `GuiGraphics.renderItem` 传的本就是 `FULL_BRIGHT(15728880)`；
+  真凶是 `!usesBlockLight()` 分支（true ⇒ `setupFor3DItems()` 法线漫反射，3D 图标亮度只剩 ~0.7）。
+  ⇒ `GenericContextAwareModel.usesBlockLight()` **恒 false**（该属性 1.21.1 只被 GuiGraphics 读）。
+  另抽出 `LivingIconRenderHelper.renderBlockIcon()` 作为「容器内手绘方块模型」图标统一入口
+  （FULL_BRIGHT + 强制 cutout + 异常隔离，替换 mixin 私有实现）⇒ **新加图标光照零配置**。
+  详见 `icon-system.md`「GUI 图标光照约定」。
 - ⚠️ 回归（2026-09-22）：**活红石粉装饰器叠了缺失纹理** —— 原因：去原版化时删了
   `textures/item/redstone_dust_dot.png`，但 `LivingRedstoneDecorator.DOT_TEXTURE`
   仍 `fromNamespaceAndPath(MOD_ID, "textures/item/redstone_dust_dot.png")`，**渲染时
@@ -239,6 +246,31 @@ src/main/java/com/qiqi/li/
   与原版不同），保留。
   ⚠️ **教训（已写进 `icon-system.md`）**：去原版化扫描必须包含 `fromNamespaceAndPath(MOD_ID, ...)`
   —— 该写法不带 `living_item:` 前缀，按 `living_item:textures/...` 扫是扫不到的。
+- ✅ 修复：**大箱子（多方块容器）两套槽位体系错位 ⇒ 活漏斗静默不传输**。症状：大箱子里上下
+  摆两个「上传下」漏斗，上方**完全不传**；拿走下方、或往输出槽放一个物品都能恢复；下方换
+  **任何朝向**都照样"锁住"（**决定性线索** —— 与方向/连接关系无关，只与那个格子有没有东西
+  有关）；同布局在单方块箱子正常。根因：`ContainerContext.getContainer` 只返回 pos 那一个 BE
+  的容器（大箱子 = 单半箱 27 槽），而 handler 是合并的 54 槽 ⇒ **错位 27**（Container 槽 22 =
+  GUI 槽 49）；`simulateInsertItem` 用它读"目标槽现有物品" ⇒ 读到另一半箱的漏斗 ⇒ 判不可插入
+  ⇒ 不传且不设冷却。`PlainSlotAccessor` 只在**目标槽为空**时调模拟插入（非空走合并分支），
+  这解释了"放一个物品就好"以及它为何藏这么久。⇒ 新增**槽位体系一致性探针**
+  `isSameSlotSpaceAsHandler`（①槽位数一致 ②单槽交叉校验），不过则回退 handler；
+  **不**在 `getContainer` 里特判合并容器 —— 合并顺序由各 mod 的 IItemHandler 决定，猜错就是
+  一道**新的**错位；探针不假设容器结构，三方块/四块/任意多方块容器通用。回退不丢语义
+  （`handler.insertItem` 内部转调 `canPlaceItem/isItemValid`，且模拟与真实由此**同源**）。
+  ⚠️ **教训**：多方块容器下"按逻辑槽位"的读写，**先验证两套体系是否同编号再使用**；
+  模拟与真实写入必须同源。详见 [living-hopper-tech.md](docs/tech/living-hopper-tech.md) §10.25。
+- ✅ 修复：**大箱子跨容器传输的面选取 —— GUI 4 方向 → 世界 6 面**。本质：两个半箱共 8 个侧面，
+  贴合的 2 个是内部面，剩 **6 个外部面**；左/右（连接轴）各只对应 **1 个**外部面（另一端是
+  贴合面，被现有防护挡掉），上/下（facing 轴）各对应 **2 个**外部面（两个半箱各一个，是
+  **两个不同方块**）。旧实现按**方向**选单个基准块（下/右→第一块，上/左→第二块），与漏斗
+  所在槽位无关 ⇒ 漏斗在后半箱向下推送时，推出去的是**前半箱正面**的方块（**静默推错面、
+  不报错**；而左右选错会被内部防护挡住，反而"看得见"）。⇒ 改为 `getBasePosCandidates()`
+  返回**候选基准块列表**：首选 = 发起槽位所属那块（`hostSlot / (size/块数)`），其余作备选，
+  **逐个尝试**（用户拍板"两个都试"，顺带让大箱子上下能覆盖两个面）。**附带收益**：有备选面
+  兜底 ⇒ 不必再为「槽位段 ↔ 位置顺序」做内容探测，假设反了最多影响优先级（对比容器内路径
+  §10.25 —— 那条路没有备选，必须靠体系探针）。另加"源/目标解析到同一邻居则跳过"防自传。
+  详见 [living-hopper-tech.md](docs/tech/living-hopper-tech.md) §6.4。
 
 **最近更新** (2026-09-20):
 - ✅ 修复：**容器规则数据勘误 + 玩家差异持久化 + 开发期导出通道**。起因「打包后没有配置文件」

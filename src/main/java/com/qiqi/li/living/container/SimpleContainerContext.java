@@ -240,8 +240,15 @@ public class SimpleContainerContext implements ContainerContext {
             return Math.min(stack.getCount(), maxStack);
         }
 
+        // ⚠ 多方块容器陷阱：ContainerContext.getContainer 只返回「pos 那一个方块实体」的
+        // 容器，而 handler 是多方块合并后的完整容器 —— 两套槽位编号体系可能整体错位
+        // （大箱子实测：Container 27 槽 vs handler 54 槽，Container 的槽 22 = GUI 的槽 49）。
+        // 此处要用 Container 读「目标槽现有物品」，错位就会读到另一个方块部分的槽位：
+        // 目标槽明明是空的却读到东西 → 判定不可插入 → 活漏斗静默不传输（不设冷却，像卡死）。
+        // 判据不假设容器结构（几方块、怎么排），只探测「两套体系是否同编号」，
+        // 故三方块 / 四块 / 任意多方块容器同样成立（living-hopper-tech.md §10.25）。
         Container container = ContainerContext.getContainer(getLevel(), getBlockPos());
-        if (container != null && slot < container.getContainerSize()) {
+        if (container != null && isSameSlotSpaceAsHandler(container, slot)) {
             if (!container.canPlaceItem(slot, stack)) {
                 return 0;
             }
@@ -261,6 +268,33 @@ public class SimpleContainerContext implements ContainerContext {
 
         ItemStack remaining = handler.insertItem(slot, stack.copy(), true);
         return stack.getCount() - remaining.getCount();
+    }
+
+    /**
+     * 槽位体系一致性探针 —— Container 与 handler 是否共用同一套槽位编号。
+     *
+     * <p>两级判据，逐级加严，且<b>都不依赖「知道容器由几个方块组成」</b>：</p>
+     * <ol>
+     *   <li><b>槽位数一致</b> —— 不一致必然是「单体 vs 合并」（大箱子 27 vs 54）；</li>
+     *   <li><b>单槽交叉校验</b> —— 挡住「槽位数相同但映射不同」的情况（如合并顺序相反）：
+     *       比对同一槽位在两套体系里的「空/非空 + 物品」是否一致。</li>
+     * </ol>
+     *
+     * <p>任一级不过 ⇒ 判定该 Container 的槽位编号不可信 ⇒ 调用方回退到 handler
+     * （handler 才是多方块合并后的真实后端，与 GUI 同体系）。回退并不丢语义：
+     * {@code handler.insertItem(slot, …, true)} 内部已转调容器的
+     * {@code canPlaceItem/isItemValid}，模拟与真实写入还因此变成同源。</p>
+     */
+    private boolean isSameSlotSpaceAsHandler(Container container, int slot) {
+        int size = container.getContainerSize();
+        if (size != handler.getSlots() || slot < 0 || slot >= size) return false;
+
+        ItemStack viaContainer = container.getItem(slot);
+        ItemStack viaHandler = handler.getStackInSlot(slot);
+        if (viaContainer.isEmpty() || viaHandler.isEmpty()) {
+            return viaContainer.isEmpty() && viaHandler.isEmpty();
+        }
+        return ItemStack.isSameItemSameComponents(viaContainer, viaHandler);
     }
 
     @Override

@@ -27,6 +27,7 @@
  */
 package com.qiqi.li.living.domain.hopper;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import com.qiqi.li.living.container.ContainerContext;
@@ -82,22 +83,50 @@ public final class CrossContainerTransfer {
 
         List<BlockPos> chestPositions = DoubleChestPositions.find(level, containerPos);
 
-        BlockPos sourceBasePos = getBasePosForDirection(containerPos, resolvedSlots.sourceOffset(), chestPositions);
-        BlockPos targetBasePos = getBasePosForDirection(containerPos, resolvedSlots.targetOffset(), chestPositions);
+        // 大箱子（及任意多方块容器）：GUI 的一个方向可能对应**多个**世界外部面
+        // （见 §6.4「GUI 4 方向 → 世界 6 面」），按 hostSlot 所在的那块定首选，其余作备选，
+        // 逐个尝试 —— 首选失败（该面无容器 / 该面是内部贴合面）就退到下一个面。
+        List<BlockPos> sourceBases = getBasePosCandidates(containerPos, hostSlot, chestPositions, containerSize);
+        List<BlockPos> targetBases = getBasePosCandidates(containerPos, hostSlot, chestPositions, containerSize);
 
         if (sourceOutOfBounds && !targetOutOfBounds) {
-            return pullFromNeighbor(containerCtx, resolvedSlots, level, sourceBasePos,
-                                     blockFacing, chestPositions, stackSize, maxTransfer, filterData, hostSlot, tick);
+            for (BlockPos base : sourceBases) {
+                if (pullFromNeighbor(containerCtx, resolvedSlots, level, base,
+                        blockFacing, chestPositions, stackSize, maxTransfer, filterData, hostSlot, tick)) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         if (targetOutOfBounds && !sourceOutOfBounds) {
-            return pushToNeighbor(containerCtx, resolvedSlots, level, targetBasePos,
-                                   blockFacing, chestPositions, stackSize, maxTransfer, filterData, tick);
+            for (BlockPos base : targetBases) {
+                if (pushToNeighbor(containerCtx, resolvedSlots, level, base,
+                        blockFacing, chestPositions, stackSize, maxTransfer, filterData, tick)) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         if (sourceOutOfBounds && targetOutOfBounds) {
-            return transferBetweenNeighbors(containerCtx, resolvedSlots, level, sourceBasePos, targetBasePos,
-                                             blockFacing, chestPositions, stackSize, maxTransfer, filterData, tick);
+            // 源/目标各有多面：先试「同一块容器」的对齐组合，再试交叉组合
+            int aligned = Math.min(sourceBases.size(), targetBases.size());
+            for (int i = 0; i < aligned; i++) {
+                if (transferBetweenNeighbors(containerCtx, resolvedSlots, level, sourceBases.get(i),
+                        targetBases.get(i), blockFacing, chestPositions, stackSize, maxTransfer, filterData, tick)) {
+                    return true;
+                }
+            }
+            for (int i = 0; i < sourceBases.size(); i++) {
+                for (int j = 0; j < targetBases.size(); j++) {
+                    if (i == j) continue;
+                    if (transferBetweenNeighbors(containerCtx, resolvedSlots, level, sourceBases.get(i),
+                            targetBases.get(j), blockFacing, chestPositions, stackSize, maxTransfer, filterData, tick)) {
+                        return true;
+                    }
+                }
+            }
         }
 
         return false;
@@ -305,6 +334,10 @@ public final class CrossContainerTransfer {
         BlockPos sourceNeighborPos = sourceBasePos.relative(sourceWorldDir);
         BlockPos targetNeighborPos = targetBasePos.relative(targetWorldDir);
 
+        // 多方块容器下「不同基准块 + 不同方向」可能解析到同一个邻居方块 ——
+        // 源=目标 就是自传，直接跳过（避免物品在自己容器里空转 / 记账错乱）。
+        if (sourceNeighborPos.equals(targetNeighborPos)) return false;
+
         Container sourceContainer = ContainerContext.getContainer(level, sourceNeighborPos);
 
         for (int i = 0; i < sourceHandler.getSlots(); i++) {
@@ -379,15 +412,49 @@ public final class CrossContainerTransfer {
 
     // ========== 大箱子处理 ==========
 
-    private static BlockPos getBasePosForDirection(BlockPos defaultPos, Pos2D gridDir, List<BlockPos> chestPositions) {
-        if (chestPositions.isEmpty() || gridDir == null || gridDir.isNone()) {
-            return defaultPos;
+    /**
+     * 跨容器传输的「基准块」候选列表（按优先级排序）。
+     *
+     * <p><b>为什么要多个候选</b>：多方块容器（大箱子等）在世界里占 N 个方块，
+     * GUI 的一个方向可能对应<b>多个</b>外部世界面 —— 沿 facing 轴（GUI 上/下）
+     * 每个块各有一个面；沿连接轴（GUI 左/右）只有一端是外部，另一端是内部贴合面
+     * （由 {@link #getNeighborHandler} 挡掉）。所以不能像单方块容器那样只定一个基准块。</p>
+     *
+     * <p><b>排序规则</b>：发起传输的槽位属于哪一块，那块就是首选，其余按位置顺序作备选。
+     * 调用方逐个尝试，某面无容器（或是内部面）就退到下一个面 —— 大箱子因此能同时
+     * 覆盖「上下各两个面」，功能更丰富。</p>
+     *
+     * <p><b>附带收益</b>：本方法依赖「槽位段 ↔ 位置顺序」按 {@code containerSize / 块数}
+     * 均分的假设，而该顺序由各模组的 IItemHandler 合并方式决定（未必等于
+     * vanilla {@code ChestBlock.getContainer} 的顺序）。有了备选面兜底，
+     * 假设反了最多是优先级不同，功能仍然成立 —— 无需再为顺序做内容探测。</p>
+     */
+    // 包级可见：CrossContainerTransferFaceSelectionTest 直接驱动（多方块容器的面候选排序），
+    // 与 tryPushToNeighbor 同一惯例 —— 纯逻辑无需 mock Level 即可钉住。
+    static List<BlockPos> getBasePosCandidates(BlockPos defaultPos, int hostSlot,
+                                               List<BlockPos> chestPositions, int containerSize) {
+        if (chestPositions.isEmpty()) {
+            return List.of(defaultPos);
         }
-        boolean useLeft = gridDir.equals(Pos2D.DOWN) || gridDir.equals(Pos2D.RIGHT);
-        if (!useLeft && !gridDir.equals(Pos2D.UP) && !gridDir.equals(Pos2D.LEFT)) {
-            return defaultPos;
+        if (chestPositions.size() == 1) {
+            return List.of(chestPositions.get(0));
         }
-        return useLeft ? chestPositions.get(0) : chestPositions.get(1);
+
+        int perBlock = containerSize / chestPositions.size();
+        if (perBlock <= 0) {
+            return List.of(chestPositions.get(0));
+        }
+
+        int primary = Math.min(Math.max(hostSlot / perBlock, 0), chestPositions.size() - 1);
+
+        List<BlockPos> result = new ArrayList<>(chestPositions.size());
+        result.add(chestPositions.get(primary));
+        for (int i = 0; i < chestPositions.size(); i++) {
+            if (i != primary) {
+                result.add(chestPositions.get(i));
+            }
+        }
+        return result;
     }
 
     private static IItemHandler getNeighborHandler(Level level, BlockPos basePos, Direction direction, List<BlockPos> chestPositions) {
