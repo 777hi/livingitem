@@ -104,6 +104,67 @@ z =  cos(yRot)·cos(xRot)
 
 另需 `setYHeadRot(yRot)` —— 部分模组读的是头部朝向。
 
+### 2.6 攻击侧 —— `AttackEntityEvent` 与「三处同类漏洞」（2026-09-22 核源码）
+
+#### ① `AttackEntityEvent` **不携带武器**
+
+```java
+public class AttackEntityEvent extends PlayerEvent implements ICancellableEvent {
+    private final Entity target;      // 唯一字段
+}
+```
+
+想知道武器只能 `event.getEntity().getMainHandItem()` —— ⚠️ 取的是"**当前**主手"，未必是"攻击时用的那把"。
+
+#### ② 但**物品侧**明确知道
+
+`Player#attack` 会把那把武器传进去：
+
+```java
+ItemStack itemstack = this.getMainHandItem();
+flag5 = itemstack.hurtEnemy(target, this);     // ← 物品收到：「我用你打了它」
+itemstack.postHurtEnemy(target, this);         // ← 打完再通知一次
+EnchantmentHelper.doPostAttackEffects(...);    // ← 锋利 / 击退等附魔效果
+```
+
+**⇒ 模组的剑重写 `hurtEnemy` / `postHurtEnemy` 就能"认领"这次攻击。**
+**⇒ 我们只需 `fake.attack(target)`，这些全部自动跑，无需我们介入。**
+
+#### ③ 完整前置：`CommonHooks.onPlayerAttackTarget`
+
+```java
+public static boolean onPlayerAttackTarget(Player player, Entity target) {
+    if (NeoForge.EVENT_BUS.post(new AttackEntityEvent(player, target)).isCanceled())
+        return false;
+    ItemStack stack = player.getMainHandItem();
+    return stack.isEmpty() || !stack.getItem().onLeftClickEntity(stack, player, target);
+}
+```
+
+⭐ **它做了两件事**：post `AttackEntityEvent` **＋** 调物品的 `onLeftClickEntity` 钩子（又一个官方扩展点）。
+
+**⇒ 实现实体攻击时的正确写法**：
+
+```java
+if (!CommonHooks.onPlayerAttackTarget(fake, target)) return;   // ① 前置（事件 + 物品钩子）
+fake.attack(target);                                            // ② 真正攻击
+```
+
+#### 📌 三处同类漏洞 —— 同一个模式
+
+| 侧 | 外部事件层（易漏） | 内部实现层（我们直调） | 状态 |
+|---|---|---|---|
+| 右键 | `onItemRightClick` | `use()` | ❌ → **✅ 已补**（2026-09-22） |
+| 左键 | `onLeftClickBlock`（START / STOP / ABORT） | `destroyBlock()` | ✅ 一直有 |
+| **攻击** | **`AttackEntityEvent`**（经 `onPlayerAttackTarget`） | **`player.attack()`** | ❌ **待补**（实现实体攻击时） |
+
+> **规律**：NeoForge 把"玩家交互事件" post 在**网络包处理层**；我们走"服务端直调" ⇒ **那一层永远不会自己跑**。
+>
+> **⇒ 口诀：凡是原版由「客户端发包」触发的交互，我们都必须手动补 post 对应的事件。**
+>
+> 这也是为什么「识别法杖」不重要、**走对分支**才重要 —— 同理，攻击时不识别武器，
+> 只要补上 `onPlayerAttackTarget`，**武器自己会通过 `hurtEnemy` 认领这次攻击**。
+
 ---
 
 ## §3 铁魔法（Irons Spells 'n Spellbooks）调研结论
