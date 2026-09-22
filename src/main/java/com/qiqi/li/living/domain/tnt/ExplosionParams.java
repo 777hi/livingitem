@@ -79,19 +79,26 @@ public record ExplosionParams(double centerX, double centerY, double centerZ,
     }
 
     /**
-     * 该区块是否落在爆炸的**圆形**作用范围内（决定"要不要炸"）。
+     * 该区块是否与爆炸的**球体**相交（决定"要不要炸"）。
      *
-     * <p>判据与旧的 {@code scheduleSuperExplosion} 一致：<b>区块中心</b>到爆炸中心的水平距离
-     * ≤ radius。保持这条判据不动是为了不改变既有行为。</p>
+     * <p>⚠️ 判据是「<b>区块 AABB 与圆相交</b>」，<b>不是</b>「区块中心落在半径内」
+     * （2026-09-22 修）。区块是 16×16 的方块，"中心在半径外、边缘却落在球内"的区块大量存在 ——
+     * 按中心判定会把它们<b>整块跳过</b>（建档时就标记完成、永不处理），表现为
+     * <b>坑不圆、边缘残留一整块区块形状的地形</b>。</p>
+     *
+     * <p>注：只判水平方向即可 —— 区块是贯穿整个世界高度的柱体，只要 (x,z) 与球体的水平投影
+     * （半径 r 的圆）相交，块内就一定有落在球体里的方块。</p>
      */
     public boolean affects(ChunkPos cp) {
         int dx = cp.x - centerChunkX();
         int dz = cp.z - centerChunkZ();
         if (Math.abs(dx) > chunkRadius() || Math.abs(dz) > chunkRadius()) return false;
-        double chunkCenterX = (cp.x << 4) + 8;
-        double chunkCenterZ = (cp.z << 4) + 8;
-        double ddx = chunkCenterX - centerX;
-        double ddz = chunkCenterZ - centerZ;
+
+        // 区块 AABB 上离爆心最近的点（爆心落在区块内时，最近点就是爆心本身 ⇒ 距离 0）
+        double nearestX = Math.max(cp.getMinBlockX(), Math.min(centerX, cp.getMaxBlockX()));
+        double nearestZ = Math.max(cp.getMinBlockZ(), Math.min(centerZ, cp.getMaxBlockZ()));
+        double ddx = nearestX - centerX;
+        double ddz = nearestZ - centerZ;
         return ddx * ddx + ddz * ddz <= radius * radius;
     }
 }

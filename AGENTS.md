@@ -157,25 +157,55 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 343 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
-全绿基线：`343 passed / 0 failed / 0 skipped`（2026-09-20 容器规则全量导出快照 + 社区贡献闭环 + UTF-8 修复）。
+**合计测试用例 352 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
+全绿基线：`352 passed / 0 failed / 0 skipped`（2026-09-22 光照刷新 + 爆炸受影响区块判据修复）。
 > 📄 测试环境配置与编写约定见 [unit-testing.md](docs/guides/unit-testing.md)；
 > 测试文件树见 [file-map.md](docs/reference/file-map.md)「测试文件树」。
 
 ## 开发进展
 
 > 📄 **更早的记录**：早于最近 3 个更新批次的条目已迁至 [changelog.md](docs/archive/changelog.md)
-> （**截至 2026-09-15**；按日期倒序，保留完整变更细节供参考；含红电阶段一~四落地、1 game tick 传播、v8/v8.1 重构周期等全部历史条目）。
+> （**截至 2026-09-16**；按日期倒序，保留完整变更细节供参考；含红电阶段一~四落地、1 game tick 传播、v8/v8.1 重构周期等全部历史条目）。
 >
 > **条目体例**：一条 = **一行结论 + 指针**。结论写「做了什么 + 关键约束/坑」，细节写进对应的
 > `docs/tech/*.md` 或 `docs/system-design/*.md` —— **这里是入口，不是档案**，别在此铺正文。
 >
-> **归档规则**：只保留最近 **3 个**更新批次，其余迁入 changelog；归档时**必须校验日期连续性**
-> ——「changelog 最新日期」与「本节最早日期」之间**不得有空档**，并同步更新本行指针。
+> **归档规则**：只保留最近 **3 个**更新批次，其余迁入 changelog。校验三件事：
+> ① **从最旧批次开始连续迁出**（不跳批次）② **守恒校验**（迁出正文原样搬全）
+> ③ **边界单调**（changelog 内容全部早于本节）。
+> ⚠️ **不校验日期间隔** —— 开发是间歇性的，「隔了几天」不含信息；
+> 旧规则「空档 ≤1 天」会误报且与「保留 3 批次」互相矛盾（详见 [docs/README.md](docs/README.md) §4）。
 > ⚠️ `2026-09-01 ~ 09-04` 曾因漏做归档而**断档**（只在 `.workbuddy-ai/memory/` 日工作日志里，
 > 而日志会定期删除），已于 2026-09-16 补录 —— **别再漏**。
 
 ### 当前版本: v0.9-alpha
+
+**最近更新** (2026-09-22):
+- ✅ 修复：**大当量/超级爆炸后光照不刷新（坑里一片漆黑）**。根因：这两条路径为性能**直接调
+  `LevelChunkSection.setBlockState()`**，绕过 `LevelChunk.setBlockState()` —— 原版把光照更新写在那里
+  ⇒ 光照引擎不知道方块没了（`NORMAL` 走 `level.setBlock()`，不受影响）。
+  ⇒ 新增 `ExplosionComponent.refreshLightAfterBulkEdit()`：重建天光柱高图 → 逐 section 上报空态
+  → `propagateLightSources()` → 被炸掉的发光方块逐个 `checkBlock()`。
+  **两条红线**：柱高图重建**必须早于**重算（反了 = 没修）；增光与减光是两条路径（后者只管**现存**光源）。
+  新增 `ExplosionComponentLightTest`（5 项）。详见 `living-tnt-tech.md` §4.3「⚠️ 光照刷新」。
+- ✅ 修复：**大当量爆炸坑不圆、边缘残留整块区块地形**。根因 `ExplosionParams.affects()` 用「区块**中心**
+  在半径内」当判据 —— 区块 16×16，"中心在外、边缘在球内"的区块**建档时就被标记完成、永不处理**
+  ⇒ 每场爆炸整块跳过 **32~86 个区块**。改为「**区块 AABB ∩ 球体**」（该判据在**三处**生效 = 单点根因）。
+  ⚠️ 它曾被 `ExplosionParamsTest` 按"与旧口径一致"**钉住** —— **把既有行为当规格前，先确认它是对的**。
+  守卫：边界回归 + **球体全覆盖** `affects_coversEveryBlockInsideSphere`
+  （断言"半径内每个方块所在区块必命中"，**已验证在旧判据下会 FAIL**）。
+  详见 `living-tnt-tech.md` §4.3「⚠️『哪些区块受影响』的判据」（含漏块量化表）。
+- ✅ 定性：玩家报的「方形区域还画着旧方块、**过一会自己消失**」= **客户端重建排队，不是数据没同步**。
+  整区块包会让客户端对**每个 section** 调 `setSectionDirtyWithNeighbors`（每次标 3×3×3=27 个），
+  一次爆炸改动**上万个 section** ⇒ 排队期间仍画旧几何，排完即恢复（数据其实**立刻**就对了）。
+  **判据：会自己消失 = 正常；一直都在 = bug（= 上面 `affects` 那条）。**
+  同时把方块同步改到光照刷新**之前**发（方块是用户直接看得见的）。
+  ⇒ `living-tnt-tech.md` §4.3 + `living-tnt-testing.md` §5「两种要分清」表（免群友误报）。
+- ✅ 文档：**修掉归档规则里的「空档 ≤1 天」**（`docs/README.md` §4/§7 + `changelog.md`/本文件节首）。
+  该规则**假设"每天都有开发"** ⇒ 间歇性开发必然误报，且与「保留 3 批次」**互相矛盾**（永远无法归档）。
+  改为只校验**边界单调**（`changelog 最新` 必须早于 `AGENTS 最早`）；防丢历史交给**连续迁出 + 守恒校验**；
+  相隔 >30 天仅提示。`doc_check.py`：`CONTINUITY_MAX_GAP_DAYS=1` → `ARCHIVE_WARN_GAP_DAYS=30`。
+  并借此归档 `2026-09-16` 批次。
 
 **最近更新** (2026-09-20):
 - ✅ 修复：**容器规则数据勘误 + 玩家差异持久化 + 开发期导出通道**。起因「打包后没有配置文件」
@@ -264,54 +294,6 @@ src/main/java/com/qiqi/li/
   调试命令 **`/living_monitor cache`**（缓存/可处理/loaded 区块/视距基准）⇒ 钉住与外扩可测量。
   详见 §3.2.1 + `D-core-05`。⏳ 未做：**爆炸路径**（§3.2.2）、**第三方 provider 伸远**（不可控面）。
   顺带修掉 §3.2 两处旧口径与一处错位/重号小节。
-
-**最近更新** (2026-09-16):
-- ✅ 新增：**活锄头跨模组兼容 + 可耕土扩展**——原先「活锄头」是**写死的 6 种原版锄头**
-  （注册侧枚举物品 + 校验侧 `instanceof HoeItem`，两侧口径还不一致），其它模组的锄头
-  活化后**耕不了活泥土**（客户端根本不拦截）。改为语义判定：新增
-  `domain/farmland/Tillables`（唯一真源）—— 锄头只认
-  `canPerformAction(ItemAbilities.HOE_TILL)`（NeoForge 对自定义工具的官方口径：原版
-  锄头经 patch 自动满足，模组锄头重写 `canPerformAction` 即自动兼容；**不做**
-  instanceof / 标签 / 配置兜底）；可耕映射对齐原版 `IBlockExtension#getToolModifiedState`
-  的 HOE_TILL 分支（以 neoforge-21.1.249 源码为准：**泥土/草方块/土径 → 耕地，砂土/
-  缠根泥土 → 泥土**，再耕一跳才变耕地；灰化土/菌丝原版不可耕，不纳入；「上方必须是
-  空气」与「缠根泥土掉垂根」属世界副作用，物品层 GUI 交互不做）。注册处 6 条精确规则
-  → **按可耕目标逐条注册通配条目 + `Tillables::canTillWith` 谓词**（与 plant_crop
-  同构）；谓词内**必须**自查 `isLivingItem(trigger)`——通配分支不校验活物品，漏了会吞
-  掉原版拿起/分堆。handler 改为查表取产物，且创造模式同样校验光标（只免耐久消耗）。
-  新增 `testutil/FakeHoe`（模组锄头替身：⚠️ **测试期物品注册表已冻结，不能 `new Item`**，
-  否则静态初始化抛 `Registry is already frozen` 导致整类 17 用例全红且看不出原因——改用
-  `Mockito.spy(Items.STICK)` + stub `canPerformAction`）+ `TillablesTest`（8 项）+
-  `TillToFarmlandCompatTest`（8 项），全量 **313 用例全绿**。收编
-  living-farmland-tech.md §3.1/§10.1/§10.2/§10.3/§11.17/§12.1 +
-  gui-interaction-system.md 处理器表 + file-map.md。
-- ✅ 修复：**活耕地种子图标在 HUD 快捷栏不渲染**——原实现画在
-  `AbstractContainerScreenMixin.render @TAIL`，硬依赖 `leftPos`/`topPos`（只有
-  `AbstractContainerScreen` 有），而快捷栏走 `Gui.renderHotbar` → `renderSlot` →
-  `GuiGraphics.renderItemDecorations` → `ItemDecoratorHandler`，**从不经过该屏幕**。
-  迁到 `IItemDecorator`（`client/render/LivingFarmlandSeedDecorator`，自抬 z=200）：
-  装饰器在快捷栏/容器 GUI/创造物品栏都会被调用，**一份代码全覆盖、只画一次**；
-  容器 Mixin 里那段重复 blit 已删除（生长槽大图保留——它需要「同容器正上方一格槽位」
-  的邻居关系，装饰器拿不到容器槽表）。新增 `LivingFarmlandSeedDecoratorTest`（4 项），
-  全量 **297 用例全绿**。收编 icon-system.md（三层架构 + §5 表格补活耕地行 + 新增
-  「种子图标改走装饰器路径」小节，含坐标/z/渲染状态三处契约）+ living-farmland-tech.md
-  v1.11 §8.2/§10.1/§10.2/§10.3/§12.3。
-- ✅ 新增：**放置活耕地回世界时自动种下自带作物**——把一块「已种植」的活耕地物品
-  放置到世界里，放置出的耕地上直接长出那株作物。**做法：模拟玩家右键**
-  （构造 `UseOnContext` 调 `ItemStack.useOn`），**不是**自己 `setBlock`——后者会绕过
-  模组在 `canSurvive` / 覆写 `useOn` 里的校验（如「水稻只能在水下种」），种出非法状态。
-  改用 `useOn` 后连 `CropClassifier`、`canBeReplaced` 检查、`is(Blocks.FARMLAND)`
-  检查都不需要了（种子自己的 `canSurvive` 会校验下方是耕地），代码反而更短。
-  入口：`mixin/BlockItemMixin`（`@Mixin(BlockItem.class)`，注入 `place` 的 `consume`
-  **之前**——注在 `@At("RETURN")` 会因空栈 `getComponents()` 返回 EMPTY 而
-  **只在单块放置时静默失效**）+ `domain/farmland/LivingFarmlandPlacement`（约 30 行）。
-  **这是「软逻辑」**（用户定调）：能种上就好，种不上（含抛异常）一律静默、整段
-  try/catch，绝不影响原版放置流程。口径：**一律种成幼苗**（不保留成熟度，用户定调）；
-  多格作物上部件不放置、交给原版长；`pendingDrops` 掉落不丢。新增
-  `LivingFarmlandPlacementTest`（5 项，含「异常不冒泡」红线与**端到端 Mixin 接线**用例），
-  全量 **293 用例全绿**。
-  收编 living-farmland-tech.md v1.10 §3.5 + §10.1/§10.2/§10.3 + §11.16（三坑：
-  `RETURN` 注入 / `isClientSide` 字段不可 mock / 别 `setBlock`）+ §12.1 实测清单。
 
 
 > 由实际踩坑沉淀的行为准则 —— **每次会话都适用**，不是某个子系统的细节。

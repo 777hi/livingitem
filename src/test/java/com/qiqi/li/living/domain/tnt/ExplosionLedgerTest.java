@@ -81,14 +81,25 @@ class ExplosionLedgerTest {
     // ---------- 1. 建档：圆外直接标记完成 ----------
 
     @Test
-    @DisplayName("建档：圆外区块立即标记完成，只有圆内的进待处理队列（半径 16 → 正十字 5 格）")
+    @DisplayName("建档：与球体相交的区块才进待处理队列（半径 16 → 3×3 网格全部相交）")
     void schedule_marksOutOfCircleAsDone() {
         ExplosionLedger ledger = new ExplosionLedger();
         assertTrue(ledger.schedule(params(16), Level.OVERWORLD));
 
         assertEquals(1, ledger.entryCount());
-        assertEquals(5, ledger.remainingOf(0), "3×3 网格里只有正十字 5 格命中圆形范围");
-        assertEquals(5, ledger.pendingCheckCount(Level.OVERWORLD), "只有未完成的区块进待检查队列");
+        assertEquals(9, ledger.remainingOf(0), "3×3 网格全部与球体相交（判据是区块 AABB，不是区块中心）");
+        assertEquals(9, ledger.pendingCheckCount(Level.OVERWORLD), "只有未完成的区块进待检查队列");
+    }
+
+    @Test
+    @DisplayName("建档：与球体完全不相交的区块立即标记完成，不进队列（半径 1 → 3×3 里只有中心 1 格）")
+    void schedule_marksTrulyOutOfCircleAsDone() {
+        ExplosionLedger ledger = new ExplosionLedger();
+        assertTrue(ledger.schedule(params(1), Level.OVERWORLD));
+
+        assertEquals(1, ledger.entryCount());
+        assertEquals(1, ledger.remainingOf(0), "半径 1 只够到中心区块");
+        assertEquals(1, ledger.pendingCheckCount(Level.OVERWORLD), "其余 8 格建档时就标记完成");
     }
 
     // ---------- 2. 未加载 → 丢弃（不轮询） ----------
@@ -104,7 +115,7 @@ class ExplosionLedgerTest {
         assertEquals(0, ledger.pendingCheckCount(Level.OVERWORLD),
             "未加载 → 丢弃（否则每 tick 都要重扫几百个未加载区块）；靠 ChunkEvent.Load 重新登记");
         assertEquals(1, ledger.entryCount(), "条目必须保留 —— 它记录着'这场爆炸还没炸完'");
-        assertEquals(5, ledger.remainingOf(0));
+        assertEquals(9, ledger.remainingOf(0));
     }
 
     @Test
@@ -123,7 +134,7 @@ class ExplosionLedgerTest {
         ledger.flush(allLoaded(), recorder);
 
         assertEquals(List.of(target), recorder.applied, "玩家走过去 → 区块加载 → 破坏补上");
-        assertEquals(4, ledger.remainingOf(0), "位图推进一位");
+        assertEquals(8, ledger.remainingOf(0), "位图推进一位");
     }
 
     // ---------- 3. 预算用尽 → carryOver（丢了就永远不炸） ----------
@@ -132,7 +143,7 @@ class ExplosionLedgerTest {
     @DisplayName("分帧预算：单 tick 只处理 MAX_CHUNKS_PER_TICK 个，剩余 carryOver 到下一 tick")
     void flush_isBudgeted_remainderCarriedOver() {
         ExplosionLedger ledger = new ExplosionLedger();
-        ledger.schedule(params(64), Level.OVERWORLD); // chunkRadius=4 ⇒ 圆内 49 格 > 预算 32
+        ledger.schedule(params(64), Level.OVERWORLD); // chunkRadius=4 ⇒ 9×9 网格里 69 格相交 > 预算 32
 
         int affected = ledger.pendingCheckCount(Level.OVERWORLD);
         assertTrue(affected > ExplosionLedger.MAX_CHUNKS_PER_TICK,
@@ -148,11 +159,18 @@ class ExplosionLedgerTest {
             "剩余必须 carryOver —— 这些区块已加载，不会再触发 ChunkEvent.Load，丢了就永远不炸");
         assertEquals(1, ledger.entryCount());
 
-        Recorder second = new Recorder();
-        ledger.flush(allLoaded(), second);
+        // 继续推进到收敛。⚠️ 不要假设"两轮就够" —— 受影响区块数是几何算出来的，
+        // 半径 64 时已超过 2×预算（区块 AABB 判据会覆盖到方形网格的整行整列）。
+        int applied = first.applied.size();
+        for (int pass = 0; pass < 8 && ledger.entryCount() > 0; pass++) {
+            Recorder next = new Recorder();
+            ledger.flush(allLoaded(), next);
+            applied += next.applied.size();
+        }
+
         assertEquals(0, ledger.pendingCheckCount(Level.OVERWORLD));
         assertEquals(0, ledger.entryCount(), "全部完成 → 条目移除（账本自动收敛）");
-        assertEquals(affected, first.applied.size() + second.applied.size(), "两次合起来正好覆盖全部");
+        assertEquals(affected, applied, "多轮合起来正好覆盖全部，不多不少");
     }
 
     // ---------- 5. 多场爆炸叠加 ----------

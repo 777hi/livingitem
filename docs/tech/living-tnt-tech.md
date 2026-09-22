@@ -324,6 +324,47 @@ baseRadius = 4.0（默认）
 完整推导、三个候选的取舍与后果清单见
 [living-item-infrastructure.md](../system-design/living-item-infrastructure.md) §3.2.2。
 
+#### ⚠️ 「哪些区块受影响」的判据 = **区块 AABB ∩ 球体**（2026-09-22 修）
+
+`ExplosionParams.affects(ChunkPos)` 是**要不要处理这个区块**的**唯一判据**，
+在**三处**被用到：建档时标记完成、`flush` 时跳过、`remainingChunks()`。
+
+```
+✅ 正确：区块 AABB 上离爆心最近的点  到爆心的距离 ≤ radius
+❌ 错误：区块中心                   到爆心的距离 ≤ radius   ← 2026-09-22 前的实现
+```
+
+**为什么中心判据是错的**：区块是 **16×16** 的方块。"中心在半径外、边缘却落在球内"的区块
+**大量存在**（区块中心最远可比最近角远约 11 格）。用中心判定会把它们**整块跳过** ——
+而且是在**建档时**就标记成"已完成"，永不处理 ⇒
+**坑不圆，边缘残留一整块区块形状的地形**（玩家可见）。
+
+> ⚠️ 这条判据原本写着"与旧 `scheduleSuperExplosion` 同口径，保持不动以免改变既有行为"，
+> 且被 `ExplosionParamsTest.affects_matchesLegacyCriterion` **钉住** —— 于是错误行为被测试保护了起来。
+> 修的时候必须**同时改测试**（现为 `affects_isChunkAabbIntersectingSphere` +
+> 边界回归 `affects_rimChunkWithCenterOutside_isAffected`）。
+> **教训：把"既有行为"当规格钉住之前，先确认既有行为是对的。**
+
+**只判水平方向就够**：区块是贯穿整个世界高度的柱体，只要 (x,z) 与球体的水平投影
+（半径 r 的圆）相交，块内就一定有落在球体里的方块。
+
+**旧判据漏掉多少区块**（纯几何可复算 —— 爆心在区块正中偏移 8 格的常见情形）：
+
+| 半径 | 网格 | 旧命中 | 新命中 | **被漏掉** |
+|---|---|---|---|---|
+| 16 | 3² | 5 | 9 | 4 |
+| 32 | 5² | 13 | 21 | 8 |
+| 64 | 9² | 49 | 69 | 20 |
+| 128 | 17² | 197 | 241 | 44 |
+| 235 | 31² | 673 | 741 | **68** |
+| 333 | 43² | 1361 | 1447 | **86** |
+
+⇒ 每场大当量爆炸都有**几十个区块**被整块跳过（= 几十块方形地形留在坑边缘）。
+
+**守卫用例**：`ExplosionParamsTest.affects_coversEveryBlockInsideSphere` ——
+断言「半径内**每一个方块**所在区块都必须命中」。**已验证它在旧判据下会 FAIL**，
+所以这条不是"通过了就完事"的空测试。
+
 #### NORMAL（≤64 TNT）
 
 ```
@@ -342,11 +383,14 @@ baseRadius = 4.0（默认）
 对每个区块：
   ├─ 阶段1-收集：遍历「球体 ∩ 本区块」，把该炸的方块按 Section 分组
   ├─ 阶段2-修改：section.setBlockState() 直接设为空气（跳过所有更新回调）
-  └─ 阶段3-同步：整区块打包 ClientboundLevelChunkWithLightPacket 发给跟踪该区块的玩家
+  ├─ 阶段3-光照刷新：refreshLightAfterBulkEdit() —— 见下方「⚠️ 光照刷新」
+  └─ 阶段4-同步：整区块打包 ClientboundLevelChunkWithLightPacket 发给跟踪该区块的玩家
 ```
 
 **性能对比**：普通模式 65536 次 `setBlock()`（32 格半径）每次触发方块/光照更新；
 大当量直接操作 Section 数据、跳过所有回调，速度提升约 100x。
+
+⚠️ **代价**：跳过所有回调**也包括光照更新** —— 必须由阶段3补回来（见下）。
 
 #### SUPER（> 3456 TNT）
 
@@ -358,10 +402,75 @@ baseRadius = 4.0（默认）
 
 每 tick（ExplosionLedger.flushAll ← ServerTickEvent.Pre）：
   ├─ 取待检查区块；**未加载的丢弃**（等它自然加载时由 ChunkEvent.Load 重新登记）
-  ├─ 已加载且未完成的 → applyToChunk（清空整区块）→ 位图置位
+  ├─ 已加载且未完成的 → applyToChunk（清空整区块 + 光照刷新）→ 位图置位
   ├─ 每 tick 最多 MAX_CHUNKS_PER_TICK = 32 个区块（分帧限速）
   └─ 条目全部完成 → 移除（账本自动收敛）
 ```
+
+### ⚠️ 光照刷新（2026-09-22 修）
+
+**症状**：大当量/超级爆炸后，坑里与坑壁**一片漆黑**（光照没刷新）。
+
+**根因**：`NORMAL` 走 `level.setBlock()`，最终进入 `LevelChunk.setBlockState()` ——
+原版把光照更新写在那里（`LevelChunk.java:258~270`）：
+
+| 原版在那里做的事 | 触发条件 |
+|---|---|
+| `lightEngine.updateSectionStatus(pos, hasOnlyAir)` | section 由「非空」变「空」（或反向） |
+| `lightEngine.checkBlock(pos)` | `LightEngine.hasDifferentLightProperties(...)` 为真 |
+
+而 `HIGH_YIELD` / `SUPER` 为了性能**直接调 `LevelChunkSection.setBlockState()`**，
+绕过了 `LevelChunk.setBlockState()` ⇒ 光照引擎完全不知道方块没了：
+天光柱高图仍认为地下被堵死、光照数据仍是炸之前的值 ⇒
+`ClientboundLevelChunkWithLightPacket` 发出去的就是**旧光照**。
+
+**修法**：`ExplosionComponent.refreshLightAfterBulkEdit(level, chunk, removedLightSources)`
+（每个受影响区块调一次，与账本的分帧粒度天然对齐）：
+
+```
+① chunk.initializeLightSources()        // 按当前方块重建「天光柱高图」
+                                        // （原版 INITIALIZE_LIGHT 阶段同款调用）
+② lightEngine.updateSectionStatus(SectionPos.of(chunkPos, minSection + i), section.hasOnlyAir())
+                                        // 逐 section 上报空态；⚠️ 用 section Y 不是索引
+③ lightEngine.propagateLightSources(chunkPos)
+                                        // 天光按列重算 + 重新登记剩余方块光源（向四周扩散）
+④ lightEngine.checkBlock(pos)           // 逐个「被炸掉的发光方块」显式减光
+```
+
+**两条必须记住的约束**：
+
+- **① 必须早于 ③** —— ③ 是**按柱高图**算天光的；高图还是旧的（认为地下被堵死），
+  算出来就还是黑的。顺序写反 = 修了等于没修。
+- **③ 只负责增光，④ 才负责减光** —— `propagateLightSources` 只是把**现存**光源重新登记；
+  光源方块被炸掉后残留的旧光，只能靠 `checkBlock` 降下来。
+  `SUPER` 传空表即可（整区块清空 ⇒ 每个 section 都变空，旧光数据随 ② 被丢弃），
+  `HIGH_YIELD` 在收集阶段顺手记录发光方块（`state.getLightEmission() > 0`，零额外扫描成本）。
+
+**⚠️ ②③④ 在 `ThreadedLevelLightEngine` 上都是「入队」而非同步执行** ——
+本 tick 只登记，真正计算在光照线程跑；算完后原版经
+`ChunkHolder.sectionLightChanged` → `broadcastChanges` 自动发 `ClientboundLightUpdatePacket`
+同步给客户端。所以紧跟其后的 `notifyChunkClients` 里那份光照**这一瞬间仍是旧的**，
+**下一 tick 会被光照包覆盖成正确的**（与原版区块加载同一套机制：`initializeLight` /
+`lightChunk` 也都是异步的）。
+
+守卫用例：`ExplosionComponentLightTest`（钉接线与顺序，真实光照计算属游戏内验证）。
+
+### ⚠️ 已知缺口：**高度图**也没随批量修改更新（2026-09-22 记录，待评估）
+
+`HIGH_YIELD` / `SUPER` 绕过 `LevelChunk.setBlockState()` ⇒ 原版在那里对**每个方块**
+调的 `heightmap.update(...)`（4 种高度图）同样被跳过了。
+
+**后果**：
+- `WORLD_SURFACE` / `MOTION_BLOCKING` 仍反映**炸之前**的地形 ⇒ 刷怪面、
+  `Level.getHeight` 类查询、雨雪高度会看到已经不存在的地面。
+- 这两张高度图**随区块包发给客户端**（`ClientboundLevelChunkPacketData` 的 `heightmaps`），
+  客户端 `LevelChunk.replaceWithPacketData` 会 `setHeightmap` ⇒ **客户端也拿到陈旧值**。
+
+**为什么这次不修**：`Heightmap.primeHeightmaps()` 是唯一的重建入口，但它按列从
+`getHighestSectionPosition() + 16` 往下扫到第一个不透明方块 —— 在账本的分帧预算下
+（每 tick ≤ 32 个区块）逐区块调用有**实打实的 CPU 成本**，与「不卡服」这条首要目标冲突。
+**先量化再决定**（候选：只重建"确实被改动的 (x,z) 列"；或把重建纳入分帧预算）。
+⚠️ **不要在没量化的情况下直接加** —— 修一个显示问题却换来掉 TPS 是净亏。
 
 **为什么是 54×64？**
 - 54 = 大箱子槽位数、64 = 最大堆叠数 ⇒ 54×64 = 3456 是一个大箱子能装下的最大活TNT数量
@@ -380,6 +489,44 @@ baseRadius = 4.0（默认）
   **未加载的**一律丢弃（否则每 tick 都要重扫几百个未加载区块）。
 
 **客户端同步**：整区块打包（`notifyChunkClients`），每区块一次，而非逐方块通知。
+
+### ⚠️ 客户端「还画着旧方块」= 重建排队，不是数据没同步（2026-09-22 定性）
+
+**现象**：爆炸后能看到一块块/方形区域**仍显示旧方块**，**过几秒到十几秒自己消失**。
+
+**机制**（已逐段核实源码，不是推测）：
+
+```
+服务端 notifyChunkClients → ClientboundLevelChunkWithLightPacket
+  └─ 客户端 handleLevelChunkWithLight
+       ├─ updateLevelChunk → replaceWithPacketData   // 方块**数据**立刻正确
+       └─ queueLightUpdate → enableChunkLight
+            └─ 对**每个 section** 调 level.setSectionDirtyWithNeighbors(x, y, z)
+                 // 每调一次 = 标记 3×3×3 = 27 个 section 需要重建
+```
+
+⇒ **数据是对的**（所以挖下去是空气、能走进去），**渲染是滞后的** ——
+一次大当量爆炸改动**上万个 section**，每个又带 27 邻域标记，
+客户端的重建队列要慢慢排；没轮到的 section 就继续画旧几何。
+**队列排完就恢复正常**（所以"会自己消失"）。
+
+**为什么必须走整区块包**：逐方块的 `ClientboundSectionBlocksUpdatePacket` 才是"只标记改动的那一个
+section"（无 27 倍放大），但半径 235 的爆炸要改**几千万个方块**，逐方块发包体积不可接受
+⇒ 只能整区块打包，代价就是这次重建风暴。
+
+**⚠️ 与「坑不圆、整块残留」的区别（别混）**：
+
+| | 表现 | 性质 |
+|---|---|---|
+| 本节（重建滞后） | 旧方块**过一会自己消失** | 正常，客户端排队 |
+| `affects` 判据错（见 §4.3 前一节） | 方形区域**一直在**，有碰撞、挖下去有方块 | **bug**，服务端根本没处理那个区块 |
+
+**判据**：**会自己消失 = 正常；一直都在 = bug。**
+给测试者的同款说明见 [living-tnt-testing.md](../guides/living-tnt-testing.md) §5「看着像 bug 其实不是」。
+
+> 可选优化（**未做**）：爆炸边缘的区块往往只改动少量方块，
+> 对这类区块改发 `ClientboundSectionBlocksUpdatePacket` 可以避开 27 倍邻域放大。
+> 需要先量化"边缘区块占比"再决定是否值得 —— 别为了好看引入两套同步路径。
 
 ### 4.4 实体伤害
 

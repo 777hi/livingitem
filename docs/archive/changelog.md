@@ -2,15 +2,64 @@
 
 > 从 `AGENTS.md` 迁出的历史更新记录，保留完整变更细节供参考。
 >
-> **归档规则**：早于最近 N 天的条目从 `AGENTS.md`「开发进展」迁入本文件（按日期倒序追加）。
-> 归档时**必须校验日期连续性**（本文件最新日期 与 AGENTS.md 最早日期之间不得有空档），
-> 并在 AGENTS.md 节首留指针。
+> **归档规则**：超出「最近 3 个批次」的条目从 `AGENTS.md`「开发进展」迁入本文件（按日期倒序追加）。
+> 必须**从最旧批次开始连续迁出**（不跳批次）且**正文原样搬全**（守恒校验），并在 AGENTS.md 节首留指针。
+> ⚠️ **不校验日期间隔**（2026-09-22 修订）—— 开发是间歇性的，隔几天不代表丢东西；
+> 旧规则「空档 ≤1 天」会误报，且与「保留 3 批次」互相矛盾。详见 `docs/README.md` §4。
 >
 > ⚠️ **2026-09-16 补录**：`2026-09-01 ~ 09-04` 曾**断档**——该段工作只在 `.workbuddy-ai/memory/`
 > 日工作日志里（而日志按策略 30 天后会被删除），`AGENTS.md` 与本文件都无记录。
 > 本次已从日工作日志补录，特此留痕。
 
 ---
+
+## 2026-09-16
+- ✅ 新增：**活锄头跨模组兼容 + 可耕土扩展**——原先「活锄头」是**写死的 6 种原版锄头**
+  （注册侧枚举物品 + 校验侧 `instanceof HoeItem`，两侧口径还不一致），其它模组的锄头
+  活化后**耕不了活泥土**（客户端根本不拦截）。改为语义判定：新增
+  `domain/farmland/Tillables`（唯一真源）—— 锄头只认
+  `canPerformAction(ItemAbilities.HOE_TILL)`（NeoForge 对自定义工具的官方口径：原版
+  锄头经 patch 自动满足，模组锄头重写 `canPerformAction` 即自动兼容；**不做**
+  instanceof / 标签 / 配置兜底）；可耕映射对齐原版 `IBlockExtension#getToolModifiedState`
+  的 HOE_TILL 分支（以 neoforge-21.1.249 源码为准：**泥土/草方块/土径 → 耕地，砂土/
+  缠根泥土 → 泥土**，再耕一跳才变耕地；灰化土/菌丝原版不可耕，不纳入；「上方必须是
+  空气」与「缠根泥土掉垂根」属世界副作用，物品层 GUI 交互不做）。注册处 6 条精确规则
+  → **按可耕目标逐条注册通配条目 + `Tillables::canTillWith` 谓词**（与 plant_crop
+  同构）；谓词内**必须**自查 `isLivingItem(trigger)`——通配分支不校验活物品，漏了会吞
+  掉原版拿起/分堆。handler 改为查表取产物，且创造模式同样校验光标（只免耐久消耗）。
+  新增 `testutil/FakeHoe`（模组锄头替身：⚠️ **测试期物品注册表已冻结，不能 `new Item`**，
+  否则静态初始化抛 `Registry is already frozen` 导致整类 17 用例全红且看不出原因——改用
+  `Mockito.spy(Items.STICK)` + stub `canPerformAction`）+ `TillablesTest`（8 项）+
+  `TillToFarmlandCompatTest`（8 项），全量 **313 用例全绿**。收编
+  living-farmland-tech.md §3.1/§10.1/§10.2/§10.3/§11.17/§12.1 +
+  gui-interaction-system.md 处理器表 + file-map.md。
+- ✅ 修复：**活耕地种子图标在 HUD 快捷栏不渲染**——原实现画在
+  `AbstractContainerScreenMixin.render @TAIL`，硬依赖 `leftPos`/`topPos`（只有
+  `AbstractContainerScreen` 有），而快捷栏走 `Gui.renderHotbar` → `renderSlot` →
+  `GuiGraphics.renderItemDecorations` → `ItemDecoratorHandler`，**从不经过该屏幕**。
+  迁到 `IItemDecorator`（`client/render/LivingFarmlandSeedDecorator`，自抬 z=200）：
+  装饰器在快捷栏/容器 GUI/创造物品栏都会被调用，**一份代码全覆盖、只画一次**；
+  容器 Mixin 里那段重复 blit 已删除（生长槽大图保留——它需要「同容器正上方一格槽位」
+  的邻居关系，装饰器拿不到容器槽表）。新增 `LivingFarmlandSeedDecoratorTest`（4 项），
+  全量 **297 用例全绿**。收编 icon-system.md（三层架构 + §5 表格补活耕地行 + 新增
+  「种子图标改走装饰器路径」小节，含坐标/z/渲染状态三处契约）+ living-farmland-tech.md
+  v1.11 §8.2/§10.1/§10.2/§10.3/§12.3。
+- ✅ 新增：**放置活耕地回世界时自动种下自带作物**——把一块「已种植」的活耕地物品
+  放置到世界里，放置出的耕地上直接长出那株作物。**做法：模拟玩家右键**
+  （构造 `UseOnContext` 调 `ItemStack.useOn`），**不是**自己 `setBlock`——后者会绕过
+  模组在 `canSurvive` / 覆写 `useOn` 里的校验（如「水稻只能在水下种」），种出非法状态。
+  改用 `useOn` 后连 `CropClassifier`、`canBeReplaced` 检查、`is(Blocks.FARMLAND)`
+  检查都不需要了（种子自己的 `canSurvive` 会校验下方是耕地），代码反而更短。
+  入口：`mixin/BlockItemMixin`（`@Mixin(BlockItem.class)`，注入 `place` 的 `consume`
+  **之前**——注在 `@At("RETURN")` 会因空栈 `getComponents()` 返回 EMPTY 而
+  **只在单块放置时静默失效**）+ `domain/farmland/LivingFarmlandPlacement`（约 30 行）。
+  **这是「软逻辑」**（用户定调）：能种上就好，种不上（含抛异常）一律静默、整段
+  try/catch，绝不影响原版放置流程。口径：**一律种成幼苗**（不保留成熟度，用户定调）；
+  多格作物上部件不放置、交给原版长；`pendingDrops` 掉落不丢。新增
+  `LivingFarmlandPlacementTest`（5 项，含「异常不冒泡」红线与**端到端 Mixin 接线**用例），
+  全量 **293 用例全绿**。
+  收编 living-farmland-tech.md v1.10 §3.5 + §10.1/§10.2/§10.3 + §11.16（三坑：
+  `RETURN` 注入 / `isClientSide` 字段不可 mock / 别 `setBlock`）+ §12.1 实测清单。
 
 ## 2026-09-15
 - ✅ 新增：**活漏斗自动施肥（骨粉 → 活耕地）**——活漏斗按 WASD 方向传输时，

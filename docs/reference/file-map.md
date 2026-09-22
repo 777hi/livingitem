@@ -263,8 +263,9 @@ src/test/java/com/qiqi/li/
 │   ├── SimpleContainerContextTest.java        # 容器上下文脏槽同步（25 项）
 │   └── ContainerChunkCacheChunkLoadTest.java  # 区块加载守卫·事件不碰世界/延后重扫不丢/限量/不主动加载/只处理ticking区/可观测性（6 项）
 ├── living/domain/tnt/
-│   ├── ExplosionParamsTest.java               # 爆炸参数·位图映射可逆/网格外返回-1/affects 判据/网格规模（4 项）
-│   └── ExplosionLedgerTest.java               # 待炸账本·圆外标记/未加载丢弃不轮询/自然加载补炸闭环/分帧预算/多场叠加不覆盖新登记/满额降级/存档往返（9 项）
+│   ├── ExplosionParamsTest.java               # 爆炸参数·位图映射可逆/网格外返回-1/affects=区块AABB∩球体/边界回归(中心在半径外但边缘在球内)/球体全覆盖(半径内每方块所在区块必命中)/网格规模（7 项）
+│   ├── ExplosionLedgerTest.java               # 待炸账本·相交才进队列/不相交立即标记/未加载丢弃不轮询/自然加载补炸闭环/分帧预算/多场叠加不覆盖新登记/满额降级/存档往返（10 项）
+│   └── ExplosionComponentLightTest.java       # 爆炸后光照刷新·四入口顺序/天光柱高图先于重算/section 空态/sectionY≠索引/发光方块减光（5 项）
 ├── living/domain/redstone/
 │   └── ContainerRedstoneDataTest.java         # 红石信号传播（29 项）
 ├── living/domain/power/

@@ -27,8 +27,8 @@ ENTRY = os.path.join(ROOT, "AGENTS.md")
 CHANGELOG = os.path.join(ROOT, "docs", "archive", "changelog.md")
 RESULTS = os.path.join(ROOT, "build", "test-results", "test", "TEST-*.xml")
 
-ENTRY_BUDGET = 20000          # chars, see docs/README.md §1
-CONTINUITY_MAX_GAP_DAYS = 1   # see docs/README.md §4
+ENTRY_BUDGET = 20000            # chars, see docs/README.md §1
+ARCHIVE_WARN_GAP_DAYS = 30      # 仅提示，不阻断；see docs/README.md §4
 
 failures = []
 warnings = []
@@ -171,22 +171,42 @@ def check_test_tree():
 # ---------------------------------------------------------------- 4. archive continuity
 
 def check_continuity():
+    """归档边界单调性（2026-09-22 修订）。
+
+    旧规则要求 `changelog 最新日期` → `AGENTS 最早日期` 间隔 **≤1 天**，理由是「不得有空档」。
+    这条规则**假设了"每天都有开发"**，在间歇性开发下必然误报：
+    「隔了 2 天」既可能是没开发、也可能是漏记，**从日期间隔上分辨不出来**。
+    更糟的是它与「保留最近 3 个批次」**互相矛盾** —— 批次相隔 2 天时，迁出最旧的一个
+    就必然产生 2 天空档 ⇒ **永远无法归档**。
+
+    ⇒ 不再把日期间隔作为失败条件。只保留真正会丢历史的判据：
+    **边界必须单调** —— changelog 的内容全部早于 AGENTS 的内容（否则归档边界切错：
+    把新批次迁走了，或两边重复）。
+    正文是否搬全由 §4 步骤 5「守恒校验」保证（那才是防丢历史的主手段）。
+    """
     cl = read(CHANGELOG)
     ag = read(ENTRY)
     cl_dates = sorted(set(re.findall(r"^## (\d{4}-\d{2}-\d{2})$", cl, re.M)))
     ag_dates = sorted(set(re.findall(r"\*\*最近更新\*\* \((\d{4}-\d{2}-\d{2})\)", ag)))
     if not cl_dates or not ag_dates:
-        failures.append("[连续性] 找不到 changelog 日期段或 AGENTS 更新批次")
-        print("4. 归档连续性      : FAIL（无日期）")
+        failures.append("[边界] 找不到 changelog 日期段或 AGENTS 更新批次")
+        print("4. 归档边界        : FAIL（无日期）")
         return
     newest, oldest = cl_dates[-1], ag_dates[0]
     gap = (datetime.date.fromisoformat(oldest) - datetime.date.fromisoformat(newest)).days
-    if gap > CONTINUITY_MAX_GAP_DAYS:
+    if gap < 1:
         failures.append(
-            f"[连续性] changelog 最新 {newest} → AGENTS 最早 {oldest}，空档 {gap - 1} 天（历史可能丢失）")
-        print(f"4. 归档连续性      : FAIL（空档 {gap - 1} 天）")
+            f"[边界] changelog 最新 {newest} 未早于 AGENTS 最早 {oldest} —— "
+            f"归档边界切错（重复或逆序）")
+        print(f"4. 归档边界        : FAIL（{newest} 未早于 {oldest}）")
+    elif gap > ARCHIVE_WARN_GAP_DAYS:
+        # 仅提示：一个月没开发完全正常，但这么长的静默值得确认一次没漏记。
+        warnings.append(
+            f"[边界] changelog 最新 {newest} → AGENTS 最早 {oldest} 相隔 {gap} 天 —— "
+            f"确认这段没有只在 .workbuddy-ai/memory/ 日志里、而没进过 AGENTS/changelog 的工作")
+        print(f"4. 归档边界        : WARN（相隔 {gap} 天，仅提示）")
     else:
-        print(f"4. 归档连续性      : OK（{newest} → {oldest}）")
+        print(f"4. 归档边界        : OK（{newest} → {oldest}，相隔 {gap} 天）")
 
 
 # ---------------------------------------------------------------- 5. entry size

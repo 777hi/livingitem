@@ -33,6 +33,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.LevelChunkSection;
+import net.minecraft.world.level.lighting.LevelLightEngine;
 import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -77,6 +78,10 @@ import com.qiqi.li.living.container.SimpleContainerContext;
  * ║  - NORMAL      ≤64 TNT：逐个 setBlock，有掉落物              ║
  * ║  - HIGH_YIELD  >64 TNT：直接改 Section 数据，无掉落物         ║
  * ║  - SUPER       >3456 TNT：整区块清空                          ║
+ * ║                                                            ║
+ * ║  ⚠️ 后两种直接改 Section 数据 ⇒ **绕过原版的方块变更回调**，   ║
+ * ║  光照引擎不会自己更新 ⇒ 必须补 refreshLightAfterBulkEdit()。  ║
+ * ║  （否则炸完坑里一片漆黑 —— 天光/方块光都还是炸之前的值）      ║
  * ║                                                            ║
  * ╚══════════════════════════════════════════════════════════════╝
  */
@@ -461,6 +466,9 @@ public class ExplosionComponent {
 
         // ── 阶段1：收集（只扫本区块）──
         Map<SectionPos, ShortSet> sectionUpdates = new HashMap<>();
+        // 被炸掉的"发光方块"（火把/萤石/岩浆…）：光照引擎需要显式给它们减光，
+        // 因为下面的 propagateLightSources 只负责"增光"。此处顺手记录，零额外扫描成本。
+        List<BlockPos> removedLightSources = new ArrayList<>();
 
         forEachBlockInChunk(level, p, chunk.getPos(), pos -> {
             double dx = pos.getX() - cx;
@@ -480,6 +488,10 @@ public class ExplosionComponent {
             double dist = Math.sqrt(distSq);
             float power = (float) (p.radius() * (1.0 - dist / p.radius()) * 2.0);
             if (power <= effectiveResistance) return;
+
+            if (state.getLightEmission(level, pos) > 0) {
+                removedLightSources.add(pos.immutable());
+            }
 
             SectionPos sectionPos = SectionPos.of(pos);
             short packedPos = (short) (SectionPos.sectionRelative(pos.getX())
@@ -520,7 +532,12 @@ public class ExplosionComponent {
         }
 
         chunk.setUnsaved(true);
+        // ⚠️ 顺序：先发方块/渲染同步，再补光照。
+        // 方块同步是**用户直接看得见**的那件事；光照刷新是入队的、且原版随后会用
+        // ClientboundLightUpdatePacket 覆盖成正确值 ⇒ 它不该有机会挡住方块同步
+        // （万一将来光照刷新出问题，也不能连累"方块没坏"）。
         notifyChunkClients(level, chunk.getPos(), chunk);
+        refreshLightAfterBulkEdit(level, chunk, removedLightSources);
     }
 
     // ══════════════════════════════════════════════
@@ -556,7 +573,68 @@ public class ExplosionComponent {
         }
 
         chunk.setUnsaved(true);
+        // 先方块同步、后光照刷新（理由同 applyHighYieldToChunk 里的顺序说明）。
+        // 超级爆炸把**整区块**清空 ⇒ 每个 section 都变成"空"，
+        // 旧光数据会随 section 状态更新被丢弃，不需要逐个记录被炸掉的光源。
         notifyChunkClients(level, chunkPos, chunk);
+        refreshLightAfterBulkEdit(level, chunk, List.of());
+    }
+
+    // ══════════════════════════════════════════════
+    //  光照刷新 —— 批量改 Section 之后必须补
+    // ══════════════════════════════════════════════
+    //
+    // ⚠️ 为什么必须补：普通模式走 level.setBlock()，最终进入 LevelChunk.setBlockState()，
+    // 那里**原版已经替我们做了两件事**（LevelChunk.java:258~270）：
+    //   ① section 从"非空"变"空" → lightEngine.updateSectionStatus(pos, true)
+    //   ② 光照属性发生变化      → lightEngine.checkBlock(pos)
+    //
+    // 而大当量/超级模式为了性能**直接调 LevelChunkSection.setBlockState()**，
+    // 绕过了 LevelChunk.setBlockState() ⇒ 光照引擎完全不知道方块没了：
+    // 天光柱高图仍认为地下被堵死、光照数据仍是旧的 ⇒ 发出去的整区块包带着旧光照，
+    // 表现就是"炸完之后坑里/坑壁一片漆黑"。
+    //
+    // 补法（按区块，与账本的分帧粒度天然对齐）：
+    //   ① 按当前方块重建"天光柱高图"—— 爆炸把方块炸没了，天光应该能照得更深
+    //   ② 告知光照引擎每个 section 现在是否为空
+    //   ③ 重算本区块光照：天光按列重算 + 重新登记剩余光源（会向四周扩散）
+    //   ④ 被炸掉的发光方块：显式触发"减光"（③ 只管增光，光源没了要靠 ④ 降下来）
+    //
+    // ⚠️ ②③④ 在 ThreadedLevelLightEngine 上都是**入队**而非同步执行 ——
+    // 本 tick 只登记，真正的计算在光照线程跑；算完后原版会经
+    // ChunkHolder.sectionLightChanged → broadcastChanges 自动发 ClientboundLightUpdatePacket
+    // 同步给客户端。所以紧跟其后的 notifyChunkClients 里那份光照**这一瞬间仍是旧的**，
+    // 下一 tick 会被光照包覆盖成正确的。
+    // （这与原版区块加载是同一套机制：initializeLight / lightChunk 也都是异步的。）
+    //
+    // 参数 removedLightSources = 本次被炸掉的发光方块位置（超级模式传空表）。
+    //
+    // 包级可见（而非 private）：留作**可测性接缝** —— 光照重算本身要真世界才能验，
+    // 但"是否按正确顺序调了原版那三个入口"可以在单测里用替身钉死
+    // （见 ExplosionComponentLightTest）。与 applyToChunk 同一个理由。
+
+    static void refreshLightAfterBulkEdit(ServerLevel level, LevelChunk chunk,
+                                          List<BlockPos> removedLightSources) {
+        ChunkPos chunkPos = chunk.getPos();
+        LevelLightEngine lightEngine = level.getLightEngine();
+
+        // ① 天光柱高图：按当前方块重建（原版 INITIALIZE_LIGHT 阶段同款调用）
+        chunk.initializeLightSources();
+
+        // ② section 空/非空状态（原版在 LevelChunk.setBlockState 里做同一件事）
+        int minSection = chunk.getMinSection();
+        for (int i = 0; i < chunk.getSectionsCount(); i++) {
+            lightEngine.updateSectionStatus(
+                SectionPos.of(chunkPos, minSection + i), chunk.getSection(i).hasOnlyAir());
+        }
+
+        // ③ 重算本区块光照（天光按列重算 + 重新登记方块光源）
+        lightEngine.propagateLightSources(chunkPos);
+
+        // ④ 被炸掉的发光方块：把残留的旧光降下来
+        for (BlockPos pos : removedLightSources) {
+            lightEngine.checkBlock(pos);
+        }
     }
 
     private static void notifyChunkClients(ServerLevel level, ChunkPos chunkPos, LevelChunk chunk) {

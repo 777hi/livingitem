@@ -14,6 +14,10 @@
   `tools/doc_check.py`（**改完必跑**，6 项）。
 - ⚠️ 搬文档**搬走不删掉**，**守恒校验必须逐段判定**（只验第一块曾误删整段）。
 - ⚠️ 入口超 20,000 字符时**先查冗余再动历史**；**不要靠上调预算解决**（2026-09-16 / 09-18 两次都是只清冗余、历史没动）。
+- ⚠️ **归档只校验「边界单调」，不校验日期间隔**（2026-09-22 用户定调：「我又不是每天都开发」）。
+  防丢历史靠**连续迁出 + 守恒校验**，**不靠日期间隔** —— 间隔天数分辨不出"没开发"与"漏记"。
+  ⇒ **别再提议把「空档 ≤N 天」加回来**（旧规则还会与「保留 3 批次」互相矛盾 ⇒ 永远无法归档）。
+  现规则：`changelog 最新` 必须早于 `AGENTS 最早`（FAIL）；相隔 >30 天仅 WARN。
 
 ## 单测：静态注册表必须显式重置（2026-09-20）
 
@@ -52,8 +56,29 @@
 - ⚠️ `schedule` 返回 false（账本满）时调用方**必须降级**（只炸已加载 + WARN），不能忽略
   —— 否则声光已播、方块没坏。
 - 多条目重叠：同一区块对每条各处理一次，**破坏幂等**；掉落物归属取决于处理顺序（不可观测）。
+- ⚠️ **`ExplosionParams.affects()` = 「区块 AABB ∩ 球体」**（取最近点算距离），
+  **不是**「区块中心在半径内」（2026-09-22 修）。区块是 16×16，中心判据会把
+  "中心在外、边缘在球内"的区块**建档时就标记完成、永不处理** ⇒ **坑不圆、残留整块地形**。
+  该判据在**三处**生效（建档标记 / `flush` 跳过 / `remainingChunks`）⇒ 单点根因。
+  ⚠️ 它曾被测试**钉住**（用例名"与旧口径一致"）—— **把既有行为当规格钉住前，先确认它是对的**。
 - 全文 `living-tnt-tech.md` §4.3 + `living-item-infrastructure.md` §3.2.2；
   给测试者的操作说明 `docs/guides/living-tnt-testing.md`。
+
+## 批量改 Section ⇒ 必须自己补光照（2026-09-22）
+
+- ⚠️ **`LevelChunkSection.setBlockState()` 绕过 `LevelChunk.setBlockState()`** ⇒ 光照引擎
+  **完全不知道方块变了**（原版把 `updateSectionStatus` / `checkBlock` 写在后者的 258~270 行）。
+  症状：大当量/超级爆炸后**坑里一片漆黑**（天光柱高图仍认为地下被堵死）。
+  `NORMAL` 走 `level.setBlock()`，**不受影响** —— 别把它也"修"一遍。
+- 修法 `ExplosionComponent.refreshLightAfterBulkEdit(level, chunk, removedLightSources)`：
+  ① `chunk.initializeLightSources()` → ② 逐 section `updateSectionStatus(SectionPos.of(cp, minSection+i), hasOnlyAir)`
+  → ③ `propagateLightSources(cp)` → ④ 被炸掉的发光方块逐个 `checkBlock`。
+- **两条红线**：**①必须早于③**（③ 按柱高图算天光，反了 = 没修）；
+  **③只管增光、④才管减光**（`propagateLightSources` 只重新登记**现存**光源）。
+- ⚠️ ②③④ 是**入队**非同步 ⇒ 下一 tick 由原版 `ClientboundLightUpdatePacket`
+  覆盖成正确值（**别**为此改成同步或自己造包）。`SUPER` 传空表即可（整区块清空）。
+- 守卫 `ExplosionComponentLightTest`（钉接线与顺序）；**真实光照计算只能游戏内验**。
+  全文 `living-tnt-tech.md` §4.3「⚠️ 光照刷新」。
 
 ## 容器对外能量接口（ContainerEnergyStorage）热路径
 

@@ -56,3 +56,5 @@ libs/
 
 ### IDE ###
 .qoderignore
+### AI 工具备份（勿提交） ###
+.workbuddy-ai/backup/

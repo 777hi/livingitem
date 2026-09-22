@@ -13,6 +13,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayerGameMode;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.InteractionResultHolder;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.UseOnContext;
@@ -241,20 +242,6 @@ public final class LivingToolReplay {
 
         Vec3 end = ray.endpointFrom(origin);
         BlockPos target = resolveUseTarget(ray, origin, blacklist, level);
-        if (target == null) {
-            return null;   // L8：没有可交互的方块就停
-        }
-
-        BlockState state = level.getBlockState(target);
-        if (!ray.matches(state.getBlock())) {
-            return null;   // L4 / L8：类型不匹配即停（去皮后 Block 改变，天然停止）
-        }
-
-        Vec3 delta = end.subtract(origin);
-        Direction face = delta.lengthSqr() < 1.0E-6
-            ? Direction.UP
-            : Direction.getNearest(-delta.x, -delta.y, -delta.z);
-        BlockHitResult hit = new BlockHitResult(Vec3.atCenterOf(target), face, target, false);
 
         LivingToolFakePlayer fake = LivingToolFakePlayerCache.get(level, LivingItemManager.getToolOwner(tool));
         fake.setPos(origin.x, origin.y, origin.z);
@@ -262,16 +249,49 @@ public final class LivingToolReplay {
         ItemStack held = tool.copy();
         fake.equipTool(held);   // L46：同时同步附魔属性，否则效率附魔不生效
 
-        // 让模组能拦截（与挖掘侧一致）
-        if (CommonHooks.onRightClickBlock(fake, InteractionHand.MAIN_HAND, target, hit).isCanceled()) {
-            return null;
-        }
+        // ⭐ 让 FakePlayer "看着"记忆射线的方向 —— 法杖 / 枪械几乎都读玩家视线。
+        //    少了这一步，它们会朝默认朝向（或上一个工具的朝向）施放。
+        faceTarget(fake, origin, end);
 
-        UseOnContext context = new UseOnContext(fake, InteractionHand.MAIN_HAND, hit);
-        InteractionResult result = held.useOn(context);
+        if (target != null) {
+            // ── 分支 A：右键【方块】（原版 ServerPlayerGameMode#useItemOn）──────
+            BlockState state = level.getBlockState(target);
+            if (!ray.matches(state.getBlock())) {
+                return null;   // L4 / L8：类型不匹配即停（去皮后 Block 改变，天然停止）
+            }
 
-        if (!result.consumesAction()) {
-            return null;
+            Vec3 delta = end.subtract(origin);
+            Direction face = delta.lengthSqr() < 1.0E-6
+                ? Direction.UP
+                : Direction.getNearest(-delta.x, -delta.y, -delta.z);
+            BlockHitResult hit = new BlockHitResult(Vec3.atCenterOf(target), face, target, false);
+
+            // 让模组能拦截（与挖掘侧一致）
+            if (CommonHooks.onRightClickBlock(fake, InteractionHand.MAIN_HAND, target, hit).isCanceled()) {
+                return null;
+            }
+
+            UseOnContext context = new UseOnContext(fake, InteractionHand.MAIN_HAND, hit);
+            if (!held.useOn(context).consumesAction()) {
+                return null;
+            }
+        } else {
+            // ── 分支 B：右键【空气 / 物品】（原版 ServerPlayerGameMode#useItem）──
+            // ⭐ 铁魔法等模组的法杖挂在这一层（PlayerInteractEvent.RightClickItem）。
+            //    原版流程：先 post 事件，未取消再 stack.use(...) —— 两步都补上（2026-09-22）。
+            //    ⚠️ 这两个事件【互相独立】：右键方块走 A、右键空气走 B，原版就是这样二选一。
+            InteractionResult cancelResult =
+                CommonHooks.onItemRightClick(fake, InteractionHand.MAIN_HAND);
+            if (cancelResult != null) {
+                return null;   // 被模组取消
+            }
+
+            InteractionResultHolder<ItemStack> used =
+                held.use(level, fake, InteractionHand.MAIN_HAND);
+            if (!used.getResult().consumesAction()) {
+                return null;
+            }
+            held = used.getObject();   // use 可能换掉栈（消耗 / 变身）
         }
 
         // K 组动画：交互是【瞬时】动作，没有像 LIVING_TOOL_PROGRESS 那样的持续状态可查，
@@ -282,6 +302,39 @@ public final class LivingToolReplay {
         LivingItemManager.setToolLastAction(tool, action);
         LivingItemManager.setToolLastAction(held, action);
         return held;
+    }
+
+    /**
+     * 让 FakePlayer <b>看向</b>记忆射线的方向。
+     *
+     * <p>⭐ <b>为什么必须这一句</b>：法杖 / 枪械这类模组的物品，几乎都是读
+     * {@code player.getLookAngle()}（或 {@code getViewVector}）来决定朝哪施放 ——
+     * 只 {@code setPos} 不设朝向的话，它们会朝 FakePlayer 当前那套残留朝向施放。</p>
+     *
+     * <p>由 {@code LivingEntity#calculateViewVector} 的公式反解：</p>
+     * <pre>
+     *   x = −sin(yRot)·cos(xRot)
+     *   y = −sin(xRot)
+     *   z =  cos(yRot)·cos(xRot)
+     * </pre>
+     */
+    private static void faceTarget(LivingToolFakePlayer fake, Vec3 origin, Vec3 end) {
+        Vec3 delta = end.subtract(origin);
+        if (delta.lengthSqr() < 1.0E-6) {
+            return;
+        }
+        Vec3 dir = delta.normalize();
+        double y = dir.y;
+        if (y > 1.0) {
+            y = 1.0;
+        } else if (y < -1.0) {
+            y = -1.0;
+        }
+        float xRot = (float) -Math.toDegrees(Math.asin(y));
+        float yRot = (float) Math.toDegrees(Math.atan2(-dir.x, dir.z));
+        fake.setXRot(xRot);
+        fake.setYRot(yRot);
+        fake.setYHeadRot(yRot);   // 部分模组读的是头部朝向
     }
 
     /**
