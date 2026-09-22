@@ -1,7 +1,7 @@
 # 活物品图标系统设计
 
-> **文档版本**: 2026.08 v4
-> **最后更新**: 2026-08-21
+> **文档版本**: 2026.09 v5
+> **最后更新**: 2026-09-22
 > **适用版本**: Minecraft 1.21.1 + NeoForge 21.1.x
 
 ## 目录
@@ -16,7 +16,11 @@
     - [5.1 Builder 可用选项](#51-builder-可用选项)
     - [5.2 模型文件策略](#52-模型文件策略)
     - [5.3 DirectionalLivingModel 变换顺序](#53-directionallivingmodel-变换顺序)
+  - [渲染上下文覆盖范围（重要约束）](#渲染上下文覆盖范围重要约束)
+  - [槽位叠加层渲染层级（z 层与深度测试窗口）](#槽位叠加层渲染层级z-层与深度测试窗口)
+  - [未决实验（2026-09-22）](#未决实验2026-09-22)
   - [关键文件](#关键文件)
+  - [纹理约定（涂蜡铜灯图标）](#纹理约定涂蜡铜灯图标)
 
 ---
 
@@ -119,16 +123,21 @@ register(LivingIconSpec.builder(Items.REDSTONE_TORCH)
 | 活漏斗 | `base` | `hopper_base.png` | 箭头叠加层（方向旋转） |
 | 活熔炉 | `idle` / `active` | `furnace_idle.png` / `furnace_active.png` | 燃烧状态切换 |
 | 活TNT | `idle` / `lit` | `tnt_idle.png` / `tnt_lit.png` | 引信闪烁动画（每10 tick切换） |
-| 活箱子 | `base` | `chest_living.png` | 无 |
-| 活红石粉 | `base` | `item/redstone_dust`（`item/generated` 平面纹理） | 连接纹理装饰器（`LivingRedstoneDecorator`） |
-| 活红石火把 | `on` / `off` | `redstone_torch.png` / `redstone_torch_off.png` | 方向旋转 + 点亮切换 |
+| 活箱子 | `base` | `chest.png`（原版拆开纹理的合成图） | 无。**2026-09-22 起注册已注释（实验）**，改走原版 `builtin/entity` 3D 渲染，见下方「未决实验」节 |
+| 活红石粉 | `base` | 直接引用 `minecraft:block/redstone_dust_dot` | 连接纹理装饰器（`LivingRedstoneDecorator`） |
+| 活红石火把 | `on` / `off` | `redstone_torch.png` / `redstone_torch_off.png`（自绘） | 方向旋转 + 点亮切换 |
 | 活拉杆 | `on` / `off` | 复用原版 `minecraft:block/lever` / `minecraft:block/lever_on` 模型 | 拉下/弹起状态切换 |
 | 活中继器 | `1tick` ~ `4tick_on`（8种） | 复用原版 `minecraft:block/repeater_Xtick` / `repeater_Xtick_on` 模型 | 方向旋转 + 延迟档位 + 供电状态 |
 | 活比较器 | `compare` / `compare_on` / `subtract` / `subtract_on` | 复用原版 `minecraft:block/comparator` / `comparator_on` / `comparator_subtract` / `comparator_on_subtract` 模型 | 方向旋转 + 模式切换（subtract 前端火把常亮） + 供电状态 |
-| 活末影箱 | `base` | `ender.png` | 无 |
+| 活末影箱 | `base` | `ender.png`（原版拆开纹理的合成图） | 无。**2026-09-22 起注册已注释（实验）**，同活箱子 |
 | 活地图 | `base` | `living_map.png` | 地图缩略图装饰器 |
-| 活水车 | `base` | `water_wheel.png` | 3D 旋转动画（Create 兼容） |
+| 活水车 | `base` | ⚠️ **无自有纹理** —— 变体路径 `item/water_wheel` 对应的模型文件**不存在**，实际复用 Create 的水车模型 | 3D 旋转动画（Create 兼容） |
 | 活耕地 | `moist` / `dry` | `item/farmland_living_moist` / `item/farmland_living`（复用原版耕地顶面纹理） | 湿润切换 + 种子图标装饰器（`LivingFarmlandSeedDecorator`，已种植时叠加所种作物的种子图标） |
+
+> ⚠️ **表中「纹理」列若写 `.png` 但该文件已不存在，以代码为准。**
+> 2026-09-22 起，**与原版同源的纹理已改为直接引用 `minecraft:` 路径**（铜家族 · 熔炉 · 漏斗 ·
+> 红石块/灯 · TNT 等，共 56 张已删），目的是**不再随包分发原版资源**，附带收益是
+> **这些图标会跟随玩家自己的材质包**。判据：`ls src/main/resources/assets/living_item/textures/item/`。
 
 ### 5.1 Builder 可用选项
 
@@ -142,9 +151,9 @@ register(LivingIconSpec.builder(Items.REDSTONE_TORCH)
 
 ### 5.2 模型文件策略
 
-模型 JSON 文件可引用两种父模型：
+模型 JSON 文件可引用**三种**父模型：
 
-**2D 平面图标**（用于扁平物品）：
+**① 2D 平面图标**（用于扁平物品）：
 ```json
 {
   "parent": "item/generated",
@@ -154,7 +163,7 @@ register(LivingIconSpec.builder(Items.REDSTONE_TORCH)
 }
 ```
 
-**3D 方块模型**（用于方块实体物品，如中继器、比较器）：
+**② 3D 方块模型**（用于方块实体物品，如中继器、比较器）：
 ```json
 {
   "parent": "minecraft:block/comparator_subtract",
@@ -166,7 +175,24 @@ register(LivingIconSpec.builder(Items.REDSTONE_TORCH)
 }
 ```
 
+**③ 多层叠加**（在原版纹理上叠加自绘部分；`item/generated` 支持 `layer0`~`layer4`）：
+```json
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "minecraft:block/copper_block",
+    "layer1": "living_item:item/wax_ring"
+  }
+}
+```
+原版用例可参照 `minecraft:item/leather_chestplate`（`layer0` + `layer1` 染色叠加）、
+`item/potion`、`item/tipped_arrow` —— **已确认 `item/generated` 支持多层**。
+⇒ 用「引用原版 layer0 + 自绘 layer1」可**既不再分发原版资源、又保留自定义外观**（涂蜡铜块即此方案）。
+
 直接引用原版方块模型，无需自绘纹理。缩放和方向旋转由 `guiScale()` 和 `directional()` 在代码层统一处理，不在 JSON 中硬编码。
+
+> ⚠️ **层叠加只解决「静态叠加」**。需要**按物品数据旋转某一层**（如漏斗箭头）时，
+> 模型层做不到 —— 见「渲染上下文覆盖范围」的方案 B/C。
 
 ### 5.3 DirectionalLivingModel 变换顺序
 
@@ -180,6 +206,63 @@ inner.applyTransform(context, poseStack, ...);     // 3. JSON display 变换
 ```
 
 **为什么是这个顺序**：方块模型的 JSON 中通常有 `"rotation": [90, 0, 0]`（X 轴旋转 90°），这会改变 PoseStack 坐标系。如果在 JSON transform 之后再旋转，`Axis.ZP` 就不再是屏幕垂直轴。先旋转再应用 JSON transform 确保方向旋转始终在屏幕空间中正确执行。**这对 2D 平面模型无影响（无 JSON 旋转），对 3D 方块模型至关重要。**
+
+---
+
+## 渲染上下文覆盖范围（重要约束）
+
+> ⚠️ **活物品的「自定义图标」只覆盖部分渲染场景，且三层架构各自的覆盖范围不同。**
+> 排查「同一物品在不同地方长得不一样」时**先读本节**，别急着改渲染代码。
+
+### 三层各自的生效范围
+
+| 层 | 生效 | **不生效** |
+|---|---|---|
+| **Layer 1 + 2**（模型注入 / `GenericContextAwareModel`） | **仅 `ItemDisplayContext.GUI`** | **手持 · 掉落物 · 展示框 · 第三人称** ⇒ 一律**回退原版模型** |
+| **Layer 3**（`IItemDecorator`） | 走 `GuiGraphics.renderItemDecorations` 的 GUI：快捷栏 / 容器 GUI / 创造物品栏 / 副手槽 | **全部世界渲染**（掉落物 · 展示框 · 手持）；**不跑该管线的第三方 GUI**（如 JEI） |
+
+### 两条机制（均为**有意设计**，不是 bug）
+
+**① `GenericContextAwareModel.applyTransform()` 非 GUI 直接返回 `vanillaModel`**
+
+```java
+if (context == ItemDisplayContext.GUI) { livingModel.applyTransform(...); return this; }
+return vanillaModel.applyTransform(context, poseStack, applyLeftHandTransform);   // ← 手持/地面 = 原版外观
+```
+
+⇒ **所有走变体路径的活物品**（熔炉 · 红石灯 · 拉杆 · 中继器 · 比较器 · 雕文铜块 …）
+在**掉落物 / 手持 / 展示框**里都显示**原版外观**。
+
+**② `IItemDecorator` 只在 GUI 内被调用**
+
+`LivingHopperDecorator` 类注释已声明：*「IItemDecorator 只在物品栏/快捷栏中生效，不影响手持和地面渲染。」*
+⇒ 依赖叠加层表达状态的物品，其**叠加层在 GUI 之外一律消失**。
+
+### 组合后果：可能出现「只有基础层」
+
+以**活漏斗**为例（三层 = `hopper_base` 模型 + 输入箭头 + 输出箭头两个装饰器）：
+
+| 场景 | 实际显示 |
+|---|---|
+| 物品栏 / 快捷栏 / 容器 GUI | 中心圆 + 两个箭头 ✓ |
+| 掉落物 / 手持 / 展示框 | **原版漏斗**（模型层也回退了） |
+| 不跑 `renderItemDecorations` 的第三方 GUI | **只有中心圆**（模型层生效、叠加层缺失） |
+
+**同源影响的装饰器**（`grep -rln "implements IItemDecorator" src/main/java/` = 7 个，注册 6 个）：
+`LivingHopperDecorator`（漏斗方向箭头）· `LivingChiseledCopperDecorator` / `LivingWaxedChiseledDecorator`
+（雕文箭头）· `LivingMapIconDecorator`（地图缩略图）· `LivingFarmlandSeedDecorator`（耕地种子）·
+`LivingRedstoneDecorator`（红石连接线）· `LivingDefaultDecorator`
+
+### 若要求「全形态一致」需要做什么（**未实施，备查**）
+
+| 方案 | 做法 | 代价 / 前提 |
+|---|---|---|
+| **A** | 让 `GenericContextAwareModel` 在**所有上下文**返回 livingModel | 改动最小（几行）；**但叠加层仍只在 GUI** ⇒ 只能消除「显示原版外观」，箭头依旧缺 |
+| **B** | 叠加层内容**搬进模型层**，用 `BakedModel` 包装器**旋转 quad** 表达方向 | ⚠️ **必须旋转 quad，不能用 `applyTransform`** —— 后者只在 GUI 生效，做不到全上下文一致。方向角来自 stack，而 `getQuads()` **无 stack 参数** ⇒ 须在 `resolve()` 里按组合生成并缓存模型（漏斗 4×4 = **16 个**） |
+| **C** | 预生成旋转后的纹理 + 变体模型 JSON，用 predicate 选 | 文件多（漏斗需 8 张旋转纹理 + 16 个 JSON），但**零渲染钩子**、最直白 |
+
+**决策（2026-09-22）**：**暂不实施**。理由：现状是**有意的取舍**（世界渲染显示原版外观可接受）；
+且方案 B/C 都需**游戏内验证**「`item/generated` 的图层混合能否复现装饰器 `blit` 的叠加效果」。
 
 ---
 
@@ -291,6 +374,39 @@ RenderSystem.disableBlend();
 
 ---
 
+## 未决实验（2026-09-22）
+
+### 活箱子 / 活末影箱改走原版 `builtin/entity` 3D 渲染
+
+**背景**：这两张图标（`chest.png` / `ender.png`）是**把原版拆开的纹理合成成一张**的产物
+⇒ 属原版衍生物。用户提出：**有方块实体的方块本来就有办法直接渲染在物品栏里**，
+参考活拉杆/活红石元件 —— 那样**连图标都不需要**。
+
+**已确认的事实（读原版 jar）**：
+
+- 原版 `item/chest.json` 用 **`"parent": "builtin/entity"`**（方块实体渲染路径，`ChestRenderer`），
+  带 `display.gui.rotation [30,45,0]` + `scale 0.625`
+- `minecraft:block/chest.json` 是**空壳**（无 `parent`、`elements` 为空，只有 `particle` 纹理）
+  ⇒ **箱子无法像拉杆那样「继承方块模型」**（拉杆有真实 `block/lever.json`）
+
+**改动（提交 `20d6ab9`）**：`LivingIconRegistry` 中 `Items.CHEST` / `Items.ENDER_CHEST`
+两处 `register(...)` **已注释**（原代码保留在注释里，便于回退）。模型与纹理**暂留未删**。
+
+**⚠️ 待游戏内验证**：`builtin/entity` 的模型是 `BuiltinModel`，其 `getOverrides()` 返回
+`ItemOverrides.EMPTY` ⇒ **模组的 override 可能根本不会被调用**（这很可能就是当初改用平面图标的原因）。
+
+**判据**（`./gradlew runClient` 后看物品栏）：
+
+| 现象 | 结论 | 下一步 |
+|---|---|---|
+| 渲染出 3D 箱子 | 路径通了 | 删 `chest.png`/`ender.png`；若要标识「活」状态，加 decorator 叠加层 |
+| 仍为平面图标 / 空白 | override 拦不住 `builtin/entity` | 取消注释回退，或改为给物品注册自定义 BER |
+
+⚠️ **注意**：3D 箱子与普通箱子**外观相同**。若测出「和普通箱子没区别」，那是**成功**（3D 通了），
+只是缺「活」的视觉标识 —— 需另加叠加层。
+
+---
+
 ## 关键文件
 
 | 文件 | 职责 |
@@ -309,11 +425,30 @@ RenderSystem.disableBlend();
 
 ## 纹理约定（涂蜡铜灯图标）
 
-- **涂蜡 vs 未涂蜡的唯一区别 = 外圈 60 像素黄框**，颜色 `(232,160,62,255)`；
-  四种锈蚀等级（copper / exposed / weathered / oxidized）的**边框掩码完全一致**。
-  发光版（lit）同理：内部取未涂蜡发光图，外圈填黄框。
+- **涂蜡 vs 未涂蜡的唯一区别 = 外圈 60 像素黄框**，颜色 `(232,160,62,255)`。
+  **实测 24/24 零例外**：4 个锈蚀等级 × 6 种形状（block / cut / chiseled / grate / bulb / bulb_lit）
+  的**掩码完全一致**，且外圈 60 像素**全部**是该色。判据（可复算）：
+  外圈 = `x∈{0,15}` 或 `y∈{0,15}`，共 `16*4-4 = 60` 像素。
+- ⚠️ **2026-09-22 起，涂蜡不再使用 24 张独立纹理**，改为**模型双层**：
+  ```json
+  { "parent": "minecraft:item/generated",
+    "textures": { "layer0": "minecraft:block/<原版铜纹理>",
+                  "layer1": "living_item:item/wax_ring" } }
+  ```
+  `wax_ring.png` = **外圈 60 px 黄框 + 内部 196 px 全透明**，**一张 mask 覆盖全部 24 张**。
+  ⇒ 24 张 `waxed_*.png` 已删；**原版纹理不再随包分发**，且自动跟随玩家材质包。
+  验证方式：模拟「原版 + 外圈黄框」与原图逐像素比对（当时 24/24 字节一致）。
+- ⚠️ **涂蜡不能用 `IItemDecorator` 实现** —— 装饰器只在 GUI 绘制（见「渲染上下文覆盖范围」），
+  而涂蜡是**物品身份**，必须到处可见 ⇒ **必须走模型层**。
 - item 纹理均为 16×16 PNG（P 调色板与 RGBA 两种都有效）。
-- ⚠️ 改这批图标时**只改内部、保留外圈掩码** —— 四种锈蚀级掩码不一致是已发生过的历史 bug
-  （曾出现 4 个 `waxed_*_copper_bulb_lit.png` 黄框丢失 + 内部乱码，逐像素比对才修好）。
+- ⚠️ 若日后重新引入涂蜡独立纹理：**只改内部、保留外圈掩码** —— 四种锈蚀级掩码不一致
+  是已发生过的历史 bug（曾出现 4 个 `waxed_*_copper_bulb_lit.png` 黄框丢失 + 内部乱码，
+  逐像素比对才修好）。
 - 图片处理用隔离 venv：
   `C:/Users/AI-777hi/.workbuddy-ai/binaries/python/envs/default/Scripts/python.exe`（Pillow 12.3.0）。
+- **判定纹理是否为原版副本的正确方法**（本次踩过假阳性，务必照做）：
+  ① 先比 **raw MD5**（字节完全相同）② 再比 **RGBA 像素 MD5**（仅重编码）
+  ③ 疑似改色时**必须比 alpha 通道**：`a.tobytes()[3::4] == b.tobytes()[3::4]`
+  （**别写成 `a_alpha[3::4]` —— `a_alpha` 已是 alpha 通道，再切一次就错**）。
+  ⚠️ **纯色/大面积透明图会产生大量巧合匹配**：`tnt_lit`（纯白）与原版 `lightning_rod_on`
+  字节相同纯属巧合；`redstone_dust_overlay` 与任何「小面积不透明」纹理都会"近似"。
