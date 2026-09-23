@@ -592,8 +592,13 @@ public final class LivingToolModelRenderer {
             int period = spinPeriod(LivingItemManager.getToolDigTicks(stack));
             spinRad = spinAngle(now, partialTick, period);
             remember(key, now, pos);
-        } else if (action != null && now - action.tick() < PULSE_TICKS) {
+        } else if (action != null && action.target() != null
+            && now - action.tick() < PULSE_TICKS) {
             // 交互：瞬现到交互位 + 缩放脉冲（不转圈）
+            //
+            // ⚠️ target == null 的两种情形【不能走这条】（否则 surfacePoint 会 NPE）：
+            //    ① 右键空气 / 物品（法杖施法）② 活武器攻击（目标是生物，不是方块）
+            //    ⇒ 直接跳过脉冲动画，模型留在原位。
             pos = surfacePoint(level, origin, action.target());
             float t = (float) (now - action.tick() + partialTick) / PULSE_TICKS;
             scale = 1.0F + PULSE_SCALE * (float) Math.sin(Math.PI * Mth.clamp(t, 0.0F, 1.0F));

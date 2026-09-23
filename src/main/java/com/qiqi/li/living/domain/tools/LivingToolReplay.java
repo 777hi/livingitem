@@ -346,7 +346,8 @@ public final class LivingToolReplay {
     @Nullable
     public static ItemStack replayAttack(ItemStack weapon,
                                          @Nullable LivingToolMemory.AttackMemory attack,
-                                         Vec3 origin, ServerLevel level, long now) {
+                                         Vec3 origin, Set<BlockPos> hostBlocks,
+                                         ServerLevel level, long now) {
         if (attack == null) {
             return null;
         }
@@ -362,7 +363,7 @@ public final class LivingToolReplay {
         // ⭐ 让 FakePlayer 看向目标 —— 与法杖/枪械同款需求，且影响击退方向
         faceTarget(fake, origin, end);
 
-        EntityHitResult hit = findAttackTarget(attack, origin, end, fake, level);
+        EntityHitResult hit = findAttackTarget(attack, origin, end, hostBlocks, fake, level);
         if (hit == null) {
             return null;
         }
@@ -370,10 +371,15 @@ public final class LivingToolReplay {
         // ── 攻击冷却（S1-a：按【物品攻击速度属性】算，与原版同源）───────────────
         float cooldown = fake.getAttackCooldownTicks();
         LivingToolAction last = LivingItemManager.getToolLastAction(weapon);
-        // 没打过（或记录随重启丢了）⇒ 视为冷却已满，允许立刻出手
-        long elapsed = last == null ? (long) cooldown : now - last.tick();
-        fake.setAttackStrengthScale((float) elapsed / cooldown);
-        if (fake.getAttackStrengthScale(0.0F) < 1.0F) {
+        // 🔴 **没打过 ⇒ 必须视为【冷却已满】**，不能拿 cooldown 自己当 elapsed。
+        //
+        //    ⚠️ 曾写 last == null ? (long) cooldown : ... —— 而冷却时长【常是小数】：
+        //       剑攻速 1.6 ⇒ 1.0/1.6*20 = 12.5 tick ⇒ (long)12.5 = 12 ⇒ 12/12.5 = 0.96 < 1
+        //       ⇒ 永远判成"冷却中" ⇒ 且这条路径【不会写 action】
+        //       ⇒ last 永远为 null ⇒ 永久死锁，一刀都打不出来（2026-09-24 用户实测）。
+        float scale = last == null ? 1.0F : (float) (now - last.tick()) / cooldown;
+        fake.setAttackStrengthScale(scale);
+        if (scale < 1.0F) {
             return null;   // 还在冷却中，本次不出手
         }
 
@@ -398,7 +404,8 @@ public final class LivingToolReplay {
      */
     @Nullable
     private static EntityHitResult findAttackTarget(LivingToolMemory.AttackMemory attack, Vec3 origin,
-                                                    Vec3 end, LivingToolFakePlayer fake, ServerLevel level) {
+                                                    Vec3 end, Set<BlockPos> hostBlocks,
+                                                    LivingToolFakePlayer fake, ServerLevel level) {
         Vec3 delta = end.subtract(origin);
         if (delta.lengthSqr() < 1.0E-6) {
             return null;
@@ -419,8 +426,10 @@ public final class LivingToolReplay {
             return null;
         }
 
-        // 隔墙检测：射线上更近处有方块 ⇒ 打不到
-        BlockPos blocker = scanForTarget(origin, end, Set.of(), level);
+        // 隔墙检测：射线上更近处有方块 ⇒ 打不到。
+        // ⚠️ 必须传 hostBlocks（排除宿主自己）—— 容器形态下射线起点埋在容器方块内部，
+        //    不排除的话第一个命中的就是"自己的家" ⇒ 永远判成隔墙 ⇒ 【永远打不出来】。
+        BlockPos blocker = scanForTarget(origin, end, hostBlocks, level);
         if (blocker != null
             && origin.distanceToSqr(Vec3.atCenterOf(blocker)) < origin.distanceToSqr(hit.getLocation())) {
             return null;

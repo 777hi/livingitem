@@ -194,15 +194,19 @@ boolean flag4 = f2 > 0.9F;        // 击退 / 横扫 / 暴击也要满冷却
 ```java
 @Override public float getAttackStrengthScale(float adjustTicks) { return this.attackStrengthScale; }
 public void setAttackStrengthScale(float scale) { ... }
-public float getAttackCooldownTicks() { return Math.max(this.getCurrentItemAttackStrengthDelay(), 1.0F); }
+public float getAttackCooldownTicks() {
+    float delay = this.getCurrentItemAttackStrengthDelay();
+    if (!Float.isFinite(delay) || delay < 1.0F) return 1.0F;   // 见下方坑 ②
+    return delay;
+}
 ```
 
 推进在 `replayAttack` 里按**世界轴 tick 差**重算（同 `LivingToolProgress` 的重算式，见 `living-tool-tech.md`）：
 
 ```java
-long elapsed = last == null ? (long) cooldown : now - last.tick();
-fake.setAttackStrengthScale((float) elapsed / cooldown);
-if (fake.getAttackStrengthScale(0.0F) < 1.0F) return null;   // 冷却中不出手
+float scale = last == null ? 1.0F : (float) (now - last.tick()) / cooldown;
+fake.setAttackStrengthScale(scale);
+if (scale < 1.0F) return null;   // 还在冷却中，本次不出手
 ```
 
 | 为什么不用 | 理由 |
@@ -210,8 +214,47 @@ if (fake.getAttackStrengthScale(0.0F) < 1.0F) return null;   // 冷却中不出�
 | 反射改 private 字段 | **生产环境会因混淆失效** |
 | Access Transformer | 要新增配置；能不用就不用 |
 
+### 🔴 三个「静默失效」—— 症状都是「有记忆、有怪，但一刀都不打」
+
+这类 bug 的共同特征：**不报错、不崩溃、就是不出手**，比崩溃难查得多。
+
+| # | 坑 | 症状 | 修法 |
+|---|---|---|---|
+| ① | **首次冷却用 `(long) cooldown` 当 elapsed** | 冷却时长**常是小数**（剑攻速 1.6 ⇒ `1.0/1.6*20 = 12.5` tick）⇒ `(long)12.5 = 12` ⇒ `12/12.5 = 0.96 < 1` ⇒ 判成"冷却中" ⇒ **且这条路径不写 action ⇒ `last` 永远为 null ⇒ 永久死锁** | 没打过就直接给 `1.0F` |
+| ② | **`ATTACK_SPEED` 为 0 ⇒ 冷却 = `Infinity`** | `Math.max(Infinity, 1)` 挡不住 ⇒ `elapsed / Infinity = 0` ⇒ 永远不满 | `!Float.isFinite(delay)` 兜底 |
+| ③ | **隔墙检测没传 `hostBlocks`** | 容器形态下射线起点**埋在容器方块内** ⇒ 第一个命中的是"自己的家" ⇒ 永远判成隔墙 | 传 `hostBlocks`（与挖掘侧一致） |
+
+> 📌 **通用判据**：凡是"某个闸门放行后才能推进状态"的循环，
+> **必须检查「首次 / 无记录」那条路径能不能自己走通** ——
+> 若它在放行前就 `return`，且 return 之前**不写状态**，就会**永久卡死**。
+
 **"上次攻击 tick"复用 `LivingToolAction.tick`** —— ⚠️ 语义上它本是给**客户端动画**用的
 （不落盘，只有 StreamCodec）⇒ 现在一物两用。**做蓄力型时应另建独立组件**，见 §9。
+
+### ⚠️ 由此引出的通用约束：组件里可空的 `BlockPos` 必须按 optional 编码
+
+活武器攻击时目标**不是方块** ⇒ `replayAttack` 写 `new LivingToolAction(now, null)`。
+
+而 `LivingToolAction` 原先用 `BlockPos.STREAM_CODEC` 直接编码 `target` ⇒ **编码 null 抛 NPE**：
+
+```
+Caused by: NullPointerException: Cannot invoke "BlockPos.asLong()" because "p_320546_" is null
+  at DataComponentPatch$1.encodeComponent(...)
+  at LivingToolHostPacket.encode(...)
+⇒ Failed to encode packet 'clientbound/minecraft:custom_payload' ⇒ 玩家被踢出游戏
+```
+
+> 🔴 **表现为「存档崩了、游戏没崩」** —— 其实是发包失败导致被踢出连接。
+
+**⇒ 约束**：**任何 DataComponent 里带 `BlockPos` 且可能为 null 的字段，一律按「可空」编码**
+（写 boolean 标志位）。同理，**客户端消费方也要判 null**（否则 `surfacePoint` 会 NPE）。
+
+⚠️ 别用 `ByteBufCodecs.optional(BlockPos.STREAM_CODEC)` 链式 `.map()` ——
+`BlockPos.STREAM_CODEC` 的缓冲类型是 `ByteBuf`（不是 `FriendlyByteBuf`）⇒ 泛型对不上，编译不过。
+**手写编解码器**最直接。
+
+> 📌 这个坑**本来就有**：`replayUse` 的「右键空气」分支同样传 null（法杖施法走那条），
+> 只是此前没在容器形态触发。
 
 ---
 
@@ -275,7 +318,24 @@ if (fake.getAttackStrengthScale(0.0F) < 1.0F) return null;   // 冷却中不出�
 | **辅助攻击**（无记忆时帮玩家打） | 未做；设计见 [../idea.md](../idea.md) §1.7 |
 | **蓄力型**（弓 / 弩 / 三叉戟） | 需「开始 → 持续推进 → 释放」状态机；FakePlayer 不 tick ⇒ **只会拉弓、射不出去** |
 | **PVP** | 需先定义"敌对关系"判据；现为硬排除所有 `Player` |
-| **清除攻击记忆** | 活工具靠"左键空气"清除，活武器**还没有对应入口** |
+| **清除攻击记忆** | ⚠️ **未实现**（方案已定，见下方小节）。`LivingToolMemory#withoutAttack()` 已就位，但**没有任何调用方** |
+
+### 记忆清除（方案已定 · 待实现）
+
+⭐ **判据：这一刀没打到怪 ⇒ 清掉攻击记忆。**
+
+| 触发 | 机制 | 备注 |
+|---|---|---|
+| 左键**挥向方块** | `PlayerInteractEvent.LeftClickBlock`（服务端） | 零网络改动 |
+| 左键**挥空** | `LeftClickEmpty`（**仅客户端**）⇒ 需发包 | 与活工具 L43 同款 |
+| 右键空气 / 物品 | 本期**不做**（近战用左键）；施法类那期再补 | R4 录制不分左右键，但清除目前认左键 |
+
+⇒ 由此得到的手感：**挥一刀空就能在「打架」和「挖矿」之间切换**
+（活斧子同时是工具与武器，清掉 attack 就自然回到挖掘模式）。
+
+> ⚠️ **必须套 L44 保护期**（写入记忆后 20 tick 内不清除）——
+> 打完怪玩家往往还会顺势挥几刀，不保护的话刚录的记忆立刻被自己清掉。
+> 活工具侧这个坑**已实测踩过**（`L44`），活武器直接照搬。
 
 ### 环成员口径（已统一）
 

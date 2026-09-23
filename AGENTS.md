@@ -178,6 +178,7 @@ src/main/java/com/qiqi/li/
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-09-24 | 活武器三个「静默失效」修复（有记忆有怪却一刀不打）：首次冷却死锁 / `ATTACK_SPEED=0` / 隔墙没排除宿主；另修组件里可空 `BlockPos` 发包 NPE（曾致被踢出） | `living-weapon-tech.md` §5 |
 | 2026-09-23 | 活武器近战核心链路：`AttackMemory` 第三类记忆 + `LivingDamageEvent.Post` 录制 + `replayAttack`；⚠️ 冷却须 override `getAttackStrengthScale()` 手动推进 | `living-weapon-tech.md` §1~§7 |
 | 2026-09-22 | 大箱子跨容器传输面选取：GUI 4 方向→世界 6 面，改候选基准块列表逐个尝试（推错面不报错） | `living-hopper-tech.md` §6.4 |
 | 2026-09-22 | 大箱子（多方块）两套槽位体系错位 ⇒ 活漏斗静默不传输；新增槽位一致性探针（不特判合并容器） | `living-hopper-tech.md` §10.25 |
@@ -187,7 +188,6 @@ src/main/java/com/qiqi/li/
 | 2026-09-22 | 图标「渲染上下文覆盖范围」写成显式约束（非 GUI 回退原版模型 + 装饰器只在 GUI 调用） | `icon-system.md` |
 | 2026-09-22 | 纹理去原版化 56 张（改引 `minecraft:` 路径，跟随材质包）；涂蜡改双层模型（24 张→1 张） | `icon-system.md`「纹理约定」 |
 | 2026-09-22 | 爆炸「方形区域过一会自己消失」= 客户端重建排队（判据：会消失=正常，一直在=bug） | `living-tnt-tech.md` §4.3 |
-| 2026-09-22 | 大当量爆炸坑不圆：`affects()` 改「区块 AABB ∩ 球体」（原「中心在半径内」漏 32~86 区块） | `living-tnt-tech.md` §4.3 |
 
 
 ## 文档导航

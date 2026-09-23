@@ -159,7 +159,13 @@ public class LivingToolFakePlayer extends FakePlayer {
      * <p>取 {@code max(..., 1)} 兜底：攻击速度为 0 的物品会让除法失去意义。</p>
      */
     public float getAttackCooldownTicks() {
-        return Math.max(this.getCurrentItemAttackStrengthDelay(), 1.0F);
+        float delay = this.getCurrentItemAttackStrengthDelay();
+        // ⚠️ ATTACK_SPEED 为 0（被模组 / 数据包改掉）时 delay = Infinity
+        //    ⇒ 冷却永远算不满 ⇒ 【永远打不出来】，与上面同类的静默失效 ⇒ 必须兜底。
+        if (!Float.isFinite(delay) || delay < 1.0F) {
+            return 1.0F;
+        }
+        return delay;
     }
 
     /**

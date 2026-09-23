@@ -115,8 +115,8 @@ public class LivingToolFunction implements LivingItemFunction {
             //    有攻击记忆 ⇒ 走攻击；否则走挖掘 / 交互。不是"看现场有什么再挑"。
             //    ⚠️ 攻击优先：对齐 W2「射线同时命中实体和方块时，实体优先」。
             if (memory.hasAttack()) {
-                ItemStack afterAttack =
-                    LivingToolReplay.replayAttack(tool, memory.attack(), origin, serverLevel, now);
+                ItemStack afterAttack = LivingToolReplay.replayAttack(
+                    tool, memory.attack(), origin, hostBlocks, serverLevel, now);
                 if (afterAttack != null) {
                     writeBack(context, entry.slotIndex(), tool, afterAttack);
                 }

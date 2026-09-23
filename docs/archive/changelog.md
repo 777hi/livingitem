@@ -15,6 +15,29 @@
 
 ---
 
+## 2026-09-24
+
+- 🔴 修复：**活武器攻击后玩家被踢出游戏**（表现为"存档崩了、游戏没崩"）。
+  根因：攻击时写 `new LivingToolAction(now, null)`（目标不是方块），而该组件的 `target`
+  原用 `BlockPos.STREAM_CODEC` 直接编码 ⇒ **编码 null 抛 NPE** ⇒
+  `Failed to encode packet 'clientbound/minecraft:custom_payload'` ⇒ 连接断开。
+  ⇒ `LivingToolAction.target` 改为 `@Nullable` + **手写 optional 编解码**（boolean 标志位）；
+  客户端消费方（`LivingToolModelRenderer` 脉冲动画）同步加判空。
+  ⚠️ **该坑原本就存在**：`replayUse` 的「右键空气」分支同样传 null（法杖施法走那条）。
+  ⚠️ 别用 `ByteBufCodecs.optional(BlockPos.STREAM_CODEC).map(...)` ——
+  `BlockPos.STREAM_CODEC` 的缓冲类型是 `ByteBuf`（非 `FriendlyByteBuf`）⇒ 泛型对不上，编译不过。
+- 🔴 修复：**活武器有记忆、射线上有怪，但一刀都不打**（三个"静默失效"，均不报错）。
+  ① **首次冷却死锁**：`last == null` 时用 `(long) cooldown` 当 elapsed —— 而冷却**常是小数**
+  （剑攻速 1.6 ⇒ 12.5 tick）⇒ `(long)12.5=12` ⇒ `0.96 < 1` ⇒ 判"冷却中" ⇒
+  **且该路径不写 action ⇒ `last` 永远 null ⇒ 永久卡死**。改为没打过直接给 `1.0F`。
+  ② `ATTACK_SPEED` 为 0 ⇒ 冷却 `Infinity` ⇒ 永远不满 ⇒ `Float.isFinite` 兜底。
+  ③ 隔墙检测**没传 `hostBlocks`** ⇒ 容器形态下第一个命中的是"自己的家" ⇒ 永远判隔墙。
+  📌 通用判据：**"闸门放行后才写状态"的循环，必须检查「首次」路径能否自己走通**。
+- 📄 文档：`living-weapon-tech.md` §5 补上述三个静默失效 + 可空 `BlockPos` 的通用约束；
+  §9 补「记忆清除」方案（判据：这一刀没打到怪 ⇒ 清；必须套 L44 保护期）。
+
+---
+
 ## 2026-09-23
 
 - ✅ 新增：**活武器「近战核心链路」**（记忆 → 录制 → 回放 → 调度 → 渲染）。
