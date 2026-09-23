@@ -14,7 +14,13 @@ import net.minecraft.server.level.ServerPlayerGameMode;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.InteractionResultHolder;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.OwnableEntity;
+import net.minecraft.world.entity.decoration.ArmorStand;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.projectile.ProjectileUtil;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
@@ -22,6 +28,7 @@ import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.common.CommonHooks;
 
@@ -313,6 +320,147 @@ public final class LivingToolReplay {
         LivingItemManager.setToolLastAction(tool, action);
         LivingItemManager.setToolLastAction(held, action);
         return held;
+    }
+
+    // ------------------------------------------------------------------
+    // 攻击记忆回放（活武器 —— 见 {@code docs/idea.md} §1）
+    // ------------------------------------------------------------------
+
+    /**
+     * 回放<b>攻击</b>记忆 —— 沿记忆射线找生物 → 摆朝向 → 推进冷却 → 出手。
+     *
+     * <p>⭐ <b>活武器不实现任何攻击逻辑</b>：这里只负责「代玩家出手」，
+     * 打多少伤害、触发什么效果全由 {@code fake.attack(entity)} 走原版管线决定
+     * （锋利 / 击退 / 火焰附加 / 横扫 / 暴击 / 耐久<b>自动生效</b>）。</p>
+     *
+     * <p>⚠️ <b>冷却必须手动推进</b>（{@code W4}，同 {@code L27}）：
+     * {@code FakePlayer#tick()} 是空实现 ⇒ 原版的 {@code attackStrengthTicker} 不会自增，
+     * 而 {@code Player#attack} 里伤害是 {@code f *= 0.2F + f²*0.8F}（f = 冷却比例）
+     * ⇒ 不推进就<b>永远只有 20% 伤害</b>。推进方式见 {@link LivingToolFakePlayer#setAttackStrengthScale}。</p>
+     *
+     * @param weapon 活武器（不会被本方法修改）
+     * @param attack 攻击记忆；{@code null} = 无记忆
+     * @param origin 射线起点（宿主位置）
+     * @return 攻击后的武器副本（可能扣耐久）；{@code null} = 本次未出手、无需写回
+     */
+    @Nullable
+    public static ItemStack replayAttack(ItemStack weapon,
+                                         @Nullable LivingToolMemory.AttackMemory attack,
+                                         Vec3 origin, ServerLevel level, long now) {
+        if (attack == null) {
+            return null;
+        }
+
+        Vec3 end = attack.endpointFrom(origin);
+
+        LivingToolFakePlayer fake =
+            LivingToolFakePlayerCache.get(level, LivingItemManager.getToolOwner(weapon));
+        fake.setPos(origin.x, origin.y, origin.z);
+        fake.setOnGround(true);
+        ItemStack held = weapon.copy();
+        fake.equipTool(held);   // 同步附魔属性，否则锋利等不生效
+        // ⭐ 让 FakePlayer 看向目标 —— 与法杖/枪械同款需求，且影响击退方向
+        faceTarget(fake, origin, end);
+
+        EntityHitResult hit = findAttackTarget(attack, origin, end, fake, level);
+        if (hit == null) {
+            return null;
+        }
+
+        // ── 攻击冷却（S1-a：按【物品攻击速度属性】算，与原版同源）───────────────
+        float cooldown = fake.getAttackCooldownTicks();
+        LivingToolAction last = LivingItemManager.getToolLastAction(weapon);
+        // 没打过（或记录随重启丢了）⇒ 视为冷却已满，允许立刻出手
+        long elapsed = last == null ? (long) cooldown : now - last.tick();
+        fake.setAttackStrengthScale((float) elapsed / cooldown);
+        if (fake.getAttackStrengthScale(0.0F) < 1.0F) {
+            return null;   // 还在冷却中，本次不出手
+        }
+
+        fake.attack(hit.getEntity());
+
+        // 记下本次出手的 tick（下次算冷却用）+ 顺带驱动客户端的"动作"动画。
+        // ⚠️ 两端都要写：held 是上面 copy 的副本，写回槽位用的是它。
+        LivingToolAction action = new LivingToolAction(now, null);
+        LivingItemManager.setToolLastAction(weapon, action);
+        LivingItemManager.setToolLastAction(held, action);
+        return held;
+    }
+
+    /**
+     * 沿攻击记忆射线找目标生物（{@code D2}：用官方 {@code ProjectileUtil}）。
+     *
+     * <p>⭐ <b>不能隔墙攻击</b>：先沿射线查有没有方块，方块比实体更近 ⇒ 放弃。
+     * 否则会出现"隔着墙把后面的怪打死"（实体检测是不看方块的）。</p>
+     *
+     * <p>⭐ <b>能打什么</b>见 {@link #isAttackableByLivingWeapon} —— 那里显式收窄了目标
+     * （非生物 / 玩家 / 盔甲架 / 主人的宠物一律不打）。</p>
+     */
+    @Nullable
+    private static EntityHitResult findAttackTarget(LivingToolMemory.AttackMemory attack, Vec3 origin,
+                                                    Vec3 end, LivingToolFakePlayer fake, ServerLevel level) {
+        Vec3 delta = end.subtract(origin);
+        if (delta.lengthSqr() < 1.0E-6) {
+            return null;
+        }
+        // 与录制端一致地截断扫描长度（防模组放大后扫出超远目标）
+        double length = Math.min(delta.length(), MAX_SCAN_LENGTH);
+        Vec3 to = origin.add(delta.normalize().scale(length));
+
+        EntityHitResult hit = ProjectileUtil.getEntityHitResult(
+            level,
+            fake,
+            origin,
+            to,
+            fake.getBoundingBox().inflate(length),
+            e -> isAttackableByLivingWeapon(e, fake));
+
+        if (hit == null) {
+            return null;
+        }
+
+        // 隔墙检测：射线上更近处有方块 ⇒ 打不到
+        BlockPos blocker = scanForTarget(origin, end, Set.of(), level);
+        if (blocker != null
+            && origin.distanceToSqr(Vec3.atCenterOf(blocker)) < origin.distanceToSqr(hit.getLocation())) {
+            return null;
+        }
+
+        // R2：蹲下录过生物类型的话，类型不匹配就不打（与挖掘侧 L4/L8 同款终止条件）
+        if (!attack.matches(hit.getEntity().getType())) {
+            return null;
+        }
+        return hit;
+    }
+
+    /**
+     * 活武器<b>可以打哪些目标</b> —— 显式收窄，不能只靠 {@code isAttackable()}。
+     *
+     * <p>⭐ <b>为什么必须自己判</b>：{@code Entity#isAttackable()} <b>默认返回 {@code true}</b>
+     * （只有掉落物等极少数 override 成 {@code false}）⇒ 光靠它<b>几乎挡不住任何东西</b>。
+     * 少了下面的判据，活剑会去砍<b>盔甲架、玩家的船与矿车</b>。</p>
+     *
+     * <ul>
+     *   <li>{@code LivingEntity} —— 排除船 / 矿车 / 掉落物这类<b>非生物</b></li>
+     *   <li>排除 {@code Player} —— <b>含主人</b>：宿主常常就是玩家本人，<b>绝不能误伤</b>。
+     *       ⭐ 这一条连带排除了 {@code fake} 自己与旁观者（FakePlayer 也是 {@code Player} 子类），
+     *       故<b>不需要</b>再单独判 {@code e != fake} / {@code !e.isSpectator()}</li>
+     *   <li>排除 {@code ArmorStand} —— 它是 {@code LivingEntity} 且 {@code isAttackable()} 为 true</li>
+     *   <li>排除<b>主人驯服的宠物</b> —— 否则会打自己的狼 / 猫</li>
+     * </ul>
+     *
+     * <p>⚠️ 由此可得一个<b>硬约束</b>：活武器<b>不支持 PVP</b> —— 所有玩家一律不打。
+     * 将来要放开，必须先定义"敌对关系"判据（谁算敌人）。</p>
+     */
+    private static boolean isAttackableByLivingWeapon(Entity entity, LivingToolFakePlayer fake) {
+        if (!(entity instanceof LivingEntity) || entity instanceof Player
+            || entity instanceof ArmorStand) {
+            return false;
+        }
+        if (entity instanceof OwnableEntity owned && fake.getUUID().equals(owned.getOwnerUUID())) {
+            return false;   // 主人自己驯服的宠物
+        }
+        return entity.isAttackable();
     }
 
     /**

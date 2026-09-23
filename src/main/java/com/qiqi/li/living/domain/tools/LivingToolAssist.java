@@ -219,21 +219,11 @@ public final class LivingToolAssist {
                 continue;   // 主手已由原版计入
             }
             ItemStack stack = inventory.getItem(slot);
-            if (isAssistTool(stack) && accept.test(stack)) {
+            if (LivingToolRecorder.isAssistTool(stack) && accept.test(stack)) {
                 out.add(stack);
             }
         }
         return out;
-    }
-
-    /**
-     * 是不是「帮忙型」活工具。
-     *
-     * <p>⭐ <b>有记忆的不帮忙</b>（用户定的分工开关）—— 它自己会去干活，两套机制别混。</p>
-     */
-    private static boolean isAssistTool(ItemStack stack) {
-        return LivingToolRecorder.isLivingTool(stack)
-            && LivingItemManager.getToolMemory(stack).isEmpty();
     }
 
     /**

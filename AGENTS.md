@@ -94,6 +94,7 @@ SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 | **活地图传送** | 三种场景 + UV 精确传送 + 跨维度 + 载具 + Sable 飞艇 | [living-map-ender-pearl-tech.md](docs/tech/living-map-ender-pearl-tech.md) |
 | **活耕地** | GUI 交互获取/种植/骨粉 + **放置回世界模拟右键种植** + 世界轴节拍生长 + round-robin 逐项产出 + 双槽渲染 | [living-farmland-tech.md](docs/tech/living-farmland-tech.md) §3.5 / §8 |
 | **活工具**（镐/斧/铲/锄） | **记忆玩家操作行为**（左键挖掘 / 右键交互）→ 以宿主为原点沿射线回放；FakePlayer 模拟完整操作 + 逐格扫描黑名单 | [living-tool-tech.md](docs/tech/living-tool-tech.md)（设计池见 [idea.md](docs/idea.md) §3.12） |
+| **活武器**（剑/斧/重锤） | **不实现攻击逻辑，只「代玩家出手」**：攻击记忆（射线）+ `fake.attack()` 走原版管线；⚠️ 冷却须手动推进（否则只有 20% 伤害）。**仅近战** | [living-weapon-tech.md](docs/tech/living-weapon-tech.md)（设计探讨见 [idea.md](docs/idea.md)） |
 | **活红石** | 红石信号传播 + BFS 算法 + 反相器 + 堆叠数影响 | [living-redstone-tech.md](docs/tech/living-redstone-tech.md) |
 | **活涂蜡铜块（红电发电）** | 双因子感应发电 + 事件驱动记账 + RE/FE 单位制 | [living-power-tech.md](docs/tech/living-power-tech.md) |
 | **活打火石** | 交互触发器，无 tick 逻辑 | [living-flint-and-steel-tech.md](docs/tech/living-flint-and-steel-tech.md) |
@@ -177,6 +178,7 @@ src/main/java/com/qiqi/li/
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-09-23 | 活武器近战核心链路：`AttackMemory` 第三类记忆 + `LivingDamageEvent.Post` 录制 + `replayAttack`；⚠️ 冷却须 override `getAttackStrengthScale()` 手动推进 | `living-weapon-tech.md` §1~§7 |
 | 2026-09-22 | 大箱子跨容器传输面选取：GUI 4 方向→世界 6 面，改候选基准块列表逐个尝试（推错面不报错） | `living-hopper-tech.md` §6.4 |
 | 2026-09-22 | 大箱子（多方块）两套槽位体系错位 ⇒ 活漏斗静默不传输；新增槽位一致性探针（不特判合并容器） | `living-hopper-tech.md` §10.25 |
 | 2026-09-22 | 活红石粉装饰器叠了缺失纹理（黑紫）；⚠️ 去原版化扫描必须含 `fromNamespaceAndPath(MOD_ID, …)` | `icon-system.md` |
@@ -186,7 +188,7 @@ src/main/java/com/qiqi/li/
 | 2026-09-22 | 纹理去原版化 56 张（改引 `minecraft:` 路径，跟随材质包）；涂蜡改双层模型（24 张→1 张） | `icon-system.md`「纹理约定」 |
 | 2026-09-22 | 爆炸「方形区域过一会自己消失」= 客户端重建排队（判据：会消失=正常，一直在=bug） | `living-tnt-tech.md` §4.3 |
 | 2026-09-22 | 大当量爆炸坑不圆：`affects()` 改「区块 AABB ∩ 球体」（原「中心在半径内」漏 32~86 区块） | `living-tnt-tech.md` §4.3 |
-| 2026-09-22 | 大当量/超级爆炸后坑里漆黑：批量改 Section 绕过光照更新 ⇒ 新增 `refreshLightAfterBulkEdit()` | `living-tnt-tech.md` §4.3 |
+
 
 ## 文档导航
 

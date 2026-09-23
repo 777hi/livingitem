@@ -42,6 +42,26 @@ public class LivingToolFakePlayer extends FakePlayer {
     /** 上一次经 {@link #equipTool} 装配的工具，用于回收它留下的附魔属性修饰符。 */
     private ItemStack lastEquipped = ItemStack.EMPTY;
 
+    /**
+     * 攻击冷却比例（0~1）—— 由 {@code LivingToolReplay#replayAttack} 手动推进。
+     *
+     * <p>🔴 <b>为什么必须自己维护</b>：原版 {@code Player#getAttackStrengthScale} 读的是
+     * <b>private</b> 的 {@code attackStrengthTicker}，它由 {@code Player#tick()} 自增，
+     * 而 {@link FakePlayer#tick()} 是<b>空实现</b>（{@code L27} 一脉）⇒ 该值<b>永远是 0</b>。</p>
+     *
+     * <p>而 {@code Player#attack} 里伤害是这样算的：</p>
+     * <pre>
+     *   f  *= 0.2F + f² * 0.8F;     // f = 冷却比例
+     *   f1 *= f;                     // 附魔伤害同样打折
+     *   flag4 = f &gt; 0.9F;            // 击退 / 横扫 / 暴击也要满冷却
+     * </pre>
+     *
+     * <p>⇒ 不推进的话，活武器<b>永远只有 20% 伤害</b>，且永远触发不了横扫与暴击。<br>
+     * 这里覆写读数、由外部按「物品攻击速度属性」推进（用户定的 S1-a），
+     * 从而<b>不必碰 private 字段</b>（反射在生产环境会因混淆失效，AT 又要新增配置）。</p>
+     */
+    private float attackStrengthScale = 1.0F;
+
     public LivingToolFakePlayer(ServerLevel level, @Nullable UUID owner) {
         super(level, new OwnerGameProfile(owner));
         this.owner = owner;
@@ -115,6 +135,31 @@ public class LivingToolFakePlayer extends FakePlayer {
     @Override
     public String getScoreboardName() {
         return "LivingTool";
+    }
+
+    /**
+     * 覆写攻击冷却读数 —— 返回外部推进出来的值（见 {@link #attackStrengthScale} 的说明）。
+     *
+     * <p>⚠️ 刻意<b>忽略 {@code adjustTicks}</b>：那个参数是给渲染插值用的，
+     * 而这里的冷却是按「世界轴 tick 差 / 物品冷却总时长」算好的绝对值。</p>
+     */
+    @Override
+    public float getAttackStrengthScale(float adjustTicks) {
+        return this.attackStrengthScale;
+    }
+
+    /** 由回放侧设置当前冷却进度。 */
+    public void setAttackStrengthScale(float scale) {
+        this.attackStrengthScale = net.minecraft.util.Mth.clamp(scale, 0.0F, 1.0F);
+    }
+
+    /**
+     * 攻击冷却<b>总时长</b>（tick）—— 由物品的攻击速度属性换算，原版同源。
+     *
+     * <p>取 {@code max(..., 1)} 兜底：攻击速度为 0 的物品会让除法失去意义。</p>
+     */
+    public float getAttackCooldownTicks() {
+        return Math.max(this.getCurrentItemAttackStrengthDelay(), 1.0F);
     }
 
     /**

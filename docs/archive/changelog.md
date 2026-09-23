@@ -15,6 +15,48 @@
 
 ---
 
+## 2026-09-23
+
+- ✅ 新增：**活武器「近战核心链路」**（记忆 → 录制 → 回放 → 调度 → 渲染）。
+  判据 `isLivingWeapon` 用原版**「可附魔类别」标签**（`ItemTags.WEAPON_ENCHANTABLE`）——
+  官方分类口径，模组武器通常也正确归类 ⇒ 自动兼容；**活石头不在任何武器标签里 ⇒ 不会误判** ✅
+  ⚠️ 只认这一个标签：弓 / 弩 / 三叉戟是**蓄力型**，需"开始→持续→释放"状态机，留待后续（FakePlayer 不 tick ⇒ 会只拉弓、射不出去）。
+- ✅ 数据模型：**`AttackMemory` 成为第三类记忆**（`LivingToolMemory` 由两字段变三字段）。
+  ⭐ **另建 record 而非复用 `RayMemory`**：后者带 `Block` 字段、语义是方块，混用会污染语义且要动
+  已稳定的编解码 ⇒ 独立出来**零回归风险**。`Codec` / `StreamCodec` 同步就位。
+  ⇒ `isEmpty()` 判三个字段 ⇒ 带攻击记忆的武器**自动不上环**。
+- 🔴 踩坑：**`LivingDamageEvent` 在 NeoForge 1.21 已拆成 `Pre` / `Post`**，`getSource()` 只在子类上。
+  用 **`Post`**（伤害已结算）⇒ 不会把「被格挡 / 被减免到 0」的攻击录进来。
+- 🔴 踩坑：**攻击冷却不推进 = 只有 20% 伤害**。`Player#attack` 里 `f *= 0.2F + f²*0.8F`（f = 冷却比例），
+  而 f 读的是 **private** 的 `attackStrengthTicker`，靠 `Player#tick()` 自增 ——
+  **`FakePlayer#tick()` 是空实现**（`L27` 一脉）⇒ 恒为 0 ⇒ **永远是两折伤害，且永不触发横扫/暴击**。
+  解法：**override `getAttackStrengthScale()`**（`LivingToolFakePlayer`），由回放侧按
+  「世界轴 tick 差 ÷ 物品冷却时长」推进（S1-a，与原版同源）。
+  不用反射（生产环境因混淆失效）、不用 AT（要新增配置）。
+- ✅ 回放 `replayAttack`：官方 `ProjectileUtil.getEntityHitResult` 找实体 → `faceTarget` → `fake.attack()`。
+  **不实现任何攻击逻辑**，伤害/附魔/耐久全走原版管线（锋利 / 击退 / 火焰附加 / 横扫 / 暴击自动生效）。
+  ⭐ **隔墙检测不能省**：实体检测不看方块 ⇒ 不加就会"隔着墙打死后面的怪"。
+- ✅ 目标过滤收窄（`isAttackableByLivingWeapon`）：
+  🔴 **`Entity#isAttackable()` 默认返回 `true`**（只有 `ItemEntity` 等极少数 override）⇒ **光靠它几乎挡不住东西**。
+  补上 `LivingEntity`（挡船/矿车/掉落物）、`!Player`（挡所有玩家，含主人）、`!ArmorStand`、
+  `!OwnableEntity(主人)`（挡自己的宠物）⇒ 否则活剑会去砍**盔甲架和玩家的船**。
+  ⚠️ 由此**活武器不支持 PVP**（所有玩家一律不打），要放开须先定义"敌对关系"判据。
+- ✅ 调度：`LivingToolFunction.canApply` 改为「工具 ∪ 武器」共用；tick 按 **S2「射线决定」** 分派
+  —— **有哪条记忆射线就走哪条路**（攻击优先 ⇒ 对齐 W2"实体优先于方块"）。
+- ✅ 修复（**会崩**）：`LivingToolModelRenderer#renderOne` 里 `dig != null ? dig : use` 对
+  **只带攻击记忆**的活剑会拿到 null 后调 `endpointFrom` ⇒ **NPE**。改为把 `AttackMemory`
+  桥接成 `RayMemory(offset, null)` 复用渲染路径；`LivingToolRayRenderer` 新增**品红**攻击射线。
+- ✅ 重构：环成员口径**曾在 3 处各写一遍**（渲染 / 同步 / 辅助）⇒ 加武器时必须同步改 3 处，
+  已收敛成 `LivingToolRecorder#isAssistItem`（环成员：工具∪武器）与 `#isAssistTool`（辅助挖掘：只工具）。
+- 📄 纠正一条旧结论：**`AttackEntityEvent` 无需手动补**。`idea.md` §2.6 曾标为「❌ 待补」，
+  核源码发现 `Player#attack` 第一行就调 `CommonHooks.onPlayerAttackTarget`，它内部已 post 该事件
+  **并**调 `Item#onLeftClickEntity` ⇒ 再手动 post 会**重复触发**。
+  📌 教训：**判断"事件会不会触发"必须顺着调用链查，不能只看 post 的位置**。
+- 📄 文档：新建 `docs/tech/living-weapon-tech.md`（活武器独立成子系统，共享部分用指针不复制）；
+  `idea.md` 加「设计探讨层」横幅 + 纠正上述结论；`AGENTS.md` 子系统索引与进展各加一行。
+
+---
+
 ## 2026-09-22
 
 - ✅ 修复：**大当量/超级爆炸后光照不刷新（坑里一片漆黑）**。根因：这两条路径为性能**直接调

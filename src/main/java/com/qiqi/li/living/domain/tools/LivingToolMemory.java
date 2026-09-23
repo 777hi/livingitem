@@ -9,6 +9,7 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.world.level.block.Block;
@@ -19,8 +20,9 @@ import net.minecraft.world.phys.Vec3;
  *
  * <p>设计要点（详见 {@code docs/idea.md} §3.12 L 组）：
  * <ul>
- *   <li><b>两条独立记忆</b>：{@code dig}（挖掘记忆 = 左键操作）、{@code use}（交互记忆 = 右键操作）。
- *       二者互不干扰，可同时存在，各自只保留<b>最新一条</b>（新记忆覆盖旧记忆）。</li>
+ *   <li><b>三条独立记忆</b>：{@code dig}（挖掘记忆 = 左键操作）、{@code use}（交互记忆 = 右键操作）、
+ *       {@code attack}（<b>攻击记忆</b> = 攻击生物，活武器专用）。
+ *       三者互不干扰，可同时存在，各自只保留<b>最新一条</b>（新记忆覆盖旧记忆）。</li>
  *   <li><b>存的是「操作行为」而非「玩法逻辑」</b>（{@code L36}）：记忆左键/右键这两个动作本身，
  *       而非"挖掘"/"去皮"这类语义。这样回放时走完整的玩家操作链路，
  *       模组工具的自定义效果也能被触发。</li>
@@ -37,10 +39,11 @@ import net.minecraft.world.phys.Vec3;
  */
 public record LivingToolMemory(
     @Nullable RayMemory dig,
-    @Nullable RayMemory use
+    @Nullable RayMemory use,
+    @Nullable AttackMemory attack
 ) {
 
-    public static final LivingToolMemory DEFAULT = new LivingToolMemory(null, null);
+    public static final LivingToolMemory DEFAULT = new LivingToolMemory(null, null, null);
 
     /**
      * 一条射线记忆。
@@ -71,6 +74,41 @@ public record LivingToolMemory(
         }
     }
 
+    /**
+     * 一条<b>攻击</b>记忆（活武器专用 —— 见 {@code docs/idea.md} §1.5 的 R1 / R2）。
+     *
+     * <p>与 {@link RayMemory} 同构，但目标是<b>生物</b>而非方块。</p>
+     *
+     * <p>⭐ <b>另建一个 record 而不是复用 {@code RayMemory}</b>（D1）：后者带 {@code Block}
+     * 字段、语义是方块，混用会污染语义，且要动已经稳定的编解码 ⇒ 独立出来<b>零回归风险</b>。</p>
+     *
+     * @param offset     「录制者眼睛 → 目标实体」的偏移向量（含长度与方向）
+     * @param entityType 蹲下时记录的生物类型（{@code R2}）；null = 不限类型
+     */
+    public record AttackMemory(Vec3 offset, @Nullable EntityType<?> entityType) {
+
+        /** 录制：由眼睛位置与目标实体位置构造（保持原样，不做加工）。 */
+        public static AttackMemory record(Vec3 eyePosition, Vec3 targetPosition,
+                                          @Nullable EntityType<?> type) {
+            return new AttackMemory(targetPosition.subtract(eyePosition), type);
+        }
+
+        /** 回放：以任意宿主位置为起点，求射线终点。 */
+        public Vec3 endpointFrom(Vec3 origin) {
+            return origin.add(offset);
+        }
+
+        /** 是否限制目标生物类型。 */
+        public boolean restrictsEntity() {
+            return entityType != null;
+        }
+
+        /** 目标生物是否匹配（未限制类型时恒真）。 */
+        public boolean matches(EntityType<?> target) {
+            return entityType == null || entityType == target;
+        }
+    }
+
     // ------------------------------------------------------------------
     // Codec（持久化）
     // ------------------------------------------------------------------
@@ -84,11 +122,24 @@ public record LivingToolMemory(
         ).apply(instance, (offset, block) -> new RayMemory(offset, block.orElse(null)))
     );
 
+    private static final Codec<EntityType<?>> ENTITY_TYPE_CODEC =
+        BuiltInRegistries.ENTITY_TYPE.byNameCodec();
+
+    public static final Codec<AttackMemory> ATTACK_CODEC = RecordCodecBuilder.create(instance ->
+        instance.group(
+            Vec3.CODEC.fieldOf("offset").forGetter(AttackMemory::offset),
+            ENTITY_TYPE_CODEC.optionalFieldOf("entity")
+                .forGetter(r -> Optional.ofNullable(r.entityType()))
+        ).apply(instance, (offset, type) -> new AttackMemory(offset, type.orElse(null)))
+    );
+
     public static final Codec<LivingToolMemory> CODEC = RecordCodecBuilder.create(instance ->
         instance.group(
             RAY_CODEC.optionalFieldOf("dig").forGetter(m -> Optional.ofNullable(m.dig)),
-            RAY_CODEC.optionalFieldOf("use").forGetter(m -> Optional.ofNullable(m.use))
-        ).apply(instance, (dig, use) -> new LivingToolMemory(dig.orElse(null), use.orElse(null)))
+            RAY_CODEC.optionalFieldOf("use").forGetter(m -> Optional.ofNullable(m.use)),
+            ATTACK_CODEC.optionalFieldOf("attack").forGetter(m -> Optional.ofNullable(m.attack))
+        ).apply(instance, (dig, use, attack) ->
+            new LivingToolMemory(dig.orElse(null), use.orElse(null), attack.orElse(null)))
     );
 
     // ------------------------------------------------------------------
@@ -121,10 +172,28 @@ public record LivingToolMemory(
         ByteBufCodecs.optional(RAY_STREAM_CODEC)
             .map(LivingToolMemory::rayFromOptional, LivingToolMemory::rayToOptional);
 
+    /** @Nullable EntityType 的网络编码（存在性标志位 + 注册 id；Optional 桥接 null 语义） */
+    private static final StreamCodec<RegistryFriendlyByteBuf, EntityType<?>> ENTITY_TYPE_STREAM_CODEC =
+        ByteBufCodecs.optional(ByteBufCodecs.registry(Registries.ENTITY_TYPE))
+            .map(LivingToolMemory::entityFromOptional, LivingToolMemory::entityToOptional);
+
+    public static final StreamCodec<RegistryFriendlyByteBuf, AttackMemory> ATTACK_STREAM_CODEC =
+        StreamCodec.composite(
+            VEC3_STREAM_CODEC, AttackMemory::offset,
+            ENTITY_TYPE_STREAM_CODEC, AttackMemory::entityType,
+            AttackMemory::new
+        );
+
+    /** @Nullable AttackMemory 的网络编码 */
+    private static final StreamCodec<RegistryFriendlyByteBuf, AttackMemory> OPTIONAL_ATTACK_STREAM_CODEC =
+        ByteBufCodecs.optional(ATTACK_STREAM_CODEC)
+            .map(LivingToolMemory::attackFromOptional, LivingToolMemory::attackToOptional);
+
     public static final StreamCodec<RegistryFriendlyByteBuf, LivingToolMemory> STREAM_CODEC =
         StreamCodec.composite(
             OPTIONAL_RAY_STREAM_CODEC, LivingToolMemory::dig,
             OPTIONAL_RAY_STREAM_CODEC, LivingToolMemory::use,
+            OPTIONAL_ATTACK_STREAM_CODEC, LivingToolMemory::attack,
             LivingToolMemory::new
         );
 
@@ -150,6 +219,24 @@ public record LivingToolMemory(
         return optional.orElse(null);
     }
 
+    private static Optional<EntityType<?>> entityToOptional(@Nullable EntityType<?> type) {
+        return Optional.ofNullable(type);
+    }
+
+    @Nullable
+    private static EntityType<?> entityFromOptional(Optional<EntityType<?>> optional) {
+        return optional.orElse(null);
+    }
+
+    private static Optional<AttackMemory> attackToOptional(@Nullable AttackMemory attack) {
+        return Optional.ofNullable(attack);
+    }
+
+    @Nullable
+    private static AttackMemory attackFromOptional(Optional<AttackMemory> optional) {
+        return optional.orElse(null);
+    }
+
     // ------------------------------------------------------------------
     // 访问与不可变更新
     // ------------------------------------------------------------------
@@ -162,25 +249,38 @@ public record LivingToolMemory(
         return use != null;
     }
 
+    public boolean hasAttack() {
+        return attack != null;
+    }
+
     public boolean isEmpty() {
-        return dig == null && use == null;
+        return dig == null && use == null && attack == null;
     }
 
     public LivingToolMemory withDig(@Nullable RayMemory dig) {
-        return new LivingToolMemory(dig, use);
+        return new LivingToolMemory(dig, use, attack);
     }
 
     public LivingToolMemory withUse(@Nullable RayMemory use) {
-        return new LivingToolMemory(dig, use);
+        return new LivingToolMemory(dig, use, attack);
+    }
+
+    public LivingToolMemory withAttack(@Nullable AttackMemory attack) {
+        return new LivingToolMemory(dig, use, attack);
     }
 
     /** 清除挖掘记忆（左键空气）。 */
     public LivingToolMemory withoutDig() {
-        return new LivingToolMemory(null, use);
+        return new LivingToolMemory(null, use, attack);
     }
 
     /** 清除交互记忆（右键空气）。 */
     public LivingToolMemory withoutUse() {
-        return new LivingToolMemory(dig, null);
+        return new LivingToolMemory(dig, null, attack);
+    }
+
+    /** 清除攻击记忆。 */
+    public LivingToolMemory withoutAttack() {
+        return new LivingToolMemory(dig, use, null);
     }
 }

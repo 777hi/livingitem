@@ -119,19 +119,11 @@ public final class LivingToolPlayerSync {
             if (stack == mainHand || stack == offHand) {
                 continue;
             }
-            if (isAssistTool(stack)) {
+            if (LivingToolRecorder.isAssistItem(stack)) {
                 out.add(stack.copy());
             }
         }
         return out;
-    }
-
-    /** 无记忆的活工具 —— 口径必须与渲染端 {@code LivingToolModelRenderer#isAssistTool} 一致。 */
-    private static boolean isAssistTool(ItemStack stack) {
-        return !stack.isEmpty()
-            && LivingItemManager.isLivingItem(stack)
-            && LivingToolRecorder.isLivingTool(stack)
-            && LivingItemManager.getToolMemory(stack).isEmpty();
     }
 
     /** 逐项比较（玩家 + 工具的<b>渲染等价性</b>）。条目是个位数，开销可忽略。 */

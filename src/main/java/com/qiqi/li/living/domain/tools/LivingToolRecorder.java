@@ -10,6 +10,10 @@ import com.qiqi.li.living.api.LivingItemManager;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.tags.ItemTags;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.ClipContext;
@@ -20,6 +24,7 @@ import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.common.ItemAbilities;
+import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
@@ -83,6 +88,57 @@ public final class LivingToolRecorder {
             || stack.canPerformAction(ItemAbilities.AXE_DIG)
             || stack.canPerformAction(ItemAbilities.SHOVEL_DIG)
             || stack.canPerformAction(ItemAbilities.HOE_DIG);
+    }
+
+    /**
+     * 判定是否为「活武器」—— 活物品 + 命中原版「<b>可附魔类别</b>」武器标签。
+     *
+     * <p>⭐ <b>用官方标签，不用 {@code instanceof SwordItem}</b>（{@code docs/idea.md} §1.6）：
+     * 这是 Mojang 自己的分类口径，模组武器通常也会正确归类 ⇒ <b>自动兼容</b>。
+     * ⇒ <b>活石头不在任何武器标签里 ⇒ 不会被误判成武器</b> ✅</p>
+     *
+     * <p>⚠️ <b>本期（剑类）只认 {@code WEAPON_ENCHANTABLE}</b> ——
+     * 弓 / 弩 / 三叉戟属于「<b>蓄力型</b>」（{@code UseAnim != NONE}），回放需要
+     * 「开始 → 持续推进 → 释放」三步状态机，而 <b>FakePlayer 的 {@code tick()} 是空实现</b>
+     * （{@code L27} 一脉）不会自动推进 ⇒ 留到那一期再开，否则会出现「只拉弓、射不出去」。</p>
+     *
+     * <p>⚠️ 该标签<b>包含斧</b> ⇒ 活斧子<b>既是工具又是武器</b>，两条路都走（D3 共存）。</p>
+     */
+    public static boolean isLivingWeapon(ItemStack stack) {
+        if (stack.isEmpty() || !LivingItemManager.isLivingItem(stack)) {
+            return false;
+        }
+        return stack.is(ItemTags.WEAPON_ENCHANTABLE);
+    }
+
+    // ------------------------------------------------------------------
+    // 「帮忙型」成员口径（⭐ 全项目唯一 —— 渲染 / 同步 / 辅助三端共用）
+    // ------------------------------------------------------------------
+
+    /* 曾经这段逻辑在三处各写一遍（渲染端 / 同步端 / 辅助端），加武器时必须同步改三处 ⇒ 极易漏。
+     * 现在收敛成下面两个方法，语义分工见 {@code docs/idea.md} §1.7 的表格。 */
+
+    /**
+     * 环成员：无记忆的（活工具 ∪ 活武器）—— 决定「<b>看不看得见</b>」。
+     *
+     * <p>⭐ <b>有记忆的不上环</b>（用户定的分工）—— 它自己会去干活，两套机制别混。</p>
+     */
+    public static boolean isAssistItem(ItemStack stack) {
+        return !stack.isEmpty()
+            && LivingItemManager.isLivingItem(stack)
+            && (isLivingTool(stack) || isLivingWeapon(stack))
+            && LivingItemManager.getToolMemory(stack).isEmpty();
+    }
+
+    /**
+     * 辅助<b>挖掘</b>成员：无记忆的【活工具】—— <b>武器不参与挖掘</b>。
+     *
+     * <p>与 {@link #isAssistItem} 的差别只在「要不要带武器」：
+     * 环是展示位（活剑也该看得见），挖掘是干活位（活剑挖不动方块）。</p>
+     */
+    public static boolean isAssistTool(ItemStack stack) {
+        return isLivingTool(stack)
+            && LivingItemManager.getToolMemory(stack).isEmpty();
     }
 
     // ------------------------------------------------------------------
@@ -231,6 +287,68 @@ public final class LivingToolRecorder {
     }
 
     // ------------------------------------------------------------------
+    // 攻击记忆（活武器 —— 见 {@code docs/idea.md} §1.5）
+    // ------------------------------------------------------------------
+
+    /**
+     * 活武器<b>造成伤害</b> → 记录攻击记忆（{@code R1}）。
+     *
+     * <p>⭐ <b>不区分左右键</b>（{@code R4}）：不管玩家是左键挥还是右键放，
+     * 只要「<b>这把活武器造成了伤害</b>」就录 —— 绕开了"这武器到底用哪只手"的判断。</p>
+     *
+     * <p>⚠️ 三个坑（{@code docs/idea.md} §1.5）：</p>
+     * <ol>
+     *   <li><b>远程武器</b>（弓）{@code directEntity} 是箭 ⇒ {@code getWeaponItem()} 返回 null
+     *       —— <b>本期只做近战（剑类）</b>，不涉及；将来支持弓需 fallback 到取主手。</li>
+     *   <li><b>非攻击伤害</b>（火焰附加 / 摔落 / 中毒 / 药水）同样触发本事件
+     *       ⇒ 只认 {@code getWeaponItem()} 是<b>活武器</b>的那些。</li>
+     *   <li>🔴 <b>回放时会自我录制</b> —— FakePlayer 造成的伤害照常触发本事件
+     *       ⇒ 必须排除，否则活武器会把"自己打的"录成新记忆，越打越偏（同 {@code L39}）。</li>
+     * </ol>
+     */
+    @SubscribeEvent
+    public static void onLivingDamage(LivingDamageEvent.Post event) {
+        // ⭐ 用 Post 而不是 Pre：伤害已结算完毕。用 Pre 的话，
+        //    被取消 / 被减免到 0 的攻击也会被录进去（玩家其实"没打到"）。
+        DamageSource source = event.getSource();
+        if (!(source.getEntity() instanceof ServerPlayer player)) {
+            return;
+        }
+        // 坑 3：FakePlayer 是 ServerPlayer 的子类，instanceof 挡不住 ⇒ 显式 isFakePlayer()
+        if (!isRecordablePlayer(player)) {
+            return;
+        }
+
+        // 坑 2：只认"由这把活武器造成的"伤害
+        ItemStack weapon = source.getWeaponItem();
+        if (weapon == null || !isLivingWeapon(weapon)) {
+            return;
+        }
+
+        LivingEntity target = event.getEntity();
+        if (target == player) {
+            return;   // 打到自己不算
+        }
+
+        // R5：一次攻击命中多个目标（横扫 / 多重）会对【每个】目标各触发一次本事件。
+        // 借 L44 的保护期实现"只记第一个" —— 后续几次落在保护期内被跳过。
+        if (isInRecordGrace(player)) {
+            return;
+        }
+
+        Vec3 eye = player.getEyePosition();
+        // 命中点取【包围盒中心】—— 比眼睛高/脚底都更能代表"打在身上"，
+        // 回放时沿这条射线做实体检测也最容易命中（D2）。
+        Vec3 hitLocation = clampLength(eye, target.getBoundingBox().getCenter(), MAX_RAY_LENGTH);
+
+        // R2：蹲下时额外记住生物类型（完全类比 L4 的"蹲下记方块类型"）
+        EntityType<?> type = player.isShiftKeyDown() ? target.getType() : null;
+
+        recordAttack(weapon, eye, hitLocation, type);
+        markRecorded(player);
+    }
+
+    // ------------------------------------------------------------------
     // 内部
     // ------------------------------------------------------------------
 
@@ -288,6 +406,29 @@ public final class LivingToolRecorder {
         LivingToolMemory.RayMemory ray = LivingToolMemory.RayMemory.record(eye, hitLocation, target);
         LivingToolMemory memory = LivingItemManager.getToolMemory(tool);
         LivingItemManager.setToolMemory(tool, memory.withUse(ray));
+    }
+
+    private static void recordAttack(ItemStack weapon, Vec3 eye, Vec3 hitLocation,
+                                     @Nullable EntityType<?> type) {
+        LivingToolMemory.AttackMemory ray =
+            LivingToolMemory.AttackMemory.record(eye, hitLocation, type);
+        LivingToolMemory memory = LivingItemManager.getToolMemory(weapon);
+        LivingItemManager.setToolMemory(weapon, memory.withAttack(ray));
+    }
+
+    /**
+     * 把「{@code from → to}」的偏移<b>截断</b>到 {@code maxLength}（保留方向）。
+     *
+     * <p>录制端就截断，与 {@link LivingToolReplay#MAX_SCAN_LENGTH} 对齐 ——
+     * 防模组放大攻击距离后录出超长射线（回放时逐格扫描是热路径）。</p>
+     */
+    private static Vec3 clampLength(Vec3 from, Vec3 to, double maxLength) {
+        Vec3 offset = to.subtract(from);
+        double len = offset.length();
+        if (len <= maxLength || len < 1.0E-6) {
+            return to;
+        }
+        return from.add(offset.scale(maxLength / len));
     }
 
     /**

@@ -99,6 +99,11 @@ public final class LivingToolRayRenderer {
     private static final float USE_G = 0.85F;
     private static final float USE_B = 1.00F;
 
+    /** 攻击记忆（活武器）—— 品红（与挖掘的橙红、交互的青蓝区分开）。 */
+    private static final float ATTACK_R = 0.95F;
+    private static final float ATTACK_G = 0.35F;
+    private static final float ATTACK_B = 0.95F;
+
     /** 命中方块时的不透明度（实心）。 */
     private static final float ALPHA_HIT = 1.0F;
 
@@ -258,6 +263,12 @@ public final class LivingToolRayRenderer {
             drew |= renderRay(poseStack, ribbon, level, cameraPos, frustum, origin, memory.use(),
                 USE_R, USE_G, USE_B);
         }
+        // 攻击记忆（活武器）—— 目标从方块换成生物，故不参与 clip，只画记忆射线本身
+        if (memory.attack() != null) {
+            drew |= renderRay(poseStack, ribbon, level, cameraPos, frustum, origin,
+                new LivingToolMemory.RayMemory(memory.attack().offset(), null),
+                ATTACK_R, ATTACK_G, ATTACK_B);
+        }
         return drew;
     }
 
@@ -298,6 +309,11 @@ public final class LivingToolRayRenderer {
         if (memory.use() != null) {
             drew |= drawRibbon(poseStack, ribbon, cameraPos, frustum, origin,
                 memory.use().endpointFrom(origin), tool.useLanded(), USE_R, USE_G, USE_B);
+        }
+        // 攻击记忆：容器形态没有同步"有没有生物命中"这个布尔 ⇒ 恒按命中画（实心）
+        if (memory.attack() != null) {
+            drew |= drawRibbon(poseStack, ribbon, cameraPos, frustum, origin,
+                memory.attack().endpointFrom(origin), true, ATTACK_R, ATTACK_G, ATTACK_B);
         }
         return drew;
     }

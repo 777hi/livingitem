@@ -342,7 +342,7 @@ public final class LivingToolModelRenderer {
             if (stack == mainHand || stack == offHand) {
                 continue;
             }
-            if (isAssistTool(stack)) {
+            if (LivingToolRecorder.isAssistItem(stack)) {
                 assist.add(stack);
                 continue;
             }
@@ -540,14 +540,6 @@ public final class LivingToolModelRenderer {
         }
     }
 
-    /** 无记忆的活工具 —— 走辅助环那套渲染（口径与 {@code LivingToolAssist} 一致）。 */
-    private static boolean isAssistTool(ItemStack stack) {
-        return !stack.isEmpty()
-            && LivingItemManager.isLivingItem(stack)
-            && LivingToolRecorder.isLivingTool(stack)
-            && LivingItemManager.getToolMemory(stack).isEmpty();
-    }
-
     /** 渲染一个活工具的悬浮模型（含动画）。 */
     private static void renderOne(Minecraft mc, PoseStack poseStack, MultiBufferSource buffers,
                                   ClientLevel level, Vec3 cameraPos, float partialTick, long now,
@@ -565,7 +557,17 @@ public final class LivingToolModelRenderer {
         seen.add(key);
 
         // 射线方向 —— 取【记忆本身】，恒定不变（L48：终点不跟随服务端的目标）
-        LivingToolMemory.RayMemory ray = memory.dig() != null ? memory.dig() : memory.use();
+        // ⭐ 活武器的【攻击记忆】同样是一条射线（只是目标从方块换成生物）⇒ 桥接成 RayMemory，
+        //    直接复用下面这一整套渲染（动画暂缓期的做法，见 {@code docs/idea.md} §1.7）。
+        //    ⚠️ 少了这个桥接，只带攻击记忆的活剑会在这里 NPE（dig / use 都是 null）。
+        LivingToolMemory.RayMemory ray = memory.dig() != null ? memory.dig()
+            : memory.use() != null ? memory.use()
+            : memory.attack() != null
+                ? new LivingToolMemory.RayMemory(memory.attack().offset(), null)
+                : null;
+        if (ray == null) {
+            return;
+        }
         Vec3 end = ray.endpointFrom(origin);
         double length = origin.distanceTo(end);
         if (length < 1.0E-6) {

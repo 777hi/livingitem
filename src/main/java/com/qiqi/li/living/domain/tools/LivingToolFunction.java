@@ -46,7 +46,8 @@ public class LivingToolFunction implements LivingItemFunction {
 
     @Override
     public boolean canApply(ItemStack stack) {
-        return LivingToolRecorder.isLivingTool(stack);
+        // ⭐ 活【工具】与活【武器】共用这一个 function（两者行为差异在 tick 里按记忆类型分派）。
+        return LivingToolRecorder.isLivingTool(stack) || LivingToolRecorder.isLivingWeapon(stack);
     }
 
     @Override
@@ -110,15 +111,26 @@ public class LivingToolFunction implements LivingItemFunction {
             LivingToolProgress progressBefore = LivingItemManager.getToolProgress(tool);
             LivingToolAction actionBefore = LivingItemManager.getToolLastAction(tool);
 
-            // 挖掘记忆（左键行为）
-            ItemStack afterDig = LivingToolReplay.replayDig(tool, memory.dig(), origin, hostBlocks, serverLevel, now);
-            if (afterDig != null) {
-                writeBack(context, entry.slotIndex(), tool, afterDig);
+            // ⭐ S2「射线决定」：走哪条路完全由【记忆射线本身】决定（用户 2026-09-23 定）——
+            //    有攻击记忆 ⇒ 走攻击；否则走挖掘 / 交互。不是"看现场有什么再挑"。
+            //    ⚠️ 攻击优先：对齐 W2「射线同时命中实体和方块时，实体优先」。
+            if (memory.hasAttack()) {
+                ItemStack afterAttack =
+                    LivingToolReplay.replayAttack(tool, memory.attack(), origin, serverLevel, now);
+                if (afterAttack != null) {
+                    writeBack(context, entry.slotIndex(), tool, afterAttack);
+                }
             } else {
-                // 交互记忆（右键行为）—— 与挖掘互斥，避免同一 tick 双写
-                ItemStack afterUse = LivingToolReplay.replayUse(tool, memory.use(), origin, hostBlocks, serverLevel);
-                if (afterUse != null) {
-                    writeBack(context, entry.slotIndex(), tool, afterUse);
+                // 挖掘记忆（左键行为）
+                ItemStack afterDig = LivingToolReplay.replayDig(tool, memory.dig(), origin, hostBlocks, serverLevel, now);
+                if (afterDig != null) {
+                    writeBack(context, entry.slotIndex(), tool, afterDig);
+                } else {
+                    // 交互记忆（右键行为）—— 与挖掘互斥，避免同一 tick 双写
+                    ItemStack afterUse = LivingToolReplay.replayUse(tool, memory.use(), origin, hostBlocks, serverLevel);
+                    if (afterUse != null) {
+                        writeBack(context, entry.slotIndex(), tool, afterUse);
+                    }
                 }
             }
 
