@@ -93,8 +93,24 @@ record AttackMemory(Vec3 offset, @Nullable EntityType<?> entityType)
 | **R4** | ⭐ **不区分左右键** —— 只按「造成伤害」判定 ⇒ 绕开"这武器用哪只手" |
 | **R5** | 一次命中多个 ⇒ 只记**第一个** —— 借 L44 保护期实现 |
 
-**命中点取 `target.getBoundingBox().getCenter()`**（不是眼睛 / 脚底）—— 最能代表"打在身上"，
-回放时沿该射线做实体检测也最容易命中。
+### ⭐ 射线的朝向取【玩家视线】，不是「眼睛 → 目标中心」
+
+```java
+Vec3 look = player.getViewVector(1.0F).normalize();
+double distance = eye.distanceTo(target.getBoundingBox().getCenter());
+Vec3 hitLocation = eye.add(look.scale(Math.min(distance, MAX_RAY_LENGTH)));
+```
+
+> ⚠️ **曾用 `eye → target.getBoundingBox().getCenter()`**（以为"包围盒中心最能代表打在身上"）——
+> 实测像"**记忆射线朝向不是我攻击时的视角朝向**"（2026-09-24）：
+> 玩家瞄头 / 瞄脚、或怪物高矮不同时，这条线会**明显偏离视线**（距离越近角度差越大）。
+>
+> ⇒ **与挖掘侧保持同构**：那边 `raycastSurface` 也是**沿视线**取命中点。
+> 长度仍取「到目标的距离」⇒ 回放时射线够得着目标（D2：沿射线找实体）。
+
+⚠️ 若仍有偏差，下一个嫌疑是**录制时机**：`LivingDamageEvent` 在**伤害结算**时才触发，
+比实际攻击晚一瞬（玩家可能已微微转视角）。届时应改到**攻击瞬间**取视角
+（`AttackEntityEvent` 经 `onPlayerAttackTarget` 在 `Player#attack` 第一行触发，更早）。
 
 ### 三个坑（必须过滤）
 
@@ -298,9 +314,12 @@ Caused by: NullPointerException: Cannot invoke "BlockPos.asLong()" because "p_32
 | 项 | 状态 | 依据 |
 |---|---|---|
 | 原版剑 / 斧 / 重锤 | ✅ | 在 `WEAPON_ENCHANTABLE` 内 |
-| 锋利 / 击退 / 火焰附加 / 横扫 / 暴击 | ✅ | `fake.attack()` 走原版管线 |
+| **锋利 / 击退 / 火焰附加** | ✅ **已实测**（2026-09-24） | 属性类走 `ItemStack#forEachModifier`（**内含** `EnchantmentHelper.forEachModifier`）；<br>效果类走 `Player#attack` 内的 `EnchantmentHelper.doPostAttackEffects` |
+| **经验修补** | ✅ **已实测**（2026-09-24） | 反证耐久走的是原版管线（`hurtEnemy` → `hurtAndBreak`） |
+| 横扫 / 暴击 | ✅ | 需冷却满（`f2 > 0.9F`）⇒ 依赖 §5 的手动推进 |
 | 耐久 | ✅ | `Player#attack` 内调 `itemstack.hurtEnemy(...)` ⇒ 走 `hurtAndBreak` 三层 |
 | 模组"不毁"附魔 | ✅ | 同上（`living-tool-tech.md` §2.4） |
+| **位置类附魔效果**（`EnchantmentLocationBasedEffect`） | ❌ **未复刻** | 原版在 `handleEquipmentChanges` 里还调<br>`EnchantmentHelper.runLocationChangedEffects` / `stopLocationBasedEffects`，<br>我们的 `equipTool` 只复刻了修饰符部分。<br>⚠️ 原版内置几乎不用，**主要为模组服务** |
 | `AttackEntityEvent` | ✅ | `CommonHooks.onPlayerAttackTarget`（§4.3） |
 | `Item#onLeftClickEntity` | ✅ | 同上，同一钩子里 |
 | 领地 / 保护插件 | ✅ | FakePlayer UUID = 主人 |

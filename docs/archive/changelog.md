@@ -35,6 +35,22 @@
   📌 通用判据：**"闸门放行后才写状态"的循环，必须检查「首次」路径能否自己走通**。
 - 📄 文档：`living-weapon-tech.md` §5 补上述三个静默失效 + 可空 `BlockPos` 的通用约束；
   §9 补「记忆清除」方案（判据：这一刀没打到怪 ⇒ 清；必须套 L44 保护期）。
+- ✅ 修复：**记忆射线朝向不是玩家攻击时的视角朝向**（实测）。
+  根因：录制时取「眼睛 → 怪物包围盒中心」，而**挖掘侧是沿视线 `clip` 取命中点** ⇒ 两侧口径不一致；
+  玩家瞄头 / 瞄脚、或怪物高矮不同时会**明显偏离视线**（距离越近角度差越大）。
+  ⇒ 改为【**视线方向 × 到目标的距离**】，与挖掘侧 `raycastSurface` **同构**。
+  ⚠️ 若仍有偏差，下一个嫌疑是**录制时机**（`LivingDamageEvent` 在伤害结算时才触发，比攻击晚一瞬），
+  届时应改到 `AttackEntityEvent`（`onPlayerAttackTarget` 在 `Player#attack` 第一行，更早）。
+  顺带删掉因此变成孤儿的 `clampLength()`。
+- ✅ 实测通过：**锋利 / 火焰附加 / 经验修补** 均生效。
+  属性类附魔走 `ItemStack#forEachModifier`（**其内部含** `EnchantmentHelper.forEachModifier`，
+  与 `LivingEntity#handleEquipmentChanges` 用的是同一句 ⇒ 复刻完整）；
+  效果类走 `Player#attack` 内的 `EnchantmentHelper.doPostAttackEffects`。
+  经验修补生效 ⇒ **反证耐久走的是原版管线**（`hurtEnemy` → `hurtAndBreak`）。
+- ⚠️ 已知小缺口：**位置类附魔效果**（`EnchantmentLocationBasedEffect`）未复刻 ——
+  原版 `handleEquipmentChanges` 还调 `EnchantmentHelper.runLocationChangedEffects` /
+  `stopLocationBasedEffects`，而 `equipTool` 只复刻了修饰符部分。
+  **原版内置几乎不用，主要为模组服务** ⇒ 暂不补，已在 §8 标注。
 
 ---
 

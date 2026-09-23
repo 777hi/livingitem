@@ -337,9 +337,15 @@ public final class LivingToolRecorder {
         }
 
         Vec3 eye = player.getEyePosition();
-        // 命中点取【包围盒中心】—— 比眼睛高/脚底都更能代表"打在身上"，
-        // 回放时沿这条射线做实体检测也最容易命中（D2）。
-        Vec3 hitLocation = clampLength(eye, target.getBoundingBox().getCenter(), MAX_RAY_LENGTH);
+        // ⭐ 朝向取【玩家视线】，不是「眼睛 → 怪物包围盒中心」——
+        //    后者在玩家瞄头 / 瞄脚、或怪物高矮不同时会偏出很大角度
+        //    （2026-09-24 用户实测："记忆射线朝向不是攻击时的视角朝向"）。
+        //    ⇒ 与挖掘侧 {@link #raycastSurface} 保持同构：那边也是【沿视线】取命中点。
+        //
+        //    长度仍取「到目标的距离」⇒ 回放时射线长度够得着目标（D2：沿射线找实体）。
+        Vec3 look = player.getViewVector(1.0F).normalize();
+        double distance = eye.distanceTo(target.getBoundingBox().getCenter());
+        Vec3 hitLocation = eye.add(look.scale(Math.min(distance, MAX_RAY_LENGTH)));
 
         // R2：蹲下时额外记住生物类型（完全类比 L4 的"蹲下记方块类型"）
         EntityType<?> type = player.isShiftKeyDown() ? target.getType() : null;
@@ -416,20 +422,6 @@ public final class LivingToolRecorder {
         LivingItemManager.setToolMemory(weapon, memory.withAttack(ray));
     }
 
-    /**
-     * 把「{@code from → to}」的偏移<b>截断</b>到 {@code maxLength}（保留方向）。
-     *
-     * <p>录制端就截断，与 {@link LivingToolReplay#MAX_SCAN_LENGTH} 对齐 ——
-     * 防模组放大攻击距离后录出超长射线（回放时逐格扫描是热路径）。</p>
-     */
-    private static Vec3 clampLength(Vec3 from, Vec3 to, double maxLength) {
-        Vec3 offset = to.subtract(from);
-        double len = offset.length();
-        if (len <= maxLength || len < 1.0E-6) {
-            return to;
-        }
-        return from.add(offset.scale(maxLength / len));
-    }
 
     /**
      * 从玩家眼睛沿视线做一次射线，返回<b>方块表面</b>的命中点。
