@@ -28,7 +28,9 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.LightTexture;
+import net.minecraft.client.renderer.block.model.ItemTransform;
 import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
@@ -43,6 +45,8 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 
 import org.joml.Matrix4f;
+import org.joml.Quaternionf;
+import org.joml.Vector3f;
 
 /**
  * 活工具<b>悬浮模型 + 动画</b>（{@code K} 组）—— 让活工具在世界里"活起来"。
@@ -180,32 +184,15 @@ public final class LivingToolModelRenderer {
     private static final long ATTACK_RING_TICKS = PULSE_TICKS;
 
     /**
-     * 模型【立正】修正角 —— 绕<b>贴图平面的法线（Z）</b>在平面内旋转。
+     * 模型【立正】修正角 —— 绕 Z 转 {@code -45°}，把「手持斜 45°」建模的贴图长轴立正成 +Y。
      *
-     * <p>⚠️ <b>为什么需要它</b>：MC 的 {@code item/handheld} 贴图是<b>斜 45° 对角</b>画的
-     * （镐头在右上、柄在左下），为的是在物品栏图标里好看。模型本身<b>没有任何元数据</b>
-     * 能说明"哪边是上" ⇒ 直接渲染出来就是<b>斜的</b>（掉落物同理）。
-     * 实测症状：工具"45° 斜朝下"，怎么调朝向都不对。</p>
+     * <p>⚠️ 2026-09-24 结论（实测三轮）：本旧方案（配合 FIXED 自带的 Y180）对
+     * 原版工具 / 守约定的模组<b>正确</b>；两次重构（「手持 transform + 运行时 rotationTo」）
+     * 都让原版物品平躺 —— 根因未查明（怀疑 sodium/iris 等渲染管线介入导致实际应用链
+     * 与源码阅读不一致）⇒ <b>路线 B（普通模型物品）回退本方案</b>。</p>
      *
-     * <p><b>完整链路</b>（注意 {@code FIXED} 自己也会转一下）：</p>
-     * <ol>
-     *   <li>模型原始空间：贴图 {@code (0,16) → 模型 (0,0)}、{@code (16,0) → 模型 (1,1)}（Y 翻转）
-     *       ⇒ 长轴指向 {@code (+1,+1)}</li>
-     *   <li>{@code FIXED} 的 display 变换：<b>绕 Y 转 180°</b>（模型 json 里的 {@code "fixed"}）
-     *       ⇒ {@code (x,y,z) → (-x,y,-z)} ⇒ 长轴变 {@code (-1,+1)}</li>
-     *   <li><b>本常量</b>：绕 Z 转 {@code -45°} ⇒
-     *       {@code x' = -cos(-45) - sin(-45) = 0}、{@code y' = -sin(-45) + cos(-45) = √2}
-     *       ⇒ 立成 {@code +Y}，头朝上、柄朝下</li>
-     *   <li>再由 {@link #drawModel} 把 {@code +Y} 对齐到目标方向</li>
-     * </ol>
-     *
-     * <p>📌 <b>跨项目印证</b>：同工作区的「御剑」模组（{@code libs/src/YujianCraft-main}）
-     * 用<b>完全相同的方案</b>（{@code renderStatic(FIXED)} + 绕 Z 校正），
-     * 并在源码里留下了同样的结论：
-     * <i>"FIXED rotates the vanilla item 180 degrees around Y. -45 aligns the real blade axis."</i>
-     * —— 第 2 步的 Y180 就是被这句点出来的，我最初漏了它，所以把符号写反了。</p>
-     *
-     * <p>⚠️ 换用别的物品模型时若朝向不对，只调这一个常量即可（±45 / ±90 / ±180 都是常见值）。</p>
+     * <p>不守约定的物品（BEWLR，如灾变）走路线 A（fixed 姿态 + thirdperson/fixed 缩放比），
+     * 见 {@link #drawModel}。</p>
      */
     private static final float MODEL_UPRIGHT_FIX = (float) (-Math.PI / 4.0);
 
@@ -789,21 +776,54 @@ public final class LivingToolModelRenderer {
             // 以【工具柄】为轴滚转，只为调整"脸朝哪"。
             poseStack.mulPose(Axis.YP.rotation(RAY_ROLL_FIX));
         }
-        // 风车自转：绕【立正后的 Z】= 薄板（T 平面）的【法线】。
-        // ⭐ 为什么是 Z 而不是 X（2026-09-20 用户实测定）：镐子是一块【平面】。
+        BakedModel baked = mc.getItemRenderer().getModel(stack, level, null, 0);
+        final boolean customRenderer = baked.isCustomRenderer();
+        ItemTransform fixedPose = null;
+        ItemTransform thirdPose = null;
+        if (customRenderer) {
+            fixedPose = baked.getTransforms().getTransform(ItemDisplayContext.FIXED);
+            thirdPose = baked.getTransforms()
+                .getTransform(ItemDisplayContext.THIRD_PERSON_RIGHT_HAND);
+        }
+
+        // 风车自转：绕【立正后的板面法线】= 薄板（T 平面）的【法线】。
+        // ⭐ 为什么绕板面法线（2026-09-20 用户实测定）：镐子是一块【平面】。
         //    绕 T 平面【内】的轴转 ⇒ 工具"横着翻滚"，看着别扭；
         //    绕【垂直于 T 平面】的轴转 ⇒ 薄板在自己平面里旋转，任何视角都一眼看出在转。
-        // ⚠️ 位置必须写在 rollRad【内侧】、立正【紧外侧】：这样自转轴就是"立正后的 Z"
-        //    = 板面法线，而且【相对模型自身恒定】—— 不随 rollRad / 射线方向改变。
-        //    （2026-09-20 用户澄清："自转是相对于模型本身的，射线不是参考系"。）
-        //    曾写在 rollRad 外侧，导致自转轴被 rollRad 带到"模型 X"上，变成横着翻滚。
+        // ⚠️ 路线 B 回退旧链 ⇒ 轴回到【立正后的 Z】（绕 Z 转不改变 Z 轴自身 ⇒ 恒为板面法线）；
+        //    路线 A（BEWLR）无「板面」约定 ⇒ 兜底绕 X（罕见场景）。
         if (spinRad != 0.0F) {
-            // ⚠️ 取负：让工具"尖"朝前转（2026-09-20 用户实测定；正号是斧背朝前、反了）。
-            poseStack.mulPose(Axis.ZP.rotation(-spinRad));
+            if (customRenderer) {
+                poseStack.mulPose(Axis.XP.rotation(-spinRad));
+            } else {
+                // ⚠️ 取负：让工具"尖"朝前转（2026-09-20 用户实测定；方向反了翻此符号）。
+                poseStack.mulPose(Axis.ZP.rotation(-spinRad));
+            }
         }
-        // 写在最后 = 最先作用于模型：把【斜 45° 的贴图长轴】立正成 +Y（见 MODEL_UPRIGHT_FIX）。
-        // 立正后 +Y 就是工具长轴，上面几步的 pitch/yaw 才能把它正确对齐到目标方向。
-        poseStack.mulPose(Axis.ZP.rotation(MODEL_UPRIGHT_FIX));
+        // 写在最后 = 最先作用于模型。
+        // ⭐ 2026-09-24 最终结论（两次重构实测失败后，按用户提示「看看之前的代码」回退）：
+        //
+        // ── 路线 B｜普通模型物品（原版 + 守约定的模组）＝【旧实测方案原样恢复】────────
+        //    模型尖（模型空间）→ FIXED 自带的 Y180（renderStatic 内部自然应用，不碰）
+        //    → MODEL_UPRIGHT_FIX 绕 Z -45° ⇒ +Y。
+        //    两次重构（「应用手持 transform + 抵消 FIXED + 运行时/手算立正」）都让原版平躺，
+        //    根因未查明（怀疑 sodium/iris 等渲染管线介入，实际应用链与源码阅读不一致）
+        //    ⇒ 先回退恢复正确行为。守约定的模组与原版建模约定相同 ⇒ 旧方案同样准确。
+        //
+        // ── 路线 A｜BEWLR 物品（灾变等）＝保留用户实测正确的新方案 ─────────────────
+        //    fixed display 交给 renderStatic(FIXED) 全权应用（模组为展示框调好的姿态：
+        //    剑柄朝圆心、剑身⊥圆平面 ✓），只补缩放比 thirdperson/fixed（对齐第三人称手持）。
+        //    🔴 不能走路线 B：会与 fixed display 叠加成双重变换（scale 0.8 × 0.35 = 0.28）。
+        if (customRenderer) {
+            if (fixedPose != ItemTransform.NO_TRANSFORM && thirdPose != ItemTransform.NO_TRANSFORM) {
+                poseStack.scale(
+                    thirdPose.scale.x() / fixedPose.scale.x(),
+                    thirdPose.scale.y() / fixedPose.scale.y(),
+                    thirdPose.scale.z() / fixedPose.scale.z());
+            }
+        } else {
+            poseStack.mulPose(Axis.ZP.rotation(MODEL_UPRIGHT_FIX));
+        }
         if (scale != 1.0F) {
             poseStack.scale(scale, scale, scale);
         }
