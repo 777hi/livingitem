@@ -146,6 +146,16 @@ public final class LivingToolRecorder {
     }
 
     /**
+     * 辅助<b>攻击</b>成员：无记忆的【活武器】—— 挖掘侧不参与。
+     *
+     * <p>与 {@link #isAssistItem}（环成员，工具 ∪ 武器）的差别：这里只要武器。</p>
+     */
+    public static boolean isAssistWeapon(ItemStack stack) {
+        return isLivingWeapon(stack)
+            && LivingItemManager.getToolMemory(stack).isEmpty();
+    }
+
+    /**
      * 辅助<b>挖掘</b>成员：无记忆的【活工具】—— <b>武器不参与挖掘</b>。
      *
      * <p>与 {@link #isAssistItem} 的差别只在「要不要带武器」：

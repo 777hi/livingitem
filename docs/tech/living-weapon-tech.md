@@ -434,9 +434,77 @@ fake.attack(怪)
 | 项 | 阻塞原因 |
 |---|---|
 | **模组法杖 / 枪械** | ① 法杖不在 `WEAPON_ENCHANTABLE`（铁魔法靠 `casting_implement` **组件**识别）<br>② 法杖是**右键施法**，而回放只调 `attack()` ⇒ 需按物品类型**分派**到 `use()` 分支（**该分支已存在**）<br>📁 参考 `libs/src/irons-spells-n-spellbooks-1.21` |
-| **辅助攻击**（无记忆时帮玩家打） | 未做；设计见 [../idea.md](../idea.md) §1.7 |
+| **辅助攻击**（无记忆时帮玩家打） | ✅ **已实现**（2026-09-24）—— 见下方小节 |
 | **蓄力型**（弓 / 弩 / 三叉戟） | 需「开始 → 持续推进 → 释放」状态机；FakePlayer 不 tick ⇒ **只会拉弓、射不出去** |
 | **PVP** | 需先定义"敌对关系"判据；现为硬排除所有 `Player` |
+
+### 辅助攻击（已实现 · 2026-09-24）
+
+**玩家打中怪 ⇒ 背包里【无记忆】的活武器一起出手**（`LivingWeaponAssist`）。
+
+| 环节 | 做法 |
+|---|---|
+| 触发 | `LivingDamageEvent.Post`（**伤害结算后**），且 `source.getEntity()` 是**真实玩家** |
+| 取武器 | `LivingToolRecorder#isAssistWeapon`（无记忆的活武器）；**跳过主手槽位**（玩家自己已挥） |
+| 射线 | **临时构造**「玩家眼睛 → 怪物中心」（无记忆 ⇒ 现算），复用 `replayAttack` |
+| 写回 | `inventory.setItem(slot, result.tool())` |
+
+#### 🔴 关键：必须压制无敌帧，否则全部白打
+
+原版生物受击后 `invulnerableTime = 20`、`> 10` 即**完全免疫** ⇒
+**玩家那一刀已经占掉了这个窗口** ⇒ 活武器随后打的全部被吞
+（**伤害 / 附魔 / 击退都不触发**）。
+
+⇒ 用官方接口把辅助攻击期间的无敌压到 0：
+
+```java
+@SubscribeEvent
+static void onIncomingDamage(LivingIncomingDamageEvent e) {
+    if (!active) return;
+    e.getContainer().setPostAttackInvulnerabilityTicks(0);   // ⭐ 官方入口
+}
+```
+
+⭐ **`active` 标志只在辅助攻击循环期间为 true** ⇒
+玩家自己那一刀、以及**自主模式**（有记忆、每 tick 打）都不受影响 —— 否则 DPS 会失控。
+
+#### ⚠️ 官方接口**救不了当前这一刀** ⇒ 必须再压一道
+
+`hurt()` 的确切顺序（行号源自 `LivingEntity` 源码）：
+
+```
+1152  damageContainers.push(...)
+1153  onEntityIncomingDamage(...)                     ← 我们的事件：设 container = 0
+...
+1190  if (invulnerableTime > 10 && !BYPASSES) ...     ← 免疫判断：读【当前 invulnerableTime】
+1202  invulnerableTime = getPostAttackInvulnerabilityTicks()   ← 才用上我们设的 0
+```
+
+⇒ 官方接口改的是「**本次之后**」的无敌时间，而 `1190` 的免疫判断读的是**当前值** ⇒
+单靠它，**第 2 把会被吞**（实测：只有背包最靠前的一把生效）。
+
+⇒ 故循环里每把攻击**前**再直接压一道（`invulnerableTime` 是 `public` 字段，无需反射 / AT）：
+
+```java
+if (target.invulnerableTime > 10) {
+    target.invulnerableTime = 10;   // 进 hurt() 会先 -1 ⇒ 9 ⇒ 跨过 `> 10` 的免疫阈值
+}
+```
+
+> 📌 两者叠加是幂等的：官方入口负责"之后"，直接兜底负责"当前"。
+> ⚠️ 直接改字段属于野路子（见 `living-tool-tech.md` §13），此处是**确认官方接口不足以覆盖**后的补充 —— 别把它当成首选方案。
+
+#### 另外两处保护
+
+| 保护 | 原因 |
+|---|---|
+| `target.isDeadOrDying()` 就 `break` | 怪中途死了还继续挥 ⇒ **不造成伤害、不触发附魔，却仍扣耐久** |
+| 取消击退（`LivingKnockBackEvent`） | N 把各推一次 ⇒ 怪会被**崩飞**，不像"围殴"（照铁魔法做法） |
+
+> ⚠️ **更正 [`../idea.md`](../idea.md) §1.7 的口径**：那里写「不加伤害闸门 ⇒ 接受伤害线性叠加」。
+> 实际上**原版本来会用无敌间隔封顶**（根本不会叠加）；
+> 是**我们主动压制无敌帧**之后才真正叠加的 —— 别把因果搞反。
+
 ### 记忆清除（已实现 · 2026-09-24）
 
 ⭐ **判据：这一刀没打到怪 ⇒ 清掉攻击记忆。**
