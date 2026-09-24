@@ -191,6 +191,26 @@ public static boolean isLivingTool(ItemStack stack) {
 | 命中点 | `event.getContext().getClickLocation()`（直接给精确位置） |
 | 工具来源 | `event.getHeldItemStack()` |
 
+#### 🔴 已知问题：工具右键「不可交互方块」也会录上 use 记忆（2026-09-24 实测，暂未修）
+
+**症状**：活斧子右键石头等不可交互方块 ⇒ 交互记忆被录上（本该只录去皮等真实交互）。
+
+**因果链（源码实锤，`libs/src/neoforge-21.1.249-merged/`）**：
+
+1. **事件在「判定之前」post** —— `AxeItem#evaluateNewBlockState`（94/99/105 行）对**任何方块**
+   无条件连发三次 `state.getToolModifiedState(AXE_STRIP / AXE_SCRAPE / AXE_WAX_OFF)`；
+   而 `IBlockStateExtension#getToolModifiedState`（648 行）是**先 post 事件、后跑原版判定**
+   （事件 `finalState` 初始 = 原状态 ⇒ **handler 里无法区分会不会成功**）⇒
+   「注定失败的尝试」也会触发我们的 `onToolModify` ⇒ 录上。
+2. **L44 保护期挡住了自愈清除** —— 本有兜底：useOn 对石头 PASS ⇒ `RightClickItem` 触发
+   ⇒ `onRightClickItem` 清 use 记忆；但录制时刚 `markRecorded` ⇒ 同一次右键的清除
+   **正好落在 1 秒保护期内被跳过** ⇒ 假录制持续残留。
+   （该保护期本是防「剥皮后惯性误触清掉真记忆」的，被假录制钻了空子。）
+
+**将来修法**（集中改 `onToolModify` 一个 handler）：按 `event.getItemAbility()` **自己重算原版判定**
+——`AXE_STRIP` → 查 strippables 数据映射（`AxeItem#getAxeStrippingState`）、`AXE_SCRAPE` → 铜氧化
+上一阶段、`AXE_WAX_OFF` → 含蜡变体……查不到结果就不录。原版方法/数据映射均可直接访问。
+
 ### 4.4 ⚠️ 必须排除假玩家（`L39`）
 
 ```java
