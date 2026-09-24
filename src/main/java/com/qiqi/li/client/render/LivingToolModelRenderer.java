@@ -37,6 +37,7 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.state.BlockState;
@@ -429,7 +430,9 @@ public final class LivingToolModelRenderer {
             if (owner.distanceToSqr(cameraPos) > MAX_DISTANCE * MAX_DISTANCE) {
                 continue;
             }
-            renderBackRing(mc, poseStack, buffers, level, cameraPos, partialTick, owner, entry.tools());
+            // ⭐ 2026-09-25 扩展：按 action 组件分组 —— 攻击环 + 背后环（零新增同步，见下）
+            renderOtherPlayerItems(mc, poseStack, buffers, level, cameraPos, partialTick, now,
+                owner, entry.tools());
         }
 
         // 清理：本帧没见到的 key 直接丢（工具被取走 / 走出范围）。
@@ -563,6 +566,9 @@ public final class LivingToolModelRenderer {
         if (target == null || age >= ATTACK_RING_TICKS) {
             return weapons;
         }
+        if (age < 0L) {
+            return weapons;   // 防御：客户端时钟略慢于服务端写入时（差 1~2 tick），视为未攻击
+        }
 
         // ── ③ 攻击环：目标生物处，环面朝玩家（与挖掘环同款取法）───────────────────
         Vec3 center = Vec3.atCenterOf(target);
@@ -581,6 +587,58 @@ public final class LivingToolModelRenderer {
         drawRing(mc, poseStack, buffers, level, cameraPos, center, normal, weapons,
             0.0F, scale, true, ATTACK_RING_RADIUS_BASE);
         return List.of();
+    }
+
+    /**
+     * ⑤ 联机：把【其它玩家】的活武器按状态分组渲染（2026-09-25 扩展，原最小版只有背后环）。
+     *
+     * <p>⭐ <b>零新增同步</b>：攻击动作（{@code LivingToolAction}）写在物品的 DataComponent 上，
+     * {@code LivingToolPlayerPacket} 里的工具副本经 {@code ItemStack.STREAM_CODEC} 编码时
+     * <b>天然携带</b>（与手持动画同一机制）⇒ 客户端直接读副本组件分组即可。</p>
+     *
+     * <p>分组：{@code action} 在存活窗口内 ⇒ <b>攻击环</b>（飞到目标生物处脉冲，与本机同款）；
+     * 其余 ⇒ 背后环。边界：挖掘环不做 —— "他正在挖哪格"需要新增协议字段（辅助挖掘状态不在
+     * 组件里）；自主模式（有记忆）的工具根本不在同步列表里。</p>
+     */
+    private static void renderOtherPlayerItems(Minecraft mc, PoseStack poseStack, MultiBufferSource buffers,
+                                               ClientLevel level, Vec3 cameraPos, float partialTick, long now,
+                                               Player owner, List<ItemStack> tools) {
+        List<ItemStack> attacking = new ArrayList<>();
+        List<ItemStack> idle = new ArrayList<>();
+        long latest = Long.MIN_VALUE;
+        BlockPos target = null;
+        for (ItemStack stack : tools) {
+            LivingToolAction action = LivingItemManager.getToolLastAction(stack);
+            if (action != null && action.target() != null
+                && now - action.tick() >= 0L && now - action.tick() < ATTACK_RING_TICKS) {
+                attacking.add(stack);
+                if (action.tick() > latest) {
+                    latest = action.tick();
+                    target = action.target();
+                }
+            } else {
+                idle.add(stack);
+            }
+        }
+
+        if (!idle.isEmpty()) {
+            renderBackRing(mc, poseStack, buffers, level, cameraPos, partialTick, owner, idle);
+        }
+
+        if (target != null) {
+            Vec3 center = Vec3.atCenterOf(target);
+            Vec3 toViewer = new Vec3(cameraPos.x - center.x, 0.0, cameraPos.z - center.z);
+            Vec3 normal = toViewer.lengthSqr() < 1.0E-6 ? lastRingFlat : toViewer.normalize();
+
+            float scale = 1.0F;
+            long age = now - latest;
+            if (age < PULSE_TICKS) {
+                float t = (float) age / PULSE_TICKS;
+                scale = 1.0F + PULSE_SCALE * (float) Math.sin(Math.PI * Mth.clamp(t, 0.0F, 1.0F));
+            }
+            drawRing(mc, poseStack, buffers, level, cameraPos, center, normal, attacking,
+                0.0F, scale, true, ATTACK_RING_RADIUS_BASE);
+        }
     }
 
     /**

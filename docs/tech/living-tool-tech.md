@@ -1494,6 +1494,17 @@ private float incrementDestroyProgress(...) {
 **渲染复用**：`renderBackRing(player, tools, …)` —— 本机与远程共用同一条路径
 （参考系直接取 `player` 自己的位置 / 朝向）。
 
+#### ✅ 扩展：攻击环联机可见（2026-09-25，零新增同步）
+
+`LivingToolAction` 写在物品的 DataComponent 上，`LivingToolPlayerPacket` 的工具副本经
+`ItemStack.STREAM_CODEC` 编码时**天然携带**（与手持动画同一机制）⇒ 客户端对别人的工具列表
+读组件即可分组：`action` 在存活窗口内 ⇒ **攻击环**（飞到目标生物处脉冲，与本机同款，
+`renderOtherPlayerItems`）；其余 ⇒ 背后环。
+
+仍不可见：**挖掘环**（"他正在挖哪格"不在组件里，辅助挖掘状态是本机 BreakSpeed 的本地记录；
+要做得新增协议字段：`Entry` 加 digging + 服务端 `BreakSpeed` 记录目标，判定偏复杂暂缓）；
+**自主模式**（有记忆）的工具不在同步列表里。
+
 ---
 
 ## 12. 已实现：`K2` 容器内容 S2C 同步（2026-09-19）
