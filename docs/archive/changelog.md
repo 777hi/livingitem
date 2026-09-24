@@ -47,6 +47,21 @@
   与 `LivingEntity#handleEquipmentChanges` 用的是同一句 ⇒ 复刻完整）；
   效果类走 `Player#attack` 内的 `EnchantmentHelper.doPostAttackEffects`。
   经验修补生效 ⇒ **反证耐久走的是原版管线**（`hurtEnemy` → `hurtAndBreak`）。
+- ✅ 新增：**活武器记忆清除**（此前 `withoutAttack()` 已就位但无调用方）。
+  判据：**这一刀没打到怪 ⇒ 清掉攻击记忆**。
+  - 左键**挥向方块**：`PlayerInteractEvent.LeftClickBlock`（服务端）⇒ 零网络改动
+  - 左键**挥空**：`LeftClickEmpty`（仅客户端）⇒ `ToolMemoryClearPacket(KIND_ATTACK)`
+  ⇒ 手感：挥一刀空就能在**打架 ⇄ 挖矿**之间切换（活斧子清掉 attack 后按 S2 回到挖掘模式）。
+  ⚠️ 两条都套 **L44 保护期**（打完怪顺势挥几刀不会误清刚录的记忆）。
+  ⚠️ `ToolMemoryClearPacket` 的 `boolean dig` 装不下第三种 ⇒ 扩展成**三态 int**
+  （`KIND_DIG` / `KIND_USE` / `KIND_ATTACK`）；服务端**判据分开**：
+  清挖掘 / 交互要求手持**活工具**，清攻击要求手持**活武器**（活剑不是活工具）。
+- 🔴 修复：**活武器【掉落物形态】不攻击**。
+  根因：`LivingItem#processItemEntityContainers` 是**独立前置过滤**（不走 `canApply` 分组），
+  而它只写了 `isLivingTool` ⇒ **活剑被整个跳过 ⇒ 不 tick ⇒ 不攻击**。
+  ⇒ 新增 `LivingToolRecorder#isLivingToolOrWeapon` 作为「谁来 tick」的**单一判据来源**，
+  该处与 `LivingToolFunction#canApply` 同时改用它。
+  📌 容器 / 玩家背包 / 末影箱形态都走 `canApply` 分组 ⇒ 自动覆盖，**只有掉落物形态漏了**。
 - ⚠️ 已知小缺口：**位置类附魔效果**（`EnchantmentLocationBasedEffect`）未复刻 ——
   原版 `handleEquipmentChanges` 还调 `EnchantmentHelper.runLocationChangedEffects` /
   `stopLocationBasedEffects`，而 `equipTool` 只复刻了修饰符部分。

@@ -291,6 +291,22 @@ Caused by: NullPointerException: Cannot invoke "BlockPos.asLong()" because "p_32
 
 ⚠️ 推论：活斧子若同时有挖掘记忆与攻击记忆 ⇒ **只走攻击**（不会同时挖）。
 
+### ⚠️ 宿主形态：判据必须走单一来源
+
+| 形态 | 入口 | 判据 |
+|---|---|---|
+| 容器（箱子 / 末影箱） | `ContainerLivingItemHandler#processContext` | 按 `canApply` 分组 ⇒ ✅ 自动覆盖 |
+| **玩家背包** | 同上 | ✅ 自动覆盖 |
+| **掉落物** | `LivingItem#processItemEntityContainers` | 🔴 **独立前置过滤** —— **不走** `canApply` 分组 |
+
+> 🔴 **事故（2026-09-24）**：掉落物形态的过滤原先只写 `isLivingTool`
+> ⇒ **活剑被整个跳过 ⇒ 不 tick ⇒ 不攻击**。
+> ⇒ 该处必须用 `LivingToolRecorder#isLivingToolOrWeapon`（与 `canApply` **同一来源**）。
+>
+> 📌 **教训**：凡是「**是否纳入某条处理管线**」的判据，都要收敛成**单一来源**；
+> 分散写就必然在扩展（新增物品类型）时漏改一处 ——
+> 环成员口径曾在 3 处重复（活剑"隐身"）已是前车之鉴。
+
 ---
 
 ## §7 渲染
@@ -337,24 +353,27 @@ Caused by: NullPointerException: Cannot invoke "BlockPos.asLong()" because "p_32
 | **辅助攻击**（无记忆时帮玩家打） | 未做；设计见 [../idea.md](../idea.md) §1.7 |
 | **蓄力型**（弓 / 弩 / 三叉戟） | 需「开始 → 持续推进 → 释放」状态机；FakePlayer 不 tick ⇒ **只会拉弓、射不出去** |
 | **PVP** | 需先定义"敌对关系"判据；现为硬排除所有 `Player` |
-| **清除攻击记忆** | ⚠️ **未实现**（方案已定，见下方小节）。`LivingToolMemory#withoutAttack()` 已就位，但**没有任何调用方** |
-
-### 记忆清除（方案已定 · 待实现）
+### 记忆清除（已实现 · 2026-09-24）
 
 ⭐ **判据：这一刀没打到怪 ⇒ 清掉攻击记忆。**
 
-| 触发 | 机制 | 备注 |
-|---|---|---|
-| 左键**挥向方块** | `PlayerInteractEvent.LeftClickBlock`（服务端） | 零网络改动 |
-| 左键**挥空** | `LeftClickEmpty`（**仅客户端**）⇒ 需发包 | 与活工具 L43 同款 |
-| 右键空气 / 物品 | 本期**不做**（近战用左键）；施法类那期再补 | R4 录制不分左右键，但清除目前认左键 |
+| 触发 | 机制 |
+|---|---|
+| 左键**挥向方块** | `PlayerInteractEvent.LeftClickBlock`（服务端，仅 `START`）⇒ `withoutAttack()` |
+| 左键**挥空** | `LeftClickEmpty`（**仅客户端**）⇒ `ToolMemoryClearPacket(KIND_ATTACK)` ⇒ 服务端 `withoutAttack()` |
+| 右键空气 / 物品 | 本期**不做**（近战用左键）；施法类那期再补 |
 
-⇒ 由此得到的手感：**挥一刀空就能在「打架」和「挖矿」之间切换**
-（活斧子同时是工具与武器，清掉 attack 就自然回到挖掘模式）。
-
-> ⚠️ **必须套 L44 保护期**（写入记忆后 20 tick 内不清除）——
+> ⚠️ 两条**都套 L44 保护期**（写完记忆 20 tick 内不清除）——
 > 打完怪玩家往往还会顺势挥几刀，不保护的话刚录的记忆立刻被自己清掉。
-> 活工具侧这个坑**已实测踩过**（`L44`），活武器直接照搬。
+> 活工具侧这个坑**已实测踩过**，活武器直接照搬。
+
+⇒ 由此得到的手感：**挥一刀空 / 挥向方块就能在「打架」和「挖矿」之间切换**
+（活斧子同时是工具与武器，清掉 attack 后按 S2 自然回到挖掘模式）。
+
+⚠️ **实现副作用（记一下）**：`ToolMemoryClearPacket` 原是 `boolean dig`，
+装不下第三种 ⇒ 已扩展成**三态 int**（`KIND_DIG=0` / `KIND_USE=1` / `KIND_ATTACK=2`）。
+服务端按 `kind` 分派，且**判据分开**：清挖掘/交互要求手持**活工具**，清攻击要求手持**活武器**
+（活剑不是活工具，合并判据会漏）。
 
 ### 环成员口径（已统一）
 

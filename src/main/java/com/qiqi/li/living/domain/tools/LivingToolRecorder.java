@@ -111,6 +111,21 @@ public final class LivingToolRecorder {
         return stack.is(ItemTags.WEAPON_ENCHANTABLE);
     }
 
+    /**
+     * 是否由 {@code LivingToolFunction} 驱动 —— 活【工具】<b>或</b>活【武器】。
+     *
+     * <p>⭐ <b>这是「谁来 tick」的单一判据来源</b>：{@code LivingToolFunction#canApply}、
+     * 掉落物形态的扫描入口（{@code LivingItem#processItemEntityContainers}）都用它。</p>
+     *
+     * <p>🔴 <b>事故（2026-09-24）</b>：掉落物形态的入口原先只写 {@code isLivingTool}
+     * ⇒ <b>活剑被整个跳过 ⇒ 不 tick ⇒ 不攻击</b>。
+     * ⚠️ 别在各处各写一遍 {@code isLivingTool(x) || isLivingWeapon(x)} ——
+     * 环成员口径就曾在 3 处重复，加武器时漏改一处即出问题（活剑"隐身"）。</p>
+     */
+    public static boolean isLivingToolOrWeapon(ItemStack stack) {
+        return isLivingTool(stack) || isLivingWeapon(stack);
+    }
+
     // ------------------------------------------------------------------
     // 「帮忙型」成员口径（⭐ 全项目唯一 —— 渲染 / 同步 / 辅助三端共用）
     // ------------------------------------------------------------------
@@ -246,7 +261,12 @@ public final class LivingToolRecorder {
     }
 
     /**
-     * 左键<b>落在方块上</b> → 先清除挖掘记忆（{@code L43}）。
+     * 左键<b>落在方块上</b> → 先清除记忆（{@code L43}）——
+     * 活工具清<b>挖掘</b>、活武器清<b>攻击</b>（活斧子两条都清）。
+     *
+     * <p>⭐ <b>活武器为什么也要清</b>：左键挥向方块 = <b>这一刀没打到怪</b>
+     * ⇒ 清掉攻击记忆 ⇒ 按 S2 分派自然回到「挖掘模式」。
+     * ⇒ 于是「挥一刀空 / 挥向方块」就能在<b>打架 ⇄ 挖矿</b>之间切换，无需额外操作。</p>
      *
      * <p>与 {@link #onBlockBreak} 配合构成「完整操作才形成记忆」：</p>
      * <pre>
@@ -274,16 +294,25 @@ public final class LivingToolRecorder {
         }
 
         ItemStack tool = event.getItemStack();
-        if (!isLivingTool(tool)) {
+        boolean asTool = isLivingTool(tool);
+        boolean asWeapon = isLivingWeapon(tool);
+        if (!asTool && !asWeapon) {
             return;
         }
 
         LivingToolMemory memory = LivingItemManager.getToolMemory(tool);
-        if (!memory.hasDig()) {
-            return;
+        LivingToolMemory updated = memory;
+        if (asTool) {
+            updated = updated.withoutDig();
+        }
+        if (asWeapon) {
+            updated = updated.withoutAttack();
+        }
+        if (updated.equals(memory)) {
+            return;   // 本来就没有记忆 → 不必写
         }
 
-        LivingItemManager.setToolMemory(tool, memory.withoutDig());
+        LivingItemManager.setToolMemory(tool, updated);
     }
 
     // ------------------------------------------------------------------

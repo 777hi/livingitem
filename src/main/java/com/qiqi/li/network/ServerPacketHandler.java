@@ -21,10 +21,13 @@ public class ServerPacketHandler {
     private static final Logger LOGGER = LoggerFactory.getLogger(ServerPacketHandler.class);
 
     /**
-     * 清除手持活工具的指定记忆（{@code L13}）。
+     * 清除手持活工具 / 活武器的指定记忆（{@code L13}）。
      *
      * <p>来源：客户端 {@code PlayerInteractEvent.LeftClickEmpty}（左键空气）。
      * 服务端感知不到左键空气，故由客户端发 {@link ToolMemoryClearPacket} 告知。</p>
+     *
+     * <p>⭐ <b>判据按 {@code kind} 分开</b>：清挖掘 / 交互要求手持<b>活工具</b>，
+     * 清攻击要求手持<b>活武器</b> —— 两者判据不同（活剑不是活工具）。</p>
      */
     public static void handleToolMemoryClear(ServerPlayer player, ToolMemoryClearPacket payload) {
         if (player == null) {
@@ -35,12 +38,26 @@ public class ServerPacketHandler {
         }
 
         ItemStack tool = player.getMainHandItem();
-        if (!LivingToolRecorder.isLivingTool(tool)) {
+        int kind = payload.kind();
+
+        boolean eligible = switch (kind) {
+            case ToolMemoryClearPacket.KIND_DIG, ToolMemoryClearPacket.KIND_USE ->
+                LivingToolRecorder.isLivingTool(tool);
+            case ToolMemoryClearPacket.KIND_ATTACK ->
+                LivingToolRecorder.isLivingWeapon(tool);
+            default -> false;
+        };
+        if (!eligible) {
             return;
         }
 
         LivingToolMemory memory = LivingItemManager.getToolMemory(tool);
-        LivingToolMemory updated = payload.dig() ? memory.withoutDig() : memory.withoutUse();
+        LivingToolMemory updated = switch (kind) {
+            case ToolMemoryClearPacket.KIND_DIG -> memory.withoutDig();
+            case ToolMemoryClearPacket.KIND_USE -> memory.withoutUse();
+            case ToolMemoryClearPacket.KIND_ATTACK -> memory.withoutAttack();
+            default -> memory;
+        };
         if (updated.equals(memory)) {
             return;   // 本来就没有这条记忆 → 不必回同步
         }

@@ -47,7 +47,8 @@ public class LivingToolFunction implements LivingItemFunction {
     @Override
     public boolean canApply(ItemStack stack) {
         // ⭐ 活【工具】与活【武器】共用这一个 function（两者行为差异在 tick 里按记忆类型分派）。
-        return LivingToolRecorder.isLivingTool(stack) || LivingToolRecorder.isLivingWeapon(stack);
+        //    判据取 LivingToolRecorder#isLivingToolOrWeapon —— 单一来源，别在这里另写一遍。
+        return LivingToolRecorder.isLivingToolOrWeapon(stack);
     }
 
     @Override

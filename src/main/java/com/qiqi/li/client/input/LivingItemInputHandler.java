@@ -24,6 +24,7 @@ import com.qiqi.li.LivingItem;
 import com.qiqi.li.network.HopperDirectionPacket;
 import com.qiqi.li.network.SlotDirectionPacket;
 import com.qiqi.li.network.ToolMemoryClearPacket;
+import com.qiqi.li.living.domain.tools.LivingToolMemory;
 import com.qiqi.li.living.domain.tools.LivingToolRecorder;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 
@@ -76,13 +77,19 @@ public class LivingItemInputHandler {
     }
 
     /**
-     * 左键空气 → 通知服务端清除活工具的<b>挖掘记忆</b>（{@code L13}）。
+     * 左键空气 → 通知服务端清除记忆（{@code L13}）。
      *
      * <p>{@code LeftClickEmpty} <b>只在客户端触发</b>（NeoForge 注释：
      * "The server is not aware of when the client left clicks empty space,
      * you will need to tell the server yourself."），故必须由客户端发包。</p>
      *
-     * <p>只在「手持活工具 <b>且确实有挖掘记忆</b>」时才发包 —— 避免无意义的网络流量。</p>
+     * <p>只在「确实有对应记忆」时才发包 —— 避免无意义的网络流量。</p>
+     *
+     * <p>⭐ 两条分支（判据不同，别合并）：</p>
+     * <ul>
+     *   <li>手持<b>活工具</b>且有挖掘记忆 ⇒ 清<b>挖掘</b>记忆</li>
+     *   <li>手持<b>活武器</b>且有攻击记忆 ⇒ 清<b>攻击</b>记忆（这一刀挥空了，没打到怪）</li>
+     * </ul>
      */
     @SubscribeEvent
     public static void onLeftClickEmpty(PlayerInteractEvent.LeftClickEmpty event) {
@@ -92,14 +99,18 @@ public class LivingItemInputHandler {
         }
 
         ItemStack tool = mc.player.getMainHandItem();
-        if (!LivingToolRecorder.isLivingTool(tool)) {
+        LivingToolMemory memory = LivingItemManager.getToolMemory(tool);
+
+        if (LivingToolRecorder.isLivingTool(tool) && memory.hasDig()) {
+            PacketDistributor.sendToServer(
+                new ToolMemoryClearPacket(ToolMemoryClearPacket.KIND_DIG));
             return;
         }
-        if (!LivingItemManager.getToolMemory(tool).hasDig()) {
-            return;   // 本来就没记忆，不必打扰服务端
+        // ⭐ 活武器：挥空 = 这一刀没打到怪 ⇒ 清掉攻击记忆（回到"无记忆"⇒ 重新上环）
+        if (LivingToolRecorder.isLivingWeapon(tool) && memory.hasAttack()) {
+            PacketDistributor.sendToServer(
+                new ToolMemoryClearPacket(ToolMemoryClearPacket.KIND_ATTACK));
         }
-
-        PacketDistributor.sendToServer(new ToolMemoryClearPacket(true));
     }
 
     /**
