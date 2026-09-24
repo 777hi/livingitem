@@ -1,6 +1,7 @@
 package com.qiqi.li.client.render;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -344,6 +345,9 @@ public final class LivingToolModelRenderer {
         //   （活斧子两者都满足 ⇒ 靠下面 if / else if 的顺序判为【工具】，不会画两遍。）
         List<ItemStack> assistTools = new ArrayList<>();
         List<ItemStack> assistWeapons = new ArrayList<>();
+        // 槽位记录 —— 背后环要按【背包顺序】排布：工具/武器分收集会打乱顺序，合并时靠它恢复
+        // （物品引用做 key：getItem 返回同一实例，收集循环里不会被改写）
+        Map<ItemStack, Integer> assistSlots = new HashMap<>();
 
         // ① 玩家背包（排除手持 —— 玩家手里已经拿着了，再飘一个是重复）
         //    ⭐ 按【有没有记忆】分两条路：无记忆 → 辅助环（围成一圈）；有记忆 → 记忆射线上。
@@ -358,10 +362,12 @@ public final class LivingToolModelRenderer {
             // ⭐ 先判工具、再判武器（活斧子两者都满足 ⇒ 算工具，进挖掘/背后环）
             if (LivingToolRecorder.isAssistTool(stack)) {
                 assistTools.add(stack);
+                assistSlots.put(stack, slot);
                 continue;
             }
             if (LivingToolRecorder.isAssistWeapon(stack)) {
                 assistWeapons.add(stack);
+                assistSlots.put(stack, slot);
                 continue;
             }
             renderOne(mc, poseStack, buffers, level, cameraPos, partialTick, now,
@@ -400,6 +406,10 @@ public final class LivingToolModelRenderer {
             idleRing.addAll(renderAttackRing(mc, poseStack, buffers, level, cameraPos, partialTick, now, assistWeapons));
         }
         if (!idleRing.isEmpty()) {
+            // ⭐ 按【背包槽位】恢复顺序 —— 分收集分路合并会把环变成"先工具后武器"两段
+            //    （用户实测反馈），槽位排序才能完全复刻背包里的相对次序。
+            idleRing.sort(Comparator.comparingInt(
+                s -> assistSlots.getOrDefault(s, Integer.MAX_VALUE)));
             renderBackRing(mc, poseStack, buffers, level, cameraPos, partialTick, mc.player, idleRing);
         }
 
