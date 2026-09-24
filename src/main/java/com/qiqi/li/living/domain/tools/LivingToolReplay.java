@@ -327,6 +327,38 @@ public final class LivingToolReplay {
     // ------------------------------------------------------------------
 
     /**
+     * 一次攻击回放的<b>结果状态</b> —— 调度层据此决定「接下来能不能去做别的事」。
+     *
+     * <p>⭐ <b>为什么不能只返回 {@code null}</b>：{@code null} 无法区分
+     * 「射线上没有目标」与「有目标但在冷却」—— 而这两者的正确后续<b>完全不同</b>：
+     * 前者可以转去挖方块，后者应该<b>专心等冷却</b>（否则会出现"边冷却边挖方块"）。</p>
+     */
+    public enum Outcome {
+        /** 没有攻击记忆（本方法不该被调用）。 */
+        NO_MEMORY,
+        /** 射线上没有可攻击目标 ⇒ 调度层<b>可以</b>转去挖掘 / 交互。 */
+        NO_TARGET,
+        /** 有目标但冷却未满 ⇒ 调度层应<b>等待</b>，不要转去做别的。 */
+        COOLING,
+        /** 已出手。 */
+        ATTACKED
+    }
+
+    /**
+     * 攻击回放的返回值。
+     *
+     * @param tool    出手后的武器副本（用于写回槽位）；未出手时为 {@code null}
+     * @param outcome 结果状态
+     */
+    public record AttackResult(@Nullable ItemStack tool, Outcome outcome) {
+
+        /** 构造一个「未出手」的结果（避免每次 new 一个 ItemStack）。 */
+        public static AttackResult none(Outcome outcome) {
+            return new AttackResult(null, outcome);
+        }
+    }
+
+    /**
      * 回放<b>攻击</b>记忆 —— 沿记忆射线找生物 → 摆朝向 → 推进冷却 → 出手。
      *
      * <p>⭐ <b>活武器不实现任何攻击逻辑</b>：这里只负责「代玩家出手」，
@@ -341,15 +373,14 @@ public final class LivingToolReplay {
      * @param weapon 活武器（不会被本方法修改）
      * @param attack 攻击记忆；{@code null} = 无记忆
      * @param origin 射线起点（宿主位置）
-     * @return 攻击后的武器副本（可能扣耐久）；{@code null} = 本次未出手、无需写回
+     * @return 结果（含状态）；{@code outcome == ATTACKED} 时 {@code tool} 才是写回用的副本
      */
-    @Nullable
-    public static ItemStack replayAttack(ItemStack weapon,
-                                         @Nullable LivingToolMemory.AttackMemory attack,
-                                         Vec3 origin, Set<BlockPos> hostBlocks,
-                                         ServerLevel level, long now) {
+    public static AttackResult replayAttack(ItemStack weapon,
+                                            @Nullable LivingToolMemory.AttackMemory attack,
+                                            Vec3 origin, Set<BlockPos> hostBlocks,
+                                            ServerLevel level, long now) {
         if (attack == null) {
-            return null;
+            return AttackResult.none(Outcome.NO_MEMORY);
         }
 
         Vec3 end = attack.endpointFrom(origin);
@@ -365,7 +396,7 @@ public final class LivingToolReplay {
 
         EntityHitResult hit = findAttackTarget(attack, origin, end, hostBlocks, fake, level);
         if (hit == null) {
-            return null;
+            return AttackResult.none(Outcome.NO_TARGET);   // 没怪 ⇒ 调度层可转去挖方块
         }
 
         // ── 攻击冷却（S1-a：按【物品攻击速度属性】算，与原版同源）───────────────
@@ -380,7 +411,8 @@ public final class LivingToolReplay {
         float scale = last == null ? 1.0F : (float) (now - last.tick()) / cooldown;
         fake.setAttackStrengthScale(scale);
         if (scale < 1.0F) {
-            return null;   // 还在冷却中，本次不出手
+            // 有目标但冷却未满 ⇒ 报告 COOLING：让调度层【等待】而不是转去挖方块
+            return AttackResult.none(Outcome.COOLING);
         }
 
         fake.attack(hit.getEntity());
@@ -390,7 +422,7 @@ public final class LivingToolReplay {
         LivingToolAction action = new LivingToolAction(now, null);
         LivingItemManager.setToolLastAction(weapon, action);
         LivingItemManager.setToolLastAction(held, action);
-        return held;
+        return new AttackResult(held, Outcome.ATTACKED);
     }
 
     /**

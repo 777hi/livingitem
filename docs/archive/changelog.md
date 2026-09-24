@@ -17,55 +17,13 @@
 
 ## 2026-09-24
 
-- 🔴 修复：**活武器攻击后玩家被踢出游戏**（表现为"存档崩了、游戏没崩"）。
-  根因：攻击时写 `new LivingToolAction(now, null)`（目标不是方块），而该组件的 `target`
-  原用 `BlockPos.STREAM_CODEC` 直接编码 ⇒ **编码 null 抛 NPE** ⇒
-  `Failed to encode packet 'clientbound/minecraft:custom_payload'` ⇒ 连接断开。
-  ⇒ `LivingToolAction.target` 改为 `@Nullable` + **手写 optional 编解码**（boolean 标志位）；
-  客户端消费方（`LivingToolModelRenderer` 脉冲动画）同步加判空。
-  ⚠️ **该坑原本就存在**：`replayUse` 的「右键空气」分支同样传 null（法杖施法走那条）。
-  ⚠️ 别用 `ByteBufCodecs.optional(BlockPos.STREAM_CODEC).map(...)` ——
-  `BlockPos.STREAM_CODEC` 的缓冲类型是 `ByteBuf`（非 `FriendlyByteBuf`）⇒ 泛型对不上，编译不过。
-- 🔴 修复：**活武器有记忆、射线上有怪，但一刀都不打**（三个"静默失效"，均不报错）。
-  ① **首次冷却死锁**：`last == null` 时用 `(long) cooldown` 当 elapsed —— 而冷却**常是小数**
-  （剑攻速 1.6 ⇒ 12.5 tick）⇒ `(long)12.5=12` ⇒ `0.96 < 1` ⇒ 判"冷却中" ⇒
-  **且该路径不写 action ⇒ `last` 永远 null ⇒ 永久卡死**。改为没打过直接给 `1.0F`。
-  ② `ATTACK_SPEED` 为 0 ⇒ 冷却 `Infinity` ⇒ 永远不满 ⇒ `Float.isFinite` 兜底。
-  ③ 隔墙检测**没传 `hostBlocks`** ⇒ 容器形态下第一个命中的是"自己的家" ⇒ 永远判隔墙。
-  📌 通用判据：**"闸门放行后才写状态"的循环，必须检查「首次」路径能否自己走通**。
-- 📄 文档：`living-weapon-tech.md` §5 补上述三个静默失效 + 可空 `BlockPos` 的通用约束；
-  §9 补「记忆清除」方案（判据：这一刀没打到怪 ⇒ 清；必须套 L44 保护期）。
-- ✅ 修复：**记忆射线朝向不是玩家攻击时的视角朝向**（实测）。
-  根因：录制时取「眼睛 → 怪物包围盒中心」，而**挖掘侧是沿视线 `clip` 取命中点** ⇒ 两侧口径不一致；
-  玩家瞄头 / 瞄脚、或怪物高矮不同时会**明显偏离视线**（距离越近角度差越大）。
-  ⇒ 改为【**视线方向 × 到目标的距离**】，与挖掘侧 `raycastSurface` **同构**。
-  ⚠️ 若仍有偏差，下一个嫌疑是**录制时机**（`LivingDamageEvent` 在伤害结算时才触发，比攻击晚一瞬），
-  届时应改到 `AttackEntityEvent`（`onPlayerAttackTarget` 在 `Player#attack` 第一行，更早）。
-  顺带删掉因此变成孤儿的 `clampLength()`。
-- ✅ 实测通过：**锋利 / 火焰附加 / 经验修补** 均生效。
-  属性类附魔走 `ItemStack#forEachModifier`（**其内部含** `EnchantmentHelper.forEachModifier`，
-  与 `LivingEntity#handleEquipmentChanges` 用的是同一句 ⇒ 复刻完整）；
-  效果类走 `Player#attack` 内的 `EnchantmentHelper.doPostAttackEffects`。
-  经验修补生效 ⇒ **反证耐久走的是原版管线**（`hurtEnemy` → `hurtAndBreak`）。
-- ✅ 新增：**活武器记忆清除**（此前 `withoutAttack()` 已就位但无调用方）。
-  判据：**这一刀没打到怪 ⇒ 清掉攻击记忆**。
-  - 左键**挥向方块**：`PlayerInteractEvent.LeftClickBlock`（服务端）⇒ 零网络改动
-  - 左键**挥空**：`LeftClickEmpty`（仅客户端）⇒ `ToolMemoryClearPacket(KIND_ATTACK)`
-  ⇒ 手感：挥一刀空就能在**打架 ⇄ 挖矿**之间切换（活斧子清掉 attack 后按 S2 回到挖掘模式）。
-  ⚠️ 两条都套 **L44 保护期**（打完怪顺势挥几刀不会误清刚录的记忆）。
-  ⚠️ `ToolMemoryClearPacket` 的 `boolean dig` 装不下第三种 ⇒ 扩展成**三态 int**
-  （`KIND_DIG` / `KIND_USE` / `KIND_ATTACK`）；服务端**判据分开**：
-  清挖掘 / 交互要求手持**活工具**，清攻击要求手持**活武器**（活剑不是活工具）。
-- 🔴 修复：**活武器【掉落物形态】不攻击**。
-  根因：`LivingItem#processItemEntityContainers` 是**独立前置过滤**（不走 `canApply` 分组），
-  而它只写了 `isLivingTool` ⇒ **活剑被整个跳过 ⇒ 不 tick ⇒ 不攻击**。
-  ⇒ 新增 `LivingToolRecorder#isLivingToolOrWeapon` 作为「谁来 tick」的**单一判据来源**，
-  该处与 `LivingToolFunction#canApply` 同时改用它。
-  📌 容器 / 玩家背包 / 末影箱形态都走 `canApply` 分组 ⇒ 自动覆盖，**只有掉落物形态漏了**。
-- ⚠️ 已知小缺口：**位置类附魔效果**（`EnchantmentLocationBasedEffect`）未复刻 ——
-  原版 `handleEquipmentChanges` 还调 `EnchantmentHelper.runLocationChangedEffects` /
-  `stopLocationBasedEffects`，而 `equipTool` 只复刻了修饰符部分。
-  **原版内置几乎不用，主要为模组服务** ⇒ 暂不补，已在 §8 标注。
+- 🔴 活武器：修「攻击后**玩家被踢出**」（组件可空 `BlockPos` 发包 NPE；表现为"存档崩了、游戏没崩"）—— `living-weapon-tech.md` §5
+- ✅ 活武器：新增**记忆清除**（挥空 / 挥向方块 ⇒ 清攻击记忆，套 L44 保护期）—— §9
+- ✅ 活武器：修**掉落物形态不攻击**（该宿主入口漏了活武器判据）—— §6
+- ✅ 活武器：双记忆共存改为**有怪打怪、没怪挖矿**（原先挖掘记忆完全失效）—— §6
+
+> 当天另有若干「只改实现、口径不变」的改动（三个静默失效、射线朝向改取视线、附魔实测、
+> 位置类附魔缺口），按 `docs/README.md` §4.0 判据**只记在 `living-weapon-tech.md`**，不进 changelog。
 
 ---
 

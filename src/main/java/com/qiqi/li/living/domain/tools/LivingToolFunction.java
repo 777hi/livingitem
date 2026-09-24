@@ -112,16 +112,28 @@ public class LivingToolFunction implements LivingItemFunction {
             LivingToolProgress progressBefore = LivingItemManager.getToolProgress(tool);
             LivingToolAction actionBefore = LivingItemManager.getToolLastAction(tool);
 
-            // ⭐ S2「射线决定」：走哪条路完全由【记忆射线本身】决定（用户 2026-09-23 定）——
-            //    有攻击记忆 ⇒ 走攻击；否则走挖掘 / 交互。不是"看现场有什么再挑"。
-            //    ⚠️ 攻击优先：对齐 W2「射线同时命中实体和方块时，实体优先」。
+            // ⭐ S2「射线决定」+【双记忆共存】（方案 C，用户 2026-09-24 定）：
+            //
+            //   有 attack 记忆时，先看射线上有没有怪：
+            //     有怪 → 冷却满则打；冷却中则【等待】（不转去挖方块）
+            //     没怪 → 转去按 dig / use 记忆干活
+            //
+            //   ⇒ 于是活斧子（既是工具又是武器）能「**有怪打怪、没怪挖矿**」，
+            //     两条记忆都真正有效 —— 而不像早先那样"有 attack 就再也不挖了"。
+            boolean handled = false;
             if (memory.hasAttack()) {
-                ItemStack afterAttack = LivingToolReplay.replayAttack(
+                LivingToolReplay.AttackResult result = LivingToolReplay.replayAttack(
                     tool, memory.attack(), origin, hostBlocks, serverLevel, now);
-                if (afterAttack != null) {
-                    writeBack(context, entry.slotIndex(), tool, afterAttack);
+                if (result.outcome() == LivingToolReplay.Outcome.ATTACKED) {
+                    writeBack(context, entry.slotIndex(), tool, result.tool());
+                    handled = true;
+                } else if (result.outcome() == LivingToolReplay.Outcome.COOLING) {
+                    handled = true;   // 专心等冷却 —— 别跑去挖方块，否则观感像"三心二意"
                 }
-            } else {
+                // NO_TARGET ⇒ 落到下面，转去挖掘 / 交互
+            }
+
+            if (!handled) {
                 // 挖掘记忆（左键行为）
                 ItemStack afterDig = LivingToolReplay.replayDig(tool, memory.dig(), origin, hostBlocks, serverLevel, now);
                 if (afterDig != null) {
