@@ -241,6 +241,7 @@ public final class LivingToolAssist {
                 LivingToolFakePlayerCache.get(serverPlayer.serverLevel(), serverPlayer.getUUID());
             fake.setPos(player.getX(), player.getY(), player.getZ());
             fake.setOnGround(true);   // L28：不设会被原版判为"离地"→ 速度 /5
+            fake.syncOwnerAttributes();   // 镜像主人属性（饰品增益 —— 挖掘速度/效率）
             fake.equipTool(stack.copy());
             return fake.getDigSpeed(state, pos);
         }

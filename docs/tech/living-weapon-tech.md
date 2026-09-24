@@ -449,6 +449,31 @@ assistWeapons = isAssistWeapon → 攻击环
 
 ---
 
+### 8.1 属性镜像：让饰品增益生效（已实现 · 2026-09-24）
+
+**问题**：饰品模组（Curios 等）的加成是往**玩家实体**的 `AttributeMap` 挂 `AttributeModifier`，
+而活工具/活武器借 **FakePlayer** 出手 —— 它是另一个实体、另有一本属性账 ⇒ 主人的增益**全部读不到**。
+
+**解法**（`LivingToolFakePlayer#syncOwnerAttributes`，借力不换人 —— 不换玩家本体执行，
+原因见"为什么不能改用玩家本身"）：把主人身上白名单属性的修饰符**复制**过来（transient）：
+
+| 项 | 说明 |
+|---|---|
+| 白名单 | `ATTACK_DAMAGE` / `ATTACK_SPEED`（冷却按它换算 ⇒ 攻速饰品直接变快出手）/ `ATTACK_KNOCKBACK` / `MINING_EFFICIENCY` / `BLOCK_BREAK_SPEED` |
+| ⭐ 排除主人**主手物品**贡献 | 否则主人手里那把的附魔会与活武器自己的（`equipTool` 装的）**叠加成双倍**。主手贡献用 `stack.forEachModifier` 可精确枚举（物品自带 + 附魔一并覆盖） |
+| base 不动 | 攻击力/攻速以活武器自身为准，镜像的只是"额外的"部分 |
+| **重算式** | 每次出手/精算前先清（记 `mirroredModifierIds`）后装 ⇒ 主人穿脱饰品下一刀自动跟上，实例共享不残留 |
+| 调用点 | `replayAttack` / `replayDig` / `replayUse` / 辅助挖掘 `digSpeed` —— **活工具与活武器同时受益** |
+
+**边界（诚实）**：只覆盖**属性型**饰品。事件型（按实体实例/饰品槽判定的）吃不到——
+那类认"玩家对象本身"，镜像救不了；按 **UUID** 判定的事件型本来就生效（FakePlayer UUID = 主人）。
+主人离线（容器/掉落物形态）⇒ 无身可借，跳过。
+
+> 「为什么不能改用玩家本身」的完整论证（`Player#attack` 无武器参数、会重置玩家冷却、
+> 消耗玩家饱食度、扣错耐久），见 2026-09-24 对话存档 —— 核心是 `Player#attack()` 自洽读 `this`。
+
+---
+
 ## §8 兼容性（已验证，附源码依据）
 
 | 项 | 状态 | 依据 |

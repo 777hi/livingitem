@@ -1,16 +1,25 @@
 package com.qiqi.li.living.domain.tools;
 
+import java.util.HashSet;
+import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 import javax.annotation.Nullable;
 
 import com.mojang.authlib.GameProfile;
 
+import net.minecraft.core.Holder;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
+import net.minecraft.world.entity.ai.attributes.AttributeModifier;
+import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.neoforged.neoforge.common.util.FakePlayer;
@@ -103,6 +112,87 @@ public class LivingToolFakePlayer extends FakePlayer {
             runLocationChangedEffects(stack);
         }
         this.lastEquipped = stack;
+    }
+
+    // ── 主人属性镜像（饰品增益 —— 2026-09-24 用户需求）─────────────────────────
+
+    /**
+     * 要镜像的属性白名单 —— 覆盖攻击侧与挖掘侧（饰品模组的主流加成点）。
+     */
+    private static final List<Holder<Attribute>> MIRRORED_ATTRIBUTES = List.of(
+        Attributes.ATTACK_DAMAGE,       // 攻击力
+        Attributes.ATTACK_SPEED,        // 攻速（冷却按它换算 ⇒ 攻速饰品直接变快出手）
+        Attributes.ATTACK_KNOCKBACK,    // 击退
+        Attributes.MINING_EFFICIENCY,   // 挖掘效率（效率附魔同款属性）
+        Attributes.BLOCK_BREAK_SPEED    // 挖掘速度
+    );
+
+    /** 上一次镜像进来的修饰符 ID —— 每次镜像前先清掉（主人穿脱饰品 ⇒ 必须全量重算）。 */
+    private final Set<ResourceLocation> mirroredModifierIds = new HashSet<>();
+
+    /**
+     * 把【主人身上】的属性修饰符镜像到本 FakePlayer —— 饰品模组的增益由此生效。
+     *
+     * <p><b>问题</b>：饰品模组（Curios 等）的加成是往<b>玩家实体</b>的 {@code AttributeMap}
+     * 上挂 {@code AttributeModifier}，而 FakePlayer 是<b>另一个实体</b>、另有一本账
+     * ⇒ 活工具 / 活武器借它出手时<b>吃不到主人的任何属性增益</b>。</p>
+     *
+     * <p><b>解法</b>：借力不换人 —— 把主人身上白名单属性的修饰符<b>复制</b>过来（transient）：
+     * 「借你的身体，不借你手里的家伙」：</p>
+     * <ul>
+     *   <li>⭐ <b>排除主人主手物品</b>贡献的修饰符 —— 否则主人手里那把的锋利会和活武器自己的
+     *       （{@link #equipTool} 装的）<b>叠加成双倍附魔</b>。主手贡献可精确枚举
+     *       （{@code stack.forEachModifier}，物品自带 + 附魔一并覆盖）；</li>
+     *   <li>⭐ <b>base 值不动</b> —— 攻击力 / 攻速以活武器自身为准，镜像的只是"额外的"那部分；</li>
+     *   <li>⭐ <b>重算式</b>（同 {@link #equipTool}）：每次出手 / 精算前先清后装，
+     *       主人穿脱饰品下一刀自动跟上，实例跨工具共享也不残留。</li>
+     * </ul>
+     *
+     * <p>⚠️ <b>边界</b>：只覆盖<b>属性型</b>增益。事件型（监听伤害事件、按实体实例/饰品槽判定的）
+     * 吃不到 —— 那类认的是"玩家对象本身"，镜像救不了。按 <b>UUID</b> 判定的事件型本来就生效
+     * （FakePlayer 的 UUID = 主人）。</p>
+     */
+    public void syncOwnerAttributes() {
+        // ① 清掉上一轮镜像的修饰符
+        for (ResourceLocation id : this.mirroredModifierIds) {
+            for (Holder<Attribute> attribute : MIRRORED_ATTRIBUTES) {
+                AttributeInstance instance = this.getAttributes().getInstance(attribute);
+                if (instance != null) {
+                    instance.removeModifier(id);
+                }
+            }
+        }
+        this.mirroredModifierIds.clear();
+
+        // ② 找到主人 —— 离线 / 无主人（FALLBACK_UUID）⇒ 无身可借，跳过
+        if (this.owner == null || !(this.level() instanceof ServerLevel serverLevel)) {
+            return;
+        }
+        Player owner = serverLevel.getPlayerByUUID(this.owner);
+        if (owner == null) {
+            return;
+        }
+
+        // ③ 排除主人主手物品贡献的修饰符（物品自带 + 附魔，一个 API 全枚举）
+        Set<ResourceLocation> mainHandIds = new HashSet<>();
+        owner.getMainHandItem().forEachModifier(EquipmentSlot.MAINHAND,
+            (attribute, modifier) -> mainHandIds.add(modifier.id()));
+
+        // ④ 逐属性复制（addOrUpdate 防同 ID 冲突抛异常）
+        for (Holder<Attribute> attribute : MIRRORED_ATTRIBUTES) {
+            AttributeInstance from = owner.getAttributes().getInstance(attribute);
+            AttributeInstance to = this.getAttributes().getInstance(attribute);
+            if (from == null || to == null) {
+                continue;
+            }
+            for (AttributeModifier modifier : from.getModifiers()) {
+                if (mainHandIds.contains(modifier.id())) {
+                    continue;
+                }
+                to.addOrUpdateTransientModifier(modifier);
+                this.mirroredModifierIds.add(modifier.id());
+            }
+        }
     }
 
     /** 摘掉上一把工具留下的修饰符（FakePlayer 实例是跨工具共享的，不摘会叠加）。 */
