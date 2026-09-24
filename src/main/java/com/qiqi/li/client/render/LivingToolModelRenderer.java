@@ -167,16 +167,17 @@ public final class LivingToolModelRenderer {
     /** 缩放脉冲时长（tick）。 */
     private static final int PULSE_TICKS = 6;
 
-    /** 缩放脉冲的最大放大比例（0.15 = 放大到 1.15 倍）。 */
-    private static final float PULSE_SCALE = 0.15F;
+    /** 缩放脉冲的最大放大比例（0.30 = 放大到 1.30 倍；2026-09-24 用户调，原 0.15）。 */
+    private static final float PULSE_SCALE = 0.30F;
 
     /**
-     * 攻击环的<b>存活窗口</b>（tick）—— 距上次攻击超过这么久 ⇒ 视为停手，收回背后环。
+     * 攻击环的<b>存活窗口</b>（tick）—— 与 {@link #PULSE_TICKS} 相同（2026-09-24 用户定）：
+     * 每次出手 ⇒ 飞到目标处脉冲一下 ⇒ 立刻收回背后，「一下一下扑上去咬」的节奏。
      *
-     * <p>⭐ 必须 <b>&gt; 武器攻击冷却</b>（剑约 12 tick / 斧更慢），否则连续攻击时环会反复
-     * 「飞出去 → 收回 → 飞出去」地闪。取 20 留足余量。</p>
+     * <p>⚠️ 窗口 &lt; 武器攻击冷却（剑 12.5 tick）⇒ 连续攻击时环会【飞出去→收回】反复 ——
+     * 这是<b>有意的效果</b>（原先取 20 留在原地反复脉冲，用户看效果后改成了扑咬式）。</p>
      */
-    private static final long ATTACK_RING_TICKS = 20L;
+    private static final long ATTACK_RING_TICKS = PULSE_TICKS;
 
     /**
      * 模型【立正】修正角 —— 绕<b>贴图平面的法线（Z）</b>在平面内旋转。
@@ -262,6 +263,15 @@ public final class LivingToolModelRenderer {
     private static final double RING_RADIUS_BASE = 0.28;
     private static final double RING_RADIUS_STEP = 0.055;
     private static final double RING_RADIUS_MAX = 1.10;
+
+    /**
+     * 攻击环的<b>起始半径</b>（2026-09-24 用户调大）—— 剑的模型长轴比镐/铲长，
+     * 沿用工具环的 0.28 会在剑与剑之间穿模 ⇒ 攻击环用<b>独立值</b>，工具环保持不变。
+     *
+     * <p>⭐ 只拆 BASE：STEP / MAX 共用（武器环通常只有一两把 ⇒ BASE 起主导，
+     * 上限 1.10 对攻击环同样够用）。</p>
+     */
+    private static final double ATTACK_RING_RADIUS_BASE = 0.42;
 
     /** 世界竖直 —— 环平面【竖直】的基准（环内"上"也取它）。 */
     private static final Vec3 WORLD_UP = new Vec3(0.0, 1.0, 0.0);
@@ -498,7 +508,7 @@ public final class LivingToolModelRenderer {
             float speed = Math.max(LivingToolAssistState.digSpeed(), 1.0E-4F);
             float spinRad = spinAngle(now, partialTick, spinPeriod((int) Math.ceil(1.0 / speed)));
             drawRing(mc, poseStack, buffers, level, cameraPos, center, normal, working, spinRad,
-                1.0F, false);
+                1.0F, false, RING_RADIUS_BASE);
         }
     }
 
@@ -559,7 +569,7 @@ public final class LivingToolModelRenderer {
         }
 
         drawRing(mc, poseStack, buffers, level, cameraPos, center, normal, weapons,
-            0.0F, scale, true);
+            0.0F, scale, true, ATTACK_RING_RADIUS_BASE);
     }
 
     /**
@@ -590,7 +600,8 @@ public final class LivingToolModelRenderer {
         Vec3 center = player.getPosition(partialTick)
             .add(0.0, RING_HEIGHT, 0.0)                 // 世界竖直 ⇒ 高度不随俯仰变
             .subtract(flat.scale(RING_BACK_OFFSET));    // 水平向后 ⇒ 始终在【背后】
-        drawRing(mc, poseStack, buffers, level, cameraPos, center, flat, tools, 0.0F, 1.0F, false);
+        drawRing(mc, poseStack, buffers, level, cameraPos, center, flat, tools, 0.0F, 1.0F, false,
+            RING_RADIUS_BASE);
     }
 
     /**
@@ -602,14 +613,17 @@ public final class LivingToolModelRenderer {
      * @param scale    整体缩放（{@code 1.0} = 原大小；&gt;1 用于脉冲）
      * @param inward   ⭐ {@code true} = <b>尖端朝圆心</b>（攻击环：剑尖指向中心）；
      *                 {@code false} = <b>柄朝圆心</b>（工具环：镐头朝外）
+     * @param radiusBase 起始半径（工具环 {@code RING_RADIUS_BASE} / 攻击环 {@code ATTACK_RING_RADIUS_BASE}
+     *                   —— 剑长 ⇒ 攻击环要更大才能不穿模）
      */
     private static void drawRing(Minecraft mc, PoseStack poseStack, MultiBufferSource buffers,
                                  ClientLevel level, Vec3 cameraPos, Vec3 center, Vec3 normal,
-                                 List<ItemStack> tools, float spinRad, float scale, boolean inward) {
+                                 List<ItemStack> tools, float spinRad, float scale, boolean inward,
+                                 double radiusBase) {
         // normal 恒为水平 ⇒ ⊥ WORLD_UP ⇒ 叉积不退化
         Vec3 right = normal.cross(WORLD_UP).normalize();
         int n = tools.size();
-        double radius = Math.min(RING_RADIUS_BASE + RING_RADIUS_STEP * n, RING_RADIUS_MAX);
+        double radius = Math.min(radiusBase + RING_RADIUS_STEP * n, RING_RADIUS_MAX);
         for (int i = 0; i < n; i++) {
             double angle = RING_START_ANGLE + Math.PI * 2.0 * i / n;
             // 径向（圆心 → 物品）：只决定【位置】
