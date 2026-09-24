@@ -265,7 +265,7 @@ public final class LivingToolModelRenderer {
      * <p>⭐ 只拆 BASE：STEP / MAX 共用（武器环通常只有一两把 ⇒ BASE 起主导，
      * 上限 1.10 对攻击环同样够用）。</p>
      */
-    private static final double ATTACK_RING_RADIUS_BASE = 0.42;
+    private static final double ATTACK_RING_RADIUS_BASE = 0.7;
 
     /** 世界竖直 —— 环平面【竖直】的基准（环内"上"也取它）。 */
     private static final Vec3 WORLD_UP = new Vec3(0.0, 1.0, 0.0);

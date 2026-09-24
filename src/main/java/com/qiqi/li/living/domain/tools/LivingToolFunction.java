@@ -171,12 +171,32 @@ public class LivingToolFunction implements LivingItemFunction {
         LivingToolMemory memory = LivingItemManager.getToolMemory(stack);
 
         tooltipAdder.accept(Component.empty());
+        // ⭐ 模式措辞「主动 / 被动」（2026-09-24 用户定，不带"挖掘"字眼 —— 活武器也适用）
         tooltipAdder.accept(Component.translatable(memory.isEmpty()
-            ? "tooltip.livingitem.tool.mode.assist"
-            : "tooltip.livingitem.tool.mode.auto"));
+            ? "tooltip.livingitem.tool.mode.passive"
+            : "tooltip.livingitem.tool.mode.active"));
 
         addRayLine(tooltipAdder, "tooltip.livingitem.tool.dig", memory.dig());
         addRayLine(tooltipAdder, "tooltip.livingitem.tool.use", memory.use());
+        addAttackLine(tooltipAdder, memory.attack());
+    }
+
+    /**
+     * 一行攻击记忆信息（活武器）—— 结构与 {@link #addRayLine} 对称，
+     * 但「限定类型」是<b>生物</b>（蹲下录的 {@code EntityType}）而非方块。
+     */
+    private static void addAttackLine(Consumer<Component> tooltipAdder,
+                                      @Nullable LivingToolMemory.AttackMemory attack) {
+        if (attack == null) {
+            return;
+        }
+        Component line = Component.translatable("tooltip.livingitem.tool.attack",
+            String.format("%.1f", attack.offset().length()));
+        if (attack.entityType() != null) {
+            line = line.copy().append(Component.translatable(
+                "tooltip.livingitem.tool.limited", attack.entityType().getDescription()));
+        }
+        tooltipAdder.accept(line);
     }
 
     /** 一行记忆信息：距离恒有，类型约束（蹲下录的）才附加。 */
