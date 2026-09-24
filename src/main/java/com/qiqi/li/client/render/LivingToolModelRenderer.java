@@ -259,10 +259,15 @@ public final class LivingToolModelRenderer {
     /** 环上第一把的起始角（π/2 = 从【身体正上方】起步 ⇒ 单工具立在头顶）。 */
     private static final double RING_START_ANGLE = Math.PI / 2.0;
 
-    /** 环半径 = BASE + STEP × 工具数，再 clamp 到上限（工具越多环越大）。 */
-    private static final double RING_RADIUS_BASE = 0.28;
+    /**
+     * 环半径 = BASE + STEP × 数量，再 clamp 到上限（越多环越大）。
+     *
+     * <p>⭐ 2026-09-24 用户调大（0.28 → 0.35）：背后环现在<b>混编工具与武器</b>，
+     * 剑的模型长轴长，小半径会穿模；挖掘环 / 攻击环共用同组基准，跟着稍大无碍。</p>
+     */
+    private static final double RING_RADIUS_BASE = 0.35;
     private static final double RING_RADIUS_STEP = 0.055;
-    private static final double RING_RADIUS_MAX = 1.10;
+    private static final double RING_RADIUS_MAX = 1.20;
 
     /**
      * 攻击环的<b>起始半径</b>（2026-09-24 用户调大）—— 剑的模型长轴比镐/铲长，
@@ -398,14 +403,17 @@ public final class LivingToolModelRenderer {
             }
         }
 
-        // ④ 辅助环（无记忆的活工具）—— 挖掘时飞到方块处转圈，否则围在脑袋后面
+        // ④/④′ 挖掘环 + 攻击环 —— 各自只画「正在干活」的那部分；
+        //        待机的（工具 + 武器）汇进【同一圈背后环】（2026-09-24 用户定：不区分混编）。
+        List<ItemStack> idleRing = new ArrayList<>();
         if (!assistTools.isEmpty()) {
-            renderAssistRing(mc, poseStack, buffers, level, cameraPos, partialTick, now, assistTools);
+            idleRing.addAll(renderAssistRing(mc, poseStack, buffers, level, cameraPos, partialTick, now, assistTools));
         }
-
-        // ④′ 攻击环（无记忆的活武器）—— 攻击时飞到目标生物处脉冲，否则收回背后
         if (!assistWeapons.isEmpty()) {
-            renderAttackRing(mc, poseStack, buffers, level, cameraPos, partialTick, now, assistWeapons);
+            idleRing.addAll(renderAttackRing(mc, poseStack, buffers, level, cameraPos, partialTick, now, assistWeapons));
+        }
+        if (!idleRing.isEmpty()) {
+            renderBackRing(mc, poseStack, buffers, level, cameraPos, partialTick, mc.player, idleRing);
         }
 
         // ⑤ 其它玩家背包里的活工具（联机可见性 · 最小版：只画背后的待机环）
@@ -459,10 +467,13 @@ public final class LivingToolModelRenderer {
      * 代价是抬头低头时会斜看环 ⇒ 环在屏幕上变成椭圆 —— 这正是"真物体"的表现。</p>
      *
      * <p>工具姿态：柄指向圆心（放射状）；斧刃 ⊥ 圆平面且朝前。</p>
+     *
+     * @return <b>待机</b>（不在挖掘的）工具 —— 调用方要与攻击环的待机武器<b>合并成同一圈背后环</b>
+     *         （2026-09-24 用户定：背后环不区分工具与武器）
      */
-    private static void renderAssistRing(Minecraft mc, PoseStack poseStack, MultiBufferSource buffers,
-                                         ClientLevel level, Vec3 cameraPos, float partialTick, long now,
-                                         List<ItemStack> tools) {
+    private static List<ItemStack> renderAssistRing(Minecraft mc, PoseStack poseStack, MultiBufferSource buffers,
+                                                    ClientLevel level, Vec3 cameraPos, float partialTick, long now,
+                                                    List<ItemStack> tools) {
         // ── 参考系：水平前方 + 世界竖直（环是"背在背上的竖直环"）────────────────
         Vec3 look = mc.player.getViewVector(partialTick);
         Vec3 flat = new Vec3(look.x, 0.0, look.z);
@@ -494,11 +505,6 @@ public final class LivingToolModelRenderer {
             }
         }
 
-        // ── ② 待机环：脑袋后面（与其它玩家共用同一条路径）─────────────────────
-        if (!idling.isEmpty()) {
-            renderBackRing(mc, poseStack, buffers, level, cameraPos, partialTick, mc.player, idling);
-        }
-
         // ── ③ 挖掘环：目标方块处，法线指向玩家（环面始终朝着玩家）──────────────
         if (!working.isEmpty()) {
             Vec3 center = Vec3.atCenterOf(digTarget);
@@ -510,6 +516,10 @@ public final class LivingToolModelRenderer {
             drawRing(mc, poseStack, buffers, level, cameraPos, center, normal, working, spinRad,
                 1.0F, false, RING_RADIUS_BASE);
         }
+
+        // ⭐ 背后环【不再在这里画】—— 待机物品交给调用方，与攻击环的待机武器
+        //    合并成同一圈背后环（各画各的话两圈同心同半径 ⇒ 完全重叠）。
+        return idling;
     }
 
     /**
@@ -531,10 +541,13 @@ public final class LivingToolModelRenderer {
      * <p>📌 <b>目标位置从哪来</b>：服务端每次出手都会往武器上写
      * {@code LivingToolAction(now, 目标所在格)}（见 {@code LivingToolReplay#replayAttack}），
      * 该组件<b>只走网络同步、不落盘</b> ⇒ 客户端直接读即可，<b>无需新增同步通道</b>。</p>
+     *
+     * @return <b>不在攻击中</b>（没打过 / 停手超时）的武器 —— 调用方要与待机工具
+     *         <b>合并成同一圈背后环</b>（2026-09-24 用户定：背后环不区分工具与武器）
      */
-    private static void renderAttackRing(Minecraft mc, PoseStack poseStack, MultiBufferSource buffers,
-                                         ClientLevel level, Vec3 cameraPos, float partialTick, long now,
-                                         List<ItemStack> weapons) {
+    private static List<ItemStack> renderAttackRing(Minecraft mc, PoseStack poseStack, MultiBufferSource buffers,
+                                                    ClientLevel level, Vec3 cameraPos, float partialTick, long now,
+                                                    List<ItemStack> weapons) {
         // ── ① 目标：取本组【最近一次出手】打在哪一格 ────────────────────────────
         // 辅助攻击是"全部朝同一目标各打一次"（docs/idea.md §1.7）⇒ 一把的位置即可代表全组。
         BlockPos target = null;
@@ -547,11 +560,10 @@ public final class LivingToolModelRenderer {
             }
         }
 
-        // ── ② 没打过 / 停手超时 ⇒ 收回背后（与挖掘环"松开左键就回背后"同款）────────
+        // ── ② 没打过 / 停手超时 ⇒ 交还给调用方，与待机工具【合并进同一圈背后环】────
         long age = target == null ? Long.MAX_VALUE : now - latest;
         if (target == null || age >= ATTACK_RING_TICKS) {
-            renderBackRing(mc, poseStack, buffers, level, cameraPos, partialTick, mc.player, weapons);
-            return;
+            return weapons;
         }
 
         // ── ③ 攻击环：目标生物处，环面朝玩家（与挖掘环同款取法）───────────────────
@@ -570,6 +582,7 @@ public final class LivingToolModelRenderer {
 
         drawRing(mc, poseStack, buffers, level, cameraPos, center, normal, weapons,
             0.0F, scale, true, ATTACK_RING_RADIUS_BASE);
+        return List.of();
     }
 
     /**
