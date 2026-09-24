@@ -250,12 +250,13 @@ public final class LivingToolModelRenderer {
     /**
      * 环半径 = BASE + STEP × 数量，再 clamp 到上限（越多环越大）。
      *
-     * <p>⭐ 2026-09-24 用户调大（0.28 → 0.35）：背后环现在<b>混编工具与武器</b>，
-     * 剑的模型长轴长，小半径会穿模；挖掘环 / 攻击环共用同组基准，跟着稍大无碍。</p>
+     * <p>⭐ 2026-09-24 两轮用户调参：0.28 → 0.35（背后环混编含剑防穿模）→
+     * <b>0.42 / STEP 0.03</b>（背后环更舒展，多把时增长放缓）。
+     * 挖掘环共用同组；攻击环 BASE 独立（0.42）但 STEP 共用。</p>
      */
-    private static final double RING_RADIUS_BASE = 0.35;
-    private static final double RING_RADIUS_STEP = 0.055;
-    private static final double RING_RADIUS_MAX = 1.20;
+    private static final double RING_RADIUS_BASE = 0.7;
+    private static final double RING_RADIUS_STEP = 0.007;
+    private static final double RING_RADIUS_MAX = 1.40;
 
     /**
      * 攻击环的<b>起始半径</b>（2026-09-24 用户调大）—— 剑的模型长轴比镐/铲长，
