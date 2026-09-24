@@ -6,6 +6,7 @@ import java.util.Set;
 
 import com.qiqi.li.living.api.LivingItemManager;
 
+import net.minecraft.commands.arguments.EntityAnchorArgument;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
@@ -511,30 +512,24 @@ public final class LivingToolReplay {
      * {@code player.getLookAngle()}（或 {@code getViewVector}）来决定朝哪施放 ——
      * 只 {@code setPos} 不设朝向的话，它们会朝 FakePlayer 当前那套残留朝向施放。</p>
      *
-     * <p>由 {@code LivingEntity#calculateViewVector} 的公式反解：</p>
-     * <pre>
-     *   x = −sin(yRot)·cos(xRot)
-     *   y = −sin(xRot)
-     *   z =  cos(yRot)·cos(xRot)
-     * </pre>
+     * <p>⭐ <b>用官方 {@code LivingEntity#lookAt(Anchor, Vec3)}，不要自己反解</b>
+     * （2026-09-24 审查改用）：官方版本除了设 {@code XRot / YRot} 外，还会同步</p>
+     * <ul>
+     *   <li>{@code yHeadRot} —— 部分模组读的是头部朝向</li>
+     *   <li>{@code yBodyRot / yBodyRotO} —— 身体朝向（{@code LivingEntity} 覆写里补的）</li>
+     *   <li>{@code xRotO / yRotO} —— <b>上一帧值</b>；⚠️ 手写反解会漏掉 ⇒
+     *       客户端插值时朝向会"甩一下"</li>
+     * </ul>
+     *
+     * <p>⭐ <b>Anchor 必须传 {@code FEET}</b>：起点取<b>实体脚部</b> = 我们 {@code setPos} 的
+     * {@code origin}，与记忆射线的起点定义一致。
+     * ⚠️ 用 {@code EYES} 会偏高约 1.6 格 ⇒ 近距离目标的角度偏差很明显。</p>
      */
     private static void faceTarget(LivingToolFakePlayer fake, Vec3 origin, Vec3 end) {
-        Vec3 delta = end.subtract(origin);
-        if (delta.lengthSqr() < 1.0E-6) {
+        if (end.distanceToSqr(origin) < 1.0E-6) {
             return;
         }
-        Vec3 dir = delta.normalize();
-        double y = dir.y;
-        if (y > 1.0) {
-            y = 1.0;
-        } else if (y < -1.0) {
-            y = -1.0;
-        }
-        float xRot = (float) -Math.toDegrees(Math.asin(y));
-        float yRot = (float) Math.toDegrees(Math.atan2(-dir.x, dir.z));
-        fake.setXRot(xRot);
-        fake.setYRot(yRot);
-        fake.setYHeadRot(yRot);   // 部分模组读的是头部朝向
+        fake.lookAt(EntityAnchorArgument.Anchor.FEET, end);
     }
 
     /**

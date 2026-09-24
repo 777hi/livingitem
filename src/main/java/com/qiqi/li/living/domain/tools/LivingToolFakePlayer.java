@@ -12,6 +12,7 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.neoforged.neoforge.common.util.FakePlayer;
 
 /**
@@ -88,9 +89,19 @@ public class LivingToolFakePlayer extends FakePlayer {
      * 摘除 / 装配两段逻辑（同 {@code LivingEntity} 源码，仅限主手槽）。</p>
      */
     public void equipTool(ItemStack stack) {
-        removeEnchantmentModifiers(this.lastEquipped);
+        // ⭐ 手上的物品【每次都要更新】—— 攻击 / 挖掘会扣耐久，回放读的就是它。
+        //   但【属性与位置类附魔效果】只在【换了另一把】时才重算：
+        //   本方法每 tick 都被调用，若无条件触发 ⇒ 位置效果会被每 tick 重复触发（原版只在装备变化时触发）。
+        boolean changed = !ItemStack.isSameItem(stack, this.lastEquipped);
+
+        if (changed) {
+            removeEnchantmentModifiers(this.lastEquipped);
+        }
         this.setItemInHand(InteractionHand.MAIN_HAND, stack);
-        addEnchantmentModifiers(stack);
+        if (changed) {
+            addEnchantmentModifiers(stack);
+            runLocationChangedEffects(stack);
+        }
         this.lastEquipped = stack;
     }
 
@@ -105,6 +116,24 @@ public class LivingToolFakePlayer extends FakePlayer {
                 instance.removeModifier(modifier.id());
             }
         });
+        // ⭐ 位置类附魔效果（EnchantmentLocationBasedEffect）—— 原版在同一处调用，我们此前漏了。
+        //    ⚠️ 原版内置几乎不用它，主要为模组服务；但既然有官方入口就补上。
+        EnchantmentHelper.stopLocationBasedEffects(stack, this, EquipmentSlot.MAINHAND);
+    }
+
+    /**
+     * 触发<b>位置类附魔效果</b>（{@code EnchantmentLocationBasedEffect}）。
+     *
+     * <p>⭐ 官方入口：{@code EnchantmentHelper.runLocationChangedEffects(ServerLevel, ItemStack, LivingEntity, EquipmentSlot)}，
+     * 原版在 {@code LivingEntity#handleEquipmentChanges} 里调用 —— 我们此前只复刻了属性部分，漏了这一句。</p>
+     *
+     * <p>⚠️ 必须由 {@code equipTool} 的 {@code changed} 分支调用 ⇒ <b>不能每 tick 触发</b>。</p>
+     */
+    private void runLocationChangedEffects(ItemStack stack) {
+        if (stack.isEmpty() || !(this.level() instanceof ServerLevel serverLevel)) {
+            return;
+        }
+        EnchantmentHelper.runLocationChangedEffects(serverLevel, stack, this, EquipmentSlot.MAINHAND);
     }
 
     /** 加上当前工具附魔提供的修饰符（效率 → {@code MINING_EFFICIENCY} 等）。 */

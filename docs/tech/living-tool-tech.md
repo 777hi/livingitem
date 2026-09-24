@@ -1596,6 +1596,56 @@ cast 到 `RegistryFriendlyByteBuf`（`ItemStack.STREAM_CODEC` 需要注册表访
 
 ---
 
+## 13. 官方 API 审查（2026-09-24）
+
+> 对活工具 / 活武器做了一次「有没有官方 API 可用」的审查。
+> **起因**：需要"无视实体无敌帧打出多段伤害"时，我 grep 到 `hurt()` 里的
+> `getPostAttackInvulnerabilityTicks()` 却没深追，直接去改 `invulnerableTime` 字段 ——
+> 而正解是 NeoForge 官方接口。
+> ⇒ 排查铁律已写进 [AGENTS.md](../../AGENTS.md)「排查铁律：原版机制挡路时」。
+
+| 点 | 审查前 | 官方 API 存在？ | 结论 |
+|---|---|---|---|
+| **朝向** `faceTarget` | 手写公式反解 | ✅ `LivingEntity#lookAt(Anchor, Vec3)` | 🔧 **已改用官方** |
+| 属性同步 `equipTool` | 复刻 private 方法 | ❌ `detectEquipmentUpdates` / `collectEquipmentChanges` / `handleEquipmentChanges` **全是 private** | 保留（**已确认无入口**） |
+| **位置类附魔效果** | 原漏了 | ✅ `EnchantmentHelper.runLocationChangedEffects` / `stopLocationBasedEffects` | 🔧 **已补** |
+| 攻击冷却 | override `getAttackStrengthScale` | ❌ 只有 `resetAttackStrengthTicker()`（设 0，不是设满） | 保留（**唯一解**） |
+| 实体检测 | `ProjectileUtil.getEntityHitResult` | ✅ 已用 | ✅ |
+| 方块扫描 | `BlockGetter.traverseBlocks` | ✅ 已用（2026-09-23 从固定步长改来） | ✅ |
+| 可空 `BlockPos` 编码 | 手写 | ❌ `ByteBufCodecs.optional(BlockPos.STREAM_CODEC)` 泛型不匹配（`BlockPos.STREAM_CODEC` 是 `StreamCodec<ByteBuf,…>`） | 保留 |
+| 无敌帧（辅助攻击待做） | — | ✅ `LivingIncomingDamageEvent#getContainer().setPostAttackInvulnerabilityTicks(0)` | **待实现，用官方** |
+
+### 13.1 `faceTarget` 改用官方 `lookAt` 的收益
+
+官方 `Entity#lookAt` 除了设 `XRot / YRot`，还会同步：
+
+- `yHeadRot` —— 部分模组读的是头部朝向
+- `yBodyRot / yBodyRotO / yHeadRotO`（`LivingEntity` 覆写补的）
+- **`xRotO / yRotO`（上一帧值）** —— ⚠️ **手写反解会漏掉** ⇒ 客户端插值时朝向会"甩一下"
+
+⭐ **Anchor 必须传 `FEET`**：起点取实体脚部 = 我们 `setPos` 的 `origin`，与记忆射线起点一致。
+⚠️ 用 `EYES` 会偏高约 1.6 格 ⇒ 近处目标角度偏差明显。
+
+> 📌 不矛盾于"录制用眼睛"：录制决定 `offset`；回放用 `origin` 重放；
+> `faceTarget` 只需保证 FakePlayer 的视线起点 == `origin`（射线起点）。
+
+### 13.2 位置类附魔效果：只在「换了另一把」时触发
+
+`equipTool` **每 tick 都被调用**，而原版位置类效果只在**装备变化**时触发 ⇒
+无条件调用会被每 tick 重复触发。故用 `ItemStack.isSameItem` 判断：
+
+```java
+boolean changed = !ItemStack.isSameItem(stack, this.lastEquipped);
+this.setItemInHand(MAIN_HAND, stack);        // ← 每次都要（耐久会变，回放读的就是它）
+if (changed) {
+    addEnchantmentModifiers(stack);
+    runLocationChangedEffects(stack);         // ← 只在切换时
+}
+```
+
+> ⚠️ **手上的物品必须每次更新**（攻击 / 挖掘会扣耐久）；只有属性与效果走 `changed` 分支。
+> ⚠️ 用 `isSameItem`（只比类型）而非 `matches` —— 后者会因耐久变化每 tick 判为"变了"。
+
 ## 附：参考源码位置
 
 本地源码：`libs/src/neoforge-21.1.249-merged/`（解压自 `build/moddev/artifacts/neoforge-21.1.249-sources.jar`）

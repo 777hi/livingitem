@@ -190,6 +190,27 @@ src/main/java/com/qiqi/li/
 | 2026-09-22 | 爆炸「方形区域过一会自己消失」= 客户端重建排队（判据：会消失=正常，一直在=bug） | `living-tnt-tech.md` §4.3 |
 
 
+## 排查铁律：原版机制挡路时
+
+遇到「原版 / NeoForge 的某个机制限制了我们」时，**按顺序**做，别跳步：
+
+1. **先找官方配置入口。** 该机制通常**留了口子** ——
+   看到 getter / container / 事件名，就**顺着追**它的 setter 与调用方。
+
+   > 🔴 **反面案例（2026-09-24）**：需要"无视实体无敌帧打出多段伤害"时，
+   > 我 grep 到 `LivingEntity#hurt` 里的 `getPostAttackInvulnerabilityTicks()`，
+   > **却没深追**，直接去改 `public int invulnerableTime` 字段。
+   > 而正解是 NeoForge 官方接口：
+   > `LivingIncomingDamageEvent#getContainer().setPostAttackInvulnerabilityTicks(0)`
+   > （铁魔法 `DamageSources#preHitEffects` 正是这么做的）。
+
+2. **确认没有，才考虑改字段 / 反射 / Access Transformer** ——
+   并在代码注释里写明**代价**（如"生产环境会因混淆失效"）。
+
+> ⚠️ **跳步的代价**：野路子会在 MC / NeoForge 改内部实现时**静默失效**，
+> 且往往比官方接口**影响面更大**（波及本不该波及的场景）。
+> 📌 教训：**看到 getter 就该想到有 setter，看到 container 就该想到有事件入口。**
+
 ## 文档导航
 
 文档按**层**组织（契约 / 实现 / 指南 / 参考 / 归档）—— 分层定义、体量约束与维护规约见
