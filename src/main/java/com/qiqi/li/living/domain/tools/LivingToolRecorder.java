@@ -149,6 +149,10 @@ public final class LivingToolRecorder {
      * 辅助<b>攻击</b>成员：无记忆的【活武器】—— 挖掘侧不参与。
      *
      * <p>与 {@link #isAssistItem}（环成员，工具 ∪ 武器）的差别：这里只要武器。</p>
+     *
+     * <p>⚠️ <b>活斧子同时满足它与 {@link #isAssistTool}</b>（既是工具又是武器，D3 共存）
+     * ⇒ 调用端必须用 {@code if (isAssistTool) ... else if (isAssistWeapon) ...} 保证互斥，
+     * 否则一把斧子会在两个环上各画一次。</p>
      */
     public static boolean isAssistWeapon(ItemStack stack) {
         return isLivingWeapon(stack)
@@ -165,6 +169,7 @@ public final class LivingToolRecorder {
         return isLivingTool(stack)
             && LivingItemManager.getToolMemory(stack).isEmpty();
     }
+
 
     // ------------------------------------------------------------------
     // 挖掘记忆（左键）

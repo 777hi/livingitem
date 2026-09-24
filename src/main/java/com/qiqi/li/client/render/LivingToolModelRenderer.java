@@ -171,6 +171,14 @@ public final class LivingToolModelRenderer {
     private static final float PULSE_SCALE = 0.15F;
 
     /**
+     * 攻击环的<b>存活窗口</b>（tick）—— 距上次攻击超过这么久 ⇒ 视为停手，收回背后环。
+     *
+     * <p>⭐ 必须 <b>&gt; 武器攻击冷却</b>（剑约 12 tick / 斧更慢），否则连续攻击时环会反复
+     * 「飞出去 → 收回 → 飞出去」地闪。取 20 留足余量。</p>
+     */
+    private static final long ATTACK_RING_TICKS = 20L;
+
+    /**
      * 模型【立正】修正角 —— 绕<b>贴图平面的法线（Z）</b>在平面内旋转。
      *
      * <p>⚠️ <b>为什么需要它</b>：MC 的 {@code item/handheld} 贴图是<b>斜 45° 对角</b>画的
@@ -330,7 +338,10 @@ public final class LivingToolModelRenderer {
         long now = level.getGameTime();
 
         Set<String> seen = new HashSet<>();
-        List<ItemStack> assist = new ArrayList<>();   // 无记忆的活工具 → 最后围成环
+        // ⭐ 无记忆的两类分开收集 —— 它们【去不同的环】：活工具 → 挖掘/背后环；活武器 → 攻击环。
+        //   （活斧子两者都满足 ⇒ 靠下面 if / else if 的顺序判为【工具】，不会画两遍。）
+        List<ItemStack> assistTools = new ArrayList<>();
+        List<ItemStack> assistWeapons = new ArrayList<>();
 
         // ① 玩家背包（排除手持 —— 玩家手里已经拿着了，再飘一个是重复）
         //    ⭐ 按【有没有记忆】分两条路：无记忆 → 辅助环（围成一圈）；有记忆 → 记忆射线上。
@@ -342,8 +353,13 @@ public final class LivingToolModelRenderer {
             if (stack == mainHand || stack == offHand) {
                 continue;
             }
-            if (LivingToolRecorder.isAssistItem(stack)) {
-                assist.add(stack);
+            // ⭐ 先判工具、再判武器（活斧子两者都满足 ⇒ 算工具，进挖掘/背后环）
+            if (LivingToolRecorder.isAssistTool(stack)) {
+                assistTools.add(stack);
+                continue;
+            }
+            if (LivingToolRecorder.isAssistWeapon(stack)) {
+                assistWeapons.add(stack);
                 continue;
             }
             renderOne(mc, poseStack, buffers, level, cameraPos, partialTick, now,
@@ -372,9 +388,14 @@ public final class LivingToolModelRenderer {
             }
         }
 
-        // ④ 辅助环（无记忆的活工具）—— 围在脑袋后面一圈
-        if (!assist.isEmpty()) {
-            renderAssistRing(mc, poseStack, buffers, level, cameraPos, partialTick, now, assist);
+        // ④ 辅助环（无记忆的活工具）—— 挖掘时飞到方块处转圈，否则围在脑袋后面
+        if (!assistTools.isEmpty()) {
+            renderAssistRing(mc, poseStack, buffers, level, cameraPos, partialTick, now, assistTools);
+        }
+
+        // ④′ 攻击环（无记忆的活武器）—— 攻击时飞到目标生物处脉冲，否则收回背后
+        if (!assistWeapons.isEmpty()) {
+            renderAttackRing(mc, poseStack, buffers, level, cameraPos, partialTick, now, assistWeapons);
         }
 
         // ⑤ 其它玩家背包里的活工具（联机可见性 · 最小版：只画背后的待机环）
@@ -476,8 +497,69 @@ public final class LivingToolModelRenderer {
             // 风车自转：转速由"含辅助贡献的破坏速度"换算（复用射线模式那套换算）
             float speed = Math.max(LivingToolAssistState.digSpeed(), 1.0E-4F);
             float spinRad = spinAngle(now, partialTick, spinPeriod((int) Math.ceil(1.0 / speed)));
-            drawRing(mc, poseStack, buffers, level, cameraPos, center, normal, working, spinRad);
+            drawRing(mc, poseStack, buffers, level, cameraPos, center, normal, working, spinRad,
+                1.0F, false);
         }
+    }
+
+    /**
+     * 无记忆的活武器 → <b>攻击环</b>：辅助攻击时围在【目标生物】处。
+     *
+     * <p>⭐ <b>与挖掘环逐条对称</b>（见 {@link #renderAssistRing} 的 ③）：</p>
+     * <pre>
+     *   挖掘环：按住左键 ⇒ 飞到【方块】处 … 松手 ⇒ 回背后
+     *   攻击环：正在打   ⇒ 飞到【生物】处 … 停手 ⇒ 回背后
+     * </pre>
+     *
+     * <p>差别只有两条（用户 2026-09-24 定）：</p>
+     * <ul>
+     *   <li><b>不转圈</b> —— 挖掘用风车自转表现"持续出力"，攻击是<b>一下一下</b>的
+     *       ⇒ 改用<b>缩放脉冲</b>（每次出手胀一下再回落）</li>
+     *   <li><b>剑尖朝圆心</b> —— 与工具环的"柄朝圆心"相反 ⇒ 一圈剑指向中心（{@code inward}）</li>
+     * </ul>
+     *
+     * <p>📌 <b>目标位置从哪来</b>：服务端每次出手都会往武器上写
+     * {@code LivingToolAction(now, 目标所在格)}（见 {@code LivingToolReplay#replayAttack}），
+     * 该组件<b>只走网络同步、不落盘</b> ⇒ 客户端直接读即可，<b>无需新增同步通道</b>。</p>
+     */
+    private static void renderAttackRing(Minecraft mc, PoseStack poseStack, MultiBufferSource buffers,
+                                         ClientLevel level, Vec3 cameraPos, float partialTick, long now,
+                                         List<ItemStack> weapons) {
+        // ── ① 目标：取本组【最近一次出手】打在哪一格 ────────────────────────────
+        // 辅助攻击是"全部朝同一目标各打一次"（docs/idea.md §1.7）⇒ 一把的位置即可代表全组。
+        BlockPos target = null;
+        long latest = Long.MIN_VALUE;
+        for (ItemStack stack : weapons) {
+            LivingToolAction action = LivingItemManager.getToolLastAction(stack);
+            if (action != null && action.target() != null && action.tick() > latest) {
+                latest = action.tick();
+                target = action.target();
+            }
+        }
+
+        // ── ② 没打过 / 停手超时 ⇒ 收回背后（与挖掘环"松开左键就回背后"同款）────────
+        long age = target == null ? Long.MAX_VALUE : now - latest;
+        if (target == null || age >= ATTACK_RING_TICKS) {
+            renderBackRing(mc, poseStack, buffers, level, cameraPos, partialTick, mc.player, weapons);
+            return;
+        }
+
+        // ── ③ 攻击环：目标生物处，环面朝玩家（与挖掘环同款取法）───────────────────
+        Vec3 center = Vec3.atCenterOf(target);
+        Vec3 toPlayer = new Vec3(cameraPos.x - center.x, 0.0, cameraPos.z - center.z);
+        Vec3 normal = toPlayer.lengthSqr() < 1.0E-6 ? lastRingFlat : toPlayer.normalize();
+
+        // ── ④ 缩放脉冲：出手瞬间胀一下再回落（复用交互脉冲的时长与力度）─────────────
+        //    ⚠️ 冷却(~12 tick) &lt; 存活窗口(20 tick) ⇒ 连续攻击时环【留在原地反复脉冲】，
+        //       不会"飞出去又收回"地闪。
+        float scale = 1.0F;
+        if (age < PULSE_TICKS) {
+            float t = (float) (age + partialTick) / PULSE_TICKS;
+            scale = 1.0F + PULSE_SCALE * (float) Math.sin(Math.PI * Mth.clamp(t, 0.0F, 1.0F));
+        }
+
+        drawRing(mc, poseStack, buffers, level, cameraPos, center, normal, weapons,
+            0.0F, scale, true);
     }
 
     /**
@@ -508,35 +590,49 @@ public final class LivingToolModelRenderer {
         Vec3 center = player.getPosition(partialTick)
             .add(0.0, RING_HEIGHT, 0.0)                 // 世界竖直 ⇒ 高度不随俯仰变
             .subtract(flat.scale(RING_BACK_OFFSET));    // 水平向后 ⇒ 始终在【背后】
-        drawRing(mc, poseStack, buffers, level, cameraPos, center, flat, tools, 0.0F);
+        drawRing(mc, poseStack, buffers, level, cameraPos, center, flat, tools, 0.0F, 1.0F, false);
     }
 
     /**
-     * 在指定位置画一圈工具：柄指向圆心（放射状）、斧刃 ⊥ 圆平面且朝前。
+     * 在指定位置画一圈物品。
      *
      * @param center   环心
      * @param normal   环平面法线（<b>必须水平</b>：环内"上"取世界竖直，靠它保证正交）
      * @param spinRad  风车自转角（0 = 不转）
+     * @param scale    整体缩放（{@code 1.0} = 原大小；&gt;1 用于脉冲）
+     * @param inward   ⭐ {@code true} = <b>尖端朝圆心</b>（攻击环：剑尖指向中心）；
+     *                 {@code false} = <b>柄朝圆心</b>（工具环：镐头朝外）
      */
     private static void drawRing(Minecraft mc, PoseStack poseStack, MultiBufferSource buffers,
                                  ClientLevel level, Vec3 cameraPos, Vec3 center, Vec3 normal,
-                                 List<ItemStack> tools, float spinRad) {
+                                 List<ItemStack> tools, float spinRad, float scale, boolean inward) {
         // normal 恒为水平 ⇒ ⊥ WORLD_UP ⇒ 叉积不退化
         Vec3 right = normal.cross(WORLD_UP).normalize();
         int n = tools.size();
         double radius = Math.min(RING_RADIUS_BASE + RING_RADIUS_STEP * n, RING_RADIUS_MAX);
         for (int i = 0; i < n; i++) {
             double angle = RING_START_ANGLE + Math.PI * 2.0 * i / n;
-            // 柄的方向（径向）：在圆平面内、延长线过圆心。
-            Vec3 dir = right.scale(Math.cos(angle)).add(WORLD_UP.scale(Math.sin(angle))).normalize();
-            Vec3 pos = center.add(dir.scale(radius));
-            // 绕柄滚转量：让"斧刃（鼓出方向）"⊥ 圆平面，且朝【前方】（背离玩家、背离相机）。
+            // 径向（圆心 → 物品）：只决定【位置】
+            Vec3 radial = right.scale(Math.cos(angle)).add(WORLD_UP.scale(Math.sin(angle))).normalize();
+            Vec3 pos = center.add(radial.scale(radius));
+
+            // ⭐ 朝向：模型局部 <b>+Y</b>（对镐是头、对剑是尖）对齐到哪个方向。
+            //   outward = +radial ⇒ 头/尖朝外、柄朝圆心（工具环）
+            //   inward  = −radial ⇒ 剑尖朝圆心、柄朝外（攻击环，用户 2026-09-24 定）
+            Vec3 dir = inward ? radial.scale(-1.0) : radial;
+
+            // 绕柄滚转量：让"鼓出方向"（+X）⊥ 圆平面，且朝【前方】（背离玩家、背离相机）。
             // 推导：yaw/pitch 之后局部 +X 落在 sign(cosθ)·flat，目标是 +flat
             // ⇒ cosθ > 0 那半圈要再转 180° 抵消符号。只依赖 θ ⇒ 【刚性】，与视角无关。
             //   （2026-09-21 用户实测定：原先取 −flat 是反的 —— 斧刃朝后了。）
-            float ringRoll = Math.cos(angle) >= 0.0 ? 0.0F : (float) Math.PI;
+            //
+            // ⚠️ inward 时 dir 取反 ⇒ yaw 偏移 π ⇒ +X 跟着反向 ⇒ 再补 π 才能仍朝前。
+            //   （推导值；若实测剑面反了，去掉下面这行 {@code + Math.PI} 即可。）
+            float base = Math.cos(angle) >= 0.0 ? 0.0F : (float) Math.PI;
+            float ringRoll = inward ? base + (float) Math.PI : base;
+
             drawModel(mc, poseStack, buffers, level, cameraPos, pos, dir, normal, ringRoll, spinRad,
-                1.0F, tools.get(i));
+                scale, tools.get(i));
         }
     }
 
@@ -594,11 +690,12 @@ public final class LivingToolModelRenderer {
             remember(key, now, pos);
         } else if (action != null && action.target() != null
             && now - action.tick() < PULSE_TICKS) {
-            // 交互：瞬现到交互位 + 缩放脉冲（不转圈）
+            // 交互 / 攻击：瞬现到目标位 + 缩放脉冲（不转圈）。
+            //   交互（右键）由 replayUse 写 target；活武器攻击由 replayAttack 写【生物所在格】
+            //   —— 两者动画同款（用户 2026-09-24 定："有记忆的，像活工具的交互动画一样"）。
             //
-            // ⚠️ target == null 的两种情形【不能走这条】（否则 surfacePoint 会 NPE）：
-            //    ① 右键空气 / 物品（法杖施法）② 活武器攻击（目标是生物，不是方块）
-            //    ⇒ 直接跳过脉冲动画，模型留在原位。
+            // ⚠️ target == null（右键空气 / 物品施法）【不能走这条】⇒ 跳过脉冲，模型留在原位。
+            //    （surfacePoint 本身永不返回 null —— clip 未命中就退回格心 ⇒ 空中目标也安全。）
             pos = surfacePoint(level, origin, action.target());
             float t = (float) (now - action.tick() + partialTick) / PULSE_TICKS;
             scale = 1.0F + PULSE_SCALE * (float) Math.sin(Math.PI * Mth.clamp(t, 0.0F, 1.0F));

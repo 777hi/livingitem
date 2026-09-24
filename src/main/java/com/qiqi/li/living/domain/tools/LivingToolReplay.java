@@ -420,7 +420,14 @@ public final class LivingToolReplay {
 
         // 记下本次出手的 tick（下次算冷却用）+ 顺带驱动客户端的"动作"动画。
         // ⚠️ 两端都要写：held 是上面 copy 的副本，写回槽位用的是它。
-        LivingToolAction action = new LivingToolAction(now, null);
+        //
+        // ⭐ target 写【目标生物的所在格】而不是 null —— 客户端据此两件事：
+        //   ① 有记忆的：走"瞬现到目标位 + 缩放脉冲"（与活工具的交互动画同款）
+        //   ② 无记忆的：把攻击环摆到目标处（见 LivingToolModelRenderer#renderAttackRing）
+        //   ⇒ 取【包围盒中心】所在格（而非 blockPosition()）—— 后者是脚下方块，
+        //     大型生物会让环沉到脚底。
+        LivingToolAction action =
+            new LivingToolAction(now, BlockPos.containing(hit.getEntity().getBoundingBox().getCenter()));
         LivingItemManager.setToolLastAction(weapon, action);
         LivingItemManager.setToolLastAction(held, action);
         return new AttackResult(held, Outcome.ATTACKED);
