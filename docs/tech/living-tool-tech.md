@@ -1494,16 +1494,24 @@ private float incrementDestroyProgress(...) {
 **渲染复用**：`renderBackRing(player, tools, …)` —— 本机与远程共用同一条路径
 （参考系直接取 `player` 自己的位置 / 朝向）。
 
-#### ✅ 扩展：攻击环联机可见（2026-09-25，零新增同步）
+#### ✅ 扩展：攻击环 + 主动模式联机可见（2026-09-25，零新增同步）
 
-`LivingToolAction` 写在物品的 DataComponent 上，`LivingToolPlayerPacket` 的工具副本经
-`ItemStack.STREAM_CODEC` 编码时**天然携带**（与手持动画同一机制）⇒ 客户端对别人的工具列表
-读组件即可分组：`action` 在存活窗口内 ⇒ **攻击环**（飞到目标生物处脉冲，与本机同款，
-`renderOtherPlayerItems`）；其余 ⇒ 背后环。
+`LivingToolAction` / `LivingToolMemory` / `LivingToolProgress` 全在物品的 DataComponent 上，
+`LivingToolPlayerPacket` 的工具副本经 `ItemStack.STREAM_CODEC` 编码时**天然携带**
+（与手持动画同一机制）⇒ 客户端读别人的工具副本组件即可渲染：
 
-仍不可见：**挖掘环**（"他正在挖哪格"不在组件里，辅助挖掘状态是本机 BreakSpeed 的本地记录；
-要做得新增协议字段：`Entry` 加 digging + 服务端 `BreakSpeed` 记录目标，判定偏复杂暂缓）；
-**自主模式**（有记忆）的工具不在同步列表里。
+| 状态 | 别人看到 |
+|---|---|
+| 无记忆（环成员）的武器 `action` 在窗口内 | **攻击环**（飞到目标生物处脉冲，`renderOtherPlayerItems`） |
+| 无记忆其余 | 背后环 |
+| **有记忆（主动模式）** | `renderOne`（悬空工具体 + 挖掘转圈 / 攻击脉冲，起点 = 他的眼睛 `L3=a`）+ **记忆射线**（F3+B，`RayRenderer` 第四条路 `renderRemotePlayerHosts`，与掉落物 / 容器同门） |
+
+实现要点：收集口径从 `isAssistItem` 扩为 **`isAssistItem ∪ 有记忆`**（活石头照旧排除）；
+去重天然工作 —— `lastAction` 只在出手时写、`progress` 只在换目标时写 ⇒ 不会每 tick 重发；
+`renderOne` 的 key 加玩家前缀（`"o"+UUID+"_"+i`）防串台。
+
+仍不可见：**被动辅助挖掘环**（"他正在挖哪格"不在组件里，`LivingToolAssistState` 是本机
+BreakSpeed 的本地记录；要做得新增协议字段，判定偏复杂暂缓）。
 
 ---
 

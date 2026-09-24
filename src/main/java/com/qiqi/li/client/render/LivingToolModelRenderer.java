@@ -7,6 +7,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 import javax.annotation.Nullable;
 
@@ -430,9 +431,9 @@ public final class LivingToolModelRenderer {
             if (owner.distanceToSqr(cameraPos) > MAX_DISTANCE * MAX_DISTANCE) {
                 continue;
             }
-            // ⭐ 2026-09-25 扩展：按 action 组件分组 —— 攻击环 + 背后环（零新增同步，见下）
+            // ⭐ 2026-09-25 扩展：被动环 / 攻击环 / 主动工具体（零新增同步，见下）
             renderOtherPlayerItems(mc, poseStack, buffers, level, cameraPos, partialTick, now,
-                owner, entry.tools());
+                owner, entry.playerId(), entry.tools(), seen);
         }
 
         // 清理：本帧没见到的 key 直接丢（工具被取走 / 走出范围）。
@@ -590,24 +591,37 @@ public final class LivingToolModelRenderer {
     }
 
     /**
-     * ⑤ 联机：把【其它玩家】的活武器按状态分组渲染（2026-09-25 扩展，原最小版只有背后环）。
+     * ⑤ 联机：把【其它玩家】的活物品按状态分组渲染（2026-09-25，原最小版只有背后环）。
      *
-     * <p>⭐ <b>零新增同步</b>：攻击动作（{@code LivingToolAction}）写在物品的 DataComponent 上，
-     * {@code LivingToolPlayerPacket} 里的工具副本经 {@code ItemStack.STREAM_CODEC} 编码时
+     * <p>⭐ <b>零新增同步</b>：记忆 / 挖掘进度 / 攻击动作全在物品的 DataComponent 上，
+     * {@code LivingToolPlayerPacket} 里的副本经 {@code ItemStack.STREAM_CODEC} 编码时
      * <b>天然携带</b>（与手持动画同一机制）⇒ 客户端直接读副本组件分组即可。</p>
      *
-     * <p>分组：{@code action} 在存活窗口内 ⇒ <b>攻击环</b>（飞到目标生物处脉冲，与本机同款）；
-     * 其余 ⇒ 背后环。边界：挖掘环不做 —— "他正在挖哪格"需要新增协议字段（辅助挖掘状态不在
-     * 组件里）；自主模式（有记忆）的工具根本不在同步列表里。</p>
+     * <p>分组（对齐本机口径）：</p>
+     * <ul>
+     *   <li><b>无记忆</b>（环成员）⇒ {@code action} 在窗口内 → <b>攻击环</b>；否则背后环</li>
+     *   <li><b>有记忆</b>（主动模式）⇒ {@link #renderOne}（悬空工具体 + 挖掘转圈 / 攻击脉冲，
+     *       起点 = 他的眼睛，{@code L3=a}）；<b>记忆射线</b>由 {@code LivingToolRayRenderer}
+     *       的远程玩家路画（F3+B，与掉落物 / 容器同门）</li>
+     * </ul>
      */
     private static void renderOtherPlayerItems(Minecraft mc, PoseStack poseStack, MultiBufferSource buffers,
                                                ClientLevel level, Vec3 cameraPos, float partialTick, long now,
-                                               Player owner, List<ItemStack> tools) {
+                                               Player owner, UUID playerId, List<ItemStack> tools,
+                                               Set<String> seen) {
+        Vec3 origin = owner.getEyePosition(partialTick);
         List<ItemStack> attacking = new ArrayList<>();
         List<ItemStack> idle = new ArrayList<>();
         long latest = Long.MIN_VALUE;
         BlockPos target = null;
-        for (ItemStack stack : tools) {
+        for (int i = 0; i < tools.size(); i++) {
+            ItemStack stack = tools.get(i);
+            if (!LivingToolRecorder.isAssistItem(stack)) {
+                // ── 主动模式（有记忆）：与本机 renderOne 完全同一套（待机位 / 挖掘转圈 / 脉冲）
+                renderOne(mc, poseStack, buffers, level, cameraPos, partialTick, now,
+                    origin, stack, "o" + playerId + "_" + i, seen);
+                continue;
+            }
             LivingToolAction action = LivingItemManager.getToolLastAction(stack);
             if (action != null && action.target() != null
                 && now - action.tick() >= 0L && now - action.tick() < ATTACK_RING_TICKS) {

@@ -8,7 +8,9 @@ import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ItemEntityContainerContext;
 import com.qiqi.li.living.domain.tools.LivingToolHostClientCache;
 import com.qiqi.li.living.domain.tools.LivingToolMemory;
+import com.qiqi.li.living.domain.tools.LivingToolPlayerClientCache;
 import com.qiqi.li.network.LivingToolHostPacket;
+import com.qiqi.li.network.LivingToolPlayerPacket;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -19,6 +21,7 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.phys.AABB;
@@ -154,6 +157,7 @@ public final class LivingToolRayRenderer {
         if (debugHitBoxes) {
             drew |= renderItemEntityHosts(poseStack, ribbon, level, cameraPos, frustum);
             drew |= renderContainerHosts(poseStack, ribbon, level, cameraPos, frustum);
+            drew |= renderRemotePlayerHosts(poseStack, ribbon, level, cameraPos, frustum, partialTick);
         }
 
         if (drew) {
@@ -228,6 +232,37 @@ public final class LivingToolRayRenderer {
             Vec3 origin = Vec3.atCenterOf(entry.pos());
             for (LivingToolHostPacket.ToolRay tool : entry.tools()) {
                 drew |= renderStackFromTarget(poseStack, ribbon, cameraPos, frustum, origin, tool);
+            }
+        }
+        return drew;
+    }
+
+    /**
+     * 其它玩家形态（联机 · 2026-09-25 主动模式扩展）：起点 = <b>他的眼睛</b>（{@code L3=a}）。
+     *
+     * <p>数据源 {@link LivingToolPlayerClientCache}（{@code LivingToolPlayerSync} 的 S2C 广播，
+     * 副本带完整记忆组件）。⭐ 与掉落物 / 容器同门：挂在 {@code debugHitBoxes}（F3+B）下 ——
+     * 「记忆是隐形的」对别人的工具同样成立。</p>
+     *
+     * <p>⭐ 只画<b>有记忆</b>的（无记忆的活工具没有射线，它们走环渲染）；
+     * 排除本机玩家 —— 自己那份走 {@link #renderPlayerHost}（读自己的背包，更实时）。</p>
+     */
+    private static boolean renderRemotePlayerHosts(PoseStack poseStack, VertexConsumer ribbon,
+                                                   ClientLevel level, Vec3 cameraPos, Frustum frustum,
+                                                   float partialTick) {
+        boolean drew = false;
+        for (LivingToolPlayerPacket.Entry entry :
+                LivingToolPlayerClientCache.get(level.dimension().location())) {
+            Player owner = level.getPlayerByUUID(entry.playerId());
+            if (owner == null || owner == Minecraft.getInstance().player) {
+                continue;
+            }
+            Vec3 eye = owner.getEyePosition(partialTick);
+            for (ItemStack stack : entry.tools()) {
+                if (LivingItemManager.getToolMemory(stack).isEmpty()) {
+                    continue;
+                }
+                drew |= renderStack(poseStack, ribbon, level, cameraPos, frustum, eye, stack);
             }
         }
         return drew;

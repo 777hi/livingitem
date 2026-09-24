@@ -103,7 +103,14 @@ public final class LivingToolPlayerSync {
     }
 
     /**
-     * 玩家背包里的「无记忆活工具」（排除手持 —— 手持的由物品自身渲染）。
+     * 玩家背包里的「联机可见活物品」（排除手持 —— 手持的由物品自身渲染）。
+     *
+     * <p>⭐ 口径与本机渲染对齐（2026-09-25 扩展主动模式）：</p>
+     * <ul>
+     *   <li><b>无记忆</b>的活工具 ∪ 活武器（{@code isAssistItem}）⇒ 别人的背后环 / 攻击环</li>
+     *   <li><b>有记忆</b>的（{@code !memory.isEmpty()}）⇒ 别人的自主工具体 + 记忆射线（F3+B）</li>
+     * </ul>
+     * <p>活石头这类「是活物品但既不上环也无记忆」的照旧排除。</p>
      *
      * <p>⚠️ 必须 {@code copy()}：直接存引用会让服务端后续修改（扣耐久等）把
      * {@link #lastSent} 里那份也改掉 ⇒ 去重比较失效、永远检测不到变化
@@ -120,6 +127,11 @@ public final class LivingToolPlayerSync {
                 continue;
             }
             if (LivingToolRecorder.isAssistItem(stack)) {
+                out.add(stack.copy());
+                continue;
+            }
+            if (LivingItemManager.isLivingItem(stack)
+                && !LivingItemManager.getToolMemory(stack).isEmpty()) {
                 out.add(stack.copy());
             }
         }
