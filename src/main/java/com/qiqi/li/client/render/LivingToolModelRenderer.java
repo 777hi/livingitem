@@ -149,10 +149,10 @@ public final class LivingToolModelRenderer {
     private static final double MAX_DISTANCE = 32.0;
 
     /** 待机位距起点的<b>上限</b>（格）。 */
-    private static final double IDLE_MAX_OFFSET = 1.5;
+    private static final double IDLE_MAX_OFFSET = 3.0;
 
     /** 待机位的半饱和长度（格）：射线长等于此值时，待机距离 = 上限的一半。 */
-    private static final double IDLE_HALF_SATURATION = 3.0;
+    private static final double IDLE_HALF_SATURATION = 7.0;
 
     /** 飞回耗时（tick）。<b>恒定</b> ⇒ 距离越远回得越快（自动满足，无需速度函数）。 */
     private static final int RETURN_TICKS = 8;
@@ -550,25 +550,36 @@ public final class LivingToolModelRenderer {
     private static List<ItemStack> renderAttackRing(Minecraft mc, PoseStack poseStack, MultiBufferSource buffers,
                                                     ClientLevel level, Vec3 cameraPos, float partialTick, long now,
                                                     List<ItemStack> weapons) {
-        // ── ① 目标：取本组【最近一次出手】打在哪一格 ────────────────────────────
-        // 辅助攻击是"全部朝同一目标各打一次"（docs/idea.md §1.7）⇒ 一把的位置即可代表全组。
-        BlockPos target = null;
+        // ── ① 按【每把武器自己】的 action 分组（2026-09-25 修正）──────────────────
+        //    ⚠️ 曾是「组内有任意一把刚出手 ⇒ 全体飞过去」—— 而辅助攻击每把有<b>独立冷却</b>
+        //       （剑 12.5 tick，见 replayAttack）⇒ 冷却中的那把也会被带着飞出去，观感不对
+        //       （用户实测）。现在：只有<b>自己刚出手</b>的进攻击环，其余（含冷却中的）
+        //       交还调用方进背后环。
+        //    ⭐ 辅助攻击是"全部朝同一目标各打一次"（docs/idea.md §1.7）⇒ 环心取
+        //       attacking 里最新那把的目标即可（通常全体相同）。
+        List<ItemStack> attacking = new ArrayList<>();
+        List<ItemStack> idle = new ArrayList<>();
         long latest = Long.MIN_VALUE;
-        for (ItemStack stack : weapons) {
-            LivingToolAction action = LivingItemManager.getToolLastAction(stack);
-            if (action != null && action.target() != null && action.tick() > latest) {
-                latest = action.tick();
-                target = action.target();
+        BlockPos target = null;
+        for (ItemStack weapon : weapons) {
+            LivingToolAction action = LivingItemManager.getToolLastAction(weapon);
+            long age = action == null || action.target() == null
+                ? Long.MAX_VALUE : now - action.tick();
+            // age < 0：客户端时钟略慢于服务端写入时（差 1~2 tick）⇒ 视为未攻击
+            if (age >= 0L && age < ATTACK_RING_TICKS) {
+                attacking.add(weapon);
+                if (action.tick() > latest) {
+                    latest = action.tick();
+                    target = action.target();
+                }
+            } else {
+                idle.add(weapon);
             }
         }
 
-        // ── ② 没打过 / 停手超时 ⇒ 交还给调用方，与待机工具【合并进同一圈背后环】────
-        long age = target == null ? Long.MAX_VALUE : now - latest;
-        if (target == null || age >= ATTACK_RING_TICKS) {
-            return weapons;
-        }
-        if (age < 0L) {
-            return weapons;   // 防御：客户端时钟略慢于服务端写入时（差 1~2 tick），视为未攻击
+        // ── ② 没出手的交还调用方，与待机工具【合并进同一圈背后环】─────────────────
+        if (target == null) {
+            return idle;
         }
 
         // ── ③ 攻击环：目标生物处，环面朝玩家（与挖掘环同款取法）───────────────────
@@ -580,14 +591,15 @@ public final class LivingToolModelRenderer {
         //    ⚠️ 冷却(~12 tick) &lt; 存活窗口(20 tick) ⇒ 连续攻击时环【留在原地反复脉冲】，
         //       不会"飞出去又收回"地闪。
         float scale = 1.0F;
+        float age = now - latest;
         if (age < PULSE_TICKS) {
             float t = (float) (age + partialTick) / PULSE_TICKS;
             scale = 1.0F + PULSE_SCALE * (float) Math.sin(Math.PI * Mth.clamp(t, 0.0F, 1.0F));
         }
 
-        drawRing(mc, poseStack, buffers, level, cameraPos, center, normal, weapons,
+        drawRing(mc, poseStack, buffers, level, cameraPos, center, normal, attacking,
             0.0F, scale, true, ATTACK_RING_RADIUS_BASE);
-        return List.of();
+        return idle;
     }
 
     /**
