@@ -61,6 +61,11 @@
   `renderOtherPlayerItems` 对有记忆物品复用 `renderOne`（悬空工具体 + 挖掘转圈 + 攻击脉冲）；
   `RayRenderer` 加第四条路 `renderRemotePlayerHosts`（F3+B，远程玩家记忆射线）。`living-tool-tech.md` §11.9
 - ✅ 联机：**攻击环可见**（`LivingToolAction` 组件随包走，渲染端按组件分组为攻击环/背后环）
+- ✅ 攻击环改为**按每把武器自己的 action 分组**（原先「组内任意一把刚出手 ⇒ 全体飞出」，
+  冷却中的那把也被带着飞）—— 现在只有刚出手的进攻击环，其余留背后环；
+  因窗口(6) < 武器冷却(剑12.5) ⇒ 多把按各自冷却**轮流扑咬**。`LivingToolModelRenderer`
+- 🎛️ **待机位调参**：`IDLE_MAX_OFFSET` / `IDLE_HALF_SATURATION`（用户调 —— 悬停距离
+  `MAX × L / (L + HALF)`，L = 记忆射线长度）
 - 🎛️ 环半径用户调参：背后/挖掘环 0.7 起、每把 +0.007、上限 1.40
 - ✅ tooltip：模式措辞简化为**主动/被动**（原"辅助玩家挖掘/自主挖掘"带挖掘字眼，活武器不适用）；
   补**攻击记忆行**（距离 + 蹲下录的生物限定，`EntityType#getDescription`）
