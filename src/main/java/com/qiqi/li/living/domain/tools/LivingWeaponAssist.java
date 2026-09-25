@@ -79,7 +79,9 @@ public final class LivingWeaponAssist {
         if (!(event.getSource().getEntity() instanceof ServerPlayer player) || player.isFakePlayer()) {
             return;
         }
-        if (player.isCreative() || player.isSpectator()) {
+        // ⭐ 创造模式 2026-09-25 放开（用户定，与辅助挖掘对齐）：创造打怪时活武器照样
+        //    出手有实际意义，且创造物品不掉耐久、无副作用；旁观依旧排除。
+        if (player.isSpectator()) {
             return;
         }
         LivingEntity target = event.getEntity();

@@ -56,7 +56,8 @@ import net.neoforged.neoforge.event.level.BlockDropsEvent;
  *
  * <h3>定案（2026-09-20 用户拍板）</h3>
  * <ul>
- *   <li>仅在<b>玩家背包</b>生效；手持普通工具时<b>也帮</b>；创造 / 旁观<b>跳过</b></li>
+ *   <li>仅在<b>玩家背包</b>生效；手持普通工具时<b>也帮</b>；旁观<b>跳过</b>
+ *       （创造 2026-09-25 放开 —— 与辅助攻击对齐）</li>
  *   <li>多把速度<b>直接相加、不设上限</b> —— 用户口径：
  *       <i>"玩家背包槽位数量就已经是上限了"</i></li>
  *   <li>不需要距离限制（只作用于玩家当前目标，天然受限）</li>
@@ -186,7 +187,7 @@ public final class LivingToolAssist {
     // ── 内部 ────────────────────────────────────────────────────────────────
 
     /**
-     * 能不能为这个玩家出力（非创造 / 旁观）。
+     * 能不能为这个玩家出力（旁观排除；创造 2026-09-25 放开）。
      *
      * <p>⭐ <b>两端都要放行</b> —— 尤其是<b>客户端</b>：原版
      * {@code ServerPlayerGameMode#tick} 里 {@code incrementDestroyProgress} 的返回值被<b>丢弃</b>，
@@ -196,7 +197,9 @@ public final class LivingToolAssist {
      * 表现为「门槛与附魔都生效（服务端判定），唯独加速没感觉」（2026-09-20 实测）。</p>
      */
     private static boolean isAssistable(@Nullable Player player) {
-        if (player == null || player.isCreative() || player.isSpectator()) {
+        // ⭐ 创造模式 2026-09-25 放开（用户定）：挖掘侧放开无副作用（加速对瞬间挖掘无影响，
+        //    材质门槛 / 掉落归属照样生效），且与辅助攻击的放开对齐；旁观依旧排除。
+        if (player == null || player.isSpectator()) {
             return false;
         }
         // FakePlayer 不是真实玩家；且它会再次触发本事件（self 递归）

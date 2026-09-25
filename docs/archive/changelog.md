@@ -54,6 +54,25 @@
 
 ---
 
+## 2026-09-25
+
+- ✅ 联机：**主动模式（有记忆）联机可见** —— 收集口径扩为 `isAssistItem ∪ 有记忆`
+  （记忆/进度/动作全在 DataComponent，随 `ItemStack.STREAM_CODEC` 包内副本天然携带，零新增同步）；
+  `renderOtherPlayerItems` 对有记忆物品复用 `renderOne`（悬空工具体 + 挖掘转圈 + 攻击脉冲）；
+  `RayRenderer` 加第四条路 `renderRemotePlayerHosts`（F3+B，远程玩家记忆射线）。`living-tool-tech.md` §11.9
+- ✅ 联机：**攻击环可见**（`LivingToolAction` 组件随包走，渲染端按组件分组为攻击环/背后环）
+- 🎛️ 环半径用户调参：背后/挖掘环 0.7 起、每把 +0.007、上限 1.40
+- ✅ tooltip：模式措辞简化为**主动/被动**（原"辅助玩家挖掘/自主挖掘"带挖掘字眼，活武器不适用）；
+  补**攻击记忆行**（距离 + 蹲下录的生物限定，`EntityType#getDescription`）
+- 🎛️ **创造模式放开辅助**（原 2026-09-20 定案"创造/旁观跳过"）—— 辅助攻击与辅助挖掘都对
+  创造玩家生效（攻击侧创造有实际意义且创造物品不掉耐久；挖掘侧放开无副作用），旁观依旧排除
+- 📝 已知问题记录（暂不修）：工具右键**不可交互方块也会录上 use 记忆** ——
+  `BlockToolModificationEvent` 在原版判定前无条件 post（`AxeItem#evaluateNewBlockState`
+  对任意方块连发三次 ability 尝试）+ L44 保护期挡住 `RightClickItem` 的自愈清除；
+  将来修法：按 ability 重算原版判定。`living-tool-tech.md` §4.3
+
+---
+
 ## 2026-09-23
 
 - ✅ 新增：**活武器「近战核心链路」**（记忆 → 录制 → 回放 → 调度 → 渲染）。
