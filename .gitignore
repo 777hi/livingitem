@@ -57,5 +57,15 @@ libs/
 ### IDE ###
 .qoderignore
 ### AI 工具备份（勿提交） ###
+# 备份快照/临时文件：git 历史本身已保存历史，勿二次入库
 .workbuddy-ai/backup/
 .workbuddy-ai/tmp/
+.workbuddy-ai/patches/
+
+# AI 工具的会话级草稿（文件名带会话 UUID/哈希），不属于项目内容
+.zcode/plans/
+.codebuddy/plans/
+
+### 崩溃日志 ###
+# 注意 *.log 已在上面忽略，但崩溃报告是 .txt，需单独挡
+docs/crash-*.txt
