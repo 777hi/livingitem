@@ -1,15 +1,3 @@
-Living Item — License Overview
-
-Living Item is released under the MIT License, with one additional condition:
-the mod itself may not be resold.
-
-Copyright (c) 2026 777hi
-https://github.com/777hi
-
-================================================================================
-
-## Code License (MIT)
-
 MIT License
 
 Copyright (c) 2026 777hi
@@ -31,54 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
-================================================================================
-
-## Additional Condition (No Resale)
-
-The rights granted above do not include the right to sell this mod, or a
-modified version of it, as a product in its own right.
-
-================================================================================
-
-## Assets License (MIT)
-
-Artwork in this project is licensed under the MIT License above, on the same
-terms.
-
-Exception: textures that are derived from, or copied from, Minecraft are not
-licensed here. See the Third-Party Notice below.
-
-================================================================================
-
-## Third-Party Notice
-
-Minecraft — including its name, brand, code, textures, images, models, sounds,
-and any derivatives — is the property of Mojang Studios and Microsoft. All
-rights in it remain with them.
-
-Some textures shipped in this mod are derived from, or are copies of, assets
-from Minecraft, including the copper-family, furnace, hopper, redstone, and TNT
-textures. Those textures are not covered by the MIT License or the Additional
-Condition above, and no rights over them are granted to you by the author. They
-are provided solely for use inside Minecraft, as part of this mod. To reuse any
-of them, obtain permission from Mojang Studios / Microsoft.
-
-Names, identifiers, and API surfaces belonging to other mods (including
-NeoForge, Create, and any other mod this project interoperates with) remain the
-property of their respective authors.
-
-Living Item is an independent, unofficial project. It is not affiliated with,
-endorsed by, sponsored by, or approved by Mojang Studios, Microsoft, NeoForged,
-or any other mod author. This license grants no rights in any third-party name
-or trademark, including the name "Living Item" as used to identify the original
-project.
-
-If you are a rights holder and believe this project contains material that
-infringes your rights, please contact the author via GitHub
-(https://github.com/777hi) and it will be removed or replaced promptly.
-
-================================================================================
-
-For licensing inquiries:
-https://github.com/777hi

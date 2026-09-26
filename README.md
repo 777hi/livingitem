@@ -27,4 +27,6 @@
 
 <h4 align="center">Find out more about Living Item on <a href="https://modrinth.com/mod/living-item">Modrinth</a></h4>
 
-<h4 align="center">Licensed under the <a href="./LICENSE.txt">MIT License, with one additional condition</a></h4>
+<h4 align="center">Licensed under the <a href="./LICENSE.txt">MIT License</a></h4>
+
+<h4 align="center">Third-party assets and trademarks: see <a href="./NOTICE.md">NOTICE.md</a></h4>
