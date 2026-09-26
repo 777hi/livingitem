@@ -83,7 +83,7 @@ ContainerContext (组合接口，继承以下 4 个接口)
 
 ### 2.2 LivingContainer — 基础物品读写
 
-[LivingContainer](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/container/LivingContainer.java) 是容器能力体系的最小接口，所有其他容器接口都继承它。
+LivingContainer.java 是容器能力体系的最小接口，所有其他容器接口都继承它。
 
 ```java
 public interface LivingContainer {
@@ -98,7 +98,7 @@ public interface LivingContainer {
 
 ### 2.3 SlotInfoProvider — 槽位能力查询
 
-[SlotInfoProvider](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/container/SlotInfoProvider.java) 扩展 `LivingContainer`，增加槽位限制、物品验证、模拟插入等能力。
+SlotInfoProvider.java 扩展 `LivingContainer`，增加槽位限制、物品验证、模拟插入等能力。
 
 ```java
 public interface SlotInfoProvider extends LivingContainer {
@@ -117,7 +117,7 @@ public interface SlotInfoProvider extends LivingContainer {
 
 ### 2.4 ContainerSync — 客户端同步
 
-[ContainerSync](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/container/ContainerSync.java) 负责将服务端修改后的物品数据同步到客户端。
+ContainerSync.java 负责将服务端修改后的物品数据同步到客户端。
 
 **为什么需要手动同步？**
 
@@ -135,7 +135,7 @@ public interface ContainerSync extends LivingContainer {
 
 ### 2.5 ContainerIdentity — 身份标识
 
-[ContainerIdentity](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/container/ContainerIdentity.java) 提供容器唯一标识和世界信息，适用于需要跨容器操作的功能。
+ContainerIdentity.java 提供容器唯一标识和世界信息，适用于需要跨容器操作的功能。
 
 ```java
 public interface ContainerIdentity {
@@ -182,7 +182,7 @@ ServerTickEvent.Pre
 
 ### 3.2 ContainerChunkCache — 容器区块缓存
 
-[ContainerChunkCache](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/container/ContainerChunkCache.java) 维护"包含容器方块实体的区块"列表，避免每 tick 全量扫描所有区块。
+ContainerChunkCache.java 维护"包含容器方块实体的区块"列表，避免每 tick 全量扫描所有区块。
 
 **为什么需要这个缓存？**
 
@@ -627,7 +627,7 @@ private final Set<String> reusableKeySet = new HashSet<>();
 
 ### 4.2 玩家背包处理
 
-[LivingItem.onServerTick](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/LivingItem.java) 中，每 tick 遍历所有在线玩家：
+LivingItem.onServerTick 中，每 tick 遍历所有在线玩家：
 
 ```java
 for (var player : server.getPlayerList().getPlayers()) {
@@ -709,7 +709,7 @@ for (var chunkPos : chunkSet) {
 
 ### 5.2 ContainerCompatibilityConfig — 容器兼容性配置
 
-[ContainerCompatibilityConfig](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/transfer/ContainerCompatibilityConfig.java) 为不同容器类型定义槽位解析规则，主要解决**非标准列数容器**的槽位方向解析问题。
+ContainerCompatibilityConfig.java 为不同容器类型定义槽位解析规则，主要解决**非标准列数容器**的槽位方向解析问题。
 
 **内置规则**（随 jar 打包，源文件 `src/main/resources/assets/living_item/container_rules.json`）：
 
@@ -1039,7 +1039,7 @@ if (rule.isPresent() && rule.get().containerSize() == getSize()) return rule;  /
 
 ### 6.3 SlotResolver — 槽位方向解析
 
-[SlotResolver](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/transfer/SlotResolver.java) 将相对方向偏移转换为容器中的绝对槽位索引。
+SlotResolver.java 将相对方向偏移转换为容器中的绝对槽位索引。
 
 **核心公式**：
 
@@ -1073,7 +1073,7 @@ result = (baseSlot / width + direction.y) * width + (baseSlot % width + directio
 
 ### 7.1 SimpleContainerContext
 
-[SimpleContainerContext](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/container/SimpleContainerContext.java) 是 `ContainerContext` 的通用实现，基于 `IItemHandler`。
+SimpleContainerContext.java 是 `ContainerContext` 的通用实现，基于 `IItemHandler`。
 
 **核心字段**：
 
@@ -1219,7 +1219,7 @@ ServerTickEvent.Post
 
 ### 8.2 processContext — 按功能分组执行
 
-[ContainerLivingItemHandler.processContext](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/container/ContainerLivingItemHandler.java) 采用六阶段设计：
+ContainerLivingItemHandler.processContext 采用六阶段设计：
 
 ```
 processContext(context, level)
@@ -1299,7 +1299,7 @@ incrementCleanup();
 
 ### 8.3 TickContext — Tick 级临时状态
 
-[TickContext](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/container/TickContext.java) 的生命周期仅为单次 tick，包含：
+TickContext.java 的生命周期仅为单次 tick，包含：
 
 | 字段 | 用途 |
 |------|------|
@@ -1377,7 +1377,7 @@ if (slot.getContainerSlot() == logicalSlot
 
 ### 8.6 ContainerSnapshot — 容器快照
 
-[ContainerSnapshot](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/container/ContainerSnapshot.java) 在 tick 开始时预扫描容器状态，避免传输过程中反复查询。
+ContainerSnapshot.java 在 tick 开始时预扫描容器状态，避免传输过程中反复查询。
 
 **核心数据**：
 
@@ -1416,7 +1416,7 @@ private final FilterData[] filterOf;  // filterOf[slot] = 此槽位继承的过�
 
 ### 8.7 ContainerFluidData — 容器流体数据
 
-[ContainerFluidData](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/domain/water/ContainerFluidData.java) 管理容器级流体状态（活水桶的水流），独立于活物品的槽位级状态。
+ContainerFluidData.java 管理容器级流体状态（活水桶的水流），独立于活物品的槽位级状态。
 
 **核心概念**：
 
@@ -1455,7 +1455,7 @@ private final FilterData[] filterOf;  // filterOf[slot] = 此槽位继承的过�
 
 ### 9.1 设计目标
 
-[SlotAccessor](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/transfer/SlotAccessor.java) 将传输引擎与具体存储类型解耦。传输引擎只调用 `extract` 和 `insert`，不关心槽位背后是普通物品、活箱子、活末影箱还是跨容器。
+SlotAccessor.java 将传输引擎与具体存储类型解耦。传输引擎只调用 `extract` 和 `insert`，不关心槽位背后是普通物品、活箱子、活末影箱还是跨容器。
 
 ### 9.2 接口定义
 
@@ -1510,7 +1510,7 @@ rollback(leftover)             → 仅当模拟与真实不一致时触发（WAR
 
 ### 9.5 FilteredSlotAccessor — 过滤装饰器
 
-[FilteredSlotAccessor](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/transfer/FilteredSlotAccessor.java) 是一个装饰器，包装任意 `SlotAccessor`，在所有操作前检查过滤规则：
+FilteredSlotAccessor.java 是一个装饰器，包装任意 `SlotAccessor`，在所有操作前检查过滤规则：
 
 ```java
 public ItemStack extract(int amount, ItemStack filterType) {
@@ -1528,7 +1528,7 @@ public ItemStack extract(int amount, ItemStack filterType) {
 
 ### 9.6 SlotAccessorFactory — 注册式工厂
 
-[SlotAccessorFactory](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/transfer/SlotAccessorFactory.java) 通过注册机制解耦类型判断与创建逻辑：
+SlotAccessorFactory.java 通过注册机制解耦类型判断与创建逻辑：
 
 ```java
 // 注册 Provider（按优先级从高到低）
@@ -1550,8 +1550,8 @@ registerProvider(SlotAccessorFactory::defaultProvider); // 优先级 3：普通�
 
 ### 9.7 SlotInteractions — 注册式槽位交互
 
-[SlotInteraction](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/transfer/SlotInteraction.java) /
-[SlotInteractions](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/transfer/SlotInteractions.java)
+SlotInteraction.java /
+SlotInteractions.java
 把「货物 × 目标槽」的**替代语义**（不插入、改做别的动作）抽象成可注册条目，
 是活漏斗传输层继 SlotAccessor 之后的第二个扩展点：
 
@@ -1605,7 +1605,7 @@ SlotInteractions.tryInteractFromNeighbor(handler, pos, targetStack, level, filte
 
 ### 10.1 PerfMetrics
 
-[PerfMetrics](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/perf/PerfMetrics.java) 收集模组运行时的性能数据，每 60 秒自动打印报告。
+PerfMetrics.java 收集模组运行时的性能数据，每 60 秒自动打印报告。
 
 **监控指标**：
 

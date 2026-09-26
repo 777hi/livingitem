@@ -3,7 +3,7 @@
 > **AI 读这里**：改代码 / 修 bug 直接看 **§技术架构**（文件结构 + 核心组件）、**§性能分析**、**§测试用例**。
 > 「§功能简介 / §使用指南」是**玩家向**说明 —— 除非改匹配规则本身，否则不需要读。
 >
-> 相关文档：[`guides/recipe-book-style.md`](../guides/recipe-book-style.md)（本功能所在的 Mixin 数据流）。
+> 相关文档：[`recipe-book-tech.md`](recipe-book-tech.md)（本功能所在的 Mixin 数据流）。
 
 ## 📋 功能概览
 

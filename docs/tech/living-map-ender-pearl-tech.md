@@ -2444,7 +2444,7 @@ if (!(event.getEntity() instanceof ServerPlayer player)) return;
 
 这推翻了之前"客户端事件取消是根因"的结论，指向一个更根本的问题：**手持地图时，原版 Minecraft 做了什么？**
 
-**根因**：原版 `MapItem.inventoryTick()` 每 tick 调用 `MapItem.update()`，后者在 [MapItem.java:113](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/libs/src/neoforge-21.1.230-merged/net/minecraft/world/item/MapItem.java#L113) 调用 `level.getChunk()`——**同步阻塞等待区块生成至 FULL 状态**。
+**根因**：原版 `MapItem.inventoryTick()` 每 tick 调用 `MapItem.update()`，后者在 MapItem.java:113 调用 `level.getChunk()`——**同步阻塞等待区块生成至 FULL 状态**。
 
 完整因果链：
 

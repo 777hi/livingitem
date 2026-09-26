@@ -1,7 +1,7 @@
 # RecipeBookComponentMixin 数据流架构总览
 
 > 📄 **中文拼音搜索**由本 Mixin 与 `client/util/PinyinHelper.java` 提供：
-> 功能说明、技术架构、性能与测试见 [pinyin-search.md](../reference/pinyin-search.md)。
+> 功能说明、技术架构、性能与测试见 [pinyin-search-tech.md](pinyin-search-tech.md)。
 > （2026-09-16：删除了文件开头遗留的 AI 对话记录，正文未改动。）
 
 ## 🏗️ **系统架构层次图**
@@ -109,7 +109,7 @@
     └── 准备就绪，等待用户交互 ✅
 ```
 
-**关键代码位置**: [L370-L403](file:///G:\777hi\mc\mymods\livingitem-template-1.21.1\src\main\java\com\qiqi\li\client\mixin\RecipeBookComponentMixin.java#L370-L403)
+**关键代码位置**: RecipeBookComponentMixin.java L370-L403
 
 ---
 
@@ -246,11 +246,11 @@
 ```
 
 **关键代码位置**:
-- [L407-L458](file:///G:\777hi\mc\mymods\livingitem-template-1.21.1\src\main\java\com\qiqi\li\client\mixin\RecipeBookComponentMixin.java#L407-L458) - 渲染前拦截
-- [L498-L548](file:///G:\777hi\mc\mymods\livingitem-template-1.21.1\src\main\java\com\qiqi\li\client\mixin\RecipeBookComponentMixin.java#L498-L548) - 内容渲染
-- [L573-L625](file:///G:\777hi\mc\mymods\livingitem-template-1.21.1\src\main\java\com\qiqi\li\client\mixin\RecipeBookComponentMixin.java#L573-L625) - 搜索过滤
-- [L719-L734](file:///G:\777hi\mc\mymods\livingitem-template-1.21.1\src\main\java\com\qiqi\li\client\mixin\RecipeBookComponentMixin.java#L719-L734) - Slot 更新
-- [L852-L905](file:///G:\777hi\mc\mymods\livingitem-template-1.21.1\src\main\java\com\qiqi\li\client\mixin\RecipeBookComponentMixin.java#L852-L905) - 槽位渲染
+- RecipeBookComponentMixin.java L407-L458 - 渲染前拦截
+- RecipeBookComponentMixin.java L498-L548 - 内容渲染
+- RecipeBookComponentMixin.java L573-L625 - 搜索过滤
+- RecipeBookComponentMixin.java L719-L734 - Slot 更新
+- RecipeBookComponentMixin.java L852-L905 - 槽位渲染
 
 ---
 
@@ -339,10 +339,10 @@
 ```
 
 **关键代码位置**:
-- [L1170-L1195](file:///G:\777hi\mc\mymods\livingitem-template-1.21.1\src\main\java\com\qiqi\li\client\mixin\RecipeBookComponentMixin.java#L1170-L1195) - 鼠标拦截
-- [L1340-L1420](file:///G:\777hi\mc\mymods\livingitem-template-1.21.1\src\main\java\com\qiqi\li\client\mixin\RecipeBookComponentMixin.java#L1340-L1420) - 点击处理
-- [L1430-L1485](file:///G:\777hi\mc\mymods\livingitem-template-1.21.1\src\main\java\com\qiqi\li\client\mixin\RecipeBookComponentMixin.java#L1430-L1485) - 操作执行
-- [L1496-L1520](file:///G:\777hi\mc\mymods\livingitem-template-1.21.1\src\main\java\com\qiqi\li\client\mixin\RecipeBookComponentMixin.java#L1496-L1520) - 触发刷新
+- RecipeBookComponentMixin.java L1170-L1195 - 鼠标拦截
+- RecipeBookComponentMixin.java L1340-L1420 - 点击处理
+- RecipeBookComponentMixin.java L1430-L1485 - 操作执行
+- RecipeBookComponentMixin.java L1496-L1520 - 触发刷新
 
 ---
 
@@ -402,9 +402,9 @@
 ```
 
 **关键代码位置**:
-- [ServerPacketHandler.java L99-L111](file:///G:\777hi\mc\mymods\livingitem-template-1.21.1\src\main\java\com\qiqi\li\network\ServerPacketHandler.java#L99-L111) - 服务端处理
-- [ServerPacketHandler.java L207-L221](file:///G:\777hi\mc\mymods\livingitem-template-1.21.1\src\main\java\com\qiqi\li\network\ServerPacketHandler.java#L207-L221) - 数据收集发送
-- [LivingChestAccessPacket.java L58-L73](file:///G:\777hi\mc\mymods\livingitem-template-1.21.1\src\main\java\com\qiqi\li\network\LivingChestAccessPacket.java#L58-L73) - 客户端接收
+- ServerPacketHandler.java L99-L111 - 服务端处理
+- ServerPacketHandler.java L207-L221 - 数据收集发送
+- LivingChestAccessPacket.java L58-L73 - 客户端接收
 
 ---
 
@@ -467,9 +467,9 @@
 ```
 
 **关键代码位置**:
-- [L573-L625](file:///G:\777hi\mc\mymods\livingitem-template-1.21.1\src\main\java\com\qiqi\li\client\mixin\RecipeBookComponentMixin.java#L573-L625) - 过滤主逻辑
-- [L654-L718](file:///G:\777hi\mc\mymods\livingitem-template-1.21.1\src\main\java\com\qiqi\li\client\mixin\RecipeBookComponentMixin.java#L654-L718) - 匹配算法
-- [PinyinHelper.java](file:///G:\777hi\mc\mymods\livingitem-template-1.21.1\src\main\java\com\qiqi\li\client\util\PinyinHelper.java) - 拼音转换工具
+- RecipeBookComponentMixin.java L573-L625 - 过滤主逻辑
+- RecipeBookComponentMixin.java L654-L718 - 匹配算法
+- PinyinHelper.java - 拼音转换工具
 
 ---
 
@@ -514,8 +514,8 @@
 ```
 
 **关键代码位置**:
-- [L719-L734](file:///G:\777hi\mc\mymods\livingitem-template-1.21.1\src\main\java\com\qiqi\li\client\mixin\RecipeBookComponentMixin.java#L719-L734) - Slot 坐标检测
-- [L992-L1033](file:///G:\777hi\mc\mymods\livingitem-template-1.21.1\src\main\java\com\qiqi\li\client\mixin\RecipeBookComponentMixin.java#L992-L1033) - 按钮位置更新
+- RecipeBookComponentMixin.java L719-L734 - Slot 坐标检测
+- RecipeBookComponentMixin.java L992-L1033 - 按钮位置更新
 
 ---
 

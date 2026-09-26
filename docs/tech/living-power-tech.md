@@ -223,13 +223,13 @@ processContext() 每 game tick：
 第11步: interval=4              → periodTicks=4.98+(4-4.98)×0.5=4.49→ period()=4  ✅ 收敛
 ```
 
-**每个中间值都创建一个独立的 `PhaseDomain`**（[ChannelState](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/domain/power/ChannelState.java#L113-L121) 按 `event.period()` 分桶），因此单个 `SignalTracker` 就能产生 10 个虚假域。中断时间越长，收敛路径越长，虚假域越多（中断 5000 tick 时收敛需 18 步，从 247502 一路降到 4）。
+**每个中间值都创建一个独立的 `PhaseDomain`**（ChannelState.java L113-L121 按 `event.period()` 分桶），因此单个 `SignalTracker` 就能产生 10 个虚假域。中断时间越长，收敛路径越长，虚假域越多（中断 5000 tick 时收敛需 18 步，从 247502 一路降到 4）。
 
 **BFS 网络遍历放大效应**：`runBfs` 为网络中被充能的每个 `(slot, dir)` 维护独立的 `SignalTracker`。N 个铜块 → 最多 4N 个跟踪器，每个在收敛过程中独立产生自己的虚假域序列 → tooltip 上出现成百上千的周期记录。
 
-**这些虚假域不影响发电**：[`accountEnergy`](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/domain/power/LivingWaxedCopperFunction.java#L597-L617) 的跳变门控只选「本 tick 有跳变」的最佳域（`bestActiveDomain`），虚假域的 `jumpTick` 不与当前 tick 对齐，不会被选中入账。
+**这些虚假域不影响发电**：LivingWaxedCopperFunction.java L597-L617 `accountEnergy` 的跳变门控只选「本 tick 有跳变」的最佳域（`bestActiveDomain`），虚假域的 `jumpTick` 不与当前 tick 对齐，不会被选中入账。
 
-**自愈机制**：[`tickCleanup`](file:///g:/777hi/mc/mymods/livingitem-template-1.21.1/src/main/java/com/qiqi/li/living/domain/power/ChannelState.java#L190-L220) 每 tick 清理过期域：
+**自愈机制**：ChannelState.java L190-L220 `tickCleanup` 每 tick 清理过期域：
 
 ```java
 long timeout = Math.max(preferredPeriod, d.period) * 2L;
