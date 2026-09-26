@@ -1,4 +1,4 @@
-<p align="center"><img src="./logo.png" alt="Logo" width="320"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/777hi/livingitem/master/logo.png" alt="Logo" width="320"></p>
 
 <h1 align="center">Living Item<br>
 	<a href="https://modrinth.com/mod/living-item"><img src="https://img.shields.io/modrinth/dt/living-item?logo=modrinth&label=&suffix=%20&style=flat&color=242629&labelColor=5CA424&logoColor=1C1C1C" alt="Modrinth"></a>
@@ -27,6 +27,6 @@
 
 <h4 align="center">Find out more about Living Item on <a href="https://modrinth.com/mod/living-item">Modrinth</a></h4>
 
-<h4 align="center">Licensed under the <a href="./LICENSE.txt">MIT License</a></h4>
+<h4 align="center">Licensed under the <a href="https://github.com/777hi/livingitem/blob/master/LICENSE.txt">MIT License</a></h4>
 
-<h4 align="center">Third-party assets and trademarks: see <a href="./NOTICE.md">NOTICE.md</a></h4>
+<h4 align="center">Third-party assets and trademarks: see <a href="https://github.com/777hi/livingitem/blob/master/NOTICE.md">NOTICE.md</a></h4>

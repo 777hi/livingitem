@@ -28,6 +28,7 @@
 - **活耕地**：GUI 交互获取/种植/骨粉催熟 + 世界轴节拍生长 + round-robin 逐项产出 + 双槽渲染
 - **接口化扩展**：`HasDirection`（WASD 朝向配置）+ `HasContainerData`（容器级数据计算），新增活物品无需修改核心文件
 - **活红石系统**：活红石粉（信号传播）+ 活红石火把（反相器）+ 活按钮/活拉杆/活红石灯 + 活中继器/活比较器/活红石块，支持与世界红石双向互通
+- **活工具 / 活武器**：记忆玩家的操作（挖掘 / 交互 / 攻击）→ 借 FakePlayer 回放；无记忆的在背后环上辅助玩家（挖掘 / 攻击），有记忆的自主沿记忆射线干活；两类状态**联机可见**（主动模式的记忆射线需 F3+B）
 
 ---
 
@@ -53,8 +54,12 @@ LivingItemFunction.tick() (各功能类自行实现 tick 逻辑)
     ├── LivingEnderPearlFunction → (纯工具类，无 DataComponent)
     ├── LivingRedstoneFunction   → LivingRedstoneData
     ├── LivingRedstoneTorchFunction → LivingRedstoneTorchData
-    └── LivingButtonFunction / LivingLeverFunction / LivingRedstoneLampFunction
-        LivingRepeaterFunction / LivingComparatorFunction / LivingRedstoneBlockFunction
+    ├── LivingButtonFunction / LivingLeverFunction / LivingRedstoneLampFunction
+    │   LivingRepeaterFunction / LivingComparatorFunction / LivingRedstoneBlockFunction
+    └── LivingToolFunction      → LivingToolMemory / LivingToolProgress
+                                  LivingToolAction / LivingToolOwner / LivingToolDigTicks
+                                  （活工具 + 活武器：记忆玩家操作 → FakePlayer 回放；
+                                   渲染见 client/render/LivingToolModelRenderer + RayRenderer）
     ↓
 容器级数据计算（HasContainerData 接口，按优先级排序）
     ├── LivingWaterBucketFunction  (prio 0) — 流体蔓延 + postTickSync
@@ -93,7 +98,7 @@ SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 | **活水车** | 力矩计算 + 应力叠加/抵消 + Create 软依赖 | [living-water-wheel-tech.md](docs/tech/living-water-wheel-tech.md) |
 | **活地图传送** | 三种场景 + UV 精确传送 + 跨维度 + 载具 + Sable 飞艇 | [living-map-ender-pearl-tech.md](docs/tech/living-map-ender-pearl-tech.md) |
 | **活耕地** | GUI 交互获取/种植/骨粉 + **放置回世界模拟右键种植** + 世界轴节拍生长 + round-robin 逐项产出 + 双槽渲染 | [living-farmland-tech.md](docs/tech/living-farmland-tech.md) §3.5 / §8 |
-| **活工具**（镐/斧/铲/锄） | **记忆玩家操作行为**（左键挖掘 / 右键交互）→ 以宿主为原点沿射线回放；FakePlayer 模拟完整操作 + 逐格扫描黑名单 | [living-tool-tech.md](docs/tech/living-tool-tech.md)（设计池见 [idea.md](docs/buffer/idea.md) §3.12） |
+| **活工具**（镐/斧/铲/锄） | **记忆玩家操作行为**（左键挖掘 / 右键交互；**活斧子还含攻击记忆 —— 三类记忆齐全**）→ 以宿主为原点沿射线回放；FakePlayer 模拟完整操作 + 逐格扫描黑名单 | [living-tool-tech.md](docs/tech/living-tool-tech.md)（设计池见 [idea.md](docs/buffer/idea.md) §3.12） |
 | **活武器**（剑/斧/重锤） | **不实现攻击逻辑，只「代玩家出手」**：攻击记忆（射线）+ `fake.attack()` 走原版管线；⚠️ 冷却须手动推进（否则只有 20% 伤害）。**仅近战** | [living-weapon-tech.md](docs/tech/living-weapon-tech.md)（设计探讨见 [idea.md](docs/buffer/idea.md)） |
 | **活红石** | 红石信号传播 + BFS 算法 + 反相器 + 堆叠数影响 | [living-redstone-tech.md](docs/tech/living-redstone-tech.md) |
 | **活涂蜡铜块（红电发电）** | 双因子感应发电 + 事件驱动记账 + RE/FE 单位制 | [living-power-tech.md](docs/tech/living-power-tech.md) |
@@ -132,6 +137,7 @@ src/main/java/com/qiqi/li/
 │   │   ├── water/                            #   活水领域
 │   │   ├── tnt/                              #   活TNT领域
 │   │   ├── farmland/                         #   活耕地领域
+│   │   ├── tools/                            #   活工具 / 活武器领域（记忆 + 回放 + 环渲染）
 │   │   └── map/                              #   活地图传送领域
 │   ├── domain/redstone/                     #   活红石领域
 │   ├── domain/power/                        #   红电发电领域（活涂蜡铜块）
@@ -178,6 +184,8 @@ src/main/java/com/qiqi/li/
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-09-25 | 辅助攻击：攻击环改为**按每把武器自己的冷却**分组（轮流扑咬，不再整组一起飞）；创造模式放开辅助（攻击 + 挖掘）；tooltip 模式改「主动 / 被动」+ 补攻击记忆行 | `living-weapon-tech.md` §7 |
+| 2026-09-25 | 联机：**主动模式（有记忆）活工具可见**（悬空工具体 + 挖掘转圈 / 攻击脉冲 + 记忆射线 F3+B）+ 攻击环可见；收集口径扩为 `isAssistItem ∪ 有记忆`（组件随 `ItemStack.STREAM_CODEC` 随包走，零新增同步） | `living-tool-tech.md` §11.9 |
 | 2026-09-24 | 活武器三个「静默失效」修复（有记忆有怪却一刀不打）：首次冷却死锁 / `ATTACK_SPEED=0` / 隔墙没排除宿主；另修组件里可空 `BlockPos` 发包 NPE（曾致被踢出） | `living-weapon-tech.md` §5 |
 | 2026-09-23 | 活武器近战核心链路：`AttackMemory` 第三类记忆 + `LivingDamageEvent.Post` 录制 + `replayAttack`；⚠️ 冷却须 override `getAttackStrengthScale()` 手动推进 | `living-weapon-tech.md` §1~§7 |
 | 2026-09-22 | 大箱子跨容器传输面选取：GUI 4 方向→世界 6 面，改候选基准块列表逐个尝试（推错面不报错） | `living-hopper-tech.md` §6.4 |
@@ -186,8 +194,6 @@ src/main/java/com/qiqi/li/
 | 2026-09-22 | GUI 图标光照统一：⚠️ 改 light 值没用，真凶是 `usesBlockLight()`；抽出 `LivingIconRenderHelper` | `icon-system.md`「GUI 图标光照约定」 |
 | 2026-09-22 | 箱子/末影箱图标定稿：`builtin/entity` 正面视角 14px 3D（判据是 `isCustomRenderer()`） | `icon-system.md`「已完成的实验」 |
 | 2026-09-22 | 图标「渲染上下文覆盖范围」写成显式约束（非 GUI 回退原版模型 + 装饰器只在 GUI 调用） | `icon-system.md` |
-| 2026-09-22 | 纹理去原版化 56 张（改引 `minecraft:` 路径，跟随材质包）；涂蜡改双层模型（24 张→1 张） | `icon-system.md`「纹理约定」 |
-| 2026-09-22 | 爆炸「方形区域过一会自己消失」= 客户端重建排队（判据：会消失=正常，一直在=bug） | `living-tnt-tech.md` §4.3 |
 
 
 ## 排查铁律：原版机制挡路时
