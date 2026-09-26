@@ -30,22 +30,16 @@
 <p align="center">
 	<a href="https://www.bilibili.com/video/BV1vrNa6AEHv"><img src="https://img.shields.io/badge/Watch-Introduction_Video-00A1D6?logo=bilibili&logoColor=white&style=for-the-badge" alt="Introduction Video"></a>
 	<a href="https://github.com/777hi/livingitem/issues"><img src="https://img.shields.io/badge/Report-Issues-181717?logo=github&logoColor=white&style=for-the-badge" alt="Issues"></a>
+	<a href="https://github.com/777hi/livingitem/blob/master/AGENTS.md"><img src="https://img.shields.io/badge/Read-Documentation-1D9E75?logo=markdown&logoColor=white&style=for-the-badge" alt="Documentation"></a>
 </p>
 
 <p align="center">
 	<a href="https://afdian.com/a/777hi"><img src="https://img.shields.io/badge/Support_this_project-Afdian-946CE6?logo=afdian&logoColor=white&style=for-the-badge&labelColor=534AB7" alt="Support this project on Afdian"></a>
 </p>
 
-<p align="center"><sub>Living Item is a one-person project. If it earns a place in your world, a tip keeps it going.<br>
-
+<p align="center"><sub>Living Item is a one-person project. If it earns a place in your world, a tip keeps it going.</sub></p>
 
 <h1></h1>
-
-<h4 align="center">Find out more about Living Item on <a href="https://modrinth.com/mod/living-item">Modrinth</a></h4>
-
-<h4 align="center">Curious how it works? See the <a href="https://github.com/777hi/livingitem/blob/master/AGENTS.md">documentation</a></h4>
-
-<h4 align="center">想了解它是怎么实现的？看<a href="https://github.com/777hi/livingitem/blob/master/AGENTS.md">文档</a></h4>
 
 <h4 align="center">Code: <a href="https://github.com/777hi/livingitem/blob/master/LICENSE.txt">LGPL-3.0-or-later</a> · Assets: <a href="https://github.com/777hi/livingitem/blob/master/ASSETS_LICENSE.txt">MIT</a></h4>
 
