@@ -5,7 +5,7 @@
 > **文档版本**: 2026.09 v1
 > **最后更新**: 2026-09-07
 > **适用版本**: Minecraft 1.21.1 + NeoForge 21.1.x
-> **关联文档**: [living-power-tech.md](../tech/living-power-tech.md)、[living-redstone-tech.md](../tech/living-redstone-tech.md)、[tooltip-system.md](tooltip-system.md)
+> **关联文档**: [living-power-tech.md](../tech/living-power-tech.md)、[living-redstone-tech.md](../tech/living-redstone-tech.md)、[tooltip-system.md](../system-design/tooltip-system.md)
 
 ## 目录
 

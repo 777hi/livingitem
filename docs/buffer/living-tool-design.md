@@ -1287,7 +1287,7 @@ K-d  玩家身边形态 + 动作动画（LIVING_ACTION network-only 组件）
 
 ### 2026-09-17（第 1 轮）
 
-- 通读 `living-tool-design.md`（原 `docs/idea.md`）原始需求 + 全项目架构，**建立本文与问题池**。
+- 通读 `living-tool-design.md`（原 `idea.md`，2026-09-26 迁入 `docs/buffer/`）原始需求 + 全项目架构，**建立本文与问题池**。
 - 确认三条好消息：玩家背包每 tick 已扫描（无需新增扫描通道）、`ItemAbility` 语义判定范式可复用（模组工具自动兼容）、背包槽位同步客户端已就绪。
 - 确认三个缺口：挖掘进度获取（0 代码）、世界内渲染（0 先例）、`ContainerContext` 无 `getPlayer()`。
 - 达成共识的工作方式：**先探讨、逐步补细节、问题逐个拍板、最后才写代码**。

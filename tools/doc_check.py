@@ -250,7 +250,7 @@ def check_java_symbols():
     实测漂移过多次（`Config.java`、`LivingButton.java`、`chest_living.png` 都是这么发现的）。
     用户原则：「文档是帮助我们了解项目的，**不是误导我们的**」。
 
-    判据：文档（**排除 archive / proposals**）里出现的 `Living*.java` / `*Mixin.java`
+    判据：文档（**排除 archive / buffer**）里出现的 `Living*.java` / `*Mixin.java`
     必须能在 `src/**` 找到；讲历史或计划的行（含「删除 / 未实现 / 设计稿…」）豁免。
     """
     have = set()
@@ -262,7 +262,7 @@ def check_java_symbols():
     docs = [ENTRY]
     for f in glob.glob(os.path.join(ROOT, "docs", "**", "*.md"), recursive=True):
         parts = f.replace("\\", "/").split("/")
-        if "archive" in parts or "proposals" in parts:
+        if "archive" in parts or "buffer" in parts:
             continue
         docs.append(f)
 

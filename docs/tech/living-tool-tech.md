@@ -4,7 +4,7 @@
 > **最后更新**: 2026-09-19
 > **适用版本**: Minecraft 1.21.1 + NeoForge 21.1.249
 > **状态**: **挖掘记忆回放 + 交互记忆回放 + 清除记忆已实现**（挖掘已通过实测）；掉落物形态 / 实体攻击 / 可视化待实现
-> **设计探讨记录**: `docs/system-design/living-tool-design.md` §3.12（L 组，问题池与定案索引，本文档只写结论）
+> **设计探讨记录**: `docs/buffer/living-tool-design.md` §3.12（L 组，问题池与定案索引，本文档只写结论）
 
 ## 目录
 
@@ -350,7 +350,7 @@ if (freshStart) {
 
 ## 7. 设计定案索引
 
-完整问题池与讨论过程见 `docs/system-design/living-tool-design.md` §3.12。核心定案：
+完整问题池与讨论过程见 `docs/buffer/living-tool-design.md` §3.12。核心定案：
 
 | 编号 | 定案 |
 |---|---|

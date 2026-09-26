@@ -527,7 +527,7 @@ gain / 灯堆状态），`THROW` 模式抛 `IllegalStateException`。
 | **Step 3** | **L2**：`ScenarioBuilder` + I-E 组断言 | 3~5 天 | **等 L1/L4 跑出价值**（两周游戏测试无违反）再扩 |
 | **Step 4** | **L3**：M1~M4 蜕变关系（复用 L2 生成器） | 2~3 天 | L2 稳定后再扩 |
 
-> 与 [redstone-evolution-roadmap.md](redstone-evolution-roadmap.md) 的关系：
+> 与 [redstone-evolution-roadmap.md](../buffer/redstone-evolution-roadmap.md) 的关系：
 > 该文档规划**架构**如何演进（SensorPort → 事件流 / 元件接口化）；
 > 本文档规划**正确性**如何被持续验证。edgeGrid 边模型重构时，
 > 只改 L4 监控的断言入口（RedstoneSensor 端口已收口），断言集本身不变——

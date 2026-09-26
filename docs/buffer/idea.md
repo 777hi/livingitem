@@ -3,11 +3,11 @@
 > **状态**：设计中（2026-09-22 起）。⚠️ **本文是「设计探讨层」** —— 记录原始需求、官方入口调研、
 > 待决问题池与探讨日志，**描述的是计划 / 未决，不是现状**。
 >
-> ⭐ **活武器「已实现」的部分（近战核心链路）见 [`docs/tech/living-weapon-tech.md`](tech/living-weapon-tech.md)**
+> ⭐ **活武器「已实现」的部分（近战核心链路）见 [`docs/tech/living-weapon-tech.md`](../tech/living-weapon-tech.md)**
 > —— 那边才描述现状。本文只在结论被定案后保留探讨过程。
 >
-> 📄 活工具的设计探讨记录（问题池 + 定案）：[`docs/system-design/living-tool-design.md`](system-design/living-tool-design.md)
-> 📄 活工具技术文档：[`docs/tech/living-tool-tech.md`](tech/living-tool-tech.md)
+> 📄 活工具的设计探讨记录（问题池 + 定案）：[`docs/buffer/living-tool-design.md`](living-tool-design.md)
+> 📄 活工具技术文档：[`docs/tech/living-tool-tech.md`](../tech/living-tool-tech.md)
 >
 > 结构：`§0` 原始需求 → `§1` 核心原则 → `§2` 官方入口盘点 → `§3` 铁魔法调研 → `§4` 待决问题池 → `§5` 探讨日志。
 
@@ -25,7 +25,7 @@
 > 理由：抽象层只要「不识别具体模组 + 走官方入口」（见 §1 铁律①②）⇒ **兼容是自然结果**，
 > 不需要逐个模组专门适配（例如 `replayUse` 已 post `RightClickItem` ⇒ 铁魔法法杖理论上已能施法）。
 >
-> ⇒ **主线 = 近战（剑 / 斧 / 重锤）**，见 [`tech/living-weapon-tech.md`](tech/living-weapon-tech.md) §0「需求范围」。
+> ⇒ **主线 = 近战（剑 / 斧 / 重锤）**，见 [`docs/tech/living-weapon-tech.md`](../tech/living-weapon-tech.md) §0「需求范围」。
 > 本文件中涉及法杖的调研（§3 铁魔法）**保留作参考**，但不再视为待办。
 
 ---
@@ -265,7 +265,7 @@ fake.attack(target);                                            // ② 真正攻
 > 核 `Player#attack` 源码：它的**第一行**就是 `if (!CommonHooks.onPlayerAttackTarget(this, target)) return;`，
 > 而 `onPlayerAttackTarget` 内部会 post `AttackEntityEvent` 并调 `Item#onLeftClickEntity`。
 > ⇒ **直接调 `fake.attack(target)` 已经触发这两者**，再手动 post 会**重复触发**。
-> 详见 [`tech/living-weapon-tech.md`](tech/living-weapon-tech.md) §4.3。
+> 详见 [`docs/tech/living-weapon-tech.md`](../tech/living-weapon-tech.md) §4.3。
 >
 > ⚠️ 下面的「口诀」**对攻击侧不适用**（它只对真正不经 `Player#attack` 的路径成立）：
 
