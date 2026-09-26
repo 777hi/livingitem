@@ -56,15 +56,15 @@ libs/
 
 ### IDE ###
 .qoderignore
-### AI 工具备份（勿提交） ###
-# 备份快照/临时文件：git 历史本身已保存历史，勿二次入库
-.workbuddy-ai/backup/
-.workbuddy-ai/tmp/
-.workbuddy-ai/patches/
 
-# AI 工具的会话级草稿（文件名带会话 UUID/哈希），不属于项目内容
-.zcode/plans/
-.codebuddy/plans/
+### AI 工具目录（工具侧，不入库）###
+# 判据：换个 AI 工具之后这个目录还在不在？不在 ⇒ 工具侧。
+# 工具侧目录不属于项目本身：别的开发者有自己的工具与配置，混进来既污染别人的工作区，
+# 也让仓库里出现「只有一部分人读得懂」的内容。工具侧约定留在工具侧记忆，不进本仓库。
+.workbuddy-ai/
+.trae/
+.zcode/
+.codebuddy/
 
 ### 崩溃日志 ###
 # 注意 *.log 已在上面忽略，但崩溃报告是 .txt，需单独挡

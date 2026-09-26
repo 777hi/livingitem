@@ -20,6 +20,7 @@
 <p align="center">
 	<a href="https://www.bilibili.com/video/BV1vrNa6AEHv"><img src="https://img.shields.io/badge/Watch-Introduction_Video-00A1D6?logo=bilibili&logoColor=white&style=for-the-badge" alt="Introduction Video"></a>
 	<a href="https://github.com/777hi/livingitem/issues"><img src="https://img.shields.io/badge/Report-Issues-181717?logo=github&logoColor=white&style=for-the-badge" alt="Issues"></a>
+	<a href="https://afdian.com/a/777hi"><img src="https://img.shields.io/badge/Support-Afdian-946CE6?logo=afdian&logoColor=white&style=for-the-badge" alt="Afdian"></a>
 </p>
 
 <h1></h1>

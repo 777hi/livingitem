@@ -570,8 +570,7 @@ minecraft:item/chest (原版 BuiltInModel [30,45,0])
 - ⚠️ 若日后重新引入涂蜡独立纹理：**只改内部、保留外圈掩码** —— 四种锈蚀级掩码不一致
   是已发生过的历史 bug（曾出现 4 个 `waxed_*_copper_bulb_lit.png` 黄框丢失 + 内部乱码，
   逐像素比对才修好）。
-- 图片处理用隔离 venv：
-  `C:/Users/AI-777hi/.workbuddy-ai/binaries/python/envs/default/Scripts/python.exe`（Pillow 12.3.0）。
+- 图片处理用**隔离 venv + Pillow**（别污染系统 Python）。
 - **判定纹理是否为原版副本的正确方法**（本次踩过假阳性，务必照做）：
   ① 先比 **raw MD5**（字节完全相同）② 再比 **RGBA 像素 MD5**（仅重编码）
   ③ 疑似改色时**必须比 alpha 通道**：`a.tobytes()[3::4] == b.tobytes()[3::4]`
