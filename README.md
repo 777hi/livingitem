@@ -43,6 +43,10 @@
 
 <h4 align="center">Find out more about Living Item on <a href="https://modrinth.com/mod/living-item">Modrinth</a></h4>
 
+<h4 align="center">Curious how it works? See the <a href="https://github.com/777hi/livingitem/blob/master/AGENTS.md">documentation</a></h4>
+
+<h4 align="center">想了解它是怎么实现的？看<a href="https://github.com/777hi/livingitem/blob/master/AGENTS.md">文档</a></h4>
+
 <h4 align="center">Code: <a href="https://github.com/777hi/livingitem/blob/master/LICENSE.txt">LGPL-3.0-or-later</a> · Assets: <a href="https://github.com/777hi/livingitem/blob/master/ASSETS_LICENSE.txt">MIT</a></h4>
 
 <h4 align="center">Third-party assets and trademarks: see <a href="https://github.com/777hi/livingitem/blob/master/NOTICE.md">NOTICE.md</a></h4>
