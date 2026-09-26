@@ -26,11 +26,15 @@ sourceSets.main.resources {
     exclude("src/generated/**/.cache") // datagen cache files
 }
 
-// 把根目录的 LICENSE.txt 与 NOTICE.md 一并打进 jar（META-INF/）。
-// NOTICE.md 含「第三方资产与商标声明」（Minecraft 纹理版权归 Mojang/Microsoft、
-// 本许可不覆盖），必须随 jar 分发到使用者手里，否则声明形同虚设。
+// 把根目录的 LICENSE.txt / ASSETS_LICENSE.txt / NOTICE.md 一并打进 jar（META-INF/）。
+// LGPL-3.0 要求随分发提供完整许可文本；NOTICE.md 含「第三方资产与商标声明」
+// （Minecraft 纹理版权归 Mojang/Microsoft、本许可不覆盖），同样必须随 jar 分发，
+// 否则声明形同虚设。
 tasks.named('processResources', ProcessResources).configure {
     from('LICENSE.txt') {
+        into 'META-INF'
+    }
+    from('ASSETS_LICENSE.txt') {
         into 'META-INF'
     }
     from('NOTICE.md') {
