@@ -6,7 +6,7 @@
 > 渲染管线全部见 [living-tool-tech.md](living-tool-tech.md)。**本文只写武器侧的差异**，共享部分一律用指针，
 > **不复制**（复制必然漂移）。
 >
-> 📄 设计探讨与待决问题池仍在 [../idea.md](../buffer/idea.md)（§1 核心原则 / §3 铁魔法调研 / §4 待决问题池）。
+> 📄 设计探讨与待决问题池仍在 [../idea.md](../idea.md)（§1 核心原则 / §3 铁魔法调研 / §4 待决问题池）。
 
 ---
 
@@ -181,7 +181,7 @@ Vec3 hitLocation = eye.add(look.scale(Math.min(distance, MAX_RAY_LENGTH)));
 
 ### 4.3 🔴 `AttackEntityEvent` 不需要手动补（纠正一条旧结论）
 
-[../idea.md](../buffer/idea.md) §2.6 曾把攻击侧列为「❌ 待补」，**该结论已被源码推翻**：
+[../idea.md](../idea.md) §2.6 曾把攻击侧列为「❌ 待补」，**该结论已被源码推翻**：
 
 ```java
 public void attack(Entity target) {
@@ -652,7 +652,7 @@ if (target.invulnerableTime > 10) {
 | `target.isDeadOrDying()` 就 `break` | 怪中途死了还继续挥 ⇒ **不造成伤害、不触发附魔，却仍扣耐久** |
 | 取消击退（`LivingKnockBackEvent`） | N 把各推一次 ⇒ 怪会被**崩飞**，不像"围殴"（照铁魔法做法） |
 
-> ⚠️ **更正 [`../idea.md`](../buffer/idea.md) §1.7 的口径**：那里写「不加伤害闸门 ⇒ 接受伤害线性叠加」。
+> ⚠️ **更正 [`../idea.md`](../idea.md) §1.7 的口径**：那里写「不加伤害闸门 ⇒ 接受伤害线性叠加」。
 > 实际上**原版本来会用无敌间隔封顶**（根本不会叠加）；
 > 是**我们主动压制无敌帧**之后才真正叠加的 —— 别把因果搞反。
 
