@@ -15,14 +15,14 @@
 
 <p>Welcome to Living Item, a mod that turns the functions of blocks into items.</p>
 
-<p>A living item keeps working while it sits inside a chest, a backpack, or any other container. Furnaces smelt, hoppers move, redstone circuits run — all inside your storage, with their state saved to the item itself and carried along wherever it goes.</p>
+<p>A living item keeps working while it sits inside a chest, a backpack, or any other supported container. Furnaces smelt, hoppers move, redstone circuits run — all inside your storage, with their state saved to the item itself and carried along wherever it goes.</p>
 
 
 ## 中文
 
 <p>Living Item 把方块的功能变成物品。</p>
 
-<p>活物品待在箱子、背包或任何容器里时都会继续工作。熔炉继续烧炼，漏斗继续搬运，红石电路继续运行 —— 全都发生在你的物品栏里，状态保存在物品自身，物品去哪它就跟到哪。</p>
+<p>活物品待在箱子、背包或其它受支持的容器里时都会继续工作。熔炉继续烧炼，漏斗继续搬运，红石电路继续运行 —— 全都发生在你的物品栏里，状态保存在物品自身，物品去哪它就跟到哪。</p>
 
 
 <p>&nbsp;</p>
