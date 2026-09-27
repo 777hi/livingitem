@@ -80,15 +80,23 @@ public class LivingItemActivationCommand {
             source.sendFailure(Component.translatable("command.livingitem.activation_need_player"));
             return 0;
         }
-        ItemStack carried = player.containerMenu.getCarried();
-        if (carried.isEmpty()) {
+        // ⭐ 只取【手持】物品（主手 → 副手），不要取 containerMenu.getCarried()。
+        //    原因（容易踩）：能输入指令 ⇒ 玩家必然【不在】容器界面
+        //    （容器界面里打不开聊天输入），此时 carried 恒为空 ⇒ 用它永远报「没拿物品」。
+        //    carried 只适用于【活化按钮】（它只存在于容器界面内，玩家用鼠标拿着物品点它）
+        //    —— 两个入口的场景不同，不要互相套用。
+        ItemStack target = player.getMainHandItem();
+        if (target.isEmpty()) {
+            target = player.getOffhandItem();
+        }
+        if (target.isEmpty()) {
             source.sendFailure(Component.translatable("command.livingitem.activation_no_item"));
             return 0;
         }
 
-        ResourceLocation id = BuiltInRegistries.ITEM.getKey(carried.getItem());
-        String name = carried.getItem().getName(carried).getString();
-        boolean claimed = LivingItemManager.hasAnyFunctionFor(carried);
+        ResourceLocation id = BuiltInRegistries.ITEM.getKey(target.getItem());
+        String name = target.getItem().getName(target).getString();
+        boolean claimed = LivingItemManager.hasAnyFunctionFor(target);
 
         source.sendSuccess(() -> Component.translatable(
             "command.livingitem.activation_test_header", name, id), false);
@@ -98,7 +106,7 @@ public class LivingItemActivationCommand {
                 : Component.translatable("command.livingitem.no")), false);
 
         for (LivingItemActivation.Via via : LivingItemActivation.Via.values()) {
-            var verdict = LivingItemActivation.evaluate(carried, true, via);
+            var verdict = LivingItemActivation.evaluate(target, true, via);
             final var v = via;
             source.sendSuccess(() -> Component.translatable(
                 "command.livingitem.activation_test_line",
