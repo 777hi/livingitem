@@ -20,15 +20,14 @@ import net.neoforged.neoforge.event.RegisterCommandsEvent;
 /**
  * {@code /livingitem activation} —— 活化规则的管理与验证（D1）。
  *
- * <pre>
- *   /livingitem activation reload  — 从配置重新加载（改完 JSON 不用重启）
- *   /livingitem activation list    — 列出当前生效规则概况
- *   /livingitem activation test    — ★ 判定手持物品能否被活化，并分途径显示结果
- * </pre>
+ * <p>挂载点：{@code /livingitem activation}。子命令不在此罗列 ——
+ * 语法以代码为准，导航见 {@code docs/reference/commands.md}，
+ * 完整用法见 {@code docs/buffer/activation-rule-design.md}。</p>
  *
- * <p>{@code test} 是这个功能的重点：配置者改完 JSON 能<b>立刻</b>验证，
- * 而不是靠猜。它把判定结果按三个途径分别列出 —— 因为「玩家能不能点活」
- * 和「任务奖励能不能发」是<b>两件事</b>（见 {@link LivingItemActivation.Via}）。
+ * <p><b>为什么 {@code test} 要分途径显示</b>（代码读不出这个意图）：
+ * 配置者改完 JSON 需要<b>立刻</b>验证而不是靠猜；而「玩家能不能点活」与
+ * 「任务奖励能不能发」是<b>两件事</b>（见 {@link LivingItemActivation.Via}），
+ * 只给一个总判定无法确认配置是否按预期生效。</p>
  */
 @EventBusSubscriber
 public class LivingItemActivationCommand {

@@ -27,32 +27,17 @@ import net.neoforged.neoforge.event.RegisterCommandsEvent;
 /**
  * 容器注册指令 —— 让玩家在游戏中注册/管理容器布局规则。
  *
- * <p>指令树：</p>
- * <ul>
- *   <li>{@code /livingitem container register <columns>}
- *     — 自动检测槽位数和容器 ID，注册玩家准心指向的容器</li>
- *   <li>{@code /livingitem container register <columns> <size>}
- *     — 手动指定槽位数，容器 ID 自动检测</li>
- *   <li>{@code /livingitem container register <columns> <containerId>}
- *     — 手动指定容器 ID，槽位数自动检测</li>
- *   <li>{@code /livingitem container register <columns> <size> <containerId>}
- *     — 全手动指定：列数 + 槽位数 + 容器 ID</li>
- *   <li>{@code /livingitem container inspect}
- *     — 查看当前准心指向容器的规则信息</li>
- *   <li>{@code /livingitem container list}
- *     — 列出所有已注册的容器规则</li>
- *   <li>{@code /livingitem container remove <containerId>}
- *     — 移除指定容器规则</li>
- *   <li>{@code /livingitem container reload}
- *     — 从配置文件重新加载</li>
- *   <li>{@code /livingitem container export}
- *     — 把玩家注册的增量规则导出为与模组自带资源同格式的 JSON
- *       （{@code config/living_item/exported_rules.json}，开发期用于合并进随包资源）</li>
- * </ul>
- * <p>
- * <b>核心设计：</b>去掉了 <code>height</code> 参数，无需关心容器是否为矩形。
- * 玩家只需指定列数 {@code columns}，槽位数可选。
- * </p>
+ * <p>挂载点：{@code /livingitem container}（子命令见代码，导航见
+ * {@code docs/reference/commands.md}；完整用法见
+ * {@code docs/guides/container-compatibility.md}）。
+ * 本文档不罗列子命令 —— 语法以代码为准，避免与文档两处维护而漂移。</p>
+ *
+ * <p><b>核心设计：</b>去掉了 <code>height</code> 参数，无需关心容器是否为矩形。
+ * 玩家只需指定列数 {@code columns}，槽位数可选。</p>
+ *
+ * <p><b>社区贡献闭环</b>（本文保留，因为代码读不出这个用途）：
+ * 玩家装了未适配的容器 → 游戏里 {@code register} 校准 → {@code export} 导出
+ * → 发给模组作者 → 作者覆盖内置资源重新打包 ⇒ 所有玩家受益。</p>
  */
 @EventBusSubscriber
 public class LivingItemContainerCommand {

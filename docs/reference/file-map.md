@@ -204,7 +204,7 @@ src/main/java/com/qiqi/li/
 │   │
 │   ├── debug/                               # 调试工具（默认关闭，命令启用）
 │   │   ├── ContainerMonitor.java            #   容器物品复制/丢失检测
-│   │   └── ContainerMonitorCommand.java     #   /livingitem debug 命令
+│   │   └── ContainerMonitorCommand.java     #   debug 子树的命令注册（语法见 reference/commands.md）
 │   │
 │   └── perf/                                # 性能监控
 │       └── PerfMetrics.java                 #   Tick 耗时/活物品数量/对象池命中率

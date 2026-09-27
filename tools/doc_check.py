@@ -329,6 +329,64 @@ def check_decisions():
         print(f"6. 决策取代关系    : OK（{len(rows)} 条决策）")
 
 
+def check_commands():
+    """命令真实性（2026-09-27 新增，第 8 项）：文档里写的 /livingitem ... 必须真实存在。
+
+    **为什么需要**：第 7 项只校验 Java 文件名，第 1 项只校验 md 链接 ——
+    两者都覆盖不到「文档里写的命令字符串」。2026-09-27 `/living_monitor` 迁至
+    `/livingitem debug` 时，代码改了、4 份活跃文档共 10 处旧命令名残留，
+    全部校验静默通过 ⇒ 读者照着敲会得到「未知指令」。
+
+    判据：文档里 `/livingitem` 之后的每一级 token，必须是源码中
+    `Commands.literal("...")` 注册过的字面量（参数占位符 `<x>` / `[x]` / `a|b` 跳过）。
+    """
+    literals = set()
+    for f in glob.glob(os.path.join(ROOT, "src", "main", "java", "**", "*.java"), recursive=True):
+        with open(f, encoding="utf-8") as fh:
+            literals |= set(re.findall(r'literal\("([\w_]+)"\)', fh.read()))
+    if not literals:
+        print("8. 命令真实性      : SKIP（未找到 literal 注册）")
+        return
+
+    bad = []
+    for p in doc_files():
+        text = read(p)
+        # 只取 /livingitem 同一行之后的内容，逐「纯 ASCII 词」校验：
+        # 遇到参数占位符 <x>、含 / 的路径、或中文说明即停止 —— 那些不是命令级别。
+        for m in re.finditer(r"/livingitem(?![A-Za-z0-9_])", text):
+            nl = text.find("\n", m.end())
+            rest = text[m.end(): nl if nl != -1 else len(text)]
+            for tok in rest.split():
+                if not re.fullmatch(r"[A-Za-z0-9_]+", tok):
+                    break                      # 参数 / 路径 / 自然语言 ⇒ 命令到此结束
+                if tok.isdigit():
+                    continue                   # 示例命令里的参数值（如 register 9 54）
+                if tok not in literals:
+                    bad.append((rel(p), tok))
+
+            # 树形图形态：/livingitem 单独一行，子命令画在下面（├── container / └── debug）
+            # —— 这是 commands.md 的主要写法，必须一并校验，否则导航核心反而是盲区。
+            if not rest.strip():
+                for ln in text[m.end():].split("\n")[1:10]:
+                    tm = re.match(r"^\s*[│\s]*[├└]──\s+([A-Za-z0-9_]+)", ln)
+                    if tm:
+                        if tm.group(1) not in literals:
+                            bad.append((rel(p), tm.group(1)))
+                    elif ln.strip() and not ln.lstrip().startswith("│"):
+                        break                  # 离开树形图
+
+    if bad:
+        seen = set()
+        for f, t in bad:
+            if (f, t) in seen:
+                continue
+            seen.add((f, t))
+            failures.append(f"[命令] {f} 引用了未注册的子命令: /livingitem ... {t}")
+        print(f"8. 命令真实性      : FAIL（{len(seen)} 处）")
+    else:
+        print("8. 命令真实性      : OK")
+
+
 def main():
     print("=== 文档系统一致性检查（docs/README.md §7）===\n")
     check_paths()
@@ -338,6 +396,7 @@ def main():
     check_entry_size()
     check_decisions()
     check_java_symbols()
+    check_commands()
 
     print()
     for w in warnings:

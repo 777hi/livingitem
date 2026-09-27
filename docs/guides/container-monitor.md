@@ -1,8 +1,13 @@
-# 容器监控系统
+# 容器监控 —— 使用指南
 
-> **文档版本**: 2026.08 v2  
-> **最后更新**: 2026-08-26  
-> **适用版本**: Minecraft 1.21.1 + NeoForge 21.1.x
+> *2026-09-27 自 `system-design/` 迁至 `guides/`（位置按「内容性质」归位）*
+
+> 📄 **本文讲「怎么用」**：启用、日志、报告格式、集成点、性能。
+> ⚖️ **「什么算异常」的判定口径属契约层**，见
+> [`container-monitor-invariants.md`](../system-design/container-monitor-invariants.md)
+> —— 本文刻意不重复维护口径，避免两处漂移。
+>
+> 命令语法以 [`reference/commands.md`](../reference/commands.md) 为导航、**以代码为准**。
 
 ## 1. 概述
 
@@ -14,12 +19,11 @@
 
 ### 2.1 游戏内命令
 
-| 命令 | 权限 | 说明 |
-|------|------|------|
-| `/livingitem debug monitor on` | OP (level 2) | 全局开启监控 |
-| `/livingitem debug monitor off` | OP (level 2) | 关闭监控 |
-| `/livingitem debug monitor status` | OP (level 2) | 查看当前状态 |
-| `/livingitem debug dump_inventory` | OP (level 2) | 转储玩家背包完整状态 |
+监控开关挂在 `/livingitem debug monitor`（`on` / `off` / `status`），
+背包转储为 `/livingitem debug dump_inventory`。
+
+**完整命令树见 [`reference/commands.md`](../reference/commands.md)** —— 本文不重复维护命令细节
+（命令名与语法以代码为准，由 `doc_check` 第 8 项校验文档引用是否真实存在）。
 
 ### 2.2 日志文件
 
@@ -41,24 +45,12 @@
 
 ## 3. 检测能力
 
-### 3.1 异常类型
+异常类型的定义、计数方式（按物品类型统计总量 ⇒ 堆叠合并不误报）、
+差异计算流程 —— **全部见契约层
+[`container-monitor-invariants.md`](../system-design/container-monitor-invariants.md)**。
 
-| 类型 | 说明 | 严重度 |
-|------|------|--------|
-| `ITEM_DUPLICATION` | 某物品总数量增加，无对应来源 | 🔴 严重 |
-| `ITEM_LOSS` | 某物品总数量减少，无对应去向 | 🔴 严重 |
-| `ITEM_DUP_AND_LOSS` | 同时存在复制和丢失 | 🔴 严重 |
-| `LIVING_OVERWRITTEN` | 活物品被非活物品覆盖 | 🔴 严重 |
-
-### 3.2 计数方式
-
-监控器按**物品类型**统计总数量（而非按 `物品@堆叠数` 分类），堆叠合并不会触发误报。
-
-| 场景 | 之前 | 之后 | 总数量变化 | 报告 |
-|------|------|------|-----------|------|
-| 堆叠合并 | 2x chest@x1 | 1x chest@x2 | 2→2 | ✅ 不报告 |
-| 物品复制 | 1x chest@x1 | 2x chest@x1 | 1→2 | 🔴 ITEM_DUPLICATION |
-| 物品丢失 | 1x water_bucket@x1 | (empty) | 1→0 | 🔴 ITEM_LOSS |
+> 为什么不放这儿：那些是「什么算异常」的口径，属于不变量（违反即 bug）；
+> 使用指南只负责「怎么开、看什么」。分开放后，改口径只需动一处。
 
 ## 4. 异常报告格式
 
