@@ -32,6 +32,7 @@ src/main/java/com/qiqi/li/
 │   ├── domain/                              # 领域模块（每个活物品内聚到此）
 │   │   ├── hopper/                           #   活漏斗领域
 │   │   │   ├── LivingHopperFunction.java     #     活漏斗功能入口
+│   │   │   ├── HopperRegistration.java          #     漏斗域注册入口（含快照贡献者）
 │   │   │   ├── TransferPipeline.java         #     统一传输入口（v8 新增）
 │   │   │   ├── CrossContainerTransfer.java   #     跨容器传输（从 container/ 迁入）
 │   │   │   ├── HopperFilterBuilder.java      #     过滤链构建（v8 新增）
@@ -42,12 +43,14 @@ src/main/java/com/qiqi/li/
 │   │   │
 │   │   ├── chest/                            #   活箱子领域
 │   │   │   ├── LivingChestFunction.java      #     活箱子功能入口（从 function/ 迁入）
+│   │   │   ├── ChestRegistration.java           #     箱子域注册入口（含快照贡献者）
 │   │   │   ├── LivingChestAccessor.java      #     活箱子 SlotAccessor（从 domain/ender/ 迁入）
 │   │   │   ├── LivingChestItemHandler.java   #     活箱子 ItemHandler（从 domain/ender/ 迁入）
 │   │   │   └── LivingChestTooltipComponent.java  # Tooltip 组件
 │   │   │
 │   │   ├── ender/                            #   活末影箱领域
 │   │   │   ├── LivingEnderChestFunction.java #     活末影箱功能入口（从 function/ 迁入）
+│   │   │   ├── EnderRegistration.java           #     末影箱域注册入口
 │   │   │   ├── LivingEnderChestAccessor.java #     活末影箱 SlotAccessor（精简，路由委托 EnderRouteManager）
 │   │   │   ├── LivingEnderChestItemHandler.java  # ItemHandler
 │   │   │   ├── EnderRouteManager.java        #     路由逻辑集中管理（v8 新增）
@@ -59,6 +62,7 @@ src/main/java/com/qiqi/li/
 │   │   │
 │   │   ├── furnace/                          #   活熔炉领域
 │   │   │   ├── LivingFurnaceFunction.java    #     活熔炉功能入口（从 function/ 迁入，改用 SlotAccessor）
+│   │   │   ├── FurnaceRegistration.java         #     熔炉域注册入口
 │   │   │   ├── LivingFurnaceData.java        #     活熔炉数据（从 data/ 迁入）
 │   │   │   ├── ProgressData.java             #     进度数据（从 data/ 迁入）
 │   │   │   ├── FuelData.java                 #     燃料数据（从 data/ 迁入）
@@ -67,6 +71,7 @@ src/main/java/com/qiqi/li/
 │   │   │
 │   │   ├── water/                            #   活水领域
 │   │   │   ├── LivingWaterBucketFunction.java #    活水桶功能入口（从 function/ 迁入）
+│   │   │   ├── WaterRegistration.java           #     水域注册入口（活水桶 + 活水车）
 │   │   │   ├── LivingWaterWheelFunction.java #     活水车功能入口（从 function/ 迁入）
 │   │   │   ├── ContainerFluidData.java       #     容器级流体数据
 │   │   │   ├── ContainerStressData.java      #     容器级应力累加器
@@ -77,6 +82,7 @@ src/main/java/com/qiqi/li/
 │   │   │
 │   │   ├── tnt/                              #   活TNT领域
 │   │   │   ├── LivingTntFunction.java        #     活TNT功能入口（从 function/ 迁入）
+│   │   │   ├── TntRegistration.java             #     TNT 域注册入口（含活打火石与点燃规则）
 │   │   │   ├── LivingTntData.java            #     活TNT数据（从 data/ 迁入）
 │   │   │   ├── ExplosionData.java            #     爆炸数据（从 data/ 迁入）
 │   │   │   ├── ExplosionComponent.java       #     爆炸执行引擎（逐区块破坏；2026-09-18 从 components/ 迁入）
@@ -85,6 +91,7 @@ src/main/java/com/qiqi/li/
 │   │   │
 │   │   ├── farmland/                         #   活耕地领域
 │   │   │   ├── LivingFarmlandFunction.java   #     tick 功能入口（生长/产出状态机 + tooltip）
+│   │   │   ├── FarmlandRegistration.java        #     耕地域注册入口（含耕种/骨粉规则）
 │   │   │   ├── FarmlandPlantComponent.java   #     种植数据组件（作物标记+age+round-robin 产出）
 │   │   │   ├── CropClassifier.java           #     作物分类器（准入三层/maxAge/茎果实 AT/收获形态/上部件注册表）
 │   │   │   ├── FarmlandBonemealInteraction.java #  槽位交互条目：普通骨粉 × 活耕地 → 施肥（注册进 SlotInteractions）
@@ -94,6 +101,7 @@ src/main/java/com/qiqi/li/
 │   │   └── map/                              #   活地图传送领域
 │   │       ├── LivingEnderPearlFunction.java #     活末影珍珠（纯工具类）
 │   │       ├── LivingMapFunction.java        #     活空地图
+│   │       ├── MapRegistration.java             #     地图传送域注册入口（含两个事件监听）
 │   │       ├── MapTeleportExecutor.java      #     传送执行器
 │   │       ├── TeleportHelper.java           #     传送工具类
 │   │       ├── MapCoordHelper.java           #     坐标转换工具类
@@ -104,6 +112,7 @@ src/main/java/com/qiqi/li/
 │   │
 │   ├── domain/redstone/                     #   活红石领域
 │   │   ├── LivingRedstoneFunction.java       #     活红石粉功能入口
+│   │   ├── RedstoneRegistration.java        #     红石域注册入口（9 Function + 17 交互规则 + 快照贡献者）
 │   │   ├── LivingRedstoneTorchFunction.java  #     活红石火把功能入口
 │   │   ├── LivingButtonFunction.java         #     活按钮
 │   │   ├── LivingLeverFunction.java          #     活拉杆
@@ -130,6 +139,7 @@ src/main/java/com/qiqi/li/
 │   │
 │   ├── domain/power/                        #   红电发电领域（活涂蜡铜块）
 │   │   ├── LivingWaxedCopperFunction.java    #     涂蜡发电机功能入口（priority=3；BFS 采样 + 相位解读 pass + 跳变门控记账）
+│   │   ├── PowerRegistration.java           #     红电域注册入口
 │   │   ├── PowerMath.java                   #     发电数学（合因子/调谐效率/存活窗口/RE→FE）
 │   │   ├── ChannelState.java                #     相位域分组计 n + 跳变门控（bestActiveDomain）
 │   │   ├── GeneratorState.java              #     单台发电机状态（单通道 + per-generator EMA）

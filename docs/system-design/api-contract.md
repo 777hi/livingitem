@@ -103,6 +103,30 @@ javadoc 明写「新增 LivingItemFunction 必须回来手添」⇒ **第三方�
 > 顺序会变成「主类的调用次序 + 各文件内部排列」，从此再也读不出来。
 > 处置见 §2.4。
 
+### 1.4 容器级数据的现状 —— ⚠️ 与 `framework-refactoring.md` 的描述不符
+
+`TickContext`（第三方实现 `tick()` 时会拿到它）目前是 **4 个 public 可变字段**：
+
+| 字段 | 使用者 |
+|---|---|
+| `fluidData` | 活水桶 / 活水车 / 活耕地 + `getSnapshot()` |
+| `stressData` | 活水车 + `ContainerLivingItemHandler` 应力输出 |
+| `redstoneData` | `getOrCreateRedstoneData()` —— 10+ 处红石功能 |
+| `powerData` | `getOrCreatePowerData()`（电力层账本） |
+
+> ⚠️ **`docs/archive/framework-refactoring.md` §3「TickContext Map 扩展」描述的
+> `containerDataStore` + `getContainerData/setContainerData` —— 从未落地。**
+> 该文档标记为「✅ 已完成」，但代码里至今仍是每加一种容器级数据就加一个字段
+> （`powerData` 就是第四个，也是这么加的）。
+>
+> 同理，该文档说泛型 `getData/setData` 将「替代所有 `getXxxData` 方法」——
+> 那一批便捷方法也一个没删，且都在正常使用。
+>
+> 这是 `docs/README.md` §1 警告过的形态：**未完成的设计写成了现状口吻**。
+
+⇒ **这 4 个字段不是兼容包袱，不要删**（它们都在用）。真正的问题是
+「要不要真的做那次重构」—— 见 §2.5。
+
 ---
 
 ## 2. 待决 / 未生效（⛔ 不得当现状引用）
@@ -151,6 +175,17 @@ javadoc 明写「新增 LivingItemFunction 必须回来手添」⇒ **第三方�
 | 解决了什么 | 补偿 A1 下放后「顺序不再可见」（§1.3）；并把口径从「书写顺序」变成「显式声明」 |
 | 顺带 | 冻结后即消解 open-plan.md §1.2 **P1-1**（tick 期间注册会 `ConcurrentModificationException`） |
 | 性质 | 与 §1.1 同类改造：**把隐式契约显式化** |
+
+### 2.5 容器级数据：`TickContext` 是否收敛为统一访问？（2026-09-27 新增）
+
+| 选项 | 做法 | 评价 |
+|---|---|---|
+| ① 维持现状 | 4 个 public 字段，新增就加字段 | 类型安全、直观；但每加一种容器级数据都要改 `TickContext`（且它对第三方可见） |
+| ② 收敛为 Map | 实现 `framework-refactoring.md` §3 当年承诺的 `getContainerData(Class)` | 可扩展；但要 cast，**丢掉类型安全** |
+| ③ 维持字段 + 收敛访问器 | 字段改 private，统一走 `getOrCreateXxx()` | 折中：类型安全 + 不再暴露可变字段给第三方 |
+
+> 尚未拍板。注意 `framework-evolution.md` 曾定「`ContainerData<T>` 通用模式等第 3 个数据点」——
+> 现在已有 4 个（fluid / stress / redstone / power），**数据点够了**，但改动面较大。
 
 ---
 

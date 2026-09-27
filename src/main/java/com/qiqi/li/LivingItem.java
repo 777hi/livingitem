@@ -1,10 +1,7 @@
 package com.qiqi.li;
 
 import com.qiqi.li.living.domain.tnt.ExplosionLedger;
-import com.qiqi.li.living.domain.map.LivingMapEventHandler;
-import com.qiqi.li.living.domain.map.ItemFrameMapTeleportHandler;
 import com.qiqi.li.living.domain.ender.EnderChannelRegistry;
-import com.qiqi.li.living.interaction.InteractionEntry;
 import com.qiqi.li.living.transfer.ContainerRuleConfig;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -29,7 +26,6 @@ import net.neoforged.neoforge.event.level.ChunkEvent;
 import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
-import net.neoforged.neoforge.capabilities.ICapabilityProvider;
 import net.neoforged.neoforge.energy.IEnergyStorage;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -37,22 +33,13 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
-import com.qiqi.li.living.container.ContainerSnapshot;
-import com.qiqi.li.living.domain.chest.ChestSnapshotProvider;
 import com.qiqi.li.living.domain.chest.LivingChestFunction;
 import com.qiqi.li.living.domain.ender.LivingEnderChestFunction;
-import com.qiqi.li.living.domain.hopper.HopperSnapshotProvider;
-import com.qiqi.li.living.domain.redstone.RedstoneSnapshotProvider;
-import com.qiqi.li.living.domain.water.LivingWaterBucketFunction;
-import com.qiqi.li.living.domain.water.LivingWaterWheelFunction;
-import com.qiqi.li.living.domain.map.LivingEnderPearlFunction;
-import com.qiqi.li.living.domain.map.LivingMapFunction;
 import com.qiqi.li.logging.ModLog;
 import com.qiqi.li.living.perf.PerfMetrics;
 
 import java.util.HashSet;
 import java.util.IdentityHashMap;
-import java.util.List;
 import java.util.Set;
 import com.qiqi.li.living.container.ContainerChunkCache;
 import com.qiqi.li.living.container.ContainerLivingItemHandler;
@@ -72,39 +59,24 @@ import com.qiqi.li.network.LivingToolHostPacket;
 import com.qiqi.li.network.LivingToolPlayerPacket;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.compat.create.ModCreate;
-import com.qiqi.li.living.domain.furnace.LivingFurnaceFunction;
-import com.qiqi.li.living.domain.hopper.LivingHopperFunction;
-import com.qiqi.li.living.domain.tnt.LivingTntFunction;
-import com.qiqi.li.living.domain.redstone.LivingRedstoneFunction;
-import com.qiqi.li.living.domain.redstone.LivingRedstoneTorchFunction;
-import com.qiqi.li.living.domain.redstone.LivingButtonFunction;
-import com.qiqi.li.living.domain.redstone.LivingLeverFunction;
-import com.qiqi.li.living.domain.redstone.LivingRedstoneLampFunction;
-import com.qiqi.li.living.domain.redstone.LivingRepeaterFunction;
-import com.qiqi.li.living.domain.redstone.LivingComparatorFunction;
-import com.qiqi.li.living.domain.redstone.LivingRedstoneBlockFunction;
-import com.qiqi.li.living.domain.redstone.LivingCopperFunction;
-import com.qiqi.li.living.domain.power.LivingWaxedCopperFunction;
-import com.qiqi.li.living.function.LivingFlintAndSteelFunction;
-import com.qiqi.li.living.interaction.InteractionRegistry;
-import com.qiqi.li.living.interaction.IgniteHandler;
-import com.qiqi.li.living.interaction.IgniteCarriedHandler;
-import com.qiqi.li.living.interaction.ButtonPressHandler;
-import com.qiqi.li.living.interaction.LeverToggleHandler;
-import com.qiqi.li.living.interaction.RepeaterCycleHandler;
-import com.qiqi.li.living.interaction.ComparatorToggleHandler;
-import com.qiqi.li.living.interaction.TillToFarmlandHandler;
-import com.qiqi.li.living.interaction.PlantCropHandler;
-import com.qiqi.li.living.interaction.BonemealHandler;
-import com.qiqi.li.living.domain.farmland.CropClassifier;
 import com.qiqi.li.living.domain.tools.LivingToolFakePlayerCache;
 import com.qiqi.li.living.domain.tools.LivingToolHostSync;
 import com.qiqi.li.living.domain.tools.LivingToolFunction;
 import com.qiqi.li.living.domain.tools.LivingToolAssist;
 import com.qiqi.li.living.domain.tools.LivingToolRecorder;
-import com.qiqi.li.living.domain.farmland.Tillables;
 import net.neoforged.neoforge.registries.DeferredRegister;
 import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
+import com.qiqi.li.living.domain.chest.ChestRegistration;
+import com.qiqi.li.living.domain.ender.EnderRegistration;
+import com.qiqi.li.living.domain.farmland.FarmlandRegistration;
+import com.qiqi.li.living.domain.furnace.FurnaceRegistration;
+import com.qiqi.li.living.domain.hopper.HopperRegistration;
+import com.qiqi.li.living.domain.map.MapRegistration;
+import com.qiqi.li.living.domain.power.PowerRegistration;
+import com.qiqi.li.living.domain.redstone.RedstoneRegistration;
+import com.qiqi.li.living.domain.tnt.TntRegistration;
+import com.qiqi.li.living.domain.tools.ToolRegistration;
+import com.qiqi.li.living.domain.water.WaterRegistration;
 import com.qiqi.li.living.domain.chest.LivingChestItemHandler;
 import com.qiqi.li.living.domain.ender.LivingEnderChestItemHandler;
 
@@ -156,149 +128,23 @@ public class LivingItem {
         ContainerRuleConfig.load();
 
         ModCreate.init();
-        LivingItemManager.registerFunction(new LivingFurnaceFunction());
-        LOGGER.info("Registered living furnace function");
 
-        LivingItemManager.registerFunction(new LivingHopperFunction());
-        LOGGER.info("Registered living hopper function");
-
-        LivingItemManager.registerFunction(new LivingTntFunction());
-        LOGGER.info("Registered living TNT function");
-
-        LivingItemManager.registerFunction(new LivingFlintAndSteelFunction());
-        LOGGER.info("Registered living flint & steel function");
-
-        LivingItemManager.registerFunction(new LivingToolFunction());
-        LOGGER.info("Registered living tool function");
-
-        LivingItemManager.registerFunction(new LivingChestFunction());
-        LOGGER.info("Registered living chest function");
-
-        LivingItemManager.registerFunction(new LivingEnderChestFunction());
-        LOGGER.info("Registered living ender chest function");
-
-        LivingItemManager.registerFunction(new LivingWaterBucketFunction());
-        LOGGER.info("Registered living water bucket function");
-
-        LivingItemManager.registerFunction(new LivingWaterWheelFunction());
-        LOGGER.info("Registered living water wheel function");
-
-        LivingItemManager.registerFunction(new LivingRedstoneFunction());
-        LOGGER.info("Registered living redstone function");
-
-        LivingItemManager.registerFunction(new LivingRedstoneTorchFunction());
-        LOGGER.info("Registered living redstone torch function");
-
-        LivingItemManager.registerFunction(new LivingButtonFunction());
-        LOGGER.info("Registered living button function");
-
-        LivingItemManager.registerFunction(new LivingLeverFunction());
-        LOGGER.info("Registered living lever function");
-
-        LivingItemManager.registerFunction(new LivingRedstoneLampFunction());
-        LOGGER.info("Registered living redstone lamp function");
-
-        LivingItemManager.registerFunction(new LivingRepeaterFunction());
-        LOGGER.info("Registered living repeater function");
-
-        LivingItemManager.registerFunction(new LivingComparatorFunction());
-        LOGGER.info("Registered living comparator function");
-
-        LivingItemManager.registerFunction(new LivingRedstoneBlockFunction());
-        LOGGER.info("Registered living redstone block function");
-
-        LivingItemManager.registerFunction(new LivingCopperFunction());
-        LOGGER.info("Registered living copper function");
-
-        LivingItemManager.registerFunction(new LivingWaxedCopperFunction());
-        LOGGER.info("Registered living waxed copper function");
-
-        LivingItemManager.registerFunction(new LivingEnderPearlFunction());
-        LOGGER.info("Registered living ender pearl function");
-
-        LivingItemManager.registerFunction(new com.qiqi.li.living.domain.farmland.LivingFarmlandFunction());
-        LOGGER.info("Registered living farmland function");
-
-        LivingItemManager.registerFunction(new LivingMapFunction());
-        LOGGER.info("Registered living map function");
-
-        // 注册容器快照贡献者（注册驱动，解除 container 包对 domain 类的依赖）
-        ContainerSnapshot.registerProvider(new HopperSnapshotProvider());
-        ContainerSnapshot.registerProvider(new ChestSnapshotProvider());
-        ContainerSnapshot.registerProvider(new RedstoneSnapshotProvider());
-
-        LivingMapEventHandler.register();
-        LOGGER.info("Registered living map event handler");
-
-        ItemFrameMapTeleportHandler.register();
-        LOGGER.info("Registered item frame map teleport handler");
-
-        InteractionRegistry.registerHandler("ignite", new IgniteHandler());
-        LOGGER.info("Registered ignite interaction handler");
-
-        InteractionRegistry.registerHandler("ignite_carried", new IgniteCarriedHandler());
-        LOGGER.info("Registered ignite_carried interaction handler");
-
-        // 注册交互规则：活打火石右键活TNT点燃
-        InteractionRegistry.register(new InteractionEntry(
-            Items.TNT, Items.FLINT_AND_STEEL, 1, "ignite"));
-        LOGGER.info("Registered ignite interaction rule");
-
-        // 注册交互规则：活TNT右键活打火石点燃（反向）
-        InteractionRegistry.register(new InteractionEntry(
-            Items.FLINT_AND_STEEL, Items.TNT, 1, "ignite_carried"));
-        LOGGER.info("Registered ignite_carried interaction rule");
-
-        // 注册按钮按压处理器和交互规则
-        InteractionRegistry.registerHandler("button_press", new ButtonPressHandler());
-        InteractionRegistry.register(new InteractionEntry(Items.STONE_BUTTON, null, 1, "button_press"));
-        InteractionRegistry.register(new InteractionEntry(Items.POLISHED_BLACKSTONE_BUTTON, null, 1, "button_press"));
-        InteractionRegistry.register(new InteractionEntry(Items.OAK_BUTTON, null, 1, "button_press"));
-        InteractionRegistry.register(new InteractionEntry(Items.SPRUCE_BUTTON, null, 1, "button_press"));
-        InteractionRegistry.register(new InteractionEntry(Items.BIRCH_BUTTON, null, 1, "button_press"));
-        InteractionRegistry.register(new InteractionEntry(Items.JUNGLE_BUTTON, null, 1, "button_press"));
-        InteractionRegistry.register(new InteractionEntry(Items.ACACIA_BUTTON, null, 1, "button_press"));
-        InteractionRegistry.register(new InteractionEntry(Items.CHERRY_BUTTON, null, 1, "button_press"));
-        InteractionRegistry.register(new InteractionEntry(Items.DARK_OAK_BUTTON, null, 1, "button_press"));
-        InteractionRegistry.register(new InteractionEntry(Items.MANGROVE_BUTTON, null, 1, "button_press"));
-        InteractionRegistry.register(new InteractionEntry(Items.BAMBOO_BUTTON, null, 1, "button_press"));
-        InteractionRegistry.register(new InteractionEntry(Items.CRIMSON_BUTTON, null, 1, "button_press"));
-        InteractionRegistry.register(new InteractionEntry(Items.WARPED_BUTTON, null, 1, "button_press"));
-        LOGGER.info("Registered button press interaction rules");
-
-        // 注册拉杆切换处理器和交互规则
-        InteractionRegistry.registerHandler("lever_toggle", new LeverToggleHandler());
-        InteractionRegistry.register(new InteractionEntry(Items.LEVER, null, 1, "lever_toggle"));
-        LOGGER.info("Registered lever toggle interaction rule");
-
-        InteractionRegistry.registerHandler("repeater_cycle", new RepeaterCycleHandler());
-        InteractionRegistry.register(new InteractionEntry(Items.REPEATER, null, 1, "repeater_cycle"));
-        LOGGER.info("Registered repeater cycle interaction rule");
-
-        InteractionRegistry.registerHandler("comparator_toggle", new ComparatorToggleHandler());
-        InteractionRegistry.register(new InteractionEntry(Items.COMPARATOR, null, 1, "comparator_toggle"));
-        LOGGER.info("Registered comparator toggle interaction rule");
-
-        // ── 活耕地：活锄头耕活土 + 种植 + 骨粉（docs/idea.md 活耕地设计） ──
-        // 锄头不枚举：通配条目 + 谓词按 HOE_TILL 能力识别，模组锄头自动兼容。
-        // 可耕目标逐条注册（映射见 Tillables）；谓词把拦截面收窄到「活着的锄头」，
-        // 其余光标一律不拦截，原版拿起/分堆操作不受影响。
-        InteractionRegistry.registerHandler("till_to_farmland", new TillToFarmlandHandler());
-        for (Item tillable : Tillables.tillableTargets()) {
-            InteractionRegistry.register(new InteractionEntry(tillable, null, 1, "till_to_farmland",
-                false, Tillables::canTillWith));
-        }
-        LOGGER.info("Registered till_to_farmland interaction rules");
-
-        // 种植：通配条目 + triggerFilter 收窄到「可种植种子」——只拦种子光标，
-        // 空手/其他物品右键不拦截（原版拿起/分堆操作不受影响；服务端 handler 仍双重校验）
-        // 骨粉：精确触发器（活骨粉）——两趟优先级匹配分流（见 InteractionRegistry javadoc）
-        InteractionRegistry.registerHandler("plant_crop", new PlantCropHandler());
-        InteractionRegistry.register(new InteractionEntry(Items.FARMLAND, null, 1, "plant_crop",
-            false, PlantCropHandler::canPlantWith));
-        InteractionRegistry.registerHandler("bonemeal", new BonemealHandler());
-        InteractionRegistry.register(new InteractionEntry(Items.FARMLAND, Items.BONE_MEAL, 1, "bonemeal"));
-        LOGGER.info("Registered farmland plant/bonemeal interaction rules");
+        // ── 各领域自注册（A1，2026-09-27）──
+        // 原先 22 个 Function / 21 条交互规则 / 9 个 handler / 3 个快照贡献者
+        // 全部写在这一个方法里（152 行）⇒ 任何改动都落在同一处，
+        // fork 者与上游的 diff 反复撞车（且是最难解的「无关 diff 相邻」型）。
+        // 现在新增活物品：改对应域的 XxxRegistration，**不要往这里加**。
+        FurnaceRegistration.register();
+        HopperRegistration.register();
+        ChestRegistration.register();
+        EnderRegistration.register();
+        WaterRegistration.register();
+        TntRegistration.register();        // 含活打火石（点燃规则的归属见该类注释）
+        RedstoneRegistration.register();
+        PowerRegistration.register();
+        FarmlandRegistration.register();
+        ToolRegistration.register();
+        MapRegistration.register();
     }
 
     /**
