@@ -269,7 +269,8 @@ src/test/java/com/qiqi/li/
 │   └── LivingFarmlandSeedDecoratorTest.java   # 种子图标装饰器守卫·普通/未种植/已种植/非耕地（4 项）
 ├── living/api/
 │   ├── ComponentOwnershipTest.java            # DataComponent 归属守卫·每组件必有主/不可重复归属/自声明会被清除（3 项）
-│   └── LivingItemActivationTest.java          # 活化门面守卫·有功能可活化/无功能拒绝/取消总允许/探针不改原物品（4 项）
+│   ├── LivingItemActivationTest.java          # 活化门面守卫·有功能可活化/无功能拒绝/取消总允许/探针不改原物品（4 项）
+│   └── ActivationRuleConfigTest.java          # 活化规则 JSON 加载语义·via缺省=player/activate与deactivate独立/先命中先赢/白名单/坏值跳过（9 项，tag 路径 @Disabled 待游戏内验证）
 ├── living/container/
 │   ├── SimpleContainerContextTest.java        # 容器上下文脏槽同步（25 项）
 │   └── ContainerChunkCacheChunkLoadTest.java  # 区块加载守卫·事件不碰世界/延后重扫不丢/限量/不主动加载/只处理ticking区/可观测性（6 项）

@@ -59,15 +59,14 @@ public final class LivingItemActivation {
      * @param via      发起途径
      */
     public static Result evaluate(ItemStack stack, boolean activate, Via via) {
-        // 取消活化总是允许：把物品恢复成普通物品不会带来副作用
-        // （活箱子的掉落、末影箱的解绑由调用方处理）
-        if (!activate) {
-            return Result.ALLOW;
+        // ① JSON 规则（黑名单 / 白名单 / 按途径）
+        if (ActivationRuleConfig.evaluate(stack, activate, via) == ActivationRuleConfig.Action.DENY) {
+            return Result.DENY_RULE;
         }
-        // 目前只对「玩家手动活化」做无功能认领的拦截：
-        // 外部途径（任务奖励）由整合包作者明确指定物品，他应当知道自己在发什么；
-        // 内部途径是模组自己产出的，必然有对应功能。
-        if (!LivingItemManager.hasAnyFunctionFor(stack)) {
+        // ② 无功能认领 —— 活化它只有隔离副作用、零收益
+        //    （只对活化生效；取消活化无副作用）
+        if (activate && ActivationRuleConfig.isDenyUnclaimed()
+                && !LivingItemManager.hasAnyFunctionFor(stack)) {
             return Result.DENY_UNCLAIMED;
         }
         return Result.ALLOW;

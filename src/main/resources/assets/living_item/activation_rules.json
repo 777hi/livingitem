@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "default": "allow",
+  "rules": [],
+  "options": {
+    "denyUnclaimed": true
+  }
+}

@@ -196,5 +196,17 @@
   "command.livingitem.export_empty": "§7没有可导出的规则（注册表为空）§r",
   "command.livingitem.export_failed": "§c导出失败，请查看日志§r",
   "livingitem.activation.deny_unclaimed": "§c该物品没有对应的活物品功能，活化它只会让它无法被传输/熔炼，因此已阻止§r",
-  "livingitem.activation.deny_rule": "§c该物品已被整合包规则禁止活化§r"
+  "livingitem.activation.deny_rule": "§c该物品已被整合包规则禁止活化§r",
+  "livingitem.activation.verdict.allow": "§a允许§r",
+  "livingitem.activation.verdict.deny_rule": "§c规则禁止§r",
+  "livingitem.activation.verdict.deny_unclaimed": "§c无功能认领§r",
+  "command.livingitem.activation_reloaded": "§a已从配置文件重新加载活化规则§r",
+  "command.livingitem.activation_list": "§6活化规则概况§r：§e%d§7 条生效规则，default=§f%s§7，denyUnclaimed=§f%s§r\n§7改完 JSON 用 §f/livingitem activation reload §7生效；验证单个物品用 §f/livingitem activation test§r",
+  "command.livingitem.activation_need_player": "§c该指令需要由玩家执行§r",
+  "command.livingitem.activation_no_item": "§7请先用鼠标拿起一个物品再执行 test§r",
+  "command.livingitem.activation_test_header": "§6%s§r §7(%s) 的活化判定：§r",
+  "command.livingitem.activation_test_claimed": "  §7有功能认领：§f%s§r",
+  "command.livingitem.activation_test_line": "  §7途径 §f%s§7 → §r%s",
+  "command.livingitem.yes": "是",
+  "command.livingitem.no": "否"
 }

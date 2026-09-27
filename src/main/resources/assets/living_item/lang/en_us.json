@@ -196,5 +196,17 @@
   "command.livingitem.export_empty": "§7No rules to export (registry is empty)§r",
   "command.livingitem.export_failed": "§cExport failed, see log for details§r",
   "livingitem.activation.deny_unclaimed": "§cThis item has no living-item function behind it; activating it would only make it untransportable/unsmeltable, so it was blocked§r",
-  "livingitem.activation.deny_rule": "§cThis item is blocked from activation by a modpack rule§r"
+  "livingitem.activation.deny_rule": "§cThis item is blocked from activation by a modpack rule§r",
+  "livingitem.activation.verdict.allow": "§aAllowed§r",
+  "livingitem.activation.verdict.deny_rule": "§cDenied by rule§r",
+  "livingitem.activation.verdict.deny_unclaimed": "§cNo function claims it§r",
+  "command.livingitem.activation_reloaded": "§aReloaded activation rules from config§r",
+  "command.livingitem.activation_list": "§6Activation rules§r: §e%d§7 effective, default=§f%s§7, denyUnclaimed=§f%s§r\n§7After editing JSON run §f/livingitem activation reload§7; verify a single item with §f/livingitem activation test§r",
+  "command.livingitem.activation_need_player": "§cThis command must be run by a player§r",
+  "command.livingitem.activation_no_item": "§7Pick up an item with the mouse first, then run test§r",
+  "command.livingitem.activation_test_header": "§6%s§r §7(%s) activation verdicts:§r",
+  "command.livingitem.activation_test_claimed": "  §7Has a claiming function: §f%s§r",
+  "command.livingitem.activation_test_line": "  §7via §f%s§7 → §r%s",
+  "command.livingitem.yes": "yes",
+  "command.livingitem.no": "no"
 }
