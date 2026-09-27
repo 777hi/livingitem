@@ -25,7 +25,7 @@ import org.slf4j.LoggerFactory;
  *
  * <h3>使用方式</h3>
  * <ol>
- *   <li>通过命令启用监控：{@code /living_monitor on}</li>
+ *   <li>通过命令启用监控：{@code /livingitem debug monitor on}</li>
  *   <li>监控系统自动对比处理前后快照，检测异常</li>
  *   <li>异常报告同时写入日志文件和聊天栏</li>
  * </ol>

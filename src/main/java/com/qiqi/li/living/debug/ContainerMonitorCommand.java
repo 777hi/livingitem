@@ -15,6 +15,14 @@ import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerChunkCache;
 import com.qiqi.li.logging.ModLog;
 
+/**
+ * 容器监控指令 —— 挂在主命令树 {@code /livingitem debug} 下（2026-09-27 整理，
+ * 自 {@code /living_monitor} 迁入；对外只保留一个命令根）。
+ *
+ * <p>💡 <b>输出刻意保持英文硬编码、不走语言文件</b>：这是开发者排障工具
+ * （输出同时进 {@code logs/latest.log} 与聊天栏），日志比对场景英文更稳，
+ * 不视为待本地化遗漏。
+ */
 @EventBusSubscriber
 public class ContainerMonitorCommand {
 
@@ -22,18 +30,21 @@ public class ContainerMonitorCommand {
     public static void onRegisterCommands(RegisterCommandsEvent event) {
         CommandDispatcher<CommandSourceStack> dispatcher = event.getDispatcher();
         dispatcher.register(
-            Commands.literal("living_monitor")
+            Commands.literal("livingitem")
                 .requires(source -> source.hasPermission(2))
-                .then(Commands.literal("on")
-                    .executes(ContainerMonitorCommand::onGlobal))
-                .then(Commands.literal("off")
-                    .executes(ContainerMonitorCommand::offGlobal))
-                .then(Commands.literal("status")
-                    .executes(ContainerMonitorCommand::status))
-                .then(Commands.literal("dump_inventory")
-                    .executes(ContainerMonitorCommand::dumpInventory))
-                .then(Commands.literal("cache")
-                    .executes(ContainerMonitorCommand::cacheStats))
+                .then(Commands.literal("debug")
+                    .then(Commands.literal("monitor")
+                        .then(Commands.literal("on")
+                            .executes(ContainerMonitorCommand::onGlobal))
+                        .then(Commands.literal("off")
+                            .executes(ContainerMonitorCommand::offGlobal))
+                        .then(Commands.literal("status")
+                            .executes(ContainerMonitorCommand::status)))
+                    .then(Commands.literal("dump_inventory")
+                        .executes(ContainerMonitorCommand::dumpInventory))
+                    .then(Commands.literal("cache")
+                        .executes(ContainerMonitorCommand::cacheStats))
+            )
         );
     }
 

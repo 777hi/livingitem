@@ -163,10 +163,10 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 374 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
-全绿基线：`373 passed / 0 failed / 1 skipped`（2026-09-27 新增活化规则 JSON 加载语义 9 项
+**合计测试用例 375 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
+全绿基线：`374 passed / 0 failed / 1 skipped`（2026-09-27 新增活化规则 JSON 加载语义 9 项
 （tag 路径 1 项 @Disabled —— FML unit test 不加载 item tags，待游戏内验证）+
-活化门面守卫 4 项 + DataComponent 归属守卫 3 项；
+活化门面守卫 5 项（含「零配置全放行」口径锁定）+ DataComponent 归属守卫 3 项；
 此前 2026-09-22 光照刷新 + 爆炸受影响区块判据修复
 + 大箱子槽位体系探针 §10.25 / 跨容器面选取 §6.4）。
 > 📄 测试环境配置与编写约定见 [unit-testing.md](docs/guides/unit-testing.md)；
@@ -235,6 +235,7 @@ src/main/java/com/qiqi/li/
 | 写测试 / 跑全量 / mock `Level` | [unit-testing.md](docs/guides/unit-testing.md) |
 | **发版本给群友测活TNT** | [living-tnt-testing.md](docs/guides/living-tnt-testing.md) §1~§6（**转发时只发这半段**） |
 | 找某个源文件 | [file-map.md](docs/reference/file-map.md)（完整文件树，快照） |
+| 查指令用法 / 加新指令 | [commands.md](docs/reference/commands.md)（指令清单，快照） |
 | **查原版 / NeoForge / 第三方模组源码** | **直接搜 `libs/src/`，无需解压** —— `libs/src/neoforge-21.1.249-merged/` 是 ⭐ 首选（版本与 `neo_version` 一致）；第三方模组在 `libs/src/<ModName>/`。详见 [living-tool-design.md](docs/buffer/living-tool-design.md) §2.2.1 |
 | 查历史变更 | [changelog.md](docs/archive/changelog.md)（按日期倒序） |
 | 红电系统总体设计 | [红电系统.md](docs/system-design/红电系统.md) |
