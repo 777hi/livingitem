@@ -352,4 +352,13 @@ def main():
 
 
 if __name__ == "__main__":
+    # Windows 控制台默认 GBK —— 结论行里的 "✓" / "✗"（U+2713 / U+2717）
+    # 不在 GBK 字符集内，print 会抛 UnicodeEncodeError。**即使 7 项全通过**，
+    # 那句「全部通过」也打印不出来，只剩一个 traceback（失败分支的 ✗ 同样崩，
+    # ⇒ 真 FAIL 时看到的是 traceback 而不是 FAIL 清单）。这里统一强制 UTF-8。
+    # IDE / CI 把 stdout 换成非 TextIOWrapper 时静默跳过（这些环境通常已是 UTF-8）。
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except (AttributeError, ValueError, OSError):
+        pass
     sys.exit(main())

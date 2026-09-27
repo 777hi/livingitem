@@ -134,7 +134,6 @@ src/main/java/com/qiqi/li/
 │   │   ├── ChannelState.java                #     相位域分组计 n + 跳变门控（bestActiveDomain）
 │   │   ├── GeneratorState.java              #     单台发电机状态（单通道 + per-generator EMA）
 │   │   ├── DerivedPhase.java                #     派生相位 record（v19.1 相位解读驻波：周期/偏移/幅度/形态）
-│   │   ├── LivingWaxedCutData.java          #     涂蜡切制组件（遗留兼容字段，逻辑不读取）
 │   │   ├── LivingWaxedChiseledData.java     #     涂蜡雕文组件（inputDir=移相读取方向；outputDir 遗留兼容）
 │   │   ├── LivingWaxedBulbData.java         #     涂蜡铜灯组件（按盏电量，1/1000 FE 定点）
 │   │   ├── LivingWaxedGeneratorData.java    #     发电机仪表盘组件（检测值快照，纯展示）
@@ -258,6 +257,8 @@ src/test/java/com/qiqi/li/
 │   └── FakeContainerContext.java              # ContainerContext 测试替身（内存数组实现）
 ├── client/render/
 │   └── LivingFarmlandSeedDecoratorTest.java   # 种子图标装饰器守卫·普通/未种植/已种植/非耕地（4 项）
+├── living/api/
+│   └── ComponentOwnershipTest.java            # DataComponent 归属守卫·每组件必有主/不可重复归属/自声明会被清除（3 项）
 ├── living/container/
 │   ├── SimpleContainerContextTest.java        # 容器上下文脏槽同步（25 项）
 │   └── ContainerChunkCacheChunkLoadTest.java  # 区块加载守卫·事件不碰世界/延后重扫不丢/限量/不主动加载/只处理ticking区/可观测性（6 项）

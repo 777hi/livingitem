@@ -163,8 +163,9 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 357 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
-全绿基线：`357 passed / 0 failed / 0 skipped`（2026-09-22 光照刷新 + 爆炸受影响区块判据修复
+**合计测试用例 360 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
+全绿基线：`360 passed / 0 failed / 0 skipped`（2026-09-27 新增 DataComponent 归属守卫 3 项；
+此前 2026-09-22 光照刷新 + 爆炸受影响区块判据修复
 + 大箱子槽位体系探针 §10.25 / 跨容器面选取 §6.4）。
 > 📄 测试环境配置与编写约定见 [unit-testing.md](docs/guides/unit-testing.md)；
 > 测试文件树见 [file-map.md](docs/reference/file-map.md)「测试文件树」。
@@ -236,6 +237,7 @@ src/main/java/com/qiqi/li/
 | 查历史变更 | [changelog.md](docs/archive/changelog.md)（按日期倒序） |
 | 红电系统总体设计 | [红电系统.md](docs/system-design/红电系统.md) |
 | 活潜影箱独立设计 | [活潜影箱实现细节.md](docs/buffer/活潜影箱实现细节.md) |
+| **给第三方写扩展 / 查对外契约**（**违反即 bug**） | [api-contract.md](docs/system-design/api-contract.md)（对外开放计划与待决问题池见 [open-plan.md](docs/buffer/open-plan.md)） |
 | GUI 点击拦截 / 容器兼容 / 单元测试 / 活TNT测试 | `docs/guides/`（**做法**） |
 | **配方书 / 拼音搜索**（跨活物品的共享技术） | `docs/tech/common/` |
 | **未定案的草稿**（设计稿 / 计划 / 路线图 / 探讨 / 待办） | `docs/buffer/`（**中间层 —— 不稳定，别当现状读**） |
