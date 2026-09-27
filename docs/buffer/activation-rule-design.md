@@ -101,47 +101,36 @@ public static boolean hasAnyFunctionFor(ItemStack stack) {
 > 教训：设计稿原写「建议默认 true」并按此实现，实施前没有和用户确认这个行为变更 ——
 > 「加一个 JSON 规则」的授权不包含「改默认逻辑」。
 
-### 2.3 组件解耦现状 —— 为什么活箱子是唯一例外
+### 2.3 组件解耦现状 —— ✅ 已被探针更正（2026-09-27 二次修订）
 
-**结论**：活化 NBT（`IS_LIVING`）与功能 NBT **已经是解耦的** ——
-功能 NBT 是 **tick 时惰性创建**的，只带 `IS_LIVING` 的物品大多数能正常工作。
-**但活箱子是唯一例外**，根因是它用的是**原版组件**而非模组自有组件：
+**更正后的结论**：活化 NBT（`IS_LIVING`）与功能 NBT **完全解耦**，
+**所有活物品（含活箱子）只带 `IS_LIVING` 都能正常工作**。
 
-| | 用的组件 | 缺失时的行为 | 需要显式初始化？ |
-|---|---|---|---|
-| 绝大多数活物品 | 模组自有 `LIVING_*_DATA` | `getData(…, DEFAULT)` 有兜底 ⇒ 惰性可用 | ❌ 不需要 |
-| **活箱子** | **原版** `DataComponents.CONTAINER` | 没有「默认值」概念，缺失即 `null` | ✅ **必须** |
+本节初版曾断言「活箱子是唯一例外，必须显式初始化」—— **该断言错误，已证伪**：
+临时探针（已按约定删除）实测 1.21.1 + NeoForge 21.1.249 下
+`new ItemStack(Items.CHEST)` 的默认组件**已含 `CONTAINER = EMPTY`**（与潜影盒同），
+`hasStorage()`（`get(CONTAINER) != null`）对新箱子恒为 true。
 
-```java
-// LivingChestFunction.java:195
-public static boolean hasStorage(ItemStack stack) {
-    return stack.get(DataComponents.CONTAINER) != null;   // 缺失 ⇒ false ⇒ 整条链静默失效
-}
-```
+由此连锁更正：
 
-`hasStorage` 有 **8 处**调用点，全是关键路径：
-`ServerPacketHandler` ×4（存 / 取）、`ServerPlaceRecipeMixin` ×2（配方书）、`ItemStackMixin` ×1（tooltip）。
-
-⇒ 所以 `setLiving` 里那条显式初始化 `CONTAINER = EMPTY` **是必需的，不是冗余**。
-
-⇒ **推论**：外部途径（任务奖励）发一个活箱子，同样必须补这一步，
-   否则玩家拿到的是「看起来是活箱子、实际什么都放不进去」的物品 —— 而这正是本功能要支持的核心场景。
-
-### 2.4 配套：`ensureInitialized()` 钩子建议
-
-与 A2 的 `getOwnedComponentTypes()` 成对（一个声明「我拥有什么」，一个负责「缺了怎么补」）：
-
-```java
-/** 确保本功能所需组件的初值存在（缺失则补）。外部途径获得的活物品、tick 首帧调用。 */
-default void ensureInitialized(ItemStack stack) {}
-```
-
-| 功能 | 实现 |
+| 初版断言 | 事实 |
 |---|---|
-| `LivingChestFunction` | 补 `CONTAINER` |
-| 其余 21 个 | 默认空实现（惰性已够，不动） |
+| 活箱子必须显式初始化，否则存/取/配方书/tooltip 全废 | ❌ 任何来源的箱子都自带 CONTAINER，坏场景不存在 |
+| `setLiving` 里的箱子补全是必需的 | ❌ `!stack.has(CONTAINER)` 恒 false ⇒ **死分支**（与已删的熔炉死代码同类） |
+| 外部途径（任务奖励）发活箱子会坏 | ❌ 不存在该问题 ⇒ **「任务奖励发活箱子」零额外工作即可用** |
 
-⇒ 把「活箱子的隐式兜底」变成**显式契约**，并让「任务奖励发活箱子」真正可用。
+> ⭐ **方法论教训**：从代码注释推断事实（「hasStorage 判 null」的防御式检查）
+> ≠ 事实本身 —— null 检查可以是防御式而非「观察到过 null」。
+> 应当先跑探针再写结论。本节初版就是没探针就下了结论。
+
+**遗留待定**：`setLiving` 里的箱子死分支（现注释已标明）是否移除，待用户确认。
+
+### 2.4 ~~`ensureInitialized()` 钩子建议~~ —— ❌ 已否决
+
+初版提议给 `LivingItemFunction` 加 `ensureInitialized` 默认方法、tick 首帧调用。
+前提（活箱子缺 CONTAINER）被 §2.3 探针证伪后，该钩子**没有存在必要** ——
+若未来真出现「某功能缺默认组件」的场景，直接在该功能的 `tick()` 里惰性补全即可
+（与 `getData(…, DEFAULT)` 同一模式），不需要框架级契约。
 
 ---
 

@@ -460,14 +460,10 @@ public class LivingItemManager {
             if (owner != null) {
                 setToolOwner(stack, owner);
             }
-            // ⚠️ 唯一需要【显式初始化】的活物品 —— 活箱子用的是**原版** CONTAINER 组件，
-            //    而不是模组自有的 LIVING_*_DATA。区别在于：
-            //      自有组件 → getData(…, DEFAULT) 有兜底 ⇒ 缺失也能 tick（惰性创建）
-            //      原版组件 → 没有"默认值"这回事，缺失即 null
-            //    而 LivingChestFunction#hasStorage() 判 `get(CONTAINER) != null` ⇒
-            //    缺失会让活箱子**静默失效**（存/取、配方书、tooltip 全废，8 处调用点）。
-            //    ⇒ 外部途径（任务奖励 / 命令给予）拿到的活箱子同样必须补这一步，
-            //       统一收口见 LivingItemFunction#ensureInitialized 的设计稿。
+            // ⚠️ 死分支（2026-09-27 探针证实）：1.21.1 的箱子物品默认组件**已含**
+            //    CONTAINER=EMPTY（与潜影盒同）⇒ !stack.has(...) 恒 false，此分支从不触发。
+            //    「外部途径拿到的活箱子缺 CONTAINER」的场景不存在 —— 任何来源的箱子都自带。
+            //    与熔炉那个已删的死代码同类（组件体系引入初期的防御，后来原版补了默认值）。
             if (stack.is(Items.CHEST) && !stack.has(net.minecraft.core.component.DataComponents.CONTAINER)) {
                 stack.set(net.minecraft.core.component.DataComponents.CONTAINER,
                     net.minecraft.world.item.component.ItemContainerContents.EMPTY);
