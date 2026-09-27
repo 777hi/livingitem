@@ -40,9 +40,18 @@
 |---|---|---|
 | `minecraft:chest` | 单个物品 | `deny minecraft:chest` |
 | `#minecraft:swords` | 物品标签（**跨模组**） | `deny #minecraft:swords` |
-| `@somemod` | 整个命名空间（某模组的全部物品） | `deny @somemod` |
+| `somemod` | 整个命名空间（某模组的全部物品） | `deny-mod somemod` |
 
-**输入时按 Tab 会自动补全**：打 `#` 补标签、打 `@` 补命名空间、其余补物品 ID（并提示这两种前缀）。
+**Tab 补全全部由平台提供**：`target` 用原版 `ResourceOrTagKeyArgument`（列举物品 ID 与 `#标签`），
+`*-mod` 用 NeoForge `ModIdArgument`（列举已加载模组）。
+
+> ⚠️ **不要用 `StringArgumentType` 接目标**（2026-09-28 修掉的 bug）：
+> 它走 `StringReader.readUnquotedString()`，允许字符集**不含** `:` `#` `@` ——
+> `minecraft:chest` 只解析出 `minecraft`、`#minecraft:swords` 与 `@somemod` 解析成**空串**，
+> 随后 Brigadier 抛「Expected whitespace to end one argument, but found trailing data」，命令执行不到。
+> 更隐蔽的是手写 `.suggests(...)` 补全**不经过** Brigadier 解析，
+> 于是表现为「Tab 能列出候选、回车却注册失败」——补全在骗人。
+> 同理 `@` 在原版是目标选择器保留前缀（`@a`/`@p`/…），语义上也不该复用。
 
 ### 匹配优先级：特异性优先
 
