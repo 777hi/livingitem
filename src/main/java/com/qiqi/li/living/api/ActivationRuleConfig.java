@@ -70,7 +70,12 @@ public final class ActivationRuleConfig {
     /** 有效动作（低层：内置，高层：玩家覆盖 / 新增） */
     private static final List<RuleEntry> RULES = new ArrayList<>();
     private static Action defaultAction = Action.ALLOW;
-    private static boolean denyUnclaimed = true;
+    /**
+     * ⚠️ 默认 {@code false}（2026-09-27 用户定调）：<b>默认行为不可动</b> ——
+     * 原本任何物品都能被活化，这个拦截只能由配置者在 JSON 里显式开启，
+     * 模组自己不得替用户决定拒绝。
+     */
+    private static boolean denyUnclaimed = false;
 
     private static Path configDir = null;
 
@@ -92,7 +97,7 @@ public final class ActivationRuleConfig {
     public static void load() {
         RULES.clear();
         defaultAction = Action.ALLOW;
-        denyUnclaimed = true;
+        denyUnclaimed = false;
 
         loadFromResource(BUNDLED_RESOURCE, "bundled");
 
@@ -191,7 +196,7 @@ public final class ActivationRuleConfig {
     static void loadFromString(String json) {
         RULES.clear();
         defaultAction = Action.ALLOW;
-        denyUnclaimed = true;
+        denyUnclaimed = false;
         apply(GSON.fromJson(json, ConfigData.class), "test");
     }
 
@@ -288,7 +293,7 @@ public final class ActivationRuleConfig {
     }
 
     private static final class Options {
-        boolean denyUnclaimed = true;
+        boolean denyUnclaimed = false;
     }
 
     /** 已解析并校验过的规则 */

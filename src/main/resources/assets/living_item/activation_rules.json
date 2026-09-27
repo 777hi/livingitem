@@ -3,6 +3,6 @@
   "default": "allow",
   "rules": [],
   "options": {
-    "denyUnclaimed": true
+    "denyUnclaimed": false
   }
 }

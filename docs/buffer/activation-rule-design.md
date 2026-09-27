@@ -95,8 +95,11 @@ public static boolean hasAnyFunctionFor(ItemStack stack) {
 | 成本 | 一次 `copy()` —— 只在玩家点按钮时发生，非热路径，可接受 |
 | 备选（否决） | 给 `LivingItemFunction` 加 `wouldApplyIfActivated()` ⇒ 要改 22 个类，且多一个与 `canApply` 语义重叠的契约，容易漂移 |
 
-> 这条默认行为**本身就能修掉 P1-3 的绝大部分**，且零配置。
-> JSON 是叠加在它之上的**额外控制权**。
+> ⚠️ **默认值已翻转（2026-09-27 用户定调）**：本拦截**默认关闭**（`denyUnclaimed=false`）。
+> 理由：**默认行为不可动** —— 原本任何物品都能被活化，模组不得替用户决定拒绝；
+> 「修 P1-3」只能是配置者权衡后**显式开启**的选项，不是模组强加的默认。
+> 教训：设计稿原写「建议默认 true」并按此实现，实施前没有和用户确认这个行为变更 ——
+> 「加一个 JSON 规则」的授权不包含「改默认逻辑」。
 
 ### 2.3 组件解耦现状 —— 为什么活箱子是唯一例外
 
@@ -158,7 +161,7 @@ default void ensureInitialized(ItemStack stack) {}
     { "item": "minecraft:chest",    "activate": "allow" }
   ],
   "options": {
-    "denyUnclaimed": true
+    "denyUnclaimed": false
   }
 }
 ```
@@ -172,7 +175,7 @@ default void ensureInitialized(ItemStack stack) {}
 | `rules[].activate` | 对**活化**动作的处理：`allow` / `deny`（省略 = 取 `default`） |
 | `rules[].deactivate` | 对**取消活化**动作的处理 —— 与 `activate` **互相独立**（2026-09-27 用户要求） |
 | `rules[].via` | 本规则作用于哪些**途径**（§1）：`player` / `external` / `internal`；省略语义见 Q-D1-5 |
-| `options.denyUnclaimed` | §2 那条默认行为的开关，**默认 `true`** |
+| `options.denyUnclaimed` | §2 那条拦截的开关，**默认 `false`**（默认行为不可动 —— 显式开启才生效） |
 
 > ⚠️ **`via` 的缺省值是危险默认值**：若省略 = 全部途径，
 > 一条 `{ "item": "x", "activate": "deny" }` 会把**任务奖励也禁掉**，

@@ -16,14 +16,16 @@ import net.minecraft.world.item.ItemStack;
  *   <tr><td>{@link Via#INTERNAL}</td><td>模组内部产出（活耕地、活地图）</td><td>❌ 否 —— 禁了功能就坏了</td></tr>
  * </table>
  *
- * <h3>第一版的规则</h3>
- * <p>目前只有一条<b>默认行为</b>（不可配）：</p>
- * <ul>
- *   <li><b>拒绝「无功能认领」的活化</b> —— 活化一个没有任何 {@link LivingItemFunction}
- *       认领的物品，只会让它进入<b>活物品隔离</b>（不传输 / 不熔炼 / 不作燃料）而<b>零收益</b>。
- *       这正是 <b>P1-3</b> 的本体：玩家误点按钮把物品变活，第三方会以为是自己模组的 bug。</li>
- * </ul>
- * <p>JSON 规则（黑名单 / 白名单 / 按途径）将在后续补入，届时本类的调用方式不变。</p>
+ * <h3>判定顺序</h3>
+ * <ol>
+ *   <li><b>JSON 规则</b>（{@link ActivationRuleConfig}）—— 黑名单 / 白名单 / 按途径，
+ *       由配置者显式书写；无规则时默认全放行。</li>
+ *   <li><b>拒绝「无功能认领」的活化</b>（{@code options.denyUnclaimed}）——
+ *       ⚠️ <b>默认关闭</b>（2026-09-27 用户定调：默认行为不可动，原本任何物品都能活化）。
+ *       开启后，活化一个没有任何 {@link LivingItemFunction} 认领的物品会被拒绝 ——
+ *       它只会进入活物品隔离（不传输 / 不熔炼 / 不作燃料）而零收益（<b>P1-3</b> 的本体）。
+ *       是否值得开启由配置者自己权衡。</li>
+ * </ol>
  *
  * <p>设计稿见 {@code docs/buffer/activation-rule-design.md}。</p>
  */
