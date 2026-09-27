@@ -109,17 +109,34 @@ class ActivationRuleConfigTest {
     }
 
     @Test
-    @DisplayName("⑥ 先命中先赢（数组顺序语义）")
-    void firstMatchWins() {
+    @DisplayName("⑥ 特异性优先：精确规则胜过宽泛规则（与数组顺序无关）")
+    void specificityWins() {
+        // ⭐ 关键：精确规则写在【后面】也必须胜出 ——
+        //    否则指令「追加」的 allow 永远覆盖不了先前 deny 的宽泛规则。
         ActivationRuleConfig.loadFromString("""
             {"version":1,"default":"allow",
-             "rules":[{"item":"minecraft:diamond_sword","activate":"allow"},
-                      {"namespace":"minecraft","activate":"deny"}]}
+             "rules":[{"namespace":"minecraft","activate":"deny"},
+                      {"item":"minecraft:diamond_sword","activate":"allow"}]}
             """);
         assertEquals(Action.ALLOW,
-            ActivationRuleConfig.evaluate(item("minecraft:diamond_sword"), true, Via.PLAYER));
+            ActivationRuleConfig.evaluate(item("minecraft:diamond_sword"), true, Via.PLAYER),
+            "item 规则比 namespace 精确 ⇒ 即使写在后面也应胜出");
         assertEquals(Action.DENY,
-            ActivationRuleConfig.evaluate(item("minecraft:stone"), true, Via.PLAYER));
+            ActivationRuleConfig.evaluate(item("minecraft:stone"), true, Via.PLAYER),
+            "只命中 namespace ⇒ 禁止");
+    }
+
+    @Test
+    @DisplayName("⑥b 同等特异性时保持先到先得（数组顺序语义仍成立）")
+    void sameSpecificityKeepsOrder() {
+        ActivationRuleConfig.loadFromString("""
+            {"version":1,"default":"allow",
+             "rules":[{"item":"minecraft:diamond_sword","activate":"deny"},
+                      {"item":"minecraft:diamond_sword","activate":"allow"}]}
+            """);
+        assertEquals(Action.DENY,
+            ActivationRuleConfig.evaluate(item("minecraft:diamond_sword"), true, Via.PLAYER),
+            "两条同为 item 精度 ⇒ 先写的那条胜出");
     }
 
     @Test

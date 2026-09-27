@@ -139,13 +139,28 @@ public final class ActivationRuleConfig {
      * @return 允许还是拒绝
      */
     public static Action evaluate(ItemStack stack, boolean activate, Via via) {
+        // ⭐ 特异性优先：所有命中的规则里，【更精确】的那条胜出
+        //   item(0) > tag(1) > namespace(2)；同等精确时保持「先到先得」（不更新 best）。
+        //   为什么不是纯顺序：纯顺序下，指令【追加】的 allow 永远排在先前的 deny 之后，
+        //   ⇒ 「禁了 #swords、再单独放行某把剑」这种组合根本表达不出来。
+        RuleEntry best = null;
         for (RuleEntry r : RULES) {
             if (!viaMatches(r, via)) continue;
             if (!itemMatches(r, stack)) continue;
-            Action a = activate ? r.activate : r.deactivate;
-            return a != null ? a : defaultAction;
+            if (best == null || specificity(r) < specificity(best)) {
+                best = r;
+            }
         }
-        return defaultAction;
+        if (best == null) return defaultAction;
+        Action a = activate ? best.activate : best.deactivate;
+        return a != null ? a : defaultAction;
+    }
+
+    /** 特异性：数值越小越精确 —— item(0) > tag(1) > namespace(2) */
+    private static int specificity(RuleEntry r) {
+        if (r.itemId != null) return 0;
+        if (r.itemTag != null) return 1;
+        return 2;                                   // namespace
     }
 
     /** {@code via} 省略 ⇒ 仅 player（见类注释）。 */
