@@ -1,16 +1,14 @@
 package com.qiqi.li.living.command;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
-import java.util.concurrent.CompletableFuture;
 
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
-import com.mojang.brigadier.suggestion.Suggestions;
-import com.mojang.brigadier.suggestion.SuggestionsBuilder;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import com.mojang.brigadier.exceptions.DynamicCommandExceptionType;
 
 import com.qiqi.li.living.api.ActivationRuleConfig;
 import com.qiqi.li.living.api.LivingItemActivation;
@@ -18,14 +16,17 @@ import com.qiqi.li.living.api.LivingItemManager;
 
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
-import net.minecraft.commands.SharedSuggestionProvider;
+import net.minecraft.commands.arguments.ResourceOrTagKeyArgument;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import net.neoforged.neoforge.server.command.ModIdArgument;
 
 /**
  * {@code /livingitem activation} —— 活化规则的查看、验证与增删改（D1）。
@@ -34,13 +35,34 @@ import net.neoforged.neoforge.event.RegisterCommandsEvent;
  * 语法以代码为准，导航见 {@code docs/reference/commands.md}，
  * 完整用法见 {@code docs/buffer/activation-rule-design.md}。</p>
  *
- * <p><b>目标语法</b>（三种颗粒度，指令会自动补全）：</p>
+ * <p><b>目标语法</b>（两种参数类型，都由平台注册好、补全与解析都由原版负责）：</p>
  * <ul>
- *   <li>{@code minecraft:chest} —— 单个物品</li>
- *   <li>{@code #minecraft:swords} —— 物品标签（跨模组）</li>
- *   <li>{@code @somemod} —— 整个命名空间</li>
+ *   <li>{@code minecraft:chest} / {@code #minecraft:swords} —— 物品 ID 或标签，
+ *       走 {@code deny} / {@code allow} / {@code remove} 的 {@code target} 参数</li>
+ *   <li>{@code somemod} —— 整个命名空间（某模组的全部物品），
+ *       走 {@code deny-mod} / {@code allow-mod} / {@code remove-mod}</li>
  * </ul>
- * 匹配采用<b>特异性优先</b>（item &gt; tag &gt; namespace），
+ *
+ * <p>⚠️ <b>为什么 {@code target} 必须用 {@link ResourceOrTagKeyArgument} 而不能用
+ * {@code StringArgumentType}</b>（实测结论，勿改回）：</p>
+ *
+ * <p>{@code StringArgumentType} 走 {@code StringReader.readUnquotedString()}，其允许字符集
+ * <b>不含</b> {@code :} {@code #} {@code @}。实测：</p>
+ *
+ * <pre>
+ *   minecraft:chest    -> 只解析出 "minecraft"（卡在 ':'）
+ *   #minecraft:swords  -> 空串
+ *   @somemod           -> 空串
+ * </pre>
+ *
+ * <p>解析成空串后 Brigadier 抛「Expected whitespace to end one argument, but found trailing data」
+ * ⇒ 命令根本执行不到。<br>
+ * 更隐蔽的是：<b>手写 {@code .suggests(...)} 补全不经过 Brigadier 解析</b>，所以现象是
+ * 「Tab 能列出候选、回车却注册失败」——补全在骗人。<br>
+ * 同理 {@code @} 在原版是<b>目标选择器保留前缀</b>（{@code @a} / {@code @p} / {@code @s}…），
+ * 语义上也不该复用；命名空间改用 NeoForge 的 {@link ModIdArgument}（{@code modid} 即物品 namespace）。</p>
+ *
+ * <p>匹配采用<b>特异性优先</b>（item &gt; tag &gt; namespace），
  * 因此后加的精确 allow 能覆盖先前的宽泛 deny，无需关心顺序。
  *
  * <p><b>为什么 {@code test} 要分途径显示</b>（代码读不出这个意图）：
@@ -50,6 +72,25 @@ import net.neoforged.neoforge.event.RegisterCommandsEvent;
  */
 @EventBusSubscriber
 public class LivingItemActivationCommand {
+
+    /**
+     * {@code target} 固定为 ITEM 注册表，{@link ResourceOrTagKeyArgument#getResourceOrTagKey}
+     * 的 cast 必然成功 ⇒ 此异常实际不会触发，仅为满足它的签名要求。
+     */
+    private static final DynamicCommandExceptionType ERROR_BAD_TARGET = new DynamicCommandExceptionType(
+        o -> Component.translatable("command.livingitem.activation_bad_selector"));
+
+    /**
+     * {@code target} 参数类型 —— 单独抽出是为了让测试直接断言<b>生产代码用的就是这个类型</b>，
+     * 而不是在测试里另写一份同构树（那样会漂移到第二份清单）。
+     *
+     * <p>原版 {@link ResourceOrTagKeyArgument} 的 {@code listSuggestions} 走
+     * {@code SharedSuggestionProvider.suggestRegistryElements(..., ElementSuggestionType.ALL, ...)}，
+     * 会同时列举物品 ID 与 {@code #标签} ⇒ 本文件不需要任何手写补全。</p>
+     */
+    public static ResourceOrTagKeyArgument<Item> targetArgument() {
+        return ResourceOrTagKeyArgument.resourceOrTagKey(Registries.ITEM);
+    }
 
     @SubscribeEvent
     public static void onRegisterCommands(RegisterCommandsEvent event) {
@@ -64,23 +105,34 @@ public class LivingItemActivationCommand {
                         .executes(LivingItemActivationCommand::listRules))
                     .then(Commands.literal("test")
                         .executes(LivingItemActivationCommand::testItem))
-                    // ── 增删改：目标是「物品ID / #标签 / @命名空间」，带 Tab 补全 ──
+                    // ── 物品 ID / 标签：解析与补全全部由原版 ResourceOrTagKeyArgument 负责 ──
                     .then(Commands.literal("deny")
-                        .then(Commands.argument("target", StringArgumentType.string())
-                            .suggests(LivingItemActivationCommand::suggestTargets)
+                        .then(Commands.argument("target", targetArgument())
                             .executes(ctx -> setRule(ctx, true, false))
                             .then(Commands.argument("via", StringArgumentType.greedyString())
                                 .executes(ctx -> setRule(ctx, true, false)))))
                     .then(Commands.literal("allow")
-                        .then(Commands.argument("target", StringArgumentType.string())
-                            .suggests(LivingItemActivationCommand::suggestTargets)
+                        .then(Commands.argument("target", targetArgument())
                             .executes(ctx -> setRule(ctx, true, true))
                             .then(Commands.argument("via", StringArgumentType.greedyString())
                                 .executes(ctx -> setRule(ctx, true, true)))))
                     .then(Commands.literal("remove")
-                        .then(Commands.argument("target", StringArgumentType.string())
-                            .suggests(LivingItemActivationCommand::suggestTargets)
+                        .then(Commands.argument("target", targetArgument())
                             .executes(LivingItemActivationCommand::removeRule)))
+                    // ── 整个命名空间（modid）：NeoForge 的 ModIdArgument，补全列出已加载模组 ──
+                    .then(Commands.literal("deny-mod")
+                        .then(Commands.argument("mod", ModIdArgument.modIdArgument())
+                            .executes(ctx -> setModRule(ctx, true, false))
+                            .then(Commands.argument("via", StringArgumentType.greedyString())
+                                .executes(ctx -> setModRule(ctx, true, false)))))
+                    .then(Commands.literal("allow-mod")
+                        .then(Commands.argument("mod", ModIdArgument.modIdArgument())
+                            .executes(ctx -> setModRule(ctx, true, true))
+                            .then(Commands.argument("via", StringArgumentType.greedyString())
+                                .executes(ctx -> setModRule(ctx, true, true)))))
+                    .then(Commands.literal("remove-mod")
+                        .then(Commands.argument("mod", ModIdArgument.modIdArgument())
+                            .executes(LivingItemActivationCommand::removeModRule)))
             )
         );
     }
@@ -160,10 +212,24 @@ public class LivingItemActivationCommand {
         return 1;
     }
 
-    /** 新增 / 更新一条规则（deny / allow 共用）。 */
-    private static int setRule(CommandContext<CommandSourceStack> ctx, boolean activate, boolean allow) {
+    /** 新增 / 更新一条规则（deny / allow 共用）—— 目标是物品 ID 或 #标签。 */
+    private static int setRule(CommandContext<CommandSourceStack> ctx, boolean activate, boolean allow)
+            throws CommandSyntaxException {
+        ResourceOrTagKeyArgument.Result<Item> r =
+            ResourceOrTagKeyArgument.getResourceOrTagKey(ctx, "target", Registries.ITEM, ERROR_BAD_TARGET);
+        // asPrintable() 由原版给出：物品 -> "minecraft:chest"、标签 -> "#minecraft:swords"
+        // ⇒ 与 JSON 侧的选择器文本同形，可直接当规则 key 回写，不必自己拼字符串。
+        return applyRule(ctx, r.asPrintable(), activate, allow);
+    }
+
+    /** 同 {@link #setRule}，但目标是整个命名空间（modid）。 */
+    private static int setModRule(CommandContext<CommandSourceStack> ctx, boolean activate, boolean allow) {
+        return applyRule(ctx, namespaceSelector(ctx), activate, allow);
+    }
+
+    private static int applyRule(CommandContext<CommandSourceStack> ctx, String target,
+            boolean activate, boolean allow) {
         CommandSourceStack source = ctx.getSource();
-        String target = StringArgumentType.getString(ctx, "target");
         if (!ActivationRuleConfig.isValidSelector(target)) {
             source.sendFailure(Component.translatable("command.livingitem.activation_bad_selector"));
             return 0;
@@ -180,10 +246,20 @@ public class LivingItemActivationCommand {
         return 1;
     }
 
-    /** 移除一条规则 */
-    private static int removeRule(CommandContext<CommandSourceStack> ctx) {
+    /** 移除一条规则 —— 目标是物品 ID 或 #标签。 */
+    private static int removeRule(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        ResourceOrTagKeyArgument.Result<Item> r =
+            ResourceOrTagKeyArgument.getResourceOrTagKey(ctx, "target", Registries.ITEM, ERROR_BAD_TARGET);
+        return removeTarget(ctx, r.asPrintable());
+    }
+
+    /** 同 {@link #removeRule}，但目标是整个命名空间（modid）。 */
+    private static int removeModRule(CommandContext<CommandSourceStack> ctx) {
+        return removeTarget(ctx, namespaceSelector(ctx));
+    }
+
+    private static int removeTarget(CommandContext<CommandSourceStack> ctx, String target) {
         CommandSourceStack source = ctx.getSource();
-        String target = StringArgumentType.getString(ctx, "target");
         boolean changed = ActivationRuleConfig.remove(target);
         ActivationRuleConfig.save();
         final String t = target;
@@ -194,6 +270,16 @@ public class LivingItemActivationCommand {
         }
         source.sendFailure(Component.translatable("command.livingitem.activation_remove_none", t));
         return 0;
+    }
+
+    /**
+     * 命名空间的选择器文本 —— {@code @} 前缀只作为<b>规则 key 的内部表示</b>
+     * （{@code ActivationRuleConfig} 靠它区分三种颗粒度，JSON 侧用的是 {@code namespace} 字段），
+     * <b>不是玩家输入语法</b>：玩家不输入 {@code @}，自然也不受
+     * {@code StringArgumentType} 读不进 {@code @} 的影响。
+     */
+    private static String namespaceSelector(CommandContext<CommandSourceStack> ctx) {
+        return "@" + ctx.getArgument("mod", String.class);
     }
 
     /** 解析可选的 via 参数（逗号分隔；空 = 不指定，取缺省仅 player）。 */
@@ -216,48 +302,7 @@ public class LivingItemActivationCommand {
         return out.isEmpty() ? null : out;
     }
 
-    /**
-     * {@code target} 参数的 Tab 补全：按输入前缀提供不同候选 ——
-     * {@code #} 补标签、{@code @} 补命名空间、其余补物品 ID（并提示两种前缀）。
-     */
-    private static CompletableFuture<Suggestions> suggestTargets(
-            CommandContext<CommandSourceStack> ctx, SuggestionsBuilder builder) {
-        String input = builder.getRemaining();
-        String lower = input.toLowerCase(Locale.ROOT);
-
-        if (lower.startsWith("#")) {
-            for (String s : tagIds()) {
-                if (s.toLowerCase(Locale.ROOT).startsWith(lower)) builder.suggest(s);
-            }
-        } else if (lower.startsWith("@")) {
-            for (String ns : namespaces()) {
-                String full = "@" + ns;
-                if (full.toLowerCase(Locale.ROOT).startsWith(lower)) builder.suggest(full);
-            }
-        } else {
-            SharedSuggestionProvider.suggestResource(BuiltInRegistries.ITEM.keySet(), builder);
-            // 提示两种特殊前缀，避免玩家不知道有 tag / namespace 可用
-            builder.suggest("#");
-            builder.suggest("@");
-        }
-        return builder.buildFuture();
-    }
-
-    /** 全部物品标签（带 {@code #} 前缀）。 */
-    private static List<String> tagIds() {
-        List<String> out = new ArrayList<>();
-        BuiltInRegistries.ITEM.getTagNames().forEach(t -> out.add("#" + t.location()));
-        Collections.sort(out);
-        return out;
-    }
-
-    /** 全部命名空间（去重排序）。 */
-    private static List<String> namespaces() {
-        List<String> out = new ArrayList<>();
-        BuiltInRegistries.ITEM.keySet().forEach(id -> {
-            if (!out.contains(id.getNamespace())) out.add(id.getNamespace());
-        });
-        Collections.sort(out);
-        return out;
-    }
+    // ── 补全不需要自己写：ResourceOrTagKeyArgument / ModIdArgument 都自带 listSuggestions ──
+    // （原先这里有一份手写 suggestTargets：它绕过 Brigadier 解析直接塞字符串，
+    //   于是「Tab 能列出候选、回车却注册失败」——坑的根源。见类 javadoc。）
 }

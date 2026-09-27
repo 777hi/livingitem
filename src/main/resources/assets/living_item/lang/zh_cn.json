@@ -209,7 +209,7 @@
   "command.livingitem.activation_test_line": "  §7途径 §f%s§7 → §r%s",
   "command.livingitem.yes": "是",
   "command.livingitem.no": "否",
-  "command.livingitem.activation_bad_selector": "§c目标格式不对：应为 物品ID（minecraft:chest）/ 标签（#minecraft:swords）/ 命名空间（@somemod）§r",
+  "command.livingitem.activation_bad_selector": "§c目标格式不对：应为 物品ID（minecraft:chest）或 标签（#minecraft:swords）；整个模组请用 §f/livingitem activation deny-mod§r",
   "command.livingitem.activation_added": "§a已新增规则§r：§e%s§r（%s=%s）",
   "command.livingitem.activation_overrode": "§6已覆盖已有规则§r：§e%s§r（%s=%s）",
   "command.livingitem.activation_removed": "§a已移除规则§r：§e%s§r",
