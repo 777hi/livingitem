@@ -41,7 +41,12 @@ import net.neoforged.neoforge.server.command.ModIdArgument;
  *       走 {@code deny} / {@code allow} / {@code remove} 的 {@code target} 参数</li>
  *   <li>{@code somemod} —— 整个命名空间（某模组的全部物品），
  *       走 {@code deny-mod} / {@code allow-mod} / {@code remove-mod}</li>
+ *   <li><b>不带任何参数</b>（{@code deny} / {@code allow} / {@code remove} 单独执行）——
+ *       对<b>手持物品</b>生效，省得配置者手打完整 ID（与 {@code test} 共用 {@link #heldItem}）</li>
  * </ul>
+ *
+ * <p>⚠️ 手持分支<b>不接受 {@code via}</b>（无参数可带），一律取 {@code via} 的缺省值
+ * （仅 {@code player}）；需要精细控制途径就用完整的 {@code deny <target> <via>} 形式。</p>
  *
  * <p>⚠️ <b>为什么 {@code target} 必须用 {@link ResourceOrTagKeyArgument} 而不能用
  * {@code StringArgumentType}</b>（实测结论，勿改回）：</p>
@@ -106,17 +111,22 @@ public class LivingItemActivationCommand {
                     .then(Commands.literal("test")
                         .executes(LivingItemActivationCommand::testItem))
                     // ── 物品 ID / 标签：解析与补全全部由原版 ResourceOrTagKeyArgument 负责 ──
+                    // 每个动词都有【不带参数】的分支：直接对【手持】物品生效，
+                    // 省得配置者手打完整 ID（与 test 子命令同一套取物品逻辑，见 heldItem）。
                     .then(Commands.literal("deny")
+                        .executes(ctx -> setHeldRule(ctx, true, false))
                         .then(Commands.argument("target", targetArgument())
                             .executes(ctx -> setRule(ctx, true, false))
                             .then(Commands.argument("via", StringArgumentType.greedyString())
                                 .executes(ctx -> setRule(ctx, true, false)))))
                     .then(Commands.literal("allow")
+                        .executes(ctx -> setHeldRule(ctx, true, true))
                         .then(Commands.argument("target", targetArgument())
                             .executes(ctx -> setRule(ctx, true, true))
                             .then(Commands.argument("via", StringArgumentType.greedyString())
                                 .executes(ctx -> setRule(ctx, true, true)))))
                     .then(Commands.literal("remove")
+                        .executes(LivingItemActivationCommand::removeHeldRule)
                         .then(Commands.argument("target", targetArgument())
                             .executes(LivingItemActivationCommand::removeRule)))
                     // ── 整个命名空间（modid）：NeoForge 的 ModIdArgument，补全列出已加载模组 ──
@@ -165,29 +175,11 @@ public class LivingItemActivationCommand {
         return 1;
     }
 
-    /**
-     * 判定【手持】物品能否被活化，并按途径分行显示结果。
-     *
-     * <p>⭐ 只取主手 → 副手，<b>不要</b>取 {@code containerMenu.getCarried()}：
-     * 能输入指令 ⇒ 玩家必然【不在】容器界面（容器界面里打不开聊天输入），
-     * 此时 carried 恒为空 ⇒ 用它永远报「没拿物品」。
-     * carried 只适用于活化按钮（它只存在于容器界面内）—— 两个入口场景不同。</p>
-     */
+    /** 判定【手持】物品能否被活化，并按途径分行显示结果。 */
     static int testItem(CommandContext<CommandSourceStack> ctx) {
         CommandSourceStack source = ctx.getSource();
-        var player = source.getPlayer();
-        if (player == null) {
-            source.sendFailure(Component.translatable("command.livingitem.activation_need_player"));
-            return 0;
-        }
-        ItemStack target = player.getMainHandItem();
-        if (target.isEmpty()) {
-            target = player.getOffhandItem();
-        }
-        if (target.isEmpty()) {
-            source.sendFailure(Component.translatable("command.livingitem.activation_no_item"));
-            return 0;
-        }
+        ItemStack target = heldItem(source);
+        if (target.isEmpty()) return 0;                    // 提示已在 heldItem 内发出
 
         ResourceLocation id = BuiltInRegistries.ITEM.getKey(target.getItem());
         String name = target.getItem().getName(target).getString();
@@ -280,6 +272,46 @@ public class LivingItemActivationCommand {
      */
     private static String namespaceSelector(CommandContext<CommandSourceStack> ctx) {
         return "@" + ctx.getArgument("mod", String.class);
+    }
+
+    /** {@code deny} / {@code allow} 不带参数时：直接对【手持】物品生效。 */
+    private static int setHeldRule(CommandContext<CommandSourceStack> ctx, boolean activate, boolean allow) {
+        ItemStack held = heldItem(ctx.getSource());
+        if (held.isEmpty()) return 0;
+        // 不走 asPrintable()：这里没有解析过程，直接问注册表要 ID 文本即可
+        return applyRule(ctx, BuiltInRegistries.ITEM.getKey(held.getItem()).toString(), activate, allow);
+    }
+
+    /** {@code remove} 不带参数时：移除【手持】物品的规则。 */
+    private static int removeHeldRule(CommandContext<CommandSourceStack> ctx) {
+        ItemStack held = heldItem(ctx.getSource());
+        if (held.isEmpty()) return 0;
+        return removeTarget(ctx, BuiltInRegistries.ITEM.getKey(held.getItem()).toString());
+    }
+
+    /**
+     * 取【手持】物品（主手 → 副手）—— {@code test} 与三个不带参数的动词共用。
+     *
+     * <p>⭐ <b>只取主手 / 副手，不要取 {@code containerMenu.getCarried()}</b>：
+     * 能输入指令 ⇒ 玩家必然【不在】容器界面（容器界面里打不开聊天输入），
+     * 此时 carried 恒为空 ⇒ 用它永远报「没拿物品」。
+     * carried 只适用于活化按钮（它只存在于容器界面内）—— <b>两个入口场景不同</b>，勿混用。</p>
+     *
+     * @return 手持物品；{@link ItemStack#EMPTY} = 拿不到（失败提示已发给玩家，调用方直接 return 0）
+     */
+    private static ItemStack heldItem(CommandSourceStack source) {
+        var player = source.getPlayer();
+        if (player == null) {
+            source.sendFailure(Component.translatable("command.livingitem.activation_need_player"));
+            return ItemStack.EMPTY;
+        }
+        ItemStack held = player.getMainHandItem();
+        if (held.isEmpty()) held = player.getOffhandItem();
+        if (held.isEmpty()) {
+            source.sendFailure(Component.translatable("command.livingitem.activation_no_item"));
+            return ItemStack.EMPTY;
+        }
+        return held;
     }
 
     /** 解析可选的 via 参数（逗号分隔；空 = 不指定，取缺省仅 player）。 */
