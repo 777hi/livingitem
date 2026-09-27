@@ -41,6 +41,14 @@
 | `minecraft:chest` | 单个物品 | `deny minecraft:chest` |
 | `#minecraft:swords` | 物品标签（**跨模组**） | `deny #minecraft:swords` |
 | `somemod` | 整个命名空间（某模组的全部物品） | `deny-mod somemod` |
+| **不带参数** | **手持物品**（主手 → 副手） | `deny` |
+
+> 不带参数的写法不接受 `via`（无参数可带），一律取 `via` 缺省值（仅 `player`）；
+> 要精细控制途径就用完整的 `deny <target> <via>`。
+
+> ⚠️ **已知缺口**：以上动词都只能设置「**活化**」动作 —— **没有任何指令能设置
+> 「取消活化」的规则**（只能手写 JSON 的 `deactivate` 字段）。
+> 详见 [`activation-rule-design.md`](../buffer/activation-rule-design.md) §11.1。
 
 **Tab 补全全部由平台提供**：`target` 用原版 `ResourceOrTagKeyArgument`（列举物品 ID 与 `#标签`），
 `*-mod` 用 NeoForge `ModIdArgument`（列举已加载模组）。
@@ -61,6 +69,13 @@ item（1 个物品，最精确）> tag（一类）> namespace（整个模组，�
 ```
 
 ⇒ **后加的精确 `allow` 能覆盖先前的宽泛 `deny`，不用关心顺序**。
+
+> ⚠️ **但 `via` 必须对齐** —— 这是最容易踩的坑：
+> `via` 省略 = **仅 `player`**。若 `deny` 覆盖了 `external`（任务奖励）而 `allow` 没带，
+> 则任务奖励途径**根本不会命中那条 `allow`**。
+> 在 `default: allow` 下看不出问题（落回默认仍是放行），
+> 但在 **`default: deny`（白名单模式）下会静默变成拒绝**。
+> ⇒ 要放行任务奖励，必须显式写 `allow <target> external`。
 （若按纯顺序匹配，指令追加的规则永远排在后面，「禁了 #swords 再单独放行一把剑」就表达不出来。）
 
 ## 约定

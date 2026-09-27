@@ -234,6 +234,7 @@ public static boolean hasAnyFunctionFor(ItemStack stack) {
 | **Q-D1-4** | 是否同时提供 Java 谓词 API？ | 提供 / 只做 JSON | **只做 JSON**（第一版）—— 服务对象是配置者；addon 作者将来若要，可再加，且不会与 JSON 冲突（二者 OR） |
 | **Q-D1-5** | `via` 省略时的语义？ | ① 缺省 = 全部途径 ② 缺省 = 仅 `player` | **②** —— 与功能目的（只封玩家途径）一致；① 会让配置者**误禁掉自己的任务奖励**，且这正是最容易写出的形式 |
 | **Q-D1-6** | `ensureInitialized()`（§2.4）是否并入 D1？ | 并入 / 单独做 | **单独做** —— 它是「任务奖励发活箱子」的**正确性前提**，与黑名单无关；改动面也很小（1 个默认方法 + 活箱子 1 处实现） |
+| **Q-D1-7** | 指令侧要不要补 **`deactivate` 动作**的入口？ | ① `deny <target> deactivate` ② `deny-deactivate <target>` ③ 暂不补 | **③ 暂不补**（2026-09-28 用户定）—— 详见 §11 已知缺口；若将来要补，倾向 **②**（与 `*-mod` 同模式，且 `via` 已是 greedyString，① 会让解析顺序变得不好解释） |
 
 ---
 
@@ -265,3 +266,39 @@ ls src/main/resources/assets/living_item/*.json
 | 2026-09-27 | ✅ **清掉熔炉的死代码初始化**：原为 `setData(…, LIVING_FURNACE_DATA.DEFAULT, LIVING_FURNACE_DATA.DEFAULT)`，因**实参 == 默认值**，`setData` 恒走 `remove` 分支 ⇒ **从未生效过**（活熔炉能工作全靠 tick 惰性兜底）。应是某次组件体系重构后的遗留。<br>顺带消除一个潜在数据丢失：对**已带数据的**活熔炉再调 `setLiving(true)` 会清掉它的数据。360 测试全绿。 |
 | 2026-09-27 | ✅ 给活箱子的初始化补上「**为什么它特殊**」的注释 —— 原代码无任何解释，看起来像另一条冗余，容易被后人误删 |
 | 2026-09-28 | ✅ **修掉「指令能补全却注册失败」**：`target` 原为 `StringArgumentType.string()`，而它走 `readUnquotedString()`、允许字符集**不含** `:` `#` `@` ⇒ `minecraft:chest` 只解析出 `minecraft`、`#minecraft:swords` 与 `@somemod` 解析成**空串**，Brigadier 随后抛「Expected whitespace to end one argument」——**整个 target 参数从来不可用**（不只 `#@`）。<br>改为原版 `ResourceOrTagKeyArgument`（解析+列举全包、已注册 ArgumentTypeInfo），`asPrintable()` 与 JSON 侧选择器同形可直接回写；命名空间改用 NeoForge `ModIdArgument` 走 `deny-mod`/`allow-mod`/`remove-mod` 子命令（`@` 在原版是目标选择器保留前缀，不再复用，仅作为 `ActivationRuleConfig` 内部 key 表示）。手写补全一并删除。<br>新增 `ActivationTargetParsingTest`（4 项）锁住契约。语法见 [`commands.md`](../reference/commands.md)。 |
+
+---
+
+## 11. 已知缺口（**未补**，2026-09-28 记录）
+
+### 11.1 指令侧无法设置 `deactivate` 动作
+
+**现象**：`deny` / `allow` / `deny-mod` / `allow-mod` 全都只能设置 `activate` 动作 ——
+命令树里 10 处 `setRule` / `setHeldRule` / `setModRule` 调用的 `activate` 参数**全是 `true`**
+⇒ **没有任何指令能设置「取消活化」的规则**。
+
+**但配置层是支持的**：
+
+```java
+// ActivationRuleConfig.java:247
+if (activate) r.activate = action; else r.deactivate = action;
+```
+
+JSON 侧也已有 `deactivate` 字段（§3）。
+
+⇒ 属于「**配置层做了、指令层漏了**」，与 §1 记录的 2026-09-27 用户要求
+（「活化和取消活化可以单独设黑名单」）不一致。
+
+**当前决定：暂不补**（Q-D1-7）。而且理由比「CLI 做不到」更根本：
+
+> **「取消活化」这个动作本身的游戏机制尚未实现**（2026-09-28 用户澄清）
+> ⇒ 即使补了指令入口，也没有可约束的行为。
+
+> ⚠️ **语义边界（勿混为一谈）**：
+> `allow` / `deny` 约束的是【**活化**】动作 —— 黑名单 = 禁止活化，`allow` = 在黑名单中放行；
+> 而 `deactivate` 是另一个**独立动作**（能否取消活化），与 `allow` / `deny` 无关。
+> `allow` **不是**「允许取消活化」的意思。
+
+> ⚠️ 为什么单独记一节而不是只留在 §7：
+> §7 是「拍板后再写代码」的待决池，而这一条**已经拍板为不做** ——
+> 它是「已知未完成」，性质不同。留在 §7 会让人误以为还在等决策。
