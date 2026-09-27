@@ -339,7 +339,7 @@ tick N:
 > ⚠️ **衍生风险：逐圈外扩（未实测；方向 A 后理论上已封死）**。被钉住的区块会触发
 > `ChunkEvent.Load` → 进本类缓存 → 若它里面也有需要读邻居的活物品，就会读**更外一圈**。
 > 但被钉住的是 **33 圈（不 ticking）** ⇒ 方向 A 下不再被处理 ⇒ **不再读它的邻居 ⇒ 链条断掉**。
-> 验证方法：玩家静止不动反复执行 `/living_monitor cache`，观察 `loaded区块` 是否持续增长
+> 验证方法：玩家静止不动反复执行 `/livingitem debug cache`，观察 `loaded区块` 是否持续增长
 > 或明显超过视距基准（见 §3.2「可观测性」）。
 
 **发生概率 = 100%**（2026-09-18 结论，更正先前"小几率"的判断）：加载区边界随玩家移动扫过世界，
@@ -378,7 +378,7 @@ tick N:
 >   BLOCK_TICKING 前返回 false ⇒ 刚加载的区块可能晚 1 tick 才开始工作。
 >   ⚠️ **扫描（`flushPendingRescans`）不做此过滤** —— 见 §3.2「两条独立的判据」。
 > - ✅ **可观测性已实施**：`ContainerChunkCache.describeCacheStats(ServerLevel)` 输出
->   `缓存区块 / 可处理 / loaded区块 / 视距基准`；调试命令 **`/living_monitor cache`**
+>   `缓存区块 / 可处理 / loaded区块 / 视距基准`；调试命令 **`/livingitem debug cache`**
 >   （同时写日志）。这是判断"钉住 / 外扩"的**唯一直接观测量**。
 > - ⏳ **方向 B（爆炸）待定口径** —— 见 §3.2.2。
 > - ⏳ **方向 C（备选，未采用）**：逐处加 `isLoaded` 守卫，或传输层改用 `BlockCapabilityCache`
@@ -1717,7 +1717,7 @@ ItemTooltipEvent（NeoForge 客户端事件，见 client/render/LivingItemToolti
 | `FilterData.java` | `transfer/` | 传输过滤规则数据（跨领域共享） |
 | `PerfMetrics.java` | `perf/` | 性能监控 |
 | `ContainerMonitor.java` | `debug/` | 容器监控系统，检测物品复制/丢失/活物品覆盖 |
-| `ContainerMonitorCommand.java` | `debug/` | `/living_monitor` 命令注册 |
+| `ContainerMonitorCommand.java` | `debug/` | `/livingitem debug` 命令注册 |
 | `ContainerFluidData.java` | `domain/water/` | 容器流体数据，BFS 水流蔓延 + 物品推动 |
 | `LivingWaterBucketFunction.java` | `domain/water/` | 活水桶功能类，瞬态数据服务端缓存优化 |
 | `TransferPipeline.java` | `domain/hopper/` | 统一传输入口，含容器内传输的 `Container` 接口槽位过滤，复用 `CrossContainerTransfer.getNeighborContainer` |

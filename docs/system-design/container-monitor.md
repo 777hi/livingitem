@@ -16,10 +16,10 @@
 
 | 命令 | 权限 | 说明 |
 |------|------|------|
-| `/living_monitor on` | OP (level 2) | 全局开启监控 |
-| `/living_monitor off` | OP (level 2) | 关闭监控 |
-| `/living_monitor status` | OP (level 2) | 查看当前状态 |
-| `/living_monitor dump_inventory` | OP (level 2) | 转储玩家背包完整状态 |
+| `/livingitem debug monitor on` | OP (level 2) | 全局开启监控 |
+| `/livingitem debug monitor off` | OP (level 2) | 关闭监控 |
+| `/livingitem debug monitor status` | OP (level 2) | 查看当前状态 |
+| `/livingitem debug dump_inventory` | OP (level 2) | 转储玩家背包完整状态 |
 
 ### 2.2 日志文件
 
@@ -144,7 +144,7 @@ public static void processContext(ContainerContext context, Level level) {
 | 文件 | 职责 |
 |------|------|
 | `ContainerMonitor.java` | 监控核心：快照捕获、差异计算、异常报告、日志写入、聊天栏广播 |
-| `ContainerMonitorCommand.java` | `/living_monitor` 命令注册与处理 |
+| `ContainerMonitorCommand.java` | `/livingitem debug` 命令注册与处理 |
 | `ContainerLivingItemHandler.java` | 集成点：beforeProcess / afterProcess 调用 |
 
 ## 9. 已发现并修复的 Bug
