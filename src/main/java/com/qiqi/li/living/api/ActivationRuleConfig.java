@@ -25,7 +25,7 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 
 /**
- * 活化规则配置 —— 允许整合包作者 / 服务器主 <b>不写一行 Java</b> 控制哪些物品可被活化。
+ * 活化规则配置 —— 允许配置者（服务器主 / 整合包作者）<b>不写一行 Java</b> 控制哪些物品可被活化。
  *
  * <h3>三层来源（优先级从高到低）</h3>
  * <ol>
@@ -53,7 +53,7 @@ import net.minecraft.world.item.ItemStack;
  *
  * <p>⚠️ <b>{@code via} 省略时 = 仅 {@code player}</b>（不是全部途径）——
  * 这是刻意的：本功能的目的就是「只封玩家自己动手活化」，若缺省是全部途径，
- * 整合包作者一行 deny 就会误禁掉<b>自己的任务奖励发放渠道</b>。见设计稿 Q-D1-5。</p>
+ * 配置者一行 deny 就会误禁掉<b>自己主动发放活物品的渠道</b>。见设计稿 Q-D1-5。</p>
  *
  * <p>设计稿见 {@code docs/buffer/activation-rule-design.md}；
  * 模式照抄 {@code ContainerRuleConfig}（幂等 load / 显式 UTF-8 / malformed 跳过不崩）。</p>

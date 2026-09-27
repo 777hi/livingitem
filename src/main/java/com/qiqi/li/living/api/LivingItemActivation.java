@@ -12,7 +12,7 @@ import net.minecraft.world.item.ItemStack;
  *   <caption>途径与是否受约束</caption>
  *   <tr><th>途径</th><th>入口</th><th>受约束？</th></tr>
  *   <tr><td>{@link Via#PLAYER}</td><td>玩家点活按钮（{@code LivingTagPacket}）</td><td>✅ 是（本功能要封的就是它）</td></tr>
- *   <tr><td>{@link Via#EXTERNAL}</td><td>任务奖励 / 命令给予 / 掉落</td><td>❌ 否 —— <b>这正是整合包作者的发放渠道</b></td></tr>
+ *   <tr><td>{@link Via#EXTERNAL}</td><td>任务奖励 / 命令给予 / 掉落</td><td>❌ 否 —— <b>这是配置者主动发放活物品的渠道</b></td></tr>
  *   <tr><td>{@link Via#INTERNAL}</td><td>模组内部产出（活耕地、活地图）</td><td>❌ 否 —— 禁了功能就坏了</td></tr>
  * </table>
  *

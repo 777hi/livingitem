@@ -64,7 +64,7 @@ class ActivationRuleConfigTest {
             ActivationRuleConfig.evaluate(item("minecraft:bedrock"), true, Via.PLAYER));
         assertEquals(Action.ALLOW,
             ActivationRuleConfig.evaluate(item("minecraft:bedrock"), true, Via.EXTERNAL),
-            "省略 via 的 deny 规则绝不能波及任务奖励/命令给予 —— 那是整合包作者的发放渠道");
+            "省略 via 的 deny 规则绝不能波及任务奖励/命令给予 —— 那是配置者主动发放活物品的渠道");
     }
 
     @Test

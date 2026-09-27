@@ -196,7 +196,7 @@
   "command.livingitem.export_empty": "§7No rules to export (registry is empty)§r",
   "command.livingitem.export_failed": "§cExport failed, see log for details§r",
   "livingitem.activation.deny_unclaimed": "§cThis item has no living-item function behind it; activating it would only make it untransportable/unsmeltable, so it was blocked§r",
-  "livingitem.activation.deny_rule": "§cThis item is blocked from activation by a modpack rule§r",
+  "livingitem.activation.deny_rule": "§cThis item cannot be activated§r",
   "livingitem.activation.verdict.allow": "§aAllowed§r",
   "livingitem.activation.verdict.deny_rule": "§cDenied by rule§r",
   "livingitem.activation.verdict.deny_unclaimed": "§cNo function claims it§r",

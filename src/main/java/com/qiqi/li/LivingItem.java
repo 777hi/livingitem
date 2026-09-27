@@ -128,7 +128,7 @@ public class LivingItem {
         // 加载容器规则：模组自带（项目级）→ 玩家本地（配置目录）
         ContainerRuleConfig.load();
 
-        // 活化规则：允许整合包作者不写 Java 就控制哪些物品可被活化（D1）
+        // 活化规则：允许配置者（服务器主 / 整合包作者）不写 Java 就控制哪些物品可被活化（D1）
         ActivationRuleConfig.init(net.neoforged.fml.loading.FMLPaths.CONFIGDIR.get());
         ActivationRuleConfig.load();
 

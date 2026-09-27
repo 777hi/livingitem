@@ -26,7 +26,7 @@ import net.neoforged.neoforge.event.RegisterCommandsEvent;
  *   /livingitem activation test    — ★ 判定手持物品能否被活化，并分途径显示结果
  * </pre>
  *
- * <p>{@code test} 是这个功能的重点：整合包作者改完 JSON 能<b>立刻</b>验证，
+ * <p>{@code test} 是这个功能的重点：配置者改完 JSON 能<b>立刻</b>验证，
  * 而不是靠猜。它把判定结果按三个途径分别列出 —— 因为「玩家能不能点活」
  * 和「任务奖励能不能发」是<b>两件事</b>（见 {@link LivingItemActivation.Via}）。
  */
@@ -71,7 +71,7 @@ public class LivingItemActivationCommand {
     /**
      * 判定手持物品能否被活化，并分途径显示结果。
      *
-     * <p>为什么分途径：整合包作者的典型配置是「禁玩家点活、但用任务奖励发放」，
+     * <p>为什么分途径：典型的配置场景是「禁玩家点活、但用任务奖励发放」，
      * 只给一个总判定会让他无法确认自己的配置是否生效。
      */
     static int testItem(CommandContext<CommandSourceStack> ctx) {

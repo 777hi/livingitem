@@ -196,7 +196,7 @@
   "command.livingitem.export_empty": "§7没有可导出的规则（注册表为空）§r",
   "command.livingitem.export_failed": "§c导出失败，请查看日志§r",
   "livingitem.activation.deny_unclaimed": "§c该物品没有对应的活物品功能，活化它只会让它无法被传输/熔炼，因此已阻止§r",
-  "livingitem.activation.deny_rule": "§c该物品已被整合包规则禁止活化§r",
+  "livingitem.activation.deny_rule": "§c该物品无法被活化§r",
   "livingitem.activation.verdict.allow": "§a允许§r",
   "livingitem.activation.verdict.deny_rule": "§c规则禁止§r",
   "livingitem.activation.verdict.deny_unclaimed": "§c无功能认领§r",
