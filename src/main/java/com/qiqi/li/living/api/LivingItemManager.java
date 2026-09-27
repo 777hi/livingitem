@@ -244,13 +244,6 @@ public class LivingItemManager {
                             .networkSynchronized(LivingCopperSignalData.STREAM_CODEC)
                             .build());
 
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<com.qiqi.li.living.domain.power.LivingWaxedCutData>> LIVING_WAXED_CUT_DATA =
-            DATA_COMPONENT_TYPES.register("living_waxed_cut_data", () ->
-                    DataComponentType.<com.qiqi.li.living.domain.power.LivingWaxedCutData>builder()
-                            .persistent(com.qiqi.li.living.domain.power.LivingWaxedCutData.CODEC)
-                            .networkSynchronized(com.qiqi.li.living.domain.power.LivingWaxedCutData.STREAM_CODEC)
-                            .build());
-
     public static final DeferredHolder<DataComponentType<?>, DataComponentType<com.qiqi.li.living.domain.power.LivingWaxedChiseledData>> LIVING_WAXED_CHISELED_DATA =
             DATA_COMPONENT_TYPES.register("living_waxed_chiseled_data", () ->
                     DataComponentType.<com.qiqi.li.living.domain.power.LivingWaxedChiseledData>builder()
@@ -401,42 +394,26 @@ public class LivingItemManager {
     /**
      * 清除活物品的所有功能数据。
      *
-     * <p><b>注意：</b>新增 {@link LivingItemFunction} 时，如果该功能有自己的
-     * {@link net.minecraft.core.component.DataComponentType}，必须在此方法中
-     * 添加对应的 {@code stack.remove()} 调用，否则旧数据会残留在物品上。</p>
+     * <p>每个 {@link LivingItemFunction} 通过 {@link LivingItemFunction#getOwnedComponentTypes()}
+     * <b>自声明</b>它挂到物品上的 DataComponent，本方法遍历统一清除。
+     * 因此<b>新增活物品不再需要修改此处</b>——第三方 addon 也就不必 fork 本仓库。
+     *
+     * <p>⚠️ 新增带了 DataComponent 的功能时，<b>必须</b>在自己的 Function 里覆盖
+     * {@code getOwnedComponentTypes()} 列全组件；漏列会让该组件在取消活化后
+     * 变成<b>孤儿数据</b>（组件还在、但无人认领），再次活化时会读到脏旧值。
+     *
+     * <p>{@code IS_LIVING} 属于框架本身、不属于任何功能，故单独清除。
+     * 清除范围是<b>所有已注册功能</b>（而非仅适用于该物品的功能），
+     * 以便连带清掉残留的历史数据。
      */
     public static void clearLivingData(ItemStack stack) {
         stack.remove(IS_LIVING.value());
-        stack.remove(LIVING_TNT_DATA.value());
-        stack.remove(LIVING_WATER_BUCKET_DATA.value());
-        stack.remove(LIVING_WATER_WHEEL_DATA.value());
-        stack.remove(LIVING_FURNACE_DATA.value());
-        stack.remove(LIVING_FURNACE_BURNING.value());
-        stack.remove(LIVING_HOPPER_DATA.value());
-        stack.remove(LIVING_HOPPER_FILTER.value());
-        stack.remove(LIVING_ENDER_CHEST_DATA.value());
-        stack.remove(LIVING_REDSTONE_DATA.value());
-        stack.remove(LIVING_REDSTONE_TORCH_DATA.value());
-        stack.remove(LIVING_BUTTON_DATA.value());
-        stack.remove(LIVING_LEVER_DATA.value());
-        stack.remove(LIVING_REDSTONE_LAMP_DATA.value());
-        stack.remove(LIVING_REPEATER_DATA.value());
-        stack.remove(LIVING_COMPARATOR_DATA.value());
-        stack.remove(LIVING_CUT_COPPER_DATA.value());
-        stack.remove(LIVING_GRATE_DATA.value());
-        stack.remove(LIVING_COPPER_BULB_DATA.value());
-        stack.remove(LIVING_COPPER_SIGNAL.value());
-        stack.remove(LIVING_WAXED_CUT_DATA.value());
-        stack.remove(LIVING_WAXED_CHISELED_DATA.value());
-        stack.remove(LIVING_GENERATOR_DATA.value());
-        stack.remove(LIVING_WAXED_BULB_DATA.value());
-        stack.remove(FARMLAND_PLANT.value());
-        stack.remove(LIVING_FARMLAND_MOIST.value());
-        stack.remove(LIVING_TOOL_MEMORY.value());
-        stack.remove(LIVING_TOOL_PROGRESS.value());
-        stack.remove(LIVING_TOOL_DIG_TICKS.value());
-        stack.remove(LIVING_TOOL_LAST_ACTION.value());
-        stack.remove(LIVING_TOOL_OWNER.value());
+
+        for (LivingItemFunction func : FUNCTIONS) {
+            for (DataComponentType<?> type : func.getOwnedComponentTypes()) {
+                stack.remove(type);
+            }
+        }
     }
 
     /** 切换活化状态（不记录主人）。 */
@@ -455,12 +432,17 @@ public class LivingItemManager {
             if (owner != null) {
                 setToolOwner(stack, owner);
             }
+            // ⚠️ 唯一需要【显式初始化】的活物品 —— 活箱子用的是**原版** CONTAINER 组件，
+            //    而不是模组自有的 LIVING_*_DATA。区别在于：
+            //      自有组件 → getData(…, DEFAULT) 有兜底 ⇒ 缺失也能 tick（惰性创建）
+            //      原版组件 → 没有"默认值"这回事，缺失即 null
+            //    而 LivingChestFunction#hasStorage() 判 `get(CONTAINER) != null` ⇒
+            //    缺失会让活箱子**静默失效**（存/取、配方书、tooltip 全废，8 处调用点）。
+            //    ⇒ 外部途径（任务奖励 / 命令给予）拿到的活箱子同样必须补这一步，
+            //       统一收口见 LivingItemFunction#ensureInitialized 的设计稿。
             if (stack.is(Items.CHEST) && !stack.has(net.minecraft.core.component.DataComponents.CONTAINER)) {
                 stack.set(net.minecraft.core.component.DataComponents.CONTAINER,
                     net.minecraft.world.item.component.ItemContainerContents.EMPTY);
-            }
-            if (stack.is(Items.FURNACE)) {
-                setData(stack, LIVING_FURNACE_DATA.value(), LivingFurnaceData.DEFAULT, LivingFurnaceData.DEFAULT);
             }
         } else {
             clearLivingData(stack);
@@ -780,17 +762,6 @@ public class LivingItemManager {
 
     public static LivingGrateData getGrateData(ItemStack stack) {
         return getData(stack, LIVING_GRATE_DATA.value(), LivingGrateData.DEFAULT);
-    }
-
-    public static com.qiqi.li.living.domain.power.LivingWaxedCutData getWaxedCutData(ItemStack stack) {
-        return getData(stack, LIVING_WAXED_CUT_DATA.value(),
-                com.qiqi.li.living.domain.power.LivingWaxedCutData.DEFAULT);
-    }
-
-    public static void setWaxedCutData(ItemStack stack,
-                                       com.qiqi.li.living.domain.power.LivingWaxedCutData data) {
-        setData(stack, LIVING_WAXED_CUT_DATA.value(), data,
-                com.qiqi.li.living.domain.power.LivingWaxedCutData.DEFAULT);
     }
 
     public static com.qiqi.li.living.domain.power.LivingWaxedChiseledData getWaxedChiseledData(ItemStack stack) {

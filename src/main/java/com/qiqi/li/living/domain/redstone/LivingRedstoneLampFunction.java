@@ -36,6 +36,11 @@ public class LivingRedstoneLampFunction implements LivingItemFunction, HasContai
     }
 
     @Override
+    public Set<DataComponentType<?>> getOwnedComponentTypes() {
+        return Set.of(LivingItemManager.LIVING_REDSTONE_LAMP_DATA.value());
+    }
+
+    @Override
     public Set<DataComponentType<?>> getIgnoredComponentTypes() {
         return Set.of();
     }

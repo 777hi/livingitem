@@ -39,6 +39,16 @@ public class LivingCopperFunction implements LivingItemFunction, HasContainerDat
     }
 
     @Override
+    public Set<DataComponentType<?>> getOwnedComponentTypes() {
+        return Set.of(
+            LivingItemManager.LIVING_CUT_COPPER_DATA.value(),
+            LivingItemManager.LIVING_GRATE_DATA.value(),
+            LivingItemManager.LIVING_COPPER_BULB_DATA.value(),
+            LivingItemManager.LIVING_COPPER_SIGNAL.value()
+        );
+    }
+
+    @Override
     public Set<DataComponentType<?>> getIgnoredComponentTypes() {
         return Set.of();
     }

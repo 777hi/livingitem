@@ -354,6 +354,11 @@ public class LivingHopperFunction implements LivingItemFunction {
     }
 
     @Override
+    public Set<DataComponentType<?>> getOwnedComponentTypes() {
+        return Set.of(LivingItemManager.LIVING_HOPPER_DATA.value(), LivingItemManager.LIVING_HOPPER_FILTER.value());
+    }
+
+    @Override
     public Set<DataComponentType<?>> getIgnoredComponentTypes() {
         // 过滤链是容器环境的派生数据（同一容器里两个漏斗的规则必然不同），
         // 不忽略会破坏漏斗堆叠；堆叠合并后下一 tick 由快照重建自愈

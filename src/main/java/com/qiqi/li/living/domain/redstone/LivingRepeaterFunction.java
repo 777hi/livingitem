@@ -39,6 +39,11 @@ public class LivingRepeaterFunction implements LivingItemFunction, HasDirection,
     }
 
     @Override
+    public Set<DataComponentType<?>> getOwnedComponentTypes() {
+        return Set.of(LivingItemManager.LIVING_REPEATER_DATA.value());
+    }
+
+    @Override
     public Set<DataComponentType<?>> getIgnoredComponentTypes() {
         return Set.of();
     }

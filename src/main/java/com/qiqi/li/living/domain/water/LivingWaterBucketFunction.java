@@ -140,6 +140,11 @@ public class LivingWaterBucketFunction implements LivingItemFunction, HasContain
     }
 
     @Override
+    public Set<DataComponentType<?>> getOwnedComponentTypes() {
+        return Set.of(LivingItemManager.LIVING_WATER_BUCKET_DATA.value());
+    }
+
+    @Override
     public Set<DataComponentType<?>> getIgnoredComponentTypes() {
         return Set.of();
     }

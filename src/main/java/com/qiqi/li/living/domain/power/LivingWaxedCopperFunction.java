@@ -6,7 +6,9 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import net.minecraft.ChatFormatting;
+import net.minecraft.core.component.DataComponentType;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -67,6 +69,15 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
     @Override
     public String getFunctionId() {
         return ID;
+    }
+
+    @Override
+    public Set<DataComponentType<?>> getOwnedComponentTypes() {
+        return Set.of(
+            LivingItemManager.LIVING_WAXED_CHISELED_DATA.value(),
+            LivingItemManager.LIVING_GENERATOR_DATA.value(),
+            LivingItemManager.LIVING_WAXED_BULB_DATA.value()
+        );
     }
 
     @Override

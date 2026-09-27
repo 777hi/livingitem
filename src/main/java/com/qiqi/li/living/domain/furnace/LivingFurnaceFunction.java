@@ -442,6 +442,11 @@ public class LivingFurnaceFunction implements LivingItemFunction, HasDirection {
     }
 
     @Override
+    public Set<DataComponentType<?>> getOwnedComponentTypes() {
+        return Set.of(LivingItemManager.LIVING_FURNACE_DATA.value(), LivingItemManager.LIVING_FURNACE_BURNING.value());
+    }
+
+    @Override
     public Set<DataComponentType<?>> getIgnoredComponentTypes() {
         // 燃烧标志是图标用的瞬态状态，两个不同燃烧状态的熔炉仍可堆叠
         return Set.of(LivingItemManager.LIVING_FURNACE_BURNING.value());

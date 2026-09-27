@@ -73,6 +73,29 @@ public interface LivingItemFunction {
     }
 
     /**
+     * 【数据归属】本功能挂载在物品上的 DataComponent（取消活化时由框架统一清除）。
+     *
+     * <p><b>为什么需要</b>：原先由 {@code LivingItemManager.clearLivingData} 集中维护一份
+     * remove 清单，导致「新增 {@link LivingItemFunction} 必须去改核心类的那个方法」——
+     * 第三方因此只能 fork 本仓库。改为各功能<b>自声明</b>后，第三方无需触碰本模组的任何文件。
+     *
+     * <p>⚠️ <b>必须列全部</b>：漏列的组件会在物品取消活化后<b>变成孤儿数据</b>
+     * （组件还在、但没有功能认领它），表现为物品描述异常或再次活化时读到脏旧值。
+     *
+     * <p>与 {@link #getIgnoredComponentTypes()} 的区别：
+     * <ul>
+     *   <li>{@code getOwnedComponentTypes} —— 「这是我的」，激活/失效时随之增删</li>
+     *   <li>{@code getIgnoredComponentTypes} —— 「比较时别看我」，用于可堆叠性判定</li>
+     * </ul>
+     * 二者语义正交，同一组件可以同时出现在两边（如 {@code LIVING_FURNACE_BURNING}）。
+     *
+     * @return 本功能拥有的 DataComponent 类型；默认空集合（无自有数据的功能不必覆盖）
+     */
+    default Set<DataComponentType<?>> getOwnedComponentTypes() {
+        return Set.of();
+    }
+
+    /**
      * 【组件过滤】获取比较时应忽略的组件类型（可选）。
      *
      * <p>默认返回空集合，需要忽略某些组件的功能覆盖此方法。</p>

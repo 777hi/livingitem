@@ -72,6 +72,11 @@ public class LivingFarmlandFunction implements LivingItemFunction {
      * 燃烧标志 LIVING_FURNACE_BURNING 同款处理。
      */
     @Override
+    public Set<DataComponentType<?>> getOwnedComponentTypes() {
+        return Set.of(LivingItemManager.FARMLAND_PLANT.value(), LivingItemManager.LIVING_FARMLAND_MOIST.value());
+    }
+
+    @Override
     public Set<DataComponentType<?>> getIgnoredComponentTypes() {
         return Set.of(LivingItemManager.LIVING_FARMLAND_MOIST.value());
     }

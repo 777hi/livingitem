@@ -18,6 +18,7 @@ import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.network.LivingToolHostPacket;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.component.DataComponentType;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.item.Item;
@@ -54,6 +55,17 @@ public class LivingToolFunction implements LivingItemFunction {
     @Override
     public String getFunctionId() {
         return ID;
+    }
+
+    @Override
+    public Set<DataComponentType<?>> getOwnedComponentTypes() {
+        return Set.of(
+            LivingItemManager.LIVING_TOOL_MEMORY.value(),
+            LivingItemManager.LIVING_TOOL_PROGRESS.value(),
+            LivingItemManager.LIVING_TOOL_DIG_TICKS.value(),
+            LivingItemManager.LIVING_TOOL_LAST_ACTION.value(),
+            LivingItemManager.LIVING_TOOL_OWNER.value()
+        );
     }
 
     @Override
