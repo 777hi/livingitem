@@ -137,17 +137,21 @@ class ActivationRuleConfigTest {
     }
 
     /**
-     * ⚠️ <b>@Disabled 原因（2026-09-27 实测）</b>：FML unit test 环境不加载 item tags
-     * —— {@code stack.is(TagKey)} 恒为 false（本项目 38 个测试类此前从无 TagKey 先例）。
-     * {@code ActivationRuleConfig.itemMatches} 的 tag 分支逻辑与 item 分支同构，
-     * 但「测试环境 tag 为空」意味着这里测不出真实行为 —— 强行断言只能得到假绿或假红。
-     * <b>tag 路径需要在 runClient 里游戏内验证</b>：
-     * 配 {@code {"tag":"#minecraft:swords","activate":"deny"}} 后对钻石剑执行
-     * {@code /livingitem activation test}。
+     * ⚠️ <b>@Disabled 原因</b>：FML unit test 环境不加载 item tags
+     * —— {@code stack.is(TagKey)} 恒为 false（本项目 39 个测试类此前从无 TagKey 先例）。
+     * 强行断言只能得到假绿或假红，故保持禁用。
+     *
+     * ✅ <b>已游戏内验证通过（2026-09-27 用户实测）</b>：
+     * 配 {@code {"tag":"#minecraft:swords","activate":"deny"}} 后，钻石剑被正确拒绝，
+     * 且<b>第三方模组的剑同样被覆盖</b> —— 这正是「用官方 tag 而非枚举物品清单」的收益：
+     * 自动兼容其它模组，无需为每种剑单独配置。
+     *
+     * <b>改动 tag 匹配逻辑后仍需游戏内回归</b>（本测试覆盖不到）：
+     * 用 {@code /livingitem activation test} 对一把剑验证。
      */
     @Test
-    @org.junit.jupiter.api.Disabled("FML unit test 不加载 item tags —— 待游戏内验证，见方法注释")
-    @DisplayName("⑨ tag 匹配（游戏内验证）")
+    @org.junit.jupiter.api.Disabled("FML unit test 不加载 item tags —— 已游戏内验证通过，见方法注释")
+    @DisplayName("⑨ tag 匹配（已游戏内验证通过，但无法自动测）")
     void tagMatch() {
         ActivationRuleConfig.loadFromString("""
             {"version":1,"default":"allow",
