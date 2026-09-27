@@ -8,9 +8,11 @@ import net.minecraft.world.inventory.ChestMenu;
 import net.minecraft.world.inventory.PlayerEnderChestContainer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.network.chat.Component;
 import net.minecraft.network.codec.StreamCodec;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import com.qiqi.li.LivingItem;
+import com.qiqi.li.living.api.LivingItemActivation;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.domain.chest.LivingChestFunction;
 import com.qiqi.li.living.domain.ender.LivingEnderChestFunction;
@@ -63,6 +65,19 @@ public record LivingTagPacket() implements CustomPacketPayload {
                 if (!carriedItem.isEmpty()) {
                     boolean currentLiving = LivingItemManager.isLivingItem(carriedItem);
                     boolean newLiving = !currentLiving;
+
+                    // ── D1：活化前过判定门面（途径 = 玩家点击活按钮）──
+                    var verdict = LivingItemActivation.evaluate(
+                        carriedItem, newLiving, LivingItemActivation.Via.PLAYER);
+                    if (verdict != LivingItemActivation.Result.ALLOW) {
+                        player.sendSystemMessage(Component.translatable(
+                            "livingitem.activation." + switch (verdict) {
+                                case DENY_UNCLAIMED -> "deny_unclaimed";
+                                case DENY_RULE -> "deny_rule";
+                                case ALLOW -> "";
+                            }));
+                        return;
+                    }
 
                     // 取消活化时：活箱子需要先掉落所有物品
                     if (!newLiving && LivingChestFunction.isLivingChest(carriedItem)) {

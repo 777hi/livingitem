@@ -163,8 +163,9 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 360 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
-全绿基线：`360 passed / 0 failed / 0 skipped`（2026-09-27 新增 DataComponent 归属守卫 3 项；
+**合计测试用例 364 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
+全绿基线：`364 passed / 0 failed / 0 skipped`（2026-09-27 新增活化门面守卫 4 项 +
+DataComponent 归属守卫 3 项；
 此前 2026-09-22 光照刷新 + 爆炸受影响区块判据修复
 + 大箱子槽位体系探针 §10.25 / 跨容器面选取 §6.4）。
 > 📄 测试环境配置与编写约定见 [unit-testing.md](docs/guides/unit-testing.md)；

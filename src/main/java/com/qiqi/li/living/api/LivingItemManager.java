@@ -381,6 +381,34 @@ public class LivingItemManager {
         return result;
     }
 
+    /**
+     * 若这个物品被活化，会不会有任何 {@link LivingItemFunction} 认领它？
+     *
+     * <p>⚠️ <b>为什么不能直接调 {@link #getApplicableFunctions}</b>：它第一行就是
+     * {@code if (!isLivingItem(stack)) return List.of()}，而 21/22 个
+     * {@code canApply} 内部<b>也都含</b> {@code isLivingItem(stack)}
+     * ⇒ 对未活化的物品，任何功能都不会认领，判定恒为「无功能」。
+     *
+     * <p>因此这里用 <b>copy 探针</b>：临时给副本打上 {@code IS_LIVING} 再走真实的
+     * {@code canApply}。只在玩家点按钮时发生（非热路径），一次 {@code copy()} 可接受。
+     *
+     * <p>本方法<b>不走</b> {@code APPLICABLE_CACHE} —— 避免把「探针」结果写进按
+     * {@code Item} 缓存的表里（该表的契约见 {@link #getApplicableFunctions}）。
+     */
+    public static boolean hasAnyFunctionFor(ItemStack stack) {
+        if (isLivingItem(stack)) {
+            return !getApplicableFunctions(stack).isEmpty();
+        }
+        ItemStack probe = stack.copy();
+        probe.set(IS_LIVING.value(), true);
+        for (LivingItemFunction function : FUNCTIONS) {
+            if (function.canApply(probe)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public static Set<DataComponentType<?>> getIgnoredComponentTypes(ItemStack stack) {
         if (!isLivingItem(stack)) return Set.of();
 

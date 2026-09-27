@@ -194,5 +194,7 @@
   "command.livingitem.container_overrode_bundled": "§a已覆盖内置规则 §e%s§a: %d 槽位 (%d列×%d行)§r\n§7该修改已记入玩家配置，可用 §f/livingitem container export §7导出§r",
   "command.livingitem.export_done": "§a已导出 %d 条生效规则§7（内置 %d + 社区 %d）§r §7→ §f%s§r\n§7这份文件是完整快照，可直接发给模组作者用于覆盖内置资源、随包发布§r",
   "command.livingitem.export_empty": "§7没有可导出的规则（注册表为空）§r",
-  "command.livingitem.export_failed": "§c导出失败，请查看日志§r"
+  "command.livingitem.export_failed": "§c导出失败，请查看日志§r",
+  "livingitem.activation.deny_unclaimed": "§c该物品没有对应的活物品功能，活化它只会让它无法被传输/熔炼，因此已阻止§r",
+  "livingitem.activation.deny_rule": "§c该物品已被整合包规则禁止活化§r"
 }
