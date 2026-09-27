@@ -208,5 +208,11 @@
   "command.livingitem.activation_test_claimed": "  §7Has a claiming function: §f%s§r",
   "command.livingitem.activation_test_line": "  §7via §f%s§7 → §r%s",
   "command.livingitem.yes": "yes",
-  "command.livingitem.no": "no"
+  "command.livingitem.no": "no",
+  "command.livingitem.activation_bad_selector": "§cInvalid target: expected item id (minecraft:chest) / tag (#minecraft:swords) / namespace (@somemod)§r",
+  "command.livingitem.activation_added": "§aAdded rule§r: §e%s§r (%s=%s)",
+  "command.livingitem.activation_overrode": "§6Overrode existing rule§r: §e%s§r (%s=%s)",
+  "command.livingitem.activation_removed": "§aRemoved rule§r: §e%s§r",
+  "command.livingitem.activation_remove_none": "§7No rule matches §f%s§r",
+  "command.livingitem.activation_list_empty": "  §7(no rules yet)§r"
 }

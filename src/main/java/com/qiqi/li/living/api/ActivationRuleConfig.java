@@ -1,16 +1,21 @@
 package com.qiqi.li.living.api;
 
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+
+import javax.annotation.Nullable;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -96,6 +101,7 @@ public final class ActivationRuleConfig {
      */
     public static void load() {
         RULES.clear();
+        REMOVED.clear();
         defaultAction = Action.ALLOW;
         denyUnclaimed = false;
 
@@ -201,7 +207,144 @@ public final class ActivationRuleConfig {
     }
 
     private static void applyUserData(ConfigData data) {
+        // 先应用删除：否则玩家删掉的内置规则会在下次 load 时被内置资源「复活」
+        if (data.removed != null) {
+            for (String sel : data.removed) {
+                if (sel == null || sel.isBlank()) continue;
+                RuleEntry r = findBySelector(sel);
+                if (r != null) RULES.remove(r);
+                REMOVED.add(sel);
+            }
+        }
         apply(data, "user");
+    }
+
+    // ── 指令侧：增删改与持久化 ─────────────────────────────────
+
+    /** 被玩家显式移除的规则（选择器文本）—— 否则 reload 时会被内置资源「复活」。 */
+    private static final Set<String> REMOVED = new LinkedHashSet<>();
+
+    /**
+     * 新增或更新一条规则（同一选择器覆盖）。
+     *
+     * @param selector  规范化选择器：`minecraft:chest` / `#minecraft:swords` / `@somemod`
+     * @param activate  true = 设置 activate 动作；false = 设置 deactivate 动作
+     * @param allow     true = allow；false = deny
+     * @param via       作用途径；null / 空 = 取缺省（仅 player）
+     * @return true = 新增；false = 覆盖了已有规则
+     */
+    public static boolean put(String selector, boolean activate, boolean allow, @Nullable List<Via> via) {
+        if (!parseSelectorInto(selector, new RuleEntry())) {
+            return false;                                  // 选择器不合法
+        }
+        Action action = allow ? Action.ALLOW : Action.DENY;
+        RuleEntry r = findBySelector(selector);
+        boolean isNew = r == null;
+        if (isNew) {
+            r = new RuleEntry();
+            parseSelectorInto(selector, r);
+        }
+        if (activate) r.activate = action; else r.deactivate = action;
+        if (via != null && !via.isEmpty()) r.viaSet = EnumSet.copyOf(via);
+        if (isNew) RULES.add(r);
+        REMOVED.remove(selector);                          // 重新加回来 ⇒ 取消先前的删除记录
+        return isNew;
+    }
+
+    /**
+     * 移除一条规则（记入 removed，防止 reload 后被内置资源复活）。
+     *
+     * @return 是否确有变化（删掉了已有规则，或新记录了一条删除）
+     */
+    public static boolean remove(String selector) {
+        RuleEntry r = findBySelector(selector);
+        boolean had = r != null;
+        if (r != null) RULES.remove(r);
+        boolean recorded = REMOVED.add(selector);
+        return had || recorded;
+    }
+
+    /** 逐条描述当前生效规则（供 {@code /livingitem activation list}）。 */
+    public static List<String> describeRules() {
+        List<String> out = new ArrayList<>();
+        for (RuleEntry r : RULES) {
+            StringBuilder sb = new StringBuilder(r.selector);
+            sb.append("  activate=").append(r.activate == null ? "-" : r.activate.name().toLowerCase());
+            sb.append("  deactivate=").append(r.deactivate == null ? "-" : r.deactivate.name().toLowerCase());
+            sb.append("  via=").append(r.viaSet == null ? "player" : r.viaSet.toString());
+            out.add(sb.toString());
+        }
+        return out;
+    }
+
+    /**
+     * 把玩家产生的差异写回 {@code config/living_item/activation_rules.json}。
+     *
+     * <p><b>只写差异</b> —— 内置规则不回写成副本，这样将来内置资源更新时
+     * 不会被玩家的旧快照锁死（照 {@code ContainerRuleConfig} 的增量语义）。</p>
+     */
+    public static void save() {
+        if (configDir == null) return;
+        ConfigData data = new ConfigData();
+        data.version = CONFIG_VERSION;
+        data.defaultAction = defaultAction.name().toLowerCase();
+        data.options = new Options();
+        data.options.denyUnclaimed = denyUnclaimed;
+        data.rules = new ArrayList<>();
+        for (RuleEntry r : RULES) {
+            RawRule raw = new RawRule();
+            if (r.itemId != null) raw.item = r.selector;
+            else if (r.itemTag != null) raw.tag = r.selector;
+            else raw.namespace = r.namespace;
+            raw.activate = r.activate == null ? null : r.activate.name().toLowerCase();
+            raw.deactivate = r.deactivate == null ? null : r.deactivate.name().toLowerCase();
+            if (r.viaSet != null) {
+                raw.via = new ArrayList<>();
+                for (Via v : r.viaSet) raw.via.add(v.name().toLowerCase());
+            }
+            data.rules.add(raw);
+        }
+        data.removed = new ArrayList<>(REMOVED);
+        try {
+            Files.createDirectories(configDir);
+            try (var writer = new OutputStreamWriter(
+                    new FileOutputStream(configDir.resolve(CONFIG_FILE).toFile()),
+                    StandardCharsets.UTF_8)) {
+                GSON.toJson(data, writer);
+            }
+        } catch (IOException e) {
+            LivingItemManager.LOGGER.error("Failed to save activation rule config", e);
+        }
+    }
+
+    private static RuleEntry findBySelector(String selector) {
+        for (RuleEntry r : RULES) {
+            if (selector.equals(r.selector)) return r;
+        }
+        return null;
+    }
+
+    /** 选择器文本是否合法（指令入口在写入前先校验）。 */
+    public static boolean isValidSelector(String selector) {
+        if (selector == null || selector.isBlank()) return false;
+        return parseSelectorInto(selector, new RuleEntry());
+    }
+
+    /** 把选择器文本解析进规则（指令入口用，不经过 JSON）。 */
+    private static boolean parseSelectorInto(String selector, RuleEntry r) {
+        if (selector.startsWith("#")) {
+            ResourceLocation id = ResourceLocation.tryParse(selector.substring(1));
+            if (id == null) return false;
+            r.itemTag = id;
+        } else if (selector.startsWith("@")) {
+            r.namespace = selector.substring(1);
+        } else {
+            ResourceLocation id = ResourceLocation.tryParse(selector);
+            if (id == null) return false;
+            r.itemId = id;
+        }
+        r.selector = selector;
+        return true;
     }
 
     /**
@@ -210,6 +353,7 @@ public final class ActivationRuleConfig {
      */
     static void loadFromString(String json) {
         RULES.clear();
+        REMOVED.clear();
         defaultAction = Action.ALLOW;
         denyUnclaimed = false;
         apply(GSON.fromJson(json, ConfigData.class), "test");
@@ -244,13 +388,16 @@ public final class ActivationRuleConfig {
                 ResourceLocation id = ResourceLocation.tryParse(raw.item);
                 if (id == null) { warnBad(source, "item", raw.item); continue; }
                 r.itemId = id;
+                r.selector = id.toString();
             } else if (raw.tag != null) {
                 String t = raw.tag.startsWith("#") ? raw.tag.substring(1) : raw.tag;
                 ResourceLocation id = ResourceLocation.tryParse(t);
                 if (id == null) { warnBad(source, "tag", raw.tag); continue; }
                 r.itemTag = id;
+                r.selector = "#" + id;                    // 规范化为带 # 的形态
             } else {
                 r.namespace = raw.namespace;
+                r.selector = "@" + raw.namespace;         // 规范化为带 @ 的形态
             }
             r.activate = parseAction(raw.activate, source, "activate");
             r.deactivate = parseAction(raw.deactivate, source, "deactivate");
@@ -295,6 +442,8 @@ public final class ActivationRuleConfig {
         String defaultAction;
         List<RawRule> rules = new ArrayList<>();
         Options options;
+        /** 被显式移除的规则（选择器文本）—— 防止被内置资源重新加载回来 */
+        List<String> removed;
     }
 
     /** JSON 原始条目（字符串形态，未经校验）—— 与已解析的 {@link RuleEntry} 分开 */
@@ -319,5 +468,10 @@ public final class ActivationRuleConfig {
         Action activate;
         Action deactivate;
         Set<Via> viaSet;                       // null = 取默认（仅 player）
+        /**
+         * 规则的原始选择器文本（规范化形态）：`minecraft:chest` / `#minecraft:swords` / `@somemod`。
+         * 供 {@code save()} 回写 JSON 与「同一目标去重」使用 —— 没有它就无法把已解析的规则还原成输入语法。
+         */
+        String selector;
     }
 }

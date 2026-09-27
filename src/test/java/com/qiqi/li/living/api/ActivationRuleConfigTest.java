@@ -1,10 +1,16 @@
 package com.qiqi.li.living.api;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.nio.file.Path;
+import java.util.List;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import com.qiqi.li.living.api.ActivationRuleConfig.Action;
 import com.qiqi.li.living.api.LivingItemActivation.Via;
@@ -151,6 +157,61 @@ class ActivationRuleConfigTest {
             ActivationRuleConfig.evaluate(item("minecraft:diamond_sword"), true, Via.PLAYER));
         assertEquals(Action.DENY,
             ActivationRuleConfig.evaluate(item("minecraft:stone"), true, Via.PLAYER));
+    }
+
+    // ── 指令侧（put / remove / 校验 / 持久化）──────────────────
+
+    @Test
+    @DisplayName("⑩ 指令侧：put 新增与覆盖、remove 移除")
+    void putAndRemove() {
+        ActivationRuleConfig.loadFromString("{}");
+
+        assertTrue(ActivationRuleConfig.put("minecraft:chest", true, false, null), "首次写入 = 新增");
+        assertEquals(Action.DENY,
+            ActivationRuleConfig.evaluate(item("minecraft:chest"), true, Via.PLAYER));
+
+        assertFalse(ActivationRuleConfig.put("minecraft:chest", true, false, null),
+            "同一选择器再次写入 = 覆盖");
+        assertEquals(1, ActivationRuleConfig.ruleCount(), "覆盖不应产生重复条目");
+
+        assertTrue(ActivationRuleConfig.remove("minecraft:chest"));
+        assertEquals(Action.ALLOW,
+            ActivationRuleConfig.evaluate(item("minecraft:chest"), true, Via.PLAYER),
+            "移除后回到 default");
+    }
+
+    @Test
+    @DisplayName("⑪ 选择器合法性校验（指令写入前先校验）")
+    void selectorValidation() {
+        assertTrue(ActivationRuleConfig.isValidSelector("minecraft:chest"), "物品");
+        assertTrue(ActivationRuleConfig.isValidSelector("#minecraft:swords"), "标签");
+        assertTrue(ActivationRuleConfig.isValidSelector("@somemod"), "命名空间");
+        assertFalse(ActivationRuleConfig.isValidSelector("not an id!!"), "非法 ID");
+        assertFalse(ActivationRuleConfig.isValidSelector(""), "空");
+    }
+
+    @Test
+    @DisplayName("⑫ describeRules 逐条输出（list 用）")
+    void describeRulesLists() {
+        ActivationRuleConfig.loadFromString("{}");
+        ActivationRuleConfig.put("@somemod", true, false, List.of(Via.PLAYER, Via.EXTERNAL));
+        var lines = ActivationRuleConfig.describeRules();
+        assertEquals(1, lines.size());
+        assertTrue(lines.get(0).contains("@somemod"), "输出应含选择器文本");
+    }
+
+    @Test
+    @DisplayName("⑬ 持久化往返：save 后重新 load，规则仍在")
+    void saveThenReload(@TempDir Path dir) {
+        ActivationRuleConfig.init(dir);
+        ActivationRuleConfig.load();
+        ActivationRuleConfig.put("minecraft:chest", true, false, null);
+        ActivationRuleConfig.save();
+
+        ActivationRuleConfig.load();                       // 重新加载（模拟重启 / reload）
+        assertEquals(Action.DENY,
+            ActivationRuleConfig.evaluate(item("minecraft:chest"), true, Via.PLAYER),
+            "save 的内容应能被 load 读回");
     }
 
     /**

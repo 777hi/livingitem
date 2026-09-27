@@ -18,8 +18,10 @@
 │   ├── list / remove
 │   └── reload / export
 ├── activation                     # 活化规则
-│   ├── reload / list
-│   └── test
+│   ├── reload / list / test
+│   ├── deny   <目标> [via]        # 禁止
+│   ├── allow  <目标> [via]        # 放行
+│   └── remove <目标>              # 删除规则
 └── debug                          # 开发者排障
     ├── monitor on|off|status
     ├── dump_inventory
@@ -31,6 +33,26 @@
 | `container` | 校准 / 管理第三方容器的槽位布局（含导出给模组作者合并进内置资源） | [`guides/container-compatibility.md`](../guides/container-compatibility.md) |
 | `activation` | 控制哪些物品可被活化（禁玩家自己活化、放行任务奖励等途径） | [`buffer/activation-rule-design.md`](../buffer/activation-rule-design.md) |
 | `debug` | 容器监控开关、背包转储、区块缓存统计（排障工具） | [`guides/container-monitor.md`](../guides/container-monitor.md) |
+
+## activation 的「目标」语法（三种颗粒度）
+
+| 写法 | 含义 | 例子 |
+|---|---|---|
+| `minecraft:chest` | 单个物品 | `deny minecraft:chest` |
+| `#minecraft:swords` | 物品标签（**跨模组**） | `deny #minecraft:swords` |
+| `@somemod` | 整个命名空间（某模组的全部物品） | `deny @somemod` |
+
+**输入时按 Tab 会自动补全**：打 `#` 补标签、打 `@` 补命名空间、其余补物品 ID（并提示这两种前缀）。
+
+### 匹配优先级：特异性优先
+
+```
+item（1 个物品，最精确）> tag（一类）> namespace（整个模组，最粗）
+同等精确保持先到先得（数组顺序）
+```
+
+⇒ **后加的精确 `allow` 能覆盖先前的宽泛 `deny`，不用关心顺序**。
+（若按纯顺序匹配，指令追加的规则永远排在后面，「禁了 #swords 再单独放行一把剑」就表达不出来。）
 
 ## 约定
 
