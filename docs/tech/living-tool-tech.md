@@ -1011,8 +1011,11 @@ LivingItem.onServerTick
 ```java
 poseStack.mulPose(Axis.YP.rotation(rollRad));            // 只调"脸朝哪"（相对射线）
 poseStack.mulPose(Axis.ZP.rotation(-spinRad));           // 自转：轴 = 立正后的 Z = 板面法线
-poseStack.mulPose(Axis.ZP.rotation(MODEL_UPRIGHT_FIX));  // 立正
+poseStack.mulPose(Axis.ZP.rotation(MODEL_UPRIGHT_FIX));  // 立正【旧常量，已删除】
 ```
+
+> ⚠️ 2026-09-29 起**路线 B** 的立正改为运行时 `rotationTo`、自转轴改为**算出的板面法线**
+> （不再是写死的 Z）⇒ 见 `living-weapon-tech.md` §7.2。此处保留旧写法仅作历史参考。
 
 这样自转轴就是「**立正后的 `Z`**」= 板面法线，而且 **相对模型自身恒定** ——
 不随 `rollRad`、也不随射线方向改变。
@@ -1199,13 +1202,19 @@ MC 的 `item/handheld` 贴图是**斜 45° 对角**画的（镐头在右上、�
 `ItemTransforms` 只给各 context 的变换，给不出"模型自身的上下"。
 唯一的办法是**按贴图约定校正 + 实测**。
 
-**完整链路**（注意第 2 步，FIXED 自己也会转一下 —— 漏了它符号就会反）：
+> ⚠️ **本节（1189–1219）描述的是【2026-09-29 之前的旧链路】**（固定 `-45°` 绕 Z 立正），
+> 该常量 `MODEL_UPRIGHT_FIX` **已删除**。现路线 B（普通模型物品）改为
+> **手写手持 transform + 运行时 `rotationTo` 立正**（context 传 `NONE`），
+> 完整链路与踩坑见 **`living-weapon-tech.md` §7.2**。
+> 保留本节仅供历史参考：**本环境 `renderStatic` 不应用 display transform** 这一条结论仍成立。
+
+**完整链路（旧）**（注意第 2 步，FIXED 自己也会转一下 —— 漏了它符号就会反）：
 
 | # | 变换 | 贴图长轴方向 |
 |---|---|---|
 | 1 | 模型原始空间：贴图 `(0,16) → 模型 (0,0)`、`(16,0) → 模型 (1,1)`（Y 翻转） | `(+1,+1)` |
 | 2 | **`FIXED` 自带：绕 Y 转 180°**（`(x,y,z) → (-x,y,-z)`） | `(-1,+1)` |
-| 3 | **`MODEL_UPRIGHT_FIX`：绕 Z 转 `-45°`** | `(0, √2)` ⇒ 立成 `+Y` |
+| 3 | **旧 `MODEL_UPRIGHT_FIX`：绕 Z 转 `-45°`** | `(0, √2)` ⇒ 立成 `+Y` |
 | 4 | `drawModel`：把 `+Y` 对齐目标方向（`yaw` + `pitch`） | 指向目标 |
 
 验算第 3 步：`x' = -cos(-45) − sin(-45) = 0`、`y' = -sin(-45) + cos(-45) = √2` ⇒ 头朝上、柄朝下。
@@ -1232,7 +1241,7 @@ MC 的 `item/handheld` 贴图是**斜 45° 对角**画的（镐头在右上、�
 
 ```java
 poseStack.mulPose(Axis.YP.rotation(rollRad));            // 绕长轴（此时 +Y 才是长轴）
-poseStack.mulPose(Axis.ZP.rotation(MODEL_UPRIGHT_FIX));  // 立正（更内层）
+poseStack.mulPose(Axis.ZP.rotation(MODEL_UPRIGHT_FIX));  // 立正【旧常量，已删除】（更内层）
 ```
 
 > ⚠️ 顺序不能反：只有**立正之后** `+Y` 才等于长轴，绕 Y 转才是"绕长轴滚转"。
