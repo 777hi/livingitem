@@ -214,5 +214,9 @@
   "command.livingitem.activation_overrode": "§6Overrode existing rule§r: §e%s§r (%s=%s)",
   "command.livingitem.activation_removed": "§aRemoved rule§r: §e%s§r",
   "command.livingitem.activation_remove_none": "§7No rule matches §f%s§r",
-  "command.livingitem.activation_list_empty": "  §7(no rules yet)§r"
+  "command.livingitem.activation_list_empty": "  §7(no rules yet)§r",
+
+  "command.livingitem.interaction_reloaded": "§aInteraction rules reloaded§r: §e%d§7 effective (%d bundled)",
+  "command.livingitem.interaction_list": "§6Interaction rules§r: §e%d§7 effective (%d bundled)§r\n§7Edit §fconfig/living_item/interaction_rules.json§7 (deltas only), then §f/livingitem interaction reload§r",
+  "command.livingitem.interaction_list_empty": "  §7(no interaction rules yet)§r"
 }

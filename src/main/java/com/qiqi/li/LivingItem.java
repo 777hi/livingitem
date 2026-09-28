@@ -58,6 +58,7 @@ import com.qiqi.li.network.ToolMemoryClearPacket;
 import com.qiqi.li.network.LivingToolHostPacket;
 import com.qiqi.li.network.LivingToolPlayerPacket;
 import com.qiqi.li.living.api.ActivationRuleConfig;
+import com.qiqi.li.living.interaction.InteractionRuleConfig;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.compat.create.ModCreate;
 import com.qiqi.li.living.domain.tools.LivingToolFakePlayerCache;
@@ -132,6 +133,10 @@ public class LivingItem {
         ActivationRuleConfig.init(net.neoforged.fml.loading.FMLPaths.CONFIGDIR.get());
         ActivationRuleConfig.load();
 
+        // 交互规则的配置目录（D2）；load() 必须在所有域注册之后 —— 规则的 action
+        // 引用要对照已注册的 handler 校验（见 InteractionRuleConfig javadoc）
+        InteractionRuleConfig.init(net.neoforged.fml.loading.FMLPaths.CONFIGDIR.get());
+
         ModCreate.init();
 
         // ── 各领域自注册（A1，2026-09-27）──
@@ -139,6 +144,8 @@ public class LivingItem {
         // 全部写在这一个方法里（152 行）⇒ 任何改动都落在同一处，
         // fork 者与上游的 diff 反复撞车（且是最难解的「无关 diff 相邻」型）。
         // 现在新增活物品：改对应域的 XxxRegistration，**不要往这里加**。
+        // D2 后各域只注册 Function / handler / 谓词；交互规则一律在
+        // interaction_rules.json（内置 + 玩家差异），由下面的 load() 统一装载。
         FurnaceRegistration.register();
         HopperRegistration.register();
         ChestRegistration.register();
@@ -150,6 +157,9 @@ public class LivingItem {
         FarmlandRegistration.register();
         ToolRegistration.register();
         MapRegistration.register();
+
+        // 规则装载（handler / 谓词全部就位之后）：内置 JSON + 玩家差异 → InteractionRegistry
+        InteractionRuleConfig.load();
 
         // 各域注册完毕 ⇒ 按 getTickPriority() 稳定排序（幂等）。
         // 默认优先级全为 0 且排序稳定 ⇒ 顺序与下放前完全一致（零行为变化），

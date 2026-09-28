@@ -115,4 +115,13 @@ public class InteractionRegistry {
         ENTRIES.clear();
         HANDLERS.clear();
     }
+
+    /**
+     * 仅清空规则条目（保留 handler）—— {@code InteractionRuleConfig#load()} 的
+     * reload 前置：handler 是代码（commonSetup 注册一次），规则是数据（可随时重载）。
+     * 包级可见：只有配置加载器该调它。
+     */
+    static void clearEntries() {
+        ENTRIES.clear();
+    }
 }

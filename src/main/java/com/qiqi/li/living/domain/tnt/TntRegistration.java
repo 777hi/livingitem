@@ -1,12 +1,9 @@
 package com.qiqi.li.living.domain.tnt;
 
-import net.minecraft.world.item.Items;
-
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.function.LivingFlintAndSteelFunction;
 import com.qiqi.li.living.interaction.IgniteCarriedHandler;
 import com.qiqi.li.living.interaction.IgniteHandler;
-import com.qiqi.li.living.interaction.InteractionEntry;
 import com.qiqi.li.living.interaction.InteractionRegistry;
 
 /**
@@ -26,10 +23,8 @@ public final class TntRegistration {
         LivingItemManager.registerFunction(new LivingFlintAndSteelFunction());
 
         // ── 交互：活打火石右键活TNT点燃（及反向）──
+        // 规则（谁触发谁）在 interaction_rules.json（D2 全迁）；这里只注册行为（handler）。
         InteractionRegistry.registerHandler("ignite", new IgniteHandler());
-        InteractionRegistry.register(new InteractionEntry(Items.TNT, Items.FLINT_AND_STEEL, 1, "ignite"));
-
         InteractionRegistry.registerHandler("ignite_carried", new IgniteCarriedHandler());
-        InteractionRegistry.register(new InteractionEntry(Items.FLINT_AND_STEEL, Items.TNT, 1, "ignite_carried"));
     }
 }

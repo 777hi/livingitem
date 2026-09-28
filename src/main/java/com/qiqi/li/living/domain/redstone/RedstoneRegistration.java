@@ -1,12 +1,9 @@
 package com.qiqi.li.living.domain.redstone;
 
-import net.minecraft.world.item.Items;
-
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerSnapshot;
 import com.qiqi.li.living.interaction.ButtonPressHandler;
 import com.qiqi.li.living.interaction.ComparatorToggleHandler;
-import com.qiqi.li.living.interaction.InteractionEntry;
 import com.qiqi.li.living.interaction.InteractionRegistry;
 import com.qiqi.li.living.interaction.LeverToggleHandler;
 import com.qiqi.li.living.interaction.RepeaterCycleHandler;
@@ -44,30 +41,14 @@ public final class RedstoneRegistration {
         ContainerSnapshot.registerProvider(new RedstoneSnapshotProvider());
 
         // ── 交互：按钮按压 ──
-        // 十三种按钮逐个注册（原版没有统一的"按钮"标签）
+        // 十三种按钮曾在此逐条注册；D2 全迁 JSON 后由 #minecraft:buttons tag 一条覆盖
+        // （该 tag 实证存在于原版 data/minecraft/tags/item/buttons.json ——
+        //   这里旧注释「原版没有统一的按钮标签」是错的，2026-09-28 已验证并更正）。
         InteractionRegistry.registerHandler("button_press", new ButtonPressHandler());
-        InteractionRegistry.register(new InteractionEntry(Items.STONE_BUTTON, null, 1, "button_press"));
-        InteractionRegistry.register(new InteractionEntry(Items.POLISHED_BLACKSTONE_BUTTON, null, 1, "button_press"));
-        InteractionRegistry.register(new InteractionEntry(Items.OAK_BUTTON, null, 1, "button_press"));
-        InteractionRegistry.register(new InteractionEntry(Items.SPRUCE_BUTTON, null, 1, "button_press"));
-        InteractionRegistry.register(new InteractionEntry(Items.BIRCH_BUTTON, null, 1, "button_press"));
-        InteractionRegistry.register(new InteractionEntry(Items.JUNGLE_BUTTON, null, 1, "button_press"));
-        InteractionRegistry.register(new InteractionEntry(Items.ACACIA_BUTTON, null, 1, "button_press"));
-        InteractionRegistry.register(new InteractionEntry(Items.CHERRY_BUTTON, null, 1, "button_press"));
-        InteractionRegistry.register(new InteractionEntry(Items.DARK_OAK_BUTTON, null, 1, "button_press"));
-        InteractionRegistry.register(new InteractionEntry(Items.MANGROVE_BUTTON, null, 1, "button_press"));
-        InteractionRegistry.register(new InteractionEntry(Items.BAMBOO_BUTTON, null, 1, "button_press"));
-        InteractionRegistry.register(new InteractionEntry(Items.CRIMSON_BUTTON, null, 1, "button_press"));
-        InteractionRegistry.register(new InteractionEntry(Items.WARPED_BUTTON, null, 1, "button_press"));
 
         // ── 交互：拉杆 / 中继器 / 比较器 ──
         InteractionRegistry.registerHandler("lever_toggle", new LeverToggleHandler());
-        InteractionRegistry.register(new InteractionEntry(Items.LEVER, null, 1, "lever_toggle"));
-
         InteractionRegistry.registerHandler("repeater_cycle", new RepeaterCycleHandler());
-        InteractionRegistry.register(new InteractionEntry(Items.REPEATER, null, 1, "repeater_cycle"));
-
         InteractionRegistry.registerHandler("comparator_toggle", new ComparatorToggleHandler());
-        InteractionRegistry.register(new InteractionEntry(Items.COMPARATOR, null, 1, "comparator_toggle"));
     }
 }

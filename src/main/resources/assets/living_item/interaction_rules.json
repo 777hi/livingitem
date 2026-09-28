@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "rules": [
+    { "id": "tnt_ignite",         "target": "minecraft:tnt",              "trigger": "minecraft:flint_and_steel", "button": "right", "action": "ignite" },
+    { "id": "tnt_ignite_carried", "target": "minecraft:flint_and_steel",  "trigger": "minecraft:tnt",             "button": "right", "action": "ignite_carried" },
+
+    { "id": "buttons_press",      "target": "#minecraft:buttons",         "button": "right", "action": "button_press" },
+    { "id": "lever_toggle",       "target": "minecraft:lever",            "button": "right", "action": "lever_toggle" },
+    { "id": "repeater_cycle",     "target": "minecraft:repeater",         "button": "right", "action": "repeater_cycle" },
+    { "id": "comparator_toggle",  "target": "minecraft:comparator",       "button": "right", "action": "comparator_toggle" },
+
+    { "id": "till_grass_block",   "target": "minecraft:grass_block",      "button": "right", "action": "till_to_farmland", "predicate": "can_till" },
+    { "id": "till_dirt_path",     "target": "minecraft:dirt_path",        "button": "right", "action": "till_to_farmland", "predicate": "can_till" },
+    { "id": "till_dirt",          "target": "minecraft:dirt",             "button": "right", "action": "till_to_farmland", "predicate": "can_till" },
+    { "id": "till_coarse_dirt",   "target": "minecraft:coarse_dirt",      "button": "right", "action": "till_to_farmland", "predicate": "can_till" },
+    { "id": "till_rooted_dirt",   "target": "minecraft:rooted_dirt",      "button": "right", "action": "till_to_farmland", "predicate": "can_till" },
+
+    { "id": "farmland_plant",     "target": "minecraft:farmland",         "button": "right", "action": "plant_crop", "predicate": "can_plant" },
+    { "id": "farmland_bonemeal",  "target": "minecraft:farmland",         "trigger": "minecraft:bone_meal", "button": "right", "action": "bonemeal" }
+  ]
+}
