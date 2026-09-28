@@ -46,8 +46,3 @@
 <h4 align="center">Third-party assets and trademarks: see <a href="https://github.com/777hi/livingitem/blob/master/NOTICE.md">NOTICE.md</a></h4>
 
 <h4 align="center">代码采用 <a href="https://github.com/777hi/livingitem/blob/master/LICENSE.txt">LGPL-3.0-or-later <b>+ 链接例外</b></a> 授权 · 资源采用 <a href="https://github.com/777hi/livingitem/blob/master/ASSETS_LICENSE.txt">MIT</a> 授权 · 第三方声明见 <a href="https://github.com/777hi/livingitem/blob/master/NOTICE.md">NOTICE.md</a></h4>
-
-> **第三方开发者请读**：本库附有 classpath 例外（LICENSE.txt 末尾「Additional permission
-> under GNU LGPL version 3 section 7」）—— 把本模组作为**前置库**依赖（编译期或运行期）
-> 的 mod / addon，其自身的许可证不受本库 LGPL 约束（**含闭源**）；只有修改本库本身时
-> 才需要遵循 LGPL（copyleft 对库本体保留）。
