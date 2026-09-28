@@ -163,9 +163,9 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 388 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
-全绿基线：`387 passed / 0 failed / 1 skipped`（2026-09-28 新增 tick 顺序契约守卫 4 项 +
-活化目标参数解析守卫 4 项；2026-09-27 新增活化规则 JSON 加载语义 14 项
+**合计测试用例 397 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
+全绿基线：`396 passed / 0 failed / 1 skipped`（2026-09-28 新增交互规则 JSON 加载语义 9 项 +
+tick 顺序契约守卫 4 项 + 活化目标参数解析守卫 4 项；2026-09-27 新增活化规则 JSON 加载语义 14 项
 （含指令侧 put/remove/校验/**持久化往返**；tag 路径 1 项 @Disabled ——
 FML unit test 不加载 item tags，已游戏内验证通过）+
 活化门面守卫 5 项（含「零配置全放行」口径锁定）+ DataComponent 归属守卫 3 项；

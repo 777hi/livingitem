@@ -318,6 +318,7 @@ src/test/java/com/qiqi/li/
 │   └── MapCoordHelperTest.java                # 地图坐标换算（29 项）
 ├── living/interaction/
 │   ├── InteractionRegistryTest.java           # 两趟优先级匹配·通配遮蔽+triggerFilter 回归守卫（7 项）
+│   ├── InteractionRuleConfigTest.java         # 交互规则 JSON 加载语义·内置全有效/玩家覆盖与removed/坏值跳过/未知字段忽略/version守卫/reload幂等（9 项；自带 mock handler 不依赖测试执行顺序）
 │   └── TillToFarmlandCompatTest.java          # 活锄头跨模组兼容·模组锄头命中+处理器产物回归（8 项）
 └── living/transfer/
     ├── ContainerCompatibilityConfigTest.java  # 容器布局推断（14 项）

@@ -1,6 +1,8 @@
-> **⛔ 未定案（设计稿）** —— 本文是 [open-plan.md](open-plan.md) §4 D2 的施工设计，
-> 尚未实施。schema 一旦随发布对外就很难再改，动代码前 §6 的问题必须先拍板。
-> 实施后：§2 并入稳定层，本文按 [README](../README.md) §1 搬迁或归档。
+> **✅ 已实施（2026-09-28）** —— Q-D2-1~4 全部按 §6 倾向拍板（Q-D2-1 用户定「①全迁」）。
+> 实施结果与 §2 设计一致：内置 13 条 JSON（源码 18 处迁出，红石 13 条按钮由
+> `#minecraft:buttons` tag 一条覆盖 —— 该 tag 实证存在，§1.1 的押注成立）、
+> 玩家差异文件、`InteractionPredicates`（2 个谓词）、`reload`/`list` 指令。
+> schema 已随实现生效 ⇒ **后续修改按破坏性契约对待**。
 
 ---
 
@@ -22,7 +24,7 @@
 | 交互规则（`new InteractionEntry`） | 源码 **18 处** | farmland 3 / tnt 2 / redstone 13 |
 | ↑ 运行时实际条数 | **多于 18** | `till_to_farmland` 按 `Tillables` 循环注册，每个可耕物品一条 |
 | 交互处理器（`registerHandler`） | **9 个** actionId | ignite / ignite_carried / button_press / lever_toggle / repeater_cycle / comparator_toggle / till_to_farmland / plant_crop / bonemeal |
-| Java 谓词（`triggerFilter`） | **仅 1 个** | `Tillables::canTillWith`（farmland） |
+| Java 谓词（`triggerFilter`） | **2 个** | `Tillables::canTillWith`（5 条 tillable 规则共用）+ `PlantCropHandler::canPlantWith`（plant_crop）。初稿误写"仅 1 个"—— 漏数了 plant_crop，2026-09-28 实施时核对修正 |
 
 ### 1.1 一个立刻能拿到的收益：红石域 13 条同构规则
 
