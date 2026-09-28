@@ -270,7 +270,8 @@ src/test/java/com/qiqi/li/
 ├── living/api/
 │   ├── ComponentOwnershipTest.java            # DataComponent 归属守卫·每组件必有主/不可重复归属/自声明会被清除（3 项）
 │   ├── LivingItemActivationTest.java          # 活化门面守卫·零配置全放行/显式开启才拒绝/取消总允许/探针不改原物品（5 项）
-│   └── ActivationRuleConfigTest.java          # 活化规则 JSON 加载语义·via缺省=player/activate与deactivate独立/先命中先赢/白名单/坏值跳过（14 项，含指令侧增删改与持久化往返；tag 路径 @Disabled —— 单测环境不加载 item tags，已游戏内验证通过）
+│   ├── ActivationRuleConfigTest.java          # 活化规则 JSON 加载语义·via缺省=player/activate与deactivate独立/先命中先赢/白名单/坏值跳过（14 项，含指令侧增删改与持久化往返；tag 路径 @Disabled —— 单测环境不加载 item tags，已游戏内验证通过）
+│   └── TickOrderTest.java                     # tick 顺序契约守卫·默认优先级全为0（零行为变化的证据）/稳定排序/优先级生效/冻结后不可变且非降序（4 项）
 ├── living/command/
 │   └── ActivationTargetParsingTest.java       # 活化目标参数解析守卫·物品ID/标签/modid 回写契约 + 反向守卫「StringArgumentType 读不进 : # @」（4 项）
 ├── living/container/

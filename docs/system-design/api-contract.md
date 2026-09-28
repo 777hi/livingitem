@@ -88,20 +88,23 @@ javadoc 明写「新增 LivingItemFunction 必须回来手添」⇒ **第三方�
 
 ---
 
-### 1.3 ⚠️ 已知隐式契约：tick 顺序
+### 1.3 tick 顺序契约（✅ 2026-09-28 已显式化）
 
-`LivingItemManager.FUNCTIONS` 是一个 `ArrayList`，`ContainerLivingItemHandler.processContext`
-按列表顺序分组调用 `tick()`。
+`ContainerLivingItemHandler.processContext` 按 `getAllFunctions()` 的列表顺序分组调用 `tick()`。
 
-⇒ **今天的功能 tick 顺序 = `registerFunction` 的调用顺序。**
+**规则（已生效）**：`LivingItem#commonSetup` 在所有域注册完毕后调用
+`LivingItemManager.sortFunctionsByPriority()` —— 按 `LivingItemFunction#getTickPriority()`
+**稳定排序**（数值小的先执行，相同优先级保持注册顺序）。
 
-这个契约今天是**隐式**的（写在 `LivingItem.java` 那 22 行的排列里，看不出哪些相邻是有意的、
-哪些只是巧合）。注意 `HasContainerData#getPriority()` 已经把**容器级数据**的顺序显式化了 ——
-说明「顺序需要显式声明」这件事项目里已经认过一次，只是 `tick()` 本身还没有。
+| 事实 | 说明 |
+|---|---|
+| 默认优先级全为 0 | ⇒ 目前 tick 顺序**仍等于注册顺序**（零行为变化；由 `TickOrderTest` 断言） |
+| **只排序、不冻结注册** | 曾计划同时冻结（此后注册抛异常），实测发现会打断测试中注册 mock 功能的既有模式，而「防 tick 期间注册」防的是一个并不存在的问题 ⇒ 放弃。`registerFunction` 保持随时可注册 + 清缓存 |
+| 为什么必须显式 | A1 把注册下放成 11 个分散文件后，顺序变成「主类调用次序 × 各文件内部排列」，没有任何一处能读出完整顺序 —— 本方法把这条契约变成**可声明、可 grep、可断言**的 |
 
-> ⚠️ **这是下一个要修的债**：一旦把注册下放成分散文件（A1），
-> 顺序会变成「主类的调用次序 + 各文件内部排列」，从此再也读不出来。
-> 处置见 §2.4。
+> 历史：这条曾是 §1.3 的「隐式契约」警告（顺序 = 22 行书写顺序），A1 下放后升级为必须修的债，
+> 现已按原 §2.4 的方案解决。`HasContainerData#getPriority()` 把容器级数据顺序显式化在先，
+> 本方法是同一类改造作用于 `tick()` 本身。
 
 ### 1.4 容器级数据的现状 —— ⚠️ 与 `framework-refactoring.md` 的描述不符
 
@@ -167,16 +170,7 @@ javadoc 明写「新增 LivingItemFunction 必须回来手添」⇒ **第三方�
 
 而显式目录的收益对所有人成立：注册可见、出错可查、**顺序确定**。
 
-### 2.4 tick 优先级显式化
-
-| 项 | 结论 |
-|---|---|
-| 做什么 | 给 `LivingItemFunction` 加 `default int getTickPriority()`，注册完成后排序并**冻结**列表 |
-| 解决了什么 | 补偿 A1 下放后「顺序不再可见」（§1.3）；并把口径从「书写顺序」变成「显式声明」 |
-| 顺带 | 冻结后即消解 open-plan.md §1.2 **P1-1**（tick 期间注册会 `ConcurrentModificationException`） |
-| 性质 | 与 §1.1 同类改造：**把隐式契约显式化** |
-
-### 2.5 容器级数据：`TickContext` 是否收敛为统一访问？（2026-09-27 新增）
+### 2.4 容器级数据：`TickContext` 是否收敛为统一访问？（2026-09-27 新增）
 
 | 选项 | 做法 | 评价 |
 |---|---|---|
