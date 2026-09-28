@@ -6,7 +6,6 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import com.qiqi.li.LivingItem;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活物品槽位方向配置网络包（用于 SLOTS 模式，如活熔炉的 input/fuel/output）。
@@ -26,7 +25,6 @@ import org.jetbrains.annotations.ApiStatus;
  * → 服务端 ServerPacketHandler.handleSlotDirection()
  * → 更新光标物品 NBT → 同步到客户端
  */
-@ApiStatus.Internal
 public record SlotDirectionPacket(
     String functionId,
     String slotName,

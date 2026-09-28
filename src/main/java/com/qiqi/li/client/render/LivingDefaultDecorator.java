@@ -7,7 +7,6 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.client.IItemDecorator;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 默认活物品标记装饰器，在物品栏中为所有没有专门图标的活物品叠加 living.png 标记。
@@ -15,7 +14,6 @@ import org.jetbrains.annotations.ApiStatus;
  * <p>与模型替换方式不同，装饰器只在渲染时叠加一层纹理，不需要修改模型烘焙管线。
  * 对于已有专门图标的活物品（漏斗、熔炉等），不会叠加此标记，避免视觉冲突。
  */
-@ApiStatus.Internal
 public class LivingDefaultDecorator implements IItemDecorator {
 
     private static final ResourceLocation LIVING_ICON =

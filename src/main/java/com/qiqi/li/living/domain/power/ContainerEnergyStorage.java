@@ -15,7 +15,6 @@ import net.neoforged.neoforge.energy.IEnergyStorage;
 import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.items.wrapper.InvWrapper;
 import com.qiqi.li.living.api.LivingItemManager;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 容器红电对外能量接口（§3.6 v17.5）。
@@ -28,7 +27,6 @@ import org.jetbrains.annotations.ApiStatus;
  * 模组容器自行注册），与容器内 tick 机制同源——模组容器能发电的地方就能取电。
  * 随机战利品容器（未开箱）按 tick 机制同款规则跳过。</p>
  */
-@ApiStatus.Internal
 public class ContainerEnergyStorage implements IEnergyStorage {
 
     /**

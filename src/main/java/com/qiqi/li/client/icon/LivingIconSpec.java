@@ -5,7 +5,6 @@ import net.minecraft.world.item.Item;
 
 import java.util.List;
 import java.util.function.Predicate;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活物品图标的声明式配置。
@@ -34,7 +33,6 @@ import org.jetbrains.annotations.ApiStatus;
  *     .build();
  * </pre>
  */
-@ApiStatus.Internal
 public class LivingIconSpec {
 
     /** 需要图标替换的原版物品 */

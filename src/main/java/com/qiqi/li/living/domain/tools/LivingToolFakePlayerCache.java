@@ -10,7 +10,6 @@ import javax.annotation.Nullable;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活工具 FakePlayer 缓存（{@code L26 = d}）：<b>按（维度, 主人 UUID）共享实例</b>。
@@ -30,7 +29,6 @@ import org.jetbrains.annotations.ApiStatus;
  * 主人 UUID 决定 FakePlayer 的身份（{@code L25}），而 GameProfile 构造后不好改，
  * 故不同主人必须各持一个实例。
  */
-@ApiStatus.Internal
 public final class LivingToolFakePlayerCache {
 
     private static final Map<CacheKey, LivingToolFakePlayer> CACHE = new HashMap<>();

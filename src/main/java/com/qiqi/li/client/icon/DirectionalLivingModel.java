@@ -15,14 +15,12 @@ import net.neoforged.neoforge.client.model.data.ModelData;
 
 import javax.annotation.Nullable;
 import java.util.List;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 方向感知模型，在 GUI 中对内部模型施加 Z 轴旋转和缩放。
  *
  * <p>与漏斗装饰器相同的旋转模式，只是作用于模型层而非叠加层。
  */
-@ApiStatus.Internal
 public class DirectionalLivingModel implements BakedModel {
 
     private final BakedModel inner;

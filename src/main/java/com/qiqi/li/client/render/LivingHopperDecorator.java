@@ -12,7 +12,6 @@ import com.mojang.math.Axis;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.client.IItemDecorator;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活漏斗的物品装饰器，在物品栏中叠加旋转后的方向箭头。
@@ -35,7 +34,6 @@ import org.jetbrains.annotations.ApiStatus;
  * 3. 输出箭头（由本 Decorator 叠加，旋转后）
  * </pre>
  */
-@ApiStatus.Internal
 public class LivingHopperDecorator implements IItemDecorator {
 
     /** 输入箭头纹理，默认朝上（0°），旋转后可表示 4 个方向 */

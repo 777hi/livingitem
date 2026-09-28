@@ -14,7 +14,6 @@ import net.neoforged.neoforge.client.model.data.ModelData;
 
 import javax.annotation.Nullable;
 import java.util.List;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 通用的上下文感知模型，根据显示场景切换不同的渲染模型。
@@ -28,7 +27,6 @@ import org.jetbrains.annotations.ApiStatus;
  *   <li>其他场景（手持、地面等）→ 委托给 vanillaModel，显示原版图标</li>
  * </ul>
  */
-@ApiStatus.Internal
 public class GenericContextAwareModel implements BakedModel {
 
     private final BakedModel livingModel;

@@ -5,7 +5,6 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import java.util.function.BiPredicate;
 import javax.annotation.Nullable;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * GUI交互规则条目 —— 声明一条"光标物品A + 按键 → 槽位物品B → 动作"的交互规则。
@@ -37,7 +36,6 @@ import org.jetbrains.annotations.ApiStatus;
  * 存 TagKey 而非展开物品集合 —— commonSetup 时 tag 尚未 resolve，
  * 匹配期（进世界后）{@code stack.is(TagKey)} 才查询，天然免掉时序问题。
  */
-@ApiStatus.Internal
 public record InteractionEntry(
     @Nullable Item targetItem,
     @Nullable TagKey<Item> targetTag,

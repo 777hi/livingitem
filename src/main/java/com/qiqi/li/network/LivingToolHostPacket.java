@@ -14,7 +14,6 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * S2C：「哪些容器里有活工具」同步包（{@code K2}）。
@@ -46,7 +45,6 @@ import org.jetbrains.annotations.ApiStatus;
  * @param dimension 所在维度，供客户端做残留保护（换维度 / 换存档时旧数据不串台）
  * @param entries   本包覆盖的全部条目；客户端<b>整体替换</b>缓存
  */
-@ApiStatus.Internal
 public record LivingToolHostPacket(
     ResourceLocation dimension,
     List<Entry> entries

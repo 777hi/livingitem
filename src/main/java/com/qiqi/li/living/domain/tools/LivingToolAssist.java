@@ -27,7 +27,6 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.level.BlockDropsEvent;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活工具<b>辅助玩家挖掘</b>（{@code A3} 支线）—— 背包里的活工具给玩家的挖掘"搭把手"。
@@ -68,7 +67,6 @@ import org.jetbrains.annotations.ApiStatus;
  * 主手那把会被跳过（它已经在原版的 {@code getDigSpeed} 里算过一次了，重复计算会翻倍）；
  * 掉落重算也只在<b>玩家自己的工具挖不动</b>时才接管 —— 玩家能挖就完全走原版，不干预。
  */
-@ApiStatus.Internal
 public final class LivingToolAssist {
 
     private LivingToolAssist() {

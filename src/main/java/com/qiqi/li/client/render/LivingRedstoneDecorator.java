@@ -13,9 +13,7 @@ import net.minecraft.world.item.Items;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.block.RedStoneWireBlock;
 import net.neoforged.neoforge.client.IItemDecorator;
-import org.jetbrains.annotations.ApiStatus;
 
-@ApiStatus.Internal
 public class LivingRedstoneDecorator implements IItemDecorator {
 
     // ⚠️ 直接引用**原版**的白色点图 —— 本模组不再随包分发该纹理（2026-09-22 去原版化）。

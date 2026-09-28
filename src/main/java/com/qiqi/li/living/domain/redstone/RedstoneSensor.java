@@ -1,7 +1,5 @@
 package com.qiqi.li.living.domain.redstone;
 
-import org.jetbrains.annotations.ApiStatus;
-
 /**
  * 红电感知端口 —— 电力层与跨层消费者（漏斗锁定 / TNT 点燃）读取信号层的**唯一**接口。
  *
@@ -16,7 +14,6 @@ import org.jetbrains.annotations.ApiStatus;
  * <p><b>消费者</b>：电力层 BFS 采样（涂蜡发电机的振荡感知）、活漏斗锁定、活 TNT 点燃。
  * 信号层内部（红石传播、充能）不经过本端口——那是信号层自己的读写路径。</p>
  */
-@ApiStatus.Internal
 public interface RedstoneSensor {
 
     /** 边方向数（UP/DOWN/LEFT/RIGHT） */

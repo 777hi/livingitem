@@ -15,7 +15,6 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
 import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
 import net.neoforged.neoforge.event.entity.living.LivingKnockBackEvent;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活武器<b>辅助攻击</b> —— 玩家打中怪时，背包里【无记忆】的活武器**一起出手**
@@ -45,7 +44,6 @@ import org.jetbrains.annotations.ApiStatus;
  * </ul>
  */
 @EventBusSubscriber(modid = LivingItem.MOD_ID)
-@ApiStatus.Internal
 public final class LivingWeaponAssist {
 
     /**

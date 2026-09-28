@@ -7,9 +7,7 @@ import net.minecraft.client.gui.screens.inventory.tooltip.ClientTooltipComponent
 import net.minecraft.world.item.ItemStack;
 
 import java.util.List;
-import org.jetbrains.annotations.ApiStatus;
 
-@ApiStatus.Internal
 public class LivingChestTooltipRenderer implements ClientTooltipComponent {
 
     private static final int SLOT_SIZE = 18;

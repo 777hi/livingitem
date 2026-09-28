@@ -21,13 +21,11 @@ import net.minecraft.world.level.portal.DimensionTransition;
 
 import java.util.ArrayList;
 import java.util.List;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 传送辅助类 - 处理末影珍珠传送的核心逻辑
  * 支持地图位置传送、旗帜传送、跨维度传送以及子位面传送
  */
-@ApiStatus.Internal
 public final class TeleportHelper {
 
     /** 传送冷却时间（tick），40 tick = 2秒 */

@@ -4,9 +4,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import com.qiqi.li.living.domain.redstone.LivingComparatorFunction;
-import org.jetbrains.annotations.ApiStatus;
 
-@ApiStatus.Internal
 public class ComparatorToggleHandler implements InteractionHandler {
 
     @Override

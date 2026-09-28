@@ -5,7 +5,7 @@
  * {@code target × trigger × button → actionId}，actionId 只能引用本模组已注册的
  * handler（玩家不能创造新行为）。指令：{@code /livingitem interaction reload|list}。</p>
  *
- * <p>包内全部类型均为内部实现（{@code @ApiStatus.Internal}）——
+ * <p>⚠️ 本包属<b>内部实现</b>（不在对外包清单内，见 api-contract.md）——
  * handler 是模组内容物，注册发生在 commonSetup。</p>
  */
 package com.qiqi.li.living.interaction;

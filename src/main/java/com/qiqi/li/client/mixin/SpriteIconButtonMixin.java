@@ -7,7 +7,6 @@ import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Mutable;
 import org.spongepowered.asm.mixin.Shadow;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * SpriteIconButton Mixin —— 使 final 的 sprite 字段可变。
@@ -19,7 +18,6 @@ import org.jetbrains.annotations.ApiStatus;
  *   提供类型安全的 setSprite 方法。
  */
 @Mixin(SpriteIconButton.class)
-@ApiStatus.Internal
 public class SpriteIconButtonMixin implements MutableSpriteSpriteIconButton {
     @Mutable
     @Shadow

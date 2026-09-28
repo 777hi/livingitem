@@ -15,9 +15,7 @@ import com.qiqi.li.living.container.ContainerSync;
 import com.qiqi.li.living.transfer.FilterData;
 import com.qiqi.li.living.domain.chest.LivingChestFunction;
 import net.minecraft.server.MinecraftServer;
-import org.jetbrains.annotations.ApiStatus;
 
-@ApiStatus.Internal
 public class LivingChestAccessor implements SlotAccessor {
 
     private final ContainerIdentity identity;

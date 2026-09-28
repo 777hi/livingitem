@@ -12,7 +12,6 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.component.TooltipProvider;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活漏斗数据。
@@ -22,7 +21,6 @@ import org.jetbrains.annotations.ApiStatus;
  * （原 {@code filter} 字段为旧存档兼容残留，2026-09-27 删除：本模组处于 alpha，
  * 不做旧存档兼容。判据见 `docs/README.md` 铁律 6。）
  */
-@ApiStatus.Internal
 public record LivingHopperData(
     DirectionTransferData direction,
     TransferData transfer,

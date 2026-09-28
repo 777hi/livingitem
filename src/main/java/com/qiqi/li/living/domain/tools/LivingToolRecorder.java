@@ -30,7 +30,6 @@ import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.event.server.ServerStoppedEvent;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活工具记忆录制器 —— 把玩家的操作行为录进 {@link LivingToolMemory}。
@@ -51,7 +50,6 @@ import org.jetbrains.annotations.ApiStatus;
  *   <li><b>只在蹲下时记录方块类型</b>（{@code L4}）。</li>
  * </ul>
  */
-@ApiStatus.Internal
 public final class LivingToolRecorder {
 
     /**

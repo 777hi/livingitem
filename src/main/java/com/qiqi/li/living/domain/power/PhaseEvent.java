@@ -1,7 +1,5 @@
 package com.qiqi.li.living.domain.power;
 
-import org.jetbrains.annotations.ApiStatus;
-
 /**
  * 相位事件 —— 振荡器在上升沿时广播到铜块网络。
  *
@@ -14,7 +12,6 @@ import org.jetbrains.annotations.ApiStatus;
  * @param delta    跳变幅度 |Δ|（信号单位）
  * @param tick     事件发生时的游戏 tick
  */
-@ApiStatus.Internal
 public record PhaseEvent(
     long sourceId,
     int period,

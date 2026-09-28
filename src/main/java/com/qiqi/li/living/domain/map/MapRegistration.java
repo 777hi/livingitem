@@ -1,7 +1,6 @@
 package com.qiqi.li.living.domain.map;
 
 import com.qiqi.li.living.api.LivingItemManager;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活地图传送域注册入口 —— 见 {@code RedstoneRegistration} 的类注释了解为何有这个类（A1）。
@@ -10,7 +9,6 @@ import org.jetbrains.annotations.ApiStatus;
  * （{@code LivingMapEventHandler} / {@code ItemFrameMapTeleportHandler}），
  * 它们同样从 {@code commonSetup} 搬到这里。
  */
-@ApiStatus.Internal
 public final class MapRegistration {
 
     private MapRegistration() {}

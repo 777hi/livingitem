@@ -69,10 +69,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import org.jetbrains.annotations.ApiStatus;
 
 @Mixin(AbstractContainerScreen.class)
-@ApiStatus.Internal
 public class AbstractContainerScreenMixin extends Screen {
     protected AbstractContainerScreenMixin(Component title) {
         super(title);

@@ -7,9 +7,7 @@ import net.minecraft.world.level.Level;
 import javax.annotation.Nullable;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import org.jetbrains.annotations.ApiStatus;
 
-@ApiStatus.Internal
 public final class LivingMapClientCache {
 
     private static final int MAX_CACHE_SIZE = 64;

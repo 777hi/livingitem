@@ -9,7 +9,6 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 光标物品更新包（服务端→客户端）。
@@ -31,7 +30,6 @@ import org.jetbrains.annotations.ApiStatus;
  *   当交互处理器修改了光标物品（如 ignite_carried 点燃光标上的活TNT），
  *   服务端需要将修改后的光标物品同步到客户端。
  */
-@ApiStatus.Internal
 public record CarriedUpdatePacket(CompoundTag carriedTag) implements CustomPacketPayload {
 
     public static final ResourceLocation ID = ResourceLocation.fromNamespaceAndPath("living_item", "carried_update");

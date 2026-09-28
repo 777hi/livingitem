@@ -15,7 +15,6 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * S2C 路由快照同步包。
@@ -26,7 +25,6 @@ import org.jetbrains.annotations.ApiStatus;
  *
  * <p>频道键是命名空间而非权限，专属频道路由不视为隐私，因此本包仍广播给所有在线玩家。</p>
  */
-@ApiStatus.Internal
 public record EnderChannelSyncPacket(
     EnderChannelKey channel,
     int channelSize,

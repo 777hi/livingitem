@@ -11,7 +11,6 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.neoforged.neoforge.common.ItemAbilities;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 耕作知识表 —— 「什么算锄头」+「什么土能耕成什么」，活耕地获取路径的唯一真源。
@@ -33,7 +32,6 @@ import org.jetbrains.annotations.ApiStatus;
  * 物品层 GUI 交互里没有世界上下文，一律不做。
  * podzol（灰化土）与 mycelium（菌丝）原版不可耕，不纳入。</p>
  */
-@ApiStatus.Internal
 public final class Tillables {
 
     /**

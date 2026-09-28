@@ -36,9 +36,7 @@ import com.qiqi.li.living.domain.runtime.LivingItemRuntimeData;
 import com.qiqi.li.living.domain.runtime.LivingItemClientCache;
 import com.mojang.logging.LogUtils;
 import org.slf4j.Logger;
-import org.jetbrains.annotations.ApiStatus;
 
-@ApiStatus.Internal
 public class LivingHopperFunction implements LivingItemFunction {
 
     public static final String ID = "living_hopper";

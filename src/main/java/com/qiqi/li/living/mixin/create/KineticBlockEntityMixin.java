@@ -10,10 +10,8 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
-import org.jetbrains.annotations.ApiStatus;
 
 @Mixin(KineticBlockEntity.class)
-@ApiStatus.Internal
 public abstract class KineticBlockEntityMixin implements LivingItemStressOutput {
 
     @Shadow(remap = false)

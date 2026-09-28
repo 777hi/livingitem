@@ -13,7 +13,6 @@ import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerContext;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 容器级流体数据 —— 参照原版水流平地蔓延逻辑实现。
@@ -34,7 +33,6 @@ import org.jetbrains.annotations.ApiStatus;
  * - 多水源时，每个槽位取最近水源的 level
  * - 流动水记录 fromSlot（BFS 父节点），物品沿水流方向推动
  */
-@ApiStatus.Internal
 public class ContainerFluidData {
 
     public static final ContainerFluidData EMPTY = new ContainerFluidData() {

@@ -16,7 +16,6 @@ import net.minecraft.resources.ResourceLocation;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.util.*;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * S2C 活物品运行时数据同步包。
@@ -37,7 +36,6 @@ import org.jetbrains.annotations.ApiStatus;
  *     [furnace fields if flags & 4]
  * </pre>
  */
-@ApiStatus.Internal
 public record LivingItemSyncPacket(
     String containerKey,
     Map<Integer, LivingItemRuntimeData> slotData

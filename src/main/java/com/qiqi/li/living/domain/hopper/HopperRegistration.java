@@ -2,12 +2,10 @@ package com.qiqi.li.living.domain.hopper;
 
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerSnapshot;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活漏斗域注册入口 —— 见 {@code RedstoneRegistration} 的类注释了解为何有这个类（A1）。
  */
-@ApiStatus.Internal
 public final class HopperRegistration {
 
     private HopperRegistration() {}

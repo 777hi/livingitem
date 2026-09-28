@@ -11,7 +11,6 @@ import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.components.ItemFilterComponent;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.transfer.FilterData;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活漏斗过滤构建器 —— 从容器上下文中构建所有活漏斗的过滤数据。
@@ -27,7 +26,6 @@ import org.jetbrains.annotations.ApiStatus;
  *   <li>递归处理活漏斗链（通过 ensureFilterBuilt 防止循环）</li>
  * </ul>
  */
-@ApiStatus.Internal
 public final class HopperFilterBuilder {
 
     private HopperFilterBuilder() {}

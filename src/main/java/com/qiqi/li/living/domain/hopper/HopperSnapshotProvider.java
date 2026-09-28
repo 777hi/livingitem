@@ -9,7 +9,6 @@ import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.transfer.SlotResolver;
 
 import net.minecraft.world.item.ItemStack;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活漏斗快照贡献者 —— 计算本容器每个活漏斗的源/目标槽位与过滤数据。
@@ -17,7 +16,6 @@ import org.jetbrains.annotations.ApiStatus;
  * <p>原逻辑位于 {@code ContainerSnapshot.capture}，此处迁回 domain 包，
  * 解除 {@code container} 包对 {@code domain.hopper} 的依赖。</p>
  */
-@ApiStatus.Internal
 public class HopperSnapshotProvider implements SnapshotProvider {
 
     @Override

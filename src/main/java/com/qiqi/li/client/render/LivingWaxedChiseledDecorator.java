@@ -12,7 +12,6 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.client.IItemDecorator;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活涂蜡雕文铜块（电力层移相器）的物品装饰器：在图标上叠加**输入方向**箭头。
@@ -24,7 +23,6 @@ import org.jetbrains.annotations.ApiStatus;
  * 组合出 4 个方向）。电力层移相器没有独立的"输出方向"概念（派生相位登记在本体槽位、
  * 由相邻雕文的输入方向读取），故只画输入箭头。</p>
  */
-@ApiStatus.Internal
 public class LivingWaxedChiseledDecorator implements IItemDecorator {
 
     private static final ResourceLocation ARROW_IN = ResourceLocation.fromNamespaceAndPath(

@@ -5,7 +5,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import com.qiqi.li.living.domain.power.LivingWaxedCopperFunction.SignalTracker;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 容器级红电数据 —— 与 {@code ContainerRedstoneData} 并列的电力层账本。
@@ -24,7 +23,6 @@ import org.jetbrains.annotations.ApiStatus;
  *       电按锈级分账后容器级「总功率」没有消费方，读数口径 = 各锈级 EMA。</li>
  * </ul>
  */
-@ApiStatus.Internal
 public class ContainerPowerData {
 
     /** EMA 平滑系数（约 8 tick 记忆） */

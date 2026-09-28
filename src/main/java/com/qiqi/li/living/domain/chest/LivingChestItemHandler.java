@@ -6,9 +6,7 @@ import net.minecraft.world.item.component.ItemContainerContents;
 import net.neoforged.neoforge.items.IItemHandler;
 
 import com.qiqi.li.living.domain.chest.LivingChestFunction;
-import org.jetbrains.annotations.ApiStatus;
 
-@ApiStatus.Internal
 public class LivingChestItemHandler implements IItemHandler {
 
     private final ItemStack chestStack;

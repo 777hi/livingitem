@@ -29,7 +29,6 @@ import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.network.PacketDistributor;
 import org.slf4j.Logger;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活末影箱全局路由表 —— 服务端单例，维护频道键→路由条目双端队列的映射。
@@ -66,7 +65,6 @@ import org.jetbrains.annotations.ApiStatus;
  * 存储在 {@link EnderChannelClientCache} 中供 Tooltip 读取，
  * 不直接访问本注册表。
  */
-@ApiStatus.Internal
 public final class EnderChannelRegistry {
 
     private static final Logger LOGGER = LogUtils.getLogger();

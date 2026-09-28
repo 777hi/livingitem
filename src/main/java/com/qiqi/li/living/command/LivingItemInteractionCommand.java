@@ -15,7 +15,6 @@ import net.minecraft.network.chat.Component;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * {@code /livingitem interaction} —— 交互规则的 reload 与查看（D2）。
@@ -25,7 +24,6 @@ import org.jetbrains.annotations.ApiStatus;
  * {@code reload}（重载磁盘）+ {@code list}（列出生效规则并标注来源）。</p>
  */
 @EventBusSubscriber
-@ApiStatus.Internal
 public class LivingItemInteractionCommand {
 
     @SubscribeEvent

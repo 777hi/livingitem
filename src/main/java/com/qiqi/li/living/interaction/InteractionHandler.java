@@ -2,7 +2,6 @@ package com.qiqi.li.living.interaction;
 
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.inventory.Slot;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * GUI交互处理器接口 —— 服务端执行交互逻辑。
@@ -24,7 +23,6 @@ import org.jetbrains.annotations.ApiStatus;
  * InteractionRegistry.registerHandler("ignite", new IgniteHandler());
  * </pre>
  */
-@ApiStatus.Internal
 public interface InteractionHandler {
 
     /**

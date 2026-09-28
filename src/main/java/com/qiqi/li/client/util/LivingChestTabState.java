@@ -1,8 +1,5 @@
 package com.qiqi.li.client.util;
 
-import org.jetbrains.annotations.ApiStatus;
-
-@ApiStatus.Internal
 public class LivingChestTabState {
 
     private static boolean active = false;

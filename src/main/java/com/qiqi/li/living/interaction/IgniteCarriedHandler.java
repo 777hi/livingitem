@@ -6,7 +6,6 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.domain.tnt.ExplosionComponent;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 光标点燃处理器 —— 处理活TNT右键活打火石的交互。
@@ -19,7 +18,6 @@ import org.jetbrains.annotations.ApiStatus;
  *   - 创造模式：信任客户端，直接点燃光标TNT
  *   - 生存模式：验证槽位中的活打火石，消耗1点耐久，点燃光标TNT
  */
-@ApiStatus.Internal
 public class IgniteCarriedHandler implements InteractionHandler {
 
     @Override

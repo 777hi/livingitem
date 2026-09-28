@@ -23,7 +23,6 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.neoforged.neoforge.common.util.FakePlayer;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活工具回放用的假玩家（{@code L24}/{@code L25}）。
@@ -42,7 +41,6 @@ import org.jetbrains.annotations.ApiStatus;
  * {@code tick()} 空实现、无敌、不收发网络包、不计统计进度、{@code isFakePlayer()==true}。
  * 其中 <b>{@code tick()} 是空的</b>意味着破坏进度不会自动推进 —— 必须我们自己推进（{@code L27}）。</p>
  */
-@ApiStatus.Internal
 public class LivingToolFakePlayer extends FakePlayer {
 
     /** 无主人（自动活化等场景）时的回退 UUID，取一个固定的常量以保证可预期。 */

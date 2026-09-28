@@ -23,9 +23,7 @@ import com.qiqi.li.living.api.HasDirection;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.model.Pos2D;
-import org.jetbrains.annotations.ApiStatus;
 
-@ApiStatus.Internal
 public class LivingCopperFunction implements LivingItemFunction, HasContainerData, HasDirection {
 
     public static final String ID = "living_copper";

@@ -19,7 +19,6 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 容器监控系统 —— 实时追踪容器状态变化，检测物品复制/丢失/异常移动。
@@ -39,7 +38,6 @@ import org.jetbrains.annotations.ApiStatus;
  *   <li><b>异常槽位变化</b>：非活物品功能涉及的槽位被意外修改</li>
  * </ul>
  */
-@ApiStatus.Internal
 public class ContainerMonitor {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("LivingItem/Monitor");

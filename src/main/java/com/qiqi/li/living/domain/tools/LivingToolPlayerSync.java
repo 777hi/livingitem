@@ -15,7 +15,6 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 服务端：把每个玩家背包里的「无记忆活工具」按距离广播给附近客户端
@@ -36,7 +35,6 @@ import org.jetbrains.annotations.ApiStatus;
  * <p>⚠️ <b>最小版不含挖掘环</b>：{@code LivingToolAssistState} 是各机器本地记录的，
  * 要同步"他正在挖哪一格"得额外广播。</p>
  */
-@ApiStatus.Internal
 public final class LivingToolPlayerSync {
 
     /** 广播半径（格）。⚠️ 必须与 {@code LivingToolHostSync.RADIUS} 一致（见类注释）。 */

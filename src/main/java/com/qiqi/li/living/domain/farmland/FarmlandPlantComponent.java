@@ -16,7 +16,6 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.component.TooltipProvider;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活耕地种植数据 —— 作物生长状态 + round-robin 逐项产出的持久化数据源。
@@ -35,7 +34,6 @@ import org.jetbrains.annotations.ApiStatus;
  * 作物渲染的数据源，进忽略集合会导致组件变化不触发容器同步（大箱快照坑，见
  * tooltip-system.md 坑清单第 3 条）。代价是仅同作物同 age 才能堆叠（一堆 = 一片同步生长的田）。</p>
  */
-@ApiStatus.Internal
 public record FarmlandPlantComponent(
     @Nullable Item cropSeed,
     int age,

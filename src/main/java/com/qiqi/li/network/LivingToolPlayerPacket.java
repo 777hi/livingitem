@@ -13,7 +13,6 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 服务端 → 客户端：<b>附近玩家背包里的「无记忆活工具」清单</b>（联机可见性 · 最小版）。
@@ -31,7 +30,6 @@ import org.jetbrains.annotations.ApiStatus;
  * @param dimension 所在维度，供客户端做残留保护（换维度 / 换存档时不串台）
  * @param entries   本包覆盖的全部条目；客户端<b>整体替换</b>缓存
  */
-@ApiStatus.Internal
 public record LivingToolPlayerPacket(
     ResourceLocation dimension,
     List<Entry> entries

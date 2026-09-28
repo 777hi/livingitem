@@ -5,9 +5,7 @@ import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.material.MapColor;
 import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
-import org.jetbrains.annotations.ApiStatus;
 
-@ApiStatus.Internal
 public class ExpandedMapTexture {
 
     private static final int TEX_SIZE = 128;

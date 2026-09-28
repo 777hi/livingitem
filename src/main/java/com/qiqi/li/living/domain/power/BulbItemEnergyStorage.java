@@ -4,7 +4,6 @@ import com.qiqi.li.living.domain.power.LivingWaxedBulbData;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.energy.IEnergyStorage;
 import com.qiqi.li.living.api.LivingItemManager;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 涂蜡铜灯物品能量接口 —— 通用电池（双向，§3.6 v17.5）。
@@ -12,7 +11,6 @@ import org.jetbrains.annotations.ApiStatus;
  * <p>每盏等量充/放（q ± Δ/count，向下取整），拆分/合并/搬运天然守恒。
  * 充电受每盏容量 C 限制；无出身论——外部充的电与红电发的电混存不分来源。</p>
  */
-@ApiStatus.Internal
 public class BulbItemEnergyStorage implements IEnergyStorage {
 
     private final ItemStack stack;

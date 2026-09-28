@@ -14,10 +14,8 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
-import org.jetbrains.annotations.ApiStatus;
 
 @Mixin(ItemStack.class)
-@ApiStatus.Internal
 public abstract class ItemStackMixin {
 
     @Inject(method = "getTooltipImage", at = @At("RETURN"), cancellable = true)

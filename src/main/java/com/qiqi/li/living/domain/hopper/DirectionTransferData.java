@@ -5,9 +5,7 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import com.qiqi.li.living.model.Pos2D;
-import org.jetbrains.annotations.ApiStatus;
 
-@ApiStatus.Internal
 public record DirectionTransferData(Pos2D sourceOffset, Pos2D targetOffset) {
 
     public static final DirectionTransferData DEFAULT = new DirectionTransferData(Pos2D.UP, Pos2D.DOWN);

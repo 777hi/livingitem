@@ -5,7 +5,6 @@ import com.qiqi.li.living.function.LivingFlintAndSteelFunction;
 import com.qiqi.li.living.interaction.IgniteCarriedHandler;
 import com.qiqi.li.living.interaction.IgniteHandler;
 import com.qiqi.li.living.interaction.InteractionRegistry;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活TNT 域注册入口 —— 见 {@code RedstoneRegistration} 的类注释了解为何有这个类（A1）。
@@ -14,7 +13,6 @@ import org.jetbrains.annotations.ApiStatus;
  * 归属选 TNT 域 —— TNT 是被作用的一方、也是本规则的意义所在；
  * 打火石只是纯触发器（无 tick 逻辑，见 {@link LivingFlintAndSteelFunction}）。
  */
-@ApiStatus.Internal
 public final class TntRegistration {
 
     private TntRegistration() {}

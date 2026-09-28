@@ -13,9 +13,7 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.component.TooltipProvider;
 import com.qiqi.li.living.model.Pos2D;
-import org.jetbrains.annotations.ApiStatus;
 
-@ApiStatus.Internal
 public record LivingCutCopperData(
     Pos2D inputDir,
     Pos2D outputDir

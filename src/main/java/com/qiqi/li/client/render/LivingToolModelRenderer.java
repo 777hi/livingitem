@@ -50,7 +50,6 @@ import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活工具<b>悬浮模型 + 动画</b>（{@code K} 组）—— 让活工具在世界里"活起来"。
@@ -110,7 +109,6 @@ import org.jetbrains.annotations.ApiStatus;
  *   <tr><td>手持</td><td>❌ 不画</td><td>玩家手里已经拿着了，再飘一个是重复</td></tr>
  * </table>
  */
-@ApiStatus.Internal
 public final class LivingToolModelRenderer {
 
     // ══════════════════════════════════════════════════════════════════════════════

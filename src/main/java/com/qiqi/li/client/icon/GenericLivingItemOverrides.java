@@ -13,7 +13,6 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.HashMap;
 import java.util.Map;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 通用的模型覆盖解析器，根据 LivingIconSpec 配置和物品 NBT 数据决定返回哪个模型。
@@ -31,7 +30,6 @@ import org.jetbrains.annotations.ApiStatus;
  *
  * <p>ContextAwareModel 实例按变体名缓存（懒加载），避免每帧创建新对象。
  */
-@ApiStatus.Internal
 public class GenericLivingItemOverrides extends ItemOverrides {
 
     private final BakedModel vanillaModel;

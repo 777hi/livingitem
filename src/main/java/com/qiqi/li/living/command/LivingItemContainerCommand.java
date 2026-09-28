@@ -23,7 +23,6 @@ import net.minecraft.world.phys.HitResult;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 容器注册指令 —— 让玩家在游戏中注册/管理容器布局规则。
@@ -41,7 +40,6 @@ import org.jetbrains.annotations.ApiStatus;
  * → 发给模组作者 → 作者覆盖内置资源重新打包 ⇒ 所有玩家受益。</p>
  */
 @EventBusSubscriber
-@ApiStatus.Internal
 public class LivingItemContainerCommand {
 
     private static final SimpleCommandExceptionType NOT_LOOKING_AT_CONTAINER =

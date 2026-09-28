@@ -1,7 +1,5 @@
 package com.qiqi.li.living.domain.power;
 
-import org.jetbrains.annotations.ApiStatus;
-
 /**
  * 红电发电数学工具 —— 全部纯函数，零 Minecraft 依赖（可单测）。
  *
@@ -17,7 +15,6 @@ import org.jetbrains.annotations.ApiStatus;
  *
  * <p>RE 为内部自然单位（零常数），K 只在边界（电池 / IEnergyStorage）出现一次。</p>
  */
-@ApiStatus.Internal
 public final class PowerMath {
 
     private PowerMath() {

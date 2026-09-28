@@ -7,7 +7,6 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.domain.farmland.Tillables;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活锄头右键活土 → 转换为耕地（物品转换型处理器）。
@@ -21,7 +20,6 @@ import org.jetbrains.annotations.ApiStatus;
  *     PlantCropHandler 同口径——创造模式光标经 carriedTag 已在服务端恢复，能正常校验）
  *   - 目标槽位物品原地替换，保留堆叠数与 IS_LIVING 标记</p>
  */
-@ApiStatus.Internal
 public class TillToFarmlandHandler implements InteractionHandler {
 
     @Override

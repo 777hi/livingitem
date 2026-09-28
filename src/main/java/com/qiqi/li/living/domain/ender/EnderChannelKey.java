@@ -8,7 +8,6 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活末影箱频道键 —— (归属玩家, 堆叠数) 复合键。
@@ -31,7 +30,6 @@ import org.jetbrains.annotations.ApiStatus;
  * @param owner 绑定的玩家 UUID，{@code null} 表示公共频道
  * @param count 活末影箱物品的堆叠数
  */
-@ApiStatus.Internal
 public record EnderChannelKey(@Nullable UUID owner, int count) {
 
     /**

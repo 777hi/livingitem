@@ -9,7 +9,6 @@ import net.minecraft.world.level.Level;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 服务端活物品运行时缓存 —— 存储每容器每槽位的运行时数据（遥测/瞬态字段）。
@@ -21,7 +20,6 @@ import org.jetbrains.annotations.ApiStatus;
  * <p>每次更新数据时标记对应容器为"脏"。在 {@link #flushToClients(Level, Collection)}
  * 中遍历脏容器，向所有打开了该容器的玩家发送同步包。</p>
  */
-@ApiStatus.Internal
 public class ContainerRuntimeCache {
 
     /** 玩家背包容器键前缀（buildContainerKey 的 inventory 分支） */

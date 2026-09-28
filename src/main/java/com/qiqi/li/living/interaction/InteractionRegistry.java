@@ -6,7 +6,6 @@ import java.util.List;
 import java.util.Map;
 import com.qiqi.li.living.api.LivingItemManager;
 import net.minecraft.world.item.ItemStack;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * GUI交互注册表 —— 全局统一管理活物品的GUI交互规则和处理器。
@@ -26,7 +25,6 @@ import org.jetbrains.annotations.ApiStatus;
  *   → 同时验证双方都是活物品
  *   → 返回匹配的 InteractionEntry
  */
-@ApiStatus.Internal
 public class InteractionRegistry {
 
     private static final List<InteractionEntry> ENTRIES = new ArrayList<>();

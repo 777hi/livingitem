@@ -15,9 +15,7 @@ import org.joml.Quaternionf;
 
 import javax.annotation.Nullable;
 import java.util.List;
-import org.jetbrains.annotations.ApiStatus;
 
-@ApiStatus.Internal
 public class RotatingWaterWheelModel implements BakedModel {
 
     private final BakedModel baseModel;

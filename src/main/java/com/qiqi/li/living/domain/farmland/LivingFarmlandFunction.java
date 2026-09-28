@@ -26,7 +26,6 @@ import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活耕地功能 —— 容器内自动种植生长 + round-robin 逐项产出。
@@ -47,7 +46,6 @@ import org.jetbrains.annotations.ApiStatus;
  *       LIVING_FARMLAND_MOIST + 主动同步——图标 moist/dry 变体切换数据源</li>
  * </ul></p>
  */
-@ApiStatus.Internal
 public class LivingFarmlandFunction implements LivingItemFunction {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("LivingFarmland");

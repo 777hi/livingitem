@@ -30,7 +30,6 @@ import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活工具<b>记忆射线可视化</b>（{@code L19} / {@code L20}）—— 把"活工具打算挖/交互哪里"画给玩家看。
@@ -74,7 +73,6 @@ import org.jetbrains.annotations.ApiStatus;
  *       不开 GUI 时客户端拿不到箱子内容</td></tr>
  * </table>
  */
-@ApiStatus.Internal
 public final class LivingToolRayRenderer {
 
     /** 渲染距离上限（格）。超出就不画，避免远处的箱子刷屏。 */

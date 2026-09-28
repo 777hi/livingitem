@@ -17,10 +17,8 @@ import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.domain.runtime.LivingItemClientCache;
 import com.qiqi.li.living.domain.runtime.LivingItemRuntimeData;
-import org.jetbrains.annotations.ApiStatus;
 
 @EventBusSubscriber(value = Dist.CLIENT, modid = LivingItem.MOD_ID)
-@ApiStatus.Internal
 public class LivingItemTooltip {
 
     @SubscribeEvent

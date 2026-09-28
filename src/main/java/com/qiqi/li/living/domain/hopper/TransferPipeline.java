@@ -14,7 +14,6 @@ import com.qiqi.li.living.transfer.SlotAccessorFactory;
 import com.qiqi.li.living.transfer.SlotInteractions;
 import com.qiqi.li.living.components.ItemFilterComponent;
 import com.qiqi.li.living.model.ResolvedSlots;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 传输管道 —— 统一活漏斗的物品传输流程。
@@ -29,7 +28,6 @@ import org.jetbrains.annotations.ApiStatus;
  *   <li><b>执行</b> —— {@link SlotAccessor#transfer}</li>
  * </ol>
  */
-@ApiStatus.Internal
 public final class TransferPipeline {
 
     private TransferPipeline() {}

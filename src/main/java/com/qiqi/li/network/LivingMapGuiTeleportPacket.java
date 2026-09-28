@@ -19,9 +19,7 @@ import net.minecraft.world.item.MapItem;
 import net.minecraft.world.level.saveddata.maps.MapId;
 import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
-import org.jetbrains.annotations.ApiStatus;
 
-@ApiStatus.Internal
 public record LivingMapGuiTeleportPacket(
     int topLeftSlotIndex,
     float u,

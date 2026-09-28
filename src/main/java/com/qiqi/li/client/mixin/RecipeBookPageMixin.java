@@ -7,10 +7,8 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
-import org.jetbrains.annotations.ApiStatus;
 
 @Mixin(RecipeBookPage.class)
-@ApiStatus.Internal
 public class RecipeBookPageMixin {
 
     @Inject(method = "render", at = @At("HEAD"), cancellable = true)

@@ -10,7 +10,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活工具当前正在挖的目标与起始时刻（{@code L21}）。
@@ -29,7 +28,6 @@ import org.jetbrains.annotations.ApiStatus;
  * 不是 {@code ServerPlayerGameMode#gameTicks} —— 后者依赖 {@code gameMode.tick()}，
  * 而 FakePlayer 的 tick 是空实现（{@code L27}）。</p>
  */
-@ApiStatus.Internal
 public record LivingToolProgress(BlockPos target, long startTick) {
 
     public static final Codec<LivingToolProgress> CODEC = RecordCodecBuilder.create(instance ->

@@ -8,9 +8,7 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import com.qiqi.li.living.model.Pos2D;
-import org.jetbrains.annotations.ApiStatus;
 
-@ApiStatus.Internal
 public record DirectionSlotsData(Map<String, Pos2D> directions, int activeSlotIndex) {
 
     public static final DirectionSlotsData EMPTY = new DirectionSlotsData(Map.of(), 0);

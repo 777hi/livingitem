@@ -17,7 +17,6 @@ import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.phys.Vec3;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活工具记忆 —— 玩家操作行为的录制结果（活工具系列的核心持久化数据）。
@@ -41,7 +40,6 @@ import org.jetbrains.annotations.ApiStatus;
  * <p>回放时以<b>宿主</b>（容器 / 玩家 / 掉落物）位置为射线起点，加上这条 offset 即得终点（{@code L14}）。
  * 记忆与宿主解耦，所以活工具在不同宿主间迁移后行为一致。</p>
  */
-@ApiStatus.Internal
 public record LivingToolMemory(
     @Nullable RayMemory dig,
     @Nullable RayMemory use,

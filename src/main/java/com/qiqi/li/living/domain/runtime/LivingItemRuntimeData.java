@@ -5,7 +5,6 @@ import com.qiqi.li.living.domain.furnace.TransformData;
 import com.qiqi.li.living.domain.power.LivingWaxedGeneratorData;
 
 import javax.annotation.Nullable;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活物品的运行时数据快照 —— 仅包含展示/瞬态字段，不参与物品堆叠判定。
@@ -21,7 +20,6 @@ import org.jetbrains.annotations.ApiStatus;
  *   <li><b>熔炉</b>：{@code progress} + {@code total} + {@code burnTime} + {@code transform}</li>
  * </ul>
  */
-@ApiStatus.Internal
 public record LivingItemRuntimeData(
     @Nullable LivingWaxedGeneratorData generatorTelemetry,
     @Nullable HopperRuntime hopper,

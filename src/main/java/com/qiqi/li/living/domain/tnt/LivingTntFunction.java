@@ -19,9 +19,7 @@ import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.domain.redstone.ContainerRedstoneData;
 import com.qiqi.li.living.domain.tnt.ExplosionData;
 import com.qiqi.li.living.domain.tnt.LivingTntData;
-import org.jetbrains.annotations.ApiStatus;
 
-@ApiStatus.Internal
 public class LivingTntFunction implements LivingItemFunction, HasContainerData {
 
     public static final String ID = "living_tnt";

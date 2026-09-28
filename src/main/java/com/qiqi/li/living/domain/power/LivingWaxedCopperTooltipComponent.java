@@ -2,7 +2,6 @@ package com.qiqi.li.living.domain.power;
 
 import java.util.List;
 import net.minecraft.world.inventory.tooltip.TooltipComponent;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活涂蜡发电机的仪器面板数据（tooltip 底部由 {@code LivingWaxedCopperTooltipRenderer} 绘制）。
@@ -25,7 +24,6 @@ import org.jetbrains.annotations.ApiStatus;
  * @param phaseDeltas     最佳域各相位 |Δᵢ|，与 {@code phaseOffsets} 同序
  * @param minPhaseGap     环形最小相位间隔（tick）；相位少于 2 路时为 -1
  */
-@ApiStatus.Internal
 public record LivingWaxedCopperTooltipComponent(
     int phaseCount,
     int period,

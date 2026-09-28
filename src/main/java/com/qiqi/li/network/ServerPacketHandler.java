@@ -15,9 +15,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.jetbrains.annotations.ApiStatus;
 
-@ApiStatus.Internal
 public class ServerPacketHandler {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ServerPacketHandler.class);

@@ -14,7 +14,6 @@ import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.network.PacketDistributor;
 import org.slf4j.Logger;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活物品切换按钮 —— 在容器界面中显示，点击后切换手持物品的 IS_LIVING 标记。
@@ -27,7 +26,6 @@ import org.jetbrains.annotations.ApiStatus;
  *   通过 {@link MutableSpriteSpriteIconButton} Mixin 实现贴图动态切换（悬停/非悬停），
  *   因为 SpriteIconButton 的 sprite 字段是 final 的，需要 Mixin 修改。
  */
-@ApiStatus.Internal
 public class LivingButton extends SpriteIconButton.CenteredIcon {
     private static final int WIDTH = 16;
     private static final int HEIGHT = 8;

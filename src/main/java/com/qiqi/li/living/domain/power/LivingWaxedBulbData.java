@@ -13,7 +13,6 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.component.TooltipProvider;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 涂蜡铜灯 —— 电池（§3.6 v17.5：纯容器，无充放限率）。
@@ -24,7 +23,6 @@ import org.jetbrains.annotations.ApiStatus;
  * × count（线性，平方容量在拆分时坍缩毁电，弃用）。
  * 电量不同的两堆不会自动合并（原版组件堆叠语义），同电量合并天然守恒。</p>
  */
-@ApiStatus.Internal
 public record LivingWaxedBulbData(
     long chargeMilliFe
 ) implements TooltipProvider {

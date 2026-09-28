@@ -7,7 +7,6 @@ import net.minecraft.world.item.Items;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.domain.farmland.CropClassifier;
 import com.qiqi.li.living.domain.farmland.FarmlandPlantComponent;
-import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活种子右键活耕地 → 种植（写入作物类型标记）。
@@ -23,7 +22,6 @@ import org.jetbrains.annotations.ApiStatus;
  * 与生存模式走同一套校验。已种植的耕地不可重复种植；要换作物先取消活化
  * （LivingTagPacket 活化开关，取消活化即清空种植数据）再重新种植。</p>
  */
-@ApiStatus.Internal
 public class PlantCropHandler implements InteractionHandler {
 
     /**
