@@ -45,7 +45,9 @@ javadoc 明写「新增 LivingItemFunction 必须回来手添」⇒ **第三方�
 > ⭐ **为什么必须有守卫**：旧写法「忘了加 remove」会立刻暴露；新写法「忘了声明」是**静默失败**。
 > 没有守卫，这份契约一定会腐烂回去。
 >
-> ⭐ **为什么用反射而不是硬编码清单**：组件集合从 `LivingItemManager` 的字段反射得出，
+> ⭐ **为什么用反射而不是硬编码清单**：组件集合从 `LivingComponents` +
+> `LivingItemManager` 两处的字段**反射得出**（A1 迁移后内容组件常量住注册站
+> `LivingComponents`，框架级原始类型组件仍留 `LivingItemManager`），
 > 新增 DataComponent **自动纳入**测试，不存在「第二份清单」需要同步
 > （避免又一次两处维护漂移）。
 
@@ -67,6 +69,7 @@ javadoc 明写「新增 LivingItemFunction 必须回来手添」⇒ **第三方�
 | 扩展点 | 位置 | 状态 |
 |---|---|---|
 | `LivingItemManager.registerFunction` | `LivingItemManager.java` | ✅ 可用 |
+| **数据组件注册** `LivingComponents.*` | `transfer/LivingComponents.java`（A1 迁入，2026-09-28） | ✅ 可用 —— 内容组件的常量与注册站；`LivingItemManager` 自此为纯框架类，不再牵出 domain 类型 |
 | `InteractionRegistry.register` / `registerHandler` | `LivingItem.java` | ✅ 声明式规则 + 谓词收窄（活耕地案例已证明无需枚举物品类） |
 | `ContainerSnapshot.registerProvider` | `LivingItem.java` | ✅ 注册驱动，已解除 container 包对 domain 类的依赖 |
 | 可选接口 `HasDirection` / `HasContainerData` | `living/api/` | ✅ 新增活物品无需改核心文件 |
