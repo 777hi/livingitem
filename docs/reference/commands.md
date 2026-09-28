@@ -31,8 +31,8 @@
 | 子树 | 负责什么 | 完整用法 |
 |---|---|---|
 | `container` | 校准 / 管理第三方容器的槽位布局（含导出给模组作者合并进内置资源） | [`guides/container-compatibility.md`](../guides/container-compatibility.md) |
-| `activation` | 控制哪些物品可被活化（禁玩家自己活化、放行任务奖励等途径） | [`buffer/activation-rule-design.md`](../buffer/activation-rule-design.md) |
-| `interaction` | 重载 / 查看活物品 GUI 交互规则（规则本体在 `config/living_item/interaction_rules.json`，只写差异；增删改直接编辑文件） | [`buffer/interaction-rule-design.md`](../buffer/interaction-rule-design.md) |
+| `activation` | 控制哪些物品可被活化（禁玩家自己活化、放行任务奖励等途径） | [`buffer/activation-rule-design.md`](../guides/activation-rules.md) |
+| `interaction` | 重载 / 查看活物品 GUI 交互规则（规则本体在 `config/living_item/interaction_rules.json`，只写差异；增删改直接编辑文件） | [`buffer/interaction-rule-design.md`](../guides/interaction-rules.md) |
 | `debug` | 容器监控开关、背包转储、区块缓存统计（排障工具） | [`guides/container-monitor.md`](../guides/container-monitor.md) |
 
 ## activation 的「目标」语法（三种颗粒度）
@@ -49,7 +49,7 @@
 
 > ⚠️ **已知缺口**：以上动词都只能设置「**活化**」动作 —— **没有任何指令能设置
 > 「取消活化」的规则**（只能手写 JSON 的 `deactivate` 字段）。
-> 详见 [`activation-rule-design.md`](../buffer/activation-rule-design.md) §11.1。
+> 详见 [`activation-rule-design.md`](../guides/activation-rules.md) §11.1。
 
 **Tab 补全全部由平台提供**：`target` 用原版 `ResourceOrTagKeyArgument`（列举物品 ID 与 `#标签`），
 `*-mod` 用 NeoForge `ModIdArgument`（列举已加载模组）。

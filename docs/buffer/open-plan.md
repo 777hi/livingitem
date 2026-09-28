@@ -143,8 +143,8 @@
 
 | # | 做什么 | 前置 | 为什么现在做 |
 |---|---|---|---|
-| **D1** | **活化黑名单 JSON**：哪些物品不允许被活化 | **无 —— 可立刻做** | 顺手解决 **P1-3**（`LivingButton.onPress` 无条件活化 ⇒ 静默破坏第三方物品）；配置者改一行 JSON 即可做平衡性调整。设计稿见 [`activation-rule-design.md`](activation-rule-design.md) |
-| **D2** | `InteractionEntry` 数据化（`target × trigger → handlerId` 本质是四元组） | **A1 完成后 ✅** | ✅ **2026-09-28 完成**：13 条内置 JSON（源码 18 处 → tag 压缩后 13 条，`#minecraft:buttons` 一条顶 13 按钮）+ 玩家差异 + `InteractionPredicates`（2 个谓词 ID 化）+ `reload`/`list` 指令。设计与论证见 [`interaction-rule-design.md`](interaction-rule-design.md) |
+| **D1** | **活化黑名单 JSON**：哪些物品不允许被活化 | **无 —— 可立刻做** | 顺手解决 **P1-3**（`LivingButton.onPress` 无条件活化 ⇒ 静默破坏第三方物品）；配置者改一行 JSON 即可做平衡性调整。设计稿见 [`activation-rule-design.md`](../guides/activation-rules.md) |
+| **D2** | `InteractionEntry` 数据化（`target × trigger → handlerId` 本质是四元组） | **A1 完成后 ✅** | ✅ **2026-09-28 完成**：13 条内置 JSON（源码 18 处 → tag 压缩后 13 条，`#minecraft:buttons` 一条顶 13 按钮）+ 玩家差异 + `InteractionPredicates`（2 个谓词 ID 化）+ `reload`/`list` 指令。设计与论证见 [`interaction-rule-design.md`](../guides/interaction-rules.md) |
 
 > ⚠️ **并行边界（重要）**：
 > **D1 与 A1 零重叠 ⇒ 可完全并行**；

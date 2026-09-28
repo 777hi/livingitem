@@ -1,3 +1,6 @@
+> 📦 **已归档（2026-09-28）**：本设计已实施完毕，**配置者使用指南**见 [guides/activation-rules.md](../guides/activation-rules.md)。
+> 本文保留设计论证 / 拍板记录 / 否决方案，供追溯。schema 已生效，修改按破坏性契约对待。
+
 <!-- markdownlint-disable -->
 
 # 活化规则 JSON（D1）设计稿
