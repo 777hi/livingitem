@@ -32,10 +32,7 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.block.model.ItemTransform;
 import net.minecraft.client.renderer.texture.OverlayTexture;
-import net.minecraft.client.renderer.block.model.BakedQuad;
 import net.minecraft.client.resources.model.BakedModel;
-import net.minecraft.util.RandomSource;
-import net.minecraft.world.item.Item;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
@@ -50,7 +47,6 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 
-import org.joml.Matrix3f;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
@@ -191,59 +187,17 @@ public final class LivingToolModelRenderer {
     private static final long ATTACK_RING_TICKS = PULSE_TICKS;
 
     /**
-     * 模型空间里的「尖」方向（归一化）—— 立正推导的锚点（见 {@link #drawModel}）。
+     * 模型【立正】修正角 —— 绕 Z 转 {@code -45°}，把「手持斜 45°」建模的贴图长轴立正成 +Y。
      *
-     * <p>⭐ <b>符号经 2026-09-29 实测校正</b>：模型空间真实长轴 = {@code (+√2/2, +√2/2, 0)}
-     * （贴图左上→右下的那条对角线）。此前误取了另一条对角线（{@code -x}），
-     * 而两条对角线正好差 <b>90°</b> ⇒ 表现为"长轴沿圆环切线"（用户实测症状）。</p>
+     * <p>⚠️ 2026-09-24 结论（实测三轮）：本旧方案（配合 FIXED 自带的 Y180）对
+     * 原版工具 / 守约定的模组<b>正确</b>；两次重构（「手持 transform + 运行时 rotationTo」）
+     * 都让原版物品平躺 —— 根因未查明（怀疑 sodium/iris 等渲染管线介入导致实际应用链
+     * 与源码阅读不一致）⇒ <b>路线 B（普通模型物品）回退本方案</b>。</p>
      *
-     * <p>📌 <b>顺带修正了旧方案的因果解释</b>：旧链（{@code renderStatic(FIXED)} +
-     * {@code Rz(-45°)}）在旧值下"自洽"，是因为假定 <b>FIXED 的 Y180 不生效</b>；
-     * 换成正确值后自洽关系反而是 —— <b>Y180 生效</b>（把 {@code (+x,+y)} 翻成 {@code (-x,+y)}）
-     * 再由 {@code Rz(-45°)} 立正。先前"FIXED 不生效"的结论是<b>被反了的符号带偏的</b>。</p>
+     * <p>不守约定的物品（BEWLR，如灾变）走路线 A（fixed 姿态 + thirdperson/fixed 缩放比），
+     * 见 {@link #drawModel}。</p>
      */
-    private static final Vector3f TIP_IN_MODEL_SPACE =
-        new Vector3f(0.70710678F, 0.70710678F, 0.0F);
-
-    /**
-     * 环上滚转的<b>实测标定偏移</b> —— 在运行时算出的 {@code θ} 之上再加 {@code -90°}
-     * （2026-09-29 用户四候选实测定：#3 = +270° = -90°）。
-     *
-     * <p>⭐ <b>与射线模式 {@link #RAY_ROLL_FIX}（实测也是 +270°）数值完全一致</b>
-     * ⇒ 说明这是<b>同一处系统性的 90° 偏差</b>（疑为"板面法线基准取模型 +Z"与实际差 90°，
-     * 或某处坐标系约定差异），而非随机误差 ⇒ 可信度高。</p>
-     *
-     * <p>📌 θ 本身仍保留运行时计算（每件物品的建模差异由它自动吸收），
-     * 本常量只是补上那一个<b>共用的固定偏差</b>。</p>
-     */
-    private static final float RING_ROLL_CALIB = (float) (-Math.PI / 2.0);
-
-
-
-    /** 立正目标轴：模型长轴最终要对齐到 {@code +Y}（绕它对齐 = 头/尖朝外）。 */
-    private static final Vector3f UPRIGHT_AXIS = new Vector3f(0.0F, 1.0F, 0.0F);
-
-    /**
-     * 【路线 A｜BEWLR 物品】在<b>手持姿态基准之上</b>的额外修正角（度，绕 X / Y / Z）。
-     *
-     * <p>⭐ <b>为什么需要它</b>：BEWLR（自定义渲染，如 Mekanism 原子分解机、灾变）的
-     * `renderByItem` <b>连 displayContext 都不看</b>，且各家内部自己做 translate / 翻转
-     * （原子分解机 `Z180°`、灾变 `scale(1,-1,-1)`）⇒ 没有统一的"尖"锚点，
-     * <b>无法通用地自动立正</b>。故改为：<b>以它在手上的姿态为基准</b>
-     * （`thirdperson_righthand` 的 display transform —— 模组亲手调好的），
-     * 再叠一个可由用户实测微调的整体修正角。</p>
-     *
-     * <p>🎛️ <b>调参入口</b>：默认全 0（= 纯手持姿态）。想让环上更"立正 / 顺眼"就调这三个值
-     * （常见 ±90 / ±180 / ±45）。</p>
-     */
-    private static final float BEWLR_POSTURE_FIX_X = 0.0F;
-    private static final float BEWLR_POSTURE_FIX_Y = 0.0F;
-    private static final float BEWLR_POSTURE_FIX_Z = 0.0F;
-
-    private static final Quaternionf BEWLR_POSTURE_FIX = new Quaternionf().rotationXYZ(
-        BEWLR_POSTURE_FIX_X * (float) (Math.PI / 180.0),
-        BEWLR_POSTURE_FIX_Y * (float) (Math.PI / 180.0),
-        BEWLR_POSTURE_FIX_Z * (float) (Math.PI / 180.0));
+    private static final float MODEL_UPRIGHT_FIX = (float) (-Math.PI / 4.0);
 
     /**
      * 挂在<b>射线上</b>的工具（自主模式）额外绕<b>长轴</b>的滚转修正角。
@@ -895,8 +849,6 @@ public final class LivingToolModelRenderer {
         poseStack.pushPose();
         // 事件给的 PoseStack 已是【相机相对】坐标
         poseStack.translate(pos.x - cameraPos.x, pos.y - cameraPos.y, pos.z - cameraPos.z);
-        BakedModel baked = mc.getItemRenderer().getModel(stack, level, null, 0);
-        final boolean customRenderer = baked.isCustomRenderer();
         if (ringNormal != null) {
             // ── 辅助环：借【射线模式同一套】的 Axis 三步旋转（2026-09-21 用户建议）──
             //   ① yaw/pitch：把 +Y（柄）转到 dir（径向）—— 与 renderOne 完全同构
@@ -909,9 +861,7 @@ public final class LivingToolModelRenderer {
             //   ⇒ 先在"柄 = +Y"的坐标系里滚转，再整体对齐到 dir ✅
             poseStack.mulPose(Axis.YP.rotation(yaw));
             poseStack.mulPose(Axis.XP.rotation(pitch));
-            // ⭐ 路线 B（普通模型）的滚转角【运行时精确算】，不写在这里（见下方立正块）：
-            //    常量 ringRoll 是按旧链标定的，换链后必然差 90°（用户实测"板面躺在圆平面内"）。
-            if (customRenderer && ringRoll != 0.0F) {
+            if (ringRoll != 0.0F) {
                 poseStack.mulPose(Axis.YP.rotation(ringRoll));
             }
         } else {
@@ -921,254 +871,60 @@ public final class LivingToolModelRenderer {
             // 以【工具柄】为轴滚转，只为调整"脸朝哪"。
             poseStack.mulPose(Axis.YP.rotation(RAY_ROLL_FIX));
         }
-        // ⭐ 手持姿态（thirdperson_righthand）—— 2026-09-28 起作为【路线 A｜BEWLR】的基准：
-        //    用户口径「玩家手往前伸直时，工具在手里就是柄垂直朝下的（= 立正的）」⇒ 直接拿来用。
-        //    （原先用的是 fixed 段 —— 那是模组为"物品展示框"调的斜摆姿态，原子分解机 thus 歪 45°。）
-        ItemTransform handPose = baked.getTransforms()
-            .getTransform(ItemDisplayContext.THIRD_PERSON_RIGHT_HAND);
-        Quaternionf handRot = new Quaternionf().rotationXYZ(
-            handPose.rotation.x() * (float) (Math.PI / 180.0),
-            handPose.rotation.y() * (float) (Math.PI / 180.0),
-            handPose.rotation.z() * (float) (Math.PI / 180.0));
-
-        // ⭐【路线 B 预计算】立正四元数 + 立正后板面法线的落点（两者都要，先算好复用）。
-        Quaternionf uprightQ = new Quaternionf();                 // identity 兜底（路线 A 不用）
-        Vector3f plateLocal = new Vector3f(0.0F, 0.0F, 1.0F);     // 兜底 = 模型 +Z
-        if (!customRenderer) {
-            Matrix3f mHand = new Matrix3f().rotation(handRot);
-            // ⭐【几何实测】替代"贴图对角线"假设：长轴 / 板面法线都由模型顶点算出
-            //    （见 {@link #computeAxes}）⇒ 3D 模型、异种建模都能适配。
-            ModelAxes axes = modelAxes(baked, stack);
-            uprightQ = new Quaternionf().rotationTo(
-                mHand.transform(axes.longAxis(), new Vector3f()), UPRIGHT_AXIS);
-            // 板面法线经【两步】—— 先 handRot、再立正 —— 在局部空间的落点。
-            // 🔴 两步缺一不可：先前只乘了 uprightQ（漏 handRot）⇒ 法线基准错 ⇒ 滚转角全错。
-            // ⇒ 它既是自转轴，也是下面算滚转角的基准。
-            plateLocal = new Matrix3f().rotation(uprightQ)
-                .transform(mHand.transform(axes.plateNormal(), new Vector3f()), new Vector3f())
-                .normalize();
+        BakedModel baked = mc.getItemRenderer().getModel(stack, level, null, 0);
+        final boolean customRenderer = baked.isCustomRenderer();
+        ItemTransform fixedPose = null;
+        ItemTransform thirdPose = null;
+        if (customRenderer) {
+            fixedPose = baked.getTransforms().getTransform(ItemDisplayContext.FIXED);
+            thirdPose = baked.getTransforms()
+                .getTransform(ItemDisplayContext.THIRD_PERSON_RIGHT_HAND);
         }
 
         // 风车自转：绕【立正后的板面法线】= 薄板（T 平面）的【法线】。
         // ⭐ 为什么绕板面法线（2026-09-20 用户实测定）：镐子是一块【平面】。
         //    绕 T 平面【内】的轴转 ⇒ 工具"横着翻滚"，看着别扭；
         //    绕【垂直于 T 平面】的轴转 ⇒ 薄板在自己平面里旋转，任何视角都一眼看出在转。
-        // ⚠️ 轴运行时算：模型板面法线 (0,0,1) 经「手持 transform + 立正补偿」后的落点
-        //    ⇒ 轴【相对模型自身恒定】，不随 rollRad / 射线方向改变。
+        // ⚠️ 路线 B 回退旧链 ⇒ 轴回到【立正后的 Z】（绕 Z 转不改变 Z 轴自身 ⇒ 恒为板面法线）；
         //    路线 A（BEWLR）无「板面」约定 ⇒ 兜底绕 X（罕见场景）。
         if (spinRad != 0.0F) {
             if (customRenderer) {
                 poseStack.mulPose(Axis.XP.rotation(-spinRad));
             } else {
-                // ⭐ 轴 = 上面算出的【真实板面法线】（不再猜 X 还是 Z）⇒ 必是"板内旋转"。
                 // ⚠️ 取负：让工具"尖"朝前转（2026-09-20 用户实测定；方向反了翻此符号）。
-                poseStack.mulPose(new Quaternionf().setAngleAxis(-spinRad,
-                    plateLocal.x(), plateLocal.y(), plateLocal.z()));
+                poseStack.mulPose(Axis.ZP.rotation(-spinRad));
             }
         }
         // 写在最后 = 最先作用于模型。
-        // ⭐ 2026-09-28 定案（三轮实测反推出根因后）：
+        // ⭐ 2026-09-24 最终结论（两次重构实测失败后，按用户提示「看看之前的代码」回退）：
         //
-        // ── 路线 B｜普通模型物品＝【用手上的方法】─────────────────────────────
-        //    立正补偿（uprightFix，运行时 rotationTo）→ 物品自己的手持 transform
-        //    （旋转 + 缩放，跳过 translation —— 那是相对手心的握持偏移，环上没有手）
-        //    ⇒ 与它在玩家手上的姿态同源，<b>每件物品自动适配</b>（不守约定的模组物品
-        //    也不会歪 45° —— 正是本次要修的症状）。
-        //    🔴 不抵消 FIXED：实测证明 renderStatic(FIXED) 内部并未应用它。
+        // ── 路线 B｜普通模型物品（原版 + 守约定的模组）＝【旧实测方案原样恢复】────────
+        //    模型尖（模型空间）→ FIXED 自带的 Y180（renderStatic 内部自然应用，不碰）
+        //    → MODEL_UPRIGHT_FIX 绕 Z -45° ⇒ +Y。
+        //    两次重构（「应用手持 transform + 抵消 FIXED + 运行时/手算立正」）都让原版平躺，
+        //    根因未查明（怀疑 sodium/iris 等渲染管线介入，实际应用链与源码阅读不一致）
+        //    ⇒ 先回退恢复正确行为。守约定的模组与原版建模约定相同 ⇒ 旧方案同样准确。
         //
-        // ── 路线 A｜BEWLR 物品（灾变等）＝保留用户实测正确的方案 ─────────────────
+        // ── 路线 A｜BEWLR 物品（灾变等）＝保留用户实测正确的新方案 ─────────────────
         //    fixed display 交给 renderStatic(FIXED) 全权应用（模组为展示框调好的姿态：
         //    剑柄朝圆心、剑身⊥圆平面 ✓），只补缩放比 thirdperson/fixed（对齐第三人称手持）。
         //    🔴 不能走路线 B：会与 fixed display 叠加成双重变换（scale 0.8 × 0.35 = 0.28）。
         if (customRenderer) {
-            poseStack.mulPose(BEWLR_POSTURE_FIX);   // 可调（默认 identity = 纯手持姿态）
-            poseStack.mulPose(handRot);
-            // ⭐ 缩放用【thirdperson / fixed 的比值】，而不是直接用 thirdperson 的 scale ——
-            //    🔴 实测证明 renderStatic(FIXED) 内部<b>并未</b>应用 fixed（本环境），
-            //    直接用 thirdperson 的 0.8 会让灾变武器比之前小 2.9 倍（用户实测）。
-            //    沿用比值 ⇒ 净缩放与用户已认可的观感一致（灾变约 2.29）。
-            ItemTransform fixedPose = baked.getTransforms()
-                .getTransform(ItemDisplayContext.FIXED);
-            if (fixedPose != ItemTransform.NO_TRANSFORM) {
+            if (fixedPose != ItemTransform.NO_TRANSFORM && thirdPose != ItemTransform.NO_TRANSFORM) {
                 poseStack.scale(
-                    handPose.scale.x() / fixedPose.scale.x(),
-                    handPose.scale.y() / fixedPose.scale.y(),
-                    handPose.scale.z() / fixedPose.scale.z());
-            } else {
-                poseStack.scale(handPose.scale.x(), handPose.scale.y(), handPose.scale.z());
+                    thirdPose.scale.x() / fixedPose.scale.x(),
+                    thirdPose.scale.y() / fixedPose.scale.y(),
+                    thirdPose.scale.z() / fixedPose.scale.z());
             }
         } else {
-            // ⭐ 立正补偿【运行时自洽计算】（2026-09-29 实验）：
-            //    ① 用与 MC 源码 {@code ItemTransform#apply} 【完全同款】的方式构造手持旋转
-            //       （rotationXYZ，顺序/语义与官方一致 ⇒ 不靠我手推角度，避免再错）；
-            //    ② 用它变换【模型空间的尖】⇒ 得到该物品"拿在手上时尖朝哪"（手空间）；
-            //    ③ {@code rotationTo} 把这个方向转到 +Y ⇒ 立正。每件物品自动适配。
-            // ⭐ 链（写在后面的先作用）：模型 → scale → 【手持旋转 handRot】→ 立正补偿。
-            //    全部由我们手写 ⇒ 与"MC 是否应用 display transform"无关（实测：本环境不应用）。
-            // ⭐ ④ 绕柄滚转（2026-09-29）：把【板面法线】精确送到【圆平面法线 normal】
-            //    ⇒ 板面 ⊥ 圆平面（用户口径："扁平的剑身垂直圆平面"）。
-            //    🔴 旧的 ringRoll 常量是按旧链标定的，换链后差 90° ⇒ 板面躺在圆平面内
-            //       （用户实测"像风扇叶片"）。改为运行时算 ⇒ 每件物品自动适配。
-            //    推导：两者都 ⊥ 立正轴(+Y=dir) ⇒ 绕 +Y 转 θ 即可；
-            //          θ = atan2( (plate × n).y , plate · n )，n 为【目标法线】在局部的表示。
-            //    🔴 目标法线 = 【切线】(normal × dir)，而【不是】normal 本身 ——
-            //       normal 是圆平面法线；板面法线若取它 ⇒ 板面 ∥ 圆平面（"风扇叶片"，用户实测）。
-            //       取切线 ⇒ 板面含 dir 与 normal ⇒ 板面 ⊥ 圆平面 ✓（= 灾变那个正确姿态）。
-            float theta = 0.0F;
-            if (ringNormal != null) {
-                Vec3 tangent = ringNormal.cross(dir);
-                if (tangent.lengthSqr() < 1.0E-6) {
-                    tangent = ringNormal.cross(WORLD_UP);   // 退化兜底（dir ∥ normal，极罕见）
-                }
-                tangent = tangent.normalize();
-                Vector3f nLocal = new Matrix4f(poseStack.last().pose()).invert()
-                    .transformDirection(new Vector3f((float) tangent.x, (float) tangent.y,
-                        (float) tangent.z)).normalize();
-                theta = (float) Math.atan2(
-                    new Vector3f().cross(plateLocal, nLocal).y(), plateLocal.dot(nLocal));
-            }
-            // ⭐ RING_ROLL_CALIB：实测标定偏移（见常量说明）。
-            if (ringNormal != null) {
-                poseStack.mulPose(Axis.YP.rotation(theta + RING_ROLL_CALIB));
-            }
-            poseStack.mulPose(uprightQ);
-            poseStack.mulPose(handRot);
-            poseStack.scale(handPose.scale.x(), handPose.scale.y(), handPose.scale.z());
+            poseStack.mulPose(Axis.ZP.rotation(MODEL_UPRIGHT_FIX));
         }
         if (scale != 1.0F) {
             poseStack.scale(scale, scale, scale);
         }
-        // ⚠️ context 分流：
-        //    路线 A（BEWLR）仍传 FIXED（灾变实测正确的方案，不动）；
-        //    路线 B 传 NONE —— ⭐ 它的 transform 是 identity，【应用与否都无害】
-        //    ⇒ 彻底绕开"本环境 renderStatic 到底生不生效"这个坑（实测：不生效），
-        //      整条链完全由上面手写决定，可推导、可复现。
-        //    路线 B 传 NONE（identity，无害）。
-        mc.getItemRenderer().renderStatic(stack,
-            customRenderer ? ItemDisplayContext.FIXED : ItemDisplayContext.NONE,
-            light, OverlayTexture.NO_OVERLAY, poseStack, buffers, level, 0);
+        mc.getItemRenderer().renderStatic(stack, ItemDisplayContext.FIXED, light,
+            OverlayTexture.NO_OVERLAY, poseStack, buffers, level, 0);
         poseStack.popPose();
-    }
-
-    /**
-     * 物品模型的【几何轴】分析结果（模型空间）—— ⭐ <b>由顶点分布实测</b>，
-     * 不依赖任何"贴图斜 45°"之类的人工约定（2026-09-29 引入）。
-     *
-     * @param longAxis    <b>长轴</b>（第一主成分）：模型最长的方向 ⇒ 立正要对齐到 {@code +Y}
-     * @param plateNormal <b>板面法线</b>（第三主成分 = 最短方向）⇒ 自转轴 + 滚转基准
-     */
-    private record ModelAxes(Vector3f longAxis, Vector3f plateNormal) {}
-
-    /** 几何分析按物品缓存（要遍历顶点，模型是静态的 ⇒ 每个物品算一次就够）。 */
-    private static final java.util.Map<Item, ModelAxes> axesCache = new java.util.HashMap<>();
-
-    private static ModelAxes modelAxes(BakedModel model, ItemStack stack) {
-        Item item = stack.getItem();
-        ModelAxes cached = axesCache.get(item);
-        if (cached == null) {
-            cached = computeAxes(model);
-            axesCache.put(item, cached);
-        }
-        return cached;
-    }
-
-    /**
-     * 用 <b>PCA（主成分分析）</b>从模型顶点算出长轴与板面法线。
-     *
-     * <p>为什么是 PCA 而不是包围盒：斜 45° 贴图的薄板，包围盒是 {@code (1,1,0.1)}
-     * ⇒ x / y 尺寸几乎相等，**分不出长轴**；而顶点分布沿<b>对角线</b>铺开，
-     * 协方差的第一主成分正好落在对角线上 ⇒ 能正确给出长轴。</p>
-     *
-     * <p>⚠️ <b>拿不到顶点时兜底</b>（BEWLR / 空模型）：沿用旧的贴图对角线假设
-     * （{@link #TIP_IN_MODEL_SPACE} + 板面法线 {@code +Z}）⇒ 行为与旧方案一致，不会更差。</p>
-     */
-    private static ModelAxes computeAxes(BakedModel model) {
-        // ① 收集顶点（BakedQuad 里位置是前 3 个 float）
-        java.util.List<Vector3f> pts = new java.util.ArrayList<>();
-        try {
-            for (BakedQuad quad : model.getQuads(null, null, RandomSource.create())) {
-                int[] v = quad.getVertices();
-                int stride = v.length / 4;
-                for (int i = 0; i < 4; i++) {
-                    int o = i * stride;
-                    pts.add(new Vector3f(Float.intBitsToFloat(v[o]), Float.intBitsToFloat(v[o + 1]),
-                        Float.intBitsToFloat(v[o + 2])));
-                }
-            }
-        } catch (RuntimeException ignored) {
-            // 拿不到顶点 ⇒ 走兜底
-        }
-        if (pts.size() < 4) {
-            return new ModelAxes(new Vector3f(TIP_IN_MODEL_SPACE), new Vector3f(0.0F, 0.0F, 1.0F));
-        }
-
-        // ② 质心 + 协方差矩阵（顶点分布的第二矩）
-        Vector3f mean = new Vector3f();
-        for (Vector3f p : pts) {
-            mean.add(p);
-        }
-        mean.div(pts.size());
-        Matrix3f cov = new Matrix3f();
-        for (Vector3f p : pts) {
-            float dx = p.x() - mean.x(), dy = p.y() - mean.y(), dz = p.z() - mean.z();
-            cov.m00 += dx * dx; cov.m01 += dx * dy; cov.m02 += dx * dz;
-            cov.m10 += dy * dx; cov.m11 += dy * dy; cov.m12 += dy * dz;
-            cov.m20 += dz * dx; cov.m21 += dz * dy; cov.m22 += dz * dz;
-        }
-
-        // ③ 幂迭代求第一主成分（长轴）；deflate 掉它再求第二；叉积得第三（最短 = 板面法线）
-        Vector3f first = powerIteration(cov, new Vector3f(1.0F, 0.0F, 0.0F));
-        float lambda = first.dot(cov.transform(first, new Vector3f()));
-        Matrix3f outer = new Matrix3f(
-            first.x() * first.x(), first.x() * first.y(), first.x() * first.z(),
-            first.y() * first.x(), first.y() * first.y(), first.y() * first.z(),
-            first.z() * first.x(), first.z() * first.y(), first.z() * first.z());
-        Matrix3f rest = new Matrix3f(cov).sub(outer.scale(lambda));
-
-        // 第二主成分的初值必须【不平行】于 first，否则 rest·v ≈ 0 迭代不出东西
-        Vector3f seed = Math.abs(first.y()) < 0.9F
-            ? new Vector3f(0.0F, 1.0F, 0.0F) : new Vector3f(1.0F, 0.0F, 0.0F);
-        seed.sub(new Vector3f(first).mul(seed.dot(first)));   // 正交化
-        if (seed.lengthSquared() < 1.0E-8F) {
-            seed = new Vector3f(0.0F, 0.0F, 1.0F);
-        }
-        Vector3f second = powerIteration(rest, seed);
-        Vector3f third = new Vector3f().cross(first, second);
-        if (third.lengthSquared() < 1.0E-12F) {
-            third = new Vector3f(0.0F, 0.0F, 1.0F);
-        }
-        third.normalize();
-
-        // ④ ⭐【简并检测】—— 必须先判，否则原版会歪：
-        //    原版 2D 物品模型的顶点【铺满整个 1×1 方板】⇒ x / y 方差相等 ⇒ 第一主成分不唯一
-        //    （幂迭代会收敛到初值方向 = x 轴，比真对角线差 45°）。
-        //    ⇒ λ2 与 λ1 接近时几何给不出方向，回退【贴图对角线约定】（与旧方案一致，原版不退化）。
-        //    板面法线（第三主成分）不受简并影响 ⇒ 仍是几何算的，比写死 +Z 更可靠。
-        float lambda2 = second.dot(cov.transform(second, new Vector3f()));
-        if (lambda < 1.0E-9F || lambda2 > lambda * 0.8F) {
-            return new ModelAxes(new Vector3f(TIP_IN_MODEL_SPACE), third);
-        }
-
-        // ⑤ 长轴【符号】：PCA 只给方向、不给定向。取与"贴图对角线"约定的同一侧 ——
-        //    对守约定的物品与旧行为完全一致；3D 模型若相反，表现为【倒 180°】（个别可再配）。
-        if (first.dot(TIP_IN_MODEL_SPACE) < 0.0F) {
-            first.negate();
-        }
-        return new ModelAxes(first, third);
-    }
-
-    /** 幂迭代：求对称矩阵【绝对值最大特征值】对应的单位特征向量（3×3、迭代 24 次足够收敛）。 */
-    private static Vector3f powerIteration(Matrix3f m, Vector3f seed) {
-        Vector3f v = seed.normalize();
-        for (int i = 0; i < 24; i++) {
-            Vector3f next = m.transform(v, new Vector3f());
-            if (next.lengthSquared() < 1.0E-12F) {
-                v = new Vector3f(0.0F, 1.0F, 0.0F);
-                continue;
-            }
-            v = next.normalize();
-        }
-        return v;
     }
 
     /**
