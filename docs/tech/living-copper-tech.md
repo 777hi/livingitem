@@ -366,7 +366,7 @@ for slot in grateSlots:
   result = min(sum, getSignalCap(count))
 
   if data.sumSignal() != result:
-    LivingItemManager.setGrateData(stack, data.withSumSignal(result))
+    LivingGrateData.set(stack, data.withSumSignal(result))
     context.syncSlotToClients(slot, stack)
 ```
 
@@ -386,7 +386,7 @@ for slot in bulbSlots:
   data = data.withPrevInput(hasInput)   // 更新上一帧输入
 
   if changed:
-    LivingItemManager.setCopperBulbData(stack, data)
+    LivingCopperBulbData.set(stack, data)
     context.syncSlotToClients(slot, stack)
 ```
 

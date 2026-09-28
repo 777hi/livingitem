@@ -57,7 +57,7 @@ LivingItemManager (DataComponent 注册中心)
 ```
 tick() 入口
     ↓
-LivingFurnaceData data = LivingItemManager.getData(stack, LIVING_FURNACE_DATA.value(), LivingFurnaceData.DEFAULT)
+LivingFurnaceData data = LivingFurnaceData.of(stack)
     ↓
 读取子数据：data.progress(), data.fuel(), data.direction()
     ↓
@@ -66,7 +66,7 @@ LivingFurnaceData data = LivingItemManager.getData(stack, LIVING_FURNACE_DATA.va
     data = tickFuel(data, fuelSlot, stack.getCount()) // FuelConsumeComponent.tick()
     data = tickTransform(data, inputSlot)          // ItemTransformComponent.tick()
     ↓
-写入新数据：LivingItemManager.setData(stack, LIVING_FURNACE_DATA.value(), data, LivingFurnaceData.DEFAULT)
+写入新数据：LivingFurnaceData.set(stack, data)
     ↓
 同步到客户端：context.syncSlotToClients(slot, stack)
 ```

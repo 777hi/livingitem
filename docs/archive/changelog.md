@@ -15,6 +15,42 @@
 
 ---
 
+## 2026-09-28
+
+- ✅ **对外开放 C 组 A1：api 面净化** —— 探针实证 `LivingItemManager`（api 包）的公共面
+  牵出 30 个 domain 类型（组件常量 + 35 对便捷访问器），api 承诺等于没有边界。
+  迁移：28 个内容组件/附件常量 → 注册站 `LivingComponents`（transfer 包，纯注册站 ——
+  静态初始化顺序由 JVM 决定无法声明，一个类一个 `<clinit>` 原子完成消灭时序问题）；
+  25 个 Data 类自带 `of()/set()`（原样搬方法体，保真语义差异：Memory 走默认值兜底、
+  Progress/Action 走 `stack.get` + null 清除）；`LivingItemManager` ~950 → 347 行成纯框架类，
+  不再 import 任何 domain 类型。存档安全（registry key 与 Java 类位置无关）。
+  ⚠️ **教训**：迁移脚本 `--apply` 的输出被 PowerShell 吞掉 ⇒ 误判"未执行"而重跑，
+  二次破坏（注册站空壳覆盖、调用点漏替换、三个 tools 类切割残骸）——
+  修复走 git HEAD 提取重建 + 三个类 checkout 手工重做 + 调用点替换拆 main/test 两轮。
+  **批处理脚本输出不可见 = 状态未知，必须先确认再重跑。** 85 文件 +953/−958
+- ✅ **D2：交互规则 JSON 化** —— 18 处 Java 注册迁 `assets/living_item/interaction_rules.json`
+  13 条（红石 13 种按钮被 `#minecraft:buttons` tag 一条覆盖 —— 原注释「原版没有按钮标签」
+  经 vanilla jar 实证为错，已更正）；玩家差异 `config/living_item/interaction_rules.json`
+  （按 id 覆盖 + removed 防复活）；未知字段 WARN（含 Gson 默认忽略的拼写错误检测）；
+  `InteractionPredicates` 谓词 ID 化（can_till / can_plant）；`/livingitem interaction reload|list`。
+  安全边界天然成立：action 只能引用已注册 handler，玩家不能创造新行为。
+- ✅ **D1 增补：活化指令修复 + 手持分支** —— `target` 从 `StringArgumentType` 改原版
+  `ResourceOrTagKeyArgument`（实证其允许字符集不含 `: # @`，**整个 target 参数从未可用**，
+  而手写补全不经过解析 ⇒「能列举却注册失败」的骗局）；命名空间改 NeoForge
+  `ModIdArgument` 走 `deny-mod/allow-mod/remove-mod`（`@` 是原版选择器保留前缀，不复用）；
+  deny/allow/remove 不带参数 = **手持物品**（`heldItem()` 四处共用，carried 踩坑注释随之单源）。
+  `ActivationTargetParsingTest` 4 项（含反向守卫防改回）。
+- ✅ **许可：LGPL-3.0 附加 classpath 例外**（LICENSE.txt 末尾 GNU LGPL v3 §7 additional
+  permission）—— 依赖本库的 mod/addon 可任意授权（含闭源）；修改库本体仍须 LGPL。
+  README 双语徽标 + 第三方须知。SPDX 无此例外标准标识符，自动化工具仍用
+  `LGPL-3.0-or-later`（已注明，不编造标识符）。
+- ✅ **开放计划推进**：`open-plan.md` Q1 拍板（加例外）、Q2 更新（D 组完成）、
+  新增 Q6 前置库三步路线图（契约 → 发布物 → 仓库）；`docs/system-design/api-contract.md`
+  扩展点盘点补组件注册站行；8 个 tech 文档 + `data-model.md` 的旧便捷方法示例
+  同步为 Data 类 `of()/set()` 新形态。测试基线 388 → 397。
+
+---
+
 ## 2026-09-25
 
 - ✅ 联机：**主动模式（有记忆）联机可见** —— 收集口径扩为 `isAssistItem ∪ 有记忆`

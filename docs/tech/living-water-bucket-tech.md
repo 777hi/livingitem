@@ -132,7 +132,7 @@ public void tick(List<SlotEntry> entries, ContainerContext context, TickContext 
 
     for (SlotEntry entry : entries) {
         // 1. 读取水桶数据
-        LivingWaterBucketData data = LivingItemManager.getWaterBucketData(stack);
+        LivingWaterBucketData data = LivingWaterBucketData.of(stack);
         WaterData water = data.water();
 
         // 2. 检测是否需要重置水源
@@ -330,7 +330,7 @@ public void addToTooltip(Item.TooltipContext context,
                          Consumer<Component> tooltipAdder,
                          TooltipFlag flag,
                          ItemStack stack) {
-    LivingWaterBucketData data = LivingItemManager.getWaterBucketData(stack);
+    LivingWaterBucketData data = LivingWaterBucketData.of(stack);
     String flow = data.water().flow();
     // 解析 flow 字符串："slot:level,slot:level,..."
     // 统计水流格数和最大级别
@@ -368,9 +368,9 @@ public static void postTickSync(ContainerContext ctx, ContainerFluidData fluidDa
         int i = entry.slotIndex();
         ItemStack stack = ctx.getItem(i);
         if (!isLivingWaterBucket(stack)) continue;
-        LivingWaterBucketData data = LivingItemManager.getWaterBucketData(stack);
+        LivingWaterBucketData data = LivingWaterBucketData.of(stack);
         WaterData water = data.water().withFlow(flowStr);
-        LivingItemManager.setWaterBucketData(stack, data.withWater(water));
+        LivingWaterBucketData.set(stack, data.withWater(water));
         ctx.syncSlotToClients(i, stack);
     }
 }

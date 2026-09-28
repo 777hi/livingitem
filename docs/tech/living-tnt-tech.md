@@ -135,9 +135,9 @@ ItemStack
 ```java
 // LivingTntFunction.startFuse()
 public static boolean startFuse(ItemStack tntStack) {
-    LivingTntData data = LivingItemManager.getTntData(tntStack);
+    LivingTntData data = LivingTntData.of(tntStack);
     if (data.explosion().ignited()) return false;  // 已点燃，不重复点火
-    LivingItemManager.setTntData(tntStack, data.withExplosion(data.explosion().ignite(80)));
+    LivingTntData.set(tntStack, data.withExplosion(data.explosion().ignite(80)));
     return true;
 }
 ```
@@ -173,7 +173,7 @@ public class LivingTntFunction implements LivingItemFunction, HasContainerData {
         for (SlotEntry entry : entries) {
             int slot = entry.slotIndex();
             ItemStack stack = entry.stack();
-            LivingTntData data = LivingItemManager.getTntData(stack);
+            LivingTntData data = LivingTntData.of(stack);
             ExplosionData explosion = data.explosion();
 
             // 红石信号点火（仅对未点燃的 TNT）
@@ -181,7 +181,7 @@ public class LivingTntFunction implements LivingItemFunction, HasContainerData {
                 int signal = tick.getSensor(context).maxSensedSignal(slot);
                 if (signal > 0) {
                     explosion = explosion.ignite();
-                    LivingItemManager.setTntData(stack, data.withExplosion(explosion));
+                    LivingTntData.set(stack, data.withExplosion(explosion));
                     context.syncSlotToClients(slot, stack);
                     continue;
                 }
@@ -217,7 +217,7 @@ public void tick(List<SlotEntry> entries, ContainerContext context, TickContext 
 
     for (SlotEntry entry : entries) {
         ItemStack stack = entry.stack();
-        LivingTntData data = LivingItemManager.getTntData(stack);
+        LivingTntData data = LivingTntData.of(stack);
         ExplosionData explosion = data.explosion();
 
         if (!explosion.ignited()) continue;  // 未点燃，跳过
@@ -227,9 +227,9 @@ public void tick(List<SlotEntry> entries, ContainerContext context, TickContext 
         if (explosion.isExploded()) {
             // 引信归零 → 执行爆炸
             ExplosionComponent.ignite(context, level);
-            LivingItemManager.setTntData(stack, LivingTntData.DEFAULT);  // 重置状态
+            LivingTntData.set(stack, LivingTntData.DEFAULT);  // 重置状态
         } else {
-            LivingItemManager.setTntData(stack, data.withExplosion(explosion));
+            LivingTntData.set(stack, data.withExplosion(explosion));
         }
     }
 }
@@ -575,7 +575,7 @@ public void addToTooltip(Item.TooltipContext context,
                          Consumer<Component> tooltipAdder,
                          TooltipFlag flag,
                          ItemStack stack) {
-    LivingTntData data = LivingItemManager.getTntData(stack);
+    LivingTntData data = LivingTntData.of(stack);
     ExplosionData explosion = data.explosion();
 
     if (explosion.ignited()) {

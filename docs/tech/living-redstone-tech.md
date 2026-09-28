@@ -565,7 +565,7 @@ phase4PowerConductors(torchSlots, buttonSlots, leverSlots,
     maxInput = edgeGrid.maxOfSlot(slot)
     if maxInput <= 1 → continue
     output = min(maxInput - 1, getSignalCap(count))
-    conn = LivingItemManager.getRedstoneData(stack).connections()
+    conn = LivingRedstoneData.of(stack).connections()
     for 4 方向 dir：
       if conn 中 dir 无连接 → continue
       powerConductiveNeighbor(slot, output, dir, secondQueue)

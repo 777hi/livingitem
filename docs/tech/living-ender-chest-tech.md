@@ -738,7 +738,7 @@ public void addToTooltip(Item.TooltipContext context,
                          Consumer<Component> tooltipAdder,
                          TooltipFlag flag,
                          ItemStack stack) {
-    LivingEnderChestData data = LivingItemManager.getEnderChestData(stack);
+    LivingEnderChestData data = LivingEnderChestData.of(stack);
     EnderChannelData channel = data.channel();
 
     tooltipAdder.accept(Component.nullToEmpty(""));

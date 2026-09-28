@@ -173,7 +173,8 @@ src/main/java/com/qiqi/li/
 │   │   ├── SlotInteractions.java            #   槽位交互注册表 + 分发器（三处传输分支唯一入口）
 │   │   ├── SlotResolver.java                #   槽位解析
 │   │   ├── ContainerCompatibilityConfig.java #  容器兼容性配置
-│   │   └── FilterData.java                  #   过滤数据（从 data/ 迁入，跨领域共享）
+│   │   ├── LivingComponents.java            #   全部持久化类型注册站（A1 迁入：28 个组件/附件常量；纯注册无逻辑）
+│   │   └── FilterData.java                  #   过滤数据（从 data/ 迁入，跨领域共享；自带 of()/set()）
 │   │
 │   ├── interaction/                         # GUI交互
 │   │   ├── InteractionEntry.java            #   交互规则 record

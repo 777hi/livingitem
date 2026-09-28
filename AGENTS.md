@@ -189,16 +189,16 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-09-28 | C 组 A1：**api 面净化** —— `LivingItemManager` 瘦身 ~950→347 行成纯框架类（不牵出任何 domain 类型）；28 个组件/附件常量迁注册站 `LivingComponents`；25 个 Data 类自带 `of()/set()`；⚠️ 脚本 --apply 输出被吞致误判重跑的教训 | `api-contract.md` §1.2 |
+| 2026-09-28 | D2：**交互规则 JSON 化** —— 18 处 Java 注册迁 13 条内置 JSON（`#minecraft:buttons` 一条顶 13 按钮）+ 玩家差异 + `interaction reload/list` 指令 + 2 谓词 ID 化 | `interaction-rule-design.md` |
+| 2026-09-28 | 活化指令修复 + 手持分支：target 改原版 `ResourceOrTagKeyArgument`（修「能补全却注册失败」—— StringArgumentType 读不进 `: # @`）；deny/allow/remove 无参 = **手持物品**；命名空间走 `*-mod` 子命令 | `commands.md` |
+| 2026-09-28 | 许可：**LGPL-3.0 附加 classpath 例外**（依赖本库的 addon 可任意授权含闭源；修改库本体仍须 LGPL）；Q6 前置库三步路线图（契约→发布物→仓库） | `LICENSE.txt` / `open-plan.md` §4.1 |
 | 2026-09-25 | 辅助攻击：攻击环改为**按每把武器自己的冷却**分组（轮流扑咬，不再整组一起飞）；创造模式放开辅助（攻击 + 挖掘）；tooltip 模式改「主动 / 被动」+ 补攻击记忆行 | `living-weapon-tech.md` §7 |
 | 2026-09-25 | 联机：**主动模式（有记忆）活工具可见**（悬空工具体 + 挖掘转圈 / 攻击脉冲 + 记忆射线 F3+B）+ 攻击环可见；收集口径扩为 `isAssistItem ∪ 有记忆`（组件随 `ItemStack.STREAM_CODEC` 随包走，零新增同步） | `living-tool-tech.md` §11.9 |
 | 2026-09-24 | 活武器三个「静默失效」修复（有记忆有怪却一刀不打）：首次冷却死锁 / `ATTACK_SPEED=0` / 隔墙没排除宿主；另修组件里可空 `BlockPos` 发包 NPE（曾致被踢出） | `living-weapon-tech.md` §5 |
 | 2026-09-23 | 活武器近战核心链路：`AttackMemory` 第三类记忆 + `LivingDamageEvent.Post` 录制 + `replayAttack`；⚠️ 冷却须 override `getAttackStrengthScale()` 手动推进 | `living-weapon-tech.md` §1~§7 |
 | 2026-09-22 | 大箱子跨容器传输面选取：GUI 4 方向→世界 6 面，改候选基准块列表逐个尝试（推错面不报错） | `living-hopper-tech.md` §6.4 |
 | 2026-09-22 | 大箱子（多方块）两套槽位体系错位 ⇒ 活漏斗静默不传输；新增槽位一致性探针（不特判合并容器） | `living-hopper-tech.md` §10.25 |
-| 2026-09-22 | 活红石粉装饰器叠了缺失纹理（黑紫）；⚠️ 去原版化扫描必须含 `fromNamespaceAndPath(MOD_ID, …)` | `icon-system.md` |
-| 2026-09-22 | GUI 图标光照统一：⚠️ 改 light 值没用，真凶是 `usesBlockLight()`；抽出 `LivingIconRenderHelper` | `icon-system.md`「GUI 图标光照约定」 |
-| 2026-09-22 | 箱子/末影箱图标定稿：`builtin/entity` 正面视角 14px 3D（判据是 `isCustomRenderer()`） | `icon-system.md`「已完成的实验」 |
-| 2026-09-22 | 图标「渲染上下文覆盖范围」写成显式约束（非 GUI 回退原版模型 + 装饰器只在 GUI 调用） | `icon-system.md` |
 
 
 ## 排查铁律：原版机制挡路时

@@ -1505,7 +1505,7 @@ result = (baseRow + direction.y) * containerWidth + (baseCol + direction.x)
 // 新流程：ContainerSnapshot.capture() 统一预计算，tick() 直接读取
 FilterData filter = tick.snapshot.getFilterOf(slot);
 data = data.withTransfer(transfer).withFilter(filter);
-LivingItemManager.setHopperData(stack, data);
+LivingHopperData.set(stack, data);
 ```
 
 **优势**：
@@ -1621,13 +1621,13 @@ L103: setHopperData(stack, data.withTransfer(xfer)) → data.filter 仍是 EMPTY
 ```java
 // 旧：data 不更新，后续 withTransfer 用旧 data 覆盖
 if (!chainFilter.equals(storedFilter)) {
-    LivingItemManager.setHopperData(stack, data.withFilter(chainFilter));
+    LivingHopperData.set(stack, data.withFilter(chainFilter));
 }
 
 // 新：data 更新，后续 withTransfer 保留 filter
 if (!chainFilter.equals(storedFilter)) {
     data = data.withFilter(chainFilter);
-    LivingItemManager.setHopperData(stack, data);
+    LivingHopperData.set(stack, data);
 }
 ```
 

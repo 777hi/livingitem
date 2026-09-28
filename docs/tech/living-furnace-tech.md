@@ -122,7 +122,7 @@ public void tick(List<SlotEntry> entries, ContainerContext context, TickContext 
 
     for (SlotEntry entry : entries) {
         ItemStack stack = entry.stack();
-        LivingFurnaceData data = LivingItemManager.getFurnaceData(stack);
+        LivingFurnaceData data = LivingFurnaceData.of(stack);
 
         // 0. 从运行时缓存恢复瞬态数据（progress/fuel/transform 不再写 DataComponent）
         LivingItemRuntimeData cached = ContainerRuntimeCache.get(containerKey, slot);

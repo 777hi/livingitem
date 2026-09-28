@@ -297,7 +297,7 @@ public static final DeferredHolder<AttachmentType<?>, AttachmentType<ContainerSt
 ```java
 if (stressData != null && context instanceof SimpleContainerContext simpleCtx) {
     for (BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {
-        be.setData(LivingItemManager.CONTAINER_STRESS_DATA.value(), stressData);
+        be.setData(LivingComponents.CONTAINER_STRESS_DATA.value(), stressData);
     }
 }
 ```
@@ -346,7 +346,7 @@ if (stressData != null && context instanceof SimpleContainerContext simpleCtx) {
 if (stressData != null && context instanceof SimpleContainerContext simpleCtx) {
     // 1. 容器场景：应力从容器底部输出
     for (BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {
-        be.setData(LivingItemManager.CONTAINER_STRESS_DATA.value(), stressData);
+        be.setData(LivingComponents.CONTAINER_STRESS_DATA.value(), stressData);
         updateStressOutput(simpleCtx, be, stressData);
     }
 
