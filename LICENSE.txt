@@ -338,3 +338,30 @@ The hypothetical commands `show w' and `show c' should show the appropriate part
 You should also get your employer (if you work as a programmer) or school, if any, to sign a “copyright disclaimer” for the program, if necessary. For more information on this, and how to apply and follow the GNU GPL, see <http://www.gnu.org/licenses/>.
 
 The GNU General Public License does not permit incorporating your program into proprietary programs. If your program is a subroutine library, you may consider it more useful to permit linking proprietary applications with the library. If this is what you want to do, use the GNU Lesser General Public License instead of this License. But first, please read <http://www.gnu.org/philosophy/why-not-lgpl.html>.
+
+================================================================================
+Additional permission under GNU LGPL version 3 section 7 (classpath exception)
+================================================================================
+
+If you modify this program, or any covered work, by linking or combining it
+with other code (including, but not limited to, Minecraft mods that depend on
+it as a library at runtime or compile time), such other code is not for that
+reason alone subject to any of the terms of the GNU Lesser General Public
+License. You must obey the GNU Lesser General Public License in all respects
+for all of the program covered work. Nevertheless, the terms of the GNU Lesser
+General Public License version 3 may still apply to the covered work.
+
+If you modify this library, you may extend this exception to your version of
+the library, but you are not obligated to do so. If you do not wish to do so,
+delete this exception statement from your version.
+
+What this means in practice:
+  * Mods / addons that merely depend on this library (compile against it or
+    load it as a prerequisite) may be licensed any way you like, including
+    proprietary — the LGPL obligation does not spread to them.
+  * Modifications to THIS library itself must still follow the LGPL
+    (copyleft is preserved for the library, not extended to its users).
+
+Note: SPDX has no standard exception identifier for LGPL-3.0 + classpath-style
+exception. Use "LGPL-3.0-or-later" for automated tooling and refer to the
+text above for the additional permission.
