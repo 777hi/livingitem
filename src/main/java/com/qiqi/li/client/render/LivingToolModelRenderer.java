@@ -32,7 +32,10 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.client.renderer.block.model.ItemTransform;
 import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.client.renderer.block.model.BakedQuad;
 import net.minecraft.client.resources.model.BakedModel;
+import net.minecraft.util.RandomSource;
+import net.minecraft.world.item.Item;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
@@ -214,6 +217,8 @@ public final class LivingToolModelRenderer {
      * 本常量只是补上那一个<b>共用的固定偏差</b>。</p>
      */
     private static final float RING_ROLL_CALIB = (float) (-Math.PI / 2.0);
+
+
 
     /** 立正目标轴：模型长轴最终要对齐到 {@code +Y}（绕它对齐 = 头/尖朝外）。 */
     private static final Vector3f UPRIGHT_AXIS = new Vector3f(0.0F, 1.0F, 0.0F);
@@ -931,14 +936,17 @@ public final class LivingToolModelRenderer {
         Vector3f plateLocal = new Vector3f(0.0F, 0.0F, 1.0F);     // 兜底 = 模型 +Z
         if (!customRenderer) {
             Matrix3f mHand = new Matrix3f().rotation(handRot);
+            // ⭐【几何实测】替代"贴图对角线"假设：长轴 / 板面法线都由模型顶点算出
+            //    （见 {@link #computeAxes}）⇒ 3D 模型、异种建模都能适配。
+            ModelAxes axes = modelAxes(baked, stack);
             uprightQ = new Quaternionf().rotationTo(
-                mHand.transform(TIP_IN_MODEL_SPACE, new Vector3f()), UPRIGHT_AXIS);
-            // 模型板面法线 (0,0,1) 经【两步】—— 先 handRot、再立正 —— 在局部空间的落点。
+                mHand.transform(axes.longAxis(), new Vector3f()), UPRIGHT_AXIS);
+            // 板面法线经【两步】—— 先 handRot、再立正 —— 在局部空间的落点。
             // 🔴 两步缺一不可：先前只乘了 uprightQ（漏 handRot）⇒ 法线基准错 ⇒ 滚转角全错。
             // ⇒ 它既是自转轴，也是下面算滚转角的基准。
             plateLocal = new Matrix3f().rotation(uprightQ)
-                .transform(mHand.transform(new Vector3f(0.0F, 0.0F, 1.0F), new Vector3f()),
-                    new Vector3f()).normalize();
+                .transform(mHand.transform(axes.plateNormal(), new Vector3f()), new Vector3f())
+                .normalize();
         }
 
         // 风车自转：绕【立正后的板面法线】= 薄板（T 平面）的【法线】。
@@ -1040,6 +1048,127 @@ public final class LivingToolModelRenderer {
             customRenderer ? ItemDisplayContext.FIXED : ItemDisplayContext.NONE,
             light, OverlayTexture.NO_OVERLAY, poseStack, buffers, level, 0);
         poseStack.popPose();
+    }
+
+    /**
+     * 物品模型的【几何轴】分析结果（模型空间）—— ⭐ <b>由顶点分布实测</b>，
+     * 不依赖任何"贴图斜 45°"之类的人工约定（2026-09-29 引入）。
+     *
+     * @param longAxis    <b>长轴</b>（第一主成分）：模型最长的方向 ⇒ 立正要对齐到 {@code +Y}
+     * @param plateNormal <b>板面法线</b>（第三主成分 = 最短方向）⇒ 自转轴 + 滚转基准
+     */
+    private record ModelAxes(Vector3f longAxis, Vector3f plateNormal) {}
+
+    /** 几何分析按物品缓存（要遍历顶点，模型是静态的 ⇒ 每个物品算一次就够）。 */
+    private static final java.util.Map<Item, ModelAxes> axesCache = new java.util.HashMap<>();
+
+    private static ModelAxes modelAxes(BakedModel model, ItemStack stack) {
+        Item item = stack.getItem();
+        ModelAxes cached = axesCache.get(item);
+        if (cached == null) {
+            cached = computeAxes(model);
+            axesCache.put(item, cached);
+        }
+        return cached;
+    }
+
+    /**
+     * 用 <b>PCA（主成分分析）</b>从模型顶点算出长轴与板面法线。
+     *
+     * <p>为什么是 PCA 而不是包围盒：斜 45° 贴图的薄板，包围盒是 {@code (1,1,0.1)}
+     * ⇒ x / y 尺寸几乎相等，**分不出长轴**；而顶点分布沿<b>对角线</b>铺开，
+     * 协方差的第一主成分正好落在对角线上 ⇒ 能正确给出长轴。</p>
+     *
+     * <p>⚠️ <b>拿不到顶点时兜底</b>（BEWLR / 空模型）：沿用旧的贴图对角线假设
+     * （{@link #TIP_IN_MODEL_SPACE} + 板面法线 {@code +Z}）⇒ 行为与旧方案一致，不会更差。</p>
+     */
+    private static ModelAxes computeAxes(BakedModel model) {
+        // ① 收集顶点（BakedQuad 里位置是前 3 个 float）
+        java.util.List<Vector3f> pts = new java.util.ArrayList<>();
+        try {
+            for (BakedQuad quad : model.getQuads(null, null, RandomSource.create())) {
+                int[] v = quad.getVertices();
+                int stride = v.length / 4;
+                for (int i = 0; i < 4; i++) {
+                    int o = i * stride;
+                    pts.add(new Vector3f(Float.intBitsToFloat(v[o]), Float.intBitsToFloat(v[o + 1]),
+                        Float.intBitsToFloat(v[o + 2])));
+                }
+            }
+        } catch (RuntimeException ignored) {
+            // 拿不到顶点 ⇒ 走兜底
+        }
+        if (pts.size() < 4) {
+            return new ModelAxes(new Vector3f(TIP_IN_MODEL_SPACE), new Vector3f(0.0F, 0.0F, 1.0F));
+        }
+
+        // ② 质心 + 协方差矩阵（顶点分布的第二矩）
+        Vector3f mean = new Vector3f();
+        for (Vector3f p : pts) {
+            mean.add(p);
+        }
+        mean.div(pts.size());
+        Matrix3f cov = new Matrix3f();
+        for (Vector3f p : pts) {
+            float dx = p.x() - mean.x(), dy = p.y() - mean.y(), dz = p.z() - mean.z();
+            cov.m00 += dx * dx; cov.m01 += dx * dy; cov.m02 += dx * dz;
+            cov.m10 += dy * dx; cov.m11 += dy * dy; cov.m12 += dy * dz;
+            cov.m20 += dz * dx; cov.m21 += dz * dy; cov.m22 += dz * dz;
+        }
+
+        // ③ 幂迭代求第一主成分（长轴）；deflate 掉它再求第二；叉积得第三（最短 = 板面法线）
+        Vector3f first = powerIteration(cov, new Vector3f(1.0F, 0.0F, 0.0F));
+        float lambda = first.dot(cov.transform(first, new Vector3f()));
+        Matrix3f outer = new Matrix3f(
+            first.x() * first.x(), first.x() * first.y(), first.x() * first.z(),
+            first.y() * first.x(), first.y() * first.y(), first.y() * first.z(),
+            first.z() * first.x(), first.z() * first.y(), first.z() * first.z());
+        Matrix3f rest = new Matrix3f(cov).sub(outer.scale(lambda));
+
+        // 第二主成分的初值必须【不平行】于 first，否则 rest·v ≈ 0 迭代不出东西
+        Vector3f seed = Math.abs(first.y()) < 0.9F
+            ? new Vector3f(0.0F, 1.0F, 0.0F) : new Vector3f(1.0F, 0.0F, 0.0F);
+        seed.sub(new Vector3f(first).mul(seed.dot(first)));   // 正交化
+        if (seed.lengthSquared() < 1.0E-8F) {
+            seed = new Vector3f(0.0F, 0.0F, 1.0F);
+        }
+        Vector3f second = powerIteration(rest, seed);
+        Vector3f third = new Vector3f().cross(first, second);
+        if (third.lengthSquared() < 1.0E-12F) {
+            third = new Vector3f(0.0F, 0.0F, 1.0F);
+        }
+        third.normalize();
+
+        // ④ ⭐【简并检测】—— 必须先判，否则原版会歪：
+        //    原版 2D 物品模型的顶点【铺满整个 1×1 方板】⇒ x / y 方差相等 ⇒ 第一主成分不唯一
+        //    （幂迭代会收敛到初值方向 = x 轴，比真对角线差 45°）。
+        //    ⇒ λ2 与 λ1 接近时几何给不出方向，回退【贴图对角线约定】（与旧方案一致，原版不退化）。
+        //    板面法线（第三主成分）不受简并影响 ⇒ 仍是几何算的，比写死 +Z 更可靠。
+        float lambda2 = second.dot(cov.transform(second, new Vector3f()));
+        if (lambda < 1.0E-9F || lambda2 > lambda * 0.8F) {
+            return new ModelAxes(new Vector3f(TIP_IN_MODEL_SPACE), third);
+        }
+
+        // ⑤ 长轴【符号】：PCA 只给方向、不给定向。取与"贴图对角线"约定的同一侧 ——
+        //    对守约定的物品与旧行为完全一致；3D 模型若相反，表现为【倒 180°】（个别可再配）。
+        if (first.dot(TIP_IN_MODEL_SPACE) < 0.0F) {
+            first.negate();
+        }
+        return new ModelAxes(first, third);
+    }
+
+    /** 幂迭代：求对称矩阵【绝对值最大特征值】对应的单位特征向量（3×3、迭代 24 次足够收敛）。 */
+    private static Vector3f powerIteration(Matrix3f m, Vector3f seed) {
+        Vector3f v = seed.normalize();
+        for (int i = 0; i < 24; i++) {
+            Vector3f next = m.transform(v, new Vector3f());
+            if (next.lengthSquared() < 1.0E-12F) {
+                v = new Vector3f(0.0F, 1.0F, 0.0F);
+                continue;
+            }
+            v = next.normalize();
+        }
+        return v;
     }
 
     /**
