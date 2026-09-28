@@ -496,6 +496,29 @@ assistWeapons = isAssistWeapon → 攻击环
 **个别既不守约定、又非 BEWLR 的物品（原子分解机）目前没有通用解** ——
 若要修，只能像 YujianCraft 那样做**按物品的姿态预设表**（默认通用值 + 白名单配补偿角）。
 
+### 7.4 🔜 下一个可试的方向（2026-09-29 用户提出，**未验证**）
+
+用户的直觉：**「明明在玩家手里姿态都是对的」⇒ 那就走【手上渲染】那条路。**
+
+不需要"造隐形玩家"（实体开销 / 同步 / 会被碰撞·仇恨等系统看到，不实际）—— 官方就有入口：
+
+```java
+mc.getItemInHandRenderer().renderItem(
+        livingEntity, stack, ItemDisplayContext.THIRD_PERSON_RIGHT_HAND,
+        false, poseStack, buffers, light);
+```
+
+- 接受**任意 `LivingEntity`**（不必是玩家）；**只画物品、不画手臂**；位置 / 朝向由传入的
+  `poseStack` 决定 ⇒ 环上的摆放方式完全不受影响。
+- 它走的是【实体手持】路径（`ItemRenderer#render` → 应用 display transform），
+  与我们四次失败用的 `renderStatic`（**物品展示 / 掉落物**路径，本环境不应用 transform）
+  **不是同一条路** —— 这正是"手里看着是对的、环上却不对"的解释。
+- ⇒ 每件物品的建模差异由**原版自己的 transform** 吸收，大小也对；我们只需再叠一个
+  **通用的立正角**把"手上的姿态"转成放射状 ⇒ 有望成为真正的通用解。
+- ⚠️ **待验证**：sodium 是否也劫持了实体手持这条路。用户手上看着正常 ⇒ 大概率没有。
+- ⚠️ **验证成本极低**：就是把 `drawModel` 里的 `renderStatic(...)` 换成上面这一行
+  （其余不动），先看原版与原子分解机的姿态 / 大小。
+
 **连带坑（已修）**：重构时 `fixedPose` 只在路线 B 分支赋值、路线 A 分支却引用它
 ⇒ 环上有 BEWLR 物品时 `renderBackRing` 第一帧 NPE，**进存档即崩**（crash report 实锤）。
 两个分支必须各读各的。
