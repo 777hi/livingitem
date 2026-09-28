@@ -351,11 +351,21 @@ def check_commands():
     bad = []
     for p in doc_files():
         text = read(p)
-        # 只取 /livingitem 同一行之后的内容，逐「纯 ASCII 词」校验：
-        # 遇到参数占位符 <x>、含 / 的路径、或中文说明即停止 —— 那些不是命令级别。
-        for m in re.finditer(r"/livingitem(?![A-Za-z0-9_])", text):
-            nl = text.find("\n", m.end())
-            rest = text[m.end(): nl if nl != -1 else len(text)]
+        lines = text.split("\n")
+        for i, line in enumerate(lines):
+            # 行级豁免：含「待建」等标记的行不是断言 —— 设计稿描述未来命令是正当场景
+            # （与第 1 项 PLANNED_MARKERS、第 7 项 JAVA_SKIP_WORDS 同一语义：
+            #   「讲计划的行」不等于「声称它已存在」）。
+            # 2026-09-28：interaction-rule-design.md §3 提到尚未实现的
+            # /livingitem interaction ... 时首次触发本豁免需求。
+            if any(k in line for k in PLANNED_MARKERS):
+                continue
+            m = re.search(r"/livingitem(?![A-Za-z0-9_])", line)
+            if not m:
+                continue
+            # 单行命令形态：逐「纯 ASCII 词」校验 /livingitem 之后的 token，
+            # 遇到参数占位符 <x>、含 / 的路径、或中文说明即停止 —— 那些不是命令级别。
+            rest = line[m.end():]
             for tok in rest.split():
                 if not re.fullmatch(r"[A-Za-z0-9_]+", tok):
                     break                      # 参数 / 路径 / 自然语言 ⇒ 命令到此结束
@@ -367,7 +377,7 @@ def check_commands():
             # 树形图形态：/livingitem 单独一行，子命令画在下面（├── container / └── debug）
             # —— 这是 commands.md 的主要写法，必须一并校验，否则导航核心反而是盲区。
             if not rest.strip():
-                for ln in text[m.end():].split("\n")[1:10]:
+                for ln in lines[i + 1: i + 11]:
                     tm = re.match(r"^\s*[│\s]*[├└]──\s+([A-Za-z0-9_]+)", ln)
                     if tm:
                         if tm.group(1) not in literals:
