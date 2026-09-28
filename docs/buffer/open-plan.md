@@ -187,14 +187,18 @@
 | B2 | §1.4 的 modid 陷阱写进文档 |
 | B3 | **mixin 使用规约**：3 个 mixin config，fork 冲突是**字节码层面静默失效**，不是编译错误 ⇒ 写「优先用 event / API，别加 mixin」 |
 
-### C 组 · addon 专有（可推迟到真有人来）
+### C 组 · addon 专有（**大部分挂起：价值在第一个真实第三方出现时才兑现**，2026-09-28 用户定）
 
-| # | 做什么 |
-|---|---|
-| C1 | maven 发布 + `javadocJar` + `sourcesJar`（现状 `build.gradle:272-283` 只发到 `file://…/repo`，第三方根本拿不到） |
-| C2 | `@ApiStatus` 分层标注 + **Javadoc 覆盖率棘轮**（当前 38%，只升不降） |
-| C3 | `example-addon/` 子项目（兼容哨兵） |
-| C4 | `docs/addon-guide.md`（**待建**，≤2 页，**只写 Javadoc 说不了的**：注册时序、`canApply` 缓存语义限制、大箱子 27 格错位、33 圈 ticking 边界、活物品隔离会波及第三方物品） |
+| # | 做什么 | 状态 |
+|---|---|---|
+| C1 | maven 发布 + `javadocJar` + `sourcesJar`（现状 `build.gradle:272-283` 只发到 `file://…/repo`，第三方根本拿不到） | ⏸ 挂起 —— 发布了没人拉等于白发 |
+| C2 | `@ApiStatus` 分层标注 | ✅ **2026-09-28 完成（形态修正）**：曾逐类标注 211 个后撤销（用户判"太笨"，Create/AnvilCraft 先例支持），改为**包级口径**「默认内部，例外对外」—— 对外包仅 5 个（api/container/transfer/model/interaction），各带 package-info 契约；`@ApiStatus.Internal` 逐类标注只在精准点名的场合用（现 0 处）。**Javadoc 覆盖率棘轮**（基线 48%）拆到第 9/10 项待建 |
+| C3 | `example-addon/` 子项目（兼容哨兵） | ⏸ 挂起 —— 依赖 Q3 拍板 |
+| C4 | `docs/addon-guide.md`（**待建**，≤2 页，**只写 Javadoc 说不了的**：注册时序、`canApply` 缓存语义限制、大箱子 27 格错位、33 圈 ticking 边界、活物品隔离会波及第三方物品） | ⏸ 挂起 —— 写了没人读会腐烂（§5 原则）；等第一个真实 addon 作者的问题清单来喂内容 |
+
+> **C 组收手的判据**：A1/A2 做完了「契约边界」这个最核心的东西（第三方现在**能用**）；
+> C1/C3/C4 全部是「让第三方更方便」—— 它们的保质期从完成日就开始倒计时，
+> 而需求侧为 0。等第一个真实的 addon 作者带着问题来，C1/C4 会带着明确需求回来。
 
 ### ❌ 明确不做（现在做就是投机设计）
 

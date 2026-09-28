@@ -185,7 +185,7 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 > （changelog 是流水，不是约束）。详见 [docs/README.md](docs/README.md) §4。
 > 判据可复算：`python tools/doc_check.py` 第 4 项（条数 ≤ 10，且最新日期与 changelog 顶部一致）。
 
-### 当前版本: v0.9-alpha
+### 当前版本: 1.5.2-alpha（发布号随 `gradle.properties` 的 `mod_version`；alpha 阶段不做旧存档兼容）
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|

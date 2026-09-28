@@ -15,7 +15,7 @@ src/main/java/com/qiqi/li/
 │   │   ├── LivingItemFunction.java          # 功能接口（tick + tooltip + canApply + getFunctionId）
 │   │   ├── HasDirection.java                # WASD 朝向配置接口
 │   │   ├── HasContainerData.java            # 容器级数据计算接口
-│   │   └── LivingItemManager.java           # 核心管理器：DataComponent 注册、数据读写、功能注册
+│   │   └── LivingItemManager.java           # 纯框架管理器：功能注册表、IS_LIVING、活化/清除、getData/setData 泛型语义、排序冻结（A1 后不再含内容组件常量）
 │   │
 │   ├── container/                           # 容器抽象层（跨活物品共享基础设施）
 │   │   ├── ContainerContext.java            #   组合接口
