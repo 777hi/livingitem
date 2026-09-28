@@ -150,6 +150,11 @@ public class LivingItem {
         FarmlandRegistration.register();
         ToolRegistration.register();
         MapRegistration.register();
+
+        // 各域注册完毕 ⇒ 按 getTickPriority() 稳定排序（幂等）。
+        // 默认优先级全为 0 且排序稳定 ⇒ 顺序与下放前完全一致（零行为变化），
+        // 但从此 tick 次序是【声明】出来的，不再藏在这 11 行的书写顺序里。
+        LivingItemManager.sortFunctionsByPriority();
     }
 
     /**

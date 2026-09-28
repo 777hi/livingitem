@@ -2,6 +2,7 @@ package com.qiqi.li.living.api;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -349,6 +350,36 @@ public class LivingItemManager {
         LOGGER.info("Registering living item function: {}", function.getFunctionId());
         FUNCTIONS.add(function);
         APPLICABLE_CACHE.clear();
+    }
+
+    /**
+     * 按 {@link LivingItemFunction#getTickPriority()} <b>稳定排序</b>功能列表。
+     * 由 {@code LivingItem#commonSetup} 在所有域注册完毕后调用（幂等）。
+     *
+     * <p>⭐ tick 次序从此由 {@code getTickPriority()} <b>声明</b>，而不是散落在
+     * 11 个 Registration 文件里的书写顺序（A1 下放后没有任何一处能读出完整顺序）。</p>
+     *
+     * <p>⚠️ 默认优先级全为 0 + 排序稳定 ⇒ <b>本方法不改变改造前的 tick 顺序</b>。
+     * 它是「把隐式契约显式化」，不是行为变更（由 {@code TickOrderTest} 断言）。</p>
+     *
+     * <p><b>为什么只排序、不冻结注册</b>：曾计划同时「冻结列表、此后注册抛异常」，
+     * 实测发现这会打断 {@code ComponentOwnershipTest} 等在测试中注册 mock 功能的既有模式 ——
+     * 而「防 tick 期间注册」防的是一个<b>并不存在</b>的问题（现实中无人这么做）。
+     * 按项目原则：不为想象中的问题付出真实代价。注册保持现状（随时可注册 + 清缓存）。</p>
+     */
+    public static void sortFunctionsByPriority() {
+        FUNCTIONS.sort(Comparator.comparingInt(LivingItemFunction::getTickPriority));
+        LOGGER.info("Living item functions sorted by getTickPriority: {} 个（稳定排序）", FUNCTIONS.size());
+    }
+
+    /**
+     * 按 tick 优先级<b>稳定</b>排序 —— 抽出来是为了让测试能直接断言排序语义，
+     * 而不必依赖全局注册状态（那样会污染其它测试）。
+     */
+    static List<LivingItemFunction> sortByPriority(List<LivingItemFunction> input) {
+        List<LivingItemFunction> copy = new ArrayList<>(input);
+        copy.sort(Comparator.comparingInt(LivingItemFunction::getTickPriority));
+        return copy;
     }
 
     public static List<LivingItemFunction> getAllFunctions() {
