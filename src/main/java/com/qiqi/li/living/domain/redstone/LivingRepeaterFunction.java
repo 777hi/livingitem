@@ -1,4 +1,6 @@
 package com.qiqi.li.living.domain.redstone;
+import com.qiqi.li.living.transfer.LivingComponents;
+import com.qiqi.li.living.domain.redstone.LivingRepeaterData;
 
 import java.util.List;
 import java.util.Set;
@@ -40,7 +42,7 @@ public class LivingRepeaterFunction implements LivingItemFunction, HasDirection,
 
     @Override
     public Set<DataComponentType<?>> getOwnedComponentTypes() {
-        return Set.of(LivingItemManager.LIVING_REPEATER_DATA.value());
+        return Set.of(LivingComponents.LIVING_REPEATER_DATA.value());
     }
 
     @Override
@@ -53,7 +55,7 @@ public class LivingRepeaterFunction implements LivingItemFunction, HasDirection,
                              Consumer<Component> tooltipAdder,
                              TooltipFlag flag,
                              ItemStack stack) {
-        LivingRepeaterData data = LivingItemManager.getRepeaterData(stack);
+        LivingRepeaterData data = LivingRepeaterData.of(stack);
         int signalCap = ContainerRedstoneData.getSignalCap(stack.getCount());
 
         tooltipAdder.accept(Component.nullToEmpty(""));
@@ -133,16 +135,16 @@ public class LivingRepeaterFunction implements LivingItemFunction, HasDirection,
 
     public static boolean updateRepeaterDirection(ItemStack stack, Pos2D direction) {
         if (stack == null || stack.isEmpty() || direction == null) return false;
-        LivingRepeaterData data = LivingItemManager.getRepeaterData(stack);
-        LivingItemManager.setRepeaterData(stack, data.withDirection(direction));
+        LivingRepeaterData data = LivingRepeaterData.of(stack);
+        LivingRepeaterData.set(stack, data.withDirection(direction));
         return true;
     }
 
     public static boolean cycleDelay(ItemStack stack) {
         if (stack == null || stack.isEmpty()) return false;
-        LivingRepeaterData data = LivingItemManager.getRepeaterData(stack);
+        LivingRepeaterData data = LivingRepeaterData.of(stack);
         int newDelay = data.delay() >= 4 ? 1 : data.delay() + 1;
-        LivingItemManager.setRepeaterData(stack, data.withDelay(newDelay));
+        LivingRepeaterData.set(stack, data.withDelay(newDelay));
         return true;
     }
 }

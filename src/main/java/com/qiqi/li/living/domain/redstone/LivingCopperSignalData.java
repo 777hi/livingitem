@@ -1,5 +1,8 @@
-package com.qiqi.li.living.domain.redstone;
+package com.qiqi.li.living.domain.redstone;import net.minecraft.world.item.ItemStack;
 
+
+import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.transfer.LivingComponents;
 import java.util.function.Consumer;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
@@ -34,5 +37,15 @@ public record LivingCopperSignalData(
 
     @Override
     public void addToTooltip(Item.TooltipContext context, Consumer<Component> tooltipAdder, TooltipFlag flag) {
+    }
+
+    /** 读取：缺失返回默认值。（A1 迁移：原 LivingItemManager.getCopperSignal） */
+    public static LivingCopperSignalData of(ItemStack stack) {
+        return LivingItemManager.getData(stack, LivingComponents.LIVING_COPPER_SIGNAL.value(), LivingCopperSignalData.DEFAULT);
+    }
+
+    /** 写入：等于默认值时移除组件。（A1 迁移：原 LivingItemManager.setCopperSignal） */
+    public static void set(ItemStack stack, LivingCopperSignalData data) {
+        LivingItemManager.setData(stack, LivingComponents.LIVING_COPPER_SIGNAL.value(), data, LivingCopperSignalData.DEFAULT);
     }
 }

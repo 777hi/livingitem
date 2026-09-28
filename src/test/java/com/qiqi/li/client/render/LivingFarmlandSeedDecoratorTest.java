@@ -29,7 +29,7 @@ class LivingFarmlandSeedDecoratorTest {
         ItemStack stack = new ItemStack(Items.FARMLAND, 1);
         LivingItemManager.setLiving(stack, true);
         if (planted) {
-            LivingItemManager.setFarmlandPlant(stack, new FarmlandPlantComponent(
+            FarmlandPlantComponent.set(stack, new FarmlandPlantComponent(
                 Items.WHEAT_SEEDS, 3, 7, 0L, -1, List.of()));
         }
         return stack;
@@ -61,7 +61,7 @@ class LivingFarmlandSeedDecoratorTest {
     void livingNonFarmland_noIcon() {
         ItemStack dirt = new ItemStack(Items.DIRT, 1);
         LivingItemManager.setLiving(dirt, true);
-        LivingItemManager.setFarmlandPlant(dirt, new FarmlandPlantComponent(
+        FarmlandPlantComponent.set(dirt, new FarmlandPlantComponent(
             Items.WHEAT_SEEDS, 3, 7, 0L, -1, List.of()));
 
         assertFalse(LivingFarmlandSeedDecorator.shouldRenderSeed(dirt),

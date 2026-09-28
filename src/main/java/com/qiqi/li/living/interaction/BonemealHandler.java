@@ -29,7 +29,7 @@ public class BonemealHandler implements InteractionHandler {
         if (farmland.isEmpty() || !farmland.is(Items.FARMLAND)) return;
         if (!LivingItemManager.isLivingItem(farmland)) return;
 
-        FarmlandPlantComponent plant = LivingItemManager.getFarmlandPlant(farmland);
+        FarmlandPlantComponent plant = FarmlandPlantComponent.of(farmland);
         if (!plant.isPlanted()) return;
 
         Block cropBlock = CropClassifier.getBlockFromSeed(plant.cropSeed());
@@ -48,7 +48,7 @@ public class BonemealHandler implements InteractionHandler {
             (net.minecraft.server.level.ServerLevel) player.level());
         if (updated.equals(plant)) return;   // 无实际变化（已冻结的成熟耕地）不消耗骨粉
 
-        LivingItemManager.setFarmlandPlant(farmland, updated);
+        FarmlandPlantComponent.set(farmland, updated);
         targetSlot.set(farmland);
 
         if (!creative) {

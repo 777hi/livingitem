@@ -1,4 +1,5 @@
 package com.qiqi.li.living.domain.power;
+import com.qiqi.li.living.domain.redstone.LivingLeverData;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -361,7 +362,7 @@ class NetworkTraversalTest {
         for (int t = 0; t < TOTAL; t++) {
             // 振荡器：4t 方波（ON 2t → OFF 2t），上升沿间隔 4t
             boolean powered = (Math.floorMod(t, 4) < 2);
-            LivingItemManager.setLeverData(lever, new com.qiqi.li.living.domain.redstone.LivingLeverData(powered));
+            LivingLeverData.set(lever, new com.qiqi.li.living.domain.redstone.LivingLeverData(powered));
             // 生产契约：DataComponent 就地变更必须 bump 修订计数，否则稳态跳过判定失明
             ctx.syncSlotToClients(0, lever);
 

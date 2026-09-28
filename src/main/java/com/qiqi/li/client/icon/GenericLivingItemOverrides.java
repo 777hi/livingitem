@@ -1,4 +1,8 @@
 package com.qiqi.li.client.icon;
+import com.qiqi.li.living.domain.water.LivingWaterWheelData;
+import com.qiqi.li.living.domain.redstone.LivingRepeaterData;
+import com.qiqi.li.living.domain.redstone.LivingRedstoneTorchData;
+import com.qiqi.li.living.domain.redstone.LivingComparatorData;
 
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.block.model.ItemOverrides;
@@ -47,7 +51,7 @@ public class GenericLivingItemOverrides extends ItemOverrides {
             if (com.qiqi.li.living.compat.create.CreateCompat.isLoaded()
                 && com.qiqi.li.living.api.LivingItemManager.isLivingItem(stack)) {
                 com.qiqi.li.living.domain.water.LivingWaterWheelData data =
-                    com.qiqi.li.living.api.LivingItemManager.getWaterWheelData(stack);
+                    LivingWaterWheelData.of(stack);
                 com.qiqi.li.living.domain.water.WaterWheelData wd = data.wheel();
                 int netStress = wd.netStress();
                 float rpm = netStress == 0 ? 0
@@ -86,15 +90,15 @@ public class GenericLivingItemOverrides extends ItemOverrides {
         com.qiqi.li.living.model.Pos2D dir;
         if (stack.is(net.minecraft.world.item.Items.REPEATER)) {
             com.qiqi.li.living.domain.redstone.LivingRepeaterData data =
-                com.qiqi.li.living.api.LivingItemManager.getRepeaterData(stack);
+                LivingRepeaterData.of(stack);
             dir = data.direction();
         } else if (stack.is(net.minecraft.world.item.Items.COMPARATOR)) {
             com.qiqi.li.living.domain.redstone.LivingComparatorData data =
-                com.qiqi.li.living.api.LivingItemManager.getComparatorData(stack);
+                LivingComparatorData.of(stack);
             dir = data.direction();
         } else {
             com.qiqi.li.living.domain.redstone.LivingRedstoneTorchData data =
-                com.qiqi.li.living.api.LivingItemManager.getRedstoneTorchData(stack);
+                LivingRedstoneTorchData.of(stack);
             dir = data.direction();
         }
         if (dir.equals(com.qiqi.li.living.model.Pos2D.UP)) return 0;

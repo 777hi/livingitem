@@ -41,7 +41,7 @@ public class LivingChiseledCopperDecorator implements IItemDecorator {
         if (!LivingItemManager.isLivingItem(stack)) return false;
         if (!LivingCopperFunction.isChiseled(stack.getItem())) return false;
 
-        LivingCutCopperData data = LivingItemManager.getCutCopperData(stack);
+        LivingCutCopperData data = LivingCutCopperData.of(stack);
         if (data == null) return false;
 
         int inputRot = directionToRotation(data.inputDir());

@@ -1,4 +1,6 @@
 package com.qiqi.li.living.domain.redstone;
+import com.qiqi.li.living.transfer.LivingComponents;
+import com.qiqi.li.living.domain.redstone.LivingLeverData;
 
 import java.util.List;
 import java.util.Set;
@@ -37,7 +39,7 @@ public class LivingLeverFunction implements LivingItemFunction, HasContainerData
 
     @Override
     public Set<DataComponentType<?>> getOwnedComponentTypes() {
-        return Set.of(LivingItemManager.LIVING_LEVER_DATA.value());
+        return Set.of(LivingComponents.LIVING_LEVER_DATA.value());
     }
 
     @Override
@@ -50,7 +52,7 @@ public class LivingLeverFunction implements LivingItemFunction, HasContainerData
                              Consumer<Component> tooltipAdder,
                              TooltipFlag flag,
                              ItemStack stack) {
-        LivingLeverData data = LivingItemManager.getLeverData(stack);
+        LivingLeverData data = LivingLeverData.of(stack);
 
         tooltipAdder.accept(Component.nullToEmpty(""));
         tooltipAdder.accept(Component.translatable("tooltip.livingitem.lever.title"));
@@ -81,8 +83,8 @@ public class LivingLeverFunction implements LivingItemFunction, HasContainerData
 
     public static boolean toggleLever(ItemStack stack) {
         if (stack == null || stack.isEmpty()) return false;
-        LivingLeverData data = LivingItemManager.getLeverData(stack);
-        LivingItemManager.setLeverData(stack, data.withPowered(!data.powered()));
+        LivingLeverData data = LivingLeverData.of(stack);
+        LivingLeverData.set(stack, data.withPowered(!data.powered()));
         return true;
     }
 }

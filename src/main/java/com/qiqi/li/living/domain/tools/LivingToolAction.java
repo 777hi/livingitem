@@ -1,5 +1,7 @@
 package com.qiqi.li.living.domain.tools;
 
+import com.qiqi.li.living.transfer.LivingComponents;
+import net.minecraft.world.item.ItemStack;
 import javax.annotation.Nullable;
 
 import net.minecraft.core.BlockPos;
@@ -68,4 +70,19 @@ public record LivingToolAction(long tick, @Nullable BlockPos target) {
                 ByteBufCodecs.VAR_LONG, LivingToolAction::tick,
                 OPTIONAL_BLOCK_POS, LivingToolAction::target,
                 LivingToolAction::new);
+
+    /** 读取：组件缺失 = 从没发生过。（A1 迁移：原 LivingItemManager.getToolLastAction） */
+    @Nullable
+    public static LivingToolAction of(ItemStack stack) {
+        return stack.get(LivingComponents.LIVING_TOOL_LAST_ACTION.value());
+    }
+
+    /** 写入：null = 清除。（A1 迁移：原 LivingItemManager.setToolLastAction） */
+    public static void set(ItemStack stack, @Nullable LivingToolAction action) {
+        if (action == null) {
+            stack.remove(LivingComponents.LIVING_TOOL_LAST_ACTION.value());
+        } else {
+            stack.set(LivingComponents.LIVING_TOOL_LAST_ACTION.value(), action);
+        }
+    }
 }

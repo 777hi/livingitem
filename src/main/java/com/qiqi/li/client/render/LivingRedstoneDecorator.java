@@ -27,7 +27,7 @@ public class LivingRedstoneDecorator implements IItemDecorator {
     public boolean render(GuiGraphics guiGraphics, Font font, ItemStack stack, int xOffset, int yOffset) {
         if (!stack.is(Items.REDSTONE) || !LivingItemManager.isLivingItem(stack)) return false;
 
-        LivingRedstoneData data = LivingItemManager.getRedstoneData(stack);
+        LivingRedstoneData data = LivingRedstoneData.of(stack);
         int power = data.signalStrength();
         byte conn = data.connections();
 

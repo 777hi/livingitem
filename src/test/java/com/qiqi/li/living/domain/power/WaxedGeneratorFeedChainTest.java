@@ -1,4 +1,7 @@
 package com.qiqi.li.living.domain.power;
+import com.qiqi.li.living.domain.redstone.LivingRedstoneTorchData;
+import com.qiqi.li.living.domain.power.LivingWaxedChiseledData;
+import com.qiqi.li.living.domain.power.LivingWaxedBulbData;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -143,7 +146,7 @@ class WaxedGeneratorFeedChainTest {
         }
         for (int t = 0; t < ticks; t++) {
             boolean powered = (Math.floorMod(t, 4) < 2);
-            LivingItemManager.setLeverData(lever, new LivingLeverData(powered));
+            LivingLeverData.set(lever, new LivingLeverData(powered));
             ctx.syncSlotToClients(0, lever);
 
             TickContext tick = new TickContext(ctx);
@@ -195,8 +198,8 @@ class WaxedGeneratorFeedChainTest {
         ItemStack[] slots = new ItemStack[27];
         // 3×3 火把环（左下角）：火把 (1,1)=10 输入=左，粉环 9/11/18/19/20
         ItemStack torch = living(Items.REDSTONE_TORCH, 1);
-        LivingItemManager.setRedstoneTorchData(torch,
-            LivingItemManager.getRedstoneTorchData(torch).withDirection(com.qiqi.li.living.model.Pos2D.RIGHT));
+        LivingRedstoneTorchData.set(torch,
+            LivingRedstoneTorchData.of(torch).withDirection(com.qiqi.li.living.model.Pos2D.RIGHT));
         slots[10] = torch;
         for (int idx : new int[] {9, 11, 18, 19, 20}) {
             slots[idx] = living(Items.REDSTONE, 1);
@@ -262,8 +265,8 @@ class WaxedGeneratorFeedChainTest {
     void productionPath_processContext_powersGenerator() {
         ItemStack[] slots = new ItemStack[27];
         ItemStack torch = living(Items.REDSTONE_TORCH, 1);
-        LivingItemManager.setRedstoneTorchData(torch,
-            LivingItemManager.getRedstoneTorchData(torch).withDirection(com.qiqi.li.living.model.Pos2D.RIGHT));
+        LivingRedstoneTorchData.set(torch,
+            LivingRedstoneTorchData.of(torch).withDirection(com.qiqi.li.living.model.Pos2D.RIGHT));
         slots[10] = torch;
         for (int idx : new int[] {9, 11, 18, 19, 20}) {
             slots[idx] = living(Items.REDSTONE, 1);
@@ -297,8 +300,8 @@ class WaxedGeneratorFeedChainTest {
         ItemStack[] slots = new ItemStack[54];
         // 3×3 火把环放在左半箱中部：行 1 列 1-3（idx 10,11,12 一行 + 下行 19,20,21）
         ItemStack torch = living(Items.REDSTONE_TORCH, 1);
-        LivingItemManager.setRedstoneTorchData(torch,
-            LivingItemManager.getRedstoneTorchData(torch).withDirection(com.qiqi.li.living.model.Pos2D.RIGHT));
+        LivingRedstoneTorchData.set(torch,
+            LivingRedstoneTorchData.of(torch).withDirection(com.qiqi.li.living.model.Pos2D.RIGHT));
         // 环：火把 (1,1)=10 输入=左 (1,0)=9，输出右 (1,2)=11 → 下 (2,2)=20 → 左 (2,1)=19 → 左 (2,0)=18 → 上回 (1,0)=9
         slots[10] = torch;
         for (int idx : new int[] {9, 11, 18, 19, 20}) {
@@ -430,8 +433,8 @@ class WaxedGeneratorFeedChainTest {
     void playerInventory_generatesAndChargesBulb() {
         ItemStack[] slots = new ItemStack[36];
         ItemStack torch = living(Items.REDSTONE_TORCH, 1);
-        LivingItemManager.setRedstoneTorchData(torch,
-            LivingItemManager.getRedstoneTorchData(torch).withDirection(com.qiqi.li.living.model.Pos2D.RIGHT));
+        LivingRedstoneTorchData.set(torch,
+            LivingRedstoneTorchData.of(torch).withDirection(com.qiqi.li.living.model.Pos2D.RIGHT));
         slots[10] = torch;
         for (int idx : new int[] {9, 11, 18, 19, 20}) {
             slots[idx] = living(Items.REDSTONE, 1);
@@ -455,7 +458,7 @@ class WaxedGeneratorFeedChainTest {
             ContainerLivingItemHandler.processContext(ctx, level);
         }
 
-        var bulbData = LivingItemManager.getWaxedBulbData(ctx.getItem(13));
+        var bulbData = LivingWaxedBulbData.of(ctx.getItem(13));
         assertTrue(bulbData.chargeMilliFe() > 0,
             "背包里同锈级铜灯应被充电（发电生效），实际=" + bulbData.chargeMilliFe());
     }
@@ -521,8 +524,8 @@ class WaxedGeneratorFeedChainTest {
             ItemStack[] slots = new ItemStack[27];
             slots[13] = chiseled.copy();
             // 重置为默认再配置目标方向（模拟玩家 WASD 配置）
-            LivingItemManager.setWaxedChiseledData(slots[13],
-                LivingItemManager.getWaxedChiseledData(slots[13]).withInputDir(c.dir()));
+            LivingWaxedChiseledData.set(slots[13],
+                LivingWaxedChiseledData.of(slots[13]).withInputDir(c.dir()));
             SimpleContainerContext ctx = new SimpleContainerContext(
                 new FakeHandler(slots), null, new ArrayList<>(), new ArrayList<>(),
                 mockServerLevel());
@@ -596,8 +599,8 @@ class WaxedGeneratorFeedChainTest {
 
             // 新实例经 chiseledInputEdge 同款映射，必须映射到正确方向
             ItemStack stack = living(Items.WAXED_CHISELED_COPPER, 4);
-            LivingItemManager.setWaxedChiseledData(stack,
-                LivingItemManager.getWaxedChiseledData(stack).withInputDir(roundTrip));
+            LivingWaxedChiseledData.set(stack,
+                LivingWaxedChiseledData.of(stack).withInputDir(roundTrip));
             int edge = LivingWaxedCopperFunction.chiseledInputEdgeForTest(roundTrip);
             assertEquals(expected.get(i).intValue(), edge,
                 "方向 " + roundTrip + "（反序列化实例）应映射到 " + expected.get(i));

@@ -1,4 +1,5 @@
 package com.qiqi.li.living.domain.furnace;
+import com.qiqi.li.living.transfer.LivingComponents;
 
 import java.util.List;
 import java.util.Set;
@@ -57,7 +58,7 @@ public class LivingFurnaceFunction implements LivingItemFunction, HasDirection {
             if (slot < 0 || slot >= context.getSize()) continue;
 
             ItemStack stack = entry.stack();
-            LivingFurnaceData data = LivingItemManager.getFurnaceData(stack);
+            LivingFurnaceData data = LivingFurnaceData.of(stack);
             String containerKey = context.getContainerKey();
 
             // 从运行时缓存读取瞬态数据（不影响物品堆叠的 DataComponent）
@@ -120,7 +121,7 @@ public class LivingFurnaceFunction implements LivingItemFunction, HasDirection {
 
             // 仅当方向数据变化时写入 DataComponent，避免运行时数据影响物品堆叠
             if (directionChanged) {
-                LivingItemManager.setFurnaceData(stack, data
+                LivingFurnaceData.set(stack, data
                     .withProgress(ProgressData.DEFAULT)
                     .withFuel(FuelData.DEFAULT)
                     .withTransform(TransformData.EMPTY));
@@ -325,7 +326,7 @@ public class LivingFurnaceFunction implements LivingItemFunction, HasDirection {
                              Consumer<Component> tooltipAdder,
                              TooltipFlag flag,
                              ItemStack stack) {
-        LivingFurnaceData data = LivingItemManager.getFurnaceData(stack);
+        LivingFurnaceData data = LivingFurnaceData.of(stack);
 
         // 从客户端缓存读取运行时数据（不影响物品堆叠）
         LivingItemRuntimeData runtimeData = LivingItemClientCache.getCurrentTooltipData();
@@ -434,21 +435,21 @@ public class LivingFurnaceFunction implements LivingItemFunction, HasDirection {
     @Override
     public boolean updateSlotDirection(ItemStack stack, String slotName, Pos2D direction) {
         if (stack == null || stack.isEmpty() || slotName == null || direction == null) return false;
-        LivingFurnaceData data = LivingItemManager.getFurnaceData(stack);
+        LivingFurnaceData data = LivingFurnaceData.of(stack);
         DirectionSlotsData dir = data.direction();
         dir = dir.withDirection(slotName, direction);
-        LivingItemManager.setFurnaceData(stack, data.withDirection(dir));
+        LivingFurnaceData.set(stack, data.withDirection(dir));
         return true;
     }
 
     @Override
     public Set<DataComponentType<?>> getOwnedComponentTypes() {
-        return Set.of(LivingItemManager.LIVING_FURNACE_DATA.value(), LivingItemManager.LIVING_FURNACE_BURNING.value());
+        return Set.of(LivingComponents.LIVING_FURNACE_DATA.value(), LivingComponents.LIVING_FURNACE_BURNING.value());
     }
 
     @Override
     public Set<DataComponentType<?>> getIgnoredComponentTypes() {
         // 燃烧标志是图标用的瞬态状态，两个不同燃烧状态的熔炉仍可堆叠
-        return Set.of(LivingItemManager.LIVING_FURNACE_BURNING.value());
+        return Set.of(LivingComponents.LIVING_FURNACE_BURNING.value());
     }
 }

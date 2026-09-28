@@ -1,4 +1,5 @@
 package com.qiqi.li.living.domain.tools;
+import com.qiqi.li.living.domain.tools.LivingToolMemory;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -197,6 +198,6 @@ public final class LivingToolHostSync {
         if (a.getItem() != b.getItem()) {
             return false;
         }
-        return Objects.equals(LivingItemManager.getToolMemory(a), LivingItemManager.getToolMemory(b));
+        return Objects.equals(LivingToolMemory.of(a), LivingToolMemory.of(b));
     }
 }

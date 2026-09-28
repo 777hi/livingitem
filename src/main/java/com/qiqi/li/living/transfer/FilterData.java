@@ -1,5 +1,7 @@
-package com.qiqi.li.living.transfer;
+package com.qiqi.li.living.transfer;import net.minecraft.world.item.ItemStack;
 
+
+import com.qiqi.li.living.api.LivingItemManager;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -99,4 +101,26 @@ public record FilterData(
         buf.writeVarInt(list.size());
         for (int i : list) buf.writeVarInt(i);
     }
+
+    /** 读取：缺失返回默认值。（A1 迁移：原 LivingItemManager.getHopperFilter） */
+    public static com.qiqi.li.living.transfer.FilterData of(ItemStack stack) {
+        return LivingItemManager.getData(stack, LivingComponents.LIVING_HOPPER_FILTER.value(), com.qiqi.li.living.transfer.FilterData.EMPTY);
+    }
+
+    /**
+     * 便捷方法：写入漏斗过滤链（EMPTY 时移除组件，节省 NBT）。
+     */
+
+    /** 写入：等于默认值时移除组件。（A1 迁移：原 LivingItemManager.setHopperFilter） */
+    public static void set(ItemStack stack, com.qiqi.li.living.transfer.FilterData filter) {
+        if (filter == null || filter.equals(com.qiqi.li.living.transfer.FilterData.EMPTY)) {
+            stack.remove(LivingComponents.LIVING_HOPPER_FILTER.value());
+        } else {
+            stack.set(LivingComponents.LIVING_HOPPER_FILTER.value(), filter);
+        }
+    }
+
+    /**
+     * 便捷方法：获取TNT数据。
+     */
 }

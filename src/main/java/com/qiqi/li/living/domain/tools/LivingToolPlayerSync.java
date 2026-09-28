@@ -1,4 +1,5 @@
 package com.qiqi.li.living.domain.tools;
+import com.qiqi.li.living.domain.tools.LivingToolMemory;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -131,7 +132,7 @@ public final class LivingToolPlayerSync {
                 continue;
             }
             if (LivingItemManager.isLivingItem(stack)
-                && !LivingItemManager.getToolMemory(stack).isEmpty()) {
+                && !LivingToolMemory.of(stack).isEmpty()) {
                 out.add(stack.copy());
             }
         }

@@ -1,4 +1,5 @@
 package com.qiqi.li.living.domain.farmland;
+import com.qiqi.li.living.domain.farmland.FarmlandPlantComponent;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -39,7 +40,7 @@ class FertilizeTransferTest {
     private static ItemStack livingFarmland(int age, int maxAge) {
         ItemStack stack = new ItemStack(Items.FARMLAND, 1);
         LivingItemManager.setLiving(stack, true);
-        LivingItemManager.setFarmlandPlant(stack,
+        FarmlandPlantComponent.set(stack,
             new FarmlandPlantComponent(Items.WHEAT_SEEDS, age, maxAge, 0L, -1, java.util.List.of()));
         return stack;
     }
@@ -53,7 +54,7 @@ class FertilizeTransferTest {
         boolean ok = LivingFarmlandFunction.tryFertilize(farmland, bonemeal, LEVEL);
 
         assertTrue(ok, "未成熟 → 生长 tick 必定成功");
-        assertEquals(4, LivingItemManager.getFarmlandPlant(farmland).age());
+        assertEquals(4, FarmlandPlantComponent.of(farmland).age());
         assertEquals(15, bonemeal.getCount(), "施肥消耗 1 个骨粉");
     }
 
@@ -62,7 +63,7 @@ class FertilizeTransferTest {
     void fertilize_frozenMatureFarmland_noOpNoConsume() {
         ItemStack farmland = new ItemStack(Items.FARMLAND, 1);
         LivingItemManager.setLiving(farmland, true);
-        LivingItemManager.setFarmlandPlant(farmland, new FarmlandPlantComponent(
+        FarmlandPlantComponent.set(farmland, new FarmlandPlantComponent(
             Items.WHEAT_SEEDS, 7, 7, 0L, 0,
             java.util.List.of(new ItemStack(Items.WHEAT))));
         ItemStack bonemeal = new ItemStack(Items.BONE_MEAL, 16);
@@ -71,7 +72,7 @@ class FertilizeTransferTest {
 
         assertFalse(ok, "已冻结待输出 → forceGrowthTick 无变化 → 零空转不消耗");
         assertEquals(16, bonemeal.getCount(), "对着等待输出的耕地不烧骨粉");
-        assertEquals(7, LivingItemManager.getFarmlandPlant(farmland).age());
+        assertEquals(7, FarmlandPlantComponent.of(farmland).age());
     }
 
     @Test
@@ -102,7 +103,7 @@ class FertilizeTransferTest {
         ItemStack wheat = new ItemStack(Items.WHEAT, 16);
 
         assertFalse(LivingFarmlandFunction.tryFertilize(farmland, wheat, LEVEL));
-        assertEquals(3, LivingItemManager.getFarmlandPlant(farmland).age(), "非骨粉不触发生长");
+        assertEquals(3, FarmlandPlantComponent.of(farmland).age(), "非骨粉不触发生长");
         assertEquals(16, wheat.getCount());
     }
 
@@ -116,7 +117,7 @@ class FertilizeTransferTest {
         // 本方法只管施肥语义，不做货物准入——漏斗路径的「活物品不作货物」由
         // SlotInteractions.isEligibleCargo 统一执行（SlotInteractionCargoGateTest）
         assertTrue(LivingFarmlandFunction.tryFertilize(farmland, livingBonemeal, LEVEL));
-        assertEquals(4, LivingItemManager.getFarmlandPlant(farmland).age());
+        assertEquals(4, FarmlandPlantComponent.of(farmland).age());
         assertEquals(15, livingBonemeal.getCount());
     }
 }

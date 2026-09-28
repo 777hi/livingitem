@@ -1,4 +1,5 @@
 package com.qiqi.li.living.domain.power;
+import com.qiqi.li.living.domain.power.LivingWaxedChiseledData;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -62,8 +63,8 @@ class PhaseInterpretationTest {
 
     private static ItemStack chiseledAimed(Pos2D inputDir) {
         ItemStack s = living(Items.WAXED_CHISELED_COPPER, PREF);
-        LivingItemManager.setWaxedChiseledData(s,
-            LivingItemManager.getWaxedChiseledData(s).withInputDir(inputDir));
+        LivingWaxedChiseledData.set(s,
+            LivingWaxedChiseledData.of(s).withInputDir(inputDir));
         return s;
     }
 

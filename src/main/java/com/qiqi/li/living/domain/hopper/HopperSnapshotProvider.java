@@ -1,4 +1,5 @@
 package com.qiqi.li.living.domain.hopper;
+import com.qiqi.li.living.domain.hopper.LivingHopperData;
 
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerContext;
@@ -24,7 +25,7 @@ public class HopperSnapshotProvider implements SnapshotProvider {
             if (stack.isEmpty()) continue;
             if (!LivingHopperFunction.isLivingHopper(stack)) continue;
 
-            LivingHopperData data = LivingItemManager.getHopperData(stack);
+            LivingHopperData data = LivingHopperData.of(stack);
             if (data == null) continue;
 
             var dir = data.direction();

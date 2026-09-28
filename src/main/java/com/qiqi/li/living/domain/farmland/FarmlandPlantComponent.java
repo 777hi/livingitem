@@ -1,5 +1,7 @@
 package com.qiqi.li.living.domain.farmland;
 
+import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.transfer.LivingComponents;
 import java.util.List;
 import java.util.function.Consumer;
 import javax.annotation.Nullable;
@@ -115,4 +117,16 @@ public record FarmlandPlantComponent(
     @Override
     public void addToTooltip(Item.TooltipContext context, Consumer<Component> tooltipAdder, TooltipFlag flag) {
     }
+
+    /** 读取：缺失返回默认值。（A1 迁移：原 LivingItemManager.getFarmlandPlant） */
+    public static FarmlandPlantComponent of(ItemStack stack) {
+        return LivingItemManager.getData(stack, LivingComponents.FARMLAND_PLANT.value(), FarmlandPlantComponent.DEFAULT);
+    }
+
+    /** 写入：等于默认值时移除组件。（A1 迁移：原 LivingItemManager.setFarmlandPlant） */
+    public static void set(ItemStack stack, FarmlandPlantComponent data) {
+        LivingItemManager.setData(stack, LivingComponents.FARMLAND_PLANT.value(), data, FarmlandPlantComponent.DEFAULT);
+    }
+
+    /** 便捷方法：获取活工具记忆（挖掘记忆 + 交互记忆）。 */
 }

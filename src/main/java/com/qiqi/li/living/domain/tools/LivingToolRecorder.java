@@ -1,4 +1,5 @@
 package com.qiqi.li.living.domain.tools;
+import com.qiqi.li.living.domain.tools.LivingToolMemory;
 
 import javax.annotation.Nullable;
 
@@ -142,7 +143,7 @@ public final class LivingToolRecorder {
         return !stack.isEmpty()
             && LivingItemManager.isLivingItem(stack)
             && (isLivingTool(stack) || isLivingWeapon(stack))
-            && LivingItemManager.getToolMemory(stack).isEmpty();
+            && LivingToolMemory.of(stack).isEmpty();
     }
 
     /**
@@ -156,7 +157,7 @@ public final class LivingToolRecorder {
      */
     public static boolean isAssistWeapon(ItemStack stack) {
         return isLivingWeapon(stack)
-            && LivingItemManager.getToolMemory(stack).isEmpty();
+            && LivingToolMemory.of(stack).isEmpty();
     }
 
     /**
@@ -167,7 +168,7 @@ public final class LivingToolRecorder {
      */
     public static boolean isAssistTool(ItemStack stack) {
         return isLivingTool(stack)
-            && LivingItemManager.getToolMemory(stack).isEmpty();
+            && LivingToolMemory.of(stack).isEmpty();
     }
 
 
@@ -266,12 +267,12 @@ public final class LivingToolRecorder {
             return;
         }
 
-        LivingToolMemory memory = LivingItemManager.getToolMemory(tool);
+        LivingToolMemory memory = LivingToolMemory.of(tool);
         if (!memory.hasUse()) {
             return;
         }
 
-        LivingItemManager.setToolMemory(tool, memory.withoutUse());
+        LivingToolMemory.set(tool, memory.withoutUse());
         player.inventoryMenu.broadcastChanges();
     }
 
@@ -315,7 +316,7 @@ public final class LivingToolRecorder {
             return;
         }
 
-        LivingToolMemory memory = LivingItemManager.getToolMemory(tool);
+        LivingToolMemory memory = LivingToolMemory.of(tool);
         LivingToolMemory updated = memory;
         if (asTool) {
             updated = updated.withoutDig();
@@ -327,7 +328,7 @@ public final class LivingToolRecorder {
             return;   // 本来就没有记忆 → 不必写
         }
 
-        LivingItemManager.setToolMemory(tool, updated);
+        LivingToolMemory.set(tool, updated);
     }
 
     // ------------------------------------------------------------------
@@ -448,22 +449,22 @@ public final class LivingToolRecorder {
 
     private static void recordDig(ItemStack tool, Vec3 eye, Vec3 hitLocation, @Nullable Block target) {
         LivingToolMemory.RayMemory ray = LivingToolMemory.RayMemory.record(eye, hitLocation, target);
-        LivingToolMemory memory = LivingItemManager.getToolMemory(tool);
-        LivingItemManager.setToolMemory(tool, memory.withDig(ray));
+        LivingToolMemory memory = LivingToolMemory.of(tool);
+        LivingToolMemory.set(tool, memory.withDig(ray));
     }
 
     private static void recordUse(ItemStack tool, Vec3 eye, Vec3 hitLocation, @Nullable Block target) {
         LivingToolMemory.RayMemory ray = LivingToolMemory.RayMemory.record(eye, hitLocation, target);
-        LivingToolMemory memory = LivingItemManager.getToolMemory(tool);
-        LivingItemManager.setToolMemory(tool, memory.withUse(ray));
+        LivingToolMemory memory = LivingToolMemory.of(tool);
+        LivingToolMemory.set(tool, memory.withUse(ray));
     }
 
     private static void recordAttack(ItemStack weapon, Vec3 eye, Vec3 hitLocation,
                                      @Nullable EntityType<?> type) {
         LivingToolMemory.AttackMemory ray =
             LivingToolMemory.AttackMemory.record(eye, hitLocation, type);
-        LivingToolMemory memory = LivingItemManager.getToolMemory(weapon);
-        LivingItemManager.setToolMemory(weapon, memory.withAttack(ray));
+        LivingToolMemory memory = LivingToolMemory.of(weapon);
+        LivingToolMemory.set(weapon, memory.withAttack(ray));
     }
 
 

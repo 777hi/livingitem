@@ -1,4 +1,6 @@
 package com.qiqi.li.living.domain.redstone;
+import com.qiqi.li.living.transfer.LivingComponents;
+import com.qiqi.li.living.domain.redstone.LivingRedstoneTorchData;
 
 import java.util.List;
 import java.util.Set;
@@ -40,7 +42,7 @@ public class LivingRedstoneTorchFunction implements LivingItemFunction, HasDirec
 
     @Override
     public Set<DataComponentType<?>> getOwnedComponentTypes() {
-        return Set.of(LivingItemManager.LIVING_REDSTONE_TORCH_DATA.value());
+        return Set.of(LivingComponents.LIVING_REDSTONE_TORCH_DATA.value());
     }
 
     @Override
@@ -53,7 +55,7 @@ public class LivingRedstoneTorchFunction implements LivingItemFunction, HasDirec
                              Consumer<Component> tooltipAdder,
                              TooltipFlag flag,
                              ItemStack stack) {
-        LivingRedstoneTorchData data = LivingItemManager.getRedstoneTorchData(stack);
+        LivingRedstoneTorchData data = LivingRedstoneTorchData.of(stack);
 
         tooltipAdder.accept(Component.nullToEmpty(""));
         tooltipAdder.accept(Component.translatable("tooltip.livingitem.redstone_torch.title"));
@@ -113,8 +115,8 @@ public class LivingRedstoneTorchFunction implements LivingItemFunction, HasDirec
 
     public static boolean updateTorchDirection(ItemStack torchStack, Pos2D direction) {
         if (torchStack == null || torchStack.isEmpty() || direction == null) return false;
-        LivingRedstoneTorchData data = LivingItemManager.getRedstoneTorchData(torchStack);
-        LivingItemManager.setRedstoneTorchData(torchStack, data.withDirection(direction));
+        LivingRedstoneTorchData data = LivingRedstoneTorchData.of(torchStack);
+        LivingRedstoneTorchData.set(torchStack, data.withDirection(direction));
         return true;
     }
 }

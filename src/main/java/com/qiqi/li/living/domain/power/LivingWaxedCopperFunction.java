@@ -1,4 +1,8 @@
 package com.qiqi.li.living.domain.power;
+import com.qiqi.li.living.transfer.LivingComponents;
+import com.qiqi.li.living.domain.power.LivingWaxedGeneratorData;
+import com.qiqi.li.living.domain.power.LivingWaxedChiseledData;
+import com.qiqi.li.living.domain.power.LivingWaxedBulbData;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -74,9 +78,9 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
     @Override
     public Set<DataComponentType<?>> getOwnedComponentTypes() {
         return Set.of(
-            LivingItemManager.LIVING_WAXED_CHISELED_DATA.value(),
-            LivingItemManager.LIVING_GENERATOR_DATA.value(),
-            LivingItemManager.LIVING_WAXED_BULB_DATA.value()
+            LivingComponents.LIVING_WAXED_CHISELED_DATA.value(),
+            LivingComponents.LIVING_GENERATOR_DATA.value(),
+            LivingComponents.LIVING_WAXED_BULB_DATA.value()
         );
     }
 
@@ -445,7 +449,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
     private static int chiseledInputEdge(ContainerContext ctx, int slot) {
         ItemStack stack = ctx.getItem(slot);
         if (stack.isEmpty() || !isWaxedChiseled(stack.getItem())) return -1;
-        return pos2dToEdgeDir(LivingItemManager.getWaxedChiseledData(stack).inputDir());
+        return pos2dToEdgeDir(LivingWaxedChiseledData.of(stack).inputDir());
     }
 
     /** 下降沿跟踪器命名空间位（与上升沿跟踪器同表，位隔离） */
@@ -475,7 +479,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             String inputDirStr = "";
             ItemStack genStack = ctx.getItem(slot);
             if (isWaxedChiseled(genStack.getItem())) {
-                inputDirStr = " inputDir=" + LivingItemManager.getWaxedChiseledData(genStack).inputDir().getSymbol();
+                inputDirStr = " inputDir=" + LivingWaxedChiseledData.of(genStack).inputDir().getSymbol();
             }
             ModLog.CONTAINER.info("[涂蜡感知] {} slot={} pref={} bestP={} n={} Σ√|Δ|={} emaFe={}{} | {}",
                 ctx.getContainerKey(), slot, pref,
@@ -551,7 +555,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
     private static void interpretShifter(int slot, ItemStack stack, ContainerContext ctx,
             int size, int width, ContainerPowerData powerData, long now,
             Map<Integer, List<DerivedPhase>> draft) {
-        var data = LivingItemManager.getWaxedChiseledData(stack);
+        var data = LivingWaxedChiseledData.of(stack);
         int inEdge = pos2dToEdgeDir(data.inputDir());
         List<DerivedPhase> out = new ArrayList<>();
 
@@ -857,7 +861,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             if (stack.isEmpty() || !isWaxedBulb(stack.getItem())) continue;
             if (getOxidationLevel(stack.getItem()) != oxidation) continue;   // v18：锈级专属通道
             long rem = LivingWaxedBulbData.totalCapacityMilliFe(stack.getCount())
-                - LivingItemManager.getWaxedBulbData(stack).totalChargeMilliFe(stack.getCount());
+                - LivingWaxedBulbData.of(stack).totalChargeMilliFe(stack.getCount());
             if (rem <= 0) continue;
             bulbs.add(new BulbRef(stack, stack.getCount(), rem));
             totalRemaining += rem;
@@ -875,10 +879,10 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             long share = PowerMath.mulDivFloor(mfe, ref.remaining(), totalRemaining);
             long perLamp = share / ref.count();
             if (perLamp <= 0) continue;
-            LivingWaxedBulbData data = LivingItemManager.getWaxedBulbData(ref.stack());
+            LivingWaxedBulbData data = LivingWaxedBulbData.of(ref.stack());
             long newQ = Math.min(PowerMath.BULB_UNIT_CAPACITY_MFE,
                 data.chargeMilliFe() + perLamp);
-            LivingItemManager.setWaxedBulbData(ref.stack(), data.withChargeMilliFe(newQ));
+            LivingWaxedBulbData.set(ref.stack(), data.withChargeMilliFe(newQ));
             distributed += (newQ - data.chargeMilliFe()) * ref.count();
         }
         return distributed > 0;
@@ -907,7 +911,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
 
         // ── 雕文感应方向（仅涂蜡雕文；v19.1 只感应输入方向）──
         if (isWaxedChiseled(item)) {
-            var chiseledData = LivingItemManager.getWaxedChiseledData(stack);
+            var chiseledData = LivingWaxedChiseledData.of(stack);
             tooltipAdder.accept(Component.translatable(
                     "tooltip.livingitem.waxed_copper.chiseled_dir",
                     chiseledData.inputDir().getSymbol())
@@ -921,7 +925,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             if (runtimeData.isGenerator()) {
                 t = runtimeData.generatorTelemetry();
             } else {
-                t = LivingItemManager.getGeneratorData(stack);
+                t = LivingWaxedGeneratorData.of(stack);
             }
             int pref = stack.getCount();
             boolean hasSignal = t.detectedPeriod() > 0;
@@ -1070,7 +1074,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
                 .append(Component.translatable("tooltip.livingitem.waxed_copper.bulb_channel",
                     Component.translatable("tooltip.livingitem.waxed_copper.oxidation." + ox)))
                 .withStyle(ChatFormatting.GRAY));
-            LivingWaxedBulbData data = LivingItemManager.getWaxedBulbData(stack);
+            LivingWaxedBulbData data = LivingWaxedBulbData.of(stack);
             long q = data.chargeMilliFe() * stack.getCount();
             long cap = LivingWaxedBulbData.totalCapacityMilliFe(stack.getCount());
             boolean full = q >= cap;
@@ -1186,9 +1190,9 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
     @Override
     public boolean updateSlotDirection(ItemStack stack, String slotName, Pos2D direction) {
         if (!isWaxedChiseled(stack.getItem())) return false;
-        var data = LivingItemManager.getWaxedChiseledData(stack);
+        var data = LivingWaxedChiseledData.of(stack);
         if ("input".equals(slotName)) {
-            LivingItemManager.setWaxedChiseledData(stack, data.withInputDir(direction));
+            LivingWaxedChiseledData.set(stack, data.withInputDir(direction));
             return true;
         }
         return false;

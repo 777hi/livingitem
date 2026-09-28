@@ -1,4 +1,5 @@
 package com.qiqi.li.living.domain.power;
+import com.qiqi.li.living.domain.power.LivingWaxedBulbData;
 
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.energy.IEnergyStorage;
@@ -19,12 +20,12 @@ public class BulbItemEnergyStorage implements IEnergyStorage {
     }
 
     private long chargeMilliFe() {
-        return LivingItemManager.getWaxedBulbData(stack).chargeMilliFe();
+        return LivingWaxedBulbData.of(stack).chargeMilliFe();
     }
 
     private void setChargeMilliFe(long chargeMilliFe) {
-        LivingItemManager.setWaxedBulbData(stack,
-            LivingItemManager.getWaxedBulbData(stack).withChargeMilliFe(chargeMilliFe));
+        LivingWaxedBulbData.set(stack,
+            LivingWaxedBulbData.of(stack).withChargeMilliFe(chargeMilliFe));
     }
 
     @Override

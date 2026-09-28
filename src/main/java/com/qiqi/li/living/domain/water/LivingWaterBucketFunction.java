@@ -1,4 +1,5 @@
 package com.qiqi.li.living.domain.water;
+import com.qiqi.li.living.transfer.LivingComponents;
 
 import java.util.HashMap;
 import java.util.List;
@@ -28,7 +29,7 @@ import com.qiqi.li.living.domain.water.WaterData;
  * <p>水桶的 {@code lastTick}、{@code hostSlot}、{@code containerKey} 等瞬态字段
  * 仅用于服务端 {@code needsReset} 检测，不需要每 tick 写入 DataComponent。
  * 这些字段缓存在 {@link #BUCKET_STATES} 中，避免每 tick 调用
- * {@code LivingItemManager.setWaterBucketData()} 修改 ItemStack 的 DataComponent，
+ * {@code LivingWaterBucketData.set()} 修改 ItemStack 的 DataComponent，
  * 从而消除玩家背包中活水桶的性能开销（DataComponent 写入 + 网络同步包）。</p>
  *
  * <p>DataComponent 仅在 {@code flow} 实际变化时（{@link #postTickSync}）才写入，
@@ -117,7 +118,7 @@ public class LivingWaterBucketFunction implements LivingItemFunction, HasContain
                              Consumer<Component> tooltipAdder,
                              TooltipFlag flag,
                              ItemStack stack) {
-        LivingWaterBucketData data = LivingItemManager.getWaterBucketData(stack);
+        LivingWaterBucketData data = LivingWaterBucketData.of(stack);
         String flow = data.water().flow();
         int count = 0;
         int maxLevel = 0;
@@ -141,7 +142,7 @@ public class LivingWaterBucketFunction implements LivingItemFunction, HasContain
 
     @Override
     public Set<DataComponentType<?>> getOwnedComponentTypes() {
-        return Set.of(LivingItemManager.LIVING_WATER_BUCKET_DATA.value());
+        return Set.of(LivingComponents.LIVING_WATER_BUCKET_DATA.value());
     }
 
     @Override
@@ -180,7 +181,7 @@ public class LivingWaterBucketFunction implements LivingItemFunction, HasContain
             ItemStack stack = ctx.getItem(i);
             if (!isLivingWaterBucket(stack)) continue;
 
-            LivingWaterBucketData data = LivingItemManager.getWaterBucketData(stack);
+            LivingWaterBucketData data = LivingWaterBucketData.of(stack);
             WaterData oldWater = data.water();
             String oldFlow = oldWater.flow();
 
@@ -202,7 +203,7 @@ public class LivingWaterBucketFunction implements LivingItemFunction, HasContain
             }
 
             if (newWater != oldWater) {
-                LivingItemManager.setWaterBucketData(stack, data.withWater(newWater));
+                LivingWaterBucketData.set(stack, data.withWater(newWater));
                 ctx.syncSlotToClients(i, stack);
             }
         }

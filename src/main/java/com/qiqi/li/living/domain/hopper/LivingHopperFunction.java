@@ -1,4 +1,5 @@
 package com.qiqi.li.living.domain.hopper;
+import com.qiqi.li.living.transfer.LivingComponents;
 
 import java.util.HashSet;
 import java.util.List;
@@ -60,7 +61,7 @@ public class LivingHopperFunction implements LivingItemFunction {
             if (slot < 0 || slot >= context.getSize()) continue;
 
             ItemStack stack = entry.stack();
-            LivingHopperData data = LivingItemManager.getHopperData(stack);
+            LivingHopperData data = LivingHopperData.of(stack);
             String containerKey = context.getContainerKey();
 
             // 从运行时缓存读取瞬态数据（不影响物品堆叠的 DataComponent）
@@ -76,7 +77,7 @@ public class LivingHopperFunction implements LivingItemFunction {
                 if (!data.disabled()) {
                     data = data.withDisabled(true);
                     // 写入 DataComponent 时重置运行时字段，不影响物品堆叠
-                    LivingItemManager.setHopperData(stack,
+                    LivingHopperData.set(stack,
                         data.withTransfer(TransferData.DEFAULT).withSlotInfo(ResolvedSlotData.EMPTY));
                     context.syncSlotToClients(slot, stack);
                 }
@@ -85,7 +86,7 @@ public class LivingHopperFunction implements LivingItemFunction {
 
             if (data.disabled()) {
                 data = data.withDisabled(false);
-                LivingItemManager.setHopperData(stack,
+                LivingHopperData.set(stack,
                     data.withTransfer(TransferData.DEFAULT).withSlotInfo(ResolvedSlotData.EMPTY));
                 context.syncSlotToClients(slot, stack);
             }
@@ -112,8 +113,8 @@ public class LivingHopperFunction implements LivingItemFunction {
             // 容器布局+物品重建，不落盘），组件仅用于网络同步给客户端 tooltip
             // （living-hopper-tech.md §2.4.2）。规则变化时才写组件（稳态零写入）；
             // 漏斗搬去新容器后旧规则过期，下一 tick 用重建结果自愈。
-            if (!filter.equals(LivingItemManager.getHopperFilter(stack))) {
-                LivingItemManager.setHopperFilter(stack, filter);
+            if (!filter.equals(FilterData.of(stack))) {
+                FilterData.set(stack, filter);
                 context.syncSlotToClients(slot, stack);
             }
 
@@ -164,7 +165,7 @@ public class LivingHopperFunction implements LivingItemFunction {
                              Consumer<Component> tooltipAdder,
                              TooltipFlag flag,
                              ItemStack stack) {
-        LivingHopperData data = LivingItemManager.getHopperData(stack);
+        LivingHopperData data = LivingHopperData.of(stack);
 
         // 从客户端缓存读取运行时数据（不影响物品堆叠）
         LivingItemRuntimeData runtimeData = LivingItemClientCache.getCurrentTooltipData();
@@ -205,7 +206,7 @@ public class LivingHopperFunction implements LivingItemFunction {
         }
 
         // 过滤链在独立组件 LIVING_HOPPER_FILTER 中（由 tick 从快照回写）
-        FilterData filter = LivingItemManager.getHopperFilter(stack);
+        FilterData filter = FilterData.of(stack);
         if (filter != null && !filter.equals(FilterData.EMPTY)) {
             ItemFilterComponent.appendFilterTooltip(filter, tooltipAdder);
         }
@@ -263,8 +264,8 @@ public class LivingHopperFunction implements LivingItemFunction {
                 .withStyle(net.minecraft.ChatFormatting.GRAY));
         }
 
-        boolean hasRules = LivingItemManager.getHopperFilter(stack) != null
-            && !LivingItemManager.getHopperFilter(stack).equals(FilterData.EMPTY);
+        boolean hasRules = FilterData.of(stack) != null
+            && !FilterData.of(stack).equals(FilterData.EMPTY);
         tooltipAdder.accept(Component.translatable(
             "tooltip.livingitem.hopper.advanced.has_filter",
             hasRules ? Component.translatable("tooltip.livingitem.hopper.advanced.yes")
@@ -341,27 +342,27 @@ public class LivingHopperFunction implements LivingItemFunction {
 
     public static boolean updateTransferMapping(ItemStack hopperStack, SlotMapping newMapping) {
         if (hopperStack == null || hopperStack.isEmpty() || newMapping == null) return false;
-        LivingHopperData data = LivingItemManager.getHopperData(hopperStack);
+        LivingHopperData data = LivingHopperData.of(hopperStack);
         DirectionTransferData dir = data.direction()
             .withSource(newMapping.sourceOffset())
             .withTarget(newMapping.targetOffset());
-        LivingItemManager.setHopperData(hopperStack, data.withDirection(dir));
+        LivingHopperData.set(hopperStack, data.withDirection(dir));
         return true;
     }
 
     public static DirectionTransferData readDirectionData(ItemStack hopperStack) {
-        return LivingItemManager.getHopperData(hopperStack).direction();
+        return LivingHopperData.of(hopperStack).direction();
     }
 
     @Override
     public Set<DataComponentType<?>> getOwnedComponentTypes() {
-        return Set.of(LivingItemManager.LIVING_HOPPER_DATA.value(), LivingItemManager.LIVING_HOPPER_FILTER.value());
+        return Set.of(LivingComponents.LIVING_HOPPER_DATA.value(), LivingComponents.LIVING_HOPPER_FILTER.value());
     }
 
     @Override
     public Set<DataComponentType<?>> getIgnoredComponentTypes() {
         // 过滤链是容器环境的派生数据（同一容器里两个漏斗的规则必然不同），
         // 不忽略会破坏漏斗堆叠；堆叠合并后下一 tick 由快照重建自愈
-        return Set.of(LivingItemManager.LIVING_HOPPER_FILTER.value());
+        return Set.of(LivingComponents.LIVING_HOPPER_FILTER.value());
     }
 }

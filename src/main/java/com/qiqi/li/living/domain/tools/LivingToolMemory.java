@@ -1,5 +1,8 @@
 package com.qiqi.li.living.domain.tools;
 
+import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.transfer.LivingComponents;
+import net.minecraft.world.item.ItemStack;
 import java.util.Optional;
 import javax.annotation.Nullable;
 
@@ -282,5 +285,15 @@ public record LivingToolMemory(
     /** 清除攻击记忆。 */
     public LivingToolMemory withoutAttack() {
         return new LivingToolMemory(dig, use, null);
+    }
+
+    /** 读取：缺失返回默认（无记忆）。（A1 迁移：原 LivingItemManager.getToolMemory） */
+    public static LivingToolMemory of(ItemStack stack) {
+        return LivingItemManager.getData(stack, LivingComponents.LIVING_TOOL_MEMORY.value(), LivingToolMemory.DEFAULT);
+    }
+
+    /** 写入：等于 DEFAULT（无记忆）时自动移除组件。（A1 迁移：原 LivingItemManager.setToolMemory） */
+    public static void set(ItemStack stack, LivingToolMemory memory) {
+        LivingItemManager.setData(stack, LivingComponents.LIVING_TOOL_MEMORY.value(), memory, LivingToolMemory.DEFAULT);
     }
 }

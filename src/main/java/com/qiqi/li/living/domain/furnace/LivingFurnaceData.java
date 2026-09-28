@@ -1,5 +1,8 @@
-package com.qiqi.li.living.domain.furnace;
+package com.qiqi.li.living.domain.furnace;import net.minecraft.world.item.ItemStack;
 
+
+import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.transfer.LivingComponents;
 import java.util.function.Consumer;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
@@ -45,4 +48,22 @@ public record LivingFurnaceData(
 
     @Override
     public void addToTooltip(Item.TooltipContext context, Consumer<Component> tooltipAdder, TooltipFlag flag) {}
+
+    /** 读取：缺失返回默认值。（A1 迁移：原 LivingItemManager.getFurnaceData） */
+    public static LivingFurnaceData of(ItemStack stack) {
+        return LivingItemManager.getData(stack, LivingComponents.LIVING_FURNACE_DATA.value(), LivingFurnaceData.DEFAULT);
+    }
+
+    /**
+     * 便捷方法：设置熔炉数据。
+     */
+
+    /** 写入：等于默认值时移除组件。（A1 迁移：原 LivingItemManager.setFurnaceData） */
+    public static void set(ItemStack stack, LivingFurnaceData data) {
+        LivingItemManager.setData(stack, LivingComponents.LIVING_FURNACE_DATA.value(), data, LivingFurnaceData.DEFAULT);
+    }
+
+    /**
+     * 便捷方法：读取熔炉燃烧标志（供图标谓词使用）。
+     */
 }

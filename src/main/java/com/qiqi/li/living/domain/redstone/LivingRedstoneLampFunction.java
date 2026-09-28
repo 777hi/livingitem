@@ -1,4 +1,6 @@
 package com.qiqi.li.living.domain.redstone;
+import com.qiqi.li.living.transfer.LivingComponents;
+import com.qiqi.li.living.domain.redstone.LivingRedstoneLampData;
 
 import java.util.List;
 import java.util.Set;
@@ -37,7 +39,7 @@ public class LivingRedstoneLampFunction implements LivingItemFunction, HasContai
 
     @Override
     public Set<DataComponentType<?>> getOwnedComponentTypes() {
-        return Set.of(LivingItemManager.LIVING_REDSTONE_LAMP_DATA.value());
+        return Set.of(LivingComponents.LIVING_REDSTONE_LAMP_DATA.value());
     }
 
     @Override
@@ -50,7 +52,7 @@ public class LivingRedstoneLampFunction implements LivingItemFunction, HasContai
                              Consumer<Component> tooltipAdder,
                              TooltipFlag flag,
                              ItemStack stack) {
-        LivingRedstoneLampData data = LivingItemManager.getLampData(stack);
+        LivingRedstoneLampData data = LivingRedstoneLampData.of(stack);
 
         tooltipAdder.accept(Component.nullToEmpty(""));
         tooltipAdder.accept(Component.translatable("tooltip.livingitem.lamp.title"));

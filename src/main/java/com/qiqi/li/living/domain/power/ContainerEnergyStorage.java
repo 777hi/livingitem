@@ -1,4 +1,5 @@
 package com.qiqi.li.living.domain.power;
+import com.qiqi.li.living.domain.power.LivingWaxedBulbData;
 
 import javax.annotation.Nullable;
 
@@ -131,7 +132,7 @@ public class ContainerEnergyStorage implements IEnergyStorage {
         for (int i = 0; i < items.getSlots(); i++) {
             ItemStack stack = items.getStackInSlot(i);
             if (isBulb(stack)) {
-                m += LivingItemManager.getWaxedBulbData(stack).totalChargeMilliFe(stack.getCount());
+                m += LivingWaxedBulbData.of(stack).totalChargeMilliFe(stack.getCount());
             }
         }
         // int 收窄 clamp：IEnergyStorage 公约是 int FE（上限 ~21.4 亿），超大堆叠容器
@@ -195,7 +196,7 @@ public class ContainerEnergyStorage implements IEnergyStorage {
             if (!isBulb(stack)) continue;
             int count = stack.getCount();
             long rem = PowerMath.BULB_UNIT_CAPACITY_MFE * count
-                - LivingItemManager.getWaxedBulbData(stack).totalChargeMilliFe(count);
+                - LivingWaxedBulbData.of(stack).totalChargeMilliFe(count);
             stacks[i] = stack;
             remaining[i] = rem;
             totalRemaining += rem;
@@ -224,8 +225,8 @@ public class ContainerEnergyStorage implements IEnergyStorage {
             long perLamp = share / count;
             if (perLamp <= 0) continue;
             if (!simulate) {
-                LivingWaxedBulbData data = LivingItemManager.getWaxedBulbData(stack);
-                LivingItemManager.setWaxedBulbData(stack,
+                LivingWaxedBulbData data = LivingWaxedBulbData.of(stack);
+                LivingWaxedBulbData.set(stack,
                     data.withChargeMilliFe(data.chargeMilliFe() + perLamp));
                 changed = true;
             }
@@ -247,11 +248,11 @@ public class ContainerEnergyStorage implements IEnergyStorage {
                 if (stack == null) continue;
                 int count = stack.getCount();
                 if (count > leftover) continue;   // 完整步进保护
-                long q = LivingItemManager.getWaxedBulbData(stack).chargeMilliFe();
+                long q = LivingWaxedBulbData.of(stack).chargeMilliFe();
                 if (q >= PowerMath.BULB_UNIT_CAPACITY_MFE) continue;
                 if (!simulate) {
-                    LivingItemManager.setWaxedBulbData(stack,
-                        LivingItemManager.getWaxedBulbData(stack).withChargeMilliFe(q + 1));
+                    LivingWaxedBulbData.set(stack,
+                        LivingWaxedBulbData.of(stack).withChargeMilliFe(q + 1));
                     changed = true;
                 }
                 distributed += count;             // 记账 = 实充（count mFE）
@@ -284,7 +285,7 @@ public class ContainerEnergyStorage implements IEnergyStorage {
             ItemStack stack = items.getStackInSlot(i);
             if (!isBulb(stack)) continue;
             int count = stack.getCount();
-            long q = LivingItemManager.getWaxedBulbData(stack).chargeMilliFe();
+            long q = LivingWaxedBulbData.of(stack).chargeMilliFe();
             long takeTotal = Math.min(q * count, remaining);
             long perLamp = takeTotal / count;
             // 余数跨 FE 边界时向上取整，避免灯里有电但外部抽不出整 FE
@@ -298,8 +299,8 @@ public class ContainerEnergyStorage implements IEnergyStorage {
             }
             if (perLamp <= 0) continue;
             if (!simulate) {
-                LivingItemManager.setWaxedBulbData(stack,
-                    LivingItemManager.getWaxedBulbData(stack).withChargeMilliFe(q - perLamp));
+                LivingWaxedBulbData.set(stack,
+                    LivingWaxedBulbData.of(stack).withChargeMilliFe(q - perLamp));
                 changed = true;
             }
             got += perLamp * count;

@@ -1,5 +1,8 @@
-package com.qiqi.li.living.domain.redstone;
+package com.qiqi.li.living.domain.redstone;import net.minecraft.world.item.ItemStack;
 
+
+import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.transfer.LivingComponents;
 import java.util.function.Consumer;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
@@ -49,5 +52,15 @@ public record LivingComparatorData(
 
     @Override
     public void addToTooltip(Item.TooltipContext context, Consumer<Component> tooltipAdder, TooltipFlag flag) {
+    }
+
+    /** 读取：缺失返回默认值。（A1 迁移：原 LivingItemManager.getComparatorData） */
+    public static LivingComparatorData of(ItemStack stack) {
+        return LivingItemManager.getData(stack, LivingComponents.LIVING_COMPARATOR_DATA.value(), LivingComparatorData.DEFAULT);
+    }
+
+    /** 写入：等于默认值时移除组件。（A1 迁移：原 LivingItemManager.setComparatorData） */
+    public static void set(ItemStack stack, LivingComparatorData data) {
+        LivingItemManager.setData(stack, LivingComponents.LIVING_COMPARATOR_DATA.value(), data, LivingComparatorData.DEFAULT);
     }
 }

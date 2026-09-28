@@ -1,4 +1,6 @@
 package com.qiqi.li.living.domain.hopper;
+import com.qiqi.li.living.transfer.FilterData;
+import com.qiqi.li.living.domain.hopper.LivingHopperData;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -52,7 +54,7 @@ class HopperFilterSyncTest {
     private static ItemStack livingHopper(Pos2D source, Pos2D target) {
         ItemStack stack = new ItemStack(Items.HOPPER);
         LivingItemManager.setLiving(stack, true);
-        LivingItemManager.setHopperData(stack, LivingItemManager.getHopperData(stack)
+        LivingHopperData.set(stack, LivingHopperData.of(stack)
             .withDirection(new DirectionTransferData(source, target)));
         return stack;
     }
@@ -79,13 +81,13 @@ class HopperFilterSyncTest {
 
         tick();
 
-        var filter = LivingItemManager.getHopperFilter(ctx.getItem(HOPPER_A));
+        var filter = FilterData.of(ctx.getItem(HOPPER_A));
         assertTrue(filter.blacklist().contains("minecraft:dirt"),
             "B 的 source 物品应成为 A 的黑名单，实际: " + filter);
         assertEquals(List.of(B_SOURCE), filter.blacklistSlots());
         assertTrue(filter.whitelist().isEmpty());
         // B 自己的过滤为空（A 的 source/target 都不指向 B）
-        assertTrue(LivingItemManager.getHopperFilter(ctx.getItem(HOPPER_B)).blacklist().isEmpty());
+        assertTrue(FilterData.of(ctx.getItem(HOPPER_B)).blacklist().isEmpty());
         assertTrue(ctx.syncedSlots.contains(HOPPER_A), "规则变化应触发槽位同步");
     }
 
@@ -100,7 +102,7 @@ class HopperFilterSyncTest {
 
         tick();
 
-        var filter = LivingItemManager.getHopperFilter(ctx.getItem(HOPPER_A));
+        var filter = FilterData.of(ctx.getItem(HOPPER_A));
         assertTrue(filter.whitelist().contains("minecraft:gold_ingot"),
             "邻居的 target 物品应成为 A 的白名单，实际: " + filter);
         assertEquals(List.of(B_SOURCE), filter.whitelistSlots());
@@ -131,7 +133,7 @@ class HopperFilterSyncTest {
         ctx.set(B_SOURCE, new ItemStack(Items.DIRT));
 
         tick();
-        assertTrue(LivingItemManager.getHopperFilter(ctx.getItem(HOPPER_A))
+        assertTrue(FilterData.of(ctx.getItem(HOPPER_A))
             .blacklist().contains("minecraft:dirt"));
 
         // 货物移走 → 内容签名变化 → 快照重建 → A 的规则应为空
@@ -140,7 +142,7 @@ class HopperFilterSyncTest {
         ctx.syncedSlots.clear();
         tick();
 
-        assertTrue(LivingItemManager.getHopperFilter(ctx.getItem(HOPPER_A)).equals(
+        assertTrue(FilterData.of(ctx.getItem(HOPPER_A)).equals(
                 com.qiqi.li.living.transfer.FilterData.EMPTY),
             "货物移走后黑名单应清空（EMPTY 时组件应被移除）");
         assertTrue(ctx.syncedSlots.contains(HOPPER_A), "规则清空应触发槽位同步");
@@ -150,7 +152,7 @@ class HopperFilterSyncTest {
     @DisplayName("堆叠兼容：过滤链在 getIgnoredComponentTypes 中，不同规则的漏斗可堆叠")
     void filter_ignoredForStacking() {
         ItemStack withFilter = livingHopper(Pos2D.LEFT, Pos2D.RIGHT);
-        LivingItemManager.setHopperFilter(withFilter,
+        FilterData.set(withFilter,
             new com.qiqi.li.living.transfer.FilterData(
                 List.of("minecraft:dirt"), List.of(), List.of(), List.of(),
                 List.of(), List.of(), List.of(), List.of(), List.of(), List.of()));

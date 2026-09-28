@@ -1,4 +1,9 @@
 package com.qiqi.li.living.domain.redstone;
+import com.qiqi.li.living.transfer.LivingComponents;
+import com.qiqi.li.living.domain.redstone.LivingGrateData;
+import com.qiqi.li.living.domain.redstone.LivingCutCopperData;
+import com.qiqi.li.living.domain.redstone.LivingCopperSignalData;
+import com.qiqi.li.living.domain.redstone.LivingCopperBulbData;
 
 import java.util.List;
 import java.util.Set;
@@ -41,10 +46,10 @@ public class LivingCopperFunction implements LivingItemFunction, HasContainerDat
     @Override
     public Set<DataComponentType<?>> getOwnedComponentTypes() {
         return Set.of(
-            LivingItemManager.LIVING_CUT_COPPER_DATA.value(),
-            LivingItemManager.LIVING_GRATE_DATA.value(),
-            LivingItemManager.LIVING_COPPER_BULB_DATA.value(),
-            LivingItemManager.LIVING_COPPER_SIGNAL.value()
+            LivingComponents.LIVING_CUT_COPPER_DATA.value(),
+            LivingComponents.LIVING_GRATE_DATA.value(),
+            LivingComponents.LIVING_COPPER_BULB_DATA.value(),
+            LivingComponents.LIVING_COPPER_SIGNAL.value()
         );
     }
 
@@ -64,7 +69,7 @@ public class LivingCopperFunction implements LivingItemFunction, HasContainerDat
         tooltipAdder.accept(Component.translatable("tooltip.livingitem.copper.title")
             .withStyle(ChatFormatting.GOLD));
 
-        LivingCopperSignalData sigData = LivingItemManager.getCopperSignal(stack);
+        LivingCopperSignalData sigData = LivingCopperSignalData.of(stack);
         tooltipAdder.accept(Component.literal("  ")
             .append(Component.translatable("tooltip.livingitem.copper.signal"))
             .append(Component.literal(": " + sigData.signalStrength()))
@@ -75,7 +80,7 @@ public class LivingCopperFunction implements LivingItemFunction, HasContainerDat
             .withStyle(ChatFormatting.GRAY));
 
         if (isChiseled(item)) {
-            LivingCutCopperData data = LivingItemManager.getCutCopperData(stack);
+            LivingCutCopperData data = LivingCutCopperData.of(stack);
             tooltipAdder.accept(Component.literal("  ")
                 .append(Component.translatable("tooltip.livingitem.copper.input_dir"))
                 .append(Component.literal(": " + data.inputDir().getSymbol()))
@@ -87,7 +92,7 @@ public class LivingCopperFunction implements LivingItemFunction, HasContainerDat
         }
 
         if (isBulb(item)) {
-            LivingCopperBulbData bulbData = LivingItemManager.getCopperBulbData(stack);
+            LivingCopperBulbData bulbData = LivingCopperBulbData.of(stack);
             tooltipAdder.accept(Component.literal("  ")
                 .append(Component.translatable("tooltip.livingitem.copper.bulb_recorded"))
                 .append(Component.literal(": " + bulbData.recordedSignal()))
@@ -95,7 +100,7 @@ public class LivingCopperFunction implements LivingItemFunction, HasContainerDat
         }
 
         if (isGrate(item)) {
-            LivingGrateData grateData = LivingItemManager.getGrateData(stack);
+            LivingGrateData grateData = LivingGrateData.of(stack);
             tooltipAdder.accept(Component.literal("  ")
                 .append(Component.translatable("tooltip.livingitem.copper.grate_sum"))
                 .append(Component.literal(": " + grateData.sumSignal()))
@@ -106,7 +111,7 @@ public class LivingCopperFunction implements LivingItemFunction, HasContainerDat
     @Override
     public int getComparatorOutput(ItemStack stack) {
         if (isBulb(stack.getItem())) {
-            LivingCopperBulbData data = LivingItemManager.getCopperBulbData(stack);
+            LivingCopperBulbData data = LivingCopperBulbData.of(stack);
             return data.recordedSignal();
         }
         return 0;
@@ -205,13 +210,13 @@ public class LivingCopperFunction implements LivingItemFunction, HasContainerDat
 
     @Override
     public boolean updateSlotDirection(ItemStack stack, String slotName, Pos2D direction) {
-        LivingCutCopperData data = LivingItemManager.getCutCopperData(stack);
+        LivingCutCopperData data = LivingCutCopperData.of(stack);
         switch (slotName) {
             case "input":
-                LivingItemManager.setCutCopperData(stack, data.withInputDir(direction));
+                LivingCutCopperData.set(stack, data.withInputDir(direction));
                 return true;
             case "output":
-                LivingItemManager.setCutCopperData(stack, data.withOutputDir(direction));
+                LivingCutCopperData.set(stack, data.withOutputDir(direction));
                 return true;
             default:
                 return false;

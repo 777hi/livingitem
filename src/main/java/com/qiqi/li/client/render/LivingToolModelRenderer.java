@@ -562,7 +562,7 @@ public final class LivingToolModelRenderer {
         long latest = Long.MIN_VALUE;
         BlockPos target = null;
         for (ItemStack weapon : weapons) {
-            LivingToolAction action = LivingItemManager.getToolLastAction(weapon);
+            LivingToolAction action = LivingToolAction.of(weapon);
             long age = action == null || action.target() == null
                 ? Long.MAX_VALUE : now - action.tick();
             // age < 0：客户端时钟略慢于服务端写入时（差 1~2 tick）⇒ 视为未攻击
@@ -634,7 +634,7 @@ public final class LivingToolModelRenderer {
                     origin, stack, "o" + playerId + "_" + i, seen);
                 continue;
             }
-            LivingToolAction action = LivingItemManager.getToolLastAction(stack);
+            LivingToolAction action = LivingToolAction.of(stack);
             if (action != null && action.target() != null
                 && now - action.tick() >= 0L && now - action.tick() < ATTACK_RING_TICKS) {
                 attacking.add(stack);
@@ -752,7 +752,7 @@ public final class LivingToolModelRenderer {
         if (stack.isEmpty() || !LivingItemManager.isLivingItem(stack)) {
             return;
         }
-        LivingToolMemory memory = LivingItemManager.getToolMemory(stack);
+        LivingToolMemory memory = LivingToolMemory.of(stack);
         if (memory.isEmpty()) {
             return;
         }
@@ -784,8 +784,8 @@ public final class LivingToolModelRenderer {
         double idleDist = IDLE_MAX_OFFSET * length / (length + IDLE_HALF_SATURATION);
         Vec3 idlePos = origin.add(dir.scale(idleDist));
 
-        LivingToolProgress progress = LivingItemManager.getToolProgress(stack);
-        LivingToolAction action = LivingItemManager.getToolLastAction(stack);
+        LivingToolProgress progress = LivingToolProgress.of(stack);
+        LivingToolAction action = LivingToolAction.of(stack);
 
         Vec3 pos;
         float spinRad = 0.0F;

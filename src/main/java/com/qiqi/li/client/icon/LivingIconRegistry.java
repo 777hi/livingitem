@@ -1,4 +1,9 @@
 package com.qiqi.li.client.icon;
+import com.qiqi.li.living.domain.redstone.LivingRedstoneTorchData;
+import com.qiqi.li.living.domain.redstone.LivingRedstoneLampData;
+import com.qiqi.li.living.domain.redstone.LivingLeverData;
+import com.qiqi.li.living.domain.redstone.LivingCopperBulbData;
+import com.qiqi.li.living.domain.power.LivingWaxedBulbData;
 
 import com.qiqi.li.LivingItem;
 import com.qiqi.li.client.render.LivingChiseledCopperDecorator;
@@ -91,13 +96,13 @@ public final class LivingIconRegistry {
 
         register(LivingIconSpec.builder(net.minecraft.world.item.Items.REDSTONE_LAMP)
             .addVariant("on", "item/redstone_lamp_on",
-                stack -> com.qiqi.li.living.api.LivingItemManager.getLampData(stack).lit())
+                stack -> LivingRedstoneLampData.of(stack).lit())
             .addVariant("off", "item/redstone_lamp", stack -> true)
             .build());
 
         register(LivingIconSpec.builder(net.minecraft.world.item.Items.REDSTONE_TORCH)
             .addVariant("on", "item/redstone_torch",
-                stack -> com.qiqi.li.living.api.LivingItemManager.getRedstoneTorchData(stack).isLit())
+                stack -> LivingRedstoneTorchData.of(stack).isLit())
             .addVariant("off", "item/redstone_torch_off", stack -> true)
             .directional()
             .build());
@@ -105,42 +110,42 @@ public final class LivingIconRegistry {
         register(LivingIconSpec.builder(net.minecraft.world.item.Items.REPEATER)
             .addVariant("1tick", "item/repeater_1tick",
                 stack -> {
-                    LivingRepeaterData d = com.qiqi.li.living.api.LivingItemManager.getRepeaterData(stack);
+                    LivingRepeaterData d = LivingRepeaterData.of(stack);
                     return d.delay() == 1 && !d.powered();
                 })
             .addVariant("1tick_on", "item/repeater_1tick_on",
                 stack -> {
-                    LivingRepeaterData d = com.qiqi.li.living.api.LivingItemManager.getRepeaterData(stack);
+                    LivingRepeaterData d = LivingRepeaterData.of(stack);
                     return d.delay() == 1 && d.powered();
                 })
             .addVariant("2tick", "item/repeater_2tick",
                 stack -> {
-                    LivingRepeaterData d = com.qiqi.li.living.api.LivingItemManager.getRepeaterData(stack);
+                    LivingRepeaterData d = LivingRepeaterData.of(stack);
                     return d.delay() == 2 && !d.powered();
                 })
             .addVariant("2tick_on", "item/repeater_2tick_on",
                 stack -> {
-                    LivingRepeaterData d = com.qiqi.li.living.api.LivingItemManager.getRepeaterData(stack);
+                    LivingRepeaterData d = LivingRepeaterData.of(stack);
                     return d.delay() == 2 && d.powered();
                 })
             .addVariant("3tick", "item/repeater_3tick",
                 stack -> {
-                    LivingRepeaterData d = com.qiqi.li.living.api.LivingItemManager.getRepeaterData(stack);
+                    LivingRepeaterData d = LivingRepeaterData.of(stack);
                     return d.delay() == 3 && !d.powered();
                 })
             .addVariant("3tick_on", "item/repeater_3tick_on",
                 stack -> {
-                    LivingRepeaterData d = com.qiqi.li.living.api.LivingItemManager.getRepeaterData(stack);
+                    LivingRepeaterData d = LivingRepeaterData.of(stack);
                     return d.delay() == 3 && d.powered();
                 })
             .addVariant("4tick", "item/repeater_4tick",
                 stack -> {
-                    LivingRepeaterData d = com.qiqi.li.living.api.LivingItemManager.getRepeaterData(stack);
+                    LivingRepeaterData d = LivingRepeaterData.of(stack);
                     return d.delay() == 4 && !d.powered();
                 })
             .addVariant("4tick_on", "item/repeater_4tick_on",
                 stack -> {
-                    LivingRepeaterData d = com.qiqi.li.living.api.LivingItemManager.getRepeaterData(stack);
+                    LivingRepeaterData d = LivingRepeaterData.of(stack);
                     return d.delay() == 4 && d.powered();
                 })
             .directional()
@@ -150,22 +155,22 @@ public final class LivingIconRegistry {
         register(LivingIconSpec.builder(net.minecraft.world.item.Items.COMPARATOR)
             .addVariant("compare", "item/comparator_compare",
                 stack -> {
-                    LivingComparatorData d = com.qiqi.li.living.api.LivingItemManager.getComparatorData(stack);
+                    LivingComparatorData d = LivingComparatorData.of(stack);
                     return !d.subtractMode() && !d.powered();
                 })
             .addVariant("compare_on", "item/comparator_compare_on",
                 stack -> {
-                    LivingComparatorData d = com.qiqi.li.living.api.LivingItemManager.getComparatorData(stack);
+                    LivingComparatorData d = LivingComparatorData.of(stack);
                     return !d.subtractMode() && d.powered();
                 })
             .addVariant("subtract", "item/comparator_subtract",
                 stack -> {
-                    LivingComparatorData d = com.qiqi.li.living.api.LivingItemManager.getComparatorData(stack);
+                    LivingComparatorData d = LivingComparatorData.of(stack);
                     return d.subtractMode() && !d.powered();
                 })
             .addVariant("subtract_on", "item/comparator_subtract_on",
                 stack -> {
-                    LivingComparatorData d = com.qiqi.li.living.api.LivingItemManager.getComparatorData(stack);
+                    LivingComparatorData d = LivingComparatorData.of(stack);
                     return d.subtractMode() && d.powered();
                 })
             .directional()
@@ -174,9 +179,9 @@ public final class LivingIconRegistry {
 
         register(LivingIconSpec.builder(net.minecraft.world.item.Items.LEVER)
             .addVariant("off", "item/lever",
-                stack -> !com.qiqi.li.living.api.LivingItemManager.getLeverData(stack).powered())
+                stack -> !LivingLeverData.of(stack).powered())
             .addVariant("on", "item/lever_on",
-                stack -> com.qiqi.li.living.api.LivingItemManager.getLeverData(stack).powered())
+                stack -> LivingLeverData.of(stack).powered())
             .build());
 
 // ⚠️ 3D 方案（2026-09-22 定稿）：同箱子 —— BEWLR 持有 EnderChestBlockEntity，
@@ -281,7 +286,7 @@ public final class LivingIconRegistry {
     private static void registerCopperBulb(Item item, String textureOff, String textureOn) {
         register(LivingIconSpec.builder(item)
             .addVariant("lit", textureOn,
-                stack -> com.qiqi.li.living.api.LivingItemManager.getCopperBulbData(stack).isLit())
+                stack -> LivingCopperBulbData.of(stack).isLit())
             .addVariant("unlit", textureOff, stack -> true)
             .build());
     }
@@ -290,7 +295,7 @@ public final class LivingIconRegistry {
     private static void registerWaxedCopperBulb(Item item, String textureOff, String textureOn) {
         register(LivingIconSpec.builder(item)
             .addVariant("lit", textureOn,
-                stack -> com.qiqi.li.living.api.LivingItemManager.getWaxedBulbData(stack).chargeMilliFe() > 0)
+                stack -> LivingWaxedBulbData.of(stack).chargeMilliFe() > 0)
             .addVariant("unlit", textureOff, stack -> true)
             .build());
     }

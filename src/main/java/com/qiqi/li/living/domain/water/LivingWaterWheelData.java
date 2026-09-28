@@ -1,5 +1,8 @@
-package com.qiqi.li.living.domain.water;
+package com.qiqi.li.living.domain.water;import net.minecraft.world.item.ItemStack;
 
+
+import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.transfer.LivingComponents;
 import java.util.function.Consumer;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
@@ -30,5 +33,15 @@ public record LivingWaterWheelData(WaterWheelData wheel) implements TooltipProvi
 
     @Override
     public void addToTooltip(Item.TooltipContext context, Consumer<Component> tooltipAdder, TooltipFlag flag) {
+    }
+
+    /** 读取：缺失返回默认值。（A1 迁移：原 LivingItemManager.getWaterWheelData） */
+    public static LivingWaterWheelData of(ItemStack stack) {
+        return LivingItemManager.getData(stack, LivingComponents.LIVING_WATER_WHEEL_DATA.value(), LivingWaterWheelData.EMPTY);
+    }
+
+    /** 写入：等于默认值时移除组件。（A1 迁移：原 LivingItemManager.setWaterWheelData） */
+    public static void set(ItemStack stack, LivingWaterWheelData data) {
+        LivingItemManager.setData(stack, LivingComponents.LIVING_WATER_WHEEL_DATA.value(), data, LivingWaterWheelData.EMPTY);
     }
 }

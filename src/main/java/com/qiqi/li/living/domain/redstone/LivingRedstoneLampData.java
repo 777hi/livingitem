@@ -1,5 +1,8 @@
-package com.qiqi.li.living.domain.redstone;
+package com.qiqi.li.living.domain.redstone;import net.minecraft.world.item.ItemStack;
 
+
+import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.transfer.LivingComponents;
 import java.util.function.Consumer;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
@@ -34,5 +37,15 @@ public record LivingRedstoneLampData(
 
     @Override
     public void addToTooltip(Item.TooltipContext context, Consumer<Component> tooltipAdder, TooltipFlag flag) {
+    }
+
+    /** 读取：缺失返回默认值。（A1 迁移：原 LivingItemManager.getLampData） */
+    public static LivingRedstoneLampData of(ItemStack stack) {
+        return LivingItemManager.getData(stack, LivingComponents.LIVING_REDSTONE_LAMP_DATA.value(), LivingRedstoneLampData.DEFAULT);
+    }
+
+    /** 写入：等于默认值时移除组件。（A1 迁移：原 LivingItemManager.setLampData） */
+    public static void set(ItemStack stack, LivingRedstoneLampData data) {
+        LivingItemManager.setData(stack, LivingComponents.LIVING_REDSTONE_LAMP_DATA.value(), data, LivingRedstoneLampData.DEFAULT);
     }
 }

@@ -1,4 +1,6 @@
 package com.qiqi.li.living.domain.tools;
+import com.qiqi.li.living.domain.tools.LivingToolProgress;
+import com.qiqi.li.living.domain.tools.LivingToolAction;
 
 import javax.annotation.Nullable;
 
@@ -87,7 +89,7 @@ public final class LivingToolReplay {
     public static ItemStack replayDig(ItemStack tool, @Nullable LivingToolMemory.RayMemory ray,
                                       Vec3 origin, Set<BlockPos> hostBlocks, ServerLevel level, long now) {
         // 上一 tick 的挖掘状态：任何「停止 / 换目标」的路径都要据此清理残留的破坏裂纹（L47）
-        LivingToolProgress previous = LivingItemManager.getToolProgress(tool);
+        LivingToolProgress previous = LivingToolProgress.of(tool);
 
         // FakePlayer 提前取（走缓存）：清理裂纹需要它的实体 id ——
         // 客户端的破坏裂纹是按【实体 id】索引的，不是按方块位置
@@ -125,7 +127,7 @@ public final class LivingToolReplay {
                 level.destroyBlockProgress(fake.getId(), previous.target(), -1);
             }
             progress = new LivingToolProgress(target, now);
-            LivingItemManager.setToolProgress(tool, progress);
+            LivingToolProgress.set(tool, progress);
         } else {
             progress = previous;
         }
@@ -192,10 +194,10 @@ public final class LivingToolReplay {
         CommonHooks.onLeftClickBlock(fake, target, Direction.UP,
             ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK);
         level.destroyBlockProgress(fake.getId(), target, -1);
-        LivingItemManager.setToolProgress(tool, null);
+        LivingToolProgress.set(tool, null);
         // ⚠️ held 是「写进度之后」才 copy 的副本，两边的进度必须一起清 ——
         //    否则写回槽位的是带残留进度的那份，下一 tick 会误判为「已经挖了很久」而瞬间破坏
-        LivingItemManager.setToolProgress(held, null);
+        LivingToolProgress.set(held, null);
 
         return held;   // 调用方负责写回容器（可能已因 F3 损坏为空）
     }
@@ -227,7 +229,7 @@ public final class LivingToolReplay {
             CommonHooks.onLeftClickBlock(fake, previous.target(), Direction.UP,
                 ServerboundPlayerActionPacket.Action.ABORT_DESTROY_BLOCK);
         }
-        LivingItemManager.setToolProgress(tool, null);
+        LivingToolProgress.set(tool, null);
     }
 
     /**
@@ -320,8 +322,8 @@ public final class LivingToolReplay {
         // 故由服务端把「tick + 目标格子」一并写下。
         // ⚠️ 两端都要写：held 是上面 copy 的副本，写回槽位用的是它。
         LivingToolAction action = new LivingToolAction(level.getGameTime(), target);
-        LivingItemManager.setToolLastAction(tool, action);
-        LivingItemManager.setToolLastAction(held, action);
+        LivingToolAction.set(tool, action);
+        LivingToolAction.set(held, action);
         return held;
     }
 
@@ -405,7 +407,7 @@ public final class LivingToolReplay {
 
         // ── 攻击冷却（S1-a：按【物品攻击速度属性】算，与原版同源）───────────────
         float cooldown = fake.getAttackCooldownTicks();
-        LivingToolAction last = LivingItemManager.getToolLastAction(weapon);
+        LivingToolAction last = LivingToolAction.of(weapon);
         // 🔴 **没打过 ⇒ 必须视为【冷却已满】**，不能拿 cooldown 自己当 elapsed。
         //
         //    ⚠️ 曾写 last == null ? (long) cooldown : ... —— 而冷却时长【常是小数】：
@@ -431,8 +433,8 @@ public final class LivingToolReplay {
         //     大型生物会让环沉到脚底。
         LivingToolAction action =
             new LivingToolAction(now, BlockPos.containing(hit.getEntity().getBoundingBox().getCenter()));
-        LivingItemManager.setToolLastAction(weapon, action);
-        LivingItemManager.setToolLastAction(held, action);
+        LivingToolAction.set(weapon, action);
+        LivingToolAction.set(held, action);
         return new AttackResult(held, Outcome.ATTACKED);
     }
 

@@ -1,4 +1,5 @@
 package com.qiqi.li.living.domain.ender;
+import com.qiqi.li.living.transfer.LivingComponents;
 
 import java.util.HashSet;
 import java.util.List;
@@ -57,7 +58,7 @@ public class LivingEnderChestFunction implements LivingItemFunction {
                              Consumer<Component> tooltipAdder,
                              TooltipFlag flag,
                              ItemStack stack) {
-        LivingEnderChestData data = LivingItemManager.getEnderChestData(stack);
+        LivingEnderChestData data = LivingEnderChestData.of(stack);
         EnderChannelData channel = data.channel();
 
         // 频道键由绑定 UUID + 堆叠数决定，客户端可独立算出（DataComponent 随物品同步）
@@ -134,33 +135,33 @@ public class LivingEnderChestFunction implements LivingItemFunction {
 
     public static boolean hasBoundPlayer(ItemStack stack) {
         if (!isLivingEnderChest(stack)) return false;
-        return LivingItemManager.getEnderChestData(stack).channel().boundPlayerUuid().isPresent();
+        return LivingEnderChestData.of(stack).channel().boundPlayerUuid().isPresent();
     }
 
     public static UUID getBoundPlayerUuid(ItemStack stack) {
         if (!isLivingEnderChest(stack)) return null;
-        return LivingItemManager.getEnderChestData(stack).channel().getPlayerUuid().orElse(null);
+        return LivingEnderChestData.of(stack).channel().getPlayerUuid().orElse(null);
     }
 
     public static String getBoundPlayerName(ItemStack stack) {
         if (!isLivingEnderChest(stack)) return null;
-        return LivingItemManager.getEnderChestData(stack).channel().boundPlayerName().orElse(null);
+        return LivingEnderChestData.of(stack).channel().boundPlayerName().orElse(null);
     }
 
     public static void setBoundPlayer(ItemStack stack, UUID uuid, String name) {
-        LivingEnderChestData data = LivingItemManager.getEnderChestData(stack);
+        LivingEnderChestData data = LivingEnderChestData.of(stack);
         EnderChannelData channel = data.channel().withBoundPlayer(uuid, name);
-        LivingItemManager.setEnderChestData(stack, data.withChannel(channel));
+        LivingEnderChestData.set(stack, data.withChannel(channel));
     }
 
     public static void clearBoundPlayer(ItemStack stack) {
-        LivingEnderChestData data = LivingItemManager.getEnderChestData(stack);
-        LivingItemManager.setEnderChestData(stack, data.withChannel(EnderChannelData.EMPTY));
+        LivingEnderChestData data = LivingEnderChestData.of(stack);
+        LivingEnderChestData.set(stack, data.withChannel(EnderChannelData.EMPTY));
     }
 
     @Override
     public Set<DataComponentType<?>> getOwnedComponentTypes() {
-        return Set.of(LivingItemManager.LIVING_ENDER_CHEST_DATA.value());
+        return Set.of(LivingComponents.LIVING_ENDER_CHEST_DATA.value());
     }
 
     @Override

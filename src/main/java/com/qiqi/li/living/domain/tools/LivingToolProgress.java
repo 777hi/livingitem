@@ -1,5 +1,8 @@
 package com.qiqi.li.living.domain.tools;
 
+import com.qiqi.li.living.transfer.LivingComponents;
+import javax.annotation.Nullable;
+import net.minecraft.world.item.ItemStack;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 
@@ -44,5 +47,20 @@ public record LivingToolProgress(BlockPos target, long startTick) {
     /** 目标变了 → 进度必须重置（{@code L23}）。 */
     public boolean isFor(BlockPos pos) {
         return target.equals(pos);
+    }
+
+    /** 读取：null = 当前没在挖。（A1 迁移：原 LivingItemManager.getToolProgress） */
+    @Nullable
+    public static LivingToolProgress of(ItemStack stack) {
+        return stack.get(LivingComponents.LIVING_TOOL_PROGRESS.value());
+    }
+
+    /** 写入：null = 清除（停止挖掘）。（A1 迁移：原 LivingItemManager.setToolProgress） */
+    public static void set(ItemStack stack, @Nullable LivingToolProgress progress) {
+        if (progress == null) {
+            stack.remove(LivingComponents.LIVING_TOOL_PROGRESS.value());
+        } else {
+            stack.set(LivingComponents.LIVING_TOOL_PROGRESS.value(), progress);
+        }
     }
 }

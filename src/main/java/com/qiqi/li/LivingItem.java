@@ -3,6 +3,7 @@ package com.qiqi.li;
 import com.qiqi.li.living.domain.tnt.ExplosionLedger;
 import com.qiqi.li.living.domain.ender.EnderChannelRegistry;
 import com.qiqi.li.living.transfer.ContainerRuleConfig;
+import com.qiqi.li.living.transfer.LivingComponents;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.RandomizableContainer;
@@ -113,8 +114,8 @@ public class LivingItem {
         modEventBus.addListener(this::commonSetup);
         modEventBus.addListener(this::onRegisterCapabilities);
         ITEMS.register(modEventBus);
-        LivingItemManager.DATA_COMPONENT_TYPES.register(modEventBus);
-        LivingItemManager.ATTACHMENT_TYPES.register(modEventBus);
+        LivingComponents.DATA_COMPONENT_TYPES.register(modEventBus);
+        LivingComponents.ATTACHMENT_TYPES.register(modEventBus);
         NeoForge.EVENT_BUS.register(this);
         NeoForge.EVENT_BUS.register(ContainerChunkCache.getInstance());
         NeoForge.EVENT_BUS.register(LivingToolRecorder.class);

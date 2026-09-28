@@ -1,4 +1,6 @@
 package com.qiqi.li.living.domain.redstone;
+import com.qiqi.li.living.transfer.LivingComponents;
+import com.qiqi.li.living.domain.redstone.LivingButtonData;
 
 import java.util.List;
 import java.util.Set;
@@ -49,7 +51,7 @@ public class LivingButtonFunction implements LivingItemFunction, HasContainerDat
 
     @Override
     public Set<DataComponentType<?>> getOwnedComponentTypes() {
-        return Set.of(LivingItemManager.LIVING_BUTTON_DATA.value());
+        return Set.of(LivingComponents.LIVING_BUTTON_DATA.value());
     }
 
     @Override
@@ -62,7 +64,7 @@ public class LivingButtonFunction implements LivingItemFunction, HasContainerDat
                              Consumer<Component> tooltipAdder,
                              TooltipFlag flag,
                              ItemStack stack) {
-        LivingButtonData data = LivingItemManager.getButtonData(stack);
+        LivingButtonData data = LivingButtonData.of(stack);
 
         tooltipAdder.accept(Component.nullToEmpty(""));
         tooltipAdder.accept(Component.translatable("tooltip.livingitem.button.title"));
@@ -106,11 +108,11 @@ public class LivingButtonFunction implements LivingItemFunction, HasContainerDat
 
     public static boolean pressButton(ItemStack stack) {
         if (stack == null || stack.isEmpty()) return false;
-        LivingButtonData data = LivingItemManager.getButtonData(stack);
+        LivingButtonData data = LivingButtonData.of(stack);
         if (data.pressed()) return false;
         boolean isWood = isWoodButton(stack);
         int pulseDuration = isWood ? 30 : 20;
-        LivingItemManager.setButtonData(stack, new LivingButtonData(true, pulseDuration, isWood));
+        LivingButtonData.set(stack, new LivingButtonData(true, pulseDuration, isWood));
         return true;
     }
 }

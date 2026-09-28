@@ -259,7 +259,7 @@ public final class LivingToolRayRenderer {
             }
             Vec3 eye = owner.getEyePosition(partialTick);
             for (ItemStack stack : entry.tools()) {
-                if (LivingItemManager.getToolMemory(stack).isEmpty()) {
+                if (LivingToolMemory.of(stack).isEmpty()) {
                     continue;
                 }
                 drew |= renderStack(poseStack, ribbon, level, cameraPos, frustum, eye, stack);
@@ -281,7 +281,7 @@ public final class LivingToolRayRenderer {
         if (stack.isEmpty() || !LivingItemManager.isLivingItem(stack)) {
             return false;
         }
-        LivingToolMemory memory = LivingItemManager.getToolMemory(stack);
+        LivingToolMemory memory = LivingToolMemory.of(stack);
         if (memory.isEmpty()) {
             return false;
         }
@@ -327,7 +327,7 @@ public final class LivingToolRayRenderer {
         if (stack.isEmpty() || !LivingItemManager.isLivingItem(stack)) {
             return false;
         }
-        LivingToolMemory memory = LivingItemManager.getToolMemory(stack);
+        LivingToolMemory memory = LivingToolMemory.of(stack);
         if (memory.isEmpty()) {
             return false;
         }

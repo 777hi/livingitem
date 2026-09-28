@@ -1,4 +1,6 @@
 package com.qiqi.li.living.domain.redstone;
+import com.qiqi.li.living.transfer.LivingComponents;
+import com.qiqi.li.living.domain.redstone.LivingComparatorData;
 
 import java.util.List;
 import java.util.Set;
@@ -40,7 +42,7 @@ public class LivingComparatorFunction implements LivingItemFunction, HasDirectio
 
     @Override
     public Set<DataComponentType<?>> getOwnedComponentTypes() {
-        return Set.of(LivingItemManager.LIVING_COMPARATOR_DATA.value());
+        return Set.of(LivingComponents.LIVING_COMPARATOR_DATA.value());
     }
 
     @Override
@@ -53,7 +55,7 @@ public class LivingComparatorFunction implements LivingItemFunction, HasDirectio
                              Consumer<Component> tooltipAdder,
                              TooltipFlag flag,
                              ItemStack stack) {
-        LivingComparatorData data = LivingItemManager.getComparatorData(stack);
+        LivingComparatorData data = LivingComparatorData.of(stack);
         int signalCap = ContainerRedstoneData.getSignalCap(stack.getCount());
 
         tooltipAdder.accept(Component.nullToEmpty(""));
@@ -120,15 +122,15 @@ public class LivingComparatorFunction implements LivingItemFunction, HasDirectio
 
     public static boolean updateComparatorDirection(ItemStack stack, Pos2D direction) {
         if (stack == null || stack.isEmpty() || direction == null) return false;
-        LivingComparatorData data = LivingItemManager.getComparatorData(stack);
-        LivingItemManager.setComparatorData(stack, data.withDirection(direction));
+        LivingComparatorData data = LivingComparatorData.of(stack);
+        LivingComparatorData.set(stack, data.withDirection(direction));
         return true;
     }
 
     public static boolean toggleMode(ItemStack stack) {
         if (stack == null || stack.isEmpty()) return false;
-        LivingComparatorData data = LivingItemManager.getComparatorData(stack);
-        LivingItemManager.setComparatorData(stack, data.withSubtractMode(!data.subtractMode()));
+        LivingComparatorData data = LivingComparatorData.of(stack);
+        LivingComparatorData.set(stack, data.withSubtractMode(!data.subtractMode()));
         return true;
     }
 

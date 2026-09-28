@@ -1,4 +1,5 @@
 package com.qiqi.li.living.domain.power;
+import com.qiqi.li.living.domain.power.LivingWaxedBulbData;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -28,11 +29,11 @@ class BulbItemEnergyStorageTest {
     @DisplayName("放电：16 盏堆抽 40 FE → 每盏扣 2500 mFE")
     void discharge_perLamp() {
         ItemStack stack = bulb(16);
-        LivingItemManager.setWaxedBulbData(stack, new LivingWaxedBulbData(4_000));
+        LivingWaxedBulbData.set(stack, new LivingWaxedBulbData(4_000));
         BulbItemEnergyStorage storage = new BulbItemEnergyStorage(stack);
 
         assertEquals(40, storage.extractEnergy(40, false));
-        assertEquals(4_000 - 2_500, LivingItemManager.getWaxedBulbData(stack).chargeMilliFe());
+        assertEquals(4_000 - 2_500, LivingWaxedBulbData.of(stack).chargeMilliFe());
         assertEquals(24, storage.getEnergyStored());   // 64 FE − 40 FE = 24 FE
     }
 
@@ -43,14 +44,14 @@ class BulbItemEnergyStorageTest {
         BulbItemEnergyStorage storage = new BulbItemEnergyStorage(stack);
 
         assertEquals(32, storage.receiveEnergy(32, false));
-        assertEquals(2_000, LivingItemManager.getWaxedBulbData(stack).chargeMilliFe());
+        assertEquals(2_000, LivingWaxedBulbData.of(stack).chargeMilliFe());
     }
 
     @Test
     @DisplayName("充电 clamp：超过每盏容量 C 只收到剩余空间")
     void charge_clampedToCapacity() {
         ItemStack stack = bulb(16);
-        LivingItemManager.setWaxedBulbData(stack,
+        LivingWaxedBulbData.set(stack,
             new LivingWaxedBulbData(PowerMath.BULB_UNIT_CAPACITY_MFE - 8_000));
         BulbItemEnergyStorage storage = new BulbItemEnergyStorage(stack);
 
@@ -63,26 +64,26 @@ class BulbItemEnergyStorageTest {
     @DisplayName("simulate：不改状态")
     void simulate_leavesStateIntact() {
         ItemStack stack = bulb(16);
-        LivingItemManager.setWaxedBulbData(stack, new LivingWaxedBulbData(4_000));
+        LivingWaxedBulbData.set(stack, new LivingWaxedBulbData(4_000));
         BulbItemEnergyStorage storage = new BulbItemEnergyStorage(stack);
 
         assertEquals(40, storage.extractEnergy(40, true));
         assertEquals(32, storage.receiveEnergy(32, true));
-        assertEquals(4_000, LivingItemManager.getWaxedBulbData(stack).chargeMilliFe());
+        assertEquals(4_000, LivingWaxedBulbData.of(stack).chargeMilliFe());
     }
 
     @Test
     @DisplayName("拆分守恒：64×q 拆成 54+10 → 每盏仍 q，总电量不变")
     void split_conservesCharge() {
         ItemStack full = bulb(64);
-        LivingItemManager.setWaxedBulbData(full, new LivingWaxedBulbData(2_000));
+        LivingWaxedBulbData.set(full, new LivingWaxedBulbData(2_000));
 
         // 模拟原版拆分：组件被复制到两堆
         ItemStack halfA = full.copyWithCount(54);
         ItemStack halfB = full.copyWithCount(10);
 
-        long total = LivingItemManager.getWaxedBulbData(halfA).totalChargeMilliFe(halfA.getCount())
-            + LivingItemManager.getWaxedBulbData(halfB).totalChargeMilliFe(halfB.getCount());
+        long total = LivingWaxedBulbData.of(halfA).totalChargeMilliFe(halfA.getCount())
+            + LivingWaxedBulbData.of(halfB).totalChargeMilliFe(halfB.getCount());
         assertEquals(64L * 2_000, total);   // 128_000 = 拆分前总量 ✓
     }
 
@@ -90,7 +91,7 @@ class BulbItemEnergyStorageTest {
     @DisplayName("容量与读数：getEnergyStored / getMaxEnergyStored 随 count 线性")
     void storedAndMax_linearInCount() {
         ItemStack stack = bulb(16);
-        LivingItemManager.setWaxedBulbData(stack, new LivingWaxedBulbData(500_000));
+        LivingWaxedBulbData.set(stack, new LivingWaxedBulbData(500_000));
 
         BulbItemEnergyStorage storage = new BulbItemEnergyStorage(stack);
         assertEquals(8000, storage.getEnergyStored());          // 500_000 × 16 / 1000
@@ -104,7 +105,7 @@ class BulbItemEnergyStorageTest {
     void oversizedStack_readsClampToIntMax() {
         // 2,148 × 1M FE = 2,148,000,000 > 2,147,483,647（int 公约上限）——超大堆叠容器的可达场景
         ItemStack stack = bulb(2_148);
-        LivingItemManager.setWaxedBulbData(stack,
+        LivingWaxedBulbData.set(stack,
             new LivingWaxedBulbData(PowerMath.BULB_UNIT_CAPACITY_MFE));   // 满堆
 
         BulbItemEnergyStorage storage = new BulbItemEnergyStorage(stack);

@@ -1,4 +1,5 @@
 package com.qiqi.li.living.domain.tnt;
+import com.qiqi.li.living.transfer.LivingComponents;
 
 import java.util.List;
 import java.util.Set;
@@ -44,14 +45,14 @@ public class LivingTntFunction implements LivingItemFunction, HasContainerData {
             if (slot < 0 || slot >= size) continue;
 
             ItemStack stack = entry.stack();
-            LivingTntData data = LivingItemManager.getTntData(stack);
+            LivingTntData data = LivingTntData.of(stack);
             ExplosionData explosion = data.explosion();
 
             if (!explosion.ignited()) {
                 int signal = tick.getSensor(context).maxSensedSignal(slot);
                 if (signal > 0) {
                     explosion = explosion.ignite();
-                    LivingItemManager.setTntData(stack, data.withExplosion(explosion));
+                    LivingTntData.set(stack, data.withExplosion(explosion));
                     context.syncSlotToClients(slot, stack);
                     continue;
                 }
@@ -62,9 +63,9 @@ public class LivingTntFunction implements LivingItemFunction, HasContainerData {
 
             if (explosion.isExploded()) {
                 ExplosionComponent.ignite(context, level);
-                LivingItemManager.setTntData(stack, LivingTntData.DEFAULT);
+                LivingTntData.set(stack, LivingTntData.DEFAULT);
             } else {
-                LivingItemManager.setTntData(stack, data.withExplosion(explosion));
+                LivingTntData.set(stack, data.withExplosion(explosion));
             }
 
             context.syncSlotToClients(slot, stack);
@@ -76,7 +77,7 @@ public class LivingTntFunction implements LivingItemFunction, HasContainerData {
                              Consumer<Component> tooltipAdder,
                              TooltipFlag flag,
                              ItemStack stack) {
-        LivingTntData data = LivingItemManager.getTntData(stack);
+        LivingTntData data = LivingTntData.of(stack);
         ExplosionData explosion = data.explosion();
 
         tooltipAdder.accept(Component.nullToEmpty(""));
@@ -93,7 +94,7 @@ public class LivingTntFunction implements LivingItemFunction, HasContainerData {
 
     @Override
     public Set<DataComponentType<?>> getOwnedComponentTypes() {
-        return Set.of(LivingItemManager.LIVING_TNT_DATA.value());
+        return Set.of(LivingComponents.LIVING_TNT_DATA.value());
     }
 
     @Override
@@ -102,18 +103,18 @@ public class LivingTntFunction implements LivingItemFunction, HasContainerData {
     }
 
     public static boolean isFuseActive(ItemStack stack) {
-        return LivingItemManager.getTntData(stack).explosion().ignited();
+        return LivingTntData.of(stack).explosion().ignited();
     }
 
     public static int getFuseTimer(ItemStack stack) {
-        ExplosionData e = LivingItemManager.getTntData(stack).explosion();
+        ExplosionData e = LivingTntData.of(stack).explosion();
         return e.ignited() ? e.fuseTimer() : -1;
     }
 
     public static boolean startFuse(ItemStack tntStack) {
-        LivingTntData data = LivingItemManager.getTntData(tntStack);
+        LivingTntData data = LivingTntData.of(tntStack);
         if (data.explosion().ignited()) return false;
-        LivingItemManager.setTntData(tntStack, data.withExplosion(data.explosion().ignite(80)));
+        LivingTntData.set(tntStack, data.withExplosion(data.explosion().ignite(80)));
         return true;
     }
 

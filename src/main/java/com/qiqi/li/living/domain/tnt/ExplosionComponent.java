@@ -1,4 +1,5 @@
 package com.qiqi.li.living.domain.tnt;
+import com.qiqi.li.living.domain.tnt.LivingTntData;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -102,11 +103,11 @@ public class ExplosionComponent {
     private ExplosionComponent() {}
 
     public static boolean startFuseOnStack(ItemStack tntStack) {
-        com.qiqi.li.living.domain.tnt.LivingTntData data = LivingItemManager.getTntData(tntStack);
+        com.qiqi.li.living.domain.tnt.LivingTntData data = LivingTntData.of(tntStack);
         com.qiqi.li.living.domain.tnt.ExplosionData explosion = data.explosion();
         if (!explosion.ignited()) {
             explosion = explosion.ignite();
-            LivingItemManager.setTntData(tntStack, data.withExplosion(explosion));
+            LivingTntData.set(tntStack, data.withExplosion(explosion));
         }
         return true;
     }

@@ -1,4 +1,9 @@
 package com.qiqi.li.living.domain.redstone;
+import com.qiqi.li.living.domain.redstone.LivingRepeaterData;
+import com.qiqi.li.living.domain.redstone.LivingRedstoneTorchData;
+import com.qiqi.li.living.domain.redstone.LivingRedstoneLampData;
+import com.qiqi.li.living.domain.redstone.LivingLeverData;
+import com.qiqi.li.living.domain.redstone.LivingComparatorData;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -171,7 +176,7 @@ class ContainerRedstoneDataTest {
     void lever_poweresAdjacentDustWhenOn() {
         var ctx = new FakeContainerContext(SIZE, WIDTH);
         ItemStack lever = living(Items.LEVER, 1);
-        LivingItemManager.setLeverData(lever, new LivingLeverData(true));
+        LivingLeverData.set(lever, new LivingLeverData(true));
         ctx.set(10, lever);
         ctx.set(11, living(Items.REDSTONE, 1));
 
@@ -200,7 +205,7 @@ class ContainerRedstoneDataTest {
             LivingRedstoneLampFunction.ID, Set.of(11));
 
         propagate(ctx, slots);
-        assertTrue(LivingItemManager.getLampData(lamp).lit(),
+        assertTrue(LivingRedstoneLampData.of(lamp).lit(),
             "紧邻红石块的灯应点亮");
     }
 
@@ -328,7 +333,7 @@ class ContainerRedstoneDataTest {
         var ctx = new FakeContainerContext(SIZE, WIDTH).withGameTime(100);
         ctx.set(9, living(Items.REDSTONE_BLOCK, 1));
         ItemStack repeater = living(Items.REPEATER, 1);
-        LivingItemManager.setRepeaterData(repeater,
+        LivingRepeaterData.set(repeater,
             LivingRepeaterData.DEFAULT.withDirection(Pos2D.RIGHT));
         ctx.set(10, repeater);
         ctx.set(11, living(Items.REDSTONE, 1));
@@ -342,13 +347,13 @@ class ContainerRedstoneDataTest {
 
         // 第 1 次传播：检测到输入，充能，delayTimer = 1 档 × 2 = 2
         tickOnce(data, ctx, slots);
-        assertEquals(2, LivingItemManager.getRepeaterData(ctx.getItem(10)).delayTimer(),
+        assertEquals(2, LivingRepeaterData.of(ctx.getItem(10)).delayTimer(),
             "一档中继器充能后 delayTimer 应为 2 game tick");
 
         // 第 2、3 次传播递减计时器，第 3 次归零后中继器开始输出
         tickOnce(data, ctx, slots);
         tickOnce(data, ctx, slots);
-        assertEquals(0, LivingItemManager.getRepeaterData(ctx.getItem(10)).delayTimer(),
+        assertEquals(0, LivingRepeaterData.of(ctx.getItem(10)).delayTimer(),
             "经过 2 game tick 后计时器应归零");
 
         tickOnce(data, ctx, slots);
@@ -366,8 +371,8 @@ class ContainerRedstoneDataTest {
         // 3×3：火把居中（输入=左），红石粉绕环回到输入侧——1 个反相器 + 环路延迟 = 振荡
         var ctx = new FakeContainerContext(SIZE, 3);
         ItemStack torch = living(Items.REDSTONE_TORCH, 1);
-        LivingItemManager.setRedstoneTorchData(torch,
-            LivingItemManager.getRedstoneTorchData(torch).withDirection(Pos2D.RIGHT));
+        LivingRedstoneTorchData.set(torch,
+            LivingRedstoneTorchData.of(torch).withDirection(Pos2D.RIGHT));
         ctx.set(4, torch);
         for (int idx : new int[] {3, 5, 6, 7, 8}) {
             ctx.set(idx, living(Items.REDSTONE, 1));
@@ -382,7 +387,7 @@ class ContainerRedstoneDataTest {
         boolean sawUnlit = false;
         for (int t = 0; t < 12; t++) {
             tickOnce(data, ctx, slots);
-            if (LivingItemManager.getRedstoneTorchData(ctx.getItem(4)).isLit()) sawLit = true;
+            if (LivingRedstoneTorchData.of(ctx.getItem(4)).isLit()) sawLit = true;
             else sawUnlit = true;
         }
 
@@ -494,7 +499,7 @@ class ContainerRedstoneDataTest {
         ctx.set(10, living(Items.REDSTONE, 1));
         ctx.set(11, living(Items.REDSTONE, 1));
         ItemStack comparator = living(Items.COMPARATOR, 1);
-        LivingItemManager.setComparatorData(comparator,
+        LivingComparatorData.set(comparator,
             LivingComparatorData.DEFAULT.withDirection(Pos2D.RIGHT));
         ctx.set(12, comparator);
         ctx.set(13, living(Items.REDSTONE, 1));
@@ -530,10 +535,10 @@ class ContainerRedstoneDataTest {
     void comparator_turnsOff_downstreamDustDecaysToZero() {
         var ctx = new FakeContainerContext(SIZE, WIDTH);
         ItemStack lever = living(Items.LEVER, 1);
-        LivingItemManager.setLeverData(lever, new LivingLeverData(true));
+        LivingLeverData.set(lever, new LivingLeverData(true));
         ctx.set(10, lever);
         ItemStack comparator = living(Items.COMPARATOR, 1);
-        LivingItemManager.setComparatorData(comparator,
+        LivingComparatorData.set(comparator,
             LivingComparatorData.DEFAULT.withDirection(Pos2D.RIGHT));
         ctx.set(11, comparator);
         ctx.set(12, living(Items.REDSTONE, 1));
@@ -550,7 +555,7 @@ class ContainerRedstoneDataTest {
         assertTrue(data.getSignal(14) > 0, "前置条件：开启时粉链末端应有信号");
 
         // 关闭拉杆（比较器失去后方输入）
-        LivingItemManager.setLeverData(lever, new LivingLeverData(false));
+        LivingLeverData.set(lever, new LivingLeverData(false));
         ctx.set(10, lever);
 
         // 反复传播足够多 tick，让衰减从比较器出边一路传到链末端
@@ -616,7 +621,7 @@ class ContainerRedstoneDataTest {
         ctx.set(11, living(Items.REDSTONE, 1));
         for (int slot = 12; slot <= 15; slot++) {
             ItemStack c = living(Items.COMPARATOR, 1);
-            LivingItemManager.setComparatorData(c,
+            LivingComparatorData.set(c,
                 LivingComparatorData.DEFAULT.withDirection(Pos2D.RIGHT));
             ctx.set(slot, c);
         }
@@ -653,7 +658,7 @@ class ContainerRedstoneDataTest {
         ctx.set(15, living(Items.REDSTONE, 1));
         for (int slot = 11; slot <= 14; slot++) {
             ItemStack c = living(Items.COMPARATOR, 1);
-            LivingItemManager.setComparatorData(c,
+            LivingComparatorData.set(c,
                 LivingComparatorData.DEFAULT.withDirection(Pos2D.LEFT));
             ctx.set(slot, c);
         }

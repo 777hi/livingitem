@@ -1,5 +1,8 @@
-package com.qiqi.li.living.domain.power;
+package com.qiqi.li.living.domain.power;import net.minecraft.world.item.ItemStack;
 
+
+import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.transfer.LivingComponents;
 import java.util.function.Consumer;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
@@ -54,5 +57,18 @@ public record LivingWaxedBulbData(
 
     @Override
     public void addToTooltip(Item.TooltipContext context, Consumer<Component> tooltipAdder, TooltipFlag flag) {
+    }
+
+    /** 读取：缺失返回默认值。（A1 迁移：原 LivingItemManager.getWaxedBulbData） */
+    public static com.qiqi.li.living.domain.power.LivingWaxedBulbData of(ItemStack stack) {
+        return LivingItemManager.getData(stack, LivingComponents.LIVING_WAXED_BULB_DATA.value(),
+                com.qiqi.li.living.domain.power.LivingWaxedBulbData.DEFAULT);
+    }
+
+    /** 写入：等于默认值时移除组件。（A1 迁移：原 LivingItemManager.setWaxedBulbData） */
+    public static void set(ItemStack stack,
+                                        com.qiqi.li.living.domain.power.LivingWaxedBulbData data) {
+        LivingItemManager.setData(stack, LivingComponents.LIVING_WAXED_BULB_DATA.value(), data,
+                com.qiqi.li.living.domain.power.LivingWaxedBulbData.DEFAULT);
     }
 }

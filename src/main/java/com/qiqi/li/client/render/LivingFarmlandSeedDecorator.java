@@ -59,7 +59,7 @@ public class LivingFarmlandSeedDecorator implements IItemDecorator {
         if (!shouldRenderSeed(stack)) return false;
 
         // cropSeed 非空由 shouldRenderSeed 保证
-        ItemStack seed = new ItemStack(LivingItemManager.getFarmlandPlant(stack).cropSeed());
+        ItemStack seed = new ItemStack(FarmlandPlantComponent.of(stack).cropSeed());
         TextureAtlasSprite sprite = CropTextureResolver.getItemSprite(seed);
         if (sprite == null) return false;   // 纹理缺失 → 跳过
 
@@ -81,7 +81,7 @@ public class LivingFarmlandSeedDecorator implements IItemDecorator {
     static boolean shouldRenderSeed(ItemStack stack) {
         if (stack.isEmpty() || !stack.is(Items.FARMLAND)) return false;
         if (!LivingItemManager.isLivingItem(stack)) return false;
-        FarmlandPlantComponent plant = LivingItemManager.getFarmlandPlant(stack);
+        FarmlandPlantComponent plant = FarmlandPlantComponent.of(stack);
         if (!plant.isPlanted() || plant.cropSeed() == null) return false;
         // 种子指向的方块不可解析（模组卸载）→ 不画，与迁入前的容器行为一致
         return CropClassifier.getBlockFromSeed(plant.cropSeed()) != null;

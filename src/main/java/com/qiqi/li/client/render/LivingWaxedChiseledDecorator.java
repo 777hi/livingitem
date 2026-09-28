@@ -33,7 +33,7 @@ public class LivingWaxedChiseledDecorator implements IItemDecorator {
         if (!LivingItemManager.isLivingItem(stack)) return false;
         if (!LivingWaxedCopperFunction.isWaxedChiseled(stack.getItem())) return false;
 
-        LivingWaxedChiseledData data = LivingItemManager.getWaxedChiseledData(stack);
+        LivingWaxedChiseledData data = LivingWaxedChiseledData.of(stack);
         if (data == null) return false;
 
         int inputRot = directionToRotation(data.inputDir());

@@ -130,7 +130,7 @@ class CrossContainerTransferFertilizeTest {
     private static ItemStack livingFarmland(int age, int maxAge) {
         ItemStack stack = new ItemStack(Items.FARMLAND, 1);
         LivingItemManager.setLiving(stack, true);
-        LivingItemManager.setFarmlandPlant(stack,
+        FarmlandPlantComponent.set(stack,
             new FarmlandPlantComponent(Items.WHEAT_SEEDS, age, maxAge, 0L, -1, List.of()));
         return stack;
     }
@@ -138,7 +138,7 @@ class CrossContainerTransferFertilizeTest {
     private static ItemStack frozenMatureFarmland() {
         ItemStack stack = new ItemStack(Items.FARMLAND, 1);
         LivingItemManager.setLiving(stack, true);
-        LivingItemManager.setFarmlandPlant(stack, new FarmlandPlantComponent(
+        FarmlandPlantComponent.set(stack, new FarmlandPlantComponent(
             Items.WHEAT_SEEDS, 7, 7, 0L, 0, List.of(new ItemStack(Items.WHEAT))));
         return stack;
     }
@@ -155,7 +155,7 @@ class CrossContainerTransferFertilizeTest {
             neighbor, NEIGHBOR_POS, farmland, LEVEL, null);
 
         assertTrue(ok, "拉取方向必须能施肥（修复前恒 false）");
-        assertEquals(4, LivingItemManager.getFarmlandPlant(farmland).age());
+        assertEquals(4, FarmlandPlantComponent.of(farmland).age());
         assertTrue(neighbor.getStackInSlot(0).isEmpty(), "空槽位保持为空");
         assertEquals(15, neighbor.getStackInSlot(1).getCount(), "施肥消耗邻居容器 1 个骨粉");
     }
@@ -168,7 +168,7 @@ class CrossContainerTransferFertilizeTest {
         ItemStack farmland = livingFarmland(0, 7);
 
         assertTrue(SlotInteractions.tryInteractFromNeighbor(neighbor, NEIGHBOR_POS, farmland, LEVEL, null));
-        assertEquals(1, LivingItemManager.getFarmlandPlant(farmland).age());
+        assertEquals(1, FarmlandPlantComponent.of(farmland).age());
         assertEquals(1, neighbor.getStackInSlot(2).getCount());
         assertEquals(3, neighbor.getStackInSlot(1).getCount(), "非骨粉货物不动");
     }
@@ -180,7 +180,7 @@ class CrossContainerTransferFertilizeTest {
         ItemStack farmland = livingFarmland(3, 7);
 
         assertFalse(SlotInteractions.tryInteractFromNeighbor(neighbor, NEIGHBOR_POS, farmland, LEVEL, null));
-        assertEquals(3, LivingItemManager.getFarmlandPlant(farmland).age());
+        assertEquals(3, FarmlandPlantComponent.of(farmland).age());
         assertEquals(16, neighbor.getStackInSlot(0).getCount());
     }
 
@@ -218,7 +218,7 @@ class CrossContainerTransferFertilizeTest {
         ItemStack farmland = livingFarmland(3, 7);
 
         assertTrue(SlotInteractions.tryInteract(source, source.stack, farmland, LEVEL));
-        assertEquals(4, LivingItemManager.getFarmlandPlant(farmland).age());
+        assertEquals(4, FarmlandPlantComponent.of(farmland).age());
         assertEquals(15, source.stack.getCount(), "生效后真扣 1 粉");
     }
 
@@ -260,7 +260,7 @@ class CrossContainerTransferFertilizeTest {
         assertFalse(SlotInteractions.canInteract(new ItemStack(Items.BONE_MEAL, 1), ItemStack.EMPTY),
             "空目标槽不匹配");
         assertFalse(SlotInteractions.canInteract(ItemStack.EMPTY, farmland), "空货物不匹配");
-        assertEquals(3, LivingItemManager.getFarmlandPlant(farmland).age(), "纯谓词不改状态");
+        assertEquals(3, FarmlandPlantComponent.of(farmland).age(), "纯谓词不改状态");
     }
 
     // ==================== 推送方向（邻居槽作目标）+ 活物品货物 ====================
@@ -280,7 +280,7 @@ class CrossContainerTransferFertilizeTest {
         assertFalse(CrossContainerTransfer.tryPushToNeighbor(
             neighbor, NEIGHBOR_POS, LEVEL, source, 1, source.stack),
             "施肥属传输语义 → 受漏斗货物规则约束（活物品不作货物）");
-        assertEquals(3, LivingItemManager.getFarmlandPlant(neighbor.getStackInSlot(0)).age(),
+        assertEquals(3, FarmlandPlantComponent.of(neighbor.getStackInSlot(0)).age(),
             "耕地未被催熟");
         assertEquals(16, source.stack.getCount(), "活骨粉一滴不烧");
     }
@@ -330,7 +330,7 @@ class CrossContainerTransferFertilizeTest {
         assertFalse(CrossContainerTransfer.tryPushToNeighbor(
             neighbor, NEIGHBOR_POS, LEVEL, source, 1, source.stack));
         assertTrue(neighbor.getStackInSlot(0).isEmpty(), "空槽不入");
-        assertEquals(3, LivingItemManager.getFarmlandPlant(neighbor.getStackInSlot(1)).age(),
+        assertEquals(3, FarmlandPlantComponent.of(neighbor.getStackInSlot(1)).age(),
             "非骨粉活物品不会误触施肥");
         assertEquals(1, source.stack.getCount());
     }
@@ -360,6 +360,6 @@ class CrossContainerTransferFertilizeTest {
         assertFalse(CrossContainerTransfer.tryPushToNeighbor(
             target, NEIGHBOR_POS, LEVEL, pushSource, 1, pushSource.stack));
 
-        assertEquals(3, LivingItemManager.getFarmlandPlant(farmland).age(), "三处都没催熟");
+        assertEquals(3, FarmlandPlantComponent.of(farmland).age(), "三处都没催熟");
     }
 }

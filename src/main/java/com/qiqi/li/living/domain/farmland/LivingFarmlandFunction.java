@@ -1,4 +1,6 @@
 package com.qiqi.li.living.domain.farmland;
+import com.qiqi.li.living.transfer.LivingComponents;
+import com.qiqi.li.living.domain.farmland.FarmlandPlantComponent;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -73,12 +75,12 @@ public class LivingFarmlandFunction implements LivingItemFunction {
      */
     @Override
     public Set<DataComponentType<?>> getOwnedComponentTypes() {
-        return Set.of(LivingItemManager.FARMLAND_PLANT.value(), LivingItemManager.LIVING_FARMLAND_MOIST.value());
+        return Set.of(LivingComponents.FARMLAND_PLANT.value(), LivingComponents.LIVING_FARMLAND_MOIST.value());
     }
 
     @Override
     public Set<DataComponentType<?>> getIgnoredComponentTypes() {
-        return Set.of(LivingItemManager.LIVING_FARMLAND_MOIST.value());
+        return Set.of(LivingComponents.LIVING_FARMLAND_MOIST.value());
     }
 
     @Override
@@ -158,7 +160,7 @@ public class LivingFarmlandFunction implements LivingItemFunction {
             ctx.syncSlotToClients(slot, farmland);
         }
 
-        FarmlandPlantComponent plant = LivingItemManager.getFarmlandPlant(farmland);
+        FarmlandPlantComponent plant = FarmlandPlantComponent.of(farmland);
         if (!plant.isPlanted()) return;
 
         Block cropBlock = CropClassifier.getBlockFromSeed(plant.cropSeed());
@@ -378,7 +380,7 @@ public class LivingFarmlandFunction implements LivingItemFunction {
         if (!farmland.is(Items.FARMLAND) || !LivingItemManager.isLivingItem(farmland)) return false;
         if (!bonemeal.is(Items.BONE_MEAL) || bonemeal.isEmpty()) return false;
 
-        FarmlandPlantComponent plant = LivingItemManager.getFarmlandPlant(farmland);
+        FarmlandPlantComponent plant = FarmlandPlantComponent.of(farmland);
         if (!plant.isPlanted()) return false;
 
         Block cropBlock = CropClassifier.getBlockFromSeed(plant.cropSeed());
@@ -387,22 +389,22 @@ public class LivingFarmlandFunction implements LivingItemFunction {
         FarmlandPlantComponent updated = forceGrowthTick(plant, cropBlock, level);
         if (updated.equals(plant)) return false;   // 无变化零消耗（BonemealHandler 同款守卫）
 
-        LivingItemManager.setFarmlandPlant(farmland, updated);
+        FarmlandPlantComponent.set(farmland, updated);
         bonemeal.shrink(1);
         return true;
     }
 
     private void updatePlant(ContainerContext ctx, int slot, ItemStack stack, FarmlandPlantComponent plant) {
         // equals 守卫：概率失败/输出放不下等场景组件未变，不写不同步
-        if (LivingItemManager.getFarmlandPlant(stack).equals(plant)) return;
-        LivingItemManager.setFarmlandPlant(stack, plant);
+        if (FarmlandPlantComponent.of(stack).equals(plant)) return;
+        FarmlandPlantComponent.set(stack, plant);
         ctx.syncSlotToClients(slot, stack);
     }
 
     @Override
     public void addToTooltip(Item.TooltipContext context, Consumer<Component> tooltipAdder,
                              TooltipFlag flag, ItemStack stack) {
-        FarmlandPlantComponent plant = LivingItemManager.getFarmlandPlant(stack);
+        FarmlandPlantComponent plant = FarmlandPlantComponent.of(stack);
         if (!plant.isPlanted()) return;
 
         tooltipAdder.accept(Component.nullToEmpty(""));

@@ -40,7 +40,7 @@ public class PlantCropHandler implements InteractionHandler {
         if (farmland.isEmpty() || !farmland.is(Items.FARMLAND)) return;
         if (!LivingItemManager.isLivingItem(farmland)) return;
 
-        FarmlandPlantComponent plant = LivingItemManager.getFarmlandPlant(farmland);
+        FarmlandPlantComponent plant = FarmlandPlantComponent.of(farmland);
         if (plant.isPlanted()) return;   // 已种植
 
         // 创造模式光标经 carriedTag 已在服务端恢复（GuiInteractionPacket.handle），
@@ -53,7 +53,7 @@ public class PlantCropHandler implements InteractionHandler {
         if (cropBlock == null) return;
         int maxAge = CropClassifier.getMaxAge(cropBlock);
 
-        LivingItemManager.setFarmlandPlant(farmland, plant.withCropSeed(carried.getItem(), maxAge));
+        FarmlandPlantComponent.set(farmland, plant.withCropSeed(carried.getItem(), maxAge));
         targetSlot.set(farmland);
 
         // 消耗 = 耕地堆叠数量的活种子（创造免费）

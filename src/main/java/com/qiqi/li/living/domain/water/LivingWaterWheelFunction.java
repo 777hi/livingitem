@@ -1,4 +1,5 @@
 package com.qiqi.li.living.domain.water;
+import com.qiqi.li.living.transfer.LivingComponents;
 
 import java.util.HashSet;
 import java.util.List;
@@ -59,7 +60,7 @@ public class LivingWaterWheelFunction implements LivingItemFunction, HasContaine
                              Consumer<Component> tooltipAdder,
                              TooltipFlag flag,
                              ItemStack stack) {
-        LivingWaterWheelData data = LivingItemManager.getWaterWheelData(stack);
+        LivingWaterWheelData data = LivingWaterWheelData.of(stack);
         WaterWheelData wheel = data.wheel();
 
         tooltipAdder.accept(Component.translatable("tooltip.livingitem.water_wheel.status"));
@@ -83,12 +84,12 @@ public class LivingWaterWheelFunction implements LivingItemFunction, HasContaine
 
     @Override
     public Set<DataComponentType<?>> getOwnedComponentTypes() {
-        return Set.of(LivingItemManager.LIVING_WATER_WHEEL_DATA.value());
+        return Set.of(LivingComponents.LIVING_WATER_WHEEL_DATA.value());
     }
 
     @Override
     public Set<DataComponentType<?>> getIgnoredComponentTypes() {
-        return Set.of(LivingItemManager.LIVING_WATER_WHEEL_DATA.value());
+        return Set.of(LivingComponents.LIVING_WATER_WHEEL_DATA.value());
     }
 
     @Override
@@ -131,12 +132,12 @@ public class LivingWaterWheelFunction implements LivingItemFunction, HasContaine
             int ccw = torque != null ? torque[1] : 0;
             int net = cw - ccw;
 
-            LivingWaterWheelData data = LivingItemManager.getWaterWheelData(stack);
+            LivingWaterWheelData data = LivingWaterWheelData.of(stack);
             WaterWheelData current = data.wheel();
 
             if (current.cwStress() != cw || current.ccwStress() != ccw || current.netStress() != net) {
                 WaterWheelData updated = current.withStress(cw, ccw, net);
-                LivingItemManager.setWaterWheelData(stack, data.withWheel(updated));
+                LivingWaterWheelData.set(stack, data.withWheel(updated));
                 ctx.syncSlotToClients(i, stack);
             }
         }

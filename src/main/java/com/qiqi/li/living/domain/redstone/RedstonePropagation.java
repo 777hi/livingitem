@@ -1,4 +1,15 @@
 package com.qiqi.li.living.domain.redstone;
+import com.qiqi.li.living.domain.redstone.LivingRepeaterData;
+import com.qiqi.li.living.domain.redstone.LivingRedstoneTorchData;
+import com.qiqi.li.living.domain.redstone.LivingRedstoneLampData;
+import com.qiqi.li.living.domain.redstone.LivingRedstoneData;
+import com.qiqi.li.living.domain.redstone.LivingLeverData;
+import com.qiqi.li.living.domain.redstone.LivingGrateData;
+import com.qiqi.li.living.domain.redstone.LivingCutCopperData;
+import com.qiqi.li.living.domain.redstone.LivingCopperSignalData;
+import com.qiqi.li.living.domain.redstone.LivingCopperBulbData;
+import com.qiqi.li.living.domain.redstone.LivingComparatorData;
+import com.qiqi.li.living.domain.redstone.LivingButtonData;
 
 import java.util.ArrayDeque;
 import java.util.Queue;
@@ -65,14 +76,14 @@ class RedstonePropagation {
             ItemStack stack = context.getItem(slot);
             if (stack.isEmpty()) continue;
 
-            LivingRepeaterData data = LivingItemManager.getRepeaterData(stack);
+            LivingRepeaterData data = LivingRepeaterData.of(stack);
             if (data.locked()) continue;
             if (!data.powered()) continue;
             if (data.delayTimer() == 0) continue;
 
             if (data.delayTimer() > 0) {
                 data = data.withDelayTimer(data.delayTimer() - 1);
-                LivingItemManager.setRepeaterData(stack, data);
+                LivingRepeaterData.set(stack, data);
                 context.syncSlotToClients(slot, stack);
             } else {
                 int newTimer = data.delayTimer() + 1;
@@ -81,7 +92,7 @@ class RedstonePropagation {
                 } else {
                     data = data.withDelayTimer(newTimer);
                 }
-                LivingItemManager.setRepeaterData(stack, data);
+                LivingRepeaterData.set(stack, data);
                 context.syncSlotToClients(slot, stack);
             }
         }
@@ -91,14 +102,14 @@ class RedstonePropagation {
             ItemStack stack = context.getItem(slot);
             if (stack.isEmpty()) continue;
 
-            LivingButtonData data = LivingItemManager.getButtonData(stack);
+            LivingButtonData data = LivingButtonData.of(stack);
             if (data.pressed() && data.pulseTimer() > 0) {
                 int newTimer = data.pulseTimer() - 1;
                 if (newTimer <= 0) {
-                    LivingItemManager.setButtonData(stack, data.withPressed(false).withPulseTimer(0));
+                    LivingButtonData.set(stack, data.withPressed(false).withPulseTimer(0));
                     context.syncSlotToClients(slot, stack);
                 } else {
-                    LivingItemManager.setButtonData(stack, data.withPulseTimer(newTimer));
+                    LivingButtonData.set(stack, data.withPulseTimer(newTimer));
                     context.syncSlotToClients(slot, stack);
                 }
             }
@@ -115,7 +126,7 @@ class RedstonePropagation {
             if (slot < 0 || slot >= size) continue;
             ItemStack stack = context.getItem(slot);
             if (stack.isEmpty()) continue;
-            LivingRedstoneTorchData data = LivingItemManager.getRedstoneTorchData(stack);
+            LivingRedstoneTorchData data = LivingRedstoneTorchData.of(stack);
             if (!data.isLit()) continue;
 
             int cap = getSignalCap(stack.getCount());
@@ -137,7 +148,7 @@ class RedstonePropagation {
             if (slot < 0 || slot >= size) continue;
             ItemStack stack = context.getItem(slot);
             if (stack.isEmpty()) continue;
-            LivingButtonData data = LivingItemManager.getButtonData(stack);
+            LivingButtonData data = LivingButtonData.of(stack);
             if (!data.pressed()) continue;
 
             int cap = getSignalCap(stack.getCount());
@@ -156,7 +167,7 @@ class RedstonePropagation {
             if (slot < 0 || slot >= size) continue;
             ItemStack stack = context.getItem(slot);
             if (stack.isEmpty()) continue;
-            LivingLeverData data = LivingItemManager.getLeverData(stack);
+            LivingLeverData data = LivingLeverData.of(stack);
             if (!data.powered()) continue;
 
             int cap = getSignalCap(stack.getCount());
@@ -175,7 +186,7 @@ class RedstonePropagation {
             if (slot < 0 || slot >= size) continue;
             ItemStack stack = context.getItem(slot);
             if (stack.isEmpty()) continue;
-            LivingRepeaterData data = LivingItemManager.getRepeaterData(stack);
+            LivingRepeaterData data = LivingRepeaterData.of(stack);
             if (!data.powered() || data.delayTimer() > 0) continue;
 
             int cap = getSignalCap(stack.getCount());
@@ -193,7 +204,7 @@ class RedstonePropagation {
             if (slot < 0 || slot >= size) continue;
             ItemStack stack = context.getItem(slot);
             if (stack.isEmpty()) continue;
-            LivingComparatorData data = LivingItemManager.getComparatorData(stack);
+            LivingComparatorData data = LivingComparatorData.of(stack);
             int output = computeComparatorOutput(slot, data);
             if (output <= 0) continue;
 
@@ -228,7 +239,7 @@ class RedstonePropagation {
             if (slot < 0 || slot >= size) continue;
             ItemStack stack = context.getItem(slot);
             if (stack.isEmpty()) continue;
-            LivingGrateData data = LivingItemManager.getGrateData(stack);
+            LivingGrateData data = LivingGrateData.of(stack);
             if (data.sumSignal() <= 0) continue;
 
             for (int dir = 0; dir < 4; dir++) {
@@ -285,7 +296,7 @@ class RedstonePropagation {
 
                 if (is(current, ContainerRedstoneData.BIT_CHISELED)) {
                     ItemStack chiseledStack = context.getItem(current);
-                    LivingCutCopperData data = LivingItemManager.getCutCopperData(chiseledStack);
+                    LivingCutCopperData data = LivingCutCopperData.of(chiseledStack);
                     int inputEdge = edgeIndex(data.inputDir());
                     int outputEdge = edgeIndex(data.outputDir());
                     int chiseledInput = inputAt(current, inputEdge);
@@ -327,12 +338,12 @@ class RedstonePropagation {
             ItemStack stack = context.getItem(slot);
             if (stack.isEmpty()) continue;
 
-            LivingRepeaterData data = LivingItemManager.getRepeaterData(stack);
+            LivingRepeaterData data = LivingRepeaterData.of(stack);
 
             boolean locked = checkRepeaterLocked(slot, data);
             if (data.locked() != locked) {
                 data = data.withLocked(locked);
-                LivingItemManager.setRepeaterData(stack, data);
+                LivingRepeaterData.set(stack, data);
                 context.syncSlotToClients(slot, stack);
             }
             if (locked) continue;
@@ -343,14 +354,14 @@ class RedstonePropagation {
             if (data.powered() && data.delayTimer() > 0) continue;
 
             if (hasInput && !data.powered()) {
-                LivingItemManager.setRepeaterData(stack,
+                LivingRepeaterData.set(stack,
                     data.withPowered(true).withDelayTimer(data.delay() * TICKS_PER_REPEATER_STEP));
                 context.syncSlotToClients(slot, stack);
             } else if (hasInput && data.powered() && data.delayTimer() < 0) {
-                LivingItemManager.setRepeaterData(stack, data.withDelayTimer(0));
+                LivingRepeaterData.set(stack, data.withDelayTimer(0));
                 context.syncSlotToClients(slot, stack);
             } else if (!hasInput && data.powered() && data.delayTimer() == 0) {
-                LivingItemManager.setRepeaterData(stack,
+                LivingRepeaterData.set(stack,
                     data.withDelayTimer(-data.delay() * TICKS_PER_REPEATER_STEP));
                 context.syncSlotToClients(slot, stack);
             }
@@ -361,11 +372,11 @@ class RedstonePropagation {
             ItemStack stack = context.getItem(slot);
             if (stack.isEmpty()) continue;
 
-            LivingComparatorData data = LivingItemManager.getComparatorData(stack);
+            LivingComparatorData data = LivingComparatorData.of(stack);
             int output = computeComparatorOutput(slot, data);
             boolean newPowered = output > 0;
             if (data.powered() != newPowered) {
-                LivingItemManager.setComparatorData(stack, data.withPowered(newPowered));
+                LivingComparatorData.set(stack, data.withPowered(newPowered));
                 context.syncSlotToClients(slot, stack);
             }
         }
@@ -384,9 +395,9 @@ class RedstonePropagation {
             int cap = getSignalCap(stack.getCount());
             int result = Math.min(sum, cap);
 
-            LivingGrateData data = LivingItemManager.getGrateData(stack);
+            LivingGrateData data = LivingGrateData.of(stack);
             if (data.sumSignal() != result) {
-                LivingItemManager.setGrateData(stack, data.withSumSignal(result));
+                LivingGrateData.set(stack, data.withSumSignal(result));
                 context.syncSlotToClients(slot, stack);
             }
         }
@@ -396,7 +407,7 @@ class RedstonePropagation {
             ItemStack stack = context.getItem(slot);
             if (stack.isEmpty()) continue;
 
-            LivingCopperBulbData data = LivingItemManager.getCopperBulbData(stack);
+            LivingCopperBulbData data = LivingCopperBulbData.of(stack);
             boolean hasInput = anyInputOfSlot(slot);
             boolean changed = false;
 
@@ -417,7 +428,7 @@ class RedstonePropagation {
             }
 
             if (changed) {
-                LivingItemManager.setCopperBulbData(stack, data);
+                LivingCopperBulbData.set(stack, data);
                 context.syncSlotToClients(slot, stack);
             }
         }
@@ -434,7 +445,7 @@ class RedstonePropagation {
             ItemStack stack = context.getItem(slot);
             if (stack.isEmpty()) continue;
 
-            LivingRedstoneData data = LivingItemManager.getRedstoneData(stack);
+            LivingRedstoneData data = LivingRedstoneData.of(stack);
             byte conn = data.connections();
             int maxInput = maxInputOfSlot(slot);
             if (maxInput <= 1) continue;
@@ -450,7 +461,7 @@ class RedstonePropagation {
             if (slot < 0 || slot >= size) continue;
             ItemStack stack = context.getItem(slot);
             if (stack.isEmpty()) continue;
-            LivingRedstoneTorchData data = LivingItemManager.getRedstoneTorchData(stack);
+            LivingRedstoneTorchData data = LivingRedstoneTorchData.of(stack);
             if (!data.isLit()) continue;
 
             int cap = getSignalCap(stack.getCount());
@@ -465,7 +476,7 @@ class RedstonePropagation {
             if (slot < 0 || slot >= size) continue;
             ItemStack stack = context.getItem(slot);
             if (stack.isEmpty()) continue;
-            LivingButtonData data = LivingItemManager.getButtonData(stack);
+            LivingButtonData data = LivingButtonData.of(stack);
             if (!data.pressed()) continue;
 
             int cap = getSignalCap(stack.getCount());
@@ -478,7 +489,7 @@ class RedstonePropagation {
             if (slot < 0 || slot >= size) continue;
             ItemStack stack = context.getItem(slot);
             if (stack.isEmpty()) continue;
-            LivingLeverData data = LivingItemManager.getLeverData(stack);
+            LivingLeverData data = LivingLeverData.of(stack);
             if (!data.powered()) continue;
 
             int cap = getSignalCap(stack.getCount());
@@ -507,7 +518,7 @@ class RedstonePropagation {
                 if (slot < 0 || slot >= size) continue;
                 ItemStack stack = context.getItem(slot);
                 if (stack.isEmpty()) continue;
-                LivingRepeaterData data = LivingItemManager.getRepeaterData(stack);
+                LivingRepeaterData data = LivingRepeaterData.of(stack);
 
                 int output = (data.powered() && data.delayTimer() <= 0)
                     ? getSignalCap(stack.getCount()) : 0;
@@ -526,7 +537,7 @@ class RedstonePropagation {
                 if (slot < 0 || slot >= size) continue;
                 ItemStack stack = context.getItem(slot);
                 if (stack.isEmpty()) continue;
-                LivingComparatorData data = LivingItemManager.getComparatorData(stack);
+                LivingComparatorData data = LivingComparatorData.of(stack);
                 int output = computeComparatorOutput(slot, data);
                 int outDir = edgeIndex(data.direction());
                 int prev = edgeGrid.get(slot, outDir);
@@ -555,7 +566,7 @@ class RedstonePropagation {
             int output = Math.min(maxInput, cap);
 
             if (is(slot, ContainerRedstoneData.BIT_CHISELED)) {
-                LivingCutCopperData data = LivingItemManager.getCutCopperData(stack);
+                LivingCutCopperData data = LivingCutCopperData.of(stack);
                 int inputEdge = edgeIndex(data.inputDir());
                 int outputEdge = edgeIndex(data.outputDir());
                 int chiseledInput = inputAt(slot, inputEdge);
@@ -593,12 +604,12 @@ class RedstonePropagation {
             ItemStack stack = context.getItem(slot);
             if (stack.isEmpty()) continue;
 
-            LivingRedstoneTorchData data = LivingItemManager.getRedstoneTorchData(stack);
+            LivingRedstoneTorchData data = LivingRedstoneTorchData.of(stack);
             int inputDir = edgeIndex(data.direction().opposite());
             boolean hasInput = getEffectiveInput(slot, inputDir) > 0;
             boolean newLit = !hasInput;
             if (data.isLit() != newLit) {
-                LivingItemManager.setRedstoneTorchData(stack, data.withLit(newLit));
+                LivingRedstoneTorchData.set(stack, data.withLit(newLit));
                 context.syncSlotToClients(slot, stack);
             }
         }
@@ -610,10 +621,10 @@ class RedstonePropagation {
 
             int maxSignal = maxInputOfSlot(slot);
             byte conn = computeDustConnections(slot);
-            LivingRedstoneData data = LivingItemManager.getRedstoneData(stack);
+            LivingRedstoneData data = LivingRedstoneData.of(stack);
             if (data.signalStrength() != maxSignal || data.isPowered() != (maxSignal > 0)
                 || data.connections() != conn) {
-                LivingItemManager.setRedstoneData(stack,
+                LivingRedstoneData.set(stack,
                     data.withSignal(maxSignal).withPowered(maxSignal > 0).withConnections(conn));
                 context.syncSlotToClients(slot, stack);
             }
@@ -625,9 +636,9 @@ class RedstonePropagation {
             if (stack.isEmpty()) continue;
 
             boolean hasSignal = anyInputOfSlot(slot);
-            LivingRedstoneLampData data = LivingItemManager.getLampData(stack);
+            LivingRedstoneLampData data = LivingRedstoneLampData.of(stack);
             if (data.lit() != hasSignal) {
-                LivingItemManager.setLampData(stack, data.withLit(hasSignal));
+                LivingRedstoneLampData.set(stack, data.withLit(hasSignal));
                 context.syncSlotToClients(slot, stack);
             }
         }
@@ -638,9 +649,9 @@ class RedstonePropagation {
             if (stack.isEmpty()) continue;
 
             int maxSignal = maxInputOfSlot(slot);
-            LivingCopperSignalData sigData = LivingItemManager.getCopperSignal(stack);
+            LivingCopperSignalData sigData = LivingCopperSignalData.of(stack);
             if (sigData.signalStrength() != maxSignal) {
-                LivingItemManager.setCopperSignal(stack, sigData.withSignal(maxSignal));
+                LivingCopperSignalData.set(stack, sigData.withSignal(maxSignal));
                 context.syncSlotToClients(slot, stack);
             }
         }
@@ -730,7 +741,7 @@ class RedstonePropagation {
             if (is(neighbor, ContainerRedstoneData.BIT_REPEATER)) {
                 ItemStack neighborStack = context.getItem(neighbor);
                 if (!neighborStack.isEmpty()) {
-                    LivingRepeaterData neighborData = LivingItemManager.getRepeaterData(neighborStack);
+                    LivingRepeaterData neighborData = LivingRepeaterData.of(neighborStack);
                     if (neighborData.powered() && neighborData.delayTimer() == 0
                             && neighborData.direction().equals(requiredDir(perpDir))) {
                         return true;
@@ -751,8 +762,8 @@ class RedstonePropagation {
                 ItemStack ns = context.getItem(neighbor);
                 if (!ns.isEmpty()) {
                     Pos2D facing = is(neighbor, ContainerRedstoneData.BIT_REPEATER)
-                        ? LivingItemManager.getRepeaterData(ns).direction()
-                        : LivingItemManager.getComparatorData(ns).direction();
+                        ? LivingRepeaterData.of(ns).direction()
+                        : LivingComparatorData.of(ns).direction();
                     Pos2D d = DIR_POS[dir];
                     if (d.equals(facing) || d.equals(facing.opposite())) {
                         conn |= (1 << dir);

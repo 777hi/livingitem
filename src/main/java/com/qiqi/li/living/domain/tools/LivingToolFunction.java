@@ -1,4 +1,8 @@
 package com.qiqi.li.living.domain.tools;
+import com.qiqi.li.living.transfer.LivingComponents;
+import com.qiqi.li.living.domain.tools.LivingToolProgress;
+import com.qiqi.li.living.domain.tools.LivingToolMemory;
+import com.qiqi.li.living.domain.tools.LivingToolAction;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -60,11 +64,11 @@ public class LivingToolFunction implements LivingItemFunction {
     @Override
     public Set<DataComponentType<?>> getOwnedComponentTypes() {
         return Set.of(
-            LivingItemManager.LIVING_TOOL_MEMORY.value(),
-            LivingItemManager.LIVING_TOOL_PROGRESS.value(),
-            LivingItemManager.LIVING_TOOL_DIG_TICKS.value(),
-            LivingItemManager.LIVING_TOOL_LAST_ACTION.value(),
-            LivingItemManager.LIVING_TOOL_OWNER.value()
+            LivingComponents.LIVING_TOOL_MEMORY.value(),
+            LivingComponents.LIVING_TOOL_PROGRESS.value(),
+            LivingComponents.LIVING_TOOL_DIG_TICKS.value(),
+            LivingComponents.LIVING_TOOL_LAST_ACTION.value(),
+            LivingComponents.LIVING_TOOL_OWNER.value()
         );
     }
 
@@ -104,7 +108,7 @@ public class LivingToolFunction implements LivingItemFunction {
                 //    记忆射线本身（恒定），传坐标反而会让射线跟着目标跳。
                 //    下面 replayDig / replayUse 会再算一次：扫描很便宜（步进 0.1、几十次
                 //    getBlockState），换来的是回放 API 保持不变、且两侧判据只有一份实现。
-                LivingToolMemory memory = LivingItemManager.getToolMemory(entry.stack());
+                LivingToolMemory memory = LivingToolMemory.of(entry.stack());
                 tools.add(new LivingToolHostPacket.ToolRay(
                     entry.stack(),
                     LivingToolReplay.resolveDigTarget(memory.dig(), origin, hostBlocks, serverLevel) != null,
@@ -115,14 +119,14 @@ public class LivingToolFunction implements LivingItemFunction {
 
         for (SlotEntry entry : entries) {
             ItemStack tool = entry.stack();
-            LivingToolMemory memory = LivingItemManager.getToolMemory(tool);
+            LivingToolMemory memory = LivingToolMemory.of(tool);
             if (memory.isEmpty()) {
                 continue;
             }
 
             // ⭐ 记录本 tick 开始时的"动画状态"（下面用于检测翻转）
-            LivingToolProgress progressBefore = LivingItemManager.getToolProgress(tool);
-            LivingToolAction actionBefore = LivingItemManager.getToolLastAction(tool);
+            LivingToolProgress progressBefore = LivingToolProgress.of(tool);
+            LivingToolAction actionBefore = LivingToolAction.of(tool);
 
             // ⭐ S2「射线决定」+【双记忆共存】（方案 C，用户 2026-09-24 定）：
             //
@@ -180,7 +184,7 @@ public class LivingToolFunction implements LivingItemFunction {
                              Consumer<Component> tooltipAdder,
                              TooltipFlag flag,
                              ItemStack stack) {
-        LivingToolMemory memory = LivingItemManager.getToolMemory(stack);
+        LivingToolMemory memory = LivingToolMemory.of(stack);
 
         tooltipAdder.accept(Component.empty());
         // ⭐ 模式措辞「主动 / 被动」（2026-09-24 用户定，不带"挖掘"字眼 —— 活武器也适用）
@@ -287,8 +291,8 @@ public class LivingToolFunction implements LivingItemFunction {
     private static void syncStateFlip(ContainerContext context, int slot, ItemStack tool,
                                       @Nullable LivingToolProgress progressBefore,
                                       @Nullable LivingToolAction actionBefore) {
-        boolean changed = !Objects.equals(progressBefore, LivingItemManager.getToolProgress(tool))
-            || !Objects.equals(actionBefore, LivingItemManager.getToolLastAction(tool));
+        boolean changed = !Objects.equals(progressBefore, LivingToolProgress.of(tool))
+            || !Objects.equals(actionBefore, LivingToolAction.of(tool));
         if (changed) {
             context.syncSlotToClients(slot, tool);
         }

@@ -51,7 +51,7 @@ public class ServerPacketHandler {
             return;
         }
 
-        LivingToolMemory memory = LivingItemManager.getToolMemory(tool);
+        LivingToolMemory memory = LivingToolMemory.of(tool);
         LivingToolMemory updated = switch (kind) {
             case ToolMemoryClearPacket.KIND_DIG -> memory.withoutDig();
             case ToolMemoryClearPacket.KIND_USE -> memory.withoutUse();
@@ -62,7 +62,7 @@ public class ServerPacketHandler {
             return;   // 本来就没有这条记忆 → 不必回同步
         }
 
-        LivingItemManager.setToolMemory(tool, updated);
+        LivingToolMemory.set(tool, updated);
         player.inventoryMenu.broadcastChanges();
     }
 

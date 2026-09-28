@@ -99,7 +99,7 @@ public class LivingItemInputHandler {
         }
 
         ItemStack tool = mc.player.getMainHandItem();
-        LivingToolMemory memory = LivingItemManager.getToolMemory(tool);
+        LivingToolMemory memory = LivingToolMemory.of(tool);
 
         if (LivingToolRecorder.isLivingTool(tool) && memory.hasDig()) {
             PacketDistributor.sendToServer(

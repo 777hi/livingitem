@@ -77,7 +77,7 @@ class SlotInteractionCargoGateTest {
 
     private static ItemStack livingFarmland(int age, int maxAge) {
         ItemStack stack = living(new ItemStack(Items.FARMLAND, 1));
-        LivingItemManager.setFarmlandPlant(stack,
+        FarmlandPlantComponent.set(stack,
             new FarmlandPlantComponent(Items.WHEAT_SEEDS, age, maxAge, 0L, -1, List.of()));
         return stack;
     }
@@ -121,7 +121,7 @@ class SlotInteractionCargoGateTest {
         assertFalse(SlotInteractions.canInteract(livingBonemeal, farmland), "准入谓词即拒");
         assertFalse(SlotInteractions.tryInteract(source, livingBonemeal, farmland, LEVEL),
             "活骨粉不是合法货物 → 不施肥");
-        assertEquals(3, LivingItemManager.getFarmlandPlant(farmland).age(), "耕地未被催熟");
+        assertEquals(3, FarmlandPlantComponent.of(farmland).age(), "耕地未被催熟");
         assertEquals(16, source.simulateExtract(16).getCount(), "一滴活骨粉都没烧（源槽未动）");
     }
 
@@ -134,7 +134,7 @@ class SlotInteractionCargoGateTest {
 
         assertTrue(SlotInteractions.canInteract(bonemeal, farmland));
         assertTrue(SlotInteractions.tryInteract(source, bonemeal, farmland, LEVEL));
-        assertEquals(4, LivingItemManager.getFarmlandPlant(farmland).age());
+        assertEquals(4, FarmlandPlantComponent.of(farmland).age());
         assertEquals(15, source.simulateExtract(16).getCount(), "生效后真扣 1 粉");
     }
 
@@ -147,6 +147,6 @@ class SlotInteractionCargoGateTest {
 
         assertFalse(SlotInteractions.canInteract(ctx.getItem(0), ctx.getItem(1)));
         assertEquals(16, ctx.getItem(0).getCount(), "活骨粉原封不动");
-        assertEquals(3, LivingItemManager.getFarmlandPlant(ctx.getItem(1)).age());
+        assertEquals(3, FarmlandPlantComponent.of(ctx.getItem(1)).age());
     }
 }

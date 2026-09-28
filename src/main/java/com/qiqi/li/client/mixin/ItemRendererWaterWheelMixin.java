@@ -66,7 +66,7 @@ public class ItemRendererWaterWheelMixin {
             RenderSystem.setShaderLights(FRONT_LIGHT_0, FRONT_LIGHT_1);
             livingItem$needRestoreLighting = true;
 
-            LivingWaterWheelData wheelData = LivingItemManager.getWaterWheelData(itemStack);
+            LivingWaterWheelData wheelData = LivingWaterWheelData.of(itemStack);
             WaterWheelData wd = wheelData.wheel();
             int netStress = wd.netStress();
 

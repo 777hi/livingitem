@@ -1,4 +1,5 @@
 package com.qiqi.li.living.container;
+import com.qiqi.li.living.transfer.LivingComponents;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -146,7 +147,7 @@ public class ContainerLivingItemHandler {
 
         if (ctx instanceof SimpleContainerContext simpleCtx) {
             for (BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {
-                ContainerFluidData persisted = be.getData(LivingItemManager.CONTAINER_FLUID_DATA);
+                ContainerFluidData persisted = be.getData(LivingComponents.CONTAINER_FLUID_DATA);
                 if (persisted != null && persisted != ContainerFluidData.EMPTY && !persisted.isEmpty()) {
                     e.fluid = persisted;
                     return persisted;
@@ -217,7 +218,7 @@ public class ContainerLivingItemHandler {
                 boolean hasWorldClock = false;
                 for (BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {
                     com.qiqi.li.living.domain.power.PhaseSnapshot snapshot =
-                        be.getData(LivingItemManager.CONTAINER_PHASE_SNAPSHOT);
+                        be.getData(LivingComponents.CONTAINER_PHASE_SNAPSHOT);
                     if (snapshot == null) continue;
                     // 世界轴基准（与 capture 同源）：服务端 BE 挂着 Level 才可信
                     if (!hasWorldClock) {
@@ -611,7 +612,7 @@ public class ContainerLivingItemHandler {
         ContainerStressData stressData = tick.stressData;
         if (stressData != null && context instanceof SimpleContainerContext simpleCtx) {
             for (BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {
-                be.setData(LivingItemManager.CONTAINER_STRESS_DATA.value(), stressData);
+                be.setData(LivingComponents.CONTAINER_STRESS_DATA.value(), stressData);
                 updateStressOutput(simpleCtx, be, stressData);
             }
 
@@ -624,7 +625,7 @@ public class ContainerLivingItemHandler {
         if (fluidData != null && !fluidData.isEmpty()) {
             if (context instanceof SimpleContainerContext simpleCtx) {
                 for (BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {
-                    be.setData(LivingItemManager.CONTAINER_FLUID_DATA.value(), fluidData);
+                    be.setData(LivingComponents.CONTAINER_FLUID_DATA.value(), fluidData);
                 }
             }
         }
@@ -655,7 +656,7 @@ public class ContainerLivingItemHandler {
             com.qiqi.li.living.domain.power.PhaseSnapshot snapshot =
                 com.qiqi.li.living.domain.power.PhaseSnapshot.capture(powerData, clock);
             for (BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {
-                be.setData(LivingItemManager.CONTAINER_PHASE_SNAPSHOT.value(), snapshot);
+                be.setData(LivingComponents.CONTAINER_PHASE_SNAPSHOT.value(), snapshot);
             }
         }
     }

@@ -1,5 +1,8 @@
-package com.qiqi.li.living.domain.tnt;
+package com.qiqi.li.living.domain.tnt;import net.minecraft.world.item.ItemStack;
 
+
+import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.transfer.LivingComponents;
 import java.util.function.Consumer;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
@@ -29,4 +32,22 @@ public record LivingTntData(ExplosionData explosion) implements TooltipProvider 
 
     @Override
     public void addToTooltip(Item.TooltipContext context, Consumer<Component> tooltipAdder, TooltipFlag flag) {}
+
+    /** 读取：缺失返回默认值。（A1 迁移：原 LivingItemManager.getTntData） */
+    public static LivingTntData of(ItemStack stack) {
+        return LivingItemManager.getData(stack, LivingComponents.LIVING_TNT_DATA.value(), LivingTntData.DEFAULT);
+    }
+
+    /**
+     * 便捷方法：设置TNT数据。
+     */
+
+    /** 写入：等于默认值时移除组件。（A1 迁移：原 LivingItemManager.setTntData） */
+    public static void set(ItemStack stack, LivingTntData data) {
+        LivingItemManager.setData(stack, LivingComponents.LIVING_TNT_DATA.value(), data, LivingTntData.DEFAULT);
+    }
+
+    /**
+     * 便捷方法：获取水桶数据。
+     */
 }

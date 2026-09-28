@@ -1,4 +1,5 @@
 package com.qiqi.li.living.domain.power;
+import com.qiqi.li.living.domain.power.LivingWaxedBulbData;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -106,7 +107,7 @@ class WaxedCopperStorageTest {
 
         assertTrue(changed);
         // mfe = 1024 × 62.5 = 64000，share = 64000（唯一堆），perLamp = 64000/16 = 4000
-        assertEquals(4000, LivingItemManager.getWaxedBulbData(stack).chargeMilliFe());
+        assertEquals(4000, LivingWaxedBulbData.of(stack).chargeMilliFe());
     }
 
     @Test
@@ -114,7 +115,7 @@ class WaxedCopperStorageTest {
     void distribute_channelIsolation_wrongColorBulbSkipped() {
         ItemStack freshBulb = bulb(16);                                        // 锈级 0（新鲜）
         ItemStack oxidizedBulb = bulbOxidized(16);                             // 锈级 3（氧化）
-        LivingItemManager.setWaxedBulbData(oxidizedBulb,
+        LivingWaxedBulbData.set(oxidizedBulb,
             new LivingWaxedBulbData(PowerMath.BULB_UNIT_CAPACITY_MFE));        // 氧化灯已满
 
         // 锈级 0 发电 1024 RE：氧化灯（满 + 错色）都不该收，新鲜灯收全部
@@ -123,9 +124,9 @@ class WaxedCopperStorageTest {
                 new LivingItemFunction.SlotEntry(1, freshBulb)));
 
         assertTrue(changed);
-        assertEquals(4000, LivingItemManager.getWaxedBulbData(freshBulb).chargeMilliFe());
+        assertEquals(4000, LivingWaxedBulbData.of(freshBulb).chargeMilliFe());
         assertEquals(PowerMath.BULB_UNIT_CAPACITY_MFE,
-            LivingItemManager.getWaxedBulbData(oxidizedBulb).chargeMilliFe());
+            LivingWaxedBulbData.of(oxidizedBulb).chargeMilliFe());
     }
 
     @Test
@@ -138,7 +139,7 @@ class WaxedCopperStorageTest {
             List.of(new LivingItemFunction.SlotEntry(0, freshBulb)));
 
         assertTrue(!changed);
-        assertEquals(0, LivingItemManager.getWaxedBulbData(freshBulb).chargeMilliFe());
+        assertEquals(0, LivingWaxedBulbData.of(freshBulb).chargeMilliFe());
     }
 
     @Test
@@ -154,8 +155,8 @@ class WaxedCopperStorageTest {
         assertTrue(LivingWaxedCopperFunction.distributeToBulbs(512, 0, entries));
         assertTrue(LivingWaxedCopperFunction.distributeToBulbs(1024, 3, entries));
 
-        assertEquals(2000, LivingItemManager.getWaxedBulbData(fresh).chargeMilliFe());
-        assertEquals(4000, LivingItemManager.getWaxedBulbData(oxidized).chargeMilliFe());
+        assertEquals(2000, LivingWaxedBulbData.of(fresh).chargeMilliFe());
+        assertEquals(4000, LivingWaxedBulbData.of(oxidized).chargeMilliFe());
     }
 
     @Test
@@ -171,7 +172,7 @@ class WaxedCopperStorageTest {
     @DisplayName("铜灯已满：弃（显性浪费，tooltip 显示已满）")
     void distribute_fullBulb_discards() {
         ItemStack stack = bulb(16);
-        LivingItemManager.setWaxedBulbData(stack,
+        LivingWaxedBulbData.set(stack,
             new LivingWaxedBulbData(PowerMath.BULB_UNIT_CAPACITY_MFE));   // 每盏已满
 
         boolean changed = LivingWaxedCopperFunction.distributeToBulbs(1024, 0,
@@ -180,29 +181,29 @@ class WaxedCopperStorageTest {
 
         assertTrue(!changed);
         assertEquals(PowerMath.BULB_UNIT_CAPACITY_MFE,
-            LivingItemManager.getWaxedBulbData(stack).chargeMilliFe());
+            LivingWaxedBulbData.of(stack).chargeMilliFe());
     }
 
     @Test
     @DisplayName("取电（模组容器场景）：纯 IItemHandler 访问器，逐堆扣铜灯")
     void extract_moddedContainer_viaItemHandler() {
         ItemStack b1 = bulb(16);
-        LivingItemManager.setWaxedBulbData(b1, new LivingWaxedBulbData(4_000));   // 堆总量 64000
+        LivingWaxedBulbData.set(b1, new LivingWaxedBulbData(4_000));   // 堆总量 64000
         ItemStack b2 = bulb(8);
-        LivingItemManager.setWaxedBulbData(b2, new LivingWaxedBulbData(1_000));   // 堆总量 8000
+        LivingWaxedBulbData.set(b2, new LivingWaxedBulbData(1_000));   // 堆总量 8000
         IItemHandler handler = new FakeHandler(generator(4), b1, b2);   // 非容器的模组容器
 
         // 请求 30_000 mFE：堆1 顺序扣 30_000（每盏 1875）→ 恰好
         long got1 = ContainerEnergyStorage.extract(handler, 30_000, false, null);
         assertEquals(30_000, got1);
-        assertEquals(4_000 - 1_875, LivingItemManager.getWaxedBulbData(b1).chargeMilliFe());
-        assertEquals(1_000, LivingItemManager.getWaxedBulbData(b2).chargeMilliFe());
+        assertEquals(4_000 - 1_875, LivingWaxedBulbData.of(b1).chargeMilliFe());
+        assertEquals(1_000, LivingWaxedBulbData.of(b2).chargeMilliFe());
 
         // 请求 50_000 mFE：堆1 余 3375×16 = 54000 → 扣 3375/16 → 每盏 1687（floor）+ b2 补
         long got2 = ContainerEnergyStorage.extract(handler, 50_000, false, null);
         assertTrue(got2 > 0);
-        assertEquals(0, LivingItemManager.getWaxedBulbData(b1).chargeMilliFe());
-        assertEquals(0, LivingItemManager.getWaxedBulbData(b2).chargeMilliFe());
+        assertEquals(0, LivingWaxedBulbData.of(b1).chargeMilliFe());
+        assertEquals(0, LivingWaxedBulbData.of(b2).chargeMilliFe());
         assertTrue(got2 <= 50_000);
     }
 
@@ -210,31 +211,31 @@ class WaxedCopperStorageTest {
     @DisplayName("超取：请求超过总储能 → 只拿到现有量，各处不为负")
     void extract_clampedToAvailable() {
         ItemStack b1 = bulb(8);
-        LivingItemManager.setWaxedBulbData(b1, new LivingWaxedBulbData(2_000));   // 堆总量 16000
+        LivingWaxedBulbData.set(b1, new LivingWaxedBulbData(2_000));   // 堆总量 16000
         IItemHandler handler = new FakeHandler(b1);
 
         long got = ContainerEnergyStorage.extract(handler, 100_000, false, null);
         assertEquals(16_000, got);
-        assertEquals(0, LivingItemManager.getWaxedBulbData(b1).chargeMilliFe());
+        assertEquals(0, LivingWaxedBulbData.of(b1).chargeMilliFe());
     }
 
     @Test
     @DisplayName("模拟抽取：不修改任何状态")
     void extract_simulateLeavesStateIntact() {
         ItemStack b1 = bulb(16);
-        LivingItemManager.setWaxedBulbData(b1, new LivingWaxedBulbData(4_000));
+        LivingWaxedBulbData.set(b1, new LivingWaxedBulbData(4_000));
         IItemHandler handler = new FakeHandler(b1);
 
         long got = ContainerEnergyStorage.extract(handler, 60_000, true, null);
         assertEquals(60_000, got);   // 受请求上限约束（可用量 64_000 > 60_000）
-        assertEquals(4_000, LivingItemManager.getWaxedBulbData(b1).chargeMilliFe());
+        assertEquals(4_000, LivingWaxedBulbData.of(b1).chargeMilliFe());
     }
 
     @Test
     @DisplayName("onChanged 回调：有实际扣减才触发（落盘信号）")
     void extract_onChangedCallback() {
         ItemStack b1 = bulb(16);
-        LivingItemManager.setWaxedBulbData(b1, new LivingWaxedBulbData(4_000));
+        LivingWaxedBulbData.set(b1, new LivingWaxedBulbData(4_000));
         IItemHandler handler = new FakeHandler(b1);
 
         final int[] calls = {0};
@@ -250,21 +251,21 @@ class WaxedCopperStorageTest {
     void receive_distributesByRemainingCapacity() {
         ItemStack b1 = bulb(16);   // 空，剩余 16_000_000_000
         ItemStack b2 = bulb(16);
-        LivingItemManager.setWaxedBulbData(b2, new LivingWaxedBulbData(500_000_000));   // 半满，剩余 8_000_000_000
+        LivingWaxedBulbData.set(b2, new LivingWaxedBulbData(500_000_000));   // 半满，剩余 8_000_000_000
         IItemHandler handler = new FakeHandler(b1, b2);
 
         // 剩余容量比例 b1:b2 = 2:1 → 30_000 mFE 中 b1 收 20_000（每盏 1250）、b2 收 10_000（每盏 625）
         long got = ContainerEnergyStorage.receive(handler, 30_000, false, null);
         assertEquals(30_000, got);
-        assertEquals(1_250, LivingItemManager.getWaxedBulbData(b1).chargeMilliFe());
-        assertEquals(500_000_000 + 625, LivingItemManager.getWaxedBulbData(b2).chargeMilliFe());
+        assertEquals(1_250, LivingWaxedBulbData.of(b1).chargeMilliFe());
+        assertEquals(500_000_000 + 625, LivingWaxedBulbData.of(b2).chargeMilliFe());
     }
 
     @Test
     @DisplayName("充电 clamp：全满 → 接受 0")
     void receive_fullBulbs_acceptZero() {
         ItemStack b1 = bulb(16);
-        LivingItemManager.setWaxedBulbData(b1,
+        LivingWaxedBulbData.set(b1,
             new LivingWaxedBulbData(PowerMath.BULB_UNIT_CAPACITY_MFE));
         IItemHandler handler = new FakeHandler(b1);
 
@@ -278,7 +279,7 @@ class WaxedCopperStorageTest {
         IItemHandler handler = new FakeHandler(b1);
 
         assertEquals(30_000, ContainerEnergyStorage.receive(handler, 30_000, true, null));
-        assertEquals(0, LivingItemManager.getWaxedBulbData(b1).chargeMilliFe());
+        assertEquals(0, LivingWaxedBulbData.of(b1).chargeMilliFe());
     }
 
     @Test
@@ -286,25 +287,25 @@ class WaxedCopperStorageTest {
     void receive_quantizedToWholeFe() {
         ItemStack b1 = bulb(16);
         // 每盏剩余 1 mFE → 总剩余 16 mFE < 1 FE → 整 FE 量化后接收 0
-        LivingItemManager.setWaxedBulbData(b1,
+        LivingWaxedBulbData.set(b1,
             new LivingWaxedBulbData(PowerMath.BULB_UNIT_CAPACITY_MFE - 1));
         IItemHandler handler = new FakeHandler(b1);
 
         assertEquals(0, ContainerEnergyStorage.receive(handler, 1000_000, false, null));
         assertEquals(PowerMath.BULB_UNIT_CAPACITY_MFE - 1,
-            LivingItemManager.getWaxedBulbData(b1).chargeMilliFe());
+            LivingWaxedBulbData.of(b1).chargeMilliFe());
     }
 
     @Test
     @DisplayName("取消活化的铜灯不参与能源系统（电量保留但不进出）")
     void deactivatedBulb_excluded() {
         ItemStack stack = new ItemStack(Items.WAXED_COPPER_BULB, 16);   // 未打 IS_LIVING
-        LivingItemManager.setWaxedBulbData(stack, new LivingWaxedBulbData(4_000));
+        LivingWaxedBulbData.set(stack, new LivingWaxedBulbData(4_000));
         IItemHandler handler = new FakeHandler(stack);
 
         long got = ContainerEnergyStorage.extract(handler, 100_000, false, null);
         assertEquals(0, got);
-        assertEquals(4_000, LivingItemManager.getWaxedBulbData(stack).chargeMilliFe());
+        assertEquals(4_000, LivingWaxedBulbData.of(stack).chargeMilliFe());
     }
 
     @Test
@@ -389,7 +390,7 @@ class WaxedCopperStorageTest {
         // 而 leftover 被顶到 accept，零头回收循环每轮只扣 count mFE → ~10 亿轮。
         for (ItemStack stack : slots) {
             assertEquals(PowerMath.BULB_UNIT_CAPACITY_MFE,
-                LivingItemManager.getWaxedBulbData(stack).chargeMilliFe());
+                LivingWaxedBulbData.of(stack).chargeMilliFe());
         }
         // 热路径：单遍扫描（27 次）之后不再碰容器，零头回收走 stacks[] 数组。
         // 修复前的 3 遍扫描是 81 次，故上限取 64。
@@ -412,8 +413,8 @@ class WaxedCopperStorageTest {
         assertTrue(LivingWaxedCopperFunction.distributeToBulbs(voiceRe, 0, entries));
 
         long expectPerLamp = expectMfe / 64;
-        assertEquals(expectPerLamp, LivingItemManager.getWaxedBulbData(bulbs).chargeMilliFe());
+        assertEquals(expectPerLamp, LivingWaxedBulbData.of(bulbs).chargeMilliFe());
         // 实充恒 ≤ 应充（宁损勿造）
-        assertTrue(LivingItemManager.getWaxedBulbData(bulbs).totalChargeMilliFe(64) <= expectMfe);
+        assertTrue(LivingWaxedBulbData.of(bulbs).totalChargeMilliFe(64) <= expectMfe);
     }
 }

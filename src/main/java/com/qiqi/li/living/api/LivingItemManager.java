@@ -1,5 +1,6 @@
 package com.qiqi.li.living.api;
 
+import com.qiqi.li.living.transfer.LivingComponents;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -12,29 +13,7 @@ import java.util.UUID;
 import javax.annotation.Nullable;
 import java.util.Set;
 
-import com.qiqi.li.living.domain.furnace.LivingFurnaceData;
-import com.qiqi.li.living.domain.hopper.LivingHopperData;
-import com.qiqi.li.living.domain.tnt.LivingTntData;
-import com.qiqi.li.living.domain.water.LivingWaterBucketData;
-import com.qiqi.li.living.domain.water.LivingWaterWheelData;
-import com.qiqi.li.living.domain.ender.LivingEnderChestData;
-import com.qiqi.li.living.domain.water.ContainerStressData;
-import com.qiqi.li.living.domain.water.ContainerFluidData;
-import com.qiqi.li.living.domain.redstone.LivingRedstoneData;
-import com.qiqi.li.living.domain.redstone.LivingRedstoneTorchData;
-import com.qiqi.li.living.domain.redstone.LivingButtonData;
-import com.qiqi.li.living.domain.redstone.LivingLeverData;
-import com.qiqi.li.living.domain.redstone.LivingRedstoneLampData;
-import com.qiqi.li.living.domain.redstone.LivingRepeaterData;
-import com.qiqi.li.living.domain.redstone.LivingComparatorData;
-import com.qiqi.li.living.domain.redstone.LivingCutCopperData;
-import com.qiqi.li.living.domain.redstone.LivingGrateData;
-import com.qiqi.li.living.domain.farmland.FarmlandPlantComponent;
 import com.qiqi.li.living.domain.tools.LivingToolAction;
-import com.qiqi.li.living.domain.tools.LivingToolMemory;
-import com.qiqi.li.living.domain.tools.LivingToolProgress;
-import com.qiqi.li.living.domain.redstone.LivingCopperBulbData;
-import com.qiqi.li.living.domain.redstone.LivingCopperSignalData;
 import net.minecraft.world.item.Items;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.UUIDUtil;
@@ -59,129 +38,25 @@ import com.mojang.logging.LogUtils;
 public class LivingItemManager {
     public static final Logger LOGGER = LogUtils.getLogger();
 
-    public static final DeferredRegister<DataComponentType<?>> DATA_COMPONENT_TYPES =
-            DeferredRegister.create(Registries.DATA_COMPONENT_TYPE, com.qiqi.li.LivingItem.MOD_ID);
 
-    public static final DeferredRegister<AttachmentType<?>> ATTACHMENT_TYPES =
-            DeferredRegister.create(net.neoforged.neoforge.registries.NeoForgeRegistries.ATTACHMENT_TYPES, com.qiqi.li.LivingItem.MOD_ID);
-
-    public static final DeferredHolder<AttachmentType<?>, AttachmentType<ContainerStressData>> CONTAINER_STRESS_DATA =
-            ATTACHMENT_TYPES.register("container_stress_data", () ->
-                    AttachmentType.builder(() -> ContainerStressData.EMPTY).build());
-
-    public static final DeferredHolder<AttachmentType<?>, AttachmentType<ContainerFluidData>> CONTAINER_FLUID_DATA =
-            ATTACHMENT_TYPES.register("container_fluid_data", () ->
-                    AttachmentType.builder(() -> ContainerFluidData.EMPTY).build());
 
     /**
      * 相位快照（2026-09-09 落盘）：红电相位账本的跨会话持久化。
      * 与流体/应力附件不同，这个带 {@code serialize(Codec)}——真正写入存档，
      * 退出重进 / 区块卸载超时后锁相状态无缝续接（详见 PhaseSnapshot javadoc）。
      */
-    public static final DeferredHolder<AttachmentType<?>, AttachmentType<com.qiqi.li.living.domain.power.PhaseSnapshot>> CONTAINER_PHASE_SNAPSHOT =
-            ATTACHMENT_TYPES.register("container_phase_snapshot", () ->
-                    AttachmentType.builder(() -> com.qiqi.li.living.domain.power.PhaseSnapshot.EMPTY)
-                            .serialize(com.qiqi.li.living.domain.power.PhaseSnapshot.CODEC)
-                            .build());
 
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<Boolean>> IS_LIVING =
-            DATA_COMPONENT_TYPES.register("is_living", () ->
-                    DataComponentType.<Boolean>builder()
-                            .persistent(Codec.BOOL)
-                            .networkSynchronized(ByteBufCodecs.BOOL)
-                            .build());
 
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingFurnaceData>> LIVING_FURNACE_DATA =
-            DATA_COMPONENT_TYPES.register("living_furnace_data", () ->
-                    DataComponentType.<LivingFurnaceData>builder()
-                            .persistent(LivingFurnaceData.CODEC)
-                            .networkSynchronized(LivingFurnaceData.STREAM_CODEC)
-                            .build());
 
-    /** 熔炉燃烧标志：燃烧状态翻转时写入，供客户端图标谓词（active/idle）读取。派生数据不落盘（仅网络同步，MAP_POST_PROCESSING 先例） */
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<Boolean>> LIVING_FURNACE_BURNING =
-            DATA_COMPONENT_TYPES.register("living_furnace_burning", () ->
-                    DataComponentType.<Boolean>builder()
-                            .networkSynchronized(ByteBufCodecs.BOOL)
-                            .build());
 
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingHopperData>> LIVING_HOPPER_DATA =
-            DATA_COMPONENT_TYPES.register("living_hopper_data", () ->
-                    DataComponentType.<LivingHopperData>builder()
-                            .persistent(LivingHopperData.CODEC)
-                            .networkSynchronized(LivingHopperData.STREAM_CODEC)
-                            .build());
 
-    /** 漏斗黑白名单过滤链：容器派生数据不落盘（仅网络同步供 tooltip，MAP_POST_PROCESSING 先例），每 tick 由快照重建 */
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<com.qiqi.li.living.transfer.FilterData>> LIVING_HOPPER_FILTER =
-            DATA_COMPONENT_TYPES.register("living_hopper_filter", () ->
-                    DataComponentType.<com.qiqi.li.living.transfer.FilterData>builder()
-                            .networkSynchronized(com.qiqi.li.living.transfer.FilterData.STREAM_CODEC)
-                            .build());
 
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingTntData>> LIVING_TNT_DATA =
-            DATA_COMPONENT_TYPES.register("living_tnt_data", () ->
-                    DataComponentType.<LivingTntData>builder()
-                            .persistent(LivingTntData.CODEC)
-                            .networkSynchronized(LivingTntData.STREAM_CODEC)
-                            .build());
 
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingWaterBucketData>> LIVING_WATER_BUCKET_DATA =
-            DATA_COMPONENT_TYPES.register("living_water_bucket_data", () ->
-                    DataComponentType.<LivingWaterBucketData>builder()
-                            .persistent(LivingWaterBucketData.CODEC)
-                            .networkSynchronized(LivingWaterBucketData.STREAM_CODEC)
-                            .build());
 
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingWaterWheelData>> LIVING_WATER_WHEEL_DATA =
-            DATA_COMPONENT_TYPES.register("living_water_wheel_data", () ->
-                    DataComponentType.<LivingWaterWheelData>builder()
-                            .persistent(LivingWaterWheelData.CODEC)
-                            .networkSynchronized(LivingWaterWheelData.STREAM_CODEC)
-                            .build());
 
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingEnderChestData>> LIVING_ENDER_CHEST_DATA =
-            DATA_COMPONENT_TYPES.register("living_ender_chest_data", () ->
-                    DataComponentType.<LivingEnderChestData>builder()
-                            .persistent(LivingEnderChestData.CODEC)
-                            .networkSynchronized(LivingEnderChestData.STREAM_CODEC)
-                            .build());
 
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingRedstoneData>> LIVING_REDSTONE_DATA =
-            DATA_COMPONENT_TYPES.register("living_redstone_data", () ->
-                    DataComponentType.<LivingRedstoneData>builder()
-                            .persistent(LivingRedstoneData.CODEC)
-                            .networkSynchronized(LivingRedstoneData.STREAM_CODEC)
-                            .build());
 
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingRedstoneTorchData>> LIVING_REDSTONE_TORCH_DATA =
-            DATA_COMPONENT_TYPES.register("living_redstone_torch_data", () ->
-                    DataComponentType.<LivingRedstoneTorchData>builder()
-                            .persistent(LivingRedstoneTorchData.CODEC)
-                            .networkSynchronized(LivingRedstoneTorchData.STREAM_CODEC)
-                            .build());
 
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingButtonData>> LIVING_BUTTON_DATA =
-            DATA_COMPONENT_TYPES.register("living_button_data", () ->
-                    DataComponentType.<LivingButtonData>builder()
-                            .persistent(LivingButtonData.CODEC)
-                            .networkSynchronized(LivingButtonData.STREAM_CODEC)
-                            .build());
-
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingLeverData>> LIVING_LEVER_DATA =
-            DATA_COMPONENT_TYPES.register("living_lever_data", () ->
-                    DataComponentType.<LivingLeverData>builder()
-                            .persistent(LivingLeverData.CODEC)
-                            .networkSynchronized(LivingLeverData.STREAM_CODEC)
-                            .build());
-
-    /** 活耕地种植数据（作物类型标记 + 生长阶段 + round-robin 产出状态，客户端渲染数据源） */
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<FarmlandPlantComponent>> FARMLAND_PLANT =
-            DATA_COMPONENT_TYPES.register("farmland_plant", () ->
-                    DataComponentType.<FarmlandPlantComponent>builder()
-                            .persistent(FarmlandPlantComponent.CODEC)
-                            .networkSynchronized(FarmlandPlantComponent.STREAM_CODEC)
-                            .build());
 
     /**
      * 活耕地湿润标志（图标 moist/dry 变体切换数据源）。
@@ -190,81 +65,15 @@ public class LivingItemManager {
      * 参考熔炉燃烧标志 LIVING_FURNACE_BURNING 先例。
      * 派生数据不落盘（仅网络同步）：湿润度每 tick 从流体邻接重算，持久化无正确性价值。
      */
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<Boolean>> LIVING_FARMLAND_MOIST =
-            DATA_COMPONENT_TYPES.register("living_farmland_moist", () ->
-                    DataComponentType.<Boolean>builder()
-                            .networkSynchronized(ByteBufCodecs.BOOL)
-                            .build());
 
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingRedstoneLampData>> LIVING_REDSTONE_LAMP_DATA =
-            DATA_COMPONENT_TYPES.register("living_redstone_lamp_data", () ->
-                    DataComponentType.<LivingRedstoneLampData>builder()
-                            .persistent(LivingRedstoneLampData.CODEC)
-                            .networkSynchronized(LivingRedstoneLampData.STREAM_CODEC)
-                            .build());
 
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingRepeaterData>> LIVING_REPEATER_DATA =
-            DATA_COMPONENT_TYPES.register("living_repeater_data", () ->
-                    DataComponentType.<LivingRepeaterData>builder()
-                            .persistent(LivingRepeaterData.CODEC)
-                            .networkSynchronized(LivingRepeaterData.STREAM_CODEC)
-                            .build());
 
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingComparatorData>> LIVING_COMPARATOR_DATA =
-            DATA_COMPONENT_TYPES.register("living_comparator_data", () ->
-                    DataComponentType.<LivingComparatorData>builder()
-                            .persistent(LivingComparatorData.CODEC)
-                            .networkSynchronized(LivingComparatorData.STREAM_CODEC)
-                            .build());
 
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingCutCopperData>> LIVING_CUT_COPPER_DATA =
-            DATA_COMPONENT_TYPES.register("living_cut_copper_data", () ->
-                    DataComponentType.<LivingCutCopperData>builder()
-                            .persistent(LivingCutCopperData.CODEC)
-                            .networkSynchronized(LivingCutCopperData.STREAM_CODEC)
-                            .build());
 
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingGrateData>> LIVING_GRATE_DATA =
-            DATA_COMPONENT_TYPES.register("living_grate_data", () ->
-                    DataComponentType.<LivingGrateData>builder()
-                            .persistent(LivingGrateData.CODEC)
-                            .networkSynchronized(LivingGrateData.STREAM_CODEC)
-                            .build());
 
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingCopperBulbData>> LIVING_COPPER_BULB_DATA =
-            DATA_COMPONENT_TYPES.register("living_copper_bulb_data", () ->
-                    DataComponentType.<LivingCopperBulbData>builder()
-                            .persistent(LivingCopperBulbData.CODEC)
-                            .networkSynchronized(LivingCopperBulbData.STREAM_CODEC)
-                            .build());
 
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingCopperSignalData>> LIVING_COPPER_SIGNAL =
-            DATA_COMPONENT_TYPES.register("living_copper_signal", () ->
-                    DataComponentType.<LivingCopperSignalData>builder()
-                            .persistent(LivingCopperSignalData.CODEC)
-                            .networkSynchronized(LivingCopperSignalData.STREAM_CODEC)
-                            .build());
 
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<com.qiqi.li.living.domain.power.LivingWaxedChiseledData>> LIVING_WAXED_CHISELED_DATA =
-            DATA_COMPONENT_TYPES.register("living_waxed_chiseled_data", () ->
-                    DataComponentType.<com.qiqi.li.living.domain.power.LivingWaxedChiseledData>builder()
-                            .persistent(com.qiqi.li.living.domain.power.LivingWaxedChiseledData.CODEC)
-                            .networkSynchronized(com.qiqi.li.living.domain.power.LivingWaxedChiseledData.STREAM_CODEC)
-                            .build());
 
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<com.qiqi.li.living.domain.power.LivingWaxedGeneratorData>> LIVING_GENERATOR_DATA =
-            DATA_COMPONENT_TYPES.register("living_generator_data", () ->
-                    DataComponentType.<com.qiqi.li.living.domain.power.LivingWaxedGeneratorData>builder()
-                            .persistent(com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.CODEC)
-                            .networkSynchronized(com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.STREAM_CODEC)
-                            .build());
-
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<com.qiqi.li.living.domain.power.LivingWaxedBulbData>> LIVING_WAXED_BULB_DATA =
-            DATA_COMPONENT_TYPES.register("living_waxed_bulb_data", () ->
-                    DataComponentType.<com.qiqi.li.living.domain.power.LivingWaxedBulbData>builder()
-                            .persistent(com.qiqi.li.living.domain.power.LivingWaxedBulbData.CODEC)
-                            .networkSynchronized(com.qiqi.li.living.domain.power.LivingWaxedBulbData.STREAM_CODEC)
-                            .build());
 
     /**
      * 活工具记忆（挖掘记忆 + 交互记忆）。
@@ -272,24 +81,12 @@ public class LivingItemManager {
      * <p>必须网络同步：客户端要据此<b>本地重算射线</b>来渲染悬浮模型与动画（{@code K30}），
      * 服务端因此无需同步"命中了哪个方块"。</p>
      */
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingToolMemory>> LIVING_TOOL_MEMORY =
-            DATA_COMPONENT_TYPES.register("living_tool_memory", () ->
-                    DataComponentType.<LivingToolMemory>builder()
-                            .persistent(LivingToolMemory.CODEC)
-                            .networkSynchronized(LivingToolMemory.STREAM_CODEC)
-                            .build());
 
     /**
      * 活工具挖掘进度（{@code L21}）：当前正在挖的目标 + 世界轴起始 tick。
      *
      * <p>组件缺失 = 没在挖。只在<b>开始挖时写一次</b>，之后每 tick 重算进度，不写组件。</p>
      */
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingToolProgress>> LIVING_TOOL_PROGRESS =
-            DATA_COMPONENT_TYPES.register("living_tool_progress", () ->
-                    DataComponentType.<LivingToolProgress>builder()
-                            .persistent(LivingToolProgress.CODEC)
-                            .networkSynchronized(LivingToolProgress.STREAM_CODEC)
-                            .build());
 
     /**
      * 活工具<b>挖掘预计总 tick</b>（{@code K} 组动画用，<b>仅网络同步、不落盘</b>）。
@@ -303,23 +100,12 @@ public class LivingItemManager {
      *
      * <p>不 {@code persistent}：纯派生数据，存档重载后会重新算出来。</p>
      */
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<Integer>> LIVING_TOOL_DIG_TICKS =
-            DATA_COMPONENT_TYPES.register("living_tool_dig_ticks", () ->
-                    DataComponentType.<Integer>builder()
-                            .networkSynchronized(ByteBufCodecs.VAR_INT)
-                            .build());
-
     /**
      * 活工具<b>最近一次瞬时动作</b>（{@code K} 组动画用，<b>仅网络同步、不落盘</b>）。
      *
      * <p>见 {@link com.qiqi.li.living.domain.tools.LivingToolAction} —— 交互是瞬时的，
      * 客户端无从得知"刚刚发生了交互"，也拿不到"交互在哪一格"（容器形态起点埋在方块里）。</p>
      */
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingToolAction>> LIVING_TOOL_LAST_ACTION =
-            DATA_COMPONENT_TYPES.register("living_tool_last_action", () ->
-                    DataComponentType.<LivingToolAction>builder()
-                            .networkSynchronized(LivingToolAction.STREAM_CODEC)
-                            .build());
 
     /**
      * 活工具主人 UUID（{@code L25}）。
@@ -336,12 +122,6 @@ public class LivingItemManager {
      *
      * <p>服务端专用，<b>不需要</b>网络同步（客户端不参与回放）。</p>
      */
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<UUID>> LIVING_TOOL_OWNER =
-            DATA_COMPONENT_TYPES.register("living_tool_owner", () ->
-                    DataComponentType.<UUID>builder()
-                            .persistent(UUIDUtil.CODEC)
-                            .build());
-
     private static final List<LivingItemFunction> FUNCTIONS = new ArrayList<>();
     private static final List<LivingItemFunction> FUNCTIONS_VIEW = Collections.unmodifiableList(FUNCTIONS);
     private static final Map<Item, List<LivingItemFunction>> APPLICABLE_CACHE = new ConcurrentHashMap<>();
@@ -387,7 +167,7 @@ public class LivingItemManager {
     }
 
     public static boolean isLivingItem(ItemStack stack) {
-        return !stack.isEmpty() && stack.has(IS_LIVING.value());
+        return !stack.isEmpty() && stack.has(LivingComponents.IS_LIVING.value());
     }
 
     public static boolean isLivingMap(ItemStack stack) {
@@ -431,7 +211,7 @@ public class LivingItemManager {
             return !getApplicableFunctions(stack).isEmpty();
         }
         ItemStack probe = stack.copy();
-        probe.set(IS_LIVING.value(), true);
+        probe.set(LivingComponents.IS_LIVING.value(), true);
         for (LivingItemFunction function : FUNCTIONS) {
             if (function.canApply(probe)) {
                 return true;
@@ -466,7 +246,7 @@ public class LivingItemManager {
      * 以便连带清掉残留的历史数据。
      */
     public static void clearLivingData(ItemStack stack) {
-        stack.remove(IS_LIVING.value());
+        stack.remove(LivingComponents.IS_LIVING.value());
 
         for (LivingItemFunction func : FUNCTIONS) {
             for (DataComponentType<?> type : func.getOwnedComponentTypes()) {
@@ -487,7 +267,7 @@ public class LivingItemManager {
      */
     public static void setLiving(ItemStack stack, boolean living, @Nullable UUID owner) {
         if (living) {
-            stack.set(IS_LIVING.value(), true);
+            stack.set(LivingComponents.IS_LIVING.value(), true);
             if (owner != null) {
                 setToolOwner(stack, owner);
             }
@@ -536,25 +316,9 @@ public class LivingItemManager {
         }
     }
 
-    /**
-     * 便捷方法：获取熔炉数据。
-     */
-    public static LivingFurnaceData getFurnaceData(ItemStack stack) {
-        return getData(stack, LIVING_FURNACE_DATA.value(), LivingFurnaceData.DEFAULT);
-    }
-
-    /**
-     * 便捷方法：设置熔炉数据。
-     */
-    public static void setFurnaceData(ItemStack stack, LivingFurnaceData data) {
-        setData(stack, LIVING_FURNACE_DATA.value(), data, LivingFurnaceData.DEFAULT);
-    }
-
-    /**
-     * 便捷方法：读取熔炉燃烧标志（供图标谓词使用）。
-     */
+    /** 活熔炉是否在燃烧（派生标志，仅网络同步；图标 active/idle 变体数据源）。 */
     public static boolean isFurnaceBurning(ItemStack stack) {
-        Boolean burning = stack.get(LIVING_FURNACE_BURNING.value());
+        Boolean burning = stack.get(LivingComponents.LIVING_FURNACE_BURNING.value());
         return burning != null && burning;
     }
 
@@ -563,312 +327,54 @@ public class LivingItemManager {
      */
     public static void setFurnaceBurning(ItemStack stack, boolean burning) {
         if (burning) {
-            stack.set(LIVING_FURNACE_BURNING.value(), true);
+            stack.set(LivingComponents.LIVING_FURNACE_BURNING.value(), true);
         } else {
-            stack.remove(LIVING_FURNACE_BURNING.value());
+            stack.remove(LivingComponents.LIVING_FURNACE_BURNING.value());
         }
     }
 
     /**
-     * 便捷方法：获取漏斗数据。
-     */
-    public static LivingHopperData getHopperData(ItemStack stack) {
-        return getData(stack, LIVING_HOPPER_DATA.value(), LivingHopperData.DEFAULT);
-    }
-
-    /**
-     * 便捷方法：设置漏斗数据。
-     */
-    public static void setHopperData(ItemStack stack, LivingHopperData data) {
-        setData(stack, LIVING_HOPPER_DATA.value(), data, LivingHopperData.DEFAULT);
-    }
-
-    /**
-     * 便捷方法：读取漏斗过滤链（tooltip 展示用；规则本体由 HopperFilterBuilder 每 tick 派生）。
-     */
-    public static com.qiqi.li.living.transfer.FilterData getHopperFilter(ItemStack stack) {
-        return getData(stack, LIVING_HOPPER_FILTER.value(), com.qiqi.li.living.transfer.FilterData.EMPTY);
-    }
-
-    /**
-     * 便捷方法：写入漏斗过滤链（EMPTY 时移除组件，节省 NBT）。
-     */
-    public static void setHopperFilter(ItemStack stack, com.qiqi.li.living.transfer.FilterData filter) {
-        if (filter == null || filter.equals(com.qiqi.li.living.transfer.FilterData.EMPTY)) {
-            stack.remove(LIVING_HOPPER_FILTER.value());
-        } else {
-            stack.set(LIVING_HOPPER_FILTER.value(), filter);
-        }
-    }
-
-    /**
-     * 便捷方法：获取TNT数据。
-     */
-    public static LivingTntData getTntData(ItemStack stack) {
-        return getData(stack, LIVING_TNT_DATA.value(), LivingTntData.DEFAULT);
-    }
-
-    /**
-     * 便捷方法：设置TNT数据。
-     */
-    public static void setTntData(ItemStack stack, LivingTntData data) {
-        setData(stack, LIVING_TNT_DATA.value(), data, LivingTntData.DEFAULT);
-    }
-
-    /**
-     * 便捷方法：获取水桶数据。
-     */
-    public static LivingWaterBucketData getWaterBucketData(ItemStack stack) {
-        return getData(stack, LIVING_WATER_BUCKET_DATA.value(), LivingWaterBucketData.EMPTY);
-    }
-
-    /**
-     * 便捷方法：设置水桶数据。
-     */
-    public static void setWaterBucketData(ItemStack stack, LivingWaterBucketData data) {
-        setData(stack, LIVING_WATER_BUCKET_DATA.value(), data, LivingWaterBucketData.EMPTY);
-    }
-
-    /**
-     * 便捷方法：获取末影箱数据。
-     */
-    public static LivingEnderChestData getEnderChestData(ItemStack stack) {
-        return getData(stack, LIVING_ENDER_CHEST_DATA.value(), LivingEnderChestData.EMPTY);
-    }
-
-    /**
-     * 便捷方法：设置末影箱数据。
-     */
-    public static void setEnderChestData(ItemStack stack, LivingEnderChestData data) {
-        setData(stack, LIVING_ENDER_CHEST_DATA.value(), data, LivingEnderChestData.EMPTY);
-    }
-
-    public static LivingWaterWheelData getWaterWheelData(ItemStack stack) {
-        return getData(stack, LIVING_WATER_WHEEL_DATA.value(), LivingWaterWheelData.EMPTY);
-    }
-
-    public static void setWaterWheelData(ItemStack stack, LivingWaterWheelData data) {
-        setData(stack, LIVING_WATER_WHEEL_DATA.value(), data, LivingWaterWheelData.EMPTY);
-    }
-
-    public static LivingRedstoneData getRedstoneData(ItemStack stack) {
-        return getData(stack, LIVING_REDSTONE_DATA.value(), LivingRedstoneData.DEFAULT);
-    }
-
-    public static void setRedstoneData(ItemStack stack, LivingRedstoneData data) {
-        setData(stack, LIVING_REDSTONE_DATA.value(), data, LivingRedstoneData.DEFAULT);
-    }
-
-    public static LivingRedstoneTorchData getRedstoneTorchData(ItemStack stack) {
-        return getData(stack, LIVING_REDSTONE_TORCH_DATA.value(), LivingRedstoneTorchData.DEFAULT);
-    }
-
-    public static void setRedstoneTorchData(ItemStack stack, LivingRedstoneTorchData data) {
-        setData(stack, LIVING_REDSTONE_TORCH_DATA.value(), data, LivingRedstoneTorchData.DEFAULT);
-    }
-
-    public static LivingButtonData getButtonData(ItemStack stack) {
-        return getData(stack, LIVING_BUTTON_DATA.value(), LivingButtonData.DEFAULT);
-    }
-
-    public static void setButtonData(ItemStack stack, LivingButtonData data) {
-        setData(stack, LIVING_BUTTON_DATA.value(), data, LivingButtonData.DEFAULT);
-    }
-
-    public static LivingLeverData getLeverData(ItemStack stack) {
-        return getData(stack, LIVING_LEVER_DATA.value(), LivingLeverData.DEFAULT);
-    }
-
-    public static void setLeverData(ItemStack stack, LivingLeverData data) {
-        setData(stack, LIVING_LEVER_DATA.value(), data, LivingLeverData.DEFAULT);
-    }
-
-    public static FarmlandPlantComponent getFarmlandPlant(ItemStack stack) {
-        return getData(stack, FARMLAND_PLANT.value(), FarmlandPlantComponent.DEFAULT);
-    }
-
-    public static void setFarmlandPlant(ItemStack stack, FarmlandPlantComponent data) {
-        setData(stack, FARMLAND_PLANT.value(), data, FarmlandPlantComponent.DEFAULT);
-    }
-
-    /** 便捷方法：获取活工具记忆（挖掘记忆 + 交互记忆）。 */
-    public static LivingToolMemory getToolMemory(ItemStack stack) {
-        return getData(stack, LIVING_TOOL_MEMORY.value(), LivingToolMemory.DEFAULT);
-    }
-
-    /** 便捷方法：设置活工具记忆（等于 DEFAULT 即无记忆时自动移除组件）。 */
-    public static void setToolMemory(ItemStack stack, LivingToolMemory memory) {
-        setData(stack, LIVING_TOOL_MEMORY.value(), memory, LivingToolMemory.DEFAULT);
-    }
-
-    /** 便捷方法：获取活工具挖掘进度；<b>null = 当前没在挖</b>。 */
-    @Nullable
-    public static LivingToolProgress getToolProgress(ItemStack stack) {
-        return stack.get(LIVING_TOOL_PROGRESS.value());
-    }
-
-    /** 便捷方法：写入活工具挖掘进度（null 表示清除，即停止挖掘）。 */
-    public static void setToolProgress(ItemStack stack, @Nullable LivingToolProgress progress) {
-        if (progress == null) {
-            stack.remove(LIVING_TOOL_PROGRESS.value());
-        } else {
-            stack.set(LIVING_TOOL_PROGRESS.value(), progress);
-        }
-    }
-
-    /**
-     * 便捷方法：获取挖掘预计总 tick（{@code K} 组动画用）。
+     * 挖掘预计总 tick（{@code K} 组动画用）。
      *
      * @return 预计 tick 数；{@code null} = 未知（用默认转速）
      */
-    @Nullable
     public static Integer getToolDigTicks(ItemStack stack) {
-        return stack.get(LIVING_TOOL_DIG_TICKS.value());
+        return stack.get(LivingComponents.LIVING_TOOL_DIG_TICKS.value());
     }
 
     /** 便捷方法：写入挖掘预计总 tick（null = 清除）。 */
     public static void setToolDigTicks(ItemStack stack, @Nullable Integer ticks) {
         if (ticks == null) {
-            stack.remove(LIVING_TOOL_DIG_TICKS.value());
+            stack.remove(LivingComponents.LIVING_TOOL_DIG_TICKS.value());
         } else {
-            stack.set(LIVING_TOOL_DIG_TICKS.value(), ticks);
+            stack.set(LivingComponents.LIVING_TOOL_DIG_TICKS.value(), ticks);
         }
     }
 
     /**
-     * 便捷方法：获取最近一次瞬时动作（{@code K} 组动画用）。
-     *
-     * @return 动作记录；{@code null} = 从没发生过
-     */
-    @Nullable
-    public static LivingToolAction getToolLastAction(ItemStack stack) {
-        return stack.get(LIVING_TOOL_LAST_ACTION.value());
-    }
-
-    /** 便捷方法：写入最近一次瞬时动作（null = 清除）。 */
-    public static void setToolLastAction(ItemStack stack, @Nullable LivingToolAction action) {
-        if (action == null) {
-            stack.remove(LIVING_TOOL_LAST_ACTION.value());
-        } else {
-            stack.set(LIVING_TOOL_LAST_ACTION.value(), action);
-        }
-    }
-
-    /**
-     * 便捷方法：获取活工具主人 UUID。
-     *
-     * @return 主人 UUID；<b>null 表示无主人</b>（未记录 / 自动活化），
-     *         调用方应回退到通用 FakePlayer
+     * 活工具主人 UUID（A2 建立绑定；null = 无主）。
      */
     @Nullable
     public static UUID getToolOwner(ItemStack stack) {
-        return stack.get(LIVING_TOOL_OWNER.value());
+        return stack.get(LivingComponents.LIVING_TOOL_OWNER.value());
     }
 
     /** 便捷方法：写入活工具主人 UUID（null 表示清除）。 */
     public static void setToolOwner(ItemStack stack, @Nullable UUID owner) {
         if (owner == null) {
-            stack.remove(LIVING_TOOL_OWNER.value());
+            stack.remove(LivingComponents.LIVING_TOOL_OWNER.value());
         } else {
-            stack.set(LIVING_TOOL_OWNER.value(), owner);
+            stack.set(LivingComponents.LIVING_TOOL_OWNER.value(), owner);
         }
     }
 
     /** 活耕地湿润标志（未打标志 = 干燥；图标 moist/dry 变体切换数据源） */
     public static boolean isFarmlandMoist(ItemStack stack) {
-        return getData(stack, LIVING_FARMLAND_MOIST.value(), Boolean.FALSE);
+        return getData(stack, LivingComponents.LIVING_FARMLAND_MOIST.value(), Boolean.FALSE);
     }
 
     public static void setFarmlandMoist(ItemStack stack, boolean moist) {
-        setData(stack, LIVING_FARMLAND_MOIST.value(), moist, Boolean.FALSE);
+        setData(stack, LivingComponents.LIVING_FARMLAND_MOIST.value(), moist, Boolean.FALSE);
     }
 
-    public static LivingRedstoneLampData getLampData(ItemStack stack) {
-        return getData(stack, LIVING_REDSTONE_LAMP_DATA.value(), LivingRedstoneLampData.DEFAULT);
-    }
-
-    public static void setLampData(ItemStack stack, LivingRedstoneLampData data) {
-        setData(stack, LIVING_REDSTONE_LAMP_DATA.value(), data, LivingRedstoneLampData.DEFAULT);
-    }
-
-    public static LivingRepeaterData getRepeaterData(ItemStack stack) {
-        return getData(stack, LIVING_REPEATER_DATA.value(), LivingRepeaterData.DEFAULT);
-    }
-
-    public static void setRepeaterData(ItemStack stack, LivingRepeaterData data) {
-        setData(stack, LIVING_REPEATER_DATA.value(), data, LivingRepeaterData.DEFAULT);
-    }
-
-    public static LivingComparatorData getComparatorData(ItemStack stack) {
-        return getData(stack, LIVING_COMPARATOR_DATA.value(), LivingComparatorData.DEFAULT);
-    }
-
-    public static void setComparatorData(ItemStack stack, LivingComparatorData data) {
-        setData(stack, LIVING_COMPARATOR_DATA.value(), data, LivingComparatorData.DEFAULT);
-    }
-
-    public static LivingCutCopperData getCutCopperData(ItemStack stack) {
-        return getData(stack, LIVING_CUT_COPPER_DATA.value(), LivingCutCopperData.DEFAULT);
-    }
-
-    public static void setCutCopperData(ItemStack stack, LivingCutCopperData data) {
-        setData(stack, LIVING_CUT_COPPER_DATA.value(), data, LivingCutCopperData.DEFAULT);
-    }
-
-    public static LivingGrateData getGrateData(ItemStack stack) {
-        return getData(stack, LIVING_GRATE_DATA.value(), LivingGrateData.DEFAULT);
-    }
-
-    public static com.qiqi.li.living.domain.power.LivingWaxedChiseledData getWaxedChiseledData(ItemStack stack) {
-        return getData(stack, LIVING_WAXED_CHISELED_DATA.value(),
-                com.qiqi.li.living.domain.power.LivingWaxedChiseledData.DEFAULT);
-    }
-
-    public static void setWaxedChiseledData(ItemStack stack,
-                                            com.qiqi.li.living.domain.power.LivingWaxedChiseledData data) {
-        setData(stack, LIVING_WAXED_CHISELED_DATA.value(), data,
-                com.qiqi.li.living.domain.power.LivingWaxedChiseledData.DEFAULT);
-    }
-
-    public static com.qiqi.li.living.domain.power.LivingWaxedGeneratorData getGeneratorData(ItemStack stack) {
-        return getData(stack, LIVING_GENERATOR_DATA.value(),
-                com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.DEFAULT);
-    }
-
-    public static void setGeneratorData(ItemStack stack,
-                                        com.qiqi.li.living.domain.power.LivingWaxedGeneratorData data) {
-        setData(stack, LIVING_GENERATOR_DATA.value(), data,
-                com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.DEFAULT);
-    }
-
-    public static com.qiqi.li.living.domain.power.LivingWaxedBulbData getWaxedBulbData(ItemStack stack) {
-        return getData(stack, LIVING_WAXED_BULB_DATA.value(),
-                com.qiqi.li.living.domain.power.LivingWaxedBulbData.DEFAULT);
-    }
-
-    public static void setWaxedBulbData(ItemStack stack,
-                                        com.qiqi.li.living.domain.power.LivingWaxedBulbData data) {
-        setData(stack, LIVING_WAXED_BULB_DATA.value(), data,
-                com.qiqi.li.living.domain.power.LivingWaxedBulbData.DEFAULT);
-    }
-
-    public static void setGrateData(ItemStack stack, LivingGrateData data) {
-        setData(stack, LIVING_GRATE_DATA.value(), data, LivingGrateData.DEFAULT);
-    }
-
-    public static LivingCopperBulbData getCopperBulbData(ItemStack stack) {
-        return getData(stack, LIVING_COPPER_BULB_DATA.value(), LivingCopperBulbData.DEFAULT);
-    }
-
-    public static void setCopperBulbData(ItemStack stack, LivingCopperBulbData data) {
-        setData(stack, LIVING_COPPER_BULB_DATA.value(), data, LivingCopperBulbData.DEFAULT);
-    }
-
-    public static LivingCopperSignalData getCopperSignal(ItemStack stack) {
-        return getData(stack, LIVING_COPPER_SIGNAL.value(), LivingCopperSignalData.DEFAULT);
-    }
-
-    public static void setCopperSignal(ItemStack stack, LivingCopperSignalData data) {
-        setData(stack, LIVING_COPPER_SIGNAL.value(), data, LivingCopperSignalData.DEFAULT);
-    }
 }

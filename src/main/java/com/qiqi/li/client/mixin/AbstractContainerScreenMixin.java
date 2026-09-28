@@ -1,4 +1,5 @@
 package com.qiqi.li.client.mixin;
+import com.qiqi.li.living.domain.farmland.FarmlandPlantComponent;
 
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
@@ -554,7 +555,7 @@ public class AbstractContainerScreenMixin extends Screen {
             if (stack.isEmpty()) continue;
             if (!LivingWaterBucketFunction.isLivingWaterBucket(stack)) continue;
 
-            LivingWaterBucketData bucketData = LivingItemManager.getWaterBucketData(stack);
+            LivingWaterBucketData bucketData = LivingWaterBucketData.of(stack);
             WaterData water = bucketData.water();
             if (water.equals(WaterData.EMPTY)) continue;
 
@@ -713,7 +714,7 @@ public class AbstractContainerScreenMixin extends Screen {
             if (!LivingItemManager.isLivingItem(stack)) continue;
 
             com.qiqi.li.living.domain.farmland.FarmlandPlantComponent plant =
-                LivingItemManager.getFarmlandPlant(stack);
+                FarmlandPlantComponent.of(stack);
             if (!plant.isPlanted()) continue;
 
             net.minecraft.world.level.block.Block cropBlock =

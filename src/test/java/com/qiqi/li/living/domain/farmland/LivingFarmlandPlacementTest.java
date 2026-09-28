@@ -1,4 +1,5 @@
 package com.qiqi.li.living.domain.farmland;
+import com.qiqi.li.living.domain.farmland.FarmlandPlantComponent;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -50,7 +51,7 @@ class LivingFarmlandPlacementTest {
     private static ItemStack plantedLivingFarmland() {
         ItemStack stack = new ItemStack(Items.FARMLAND, 1);
         LivingItemManager.setLiving(stack, true);
-        LivingItemManager.setFarmlandPlant(stack, new FarmlandPlantComponent(
+        FarmlandPlantComponent.set(stack, new FarmlandPlantComponent(
             Items.WHEAT_SEEDS, 5, 7, 0L, -1, List.of()));
         return stack;
     }
@@ -105,7 +106,7 @@ class LivingFarmlandPlacementTest {
 
         ItemStack livingDirt = new ItemStack(Items.DIRT, 1);
         LivingItemManager.setLiving(livingDirt, true);
-        LivingItemManager.setFarmlandPlant(livingDirt, new FarmlandPlantComponent(
+        FarmlandPlantComponent.set(livingDirt, new FarmlandPlantComponent(
             Items.WHEAT_SEEDS, 5, 7, 0L, -1, List.of()));
         assertFalse(LivingFarmlandPlacement.isPlantable(livingDirt),
             "非耕地（即使带种植组件）→ false");

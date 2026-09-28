@@ -27,6 +27,8 @@ import com.qiqi.li.living.domain.map.LivingMapFunction;
 import com.qiqi.li.living.domain.power.LivingWaxedCopperFunction;
 import com.qiqi.li.living.domain.redstone.LivingButtonFunction;
 import com.qiqi.li.living.domain.redstone.LivingComparatorFunction;
+import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.transfer.LivingComponents;
 import com.qiqi.li.living.domain.redstone.LivingCopperFunction;
 import com.qiqi.li.living.domain.redstone.LivingLeverFunction;
 import com.qiqi.li.living.domain.redstone.LivingRedstoneBlockFunction;
@@ -105,20 +107,28 @@ class ComponentOwnershipTest {
         );
     }
 
-    /** 反射取 {@code LivingItemManager} 里所有 DataComponent，字段名作为可读标识。 */
+    /**
+     * 反射取所有 DataComponent，字段名作为可读标识。
+     *
+     * <p>A1 迁移后组件常量分居两处：内容组件在 {@code LivingComponents}（注册站）、
+     * 框架级原始类型组件（IS_LIVING / 工具 owner 等）在 {@code LivingItemManager} ——
+     * 两处都枚举，AttachmentType 会被 {@code instanceof DataComponentType} 自动过滤。</p>
+     */
     private static Map<DataComponentType<?>, String> componentTypes() {
         Map<DataComponentType<?>, String> out = new LinkedHashMap<>();
-        for (Field f : LivingItemManager.class.getFields()) {
-            if (!Modifier.isStatic(f.getModifiers()) || f.getType() != DeferredHolder.class) {
-                continue;
-            }
-            try {
-                if (f.get(null) instanceof DeferredHolder<?, ?> holder
-                        && holder.get() instanceof DataComponentType<?> type) {
-                    out.put(type, f.getName());
+        for (Class<?> holder : List.of(LivingComponents.class, LivingItemManager.class)) {
+            for (Field f : holder.getFields()) {
+                if (!Modifier.isStatic(f.getModifiers()) || f.getType() != DeferredHolder.class) {
+                    continue;
                 }
-            } catch (IllegalAccessException e) {
-                fail("无法读取 LivingItemManager." + f.getName() + ": " + e);
+                try {
+                    if (f.get(null) instanceof DeferredHolder<?, ?> h
+                            && h.get() instanceof DataComponentType<?> type) {
+                        out.put(type, f.getName());
+                    }
+                } catch (IllegalAccessException e) {
+                    fail("无法读取 " + holder.getSimpleName() + "." + f.getName() + ": " + e);
+                }
             }
         }
         return out;
@@ -183,9 +193,9 @@ class ComponentOwnershipTest {
 
         LivingItemManager.setLiving(stack, false);
 
-        assertFalse(stack.has(LivingItemManager.LIVING_FURNACE_BURNING.value()),
+        assertFalse(stack.has(LivingComponents.LIVING_FURNACE_BURNING.value()),
             "LIVING_FURNACE_BURNING 已由 LivingFurnaceFunction 声明，取消活化时应当被清除");
-        assertFalse(stack.has(LivingItemManager.IS_LIVING.value()),
+        assertFalse(stack.has(LivingComponents.IS_LIVING.value()),
             "IS_LIVING 属框架本身，取消活化时必须被清除");
     }
 }

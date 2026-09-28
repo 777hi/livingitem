@@ -173,6 +173,6 @@ public class LivingItemClient {
                 }
             }
         }
-        return LivingItemManager.getGeneratorData(stack);
+        return LivingWaxedGeneratorData.of(stack);
     }
 }

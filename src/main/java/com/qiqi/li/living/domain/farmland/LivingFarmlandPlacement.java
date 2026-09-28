@@ -1,4 +1,5 @@
 package com.qiqi.li.living.domain.farmland;
+import com.qiqi.li.living.domain.farmland.FarmlandPlantComponent;
 
 import javax.annotation.Nullable;
 
@@ -52,7 +53,7 @@ public final class LivingFarmlandPlacement {
     public static boolean isPlantable(ItemStack stack) {
         return stack.is(Items.FARMLAND)
             && LivingItemManager.isLivingItem(stack)
-            && LivingItemManager.getFarmlandPlant(stack).isPlanted();
+            && FarmlandPlantComponent.of(stack).isPlanted();
     }
 
     /**
@@ -72,7 +73,7 @@ public final class LivingFarmlandPlacement {
         if (level.isClientSide()) return;               // 客户端也跑 place，只在服务端生效
         if (!isPlantable(farmlandStack)) return;
         try {
-            FarmlandPlantComponent plant = LivingItemManager.getFarmlandPlant(farmlandStack);
+            FarmlandPlantComponent plant = FarmlandPlantComponent.of(farmlandStack);
             // cropSeed 非空由 isPlantable() 的 isPlanted() 保证
             ItemStack seed = new ItemStack(plant.cropSeed());
             BlockHitResult hit = new BlockHitResult(
