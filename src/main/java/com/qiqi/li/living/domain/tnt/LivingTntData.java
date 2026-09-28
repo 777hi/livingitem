@@ -12,7 +12,9 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.component.TooltipProvider;
+import org.jetbrains.annotations.ApiStatus;
 
+@ApiStatus.Internal
 public record LivingTntData(ExplosionData explosion) implements TooltipProvider {
 
     public static final LivingTntData DEFAULT = new LivingTntData(ExplosionData.DEFAULT);

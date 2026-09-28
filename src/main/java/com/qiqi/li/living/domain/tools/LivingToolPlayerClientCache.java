@@ -6,6 +6,7 @@ import java.util.UUID;
 import com.qiqi.li.network.LivingToolPlayerPacket;
 
 import net.minecraft.resources.ResourceLocation;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 客户端「附近玩家背包里的活工具」缓存（联机可见性 · 最小版）。
@@ -23,6 +24,7 @@ import net.minecraft.resources.ResourceLocation;
  * <p>⚠️ 网络包在 Netty 线程解码、渲染在主线程 —— 故字段用 {@code volatile}
  * 且写入不可变 {@code List}。</p>
  */
+@ApiStatus.Internal
 public final class LivingToolPlayerClientCache {
 
     private static volatile ResourceLocation dimension;

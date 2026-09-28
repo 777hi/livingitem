@@ -26,6 +26,7 @@ import org.slf4j.Logger;
 import javax.annotation.Nullable;
 import java.util.Set;
 import java.util.UUID;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活末影箱槽位访问器 —— 支持直连模式与两种路由模式。
@@ -64,6 +65,7 @@ import java.util.UUID;
  * 路由模式（含专属频道）的 {@code filterData} 用于路由表预过滤（{@code registry.peek()}），
  * 避免提取不匹配的物品类型 —— <b>必须保留，不可置空</b>。</p>
  */
+@ApiStatus.Internal
 public class LivingEnderChestAccessor implements SlotAccessor {
 
     private static final Logger LOGGER = LogUtils.getLogger();

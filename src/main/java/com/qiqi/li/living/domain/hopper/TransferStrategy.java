@@ -3,6 +3,7 @@ package com.qiqi.li.living.domain.hopper;
 import java.util.List;
 import com.qiqi.li.living.model.Pos2D;
 import com.qiqi.li.living.model.SlotMapping;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 传输策略接口 —— 定义活物品的物品传输路径。
@@ -26,6 +27,7 @@ import com.qiqi.li.living.model.SlotMapping;
  * TransferStrategy.collect(List.of(LEFT, RIGHT), Pos2D.DOWN);  // 汇聚
  * </pre>
  */
+@ApiStatus.Internal
 public interface TransferStrategy {
 
     /**

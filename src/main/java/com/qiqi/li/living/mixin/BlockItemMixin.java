@@ -8,6 +8,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活耕地「放置回世界」：放置已种植的活耕地后，把物品自带的作物种到耕地之上。
@@ -26,6 +27,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * {@link LivingFarmlandPlacement#onPlaced} 内（保持无状态）。</p>
  */
 @Mixin(BlockItem.class)
+@ApiStatus.Internal
 public abstract class BlockItemMixin {
 
     @Inject(method = "place(Lnet/minecraft/world/item/context/BlockPlaceContext;)Lnet/minecraft/world/InteractionResult;",

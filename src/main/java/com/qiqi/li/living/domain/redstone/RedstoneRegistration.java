@@ -7,6 +7,7 @@ import com.qiqi.li.living.interaction.ComparatorToggleHandler;
 import com.qiqi.li.living.interaction.InteractionRegistry;
 import com.qiqi.li.living.interaction.LeverToggleHandler;
 import com.qiqi.li.living.interaction.RepeaterCycleHandler;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 红石域注册入口 —— 本领域的 Function / 交互规则 / 交互处理器 / 快照贡献者。
@@ -21,6 +22,7 @@ import com.qiqi.li.living.interaction.RepeaterCycleHandler;
  *
  * <p>由 {@code LivingItem#commonSetup} 调用一次。
  */
+@ApiStatus.Internal
 public final class RedstoneRegistration {
 
     private RedstoneRegistration() {}

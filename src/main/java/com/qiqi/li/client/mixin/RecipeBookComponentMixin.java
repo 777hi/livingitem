@@ -38,6 +38,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.ArrayList;
 import java.util.List;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 配方书组件 (RecipeBookComponent) 的 Mixin 类
@@ -85,6 +86,7 @@ import java.util.List;
  */
 @OnlyIn(Dist.CLIENT)
 @Mixin(RecipeBookComponent.class)
+@ApiStatus.Internal
 public abstract class RecipeBookComponentMixin {
 
     // ==================== Shadow 字段（访问原类私有成员） ====================

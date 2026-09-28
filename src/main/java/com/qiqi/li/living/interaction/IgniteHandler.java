@@ -7,6 +7,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.domain.tnt.ExplosionComponent;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 点燃交互处理器 —— 处理活打火石右键活TNT的交互。
@@ -17,6 +18,7 @@ import com.qiqi.li.living.domain.tnt.ExplosionComponent;
  *   - 调用 ExplosionComponent.startFuseOnStack() 启动引信倒计时
  *   - 同步菜单数据到客户端
  */
+@ApiStatus.Internal
 public class IgniteHandler implements InteractionHandler {
 
     @Override

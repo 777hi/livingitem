@@ -28,6 +28,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活物品图标注册中心，统一管理所有活物品的图标配置和模型注入。
@@ -47,6 +48,7 @@ import java.util.Set;
  *     .build());
  * </pre>
  */
+@ApiStatus.Internal
 public final class LivingIconRegistry {
 
     private static final List<LivingIconSpec> SPECS = new ArrayList<>();

@@ -1,5 +1,7 @@
 package com.qiqi.li.living.domain.power;
 
+import org.jetbrains.annotations.ApiStatus;
+
 /**
  * 派生相位 —— 相位元件解读出的「驻波」条目（v19 相位解读三元件）。
  *
@@ -21,6 +23,7 @@ package com.qiqi.li.living.domain.power;
  * @param kind        解读形态（KIND_*）
  * @param updatedTick 最近一次派生 tick（活性判定：停更超过存活窗口即熄灭修剪）
  */
+@ApiStatus.Internal
 public record DerivedPhase(int period, int offset, int delta, int kind, long updatedTick) {
 
     public static final int KIND_SHIFT = 0;

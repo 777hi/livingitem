@@ -1,6 +1,7 @@
 package com.qiqi.li.client.mixinsupport;
 
 import net.minecraft.resources.ResourceLocation;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 可变贴图精灵按钮接口 —— 提供 setSprite 方法。
@@ -16,6 +17,7 @@ import net.minecraft.resources.ResourceLocation;
  * @see com.qiqi.li.client.mixin.SpriteIconButtonMixin Mixin 实现
  * @see com.qiqi.li.client.gui.LivingButton 使用方
  */
+@ApiStatus.Internal
 public interface MutableSpriteSpriteIconButton {
     void setSprite(ResourceLocation location);
 }

@@ -21,6 +21,7 @@ import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.saveddata.SavedData;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 待炸账本 —— 「未观测的地形变更推迟到观测时」（原版 TNT 引信模型的**爆炸范围**版本）。
@@ -50,6 +51,7 @@ import net.minecraft.world.level.saveddata.SavedData;
  *       主线程不在任何区块任务内部。</li>
  * </ol>
  */
+@ApiStatus.Internal
 public class ExplosionLedger extends SavedData {
 
     /** 存档内的数据名。 */

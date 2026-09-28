@@ -12,6 +12,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.client.model.data.ModelData;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 容器 GUI 内「把方块模型当图标画」的统一入口。
@@ -34,6 +35,7 @@ import org.slf4j.LoggerFactory;
  *
  * @see com.qiqi.li.client.icon.GenericContextAwareModel#usesBlockLight()
  */
+@ApiStatus.Internal
 public final class LivingIconRenderHelper {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("LivingItem/IconRender");

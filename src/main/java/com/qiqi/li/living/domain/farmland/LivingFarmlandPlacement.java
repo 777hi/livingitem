@@ -18,6 +18,7 @@ import net.minecraft.world.phys.Vec3;
 import org.slf4j.Logger;
 
 import com.qiqi.li.living.api.LivingItemManager;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活耕地「放置回世界」——放置已种植的活耕地时，把物品自带的作物种到耕地之上。
@@ -38,6 +39,7 @@ import com.qiqi.li.living.api.LivingItemManager;
  *
  * @see com.qiqi.li.living.mixin.BlockItemMixin 调用点
  */
+@ApiStatus.Internal
 public final class LivingFarmlandPlacement {
 
     private static final Logger LOGGER = LogUtils.getLogger();

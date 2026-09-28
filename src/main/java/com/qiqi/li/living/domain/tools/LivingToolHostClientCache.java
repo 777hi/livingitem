@@ -5,6 +5,7 @@ import java.util.List;
 import com.qiqi.li.network.LivingToolHostPacket;
 
 import net.minecraft.resources.ResourceLocation;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 客户端「哪些容器里有活工具」缓存（{@code K2}）。
@@ -23,6 +24,7 @@ import net.minecraft.resources.ResourceLocation;
  * <p>⚠️ 网络包在 Netty 线程解码、渲染在主线程 —— 故字段用 {@code volatile}
  * 且写入不可变 {@code List}。</p>
  */
+@ApiStatus.Internal
 public final class LivingToolHostClientCache {
 
     private static volatile ResourceLocation dimension;

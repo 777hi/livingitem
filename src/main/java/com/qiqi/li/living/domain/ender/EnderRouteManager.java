@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import java.util.UUID;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.transfer.SlotAccessor;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活末影箱路由管理器 —— 统一所有末影箱路由决策逻辑。
@@ -40,6 +41,7 @@ import com.qiqi.li.living.transfer.SlotAccessor;
  *   <li>{@link Decision#HANDLED} —— 已处理（路由注册或直连传输完成），调用方无需再操作</li>
  * </ul>
  */
+@ApiStatus.Internal
 public final class EnderRouteManager {
 
     private static final Logger LOGGER = LogUtils.getLogger();

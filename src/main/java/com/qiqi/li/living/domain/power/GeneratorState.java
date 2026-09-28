@@ -1,5 +1,7 @@
 package com.qiqi.li.living.domain.power;
 
+import org.jetbrains.annotations.ApiStatus;
+
 /**
  * 单台发电机的发电状态（按槽位索引）。
  *
@@ -13,6 +15,7 @@ package com.qiqi.li.living.domain.power;
  * 相位解读元件」重构退役——同周期偏移本就归同一个相位域，裂相相位进同一通道；
  * 通道重新回归单实例。</p>
  */
+@ApiStatus.Internal
 public class GeneratorState {
 
     /** EMA 平滑系数（约 8 tick 记忆） */

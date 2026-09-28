@@ -1,5 +1,8 @@
 package com.qiqi.li.client.icon;
 
+import org.jetbrains.annotations.ApiStatus;
+
+@ApiStatus.Internal
 public class WaterWheelRenderState {
 
     private static final ThreadLocal<Float> RPM = new ThreadLocal<>();

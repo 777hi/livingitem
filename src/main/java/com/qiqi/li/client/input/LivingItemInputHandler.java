@@ -27,6 +27,7 @@ import com.qiqi.li.network.ToolMemoryClearPacket;
 import com.qiqi.li.living.domain.tools.LivingToolMemory;
 import com.qiqi.li.living.domain.tools.LivingToolRecorder;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活物品客户端输入处理器 —— 处理 WASD 键入配置活漏斗传输方向。
@@ -60,6 +61,7 @@ import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
  * → HopperDirectionPacket → 服务端 ServerPacketHandler
  */
 @EventBusSubscriber(modid = LivingItem.MOD_ID, value = net.neoforged.api.distmarker.Dist.CLIENT)
+@ApiStatus.Internal
 public class LivingItemInputHandler {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(LivingItemInputHandler.class);

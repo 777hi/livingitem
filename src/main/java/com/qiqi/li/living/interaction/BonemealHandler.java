@@ -9,6 +9,7 @@ import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.domain.farmland.CropClassifier;
 import com.qiqi.li.living.domain.farmland.FarmlandPlantComponent;
 import com.qiqi.li.living.domain.farmland.LivingFarmlandFunction;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活骨粉右键活耕地 → 强制触发一次生长 tick。
@@ -21,6 +22,7 @@ import com.qiqi.li.living.domain.farmland.LivingFarmlandFunction;
  * 冻结实³战利品表（输出阶段每 tick 自动运输，下个 tick 送达生长槽）。
  * 组件无实际变化（如已冻结的成熟耕地重复右键）不消耗骨粉。</p>
  */
+@ApiStatus.Internal
 public class BonemealHandler implements InteractionHandler {
 
     @Override

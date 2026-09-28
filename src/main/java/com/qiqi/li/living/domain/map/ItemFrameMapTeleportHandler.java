@@ -17,7 +17,9 @@ import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
+import org.jetbrains.annotations.ApiStatus;
 
+@ApiStatus.Internal
 public final class ItemFrameMapTeleportHandler {
 
     private ItemFrameMapTeleportHandler() {}

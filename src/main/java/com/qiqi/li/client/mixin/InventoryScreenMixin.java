@@ -21,6 +21,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 生存模式背包界面Mixin，处理活物品GUI交互。
@@ -30,6 +31,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  *   匹配到交互规则时取消原版点击行为并发送网络包。
  */
 @Mixin(InventoryScreen.class)
+@ApiStatus.Internal
 public abstract class InventoryScreenMixin extends EffectRenderingInventoryScreen<InventoryMenu> {
     public InventoryScreenMixin(InventoryMenu menu, Inventory playerInventory, Component title) {
         super(menu, playerInventory, title);

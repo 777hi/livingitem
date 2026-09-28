@@ -12,6 +12,7 @@ import com.mojang.math.Axis;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.client.IItemDecorator;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活雕文铜块的物品装饰器，在物品栏中叠加旋转后的输入/输出方向箭头。
@@ -30,6 +31,7 @@ import net.neoforged.neoforge.client.IItemDecorator;
  * 3. 输出箭头（由本 Decorator 叠加，旋转后）
  * </pre>
  */
+@ApiStatus.Internal
 public class LivingChiseledCopperDecorator implements IItemDecorator {
 
     private static final ResourceLocation ARROW_IN = ResourceLocation.fromNamespaceAndPath(LivingItem.MOD_ID, "textures/item/chiseled_copper_input.png");

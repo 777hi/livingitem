@@ -2,6 +2,7 @@ package com.qiqi.li.living.domain.tnt;
 
 import net.minecraft.core.SectionPos;
 import net.minecraft.world.level.ChunkPos;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 一次爆炸的完整参数 —— 可序列化进待炸账本，也可用于**逐区块**应用。
@@ -22,6 +23,7 @@ import net.minecraft.world.level.ChunkPos;
  * @param mode         破坏方式
  * @param vanillaDrops 仅 {@link Mode#NORMAL} 有意义：true = 原版衰减掉落，false = 100% 掉落
  */
+@ApiStatus.Internal
 public record ExplosionParams(double centerX, double centerY, double centerZ,
                               double radius, Mode mode, boolean vanillaDrops) {
 

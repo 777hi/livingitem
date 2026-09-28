@@ -7,7 +7,9 @@ import net.minecraft.world.item.ItemStack;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import org.jetbrains.annotations.ApiStatus;
 
+@ApiStatus.Internal
 public final class MapUpdateSkipHelper {
 
     private static final int SKIP_TICKS = 40;

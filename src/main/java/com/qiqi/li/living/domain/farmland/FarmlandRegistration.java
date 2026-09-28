@@ -6,6 +6,7 @@ import com.qiqi.li.living.interaction.InteractionPredicates;
 import com.qiqi.li.living.interaction.InteractionRegistry;
 import com.qiqi.li.living.interaction.PlantCropHandler;
 import com.qiqi.li.living.interaction.TillToFarmlandHandler;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活耕地域注册入口 —— 见 {@code RedstoneRegistration} 的类注释了解为何有这个类（A1）。
@@ -14,6 +15,7 @@ import com.qiqi.li.living.interaction.TillToFarmlandHandler;
  * （{@code Tillables::canTillWith} 按 HOE_TILL 能力识别锄头、
  * {@code PlantCropHandler::canPlantWith} 收窄到「可种植种子」）⇒ 模组工具自动兼容。
  */
+@ApiStatus.Internal
 public final class FarmlandRegistration {
 
     private FarmlandRegistration() {}

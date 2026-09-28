@@ -8,6 +8,7 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 清除活工具 / 活武器记忆（C2S）—— 手持时<b>左键空气</b>由客户端发起。
@@ -23,6 +24,7 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
  *
  * @param kind 见 {@link #KIND_DIG} / {@link #KIND_USE} / {@link #KIND_ATTACK}
  */
+@ApiStatus.Internal
 public record ToolMemoryClearPacket(int kind) implements CustomPacketPayload {
 
     /** 清除<b>挖掘</b>记忆（左键）。 */

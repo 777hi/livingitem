@@ -10,6 +10,7 @@ import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.neoforged.neoforge.client.IItemDecorator;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活耕地种子图标装饰器 —— 在耕地槽叠加所种作物的**种子物品图标**（一眼区分作物类型）。
@@ -45,6 +46,7 @@ import net.neoforged.neoforge.client.IItemDecorator;
  * {@code AbstractContainerScreenMixin}：它需要「同容器正上方一格槽位」的邻居关系，
  * 而装饰器只拿得到 {@code xOffset/yOffset}、拿不到容器槽表，快捷栏也没有该结构。</p>
  */
+@ApiStatus.Internal
 public class LivingFarmlandSeedDecorator implements IItemDecorator {
 
     /** 相对槽位 pose 的抬升量，对齐既有装饰器约定（容器净 300 / 快捷栏净 200） */

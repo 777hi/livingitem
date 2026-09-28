@@ -32,7 +32,9 @@ import com.qiqi.li.living.domain.furnace.TransformData;
 import com.qiqi.li.living.domain.runtime.ContainerRuntimeCache;
 import com.qiqi.li.living.domain.runtime.LivingItemRuntimeData;
 import com.qiqi.li.living.domain.runtime.LivingItemClientCache;
+import org.jetbrains.annotations.ApiStatus;
 
+@ApiStatus.Internal
 public class LivingFurnaceFunction implements LivingItemFunction, HasDirection {
 
     public static final String ID = "living_furnace";

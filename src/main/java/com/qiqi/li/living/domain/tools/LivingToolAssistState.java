@@ -3,6 +3,7 @@ package com.qiqi.li.living.domain.tools;
 import javax.annotation.Nullable;
 
 import net.minecraft.core.BlockPos;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 客户端的「辅助挖掘进行中」状态（{@code A3} 模型的挖掘环用）。
@@ -14,6 +15,7 @@ import net.minecraft.core.BlockPos;
  * <p>⚠️ 只放<b>两端都安全</b>的类型（{@code BlockPos} / 基本类型）——
  * 若引用任何客户端类，服务端加载本类时会崩。</p>
  */
+@ApiStatus.Internal
 public final class LivingToolAssistState {
 
     /**

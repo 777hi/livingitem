@@ -53,7 +53,9 @@ import com.qiqi.li.living.domain.ender.LivingEnderChestFunction;
 import net.minecraft.server.MinecraftServer;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.items.IItemHandler;
+import org.jetbrains.annotations.ApiStatus;
 
+@ApiStatus.Internal
 public final class CrossContainerTransfer {
 
     private CrossContainerTransfer() {}

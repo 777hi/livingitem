@@ -4,7 +4,9 @@ import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
+import org.jetbrains.annotations.ApiStatus;
 
+@ApiStatus.Internal
 public record ProgressData(int progress, int total) {
 
     public static final ProgressData DEFAULT = new ProgressData(0, 200);

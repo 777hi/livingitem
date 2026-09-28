@@ -13,7 +13,9 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.component.TooltipProvider;
 import com.qiqi.li.LivingItem;
+import org.jetbrains.annotations.ApiStatus;
 
+@ApiStatus.Internal
 public record LivingWaterWheelData(WaterWheelData wheel) implements TooltipProvider {
 
     public static final LivingWaterWheelData EMPTY = new LivingWaterWheelData(WaterWheelData.EMPTY);

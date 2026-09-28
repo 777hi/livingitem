@@ -4,7 +4,9 @@ import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
+import org.jetbrains.annotations.ApiStatus;
 
+@ApiStatus.Internal
 public record ExplosionData(boolean ignited, int fuseTimer) {
 
     public static final ExplosionData DEFAULT = new ExplosionData(false, 0);

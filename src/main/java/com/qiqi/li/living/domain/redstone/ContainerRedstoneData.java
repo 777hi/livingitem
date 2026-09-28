@@ -18,7 +18,9 @@ import com.qiqi.li.living.container.ContainerSnapshot;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.domain.hopper.CrossContainerTransfer;
 import com.qiqi.li.living.model.Pos2D;
+import org.jetbrains.annotations.ApiStatus;
 
+@ApiStatus.Internal
 public class ContainerRedstoneData implements RedstoneSensor {
 
     // ── 槽位类型位掩码 ──

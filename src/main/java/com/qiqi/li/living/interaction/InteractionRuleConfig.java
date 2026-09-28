@@ -27,6 +27,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 交互规则配置 —— 规则（{@link InteractionEntry}）的 JSON 加载器（D2 · Q-D2-1 全迁）。
@@ -58,6 +59,7 @@ import net.minecraft.world.item.ItemStack;
  * <p><b>加载时机</b>：commonSetup 里所有域 {@code XxxRegistration.register()} 之后 ——
  * handler 先注册，规则加载时才能校验 {@code action} 引用有效。</p>
  */
+@ApiStatus.Internal
 public final class InteractionRuleConfig {
 
     private static final String CONFIG_FILE = "interaction_rules.json";

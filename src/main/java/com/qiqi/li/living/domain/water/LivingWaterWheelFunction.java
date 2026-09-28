@@ -23,7 +23,9 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
+import org.jetbrains.annotations.ApiStatus;
 
+@ApiStatus.Internal
 public class LivingWaterWheelFunction implements LivingItemFunction, HasContainerData {
 
     public static final String ID = "living_water_wheel";

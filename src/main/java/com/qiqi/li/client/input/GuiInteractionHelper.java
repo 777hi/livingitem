@@ -13,6 +13,7 @@ import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 import javax.annotation.Nullable;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 客户端GUI交互统一处理工具。
@@ -32,6 +33,7 @@ import javax.annotation.Nullable;
  *   当交互需要服务端访问光标物品时，客户端通过 carriedTag
  *   将光标物品的完整NBT数据发送到服务端。
  */
+@ApiStatus.Internal
 public final class GuiInteractionHelper {
 
     private GuiInteractionHelper() {}

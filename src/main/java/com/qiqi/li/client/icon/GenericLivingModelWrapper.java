@@ -13,6 +13,7 @@ import net.neoforged.neoforge.client.model.data.ModelData;
 
 import javax.annotation.Nullable;
 import java.util.List;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 通用的模型包装器，用于注入自定义 ItemOverrides。
@@ -24,6 +25,7 @@ import java.util.List;
  * 唯一的区别是 getOverrides() 返回自定义的 GenericLivingItemOverrides，
  * 它会根据物品的 NBT 数据决定返回原版模型还是活物品模型。
  */
+@ApiStatus.Internal
 public class GenericLivingModelWrapper implements BakedModel {
 
     private final BakedModel vanillaModel;

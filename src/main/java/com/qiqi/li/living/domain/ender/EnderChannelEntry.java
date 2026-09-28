@@ -3,6 +3,7 @@ package com.qiqi.li.living.domain.ender;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.Level;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活末影箱路由条目 —— 描述一个可用于无线传输的源物品位置。
@@ -26,6 +27,7 @@ import net.minecraft.world.level.Level;
  * @param registrarContainerKey 注册者（活漏斗/活末影箱）所在容器的唯一标识 key，
  *                               用于 removeStaleEnderChestRoutes 按容器隔离清理
  */
+@ApiStatus.Internal
 public record EnderChannelEntry(
     String itemType,
     ResourceKey<Level> sourceDim,

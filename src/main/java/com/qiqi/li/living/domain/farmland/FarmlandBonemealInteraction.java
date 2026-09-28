@@ -6,6 +6,7 @@ import net.minecraft.world.item.Items;
 
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.transfer.SlotInteraction;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 内置槽位交互：骨粉 → 活耕地 = <b>施肥</b>（强制一次生长 tick）。
@@ -29,6 +30,7 @@ import com.qiqi.li.living.transfer.SlotInteraction;
  * 三处传输分支里，拉取方向曾漏写导致「跨容器骨粉 → 同容器活耕地」不施肥
  * （2026-09-15 实测），现已收编为单条注册项。</p>
  */
+@ApiStatus.Internal
 public class FarmlandBonemealInteraction implements SlotInteraction {
 
     @Override

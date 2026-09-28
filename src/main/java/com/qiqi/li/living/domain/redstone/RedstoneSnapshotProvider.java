@@ -11,6 +11,7 @@ import com.qiqi.li.living.container.TickContext;
 
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 红电快照贡献者 —— 计算每个槽位的红电元件类型位图（{@code redstoneMaskOf}）与铜氧化等级（{@code capOf}）。
@@ -22,6 +23,7 @@ import net.minecraft.world.item.ItemStack;
  * <p>类型位图通过 {@link TickContext#getFunctionSlots} 读取活跃槽位集合得到，与
  * {@code buildSlotMask} 原先的来源完全一致，行为等价。</p>
  */
+@ApiStatus.Internal
 public class RedstoneSnapshotProvider implements SnapshotProvider {
 
     @Override

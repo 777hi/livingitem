@@ -14,6 +14,7 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.component.TooltipProvider;
 import com.qiqi.li.living.model.Pos2D;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 涂蜡雕文铜块 —— 输入/输出方向配置（§3.4 感应拓扑）。
@@ -22,6 +23,7 @@ import com.qiqi.li.living.model.Pos2D;
  * 只向 {@code outputDir} 方向传播相位事件（信号层同款 2 键 WASD 配置）。
  * 默认输入=↓ 输出=↑（下传上）。</p>
  */
+@ApiStatus.Internal
 public record LivingWaxedChiseledData(
     Pos2D inputDir,
     Pos2D outputDir

@@ -33,6 +33,7 @@ import com.qiqi.li.living.domain.runtime.LivingItemRuntimeData;
 import com.qiqi.li.living.model.Pos2D;
 import com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.DomainSnapshot;
 import com.qiqi.li.logging.ModLog;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活涂蜡铜块 —— 电力层发电机 / 电池（§3.4、§3.5、§3.6）。
@@ -46,6 +47,7 @@ import com.qiqi.li.logging.ModLog;
  * <p>调度：{@code getPriority()} = 3，必须晚于红石层（priority 2）——
  * 电力采样依赖红石已算完的 edgeGrid / prevEdgeGrid 双缓冲。</p>
  */
+@ApiStatus.Internal
 public class LivingWaxedCopperFunction implements LivingItemFunction, HasContainerData, HasDirection {
 
     public static final String ID = "living_waxed_copper";

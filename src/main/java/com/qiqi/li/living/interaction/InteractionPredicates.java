@@ -7,6 +7,7 @@ import java.util.function.BiPredicate;
 import javax.annotation.Nullable;
 
 import net.minecraft.world.item.ItemStack;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 交互谓词注册表 —— JSON 规则里写谓词 ID，Java 里按 ID 查表（D2 · Q-D2-3）。
@@ -25,6 +26,7 @@ import net.minecraft.world.item.ItemStack;
  * （沉默即缺陷 —— 与 open-plan §5 原则 4 一致）。注册表本身不持久化，
  * 随 commonSetup 重建。</p>
  */
+@ApiStatus.Internal
 public final class InteractionPredicates {
 
     private static final Map<String, BiPredicate<ItemStack, ItemStack>> PREDICATES = new HashMap<>();

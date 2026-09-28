@@ -14,7 +14,9 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.component.TooltipProvider;
 import com.qiqi.li.living.model.Pos2D;
+import org.jetbrains.annotations.ApiStatus;
 
+@ApiStatus.Internal
 public record LivingRedstoneTorchData(
     Pos2D direction,
     boolean isLit

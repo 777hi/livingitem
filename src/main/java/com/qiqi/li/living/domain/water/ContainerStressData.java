@@ -8,6 +8,7 @@ import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.domain.water.LivingWaterWheelFunction;
 
 import net.minecraft.world.item.ItemStack;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 容器级应力数据 —— 管理容器内所有活水车的应力累加。
@@ -22,6 +23,7 @@ import net.minecraft.world.item.ItemStack;
  * 应力计算在 ContainerFluidData.recalculate() 之后执行，
  * 读取 BFS 水流状态计算每个水车的力矩。
  */
+@ApiStatus.Internal
 public class ContainerStressData {
 
     public static final ContainerStressData EMPTY = new ContainerStressData();

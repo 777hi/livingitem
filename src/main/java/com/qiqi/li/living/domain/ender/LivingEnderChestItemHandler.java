@@ -6,7 +6,9 @@ import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.items.wrapper.InvWrapper;
 
 import com.qiqi.li.living.domain.ender.LivingEnderChestFunction;
+import org.jetbrains.annotations.ApiStatus;
 
+@ApiStatus.Internal
 public class LivingEnderChestItemHandler implements IItemHandler {
 
     private final ItemStack enderChestStack;

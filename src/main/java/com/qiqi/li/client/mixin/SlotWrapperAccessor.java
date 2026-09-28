@@ -3,6 +3,7 @@ package com.qiqi.li.client.mixin;
 import net.minecraft.world.inventory.Slot;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Accessor;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * SlotWrapper的访问器，用于获取被包装的原始槽位（target字段）。
@@ -13,6 +14,7 @@ import org.spongepowered.asm.mixin.gen.Accessor;
  * 服务端需要真实容器索引才能正确定位活TNT物品。
  */
 @Mixin(targets = "net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen$SlotWrapper")
+@ApiStatus.Internal
 public interface SlotWrapperAccessor {
     @Accessor("target")
     Slot getTarget();

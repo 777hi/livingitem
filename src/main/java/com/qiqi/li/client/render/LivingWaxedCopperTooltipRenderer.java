@@ -6,6 +6,7 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.inventory.tooltip.ClientTooltipComponent;
 import net.minecraft.network.chat.Component;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活涂蜡发电机的「仪器面板」tooltip 渲染器（v19.2 相位圆盘）。
@@ -31,6 +32,7 @@ import net.minecraft.network.chat.Component;
  * {@code LivingItemClient} 的 GatherComponents 事件决定是否挂载），
  * 这里是纯绘制逻辑，不再二次判空——未挂载时本类根本不会被实例化。</p>
  */
+@ApiStatus.Internal
 public class LivingWaxedCopperTooltipRenderer implements ClientTooltipComponent {
 
     private static final int PANEL_W = 172;

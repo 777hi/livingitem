@@ -7,6 +7,7 @@ import com.qiqi.li.living.container.SnapshotProvider;
 import com.qiqi.li.living.container.TickContext;
 
 import net.minecraft.world.item.ItemStack;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活箱子快照贡献者 —— 计算每个活箱子的占用槽位/字节快照。
@@ -14,6 +15,7 @@ import net.minecraft.world.item.ItemStack;
  * <p>原逻辑位于 {@code ContainerSnapshot.capture}（buildAllChestSnapshots），此处迁回 domain 包，
  * 解除 {@code container} 包对 {@code domain.chest} 的依赖。</p>
  */
+@ApiStatus.Internal
 public class ChestSnapshotProvider implements SnapshotProvider {
 
     @Override

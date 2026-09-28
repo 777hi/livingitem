@@ -14,6 +14,7 @@ import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerChunkCache;
 import com.qiqi.li.logging.ModLog;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 容器监控指令 —— 挂在主命令树 {@code /livingitem debug} 下（2026-09-27 整理，
@@ -24,6 +25,7 @@ import com.qiqi.li.logging.ModLog;
  * 不视为待本地化遗漏。
  */
 @EventBusSubscriber
+@ApiStatus.Internal
 public class ContainerMonitorCommand {
 
     @SubscribeEvent

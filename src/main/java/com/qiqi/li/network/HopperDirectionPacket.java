@@ -7,6 +7,7 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import com.qiqi.li.LivingItem;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活漏斗方向配置网络包（v2 版本）。
@@ -32,6 +33,7 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
  * - 服务端验证光标物品是否为活物品
  * - 只更新光标物品，不信任客户端传来的其他数据
  */
+@ApiStatus.Internal
 public record HopperDirectionPacket(
     CompoundTag mappingData
 ) implements CustomPacketPayload {

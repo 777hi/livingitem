@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 线圈通道 —— 相位事件域管理器（v3 —— 相位事件总线）。
@@ -27,6 +28,7 @@ import java.util.Map;
  * 该域就永不超时，被拆掉那路的偏移会永久留在域内，n 被永久高估 →
  * 合因子虚高 → 长期白拿发电量。</p>
  */
+@ApiStatus.Internal
 public class ChannelState {
 
     /** 相位域：period → PhaseDomain */

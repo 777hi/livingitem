@@ -1,7 +1,9 @@
 package com.qiqi.li.client.util;
 
 import java.util.Locale;
+import org.jetbrains.annotations.ApiStatus;
 
+@ApiStatus.Internal
 public class PinyinHelper {
 
     private static final String CHARS =

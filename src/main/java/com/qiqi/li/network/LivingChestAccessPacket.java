@@ -8,6 +8,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import javax.annotation.Nullable;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活箱子存取请求包（客户端→服务端）。
@@ -17,6 +18,7 @@ import javax.annotation.Nullable;
  *   DEPOSIT(1)  — 将光标物品存入活箱子，itemTag 为光标物品NBT，amount 为存入数量
  *   WITHDRAW(2) — 从活箱子取出物品，itemTag 为目标物品NBT，amount 为取出数量
  */
+@ApiStatus.Internal
 public record LivingChestAccessPacket(int action, @Nullable CompoundTag itemTag, int amount) implements CustomPacketPayload {
 
     public static final int LOAD = 0;

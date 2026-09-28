@@ -12,7 +12,9 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.component.TooltipProvider;
+import org.jetbrains.annotations.ApiStatus;
 
+@ApiStatus.Internal
 public record LivingFurnaceData(
     ProgressData progress,
     FuelData fuel,

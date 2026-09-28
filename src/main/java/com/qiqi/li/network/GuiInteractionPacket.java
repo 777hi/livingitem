@@ -16,6 +16,7 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 import com.qiqi.li.living.api.LivingItemManager;
 
 import javax.annotation.Nullable;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 通用GUI交互网络包，支持所有活物品的GUI交互。
@@ -40,6 +41,7 @@ import javax.annotation.Nullable;
  *   4. 调用 handler.handle(player, targetSlot)
  *   5. 如果光标物品被修改，同步回客户端
  */
+@ApiStatus.Internal
 public record GuiInteractionPacket(
     int slotIndex,
     int containerSlot,

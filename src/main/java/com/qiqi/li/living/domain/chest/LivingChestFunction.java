@@ -20,7 +20,9 @@ import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
+import org.jetbrains.annotations.ApiStatus;
 
+@ApiStatus.Internal
 public class LivingChestFunction implements LivingItemFunction {
 
     public static final String ID = "living_chest";

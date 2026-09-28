@@ -14,7 +14,9 @@ import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
+import org.jetbrains.annotations.ApiStatus;
 
+@ApiStatus.Internal
 public class LivingMapFunction implements LivingItemFunction {
 
     public static final String ID = "living_map";

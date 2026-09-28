@@ -34,6 +34,7 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.common.CommonHooks;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活工具记忆回放（{@code L-d}）—— 把录下的「左键 / 右键操作」在宿主身上重放一遍。
@@ -57,6 +58,7 @@ import net.neoforged.neoforge.common.CommonHooks;
  * 这里给 FakePlayer 一份<b>副本</b>，破坏后由调用方写回容器
  * （{@code LivingToolFunction} 会比对是否变化再决定是否写回）。
  */
+@ApiStatus.Internal
 public final class LivingToolReplay {
 
     /**

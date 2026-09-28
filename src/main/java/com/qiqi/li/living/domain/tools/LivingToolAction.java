@@ -8,6 +8,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活工具最近一次<b>瞬时动作</b>（{@code K} 组模型动画用，<b>仅网络同步、不落盘</b>）。
@@ -26,6 +27,7 @@ import net.minecraft.network.codec.StreamCodec;
  * @param target 交互目标格子（客户端据此定位模型该瞬现到哪）；
  *               ⭐ <b>可为 {@code null}</b> —— 见 {@link #STREAM_CODEC} 的说明
  */
+@ApiStatus.Internal
 public record LivingToolAction(long tick, @Nullable BlockPos target) {
 
     /**

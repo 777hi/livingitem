@@ -25,6 +25,7 @@ import net.minecraft.world.level.block.NetherWartBlock;
 import net.minecraft.world.level.block.StemBlock;
 import net.minecraft.world.level.block.SweetBerryBushBlock;
 import net.neoforged.neoforge.common.Tags;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活耕地作物分类器 —— 种植准入、类型判定、maxAge 读取的唯一定义点。
@@ -35,6 +36,7 @@ import net.neoforged.neoforge.common.Tags;
  * 故第 2 层不用 BushBlock 兜底。模组作物依赖 c:seeds 标签（c:crops 混有仙人掌/
  * 可可豆等非耕地作物，不用）。</p>
  */
+@ApiStatus.Internal
 public final class CropClassifier {
 
     private CropClassifier() {}

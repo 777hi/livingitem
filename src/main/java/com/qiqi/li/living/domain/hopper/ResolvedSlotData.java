@@ -5,7 +5,9 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
+import org.jetbrains.annotations.ApiStatus;
 
+@ApiStatus.Internal
 public record ResolvedSlotData(
     int hostSlot,
     int sourceSlot,

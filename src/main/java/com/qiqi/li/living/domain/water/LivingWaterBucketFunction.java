@@ -21,6 +21,7 @@ import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.domain.water.ContainerFluidData;
 import com.qiqi.li.living.domain.water.LivingWaterBucketData;
 import com.qiqi.li.living.domain.water.WaterData;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活水桶功能 —— 模拟原版水流在容器内的蔓延与推动。
@@ -35,6 +36,7 @@ import com.qiqi.li.living.domain.water.WaterData;
  * <p>DataComponent 仅在 {@code flow} 实际变化时（{@link #postTickSync}）才写入，
  * 大幅减少网络包数量。</p>
  */
+@ApiStatus.Internal
 public class LivingWaterBucketFunction implements LivingItemFunction, HasContainerData {
 
     public static final String ID = "living_water_bucket";

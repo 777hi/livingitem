@@ -21,7 +21,9 @@ import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
 import it.unimi.dsi.fastutil.longs.LongSet;
 
 import java.util.*;
+import org.jetbrains.annotations.ApiStatus;
 
+@ApiStatus.Internal
 public final class StructureMapDecorator {
 
     private record TagIconEntry(

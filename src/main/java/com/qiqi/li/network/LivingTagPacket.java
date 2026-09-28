@@ -16,6 +16,7 @@ import com.qiqi.li.living.api.LivingItemActivation;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.domain.chest.LivingChestFunction;
 import com.qiqi.li.living.domain.ender.LivingEnderChestFunction;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活物品标签切换网络包。
@@ -34,6 +35,7 @@ import com.qiqi.li.living.domain.ender.LivingEnderChestFunction;
  *   物品数据在服务端是权威的，客户端的修改会被服务端覆盖。
  *   必须通过网络包让服务端执行修改，再由原版同步机制同步回客户端。
  */
+@ApiStatus.Internal
 public record LivingTagPacket() implements CustomPacketPayload {
 
     public static final ResourceLocation ID = ResourceLocation.fromNamespaceAndPath("living_item", "living_tag");

@@ -3,6 +3,7 @@ package com.qiqi.li.living.domain.runtime;
 import javax.annotation.Nullable;
 import java.util.HashMap;
 import java.util.Map;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 客户端活物品运行时缓存 —— 由 {@link com.qiqi.li.network.LivingItemSyncPacket} 更新。
@@ -13,6 +14,7 @@ import java.util.Map;
  * <p>本类不依赖 {@link net.minecraft.client.Minecraft}，可在服务端安全加载。
  * 获取当前悬停槽位的功能由客户端辅助类 {@code LivingItemTooltipBridge} 提供。</p>
  */
+@ApiStatus.Internal
 public class LivingItemClientCache {
 
     private static String currentContainerKey = "";

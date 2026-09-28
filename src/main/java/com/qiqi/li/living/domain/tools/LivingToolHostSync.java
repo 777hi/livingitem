@@ -18,6 +18,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 服务端「哪些容器里有活工具」收集 + 广播（{@code K2}）。
@@ -34,6 +35,7 @@ import net.minecraft.world.phys.Vec3;
  *       （放置 / 取走 / 耐久），去重之后天然就是按需发送。</li>
  * </ul>
  */
+@ApiStatus.Internal
 public final class LivingToolHostSync {
 
     /**

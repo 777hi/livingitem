@@ -40,6 +40,7 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.SimpleContainerContext;
+import org.jetbrains.annotations.ApiStatus;
 
 /*
  * ╔══════════════════════════════════════════════════════════════╗
@@ -87,6 +88,7 @@ import com.qiqi.li.living.container.SimpleContainerContext;
  * ╚══════════════════════════════════════════════════════════════╝
  */
 
+@ApiStatus.Internal
 public class ExplosionComponent {
 
     public static final String ID = "explosion";

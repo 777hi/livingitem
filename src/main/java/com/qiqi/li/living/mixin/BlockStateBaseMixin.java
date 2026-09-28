@@ -14,8 +14,10 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import org.jetbrains.annotations.ApiStatus;
 
 @Mixin(BlockBehaviour.BlockStateBase.class)
+@ApiStatus.Internal
 public abstract class BlockStateBaseMixin {
 
     @Inject(method = "getSignal", at = @At("RETURN"), cancellable = true)

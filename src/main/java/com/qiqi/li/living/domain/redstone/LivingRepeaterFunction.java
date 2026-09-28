@@ -20,7 +20,9 @@ import com.qiqi.li.living.api.HasContainerData;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.model.Pos2D;
+import org.jetbrains.annotations.ApiStatus;
 
+@ApiStatus.Internal
 public class LivingRepeaterFunction implements LivingItemFunction, HasDirection, HasContainerData {
 
     public static final String ID = "living_repeater";

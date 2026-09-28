@@ -6,6 +6,7 @@ import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 活末影箱路由表的客户端镜像缓存 —— 供 Tooltip 渲染读取。
@@ -20,6 +21,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * 因此当服务端下发 {@code channelSize == 0} 时直接移除条目，而不是覆盖成空快照，
  * 避免缓存无限增长。</p>
  */
+@ApiStatus.Internal
 public class EnderChannelClientCache {
 
     private static final Map<EnderChannelKey, ChannelSnapshot> cache = new ConcurrentHashMap<>();

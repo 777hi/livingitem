@@ -9,7 +9,9 @@ import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.resources.ResourceLocation;
 import org.joml.Matrix4f;
+import org.jetbrains.annotations.ApiStatus;
 
+@ApiStatus.Internal
 public final class LivingMapTargetRenderer {
 
     private static final ResourceLocation CROSSHAIR_SPRITE = ResourceLocation.withDefaultNamespace("hud/crosshair");

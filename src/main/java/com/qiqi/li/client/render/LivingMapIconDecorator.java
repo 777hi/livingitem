@@ -19,7 +19,9 @@ import net.neoforged.neoforge.client.IItemDecorator;
 import javax.annotation.Nullable;
 import java.util.HashMap;
 import java.util.Map;
+import org.jetbrains.annotations.ApiStatus;
 
+@ApiStatus.Internal
 public class LivingMapIconDecorator implements IItemDecorator {
 
     private static final int MAP_SIZE = 128;

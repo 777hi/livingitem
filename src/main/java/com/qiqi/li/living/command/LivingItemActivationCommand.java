@@ -27,6 +27,7 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.server.command.ModIdArgument;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * {@code /livingitem activation} —— 活化规则的查看、验证与增删改（D1）。
@@ -76,6 +77,7 @@ import net.neoforged.neoforge.server.command.ModIdArgument;
  * 只给一个总判定无法确认配置是否按预期生效。</p>
  */
 @EventBusSubscriber
+@ApiStatus.Internal
 public class LivingItemActivationCommand {
 
     /**

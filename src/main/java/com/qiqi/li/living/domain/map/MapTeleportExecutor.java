@@ -10,7 +10,9 @@ import net.minecraft.world.level.saveddata.maps.MapDecoration;
 import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
 
 import javax.annotation.Nullable;
+import org.jetbrains.annotations.ApiStatus;
 
+@ApiStatus.Internal
 public final class MapTeleportExecutor {
 
     public static final int UNEXPLORED_PEARL_COST = 16;

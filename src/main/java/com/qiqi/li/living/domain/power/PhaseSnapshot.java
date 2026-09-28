@@ -8,6 +8,7 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
 import com.mojang.serialization.DataResult;
 
 import com.qiqi.li.living.domain.power.LivingWaxedCopperFunction.SignalTracker;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 相位快照 —— 容器红电账本的跨会话持久化形态（2026-09-09 相位快照落盘）。
@@ -31,6 +32,7 @@ import com.qiqi.li.living.domain.power.LivingWaxedCopperFunction.SignalTracker;
  * @param tickCounter 快照时的容器本地 tick 计数（回填平移基准，可不存精确值）
  * @param edges       边跟踪器快照（edgeKey → 锁相状态）
  */
+@ApiStatus.Internal
 public record PhaseSnapshot(
     long tickCounter,
     List<EdgeEntry> edges

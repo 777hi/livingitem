@@ -15,6 +15,7 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.component.TooltipProvider;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 涂蜡发电机的检测仪表盘数据（v3 —— 相位事件总线）。
@@ -24,6 +25,7 @@ import net.minecraft.world.item.component.TooltipProvider;
  *
  * <p>全部为展示快照，不影响任何结算（纯仪表，非账本）。</p>
  */
+@ApiStatus.Internal
 public record LivingWaxedGeneratorData(
     int detectedPeriod,      // 检测周期（tick），0 = 无信号/检测中
     int phaseCount,          // 相数 n（最佳域）

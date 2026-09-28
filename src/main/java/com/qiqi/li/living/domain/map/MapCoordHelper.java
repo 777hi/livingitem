@@ -17,7 +17,9 @@ import net.minecraft.world.level.saveddata.maps.MapBanner;
 import net.minecraft.world.level.saveddata.maps.MapDecoration;
 import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
 import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.ApiStatus;
 
+@ApiStatus.Internal
 public final class MapCoordHelper {
 
     public static final int MAP_SIZE = 128;

@@ -5,6 +5,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.model.BakedModel;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.world.item.ItemStack;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 物品图标精灵图解析器（客户端）——取 item/generated 模型的粒子图标（layer0 纹理），
@@ -21,6 +22,7 @@ import net.minecraft.world.item.ItemStack;
  * 现走 {@code IItemDecorator} 路径（{@code renderItemDecorations} 末尾分发），
  * 快捷栏/容器 GUI/创造物品栏共用。</p>
  */
+@ApiStatus.Internal
 public final class CropTextureResolver {
 
     private CropTextureResolver() {}

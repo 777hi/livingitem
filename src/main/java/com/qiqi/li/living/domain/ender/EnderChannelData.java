@@ -6,7 +6,9 @@ import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
+import org.jetbrains.annotations.ApiStatus;
 
+@ApiStatus.Internal
 public record EnderChannelData(Optional<String> boundPlayerUuid, Optional<String> boundPlayerName) {
 
     public static final EnderChannelData EMPTY = new EnderChannelData(Optional.empty(), Optional.empty());

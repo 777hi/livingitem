@@ -23,7 +23,9 @@ import com.qiqi.li.living.domain.ender.EnderChannelRegistry;
 import com.qiqi.li.living.domain.ender.EnderChannelData;
 import com.qiqi.li.living.domain.ender.LivingEnderChestData;
 import com.qiqi.li.living.domain.hopper.LivingHopperFunction;
+import org.jetbrains.annotations.ApiStatus;
 
+@ApiStatus.Internal
 public class LivingEnderChestFunction implements LivingItemFunction {
 
     public static final String ID = "living_ender_chest";

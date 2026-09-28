@@ -12,6 +12,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * 创造模式背包界面的Mixin，拦截活物品GUI交互。
@@ -32,6 +33,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  *   ServerboundSetCreativeModeSlotPacket，确保服务端同步。
  */
 @Mixin(CreativeModeInventoryScreen.class)
+@ApiStatus.Internal
 public abstract class CreativeModeInventoryScreenMixin extends EffectRenderingInventoryScreen<CreativeModeInventoryScreen.ItemPickerMenu> {
     public CreativeModeInventoryScreenMixin(CreativeModeInventoryScreen.ItemPickerMenu menu, net.minecraft.world.entity.player.Inventory playerInventory, Component title) {
         super(menu, playerInventory, title);
