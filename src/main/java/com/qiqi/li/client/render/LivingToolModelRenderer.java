@@ -234,8 +234,14 @@ public final class LivingToolModelRenderer {
      */
     private static final float RING_FACE_ROLL = (float) (Math.PI * 1.5);   // 90° + 180°（整体翻正）
 
-    /** ⏳ 临时（2026-09-30）：射线模式滚转四候选（以柄为轴），定角后连本字段一起删。 */
-    private static final boolean DEBUG_RAY_ROLL_CANDIDATES = true;
+    /**
+     * 【BEWLR · 射线】立正角 —— <b>identity（不转）</b>（2026-09-30 五候选实测：**#0 正确**）。
+     *
+     * <p>⭐ 有意思的结论：环·BEWLR 需要绕 Y −90°，射线·BEWLR 却**什么都不用加** ——
+     * 因为环的对齐基准是【水平径向】（要求柄水平），射线的对齐基准是【任意 3D 方向】
+     * （柄本来就沿射线）⇒ 手持姿态直接对齐即可。</p>
+     */
+    private static final Quaternionf BEWLR_RAY_UPRIGHT_FIX = new Quaternionf();
 
     /**
      * 【路线 A｜BEWLR 物品】在【第三人称手持】姿态之上再叠加的<b>立正角</b> ——
@@ -950,7 +956,13 @@ public final class LivingToolModelRenderer {
         // ④ 立正：固定整体旋转 —— 两组常量（BEWLR / 普通模型，模型空间不同），
         //    但做法相同：都是固定的整体旋转，无任何"长轴 / 板面"逐物品计算。
         //    （射线模式与环模式【共用】ITEM_UPRIGHT_FIX —— 对齐的都是"立正后的 +Y"。）
-        poseStack.mulPose(customRenderer ? BEWLR_UPRIGHT_FIX : ITEM_UPRIGHT_FIX);
+        Quaternionf upright;
+        if (customRenderer) {
+            upright = ringNormal == null ? BEWLR_RAY_UPRIGHT_FIX : BEWLR_UPRIGHT_FIX;
+        } else {
+            upright = ITEM_UPRIGHT_FIX;   // 环 / 射线共用（实测同值）
+        }
+        poseStack.mulPose(upright);
         mc.getItemRenderer().renderStatic(stack, ItemDisplayContext.THIRD_PERSON_RIGHT_HAND,
             light, OverlayTexture.NO_OVERLAY, poseStack, buffers, level, 0);
         poseStack.popPose();
