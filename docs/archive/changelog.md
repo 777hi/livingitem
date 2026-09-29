@@ -15,6 +15,26 @@
 
 ---
 
+## 2026-09-29
+
+- ✅ **活武器连击修复**：主动模式高速连击（不扣耐久的灾变武器最明显）——「上次攻击 tick」
+  (`LivingToolAction`) 持久化两条丢失通道：① `writeBack` 的 `ItemStack.matches` 对只变
+  运行时组件的栈误判相等（副本宿主下记录随副本丢弃）；② 记录旧写在 `fake.attack()` 之后
+  （模组武器自结伤害/事件取消/异常时 `attack()` 提前返回，记录执行不到）。修复：出手记录
+  改写在 `attack()` 之前 + 攻击分支出手必 `setItem`。灾变源码已核（无 durability 注册、
+  未拦截左键、攻速走标准修饰符），✅ 已实测：间隔恢复面板冷却、攻速饰品镜像生效。
+  细节见 `living-weapon-tech.md` §5 第四坑。
+- ✅ **活工具/活武器 tooltip 新增「赋灵者」行**：显示绑定主人（玩家名优先，
+  解析不到回退短 UUID；无主不显示）。`LIVING_TOOL_OWNER` 补 `networkSynchronized`
+  （此前仅持久化，客户端栈上无此组件）；新增公共侧解析桥 `OwnerNameResolver`
+  （客户端 `FMLClientSetup` 注入：tab 列表 → UsernameCache，公共类不引用客户端类）；
+  名字解析不到的回退与「负信息不上 tooltip」口径见 `LivingToolFunction#addOwnerLine`。
+
+- ✅ **文档口径**：活箱子不是宿主、内容物不 tick（`LivingChestFunction.tick` 空实现 +
+  `LivingChestItemHandler` 死代码，复算判据三条）固化进 `living-chest-tech.md` §3.3；
+  weapon/tool 文档宿主表补「三宿主即全部」指针。属性镜像生效条件澄清为「只看主人在线
+  + 同维度，与宿主无关」并勘误旧表述（`living-weapon-tech.md` §8.1.1）。
+
 ## 2026-09-28
 
 - ✅ **对外开放 C 组 A1：api 面净化** —— 探针实证 `LivingItemManager`（api 包）的公共面

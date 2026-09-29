@@ -25,6 +25,7 @@
   "tooltip.livingitem.flint_and_steel.status": "§eLiving Flint & Steel§r",
   "tooltip.livingitem.tool.mode.passive": "  §7Mode: §bPassive§r",
   "tooltip.livingitem.tool.mode.active": "  §7Mode: §aActive§r",
+  "tooltip.livingitem.tool.owner": "  §7Ensouled by: §f%s§r",
   "tooltip.livingitem.tool.dig": "  §7Dig memory: §e%s §7blocks ahead§r",
   "tooltip.livingitem.tool.use": "  §7Use memory: §e%s §7blocks ahead§r",
   "tooltip.livingitem.tool.attack": "  §7Attack memory: §e%s §7blocks ahead§r",

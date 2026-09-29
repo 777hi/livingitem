@@ -9,12 +9,14 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 import java.util.function.Consumer;
 
 import javax.annotation.Nullable;
 
 import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.components.OwnerNameResolver;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.ItemEntityContainerContext;
 import com.qiqi.li.living.container.SimpleContainerContext;
@@ -199,10 +201,30 @@ public class LivingToolFunction implements LivingItemFunction {
         tooltipAdder.accept(Component.translatable(memory.isEmpty()
             ? "tooltip.livingitem.tool.mode.passive"
             : "tooltip.livingitem.tool.mode.active"));
+        addOwnerLine(tooltipAdder, LivingItemManager.getToolOwner(stack));
 
         addRayLine(tooltipAdder, "tooltip.livingitem.tool.dig", memory.dig());
         addRayLine(tooltipAdder, "tooltip.livingitem.tool.use", memory.use());
         addAttackLine(tooltipAdder, memory.attack());
+    }
+
+    /**
+     * 一行主人信息（「赋灵者」）—— 活工具与活武器共用本 function，一处覆盖两类。
+     *
+     * <p>⭐ 名字在<b>客户端</b>解析（tooltip 只在客户端组装）：在线玩家走 tab 列表，
+     * 离线主人走 {@code UsernameCache} 本地缓存；都查不到时回退显示短 UUID（前 8 位），
+     * 保证「绑定关系」这一信息永远可见 —— 专用服务器上别的玩家查看时尤其如此。</p>
+     *
+     * <p>⚠️ 无主（自动活化等，owner 为 null 或 {@link LivingToolFakePlayer#FALLBACK_UUID}）
+     * 则<b>不显示</b>这一行 —— 负信息不上 tooltip。</p>
+     */
+    private static void addOwnerLine(Consumer<Component> tooltipAdder, @Nullable UUID owner) {
+        if (owner == null || LivingToolFakePlayer.FALLBACK_UUID.equals(owner)) {
+            return;
+        }
+        String name = OwnerNameResolver.resolve(owner);
+        String display = name != null ? name : owner.toString().substring(0, 8) + "…";
+        tooltipAdder.accept(Component.translatable("tooltip.livingitem.tool.owner", display));
     }
 
     /**

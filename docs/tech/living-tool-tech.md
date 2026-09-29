@@ -304,6 +304,11 @@ fake.setOnGround(true);          // L28：不设会被判"离地"→ 速度 /5
 fake.setItemInHand(InteractionHand.MAIN_HAND, held);
 ```
 
+**主人属性镜像**：每次回放开头 `syncOwnerAttributes()` 会把主人身上的白名单属性修饰符
+（攻击伤害/攻速/击退/挖掘效率/挖掘速度）复制到 FakePlayer ⇒ **饰品加成对活工具同样生效**，
+且**与宿主形态无关**（只看主人在线 + 同维度）—— 机制与边界见
+[living-weapon-tech.md](living-weapon-tech.md) §8.1 / §8.1.1。
+
 ### 5.5 模拟完整操作（`L36`）
 
 直接调 `gameMode.destroyBlock()` 会**跳过**挥击前置，故首次命中时补上：

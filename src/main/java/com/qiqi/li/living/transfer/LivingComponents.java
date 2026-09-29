@@ -70,6 +70,9 @@ public final class LivingComponents {
             DATA_COMPONENT_TYPES.register("living_tool_owner", () ->
                     DataComponentType.<UUID>builder()
                             .persistent(UUIDUtil.CODEC)
+                            // ⭐ 网络同步（2026-09-29）：tooltip 在客户端显示「赋灵者」，
+                            //    不同步的话客户端栈上根本没有这个组件，显示不出主人。
+                            .networkSynchronized(UUIDUtil.STREAM_CODEC)
                             .build());
 
     public static final DeferredHolder<DataComponentType<?>, DataComponentType<Integer>> LIVING_TOOL_DIG_TICKS =

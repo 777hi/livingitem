@@ -8,6 +8,7 @@ import com.qiqi.li.client.render.LivingToolModelRenderer;
 import com.qiqi.li.client.render.LivingToolRayRenderer;
 import com.qiqi.li.client.render.LivingWaxedCopperTooltipRenderer;
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.components.OwnerNameResolver;
 import com.qiqi.li.living.domain.chest.LivingChestTooltipComponent;
 import com.qiqi.li.living.domain.power.LivingWaxedCopperFunction;
 import com.qiqi.li.living.domain.power.LivingWaxedCopperTooltipComponent;
@@ -62,6 +63,20 @@ public class LivingItemClient {
     static void onClientSetup(FMLClientSetupEvent event) {
         LivingItem.LOGGER.info("HELLO FROM CLIENT SETUP");
         LivingItem.LOGGER.info("MINECRAFT NAME >> {}", Minecraft.getInstance().getUser().getName());
+
+        // 「赋灵者」tooltip：注入 UUID → 玩家名的客户端解析（先查在线玩家 tab 列表，
+        // 再查 UsernameCache 本地缓存 —— 单机可用；专用服务器上离线主人解析不到时，
+        // 调用方回退显示短 UUID）。
+        OwnerNameResolver.install(uuid -> {
+            var connection = Minecraft.getInstance().getConnection();
+            if (connection != null) {
+                var info = connection.getPlayerInfo(uuid);
+                if (info != null) {
+                    return info.getProfile().getName();
+                }
+            }
+            return net.neoforged.neoforge.common.UsernameCache.getLastKnownUsername(uuid);
+        });
 
         event.enqueueWork(() -> {
             ResourceLocation isLiving = ResourceLocation.fromNamespaceAndPath(LivingItem.MOD_ID, "is_living");
