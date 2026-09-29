@@ -151,8 +151,12 @@ public class LivingToolFakePlayer extends FakePlayer {
      * <p>⚠️ <b>边界</b>：只覆盖<b>属性型</b>增益。事件型（监听伤害事件、按实体实例/饰品槽判定的）
      * 吃不到 —— 那类认的是"玩家对象本身"，镜像救不了。按 <b>UUID</b> 判定的事件型本来就生效
      * （FakePlayer 的 UUID = 主人）。</p>
+     *
+     * @return 找到的<b>在线主人</b>（同维度）；离线 / 跨维度 / 无主人时 {@code null} ——
+     *         调用方可顺手用它刷新主人名字的显示缓存（见 {@code LivingToolOwnerName#refresh}）
      */
-    public void syncOwnerAttributes() {
+    @Nullable
+    public Player syncOwnerAttributes() {
         // ① 清掉上一轮镜像的修饰符
         for (ResourceLocation id : this.mirroredModifierIds) {
             for (Holder<Attribute> attribute : MIRRORED_ATTRIBUTES) {
@@ -166,11 +170,11 @@ public class LivingToolFakePlayer extends FakePlayer {
 
         // ② 找到主人 —— 离线 / 无主人（FALLBACK_UUID）⇒ 无身可借，跳过
         if (this.owner == null || !(this.level() instanceof ServerLevel serverLevel)) {
-            return;
+            return null;
         }
         Player owner = serverLevel.getPlayerByUUID(this.owner);
         if (owner == null) {
-            return;
+            return null;
         }
 
         // ③ 排除主人主手物品贡献的修饰符（物品自带 + 附魔，一个 API 全枚举）
@@ -193,6 +197,7 @@ public class LivingToolFakePlayer extends FakePlayer {
                 this.mirroredModifierIds.add(modifier.id());
             }
         }
+        return owner;
     }
 
     /** 摘掉上一把工具留下的修饰符（FakePlayer 实例是跨工具共享的，不摘会叠加）。 */

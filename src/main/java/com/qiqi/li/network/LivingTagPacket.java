@@ -16,6 +16,8 @@ import com.qiqi.li.living.api.LivingItemActivation;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.domain.chest.LivingChestFunction;
 import com.qiqi.li.living.domain.ender.LivingEnderChestFunction;
+import com.qiqi.li.living.domain.tools.LivingToolOwnerName;
+import com.qiqi.li.living.domain.tools.LivingToolRecorder;
 
 /**
  * 活物品标签切换网络包。
@@ -94,11 +96,18 @@ public record LivingTagPacket() implements CustomPacketPayload {
                     LivingItemManager.setLiving(carriedItem, newLiving, player.getUUID());
 
                     // 活化末影箱时：如果玩家在末影箱 GUI 中，绑定当前玩家
+                    // （UUID 是绑定数据；名字只是显示缓存，tick 里遇到在线绑定玩家会自动刷新）
                     if (newLiving && carriedItem.is(Items.ENDER_CHEST)
                         && isInEnderChestGui(player)) {
                         LivingEnderChestFunction.setBoundPlayer(
                             carriedItem, player.getUUID(), player.getName().getString());
                         LivingItem.LOGGER.info("活末影箱绑定玩家: {}", player.getName().getString());
+                    }
+
+                    // 活工具/活武器：绑定主人后顺带记下名字的「显示缓存」
+                    // （主人离线时 tooltip 兜底显示；回放遇到在线主人会自动刷新）
+                    if (newLiving && LivingToolRecorder.isLivingToolOrWeapon(carriedItem)) {
+                        LivingToolOwnerName.set(carriedItem, player.getName().getString());
                     }
 
                     LivingItem.LOGGER.info("服务端：将物品 {} 的 living 标签从 {} 切换为 {}",

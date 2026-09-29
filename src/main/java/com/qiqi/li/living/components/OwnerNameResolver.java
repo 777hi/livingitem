@@ -33,4 +33,24 @@ public final class OwnerNameResolver {
     public static String resolve(UUID owner) {
         return resolver.apply(owner);
     }
+
+    /**
+     * 统一的显示口径（活工具/活武器与活末影箱 tooltip 共用）：
+     * <b>实时解析玩家名 → 调用方提供的显示缓存 → 短 UUID</b>（前 8 位）。
+     *
+     * <p>⭐ 显示缓存的写入方在服务端（活化时 / 回放遇到在线主人时，
+     * 见 {@code LivingToolOwnerName#refresh} 与 {@code EnderChannelData}）——
+     * 它专治「专用服务器上主人离线、客户端本地无缓存」的场景：宁可显示
+     * 缓存的旧名（改名极少发生，且服务端下次能解析到时自动跟上），不显示无意义的 UUID。</p>
+     */
+    public static String displayName(UUID owner, @Nullable String cachedName) {
+        String name = resolve(owner);
+        if (name != null) {
+            return name;
+        }
+        if (cachedName != null && !cachedName.isBlank()) {
+            return cachedName;
+        }
+        return owner.toString().substring(0, 8) + "…";
+    }
 }

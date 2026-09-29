@@ -70,7 +70,9 @@ public class LivingToolFunction implements LivingItemFunction {
             LivingComponents.LIVING_TOOL_PROGRESS.value(),
             LivingComponents.LIVING_TOOL_DIG_TICKS.value(),
             LivingComponents.LIVING_TOOL_LAST_ACTION.value(),
-            LivingComponents.LIVING_TOOL_OWNER.value()
+            LivingComponents.LIVING_TOOL_OWNER.value(),
+            // 主人名字的显示缓存（tooltip 兜底）—— 取消活化时随 owned-types 一起清
+            LivingComponents.LIVING_TOOL_OWNER_NAME.value()
         );
     }
 
@@ -201,7 +203,7 @@ public class LivingToolFunction implements LivingItemFunction {
         tooltipAdder.accept(Component.translatable(memory.isEmpty()
             ? "tooltip.livingitem.tool.mode.passive"
             : "tooltip.livingitem.tool.mode.active"));
-        addOwnerLine(tooltipAdder, LivingItemManager.getToolOwner(stack));
+        addOwnerLine(tooltipAdder, stack, LivingItemManager.getToolOwner(stack));
 
         addRayLine(tooltipAdder, "tooltip.livingitem.tool.dig", memory.dig());
         addRayLine(tooltipAdder, "tooltip.livingitem.tool.use", memory.use());
@@ -211,20 +213,19 @@ public class LivingToolFunction implements LivingItemFunction {
     /**
      * 一行主人信息（「赋灵者」）—— 活工具与活武器共用本 function，一处覆盖两类。
      *
-     * <p>⭐ 名字在<b>客户端</b>解析（tooltip 只在客户端组装）：在线玩家走 tab 列表，
-     * 离线主人走 {@code UsernameCache} 本地缓存；都查不到时回退显示短 UUID（前 8 位），
-     * 保证「绑定关系」这一信息永远可见 —— 专用服务器上别的玩家查看时尤其如此。</p>
+     * <p>⭐ 显示口径统一在 {@code OwnerNameResolver#displayName}：
+     * 实时解析（tab 列表 / 本地 UsernameCache）→ 服务端维护的显示缓存
+     * （{@link LivingToolOwnerName}，专治专用服务器上主人离线）→ 短 UUID。</p>
      *
      * <p>⚠️ 无主（自动活化等，owner 为 null 或 {@link LivingToolFakePlayer#FALLBACK_UUID}）
      * 则<b>不显示</b>这一行 —— 负信息不上 tooltip。</p>
      */
-    private static void addOwnerLine(Consumer<Component> tooltipAdder, @Nullable UUID owner) {
+    private static void addOwnerLine(Consumer<Component> tooltipAdder, ItemStack stack, @Nullable UUID owner) {
         if (owner == null || LivingToolFakePlayer.FALLBACK_UUID.equals(owner)) {
             return;
         }
-        String name = OwnerNameResolver.resolve(owner);
-        String display = name != null ? name : owner.toString().substring(0, 8) + "…";
-        tooltipAdder.accept(Component.translatable("tooltip.livingitem.tool.owner", display));
+        tooltipAdder.accept(Component.translatable("tooltip.livingitem.tool.owner",
+            OwnerNameResolver.displayName(owner, LivingToolOwnerName.of(stack))));
     }
 
     /**

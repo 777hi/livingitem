@@ -13,9 +13,11 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.TooltipFlag;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.components.OwnerNameResolver;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.domain.ender.EnderChannelClientCache;
@@ -43,6 +45,10 @@ public class LivingEnderChestFunction implements LivingItemFunction {
         Set<Integer> activeEnderChestSlots = new HashSet<>();
         for (SlotEntry entry : entries) {
             activeEnderChestSlots.add(entry.slotIndex());
+            // ⭐ 顺手刷新绑定玩家名的显示缓存（binding UUID 不动）：
+            //    绑定玩家在线且同维度时，把「当前确认的名字」写回缓存 ——
+            //    玩家改名必然发生在线上，下一次 tick 即跟上；名字没变时不写，无脏写开销。
+            refreshBoundPlayerNameCache(entry, level);
         }
 
         Set<Integer> activeHopperSlots = tick.getFunctionSlots(LivingHopperFunction.ID);
@@ -68,7 +74,10 @@ public class LivingEnderChestFunction implements LivingItemFunction {
         tooltipAdder.accept(Component.translatable("tooltip.livingitem.ender_chest.status"));
 
         if (channel.boundPlayerUuid().isPresent()) {
-            String name = channel.boundPlayerName().orElse("???");
+            // ⭐ 与活工具/活武器统一（2026-09-30）：实时解析 → 绑定玩家名缓存 → 短 UUID，
+            //    见 OwnerNameResolver#displayName；缓存的服务端刷新见下方 tick。
+            String name = OwnerNameResolver.displayName(
+                channel.getPlayerUuid().orElseThrow(), channel.boundPlayerName().orElse(null));
             tooltipAdder.accept(Component.translatable(
                 "tooltip.livingitem.ender_chest.bound_player", name)
                 .withStyle(style -> style.withColor(0xDD44FF).withBold(true)));
@@ -143,15 +152,34 @@ public class LivingEnderChestFunction implements LivingItemFunction {
         return LivingEnderChestData.of(stack).channel().getPlayerUuid().orElse(null);
     }
 
-    public static String getBoundPlayerName(ItemStack stack) {
-        if (!isLivingEnderChest(stack)) return null;
-        return LivingEnderChestData.of(stack).channel().boundPlayerName().orElse(null);
+    public static void setBoundPlayer(ItemStack stack, UUID uuid, String nameCache) {
+        LivingEnderChestData data = LivingEnderChestData.of(stack);
+        EnderChannelData channel = data.channel().withBoundPlayer(uuid, nameCache);
+        LivingEnderChestData.set(stack, data.withChannel(channel));
     }
 
-    public static void setBoundPlayer(ItemStack stack, UUID uuid, String name) {
+    /**
+     * 刷新绑定玩家名的<b>显示缓存</b>（tooltip 兜底，见 {@code OwnerNameResolver#displayName}）。
+     *
+     * <p>绑定玩家在线且同维度时把「当前确认的名字」写回缓存 —— 名字没变时不写；
+     * 离线 / 跨维度自然跳过（此时缓存保持上次确认值，正是离线显示想要的）。</p>
+     */
+    private static void refreshBoundPlayerNameCache(LivingItemFunction.SlotEntry entry, Level level) {
+        ItemStack stack = entry.stack();
+        UUID bound = getBoundPlayerUuid(stack);
+        if (bound == null) {
+            return;
+        }
+        Player online = level.getPlayerByUUID(bound);
+        if (online == null) {
+            return;
+        }
+        String current = online.getName().getString();
         LivingEnderChestData data = LivingEnderChestData.of(stack);
-        EnderChannelData channel = data.channel().withBoundPlayer(uuid, name);
-        LivingEnderChestData.set(stack, data.withChannel(channel));
+        if (!current.equals(data.channel().boundPlayerName().orElse(null))) {
+            LivingEnderChestData.set(stack, data.withChannel(
+                data.channel().withPlayerNameCache(current)));
+        }
     }
 
     public static void clearBoundPlayer(ItemStack stack) {

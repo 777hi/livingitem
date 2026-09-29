@@ -243,8 +243,11 @@ public final class LivingToolAssist {
             LivingToolFakePlayer fake =
                 LivingToolFakePlayerCache.get(serverPlayer.serverLevel(), serverPlayer.getUUID());
             fake.setPos(player.getX(), player.getY(), player.getZ());
-            fake.setOnGround(true);   // L28：不设会被原版判为"离地"→ 速度 /5
-            fake.syncOwnerAttributes();   // 镜像主人属性（饰品增益 —— 挖掘速度/效率）
+            fake.setOnGround(true);   // L28：不设会被原版判"离地"→ 速度 /5
+            Player owner = fake.syncOwnerAttributes();   // 镜像主人属性（饰品增益 —— 挖掘速度/效率）
+            if (owner != null) {
+                LivingToolOwnerName.refresh(stack, owner);   // 顺手刷新主人名字的显示缓存
+            }
             fake.equipTool(stack.copy());
             return fake.getDigSpeed(state, pos);
         }

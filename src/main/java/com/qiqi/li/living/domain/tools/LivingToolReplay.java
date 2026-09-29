@@ -136,7 +136,10 @@ public final class LivingToolReplay {
         fake.setPos(origin.x, origin.y, origin.z);
         fake.setOnGround(true);   // L28：不设会被原版判为"离地"→ 速度 /5
         ItemStack held = tool.copy();
-        fake.syncOwnerAttributes();   // 镜像主人属性（饰品增益）
+        Player owner = fake.syncOwnerAttributes();   // 镜像主人属性（饰品增益）
+        if (owner != null) {
+            LivingToolOwnerName.refresh(tool, owner);   // 顺手刷新主人名字的显示缓存
+        }
         fake.equipTool(held);   // L46：同时同步附魔属性，否则效率附魔不生效
 
         // 4) L36：首次命中时补上「挥击前置」—— 直接调 destroyBlock 会跳过这些，
@@ -269,7 +272,10 @@ public final class LivingToolReplay {
         fake.setPos(origin.x, origin.y, origin.z);
         fake.setOnGround(true);
         ItemStack held = tool.copy();
-        fake.syncOwnerAttributes();   // 镜像主人属性（饰品增益）
+        Player owner = fake.syncOwnerAttributes();   // 镜像主人属性（饰品增益）
+        if (owner != null) {
+            LivingToolOwnerName.refresh(tool, owner);   // 顺手刷新主人名字的显示缓存
+        }
         fake.equipTool(held);   // L46：同时同步附魔属性，否则效率附魔不生效
 
         // ⭐ 让 FakePlayer "看着"记忆射线的方向 —— 法杖 / 枪械几乎都读玩家视线。
@@ -395,7 +401,10 @@ public final class LivingToolReplay {
         fake.setPos(origin.x, origin.y, origin.z);
         fake.setOnGround(true);
         ItemStack held = weapon.copy();
-        fake.syncOwnerAttributes();   // 镜像主人属性（饰品增益 —— 攻击力/攻速/击退）
+        Player owner = fake.syncOwnerAttributes();   // 镜像主人属性（饰品增益 —— 攻击力/攻速/击退）
+        if (owner != null) {
+            LivingToolOwnerName.refresh(weapon, owner);   // 顺手刷新主人名字的显示缓存
+        }
         fake.equipTool(held);   // 同步附魔属性，否则锋利等不生效
         // ⭐ 让 FakePlayer 看向目标 —— 与法杖/枪械同款需求，且影响击退方向
         faceTarget(fake, origin, end);

@@ -75,6 +75,20 @@ public final class LivingComponents {
                             .networkSynchronized(UUIDUtil.STREAM_CODEC)
                             .build());
 
+    /**
+     * 主人名字的<b>显示缓存</b>（非绑定数据 —— 绑定关系只看 {@link #LIVING_TOOL_OWNER} 的 UUID）。
+     *
+     * <p>⚠️ 名字是<b>衍生显示数据</b>：服务端在能确认名字时（活化时 / 回放遇到在线主人时）
+     * 刷新缓存，客户端 tooltip 在实时解析失败（主人离线且本地无缓存）时兜底显示它。
+     * 不刷新只会显示旧名，不会显示错人 —— 所以允许陈旧。</p>
+     */
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<String>> LIVING_TOOL_OWNER_NAME =
+            DATA_COMPONENT_TYPES.register("living_tool_owner_name", () ->
+                    DataComponentType.<String>builder()
+                            .persistent(Codec.STRING)
+                            .networkSynchronized(ByteBufCodecs.STRING_UTF8)
+                            .build());
+
     public static final DeferredHolder<DataComponentType<?>, DataComponentType<Integer>> LIVING_TOOL_DIG_TICKS =
             DATA_COMPONENT_TYPES.register("living_tool_dig_ticks", () ->
                     DataComponentType.<Integer>builder()

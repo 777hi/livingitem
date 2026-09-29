@@ -241,15 +241,20 @@ key.isPublic()          // 未绑定              → 公共频道
 绑定数据存储在活末影箱物品的 DataComponent 中（通过 `LivingEnderChestData` + `EnderChannelData` record）：
 
 ```java
-// EnderChannelData — 绑定玩家数据
+// EnderChannelData — 绑定玩家数据（2026-09-30 定稿：UUID=绑定数据，名字=显示缓存）
+// ⚠️ 两个字段语义不对等：绑定关系只看 UUID；bound_player_name 是衍生显示数据，
+//    专治「专用服务器上主人离线、客户端实时解析失败」—— 服务端在能确认名字时刷新
+//    （绑定时记名；tick 遇到在线绑定玩家刷新，withPlayerNameCache 只动缓存不动绑定），
+//    陈旧只是显示旧名、不会显示错人。与活工具/活武器（LIVING_TOOL_OWNER_NAME）同口径：
+//    显示统一走 OwnerNameResolver#displayName（实时解析 → 显示缓存 → 短 UUID）。
 public record EnderChannelData(
-    Optional<String> boundPlayerUuid,   // 绑定玩家 UUID（字符串形式）
-    Optional<String> boundPlayerName    // 绑定玩家名称
+    Optional<String> boundPlayerUuid,   // 绑定玩家 UUID（字符串形式）—— 绑定数据
+    Optional<String> boundPlayerName    // 绑定玩家名 —— 显示缓存（允许陈旧）
 ) {
     public static final EnderChannelData EMPTY = new EnderChannelData(Optional.empty(), Optional.empty());
 
-    public EnderChannelData withBoundPlayer(UUID uuid, String name) {
-        return new EnderChannelData(Optional.of(uuid.toString()), Optional.of(name));
+    public EnderChannelData withBoundPlayer(UUID uuid, String nameCache) {
+        return new EnderChannelData(Optional.of(uuid.toString()), Optional.of(nameCache));
     }
 
     public Optional<UUID> getPlayerUuid() {
@@ -745,8 +750,9 @@ public void addToTooltip(Item.TooltipContext context,
     tooltipAdder.accept(Component.translatable("tooltip.livingitem.ender_chest.status"));
 
     if (channel.boundPlayerUuid().isPresent()) {
-        // 直连模式
-        String name = channel.boundPlayerName().orElse("???");
+        // 直连模式 —— 统一显示口径：实时解析 → 显示缓存 → 短 UUID
+        String name = OwnerNameResolver.displayName(
+            channel.getPlayerUuid().orElseThrow(), channel.boundPlayerName().orElse(null));
         tooltipAdder.accept(Component.translatable(
             "tooltip.livingitem.ender_chest.bound_player", name)
             .withStyle(style -> style.withColor(0xDD44FF).withBold(true)));
@@ -1161,7 +1167,7 @@ v11 及之前 `clear()` / `removeChannel()` 全项目零调用者，缓存只增
 ### 14.6 Tooltip 与同步
 
 - [ ] 路由模式显示频道号和路由数量
-- [ ] 直连模式显示绑定玩家名称（紫色加粗）
+- [ ] 直连模式显示绑定玩家（紫色加粗；实时解析名字，离线且无缓存时显示短 UUID）
 - [ ] 高级模式（F3+H）显示每条路由的详细信息
 - [ ] 客户端缓存与服务端同步：路由变化后 Tooltip 立即更新
 - [ ] EnderChannelClientCache 线程安全（ConcurrentHashMap）

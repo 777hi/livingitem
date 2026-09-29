@@ -15,6 +15,17 @@
 
 ---
 
+## 2026-09-30
+
+- ✅ **tooltip 主人显示统一**：活末影箱与活工具/活武器收敛为同一口径 ——
+  **UUID 是绑定数据，名字是显示缓存**（`OwnerNameResolver#displayName` 单一显示来源：
+  实时解析 → 显示缓存 → 短 UUID；显示短 UUID 的方案被否——「有毛用」）。
+  新增 `LIVING_TOOL_OWNER_NAME` 显示缓存组件（活化时记名；`syncOwnerAttributes` 改为
+  返回在线主人，回放/辅助四路顺手刷新，改名下次回放即跟上；随 owned-types 取消活化清除）；
+  `EnderChannelData.boundPlayerName` 语义改为显示缓存（绑定时记名 + 末影箱 tick 遇到
+  在线绑定玩家刷新，`withPlayerNameCache` 只动缓存不动绑定）。
+  `living-ender-chest-tech.md` 数据模型与验证清单已同步。
+
 ## 2026-09-29
 
 - ✅ **活武器连击修复**：主动模式高速连击（不扣耐久的灾变武器最明显）——「上次攻击 tick」

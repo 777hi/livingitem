@@ -309,6 +309,11 @@ fake.setItemInHand(InteractionHand.MAIN_HAND, held);
 且**与宿主形态无关**（只看主人在线 + 同维度）—— 机制与边界见
 [living-weapon-tech.md](living-weapon-tech.md) §8.1 / §8.1.1。
 
+**主人显示（tooltip「赋灵者」行）**：绑定 UUID 是**数据**（`LIVING_TOOL_OWNER`），
+玩家名是**显示缓存**（`LIVING_TOOL_OWNER_NAME`，活化时记名、回放遇到在线主人时刷新）。
+tooltip 统一走 `OwnerNameResolver#displayName`：实时解析 → 显示缓存 → 短 UUID ——
+与活末影箱（`EnderChannelData.boundPlayerName`）同口径，决策见 `decisions.md` D-core-06。
+
 ### 5.5 模拟完整操作（`L36`）
 
 直接调 `gameMode.destroyBlock()` 会**跳过**挥击前置，故首次命中时补上：

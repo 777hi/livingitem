@@ -189,6 +189,7 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-09-30 | tooltip 主人显示统一：UUID=绑定数据、名字=显示缓存（新增 `LIVING_TOOL_OWNER_NAME`，`syncOwnerAttributes` 返回主人供四路回放刷新；末影箱 tick 同款），显示走 `OwnerNameResolver#displayName` 实时→缓存→短UUID | `living-ender-chest-tech.md` §绑定 |
 | 2026-09-29 | 活武器**高速连击修复**：出手记录（上次攻击 tick）改写在 `fake.attack()` 之前 + 攻击分支不走 `matches` 短路必写回；灾变源码核对不扣耐久系武器；✅ 实测间隔恢复面板冷却 | `living-weapon-tech.md` §5 |
 | 2026-09-29 | tooltip 新增**「赋灵者」行**（绑定主人）：`LIVING_TOOL_OWNER` 补网络同步 + 公共侧解析桥 `OwnerNameResolver`（名字→短 UUID 回退）；文档澄清属性镜像生效条件与宿主无关 + 活箱子非宿主口径 | `living-weapon-tech.md` §8.1.1 |
 | 2026-09-28 | C 组 A1：**api 面净化** —— `LivingItemManager` 瘦身 ~950→347 行成纯框架类（不牵出任何 domain 类型）；28 个组件/附件常量迁注册站 `LivingComponents`；25 个 Data 类自带 `of()/set()`；⚠️ 脚本 --apply 输出被吞致误判重跑的教训 | `api-contract.md` §1.2 |
@@ -198,7 +199,6 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 | 2026-09-25 | 辅助攻击：攻击环改为**按每把武器自己的冷却**分组（轮流扑咬，不再整组一起飞）；创造模式放开辅助（攻击 + 挖掘）；tooltip 模式改「主动 / 被动」+ 补攻击记忆行 | `living-weapon-tech.md` §7 |
 | 2026-09-25 | 联机：**主动模式（有记忆）活工具可见**（悬空工具体 + 挖掘转圈 / 攻击脉冲 + 记忆射线 F3+B）+ 攻击环可见；收集口径扩为 `isAssistItem ∪ 有记忆`（组件随 `ItemStack.STREAM_CODEC` 随包走，零新增同步） | `living-tool-tech.md` §11.9 |
 | 2026-09-24 | 活武器三个「静默失效」修复（有记忆有怪却一刀不打）：首次冷却死锁 / `ATTACK_SPEED=0` / 隔墙没排除宿主；另修组件里可空 `BlockPos` 发包 NPE（曾致被踢出） | `living-weapon-tech.md` §5 |
-| 2026-09-23 | 活武器近战核心链路：`AttackMemory` 第三类记忆 + `LivingDamageEvent.Post` 录制 + `replayAttack`；⚠️ 冷却须 override `getAttackStrengthScale()` 手动推进 | `living-weapon-tech.md` §1~§7 |
 
 
 ## 排查铁律：原版机制挡路时
