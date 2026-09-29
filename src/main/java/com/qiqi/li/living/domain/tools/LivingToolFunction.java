@@ -141,7 +141,15 @@ public class LivingToolFunction implements LivingItemFunction {
                 LivingToolReplay.AttackResult result = LivingToolReplay.replayAttack(
                     tool, memory.attack(), origin, hostBlocks, serverLevel, now);
                 if (result.outcome() == LivingToolReplay.Outcome.ATTACKED) {
-                    writeBack(context, entry.slotIndex(), tool, result.tool());
+                    // ⭐ 攻击侧【不走】writeBack 的 matches 短路，按「记录是否翻转」写回：
+                    //    matches 对「只变运行时组件」的栈可能误判相等（项目已知坑，见 syncStateFlip），
+                    //    而不扣耐久的武器（灾变系自结伤害型）攻击后恰好只变 LIVING_TOOL_LAST_ACTION ——
+                    //    在返回副本的宿主 handler（getItem 非实时引用）下，就地写的记录会随副本丢弃
+                    //    ⇒ 「上次攻击 tick」丢失 ⇒ 下 tick 判成首刀 ⇒ 高速连击。
+                    //    出手每次都要保证冷却计时起点落进容器，这里 matches 救不了，直接写。
+                    ItemStack after = result.tool();
+                    context.setItem(entry.slotIndex(), after);
+                    context.syncSlotToClients(entry.slotIndex(), after);
                     handled = true;
                 } else if (result.outcome() == LivingToolReplay.Outcome.COOLING) {
                     handled = true;   // 专心等冷却 —— 别跑去挖方块，否则观感像"三心二意"

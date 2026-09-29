@@ -338,6 +338,9 @@ if (freshStart) {
 **三者共用同一条回放逻辑**：都走 `ContainerLivingItemHandler#processContext`，
 差异只在"射线起点"（`LivingToolFunction#resolveOrigin`）与"写回同步"。
 
+> ⚠️ **"三宿主"就是全部宿主，没有第四种** —— 活箱子**不是宿主**，放进活箱子里的活物品
+> **不会被 tick**（设计现状，非 bug）；复算判据见 [living-chest-tech.md](living-chest-tech.md) §3.3。
+
 | 宿主 | 扫描通道 | 上下文实现 | 写回同步 |
 |---|---|---|---|
 | 方块容器 | `processLevelContainers`（区块 → 方块实体） | `SimpleContainerContext` | `ClientboundContainerSetSlotPacket` |

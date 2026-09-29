@@ -421,20 +421,30 @@ public final class LivingToolReplay {
             return AttackResult.none(Outcome.COOLING);
         }
 
-        fake.attack(hit.getEntity());
-
-        // 记下本次出手的 tick（下次算冷却用）+ 顺带驱动客户端的"动作"动画。
-        // ⚠️ 两端都要写：held 是上面 copy 的副本，写回槽位用的是它。
+        // 记下本次出手的 tick（冷却计时起点）+ 顺带驱动客户端的"动作"动画。
+        // 🔴 必须写在 fake.attack()【之前】（2026-09-29 修复"慢速武器高速连击"）：
+        //    attack() 走的是【武器自己的代码】—— 模组武器常在 onLeftClickEntity 里
+        //    自结伤害并返回 true ⇒ CommonHooks.onPlayerAttackTarget 返回 false ⇒
+        //    Player#attack 第一行就提前返回；被事件取消 / 抛异常同理。
+        //    写在 attack() 之后的记录就【永远执行不到】⇒ 下 tick last == null ⇒
+        //    判成"没打过"立即再打 ⇒ 冷却闸门形同虚设，每 tick 一刀。
+        //    📌 同一批武器的伴生症状"不扣耐久"是同一根源的【旁证】：自结伤害的武器
+        //    不走原版 hurtEnemy ⇒ 不掉耐久 ⇒ 也因此不会被 writeBack 的 durability
+        //    差异救回来。
         //
         // ⭐ target 写【目标生物的所在格】而不是 null —— 客户端据此两件事：
         //   ① 有记忆的：走"瞬现到目标位 + 缩放脉冲"（与活工具的交互动画同款）
         //   ② 无记忆的：把攻击环摆到目标处（见 LivingToolModelRenderer#renderAttackRing）
         //   ⇒ 取【包围盒中心】所在格（而非 blockPosition()）—— 后者是脚下方块，
         //     大型生物会让环沉到脚底。
+        // ⚠️ 两端都要写：weapon 是容器里的实时栈（就地生效），held 是写回槽位用的副本。
         LivingToolAction action =
             new LivingToolAction(now, BlockPos.containing(hit.getEntity().getBoundingBox().getCenter()));
         LivingToolAction.set(weapon, action);
         LivingToolAction.set(held, action);
+
+        fake.attack(hit.getEntity());
+
         return new AttackResult(held, Outcome.ATTACKED);
     }
 

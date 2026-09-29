@@ -1,7 +1,7 @@
 # Living Chest (活箱子) 技术文档
 
-> **文档版本**: 2026.09 v7.2  
-> **最后更新**: 2026-09-08  
+> **文档版本**: 2026.09 v7.3  
+> **最后更新**: 2026-09-29  
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -216,17 +216,47 @@ LivingChestFunction.extractItem(chestStack, target, amount)
               return result
 ```
 
-### 3.3 Tick 维护
+### 3.3 Tick 维护 —— ⭐ 活箱子不是宿主形态，**内容物不会被 tick**
 
-活箱子在 tick 中不执行任何操作（空实现），因为其数据已在 `CONTAINER` 组件中，不需要每 tick 更新。
+> 🔴 **给排查者的硬约束（2026-09-29 因真实排查走弯路而固化）**：
+> **放进活箱子里的任何物品（含活工具 / 活武器 / 其它活物品）【不会】被 tick** ——
+> 不挖掘、不攻击、不熔炼、不运行。
+> 排查「某活物品放进活箱子后为什么不工作」时，**到此为止：这是设计现状，不是 bug**，
+> **不要**再去追 tick 管线、也不要去找"活箱子内容物的处理路径" —— 它不存在。
+
+**为什么**：活箱子是「被外层容器 tick 的一个物品」，**不是宿主**。它自己的 `tick()`
+是**有意空实现**（数据已在 `CONTAINER` 组件里，无需每 tick 维护），
+而箱子内容物在 tick 管线里**从来不被当作独立槽位扫描** ——
+管线扫的是「宿主容器的槽位」，`CONTAINER` 组件内部对管线不可见。
+
+**宿主形态只有三种**（方块容器 / 玩家背包 / 掉落物，判据见
+[living-weapon-tech.md](living-weapon-tech.md) §6 与 [living-tool-tech.md](living-tool-tech.md)），
+**活箱子不在其中**。将来若要让活箱子成为宿主（内容物活起来），属于**新增能力**，
+需要显式开一条处理通道 —— 不能指望现有管线自动覆盖。
+
+**复算判据**（可执行，防止本文陈述与代码漂移）：
+
+```bash
+# ① tick 管线入口只有三处（玩家背包 / 方块容器 / 掉落物），没有第四条通道：
+grep -n "processContainer\|processItemEntityContainers\|processContainerAt" src/main/java/com/qiqi/li/LivingItem.java
+
+# ② 活箱子自己的 tick 是空实现：
+grep -n "public void tick" -A 3 src/main/java/com/qiqi/li/living/domain/chest/LivingChestFunction.java
+
+# ③ 唯一像"活箱子容器适配器"的 LivingChestItemHandler 是死代码（零构造点 = 无任何通道）：
+grep -rn "new LivingChestItemHandler" src/main   # 期望：无命中
+```
 
 ```java
 @Override
 public void tick(List<SlotEntry> entries, ContainerContext context, TickContext tick, Level level) {
     if (level.isClientSide) return;
-    // 空实现 —— 活箱子数据已存储在 CONTAINER 组件中
+    // 空实现 —— 活箱子数据已存储在 CONTAINER 组件中；内容物不是槽位、不会被 tick
 }
 ```
+
+> ℹ️ `LivingChestAccessor`（§6）走的是**传输**管线（活漏斗存取），不是 tick ——
+> 别把它误当成"内容物会动"的证据。
 
 ### 3.4 取消活化
 

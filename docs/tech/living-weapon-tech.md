@@ -260,6 +260,42 @@ if (scale < 1.0F) return null;   // 还在冷却中，本次不出手
 > **必须检查「首次 / 无记录」那条路径能不能自己走通** ——
 > 若它在放行前就 `return`，且 return 之前**不写状态**，就会**永久卡死**。
 
+### 🔴 第四个坑（**反向**）：出手记录写在 `attack()` 之后 ⇒ 冷却闸门失效变【高速连击】（2026-09-29 修复）
+
+上面三个坑都是「一刀不打」，这个坑**方向相反**：**攻速越慢的武器打得越离谱**。
+实测集中在**灾变模组里不扣耐久的武器**（源码已核：Ceraunus / The_Annihilator / Astrape /
+Meat_Shredder 等注册处只有 `stacksTo(1).fireResistant()`，**无 `.durability()`**
+⇒ `isDamageable()==false`；攻速 -2.4 ~ -3.3）；原版剑 / 斧正常。
+
+**根因 —— 「上次攻击 tick」的持久化有两条丢失通道**：
+
+```
+通道 ①  writeBack 的 ItemStack.matches 短路：
+        不扣耐久的武器攻击后【只变】 LIVING_TOOL_LAST_ACTION（运行时组件），
+        matches 对这类变化可能误判相等（项目已知坑，见 `syncStateFlip` 的说明）⇒ setItem 被跳过；
+        在 getItem 返回【副本】的宿主 handler 下，就地写在副本上的记录随副本丢弃
+        ⇒ 下 tick last == null ⇒ 判成"没打过" ⇒ scale = 1.0 ⇒ 立即再打。
+        （背包等实时引用宿主理论上靠就地写幸存，但任何宿主形态都不该依赖这条脆弱通道。）
+
+通道 ②  旧实现把记录写在 fake.attack() 之【后】：
+        attack() 走武器自己的代码 —— 模组武器若在 onLeftClickEntity 自结伤害返回 true、
+        被事件取消、或抛异常，attack() 提前退出 ⇒ 记录永远执行不到 ⇒ 同样每 tick 重打。
+        ⚠️ 已核灾变源码：这批武器【没有】拦截左键，故本次实测不是通道 ② 触发；
+        但它是结构性隐患，任何"自结伤害型"武器都会踩，仍按规则修掉。
+```
+
+**修法（两道，都要在）**：
+
+1. ⭐ **出手记录必须写在 `fake.attack()` 之前** —— 计时起点先落账，
+   攻击无论怎么退出都不影响下一 tick 的冷却判定。
+   代价：若攻击被事件取消，武器会白等一个冷却 —— 比连击失控安全得多。
+2. **攻击侧写回不走 `writeBack` 的 `matches` 短路**（`LivingToolFunction`）——
+   出手即 `setItem` + 同步，保证冷却计时起点必然落进容器，与宿主 handler 是否返回副本无关。
+
+**验证**：✅ **已实测通过（2026-09-29 用户确认）** —— 不扣耐久的灾变武器放背包主动打怪，
+攻击间隔恢复面板冷却节奏；且攻速类饰品增益（§8.1 属性镜像）正常生效。
+若日后仍出现连击 ⇒ 用一次性日志打出每 tick 的 `(last.tick, now, cooldown, scale)` 定位真实丢失点。
+
 ### 冷却数值：完全由【那把武器自身】的攻击速度决定
 
 ```
@@ -367,9 +403,13 @@ Caused by: NullPointerException: Cannot invoke "BlockPos.asLong()" because "p_32
 
 | 形态 | 入口 | 判据 |
 |---|---|---|
-| 容器（箱子 / 末影箱） | `ContainerLivingItemHandler#processContext` | 按 `canApply` 分组 ⇒ ✅ 自动覆盖 |
+| 容器（**普通方块容器**：箱子 / 末影箱等） | `ContainerLivingItemHandler#processContext` | 按 `canApply` 分组 ⇒ ✅ 自动覆盖 |
 | **玩家背包** | 同上 | ✅ 自动覆盖 |
 | **掉落物** | `LivingItem#processItemEntityContainers` | 🔴 **独立前置过滤** —— **不走** `canApply` 分组 |
+
+> ⚠️ **上表「容器」不含活箱子** —— 活箱子**不是宿主形态**，放进活箱子里的活物品
+> **不会被 tick**（不攻击、不挖掘），这是设计现状而非 bug。
+> 依据与复算判据见 [living-chest-tech.md](living-chest-tech.md) §3.3，别再去追处理路径。
 
 > 🔴 **事故（2026-09-24）**：掉落物形态的过滤原先只写 `isLivingTool`
 > ⇒ **活剑被整个跳过 ⇒ 不 tick ⇒ 不攻击**。
