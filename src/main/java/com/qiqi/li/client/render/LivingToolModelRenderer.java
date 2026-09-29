@@ -200,6 +200,19 @@ public final class LivingToolModelRenderer {
     private static final float MODEL_UPRIGHT_FIX = (float) (-Math.PI / 4.0);
 
     /**
+     * 【路线 A｜BEWLR 物品】在【第三人称手持】姿态之上再叠加的<b>立正角</b> ——
+     * 绕 Y 转 {@code -90°}（2026-09-30 四候选实测：**#3 = 270°**）。
+     *
+     * <p>配套前提：BEWLR 改走 {@code THIRD_PERSON_RIGHT_HAND}（“拿在手上”的姿态），
+     * 而<b>不是</b>模组为展示框调的 {@code FIXED} —— 后者正是原子分解机<b>歪 45°</b>的根源
+     * （用户实测：换过去后立刻"横平竖直、没有斜的"，只剩需要立正）。</p>
+     *
+     * <p>📌 选轴历程（供以后参考，别重走）：绕 X ⇒ 四档完全一致（无效，长轴含 X）；
+     * 绕 Z ⇒ 有效但角度不对；绕 Y ⇒ 正确。</p>
+     */
+    private static final Quaternionf BEWLR_UPRIGHT_FIX = Axis.YP.rotationDegrees(-90.0F);
+
+    /**
      * 挂在<b>射线上</b>的工具（自主模式）额外绕<b>长轴</b>的滚转修正角。
      *
      * <p><b>为什么只有它需要</b>：立正只保证"长轴竖直"，但<b>板面朝向</b>（脸朝哪）
@@ -873,13 +886,6 @@ public final class LivingToolModelRenderer {
         }
         BakedModel baked = mc.getItemRenderer().getModel(stack, level, null, 0);
         final boolean customRenderer = baked.isCustomRenderer();
-        ItemTransform fixedPose = null;
-        ItemTransform thirdPose = null;
-        if (customRenderer) {
-            fixedPose = baked.getTransforms().getTransform(ItemDisplayContext.FIXED);
-            thirdPose = baked.getTransforms()
-                .getTransform(ItemDisplayContext.THIRD_PERSON_RIGHT_HAND);
-        }
 
         // 风车自转：绕【立正后的板面法线】= 薄板（T 平面）的【法线】。
         // ⭐ 为什么绕板面法线（2026-09-20 用户实测定）：镐子是一块【平面】。
@@ -909,21 +915,27 @@ public final class LivingToolModelRenderer {
         //    fixed display 交给 renderStatic(FIXED) 全权应用（模组为展示框调好的姿态：
         //    剑柄朝圆心、剑身⊥圆平面 ✓），只补缩放比 thirdperson/fixed（对齐第三人称手持）。
         //    🔴 不能走路线 B：会与 fixed display 叠加成双重变换（scale 0.8 × 0.35 = 0.28）。
-        if (customRenderer) {
-            if (fixedPose != ItemTransform.NO_TRANSFORM && thirdPose != ItemTransform.NO_TRANSFORM) {
-                poseStack.scale(
-                    thirdPose.scale.x() / fixedPose.scale.x(),
-                    thirdPose.scale.y() / fixedPose.scale.y(),
-                    thirdPose.scale.z() / fixedPose.scale.z());
-            }
-        } else {
+        // ⭐ 实验（2026-09-30）：BEWLR 物品改走【第三人称手持】display —— 与"拿在手上"同源，
+        //    不再用模组为【展示框】调的 fixed ⇒ 歪 45° 已消除（用户实测"横平竖直"），
+        //    现只剩"躺着" ⇒ 差一个整 90° 的立正旋转，用四候选并排定角。
+        //    路线 B（普通模型）保持 FIXED + `-45°` 不变 ⇒ 不破坏现有可用状态。
+        if (!customRenderer) {
             poseStack.mulPose(Axis.ZP.rotation(MODEL_UPRIGHT_FIX));
+            if (scale != 1.0F) {
+                poseStack.scale(scale, scale, scale);
+            }
+            mc.getItemRenderer().renderStatic(stack, ItemDisplayContext.FIXED, light,
+                OverlayTexture.NO_OVERLAY, poseStack, buffers, level, 0);
+        } else {
+            // ⭐ BEWLR 立正角（实测定，见常量说明）
+            poseStack.mulPose(BEWLR_UPRIGHT_FIX);
+            if (scale != 1.0F) {
+                poseStack.scale(scale, scale, scale);
+            }
+            mc.getItemRenderer().renderStatic(stack,
+                ItemDisplayContext.THIRD_PERSON_RIGHT_HAND, light,
+                OverlayTexture.NO_OVERLAY, poseStack, buffers, level, 0);
         }
-        if (scale != 1.0F) {
-            poseStack.scale(scale, scale, scale);
-        }
-        mc.getItemRenderer().renderStatic(stack, ItemDisplayContext.FIXED, light,
-            OverlayTexture.NO_OVERLAY, poseStack, buffers, level, 0);
         poseStack.popPose();
     }
 

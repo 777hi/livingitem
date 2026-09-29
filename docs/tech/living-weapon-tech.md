@@ -449,19 +449,25 @@ assistWeapons = isAssistWeapon → 攻击环
 
 ### 7.2 模型立正：按「是否自定义渲染」分两条路（2026-09-24，实测三轮）
 
-**问题**：环上用 `renderStatic(FIXED)` 渲染，只有 FIXED 自带的 transform（原版 = Y180）——
-物品模型按「手持斜 45°」建模，立正本该由**手持 display transform** 完成 ⇒ 旧方案用固定
-`-45°(绕Z)` 手工凑，对原版系准，但**灾变这类模组武器方向偏 45°、大小不对**（用户实测）。
+**问题**：环上用 `renderStatic` 渲染；物品模型按「手持斜 45°」建模，立正本该由
+**手持 display transform** 完成 ⇒ 路线 B 用固定 `-45°(绕Z)` 手工凑（对原版系准）；
+而 **BEWLR 物品若用 `FIXED`（模组为"物品展示框"调的姿态）就会歪 45°**
+（原子分解机，用户实测）。
 
-**最终方案（`drawModel` 按 `isCustomRenderer()` 分路）**：
+**方案（`drawModel` 按 `isCustomRenderer()` 分路）**：
 
 | 路线 | 适用 | 做法 |
 |---|---|---|
-| **B** | 原版 + 守约定的模组 | **旧实测方案原样保留**：FIXED 自带 Y180（不碰）→ 绕 Z `-45°` 立正 → spin 绕 Z（= 板面法线） |
-| **A** | BEWLR（灾变等） | fixed display 交给 `renderStatic(FIXED)` 全权应用（模组为展示框调好的姿态：柄朝圆心、剑身⊥圆平面）；**缩放乘 `thirdperson/fixed` 比值**（灾变 0.8/0.35 ≈ 2.29×）对齐第三人称手持大小 |
+| **B** | 原版 + 守约定的模组 | `renderStatic(FIXED)`（FIXED 自带 Y180，不碰）→ 绕 Z `-45°` 立正 → spin 绕 Z（= 板面法线） |
+| **A** | BEWLR（灾变、原子分解机等） | ⭐ `renderStatic(THIRD_PERSON_RIGHT_HAND)` —— 走**「拿在手上」**的姿态（不再用展示框的 fixed）→ 再绕 Y `-90°` 立正（`BEWLR_UPRIGHT_FIX`）。**不需要**再补 thirdperson/fixed 缩放比（MC 自己会应用手持缩放） |
 
-🔴 **路线 A 不能混入路线 B 的立正**：会与 JSON 的 fixed display 叠加成**双重变换**
-（灾变实测 scale 0.8 × 0.35 = 0.28 ⇒ 缩放错乱）。
+⭐ **路线 A 为何改用 `THIRD_PERSON`**（2026-09-30 用户实测）：换过去后原子分解机立刻
+**"横平竖直、没有斜的"** ⇒ 歪 45° 的根源就是用了模组为**展示框**调的 `fixed`；
+换手持后只剩"需要立正"，一个整 90° 的旋转即可（四候选实测 **#3 = 绕 Y −90°**）。
+📌 选轴历程（别重走）：绕 X ⇒ 四档完全一致（无效，长轴含 X）；绕 Z ⇒ 有效但角度不对；**绕 Y ⇒ 正确**。
+
+🔴 **路线 A 不能混入路线 B 的立正**：两套链不同（一个是 FIXED + `-45°`，一个是手持 + `-90°`），
+混用会与各自已应用的 display transform 叠加成**双重变换**（曾实测 scale 0.8 × 0.35 = 0.28 ⇒ 缩放错乱）。
 
 **连带坑（已修）**：重构时 `fixedPose` 只在路线 B 分支赋值、路线 A 分支却引用它
 ⇒ 环上有 BEWLR 物品时 `renderBackRing` 第一帧 NPE，**进存档即崩**（crash report 实锤）。
@@ -471,6 +477,14 @@ assistWeapons = isAssistWeapon → 攻击环
 
 目标是让**不守约定的模组物品也自动立正**（原始症状：原子分解机歪 45°、大小不对）。
 **四轮全部失败，代码已回退到 §7.2 的旧方案；尝试本身留在 git 历史里当参考。**
+（✅ 真正的解法见 §7.4 —— 不是"更聪明的计算"，而是**换一条渲染路径**。）
+
+> ⚠️ **本节第一版曾写了一条已被证伪的结论，务必以这里为准**：
+> ~~"本环境（sodium/iris）`renderStatic` 不应用 display transform"~~ —— **是错的。**
+> 源码 `ItemRenderer`（`renderStatic` 内部实际调用的那个 `render`）L123 就是
+> `ClientHooks.handleCameraTransforms(...)`，**会应用**；L155-157 也**会**处理 BEWLR
+> （`renderByItem`）。当时真正的问题只是**滚转 / 轴选择没标定**（"风扇叶片"= 长轴已对、板面躺），
+> 我却误判成"transform 没生效"，一路去改立正，于是四轮全废。
 
 | # | 日期 / commit | 方案 | 结果 |
 |---|---|---|---|
@@ -496,28 +510,25 @@ assistWeapons = isAssistWeapon → 攻击环
 **个别既不守约定、又非 BEWLR 的物品（原子分解机）目前没有通用解** ——
 若要修，只能像 YujianCraft 那样做**按物品的姿态预设表**（默认通用值 + 白名单配补偿角）。
 
-### 7.4 🔜 下一个可试的方向（2026-09-29 用户提出，**未验证**）
+### 7.4 ✅「走手上那条路」—— 想法成立（2026-09-29 提出，09-30 验证采纳）
 
 用户的直觉：**「明明在玩家手里姿态都是对的」⇒ 那就走【手上渲染】那条路。**
 
-不需要"造隐形玩家"（实体开销 / 同步 / 会被碰撞·仇恨等系统看到，不实际）—— 官方就有入口：
+✅ **已验证成立，且实现比预想的更简单** —— 不必换用
+`ItemInHandRenderer#renderItem`（那是第一人称手部入口），
+**直接把 `renderStatic` 的 context 从 `FIXED` 换成 `THIRD_PERSON_RIGHT_HAND` 即可**：
+因为 `renderStatic` 内部本来就会 `handleCameraTransforms` 应用 display transform
+（源码 `ItemRenderer` L123）⇒ 它会按"拿在手上"的方式摆好每件物品。
 
-```java
-mc.getItemInHandRenderer().renderItem(
-        livingEntity, stack, ItemDisplayContext.THIRD_PERSON_RIGHT_HAND,
-        false, poseStack, buffers, light);
-```
-
-- 接受**任意 `LivingEntity`**（不必是玩家）；**只画物品、不画手臂**；位置 / 朝向由传入的
-  `poseStack` 决定 ⇒ 环上的摆放方式完全不受影响。
-- 它走的是【实体手持】路径（`ItemRenderer#render` → 应用 display transform），
-  与我们四次失败用的 `renderStatic`（**物品展示 / 掉落物**路径，本环境不应用 transform）
-  **不是同一条路** —— 这正是"手里看着是对的、环上却不对"的解释。
-- ⇒ 每件物品的建模差异由**原版自己的 transform** 吸收，大小也对；我们只需再叠一个
-  **通用的立正角**把"手上的姿态"转成放射状 ⇒ 有望成为真正的通用解。
-- ⚠️ **待验证**：sodium 是否也劫持了实体手持这条路。用户手上看着正常 ⇒ 大概率没有。
-- ⚠️ **验证成本极低**：就是把 `drawModel` 里的 `renderStatic(...)` 换成上面这一行
-  （其余不动），先看原版与原子分解机的姿态 / 大小。
+- 效果（原子分解机实测）：由**歪 45°** ⇒ **"横平竖直、没有斜的"** ⇒ 再补一个
+  **绕 Y −90°** 立正即完全正确（已作为路线 A 落地，见 §7.2）。
+- ❌ **不需要造"隐形玩家"**：实体开销 / 网络同步 / 会被碰撞·仇恨等系统看到，不实际，
+  而且根本没必要 —— 姿态由 display transform 决定，与"谁拿着"无关。
+- ⭐ **这才是通用解的正确分工**：
+  **MC 负责"每件物品各自摆正"（原版自己的 transform），我们只负责"整体转向径向"**
+  ⇒ 建模差异自动被吸收，而不是我们去逐个标定。
+- 🔜 **剩余待办**：路线 B（普通模型）目前仍用 `FIXED` + `-45°`。
+  若要彻底统一，可把路线 B 也改走 `THIRD_PERSON` + 重新标定立正 / 滚转（未做）。
 
 **连带坑（已修）**：重构时 `fixedPose` 只在路线 B 分支赋值、路线 A 分支却引用它
 ⇒ 环上有 BEWLR 物品时 `renderBackRing` 第一帧 NPE，**进存档即崩**（crash report 实锤）。
