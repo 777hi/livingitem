@@ -234,6 +234,9 @@ public final class LivingToolModelRenderer {
      */
     private static final float RING_FACE_ROLL = (float) (Math.PI * 1.5);   // 90° + 180°（整体翻正）
 
+    /** ⏳ 临时（2026-09-30）：射线模式滚转四候选（以柄为轴），定角后连本字段一起删。 */
+    private static final boolean DEBUG_RAY_ROLL_CANDIDATES = true;
+
     /**
      * 【路线 A｜BEWLR 物品】在【第三人称手持】姿态之上再叠加的<b>立正角</b> ——
      * 绕 Y 转 {@code -90°}（2026-09-30 四候选实测：**#3 = 270°**）。
@@ -260,7 +263,7 @@ public final class LivingToolModelRenderer {
      * <p>⚠️ 它<b>只</b>管"脸朝哪"，<b>不</b>影响自转轴 —— 自转写在它的内侧，轴恒为板面法线
      * （见 {@link #drawModel}）。曾误把它当自转轴的旋钮，导致自转变成"横着翻滚"。</p>
      */
-    private static final float RAY_ROLL_FIX = (float) (Math.PI * 1.5);
+    private static final float RAY_ROLL_FIX = (float) Math.PI;
 
     // ══════════════════════════════════════════════════════════════════════════
     //  辅助环（无记忆的活工具）—— 脑袋后面一圈"放射"
@@ -912,20 +915,27 @@ public final class LivingToolModelRenderer {
         //    ⭐ 但【不需要逐物品计算】：板面法线用常量近似 PLATE_LOCAL（由 handheld 推出），
         //      每件物品的微小差异忽略；且它差 180° 在视觉上等价 ⇒ 无需标定。
         if (ringNormal != null) {
-            Vec3 tangent = ringNormal.cross(dir);
-            if (tangent.lengthSqr() < 1.0E-6) {
-                tangent = ringNormal.cross(WORLD_UP);   // 退化兜底
+            if (customRenderer) {
+                // 🔴 BEWLR 用自己的 ringRoll（0 / π）—— 运行时那套的板面法线基准（PLATE_LOCAL=-X）
+                //    是给【普通贴图模型】推的，BEWLR 是实体模型、模型空间不同 ⇒ 照用会躺（实测）。
+                if (ringRoll != 0.0F) {
+                    poseStack.mulPose(Axis.YP.rotation(ringRoll));
+                }
+            } else {
+                // 普通模型：把【板面法线】转到【切线】⇒ 板面 ⊥ 圆平面。
+                Vec3 tangent = ringNormal.cross(dir);
+                if (tangent.lengthSqr() < 1.0E-6) {
+                    tangent = ringNormal.cross(WORLD_UP);   // 退化兜底
+                }
+                tangent = tangent.normalize();
+                Vector3f nLocal = new Matrix4f(poseStack.last().pose()).invert()
+                    .transformDirection(new Vector3f((float) tangent.x, (float) tangent.y,
+                        (float) tangent.z)).normalize();
+                float roll = (float) Math.atan2(
+                    new Vector3f().cross(PLATE_LOCAL, nLocal).y(), PLATE_LOCAL.dot(nLocal));
+                // ⭐ 叠加 ringRoll（0 / π）：没有它开锋朝向绕环连续 ⇒ 左右刃一前一后（实测）。
+                poseStack.mulPose(Axis.YP.rotation(roll + RING_FACE_ROLL + ringRoll));
             }
-            tangent = tangent.normalize();
-            Vector3f nLocal = new Matrix4f(poseStack.last().pose()).invert()
-                .transformDirection(new Vector3f((float) tangent.x, (float) tangent.y,
-                    (float) tangent.z)).normalize();
-            float roll = (float) Math.atan2(
-                new Vector3f().cross(PLATE_LOCAL, nLocal).y(), PLATE_LOCAL.dot(nLocal));
-            // ⭐ 叠加 ringRoll（按第几把取 0 / π，半圈翻转 180°）——
-            //    没有它：开锋朝向 = ±切线，绕环连续 ⇒ 左右半圆的刃一前一后（用户实测）。
-            //    叠加后：半圈翻 180° ⇒ 全环刃朝向统一（与路线 A / 旧方案同款逻辑）。
-            poseStack.mulPose(Axis.YP.rotation(roll + RING_FACE_ROLL + ringRoll));
         } else {
             poseStack.mulPose(Axis.YP.rotation(RAY_ROLL_FIX));
         }
@@ -937,8 +947,9 @@ public final class LivingToolModelRenderer {
             poseStack.scale(scale, scale, scale);
         }
         // 写在最后 = 最先作用于模型。
-        // ④ 立正：【固定的整体旋转】—— BEWLR 与普通模型各一组常量（两者模型空间不同），
-        //    但都是同一套做法（整体旋转），不再有"钉某根轴 / 算板面法线"那类逐物品逻辑。
+        // ④ 立正：固定整体旋转 —— 两组常量（BEWLR / 普通模型，模型空间不同），
+        //    但做法相同：都是固定的整体旋转，无任何"长轴 / 板面"逐物品计算。
+        //    （射线模式与环模式【共用】ITEM_UPRIGHT_FIX —— 对齐的都是"立正后的 +Y"。）
         poseStack.mulPose(customRenderer ? BEWLR_UPRIGHT_FIX : ITEM_UPRIGHT_FIX);
         mc.getItemRenderer().renderStatic(stack, ItemDisplayContext.THIRD_PERSON_RIGHT_HAND,
             light, OverlayTexture.NO_OVERLAY, poseStack, buffers, level, 0);
