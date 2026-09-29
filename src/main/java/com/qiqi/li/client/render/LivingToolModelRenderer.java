@@ -47,6 +47,7 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 
+import org.joml.Matrix3f;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
@@ -198,6 +199,40 @@ public final class LivingToolModelRenderer {
      * 见 {@link #drawModel}。</p>
      */
     private static final float MODEL_UPRIGHT_FIX = (float) (-Math.PI / 4.0);
+
+    /**
+     * 【普通模型物品】立正 —— 一个<b>固定的整体旋转</b>：绕 X {@code +100°}。
+     *
+     * <p>⭐ <b>由 handheld 的 {@code rotation [0,-90,55]} 精确推出</b>：手持时工具长轴在手空间
+     * 落在 {@code (0, 0.985, -0.173)} —— <b>几乎已经竖直</b> ⇒ 转到 {@code +Y}（径向）
+     * 只需绕 X 约 <b>+10°</b>，<b>不是 90° 量级</b>。</p>
+     *
+     * <p>🔴 <b>踩过的坑</b>：曾误取 {@code +100°} ⇒ 把长轴转成 {@code (0,0,1)}（垂直于径向）
+     * ⇒ 表现为"横平竖直、但柄沿切线"（2026-09-30 用户实测）。也别再拿整 90° 的候选去凑。</p>
+     *
+     * <p>⭐ 与 {@link #BEWLR_UPRIGHT_FIX}（BEWLR 用，绕 Y −90°）是<b>同一套做法</b>：
+     * 都是固定的整体旋转，<b>不需要知道任何物品的"长轴 / 板面法线"</b> ——
+     * 每件物品的建模差异由 MC 的 display transform 吸收。</p>
+     */
+    private static final Quaternionf ITEM_UPRIGHT_FIX = Axis.XP.rotationDegrees(10.0F);
+
+    /**
+     * 【立正后】板面法线在局部空间的近似方向 —— 由 handheld 的 {@code rotation [0,-90,55]}
+     * 推出：模型 {@code +Z} 经手持旋转后落在 {@code -X}，再经立正（绕 X 小角）基本不变。
+     *
+     * <p>⭐ <b>它是常量</b>（对所有守约定的物品近似成立），滚转角由它【运行时算】⇒
+     * 不需要逐物品计算，也不需要标定（差 180° 在视觉上等价）。</p>
+     */
+    private static final Vector3f PLATE_LOCAL = new Vector3f(-1.0F, 0.0F, 0.0F);
+
+    /**
+     * 环上滚转的标定偏移 —— {@code +90°}（2026-09-30 实测）。
+     *
+     * <p>⭐ <b>这个量只有两种可能</b>：板面法线要么沿局部 X、要么沿局部 Z ⇒ 滚转只差 90°
+     * （±180° 视觉等价、±Y 不可能 —— 板面法线必垂直于长轴）。
+     * 实测 {@code 0°} 是"躺着" ⇒ 取 {@code +90°}。</p>
+     */
+    private static final float RING_FACE_ROLL = (float) (Math.PI * 1.5);   // 90° + 180°（整体翻正）
 
     /**
      * 【路线 A｜BEWLR 物品】在【第三人称手持】姿态之上再叠加的<b>立正角</b> ——
@@ -862,80 +897,51 @@ public final class LivingToolModelRenderer {
         poseStack.pushPose();
         // 事件给的 PoseStack 已是【相机相对】坐标
         poseStack.translate(pos.x - cameraPos.x, pos.y - cameraPos.y, pos.z - cameraPos.z);
-        if (ringNormal != null) {
-            // ── 辅助环：借【射线模式同一套】的 Axis 三步旋转（2026-09-21 用户建议）──
-            //   ① yaw/pitch：把 +Y（柄）转到 dir（径向）—— 与 renderOne 完全同构
-            //   ② 绕柄滚转：让"鼓出方向"（+X）⊥ 圆平面
-            //
-            // ⚠️ 原先这里用【自造的正交基矩阵】，实测"柄不指向圆心、姿态随视角乱转"
-            //    （用户反馈）⇒ 换成与射线模式完全同构的 Axis 路径，不再自造矩阵。
-            //
-            // 作用顺序（后写的先作用于模型）：ringRoll → pitch → yaw
-            //   ⇒ 先在"柄 = +Y"的坐标系里滚转，再整体对齐到 dir ✅
-            poseStack.mulPose(Axis.YP.rotation(yaw));
-            poseStack.mulPose(Axis.XP.rotation(pitch));
-            if (ringRoll != 0.0F) {
-                poseStack.mulPose(Axis.YP.rotation(ringRoll));
-            }
-        } else {
-            // ── 射线模式：yaw/pitch 对齐 + 绕柄滚转 ─────────────────────────
-            poseStack.mulPose(Axis.YP.rotation(yaw));
-            poseStack.mulPose(Axis.XP.rotation(pitch));
-            // 以【工具柄】为轴滚转，只为调整"脸朝哪"。
-            poseStack.mulPose(Axis.YP.rotation(RAY_ROLL_FIX));
-        }
+        // ⭐ 统一链 —— 一律走【第三人称手持】display ⇒ MC 用物品自己的 display transform
+        //    把每件物品摆正（建模差异 100% 在这里被吸收）。
         BakedModel baked = mc.getItemRenderer().getModel(stack, level, null, 0);
         final boolean customRenderer = baked.isCustomRenderer();
 
-        // 风车自转：绕【立正后的板面法线】= 薄板（T 平面）的【法线】。
-        // ⭐ 为什么绕板面法线（2026-09-20 用户实测定）：镐子是一块【平面】。
-        //    绕 T 平面【内】的轴转 ⇒ 工具"横着翻滚"，看着别扭；
-        //    绕【垂直于 T 平面】的轴转 ⇒ 薄板在自己平面里旋转，任何视角都一眼看出在转。
-        // ⚠️ 路线 B 回退旧链 ⇒ 轴回到【立正后的 Z】（绕 Z 转不改变 Z 轴自身 ⇒ 恒为板面法线）；
-        //    路线 A（BEWLR）无「板面」约定 ⇒ 兜底绕 X（罕见场景）。
-        if (spinRad != 0.0F) {
-            if (customRenderer) {
-                poseStack.mulPose(Axis.XP.rotation(-spinRad));
-            } else {
-                // ⚠️ 取负：让工具"尖"朝前转（2026-09-20 用户实测定；方向反了翻此符号）。
-                poseStack.mulPose(Axis.ZP.rotation(-spinRad));
+        // ① yaw / pitch：把立正后的 +Y 对齐到 dir（径向）
+        poseStack.mulPose(Axis.YP.rotation(yaw));
+        poseStack.mulPose(Axis.XP.rotation(pitch));
+        // ② 滚转：把【板面法线】转到【切线】⇒ 板面 ⊥ 圆平面。
+        //    🔴 **不能是常量**：立正后局部 X / Z 的朝向随 yaw 变化，而 yaw 随【环上位置】变化
+        //       ⇒ 板面与圆平面的关系依赖位置 ⇒ 必须运行时算。
+        //       （曾改成常量 ⇒ "板面躺着"成为系统性现象，怎么标角度都不对。）
+        //    ⭐ 但【不需要逐物品计算】：板面法线用常量近似 PLATE_LOCAL（由 handheld 推出），
+        //      每件物品的微小差异忽略；且它差 180° 在视觉上等价 ⇒ 无需标定。
+        if (ringNormal != null) {
+            Vec3 tangent = ringNormal.cross(dir);
+            if (tangent.lengthSqr() < 1.0E-6) {
+                tangent = ringNormal.cross(WORLD_UP);   // 退化兜底
             }
+            tangent = tangent.normalize();
+            Vector3f nLocal = new Matrix4f(poseStack.last().pose()).invert()
+                .transformDirection(new Vector3f((float) tangent.x, (float) tangent.y,
+                    (float) tangent.z)).normalize();
+            float roll = (float) Math.atan2(
+                new Vector3f().cross(PLATE_LOCAL, nLocal).y(), PLATE_LOCAL.dot(nLocal));
+            // ⭐ 叠加 ringRoll（按第几把取 0 / π，半圈翻转 180°）——
+            //    没有它：开锋朝向 = ±切线，绕环连续 ⇒ 左右半圆的刃一前一后（用户实测）。
+            //    叠加后：半圈翻 180° ⇒ 全环刃朝向统一（与路线 A / 旧方案同款逻辑）。
+            poseStack.mulPose(Axis.YP.rotation(roll + RING_FACE_ROLL + ringRoll));
+        } else {
+            poseStack.mulPose(Axis.YP.rotation(RAY_ROLL_FIX));
+        }
+        // ③ 风车自转：【固定轴】（常量）—— 不再去算"板面法线"。
+        if (spinRad != 0.0F) {
+            poseStack.mulPose(Axis.XP.rotation(-spinRad));
+        }
+        if (scale != 1.0F) {
+            poseStack.scale(scale, scale, scale);
         }
         // 写在最后 = 最先作用于模型。
-        // ⭐ 2026-09-24 最终结论（两次重构实测失败后，按用户提示「看看之前的代码」回退）：
-        //
-        // ── 路线 B｜普通模型物品（原版 + 守约定的模组）＝【旧实测方案原样恢复】────────
-        //    模型尖（模型空间）→ FIXED 自带的 Y180（renderStatic 内部自然应用，不碰）
-        //    → MODEL_UPRIGHT_FIX 绕 Z -45° ⇒ +Y。
-        //    两次重构（「应用手持 transform + 抵消 FIXED + 运行时/手算立正」）都让原版平躺，
-        //    根因未查明（怀疑 sodium/iris 等渲染管线介入，实际应用链与源码阅读不一致）
-        //    ⇒ 先回退恢复正确行为。守约定的模组与原版建模约定相同 ⇒ 旧方案同样准确。
-        //
-        // ── 路线 A｜BEWLR 物品（灾变等）＝保留用户实测正确的新方案 ─────────────────
-        //    fixed display 交给 renderStatic(FIXED) 全权应用（模组为展示框调好的姿态：
-        //    剑柄朝圆心、剑身⊥圆平面 ✓），只补缩放比 thirdperson/fixed（对齐第三人称手持）。
-        //    🔴 不能走路线 B：会与 fixed display 叠加成双重变换（scale 0.8 × 0.35 = 0.28）。
-        // ⭐ 实验（2026-09-30）：BEWLR 物品改走【第三人称手持】display —— 与"拿在手上"同源，
-        //    不再用模组为【展示框】调的 fixed ⇒ 歪 45° 已消除（用户实测"横平竖直"），
-        //    现只剩"躺着" ⇒ 差一个整 90° 的立正旋转，用四候选并排定角。
-        //    路线 B（普通模型）保持 FIXED + `-45°` 不变 ⇒ 不破坏现有可用状态。
-        if (!customRenderer) {
-            poseStack.mulPose(Axis.ZP.rotation(MODEL_UPRIGHT_FIX));
-            if (scale != 1.0F) {
-                poseStack.scale(scale, scale, scale);
-            }
-            mc.getItemRenderer().renderStatic(stack, ItemDisplayContext.FIXED, light,
-                OverlayTexture.NO_OVERLAY, poseStack, buffers, level, 0);
-        } else {
-            // ⭐ BEWLR 立正角（实测定，见常量说明）
-            poseStack.mulPose(BEWLR_UPRIGHT_FIX);
-            if (scale != 1.0F) {
-                poseStack.scale(scale, scale, scale);
-            }
-            mc.getItemRenderer().renderStatic(stack,
-                ItemDisplayContext.THIRD_PERSON_RIGHT_HAND, light,
-                OverlayTexture.NO_OVERLAY, poseStack, buffers, level, 0);
-        }
+        // ④ 立正：【固定的整体旋转】—— BEWLR 与普通模型各一组常量（两者模型空间不同），
+        //    但都是同一套做法（整体旋转），不再有"钉某根轴 / 算板面法线"那类逐物品逻辑。
+        poseStack.mulPose(customRenderer ? BEWLR_UPRIGHT_FIX : ITEM_UPRIGHT_FIX);
+        mc.getItemRenderer().renderStatic(stack, ItemDisplayContext.THIRD_PERSON_RIGHT_HAND,
+            light, OverlayTexture.NO_OVERLAY, poseStack, buffers, level, 0);
         poseStack.popPose();
     }
 
