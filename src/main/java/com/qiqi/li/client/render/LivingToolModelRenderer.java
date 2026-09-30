@@ -133,8 +133,8 @@ public final class LivingToolModelRenderer {
     //                                            调低 = 半径大时下半环会埋进地面。
     //  RING_START_ANGLE         +90°            起始角（π/2 = 从正上方起步）。
     //  RING_RADIUS_MAX=1.77     半径上限（渐近）—— 与下面组成【双曲饱和】。
-    //  RING_RADIUS_HALF_SAT=7   半饱和数量：n = 7 时半径 = 上限的一半。
-    //                            半径 = 1.77·n/(n+7) ⇒ 先快后慢（1 把 0.22 / 7 把 0.89 / 36 把 1.48）
+    //  RING_RADIUS_HALF_SAT=21  半饱和数量：n = 21 时半径 = 上限的一半（越大=饱和越晚）。
+    //                            半径 = 1.77·n/(n+21) ⇒ 先快后慢（1 把 0.08 / 10 把 0.57 / 36 把 1.12）
     //
     //  ⚠️ 环【没有朝向旋钮】—— 法线恒为"水平前方"，斧刃恒朝前。详见常量区说明块。
     //
@@ -330,9 +330,11 @@ public final class LivingToolModelRenderer {
 
     /**
      * 环半径的<b>半饱和数量</b>：物品数 = 本值时半径 = {@link #RING_RADIUS_MAX} 的一半。
-     * ⭐ 取 7 —— 与射线待机距离的 {@code IDLE_HALF_SATURATION} 同值，口径统一。
+     *
+     * <p>⭐ 调参（用户定）：7 → <b>21</b>（2026-10-01）—— K 越大 = 饱和越晚
+     * ⇒ 起步更紧凑（1 把 0.08）、"随数量铺开"的区间更长（36 把 1.12，仍有余量）。</p>
      */
-    private static final double RING_RADIUS_HALF_SATURATION = 7.0;
+    private static final double RING_RADIUS_HALF_SATURATION = 21.0;
 
     // ⭐ 攻击环【不再有独立起始半径】（2026-09-30 用户定：与其它环一致）⇒ 统一用
     //    RING_RADIUS_BASE / STEP / MAX。原 ATTACK_RING_RADIUS_BASE(0.7) 是当初为"剑长穿模"
@@ -785,7 +787,7 @@ public final class LivingToolModelRenderer {
         int n = tools.size();
         // ⭐ 半径 = 【双曲饱和】MAX · n / (n + K)：先快后慢，渐近上限（永远达不到）。
         //    与射线待机距离同一口径（IDLE_MAX_OFFSET / IDLE_HALF_SATURATION）。
-        //    1 把 0.22 / 3 把 0.53 / 7 把 0.89（上限一半）/ 15 把 1.21 / 36 把 1.48。
+        //    1 把 0.08 / 10 把 0.57 / 21 把 0.89（上限一半）/ 36 把 1.12。
         double radius = RING_RADIUS_MAX * n / (n + RING_RADIUS_HALF_SATURATION);
         for (int i = 0; i < n; i++) {
             double angle = RING_START_ANGLE + Math.PI * 2.0 * i / n;
