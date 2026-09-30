@@ -22,6 +22,7 @@ import com.qiqi.li.living.domain.tools.LivingToolMemory;
 import com.qiqi.li.living.domain.tools.LivingToolPlayerClientCache;
 import com.qiqi.li.living.domain.tools.LivingToolProgress;
 import com.qiqi.li.living.domain.tools.LivingToolRecorder;
+import com.qiqi.li.living.domain.tools.LivingToolRayTuning;
 import com.qiqi.li.network.LivingToolHostPacket;
 import com.qiqi.li.network.LivingToolPlayerPacket;
 
@@ -131,7 +132,8 @@ public final class LivingToolModelRenderer {
     //  RING_HEIGHT              1.7 格          环心高度（【世界竖直】）。
     //                                            调低 = 半径大时下半环会埋进地面。
     //  RING_START_ANGLE         +90°            起始角（π/2 = 从正上方起步）。
-    //  RING_RADIUS_*            0.28/0.055/1.10 半径 = BASE + STEP×工具数，clamp 到 MAX。
+    //  RING_RADIUS_*            0.34/0.07/1.77   半径 = BASE + STEP×数量，clamp 到 MAX。
+    //                                            （2026-09-30 用户调：起始更小、增长更明显）
     //
     //  ⚠️ 环【没有朝向旋钮】—— 法线恒为"水平前方"，斧刃恒朝前。详见常量区说明块。
     //
@@ -309,13 +311,15 @@ public final class LivingToolModelRenderer {
     /**
      * 环半径 = BASE + STEP × 数量，再 clamp 到上限（越多环越大）。
      *
-     * <p>⭐ 2026-09-24 两轮用户调参：0.28 → 0.35（背后环混编含剑防穿模）→
-     * <b>0.42 / STEP 0.03</b>（背后环更舒展，多把时增长放缓）。
-     * 挖掘环共用同组；攻击环 BASE 独立（0.42）但 STEP 共用。</p>
+     * <p>⭐ 调参历程：0.28 → 0.35（背后环混编含剑防穿模）→ 0.7 / 0.007 / 1.40
+     * （背后环更舒展）→ <b>2026-09-30 用户调：0.34 / 0.07 / 1.77</b>
+     * （起始更小、增长更明显、上限更大）。</p>
+     *
+     * <p>挖掘环共用同组；攻击环 BASE 独立（0.7）但 STEP / MAX 共用。</p>
      */
-    private static final double RING_RADIUS_BASE = 0.7;
-    private static final double RING_RADIUS_STEP = 0.007;
-    private static final double RING_RADIUS_MAX = 1.40;
+    private static final double RING_RADIUS_BASE = 0.34;
+    private static final double RING_RADIUS_STEP = 0.07;
+    private static final double RING_RADIUS_MAX = 1.77;
 
     /**
      * 攻击环的<b>起始半径</b>（2026-09-24 用户调大）—— 剑的模型长轴比镐/铲长，
@@ -431,7 +435,7 @@ public final class LivingToolModelRenderer {
                 continue;
             }
             renderOne(mc, poseStack, buffers, level, cameraPos, partialTick, now,
-                mc.player.getEyePosition(partialTick), stack, "p" + slot, seen);
+                mc.player.getEyePosition(partialTick), mc.player, stack, "p" + slot, seen);
         }
 
         // ② 掉落物
@@ -440,7 +444,7 @@ public final class LivingToolModelRenderer {
         for (Entity entity : level.entitiesForRendering()) {
             if (entity instanceof ItemEntity itemEntity) {
                 renderOne(mc, poseStack, buffers, level, cameraPos, partialTick, now,
-                    ItemEntityContainerContext.rayOrigin(itemEntity), itemEntity.getItem(),
+                    ItemEntityContainerContext.rayOrigin(itemEntity), null, itemEntity.getItem(),
                     "e" + itemEntity.getId(), seen);
             }
         }
@@ -452,7 +456,7 @@ public final class LivingToolModelRenderer {
             var tools = entry.tools();
             for (int i = 0; i < tools.size(); i++) {
                 renderOne(mc, poseStack, buffers, level, cameraPos, partialTick, now,
-                    origin, tools.get(i).stack(), "b" + entry.pos().asLong() + "_" + i, seen);
+                    origin, null, tools.get(i).stack(), "b" + entry.pos().asLong() + "_" + i, seen);
             }
         }
 
@@ -688,7 +692,7 @@ public final class LivingToolModelRenderer {
             if (!LivingToolRecorder.isAssistItem(stack)) {
                 // ── 主动模式（有记忆）：与本机 renderOne 完全同一套（待机位 / 挖掘转圈 / 脉冲）
                 renderOne(mc, poseStack, buffers, level, cameraPos, partialTick, now,
-                    origin, stack, "o" + playerId + "_" + i, seen);
+                    origin, owner, stack, "o" + playerId + "_" + i, seen);
                 continue;
             }
             LivingToolAction action = LivingToolAction.of(stack);
@@ -805,7 +809,8 @@ public final class LivingToolModelRenderer {
     /** 渲染一个活工具的悬浮模型（含动画）。 */
     private static void renderOne(Minecraft mc, PoseStack poseStack, MultiBufferSource buffers,
                                   ClientLevel level, Vec3 cameraPos, float partialTick, long now,
-                                  Vec3 origin, ItemStack stack, String key, Set<String> seen) {
+                                  Vec3 defaultOrigin, @Nullable Player bearer, ItemStack stack,
+                                  String key, Set<String> seen) {
         if (stack.isEmpty() || !LivingItemManager.isLivingItem(stack)) {
             return;
         }
@@ -813,6 +818,22 @@ public final class LivingToolModelRenderer {
         if (memory.isEmpty()) {
             return;
         }
+
+        // ⭐ 射线微调（2026-09-30，仅玩家形态生效）：与服务端回放、射线渲染同一公式 ——
+        //    起点 = 锚点（身体中轴高度）否则默认起点；offset = 跟随时绕 Y 旋转（衍生副本）。
+        //    待机位 / surfacePoint 裁剪起点 / 模型朝向全部走微调后的 origin + memory，
+        //    否则「模型在老地方、射线在锚点上」两头分叉。
+        //    bearer == null（容器形态）⇒ 配置不生效（容器回放本就不应用微调）。
+        Vec3 origin = defaultOrigin;
+        if (bearer != null) {
+            LivingToolRayTuning tuning = LivingToolRayTuning.of(stack);
+            Vec3 anchored = tuning.resolveAnchorOrigin(bearer, partialTick);
+            if (anchored != null) {
+                origin = anchored;
+            }
+            memory = tuning.transform(memory, bearer, partialTick);
+        }
+
         if (origin.distanceToSqr(cameraPos) > MAX_DISTANCE * MAX_DISTANCE) {
             return;
         }
