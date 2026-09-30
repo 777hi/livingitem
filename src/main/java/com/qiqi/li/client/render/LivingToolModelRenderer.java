@@ -122,9 +122,9 @@ public final class LivingToolModelRenderer {
     //
     //  ── 射线模式（有记忆的工具）──────────────────────────────────────────────
     //  RAY_ROLL_FIX             +270°           绕长轴的滚转。只调"脸朝哪"，不影响自转轴。
-    //  IDLE_MAX_OFFSET          1.5 格          待机位离射线起点的【上限】。
+    //  IDLE_MAX_OFFSET          3.0 格          待机位离射线起点的【上限】（渐近，达不到）。
     //                                            调大 = 平时飘得离宿主更远。
-    //  IDLE_HALF_SATURATION     3.0 格          走到"上限一半"所需的射线长度。
+    //  IDLE_HALF_SATURATION     7.0 格          走到"上限一半"所需的射线长度（半饱和点）。
     //
     //  ── 辅助环（无记忆的工具）────────────────────────────────────────────────
     //  RING_BACK_OFFSET         0.75 格         环心沿【水平后方】偏移多远。
@@ -132,8 +132,9 @@ public final class LivingToolModelRenderer {
     //  RING_HEIGHT              1.7 格          环心高度（【世界竖直】）。
     //                                            调低 = 半径大时下半环会埋进地面。
     //  RING_START_ANGLE         +90°            起始角（π/2 = 从正上方起步）。
-    //  RING_RADIUS_*            0.34/0.07/1.77   半径 = BASE + STEP×数量，clamp 到 MAX。
-    //                                            （2026-09-30 用户调：起始更小、增长更明显）
+    //  RING_RADIUS_MAX=1.77     半径上限（渐近）—— 与下面组成【双曲饱和】。
+    //  RING_RADIUS_HALF_SAT=7   半饱和数量：n = 7 时半径 = 上限的一半。
+    //                            半径 = 1.77·n/(n+7) ⇒ 先快后慢（1 把 0.22 / 7 把 0.89 / 36 把 1.48）
     //
     //  ⚠️ 环【没有朝向旋钮】—— 法线恒为"水平前方"，斧刃恒朝前。详见常量区说明块。
     //
@@ -312,14 +313,26 @@ public final class LivingToolModelRenderer {
      * 环半径 = BASE + STEP × 数量，再 clamp 到上限（越多环越大）。
      *
      * <p>⭐ 调参历程：0.28 → 0.35（背后环混编含剑防穿模）→ 0.7 / 0.007 / 1.40
-     * （背后环更舒展）→ <b>2026-09-30 用户调：0.34 / 0.07 / 1.77</b>
-     * （起始更小、增长更明显、上限更大）。</p>
+     * （背后环更舒展）→ 0.34 / 0.07 / 1.77 → 0.07 / 0.07 / 1.77 →
+     * <b>2026-10-01 用户调：0.07 / 0.007 / 1.77</b>（STEP 再压小 ⇒ 半径几乎恒定，
+     * 单把 0.077、10 把 0.14、100 把 0.77）。</p>
      *
      * <p>挖掘环共用同组；攻击环 BASE 独立（0.7）但 STEP / MAX 共用。</p>
      */
-    private static final double RING_RADIUS_BASE = 0.34;
-    private static final double RING_RADIUS_STEP = 0.07;
+    /**
+     * 环半径的<b>渐近上限</b>（格）—— 与 {@link #RING_RADIUS_HALF_SATURATION} 组成双曲饱和。
+     *
+     * <p>⭐ 2026-10-01 用户定：半径改【双曲饱和】{@code r(n) = MAX · n / (n + K)}
+     * （先快后慢、有上界），取代原来的线性 {@code BASE + STEP × n}
+     * ⇒ 不再需要 {@code BASE / STEP}，所有环（背后 / 挖掘 / 攻击）共用同一公式。</p>
+     */
     private static final double RING_RADIUS_MAX = 1.77;
+
+    /**
+     * 环半径的<b>半饱和数量</b>：物品数 = 本值时半径 = {@link #RING_RADIUS_MAX} 的一半。
+     * ⭐ 取 7 —— 与射线待机距离的 {@code IDLE_HALF_SATURATION} 同值，口径统一。
+     */
+    private static final double RING_RADIUS_HALF_SATURATION = 7.0;
 
     // ⭐ 攻击环【不再有独立起始半径】（2026-09-30 用户定：与其它环一致）⇒ 统一用
     //    RING_RADIUS_BASE / STEP / MAX。原 ATTACK_RING_RADIUS_BASE(0.7) 是当初为"剑长穿模"
@@ -572,7 +585,7 @@ public final class LivingToolModelRenderer {
             float speed = Math.max(LivingToolAssistState.digSpeed(), 1.0E-4F);
             float spinRad = spinAngle(now, partialTick, spinPeriod((int) Math.ceil(1.0 / speed)));
             drawRing(mc, poseStack, buffers, level, cameraPos, center, normal, working, spinRad,
-                1.0F, false, RING_RADIUS_BASE);
+                1.0F, false);
         }
 
         // ⭐ 背后环【不再在这里画】—— 待机物品交给调用方，与攻击环的待机武器
@@ -654,7 +667,7 @@ public final class LivingToolModelRenderer {
         }
 
         drawRing(mc, poseStack, buffers, level, cameraPos, center, normal, attacking,
-            0.0F, scale, true, RING_RADIUS_BASE);
+            0.0F, scale, true);
         return idle;
     }
 
@@ -719,7 +732,7 @@ public final class LivingToolModelRenderer {
                 scale = 1.0F + PULSE_SCALE * (float) Math.sin(Math.PI * Mth.clamp(t, 0.0F, 1.0F));
             }
             drawRing(mc, poseStack, buffers, level, cameraPos, center, normal, attacking,
-                0.0F, scale, true, RING_RADIUS_BASE);
+                0.0F, scale, true);
         }
     }
 
@@ -751,8 +764,7 @@ public final class LivingToolModelRenderer {
         Vec3 center = player.getPosition(partialTick)
             .add(0.0, RING_HEIGHT, 0.0)                 // 世界竖直 ⇒ 高度不随俯仰变
             .subtract(flat.scale(RING_BACK_OFFSET));    // 水平向后 ⇒ 始终在【背后】
-        drawRing(mc, poseStack, buffers, level, cameraPos, center, flat, tools, 0.0F, 1.0F, false,
-            RING_RADIUS_BASE);
+        drawRing(mc, poseStack, buffers, level, cameraPos, center, flat, tools, 0.0F, 1.0F, false);
     }
 
     /**
@@ -764,17 +776,17 @@ public final class LivingToolModelRenderer {
      * @param scale    整体缩放（{@code 1.0} = 原大小；&gt;1 用于脉冲）
      * @param inward   ⭐ {@code true} = <b>尖端朝圆心</b>（攻击环：剑尖指向中心）；
      *                 {@code false} = <b>柄朝圆心</b>（工具环：镐头朝外）
-     * @param radiusBase 起始半径（所有环统一用 {@code RING_RADIUS_BASE}；
-     *                   攻击环曾因"剑长穿模"单独放大，改走手持 display 后已不需要）
      */
     private static void drawRing(Minecraft mc, PoseStack poseStack, MultiBufferSource buffers,
                                  ClientLevel level, Vec3 cameraPos, Vec3 center, Vec3 normal,
-                                 List<ItemStack> tools, float spinRad, float scale, boolean inward,
-                                 double radiusBase) {
+                                 List<ItemStack> tools, float spinRad, float scale, boolean inward) {
         // normal 恒为水平 ⇒ ⊥ WORLD_UP ⇒ 叉积不退化
         Vec3 right = normal.cross(WORLD_UP).normalize();
         int n = tools.size();
-        double radius = Math.min(radiusBase + RING_RADIUS_STEP * n, RING_RADIUS_MAX);
+        // ⭐ 半径 = 【双曲饱和】MAX · n / (n + K)：先快后慢，渐近上限（永远达不到）。
+        //    与射线待机距离同一口径（IDLE_MAX_OFFSET / IDLE_HALF_SATURATION）。
+        //    1 把 0.22 / 3 把 0.53 / 7 把 0.89（上限一半）/ 15 把 1.21 / 36 把 1.48。
+        double radius = RING_RADIUS_MAX * n / (n + RING_RADIUS_HALF_SATURATION);
         for (int i = 0; i < n; i++) {
             double angle = RING_START_ANGLE + Math.PI * 2.0 * i / n;
             // 径向（圆心 → 物品）：只决定【位置】
