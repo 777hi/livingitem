@@ -144,6 +144,12 @@ LivingEntity 的 body 旋转推进只走 `isEffectiveAi` 分支，玩家不满�
 - 主手槽位物品才可配；被动模式（无记忆）点击无操作；光标持物时点击不响应
 - 创造背包（INVENTORY 标签页）同样支持；小人命中判定 = **渲染矩形竖向三分**
   （头 0~30% 重置 / 躯干中心 30~55% / 躯干底部 55~100%），不做 3D 拾取
+- ⚠️ **锚点高度是按原版玩家比例写死的绝对值**（1.125 / 0.75，身高 1.8），**不随实体
+  尺寸缩放**（2026-09-30 用户定：不修）—— 缩放 mod 放大/缩小实体、或 morph 成其它
+  生物时，锚点退化成「脚底上方固定高度」（巨人 = 膝盖、小模型 = 头顶上方），
+  只语义漂移、不出错；对比：脑袋重置回的默认眼睛走 `getEyePosition()` 是自适应的。
+  将来要修 = 高度改按 `getBoundingBox().getYsize()` 比例（62.5% / 41.7%），
+  GUI 分区层不动
 
 实现：`LivingToolRayTuning`（组件+公式）/ `ToolRayTuningPacket`（服务端校验「主手有记忆
 的活工具/武器」后写入并强制同步 -2 槽位包）/ `ToolRayTuningClicks`（客户端命中判定）。
@@ -370,6 +376,45 @@ if (freshStart) {
 
 1. 给 FakePlayer 一份 `tool.copy()`
 2. 破坏后由 `LivingToolFunction` 比对，变化才 `context.setItem()` + `syncSlotToClients()`
+
+### 5.7 代持 tick：手持类效果的通用兼容（2026-09-30）
+
+**问题**：大量 mod 武器有「手持时每 tick」类效果（`inventoryTick`：足迹粒子、手持 buff、
+蓄能……）与物品冷却（`ItemCooldowns`）—— 原版由玩家背包循环驱动，而 **FakePlayer.tick
+是空的** ⇒ 这类效果在主动模式（假玩家代持）下永远不推进。被动模式不受影响
+（真玩家背包 tick 照常跑），但大多再检查「必须是主手装备」⇒ 背包里仍不触发。
+
+**机制**（`LivingToolReplay` 三个持续回放入口，`equipTool` 之后每 tick 补两句）：
+
+```java
+held.inventoryTick(level, fake, 0, true);   // selected=true = 「假玩家正手持」
+fake.getCooldowns().tick();                 // 原版 Player.tick 里也有这一句
+```
+
+`equipTool` 已把物品装进假玩家主手 ⇒ 各 mod 的
+`getEquippedStack(MAINHAND) == stack` / `entity instanceof Player` 检查天然通过。
+**模组无关** —— 走原版入口的 mod 自动兼容（铁律②）。实测样例：Simply Swords
+（`postHit` 特效、`inventoryTick` 足迹、技能的 `ItemCooldownManager`）。
+
+**范围与边界**：
+- 仅**持续回放路径**（挖掘/交互/攻击记忆每 tick）调用；辅助攻击/辅助挖掘是瞬时路径，
+  不做（语义上不是持续手持）
+- 容器形态照常生效（箱子不 tick 物品 ⇒ 无双 tick）；**玩家形态会双 tick**
+  （真玩家背包 selected=false 一次 + 假玩家 selected=true 一次）——
+  少数不做任何检查的效果会双倍计数，语义上可辩护（假玩家是独立持有者），接受
+- 被动模式的「必须主手装备」检查**无法也不应伪造**（物品确实不在手上）
+- **被动模式为什么也不做代持 tick**（2026-09-30 澄清，勿记成"做不到"）：被动模式
+  同样走 FakePlayer + `equipTool`（`LivingWeaponAssist`/`LivingToolAssist`），
+  主手检查机制上一样能过 —— 不做是因为 ① 被动是事件驱动（每次玩家命中走一遍），
+  调用节奏 = 玩家点击频率，per-tick 语义失真（"手持 100 tick 蓄满"变"砍 100 下蓄满"）；
+  ② 手持 buff 落在一次性傀儡 fake 上无人受益，落给真玩家则要伪造真主手
+  （N 把武器并发冲突 + 全局谎报，回到上一条的边界）；
+  ③ 有意义的那部分（`postHit` 命中特效）本来就能触发。将来若要"蓄能类在被动模式
+  也推进"，可在辅助出手时机各补一次调用（几行），接受按挥击频率推进，暂不做
+- ⚠️ `inventoryTick` 对 `held`（回放副本）的修改：挖掘路径**只在挖完时写回**，
+  中断即丢失 ⇒ 蓄能类 per-tick 计数会被挖断清零 —— 罕见模式，接受
+- 冷却推进连带修复：走 `ItemCooldownManager` 的技能/prod 冷却死锁
+  （如 Simply Swords 技能右键施放一次后永久锁死）
 
 ---
 

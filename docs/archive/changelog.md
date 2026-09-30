@@ -34,6 +34,14 @@
   实现：`LivingToolRayTuning` 组件 + `ToolRayTuningPacket` + `ToolRayTuningClicks`
   （渲染矩形竖向三分命中，不做 3D 拾取）。详见 `living-tool-tech.md` §2.5。
 
+- ✅ **活武器/活工具「代持 tick」通用兼容**：FakePlayer.tick 为空 ⇒ `inventoryTick`
+  （手持 buff/足迹/蓄能）与 `ItemCooldowns`（技能/proc 冷却）在主动模式从不推进。
+  三个持续回放入口在 equipTool 后补两句：`held.inventoryTick(level, fake, 0, true)`
+  （selected=true = 假玩家正手持）+ `fake.getCooldowns().tick()` —— 模组无关
+  （走原版入口即兼容，铁律②；实测 Simply Swords postHit 特效/足迹/技能冷却）。
+  边界：玩家形态双 tick 接受；被动模式 main-hand 检查不伪造；瞬时辅助路径不做；
+  held 中断修改丢失（挖断蓄能清零）罕见模式接受。详见 `living-tool-tech.md` §5.7。
+
 ## 2026-09-29
 
 - ✅ **活武器连击修复**：主动模式高速连击（不扣耐久的灾变武器最明显）——「上次攻击 tick」

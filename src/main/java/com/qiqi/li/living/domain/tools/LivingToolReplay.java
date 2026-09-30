@@ -141,6 +141,16 @@ public final class LivingToolReplay {
             LivingToolOwnerName.refresh(tool, owner);   // 顺手刷新主人名字的显示缓存
         }
         fake.equipTool(held);   // L46：同时同步附魔属性，否则效率附魔不生效
+        // ⭐ 代持 tick（2026-09-30）：FakePlayer.tick 为空 ⇒ 原版玩家的物品 tick 循环不会跑，
+        //    所有「手持时每 tick」类效果（inventoryTick：足迹/手持 buff/蓄能……）与物品冷却
+        //    （ItemCooldowns）都不会推进。这里代替原版循环补上：
+        //    ① inventoryTick 以 selected=true 语义触发（= 假玩家正手持此物），
+        //       effects 里的 getEquippedStack(MAINHAND)==stack 检查也天然通过（equipTool 已装）；
+        //    ② 冷却推进让技能/proc 的 ItemCooldowns 正常消退（否则首次触发后永久锁死）。
+        //    模组无关 —— 任何走原版入口的 mod 自动兼容（铁律②）。仅持续回放路径调用；
+        //    辅助攻击/辅助挖掘是瞬时路径，不做（语义上不是持续手持）。
+        held.inventoryTick(level, fake, 0, true);
+        fake.getCooldowns().tick();
 
         // 4) L36：首次命中时补上「挥击前置」—— 直接调 destroyBlock 会跳过这些，
         //    模组工具的自定义效果很多挂在上面
@@ -277,6 +287,16 @@ public final class LivingToolReplay {
             LivingToolOwnerName.refresh(tool, owner);   // 顺手刷新主人名字的显示缓存
         }
         fake.equipTool(held);   // L46：同时同步附魔属性，否则效率附魔不生效
+        // ⭐ 代持 tick（2026-09-30）：FakePlayer.tick 为空 ⇒ 原版玩家的物品 tick 循环不会跑，
+        //    所有「手持时每 tick」类效果（inventoryTick：足迹/手持 buff/蓄能……）与物品冷却
+        //    （ItemCooldowns）都不会推进。这里代替原版循环补上：
+        //    ① inventoryTick 以 selected=true 语义触发（= 假玩家正手持此物），
+        //       effects 里的 getEquippedStack(MAINHAND)==stack 检查也天然通过（equipTool 已装）；
+        //    ② 冷却推进让技能/proc 的 ItemCooldowns 正常消退（否则首次触发后永久锁死）。
+        //    模组无关 —— 任何走原版入口的 mod 自动兼容（铁律②）。仅持续回放路径调用；
+        //    辅助攻击/辅助挖掘是瞬时路径，不做（语义上不是持续手持）。
+        held.inventoryTick(level, fake, 0, true);
+        fake.getCooldowns().tick();
 
         // ⭐ 让 FakePlayer "看着"记忆射线的方向 —— 法杖 / 枪械几乎都读玩家视线。
         //    少了这一步，它们会朝默认朝向（或上一个工具的朝向）施放。
@@ -406,6 +426,16 @@ public final class LivingToolReplay {
             LivingToolOwnerName.refresh(weapon, owner);   // 顺手刷新主人名字的显示缓存
         }
         fake.equipTool(held);   // 同步附魔属性，否则锋利等不生效
+        // ⭐ 代持 tick（2026-09-30）：FakePlayer.tick 为空 ⇒ 原版玩家的物品 tick 循环不会跑，
+        //    所有「手持时每 tick」类效果（inventoryTick：足迹/手持 buff/蓄能……）与物品冷却
+        //    （ItemCooldowns）都不会推进。这里代替原版循环补上：
+        //    ① inventoryTick 以 selected=true 语义触发（= 假玩家正手持此物），
+        //       effects 里的 getEquippedStack(MAINHAND)==stack 检查也天然通过（equipTool 已装）；
+        //    ② 冷却推进让技能/proc 的 ItemCooldowns 正常消退（否则首次触发后永久锁死）。
+        //    模组无关 —— 任何走原版入口的 mod 自动兼容（铁律②）。仅持续回放路径调用；
+        //    辅助攻击/辅助挖掘是瞬时路径，不做（语义上不是持续手持）。
+        held.inventoryTick(level, fake, 0, true);
+        fake.getCooldowns().tick();
         // ⭐ 让 FakePlayer 看向目标 —— 与法杖/枪械同款需求，且影响击退方向
         faceTarget(fake, origin, end);
 

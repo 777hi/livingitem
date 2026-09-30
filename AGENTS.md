@@ -189,6 +189,7 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-09-30 | **代持 tick**（通用兼容）：回放路径补 `held.inventoryTick(selected=true)` + `fake.getCooldowns().tick()` —— 手持类效果与物品冷却在主动模式正常推进，模组无关（Simply Swords 实测）；玩家形态双 tick 接受 | `living-tool-tech.md` §5.7 |
 | 2026-09-30 | **射线微调**（主动模式·玩家形态）：背包点小人 —— 左键躯干中心/底部=起点锚点、脑袋=重置，右键=朝向跟随（背后环同款）；衍生副本旋转，原始 offset 不动，两端同公式；录制即重置 | `living-tool-tech.md` §2.5 |
 | 2026-09-30 | tooltip 主人显示统一：UUID=绑定数据、名字=显示缓存（新增 `LIVING_TOOL_OWNER_NAME`，`syncOwnerAttributes` 返回主人供四路回放刷新；末影箱 tick 同款），显示走 `OwnerNameResolver#displayName` 实时→缓存→短UUID | `living-ender-chest-tech.md` §绑定 |
 | 2026-09-29 | 活武器**高速连击修复**：出手记录（上次攻击 tick）改写在 `fake.attack()` 之前 + 攻击分支不走 `matches` 短路必写回；灾变源码核对不扣耐久系武器；✅ 实测间隔恢复面板冷却 | `living-weapon-tech.md` §5 |
@@ -198,7 +199,6 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 | 2026-09-28 | 活化指令修复 + 手持分支：target 改原版 `ResourceOrTagKeyArgument`（修「能补全却注册失败」—— StringArgumentType 读不进 `: # @`）；deny/allow/remove 无参 = **手持物品**；命名空间走 `*-mod` 子命令 | `commands.md` |
 | 2026-09-28 | 许可：**LGPL-3.0 附加 classpath 例外**（依赖本库的 addon 可任意授权含闭源；修改库本体仍须 LGPL）；Q6 前置库三步路线图（契约→发布物→仓库） | `LICENSE.txt` / `open-plan.md` §4.1 |
 | 2026-09-25 | 辅助攻击：攻击环改为**按每把武器自己的冷却**分组（轮流扑咬，不再整组一起飞）；创造模式放开辅助（攻击 + 挖掘）；tooltip 模式改「主动 / 被动」+ 补攻击记忆行 | `living-weapon-tech.md` §7 |
-| 2026-09-25 | 联机：**主动模式（有记忆）活工具可见**（悬空工具体 + 挖掘转圈 / 攻击脉冲 + 记忆射线 F3+B）+ 攻击环可见；收集口径扩为 `isAssistItem ∪ 有记忆`（组件随 `ItemStack.STREAM_CODEC` 随包走，零新增同步） | `living-tool-tech.md` §11.9 |
 
 
 ## 排查铁律：原版机制挡路时
