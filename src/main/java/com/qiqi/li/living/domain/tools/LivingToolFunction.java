@@ -140,11 +140,11 @@ public class LivingToolFunction implements LivingItemFunction {
             Vec3 entryOrigin = origin;
             if (bearer != null) {
                 LivingToolRayTuning tuning = LivingToolRayTuning.of(tool);
-                Vec3 anchored = tuning.resolveAnchorOrigin(bearer);
+                Vec3 anchored = tuning.resolveAnchorOrigin(bearer, 1.0F);
                 if (anchored != null) {
                     entryOrigin = anchored;   // 锚点全在身体中轴上 ⇒ 起点不随朝向转
                 }
-                memory = tuning.transform(memory, bearer);
+                memory = tuning.transform(memory, bearer, 1.0F);
             }
 
             // ⭐ 记录本 tick 开始时的"动画状态"（下面用于检测翻转）

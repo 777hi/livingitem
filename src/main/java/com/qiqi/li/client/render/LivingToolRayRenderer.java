@@ -194,7 +194,7 @@ public final class LivingToolRayRenderer {
             if (!held && !debugHitBoxes) {
                 continue;
             }
-            drew |= renderStack(poseStack, ribbon, level, cameraPos, frustum, eye, mc.player, stack);
+            drew |= renderStack(poseStack, ribbon, level, cameraPos, frustum, partialTick, eye, mc.player, stack);
         }
         return drew;
     }
@@ -211,7 +211,7 @@ public final class LivingToolRayRenderer {
         boolean drew = false;
         for (Entity entity : level.entitiesForRendering()) {
             if (entity instanceof ItemEntity itemEntity) {
-                drew |= renderStack(poseStack, ribbon, level, cameraPos, frustum,
+                drew |= renderStack(poseStack, ribbon, level, cameraPos, frustum, 0.0F,
                     ItemEntityContainerContext.rayOrigin(itemEntity), null, itemEntity.getItem());
             }
         }
@@ -263,7 +263,7 @@ public final class LivingToolRayRenderer {
                 if (LivingToolMemory.of(stack).isEmpty()) {
                     continue;
                 }
-                drew |= renderStack(poseStack, ribbon, level, cameraPos, frustum, eye, owner, stack);
+                drew |= renderStack(poseStack, ribbon, level, cameraPos, frustum, partialTick, eye, owner, stack);
             }
         }
         return drew;
@@ -278,7 +278,7 @@ public final class LivingToolRayRenderer {
      * @return 是否真的画了东西
      */
     private static boolean renderStack(PoseStack poseStack, VertexConsumer ribbon, ClientLevel level,
-                                       Vec3 cameraPos, Frustum frustum, Vec3 defaultOrigin,
+                                       Vec3 cameraPos, Frustum frustum, float partialTick, Vec3 defaultOrigin,
                                        @org.jetbrains.annotations.Nullable Player bearer, ItemStack stack) {
         if (stack.isEmpty() || !LivingItemManager.isLivingItem(stack)) {
             return false;
@@ -294,11 +294,11 @@ public final class LivingToolRayRenderer {
         Vec3 origin = defaultOrigin;
         if (bearer != null) {
             LivingToolRayTuning tuning = LivingToolRayTuning.of(stack);
-            Vec3 anchored = tuning.resolveAnchorOrigin(bearer);
+            Vec3 anchored = tuning.resolveAnchorOrigin(bearer, partialTick);
             if (anchored != null) {
                 origin = anchored;
             }
-            memory = tuning.transform(memory, bearer);
+            memory = tuning.transform(memory, bearer, partialTick);
         }
 
         if (origin.distanceToSqr(cameraPos) > MAX_DISTANCE * MAX_DISTANCE) {

@@ -127,22 +127,26 @@ RayAnchor.CODEC
      * 锚点在中轴上 ⇒ 起点不随朝向转。
      */
     @Nullable
-    public Vec3 resolveAnchorOrigin(Player bearer) {
+    public Vec3 resolveAnchorOrigin(Player bearer, float partialTick) {
         if (anchor == null) {
             return null;
         }
-        return bearer.position().add(0, anchor.height, 0);
+        // ⭐ 用插值坐标（帧间 lerp），不用 position()（每 tick 跳一次 = 一顿一顿）；
+        //    服务端回放传 1.0F ⇒ 恰为当前坐标，行为不变。
+        return bearer.getPosition(partialTick).add(0, anchor.height, 0);
     }
 
     /**
      * 施加朝向跟随：返回<b>衍生副本</b>（原始记忆组件不动）。
      * 未开启跟随 / 角度差可忽略时原样返回。
      */
-    public LivingToolMemory transform(LivingToolMemory memory, Player bearer) {
+    public LivingToolMemory transform(LivingToolMemory memory, Player bearer, float partialTick) {
         if (!followBody) {
             return memory;
         }
-        float deltaYaw = bearer.getYRot() - followRefYaw;
+        // ⭐ 视角角同样取帧间插值（getViewYRot = lerp(yRotO, yRot, partialTick)）——
+        //    转身时射线跟着平滑转；服务端 yRotO == yRot，传 1.0F 恰为当前值。
+        float deltaYaw = bearer.getViewYRot(partialTick) - followRefYaw;
         if (Math.abs(deltaYaw) < 1.0E-4F) {
             return memory;
         }
