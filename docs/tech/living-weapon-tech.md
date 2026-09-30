@@ -463,8 +463,10 @@ Caused by: NullPointerException: Cannot invoke "BlockPos.asLong()" because "p_32
 - **环存活窗口 = 脉冲时长**（`ATTACK_RING_TICKS = PULSE_TICKS`，2026-09-24 用户定）：
   每次出手 ⇒ 飞到目标处脉冲一下 ⇒ 立刻收回背后，「扑咬式」节奏。⚠️ 窗口小于武器攻击冷却
   ⇒ 连续攻击时环反复"飞出去→收回"—— **有意的效果**（曾取 20 留在原地，用户看效果后改掉）
-- **起始半径独立**（`ATTACK_RING_RADIUS_BASE = 0.42`）：剑的模型长轴比镐/铲长，
-  小半径会**穿模**（2026-09-24 用户报）；STEP / MAX 仍共用
+- **起始半径与其它环统一**（2026-09-30 用户定）：攻击环原用独立常量
+  `ATTACK_RING_RADIUS_BASE`（0.28→0.42→0.7，当初为"剑长穿模"调大）；
+  渲染改走**手持 display** 后大小已与手上一致、穿模自然缓解 ⇒ 独立常量**删除**，
+  三个环（背后 / 挖掘 / 攻击）统一用 `RING_RADIUS_BASE / STEP / MAX`（0.34 / 0.07 / 1.77）
 - **背后环混编一圈**（2026-09-24 用户定）：待机的工具与武器**合并成同一圈** ——
   `renderAssistRing` / `renderAttackRing` 都改为返回「待机物品」，由 `render` 统一调一次
   `renderBackRing`。各画各的话两圈同心同半径 ⇒ 完全重叠。其它玩家的环本来就是

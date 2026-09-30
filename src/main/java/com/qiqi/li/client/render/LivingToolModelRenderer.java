@@ -321,14 +321,9 @@ public final class LivingToolModelRenderer {
     private static final double RING_RADIUS_STEP = 0.07;
     private static final double RING_RADIUS_MAX = 1.77;
 
-    /**
-     * 攻击环的<b>起始半径</b>（2026-09-24 用户调大）—— 剑的模型长轴比镐/铲长，
-     * 沿用工具环的 0.28 会在剑与剑之间穿模 ⇒ 攻击环用<b>独立值</b>，工具环保持不变。
-     *
-     * <p>⭐ 只拆 BASE：STEP / MAX 共用（武器环通常只有一两把 ⇒ BASE 起主导，
-     * 上限 1.10 对攻击环同样够用）。</p>
-     */
-    private static final double ATTACK_RING_RADIUS_BASE = 0.7;
+    // ⭐ 攻击环【不再有独立起始半径】（2026-09-30 用户定：与其它环一致）⇒ 统一用
+    //    RING_RADIUS_BASE / STEP / MAX。原 ATTACK_RING_RADIUS_BASE(0.7) 是当初为"剑长穿模"
+    //    调的；渲染链路改成手持 display 后大小已与手上一致，实测不再需要单独放大。
 
     /** 世界竖直 —— 环平面【竖直】的基准（环内"上"也取它）。 */
     private static final Vec3 WORLD_UP = new Vec3(0.0, 1.0, 0.0);
@@ -659,7 +654,7 @@ public final class LivingToolModelRenderer {
         }
 
         drawRing(mc, poseStack, buffers, level, cameraPos, center, normal, attacking,
-            0.0F, scale, true, ATTACK_RING_RADIUS_BASE);
+            0.0F, scale, true, RING_RADIUS_BASE);
         return idle;
     }
 
@@ -724,7 +719,7 @@ public final class LivingToolModelRenderer {
                 scale = 1.0F + PULSE_SCALE * (float) Math.sin(Math.PI * Mth.clamp(t, 0.0F, 1.0F));
             }
             drawRing(mc, poseStack, buffers, level, cameraPos, center, normal, attacking,
-                0.0F, scale, true, ATTACK_RING_RADIUS_BASE);
+                0.0F, scale, true, RING_RADIUS_BASE);
         }
     }
 
@@ -769,8 +764,8 @@ public final class LivingToolModelRenderer {
      * @param scale    整体缩放（{@code 1.0} = 原大小；&gt;1 用于脉冲）
      * @param inward   ⭐ {@code true} = <b>尖端朝圆心</b>（攻击环：剑尖指向中心）；
      *                 {@code false} = <b>柄朝圆心</b>（工具环：镐头朝外）
-     * @param radiusBase 起始半径（工具环 {@code RING_RADIUS_BASE} / 攻击环 {@code ATTACK_RING_RADIUS_BASE}
-     *                   —— 剑长 ⇒ 攻击环要更大才能不穿模）
+     * @param radiusBase 起始半径（所有环统一用 {@code RING_RADIUS_BASE}；
+     *                   攻击环曾因"剑长穿模"单独放大，改走手持 display 后已不需要）
      */
     private static void drawRing(Minecraft mc, PoseStack poseStack, MultiBufferSource buffers,
                                  ClientLevel level, Vec3 cameraPos, Vec3 center, Vec3 normal,
