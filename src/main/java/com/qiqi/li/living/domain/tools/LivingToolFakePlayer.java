@@ -99,16 +99,24 @@ public class LivingToolFakePlayer extends FakePlayer {
      */
     public void equipTool(ItemStack stack) {
         // ⭐ 手上的物品【每次都要更新】—— 攻击 / 挖掘会扣耐久，回放读的就是它。
-        //   但【属性与位置类附魔效果】只在【换了另一把】时才重算：
-        //   本方法每 tick 都被调用，若无条件触发 ⇒ 位置效果会被每 tick 重复触发（原版只在装备变化时触发）。
+        //
+        // 🔴 属性修饰符【每次都摘旧装新】（2026-09-30 修复"特定武器永久白板化"）：
+        //    曾用 changed 门控（同物品不重算），但属性可能被【镜像清理】误删 ——
+        //    主人换手发生在容器点击（tick 之间处理），而主人的属性刷新在其后的实体 tick，
+        //    竞态窗口内主人地图里的旧武器 bd/bs 会被镜像当成"非主手来源"记录；
+        //    下一轮镜像清理按 id 删掉它们（与武器自身修饰符同 id！），
+        //    changed=false ⇒ equipTool 不补回 ⇒ 武器永久只剩白板（伤害 1 / 攻速 4.0，
+        //    表现 = 该武器 0.25s 一刀只打 1 点 + 常驻拉仇恨）。
+        //    摘旧装新是幂等的（按 id 先删后加），每 tick 做一次代价可忽略 ⇒ 让它自愈。
+        //
+        //   【位置类附魔效果】仍只在【换了另一把】时触发：
+        //   每 tick 重复触发会叠加（原版只在装备变化时触发），故保留 changed 门控。
         boolean changed = !ItemStack.isSameItem(stack, this.lastEquipped);
 
-        if (changed) {
-            removeEnchantmentModifiers(this.lastEquipped);
-        }
+        removeEnchantmentModifiers(this.lastEquipped);
         this.setItemInHand(InteractionHand.MAIN_HAND, stack);
+        addEnchantmentModifiers(stack);
         if (changed) {
-            addEnchantmentModifiers(stack);
             runLocationChangedEffects(stack);
         }
         this.lastEquipped = stack;
@@ -178,9 +186,18 @@ public class LivingToolFakePlayer extends FakePlayer {
         }
 
         // ③ 排除主人主手物品贡献的修饰符（物品自带 + 附魔，一个 API 全枚举）
+        // ⭐ 再排除【假玩家当前手持物品】自己的修饰符 id（2026-09-30 修复，与 equipTool
+        //    的注释同一案例）：addOrUpdate 按 id 替换 —— 主人换手竞态窗口内，主人地图里
+        //    的旧武器 bd/bs 与假玩家武器自身的修饰符【同 id】，会被镜像覆盖并记录，
+        //    下一轮清理又删掉 ⇒ 属性反复丢失。同名 id 一律不镜像（损失可忽略：
+        //    "与武器同 id 的非主手来源"现实中不存在）。
         Set<ResourceLocation> mainHandIds = new HashSet<>();
         owner.getMainHandItem().forEachModifier(EquipmentSlot.MAINHAND,
             (attribute, modifier) -> mainHandIds.add(modifier.id()));
+        if (this.lastEquipped != null) {
+            this.lastEquipped.forEachModifier(EquipmentSlot.MAINHAND,
+                (attribute, modifier) -> mainHandIds.add(modifier.id()));
+        }
 
         // ④ 逐属性复制（addOrUpdate 防同 ID 冲突抛异常）
         for (Holder<Attribute> attribute : MIRRORED_ATTRIBUTES) {
