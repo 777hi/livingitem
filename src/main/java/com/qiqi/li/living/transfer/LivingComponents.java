@@ -89,6 +89,17 @@ public final class LivingComponents {
                             .networkSynchronized(ByteBufCodecs.STRING_UTF8)
                             .build());
 
+    /**
+     * 活工具/活武器射线微调配置（起点锚点 + 朝向跟随，仅玩家形态生效 —— 2026-09-30）。
+     * 录制新记忆时由 {@code LivingToolRecorder} 整体重置。
+     */
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<com.qiqi.li.living.domain.tools.LivingToolRayTuning>> LIVING_TOOL_RAY_TUNING =
+            DATA_COMPONENT_TYPES.register("living_tool_ray_tuning", () ->
+                    DataComponentType.<com.qiqi.li.living.domain.tools.LivingToolRayTuning>builder()
+                            .persistent(com.qiqi.li.living.domain.tools.LivingToolRayTuning.CODEC)
+                            .networkSynchronized(com.qiqi.li.living.domain.tools.LivingToolRayTuning.STREAM_CODEC)
+                            .build());
+
     public static final DeferredHolder<DataComponentType<?>, DataComponentType<Integer>> LIVING_TOOL_DIG_TICKS =
             DATA_COMPONENT_TYPES.register("living_tool_dig_ticks", () ->
                     DataComponentType.<Integer>builder()

@@ -1,13 +1,17 @@
 package com.qiqi.li.client.mixin;
 
 import com.qiqi.li.client.input.GuiInteractionHelper;
+import com.qiqi.li.client.input.ToolRayTuningClicks;
 import net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen;
 import net.minecraft.client.gui.screens.inventory.EffectRenderingInventoryScreen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.ItemStack;
+import org.lwjgl.glfw.GLFW;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -33,6 +37,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  */
 @Mixin(CreativeModeInventoryScreen.class)
 public abstract class CreativeModeInventoryScreenMixin extends EffectRenderingInventoryScreen<CreativeModeInventoryScreen.ItemPickerMenu> {
+
+    @Shadow private static net.minecraft.world.item.CreativeModeTab selectedTab;
+
     public CreativeModeInventoryScreenMixin(CreativeModeInventoryScreen.ItemPickerMenu menu, net.minecraft.world.entity.player.Inventory playerInventory, Component title) {
         super(menu, playerInventory, title);
     }
@@ -42,6 +49,18 @@ public abstract class CreativeModeInventoryScreenMixin extends EffectRenderingIn
         if (GuiInteractionHelper.tryInteract(this.hoveredSlot, button, false, this.menu)) {
             ((AbstractContainerScreenAccessor) this).setSkipNextRelease(true);
             cir.setReturnValue(true);
+        }
+
+        // ⭐ 射线微调：仅 INVENTORY 标签页渲染小人（矩形与原版 render 调用一致，
+        //    scale 20 —— 见 CreativeModeInventoryScreen 的 renderEntityInInventoryFollowsMouse）
+        if (selectedTab.getType() == CreativeModeTab.Type.INVENTORY
+            && (button == GLFW.GLFW_MOUSE_BUTTON_LEFT || button == GLFW.GLFW_MOUSE_BUTTON_RIGHT)
+            && ToolRayTuningClicks.handle(mouseX, mouseY, button,
+                this.leftPos + 73, this.topPos + 6, this.leftPos + 105, this.topPos + 49,
+                this.menu.getCarried().isEmpty())) {
+            ((AbstractContainerScreenAccessor) this).setSkipNextRelease(true);
+            cir.setReturnValue(true);
+            return;
         }
     }
 

@@ -56,6 +56,7 @@ import com.qiqi.li.network.LivingMapMetadataPacket;
 import com.qiqi.li.network.LivingMapGuiTeleportPacket;
 import com.qiqi.li.network.LivingItemSyncPacket;
 import com.qiqi.li.network.ToolMemoryClearPacket;
+import com.qiqi.li.network.ToolRayTuningPacket;
 import com.qiqi.li.network.LivingToolHostPacket;
 import com.qiqi.li.network.LivingToolPlayerPacket;
 import com.qiqi.li.living.api.ActivationRuleConfig;
@@ -323,6 +324,8 @@ public class LivingItem {
         registrar.playToServer(LivingChestAccessPacket.TYPE, LivingChestAccessPacket.STREAM_CODEC, LivingChestAccessPacket::handle);
         // 活工具：左键空气清除挖掘记忆（服务端感知不到左键空气，需客户端告知）
         registrar.playToServer(ToolMemoryClearPacket.TYPE, ToolMemoryClearPacket.STREAM_CODEC, ToolMemoryClearPacket::handle);
+        // 活工具/活武器射线微调：背包界面点击玩家小人（左键=起点锚点/重置，右键=朝向跟随切换）
+        registrar.playToServer(ToolRayTuningPacket.TYPE, ToolRayTuningPacket.STREAM_CODEC, ToolRayTuningPacket::handle);
         // 服务端 → 客户端：下发容器运行时数据（由 ContainerRuntimeCache.flushToClients 发送）
         registrar.playToClient(LivingItemSyncPacket.TYPE, LivingItemSyncPacket.STREAM_CODEC, LivingItemSyncPacket::handle);
         // 活工具（K2）：近处方块容器里的活工具清单（位置 + ItemStack），

@@ -8,6 +8,7 @@ import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ItemEntityContainerContext;
 import com.qiqi.li.living.domain.tools.LivingToolHostClientCache;
 import com.qiqi.li.living.domain.tools.LivingToolMemory;
+import com.qiqi.li.living.domain.tools.LivingToolRayTuning;
 import com.qiqi.li.living.domain.tools.LivingToolPlayerClientCache;
 import com.qiqi.li.network.LivingToolHostPacket;
 import com.qiqi.li.network.LivingToolPlayerPacket;
@@ -193,7 +194,7 @@ public final class LivingToolRayRenderer {
             if (!held && !debugHitBoxes) {
                 continue;
             }
-            drew |= renderStack(poseStack, ribbon, level, cameraPos, frustum, eye, stack);
+            drew |= renderStack(poseStack, ribbon, level, cameraPos, frustum, eye, mc.player, stack);
         }
         return drew;
     }
@@ -211,7 +212,7 @@ public final class LivingToolRayRenderer {
         for (Entity entity : level.entitiesForRendering()) {
             if (entity instanceof ItemEntity itemEntity) {
                 drew |= renderStack(poseStack, ribbon, level, cameraPos, frustum,
-                    ItemEntityContainerContext.rayOrigin(itemEntity), itemEntity.getItem());
+                    ItemEntityContainerContext.rayOrigin(itemEntity), null, itemEntity.getItem());
             }
         }
         return drew;
@@ -262,7 +263,7 @@ public final class LivingToolRayRenderer {
                 if (LivingToolMemory.of(stack).isEmpty()) {
                     continue;
                 }
-                drew |= renderStack(poseStack, ribbon, level, cameraPos, frustum, eye, stack);
+                drew |= renderStack(poseStack, ribbon, level, cameraPos, frustum, eye, owner, stack);
             }
         }
         return drew;
@@ -277,7 +278,8 @@ public final class LivingToolRayRenderer {
      * @return 是否真的画了东西
      */
     private static boolean renderStack(PoseStack poseStack, VertexConsumer ribbon, ClientLevel level,
-                                       Vec3 cameraPos, Frustum frustum, Vec3 origin, ItemStack stack) {
+                                       Vec3 cameraPos, Frustum frustum, Vec3 defaultOrigin,
+                                       @org.jetbrains.annotations.Nullable Player bearer, ItemStack stack) {
         if (stack.isEmpty() || !LivingItemManager.isLivingItem(stack)) {
             return false;
         }
@@ -285,6 +287,20 @@ public final class LivingToolRayRenderer {
         if (memory.isEmpty()) {
             return false;
         }
+
+        // ⭐ 射线微调（2026-09-30，仅玩家形态生效）：与服务端回放同一公式 ——
+        //    起点 = 锚点（身体中轴高度）否则默认起点；offset = 跟随时绕 Y 旋转（衍生副本）。
+        //    bearer == null（掉落物形态）⇒ 配置不生效，画线与容器/掉落物回放口径一致。
+        Vec3 origin = defaultOrigin;
+        if (bearer != null) {
+            LivingToolRayTuning tuning = LivingToolRayTuning.of(stack);
+            Vec3 anchored = tuning.resolveAnchorOrigin(bearer);
+            if (anchored != null) {
+                origin = anchored;
+            }
+            memory = tuning.transform(memory, bearer);
+        }
+
         if (origin.distanceToSqr(cameraPos) > MAX_DISTANCE * MAX_DISTANCE) {
             return false;   // 距离裁剪
         }

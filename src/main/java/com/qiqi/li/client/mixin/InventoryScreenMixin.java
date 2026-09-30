@@ -1,6 +1,7 @@
 package com.qiqi.li.client.mixin;
 
 import com.qiqi.li.client.input.GuiInteractionHelper;
+import com.qiqi.li.client.input.ToolRayTuningClicks;
 import com.qiqi.li.client.util.LivingChestTabState;
 import com.qiqi.li.living.domain.chest.LivingChestFunction;
 import com.qiqi.li.network.LivingChestAccessPacket;
@@ -48,6 +49,18 @@ public abstract class InventoryScreenMixin extends EffectRenderingInventoryScree
         if (GuiInteractionHelper.tryInteract(this.hoveredSlot, button, false, this.menu)) {
             ((AbstractContainerScreenAccessor) this).setSkipNextRelease(true);
             cir.setReturnValue(true);
+        }
+
+        // ⭐ 射线微调：点击玩家小人（左键=起点锚点/脑袋重置，右键=朝向跟随切换）。
+        //    小人区域没有 slot，tryInteract 不会命中，二者互不干扰；
+        //    命中分区与光标/主手校验见 ToolRayTuningClicks（2026-09-30）。
+        if ((button == GLFW.GLFW_MOUSE_BUTTON_LEFT || button == GLFW.GLFW_MOUSE_BUTTON_RIGHT)
+            && ToolRayTuningClicks.handle(mouseX, mouseY, button,
+                this.leftPos + 26, this.topPos + 8, this.leftPos + 75, this.topPos + 78,
+                this.menu.getCarried().isEmpty())) {
+            ((AbstractContainerScreenAccessor) this).setSkipNextRelease(true);
+            cir.setReturnValue(true);
+            return;
         }
 
         if (button == GLFW.GLFW_MOUSE_BUTTON_1 && hasShiftDown()

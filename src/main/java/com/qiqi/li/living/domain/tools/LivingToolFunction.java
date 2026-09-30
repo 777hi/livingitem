@@ -27,6 +27,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
@@ -72,7 +73,9 @@ public class LivingToolFunction implements LivingItemFunction {
             LivingComponents.LIVING_TOOL_LAST_ACTION.value(),
             LivingComponents.LIVING_TOOL_OWNER.value(),
             // 主人名字的显示缓存（tooltip 兜底）—— 取消活化时随 owned-types 一起清
-            LivingComponents.LIVING_TOOL_OWNER_NAME.value()
+            LivingComponents.LIVING_TOOL_OWNER_NAME.value(),
+            // 射线微调配置（起点锚点 + 朝向跟随）—— 录制新记忆时重置
+            LivingComponents.LIVING_TOOL_RAY_TUNING.value()
         );
     }
 
@@ -128,6 +131,22 @@ public class LivingToolFunction implements LivingItemFunction {
                 continue;
             }
 
+            // ⭐ 射线微调（2026-09-30，仅玩家形态生效）：起点锚点 + 朝向跟随。
+            //    容器/掉落物形态 bearer == null ⇒ 配置不生效（origin / memory 原样）。
+            //    memory 是【衍生副本】—— 原始记忆组件永不被修改（纯净射线 L15 不破坏）。
+            Player bearer = context instanceof SimpleContainerContext simple && simple.getInventory() != null
+                ? simple.getInventory().player
+                : null;
+            Vec3 entryOrigin = origin;
+            if (bearer != null) {
+                LivingToolRayTuning tuning = LivingToolRayTuning.of(tool);
+                Vec3 anchored = tuning.resolveAnchorOrigin(bearer);
+                if (anchored != null) {
+                    entryOrigin = anchored;   // 锚点全在身体中轴上 ⇒ 起点不随朝向转
+                }
+                memory = tuning.transform(memory, bearer);
+            }
+
             // ⭐ 记录本 tick 开始时的"动画状态"（下面用于检测翻转）
             LivingToolProgress progressBefore = LivingToolProgress.of(tool);
             LivingToolAction actionBefore = LivingToolAction.of(tool);
@@ -143,7 +162,7 @@ public class LivingToolFunction implements LivingItemFunction {
             boolean handled = false;
             if (memory.hasAttack()) {
                 LivingToolReplay.AttackResult result = LivingToolReplay.replayAttack(
-                    tool, memory.attack(), origin, hostBlocks, serverLevel, now);
+                    tool, memory.attack(), entryOrigin, hostBlocks, serverLevel, now);
                 if (result.outcome() == LivingToolReplay.Outcome.ATTACKED) {
                     // ⭐ 攻击侧【不走】writeBack 的 matches 短路，按「记录是否翻转」写回：
                     //    matches 对「只变运行时组件」的栈可能误判相等（项目已知坑，见 syncStateFlip），
@@ -163,12 +182,12 @@ public class LivingToolFunction implements LivingItemFunction {
 
             if (!handled) {
                 // 挖掘记忆（左键行为）
-                ItemStack afterDig = LivingToolReplay.replayDig(tool, memory.dig(), origin, hostBlocks, serverLevel, now);
+                ItemStack afterDig = LivingToolReplay.replayDig(tool, memory.dig(), entryOrigin, hostBlocks, serverLevel, now);
                 if (afterDig != null) {
                     writeBack(context, entry.slotIndex(), tool, afterDig);
                 } else {
                     // 交互记忆（右键行为）—— 与挖掘互斥，避免同一 tick 双写
-                    ItemStack afterUse = LivingToolReplay.replayUse(tool, memory.use(), origin, hostBlocks, serverLevel);
+                    ItemStack afterUse = LivingToolReplay.replayUse(tool, memory.use(), entryOrigin, hostBlocks, serverLevel);
                     if (afterUse != null) {
                         writeBack(context, entry.slotIndex(), tool, afterUse);
                     }
@@ -208,6 +227,30 @@ public class LivingToolFunction implements LivingItemFunction {
         addRayLine(tooltipAdder, "tooltip.livingitem.tool.dig", memory.dig());
         addRayLine(tooltipAdder, "tooltip.livingitem.tool.use", memory.use());
         addAttackLine(tooltipAdder, memory.attack());
+        addRayTuningLine(tooltipAdder, stack);
+    }
+
+    /**
+     * 一行射线微调信息（仅已配置时显示 —— 负信息不上 tooltip）。
+     *
+     * <p>「起点: 躯干底部 / 朝向: 跟随身体」。起点锚点未设但朝向跟随开启时
+     * 显示「起点: 眼睛（默认）」，让这一行的两段语义始终完整。</p>
+     */
+    private static void addRayTuningLine(Consumer<Component> tooltipAdder, ItemStack stack) {
+        LivingToolRayTuning tuning = LivingToolRayTuning.of(stack);
+        if (tuning.isDefault()) {
+            return;
+        }
+        Component origin = Component.translatable(tuning.anchor() == LivingToolRayTuning.RayAnchor.TORSO_BOTTOM
+            ? "tooltip.livingitem.tool.ray.anchor.torso_bottom"
+            : tuning.anchor() == LivingToolRayTuning.RayAnchor.TORSO_CENTER
+                ? "tooltip.livingitem.tool.ray.anchor.torso_center"
+                : "tooltip.livingitem.tool.ray.anchor.default");
+        Component line = Component.translatable("tooltip.livingitem.tool.ray.origin", origin);
+        if (tuning.followBody()) {
+            line = line.copy().append(Component.translatable("tooltip.livingitem.tool.ray.follow"));
+        }
+        tooltipAdder.accept(line);
     }
 
     /**

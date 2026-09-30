@@ -451,12 +451,18 @@ public final class LivingToolRecorder {
         LivingToolMemory.RayMemory ray = LivingToolMemory.RayMemory.record(eye, hitLocation, target);
         LivingToolMemory memory = LivingToolMemory.of(tool);
         LivingToolMemory.set(tool, memory.withDig(ray));
+        // 录制新记忆 = 射线微调配置整体重置（起点回眼睛 / 朝向绑定解除）——
+        // 新记忆是新录的线，旧配置对它没有意义（2026-09-30 用户定）
+        LivingToolRayTuning.set(tool, LivingToolRayTuning.DEFAULT);
     }
 
     private static void recordUse(ItemStack tool, Vec3 eye, Vec3 hitLocation, @Nullable Block target) {
         LivingToolMemory.RayMemory ray = LivingToolMemory.RayMemory.record(eye, hitLocation, target);
         LivingToolMemory memory = LivingToolMemory.of(tool);
         LivingToolMemory.set(tool, memory.withUse(ray));
+        // 录制新记忆 = 射线微调配置整体重置（起点回眼睛 / 朝向绑定解除）——
+        // 新记忆是新录的线，旧配置对它没有意义（2026-09-30 用户定）
+        LivingToolRayTuning.set(tool, LivingToolRayTuning.DEFAULT);
     }
 
     private static void recordAttack(ItemStack weapon, Vec3 eye, Vec3 hitLocation,
@@ -465,6 +471,9 @@ public final class LivingToolRecorder {
             LivingToolMemory.AttackMemory.record(eye, hitLocation, type);
         LivingToolMemory memory = LivingToolMemory.of(weapon);
         LivingToolMemory.set(weapon, memory.withAttack(ray));
+        // 录制新记忆 = 射线微调配置整体重置（起点回眼睛 / 朝向绑定解除）——
+        // 新记忆是新录的线，旧配置对它没有意义（2026-09-30 用户定）
+        LivingToolRayTuning.set(weapon, LivingToolRayTuning.DEFAULT);
     }
 
 
