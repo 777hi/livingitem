@@ -50,6 +50,16 @@
   边界：玩家形态双 tick 接受；被动模式 main-hand 检查不伪造；瞬时辅助路径不做；
   held 中断修改丢失（挖断蓄能清零）罕见模式接受。详见 `living-tool-tech.md` §5.7。
 
+- 🏗️ **活武器受控 tick 重构（台阶一/二，含一次实测回归修正）**：`FakePlayer.tick()` 被
+  刻意掏空导致六类原生机制冻结，现 `LivingToolFakePlayer#driveWielderTick` 按 game tick
+  去重驱动真链（**调 doTick() 不调 tick()** —— ServerPlayer.tick 只做簿记，真链在
+  doTick；noGravity + deltaMovement 归零钉位，不进世界）⇒ inventoryTick / 物品冷却 /
+  药效衰减 / 装备属性刷新 / 蓄力推进全原生（代持 tick 两行与镜像竞态的自愈补丁退役，
+  镜像排除保留）。⚠️ 攻击节奏为 per-weapon 语义 —— 原生 ticker 长在共享 fake 上
+  （实测回归：被动模式只有最靠前的武器出手），缩放改由回放侧按各武器上次攻击记录
+  算好经 `setAttackStrengthScale` 注入。**为蓄力型（活弓箭）铺路**：
+  真链的 `updatingUsingItem` 即蓄力状态机。详见 `living-tool-tech.md` §5.7。
+
 ## 2026-09-29
 
 - ✅ **活武器连击修复**：主动模式高速连击（不扣耐久的灾变武器最明显）——「上次攻击 tick」

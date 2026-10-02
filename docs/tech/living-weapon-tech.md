@@ -3,7 +3,7 @@
 > **状态**：核心链路已实现（2026-09-23），**仅限近战（剑类）**；施法 / 射击 / 蓄力类**未实现**（见 §9）。
 >
 > ⭐ **共享基础设施不在这里** —— FakePlayer、记忆射线模型、辅助环、挖掘/交互回放、DataComponent 编解码、
-> 渲染管线全部见 [living-tool-tech.md](living-tool-tech.md)。**本文只写武器侧的差异**，共享部分一律用指针，
+> 渲染管线、**射线微调（起点锚点 + 朝向跟随，两模式通用）**全部见 [living-tool-tech.md](living-tool-tech.md)。**本文只写武器侧的差异**，共享部分一律用指针，
 > **不复制**（复制必然漂移）。
 >
 > 📄 设计探讨与待决问题池仍在 [../idea.md](../idea.md)（§1 核心原则 / §3 铁魔法调研 / §4 待决问题池）。
@@ -202,99 +202,53 @@ public static boolean onPlayerAttackTarget(Player player, Entity target) {
 
 ---
 
-## §5 🔴 攻击冷却：必须手动推进
+## §5 攻击冷却：原生机制（2026-09-30 受控 tick 重构）
 
-**这是活武器最容易踩、且症状最隐蔽的坑。**
+**历史坑（已由架构根治）**：`Player#attack` 的伤害按冷却比例打折
+（`f *= 0.2F + f2*f2*0.8F`，f2 = `getAttackStrengthScale(0.5F)`），而
+`attackStrengthTicker` 由 `Player#tick()` 自增 —— **FakePlayer.tick 是空的** ⇒
+该值永远 0 ⇒ 活武器永远 20% 伤害、无横扫无暴击。第一版解法是覆写
+`getAttackStrengthScale` + 在 `replayAttack` 里按「上次攻击 tick / 攻速属性」手算 ——
+随之产生一整类坑：冷却时长小数截断死锁、`LivingToolAction` 写回被 `matches`
+吞掉导致高速连击（2026-09-29）、属性镜像竞态改写冷却分母导致白板化（2026-09-30）。
 
-```java
-// Player#attack 内部
-float f2 = this.getAttackStrengthScale(0.5F);
-f  *= 0.2F + f2 * f2 * 0.8F;     // 基础伤害
-f1 *= f2;                         // 附魔伤害同样打折
-boolean flag4 = f2 > 0.9F;        // 击退 / 横扫 / 暴击也要满冷却
-```
-
-而 `getAttackStrengthScale` 读的是 **private** 的 `attackStrengthTicker`，它由 `Player#tick()` 自增 ——
-**`FakePlayer#tick()` 是空实现**（`L27` 一脉）⇒ 该值**永远是 0** ⇒
-
-> 🔴 **不推进 = 活武器永远只有 20% 伤害，且永远触发不了横扫与暴击。**
-
-### 解法：override 读数，不用反射、不用 AT
-
-`LivingToolFakePlayer` 覆写：
+**现方案（受控 tick，见 `living-tool-tech.md` §5.7）**：
+`LivingToolFakePlayer#driveWielderTick` 每 game tick 驱动真链 ⇒
+`attackStrengthTicker` 原生自增、`fake.attack()` 命中后原生重置，
+`replayAttack` 的门只剩一行：
 
 ```java
-@Override public float getAttackStrengthScale(float adjustTicks) { return this.attackStrengthScale; }
-public void setAttackStrengthScale(float scale) { ... }
-public float getAttackCooldownTicks() {
-    float delay = this.getCurrentItemAttackStrengthDelay();
-    if (!Float.isFinite(delay) || delay < 1.0F) return 1.0F;   // 见下方坑 ②
-    return delay;
-}
+if (fake.getAttackStrengthScale(0.5F) < 1.0F) return AttackResult.none(Outcome.COOLING);
 ```
 
-推进在 `replayAttack` 里按**世界轴 tick 差**重算（同 `LivingToolProgress` 的重算式，见 `living-tool-tech.md`）：
+节奏完全由武器攻速属性决定，与真玩家同源；上述整类坑随原生机制退役。
+`LivingToolAction` 不再承担冷却计时（只负责客户端动画）。
 
-```java
-float scale = last == null ? 1.0F : (float) (now - last.tick()) / cooldown;
-fake.setAttackStrengthScale(scale);
-if (scale < 1.0F) return null;   // 还在冷却中，本次不出手
-```
+副作用（原版一致行为）：假玩家新建/换武器后 `attackStrengthTicker` 从 0 爬升 ⇒
+**首刀前有一个冷却期的热身** —— 与真玩家换武器后相同。
 
-| 为什么不用 | 理由 |
-|---|---|
-| 反射改 private 字段 | **生产环境会因混淆失效** |
-| Access Transformer | 要新增配置；能不用就不用 |
+> ⚠️ 历史教训保留：这个坑的三个变体（死锁 / 连击 / 白板）都是"手动维护
+> 应由 tick 驱动的状态"的必然产物 —— 见 §8.1 镜像竞态与 `living-tool-tech.md` §5.7。
 
-### 🔴 三个「静默失效」—— 症状都是「有记忆、有怪，但一刀都不打」
+### 🔴 历史坑档案（手动节奏时代的教训，保留防复发）
 
-这类 bug 的共同特征：**不报错、不崩溃、就是不出手**，比崩溃难查得多。
+**「静默失效」三连**（症状：「有记忆、有怪，但一刀都不打」，比崩溃难查得多）：
 
-| # | 坑 | 症状 | 修法 |
-|---|---|---|---|
-| ① | **首次冷却用 `(long) cooldown` 当 elapsed** | 冷却时长**常是小数**（剑攻速 1.6 ⇒ `1.0/1.6*20 = 12.5` tick）⇒ `(long)12.5 = 12` ⇒ `12/12.5 = 0.96 < 1` ⇒ 判成"冷却中" ⇒ **且这条路径不写 action ⇒ `last` 永远为 null ⇒ 永久死锁** | 没打过就直接给 `1.0F` |
-| ② | **`ATTACK_SPEED` 为 0 ⇒ 冷却 = `Infinity`** | `Math.max(Infinity, 1)` 挡不住 ⇒ `elapsed / Infinity = 0` ⇒ 永远不满 | `!Float.isFinite(delay)` 兜底 |
-| ③ | **隔墙检测没传 `hostBlocks`** | 容器形态下射线起点**埋在容器方块内** ⇒ 第一个命中的是"自己的家" ⇒ 永远判成隔墙 | 传 `hostBlocks`（与挖掘侧一致） |
+| # | 坑 | 现状 |
+|---|---|---|
+| ① | 首次冷却用 `(long) cooldown` 当 elapsed ⇒ 小数截断（剑 12.5→12）⇒ 0.96<1 判冷却中 ⇒ 且该路径不写记录 ⇒ **永久死锁** | ✅ 随原生节奏结构性根除（ticker 无条件自增，无手动除法） |
+| ② | `ATTACK_SPEED=0` ⇒ `Infinity` ⇒ 永远判不满 | ✅ 同上 |
+| ③ | 隔墙检测没传 `hostBlocks` ⇒ 容器起点埋在方块内 ⇒ 永判隔墙 | ✅ **仍有效**：`findAttackTarget` 必须传 `hostBlocks` |
 
-> 📌 **通用判据**：凡是"某个闸门放行后才能推进状态"的循环，
-> **必须检查「首次 / 无记录」那条路径能不能自己走通** ——
-> 若它在放行前就 `return`，且 return 之前**不写状态**，就会**永久卡死**。
+**第四坑（反向）**：出手记录写在 `attack()` 之后 ⇒ 模组武器在 `onLeftClickEntity`
+自结伤害返回 true / 事件取消 / 异常 ⇒ `attack()` 提前返回 ⇒ 记录丢失 ⇒ 每 tick 一刀
+（2026-09-29 修复：记录写在 attack 之前 + 攻击分支不走 `matches` 短路必写回）。
+✅ **节奏层面已随原生机制结构性根除**（ticker 由 attack 原生重置，不依赖记录）；
+**攻击分支必写回的规则保留** —— 它还承担把耐久 / 动画状态落进容器的职责。
 
-### 🔴 第四个坑（**反向**）：出手记录写在 `attack()` 之后 ⇒ 冷却闸门失效变【高速连击】（2026-09-29 修复）
-
-上面三个坑都是「一刀不打」，这个坑**方向相反**：**攻速越慢的武器打得越离谱**。
-实测集中在**灾变模组里不扣耐久的武器**（源码已核：Ceraunus / The_Annihilator / Astrape /
-Meat_Shredder 等注册处只有 `stacksTo(1).fireResistant()`，**无 `.durability()`**
-⇒ `isDamageable()==false`；攻速 -2.4 ~ -3.3）；原版剑 / 斧正常。
-
-**根因 —— 「上次攻击 tick」的持久化有两条丢失通道**：
-
-```
-通道 ①  writeBack 的 ItemStack.matches 短路：
-        不扣耐久的武器攻击后【只变】 LIVING_TOOL_LAST_ACTION（运行时组件），
-        matches 对这类变化可能误判相等（项目已知坑，见 `syncStateFlip` 的说明）⇒ setItem 被跳过；
-        在 getItem 返回【副本】的宿主 handler 下，就地写在副本上的记录随副本丢弃
-        ⇒ 下 tick last == null ⇒ 判成"没打过" ⇒ scale = 1.0 ⇒ 立即再打。
-        （背包等实时引用宿主理论上靠就地写幸存，但任何宿主形态都不该依赖这条脆弱通道。）
-
-通道 ②  旧实现把记录写在 fake.attack() 之【后】：
-        attack() 走武器自己的代码 —— 模组武器若在 onLeftClickEntity 自结伤害返回 true、
-        被事件取消、或抛异常，attack() 提前退出 ⇒ 记录永远执行不到 ⇒ 同样每 tick 重打。
-        ⚠️ 已核灾变源码：这批武器【没有】拦截左键，故本次实测不是通道 ② 触发；
-        但它是结构性隐患，任何"自结伤害型"武器都会踩，仍按规则修掉。
-```
-
-**修法（两道，都要在）**：
-
-1. ⭐ **出手记录必须写在 `fake.attack()` 之前** —— 计时起点先落账，
-   攻击无论怎么退出都不影响下一 tick 的冷却判定。
-   代价：若攻击被事件取消，武器会白等一个冷却 —— 比连击失控安全得多。
-2. **攻击侧写回不走 `writeBack` 的 `matches` 短路**（`LivingToolFunction`）——
-   出手即 `setItem` + 同步，保证冷却计时起点必然落进容器，与宿主 handler 是否返回副本无关。
-
-**验证**：✅ **已实测通过（2026-09-29 用户确认）** —— 不扣耐久的灾变武器放背包主动打怪，
-攻击间隔恢复面板冷却节奏；且攻速类饰品增益（§8.1 属性镜像）正常生效。
-若日后仍出现连击 ⇒ 用一次性日志打出每 tick 的 `(last.tick, now, cooldown, scale)` 定位真实丢失点。
+> 📌 **通用判据**（仍然成立）：凡是"某个闸门放行后才能推进状态"的循环，
+> 必须检查「首次 / 无记录」那条路径能不能自己走通 —— 若它在放行前就 `return`
+> 且不写状态，就会永久卡死。
 
 ### 冷却数值：完全由【那把武器自身】的攻击速度决定
 

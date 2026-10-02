@@ -286,17 +286,8 @@ public final class LivingToolReplay {
         if (owner != null) {
             LivingToolOwnerName.refresh(tool, owner);   // 顺手刷新主人名字的显示缓存
         }
-        fake.equipTool(held);   // L46：同时同步附魔属性，否则效率附魔不生效
-        // ⭐ 代持 tick（2026-09-30）：FakePlayer.tick 为空 ⇒ 原版玩家的物品 tick 循环不会跑，
-        //    所有「手持时每 tick」类效果（inventoryTick：足迹/手持 buff/蓄能……）与物品冷却
-        //    （ItemCooldowns）都不会推进。这里代替原版循环补上：
-        //    ① inventoryTick 以 selected=true 语义触发（= 假玩家正手持此物），
-        //       effects 里的 getEquippedStack(MAINHAND)==stack 检查也天然通过（equipTool 已装）；
-        //    ② 冷却推进让技能/proc 的 ItemCooldowns 正常消退（否则首次触发后永久锁死）。
-        //    模组无关 —— 任何走原版入口的 mod 自动兼容（铁律②）。仅持续回放路径调用；
-        //    辅助攻击/辅助挖掘是瞬时路径，不做（语义上不是持续手持）。
-        held.inventoryTick(level, fake, 0, true);
-        fake.getCooldowns().tick();
+        fake.equipTool(held);   // L46：装入假玩家主手（属性由真链的装备刷新原生应用；
+        //                        「代持 tick」两行已退役，见 LivingToolFakePlayer#driveWielderTick）
 
         // ⭐ 让 FakePlayer "看着"记忆射线的方向 —— 法杖 / 枪械几乎都读玩家视线。
         //    少了这一步，它们会朝默认朝向（或上一个工具的朝向）施放。
@@ -396,10 +387,11 @@ public final class LivingToolReplay {
      * 打多少伤害、触发什么效果全由 {@code fake.attack(entity)} 走原版管线决定
      * （锋利 / 击退 / 火焰附加 / 横扫 / 暴击 / 耐久<b>自动生效</b>）。</p>
      *
-     * <p>⚠️ <b>冷却必须手动推进</b>（{@code W4}，同 {@code L27}）：
-     * {@code FakePlayer#tick()} 是空实现 ⇒ 原版的 {@code attackStrengthTicker} 不会自增，
-     * 而 {@code Player#attack} 里伤害是 {@code f *= 0.2F + f²*0.8F}（f = 冷却比例）
-     * ⇒ 不推进就<b>永远只有 20% 伤害</b>。推进方式见 {@link LivingToolFakePlayer#setAttackStrengthScale}。</p>
+     * <p>⭐ 攻击节奏为 <b>per-weapon</b>（2026-09-30 二次修正）：按【该武器自己】的
+     * 上次攻击记录 + 攻速属性算缩放，经 setAttackStrengthScale 注入假玩家 ——
+     * 共享假玩家服务多把武器时，不能让全体共用一个攻击时钟。
+     * 受控 tick 驱动（{@link LivingToolFakePlayer#driveWielderTick}）继续承担
+     * inventoryTick / 冷却 / 药效衰减 / 装备属性刷新。</p>
      *
      * @param weapon 活武器（不会被本方法修改）
      * @param attack 攻击记忆；{@code null} = 无记忆
@@ -418,6 +410,7 @@ public final class LivingToolReplay {
 
         LivingToolFakePlayer fake =
             LivingToolFakePlayerCache.get(level, LivingItemManager.getToolOwner(weapon));
+        fake.driveWielderTick();   // 受控 tick：真链每 game tick 推进一次（按 game time 去重）
         fake.setPos(origin.x, origin.y, origin.z);
         fake.setOnGround(true);
         ItemStack held = weapon.copy();
@@ -425,17 +418,9 @@ public final class LivingToolReplay {
         if (owner != null) {
             LivingToolOwnerName.refresh(weapon, owner);   // 顺手刷新主人名字的显示缓存
         }
-        fake.equipTool(held);   // 同步附魔属性，否则锋利等不生效
-        // ⭐ 代持 tick（2026-09-30）：FakePlayer.tick 为空 ⇒ 原版玩家的物品 tick 循环不会跑，
-        //    所有「手持时每 tick」类效果（inventoryTick：足迹/手持 buff/蓄能……）与物品冷却
-        //    （ItemCooldowns）都不会推进。这里代替原版循环补上：
-        //    ① inventoryTick 以 selected=true 语义触发（= 假玩家正手持此物），
-        //       effects 里的 getEquippedStack(MAINHAND)==stack 检查也天然通过（equipTool 已装）；
-        //    ② 冷却推进让技能/proc 的 ItemCooldowns 正常消退（否则首次触发后永久锁死）。
-        //    模组无关 —— 任何走原版入口的 mod 自动兼容（铁律②）。仅持续回放路径调用；
-        //    辅助攻击/辅助挖掘是瞬时路径，不做（语义上不是持续手持）。
-        held.inventoryTick(level, fake, 0, true);
-        fake.getCooldowns().tick();
+        fake.equipTool(held);   // 装入假玩家主手（属性由真链的装备刷新原生应用）
+        // ⭐（原「代持 tick」两行已退役 2026-09-30）：inventoryTick / 冷却推进 /
+        //    药效衰减 / 装备属性刷新全部由真链原生承担，见 LivingToolFakePlayer#driveWielderTick。
         // ⭐ 让 FakePlayer 看向目标 —— 与法杖/枪械同款需求，且影响击退方向
         faceTarget(fake, origin, end);
 
@@ -444,15 +429,13 @@ public final class LivingToolReplay {
             return AttackResult.none(Outcome.NO_TARGET);   // 没怪 ⇒ 调度层可转去挖方块
         }
 
-        // ── 攻击冷却（S1-a：按【物品攻击速度属性】算，与原版同源）───────────────
+        // ── 攻击冷却（per-weapon，2026-09-30 二次修正）────────────────────────
+        //    节奏必须【每把武器一份】（按各自攻速独立出手），而原生 attackStrengthTicker
+        //    长在共享假玩家身上（全体武器一个时钟）⇒ 门按【该武器自己】的上次攻击记录算，
+        //    缩放经 setAttackStrengthScale 注入假玩家（见 LivingToolFakePlayer 的说明）。
+        //    上次攻击记录写在 attack() 之前（见下），攻击分支必写回 ⇒ 记录不会丢。
         float cooldown = fake.getAttackCooldownTicks();
         LivingToolAction last = LivingToolAction.of(weapon);
-        // 🔴 **没打过 ⇒ 必须视为【冷却已满】**，不能拿 cooldown 自己当 elapsed。
-        //
-        //    ⚠️ 曾写 last == null ? (long) cooldown : ... —— 而冷却时长【常是小数】：
-        //       剑攻速 1.6 ⇒ 1.0/1.6*20 = 12.5 tick ⇒ (long)12.5 = 12 ⇒ 12/12.5 = 0.96 < 1
-        //       ⇒ 永远判成"冷却中" ⇒ 且这条路径【不会写 action】
-        //       ⇒ last 永远为 null ⇒ 永久死锁，一刀都打不出来（2026-09-24 用户实测）。
         float scale = last == null ? 1.0F : (float) (now - last.tick()) / cooldown;
         fake.setAttackStrengthScale(scale);
         if (scale < 1.0F) {

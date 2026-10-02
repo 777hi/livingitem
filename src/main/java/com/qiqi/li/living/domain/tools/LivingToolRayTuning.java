@@ -35,10 +35,14 @@ import com.qiqi.li.living.transfer.LivingComponents;
  * <h3>数据与变换的分工（⭐ 不破坏「纯净射线」{@code L15}）</h3>
  * <pre>
  *   存储：{@code LivingToolMemory.offset} 永远是录制时的【世界系原始向量】，本组件不碰它
- *   回放/渲染：有效offset = followBody ? rotateY(原始offset, 当前yBodyRot − followRefYaw) : 原始offset
+ *   回放/渲染：有效offset = followBody ? rotateY(原始offset, 当前视线朝向(yRot) − followRefYaw) : 原始offset
  * </pre>
  * 绑定时刻「射线此时的朝向」被参考 yaw 天然钉住；pitch 永不参与（身体朝向只有 yaw，
  * 与背后环一致，2026-09-30 用户定）。
+ * ⚠️ 参考与 delta 一律用 {@code getYRot()}（视线朝向）：服务端玩家的
+ * {@code yBodyRot} 从不随移动包更新（{@code handleMovePlayer} 只写 yRot），
+ * 用它当参考 = 拿陈旧值当原点 ⇒ 绑定瞬间射线跳变（实测踩坑，详见
+ * {@code ToolRayTuningPacket} 注释与 living-tool-tech.md §2.5）。
  *
  * <h3>生命周期</h3>
  * <ul>

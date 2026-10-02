@@ -21,6 +21,7 @@ import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.neoforged.neoforge.common.util.FakePlayer;
 
@@ -52,29 +53,10 @@ public class LivingToolFakePlayer extends FakePlayer {
     /** 上一次经 {@link #equipTool} 装配的工具，用于回收它留下的附魔属性修饰符。 */
     private ItemStack lastEquipped = ItemStack.EMPTY;
 
-    /**
-     * 攻击冷却比例（0~1）—— 由 {@code LivingToolReplay#replayAttack} 手动推进。
-     *
-     * <p>🔴 <b>为什么必须自己维护</b>：原版 {@code Player#getAttackStrengthScale} 读的是
-     * <b>private</b> 的 {@code attackStrengthTicker}，它由 {@code Player#tick()} 自增，
-     * 而 {@link FakePlayer#tick()} 是<b>空实现</b>（{@code L27} 一脉）⇒ 该值<b>永远是 0</b>。</p>
-     *
-     * <p>而 {@code Player#attack} 里伤害是这样算的：</p>
-     * <pre>
-     *   f  *= 0.2F + f² * 0.8F;     // f = 冷却比例
-     *   f1 *= f;                     // 附魔伤害同样打折
-     *   flag4 = f &gt; 0.9F;            // 击退 / 横扫 / 暴击也要满冷却
-     * </pre>
-     *
-     * <p>⇒ 不推进的话，活武器<b>永远只有 20% 伤害</b>，且永远触发不了横扫与暴击。<br>
-     * 这里覆写读数、由外部按「物品攻击速度属性」推进（用户定的 S1-a），
-     * 从而<b>不必碰 private 字段</b>（反射在生产环境会因混淆失效，AT 又要新增配置）。</p>
-     */
-    private float attackStrengthScale = 1.0F;
-
     public LivingToolFakePlayer(ServerLevel level, @Nullable UUID owner) {
         super(level, new OwnerGameProfile(owner));
         this.owner = owner;
+        this.setNoGravity(true);   // 受控 tick：真链里的 travel 不得移动假玩家（每次回放 setPos 钉回原点）
     }
 
     /**
@@ -278,31 +260,73 @@ public class LivingToolFakePlayer extends FakePlayer {
         return "LivingTool";
     }
 
+    // ── 受控 tick（2026-09-30 重构核心）─────────────────────────────────────
+    //
+    // NeoForge 的 FakePlayer 刻意把 tick() 掏空 —— 它的设计前提是"假玩家不该活着"。
+    // 但活武器的"代持"语义恰恰需要一个【活着】的持械者：攻击强度计时器、物品冷却、
+    // 逐槽 inventoryTick、药效衰减、装备属性刷新、蓄力推进（updatingUsingItem）
+    // 全部住在真链里。此前这六样各打了一个补丁（覆写读数 / 代持 tick / 摘旧装新……），
+    // 现在让假玩家【真的活一次】：由驱动器（{@link #driveWielderTick}）按 game tick 去重调用。
+    //
+    // ⚠️ 不 addFreshEntity 进世界 —— 不渲染、无碰撞，只在回放时被驱动；物理用
+    //    noGravity + 每 tick 归零 deltaMovement 钉住（见构造器与 {@link #driveWielderTick}）。
+    // ⚠️ 事件面：真链会触发 PlayerTickEvent / LivingTickEvent 等 —— 本项目内部处理器
+    //    均有 isFakePlayer 或判据防护；第三方 mod 对假玩家的 tick 可见（接受并观察）。
+
     /**
-     * 覆写攻击冷却读数 —— 返回外部推进出来的值（见 {@link #attackStrengthScale} 的说明）。
+     * 驱动器：每 game tick 至多推进一次真链（多宿主 / 辅助路径共享同一假玩家，按 game time 去重）。
      *
-     * <p>⚠️ 刻意<b>忽略 {@code adjustTicks}</b>：那个参数是给渲染插值用的，
-     * 而这里的冷却是按「世界轴 tick 差 / 物品冷却总时长」算好的绝对值。</p>
+     * <p>🔴 <b>必须调 {@code doTick()} 而不是 {@code tick()}</b>（2026-09-30 实测踩坑）：
+     * {@code ServerPlayer.tick()} 只做 ServerPlayer 侧簿记（gameMode/broadcast/criteria），
+     * <b>不含 {@code super.tick()}</b> —— 真链（{@code Player.tick → LivingEntity.tick}：
+     * 攻击强度计时器 / inventoryTick / 冷却 / 药效衰减 / 装备属性刷新 / 蓄力推进）
+     * 在 {@code ServerPlayer.doTick()} 里，由连接器的 {@code tick() → player.doTick()} 驱动；
+     * 而 FakePlayer 把连接器 tick 也掏空了 ⇒ 调 {@code tick()} 等于只跑簿记，
+     * 计时器永远 0 ⇒ 攻击冷却门永远 COOLING（表现 = 武器两模式都不攻击）。</p>
      */
-    @Override
-    public float getAttackStrengthScale(float adjustTicks) {
-        return this.attackStrengthScale;
+    public void driveWielderTick() {
+        long now = this.level().getGameTime();
+        if (this.lastDrivenTick == now) {
+            return;
+        }
+        this.lastDrivenTick = now;
+        this.setDeltaMovement(Vec3.ZERO);   // 钉位：travel 不得位移（noGravity 已关重力）
+        this.fallDistance = 0.0F;
+        this.doTick();   // 真链入口：super.tick() = Player.tick → LivingEntity.tick（内部 try-catch 兜底）
     }
 
-    /** 由回放侧设置当前冷却进度。 */
+    private long lastDrivenTick = Long.MIN_VALUE;
+
+    // ── 攻击缩放注入（per-weapon）────────────────────────────────────────
+    // ⚠️ 为什么覆写 getAttackStrengthScale（2026-09-30 二次修正）：
+    //    原生 attackStrengthTicker 长在【假玩家】身上 —— 共享假玩家服务 N 把武器时，
+    //    它是【全体武器共用一个攻击时钟】：被动模式玩家一刀，第一把命中后原生重置，
+    //    第二把在同 tick 读到 scale≈0 ⇒ COOLING ⇒ 只有最靠前的武器出手。
+    //    而语义要求【每把武器一份节奏】（按各自攻速独立出手）。
+    //    ⇒ 缩放由回放侧按武器自身的上次攻击记录算好，经 setAttackStrengthScale 注入；
+    //      原生 ticker 仍在走（无害，覆写不读它）。
+    //    受控 tick 驱动（driveWielderTick）继续承担 inventoryTick / 冷却 / 药效衰减 /
+    //    装备属性刷新 —— 与本注入互不冲突。
+
+    /** 攻击缩放比例（0~1）—— 由回放侧按【该武器自己】的上次攻击记录算好后注入。 */
+    private float attackStrengthScale = 1.0F;
+
+    @Override
+    public float getAttackStrengthScale(float adjustTicks) {
+        return this.attackStrengthScale;   // 傀儡的缩放由武器决定，不由共享时钟决定
+    }
+
+    /** 由回放侧注入当前武器的攻击缩放（每次 attack 前调用，调用后立即 attack，无交叉）。 */
     public void setAttackStrengthScale(float scale) {
         this.attackStrengthScale = net.minecraft.util.Mth.clamp(scale, 0.0F, 1.0F);
     }
 
     /**
      * 攻击冷却<b>总时长</b>（tick）—— 由物品的攻击速度属性换算，原版同源。
-     *
-     * <p>取 {@code max(..., 1)} 兜底：攻击速度为 0 的物品会让除法失去意义。</p>
+     * {@code ATTACK_SPEED} 异常（0 / 负数）时兜底 1，防除法失去意义。
      */
     public float getAttackCooldownTicks() {
         float delay = this.getCurrentItemAttackStrengthDelay();
-        // ⚠️ ATTACK_SPEED 为 0（被模组 / 数据包改掉）时 delay = Infinity
-        //    ⇒ 冷却永远算不满 ⇒ 【永远打不出来】，与上面同类的静默失效 ⇒ 必须兜底。
         if (!Float.isFinite(delay) || delay < 1.0F) {
             return 1.0F;
         }

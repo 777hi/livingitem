@@ -189,6 +189,7 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-09-30 | **受控 tick 重构**（台阶一/二）：`driveWielderTick` 按 game tick 去重驱动 FakePlayer 真链（**调 doTick 非 tick**，物理钉住/不进世界）⇒ inventoryTick/冷却/药效衰减/装备刷新/蓄力推进全原生；攻击缩放为 per-weapon 注入（共享 fake 一个时钟的实测回归修正）；蓄力型地基就绪 | `living-tool-tech.md` §5.7 |
 | 2026-09-30 | **修复「特定活武器永久白板化」**（0.25s 一刀 / 伤害 1 / 拉仇恨）：属性镜像竞态 —— 主人换手点击与属性刷新差一个 tick，旧武器 bd/bs 被镜像记录后清理时连武器自身的同 id 修饰符一起删，equipTool changed=false 不补回；修：每次摘旧装新自愈 + 镜像排除武器自身 id | `living-weapon-tech.md` §8.1 |
 | 2026-09-30 | **代持 tick**（通用兼容）：回放路径补 `held.inventoryTick(selected=true)` + `fake.getCooldowns().tick()` —— 手持类效果与物品冷却在主动模式正常推进，模组无关（Simply Swords 实测）；玩家形态双 tick 接受 | `living-tool-tech.md` §5.7 |
 | 2026-09-30 | **射线微调**（主动模式·玩家形态）：背包点小人 —— 左键躯干中心/底部=起点锚点、脑袋=重置，右键=朝向跟随（背后环同款）；衍生副本旋转，原始 offset 不动，两端同公式；录制即重置 | `living-tool-tech.md` §2.5 |
@@ -198,7 +199,6 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 | 2026-09-28 | C 组 A1：**api 面净化** —— `LivingItemManager` 瘦身 ~950→347 行成纯框架类（不牵出任何 domain 类型）；28 个组件/附件常量迁注册站 `LivingComponents`；25 个 Data 类自带 `of()/set()`；⚠️ 脚本 --apply 输出被吞致误判重跑的教训 | `api-contract.md` §1.2 |
 | 2026-09-28 | D2：**交互规则 JSON 化** —— 18 处 Java 注册迁 13 条内置 JSON（`#minecraft:buttons` 一条顶 13 按钮）+ 玩家差异 + `interaction reload/list` 指令 + 2 谓词 ID 化 | `interaction-rule-design.md` |
 | 2026-09-28 | 活化指令修复 + 手持分支：target 改原版 `ResourceOrTagKeyArgument`（修「能补全却注册失败」—— StringArgumentType 读不进 `: # @`）；deny/allow/remove 无参 = **手持物品**；命名空间走 `*-mod` 子命令 | `commands.md` |
-| 2026-09-28 | 许可：**LGPL-3.0 附加 classpath 例外**（依赖本库的 addon 可任意授权含闭源；修改库本体仍须 LGPL）；Q6 前置库三步路线图（契约→发布物→仓库） | `LICENSE.txt` / `open-plan.md` §4.1 |
 
 
 ## 排查铁律：原版机制挡路时

@@ -154,6 +154,15 @@ LivingEntity 的 body 旋转推进只走 `isEffectiveAi` 分支，玩家不满�
 实现：`LivingToolRayTuning`（组件+公式）/ `ToolRayTuningPacket`（服务端校验「主手有记忆
 的活工具/武器」后写入并强制同步 -2 槽位包）/ `ToolRayTuningClicks`（客户端命中判定）。
 
+**验证清单**（2026-09-30 实测通过）：
+
+- [x] 左键躯干中心/底部 → F3+B 射线起点移到对应高度；左键脑袋 → 回眼睛；动作栏有反馈
+- [x] 右键小人 → 转身时射线刚性跟随（从背后射出的关系保持）；再右键 → 回世界固定
+- [x] 悬空模型与射线同步跟随（待机位 / 挖掘转圈 / 攻击脉冲全走微调后 origin）
+- [x] 玩家移动/转身平滑（partialTick 插值），不再顿挫
+- [x] 容器/掉落物形态不生效（世界系原样）；录制新记忆后配置重置
+- [x] 朝向参考用 `yRot`（`yBodyRot` 服务端从不更新 —— 绑定跳变踩坑已修，见上）
+
 ---
 
 ## 3. 数据模型
@@ -377,44 +386,54 @@ if (freshStart) {
 1. 给 FakePlayer 一份 `tool.copy()`
 2. 破坏后由 `LivingToolFunction` 比对，变化才 `context.setItem()` + `syncSlotToClients()`
 
-### 5.7 代持 tick：手持类效果的通用兼容（2026-09-30）
+### 5.7 受控 tick 驱动：让假玩家"真的活"（2026-09-30 重构）
 
-**问题**：大量 mod 武器有「手持时每 tick」类效果（`inventoryTick`：足迹粒子、手持 buff、
-蓄能……）与物品冷却（`ItemCooldowns`）—— 原版由玩家背包循环驱动，而 **FakePlayer.tick
-是空的** ⇒ 这类效果在主动模式（假玩家代持）下永远不推进。被动模式不受影响
-（真玩家背包 tick 照常跑），但大多再检查「必须是主手装备」⇒ 背包里仍不触发。
+**问题**：NeoForge 的 `FakePlayer.tick()` 被刻意掏空（设计前提 = "假玩家不该活着"），
+但活武器的"代持"语义需要一个**活着的持械者** —— 以下原版机制全部住在真链里，
+假玩家不 tick 就全部冻结：
 
-**机制**（`LivingToolReplay` 三个持续回放入口，`equipTool` 之后每 tick 补两句）：
+| 冻结的原生机制 | 处置（2026-09-30 二次修正后） | 曾经的症状 |
+|---|---|---|
+| 逐槽 `inventoryTick`（手持 buff/足迹/蓄能） | 真链接管（代持 tick 第一行退役） | 手持类效果全灭 |
+| `ItemCooldowns.tick` | 真链接管（第二行退役） | 技能施放一次永久锁死 |
+| `tickEffects`（药效衰减） | 真链接管（共享 fake buff 永久残留 = 跨武器污染 → 消失） | proc 条件判断异常 |
+| 装备属性刷新（`handleEquipmentChanges`） | 真链接管 + `equipTool` 摘旧装新保留（消除单 tick 迟滞） | 属性镜像竞态 → 白板化 |
+| `attackStrengthTicker`（攻击节奏） | **per-weapon 注入**：节奏是【每把武器一份】的语义，而原生 ticker 长在共享 fake 上（全体武器一个时钟）⇒ 缩放由回放侧按各武器上次攻击记录算好注入 | 被动模式只有最靠前的武器出手 / 节奏计算死锁 |
+| `updatingUsingItem`（蓄力推进） | 真链接管（蓄力型地基就绪） | — |
 
-```java
-held.inventoryTick(level, fake, 0, true);   // selected=true = 「假玩家正手持」
-fake.getCooldowns().tick();                 // 原版 Player.tick 里也有这一句
-```
+**机制**（`LivingToolFakePlayer#driveWielderTick`）：由回放路径按 **game time 去重**
+驱动（每 game tick 至多一次；多宿主/辅助路径共享同一假玩家），调
+**`doTick()`**（内部 `super.tick()` = `Player.tick → LivingEntity.tick` 真链）。
+物理钉住：`noGravity` + 每 tick 归零 `deltaMovement`（travel 不得位移），
+不 `addFreshEntity` 进世界（不渲染、无碰撞）。
 
-`equipTool` 已把物品装进假玩家主手 ⇒ 各 mod 的
-`getEquippedStack(MAINHAND) == stack` / `entity instanceof Player` 检查天然通过。
-**模组无关** —— 走原版入口的 mod 自动兼容（铁律②）。实测样例：Simply Swords
-（`postHit` 特效、`inventoryTick` 足迹、技能的 `ItemCooldownManager`）。
+🔴 **必须调 `doTick()`，不能调 `tick()`**（实测踩坑）：`ServerPlayer.tick()` 只做
+ServerPlayer 侧簿记（gameMode/broadcast/criteria），**不含 `super.tick()`** ——
+真链在 `ServerPlayer.doTick()` 里，由连接器 `tick() → player.doTick()` 驱动，
+而 FakePlayer 把连接器 tick 也掏空了 ⇒ 调 `tick()` = 只跑簿记，
+`attackStrengthTicker` 永远 0 ⇒ 攻击冷却门永远 COOLING（武器两模式都不攻击）。
+NeoForge 对此的防御是双层的：`FakePlayer.tick()` 与其连接器的 `tick()` 都是空的。
+
+**被原生化取代的补丁（全部退役）**：冷却门的手动节奏计算（连带"没打过必须当满冷却"
+的死锁坑、写回被 `matches` 吞掉的坑）、`getAttackStrengthScale` 覆写、
+"代持 tick"两行。`equipTool` 的每次摘旧装新**保留**——消除原生装备检测的
+单 tick 迟滞（首次装备/换武器当 tick 立即生效），与原生刷新幂等不冲突。
 
 **范围与边界**：
-- 仅**持续回放路径**（挖掘/交互/攻击记忆每 tick）调用；辅助攻击/辅助挖掘是瞬时路径，
-  不做（语义上不是持续手持）
-- 容器形态照常生效（箱子不 tick 物品 ⇒ 无双 tick）；**玩家形态会双 tick**
-  （真玩家背包 selected=false 一次 + 假玩家 selected=true 一次）——
-  少数不做任何检查的效果会双倍计数，语义上可辩护（假玩家是独立持有者），接受
-- 被动模式的「必须主手装备」检查**无法也不应伪造**（物品确实不在手上）
-- **被动模式为什么也不做代持 tick**（2026-09-30 澄清，勿记成"做不到"）：被动模式
-  同样走 FakePlayer + `equipTool`（`LivingWeaponAssist`/`LivingToolAssist`），
-  主手检查机制上一样能过 —— 不做是因为 ① 被动是事件驱动（每次玩家命中走一遍），
-  调用节奏 = 玩家点击频率，per-tick 语义失真（"手持 100 tick 蓄满"变"砍 100 下蓄满"）；
-  ② 手持 buff 落在一次性傀儡 fake 上无人受益，落给真玩家则要伪造真主手
-  （N 把武器并发冲突 + 全局谎报，回到上一条的边界）；
-  ③ 有意义的那部分（`postHit` 命中特效）本来就能触发。将来若要"蓄能类在被动模式
-  也推进"，可在辅助出手时机各补一次调用（几行），接受按挥击频率推进，暂不做
-- ⚠️ `inventoryTick` 对 `held`（回放副本）的修改：挖掘路径**只在挖完时写回**，
-  中断即丢失 ⇒ 蓄能类 per-tick 计数会被挖断清零 —— 罕见模式，接受
-- 冷却推进连带修复：走 `ItemCooldownManager` 的技能/prod 冷却死锁
-  （如 Simply Swords 技能右键施放一次后永久锁死）
+- 驱动点在三个回放方法内部 ⇒ **主动模式每 tick**；被动辅助攻击因复用
+  `replayAttack` 同样驱动（有 game time 去重，同 tick 不重复）；辅助挖掘
+  `digSpeed` 独立路径不驱动（瞬时路径，无 per-tick 语义可失真）
+- 容器/掉落物形态照常生效（箱子/掉落物本就不 tick 物品 ⇒ 我们的驱动是唯一一次，
+  纯收益）；**玩家形态双 tick**（真背包 selected=false + 假玩家 selected=true）——
+  少数无检查的效果双倍计数，语义可辩护（假玩家是独立持有者），接受
+- 被动模式的「必须主手装备」检查无法也不应伪造（物品确实不在手上）
+- `inventoryTick` 对 `held`（回放副本）的修改：挖掘路径只在挖完时写回，
+  中断即丢失 —— 罕见模式，接受
+- **事件面**：真链触发 `PlayerTickEvent` / `LivingEquipmentChangeEvent` 等，
+  第三方 mod 对假玩家的 tick 可见（本项目内部处理器均有 isFakePlayer 防护）——
+  接受并观察；假玩家数量按（维度，主人）有限
+- **热身**：假玩家新建/换武器后 `attackStrengthTicker` 从 0 爬升 ⇒ 首刀前有
+  一个冷却期 —— 与真玩家换武器后的原生行为一致
 
 ---
 
@@ -652,6 +671,13 @@ public void equipTool(ItemStack stack) {
 | `onGround` | 挖掘慢 5 倍 | `L28` |
 | 破坏进度（`gameMode.tick()`） | 进度不推进 | `L27` |
 | **破坏裂纹的清除** | 停止挖掘时无人清 → **裂纹永久残留** | `L47` |
+
+> ⭐ **2026-09-30 口径翻转**：随着活武器演进（手持 buff / 技能冷却 / 蓄力型），
+"完全不 tick" 的代价已超过收益 ⇒ `LivingToolFakePlayer#driveWielderTick` 现在按
+game tick 去重**驱动真链**（`super.tick()`，物理钉住、不进世界）。上述四个坑中
+装备属性（L46）由原生装备刷新接管；L27/L47/L28 的挖掘侧补丁**保留**
+（`gameMode.tick` 的破坏进度与裂纹收尾仍不在真链里，见源码 `ServerPlayerGameMode#tick`）。
+代持 tick 两行退役（由真链的 `inventory.tick` / `cooldowns.tick` 接管），详见 §5.7。
 
 #### ⚠️ 破坏裂纹为什么必须自己清（`L47`）
 
