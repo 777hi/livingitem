@@ -1,10 +1,12 @@
 # 🎮 活漏斗WASD方向输入系统 - 创新设计方案
 
-> 📐 **提案（未实现）** —— 本文是**设计稿**，描述**计划**，**不是现状**。
-> 2026-09-22 复核：文中提到的类（`Direction2D` / `TransferDirection` / `WASDSequenceParser` /
-> `HopperModeController` / `ItemTransferComponent` / `LivingHopperInteractionHandler`）
-> **在仓库中均不存在**。活漏斗当前的方向配置见 `docs/tech/living-hopper-tech.md`。
-> ⇒ 读它请当「未来可能怎么做」，**不要**当作现有实现。
+> 📦 **已归档（2026-10-02）**：本设计的**核心机制已实现（以变体）** —— WASD 键入 + 输入会话 + 超时
+> 见 `client/input/LivingItemInputHandler`；方向数据见 `DirectionTransferData`。
+> **玩家操作说明**见 [living-hopper-tech.md](../tech/living-hopper-tech.md) §8.3。
+> 本文保留**交互设计与 UI 规范**（4 级反馈层次 / 键位映射 / 时间窗口分组算法），供将来做 UI 指引时参考。
+> ⚠️ 文中类名（`Direction2D` / `TransferDirection` / `WASDSequenceParser` / `HopperModeController` /
+> `ItemTransferComponent` / `LivingHopperInteractionHandler`）**在仓库中均不存在**，勿照抄；
+> 未实现的部分是 **4 级 UI 反馈 / ESC 取消 / 对角线组合键**。
 
 ## 💡 **核心理念**
 

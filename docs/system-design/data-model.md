@@ -134,6 +134,13 @@ LivingFurnaceData data = LivingFurnaceData.of(stack)
 
 两种方向数据均为不可变 Record，通过 `withXxx()` 方法创建新实例。替代旧的 `DirectionModeComponent` + `ComponentState` 模式。
 
+**选型取舍**（2026-10-02 补记；原设计稿 `custom-slot-design.md` 已删）：
+立项时评估过 6 条路 —— ① 增强型方向枚举 ② 偏移量列表（多槽位）③ 选择器函数式接口
+④ NBT 运行时配置 ⑤ 模式库 / 资源包扩展 ⑥ 可视化拖拽编辑器。
+**选定 ① 的变体**（枚举 → `Pos2D` 值对象 + 具名槽位）；**②③⑤⑥ 未采纳** —— 复杂度递增而收益边际
+（① 已覆盖绝大多数活物品，多槽位与可视化配置的真实需求尚未出现）；④ 的运行时可配置 / 持久化 /
+网络同步随本模型一并具备。⇒ **将来要做多槽位或可视化配置时，这是已知的取舍起点，不必从零评估。**
+
 ### 4.4 活物品隔离
 
 所有组件在处理物品时检查 `LivingItemManager.isLivingItem()`：

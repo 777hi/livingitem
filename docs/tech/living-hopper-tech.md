@@ -256,10 +256,11 @@ TransferPipeline.execute(ctx, level, hostSlot, sourceSlot, targetSlot, ...)
 | 右传上 | → | ↑ | →→↑ |
 | 右传下 | → | ↓ | →→↓ |
 
-**WASD 输入**：玩家通过按键修改方向，`WASDSequenceParser` 解析：
-- 第1个键 = 源方向（W=↑, A=←, S=↓, D=→）
-- 第2个键 = 目标方向
-- 例如："WD" → 上传下，"AD" → 左传右
+**WASD 输入**：玩家通过按键修改方向，客户端 `LivingItemInputHandler`（`InputSession` 收集）解析：
+- **第 1 个键 = 源方向**（W=↑, A=←, S=↓, D=→），**第 2 个键 = 目标方向**
+  —— 按**先后顺序**取键（`charAt(0)` / `charAt(1)`），**不是同时按**
+- 例如："WD" → 上传右（W=↑ → D=→），"AD" → 左传右（A=← → D=→）
+- ⚠️ **不支持组合键**：同时按两键配不出对角线方向（输入侧只暴露单键）
 
 **NBT 存储**（TRANSFER 模式）：
 | 键名 | 说明 |
@@ -1213,16 +1214,22 @@ public record SlotMapping(
 
 ### 8.3 WASD 输入系统
 
+玩家**光标持有活漏斗**、且鼠标悬停在活按钮上时，键入两个 WASD 键：
+**第 1 键 = 源方向，第 2 键 = 目标方向**（按**先后顺序**取键，不是同时按）。
+
 ```
-WASDSequenceParser:
+LivingItemInputHandler（客户端）→ InputSession 收集
   'W' → UP    (0, -1)
   'A' → LEFT  (-1, 0)
   'S' → DOWN  (0,  1)
   'D' → RIGHT (1,  0)
 
-输入序列 "WD" → source=UP, target=DOWN → "上传下"
+输入序列 "WD" → source=UP, target=RIGHT → "上传右"
 输入序列 "AS" → source=LEFT, target=DOWN → "左传下"
 ```
+
+- ⚠️ **不支持组合键**：同时按两键配不出对角线方向（输入侧只暴露单键；`Pos2D` 本身支持 8 方向）
+- 未在超时内按满两键 ⇒ `InputSession.isTimedOut()` 在 `onLevelTick` 里丢弃本次输入
 
 ---
 
