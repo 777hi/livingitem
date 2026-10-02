@@ -6,7 +6,7 @@
 > 渲染管线、**射线微调（起点锚点 + 朝向跟随，两模式通用）**全部见 [living-tool-tech.md](living-tool-tech.md)。**本文只写武器侧的差异**，共享部分一律用指针，
 > **不复制**（复制必然漂移）。
 >
-> 📄 设计探讨与待决问题池仍在 [../idea.md](../idea.md)（§1 核心原则 / §3 铁魔法调研 / §4 待决问题池）。
+> 📄 设计探讨与待决问题池在 [../buffer/living-weapon-design.md](../buffer/living-weapon-design.md)（官方入口盘点 / 铁魔法调研 / 未决池：守卫型与真蓄力节奏）。
 
 ---
 
@@ -181,7 +181,7 @@ Vec3 hitLocation = eye.add(look.scale(Math.min(distance, MAX_RAY_LENGTH)));
 
 ### 4.3 🔴 `AttackEntityEvent` 不需要手动补（纠正一条旧结论）
 
-[../idea.md](../idea.md) §2.6 曾把攻击侧列为「❌ 待补」，**该结论已被源码推翻**：
+[../buffer/living-weapon-design.md](../buffer/living-weapon-design.md) §2.6 曾把攻击侧列为「❌ 待补」，**该结论已被源码推翻**：
 
 ```java
 public void attack(Entity target) {
@@ -705,8 +705,39 @@ fake.attack(怪)
 
 | 项 | 阻塞原因 |
 |---|---|
-| **蓄力型**（弓 / 弩 / 三叉戟） | 需「开始 → 持续推进 → 释放」状态机；FakePlayer 不 tick ⇒ **只会拉弓、射不出去** |
+| **蓄力型**（弓 / 三叉戟） | 设计已定稿（见下方 §9.1 蓄力型设计稿），待开工 |
 | **PVP** | 需先定义"敌对关系"判据；现为硬排除所有 `Player` |
+
+### 9.1 蓄力型设计稿（2026-09-30 定稿，待开工）
+
+**可识别性（原版口径，铁律②）**：`getUseDuration > 0` + `getUseAnimation != NONE`
++ 武器标签收窄（`#enchantable/bow` / `trident`，mod 弓通常自带）—— 排除食物/盾/望远镜
+等非武器 use 物品。`CROSSBOW` 是"装填-稍后发射"语义，一期排除。
+
+**核心设计（用户定）：常驻满蓄力、触发直发、发射后慢慢回充** —— 免录制
+（不需要录玩家拉弓时长，此前"三步状态机 + 录制"的整个障碍随之消失）：
+
+- **发射**：`fake.releaseUsing(stack, level, fake, getUseDuration - 20)` ——
+  蓄力时长是 releaseUsing 的**调用参数**（原版 BowItem 威力从传入 remainingTicks 推导，
+  不读实体状态）⇒ 合成"满蓄力"参数直接调用，无需 startUsingItem
+- **方向**：记忆射线（复用 R1：箭命中生物造成伤害时录射线，与近战同构）+
+  faceTarget + 朝向跟随（射线微调全套复用，箭沿瞄准线飞，弹道下坠为原生行为）
+- **节流**：per-item 充能组件（`lastFireTick`），门 = `now - lastFireTick >= 回充时长`；
+  回充时长 **20 ticks**（原版弓满蓄力标准 ⇒ 连射 DPS 与真玩家持弓一致，免调平衡）
+- **蓄力姿态**：只做渲染层（模型画成拉弓姿态）；**不要真调 startUsingItem** ——
+  受控 tick 会推进 `useItemRemaining`，时长有限的武器被原生自动 release，
+  fresh copy 的续用判定（canContinueUsing）是新坑
+
+**待拍板**：① 弹药经济学（推荐：从主人背包抽箭，主人没箭不射 —— 与活熔炉
+"要燃料"语义一致；备选：假玩家常备箭无限弹药 / 照搬原版创造与无限规则；
+注意 fake 生存模式下 `BowItem.releaseUsing` 会找箭、找不到不射）；
+② 回充途中触发：不满不射（推荐，与近战 COOLING 对称）还是半功率可射；
+③ 回充时长是否可配置；④ Crossbow 一期排除（已定）。
+
+**受控 tick 的关系**：发射是原子调用（单次 releaseUsing），不依赖 onUseTick 推进；
+但受控 tick 仍承担弓的 inventoryTick（手持特效）/ 冷却 / 药效衰减 / 装备刷新 ——
+且 `updatingUsingItem` 状态机已就位，将来要真蓄力节奏（按玩家录制的拉弓时长）
+时地基已备。
 
 ### 辅助攻击（已实现 · 2026-09-24）
 
@@ -771,7 +802,7 @@ if (target.invulnerableTime > 10) {
 | `target.isDeadOrDying()` 就 `break` | 怪中途死了还继续挥 ⇒ **不造成伤害、不触发附魔，却仍扣耐久** |
 | 取消击退（`LivingKnockBackEvent`） | N 把各推一次 ⇒ 怪会被**崩飞**，不像"围殴"（照铁魔法做法） |
 
-> ⚠️ **更正 [`../idea.md`](../idea.md) §1.7 的口径**：那里写「不加伤害闸门 ⇒ 接受伤害线性叠加」。
+> ⚠️ **更正 [`../buffer/living-weapon-design.md`](../buffer/living-weapon-design.md) §1.7 的口径**：那里写「不加伤害闸门 ⇒ 接受伤害线性叠加」。
 > 实际上**原版本来会用无敌间隔封顶**（根本不会叠加）；
 > 是**我们主动压制无敌帧**之后才真正叠加的 —— 别把因果搞反。
 

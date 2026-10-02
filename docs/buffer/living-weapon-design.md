@@ -1,15 +1,14 @@
-# 活武器
+# 活武器设计池（原 `idea.md`（docs 根），2026-09-30 降级搬运后已删除）
 
-> **状态**：设计中（2026-09-22 起）。⚠️ **本文是「设计探讨层」** —— 记录原始需求、官方入口调研、
-> 待决问题池与探讨日志，**描述的是计划 / 未决，不是现状**。
+> **状态**：设计探讨层（buffer）。⚠️ 描述的是**计划 / 未决**，不是现状。
 >
-> ⭐ **活武器「已实现」的部分（近战核心链路）见 [`docs/tech/living-weapon-tech.md`](tech/living-weapon-tech.md)**
-> —— 那边才描述现状。本文只在结论被定案后保留探讨过程。
+> ⭐ **近战核心链路已实现**，现状见 [`docs/tech/living-weapon-tech.md`](../tech/living-weapon-tech.md)；
+> **蓄力型（活弓箭）设计已定稿**，见 `living-weapon-tech.md` §9.1（一期免录制）。
+> 本文件只保留仍有前瞻价值的内容：原始需求 / 官方入口盘点（蓄力型与法杖开工的 prep）/
+> 铁魔法联动调研 / 未决问题池（守卫型、真蓄力节奏、盾牌等）。
 >
-> 📄 活工具的设计探讨记录（问题池 + 定案）：[`docs/buffer/living-tool-design.md`](buffer/living-tool-design.md)
-> 📄 活工具技术文档：[`docs/tech/living-tool-tech.md`](tech/living-tool-tech.md)
->
-> 结构：`§0` 原始需求 → `§1` 核心原则 → `§2` 官方入口盘点 → `§3` 铁魔法调研 → `§4` 待决问题池 → `§5` 探讨日志。
+> 📄 已定案内容（核心原则 / D 组拍板 / 探讨结论）已沉淀进 tech 文档与 changelog，原稿已清。
+> 📄 活工具设计池：[`living-tool-design.md`](living-tool-design.md)
 
 ---
 
@@ -25,10 +24,12 @@
 > 理由：抽象层只要「不识别具体模组 + 走官方入口」（见 §1 铁律①②）⇒ **兼容是自然结果**，
 > 不需要逐个模组专门适配（例如 `replayUse` 已 post `RightClickItem` ⇒ 铁魔法法杖理论上已能施法）。
 >
-> ⇒ **主线 = 近战（剑 / 斧 / 重锤）**，见 [`docs/tech/living-weapon-tech.md`](tech/living-weapon-tech.md) §0「需求范围」。
+> ⇒ **主线 = 近战（剑 / 斧 / 重锤）**，见 [`docs/tech/living-weapon-tech.md`](../tech/living-weapon-tech.md) §0「需求范围」。
 > 本文件中涉及法杖的调研（§3 铁魔法）**保留作参考**，但不再视为待办。
 
 ---
+
+
 
 ## §1 核心原则：活武器**不实现**任何攻击逻辑，只负责「代玩家出手」
 
@@ -143,6 +144,8 @@ isLivingWeapon(stack) = isLivingItem(stack) && (以上任一标签)
 > 活武器动画初期直接复用活工具同款。
 
 ---
+
+
 
 ## §2 官方入口盘点（2026-09-22 核 NeoForge 21.1.249 源码）
 
@@ -265,7 +268,7 @@ fake.attack(target);                                            // ② 真正攻
 > 核 `Player#attack` 源码：它的**第一行**就是 `if (!CommonHooks.onPlayerAttackTarget(this, target)) return;`，
 > 而 `onPlayerAttackTarget` 内部会 post `AttackEntityEvent` 并调 `Item#onLeftClickEntity`。
 > ⇒ **直接调 `fake.attack(target)` 已经触发这两者**，再手动 post 会**重复触发**。
-> 详见 [`docs/tech/living-weapon-tech.md`](tech/living-weapon-tech.md) §4.3。
+> 详见 [`docs/tech/living-weapon-tech.md`](../tech/living-weapon-tech.md) §4.3。
 >
 > ⚠️ 下面的「口诀」**对攻击侧不适用**（它只对真正不经 `Player#attack` 的路径成立）：
 
@@ -337,6 +340,8 @@ while (d12 <= 1.0 || d13 <= 1.0 || d14 <= 1.0) { /* 取最早到达的轴，只�
 
 ---
 
+
+
 ## §3 铁魔法（Irons Spells 'n Spellbooks）调研结论
 
 > 📁 `libs/src/irons-spells-n-spellbooks-1.21`（NeoForge 版，可直接参考）
@@ -395,18 +400,13 @@ PlayerInteractEvent.RightClickItem
 
 ---
 
+
+
 ## §4 待决问题池（W / V / T 组）
 
 | # | P | 问题 | 选项 | 倾向 | 结论 |
 |---|---|---|---|---|---|
-| W0 | P0 | **"活武器"指哪些？** 只活剑？还是剑/斧/三叉戟/弓全算？ | a) 先做活剑 b) 一整类 | **a** —— 抽象层写通用，验证先用剑 | *待定* |
-| W1 | P1 | 用哪条记忆驱动攻击？ | a) 复用 `dig`（左键） b) 新增 attack 记忆 | **a** ⇒ 数据模型零改动 | *待定* |
-| W2 | P1 | 射线同时命中实体和方块，先走哪个入口？ | a) 实体优先 b) 方块优先 | **a**（对齐原版准星行为） | *待定* |
-| W3 | P1 | 近战走哪个入口？ | a) `fake.attack(entity)` b) 自己算伤害 | **a**（附魔自动生效） | *待定* |
-| W4 | P1 | 攻击冷却？ | a) 遵守原版 b) 自己节流 | **a**；⚠️ FakePlayer `tick()` 空 ⇒ 需**手动推进**（同 `L27`） | *待定* |
-| W5 | P2 | 要"辅助攻击"（背包活武器给玩家**加伤害**，类比辅助挖掘）吗？ | a) 做 b) 不做 | **b**（平衡敏感） | *待定* |
 | W6 | P2 | 要"自动选目标"（不依赖记忆射线，自动打附近敌人）吗？ | a) 做 b) 不做 | 这是**并列的新模式**（守卫型），非本期 | *待定* |
-| W7 | P0 | 🔑 `faceTarget` 的朝向反解对不对？ | — | 按公式反解，**待实测**（上下颠倒 = 符号反了） | *待实测* |
 
 ### 4.2 V 组 —— 记忆录制（用户方案：让玩家「教」用法）
 
@@ -462,26 +462,8 @@ PlayerInteractEvent.RightClickItem
 
 ---
 
-## §5 探讨日志
 
-### 2026-09-22 —— 攻击方式抽象 + 铁魔法调研
 
-- 用户定调：**要的是"攻击方式的逻辑"，不是"活剑"这个功能** ⇒ 目标改为一套抽象层。
-- 确立核心原则：**活武器不实现攻击逻辑，只"代玩家出手"**。
-- 研读铁魔法源码得三条结论：
-  1. 识别法杖 = `has(casting_implement)` 数据组件，**不要** `instanceof` / 别用 `staff` 标签
-  2. **施法入口不是 `use`**，是 `RightClickItem` ⇒ 我们此前只做了"右键方块"分支，**整个漏了"右键空气"**
-  3. `casting_implement`（触发器）与 `spell_container`（存储器）**正交**
-- 核 `CommonHooks` 源码确认：`onRightClickBlock` 与 `onItemRightClick` **完全独立** ⇒ 原版按目标类型二选一。
-- 改动 `LivingToolReplay#replayUse`：拆成「方块 / 空气」两条分支。
-- 新增 `faceTarget(fake, origin, end)` —— 让 FakePlayer 看向记忆射线，这是联动法杖/枪械的钥匙。
-- 复查左键：三个 action 齐全 + `destroyBlock` 内部完整 ⇒ **没有类似遗漏**。
+---
 
-### 2026-09-23 —— 活武器判据 + 遍历优化 + D 组拍板
-
-- 用户定调：要活化的是**整个武器战斗系统**（不只剑，还有弓 / 弩 / 三叉戟 / 重锤）。
-- 发现原版用「**可附魔类别**」标签分类武器 ⇒ 定为活武器判据（**活石头不会误判**）。
-- 用户问"官方 `clip` 的逻辑是什么" ⇒ 核源码发现是**体素遍历**（跳格子边界），
-  我们原来的**固定 0.1 步长慢一个数量级** ⇒ 改用 `BlockGetter.traverseBlocks`，黑名单能力保留。
-- 拍板 D1~D5，并确定 R1 的用法（沿射线找）与冷却推进方式（读物品属性）。
-- 用户认可"用可附魔类别区分武器类型"这条思路。
+> 探讨日志（2026-09-22 ~ 09-23）已清：里程碑结论见 `docs/archive/changelog.md` 与 tech 文档踩坑节。
