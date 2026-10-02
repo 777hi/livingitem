@@ -133,7 +133,7 @@ return "container_" + Integer.toHexString(handler.hashCode());
 
 | # | 问题 | 推荐（**待拍板**） | 阻塞 |
 |---|---|---|---|
-| **Q1** | 「容器级逻辑」的注册形态 | **拆两类**：`HasContainerData` 保留（功能驱动，要 `entries`，**15 个实现者不动**）；新增 `ContainerLevelLogic`（容器自持，**必须带 `shouldRun()`**） | 1a-1 |
+| **Q1** | 「容器级逻辑」的注册形态 | ⭐ **不新增接口**：给 `LivingItemFunction` 加一个 `default boolean shouldTickWithoutOwnItems(ContainerContext)`（默认 `false` ⇒ **现有 22 个功能全部不受影响**）。**活水源 = 没有物品载体的活物品** —— 接口本就允许 `entries` 为空，只差收集路径 | 1a-1 |
 | **Q2** | 容器级数据的存储形态 | **类型化 key + 单一存储**（`ContainerDataKey<T>` + `ctx.getData(key)`）—— 现状三处是**同一份数据的三个镜像** | 1a-4 |
 | **Q3** | `containerKey` 第三档 | ⭐ **直接删，改为显式抛异常**（**无需观测期** —— 已静态证明不可达） | 1a-2 |
 | **Q4** | `ContainerContext` 补哪些方法 | **抽 `TickableContainerContext` 子接口**（不污染只读的 `ContainerContext`） | 1a-3 |
@@ -142,8 +142,59 @@ return "container_" + Integer.toHexString(handler.hashCode());
 **Q3 的不可达证明**：`buildContext` 唯一调用点传 `player.getInventory()`（inventory 恒非 null）；
 `processContainerAt` 的 else 分支（`:759-768`）**无条件** `positions.add(pos)` ⇒ positions 恒非空。
 
-**Q1 的关键约束**：`shouldRun()` **必须免扫描**（不得遍历槽位）—— 否则会把 §1.7 的
-两次遍历变成三次。详见 §6.3-B。
+**Q3 的处置**（2026-10-03）：**删掉第三档，改为显式抛 `IllegalStateException`**。
+理由：既无背包、又无位置、又无 BE 的容器**本质上没有稳定身份**（下次拿到的是另一个对象），
+跨 tick 数据本就留不住 ⇒ **失败比静默丢数据诚实**。
+安全性：`buildContext` 虽为 public，但项目尚未对外开放（见 [open-plan.md](open-plan.md)），
+无外部调用者。
+
+**Q4 的接口设计**（2026-10-03）：新增 `TickableContainerContext extends ContainerContext`，
+补 4 个方法：`setTickContext(TickContext)`（传 null = 解绑）/ `flushDirtySlots()` /
+`getAssociatedBlockEntities()` / `getInventory()`。
+`processContext` 的参数类型改为它 ⇒ **7 处 `instanceof` 全部消失**
+（4 处在主流程 + 3 处在 `writebackBlockEntities`）。
+⚠️ **不塞进 `ContainerContext`** —— 那个接口是**只读能力**（读槽位 / 同步 / 身份），
+混入 tick 生命周期会破坏其语义，且所有实现类被迫实现。
+
+**Q4 的裂缝预判成真**（§6.3-A）：`ItemEntityContainerContext`（掉落物）必须新增这 4 个方法 ——
+`getAssociatedBlockEntities()` 返回**空列表**、`getInventory()` 返回 **null**、
+另两个空实现。⇒ 验证了当时的判断：**空列表是诚实语义，不是妥协**；
+抽象划的是「tick 生命周期」而非「必须有方块实体」，故成立。
+
+**Q1 的关键约束**：`shouldTickWithoutOwnItems()` **必须免扫描**（不得遍历槽位）—— 否则会把
+§1.7 的两次遍历变成三次。详见 §6.3-B。
+
+**Q1 的关键机制**（为什么只加 4 行就够）：把自持功能 `computeIfAbsent` 塞进 `grouped`
+（其 `entries` 为空列表）⇒ **短路条件 `grouped.isEmpty()` 一个字不用改**，
+后续所有阶段（功能 tick / 容器级数据 / 写回）**原样复用**。
+
+**Q1 的方案演进留痕**：原推荐是「新增 `ContainerLevelLogic` 接口 + 独立注册表」；
+用户提出视角「**活水源 = 没有具体物品的活物品**」后改为现方案 —— 概念数不增、
+复用 `getTickPriority` 排序、`processContext` 只改 4 行。
+⚠️ 方案 A 曾声称的附带收益「消掉层次倒置一大半」**是误判** —— 那是 Q2 的职责。
+
+**Q1 的性能实测**（2026-10-03）：新增循环 = 每容器每 tick 遍历 **22 个**已注册功能
+（`LivingItemManager.FUNCTIONS`，实测）。估算 ~110–220 ns/容器，100 容器约 **11–22 μs/tick**，
+占 tick 预算 **0.02–0.04%** ⇒ **不严重，暂不预计算**。
+（注：热路径上 `getApplicableFunctions` 有 `APPLICABLE_CACHE` 按 `Item` 缓存、
+`getCachedSnapshot` 有 revision 机制 —— **这个新循环是唯一无缓存的一段**。）
+
+**Q2 的关键决策**（2026-10-03）：
+
+- **放 `living/container/`**（不放 `api`）—— `ContainerDataKey` / `ContainerDataStore` 本质是
+  容器层机制；这样只需 `api → container`（**该依赖已存在**）⇒ **不新增跨包依赖**。
+- **数组下标而非哈希**：`ContainerDataKey` 自带全局递增 `index`，`ContainerDataStore` 用
+  `Object[]` 存储 ⇒ 访问成本 ≈ 原字段读（~1ns）⇒ **Q2 不给热路径加负担**（不进 TODO 性能清单）。
+- **key 自己声明层级**（`persistent(...)` 带 attachment / `of(...)` 为 tick 级）⇒
+  `TickContext.data(key)` 的查找路径**确定**，无需"逐层兜底"。
+- **落盘零硬编码**：`writebackBlockEntities` 改为遍历 `ContainerDataKey.all()`，
+  按 key 声明的 attachment 写回 ⇒ **新增一种落盘数据 = 改 0 个核心文件**。
+- **改造面实测**：四类数据全项目仅 **14 处**字段访问（`fluidData` 10 / `stressData` 3 /
+  `powerData` 1 / `redstoneData` **0** —— 红电走 `getOrCreateRedstoneData()` 方法），
+  分布 6 个文件 ⇒ **不需要过渡期，可直接改到位**。
+
+> 📌 `getOrCreateRedstoneData()` / `getOrCreatePowerData()` 等**保留方法签名**（内部改走
+> `getOrCreate(key)`）⇒ 红电的调用点不用动。
 
 > Q5 不阻塞本次重构，但**阻塞活水源二期** —— 建议尽早做最小实验。
 
@@ -155,10 +206,10 @@ return "container_" + Integer.toHexString(handler.hashCode());
 
 | 步骤 | 内容 | 验收判据（可复算） |
 |---|---|---|
-| 1a-1 | 容器级逻辑解耦成独立注册表 | `processContext` 内**无任何 `domain.*` import** |
-| 1a-2 | 消除 `containerKey` 第三档 | 加 WARN 观察期后归零；或改为显式抛异常 |
-| 1a-3 | 补全 `ContainerContext` 接口 | `processContext` 内**无 `instanceof SimpleContainerContext`** |
-| 1a-4 | 容器级数据存储抽离（Q2 拍板后） | **新增一种容器级数据 = 改 0 个类** |
+| 1a-1 | 收集路径不再要求物品（`shouldTickWithoutOwnItems` + 塞进 `grouped`，约 **4 行**） | 纯源容器能跑流体；**完全空容器仍短路**（性能不变） |
+| 1a-2 | 删 `containerKey` 第三档，改显式抛异常（**无需观测期**） | 该分支**不可达**（已静态证明） |
+| 1a-3 | 抽 `TickableContainerContext`，改 `processContext` 参数类型 | `processContext` 内**无 `instanceof SimpleContainerContext`**（现 **7 处** → 0） |
+| 1a-4 | 容器级数据存储抽离（Q2 定稿） | **新增一种容器级数据 = 改 0 个类**；改造面实测仅 **14 处**字段访问 |
 
 **1a 全部是行为不变的重构** —— 靠现有 384 个测试回归验证，不引入新功能。
 
@@ -201,7 +252,7 @@ return "container_" + Integer.toHexString(handler.hashCode());
 
 | 现状债（§1） | 消失原因 |
 |---|---|
-| 1.1 容器级逻辑收集依赖活物品分组 | 拆两类 + `shouldRun()` |
+| 1.1 容器级逻辑收集依赖活物品分组 | `shouldTickWithoutOwnItems` + 塞进 `grouped`（**不新增接口**） |
 | 1.2 容器级数据硬编码在三处 | 类型化 key + 单一存储 |
 | 1.5 抽象泄漏（4 处 `instanceof`） | `TickableContainerContext` 子接口 |
 | 1.6 `containerKey` 第三档 | 死代码，直接删 |
@@ -222,7 +273,7 @@ return "container_" + Integer.toHexString(handler.hashCode());
 | **A** | `getAssociatedBlockEntities()` 对掉落物容器返回空 | 空列表是诚实语义，但审查会停下来看这里算不算又一次抽象不完整 |
 | **B** | 性能上限从"没有"变成"有一个数" | ⚠️ **本轮判断已修正**：空容器**本来就不是零开销**（§1.7 两次全槽位遍历），新增的 N 次 `shouldRun()` 相对可忽略 —— **前提是 `shouldRun()` 免扫描**。真正的优化机会是**合并 §1.7 那两次遍历**，与本次重构正交 |
 | **C** | 注册点可能成为新膨胀源 | `LivingItem.commonSetup` 继续变长（注册式扩展的固有代价） |
-| **D** | `getTickPriority()` 第二次被点名 | 它至今**零使用**（15 个实现者全默认 0）—— 除非 `ContainerLevelLogic` 的排序真的用上它 |
+| **D** | `getTickPriority()` 第二次被点名 | ✅ **本次会解决**：活水源若声明 priority（须早于红石 prio 2），`sortFunctions` 的稳定排序**首次真正生效** —— 机制从「上了膛没开过」变成「已实践」 |
 
 ### 6.4 够不到（本次范围外）
 
