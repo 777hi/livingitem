@@ -4,6 +4,17 @@
 > 功能说明、技术架构、性能与测试见 [pinyin-search-tech.md](pinyin-search-tech.md)。
 > （2026-09-16：删除了文件开头遗留的 AI 对话记录，正文未改动。）
 
+> ⚠️ **勘误（2026-10-03）—— 数据缓存层的描述已整体过时**：
+> `LivingChestContentsCache`（全局静态缓存 + `dirty` 脏标记）**已删除**。
+> 现在由 `RecipeBookComponentMixin.collectLivingChestItems()` **每帧扫描玩家背包**收集内容 ——
+> **没有全局缓存，也没有脏标记**。
+>
+> 因此下文中所有 `LivingChestContentsCache.get() / .set() / .markDirty() / .isDirty()` 调用，
+> 以及依赖脏标记的「强制刷新检查」流程，**均以旧架构为前提，请以代码为准**。
+>
+> 📌 本文需要按现架构**重写**（已登记待办）；本次（2026-10-03）只做勘误标注，
+> 不逐段改写 —— 因为重写需要先完整梳理现实现，不是「顺手修」的范围。
+
 ## 🏗️ **系统架构层次图**
 
 ```

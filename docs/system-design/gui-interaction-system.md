@@ -18,7 +18,7 @@
 
 活物品间的 GUI 交互通过声明式规则驱动，而非硬编码物品判断。系统由三部分组成：
 
-- **规则声明**：`InteractionEntry(targetItem, triggerItem, button, actionId)` 在 `LivingFunctionConfig` 中注册
+- **规则声明**：`InteractionEntry(targetItem, triggerItem, button, actionId)` 由 `InteractionRuleConfig` 从 JSON 加载（内置资源 + 玩家差异）
 - **统一拦截**：所有 Screen Mixin 调用 `GuiInteractionHelper.tryInteract()`，查询 `InteractionRegistry` 匹配规则
 - **服务端处理**：`GuiInteractionPacket` 携带 `actionId`，服务端通过 `InteractionRegistry.getHandler()` 查找处理器
 
@@ -95,7 +95,7 @@ new InteractionEntry(Items.FLINT_AND_STEEL, Items.TNT, 1, "ignite_carried")
 
 新增交互类型只需两步：
 
-1. 在 `LivingFunctionConfig` 中 `addInteraction(new InteractionEntry(...))`
+1. 在 `interaction_rules.json` 中新增 `InteractionEntry` 条目（内置 `assets/living_item/` 或玩家 `config/living_item/`）
 2. 注册处理器 `InteractionRegistry.registerHandler("actionId", new XxxHandler())`
 
 无需修改任何 Mixin 代码。

@@ -723,7 +723,7 @@ public class ContainerLivingItemHandler {
      * <p>此方法是 {@link #processBlockEntities} 和
      * {@link com.qiqi.li.LivingItem#processLevelContainers} 的公共逻辑提取，
      * 避免两个调用点重复编写"获取 handler → 大箱子检测 → 构建上下文 →
-     * 活跃标记 → 处理"的流程。</p>
+     * 处理"的流程。</p>
      *
      * @param level 世界
      * @param pos 容器方块位置
@@ -782,9 +782,9 @@ public class ContainerLivingItemHandler {
      * 1. IdentityHashMap 按 IItemHandler 实例去重（NeoForge 大箱子可能返回同一实例）
      * 2. HashSet 按 containerKey 去重（防止 IItemHandler 每次创建新实例时重复处理）
      *
-     * 惰性 Tick 优化：
-     * 扫描容器时，如果发现活物品则标记容器为活跃，
-     * 如果没有活物品则移除活跃标记。
+     * ⚠️ 没有「活跃容器」跳过机制 —— 每个方块实体都会进入处理流程；
+     * 空容器的开销由 {@code processContext} 的 {@code grouped.isEmpty()} 分支承担
+     * （两次全槽位遍历：分组扫描 + 内容签名）。
      *
      * @param blockEntities 区块中的方块实体集合
      * @param level 世界

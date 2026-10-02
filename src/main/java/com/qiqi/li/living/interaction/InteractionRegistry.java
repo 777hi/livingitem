@@ -15,8 +15,8 @@ import net.minecraft.world.item.ItemStack;
  *   2. 交互处理器（InteractionHandler）：服务端执行具体逻辑
  *
  * 注册时机：
- *   - 交互规则：由 LivingFunctionConfig.addInteraction() 在功能类静态初始化时注册
- *   - 交互处理器：由模组初始化时注册（如 LivingItem.onRegisterPayloadHandler）
+ *   - 交互规则：由 {@link InteractionRuleConfig} 从 JSON 加载（内置资源 + 玩家差异，D2）
+ *   - 交互处理器：由各领域的 {@code XxxRegistration} 在 commonSetup 阶段注册
  *
  * 查询流程：
  *   光标物品(trigger) + 槽位物品(target) + 按键(button)
@@ -32,7 +32,7 @@ public class InteractionRegistry {
 
     /**
      * 注册一条交互规则。
-     * 通常由 LivingFunctionConfig.addInteraction() 内部调用。
+     * 通常由 {@link InteractionRuleConfig} 加载 JSON 后调用。
      */
     public static void register(InteractionEntry entry) {
         ENTRIES.add(entry);

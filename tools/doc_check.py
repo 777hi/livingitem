@@ -2,15 +2,18 @@
 Documentation system consistency checker.
 
 Verifies the invariants declared in docs/README.md §7 ("改完必查"):
-  1. Path reality       - every path mentioned in a doc (relative markdown links,
-                          and repo-relative docs/... / src/... mentions) exists
-  2. Test count         - AGENTS.md's declared total matches build/test-results/test/*.xml
-  3. Test tree          - the test file list in AGENTS.md matches src/test reality
-  4. Archive continuity - changelog newest date -> AGENTS oldest date, gap <= 1 day
-  5. Entry size         - AGENTS.md stays under the entry budget (soft warning)
+  1. Path reality      - every path mentioned in a doc (relative markdown links,
+                         and repo-relative docs/... / src/... mentions) exists
+  2. Test count        - AGENTS.md's declared total matches build/test-results/test/*.xml
+  3. Test tree         - the test file list in file-map.md matches src/test reality
+  4. Progress rolling  - AGENTS「开发进展」一行式条数 / 日期对齐 / 指针含 .md
+  5. Entry size        - AGENTS.md stays under the entry budget (soft warning)
+  6. Decisions         - decisions.md 的 supersedes 链双向一致
+  7. Java symbols      - docs 提到的 Living*.java / *Mixin.java 必须存在
+  8. Commands          - docs 引用的 /livingitem 子命令必须已注册
 
-Checks 1-4 fail the run (exit 1). Check 5 only warns: the entry being slightly over
-budget is a maintenance signal, not a correctness error.
+Checks 1-4 and 6-8 fail the run (exit 1). Check 5 only warns: the entry being
+slightly over budget is a maintenance signal, not a correctness error.
 
 Usage: python tools/doc_check.py [-v]
 """
@@ -233,8 +236,20 @@ def check_entry_size():
 
 # ---------------------------------------------------------------- 6/7. java symbols
 
-# 只检查「本项目专有命名」的类引用 —— 原版 / 第三方没有 Living* / *Mixin 命名的类，
-# 故误报率极低（2026-09-22 探针：命中 5 处，全是「| X.java | 删除 |」表格写法 ⇒ 已加豁免）。
+# 只检查「本项目专有命名」的类引用。原判据注释曾写「原版 / 第三方没有 Living* / *Mixin 命名的类」
+# —— **这句是错的**（见下方 2026-10-03 实测）。当前口径：**带 `.java` 后缀**才检查。
+# 2026-09-22 探针：命中 5 处，全是「| X.java | 删除 |」表格写法 ⇒ 已加豁免。
+#
+# ⚠️ 2026-10-03 试过放宽（去掉 `.java` 要求，直接匹配类名）：**放弃**。
+# 实测命中 73 处，其中约 43 处是**误报**，且**无法机械排除**：
+#   - 原版 / NeoForge 的 Living* 类：`LivingEntity`(×12)、`LivingDamageEvent`(×5)、
+#     `LivingIncomingDamageEvent`(×3)、`LivingKnockBackEvent`、`LivingEquipmentChangeEvent`
+#   - 第三方（Sable）的 Mixin：`ServerboundMovePlayerPacketMixin`(×5)、`ChunkMapMixin`(×3) …
+#   - 占位符写法：`LivingXxxData` / `LivingXxxItemOverrides`
+# ⇒ **「Living 前缀」不足以判定是本项目类。** 带 `.java` 后缀虽窄，但误报率≈0 ——
+#   **窄而准 > 宽而吵**（一个 59% 误报的检查会被无视，等于没有）。
+#   代价：不带后缀的引用（实例 `gui-interaction-system.md` 的 `LivingFunctionConfig`）**仍会漏**，
+#   属**已知盲区**，只能靠人工复核。要补的话需要"原版类清单"之类的机制，成本另算。
 JAVA_SYMBOL_RE = re.compile(r"\b(Living[A-Za-z0-9_]*\.java|[A-Z][A-Za-z0-9_]*Mixin\.java)\b")
 # 行级豁免：讲历史/计划的行不算误导（「删除」覆盖「| X.java | 删除 |」这种表格写法）
 JAVA_SKIP_WORDS = ("已删除", "已移除", "未实现", "设计稿", "待建", "不存在", "已废弃", "作废", "删除")
@@ -252,6 +267,8 @@ def check_java_symbols():
 
     判据：文档（**排除 archive / buffer**）里出现的 `Living*.java` / `*Mixin.java`
     必须能在 `src/**` 找到；讲历史或计划的行（含「删除 / 未实现 / 设计稿…」）豁免。
+    ⚠️ **不带 `.java` 后缀的引用不在检查范围** —— 放宽试过，因误报率 59% 而放弃，
+    理由见上方 `JAVA_SYMBOL_RE` 的注释。
     """
     have = set()
     for root, _dirs, files in os.walk(os.path.join(ROOT, "src")):
@@ -422,7 +439,7 @@ def main():
 
 if __name__ == "__main__":
     # Windows 控制台默认 GBK —— 结论行里的 "✓" / "✗"（U+2713 / U+2717）
-    # 不在 GBK 字符集内，print 会抛 UnicodeEncodeError。**即使 7 项全通过**，
+    # 不在 GBK 字符集内，print 会抛 UnicodeEncodeError。**即使 8 项全通过**，
     # 那句「全部通过」也打印不出来，只剩一个 traceback（失败分支的 ✗ 同样崩，
     # ⇒ 真 FAIL 时看到的是 traceback 而不是 FAIL 清单）。这里统一强制 UTF-8。
     # IDE / CI 把 stdout 换成非 TextIOWrapper 时静默跳过（这些环境通常已是 UTF-8）。

@@ -4,6 +4,13 @@
 > 那是 changelog 的职责）；本文件只放**还没做的事**。
 > 上次复核：2026-09-22。
 
+## 文档
+
+1. `docs/tech/common/recipe-book-tech.md` **需按现架构重写**（2026-10-03 发现）：
+   全文以**已删除**的 `LivingChestContentsCache`（全局缓存 + `dirty` 脏标记）为前提，
+   现为 `RecipeBookComponentMixin.collectLivingChestItems()` **每帧扫描玩家背包**。
+   已加勘误横幅，**正文未改写** —— 重写前需先完整梳理现实现。
+
 ## 活水车
 
 1. 在航空学载具上，玩家应力无法传输到脚下。（2026-09-22 复核：**仍未解决**）

@@ -39,8 +39,8 @@ public abstract class ItemStackMixin {
      * {@link LivingItemFunction#getIgnoredComponentTypes()}，
      * 在比较时跳过这些组件。</p>
      *
-     * <p>组件化设计：活物品只需在 {@link com.qiqi.li.living.core.LivingFunctionConfig}
-     * 中通过 {@code withIgnoreComponentTypes()} 声明即可，
+     * <p>组件化设计：活物品只需在各自的功能类里覆盖
+     * {@link com.qiqi.li.living.api.LivingItemFunction#getIgnoredComponentTypes()} 声明即可，
      * 无需在此 Mixin 中硬编码物品类型。</p>
      */
     @Inject(method = "isSameItemSameComponents", at = @At("HEAD"), cancellable = true)
