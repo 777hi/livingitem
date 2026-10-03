@@ -13,6 +13,7 @@ import java.util.Set;
 
 import com.qiqi.li.living.api.HasContainerData;
 import com.qiqi.li.living.domain.redstone.ContainerRedstoneData;
+import com.qiqi.li.living.domain.redstone.LivingRedstoneFunction;
 import com.qiqi.li.living.domain.runtime.ContainerRuntimeCache;
 import com.qiqi.li.living.domain.water.ContainerFluidData;
 import com.qiqi.li.living.domain.water.ContainerStressData;
@@ -496,6 +497,10 @@ public class ContainerLivingItemHandler {
             PerfMetrics.recordPhase("flush_channels", flushChEndNanos - funcTickEndNanos);
 
             // 阶段 4：容器级数据（红石、流体等按优先级传播）
+            // 1b-2c 红石归零解耦：容器有 REDSTONE 数据但 grouped 里没有 LivingRedstoneFunction（残留红石）
+            // ⇒ 主动归零，**不再依赖 `grouped.isEmpty()`**（自维持函数使其恒非空）。放在容器级数据之前，
+            // 让下游（电力 prio 3）读到归零后的值。
+            zeroResidualRedstone(grouped, context, tick);
             runContainerDataTicks(grouped, context, tick);
 
             long containerDataEndNanos = System.nanoTime();
@@ -536,6 +541,26 @@ public class ContainerLivingItemHandler {
         if (PerfMetrics.shouldReport()) {
             PerfMetrics.printReport();
         }
+    }
+
+    /**
+     * 残留红石归零（1b-2c 解耦）：容器有 {@code REDSTONE} 数据、但本 tick 的分组里**没有**
+     * {@link LivingRedstoneFunction}（如活红石被移走后残留的账本）⇒ 主动跑一次
+     * {@link ContainerRedstoneData#calculate} 让信号归零。
+     *
+     * <p>⚠️ 判据与 {@code grouped} 是否为空<b>无关</b>：自维持函数（如流体驱动 {@code LivingFluidFunction}）
+     * 使 {@code grouped} <b>恒非空</b>，原先寄生在 {@code grouped.isEmpty()} 分支里的归零会失效。
+     * 有活红石时由它自己按 prio 2 计算，本方法直接跳过。</p>
+     */
+    private static void zeroResidualRedstone(
+            Map<LivingItemFunction, List<LivingItemFunction.SlotEntry>> grouped,
+            ContainerContext context, TickContext tick) {
+        for (var f : grouped.keySet()) {
+            if (f instanceof LivingRedstoneFunction) return;
+        }
+        ContainerRedstoneData rd = context.peekContainerData(ContainerDataKeys.REDSTONE);
+        if (rd == null) return;
+        rd.calculate(context, tick);
     }
 
     /**

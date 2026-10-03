@@ -1,6 +1,7 @@
 package com.qiqi.li.living.domain.water;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -119,5 +120,24 @@ class ContainerFluidIntegrationTest {
             .anyMatch(f -> f instanceof LivingFluidFunction);
         assertTrue(found,
             "驱动必须进自维持清单，否则「容器里没有活物品」时流体不跑");
+    }
+
+    @Test
+    @DisplayName("端到端：残留红石归零在非空容器里仍执行（1b-2c 解耦守卫）")
+    void residualRedstone_zeroedEvenWhenGroupedNonEmpty() {
+        // 全空容器（没有任何活物品）：grouped 只因「自维持驱动」而非空 —— 正是 1b-2c 的场景
+        ItemStack[] slots = new ItemStack[9];
+        Level level = mockServerLevel();
+        var ctx = new SimpleContainerContext(new FakeHandler(slots), level);
+
+        // 制造「残留红石账本」：有 REDSTONE 数据，但没有活红石
+        var rd = ctx.getOrCreateContainerData(ContainerDataKeys.REDSTONE);
+        assertFalse(rd.hasEdgeHistory(), "初始应未 calculate 过");
+
+        ContainerLivingItemHandler.processContext(ctx, level);
+
+        assertTrue(rd.hasEdgeHistory(),
+            "残留红石必须被 calculate（归零）—— 即便 grouped 因自维持驱动而恒非空"
+            + "（1b-2c 前它寄生在 grouped.isEmpty() 分支里 ⇒ 永不执行）");
     }
 }

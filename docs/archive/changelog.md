@@ -36,6 +36,8 @@
 
 - ✅ **流体测试补强**（2026-10-03）：新增**端到端**测试 `ContainerFluidIntegrationTest`（走真实 `processContext`，验证「桶注册源 + 驱动跑 BFS」在真实流程**接通** —— 撤销 1b-2b 的「仅单元级」保留）+ 引擎**二维扩散**测试（覆盖 `getNeighbors` 的 up/down）。**411 测试全绿**。
 
+- ✅ **1b-2c 红石归零解耦**（框架修复）：抽出 `zeroResidualRedstone(grouped, ctx, tick)` —— 容器有 `REDSTONE` 数据但 `grouped` 里没有 `LivingRedstoneFunction`（残留红石）⇒ 主动归零，**判据与 `grouped` 是否为空无关**。⚠️ **该问题已被 1b-2b 提前触发**（自维持驱动使 `grouped` 恒非空 ⇒ 原 `handleEmptyContainer` 分支**永不执行** ⇒ 残留红石不再归零）。**412 测试全绿**（含 1b-2c 回归守卫，已实测「禁用即挂」）。
+
 - 🔴 **修复「特定活武器永久白板化」**（高频 0.25s 一刀 / 伤害恒 1 / 常驻拉仇恨）：
   属性镜像竞态 —— 主人换手发生在容器点击（tick 间），属性刷新在其后实体 tick，
   竞态窗口内主人地图的旧武器 bd/bs 被镜像记录，下一轮清理按 id 删除

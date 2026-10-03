@@ -389,7 +389,10 @@ return "container_" + Integer.toHexString(handler.hashCode());
    驱动容器级流体 BFS，与桶**解耦**（桶的 `tickContainerData` 只留 `postTickSync`，prio **0→1**）。
    ⇒ 桶不在场时容器级流体照样推进。**已端到端验证**（`ContainerFluidIntegrationTest` 走真实
    `processContext`）；**411 测试全绿**。
-6. **红石归零解耦**（B.3）。
+6. ✅ **红石归零解耦**（2026-10-03）—— 抽出 `zeroResidualRedstone(grouped, ctx, tick)`：容器有
+   REDSTONE 数据但 `grouped` 里无 `LivingRedstoneFunction` ⇒ 主动归零，**判据与 `grouped` 是否为空无关**。
+   ⚠️ 该问题已被 **1b-2b 提前触发**（自维持驱动使 `grouped` 恒非空 ⇒ 原 `handleEmptyContainer` 分支
+   **永不执行**）。**412 测试全绿**（含 1b-2c 回归守卫，已实测「禁用即挂」）。
 7. **API**：查 / 改某槽位流体源（给汲 / 倒处理器用）。
 8. **落盘**：`ContainerFluidData.CODEC` + `CONTAINER_FLUID_DATA.serialize` + 背包 Player attachment。
 9. **同步轨泛化**（Q5）：纯源容器的流体同步到客户端。
