@@ -85,19 +85,27 @@ public record WaterData(
 
 ```java
 public class ContainerFluidData {
-    public static final int SOURCE_LEVEL = 0;      // 水源级别
-    public static final int MAX_FLOW_LEVEL = 7;    // 最大流动级别
+    public static final int SOURCE_LEVEL = 0;      // 源级别
+    public static final int MAX_FLOW_LEVEL = 7;    // 最大流动级别（1b-1：仍为水常量，每流体上限归 1b-2）
     public static final int FLOW_STEP_TICKS = 4;   // 流动间隔（ticks）
 
     public static class FlowEntry {
-        int level;        // 水流级别（0=水源, 1~7=流动）
-        boolean isSource; // 是否为水源
-        int fromSlot;     // 水流来源槽位（BFS 父节点，水源为 -1）
+        int level;            // 流体级别（0=源, 1~7=流动）
+        boolean isSource;     // 是否为源
+        int fromSlot;         // 来源槽位（BFS 父节点，源为 -1）
+        FluidType fluid;      // 流体类型（1b-1 新增）
     }
 
     private final Map<Integer, FlowEntry> flows = new LinkedHashMap<>();
 }
 ```
+
+> **流体类型维度（1b-1，2026-10-03）**：每个 `FlowEntry` 带 `FluidType` —— 用**单张 map 带类型**
+> （一槽只装一种流体，类比一个方块位置），BFS 只在**同种流体**内扩散（已占格不被别的流体覆盖）。
+> `registerSource(slot)` 默认水（兼容旧调用点）；`registerSource(slot, fluid)` 指定流体。
+> ⚠️ **本步是纯重构**：全部按水处理，水行为**零变化**（由 `ContainerFluidDataTest` 的 6 条行为快照钉住）。
+> 多流体的「行为分档 / 每流体上限 / 桶内容判定 / 跨流体交互」归 **1b-2**（见
+> [buffer/infrastructure-refactoring-plan.md](../buffer/infrastructure-refactoring-plan.md) §3 1b）。
 
 ### 2.3 存储结构
 

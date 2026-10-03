@@ -13,18 +13,26 @@ import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerContext;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.material.Fluids;
+import net.neoforged.neoforge.fluids.FluidType;
 
 /**
  * 容器级流体数据 —— 参照原版水流平地蔓延逻辑实现。
  *
  * 核心映射：
- * - ContainerFluidData = 一个区块的水流状态
+ * - ContainerFluidData = 一个区块的流体状态
  * - 槽位 = 方块位置
- * - FlowEntry(level=0, isSource=true) = 水源方块
- * - FlowEntry(level=1~7, isSource=false) = 流动水方块
+ * - FlowEntry(level=0, isSource=true) = 流体源方块
+ * - FlowEntry(level=1~7, isSource=false) = 流动流体方块
  * - 无 FlowEntry = 空气
  * - 活物品 = 阻挡水流的方块
  * - 非活物品 = 水中的实体（不阻挡水流，被水流推动）
+ *
+ * <p><b>流体类型维度（1b-1，2026-10-03）</b>：每个 {@link FlowEntry} 带 {@link FluidType} ——
+ * 用<b>单张 map 带类型</b>（一槽只装一种流体，类比一个方块位置），不是「每流体一张 map」。
+ * BFS 只在<b>同种流体</b>内扩散（已占用的格子不被别的流体覆盖）。</p>
+ * <p>⚠️ <b>1b-1 是纯重构</b>：全部按「水」处理，水行为零变化（由 {@code ContainerFluidDataTest} 钉住）。
+ * 多流体的「行为分档 / 每流体上限 / 桶内容判定 / 跨流体交互」由 <b>1b-2 的流体行为接缝</b>接管。</p>
  *
  * 与原版一致的行为：
  * - 水源向4方向蔓延，level 递增，最远7格
@@ -39,12 +47,19 @@ public class ContainerFluidData {
         @Override
         public void registerSource(int slot) { }
         @Override
+        public void registerSource(int slot, FluidType fluid) { }
+        @Override
         public void removeSource(int slot) { }
         @Override
         public void setLastTickTime(long time) { }
         @Override
         public void tick(ContainerContext ctx) { }
     };
+
+    /** 默认流体 = 水（1b-1 兼容：旧调用点 {@link #registerSource(int)} 未指定流体时按水处理）。 */
+    private static FluidType defaultFluid() {
+        return Fluids.WATER.getFluidType();
+    }
 
     public static final int SOURCE_LEVEL = 0;
     public static final int MAX_FLOW_LEVEL = 7;
@@ -54,16 +69,25 @@ public class ContainerFluidData {
         int level;
         boolean isSource;
         int fromSlot;
+        /** 该格流体类型（1b-1：单张 map 带类型 —— 一个槽位只装一种流体，类比一个方块位置）。 */
+        final FluidType fluid;
 
+        /** 兼容构造器：未指定流体时按水处理（旧调用点）。 */
         public FlowEntry(int level, boolean isSource, int fromSlot) {
+            this(level, isSource, fromSlot, defaultFluid());
+        }
+
+        public FlowEntry(int level, boolean isSource, int fromSlot, FluidType fluid) {
             this.level = level;
             this.isSource = isSource;
             this.fromSlot = fromSlot;
+            this.fluid = fluid;
         }
 
         public int level() { return level; }
         public boolean isSource() { return isSource; }
         public int fromSlot() { return fromSlot; }
+        public FluidType fluid() { return fluid; }
     }
 
     private final Map<Integer, FlowEntry> flows = new LinkedHashMap<>();
@@ -86,14 +110,24 @@ public class ContainerFluidData {
         this.lastTickTime = time;
     }
 
+    /** 注册一个源（默认水 —— 兼容旧调用点）。 */
     public void registerSource(int slot) {
+        registerSource(slot, defaultFluid());
+    }
+
+    /**
+     * 注册一个指定流体类型的源。
+     *
+     * <p>同槽位换流体 ⇒ <b>整条覆盖</b>（一槽只装一种流体）。</p>
+     */
+    public void registerSource(int slot, FluidType fluid) {
         FlowEntry existing = flows.get(slot);
-        if (existing != null) {
+        if (existing != null && existing.fluid == fluid) {
             existing.isSource = true;
             existing.level = SOURCE_LEVEL;
             existing.fromSlot = -1;
         } else {
-            flows.put(slot, new FlowEntry(SOURCE_LEVEL, true, -1));
+            flows.put(slot, new FlowEntry(SOURCE_LEVEL, true, -1, fluid));
         }
     }
 
@@ -133,36 +167,49 @@ public class ContainerFluidData {
         Deque<Integer> queue = new ArrayDeque<>();
 
         for (var entry : flows.entrySet()) {
-            if (entry.getValue().isSource) {
-                int slot = entry.getKey();
-                ItemStack item = ctx.getItem(slot);
-                if (item.is(Items.WATER_BUCKET) && LivingItemManager.isLivingItem(item)) {
-                    newFlows.put(slot, new FlowEntry(SOURCE_LEVEL, true, -1));
-                    queue.add(slot);
-                }
-            }
+            FlowEntry src = entry.getValue();
+            if (!src.isSource) continue;
+            int slot = entry.getKey();
+            // 源的存活判定：槽位里仍是「装着该流体的活桶」（1b-1：仅水）
+            if (!isLivingBucketOf(ctx.getItem(slot), src.fluid)) continue;
+            newFlows.put(slot, new FlowEntry(SOURCE_LEVEL, true, -1, src.fluid));
+            queue.add(slot);
         }
 
         while (!queue.isEmpty()) {
             int slot = queue.poll();
             FlowEntry fe = newFlows.get(slot);
+            // 1b-1：上限仍为水常量（每流体上限由 1b-2 的流体行为接缝提供）
             if (fe.level >= MAX_FLOW_LEVEL) continue;
 
             int[] neighbors = ContainerContext.getNeighbors(slot, containerSize, width);
             for (int neighbor : neighbors) {
+                // 已被占用（含被别的流体占用）⇒ 不覆盖 —— 流体不混色
                 if (newFlows.containsKey(neighbor)) continue;
 
                 ItemStack item = ctx.getItem(neighbor);
                 if (LivingItemManager.isLivingItem(item)) continue;
 
                 int newLevel = fe.level + 1;
-                newFlows.put(neighbor, new FlowEntry(newLevel, false, slot));
+                newFlows.put(neighbor, new FlowEntry(newLevel, false, slot, fe.fluid));
                 queue.add(neighbor);
             }
         }
 
         flows.clear();
         flows.putAll(newFlows);
+    }
+
+    /**
+     * 该物品是否是「装着指定流体的活桶」—— 源的存活判定。
+     *
+     * <p><b>1b-1：仅水。</b>多流体 / 模组流体的「桶内容判定」由 <b>1b-2 的流体行为接缝</b>接管
+     * （届时改读 NeoForge 的 {@code FluidStack} / {@code SimpleFluidContent}，而非硬编码水桶）。</p>
+     */
+    private static boolean isLivingBucketOf(ItemStack item, FluidType fluid) {
+        return fluid == defaultFluid()
+            && item.is(Items.WATER_BUCKET)
+            && LivingItemManager.isLivingItem(item);
     }
 
     /**

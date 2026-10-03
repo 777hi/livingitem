@@ -24,6 +24,10 @@
   - **Q1（1a-1）**：`LivingItemFunction` 新增 `default boolean shouldTickWithoutOwnItems(ContainerContext)`（默认 `false`，现有 22 个功能不受影响）；`LivingItemManager` 在**注册期**算出静态「自维持函数」清单（以 null ctx 调用一次），`processContext` 在 `grouped.isEmpty()` 短路前把清单塞进 `grouped`（空 entries）。每 tick 只遍历 0~1 个，不逐函数判定 ⇒ 成千上万个容器下开销可控。**当前无函数覆写（活水源在 1b）**，完全空容器仍走 `handleEmptyContainer` 短路。
   - 设计要点见 `docs/buffer/infrastructure-refactoring-plan.md` §2 / §3。
 
+- ✅ **1b-1 引擎泛化**（纯重构，水行为零变化）：`ContainerFluidData` 条目带**流体类型**（`FlowEntry.fluid`，**单张 map 带类型** —— 一槽只装一种流体）；新增 `registerSource(slot, fluid)`（旧 `registerSource(slot)` 默认水）；`recalculate()` 的播种与 BFS 扩散**按类型**（已占格不被别的流体覆盖）。
+  - ⚠️ **关键做法**：本类此前**零单测** ⇒ 先补 6 条「行为快照」（`ContainerFluidDataTest`，golden master）钉住水行为，**再**重构 —— 否则「397 绿」只证明别的层没坏、证明不了引擎行为没变。
+  - **403 测试全绿**（397 + 6）。多流体的「行为分档 / 每流体上限 / 桶内容判定 / 跨流体交互」归 **1b-2**（本步按水处理，`isLivingBucketOf` / `MAX_FLOW_LEVEL` 保持水常量）。
+
 - 🔴 **修复「特定活武器永久白板化」**（高频 0.25s 一刀 / 伤害恒 1 / 常驻拉仇恨）：
   属性镜像竞态 —— 主人换手发生在容器点击（tick 间），属性刷新在其后实体 tick，
   竞态窗口内主人地图的旧武器 bd/bs 被镜像记录，下一轮清理按 id 删除

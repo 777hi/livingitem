@@ -354,7 +354,7 @@ return "container_" + Integer.toHexString(handler.hashCode());
 
 | 期 | 内容 | 验证 |
 |---|---|---|
-| **1b-1 引擎泛化** | `ContainerFluidData` 变流体无关，**水的行为零变化** | **397 测试全绿**（纯重构） |
+| **1b-1 引擎泛化** | ✅ **已完成 2026-10-03** —— `ContainerFluidData` 条目带流体类型（单张 map），水行为零变化 | **403 测试全绿**（397 + 新增 6 条行为快照） |
 | **1b-2 框架契约** | 行为分档接口 + 自维持函数骨架 | 新测试：**排序断言**（source 先于 bucket 先于 redstone）+ **红石归零解耦回归** |
 | 流体侧 | 接水 / 岩浆 / 模组流体 | 另一 AI |
 
@@ -370,11 +370,15 @@ return "container_" + Integer.toHexString(handler.hashCode());
 
 #### B.8 框架侧任务清单（供流体侧对照）
 
-**1b-1 引擎泛化（纯重构，水行为不变，397 绿）**
+**1b-1 引擎泛化（纯重构，水行为不变）** ✅ **已完成 2026-10-03**
 
-1. `ContainerFluidData` 条目带流体类型（单张 map）。
-2. `recalculate()` 播种 / BFS 扩散按类型；跨流体交互留钩子。
-3. 验收：**397 测试全绿**。
+1. ✅ `ContainerFluidData` 条目带流体类型（**单张 map**：`FlowEntry.fluid`）。
+2. ✅ `recalculate()` 播种 / BFS 扩散按类型：`registerSource(slot, fluid)`；同槽换流体**整条覆盖**；已占格**不被别的流体覆盖**。
+3. ✅ 验收：**403 测试全绿**（397 + 新增 6 条 `ContainerFluidDataTest` 行为快照）。
+
+> ⚠️ **关键做法**：本类此前**零单测** ⇒ 先补 6 条「行为快照」（golden master）钉住水行为，**再**重构 ——
+> 否则「397 绿」只证明别的层没坏、证明不了引擎行为没变。
+> 多流体的「行为分档 / 每流体上限 / 桶内容判定 / 跨流体交互」**仍归 1b-2**（本步按水处理，`isLivingBucketOf` / `MAX_FLOW_LEVEL` 保持水常量，已标 TODO）。
 
 **1b-2 框架契约（新增接口）**
 
