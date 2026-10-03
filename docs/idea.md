@@ -10,7 +10,121 @@
 
 ---
 
-## 一、核心概念与已定口径
+## 〇、框架就位对齐（2026-10-03 晚，1a/1b 完成后）
+
+框架侧（1a 地基 4/4 + 1b 通用流体框架）已落地，**413 测试全绿**。流体侧（本文件）据此刻对齐：
+
+**框架已交付**（详见 infrastructure-refactoring-plan.md §3 1b B.8）：
+
+- 自维持通道：`shouldTickWithoutOwnItems` + 注册期静态清单 ⇒ `LivingFluidFunction`（prio 0）
+  驱动容器级流体 BFS，**纯源容器照样 tick**（§四.5 的目标已由框架以更优方式实现）
+- `ContainerFluidData` 泛化：FlowEntry 带 `FluidType`（单 map 一槽一流体，同槽换流体整条覆盖、
+  已占格不被异种流体覆盖）；行为分档接缝 `FluidFlowBehavior`（canFlow/maxLevel/flowSpeed，
+  未注册 = 静止；水已注册 flowing(7,0)）
+- 源查询 API：`isSource(slot)` / `sourceFluid(slot)` / `hasAnySource()` —— 汲/倒处理器直接可用
+- 红石归零解耦（与 grouped 空否无关）；Q5 渲染轨已定向：**复用 `ContainerRuntimeCache.flushToClients`
+  + `LivingItemSyncPacket`**（此前「attachment 同步语义待验证」作废，不需验证）
+
+**对本文件机制设计的修正与新约束**：
+
+1. **活空桶/活水桶 = 同一物品 + `FluidStack` 内容组件**（框架定案：与 NeoForge 桶同构）。
+   机制一/四的实现形态随之简化：汲 = 向桶的 FluidStack 灌入（空→满），倒 = 放出（满→空），
+   活标记与宿主数据全程自然保留，不再需要「换功能组件」。
+2. **`isLivingBucketOf` 泛化归流体侧**：源存活判定改读桶的 FluidStack 类型匹配
+   （活岩浆桶养岩浆源），替换现硬编码水桶。
+3. **`generatedSources` 数据模型（流体侧定义，框架等它接 CODEC 落盘，B.5⑧）**——提案：
+   `Map<Integer, FluidType>`（槽位 → 源流体类型）。派生源必须记住自己的流体，
+   否则 `recalculate` 重播种时类型信息丢失。生命周期：晋升写入 / 挤没移除 / 汲走移除 /
+   容器销毁随 attachment 湮灭。
+4. **晋升与转化需要引擎接缝（向框架侧提出，流体侧填行为）**：
+   - 晋升 hook：`recalculate` 收敛循环里问行为「该格是否升源」（水：≥2 邻源；岩浆：永不）
+   - 转化 hook：每流体拍在源格问行为「格上物品是否转化」（转化表 JSON 归流体侧）
+   - 二者作为 `FluidFlowBehavior` 可选 default 方法（默认 no-op），「流体侧只填行为」的分工不破
+5. **跨流体交互影响倒水语义**：往岩浆源格倒水，原版是石头/黑曜石，不是「整条覆盖」。
+   一期水单体无所谓；接岩浆时倒水处理器须先问跨流体交互 hook（B.4 可选钩子）。
+
+**流体侧任务队列**（2026-10-03 晚批次一执行后更新）：
+
+| 期 | 内容 | 状态 |
+|---|---|---|
+| F1 | `generatedSources: Map<Integer,FluidType>` 数据模型 + 引擎播种② + 挤没判定 | ✅ 完成（6 测试；框架可接 CODEC = B.5⑧） |
+| F2 | 晋升 hook 接缝 + 水晋升行为（任意 2/4）+ 挤没自愈回归 | 待框架接缝（规格见 §〇 第 4 条） |
+| F3 | 活桶 FluidStack 化 + 汲/倒 GUI 交互规则 + 处理器 + **桶源退役同批** | 待做 |
+| F4 | 转化表 JSON（含流体维度键）+ 转化 hook + 漏斗自动化实测 | 待框架接缝 |
+| F5 | 渲染轨：`FluidFlowSyncPacket` 容器级同步 + `IClientFluidTypeExtensions` 自适应 + 旧桶轨降级过渡回退 | ✅ 完成（同批次一） |
+
+**批次修正（执行留痕）**：原定「桶源退役与 F5 同批」不成立 —— 桶源拆掉而汲/倒（F3）未落地，
+中间态**没有任何造源手段**，水从游戏里消失。修正为：桶源退役与 **F3 同批**（先有倒水，再拆桶源）；
+F5 主轨先行（容器级快照本就覆盖桶源数据，切换无损），旧桶轨降级为过渡回退。
+
+---
+
+## 〇.5、桶源存废：已拍板取消（2026-10-03）
+
+**问题**：活水桶要不要保留「放在容器里本身就是源」（桶源）？取消则水流逻辑全部归活水源。
+
+**建议：取消。** 理由按分量排：
+
+1. **经济上是重复计账**。桶源 = 水既在桶里、又同时是世界里的源——一把满桶就是携带式
+   无限源。取消后守恒律从「软」变「硬」：水要么在桶里（FluidStack），要么在世界里（源），
+   桶 ⇄ 源只能经倒/汲转换。A 方案下「2 桶放对位置 → 白得第 3 源且桶还是满的」的免费午餐消失
+   （晋升增长保留，那是机制不是漏洞）。
+2. **引擎最后一个流体特判消失**。`isLivingBucketOf` / `Items.WATER_BUCKET` 是引擎里仅剩的
+   水硬编码（框架 TODO 交给流体侧泛化的正是它）——取消桶源 = **删掉这个工作项而非完成它**。
+   源存活判定只剩「挤没」一条统一规则（活物品在场即毁）。
+3. **多流体统一心智**（用户点名的关键）：B 下每种流体的玩法 = 倒/汲（FluidStack）+
+   行为分档（流/静止）+ 源资产，一套模型接所有流体；A 下每种流体都要定义「桶即源」耦合。
+   原版本身就是 B：桶是物品、源是方块，从不存在「既是桶又是水块」的东西。
+4. **源生命周期单一化**：桶源/派生源双记账合并为一种源。汲水「仅限派生源」特例作废
+   （§一 row 6），机制二无豁免口径变得更彻底（活桶压源格 = 纯粹的挤没）。
+5. **渲染双轨收敛为单轨**：桶不再携带 flow 字符串 ⇒ `postTickSync` + 桶轨渲染退役，
+   Q5 容器轨（`ContainerRuntimeCache.flushToClients` + `LivingItemSyncPacket`）成唯一轨道。
+
+**代价（诚实列出）**：
+
+- 多一步交互：放桶 ≠ 有水，要倒一下。原版直觉（手持桶右键）让这步很自然，可接受。
+- 失去「临时水」：A 下桶拿走水就没了（自清洁）；B 下每次倒水留下永久资产，清理要汲走
+  （一击）。需写进玩家预期。
+- 活化后「立刻见效」的演示感没了；alpha 无旧存档兼容，现存活水桶变惰性载体。
+
+**时序硬约束**：渲染轨（F5/Q5）必须与取消桶源**同批或更早**落地——桶不再携带 flow 字符串、
+容器轨未就位 ⇒ 水不可见。
+
+**对 F 队列的修订**：F1 缩水（无桶源记账，播种只读 `generatedSources`）；F3 改为
+「`LivingWaterBucketFunction` 瘦身为交互型（类比活打火石：无 tick）+ FluidStack 化」；
+F5 提前为与桶源取消同批。
+
+**拍板后续（口径更新）**：§一的「桶源/派生源」二分作废——**源只有一种**（容器资产）；
+汲水对一切源生效（row 6 特例废）；守恒律硬化（水在桶里 = FluidStack，在世界 = 源，
+二者互斥，经倒/汲转换）；机制一/四措辞 = 「活桶（空）汲入 / 活桶（满）放出」。
+
+---
+
+## 〇.6、流体渲染自适应性评估（2026-10-03）
+
+**结论：当前不是自适应的——三处水硬编码**（`AbstractContainerScreenMixin` 渲染段）：
+
+1. **数据源**：`collectWaterBuckets` 只认活水桶物品组件里的 flow 字符串（桶轨；
+   桶源取消后本就要退役，见 §〇.5）。
+2. **贴图**：`block/water_still` / `block/water_flow` 写死（block atlas）。
+3. **颜色 / alpha**：`setShaderColor(0.25, 0.5, 1.0, …)` 蓝色调写死；alpha 归一写死
+   `level / 7`（水的 maxLevel）——岩浆（maxLevel 3）接入即错。
+
+**但渲染机制本身是流体无关的**：槽位→格子映射、方向旋转、blit 全部通用；
+**动画是白拿的**——atlas sprite 随原版动画 mcmeta 每 tick 上传新帧，blit 即动
+（水如此，岩浆/模组流体同样如此）。
+
+**自适应化路径（并入 F5）**：
+
+- 贴图/颜色：NeoForge 标准客户端接口 `IClientFluidTypeExtensions.of(fluid)` →
+  `getStillTexture()` / `getFlowingTexture()` / `getTintColor()`——原版水/岩浆与正确注册
+  client 扩展的模组流体**全免费**；alpha 用 `FluidFlowBehavior.maxLevel()` 归一（分档注册表现成）。
+- 数据格式：现 flow 字符串 `slot:level:fromSlot` **无流体维度** ⇒ Q5 轨 payload 每 cell
+  须带 fluidId（`exportFlowData()` 一并扩）。同容器多流体（水+岩浆同屏）天然支持。
+- 触发源：`collectWaterBuckets`（扫桶物品）→ 按屏幕容器查 Q5 缓存；
+  模组流体缺 client 扩展时回退灰色半透明（安全默认，类比行为分档的「未注册 = 静止」）。
+
+---
 
 **活水源** = 容器级永久资产。存放在 `ContainerFluidData.generatedSources: Set<Integer>`（槽位索引），
 与桶源（`isSource` 由活水桶注册）并列作为 BFS 播种源。
@@ -111,6 +225,10 @@
 
 ## 四.5、架构升格：活水源 = 第一种「容器级自主逻辑」（2026-10-03）
 
+> ✅ **已被 1a/1b 取代，留痕**——目标由框架以更优方式实现（`shouldTickWithoutOwnItems`
+> 自维持通道，把「容器级逻辑」收敛为「没有物品载体的活物品」，概念数不增）；
+> 见 §〇。下文当时的技术判断（发现层全覆盖、门在 grouped 短路）仍然成立。
+
 **修正**：此前「只有源的容器不 tick、源休眠」说法有误。核实（`LivingItem.java:243-298`
 + `ContainerLivingItemHandler.java:430-449`）：ticking 区块内**每个容器 BE 每 tick 都被
 `processContainerAt` 拜访**；真正的门是 `processContext` 的 `grouped.isEmpty()` 短路——
@@ -151,7 +269,10 @@ attachment 网络同步（`.networkSynchronized(STREAM_CODEC)`）+ 渲染端从 
 
 ---
 
-## 五、实现分期（待开工）
+## 五、实现分期（已被 §〇 流体侧任务队列取代，留痕）
+
+> 框架侧已把「地基」做完（且方式不同：自维持通道而非 processContext 分支、
+> 渲染轨走 ContainerRuntimeCache 而非 attachment 同步）。执行以 §〇 队列为准。
 
 1. **一期·地基**：`generatedSources` + CODEC + attachment `.serialize`；闭包晋升（任意 2/4）；
    挤没判定；**流体 tick 升格**（processContext 独立阶段 + 纯源容器分支，见 §四.5）；

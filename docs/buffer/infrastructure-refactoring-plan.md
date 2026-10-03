@@ -403,6 +403,22 @@ return "container_" + Integer.toHexString(handler.hashCode());
 
 **之后**：流体侧接水 / 岩浆 / 模组流体。
 
+> **📌 流体侧进展登记（2026-10-03 晚，另一路 AI / 批次一，419 测试全绿）**
+>
+> - **⑧ 落盘的前置已就位**：流体侧已在 `ContainerFluidData` 定义并实现
+>   `generatedSources: Map<Integer, FluidType>`（含生命周期 API
+>   `registerGeneratedSource` / `removeGeneratedSource` / `isGeneratedSource` /
+>   `hasGeneratedSources` / `getGeneratedSources()` 只读视图）—— **CODEC 只序列化这张 map
+>   即可接线**（flow 表仍不落）。渲染同步轨⑨也已由流体侧落地
+>   （`FluidFlowSyncPacket` + `FluidFlowServerSync` + `FluidFlowClientCache`，挂在
+>   `LivingFluidFunction.tickContainerData` 尾部，零框架文件改动）。
+> - **向框架侧的接缝请求**（流体侧行为填充用，见 idea.md §〇 第 4 条）：
+>   ① 晋升 hook —— `recalculate` 收敛循环问行为「该格是否升源」（默认 no-op）；
+>   ② 转化 hook —— 每流体拍在源格问行为「格上物品是否转化」（默认 no-op）。
+>   二者作为 `FluidFlowBehavior` 可选 default 方法，不破坏「流体侧只填行为」分工。
+> - **桶源退役已拍板**（idea.md §〇.5）但**顺延**至流体侧批次二（与汲/倒同批）——
+>   批次一期间 `isLivingBucketOf` 桶源路径保持现状，删它时连同旧桶轨渲染回退一起清。
+
 ---
 
 ## 4. 每一步都必须做的验证协议

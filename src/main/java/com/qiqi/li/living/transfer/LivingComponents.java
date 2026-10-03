@@ -300,7 +300,9 @@ public final class LivingComponents {
 
     public static final DeferredHolder<AttachmentType<?>, AttachmentType<ContainerFluidData>> CONTAINER_FLUID_DATA =
             ATTACHMENT_TYPES.register("container_fluid_data", () ->
-                    AttachmentType.builder(() -> ContainerFluidData.EMPTY).build());
+                    AttachmentType.builder(() -> ContainerFluidData.EMPTY)
+                            .serialize(ContainerFluidData.CODEC)
+                            .build());
 
     public static final DeferredHolder<AttachmentType<?>, AttachmentType<com.qiqi.li.living.domain.power.PhaseSnapshot>> CONTAINER_PHASE_SNAPSHOT =
             ATTACHMENT_TYPES.register("container_phase_snapshot", () ->

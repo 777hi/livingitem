@@ -164,9 +164,13 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 413 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
-全绿基线：`396 passed / 0 failed / 1 skipped`（2026-09-28 新增交互规则 JSON 加载语义 9 项 +
-tick 顺序契约守卫 4 项 + 活化目标参数解析守卫 4 项；2026-09-27 新增活化规则 JSON 加载语义 14 项
+**合计测试用例 419 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
+全绿基线：`418 passed / 0 failed / 1 skipped`（2026-10-03 流体侧 F1：`ContainerFluidDataTest`
+新增派生源 6 项 —— 独立存活/挤没/与非活物品共存/桶源同格无豁免/异种覆盖/生命周期与 EMPTY noop；
+此前 2026-10-03 1b 系列至 413（引擎行为快照/驱动/红石归零解耦/源查询 API）；
+2026-09-28 新增交互规则 JSON 加载语义 9 项 +
+tick 顺序契约守卫 4 项 + 活化目标参数解析守卫 4 项；
+2026-09-27 新增活化规则 JSON 加载语义 14 项
 （含指令侧 put/remove/校验/**持久化往返**；tag 路径 1 项 @Disabled ——
 FML unit test 不加载 item tags，已游戏内验证通过）+
 活化门面守卫 5 项（含「零配置全放行」口径锁定）+ DataComponent 归属守卫 3 项；
@@ -190,6 +194,7 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-03 | **流体侧批次一（F1+F5）**：F1 派生源（活水源）—— `generatedSources: Map<Integer,FluidType>` + 播种②无条件并入 BFS + **挤没判定**（活物品进源格即销毁，非活共存）；F5 流体渲染轨 —— `FluidFlowSyncPacket` 容器级同步（玩家背包/BE/大箱子全覆盖）+ `IClientFluidTypeExtensions` 自适应贴图/颜色（alpha 按 maxLevel 归一），旧桶轨降级过渡回退。桶源退役顺延批次二与汲/倒同批。**419 测试全绿** | `idea.md` §〇 |
 | 2026-10-03 | 🔴 **修复 1a-4 引入的回归：容器流体数据不再被创建**（活水桶 `registerSource` 被跳过 ⇒ **水流功能整体失效**）：1a-4「容器级数据统一存储」把 `TickContext.fluidData()` 改成只读 peek 时，**丢掉了构造器里创建流体数据的调用**；恢复（含 BE 附件回填）+ 补回归测试（退回旧实现**恰好挂掉该测试**）。**406 测试全绿** | `living-water-bucket-tech.md` §2.2 |
 | 2026-10-03 | **1b 通用流体框架（框架侧 ①②③④）**：① **1b-1 引擎泛化** —— `ContainerFluidData` 条目带**流体类型**（单张 map，水行为零变化）；② **1b-2a 行为分档接缝** —— `FluidFlowBehavior`/`FluidFlowBehaviors`（未注册=静止，水注册上限 7）；③ **1b-2b 通用驱动** —— `LivingFluidFunction`（**自维持** + `HasContainerData` prio 0），桶的 BFS 驱动**解耦**（只留 postTickSync）；④ **1b-2c 红石归零解耦** —— 自维持驱动使 `grouped` 恒非空、原寄生在 `grouped.isEmpty()` 的残留红石归零会失效 ⇒ 抽出 `zeroResidualRedstone`。⚠️ 流体引擎原**零单测** ⇒ 先补「行为快照」再重构。**412 测试全绿** | `living-water-bucket-tech.md` §2.2 |
 | 2026-10-03 | **基础设施重构 1a 地基完成**（4/4，397 测试全绿，行为不变）：Q3 删 `containerKey` 第三档改抛异常；Q4 抽 `TickableContainerContext` 子接口；Q2 容器级数据并入 `ContainerDataStore`（按 `ContainerDataKey` 数组下标存取，新增一种数据只改 1 行）；Q1 `LivingItemFunction#shouldTickWithoutOwnItems`（默认 false）+ 注册期静态自维持清单（每 tick 只遍历 0~1 个，不逐函数判定），为「活水源 = 没有物品载体的活物品」铺路 | `docs/buffer/infrastructure-refactoring-plan.md` §3 |
@@ -199,7 +204,6 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 | 2026-09-30 | **射线微调**（主动模式·玩家形态）：背包点小人 —— 左键躯干中心/底部=起点锚点、脑袋=重置，右键=朝向跟随（背后环同款）；衍生副本旋转，原始 offset 不动，两端同公式；录制即重置 | `living-tool-tech.md` §2.5 |
 | 2026-09-30 | tooltip 主人显示统一：UUID=绑定数据、名字=显示缓存（新增 `LIVING_TOOL_OWNER_NAME`，`syncOwnerAttributes` 返回主人供四路回放刷新；末影箱 tick 同款），显示走 `OwnerNameResolver#displayName` 实时→缓存→短UUID | `living-ender-chest-tech.md` §绑定 |
 | 2026-09-29 | 活武器**高速连击修复**：出手记录（上次攻击 tick）改写在 `fake.attack()` 之前 + 攻击分支不走 `matches` 短路必写回；灾变源码核对不扣耐久系武器；✅ 实测间隔恢复面板冷却 | `living-weapon-tech.md` §5 |
-| 2026-09-29 | tooltip 新增**「赋灵者」行**（绑定主人）：`LIVING_TOOL_OWNER` 补网络同步 + 公共侧解析桥 `OwnerNameResolver`（名字→短 UUID 回退）；文档澄清属性镜像生效条件与宿主无关 + 活箱子非宿主口径 | `living-weapon-tech.md` §8.1.1 |
 
 
 ## 排查铁律：原版机制挡路时

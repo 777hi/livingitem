@@ -1,5 +1,7 @@
 package com.qiqi.li.living.domain.water;
 
+import net.minecraft.world.item.ItemStack;
+
 /**
  * 流体流动行为（1b-2 契约）—— 框架向流体侧要的「行为参数」。
  *
@@ -47,4 +49,33 @@ public interface FluidFlowBehavior {
 
     /** 流速（扩散节拍）。⚠️ 预留，当前未使用。 */
     int flowSpeed();
+
+    // ── 引擎接缝（1b-2，默认 no-op；流体侧填行为）────────────────
+
+    /**
+     * 晋升判定（引擎在 {@code recalculate} 的<b>收敛循环</b>里调用）：该格是否应<b>升格为源</b>。
+     *
+     * <p>默认 {@code false}（不晋升）。框架负责算「该格四邻中已是源的个数」并反复收敛
+     * （升格后水网扩张会重跑 BFS，直到无新升格）；具体阈值由流体侧填
+     * （水：≥2 邻源；岩浆：永不）。升格写入容器的派生源集合，成为永久资产。</p>
+     *
+     * @param slot                候选格（当前是流动格，非源）
+     * @param sourceNeighborCount 该格四邻中已是源的个数
+     */
+    default boolean shouldPromote(int slot, int sourceNeighborCount) {
+        return false;
+    }
+
+    /**
+     * 转化判定（引擎<b>每流体拍</b>在源格调用）：源格上的物品是否应<b>转化</b>。
+     *
+     * <p>默认 {@code null}（不转化）。转化表归流体侧
+     * （空桶→水桶、干海绵→湿海绵、混凝土粉末→混凝土…）。引擎只在<b>源格</b>问，非源格不问。</p>
+     *
+     * @param item 源格上的物品（保证非空）
+     * @return 转化后的物品；{@code null} = 不转化（物品原样保留）
+     */
+    default ItemStack transformItem(ItemStack item) {
+        return null;
+    }
 }

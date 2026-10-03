@@ -316,4 +316,108 @@ class ContainerFluidDataTest {
         assertFalse(fluid.isSource(0), "移除后不再是源");
         assertNull(fluid.sourceFluid(0));
     }
+
+    // ── 派生源（活水源）—— 2026-10-03 F1 ─────────────────────
+
+    @Test
+    @DisplayName("⑭ 派生源独立存活：无任何活水桶，源与流动照样推进且跨 tick 保持")
+    void generatedSource_survivesWithoutBucket() {
+        var ctx = row();   // 空容器
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(3, Fluids.WATER.getFluidType());
+        assertTrue(fluid.hasGeneratedSources());
+
+        fluid.tick(ctx);
+        assertTrue(fluid.isSource(3), "派生源是源");
+        assertEquals(9, fluid.getFlows().size(), "无桶也应 BFS 蔓延：源在 slot 3 ⇒ 9 格全可达");
+
+        fluid.tick(ctx);
+        fluid.tick(ctx);
+        assertTrue(fluid.isSource(3), "水桶不在场派生源不消失（容器级永久资产）");
+        assertEquals(9, fluid.getFlows().size());
+    }
+
+    @Test
+    @DisplayName("⑮ 挤没：活物品进入派生源格 ⇒ 源永久销毁")
+    void generatedSource_squeezedByLivingItem() {
+        var ctx = row(ItemStack.EMPTY, ItemStack.EMPTY, ItemStack.EMPTY, livingNonWater());
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(3, Fluids.WATER.getFluidType());
+
+        fluid.tick(ctx);
+        assertFalse(fluid.hasGeneratedSources(), "派生源被挤没");
+        assertFalse(fluid.isSource(3), "源格被活物品占据 ⇒ 无源");
+        assertTrue(fluid.getFlows().isEmpty(), "无源 ⇒ 无流动");
+    }
+
+    @Test
+    @DisplayName("⑯ 非活物品与派生源共存（水穿过实体，不挤没）")
+    void generatedSource_coexistsWithNonLivingItem() {
+        var ctx = row(new ItemStack(Items.REDSTONE, 3));
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
+
+        fluid.tick(ctx);
+        assertTrue(fluid.hasGeneratedSources(), "非活物品不挤没");
+        assertTrue(fluid.isSource(0));
+        assertEquals(8, fluid.getFlows().size(), "扩散不受同格物品影响");
+    }
+
+    @Test
+    @DisplayName("⑰ 桶源与派生源同格：挤没无豁免 —— 活水桶挤掉派生源，桶源照常存在")
+    void bucketOnGeneratedSource_destroysGeneratedKeepsBucketSource() {
+        var ctx = row(ItemStack.EMPTY, ItemStack.EMPTY, ItemStack.EMPTY, livingWaterBucket());
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(3, Fluids.WATER.getFluidType());
+        fluid.registerSource(3);   // 模拟桶 tick 的注册（桶在 slot 3）
+
+        fluid.tick(ctx);
+        assertFalse(fluid.isGeneratedSource(3), "派生源被活水桶挤没（无豁免口径）");
+        assertTrue(fluid.isSource(3), "槽位仍是源 —— 桶源接管，BFS/渲染无感");
+    }
+
+    @Test
+    @DisplayName("⑱ 同槽异种覆盖：岩浆派生源不扩散（未注册行为=静止），重注册水后整条覆盖")
+    void generatedSource_fluidOverwrite() {
+        var ctx = row();
+        var fluid = new ContainerFluidData();
+
+        fluid.registerGeneratedSource(3, Fluids.LAVA.getFluidType());
+        fluid.tick(ctx);
+        assertTrue(fluid.isSource(3));
+        assertEquals(1, fluid.getFlows().size(), "岩浆未注册流动行为 ⇒ 静止，只做源");
+        assertEquals(Fluids.LAVA.getFluidType(), fluid.sourceFluid(3), "派生源记住自己的流体");
+
+        fluid.registerGeneratedSource(3, Fluids.WATER.getFluidType());
+        fluid.tick(ctx);
+        assertEquals(Fluids.WATER.getFluidType(), fluid.sourceFluid(3), "同槽重注册 ⇒ 整条覆盖");
+        assertEquals(9, fluid.getFlows().size(), "水恢复扩散（9 格全可达）");
+    }
+
+    @Test
+    @DisplayName("⑲ 桶源消失不影响派生源；EMPTY 单例的派生源 API 是 noop")
+    void generatedSource_vsBucketSourceLifecycle() {
+        // slot 4 放真实活水桶（桶源存活校验看的是桶物品，不是注册标记）
+        FakeHandler h = new FakeHandler(9);
+        h.slots[4] = livingWaterBucket();
+        var ctx = new SimpleContainerContext(h);
+        var fluid = new ContainerFluidData();
+
+        fluid.registerGeneratedSource(2, Fluids.WATER.getFluidType());
+        fluid.registerSource(4);          // 模拟桶 tick 的注册
+        fluid.tick(ctx);
+        assertTrue(fluid.isSource(2) && fluid.isSource(4), "派生源与桶源并存");
+
+        h.slots[4] = ItemStack.EMPTY;     // 桶被移走
+        fluid.removeSource(4);
+        fluid.tick(ctx);
+        assertFalse(fluid.isSource(4), "桶源随桶消失");
+        assertTrue(fluid.isSource(2), "派生源不受影响");
+
+        // EMPTY noop 安全（匿名子类必须覆写全部可变方法）
+        ContainerFluidData.EMPTY.registerGeneratedSource(0, Fluids.WATER.getFluidType());
+        ContainerFluidData.EMPTY.removeGeneratedSource(0);
+        assertFalse(ContainerFluidData.EMPTY.hasGeneratedSources());
+        assertFalse(ContainerFluidData.EMPTY.isGeneratedSource(0));
+    }
 }

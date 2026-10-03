@@ -17,6 +17,12 @@
 
 ## 2026-10-03
 
+- ✅ **流体侧批次一：F1 派生源（活水源）数据模型 + F5 流体渲染轨**（**419 测试全绿**，413 + 新增 6）。设计口径与分工见 [idea.md](../idea.md) §〇（本会话 = 流体侧；桶源退役已拍板但**顺延至批次二**与汲/倒同批 —— 否则中间态没有任何造源手段）。
+  - **F1 `generatedSources`**：`ContainerFluidData` 新增 `Map<Integer, FluidType> generatedSources`（派生源必须记住流体类型，否则重播种时岩浆源退化成水）+ 生命周期 API（`registerGeneratedSource` / `removeGeneratedSource` / `isGeneratedSource` / `hasGeneratedSources` / `getGeneratedSources` 只读视图，供框架接 CODEC 落盘 = B.5⑧ 前置就位）。`recalculate()` 播种②：派生源**无条件并入** BFS（不依赖任何物品在场 = 纯源容器可活）；**挤没判定在此进行** —— 任何活物品进派生源格 ⇒ 永久销毁（原版「放方块进水源」语义），不关心物品怎么来（手放/未来活活塞推），非活物品共存（供机制三转化）；同槽异种整条覆盖。EMPTY 单例补 noop 覆写。
+  - **F5 渲染轨（Q5）**：新 `FluidFlowSyncPacket`（S2C，流体**调色板**传输 + cell = level/fromSlot/调色板下标）+ `FluidFlowServerSync`（`LivingFluidFunction.tickContainerData` 尾部发送 —— **零框架文件改动**；玩家背包直发本人、BE 容器菜单匹配含大箱子特判）+ `FluidFlowClientCache`（最后快照模型，玩家/BE 分存防串台，界面关闭清空）。
+  - **渲染自适应**（`AbstractContainerScreenMixin`）：主轨改读容器级快照；贴图/颜色走 NeoForge `IClientFluidTypeExtensions.of(FluidType)`（still/flow 贴图 + ARGB 染色，水/岩浆/模组流体全免费），alpha 用 `FluidFlowBehavior.maxLevel()` 归一（修掉写死 `/7`）；**动画白拿**（atlas sprite 随原版 mcmeta）。旧桶轨降级为**过渡期回退**（容器轨未覆盖且有带 flow 的活水桶时才画），批次二随桶源退役删除。
+  - 新增 `ContainerFluidDataTest` ⑭~⑲（派生源独立存活/挤没/与非活物品共存/桶源同格无豁免/异种覆盖/生命周期与 EMPTY noop）。
+
 - 🔴 **修复 1a-4 引入的回归：容器流体数据不再被创建**（活水桶 `registerSource` 被跳过 ⇒ **水流功能整体失效**）：1a-4「容器级数据统一存储」把 `TickContext.fluidData()` 改成只读 `peek` 时，**丢掉了 `TickContext` 构造器里创建流体数据的调用**（旧版由 `simpleCtx.getOrCreateFluidData()` 在此创建，1a-4 一并删掉了该调用）。恢复：构造器对 `SimpleContainerContext` 调 `ContainerLivingItemHandler.getFluidData(ctx)`（含 BE 附件回填，与 1a-4 之前一致）。**补回归测试** `ContainerFluidDataTest.tickContext_createsFluidData`（**退回旧实现恰好挂掉该测试**，已实测验证）。**406 测试全绿**。
 
 - ✅ **基础设施重构 1a 地基完成（4/4，397 测试全绿，行为不变）**：为「活水源 = 没有物品载体的活物品」铺路。

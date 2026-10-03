@@ -64,6 +64,7 @@ public class LivingFluidFunction implements LivingItemFunction, HasContainerData
     /**
      * 驱动容器级流体 tick：BFS 重算流动 + 周期性推动物品。
      * 无流体数据的容器是廉价 no-op（{@code fluidData.isEmpty()}）。
+     * tick 后向正在查看的玩家下发流体快照（Q5 渲染轨 —— 纯源容器的水也能渲染）。
      */
     @Override
     public void tickContainerData(List<SlotEntry> entries, ContainerContext ctx, TickContext tick) {
@@ -72,6 +73,9 @@ public class LivingFluidFunction implements LivingItemFunction, HasContainerData
         if (!fluidData.isEmpty()) {
             fluidData.setLastTickTime(System.currentTimeMillis());
             fluidData.tick(ctx);
+            if (ctx instanceof com.qiqi.li.living.container.TickableContainerContext tickable) {
+                FluidFlowServerSync.flushAfterTick(tickable, fluidData);
+            }
         }
     }
 }

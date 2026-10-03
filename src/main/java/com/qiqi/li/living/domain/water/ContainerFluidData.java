@@ -9,12 +9,16 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import com.mojang.serialization.Codec;
+import com.mojang.serialization.codecs.RecordCodecBuilder;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerContext;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.material.Fluids;
 import net.neoforged.neoforge.fluids.FluidType;
+import net.neoforged.neoforge.registries.NeoForgeRegistries;
 
 /**
  * 容器级流体数据 —— 参照原版水流平地蔓延逻辑实现。
@@ -51,6 +55,12 @@ public class ContainerFluidData {
         public void registerSource(int slot, FluidType fluid) { }
         @Override
         public void removeSource(int slot) { }
+        @Override
+        public void registerGeneratedSource(int slot, FluidType fluid) { }
+        @Override
+        public void removeGeneratedSource(int slot) { }
+        @Override
+        public boolean hasGeneratedSources() { return false; }
         @Override
         public void setLastTickTime(long time) { }
         @Override
@@ -92,6 +102,17 @@ public class ContainerFluidData {
     }
 
     private final Map<Integer, FlowEntry> flows = new LinkedHashMap<>();
+    /**
+     * 派生源（活水源，2026-10-03）—— <b>容器级永久资产</b>：槽位 → 源流体类型。
+     *
+     * <p>与「桶源」（活水桶在场时由桶注册，见 {@code LivingWaterBucketFunction.tick}）并列的
+     * 第二种源：由倒水 / 晋升创建，<b>不随水桶离开消失</b>（原版语义：源是真实方块）。
+     * 每 tick 在 {@link #recalculate} 播种阶段并入 BFS；生命周期：
+     * 倒入/晋升而生，挤没（任何活物品进入该格）/汲走而死，容器销毁随 attachment 湮灭。</p>
+     *
+     * <p>⚠️ 必须记住流体类型 —— 否则重播种时岩浆源会退化成水。</p>
+     */
+    private final Map<Integer, FluidType> generatedSources = new LinkedHashMap<>();
     private long lastTickTime;
     private int tickCounter;
 
@@ -168,6 +189,79 @@ public class ContainerFluidData {
         return false;
     }
 
+    // ── 派生源（活水源）生命周期 API ─────────────────────────
+
+    /**
+     * 【改】创建 / 覆盖一个派生源（倒水处理器用）。
+     *
+     * <p>同槽已有（异种）派生源 ⇒ 覆盖。⚠️ 接岩浆后，倒水处理器须先问跨流体交互
+     * （原版往岩浆源倒水是石头/黑曜石，不是覆盖）。</p>
+     */
+    public void registerGeneratedSource(int slot, FluidType fluid) {
+        if (fluid == null) return;
+        generatedSources.put(slot, fluid);
+    }
+
+    /** 【改】移除派生源（汲走处理器用）。非派生源的槽位无效果。 */
+    public void removeGeneratedSource(int slot) {
+        generatedSources.remove(slot);
+    }
+
+    /** 【查】该槽位是否为派生源（区别于桶源）。 */
+    public boolean isGeneratedSource(int slot) {
+        return generatedSources.containsKey(slot);
+    }
+
+    /** 【查】本容器是否存在任何派生源（廉价）。 */
+    public boolean hasGeneratedSources() {
+        return !generatedSources.isEmpty();
+    }
+
+    /** 【查】派生源只读视图（供落盘 CODEC / 导出用；fluid 侧定义，框架接序列化）。 */
+    public Map<Integer, FluidType> getGeneratedSources() {
+        return java.util.Collections.unmodifiableMap(generatedSources);
+    }
+
+    // ── 落盘 CODEC（1b-2⑧，框架）────────────────────────────
+    // 只序列化「派生源」map（槽位 → 流体类型）；流动表每 tick 由 BFS 重算，落盘无正确性价值。
+    // 桶源**不落盘** —— 桶在场时每 tick 由桶重新注册，落盘无意义且会造出幽灵源。
+
+    /** 序列化形态：一条派生源（槽位 + 流体类型注册 id）。 */
+    private record SourceEntry(int slot, String fluidId) {
+        static final Codec<SourceEntry> CODEC = RecordCodecBuilder.create(i -> i.group(
+            Codec.INT.fieldOf("slot").forGetter(SourceEntry::slot),
+            Codec.STRING.fieldOf("fluid").forGetter(SourceEntry::fluidId)
+        ).apply(i, SourceEntry::new));
+    }
+
+    /** 落盘 CODEC：只存 {@link #generatedSources}。重建后流动表为空，下一 tick 由 BFS 重算。 */
+    public static final Codec<ContainerFluidData> CODEC =
+        SourceEntry.CODEC.listOf().xmap(ContainerFluidData::fromSources, ContainerFluidData::toSources);
+
+    private static ContainerFluidData fromSources(List<SourceEntry> entries) {
+        ContainerFluidData data = new ContainerFluidData();
+        for (SourceEntry e : entries) {
+            FluidType fluid = resolveFluidType(e.fluidId());
+            if (fluid != null) data.generatedSources.put(e.slot(), fluid);
+        }
+        return data;
+    }
+
+    private static List<SourceEntry> toSources(ContainerFluidData data) {
+        List<SourceEntry> out = new ArrayList<>();
+        for (var en : data.generatedSources.entrySet()) {
+            ResourceLocation rl = NeoForgeRegistries.FLUID_TYPES.getKey(en.getValue());
+            if (rl != null) out.add(new SourceEntry(en.getKey(), rl.toString()));
+        }
+        return out;
+    }
+
+    /** 流体类型注册 id → {@link FluidType}；未知 id 返回 {@code null}（安全丢弃）。 */
+    private static FluidType resolveFluidType(String id) {
+        ResourceLocation rl = ResourceLocation.tryParse(id);
+        return rl == null ? null : NeoForgeRegistries.FLUID_TYPES.getOptional(rl).orElse(null);
+    }
+
     public void tick(ContainerContext ctx) {
         int containerSize = ctx.getSize();
         int width = ctx.getWidth();
@@ -176,9 +270,30 @@ public class ContainerFluidData {
         tickCounter++;
 
         recalculate(containerSize, width, ctx);
+        transformSourceItems(ctx); // 1b-2 接缝：每流体拍在源格问行为「是否转化」
 
         if (tickCounter % FLOW_STEP_TICKS == 0) {
             pushItems(ctx, containerSize, width);
+        }
+    }
+
+    /**
+     * 转化（1b-2 接缝）：每流体拍在<b>源格</b>问行为「格上物品是否转化」。
+     *
+     * <p>默认行为 {@link FluidFlowBehavior#transformItem} 返回 {@code null} ⇒ 什么都不做。
+     * ⚠️ 转化产物若是活物品，下一拍会被「挤没」销毁 —— 流体侧定义转化表时须留意。</p>
+     */
+    private void transformSourceItems(ContainerContext ctx) {
+        for (var e : flows.entrySet()) {
+            FlowEntry fe = e.getValue();
+            if (!fe.isSource) continue;
+            int slot = e.getKey();
+            ItemStack item = ctx.getItem(slot);
+            if (item.isEmpty()) continue;
+            ItemStack transformed = FluidFlowBehaviors.of(fe.fluid).transformItem(item);
+            if (transformed != null) {
+                ctx.setItem(slot, transformed);
+            }
         }
     }
 
@@ -193,9 +308,23 @@ public class ContainerFluidData {
      * - 每个槽位取最近水源的 level（多水源取最小值）
      */
     private void recalculate(int containerSize, int width, ContainerContext ctx) {
+        Map<Integer, FlowEntry> newFlows;
+        // 晋升收敛循环（1b-2 接缝）：升格为源后水网会扩张 ⇒ 重跑 BFS，直到无新升格。
+        // 默认行为不晋升（shouldPromote 恒 false）⇒ 恰好一轮，与旧行为一致。
+        while (true) {
+            newFlows = spread(containerSize, width, ctx);
+            if (!tryPromote(newFlows, containerSize, width)) break;
+        }
+        flows.clear();
+        flows.putAll(newFlows);
+    }
+
+    /** 播种（桶源 + 派生源）+ BFS 扩散**一轮**，返回流动表（不改 {@link #flows}）。 */
+    private Map<Integer, FlowEntry> spread(int containerSize, int width, ContainerContext ctx) {
         Map<Integer, FlowEntry> newFlows = new LinkedHashMap<>();
         Deque<Integer> queue = new ArrayDeque<>();
 
+        // 播种①：桶源（活水桶在场；桶源退役批次二后此段随 isLivingBucketOf 一并删除）
         for (var entry : flows.entrySet()) {
             FlowEntry src = entry.getValue();
             if (!src.isSource) continue;
@@ -204,6 +333,28 @@ public class ContainerFluidData {
             if (!isLivingBucketOf(ctx.getItem(slot), src.fluid)) continue;
             newFlows.put(slot, new FlowEntry(SOURCE_LEVEL, true, -1, src.fluid));
             queue.add(slot);
+        }
+
+        // 播种②：派生源（活水源）—— 无条件并入，不依赖任何物品在场。
+        // 挤没判定在此进行：任何活物品进入派生源格 ⇒ 源被挤没（永久销毁，原版「放方块进水源」语义）。
+        // 不关心物品怎么来的（手放 / 未来活活塞推 / 任何途径）—— 判定只看槽位内容。
+        // 非活物品不挤没（原版实体可与水源共存），派生源与物品同格，供后续机制三转化。
+        if (!generatedSources.isEmpty()) {
+            var it = generatedSources.entrySet().iterator();
+            while (it.hasNext()) {
+                var entry = it.next();
+                int slot = entry.getKey();
+                if (slot < 0 || slot >= containerSize) {
+                    it.remove();
+                    continue;
+                }
+                if (LivingItemManager.isLivingItem(ctx.getItem(slot))) {
+                    it.remove();
+                    continue;
+                }
+                newFlows.put(slot, new FlowEntry(SOURCE_LEVEL, true, -1, entry.getValue()));
+                queue.add(slot);
+            }
         }
 
         while (!queue.isEmpty()) {
@@ -227,8 +378,38 @@ public class ContainerFluidData {
             }
         }
 
-        flows.clear();
-        flows.putAll(newFlows);
+        return newFlows;
+    }
+
+    /**
+     * 晋升检查（1b-2 接缝）：问每个<b>流动格</b>的行为「是否升格为源」；有升格则写入
+     * {@link #generatedSources}（永久资产）并返回 {@code true}（外层据此重跑 BFS）。
+     *
+     * <p>默认行为 {@link FluidFlowBehavior#shouldPromote} 恒 false ⇒ 永不晋升，与旧行为一致。</p>
+     */
+    private boolean tryPromote(Map<Integer, FlowEntry> newFlows, int containerSize, int width) {
+        boolean promoted = false;
+        for (var e : newFlows.entrySet()) {
+            FlowEntry fe = e.getValue();
+            if (fe.isSource) continue;
+            int slot = e.getKey();
+            FluidFlowBehavior behavior = FluidFlowBehaviors.of(fe.fluid);
+            if (behavior.shouldPromote(slot, countSourceNeighbors(newFlows, slot, containerSize, width))) {
+                generatedSources.put(slot, fe.fluid);
+                promoted = true;
+            }
+        }
+        return promoted;
+    }
+
+    /** 该格四邻中已是源的个数（晋升判定的输入）。 */
+    private static int countSourceNeighbors(Map<Integer, FlowEntry> flows, int slot, int containerSize, int width) {
+        int count = 0;
+        for (int n : ContainerContext.getNeighbors(slot, containerSize, width)) {
+            FlowEntry fe = flows.get(n);
+            if (fe != null && fe.isSource) count++;
+        }
+        return count;
     }
 
     /**

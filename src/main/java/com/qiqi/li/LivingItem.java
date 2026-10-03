@@ -55,6 +55,7 @@ import com.qiqi.li.network.LivingChestAccessPacket;
 import com.qiqi.li.network.LivingMapMetadataPacket;
 import com.qiqi.li.network.LivingMapGuiTeleportPacket;
 import com.qiqi.li.network.LivingItemSyncPacket;
+import com.qiqi.li.network.FluidFlowSyncPacket;
 import com.qiqi.li.network.ToolMemoryClearPacket;
 import com.qiqi.li.network.ToolRayTuningPacket;
 import com.qiqi.li.network.LivingToolHostPacket;
@@ -328,6 +329,8 @@ public class LivingItem {
         registrar.playToServer(ToolRayTuningPacket.TYPE, ToolRayTuningPacket.STREAM_CODEC, ToolRayTuningPacket::handle);
         // 服务端 → 客户端：下发容器运行时数据（由 ContainerRuntimeCache.flushToClients 发送）
         registrar.playToClient(LivingItemSyncPacket.TYPE, LivingItemSyncPacket.STREAM_CODEC, LivingItemSyncPacket::handle);
+        // 服务端 → 客户端：下发容器流体快照（Q5 渲染轨，FluidFlowServerSync.flushAfterTick 发送）
+        registrar.playToClient(FluidFlowSyncPacket.TYPE, FluidFlowSyncPacket.STREAM_CODEC, FluidFlowSyncPacket::handle);
         // 活工具（K2）：近处方块容器里的活工具清单（位置 + ItemStack），
         // 供客户端渲染记忆射线与（未来的）悬浮模型 —— 不开 GUI 时客户端拿不到箱子内容
         registrar.playToClient(LivingToolHostPacket.TYPE, LivingToolHostPacket.STREAM_CODEC, LivingToolHostPacket::handle);
