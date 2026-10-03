@@ -268,7 +268,7 @@ return "container_" + Integer.toHexString(handler.hashCode());
 新功能都重新踩一遍，且教训散落四处（hopper §10.25/§6.4、container-compatibility、
 changelog）——流体侧实现汲/倒时是把先例全部翻过一遍才敢下手的。
 
-**推荐方案（待拍板）**：新增 `ContainerContexts`（container/ 包）共享内核——
+**推荐方案（原提案；已按此实装，见下方批次 A/B/C 实施记录）**：新增 `ContainerContexts`（container/ 包）共享内核——
 
 ```
 ContainerContexts
@@ -278,6 +278,12 @@ ContainerContexts
   ├─ ownsContainer(context, Container) （底稿 = slotBelongsTo）
   └─ resolveMenuSlot(menu, containerSlot)（客户端 SlotWrapper 解析，底稿 = GuiInteractionHelper）
 ```
+
+> ⚠️ **实装差异（2026-10-04）**：实际方法名 / 签名与此草图略有出入 ——
+> 服务端 `ownsContainer(Container, Collection<Container>)`（非 `ownsContainer(context, Container)`）、
+> 并新增 `isSameSlotSpace(Container, IItemHandler, int)`；客户端 `resolveMenuSlot` 因
+> `SlotWrapperAccessor` 是**客户端 Mixin**（common 包引用会让专用服务端崩）⇒
+> 实装为 `client/util/ClientSlotResolve.resolveContainerSlot(Slot)`（**被迫分居两侧**）。
 
 要点：
 - **收编是搬家不是重写** —— 四个实现全是已验证的现成代码，含各自的坑位注释；
@@ -558,9 +564,11 @@ ContainerContexts
   下次审查应指出：**该再拆一次 —— 框架留下、实现下放各 domain。**
 - **1.4 God Class 只缓解**：824 行 → 约 600 行，仍剩 **4 个职责**
   （调度 / 位置索引 / 内容签名 / 大箱子解析）。
-- **多方块容器边界带的身份解析重复**（新发现，2026-10-03 流体侧移交）：6 处消费者
+- ~~**多方块容器边界带的身份解析重复**~~（新发现，2026-10-03 流体侧移交）：6 处消费者
   各写一次匹配逻辑，见 §2.1-Q6 —— 与「interaction 该再拆一次」同属
   「框架留下、实现收拢」的整理，收编方案已在 Q6 给出底稿清单。
+  → **✅ 已由 Q6 收编（2026-10-04，批次 A/B/C 全部落地）**，见
+  [container-identity.md](../system-design/container-identity.md)。
 
 ### 6.3 会新暴露（4 条）
 

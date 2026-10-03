@@ -138,7 +138,7 @@ F5 提前为与桶源取消同批。
 | 5 | 倒水目标 | 槽位**无物品**即可（有派生源无妨——原版也能往水源里倒水：桶照空、源不变）；有非活物品不允许；有活物品不允许（那是挤没） |
 | 6 | 汲水目标 | 仅限派生源；桶源不可汲（想要水直接拿桶） |
 | 7 | 转化节拍 | **无独立节拍**，随流体 tick 即时转化（理由见 §三） |
-| 8 | 落盘 | BE 容器：`CONTAINER_FLUID_DATA` attachment 补 `.serialize(CODEC)`（现无序列化，重启全丢）；玩家背包：Player attachment（`Map<containerKey, Set<slot>>`，覆盖背包+末影箱 key）——倒水主场景在背包，此项必做 |
+| 8 | 落盘 | ✅ **已完成**（框架侧 B.5，2026-10-04）—— BE 容器：`CONTAINER_FLUID_DATA` 附件 `.serialize(CODEC)`；玩家背包 / 末影箱：**Player attachment** `CONTAINER_FLUID_DATA_PLAYER`。⚠️ 实装值类型**不是**本行的 `Set<slot>`，而是 `ContainerFluidData`（只存槽位会丢流体类型） |
 
 **自愈性**（挤没的天然保险）：挤没/汲走后若邻域仍 ≥2 源，晋升规则自动重新派生。
 水网核心拆不掉，孤立源一挤就没。

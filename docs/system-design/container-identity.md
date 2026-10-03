@@ -117,4 +117,4 @@
 - **大箱子去重 / 容器归属验证**：[living-item-infrastructure.md §3.3 / §8.5](living-item-infrastructure.md)
 - **Tooltip 大箱匹配（CompoundContainer）**：[tooltip-system.md §3.2 / §7](tooltip-system.md)
 - **活漏斗槽位体系探针 / 跨容器面选取**：[living-hopper-tech.md §10.25 / §6.4](../tech/living-hopper-tech.md)
-- **收编方案与待办批次**：[buffer/infrastructure-refactoring-plan.md §2.1-Q6](../buffer/infrastructure-refactoring-plan.md)
+- **收编方案与实施记录（批次 A/B/C）**：[buffer/infrastructure-refactoring-plan.md §2.1-Q6](../buffer/infrastructure-refactoring-plan.md)

@@ -33,13 +33,7 @@
 
 4. **`scanAndGroupLivingItems` 每容器 `new LinkedHashMap<>()`** —— 同上量级。
 
-5. **自持功能的判据循环要预计算**（Q1 设计的一部分）——
-   `shouldTickWithoutOwnItems` 每 tick 要遍历全部 **22 个**功能；
-   10000 容器时约 **1.1–2.2 ms/tick**（占 tick 预算 2–4%）。
-   修法：加不依赖 ctx 的静态声明（如 `requiresOwnItems()`）+ 注册时过滤 ⇒ 22 次降到 1 次。
-   ⚠️ **实现 1a-1 时一并做**，别等之后再返工。
-
-6. **（收益最大）合并两次全槽位遍历** —— `scanAndGroupLivingItems` 与
+5. **（收益最大）合并两次全槽位遍历** —— `scanAndGroupLivingItems` 与
    `computeContentSignature` 各遍历一遍全部槽位 ⇒ 合并可**省 50% 扫描**。
    详见 [infrastructure-refactoring-plan.md](buffer/infrastructure-refactoring-plan.md) §1.7 / §6.3-B。
 
