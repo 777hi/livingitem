@@ -31,8 +31,9 @@ import net.neoforged.neoforge.fluids.FluidType;
  * <p><b>流体类型维度（1b-1，2026-10-03）</b>：每个 {@link FlowEntry} 带 {@link FluidType} ——
  * 用<b>单张 map 带类型</b>（一槽只装一种流体，类比一个方块位置），不是「每流体一张 map」。
  * BFS 只在<b>同种流体</b>内扩散（已占用的格子不被别的流体覆盖）。</p>
- * <p>⚠️ <b>1b-1 是纯重构</b>：全部按「水」处理，水行为零变化（由 {@code ContainerFluidDataTest} 钉住）。
- * 多流体的「行为分档 / 每流体上限 / 桶内容判定 / 跨流体交互」由 <b>1b-2 的流体行为接缝</b>接管。</p>
+ * <p>⚠️ <b>行为分档（1b-2）</b>：扩散由 {@link FluidFlowBehaviors} 查<b>每流体行为</b> ——
+ * 静止流体只做源不扩散，会流动的按各自 {@code maxLevel}（水 7）。水行为仍<b>零变化</b>
+ * （由 {@code ContainerFluidDataTest} 钉住）。「桶内容判定 / 跨流体交互」仍归后续（流体侧）。</p>
  *
  * 与原版一致的行为：
  * - 水源向4方向蔓延，level 递增，最远7格
@@ -179,8 +180,9 @@ public class ContainerFluidData {
         while (!queue.isEmpty()) {
             int slot = queue.poll();
             FlowEntry fe = newFlows.get(slot);
-            // 1b-1：上限仍为水常量（每流体上限由 1b-2 的流体行为接缝提供）
-            if (fe.level >= MAX_FLOW_LEVEL) continue;
+            // 行为分档（1b-2）：静止流体不扩散；会流动的按各自的 level 上限（水 7 / 岩浆 3）
+            FluidFlowBehavior behavior = FluidFlowBehaviors.of(fe.fluid);
+            if (!behavior.canFlow() || fe.level >= behavior.maxLevel()) continue;
 
             int[] neighbors = ContainerContext.getNeighbors(slot, containerSize, width);
             for (int neighbor : neighbors) {
@@ -203,8 +205,8 @@ public class ContainerFluidData {
     /**
      * 该物品是否是「装着指定流体的活桶」—— 源的存活判定。
      *
-     * <p><b>1b-1：仅水。</b>多流体 / 模组流体的「桶内容判定」由 <b>1b-2 的流体行为接缝</b>接管
-     * （届时改读 NeoForge 的 {@code FluidStack} / {@code SimpleFluidContent}，而非硬编码水桶）。</p>
+     * <p><b>当前仅水。</b>多流体 / 模组流体的「桶内容判定」属<b>流体侧</b>
+     * （改读 NeoForge 的 {@code FluidStack} / {@code SimpleFluidContent}，而非硬编码水桶）。</p>
      */
     private static boolean isLivingBucketOf(ItemStack item, FluidType fluid) {
         return fluid == defaultFluid()

@@ -86,7 +86,7 @@ public record WaterData(
 ```java
 public class ContainerFluidData {
     public static final int SOURCE_LEVEL = 0;      // 源级别
-    public static final int MAX_FLOW_LEVEL = 7;    // 最大流动级别（1b-1：仍为水常量，每流体上限归 1b-2）
+    public static final int MAX_FLOW_LEVEL = 7;    // 水的最大流动级别（1b-2 起：每流体上限由 FluidFlowBehaviors 提供）
     public static final int FLOW_STEP_TICKS = 4;   // 流动间隔（ticks）
 
     public static class FlowEntry {
@@ -106,6 +106,10 @@ public class ContainerFluidData {
 > ⚠️ **本步是纯重构**：全部按水处理，水行为**零变化**（由 `ContainerFluidDataTest` 的 6 条行为快照钉住）。
 > 多流体的「行为分档 / 每流体上限 / 桶内容判定 / 跨流体交互」归 **1b-2**（见
 > [buffer/infrastructure-refactoring-plan.md](../buffer/infrastructure-refactoring-plan.md) §3 1b）。
+>
+> **行为分档接缝（1b-2a，2026-10-03）**：扩散上限**不再硬编码** —— 引擎通过 `FluidFlowBehaviors.of(fluid)`
+> 查每流体行为（`canFlow` / `maxLevel` / `flowSpeed`）；**未注册流体 = 静止**（只做源、不扩散），
+> 水在 `WaterRegistration` 注册为 `flowing(7, 0)`。⇒ 新增流体**零改引擎**（框架只给契约，取值由流体侧填）。
 
 ### 2.3 存储结构
 

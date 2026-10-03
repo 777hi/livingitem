@@ -382,7 +382,9 @@ return "container_" + Integer.toHexString(handler.hashCode());
 
 **1b-2 框架契约（新增接口）**
 
-4. **行为分档接口**（`canFlow` / `maxLevel` / `flowSpeed`）+ 流体行为注册点。
+4. ✅ **行为分档接口**（2026-10-03）—— `FluidFlowBehavior`（`canFlow` / `maxLevel` / `flowSpeed`）
+   + `FluidFlowBehaviors` 注册表；**未注册流体 = 静止**（安全默认）；水在 `WaterRegistration` 注册（上限 7）。
+   引擎改用接缝（`ContainerFluidData` **不再硬编码上限**）。**405 测试全绿**。
 5. **通用驱动函数**（自维持 + `HasContainerData`，框架提供；流体侧只填行为）。
 6. **红石归零解耦**（B.3）。
 7. **API**：查 / 改某槽位流体源（给汲 / 倒处理器用）。

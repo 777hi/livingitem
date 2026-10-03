@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -12,6 +14,7 @@ import com.qiqi.li.living.container.SimpleContainerContext;
 
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.material.Fluids;
 import net.neoforged.neoforge.items.IItemHandlerModifiable;
 
 /**
@@ -101,6 +104,24 @@ class ContainerFluidDataTest {
         return new SimpleContainerContext(h);
     }
 
+    /**
+     * 测试自足：基线注册水为「会流动，上限 7」—— 不依赖 mod 引导，值同 {@code WaterRegistration}。
+     * （{@link FluidFlowBehaviors} 是静态注册表 ⇒ 必须显式重置，项目红线。）
+     */
+    @BeforeEach
+    void baselineWaterBehavior() {
+        registerWater(ContainerFluidData.MAX_FLOW_LEVEL);
+    }
+
+    @AfterEach
+    void restoreWaterBehavior() {
+        registerWater(ContainerFluidData.MAX_FLOW_LEVEL);
+    }
+
+    private static void registerWater(int maxLevel) {
+        FluidFlowBehaviors.register(Fluids.WATER.getFluidType(), FluidFlowBehavior.flowing(maxLevel, 0));
+    }
+
     @Test
     @DisplayName("① 单源沿行扩散：level 0..7，第 8 格（level 8）不到达")
     void singleSource_spreadsToMaxLevel7() {
@@ -186,5 +207,31 @@ class ContainerFluidDataTest {
         assertTrue(ctx.getItem(1).isEmpty(), "slot 1 的物品应被推走");
         assertEquals(Items.REDSTONE, ctx.getItem(2).getItem(), "物品应到下游 slot 2");
         assertEquals(1, ctx.getItem(2).getCount());
+    }
+
+    @Test
+    @DisplayName("⑦ 行为接缝：会流动流体按各自 maxLevel 扩散（改 maxLevel=3 ⇒ 只到 slot 3）")
+    void behaviorSeam_respectsMaxLevel() {
+        registerWater(3);
+        var ctx = row(livingWaterBucket());
+        var fluid = new ContainerFluidData();
+        fluid.registerSource(0);
+        fluid.tick(ctx);
+
+        assertEquals(4, fluid.getFlows().size(), "maxLevel=3 ⇒ 覆盖 slot 0..3");
+        assertFalse(fluid.getFlows().containsKey(4), "slot 4 超过 maxLevel=3");
+    }
+
+    @Test
+    @DisplayName("⑧ 行为接缝：静止流体只做源、不扩散")
+    void behaviorSeam_staticDoesNotSpread() {
+        FluidFlowBehaviors.register(Fluids.WATER.getFluidType(), FluidFlowBehavior.STATIC);
+        var ctx = row(livingWaterBucket());
+        var fluid = new ContainerFluidData();
+        fluid.registerSource(0);
+        fluid.tick(ctx);
+
+        assertEquals(1, fluid.getFlows().size(), "静止 ⇒ 只有源自己");
+        assertTrue(fluid.getFlows().get(0).isSource());
     }
 }

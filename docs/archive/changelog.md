@@ -28,6 +28,8 @@
   - ⚠️ **关键做法**：本类此前**零单测** ⇒ 先补 6 条「行为快照」（`ContainerFluidDataTest`，golden master）钉住水行为，**再**重构 —— 否则「397 绿」只证明别的层没坏、证明不了引擎行为没变。
   - **403 测试全绿**（397 + 6）。多流体的「行为分档 / 每流体上限 / 桶内容判定 / 跨流体交互」归 **1b-2**（本步按水处理，`isLivingBucketOf` / `MAX_FLOW_LEVEL` 保持水常量）。
 
+- ✅ **1b-2a 行为分档接缝**（框架契约）：新增 `FluidFlowBehavior`（`canFlow` / `maxLevel` / `flowSpeed`）+ `FluidFlowBehaviors` 注册表 —— **未注册流体 = 静止**（安全默认），水在 `WaterRegistration` 注册（上限 7）。`ContainerFluidData` **改用接缝**（不再硬编码上限）。**405 测试全绿**（+2 条接缝测试：按 maxLevel 扩散 / 静止不扩散）。
+
 - 🔴 **修复「特定活武器永久白板化」**（高频 0.25s 一刀 / 伤害恒 1 / 常驻拉仇恨）：
   属性镜像竞态 —— 主人换手发生在容器点击（tick 间），属性刷新在其后实体 tick，
   竞态窗口内主人地图的旧武器 bd/bs 被镜像记录，下一轮清理按 id 删除
