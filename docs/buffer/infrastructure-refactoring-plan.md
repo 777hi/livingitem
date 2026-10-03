@@ -201,11 +201,13 @@ return "container_" + Integer.toHexString(handler.hashCode());
 复用 `getTickPriority` 排序、`processContext` 只改 4 行。
 ⚠️ 方案 A 曾声称的附带收益「消掉层次倒置一大半」**是误判** —— 那是 Q2 的职责。
 
-**Q1 的性能实测**（2026-10-03）：新增循环 = 每容器每 tick 遍历 **22 个**已注册功能
-（`LivingItemManager.FUNCTIONS`，实测）。估算 ~110–220 ns/容器，100 容器约 **11–22 μs/tick**，
-占 tick 预算 **0.02–0.04%** ⇒ **不严重，暂不预计算**。
-（注：热路径上 `getApplicableFunctions` 有 `APPLICABLE_CACHE` 按 `Item` 缓存、
-`getCachedSnapshot` 有 revision 机制 —— **这个新循环是唯一无缓存的一段**。）
+**Q1 的性能实测与最终决策**（2026-10-03）：若每 tick 逐功能判定，需遍历 **22 个**已注册功能
+（`LivingItemManager.FUNCTIONS`，实测）≈ 110–220 ns/容器。100 容器仅 0.02–0.04%，
+**但按用户「上万容器」前提**（大型整合包跑图）⇒ **10,000 容器 = 1.1–2.2 ms/tick ≈ 2–4% 预算**。
+⇒ **最终改为注册期预计算**：`LivingItemManager` 在注册 / 排序时算出静态「自维持清单」
+（`SELF_SUSTAINING_FUNCTIONS`），每 tick 只遍历该清单（当前 **0~1 个**）⇒ 开销恒定、**与功能总数无关**。
+（注：热路径上 `getApplicableFunctions` 有 `APPLICABLE_CACHE`、`getCachedSnapshot` 有 revision 机制 ——
+本循环曾是唯一无缓存的一段，现已消除。**1a-1 已完成，见 §3。**）
 
 **Q2 的关键决策**（2026-10-03）：
 
@@ -260,6 +262,19 @@ return "container_" + Integer.toHexString(handler.hashCode());
 
 > 1a 与 1b **必须分开做**：合在一起出问题，分不清是重构引入的还是水源逻辑的锅。
 
+⚠️ **1a-1 终审发现的 1b 前提（务必在 1b 处理）——「空容器红石归零」的解耦**：
+`processContext` 的红石归零目前**寄生在 `grouped.isEmpty()` 短路分支**里
+（`handleEmptyContainer`：peek REDSTONE 数据 → `rd.calculate()` 归零）。一旦有自维持功能
+（活水源）注册，**含活水源的容器 `grouped` 不再为空 ⇒ 该分支被跳过** ⇒ 若该容器还残留
+（此前放过的活红石移走后留下的）红石数据，将**得不到归零**，表现为**残留红石信号**。
+⇒ 1b 必须把「红石归零」从 `grouped.isEmpty()` **解耦成独立步骤**（判据：容器有 REDSTONE 数据
+但 `grouped` 里没有 `LivingRedstoneFunction`）。**1a-1 本身无此问题**（清单恒空，短路照旧，
+397 测试已证行为不变）。
+
+⚠️ **1a-1 终审发现的 1b 前提（之二）——排序机制别搞错**：自维持函数被**追加到 `grouped` 末尾**
+⇒ 在 `runFunctionTicks` 里**最后执行**，`getTickPriority()` 对它**无效**。1b 若需「水源先于红石」，
+须走 **`HasContainerData.getPriority()`**（`runContainerDataTicks` 的排序路径）。详见 §6.3-D 的终审修正。
+
 ---
 
 ## 4. 每一步都必须做的验证协议
@@ -312,9 +327,9 @@ return "container_" + Integer.toHexString(handler.hashCode());
 | # | 新问题 | 说明 |
 |---|---|---|
 | **A** | `getAssociatedBlockEntities()` 对掉落物容器返回空 | 空列表是诚实语义，但审查会停下来看这里算不算又一次抽象不完整 |
-| **B** | 性能上限从"没有"变成"有一个数" | ⚠️ **本轮判断已修正**：空容器**本来就不是零开销**（§1.7 两次全槽位遍历），新增的 N 次 `shouldRun()` 相对可忽略 —— **前提是 `shouldRun()` 免扫描**。真正的优化机会是**合并 §1.7 那两次遍历**，与本次重构正交 |
+| **B** | 性能上限从"没有"变成"有一个数" | ⚠️ **本轮判断已修正**：空容器**本来就不是零开销**（§1.7 两次全槽位遍历）。最终设计**不在每 tick 逐功能判定**（注册期算静态清单，每 tick 只遍历 **0~1 个**）⇒ **不新增每容器每 tick 开销**。真正的优化机会是**合并 §1.7 那两次遍历**，与本次重构正交 |
 | **C** | 注册点可能成为新膨胀源 | `LivingItem.commonSetup` 继续变长（注册式扩展的固有代价） |
-| **D** | `getTickPriority()` 第二次被点名 | ✅ **本次会解决**：活水源若声明 priority（须早于红石 prio 2），`sortFunctions` 的稳定排序**首次真正生效** —— 机制从「上了膛没开过」变成「已实践」 |
+| **D** | `getTickPriority()` 第二次被点名 | ⚠️ **终审修正（1a-1 后）**：原判「活水源声明 priority ⇒ `sortFunctions` 首次生效」**不准确**。① 红石「prio 2」实为 **`HasContainerData.getPriority()`**（`runContainerDataTicks` 里排序，**早已在用**），与 `getTickPriority()` 是**两套机制**；② `runFunctionTicks` 遍历的是 `grouped`（**插入序**，非 `FUNCTIONS` 排序序），且自维持函数被**追加到最后** ⇒ `getTickPriority()` **管不到**自维持函数的执行位置。⇒ 1b 若需「水源先于红石」，须靠 **`HasContainerData.getPriority()`**（容器级数据路径），而非 `getTickPriority()`。**`getTickPriority()` 至今仍未被真正实践** |
 
 ### 6.4 够不到（本次范围外）
 
@@ -330,8 +345,12 @@ return "container_" + Integer.toHexString(handler.hashCode());
 | 例子 | 层次倒置 / God Class / 硬编码 | `interaction` 定位 / 新抽象的裂缝 / N 的上限 |
 | 性质 | **必修**（不修就挡开发） | **选修**（结构已不挡新功能） |
 
-⚠️ 下次审查可能质疑「**是否过度抽象**」：`HasContainerData` 有 15 个实现者，
-而 `ContainerLevelLogic` 只有 1 个 —— 为一个罕见形态引入新接口值不值？
+⚠️ 下次审查可能质疑「**这个 `default` 方法是不是在掩盖一个缺失的抽象**」：
+`shouldTickWithoutOwnItems` 目前**只有活水源会覆盖**（1 个），其余 22 个功能都吃默认 `false`
+—— 用一个 `default` 方法 + 一张静态清单承载「容器级逻辑」这个新概念，够不够显式？
 
-> **本文的判断：值。** 活水源是第一个，电力层可能跟进；而且拆开后的收益不只是活水源，
-> 还有 §6.1 里那 4 条债的同时消解。
+> **本文的判断：够（Plan B 优于原 Plan A）。** 理由：① **概念数不增** —— 复用
+> `LivingItemFunction`（其 `entries` 本就允许为空）+ `getTickPriority` 排序，不引入新类型；
+> ② 若将来出现第 2、3 个自维持功能（电力层可能跟进），**静态清单机制自然扩展**，无需新接口；
+> ③ 反之若永远只有 1 个，新增 `ContainerLevelLogic` 接口反而是**为罕见形态引入的过度抽象**。
+> ⇒ **判据是「第 2 个是否真会出现」，不是「现在有几个」。**（方案 A→B 的演进见 §2 Q1 留痕。）
