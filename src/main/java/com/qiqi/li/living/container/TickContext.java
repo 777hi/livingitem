@@ -47,6 +47,13 @@ public class TickContext {
         this.ctx = ctx;
         // 应力是 tick 级新建数据：每 tick 一个新实例，tick 末写回 BE（供 Create 读取）
         tickData.put(ContainerDataKeys.STRESS, new ContainerStressData());
+        // ⚠️ 必须在此创建容器的流体数据 —— 1a-4「容器级数据统一存储」曾漏掉此调用
+        // （旧版由 getOrCreateFluidData() 在此创建），导致 tick.fluidData() 恒为 EMPTY
+        // ⇒ 活水桶的 registerSource 被跳过 ⇒ 水流整体失效。
+        // 与 1a-4 之前一致：仅对 SimpleContainerContext 创建，且含 BE 附件回填（LRU 驱逐后恢复）。
+        if (ctx instanceof SimpleContainerContext) {
+            ContainerLivingItemHandler.getFluidData(ctx);
+        }
     }
 
     /**

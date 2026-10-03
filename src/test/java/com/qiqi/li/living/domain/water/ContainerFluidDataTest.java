@@ -2,6 +2,7 @@ package com.qiqi.li.living.domain.water;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.AfterEach;
@@ -11,6 +12,7 @@ import org.junit.jupiter.api.Test;
 
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.SimpleContainerContext;
+import com.qiqi.li.living.container.TickContext;
 
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -233,5 +235,14 @@ class ContainerFluidDataTest {
 
         assertEquals(1, fluid.getFlows().size(), "静止 ⇒ 只有源自己");
         assertTrue(fluid.getFlows().get(0).isSource());
+    }
+
+    @Test
+    @DisplayName("⑨ 集成回归：TickContext 构造时创建容器流体数据（1a-4 漏建 ⇒ 水流失效）")
+    void tickContext_createsFluidData() {
+        var ctx = row(livingWaterBucket());
+        var tick = new TickContext(ctx);
+        assertNotSame(ContainerFluidData.EMPTY, tick.fluidData(),
+            "1a-4 曾漏掉创建 ⇒ tick.fluidData() 恒 EMPTY ⇒ 桶 registerSource 被跳过 ⇒ 水流失效");
     }
 }

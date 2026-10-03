@@ -110,6 +110,11 @@ public class ContainerFluidData {
 > **行为分档接缝（1b-2a，2026-10-03）**：扩散上限**不再硬编码** —— 引擎通过 `FluidFlowBehaviors.of(fluid)`
 > 查每流体行为（`canFlow` / `maxLevel` / `flowSpeed`）；**未注册流体 = 静止**（只做源、不扩散），
 > 水在 `WaterRegistration` 注册为 `flowing(7, 0)`。⇒ 新增流体**零改引擎**（框架只给契约，取值由流体侧填）。
+>
+> **⚠️ 生命周期（2026-10-03 回归修复）**：容器流体数据由 **`TickContext` 构造时创建**
+> （`ContainerLivingItemHandler.getFluidData(ctx)`，含 BE 附件回填）—— 1a-4「容器级数据统一存储」
+> 曾漏掉此创建，导致 `tick.fluidData()` 恒为 `EMPTY`、活水桶 `registerSource` 被 `continue` 跳过
+> ⇒ **水流整体失效**。回归守卫：`ContainerFluidDataTest.tickContext_createsFluidData`。
 
 ### 2.3 存储结构
 

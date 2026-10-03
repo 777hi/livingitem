@@ -17,6 +17,8 @@
 
 ## 2026-10-03
 
+- 🔴 **修复 1a-4 引入的回归：容器流体数据不再被创建**（活水桶 `registerSource` 被跳过 ⇒ **水流功能整体失效**）：1a-4「容器级数据统一存储」把 `TickContext.fluidData()` 改成只读 `peek` 时，**丢掉了 `TickContext` 构造器里创建流体数据的调用**（旧版由 `simpleCtx.getOrCreateFluidData()` 在此创建，1a-4 一并删掉了该调用）。恢复：构造器对 `SimpleContainerContext` 调 `ContainerLivingItemHandler.getFluidData(ctx)`（含 BE 附件回填，与 1a-4 之前一致）。**补回归测试** `ContainerFluidDataTest.tickContext_createsFluidData`（**退回旧实现恰好挂掉该测试**，已实测验证）。**406 测试全绿**。
+
 - ✅ **基础设施重构 1a 地基完成（4/4，397 测试全绿，行为不变）**：为「活水源 = 没有物品载体的活物品」铺路。
   - **Q3（1a-2）**：删 `containerKey` 第三档（按 handler hashCode 兜底），改为显式抛 `IllegalStateException`；新增测试专用构造器 `SimpleContainerContext(IItemHandler)` / `(IItemHandler, Level)`，键生成 `test#N`。
   - **Q4（1a-3）**：抽 `TickableContainerContext` 子接口（`setTickContext` / `flushDirtySlots` / `getAssociatedBlockEntities` / `getInventory`）；`ContainerLivingItemHandler` 内 `instanceof SimpleContainerContext` 由 9 → 2；`ItemEntityContainerContext` 实现为无操作。

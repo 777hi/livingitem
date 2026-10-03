@@ -163,7 +163,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 405 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
+**合计测试用例 406 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
 全绿基线：`396 passed / 0 failed / 1 skipped`（2026-09-28 新增交互规则 JSON 加载语义 9 项 +
 tick 顺序契约守卫 4 项 + 活化目标参数解析守卫 4 项；2026-09-27 新增活化规则 JSON 加载语义 14 项
 （含指令侧 put/remove/校验/**持久化往返**；tag 路径 1 项 @Disabled ——
@@ -189,6 +189,7 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-03 | 🔴 **修复 1a-4 引入的回归：容器流体数据不再被创建**（活水桶 `registerSource` 被跳过 ⇒ **水流功能整体失效**）：1a-4「容器级数据统一存储」把 `TickContext.fluidData()` 改成只读 peek 时，**丢掉了构造器里创建流体数据的调用**；恢复（含 BE 附件回填）+ 补回归测试（退回旧实现**恰好挂掉该测试**）。**406 测试全绿** | `living-water-bucket-tech.md` §2.2 |
 | 2026-10-03 | **1b-1 引擎泛化**（纯重构，水行为零变化）：`ContainerFluidData` 条目带**流体类型**（`FlowEntry.fluid`，**单张 map 带类型**）；新增 `registerSource(slot, fluid)`；BFS 只在**同种流体**内扩散（已占格不被别的流体覆盖）。⚠️ 本类原**零单测** ⇒ 先补 6 条「行为快照」（golden master）钉住水行为再重构；**403 测试全绿**（397 + 6） | `living-water-bucket-tech.md` §2.2 |
 | 2026-10-03 | **基础设施重构 1a 地基完成**（4/4，397 测试全绿，行为不变）：Q3 删 `containerKey` 第三档改抛异常；Q4 抽 `TickableContainerContext` 子接口；Q2 容器级数据并入 `ContainerDataStore`（按 `ContainerDataKey` 数组下标存取，新增一种数据只改 1 行）；Q1 `LivingItemFunction#shouldTickWithoutOwnItems`（默认 false）+ 注册期静态自维持清单（每 tick 只遍历 0~1 个，不逐函数判定），为「活水源 = 没有物品载体的活物品」铺路 | `docs/buffer/infrastructure-refactoring-plan.md` §3 |
 | 2026-09-30 | **受控 tick 重构**（台阶一/二）：`driveWielderTick` 按 game tick 去重驱动 FakePlayer 真链（**调 doTick 非 tick**，物理钉住/不进世界）⇒ inventoryTick/冷却/药效衰减/装备刷新/蓄力推进全原生；攻击缩放为 per-weapon 注入（共享 fake 一个时钟的实测回归修正）；蓄力型地基就绪 | `living-tool-tech.md` §5.7 |
@@ -198,7 +199,6 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 | 2026-09-30 | tooltip 主人显示统一：UUID=绑定数据、名字=显示缓存（新增 `LIVING_TOOL_OWNER_NAME`，`syncOwnerAttributes` 返回主人供四路回放刷新；末影箱 tick 同款），显示走 `OwnerNameResolver#displayName` 实时→缓存→短UUID | `living-ender-chest-tech.md` §绑定 |
 | 2026-09-29 | 活武器**高速连击修复**：出手记录（上次攻击 tick）改写在 `fake.attack()` 之前 + 攻击分支不走 `matches` 短路必写回；灾变源码核对不扣耐久系武器；✅ 实测间隔恢复面板冷却 | `living-weapon-tech.md` §5 |
 | 2026-09-29 | tooltip 新增**「赋灵者」行**（绑定主人）：`LIVING_TOOL_OWNER` 补网络同步 + 公共侧解析桥 `OwnerNameResolver`（名字→短 UUID 回退）；文档澄清属性镜像生效条件与宿主无关 + 活箱子非宿主口径 | `living-weapon-tech.md` §8.1.1 |
-| 2026-09-28 | C 组 A1：**api 面净化** —— `LivingItemManager` 瘦身 ~950→347 行成纯框架类（不牵出任何 domain 类型）；28 个组件/附件常量迁注册站 `LivingComponents`；25 个 Data 类自带 `of()/set()`；⚠️ 脚本 --apply 输出被吞致误判重跑的教训 | `api-contract.md` §1.2 |
 
 
 ## 排查铁律：原版机制挡路时
