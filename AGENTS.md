@@ -166,7 +166,8 @@ src/main/java/com/qiqi/li/
 ```
 
 **合计测试用例 443 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
-全绿基线：`436 passed / 0 failed / 1 skipped`（2026-10-04 B.5 第三项：`ContainerFluidDataTest` 新增 1 项 ——
+全绿基线：`442 passed / 0 failed / 1 skipped`（2026-10-04 流体侧批次三 F4：`FluidTransformTableTest` 新增 6 项；
+2026-10-04 B.5 第三项：`ContainerFluidDataTest` 新增 1 项 ——
 玩家背包/末影箱落盘 `KEYED_CODEC` 往返；2026-10-04 Q6 批次 B：`ContainerContextsTest` 新增 10 项 ——
 边界带共享内核 `ownsContainer`（大箱 `CompoundContainer` 特判）/ `isSameSlotSpace`（槽位体系探针）；
 此前 2026-10-03 流体侧批次二 F2/F3 + 批次一 F1：`ContainerFluidDataTest`
@@ -198,6 +199,7 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-04 | **流体侧批次三（F4 转化表 JSON 化）**：新 `FluidTransformTable`（三层来源加载器 —— 内置 assets + 玩家 config 差异：追加/按 id 覆盖/removed 删除；条目 = 流体/输入/输出，同容器水/岩浆各走各的）+ 水行为 `transformItem` **委托查表**（删硬编码）+ 内置 17 条（水-空桶→水桶 + 16 色混凝土粉末→混凝土）+ 指令 `/livingitem transforms reload/list`。**443 测试全绿** | `living-water-bucket-tech.md` §2.2 |
 | 2026-10-04 | **B.5 第三项：玩家背包 / 末影箱流体落盘（Player attachment）**：新增 `CONTAINER_FLUID_DATA_PLAYER`（`Map<容器键, ContainerFluidData>`，`ContainerFluidData.KEYED_CODEC`）—— 背包 + 末影箱**无 BE 可挂** ⇒ 落 Player（一个玩家两个容器）；`ContainerLivingItemHandler` 读写按 `ownerPlayer(ctx)` 分派。**437 测试全绿** | `living-water-bucket-tech.md` §2.2；`living-item-infrastructure.md` §8.7 |
 | 2026-10-04 | **Q6 多方块容器边界带「身份解析」收敛（批次 A+B+C，全部完成）+ 稳定层文档**：服务端 `container/ContainerContexts.java` 共享内核（`resolve`/`isViewing`/`ownsContainer`/`isSameSlotSpace`，5 个消费者改薄委托）+ **客户端对偶** `client/util/ClientSlotResolve.java`（`GuiInteractionHelper`/`AbstractContainerScreenMixin` 改薄委托，因 `SlotWrapperAccessor` 是客户端 Mixin 而**被迫分居两侧**）。**`grep CompoundContainer` 代码特判收敛到 1 处**；新增 `ContainerContextsTest` 10 项（**436 测试全绿**）。**新建稳定层文档** `container-identity.md` + tooltip/hopper/farmland/infra 旧教训改指向它 | `container-identity.md`；方案 `infrastructure-refactoring-plan.md` §2.1-Q6 |
 | 2026-10-03 | **框架侧接缝落地（1b-2⑧⑩）**：⑧ **落盘** —— `ContainerFluidData.CODEC`（**只序列化派生源**，桶源/流动表不落）+ `CONTAINER_FLUID_DATA` 附件 `.serialize`；⑩ **引擎接缝** —— `FluidFlowBehavior.shouldPromote(slot, 邻源数)`（`recalculate` 加**晋升收敛循环**）/ `transformItem(item)`（`tick` 每流体拍在源格转化），两条都是 **default no-op ⇒ 现有行为零变化**。⚠️ **背包 Player attachment 仍未做**。**422 测试全绿** | `living-water-bucket-tech.md` §2.2 |

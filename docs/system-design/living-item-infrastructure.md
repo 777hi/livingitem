@@ -166,6 +166,25 @@ public interface ContainerIdentity {
 > 另见 [container-identity.md](container-identity.md)（Q6 收敛，2026-10-04）——
 > 本文 §2.5 讲的是**跨 tick 的 containerKey**（稳定键），那篇讲的是**边界带的「槽位↔容器」解析**。
 
+### 2.6 TickableContainerContext — 可 tick 的容器上下文（1a-3）
+
+`ContainerContext` 是**只读能力**接口（读槽位 / 同步 / 身份），被功能类广泛依赖；tick 主链路另需
+四样「只有可 tick 容器才有」的能力，1a-3 把它们抽成子接口，`processContext` 等参数类型改为它 ——
+`ContainerLivingItemHandler` 里的 `instanceof SimpleContainerContext` 从 9 处降到 2 处（余下 2 处属容器级数据范围）。
+
+```java
+public interface TickableContainerContext extends ContainerContext {
+    void setTickContext(TickContext tick);           // 绑定本 tick 的临时状态（null = 解绑）
+    void flushDirtySlots();                          // tick 末批量同步脏槽
+    List<BlockEntity> getAssociatedBlockEntities();  // 关联方块实体；玩家背包 / 掉落物 → 空列表
+    Inventory getInventory();                        // 玩家背包；方块容器 / 掉落物 → null
+}
+```
+
+> ⚠️ **空列表 / null 是「事实陈述」，不是妥协**：掉落物容器确实没有 BE、没有背包，调用方据此自然跳过
+> 容器级处理（红石 / 流体 / 应力 / 相位），与旧 `instanceof` 不匹配的效果一致。**落盘也据此分流**：
+> 有 BE → `CONTAINER_FLUID_DATA` 附件；无 BE 但有玩家 → Player attachment（§8.7）。
+
 ---
 
 ## 3. 容器发现与缓存

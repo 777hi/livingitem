@@ -1,13 +1,16 @@
 # 基础设施重构方案（infrastructure refactoring plan）
 
-*创建: 2026-10-03 · 状态: **1a 地基已完成（4/4，397 测试全绿）**；1b 已从「活水源」升级为**通用流体框架**（框架先行，流体侧另接）*
+*创建: 2026-10-03 · 状态（2026-10-04）：**框架侧全部执行完毕** —— 1a 地基（4/4）、1b 通用流体框架（①–⑩ + B.5）、
+Q6 边界带身份解析（A/B/C）均已落地；**流体侧**（接水 / 岩浆 / 模组流体）进行中。*
 
-> **计划书**：未执行，**勿当现状读**。本文随重构推进成长；执行后结论沉淀到
-> [living-item-infrastructure.md](../system-design/living-item-infrastructure.md)，
-> 本文按 buffer 收敛三步法归档（见 [README.md](../README.md) §1）。
+> **本文已从「计划书」转为「执行记录 + 流体侧协调文档」**：框架侧结论已沉淀到稳定层 ——
+> [living-item-infrastructure.md](../system-design/living-item-infrastructure.md)（1a/1b 契约）、
+> [container-identity.md](../system-design/container-identity.md)（Q6）、
+> [living-water-bucket-tech.md](../tech/living-water-bucket-tech.md)（流体机制）。
+> 本文保留在 `buffer/` 的原因：**流体侧仍在进行**，§3 1b 是其分工 / 契约参考；
+> 待流体侧收口后按 buffer 收敛三步法（[README.md](../README.md) §1）归档到 `archive/`。
 >
-> ⚠️ 本文**尚未登记** `AGENTS.md` 子系统索引 —— 该索引声明「下方全部子系统均已实现」，
-> 未执行的计划进索引会误导。重构开工时再补。
+> ⚠️ §1「现状量化」是 **2026-10-03 的重构前快照**（多数已修复、标 ✅）—— 属**地层**，勿当现状读。
 
 ---
 
