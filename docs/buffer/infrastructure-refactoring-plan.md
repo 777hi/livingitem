@@ -395,11 +395,15 @@ return "container_" + Integer.toHexString(handler.hashCode());
    **永不执行**）。**412 测试全绿**（含 1b-2c 回归守卫，已实测「禁用即挂」）。
 7. ✅ **API**（2026-10-03）—— `ContainerFluidData` 补**查询**接口 `isSource(slot)` / `sourceFluid(slot)` /
    `hasAnySource()`（**改**已有 `registerSource` / `removeSource`）。供汲 / 倒处理器用。**413 测试全绿**。
-8. ⏸️ **落盘** —— **待流体侧数据模型**：今天唯一的源是「**桶源**」（桶在场才有效、每 tick 由桶重新注册
-   ⇒ **无物可落**）；真正要持久化的是流体侧的 `generatedSources`。⇒ 等流体侧定义它之后再接 `CODEC`
-   （小改动）—— **不预先为假想数据写序列化**。
-9. ⏸️ **同步轨泛化（Q5）** —— **待 Q5 / 渲染侧**：§2 Q5 的结论是「复用 `ContainerRuntimeCache.flushToClients`
-   + `LivingItemSyncPacket`」；落地属**客户端渲染**（流体侧）。
+8. ✅ **落盘**（2026-10-03，**框架侧**）—— 流体侧已备好 `generatedSources: Map<Integer, FluidType>`；
+   框架接上 `ContainerFluidData.CODEC`（**只序列化派生源**，桶源 / 流动表不落）+ `CONTAINER_FLUID_DATA`
+   附件 `.serialize`。⚠️ **背包 Player attachment 仍未做**（倒水主场景，见 B.5 第三项）。
+9. ✅ **同步轨泛化（Q5）** —— **已由流体侧落地**（`FluidFlowSyncPacket` + `FluidFlowServerSync`
+   + `FluidFlowClientCache`，挂 `LivingFluidFunction.tickContainerData` 尾部，零框架文件改动）。
+10. ✅ **引擎接缝**（2026-10-03，**框架侧**）—— 流体侧点名的两条，都是 `FluidFlowBehavior` 的
+   **default no-op**（现有行为零变化）：
+   - `shouldPromote(slot, sourceNeighborCount)` —— 引擎 `recalculate` 加**晋升收敛循环**（升格为源后重跑 BFS）；
+   - `transformItem(item)` —— 引擎 `tick` **每流体拍**在源格调用，产物写回该格。
 
 **之后**：流体侧接水 / 岩浆 / 模组流体。
 

@@ -129,6 +129,14 @@ public class ContainerFluidData {
 > （接哪些流体、流速、跨流体交互、转化表、汲 / 倒规则、`generatedSources` 数据模型）由流体侧负责 ——
 > 设计稿见 [idea.md](../idea.md)，分工表见
 > [buffer/infrastructure-refactoring-plan.md](../buffer/infrastructure-refactoring-plan.md) §3 1b B.1。
+>
+> **落盘 CODEC（1b-2⑧，框架）**：`ContainerFluidData.CODEC` **只序列化派生源**（`generatedSources`）——
+> 桶源 / 流动表**不落**（桶在场时每 tick 由桶重新注册，落盘会造幽灵源；流动每 tick 由 BFS 重算）；
+> `CONTAINER_FLUID_DATA` 附件已接 `.serialize`。⚠️ 背包（Player attachment）落盘仍未做。
+>
+> **引擎接缝（1b-2⑩，框架）**：`FluidFlowBehavior` 的两条 **default no-op**（流体侧填行为）——
+> `shouldPromote(slot, sourceNeighborCount)`（引擎 `recalculate` 的**晋升收敛循环**）/
+> `transformItem(item)`（**每流体拍**在源格转化，产物写回）。
 
 ### 2.3 存储结构
 

@@ -420,4 +420,63 @@ class ContainerFluidDataTest {
         assertFalse(ContainerFluidData.EMPTY.hasGeneratedSources());
         assertFalse(ContainerFluidData.EMPTY.isGeneratedSource(0));
     }
+
+    @Test
+    @DisplayName("⑳ 落盘 CODEC：只序列化派生源，往返一致（桶源 / 流动表不落）")
+    void codec_roundTripsGeneratedSourcesOnly() {
+        var data = new ContainerFluidData();
+        data.registerGeneratedSource(3, Fluids.WATER.getFluidType());
+        data.registerSource(0); // 桶源：不该落盘
+        data.getFlows().put(1, new ContainerFluidData.FlowEntry(1, false, 0, Fluids.WATER.getFluidType()));
+
+        var ops = net.minecraft.nbt.NbtOps.INSTANCE;
+        var tag = ContainerFluidData.CODEC.encodeStart(ops, data).getOrThrow();
+        var restored = ContainerFluidData.CODEC.parse(ops, tag).getOrThrow();
+
+        assertEquals(java.util.Map.of(3, Fluids.WATER.getFluidType()), restored.getGeneratedSources(),
+            "只有派生源应往返；桶源 / 流动表不落盘");
+        assertTrue(restored.getFlows().isEmpty(), "流动表不落盘（下一 tick 由 BFS 重算）");
+    }
+
+    @Test
+    @DisplayName("㉑ 晋升接缝：shouldPromote 为真的流动格升格为派生源（并重跑 BFS）")
+    void promoteHook_promotesEligibleCell() {
+        FluidFlowBehaviors.register(Fluids.WATER.getFluidType(), new FluidFlowBehavior() {
+            @Override public boolean canFlow() { return true; }
+            @Override public int maxLevel() { return ContainerFluidData.MAX_FLOW_LEVEL; }
+            @Override public int flowSpeed() { return 0; }
+            @Override public boolean shouldPromote(int slot, int sourceNeighborCount) {
+                return sourceNeighborCount >= 2; // 水规则：任意 2 邻源
+            }
+        });
+        // 桶源在 slot 0 与 slot 2 ⇒ 中间的 slot 1 有 2 个源邻居 ⇒ 应晋升
+        var ctx = row(livingWaterBucket(), ItemStack.EMPTY, livingWaterBucket());
+        var fluid = new ContainerFluidData();
+        fluid.registerSource(0);
+        fluid.registerSource(2);
+        fluid.tick(ctx);
+
+        assertTrue(fluid.isGeneratedSource(1), "slot 1 有 2 个源邻居(0,2) ⇒ 应升格为派生源");
+        assertTrue(fluid.isSource(1), "升格后是源");
+    }
+
+    @Test
+    @DisplayName("㉒ 转化接缝：transformItem 的产物写回源格（仅源格）")
+    void transformHook_writesBackAtSourceCell() {
+        FluidFlowBehaviors.register(Fluids.WATER.getFluidType(), new FluidFlowBehavior() {
+            @Override public boolean canFlow() { return true; }
+            @Override public int maxLevel() { return ContainerFluidData.MAX_FLOW_LEVEL; }
+            @Override public int flowSpeed() { return 0; }
+            @Override public ItemStack transformItem(ItemStack item) {
+                return item.is(Items.DIRT) ? new ItemStack(Items.GRASS_BLOCK) : null;
+            }
+        });
+        // 派生源格上放非活物品 DIRT ⇒ 应被转化（非源格不转化）
+        var ctx = row(new ItemStack(Items.DIRT, 1));
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
+        fluid.tick(ctx);
+
+        assertEquals(Items.GRASS_BLOCK, ctx.getItem(0).getItem(), "源格上的 DIRT 应转化为草方块");
+    }
 }
