@@ -2,6 +2,7 @@ package com.qiqi.li.living.api;
 
 import java.util.List;
 import java.util.Set;
+import javax.annotation.Nullable;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
@@ -139,5 +140,27 @@ public interface LivingItemFunction {
      */
     default int getComparatorOutput(ItemStack stack) {
         return 0;
+    }
+
+    /**
+     * 【自维持】本功能是否能在「容器内<b>没有它自己的活物品</b>」时仍然执行 tick。
+     *
+     * <p>默认 {@code false}：绝大多数功能需要容器里实际存在该活物品才 tick
+     * （如活熔炉需要熔炉物品、活漏斗需要漏斗物品）。活水源是例外——
+     * 它是一种「没有具体物品的活物品」，即使容器里没有任何活物品，也要持续更新
+     * 其容器级状态（水势、连通性、溢出判定等）。</p>
+     *
+     * <p>⚠️ <b>性能约定（务必遵守）</b>：本方法在<b>注册期</b>由
+     * {@link com.qiqi.li.living.api.LivingItemManager} 以 {@code null} 上下文调用一次，
+     * 用于构建「自维持函数清单」。每 tick 的 {@code processContext} 只遍历这张<b>静态清单</b>
+     * （通常 0~1 个），<b>不会</b>逐函数调用本方法——因此覆盖时请把它当作
+     * <b>静态声明</b>：忽略 {@code ctx} 参数（或容忍 null），返回恒定真值。
+     * 真正的「是否这次真的要工作」留给 {@code tick(emptyList, ...)} 内部按容器状态判断。</p>
+     *
+     * @param ctx 容器上下文（注册期可能为 null，覆盖时请勿依赖）
+     * @return true 表示即使没有自身活物品也参与 tick
+     */
+    default boolean shouldTickWithoutOwnItems(@Nullable ContainerContext ctx) {
+        return false;
     }
 }

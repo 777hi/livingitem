@@ -15,6 +15,15 @@
 
 ---
 
+## 2026-10-03
+
+- ✅ **基础设施重构 1a 地基完成（4/4，397 测试全绿，行为不变）**：为「活水源 = 没有物品载体的活物品」铺路。
+  - **Q3（1a-2）**：删 `containerKey` 第三档（按 handler hashCode 兜底），改为显式抛 `IllegalStateException`；新增测试专用构造器 `SimpleContainerContext(IItemHandler)` / `(IItemHandler, Level)`，键生成 `test#N`。
+  - **Q4（1a-3）**：抽 `TickableContainerContext` 子接口（`setTickContext` / `flushDirtySlots` / `getAssociatedBlockEntities` / `getInventory`）；`ContainerLivingItemHandler` 内 `instanceof SimpleContainerContext` 由 9 → 2；`ItemEntityContainerContext` 实现为无操作。
+  - **Q2（1a-4）**：容器级数据（流体/红石/电力）由分散字段并入统一 `ContainerDataStore`，按 `ContainerDataKey<T>` 的数组下标存取（非哈希）；新增一种容器级数据 = 在 `ContainerDataKeys` 加一行。涉及 `ContainerDataKey` / `ContainerDataStore` / `ContainerDataKeys` 三个新类，以及 `TickContext` 改为持 `ContainerDataStore`。
+  - **Q1（1a-1）**：`LivingItemFunction` 新增 `default boolean shouldTickWithoutOwnItems(ContainerContext)`（默认 `false`，现有 22 个功能不受影响）；`LivingItemManager` 在**注册期**算出静态「自维持函数」清单（以 null ctx 调用一次），`processContext` 在 `grouped.isEmpty()` 短路前把清单塞进 `grouped`（空 entries）。每 tick 只遍历 0~1 个，不逐函数判定 ⇒ 成千上万个容器下开销可控。**当前无函数覆写（活水源在 1b）**，完全空容器仍走 `handleEmptyContainer` 短路。
+  - 设计要点见 `docs/buffer/infrastructure-refactoring-plan.md` §2 / §3。
+
 - 🔴 **修复「特定活武器永久白板化」**（高频 0.25s 一刀 / 伤害恒 1 / 常驻拉仇恨）：
   属性镜像竞态 —— 主人换手发生在容器点击（tick 间），属性刷新在其后实体 tick，
   竞态窗口内主人地图的旧武器 bd/bs 被镜像记录，下一轮清理按 id 删除

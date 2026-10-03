@@ -460,6 +460,13 @@ public class ContainerLivingItemHandler {
         Map<LivingItemFunction, List<LivingItemFunction.SlotEntry>> grouped = scanAndGroupLivingItems(context);
         syncContentRevision(context);
 
+        // 自维持功能（如活水源）：即便容器内没有它自己的活物品，也要进入主流程参与 tick。
+        // 遍历的是注册期算好的静态清单（通常 0~1 个），不逐函数判定，保证成千上万个容器
+        // 下的每 tick 开销可控（详见 LivingItemFunction#shouldTickWithoutOwnItems）。
+        for (var f : LivingItemManager.getSelfSustainingFunctions()) {
+            grouped.computeIfAbsent(f, k -> new ArrayList<>());
+        }
+
         // 空容器：仅残留红石归零
         if (grouped.isEmpty()) {
             handleEmptyContainer(context, startNanos, monitorKey);

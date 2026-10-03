@@ -1,6 +1,6 @@
 # 基础设施重构方案（infrastructure refactoring plan）
 
-*创建: 2026-10-03 · 状态: 未执行（待 §2 待决问题拍板后按序推进）*
+*创建: 2026-10-03 · 状态: **1a 地基已完成（4/4，397 测试全绿）**，活水源功能 1b 待做*
 
 > **计划书**：未执行，**勿当现状读**。本文随重构推进成长；执行后结论沉淀到
 > [living-item-infrastructure.md](../system-design/living-item-infrastructure.md)，
@@ -146,7 +146,7 @@ return "container_" + Integer.toHexString(handler.hashCode());
 
 | # | 问题 | 推荐（**待拍板**） | 阻塞 |
 |---|---|---|---|
-| **Q1** | 「容器级逻辑」的注册形态 | ⭐ **不新增接口**：给 `LivingItemFunction` 加一个 `default boolean shouldTickWithoutOwnItems(ContainerContext)`（默认 `false` ⇒ **现有 22 个功能全部不受影响**）。**活水源 = 没有物品载体的活物品** —— 接口本就允许 `entries` 为空，只差收集路径 | 1a-1 |
+| **Q1** | 「容器级逻辑」的注册形态 | ⭐ **不新增接口**：给 `LivingItemFunction` 加一个 `default boolean shouldTickWithoutOwnItems(ContainerContext)`（默认 `false` ⇒ **现有 22 个功能全部不受影响**）。**活水源 = 没有物品载体的活物品** —— 接口本就允许 `entries` 为空，只差收集路径 | 1a-1 | ✅ **已完成 2026-10-03** |
 | **Q2** | 容器级数据的存储形态 | **类型化 key + 单一存储**（`ContainerDataKey<T>` + `ctx.getData(key)`）—— 现状三处是**同一份数据的三个镜像** | 1a-4 |
 | **Q3** | `containerKey` 第三档 | ⭐ **直接删，改为显式抛异常**（**无需观测期** —— 已静态证明不可达） | 1a-2 |
 | **Q4** | `ContainerContext` 补哪些方法 | **抽 `TickableContainerContext` 子接口**（不污染只读的 `ContainerContext`） | 1a-3 |
@@ -247,12 +247,12 @@ return "container_" + Integer.toHexString(handler.hashCode());
 
 | 步骤 | 内容 | 验收判据（可复算） |
 |---|---|---|
-| 1a-1 | 收集路径不再要求物品（`shouldTickWithoutOwnItems` + 塞进 `grouped`，约 **4 行**） | 纯源容器能跑流体；**完全空容器仍短路**（性能不变） |
+| 1a-1 | ✅ **已完成 2026-10-03** —— `LivingItemFunction` 加 `shouldTickWithoutOwnItems`（默认 `false`）+ `LivingItemManager` 注册期算静态自维持清单 + `processContext` 在 `grouped.isEmpty()` 前把清单塞进 `grouped`（空 entries） | **397 测试全绿**（0 失败 / 0 错误）；当前无函数覆写（活水源在 1b）；**完全空容器仍短路**；每 tick 只遍历静态清单（0~1 个），非逐函数判定 |
 | 1a-2 | ✅ **已完成 2026-10-03** —— 删 `containerKey` 第三档改抛异常 + 新增测试专用构造器 | **397 测试全绿**（0 失败 / 0 错误） |
 | 1a-3 | ✅ **已完成 2026-10-03** —— 抽 `TickableContainerContext`，消掉 7 处转型 | 该文件里 `instanceof` **9 → 2**（余 2 处属 1a-4）；**397 测试全绿** |
 | 1a-4 | ✅ **已完成 2026-10-03** —— 容器级数据并入 `ContainerDataStore`（新增 3 个类） | 新增一种数据 = 改 **1 行**（`ContainerDataKeys`）；**397 测试全绿** |
 
-**1a 全部是行为不变的重构** —— 靠现有 384 个测试回归验证，不引入新功能。
+**1a 全部是行为不变的重构** —— 靠现有 397 个测试回归验证，不引入新功能。
 
 ### 1b · 活水源功能
 

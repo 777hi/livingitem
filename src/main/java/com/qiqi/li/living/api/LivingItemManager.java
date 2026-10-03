@@ -126,10 +126,39 @@ public class LivingItemManager {
     private static final List<LivingItemFunction> FUNCTIONS_VIEW = Collections.unmodifiableList(FUNCTIONS);
     private static final Map<Item, List<LivingItemFunction>> APPLICABLE_CACHE = new ConcurrentHashMap<>();
 
+    /**
+     * 自维持函数清单（{@link LivingItemFunction#shouldTickWithoutOwnItems} 为真的函数）。
+     *
+     * <p>在<b>注册期</b>一次性算出，每 tick 的 {@code processContext} 只遍历这张静态清单，
+     * 避免逐函数调用判定（22 个函数 × 成千上万个容器 = 不可接受的每 tick 开销）。
+     * 详见 {@link LivingItemFunction#shouldTickWithoutOwnItems} 的注册期约定。</p>
+     */
+    private static volatile List<LivingItemFunction> SELF_SUSTAINING_FUNCTIONS = List.of();
+
     public static void registerFunction(LivingItemFunction function) {
         LOGGER.info("Registering living item function: {}", function.getFunctionId());
         FUNCTIONS.add(function);
         APPLICABLE_CACHE.clear();
+        recomputeSelfSustaining();
+    }
+
+    /**
+     * 按 {@link LivingItemFunction#shouldTickWithoutOwnItems} 重算自维持函数清单。
+     * 注册 / 排序时各调用一次；用 null 上下文（覆盖方须当作静态声明处理）。
+     */
+    private static void recomputeSelfSustaining() {
+        List<LivingItemFunction> selfSustaining = new ArrayList<>();
+        for (LivingItemFunction f : FUNCTIONS) {
+            if (f.shouldTickWithoutOwnItems(null)) {
+                selfSustaining.add(f);
+            }
+        }
+        SELF_SUSTAINING_FUNCTIONS = Collections.unmodifiableList(selfSustaining);
+    }
+
+    /** 自维持函数清单（注册期算好的静态视图，每 tick 只读遍历）。 */
+    public static List<LivingItemFunction> getSelfSustainingFunctions() {
+        return SELF_SUSTAINING_FUNCTIONS;
     }
 
     /**
@@ -149,6 +178,7 @@ public class LivingItemManager {
      */
     public static void sortFunctionsByPriority() {
         FUNCTIONS.sort(Comparator.comparingInt(LivingItemFunction::getTickPriority));
+        recomputeSelfSustaining();
         LOGGER.info("Living item functions sorted by getTickPriority: {} 个（稳定排序）", FUNCTIONS.size());
     }
 
