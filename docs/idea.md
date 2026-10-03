@@ -2,6 +2,11 @@
 
 > **草稿纸**：探讨中，未定案，勿当现状读。定案内容沉淀到 `living-water-bucket-tech.md` 后从此处清除。
 > 探讨周期：2026-10-02 ~ 10-03，基于 `domain/water/` 现有实现（BFS 重算架构）。
+>
+> ⚠️ **框架契约见 [buffer/infrastructure-refactoring-plan.md](buffer/infrastructure-refactoring-plan.md) §3 1b**：
+> 容器级流体的**基础设施**（`ContainerFluidData` 泛化 / 流动引擎 / 行为分档接口 / tick 归属与排序 / 落盘）
+> 由**框架侧**负责；本文件只管**流体本身的行为**（接哪些流体、流速、交互、转化表、汲/倒规则）。
+> **框架先行** —— 框架就位，本文件的机制才能推进。
 
 ---
 
