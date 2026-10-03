@@ -151,6 +151,7 @@ return "container_" + Integer.toHexString(handler.hashCode());
 | **Q3** | `containerKey` 第三档 | ⭐ **直接删，改为显式抛异常**（**无需观测期** —— 已静态证明不可达） | 1a-2 |
 | **Q4** | `ContainerContext` 补哪些方法 | **抽 `TickableContainerContext` 子接口**（不污染只读的 `ContainerContext`） | 1a-3 |
 | **Q5** | 纯源容器渲染的同步轨 | ⭐ **不用验证 attachment** —— 复用已有的 `ContainerRuntimeCache.flushToClients` + `LivingItemSyncPacket` | 活水源二期 |
+| **Q6** | 多方块容器边界带「身份解析」收敛（流体侧移交，2026-10-03） | ⭐ 新增 `ContainerContexts`（container/ 包）共享内核，收编 6 处重复消费者（详见 §2.1-Q6） | 建议在**第 7 个消费者**（活活塞/岩浆桶/转化自动化）落地前 |
 
 **Q3 的不可达证明**：`buildContext` 唯一调用点传 `player.getInventory()`（inventory 恒非 null）；
 `processContainerAt` 的 else 分支（`:759-768`）**无条件** `positions.add(pos)` ⇒ positions 恒非空。
@@ -240,6 +241,50 @@ return "container_" + Integer.toHexString(handler.hashCode());
 - **397 测试全绿**（0 失败）
 
 > Q5 不阻塞本次重构，但**阻塞活水源二期** —— 建议尽早做最小实验。
+
+**Q6 的发现（2026-10-03，流体侧移交——本会话按分工不实施，只交底）**：
+
+原版/NeoForge 的多方块容器**没有统一身份句柄**——Container 实例、BlockEntity+位置、
+合并 IItemHandler 三个视图互不可达（`CompoundContainer` 不给两半访问器、菜单不暴露位置）。
+每个需要「菜单槽位 / 同步 / 世界 ↔ 容器状态」的消费者被迫各付一次，现存 **6 处**：
+
+| # | 消费者 | 解法 | 场景 |
+|---|---|---|---|
+| 1 | `DoubleChestPositions.find` | 位置级找伙伴（LEFT/RIGHT 规范序） | 上下文构建 / 面选取 |
+| 2 | `ContainerRuntimeCache.isViewingContainer` | `CompoundContainer.contains` 特判 | 查看者匹配（v19.1） |
+| 3 | `SimpleContainerContext.slotBelongsTo` | 容器归属匹配 | 大箱子 tooltip 同步（2026-09-09） |
+| 4 | `CrossContainerTransfer.getBasePosCandidates` | 候选基准块列表 | 跨容器面选取（hopper §6.4） |
+| 5 | `isSameSlotSpaceAsHandler` 探针 | 槽位体系一致性仲裁 | 活漏斗静默不传输（hopper §10.25） |
+| 6 | `LivingBucketInteractSupport.compoundContext` | 反射掏两半 + find 规范化 | 汲/倒反查活流体数据（流体侧批次二，2026-10-03） |
+
+另客户端 `resolveContainerSlot`（SlotWrapper 反射，创造模式）同构 —— 包装器把
+「槽位 ↔ 容器」直达链路藏起来，是同一个病的另一种形态。
+
+**核心（tick 主链路）不乱**：上下文以 positions/BEs/合并 handler 单一事实构建，
+§10.25 后「以合并 handler 为唯一槽位体系」已成口径。乱的是**边界带**：每个 GUI 级
+新功能都重新踩一遍，且教训散落四处（hopper §10.25/§6.4、container-compatibility、
+changelog）——流体侧实现汲/倒时是把先例全部翻过一遍才敢下手的。
+
+**推荐方案（待拍板）**：新增 `ContainerContexts`（container/ 包）共享内核——
+
+```
+ContainerContexts
+  ├─ resolve(Slot|Container, player/level) → TickableContainerContext
+  │    （底稿 = LivingBucketInteractSupport.compoundContext，现成可用）
+  ├─ isViewing(player, context)        （底稿 = ContainerRuntimeCache.isViewingContainer）
+  ├─ ownsContainer(context, Container) （底稿 = slotBelongsTo）
+  └─ resolveMenuSlot(menu, containerSlot)（客户端 SlotWrapper 解析，底稿 = GuiInteractionHelper）
+```
+
+要点：
+- **收编是搬家不是重写** —— 四个实现全是已验证的现成代码，含各自的坑位注释；
+- 单一 javadoc 契约 + 一份「多方块容器身份解析」文档（收编 hopper §10.25 的教训：
+  按逻辑槽位读写先验证两套体系；模拟与真实写入同源）；
+- 验收判据可复算：6 个消费者改走新入口（或保留薄委托），`grep CompoundContainer`
+  的特判从 6 处收敛到 1 处；
+- **触发时机建议**：第 7 个消费者落地前。流体侧管线里的活活塞（推活物品进源格）、
+  岩浆桶、转化自动化都冲着这条边界来，且流体侧不排除把 `compoundContext` 的
+  反射底稿直接上交。
 
 ---
 
@@ -469,6 +514,9 @@ return "container_" + Integer.toHexString(handler.hashCode());
   下次审查应指出：**该再拆一次 —— 框架留下、实现下放各 domain。**
 - **1.4 God Class 只缓解**：824 行 → 约 600 行，仍剩 **4 个职责**
   （调度 / 位置索引 / 内容签名 / 大箱子解析）。
+- **多方块容器边界带的身份解析重复**（新发现，2026-10-03 流体侧移交）：6 处消费者
+  各写一次匹配逻辑，见 §2.1-Q6 —— 与「interaction 该再拆一次」同属
+  「框架留下、实现收拢」的整理，收编方案已在 Q6 给出底稿清单。
 
 ### 6.3 会新暴露（4 条）
 
