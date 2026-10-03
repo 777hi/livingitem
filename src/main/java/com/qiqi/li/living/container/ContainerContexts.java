@@ -41,7 +41,9 @@ import com.qiqi.li.living.util.DoubleChestPositions;
  *
  * <p>批次 A（2026-10-04）收编服务端 {@link #resolve} / {@link #isViewing}；
  * 批次 B（2026-10-04）补 {@link #ownsContainer}（归属匹配）与 {@link #isSameSlotSpace}（槽位体系探针）；
- * 客户端 {@code resolveMenuSlot} 归批次 C。</p>
+ * 批次 C（2026-10-04）的客户端槽位解析因 {@code SlotWrapperAccessor} 是<b>客户端 Mixin</b>
+ * （common 引用会让专用服务端崩）⇒ <b>不能放本类</b>，实装为
+ * {@code com.qiqi.li.client.util.ClientSlotResolve}（被迫分居两侧）。</p>
  */
 public final class ContainerContexts {
 

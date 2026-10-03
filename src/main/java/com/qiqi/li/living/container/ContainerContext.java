@@ -112,7 +112,7 @@ public interface ContainerContext extends SlotInfoProvider, ContainerSync, Conta
      * （Container 的槽 22 = GUI 的槽 49）。
      *
      * <p>因此任何「用本方法读/写某个<b>逻辑槽位</b>」的调用点，都必须先跑
-     * {@code SimpleContainerContext#isSameSlotSpaceAsHandler} 那样的<b>体系一致性探针</b>
+     * {@code ContainerContexts#isSameSlotSpace} 那样的<b>体系一致性探针</b>
      * （槽位数一致 + 单槽交叉校验）才可安全使用，否则一律回退到 IItemHandler。
      * 典型受害者见 {@code SimpleContainerContext.simulateInsertItem}
      * （活漏斗在大箱子里静默不传输，living-hopper-tech.md §10.25）。</p>

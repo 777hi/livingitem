@@ -16,17 +16,9 @@ import com.qiqi.li.living.container.ContainerLivingItemHandler;
  * 从菜单槽位反查<b>活着的</b> {@link ContainerFluidData}（必须是容器 tick 循环里的那份实例，
  * 改别处的副本会被下一 tick 重算覆盖）+ 桶内容增减。
  *
- * <p>context 反查方式镜像 {@code ContainerLivingItemHandler.processContainerAt} 的构建规则
- * （containerKey 由 positions/BEs 推导 ⇒ 同一容器同一键 ⇒ {@link
- * ContainerLivingItemHandler#getFluidData} 命中同一条目）：</p>
- * <ul>
- *   <li>玩家背包：{@code slot.container == player.getInventory()}</li>
- *   <li>单 BE 容器：{@code slot.container instanceof BlockEntity}</li>
- *   <li>原版大箱子：{@code CompoundContainer}（半箱无公开访问器 ⇒ 反射取两半，
- *       项目已有 SlotWrapper 反射先例），顺序经 {@code DoubleChestPositions.find} 规范化</li>
- * </ul>
- * ⚠️ 末影箱菜单的 containerKey 由 {@code EnderChestContainerContext} 覆写为玩家键，
- * 本支撑解析不出 → 返回 null ⇒ 汲/倒静默无效（末影箱水网 = 已知缺口）。
+ * <p>context 反查已收编到 {@link com.qiqi.li.living.container.ContainerContexts#resolve}
+ * （Q6 批次 A，2026-10-04）—— 解析规则（背包 / 单 BE / 大箱子反射两半 + 规范化顺序）与
+ * 已知缺口（末影箱解析不出 ⇒ 汲/倒静默无效）见该类 javadoc，此处不再复述。</p>
  */
 public final class LivingBucketInteractSupport {
 

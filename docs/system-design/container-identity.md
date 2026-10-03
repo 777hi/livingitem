@@ -85,6 +85,11 @@
 
 > **判据（可复算）**：`grep -rn CompoundContainer src/main/java` 的**特判**应收敛到 `ContainerContexts` 一处。
 
+> ⚠️ **残留（2026-10-04 代码审查，未收编）**：`AbstractContainerScreenMixin.living_item$resolveServerSlotIndex`
+> 仍自己解包 `SlotWrapper`（取 **`.index`**）—— 与 Q6 的「→ 容器槽位」是**不同映射**，故不在本批范围。
+> 若要彻底统一「SlotWrapper 解包」，可抽 `ClientSlotResolve.unwrap(Slot)` 原语（代价：该处也会获得反射兜底，
+> 行为超集）。
+
 ---
 
 ## 4. 收编的通用教训（写别的消费者之前先读）
