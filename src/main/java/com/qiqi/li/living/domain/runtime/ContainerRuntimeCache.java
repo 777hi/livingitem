@@ -131,19 +131,11 @@ public class ContainerRuntimeCache {
      * 对大箱永远不匹配 → 同步包从不发给打开大箱的玩家 → 客户端遥测缓存为空 →
      * tooltip 永远显示 0/无数据（单箱菜单容器就是 BE 本体，故正常）。
      * 用 CompoundContainer 自带的 {@code contains(Container)} 匹配关联 BE。</p>
+     *
+     * <p>Q6 收编（2026-10-04）：实现已迁至
+     * {@link com.qiqi.li.living.container.ContainerContexts#isViewing}，此处保留薄委托。</p>
      */
     private static boolean isViewingContainer(ServerPlayer player, Collection<Container> containerInstances) {
-        AbstractContainerMenu menu = player.containerMenu;
-        if (menu == player.inventoryMenu) return false;
-        for (Slot slot : menu.slots) {
-            Container menuContainer = slot.container;
-            if (containerInstances.contains(menuContainer)) return true;
-            if (menuContainer instanceof net.minecraft.world.CompoundContainer compound) {
-                for (Container be : containerInstances) {
-                    if (compound.contains(be)) return true;
-                }
-            }
-        }
-        return false;
+        return com.qiqi.li.living.container.ContainerContexts.isViewing(player, containerInstances);
     }
 }

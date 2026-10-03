@@ -98,21 +98,12 @@ public final class FluidFlowServerSync {
 
     /**
      * 判断玩家菜单里是否包含「该容器关联的 Container 实例」。
-     * 与 {@code ContainerRuntimeCache.isViewingContainer} 同构 —— 大箱子菜单槽位容器是
-     * {@code CompoundContainer}，须用其 {@code contains(Container)} 匹配。
+     *
+     * <p>Q6 收编（2026-10-04）：与 {@code ContainerRuntimeCache.isViewingContainer} 的
+     * 同构实现已合并到 {@link com.qiqi.li.living.container.ContainerContexts#isViewing}，
+     * 此处保留薄委托。</p>
      */
     private static boolean isViewingContainer(ServerPlayer player, List<Container> containerInstances) {
-        AbstractContainerMenu menu = player.containerMenu;
-        if (menu == player.inventoryMenu) return false;
-        for (Slot slot : menu.slots) {
-            Container menuContainer = slot.container;
-            if (containerInstances.contains(menuContainer)) return true;
-            if (menuContainer instanceof net.minecraft.world.CompoundContainer compound) {
-                for (Container be : containerInstances) {
-                    if (compound.contains(be)) return true;
-                }
-            }
-        }
-        return false;
+        return com.qiqi.li.living.container.ContainerContexts.isViewing(player, containerInstances);
     }
 }

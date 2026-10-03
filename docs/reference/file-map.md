@@ -19,6 +19,7 @@ src/main/java/com/qiqi/li/
 │   │
 │   ├── container/                           # 容器抽象层（跨活物品共享基础设施）
 │   │   ├── ContainerContext.java            #   组合接口
+│   │   ├── ContainerContexts.java           #   多方块容器边界带「身份解析」共享内核（Q6 批次 A：resolve/isViewing 收编）
 │   │   ├── TickContext.java                 #   Tick 级临时状态（每 tick 新建 + 脏槽位集合）
 │   │   ├── SimpleContainerContext.java      #   容器上下文实现（脏槽位批量同步）
 │   │   ├── ContainerLivingItemHandler.java  #   容器扫描、分组调度、容器级数据缓存（含位置反向索引）

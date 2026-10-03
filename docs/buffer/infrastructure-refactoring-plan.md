@@ -151,7 +151,7 @@ return "container_" + Integer.toHexString(handler.hashCode());
 | **Q3** | `containerKey` 第三档 | ⭐ **直接删，改为显式抛异常**（**无需观测期** —— 已静态证明不可达） | 1a-2 |
 | **Q4** | `ContainerContext` 补哪些方法 | **抽 `TickableContainerContext` 子接口**（不污染只读的 `ContainerContext`） | 1a-3 |
 | **Q5** | 纯源容器渲染的同步轨 | ⭐ **不用验证 attachment** —— 复用已有的 `ContainerRuntimeCache.flushToClients` + `LivingItemSyncPacket` | 活水源二期 |
-| **Q6** | 多方块容器边界带「身份解析」收敛（流体侧移交，2026-10-03） | ⭐ 新增 `ContainerContexts`（container/ 包）共享内核，收编 6 处重复消费者（详见 §2.1-Q6） | 建议在**第 7 个消费者**（活活塞/岩浆桶/转化自动化）落地前 |
+| **Q6** | 多方块容器边界带「身份解析」收敛（流体侧移交，2026-10-03） | ⭐ 新增 `ContainerContexts`（container/ 包）共享内核，收编 6 处重复消费者（详见 §2.1-Q6） | 批次 A（服务端 `resolve`/`isViewing`）✅ 2026-10-04；批次 B（`ownsContainer`+槽位探针）、C（客户端 `resolveMenuSlot`）待办 |
 
 **Q3 的不可达证明**：`buildContext` 唯一调用点传 `player.getInventory()`（inventory 恒非 null）；
 `processContainerAt` 的 else 分支（`:759-768`）**无条件** `positions.add(pos)` ⇒ positions 恒非空。
@@ -285,6 +285,20 @@ ContainerContexts
 - **触发时机建议**：第 7 个消费者落地前。流体侧管线里的活活塞（推活物品进源格）、
   岩浆桶、转化自动化都冲着这条边界来，且流体侧不排除把 `compoundContext` 的
   反射底稿直接上交。
+
+**批次 A 实施（2026-10-04，✅ 已完成）**：只落地服务端两个入口，原则「搬家不是重写」——
+- 新增 `container/ContainerContexts.java`（共享内核），`resolve(player, slot)` 与 `isViewing(player, containers)`
+  均逐字迁移自已验证实现（`LivingBucketInteractSupport.compoundContext` /
+  `ContainerRuntimeCache.isViewingContainer` 与 `FluidFlowServerSync.isViewingContainer` 两份同构），
+  含各自坑位注释（反射掏两半、`DoubleChestPositions.find` 规范化、v19.1 大箱 `CompoundContainer.contains` 特判）；
+- 三个消费者改薄委托：`LivingBucketInteractSupport.resolveContext` → `ContainerContexts.resolve`；
+  `ContainerRuntimeCache.isViewingContainer` / `FluidFlowServerSync.isViewingContainer` → `ContainerContexts.isViewing`；
+- 验收（可复算）：`grep CompoundContainer` 特判由 **3 处**（原 compoundContext + 2 处 isViewing，
+  不含客户端 SlotWrapper）收敛到 **1 处**（`ContainerContexts` 内部）；全量单测回归绿。
+- 末影箱水网仍为已知缺口（`resolve` 解析不出 `EnderChestContainerContext` 覆写的玩家键 → 返回 null）。
+- 批次 B/C 待办：服务端 `ownsContainer`（收编 `SimpleContainerContext.slotBelongsTo`）、槽位体系一致性探针
+  （`isSameSlotSpaceAsHandler`）、跨容器面选取（`CrossContainerTransfer.getBasePosCandidates`）；
+  客户端 `resolveMenuSlot`（收编 `GuiInteractionHelper.resolveContainerSlot` + `AbstractContainerScreenMixin`）。
 
 ---
 

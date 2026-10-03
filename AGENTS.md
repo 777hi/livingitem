@@ -194,6 +194,7 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-04 | **Q6 多方块容器边界带「身份解析」收敛 —— 批次 A（服务端入口）**：新增 `container/ContainerContexts.java` 共享内核，`resolve(player,slot)→TickableContainerContext`（底稿 `LivingBucketInteractSupport.compoundContext`）+ `isViewing(player,containers)`（底稿 `ContainerRuntimeCache`/`FluidFlowServerSync` 两份同构）；3 个消费者改薄委托。**纯重构未增删测试，426 测试全绿**；`grep CompoundContainer` 特判由 3 处收敛到 1 处。批次 B（`ownsContainer`+槽位探针+跨容器面选取）/C（客户端 `resolveMenuSlot`）待办 | `infrastructure-refactoring-plan.md` §2.1-Q6 |
 | 2026-10-03 | **框架侧接缝落地（1b-2⑧⑩）**：⑧ **落盘** —— `ContainerFluidData.CODEC`（**只序列化派生源**，桶源/流动表不落）+ `CONTAINER_FLUID_DATA` 附件 `.serialize`；⑩ **引擎接缝** —— `FluidFlowBehavior.shouldPromote(slot, 邻源数)`（`recalculate` 加**晋升收敛循环**）/ `transformItem(item)`（`tick` 每流体拍在源格转化），两条都是 **default no-op ⇒ 现有行为零变化**。⚠️ **背包 Player attachment 仍未做**。**422 测试全绿** | `living-water-bucket-tech.md` §2.2 |
 | 2026-10-03 | **流体侧批次一（F1+F5）**：F1 派生源（活水源）—— `generatedSources: Map<Integer,FluidType>` + 播种②无条件并入 BFS + **挤没判定**（活物品进源格即销毁，非活共存）；F5 流体渲染轨 —— `FluidFlowSyncPacket` 容器级同步（玩家背包/BE/大箱子全覆盖）+ `IClientFluidTypeExtensions` 自适应贴图/颜色（alpha 按 maxLevel 归一），旧桶轨降级过渡回退。桶源退役顺延批次二与汲/倒同批。**419 测试全绿** | `idea.md` §〇 |
 | 2026-10-03 | 🔴 **修复 1a-4 引入的回归：容器流体数据不再被创建**（活水桶 `registerSource` 被跳过 ⇒ **水流功能整体失效**）：1a-4「容器级数据统一存储」把 `TickContext.fluidData()` 改成只读 peek 时，**丢掉了构造器里创建流体数据的调用**；恢复（含 BE 附件回填）+ 补回归测试（退回旧实现**恰好挂掉该测试**）。**406 测试全绿** | `living-water-bucket-tech.md` §2.2 |
@@ -202,8 +203,6 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 | 2026-09-30 | **受控 tick 重构**（台阶一/二）：`driveWielderTick` 按 game tick 去重驱动 FakePlayer 真链（**调 doTick 非 tick**，物理钉住/不进世界）⇒ inventoryTick/冷却/药效衰减/装备刷新/蓄力推进全原生；攻击缩放为 per-weapon 注入（共享 fake 一个时钟的实测回归修正）；蓄力型地基就绪 | `living-tool-tech.md` §5.7 |
 | 2026-09-30 | **修复「特定活武器永久白板化」**（0.25s 一刀 / 伤害 1 / 拉仇恨）：属性镜像竞态 —— 主人换手点击与属性刷新差一个 tick，旧武器 bd/bs 被镜像记录后清理时连武器自身的同 id 修饰符一起删，equipTool changed=false 不补回；修：每次摘旧装新自愈 + 镜像排除武器自身 id | `living-weapon-tech.md` §8.1 |
 | 2026-09-30 | **代持 tick**（通用兼容）：回放路径补 `held.inventoryTick(selected=true)` + `fake.getCooldowns().tick()` —— 手持类效果与物品冷却在主动模式正常推进，模组无关（Simply Swords 实测）；玩家形态双 tick 接受 | `living-tool-tech.md` §5.7 |
-| 2026-09-30 | tooltip 主人显示统一：UUID=绑定数据、名字=显示缓存（新增 `LIVING_TOOL_OWNER_NAME`，`syncOwnerAttributes` 返回主人供四路回放刷新；末影箱 tick 同款），显示走 `OwnerNameResolver#displayName` 实时→缓存→短UUID | `living-ender-chest-tech.md` §绑定 |
-
 
 ## 排查铁律：原版机制挡路时
 

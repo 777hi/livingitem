@@ -15,6 +15,14 @@
 
 ---
 
+## 2026-10-04
+
+- ✅ **Q6 多方块容器边界带「身份解析」收敛 —— 批次 A（服务端入口）**（**426 测试全绿**，纯重构未增删测试）。
+  - 新增 `container/ContainerContexts.java` 共享内核：`resolve(player, slot) → TickableContainerContext`（菜单槽位→tick 上下文，底稿 `LivingBucketInteractSupport.compoundContext`：背包/单 BE/大箱子 `CompoundContainer` 反射两半 + `DoubleChestPositions.find` 规范化；末影箱解析不出→null 已知缺口）与 `isViewing(player, containers)`（底稿 `ContainerRuntimeCache.isViewingContainer` 与 `FluidFlowServerSync.isViewingContainer` 两份同构：大箱子 `CompoundContainer.contains` 特判）。
+  - 三个消费者改薄委托：`LivingBucketInteractSupport.resolveContext` → `ContainerContexts.resolve`；`ContainerRuntimeCache.isViewingContainer` / `FluidFlowServerSync.isViewingContainer` → `ContainerContexts.isViewing`。
+  - 验收（可复算）：`grep CompoundContainer` 特判由 3 处收敛到 1 处（`ContainerContexts` 内部）；全量单测回归绿。
+  - 批次 B/C 待办：服务端 `ownsContainer`（`SimpleContainerContext.slotBelongsTo`）、槽位体系一致性探针（`isSameSlotSpaceAsHandler`）、跨容器面选取（`CrossContainerTransfer.getBasePosCandidates`）；客户端 `resolveMenuSlot`（`GuiInteractionHelper.resolveContainerSlot` + `AbstractContainerScreenMixin`）。
+
 ## 2026-10-03
 
 - ✅ **流体侧批次二（F3 活桶 FluidStack 化 + F2 水晋升）—— 桶源退役落地**（**426 测试全绿**）。

@@ -1,27 +1,15 @@
 package com.qiqi.li.living.domain.water;
 
-import java.lang.reflect.Field;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 
-import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.CompoundContainer;
-import net.minecraft.world.Container;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.entity.BlockEntity;
-import net.minecraft.world.level.block.entity.RandomizableContainerBlockEntity;
-import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.fluids.FluidType;
 import net.neoforged.neoforge.fluids.SimpleFluidContent;
-import net.neoforged.neoforge.items.IItemHandler;
 
-import com.qiqi.li.living.container.ContainerLivingItemHandler;
 import com.qiqi.li.living.container.ContainerContext;
-import com.qiqi.li.living.container.SimpleContainerContext;
+import com.qiqi.li.living.container.ContainerLivingItemHandler;
 
 /**
  * 活桶汲/倒的服务端支撑（流体侧批次二，2026-10-03）——
@@ -41,8 +29,6 @@ import com.qiqi.li.living.container.SimpleContainerContext;
  * 本支撑解析不出 → 返回 null ⇒ 汲/倒静默无效（末影箱水网 = 已知缺口）。
  */
 public final class LivingBucketInteractSupport {
-
-    private static final Map<Class<?>, Field[]> COMPOUND_FIELDS = new java.util.concurrent.ConcurrentHashMap<>();
 
     /** FluidType → 代表 Fluid（FluidStack 构造需要；优先 still 态），缓存反查结果。 */
     private static final Map<FluidType, net.minecraft.world.level.material.Fluid> REPRESENTATIVE_FLUID =
@@ -70,85 +56,14 @@ public final class LivingBucketInteractSupport {
         return fluidData == null || fluidData == ContainerFluidData.EMPTY ? null : fluidData;
     }
 
-    /** 反查目标槽位所属容器的 tick 上下文（容器键与 tick 循环一致）。不支持返回 null。 */
-    public static ContainerContext resolveContext(ServerPlayer player, Slot slot) {
-        Level level = player.level();
-        Container container = slot.container;
-
-        if (container == player.getInventory()) {
-            IItemHandler handler = player.getCapability(Capabilities.ItemHandler.ENTITY);
-            if (handler == null) return null;
-            return new SimpleContainerContext(handler, player.getInventory(), new ArrayList<>(),
-                new ArrayList<>(), level);
-        }
-
-        if (container instanceof BlockEntity be) {
-            if (be.getLevel() == null) return null;
-            return beContext(level, List.of(be.getBlockPos()), List.of(be));
-        }
-
-        if (container instanceof CompoundContainer) {
-            return compoundContext(level, container);
-        }
-
-        return null;
-    }
-
-    private static ContainerContext beContext(Level level, List<BlockPos> positions, List<BlockEntity> blockEntities) {
-        for (BlockEntity be : blockEntities) {
-            if (be instanceof RandomizableContainerBlockEntity rc && rc.getLootTable() != null) return null;
-        }
-        IItemHandler handler = level.getCapability(
-            Capabilities.ItemHandler.BLOCK, positions.get(0), null);
-        if (handler == null) return null;
-        return new SimpleContainerContext(handler, null, new ArrayList<>(positions),
-            new ArrayList<>(blockEntities), level);
-    }
-
     /**
-     * 大箱子：反射取 CompoundContainer 的两半（container1 / container2），
-     * 顺序用 {@code DoubleChestPositions.find} 规范化（LEFT 在前，与 tick 构建的容器键一致）。
+     * 反查目标槽位所属容器的 tick 上下文（容器键与 tick 循环一致）。不支持返回 null。
+     *
+     * <p>Q6 收编（2026-10-04）：解析逻辑已迁至 {@link com.qiqi.li.living.container.ContainerContexts#resolve}
+     * （多方块容器边界带共享内核），此处保留薄委托。</p>
      */
-    private static ContainerContext compoundContext(Level level, Container container) {
-        BlockEntity[] halves = reflectHalves(container);
-        if (halves == null) return null;
-
-        // 顺序规范化：用 mod 自己的大箱子解析器（与 processContainerAt 同源），保证容器键一致
-        List<BlockPos> doubleChestPos = com.qiqi.li.living.util.DoubleChestPositions
-            .find(level, halves[0].getBlockPos());
-        if (doubleChestPos.isEmpty()) return null;
-
-        List<BlockEntity> blockEntities = new ArrayList<>();
-        for (BlockPos pos : doubleChestPos) {
-            BlockEntity be = level.getBlockEntity(pos);
-            if (be == null) return null;
-            blockEntities.add(be);
-        }
-        return beContext(level, doubleChestPos, blockEntities);
-    }
-
-    private static BlockEntity[] reflectHalves(Container container) {
-        Field[] fields = COMPOUND_FIELDS.computeIfAbsent(CompoundContainer.class, clazz -> {
-            List<Field> found = new ArrayList<>();
-            for (Field f : clazz.getDeclaredFields()) {
-                if (f.getType() == Container.class) {
-                    f.setAccessible(true);
-                    found.add(f);
-                }
-            }
-            return found.toArray(new Field[0]);
-        });
-        if (fields.length < 2) return null;
-        try {
-            Object a = fields[0].get(container);
-            Object b = fields[1].get(container);
-            if (a instanceof BlockEntity be1 && b instanceof BlockEntity be2) {
-                return new BlockEntity[]{be1, be2};
-            }
-        } catch (IllegalAccessException e) {
-            return null;
-        }
-        return null;
+    public static ContainerContext resolveContext(ServerPlayer player, Slot slot) {
+        return com.qiqi.li.living.container.ContainerContexts.resolve(player, slot);
     }
 
     // ── 桶内容增减（倒/汲各一）────────────────────────────────
