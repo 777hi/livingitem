@@ -296,8 +296,9 @@ return "container_" + Integer.toHexString(handler.hashCode());
 （现状「数据是容器级的、驱动权却是桶的」—— idea.md §四.5）。
 
 **机制（1a-1 已就位）**：自维持通道 —— `LivingItemFunction.shouldTickWithoutOwnItems`
-+ 注册期静态清单 + 塞进 `grouped`。⇒ **流体侧只需写一个「自维持 + `HasContainerData`」的函数**，
-框架自动让它在**纯源容器**（无物品）里也跑。
++ 注册期静态清单 + 塞进 `grouped`。
+**决策**：**框架提供通用驱动函数**（自维持 + `HasContainerData`），流体侧**只填行为、不写驱动**
+（避免每种流体各写一份 tick 逻辑）。框架自动让它在**纯源容器**（无物品）里也跑。
 
 **排序**：容器级数据由 **`HasContainerData.getPriority()`** 稳定排序（**不是** `getTickPriority()`）：
 
@@ -323,13 +324,23 @@ return "container_" + Integer.toHexString(handler.hashCode());
 
 #### B.4 流体无关引擎（框架）
 
-- `ContainerFluidData`：「隐式水」→「**按流体类型索引**」—— 源 / 流动都带流体类型
-  （`FluidStack` / `FluidType`）。
-- 流动引擎：BFS **只在同种流体**内扩散；跨流体交互（水 + 岩浆 → 石 / 黑曜石）作为**可选规则**。
-- **行为分档**：每个流体声明「**会流动 / 静止**」；静止的只做源、不进扩散。
+**存储决策**：`ContainerFluidData` 用**单张 map 带流体类型**（一槽一流体，类比「一个方块位置只装一种流体」），
+**不**用「每流体一张 map」。
+
+**引擎**：
+- `ContainerFluidData`：「隐式水」→「**按流体类型索引**」—— 源 / 流动都带流体类型（`FluidStack` / `FluidType`）。
+- 流动引擎：BFS **只在同种流体**内扩散；跨流体交互（水 + 岩浆 → 石 / 黑曜石）作为**可选钩子**。
 - **契约**：引擎只认「流体类型 + 行为入口」，**不认具体是水还是岩浆** ⇒ 新增流体**零改引擎**。
 
-**具体流体行为**（水 / 岩浆的流速、跨流体交互、转化表、晋升规则）→ **流体侧（另一 AI）**。
+**行为分档（每流体声明，取值由流体侧填）**：
+
+| 参数 | 含义 | 备注 |
+|---|---|---|
+| `canFlow` | 会流动 / 静止 | 静止的只做「源」，不进扩散 |
+| `maxLevel` | **level 上限 = 流动距离** | 水 7、岩浆 3（各自不同）—— 用户明确要 |
+| `flowSpeed` | 流速（扩散节拍） | ⚠️ **预留字段**，当前用途不明，先加上（同 idea.md §三 的 `interval` 思路） |
+
+**具体流体行为的取值**（水 / 岩浆的 `maxLevel`、流速、跨流体交互、转化表、晋升规则）→ **流体侧（另一 AI）**。
 
 #### B.5 落盘（框架）
 
@@ -356,6 +367,25 @@ return "container_" + Integer.toHexString(handler.hashCode());
 - `ContainerFluidData.CODEC` 是否需序列化「流动」：**否**（见 B.5）。
 - 背包「每 tick 无条件 `processContainer`」路径能否承载自维持函数：**应可以**（同一 `grouped` 通道），
   实现时验证。
+
+#### B.8 框架侧任务清单（供流体侧对照）
+
+**1b-1 引擎泛化（纯重构，水行为不变，397 绿）**
+
+1. `ContainerFluidData` 条目带流体类型（单张 map）。
+2. `recalculate()` 播种 / BFS 扩散按类型；跨流体交互留钩子。
+3. 验收：**397 测试全绿**。
+
+**1b-2 框架契约（新增接口）**
+
+4. **行为分档接口**（`canFlow` / `maxLevel` / `flowSpeed`）+ 流体行为注册点。
+5. **通用驱动函数**（自维持 + `HasContainerData`，框架提供；流体侧只填行为）。
+6. **红石归零解耦**（B.3）。
+7. **API**：查 / 改某槽位流体源（给汲 / 倒处理器用）。
+8. **落盘**：`ContainerFluidData.CODEC` + `CONTAINER_FLUID_DATA.serialize` + 背包 Player attachment。
+9. **同步轨泛化**（Q5）：纯源容器的流体同步到客户端。
+
+**之后**：流体侧接水 / 岩浆 / 模组流体。
 
 ---
 
