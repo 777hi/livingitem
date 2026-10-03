@@ -163,7 +163,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 408 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
+**合计测试用例 411 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
 全绿基线：`396 passed / 0 failed / 1 skipped`（2026-09-28 新增交互规则 JSON 加载语义 9 项 +
 tick 顺序契约守卫 4 项 + 活化目标参数解析守卫 4 项；2026-09-27 新增活化规则 JSON 加载语义 14 项
 （含指令侧 put/remove/校验/**持久化往返**；tag 路径 1 项 @Disabled ——

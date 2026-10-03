@@ -387,7 +387,8 @@ return "container_" + Integer.toHexString(handler.hashCode());
    引擎改用接缝（`ContainerFluidData` **不再硬编码上限**）。**405 测试全绿**。
 5. ✅ **通用驱动函数**（2026-10-03）—— 新增 `LivingFluidFunction`（**自维持** + `HasContainerData` **prio 0**）：
    驱动容器级流体 BFS，与桶**解耦**（桶的 `tickContainerData` 只留 `postTickSync`，prio **0→1**）。
-   ⇒ 桶不在场时容器级流体照样推进。**408 测试全绿**。
+   ⇒ 桶不在场时容器级流体照样推进。**已端到端验证**（`ContainerFluidIntegrationTest` 走真实
+   `processContext`）；**411 测试全绿**。
 6. **红石归零解耦**（B.3）。
 7. **API**：查 / 改某槽位流体源（给汲 / 倒处理器用）。
 8. **落盘**：`ContainerFluidData.CODEC` + `CONTAINER_FLUID_DATA.serialize` + 背包 Player attachment。

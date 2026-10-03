@@ -34,6 +34,8 @@
 
 - ✅ **1b-2b 通用驱动函数**（框架契约）：新增 `LivingFluidFunction`（**自维持** + `HasContainerData` **prio 0**）—— 驱动容器级流体 BFS，**与桶解耦**（桶的 `tickContainerData` 只留 `postTickSync`、prio **0→1**）⇒ **桶不在场时容器级流体照样推进**。**408 测试全绿**（+2 条驱动测试：自维持/prio/不挂物品、驱动 BFS）。
 
+- ✅ **流体测试补强**（2026-10-03）：新增**端到端**测试 `ContainerFluidIntegrationTest`（走真实 `processContext`，验证「桶注册源 + 驱动跑 BFS」在真实流程**接通** —— 撤销 1b-2b 的「仅单元级」保留）+ 引擎**二维扩散**测试（覆盖 `getNeighbors` 的 up/down）。**411 测试全绿**。
+
 - 🔴 **修复「特定活武器永久白板化」**（高频 0.25s 一刀 / 伤害恒 1 / 常驻拉仇恨）：
   属性镜像竞态 —— 主人换手发生在容器点击（tick 间），属性刷新在其后实体 tick，
   竞态窗口内主人地图的旧武器 bd/bs 被镜像记录，下一轮清理按 id 删除

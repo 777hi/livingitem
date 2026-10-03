@@ -272,4 +272,23 @@ class ContainerFluidDataTest {
         assertEquals(8, fluid.getFlows().size(), "驱动应完成 BFS（slot 0..7）");
         assertTrue(fluid.getFlows().get(0).isSource());
     }
+
+    @Test
+    @DisplayName("⑫ 二维扩散：宽度>1 时右邻与下邻都蔓延（覆盖 getNeighbors 的 up/down）")
+    void twoDimensional_spreadsRightAndDown() {
+        // 27 格 ⇒ 宽度 9 ⇒ 3×9；源在 slot 0 ⇒ 右邻 slot 1、下邻 slot 9
+        FakeHandler h = new FakeHandler(27);
+        h.slots[0] = livingWaterBucket();
+        var ctx = new SimpleContainerContext(h);
+
+        var fluid = new ContainerFluidData();
+        fluid.registerSource(0);
+        fluid.tick(ctx);
+
+        var flows = fluid.getFlows();
+        assertEquals(0, flows.get(0).level());
+        assertTrue(flows.get(0).isSource());
+        assertEquals(1, flows.get(1).level(), "右邻应为 level 1");
+        assertEquals(1, flows.get(9).level(), "下邻应为 level 1（二维蔓延）");
+    }
 }
