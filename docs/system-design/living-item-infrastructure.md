@@ -154,7 +154,11 @@ public interface ContainerIdentity {
 | 玩家末影箱 | `player_<uuid>_ender_chest` | `player_550e8400-..._ender_chest` |
 | 方块容器 | `chest_<x>_<y>_<z>` | `chest_0_64_0` |
 | 大箱子 | `chest_<x1>_<y1>_<z1>_<x2>_<y2>_<z2>` | `chest_0_64_0_1_64_0` |
-| 未知容器 | `container_<handlerHashCode>` | `container_1a2b3c4d` |
+
+> ⚠️ 旧第三档 `container_<handlerHashCode>`（对象身份哈希）已删除（1a-2，2026-10-03）：
+> BE 重建后键漂移会让落盘的容器级数据静默丢失。现「无背包、无位置」的容器直接抛
+> `IllegalStateException`（测试用测试专用构造器 `SimpleContainerContext(IItemHandler)`，
+> 自动生成 `test#N` 键）。
 
 `getStableKey` 用于生成槽位级别的稳定标识，格式为 `containerKey_slot_<N>_func_<functionId>`，用于缓存和状态关联。
 
@@ -1225,25 +1229,34 @@ ContainerLivingItemHandler.processContext 采用六阶段设计：
 processContext(context, level)
   ├─ 阶段 1：扫描（scanAndGroupLivingItems + syncContentRevision）
   │   ├─ 遍历全槽位，按功能类型分组收集活物品
+  │   ├─ 自维持通道（1a-1）：把静态自维持清单中的功能塞进 grouped（空 entries）
+  │   │   ⇒ LivingFluidFunction 等「无物品载体的容器级逻辑」在纯源容器也进主流程
   │   └─ 校验内容签名，必要时 bump 修订计数（防稳态死锁）
   │
   ├─ [空容器分支：handleEmptyContainer]
-  │   └─ grouped 为空时，仅让残留红石信号归零后提前返回
+  │   └─ grouped 为空时提前返回（⚠️ 自维持清单恒塞入 LivingFluidFunction 后
+  │      grouped 实际不再为空 —— 分支仅剩防御意义）
   │
   ├─ 阶段 2：功能 tick（tickFunctionSlots + runFunctionTicks）
   │   ├─ 将功能槽位集合写入 TickContext
   │   └─ 对每种功能只调用一次 tick()，传入该组所有活物品
   │
   ├─ 阶段 3：EnderChannel 刷新（flushEnderChannels）
-  │   ├─ 刷新脏通道
-  │   └─ 清理无活水桶容器中的冗余流数据
+  │   └─ 刷新脏通道（原「无活水桶清冗余流」已随桶源退役删除，2026-10-03：
+  │      源唯一形态为派生源，无源容器 flows 自然为空）
   │
   ├─ 阶段 4：容器级数据（runContainerDataTicks）
   │   └─ 收集 HasContainerData 实现者，按优先级排序后依次执行
   │
+  ├─ 阶段 4.5：运行时缓存下发（ContainerRuntimeCache.flushToClients）
+  │
   ├─ 阶段 5：写回 BlockEntity（writebackBlockEntities + incrementCleanup）
-  │   ├─ 应力与流体数据写回关联的 BlockEntity（或玩家脚底）
+  │   ├─ 应力与流体数据（按 ContainerDataKey 声明的 attachment）写回关联的 BlockEntity
   │   └─ 达到清理间隔时执行过期数据清理
+  │
+  ├─ [残留红石归零（zeroResidualRedstone，1b-2c）]
+  │   └─ 容器有 REDSTONE 数据但 grouped 里无 LivingRedstoneFunction ⇒ 主动归零
+  │      （判据与 grouped 是否为空无关 —— 原 handleEmptyContainer 寄生分支已失效）
   │
   └─ [finally] 脏槽同步 + TickContext 清理（flushDirtySlots + setTickContext(null)）
 ```
@@ -1281,10 +1294,15 @@ runContainerDataTicks(grouped, context, tick);
 
 | 优先级 | 功能类 | 容器级数据计算 |
 |--------|--------|--------------|
-| 0 | `LivingWaterBucketFunction` | 流体蔓延 + postTickSync |
+| 0 | `LivingFluidFunction`（自维持） | 容器级流体 BFS + 快照下发（FluidFlowServerSync） |
 | 1 | `LivingWaterWheelFunction` | 应力计算 + postTickSync |
 | 2 | `LivingRedstoneFunction` | 红石信号传播 |
 | 2 | `LivingRedstoneTorchFunction` | 红石信号传播（火把独立存在时） |
+
+> 旧 `LivingWaterBucketFunction`（prio 0 流体驱动 + postTickSync）已拆分：驱动收归
+> `LivingFluidFunction`（1b-2b，自维持），桶物品侧随桶源退役整体删除（2026-10-03）。
+> ⚠️ 排序只能靠 `HasContainerData.getPriority()` —— `getTickPriority()` 管不到自维持函数
+> （被追加到 grouped 末尾）。
 
 通过接口化设计，`ContainerLivingItemHandler.processContext()` 不再需要硬编码任何具体功能类的容器级数据计算逻辑。
 
@@ -1295,7 +1313,10 @@ writebackBlockEntities(context, tick);
 incrementCleanup();
 ```
 
-**空容器处理**：当容器内无任何活物品时，`handleEmptyContainer` 检查是否有残留红石数据，若有则再跑一次 `calculate()` 使信号归零，避免信号层"集体死掉"。
+**残留红石归零**：`zeroResidualRedstone(grouped, ctx, tick)` 在容器有 REDSTONE 数据但
+`grouped` 里无 `LivingRedstoneFunction` 时主动归零 —— 判据与 grouped 是否为空无关
+（1b-2c 解耦：自维持驱动使 grouped 恒非空，原寄生在 `grouped.isEmpty()` 的分支永不执行；
+顺带修掉「有其它活物品 + 残留红石」场景下也不归零的既有缺陷）。
 
 ### 8.3 TickContext — Tick 级临时状态
 
@@ -1307,10 +1328,7 @@ TickContext.java 的生命周期仅为单次 tick，包含：
 | `transferredTargetSlots` | 级联传输防护，防止同 tick 内漏斗链级联传输 |
 | `dirtySlots` | 脏槽位集合，tick 内被修改的槽位索引，tick 结束时批量同步 |
 | `snapshot` | 容器快照，预扫描的活漏斗连接图和过滤链 |
-| `fluidData` | 容器关联的流体状态 |
-| `stressData` | 容器关联的应力状态 |
-| `redstoneData` | 容器关联的红石信号状态（延迟获取，从 `ContainerLivingItemHandler.CONTAINER_DATA` 静态缓存的聚合条目中按 `containerKey` 取 `redstone` 字段持久化实例，确保 `edgeGrid`/`prevEdgeGrid`/`tickCounter` 跨 tick 保留） |
-| `containerDataStore` | 通用容器级数据存储（`Map<Class<?>, Object>`），新数据类型无需在 TickContext 中新增字段 |
+| `containerDataStore` | 通用容器级数据存储（1a-4：`ContainerDataStore` 按 `ContainerDataKey<T>` 的**数组下标**存取，非哈希）。流体/应力/电力/红石四个 key 集中定义在 `ContainerDataKeys`，访问走 `tick.data(key)` / `tick.fluidData()` 等 —— 新增一种容器级数据 = `ContainerDataKeys` 加一行，三处硬编码字段已删 |
 | `functionSlots` | 功能槽位缓存，processContext 分组时填充，O(1) 读取各功能的活跃槽位集合 |
 
 **生命周期**：
@@ -1414,40 +1432,57 @@ private final FilterData[] filterOf;  // filterOf[slot] = 此槽位继承的过�
 漏斗的黑白名单随之更新（漏斗被搬到新容器后旧规则过期，同样在首 tick 重建自愈——
 详见 [living-hopper-tech.md](../tech/living-hopper-tech.md) §2.4.2 存储位置沿革）。
 
-### 8.7 ContainerFluidData — 容器流体数据
+### 8.7 ContainerFluidData — 容器流体数据（通用流体框架）
 
-ContainerFluidData.java 管理容器级流体状态（活水桶的水流），独立于活物品的槽位级状态。
+ContainerFluidData.java 管理容器级流体状态，**独立于任何活物品**（驱动者是自维持的
+`LivingFluidFunction`，prio 0 —— 见 §8.2 阶段 4）。设计口径与玩法机制详见
+[living-water-bucket-tech.md](../tech/living-water-bucket-tech.md) 与 [idea.md](../idea.md) §〇。
 
-**核心概念**：
+**核心映射（一槽一 world 方块）**：
 
-- `sourceEntry`（level=0）对应水源方块
-- `flowEntry`（level=1~7）对应流动水方块
-- 无 entry 对应空气
-- 水流按 `FLOW_STEP_TICKS`（4 tick）间隔蔓延
-- 水流遇到物品会推动物品到下游槽位
+- `FlowEntry(level=0, isSource=true)` = 流体源方块；`FlowEntry(level=1~N)` = 流动流体
+- 每条 `FlowEntry` 带 **`FluidType`**（1b-1：单张 map 带类型，一槽只装一种流体，
+  同槽异种整条覆盖、已占格不被异种覆盖 —— 流体不混色）
+- **派生源（`generatedSources: Map<Integer, FluidType>`）是唯一的源形态**：容器级永久资产，
+  由倒水 / 晋升创建，不随水桶离开消失；生命周期 = 倒入/晋升而生，挤没（任何活物品进源格）
+  /汲走而死，容器销毁随 attachment 湮灭（桶源已于 2026-10-03 退役）
 
-**水流蔓延**：BFS 从水源槽位开始，逐层向外扩展，遇到活物品（障碍物）停止。每层的 `fromSlot` 记录上游来源，形成水流树。
-
-**物品推动（pushItems）**：
-
-物品沿水流方向（从上游到下游）被推动。处理顺序按 level **升序**（离水源近的先处理），确保物品逐层向外移动，与水流方向一致。
+**引擎结构（每 tick，`tick(ctx)`）**：
 
 | 步骤 | 说明 |
 |------|------|
-| 1. 构建 downstream 映射 | `fromSlot → [子节点列表]`，表示水流方向 |
-| 2. 按 level 升序排序 | 先处理 level=1（离水源最近），后处理 level=7 |
-| 3. 逐槽位推动 | 对每个有物品的非水源槽位，尝试推到下游子节点 |
-| 4. 堆叠合并 | 目标槽位有同类物品且未满时合并，否则移到空槽位 |
-| 5. 每源每 tick 一次 | 部分合并后立即 break，避免用过期数量继续合并 |
+| `recalculate` | **晋升收敛循环**：`spread()`（播种派生源 → BFS 扩散，活物品阻挡）+ `tryPromote()`（问行为 `shouldPromote(slot, 邻源数)`，真则写入 `generatedSources` 并重跑 BFS 直到不动点） |
+| `transformSourceItems` | 每流体拍在**源格**问行为 `transformItem(item)`，产物写回槽位（机制三：空桶→水桶等，转化表归流体侧） |
+| `pushItems`（每 4 tick） | 沿水流树下游推动物品，level **升序**处理；不推入源格/活物品格；`moved` 集合防级联双推 |
 
-**安全约束**：
+**行为分档（1b-2 契约）**：引擎不认具体流体，扩散参数问 `FluidFlowBehaviors.of(FluidType)`
+—— `canFlow()`（静止流体只做源）、`maxLevel()`（水 7 / 岩浆 3）、`flowSpeed()`（预留），
+未注册 = 静止（安全默认）。水行为在 `WaterRegistration` 注册（含晋升 ≥2 邻源 = 原版无限水）。
+新增流体**零改引擎**，只注册一个行为。
 
-- 不推入水源槽位（活水桶所在）
-- 不推入活物品槽位（活漏斗/活熔炉等）
-- 使用 `moved` 集合避免同一物品被级联推动两次
-- 通过 `ctx.setItem()` 统一走 `IItemHandler` 路径，确保大箱子读写一致
+**查询 API（供汲/倒处理器与渲染）**：`isSource(slot)` / `sourceFluid(slot)` / `hasAnySource()` /
+`isGeneratedSource(slot)` / `hasGeneratedSources()`。⚠️ `isEmpty()` 必须计入派生源 ——
+否则纯源容器会被驱动的 `!isEmpty()` 门挡在 tick 外（BFS 永不启动、落盘漏）。
 
-**生命周期**：活水桶放入 → 注册水源槽位 → 水源蔓延 → 活水桶移除 → 水源取消，但流动槽位继续干涸。过期条目的清理阈值是 120 秒未访问。
+**落盘**：`CODEC` 只序列化 `generatedSources`（流动表每 tick 重算，落盘无价值），
+经 `CONTAINER_FLUID_DATA` attachment（`.serialize`）随 BE 持久化；背包/末影箱的
+Player attachment 落盘仍待做。
+
+**渲染轨（Q5）**：`FluidFlowServerSync` 在 `LivingFluidFunction.tickContainerData` 尾部把
+flow 快照经 `FluidFlowSyncPacket`（流体调色板 + level/fromSlot）发给查看者 → 客户端
+`FluidFlowClientCache` → `AbstractContainerScreenMixin` 按流体自适应渲染
+（`IClientFluidTypeExtensions` 贴图/染色，alpha 按 `maxLevel` 归一）。
+**不依赖任何活水桶物品** —— 纯源容器的水也能画。
+
+**汲/倒交互**：客户端 `GuiInteractionHelper` 活桶分支按快照精确判定（不命中不拦截），
+复用 `GuiInteractionPacket` 管道 → `LivingBucketInteractHandlers` 权威重验 →
+`LivingBucketInteractSupport` 从菜单槽位反查活流体数据（玩家背包 / 单 BE /
+大箱子 `CompoundContainer` 反射两半 + `DoubleChestPositions` 规范化顺序，
+容器键与 tick 循环一致）。
+
+**物品推动（pushItems）**：处理顺序按 level 升序（离水源近的先处理），物品逐层向外移动。
+安全约束：不推入水源槽位 / 活物品槽位；`moved` 集合防级联双推；`ctx.setItem()` 统一走
+`IItemHandler` 路径，确保大箱子读写一致。
 
 ---
 
@@ -1628,10 +1663,9 @@ PerfMetrics.java 收集模组运行时的性能数据，每 60 秒自动打印�
 | 贪心提取 | EnderChannelRegistry | 输出槽有物品时优先提取同类型（可堆叠），避免轮询到不同类型导致传输停止 |
 | IdentityHashMap 去重 | 大箱子 | 避免同一 IItemHandler 被处理两次 |
 | InvWrapper 缓存 | LivingEnderChestAccessor | 直连模式避免每 tick 重复创建 |
-| 瞬态数据服务端缓存 | LivingWaterBucketFunction | WaterData 瞬态字段存入 BUCKET_STATES Map，不再每 tick 写 DataComponent，消除玩家背包场景下的网络同步开销 |
 | handler 统一读写 | SimpleContainerContext.setItem() | 移除 container.setItem() 路径，统一走 IItemHandler，确保大箱子读写一致，消除物品复制 bug |
-| BUCKET_STATES 周期清理 | LivingWaterBucketFunction | cleanupStaleEntries() 清理 120s 未访问的瞬态缓存条目，防止内存泄漏 |
-| 双时间尺度 | BucketState(lastAccessMs, lastGameTick) | lastAccessMs 用 System.currentTimeMillis() 供缓存清理，lastGameTick 用 gameTime 供 needsReset 检测 |
+| 自维持静态清单 | LivingItemManager（1a-1） | 注册期算出「无物品载体可 tick」的功能清单，每 tick 只遍历 0~1 个，不逐功能判定 |
+| APPLICABLE_CACHE | LivingItemManager | 功能适用性缓存，热路径免重复匹配 |
 
 ---
 
