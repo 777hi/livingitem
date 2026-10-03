@@ -3,6 +3,7 @@ package com.qiqi.li.living.domain.water;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -290,5 +291,29 @@ class ContainerFluidDataTest {
         assertTrue(flows.get(0).isSource());
         assertEquals(1, flows.get(1).level(), "右邻应为 level 1");
         assertEquals(1, flows.get(9).level(), "下邻应为 level 1（二维蔓延）");
+    }
+
+    @Test
+    @DisplayName("⑬ 源查询 API：isSource / sourceFluid / hasAnySource（供汲/倒处理器用）")
+    void sourceQueryApi() {
+        var ctx = row(livingWaterBucket());
+        var fluid = new ContainerFluidData();
+        assertFalse(fluid.hasAnySource(), "空数据无源");
+
+        fluid.registerSource(0);
+        assertTrue(fluid.isSource(0));
+        assertEquals(Fluids.WATER.getFluidType(), fluid.sourceFluid(0));
+        assertTrue(fluid.hasAnySource());
+        assertFalse(fluid.isSource(5), "非源槽位");
+        assertNull(fluid.sourceFluid(5), "非源槽位无流体");
+
+        fluid.tick(ctx);
+        assertTrue(fluid.isSource(0), "源仍是源");
+        assertFalse(fluid.isSource(1), "slot 1 是流动水不是源");
+        assertNull(fluid.sourceFluid(1), "流动格不是源");
+
+        fluid.removeSource(0);
+        assertFalse(fluid.isSource(0), "移除后不再是源");
+        assertNull(fluid.sourceFluid(0));
     }
 }

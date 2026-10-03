@@ -38,6 +38,9 @@
 
 - ✅ **1b-2c 红石归零解耦**（框架修复）：抽出 `zeroResidualRedstone(grouped, ctx, tick)` —— 容器有 `REDSTONE` 数据但 `grouped` 里没有 `LivingRedstoneFunction`（残留红石）⇒ 主动归零，**判据与 `grouped` 是否为空无关**。⚠️ **该问题已被 1b-2b 提前触发**（自维持驱动使 `grouped` 恒非空 ⇒ 原 `handleEmptyContainer` 分支**永不执行** ⇒ 残留红石不再归零）。**412 测试全绿**（含 1b-2c 回归守卫，已实测「禁用即挂」）。
 
+- ✅ **1b-2 源查询 API**（框架）：`ContainerFluidData` 补 `isSource(slot)` / `sourceFluid(slot)` / `hasAnySource()`（供汲 / 倒处理器用）。**413 测试全绿**。
+  - ⏸️ **1b-2 余下两项明确暂缓**：⑧ **落盘** 待流体侧 `generatedSources` 数据模型（今天唯一的源是桶源、每 tick 由桶重新注册 ⇒ 无物可落，预先写 CODEC 属为假想数据做序列化）；⑨ **同步轨泛化** 属客户端渲染（待 Q5）。详见 `docs/buffer/infrastructure-refactoring-plan.md` §3 1b B.8。
+
 - 🔴 **修复「特定活武器永久白板化」**（高频 0.25s 一刀 / 伤害恒 1 / 常驻拉仇恨）：
   属性镜像竞态 —— 主人换手发生在容器点击（tick 间），属性刷新在其后实体 tick，
   竞态窗口内主人地图的旧武器 bd/bs 被镜像记录，下一轮清理按 id 删除

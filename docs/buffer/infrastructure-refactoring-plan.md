@@ -393,9 +393,13 @@ return "container_" + Integer.toHexString(handler.hashCode());
    REDSTONE 数据但 `grouped` 里无 `LivingRedstoneFunction` ⇒ 主动归零，**判据与 `grouped` 是否为空无关**。
    ⚠️ 该问题已被 **1b-2b 提前触发**（自维持驱动使 `grouped` 恒非空 ⇒ 原 `handleEmptyContainer` 分支
    **永不执行**）。**412 测试全绿**（含 1b-2c 回归守卫，已实测「禁用即挂」）。
-7. **API**：查 / 改某槽位流体源（给汲 / 倒处理器用）。
-8. **落盘**：`ContainerFluidData.CODEC` + `CONTAINER_FLUID_DATA.serialize` + 背包 Player attachment。
-9. **同步轨泛化**（Q5）：纯源容器的流体同步到客户端。
+7. ✅ **API**（2026-10-03）—— `ContainerFluidData` 补**查询**接口 `isSource(slot)` / `sourceFluid(slot)` /
+   `hasAnySource()`（**改**已有 `registerSource` / `removeSource`）。供汲 / 倒处理器用。**413 测试全绿**。
+8. ⏸️ **落盘** —— **待流体侧数据模型**：今天唯一的源是「**桶源**」（桶在场才有效、每 tick 由桶重新注册
+   ⇒ **无物可落**）；真正要持久化的是流体侧的 `generatedSources`。⇒ 等流体侧定义它之后再接 `CODEC`
+   （小改动）—— **不预先为假想数据写序列化**。
+9. ⏸️ **同步轨泛化（Q5）** —— **待 Q5 / 渲染侧**：§2 Q5 的结论是「复用 `ContainerRuntimeCache.flushToClients`
+   + `LivingItemSyncPacket`」；落地属**客户端渲染**（流体侧）。
 
 **之后**：流体侧接水 / 岩浆 / 模组流体。
 

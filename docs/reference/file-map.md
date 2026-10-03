@@ -318,7 +318,7 @@ src/test/java/com/qiqi/li/
 ├── living/domain/map/
 │   └── MapCoordHelperTest.java                # 地图坐标换算（29 项）
 ├── living/domain/water/
-│   ├── ContainerFluidDataTest.java            # 流体引擎行为快照·单源扩散/上限7/活物阻挡/非活物穿过/源移除/水流推动/二维扩散 + 行为接缝·按maxLevel/静止不扩散 + TickContext 建流体数据回归 + 通用驱动·自维持/驱动BFS（12 项）
+│   ├── ContainerFluidDataTest.java            # 流体引擎行为快照·单源扩散/上限7/活物阻挡/非活物穿过/源移除/水流推动/二维扩散 + 行为接缝·按maxLevel/静止不扩散 + TickContext 建流体数据回归 + 通用驱动·自维持/驱动BFS + 源查询API（13 项）
 │   └── ContainerFluidIntegrationTest.java     # 流体端到端（走真实 processContext）·桶注册源+驱动跑BFS / 驱动进自维持清单 / 残留红石在非空容器仍归零（1b-2c 守卫）（3 项）
 ├── living/interaction/
 │   ├── InteractionRegistryTest.java           # 两趟优先级匹配·通配遮蔽+triggerFilter 回归守卫（7 项）

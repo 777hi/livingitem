@@ -139,6 +139,35 @@ public class ContainerFluidData {
         }
     }
 
+    /**
+     * 【查】指定槽位是否是流体源（供汲 / 倒处理器与渲染端查询）。
+     *
+     * <p>注意：源是<b>容器级资产</b>，与「槽位里有没有活物品」无关 —— 桶源由桶的物品驱动注册，
+     * 生成源由流体侧注册，二者在本表里等价。</p>
+     */
+    public boolean isSource(int slot) {
+        FlowEntry e = flows.get(slot);
+        return e != null && e.isSource;
+    }
+
+    /**
+     * 【查】指定槽位的源流体类型；非源返回 {@code null}。
+     *
+     * <p>供「汲水」判定该格是不是可汲的源、以及「倒水」判定目标格是否已有（异种）源。</p>
+     */
+    public FluidType sourceFluid(int slot) {
+        FlowEntry e = flows.get(slot);
+        return (e != null && e.isSource) ? e.fluid : null;
+    }
+
+    /** 【查】本容器当前是否存在任何流体源（廉价，不扫描槽位）。 */
+    public boolean hasAnySource() {
+        for (FlowEntry e : flows.values()) {
+            if (e.isSource) return true;
+        }
+        return false;
+    }
+
     public void tick(ContainerContext ctx) {
         int containerSize = ctx.getSize();
         int width = ctx.getWidth();
