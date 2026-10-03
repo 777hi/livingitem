@@ -1,0 +1,107 @@
+{
+  "version": 1,
+  "transforms": [
+    {
+      "id": "water_empty_bucket",
+      "fluid": "minecraft:water",
+      "input": "minecraft:bucket",
+      "output": "minecraft:water_bucket"
+    },
+    {
+      "id": "water_white_concrete",
+      "fluid": "minecraft:water",
+      "input": "minecraft:white_concrete_powder",
+      "output": "minecraft:white_concrete"
+    },
+    {
+      "id": "water_orange_concrete",
+      "fluid": "minecraft:water",
+      "input": "minecraft:orange_concrete_powder",
+      "output": "minecraft:orange_concrete"
+    },
+    {
+      "id": "water_magenta_concrete",
+      "fluid": "minecraft:water",
+      "input": "minecraft:magenta_concrete_powder",
+      "output": "minecraft:magenta_concrete"
+    },
+    {
+      "id": "water_light_blue_concrete",
+      "fluid": "minecraft:water",
+      "input": "minecraft:light_blue_concrete_powder",
+      "output": "minecraft:light_blue_concrete"
+    },
+    {
+      "id": "water_yellow_concrete",
+      "fluid": "minecraft:water",
+      "input": "minecraft:yellow_concrete_powder",
+      "output": "minecraft:yellow_concrete"
+    },
+    {
+      "id": "water_lime_concrete",
+      "fluid": "minecraft:water",
+      "input": "minecraft:lime_concrete_powder",
+      "output": "minecraft:lime_concrete"
+    },
+    {
+      "id": "water_pink_concrete",
+      "fluid": "minecraft:water",
+      "input": "minecraft:pink_concrete_powder",
+      "output": "minecraft:pink_concrete"
+    },
+    {
+      "id": "water_gray_concrete",
+      "fluid": "minecraft:water",
+      "input": "minecraft:gray_concrete_powder",
+      "output": "minecraft:gray_concrete"
+    },
+    {
+      "id": "water_light_gray_concrete",
+      "fluid": "minecraft:water",
+      "input": "minecraft:light_gray_concrete_powder",
+      "output": "minecraft:light_gray_concrete"
+    },
+    {
+      "id": "water_cyan_concrete",
+      "fluid": "minecraft:water",
+      "input": "minecraft:cyan_concrete_powder",
+      "output": "minecraft:cyan_concrete"
+    },
+    {
+      "id": "water_purple_concrete",
+      "fluid": "minecraft:water",
+      "input": "minecraft:purple_concrete_powder",
+      "output": "minecraft:purple_concrete"
+    },
+    {
+      "id": "water_blue_concrete",
+      "fluid": "minecraft:water",
+      "input": "minecraft:blue_concrete_powder",
+      "output": "minecraft:blue_concrete"
+    },
+    {
+      "id": "water_brown_concrete",
+      "fluid": "minecraft:water",
+      "input": "minecraft:brown_concrete_powder",
+      "output": "minecraft:brown_concrete"
+    },
+    {
+      "id": "water_green_concrete",
+      "fluid": "minecraft:water",
+      "input": "minecraft:green_concrete_powder",
+      "output": "minecraft:green_concrete"
+    },
+    {
+      "id": "water_red_concrete",
+      "fluid": "minecraft:water",
+      "input": "minecraft:red_concrete_powder",
+      "output": "minecraft:red_concrete"
+    },
+    {
+      "id": "water_black_concrete",
+      "fluid": "minecraft:water",
+      "input": "minecraft:black_concrete_powder",
+      "output": "minecraft:black_concrete"
+    }
+  ]
+}

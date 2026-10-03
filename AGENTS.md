@@ -165,7 +165,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 437 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
+**合计测试用例 443 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
 全绿基线：`436 passed / 0 failed / 1 skipped`（2026-10-04 B.5 第三项：`ContainerFluidDataTest` 新增 1 项 ——
 玩家背包/末影箱落盘 `KEYED_CODEC` 往返；2026-10-04 Q6 批次 B：`ContainerContextsTest` 新增 10 项 ——
 边界带共享内核 `ownsContainer`（大箱 `CompoundContainer` 特判）/ `isSameSlotSpace`（槽位体系探针）；
@@ -207,7 +207,6 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 | 2026-10-03 | **基础设施重构 1a 地基完成**（4/4，397 测试全绿，行为不变）：Q3 删 `containerKey` 第三档改抛异常；Q4 抽 `TickableContainerContext` 子接口；Q2 容器级数据并入 `ContainerDataStore`（按 `ContainerDataKey` 数组下标存取，新增一种数据只改 1 行）；Q1 `LivingItemFunction#shouldTickWithoutOwnItems`（默认 false）+ 注册期静态自维持清单（每 tick 只遍历 0~1 个，不逐函数判定），为「活水源 = 没有物品载体的活物品」铺路 | `docs/buffer/infrastructure-refactoring-plan.md` §3 |
 | 2026-09-30 | **受控 tick 重构**（台阶一/二）：`driveWielderTick` 按 game tick 去重驱动 FakePlayer 真链（**调 doTick 非 tick**，物理钉住/不进世界）⇒ inventoryTick/冷却/药效衰减/装备刷新/蓄力推进全原生；攻击缩放为 per-weapon 注入（共享 fake 一个时钟的实测回归修正）；蓄力型地基就绪 | `living-tool-tech.md` §5.7 |
 | 2026-09-30 | **修复「特定活武器永久白板化」**（0.25s 一刀 / 伤害 1 / 拉仇恨）：属性镜像竞态 —— 主人换手点击与属性刷新差一个 tick，旧武器 bd/bs 被镜像记录后清理时连武器自身的同 id 修饰符一起删，equipTool changed=false 不补回；修：每次摘旧装新自愈 + 镜像排除武器自身 id | `living-weapon-tech.md` §8.1 |
-| 2026-09-30 | **代持 tick**（通用兼容）：回放路径补 `held.inventoryTick(selected=true)` + `fake.getCooldowns().tick()` —— 手持类效果与物品冷却在主动模式正常推进，模组无关（Simply Swords 实测）；玩家形态双 tick 接受 | `living-tool-tech.md` §5.7 |
 
 ## 排查铁律：原版机制挡路时
 

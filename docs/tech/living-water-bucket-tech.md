@@ -359,6 +359,22 @@ private void pushItems(ContainerContext ctx, int containerSize, int width) {
 
 ---
 
+## 5.5 流体转化表（F4，2026-10-03）
+
+源格物品转化（机制三）的数据层：各流体行为的 `transformItem` 委托到
+`FluidTransformTable.transform(fluid, stack)`，按（流体类型，输入物品）查表。
+
+- **条目格式**：`{ "id", "fluid", "input", "output" }` —— 流体为 FluidType 注册 id
+- **三层来源**：内置 `assets/living_item/fluid_transforms.json` + 玩家差异
+  `config/living_item/fluid_transforms.json`（`transforms[]` 追加/按 id 覆盖、`removed[]` 删除），
+  与交互规则加载器同构（沉默即缺陷：坏条目 WARN 跳过，绝不崩游戏）
+- **转化口径**（2026-10-03 拍板）：整槽等量替换，且 `数量 ≤ 产物最大堆叠` 才执行
+  （缩容等待：空桶×16 永不转化，拆分后立即转化）；活物品不转化（进源格先被挤没）
+- **转化节拍**：无（全部即时 ≤1t）；JSON 暂不解析 interval —— 引擎接缝
+  `transformItem` 无节拍参数，等首个真需要节拍的条目再扩（不为假想需求做扩展点）
+- **内置条目**：水-空桶→水桶；16 色混凝土粉末→混凝土（干海绵→湿海绵暂缓，等活海绵定案）
+- **指令**：`/livingitem transforms reload|list`（list 标注 bundled/user）
+
 ## 6. Tooltip 显示
 
 ### 6.1 显示内容

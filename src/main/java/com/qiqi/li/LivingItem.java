@@ -81,6 +81,7 @@ import com.qiqi.li.living.domain.power.PowerRegistration;
 import com.qiqi.li.living.domain.redstone.RedstoneRegistration;
 import com.qiqi.li.living.domain.tnt.TntRegistration;
 import com.qiqi.li.living.domain.tools.ToolRegistration;
+import com.qiqi.li.living.domain.water.FluidTransformTable;
 import com.qiqi.li.living.domain.water.WaterRegistration;
 import com.qiqi.li.living.domain.chest.LivingChestItemHandler;
 import com.qiqi.li.living.domain.ender.LivingEnderChestItemHandler;
@@ -139,6 +140,9 @@ public class LivingItem {
         // 交互规则的配置目录（D2）；load() 必须在所有域注册之后 —— 规则的 action
         // 引用要对照已注册的 handler 校验（见 InteractionRuleConfig javadoc）
         InteractionRuleConfig.init(net.neoforged.fml.loading.FMLPaths.CONFIGDIR.get());
+        // 流体转化表的配置目录（F4，2026-10-03）；纯数据（无 handler 引用），
+        // load 在域注册之后统一走下方规则装载
+        FluidTransformTable.init(net.neoforged.fml.loading.FMLPaths.CONFIGDIR.get());
 
         ModCreate.init();
 
@@ -163,6 +167,8 @@ public class LivingItem {
 
         // 规则装载（handler / 谓词全部就位之后）：内置 JSON + 玩家差异 → InteractionRegistry
         InteractionRuleConfig.load();
+        // 流体转化表装载（F4）：内置 JSON + 玩家差异 → FluidTransformTable
+        FluidTransformTable.load();
 
         // 各域注册完毕 ⇒ 按 getTickPriority() 稳定排序（幂等）。
         // 默认优先级全为 0 且排序稳定 ⇒ 顺序与下放前完全一致（零行为变化），

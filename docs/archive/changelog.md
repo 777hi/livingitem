@@ -40,6 +40,19 @@
 
 ## 2026-10-03
 
+- ✅ **流体侧批次三（F4 转化表 JSON 化）**（**443 测试全绿**，437 + 新增 6）。
+  - 新 `FluidTransformTable`（domain/water）：源格物品转化的数据层，与 `InteractionRuleConfig`
+    同构的三层来源加载器（内置 `assets/living_item/fluid_transforms.json` + 玩家差异
+    `config/living_item/fluid_transforms.json`：追加/按 id 覆盖/`removed[]` 删除；
+    坏条目 WARN 跳过——沉默即缺陷，含未知字段检测）。条目 = `{id, fluid, input, output}`
+    （流体为 FluidType 注册 id，**含流体维度键**——同容器水/岩浆各走各的转化）。
+  - 转化口径不变：整槽等量替换 + 缩容堆叠等待（数量 > 产物最大堆叠则不转）+ 活物品过滤。
+    转化节拍不做：JSON 暂不解析 interval（引擎接缝无节拍参数，不为假想需求做扩展点）。
+  - 内置 17 条：水-空桶→水桶 + 16 色混凝土粉末→混凝土（干海绵暂缓等活海绵）。
+    `WaterRegistration` 水行为的 `transformItem` 改为委托查表（删硬编码）。
+  - 新指令 `/livingitem transforms reload|list`（`LivingItemTransformCommand`，
+    与 interaction 同构）；commonSetup 接 `init`/`load`。
+  - 新 `FluidTransformTableTest` 6 项（内置装载/玩家差异/坏文件/坏条目/缩容等待/活物品过滤）。
 - ✅ **流体侧批次二（F3 活桶 FluidStack 化 + F2 水晋升）—— 桶源退役落地**（**426 测试全绿**）。
   - **F3 活桶 = 同一物品 + 内容组件**：新 `LivingBucketFunction`（`Items.BUCKET` 宿主 + `LIVING_BUCKET_FLUID`
     内容组件 `SimpleFluidContent`，交互型无 tick）；满 = 活水桶、空 = 活空桶，倒/汲只改内容，

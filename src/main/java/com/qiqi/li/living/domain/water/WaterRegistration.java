@@ -3,7 +3,6 @@ package com.qiqi.li.living.domain.water;
 import com.qiqi.li.living.api.LivingItemManager;
 
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
 import net.minecraft.world.level.material.Fluids;
 
 /**
@@ -29,11 +28,11 @@ public final class WaterRegistration {
         com.qiqi.li.living.interaction.InteractionRegistry.registerHandler(
             "living_bucket_scoop", LivingBucketInteractHandlers.SCOOP);
 
-        // 流体流动行为（1b-2 契约 + 流体侧 F2/F4 前身）：
+        // 流体流动行为（1b-2 契约 + 流体侧 F2/F4）：
         //  - 会流动，level 上限 7，流速预留 0
         //  - 晋升（F2）：四邻中 ≥2 源 → 升格为派生源（原版无限水；岩浆等其它流体吃默认永不晋升）
-        //  - 转化（F4 前身，最小内置）：源格上的单个非活空桶 → 水桶；
-        //    缩容堆叠等待规则：数量 > 1 不转化（水桶最大堆叠 1，整槽无法等量替换）
+        //  - 转化（F4）：委托 FluidTransformTable 按 JSON 转化表查（水：空桶→水桶、
+        //    混凝土粉末→混凝土；缩容堆叠等待规则在表内实施）
         FluidFlowBehaviors.register(Fluids.WATER.getFluidType(), new FluidFlowBehavior() {
             @Override public boolean canFlow() { return true; }
             @Override public int maxLevel() { return ContainerFluidData.MAX_FLOW_LEVEL; }
@@ -42,11 +41,7 @@ public final class WaterRegistration {
                 return sourceNeighborCount >= 2;
             }
             @Override public ItemStack transformItem(ItemStack item) {
-                if (item.is(Items.BUCKET) && item.getCount() == 1
-                        && !LivingItemManager.isLivingItem(item)) {
-                    return new ItemStack(Items.WATER_BUCKET);
-                }
-                return null;
+                return FluidTransformTable.transform(Fluids.WATER.getFluidType(), item);
             }
         });
     }

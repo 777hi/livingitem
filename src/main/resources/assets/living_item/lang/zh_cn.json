@@ -229,6 +229,9 @@
   "command.livingitem.activation_list_empty": "  §7（当前没有任何规则）§r",
 
   "command.livingitem.interaction_reloaded": "§a交互规则已重载§r：§e%d§7 条生效（内置 %d）",
+  "command.livingitem.transforms_reloaded": "§a流体转化表已重载§r：§e%d§7 条生效（内置 %d）",
   "command.livingitem.interaction_list": "§6交互规则概况§r：§e%d§7 条生效（内置 %d）§r\n§7增删改直接编辑 §fconfig/living_item/interaction_rules.json§7（只写差异），改完 §f/livingitem interaction reload§r",
-  "command.livingitem.interaction_list_empty": "  §7（当前没有任何交互规则）§r"
+  "command.livingitem.transforms_list": "§6流体转化表概况§r：§e%d§7 条生效（内置 %d）§r\n§7增删改直接编辑 §fconfig/living_item/fluid_transforms.json§7（只写差异），改完 §f/livingitem transforms reload§r",
+  "command.livingitem.interaction_list_empty": "  §7（当前没有任何交互规则）§r",
+  "command.livingitem.transforms_list_empty": "  §7（当前没有任何转化）§r"
 }

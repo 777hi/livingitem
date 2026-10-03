@@ -33,6 +33,7 @@
 | `container` | 校准 / 管理第三方容器的槽位布局（含导出给模组作者合并进内置资源） | [`guides/container-compatibility.md`](../guides/container-compatibility.md) |
 | `activation` | 控制哪些物品可被活化（禁玩家自己活化、放行任务奖励等途径） | [`buffer/activation-rule-design.md`](../guides/activation-rules.md) |
 | `interaction` | 重载 / 查看活物品 GUI 交互规则（规则本体在 `config/living_item/interaction_rules.json`，只写差异；增删改直接编辑文件） | [`buffer/interaction-rule-design.md`](../guides/interaction-rules.md) |
+| `transforms` | 重载 / 查看流体转化表（源格物品转化，条目本体在 `config/living_item/fluid_transforms.json`，只写差异；增删改直接编辑文件） | [`tech/living-water-bucket-tech.md`](../tech/living-water-bucket-tech.md) |
 | `debug` | 容器监控开关、背包转储、区块缓存统计（排障工具） | [`guides/container-monitor.md`](../guides/container-monitor.md) |
 
 ## activation 的「目标」语法（三种颗粒度）
