@@ -1393,7 +1393,7 @@ if (slot.getContainerSlot() == logicalSlot
 
 **大箱匹配（2026-09-09 补丁）**：容器归属验证最初是纯实例匹配 `myContainers.contains(slot.container)`，但原版大箱子菜单的槽位容器是 `new CompoundContainer(左半BE, 右半BE)` **包装对象**而非 BE 本体——实例匹配对大箱**永远不命中**，导致活物品 DataComponent 变化的同步包从不发给大箱查看者（症状：活水车旋转动画/Tooltip、活水桶水流 Tooltip 停留在开箱快照，重开界面才恢复；单箱正常）。单箱菜单容器就是 BE 本体，故不受影响。修复为两级匹配（`slotBelongsTo`）：先实例匹配（单箱），再对 `CompoundContainer` 用其自带的 `contains(Container)`（引用相等）逐个匹配关联 BE（大箱）。
 
-> **与 tooltip-system.md §3.2 的关系**：同一 bug 模式在 v19.1 修 `ContainerRuntimeCache.isViewingContainer`（遥测链路）时就出现过，当时只修了遥测一处，此处（组件同步链路）是漏掉的平行断点。教训已提炼为通用规则：「任何『玩家菜单 ↔ 容器实例』匹配必须兼容 `CompoundContainer.contains(be)`」（[tooltip-system.md §7 坑清单第 3 条](tooltip-system.md#7-设计原则与坑清单)）。**新增按玩家菜单匹配容器的代码时，必须检查这两个先例**。
+> **与 tooltip-system.md §3.2 的关系**：同一 bug 模式在 v19.1 修 `ContainerRuntimeCache.isViewingContainer`（遥测链路）时就出现过，当时只修了遥测一处，此处（组件同步链路）是漏掉的平行断点。教训已提炼为通用不变量：「任何『玩家菜单 ↔ 容器实例』匹配必须兼容 `CompoundContainer.contains(be)`」（**正文见 [container-identity.md](container-identity.md) §2**）。**新增按玩家菜单匹配容器的代码时，必须检查这两个先例**。
 
 **槽位对齐**：大箱的 IItemHandler（`InvWrapper(CompoundContainer)`，`logicalSlot` 的来源）与菜单 `CompoundContainer` 都经 `ChestBlock.combine → DoubleBlockCombiner` 生成，拼接顺序由 `ChestBlock.TYPE`（LEFT/RIGHT）归一化——无论从哪个半箱查询，`container1` 恒为左半箱，槽位索引天然一致，同步不会左右对调。
 

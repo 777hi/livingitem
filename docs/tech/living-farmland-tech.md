@@ -93,7 +93,7 @@ LivingFarmlandFunction.tick（每容器 tick）
 | `pendingDrops` | `List<ItemStack>` | 首次成熟时评估冻结的战利品列表（round-robin 数据源，Codec 用 `ItemStack.OPTIONAL_CODEC.listOf()`） |
 
 **不进 `getIgnoredComponentTypes()`**——age/pendingDrops 是客户端渲染数据源，进忽略
-集合会复现「大箱快照坑」（tooltip-system.md 坑清单第 3 条）。代价：仅同作物同 age 同
+集合会复现「大箱快照坑」（通用不变量见 [container-identity.md](../system-design/container-identity.md)）。代价：仅同作物同 age 同
 冷却戳才可堆叠（一堆 = 一片同步生长的田，语义合理）。
 
 **`setData` 移除语义安全**：`LivingItemManager.setData` 在组件等于 DEFAULT 时会 remove；

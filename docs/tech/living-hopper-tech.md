@@ -998,6 +998,9 @@ GUI右(RIGHT) → 世界西(WEST)   → 旋转后
 假设反了最多影响优先级，功能仍然成立。对比 §10.25 的容器内路径 —— 那条路没有备选可用，
 所以必须靠体系一致性探针。
 
+> 📄 通用教训（**跨容器面候选不做结构假设**）已收编进
+> [container-identity.md](../system-design/container-identity.md) §4。
+
 **内部传输防护**：`getNeighborHandler()` 中 `chestPositions.contains(neighborPos)` →
 指向另一半的方向返回 `null`。
 **源=目标自传防护**：`transferBetweenNeighbors` 中若源/目标邻居位置相同则跳过
@@ -1855,6 +1858,9 @@ return stack.getCount() - remaining.getCount();
 
 **遗留**：`TransferPipeline` 的 `hostContainer.canTakeItem/canPlaceItem` 仍按单方块体系索引
 （对原版箱子无害，因默认 `true`），如需彻底统一可复用同一探针。
+
+> 📄 本条的两条通用教训（**两套槽位体系探针**、**模拟与真实写入同源**）已收编进
+> [container-identity.md](../system-design/container-identity.md) §4；此处保留本子系统的完整踩坑案例。
 
 **相关提交**：2026-09-22
 
