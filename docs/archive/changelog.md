@@ -26,7 +26,10 @@
   - `ContainerContexts.isSameSlotSpace(Container, IItemHandler, int)` 收编 `SimpleContainerContext.isSameSlotSpaceAsHandler`（hopper §10.25 两级探针）。
   - 两个消费者改薄委托；**`grep CompoundContainer` 代码特判收敛到 1 处**（`ContainerContexts`，其余全为注释）。
   - ⚠️ `CrossContainerTransfer.getBasePosCandidates` **不迁移**（非重复项，属传输「面选取」；通用教训已收编 `container-identity.md` §4）。
-  - 批次 C 待办：客户端 `resolveMenuSlot`（`GuiInteractionHelper.resolveContainerSlot` + `AbstractContainerScreenMixin`）。
+- ✅ **Q6 批次 C（客户端收尾）**（**436 测试全绿**，客户端无自动化测试、靠游戏内验证）：
+  - ⚠️ **不能放 `ContainerContexts`**：`SlotWrapperAccessor` 是客户端 Mixin，common 包引用它会让**专用服务端**加载时崩 ⇒ 新建客户端对偶 `client/util/ClientSlotResolve.resolveContainerSlot(Slot)`（**被迫分居两侧**）。
+  - 收编 `GuiInteractionHelper.resolveContainerSlot` + `AbstractContainerScreenMixin.living_item$resolveContainerSlot`（后者多一层反射兜底，统一保留）；顺带删除 Mixin 里已死的 `WATER_LOGGER` / `SLOT_WRAPPER_FIELD_CACHE` 字段。
+  - 两个消费者改薄委托；**Q6 三个批次至此全部落地**。
 - ✅ **新建稳定层文档 `docs/system-design/container-identity.md`「多方块容器身份解析（边界带）」**：Q6 收敛前，该主题的教训散在 hopper §6.4/§10.25、tooltip §3.2/§7、infrastructure §2.5/§8.5、活桶汲/倒四处，且只在 buffer 层有记录（无稳定归宿）。本文把问题（三视图互不可达）、共享内核契约（`ContainerContexts.resolve`/`isViewing` + 两条不变量）、消费者清单（6+客户端 1）、通用教训、已知缺口集中到一处；infrastructure §2.5 与 AGENTS 子系统索引已加指针。
 
 ## 2026-10-03

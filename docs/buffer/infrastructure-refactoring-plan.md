@@ -151,7 +151,7 @@ return "container_" + Integer.toHexString(handler.hashCode());
 | **Q3** | `containerKey` 第三档 | ⭐ **直接删，改为显式抛异常**（**无需观测期** —— 已静态证明不可达） | 1a-2 |
 | **Q4** | `ContainerContext` 补哪些方法 | **抽 `TickableContainerContext` 子接口**（不污染只读的 `ContainerContext`） | 1a-3 |
 | **Q5** | 纯源容器渲染的同步轨 | ⭐ **不用验证 attachment** —— 复用已有的 `ContainerRuntimeCache.flushToClients` + `LivingItemSyncPacket` | 活水源二期 |
-| **Q6** | 多方块容器边界带「身份解析」收敛（流体侧移交，2026-10-03） | ⭐ 新增 `ContainerContexts`（container/ 包）共享内核，收编 6 处重复消费者（详见 §2.1-Q6） | 批次 A（服务端 `resolve`/`isViewing`）✅ 2026-10-04；批次 B（`ownsContainer`+`isSameSlotSpace`）✅ 2026-10-04；批次 C（客户端 `resolveMenuSlot`）待办 |
+| **Q6** | 多方块容器边界带「身份解析」收敛（流体侧移交，2026-10-03） | ⭐ 新增 `ContainerContexts`（container/ 包）共享内核 + 客户端对偶 `ClientSlotResolve`，收编 6+1 处重复消费者（详见 §2.1-Q6） | ✅ **全部完成 2026-10-04**（A 服务端 `resolve`/`isViewing`；B `ownsContainer`/`isSameSlotSpace`；C 客户端 `ClientSlotResolve`）|
 
 **Q3 的不可达证明**：`buildContext` 唯一调用点传 `player.getInventory()`（inventory 恒非 null）；
 `processContainerAt` 的 else 分支（`:759-768`）**无条件** `positions.add(pos)` ⇒ positions 恒非空。
@@ -314,7 +314,13 @@ ContainerContexts
 - ⚠️ **`CrossContainerTransfer.getBasePosCandidates` 不迁移**（判断）：它不是重复项（仅本处使用），
   属传输「面选取」而非「身份解析」，且不在 Q6 推荐 API 内；其通用教训（跨容器面候选不做结构假设）
   已在 `container-identity.md` §4 收编，`living-hopper-tech.md` §6.4 亦已加指针。
-- 批次 C 待办：客户端 `resolveMenuSlot`（收编 `GuiInteractionHelper.resolveContainerSlot` + `AbstractContainerScreenMixin`）。
+**批次 C 实施（2026-10-04，✅ 已完成）**：客户端收尾——
+- ⚠️ **不能放 `ContainerContexts`**：`SlotWrapperAccessor` 是客户端 Mixin，common 包引用它会让**专用服务端**崩
+  ⇒ 新建客户端对偶 `client/util/ClientSlotResolve.resolveContainerSlot(Slot)`（**被迫分居两侧**）。
+- 收编 `GuiInteractionHelper.resolveContainerSlot` + `AbstractContainerScreenMixin.living_item$resolveContainerSlot`
+  （后者多一层反射兜底，统一保留；顺带删除 Mixin 里已死的 `WATER_LOGGER` / `SLOT_WRAPPER_FIELD_CACHE` 字段）。
+- 两个消费者改薄委托；客户端无自动化测试，靠游戏内验证（与 tooltip 客户端路径同口径）。
+- **Q6 三个批次至此全部落地**。
 
 ---
 

@@ -4,9 +4,9 @@
 > 把原先散落在 hopper §6.4/§10.25、tooltip-system §3.2/§7、infrastructure §2.5/§8.5、
 > 活桶汲/倒里的同类教训**集中到一处**。
 >
-> **状态**：批次 A（服务端 `resolve` / `isViewing`）**已落地**；批次 B（`ownsContainer` + `isSameSlotSpace`）**已落地**；
-> 批次 C（客户端 `resolveMenuSlot`）**待办**。
-> 收编方案、拍板记录与待办清单在
+> **状态**：批次 A（服务端 `resolve` / `isViewing`）、批次 B（`ownsContainer` + `isSameSlotSpace`）、
+> 批次 C（客户端槽位解析）**均已落地**。
+> 收编方案与拍板记录在
 > [buffer/infrastructure-refactoring-plan.md §2.1-Q6](../buffer/infrastructure-refactoring-plan.md)。
 
 ---
@@ -60,9 +60,13 @@
 2. **`resolve` 的容器键必须与 `ContainerLivingItemHandler.processContainerAt` 的构建规则一致** ——
    否则拿到的不是 tick 循环里那份活实例，改副本会被下一 tick 重算覆盖。
 
-**未来批次**（方案见 buffer 计划，尚未实现）：
+**客户端对偶**（批次 C，已落地）：`client/util/ClientSlotResolve.resolveContainerSlot(Slot)` ——
+收编 `GuiInteractionHelper.resolveContainerSlot` 与 `AbstractContainerScreenMixin.living_item$resolveContainerSlot`
+（后者多一层反射兜底，统一保留）。
 
-- `resolveMenuSlot(menu, containerSlot)` —— 客户端 `SlotWrapper` 解析（底稿 `GuiInteractionHelper.resolveContainerSlot`）。
+> ⚠️ **为何不在 `ContainerContexts` 内**：创造模式 `SlotWrapper` 是原版**客户端**内部类，靠客户端 Mixin
+> `SlotWrapperAccessor` 访问 —— 若 common 包的 `ContainerContexts` 引用它，**专用服务端**加载时会崩。
+> 故客户端解析被迫分居 `client/util/`，逻辑同属「槽位 ↔ 容器身份」收敛。
 
 ---
 
@@ -77,7 +81,7 @@
 | 5 | `SimpleContainerContext.java` `slotBelongsTo` | 容器归属匹配（组件同步）| ✅ 改薄委托 → `ContainerContexts.ownsContainer` |
 | 6 | `CrossContainerTransfer.java` `getBasePosCandidates` | 跨容器面选取（基准块候选）| 不迁移（非重复项，属传输面选取；通用教训见 §4）|
 | 7 | `SimpleContainerContext.java` `isSameSlotSpaceAsHandler` | 槽位体系一致性仲裁 | ✅ 改薄委托 → `ContainerContexts.isSameSlotSpace` |
-| C | `GuiInteractionHelper.java` + `AbstractContainerScreenMixin.java` | 客户端槽位 → 容器（创造模式 `SlotWrapper`）| 待批次 C 收编 |
+| C | `GuiInteractionHelper.java` + `AbstractContainerScreenMixin.java` | 客户端槽位 → 容器（创造模式 `SlotWrapper`）| ✅ 改薄委托 → `ClientSlotResolve.resolveContainerSlot`（`client/util/`）|
 
 > **判据（可复算）**：`grep -rn CompoundContainer src/main/java` 的**特判**应收敛到 `ContainerContexts` 一处。
 
@@ -86,7 +90,7 @@
 ## 4. 收编的通用教训（写别的消费者之前先读）
 
 1. **两套槽位体系可能错位**（hopper §10.25）：`Container` 给单个半箱（27 槽），`IItemHandler` 给合并（54 槽），
-   槽号错位 27。按逻辑槽位读写前**先验证两套体系一致** —— `isSameSlotSpaceAsHandler` 两级判据
+   槽号错位 27。按逻辑槽位读写前**先验证两套体系一致** —— `isSameSlotSpace` 两级判据
    （① 槽位数一致挡住「单体 vs 合并」；② 单槽交叉校验挡住「槽位数相同但合并顺序相反」），不过则回退 handler。
 2. **模拟与真实写入必须同源**：§10.25 的温床正是「模拟走 `Container`、真实走 handler」。
    `handler.insertItem(slot, …, true)` 内部本就转调容器的 `canPlaceItem`/`isItemValid`，语义不丢。

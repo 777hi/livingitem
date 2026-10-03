@@ -11,6 +11,7 @@ import com.qiqi.li.client.render.ExpandedMapTexture;
 import com.qiqi.li.client.render.LivingIconRenderHelper;
 import com.qiqi.li.client.render.LivingMapLayout;
 import com.qiqi.li.client.render.LivingMapTargetRenderer;
+import com.qiqi.li.client.util.ClientSlotResolve;
 import com.qiqi.li.client.util.LivingChestTabState;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.domain.map.MapCoordHelper;
@@ -52,8 +53,6 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.lwjgl.glfw.GLFW;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -70,7 +69,6 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Mixin(AbstractContainerScreen.class)
 public class AbstractContainerScreenMixin extends Screen {
@@ -476,10 +474,6 @@ public class AbstractContainerScreenMixin extends Screen {
 
     // ==================== Water Flow Rendering ====================
 
-    private static final Logger WATER_LOGGER = LoggerFactory.getLogger("LivingItem/WaterRender");
-
-    private static final ConcurrentHashMap<Class<?>, java.lang.reflect.Field[]> SLOT_WRAPPER_FIELD_CACHE = new ConcurrentHashMap<>();
-
     private static final int DIR_DOWN = 0;
     private static final int DIR_RIGHT = 1;
     private static final int DIR_UP = 2;
@@ -640,47 +634,13 @@ public class AbstractContainerScreenMixin extends Screen {
         };
     }
 
+    /**
+     * 解析槽位的真实容器槽位索引（Q6 批次 C，2026-10-04）—— 实现已迁至
+     * {@link ClientSlotResolve#resolveContainerSlot}（客户端槽位解析共享工具），此处保留薄委托。
+     */
     @Unique
     private static int living_item$resolveContainerSlot(Slot s) {
-        if (s instanceof SlotWrapperAccessor accessor) {
-            return accessor.getTarget().getContainerSlot();
-        }
-        if (s.getClass().getSimpleName().contains("SlotWrapper")) {
-            Slot target = living_item$resolveSlotWrapperTarget(s);
-            if (target != null) {
-                return target.getContainerSlot();
-            }
-            WATER_LOGGER.warn("[WaterRender] SlotWrapper detected but could NOT resolve target! class={}", s.getClass().getName());
-        }
-        return s.getContainerSlot();
-    }
-
-    @Unique
-    private static Slot living_item$resolveSlotWrapperTarget(Slot wrapper) {
-        try {
-            Class<?> wrapperClass = wrapper.getClass();
-            java.lang.reflect.Field[] fields = SLOT_WRAPPER_FIELD_CACHE.computeIfAbsent(wrapperClass, clazz -> {
-                List<java.lang.reflect.Field> slotFields = new ArrayList<>();
-                for (Class<?> c = clazz; c != null; c = c.getSuperclass()) {
-                    for (java.lang.reflect.Field f : c.getDeclaredFields()) {
-                        if (Slot.class.isAssignableFrom(f.getType())) {
-                            f.setAccessible(true);
-                            slotFields.add(f);
-                        }
-                    }
-                }
-                return slotFields.toArray(new java.lang.reflect.Field[0]);
-            });
-            for (java.lang.reflect.Field f : fields) {
-                Slot target = (Slot) f.get(wrapper);
-                if (target != null && target != wrapper) {
-                    return target;
-                }
-            }
-        } catch (Exception e) {
-            WATER_LOGGER.error("[WaterRender] Reflection fallback failed for SlotWrapper", e);
-        }
-        return null;
+        return ClientSlotResolve.resolveContainerSlot(s);
     }
 
     @Unique

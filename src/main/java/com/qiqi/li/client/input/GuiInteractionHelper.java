@@ -1,6 +1,6 @@
 package com.qiqi.li.client.input;
 
-import com.qiqi.li.client.mixin.SlotWrapperAccessor;
+import com.qiqi.li.client.util.ClientSlotResolve;
 import com.qiqi.li.living.domain.water.FluidFlowClientCache;
 import com.qiqi.li.living.domain.water.LivingBucketFunction;
 import com.qiqi.li.living.interaction.InteractionEntry;
@@ -110,12 +110,12 @@ public final class GuiInteractionHelper {
 
     /**
      * 解析槽位的真实容器索引，兼容创造模式 SlotWrapper。
+     *
+     * <p>Q6 批次 C（2026-10-04）：实现已迁至 {@link ClientSlotResolve#resolveContainerSlot}
+     * （客户端槽位解析共享工具），此处保留薄委托。</p>
      */
     private static int resolveContainerSlot(Slot slot) {
-        if (slot instanceof SlotWrapperAccessor accessor) {
-            return accessor.getTarget().getContainerSlot();
-        }
-        return slot.getContainerSlot();
+        return ClientSlotResolve.resolveContainerSlot(slot);
     }
 
     /**
