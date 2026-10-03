@@ -152,17 +152,17 @@ public class LivingWaterBucketFunction implements LivingItemFunction, HasContain
 
     @Override
     public int getPriority() {
-        return 0;
+        // 1b-2b：BFS 驱动已移到 LivingFluidFunction（prio 0）⇒ 本功能只做 postTickSync，
+        // 排到 BFS 之后（prio 1）。与活水车同 prio、注册序在前 ⇒ 相对序不变。
+        return 1;
     }
 
     @Override
     public void tickContainerData(List<SlotEntry> entries, ContainerContext ctx, TickContext tick) {
+        // 1b-2b：BFS（fluidData.tick）已由 LivingFluidFunction 驱动；本功能只负责把最新的
+        // flow 字符串同步回活水桶物品（供 tooltip / 客户端渲染）。
         ContainerFluidData fluidData = tick.fluidData();
         if (fluidData == null || fluidData == ContainerFluidData.EMPTY) return;
-        if (!fluidData.isEmpty()) {
-            fluidData.setLastTickTime(System.currentTimeMillis());
-            fluidData.tick(ctx);
-        }
         postTickSync(ctx, fluidData, entries);
     }
 

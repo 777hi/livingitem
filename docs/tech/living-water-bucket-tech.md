@@ -115,6 +115,11 @@ public class ContainerFluidData {
 > （`ContainerLivingItemHandler.getFluidData(ctx)`，含 BE 附件回填）—— 1a-4「容器级数据统一存储」
 > 曾漏掉此创建，导致 `tick.fluidData()` 恒为 `EMPTY`、活水桶 `registerSource` 被 `continue` 跳过
 > ⇒ **水流整体失效**。回归守卫：`ContainerFluidDataTest.tickContext_createsFluidData`。
+>
+> **驱动解耦（1b-2b，2026-10-03）**：容器级流体 tick 的**所有权从桶收归框架** ——
+> 新增 `LivingFluidFunction`（**自维持** + `HasContainerData` **prio 0**）驱动 BFS；
+> 活水桶的 `tickContainerData` 只留 `postTickSync`（prio **0→1**）。
+> ⇒ **桶不在场时容器级流体照样推进**。排序：驱动(0) → 桶同步(1) → 水车(1) → 红石(2)。
 
 ### 2.3 存储结构
 

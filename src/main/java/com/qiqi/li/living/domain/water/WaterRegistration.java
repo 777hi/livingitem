@@ -12,6 +12,8 @@ public final class WaterRegistration {
     private WaterRegistration() {}
 
     public static void register() {
+        // 容器级流体 tick 驱动（1b-2b，框架）：自维持 + HasContainerData prio 0
+        LivingItemManager.registerFunction(new LivingFluidFunction());
         LivingItemManager.registerFunction(new LivingWaterBucketFunction());
         LivingItemManager.registerFunction(new LivingWaterWheelFunction());
 

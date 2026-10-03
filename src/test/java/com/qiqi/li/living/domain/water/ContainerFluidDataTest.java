@@ -5,12 +5,15 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.List;
+
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.container.ContainerDataKeys;
 import com.qiqi.li.living.container.SimpleContainerContext;
 import com.qiqi.li.living.container.TickContext;
 
@@ -244,5 +247,29 @@ class ContainerFluidDataTest {
         var tick = new TickContext(ctx);
         assertNotSame(ContainerFluidData.EMPTY, tick.fluidData(),
             "1a-4 曾漏掉创建 ⇒ tick.fluidData() 恒 EMPTY ⇒ 桶 registerSource 被跳过 ⇒ 水流失效");
+    }
+
+    @Test
+    @DisplayName("⑩ 通用驱动：自维持 + prio 0 + 不挂物品（纯容器级）")
+    void fluidDriver_isSelfSustainingContainerLevel() {
+        var driver = new LivingFluidFunction();
+        assertTrue(driver.shouldTickWithoutOwnItems(row()), "必须自维持 —— 纯源容器的关键");
+        assertEquals(0, driver.getPriority(), "prio 0：BFS 先于应力(1)/红石(2)");
+        assertEquals("living_fluid", driver.getFunctionId());
+        assertFalse(driver.canApply(new ItemStack(Items.WATER_BUCKET)), "不挂任何物品");
+    }
+
+    @Test
+    @DisplayName("⑪ 通用驱动：tickContainerData 驱动 BFS（与桶解耦）")
+    void fluidDriver_drivesBfs() {
+        var ctx = row(livingWaterBucket());
+        var tick = new TickContext(ctx);
+        var fluid = ctx.peekContainerData(ContainerDataKeys.FLUID);
+        fluid.registerSource(0);
+
+        new LivingFluidFunction().tickContainerData(List.of(), ctx, tick);
+
+        assertEquals(8, fluid.getFlows().size(), "驱动应完成 BFS（slot 0..7）");
+        assertTrue(fluid.getFlows().get(0).isSource());
     }
 }
