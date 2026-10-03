@@ -62,7 +62,8 @@ LivingItemFunction.tick() (各功能类自行实现 tick 逻辑)
                                    渲染见 client/render/LivingToolModelRenderer + RayRenderer）
     ↓
 容器级数据计算（HasContainerData 接口，按优先级排序）
-    ├── LivingWaterBucketFunction  (prio 0) — 流体蔓延 + postTickSync
+    ├── LivingFluidFunction        (prio 0) — 容器级流体 BFS（**自维持**，与桶解耦）
+    ├── LivingWaterBucketFunction  (prio 1) — postTickSync（把 flow 同步回桶物品）
     ├── LivingWaterWheelFunction   (prio 1) — 应力计算 + postTickSync
     ├── LivingRedstoneFunction     (prio 2) — 红石信号传播
     └── LivingRedstoneTorchFunction(prio 2) — 红石信号传播（火把独立时）
@@ -90,7 +91,7 @@ SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 | 子系统 | 概述 | 详细文档 |
 |--------|------|----------|
 | **活TNT** | 引信倒计时 + 爆炸，威力随数量缩放，三模式（普通/大当量/超级爆炸）；破坏按区块分帧 + 待炸账本 | [living-tnt-tech.md](docs/tech/living-tnt-tech.md) |
-| **活水桶** | 水源注册 + BFS 蔓延 + 水流推动物品 | [living-water-bucket-tech.md](docs/tech/living-water-bucket-tech.md) |
+| **活水桶 / 通用流体框架** | 水源注册 + 流体蔓延（`LivingFluidFunction` 驱动）+ 水流推动物品；**通用流体框架**（流体类型 / 行为分档 / 驱动 / 源查询 API）见 §2.2，流体侧分工见 [buffer/infrastructure-refactoring-plan.md](docs/buffer/infrastructure-refactoring-plan.md) §3 1b | [living-water-bucket-tech.md](docs/tech/living-water-bucket-tech.md) |
 | **活熔炉** | 配方匹配 + 燃料消耗 + 方向槽位配置 | [living-furnace-tech.md](docs/tech/living-furnace-tech.md) |
 | **活漏斗** | TransferPipeline 统一传输 + 黑白名单 + 跨容器 + WASD 配置 | [living-hopper-tech.md](docs/tech/living-hopper-tech.md) |
 | **活箱子** | 堆叠倍增 + UUID 映射 + LRU 缓存 + 磁盘持久化 | [living-chest-tech.md](docs/tech/living-chest-tech.md) |

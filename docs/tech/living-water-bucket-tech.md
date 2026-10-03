@@ -120,6 +120,15 @@ public class ContainerFluidData {
 > 新增 `LivingFluidFunction`（**自维持** + `HasContainerData` **prio 0**）驱动 BFS；
 > 活水桶的 `tickContainerData` 只留 `postTickSync`（prio **0→1**）。
 > ⇒ **桶不在场时容器级流体照样推进**。排序：驱动(0) → 桶同步(1) → 水车(1) → 红石(2)。
+>
+> **源查询 / 修改 API（1b-2⑦，2026-10-03）** —— 供汲 / 倒处理器与渲染端用：
+> **查**：`isSource(slot)` / `sourceFluid(slot)`（非源返回 `null`）/ `hasAnySource()`（廉价，不扫槽位）；
+> **改**：`registerSource(slot)` / `registerSource(slot, fluid)` / `removeSource(slot)`。
+>
+> **⚠️ 流体侧（另一 AI）分工**：框架侧只提供上列基础设施 + 契约；**流体本身的行为**
+> （接哪些流体、流速、跨流体交互、转化表、汲 / 倒规则、`generatedSources` 数据模型）由流体侧负责 ——
+> 设计稿见 [idea.md](../idea.md)，分工表见
+> [buffer/infrastructure-refactoring-plan.md](../buffer/infrastructure-refactoring-plan.md) §3 1b B.1。
 
 ### 2.3 存储结构
 
@@ -179,9 +188,12 @@ public void tick(List<SlotEntry> entries, ContainerContext context, TickContext 
 }
 ```
 
-> **v2 变更**：`ContainerFluidData` 现在由 `ContainerSnapshot` 持有引用，通过 `tick.snapshot.getFluidData()` 获取。流体数据在 `TickContext.reset()` 阶段随快照一起捕获，确保活水桶 tick 时能直接读取。
+> **v2 变更**：`ContainerFluidData` 曾由 `ContainerSnapshot` 持有引用、经 `tick.snapshot.getFluidData()` 获取。
+> ⚠️ **现状（1a-4 后）**：改由 **`TickContext` 构造时创建**、读取走 `tick.fluidData()`（见 §2.2）—— 上文为 v2 时期形态。
 
 ### 3.2 BFS 重算机制
+
+> **驱动者**：**`LivingFluidFunction`（prio 0，自维持）** —— **不再是活水桶**（1b-2b 解耦，见 §2.2）。
 
 每个 tick 通过 BFS 从所有水源重新计算水流状态，动态适应环境变化：
 
