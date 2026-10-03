@@ -346,12 +346,12 @@ public class ContainerLivingItemHandler {
         cleanupCounter = 0;
     }
 
-    private static void updateStressOutput(SimpleContainerContext ctx, BlockEntity containerBE,
+    private static void updateStressOutput(TickableContainerContext ctx, BlockEntity containerBE,
                                             ContainerStressData stressData) {
         StressOutputManager.apply(containerBE.getLevel(), containerBE.getBlockPos(), stressData);
     }
 
-    private static void updatePlayerFeetStressOutput(SimpleContainerContext ctx,
+    private static void updatePlayerFeetStressOutput(TickableContainerContext ctx,
                                                       ContainerStressData stressData) {
         Inventory inventory = ctx.getInventory();
         if (inventory == null) return;
@@ -373,7 +373,7 @@ public class ContainerLivingItemHandler {
         if (level.isClientSide) return;
         IItemHandler handler = inventory.player.getCapability(Capabilities.ItemHandler.ENTITY);
         if (handler == null) return;
-        ContainerContext context = buildContext(handler, inventory, level);
+        TickableContainerContext context = buildContext(handler, inventory, level);
         processContext(context, level);
 
         processEnderChest(inventory.player, level);
@@ -395,7 +395,7 @@ public class ContainerLivingItemHandler {
         if (enderChest == null) return;
 
         IItemHandler handler = new InvWrapper(enderChest);
-        ContainerContext context = new EnderChestContainerContext(handler, player, level);
+        TickableContainerContext context = new EnderChestContainerContext(handler, player, level);
         processContext(context, level);
     }
 
@@ -407,7 +407,7 @@ public class ContainerLivingItemHandler {
      * @param level 世界
      * @return 包装后的容器上下文
      */
-    public static ContainerContext buildContext(IItemHandler handler, Inventory inventory, Level level) {
+    public static TickableContainerContext buildContext(IItemHandler handler, Inventory inventory, Level level) {
         return new SimpleContainerContext(handler, inventory, new ArrayList<>(), new ArrayList<>(), level);
     }
 
@@ -424,10 +424,11 @@ public class ContainerLivingItemHandler {
      * 按功能分组后，由功能实现自行决定如何分配处理
      * （如活熔炉每 tick 只处理一个），从根本上避免速度翻倍。
      *
-     * @param context 容器上下文
+     * @param context 可 tick 的容器上下文（掉落物形态也实现 {@link TickableContainerContext}，
+     *                靠空实现 / 空列表 / null 表达「无容器级生命周期」）
      * @param level 世界
      */
-    public static void processContext(ContainerContext context, Level level) {
+    public static void processContext(TickableContainerContext context, Level level) {
         long startNanos = System.nanoTime();
 
         int containerSize = context.getSize();
@@ -450,9 +451,7 @@ public class ContainerLivingItemHandler {
 
         // 准备 TickContext（功能 tick 与环境交互的上下文）
         TickContext tick = new TickContext(context);
-        if (context instanceof SimpleContainerContext simpleCtx) {
-            simpleCtx.setTickContext(tick);
-        }
+        context.setTickContext(tick);
 
         long scanEndNanos = System.nanoTime();
         PerfMetrics.recordPhase("scan", scanEndNanos - startNanos);
@@ -479,16 +478,14 @@ public class ContainerLivingItemHandler {
             PerfMetrics.recordPhase("container_data", containerDataEndNanos - flushChEndNanos);
 
             // 阶段 4.5：刷新运行时数据缓存到客户端（用于 tooltip 展示，不影响物品堆叠）
-            if (context instanceof SimpleContainerContext simpleCtx) {
-                java.util.List<Container> containers = new java.util.ArrayList<>();
-                for (BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {
-                    if (be instanceof Container c) {
-                        containers.add(c);
-                    }
+            java.util.List<Container> containers = new java.util.ArrayList<>();
+            for (BlockEntity be : context.getAssociatedBlockEntities()) {
+                if (be instanceof Container c) {
+                    containers.add(c);
                 }
-                if (!containers.isEmpty()) {
-                    ContainerRuntimeCache.flushToClients(level, containers);
-                }
+            }
+            if (!containers.isEmpty()) {
+                ContainerRuntimeCache.flushToClients(level, containers);
             }
 
             // 阶段 5：写回 BlockEntity（应力 + 流体）与过期清理
@@ -500,10 +497,8 @@ public class ContainerLivingItemHandler {
         } finally {
             // 无论功能 tick / 容器级数据 / 写回是否抛异常，都同步脏槽到客户端并清掉 stale
             // TickContext：否则异常时客户端物品显示错位，且下一 tick 残留旧上下文（P1-6）。
-            if (context instanceof SimpleContainerContext simpleCtx) {
-                simpleCtx.flushDirtySlots();
-                simpleCtx.setTickContext(null);
-            }
+            context.flushDirtySlots();
+            context.setTickContext(null);
         }
 
         // 阶段 6：脏槽刷新（from finally）后的 perf 收尾
@@ -523,23 +518,21 @@ public class ContainerLivingItemHandler {
      * 容器内无活物品时，仅需让残留红石信号归零。
      * 若容器有红石数据且已计算过，再跑一次 {@link ContainerRedstoneData#calculate} 使其归零。
      */
-    private static void handleEmptyContainer(ContainerContext context, long startNanos, String monitorKey) {
-        if (context instanceof SimpleContainerContext simpleCtx) {
-            String key = cacheKey(simpleCtx);
-            ContainerRedstoneData rd = null;
-            if (key != null) {
-                ContainerEntry re = CONTAINER_DATA.get(key);
-                rd = re == null ? null : re.redstone;
-            }
-            if (rd != null) {
-                TickContext tick = new TickContext(context);
-                simpleCtx.setTickContext(tick);
-                try {
-                    rd.calculate(context, tick);
-                } finally {
-                    simpleCtx.flushDirtySlots();
-                    simpleCtx.setTickContext(null);
-                }
+    private static void handleEmptyContainer(TickableContainerContext context, long startNanos, String monitorKey) {
+        String key = cacheKey(context);
+        ContainerRedstoneData rd = null;
+        if (key != null) {
+            ContainerEntry re = CONTAINER_DATA.get(key);
+            rd = re == null ? null : re.redstone;
+        }
+        if (rd != null) {
+            TickContext tick = new TickContext(context);
+            context.setTickContext(tick);
+            try {
+                rd.calculate(context, tick);
+            } finally {
+                context.flushDirtySlots();
+                context.setTickContext(null);
             }
         }
 
@@ -608,25 +601,23 @@ public class ContainerLivingItemHandler {
     /**
      * 将应力与流体数据写回 BlockEntity（或玩家脚底），并清理空流体缓存。
      */
-    private static void writebackBlockEntities(ContainerContext context, TickContext tick) {
+    private static void writebackBlockEntities(TickableContainerContext context, TickContext tick) {
         ContainerStressData stressData = tick.stressData;
-        if (stressData != null && context instanceof SimpleContainerContext simpleCtx) {
-            for (BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {
+        if (stressData != null) {
+            for (BlockEntity be : context.getAssociatedBlockEntities()) {
                 be.setData(LivingComponents.CONTAINER_STRESS_DATA.value(), stressData);
-                updateStressOutput(simpleCtx, be, stressData);
+                updateStressOutput(context, be, stressData);
             }
 
-            if (simpleCtx.getAssociatedBlockEntities().isEmpty() && simpleCtx.getInventory() != null) {
-                updatePlayerFeetStressOutput(simpleCtx, stressData);
+            if (context.getAssociatedBlockEntities().isEmpty() && context.getInventory() != null) {
+                updatePlayerFeetStressOutput(context, stressData);
             }
         }
 
         ContainerFluidData fluidData = tick.fluidData;
         if (fluidData != null && !fluidData.isEmpty()) {
-            if (context instanceof SimpleContainerContext simpleCtx) {
-                for (BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {
-                    be.setData(LivingComponents.CONTAINER_FLUID_DATA.value(), fluidData);
-                }
+            for (BlockEntity be : context.getAssociatedBlockEntities()) {
+                be.setData(LivingComponents.CONTAINER_FLUID_DATA.value(), fluidData);
             }
         }
         if (fluidData != null && fluidData.isEmpty()) {
@@ -643,10 +634,9 @@ public class ContainerLivingItemHandler {
         // 2026-09-11 换轴：capture 时钟与 tickContainerData 的 resolvePhaseClock 同源
         // （世界 game time 优先，回退本地轴）——快照必须存与驱动同坐标系的值。
         com.qiqi.li.living.domain.power.ContainerPowerData powerData = tick.powerData;
-        if (powerData != null && context instanceof SimpleContainerContext simpleCtx
-                && !simpleCtx.getAssociatedBlockEntities().isEmpty()) {
+        if (powerData != null && !context.getAssociatedBlockEntities().isEmpty()) {
             long clock = powerData.currentTick();   // 回退轴（无 Level / 测试环境）
-            for (BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {
+            for (BlockEntity be : context.getAssociatedBlockEntities()) {
                 Level beLevel = be.getLevel();
                 if (beLevel != null && !beLevel.isClientSide()) {
                     clock = beLevel.getGameTime();
@@ -655,7 +645,7 @@ public class ContainerLivingItemHandler {
             }
             com.qiqi.li.living.domain.power.PhaseSnapshot snapshot =
                 com.qiqi.li.living.domain.power.PhaseSnapshot.capture(powerData, clock);
-            for (BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {
+            for (BlockEntity be : context.getAssociatedBlockEntities()) {
                 be.setData(LivingComponents.CONTAINER_PHASE_SNAPSHOT.value(), snapshot);
             }
         }
@@ -767,7 +757,7 @@ public class ContainerLivingItemHandler {
             }
         }
 
-        ContainerContext context = new SimpleContainerContext(handler, null, positions, blockEntities, level);
+        TickableContainerContext context = new SimpleContainerContext(handler, null, positions, blockEntities, level);
         String key = context.getContainerKey();
         if (processedKeys != null && !processedKeys.add(key)) return false;
 

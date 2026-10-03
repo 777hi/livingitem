@@ -6,8 +6,10 @@ import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.phys.Vec3;
 
 /**
@@ -15,8 +17,9 @@ import net.minecraft.world.phys.Vec3;
  *
  * <p>目的：让「掉落物形态」的活物品复用现成的容器 tick 管线
  * （{@code ContainerLivingItemHandler#processContext}），而不是另写一条平行的回放逻辑。
- * 管线里所有 {@code instanceof SimpleContainerContext} 的分支（红石 / 流体 / 应力 / 相位快照 /
- * tooltip 同步）对掉落物都<b>自动跳过</b>，正是我们想要的结果。</p>
+ * 管线里的容器级处理（红石 / 流体 / 应力 / 相位快照 / tooltip 同步）对掉落物都
+ * <b>自动跳过</b>，正是我们想要的结果 —— 实现方式是 {@link TickableContainerContext}
+ * 的空实现 / 空列表 / null（见本类末尾），不再是 {@code instanceof} 不匹配。</p>
  *
  * <h3>意图标识</h3>
  * <ul>
@@ -33,7 +36,7 @@ import net.minecraft.world.phys.Vec3;
  *
  * @see SimpleContainerContext
  */
-public class ItemEntityContainerContext implements ContainerContext {
+public class ItemEntityContainerContext implements TickableContainerContext {
 
     /** 单栈容器只有这一个槽位。 */
     public static final int SINGLE_SLOT = 0;
@@ -128,5 +131,36 @@ public class ItemEntityContainerContext implements ContainerContext {
             level.getChunkSource().broadcastAndSend(entity,
                 new ClientboundSetEntityDataPacket(entity.getId(), packed));
         }
+    }
+
+    // ============================================================
+    // TickableContainerContext —— 掉落物形态没有容器级生命周期，全部为空实现
+    // ============================================================
+
+    /**
+     * 空实现 —— 掉落物没有容器级 tick 状态。
+     *
+     * <p>旧实现里管线靠「{@code instanceof SimpleContainerContext} 不匹配」跳过掉落物；
+     * 现在接口统一了，这里用 <b>空实现 / 空列表 / null</b> 表达同一件事 ——
+     * 调用方据此自然跳过红石 / 流体 / 应力 / 相位快照等容器级处理。</p>
+     */
+    @Override
+    public void setTickContext(TickContext tick) {
+        // 掉落物形态无容器级 tick 状态
+    }
+
+    @Override
+    public void flushDirtySlots() {
+        // 掉落物的同步走 syncSlotToClients（实体同步数据），没有脏槽批量刷新
+    }
+
+    @Override
+    public List<BlockEntity> getAssociatedBlockEntities() {
+        return List.of();   // 掉落物不是方块容器
+    }
+
+    @Override
+    public Inventory getInventory() {
+        return null;        // 掉落物不属于任何玩家背包
     }
 }

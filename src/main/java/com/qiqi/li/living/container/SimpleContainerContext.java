@@ -31,7 +31,7 @@ import org.slf4j.Logger;
  * - associatedBlockPositions / associatedBlockEntities：用于生成稳定的容器标识 key
  * - syncSlotToClients：手动同步 DataComponent 变化到客户端
  */
-public class SimpleContainerContext implements ContainerContext {
+public class SimpleContainerContext implements TickableContainerContext {
 
     private static final Logger LOGGER = LogUtils.getLogger();
 
@@ -51,6 +51,7 @@ public class SimpleContainerContext implements ContainerContext {
     private com.qiqi.li.living.domain.power.ContainerPowerData powerData;
     private TickContext currentTickContext;
 
+    @Override
     public void setTickContext(TickContext tick) {
         this.currentTickContext = tick;
         if (tick != null) {
@@ -355,10 +356,12 @@ public class SimpleContainerContext implements ContainerContext {
         return containerKey;
     }
 
+    @Override
     public Inventory getInventory() {
         return inventory;
     }
 
+    @Override
     public List<BlockEntity> getAssociatedBlockEntities() {
         return associatedBlockEntities;
     }
@@ -409,7 +412,8 @@ public class SimpleContainerContext implements ContainerContext {
         }
     }
 
-    void flushDirtySlots() {
+    @Override
+    public void flushDirtySlots() {
         if (currentTickContext == null) return;
         for (int slot : currentTickContext.dirtySlots) {
             flushSlotSync(slot, getItem(slot));

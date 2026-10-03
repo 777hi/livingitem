@@ -91,7 +91,11 @@ grep -rl "import com.qiqi.li.living.domain" \
 
 ### 1.5 抽象泄漏
 
-`processContext` 中 `instanceof SimpleContainerContext` 出现 **4 次**
+> ✅ **已修复（2026-10-03，1a-3）** —— 新增 `TickableContainerContext` 子接口，
+> `processContext` 等参数类型改为它。该文件里的 `instanceof` 从 **9 处降到 2 处**
+> （余下 2 处属 §1.2 的容器级数据范围，由 1a-4 处理）。**397 测试全绿**。
+
+**（修复前）**`processContext` 中 `instanceof SimpleContainerContext` 出现 **4 次**
 （`:453` / `:482` / `:503`，另 `writebackBlockEntities` 内 3 处）。
 
 `ContainerContext` 缺三样能力，调用方只能认具体实现：
@@ -173,6 +177,12 @@ return "container_" + Integer.toHexString(handler.hashCode());
 另两个空实现。⇒ 验证了当时的判断：**空列表是诚实语义，不是妥协**；
 抽象划的是「tick 生命周期」而非「必须有方块实体」，故成立。
 
+**实施结果**（2026-10-03，✅ 已完成）：`ContainerLivingItemHandler` 里的
+`instanceof SimpleContainerContext` 从 **9 处降到 2 处**（比原估的 7 处多 2 处 ——
+`:148` / `:216` 也在用 `getAssociatedBlockEntities()`，但它们属于容器级数据范围，留给 1a-4）。
+`flushDirtySlots()` 顺带从**包级私有改为 public**（接口方法要求）。
+**397 测试全绿**。
+
 **Q1 的关键约束**：`shouldTickWithoutOwnItems()` **必须免扫描**（不得遍历槽位）—— 否则会把
 §1.7 的两次遍历变成三次。详见 §6.3-B。
 
@@ -220,7 +230,7 @@ return "container_" + Integer.toHexString(handler.hashCode());
 |---|---|---|
 | 1a-1 | 收集路径不再要求物品（`shouldTickWithoutOwnItems` + 塞进 `grouped`，约 **4 行**） | 纯源容器能跑流体；**完全空容器仍短路**（性能不变） |
 | 1a-2 | ✅ **已完成 2026-10-03** —— 删 `containerKey` 第三档改抛异常 + 新增测试专用构造器 | **397 测试全绿**（0 失败 / 0 错误） |
-| 1a-3 | 抽 `TickableContainerContext`，改 `processContext` 参数类型 | `processContext` 内**无 `instanceof SimpleContainerContext`**（现 **7 处** → 0） |
+| 1a-3 | ✅ **已完成 2026-10-03** —— 抽 `TickableContainerContext`，消掉 7 处转型 | 该文件里 `instanceof` **9 → 2**（余 2 处属 1a-4）；**397 测试全绿** |
 | 1a-4 | 容器级数据存储抽离（Q2 定稿） | **新增一种容器级数据 = 改 0 个类**；改造面实测仅 **14 处**字段访问 |
 
 **1a 全部是行为不变的重构** —— 靠现有 384 个测试回归验证，不引入新功能。
