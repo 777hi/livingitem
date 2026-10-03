@@ -15,8 +15,6 @@ import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerContext;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
-import net.minecraft.world.level.material.Fluids;
 import net.neoforged.neoforge.fluids.FluidType;
 import net.neoforged.neoforge.registries.NeoForgeRegistries;
 
@@ -50,12 +48,6 @@ public class ContainerFluidData {
 
     public static final ContainerFluidData EMPTY = new ContainerFluidData() {
         @Override
-        public void registerSource(int slot) { }
-        @Override
-        public void registerSource(int slot, FluidType fluid) { }
-        @Override
-        public void removeSource(int slot) { }
-        @Override
         public void registerGeneratedSource(int slot, FluidType fluid) { }
         @Override
         public void removeGeneratedSource(int slot) { }
@@ -67,11 +59,6 @@ public class ContainerFluidData {
         public void tick(ContainerContext ctx) { }
     };
 
-    /** 默认流体 = 水（1b-1 兼容：旧调用点 {@link #registerSource(int)} 未指定流体时按水处理）。 */
-    private static FluidType defaultFluid() {
-        return Fluids.WATER.getFluidType();
-    }
-
     public static final int SOURCE_LEVEL = 0;
     public static final int MAX_FLOW_LEVEL = 7;
     public static final int FLOW_STEP_TICKS = 4;
@@ -82,11 +69,6 @@ public class ContainerFluidData {
         int fromSlot;
         /** 该格流体类型（1b-1：单张 map 带类型 —— 一个槽位只装一种流体，类比一个方块位置）。 */
         final FluidType fluid;
-
-        /** 兼容构造器：未指定流体时按水处理（旧调用点）。 */
-        public FlowEntry(int level, boolean isSource, int fromSlot) {
-            this(level, isSource, fromSlot, defaultFluid());
-        }
 
         public FlowEntry(int level, boolean isSource, int fromSlot, FluidType fluid) {
             this.level = level;
@@ -103,14 +85,15 @@ public class ContainerFluidData {
 
     private final Map<Integer, FlowEntry> flows = new LinkedHashMap<>();
     /**
-     * 派生源（活水源，2026-10-03）—— <b>容器级永久资产</b>：槽位 → 源流体类型。
+     * 派生源（活水源，2026-10-03）—— <b>唯一的源形态</b>：槽位 → 源流体类型。
      *
-     * <p>与「桶源」（活水桶在场时由桶注册，见 {@code LivingWaterBucketFunction.tick}）并列的
-     * 第二种源：由倒水 / 晋升创建，<b>不随水桶离开消失</b>（原版语义：源是真实方块）。
+     * <p>由倒水 / 晋升创建，<b>不随水桶离开消失</b>（原版语义：源是真实方块）。
      * 每 tick 在 {@link #recalculate} 播种阶段并入 BFS；生命周期：
      * 倒入/晋升而生，挤没（任何活物品进入该格）/汲走而死，容器销毁随 attachment 湮灭。</p>
      *
      * <p>⚠️ 必须记住流体类型 —— 否则重播种时岩浆源会退化成水。</p>
+     * <p>⚠️ 桶源已退役（idea.md §〇.5）—— 旧「活水桶在场即源」路径连同
+     * {@code registerSource}/{@code isLivingBucketOf} 一并删除。</p>
      */
     private final Map<Integer, FluidType> generatedSources = new LinkedHashMap<>();
     private long lastTickTime;
@@ -121,7 +104,9 @@ public class ContainerFluidData {
     }
 
     public boolean isEmpty() {
-        return flows.isEmpty();
+        // ⚠️ 必须计入派生源：纯源容器（flows 尚空、仅 generatedSources 非空）不是空数据 ——
+        // 否则驱动的 !isEmpty() 门会把它们永远挡在 tick 之外，BFS 无从启动、落盘也会漏。
+        return flows.isEmpty() && generatedSources.isEmpty();
     }
 
     public long getLastTickTime() {
@@ -132,39 +117,10 @@ public class ContainerFluidData {
         this.lastTickTime = time;
     }
 
-    /** 注册一个源（默认水 —— 兼容旧调用点）。 */
-    public void registerSource(int slot) {
-        registerSource(slot, defaultFluid());
-    }
-
-    /**
-     * 注册一个指定流体类型的源。
-     *
-     * <p>同槽位换流体 ⇒ <b>整条覆盖</b>（一槽只装一种流体）。</p>
-     */
-    public void registerSource(int slot, FluidType fluid) {
-        FlowEntry existing = flows.get(slot);
-        if (existing != null && existing.fluid == fluid) {
-            existing.isSource = true;
-            existing.level = SOURCE_LEVEL;
-            existing.fromSlot = -1;
-        } else {
-            flows.put(slot, new FlowEntry(SOURCE_LEVEL, true, -1, fluid));
-        }
-    }
-
-    public void removeSource(int slot) {
-        FlowEntry entry = flows.get(slot);
-        if (entry != null) {
-            entry.isSource = false;
-        }
-    }
-
     /**
      * 【查】指定槽位是否是流体源（供汲 / 倒处理器与渲染端查询）。
      *
-     * <p>注意：源是<b>容器级资产</b>，与「槽位里有没有活物品」无关 —— 桶源由桶的物品驱动注册，
-     * 生成源由流体侧注册，二者在本表里等价。</p>
+     * <p>源是<b>容器级资产</b>，与「槽位里有没有物品」无关。</p>
      */
     public boolean isSource(int slot) {
         FlowEntry e = flows.get(slot);
@@ -319,23 +275,12 @@ public class ContainerFluidData {
         flows.putAll(newFlows);
     }
 
-    /** 播种（桶源 + 派生源）+ BFS 扩散**一轮**，返回流动表（不改 {@link #flows}）。 */
+    /** 播种（派生源）+ BFS 扩散**一轮**，返回流动表（不改 {@link #flows}）。 */
     private Map<Integer, FlowEntry> spread(int containerSize, int width, ContainerContext ctx) {
         Map<Integer, FlowEntry> newFlows = new LinkedHashMap<>();
         Deque<Integer> queue = new ArrayDeque<>();
 
-        // 播种①：桶源（活水桶在场；桶源退役批次二后此段随 isLivingBucketOf 一并删除）
-        for (var entry : flows.entrySet()) {
-            FlowEntry src = entry.getValue();
-            if (!src.isSource) continue;
-            int slot = entry.getKey();
-            // 源的存活判定：槽位里仍是「装着该流体的活桶」（1b-1：仅水）
-            if (!isLivingBucketOf(ctx.getItem(slot), src.fluid)) continue;
-            newFlows.put(slot, new FlowEntry(SOURCE_LEVEL, true, -1, src.fluid));
-            queue.add(slot);
-        }
-
-        // 播种②：派生源（活水源）—— 无条件并入，不依赖任何物品在场。
+        // 播种：派生源（活水源）—— 无条件并入，不依赖任何物品在场。
         // 挤没判定在此进行：任何活物品进入派生源格 ⇒ 源被挤没（永久销毁，原版「放方块进水源」语义）。
         // 不关心物品怎么来的（手放 / 未来活活塞推 / 任何途径）—— 判定只看槽位内容。
         // 非活物品不挤没（原版实体可与水源共存），派生源与物品同格，供后续机制三转化。
@@ -410,18 +355,6 @@ public class ContainerFluidData {
             if (fe != null && fe.isSource) count++;
         }
         return count;
-    }
-
-    /**
-     * 该物品是否是「装着指定流体的活桶」—— 源的存活判定。
-     *
-     * <p><b>当前仅水。</b>多流体 / 模组流体的「桶内容判定」属<b>流体侧</b>
-     * （改读 NeoForge 的 {@code FluidStack} / {@code SimpleFluidContent}，而非硬编码水桶）。</p>
-     */
-    private static boolean isLivingBucketOf(ItemStack item, FluidType fluid) {
-        return fluid == defaultFluid()
-            && item.is(Items.WATER_BUCKET)
-            && LivingItemManager.isLivingItem(item);
     }
 
     /**

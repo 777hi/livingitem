@@ -131,11 +131,11 @@ class ContainerFluidDataTest {
     @Test
     @DisplayName("① 单源沿行扩散：level 0..7，第 8 格（level 8）不到达")
     void singleSource_spreadsToMaxLevel7() {
-        var ctx = row(livingWaterBucket());
+        var ctx = row();
         assertEquals(9, ctx.getWidth(), "9 格应为 1×9 单行");
 
         var fluid = new ContainerFluidData();
-        fluid.registerSource(0);
+        fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
         fluid.tick(ctx);
 
         var flows = fluid.getFlows();
@@ -153,9 +153,9 @@ class ContainerFluidDataTest {
     @Test
     @DisplayName("② 活物品阻挡扩散")
     void livingItemBlocksSpread() {
-        var ctx = row(livingWaterBucket(), ItemStack.EMPTY, livingNonWater());
+        var ctx = row(ItemStack.EMPTY, ItemStack.EMPTY, livingNonWater());
         var fluid = new ContainerFluidData();
-        fluid.registerSource(0);
+        fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
         fluid.tick(ctx);
 
         var flows = fluid.getFlows();
@@ -168,9 +168,9 @@ class ContainerFluidDataTest {
     @Test
     @DisplayName("③ 非活物品不阻挡（水穿过）")
     void nonLivingItemDoesNotBlock() {
-        var ctx = row(livingWaterBucket(), new ItemStack(Items.REDSTONE, 3));
+        var ctx = row(new ItemStack(Items.REDSTONE, 3));
         var fluid = new ContainerFluidData();
-        fluid.registerSource(0);
+        fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
         fluid.tick(ctx);
 
         var flows = fluid.getFlows();
@@ -179,17 +179,17 @@ class ContainerFluidDataTest {
     }
 
     @Test
-    @DisplayName("④ 源移除后（槽位无活水桶）流动整体消失")
+    @DisplayName("④ 源移除后（汲走）流动整体消失")
     void removedSource_clearsFlows() {
-        var ctx = row(livingWaterBucket());
+        var ctx = row();
         var fluid = new ContainerFluidData();
-        fluid.registerSource(0);
+        fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
         fluid.tick(ctx);
         assertFalse(fluid.getFlows().isEmpty(), "先确认有水");
 
-        fluid.removeSource(0);
+        fluid.removeGeneratedSource(0);
         fluid.tick(ctx);
-        assertTrue(fluid.getFlows().isEmpty(), "源移除且槽位无桶 ⇒ 无播种 ⇒ 全空");
+        assertTrue(fluid.getFlows().isEmpty(), "源移除 ⇒ 无播种 ⇒ 全空");
     }
 
     @Test
@@ -204,9 +204,9 @@ class ContainerFluidDataTest {
     @Test
     @DisplayName("⑥ 水流推动：第 4 tick 沿水流方向把非活物品推下游")
     void pushItems_movesItemDownstreamOn4thTick() {
-        var ctx = row(livingWaterBucket(), new ItemStack(Items.REDSTONE, 1));
+        var ctx = row(ItemStack.EMPTY, new ItemStack(Items.REDSTONE, 1));
         var fluid = new ContainerFluidData();
-        fluid.registerSource(0);
+        fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
 
         for (int t = 0; t < 4; t++) fluid.tick(ctx);
 
@@ -219,9 +219,9 @@ class ContainerFluidDataTest {
     @DisplayName("⑦ 行为接缝：会流动流体按各自 maxLevel 扩散（改 maxLevel=3 ⇒ 只到 slot 3）")
     void behaviorSeam_respectsMaxLevel() {
         registerWater(3);
-        var ctx = row(livingWaterBucket());
+        var ctx = row();
         var fluid = new ContainerFluidData();
-        fluid.registerSource(0);
+        fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
         fluid.tick(ctx);
 
         assertEquals(4, fluid.getFlows().size(), "maxLevel=3 ⇒ 覆盖 slot 0..3");
@@ -232,9 +232,9 @@ class ContainerFluidDataTest {
     @DisplayName("⑧ 行为接缝：静止流体只做源、不扩散")
     void behaviorSeam_staticDoesNotSpread() {
         FluidFlowBehaviors.register(Fluids.WATER.getFluidType(), FluidFlowBehavior.STATIC);
-        var ctx = row(livingWaterBucket());
+        var ctx = row();
         var fluid = new ContainerFluidData();
-        fluid.registerSource(0);
+        fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
         fluid.tick(ctx);
 
         assertEquals(1, fluid.getFlows().size(), "静止 ⇒ 只有源自己");
@@ -244,10 +244,10 @@ class ContainerFluidDataTest {
     @Test
     @DisplayName("⑨ 集成回归：TickContext 构造时创建容器流体数据（1a-4 漏建 ⇒ 水流失效）")
     void tickContext_createsFluidData() {
-        var ctx = row(livingWaterBucket());
+        var ctx = row();
         var tick = new TickContext(ctx);
         assertNotSame(ContainerFluidData.EMPTY, tick.fluidData(),
-            "1a-4 曾漏掉创建 ⇒ tick.fluidData() 恒 EMPTY ⇒ 桶 registerSource 被跳过 ⇒ 水流失效");
+            "1a-4 曾漏掉创建 ⇒ tick.fluidData() 恒 EMPTY ⇒ 流体数据无处着落 ⇒ 水流失效");
     }
 
     @Test
@@ -263,10 +263,10 @@ class ContainerFluidDataTest {
     @Test
     @DisplayName("⑪ 通用驱动：tickContainerData 驱动 BFS（与桶解耦）")
     void fluidDriver_drivesBfs() {
-        var ctx = row(livingWaterBucket());
+        var ctx = row();
         var tick = new TickContext(ctx);
         var fluid = ctx.peekContainerData(ContainerDataKeys.FLUID);
-        fluid.registerSource(0);
+        fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
 
         new LivingFluidFunction().tickContainerData(List.of(), ctx, tick);
 
@@ -279,11 +279,11 @@ class ContainerFluidDataTest {
     void twoDimensional_spreadsRightAndDown() {
         // 27 格 ⇒ 宽度 9 ⇒ 3×9；源在 slot 0 ⇒ 右邻 slot 1、下邻 slot 9
         FakeHandler h = new FakeHandler(27);
-        h.slots[0] = livingWaterBucket();
+        h.slots[0] = ItemStack.EMPTY;
         var ctx = new SimpleContainerContext(h);
 
         var fluid = new ContainerFluidData();
-        fluid.registerSource(0);
+        fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
         fluid.tick(ctx);
 
         var flows = fluid.getFlows();
@@ -296,14 +296,12 @@ class ContainerFluidDataTest {
     @Test
     @DisplayName("⑬ 源查询 API：isSource / sourceFluid / hasAnySource（供汲/倒处理器用）")
     void sourceQueryApi() {
-        var ctx = row(livingWaterBucket());
+        var ctx = row();
         var fluid = new ContainerFluidData();
         assertFalse(fluid.hasAnySource(), "空数据无源");
 
-        fluid.registerSource(0);
-        assertTrue(fluid.isSource(0));
-        assertEquals(Fluids.WATER.getFluidType(), fluid.sourceFluid(0));
-        assertTrue(fluid.hasAnySource());
+        fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
+        assertTrue(fluid.isGeneratedSource(0), "注册即入派生源集合（flow 表等 tick 播种）");
         assertFalse(fluid.isSource(5), "非源槽位");
         assertNull(fluid.sourceFluid(5), "非源槽位无流体");
 
@@ -312,8 +310,10 @@ class ContainerFluidDataTest {
         assertFalse(fluid.isSource(1), "slot 1 是流动水不是源");
         assertNull(fluid.sourceFluid(1), "流动格不是源");
 
-        fluid.removeSource(0);
-        assertFalse(fluid.isSource(0), "移除后不再是源");
+        fluid.removeGeneratedSource(0);
+        assertFalse(fluid.isGeneratedSource(0), "派生源集合立即移除");
+        fluid.tick(ctx);
+        assertFalse(fluid.isSource(0), "下一拍重播种 ⇒ flow 表也不再是源");
         assertNull(fluid.sourceFluid(0));
     }
 
@@ -364,16 +364,16 @@ class ContainerFluidDataTest {
     }
 
     @Test
-    @DisplayName("⑰ 桶源与派生源同格：挤没无豁免 —— 活水桶挤掉派生源，桶源照常存在")
-    void bucketOnGeneratedSource_destroysGeneratedKeepsBucketSource() {
+    @DisplayName("⑰ 挤没无豁免：活水桶压进派生源格 ⇒ 源销毁（桶源已退役，无「接管」）")
+    void bucketOnGeneratedSource_squeezesIt() {
         var ctx = row(ItemStack.EMPTY, ItemStack.EMPTY, ItemStack.EMPTY, livingWaterBucket());
         var fluid = new ContainerFluidData();
         fluid.registerGeneratedSource(3, Fluids.WATER.getFluidType());
-        fluid.registerSource(3);   // 模拟桶 tick 的注册（桶在 slot 3）
 
         fluid.tick(ctx);
-        assertFalse(fluid.isGeneratedSource(3), "派生源被活水桶挤没（无豁免口径）");
-        assertTrue(fluid.isSource(3), "槽位仍是源 —— 桶源接管，BFS/渲染无感");
+        assertFalse(fluid.isGeneratedSource(3), "活水桶（任何活物品）挤没派生源");
+        assertFalse(fluid.isSource(3), "源随挤没消失");
+        assertTrue(fluid.getFlows().isEmpty());
     }
 
     @Test
@@ -395,24 +395,18 @@ class ContainerFluidDataTest {
     }
 
     @Test
-    @DisplayName("⑲ 桶源消失不影响派生源；EMPTY 单例的派生源 API 是 noop")
-    void generatedSource_vsBucketSourceLifecycle() {
-        // slot 4 放真实活水桶（桶源存活校验看的是桶物品，不是注册标记）
-        FakeHandler h = new FakeHandler(9);
-        h.slots[4] = livingWaterBucket();
-        var ctx = new SimpleContainerContext(h);
+    @DisplayName("⑲ 派生源跨 tick 持久；EMPTY 单例的派生源 API 是 noop")
+    void generatedSource_lifecycleAndEmptyNoop() {
+        var ctx = row();
         var fluid = new ContainerFluidData();
-
         fluid.registerGeneratedSource(2, Fluids.WATER.getFluidType());
-        fluid.registerSource(4);          // 模拟桶 tick 的注册
         fluid.tick(ctx);
-        assertTrue(fluid.isSource(2) && fluid.isSource(4), "派生源与桶源并存");
+        assertTrue(fluid.isSource(2));
+        assertTrue(fluid.hasGeneratedSources(), "派生源是持久资产");
 
-        h.slots[4] = ItemStack.EMPTY;     // 桶被移走
-        fluid.removeSource(4);
         fluid.tick(ctx);
-        assertFalse(fluid.isSource(4), "桶源随桶消失");
-        assertTrue(fluid.isSource(2), "派生源不受影响");
+        fluid.tick(ctx);
+        assertTrue(fluid.isSource(2), "多次重算后仍存活（无物可依也独立存在）");
 
         // EMPTY noop 安全（匿名子类必须覆写全部可变方法）
         ContainerFluidData.EMPTY.registerGeneratedSource(0, Fluids.WATER.getFluidType());
@@ -426,7 +420,6 @@ class ContainerFluidDataTest {
     void codec_roundTripsGeneratedSourcesOnly() {
         var data = new ContainerFluidData();
         data.registerGeneratedSource(3, Fluids.WATER.getFluidType());
-        data.registerSource(0); // 桶源：不该落盘
         data.getFlows().put(1, new ContainerFluidData.FlowEntry(1, false, 0, Fluids.WATER.getFluidType()));
 
         var ops = net.minecraft.nbt.NbtOps.INSTANCE;
@@ -449,11 +442,11 @@ class ContainerFluidDataTest {
                 return sourceNeighborCount >= 2; // 水规则：任意 2 邻源
             }
         });
-        // 桶源在 slot 0 与 slot 2 ⇒ 中间的 slot 1 有 2 个源邻居 ⇒ 应晋升
-        var ctx = row(livingWaterBucket(), ItemStack.EMPTY, livingWaterBucket());
+        // 源在 slot 0 与 slot 2 ⇒ 中间的 slot 1 有 2 个源邻居 ⇒ 应晋升
+        var ctx = row();
         var fluid = new ContainerFluidData();
-        fluid.registerSource(0);
-        fluid.registerSource(2);
+        fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
+        fluid.registerGeneratedSource(2, Fluids.WATER.getFluidType());
         fluid.tick(ctx);
 
         assertTrue(fluid.isGeneratedSource(1), "slot 1 有 2 个源邻居(0,2) ⇒ 应升格为派生源");
@@ -478,5 +471,89 @@ class ContainerFluidDataTest {
         fluid.tick(ctx);
 
         assertEquals(Items.GRASS_BLOCK, ctx.getItem(0).getItem(), "源格上的 DIRT 应转化为草方块");
+    }
+
+    // ── 水晋升 / 最小转化（流体侧批次二 F2，2026-10-03）─────────
+
+    /** 注册「生产口径」的水行为：流动 7 + 晋升 ≥2 邻源 + 空桶转化（同 WaterRegistration）。 */
+    private static void registerProductionWaterBehavior() {
+        FluidFlowBehaviors.register(Fluids.WATER.getFluidType(), new FluidFlowBehavior() {
+            @Override public boolean canFlow() { return true; }
+            @Override public int maxLevel() { return ContainerFluidData.MAX_FLOW_LEVEL; }
+            @Override public int flowSpeed() { return 0; }
+            @Override public boolean shouldPromote(int slot, int sourceNeighborCount) {
+                return sourceNeighborCount >= 2;
+            }
+            @Override public ItemStack transformItem(ItemStack item) {
+                if (item.is(Items.BUCKET) && item.getCount() == 1
+                        && !LivingItemManager.isLivingItem(item)) {
+                    return new ItemStack(Items.WATER_BUCKET);
+                }
+                return null;
+            }
+        });
+    }
+
+    @Test
+    @DisplayName("㉓ 相邻两源不繁殖：slot 2 只有 1 个源邻居 ⇒ 不晋升（原版口径）")
+    void adjacentSources_doNotPromote() {
+        registerProductionWaterBehavior();
+        var ctx = row();
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
+        fluid.registerGeneratedSource(1, Fluids.WATER.getFluidType());
+        fluid.tick(ctx);
+
+        assertEquals(java.util.Set.of(0, 1), fluid.getGeneratedSources().keySet(),
+            "相邻两源不产生新源");
+        assertFalse(fluid.isGeneratedSource(2), "slot 2 仅 1 个源邻居 ⇒ 不晋升");
+    }
+
+    @Test
+    @DisplayName("㉔ 挤没自愈：夹缝源被活物品挤没后，物品移走且邻域仍 ≥2 源 ⇒ 重新派生")
+    void squeezedSource_selfHealsViaPromotion() {
+        registerProductionWaterBehavior();
+        // 源 0、2 + 夹缝 1 先晋升出第三个源
+        var fluid = new ContainerFluidData();
+        FakeHandler h = new FakeHandler(9);
+        var ctx = new SimpleContainerContext(h);
+        fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
+        fluid.registerGeneratedSource(2, Fluids.WATER.getFluidType());
+        fluid.tick(ctx);
+        assertTrue(fluid.isGeneratedSource(1), "先晋升出夹缝源");
+
+        h.slots[1] = livingNonWater();   // 活物品压进夹缝源
+        fluid.tick(ctx);
+        assertFalse(fluid.isGeneratedSource(1), "挤没");
+
+        h.slots[1] = ItemStack.EMPTY;    // 物品移走，邻域 0、2 仍是源
+        fluid.tick(ctx);
+        assertTrue(fluid.isGeneratedSource(1), "邻域 ≥2 源 ⇒ 自愈重派生");
+    }
+
+    @Test
+    @DisplayName("㉕ 最小转化：源格上的单个空桶 → 水桶（非活，与源共存）")
+    void transform_minimalBucketToWaterBucket() {
+        registerProductionWaterBehavior();
+        var ctx = row(new ItemStack(Items.BUCKET));
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
+        fluid.tick(ctx);
+
+        assertEquals(Items.WATER_BUCKET, ctx.getItem(0).getItem(), "空桶被源浸泡成水桶");
+        assertTrue(fluid.isSource(0), "源不受转化影响");
+    }
+
+    @Test
+    @DisplayName("㉖ 缩容等待：空桶堆叠 >1 不转化（水桶最大堆叠 1，整槽无法等量替换）")
+    void transform_shrinkingStackStalls() {
+        registerProductionWaterBehavior();
+        var ctx = row(new ItemStack(Items.BUCKET, 16));
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
+        fluid.tick(ctx);
+
+        assertEquals(Items.BUCKET, ctx.getItem(0).getItem(), "16 桶不转化，等待玩家拆分");
+        assertEquals(16, ctx.getItem(0).getCount());
     }
 }

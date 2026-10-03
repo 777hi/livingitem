@@ -38,7 +38,7 @@ import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.domain.ender.EnderChannelRegistry;
 import com.qiqi.li.living.compat.create.StressOutputManager;
-import com.qiqi.li.living.domain.water.LivingWaterBucketFunction;
+import com.qiqi.li.living.domain.water.ContainerFluidData;
 import com.qiqi.li.living.perf.PerfMetrics;
 
 /**
@@ -360,7 +360,6 @@ public class ContainerLivingItemHandler {
     public static void clearAllCaches() {
         CONTAINER_DATA.clear();
         POS_TO_CACHE_KEY.clear();
-        LivingWaterBucketFunction.clearAllCaches();
         cleanupCounter = 0;
     }
 
@@ -633,18 +632,9 @@ public class ContainerLivingItemHandler {
     private static void flushEnderChannels(TickContext tick,
                                             Map<LivingItemFunction, List<LivingItemFunction.SlotEntry>> grouped) {
         EnderChannelRegistry.getInstance().flushDirtyChannels();
-
-        // 若容器内没有活水桶，清除流体数据中的冗余流（避免残留流一直动画）
-        boolean hasWaterBucket = false;
-        for (var entry : grouped.entrySet()) {
-            if ("living_water_bucket".equals(entry.getKey().getFunctionId())) {
-                hasWaterBucket = true;
-                break;
-            }
-        }
-        if (!hasWaterBucket && tick.fluidData() != null && tick.fluidData() != ContainerFluidData.EMPTY) {
-            tick.fluidData().getFlows().clear();
-        }
+        // （桶源退役，2026-10-03）原「无活水桶清空流体冗余流」逻辑删除：
+        // 源唯一形态为派生源（generatedSources），流动表每 tick 由 BFS 重播种，
+        // 无源容器 flows 自然为空，无需按物品在场清理。
     }
 
     /**
@@ -710,7 +700,6 @@ public class ContainerLivingItemHandler {
             long currentTimeMs = System.currentTimeMillis();
             cleanupStaleData(currentTimeMs);
             cleanupStalePosIndex();
-            LivingWaterBucketFunction.cleanupStaleEntries(currentTimeMs);
         }
     }
 

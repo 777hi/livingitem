@@ -1,6 +1,8 @@
 package com.qiqi.li.client.input;
 
 import com.qiqi.li.client.mixin.SlotWrapperAccessor;
+import com.qiqi.li.living.domain.water.FluidFlowClientCache;
+import com.qiqi.li.living.domain.water.LivingBucketFunction;
 import com.qiqi.li.living.interaction.InteractionEntry;
 import com.qiqi.li.living.interaction.InteractionRegistry;
 import com.qiqi.li.network.GuiInteractionPacket;
@@ -50,6 +52,21 @@ public final class GuiInteractionHelper {
         ItemStack target = hoveredSlot.getItem();
         ItemStack trigger = menu.getCarried();
 
+        // 活桶汲/倒（流体侧批次二，2026-10-03）：目标条件是「空槽位 + 容器级源状态」，
+        // 物品中心的规则系统表达不了（matchesTarget 对空槽恒 false）⇒ 客户端按流体快照
+        // 缓存精确判定，不命中不拦截（原版操作不受影响）；命中后复用 GuiInteractionPacket
+        // 服务端管道（actionId → WaterRegistration 注册的处理器，服务端权威重验）。
+        if (button == 1 && !onRelease && LivingBucketFunction.isLivingBucket(trigger)) {
+            String bucketAction = matchBucketInteract(hoveredSlot, trigger);
+            if (bucketAction != null) {
+                int containerSlot = resolveContainerSlot(hoveredSlot);
+                CompoundTag carriedTag = resolveCarriedTag(menu);
+                PacketDistributor.sendToServer(new GuiInteractionPacket(
+                    hoveredSlot.index, containerSlot, bucketAction, carriedTag));
+                return true;
+            }
+        }
+
         InteractionEntry entry = InteractionRegistry.findInteraction(trigger, target, button, onRelease);
         if (entry == null) return false;
 
@@ -59,6 +76,36 @@ public final class GuiInteractionHelper {
         PacketDistributor.sendToServer(new GuiInteractionPacket(
             hoveredSlot.index, containerSlot, entry.actionId(), carriedTag));
         return true;
+    }
+
+    /**
+     * 活桶汲/倒的客户端判定（依据 {@link FluidFlowClientCache} 快照 —— 与渲染同源）：
+     * <ul>
+     *   <li>满桶 + 目标格无物品 → 倒水（目标格已有源也倒：源不变，仅排空 —— 原版语义）；</li>
+     *   <li>空桶 + 目标格是源（快照 level==0；桶源退役后一切源皆派生源）→ 汲水。</li>
+     * </ul>
+     * 其余情况返回 null（不拦截，光标右键的原版拿起/放置/交换照常）。
+     */
+    @Nullable
+    private static String matchBucketInteract(Slot hoveredSlot, ItemStack carried) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) return null;
+
+        FluidFlowClientCache.FlowSnapshot snapshot =
+            hoveredSlot.container == mc.player.getInventory()
+                ? FluidFlowClientCache.getPlayer()
+                : FluidFlowClientCache.get();
+
+        var cell = snapshot.cells().get(resolveContainerSlot(hoveredSlot));
+        boolean isSourceCell = cell != null && cell[0] == 0;
+
+        if (LivingBucketFunction.hasFullBucket(carried)) {
+            return hoveredSlot.getItem().isEmpty() ? "living_bucket_pour" : null;
+        }
+        if (LivingBucketFunction.isEmptyBucket(carried) && isSourceCell) {
+            return "living_bucket_scoop";
+        }
+        return null;
     }
 
     /**

@@ -47,9 +47,10 @@
 
 | 类名 | 文件位置 | 职责 |
 |------|---------|------|
-| `LivingWaterBucketFunction` | `domain/water/LivingWaterBucketFunction.java` | 活水桶功能入口，管理水源注册和状态同步 |
-| `WaterData` | `domain/water/WaterData.java` | 水源状态 record：位置、容器、流动信息 |
-| `LivingWaterBucketData` | `domain/water/LivingWaterBucketData.java` | 活水桶数据容器：包含 WaterData |
+| `LivingBucketFunction` | `domain/water/LivingBucketFunction.java` | 活桶（交互型，无 tick）：同一物品 + `SimpleFluidContent` 内容组件，汲/倒只改内容 |
+| `LivingBucketInteractSupport` | `domain/water/LivingBucketInteractSupport.java` | 汲/倒服务端支撑：菜单槽位 → 活流体数据反查（含大箱子反射）+ 桶内容增减 |
+| `LivingBucketInteractHandlers` | `domain/water/LivingBucketInteractHandlers.java` | 汲/倒处理器（`living_bucket_pour` / `living_bucket_scoop`） |
+| `FluidFlowSyncPacket` / `FluidFlowServerSync` / `FluidFlowClientCache` | `network/` + `domain/water/` | 流体渲染轨（Q5）：容器级快照下发 + 客户端缓存 |
 | `ContainerFluidData` | `container/ContainerFluidData.java` | 容器级流体数据，管理水流蔓延和物品推动。由 `ContainerSnapshot` 持有引用，生命周期独立于活水桶 |
 | `ContainerSnapshot` | `container/ContainerSnapshot.java` | 容器快照，持有 `ContainerFluidData` 引用，每 tick 预计算 |
 | `ContainerLivingItemHandler` | `container/ContainerLivingItemHandler.java` | 容器处理器，管理 `ContainerFluidData` 的持久化缓存（`CONTAINER_DATA` 嵌套 `fluid` 字段） |

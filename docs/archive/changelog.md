@@ -17,6 +17,29 @@
 
 ## 2026-10-03
 
+- ✅ **流体侧批次二（F3 活桶 FluidStack 化 + F2 水晋升）—— 桶源退役落地**（**426 测试全绿**）。
+  - **F3 活桶 = 同一物品 + 内容组件**：新 `LivingBucketFunction`（`Items.BUCKET` 宿主 + `LIVING_BUCKET_FLUID`
+    内容组件 `SimpleFluidContent`，交互型无 tick）；满 = 活水桶、空 = 活空桶，倒/汲只改内容，
+    活标记全程保留。新组件注册于 `LivingComponents`。
+  - **汲/倒交互**：目标条件是「空槽位 + 容器级源状态」，物品中心的交互规则表达不了
+    （`matchesTarget` 对空槽恒 false）⇒ 客户端拦截放 `GuiInteractionHelper` 活桶分支
+    （按流体快照缓存精确判定，不命中不拦截，原版操作不受影响），复用 `GuiInteractionPacket`
+    服务端管道（新 actionId `living_bucket_pour` / `living_bucket_scoop` + 权威重验）。
+    服务端 `LivingBucketInteractSupport` 从菜单槽位反查**活着的** ContainerFluidData
+    （玩家背包 / 单 BE / 大箱子 CompoundContainer 反射两半 + `DoubleChestPositions` 规范化顺序，
+    容器键与 tick 循环一致）；末影箱解析不出 → 静默无效（已知缺口）。
+    倒水语义：无源格诞生派生源，已有源「源不变」仅排空（原版语义）。
+  - **F2 水晋升行为**：`WaterRegistration` 注册水行为（流动 7 + `shouldPromote` ≥2 邻源
+    —— 原版无限水，接缝由框架侧 1b-2⑩ 提供）+ **最小转化**（F4 前身）：源格上单个非活空桶
+    → 水桶（缩容堆叠等待：数量 >1 不转化）。
+  - **桶源退役**：引擎删桶源播种 / `isLivingBucketOf` / `registerSource`/`removeSource`；
+    删 `LivingWaterBucketFunction` / `LivingWaterBucketData` / `WaterData` 及组件注册；
+    `flushEnderChannels` 的「无桶清 flow」逻辑删除（源唯一形态 = 派生源）；
+    渲染旧桶轨（桶组件 flow 字符串 + `postTickSync`）随类删除，渲染单一容器轨。
+    ⚠️ 修真 bug：`ContainerFluidData.isEmpty()` 未计 `generatedSources`
+    ⇒ 纯源容器被驱动的 `!isEmpty()` 门挡在 tick 外（BFS 永不启动、落盘也会漏）。
+  - 测试迁移：桶源语义用例全部改写为派生源口径（①~⑬⑰⑲ + 端到端 + 框架侧 ⑳㉑㉒），
+    新增 ㉓~㉖（相邻不繁殖 / 挤没自愈 / 最小转化 / 缩容等待）。
 - ✅ **框架侧接缝落地：⑧ 落盘 CODEC + 晋升/转化引擎接缝**（**422 测试全绿**，419 + 新增 3）。
   - **⑧ 落盘**：`ContainerFluidData.CODEC`（只序列化 `generatedSources`，**桶源 / 流动表不落** —— 桶在场时每 tick 由桶重新注册，落盘会造幽灵源；流动每 tick 由 BFS 重算）+ `CONTAINER_FLUID_DATA` 附件 `.serialize`。流体类型按 NeoForge 注册表 key 字符串存（`NeoForgeRegistries.FLUID_TYPES`），未知 id 安全丢弃。
   - **引擎接缝**（流体侧点名要的两条，都是 `FluidFlowBehavior` 的 **default no-op** ⇒ 现有行为零变化）：`shouldPromote(slot, sourceNeighborCount)` → `recalculate` 加**晋升收敛循环**（升格为源后重跑 BFS，直到无新升格）；`transformItem(item)` → `tick` **每流体拍**在源格调用、产物写回。⚠️ 转化产物若是活物品，下一拍会被「挤没」销毁 —— 流体侧定转化表时须留意。

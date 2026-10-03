@@ -97,13 +97,15 @@ class ContainerFluidIntegrationTest {
     }
 
     @Test
-    @DisplayName("端到端：processContext 驱动水流（桶注册源 + 驱动跑 BFS）")
+    @DisplayName("端到端：processContext 驱动水流（预置派生源 + 驱动跑 BFS）")
     void processContext_drivesWaterFlow() {
         ItemStack[] slots = new ItemStack[9];
-        slots[0] = livingWaterBucket();
         Level level = mockServerLevel();
         var ctx = new SimpleContainerContext(new FakeHandler(slots), level);
 
+        // 桶源退役（2026-10-03）：源由倒水/落盘而来，预置派生源验证端到端 BFS
+        ContainerLivingItemHandler.getFluidData(ctx)
+            .registerGeneratedSource(0, Fluids.WATER.getFluidType());
         ContainerLivingItemHandler.processContext(ctx, level);
 
         var fluid = ctx.peekContainerData(ContainerDataKeys.FLUID);

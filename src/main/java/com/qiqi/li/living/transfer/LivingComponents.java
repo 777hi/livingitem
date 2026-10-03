@@ -14,7 +14,6 @@ import com.qiqi.li.living.domain.furnace.LivingFurnaceData;
 import com.qiqi.li.living.domain.hopper.LivingHopperData;
 import com.qiqi.li.living.transfer.FilterData;
 import com.qiqi.li.living.domain.tnt.LivingTntData;
-import com.qiqi.li.living.domain.water.LivingWaterBucketData;
 import com.qiqi.li.living.domain.water.LivingWaterWheelData;
 import com.qiqi.li.living.domain.water.ContainerStressData;
 import com.qiqi.li.living.domain.water.ContainerFluidData;
@@ -145,13 +144,6 @@ public final class LivingComponents {
                     DataComponentType.<LivingTntData>builder()
                             .persistent(LivingTntData.CODEC)
                             .networkSynchronized(LivingTntData.STREAM_CODEC)
-                            .build());
-
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingWaterBucketData>> LIVING_WATER_BUCKET_DATA =
-            DATA_COMPONENT_TYPES.register("living_water_bucket_data", () ->
-                    DataComponentType.<LivingWaterBucketData>builder()
-                            .persistent(LivingWaterBucketData.CODEC)
-                            .networkSynchronized(LivingWaterBucketData.STREAM_CODEC)
                             .build());
 
     public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingWaterWheelData>> LIVING_WATER_WHEEL_DATA =
@@ -302,6 +294,14 @@ public final class LivingComponents {
             ATTACHMENT_TYPES.register("container_fluid_data", () ->
                     AttachmentType.builder(() -> ContainerFluidData.EMPTY)
                             .serialize(ContainerFluidData.CODEC)
+                            .build());
+
+    /** 活桶内容（流体侧批次二，2026-10-03）：与 NeoForge 桶同构 —— 同一物品 + FluidStack 内容。 */
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<net.neoforged.neoforge.fluids.SimpleFluidContent>> LIVING_BUCKET_FLUID =
+            DATA_COMPONENT_TYPES.register("living_bucket_fluid", () ->
+                    DataComponentType.<net.neoforged.neoforge.fluids.SimpleFluidContent>builder()
+                            .persistent(net.neoforged.neoforge.fluids.SimpleFluidContent.CODEC)
+                            .networkSynchronized(net.neoforged.neoforge.fluids.SimpleFluidContent.STREAM_CODEC)
                             .build());
 
     public static final DeferredHolder<AttachmentType<?>, AttachmentType<com.qiqi.li.living.domain.power.PhaseSnapshot>> CONTAINER_PHASE_SNAPSHOT =

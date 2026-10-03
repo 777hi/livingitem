@@ -2,10 +2,12 @@ package com.qiqi.li.living.domain.water;
 
 import com.qiqi.li.living.api.LivingItemManager;
 
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.material.Fluids;
 
 /**
- * 活水域注册入口（活水桶 / 活水车）—— 见 {@code RedstoneRegistration} 的类注释了解为何有这个类（A1）。
+ * 活水域注册入口（活桶 / 活水车 / 流体行为）—— 见 {@code RedstoneRegistration} 的类注释了解为何有这个类（A1）。
  */
 public final class WaterRegistration {
 
@@ -14,11 +16,38 @@ public final class WaterRegistration {
     public static void register() {
         // 容器级流体 tick 驱动（1b-2b，框架）：自维持 + HasContainerData prio 0
         LivingItemManager.registerFunction(new LivingFluidFunction());
-        LivingItemManager.registerFunction(new LivingWaterBucketFunction());
+        // 活桶（流体侧批次二，2026-10-03）：交互型，无 tick —— 汲/倒走 GUI 交互管道。
+        // ⚠️ 旧 LivingWaterBucketFunction（WATER_BUCKET 宿主 + 桶源注册）已随「桶源退役」删除。
+        LivingItemManager.registerFunction(new LivingBucketFunction());
         LivingItemManager.registerFunction(new LivingWaterWheelFunction());
 
-        // 流体流动行为（1b-2 契约）：水 = 会流动，level 上限 7，流速预留 0
-        FluidFlowBehaviors.register(Fluids.WATER.getFluidType(),
-            FluidFlowBehavior.flowing(ContainerFluidData.MAX_FLOW_LEVEL, 0));
+        // 交互处理器（汲/倒）：客户端拦截不走规则 JSON（目标条件是「空槽位 + 容器级源状态」，
+        // 物品中心规则表达不了，见 LivingBucketInteractHandlers 类注释），直接发
+        // GuiInteractionPacket 走本注册的 handler
+        com.qiqi.li.living.interaction.InteractionRegistry.registerHandler(
+            "living_bucket_pour", LivingBucketInteractHandlers.POUR);
+        com.qiqi.li.living.interaction.InteractionRegistry.registerHandler(
+            "living_bucket_scoop", LivingBucketInteractHandlers.SCOOP);
+
+        // 流体流动行为（1b-2 契约 + 流体侧 F2/F4 前身）：
+        //  - 会流动，level 上限 7，流速预留 0
+        //  - 晋升（F2）：四邻中 ≥2 源 → 升格为派生源（原版无限水；岩浆等其它流体吃默认永不晋升）
+        //  - 转化（F4 前身，最小内置）：源格上的单个非活空桶 → 水桶；
+        //    缩容堆叠等待规则：数量 > 1 不转化（水桶最大堆叠 1，整槽无法等量替换）
+        FluidFlowBehaviors.register(Fluids.WATER.getFluidType(), new FluidFlowBehavior() {
+            @Override public boolean canFlow() { return true; }
+            @Override public int maxLevel() { return ContainerFluidData.MAX_FLOW_LEVEL; }
+            @Override public int flowSpeed() { return 0; }
+            @Override public boolean shouldPromote(int slot, int sourceNeighborCount) {
+                return sourceNeighborCount >= 2;
+            }
+            @Override public ItemStack transformItem(ItemStack item) {
+                if (item.is(Items.BUCKET) && item.getCount() == 1
+                        && !LivingItemManager.isLivingItem(item)) {
+                    return new ItemStack(Items.WATER_BUCKET);
+                }
+                return null;
+            }
+        });
     }
 }

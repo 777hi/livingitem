@@ -48,8 +48,8 @@
 | 期 | 内容 | 状态 |
 |---|---|---|
 | F1 | `generatedSources: Map<Integer,FluidType>` 数据模型 + 引擎播种② + 挤没判定 | ✅ 完成（6 测试；框架可接 CODEC = B.5⑧） |
-| F2 | 晋升 hook 接缝 + 水晋升行为（任意 2/4）+ 挤没自愈回归 | 待框架接缝（规格见 §〇 第 4 条） |
-| F3 | 活桶 FluidStack 化 + 汲/倒 GUI 交互规则 + 处理器 + **桶源退役同批** | 待做 |
+| F2 | 水晋升行为（任意 2/4）+ 挤没自愈回归 | ✅ 完成（接缝已由框架落地） |
+| F3 | 活桶 FluidStack 化 + 汲/倒交互（客户端精确拦截 + 交互包管道）+ 处理器 + **桶源退役同批** | ✅ 完成（汲/倒交互不走规则 JSON，走 GuiInteractionHelper 活桶分支；末影箱 = 已知缺口） |
 | F4 | 转化表 JSON（含流体维度键）+ 转化 hook + 漏斗自动化实测 | 待框架接缝 |
 | F5 | 渲染轨：`FluidFlowSyncPacket` 容器级同步 + `IClientFluidTypeExtensions` 自适应 + 旧桶轨降级过渡回退 | ✅ 完成（同批次一） |
 

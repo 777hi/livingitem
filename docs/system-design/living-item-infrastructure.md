@@ -1719,7 +1719,7 @@ ItemTooltipEvent（NeoForge 客户端事件，见 client/render/LivingItemToolti
 | `ContainerMonitor.java` | `debug/` | 容器监控系统，检测物品复制/丢失/活物品覆盖 |
 | `ContainerMonitorCommand.java` | `debug/` | `/livingitem debug` 命令注册 |
 | `ContainerFluidData.java` | `domain/water/` | 容器流体数据，BFS 水流蔓延 + 物品推动 |
-| `LivingWaterBucketFunction.java` | `domain/water/` | 活水桶功能类，瞬态数据服务端缓存优化 |
+| `LivingBucketFunction.java` | `domain/water/` | 活桶（交互型）：FluidStack 内容组件，汲/倒（旧活水桶功能类已随桶源退役删除） |
 | `TransferPipeline.java` | `domain/hopper/` | 统一传输入口，含容器内传输的 `Container` 接口槽位过滤，复用 `CrossContainerTransfer.getNeighborContainer` |
 | `HopperFilterBuilder.java` | `domain/hopper/` | 活漏斗过滤链构建（从 ContainerSnapshot 提取） |
 | `CrossContainerTransfer.java` | `domain/hopper/` | 跨容器传输，含 `Container` 接口槽位过滤 + `tryPullFromNeighbor`/`tryPushToNeighbor` 核心 helper + 方向解析 + 大箱子处理 |

@@ -18,9 +18,6 @@ import com.qiqi.li.living.domain.chest.LivingChestFunction;
 import com.qiqi.li.living.domain.map.LivingEnderPearlFunction;
 import com.qiqi.li.living.domain.water.FluidFlowBehaviors;
 import com.qiqi.li.living.domain.water.FluidFlowClientCache;
-import com.qiqi.li.living.domain.water.LivingWaterBucketData;
-import com.qiqi.li.living.domain.water.LivingWaterBucketFunction;
-import com.qiqi.li.living.domain.water.WaterData;
 import com.qiqi.li.network.LivingChestAccessPacket;
 import com.qiqi.li.network.LivingMapGuiTeleportPacket;
 import net.minecraft.client.Minecraft;
@@ -493,13 +490,10 @@ public class AbstractContainerScreenMixin extends Screen {
                                               CallbackInfo ci) {
         AbstractContainerScreen<?> self = (AbstractContainerScreen<?>) (Object) this;
 
-        // 主轨（Q5 渲染轨）：容器级流体快照（FluidFlowSyncPacket），贴图/颜色按流体自适应 —— 纯源容器的水也能画
-        java.util.Set<Object> coveredContainers = new java.util.HashSet<>();
-        List<FluidCellRender> cells = living_item$collectContainerFluidCells(self, coveredContainers);
-
-        // 过渡期回退（批次二随桶源退役删除）：容器轨未覆盖、且界面里有携带 flow 的活水桶时走旧桶轨
-        List<WaterBucketRender> legacyBuckets = living_item$collectWaterBuckets(self, coveredContainers);
-        if (cells.isEmpty() && legacyBuckets.isEmpty()) return;
+        // 容器级流体快照（FluidFlowSyncPacket），贴图/颜色按流体自适应 —— 纯源容器的水也能画。
+        // （旧桶轨已随桶源退役删除，2026-10-03 批次二）
+        List<FluidCellRender> cells = living_item$collectContainerFluidCells(self);
+        if (cells.isEmpty()) return;
 
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
@@ -512,34 +506,6 @@ public class AbstractContainerScreenMixin extends Screen {
             FluidVisual visual = living_item$fluidVisual(cell.fluid());
             living_item$drawFluidCell(guiGraphics, leftPos + slot.x, topPos + slot.y,
                 cell.level(), cell.direction(), visual);
-        }
-
-        for (WaterBucketRender bucket : legacyBuckets) {
-            for (Map.Entry<Integer, WaterCell> entry : bucket.cells().entrySet()) {
-                int menuSlotIndex = entry.getKey();
-                WaterCell cell = entry.getValue();
-
-                Slot slot = self.getMenu().getSlot(menuSlotIndex);
-                if (slot == null) continue;
-
-                float alpha = cell.level() == 0 ? 0.55f : 0.25f + (1.0f - (float) cell.level() / 7.0f) * 0.3f;
-                RenderSystem.setShaderColor(0.25f, 0.5f, 1.0f, alpha);
-
-                if (cell.level() == 0) {
-                    guiGraphics.blit(leftPos + slot.x, topPos + slot.y, 0, 16, 16,
-                        living_item$blockSprite(ResourceLocation.withDefaultNamespace("block/water_still")));
-                } else {
-                    float angleDeg = living_item$directionToRotation(cell.direction());
-                    PoseStack pose = guiGraphics.pose();
-                    pose.pushPose();
-                    pose.translate(leftPos + slot.x + 8, topPos + slot.y + 8, 0);
-                    pose.mulPose(new Quaternionf().rotateZ((float) Math.toRadians(angleDeg)));
-                    pose.translate(-8, -8, 0);
-                    guiGraphics.blit(0, 0, 0, 16, 16,
-                        living_item$blockSprite(ResourceLocation.withDefaultNamespace("block/water_flow")));
-                    pose.popPose();
-                }
-            }
         }
 
         RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
@@ -615,11 +581,9 @@ public class AbstractContainerScreenMixin extends Screen {
      * 容器轨取数：菜单槽位按 {@code slot.container} 分组，每组选快照
      * （玩家背包 → {@link FluidFlowClientCache#getPlayer()}，其余 → {@link FluidFlowClientCache#get()}），
      * handler 槽位经 {@link #living_item$resolveContainerSlot(Slot)} 映射回菜单槽位。
-     * 有快照的容器记入 {@code coveredContainers}（供旧桶轨回退判定）。
      */
     @Unique
-    private List<FluidCellRender> living_item$collectContainerFluidCells(AbstractContainerScreen<?> self,
-                                                                          java.util.Set<Object> coveredContainers) {
+    private List<FluidCellRender> living_item$collectContainerFluidCells(AbstractContainerScreen<?> self) {
         List<FluidCellRender> out = new ArrayList<>();
         net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
         if (mc.player == null) return out;
@@ -636,7 +600,6 @@ public class AbstractContainerScreenMixin extends Screen {
             FluidFlowClientCache.FlowSnapshot snapshot =
                 group.getKey() == playerInv ? FluidFlowClientCache.getPlayer() : FluidFlowClientCache.get();
             if (snapshot.isEmpty()) continue;
-            coveredContainers.add(group.getKey());
 
             int width = Math.max(1, snapshot.width());
             for (var cellEntry : snapshot.cells().entrySet()) {
@@ -675,76 +638,6 @@ public class AbstractContainerScreenMixin extends Screen {
             case DIR_LEFT -> 90.0f;
             default -> 0.0f;
         };
-    }
-
-    @Unique
-    private List<WaterBucketRender> living_item$collectWaterBuckets(AbstractContainerScreen<?> screen,
-                                                                     java.util.Set<Object> skipContainers) {
-        List<WaterBucketRender> buckets = new ArrayList<>();
-
-        for (Slot slot : screen.getMenu().slots) {
-            ItemStack stack = slot.getItem();
-            if (stack.isEmpty()) continue;
-            if (!LivingWaterBucketFunction.isLivingWaterBucket(stack)) continue;
-            if (skipContainers.contains(slot.container)) continue;   // 容器轨已覆盖 ⇒ 不走旧桶轨
-
-            LivingWaterBucketData bucketData = LivingWaterBucketData.of(stack);
-            WaterData water = bucketData.water();
-            if (water.equals(WaterData.EMPTY)) continue;
-
-            String flowStr = water.flow();
-            if (flowStr == null || flowStr.isEmpty()) continue;
-
-            int handlerWidth = water.width();
-
-            Map<Integer, int[]> handlerFlow = living_item$parseFlowData(flowStr);
-            if (handlerFlow.isEmpty()) continue;
-
-            Container bucketContainer = slot.container;
-            Map<Integer, Integer> handlerToMenuIndex = new HashMap<>();
-            for (int i = 0; i < screen.getMenu().slots.size(); i++) {
-                Slot s = screen.getMenu().slots.get(i);
-                if (s.container == bucketContainer) {
-                    int containerSlot = living_item$resolveContainerSlot(s);
-                    handlerToMenuIndex.put(containerSlot, i);
-                }
-            }
-
-            Map<Integer, WaterCell> cells = new HashMap<>();
-            int skippedCount = 0;
-            for (var entry : handlerFlow.entrySet()) {
-                int handlerSlot = entry.getKey();
-                int level = entry.getValue()[0];
-                int fromSlot = entry.getValue()[1];
-
-                Integer menuIndex = handlerToMenuIndex.get(handlerSlot);
-                if (menuIndex == null) {
-                    skippedCount++;
-                    continue;
-                }
-
-                int direction;
-                if (level == 0 || fromSlot < 0) {
-                    direction = DIR_DOWN;
-                } else {
-                    int dx = (handlerSlot % handlerWidth) - (fromSlot % handlerWidth);
-                    int dy = (handlerSlot / handlerWidth) - (fromSlot / handlerWidth);
-                    direction = living_item$cardinalDirection(dx, dy);
-                }
-
-                cells.put(menuIndex, new WaterCell(level, direction));
-            }
-
-            if (skippedCount > 0) {
-                WATER_LOGGER.debug("[WaterRender] Skipped {} flow entries", skippedCount);
-            }
-
-            if (!cells.isEmpty()) {
-                buckets.add(new WaterBucketRender(cells, handlerWidth));
-            }
-        }
-
-        return buckets;
     }
 
     @Unique
@@ -798,27 +691,6 @@ public class AbstractContainerScreenMixin extends Screen {
             return dy >= 0 ? DIR_DOWN : DIR_UP;
         }
     }
-
-    @Unique
-    private static Map<Integer, int[]> living_item$parseFlowData(String data) {
-        Map<Integer, int[]> map = new HashMap<>();
-        if (data == null || data.isEmpty()) return map;
-        for (String part : data.split(",")) {
-            String[] kv = part.split(":");
-            if (kv.length >= 2) {
-                int slot = Integer.parseInt(kv[0]);
-                int level = Integer.parseInt(kv[1]);
-                int fromSlot = kv.length >= 3 ? Integer.parseInt(kv[2]) : -1;
-                map.put(slot, new int[]{level, fromSlot});
-            }
-        }
-        return map;
-    }
-
-    @Unique
-    private record WaterCell(int level, int direction) {}
-    @Unique
-    private record WaterBucketRender(Map<Integer, WaterCell> cells, int handlerWidth) {}
 
     /** 容器轨渲染格：菜单槽位索引 + level + 四方向 + 流体类型（贴图/颜色按流体自适应）。 */
     @Unique

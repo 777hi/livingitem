@@ -14,8 +14,8 @@ import com.qiqi.li.living.container.TickContext;
  * 容器级流体 tick 驱动（1b-2b，<b>框架提供</b>）。
  *
  * <h3>为什么需要它</h3>
- * <p>现状：容器级流体 tick 挂在<b>活水桶</b>上（{@code LivingWaterBucketFunction.tickContainerData}）
- * ⇒ 桶不在场，容器级流体就瘫痪（「数据是容器级的、驱动权却是桶的」）。本类把驱动权收归<b>容器</b>：
+ * <p>缘起（1b-2b）：容器级流体 tick 曾挂在<b>活水桶</b>上 ⇒ 桶不在场，容器级流体就瘫痪
+ * （「数据是容器级的、驱动权却是桶的」）。本类把驱动权收归<b>容器</b>：
  * 它是<b>自维持</b>函数（{@link #shouldTickWithoutOwnItems} 恒真）⇒ 即使容器里一个活物品都没有
  * （纯源容器），流体照样推进。</p>
  *

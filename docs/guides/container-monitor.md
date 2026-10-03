@@ -170,6 +170,6 @@ public static void processContext(ContainerContext context, Level level) {
 | # | 文件 | 问题 | 严重度 | 修复 |
 |---|------|------|--------|------|
 | 1 | `ContainerFluidData.java` | Javadoc 说"按 level 降序"但代码是升序 | 低 | 修正 Javadoc 为"按 level 升序" |
-| 2 | `LivingWaterBucketFunction.java` | `cleanupStaleEntries()` 是空方法体，`BUCKET_STATES` 无限增长 | 🔴 高 | 实现清理逻辑：移除 120s 未访问条目 |
-| 3 | `LivingWaterBucketFunction.java` | `BucketState.lastTick` 存 `gameTime`（~1000），但 `cleanupStaleEntries` 用 `System.currentTimeMillis()`（~1.7万亿）做差值，所有条目立即被清除 | 🔴 高 | 拆为双字段：`lastAccessMs`（System.currentTimeMillis）供缓存清理，`lastGameTick`（gameTime）供 needsReset 检测 |
+| 2 | ~~`LivingWaterBucketFunction.java`~~ | （桶源退役，2026-10-03：类已删除） | — | — |
+| 3 | ~~`LivingWaterBucketFunction.java`~~ | （桶源退役，2026-10-03：类已删除，随迁） | — | — |
 | 4 | `ContainerLivingItemHandler.java` | `cleanupStaleEntries` 未接入周期清理逻辑 | 中 | 在 CLEANUP_INTERVAL 周期清理中调用 |

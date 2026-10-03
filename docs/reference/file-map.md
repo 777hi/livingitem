@@ -70,13 +70,17 @@ src/main/java/com/qiqi/li/
 │   │   │   └── DirectionSlotsData.java       #     方向槽位数据（从 data/ 迁入）
 │   │   │
 │   │   ├── water/                            #   活水领域
-│   │   │   ├── LivingWaterBucketFunction.java #    活水桶功能入口（从 function/ 迁入）
-│   │   │   ├── WaterRegistration.java           #     水域注册入口（活水桶 + 活水车）
+│   │   │   ├── LivingBucketFunction.java     #    活桶（交互型：汲/倒，FluidStack 内容组件）
+│   │   │   ├── LivingBucketInteractSupport.java #  汲/倒服务端支撑（活流体数据反查 + 内容增减）
+│   │   │   ├── LivingBucketInteractHandlers.java # 汲/倒交互处理器（GuiInteractionPacket 管道）
+│   │   │   ├── WaterRegistration.java           #     水域注册入口（活桶 + 活水车 + 流体行为）
 │   │   │   ├── LivingWaterWheelFunction.java #     活水车功能入口（从 function/ 迁入）
-│   │   │   ├── ContainerFluidData.java       #     容器级流体数据
+│   │   │   ├── ContainerFluidData.java       #     容器级流体数据（派生源 = 唯一源形态）
 │   │   │   ├── ContainerStressData.java      #     容器级应力累加器
-│   │   │   ├── LivingWaterBucketData.java    #     活水桶数据（从 data/ 迁入）
-│   │   │   ├── WaterData.java                #     水源数据（从 data/ 迁入）
+│   │   │   ├── FluidFlowBehavior.java        #     流体行为分档契约（晋升/转化接缝）
+│   │   │   ├── FluidFlowBehaviors.java       #     流体行为注册表
+│   │   │   ├── FluidFlowClientCache.java     #     客户端流体快照缓存（渲染/客户端判定）
+│   │   │   ├── FluidFlowServerSync.java      #     服务端流体快照同步（Q5 渲染轨）
 │   │   │   ├── LivingWaterWheelData.java     #     活水车数据（从 data/ 迁入）
 │   │   │   └── WaterWheelData.java           #     水车应力数据（从 data/ 迁入）
 │   │   │
