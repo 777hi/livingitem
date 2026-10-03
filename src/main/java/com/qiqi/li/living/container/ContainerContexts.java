@@ -13,6 +13,7 @@ import net.minecraft.world.CompoundContainer;
 import net.minecraft.world.Container;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.RandomizableContainerBlockEntity;
@@ -38,8 +39,9 @@ import com.qiqi.li.living.util.DoubleChestPositions;
  * <p>本类的每个方法都是<b>已验证的现成实现</b>的迁移（含各自的坑位注释），
  * 消费者改走本入口（或保留薄委托）。</p>
  *
- * <p>⚠️ 本批（A）只收编<b>服务端</b>的 {@link #resolve} / {@link #isViewing}；
- * 归属匹配（ownsContainer）、槽位体系探针、客户端 {@code resolveMenuSlot} 归后续批次。</p>
+ * <p>批次 A（2026-10-04）收编服务端 {@link #resolve} / {@link #isViewing}；
+ * 批次 B（2026-10-04）补 {@link #ownsContainer}（归属匹配）与 {@link #isSameSlotSpace}（槽位体系探针）；
+ * 客户端 {@code resolveMenuSlot} 归批次 C。</p>
  */
 public final class ContainerContexts {
 
@@ -159,14 +161,59 @@ public final class ContainerContexts {
         AbstractContainerMenu menu = player.containerMenu;
         if (menu == player.inventoryMenu) return false;
         for (Slot slot : menu.slots) {
-            Container menuContainer = slot.container;
-            if (containerInstances.contains(menuContainer)) return true;
-            if (menuContainer instanceof CompoundContainer compound) {
-                for (Container be : containerInstances) {
-                    if (compound.contains(be)) return true;
-                }
+            if (ownsContainer(slot.container, containerInstances)) return true;
+        }
+        return false;
+    }
+
+    // ── ownsContainer：菜单槽位的容器实例是否属于给定集合 ──────────
+
+    /**
+     * 判断「某个菜单槽位的容器实例」是否属于给定容器实例集合。
+     *
+     * <p><b>大箱子</b>：菜单槽位的容器是 {@code CompoundContainer}(左半BE, 右半BE)
+     * 包装对象而非 BE 本体 ⇒ 单靠 {@code contains} 永远不命中，必须再用其自带的
+     * {@code contains(Container)} 逐个匹配关联 BE。</p>
+     *
+     * <p>收编自 {@code SimpleContainerContext.slotBelongsTo}（组件同步归属验证）；
+     * 与 {@link #isViewing} 逐槽判据同源 —— 后者即「菜单里任取一槽，是否属于该集合」。</p>
+     */
+    public static boolean ownsContainer(Container menuContainer, Collection<Container> containerInstances) {
+        if (containerInstances.contains(menuContainer)) return true;
+        if (menuContainer instanceof CompoundContainer compound) {
+            for (Container be : containerInstances) {
+                if (compound.contains(be)) return true;
             }
         }
         return false;
+    }
+
+    // ── isSameSlotSpace：Container 与 handler 是否共用同一套槽位编号 ──
+
+    /**
+     * 槽位体系一致性探针 —— {@code Container} 与 {@code IItemHandler} 是否共用同一套槽位编号。
+     *
+     * <p>多方块容器（大箱子）的两套槽位体系可能整体错位：{@code Container} 给单个半箱（27 槽），
+     * {@code IItemHandler} 给合并（54 槽）。按逻辑槽位读写前先探一次，不过则回退 handler。</p>
+     *
+     * <p>两级判据，逐级加严，且<b>都不依赖「知道容器由几个方块组成」</b>（三方块 / 四块同样成立）：</p>
+     * <ol>
+     *   <li><b>槽位数一致</b> —— 不一致必然是「单体 vs 合并」；</li>
+     *   <li><b>单槽交叉校验</b> —— 挡住「槽位数相同但映射不同」（如合并顺序相反）：
+     *       比对同一槽位在两套体系里的「空/非空 + 物品」是否一致。</li>
+     * </ol>
+     *
+     * <p>收编自 {@code SimpleContainerContext.isSameSlotSpaceAsHandler}（hopper §10.25 修复）。</p>
+     */
+    public static boolean isSameSlotSpace(Container container, IItemHandler handler, int slot) {
+        int size = container.getContainerSize();
+        if (size != handler.getSlots() || slot < 0 || slot >= size) return false;
+
+        ItemStack viaContainer = container.getItem(slot);
+        ItemStack viaHandler = handler.getStackInSlot(slot);
+        if (viaContainer.isEmpty() || viaHandler.isEmpty()) {
+            return viaContainer.isEmpty() && viaHandler.isEmpty();
+        }
+        return ItemStack.isSameItemSameComponents(viaContainer, viaHandler);
     }
 }

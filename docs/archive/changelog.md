@@ -21,7 +21,12 @@
   - 新增 `container/ContainerContexts.java` 共享内核：`resolve(player, slot) → TickableContainerContext`（菜单槽位→tick 上下文，底稿 `LivingBucketInteractSupport.compoundContext`：背包/单 BE/大箱子 `CompoundContainer` 反射两半 + `DoubleChestPositions.find` 规范化；末影箱解析不出→null 已知缺口）与 `isViewing(player, containers)`（底稿 `ContainerRuntimeCache.isViewingContainer` 与 `FluidFlowServerSync.isViewingContainer` 两份同构：大箱子 `CompoundContainer.contains` 特判）。
   - 三个消费者改薄委托：`LivingBucketInteractSupport.resolveContext` → `ContainerContexts.resolve`；`ContainerRuntimeCache.isViewingContainer` / `FluidFlowServerSync.isViewingContainer` → `ContainerContexts.isViewing`。
   - 验收（可复算）：`grep CompoundContainer` 特判由 3 处收敛到 1 处（`ContainerContexts` 内部）；全量单测回归绿。
-  - 批次 B/C 待办：服务端 `ownsContainer`（`SimpleContainerContext.slotBelongsTo`）、槽位体系一致性探针（`isSameSlotSpaceAsHandler`）、跨容器面选取（`CrossContainerTransfer.getBasePosCandidates`）；客户端 `resolveMenuSlot`（`GuiInteractionHelper.resolveContainerSlot` + `AbstractContainerScreenMixin`）。
+- ✅ **Q6 批次 B（服务端收尾）**（**436 测试全绿**，新增 `ContainerContextsTest` 10 项）：
+  - `ContainerContexts.ownsContainer(Container, Collection<Container>)` 收编 `SimpleContainerContext.slotBelongsTo`（组件同步归属验证），并把 `isViewing` 的逐槽判据提取为它（两者同源：`isViewing` = 菜单里任一槽 `ownsContainer`）。
+  - `ContainerContexts.isSameSlotSpace(Container, IItemHandler, int)` 收编 `SimpleContainerContext.isSameSlotSpaceAsHandler`（hopper §10.25 两级探针）。
+  - 两个消费者改薄委托；**`grep CompoundContainer` 代码特判收敛到 1 处**（`ContainerContexts`，其余全为注释）。
+  - ⚠️ `CrossContainerTransfer.getBasePosCandidates` **不迁移**（非重复项，属传输「面选取」；通用教训已收编 `container-identity.md` §4）。
+  - 批次 C 待办：客户端 `resolveMenuSlot`（`GuiInteractionHelper.resolveContainerSlot` + `AbstractContainerScreenMixin`）。
 - ✅ **新建稳定层文档 `docs/system-design/container-identity.md`「多方块容器身份解析（边界带）」**：Q6 收敛前，该主题的教训散在 hopper §6.4/§10.25、tooltip §3.2/§7、infrastructure §2.5/§8.5、活桶汲/倒四处，且只在 buffer 层有记录（无稳定归宿）。本文把问题（三视图互不可达）、共享内核契约（`ContainerContexts.resolve`/`isViewing` + 两条不变量）、消费者清单（6+客户端 1）、通用教训、已知缺口集中到一处；infrastructure §2.5 与 AGENTS 子系统索引已加指针。
 
 ## 2026-10-03

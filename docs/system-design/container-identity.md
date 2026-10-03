@@ -4,8 +4,8 @@
 > 把原先散落在 hopper §6.4/§10.25、tooltip-system §3.2/§7、infrastructure §2.5/§8.5、
 > 活桶汲/倒里的同类教训**集中到一处**。
 >
-> **状态**：批次 A（服务端 `resolve` / `isViewing`）**已落地**；
-> 批次 B（`ownsContainer` + 槽位体系探针 + 跨容器面选取）、批次 C（客户端 `resolveMenuSlot`）**待办**。
+> **状态**：批次 A（服务端 `resolve` / `isViewing`）**已落地**；批次 B（`ownsContainer` + `isSameSlotSpace`）**已落地**；
+> 批次 C（客户端 `resolveMenuSlot`）**待办**。
 > 收编方案、拍板记录与待办清单在
 > [buffer/infrastructure-refactoring-plan.md §2.1-Q6](../buffer/infrastructure-refactoring-plan.md)。
 
@@ -43,6 +43,8 @@
 |---|---|---|
 | `resolve(ServerPlayer, Slot) → TickableContainerContext` | 菜单槽位 → tick 上下文（容器键与 `processContainerAt` 同源 ⇒ 同一容器同一键）| `LivingBucketInteractSupport.compoundContext` |
 | `isViewing(ServerPlayer, Collection<Container>)` | 玩家菜单里是否含该容器（大箱 `CompoundContainer.contains` 特判）| `ContainerRuntimeCache` / `FluidFlowServerSync` 两份同构 |
+| `ownsContainer(Container, Collection<Container>)` | 单个菜单槽位的容器是否属于给定实例集合（大箱特判）| `SimpleContainerContext.slotBelongsTo` |
+| `isSameSlotSpace(Container, IItemHandler, int)` | Container ↔ handler 是否共用同一套槽位编号（两级判据）| `SimpleContainerContext.isSameSlotSpaceAsHandler` |
 
 `resolve` 的分支（镜像 `ContainerLivingItemHandler.processContainerAt` 的构建规则）：
 
@@ -60,7 +62,6 @@
 
 **未来批次**（方案见 buffer 计划，尚未实现）：
 
-- `ownsContainer(context, Container)` —— 容器归属匹配（底稿 `SimpleContainerContext.slotBelongsTo`）。
 - `resolveMenuSlot(menu, containerSlot)` —— 客户端 `SlotWrapper` 解析（底稿 `GuiInteractionHelper.resolveContainerSlot`）。
 
 ---
@@ -73,9 +74,9 @@
 | 2 | `ContainerRuntimeCache.java` `isViewingContainer` | 查看者匹配（遥测）| ✅ 改薄委托 → `ContainerContexts.isViewing` |
 | 3 | `FluidFlowServerSync.java` `isViewingContainer` | 查看者匹配（流体渲染）| ✅ 改薄委托 → `ContainerContexts.isViewing` |
 | 4 | `LivingBucketInteractSupport.java` `compoundContext` | 汲/倒反查活流体数据 | ✅ 改薄委托 → `ContainerContexts.resolve` |
-| 5 | `SimpleContainerContext.java` `slotBelongsTo` | 容器归属匹配（组件同步）| 待批次 B 收编 |
-| 6 | `CrossContainerTransfer.java` `getBasePosCandidates` | 跨容器面选取（基准块候选）| 待批次 B 收编 |
-| 7 | `SimpleContainerContext.java` `isSameSlotSpaceAsHandler` | 槽位体系一致性仲裁 | 待批次 B 收编 |
+| 5 | `SimpleContainerContext.java` `slotBelongsTo` | 容器归属匹配（组件同步）| ✅ 改薄委托 → `ContainerContexts.ownsContainer` |
+| 6 | `CrossContainerTransfer.java` `getBasePosCandidates` | 跨容器面选取（基准块候选）| 不迁移（非重复项，属传输面选取；通用教训见 §4）|
+| 7 | `SimpleContainerContext.java` `isSameSlotSpaceAsHandler` | 槽位体系一致性仲裁 | ✅ 改薄委托 → `ContainerContexts.isSameSlotSpace` |
 | C | `GuiInteractionHelper.java` + `AbstractContainerScreenMixin.java` | 客户端槽位 → 容器（创造模式 `SlotWrapper`）| 待批次 C 收编 |
 
 > **判据（可复算）**：`grep -rn CompoundContainer src/main/java` 的**特判**应收敛到 `ContainerContexts` 一处。

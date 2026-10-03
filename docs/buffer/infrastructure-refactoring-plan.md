@@ -151,7 +151,7 @@ return "container_" + Integer.toHexString(handler.hashCode());
 | **Q3** | `containerKey` 第三档 | ⭐ **直接删，改为显式抛异常**（**无需观测期** —— 已静态证明不可达） | 1a-2 |
 | **Q4** | `ContainerContext` 补哪些方法 | **抽 `TickableContainerContext` 子接口**（不污染只读的 `ContainerContext`） | 1a-3 |
 | **Q5** | 纯源容器渲染的同步轨 | ⭐ **不用验证 attachment** —— 复用已有的 `ContainerRuntimeCache.flushToClients` + `LivingItemSyncPacket` | 活水源二期 |
-| **Q6** | 多方块容器边界带「身份解析」收敛（流体侧移交，2026-10-03） | ⭐ 新增 `ContainerContexts`（container/ 包）共享内核，收编 6 处重复消费者（详见 §2.1-Q6） | 批次 A（服务端 `resolve`/`isViewing`）✅ 2026-10-04；批次 B（`ownsContainer`+槽位探针）、C（客户端 `resolveMenuSlot`）待办 |
+| **Q6** | 多方块容器边界带「身份解析」收敛（流体侧移交，2026-10-03） | ⭐ 新增 `ContainerContexts`（container/ 包）共享内核，收编 6 处重复消费者（详见 §2.1-Q6） | 批次 A（服务端 `resolve`/`isViewing`）✅ 2026-10-04；批次 B（`ownsContainer`+`isSameSlotSpace`）✅ 2026-10-04；批次 C（客户端 `resolveMenuSlot`）待办 |
 
 **Q3 的不可达证明**：`buildContext` 唯一调用点传 `player.getInventory()`（inventory 恒非 null）；
 `processContainerAt` 的 else 分支（`:759-768`）**无条件** `positions.add(pos)` ⇒ positions 恒非空。
@@ -296,12 +296,25 @@ ContainerContexts
 - 验收（可复算）：`grep CompoundContainer` 特判由 **3 处**（原 compoundContext + 2 处 isViewing，
   不含客户端 SlotWrapper）收敛到 **1 处**（`ContainerContexts` 内部）；全量单测回归绿。
 - 末影箱水网仍为已知缺口（`resolve` 解析不出 `EnderChestContainerContext` 覆写的玩家键 → 返回 null）。
-- 批次 B/C 待办：服务端 `ownsContainer`（收编 `SimpleContainerContext.slotBelongsTo`）、槽位体系一致性探针
-  （`isSameSlotSpaceAsHandler`）、跨容器面选取（`CrossContainerTransfer.getBasePosCandidates`）；
-  客户端 `resolveMenuSlot`（收编 `GuiInteractionHelper.resolveContainerSlot` + `AbstractContainerScreenMixin`）。
 - **稳定层文档已建**：`docs/system-design/container-identity.md`「多方块容器身份解析（边界带）」——
   收编问题陈述 / 内核契约（含两条不变量）/ 消费者清单 / 通用教训 / 已知缺口。本文（buffer）继续承载
-  **未定案**的批次 B/C 方案与拍板记录，稳定后按 buffer 收敛三步法并入。
+  **未定案**的后续批次方案与拍板记录，稳定后按 buffer 收敛三步法并入。
+
+**批次 B 实施（2026-10-04，✅ 已完成）**：补服务端两个入口，同样「搬家不是重写」——
+- `ContainerContexts.ownsContainer(Container, Collection<Container>)`：收编 `SimpleContainerContext.slotBelongsTo`
+  （组件同步归属验证）；并把 `isViewing` 的逐槽判据提取为它（两者同源：`isViewing` = 菜单里任一槽 `ownsContainer`）。
+- `ContainerContexts.isSameSlotSpace(Container, IItemHandler, int)`：收编 `SimpleContainerContext.isSameSlotSpaceAsHandler`
+  （hopper §10.25 两级探针）。
+- 两个消费者改薄委托：`SimpleContainerContext.slotBelongsTo` → `ownsContainer`；
+  `SimpleContainerContext.isSameSlotSpaceAsHandler` → `isSameSlotSpace`。
+- 新增 `ContainerContextsTest`（10 项：`ownsContainer` 单箱/大箱 `CompoundContainer`/防跨容器虚影/空集；
+  `isSameSlotSpace` 槽位数不一致/越界/同空/同物品/一空一非空/异物品）。
+- 验收（可复算）：`grep -rn CompoundContainer src/main/java` 的**代码特判**收敛到 **1 处**
+  （`ContainerContexts`，其余全为注释）；全量单测回归绿。
+- ⚠️ **`CrossContainerTransfer.getBasePosCandidates` 不迁移**（判断）：它不是重复项（仅本处使用），
+  属传输「面选取」而非「身份解析」，且不在 Q6 推荐 API 内；其通用教训（跨容器面候选不做结构假设）
+  已在 `container-identity.md` §4 收编，`living-hopper-tech.md` §6.4 亦已加指针。
+- 批次 C 待办：客户端 `resolveMenuSlot`（收编 `GuiInteractionHelper.resolveContainerSlot` + `AbstractContainerScreenMixin`）。
 
 ---
 

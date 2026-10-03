@@ -317,14 +317,8 @@ public class SimpleContainerContext implements TickableContainerContext {
     }
 
     /**
-     * 槽位体系一致性探针 —— Container 与 handler 是否共用同一套槽位编号。
-     *
-     * <p>两级判据，逐级加严，且<b>都不依赖「知道容器由几个方块组成」</b>：</p>
-     * <ol>
-     *   <li><b>槽位数一致</b> —— 不一致必然是「单体 vs 合并」（大箱子 27 vs 54）；</li>
-     *   <li><b>单槽交叉校验</b> —— 挡住「槽位数相同但映射不同」的情况（如合并顺序相反）：
-     *       比对同一槽位在两套体系里的「空/非空 + 物品」是否一致。</li>
-     * </ol>
+     * 槽位体系一致性探针（Q6 批次 B，2026-10-04）—— 两级判据已迁至
+     * {@link ContainerContexts#isSameSlotSpace}（边界带共享内核），此处保留薄委托。
      *
      * <p>任一级不过 ⇒ 判定该 Container 的槽位编号不可信 ⇒ 调用方回退到 handler
      * （handler 才是多方块合并后的真实后端，与 GUI 同体系）。回退并不丢语义：
@@ -332,15 +326,7 @@ public class SimpleContainerContext implements TickableContainerContext {
      * {@code canPlaceItem/isItemValid}，模拟与真实写入还因此变成同源。</p>
      */
     private boolean isSameSlotSpaceAsHandler(Container container, int slot) {
-        int size = container.getContainerSize();
-        if (size != handler.getSlots() || slot < 0 || slot >= size) return false;
-
-        ItemStack viaContainer = container.getItem(slot);
-        ItemStack viaHandler = handler.getStackInSlot(slot);
-        if (viaContainer.isEmpty() || viaHandler.isEmpty()) {
-            return viaContainer.isEmpty() && viaHandler.isEmpty();
-        }
-        return ItemStack.isSameItemSameComponents(viaContainer, viaHandler);
+        return ContainerContexts.isSameSlotSpace(container, handler, slot);
     }
 
     @Override
@@ -550,17 +536,10 @@ public class SimpleContainerContext implements TickableContainerContext {
     /**
      * 判断菜单槽位的容器是否属于本容器关联的 Container 实例集合。
      *
-     * <p>单箱菜单容器即 BE 本体，实例匹配即可；大箱子菜单容器是
-     * {@link net.minecraft.world.CompoundContainer CompoundContainer}(左BE, 右BE)
-     * 包装对象，需用其自带的 {@code contains(Container)} 逐个匹配关联 BE。</p>
+     * <p>Q6 批次 B（2026-10-04）：实现已迁至 {@link ContainerContexts#ownsContainer}
+     * （边界带共享内核），此处保留薄委托。</p>
      */
     private static boolean slotBelongsTo(Container menuContainer, java.util.Set<Container> myContainers) {
-        if (myContainers.contains(menuContainer)) return true;
-        if (menuContainer instanceof net.minecraft.world.CompoundContainer compound) {
-            for (Container c : myContainers) {
-                if (compound.contains(c)) return true;
-            }
-        }
-        return false;
+        return ContainerContexts.ownsContainer(menuContainer, myContainers);
     }
 }
