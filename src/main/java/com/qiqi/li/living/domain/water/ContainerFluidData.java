@@ -194,6 +194,16 @@ public class ContainerFluidData {
     public static final Codec<ContainerFluidData> CODEC =
         SourceEntry.CODEC.listOf().xmap(ContainerFluidData::fromSources, ContainerFluidData::toSources);
 
+    /**
+     * 按容器键索引的落盘 CODEC（B.5 第三项，2026-10-04）—— 玩家背包 / 末影箱用。
+     *
+     * <p>一个玩家有<b>两个</b>容器（背包 {@code player_<uuid>} + 末影箱 {@code player_<uuid>_ender_chest}），
+     * 二者都<b>无 BE</b> 可挂 {@code .serialize} ⇒ 落到 <b>Player attachment</b>（单值 holder），
+     * 用本 CODEC 存「容器键 → 流体数据」的映射（值仍是 {@link #CODEC}：只存派生源）。</p>
+     */
+    public static final Codec<Map<String, ContainerFluidData>> KEYED_CODEC =
+        Codec.unboundedMap(Codec.STRING, CODEC);
+
     private static ContainerFluidData fromSources(List<SourceEntry> entries) {
         ContainerFluidData data = new ContainerFluidData();
         for (SourceEntry e : entries) {

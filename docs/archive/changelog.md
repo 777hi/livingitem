@@ -17,6 +17,12 @@
 
 ## 2026-10-04
 
+- ✅ **B.5 第三项：玩家背包 / 末影箱流体落盘（Player attachment）**（**437 测试全绿**，新增 `KEYED_CODEC` 往返 1 项）：
+  - 背包 / 末影箱**无 BE** 可挂 `CONTAINER_FLUID_DATA` ⇒ 新增 **Player attachment** `CONTAINER_FLUID_DATA_PLAYER`（`Map<容器键, ContainerFluidData>`，`ContainerFluidData.KEYED_CODEC`）—— 一个玩家有背包（`player_<uuid>`）+ 末影箱（`player_<uuid>_ender_chest`）两个容器。
+  - `ContainerLivingItemHandler.getFluidData` / `writebackBlockEntities` 按 `ownerPlayer(ctx)` 分派读写；末影箱 context 补存 `player` 引用（inventory 为 null 无法反查）。
+  - ⚠️ **与原草案偏差**：草案写 `Map<containerKey, Set<slot>>` → 实装 `Map<containerKey, ContainerFluidData>`（只存 slot 集合会丢流体类型）。
+  - ⚠️ 测试抓到一处 NPE：`WaxedGeneratorFeedChainTest` 用 mock Player，其 `getData` 返回 null ⇒ 已加判空（对真 Player 无影响）。
+
 - ✅ **Q6 多方块容器边界带「身份解析」收敛 —— 批次 A（服务端入口）**（**426 测试全绿**，纯重构未增删测试）。
   - 新增 `container/ContainerContexts.java` 共享内核：`resolve(player, slot) → TickableContainerContext`（菜单槽位→tick 上下文，底稿 `LivingBucketInteractSupport.compoundContext`：背包/单 BE/大箱子 `CompoundContainer` 反射两半 + `DoubleChestPositions.find` 规范化；末影箱解析不出→null 已知缺口）与 `isViewing(player, containers)`（底稿 `ContainerRuntimeCache.isViewingContainer` 与 `FluidFlowServerSync.isViewingContainer` 两份同构：大箱子 `CompoundContainer.contains` 特判）。
   - 三个消费者改薄委托：`LivingBucketInteractSupport.resolveContext` → `ContainerContexts.resolve`；`ContainerRuntimeCache.isViewingContainer` / `FluidFlowServerSync.isViewingContainer` → `ContainerContexts.isViewing`。

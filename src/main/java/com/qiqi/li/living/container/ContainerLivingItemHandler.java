@@ -156,7 +156,38 @@ public class ContainerLivingItemHandler {
             }
         }
 
+        // 玩家背包 / 末影箱（B.5 第三项）：无 BE 可挂 ⇒ 从 Player attachment 回填（按容器键）。
+        // ⚠️ getData 可能返回 null（测试替身 / 附件未注册），必须判空。
+        Player owner = ownerPlayer(ctx);
+        if (owner != null) {
+            String ownerKey = ctx.getContainerKey();
+            if (ownerKey != null) {
+                Map<String, ContainerFluidData> playerMap =
+                    owner.getData(LivingComponents.CONTAINER_FLUID_DATA_PLAYER);
+                ContainerFluidData persisted = playerMap == null ? null : playerMap.get(ownerKey);
+                if (persisted != null && persisted != ContainerFluidData.EMPTY && !persisted.isEmpty()) {
+                    e.store.put(ContainerDataKeys.FLUID, persisted);
+                    return persisted;
+                }
+            }
+        }
+
         return e.store.getOrCreate(ContainerDataKeys.FLUID);
+    }
+
+    /**
+     * 取容器的「所属玩家」—— 仅玩家背包 / 末影箱有；方块容器返回 {@code null}。
+     *
+     * <p>用于把容器级流体数据落到 <b>Player attachment</b>（B.5 第三项）：背包走
+     * {@code getInventory().player}；末影箱 inventory 为 null ⇒ 直接取 context 持有的 player。</p>
+     */
+    private static Player ownerPlayer(ContainerContext ctx) {
+        if (ctx instanceof EnderChestContainerContext ec) return ec.player;
+        if (ctx instanceof TickableContainerContext tctx) {
+            Inventory inv = tctx.getInventory();
+            if (inv != null) return inv.player;
+        }
+        return null;
     }
 
     /**
@@ -659,6 +690,25 @@ public class ContainerLivingItemHandler {
                 be.setData(LivingComponents.CONTAINER_FLUID_DATA.value(), fluidData);
             }
         }
+        // 玩家背包 / 末影箱（B.5 第三项）：无 BE 可挂 ⇒ 落到 Player attachment（按容器键）。
+        // 一个玩家有背包 + 末影箱两个容器 ⇒ 读-改-写一份 map（Codec 解码得到不可变 map，先复制）。
+        // ⚠️ getData 可能返回 null（测试替身 / 附件未注册），必须判空。
+        Player owner = ownerPlayer(context);
+        if (owner != null && fluidData != null) {
+            String ownerKey = context.getContainerKey();
+            if (ownerKey != null) {
+                Map<String, ContainerFluidData> current =
+                    owner.getData(LivingComponents.CONTAINER_FLUID_DATA_PLAYER);
+                Map<String, ContainerFluidData> persistedMap =
+                    current != null ? new HashMap<>(current) : new HashMap<>();
+                if (fluidData.isEmpty()) {
+                    persistedMap.remove(ownerKey);
+                } else {
+                    persistedMap.put(ownerKey, fluidData);
+                }
+                owner.setData(LivingComponents.CONTAINER_FLUID_DATA_PLAYER.value(), persistedMap);
+            }
+        }
         if (fluidData != null && fluidData.isEmpty()) {
             String fluidKey = cacheKey(context);
             if (fluidKey != null) {
@@ -839,9 +889,12 @@ public class ContainerLivingItemHandler {
 
     private static class EnderChestContainerContext extends SimpleContainerContext {
         private final String enderChestKey;
+        /** 持有玩家：B.5 落盘需要 owner（inventory 为 null，无法从 getInventory() 反查）。 */
+        private final Player player;
 
         EnderChestContainerContext(IItemHandler handler, Player player, Level level) {
             super(handler, null, new ArrayList<>(), new ArrayList<>(), level);
+            this.player = player;
             this.enderChestKey = "player_" + player.getStringUUID() + "_ender_chest";
         }
 

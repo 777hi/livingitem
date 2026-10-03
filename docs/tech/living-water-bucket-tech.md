@@ -131,9 +131,11 @@ public class ContainerFluidData {
 > 设计稿见 [idea.md](../idea.md)，分工表见
 > [buffer/infrastructure-refactoring-plan.md](../buffer/infrastructure-refactoring-plan.md) §3 1b B.1。
 >
-> **落盘 CODEC（1b-2⑧，框架）**：`ContainerFluidData.CODEC` **只序列化派生源**（`generatedSources`）——
-> 桶源 / 流动表**不落**（桶在场时每 tick 由桶重新注册，落盘会造幽灵源；流动每 tick 由 BFS 重算）；
-> `CONTAINER_FLUID_DATA` 附件已接 `.serialize`。⚠️ 背包（Player attachment）落盘仍未做。
+> **落盘 CODEC（1b-2⑧ + B.5，框架）**：`ContainerFluidData.CODEC` **只序列化派生源**（`generatedSources`）——
+> 桶源 / 流动表**不落**（桶在场时每 tick 由桶重新注册，落盘会造幽灵源；流动每 tick 由 BFS 重算）。
+> **方块容器**：`CONTAINER_FLUID_DATA` 附件已接 `.serialize`；**玩家背包 / 末影箱**（B.5 第三项，2026-10-04）：
+> 无 BE 可挂 ⇒ 落到 **Player attachment** `CONTAINER_FLUID_DATA_PLAYER`（`Map<容器键, ContainerFluidData>`，
+> `ContainerFluidData.KEYED_CODEC`）—— 一个玩家有背包 + 末影箱两个容器。
 >
 > **引擎接缝（1b-2⑩，框架）**：`FluidFlowBehavior` 的两条 **default no-op**（流体侧填行为）——
 > `shouldPromote(slot, sourceNeighborCount)`（引擎 `recalculate` 的**晋升收敛循环**）/

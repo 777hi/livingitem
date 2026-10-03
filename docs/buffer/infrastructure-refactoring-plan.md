@@ -425,11 +425,14 @@ ContainerContexts
 
 #### B.5 落盘（框架）
 
-- `ContainerFluidData` 加 `CODEC`；`CONTAINER_FLUID_DATA` 加 `.serialize(CODEC)`
-  （照 `CONTAINER_PHASE_SNAPSHOT` 的既有先例 —— 它已带 `.serialize`，可作模板）。
+- ✅ `ContainerFluidData` 加 `CODEC`；`CONTAINER_FLUID_DATA` 加 `.serialize(CODEC)`
+  （照 `CONTAINER_PHASE_SNAPSHOT` 的既有先例 —— 它已带 `.serialize`，可作模板）。**2026-10-03 完成**。
 - ⚠️ **只落「源」，不落「流动」**：流动每 tick 由 BFS 重算，落盘无正确性价值（源才是资产）。
-- **玩家背包**：新增 Player attachment（`Map<containerKey, Set<slot>>`，覆盖背包 + 末影箱 key）
+- ✅ **玩家背包 / 末影箱**（2026-10-04 完成）：新增 **Player attachment**
+  `CONTAINER_FLUID_DATA_PLAYER`（`Map<容器键, ContainerFluidData>`，`ContainerFluidData.KEYED_CODEC`）
   —— 倒水主场景在背包，此项必做。
+  ⚠️ **与原草案的偏差**：草案写 `Map<containerKey, Set<slot>>`，实装为 `Map<containerKey, ContainerFluidData>`
+  —— 只存 slot 集合会**丢流体类型**（派生源 = 槽位 → 流体），故直接存整份流体数据（值仍只含派生源）。
 
 #### B.6 分期（框架侧）
 
@@ -478,7 +481,9 @@ ContainerContexts
    `hasAnySource()`（**改**已有 `registerSource` / `removeSource`）。供汲 / 倒处理器用。**413 测试全绿**。
 8. ✅ **落盘**（2026-10-03，**框架侧**）—— 流体侧已备好 `generatedSources: Map<Integer, FluidType>`；
    框架接上 `ContainerFluidData.CODEC`（**只序列化派生源**，桶源 / 流动表不落）+ `CONTAINER_FLUID_DATA`
-   附件 `.serialize`。⚠️ **背包 Player attachment 仍未做**（倒水主场景，见 B.5 第三项）。
+   附件 `.serialize`。
+   ✅ **背包 Player attachment 已补**（2026-10-04，B.5 第三项）—— `CONTAINER_FLUID_DATA_PLAYER`
+   （`Map<容器键, ContainerFluidData>`，`KEYED_CODEC`）挂 **Player**，覆盖背包 + 末影箱（一个玩家两个容器）。
 9. ✅ **同步轨泛化（Q5）** —— **已由流体侧落地**（`FluidFlowSyncPacket` + `FluidFlowServerSync`
    + `FluidFlowClientCache`，挂 `LivingFluidFunction.tickContainerData` 尾部，零框架文件改动）。
 10. ✅ **引擎接缝**（2026-10-03，**框架侧**）—— 流体侧点名的两条，都是 `FluidFlowBehavior` 的

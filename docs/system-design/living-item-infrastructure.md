@@ -1468,9 +1468,12 @@ ContainerFluidData.java 管理容器级流体状态，**独立于任何活物品
 `isGeneratedSource(slot)` / `hasGeneratedSources()`。⚠️ `isEmpty()` 必须计入派生源 ——
 否则纯源容器会被驱动的 `!isEmpty()` 门挡在 tick 外（BFS 永不启动、落盘漏）。
 
-**落盘**：`CODEC` 只序列化 `generatedSources`（流动表每 tick 重算，落盘无价值），
-经 `CONTAINER_FLUID_DATA` attachment（`.serialize`）随 BE 持久化；背包/末影箱的
-Player attachment 落盘仍待做。
+**落盘**：`CODEC` 只序列化 `generatedSources`（流动表每 tick 重算，落盘无价值）。
+- **方块容器**：`CONTAINER_FLUID_DATA` attachment（`.serialize`）随 BE 持久化；
+- **玩家背包 / 末影箱**（B.5 第三项，2026-10-04）：无 BE 可挂 ⇒ 落到 **Player attachment**
+  `CONTAINER_FLUID_DATA_PLAYER`（`Map<容器键, ContainerFluidData>`，`ContainerFluidData.KEYED_CODEC`）
+  —— 一个玩家有背包（`player_<uuid>`）+ 末影箱（`player_<uuid>_ender_chest`）两个容器。
+  读写由 `ContainerLivingItemHandler.getFluidData` / `writebackBlockEntities` 按 `ownerPlayer(ctx)` 分派。
 
 **渲染轨（Q5）**：`FluidFlowServerSync` 在 `LivingFluidFunction.tickContainerData` 尾部把
 flow 快照经 `FluidFlowSyncPacket`（流体调色板 + level/fromSlot）发给查看者 → 客户端

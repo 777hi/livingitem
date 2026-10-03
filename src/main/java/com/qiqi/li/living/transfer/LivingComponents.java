@@ -9,6 +9,7 @@ import net.neoforged.neoforge.attachment.AttachmentType;
 import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
+import java.util.Map;
 import java.util.UUID;
 import com.qiqi.li.living.domain.furnace.LivingFurnaceData;
 import com.qiqi.li.living.domain.hopper.LivingHopperData;
@@ -294,6 +295,20 @@ public final class LivingComponents {
             ATTACHMENT_TYPES.register("container_fluid_data", () ->
                     AttachmentType.builder(() -> ContainerFluidData.EMPTY)
                             .serialize(ContainerFluidData.CODEC)
+                            .build());
+
+    /**
+     * 玩家背包 / 末影箱的容器级流体数据（B.5 第三项，2026-10-04）。
+     *
+     * <p>背包与末影箱<b>没有 BE</b> 可挂 {@link #CONTAINER_FLUID_DATA} ⇒ 落到 <b>Player</b> 上；
+     * 一个玩家有背包（{@code player_<uuid>}）+ 末影箱（{@code player_<uuid>_ender_chest}）<b>两个</b>容器
+     * ⇒ 用「容器键 → 流体数据」映射。默认空 map；{@code copyOnDeath} 默认 false ⇒ 玩家死亡清空
+     * （与「背包清空」语义一致）。</p>
+     */
+    public static final DeferredHolder<AttachmentType<?>, AttachmentType<Map<String, ContainerFluidData>>> CONTAINER_FLUID_DATA_PLAYER =
+            ATTACHMENT_TYPES.register("container_fluid_data_player", () ->
+                    AttachmentType.<Map<String, ContainerFluidData>>builder(() -> Map.of())
+                            .serialize(ContainerFluidData.KEYED_CODEC)
                             .build());
 
     /** 活桶内容（流体侧批次二，2026-10-03）：与 NeoForge 桶同构 —— 同一物品 + FluidStack 内容。 */

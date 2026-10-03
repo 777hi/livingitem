@@ -165,8 +165,9 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 436 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
-全绿基线：`435 passed / 0 failed / 1 skipped`（2026-10-04 Q6 批次 B：`ContainerContextsTest` 新增 10 项 ——
+**合计测试用例 437 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
+全绿基线：`436 passed / 0 failed / 1 skipped`（2026-10-04 B.5 第三项：`ContainerFluidDataTest` 新增 1 项 ——
+玩家背包/末影箱落盘 `KEYED_CODEC` 往返；2026-10-04 Q6 批次 B：`ContainerContextsTest` 新增 10 项 ——
 边界带共享内核 `ownsContainer`（大箱 `CompoundContainer` 特判）/ `isSameSlotSpace`（槽位体系探针）；
 此前 2026-10-03 流体侧批次二 F2/F3 + 批次一 F1：`ContainerFluidDataTest`
 新增派生源 6 项 —— 独立存活/挤没/与非活物品共存/桶源同格无豁免/异种覆盖/生命周期与 EMPTY noop；
@@ -197,6 +198,7 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-04 | **B.5 第三项：玩家背包 / 末影箱流体落盘（Player attachment）**：新增 `CONTAINER_FLUID_DATA_PLAYER`（`Map<容器键, ContainerFluidData>`，`ContainerFluidData.KEYED_CODEC`）—— 背包 + 末影箱**无 BE 可挂** ⇒ 落 Player（一个玩家两个容器）；`ContainerLivingItemHandler` 读写按 `ownerPlayer(ctx)` 分派。**437 测试全绿** | `living-water-bucket-tech.md` §2.2；`living-item-infrastructure.md` §8.7 |
 | 2026-10-04 | **Q6 多方块容器边界带「身份解析」收敛（批次 A+B+C，全部完成）+ 稳定层文档**：服务端 `container/ContainerContexts.java` 共享内核（`resolve`/`isViewing`/`ownsContainer`/`isSameSlotSpace`，5 个消费者改薄委托）+ **客户端对偶** `client/util/ClientSlotResolve.java`（`GuiInteractionHelper`/`AbstractContainerScreenMixin` 改薄委托，因 `SlotWrapperAccessor` 是客户端 Mixin 而**被迫分居两侧**）。**`grep CompoundContainer` 代码特判收敛到 1 处**；新增 `ContainerContextsTest` 10 项（**436 测试全绿**）。**新建稳定层文档** `container-identity.md` + tooltip/hopper/farmland/infra 旧教训改指向它 | `container-identity.md`；方案 `infrastructure-refactoring-plan.md` §2.1-Q6 |
 | 2026-10-03 | **框架侧接缝落地（1b-2⑧⑩）**：⑧ **落盘** —— `ContainerFluidData.CODEC`（**只序列化派生源**，桶源/流动表不落）+ `CONTAINER_FLUID_DATA` 附件 `.serialize`；⑩ **引擎接缝** —— `FluidFlowBehavior.shouldPromote(slot, 邻源数)`（`recalculate` 加**晋升收敛循环**）/ `transformItem(item)`（`tick` 每流体拍在源格转化），两条都是 **default no-op ⇒ 现有行为零变化**。⚠️ **背包 Player attachment 仍未做**。**422 测试全绿** | `living-water-bucket-tech.md` §2.2 |
 | 2026-10-03 | **流体侧批次一（F1+F5）**：F1 派生源（活水源）—— `generatedSources: Map<Integer,FluidType>` + 播种②无条件并入 BFS + **挤没判定**（活物品进源格即销毁，非活共存）；F5 流体渲染轨 —— `FluidFlowSyncPacket` 容器级同步（玩家背包/BE/大箱子全覆盖）+ `IClientFluidTypeExtensions` 自适应贴图/颜色（alpha 按 maxLevel 归一），旧桶轨降级过渡回退。桶源退役顺延批次二与汲/倒同批。**419 测试全绿** | `idea.md` §〇 |
