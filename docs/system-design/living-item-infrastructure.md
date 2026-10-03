@@ -162,6 +162,10 @@ public interface ContainerIdentity {
 
 `getStableKey` 用于生成槽位级别的稳定标识，格式为 `containerKey_slot_<N>_func_<functionId>`，用于缓存和状态关联。
 
+> 📄 **边界带身份解析**（菜单槽位 ↔ 容器上下文、查看者匹配、大箱 `CompoundContainer` 特判）
+> 另见 [container-identity.md](container-identity.md)（Q6 收敛，2026-10-04）——
+> 本文 §2.5 讲的是**跨 tick 的 containerKey**（稳定键），那篇讲的是**边界带的「槽位↔容器」解析**。
+
 ---
 
 ## 3. 容器发现与缓存

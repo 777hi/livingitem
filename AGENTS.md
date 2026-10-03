@@ -111,6 +111,7 @@ SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 | **红电不变量测试** | 35 条可执行不变量（七组） + 四层测试方案（属性测试/场景生成/蜕变/运行时监控） | [power-invariants.md](docs/system-design/power-invariants.md) |
 | **超大堆叠审计** | 模组容器堆叠上限 > 64 场景下全部活物品的表现评级（202 处调用点） | [oversized-stack-audit.md](docs/system-design/oversized-stack-audit.md) |
 | **基础设施** | 容器抽象 + 发现缓存 + SlotAccessor + 性能监控 | [living-item-infrastructure.md](docs/system-design/living-item-infrastructure.md) |
+| **多方块容器身份解析** | 边界带「槽位↔容器」解析共享内核（`ContainerContexts`）+ 大箱 `CompoundContainer` 匹配不变量 + 两套槽位体系探针 | [container-identity.md](docs/system-design/container-identity.md) |
 | **数据模型** | DataComponent 体系 + 新旧架构对比 + 设计决策 | [data-model.md](docs/system-design/data-model.md) |
 | **单元测试** | FML 测试环境配置 + 测试替身 + 可测性边界 | [unit-testing.md](docs/guides/unit-testing.md) |
 | **活TNT测试说明** | **分两区**：群友版（`T-01`~`T-13`，肉眼观察引爆现象，含**铁箱子触发的超级爆炸**）+ 作者自测（`A-01`~`A-12`，需日志/TPS/跑图） | [living-tnt-testing.md](docs/guides/living-tnt-testing.md) |
@@ -194,7 +195,7 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
-| 2026-10-04 | **Q6 多方块容器边界带「身份解析」收敛 —— 批次 A（服务端入口）**：新增 `container/ContainerContexts.java` 共享内核，`resolve(player,slot)→TickableContainerContext`（底稿 `LivingBucketInteractSupport.compoundContext`）+ `isViewing(player,containers)`（底稿 `ContainerRuntimeCache`/`FluidFlowServerSync` 两份同构）；3 个消费者改薄委托。**纯重构未增删测试，426 测试全绿**；`grep CompoundContainer` 特判由 3 处收敛到 1 处。批次 B（`ownsContainer`+槽位探针+跨容器面选取）/C（客户端 `resolveMenuSlot`）待办 | `infrastructure-refactoring-plan.md` §2.1-Q6 |
+| 2026-10-04 | **Q6 多方块容器边界带「身份解析」收敛 —— 批次 A（服务端入口）**：新增 `container/ContainerContexts.java` 共享内核，`resolve(player,slot)→TickableContainerContext`（底稿 `LivingBucketInteractSupport.compoundContext`）+ `isViewing(player,containers)`（底稿 `ContainerRuntimeCache`/`FluidFlowServerSync` 两份同构）；3 个消费者改薄委托。**纯重构未增删测试，426 测试全绿**；`grep CompoundContainer` 特判由 3 处收敛到 1 处。**新建稳定层文档** `container-identity.md`（主题此前只在 buffer 层有记录）。批次 B（`ownsContainer`+槽位探针+跨容器面选取）/C（客户端 `resolveMenuSlot`）待办 | `container-identity.md`；方案 `infrastructure-refactoring-plan.md` §2.1-Q6 |
 | 2026-10-03 | **框架侧接缝落地（1b-2⑧⑩）**：⑧ **落盘** —— `ContainerFluidData.CODEC`（**只序列化派生源**，桶源/流动表不落）+ `CONTAINER_FLUID_DATA` 附件 `.serialize`；⑩ **引擎接缝** —— `FluidFlowBehavior.shouldPromote(slot, 邻源数)`（`recalculate` 加**晋升收敛循环**）/ `transformItem(item)`（`tick` 每流体拍在源格转化），两条都是 **default no-op ⇒ 现有行为零变化**。⚠️ **背包 Player attachment 仍未做**。**422 测试全绿** | `living-water-bucket-tech.md` §2.2 |
 | 2026-10-03 | **流体侧批次一（F1+F5）**：F1 派生源（活水源）—— `generatedSources: Map<Integer,FluidType>` + 播种②无条件并入 BFS + **挤没判定**（活物品进源格即销毁，非活共存）；F5 流体渲染轨 —— `FluidFlowSyncPacket` 容器级同步（玩家背包/BE/大箱子全覆盖）+ `IClientFluidTypeExtensions` 自适应贴图/颜色（alpha 按 maxLevel 归一），旧桶轨降级过渡回退。桶源退役顺延批次二与汲/倒同批。**419 测试全绿** | `idea.md` §〇 |
 | 2026-10-03 | 🔴 **修复 1a-4 引入的回归：容器流体数据不再被创建**（活水桶 `registerSource` 被跳过 ⇒ **水流功能整体失效**）：1a-4「容器级数据统一存储」把 `TickContext.fluidData()` 改成只读 peek 时，**丢掉了构造器里创建流体数据的调用**；恢复（含 BE 附件回填）+ 补回归测试（退回旧实现**恰好挂掉该测试**）。**406 测试全绿** | `living-water-bucket-tech.md` §2.2 |

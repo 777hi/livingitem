@@ -299,6 +299,9 @@ ContainerContexts
 - 批次 B/C 待办：服务端 `ownsContainer`（收编 `SimpleContainerContext.slotBelongsTo`）、槽位体系一致性探针
   （`isSameSlotSpaceAsHandler`）、跨容器面选取（`CrossContainerTransfer.getBasePosCandidates`）；
   客户端 `resolveMenuSlot`（收编 `GuiInteractionHelper.resolveContainerSlot` + `AbstractContainerScreenMixin`）。
+- **稳定层文档已建**：`docs/system-design/container-identity.md`「多方块容器身份解析（边界带）」——
+  收编问题陈述 / 内核契约（含两条不变量）/ 消费者清单 / 通用教训 / 已知缺口。本文（buffer）继续承载
+  **未定案**的批次 B/C 方案与拍板记录，稳定后按 buffer 收敛三步法并入。
 
 ---
 

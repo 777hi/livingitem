@@ -22,6 +22,7 @@
   - 三个消费者改薄委托：`LivingBucketInteractSupport.resolveContext` → `ContainerContexts.resolve`；`ContainerRuntimeCache.isViewingContainer` / `FluidFlowServerSync.isViewingContainer` → `ContainerContexts.isViewing`。
   - 验收（可复算）：`grep CompoundContainer` 特判由 3 处收敛到 1 处（`ContainerContexts` 内部）；全量单测回归绿。
   - 批次 B/C 待办：服务端 `ownsContainer`（`SimpleContainerContext.slotBelongsTo`）、槽位体系一致性探针（`isSameSlotSpaceAsHandler`）、跨容器面选取（`CrossContainerTransfer.getBasePosCandidates`）；客户端 `resolveMenuSlot`（`GuiInteractionHelper.resolveContainerSlot` + `AbstractContainerScreenMixin`）。
+- ✅ **新建稳定层文档 `docs/system-design/container-identity.md`「多方块容器身份解析（边界带）」**：Q6 收敛前，该主题的教训散在 hopper §6.4/§10.25、tooltip §3.2/§7、infrastructure §2.5/§8.5、活桶汲/倒四处，且只在 buffer 层有记录（无稳定归宿）。本文把问题（三视图互不可达）、共享内核契约（`ContainerContexts.resolve`/`isViewing` + 两条不变量）、消费者清单（6+客户端 1）、通用教训、已知缺口集中到一处；infrastructure §2.5 与 AGENTS 子系统索引已加指针。
 
 ## 2026-10-03
 
