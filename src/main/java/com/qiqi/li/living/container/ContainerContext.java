@@ -32,6 +32,26 @@ public interface ContainerContext extends SlotInfoProvider, ContainerSync, Conta
         return logicalSlot >= 0 && logicalSlot < getSize();
     }
 
+    /**
+     * 查询容器级持久数据（不创建，不存在返回 {@code null}）。
+     *
+     * <p>默认返回 {@code null} —— 不支持容器级数据的实现（如掉落物容器）用
+     * 「返回 null」表达「我没有」，与 {@link TickableContainerContext} 的空实现哲学一致。</p>
+     */
+    default <T> T peekContainerData(ContainerDataKey<T> key) {
+        return null;
+    }
+
+    /**
+     * 查询或创建容器级持久数据。
+     *
+     * <p>默认实现<b>不存储</b>（创建后直接返回）—— 只有支持跨 tick 持久的实现
+     * （{@code SimpleContainerContext}）才覆写它。</p>
+     */
+    default <T> T getOrCreateContainerData(ContainerDataKey<T> key) {
+        return key.create();
+    }
+
     /** 方向编码：与红电 EDGE_* 一致（0=上 1=下 2=左 3=右） */
     int E_UP = 0;
     int E_DOWN = 1;

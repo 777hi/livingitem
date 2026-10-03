@@ -29,10 +29,13 @@ public class TickContext {
     public final Set<String> occupiedSlots = new HashSet<>();
     public final Set<Integer> transferredTargetSlots = new HashSet<>();
     public final Set<Integer> dirtySlots = new HashSet<>();
-    public ContainerFluidData fluidData = ContainerFluidData.EMPTY;
-    public ContainerStressData stressData = ContainerStressData.EMPTY;
-    public ContainerRedstoneData redstoneData = null;
-    public com.qiqi.li.living.domain.power.ContainerPowerData powerData = null;
+
+    /**
+     * tick 级数据的统一存储（1a-4）。
+     * 容器级持久 key 的数据存在 {@code ContainerEntry.store}（跨 tick），
+     * 这里只放 tick 级的（如应力）；读取统一走 {@link #data(ContainerDataKey)}。
+     */
+    private final ContainerDataStore tickData = new ContainerDataStore();
 
     private Map<String, Set<Integer>> functionSlots = Collections.emptyMap();
 
@@ -42,16 +45,38 @@ public class TickContext {
 
     public TickContext(ContainerContext ctx) {
         this.ctx = ctx;
+        // 应力是 tick 级新建数据：每 tick 一个新实例，tick 末写回 BE（供 Create 读取）
+        tickData.put(ContainerDataKeys.STRESS, new ContainerStressData());
+    }
 
-        ContainerFluidData fluidData = ContainerFluidData.EMPTY;
-        if (ctx instanceof SimpleContainerContext simpleCtx) {
-            ContainerFluidData fetched = simpleCtx.getOrCreateFluidData();
-            if (fetched != null) {
-                fluidData = fetched;
-            }
-        }
-        this.fluidData = fluidData;
-        this.stressData = new ContainerStressData();
+    /**
+     * 读容器级 / tick 级数据（1a-4 的统一入口）。
+     * 持久 key 委托给容器的 store；tick 级 key 查本 tick 的 store。
+     */
+    public <T> T data(ContainerDataKey<T> key) {
+        return key.isPersistent() ? ctx.peekContainerData(key) : tickData.peek(key);
+    }
+
+    /** 写 tick 级数据（持久 key 请走 {@code ctx.getOrCreateContainerData}）。 */
+    public <T> void put(ContainerDataKey<T> key, T value) {
+        tickData.put(key, value);
+    }
+
+    /** 本容器的流体数据（保证非 null：无数据时返回 {@link ContainerFluidData#EMPTY}）。 */
+    public ContainerFluidData fluidData() {
+        ContainerFluidData f = data(ContainerDataKeys.FLUID);
+        return f != null ? f : ContainerFluidData.EMPTY;
+    }
+
+    /** 本 tick 的应力数据（构造时新建，保证非 null）。 */
+    public ContainerStressData stressData() {
+        ContainerStressData s = data(ContainerDataKeys.STRESS);
+        return s != null ? s : new ContainerStressData();
+    }
+
+    /** 本容器的红电账本（可能为 null：容器不支持时）。 */
+    public com.qiqi.li.living.domain.power.ContainerPowerData powerData() {
+        return data(ContainerDataKeys.POWER);
     }
 
     /**
@@ -61,7 +86,7 @@ public class TickContext {
     public ContainerSnapshot getSnapshot() {
         if (!snapshotBuilt) {
             long rev = ContainerLivingItemHandler.getContainerRevision(ctx);
-            _snapshot = ContainerLivingItemHandler.getCachedSnapshot(ctx, rev, fluidData, this);
+            _snapshot = ContainerLivingItemHandler.getCachedSnapshot(ctx, rev, fluidData(), this);
             snapshotBuilt = true;
         }
         return _snapshot;
@@ -69,17 +94,10 @@ public class TickContext {
 
     /**
      * 获取或创建容器红石数据。
-     * 优先从持久化的 {@link SimpleContainerContext} 获取，确保 edgeGrid 跨 tick 保持。
+     * 统一走容器的持久 store（1a-4），确保 edgeGrid 跨 tick 保持。
      */
     public ContainerRedstoneData getOrCreateRedstoneData(ContainerContext context) {
-        if (redstoneData == null) {
-            if (context instanceof SimpleContainerContext simpleCtx) {
-                redstoneData = simpleCtx.getOrCreateRedstoneData();
-            } else {
-                redstoneData = new ContainerRedstoneData();
-            }
-        }
-        return redstoneData;
+        return context.getOrCreateContainerData(ContainerDataKeys.REDSTONE);
     }
 
     /**
@@ -92,17 +110,10 @@ public class TickContext {
 
     /**
      * 获取或创建容器红电数据（电力层账本）。
-     * 优先从持久化的 {@link SimpleContainerContext} 获取，确保事件状态跨 tick 保持。
+     * 统一走容器的持久 store（1a-4），确保事件状态跨 tick 保持。
      */
     public com.qiqi.li.living.domain.power.ContainerPowerData getOrCreatePowerData(ContainerContext context) {
-        if (powerData == null) {
-            if (context instanceof SimpleContainerContext simpleCtx) {
-                powerData = simpleCtx.getOrCreatePowerData();
-            } else {
-                powerData = new com.qiqi.li.living.domain.power.ContainerPowerData();
-            }
-        }
-        return powerData;
+        return context.getOrCreateContainerData(ContainerDataKeys.POWER);
     }
 
     /**

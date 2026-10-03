@@ -45,6 +45,12 @@ for (var entry : grouped.entrySet())
 
 ### 1.2 容器级数据硬编码在三处
 
+> ✅ **已修复（2026-10-03，1a-4）** —— 三处字段全部并入统一的 `ContainerDataStore`
+> （按 `ContainerDataKey` 的**数组下标**存取，非哈希）。新增一种容器级数据 =
+> 在 `ContainerDataKeys` 加一行。**397 测试全绿**。
+
+**（修复前）**
+
 | 位置 | 硬编码字段 |
 |---|---|
 | `ContainerLivingItemHandler.ContainerEntry` | `fluid` / `redstone` / `power` |
@@ -218,6 +224,19 @@ return "container_" + Integer.toHexString(handler.hashCode());
 > 📌 `getOrCreateRedstoneData()` / `getOrCreatePowerData()` 等**保留方法签名**（内部改走
 > `getOrCreate(key)`）⇒ 红电的调用点不用动。
 
+**实施结果**（2026-10-03，✅ 已完成）：
+
+- 新增 3 个类：`ContainerDataKey`（类型化 key + 数组下标）/ `ContainerDataStore`（统一存储）/
+  `ContainerDataKeys`（4 个 key 清单，**集中定义** —— 「领域各自定义」留作后续可选迁移）
+- `ContainerContext` 加 2 个 default 方法（`peekContainerData` / `getOrCreateContainerData`）⇒
+  `TickContext` 与功能类通过**统一入口**取数，无需按类型 switch
+- `ContainerEntry` 3 字段 → 1 个 store；`SimpleContainerContext` 3 字段**删除**（改为委托）；
+  `TickContext` 4 字段 → store + `data()` / `fluidData()` / `stressData()` / `powerData()`
+- 功能类访问点 `tick.fluidData` → `tick.fluidData()`（**加括号即可**，语义不变）
+- ⚠️ **偏差**：落盘「遍历 key」只覆盖声明了 attachment 的 FLUID；应力 / 相位快照的写回
+  **保持硬编码**（它们有各自的特殊逻辑，不属于通用落盘）
+- **397 测试全绿**（0 失败）
+
 > Q5 不阻塞本次重构，但**阻塞活水源二期** —— 建议尽早做最小实验。
 
 ---
@@ -231,7 +250,7 @@ return "container_" + Integer.toHexString(handler.hashCode());
 | 1a-1 | 收集路径不再要求物品（`shouldTickWithoutOwnItems` + 塞进 `grouped`，约 **4 行**） | 纯源容器能跑流体；**完全空容器仍短路**（性能不变） |
 | 1a-2 | ✅ **已完成 2026-10-03** —— 删 `containerKey` 第三档改抛异常 + 新增测试专用构造器 | **397 测试全绿**（0 失败 / 0 错误） |
 | 1a-3 | ✅ **已完成 2026-10-03** —— 抽 `TickableContainerContext`，消掉 7 处转型 | 该文件里 `instanceof` **9 → 2**（余 2 处属 1a-4）；**397 测试全绿** |
-| 1a-4 | 容器级数据存储抽离（Q2 定稿） | **新增一种容器级数据 = 改 0 个类**；改造面实测仅 **14 处**字段访问 |
+| 1a-4 | ✅ **已完成 2026-10-03** —— 容器级数据并入 `ContainerDataStore`（新增 3 个类） | 新增一种数据 = 改 **1 行**（`ContainerDataKeys`）；**397 测试全绿** |
 
 **1a 全部是行为不变的重构** —— 靠现有 384 个测试回归验证，不引入新功能。
 

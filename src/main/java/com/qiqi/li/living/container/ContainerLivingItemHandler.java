@@ -71,19 +71,18 @@ public class ContainerLivingItemHandler {
      */
     private static final Map<PosKey, String> POS_TO_CACHE_KEY = new HashMap<>();
 
-    /** 每容器聚合数据；惰性字段随首次访问创建，rev/contentSig/snapshot 跨 tick 持久。 */
+    /**
+     * 每容器聚合数据；rev/contentSig/snapshot 跨 tick 持久。
+     * 容器级数据（流体 / 红石 / 电力）改由 {@link ContainerDataStore} 统一存储
+     * （2026-10-03，1a-4）：新增一种数据只需在 {@link ContainerDataKeys} 定义 key，
+     * 本类与 store 零改动。
+     */
     private static final class ContainerEntry {
-        ContainerFluidData fluid;
-        ContainerRedstoneData redstone;
-        com.qiqi.li.living.domain.power.ContainerPowerData power;
+        final ContainerDataStore store = new ContainerDataStore();
         long revision;
         int contentSig = Integer.MIN_VALUE;   // 未算过签名时的哨兵
         long cachedSnapshotRevision = -1;      // 与下方快照配对的修订计数
         ContainerSnapshot cachedSnapshot;
-
-        boolean hasData() {
-            return fluid != null || redstone != null || power != null;
-        }
     }
 
     private static final int CLEANUP_INTERVAL = 1200;
@@ -143,20 +142,20 @@ public class ContainerLivingItemHandler {
     public static ContainerFluidData getFluidData(ContainerContext ctx) {
         ContainerEntry e = entry(ctx);
         if (e == null) return null;
-        if (e.fluid != null) return e.fluid;
+        ContainerFluidData existing = e.store.peek(ContainerDataKeys.FLUID);
+        if (existing != null) return existing;
 
         if (ctx instanceof SimpleContainerContext simpleCtx) {
             for (BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {
                 ContainerFluidData persisted = be.getData(LivingComponents.CONTAINER_FLUID_DATA);
                 if (persisted != null && persisted != ContainerFluidData.EMPTY && !persisted.isEmpty()) {
-                    e.fluid = persisted;
+                    e.store.put(ContainerDataKeys.FLUID, persisted);
                     return persisted;
                 }
             }
         }
 
-        e.fluid = new ContainerFluidData();
-        return e.fluid;
+        return e.store.getOrCreate(ContainerDataKeys.FLUID);
     }
 
     /**
@@ -176,11 +175,14 @@ public class ContainerLivingItemHandler {
     private static void cleanupStaleData(long currentTimeMs) {
         CONTAINER_DATA.entrySet().removeIf(en -> {
             ContainerEntry e = en.getValue();
-            boolean fluidStale = e.fluid == null || currentTimeMs - e.fluid.getLastTickTime() > 120_000;
-            boolean redstoneStale = e.redstone == null
-                || currentTimeMs - e.redstone.getLastTickTime() > 120_000;
-            boolean powerStale = e.power == null
-                || currentTimeMs - e.power.getLastTickTime() > 120_000;
+            ContainerFluidData fluid = e.store.peek(ContainerDataKeys.FLUID);
+            ContainerRedstoneData redstone = e.store.peek(ContainerDataKeys.REDSTONE);
+            com.qiqi.li.living.domain.power.ContainerPowerData power = e.store.peek(ContainerDataKeys.POWER);
+            boolean fluidStale = fluid == null || currentTimeMs - fluid.getLastTickTime() > 120_000;
+            boolean redstoneStale = redstone == null
+                || currentTimeMs - redstone.getLastTickTime() > 120_000;
+            boolean powerStale = power == null
+                || currentTimeMs - power.getLastTickTime() > 120_000;
             return fluidStale && redstoneStale && powerStale;
         });
     }
@@ -192,8 +194,7 @@ public class ContainerLivingItemHandler {
     public static ContainerRedstoneData getRedstoneData(ContainerContext ctx) {
         ContainerEntry e = entry(ctx);
         if (e == null) return null;
-        if (e.redstone == null) e.redstone = new ContainerRedstoneData();
-        return e.redstone;
+        return e.store.getOrCreate(ContainerDataKeys.REDSTONE);
     }
 
     /**
@@ -210,8 +211,9 @@ public class ContainerLivingItemHandler {
     public static com.qiqi.li.living.domain.power.ContainerPowerData getPowerData(ContainerContext ctx) {
         ContainerEntry e = entry(ctx);
         if (e == null) return null;
-        if (e.power == null) {
-            e.power = new com.qiqi.li.living.domain.power.ContainerPowerData();
+        com.qiqi.li.living.domain.power.ContainerPowerData power = e.store.peek(ContainerDataKeys.POWER);
+        if (power == null) {
+            power = e.store.getOrCreate(ContainerDataKeys.POWER);
             // 相位快照回填（2026-09-09）：BE 附件里存有退出前的锁相状态则无缝续接
             if (ctx instanceof SimpleContainerContext simpleCtx) {
                 long base = 0;
@@ -228,12 +230,12 @@ public class ContainerLivingItemHandler {
                             hasWorldClock = true;
                         }
                     }
-                    long clock = hasWorldClock ? base : e.power.currentTick();
-                    if (snapshot.restoreInto(e.power, clock) > 0) break;
+                    long clock = hasWorldClock ? base : power.currentTick();
+                    if (snapshot.restoreInto(power, clock) > 0) break;
                 }
             }
         }
-        return e.power;
+        return power;
     }
 
     /** 按位置 O(1) 查询红石数据，供 mixin 热路径调用 */
@@ -241,7 +243,7 @@ public class ContainerLivingItemHandler {
         String key = POS_TO_CACHE_KEY.get(new PosKey(level.dimension(), pos));
         if (key == null) return null;
         ContainerEntry e = CONTAINER_DATA.get(key);
-        return e == null ? null : e.redstone;
+        return e == null ? null : e.store.peek(ContainerDataKeys.REDSTONE);
     }
 
     /** 按位置 O(1) 查询红电数据（电力层，供对外能量接口调用） */
@@ -249,7 +251,22 @@ public class ContainerLivingItemHandler {
         String key = POS_TO_CACHE_KEY.get(new PosKey(level.dimension(), pos));
         if (key == null) return null;
         ContainerEntry e = CONTAINER_DATA.get(key);
-        return e == null ? null : e.power;
+        return e == null ? null : e.store.peek(ContainerDataKeys.POWER);
+    }
+
+    /**
+     * 泛型访问容器级持久数据（不创建）。供 {@code SimpleContainerContext} 的
+     * {@code peekContainerData} 覆写委托 —— 按 key 走统一 store，无需按类型 switch。
+     */
+    public static <T> T peekContainerData(ContainerContext ctx, ContainerDataKey<T> key) {
+        ContainerEntry e = entry(ctx);
+        return e == null ? null : e.store.peek(key);
+    }
+
+    /** 泛型访问或创建容器级持久数据。见 {@link #peekContainerData(ContainerContext, ContainerDataKey)}。 */
+    public static <T> T getOrCreateContainerData(ContainerContext ctx, ContainerDataKey<T> key) {
+        ContainerEntry e = entry(ctx);
+        return e == null ? key.create() : e.store.getOrCreate(key);
     }
 
     /**
@@ -334,7 +351,7 @@ public class ContainerLivingItemHandler {
         POS_TO_CACHE_KEY.values().removeIf(
             key -> {
                 ContainerEntry e = CONTAINER_DATA.get(key);
-                return e == null || !e.hasData();
+                return e == null || e.store.isEmpty();
             });
     }
 
@@ -523,7 +540,7 @@ public class ContainerLivingItemHandler {
         ContainerRedstoneData rd = null;
         if (key != null) {
             ContainerEntry re = CONTAINER_DATA.get(key);
-            rd = re == null ? null : re.redstone;
+            rd = re == null ? null : re.store.peek(ContainerDataKeys.REDSTONE);
         }
         if (rd != null) {
             TickContext tick = new TickContext(context);
@@ -593,8 +610,8 @@ public class ContainerLivingItemHandler {
                 break;
             }
         }
-        if (!hasWaterBucket && tick.fluidData != null && tick.fluidData != ContainerFluidData.EMPTY) {
-            tick.fluidData.getFlows().clear();
+        if (!hasWaterBucket && tick.fluidData() != null && tick.fluidData() != ContainerFluidData.EMPTY) {
+            tick.fluidData().getFlows().clear();
         }
     }
 
@@ -602,7 +619,7 @@ public class ContainerLivingItemHandler {
      * 将应力与流体数据写回 BlockEntity（或玩家脚底），并清理空流体缓存。
      */
     private static void writebackBlockEntities(TickableContainerContext context, TickContext tick) {
-        ContainerStressData stressData = tick.stressData;
+        ContainerStressData stressData = tick.stressData();
         if (stressData != null) {
             for (BlockEntity be : context.getAssociatedBlockEntities()) {
                 be.setData(LivingComponents.CONTAINER_STRESS_DATA.value(), stressData);
@@ -614,7 +631,7 @@ public class ContainerLivingItemHandler {
             }
         }
 
-        ContainerFluidData fluidData = tick.fluidData;
+        ContainerFluidData fluidData = tick.fluidData();
         if (fluidData != null && !fluidData.isEmpty()) {
             for (BlockEntity be : context.getAssociatedBlockEntities()) {
                 be.setData(LivingComponents.CONTAINER_FLUID_DATA.value(), fluidData);
@@ -624,7 +641,7 @@ public class ContainerLivingItemHandler {
             String fluidKey = cacheKey(context);
             if (fluidKey != null) {
                 ContainerEntry fe = CONTAINER_DATA.get(fluidKey);
-                if (fe != null) fe.fluid = null;
+                if (fe != null) fe.store.put(ContainerDataKeys.FLUID, null);
             }
         }
 
@@ -633,7 +650,7 @@ public class ContainerLivingItemHandler {
         // 零成本。退出重进 / LRU 回收后由 getPowerData 回填，相位无缝续接。
         // 2026-09-11 换轴：capture 时钟与 tickContainerData 的 resolvePhaseClock 同源
         // （世界 game time 优先，回退本地轴）——快照必须存与驱动同坐标系的值。
-        com.qiqi.li.living.domain.power.ContainerPowerData powerData = tick.powerData;
+        com.qiqi.li.living.domain.power.ContainerPowerData powerData = tick.powerData();
         if (powerData != null && !context.getAssociatedBlockEntities().isEmpty()) {
             long clock = powerData.currentTick();   // 回退轴（无 Level / 测试环境）
             for (BlockEntity be : context.getAssociatedBlockEntities()) {

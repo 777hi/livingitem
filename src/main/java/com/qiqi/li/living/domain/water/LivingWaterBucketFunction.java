@@ -74,7 +74,7 @@ public class LivingWaterBucketFunction implements LivingItemFunction, HasContain
         long nowMs = System.currentTimeMillis();
         String containerKey = context.getContainerKey();
         int containerWidth = context.getWidth();
-        ContainerFluidData fluidData = tick.fluidData;
+        ContainerFluidData fluidData = tick.fluidData();
 
         for (SlotEntry entry : entries) {
             int slot = entry.slotIndex();
@@ -157,7 +157,7 @@ public class LivingWaterBucketFunction implements LivingItemFunction, HasContain
 
     @Override
     public void tickContainerData(List<SlotEntry> entries, ContainerContext ctx, TickContext tick) {
-        ContainerFluidData fluidData = tick.fluidData;
+        ContainerFluidData fluidData = tick.fluidData();
         if (fluidData == null || fluidData == ContainerFluidData.EMPTY) return;
         if (!fluidData.isEmpty()) {
             fluidData.setLastTickTime(System.currentTimeMillis());

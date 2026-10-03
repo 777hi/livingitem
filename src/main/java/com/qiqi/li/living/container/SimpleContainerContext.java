@@ -46,9 +46,6 @@ public class SimpleContainerContext implements TickableContainerContext {
     private final List<BlockEntity> associatedBlockEntities;
     private final Level overrideLevel;
 
-    private ContainerFluidData fluidData;
-    private ContainerRedstoneData redstoneData;
-    private com.qiqi.li.living.domain.power.ContainerPowerData powerData;
     private TickContext currentTickContext;
 
     @Override
@@ -433,27 +430,33 @@ public class SimpleContainerContext implements TickableContainerContext {
      * 获取或创建容器流体数据。
      */
     ContainerFluidData getOrCreateFluidData() {
-        if (fluidData == null) {
-            fluidData = ContainerLivingItemHandler.getFluidData(this);
-        }
-        return fluidData;
+        return getOrCreateContainerData(ContainerDataKeys.FLUID);
     }
 
     public ContainerRedstoneData getOrCreateRedstoneData() {
-        if (redstoneData == null) {
-            redstoneData = ContainerLivingItemHandler.getRedstoneData(this);
-        }
-        return redstoneData;
+        return getOrCreateContainerData(ContainerDataKeys.REDSTONE);
     }
 
     /**
      * 获取或创建容器红电数据（电力层账本，跨 tick 持久）。
      */
     public com.qiqi.li.living.domain.power.ContainerPowerData getOrCreatePowerData() {
-        if (powerData == null) {
-            powerData = ContainerLivingItemHandler.getPowerData(this);
-        }
-        return powerData;
+        return getOrCreateContainerData(ContainerDataKeys.POWER);
+    }
+
+    /**
+     * 容器级持久数据的统一访问入口（1a-4）：委托给 Handler 的统一 store。
+     * 旧实现是「每个类型一个字段 + 一个方法」，新增一种数据要改三处；
+     * 现在新增一种只需在 {@link ContainerDataKeys} 定义 key。
+     */
+    @Override
+    public <T> T peekContainerData(ContainerDataKey<T> key) {
+        return ContainerLivingItemHandler.peekContainerData(this, key);
+    }
+
+    @Override
+    public <T> T getOrCreateContainerData(ContainerDataKey<T> key) {
+        return ContainerLivingItemHandler.getOrCreateContainerData(this, key);
     }
 
     private void syncPlayerInventory(Inventory inv, int logicalSlot, ItemStack stack) {
