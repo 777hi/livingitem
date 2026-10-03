@@ -35,6 +35,10 @@ public class SimpleContainerContext implements ContainerContext {
 
     private static final Logger LOGGER = LogUtils.getLogger();
 
+    /** 测试专用构造器的 key 序号（见 {@link #SimpleContainerContext(IItemHandler)}）。 */
+    private static final java.util.concurrent.atomic.AtomicInteger TEST_SEQ =
+        new java.util.concurrent.atomic.AtomicInteger();
+
     private final IItemHandler handler;
     private final Inventory inventory;
     private final String containerKey;
@@ -59,6 +63,35 @@ public class SimpleContainerContext implements ContainerContext {
 
     public TickContext getTickContext() {
         return currentTickContext;
+    }
+
+    /**
+     * <b>测试专用</b>：自动生成唯一 containerKey。
+     *
+     * <p>用于「无玩家背包、无方块实体」的**替身场景**（单元测试里的 FakeHandler）。
+     * 生产代码请用另外两个构造器 —— 真实容器必须有稳定身份，否则无法跨 tick
+     * 持久化容器级数据（见 {@link #buildContainerKey} 的说明）。</p>
+     *
+     * <p><b>为什么要单独开一个构造器</b>：旧实现在「两者都无」时回退到
+     * {@code handler.hashCode()} 做键 —— 那个分支**生产不可达、只被测试走到**，
+     * 却把「静默丢数据」的隐患留在了生产代码里。现在拆成显式的测试入口，
+     * 生产路径遇同类输入直接抛异常。</p>
+     */
+    public SimpleContainerContext(IItemHandler handler) {
+        this(handler, (Level) null);
+    }
+
+    /**
+     * <b>测试专用</b>：自动生成唯一 containerKey，并指定覆盖世界。
+     * 说明见 {@link #SimpleContainerContext(IItemHandler)}。
+     */
+    public SimpleContainerContext(IItemHandler handler, Level overrideLevel) {
+        this.handler = handler;
+        this.inventory = null;
+        this.overrideLevel = overrideLevel;
+        this.associatedBlockPositions = new ArrayList<>();
+        this.associatedBlockEntities = new ArrayList<>();
+        this.containerKey = "test#" + TEST_SEQ.getAndIncrement();
     }
 
     /**
@@ -101,10 +134,21 @@ public class SimpleContainerContext implements ContainerContext {
             this.associatedBlockEntities.addAll(blockEntities);
         }
 
-        this.containerKey = buildContainerKey(inventory, this.associatedBlockPositions, this.associatedBlockEntities, handler);
+        this.containerKey = buildContainerKey(inventory, this.associatedBlockPositions, this.associatedBlockEntities);
     }
 
-    private static String buildContainerKey(Inventory inventory, List<BlockPos> positions, List<BlockEntity> entities, IItemHandler handler) {
+    /**
+     * 构造容器的稳定标识键 —— **跨 tick 持久化容器级数据的前提**。
+     *
+     * <p>只有两条合法来源：玩家背包（UUID）或方块坐标（含维度）。二者都没有的容器
+     * <b>没有稳定身份</b> —— 下次拿到的已是另一个对象，任何跨 tick 数据都留不住。</p>
+     *
+     * <p>⚠️ <b>第三个分支已被显式删除</b>（2026-10-03）：旧实现会回退到
+     * {@code "container_" + Integer.toHexString(handler.hashCode())}，而对象身份哈希
+     * 在 BE 重建后会变 ⇒ <b>键漂移 ⇒ 数据静默丢失</b>。经静态追踪该分支不可达
+     * （两条构造路径分别走背包分支与坐标分支），故改为<b>显式失败</b>而不是保留隐患。</p>
+     */
+    private static String buildContainerKey(Inventory inventory, List<BlockPos> positions, List<BlockEntity> entities) {
         if (inventory != null) {
             return "player_" + inventory.player.getStringUUID();
         }
@@ -125,7 +169,11 @@ public class SimpleContainerContext implements ContainerContext {
             }
             return sb.toString();
         }
-        return "container_" + Integer.toHexString(handler.hashCode());
+        throw new IllegalStateException(
+            "容器缺少稳定身份：既不是玩家背包，也没有方块位置 / 方块实体。"
+            + "这类容器无法跨 tick 持久化容器级数据 —— 旧实现会回退到 hashCode 键，"
+            + "而对象身份哈希在 BE 重建后会变化，导致数据静默丢失。"
+            + "若确需支持，请为它提供稳定键（见本方法的两条合法分支）。");
     }
 
     @Override

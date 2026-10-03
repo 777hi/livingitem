@@ -102,7 +102,7 @@ class NetworkTraversalTest {
             slots[i] = living(Items.WAXED_COPPER_BLOCK, PREF);
         }
         IItemHandler handler = new FakeHandler(slots);
-        SimpleContainerContext ctx = new SimpleContainerContext(handler, new ArrayList<>(), new ArrayList<>());
+        SimpleContainerContext ctx = new SimpleContainerContext(handler);
         ContainerRedstoneData redstone = ctx.getOrCreateRedstoneData();
 
         List<LivingItemFunction.SlotEntry> entries = new ArrayList<>();
@@ -232,7 +232,7 @@ class NetworkTraversalTest {
         slots[1] = living(Items.WAXED_OXIDIZED_COPPER, PREF);       // 氧化 3
 
         IItemHandler handler = new FakeHandler(slots);
-        SimpleContainerContext ctx = new SimpleContainerContext(handler, new ArrayList<>(), new ArrayList<>());
+        SimpleContainerContext ctx = new SimpleContainerContext(handler);
         ContainerRedstoneData redstone = ctx.getOrCreateRedstoneData();
 
         List<LivingItemFunction.SlotEntry> entries = new ArrayList<>();
@@ -279,7 +279,7 @@ class NetworkTraversalTest {
         slots[0] = living(Items.WAXED_COPPER_BLOCK, 4);        // 锈级 0
         slots[1] = living(Items.WAXED_OXIDIZED_COPPER, 8);     // 锈级 3
         IItemHandler handler = new FakeHandler(slots);
-        SimpleContainerContext ctx = new SimpleContainerContext(handler, new ArrayList<>(), new ArrayList<>());
+        SimpleContainerContext ctx = new SimpleContainerContext(handler);
         ContainerRedstoneData redstone = ctx.getOrCreateRedstoneData();
 
         List<LivingItemFunction.SlotEntry> entries = new ArrayList<>();
@@ -346,7 +346,7 @@ class NetworkTraversalTest {
         slots[0] = lever;
         slots[1] = genStack;
         IItemHandler handler = new FakeHandler(slots);
-        SimpleContainerContext ctx = new SimpleContainerContext(handler, new ArrayList<>(), new ArrayList<>());
+        SimpleContainerContext ctx = new SimpleContainerContext(handler);
         ContainerRedstoneData redstone = ctx.getOrCreateRedstoneData();
 
         // 电力层 entries（发电机）

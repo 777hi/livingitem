@@ -1,6 +1,7 @@
 package com.qiqi.li.living.container;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -123,7 +124,7 @@ class SimpleContainerContextTest {
         @DisplayName("getSize 委托给 handler.getSlots")
         void getSize_delegatesToHandler() {
             var handler = new FakeHandler(27);
-            var ctx = new SimpleContainerContext(handler, null, null, null, null);
+            var ctx = new SimpleContainerContext(handler);
             assertEquals(27, ctx.getSize());
         }
 
@@ -132,7 +133,7 @@ class SimpleContainerContextTest {
         void getItem_delegatesToHandler() {
             var handler = new FakeHandler(27);
             handler.setStackInSlot(5, new ItemStack(Items.REDSTONE, 3));
-            var ctx = new SimpleContainerContext(handler, null, null, null, null);
+            var ctx = new SimpleContainerContext(handler);
             ItemStack result = ctx.getItem(5);
             assertEquals(Items.REDSTONE, result.getItem());
             assertEquals(3, result.getCount());
@@ -142,7 +143,7 @@ class SimpleContainerContextTest {
         @DisplayName("getItem 越界返回 EMPTY")
         void getItem_outOfBounds_returnsEmpty() {
             var handler = new FakeHandler(5);
-            var ctx = new SimpleContainerContext(handler, null, null, null, null);
+            var ctx = new SimpleContainerContext(handler);
             assertTrue(ctx.getItem(-1).isEmpty());
             assertTrue(ctx.getItem(5).isEmpty());
             assertTrue(ctx.getItem(100).isEmpty());
@@ -152,7 +153,7 @@ class SimpleContainerContextTest {
         @DisplayName("getSlotLimit 委托给 handler.getSlotLimit")
         void getSlotLimit_delegatesToHandler() {
             var handler = new FakeHandler(27);
-            var ctx = new SimpleContainerContext(handler, null, null, null, null);
+            var ctx = new SimpleContainerContext(handler);
             assertEquals(64, ctx.getSlotLimit(0));
         }
 
@@ -160,7 +161,7 @@ class SimpleContainerContextTest {
         @DisplayName("isItemValid 委托给 handler.isItemValid")
         void isItemValid_delegatesToHandler() {
             var handler = new FakeHandler(27);
-            var ctx = new SimpleContainerContext(handler, null, null, null, null);
+            var ctx = new SimpleContainerContext(handler);
             assertTrue(ctx.isItemValid(0, new ItemStack(Items.REDSTONE)));
         }
 
@@ -168,7 +169,7 @@ class SimpleContainerContextTest {
         @DisplayName("getMaxStackSize 取 handler 首槽上限")
         void getMaxStackSize_usesFirstSlotLimit() {
             var handler = new FakeHandler(27);
-            var ctx = new SimpleContainerContext(handler, null, null, null, null);
+            var ctx = new SimpleContainerContext(handler);
             assertEquals(64, ctx.getMaxStackSize());
         }
     }
@@ -186,7 +187,7 @@ class SimpleContainerContextTest {
         void playerInventory_returns9() {
             // 仅测试构造不抛异常 + 返回 9（需要 mock Inventory，此处简化验证）
             var handler = new FakeHandler(41);
-            var ctx = new SimpleContainerContext(handler, (net.minecraft.world.entity.player.Inventory) null);
+            var ctx = new SimpleContainerContext(handler);
             assertNotNull(ctx);
         }
 
@@ -225,7 +226,7 @@ class SimpleContainerContextTest {
 
         private void assertWidth(int size, int expectedWidth) {
             var handler = new FakeHandler(size);
-            var ctx = new SimpleContainerContext(handler, null, null, null, null);
+            var ctx = new SimpleContainerContext(handler);
             assertEquals(expectedWidth, ctx.getWidth(),
                 () -> size + " 格容器应推断 " + expectedWidth + " 列");
         }
@@ -243,7 +244,7 @@ class SimpleContainerContextTest {
         @DisplayName("空槽写入：插入成功")
         void setItem_emptySlot_inserts() {
             var handler = new FakeHandler(27);
-            var ctx = new SimpleContainerContext(handler, null, null, null, null);
+            var ctx = new SimpleContainerContext(handler);
             ItemStack stack = new ItemStack(Items.REDSTONE, 5);
             ctx.setItem(3, stack);
             assertEquals(Items.REDSTONE, handler.getStackInSlot(3).getItem());
@@ -254,7 +255,7 @@ class SimpleContainerContextTest {
         @DisplayName("越界写入：不抛异常，不改变内容")
         void setItem_outOfBounds_doesNothing() {
             var handler = new FakeHandler(27);
-            var ctx = new SimpleContainerContext(handler, null, null, null, null);
+            var ctx = new SimpleContainerContext(handler);
             ctx.setItem(-1, new ItemStack(Items.REDSTONE));
             ctx.setItem(27, new ItemStack(Items.REDSTONE));
             // 不抛异常即通过
@@ -265,7 +266,7 @@ class SimpleContainerContextTest {
         void setItem_overwrite_replacesContent() {
             var handler = new FakeHandler(27);
             handler.setStackInSlot(5, new ItemStack(Items.DIAMOND, 10));
-            var ctx = new SimpleContainerContext(handler, null, null, null, null);
+            var ctx = new SimpleContainerContext(handler);
             ctx.setItem(5, new ItemStack(Items.REDSTONE, 3));
             assertEquals(Items.REDSTONE, handler.getStackInSlot(5).getItem());
             assertEquals(3, handler.getStackInSlot(5).getCount());
@@ -276,7 +277,7 @@ class SimpleContainerContextTest {
         void setItem_exceedsMaxStack_truncates() {
             // Redstone 的 maxStackSize = 64
             var handler = new FakeHandler(27);
-            var ctx = new SimpleContainerContext(handler, null, null, null, null);
+            var ctx = new SimpleContainerContext(handler);
             // handler.getSlotLimit(0) = 64, 但 redstone maxStackSize = 64
             ctx.setItem(0, new ItemStack(Items.REDSTONE, 100));
             // 实际 handler 按 maxStack 截断
@@ -296,7 +297,7 @@ class SimpleContainerContextTest {
         @DisplayName("无 Container 回退到 handler.insertItem(simulate)")
         void noContainer_fallsBackToHandler() {
             var handler = new FakeHandler(27);
-            var ctx = new SimpleContainerContext(handler, null, null, null, null);
+            var ctx = new SimpleContainerContext(handler);
             int result = ctx.simulateInsertItem(0, new ItemStack(Items.REDSTONE, 10));
             assertEquals(10, result);
             // 模拟插入不应改变实际内容
@@ -307,7 +308,7 @@ class SimpleContainerContextTest {
         @DisplayName("空槽位：返回最少值（slotLimit, maxStackSize, count）")
         void simulateInsertItem_emptySlot_returnsMin() {
             var handler = new FakeHandler(27);
-            var ctx = new SimpleContainerContext(handler, null, null, null, null);
+            var ctx = new SimpleContainerContext(handler);
             int result = ctx.simulateInsertItem(0, new ItemStack(Items.REDSTONE, 100));
             // handler.getSlotLimit(0)=64, 但 redstone 的 maxStackSize=64, 所以 =64
             assertTrue(result <= 64);
@@ -319,7 +320,7 @@ class SimpleContainerContextTest {
         void simulateInsertItem_partialSlot_returnsSpace() {
             var handler = new FakeHandler(27);
             handler.setStackInSlot(0, new ItemStack(Items.REDSTONE, 50));
-            var ctx = new SimpleContainerContext(handler, null, null, null, null);
+            var ctx = new SimpleContainerContext(handler);
             // 50 已在槽中，maxStack=64，空间=14
             int result = ctx.simulateInsertItem(0, new ItemStack(Items.REDSTONE, 20));
             assertEquals(14, result);
@@ -330,7 +331,7 @@ class SimpleContainerContextTest {
         void simulateInsertItem_fullSlot_returnsZero() {
             var handler = new FakeHandler(27);
             handler.setStackInSlot(0, new ItemStack(Items.REDSTONE, 64));
-            var ctx = new SimpleContainerContext(handler, null, null, null, null);
+            var ctx = new SimpleContainerContext(handler);
             int result = ctx.simulateInsertItem(0, new ItemStack(Items.REDSTONE, 10));
             assertEquals(0, result);
         }
@@ -340,7 +341,7 @@ class SimpleContainerContextTest {
         void simulateInsertItem_differentItem_returnsZero() {
             var handler = new FakeHandler(27);
             handler.setStackInSlot(0, new ItemStack(Items.DIAMOND, 1));
-            var ctx = new SimpleContainerContext(handler, null, null, null, null);
+            var ctx = new SimpleContainerContext(handler);
             int result = ctx.simulateInsertItem(0, new ItemStack(Items.REDSTONE, 1));
             assertEquals(0, result);
         }
@@ -355,13 +356,15 @@ class SimpleContainerContextTest {
     class ContainerKey {
 
         @Test
-        @DisplayName("无 inventory / 无 BE：使用 handler 哈希")
-        void noInventory_noBe_usesHandlerHash() {
-            var handler = new FakeHandler(27);
-            var ctx = new SimpleContainerContext(handler, null, null, null, null);
+        @DisplayName("测试替身：自动生成唯一 key（生产路径不允许无身份）")
+        void testDoubleGetsAutoKey() {
+            var ctx = new SimpleContainerContext(new FakeHandler(27));
             String key = ctx.getContainerKey();
-            assertTrue(key.startsWith("container_"));
-            assertTrue(key.length() > "container_".length());
+            assertTrue(key.startsWith("test#"), "测试替身应拿到自动生成的 key，实际=" + key);
+
+            // 唯一性：两个替身不能拿到同一个 key，否则容器级数据（CONTAINER_DATA 全局表）会串味
+            var another = new SimpleContainerContext(new FakeHandler(27));
+            assertFalse(key.equals(another.getContainerKey()), "不同替身必须拿到不同 key");
         }
     }
 

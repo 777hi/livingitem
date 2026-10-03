@@ -99,8 +99,11 @@ grep -rl "import com.qiqi.li.living.domain" \
 
 ### 1.6 `containerKey` 第三档身份不稳定 ⭐ 落盘后升级为正确性问题
 
+> ✅ **已修复（2026-10-03，1a-2）** —— 该分支已删除，改为显式抛异常；
+> 测试替身改走新增的显式构造器。**397 个测试全绿**。详见 §2 的 Q3。
+
 ```java
-// SimpleContainerContext:128  buildContainerKey
+// SimpleContainerContext  buildContainerKey ← 修复前的旧实现（第三档）
 return "container_" + Integer.toHexString(handler.hashCode());
 ```
 
@@ -142,11 +145,20 @@ return "container_" + Integer.toHexString(handler.hashCode());
 **Q3 的不可达证明**：`buildContext` 唯一调用点传 `player.getInventory()`（inventory 恒非 null）；
 `processContainerAt` 的 else 分支（`:759-768`）**无条件** `positions.add(pos)` ⇒ positions 恒非空。
 
-**Q3 的处置**（2026-10-03）：**删掉第三档，改为显式抛 `IllegalStateException`**。
+**Q3 的处置**（2026-10-03，✅ **已完成**）：**删掉第三档，改为显式抛 `IllegalStateException`**。
 理由：既无背包、又无位置、又无 BE 的容器**本质上没有稳定身份**（下次拿到的是另一个对象），
 跨 tick 数据本就留不住 ⇒ **失败比静默丢数据诚实**。
-安全性：`buildContext` 虽为 public，但项目尚未对外开放（见 [open-plan.md](open-plan.md)），
-无外部调用者。
+
+⚠️ **实施时的重要修正**：原判据「不可达」**只对生产代码成立** —— 首次实施后 **43 个测试失败**。
+根因：测试用**替身**（`FakeHandler` + 空 positions/entities）构造 context，走的正是第三档，
+且 `SimpleContainerContextTest` 有一个**专门覆盖该分支**的用例。
+⇒ **「生产不可达」≠「不可达」—— 测试也是调用者。**
+
+**最终方案**：新增**测试专用构造器** `SimpleContainerContext(IItemHandler)` /
+`(IItemHandler, Level)`（自动生成 `test#N` 唯一 key）；生产构造器保持「必须有身份」。
+测试改动 **35 处**（机械替换）；`SimpleContainerContextTest` 的 key 用例改为
+「测试替身应拿到自动生成的唯一 key」。
+**验证**：**397 个测试全绿**（0 失败 / 0 错误）。
 
 **Q4 的接口设计**（2026-10-03）：新增 `TickableContainerContext extends ContainerContext`，
 补 4 个方法：`setTickContext(TickContext)`（传 null = 解绑）/ `flushDirtySlots()` /
@@ -207,7 +219,7 @@ return "container_" + Integer.toHexString(handler.hashCode());
 | 步骤 | 内容 | 验收判据（可复算） |
 |---|---|---|
 | 1a-1 | 收集路径不再要求物品（`shouldTickWithoutOwnItems` + 塞进 `grouped`，约 **4 行**） | 纯源容器能跑流体；**完全空容器仍短路**（性能不变） |
-| 1a-2 | 删 `containerKey` 第三档，改显式抛异常（**无需观测期**） | 该分支**不可达**（已静态证明） |
+| 1a-2 | ✅ **已完成 2026-10-03** —— 删 `containerKey` 第三档改抛异常 + 新增测试专用构造器 | **397 测试全绿**（0 失败 / 0 错误） |
 | 1a-3 | 抽 `TickableContainerContext`，改 `processContext` 参数类型 | `processContext` 内**无 `instanceof SimpleContainerContext`**（现 **7 处** → 0） |
 | 1a-4 | 容器级数据存储抽离（Q2 定稿） | **新增一种容器级数据 = 改 0 个类**；改造面实测仅 **14 处**字段访问 |
 

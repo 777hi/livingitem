@@ -119,7 +119,7 @@ class WaxedGeneratorFeedChainTest {
         slots[genSlot] = gen;
 
         IItemHandler handler = new FakeHandler(slots);
-        SimpleContainerContext ctx = new SimpleContainerContext(handler, new ArrayList<>(), new ArrayList<>());
+        SimpleContainerContext ctx = new SimpleContainerContext(handler);
         ContainerRedstoneData redstone = ctx.getOrCreateRedstoneData();
         ContainerSnapshot.registerProvider(new RedstoneSnapshotProvider());
 
@@ -209,7 +209,7 @@ class WaxedGeneratorFeedChainTest {
         slots[genSlot] = living(Items.WAXED_COPPER_BLOCK, 4);
 
         IItemHandler handler = new FakeHandler(slots);
-        SimpleContainerContext ctx = new SimpleContainerContext(handler, new ArrayList<>(), new ArrayList<>());
+        SimpleContainerContext ctx = new SimpleContainerContext(handler);
         ContainerRedstoneData redstone = ctx.getOrCreateRedstoneData();
         ContainerSnapshot.registerProvider(new RedstoneSnapshotProvider());
 
@@ -274,8 +274,7 @@ class WaxedGeneratorFeedChainTest {
         int genSlot = 12;
         slots[genSlot] = living(Items.WAXED_COPPER_BLOCK, 4);
 
-        SimpleContainerContext ctx = new SimpleContainerContext(
-            new FakeHandler(slots), new ArrayList<>(), new ArrayList<>());
+        SimpleContainerContext ctx = new SimpleContainerContext(new FakeHandler(slots));
         ContainerSnapshot.registerProvider(new RedstoneSnapshotProvider());
 
         // 首拍热身（根修对齐）：先空跑一拍建立边历史（首拍无沿，火把环从第二拍起自然起振）
@@ -312,8 +311,7 @@ class WaxedGeneratorFeedChainTest {
         slots[genSlot] = living(Items.WAXED_COPPER_BLOCK, 4);
         slots[12] = living(Items.REDSTONE, 1);
 
-        SimpleContainerContext ctx = new SimpleContainerContext(
-            new FakeHandler(slots), new ArrayList<>(), new ArrayList<>());
+        SimpleContainerContext ctx = new SimpleContainerContext(new FakeHandler(slots));
         ContainerSnapshot.registerProvider(new RedstoneSnapshotProvider());
 
         // 首拍热身（根修对齐）：先空跑一拍建立边历史（首拍无沿）
@@ -340,8 +338,7 @@ class WaxedGeneratorFeedChainTest {
 
         net.minecraft.world.level.Level level = mockServerLevel();
 
-        SimpleContainerContext ctx = new SimpleContainerContext(
-            new FakeHandler(slots), null, new ArrayList<>(), new ArrayList<>(), level);
+        SimpleContainerContext ctx = new SimpleContainerContext(new FakeHandler(slots), level);
 
         TickContext tick = new TickContext(ctx);
         var filter = tick.getSnapshot().getFilterOf(13);
@@ -381,8 +378,7 @@ class WaxedGeneratorFeedChainTest {
 
         net.minecraft.world.level.Level level = mockServerLevel();
 
-        SimpleContainerContext ctx = new SimpleContainerContext(
-            new FakeHandler(slots), null, new ArrayList<>(), new ArrayList<>(), level);
+        SimpleContainerContext ctx = new SimpleContainerContext(new FakeHandler(slots), level);
 
         var dir = com.qiqi.li.living.domain.hopper.DirectionTransferData.DEFAULT;
         TickContext tick = new TickContext(ctx);
@@ -412,8 +408,7 @@ class WaxedGeneratorFeedChainTest {
 
             net.minecraft.world.level.Level level = mockServerLevel();
 
-            SimpleContainerContext ctx = new SimpleContainerContext(
-                new FakeHandler(slots), null, new ArrayList<>(), new ArrayList<>(), level);
+            SimpleContainerContext ctx = new SimpleContainerContext(new FakeHandler(slots), level);
             for (int t = 0; t < 40; t++) {
                 ContainerLivingItemHandler.processContext(ctx, level);
             }
@@ -474,8 +469,7 @@ class WaxedGeneratorFeedChainTest {
         ItemStack[] slots = new ItemStack[9];
         slots[4] = living(Items.WAXED_CHISELED_COPPER, 4);
         SimpleContainerContext ctx = new SimpleContainerContext(
-            new FakeHandler(slots), null, new ArrayList<>(), new ArrayList<>(),
-            mockServerLevel());
+            new FakeHandler(slots), mockServerLevel());
 
         // 模拟 WASD 配置（SlotDirectionPacket → updateSlotDirection，写在 carried 组件上）
         ItemStack configured = ctx.getItem(4);
@@ -527,8 +521,7 @@ class WaxedGeneratorFeedChainTest {
             LivingWaxedChiseledData.set(slots[13],
                 LivingWaxedChiseledData.of(slots[13]).withInputDir(c.dir()));
             SimpleContainerContext ctx = new SimpleContainerContext(
-                new FakeHandler(slots), null, new ArrayList<>(), new ArrayList<>(),
-                mockServerLevel());
+                new FakeHandler(slots), mockServerLevel());
 
             // 预建容器尺寸的 edgeGrid（模拟生产中 calculate 创建的网格），
             // 否则测试 seam 的 9×1 默认网格会让 UP/DOWN 注入越界失效
