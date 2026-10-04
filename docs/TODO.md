@@ -35,7 +35,7 @@
 
 5. **（收益最大）合并两次全槽位遍历** —— `scanAndGroupLivingItems` 与
    `computeContentSignature` 各遍历一遍全部槽位 ⇒ 合并可**省 50% 扫描**。
-   详见 [infrastructure-refactoring-plan.md](buffer/infrastructure-refactoring-plan.md) §1.7 / §6.3-B。
+   详见 [infrastructure-refactoring-plan.md](archive/infrastructure-refactoring-plan.md) §1.7 / §6.3-B。
 
 ## 活水车
 

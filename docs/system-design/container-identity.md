@@ -7,7 +7,7 @@
 > **状态**：批次 A（服务端 `resolve` / `isViewing`）、批次 B（`ownsContainer` + `isSameSlotSpace`）、
 > 批次 C（客户端槽位解析）**均已落地**。
 > 收编方案与拍板记录在
-> [buffer/infrastructure-refactoring-plan.md §2.1-Q6](../buffer/infrastructure-refactoring-plan.md)。
+> [archive/infrastructure-refactoring-plan.md §2.1-Q6](../archive/infrastructure-refactoring-plan.md)。
 
 ---
 
@@ -122,4 +122,4 @@
 - **大箱子去重 / 容器归属验证**：[living-item-infrastructure.md §3.3 / §8.5](living-item-infrastructure.md)
 - **Tooltip 大箱匹配（CompoundContainer）**：[tooltip-system.md §3.2 / §7](tooltip-system.md)
 - **活漏斗槽位体系探针 / 跨容器面选取**：[living-hopper-tech.md §10.25 / §6.4](../tech/living-hopper-tech.md)
-- **收编方案与实施记录（批次 A/B/C）**：[buffer/infrastructure-refactoring-plan.md §2.1-Q6](../buffer/infrastructure-refactoring-plan.md)
+- **收编方案与实施记录（批次 A/B/C）**：[archive/infrastructure-refactoring-plan.md §2.1-Q6](../archive/infrastructure-refactoring-plan.md)

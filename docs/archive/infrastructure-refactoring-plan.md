@@ -1,15 +1,16 @@
-# 基础设施重构方案（infrastructure refactoring plan）
-
-*创建: 2026-10-03 · 状态（2026-10-04）：**框架侧全部执行完毕** —— 1a 地基（4/4）、1b 通用流体框架（①–⑩ + B.5）、
-Q6 边界带身份解析（A/B/C）均已落地；**流体侧**（接水 / 岩浆 / 模组流体）进行中。*
-
-> **本文已从「计划书」转为「执行记录 + 流体侧协调文档」**：框架侧结论已沉淀到稳定层 ——
+> 📦 **已归档（2026-10-04）**：本次基础设施重构（1a 地基 + 1b 通用流体框架 + Q6 边界带 + B.5 落盘）
+> **框架侧与流体侧均已收口**（460 测试全绿、游戏内验证功能正常）。**现状见稳定层** ——
 > [living-item-infrastructure.md](../system-design/living-item-infrastructure.md)（1a/1b 契约）、
 > [container-identity.md](../system-design/container-identity.md)（Q6）、
 > [living-water-bucket-tech.md](../tech/living-water-bucket-tech.md)（流体机制）。
-> 本文保留在 `buffer/` 的原因：**流体侧仍在进行**，§3 1b 是其分工 / 契约参考；
-> 待流体侧收口后按 buffer 收敛三步法（[README.md](../README.md) §1）归档到 `archive/`。
->
+> 本文保留**执行记录 / 拍板记录 / 分工与契约底稿 / 自检清单**，供追溯。
+
+<!-- markdownlint-disable -->
+
+# 基础设施重构方案（infrastructure refactoring plan）
+
+*创建: 2026-10-03 · 完成: 2026-10-04（框架侧 1a/1b + Q6 + B.5；流体侧 F1–F5）*
+
 > ⚠️ §1「现状量化」是 **2026-10-03 的重构前快照**（多数已修复、标 ✅）—— 属**地层**，勿当现状读。
 
 ---
@@ -522,7 +523,7 @@ ContainerContexts
 
 ## 4. 每一步都必须做的验证协议
 
-沿用 [power-refactoring-plan.md](power-refactoring-plan.md) §6 的三条：
+沿用 [power-refactoring-plan.md](../buffer/power-refactoring-plan.md) §6 的三条：
 
 1. **改前先量化** —— 把现状数字写进 §1（行数 / 调用点 / grep 计数），改完复算对比。
 2. **改后跑全量测试** —— `./gradlew test --rerun`（`FROM-CACHE` 是**假绿**），
@@ -535,7 +536,7 @@ ContainerContexts
 ## 5. 明确不做
 
 - ❌ **不为「假设的第三方」做扩展点** —— 等第一个真实第三方出现再动
-  （见 [open-plan.md](open-plan.md) §C 的既有结论）。
+  （见 [open-plan.md](../buffer/open-plan.md) §C 的既有结论）。
 - ❌ **不消灭 `container ↔ transfer` 的双向依赖** —— 成本高于收益，记录在案即可。
 - ❌ **不顺手拆 `RecipeBookComponentMixin`**（1293 行）—— 那是客户端侧的另一笔债，
   与本次基础设施改造无交集，另案处理。

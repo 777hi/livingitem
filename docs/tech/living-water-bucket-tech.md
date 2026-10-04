@@ -121,7 +121,7 @@ public class ContainerFluidData {
 > `registerSource(slot)` 默认水（兼容旧调用点）；`registerSource(slot, fluid)` 指定流体。
 > ⚠️ **本步是纯重构**：全部按水处理，水行为**零变化**（由 `ContainerFluidDataTest` 的 6 条行为快照钉住）。
 > 多流体的「行为分档 / 每流体上限 / 桶内容判定 / 跨流体交互」归 **1b-2**（见
-> [buffer/infrastructure-refactoring-plan.md](../buffer/infrastructure-refactoring-plan.md) §3 1b）。
+> [archive/infrastructure-refactoring-plan.md](../archive/infrastructure-refactoring-plan.md) §3 1b）。
 >
 > **行为分档接缝（1b-2a，2026-10-03）**：扩散上限**不再硬编码** —— 引擎通过 `FluidFlowBehaviors.of(fluid)`
 > 查每流体行为（`canFlow` / `maxLevel` / `flowSpeed`）；**未注册流体 = 静止**（只做源、不扩散），
@@ -144,7 +144,7 @@ public class ContainerFluidData {
 > **⚠️ 流体侧（另一 AI）分工**：框架侧只提供上列基础设施 + 契约；**流体本身的行为**
 > （接哪些流体、流速、跨流体交互、转化表、汲 / 倒规则、`generatedSources` 数据模型）由流体侧负责 ——
 > 设计稿见 [idea.md](../idea.md)，分工表见
-> [buffer/infrastructure-refactoring-plan.md](../buffer/infrastructure-refactoring-plan.md) §3 1b B.1。
+> [archive/infrastructure-refactoring-plan.md](../archive/infrastructure-refactoring-plan.md) §3 1b B.1。
 >
 > **落盘 CODEC（1b-2⑧ + B.5，框架）**：`ContainerFluidData.CODEC` **只序列化派生源**（`generatedSources`）——
 > 桶源 / 流动表**不落**（桶在场时每 tick 由桶重新注册，落盘会造幽灵源；流动每 tick 由 BFS 重算）。
