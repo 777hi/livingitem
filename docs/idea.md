@@ -49,7 +49,7 @@
 |---|---|---|
 | F1 | `generatedSources: Map<Integer,FluidType>` 数据模型 + 引擎播种② + 挤没判定 | ✅ 完成（6 测试；框架可接 CODEC = B.5⑧） |
 | F2 | 水晋升行为（任意 2/4）+ 挤没自愈回归 | ✅ 完成（接缝已由框架落地） |
-| F3 | 活桶 FluidStack 化 + 汲/倒交互（客户端精确拦截 + 交互包管道）+ 处理器 + **桶源退役同批** | ✅ 完成（汲/倒交互不走规则 JSON，走 GuiInteractionHelper 活桶分支）。Q6 收编后解析走 `ContainerContexts.resolve`；背包/末影箱流体已随 B.5 第三项落 Player attachment。**仅剩缺口**：末影箱汲/倒 —— `ContainerContexts.resolve` 无末影箱分支（`EnderChestContainerContext` 是 ContainerLivingItemHandler 私有类，流体侧无法自行构建；基建已就绪，等框架侧一个小分支）。⚠️ **另：右键仍走原版逻辑（未解决）→ 见 §〇.7** |
+| F3 | 活桶 FluidStack 化 + 汲/倒交互（客户端精确拦截 + 交互包管道）+ 处理器 + **桶源退役同批** | ✅ 完成（汲/倒交互不走规则 JSON，走 GuiInteractionHelper 活桶分支）。Q6 收编后解析走 `ContainerContexts.resolve`；背包/末影箱流体已随 B.5 第三项落 Player attachment。**仅剩缺口**：末影箱汲/倒 —— `ContainerContexts.resolve` 无末影箱分支（`EnderChestContainerContext` 是 ContainerLivingItemHandler 私有类，流体侧无法自行构建；基建已就绪，等框架侧一个小分支）。⚠️ **另：右键曾失效（取水闭环断链）→ 已结案，见 §〇.7** |
 | F4 | 转化表 JSON（含流体维度键）+ 转化 hook + 漏斗自动化实测 | ✅ 代码完成（`FluidTransformTable` + `/livingitem transforms`，443 测试全绿）；漏斗自动化实测待游戏内 |
 | F5 | 渲染轨：`FluidFlowSyncPacket` 容器级同步 + `IClientFluidTypeExtensions` 自适应 + 旧桶轨降级过渡回退 | ✅ 完成（同批次一） |
 
