@@ -887,13 +887,17 @@ public class ContainerLivingItemHandler {
         return DoubleChestPositions.find(level, pos);
     }
 
-    private static class EnderChestContainerContext extends SimpleContainerContext {
+    static class EnderChestContainerContext extends SimpleContainerContext {
         private final String enderChestKey;
         /** 持有玩家：B.5 落盘需要 owner（inventory 为 null，无法从 getInventory() 反查）。 */
         private final Player player;
 
         EnderChestContainerContext(IItemHandler handler, Player player, Level level) {
-            super(handler, null, new ArrayList<>(), new ArrayList<>(), level);
+            // 显式稳定键（玩家作用域 UUID，无 BE ⇒ 无键漂移）—— 1a-2 的 hashCode 第三档删除
+            // 时漏算了本调用者，空 positions + null inventory 会触发「缺稳定身份」异常
+            // （crash-2026-10-04）。类为包级私有：回归测试直接构造本类复现该崩溃路径。
+            super(handler, null, new ArrayList<>(), new ArrayList<>(), level,
+                "player_" + player.getStringUUID() + "_ender_chest");
             this.player = player;
             this.enderChestKey = "player_" + player.getStringUUID() + "_ender_chest";
         }

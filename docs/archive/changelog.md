@@ -38,6 +38,25 @@
   - 两个消费者改薄委托；**Q6 三个批次至此全部落地**。
 - ✅ **新建稳定层文档 `docs/system-design/container-identity.md`「多方块容器身份解析（边界带）」**：Q6 收敛前，该主题的教训散在 hopper §6.4/§10.25、tooltip §3.2/§7、infrastructure §2.5/§8.5、活桶汲/倒四处，且只在 buffer 层有记录（无稳定归宿）。本文把问题（三视图互不可达）、共享内核契约（`ContainerContexts.resolve`/`isViewing` + 两条不变量）、消费者清单（6+客户端 1）、通用教训、已知缺口集中到一处；infrastructure §2.5 与 AGENTS 子系统索引已加指针。
 
+## 2026-10-04
+
+- 🔴 **修复末影箱 tick 崩溃（crash-2026-10-04_16.55.26-server）**：`EnderChestContainerContext`
+  传空 positions + null inventory 走生产构造器，撞上 1a-2 删 hashCode 第三档后新加的
+  「缺稳定身份」显式抛异常 ⇒ **任何有玩家的服务器 tick 必炸**（`processEnderChest` 每拍
+  无条件构建）。根因是 1a-2 的「不可达」静态证明**只枚举了 `processContainerAt` 两条路径，
+  漏了这个第三调用者** —— 这不是理论隐患，首跑即炸。
+  **修法**：给 `SimpleContainerContext` 加**显式稳定键构造器**（第五参 `explicitContainerKey`，
+  null = 走原推导）—— 末影箱有完全合法的稳定身份（`player_<uuid>_ender_chest`，玩家作用域
+  UUID，无 BE ⇒ 无键漂移），异常消息「请为它提供稳定键」指的正是这条出路；显式键**不是**
+  hashCode 回退（调用方必须给跨会话稳定键，空白键照样抛）。`EnderChestContainerContext`
+  改走新构造器 + 改包级私有供测试。
+  ⚠️ **教训（第二次同型事故）**：Q3 当时就写过「生产不可达 ≠ 不可达——测试也是调用者」，
+  这次是「**证明必须枚举全部调用点**」—— `grep 构造器调用者` 是最小动作。
+  回归守卫 4 项（`SimpleContainerContextTest` 新 Nested：末影箱构造+键 / 显式键生效 /
+  空白键抛 / 无身份仍抛）。**447 测试全绿**。
+  （修复由流体侧会话代笔 —— 崩溃阻塞游戏实测，不等框架侧；`EnderChestContainerContext`
+  归框架侧所有， FluidTransformTable 无关。）
+
 ## 2026-10-03
 
 - ✅ **流体侧批次三（F4 转化表 JSON 化）**（**443 测试全绿**，437 + 新增 6）。
