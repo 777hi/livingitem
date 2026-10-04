@@ -165,7 +165,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 452 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
+**合计测试用例 457 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
 全绿基线：`449 passed / 0 failed / 1 skipped`（2026-10-04 活桶汲/倒包修复：`GuiInteractionPacketTest` 新增 3 项；
 2026-10-04 末影箱崩溃修复：`SimpleContainerContextTest` 新增 4 项；
 2026-10-04 流体侧批次三 F4：`FluidTransformTableTest` 新增 6 项；

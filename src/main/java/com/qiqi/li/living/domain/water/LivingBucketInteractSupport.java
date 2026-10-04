@@ -75,8 +75,11 @@ public final class LivingBucketInteractSupport {
         if (!fluidData.isSource(containerSlot)) {
             fluidData.registerGeneratedSource(containerSlot, content.getFluidType());
         }
-        LivingBucketFunction.setContent(carried, SimpleFluidContent.copyOf(
-            content.copy().copyWithAmount(content.getAmount() - FluidType.BUCKET_VOLUME)));
+        SimpleFluidContent remaining = content.getAmount() - FluidType.BUCKET_VOLUME > 0
+            ? SimpleFluidContent.copyOf(content.copy().copyWithAmount(content.getAmount() - FluidType.BUCKET_VOLUME))
+            : SimpleFluidContent.EMPTY;
+        // 换宿主模型：排空后可能变回空桶形态 ⇒ 写回光标
+        player.containerMenu.setCarried(LivingBucketFunction.withContent(carried, remaining));
     }
 
     /**
@@ -94,7 +97,8 @@ public final class LivingBucketInteractSupport {
         net.minecraft.world.level.material.Fluid fluidHolder = representativeFluid(fluid);
         if (fluidHolder == null) return;   // 未知流体（理论上不可达）—— 保守放弃，不丢源
         fluidData.removeGeneratedSource(containerSlot);
-        LivingBucketFunction.setContent(carried, SimpleFluidContent.copyOf(
-            new net.neoforged.neoforge.fluids.FluidStack(fluidHolder, FluidType.BUCKET_VOLUME)));
+        // 换宿主模型：汲满后变水桶/岩浆桶形态 ⇒ 写回光标
+        player.containerMenu.setCarried(LivingBucketFunction.withContent(carried, SimpleFluidContent.copyOf(
+            new net.neoforged.neoforge.fluids.FluidStack(fluidHolder, FluidType.BUCKET_VOLUME))));
     }
 }

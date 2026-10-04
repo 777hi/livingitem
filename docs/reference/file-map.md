@@ -328,7 +328,8 @@ src/test/java/com/qiqi/li/
 │   ├── ContainerFluidDataTest.java            # 流体引擎行为快照·单源扩散/上限7/活物阻挡/非活物穿过/源移除/水流推动/二维扩散 + 行为接缝·按maxLevel/静止不扩散 + TickContext 建流体数据回归 + 通用驱动·自维持/驱动BFS + 源查询API + 派生源·独立存活/挤没/共存/同格无豁免/异种覆盖/EMPTY noop + 落盘CODEC往返 + 晋升接缝 + 转化接缝（22 项）
 │   ├── ContainerFluidIntegrationTest.java     # 流体端到端（走真实 processContext）·预置派生源+驱动跑BFS / 驱动进自维持清单 / 残留红石在非空容器仍归零（1b-2c 守卫）（3 项）
 │   ├── FluidTransformTableTest.java           # 流体转化表 JSON 语义·内置装载/玩家差异(覆盖/removed)/坏文件跳过/坏条目跳过/缩容等待/活物品过滤（6 项）
-│   ├── LivingBucketWorldUseTest.java          # 活桶世界取水 priming·灌入命中流体一桶/不换物品活标记保留/覆盖不叠加（2 项）
+│   ├── LivingBucketFunctionTest.java          # 活桶换宿主模型·隐含内容(活化水桶=满桶)/倒空变空桶/灌满变水桶岩浆桶/数量超限保宿主（5 项）
+│   ├── LivingBucketWorldUseTest.java          # 活桶世界取水 priming·灌满换宿主水桶/岩浆桶形态/覆盖不叠加（2 项）
 ├── living/interaction/
 │   ├── InteractionRegistryTest.java           # 两趟优先级匹配·通配遮蔽+triggerFilter 回归守卫（7 项）
 │   ├── InteractionRuleConfigTest.java         # 交互规则 JSON 加载语义·内置全有效/玩家覆盖与removed/坏值跳过/未知字段忽略/version守卫/reload幂等（9 项；自带 mock handler 不依赖测试执行顺序）

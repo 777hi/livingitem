@@ -60,16 +60,17 @@ public final class LivingBucketWorldUse {
         if (LivingBucketFunction.isEmptyBucket(held)) {
             event.setCanceled(true);   // 两端取消：防原版 swap 丢活标记
             if (!level.isClientSide) {
-                fillFromSource(held, fluidState);
+                player.setItemInHand(event.getHand(),
+                    fillFromSource(held, fluidState));   // 换宿主模型：灌满变水桶/岩浆桶形态
             }
         } else if (LivingBucketFunction.hasFullBucket(held)) {
             event.setCanceled(true);   // 满桶对世界：原版放水会丢活标记，本期一律不放
         }
     }
 
-    /** 灌入一桶（服务端权威；包级私有供测试）。 */
-    static void fillFromSource(ItemStack held, FluidState fluidState) {
-        LivingBucketFunction.setContent(held, SimpleFluidContent.copyOf(
+    /** 灌入一桶（服务端权威；包级私有供测试）。⚠️ 换宿主模型：可能返回新实例（水桶/岩浆桶形态）。 */
+    static ItemStack fillFromSource(ItemStack held, FluidState fluidState) {
+        return LivingBucketFunction.withContent(held, SimpleFluidContent.copyOf(
             new FluidStack(fluidState.getType(), FluidType.BUCKET_VOLUME)));
     }
 
