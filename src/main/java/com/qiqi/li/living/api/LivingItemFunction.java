@@ -189,10 +189,10 @@ public interface LivingItemFunction {
      * </ol>
      *
      * <h3>关于 {@code player} 可为 null ⭐</h3>
-     * <p><b>「玩家缺席」不是错误状态，是一个需要被定义的合法态</b> ——
-     * 本项目既有的传统：无主活工具走 {@code FALLBACK_UUID} 兜底、
-     * 未绑定活末影箱走路由模式（公共黑板），两者都是<b>已存在的合法模式</b>。
-     * 逐功能的降级口径见 {@code docs/buffer/activation-hook-refactoring-plan.md} §3.4。</p>
+     * <p><b>「玩家缺席」不是错误状态</b>：本项目既有的传统里，无主活工具走
+     * {@code FALLBACK_UUID} 兜底、未绑定活末影箱走路由模式（公共黑板）——
+     * 二者都是<b>已存在的合法模式</b>。
+     * 逐功能的缺席行为写在该功能自己的实现里（属下游），框架不代为规定。</p>
      *
      * <p>⚠️ <b>本方法不得依赖 {@code player} 非空</b>；确实需要玩家数据时，
      * 降级行为必须显式写出（典型：{@code if (player == null) return;}）。</p>
@@ -216,26 +216,25 @@ public interface LivingItemFunction {
      * 【活化时机】此功能认领的物品<b>被取消活化</b>的那一刻（可选，默认空实现）。
      *
      * <p>由 {@link LivingItemActivation#apply} 在 {@code clearLivingData()} <b>之前</b>调用
-     * —— 顺序是硬约束：判据 {@code isLivingChest} / {@code isLivingEnderChest} 都含
-     * {@code isLivingItem(stack)}，{@code IS_LIVING} 被清之后它们恒为 false
-     * ⇒ 箱子会不掉物、末影箱会不清绑定。</p>
+     * —— 顺序是硬约束：判据（各功能 {@code canApply}）都含 {@code isLivingItem(stack)}，
+     * {@code IS_LIVING} 被清之后它们恒为 false ⇒ 功能认不出物品。</p>
      *
-     * <p>⭐ <b>返回值 = 数据安全否决通道</b>：返回 {@code false} 表示
-     * 「无法在当前上下文安全地取消活化」，框架将<b>保持物品的活状态</b>、不清任何数据。</p>
+     * <p>⭐ <b>返回值 = 下游自决的否决通道</b>：返回 {@code false} 表示
+     * 「本次不做这个动作」，框架将<b>保持物品的活状态、不清任何数据</b>，
+     * 并如实向调用方报告「状态未被切换」。</p>
      *
-     * <p>它的唯一用途是把「宁可不活化，也不销毁数据」变成可执行的口径 ——
-     * 典型是活箱子：27 格内容需要掉落位置，无玩家在场时无路可走 ⇒ 拒绝。
-     * 这与 {@link LivingItemActivation.Result} 里的<b>策略拒绝</b>（配置者写的黑白名单）
-     * 是两件不同的事：<b>数据安全</b> vs <b>配置意图</b>。</p>
+     * <p><b>上游只承诺「否决 ⇒ 零改动」这一件事</b>；
+     * <b>为什么否决、数据本来是否安全，全由本功能自己判断</b>，框架无从知晓。
+     * 典型场景是「本功能需要的位置/上下文此刻拿不到」——那就拒绝，不要硬来。</p>
      *
      * <p>⚠️ 约定：<b>返回 {@code false} 的路径不得已产生副作用</b>
      * （框架会把所有认领功能都问一遍，任一否决即整体中止）。</p>
      *
      * @param stack 即将被取消活化、<b>仍带 IS_LIVING</b> 的物品
      * @param level 世界（必填）
-     * @param player 发起者；<b>可为 null</b> ⇒ 此时需要玩家数据的功能应当降级或拒绝
+     * @param player 发起者；<b>可为 null</b> ⇒ 本方法若需要玩家数据，必须自行定义降级或拒绝
      * @param via 发起途径
-     * @return true（默认）继续取消活化；false = 拒绝，框架不清数据
+     * @return true（默认）继续取消活化；false = 本次不做，框架不清数据
      */
     default boolean onDeactivated(ItemStack stack, Level level, @Nullable Player player,
             LivingItemActivation.Via via) {

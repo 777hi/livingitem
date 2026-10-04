@@ -128,7 +128,7 @@ class ActivationHookTest {
     // ---------------------------------------------------------------- 否决通道
 
     @Test
-    @DisplayName("④ 数据安全否决：功能拒绝取消活化 ⇒ 框架不清任何数据")
+    @DisplayName("④ 下游否决：功能返回 false ⇒ 框架零改动（不清数据、不改 IS_LIVING）")
     void vetoKeepsDataIntact() {
         RECORDER.vetoDeactivation = true;
         try {
@@ -148,7 +148,7 @@ class ActivationHookTest {
     // ---------------------------------------------------------------- 真实功能 · 玩家缺席
 
     @Test
-    @DisplayName("⑤ 活箱子：玩家缺席时拒绝取消活化，27 格内容原样保住")
+    @DisplayName("⑤ 活箱子：玩家缺席时返回 false（掉不出来 ⇒ 本次不做）")
     void chestRefusesDeactivationWithoutPlayer() {
         ItemStack chest = new ItemStack(Items.CHEST);
         LivingItemActivation.apply(chest, level, null, LivingItemActivation.Via.PLAYER, true);
@@ -157,10 +157,10 @@ class ActivationHookTest {
 
         assertFalse(LivingItemActivation.apply(chest, level, null,
                 LivingItemActivation.Via.PLAYER, false),
-            "掉落需要位置，无玩家时应拒绝而不是把内容清成空气");
-        assertTrue(LivingItemManager.isLivingItem(chest), "仍应是活箱子");
+            "掉落需要一个位置，而门面没有位置参数 ⇒ 本次不做");
+        assertTrue(LivingItemManager.isLivingItem(chest), "仍应是活箱子（框架零改动）");
         assertEquals(Items.DIAMOND, LivingChestFunction.getItems(chest).getFirst().getItem(),
-            "内容必须完好 —— 这条是「宁可不活化，也不销毁数据」的落点");
+            "内容本就不会被清 —— 箱子内容在原版 CONTAINER 里，不在 owned types 里");
     }
 
     @Test

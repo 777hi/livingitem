@@ -38,21 +38,23 @@ public class LivingChestFunction implements LivingItemFunction {
     public String getFunctionId() { return ID; }
 
     /**
-     * 【活化时机】取消活化时把 27 格内容全部掉落 —— 原先写在网络包里。
+     * 【活化时机】取消活化时把内容全部掉落 —— 原先写在网络包里。
      *
-     * <p>⚠️ <b>无玩家时返回 {@code false} = 拒绝取消活化</b>（数据安全否决通道）。
-     * 掉落需要位置（{@code dropAllItems} 用玩家坐标），没有玩家就无路可走；
-     * 而 {@link LivingItemManager#clearLivingData} 只 remove 组件、<b>不会掉物</b>
-     * ⇒ 硬着头皮走下去就是 <b>27 格内容凭空消失</b>。
-     * <b>宁可不活化，也不销毁数据</b> —— 这条是 §3.4 统一口径的第一个落点，
-     * 也是未来「批量去活化」（活凋零玫瑰）必须逐类表态的样板。</p>
+     * <p>⚠️ <b>无玩家时返回 {@code false} = 本次不做</b>（{@code onDeactivated} 的否决通道）。
+     * 理由很窄：<b>掉落需要一个位置，而门面没有提供位置参数</b>，玩家是此刻唯一的坐标来源。
+     * 拿不到就不做 —— 这是本功能自己的选择，框架只负责「否决 ⇒ 不清任何数据」。</p>
+     *
+     * <p>⚠️ 与内容安全无关：本功能的物品内容存在<b>原版 {@code DataComponents.CONTAINER}</b>，
+     * 而它<b>不在</b> {@link #getOwnedComponentTypes()} 里 ⇒ 取消活化<b>不会</b>清空内容
+     * （箱子只是变回普通箱子，里面东西还在）。返回 false 是因为「掉不出来」，
+     * <b>不是</b>因为「会丢」。</p>
      *
      * <p>返回 {@code false} 的路径**不得已产生副作用**，所以拒绝发生在 {@code dropAllItems} 之前。</p>
      */
     @Override
     public boolean onDeactivated(ItemStack stack, Level level, @Nullable Player player,
             LivingItemActivation.Via via) {
-        if (player == null) return false;           // 无法安全降级 ⇒ 拒绝，框架不清任何数据
+        if (player == null) return false;           // 拿不到掉落位置 ⇒ 本次不做，框架不清数据
         dropAllItems(stack, player);
         return true;
     }

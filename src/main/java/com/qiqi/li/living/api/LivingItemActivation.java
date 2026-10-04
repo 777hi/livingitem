@@ -120,10 +120,10 @@ public final class LivingItemActivation {
      *               {@link LivingItemFunction#onActivated} 的降级约定）
      * @param via 发起途径
      * @param activate true = 活化；false = 取消活化
-     * @return 状态是否真的被切换；<b>false = 被功能否决</b>
-     *         （{@link LivingItemFunction#onDeactivated} 的数据安全否决通道：
+     * @return 状态是否真的被切换；<b>false = 下游否决</b>
+     *         （{@link LivingItemFunction#onDeactivated} 返回了 false：
      *          框架已保持物品的活状态、未清任何数据。玩家点活按钮这条路今天不会
-     *          走到 false —— 三个入口都带 player；它是为「批量转化」准备的。）
+     *          走到 false —— 三个入口都带 player；它是为「批量转化」预留的。）
      */
     public static boolean apply(ItemStack stack, Level level, @Nullable Player player,
             Via via, boolean activate) {
@@ -139,7 +139,7 @@ public final class LivingItemActivation {
 
         for (LivingItemFunction function : LivingItemManager.getApplicableFunctions(stack)) {
             if (!function.onDeactivated(stack, level, player, via)) {
-                return false;                    // 数据安全否决：不清任何数据
+                return false;                    // 下游否决：不清任何数据
             }
         }
         LivingItemManager.setLiving(stack, false);
