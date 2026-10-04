@@ -17,6 +17,13 @@
 
 ## 2026-10-04
 
+- ✅ **修复汲/倒「右键仍走原版」—— 真因是取水闭环断链，不是拦截失效**（idea.md §〇.7 结案，**452 测试全绿**）。
+  诊断：客户端拦截链完好，但桶源退役后 **满活桶不可能存在**（倒水需要它、汲水依赖已有源、
+  活化水桶是惰性物品、活空桶对世界取水被原版 swap 丢活标记）⇒ 玩家手里永远是空活桶，
+  `matchBucketInteract` 正确返回 null。**修复**：新 `LivingBucketWorldUse`
+  （`PlayerInteractEvent.RightClickItem`，两端取消）—— 空活桶对世界流体源（含岩浆）取水
+  **灌入内容组件不换物品**（priming）；满活桶对世界一律取消（防 swap 丢活标记，放世界水后补）。
+  设计含义：活化空桶 → 世界取水 → 倒进容器，此后进桶⇄源守恒循环。新增 `LivingBucketWorldUseTest` 2 项。
 - 🔧 **修复：活水桶右键「没反应」—— 服务端把汲/倒包丢了**（**450 测试全绿**，新增 `GuiInteractionPacketTest` 3 项）：
   - **根因**：`GuiInteractionPacket.resolveSlot` 只认「持活物品」的槽，而汲/倒的目标槽**就是空槽**（倒水要求目标格无物品、汲水的源格也无物品）⇒ `resolveSlot` 恒返回 null、包被丢弃（客户端其实拦了，是服务端扔的）。
   - **修法**：目标槽判据放宽为「活物品 **或** 空槽」（`GuiInteractionPacket.isValidTarget`）。空槽放行安全：非活桶动作只在 `InteractionEntry.matchesTarget` 命中时才发包，而它对空槽恒 `false`。

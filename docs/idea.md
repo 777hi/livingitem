@@ -149,7 +149,7 @@ F5 提前为与桶源取消同批。
 
 ---
 
-## 〇.7 ⚠️ 未解决：活水桶右键「仍走原版逻辑」（2026-10-04，交下一轮）
+## 〇.7 ✅ 已结案：活水桶右键「仍走原版逻辑」—— 真因是取水闭环断链（2026-10-04）
 
 **症状**（用户游戏内实测）：手持活桶在容器界面**右键**，执行的是**原版**行为，汲/倒**没有拦截**。
 ⇒ 客户端 `GuiInteractionHelper.tryInteract` 的活桶分支**没生效**（若生效会 `cir.setReturnValue(true)` 取消原版）。
@@ -165,22 +165,21 @@ F5 提前为与桶源取消同批。
 - ⚠️ **但修完用户实测仍走原版** ⇒ **客户端根本没拦到**（`tryInteract` 返回 false）——
   问题在**客户端侧**，且不（只）是 `resolveSlot`。
 
-**下一轮排查入口（按可能性排序）**：
+**真因（流体侧 2026-10-04 结案）：拦截链完好，是「满活桶不可能存在」的取水闭环断链** ——
+桶源退役后：容器内源唯一入口 = 倒水（需满活桶）；满活桶唯一入口 = 汲水（需已有源）；
+活化 `WATER_BUCKET` 是惰性物品（`canApply` 只认 `Items.BUCKET`）；活空桶对世界取水走原版
+`BucketItem.use` 会 **new ItemStack 换掉整个物品**（丢活标记）。⇒ 玩家手里永远是**空活桶**：
+倒水条件不满足、汲水没有源 ⇒ `matchBucketInteract` 正确返回 null ⇒ 原版行为照常。
+§〇.7 当初的四个假设（错物品/carried/快照/mixin）全部不成立。
 
-1. ⭐ **手里那个是不是「活桶」**：`LivingBucketFunction.isLivingBucket` 要求
-   `stack.is(Items.BUCKET) && isLivingItem(stack)` —— 宿主必须是**空桶**（`Items.BUCKET`）。
-   F3 已把活桶改成「空桶宿主 + `LIVING_BUCKET_FLUID` 内容组件」；**旧设计的 `WATER_BUCKET` 活桶是惰性的**
-   （alpha 不做旧存档兼容）。→ **先确认**：手里的是不是「用活化把**空桶**变成的活桶」，而不是水桶 / 旧活水桶。
-2. `menu.getCarried()` 客户端是否真拿到光标物品（创造模式是虚拟的，靠 `carriedTag`）。
-3. `matchBucketInteract` 是否返回 `null`：满桶但目标格非空 / 空桶但 `FluidFlowClientCache` 快照里该格不是源
-   （快照依赖 F5 同步包，开箱后 1 tick 才到）。
-4. Mixin 在**运行时**是否真的应用了（配置已注册，仍需确认 refmap / 环境）。
+**修复**：`LivingBucketWorldUse`（`PlayerInteractEvent.RightClickItem`，两端取消）——
+空活桶对准世界流体源（含岩浆）右键 → **灌入一桶**（不换物品，只改内容组件，活标记保留）；
+满活桶对世界一律取消（原版放水同样 swap 丢活标记，「往世界放水」后补）。
+设计含义：**priming = 活化空桶 → 世界水源取一桶 → 进容器倒水**，此后进桶⇄源守恒循环。
+回退测试路径：活化空桶 → 对世界水取水 → 容器空格倒水 → 汲回 → 倒回（守恒）。
 
-**最小诊断动作**：在 `GuiInteractionHelper.tryInteract` 活桶分支加临时日志 ——
-`button` / `LivingBucketFunction.isLivingBucket(menu.getCarried())` / `matchBucketInteract(...)` 的返回值，
-进游戏复现一次即知断在哪一步。
-
-> 相关：F3（上方任务队列）；框架侧修复提交 `8dae695`（`resolveSlot` 空槽判据）。
+> 相关：F3（上方任务队列）；框架侧修复提交 `8dae695`（`resolveSlot` 空槽判据——仍是有效修复，
+> 倒水目标空槽会经过它）。
 
 ---
 
