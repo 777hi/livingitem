@@ -17,6 +17,14 @@
 
 ## 2026-10-04
 
+- ✅ **修复流体渲染跨存档残留**（游戏实测反馈，**460 测试全绿**）：单机「退存档→进另一存档」
+  不重启 JVM，界面 `removed()` 清缓存与服务端最后一拍发包之间存在竞态窗口 ——
+  快照包在客户端清缓存**之后**送达并被无条件写入 ⇒ 缓存带着存档 A 的水进入存档 B ⇒
+  同坐标容器首次打开渲染旧水、重开（removed 清缓存）才消失。修：新
+  `FluidClientCacheCleanup`（客户端 `ClientPlayerNetworkEvent.LoggingOut` 兜底清
+  `FluidFlowClientCache` + `LivingItemClientCache`，覆盖一切时序）；
+  `FluidFlowServerSync.CLIENT_ACTIVE` 挂进 `onServerStopped` 清理清单
+  （跨存档残留会误发一次空包，自愈但脏）。
 - ✅ **修复汲走的源跨存档复活（渲染跨存档残留的根因）**（游戏实测反馈，**468 测试全绿**）：
   写回逻辑在流体数据变空时只清内存与玩家 attachment map，**BE attachment 从不清** ——
   非空期间最后一次写回把源留在箱子的存档数据里 ⇒ 重进存档 `getFluidData` 从附件回填 ⇒ 源复活。

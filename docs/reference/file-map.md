@@ -243,6 +243,7 @@ src/main/java/com/qiqi/li/
 │   │   └── LivingWaxedCopperTooltipRenderer.java # 红电仪表盘 Tooltip 渲染
 │   ├── util/                                # 客户端工具
 │   │   ├── ClientSlotResolve.java           #   槽位解析共享工具（SlotWrapper → 真实容器槽位，Q6 批次 C）
+│   ├── FluidClientCacheCleanup.java          # 客户端断连兜底清流体/遥测缓存（跨存档渲染残留，LoggingOut）
 │   │   ├── PinyinHelper.java                #   中文拼音检索（搜索框用）
 │   │   └── LivingChestTabState.java         #   活箱子页签状态
 │   └── mixin/                               # 客户端 Mixin

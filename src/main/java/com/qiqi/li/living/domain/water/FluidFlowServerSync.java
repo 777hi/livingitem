@@ -57,6 +57,11 @@ public final class FluidFlowServerSync {
         CLIENT_ACTIVE.clear();
     }
 
+    /** 生产清理（ServerStopped 挂钩）：单人「退存档→进另一存档」不重启 JVM，跨存档必须清。 */
+    public static void clearRuntimeState() {
+        CLIENT_ACTIVE.clear();
+    }
+
     /** 构建 flow 快照包；无流体数据时返回 null。流体按调色板去重（只用 Registry.getKey 接口）。 */
     public static FluidFlowSyncPacket buildPacket(String containerKey, int width, ContainerFluidData fluidData) {
         var flows = fluidData.getFlows();

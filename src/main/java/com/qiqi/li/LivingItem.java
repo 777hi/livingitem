@@ -363,6 +363,9 @@ public class LivingItem {
         EnderChannelRegistry.getInstance().clearAll();
         ContainerChunkCache.getInstance().clear();
         ContainerLivingItemHandler.clearAllCaches();
+        // 流体快照同步的「曾下发过」边沿集（2026-10-04）：跨存档不清会在新世界
+        // 对同键容器误发一次空快照（自愈但脏）；有源残留由下方断连清理兜底
+        com.qiqi.li.living.domain.water.FluidFlowServerSync.clearRuntimeState();
         // 待炸账本的**内存调度表**要清（条目本身随存档走，不需要清）。
         // ⚠️ 单人游戏「退出存档 → 进另一个存档」不重启 JVM：不清会把上一个维度的调度表带过来。
         ExplosionLedger.clearAllRuntimeState(event.getServer());
