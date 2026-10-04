@@ -5,8 +5,9 @@ import java.util.Map;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.material.Fluid;
+import net.minecraft.world.level.material.Fluids;
 import net.neoforged.neoforge.fluids.FluidType;
-import net.neoforged.neoforge.fluids.SimpleFluidContent;
 
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.ContainerLivingItemHandler;
@@ -62,24 +63,20 @@ public final class LivingBucketInteractSupport {
 
     /**
      * 倒水服务端执行：目标格空且无源 → 诞生派生源；已有源 → 源不变（原版语义）。
-     * 两种情况桶都排空一桶。前置校验由调用方完成（光标是满活桶 + 目标格无物品）。
+     * 桶排空（换宿主 → 空桶形态）。前置校验由调用方完成（光标是满活桶 + 目标格无物品）。
      */
     public static void pour(ServerPlayer player, Slot slot, ItemStack carried) {
-        SimpleFluidContent content = LivingBucketFunction.getContent(carried);
-        if (content.isEmpty() || content.getAmount() < FluidType.BUCKET_VOLUME) return;
+        Fluid fluid = LivingBucketFunction.getBucketFluid(carried);
+        if (fluid == Fluids.EMPTY) return;
 
         ContainerFluidData fluidData = resolveFluidData(player, slot);
         if (fluidData == null) return;
 
         int containerSlot = slot.getContainerSlot();
         if (!fluidData.isSource(containerSlot)) {
-            fluidData.registerGeneratedSource(containerSlot, content.getFluidType());
+            fluidData.registerGeneratedSource(containerSlot, fluid.getFluidType());
         }
-        SimpleFluidContent remaining = content.getAmount() - FluidType.BUCKET_VOLUME > 0
-            ? SimpleFluidContent.copyOf(content.copy().copyWithAmount(content.getAmount() - FluidType.BUCKET_VOLUME))
-            : SimpleFluidContent.EMPTY;
-        // 换宿主模型：排空后可能变回空桶形态 ⇒ 写回光标
-        player.containerMenu.setCarried(LivingBucketFunction.withContent(carried, remaining));
+        player.containerMenu.setCarried(LivingBucketFunction.withFluid(carried, Fluids.EMPTY));
     }
 
     /**
@@ -97,8 +94,7 @@ public final class LivingBucketInteractSupport {
         net.minecraft.world.level.material.Fluid fluidHolder = representativeFluid(fluid);
         if (fluidHolder == null) return;   // 未知流体（理论上不可达）—— 保守放弃，不丢源
         fluidData.removeGeneratedSource(containerSlot);
-        // 换宿主模型：汲满后变水桶/岩浆桶形态 ⇒ 写回光标
-        player.containerMenu.setCarried(LivingBucketFunction.withContent(carried, SimpleFluidContent.copyOf(
-            new net.neoforged.neoforge.fluids.FluidStack(fluidHolder, FluidType.BUCKET_VOLUME))));
+        // 换宿主模型：汲满后变水桶/岩浆桶形态（fluid.getBucket() 注册映射）⇒ 写回光标
+        player.containerMenu.setCarried(LivingBucketFunction.withFluid(carried, fluidHolder));
     }
 }

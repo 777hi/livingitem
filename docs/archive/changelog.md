@@ -17,6 +17,19 @@
 
 ## 2026-10-04
 
+- ✅ **活桶逻辑纠偏定稿：桶 = 载体，零私有状态**（用户点破方向偏差；**457 测试全绿**）。
+  桶的逻辑本来就只有「右键切换物品」一下，重量全在活流体（容器级）——此前给活桶发明的
+  私有状态全是负资产，本次拆除：
+  - **删 `LIVING_BUCKET_FLUID` 组件**：内容状态 = 原版 `BucketItem.content`（public 字段）——
+    活化水桶天然装水，旧活水桶天然正确，「隐含内容推导」与「双真相不变量」两个隐患连根消失；
+  - **`canApply`/`isLivingBucket` = `instanceof BucketItem`**：原版 + 模组桶通吃，
+    `isBucketFamily` 硬编码枚举删除；
+  - **形态变换 = `Fluid.getBucket()` 注册映射**（`withFluid` 唯一入口）：汲入流体 X → X 的桶
+    （模组流体自动兼容），排空 → `Items.BUCKET`；组件全量保留，形态不变零新对象；
+  - **世界取水改走原版 `BucketPickup.pickupBlock`**（含「拿走世界水源」语义）+
+    `ItemUtils.createFilledResult`（数量/创造模式语义对齐）+ 取水音效/FLUID_PICKUP gameEvent；
+  - 汲/倒处理器走 `menu.setCarried` 写回。新 `LivingBucketFunctionTest` 5 项（判定/内容/形态变换）
+    + 世界取水测试适配（`asLivingBucketForm`）。
 - ✅ **活桶改换宿主模型（用户拍板）**：汲/倒必须是「空桶⇄水桶**物品形态**变换」（原版桶心智），
   原「同一物品 + 内容组件」模型满/空外观相同且不认 `WATER_BUCKET` 宿主的旧活水桶。
   **内容组件仍是权威数据**，宿主物品跟随内容变换（`LivingBucketFunction.withContent`：

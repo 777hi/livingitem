@@ -311,13 +311,6 @@ public final class LivingComponents {
                             .serialize(ContainerFluidData.KEYED_CODEC)
                             .build());
 
-    /** 活桶内容（流体侧批次二，2026-10-03）：与 NeoForge 桶同构 —— 同一物品 + FluidStack 内容。 */
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<net.neoforged.neoforge.fluids.SimpleFluidContent>> LIVING_BUCKET_FLUID =
-            DATA_COMPONENT_TYPES.register("living_bucket_fluid", () ->
-                    DataComponentType.<net.neoforged.neoforge.fluids.SimpleFluidContent>builder()
-                            .persistent(net.neoforged.neoforge.fluids.SimpleFluidContent.CODEC)
-                            .networkSynchronized(net.neoforged.neoforge.fluids.SimpleFluidContent.STREAM_CODEC)
-                            .build());
 
     public static final DeferredHolder<AttachmentType<?>, AttachmentType<com.qiqi.li.living.domain.power.PhaseSnapshot>> CONTAINER_PHASE_SNAPSHOT =
             ATTACHMENT_TYPES.register("container_phase_snapshot", () ->

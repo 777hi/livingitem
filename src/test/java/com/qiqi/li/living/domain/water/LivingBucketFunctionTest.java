@@ -2,13 +2,12 @@ package com.qiqi.li.living.domain.water;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.material.Fluids;
-import net.neoforged.neoforge.fluids.FluidType;
-import net.neoforged.neoforge.fluids.SimpleFluidContent;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -16,11 +15,11 @@ import org.junit.jupiter.api.Test;
 import com.qiqi.li.living.api.LivingItemManager;
 
 /**
- * 活桶换宿主模型（2026-10-04）—— 内容组件是权威，宿主物品跟随内容变换。
+ * 活桶（2026-10-04 逻辑纠偏定稿）—— <b>桶只是载体，零私有状态</b>。
  *
- * <p>口径（用户拍板）：倒水后应「变成活空桶」、吸水后「变成活水桶」—— 空桶/水桶
- * <b>物品形态</b>之间的变换，活标记全程保留。另含<b>宿主隐含内容</b>：活化水桶/岩浆桶
- * （无组件）直接视为满桶 —— 兼容旧活水桶与「活化水桶直取」路径。</p>
+ * <p>口径（用户拍板）：「活桶」= 任意 {@code BucketItem} × 活标记；内容状态就是原版
+ * {@code BucketItem.content}（活化水桶天然装水）；形态变换走 {@code Fluid.getBucket()}
+ * 注册映射（汲水后「变成活水桶」、倒水后「变成活空桶」），活标记全程保留。</p>
  */
 class LivingBucketFunctionTest {
 
@@ -29,67 +28,63 @@ class LivingBucketFunctionTest {
         return stack;
     }
 
-    // ── 宿主隐含内容 ─────────────────────────────────────────
+    // ── 判定 ─────────────────────────────────────────────────
 
     @Test
-    @DisplayName("宿主隐含内容：活化的水桶（无组件）直接视为满水桶 —— 兼容旧活水桶")
-    void impliedContent_livingWaterBucketIsFull() {
-        var held = living(new ItemStack(Items.WATER_BUCKET));   // 活化不写内容组件
-
-        assertTrue(LivingBucketFunction.hasFullBucket(held), "活化水桶 = 满桶（隐含内容）");
-        assertEquals(Fluids.WATER, LivingBucketFunction.getContent(held).getFluid());
+    @DisplayName("判定：活水桶/活岩浆桶/活空桶都是活桶（BucketItem 家族通吃）")
+    void isLivingBucket_bucketFamily() {
+        assertTrue(LivingBucketFunction.isLivingBucket(living(new ItemStack(Items.WATER_BUCKET))),
+            "活水桶（旧存档/活化直取）天然被认领 —— content 就是水");
+        assertTrue(LivingBucketFunction.isLivingBucket(living(new ItemStack(Items.LAVA_BUCKET))));
+        assertTrue(LivingBucketFunction.isLivingBucket(living(new ItemStack(Items.BUCKET))));
+        assertFalse(LivingBucketFunction.isLivingBucket(living(new ItemStack(Items.DIAMOND))),
+            "非桶物品不是活桶");
+        assertFalse(LivingBucketFunction.isLivingBucket(new ItemStack(Items.WATER_BUCKET)),
+            "无活标记 = 不是活桶");
     }
 
     @Test
-    @DisplayName("宿主隐含内容：活化岩浆桶 = 满岩浆；活化空桶 = 空")
-    void impliedContent_lavaAndEmpty() {
-        assertTrue(LivingBucketFunction.hasFullBucket(living(new ItemStack(Items.LAVA_BUCKET))),
-            "活化岩浆桶 = 满岩浆");
-        assertFalse(LivingBucketFunction.hasFullBucket(living(new ItemStack(Items.BUCKET))),
-            "活化空桶 = 空");
+    @DisplayName("内容状态 = 原版 BucketItem.content：活化水桶天然满、空桶天然空")
+    void content_comesFromVanillaBucketItem() {
+        assertTrue(LivingBucketFunction.hasFullBucket(living(new ItemStack(Items.WATER_BUCKET))),
+            "水桶 content=water —— 无需任何私有组件/推导");
+        assertTrue(LivingBucketFunction.isEmptyBucket(living(new ItemStack(Items.BUCKET))));
+        assertEquals(Fluids.LAVA, LivingBucketFunction.getBucketFluid(living(new ItemStack(Items.LAVA_BUCKET))));
     }
 
-    // ── 换宿主变换 ───────────────────────────────────────────
+    // ── 形态变换（右键一下切换物品）────────────────────────────
 
     @Test
-    @DisplayName("倒水（灌空）：水桶形态 → 空桶形态，活标记保留")
-    void withContent_drain_swapsToEmptyBucket() {
+    @DisplayName("倒水：活水桶 → 活空桶（排空 = BUCKET），活标记保留")
+    void withFluid_drain_swapsToEmptyBucket() {
         var held = living(new ItemStack(Items.WATER_BUCKET));
 
-        var out = LivingBucketFunction.withContent(held, SimpleFluidContent.EMPTY);
+        var out = LivingBucketFunction.withFluid(held, Fluids.EMPTY);
 
-        assertEquals(Items.BUCKET, out.getItem(), "倒空后应「变成活空桶」");
+        assertEquals(Items.BUCKET, out.getItem(), "倒水后「变成活空桶」");
         assertTrue(LivingItemManager.isLivingItem(out), "活标记保留");
         assertTrue(LivingBucketFunction.isEmptyBucket(out));
     }
 
     @Test
-    @DisplayName("汲水（灌满）：空桶形态 → 水桶形态；取岩浆 → 岩浆桶形态")
-    void withContent_fill_swapsToFluidBucket() {
+    @DisplayName("汲水：活空桶 + 水 → 活水桶；+ 岩浆 → 活岩浆桶（Fluid.getBucket 注册映射）")
+    void withFluid_fill_swapsToFluidBucket() {
         var empty = living(new ItemStack(Items.BUCKET));
 
-        var water = LivingBucketFunction.withContent(empty, SimpleFluidContent.copyOf(
-            new net.neoforged.neoforge.fluids.FluidStack(Fluids.WATER, FluidType.BUCKET_VOLUME)));
-        assertEquals(Items.WATER_BUCKET, water.getItem(), "汲满水应「变成活水桶」");
+        var water = LivingBucketFunction.withFluid(empty, Fluids.WATER);
+        assertEquals(Items.WATER_BUCKET, water.getItem(), "汲水后「变成活水桶」");
         assertTrue(LivingItemManager.isLivingItem(water));
 
-        var lava = LivingBucketFunction.withContent(empty, SimpleFluidContent.copyOf(
-            new net.neoforged.neoforge.fluids.FluidStack(Fluids.LAVA, FluidType.BUCKET_VOLUME)));
-        assertEquals(Items.LAVA_BUCKET, lava.getItem(), "汲岩浆 → 岩浆桶形态");
+        var lava = LivingBucketFunction.withFluid(empty, Fluids.LAVA);
+        assertEquals(Items.LAVA_BUCKET, lava.getItem(), "汲岩浆 → 活岩浆桶");
+        assertTrue(LivingItemManager.isLivingItem(lava));
     }
 
     @Test
-    @DisplayName("换宿主不丢数量与组件：数量保留、宿主不变时零新对象")
-    void withContent_preservesCountAndComponents() {
-        var held = living(new ItemStack(Items.BUCKET, 3));
-
-        var out = LivingBucketFunction.withContent(held, SimpleFluidContent.copyOf(
-            new net.neoforged.neoforge.fluids.FluidStack(Fluids.WATER, FluidType.BUCKET_VOLUME)));
-
-        // 3 个 > 水桶最大堆叠 1 ⇒ 保持空桶宿主（数量优先），内容组件照写
-        assertEquals(Items.BUCKET, out.getItem(), "数量超宿主堆叠 ⇒ 保持原宿主");
-        assertEquals(3, out.getCount());
-        assertTrue(LivingItemManager.isLivingItem(out));
-        assertTrue(LivingBucketFunction.hasFullBucket(out), "内容组件仍可读出满桶");
+    @DisplayName("形态不变时返回原实例（零新对象）")
+    void withFluid_sameShape_returnsSameInstance() {
+        var held = living(new ItemStack(Items.WATER_BUCKET));
+        assertSame(held, LivingBucketFunction.withFluid(held, Fluids.WATER),
+            "已是水桶形态再灌水 ⇒ 无需变换");
     }
 }
