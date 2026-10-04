@@ -21,6 +21,8 @@
   - **根因**：`GuiInteractionPacket.resolveSlot` 只认「持活物品」的槽，而汲/倒的目标槽**就是空槽**（倒水要求目标格无物品、汲水的源格也无物品）⇒ `resolveSlot` 恒返回 null、包被丢弃（客户端其实拦了，是服务端扔的）。
   - **修法**：目标槽判据放宽为「活物品 **或** 空槽」（`GuiInteractionPacket.isValidTarget`）。空槽放行安全：非活桶动作只在 `InteractionEntry.matchesTarget` 命中时才发包，而它对空槽恒 `false`。
   - **回归守卫**：`GuiInteractionPacketTest.emptySlot_isValid`（修复前该断言失败）。
+  - ⚠️ **实测未解决（当日更正）**：用户游戏内右键**仍走原版逻辑** ⇒ **客户端根本没拦到**（`tryInteract` 返回 false），
+    问题在**客户端侧**；此修只是服务端一个**真实的丢包点**，并非症状根因。排查记录见 [idea.md](../idea.md) §〇.7。
 
 - ✅ **B.5 第三项：玩家背包 / 末影箱流体落盘（Player attachment）**（**437 测试全绿**，新增 `KEYED_CODEC` 往返 1 项）：
   - 背包 / 末影箱**无 BE** 可挂 `CONTAINER_FLUID_DATA` ⇒ 新增 **Player attachment** `CONTAINER_FLUID_DATA_PLAYER`（`Map<容器键, ContainerFluidData>`，`ContainerFluidData.KEYED_CODEC`）—— 一个玩家有背包（`player_<uuid>`）+ 末影箱（`player_<uuid>_ender_chest`）两个容器。

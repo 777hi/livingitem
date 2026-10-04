@@ -49,7 +49,7 @@
 |---|---|---|
 | F1 | `generatedSources: Map<Integer,FluidType>` 数据模型 + 引擎播种② + 挤没判定 | ✅ 完成（6 测试；框架可接 CODEC = B.5⑧） |
 | F2 | 水晋升行为（任意 2/4）+ 挤没自愈回归 | ✅ 完成（接缝已由框架落地） |
-| F3 | 活桶 FluidStack 化 + 汲/倒交互（客户端精确拦截 + 交互包管道）+ 处理器 + **桶源退役同批** | ✅ 完成（汲/倒交互不走规则 JSON，走 GuiInteractionHelper 活桶分支）。Q6 收编后解析走 `ContainerContexts.resolve`；背包/末影箱流体已随 B.5 第三项落 Player attachment。**仅剩缺口**：末影箱汲/倒 —— `ContainerContexts.resolve` 无末影箱分支（`EnderChestContainerContext` 是 ContainerLivingItemHandler 私有类，流体侧无法自行构建；基建已就绪，等框架侧一个小分支） |
+| F3 | 活桶 FluidStack 化 + 汲/倒交互（客户端精确拦截 + 交互包管道）+ 处理器 + **桶源退役同批** | ✅ 完成（汲/倒交互不走规则 JSON，走 GuiInteractionHelper 活桶分支）。Q6 收编后解析走 `ContainerContexts.resolve`；背包/末影箱流体已随 B.5 第三项落 Player attachment。**仅剩缺口**：末影箱汲/倒 —— `ContainerContexts.resolve` 无末影箱分支（`EnderChestContainerContext` 是 ContainerLivingItemHandler 私有类，流体侧无法自行构建；基建已就绪，等框架侧一个小分支）。⚠️ **另：右键仍走原版逻辑（未解决）→ 见 §〇.7** |
 | F4 | 转化表 JSON（含流体维度键）+ 转化 hook + 漏斗自动化实测 | ✅ 代码完成（`FluidTransformTable` + `/livingitem transforms`，443 测试全绿）；漏斗自动化实测待游戏内 |
 | F5 | 渲染轨：`FluidFlowSyncPacket` 容器级同步 + `IClientFluidTypeExtensions` 自适应 + 旧桶轨降级过渡回退 | ✅ 完成（同批次一） |
 
@@ -146,6 +146,41 @@ F5 提前为与桶源取消同批。
 **守恒律**：倒水/汲水不改变「活水桶+活水源」总数。1 桶=1 可移动源；2 桶夹 1 格 bootstrap
 出 3 永久源且桶完好归还。增长只来自晋升规则。量产通道（机制三）产出非活水桶，
 不参与倒/汲循环，可逐把活化后加入活经济。
+
+---
+
+## 〇.7 ⚠️ 未解决：活水桶右键「仍走原版逻辑」（2026-10-04，交下一轮）
+
+**症状**（用户游戏内实测）：手持活桶在容器界面**右键**，执行的是**原版**行为，汲/倒**没有拦截**。
+⇒ 客户端 `GuiInteractionHelper.tryInteract` 的活桶分支**没生效**（若生效会 `cir.setReturnValue(true)` 取消原版）。
+
+**已核实的（框架侧 2026-10-04）**：
+
+- **拦截链代码上是通的**：`AbstractContainerScreenMixin` / `InventoryScreenMixin` /
+  `CreativeModeInventoryScreenMixin` 的 `mouseClicked`(HEAD, cancellable) 都调
+  `GuiInteractionHelper.tryInteract(hoveredSlot, button, false, menu)`，返回 `true` 即取消原版；
+  Mixin 已在 `living_item.client.mixins.json` 注册。
+- 服务端侧确实存在并**已修**一个会丢包的点：`GuiInteractionPacket.resolveSlot` 只认「持活物品」的槽，
+  而汲/倒的目标是**空槽** ⇒ 包被丢（判据已放宽为「活物品 **或** 空槽」+ 回归测试 `GuiInteractionPacketTest`）。
+- ⚠️ **但修完用户实测仍走原版** ⇒ **客户端根本没拦到**（`tryInteract` 返回 false）——
+  问题在**客户端侧**，且不（只）是 `resolveSlot`。
+
+**下一轮排查入口（按可能性排序）**：
+
+1. ⭐ **手里那个是不是「活桶」**：`LivingBucketFunction.isLivingBucket` 要求
+   `stack.is(Items.BUCKET) && isLivingItem(stack)` —— 宿主必须是**空桶**（`Items.BUCKET`）。
+   F3 已把活桶改成「空桶宿主 + `LIVING_BUCKET_FLUID` 内容组件」；**旧设计的 `WATER_BUCKET` 活桶是惰性的**
+   （alpha 不做旧存档兼容）。→ **先确认**：手里的是不是「用活化把**空桶**变成的活桶」，而不是水桶 / 旧活水桶。
+2. `menu.getCarried()` 客户端是否真拿到光标物品（创造模式是虚拟的，靠 `carriedTag`）。
+3. `matchBucketInteract` 是否返回 `null`：满桶但目标格非空 / 空桶但 `FluidFlowClientCache` 快照里该格不是源
+   （快照依赖 F5 同步包，开箱后 1 tick 才到）。
+4. Mixin 在**运行时**是否真的应用了（配置已注册，仍需确认 refmap / 环境）。
+
+**最小诊断动作**：在 `GuiInteractionHelper.tryInteract` 活桶分支加临时日志 ——
+`button` / `LivingBucketFunction.isLivingBucket(menu.getCarried())` / `matchBucketInteract(...)` 的返回值，
+进游戏复现一次即知断在哪一步。
+
+> 相关：F3（上方任务队列）；框架侧修复提交 `8dae695`（`resolveSlot` 空槽判据）。
 
 ---
 
