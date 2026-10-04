@@ -17,6 +17,13 @@
 
 ## 2026-10-04
 
+- ✅ **修复汲走的源跨存档复活（渲染跨存档残留的根因）**（游戏实测反馈，**468 测试全绿**）：
+  写回逻辑在流体数据变空时只清内存与玩家 attachment map，**BE attachment 从不清** ——
+  非空期间最后一次写回把源留在箱子的存档数据里 ⇒ 重进存档 `getFluidData` 从附件回填 ⇒ 源复活。
+  修：空分支对关联 BE 写回 `EMPTY` 附件（对齐玩家路径的 `persistedMap.remove`；
+  EMPTY 序列化为空表，加载端 `!isEmpty()` 守卫跳过 ⇒ 不复活）。
+  端到端守卫（`ContainerFluidIntegrationTest`，mock BE 捕获写回序列）：
+  有源 ⇒ 附件非空；清空 ⇒ 附件 EMPTY（**退回即挂**已验证）。
 - ✅ **活化时机钩子收编（A3 · 467 测试全绿）**：`LivingTagPacket` 里 5 段内联类型判断
   （活箱子掉物 / 活末影箱绑定与解绑 / 活工具写主人 + 名字缓存）收编为
   `LivingItemFunction#onActivated` / `#onDeactivated`（默认空实现），与 A2 的

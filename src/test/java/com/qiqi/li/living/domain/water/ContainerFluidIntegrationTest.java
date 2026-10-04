@@ -12,11 +12,14 @@ import org.junit.jupiter.api.Test;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerDataKeys;
 import com.qiqi.li.living.container.ContainerLivingItemHandler;
+import com.qiqi.li.living.transfer.LivingComponents;
 import com.qiqi.li.living.container.SimpleContainerContext;
 
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.material.Fluids;
 import net.neoforged.neoforge.items.IItemHandlerModifiable;
 
@@ -113,6 +116,32 @@ class ContainerFluidIntegrationTest {
         assertEquals(8, fluid.getFlows().size(), "应完成 BFS（slot 0..7）");
         assertTrue(fluid.getFlows().get(0).isSource(), "slot 0 应为源（桶在真实流程里注册）");
         assertEquals(1, fluid.getFlows().get(1).level(), "slot 1 应为 level 1");
+    }
+
+    @Test
+    @DisplayName("端到端：源清空后 BE 附件写回 EMPTY（跨存档残留守卫，2026-10-04）")
+    void writeback_clearsBeAttachmentWhenFluidEmpties() {
+        Level level = mockServerLevel();
+        BlockEntity be = org.mockito.Mockito.mock(BlockEntity.class);
+        org.mockito.Mockito.when(be.getBlockPos()).thenReturn(BlockPos.ZERO);
+
+        var ctx = new SimpleContainerContext(new FakeHandler(new ItemStack[9]),
+            java.util.List.of(BlockPos.ZERO), java.util.List.of(be));
+        ContainerLivingItemHandler.getFluidData(ctx)
+            .registerGeneratedSource(0, Fluids.WATER.getFluidType());
+
+        var captor = org.mockito.ArgumentCaptor.forClass(ContainerFluidData.class);
+        ContainerLivingItemHandler.processContext(ctx, level);
+        org.mockito.Mockito.verify(be, org.mockito.Mockito.atLeastOnce())
+            .setData(org.mockito.Mockito.eq(LivingComponents.CONTAINER_FLUID_DATA.value()), captor.capture());
+        assertFalse(captor.getValue().isEmpty(), "有源 ⇒ 附件写回非空（源落盘）");
+
+        ContainerLivingItemHandler.getFluidData(ctx).removeGeneratedSource(0);
+        ContainerLivingItemHandler.processContext(ctx, level);
+        org.mockito.Mockito.verify(be, org.mockito.Mockito.atLeastOnce())
+            .setData(org.mockito.Mockito.eq(LivingComponents.CONTAINER_FLUID_DATA.value()), captor.capture());
+        assertTrue(captor.getValue().isEmpty(),
+            "源清空 ⇒ 附件必须写回 EMPTY —— 否则重进存档从附件回填复活（跨存档残留）");
     }
 
     @Test
