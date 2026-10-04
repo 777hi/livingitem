@@ -2,7 +2,7 @@
 > **框架侧与流体侧均已收口**（460 测试全绿、游戏内验证功能正常）。**现状见稳定层** ——
 > [living-item-infrastructure.md](../system-design/living-item-infrastructure.md)（1a/1b 契约）、
 > [container-identity.md](../system-design/container-identity.md)（Q6）、
-> [living-water-bucket-tech.md](../tech/living-water-bucket-tech.md)（流体机制）。
+> [../tech/living-fluid-tech.md](../tech/../tech/living-fluid-tech.md)（流体机制）。
 > 本文保留**执行记录 / 拍板记录 / 分工与契约底稿 / 自检清单**，供追溯。
 
 <!-- markdownlint-disable -->

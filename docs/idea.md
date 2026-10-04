@@ -1,6 +1,6 @@
 # 活水源（Living Water Source）设计草稿
 
-> **草稿纸**：探讨中，未定案，勿当现状读。定案内容沉淀到 `living-water-bucket-tech.md` 后从此处清除。
+> **草稿纸**：探讨中，未定案，勿当现状读。定案内容沉淀到 `tech/living-fluid-tech.md` 后从此处清除。
 > 探讨周期：2026-10-02 ~ 10-03，基于 `domain/water/` 现有实现（BFS 重算架构）。
 >
 > ⚠️ **框架契约见 [archive/infrastructure-refactoring-plan.md](archive/infrastructure-refactoring-plan.md) §3 1b**：
@@ -333,4 +333,4 @@ attachment 网络同步（`.networkSynchronized(STREAM_CODEC)`）+ 渲染端从 
 3. **三期·转化**：转化表 JSON + reload/list 指令 + 即时转化逻辑；漏斗自动化实测。
 4. **测试**：晋升闭包（2/4、连锁、稳定）、桶撤源留、挤没+自愈、汲倒往返守恒、
    CODEC 往返、缩容转化等待、末影箱路由共享源。
-5. **文档**：`living-water-bucket-tech.md` 新章 + 顺手勘误（flow 字符串三段式、推送 level 升序）。
+5. **文档**：`tech/living-fluid-tech.md` 新章 + 顺手勘误（flow 字符串三段式、推送 level 升序）。

@@ -1459,7 +1459,7 @@ private final FilterData[] filterOf;  // filterOf[slot] = 此槽位继承的过�
 
 ContainerFluidData.java 管理容器级流体状态，**独立于任何活物品**（驱动者是自维持的
 `LivingFluidFunction`，prio 0 —— 见 §8.2 阶段 4）。设计口径与玩法机制详见
-[living-water-bucket-tech.md](../tech/living-water-bucket-tech.md) 与 [idea.md](../idea.md) §〇。
+[../tech/living-fluid-tech.md](../tech/../tech/living-fluid-tech.md) 与 [idea.md](../idea.md) §〇。
 
 **核心映射（一槽一 world 方块）**：
 

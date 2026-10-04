@@ -1064,7 +1064,7 @@
   syncSlotToClients 的活物品数据在大箱中的实时同步（水车应力/水桶水流/熔炉进度等），
   全量 216 用例全绿；踩坑记录收编 living-water-wheel-tech.md §9.23 +
   living-item-infrastructure.md §8.5（大箱匹配补丁）+ tooltip-system.md §7 坑清单
-  第 3 条升级为双先例通用规则 + living-water-bucket-tech.md 验证清单补大箱项
+  第 3 条升级为双先例通用规则 + ../tech/living-fluid-tech.md 验证清单补大箱项
 - ✅ 修复：**活熔炉图标不切换 active/idle**——熔炼时图标永远停在 furnace_idle.png。
   根因：图标谓词 `LivingFurnaceFunction.isBurning(stack)` 读物品 DataComponent，而
   b064865（09-03「tooltip优化，nbt数据简化」）把 burnTime 迁到了运行时缓存
