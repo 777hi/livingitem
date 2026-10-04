@@ -165,8 +165,10 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 447 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
-全绿基线：`442 passed / 0 failed / 1 skipped`（2026-10-04 流体侧批次三 F4：`FluidTransformTableTest` 新增 6 项；
+**合计测试用例 450 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
+全绿基线：`449 passed / 0 failed / 1 skipped`（2026-10-04 活桶汲/倒包修复：`GuiInteractionPacketTest` 新增 3 项；
+2026-10-04 末影箱崩溃修复：`SimpleContainerContextTest` 新增 4 项；
+2026-10-04 流体侧批次三 F4：`FluidTransformTableTest` 新增 6 项；
 2026-10-04 B.5 第三项：`ContainerFluidDataTest` 新增 1 项 ——
 玩家背包/末影箱落盘 `KEYED_CODEC` 往返；2026-10-04 Q6 批次 B：`ContainerContextsTest` 新增 10 项 ——
 边界带共享内核 `ownsContainer`（大箱 `CompoundContainer` 特判）/ `isSameSlotSpace`（槽位体系探针）；

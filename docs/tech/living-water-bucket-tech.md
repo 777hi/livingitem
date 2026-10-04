@@ -55,6 +55,21 @@
 | `ContainerSnapshot` | `container/ContainerSnapshot.java` | 容器快照，持有 `ContainerFluidData` 引用，每 tick 预计算 |
 | `ContainerLivingItemHandler` | `container/ContainerLivingItemHandler.java` | 容器处理器，管理 `ContainerFluidData` 的持久化缓存（`CONTAINER_DATA` 嵌套 `fluid` 字段） |
 
+### 1.4 汲/倒交互链（F3）+ 踩坑：目标槽是空槽
+
+**链路**：客户端 `GuiInteractionHelper.tryInteract` 的活桶分支（按 `FluidFlowClientCache` 快照精确判定，
+不命中不拦截）→ `GuiInteractionPacket`（`actionId` = `living_bucket_pour` / `living_bucket_scoop`）
+→ 服务端 `GuiInteractionPacket.handle` → `resolveSlot` → `LivingBucketInteractHandlers`
+（权威重验：光标是活桶 + 满/空 + 目标格状态）→ `LivingBucketInteractSupport`（反查活流体数据 + 增减桶内容）。
+
+> ⚠️ **踩坑（2026-10-04 修复）：目标槽是「空槽」，而 `resolveSlot` 原只认活物品** ——
+> 倒水要求目标格**无物品**、汲水的源格也**无物品** ⇒ `resolveSlot` 里的
+> `!stack.isEmpty() && isLivingItem(stack)` 恒 `false` ⇒ **汲/倒包一律被丢弃**，
+> 表现为「活水桶右键没反应」（客户端其实拦了，是服务端把包扔了）。
+> 修法：判据放宽为「活物品 **或** 空槽」（`GuiInteractionPacket.isValidTarget`）。
+> 空槽放行安全：非活桶动作只在 `InteractionEntry.matchesTarget` 命中时才发包，而它对空槽恒 `false`。
+> 回归守卫：`GuiInteractionPacketTest.emptySlot_isValid`。
+
 ---
 
 ## 2. 数据结构

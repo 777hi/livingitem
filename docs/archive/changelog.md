@@ -17,6 +17,11 @@
 
 ## 2026-10-04
 
+- 🔧 **修复：活水桶右键「没反应」—— 服务端把汲/倒包丢了**（**450 测试全绿**，新增 `GuiInteractionPacketTest` 3 项）：
+  - **根因**：`GuiInteractionPacket.resolveSlot` 只认「持活物品」的槽，而汲/倒的目标槽**就是空槽**（倒水要求目标格无物品、汲水的源格也无物品）⇒ `resolveSlot` 恒返回 null、包被丢弃（客户端其实拦了，是服务端扔的）。
+  - **修法**：目标槽判据放宽为「活物品 **或** 空槽」（`GuiInteractionPacket.isValidTarget`）。空槽放行安全：非活桶动作只在 `InteractionEntry.matchesTarget` 命中时才发包，而它对空槽恒 `false`。
+  - **回归守卫**：`GuiInteractionPacketTest.emptySlot_isValid`（修复前该断言失败）。
+
 - ✅ **B.5 第三项：玩家背包 / 末影箱流体落盘（Player attachment）**（**437 测试全绿**，新增 `KEYED_CODEC` 往返 1 项）：
   - 背包 / 末影箱**无 BE** 可挂 `CONTAINER_FLUID_DATA` ⇒ 新增 **Player attachment** `CONTAINER_FLUID_DATA_PLAYER`（`Map<容器键, ContainerFluidData>`，`ContainerFluidData.KEYED_CODEC`）—— 一个玩家有背包（`player_<uuid>`）+ 末影箱（`player_<uuid>_ender_chest`）两个容器。
   - `ContainerLivingItemHandler.getFluidData` / `writebackBlockEntities` 按 `ownerPlayer(ctx)` 分派读写；末影箱 context 补存 `player` 引用（inventory 为 null 无法反查）。
@@ -37,8 +42,6 @@
   - 收编 `GuiInteractionHelper.resolveContainerSlot` + `AbstractContainerScreenMixin.living_item$resolveContainerSlot`（后者多一层反射兜底，统一保留）；顺带删除 Mixin 里已死的 `WATER_LOGGER` / `SLOT_WRAPPER_FIELD_CACHE` 字段。
   - 两个消费者改薄委托；**Q6 三个批次至此全部落地**。
 - ✅ **新建稳定层文档 `docs/system-design/container-identity.md`「多方块容器身份解析（边界带）」**：Q6 收敛前，该主题的教训散在 hopper §6.4/§10.25、tooltip §3.2/§7、infrastructure §2.5/§8.5、活桶汲/倒四处，且只在 buffer 层有记录（无稳定归宿）。本文把问题（三视图互不可达）、共享内核契约（`ContainerContexts.resolve`/`isViewing` + 两条不变量）、消费者清单（6+客户端 1）、通用教训、已知缺口集中到一处；infrastructure §2.5 与 AGENTS 子系统索引已加指针。
-
-## 2026-10-04
 
 - 🔴 **修复末影箱 tick 崩溃（crash-2026-10-04_16.55.26-server）**：`EnderChestContainerContext`
   传空 positions + null inventory 走生产构造器，撞上 1a-2 删 hashCode 第三档后新加的

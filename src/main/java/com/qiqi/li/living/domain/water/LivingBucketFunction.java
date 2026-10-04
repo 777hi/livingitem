@@ -37,8 +37,7 @@ import com.qiqi.li.living.transfer.LivingComponents;
  * <p>客户端拦截在 {@code GuiInteractionHelper.tryInteract} 的活桶分支：目标条件是
  * 「空槽位 + 容器级源状态」，物品中心的交互规则系统表达不了（matchesTarget 对空槽恒 false），
  * 由客户端按流体快照缓存精确判定（不命中不拦截，原版操作不受影响），
- * 服务端经 {@code GuiInteractionPacket} 管道由 {@link LivingBucketPourHandler} /
- * {@link LivingBucketScoopHandler} 权威重验执行。</p>
+ * 服务端经 {@code GuiInteractionPacket} 管道由 {@link LivingBucketInteractHandlers} 权威重验执行。</p>
  *
  * <p>⚠️ 桶源已退役（idea.md §〇.5）：旧「活水桶（WATER_BUCKET 宿主）」不再注册任何源，
  * 现存活水桶成为惰性物品（alpha 不做旧存档兼容）。水流语义全部归活水源（派生源）。</p>

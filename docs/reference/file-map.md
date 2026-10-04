@@ -282,7 +282,7 @@ src/test/java/com/qiqi/li/
 ├── living/command/
 │   └── ActivationTargetParsingTest.java       # 活化目标参数解析守卫·物品ID/标签/modid 回写契约 + 反向守卫「StringArgumentType 读不进 : # @」（4 项）
 ├── living/container/
-│   ├── SimpleContainerContextTest.java        # 容器上下文脏槽同步（25 项）
+│   ├── SimpleContainerContextTest.java        # 容器上下文脏槽同步 + 末影箱稳定键构造器（4 项回归）（29 项）
 │   ├── ContainerContextsTest.java             # 边界带共享内核·ownsContainer(单箱实例/大箱CompoundContainer/防跨容器虚影/空集) + isSameSlotSpace(槽位数不一致/越界/同空/同物品/一空一非空/异物品)（10 项）
 │   └── ContainerChunkCacheChunkLoadTest.java  # 区块加载守卫·事件不碰世界/延后重扫不丢/限量/不主动加载/只处理ticking区/可观测性（6 项）
 ├── living/domain/tnt/
@@ -332,8 +332,10 @@ src/test/java/com/qiqi/li/
 │   ├── InteractionRegistryTest.java           # 两趟优先级匹配·通配遮蔽+triggerFilter 回归守卫（7 项）
 │   ├── InteractionRuleConfigTest.java         # 交互规则 JSON 加载语义·内置全有效/玩家覆盖与removed/坏值跳过/未知字段忽略/version守卫/reload幂等（9 项；自带 mock handler 不依赖测试执行顺序）
 │   └── TillToFarmlandCompatTest.java          # 活锄头跨模组兼容·模组锄头命中+处理器产物回归（8 项）
-└── living/transfer/
-    ├── ContainerCompatibilityConfigTest.java  # 容器布局推断（14 项）
-    ├── ContainerRuleConfigTest.java           # 玩家差异持久化·覆盖内置+删除不复活+导出全量快照+社区闭环（11 项）
-    └── SlotInteractionCargoGateTest.java      # 槽位交互货物准入真值表·活骨粉不施肥（5 项）
+├── living/transfer/
+│   ├── ContainerCompatibilityConfigTest.java  # 容器布局推断（14 项）
+│   ├── ContainerRuleConfigTest.java           # 玩家差异持久化·覆盖内置+删除不复活+导出全量快照+社区闭环（11 项）
+│   └── SlotInteractionCargoGateTest.java      # 槽位交互货物准入真值表·活骨粉不施肥（5 项）
+└── network/
+    └── GuiInteractionPacketTest.java          # 目标槽判据·空槽可解析（活桶汲/倒包的回归守卫）/活物品可解析/非活物品不可解析（3 项）
 ```

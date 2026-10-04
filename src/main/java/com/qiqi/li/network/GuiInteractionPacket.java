@@ -134,21 +134,31 @@ public record GuiInteractionPacket(
     private static Slot resolveSlot(AbstractContainerMenu menu, int slotIndex, int containerSlot) {
         if (slotIndex >= 0 && slotIndex < menu.slots.size()) {
             Slot directSlot = menu.getSlot(slotIndex);
-            ItemStack stack = directSlot.getItem();
-            if (!stack.isEmpty() && LivingItemManager.isLivingItem(stack)) {
-                return directSlot;
-            }
+            if (isValidTarget(directSlot.getItem())) return directSlot;
         }
 
         for (Slot s : menu.slots) {
-            if (s.getContainerSlot() == containerSlot) {
-                ItemStack stack = s.getItem();
-                if (!stack.isEmpty() && LivingItemManager.isLivingItem(stack)) {
-                    return s;
-                }
+            if (s.getContainerSlot() == containerSlot && isValidTarget(s.getItem())) {
+                return s;
             }
         }
 
         return null;
+    }
+
+    /**
+     * 目标槽是否可解析：<b>持活物品</b>（点火 / 施肥等既有交互），或 <b>空槽</b>。
+     *
+     * <p>⚠️ <b>空槽必须放行</b>（2026-10-04 修复）：活桶汲/倒的目标就是<b>空槽</b>
+     * （倒水要求目标格无物品、汲水的源格也无物品），此前只认活物品 ⇒ 汲/倒包一律被丢，
+     * 表现即「活水桶右键没反应」。</p>
+     *
+     * <p>放行空槽是安全的：非活桶动作只在客户端 {@code InteractionEntry.matchesTarget} 命中时才发包，
+     * 而它对空槽恒 {@code false} ⇒ 空槽只会由活桶分支送到这里。</p>
+     *
+     * <p>包级可见：{@code GuiInteractionPacketTest} 直接驱动（纯判据，无需 mock 菜单）。</p>
+     */
+    static boolean isValidTarget(ItemStack stack) {
+        return stack.isEmpty() || LivingItemManager.isLivingItem(stack);
     }
 }
