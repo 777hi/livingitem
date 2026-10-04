@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
@@ -34,7 +35,27 @@ import com.qiqi.li.network.FluidFlowSyncPacket;
  */
 public final class FluidFlowServerSync {
 
+    /**
+     * 曾向客户端下发过快照的容器键 —— 用于「数据刚清空」的边沿检测：
+     * 汲走最后一个源后 fluidData 变空，驱动的 {@code !isEmpty()} 门会跳过 tick，
+     * 若不同步下发一次<b>空快照</b>，客户端缓存里的旧水将永远不被清除。
+     * 无流体容器不在此集合 ⇒ 每拍只多一次 Set 查询，零发包开销。
+     */
+    private static final Set<String> CLIENT_ACTIVE = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
     private FluidFlowServerSync() {}
+
+    /** 边沿状态机（包级私有供测试）：返回「本次是否需要下发清空包」。 */
+    static boolean markActiveAndCheckClear(String key, boolean hasData) {
+        boolean wasActive = CLIENT_ACTIVE.remove(key);
+        if (hasData) CLIENT_ACTIVE.add(key);
+        return !hasData && wasActive;
+    }
+
+    /** 测试用：清空边沿状态。 */
+    public static void clearForTest() {
+        CLIENT_ACTIVE.clear();
+    }
 
     /** 构建 flow 快照包；无流体数据时返回 null。流体按调色板去重（只用 Registry.getKey 接口）。 */
     public static FluidFlowSyncPacket buildPacket(String containerKey, int width, ContainerFluidData fluidData) {
@@ -66,14 +87,28 @@ public final class FluidFlowServerSync {
      * 玩家背包（key = "player_<uuid>"）直发本人；BE 容器按菜单槽位匹配查看者。
      */
     public static void flushAfterTick(TickableContainerContext ctx, ContainerFluidData fluidData) {
-        if (fluidData == null || fluidData == ContainerFluidData.EMPTY || fluidData.isEmpty()) return;
         Level level = ctx.getLevel();
         if (level == null || level.isClientSide) return;
         String key = ctx.getContainerKey();
         if (key == null) return;
 
+        boolean hasData = fluidData != null && fluidData != ContainerFluidData.EMPTY && !fluidData.isEmpty();
+        boolean needClear = markActiveAndCheckClear(key, hasData);
+        if (!hasData) {
+            if (needClear) {
+                // 数据刚清空（最后一个源被汲走/挤没）⇒ 下发一次空快照，清掉客户端残留渲染
+                dispatch(level, ctx, new FluidFlowSyncPacket(key, ctx.getWidth(), List.of(), Map.of()));
+            }
+            return;
+        }
+
         CustomPacketPayload packet = buildPacket(key, ctx.getWidth(), fluidData);
         if (packet == null) return;
+        dispatch(level, ctx, packet);
+    }
+
+    /** 按容器归属派发：玩家背包直发本人；BE 容器按菜单匹配查看者（含大箱子特判）。 */
+    private static void dispatch(Level level, TickableContainerContext ctx, CustomPacketPayload packet) {
 
         // 玩家背包：背包没有 BE 实例可匹配，直发主人本人（同 ContainerRuntimeCache 的玩家路径）
         Inventory inv = ctx.getInventory();

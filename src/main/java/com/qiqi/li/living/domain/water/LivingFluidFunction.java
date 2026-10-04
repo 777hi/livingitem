@@ -73,9 +73,11 @@ public class LivingFluidFunction implements LivingItemFunction, HasContainerData
         if (!fluidData.isEmpty()) {
             fluidData.setLastTickTime(System.currentTimeMillis());
             fluidData.tick(ctx);
-            if (ctx instanceof com.qiqi.li.living.container.TickableContainerContext tickable) {
-                FluidFlowServerSync.flushAfterTick(tickable, fluidData);
-            }
+        }
+        // flush 在 isEmpty 门之外：数据刚清空（最后一个源被汲走/挤没）时也要下发一次
+        // 空快照清掉客户端残留渲染（边沿检测在 FluidFlowServerSync，无流体容器零发包）
+        if (ctx instanceof com.qiqi.li.living.container.TickableContainerContext tickable) {
+            FluidFlowServerSync.flushAfterTick(tickable, fluidData);
         }
     }
 }
