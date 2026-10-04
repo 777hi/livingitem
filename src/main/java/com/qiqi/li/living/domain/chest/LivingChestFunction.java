@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Consumer;
+import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.NonNullList;
 import net.minecraft.core.component.DataComponentType;
@@ -16,6 +17,7 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.component.ItemContainerContents;
 import net.minecraft.world.level.Level;
+import com.qiqi.li.living.api.LivingItemActivation;
 import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerContext;
@@ -34,6 +36,26 @@ public class LivingChestFunction implements LivingItemFunction {
 
     @Override
     public String getFunctionId() { return ID; }
+
+    /**
+     * 【活化时机】取消活化时把 27 格内容全部掉落 —— 原先写在网络包里。
+     *
+     * <p>⚠️ <b>无玩家时返回 {@code false} = 拒绝取消活化</b>（数据安全否决通道）。
+     * 掉落需要位置（{@code dropAllItems} 用玩家坐标），没有玩家就无路可走；
+     * 而 {@link LivingItemManager#clearLivingData} 只 remove 组件、<b>不会掉物</b>
+     * ⇒ 硬着头皮走下去就是 <b>27 格内容凭空消失</b>。
+     * <b>宁可不活化，也不销毁数据</b> —— 这条是 §3.4 统一口径的第一个落点，
+     * 也是未来「批量去活化」（活凋零玫瑰）必须逐类表态的样板。</p>
+     *
+     * <p>返回 {@code false} 的路径**不得已产生副作用**，所以拒绝发生在 {@code dropAllItems} 之前。</p>
+     */
+    @Override
+    public boolean onDeactivated(ItemStack stack, Level level, @Nullable Player player,
+            LivingItemActivation.Via via) {
+        if (player == null) return false;           // 无法安全降级 ⇒ 拒绝，框架不清任何数据
+        dropAllItems(stack, player);
+        return true;
+    }
 
     @Override
     public void tick(List<SlotEntry> entries, ContainerContext context, TickContext tick, Level level) {

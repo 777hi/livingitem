@@ -1,5 +1,6 @@
 package com.qiqi.li.living.domain.map;
 
+import com.qiqi.li.living.api.LivingItemActivation;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.domain.map.LivingEnderPearlFunction;
 import net.minecraft.core.component.DataComponents;
@@ -224,7 +225,7 @@ public final class LivingMapEventHandler {
         player.level().playSound(null, player, SoundEvents.UI_CARTOGRAPHY_TABLE_TAKE_RESULT, player.getSoundSource(), 1.0F, 1.0F);
 
         ItemStack newMap = MapItem.create(level, centerX, centerZ, (byte)0, true, false);
-        LivingItemManager.setLiving(newMap, true);
+        LivingItemActivation.apply(newMap, level, player, LivingItemActivation.Via.INTERNAL, true);
         MapItem.renderBiomePreviewMap(level, newMap);
 
         if (stack.isEmpty()) {

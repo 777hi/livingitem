@@ -1,6 +1,10 @@
 package com.qiqi.li.living.api;
 
+import javax.annotation.Nullable;
+
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
 
 /**
  * 活化门面 —— 所有「活化 / 取消活化」途径的<b>统一判定点</b>（D1，2026-09-27）。
@@ -77,5 +81,68 @@ public final class LivingItemActivation {
     /** 便捷方法：只要{@link Result#ALLOW}才返回 true。 */
     public static boolean isAllowed(ItemStack stack, boolean activate, Via via) {
         return evaluate(stack, activate, via) == Result.ALLOW;
+    }
+
+    // ==================================================================
+    // 活化执行（2026-10-04）—— 所有「切换活物品状态」的唯一入口
+    //
+    // ⭐ 为什么判定（evaluate）与执行（apply）分成两个方法：
+    //    判定关心**配置意图**（黑白名单），执行关心**数据安全**（派发/否决）。
+    //    ⚠️ 判定**故意不收进这里** —— INTERNAL 途径（活耕地、活地图）按设计不受约束
+    //    （见本类 javadoc 的途径表），把它包进来会让「规则拦掉内部产出」成为可能，
+    //    而内部产出被拦时没有任何玩家能收到提示 ⇒ 静默失败。
+    // ==================================================================
+
+    /**
+     * 切换活物品状态，并向「认领该物品的功能」派发时机钩子。
+     *
+     * <p><b>顺序是硬约束</b>（违反即 bug）：</p>
+     * <table border="1">
+     *   <caption>两个方向的调用顺序与原因</caption>
+     *   <tr><th>方向</th><th>顺序</th><th>反了会怎样</th></tr>
+     *   <tr><td>活化</td><td>{@code setLiving(true)} → {@code onActivated}</td>
+     *       <td>功能认不出物品（判据含 {@code isLivingItem}）</td></tr>
+     *   <tr><td>取消活化</td><td>{@code onDeactivated} → {@code setLiving(false)}</td>
+     *       <td>箱子不掉物、末影箱不清绑定（同上）</td></tr>
+     * </table>
+     *
+     * <p><b>派发给谁</b>：{@code getApplicableFunctions(stack)} ——
+     * <b>不用</b> {@code hasAnyFunctionFor} 的 copy 探针（它专为判定设计，
+     * 且刻意不写进按 {@code Item} 缓存的表）。正因为两侧调用时物品都处于「活」状态，
+     * 这里不需要探针。</p>
+     *
+     * <p>⚠️ <b>本方法不调 {@link #evaluate}</b> —— 判定留在调用方
+     * （玩家点活按钮那条路需要 {@code Result} 给提示）。</p>
+     *
+     * @param stack 目标物品（服务端权威，直接改它）
+     * @param level 世界（必填；三个入口天然都有 ⇒ 功能不必依赖 player 就能拿世界）
+     * @param player 发起者；<b>可为 null</b>（内部产出 / 批量转化场景，见
+     *               {@link LivingItemFunction#onActivated} 的降级约定）
+     * @param via 发起途径
+     * @param activate true = 活化；false = 取消活化
+     * @return 状态是否真的被切换；<b>false = 被功能否决</b>
+     *         （{@link LivingItemFunction#onDeactivated} 的数据安全否决通道：
+     *          框架已保持物品的活状态、未清任何数据。玩家点活按钮这条路今天不会
+     *          走到 false —— 三个入口都带 player；它是为「批量转化」准备的。）
+     */
+    public static boolean apply(ItemStack stack, Level level, @Nullable Player player,
+            Via via, boolean activate) {
+        if (stack.isEmpty()) return false;
+
+        if (activate) {
+            LivingItemManager.setLiving(stack, true);
+            for (LivingItemFunction function : LivingItemManager.getApplicableFunctions(stack)) {
+                function.onActivated(stack, level, player, via);
+            }
+            return true;
+        }
+
+        for (LivingItemFunction function : LivingItemManager.getApplicableFunctions(stack)) {
+            if (!function.onDeactivated(stack, level, player, via)) {
+                return false;                    // 数据安全否决：不清任何数据
+            }
+        }
+        LivingItemManager.setLiving(stack, false);
+        return true;
     }
 }

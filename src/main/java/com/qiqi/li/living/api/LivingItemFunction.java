@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Set;
 import javax.annotation.Nullable;
 import net.minecraft.core.component.DataComponentType;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import com.qiqi.li.living.container.ContainerContext;
@@ -162,5 +163,82 @@ public interface LivingItemFunction {
      */
     default boolean shouldTickWithoutOwnItems(@Nullable ContainerContext ctx) {
         return false;
+    }
+
+    // ==================================================================
+    // 活化时机钩子（2026-10-04 收编，见 docs/buffer/activation-hook-refactoring-plan.md §3）
+    //
+    // ⭐ 为什么是「收编」而不是「新增 hook」：这五段「活化这一刻要挂什么」原先散落在
+    //    LivingTagPacket 里（内联类型判断）。与 A2 的 getOwnedComponentTypes() 同构 ——
+    //    同一件事的两半：组件归属自声明 + 活化时机自声明。
+    // ==================================================================
+
+    /**
+     * 【活化时机】此功能认领的物品<b>被活化</b>的那一刻（可选，默认空实现）。
+     *
+     * <p><b>派发给「认领该物品的功能」</b>（{@code getApplicableFunctions}），
+     * 由 {@link LivingItemActivation#apply} 在 {@code IS_LIVING} 写入<b>之后</b>调用。</p>
+     *
+     * <h3>不变量（违反即 bug）</h3>
+     * <ol>
+     *   <li>⭐ <b>调用时物品必定处于「活」状态</b> —— 因为本方法靠
+     *       {@code canApply} 派发，而绝大多数 {@code canApply} 内部含
+     *       {@code isLivingItem(stack)}。这让两侧都能直接用既有判据，
+     *       <b>不需要 copy 探针</b>。</li>
+     *   <li>只在<b>服务端</b>调用。</li>
+     * </ol>
+     *
+     * <h3>关于 {@code player} 可为 null ⭐</h3>
+     * <p><b>「玩家缺席」不是错误状态，是一个需要被定义的合法态</b> ——
+     * 本项目既有的传统：无主活工具走 {@code FALLBACK_UUID} 兜底、
+     * 未绑定活末影箱走路由模式（公共黑板），两者都是<b>已存在的合法模式</b>。
+     * 逐功能的降级口径见 {@code docs/buffer/activation-hook-refactoring-plan.md} §3.4。</p>
+     *
+     * <p>⚠️ <b>本方法不得依赖 {@code player} 非空</b>；确实需要玩家数据时，
+     * 降级行为必须显式写出（典型：{@code if (player == null) return;}）。</p>
+     *
+     * <h3>触及邻接的通道</h3>
+     * <p>持续影响 → {@link #tick}（自带 {@code ContainerContext}）；
+     * 玩家显式触发的一次性操作 → 已有的 {@code InteractionHandler} 通道。
+     * <b>只有「一次性 + 槽位上下文」确实无处安放时</b>才走
+     * {@link LivingItemActivation#apply} 的门面参数，而不是把上下文塞进本方法。</p>
+     *
+     * @param stack 刚被活化、<b>已带 IS_LIVING</b> 的物品（直接改它即写入了组件）
+     * @param level 世界（<b>必填</b> —— 三个活化入口天然都有；箱子的掉落位置等只需它 + 一个可选玩家）
+     * @param player 发起者；<b>可为 null</b>（内部产出 / 批量转化场景）
+     * @param via 发起途径（判定面已按途径分流；本参数供功能按来源区分行为）
+     */
+    default void onActivated(ItemStack stack, Level level, @Nullable Player player,
+            LivingItemActivation.Via via) {
+    }
+
+    /**
+     * 【活化时机】此功能认领的物品<b>被取消活化</b>的那一刻（可选，默认空实现）。
+     *
+     * <p>由 {@link LivingItemActivation#apply} 在 {@code clearLivingData()} <b>之前</b>调用
+     * —— 顺序是硬约束：判据 {@code isLivingChest} / {@code isLivingEnderChest} 都含
+     * {@code isLivingItem(stack)}，{@code IS_LIVING} 被清之后它们恒为 false
+     * ⇒ 箱子会不掉物、末影箱会不清绑定。</p>
+     *
+     * <p>⭐ <b>返回值 = 数据安全否决通道</b>：返回 {@code false} 表示
+     * 「无法在当前上下文安全地取消活化」，框架将<b>保持物品的活状态</b>、不清任何数据。</p>
+     *
+     * <p>它的唯一用途是把「宁可不活化，也不销毁数据」变成可执行的口径 ——
+     * 典型是活箱子：27 格内容需要掉落位置，无玩家在场时无路可走 ⇒ 拒绝。
+     * 这与 {@link LivingItemActivation.Result} 里的<b>策略拒绝</b>（配置者写的黑白名单）
+     * 是两件不同的事：<b>数据安全</b> vs <b>配置意图</b>。</p>
+     *
+     * <p>⚠️ 约定：<b>返回 {@code false} 的路径不得已产生副作用</b>
+     * （框架会把所有认领功能都问一遍，任一否决即整体中止）。</p>
+     *
+     * @param stack 即将被取消活化、<b>仍带 IS_LIVING</b> 的物品
+     * @param level 世界（必填）
+     * @param player 发起者；<b>可为 null</b> ⇒ 此时需要玩家数据的功能应当降级或拒绝
+     * @param via 发起途径
+     * @return true（默认）继续取消活化；false = 拒绝，框架不清数据
+     */
+    default boolean onDeactivated(ItemStack stack, Level level, @Nullable Player player,
+            LivingItemActivation.Via via) {
+        return true;
     }
 }

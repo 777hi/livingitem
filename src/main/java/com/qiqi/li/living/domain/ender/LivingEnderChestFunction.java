@@ -7,14 +7,19 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
+import javax.annotation.Nullable;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.inventory.ChestMenu;
+import net.minecraft.world.inventory.PlayerEnderChestContainer;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
+import com.qiqi.li.LivingItem;
+import com.qiqi.li.living.api.LivingItemActivation;
 import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.components.OwnerNameResolver;
@@ -37,6 +42,39 @@ public class LivingEnderChestFunction implements LivingItemFunction {
 
     @Override
     public String getFunctionId() { return ID; }
+
+    /**
+     * 【活化时机】在末影箱 GUI 内活化时绑定当前玩家 —— 原先写在网络包里。
+     *
+     * <p>绑定的是「某个玩家的末影箱」⇒ <b>语义必然依赖玩家</b>，没有玩家就没有绑定。
+     * 而<b>未绑定不是错误状态</b>：本功能本就有一等公民的「路由模式（共享黑板）」，
+     * 不绑定即落回该模式（{@code player == null} ⇒ 直接返回）。</p>
+     *
+     * <p>⚠️ 「是否在末影箱 GUI 内」问的是<b>玩家正在干什么</b>（触发场景），
+     * 不是物品数据 —— 所以判定只在这里做，别的功能不需要知道。</p>
+     */
+    @Override
+    public void onActivated(ItemStack stack, Level level, @Nullable Player player,
+            LivingItemActivation.Via via) {
+        if (player == null) return;                 // 无玩家 ⇒ 不绑定，落回路由模式
+        if (!isInEnderChestGui(player)) return;     // 不在末影箱界面 ⇒ 不绑定
+        setBoundPlayer(stack, player.getUUID(), player.getName().getString());
+        LivingItem.LOGGER.info("活末影箱绑定玩家: {}", player.getName().getString());
+    }
+
+    /** 【活化时机】取消活化时清空绑定（原本就是网络包里的内联判断，收编到此处）。 */
+    @Override
+    public boolean onDeactivated(ItemStack stack, Level level, @Nullable Player player,
+            LivingItemActivation.Via via) {
+        clearBoundPlayer(stack);
+        return true;                                 // 清绑定不需要玩家
+    }
+
+    /** 玩家当前是否正打开着自己的末影箱 —— 「在末影箱界面里」是唯一会绑定的前提。 */
+    private static boolean isInEnderChestGui(Player player) {
+        return player.containerMenu instanceof ChestMenu chestMenu
+            && chestMenu.getContainer() instanceof PlayerEnderChestContainer;
+    }
 
     @Override
     public void tick(List<SlotEntry> entries, ContainerContext context, TickContext tick, Level level) {

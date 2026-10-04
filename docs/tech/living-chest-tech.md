@@ -262,6 +262,19 @@ public void tick(List<SlotEntry> entries, ContainerContext context, TickContext 
 
 当活箱子取消活化时，`dropAllItems()` 将箱子内所有物品掉落到玩家位置。
 
+> 📍 **触发点在哪（2026-10-04 起）**：`LivingChestFunction#onDeactivated` ——
+> 原先这段是 `LivingTagPacket` 里的内联类型判断，现由功能自声明（契约见
+> [api-contract.md §1.5](../system-design/api-contract.md)）。
+>
+> ⭐ **无玩家时拒绝取消活化**（钩子返回 `false` ⇒ 框架保持活状态、**不清任何数据**）。
+> 理由：掉落需要位置，而 `clearLivingData` 只 remove 组件、**不会掉物** ⇒ 硬走下去就是
+> 27 格内容凭空消失。统一口径是**「无法安全降级时拒绝操作，绝不静默销毁数据」**。
+> 今天的三个活化入口都带玩家，所以这条只在将来的**批量转化**（活凋零玫瑰 / 活纸还原）时才触发；
+> 守卫见 `ActivationHookTest` 第 ⑤ 项。
+>
+> ✅ **游戏内验证（2026-10-04）**：有玩家时取消活化仍正常掉物、内容与堆叠倍数返还
+> 与收编前完全一致（这条路径单测造不出 `ServerPlayer`，只能游戏内验）。
+
 **堆叠倍数返还**（2026-09-08 修复）：堆叠数 N 的活箱子语义上是
 N 个内容完全相同的箱子——`CONTAINER` 组件相同才允许堆叠，且堆叠期间
 存取关闭（`count > 1` 时全部操作拒绝，见 §3.1/§3.2 前置检查），

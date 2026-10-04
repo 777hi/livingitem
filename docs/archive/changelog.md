@@ -17,6 +17,37 @@
 
 ## 2026-10-04
 
+- ✅ **活化时机钩子收编（A3 · 467 测试全绿）**：`LivingTagPacket` 里 5 段内联类型判断
+  （活箱子掉物 / 活末影箱绑定与解绑 / 活工具写主人 + 名字缓存）收编为
+  `LivingItemFunction#onActivated` / `#onDeactivated`（默认空实现），与 A2 的
+  `getOwnedComponentTypes()` **同构** —— 同一件事的两半：组件归属自声明 + 活化时机自声明。
+  新门面 `LivingItemActivation.apply(stack, level, player, via, activate)` 是三个活化入口
+  （活按钮 / 活耕地 / 活地图）**唯一**的切换通道；`setLiving(stack, living, owner)` 的
+  `owner` 参数删除（那本就是「框架不知道该写谁、就让调用方传」的 workaround）。
+  - ⭐ **owner 读写归一**：`clearLivingData` 一直把 `LIVING_TOOL_OWNER` 当「活工具的数据」
+    清除，写入却散在网络包 ⇒ 收编后**读在功能、写也在功能**。原 A2 描述的「非工具物品带
+    16B 冗余 UUID」现象随之消失（非工具不写该组件）。
+  - ⭐ **玩家缺席被定义为合法态**（不是错误）：签名 `Level` 必填 / `Player` 可空。
+    无主活工具走 `FALLBACK_UUID`、未绑定活末影箱走路由模式 —— 二者本就是既有合法模式。
+  - ⭐ **新增「数据安全否决」通道**：`onDeactivated` 返回 `false` ⇒ 框架**保持活状态、
+    不清任何数据**。首个落点是**活箱子**：掉落需要位置，无玩家时拒绝取消活化，
+    而不是让 27 格内容凭空消失（`clearLivingData` 只 remove 组件、不会掉物）。
+    统一口径：**无法安全降级时拒绝操作，绝不静默销毁数据**。
+  - 派发目标为「认领该物品的功能」（`getApplicableFunctions`），**不用**
+    `hasAnyFunctionFor` 的 copy 探针（它专为判定设计、刻意不入 `APPLICABLE_CACHE`）。
+    两侧调用时物品都处于「活」状态 ⇒ 顺序成硬不变量（活「先标记后派发」、
+    取消「先派发后清」），已由守卫测试钉死。
+  - `ActivationHookTest` 7 项（派发次数与参数原样送达 / 顺序不变量 / 未认领物品不派发 /
+    否决通道 / 箱子无玩家拒绝且内容保住 / 末影箱不绑定且照常解绑 / owner 只由活工具钩子写）。
+  - ✅ **游戏内验证通过**（2026-10-04）：单测造不出 `ServerPlayer`，故「有玩家」侧三条分支
+    （工具写 owner + 赋灵者 tooltip / 末影箱 GUI 内外绑定差异 / 箱子取消活化掉物）
+    逐项确认与收编前一致 —— 属**可测性边界**，不是遗留缺口。
+  - 勘误：原待办 A1「活化指令路径缺 owner 写入」**病灶不存在** ——
+    `LivingItemActivationCommand` 是 `/livingitem activation` **规则管理**命令，
+    全程不调 `setLiving`、根本不活化物品。
+  - 方案与「未来场景预演」（活经验瓶 / 活凋零玫瑰 / 活纸）见
+    `docs/archive/activation-hook-refactoring-plan.md`；三台未来机器已记入 `docs/TODO.md`。
+
 - ✅ **修复汲走源后渲染残留**（游戏实测反馈，**460 测试全绿**）：汲走最后一个源 ⇒ fluidData
   变空 ⇒ 驱动的 `!isEmpty()` 门把**同步也一起跳过** ⇒ 服务器不再发包，客户端快照里的旧水
   永不清除（非「不及时」，是「永不」）。修：`FluidFlowServerSync` 加**边沿状态机**

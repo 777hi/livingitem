@@ -285,22 +285,17 @@ public class LivingItemManager {
         }
     }
 
-    /** 切换活化状态（不记录主人）。 */
-    public static void setLiving(ItemStack stack, boolean living) {
-        setLiving(stack, living, null);
-    }
-
     /**
-     * 切换活化状态。
+     * 切换活化状态（<b>不含任何时机副作用</b>）。
      *
-     * @param owner 主人 UUID（活工具用，见 {@link #LIVING_TOOL_OWNER}）；null = 不记录
+     * <p>⚠️ <b>调用方几乎应该用 {@link LivingItemActivation#apply} 而不是本方法</b> ——
+     * 本方法只翻标记，不派发 {@link LivingItemFunction#onActivated} /
+     * {@link LivingItemFunction#onDeactivated}（例如活箱子不会掉物、活末影箱不会解绑）。
+     * 保留它是因为 {@code apply} 内部与「单元测试造一个已活化的物品」都要用最底层的原语。</p>
      */
-    public static void setLiving(ItemStack stack, boolean living, @Nullable UUID owner) {
+    public static void setLiving(ItemStack stack, boolean living) {
         if (living) {
             stack.set(LivingComponents.IS_LIVING.value(), true);
-            if (owner != null) {
-                setToolOwner(stack, owner);
-            }
             // ⚠️ 死分支（2026-09-27 探针证实）：1.21.1 的箱子物品默认组件**已含**
             //    CONTAINER=EMPTY（与潜影盒同）⇒ !stack.has(...) 恒 false，此分支从不触发。
             //    「外部途径拿到的活箱子缺 CONTAINER」的场景不存在 —— 任何来源的箱子都自带。

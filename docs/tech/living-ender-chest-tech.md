@@ -238,6 +238,12 @@ key.isPublic()          // 未绑定              → 公共频道
 
 **绑定触发**：玩家在末影箱 GUI 中，光标持有末影箱物品，点击活按钮 → 末影箱被活化并绑定当前玩家。
 
+> 📍 **触发点在哪（2026-10-04 起）**：`LivingEnderChestFunction#onActivated` ——
+> 判定「是否在末影箱 GUI 内」也搬进了这个功能（问的是**玩家正在干什么**，属于触发场景，
+> 不是物品数据）。取消活化时由 `#onDeactivated` 清空绑定（**不需要玩家**）。
+> ⚠️ **玩家缺席 ⇒ 不绑定**，落回下表的「公共频道」—— 未绑定是**已存在的合法模式**，不是错误状态。
+> 契约见 [api-contract.md §1.5](../system-design/api-contract.md)。
+
 绑定数据存储在活末影箱物品的 DataComponent 中（通过 `LivingEnderChestData` + `EnderChannelData` record）：
 
 ```java

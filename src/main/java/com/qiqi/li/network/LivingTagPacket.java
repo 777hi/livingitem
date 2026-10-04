@@ -4,20 +4,13 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.inventory.ChestMenu;
-import net.minecraft.world.inventory.PlayerEnderChestContainer;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.codec.StreamCodec;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import com.qiqi.li.LivingItem;
 import com.qiqi.li.living.api.LivingItemActivation;
 import com.qiqi.li.living.api.LivingItemManager;
-import com.qiqi.li.living.domain.chest.LivingChestFunction;
-import com.qiqi.li.living.domain.ender.LivingEnderChestFunction;
-import com.qiqi.li.living.domain.tools.LivingToolOwnerName;
-import com.qiqi.li.living.domain.tools.LivingToolRecorder;
 
 /**
  * 活物品标签切换网络包。
@@ -81,34 +74,9 @@ public record LivingTagPacket() implements CustomPacketPayload {
                         return;
                     }
 
-                    // 取消活化时：活箱子需要先掉落所有物品
-                    if (!newLiving && LivingChestFunction.isLivingChest(carriedItem)) {
-                        LivingChestFunction.dropAllItems(carriedItem, player);
-                    }
-
-                    // 取消活化时：活末影箱清空绑定玩家
-                    if (!newLiving && carriedItem.is(Items.ENDER_CHEST)) {
-                        LivingEnderChestFunction.clearBoundPlayer(carriedItem);
-                    }
-
-                    // 活工具需要主人 UUID（L25）：回放时 FakePlayer 靠它伪装成真实玩家
-                    // 以通过领地 / 保护插件的权限判定。无主人时回退到通用 FakePlayer。
-                    LivingItemManager.setLiving(carriedItem, newLiving, player.getUUID());
-
-                    // 活化末影箱时：如果玩家在末影箱 GUI 中，绑定当前玩家
-                    // （UUID 是绑定数据；名字只是显示缓存，tick 里遇到在线绑定玩家会自动刷新）
-                    if (newLiving && carriedItem.is(Items.ENDER_CHEST)
-                        && isInEnderChestGui(player)) {
-                        LivingEnderChestFunction.setBoundPlayer(
-                            carriedItem, player.getUUID(), player.getName().getString());
-                        LivingItem.LOGGER.info("活末影箱绑定玩家: {}", player.getName().getString());
-                    }
-
-                    // 活工具/活武器：绑定主人后顺带记下名字的「显示缓存」
-                    // （主人离线时 tooltip 兜底显示；回放遇到在线主人会自动刷新）
-                    if (newLiving && LivingToolRecorder.isLivingToolOrWeapon(carriedItem)) {
-                        LivingToolOwnerName.set(carriedItem, player.getName().getString());
-                    }
+                    // ── 活化执行：切换标记 + 派发时机钩子（各功能自声明挂什么）──
+                    LivingItemActivation.apply(carriedItem, player.level(), player,
+                        LivingItemActivation.Via.PLAYER, newLiving);
 
                     LivingItem.LOGGER.info("服务端：将物品 {} 的 living 标签从 {} 切换为 {}",
                             carriedItem.getItem().getName(carriedItem).getString(),
@@ -119,12 +87,5 @@ public record LivingTagPacket() implements CustomPacketPayload {
                 }
             }
         });
-    }
-
-    private static boolean isInEnderChestGui(ServerPlayer player) {
-        if (player.containerMenu instanceof ChestMenu chestMenu) {
-            return chestMenu.getContainer() instanceof PlayerEnderChestContainer;
-        }
-        return false;
     }
 }

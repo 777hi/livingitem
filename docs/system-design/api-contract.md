@@ -87,6 +87,7 @@ javadoc 明写「新增 LivingItemFunction 必须回来手添」⇒ **第三方�
 | 可选接口 `HasDirection` / `HasContainerData` | `living/api/` | ✅ 新增活物品无需改核心文件 |
 | `SlotInteractions.register` | `SlotInteractions.java` | ⚠️ public，但全仓仅 1 处调用（内置静态块）——**从未被外部验证** |
 | `LivingIconRegistry.register` | `LivingIconRegistry.java` | ⚠️ public，但内置调用时机在 mod 构造函数，无时序契约 |
+| 可选钩子 `onActivated` / `onDeactivated` | `living/api/LivingItemFunction.java` | ✅ default 空实现，契约见 §1.5（2026-10-04）—— ⚠️ 与其它钩子不同，它**有守卫测试**（`ActivationHookTest`） |
 
 #### ⚠️ 已知缺口：注册时序是隐式的
 
@@ -144,6 +145,74 @@ javadoc 明写「新增 LivingItemFunction 必须回来手添」⇒ **第三方�
 
 ⇒ **这 4 个字段不是兼容包袱，不要删**（它们都在用）。真正的问题是
 「要不要真的做那次重构」—— 见 §2.5。
+
+### 1.5 活化时机自声明 —— `onActivated()` / `onDeactivated()`
+
+**机制**：每个 `LivingItemFunction` 自声明「这件物品被活化 / 被取消活化的那一刻要挂什么」；
+`LivingItemActivation.apply` 切换 `IS_LIVING` 后（或清除前）向
+**认领该物品的功能**（`getApplicableFunctions`）派发。
+
+```java
+// LivingItemFunction.java —— 两个默认空实现
+default void onActivated(ItemStack stack, Level level, @Nullable Player player, Via via) {}
+default boolean onDeactivated(ItemStack stack, Level level, @Nullable Player player, Via via) { return true; }
+```
+
+**为何如此**（一句话）：与 §1.1 **同构**——组件归属自声明 + 活化时机自声明，
+是同一件事的两半。收编前这五段是 `LivingTagPacket` 里的内联类型判断
+（活箱子掉物 / 活末影箱绑定与解绑 / 活工具写主人），新增功能必须去改网络包。
+
+**唯一入口**：`LivingItemActivation.apply(stack, level, player, via, activate)`
+—— 活按钮、活耕地、活地图三个入口都走它。⚠️ 判定（`evaluate`）**故意不在**其中，
+理由见 `LivingItemActivation` 类 javadoc（INTERNAL 途径按设计不受规则约束）。
+
+#### 不变量（违反即 bug）
+
+| # | 断言 | 违反后果 |
+|---|---|---|
+| **I-H1** | 派发时物品**必定处于「活」状态** ⇒ 活化必须「先写标记后派发」，取消必须「先派发后清标记」 | 判据（`isLivingChest` / `isLivingToolOrWeapon`）都含 `isLivingItem` ⇒ 箱子不掉物、末影箱不清绑定、功能认不出物品 |
+| **I-H2** | 派发目标是**认领该物品的功能**（`getApplicableFunctions`），**不得**用 `hasAnyFunctionFor` 的 copy 探针 | 探针结果会被写进按 `Item` 缓存的表（该表契约见 `getApplicableFunctions`） |
+| **I-H3** | `onDeactivated` 返回 `false`（否决）时**不得已产生副作用** | 框架把所有认领功能问一遍，任一否决即整体中止 ⇒ 已产生的副作用无法回滚 |
+| **I-H4** | `player` **可为 null**，覆盖它时必须显式写出降级行为 | 见下面的降级表 |
+
+#### 「玩家缺席」是合法态，不是错误
+
+| 功能 | `player == null` 时 |
+|---|---|
+| 活工具 | 不写 owner ⇒ 无主，回放走 `FALLBACK_UUID` 通用 FakePlayer（tooltip 不显示主人行） |
+| 活末影箱 | 不绑定 ⇒ 落回**路由模式（公共黑板）** |
+| 活末影箱（取消） | 照常清绑定 —— 不需要玩家 |
+| **活箱子（取消）** | ⚠️ **拒绝**（返回 false），保持活状态 |
+
+**统一口径**：**无法安全降级时拒绝操作并提示，绝不静默销毁数据。**
+「拒绝」与 `evaluate` 的**策略拒绝**（配置者写的黑白名单）是两件事：**数据安全** vs **配置意图**。
+否决走的是**返回值**，不占用 `Result` 枚举。
+
+> ⚠️ 玩家为 null 的入口**今天不存在**（三个入口都持有 `player`）；
+> 这套口径是为**批量转化**准备的（`docs/TODO.md` 的活经验瓶 / 活凋零玫瑰 / 活纸）。
+> 上下文对象（能力袋）**刻意不做** —— 那是无终点的框架机制，触发条件见
+> `activation-hook-refactoring-plan.md` §3.5。
+
+#### 守卫
+
+`src/test/java/com/qiqi/li/living/api/ActivationHookTest.java`（7 项）覆盖 I-H1~I-H4
++ 端到端（箱子内容保住 / 末影箱不绑定 / owner 只由活工具钩子写）。
+
+> ⭐ **为什么必须有守卫**：新写法「忘了覆盖钩子」是**静默失败** ——
+> 主人不记、绑定不清、物品不掉，系统不报错。与 §1.1 的「忘了声明」同病。
+
+#### 可测性边界（「有玩家」侧无自动化覆盖）
+
+单测**造不出真实玩家**（`ServerPlayer` 需要服务器）⇒ 三条分支没有自动化覆盖：
+
+| 分支 | 覆盖方式 |
+|---|---|
+| 工具写 owner + 名字缓存 | ✅ 游戏内验证（2026-10-04）：点活按钮后 tooltip 出现「赋灵者」行 |
+| 末影箱在 GUI 内绑定 / GUI 外不绑定 | ✅ 游戏内验证（2026-10-04） |
+| 箱子取消活化掉物 | ✅ 游戏内验证（2026-10-04）：内容与堆叠倍数返还与收编前一致 |
+
+⇒ 这**不是遗留缺口，而是可测性边界**（`docs/guides/unit-testing.md`）：
+要自动化它得先有可用的 level/player 替身，属另一件事。
 
 ---
 

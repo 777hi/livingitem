@@ -5,7 +5,7 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.api.LivingItemActivation;
 import com.qiqi.li.living.domain.farmland.Tillables;
 
 /**
@@ -38,7 +38,8 @@ public class TillToFarmlandHandler implements InteractionHandler {
         }
 
         ItemStack tilled = new ItemStack(result, source.getCount());
-        LivingItemManager.setLiving(tilled, true);
+        LivingItemActivation.apply(tilled, player.level(), player,
+            LivingItemActivation.Via.INTERNAL, true);
         targetSlot.set(tilled);
 
         player.containerMenu.broadcastChanges();

@@ -14,6 +14,7 @@ import java.util.function.Consumer;
 
 import javax.annotation.Nullable;
 
+import com.qiqi.li.living.api.LivingItemActivation;
 import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.components.OwnerNameResolver;
@@ -62,6 +63,28 @@ public class LivingToolFunction implements LivingItemFunction {
     @Override
     public String getFunctionId() {
         return ID;
+    }
+
+    /**
+     * 【活化时机】绑定主人（L25）—— 原先写在网络包里，现由功能自声明。
+     *
+     * <p>⭐ <b>为什么 owner 只在这里写</b>：它是「活工具 / 活武器」的数据
+     * （消费方只有 {@code LivingToolReplay} / {@code LivingToolOwnerName}），
+     * 而清理侧一直由本功能的 {@link #getOwnedComponentTypes()} 声明 ——
+     * <b>读在功能、写也必须在功能</b>，否则就是「A2 只做了一半」的读写分离。</p>
+     *
+     * <p>⚠️ <b>{@code player == null} ⇒ 不写 owner</b>，这与活物品「无主」是既有合法态
+     * 一致（tooltip 不显示主人行、回放走 {@code FALLBACK_UUID} 通用 FakePlayer）。
+     * 内部产出（活耕地 / 活地图）走的正是这条路径。</p>
+     */
+    @Override
+    public void onActivated(ItemStack stack, Level level, @Nullable Player player,
+            LivingItemActivation.Via via) {
+        if (player == null) return;                 // 缺席即无主（合法态）
+        LivingItemManager.setToolOwner(stack, player.getUUID());
+        // 顺带记下名字的「显示缓存」—— 主人离线时 tooltip 兜底；
+        // 回放遇到在线主人会自动刷新（OwnerNameResolver）。
+        LivingToolOwnerName.set(stack, player.getName().getString());
     }
 
     @Override

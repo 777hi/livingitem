@@ -200,7 +200,15 @@ public record LivingToolProgress(BlockPos target, long startTick) { }
 ### 3.3 LivingToolOwner（UUID）
 
 `FakePlayer` 用它伪装成真实玩家，以通过领地 / 保护插件（`L25`，见 §5.4）。
-玩家手动活化时由 `LivingTagPacket` 写入。
+
+**谁写它（2026-10-04 起）**：`LivingToolFunction#onActivated` ——
+原先是 `LivingTagPacket` 里的内联判断。清除侧一直由本功能的 `getOwnedComponentTypes()`
+声明 ⇒ 现在**读在功能、写也在功能**（A2 契约的另一半，见
+[api-contract.md §1.5](../system-design/api-contract.md)）。
+副作用是**非工具物品不再携带这个组件**（此前任何被活化的物品都会写 16B UUID）。
+
+⚠️ **玩家缺席 ⇒ 不写 owner**（组件缺失 = 无主，回放走 `FALLBACK_UUID` 通用 FakePlayer，
+tooltip 不显示「赋灵者」行）—— 这是**既有的合法态**，内部产出（活耕地 / 活地图）走的正是它。
 
 ---
 
@@ -523,12 +531,12 @@ src/main/java/com/qiqi/li/network/
 
 | 位置 | 内容 |
 |---|---|
-| `LivingItemManager` | 3 个 DataComponent + `getToolMemory/setToolMemory`、`getToolProgress/setToolProgress`、`getToolOwner/setToolOwner`、`setLiving(stack, living, owner)` 重载 |
+| `LivingItemManager` | 3 个 DataComponent + `getToolMemory/setToolMemory`、`getToolProgress/setToolProgress`、`getToolOwner/setToolOwner`（⚠️ `setLiving(stack, living, owner)` 重载已于 2026-10-04 **删除** —— owner 改由 `LivingToolFunction#onActivated` 写，`setLiving` 退回「只翻标记」的原语） |
 | `LivingItemManager.clearLivingData` | 移除 `LIVING_TOOL_MEMORY` / `LIVING_TOOL_PROGRESS` / `LIVING_TOOL_OWNER` |
 | `LivingItem` 构造函数 | `NeoForge.EVENT_BUS.register(LivingToolRecorder.class)` |
 | `LivingItem.commonSetup` | `LivingItemManager.registerFunction(new LivingToolFunction())` |
 | `LivingItem.onServerStopped` | `LivingToolFakePlayerCache.clear()` |
-| `LivingTagPacket.handle` | `setLiving(carriedItem, newLiving, player.getUUID())` 记录主人 |
+| `LivingToolFunction.onActivated` | 记录主人 UUID + 名字显示缓存（2026-10-04 起，原先在 `LivingTagPacket`） |
 | `LivingItem.onRegisterPayloadHandler` | `playToServer(ToolMemoryClearPacket...)` |
 | `LivingItemInputHandler`（客户端） | `onLeftClickEmpty` → 发 `ToolMemoryClearPacket` |
 | `ServerPacketHandler.handleToolMemoryClear` | 清记忆 + `broadcastChanges()` |

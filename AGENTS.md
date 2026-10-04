@@ -165,8 +165,11 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 460 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
-全绿基线：`449 passed / 0 failed / 1 skipped`（2026-10-04 活桶汲/倒包修复：`GuiInteractionPacketTest` 新增 3 项；
+**合计测试用例 467 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
+全绿基线：`456 passed / 0 failed / 1 skipped`（2026-10-04 活化时机钩子收编：
+`ActivationHookTest` 新增 7 项 —— 派发参数原样送达 / 顺序不变量 / 未认领物品不派发 /
+数据安全否决 / 箱子无玩家拒绝且内容保住 / 末影箱不绑定且照常解绑 / owner 只由活工具钩子写；
+2026-10-04 活桶汲/倒包修复：`GuiInteractionPacketTest` 新增 3 项；
 2026-10-04 末影箱崩溃修复：`SimpleContainerContextTest` 新增 4 项；
 2026-10-04 流体侧批次三 F4：`FluidTransformTableTest` 新增 6 项；
 2026-10-04 B.5 第三项：`ContainerFluidDataTest` 新增 1 项 ——
@@ -201,6 +204,7 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-04 | **活化时机钩子收编（A3）**：`LivingTagPacket` 5 段内联类型判断收编为 `LivingItemFunction#onActivated`/`#onDeactivated`（与 A2 `getOwnedComponentTypes()` 同构）；新门面 `LivingItemActivation.apply` 成三个入口唯一通道，`setLiving` 的 `owner` 参数删除 ⇒ **owner 读写归一**（非工具不再带冗余 UUID）。⭐ `Player` 改**可空**（缺席是合法态：无主工具 / 未绑定末影箱）；⭐ 新增**数据安全否决**（`onDeactivated` 返回 false ⇒ 不清任何数据）—— 活箱子无玩家时拒绝取消活化，**宁可不活化也不销毁 27 格内容**。**467 测试全绿** | `activation-hook-refactoring-plan.md`（已归档）；`api-contract.md` §1.5 |
 | 2026-10-04 | **活桶收尾三连**：① 🔴 汲/倒**右键失效**修复 —— 真因**取水闭环断链**（新 `LivingBucketWorldUse` 世界取水 priming）；② **宿主模型改换（用户拍板）** —— 桶 = 载体**零私有状态**，空桶 ⇄ 水桶 ⇄ 岩浆桶形态变换走**原版流体映射**；③ 汲走源后**渲染残留**修复（同步边沿检测 + 空快照清屏）。**460 测试全绿** | `changelog.md`（2026-10-04）；排查 `idea.md` §〇.7 |
 | 2026-10-04 | 🔴 **修复末影箱 tick 崩溃**：1a-2 的「不可达证明」漏了 `EnderChestContainerContext`（传空 positions + null inventory）⇒ 撞上被删的 hashCode 第三档 ⇒ **任何有玩家的服务器 tick 必炸**；加**显式稳定键构造器**。⚠️ 教训：**不可达证明必须枚举全部调用点**。**447 测试全绿** | `living-item-infrastructure.md` §2.5 |
 | 2026-10-04 | **流体侧批次三（F4 转化表 JSON 化）**：新 `FluidTransformTable`（三层来源加载器 —— 内置 assets + 玩家 config 差异：追加/按 id 覆盖/removed 删除；条目 = 流体/输入/输出，同容器水/岩浆各走各的）+ 水行为 `transformItem` **委托查表**（删硬编码）+ 内置 17 条（水-空桶→水桶 + 16 色混凝土粉末→混凝土）+ 指令 `/livingitem transforms reload/list`。**443 测试全绿** | `living-water-bucket-tech.md` §2.2 |
@@ -210,7 +214,6 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 | 2026-10-03 | **流体侧批次一（F1+F5）**：F1 派生源（活水源）—— `generatedSources: Map<Integer,FluidType>` + 播种②无条件并入 BFS + **挤没判定**（活物品进源格即销毁，非活共存）；F5 流体渲染轨 —— `FluidFlowSyncPacket` 容器级同步（玩家背包/BE/大箱子全覆盖）+ `IClientFluidTypeExtensions` 自适应贴图/颜色（alpha 按 maxLevel 归一），旧桶轨降级过渡回退。桶源退役顺延批次二与汲/倒同批。**419 测试全绿** | `idea.md` §〇 |
 | 2026-10-03 | 🔴 **修复 1a-4 引入的回归：容器流体数据不再被创建**（活水桶 `registerSource` 被跳过 ⇒ **水流功能整体失效**）：1a-4「容器级数据统一存储」把 `TickContext.fluidData()` 改成只读 peek 时，**丢掉了构造器里创建流体数据的调用**；恢复（含 BE 附件回填）+ 补回归测试（退回旧实现**恰好挂掉该测试**）。**406 测试全绿** | `living-water-bucket-tech.md` §2.2 |
 | 2026-10-03 | **1b 通用流体框架（框架侧 ①②③④）**：① **1b-1 引擎泛化** —— `ContainerFluidData` 条目带**流体类型**（单张 map，水行为零变化）；② **1b-2a 行为分档接缝** —— `FluidFlowBehavior`/`FluidFlowBehaviors`（未注册=静止，水注册上限 7）；③ **1b-2b 通用驱动** —— `LivingFluidFunction`（**自维持** + `HasContainerData` prio 0），桶的 BFS 驱动**解耦**（只留 postTickSync）；④ **1b-2c 红石归零解耦** —— 自维持驱动使 `grouped` 恒非空、原寄生在 `grouped.isEmpty()` 的残留红石归零会失效 ⇒ 抽出 `zeroResidualRedstone`。⚠️ 流体引擎原**零单测** ⇒ 先补「行为快照」再重构。**412 测试全绿** | `living-water-bucket-tech.md` §2.2 |
-| 2026-10-03 | **基础设施重构 1a 地基完成**（4/4，397 测试全绿，行为不变）：Q3 删 `containerKey` 第三档改抛异常；Q4 抽 `TickableContainerContext` 子接口；Q2 容器级数据并入 `ContainerDataStore`（按 `ContainerDataKey` 数组下标存取，新增一种数据只改 1 行）；Q1 `LivingItemFunction#shouldTickWithoutOwnItems`（默认 false）+ 注册期静态自维持清单（每 tick 只遍历 0~1 个，不逐函数判定），为「活水源 = 没有物品载体的活物品」铺路 | `docs/archive/infrastructure-refactoring-plan.md` §3 |
 
 ## 排查铁律：原版机制挡路时
 

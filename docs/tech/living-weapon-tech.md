@@ -598,7 +598,9 @@ renderStatic(THIRD_PERSON_RIGHT_HAND)     ← MC 摆正（吸收建模差异 + �
 原理链条：
 
 ```
-活化时 setLiving(stack, true, owner) 把主人 UUID 写进 LIVING_TOOL_OWNER 组件
+活化时由 `LivingToolFunction#onActivated` 把主人 UUID 写进 `LIVING_TOOL_OWNER` 组件
+（2026-10-04 起，原先是 `setLiving(stack, true, owner)` 内联在网络包里；
+玩家缺席 ⇒ 不写 = 无主，回放走 `FALLBACK_UUID`，见 [api-contract.md §1.5](../system-design/api-contract.md)）
   ⇒ 该组件【持久随物品走】，物品迁移到任何宿主都还在
   ⇒ 任意宿主形态的回放第一步：FakePlayerCache.get(level, getToolOwner(stack))
   ⇒ fake.syncOwnerAttributes()：按 UUID 找到主人 → 复制白名单修饰符 → 出手时生效
