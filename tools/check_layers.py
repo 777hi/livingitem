@@ -28,6 +28,7 @@ R3  领域（`living/domain/*`）之间应尽量不互相依赖。
 from __future__ import annotations
 
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -36,18 +37,47 @@ import gen_code_map as G  # noqa: E402  —— 复用它的 LAYERS 表与解析�
 ROOT = G.ROOT
 BASELINE = os.path.join(ROOT, "tools", "layer_baseline.txt")
 
-R1, R2, R3 = "module", "mixin", "domain"
+R1, R2, R3, R4 = "module", "mixin", "domain", "registry"
 TITLES = {
     R1: "R1 跨模块方向违规（下层依赖上层）",
     R2: "R2 Mixin 位置违规（只能声明在 L4 / L5）",
     R3: "R3 领域互依赖（living/domain/* 之间）",
+    R4: "R4 注册入口不唯一（注册调用散落在 *Registration.java 之外）",
 }
 # 规则顺序固定，便于基线文件 diff
-ORDER = (R1, R2, R3)
+ORDER = (R1, R2, R3, R4)
+
+# ---------------------------------------------------------------- R4 的注册方法清单
+#
+# ⚠️ **这是显式清单，不是自动发现** —— 自动发现会把 `CropClassifier.registerManualSeed`、
+# `PerfMetrics.addLivingItem` 这类**内部装表方法**误判成注册表（实测 30 个候选里大半是误报）。
+# 新增注册表时在这里登记一行；**清单里写了但代码里没有 ⇒ 校验失败**（防清单过期）。
+#
+# 判据：**注册方法的调用点必须落在 `*Registration.java`，或该方法自己的声明文件里。**
+# 为什么这条重要：它让「注册表有哪些成员」=「有哪些 *Registration 文件」——
+# **人 / AI 都能一眼枚举，不需要静态分析**（注册式关系在图上没有边）。
+#
+# ⚠️ **只收「成员注册表（SPI 型）」—— 注册的是「谁实现了这个接口」，成员是**代码**。**
+# **不收「规则表（数据型）」**（如 `ContainerCompatibilityConfig.register`）：它注册的是
+# **数据条目**（来源是 JSON / 命令），成员从**配置文件**枚举 —— 不是这条规则管的事。
+# 第一次跑 R4 就是靠这个区分收窄的（见 docs/guides/code-map.md §6）。
+REGISTRY_METHODS = [
+    "LivingItemManager.registerFunction",
+    "InteractionRegistry.register",
+    "InteractionRegistry.registerHandler",
+    "InteractionPredicates.register",
+    "FluidFlowBehaviors.register",
+    "SlotInteractions.register",
+    "SlotAccessorFactory.registerProvider",
+    "ContainerSnapshot.registerProvider",
+    "LivingIconRegistry.register",
+]
+REGISTRY_RE = re.compile(
+    r"\b(" + "|".join(m.replace(".", r"\s*\.\s*") for m in REGISTRY_METHODS) + r")\s*\(")
 
 
-def collect() -> dict[str, dict[tuple[str, str], int]]:
-    """返回 {规则: {(源, 目标): 条数}}。"""
+def collect() -> tuple[dict[str, dict[tuple[str, str], int]], list[str]]:
+    """返回 ({规则: {(源, 目标): 条数}}, 清单里已不存在的注册方法)。"""
     files = [G.parse_file(p) for p in G.collect_java()]
     graph = G.build_graph(files)
 
@@ -70,7 +100,24 @@ def collect() -> dict[str, dict[tuple[str, str], int]]:
         if G.layer_of(f["module"]) not in (4, 5):
             out[R2][(f["pkg"] + "." + f["name"], f["module"])] = 1
 
-    return out
+    # R4：注册方法的调用点必须落在 `*Registration.java`，或该方法**自己的声明文件**里。
+    # 为什么这条重要：注册式关系在图上没有边（注册表不静态认识成员）——
+    # 把调用点收敛到 Registration 文件后，「注册表有哪些成员」= 「有哪些 *Registration 文件」，
+    # 人和 AI 都能一眼枚举。
+    decl = {f["name"]: f["path"] for f in files if f["kind"] != "file"}
+    for f in files:
+        if f["kind"] == "file":
+            continue
+        for m in REGISTRY_RE.finditer(f["code"]):
+            method = re.sub(r"\s*\.\s*", ".", m.group(1))
+            owner = method.split(".", 1)[0]
+            if f["path"].endswith("Registration.java") or f["path"] == decl.get(owner):
+                continue
+            key = (method, f["path"])
+            out[R4][key] = out[R4].get(key, 0) + 1
+
+    stale = [m for m in REGISTRY_METHODS if m.split(".", 1)[0] not in decl]
+    return out, stale
 
 
 def read_baseline() -> dict[str, dict[tuple[str, str], int]]:
@@ -116,7 +163,7 @@ def main() -> int:
     show_only = "--show" in sys.argv
     update = "--update-baseline" in sys.argv
 
-    cur = collect()
+    cur, stale = collect()
     totals = {k: (sum(cur[k].values()), len(cur[k])) for k in ORDER}
 
     print("=== 架构分层校验（tools/check_layers.py）===\n")
@@ -124,6 +171,10 @@ def main() -> int:
         n, pairs = totals[k]
         flag = "OK " if n == 0 else "!! "
         print("%s%s   %3d 条 / %d 对" % (flag, TITLES[k], n, pairs))
+    if stale:
+        print("\n🔴 注册方法清单已过期（清单里有、代码里找不到）—— 检查会静默失效，必须修：")
+        for m in stale:
+            print("   %s" % m)
     print()
 
     if show_only or update:
@@ -182,6 +233,9 @@ def main() -> int:
     if added:
         print("\n✗ 失败：基线只允许减少，不允许增加。")
         print("  如果这是**有意的**架构决策，跑 `--update-baseline` 显式接受它。")
+        return 1
+    if stale:
+        print("\n✗ 失败：注册方法清单过期 —— 先修 `REGISTRY_METHODS`（清单失效 = 规则失效）。")
         return 1
     if shrunk:
         print("\n✓ 通过（有已消除项，记得收紧基线）")

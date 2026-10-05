@@ -144,8 +144,34 @@ python tools/check_layers.py --update-baseline   # 修完后收紧基线
 | **R1** | 跨模块依赖只能「上层 → 下层」；**下层依赖上层 = 违规** |
 | **R2** | `@Mixin` 只能声明在 **L4 / L5** —— 挂原版钩子必须关在接线层 |
 | **R3** | 领域（`living/domain/*`）之间应尽量不互相依赖 |
+| **R4** | **注册方法的调用点必须收敛到 `*Registration.java`**（或该方法自己的声明文件） |
 
-🔑 **棘轮机制（为什么现在就能用）**：项目当前已有违规，一次性修完不现实。
+### 6.1 R4：为什么它能治「注册式关系在图上没有边」
+
+注册表（`LivingItemManager` / `InteractionRegistry` / `FluidFlowBehaviors` …）**静态上不认识自己的成员**
+—— 成员是运行时注册进来的，图上没有边。R4 把这件事反过来解：
+
+> **只要「注册调用只能出现在 `*Registration.java` 里」，那么
+> 「注册表有哪些成员」就等价于「有哪些 `*Registration` 文件」** ——
+> 人和 AI 都能一眼枚举完，**不需要静态分析**。
+
+实测（2026-10-06）：`LivingItemManager.registerFunction` 的 **21 处调用全部落在 `*Registration.java`**，
+零例外；`InteractionRegistry.registerHandler` 11 处同理。⇒ 这条约定**现在就成立**，
+加检查是零成本，作用是把约定**锁死**。
+
+⚠️ **R4 只管「成员注册表（SPI 型）」—— 注册的是「谁实现了这个接口」，成员是代码。**
+**不管「规则表（数据型）」**：如 `ContainerCompatibilityConfig.register` 注册的是**数据条目**
+（来源是 JSON / 命令），成员要从**配置文件**枚举，不是这条规则的事。
+（第一次跑 R4 正是靠这个区分收窄的 —— 它报了 3 处，查下来是规则表，于是把它移出清单。）
+
+⚠️ **清单是显式的，不自动发现**：自动发现会把 `CropClassifier.registerManualSeed`、
+`PerfMetrics.addLivingItem` 这类**内部装表方法**误判成注册表（实测 30 个候选里大半是误报）。
+所以 `REGISTRY_METHODS` 写在 `check_layers.py` 顶部，**新增注册表时登记一行**；
+**清单里写了但代码里没有 ⇒ 校验失败**（防清单过期 —— 清单失效 = 规则失效）。
+
+### 6.2 棘轮机制（为什么现在就能用）
+
+项目当前已有违规，一次性修完不现实。
 所以 `tools/layer_baseline.txt` 记录**已存在的违规** —— **只允许减少、不允许增加**。
 新增违规 ⇒ 退出 1；修掉一批后跑 `--update-baseline` 收紧。
 

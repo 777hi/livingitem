@@ -305,6 +305,9 @@ def parse_file(path: str) -> dict:
         # 精确标识符集合 —— 不能用子串匹配，否则 LivingItem 会把
         # LivingItemFunction / LivingItemManager 全算成自己的引用（实测 154 条假上游）。
         "tokens": set(re.findall(r"[A-Za-z_$][\w$]*", code)),
+        # 去噪后的正文 —— 供 check_layers.py 扫「注册方法调用点」用
+        # （不能拿 tokens 扫，那是无位置信息的集合）
+        "code": code,
         "mixins": sorted(mixins),
     }
 
