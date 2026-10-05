@@ -1,6 +1,7 @@
 package com.qiqi.li.living.domain.water;
 
 import net.minecraft.world.item.ItemStack;
+import net.neoforged.neoforge.fluids.FluidType;
 
 /**
  * 流体流动行为（1b-2 契约）—— 框架向流体侧要的「行为参数」。
@@ -96,4 +97,28 @@ public interface FluidFlowBehavior {
     default boolean consumesSourceOnTransform(ItemStack input) {
         return false;
     }
+
+    // ── 活熔岩接缝（2026-10-05/06，流体侧填行为）────────────────
+
+    /**
+     * 焚毁判定（引擎每 tick 对该流体各格上的非活物品询问）：
+     * {@link IncinerateResult#SURVIVE} 存活共存、{@link IncinerateResult#BURN} 焚毁、
+     * {@link IncinerateResult#SPAWN_SOURCE} 消耗物品并在该格诞生一个本流体源（新配方）。
+     * 默认 {@code SURVIVE}（水等流体不焚毁）。
+     */
+    default IncinerateResult incinerateResult(ItemStack input) {
+        return IncinerateResult.SURVIVE;
+    }
+
+    /**
+     * 前沿反应（引擎在生长前沿<b>新现格</b>四邻出现异种流体时询问）：
+     * 返回产物物品（落在该格、流体退去），{@code null} = 不反应（正常流入）。
+     * 默认 {@code null}。活熔岩对水：圆石（原版 shouldSpreadLiquid 的容器映射）。
+     */
+    default ItemStack frontierReaction(FluidType neighborFluid) {
+        return null;
+    }
+
+    /** 焚毁/源诞生的判定结果（机制一/四）。 */
+    enum IncinerateResult { SURVIVE, BURN, SPAWN_SOURCE }
 }

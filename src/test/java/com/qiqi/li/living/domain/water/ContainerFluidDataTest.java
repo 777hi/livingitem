@@ -21,6 +21,7 @@ import com.qiqi.li.living.container.TickContext;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.material.Fluids;
+import net.neoforged.neoforge.fluids.FluidType;
 import net.neoforged.neoforge.items.IItemHandlerModifiable;
 
 /**
@@ -500,9 +501,27 @@ class ContainerFluidDataTest {
 
     // ── 蔓延时序化：慢流体（2026-10-05）────────────────────
 
-    /** 注册慢流体（岩浆 FluidType）：flowSpeed 10、maxLevel 3 —— CA 渐进生长。 */
+    /** 注册慢流体（岩浆 FluidType）：flowSpeed 10、maxLevel 3 + 焚毁/前沿反应 —— CA 渐进生长。 */
     private static void registerSlowLava() {
-        FluidFlowBehaviors.register(Fluids.LAVA.getFluidType(), FluidFlowBehavior.flowing(3, 10));
+        FluidFlowBehaviors.register(Fluids.LAVA.getFluidType(), new FluidFlowBehavior() {
+            @Override public boolean canFlow() { return true; }
+            @Override public int maxLevel() { return 3; }
+            @Override public int flowSpeed() { return 10; }
+            @Override public IncinerateResult incinerateResult(ItemStack item) {
+                if (isStoneFamilyFull(item)) return IncinerateResult.SPAWN_SOURCE;
+                if (item.has(net.minecraft.core.component.DataComponents.FIRE_RESISTANT)) return IncinerateResult.SURVIVE;
+                return IncinerateResult.BURN;
+            }
+            @Override public ItemStack frontierReaction(FluidType neighbor) {
+                return neighbor == Fluids.WATER.getFluidType()
+                    ? new ItemStack(Items.COBBLESTONE) : null;
+            }
+        });
+    }
+
+    private static boolean isStoneFamilyFull(ItemStack item) {
+        return (item.is(Items.COBBLESTONE) || item.is(Items.STONE) || item.is(Items.DEEPSLATE))
+            && item.getCount() >= item.getMaxStackSize();
     }
 
     @Test
@@ -587,6 +606,76 @@ class ContainerFluidDataTest {
         assertEquals(8, fluid.getFlows().size(), "充分时间后收敛到全距（slot 0..7）");
     }
 
+    // ── 活熔岩：刷石机 + 焚毁/源诞生（2026-10-06）────────────
+
+    @Test
+    @DisplayName("㉝ 刷石机：熔岩前沿遇水凝固为圆石（frontierReaction），固墙阻隔两侧")
+    void frontierReaction_cobblestoneAtContact() {
+        registerSlowLava();   // 岩浆 flowing(3, 10)
+        var ctx = row();
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(0, Fluids.LAVA.getFluidType());
+        fluid.registerGeneratedSource(4, Fluids.WATER.getFluidType());
+
+        for (int t = 0; t < 45; t++) fluid.tick(ctx);
+
+        boolean hasCobble = false;
+        for (int i = 0; i < 9; i++) if (ctx.getItem(i).is(Items.COBBLESTONE)) hasCobble = true;
+        assertTrue(hasCobble, "熔岩前沿遇水 ⇒ 圆石凝固");
+        assertTrue(fluid.isSource(0) && fluid.isSource(4), "两侧源保留");
+        assertFalse(fluid.isSource(3), "接触格熔岩已凝固退去");
+    }
+
+    @Test
+    @DisplayName("㉞ 焚毁→源诞生：熔岩流动格上的满组石头系物品 ⇒ 该格诞生活熔岩源（新配方）")
+    void incinerate_fullStoneStack_spawnsLavaSource() {
+        registerSlowLava();   // 岩浆 flowing(3, 10) + 焚毁/前沿反应
+        FakeHandler h = new FakeHandler(9);
+        var ctx = new SimpleContainerContext(h);
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(0, Fluids.LAVA.getFluidType());
+        h.slots[1] = new ItemStack(Items.STONE, 64);
+
+        fluid.tick(ctx);
+
+        assertTrue(fluid.isGeneratedSource(1), "满组石头喂养 ⇒ 该格诞生活熔岩源");
+        assertTrue(ctx.getItem(1).isEmpty(), "石头被消耗");
+        assertTrue(fluid.isSource(1), "新生源立即可用");
+    }
+
+    @Test
+    @DisplayName("㉟ 部分石头堆焚毁：不满足满组 ⇒ 焚毁不生源")
+    void incinerate_partialStoneStack_burns() {
+        registerSlowLava();
+        FakeHandler h = new FakeHandler(9);
+        var ctx = new SimpleContainerContext(h);
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(0, Fluids.LAVA.getFluidType());
+        h.slots[1] = new ItemStack(Items.STONE, 16);
+
+        fluid.tick(ctx);
+
+        assertTrue(ctx.getItem(1).isEmpty(), "部分石头堆焚毁");
+        assertFalse(fluid.isGeneratedSource(1), "不满组 ⇒ 不生源（slot 0 是测试自带的源，不能查 hasGeneratedSources）");
+    }
+
+    @Test
+    @DisplayName("㊱ 防火物品存活：FIRE_RESISTANT 组件物品在熔岩格共存不焚毁")
+    void incinerate_fireResistant_survives() {
+        registerSlowLava();
+        FakeHandler h = new FakeHandler(9);
+        var ctx = new SimpleContainerContext(h);
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(0, Fluids.LAVA.getFluidType());
+        // 下界合金锭 = 原版 fireResistant（DataComponents.FIRE_RESISTANT）物品
+        // ⚠️ 附魔金苹果不防火（原版只有 rarity/food/glint 组件）——别拿它当防火样本
+        h.slots[1] = new ItemStack(Items.NETHERITE_INGOT);
+
+        fluid.tick(ctx);
+
+        assertEquals(Items.NETHERITE_INGOT, ctx.getItem(1).getItem(), "防火物品存活");
+    }
+
     @Test
     @DisplayName("㉓ 相邻两源不繁殖：slot 2 只有 1 个源邻居 ⇒ 不晋升（原版口径）")
     void adjacentSources_doNotPromote() {
@@ -644,9 +733,7 @@ class ContainerFluidDataTest {
         var ctx = row(new ItemStack(Items.BUCKET));
         var fluid = new ContainerFluidData();
         fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
-        System.out.println("[DBG-T0] before tick: slot0=" + ctx.getItem(0) + " isLiving=" + LivingItemManager.isLivingItem(ctx.getItem(0)));
         fluid.tick(ctx);
-        System.out.println("[DBG-T1] after tick: slot0=" + ctx.getItem(0));
 
         assertEquals(Items.WATER_BUCKET, ctx.getItem(0).getItem(), "转化为水桶");
         assertFalse(fluid.hasGeneratedSources(), "转化消耗了源（单源不再无限产水桶）");

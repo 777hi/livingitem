@@ -242,11 +242,15 @@ public class ContainerFluidData {
         Map<Integer, FlowEntry> targets = computeTargets(containerSize, width, ctx);
 
         // 实际层：flows 向目标推进（生长按流体节拍渐进，移除/源即时）
+        unmarkMinedSolidCells(ctx);
         pruneActual(targets);
         ensureSourceCells(targets);
         advanceGrowth(targets, containerSize, width, ctx);
 
-        transformSourceItems(ctx); // 1b-2 接缝：每流体拍在源格问行为「是否转化」
+        transformSourceItems(ctx);   // 机制三：源格 = 转化台（表条目，源格不焚毁）
+        incinerateFlowItems(ctx);    // 机制一：熔岩流动格非活物品焚毁/源诞生（石头系满组）
+        reactFrontiers(ctx);         // 刷石机：熔岩格四邻有水 ⇒ 凝固产物 + 固墙
+
 
         if (tickCounter % FLOW_STEP_TICKS == 0) {
             pushItems(ctx, containerSize, width);
@@ -255,6 +259,104 @@ public class ContainerFluidData {
 
     /** 每流体推进节拍记忆（tickCounter）；跨存档不保留（重进流体重新生长，已拍板）。 */
     private final Map<FluidType, Integer> lastAdvance = new HashMap<>();
+
+    /**
+     * 凝固墙（2026-10-06）—— 前沿反应产物（圆石/黑曜石物品）所在的格：
+     * 两种流体的 BFS 都不再进入（原版：反应产物是实体方块，阻挡两侧流体）。
+     * 挖走产物 ⇒ 下一拍解封 ⇒ 重新涌入/反应（刷石机再生）。
+     * 跨存档不保留：重载后产物重新凝固（视觉自愈，可接受）。
+     */
+    private final Map<Integer, ItemStack> solidified = new HashMap<>();
+
+    /**
+     * 机制一·焚毁（2026-10-06）：<b>流动</b>熔岩格上的非活物品按行为判定处置——
+     * {@code BURN} 销毁、{@code SPAWN_SOURCE} 消耗满组石头系物品并在该格诞生活熔岩源（新配方）。
+     *
+     * <p>⚠️ 源格 = 转化台（机制三），不焚毁 —— 转化产物（熔岩桶等）要存活到被漏斗抽走。
+     * 防火物品（原版 {@code fireResistant}，下界合金系）存活共存。
+     * 活物品不进入熔岩格（阻挡蔓延），不在本判定内。</p>
+     *
+     * <p>{@code SPAWN_SOURCE} 诞生的源<b>当拍即可用</b>（对齐「源即时」不变量：
+     * 直接改写实际层流表，不等下一拍 {@link #ensureSourceCells}）。</p>
+     */
+    private void incinerateFlowItems(ContainerContext ctx) {
+        for (var e : flows.entrySet()) {
+            FlowEntry fe = e.getValue();
+            if (fe.isSource()) continue;   // 源格 = 转化台，不焚毁
+            FluidFlowBehavior behavior = FluidFlowBehaviors.of(fe.fluid());
+            if (!behavior.canFlow()) continue;   // 静止流体（未注册等）不焚毁
+            int slot = e.getKey();
+            ItemStack item = ctx.getItem(slot);
+            if (item.isEmpty() || LivingItemManager.isLivingItem(item)) continue;
+            switch (behavior.incinerateResult(item)) {
+                case BURN -> ctx.setItem(slot, ItemStack.EMPTY);
+                case SPAWN_SOURCE -> {
+                    ctx.setItem(slot, ItemStack.EMPTY);
+                    registerGeneratedSource(slot, fe.fluid());
+                    // 源即时：实际层当拍改写为源（渲染/转化/汲倒查询立即正确，不等下一拍）
+                    flows.put(slot, new FlowEntry(SOURCE_LEVEL, true, -1, fe.fluid()));
+                }
+                default -> { }
+            }
+        }
+    }
+
+    /**
+     * 刷石机·凝固反应（2026-10-06）：熔岩格四邻有水 ⇒ 该格熔岩退去、产物物品凝固落格、
+     * 该格固墙（两侧流体不再进入）。挖走产物 ⇒ 解封 ⇒ 重新涌入/反应（原版刷石机再生）。
+     * ⚠️ 只处理熔岩格——水格不反应（对齐原版：岩浆把自己转化掉，水不动）。
+     */
+    private void reactFrontiers(ContainerContext ctx) {
+        record Reaction(int slot, ItemStack product, boolean wasSource) {}
+        List<Reaction> reactions = new ArrayList<>();
+
+        for (var e : flows.entrySet()) {
+            FlowEntry fe = e.getValue();
+            FluidType fluid = fe.fluid();
+            FluidFlowBehavior behavior = FluidFlowBehaviors.of(fluid);
+            int slot = e.getKey();
+            // 异种流体邻居 ⇒ 问本格行为「前沿反应」（活熔岩对水：圆石）；null = 共存不反应
+            FluidType reactionNeighbor = null;
+            for (int n : ContainerContext.getNeighbors(slot, ctx.getSize(), ctx.getWidth())) {
+                FlowEntry neighbor = flows.get(n);
+                if (neighbor == null || neighbor.fluid() == fluid) continue;
+                if (behavior.frontierReaction(neighbor.fluid()) != null) {
+                    reactionNeighbor = neighbor.fluid();
+                    break;
+                }
+            }
+            if (reactionNeighbor == null) continue;
+
+            ItemStack product = behavior.frontierReaction(reactionNeighbor);
+            reactions.add(new Reaction(slot, product, fe.isSource()));
+        }
+
+        for (Reaction r : reactions) {
+            ItemStack existing = ctx.getItem(r.slot());
+            if (existing.isEmpty()) {
+                ctx.setItem(r.slot(), r.product());
+            } else if (ItemStack.isSameItemSameComponents(existing, r.product())
+                    && existing.getCount() < existing.getMaxStackSize()) {
+                existing.grow(1);
+                ctx.setItem(r.slot(), existing);
+            } else {
+                continue;   // 产物放不下（异种物品占据）⇒ 不反应不固墙
+            }
+            if (r.wasSource()) {
+                removeGeneratedSource(r.slot());   // 岩浆源被反应湮灭（产物=黑曜石）
+            }
+            flows.remove(r.slot());
+            solidified.put(r.slot(), r.product());
+        }
+    }
+
+    /** 固墙解封检查：产物被挖走（槽位物品变化/清空）⇒ 解封，下一拍重新涌入。 */
+    private void unmarkMinedSolidCells(ContainerContext ctx) {
+        solidified.entrySet().removeIf(e -> {
+            ItemStack item = ctx.getItem(e.getKey());
+            return item.isEmpty() || !ItemStack.isSameItemSameComponents(item, e.getValue());
+        });
+    }
 
     /**
      * 转化（1b-2 接缝）：每流体拍在<b>源格</b>问行为「格上物品是否转化」。
@@ -470,6 +572,7 @@ public class ContainerFluidData {
 
                 ItemStack item = ctx.getItem(neighbor);
                 if (LivingItemManager.isLivingItem(item)) continue;
+                if (solidified.containsKey(neighbor)) continue;   // 凝固墙：产物所在格阻挡两侧流体
 
                 int newLevel = fe.level + 1;
                 newFlows.put(neighbor, new FlowEntry(newLevel, false, slot, fe.fluid));

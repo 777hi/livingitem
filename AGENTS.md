@@ -91,7 +91,7 @@ SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 | 子系统 | 概述 | 详细文档 |
 |--------|------|----------|
 | **活TNT** | 引信倒计时 + 爆炸，威力随数量缩放，三模式（普通/大当量/超级爆炸）；破坏按区块分帧 + 待炸账本 | [living-tnt-tech.md](docs/tech/living-tnt-tech.md) |
-| **活流体**（原「活水桶」） | 容器级流体引擎（`ContainerFluidData`：派生源/蔓延/晋升/挤没/转化/推动，`LivingFluidFunction` 自维持驱动）+ 行为分档 + 转化表；**活桶**（桶家族 × 活标记）是系统的激活器/载体（类比红电的活铜块们），子系统关系见 §1 | [docs/tech/living-fluid-tech.md](docs/tech/living-fluid-tech.md) |
+| **活流体**（原「活水桶」） | 容器级流体引擎（`ContainerFluidData`：派生源/蔓延/晋升/挤没/转化/推动，`LivingFluidFunction` 自维持驱动）+ 行为分档 + 转化表；**活桶**（桶家族 × 活标记）是系统的激活器/载体（类比红电的活铜块们），子系统关系见 §1；**活熔岩** = 接入的第二条会流动流体（引擎零改动）：焚毁/源诞生 + 前沿反应·刷石机，见 §3.7 | [docs/tech/living-fluid-tech.md](docs/tech/living-fluid-tech.md) |
 | **活熔炉** | 配方匹配 + 燃料消耗 + 方向槽位配置 | [living-furnace-tech.md](docs/tech/living-furnace-tech.md) |
 | **活漏斗** | TransferPipeline 统一传输 + 黑白名单 + 跨容器 + WASD 配置 | [living-hopper-tech.md](docs/tech/living-hopper-tech.md) |
 | **活箱子** | 堆叠倍增 + UUID 映射 + LRU 缓存 + 磁盘持久化 | [living-chest-tech.md](docs/tech/living-chest-tech.md) |
@@ -166,8 +166,8 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 475 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
-全绿基线：`468 passed / 0 failed / 1 skipped`（2026-10-05 F-1：`ContainerContextsTest` 新增 2 项 ——
+**合计测试用例 479 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
+全绿基线：`478 passed / 0 failed / 1 skipped`（2026-10-05 F-1：`ContainerContextsTest` 新增 2 项 ——
 末影箱菜单槽位可解析 / 非容器槽位仍返回 null；
 2026-10-04 活化时机钩子收编：
 `ActivationHookTest` 新增 7 项 —— 派发参数原样送达 / 顺序不变量 / 未认领物品不派发 /
@@ -207,6 +207,7 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-06 | ✅ **活熔岩接入（第三条流体，引擎零改动）**：`WaterRegistration` 注册熔岩行为（参数全派生原版：maxLevel 3 / 30t·格 / 永不晋升）+ 转化表 `lava_empty_bucket`；机制① **焚毁**（满组石头系 → 诞生活熔岩源「新配方」/ 防火物品共存 / 其余销毁，源格不焚毁）+ 机制② **前沿反应·刷石机**（熔岩遇水 → 圆石落格 + **凝固墙**，挖走即解封再生）。⚠️ 岩浆不晋升 ⇒ 消耗即耗尽（矿脉型，与水的三连源农场对偶）。**479 测试全绿** | `living-fluid-tech.md` §3.7；`changelog.md`（2026-10-06） |
 | 2026-10-06 | ✅ **实测三连修 + 转化消耗源**：① 末影箱渲染泄漏（缓存键同前缀撞车 ⇒ `FluidFlowClientCache` 三分路由）；② 创造汲水光标不变身（GUI 语义改光标变身/倒水不消耗）；③ 转化消耗源（`consumeSource` 表标记 + 契约 + 引擎；三连源晋升再生 = 水桶农场闭环）。🔴 附带发现 `setItem` 抽干活引用的基建坑。**475 测试全绿** | `changelog.md`（2026-10-06） |
 | 2026-10-05 | 🛠 **新增开发工具 `tools/gen_code_map.py`（代码关系图）**：从源码**派生**可交互关系图，回答「改这个类会牵动谁」（类 / 包 / **层次**三视图 + **上游/下游高亮** + **分层违规报告**）。🔴 **定位 = 派生视图，不是第二份真相** —— 产物落 `build/`（gitignore），唯一真相永远是 `src/`。**未改动 mod 代码** | `docs/guides/code-map.md` |
 | 2026-10-05 | **框架侧待办移交收口（F-1 + F-2）**：**F-1** `ContainerContexts.resolve` 补**末影箱分支**（`PlayerEnderChestContainer` —— 原版末影箱 GUI 的槽位容器不是 BE）⇒ 解锁末影箱汲/倒；`EnderChestContainerContext` 迁出为独立类（避免共享内核反向依赖 God class）。**F-2** 新 `living/util/StaticCacheRegistry`（static 缓存清理注册表，首批登记 7+2 项）—— 把「自愿挂靠（靠记性）」改为「**登记一行即被生命周期覆盖**」；🔴 **A1 铁律成文**（infra §3.4）。**469 测试全绿** | `living-item-infrastructure.md` §3.4；`archive/infrastructure-refactoring-plan.md` §7 |
@@ -216,7 +217,7 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 | 2026-10-04 | **流体侧批次三（F4 转化表 JSON 化）**：新 `FluidTransformTable`（三层来源加载器 —— 内置 assets + 玩家 config 差异：追加/按 id 覆盖/removed 删除；条目 = 流体/输入/输出，同容器水/岩浆各走各的）+ 水行为 `transformItem` **委托查表**（删硬编码）+ 内置 17 条（水-空桶→水桶 + 16 色混凝土粉末→混凝土）+ 指令 `/livingitem transforms reload/list`。**443 测试全绿** | `docs/tech/living-fluid-tech.md` §2.2 |
 | 2026-10-04 | **B.5 第三项：玩家背包 / 末影箱流体落盘（Player attachment）**：新增 `CONTAINER_FLUID_DATA_PLAYER`（`Map<容器键, ContainerFluidData>`，`ContainerFluidData.KEYED_CODEC`）—— 背包 + 末影箱**无 BE 可挂** ⇒ 落 Player（一个玩家两个容器）；`ContainerLivingItemHandler` 读写按 `ownerPlayer(ctx)` 分派。**437 测试全绿** | `docs/tech/living-fluid-tech.md` §2.2；`living-item-infrastructure.md` §8.7 |
 | 2026-10-04 | **Q6 多方块容器边界带「身份解析」收敛（批次 A+B+C，全部完成）+ 稳定层文档**：服务端 `container/ContainerContexts.java` 共享内核（`resolve`/`isViewing`/`ownsContainer`/`isSameSlotSpace`，5 个消费者改薄委托）+ **客户端对偶** `client/util/ClientSlotResolve.java`（`GuiInteractionHelper`/`AbstractContainerScreenMixin` 改薄委托，因 `SlotWrapperAccessor` 是客户端 Mixin 而**被迫分居两侧**）。**`grep CompoundContainer` 代码特判收敛到 1 处**；新增 `ContainerContextsTest` 10 项（**436 测试全绿**）。**新建稳定层文档** `container-identity.md` + tooltip/hopper/farmland/infra 旧教训改指向它 | `container-identity.md`；方案 `infrastructure-refactoring-plan.md` §2.1-Q6 |
-| 2026-10-03 | **框架侧接缝落地（1b-2⑧⑩）**：⑧ **落盘** —— `ContainerFluidData.CODEC`（**只序列化派生源**，桶源/流动表不落）+ `CONTAINER_FLUID_DATA` 附件 `.serialize`；⑩ **引擎接缝** —— `FluidFlowBehavior.shouldPromote(slot, 邻源数)`（`recalculate` 加**晋升收敛循环**）/ `transformItem(item)`（`tick` 每流体拍在源格转化），两条都是 **default no-op ⇒ 现有行为零变化**。⚠️ **背包 Player attachment 仍未做**。**422 测试全绿** | `docs/tech/living-fluid-tech.md` §2.2 |
+
 
 ## 排查铁律：原版机制挡路时
 

@@ -102,6 +102,13 @@
       "fluid": "minecraft:water",
       "input": "minecraft:black_concrete_powder",
       "output": "minecraft:black_concrete"
+    },
+    {
+      "id": "lava_empty_bucket",
+      "fluid": "minecraft:lava",
+      "input": "minecraft:bucket",
+      "output": "minecraft:lava_bucket",
+      "consumeSource": true
     }
   ]
 }
