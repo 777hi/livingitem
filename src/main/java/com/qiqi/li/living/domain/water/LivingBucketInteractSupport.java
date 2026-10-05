@@ -94,7 +94,12 @@ public final class LivingBucketInteractSupport {
         net.minecraft.world.level.material.Fluid fluidHolder = representativeFluid(fluid);
         if (fluidHolder == null) return;   // 未知流体（理论上不可达）—— 保守放弃，不丢源
         fluidData.removeGeneratedSource(containerSlot);
-        // 换宿主模型：汲满后变水桶/岩浆桶形态（fluid.getBucket() 注册映射）⇒ 写回光标
-        player.containerMenu.setCarried(LivingBucketFunction.withFluid(carried, fluidHolder));
+        // 数量语义对齐原版 ItemUtils.createFilledResult：空桶栈只消耗一个空桶，
+        // 装好的桶进背包（放不下掉落）—— 光标堆叠多个活空桶汲水不再丢桶
+        ItemStack filled = new ItemStack(fluidHolder.getBucket());
+        filled.applyComponents(carried.getComponents());   // 活标记
+        filled.set(net.minecraft.core.component.DataComponents.MAX_STACK_SIZE,
+            new ItemStack(filled.getItem()).getMaxStackSize());   // 同 withFluid：形态自然堆叠
+        player.containerMenu.setCarried(net.minecraft.world.item.ItemUtils.createFilledResult(carried, player, filled));
     }
 }

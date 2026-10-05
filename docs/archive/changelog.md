@@ -17,6 +17,16 @@
 
 ## 2026-10-04
 
+- ✅ **实测两连修**（**469 测试全绿**）：
+  ① **活水桶仍不能往世界倒水**——事件路径缺口：倒水必然对着方块面右键，走原版
+  `useItemOn → BucketItem.useOn`（放水分支），而修复只订阅了 `RightClickItem`
+  （`use()` 路径——空桶汲水恰好走这条所以能用）。补 `RightClickBlock` 拦截：
+  对齐原版 filled 分支（`emptyContents` + 位置规则 + 创造不消耗），⚠️ 只拦
+  **非交互方块**（`MenuProvider` 方块放行原版开界面——方块 use 消费后原版 useOn
+  本就不执行，无 swap 风险）；
+  ② **光标堆叠多个活空桶汲水丢桶**——`withFluid` 的
+  `min(数量, 目标堆叠)` 截断（16 桶变 1 桶）；汲/倒堆叠语义改为对齐原版
+  `ItemUtils.createFilledResult`（只耗一个空桶，装好的进背包/掉落）。
 - ✅ **游戏实测四连修**（**470 测试全绿**）：
   ① **满活桶对世界放水**（原暂缓项落地）——对齐原版 `BucketItem.use` filled 分支：
   `emptyContents` + `canBlockContainFluid` 规则（原地可容纳则原地/否则相邻面格）+

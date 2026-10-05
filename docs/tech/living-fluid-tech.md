@@ -168,7 +168,12 @@ vanilla 双箱 = CompoundContainer 单容器天然一网；末影箱路由模式
 空活桶对准 `BucketPickup` 方块右键 → 原版 `pickupBlock`（含「拿走世界水源」语义）+
 `ItemUtils.createFilledResult`（数量/创造模式）+ 结果保留活标记。
 取水闭环的**必要入口**（否则满活桶只能来自汲水 = 死循环）。
-满活桶对世界：暂取消（原版放水会 swap 丢活标记；放世界水应复用 `emptyContents`，后补）。
+**满活桶对世界放水**（2026-10-04）：`PlayerInteractEvent.RightClickBlock` 拦截，
+对齐原版 `BucketItem.useOn` filled 分支——`emptyContents` + 原版位置规则
+（可容纳则原地/否则相邻面格）+ 创造模式不消耗；排空走 `withFluid` 保活标记。
+⚠️ 只拦非交互方块（`MenuProvider` 方块放行原版开界面——方块 use 消费后原版 useOn
+本就不执行，无 swap 风险）。汲水/倒水的**堆叠语义**对齐原版
+`ItemUtils.createFilledResult`（空桶栈只耗一个，装好的进背包）。
 
 ### 5.3 GUI 汲/倒
 

@@ -9,8 +9,12 @@ import net.minecraft.world.item.BucketItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.ItemUtils;
 import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.level.material.Fluid;
+import net.minecraft.world.level.material.Fluids;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.MenuProvider;
 import net.minecraft.world.level.block.BucketPickup;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.gameevent.GameEvent;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
@@ -80,6 +84,44 @@ public final class LivingBucketWorldUse {
         out.set(net.minecraft.core.component.DataComponents.MAX_STACK_SIZE,
             new ItemStack(pickedFilledBucket.getItem()).getMaxStackSize());
         return out;
+    }
+
+    /**
+     * 放水（2026-10-04）：对齐原版 {@code BucketItem.useOn} 的 filled 分支。
+     *
+     * <p>⚠️ 只拦「非交互方块」——{@code MenuProvider} 方块（箱子/熔炉等）放行原版开界面，
+     * 此时原版 {@code useOn} 也不会执行（方块 use 已消费）⇒ 无 swap 风险。
+     * 非交互方块（草/石/泥）取消事件并 {@code emptyContents} 放置，排空走
+     * {@code withFluid} 保活标记；创造模式不消耗。</p>
+     */
+    @SubscribeEvent
+    public static void onRightClickBlock(PlayerInteractEvent.RightClickBlock event) {
+        ItemStack held = event.getItemStack();
+        if (!(LivingBucketFunction.hasFullBucket(held) && held.getItem() instanceof BucketItem bucketItem)) return;
+
+        Level level = event.getLevel();
+        Player player = event.getEntity();
+        BlockHitResult hit = event.getHitVec();
+        BlockPos pos = hit.getBlockPos();
+        BlockState state = level.getBlockState(pos);
+        if (state.getMenuProvider(level, pos) != null) return;   // 交互方块：放行原版开界面
+
+        Direction direction = hit.getDirection();
+        BlockPos placePos = pos.relative(direction);
+        if (!level.mayInteract(player, pos) || !player.mayUseItemAt(placePos, direction, held)) return;
+
+        Fluid fluid = LivingBucketFunction.getBucketFluid(held);
+        BlockPos target = state.isAir() || state.canBeReplaced(fluid) ? pos : placePos;
+
+        event.setCanceled(true);   // 阻断原版 useOn 的 swap（活标记）
+        if (level.isClientSide) return;
+
+        if (bucketItem.emptyContents(player, level, target, hit, held)) {
+            ItemStack result = player.hasInfiniteMaterials()
+                ? held
+                : LivingBucketFunction.withFluid(held, Fluids.EMPTY);
+            player.setItemInHand(event.getHand(), result);
+        }
     }
 
     /** 原版同款视线投射（SOURCE_ONLY）：命中可拾取方块返回结果，否则 null。包级私有供测试。 */
