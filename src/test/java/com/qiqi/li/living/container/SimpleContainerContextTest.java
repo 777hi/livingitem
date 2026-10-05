@@ -440,7 +440,7 @@ class SimpleContainerContextTest {
         @Test
         @DisplayName("崩溃回归（crash-2026-10-04）：末影箱上下文可构造，键 = player_<uuid>_ender_chest")
         void enderChestContext_constructs_stableKey() {
-            var ctx = new ContainerLivingItemHandler.EnderChestContainerContext(
+            var ctx = new EnderChestContainerContext(
                 handler, playerWithUuid("uuid-ender-1"), null);
 
             assertEquals("player_uuid-ender-1_ender_chest", ctx.getContainerKey(),

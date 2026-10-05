@@ -4,8 +4,7 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 
-import com.qiqi.li.living.domain.runtime.LivingItemClientCache;
-import com.qiqi.li.living.domain.water.FluidFlowClientCache;
+import com.qiqi.li.living.util.StaticCacheRegistry;
 
 /**
  * 客户端断连兜底清理（2026-10-04，游戏实测「渲染跨存档残留」）。
@@ -22,7 +21,7 @@ public final class FluidClientCacheCleanup {
 
     @SubscribeEvent
     public static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
-        FluidFlowClientCache.clear();
-        LivingItemClientCache.clear();   // 运行时遥测缓存同病同修（removed() 与断线同竞态）
+        // 清理项集中在 StaticCacheRegistry（F-2，2026-10-05）：登记一行即被覆盖。
+        StaticCacheRegistry.runClient();
     }
 }

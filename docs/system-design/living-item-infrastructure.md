@@ -638,6 +638,19 @@ private final Set<String> reusableKeySet = new HashSet<>();
 
 `findDoubleChestPositions()` 方法通过 `ChestBlock.TYPE` 属性检测大箱子，返回 LEFT 和 RIGHT 两半的位置，用于构建包含两个坐标的 ContainerKey。
 
+### 3.4 进程级 static 缓存的生命周期（F-2，2026-10-05）
+
+单机「退出存档 → 进另一个存档」**不重启 JVM** ⇒ `static` 字段跨存档存活，必须显式清理。
+
+> 🔴 **铁律（A1 成文）：新增 static 缓存 ⇒ 必须在 `StaticCacheRegistry` 登记一行。**
+> - 服务端缓存 → `StaticCacheRegistry.onServerStop(...)`（`ServerStoppedEvent` 时执行，可读 `MinecraftServer` 上下文）；
+> - 客户端缓存 → `StaticCacheRegistry.onClientLogout(...)`（`ClientPlayerNetworkEvent.LoggingOut` 时执行）。
+>
+> 两个生命周期钩子（`LivingItem.onServerStopped` / `FluidClientCacheCleanup.onLoggingOut`）**只调
+> `runServer` / `runClient`，不再往钩子里加**。登记一行即被覆盖 —— 这是把「自愿挂靠（靠记性）」
+> 改为「登记表」的治本：两次漏挂事故（Q3「测试也是调用者」、流体侧 `CLIENT_ACTIVE` 未挂
+> `ServerStopped`）都源于散落挂靠。
+
 ---
 
 ## 4. 容器类型检测与访问

@@ -44,6 +44,7 @@ import java.util.IdentityHashMap;
 import java.util.Set;
 import com.qiqi.li.living.container.ContainerChunkCache;
 import com.qiqi.li.living.container.ContainerLivingItemHandler;
+import com.qiqi.li.living.util.StaticCacheRegistry;
 import com.qiqi.li.living.container.ItemEntityContainerContext;
 import com.qiqi.li.network.LivingTagPacket;
 import com.qiqi.li.network.HopperDirectionPacket;
@@ -64,7 +65,6 @@ import com.qiqi.li.living.api.ActivationRuleConfig;
 import com.qiqi.li.living.interaction.InteractionRuleConfig;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.compat.create.ModCreate;
-import com.qiqi.li.living.domain.tools.LivingToolFakePlayerCache;
 import com.qiqi.li.living.domain.tools.LivingToolHostSync;
 import com.qiqi.li.living.domain.tools.LivingToolFunction;
 import com.qiqi.li.living.domain.tools.LivingToolAssist;
@@ -360,19 +360,9 @@ public class LivingItem {
      */
     @SubscribeEvent
     public void onServerStopped(ServerStoppedEvent event) {
-        EnderChannelRegistry.getInstance().clearAll();
-        ContainerChunkCache.getInstance().clear();
-        ContainerLivingItemHandler.clearAllCaches();
-        // 流体快照同步的「曾下发过」边沿集（2026-10-04）：跨存档不清会在新世界
-        // 对同键容器误发一次空快照（自愈但脏）；有源残留由下方断连清理兜底
-        com.qiqi.li.living.domain.water.FluidFlowServerSync.clearRuntimeState();
-        // 待炸账本的**内存调度表**要清（条目本身随存档走，不需要清）。
-        // ⚠️ 单人游戏「退出存档 → 进另一个存档」不重启 JVM：不清会把上一个维度的调度表带过来。
-        ExplosionLedger.clearAllRuntimeState(event.getServer());
-        // 活工具的 FakePlayer 缓存（L26）：维度+主人 keyed，跨存档必须清
-        LivingToolFakePlayerCache.clear();
-        // 活工具容器同步（K2）：每个玩家的"上次发出内容"，跨存档必须清
-        LivingToolHostSync.clear();
+        // 清理项集中在 StaticCacheRegistry（F-2，2026-10-05）：把「自愿挂靠」改为「登记一行即被覆盖」。
+        // 🔴 新增 static 缓存 ⇒ 去 StaticCacheRegistry.onServerStop 登记一行，不要再往这里加。
+        StaticCacheRegistry.runServer(event.getServer());
         LOGGER.info("Cleared living item caches on server stop");
     }
 

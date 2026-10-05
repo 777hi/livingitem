@@ -37,19 +37,11 @@
    `computeContentSignature` 各遍历一遍全部槽位 ⇒ 合并可**省 50% 扫描**。
    详见 [infrastructure-refactoring-plan.md](archive/infrastructure-refactoring-plan.md) §1.7 / §6.3-B。
 
-## 基础设施：static 缓存生命周期（2026-10-04 跨存档残留事故的后续）
-
-> 背景：单机「退存档 → 进另一存档」不重启 JVM，static 字段跨存档存活；流体侧两个缓存
-> 因此漏了清理挂钩，引发「渲染跨存档残留 + 源复活」两连（changelog 2026-10-04）。
-> 当前存量已审干净。**两条已移交框架侧**（规格见
-> [archive/infrastructure-refactoring-plan.md](archive/infrastructure-refactoring-plan.md) §7 F-2，
-> 含 A1 成文规则）——本节留作背景与出处记录。
-
 ## 活流体（流体侧挂起项，细节以 [idea.md](idea.md) 任务队列为准）
 
-1. **末影箱汲/倒** —— **已移交框架侧**（规格见
-   [archive/infrastructure-refactoring-plan.md](archive/infrastructure-refactoring-plan.md) §7 F-1）；
-   分支合入后流体侧补 flush 派发即通。
+1. **末影箱汲/倒** —— 框架侧 F-1 **已完成**（2026-10-05：`ContainerContexts.resolve` 加末影箱分支，
+   `EnderChestContainerContext` 迁出为独立类）；**待流体侧补 `FluidFlowServerSync.flushAfterTick`
+   第三条派发**（末影箱 `player` 直发）即通。
 2. **岩浆/模组流体接入** —— 一行行为注册 + 转化表条目；**跨流体交互策略需拍板**
    （互不侵犯 vs 框架加钩子，`idea.md` §〇 第 5 条）。
 3. **游戏实测清单** —— 漏斗自动化活锁、多流体同屏渲染、创造模式汲/倒。

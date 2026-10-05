@@ -15,6 +15,18 @@
 
 ---
 
+## 2026-10-05
+
+- ✅ **F-1 末影箱汲/倒解锁**（框架侧，**469 测试全绿**，`ContainerContextsTest` 新增 2 项）：
+  `ContainerContexts.resolve` 补 `PlayerEnderChestContainer` 分支 —— 原版末影箱 GUI 的槽位容器**不是 BE**，
+  这正是它原先走不进「背包 / 单 BE / CompoundContainer」三分支的原因；`EnderChestContainerContext` 从
+  `ContainerLivingItemHandler` 迁出为独立文件（避免共享内核反向依赖 God class）。
+  ⚠️ 流体侧配套：`FluidFlowServerSync.flushAfterTick` 需补第三条派发（末影箱 `player` 直发）即通。
+- ✅ **F-2 static 缓存清理注册表（治本）**：新 `living/util/StaticCacheRegistry`（服务端 / 客户端两张表，
+  首批登记 7 + 2 项）—— 把「自愿挂靠（靠记性）」改为「**登记一行即被生命周期覆盖**」；
+  `LivingItem.onServerStopped` / `FluidClientCacheCleanup.onLoggingOut` 改为只调 `runServer` / `runClient`。
+  🔴 **A1 铁律成文**（infra §3.4）：新增 static 缓存 ⇒ 必须在注册表登记一行。
+
 ## 2026-10-04
 
 - ✅ **活桶世界侧定稿：零拦截**（用户拍板，**467 测试全绿**）。为保活标记而做的

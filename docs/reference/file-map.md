@@ -28,7 +28,8 @@ src/main/java/com/qiqi/li/
 │   │   ├── ContainerSync.java               #   容器同步
 │   │   ├── SlotInfoProvider.java            #   槽位信息提供
 │   │   ├── ContainerIdentity.java           #   容器标识
-│   │   └── LivingContainer.java             #   活容器
+│   │   ├── LivingContainer.java             #   活容器
+│   │   └── EnderChestContainerContext.java  #   末影箱上下文（F-1：tick 主链路 + 菜单槽位反查共用）
 │   │
 │   ├── domain/                              # 领域模块（每个活物品内聚到此）
 │   │   ├── hopper/                           #   活漏斗领域
@@ -181,6 +182,10 @@ src/main/java/com/qiqi/li/
 │   │   ├── LivingComponents.java            #   全部持久化类型注册站（A1 迁入：28 个组件/附件常量；纯注册无逻辑）
 │   │   └── FilterData.java                  #   过滤数据（从 data/ 迁入，跨领域共享；自带 of()/set()）
 │   │
+│   ├── util/                                # 跨领域工具
+│   │   ├── DoubleChestPositions.java        #   大箱子双半箱位置查找（LEFT/RIGHT 规范序）
+│   │   └── StaticCacheRegistry.java         #   进程级 static 缓存清理注册表（F-2：登记一行即被生命周期覆盖）
+│   │
 │   ├── interaction/                         # GUI交互
 │   │   ├── InteractionEntry.java            #   交互规则 record
 │   │   ├── InteractionRegistry.java         #   交互注册表（两趟优先级匹配：精确触发器 > 通配）
@@ -285,7 +290,7 @@ src/test/java/com/qiqi/li/
 │   └── ActivationTargetParsingTest.java       # 活化目标参数解析守卫·物品ID/标签/modid 回写契约 + 反向守卫「StringArgumentType 读不进 : # @」（4 项）
 ├── living/container/
 │   ├── SimpleContainerContextTest.java        # 容器上下文脏槽同步 + 末影箱稳定键构造器（4 项回归）（29 项）
-│   ├── ContainerContextsTest.java             # 边界带共享内核·ownsContainer(单箱实例/大箱CompoundContainer/防跨容器虚影/空集) + isSameSlotSpace(槽位数不一致/越界/同空/同物品/一空一非空/异物品)（10 项）
+│   ├── ContainerContextsTest.java             # 边界带共享内核·ownsContainer(单箱实例/大箱CompoundContainer/防跨容器虚影/空集) + isSameSlotSpace(槽位数不一致/越界/同空/同物品/一空一非空/异物品) + resolve 末影箱分支(F-1)（12 项）
 │   └── ContainerChunkCacheChunkLoadTest.java  # 区块加载守卫·事件不碰世界/延后重扫不丢/限量/不主动加载/只处理ticking区/可观测性（6 项）
 ├── living/domain/tnt/
 │   ├── ExplosionParamsTest.java               # 爆炸参数·位图映射可逆/网格外返回-1/affects=区块AABB∩球体/边界回归(中心在半径外但边缘在球内)/球体全覆盖(半径内每方块所在区块必命中)/网格规模（7 项）

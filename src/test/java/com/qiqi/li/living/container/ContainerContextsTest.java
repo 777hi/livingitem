@@ -1,7 +1,12 @@
 package com.qiqi.li.living.container;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.util.Set;
 
@@ -9,10 +14,14 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.CompoundContainer;
 import net.minecraft.world.SimpleContainer;
+import net.minecraft.world.inventory.PlayerEnderChestContainer;
+import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.items.ItemStackHandler;
 
 /**
@@ -118,6 +127,38 @@ class ContainerContextsTest {
             container.setItem(3, new ItemStack(Items.STONE));
             handler.setStackInSlot(3, new ItemStack(Items.DIRT));
             assertFalse(ContainerContexts.isSameSlotSpace(container, handler, 3));
+        }
+    }
+
+    @Nested
+    @DisplayName("resolve —— 菜单槽位 → tick 上下文（F-1 末影箱分支）")
+    class Resolve {
+
+        @Test
+        @DisplayName("末影箱菜单槽位可解析：PlayerEnderChestContainer → EnderChestContainerContext")
+        void enderChest_resolves() {
+            ServerPlayer player = mock(ServerPlayer.class);
+            when(player.level()).thenReturn(mock(Level.class));
+            when(player.getStringUUID()).thenReturn("uuid-ec");
+
+            // 原版末影箱 GUI 的槽位容器就是 PlayerEnderChestContainer（不是 BE）
+            PlayerEnderChestContainer enderChest = new PlayerEnderChestContainer();
+            when(player.getEnderChestInventory()).thenReturn(enderChest);
+            Slot slot = new Slot(enderChest, 0, 0, 0);
+
+            TickableContainerContext ctx = ContainerContexts.resolve(player, slot);
+            assertNotNull(ctx, "末影箱菜单槽位应能解析（F-1 之前恒 null ⇒ 末影箱汲/倒静默无效）");
+            assertEquals("player_uuid-ec_ender_chest", ctx.getContainerKey());
+        }
+
+        @Test
+        @DisplayName("非容器槽位仍返回 null（不误判）")
+        void unknownContainer_null() {
+            ServerPlayer player = mock(ServerPlayer.class);
+            when(player.level()).thenReturn(mock(Level.class));
+            Slot slot = new Slot(new SimpleContainer(1), 0, 0, 0);
+
+            assertNull(ContainerContexts.resolve(player, slot));
         }
     }
 }

@@ -525,8 +525,15 @@ ContainerContexts
 
 > 本文档主体已归档，但这两件是**新增框架侧待办**，规格在此移交（流体侧游戏实测为验收）。
 > 完成后结论沉淀 `living-item-infrastructure.md`，本节删除。
+>
+> ✅ **F-1 / F-2 已于 2026-10-05 完成**（框架侧）—— 结论已沉淀（F-2 → infra §3.4；F-1 →
+> `ContainerContexts.resolve` + `EnderChestContainerContext` 迁出）。规格留作追溯；**F-3 仍未拍板、不动手**。
 
-### F-1 `ContainerContexts` 补末影箱分支 ⭐（解锁活流体的末影箱汲/倒）
+### F-1 `ContainerContexts` 补末影箱分支 ⭐（解锁活流体的末影箱汲/倒）—— ✅ 已完成 2026-10-05
+
+> **实施**：`resolve` 加 `PlayerEnderChestContainer` 分支；`EnderChestContainerContext` 从
+> `ContainerLivingItemHandler` 迁出为独立文件（避免共享内核反向依赖 God class）；
+> `ContainerContextsTest` 回归 2 项。⚠️ 流体侧配套（`FluidFlowServerSync` 第三条派发）仍需流体侧做。
 
 **现状**：`resolve(player, slot)` 对末影箱菜单返回 null（无分支）——
 `EnderChestContainerContext` 是 `ContainerLivingItemHandler` 的 **private 嵌套类**，
@@ -548,7 +555,11 @@ ContainerContexts
 背包（直发）/ BE（菜单匹配）两条路，分支到位后需补第三条
 （`EnderChestContainerContext.player` 直发）——已登记流体侧 TODO，分支合入即做。
 
-### F-2 缓存清理注册表（TODO.md A2，治本）
+### F-2 缓存清理注册表（TODO.md A2，治本）—— ✅ 已完成 2026-10-05
+
+> **实施**：新 `living/util/StaticCacheRegistry`（服务端 / 客户端两张表，首批登记 7 + 2 项）；
+> `LivingItem.onServerStopped` / `FluidClientCacheCleanup.onLoggingOut` 改为只调 `runServer` / `runClient`；
+> **A1 铁律成文于 infra §3.4**（新增 static 缓存 ⇒ 必须登记一行）。
 
 **背景**：两次漏挂事故（Q3「测试也是调用者」、流体侧 `CLIENT_ACTIVE` 未挂
 `ServerStopped`）。现有清理散落两处：`LivingItem.onServerStopped`（服务端 7 项）+
