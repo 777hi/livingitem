@@ -52,6 +52,10 @@ from collections import defaultdict
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC_ROOT = os.path.join(ROOT, "src", "main", "java")
 BASE_PKG = "com.qiqi.li"
+OWN_PKG = "com.qiqi.li"
+# 是否**本项目** —— 决定要不要套用下面的 `LAYERS` 分层（外部项目没有这套标准）。
+# 由 `--base-pkg` 或自动探测覆盖；base 包不是 `com.qiqi.li` 时自动置 False。
+IS_OWN_PROJECT = True
 
 # --------------------------------------------------------------------------- 目标架构分层
 #
@@ -77,7 +81,7 @@ for _m in ("living/container", "living/perf", "living/util", "logging"):
 for _m in ("living/compat", "living/components", "living/debug", "living/function",
            "living/interaction", "living/transfer"):
     MODULE_LAYER[_m] = 2
-for _m in ("com/qiqi", "living/command", "living/mixin", "network"):
+for _m in ("(root)", "living/command", "living/mixin", "network"):
     MODULE_LAYER[_m] = 4
 for _m in ("client/gui", "client/icon", "client/input", "client/mixin",
            "client/mixinsupport", "client/render", "client/util"):
@@ -87,7 +91,13 @@ UNMAPPED: set[str] = set()
 
 
 def layer_of(module: str) -> int:
-    """模块 → 目标层号。未登记的模块落到 L3 并记入 UNMAPPED（main 里告警）。"""
+    """模块 → 目标层号。未登记的模块落到 L3 并记入 UNMAPPED（main 里告警）。
+
+    外部项目（`IS_OWN_PROJECT=False`）没有这套分层标准 ⇒ 一律返回 0，
+    且 `build_graph` 不会输出 `layers`（前端据此隐藏「层次视图」）。
+    """
+    if not IS_OWN_PROJECT:
+        return 0
     if module.startswith("living/domain/"):
         return 3
     lay = MODULE_LAYER.get(module)
@@ -237,15 +247,36 @@ def simple_types(fragment: str, known: set[str]) -> set[str]:
 
 
 def module_of(rel_pkg: str) -> str:
-    """把包路径收敛成「模块」标签 —— 用于配色与图例分组。"""
+    """把包路径收敛成「模块」标签 —— 用于配色与图例分组。
+
+    本项目有 `living/domain/<子系统>` 这个特殊层级（一个领域一个模块）；
+    外部项目按「前两段」分组（如 Create 的 `content/kinetics`、`api/registry`）。
+    """
     if not rel_pkg:
         return "(root)"
     parts = rel_pkg.split("/")
-    if len(parts) >= 3 and parts[0] == "living" and parts[1] == "domain":
+    if IS_OWN_PROJECT and len(parts) >= 3 and parts[0] == "living" and parts[1] == "domain":
         return "living/domain/" + parts[2]
     if len(parts) >= 2:
         return parts[0] + "/" + parts[1]
     return parts[0]
+
+
+def detect_base_pkg(java_files: list[str]) -> str:
+    """取所有文件**包路径的最长公共前缀**（按包段）—— 让工具能直接跑在别的项目上。"""
+    pkgs = []
+    for p in java_files:
+        rel = os.path.relpath(p, SRC_ROOT).replace("\\", "/")
+        pkgs.append(os.path.dirname(rel).split("/"))
+    if not pkgs:
+        return ""
+    common = pkgs[0][:]
+    for segs in pkgs[1:]:
+        i = 0
+        while i < len(common) and i < len(segs) and common[i] == segs[i]:
+            i += 1
+        common = common[:i]
+    return ".".join(common)
 
 
 def collect_java() -> list[str]:
@@ -267,8 +298,16 @@ def parse_file(path: str) -> dict:
     # 供 module_of 分组用。
     rel_pkg = os.path.dirname(rel).replace("\\", "/")
     pkg = rel_pkg.replace("/", ".")
-    prefix = BASE_PKG.replace(".", "/") + "/"
-    pkg_rel = rel_pkg[len(prefix):] if rel_pkg.startswith(prefix) else rel_pkg
+    # ⚠️ 必须同时处理「文件直接在基础包里」的情况（rel_pkg 恰好 == BASE_PKG）。
+    # 只写 startswith(prefix + "/") 会漏掉它 ⇒ 基础包根下的文件被错标成上层包名
+    # （实例：Create 的 com/simibubi 38 个类、本项目的 com/qiqi）。
+    prefix = BASE_PKG.replace(".", "/")
+    if rel_pkg == prefix:
+        pkg_rel = ""
+    elif rel_pkg.startswith(prefix + "/"):
+        pkg_rel = rel_pkg[len(prefix) + 1:]
+    else:
+        pkg_rel = rel_pkg
 
     decl = DECL_RE.search(code)
     if decl:
@@ -434,7 +473,8 @@ def build_graph(files: list[dict]) -> dict:
         "edges": edge_list,
         "modules": modules,
         "moduleEdges": module_edges,
-        "layers": [{"id": l, "name": n, "desc": d} for l, n, d in LAYERS],
+        "layers": ([{"id": l, "name": n, "desc": d} for l, n, d in LAYERS]
+                   if IS_OWN_PROJECT else []),
     }
 
 
@@ -498,7 +538,7 @@ HTML = r"""<!DOCTYPE html>
 </head>
 <body>
 <div id="head">
-  <b>活物品 · 代码关系图</b>
+  <b id="brand">代码关系图</b>
   <span class="sub" id="stat"></span>
   <div class="seg" id="mode">
     <button data-m="class" class="on">类视图</button>
@@ -990,7 +1030,7 @@ function renderPanel(){
   var html='<div class="close" id="pclose">×</div>'+
     '<h3>'+esc(n.id)+'</h3>'+
     '<div class="meta">'+esc(n.pkg||'')+'<br>'+
-    (n.layer!==undefined ? esc(layerName[n.layer]||('L'+n.layer))+' · ' : '')+
+    (n.layer!==undefined && layerName[n.layer] ? esc(layerName[n.layer])+' · ' : '')+
     esc(n.kind)+' · '+esc(n.path||'')+'<br>'+
     '上游 <b style="color:#e0524a">'+n.in+'</b> · 下游 <b style="color:#3f9ad6">'+n.out+'</b></div>'+
     (n.summary?'<div class="sum">'+esc(n.summary)+'</div>':'')+
@@ -1061,6 +1101,13 @@ window.addEventListener('resize',resize);
 document.addEventListener('keydown',function(e){ if(e.key==='Escape') clearSel(); });
 
 resize();
+// 标题：外部项目由 --title / 基础包名决定
+if(D.title){ document.title = D.title; document.getElementById('brand').textContent = D.title; }
+// 没有分层表（外部项目）⇒ 隐藏「层次视图」（它按 LAYERS 排，没表就没意义）
+if(!D.layers || !D.layers.length){
+  var lb=document.querySelector('#mode button[data-m="layer"]');
+  if(lb) lb.style.display='none';
+}
 var qs=new URLSearchParams(location.search);
 var wantView=qs.get('view');
 var startMode=(wantView==='module'||wantView==='layer') ? wantView : 'class';
@@ -1356,9 +1403,9 @@ def verify_report(graph: dict) -> int:
 
 
 def main() -> int:
-    global SRC_ROOT
+    global SRC_ROOT, BASE_PKG, IS_OWN_PROJECT
 
-    ap = argparse.ArgumentParser(description="生成活物品代码关系图")
+    ap = argparse.ArgumentParser(description="生成 Java 项目的代码关系图（单页离线 HTML）")
     ap.add_argument("--out", default=os.path.join(ROOT, "build", "code-map.html"))
     ap.add_argument("--json", action="store_true", help="同时输出 build/code-map.json")
     ap.add_argument("--query", metavar="NAME",
@@ -1367,13 +1414,25 @@ def main() -> int:
                     help="列出扩展点：被多数领域共同依赖的类（新增子系统要接的口子）")
     ap.add_argument("--verify", action="store_true",
                     help="用 jdeps 读字节码交叉校验本图（找出「签名级依赖」这类盲区）")
-    ap.add_argument("--src", default=SRC_ROOT)
+    ap.add_argument("--src", default=SRC_ROOT,
+                    help="源码根目录（默认本项目 src/main/java；外部项目指到它的 src/main/java）")
+    ap.add_argument("--base-pkg", default=None,
+                    help="项目基础包名（默认自动探测：所有文件包路径的最长公共前缀）")
+    ap.add_argument("--title", default=None, help="页面标题（默认取基础包名）")
     args = ap.parse_args()
 
-    SRC_ROOT = args.src
+    SRC_ROOT = os.path.abspath(args.src)
+    java_files = collect_java()
+    if not java_files:
+        print("在 %s 下没找到 .java 文件。" % SRC_ROOT)
+        return 1
+    BASE_PKG = args.base_pkg or detect_base_pkg(java_files)
+    # 不是本项目 ⇒ 不套用 LAYERS 分层（外部项目没有这套标准），层次视图会隐藏
+    IS_OWN_PROJECT = (BASE_PKG == OWN_PKG)
 
-    files = [parse_file(p) for p in collect_java()]
+    files = [parse_file(p) for p in java_files]
     graph = build_graph(files)
+    graph["title"] = args.title or ("%s · 代码关系图" % (BASE_PKG or "Java"))
 
     if args.query:
         return query_report(graph, args.query)
@@ -1434,26 +1493,27 @@ def main() -> int:
             print("  %-24s ⇄ %-24s  %d ↔ %d" % (a, b, w1, w2))
 
     # 分层违规：**下层依赖上层**（层次视图里标红的就是这些）
-    # 这是「架构演进」的进度指标 —— 目标是把跨模块违规压到 0。
-    lay = {n["id"]: n["layer"] for n in graph["nodes"]}
-    mod_lay = {m["id"]: layer_of(m["id"]) for m in graph["modules"]}
-    mw = {(e["s"], e["d"]): e["w"] for e in graph["moduleEdges"]}
-    viol = collections.defaultdict(int)
-    for (a, b), w in mw.items():
-        if a in mod_lay and b in mod_lay and mod_lay[a] < mod_lay[b]:
-            viol[(mod_lay[a], mod_lay[b])] += w
-    name_of = {l: n for l, n, _ in LAYERS}
-    print("\n分层违规（下层依赖上层 —— 与层次视图的红边同一批）：")
-    if not viol:
-        print("  （无 —— 模块图完全单向，分层成立）")
-    else:
-        tot_v = sum(viol.values())
-        print("  合计 %d 条（占跨模块依赖 %.0f%%）" % (tot_v, 100.0 * tot_v / max(1, sum(mw.values()))))
-        for (a, b), w in sorted(viol.items(), key=lambda x: -x[1]):
-            print("    %-14s → %-14s %3d 条" % (name_of.get(a, a), name_of.get(b, b), w))
-    if UNMAPPED:
-        print("\n⚠ 未登记分层的模块（已按 L3 处理，请补进 LAYERS/MODULE_LAYER）：%s"
-              % "、".join(sorted(UNMAPPED)))
+    # 只有本项目有分层标准 ⇒ 外部项目跳过。
+    if IS_OWN_PROJECT:
+        mod_lay = {m["id"]: layer_of(m["id"]) for m in graph["modules"]}
+        mw = {(e["s"], e["d"]): e["w"] for e in graph["moduleEdges"]}
+        viol = collections.defaultdict(int)
+        for (a, b), w in mw.items():
+            if a in mod_lay and b in mod_lay and mod_lay[a] < mod_lay[b]:
+                viol[(mod_lay[a], mod_lay[b])] += w
+        name_of = {l: n for l, n, _ in LAYERS}
+        print("\n分层违规（下层依赖上层 —— 与层次视图的红边同一批）：")
+        if not viol:
+            print("  （无 —— 模块图完全单向，分层成立）")
+        else:
+            tot_v = sum(viol.values())
+            print("  合计 %d 条（占跨模块依赖 %.0f%%）"
+                  % (tot_v, 100.0 * tot_v / max(1, sum(mw.values()))))
+            for (a, b), w in sorted(viol.items(), key=lambda x: -x[1]):
+                print("    %-14s → %-14s %3d 条" % (name_of.get(a, a), name_of.get(b, b), w))
+        if UNMAPPED:
+            print("\n⚠ 未登记分层的模块（已按 L3 处理，请补进 LAYERS/MODULE_LAYER）：%s"
+                  % "、".join(sorted(UNMAPPED)))
 
     print("\n输出        : %s" % os.path.relpath(args.out, ROOT).replace("\\", "/"))
     return 0

@@ -24,6 +24,24 @@ python tools/gen_code_map.py --json   # 同时落 build/code-map.json（供二�
 
 🔴 **产物只落 `build/`（已 gitignore）—— 提交图等于把「过期风险」一起提交。**
 
+### 2.1 跑**别的项目**（工具是通用的）
+
+只要有源码目录就能跑 —— 基础包名**自动探测**（所有文件包路径的最长公共前缀）：
+
+```bash
+python tools/gen_code_map.py \
+  --src libs/src/Create-mc1.21.1-6.0.10/src/main/java \
+  --out build/create-map.html
+```
+
+- `--base-pkg` 可显式指定（探测不对时）；`--title` 改页面标题
+- 外部项目**不套用 `LAYERS` 分层**（那是本项目的标准）⇒ **层次视图自动隐藏**、CLI 不报分层违规
+- `--query` / `--extend` 对外部项目**同样可用**（也是直接解析源码）
+- `--verify` 需要该项目的编译产物（`build/classes/java/main`），外部项目一般没有 ⇒ 会提示
+
+> 📌 实测：Create（2016 文件 / 2067 节点 / 11039 条边）**解析约 6 秒**；
+> 包视图 80 个模块可读，类视图是毛线球（这个量级必然如此 —— 用**点节点看上下游**和**模块过滤**）。
+
 ## 3. 交互口径（**代码里推不出来的约定**）
 
 | 元素 | 含义 |
