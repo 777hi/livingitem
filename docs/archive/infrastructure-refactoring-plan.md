@@ -521,6 +521,56 @@ ContainerContexts
 
 ---
 
+## 7. 框架侧待办移交（2026-10-04，流体侧）
+
+> 本文档主体已归档，但这两件是**新增框架侧待办**，规格在此移交（流体侧游戏实测为验收）。
+> 完成后结论沉淀 `living-item-infrastructure.md`，本节删除。
+
+### F-1 `ContainerContexts` 补末影箱分支 ⭐（解锁活流体的末影箱汲/倒）
+
+**现状**：`resolve(player, slot)` 对末影箱菜单返回 null（无分支）——
+`EnderChestContainerContext` 是 `ContainerLivingItemHandler` 的 **private 嵌套类**，
+流体侧无法自行构造。流体侧其余部分**已全部就绪**：汲/倒处理器、Player attachment 落盘
+（键 = `player_<uuid>_ender_chest`）、路由模式共享水网语义——分支一到位即通。
+
+**规格**：
+1. **识别**：末影箱 GUI 菜单槽位的 `slot.container instanceof PlayerEnderChestContainer`
+   （原版末影箱界面容器是 `PlayerEnderChestContainer`，**不是 BE**——这正是它走不进
+   `resolve` 现有背包 / 单 BE / CompoundContainer 三分支的原因）；
+2. **构造**：`new InvWrapper(player.getEnderChestInventory())` +
+   `new EnderChestContainerContext(handler, player, level)`（参照 `processEnderChest` 现有构建）；
+   类可见性需从 private 提升——建议顺手迁出 `ContainerLivingItemHandler`（迁哪由框架侧定）；
+3. **键语义**：`player_<uuid>_ender_chest` 覆写已存在；一个玩家一个末影箱容器；
+   路由模式多箱共享同一键（涌现：共享水网，idea.md §四）。
+
+**验收**：流体侧游戏实测——末影箱 GUI 内倒水 / 汲水 / 渲染。
+⚠️ 配套（**流体侧自留**）：`FluidFlowServerSync.flushAfterTick` 的派发当前只有
+背包（直发）/ BE（菜单匹配）两条路，分支到位后需补第三条
+（`EnderChestContainerContext.player` 直发）——已登记流体侧 TODO，分支合入即做。
+
+### F-2 缓存清理注册表（TODO.md A2，治本）
+
+**背景**：两次漏挂事故（Q3「测试也是调用者」、流体侧 `CLIENT_ACTIVE` 未挂
+`ServerStopped`）。现有清理散落两处：`LivingItem.onServerStopped`（服务端 7 项）+
+`FluidClientCacheCleanup`（客户端 LoggingOut，1 项）——全是「自愿挂靠」，靠记性。
+
+**规格**：
+1. 注册表：服务端 / 客户端各一张生命周期表（`ServerStopped` 遍历执行、
+   `LoggingOut` 遍历执行）；表结构设计自由度框架侧定，约束是**登记一行即被覆盖**；
+2. 首批条目迁移：`onServerStopped` 现有 7 项 + `FluidClientCacheCleanup` 现有 1 项
+   （迁移 = 改调用点，行为不变）；
+3. A1 成文：**新增 static 缓存 ⇒ 必须登记**（落「排查铁律」或
+   `living-item-infrastructure.md`）；
+4. 验收：新缓存登记一行即被两个生命周期覆盖；全量测试绿；doc_check 过。
+
+### F-3（预告，未拍板，不动手）跨流体交互钩子
+
+水遇岩浆语义若最终选「原版完全对齐」（蔓延接触生成石头/黑曜石），需要引擎在
+`spread()` 阻挡/覆盖时向行为问「相遇产物」的钩子（`FluidFlowBehavior` 第三条
+default no-op）。流体侧拍板前**不动**——当前口径是 v1 接受互不侵犯（idea.md §〇 第 5 条）。
+
+---
+
 ## 4. 每一步都必须做的验证协议
 
 沿用 [power-refactoring-plan.md](../buffer/power-refactoring-plan.md) §6 的三条：

@@ -41,22 +41,15 @@
 
 > 背景：单机「退存档 → 进另一存档」不重启 JVM，static 字段跨存档存活；流体侧两个缓存
 > 因此漏了清理挂钩，引发「渲染跨存档残留 + 源复活」两连（changelog 2026-10-04）。
-> 当前存量已审干净，以下两条是防复发的机制化动作。
-
-1. **成文规则：新增 static 缓存 ⇒ 必须挂清理** —— 在「排查铁律」（AGENTS.md）或
-   `living-item-infrastructure.md` 加一条：新增任何 static 缓存，必须同时挂
-   `ServerStopped`（服务端）/ `ClientPlayerNetworkEvent.LoggingOut`（客户端）。
-   出处：`CLIENT_ACTIVE` 加缓存时忘了挂钩（现行犯）；同型教训 Q3「测试也是调用者」。
-   触发时机：下一次新增 static 缓存之前。
-2. **缓存清理注册表收口**（框架侧，治本）—— 把散落 `onServerStopped` 与客户端角落的
-   清理调用收编成注册表，遍历执行，新缓存登记一行即自动覆盖（与 Q6 收编同哲学）。
-   底稿：`onServerStopped` 现有清单就是第一批条目。触发时机：与上条一起，或在
-   第 3 个漏挂事故前。
+> 当前存量已审干净。**两条已移交框架侧**（规格见
+> [archive/infrastructure-refactoring-plan.md](archive/infrastructure-refactoring-plan.md) §7 F-2，
+> 含 A1 成文规则）——本节留作背景与出处记录。
 
 ## 活流体（流体侧挂起项，细节以 [idea.md](idea.md) 任务队列为准）
 
-1. **末影箱汲/倒** —— 等框架侧 `ContainerContexts` 末影箱分支
-   （`EnderChestContainerContext` 是私有类，流体侧无法自行构建；基建已就绪）。
+1. **末影箱汲/倒** —— **已移交框架侧**（规格见
+   [archive/infrastructure-refactoring-plan.md](archive/infrastructure-refactoring-plan.md) §7 F-1）；
+   分支合入后流体侧补 flush 派发即通。
 2. **岩浆/模组流体接入** —— 一行行为注册 + 转化表条目；**跨流体交互策略需拍板**
    （互不侵犯 vs 框架加钩子，`idea.md` §〇 第 5 条）。
 3. **游戏实测清单** —— 漏斗自动化活锁、多流体同屏渲染、创造模式汲/倒。
