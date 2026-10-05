@@ -206,6 +206,7 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-05 | 🛠 **新增开发工具 `tools/gen_code_map.py`（代码关系图）**：从源码**派生**可交互关系图，回答「改这个类会牵动谁」（类 / 包双视图 + **上游/下游高亮** + 模块耦合报告）。🔴 **定位 = 派生视图，不是第二份真相** —— 产物落 `build/`（gitignore），唯一真相永远是 `src/`。**未改动 mod 代码** | `docs/guides/code-map.md` |
 | 2026-10-05 | **框架侧待办移交收口（F-1 + F-2）**：**F-1** `ContainerContexts.resolve` 补**末影箱分支**（`PlayerEnderChestContainer` —— 原版末影箱 GUI 的槽位容器不是 BE）⇒ 解锁末影箱汲/倒；`EnderChestContainerContext` 迁出为独立类（避免共享内核反向依赖 God class）。**F-2** 新 `living/util/StaticCacheRegistry`（static 缓存清理注册表，首批登记 7+2 项）—— 把「自愿挂靠（靠记性）」改为「**登记一行即被生命周期覆盖**」；🔴 **A1 铁律成文**（infra §3.4）。**469 测试全绿** | `living-item-infrastructure.md` §3.4；`archive/infrastructure-refactoring-plan.md` §7 |
 | 2026-10-04 | **活化时机钩子收编（A3）**：`LivingTagPacket` 5 段内联类型判断收编为 `LivingItemFunction#onActivated`/`#onDeactivated`（与 A2 `getOwnedComponentTypes()` 同构）；新门面 `LivingItemActivation.apply` 成三个入口唯一通道，`setLiving` 的 `owner` 参数删除 ⇒ **owner 读写归一**（非工具不再带冗余 UUID）。`Player` 改**可空**（缺席是合法态，行为由各功能自决）；`onDeactivated` 返回 false = **下游自决否决 ⇒ 框架零改动**。**467 测试全绿** | `activation-hook-refactoring-plan.md`（已归档）；`api-contract.md` §1.5 |
 | 2026-10-04 | **活桶收尾三连**：① 🔴 汲/倒**右键失效**修复 —— 真因**取水闭环断链**（新 `LivingBucketWorldUse` 世界取水 priming）；② **宿主模型改换（用户拍板）** —— 桶 = 载体**零私有状态**，空桶 ⇄ 水桶 ⇄ 岩浆桶形态变换走**原版流体映射**；③ 汲走源后**渲染残留**修复（同步边沿检测 + 空快照清屏）。**460 测试全绿** | `changelog.md`（2026-10-04）；排查 `idea.md` §〇.7 |
@@ -215,7 +216,6 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 | 2026-10-04 | **Q6 多方块容器边界带「身份解析」收敛（批次 A+B+C，全部完成）+ 稳定层文档**：服务端 `container/ContainerContexts.java` 共享内核（`resolve`/`isViewing`/`ownsContainer`/`isSameSlotSpace`，5 个消费者改薄委托）+ **客户端对偶** `client/util/ClientSlotResolve.java`（`GuiInteractionHelper`/`AbstractContainerScreenMixin` 改薄委托，因 `SlotWrapperAccessor` 是客户端 Mixin 而**被迫分居两侧**）。**`grep CompoundContainer` 代码特判收敛到 1 处**；新增 `ContainerContextsTest` 10 项（**436 测试全绿**）。**新建稳定层文档** `container-identity.md` + tooltip/hopper/farmland/infra 旧教训改指向它 | `container-identity.md`；方案 `infrastructure-refactoring-plan.md` §2.1-Q6 |
 | 2026-10-03 | **框架侧接缝落地（1b-2⑧⑩）**：⑧ **落盘** —— `ContainerFluidData.CODEC`（**只序列化派生源**，桶源/流动表不落）+ `CONTAINER_FLUID_DATA` 附件 `.serialize`；⑩ **引擎接缝** —— `FluidFlowBehavior.shouldPromote(slot, 邻源数)`（`recalculate` 加**晋升收敛循环**）/ `transformItem(item)`（`tick` 每流体拍在源格转化），两条都是 **default no-op ⇒ 现有行为零变化**。⚠️ **背包 Player attachment 仍未做**。**422 测试全绿** | `docs/tech/living-fluid-tech.md` §2.2 |
 | 2026-10-03 | **流体侧批次一（F1+F5）**：F1 派生源（活水源）—— `generatedSources: Map<Integer,FluidType>` + 播种②无条件并入 BFS + **挤没判定**（活物品进源格即销毁，非活共存）；F5 流体渲染轨 —— `FluidFlowSyncPacket` 容器级同步（玩家背包/BE/大箱子全覆盖）+ `IClientFluidTypeExtensions` 自适应贴图/颜色（alpha 按 maxLevel 归一），旧桶轨降级过渡回退。桶源退役顺延批次二与汲/倒同批。**419 测试全绿** | `idea.md` §〇 |
-| 2026-10-03 | 🔴 **修复 1a-4 引入的回归：容器流体数据不再被创建**（活水桶 `registerSource` 被跳过 ⇒ **水流功能整体失效**）：1a-4「容器级数据统一存储」把 `TickContext.fluidData()` 改成只读 peek 时，**丢掉了构造器里创建流体数据的调用**；恢复（含 BE 附件回填）+ 补回归测试（退回旧实现**恰好挂掉该测试**）。**406 测试全绿** | `docs/tech/living-fluid-tech.md` §2.2 |
 
 ## 排查铁律：原版机制挡路时
 
@@ -251,6 +251,7 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 | **查「为什么这么定」/ 某口径是否已被取代** | [decisions.md](docs/decisions.md)（决策索引 + 翻转留痕） |
 | 改文档 / 归档 / 校验 | [docs/README.md](docs/README.md) + `python tools/doc_check.py` |
 | 写测试 / 跑全量 / mock `Level` | [unit-testing.md](docs/guides/unit-testing.md) |
+| **梳理上下游 / 估改动爆炸半径 / 判断模块是否真解耦** | [code-map.md](docs/guides/code-map.md) + `python tools/gen_code_map.py`（**派生视图，唯一真相是 `src/`**） |
 | **发版本给群友测活TNT** | [living-tnt-testing.md](docs/guides/living-tnt-testing.md) §1~§6（**转发时只发这半段**） |
 | 找某个源文件 | [file-map.md](docs/reference/file-map.md)（完整文件树，快照） |
 | 查指令用法 / 加新指令 | [commands.md](docs/reference/commands.md)（指令清单，快照） |

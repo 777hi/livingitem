@@ -37,6 +37,19 @@
   首批登记 7 + 2 项）—— 把「自愿挂靠（靠记性）」改为「**登记一行即被生命周期覆盖**」；
   `LivingItem.onServerStopped` / `FluidClientCacheCleanup.onLoggingOut` 改为只调 `runServer` / `runClient`。
   🔴 **A1 铁律成文**（infra §3.4）：新增 static 缓存 ⇒ 必须在注册表登记一行。
+- 🛠 **新增开发工具 `tools/gen_code_map.py`（代码关系图）** —— 从源码**派生**可交互关系图，
+  回答「**改这个类会牵动谁**」（起因：用户提出「逻辑散落各处、上下游纠缠」）。
+  解析 `src/main/java`（包 / 类型 / javadoc 摘要 / `extends|implements|permits` / record 组件 /
+  import 与正文标识符 / `@Mixin` 三种写法）⇒ 三类边 `inherit` / `use` / `mixin` + `external` 节点
+  （18 个原版注入点）；产出单页离线 HTML（自研 FR 力导向 + **上游/下游高亮** + 深度 1~4 +
+  包视图 + URL 直达某类）；CLI 另报「被依赖最多的类」「模块级强连通分量」「双向耦合最强的模块对」。
+  🔴 **定位 = 派生视图，不是第二份真相**：产物落 `build/`（已 gitignore），**进版本控制的只有脚本**；
+  唯一真相永远是 `src/`。新建 `docs/guides/code-map.md` 记录口径与**可信边界**（静态近似 ——
+  看不见反射 / 字符串引用、`use` 边不分强度、Mixin 只到类级、不含 `src/test`）。**未改动 mod 代码**。
+  ⚠️ 实测坑（四个）：① 子串匹配造出 **154 条假上游**（`LivingItem` 吃掉 `LivingItemFunction`…）⇒ 须按标识符精确匹配；
+  ② `@Mixin` 三种写法（简称 / 全限定名 / `targets="…$Inner"`）只认第一种会**漏 3 个注入点**；
+  ③ 自研 1/d² 斥力 + 线性弹簧在 300 节点 / 1100 边上**塌成一个球** ⇒ 换 Fruchterman-Reingold；
+  ④ `fitView` 用 min/max 被离群点拉大包围盒 ⇒ 改 **3%~97% 分位数**。
 
 ## 2026-10-05
 
