@@ -166,9 +166,11 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 481 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
-全绿基线：`480 passed / 0 failed / 1 skipped`（2026-10-06 活熔岩口径更正：
-`ContainerFluidDataTest` 新增 2 项 —— ㊲ 源格也焚毁 / ㊳ 岩浆不转化；
+**合计测试用例 484 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
+全绿基线：`483 passed / 0 failed / 1 skipped`（2026-10-06 黑曜石循环 + 转化表收窄：
+`ContainerFluidDataTest` 新增 4 项 —— ㊴ 源格遇水⇒黑曜石 / ㊵ 黑曜石被焚毁 /
+㊶ 端到端循环 / ㊷ 契约默认回退，另 3 项随口径改写、缩容守卫移至 `FluidTransformTableTest`；
+2026-10-06 活熔岩口径更正：`ContainerFluidDataTest` 新增 2 项 —— ㊲ 源格也焚毁 / ㊳ 岩浆不转化；
 2026-10-05 F-1：`ContainerContextsTest` 新增 2 项 ——
 末影箱菜单槽位可解析 / 非容器槽位仍返回 null；
 2026-10-04 活化时机钩子收编：
@@ -209,6 +211,7 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-06 | ✅ **黑曜石循环 + 转化表作用域收窄**（同日第三批次）：① 契约加 default `frontierSourceReaction`（默认回退 `frontierReaction`）⇒ **源格遇水 = 黑曜石、流动格 = 圆石**，循环闭合（圆石累加 → 满 64 → 岩浆源 → 黑曜石 → 焚毁 → 回圆石；黑曜石存活窗口 ≈ 1.5s 待实测）；② **取消「非活空桶 → 水桶」** —— 对称性：活化影响非活化 ✓，非活化消耗活化资产 ✗ ⇒ 转化改为**催化剂语义（永不消耗源）**，删 `consumeSource` 整套机制，自动化水桶农场随之不成立。**484 测试全绿** | `living-fluid-tech.md` §3.7 / §6.1；`buffer/living-fluid-obsidian-plan.md` |
 | 2026-10-06 | 🔧 **活熔岩口径更正**（同日第二批次）：① **源格同样焚毁**（「源格 = 转化台」只对**水**成立，岩浆不转化）；② **产物格不是墙** ⇒ 岩浆重新流入再反应，**圆石持续累加**（删整套 `solidified`）；③ 相位改「**反应先于焚毁**」（否则岩浆一流入就把不满组的圆石烧掉，数量永远停在 1）；④ **岩浆不转化** —— 删 `lava_empty_bucket` 死条目，非活空桶放岩浆源 = **被焚毁**。**481 测试全绿** | `living-fluid-tech.md` §3.7；`changelog.md`（2026-10-06） |
 | 2026-10-06 | ✅ **活熔岩接入（第三条流体，引擎零改动）**：`WaterRegistration` 注册熔岩行为（参数全派生原版：maxLevel 3 / 30t·格 / 永不晋升）；机制① **焚毁**（满组石头系 → 诞生活熔岩源「新配方」/ 防火物品共存 / 其余销毁）+ 机制② **前沿反应·刷石机**（熔岩遇水 → 圆石落格；岩浆源须离水 ≥2 格，贴水的源会被湮灭）。⚠️ 岩浆不晋升 ⇒ 消耗即耗尽（矿脉型，与水的三连源农场对偶） | `living-fluid-tech.md` §3.7；`changelog.md`（2026-10-06） |
 | 2026-10-06 | ✅ **实测三连修 + 转化消耗源**：① 末影箱渲染泄漏（缓存键同前缀撞车 ⇒ `FluidFlowClientCache` 三分路由）；② 创造汲水光标不变身（GUI 语义改光标变身/倒水不消耗）；③ 转化消耗源（`consumeSource` 表标记 + 契约 + 引擎；三连源晋升再生 = 水桶农场闭环）。🔴 附带发现 `setItem` 抽干活引用的基建坑。**475 测试全绿** | `changelog.md`（2026-10-06） |
@@ -218,7 +221,7 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 | 2026-10-04 | **活桶收尾三连**：① 🔴 汲/倒**右键失效**修复 —— 真因**取水闭环断链**（新 `LivingBucketWorldUse` 世界取水 priming）；② **宿主模型改换（用户拍板）** —— 桶 = 载体**零私有状态**，空桶 ⇄ 水桶 ⇄ 岩浆桶形态变换走**原版流体映射**；③ 汲走源后**渲染残留**修复（同步边沿检测 + 空快照清屏）。**460 测试全绿** | `changelog.md`（2026-10-04）；排查 `idea.md` §〇.7 |
 | 2026-10-04 | 🔴 **修复末影箱 tick 崩溃**：1a-2 的「不可达证明」漏了 `EnderChestContainerContext`（传空 positions + null inventory）⇒ 撞上被删的 hashCode 第三档 ⇒ **任何有玩家的服务器 tick 必炸**；加**显式稳定键构造器**。⚠️ 教训：**不可达证明必须枚举全部调用点**。**447 测试全绿** | `living-item-infrastructure.md` §2.5 |
 | 2026-10-04 | **流体侧批次三（F4 转化表 JSON 化）**：新 `FluidTransformTable`（三层来源加载器 —— 内置 assets + 玩家 config 差异：追加/按 id 覆盖/removed 删除；条目 = 流体/输入/输出，同容器水/岩浆各走各的）+ 水行为 `transformItem` **委托查表**（删硬编码）+ 内置 17 条（水-空桶→水桶 + 16 色混凝土粉末→混凝土）+ 指令 `/livingitem transforms reload/list`。**443 测试全绿** | `docs/tech/living-fluid-tech.md` §2.2 |
-| 2026-10-04 | **B.5 第三项：玩家背包 / 末影箱流体落盘（Player attachment）**：新增 `CONTAINER_FLUID_DATA_PLAYER`（`Map<容器键, ContainerFluidData>`，`ContainerFluidData.KEYED_CODEC`）—— 背包 + 末影箱**无 BE 可挂** ⇒ 落 Player（一个玩家两个容器）；`ContainerLivingItemHandler` 读写按 `ownerPlayer(ctx)` 分派。**437 测试全绿** | `docs/tech/living-fluid-tech.md` §2.2；`living-item-infrastructure.md` §8.7 |
+
 
 
 

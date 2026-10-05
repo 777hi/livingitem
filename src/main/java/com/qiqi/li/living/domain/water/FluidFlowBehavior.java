@@ -87,17 +87,6 @@ public interface FluidFlowBehavior {
         return null;
     }
 
-    /**
-     * 该转化是否<b>消耗源</b>（引擎在转化成功后移除该格派生源；2026-10-06 实测口径：
-     * 空桶→水桶必须消耗源，否则一格水 = 无限水桶）。默认 {@code false}（催化剂型，
-     * 如混凝土粉末→混凝土——源保留，工厂化转化）。
-     *
-     * <p>仅在 {@link #transformItem} 返回非空后询问（入参保证非空且非活物品）。</p>
-     */
-    default boolean consumesSourceOnTransform(ItemStack input) {
-        return false;
-    }
-
     // ── 活熔岩接缝（2026-10-05/06，流体侧填行为）────────────────
 
     /**
@@ -111,12 +100,24 @@ public interface FluidFlowBehavior {
     }
 
     /**
-     * 前沿反应（引擎在生长前沿<b>新现格</b>四邻出现异种流体时询问）：
+     * 前沿反应（引擎在<b>流动格</b>四邻出现异种流体时询问）：
      * 返回产物物品（落在该格、流体退去），{@code null} = 不反应（正常流入）。
      * 默认 {@code null}。活熔岩对水：圆石（原版 shouldSpreadLiquid 的容器映射）。
      */
     default ItemStack frontierReaction(FluidType neighborFluid) {
         return null;
+    }
+
+    /**
+     * 前沿反应·<b>源格</b>版本（2026-10-06 黑曜石循环）：引擎在<b>源格</b>四邻出现异种流体时
+     * 优先问本方法；产物落在该格、流体退去且<b>源湮灭</b>。{@code null} = 不反应。
+     *
+     * <p>默认<b>回退</b> {@link #frontierReaction} ⇒ 不区分源/流动的流体<b>零变化</b>
+     * （对齐原版 {@code shouldSpreadLiquid}：本格是源 ⇒ 黑曜石，流动 ⇒ 圆石 —— 与「谁撞谁」无关）。
+     * 活熔岩：源 + 水 ⇒ 黑曜石。</p>
+     */
+    default ItemStack frontierSourceReaction(FluidType neighborFluid) {
+        return frontierReaction(neighborFluid);
     }
 
     /** 焚毁/源诞生的判定结果（机制一/四）。 */

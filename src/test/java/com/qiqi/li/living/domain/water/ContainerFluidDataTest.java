@@ -477,7 +477,13 @@ class ContainerFluidDataTest {
 
     // ── 水晋升 / 最小转化（流体侧批次二 F2，2026-10-03）─────────
 
-    /** 注册「生产口径」的水行为：流动 7 + 晋升 ≥2 邻源 + 空桶转化（同 WaterRegistration）。 */
+    /**
+     * 注册「生产口径」的水行为：流动 7 + 晋升 ≥2 邻源 + 一条**催化剂型**转化
+     * （DIRT→草方块，1:1 且**不消耗源**）。
+     *
+     * <p>⚠️ 2026-10-06 定稿：转化表不再有「空桶→水桶」条目 —— 非活化物品不得消耗活化资产，
+     * 故测试也改用与桶无关的转化（桶侧行为见 ㊳ / ㉕）。</p>
+     */
     private static void registerProductionWaterBehavior() {
         FluidFlowBehaviors.register(Fluids.WATER.getFluidType(), new FluidFlowBehavior() {
             @Override public boolean canFlow() { return true; }
@@ -487,21 +493,19 @@ class ContainerFluidDataTest {
                 return sourceNeighborCount >= 2;
             }
             @Override public ItemStack transformItem(ItemStack item) {
-                if (item.is(Items.BUCKET) && item.getCount() == 1
-                        && !LivingItemManager.isLivingItem(item)) {
-                    return new ItemStack(Items.WATER_BUCKET);
-                }
-                return null;
-            }
-            @Override public boolean consumesSourceOnTransform(ItemStack item) {
-                return item.is(Items.BUCKET);   // 空桶转化消耗源（生产口径同 WaterRegistration）
+                return item.is(Items.DIRT) && !LivingItemManager.isLivingItem(item)
+                    ? new ItemStack(Items.GRASS_BLOCK, item.getCount())
+                    : null;
             }
         });
     }
 
     // ── 蔓延时序化：慢流体（2026-10-05）────────────────────
 
-    /** 注册慢流体（岩浆 FluidType）：flowSpeed 10、maxLevel 3 + 焚毁/前沿反应 —— CA 渐进生长。 */
+    /**
+     * 注册慢流体（岩浆 FluidType）：flowSpeed 10、maxLevel 3 + 焚毁 / 前沿反应 —— CA 渐进生长。
+     * 产物对同生产口径（{@code WaterRegistration}）：**流动格 → 圆石，源格 → 黑曜石**。
+     */
     private static void registerSlowLava() {
         FluidFlowBehaviors.register(Fluids.LAVA.getFluidType(), new FluidFlowBehavior() {
             @Override public boolean canFlow() { return true; }
@@ -515,6 +519,10 @@ class ContainerFluidDataTest {
             @Override public ItemStack frontierReaction(FluidType neighbor) {
                 return neighbor == Fluids.WATER.getFluidType()
                     ? new ItemStack(Items.COBBLESTONE) : null;
+            }
+            @Override public ItemStack frontierSourceReaction(FluidType neighbor) {
+                return neighbor == Fluids.WATER.getFluidType()
+                    ? new ItemStack(Items.OBSIDIAN) : null;
             }
         });
     }
@@ -713,6 +721,88 @@ class ContainerFluidDataTest {
     }
 
     @Test
+    @DisplayName("㊴ 黑曜石①：岩浆**源格**邻水 ⇒ 产物黑曜石 + 源湮灭（源/流动产物分开）")
+    void frontierSourceReaction_obsidianAtSource() {
+        registerSlowLava();
+        var ctx = row();
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(0, Fluids.LAVA.getFluidType());
+        fluid.registerGeneratedSource(1, Fluids.WATER.getFluidType());
+
+        fluid.tick(ctx);
+
+        assertEquals(Items.OBSIDIAN, ctx.getItem(0).getItem(), "源格遇水 ⇒ 黑曜石（不是圆石）");
+        assertFalse(fluid.isGeneratedSource(0), "源被反应湮灭");
+        assertFalse(fluid.isSource(0), "该格不再是源");
+    }
+
+    @Test
+    @DisplayName("㊵ 黑曜石②：黑曜石被蔓延回来的岩浆焚毁（∉ 石头系、不防火 ⇒ BURN）")
+    void obsidianInLavaCell_burns() {
+        registerSlowLava();
+        FakeHandler h = new FakeHandler(9);
+        var ctx = new SimpleContainerContext(h);
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(0, Fluids.LAVA.getFluidType());
+        h.slots[1] = new ItemStack(Items.OBSIDIAN);
+
+        fluid.tick(ctx);
+
+        assertTrue(ctx.getItem(1).isEmpty(), "黑曜石在岩浆流动格被焚毁 ⇒ 循环回到圆石阶段");
+    }
+
+    @Test
+    @DisplayName("㊶ 黑曜石③：端到端循环 —— 满组圆石 ⇒ 岩浆源 ⇒ 黑曜石 ⇒ 焚毁 ⇒ 回到圆石")
+    void obsidianLoop_endToEnd() {
+        registerSlowLava();
+        FakeHandler h = new FakeHandler(9);
+        var ctx = new SimpleContainerContext(h);
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(0, Fluids.LAVA.getFluidType());   // 岩浆源（离水 ≥2 格）
+        fluid.registerGeneratedSource(4, Fluids.WATER.getFluidType());
+        h.slots[2] = new ItemStack(Items.COBBLESTONE, 64);              // 接触格已攒满
+
+        boolean sawSource = false, sawObsidian = false;
+        for (int t = 0; t < 60 && !sawObsidian; t++) {
+            fluid.tick(ctx);
+            if (fluid.isGeneratedSource(2)) sawSource = true;
+            sawObsidian = ctx.getItem(2).is(Items.OBSIDIAN);
+        }
+        assertTrue(sawSource, "满组圆石（石头系）⇒ 该格诞生活熔岩源（循环的驱动步）");
+        assertTrue(sawObsidian, "新生源邻水 ⇒ 黑曜石");
+        assertFalse(fluid.isGeneratedSource(2), "源格反应 ⇒ 源湮灭");
+
+        boolean backToCobble = false;
+        for (int t = 0; t < 60 && !backToCobble; t++) {
+            fluid.tick(ctx);
+            backToCobble = ctx.getItem(2).is(Items.COBBLESTONE);
+        }
+        assertTrue(backToCobble, "黑曜石被蔓延回来的岩浆焚毁 ⇒ 重新反应 ⇒ 回到圆石（循环闭合）");
+    }
+
+    @Test
+    @DisplayName("㊷ 契约默认回退：只覆写 frontierReaction 的流体，其源格产物也走 frontierReaction")
+    void frontierSourceReaction_defaultFallback() {
+        FluidFlowBehaviors.register(Fluids.LAVA.getFluidType(), new FluidFlowBehavior() {
+            @Override public boolean canFlow() { return true; }
+            @Override public int maxLevel() { return 3; }
+            @Override public int flowSpeed() { return 0; }
+            @Override public ItemStack frontierReaction(FluidType neighbor) {
+                return neighbor == Fluids.WATER.getFluidType() ? new ItemStack(Items.COBBLESTONE) : null;
+            }
+        });
+        var ctx = row();
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(0, Fluids.LAVA.getFluidType());
+        fluid.registerGeneratedSource(1, Fluids.WATER.getFluidType());
+
+        fluid.tick(ctx);
+
+        assertEquals(Items.COBBLESTONE, ctx.getItem(0).getItem(),
+            "default 回退 ⇒ 不区分源/流动的流体行为零变化（源格也是圆石）");
+    }
+
+    @Test
     @DisplayName("㉓ 相邻两源不繁殖：slot 2 只有 1 个源邻居 ⇒ 不晋升（原版口径）")
     void adjacentSources_doNotPromote() {
         registerProductionWaterBehavior();
@@ -750,74 +840,55 @@ class ContainerFluidDataTest {
     }
 
     @Test
-    @DisplayName("㉕ 最小转化：源格上的单个空桶 → 水桶（非活，与源共存）")
-    void transform_minimalBucketToWaterBucket() {
+    @DisplayName("㉕ 非活化不取活化资产：非活空桶放**水源格** ⇒ 不转化、源不消耗（2026-10-06 定稿）")
+    void nonLivingBucketInWaterSource_untouched() {
         registerProductionWaterBehavior();
         var ctx = row(new ItemStack(Items.BUCKET));
         var fluid = new ContainerFluidData();
         fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
         fluid.tick(ctx);
 
-        assertEquals(Items.WATER_BUCKET, ctx.getItem(0).getItem(), "空桶被源浸泡成水桶");
-        assertTrue(fluid.isSource(0), "源不受转化影响");
+        assertEquals(Items.BUCKET, ctx.getItem(0).getItem(), "空桶不会被水源泡成水桶（转化表无桶条目）");
+        assertTrue(fluid.isSource(0), "源不被非活化物品消耗（对称性：活化影响非活化，反之不许）");
     }
 
     @Test
-    @DisplayName("㉛ 消耗型转化：空桶→水桶同时消耗源（否则一格水 = 无限水桶，2026-10-06 实测口径）")
-    void transform_consumesSource() {
+    @DisplayName("㉛ 催化剂语义：转化**不消耗源**（DIRT→草方块整槽替换后源仍在）")
+    void transform_neverConsumesSource() {
         registerProductionWaterBehavior();
-        var ctx = row(new ItemStack(Items.BUCKET));
+        var ctx = row(new ItemStack(Items.DIRT, 64));
         var fluid = new ContainerFluidData();
         fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
         fluid.tick(ctx);
 
-        assertEquals(Items.WATER_BUCKET, ctx.getItem(0).getItem(), "转化为水桶");
-        assertFalse(fluid.hasGeneratedSources(), "转化消耗了源（单源不再无限产水桶）");
-        fluid.tick(ctx);   // 实际层下一拍收敛
-        assertFalse(fluid.isSource(0), "下一拍重播种 ⇒ 流表也不再是源");
+        assertEquals(Items.GRASS_BLOCK, ctx.getItem(0).getItem(), "整槽等量替换");
+        assertEquals(64, ctx.getItem(0).getCount());
+        assertTrue(fluid.isGeneratedSource(0), "催化剂语义：源保留（转化永不消耗活化资产）");
+        assertTrue(fluid.isSource(0));
     }
 
     @Test
-    @DisplayName("㉜ 消耗 + 晋升再生：三连源的中间源被转化消耗后自动补回（自动化水桶农场闭环）")
-    void transform_trioRegeneratesAfterConsumption() {
+    @DisplayName("㉜ 晋升再生：三连源中间源被**汲走**（活空桶，活化侧操作）⇒ 下一拍补回")
+    void trioSource_regeneratesAfterScoop() {
         registerProductionWaterBehavior();
         FakeHandler h = new FakeHandler(9);
         var ctx = new SimpleContainerContext(h);
         var fluid = new ContainerFluidData();
-        // 手动铺三连源（0、1、2），源 1 上放空桶
         fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
         fluid.registerGeneratedSource(1, Fluids.WATER.getFluidType());
         fluid.registerGeneratedSource(2, Fluids.WATER.getFluidType());
-        h.slots[1] = new ItemStack(Items.BUCKET);
+        fluid.tick(ctx);
+        assertTrue(fluid.isGeneratedSource(1), "先确认三连源就位");
+
+        fluid.removeGeneratedSource(1);   // 汲走的服务端语义（活空桶 GUI 汲）
         fluid.tick(ctx);
 
-        assertEquals(Items.WATER_BUCKET, h.slots[1].getItem(), "空桶转化为水桶");
-        assertFalse(fluid.isGeneratedSource(1), "转化消耗了中间源（generatedSources 当拍移除）");
-        assertTrue(fluid.isSource(0) && fluid.isSource(2), "两侧源不受影响");
-
-        fluid.tick(ctx);   // 下一拍：晋升再生（邻域 ≥2 源 ⇒ 中间源自动补回——自动化水桶农场的再生步）
-        assertTrue(fluid.isGeneratedSource(1), "晋升再生");
-        assertTrue(fluid.isSource(1));
-        assertEquals(Items.WATER_BUCKET, h.slots[1].getItem(), "再生源与水桶共存（非活物品共存）");
-
-        h.slots[1] = new ItemStack(Items.BUCKET);   // 再喂一个空桶（模拟漏斗持续供料）
-        fluid.tick(ctx);
-        assertEquals(Items.WATER_BUCKET, h.slots[1].getItem(), "再次转化");
-        assertFalse(fluid.isGeneratedSource(1), "再次消耗（农场循环）");
+        assertTrue(fluid.isGeneratedSource(1), "邻域 ≥2 源 ⇒ 晋升再生（下一拍补回）");
+        assertTrue(fluid.isSource(1), "再生源当拍可用");
     }
 
-    @Test
-    @DisplayName("㉖ 缩容等待：空桶堆叠 >1 不转化（水桶最大堆叠 1，整槽无法等量替换）")
-    void transform_shrinkingStackStalls() {
-        registerProductionWaterBehavior();
-        var ctx = row(new ItemStack(Items.BUCKET, 16));
-        var fluid = new ContainerFluidData();
-        fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
-        fluid.tick(ctx);
-
-        assertEquals(Items.BUCKET, ctx.getItem(0).getItem(), "16 桶不转化，等待玩家拆分");
-        assertEquals(16, ctx.getItem(0).getCount());
-    }
+    // ⚠️ 原「㉖ 缩容等待」已从本类移除：缩容是**转化表**的规则（{@code FluidTransformTable}），
+    // 引擎的 transformItem 接缝不重复实现 —— 其守卫见 FluidTransformTableTest。
 
     @Test
     @DisplayName("㉗ 玩家落盘 CODEC（B.5 第三项）：容器键 → 流体数据映射往返一致")

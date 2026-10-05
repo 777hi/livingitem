@@ -67,7 +67,13 @@ public final class WaterRegistration {
             }
             @Override public ItemStack frontierReaction(FluidType neighbor) {
                 return neighbor == Fluids.WATER.getFluidType()
-                    ? new ItemStack(Items.COBBLESTONE)   // 刷石机：熔岩遇水 → 圆石
+                    ? new ItemStack(Items.COBBLESTONE)   // 刷石机：流动熔岩遇水 → 圆石
+                    : null;
+            }
+            // 黑曜石循环（2026-10-06）：**源格**遇水 → 黑曜石 + 源湮灭（原版 shouldSpreadLiquid）
+            @Override public ItemStack frontierSourceReaction(FluidType neighbor) {
+                return neighbor == Fluids.WATER.getFluidType()
+                    ? new ItemStack(Items.OBSIDIAN)
                     : null;
             }
         });
@@ -86,9 +92,6 @@ public final class WaterRegistration {
             }
             @Override public ItemStack transformItem(ItemStack item) {
                 return FluidTransformTable.transform(Fluids.WATER.getFluidType(), item);
-            }
-            @Override public boolean consumesSourceOnTransform(ItemStack item) {
-                return FluidTransformTable.consumesSource(Fluids.WATER.getFluidType(), item);
             }
         });
     }

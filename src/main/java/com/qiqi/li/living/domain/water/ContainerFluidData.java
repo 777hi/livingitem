@@ -312,19 +312,20 @@ public class ContainerFluidData {
             FluidType fluid = fe.fluid();
             FluidFlowBehavior behavior = FluidFlowBehaviors.of(fluid);
             int slot = e.getKey();
-            // 异种流体邻居 ⇒ 问本格行为「前沿反应」（活熔岩对水：圆石）；null = 共存不反应
-            FluidType reactionNeighbor = null;
+            // 异种流体邻居 ⇒ 问本格行为「前沿反应」；null = 共存不反应
+            // ⚠️ 源格走 frontierSourceReaction（黑曜石），流动格走 frontierReaction（圆石）
+            ItemStack product = null;
             for (int n : ContainerContext.getNeighbors(slot, ctx.getSize(), ctx.getWidth())) {
                 FlowEntry neighbor = flows.get(n);
                 if (neighbor == null || neighbor.fluid() == fluid) continue;
-                if (behavior.frontierReaction(neighbor.fluid()) != null) {
-                    reactionNeighbor = neighbor.fluid();
+                ItemStack candidate = frontierProduct(behavior, fe.isSource(), neighbor.fluid());
+                if (candidate != null) {
+                    product = candidate;
                     break;
                 }
             }
-            if (reactionNeighbor == null) continue;
+            if (product == null) continue;
 
-            ItemStack product = behavior.frontierReaction(reactionNeighbor);
             reactions.add(new Reaction(slot, product, fe.isSource()));
         }
 
@@ -348,6 +349,17 @@ public class ContainerFluidData {
     }
 
     /**
+     * 前沿产物查询（2026-10-06 黑曜石循环）：<b>源格</b>问 {@code frontierSourceReaction}、
+     * <b>流动格</b>问 {@code frontierReaction} —— 对齐原版 {@code shouldSpreadLiquid}
+     * 的「本格是源 ⇒ 黑曜石，流动 ⇒ 圆石」，与「谁撞谁」无关。
+     */
+    private static ItemStack frontierProduct(FluidFlowBehavior behavior, boolean selfIsSource,
+                                             FluidType neighborFluid) {
+        return selfIsSource ? behavior.frontierSourceReaction(neighborFluid)
+                            : behavior.frontierReaction(neighborFluid);
+    }
+
+    /**
      * 转化（1b-2 接缝）：每流体拍在<b>源格</b>问行为「格上物品是否转化」。
      *
      * <p>默认行为 {@link FluidFlowBehavior#transformItem} 返回 {@code null} ⇒ 什么都不做。
@@ -362,15 +374,11 @@ public class ContainerFluidData {
             if (item.isEmpty()) continue;
             ItemStack transformed = FluidFlowBehaviors.of(fe.fluid).transformItem(item);
             if (transformed != null) {
-                // 消耗判定必须在 setItem 之前 —— setItem 的实现是「先 extractItem 抽干槽位、
-                // 再 insertItem 插入新栈」，item（活引用）会被抽干成空栈，事后判定恒 false
-                // （2026-10-06 实测口径：空桶→水桶必须消耗源，否则一格水 = 无限水桶；
-                //   三连源场景晋升会再生中间源 ⇒ 自动化水桶农场成立，无限性来自三连源而非免费转化）
-                boolean consumeSource = FluidFlowBehaviors.of(fe.fluid).consumesSourceOnTransform(item);
+                // ⚠️ 转化是**催化剂语义**：永不消耗源（2026-10-06 定稿 —— 非活化物品
+                // 不得消耗活化资产；原「空桶→水桶消耗源」条目已删除）。
+                // 另注：setItem 的实现是「先 extractItem 抽干槽位、再 insertItem 插入新栈」，
+                // 调用方持有的旧栈活引用会被抽干成空栈 —— 任何「setItem 后再读旧引用」的写法都会中招。
                 ctx.setItem(slot, transformed);
-                if (consumeSource) {
-                    removeGeneratedSource(slot);
-                }
             }
         }
     }

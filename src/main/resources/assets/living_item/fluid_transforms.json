@@ -2,12 +2,6 @@
   "version": 1,
   "transforms": [
     {
-      "id": "water_empty_bucket",
-      "fluid": "minecraft:water",
-      "input": "minecraft:bucket",
-      "output": "minecraft:water_bucket"
-    },
-    {
       "id": "water_white_concrete",
       "fluid": "minecraft:water",
       "input": "minecraft:white_concrete_powder",

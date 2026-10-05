@@ -42,19 +42,20 @@ class FluidTransformTableTest {
     // ── 1. 内置数据 ──────────────────────────────────────────
 
     @Test
-    @DisplayName("内置 JSON 全部装载成功：水桶转化 + 16 色混凝土，物品/流体真实存在")
+    @DisplayName("内置 JSON 全部装载成功：16 色混凝土（**无桶条目**），物品/流体真实存在")
     void bundledTransformsLoad() {
         FluidTransformTable.load();
 
         int count = FluidTransformTable.entryCount();
-        assertTrue(count >= 17, "内置转化应至少 17 条（1 水桶 + 16 混凝土），实际 " + count);
+        assertTrue(count >= 16, "内置转化应至少 16 条（16 混凝土），实际 " + count);
         assertEquals(count, FluidTransformTable.bundledCount(),
             "无玩家文件时全部条目都应是内置的");
 
-        // 抽查：水 + 空桶 → 水桶；白/黑混凝土粉末 → 混凝土
+        // ⚠️ 2026-10-06 定稿：无「空桶→水桶」条目 —— 非活化物品不得从活化资产取物
         var water = Fluids.WATER.getFluidType();
-        assertEquals(Items.WATER_BUCKET,
-            FluidTransformTable.transform(water, new ItemStack(Items.BUCKET)).getItem());
+        assertNull(FluidTransformTable.transform(water, new ItemStack(Items.BUCKET)),
+            "空桶不转化（催化剂语义：转化不产出「含该流体」的容器物品）");
+        // 抽查：白/黑混凝土粉末 → 混凝土
         assertEquals(Items.WHITE_CONCRETE,
             FluidTransformTable.transform(water, new ItemStack(Items.WHITE_CONCRETE_POWDER)).getItem());
         assertEquals(Items.BLACK_CONCRETE,
@@ -71,8 +72,8 @@ class FluidTransformTableTest {
               "version": 1,
               "removed": ["water_black_concrete"],
               "transforms": [
-                { "id": "water_empty_bucket", "fluid": "minecraft:water",
-                  "input": "minecraft:bucket", "output": "minecraft:lava_bucket" },
+                { "id": "water_white_concrete", "fluid": "minecraft:water",
+                  "input": "minecraft:white_concrete_powder", "output": "minecraft:lava_bucket" },
                 { "id": "water_dirt_to_grass", "fluid": "minecraft:water",
                   "input": "minecraft:dirt", "output": "minecraft:grass_block" }
               ]
@@ -81,16 +82,16 @@ class FluidTransformTableTest {
 
         var water = Fluids.WATER.getFluidType();
         assertEquals(Items.LAVA_BUCKET,
-            FluidTransformTable.transform(water, new ItemStack(Items.BUCKET)).getItem(),
-            "按 id 覆盖内置（空桶→岩浆桶）");
+            FluidTransformTable.transform(water, new ItemStack(Items.WHITE_CONCRETE_POWDER)).getItem(),
+            "按 id 覆盖内置（白混凝土粉末→岩浆桶，仅为验证覆盖语义）");
         assertEquals(Items.GRASS_BLOCK,
             FluidTransformTable.transform(water, new ItemStack(Items.DIRT)).getItem(),
             "玩家追加条目生效");
         assertNull(FluidTransformTable.transform(water, new ItemStack(Items.BLACK_CONCRETE_POWDER)),
             "removed 删除的内置条目不复活");
-        assertEquals(17, FluidTransformTable.entryCount(),
-            "16 内置生效（black_concrete 被 removed）+ 1 玩家追加");
-        assertEquals(17, FluidTransformTable.bundledCount(),
+        assertEquals(16, FluidTransformTable.entryCount(),
+            "15 内置生效（black_concrete 被 removed）+ 1 玩家追加");
+        assertEquals(16, FluidTransformTable.bundledCount(),
             "bundled 集合含全部内置锚点（removed/覆盖后仍是锚点，同 InteractionRuleConfig 口径）");
     }
 
@@ -145,16 +146,24 @@ class FluidTransformTableTest {
     // ── 4. 转化口径 ──────────────────────────────────────────
 
     @Test
-    @DisplayName("缩容等待：空桶堆叠 >1 不转化（水桶最大堆叠 1）；=1 立即转化")
-    void transform_shrinkingStackStalls() {
+    @DisplayName("缩容等待：整槽存量 > 产物最大堆叠 ⇒ 不转化（玩家条目 DIRT→末影珍珠，上限 16）")
+    void transform_shrinkingStackStalls() throws Exception {
+        writeUserFile("""
+            {
+              "version": 1,
+              "transforms": [
+                { "id": "water_dirt_to_pearl", "fluid": "minecraft:water",
+                  "input": "minecraft:dirt", "output": "minecraft:ender_pearl" }
+              ]
+            }""");
         FluidTransformTable.load();
         var water = Fluids.WATER.getFluidType();
 
-        assertNull(FluidTransformTable.transform(water, new ItemStack(Items.BUCKET, 16)),
-            "16 桶 ⇒ 整槽无法等量替换 ⇒ 等待");
-        var one = FluidTransformTable.transform(water, new ItemStack(Items.BUCKET));
-        assertEquals(Items.WATER_BUCKET, one.getItem());
-        assertEquals(1, one.getCount(), "等量替换");
+        assertNull(FluidTransformTable.transform(water, new ItemStack(Items.DIRT, 64)),
+            "64 个 DIRT 超过末影珍珠上限 16 ⇒ 整槽无法等量替换 ⇒ 等待拆分");
+        var ok = FluidTransformTable.transform(water, new ItemStack(Items.DIRT, 16));
+        assertEquals(Items.ENDER_PEARL, ok.getItem());
+        assertEquals(16, ok.getCount(), "等量替换（缩容规则属表侧，引擎不重复实现）");
     }
 
     @Test
