@@ -206,6 +206,7 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-06 | ✅ **实测三连修 + 转化消耗源**：① 末影箱渲染泄漏（缓存键同前缀撞车 ⇒ `FluidFlowClientCache` 三分路由）；② 创造汲水光标不变身（GUI 语义改光标变身/倒水不消耗）；③ 转化消耗源（`consumeSource` 表标记 + 契约 + 引擎；三连源晋升再生 = 水桶农场闭环）。🔴 附带发现 `setItem` 抽干活引用的基建坑。**475 测试全绿** | changelog 2026-10-06 |
 | 2026-10-05 | 🛠 **新增开发工具 `tools/gen_code_map.py`（代码关系图）**：从源码**派生**可交互关系图，回答「改这个类会牵动谁」（类 / 包 / **层次**三视图 + **上游/下游高亮** + **分层违规报告**）。🔴 **定位 = 派生视图，不是第二份真相** —— 产物落 `build/`（gitignore），唯一真相永远是 `src/`。**未改动 mod 代码** | `docs/guides/code-map.md` |
 | 2026-10-05 | **框架侧待办移交收口（F-1 + F-2）**：**F-1** `ContainerContexts.resolve` 补**末影箱分支**（`PlayerEnderChestContainer` —— 原版末影箱 GUI 的槽位容器不是 BE）⇒ 解锁末影箱汲/倒；`EnderChestContainerContext` 迁出为独立类（避免共享内核反向依赖 God class）。**F-2** 新 `living/util/StaticCacheRegistry`（static 缓存清理注册表，首批登记 7+2 项）—— 把「自愿挂靠（靠记性）」改为「**登记一行即被生命周期覆盖**」；🔴 **A1 铁律成文**（infra §3.4）。**469 测试全绿** | `living-item-infrastructure.md` §3.4；`archive/infrastructure-refactoring-plan.md` §7 |
 | 2026-10-04 | **活化时机钩子收编（A3）**：`LivingTagPacket` 5 段内联类型判断收编为 `LivingItemFunction#onActivated`/`#onDeactivated`（与 A2 `getOwnedComponentTypes()` 同构）；新门面 `LivingItemActivation.apply` 成三个入口唯一通道，`setLiving` 的 `owner` 参数删除 ⇒ **owner 读写归一**（非工具不再带冗余 UUID）。`Player` 改**可空**（缺席是合法态，行为由各功能自决）；`onDeactivated` 返回 false = **下游自决否决 ⇒ 框架零改动**。**467 测试全绿** | `activation-hook-refactoring-plan.md`（已归档）；`api-contract.md` §1.5 |
@@ -215,7 +216,6 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 | 2026-10-04 | **B.5 第三项：玩家背包 / 末影箱流体落盘（Player attachment）**：新增 `CONTAINER_FLUID_DATA_PLAYER`（`Map<容器键, ContainerFluidData>`，`ContainerFluidData.KEYED_CODEC`）—— 背包 + 末影箱**无 BE 可挂** ⇒ 落 Player（一个玩家两个容器）；`ContainerLivingItemHandler` 读写按 `ownerPlayer(ctx)` 分派。**437 测试全绿** | `docs/tech/living-fluid-tech.md` §2.2；`living-item-infrastructure.md` §8.7 |
 | 2026-10-04 | **Q6 多方块容器边界带「身份解析」收敛（批次 A+B+C，全部完成）+ 稳定层文档**：服务端 `container/ContainerContexts.java` 共享内核（`resolve`/`isViewing`/`ownsContainer`/`isSameSlotSpace`，5 个消费者改薄委托）+ **客户端对偶** `client/util/ClientSlotResolve.java`（`GuiInteractionHelper`/`AbstractContainerScreenMixin` 改薄委托，因 `SlotWrapperAccessor` 是客户端 Mixin 而**被迫分居两侧**）。**`grep CompoundContainer` 代码特判收敛到 1 处**；新增 `ContainerContextsTest` 10 项（**436 测试全绿**）。**新建稳定层文档** `container-identity.md` + tooltip/hopper/farmland/infra 旧教训改指向它 | `container-identity.md`；方案 `infrastructure-refactoring-plan.md` §2.1-Q6 |
 | 2026-10-03 | **框架侧接缝落地（1b-2⑧⑩）**：⑧ **落盘** —— `ContainerFluidData.CODEC`（**只序列化派生源**，桶源/流动表不落）+ `CONTAINER_FLUID_DATA` 附件 `.serialize`；⑩ **引擎接缝** —— `FluidFlowBehavior.shouldPromote(slot, 邻源数)`（`recalculate` 加**晋升收敛循环**）/ `transformItem(item)`（`tick` 每流体拍在源格转化），两条都是 **default no-op ⇒ 现有行为零变化**。⚠️ **背包 Player attachment 仍未做**。**422 测试全绿** | `docs/tech/living-fluid-tech.md` §2.2 |
-| 2026-10-03 | **流体侧批次一（F1+F5）**：F1 派生源（活水源）—— `generatedSources: Map<Integer,FluidType>` + 播种②无条件并入 BFS + **挤没判定**（活物品进源格即销毁，非活共存）；F5 流体渲染轨 —— `FluidFlowSyncPacket` 容器级同步（玩家背包/BE/大箱子全覆盖）+ `IClientFluidTypeExtensions` 自适应贴图/颜色（alpha 按 maxLevel 归一），旧桶轨降级过渡回退。桶源退役顺延批次二与汲/倒同批。**419 测试全绿** | `idea.md` §〇 |
 
 ## 排查铁律：原版机制挡路时
 
