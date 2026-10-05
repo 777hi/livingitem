@@ -37,9 +37,11 @@ python tools/gen_code_map.py --json   # 同时落 build/code-map.json（供二�
 | 紫线 `mixin` | `@Mixin(X.class)` 或 `@Mixin(targets="…")` |
 
 - 深度滑杆 = 上游 / 下游展开跳数（1~4）
+- **高亮口径：线高亮 ⟺ 两端都在高亮集合内**（不会出现「点只亮 1 层、线跑到 2 层」）
 - `?view=module` → 包视图（按包聚合，**边粗细 = 耦合强度**）
 - `?view=layer` → 层次视图（见 §3.1）
-- `code-map.html#ContainerFluidData` → 直达某个类（可分享 / 可收藏）
+- `?depth=2` → 预设上下游深度
+- `code-map.html#ContainerFluidData` → 直达某个类（**三者可组合，链接可分享**）
 
 ### 3.1 层次视图与「分层违规」
 

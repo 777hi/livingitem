@@ -811,7 +811,11 @@ function draw(){
   for(var i=0;i<es.length;i++){
     var e=es[i], a=idx[e.s], b=idx[e.d];
     if(!a||!b||!nodeVisible(a)||!nodeVisible(b))continue;
-    var rel = sel ? (e.s===sel||e.d===sel||selUp[e.s]||selDown[e.d]||selUp[e.d]||selDown[e.s]) : false;
+    // 高亮判定：**两端都在高亮集合里**才算这条线「在邻域内」。
+    // ⚠️ 不能写成 `selUp[e.s] || selDown[e.d]` 之类 —— 那会把「上游的上游」
+    // 也点亮 ⇒ 深度 1 时线跑到 2 层（2026-10-06 用户实测发现）。
+    var rel = sel ? ((e.s===sel||selUp[e.s]||selDown[e.s]) &&
+                     (e.d===sel||selUp[e.d]||selDown[e.d])) : false;
     // 层次视图：**下层依赖上层 = 违规** ⇒ 标红（这是「层次在哪断的」）
     var viol = (viewMode==='layer') && (a.layer!==undefined) && (b.layer!==undefined) && (a.layer<b.layer);
     ctx.lineWidth = e.w ? Math.min(4.5, 0.6+e.w*0.16) : (viol?1.3:1);   // 包视图：粗细 = 耦合强度
@@ -1050,6 +1054,12 @@ if(startMode!=='class'){
   });
 }
 loadMode(startMode); bindHead(); renderLegend(); computeStats();
+// 支持 ?depth=2 预设上下游深度（可分享的链接）
+var dv=parseInt(qs.get('depth'),10);
+if(dv>=1 && dv<=4){
+  document.getElementById('depth').value=dv;
+  document.getElementById('depthv').textContent=dv;
+}
 warmup(400);
 // 支持 code-map.html#ContainerFluidData 直接定位（可分享 / 可收藏）
 var hash=decodeURIComponent((location.hash||'').replace(/^#/,''));
