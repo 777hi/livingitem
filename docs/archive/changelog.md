@@ -27,8 +27,12 @@
   `LivingItem.onServerStopped` / `FluidClientCacheCleanup.onLoggingOut` 改为只调 `runServer` / `runClient`。
   🔴 **A1 铁律成文**（infra §3.4）：新增 static 缓存 ⇒ 必须在注册表登记一行。
 
-## 2026-10-04
+## 2026-10-05
 
+- ✅ **末影箱流体渲染同轨（F-1 配套收口）**（**469 测试全绿**）：`EnderChestContainerContext`
+  升 public + 补 `getOwner()`（F-1 已迁出 God class，跨包使用顺理成章）；
+  `FluidFlowServerSync.flushAfterTick` 补第三条派发路径（context 持有 player 直发）——
+  末影箱汲/倒（F-1 解锁）后的渲染/同步同轨。TODO 对应项清结。
 - ✅ **活桶世界侧定稿：零拦截**（用户拍板，**467 测试全绿**）。为保活标记而做的
   世界侧兜底（取水 priming 拦截 + 放水 `emptyContents` 重放 + use/useOn 双路径
   事件补丁）整体删除——**活桶在容器里活，在世界里就是普通桶**：

@@ -19,9 +19,11 @@ import net.neoforged.neoforge.items.IItemHandler;
  * 与菜单槽位反查（{@link ContainerContexts#resolve}，F-1 末影箱分支）都要构造它 —— 留在
  * God class 里会让共享内核反向依赖 {@code ContainerLivingItemHandler}。</p>
  *
- * <p>包级可见：回归测试直接构造本类复现 crash-2026-10-04 的崩溃路径。</p>
+ * <p>可见性：public —— F-1 末影箱分支后跨包使用（流体快照同步
+ * {@code FluidFlowServerSync} 需要 {@link #getOwner()} 直发渲染数据）；
+ * 回归测试同包直接构造复现 crash-2026-10-04 的崩溃路径。</p>
  */
-class EnderChestContainerContext extends SimpleContainerContext {
+public class EnderChestContainerContext extends SimpleContainerContext {
 
     private final String enderChestKey;
     private final Player player;
@@ -31,6 +33,11 @@ class EnderChestContainerContext extends SimpleContainerContext {
             "player_" + player.getStringUUID() + "_ender_chest");
         this.player = player;
         this.enderChestKey = "player_" + player.getStringUUID() + "_ender_chest";
+    }
+
+    /** 持有玩家（流体快照直发用；inventory 为 null，无法从 getInventory() 反查）。 */
+    public Player getOwner() {
+        return player;
     }
 
     @Override

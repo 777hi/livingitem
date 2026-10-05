@@ -152,6 +152,14 @@ public final class FluidFlowServerSync {
             return;
         }
 
+        // 末影箱（F-1 配套，2026-10-05）：context 持有 player（inventory 为 null），
+        // 直发主人本人 —— 末影箱汲/倒解锁后渲染同轨
+        if (ctx instanceof com.qiqi.li.living.container.EnderChestContainerContext ender
+                && ender.getOwner() instanceof ServerPlayer owner) {
+            owner.connection.send(packet);
+            return;
+        }
+
         // BE 容器：关联 BlockEntity 中的 Container 实例 ↔ 玩家菜单匹配
         List<Container> containers = new ArrayList<>();
         for (BlockEntity be : ctx.getAssociatedBlockEntities()) {
