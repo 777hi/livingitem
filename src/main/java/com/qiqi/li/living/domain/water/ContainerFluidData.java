@@ -271,7 +271,15 @@ public class ContainerFluidData {
             if (item.isEmpty()) continue;
             ItemStack transformed = FluidFlowBehaviors.of(fe.fluid).transformItem(item);
             if (transformed != null) {
+                // 消耗判定必须在 setItem 之前 —— setItem 的实现是「先 extractItem 抽干槽位、
+                // 再 insertItem 插入新栈」，item（活引用）会被抽干成空栈，事后判定恒 false
+                // （2026-10-06 实测口径：空桶→水桶必须消耗源，否则一格水 = 无限水桶；
+                //   三连源场景晋升会再生中间源 ⇒ 自动化水桶农场成立，无限性来自三连源而非免费转化）
+                boolean consumeSource = FluidFlowBehaviors.of(fe.fluid).consumesSourceOnTransform(item);
                 ctx.setItem(slot, transformed);
+                if (consumeSource) {
+                    removeGeneratedSource(slot);
+                }
             }
         }
     }

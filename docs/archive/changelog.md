@@ -15,6 +15,23 @@
 
 ---
 
+## 2026-10-06
+
+- ✅ **实测三连修 + 转化消耗源**（**475 测试全绿**）：
+  ① **末影箱渲染泄漏到玩家物品栏**——客户端缓存只有两槽位，末影箱同步键
+  （`player_<uuid>_ender_chest`）与背包键（`player_<uuid>`）同前缀 ⇒ 撞进背包快照。
+  修：`FluidFlowClientCache` 三分路由（背包/末影箱/BE 容器），渲染与客户端汲/倒判定
+  按容器类型取快照（`PlayerEnderChestContainer` instanceof）；
+  ② **创造模式汲水光标不变身**——汲水走了 `createFilledResult` 的创造分支
+  （原桶保留 + 水桶进背包，原版桶语义）⇒ 改 GUI 语义：创造模式光标直接变身活水桶、
+  倒水不消耗（对齐原版无限桶）；③ **转化消耗源**（用户拍板：否则一格水 = 无限水桶）——
+  转化表条目加 `consumeSource` 标记（空桶→水桶 true，混凝土 false 催化剂语义）+
+  契约 `consumesSourceOnTransform` default + 引擎转化成功后移除派生源；
+  三连源场景晋升再生中间源 ⇒ 自动化水桶农场闭环成立（无限性来自三连源而非免费转化）。
+  🔴 **调试中发现的基建坑**：`SimpleContainerContext.setItem` 的实现是
+  「extractItem 抽干槽位 → insertItem 插入新栈」——**调用方持有的旧栈活引用会被抽干成空栈**
+  ⇒ 转化消耗检查（在 setItem 之后读 item）恒 false。修：消耗判定移到 setItem 之前
+  （活引用语义的坑：任何「setItem 后再读旧引用」的代码都中招）。
 ## 2026-10-05
 
 - ✅ **引擎时序化（flowSpeed 消费，跨流体反应的时间地基）**（**473 测试全绿**）：

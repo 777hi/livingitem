@@ -91,10 +91,14 @@ public final class GuiInteractionHelper {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return null;
 
-        FluidFlowClientCache.FlowSnapshot snapshot =
-            hoveredSlot.container == mc.player.getInventory()
-                ? FluidFlowClientCache.getPlayer()
-                : FluidFlowClientCache.get();
+        FluidFlowClientCache.FlowSnapshot snapshot;
+        if (hoveredSlot.container == mc.player.getInventory()) {
+            snapshot = FluidFlowClientCache.getPlayer();
+        } else if (hoveredSlot.container instanceof net.minecraft.world.inventory.PlayerEnderChestContainer) {
+            snapshot = FluidFlowClientCache.getEnder();   // 末影箱汲/倒（F-1 配套）
+        } else {
+            snapshot = FluidFlowClientCache.get();
+        }
 
         var cell = snapshot.cells().get(resolveContainerSlot(hoveredSlot));
         boolean isSourceCell = cell != null && cell[0] == 0;

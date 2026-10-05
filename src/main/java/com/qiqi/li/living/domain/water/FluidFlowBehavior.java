@@ -85,4 +85,15 @@ public interface FluidFlowBehavior {
     default ItemStack transformItem(ItemStack item) {
         return null;
     }
+
+    /**
+     * 该转化是否<b>消耗源</b>（引擎在转化成功后移除该格派生源；2026-10-06 实测口径：
+     * 空桶→水桶必须消耗源，否则一格水 = 无限水桶）。默认 {@code false}（催化剂型，
+     * 如混凝土粉末→混凝土——源保留，工厂化转化）。
+     *
+     * <p>仅在 {@link #transformItem} 返回非空后询问（入参保证非空且非活物品）。</p>
+     */
+    default boolean consumesSourceOnTransform(ItemStack input) {
+        return false;
+    }
 }

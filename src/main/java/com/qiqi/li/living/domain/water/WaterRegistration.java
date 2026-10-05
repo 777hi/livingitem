@@ -43,6 +43,9 @@ public final class WaterRegistration {
             @Override public ItemStack transformItem(ItemStack item) {
                 return FluidTransformTable.transform(Fluids.WATER.getFluidType(), item);
             }
+            @Override public boolean consumesSourceOnTransform(ItemStack item) {
+                return FluidTransformTable.consumesSource(Fluids.WATER.getFluidType(), item);
+            }
         });
     }
 }

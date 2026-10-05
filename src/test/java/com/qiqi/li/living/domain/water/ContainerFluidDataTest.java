@@ -492,6 +492,9 @@ class ContainerFluidDataTest {
                 }
                 return null;
             }
+            @Override public boolean consumesSourceOnTransform(ItemStack item) {
+                return item.is(Items.BUCKET);   // 空桶转化消耗源（生产口径同 WaterRegistration）
+            }
         });
     }
 
@@ -632,6 +635,52 @@ class ContainerFluidDataTest {
 
         assertEquals(Items.WATER_BUCKET, ctx.getItem(0).getItem(), "空桶被源浸泡成水桶");
         assertTrue(fluid.isSource(0), "源不受转化影响");
+    }
+
+    @Test
+    @DisplayName("㉛ 消耗型转化：空桶→水桶同时消耗源（否则一格水 = 无限水桶，2026-10-06 实测口径）")
+    void transform_consumesSource() {
+        registerProductionWaterBehavior();
+        var ctx = row(new ItemStack(Items.BUCKET));
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
+        System.out.println("[DBG-T0] before tick: slot0=" + ctx.getItem(0) + " isLiving=" + LivingItemManager.isLivingItem(ctx.getItem(0)));
+        fluid.tick(ctx);
+        System.out.println("[DBG-T1] after tick: slot0=" + ctx.getItem(0));
+
+        assertEquals(Items.WATER_BUCKET, ctx.getItem(0).getItem(), "转化为水桶");
+        assertFalse(fluid.hasGeneratedSources(), "转化消耗了源（单源不再无限产水桶）");
+        fluid.tick(ctx);   // 实际层下一拍收敛
+        assertFalse(fluid.isSource(0), "下一拍重播种 ⇒ 流表也不再是源");
+    }
+
+    @Test
+    @DisplayName("㉜ 消耗 + 晋升再生：三连源的中间源被转化消耗后自动补回（自动化水桶农场闭环）")
+    void transform_trioRegeneratesAfterConsumption() {
+        registerProductionWaterBehavior();
+        FakeHandler h = new FakeHandler(9);
+        var ctx = new SimpleContainerContext(h);
+        var fluid = new ContainerFluidData();
+        // 手动铺三连源（0、1、2），源 1 上放空桶
+        fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
+        fluid.registerGeneratedSource(1, Fluids.WATER.getFluidType());
+        fluid.registerGeneratedSource(2, Fluids.WATER.getFluidType());
+        h.slots[1] = new ItemStack(Items.BUCKET);
+        fluid.tick(ctx);
+
+        assertEquals(Items.WATER_BUCKET, h.slots[1].getItem(), "空桶转化为水桶");
+        assertFalse(fluid.isGeneratedSource(1), "转化消耗了中间源（generatedSources 当拍移除）");
+        assertTrue(fluid.isSource(0) && fluid.isSource(2), "两侧源不受影响");
+
+        fluid.tick(ctx);   // 下一拍：晋升再生（邻域 ≥2 源 ⇒ 中间源自动补回——自动化水桶农场的再生步）
+        assertTrue(fluid.isGeneratedSource(1), "晋升再生");
+        assertTrue(fluid.isSource(1));
+        assertEquals(Items.WATER_BUCKET, h.slots[1].getItem(), "再生源与水桶共存（非活物品共存）");
+
+        h.slots[1] = new ItemStack(Items.BUCKET);   // 再喂一个空桶（模拟漏斗持续供料）
+        fluid.tick(ctx);
+        assertEquals(Items.WATER_BUCKET, h.slots[1].getItem(), "再次转化");
+        assertFalse(fluid.isGeneratedSource(1), "再次消耗（农场循环）");
     }
 
     @Test

@@ -35,6 +35,10 @@ public final class LivingBucketInteractHandlers {
             if (!LivingBucketFunction.hasFullBucket(carried)) return;
             if (!slot.getItem().isEmpty()) return;   // 有物品 = 原版放置语义，不倒
             LivingBucketInteractSupport.pour(player, slot, carried);
+            // 创造模式对齐原版无限桶：倒水不消耗（光标保持满桶）
+            if (player.hasInfiniteMaterials()) {
+                player.containerMenu.setCarried(carried);
+            }
         } else {
             if (!LivingBucketFunction.isEmptyBucket(carried)) return;
             LivingBucketInteractSupport.scoop(player, slot, carried);

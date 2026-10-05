@@ -5,6 +5,7 @@ import java.util.Map;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.ItemUtils;
 import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.material.Fluids;
 import net.neoforged.neoforge.fluids.FluidType;
@@ -94,12 +95,18 @@ public final class LivingBucketInteractSupport {
         net.minecraft.world.level.material.Fluid fluidHolder = representativeFluid(fluid);
         if (fluidHolder == null) return;   // 未知流体（理论上不可达）—— 保守放弃，不丢源
         fluidData.removeGeneratedSource(containerSlot);
-        // 数量语义对齐原版 ItemUtils.createFilledResult：空桶栈只消耗一个空桶，
-        // 装好的桶进背包（放不下掉落）—— 光标堆叠多个活空桶汲水不再丢桶
         ItemStack filled = new ItemStack(fluidHolder.getBucket());
         filled.applyComponents(carried.getComponents());   // 活标记
         filled.set(net.minecraft.core.component.DataComponents.MAX_STACK_SIZE,
             new ItemStack(filled.getItem()).getMaxStackSize());   // 同 withFluid：形态自然堆叠
-        player.containerMenu.setCarried(net.minecraft.world.item.ItemUtils.createFilledResult(carried, player, filled));
+        if (player.hasInfiniteMaterials()) {
+            // 创造模式：光标直接变身（活空桶 → 活水桶）——
+            // createFilledResult 的创造分支（原桶保留 + 水桶进背包）不符合 GUI 汲水语义（2026-10-06 实测）
+            player.containerMenu.setCarried(filled);
+            return;
+        }
+        // 生存：数量语义对齐原版 createFilledResult——空桶栈只消耗一个空桶，
+        // 装好的桶进背包（放不下掉落）—— 光标堆叠多个活空桶汲水不再丢桶
+        player.containerMenu.setCarried(ItemUtils.createFilledResult(carried, player, filled));
     }
 }

@@ -340,6 +340,28 @@ slot/level/fromSlot）→ 客户端 `FluidFlowClientCache` → `AbstractContaine
 
 ---
 
+## 10. 管道抽取——设计存档（2026-10-05，待实现）
+
+**需求**：容器里的活水源可被模组流体管道抽取（Pipez/Mekanism/Create 全走
+NeoForge `IFluidHandler` capability 方言）。**红电对外供电接口
+（`ContainerEnergyStorage`）为完整范本**，设计决策全部有先例：
+
+| 决策 | 定案 | 红电先例 |
+|---|---|---|
+| 抽取消耗源 | **消耗**——管道抽取 = 自动化汲走；晋升邻域自动再生 ⇒ **原版无限水源的工业化形态**（两源夹一格 + 管道抽中间 + 晋升补中间） | 取电消耗发电量 ← 铜灯再生；同构 |
+| 覆盖范围 | **宽注册全部 BE 类型** + provider 判定链（战利品跳过 / 已有 FluidHandler 让位 / 返回实例——永不 null 切换） | 同款判定链照抄 |
+| 缓冲 | **无**——drain 直接消耗源（任意抽取 ≥1mB 即耗整源，返回请求量 ≤1000）；部分抽取需 SourceEntry 加 amount（挂起） | 无容器池直接扣 |
+| 注水成源 | **v1 不做**（fill 返回 0）——守住活桶的种子工具地位；「源充能」将来独立设计 | 只出不进先例 |
+| 末影箱 | **不做**（流体数据在玩家附件，管道无归属语义） | — |
+| 侧面 | 忽略（GUI 网格与世界朝向无对应） | — |
+| 流体范围 | 自动覆盖全部已注册源流体（岩浆接入即抽岩浆） | — |
+
+**实现清单**：`LivingFluidSourceHandler implements IFluidHandler`（getTanks = 派生源数、
+getFluidInTank = 源流体 ×1000mB、drain 消耗源 + SIMULATE、fill = 0）+ provider 判定链 +
+活数据反查（BE → 双箱规范化 → `getFluidData`，同源原则）。**一个自动成立的边界**：
+管道搬不动活物品（活物品隔离）⇒ 管道只能抽已有的源，不能自动化「倒水」——
+活桶作为源的唯一种子工具的地位不受威胁，守恒律完好。
+
 ## 附录：容器水流示例
 
 ```

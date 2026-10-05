@@ -165,7 +165,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 473 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
+**合计测试用例 475 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
 全绿基线：`468 passed / 0 failed / 1 skipped`（2026-10-05 F-1：`ContainerContextsTest` 新增 2 项 ——
 末影箱菜单槽位可解析 / 非容器槽位仍返回 null；
 2026-10-04 活化时机钩子收编：

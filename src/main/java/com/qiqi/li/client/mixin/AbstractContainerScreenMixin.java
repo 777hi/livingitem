@@ -591,8 +591,15 @@ public class AbstractContainerScreenMixin extends Screen {
 
         Inventory playerInv = mc.player.getInventory();
         for (var group : groups.entrySet()) {
-            FluidFlowClientCache.FlowSnapshot snapshot =
-                group.getKey() == playerInv ? FluidFlowClientCache.getPlayer() : FluidFlowClientCache.get();
+            // 三路由：玩家背包 → 背包快照；末影箱容器 → 末影快照；其余 → BE 容器快照
+            FluidFlowClientCache.FlowSnapshot snapshot;
+            if (group.getKey() == playerInv) {
+                snapshot = FluidFlowClientCache.getPlayer();
+            } else if (group.getKey() instanceof net.minecraft.world.inventory.PlayerEnderChestContainer) {
+                snapshot = FluidFlowClientCache.getEnder();
+            } else {
+                snapshot = FluidFlowClientCache.get();
+            }
             if (snapshot.isEmpty()) continue;
 
             int width = Math.max(1, snapshot.width());

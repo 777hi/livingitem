@@ -67,10 +67,16 @@ public final class FluidTransformTable {
     private static final int CONFIG_VERSION = 1;
 
     /** 条目对象允许的全部字段 —— 多出的都是拼写错误，WARN。 */
-    private static final Set<String> KNOWN_KEYS = Set.of("id", "fluid", "input", "output");
+    private static final Set<String> KNOWN_KEYS = Set.of("id", "fluid", "input", "output", "consumeSource");
 
-    /** 一条转化：流体类型 + 输入物品 → 输出物品（等量替换）。 */
-    public record TransformEntry(String id, FluidType fluid, Item input, Item output) {}
+    /**
+     * 一条转化：流体类型 + 输入物品 → 输出物品（等量替换）。
+     *
+     * @param consumeSource 反应是否<b>消耗该源</b>（2026-10-06 实测口径）：
+     *        输出「含该流体」的条目（空桶→水桶）为 true —— 否则一格水就是无限水；
+     *        催化剂型条目（混凝土粉末→混凝土）为 false——源保留，工厂化转化。
+     */
+    public record TransformEntry(String id, FluidType fluid, Item input, Item output, boolean consumeSource) {}
 
     /** 合并后的最终表（id → 条目，顺序 = 注册顺序）。 */
     private static final Map<String, TransformEntry> ENTRIES = new LinkedHashMap<>();
@@ -160,6 +166,18 @@ public final class FluidTransformTable {
         return new ItemStack(entry.output(), stack.getCount());
     }
 
+    /**
+     * 该转化是否<b>消耗源</b>（引擎在转化成功后移除该格派生源；2026-10-06 实测口径：
+     * 空桶→水桶消耗源，否则一格水 = 无限水桶）。
+     */
+    public static boolean consumesSource(FluidType fluid, ItemStack stack) {
+        if (stack.isEmpty() || LivingItemManager.isLivingItem(stack)) return false;
+        Map<Item, TransformEntry> byInput = INDEX.get(fluid);
+        if (byInput == null) return false;
+        TransformEntry entry = byInput.get(stack.getItem());
+        return entry != null && entry.consumeSource();
+    }
+
     // ── 解析（与 InteractionRuleConfig 同构）──────────────────
 
     private static void parseResource(String resourcePath, String source,
@@ -233,6 +251,7 @@ public final class FluidTransformTable {
         String fluidId = string(obj, "fluid");
         String inputId = string(obj, "input");
         String outputId = string(obj, "output");
+        boolean consumeSource = obj.has("consumeSource") && obj.get("consumeSource").getAsBoolean();
         if (id == null || fluidId == null || inputId == null || outputId == null) {
             LivingItemManager.LOGGER.warn("[fluid-transforms/{}] 条目缺 id/fluid/input/output 之一，跳过", source);
             return;
@@ -247,7 +266,7 @@ public final class FluidTransformTable {
             return;
         }
 
-        boolean replaced = merged.put(id, new TransformEntry(id, fluid, input, output)) != null;
+        boolean replaced = merged.put(id, new TransformEntry(id, fluid, input, output, consumeSource)) != null;
         if ("bundled".equals(source)) bundled.add(id);
         if (replaced) {
             LivingItemManager.LOGGER.info("[fluid-transforms/{}] 覆盖条目: {}", source, id);

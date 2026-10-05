@@ -27,13 +27,20 @@ public final class FluidFlowClientCache {
 
     private static volatile FlowSnapshot containerSnapshot = FlowSnapshot.EMPTY;
     private static volatile FlowSnapshot playerSnapshot = FlowSnapshot.EMPTY;
+    /** 末影箱（2026-10-06）：键 player_<uuid>_ender_chest 与背包同前缀 ⇒ 必须独立槽位，
+     *  否则末影箱的水会渲染到玩家物品栏（实测泄漏）。 */
+    private static volatile FlowSnapshot enderSnapshot = FlowSnapshot.EMPTY;
 
     private FluidFlowClientCache() {}
 
-    /** 更新缓存（网络包线程调用；key = "player_<uuid>" 前缀走背包快照，防与 BE 缓存串台）。 */
+    /** 更新缓存（网络包线程调用）：按键路由三槽位（背包 / 末影箱 / BE 容器）。 */
     public static void update(String containerKey, FlowSnapshot snapshot) {
         if (containerKey != null && containerKey.startsWith("player_")) {
-            playerSnapshot = snapshot;
+            if (containerKey.endsWith("_ender_chest")) {
+                enderSnapshot = snapshot;
+            } else {
+                playerSnapshot = snapshot;
+            }
         } else {
             containerSnapshot = snapshot;
         }
@@ -49,10 +56,16 @@ public final class FluidFlowClientCache {
         return playerSnapshot;
     }
 
-    /** 清空两份缓存（界面关闭时调用，防止下次打开别的容器闪现旧水）。 */
+    /** 当前末影箱快照（无数据返回 EMPTY）。 */
+    public static FlowSnapshot getEnder() {
+        return enderSnapshot;
+    }
+
+    /** 清空三份缓存（界面关闭时调用，防止下次打开别的容器闪现旧水）。 */
     public static void clear() {
         containerSnapshot = FlowSnapshot.EMPTY;
         playerSnapshot = FlowSnapshot.EMPTY;
+        enderSnapshot = FlowSnapshot.EMPTY;
     }
 
     /** 便捷拷贝（网络包处理构造快照用）。 */
