@@ -28,8 +28,9 @@ import com.qiqi.li.living.container.TickContext;
  * （每个流体的注册桶物品）；排空 → {@code Items.BUCKET}。组件（活标记）在变换时全量保留。
  * 本类的逻辑量极少 —— <b>重量全在容器级活流体上</b>（{@link ContainerFluidData}）。</p>
  *
- * <p>汲/倒/世界取水的调用方：{@code LivingBucketInteractHandlers}（GUI，走
- * GuiInteractionPacket 管道）与 {@code LivingBucketWorldUse}（世界，BucketPickup）。</p>
+ * <p>汲/倒调用方：{@code LivingBucketInteractHandlers}（GUI，走 GuiInteractionPacket 管道）。
+ * <b>世界侧零拦截</b>（2026-10-04 定稿）：活桶在世界里就是普通桶（原版取/放水原生行为，
+ * swap 会丢活标记——丢了就再点活按钮，不做兜底）；priming = 活化水桶直取。</p>
  */
 public class LivingBucketFunction implements LivingItemFunction {
 

@@ -162,18 +162,21 @@ vanilla 双箱 = CompoundContainer 单容器天然一网；末影箱路由模式
 - 形态变换 `withFluid(stack, fluid)`：汲入 X → `X.getBucket()`（模组流体自动兼容），
   排空 → `Items.BUCKET`；组件全量保留；形态不变零新对象。
 
-### 5.2 世界取水（priming）
+### 5.2 世界侧：零拦截（2026-10-04 最终定稿）
 
-`LivingBucketWorldUse`（`PlayerInteractEvent.RightClickItem`，两端取消）：
-空活桶对准 `BucketPickup` 方块右键 → 原版 `pickupBlock`（含「拿走世界水源」语义）+
-`ItemUtils.createFilledResult`（数量/创造模式）+ 结果保留活标记。
-取水闭环的**必要入口**（否则满活桶只能来自汲水 = 死循环）。
-**满活桶对世界放水**（2026-10-04）：`PlayerInteractEvent.RightClickBlock` 拦截，
-对齐原版 `BucketItem.useOn` filled 分支——`emptyContents` + 原版位置规则
-（可容纳则原地/否则相邻面格）+ 创造模式不消耗；排空走 `withFluid` 保活标记。
-⚠️ 只拦非交互方块（`MenuProvider` 方块放行原版开界面——方块 use 消费后原版 useOn
-本就不执行，无 swap 风险）。汲水/倒水的**堆叠语义**对齐原版
-`ItemUtils.createFilledResult`（空桶栈只耗一个，装好的进背包）。
+活桶在世界里就是**普通桶**——原版取/放水原生行为，不做任何拦截或重放：
+
+- 活水桶对世界放水 → 原版放置 → 换成普通空桶（活标记随 swap 丢失）；
+- 活空桶对世界取水 → 原版拾取 → 换成普通水桶（同上）。
+
+**想要活标记就再点活按钮**（活化无门槛、无消耗），不做任何兜底。
+由此 priming 塌缩为一步：**活化水桶直取**——原版水桶本身就是满水
+（`BucketItem.content`），活化即得满活水桶，倒进容器即开工；
+活空桶的世界汲水路径因此失去意义（汲完还得重新活化，不如直取）。
+
+> 沿革：取水闭环断链 ⇒ `RightClickItem` 拦截（事件路径错误）⇒ 补 `RightClickBlock`
+> （use/useOn 双路径）⇒ 交换点 Mixin 提案 ⇒ 最终裁定：**为一个标记做这么多兜底不值得，
+> 活化按钮就是兜底**。世界侧拦截层（`LivingBucketWorldUse`）整体删除。
 
 ### 5.3 GUI 汲/倒
 
