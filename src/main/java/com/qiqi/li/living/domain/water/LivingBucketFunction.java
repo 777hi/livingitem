@@ -100,6 +100,12 @@ public class LivingBucketFunction implements LivingItemFunction {
         }
         ItemStack out = new ItemStack(target, Math.min(current.getCount(), new ItemStack(target).getMaxStackSize()));
         out.applyComponents(current.getComponents());   // 活标记等组件全量保留
+        // ⚠️ applyComponents 会连**源物品的默认组件**一起复制（1.21 组件系统：stacksTo
+        //    注册为默认组件，水桶的 max_stack_size=1 随 map 上身）。
+        //    ⚠️ 不能 remove()：移除后 getOrDefault(MAX_STACK_SIZE, 1) 落到**硬编码兜底 1**
+        //    （Item.java:120），而非物品自身的 16 —— 必须**显式设置目标形态的自然堆叠值**。
+        out.set(net.minecraft.core.component.DataComponents.MAX_STACK_SIZE,
+            new ItemStack(target).getMaxStackSize());
         return out;
     }
 }

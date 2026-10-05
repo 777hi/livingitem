@@ -165,7 +165,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 468 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
+**合计测试用例 470 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
 全绿基线：`456 passed / 0 failed / 1 skipped`（2026-10-04 活化时机钩子收编：
 `ActivationHookTest` 新增 7 项 —— 派发参数原样送达 / 顺序不变量 / 未认领物品不派发 /
 数据安全否决 / 箱子无玩家拒绝且内容保住 / 末影箱不绑定且照常解绑 / owner 只由活工具钩子写；

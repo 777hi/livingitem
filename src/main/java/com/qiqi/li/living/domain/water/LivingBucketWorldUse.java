@@ -1,9 +1,11 @@
 package com.qiqi.li.living.domain.water;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.BucketItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.ItemUtils;
 import net.minecraft.world.level.ClipContext;
@@ -74,6 +76,9 @@ public final class LivingBucketWorldUse {
     static ItemStack asLivingBucketForm(ItemStack pickedFilledBucket, ItemStack originalHeld) {
         ItemStack out = new ItemStack(pickedFilledBucket.getItem());
         out.applyComponents(originalHeld.getComponents());
+        // 同 withFluid：显式设置目标形态的自然堆叠（remove 会落到硬编码兜底 1）
+        out.set(net.minecraft.core.component.DataComponents.MAX_STACK_SIZE,
+            new ItemStack(pickedFilledBucket.getItem()).getMaxStackSize());
         return out;
     }
 

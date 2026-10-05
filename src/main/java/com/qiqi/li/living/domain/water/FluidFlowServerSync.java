@@ -15,6 +15,9 @@ import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.event.entity.player.PlayerContainerEvent;
 import net.neoforged.neoforge.fluids.FluidType;
 import net.neoforged.neoforge.registries.NeoForgeRegistries;
 
@@ -33,6 +36,7 @@ import com.qiqi.li.network.FluidFlowSyncPacket;
  * 包很小（≤54 格 × 3 varint），且「打开后 1 tick 内出图、状态静止也持续刷新」的自愈语义
  * 比脏标记省包更重要。</p>
  */
+@EventBusSubscriber
 public final class FluidFlowServerSync {
 
     /**
@@ -50,6 +54,32 @@ public final class FluidFlowServerSync {
         boolean wasActive = CLIENT_ACTIVE.remove(key);
         if (hasData) CLIENT_ACTIVE.add(key);
         return !hasData && wasActive;
+    }
+
+    /**
+     * 玩家关闭容器（2026-10-04）：立即向**该玩家**下发一次空快照（若此容器曾向其同步）。
+     *
+     * <p>覆盖关闭后的**在途包竞态**：客户端 {@code removed()} 清缓存之后，服务端最后一拍
+     * 仍可能把玩家当 viewer 发出快照包并被无条件写入 ⇒ 残留跨界面/跨破坏存活
+     * （实测：关箱子快开背包，合成槽位渲染旧水；破坏重放同键容器首开残留）。
+     * 本包在服务端处理完关闭**之后**发出 ⇒ 同连接 FIFO 保证最后落地的是空快照。
+     * 其它仍在查看的玩家不受影响（正常 per-tick 同步继续）。</p>
+     */
+    @SubscribeEvent
+    public static void onContainerClose(net.neoforged.neoforge.event.entity.player.PlayerContainerEvent.Close event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
+        AbstractContainerMenu menu = event.getContainer();
+        for (Slot slot : menu.slots) {
+            if (slot.container == player.getInventory()) continue;
+            TickableContainerContext ctx = com.qiqi.li.living.container.ContainerContexts.resolve(player, slot);
+            if (ctx == null) continue;   // 末影箱等解析不出 ⇒ 跳过
+            String key = ctx.getContainerKey();
+            if (key == null) return;
+            if (!CLIENT_ACTIVE.contains(key)) return;   // 从未向其同步过 ⇒ 无残留可清
+            player.connection.send(new FluidFlowSyncPacket(
+                key, Math.max(1, ctx.getWidth()), List.of(), Map.of()));
+            return;   // 一个容器一条键，首个可解析槽位即定
+        }
     }
 
     /** 测试用：清空边沿状态。 */

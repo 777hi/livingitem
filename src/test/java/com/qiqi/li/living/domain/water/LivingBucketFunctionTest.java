@@ -81,6 +81,15 @@ class LivingBucketFunctionTest {
     }
 
     @Test
+    @DisplayName("换宿主后最大堆叠随形态：倒空的活空桶可堆 16")
+    void withFluid_drain_maxStackFollowsHost() {
+        var held = living(new ItemStack(Items.WATER_BUCKET));
+        var out = LivingBucketFunction.withFluid(held, Fluids.EMPTY);
+        assertEquals(16, out.getMaxStackSize(), "空桶形态应恢复 16 堆叠");
+        assertTrue(out.is(Items.BUCKET));
+    }
+
+    @Test
     @DisplayName("形态不变时返回原实例（零新对象）")
     void withFluid_sameShape_returnsSameInstance() {
         var held = living(new ItemStack(Items.WATER_BUCKET));
