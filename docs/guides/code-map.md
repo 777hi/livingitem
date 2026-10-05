@@ -78,6 +78,29 @@ python tools/gen_code_map.py --json   # 同时落 build/code-map.json（供二�
 
 **判据一句话**：图用来**发现线索**，不用来**下结论**；结论回代码验证。
 
+### 4.1 实测精度（2026-10-06，用 `jdeps` 交叉校验）
+
+本图是**文本解析**（一个文件 = 一个节点），精度实测如下。复算方式：
+
+```bash
+jdeps -verbose:class -filter:none build/classes/java/main   # 需先编译（./gradlew classes）
+```
+
+| | 条数 | 说明 |
+|---|---|---|
+| 本图类级边 | 1160 | |
+| `jdeps` 类级边（读字节码） | 1189 | |
+| **一致** | **1146（占本图 99%）** | |
+| 本图独有 | 14 | **全是「未使用的 import」** —— 本图把 import 一律计为使用 |
+| `jdeps` 独有 | 43 | **签名级依赖**：`registerFunction(new X())` 这类**方法签名里的类型**（如 `LivingItemFunction`）源码正文不出现、字节码里有 |
+
+⚠️ **另有一条已知结构性局限**：**一个文件 = 一个节点** ⇒
+包级私有类 / 嵌套类被折叠进宿主类（实例：`TransferStrategy.java` 里的 `CollectStrategy`、
+`DistributeStrategy` 在图上是 `TransferStrategy`）。
+
+⇒ **结论**：对「谁认识谁」可信（99%）；**会漏「通过方法签名间接认识」的边**。
+需要判断**编译期耦合**（而不只是源码引用）时，用上面的 `jdeps` 命令交叉验证。
+
 ## 5. 给 AI 用：文本查询（`--query` / `--extend`）
 
 > ⭐ **AI 不要用浏览器去看 HTML，也不要自己写脚本解析 `build/code-map.json`** ——
