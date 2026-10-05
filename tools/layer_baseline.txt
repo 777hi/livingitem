@@ -1,0 +1,67 @@
+# 架构分层基线 —— 已存在的违规。**只允许减少，不允许增加。**
+# 由 tools/check_layers.py 读写；除删行外请勿手改。
+# 修掉一批后跑：python tools/check_layers.py --update-baseline
+# 格式：规则 <TAB> 源 <TAB> 目标 <TAB> 条数
+
+# R1 跨模块方向违规（下层依赖上层）
+module	living/transfer	living/domain/redstone	11
+module	living/container	living/domain/water	9
+module	living/container	living/domain/redstone	6
+module	living/interaction	living/domain/farmland	6
+module	living/container	living/domain/power	5
+module	living/container	living/transfer	5
+module	living/domain/tools	network	5
+module	com/qiqi	client/render	4
+module	living/api	living/container	4
+module	living/interaction	living/domain/redstone	4
+module	living/transfer	living/domain/ender	4
+module	living/transfer	living/domain/power	4
+module	living/transfer	living/domain/tools	4
+module	living/compat	living/domain/water	3
+module	living/domain/tools	com/qiqi	3
+module	living/transfer	living/domain/chest	3
+module	living/transfer	living/domain/water	3
+module	living/domain/tnt	com/qiqi	2
+module	living/interaction	living/domain/tnt	2
+module	living/transfer	living/domain/farmland	2
+module	living/util	living/domain/tools	2
+module	living/util	living/domain/water	2
+module	com/qiqi	client/icon	1
+module	living/api	living/domain/tools	1
+module	living/api	living/transfer	1
+module	living/container	living/compat	1
+module	living/container	living/debug	1
+module	living/container	living/domain/ender	1
+module	living/container	living/domain/runtime	1
+module	living/domain/ender	com/qiqi	1
+module	living/domain/ender	network	1
+module	living/domain/map	network	1
+module	living/domain/runtime	network	1
+module	living/domain/water	com/qiqi	1
+module	living/domain/water	network	1
+module	living/transfer	com/qiqi	1
+module	living/transfer	living/domain/furnace	1
+module	living/transfer	living/domain/hopper	1
+module	living/transfer	living/domain/tnt	1
+module	living/util	living/domain/ender	1
+module	living/util	living/domain/runtime	1
+module	living/util	living/domain/tnt	1
+
+# R2 Mixin 位置违规（只能声明在 L4 / L5）
+#   （无）
+
+# R3 领域互依赖（living/domain/* 之间）
+domain	living/domain/hopper	living/domain/ender	7
+domain	living/domain/furnace	living/domain/runtime	3
+domain	living/domain/hopper	living/domain/runtime	3
+domain	living/domain/power	living/domain/runtime	3
+domain	living/domain/hopper	living/domain/chest	2
+domain	living/domain/power	living/domain/redstone	2
+domain	living/domain/ender	living/domain/hopper	1
+domain	living/domain/hopper	living/domain/redstone	1
+domain	living/domain/redstone	living/domain/hopper	1
+domain	living/domain/redstone	living/domain/power	1
+domain	living/domain/runtime	living/domain/furnace	1
+domain	living/domain/runtime	living/domain/hopper	1
+domain	living/domain/runtime	living/domain/power	1
+domain	living/domain/tnt	living/domain/redstone	1

@@ -45,6 +45,7 @@ import collections
 import json
 import os
 import re
+import subprocess
 import sys
 from collections import defaultdict
 
@@ -94,6 +95,14 @@ def layer_of(module: str) -> int:
         UNMAPPED.add(module)
         return 3
     return lay
+
+
+LAYER_NAME = {l: n for l, n, _ in LAYERS}
+
+
+def layer_name_of(layer: int) -> str:
+    """层号 → 显示名（如 2 → `L2 通用机制`）。"""
+    return LAYER_NAME.get(layer, "L%s" % layer)
 
 
 # --------------------------------------------------------------------------- 解析
@@ -1266,6 +1275,83 @@ def extend_report(graph: dict, threshold: float = 0.6) -> int:
     return 0
 
 
+def verify_report(graph: dict) -> int:
+    """用 `jdeps` 读**字节码**，交叉校验本图的类级边。
+
+    **为什么需要**：本图是文本解析 ⇒ 原理上**看不见「签名级依赖」** ——
+    例如 `LivingItemManager.registerFunction(new X())`，调用方必须链接到
+    方法签名里的 `LivingItemFunction`，但**源码正文里根本没出现过这个名字**。
+    实测（2026-10-06）：本图 1160 条边里 99% 被字节码证实，但漏了 43 条签名级边。
+    """
+    classes = os.path.join(ROOT, "build", "classes", "java", "main")
+    if not os.path.isdir(classes):
+        print("找不到 %s —— 先编译：./gradlew classes"
+              % os.path.relpath(classes, ROOT).replace("\\", "/"))
+        return 1
+
+    # 陈旧警告：源码比 class 新 ⇒ 校验结果可能失真
+    newest_java = max((os.path.getmtime(os.path.join(dp, f))
+                       for dp, _d, fs in os.walk(SRC_ROOT) for f in fs if f.endswith(".java")),
+                      default=0)
+    newest_cls = max((os.path.getmtime(os.path.join(dp, f))
+                      for dp, _d, fs in os.walk(classes) for f in fs if f.endswith(".class")),
+                     default=0)
+    stale = newest_java > newest_cls
+
+    try:
+        proc = subprocess.run(["jdeps", "-verbose:class", "-filter:none", classes],
+                              capture_output=True, text=True, errors="replace")
+    except FileNotFoundError:
+        print("找不到 jdeps —— 它是 JDK 自带的，确认 JAVA_HOME/bin 在 PATH 里。")
+        return 1
+    if proc.returncode != 0:
+        print("jdeps 失败：\n%s" % proc.stderr[:500])
+        return 1
+
+    def simple(fqn: str) -> str:
+        return fqn.rsplit(".", 1)[-1].rsplit("$", 1)[0]
+
+    jd: set[tuple[str, str]] = set()
+    for ln in proc.stdout.split("\n"):
+        m = re.match(r"^\s*(\S+)\s+->\s+(\S+)\s+\S+$", ln)
+        if not m:
+            continue
+        a, b = m.group(1), m.group(2)
+        if a.startswith(BASE_PKG) and b.startswith(BASE_PKG):
+            sa, sb = simple(a), simple(b)
+            if sa != sb:
+                jd.add((sa, sb))
+
+    ext = {n["id"] for n in graph["nodes"] if n["kind"] == "external"}
+    mine = {(e["s"], e["d"]) for e in graph["edges"]
+            if e["s"] not in ext and e["d"] not in ext}
+
+    both, only_mine, only_jd = mine & jd, mine - jd, jd - mine
+    print("=== 与 jdeps（字节码）交叉校验 ===\n")
+    print("  本图类级边    %5d" % len(mine))
+    print("  jdeps 类级边  %5d" % len(jd))
+    print("  一致          %5d  （占本图 %.0f%%）" % (len(both), 100 * len(both) / max(1, len(mine))))
+    print("  本图独有      %5d  ← 多为「未使用的 import」（本图把 import 一律计为使用）" % len(only_mine))
+    print("  jdeps 独有    %5d  ← **签名级依赖**：本图原理上看不见" % len(only_jd))
+    if stale:
+        print("\n  ⚠ 源码比 class 新 ⇒ 结果可能失真。先 `./gradlew classes` 再校验。")
+
+    if only_jd:
+        print("\n【jdeps 独有 —— 真实的编译期耦合，本图没有】")
+        for a, b in sorted(only_jd)[:40]:
+            print("    %-32s -> %s" % (a, b))
+        if len(only_jd) > 40:
+            print("    …（共 %d 条）" % len(only_jd))
+        print("\n  ⇒ 判断「编译期耦合 / 拆包会不会断链」时，以这一份为准。")
+    if only_mine:
+        print("\n【本图独有 —— 字节码里没有，多半是未使用的 import】")
+        for a, b in sorted(only_mine)[:20]:
+            print("    %-32s -> %s" % (a, b))
+        if len(only_mine) > 20:
+            print("    …（共 %d 条）" % len(only_mine))
+    return 0
+
+
 def main() -> int:
     global SRC_ROOT
 
@@ -1276,6 +1362,8 @@ def main() -> int:
                     help="查某个类 / 模块的上下游（**直接解析源码，始终最新**，不产出 HTML）")
     ap.add_argument("--extend", action="store_true",
                     help="列出扩展点：被多数领域共同依赖的类（新增子系统要接的口子）")
+    ap.add_argument("--verify", action="store_true",
+                    help="用 jdeps 读字节码交叉校验本图（找出「签名级依赖」这类盲区）")
     ap.add_argument("--src", default=SRC_ROOT)
     args = ap.parse_args()
 
@@ -1288,6 +1376,8 @@ def main() -> int:
         return query_report(graph, args.query)
     if args.extend:
         return extend_report(graph)
+    if args.verify:
+        return verify_report(graph)
 
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
     payload = json.dumps(graph, ensure_ascii=False, separators=(",", ":")).replace("<", "\\u003c")

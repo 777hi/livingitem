@@ -99,7 +99,11 @@ jdeps -verbose:class -filter:none build/classes/java/main   # 需先编译（./g
 `DistributeStrategy` 在图上是 `TransferStrategy`）。
 
 ⇒ **结论**：对「谁认识谁」可信（99%）；**会漏「通过方法签名间接认识」的边**。
-需要判断**编译期耦合**（而不只是源码引用）时，用上面的 `jdeps` 命令交叉验证。
+需要判断**编译期耦合**（而不只是源码引用）时，用 `--verify` 或上面的 `jdeps` 命令交叉验证：
+
+```bash
+python tools/gen_code_map.py --verify   # 自动比对，并把「jdeps 独有的签名级边」列出来
+```
 
 ## 5. 给 AI 用：文本查询（`--query` / `--extend`）
 
@@ -124,7 +128,34 @@ python tools/gen_code_map.py --extend                   # 扩展点：多数领�
 ⚠️ **图只回答「结构」，不回答「意图」。** 「为什么这么设计 / 当初踩过什么坑」
 仍然只能读 `docs/`（`tech/*` 与 `system-design/*`）。两者是**互补**的，别互相替代。
 
-## 6. 铁律
+## 6. 分层校验：`tools/check_layers.py`
+
+> **把「层次」从一句约定，变成不可能被违反的机制** —— 违规即退出码 1。
+> 它读的是 `gen_code_map.py` 的 **`LAYERS` 表（同一张，不复制第二份）**。
+
+```bash
+python tools/check_layers.py                     # 校验（有新增违规 ⇒ 退出 1）
+python tools/check_layers.py --show              # 只看当前违规，不比对基线
+python tools/check_layers.py --update-baseline   # 修完后收紧基线
+```
+
+| 规则 | 内容 |
+|---|---|
+| **R1** | 跨模块依赖只能「上层 → 下层」；**下层依赖上层 = 违规** |
+| **R2** | `@Mixin` 只能声明在 **L4 / L5** —— 挂原版钩子必须关在接线层 |
+| **R3** | 领域（`living/domain/*`）之间应尽量不互相依赖 |
+
+🔑 **棘轮机制（为什么现在就能用）**：项目当前已有违规，一次性修完不现实。
+所以 `tools/layer_baseline.txt` 记录**已存在的违规** —— **只允许减少、不允许增加**。
+新增违规 ⇒ 退出 1；修掉一批后跑 `--update-baseline` 收紧。
+
+⇒ **它的作用不是「立刻变干净」，而是「不许更脏」。**
+配合「每批纯重构 + 全量测试全绿」，违规数只会单向下降 —— 这就是可验证的架构演进。
+
+⚠️ **基线是「已接受的债」，不是「正确」**：`--update-baseline` 等于**显式接受**新增违规。
+跑它之前先问：这是有意为之，还是我顺手带进来的？
+
+## 7. 铁律
 
 🔴 **图是派生的 ⇒ 一定会过期。** 改完代码**必须重新生成**才可信；
 **唯一真相永远是 `src/`，不是这张图。**
