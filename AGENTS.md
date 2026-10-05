@@ -116,6 +116,7 @@ SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 | **单元测试** | FML 测试环境配置 + 测试替身 + 可测性边界 | [unit-testing.md](docs/guides/unit-testing.md) |
 | **活TNT测试说明** | **分两区**：群友版（`T-01`~`T-13`，肉眼观察引爆现象，含**铁箱子触发的超级爆炸**）+ 作者自测（`A-01`~`A-12`，需日志/TPS/跑图） | [living-tnt-testing.md](docs/guides/living-tnt-testing.md) |
 | **框架重构** | HasDirection + HasContainerData 接口化设计 | [framework-refactoring.md](docs/archive/framework-refactoring.md) |
+| **框架层对标（未定案）** | 🆚 对标 AnvilCraft + Cataclysm 的框架层：可学 5 条（Mixin 外移 / 注册期事件 / reload 钩子 / 确定性排序 / nullness）+ 待拍板 1 条（规则 JSON 迁 `data/`）+ 明确不抄清单。**动架构改向前先读它** | [framework-benchmark.md](docs/buffer/framework-benchmark.md) |
 
 ---
 

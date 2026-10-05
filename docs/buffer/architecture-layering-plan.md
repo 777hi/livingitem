@@ -6,7 +6,7 @@
 > ⚠️ **本文是「探讨层」，不是现状描述。** 动代码前必须先回到本文逐条确认。
 >
 > ⚠️ **与并行文档的边界（2026-10-06）**：本文只谈**分层与模块归属**；
-> [framework-benchmark-anvilcraft.md](framework-benchmark-anvilcraft.md) 谈**向 AnvilCraft 学什么**
+> [framework-benchmark.md](framework-benchmark.md) 谈**向 AnvilCraft / Cataclysm 学什么**
 > （mixin 契约接口 / 注册期事件 / Nullness / reload 钩子…）。两份都指向"框架层优化"，
 > 但**改动面基本不重叠**；若出现重叠，**以先动手的那份为准**，另一份同步降级。
 
@@ -118,7 +118,7 @@ public record LivingItemRuntimeData(
 
 **硬编码「三选一」联合体** —— 三个领域各调 `forGenerator` / `forHopper` / `forFurnace` 填自己那格
 （= **贡献者模式的手工版**）。**真问题：加一个新领域的 tooltip ⇒ 必须改这个核心 record。**
-与 [framework-benchmark-anvilcraft.md](framework-benchmark-anvilcraft.md) §3.2 是**同一个判据**
+与 [framework-benchmark.md](framework-benchmark.md) §3.2 是**同一个判据**
 （「主类必须认识所有功能 ⇒ 与 `getOwnedComponentTypes()` 的自声明方向相反」）。
 
 🔴 **定稿：做成正式机制。**
@@ -195,7 +195,7 @@ javadoc 明写「红电感知端口 —— 电力层与跨层消费者（漏斗�
 
 | # | 问题 | 影响 |
 |---|---|---|
-| Q1 | ① 的 9 个 handler 搬走后，`InteractionRegistry` 要不要加确定性排序？（对齐 [framework-benchmark-anvilcraft.md](framework-benchmark-anvilcraft.md) §3.4） | ① 与那份文档的**唯一可能重叠点** |
+| Q1 | ① 的 9 个 handler 搬走后，`InteractionRegistry` 要不要加确定性排序？（对齐 [framework-benchmark.md](framework-benchmark.md) §3.4） | ① 与那份文档的**唯一可能重叠点** |
 | Q2 | ③ `LivingComponents` 是只搬家，还是治本（各领域自己声明并注册 `DataComponentType`）？ | ③ |
 | Q3 | **B 的机制化设计**：框架层「不透明分组容器」的载荷用什么？（`CompoundTag` 不透明透传 vs 注册式 codec）—— 前者轻、后者类型安全 | §3.1 |
 | Q4 | ⑤ `container → 领域` 抽什么接口？会动 tick 调度热路径 | ⑤ |
