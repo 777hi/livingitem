@@ -12,6 +12,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.domain.farmland.PlantCropHandler;
 
 /**
  * 交互注册表匹配测试 —— 两趟优先级（精确触发器 > 通配自交互）回归守卫。

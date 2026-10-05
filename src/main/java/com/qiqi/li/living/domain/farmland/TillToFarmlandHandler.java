@@ -1,4 +1,4 @@
-package com.qiqi.li.living.interaction;
+package com.qiqi.li.living.domain.farmland;
 
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.EquipmentSlot;
@@ -6,7 +6,7 @@ import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import com.qiqi.li.living.api.LivingItemActivation;
-import com.qiqi.li.living.domain.farmland.Tillables;
+import com.qiqi.li.living.interaction.InteractionHandler;
 
 /**
  * 活锄头右键活土 → 转换为耕地（物品转换型处理器）。

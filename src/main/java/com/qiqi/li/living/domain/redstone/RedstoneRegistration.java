@@ -2,11 +2,7 @@ package com.qiqi.li.living.domain.redstone;
 
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerSnapshot;
-import com.qiqi.li.living.interaction.ButtonPressHandler;
-import com.qiqi.li.living.interaction.ComparatorToggleHandler;
 import com.qiqi.li.living.interaction.InteractionRegistry;
-import com.qiqi.li.living.interaction.LeverToggleHandler;
-import com.qiqi.li.living.interaction.RepeaterCycleHandler;
 
 /**
  * 红石域注册入口 —— 本领域的 Function / 交互规则 / 交互处理器 / 快照贡献者。

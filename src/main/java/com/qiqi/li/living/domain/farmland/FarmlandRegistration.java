@@ -1,11 +1,8 @@
 package com.qiqi.li.living.domain.farmland;
 
 import com.qiqi.li.living.api.LivingItemManager;
-import com.qiqi.li.living.interaction.BonemealHandler;
 import com.qiqi.li.living.interaction.InteractionPredicates;
 import com.qiqi.li.living.interaction.InteractionRegistry;
-import com.qiqi.li.living.interaction.PlantCropHandler;
-import com.qiqi.li.living.interaction.TillToFarmlandHandler;
 
 /**
  * 活耕地域注册入口 —— 见 {@code RedstoneRegistration} 的类注释了解为何有这个类（A1）。

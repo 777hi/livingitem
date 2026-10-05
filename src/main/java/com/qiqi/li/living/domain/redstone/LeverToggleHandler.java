@@ -1,9 +1,9 @@
-package com.qiqi.li.living.interaction;
+package com.qiqi.li.living.domain.redstone;
 
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
-import com.qiqi.li.living.domain.redstone.LivingLeverFunction;
+import com.qiqi.li.living.interaction.InteractionHandler;
 
 public class LeverToggleHandler implements InteractionHandler {
 

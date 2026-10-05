@@ -2,8 +2,6 @@ package com.qiqi.li.living.domain.tnt;
 
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.function.LivingFlintAndSteelFunction;
-import com.qiqi.li.living.interaction.IgniteCarriedHandler;
-import com.qiqi.li.living.interaction.IgniteHandler;
 import com.qiqi.li.living.interaction.InteractionRegistry;
 
 /**

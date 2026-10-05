@@ -1,18 +1,18 @@
-package com.qiqi.li.living.interaction;
+package com.qiqi.li.living.domain.redstone;
 
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
-import com.qiqi.li.living.domain.redstone.LivingButtonFunction;
+import com.qiqi.li.living.interaction.InteractionHandler;
 
-public class ButtonPressHandler implements InteractionHandler {
+public class RepeaterCycleHandler implements InteractionHandler {
 
     @Override
     public void handle(ServerPlayer player, Slot targetSlot) {
         ItemStack stack = targetSlot.getItem();
         if (stack.isEmpty()) return;
 
-        if (LivingButtonFunction.pressButton(stack)) {
+        if (LivingRepeaterFunction.cycleDelay(stack)) {
             player.containerMenu.broadcastChanges();
         }
     }

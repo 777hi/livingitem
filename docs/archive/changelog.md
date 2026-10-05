@@ -17,6 +17,19 @@
 
 ## 2026-10-06
 
+- 🏗 **架构分层第一步：`interaction` 的 9 个领域专用 handler 归位**（**484 测试全绿**，纯重构）：
+  把 `living/interaction/` 里 9 个「某领域专用」的 handler 搬进各自领域 ——
+  `BonemealHandler` / `PlantCropHandler` / `TillToFarmlandHandler` → `domain/farmland`；
+  `ButtonPressHandler` / `LeverToggleHandler` / `ComparatorToggleHandler` / `RepeaterCycleHandler` → `domain/redstone`；
+  `IgniteHandler` / `IgniteCarriedHandler` → `domain/tnt`。
+  ⇒ **`living/interaction/` 只剩通用机制**（Entry / Handler / Predicates / Registry / RuleConfig）；
+  **`InteractionRegistry` 一行未改** —— 注册调用本来就在各 `XxxRegistration` 里（R4 早已满足）。
+  **分层违规 R1 113 → 101**（`interaction → farmland/redstone/tnt` 三对清零），
+  基线随之收紧 **42 对 → 39 对**。判据可复算：`python tools/check_layers.py`。
+  方案与后续批次见 `buffer/architecture-layering-plan.md` ①。
+  ⚠️ **踩坑**：按 `import` 搜引用会漏「**同包引用**」—— `TillToFarmlandCompatTest` 与 handler 同包、
+  **没有 import**，编译才发现（`InteractionRegistryTest` 同理，靠 `PlantCropHandler.canPlantWith` 静态引用暴露）。
+
 - ✅ **实测三连修 + 转化消耗源**（**475 测试全绿**）：
   ① **末影箱渲染泄漏到玩家物品栏**——客户端缓存只有两槽位，末影箱同步键
   （`player_<uuid>_ender_chest`）与背包键（`player_<uuid>`）同前缀 ⇒ 撞进背包快照。

@@ -1,4 +1,4 @@
-package com.qiqi.li.living.interaction;
+package com.qiqi.li.living.domain.farmland;
 
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.inventory.Slot;
@@ -6,9 +6,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
 import com.qiqi.li.living.api.LivingItemManager;
-import com.qiqi.li.living.domain.farmland.CropClassifier;
-import com.qiqi.li.living.domain.farmland.FarmlandPlantComponent;
-import com.qiqi.li.living.domain.farmland.LivingFarmlandFunction;
+import com.qiqi.li.living.interaction.InteractionHandler;
 
 /**
  * 活骨粉右键活耕地 → 强制触发一次生长 tick。

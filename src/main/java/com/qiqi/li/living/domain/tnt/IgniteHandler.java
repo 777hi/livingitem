@@ -1,4 +1,4 @@
-package com.qiqi.li.living.interaction;
+package com.qiqi.li.living.domain.tnt;
 
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.EquipmentSlot;
@@ -6,7 +6,7 @@ import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import com.qiqi.li.living.api.LivingItemManager;
-import com.qiqi.li.living.domain.tnt.ExplosionComponent;
+import com.qiqi.li.living.interaction.InteractionHandler;
 
 /**
  * 点燃交互处理器 —— 处理活打火石右键活TNT的交互。
