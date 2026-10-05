@@ -66,6 +66,13 @@ libs/
 .zcode/
 .codebuddy/
 
+### 笔记工具（工具侧，不入库）###
+# Obsidian 的库配置：workspace.json 每次开软件都变，且只对本地有意义。
+# 不带斜杠 ⇒ 匹配任意层级的 .obsidian/（docs/.obsidian/ 与仓库根的都能挡住）。
+.obsidian/
+# 根目录那个误建的库（vault 本体是 md 文件，属工具侧草稿，不入库）
+/LivingItem/
+
 ### 崩溃日志 ###
 # 注意 *.log 已在上面忽略，但崩溃报告是 .txt，需单独挡
 docs/crash-*.txt
