@@ -28,6 +28,10 @@
     python tools/gen_code_map.py --out x.html
     python tools/gen_code_map.py --json         # 同时落一份 build/code-map.json
 
+    # 给 **AI** 用的文本查询（不产出 HTML，直接解析源码 ⇒ 不存在读到过期图的问题）
+    python tools/gen_code_map.py --query ContainerFluidData
+    python tools/gen_code_map.py --query living/transfer
+
 设计约束
 --------
 * **纯派生**：图完全由源码算出，不存任何手工维护的数据 ⇒ 不可能漂移。
@@ -1116,12 +1120,162 @@ def find_cycles(ids: list[str], edges: list[dict]) -> list[list[str]]:
     return [c for c in comps if len(c) > 1]
 
 
+def _closure(start: str, edges: list[dict], reverse: bool) -> set[str]:
+    """传递闭包：reverse=True 取「谁（间接）依赖我」，False 取「我（间接）依赖谁」。"""
+    adj: dict[str, list[str]] = defaultdict(list)
+    for e in edges:
+        if reverse:
+            adj[e["d"]].append(e["s"])
+        else:
+            adj[e["s"]].append(e["d"])
+    seen: set[str] = set()
+    front = [start]
+    while front:
+        nxt = []
+        for x in front:
+            for y in adj[x]:
+                if y != start and y not in seen:
+                    seen.add(y)
+                    nxt.append(y)
+        front = nxt
+    return seen
+
+
+def query_report(graph: dict, name: str) -> int:
+    """文本报告 —— 给 **AI** 用的入口（AI 不该去解析 HTML）。
+
+    始终**直接解析源码**（不读 build/ 里的产物）⇒ 不存在「读到过期图」的问题。
+    """
+    nodes = {n["id"]: n for n in graph["nodes"]}
+    mods = {m["id"]: m for m in graph["modules"]}
+    edges = graph["edges"]
+    lname = {l: nm for l, nm, _ in LAYERS}
+    ldesc = {l: d for l, _, d in LAYERS}
+
+    if name in nodes:
+        n = nodes[name]
+        ups = [e for e in edges if e["d"] == name]
+        downs = [e for e in edges if e["s"] == name]
+        up_all = _closure(name, edges, True)
+        down_all = _closure(name, edges, False)
+        print(name)
+        print("  层      %s（%s）—— %s" % (lname.get(n["layer"], n["layer"]), n["module"],
+                                          ldesc.get(n["layer"], "")))
+        print("  文件    %s" % n["path"])
+        if n["summary"]:
+            print("  摘要    %s" % n["summary"])
+        print("  上游 %d 个（传递闭包 %d）· 下游 %d 个（传递闭包 %d）"
+              % (len(ups), len(up_all), len(downs), len(down_all)))
+        if up_all:
+            worst = sorted(up_all, key=lambda x: -nodes[x]["in"])[:5]
+            print("  ⇒ 改它会（间接）波及 %d 个类；最重的几个：%s"
+                  % (len(up_all), "、".join("%s(%d)" % (w, nodes[w]["in"]) for w in worst)))
+
+        def dump(title, es, key):
+            print("\n  %s" % title)
+            if not es:
+                print("    （无）")
+                return
+            rows = sorted(es, key=lambda e: (e["k"], -nodes[e[key]]["in"]))
+            for e in rows:
+                o = nodes[e[key]]
+                print("    %-32s %-7s %s" % (o["id"], e["k"], lname.get(o["layer"], o["layer"])))
+
+        dump("上游（谁依赖我 —— 改我，它们全受影响）", ups, "s")
+        dump("下游（我依赖谁 —— 改它们，我可能坏）", downs, "d")
+        return 0
+
+    if name in mods:
+        m = mods[name]
+        out = [(e, e["w"]) for e in graph["moduleEdges"] if e["s"] == name]
+        inn = [(e, e["w"]) for e in graph["moduleEdges"] if e["d"] == name]
+        lay = layer_of(name)
+        print("%s（模块）" % name)
+        print("  层      %s —— %s" % (lname.get(lay, lay), ldesc.get(lay, "")))
+        print("  类 %d 个 · 跨模块出边 %d / 入边 %d" % (m["count"], len(out), len(inn)))
+        viol_out = [(e, w) for e, w in out if lay < layer_of(e["d"])]
+        viol_in = [(e, w) for e, w in inn if layer_of(e["s"]) < lay]
+        if viol_out:
+            print("\n  🔴 向下违规（它伸手到了上层 —— 该断的正是这些）")
+            for e, w in sorted(viol_out, key=lambda x: -x[1]):
+                print("    → %-26s %2d 条（%s）" % (e["d"], w, lname.get(layer_of(e["d"]), "?")))
+        if viol_in:
+            print("\n  🔴 被下层伸手（下层依赖它 —— 该断的是对方）")
+            for e, w in sorted(viol_in, key=lambda x: -x[1]):
+                print("    ← %-26s %2d 条（%s）" % (e["s"], w, lname.get(layer_of(e["s"]), "?")))
+        print("\n  出边（它依赖谁）")
+        for e, w in sorted(out, key=lambda x: -x[1]):
+            print("    → %-26s %2d 条" % (e["d"], w))
+        print("\n  入边（谁依赖它）")
+        for e, w in sorted(inn, key=lambda x: -x[1]):
+            print("    ← %-26s %2d 条" % (e["s"], w))
+        return 0
+
+    near = sorted([k for k in list(nodes) + list(mods)
+                   if name.lower() in k.lower()], key=len)[:8]
+    print("找不到 %r。" % name)
+    if near:
+        print("  相近的：%s" % "、".join(near))
+    else:
+        print("  提示：类名要写简单名（如 ContainerFluidData）；模块名如 living/transfer。")
+    return 1
+
+
+def extend_report(graph: dict, threshold: float = 0.6) -> int:
+    """**扩展点**：被多数领域共同依赖的类 = 新增一个子系统要接的口子。
+
+    这是 AI 在本项目里最该问的问题（「我要新写一个活物品功能，动哪些地方」）——
+    答案不是去读 12 个领域，而是看**它们共同依赖谁**。
+    """
+    nodes = {n["id"]: n for n in graph["nodes"]}
+    edges = graph["edges"]
+    lname = {l: nm for l, nm, _ in LAYERS}
+    domains = sorted({n["module"] for n in graph["nodes"]
+                      if n["module"].startswith("living/domain/")})
+    if not domains:
+        print("找不到 living/domain/* 模块。")
+        return 1
+
+    used: dict[str, set[str]] = defaultdict(set)
+    for e in edges:
+        a = nodes[e["s"]]
+        if a["module"].startswith("living/domain/") and nodes[e["d"]]["module"] != a["module"]:
+            used[e["d"]].add(a["module"])
+
+    total = len(domains)
+    rows = [(len(m), cid) for cid, m in used.items() if len(m) / total >= threshold]
+    rows.sort(key=lambda x: (-x[0], x[1]))
+
+    print("扩展点 —— %d 个领域共同依赖的类（新增一个子系统要接的口子）" % total)
+    print("  判据：被 ≥ %d%% 的领域依赖（%d / %d）\n" % (int(threshold * 100),
+                                                      int(threshold * total), total))
+    if not rows:
+        print("  （无 —— 领域之间没有共同依赖，说明契约可能散落了）")
+        return 0
+    for cnt, cid in rows:
+        n = nodes[cid]
+        who = "、".join(sorted(used[cid])[:3])
+        more = "" if len(used[cid]) <= 3 else " 等"
+        print("  %2d/%d  %-32s %-14s %s" % (cnt, total, cid, lname.get(n["layer"], ""),
+                                            n["summary"][:40] if n["summary"] else ""))
+        if cnt < total:
+            miss = sorted(set(domains) - used[cid])
+            print("        ↳ 未用：%s%s" % ("、".join(miss[:4]),
+                                          " 等" if len(miss) > 4 else ""))
+    print("\n  提示：**实现 / 注册** 这些口子，就接入了容器 tick、槽位、数据同步与落盘。")
+    return 0
+
+
 def main() -> int:
     global SRC_ROOT
 
     ap = argparse.ArgumentParser(description="生成活物品代码关系图")
     ap.add_argument("--out", default=os.path.join(ROOT, "build", "code-map.html"))
     ap.add_argument("--json", action="store_true", help="同时输出 build/code-map.json")
+    ap.add_argument("--query", metavar="NAME",
+                    help="查某个类 / 模块的上下游（**直接解析源码，始终最新**，不产出 HTML）")
+    ap.add_argument("--extend", action="store_true",
+                    help="列出扩展点：被多数领域共同依赖的类（新增子系统要接的口子）")
     ap.add_argument("--src", default=SRC_ROOT)
     args = ap.parse_args()
 
@@ -1129,6 +1283,11 @@ def main() -> int:
 
     files = [parse_file(p) for p in collect_java()]
     graph = build_graph(files)
+
+    if args.query:
+        return query_report(graph, args.query)
+    if args.extend:
+        return extend_report(graph)
 
     os.makedirs(os.path.dirname(args.out), exist_ok=True)
     payload = json.dumps(graph, ensure_ascii=False, separators=(",", ":")).replace("<", "\\u003c")

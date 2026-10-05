@@ -251,7 +251,7 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 | **查「为什么这么定」/ 某口径是否已被取代** | [decisions.md](docs/decisions.md)（决策索引 + 翻转留痕） |
 | 改文档 / 归档 / 校验 | [docs/README.md](docs/README.md) + `python tools/doc_check.py` |
 | 写测试 / 跑全量 / mock `Level` | [unit-testing.md](docs/guides/unit-testing.md) |
-| **梳理上下游 / 估改动爆炸半径 / 判断模块是否真解耦** | [code-map.md](docs/guides/code-map.md) + `python tools/gen_code_map.py`（**派生视图，唯一真相是 `src/`**） |
+| **梳理上下游 / 估改动爆炸半径 / 判断模块是否真解耦 / 查新增子系统的扩展点** | [code-map.md](docs/guides/code-map.md) —— 人看 HTML，**AI 直接调 `python tools/gen_code_map.py --query <类名>` / `--extend`**（文本输出、直接解析源码、**不会读到过期图**） |
 | **发版本给群友测活TNT** | [living-tnt-testing.md](docs/guides/living-tnt-testing.md) §1~§6（**转发时只发这半段**） |
 | 找某个源文件 | [file-map.md](docs/reference/file-map.md)（完整文件树，快照） |
 | 查指令用法 / 加新指令 | [commands.md](docs/reference/commands.md)（指令清单，快照） |
