@@ -37,6 +37,7 @@
 from __future__ import annotations
 
 import argparse
+import collections
 import json
 import os
 import re
@@ -46,6 +47,50 @@ from collections import defaultdict
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC_ROOT = os.path.join(ROOT, "src", "main", "java")
 BASE_PKG = "com.qiqi.li"
+
+# --------------------------------------------------------------------------- 目标架构分层
+#
+# ⚠️ **这是「目标」，不是「现状」**。层次视图按它排列，**违规边标红**。
+# 改这张表 = 改你对架构的期望；别处若也要校验分层，应读同一张表。
+#
+# 约定：**数字越大越靠上层**；上层可以依赖下层，**下层不得依赖上层**。
+LAYERS: list[tuple[int, str, str]] = [
+    (-1, "外部", "原版 / 第三方 —— @Mixin 注入目标，mod 挂在它们身上"),
+    (0, "L0 契约", "纯接口 / 数据，不依赖任何实现"),
+    (1, "L1 基础", "容器抽象 · 工具 · 性能 · 日志"),
+    (2, "L2 通用机制", "transfer · interaction · components …（不应认识具体领域）"),
+    (3, "L3 领域", "12 个子系统 —— 彼此应几乎不依赖"),
+    (4, "L4 接线 · 入口", "主类 · 网络包 · Mixin · 指令（只做注册与接线）"),
+    (5, "L5 客户端", "渲染 · 输入 · 图标 · 屏幕（依赖一切，谁都不依赖它）"),
+]
+
+MODULE_LAYER: dict[str, int] = {"(external)": -1}
+for _m in ("living/api", "living/model"):
+    MODULE_LAYER[_m] = 0
+for _m in ("living/container", "living/perf", "living/util", "logging"):
+    MODULE_LAYER[_m] = 1
+for _m in ("living/compat", "living/components", "living/debug", "living/function",
+           "living/interaction", "living/transfer"):
+    MODULE_LAYER[_m] = 2
+for _m in ("com/qiqi", "living/command", "living/mixin", "network"):
+    MODULE_LAYER[_m] = 4
+for _m in ("client/gui", "client/icon", "client/input", "client/mixin",
+           "client/mixinsupport", "client/render", "client/util"):
+    MODULE_LAYER[_m] = 5
+
+UNMAPPED: set[str] = set()
+
+
+def layer_of(module: str) -> int:
+    """模块 → 目标层号。未登记的模块落到 L3 并记入 UNMAPPED（main 里告警）。"""
+    if module.startswith("living/domain/"):
+        return 3
+    lay = MODULE_LAYER.get(module)
+    if lay is None:
+        UNMAPPED.add(module)
+        return 3
+    return lay
+
 
 # --------------------------------------------------------------------------- 解析
 
@@ -266,6 +311,7 @@ def build_graph(files: list[dict]) -> dict:
             "kind": f["kind"],
             "path": f["path"],
             "summary": f["summary"],
+            "layer": layer_of(f["module"]),
         })
     index = {n["id"]: n for n in nodes}
 
@@ -285,6 +331,7 @@ def build_graph(files: list[dict]) -> dict:
                 "kind": "external",
                 "path": target,
                 "summary": "Mixin 注入目标（原版 / 第三方）",
+                "layer": -1,
             })
     for e in externals.values():
         index[e["id"]] = e
@@ -371,6 +418,7 @@ def build_graph(files: list[dict]) -> dict:
         "edges": edge_list,
         "modules": modules,
         "moduleEdges": module_edges,
+        "layers": [{"id": l, "name": n, "desc": d} for l, n, d in LAYERS],
     }
 
 
@@ -439,6 +487,7 @@ HTML = r"""<!DOCTYPE html>
   <div class="seg" id="mode">
     <button data-m="class" class="on">类视图</button>
     <button data-m="module">包视图</button>
+    <button data-m="layer">层次视图</button>
   </div>
   <input type="search" id="q" placeholder="搜索类名…">
   <label>上游/下游深度 <input type="range" id="depth" min="1" max="4" value="1"><span id="depthv">1</span></label>
@@ -473,19 +522,22 @@ mods.forEach(function(m,i){
 function colorOf(id){var n=idx[id];return modColor[n?n.module:'(root)']||'#888';}
 
 /* ---------- 建图 ---------- */
-var idx={}, nodes=[], edges=[];
-function loadMode(mode){
-  if(mode==='class'){
-    nodes = D.nodes.map(function(n){return Object.assign({},n);});
-    edges = D.edges.map(function(e){return {s:e.s,d:e.d,k:e.k};});
-  } else {
-    var mi={};
-    nodes = D.modules.map(function(m){
-      var o={id:m.id,module:m.id,pkg:m.id,kind:'module',path:'',summary:'',
-             count:m.count,out:m.out,in:m.in};
-      mi[m.id]=o; return o;
+var idx={}, nodes=[], edges=[], viewMode='class';
+var layerName={}, layerDesc={};
+(D.layers||[]).forEach(function(l){ layerName[l.id]=l.name; layerDesc[l.id]=l.desc; });
+
+function loadMode(m){
+  viewMode = m;
+  if(m==='module'){
+    nodes = D.modules.map(function(mm){
+      return {id:mm.id,module:mm.id,pkg:mm.id,kind:'module',path:'',summary:'',
+              count:mm.count,out:mm.out,in:mm.in};
     });
     edges = D.moduleEdges.map(function(e){return {s:e.s,d:e.d,k:'use',w:e.w};});
+  } else {
+    // 类视图与层次视图共用同一份数据，只是布局不同
+    nodes = D.nodes.map(function(n){return Object.assign({},n);});
+    edges = D.edges.map(function(e){return {s:e.s,d:e.d,k:e.k};});
   }
   idx={}; nodes.forEach(function(n){idx[n.id]=n;});
   adj={}; radj={};
@@ -568,21 +620,95 @@ function layout(iters){
     t-=cool; if(t<0.3) t=0.3;
   }
 }
-function warmup(iters){ layout(iters); fitView(); }
+function warmup(iters){
+  if(viewMode==='layer') layeredLayout(); else layout(iters);
+  fitView();
+}
 
 function fitView(){
   var n=nodes.length; if(!n) return;
+  if(viewMode==='layer'){
+    // 层次视图是结构化布局：用真实包围盒（不能按分位数裁，否则会切掉整层）
+    var lx=nodes.map(function(p){return p.x;}), ly=nodes.map(function(p){return p.y;});
+    var x0=Math.min.apply(null,lx)-BAND_PAD, x1=Math.max.apply(null,lx)+BAND_PAD+100;
+    var y0=Math.min.apply(null,ly)-30, y1=Math.max.apply(null,ly)+30;
+    var leftGutter=236, availW=Math.max(240,W-leftGutter-16), availH=Math.max(200,H-60);
+    var kl=Math.min(availW/Math.max(1,x1-x0), availH/Math.max(1,y1-y0));
+    view.k=Math.max(0.1,Math.min(2.6,kl));
+    view.x=leftGutter+availW/2-(x0+x1)/2*view.k;
+    view.y=H/2-(y0+y1)/2*view.k;
+    return;
+  }
   // 用 3%~97% 分位数当边界，而不是 min/max ——
   // 几个孤立离群点会把包围盒拉得很大，导致主簇只占屏幕中间一小块。
-  var xs=nodes.map(function(p){return p.x;}).sort(function(a,b){return a-b;});
-  var ys=nodes.map(function(p){return p.y;}).sort(function(a,b){return a-b;});
+  var xs2=nodes.map(function(p){return p.x;}).sort(function(a,b){return a-b;});
+  var ys2=nodes.map(function(p){return p.y;}).sort(function(a,b){return a-b;});
   var lo=Math.floor(n*0.03), hi=Math.min(n-1, Math.ceil(n*0.97)-1);
-  var x0=xs[lo], x1=xs[hi], y0=ys[lo], y1=ys[hi];
+  var qx0=xs2[lo], qx1=xs2[hi], qy0=ys2[lo], qy1=ys2[hi];
   var pad=64;
-  var k=Math.min((W-pad*2)/Math.max(1,x1-x0), (H-pad*2)/Math.max(1,y1-y0));
-  view.k=Math.max(0.12,Math.min(2.6,k));
-  view.x=W/2-(x0+x1)/2*view.k;
-  view.y=H/2-(y0+y1)/2*view.k;
+  var k2=Math.min((W-pad*2)/Math.max(1,qx1-qx0), (H-pad*2)/Math.max(1,qy1-qy0));
+  view.k=Math.max(0.12,Math.min(2.6,k2));
+  view.x=W/2-(qx0+qx1)/2*view.k;
+  view.y=H/2-(qy0+qy1)/2*view.k;
+}
+
+/* ---------- 层次视图布局（Sugiyama 简化版） ----------
+   按「目标分层」把类排成自下而上的横带；层内用 barycenter 两趟扫描减少交叉。
+   违规边（下层依赖上层）在 draw() 里标红 —— 「层次在哪断的」一眼可见。 */
+var bands=[], bandW=0;
+var PER_ROW=26, SLOT=42, ROW_H=48, LAYER_GAP=86, BAND_PAD=26;
+
+function layeredLayout(){
+  bands=[]; bandW=PER_ROW*SLOT;
+  var byLayer={};
+  nodes.forEach(function(n){
+    var L=(n.layer===undefined||n.layer===null)?3:n.layer;
+    n.layer=L;
+    (byLayer[L]=byLayer[L]||[]).push(n);
+  });
+  var keys=Object.keys(byLayer).map(Number).sort(function(a,b){return a-b;});
+  if(!keys.length) return;
+
+  keys.forEach(function(L){
+    byLayer[L].sort(function(a,b){return (a.module+'/'+a.id).localeCompare(b.module+'/'+b.id);});
+  });
+
+  var xpos={};
+  function sweep(orderKeys){
+    orderKeys.forEach(function(L){
+      var arr=byLayer[L];
+      arr.forEach(function(n){
+        var s=0,c=0;
+        var es=(adj[n.id]||[]).concat(radj[n.id]||[]);
+        for(var i=0;i<es.length;i++){
+          var o=(es[i].s===n.id)?es[i].d:es[i].s;
+          if(xpos[o]!==undefined){ s+=xpos[o]; c++; }
+        }
+        n._bc = c ? s/c : (xpos[n.id]!==undefined ? xpos[n.id] : 1e6);
+      });
+      arr.sort(function(a,b){ return a._bc-b._bc; });
+      arr.forEach(function(n,i){ xpos[n.id]=i; });
+    });
+  }
+  byLayer[keys[0]].forEach(function(n,i){ xpos[n.id]=i; });
+  sweep(keys.slice(1));                                    // 自下而上
+  sweep(keys.slice(0,keys.length-1).reverse());             // 自上而下修正
+
+  var h=0;
+  keys.forEach(function(L){
+    var arr=byLayer[L];
+    var rows=Math.max(1,Math.ceil(arr.length/PER_ROW));
+    var y0=h, y1=h+rows*ROW_H;
+    bands.push({L:L, y0:y0, y1:y1, count:arr.length});
+    h=y1+LAYER_GAP;
+    var span=Math.min(PER_ROW, arr.length);
+    arr.forEach(function(n,i){
+      var row=Math.floor(i/PER_ROW), col=i%PER_ROW;
+      var inRow=Math.min(PER_ROW, arr.length-row*PER_ROW);
+      n.x=(col+0.5)/span*bandW + (span-inRow)*SLOT/2;
+      n.y=-(y0+row*ROW_H+ROW_H/2);
+    });
+  });
 }
 
 /* ---------- 视图 ---------- */
@@ -631,16 +757,69 @@ function draw(){
   var es=visibleEdges();
   var dimAll = !!sel || Object.keys(searchHit).length>0;
 
+  // 层次视图：先铺层带（含层名），再画边
+  if(viewMode==='layer'){
+    for(var bi=0;bi<bands.length;bi++){
+      var bd=bands[bi];
+      var q0=toScreen({x:-BAND_PAD, y:-bd.y1});
+      var q1=toScreen({x:bandW+BAND_PAD, y:-bd.y0});
+      ctx.fillStyle='rgba(255,255,255,0.030)';
+      ctx.fillRect(q0[0],q0[1],q1[0]-q0[0],q1[1]-q0[1]);
+      ctx.strokeStyle='rgba(140,134,124,0.20)';
+      ctx.lineWidth=0.5;
+      ctx.strokeRect(q0[0],q0[1],q1[0]-q0[0],q1[1]-q0[1]);
+      var midY=-(bd.y0+bd.y1)/2;
+      var lb=toScreen({x:bandW+BAND_PAD+12, y:midY});
+      ctx.textAlign='left'; ctx.textBaseline='middle';
+      ctx.font='500 '+Math.min(15,Math.max(10,11.5*view.k))+'px "Segoe UI","Microsoft YaHei",sans-serif';
+      ctx.fillStyle='#c9c3b8';
+      ctx.fillText(layerName[bd.L]||('L'+bd.L), lb[0], lb[1]);
+      var lb2=toScreen({x:bandW+BAND_PAD+12, y:midY-17});
+      ctx.font=Math.min(12,Math.max(9.5,10*view.k))+'px "Segoe UI","Microsoft YaHei",sans-serif';
+      ctx.fillStyle='#6f6a62';
+      ctx.fillText(bd.count+' 个类', lb2[0], lb2[1]);
+    }
+    // 相邻层之间直接标出违规条数 —— 把「红边」和「数字」对上
+    var vc={};
+    for(var vi=0;vi<edges.length;vi++){
+      var ee=edges[vi], na=idx[ee.s], nb=idx[ee.d];
+      if(!na||!nb||na.layer===undefined||nb.layer===undefined)continue;
+      if(!nodeVisible(na)||!nodeVisible(nb))continue;
+      if(na.layer<nb.layer){ var kk=na.layer+'|'+nb.layer; vc[kk]=(vc[kk]||0)+1; }
+    }
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    for(var bj=0;bj<bands.length-1;bj++){
+      var lo=bands[bj].L, hi=bands[bj+1].L;
+      if(hi!==lo+1) continue;
+      var cnt=vc[lo+'|'+hi];
+      if(!cnt) continue;
+      var gp=toScreen({x:bandW/2, y:-(bands[bj].y1+bands[bj+1].y0)/2});
+      ctx.font='500 '+Math.min(14,Math.max(10,11*view.k))+'px "Segoe UI","Microsoft YaHei",sans-serif';
+      var txt='违规 '+cnt+' 条';
+      var tw=ctx.measureText(txt).width;
+      ctx.fillStyle='rgba(18,16,14,0.88)';
+      ctx.fillRect(gp[0]-tw/2-8, gp[1]-9, tw+16, 18);
+      ctx.strokeStyle='rgba(232,86,74,0.55)'; ctx.lineWidth=0.5;
+      ctx.strokeRect(gp[0]-tw/2-8, gp[1]-9, tw+16, 18);
+      ctx.fillStyle='#e8564a';
+      ctx.fillText(txt, gp[0], gp[1]);
+    }
+    ctx.lineWidth=1;
+  }
+
   // 边
   for(var i=0;i<es.length;i++){
     var e=es[i], a=idx[e.s], b=idx[e.d];
     if(!a||!b||!nodeVisible(a)||!nodeVisible(b))continue;
     var rel = sel ? (e.s===sel||e.d===sel||selUp[e.s]||selDown[e.d]||selUp[e.d]||selDown[e.s]) : false;
-    ctx.lineWidth = e.w ? Math.min(4.5, 0.6+e.w*0.16) : 1;   // 包视图：粗细 = 耦合强度
+    // 层次视图：**下层依赖上层 = 违规** ⇒ 标红（这是「层次在哪断的」）
+    var viol = (viewMode==='layer') && (a.layer!==undefined) && (b.layer!==undefined) && (a.layer<b.layer);
+    ctx.lineWidth = e.w ? Math.min(4.5, 0.6+e.w*0.16) : (viol?1.3:1);   // 包视图：粗细 = 耦合强度
     if(dimAll && !rel){ ctx.strokeStyle='rgba(120,113,102,0.055)'; }
-    else if(e.k==='inherit'){ ctx.strokeStyle=rel?'rgba(224,162,74,0.85)':'rgba(224,162,74,0.30)'; }
-    else if(e.k==='mixin'){ ctx.strokeStyle=rel?'rgba(190,120,220,0.9)':'rgba(190,120,220,0.26)'; }
-    else { ctx.strokeStyle=rel?'rgba(150,190,220,0.75)':(e.w?'rgba(150,175,195,0.34)':'rgba(140,160,175,0.13)'); }
+    else if(viol){ ctx.strokeStyle=rel?'rgba(232,86,74,0.95)':'rgba(232,86,74,0.42)'; }
+    else if(e.k==='inherit'){ ctx.strokeStyle=rel?'rgba(224,162,74,0.85)':'rgba(224,162,74,0.26)'; }
+    else if(e.k==='mixin'){ ctx.strokeStyle=rel?'rgba(190,120,220,0.9)':'rgba(190,120,220,0.24)'; }
+    else { ctx.strokeStyle=rel?'rgba(150,190,220,0.75)':(e.w?'rgba(150,175,195,0.34)':'rgba(140,160,175,0.12)'); }
     var p1=toScreen(a), p2=toScreen(b);
     ctx.beginPath(); ctx.moveTo(p1[0],p1[1]); ctx.lineTo(p2[0],p2[1]); ctx.stroke();
   }
@@ -790,7 +969,9 @@ function renderPanel(){
   }
   var html='<div class="close" id="pclose">×</div>'+
     '<h3>'+esc(n.id)+'</h3>'+
-    '<div class="meta">'+esc(n.pkg||'')+'<br>'+esc(n.kind)+' · '+esc(n.path||'')+'<br>'+
+    '<div class="meta">'+esc(n.pkg||'')+'<br>'+
+    (n.layer!==undefined ? esc(layerName[n.layer]||('L'+n.layer))+' · ' : '')+
+    esc(n.kind)+' · '+esc(n.path||'')+'<br>'+
     '上游 <b style="color:#e0524a">'+n.in+'</b> · 下游 <b style="color:#3f9ad6">'+n.out+'</b></div>'+
     (n.summary?'<div class="sum">'+esc(n.summary)+'</div>':'')+
     '<h5><span style="color:#e0524a">▲ 上游</span><span class="bar"></span><span style="color:#8f8a80;font-weight:400">谁依赖我</span></h5>'+list(up)+
@@ -861,10 +1042,11 @@ document.addEventListener('keydown',function(e){ if(e.key==='Escape') clearSel()
 
 resize();
 var qs=new URLSearchParams(location.search);
-var startMode = qs.get('view')==='module' ? 'module' : 'class';
-if(startMode==='module'){
+var wantView=qs.get('view');
+var startMode=(wantView==='module'||wantView==='layer') ? wantView : 'class';
+if(startMode!=='class'){
   document.querySelectorAll('#mode button').forEach(function(b){
-    b.classList.toggle('on', b.getAttribute('data-m')==='module');
+    b.classList.toggle('on', b.getAttribute('data-m')===startMode);
   });
 }
 loadMode(startMode); bindHead(); renderLegend(); computeStats();
@@ -988,6 +1170,28 @@ def main() -> int:
         print("\n双向耦合最强的模块对（互相依赖，改一边必然动另一边）：")
         for a, b, w1, w2 in bidir[:8]:
             print("  %-24s ⇄ %-24s  %d ↔ %d" % (a, b, w1, w2))
+
+    # 分层违规：**下层依赖上层**（层次视图里标红的就是这些）
+    # 这是「架构演进」的进度指标 —— 目标是把跨模块违规压到 0。
+    lay = {n["id"]: n["layer"] for n in graph["nodes"]}
+    mod_lay = {m["id"]: layer_of(m["id"]) for m in graph["modules"]}
+    mw = {(e["s"], e["d"]): e["w"] for e in graph["moduleEdges"]}
+    viol = collections.defaultdict(int)
+    for (a, b), w in mw.items():
+        if a in mod_lay and b in mod_lay and mod_lay[a] < mod_lay[b]:
+            viol[(mod_lay[a], mod_lay[b])] += w
+    name_of = {l: n for l, n, _ in LAYERS}
+    print("\n分层违规（下层依赖上层 —— 与层次视图的红边同一批）：")
+    if not viol:
+        print("  （无 —— 模块图完全单向，分层成立）")
+    else:
+        tot_v = sum(viol.values())
+        print("  合计 %d 条（占跨模块依赖 %.0f%%）" % (tot_v, 100.0 * tot_v / max(1, sum(mw.values()))))
+        for (a, b), w in sorted(viol.items(), key=lambda x: -x[1]):
+            print("    %-14s → %-14s %3d 条" % (name_of.get(a, a), name_of.get(b, b), w))
+    if UNMAPPED:
+        print("\n⚠ 未登记分层的模块（已按 L3 处理，请补进 LAYERS/MODULE_LAYER）：%s"
+              % "、".join(sorted(UNMAPPED)))
 
     print("\n输出        : %s" % os.path.relpath(args.out, ROOT).replace("\\", "/"))
     return 0
