@@ -73,7 +73,7 @@ python tools/gen_code_map.py      # 出 build/code-map.html（人看）/ --query
 | 类 | 特征 | 实例 | 条数 | 治法 |
 |---|---|---|---|---|
 | **A 抽象缺失** | 通用机制里写死了某个领域的特例 | `TransferPipeline` / `CrossContainerTransfer` **直接调** `LivingChestFunction` / `LivingEnderChestFunction` | 10 | **补抽象**（让箱子走标准 `SlotAccessor`） |
-| **B 层位错误** | 被多领域共用的基础设施放在领域层 | `runtime` 被 furnace / hopper / power 三个领域共用 | 12 | **下移框架层**（⚠️ 见下） |
+| **B 稳定机制**（不是债） | 跨领域共用的运行时数据管道 | `runtime`：tooltip 数据的构造 → 缓存 → 同步 → 渲染 | 12 | **做成正式机制**（见 §3.1） |
 | **C 真·联动** | 双向互相需要 | `power ⇄ redstone`（发电读信号）、`redstone ⇄ hopper`、`tnt → redstone` | 6 | **端口**（已存在，见 §4） |
 | **D 边界画错** | — | — | — | **已撤销，见 §4** |
 
@@ -89,6 +89,51 @@ python tools/gen_code_map.py      # 出 build/code-map.html（人看）/ --query
 > ⚠️ **B 的坑（动之前必须看清）**：`LivingItemRuntimeData` **反过来继承了 `LivingWaxedGeneratorData`**、
 > 引用了 `TransformData` / `ResolvedSlotData` —— 它是**聚合所有领域运行时数据的 God data class**。
 > 单纯把 `runtime` 下移只会把违规**方向反过来**，条数一条不减。
+
+### 3.1 B 详析：`runtime` 不是领域，是**稳定机制**
+
+> 📌 **2026-10-06 用户明确：「B 这条是有稳定需求的」** ⇒ 它不是"等技术债累积再改"，
+> 而是**正当的长期机制** ⇒ **不该按 A 类那样「补抽象」，而应该做扎实**。
+
+`LivingItemRuntimeData` 的 javadoc 自己写着：数据存 `ContainerRuntimeCache` → `LivingItemSyncPacket`
+→ `LivingItemClientCache` → **供 Tooltip 渲染**。⇒ 它服务「tooltip 渲染」这个**跨领域需求**，
+**是框架级机制，不是某个领域。**
+
+```
+领域 Function ──forXxx()──> LivingItemRuntimeData ──> ContainerRuntimeCache
+                                                            │
+                                                    LivingItemSyncPacket
+                                                            ▼
+                                  LivingItemClientCache ──> LivingItemTooltip
+```
+
+**唯一的领域耦合点是中间那个 record**：
+
+```java
+public record LivingItemRuntimeData(
+    @Nullable LivingWaxedGeneratorData generatorTelemetry,   // power
+    @Nullable HopperRuntime hopper,                          // hopper
+    @Nullable FurnaceRuntime furnace)                        // furnace
+```
+
+**硬编码「三选一」联合体** —— 三个领域各调 `forGenerator` / `forHopper` / `forFurnace` 填自己那格
+（= **贡献者模式的手工版**）。**真问题：加一个新领域的 tooltip ⇒ 必须改这个核心 record。**
+与 [framework-benchmark-anvilcraft.md](framework-benchmark-anvilcraft.md) §3.2 是**同一个判据**
+（「主类必须认识所有功能 ⇒ 与 `getOwnedComponentTypes()` 的自声明方向相反」）。
+
+🔴 **定稿：做成正式机制。**
+**方向**：框架层只做**不透明分组容器**（`Map<String, 各领域自带的载荷>`），
+各领域**自带 codec 与 tooltip 渲染器并注册** ⇒ `runtime` 不再 import 任何领域，
+加第 4 个领域**不用改核心**。
+
+⚠️ **难点与成本（决定排期）**：
+- 现在 `LivingItemRuntimeData` 是**静态 record**，codec 编译期确定；改成动态分组后需要**注册式序列化**
+- 触碰 **`network/LivingItemSyncPacket`**（全库级）⇒ **必须排在流体领域改动之后**
+- 涉及 4 个文件 + 3 个领域的构造点
+
+⚠️ **单纯下移不算修好**：`runtime` 移到 `living/runtime/`(L1) ⇒ `domain → runtime` 变合规（R3 减 9），
+但 `runtime → domain` 变成 R1 违规（**新增 3**）。那 3 条**本来就存在**，只是被「runtime 算领域」
+这个错误标签掩盖了。⇒ **下移让归属诚实，但必须与上面的机制改造同做。**
 
 ## 4. ⚠️ 两条**已撤销**的判断（留痕，别再犯）
 
@@ -131,7 +176,9 @@ javadoc 明写「红电感知端口 —— 电力层与跨层消费者（漏斗�
 
 ## 5. 推荐顺序与验证方式
 
-**顺序**：`①②`（低垂果实，真减 19）→ `③`（修正归属）→ `C 收尾`（接口上移，减 6）→ `④` → `⑥` → `⑤`（最贵放最后）
+**顺序**：`①②`（低垂果实，真减 19）→ `③`（修正归属）→ `C 收尾`（接口上移，减 6）→ `④`
+→ `⑥` → **`B 机制化`**（§3.1，**框架级 + 碰 `LivingItemSyncPacket` ⇒ 必须排在流体领域之后**）
+→ `⑤`（最贵放最后）
 
 **每一批都是纯重构**：行为零变化 + 全量测试全绿 + 跑 `check_layers.py` 看 R1 数字下降。
 
@@ -150,7 +197,7 @@ javadoc 明写「红电感知端口 —— 电力层与跨层消费者（漏斗�
 |---|---|---|
 | Q1 | ① 的 9 个 handler 搬走后，`InteractionRegistry` 要不要加确定性排序？（对齐 [framework-benchmark-anvilcraft.md](framework-benchmark-anvilcraft.md) §3.4） | ① 与那份文档的**唯一可能重叠点** |
 | Q2 | ③ `LivingComponents` 是只搬家，还是治本（各领域自己声明并注册 `DataComponentType`）？ | ③ |
-| Q3 | B（`runtime`）到底能不能下移？先看清 `LivingItemRuntimeData` 聚合了什么 | ⑥ |
+| Q3 | **B 的机制化设计**：框架层「不透明分组容器」的载荷用什么？（`CompoundTag` 不透明透传 vs 注册式 codec）—— 前者轻、后者类型安全 | §3.1 |
 | Q4 | ⑤ `container → 领域` 抽什么接口？会动 tick 调度热路径 | ⑤ |
 | Q5 | 领域内**不分子包**（2026-10-06 用户拍板）—— 判据是「>30 个类 **且** 存在跨组 <35% 的切法」 | 未来 |
 
