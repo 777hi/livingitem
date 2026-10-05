@@ -29,14 +29,14 @@ public final class WaterRegistration {
             "living_bucket_scoop", LivingBucketInteractHandlers.SCOOP);
 
         // 流体流动行为（1b-2 契约 + 流体侧 F2/F4）：
-        //  - 会流动，level 上限 7，流速预留 0
+        //  - 会流动，level 上限 7（= 原版 dropOff 派生值）
+        //  - 流速：不覆写 ⇒ 派生自原版 getTickDelay（水 5t/格，与原版对齐，2026-10-05 时序化）
         //  - 晋升（F2）：四邻中 ≥2 源 → 升格为派生源（原版无限水；岩浆等其它流体吃默认永不晋升）
         //  - 转化（F4）：委托 FluidTransformTable 按 JSON 转化表查（水：空桶→水桶、
         //    混凝土粉末→混凝土；缩容堆叠等待规则在表内实施）
         FluidFlowBehaviors.register(Fluids.WATER.getFluidType(), new FluidFlowBehavior() {
             @Override public boolean canFlow() { return true; }
             @Override public int maxLevel() { return ContainerFluidData.MAX_FLOW_LEVEL; }
-            @Override public int flowSpeed() { return 0; }
             @Override public boolean shouldPromote(int slot, int sourceNeighborCount) {
                 return sourceNeighborCount >= 2;
             }

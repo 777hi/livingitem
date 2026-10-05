@@ -116,6 +116,7 @@ class ContainerFluidDataTest {
      */
     @BeforeEach
     void baselineWaterBehavior() {
+        FluidFlowBehaviors.clear();   // 清其它测试残留的注册（㉗ 的慢岩浆等）—— 静态表必须显式 reset
         registerWater(ContainerFluidData.MAX_FLOW_LEVEL);
     }
 
@@ -492,6 +493,95 @@ class ContainerFluidDataTest {
                 return null;
             }
         });
+    }
+
+    // ── 蔓延时序化：慢流体（2026-10-05）────────────────────
+
+    /** 注册慢流体（岩浆 FluidType）：flowSpeed 10、maxLevel 3 —— CA 渐进生长。 */
+    private static void registerSlowLava() {
+        FluidFlowBehaviors.register(Fluids.LAVA.getFluidType(), FluidFlowBehavior.flowing(3, 10));
+    }
+
+    @Test
+    @DisplayName("㉗ 慢流体渐进生长：每 flowSpeed tick 推进一格，非一拍全淹")
+    void slowFluid_gradualGrowth() {
+        registerSlowLava();
+        var ctx = row();
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(0, Fluids.LAVA.getFluidType());
+
+        fluid.tick(ctx);   // tick 1：首拍即推进一次（首环）
+        assertEquals(2, fluid.getFlows().size(), "tick 1：源 + 第一环");
+        assertEquals(0, fluid.getFlows().get(0).level());
+        assertEquals(1, fluid.getFlows().get(1).level(), "第一环 level 1");
+
+        fluid.tick(ctx);   // tick 2~10：未到节拍，冻结
+        assertEquals(2, fluid.getFlows().size(), "未到节拍不生长");
+
+        for (int t = 0; t < 9; t++) fluid.tick(ctx);   // 至 tick 11：第二环
+        assertEquals(3, fluid.getFlows().size());
+        assertEquals(2, fluid.getFlows().get(2).level(), "第二环 level 2");
+
+        for (int t = 0; t < 10; t++) fluid.tick(ctx);   // 至 tick 21：第三环（maxLevel 收敛）
+        assertEquals(4, fluid.getFlows().size(), "maxLevel 3 ⇒ 覆盖 0..3");
+        assertEquals(3, fluid.getFlows().get(3).level());
+
+        for (int t = 0; t < 15; t++) fluid.tick(ctx);   // 收敛后稳定
+        assertEquals(4, fluid.getFlows().size(), "收敛后不再生长");
+    }
+
+    @Test
+    @DisplayName("㉘ 慢流体移除即时：源被汲走 ⇒ 全部流动当拍清除（不等节拍）")
+    void slowFluid_removalInstant() {
+        registerSlowLava();
+        var ctx = row();
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(0, Fluids.LAVA.getFluidType());
+        for (int t = 0; t < 25; t++) fluid.tick(ctx);
+        assertFalse(fluid.getFlows().isEmpty(), "先确认已生长");
+
+        fluid.removeGeneratedSource(0);
+        fluid.tick(ctx);   // 下一拍：目标全空 ⇒ 修剪即时（即使未到生长节拍）
+        assertTrue(fluid.getFlows().isEmpty(), "移除即时，不渐进干涸");
+    }
+
+    @Test
+    @DisplayName("㉙ 慢流体挤没即时：活物品压进流网 ⇒ 受影响格当拍清除")
+    void slowFluid_squeezeInstant() {
+        registerSlowLava();
+        FakeHandler h = new FakeHandler(9);
+        var ctx = new SimpleContainerContext(h);
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
+        h.slots[0] = livingNonWater();   // 活物品压住源 ⇒ 源挤没
+        fluid.tick(ctx);
+        assertEquals(0, fluid.getFlows().size(), "源被挤没 ⇒ 整网目标消失 ⇒ 当拍全清");
+    }
+
+    @Test
+    @DisplayName("㉚ 水按派生节拍渐进（tickDelay 5）：一拍只长一格，非秒淹")
+    void water_derivedCadenceGradual() {
+        // 水行为不覆写 flowSpeed ⇒ 派生自原版 getTickDelay = 5（null level 兜底同值）
+        FluidFlowBehaviors.register(Fluids.WATER.getFluidType(),
+            new FluidFlowBehavior() {
+                @Override public boolean canFlow() { return true; }
+                @Override public int maxLevel() { return ContainerFluidData.MAX_FLOW_LEVEL; }
+            });
+        var ctx = row();
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
+
+        fluid.tick(ctx);
+        assertEquals(2, fluid.getFlows().size(), "tick 1：源 + 第一环（level 1）");
+
+        fluid.tick(ctx);
+        assertEquals(2, fluid.getFlows().size(), "tick 2：未到节拍");
+
+        for (int t = 0; t < 4; t++) fluid.tick(ctx);   // 至 tick 6：第二环
+        assertEquals(3, fluid.getFlows().size(), "tick 6：level 2 环推进");
+
+        for (int t = 0; t < 30; t++) fluid.tick(ctx);   // 充分推进
+        assertEquals(8, fluid.getFlows().size(), "充分时间后收敛到全距（slot 0..7）");
     }
 
     @Test

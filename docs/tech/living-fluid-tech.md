@@ -176,7 +176,7 @@ tick(ctx)
 > ⚠️ 注意：蔓延路径的反应**不需要引擎钩子**——`recalculate` 在 `ContainerFluidData`
 > （fluid 侧领地）内，只有选择改 `FluidFlowBehavior` 契约形态时才需要框架。
 
-### 3.6 蔓延时序化设计提案（flowSpeed 消费，2026-10-05——待拍板后实施）
+### 3.6 蔓延时序化（flowSpeed 消费，2026-10-05 定稿已实施）
 
 **动机**：跨流体反应依赖「两个生长前沿在时间上相遇」（岩浆前沿慢爬、水前沿快冲、
 相遇点反应）——瞬时蔓延下反应退化成同拍同时出现，时序无法定义。
@@ -203,13 +203,20 @@ tick(ctx)
 **关键兼容性设计**：水注册 `flowSpeed 0`（瞬时）⇒ **水行为零变化、全部既有测试零迁移**；
 慢流体（岩浆 flowSpeed 建议 10~30）走 CA——两模式按流体数据驱动共存于一容器。
 
-**待拍板分叉**：
+**定稿（用户拍板「和原版对齐」）**：
 
-1. **水是否也渐进**：推荐**水保持瞬时**（零行为变化）；水渐进（flowSpeed 1~2）更贴原版
-   但水的全部测试重写 + 「倒水秒淹」的爽感消失；
+1. **水也渐进**——但不手设参数：`flowSpeed` 契约改为 **default -1 = 派生自原版
+   `Fluid.getTickDelay`**（水 5t/格；生产 WaterRegistration 不再覆写）；
+   `0` = 瞬时（单元测试基线用，行为快照零迁移）；`N` = 每 N tick 一格（显式覆盖）。
+   参数派生即「三维到二维映射」的时间维（空间维 maxLevel = floor(7/dropOff) 同理，
+   现 7/3 即派生值，注册处显式保留）；
 2. **实际层不落盘**：重进存档流体按节拍**重新生长**（风味：流体重新沉降）；
-   落盘 actual = 更大改动，不推荐；
-3. **岩浆参数**：接入时定（建议 flowSpeed 10~30、maxLevel 3）。
+3. **岩浆参数**：派生 flowSpeed 30、maxLevel 3（dropOff 2），接入即用。
+
+实施记录：`computeTargets`（原 recalculate，不再写 flows）/ `pruneActual`（目标消失当拍删）/
+`ensureSourceCells`（源即时）/ `advanceGrowth`（同步快照 CA，含 canFlow 静止跳过）；
+测试新增 ㉗~㉚（渐进/移除即时/挤没即时/水派生节拍渐进）+ @BeforeEach 补注册表清空
+（静态残留污染修复）。
 
 **实现落点**（全部流体侧）：`ContainerFluidData`（目标/实际两层 + lastAdvance map）+
 `FluidFlowBehavior`（flowSpeed 消费，框架契约**已预留此字段无需改动**）+

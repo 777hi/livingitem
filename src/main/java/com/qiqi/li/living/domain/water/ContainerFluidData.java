@@ -14,7 +14,10 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerContext;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.tags.FluidTags;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.material.Fluids;
 import net.neoforged.neoforge.fluids.FluidType;
 import net.neoforged.neoforge.registries.NeoForgeRegistries;
 
@@ -235,13 +238,23 @@ public class ContainerFluidData {
 
         tickCounter++;
 
-        recalculate(containerSize, width, ctx);
+        // 目标层：拓扑每 tick 全量重算（播种挤没 + BFS + 晋升收敛）—— 移除/挤没/拓扑即时
+        Map<Integer, FlowEntry> targets = computeTargets(containerSize, width, ctx);
+
+        // 实际层：flows 向目标推进（生长按流体节拍渐进，移除/源即时）
+        pruneActual(targets);
+        ensureSourceCells(targets);
+        advanceGrowth(targets, containerSize, width, ctx);
+
         transformSourceItems(ctx); // 1b-2 接缝：每流体拍在源格问行为「是否转化」
 
         if (tickCounter % FLOW_STEP_TICKS == 0) {
             pushItems(ctx, containerSize, width);
         }
     }
+
+    /** 每流体推进节拍记忆（tickCounter）；跨存档不保留（重进流体重新生长，已拍板）。 */
+    private final Map<FluidType, Integer> lastAdvance = new HashMap<>();
 
     /**
      * 转化（1b-2 接缝）：每流体拍在<b>源格</b>问行为「格上物品是否转化」。
@@ -273,7 +286,12 @@ public class ContainerFluidData {
      * - 非活物品不阻挡水流（类比实体，水穿过）
      * - 每个槽位取最近水源的 level（多水源取最小值）
      */
-    private void recalculate(int containerSize, int width, ContainerContext ctx) {
+    /**
+     * 目标层计算（时序化后改名）：拓扑每 tick 全量重算 —— 播种（挤没判定）+ BFS + 晋升收敛。
+     * 返回<b>目标流表</b>（每个格子的流体最终应到哪），不直接写 {@link #flows} ——
+     * 实际层（flows）由 {@link #advanceGrowth} 按流体节拍向目标推进。
+     */
+    private Map<Integer, FlowEntry> computeTargets(int containerSize, int width, ContainerContext ctx) {
         Map<Integer, FlowEntry> newFlows;
         // 晋升收敛循环（1b-2 接缝）：升格为源后水网会扩张 ⇒ 重跑 BFS，直到无新升格。
         // 默认行为不晋升（shouldPromote 恒 false）⇒ 恰好一轮，与旧行为一致。
@@ -281,8 +299,126 @@ public class ContainerFluidData {
             newFlows = spread(containerSize, width, ctx);
             if (!tryPromote(newFlows, containerSize, width)) break;
         }
-        flows.clear();
-        flows.putAll(newFlows);
+        return newFlows;
+    }
+
+    // ── 实际层三相位（时序化，2026-10-05）────────────────────
+
+    /**
+     * 相位一·修剪：实际层中<b>目标已消失</b>或<b>流体已变</b>的格 ⇒ 当拍删除（移除/挤没/异种覆盖即时，
+     * 不渐进干涸）。源格恒有目标（播种保证），不受影响。
+     */
+    private void pruneActual(Map<Integer, FlowEntry> targets) {
+        flows.keySet().removeIf(slot -> {
+            FlowEntry target = targets.get(slot);
+            FlowEntry actual = flows.get(slot);
+            return target == null || target.fluid() != actual.fluid();
+        });
+    }
+
+    /**
+     * 相位二·源即时：目标层的源格在**实际层立即可用**（不受流体节拍限制）——
+     * 倒水/晋升产生的源当拍生效（渲染/转化/汲倒查询立即正确）。异种覆盖在此同步流体。
+     */
+    private void ensureSourceCells(Map<Integer, FlowEntry> targets) {
+        for (var e : targets.entrySet()) {
+            FlowEntry target = e.getValue();
+            if (!target.isSource()) continue;
+            FlowEntry cur = flows.get(e.getKey());
+            if (cur == null || !cur.isSource() || cur.fluid() != target.fluid()) {
+                flows.put(e.getKey(), new FlowEntry(SOURCE_LEVEL, true, -1, target.fluid()));
+            }
+        }
+    }
+
+    /**
+     * 相位三·生长：非源格按<b>流体节拍</b>向目标推进（元胞自动机，同步快照语义）。
+     *
+     * <p>单步：{@code 新实际 = min(目标, min同流体邻居实际 + 1)} ——
+     * {@code min 邻居} = 最近供给源胜出（对齐原版 getNewLiquid 的 max(amount)−dropOff
+     * 取最优供给），{@code min 目标} 兜住不越过 BFS 距离。
+     * 无同流体实际邻居供给的格 = 前沿未到 ⇒ 不出现（保留已有实际不倒退）。</p>
+     *
+     * <p>节拍：{@code flowSpeed() < 0} = 派生自原版 {@code getTickDelay}
+     * （水 5 / 岩浆 30，下界加速自动成立）；{@code 0} = 瞬时（实际直接取目标）；
+     * {@code N} = 每 N tick 推进一格。静止流体（canFlow=false）无生长。</p>
+     */
+    private void advanceGrowth(Map<Integer, FlowEntry> targets, int containerSize, int width,
+                               ContainerContext ctx) {
+        Level level = ctx.getLevel();
+        // 按流体分组非源目标格
+        Map<FluidType, List<Integer>> byFluid = new LinkedHashMap<>();
+        for (var e : targets.entrySet()) {
+            if (e.getValue().isSource()) continue;
+            byFluid.computeIfAbsent(e.getValue().fluid(), k -> new ArrayList<>()).add(e.getKey());
+        }
+
+        for (var group : byFluid.entrySet()) {
+            FluidType fluid = group.getKey();
+            FluidFlowBehavior behavior = FluidFlowBehaviors.of(fluid);
+            if (!behavior.canFlow()) continue;   // 静止流体：只做源，无生长
+
+            int speed = behavior.flowSpeed();
+            if (speed < 0) speed = vanillaTickDelay(fluid, level);
+            if (speed <= 0) {
+                // 瞬时模式：实际直接取目标
+                for (int slot : group.getValue()) {
+                    FlowEntry t = targets.get(slot);
+                    flows.put(slot, new FlowEntry(t.level(), t.isSource(), t.fromSlot(), fluid));
+                }
+                continue;
+            }
+
+            Integer last = lastAdvance.get(fluid);
+            if (last != null && tickCounter - last < speed) continue;   // 未到节拍
+            lastAdvance.put(fluid, tickCounter);
+
+            // 同步快照语义：全部新值基于推进前快照计算，随后统一应用
+            List<Runnable> updates = new ArrayList<>();
+            for (int slot : group.getValue()) {
+                FlowEntry target = targets.get(slot);
+                int bestFeeder = Integer.MAX_VALUE;
+                int feederSlot = -1;
+                for (int n : ContainerContext.getNeighbors(slot, containerSize, width)) {
+                    FlowEntry neighbor = flows.get(n);
+                    if (neighbor == null || neighbor.fluid() != fluid) continue;
+                    if (neighbor.level() + 1 < bestFeeder) {
+                        bestFeeder = neighbor.level() + 1;
+                        feederSlot = n;
+                    }
+                }
+                if (bestFeeder == Integer.MAX_VALUE) continue;   // 前沿未到：不出现/不推进
+                FlowEntry cur = flows.get(slot);
+                int newLevel = Math.min(target.level(), bestFeeder);
+                if (cur != null && cur.level() == newLevel && cur.fromSlot() == feederSlot) continue;
+                final int lv = newLevel, fs = feederSlot;
+                updates.add(() -> flows.put(slot, new FlowEntry(lv, false, fs, fluid)));
+            }
+            updates.forEach(Runnable::run);
+        }
+    }
+
+    /** 原版每格刻延迟（水 5 / 岩浆 30、下界 10）。level 为 null（单元测试/无维度环境）时按主世界兜底。 */
+    private static int vanillaTickDelay(FluidType fluid, @javax.annotation.Nullable Level level) {
+        net.minecraft.world.level.material.Fluid f = representativeFluid(fluid);
+        if (level != null && f != null) return f.getTickDelay(level);
+        boolean lava = f == Fluids.LAVA || f == Fluids.FLOWING_LAVA;
+        return lava ? 30 : 5;   // null 维度兜底（单元测试/无 Level 环境）按主世界节奏
+    }
+
+    /** FluidType → 代表 {@link net.minecraft.world.level.material.Fluid}（读原版参数用），缓存。 */
+    private static final Map<FluidType, net.minecraft.world.level.material.Fluid> REPRESENTATIVE = new HashMap<>();
+
+    private static net.minecraft.world.level.material.Fluid representativeFluid(FluidType type) {
+        if (REPRESENTATIVE.containsKey(type)) return REPRESENTATIVE.get(type);
+        net.minecraft.world.level.material.Fluid found = null;
+        for (var f : net.minecraft.core.registries.BuiltInRegistries.FLUID) {
+            if (f.getFluidType() != type) continue;
+            if (found == null || f.defaultFluidState().isSource()) found = f;
+            if (found != null && found.defaultFluidState().isSource()) break;
+        }
+        REPRESENTATIVE.put(type, found);
+        return found;
     }
 
     /** 播种（派生源）+ BFS 扩散**一轮**，返回流动表（不改 {@link #flows}）。 */

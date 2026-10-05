@@ -47,8 +47,15 @@ public interface FluidFlowBehavior {
     /** level 上限（流动距离）。 */
     int maxLevel();
 
-    /** 流速（扩散节拍）。⚠️ 预留，当前未使用。 */
-    int flowSpeed();
+    /**
+     * 流速（扩散节拍，2026-10-05 契约消费）：
+     * {@code -1}（默认）= **派生自原版** {@code Fluid.getTickDelay}（水 5 / 岩浆 30，下界 10）；
+     * {@code 0} = 瞬时（实际层直接取目标层，无生长过程）；
+     * {@code N} = 每 N tick 实际层向目标推进一格。
+     */
+    default int flowSpeed() {
+        return -1;
+    }
 
     // ── 引擎接缝（1b-2，默认 no-op；流体侧填行为）────────────────
 

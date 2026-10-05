@@ -17,6 +17,17 @@
 
 ## 2026-10-05
 
+- ✅ **引擎时序化（flowSpeed 消费，跨流体反应的时间地基）**（**473 测试全绿**）：
+  目标/实际双层 —— 目标层（原 BFS 重算：播种挤没 + BFS + 晋升收敛，每 tick 全量、移除/挤没/拓扑即时）
+  与实际层（`flows` 按流体节拍向目标推进：**元胞自动机单步 `min(目标, min同流体邻居实际+1)`**，
+  min = 最近供给源胜出，对齐原版 getNewLiquid 取最优供给）。三相位：`computeTargets` →
+  `pruneActual`（目标消失当拍删）→ `ensureSourceCells`（源即时）→ `advanceGrowth`（生长按节拍）。
+  **参数派生**（层次二，用户拍板「和原版对齐」）：`flowSpeed` 契约改 default -1 = 派生自
+  `Fluid.getTickDelay`（水 5 / 岩浆 30），0 = 瞬时（测试基线用，**既有水测试零迁移**），
+  N = 显式节拍；maxLevel 注册值即 dropOff 派生值（7/3）。
+  推进/渲染/转化全改读实际层——**跨流体反应（§3.5）的时间地基就位**（反应在实际层前沿相遇点触发）。
+  测试：新增 ㉗~㉚（慢流体渐进/移除即时/挤没即时/水派生节拍渐进）+
+  @BeforeEach 补注册表清空（静态残留污染修复——JUnit 乱序执行下 ㉗ 的慢岩浆污染 ⑱）。
 - ✅ **F-1 末影箱汲/倒解锁**（框架侧，**469 测试全绿**，`ContainerContextsTest` 新增 2 项）：
   `ContainerContexts.resolve` 补 `PlayerEnderChestContainer` 分支 —— 原版末影箱 GUI 的槽位容器**不是 BE**，
   这正是它原先走不进「背包 / 单 BE / CompoundContainer」三分支的原因；`EnderChestContainerContext` 从
