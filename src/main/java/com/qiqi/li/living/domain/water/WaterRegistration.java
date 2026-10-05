@@ -50,9 +50,11 @@ public final class WaterRegistration {
         // ── 活熔岩（2026-10-06，与活水源对称的第三条流体）──────
         //  - 会流动：maxLevel 3（dropOff 2 派生值）、30t/格（getTickDelay 派生值，下界 10）
         //  - 晋升：永不（原版岩浆无无限源；gamerule 口径不实现）
-        //  - 焚毁（机制一）：流动格上的非活物品——防火物品（下界合金系）存活共存；
-        //    石头系满组 → SPAWN_SOURCE（新配方：喂养熔岩源）；其余 BURN
+        //  - 焚毁（机制一）：**含源格**——防火物品（下界合金系）存活共存；
+        //    石头系满组 → SPAWN_SOURCE（源已存在时只消耗石头）；其余 BURN
         //  - 前沿反应（刷石机）：熔岩格四邻有水 → 圆石（对齐原版 shouldSpreadLiquid）
+        //  - ⚠️ **不覆写 transformItem ⇒ 岩浆不转化**：源格上的空桶走焚毁而非变岩浆桶
+        //    （转化是活水源的机制三；活岩浆桶只从世界汲取 / GUI 汲获得）
         FluidFlowBehaviors.register(Fluids.LAVA.getFluidType(), new FluidFlowBehavior() {
             @Override public boolean canFlow() { return true; }
             @Override public int maxLevel() { return 3; }   // dropOff 2 派生值

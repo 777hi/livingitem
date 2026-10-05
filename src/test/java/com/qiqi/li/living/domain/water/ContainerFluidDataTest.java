@@ -609,7 +609,7 @@ class ContainerFluidDataTest {
     // ── 活熔岩：刷石机 + 焚毁/源诞生（2026-10-06）────────────
 
     @Test
-    @DisplayName("㉝ 刷石机：熔岩前沿遇水凝固为圆石（frontierReaction），固墙阻隔两侧")
+    @DisplayName("㉝ 刷石机：熔岩前沿遇水凝固为圆石（frontierReaction），产物格不是墙 ⇒ 圆石持续累加")
     void frontierReaction_cobblestoneAtContact() {
         registerSlowLava();   // 岩浆 flowing(3, 10)
         var ctx = row();
@@ -619,11 +619,14 @@ class ContainerFluidDataTest {
 
         for (int t = 0; t < 45; t++) fluid.tick(ctx);
 
-        boolean hasCobble = false;
-        for (int i = 0; i < 9; i++) if (ctx.getItem(i).is(Items.COBBLESTONE)) hasCobble = true;
-        assertTrue(hasCobble, "熔岩前沿遇水 ⇒ 圆石凝固");
-        assertTrue(fluid.isSource(0) && fluid.isSource(4), "两侧源保留");
-        assertFalse(fluid.isSource(3), "接触格熔岩已凝固退去");
+        assertTrue(ctx.getItem(2).is(Items.COBBLESTONE), "圆石落在**熔岩侧**接触格（slot 2），水格不动");
+        assertTrue(fluid.isSource(0) && fluid.isSource(4), "两侧源保留（岩浆源离水 ≥2 格）");
+        assertFalse(fluid.isSource(2), "接触格已凝固退去（不是源）");
+
+        int before = ctx.getItem(2).getCount();
+        for (int t = 0; t < 25; t++) fluid.tick(ctx);   // 再跑两轮岩浆节拍
+        assertTrue(ctx.getItem(2).getCount() > before,
+            "产物格不是墙：岩浆重新流入同一格再反应 ⇒ 圆石累加（刷石机自动产出，无需玩家挖）");
     }
 
     @Test
@@ -674,6 +677,39 @@ class ContainerFluidDataTest {
         fluid.tick(ctx);
 
         assertEquals(Items.NETHERITE_INGOT, ctx.getItem(1).getItem(), "防火物品存活");
+    }
+
+    @Test
+    @DisplayName("㊲ 源格也焚毁：满组石头放进**已存在的**熔岩源 ⇒ 只消耗石头，源保留（不重复诞生）")
+    void incinerate_fullStoneStackAtSource_consumesOnly() {
+        registerSlowLava();
+        FakeHandler h = new FakeHandler(9);
+        var ctx = new SimpleContainerContext(h);
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(0, Fluids.LAVA.getFluidType());
+        h.slots[0] = new ItemStack(Items.STONE, 64);
+
+        fluid.tick(ctx);
+
+        assertTrue(ctx.getItem(0).isEmpty(), "源格同样焚毁：满组石头被消耗");
+        assertTrue(fluid.isSource(0), "源仍在（源已存在 ⇒ 不再诞生新源）");
+        assertEquals(1, fluid.getGeneratedSources().size(), "没有多出第二个源");
+    }
+
+    @Test
+    @DisplayName("㊳ 岩浆不转化：非活空桶放进熔岩源格 ⇒ 被焚毁（不是变岩浆桶 —— 转化是活水源的机制三）")
+    void lavaSource_incineratesBucket_notTransform() {
+        registerSlowLava();
+        FakeHandler h = new FakeHandler(9);
+        var ctx = new SimpleContainerContext(h);
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(0, Fluids.LAVA.getFluidType());
+        h.slots[0] = new ItemStack(Items.BUCKET);
+
+        fluid.tick(ctx);
+
+        assertTrue(ctx.getItem(0).isEmpty(), "空桶被焚毁（岩浆没有转化条目）");
+        assertTrue(fluid.isSource(0), "焚毁只销毁物品，不动容器级资产（源保留）");
     }
 
     @Test

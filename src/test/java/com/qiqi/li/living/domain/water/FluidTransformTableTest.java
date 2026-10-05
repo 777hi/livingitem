@@ -42,20 +42,17 @@ class FluidTransformTableTest {
     // ── 1. 内置数据 ──────────────────────────────────────────
 
     @Test
-    @DisplayName("内置 JSON 全部装载成功：水桶/岩浆桶转化 + 16 色混凝土，物品/流体真实存在")
+    @DisplayName("内置 JSON 全部装载成功：水桶转化 + 16 色混凝土，物品/流体真实存在")
     void bundledTransformsLoad() {
         FluidTransformTable.load();
 
         int count = FluidTransformTable.entryCount();
-        assertTrue(count >= 18, "内置转化应至少 18 条（1 水桶 + 16 混凝土 + 1 岩浆桶），实际 " + count);
+        assertTrue(count >= 17, "内置转化应至少 17 条（1 水桶 + 16 混凝土），实际 " + count);
         assertEquals(count, FluidTransformTable.bundledCount(),
             "无玩家文件时全部条目都应是内置的");
 
-        // 抽查：水 + 空桶 → 水桶；岩浆 + 空桶 → 岩浆桶；白/黑混凝土粉末 → 混凝土
+        // 抽查：水 + 空桶 → 水桶；白/黑混凝土粉末 → 混凝土
         var water = Fluids.WATER.getFluidType();
-        assertEquals(Items.LAVA_BUCKET,
-            FluidTransformTable.transform(Fluids.LAVA.getFluidType(), new ItemStack(Items.BUCKET)).getItem(),
-            "活熔岩接入：空桶在岩浆源格 → 岩浆桶（消耗源）");
         assertEquals(Items.WATER_BUCKET,
             FluidTransformTable.transform(water, new ItemStack(Items.BUCKET)).getItem());
         assertEquals(Items.WHITE_CONCRETE,
@@ -91,9 +88,9 @@ class FluidTransformTableTest {
             "玩家追加条目生效");
         assertNull(FluidTransformTable.transform(water, new ItemStack(Items.BLACK_CONCRETE_POWDER)),
             "removed 删除的内置条目不复活");
-        assertEquals(18, FluidTransformTable.entryCount(),
-            "17 内置生效（black_concrete 被 removed，含岩浆桶）+ 1 玩家追加");
-        assertEquals(18, FluidTransformTable.bundledCount(),
+        assertEquals(17, FluidTransformTable.entryCount(),
+            "16 内置生效（black_concrete 被 removed）+ 1 玩家追加");
+        assertEquals(17, FluidTransformTable.bundledCount(),
             "bundled 集合含全部内置锚点（removed/覆盖后仍是锚点，同 InteractionRuleConfig 口径）");
     }
 
@@ -171,11 +168,8 @@ class FluidTransformTableTest {
         assertNull(FluidTransformTable.transform(water, livingBucket), "活物品不转化（挤没在先，防御在后）");
 
         assertNull(FluidTransformTable.transform(water, new ItemStack(Items.DIRT)), "表外物品不转化");
-        assertEquals(Items.LAVA_BUCKET,
-            FluidTransformTable.transform(Fluids.LAVA.getFluidType(), new ItemStack(Items.BUCKET)).getItem(),
-            "岩浆已接入：空桶 → 岩浆桶");
-        assertNull(FluidTransformTable.transform(Fluids.LAVA.getFluidType(), new ItemStack(Items.DIRT)),
-            "表外物品（岩浆 + 泥土）不转化");
+        assertNull(FluidTransformTable.transform(Fluids.LAVA.getFluidType(), new ItemStack(Items.BUCKET)),
+            "岩浆无转化条目：空桶在岩浆源格走**焚毁**，不是变岩浆桶（转化是活水源的机制三）");
 
         var big = FluidTransformTable.transform(water, new ItemStack(Items.WHITE_CONCRETE_POWDER, 64));
         assertEquals(64, big.getCount(), "等比转化（64 ≤ 64 堆叠上限）整槽通过");
