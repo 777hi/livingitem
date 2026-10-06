@@ -618,6 +618,16 @@ public class ContainerFluidData {
                 ItemStack item = ctx.getItem(neighbor);
                 if (LivingItemManager.isLivingItem(item)) continue;
 
+                // 异种流体已**实际**占据该格 ⇒ 不抢（2026-10-07 定档，docs/buffer/living-fluid-no-displace-fix.md）：
+                // 原版语义是「接触面直接反应」（shouldSpreadLiquid 在岩浆格上凝固），熔岩前沿
+                // 停在接触面、逐格凝固，**从不驱逐对方**。此前目标层按距离抢占 ⇒ pruneActual
+                // 当拍删掉对方 ⇒ 接触前露出 1.5s 空档（水凭空消失一格，像 bug）。
+                // ⚠️ 代价：目标层不再是纯 BFS 纯函数（要读实际层）——换来 pruneActual 只剩
+                // 「目标消失」一个职责（异种驱逐的决策权挪进这里）。
+                // ⚠️ 播种（generatedSources）**仍然覆盖**：倒桶是玩家显式行为，见 §5。
+                FlowEntry occupied = flows.get(neighbor);
+                if (occupied != null && occupied.fluid() != fe.fluid) continue;
+
                 int newLevel = fe.level + 1;
                 newFlows.put(neighbor, new FlowEntry(newLevel, false, slot, fe.fluid));
                 queue.add(neighbor);

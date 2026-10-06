@@ -846,6 +846,67 @@ class ContainerFluidDataTest {
     }
 
     @Test
+    @DisplayName("㊾ 不驱逐：水源流到 4格 时在**前方空槽**倒岩浆源 ⇒ 水原地不动、无空档，接触面凝固圆石")
+    void lavaPourAheadOfWaterFlow_doesNotDisplace() {
+        registerSlowLava();                       // 岩浆 flowSpeed 10、maxLevel 3 + 前沿反应
+        // 水限maxLevel 4 ⇒ 水只能到 slot 4，slot 5/6 保持空白（基线水是瞬时且上限 7，一拍就铺满）
+        FluidFlowBehaviors.register(Fluids.WATER.getFluidType(), FluidFlowBehavior.flowing(4, 0));
+        FakeHandler h = new FakeHandler(9);
+        var ctx = new SimpleContainerContext(h);
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
+        fluid.tick(ctx);
+        assertEquals(Fluids.WATER.getFluidType(), fluid.getFlows().get(4).fluid(), "前置：slot 4 是流动水");
+        assertTrue(fluid.getFlows().get(5) == null && fluid.getFlows().get(6) == null,
+            "前置：slot 5/6 还是空的（水没流到）");
+
+        // 在 slot 6 倒岩浆（与水隔一格 ⇒ 旧目标层会按距离抢 slot 4/5，把水驱逐掉）
+        fluid.registerGeneratedSource(6, Fluids.LAVA.getFluidType());
+        fluid.tick(ctx);
+
+        assertEquals(Fluids.WATER.getFluidType(), fluid.getFlows().get(4).fluid(),
+            "核心：异种流体实际占据的格不被抢占 ⇒ 水不消失（旧行为：这一拍就被 pruneActual 删掉）");
+
+        // 岩浆推进到接触面（slot 5）⇒ 机制五流动格分支 ⇒ 圆石落格并累加（刷石机启动，节奏不变）
+        boolean cobble = false;
+        boolean waterHeldSlot4 = true;
+        for (int t = 0; t < 40 && !cobble; t++) {
+            fluid.tick(ctx);
+            var at4 = fluid.getFlows().get(4);
+            waterHeldSlot4 &= at4 != null && at4.fluid() == Fluids.WATER.getFluidType();
+            cobble = ctx.getItem(5).is(Items.COBBLESTONE);
+        }
+        assertTrue(waterHeldSlot4, "水全程没被驱逐（旧行为：倒完立刻空一格，约 1.5s 后才变圆石）");
+        assertTrue(cobble, "岩浆前沿停在接触面并凝固成圆石（原版节奏：到达即反应）");
+    }
+
+    @Test
+    @DisplayName("㊿ 倒进**异种流动格** ⇒ 直接覆盖：活岩浆桶倒进流动水格 ⇒ 该格成岩浆源 → 源格遇水 ⇒ 黑曜石 + 源湮灭")
+    void lavaPourIntoFlowingWaterCell_overwritesAndPetrifies() {
+        registerSlowLava();
+        FakeHandler h = new FakeHandler(9);
+        var ctx = new SimpleContainerContext(h);
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
+        for (int t = 0; t < 6; t++) fluid.tick(ctx);    // 水流到 slot 6
+        assertEquals(Fluids.WATER.getFluidType(), fluid.getFlows().get(6).fluid(), "前置：slot 6 是流动水");
+
+        // 倒桶是玩家显式行为 ⇒ 覆盖该格（B 档口径：源播种仍然覆盖，只禁「蔓延抢占」）
+        fluid.registerGeneratedSource(6, Fluids.LAVA.getFluidType());
+        fluid.tick(ctx);
+
+        assertEquals(Items.OBSIDIAN, ctx.getItem(6).getItem(),
+            "该格成岩浆源且紧邻水 ⇒ 源格反应当拍出黑曜石（不是圆石）");
+        assertFalse(fluid.isGeneratedSource(6), "源格反应 ⇒ 岩浆源湮灭（不会反复重生）");
+        assertEquals(Fluids.WATER.getFluidType(), fluid.getFlows().get(5).fluid(),
+            "旁边的水**不受影响**（新守卫：蔓延不抢占异种格）");
+
+        fluid.tick(ctx);
+        assertEquals(Fluids.WATER.getFluidType(), fluid.getFlows().get(6).fluid(),
+            "水随后灌回该格（黑曜石是非活物品，不阻挡水流）");
+    }
+
+    @Test
     @DisplayName("㊷ 契约默认回退：只覆写 frontierReaction 的流体，其源格产物也走 frontierReaction")
     void frontierSourceReaction_defaultFallback() {
         FluidFlowBehaviors.register(Fluids.LAVA.getFluidType(), new FluidFlowBehavior() {
