@@ -146,8 +146,11 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 514 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
-全绿基线：`513 passed / 0 failed / 1 skipped`（2026-10-07 到达时间抢占：新增「两源太近 ⇒
+**合计测试用例 519 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
+全绿基线：`518 passed / 0 failed / 1 skipped`（2026-10-07 收尾审查：`ContainerFluidDataTest`
+新增 2 项（晋升只数同流体邻源 / 到达时间竞争慢者让位）、`FluidFlowServerSyncTest` 新增 3 项
+（末影箱派发必须判 viewer / renderTargetOf 两类 / 非末影箱不受 viewer 门影响）；
+2026-10-07 到达时间抢占：新增「两源太近 ⇒
 岩浆源变黑曜石」守卫 1 项，㉝/㊶ 改为生产节拍下的可用几何；
 2026-10-07 消除异种驱逐空档：
 `ContainerFluidDataTest` 新增 2 项 —— ㊾ 不驱逐 + 接触面圆石（水全程不动）、
@@ -215,6 +218,7 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-07 | 🔧 **收尾审查批次（六维度审查后修复）**：① 🔴 **晋升邻源计数不分流体**（真 bug）⇒ 岩浆源会被算进水的「≥2邻源」⇒ 流动水夹在两个岩浆源之间错误晋升；② 删零调用的 `exportFlowData()`；③ `onContainerClose` 两处 `return` ⇒ `continue`（多容器菜单漏清）；④ `representativeFluid` 重复实现 + ConcurrentHashMap `put(null)` 潜在 NPE ⇒ 统一委托；⑤ `isFluidValid` 改按 tank（NeoForge 契约）；⑥ 客户端 javadoc。⚠️ 口径更正：晋升/焚毁 SPAWN_SOURCE **直接写实际层（当拍）**，倒桶/汲走/管道**只写 generatedSources（下一拍）**。测试 +5：同流体邻源、慢者让位、**末影箱派发判 viewer 的接线守卫**（此前只有判据用例）、renderTargetOf。**519 测试全绿** | `living-fluid-tech.md` §3.2；`buffer/living-fluid-review-2026-10-07.md` |
 | 2026-10-07 | 🔧 **目标层抢占：距离 ⇒ 到达时间**（消掉刷石机的"看不见的墙"）：那格在活水源流域内、水到得更快却永不进水 —— 根因是分配用**距离+入队顺序**、与"实际多久流到"无关（统一时钟只管蔓延、不管分配）。定档：多源 Dijkstra 按到达时间抢占（每格成本=该流体节拍，源格永不被蔓延抢占）。🔴 **实测**几何结论：岩浆守得住 ≈ 两源间距的 1/7 ⇒ 太近（曼哈顿 ≲6）则水贴到岩浆源 ⇒ 黑曜石+源湮灭（刷石机自毁），**D≥7 则源存活 + 圆石照常累加**（27 格 D=7、9 格单行 D=8 实测圆石累加到 x7）。⚠️ 我先前" A 会毁掉刷石机 / 必须配产物挡路"两处断言**都是错的**（以偏概全 + 归因错误），已留痕。**514 测试全绿** | `living-fluid-tech.md` §3.1；`buffer/living-fluid-arrival-time-claim.md` |
 | 2026-10-07 | 🔧 **消除「异种流体被当拍驱逐 ⇒ 接触前空档」**：现象= 活熔岩倒在活水流旁 ⇒ 中间空一格约 1.5s（岩浆 30t/格）才变圆石。根因三条叠加：目标层混合 BFS **按距离抢占** + `pruneActual` **当拍删** + 非源格蔓延**按流体节拍**。定档：**目标层 BFS 跳过「实际层已被异种流体占据」的格** ⇒ 熔岩前沿停在接触面、逐格凝固，**从不驱逐**（对齐原版接触面反应）；播种仍覆盖（倒进异种**流动**格 ⇒ 覆盖 ⇒ 成岩浆源 ⇒ 紧邻水 ⇒ 源格反应出**黑曜石** + 源湮灭）。⚠️ 代价：目标层不再是纯 BFS 纯函数（读实际层）—— 换来 `pruneActual` 只剩「目标消失」一个职责，**概念变轻**。🔍 测试踩坑：基线水是**瞬时**（speed 0、上限 7）⇒ 一拍铺满 0..7，别用「跑 N 拍」假设它只流了 N 格。**513 测试全绿** | `living-fluid-tech.md` §3.7；`buffer/living-fluid-no-displace-fix.md` |
 | 2026-10-06 | 🔧 **倒桶口径对称化（A 档）**：追问「为什么异种源格语义要不同」后查实 —— 上一批**用错了函数**：`canBeReplacedWith`（`getHeight() >= 0.444`）属**蔓延**路径（能否流进），`BucketItem` 不查它；倒桶只问 `canBeReplaced(f) = ... \|\| !isSolid()` ⇒ 液体块一律可替换（`LiquidBlock` 也未实现 `LiquidBlockContainer`）⇒ **原版对水/岩浆、源/流动一律替换**。⇒ 契约去掉 `selfIsSource`、**水与岩浆对称覆写**（岩浆桶倒进水格从「拒绝」改为「变岩浆源」）、default `false` 重新定位为「未覆写流体保守拒绝」；`pour` 简化为三态。**511 测试全绿** | `living-fluid-tech.md` §5 / §3.5；`buffer/living-pour-source-replace.md` §0 |
@@ -224,7 +228,6 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 | 2026-10-06 | 🔧 **实测三修**：① **末影箱流体不渲染** —— 客户端无法推断界面容器身份（末影箱 GUI 在客户端是 `GENERIC_9x3` + `SimpleContainer` 替身，与普通箱子同形）⇒ `instanceof PlayerEnderChestContainer` 是**死分支**；修：包加 **`RenderTarget`（服务端权威告知）**，客户端按它路由。🔴 **约束成文：客户端不得靠槽位容器类型推断容器身份**（两次踩坑同源：键前缀猜 ⇒ 泄漏；类型判 ⇒ 不画）。② **创造模式背包倒不进活流体** —— 客户端 `ItemPickerMenu` vs 服务端 `InventoryMenu` 索引错位，索引直查落到无关空槽（合成结果槽）⇒ 静默失败；修：空槽目标加「必须能解析出活容器」的门 + 回退 `containerSlot`。③ **管道瞬间抽空** —— v1「任意请求吞整源只返请求量」；定稿（用户拍板）**整源单位**：drain 请求 ≥1000 才给满 1000 并删源，<1000 **一分不给**。曾短暂上「源余额账本」（部分抽取）并**撤回** —— 源到处是二进制语义（挤没/晋升/汲走/刷石机/黑曜石/渲染/落盘），分数源污染每条路径；「无限源」也撤回。细水长流留给**专用流体活物品**（照抄活涂蜡铜灯存电）。**496 测试全绿** | `living-fluid-tech.md` §7 / §10.3；`changelog.md`（2026-10-06） |
 | 2026-10-06 | ✅ **管道抽取（活水源对外流体能力）**：新 `ContainerFluidHandler`（NeoForge `IFluidHandler`）—— **tank 数 = 派生源数、drain 直接消耗源、fill 恒 0（只出不进）、isFluidValid 如实答「是否持有」**；宽注册全部 BE + provider 四段让位（与红电同款）。活数据反查把 `processContainerAt` 的上下文构建抽成 `resolveContextAt`（**与 tick 路径同源同键**）+ `peekContainerData` 只读不创建。🔍 **Create 6 / Mekanism / Pipez 通用、无需兼容代码**（Create 6 内部 tank 就是 NeoForge `FluidTank` 模板，管道只拉不推）。⚠️ 速率模型修正：单源再生间隔 = `flowSpeed`（水 ≤5t）。**493 测试全绿** | `living-fluid-tech.md` §10 |
 | 2026-10-06 | ✅ **统一时钟：生长类逻辑一律走该流体自己的节拍**（同日第四批次）：此前引擎有**三个时钟**（目标层每 tick / 实际层每流体节拍 / 推动固定 4t）⇒ 错配：岩浆 30t 爬一格却 4t 推物品、水 5t 长一格却 4t 推。定稿「**流动的事按流体节拍走；外界引起的事当拍生效**」：**晋升搬到实际层 + 该流体推进拍**（判定改读实际层邻源，要求本格真有流体；收敛循环删除，目标层退化为纯 BFS）、**物品推动按流体分组随蔓延同拍**（水 5t / 岩浆 30t，`FLOW_STEP_TICKS` 删除）。焚毁/前沿反应/转化/挤没**故意不上时钟**（外部输入等 30t 手感说不过去）。⚠️ 三连源再生 1t ⇒ ≤5t。**487 测试全绿** | `living-fluid-tech.md` §3.2/§3.3/§3.6；`buffer/living-fluid-single-clock-plan.md` |
-| 2026-10-06 | ✅ **黑曜石循环 + 转化表作用域收窄**（同日第三批次）：① 契约加 default `frontierSourceReaction`（默认回退 `frontierReaction`）⇒ **源格遇水 = 黑曜石、流动格 = 圆石**，循环闭合（圆石累加 → 满 64 → 岩浆源 → 黑曜石 → 焚毁 → 回圆石；黑曜石存活窗口 ≈ 1.5s 待实测）；② **取消「非活空桶 → 水桶」** —— 对称性：活化影响非活化 ✓，非活化消耗活化资产 ✗ ⇒ 转化改为**催化剂语义（永不消耗源）**，删 `consumeSource` 整套机制，自动化水桶农场随之不成立。**484 测试全绿** | `living-fluid-tech.md` §3.7 / §6.1；`buffer/living-fluid-obsidian-plan.md` |
 
 
 

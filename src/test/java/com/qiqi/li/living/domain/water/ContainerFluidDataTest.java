@@ -671,6 +671,71 @@ class ContainerFluidDataTest {
     }
 
     @Test
+    @DisplayName("晋升只数**同流体**邻源：流动水夹在两个岩浆源之间 ⇒ 不晋升（2026-10-07 收尾修复）")
+    void promotion_countsOnlySameFluidSourceNeighbors() {
+        // 岩浆用**静止档**：只占自己的源格 0 / 2，不扩张 ⇒ slot 1 留给水
+        FluidFlowBehaviors.register(Fluids.LAVA.getFluidType(), FluidFlowBehavior.STATIC);
+        // 水：maxLevel 7 + 「≥2 邻源即晋升」的生产口径
+        FluidFlowBehaviors.register(Fluids.WATER.getFluidType(), new FluidFlowBehavior() {
+            @Override public boolean canFlow() { return true; }
+            @Override public int maxLevel() { return ContainerFluidData.MAX_FLOW_LEVEL; }
+            @Override public int flowSpeed() { return 0; }
+            @Override public boolean shouldPromote(int slot, int sourceNeighborCount) {
+                return sourceNeighborCount >= 2;
+            }
+        });
+
+        // 27 格（9×3）：岩浆源占 0 / 2（单行会把 slot 1 封死——源格不可穿越），
+        // 水从下一行绕上来（13 → 10 → 1）⇒ slot 1 才成为「夹在两个岩浆源之间的流动水」
+        FakeHandler h = new FakeHandler(27);
+        var ctx = new SimpleContainerContext(h);
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(0, Fluids.LAVA.getFluidType());
+        fluid.registerGeneratedSource(2, Fluids.LAVA.getFluidType());
+        fluid.registerGeneratedSource(13, Fluids.WATER.getFluidType());
+
+        boolean slot1WasWater = false;
+        for (int t = 0; t < 30; t++) {
+            fluid.tick(ctx);
+            var at1 = fluid.getFlows().get(1);
+            slot1WasWater |= at1 != null && at1.fluid() == Fluids.WATER.getFluidType();
+        }
+
+        assertTrue(slot1WasWater, "前置：slot 1 曾是流动水（夹在两个岩浆源之间）");
+        assertTrue(fluid.isSource(0) && fluid.isSource(2), "前置：两侧都是岩浆源");
+        assertFalse(fluid.isGeneratedSource(1),
+            "岩浆源**不算**水的邻源 ⇒ 不满足「同流体 ≥2 邻源」⇒ 不晋升（修复前会错误升成水源）");
+    }
+
+    @Test
+    @DisplayName("到达时间抢占：同一格两流体竞争，**到得慢的让位**（水 5t/格 胜 岩浆 30t/格）")
+    void arrivalTime_slowerFluidYields() {
+        registerProductionCadence();
+        FakeHandler h = new FakeHandler(9);
+        var ctx = new SimpleContainerContext(h);
+        var fluid = new ContainerFluidData();
+        // 岩浆源 0、水源 8 ⇒ 中间格双方都够得着，按到达时间判给速度快的水
+        fluid.registerGeneratedSource(0, Fluids.LAVA.getFluidType());
+        fluid.registerGeneratedSource(8, Fluids.WATER.getFluidType());
+
+        boolean slot1EverWater = false;
+        for (int t = 0; t < 120; t++) {
+            fluid.tick(ctx);
+            var at1 = fluid.getFlows().get(1);
+            slot1EverWater |= at1 != null && at1.fluid() == Fluids.WATER.getFluidType();
+        }
+
+        assertTrue(fluid.isSource(0), "岩浆源存活（几何够远）");
+        assertFalse(slot1EverWater,
+            "slot 1：岩浆 30t < 水 35t ⇒ **岩浆守得住**，水从没进去过（它不是让位的一方）");
+        for (int slot = 3; slot <= 7; slot++) {
+            var at = fluid.getFlows().get(slot);
+            assertTrue(at != null && at.fluid() == Fluids.WATER.getFluidType(),
+                "slot " + slot + "：水 5t/格 远快于岩浆 30t/格 ⇒ 归水（慢者让位）");
+        }
+    }
+
+    @Test
     @DisplayName("㊿⁺ 几何约束（到达时间分配的代价）：两源太近 ⇒ 水贴到岩浆源 ⇒ 黑曜石 + 源湮灭")
     void tooCloseGeometry_lavaSourcePetrifies() {
         registerProductionCadence();

@@ -24,20 +24,16 @@ import com.qiqi.li.living.container.ContainerLivingItemHandler;
  */
 public final class LivingBucketInteractSupport {
 
-    /** FluidType → 代表 Fluid（FluidStack 构造需要；优先 still 态），缓存反查结果。 */
-    private static final Map<FluidType, net.minecraft.world.level.material.Fluid> REPRESENTATIVE_FLUID =
-        new java.util.concurrent.ConcurrentHashMap<>();
-
+    /**
+     * FluidType → 代表 {@code Fluid}（FluidStack 构造需要；优先 still 态）。
+     *
+     * <p>⚠️ 2026-10-07 收尾审查：此前这里有一份<b>重复实现</b>，且用
+     * {@code ConcurrentHashMap} 缓存却可能 {@code put(type, null)}（未注册到
+     * {@code BuiltInRegistries.FLUID} 的 FluidType）⇒ <b>NPE</b>。现统一委托
+     * {@link ContainerFluidData#representativeFluidOf}（内部用 HashMap + containsKey，安全）。</p>
+     */
     private static net.minecraft.world.level.material.Fluid representativeFluid(FluidType type) {
-        if (REPRESENTATIVE_FLUID.containsKey(type)) return REPRESENTATIVE_FLUID.get(type);
-        net.minecraft.world.level.material.Fluid found = null;
-        for (net.minecraft.world.level.material.Fluid f : net.minecraft.core.registries.BuiltInRegistries.FLUID) {
-            if (f.getFluidType() != type) continue;
-            if (found == null || f.defaultFluidState().isSource()) found = f;
-            if (found != null && found.defaultFluidState().isSource()) break;
-        }
-        REPRESENTATIVE_FLUID.put(type, found);
-        return found;
+        return ContainerFluidData.representativeFluidOf(type);
     }
 
     private LivingBucketInteractSupport() {}

@@ -573,7 +573,7 @@ public class AbstractContainerScreenMixin extends Screen {
 
     /**
      * 容器轨取数：菜单槽位按 {@code slot.container} 分组，每组选快照
-     * （玩家背包 → {@link FluidFlowClientCache#getPlayer()}，其余 → {@link FluidFlowClientCache#get()}），
+     * （玩家背包 → {@link FluidFlowClientCache#getPlayer()}，其余 → {@link FluidFlowClientCache#getChestLike()}），
      * handler 槽位经 {@link #living_item$resolveContainerSlot(Slot)} 映射回菜单槽位。
      */
     @Unique

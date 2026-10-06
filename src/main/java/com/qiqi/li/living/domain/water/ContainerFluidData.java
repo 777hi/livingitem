@@ -535,7 +535,8 @@ public class ContainerFluidData {
             for (var e : flows.entrySet()) {
                 FlowEntry fe = e.getValue();
                 if (fe.isSource || fe.fluid() != fluid) continue;
-                if (behavior.shouldPromote(e.getKey(), countSourceNeighbors(flows, e.getKey(), containerSize, width))) {
+                if (behavior.shouldPromote(e.getKey(),
+                        countSourceNeighbors(flows, e.getKey(), containerSize, width, fluid))) {
                     candidates.add(e.getKey());
                 }
             }
@@ -680,12 +681,19 @@ public class ContainerFluidData {
         return newFlows;
     }
 
-    /** 该格四邻中已是源的个数（晋升判定的输入）。 */
-    private static int countSourceNeighbors(Map<Integer, FlowEntry> flows, int slot, int containerSize, int width) {
+    /**
+     * 该格四邻中已是**同流体**源的个数（晋升判定的输入，对齐原版 `getNewLiquid`
+     * 的「水平相邻同流体源 ≥2」）。
+     *
+     * <p>🔴 2026-10-07 收尾审查修复：此前<b>不判流体</b> ⇒ 岩浆源会被算进水的邻源数 ⇒
+     * 一格流动水夹在两个岩浆源之间会<b>错误晋升成水源</b>。</p>
+     */
+    private static int countSourceNeighbors(Map<Integer, FlowEntry> flows, int slot, int containerSize,
+                                            int width, FluidType fluid) {
         int count = 0;
         for (int n : ContainerContext.getNeighbors(slot, containerSize, width)) {
             FlowEntry fe = flows.get(n);
-            if (fe != null && fe.isSource) count++;
+            if (fe != null && fe.isSource && fe.fluid() == fluid) count++;
         }
         return count;
     }
@@ -790,12 +798,6 @@ public class ContainerFluidData {
         }
     }
 
-    public Map<Integer, int[]> exportFlowData() {
-        Map<Integer, int[]> map = new LinkedHashMap<>();
-        for (var e : flows.entrySet()) {
-            FlowEntry fe = e.getValue();
-            map.put(e.getKey(), new int[]{fe.level, fe.fromSlot});
-        }
-        return map;
-    }
+    // ⚠️ 2026-10-07 收尾审查：原 exportFlowData() 全仓库零调用 ⇒ 删除（不为假想需求留 API）。
+    //    需要导出流动表时读 getFlows()（已返回只读视图）。
 }

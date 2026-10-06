@@ -139,19 +139,21 @@ public final class ContainerFluidHandler implements IFluidHandler {
     }
 
     /**
-     * 「本 handler 是否<b>持有</b>该流体」= 该流体是否是某个源格里的流体。
+     * 「<b>该 tank</b> 是否持有该流体」（NeoForge 契约是<b>按 tank</b> 回答）。
      *
      * <p><b>不是</b>「能不能注入」—— 注入一律失败（{@link #fill} 恒 0）；这里如实回答
-     * 「我这边有没有这种流体」，让按 {@code isFluidValid} 过滤的消费者不至于把整台机器判死。</p>
+     * 「这一格源里是不是这种流体」，让按 {@code isFluidValid} 过滤的消费者不至于把整台机器判死。</p>
+     *
+     * <p>⚠️ 2026-10-07 收尾审查：此前<b>忽略 {@code tank}</b>、遍历所有源回答 ⇒
+     * 按 tank 过滤的消费者会拿到跨 tank 的答复。现只判断该 tank 对应的源（越界 false）。</p>
      */
     @Override
     public boolean isFluidValid(int tank, FluidStack stack) {
         if (stack == null || stack.isEmpty()) return false;
-        for (Source s : sources()) {
-            FluidStack mine = stackOf(s.type(), 1);
-            if (!mine.isEmpty() && mine.getFluid() == stack.getFluid()) return true;
-        }
-        return false;
+        List<Source> list = sources();
+        if (tank < 0 || tank >= list.size()) return false;
+        FluidStack mine = stackOf(list.get(tank).type(), 1);
+        return !mine.isEmpty() && mine.getFluid() == stack.getFluid();
     }
 
     /** 只出不进：恒 0（守住活桶的种子工具地位，见类注释）。 */

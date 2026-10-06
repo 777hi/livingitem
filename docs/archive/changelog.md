@@ -39,6 +39,23 @@
   新增测试帮手 `registerProductionCadence()`（**基线水是瞬时 ⇒ 到达时间恒 0 ⇒ 会赢走所有争用格**，
   跨流体几何必须用生产节拍，否则看到的是退化几何）。
   方案留痕 `docs/buffer/living-fluid-arrival-time-claim.md`。
+- 🔧 **收尾审查批次（519 全绿）** —— 六维度审查（契约接缝 / 相位 / 时钟 / IO / 落盘 / 性能）
+  后的修复，方案留痕 `docs/buffer/living-fluid-review-2026-10-07.md`：
+  ① 🔴 **晋升邻源计数不分流体**（真 bug）：`countSourceNeighbors` 只看 `isSource` ⇒
+  岩浆源会被算进水的「≥2 邻源」⇒ 一格流动水夹在两个岩浆源之间**错误晋升成水源**；
+  加 `fe.fluid() == fluid` 过滤。② 删 `exportFlowData()`（全仓库零调用）。
+  ③ `FluidFlowServerSync.onContainerClose` 的 `key==null` / `未同步过` 两处 `return` ⇒
+  改 `continue`（否则多容器菜单漏清）。④ `LivingBucketInteractSupport.representativeFluid`
+  与 `ContainerFluidData` 重复实现且用 ConcurrentHashMap 可能 `put(null)` ⇒ **NPE**；
+  统一委托 `representativeFluidOf`。⑤ `ContainerFluidHandler.isFluidValid` 忽略 `tank`
+  ⇒ 改为按 tank 回答（NeoForge 契约）。⑥ 客户端 javadoc 修正（已删除的 `get()`）。
+  ⚠️ **口径更正**：三种"改源"路径写入层级不同 —— 晋升 / 焚毁 `SPAWN_SOURCE` 直接写实际层
+  （**当拍**可见），倒桶 / 汲走 / 管道抽取只写 `generatedSources`（**下一拍**可见）。
+  **测试**（+5）：晋升只数同流体邻源、到达时间竞争「慢者让位」、末影箱派发**必须判 viewer**
+  （第三次泄漏修复的**接线**守卫，此前只有判据用例没有接线用例）、`renderTargetOf` 两类、
+  非末影箱不受 viewer 门影响。
+  审查同时确认**无问题**：契约 9 方法全部真被调用、相位读层全对、CODEC 与 `lastAdvance`
+  生命周期正确、Dijkstra 无退化输入、"不驱逐"守卫未失效、客户端预判↔服务端重验一致。
 - 🔧 **消除「异种流体被当拍驱逐 ⇒ 接触前空档」**（**513 全绿**）：
   现象 = 活熔岩倒在活水流旁 ⇒ 中间突然空一格，约 1.5s 后变圆石。根因是三条规则叠加：
   ① 目标层混合 BFS **按距离抢占**（新源会抢下它到对方水源之间那格）；② `pruneActual`

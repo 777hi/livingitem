@@ -74,8 +74,10 @@ public final class FluidFlowServerSync {
             TickableContainerContext ctx = com.qiqi.li.living.container.ContainerContexts.resolve(player, slot);
             if (ctx == null) continue;   // 末影箱等解析不出 ⇒ 跳过
             String key = ctx.getContainerKey();
-            if (key == null) return;
-            if (!CLIENT_ACTIVE.contains(key)) return;   // 从未向其同步过 ⇒ 无残留可清
+            // ⚠️ 2026-10-07 收尾审查：这两处原为 return ⇒ 首个槽位不满足就放弃整个清理；
+            //    改 continue 继续找下一个可解析槽位（大箱子 / 多容器菜单）。
+            if (key == null) continue;
+            if (!CLIENT_ACTIVE.contains(key)) continue;   // 从未向其同步过 ⇒ 无残留可清
             player.connection.send(new FluidFlowSyncPacket(
                 key, Math.max(1, ctx.getWidth()), List.of(), Map.of(), renderTargetOf(ctx)));
             return;   // 一个容器一条键，首个可解析槽位即定
@@ -180,7 +182,7 @@ public final class FluidFlowServerSync {
         //   不发时也要 return：末影箱无关联 BE，不能落到下面的 BE 匹配分支。
         if (ctx instanceof com.qiqi.li.living.container.EnderChestContainerContext ender
                 && ender.getOwner() instanceof ServerPlayer owner) {
-            if (com.qiqi.li.living.container.ContainerContexts.isViewingEnderChest(owner)) {
+            if (shouldDispatch(ender, owner)) {
                 owner.connection.send(packet);
             }
             return;
@@ -198,6 +200,21 @@ public final class FluidFlowServerSync {
                 player.connection.send(packet);
             }
         }
+    }
+
+    /**
+     * 末影箱快照是否应发给该玩家（包级私有，供单测）—— <b>必须判 viewer</b>。
+     *
+     * <p>2026-10-06 第 ③ 次泄漏修复的<b>接线点</b>：此前无条件每 tick 直发主人 ⇒
+     * 玩家关掉末影箱打开普通箱子后包仍在来 ⇒ 客户端 {@code chestLikeTarget} 提示被翻成
+     * {@code ENDER_CHEST} ⇒ 末影箱的水渲染到别的箱子界面上。判据见
+     * {@code ContainerContexts.isViewingEnderChest}（唯一实现点）。</p>
+     */
+    static boolean shouldDispatch(TickableContainerContext ctx, ServerPlayer player) {
+        if (ctx instanceof com.qiqi.li.living.container.EnderChestContainerContext) {
+            return com.qiqi.li.living.container.ContainerContexts.isViewingEnderChest(player);
+        }
+        return true;   // 背包 / BE 容器走 dispatch 里各自的分支
     }
 
     /**
