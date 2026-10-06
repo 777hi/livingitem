@@ -591,13 +591,13 @@ public class AbstractContainerScreenMixin extends Screen {
 
         Inventory playerInv = mc.player.getInventory();
         for (var group : groups.entrySet()) {
-            // 两分：玩家背包 → 背包快照；其余（方块容器）→ BE 容器快照。
-            // ⚠️ 末影箱已不支持流体（2026-10-06 撤除兼容层）⇒ 不再有第三种目标。
+            // 两分：玩家背包 → 背包快照；**其余一律非背包组** → 由服务端下发的 RenderTarget 决定
+            // （末影箱界面在客户端与普通 3 行箱子同形，靠 instanceof 判末影箱是死分支 —— 2026-10-06）
             FluidFlowClientCache.FlowSnapshot snapshot;
             if (group.getKey() == playerInv) {
                 snapshot = FluidFlowClientCache.getPlayer();
             } else {
-                snapshot = FluidFlowClientCache.get();
+                snapshot = FluidFlowClientCache.getChestLike();
             }
             if (snapshot.isEmpty()) continue;
 

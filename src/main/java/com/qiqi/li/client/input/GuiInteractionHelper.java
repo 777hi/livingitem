@@ -95,7 +95,8 @@ public final class GuiInteractionHelper {
         if (hoveredSlot.container == mc.player.getInventory()) {
             snapshot = FluidFlowClientCache.getPlayer();
         } else {
-            snapshot = FluidFlowClientCache.get();   // 方块容器（末影箱已不支持流体）
+            // 非背包组：末影箱 / BE 容器在客户端同形 ⇒ 由服务端下发的 RenderTarget 决定
+            snapshot = FluidFlowClientCache.getChestLike();
         }
 
         var cell = snapshot.cells().get(resolveContainerSlot(hoveredSlot));

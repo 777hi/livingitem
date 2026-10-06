@@ -39,10 +39,9 @@
 
 ## 活流体（流体侧挂起项，细节以 [idea.md](idea.md) 任务队列为准）
 
-1. ~~**末影箱汲/倒**~~ —— **已撤销**（2026-10-06，用户拍板「不兼容了，太费劲了」）：原版末影箱
-   **不支持流体**（不能倒水 / 汲水 / 装活物品、不渲染）。理由与清单见
-   [buffer/living-ender-fluid-removal.md](buffer/living-ender-fluid-removal.md)。
-   随身存流体请用**活末影箱物品**（`domain/ender/`，独立子系统）。
+1. **末影箱汲/倒** —— 框架侧 F-1 **已完成**（2026-10-05：`ContainerContexts.resolve` 加末影箱分支，
+   `EnderChestContainerContext` 迁出为独立类）；**待流体侧补 `FluidFlowServerSync.flushAfterTick`
+   第三条派发**（末影箱 `player` 直发）即通。
 2. ~~**岩浆/模组流体接入**~~ —— **活熔岩已接入**（2026-10-06，`living-fluid-tech.md` §3.7）：
    一行行为注册（引擎零改动），产物形态已拍板 —— **流动格遇水 ⇒ 圆石、源格遇水 ⇒ 黑曜石**
    （原版 `shouldSpreadLiquid`，与「谁撞谁」无关）。仍挂起：① **倒水进岩浆源 ⇒ 黑曜石**

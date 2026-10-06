@@ -23,7 +23,7 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.Container;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
-
+import net.minecraft.world.inventory.PlayerEnderChestContainer;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
@@ -31,6 +31,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.RandomizableContainer;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.items.IItemHandler;
+import net.neoforged.neoforge.items.wrapper.InvWrapper;
 import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
 import com.qiqi.li.living.api.LivingItemFunction;
@@ -155,9 +156,7 @@ public class ContainerLivingItemHandler {
             }
         }
 
-        // 玩家背包（B.5 第三项）：无 BE 可挂 ⇒ 从 Player attachment 回填（按容器键）。
-        // ⚠️ 2026-10-06：末影箱已不支持流体（兼容层整体撤除，见 docs/buffer/living-ender-fluid-removal.md），
-        //   此路径现在**只服务玩家背包**；Map 形态保留（改单值要动落盘格式，零玩法收益）。
+        // 玩家背包 / 末影箱（B.5 第三项）：无 BE 可挂 ⇒ 从 Player attachment 回填（按容器键）。
         // ⚠️ getData 可能返回 null（测试替身 / 附件未注册），必须判空。
         Player owner = ownerPlayer(ctx);
         if (owner != null) {
@@ -177,12 +176,13 @@ public class ContainerLivingItemHandler {
     }
 
     /**
-     * 取容器的「所属玩家」—— <b>仅玩家背包</b>有；方块容器返回 {@code null}。
+     * 取容器的「所属玩家」—— 仅玩家背包 / 末影箱有；方块容器返回 {@code null}。
      *
      * <p>用于把容器级流体数据落到 <b>Player attachment</b>（B.5 第三项）：背包走
-     * {@code getInventory().player}。⚠️ 末影箱原在此有一分支（2026-10-06 随兼容层撤除）。</p>
+     * {@code getInventory().player}；末影箱 inventory 为 null ⇒ 直接取 context 持有的 player。</p>
      */
     private static Player ownerPlayer(ContainerContext ctx) {
+        if (ctx instanceof EnderChestContainerContext ec) return ec.owner();
         if (ctx instanceof TickableContainerContext tctx) {
             Inventory inv = tctx.getInventory();
             if (inv != null) return inv.player;
@@ -422,6 +422,28 @@ public class ContainerLivingItemHandler {
         IItemHandler handler = inventory.player.getCapability(Capabilities.ItemHandler.ENTITY);
         if (handler == null) return;
         TickableContainerContext context = buildContext(handler, inventory, level);
+        processContext(context, level);
+
+        processEnderChest(inventory.player, level);
+    }
+
+    /**
+     * 处理玩家末影箱中的所有活物品。
+     *
+     * <p>末影箱容器（{@link PlayerEnderChestContainer}）既不是方块实体也不是玩家背包的一部分，
+     * 需要单独处理。使用 "player_&lt;uuid&gt;_ender_chest" 作为容器 key，
+     * 与玩家背包的 key（"player_&lt;uuid&gt;"）区分。</p>
+     *
+     * @param player 玩家
+     * @param level 世界
+     */
+    public static void processEnderChest(Player player, Level level) {
+        if (level.isClientSide) return;
+        PlayerEnderChestContainer enderChest = player.getEnderChestInventory();
+        if (enderChest == null) return;
+
+        IItemHandler handler = new InvWrapper(enderChest);
+        TickableContainerContext context = new EnderChestContainerContext(handler, player, level);
         processContext(context, level);
     }
 

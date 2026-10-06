@@ -147,10 +147,7 @@ src/main/java/com/qiqi/li/
 ```
 
 **合计测试用例 496 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
-全绿基线：`495 passed / 0 failed / 1 skipped`（2026-10-06 撤除末影箱流体兼容：新增
-`FluidFlowClientCacheTest` 3 项（键前缀两分路由 = 10-05 泄漏的不变量本体）、删显式键 3 项、
-`ContainerContextsTest` 末影箱用例改为断言 null；
-2026-10-06 实测三修：新增
+全绿基线：`495 passed / 0 failed / 1 skipped`（2026-10-06 实测三修：新增
 `ContainerFluidHandlerTest` ㊾⁺（慢管道抽不到 / 整源逐个抽）、
 `GuiInteractionPacketTest` 2 项索引错位回退；
 2026-10-06 管道抽取：新增
@@ -204,7 +201,6 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
 | 2026-10-06 | 🏗 **架构分层第一步**：`interaction` 的 9 个领域专用 handler 归位（farmland×3 / redstone×4 / tnt×2）⇒ 该包只剩通用机制，**`InteractionRegistry` 一行未改**。**R1 分层违规 113 → 101**，基线 42→39 对。**484 全绿**（纯重构） | `buffer/architecture-layering-plan.md` ① |
-| 2026-10-06 | 🔨 **砍掉「原版末影箱当流体容器」兼容**（用户拍板：太费劲、无玩法收益）：同一概念**三次**实测泄漏（渲染到物品栏 → 不渲染 → 渲染到别的箱子），复杂度已渗进架构层。撤除 `EnderChestContainerContext` / `processEnderChest` / `ContainerContexts` F-1 分支 / 显式键构造器 / 快照第三条派发 / `RenderTarget` 协议字段 + 客户端三桶（**回到按键前缀两槽位**）。🔴 不动活末影箱物品（`domain/ender/`）。回退：末影箱不装活物品、不渲染流体。**496 全绿** | `buffer/living-ender-fluid-removal.md` |
 | 2026-10-06 | 🔧 **实测三修**：① **末影箱流体不渲染** —— 客户端无法推断界面容器身份（末影箱 GUI 在客户端是 `GENERIC_9x3` + `SimpleContainer` 替身，与普通箱子同形）⇒ `instanceof PlayerEnderChestContainer` 是**死分支**；修：包加 **`RenderTarget`（服务端权威告知）**，客户端按它路由。🔴 **约束成文：客户端不得靠槽位容器类型推断容器身份**（两次踩坑同源：键前缀猜 ⇒ 泄漏；类型判 ⇒ 不画）。② **创造模式背包倒不进活流体** —— 客户端 `ItemPickerMenu` vs 服务端 `InventoryMenu` 索引错位，索引直查落到无关空槽（合成结果槽）⇒ 静默失败；修：空槽目标加「必须能解析出活容器」的门 + 回退 `containerSlot`。③ **管道瞬间抽空** —— v1「任意请求吞整源只返请求量」；定稿（用户拍板）**整源单位**：drain 请求 ≥1000 才给满 1000 并删源，<1000 **一分不给**。曾短暂上「源余额账本」（部分抽取）并**撤回** —— 源到处是二进制语义（挤没/晋升/汲走/刷石机/黑曜石/渲染/落盘），分数源污染每条路径；「无限源」也撤回。细水长流留给**专用流体活物品**（照抄活涂蜡铜灯存电）。**496 测试全绿** | `living-fluid-tech.md` §7 / §10.3；`changelog.md`（2026-10-06） |
 | 2026-10-06 | ✅ **管道抽取（活水源对外流体能力）**：新 `ContainerFluidHandler`（NeoForge `IFluidHandler`）—— **tank 数 = 派生源数、drain 直接消耗源、fill 恒 0（只出不进）、isFluidValid 如实答「是否持有」**；宽注册全部 BE + provider 四段让位（与红电同款）。活数据反查把 `processContainerAt` 的上下文构建抽成 `resolveContextAt`（**与 tick 路径同源同键**）+ `peekContainerData` 只读不创建。🔍 **Create 6 / Mekanism / Pipez 通用、无需兼容代码**（Create 6 内部 tank 就是 NeoForge `FluidTank` 模板，管道只拉不推）。⚠️ 速率模型修正：单源再生间隔 = `flowSpeed`（水 ≤5t）。**493 测试全绿** | `living-fluid-tech.md` §10 |
 | 2026-10-06 | ✅ **统一时钟：生长类逻辑一律走该流体自己的节拍**（同日第四批次）：此前引擎有**三个时钟**（目标层每 tick / 实际层每流体节拍 / 推动固定 4t）⇒ 错配：岩浆 30t 爬一格却 4t 推物品、水 5t 长一格却 4t 推。定稿「**流动的事按流体节拍走；外界引起的事当拍生效**」：**晋升搬到实际层 + 该流体推进拍**（判定改读实际层邻源，要求本格真有流体；收敛循环删除，目标层退化为纯 BFS）、**物品推动按流体分组随蔓延同拍**（水 5t / 岩浆 30t，`FLOW_STEP_TICKS` 删除）。焚毁/前沿反应/转化/挤没**故意不上时钟**（外部输入等 30t 手感说不过去）。⚠️ 三连源再生 1t ⇒ ≤5t。**487 测试全绿** | `living-fluid-tech.md` §3.2/§3.3/§3.6；`buffer/living-fluid-single-clock-plan.md` |
@@ -212,7 +208,8 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 | 2026-10-06 | 🔧 **活熔岩口径更正**（同日第二批次）：① **源格同样焚毁**（「源格 = 转化台」只对**水**成立，岩浆不转化）；② **产物格不是墙** ⇒ 岩浆重新流入再反应，**圆石持续累加**（删整套 `solidified`）；③ 相位改「**反应先于焚毁**」（否则岩浆一流入就把不满组的圆石烧掉，数量永远停在 1）；④ **岩浆不转化** —— 删 `lava_empty_bucket` 死条目，非活空桶放岩浆源 = **被焚毁**。**481 测试全绿** | `living-fluid-tech.md` §3.7；`changelog.md`（2026-10-06） |
 | 2026-10-06 | ✅ **活熔岩接入（第三条流体，引擎零改动）**：`WaterRegistration` 注册熔岩行为（参数全派生原版：maxLevel 3 / 30t·格 / 永不晋升）；机制① **焚毁**（满组石头系 → 诞生活熔岩源「新配方」/ 防火物品共存 / 其余销毁）+ 机制② **前沿反应·刷石机**（熔岩遇水 → 圆石落格；岩浆源须离水 ≥2 格，贴水的源会被湮灭）。⚠️ 岩浆不晋升 ⇒ 消耗即耗尽（矿脉型，与水的三连源农场对偶） | `living-fluid-tech.md` §3.7；`changelog.md`（2026-10-06） |
 | 2026-10-06 | ✅ **实测三连修 + 转化消耗源**：① 末影箱渲染泄漏（缓存键同前缀撞车 ⇒ `FluidFlowClientCache` 三分路由）；② 创造汲水光标不变身（GUI 语义改光标变身/倒水不消耗）；③ 转化消耗源（`consumeSource` 表标记 + 契约 + 引擎；三连源晋升再生 = 水桶农场闭环）。🔴 附带发现 `setItem` 抽干活引用的基建坑。**475 测试全绿** | `changelog.md`（2026-10-06） |
-| 2026-10-05 | **框架侧待办移交收口（F-2 + StaticCacheRegistry）**：新 `living/util/StaticCacheRegistry`（static 缓存清理注册表，首批登记 7+2 项）—— 把「自愿挂靠（靠记性）」改为「**登记一行即被生命周期覆盖**」；🔴 **A1 铁律成文**（infra §3.4）。（同日的 F-1 末影箱分支已于 2026-10-06 随末影箱兼容撤除一并删除）**469 测试全绿** | `living-item-infrastructure.md` §3.4；`archive/infrastructure-refactoring-plan.md` §7 |
+| 2026-10-05 | 🛠 **新增开发工具 `tools/gen_code_map.py`（代码关系图）**：从源码**派生**可交互关系图，回答「改这个类会牵动谁」（类 / 包 / **层次**三视图 + **上游/下游高亮** + **分层违规报告**）。🔴 **定位 = 派生视图，不是第二份真相** —— 产物落 `build/`（gitignore），唯一真相永远是 `src/`。**未改动 mod 代码** | `docs/guides/code-map.md` |
+| 2026-10-05 | **框架侧待办移交收口（F-1 + F-2）**：**F-1** `ContainerContexts.resolve` 补**末影箱分支**（`PlayerEnderChestContainer` —— 原版末影箱 GUI 的槽位容器不是 BE）⇒ 解锁末影箱汲/倒；`EnderChestContainerContext` 迁出为独立类（避免共享内核反向依赖 God class）。**F-2** 新 `living/util/StaticCacheRegistry`（static 缓存清理注册表，首批登记 7+2 项）—— 把「自愿挂靠（靠记性）」改为「**登记一行即被生命周期覆盖**」；🔴 **A1 铁律成文**（infra §3.4）。**469 测试全绿** | `living-item-infrastructure.md` §3.4；`archive/infrastructure-refactoring-plan.md` §7 |
 
 
 
