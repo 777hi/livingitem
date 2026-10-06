@@ -435,6 +435,29 @@ class ContainerFluidDataTest {
     }
 
     @Test
+    @DisplayName("⑳⁺ 源余额账本：part 抽取后落盘往返（管道抽了一半，重登不回满）")
+    void codec_roundTripsSourceRemainder() {
+        var data = new ContainerFluidData();
+        data.registerGeneratedSource(0, Fluids.WATER.getFluidType());   // 满源
+        data.registerGeneratedSource(2, Fluids.WATER.getFluidType());
+        assertEquals(1000, data.sourceRemaining(0), "新源 = 满源（SOURCE_MB）");
+        assertEquals(400, data.consumeSourceAmount(0, 400), "部分抽取 400");
+        assertEquals(600, data.sourceRemaining(0));
+
+        var ops = net.minecraft.nbt.NbtOps.INSTANCE;
+        var tag = ContainerFluidData.CODEC.encodeStart(ops, data).getOrThrow();
+        var restored = ContainerFluidData.CODEC.parse(ops, tag).getOrThrow();
+
+        assertEquals(600, restored.sourceRemaining(0), "余额落盘（否则重登回满 = 白白多出流体）");
+        assertEquals(1000, restored.sourceRemaining(2), "满源仍是满源（不写冗余字段）");
+        assertEquals(data.getGeneratedSources().keySet(), restored.getGeneratedSources().keySet());
+
+        assertEquals(600, restored.consumeSourceAmount(0, 9999), "抽干只能拿到余额");
+        assertFalse(restored.isGeneratedSource(0), "抽干 ⇒ 源消失");
+        assertEquals(0, restored.sourceRemaining(0), "非源格余额 0");
+    }
+
+    @Test
     @DisplayName("㉑ 晋升接缝：shouldPromote 为真的流动格升格为派生源（并重跑 BFS）")
     void promoteHook_promotesEligibleCell() {
         FluidFlowBehaviors.register(Fluids.WATER.getFluidType(), new FluidFlowBehavior() {

@@ -29,11 +29,12 @@ import com.qiqi.li.living.container.TickableContainerContext;
  *
  * <h3>语义（逐条对应 §10 定案）</h3>
  * <ul>
- *   <li><b>抽取 = 消耗源</b>：drain 直接 {@code removeGeneratedSource}，等价「自动化汲走」；
- *       两源夹一格 + 抽中间 + 晋升补中间 ⇒ 原版无限水的工业化形态。</li>
- *   <li><b>一源 = 一 tank = 1000mB</b>：源是<b>全有或全无</b>的资产 —— 任意 ≥1mB 的请求都会消耗
- *       <b>整个</b>源，返回量 = {@code min(请求量, 1000)}（§10「无缓冲」）。⚠️ 若某管道用 EXECUTE
- *       试探（而非 SIMULATE）会白耗一个源 —— Create / Pipez / Mekanism 的探测都是 SIMULATE。</li>
+ *   <li><b>抽取 = 消耗源</b>：drain 扣该源余额，扣到 0 ⇒ 源消失（{@code removeGeneratedSource}），
+ *       等价「自动化汲走」；两源夹一格 + 抽中间 + 晋升补中间 ⇒ 原版无限水的工业化形态。</li>
+ *   <li><b>一源 = 一 tank = 1000mB</b>，且支持<b>部分抽取</b>（2026-10-06 实测修正）：drain 按请求量
+ *       扣该源<b>余额</b>（{@code ContainerFluidData.sourceRemaining}，<b>落盘</b>）⇒ 慢管道
+ *       （如 100mB/t）一滴滴抽、按自己的速率抽空一个源。源在游戏层仍是二进制资产（有 / 无），
+ *       余额只是管道账本（汲走 / 挤没 / 转化消耗一律按整源处理）。</li>
  *   <li><b>无缓冲</b>：不缓存 FluidStack，每次调用现场读活数据（源随时被汲走 / 晋升）。</li>
  *   <li><b>只出不进</b>：{@link #fill} 恒 0 —— 守住「活桶是源的唯一种子工具」，与 §6.1 对称性一致。</li>
  *   <li><b>范围</b>：tank 数 = 当前<b>派生源</b>个数（权威资产表）；流动格不算（每 tick 由 BFS 重算）。</li>
@@ -44,8 +45,8 @@ import com.qiqi.li.living.container.TickableContainerContext;
  */
 public final class ContainerFluidHandler implements IFluidHandler {
 
-    /** 一个源格对外的容量口径（mB）—— 与 Create 的 tank 容量一致。 */
-    public static final int SOURCE_MB = 1000;
+    /** 一个源格对外的容量口径（mB）—— 单一真相在 {@link ContainerFluidData#SOURCE_MB}。 */
+    public static final int SOURCE_MB = ContainerFluidData.SOURCE_MB;
 
     private final BlockEntity be;
 
@@ -128,9 +129,11 @@ public final class ContainerFluidHandler implements IFluidHandler {
 
     @Override
     public FluidStack getFluidInTank(int tank) {
+        ContainerFluidData data = peekFluidData();
         List<Source> list = sources();
-        if (tank < 0 || tank >= list.size()) return FluidStack.EMPTY;
-        return stackOf(list.get(tank).type(), SOURCE_MB);
+        if (data == null || tank < 0 || tank >= list.size()) return FluidStack.EMPTY;
+        // 报**余额**（部分抽取后 < 1000）—— 管道据此知道还能抽多少
+        return stackOf(list.get(tank).type(), data.sourceRemaining(list.get(tank).slot()));
     }
 
     @Override
@@ -184,18 +187,28 @@ public final class ContainerFluidHandler implements IFluidHandler {
     }
 
     /**
-     * 消耗一个源并返回 {@code min(请求量, 1000)} —— 源是全有或全无的资产（无缓冲，§10）。
-     * {@code simulate()} 时只算不消耗（Create 的探测走这条路）。
+     * 按请求量抽取该源（**部分抽取**，2026-10-06 实测修正）：
+     * 返回 {@code min(请求量, 该源余额)}，余额扣减；扣到 0 ⇒ 源消失。
+     *
+     * <p>⚠️ 原实现是「任意请求都吞整源、返回请求量」的<b>全有或全无</b>语义 ⇒ 慢管道
+     * （如 100mB/t）每拍请求 100 却整源蒸发，几拍就把容器抽干（用户实测：瞬间抽完、且
+     * 每次只拿到 100 不是 1000）。现在余额记在 {@link ContainerFluidData#sourceRemaining} 上
+     * 并落盘 ⇒ 慢管道一滴滴抽，抽干才删源。</p>
+     *
+     * <p>{@code simulate()} 时只算不消耗（Create 的探测走这条路）。</p>
      */
     private FluidStack drainSlot(Source source, int requested, FluidAction action) {
         FluidStack probe = stackOf(source.type(), 1);
         if (probe.isEmpty()) return FluidStack.EMPTY;
-        if (action.execute()) {
-            ContainerFluidData data = peekFluidData();
-            if (data == null) return FluidStack.EMPTY;
-            data.removeGeneratedSource(source.slot());     // ≡ 汲走（唯一正确的删源口径）
-            be.setChanged();
+        ContainerFluidData data = peekFluidData();
+        if (data == null) return FluidStack.EMPTY;
+
+        if (action.simulate()) {
+            return new FluidStack(probe.getFluid(), Math.min(requested, data.sourceRemaining(source.slot())));
         }
-        return new FluidStack(probe.getFluid(), Math.min(requested, SOURCE_MB));
+        int taken = data.consumeSourceAmount(source.slot(), requested);
+        if (taken <= 0) return FluidStack.EMPTY;
+        be.setChanged();
+        return new FluidStack(probe.getFluid(), taken);
     }
 }

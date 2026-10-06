@@ -77,7 +77,7 @@ public final class FluidFlowServerSync {
             if (key == null) return;
             if (!CLIENT_ACTIVE.contains(key)) return;   // 从未向其同步过 ⇒ 无残留可清
             player.connection.send(new FluidFlowSyncPacket(
-                key, Math.max(1, ctx.getWidth()), List.of(), Map.of()));
+                key, Math.max(1, ctx.getWidth()), List.of(), Map.of(), renderTargetOf(ctx)));
             return;   // 一个容器一条键，首个可解析槽位即定
         }
     }
@@ -92,8 +92,25 @@ public final class FluidFlowServerSync {
         CLIENT_ACTIVE.clear();
     }
 
+    /**
+     * 快照的渲染目标（服务端权威判定，2026-10-06）—— 客户端<b>无法</b>从界面推断容器身份：
+     * 末影箱 GUI 在客户端是 {@code GENERIC_9x3} + 27 格 {@code SimpleContainer} 替身，
+     * 与普通 3 行箱子同形 ⇒ 只能由服务端告知。
+     */
+    public static com.qiqi.li.living.domain.water.FluidFlowClientCache.RenderTarget renderTargetOf(
+            TickableContainerContext ctx) {
+        if (ctx instanceof com.qiqi.li.living.container.EnderChestContainerContext) {
+            return com.qiqi.li.living.domain.water.FluidFlowClientCache.RenderTarget.ENDER_CHEST;
+        }
+        if (ctx.getInventory() != null) {
+            return com.qiqi.li.living.domain.water.FluidFlowClientCache.RenderTarget.PLAYER_INV;
+        }
+        return com.qiqi.li.living.domain.water.FluidFlowClientCache.RenderTarget.BLOCK;
+    }
+
     /** 构建 flow 快照包；无流体数据时返回 null。流体按调色板去重（只用 Registry.getKey 接口）。 */
-    public static FluidFlowSyncPacket buildPacket(String containerKey, int width, ContainerFluidData fluidData) {
+    public static FluidFlowSyncPacket buildPacket(String containerKey, int width, ContainerFluidData fluidData,
+                                                  com.qiqi.li.living.domain.water.FluidFlowClientCache.RenderTarget target) {
         var flows = fluidData.getFlows();
         if (flows.isEmpty()) return null;
 
@@ -114,7 +131,7 @@ public final class FluidFlowServerSync {
             cells.put(e.getKey(), new int[]{e.getValue().level(), e.getValue().fromSlot(), idx});
         }
         if (cells.isEmpty()) return null;
-        return new FluidFlowSyncPacket(containerKey, width, palette, cells);
+        return new FluidFlowSyncPacket(containerKey, width, palette, cells, target);
     }
 
     /**
@@ -129,15 +146,17 @@ public final class FluidFlowServerSync {
 
         boolean hasData = fluidData != null && fluidData != ContainerFluidData.EMPTY && !fluidData.isEmpty();
         boolean needClear = markActiveAndCheckClear(key, hasData);
+        var target = renderTargetOf(ctx);
         if (!hasData) {
             if (needClear) {
                 // 数据刚清空（最后一个源被汲走/挤没）⇒ 下发一次空快照，清掉客户端残留渲染
-                dispatch(level, ctx, new FluidFlowSyncPacket(key, ctx.getWidth(), List.of(), Map.of()));
+                dispatch(level, ctx,
+                    new FluidFlowSyncPacket(key, ctx.getWidth(), List.of(), Map.of(), target));
             }
             return;
         }
 
-        CustomPacketPayload packet = buildPacket(key, ctx.getWidth(), fluidData);
+        CustomPacketPayload packet = buildPacket(key, ctx.getWidth(), fluidData, target);
         if (packet == null) return;
         dispatch(level, ctx, packet);
     }

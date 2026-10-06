@@ -124,15 +124,45 @@ class ContainerFluidHandlerTest {
     }
 
     @Test
-    @DisplayName("㊼ 源是全有或全无：请求 500 ⇒ 得 500，但整源被消耗（§10 无缓冲）")
-    void drain_partialRequestStillConsumesWholeSource() {
+    @DisplayName("㊼ 部分抽取（慢管道）：请求 500 ⇒ 得 500，源只剩 500 —— 不是整源蒸发")
+    void drain_partialRequestKeepsRemainder() {
         Level level = mockLevel(mock(BlockEntity.class));
         BlockEntity be = mockBe(level);
         ContainerFluidData data = seed(level, 0);
+        IFluidHandler h = handlerFor(be);
 
-        FluidStack got = handlerFor(be).drain(500, IFluidHandler.FluidAction.EXECUTE);
-        assertEquals(500, got.getAmount(), "按请求量返回（≤1000）");
-        assertFalse(data.isGeneratedSource(0), "但源是全有或全无 ⇒ 整源消耗");
+        FluidStack got = h.drain(500, IFluidHandler.FluidAction.EXECUTE);
+        assertEquals(500, got.getAmount(), "按请求量返回（不限整源）");
+        assertTrue(data.isGeneratedSource(0), "源还在（余额未扣完）");
+        assertEquals(500, data.sourceRemaining(0), "余额 500（落盘账本）");
+        assertEquals(500, h.getFluidInTank(0).getAmount(), "tank 如实报余额");
+        assertEquals(1000, h.getTankCapacity(0), "容量口径不变");
+
+        assertEquals(500, h.drain(1000, IFluidHandler.FluidAction.EXECUTE).getAmount(),
+            "再抽 ⇒ 只拿剩余 500");
+        assertFalse(data.isGeneratedSource(0), "抽干 ⇒ 源消失");
+        assertEquals(0, h.getTanks());
+    }
+
+    @Test
+    @DisplayName("㊾⁺ 慢管道逐滴抽：100mB × 10 次抽干一个源（不瞬间抽空整个容器）")
+    void slowPipe_drainsGradually() {
+        Level level = mockLevel(mock(BlockEntity.class));
+        BlockEntity be = mockBe(level);
+        ContainerFluidData data = seed(level, 0, 1);   // 两个源
+        IFluidHandler h = handlerFor(be);
+
+        for (int i = 0; i < 9; i++) {
+            assertEquals(100, h.drain(100, IFluidHandler.FluidAction.EXECUTE).getAmount(),
+                "第 " + (i + 1) + " 滴");
+        }
+        assertEquals(2, h.getTanks(), "抽了 900mB ⇒ 两个源都还在");
+        assertEquals(100, data.sourceRemaining(0), "源 0 只剩 100");
+
+        assertEquals(100, h.drain(100, IFluidHandler.FluidAction.EXECUTE).getAmount(), "第 10 滴抽干源 0");
+        assertFalse(data.isGeneratedSource(0), "源 0 消失");
+        assertEquals(1, h.getTanks(), "源 1 不受影响（不会连带抽空）");
+        assertTrue(data.isGeneratedSource(1));
     }
     // MARK
 

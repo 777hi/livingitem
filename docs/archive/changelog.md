@@ -146,7 +146,29 @@
   ⚠️ **速率模型修正**（统一时钟后）：单源再生间隔从 1t 变成 `flowSpeed`（水 ≤5t）⇒
   抽速上限 = 1000mB/5t，要更高速率靠**并排更多源**。
   测试新增 `ContainerFluidHandlerTest` 6 项（tank 枚举/稳定序、SIMULATE vs EXECUTE、
-  全有或全无、异种 EMPTY、fill 恒 0 + isFluidValid、非容器无害、provider 四段让位）。
+  异种 EMPTY、fill 恒 0 + isFluidValid、非容器无害、provider 四段让位）。
+- 🔧 **实测三修（末影箱不渲染 / 创造模式倒不进背包 / 管道瞬间抽空）**（497 测试全绿）：
+  ① 🔴 **末影箱流体完全不渲染** —— 根因：**客户端无法推断界面容器身份**。原版末影箱 GUI 在客户端是
+  `MenuType.GENERIC_9x3` + 27 格 `SimpleContainer` **替身**（真实容器 `PlayerEnderChestContainer`
+  只在服务端），与普通 3 行箱子**同形** ⇒ `slot.container instanceof PlayerEnderChestContainer`
+  在客户端是**死分支**（渲染落到 BE 桶 = 空）。修：`FluidFlowSyncPacket` 加
+  `FluidFlowClientCache.RenderTarget`（PLAYER_INV / ENDER_CHEST / BLOCK，**服务端权威告知**），
+  客户端按 target 路由 + `getChestLike()` 取非背包组快照（`GuiInteractionHelper` 的末影箱汲/倒判定同修）。
+  📌 两次踩坑同源：先按键前缀猜（撞车 ⇒ 泄漏到物品栏），再按容器类型判（死分支 ⇒ 一点不画）
+  ⇒ **约束成文：客户端不得靠槽位容器类型推断容器身份**。
+  ② 🔴 **创造模式在玩家背包里倒不进活流体** —— 根因：创造模式客户端用 `ItemPickerMenu`、
+  服务端仍是 `InventoryMenu`，**槽位索引不同** ⇒ `resolveSlot` 的「索引直查」落到「恰好也是空槽」的
+  无关槽位（如合成结果槽）⇒ 解析不出容器 ⇒ 倒水**静默失败**。修：空槽目标加一道
+  **「必须能解析出活容器上下文」**的门（`isAcceptable`），被否决即回退按 `containerSlot` 精确定位；
+  `resolveSlot` 改为可注入谓词（纯逻辑可单测）。
+  ③ 🔴 **管道瞬间抽空容器 + 每次只拿到请求量** —— 根因：v1 drain 是「**全有或全无**」
+  （任意 ≥1mB 请求都吞整源、返回请求量）⇒ 慢管道（100mB/t）每拍蒸发一个源、只换回 100mB。
+  修：**源余额账本**（`sourceRemaining` / `consumeSourceAmount`，§10.3）—— drain 按请求量扣减，
+  扣到 0 才删源；余额**落盘**（`SourceEntry.amount` 可选字段，缺省 = 满源 ⇒ 旧存档可读）；
+  汲走 / 挤没 / 转化消耗等既有路径一律按**整源**处理（源仍是二进制资产，余额只是管道账本）。
+  测试：`ContainerFluidHandlerTest` ㊼ 改钉部分抽取、新增 ㊾⁺ 慢管道逐滴抽干一源不连带；
+  `ContainerFluidDataTest` 新增 ⑳⁺ 余额落盘往返；`GuiInteractionPacketTest` 新增 2 项
+  （索引错位回退 / 索引优先语义保留）。
 ## 2026-10-05
 
 - ✅ **引擎时序化（flowSpeed 消费，跨流体反应的时间地基）**（**473 测试全绿**）：

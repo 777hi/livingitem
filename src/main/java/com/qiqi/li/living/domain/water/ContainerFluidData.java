@@ -66,6 +66,12 @@ public class ContainerFluidData {
     public static final int SOURCE_LEVEL = 0;
     public static final int MAX_FLOW_LEVEL = 7;
 
+    /**
+     * 一个源格的流体总量（mB）—— 对外能力（管道抽取）的容量口径，与 Create 的 tank 一致。
+     * 源在游戏层仍是<b>二进制资产</b>（有 / 无），这个量只是<b>管道账本</b>（见 {@link #consumeSourceAmount}）。
+     */
+    public static final int SOURCE_MB = 1000;
+
     public static class FlowEntry {
         int level;
         boolean isSource;
@@ -99,6 +105,15 @@ public class ContainerFluidData {
      * {@code registerSource}/{@code isLivingBucketOf} 一并删除。</p>
      */
     private final Map<Integer, FluidType> generatedSources = new LinkedHashMap<>();
+
+    /**
+     * 源格的**余额账本**（mB，2026-10-06 管道抽取修复）：槽位 → 剩余流体。
+     *
+     * <p>缺席 = 满源（{@link #SOURCE_MB}）。只有被管道<b>部分抽取</b>过的源才有条目，
+     * 扣完即删源（条目一并清）。落盘（见 {@code SourceEntry.amount}）—— 否则重登回满。</p>
+     */
+    private final Map<Integer, Integer> sourceRemainder = new LinkedHashMap<>();
+
     private long lastTickTime;
     private int tickCounter;
 
@@ -159,11 +174,46 @@ public class ContainerFluidData {
     public void registerGeneratedSource(int slot, FluidType fluid) {
         if (fluid == null) return;
         generatedSources.put(slot, fluid);
+        sourceRemainder.remove(slot);   // 新源 = 满源（清掉上一个源残留的余额账本）
     }
 
-    /** 【改】移除派生源（汲走处理器用）。非派生源的槽位无效果。 */
+    /** 【改】移除派生源（汲走处理器用）。非派生源的槽位无效果；余额账本一并清。 */
     public void removeGeneratedSource(int slot) {
         generatedSources.remove(slot);
+        sourceRemainder.remove(slot);
+    }
+
+    // ── 源余额账本（管道抽取的「部分抽取」支持，2026-10-06）────────
+
+    /**
+     * 【查】该源格的剩余流体（mB）；未记录 = 满源 {@link #SOURCE_MB}；非源格 = 0。
+     */
+    public int sourceRemaining(int slot) {
+        if (!generatedSources.containsKey(slot)) return 0;
+        return sourceRemainder.getOrDefault(slot, SOURCE_MB);
+    }
+
+    /**
+     * 【改】从该源格消耗 {@code amount}（mB），返回<b>实际消耗量</b>；余额归零 ⇒ 源本身消失。
+     *
+     * <p>⚠️ <b>口径</b>（2026-10-06 实测修正）：源在游戏层仍是<b>二进制资产</b>（有 / 无），
+     * 余额只是<b>管道账本</b> —— 所以「汲走 / 挤没 / 转化消耗」等既有路径一律按<b>整源</b>
+     * 处理（让源直接消失），不读余额。这条缝只给管道抽取用：慢管道按自己的速率一滴滴抽，
+     * 抽干才删源（原实现「任意请求都吞整源、返回请求量」导致慢管道把容器瞬间抽空，见 §10.3）。</p>
+     *
+     * @return 实际消耗量（0 = 非源 / amount ≤ 0）
+     */
+    public int consumeSourceAmount(int slot, int amount) {
+        if (amount <= 0 || !generatedSources.containsKey(slot)) return 0;
+        int remaining = sourceRemaining(slot);
+        int taken = Math.min(amount, remaining);
+        int left = remaining - taken;
+        if (left <= 0) {
+            removeGeneratedSource(slot);     // 抽干 ⇒ 源消失（账本一并清）
+        } else {
+            sourceRemainder.put(slot, left);
+        }
+        return taken;
     }
 
     /** 【查】该槽位是否为派生源（区别于桶源）。 */
@@ -185,11 +235,16 @@ public class ContainerFluidData {
     // 只序列化「派生源」map（槽位 → 流体类型）；流动表每 tick 由 BFS 重算，落盘无正确性价值。
     // 桶源**不落盘** —— 桶在场时每 tick 由桶重新注册，落盘无意义且会造出幽灵源。
 
-    /** 序列化形态：一条派生源（槽位 + 流体类型注册 id）。 */
-    private record SourceEntry(int slot, String fluidId) {
+    /**
+     * 序列化形态：一条派生源（槽位 + 流体类型注册 id + 余额）。
+     *
+     * <p>{@code amount} <b>可选</b>（缺省 = 满源）—— 保证旧存档可读，且满源不写冗余字段。</p>
+     */
+    private record SourceEntry(int slot, String fluidId, int amount) {
         static final Codec<SourceEntry> CODEC = RecordCodecBuilder.create(i -> i.group(
             Codec.INT.fieldOf("slot").forGetter(SourceEntry::slot),
-            Codec.STRING.fieldOf("fluid").forGetter(SourceEntry::fluidId)
+            Codec.STRING.fieldOf("fluid").forGetter(SourceEntry::fluidId),
+            Codec.INT.optionalFieldOf("amount", SOURCE_MB).forGetter(SourceEntry::amount)
         ).apply(i, SourceEntry::new));
     }
 
@@ -211,7 +266,9 @@ public class ContainerFluidData {
         ContainerFluidData data = new ContainerFluidData();
         for (SourceEntry e : entries) {
             FluidType fluid = resolveFluidType(e.fluidId());
-            if (fluid != null) data.generatedSources.put(e.slot(), fluid);
+            if (fluid == null) continue;
+            data.generatedSources.put(e.slot(), fluid);
+            if (e.amount() < SOURCE_MB) data.sourceRemainder.put(e.slot(), Math.max(0, e.amount()));
         }
         return data;
     }
@@ -220,7 +277,9 @@ public class ContainerFluidData {
         List<SourceEntry> out = new ArrayList<>();
         for (var en : data.generatedSources.entrySet()) {
             ResourceLocation rl = NeoForgeRegistries.FLUID_TYPES.getKey(en.getValue());
-            if (rl != null) out.add(new SourceEntry(en.getKey(), rl.toString()));
+            if (rl == null) continue;
+            int amount = data.sourceRemainder.getOrDefault(en.getKey(), SOURCE_MB);
+            out.add(new SourceEntry(en.getKey(), rl.toString(), amount));   // 满源不写 amount（optionalFieldOf 缺省）
         }
         return out;
     }

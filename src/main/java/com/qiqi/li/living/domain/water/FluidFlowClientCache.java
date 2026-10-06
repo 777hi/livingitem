@@ -25,30 +25,51 @@ public final class FluidFlowClientCache {
         public boolean isEmpty() { return cells.isEmpty(); }
     }
 
+    /**
+     * 快照的**渲染目标**（服务端权威告知）—— 2026-10-06 教训：
+     * <b>客户端无法推断「当前界面是哪个容器」</b>：原版末影箱 GUI 在客户端是
+     * {@code MenuType.GENERIC_9x3} + 一个 27 格 {@code SimpleContainer} 替身
+     * （真实容器 {@code PlayerEnderChestContainer} 只在服务端），
+     * 与「普通 3 行箱子界面」在客户端**完全同形** ⇒
+     * 靠 {@code slot.container instanceof} 判末影箱是<b>死分支</b>
+     * （一度表现为「末影箱的水一点都不渲染」；更早则表现为「泄漏到玩家物品栏」）。
+     * ⇒ 改由服务端在包里明确带上目标，客户端只做路由。
+     */
+    public enum RenderTarget { PLAYER_INV, ENDER_CHEST, BLOCK }
+
     private static volatile FlowSnapshot containerSnapshot = FlowSnapshot.EMPTY;
     private static volatile FlowSnapshot playerSnapshot = FlowSnapshot.EMPTY;
-    /** 末影箱（2026-10-06）：键 player_<uuid>_ender_chest 与背包同前缀 ⇒ 必须独立槽位，
-     *  否则末影箱的水会渲染到玩家物品栏（实测泄漏）。 */
     private static volatile FlowSnapshot enderSnapshot = FlowSnapshot.EMPTY;
+
+    /** 「非背包组」的快照当前该取哪个槽 —— 由最近一次服务端下发决定（见 {@link RenderTarget}）。 */
+    private static volatile RenderTarget chestLikeTarget = RenderTarget.BLOCK;
 
     private FluidFlowClientCache() {}
 
-    /** 更新缓存（网络包线程调用）：按键路由三槽位（背包 / 末影箱 / BE 容器）。 */
-    public static void update(String containerKey, FlowSnapshot snapshot) {
-        if (containerKey != null && containerKey.startsWith("player_")) {
-            if (containerKey.endsWith("_ender_chest")) {
+    /** 更新缓存（网络包线程调用）：按服务端下发的 {@link RenderTarget} 路由（不再靠键前缀猜）。 */
+    public static void update(RenderTarget target, FlowSnapshot snapshot) {
+        switch (target) {
+            case PLAYER_INV -> playerSnapshot = snapshot;
+            case ENDER_CHEST -> {
                 enderSnapshot = snapshot;
-            } else {
-                playerSnapshot = snapshot;
+                chestLikeTarget = RenderTarget.ENDER_CHEST;
             }
-        } else {
-            containerSnapshot = snapshot;
+            case BLOCK -> {
+                containerSnapshot = snapshot;
+                chestLikeTarget = RenderTarget.BLOCK;
+            }
         }
     }
 
-    /** 当前打开的 BE 容器快照（无数据返回 EMPTY）。 */
-    public static FlowSnapshot get() {
-        return containerSnapshot;
+    /**
+     * <b>非背包组</b>（界面里除玩家背包外的那些槽位）该用的快照。
+     *
+     * <p>末影箱界面与 BE 容器界面在客户端同形（见 {@link RenderTarget}）⇒ 只能由服务端
+     * 最近一次下发的目标决定；界面关闭时 {@link #clear()} 会重置为 BLOCK/EMPTY，
+     * 所以「打开一个没有流体的容器」不会闪现上一个界面的水。</p>
+     */
+    public static FlowSnapshot getChestLike() {
+        return chestLikeTarget == RenderTarget.ENDER_CHEST ? enderSnapshot : containerSnapshot;
     }
 
     /** 当前玩家背包快照（无数据返回 EMPTY）。 */
@@ -56,16 +77,12 @@ public final class FluidFlowClientCache {
         return playerSnapshot;
     }
 
-    /** 当前末影箱快照（无数据返回 EMPTY）。 */
-    public static FlowSnapshot getEnder() {
-        return enderSnapshot;
-    }
-
-    /** 清空三份缓存（界面关闭时调用，防止下次打开别的容器闪现旧水）。 */
+    /** 清空三份缓存 + 目标提示（界面关闭时调用，防止下次打开别的容器闪现旧水）。 */
     public static void clear() {
         containerSnapshot = FlowSnapshot.EMPTY;
         playerSnapshot = FlowSnapshot.EMPTY;
         enderSnapshot = FlowSnapshot.EMPTY;
+        chestLikeTarget = RenderTarget.BLOCK;   // 重置为默认（未收到提示 ⇒ 非背包组取 EMPTY）
     }
 
     /** 便捷拷贝（网络包处理构造快照用）。 */

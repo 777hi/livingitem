@@ -99,7 +99,8 @@ public record GuiInteractionPacket(
                 }
             }
 
-            Slot targetSlot = resolveSlot(menu, packet.slotIndex(), packet.containerSlot());
+            Slot targetSlot = resolveSlot(menu, packet.slotIndex(), packet.containerSlot(),
+                slot -> isAcceptable(player, slot));
             if (targetSlot == null) {
                 if (carriedRestored) menu.setCarried(ItemStack.EMPTY);
                 return;
@@ -128,22 +129,40 @@ public record GuiInteractionPacket(
     }
 
     /**
-     * 定位目标槽位，兼容创造模式的索引差异。
-     * 优先通过 slotIndex 直接查找，失败则通过 containerSlot 遍历查找。
+     * 定位目标槽位，兼容创造模式的索引差异：
+     * 优先按 {@code slotIndex} 直查，被谓词否决则按 {@code containerSlot} 遍历回退。
+     *
+     * <p>包级可见 + 谓词可注入：纯排序逻辑可直接单测（无需 mock 菜单/玩家）。</p>
      */
-    private static Slot resolveSlot(AbstractContainerMenu menu, int slotIndex, int containerSlot) {
+    static Slot resolveSlot(AbstractContainerMenu menu, int slotIndex, int containerSlot,
+                            java.util.function.Predicate<Slot> acceptable) {
         if (slotIndex >= 0 && slotIndex < menu.slots.size()) {
             Slot directSlot = menu.getSlot(slotIndex);
-            if (isValidTarget(directSlot.getItem())) return directSlot;
+            if (acceptable.test(directSlot)) return directSlot;
         }
 
         for (Slot s : menu.slots) {
-            if (s.getContainerSlot() == containerSlot && isValidTarget(s.getItem())) {
+            if (s.getContainerSlot() == containerSlot && acceptable.test(s)) {
                 return s;
             }
         }
 
         return null;
+    }
+
+    /**
+     * 目标槽是否可接受：持活物品（点火 / 施肥…），或**能解析成活容器的空槽**（活桶汲 / 倒）。
+     *
+     * <p>⚠️ <b>2026-10-06（创造模式背包修复）</b>：空槽必须落在「能解析出容器上下文」的槽位上。
+     * 创造模式的玩家背包界面客户端是 {@code ItemPickerMenu}、服务端仍是 {@code InventoryMenu}，
+     * <b>两者槽位索引不同</b> ⇒ 索引直查可能落到「恰好也是空槽」的无关槽位（如合成结果槽），
+     * 后果是倒水<b>静默失败</b>（解析不出容器 ⇒ 无处注册源）。加上这道门后，索引直查被否决，
+     * 自动回退到按 {@code containerSlot} 精确定位（客户端已解包 {@code SlotWrapper}）。</p>
+     */
+    private static boolean isAcceptable(ServerPlayer player, Slot slot) {
+        if (!isValidTarget(slot.getItem())) return false;
+        if (!slot.getItem().isEmpty()) return true;   // 活物品目标：老口径不变
+        return com.qiqi.li.living.container.ContainerContexts.resolve(player, slot) != null;
     }
 
     /**

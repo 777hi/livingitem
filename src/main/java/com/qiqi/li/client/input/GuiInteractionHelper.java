@@ -94,10 +94,9 @@ public final class GuiInteractionHelper {
         FluidFlowClientCache.FlowSnapshot snapshot;
         if (hoveredSlot.container == mc.player.getInventory()) {
             snapshot = FluidFlowClientCache.getPlayer();
-        } else if (hoveredSlot.container instanceof net.minecraft.world.inventory.PlayerEnderChestContainer) {
-            snapshot = FluidFlowClientCache.getEnder();   // 末影箱汲/倒（F-1 配套）
         } else {
-            snapshot = FluidFlowClientCache.get();
+            // 非背包组：末影箱 / BE 容器在客户端同形 ⇒ 由服务端下发的 RenderTarget 决定
+            snapshot = FluidFlowClientCache.getChestLike();
         }
 
         var cell = snapshot.cells().get(resolveContainerSlot(hoveredSlot));

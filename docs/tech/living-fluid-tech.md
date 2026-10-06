@@ -451,7 +451,17 @@ slot/level/fromSlot）→ 客户端 `FluidFlowClientCache` → `AbstractContaine
 自适应渲染（`IClientFluidTypeExtensions` 贴图/染色，alpha 按 `maxLevel` 归一；动画白拿）。
 
 - **不依赖任何活桶物品**——纯源容器的水也能画；
+- **派发目标由服务端权威告知**（`FluidFlowSyncPacket.target`，2026-10-06 修正）：
+  客户端**无法**推断「当前界面是哪个容器」—— 原版末影箱 GUI 在客户端是
+  `MenuType.GENERIC_9x3` + 27 格 `SimpleContainer` **替身**（真实容器
+  `PlayerEnderChestContainer` 只在服务端），与「普通 3 行箱子界面」**完全同形**；
+  ⇒ 客户端渲染按 `FluidFlowClientCache.getChestLike()` 取「非背包组」快照，
+  具体取末影还是 BE 由最近一次下发的 `target` 决定（`clear()` 时重置）。
+  🔴 两次踩坑都出在这条：先按「键前缀」猜（末影箱键与背包键同前缀 ⇒ **泄漏到物品栏**），
+  再按 `slot.container instanceof PlayerEnderChestContainer` 判（客户端**死分支** ⇒ **一点不画**）。
+  **约束：客户端不得靠槽位容器类型推断容器身份，只能听服务端的。**
 - 玩家背包直发本人 / BE 容器菜单匹配（大箱子 `CompoundContainer` 特判）；
+  末影箱：context 持 player（inventory 为 null）⇒ **直发主人本人**（第三条派发，2026-10-05）；
 - **边沿清屏**：数据从有变无（汲走最后一个源）⇒ 一次性下发空快照
   （`CLIENT_ACTIVE` 状态机），否则客户端旧水永不清除；
 - **跨存档**：`CLIENT_ACTIVE` 挂 `onServerStopped`；客户端缓存挂
@@ -464,7 +474,7 @@ slot/level/fromSlot）→ 客户端 `FluidFlowClientCache` → `AbstractContaine
 
 | 容器 | 载体 | 内容 |
 |---|---|---|
-| BE 容器 | `CONTAINER_FLUID_DATA` attachment（`.serialize(CODEC)`） | 只存 `generatedSources`（流动每 tick 重算，不落） |
+| BE 容器 | `CONTAINER_FLUID_DATA` attachment（`.serialize(CODEC)`） | `generatedSources` + **源余额** `amount`（可选字段，缺省 = 满源；见 §10.3）；流动表每 tick 重算，不落 |
 | 玩家背包 / 末影箱 | **Player attachment** `CONTAINER_FLUID_DATA_PLAYER`（`KEYED_CODEC`，一个玩家两个容器键） | 同上 |
 
 ⚠️ 数据变空时**必须写回 EMPTY**（BE 与玩家两条路径都要）——不清则重进存档
@@ -521,10 +531,32 @@ Create 6.0.10 的 `SmartFluidTank extends net.neoforged.neoforge.fluids.capabili
 
 ### 10.2 速率模型修正（2026-10-06 统一时钟后）
 
+
 原设计的「无限水 = 每源每 tick 再生一个」已随 §3.6 统一时钟变为
 **每源每 `<flowSpeed>` tick 再生一个（水 ≤5t）**。结论方向不变（多源并行堆速率），
 但单源的**再生间隔**从 1t 变成 5t —— 抽速上限 = `1000mB / 5t`（水）。
 想要更高供水速率：并排放更多源，而不是指望单源秒补。
+
+### 10.3 部分抽取：源余额账本（2026-10-06 实测修正）
+
+**实测问题**：管道会**瞬间把容器抽空**，且**每次只拿到请求量而非 1000mB**。
+
+**根因**：v1 的 drain 是「**全有或全无**」——任意 ≥1mB 的请求都消耗**整个**源、返回请求量。
+慢管道（如 100mB/t）每拍请求 100 ⇒ **整源蒸发只换来 100mB**，几拍就把容器抽干。
+
+**修正：余额账本**（`ContainerFluidData.sourceRemaining` / `consumeSourceAmount`）：
+
+| 规则 | 说明 |
+|---|---|
+| 一个源 = 1000mB 额度 | 新源满额；`registerGeneratedSource` 清空旧余额 |
+| drain 按请求量扣减 | 返回 `min(请求量, 余额)`；`getFluidInTank` 报**余额** |
+| 余额扣到 0 | 才 `removeGeneratedSource`（源这时才消失） |
+| **落盘** | `SourceEntry.amount`（**可选字段**，缺省 = 满源 ⇒ 旧存档可读、满源不写冗余）；不落则重登回满 = 白送流体 |
+| 其余路径按**整源** | 汲走 / 挤没 / 转化消耗 一律直接删源、**不读余额** —— 源在游戏层仍是二进制资产，余额只是**管道账本** |
+| 并发安全 | 每条路径都重新 `peekFluidData()`（能力实例无状态，源随时被汲走 / 晋升） |
+
+守卫：`ContainerFluidHandlerTest` ㊼（部分抽取 + 抽干才删源）/ ㊾⁺（慢管道 100mB×10 抽干一个源、
+**不连带抽空另一个源**）；`ContainerFluidDataTest` ⑳⁺（余额落盘往返）。
 
 ## 附录：容器水流示例
 

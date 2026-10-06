@@ -146,8 +146,11 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 493 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
-全绿基线：`492 passed / 0 failed / 1 skipped`（2026-10-06 管道抽取：新增
+**合计测试用例 497 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
+全绿基线：`496 passed / 0 failed / 1 skipped`（2026-10-06 实测三修：新增
+`ContainerFluidHandlerTest` ㊾⁺ 慢管道逐滴抽干、`ContainerFluidDataTest` ⑳⁺ 余额落盘往返、
+`GuiInteractionPacketTest` 2 项索引错位回退；
+2026-10-06 管道抽取：新增
 `ContainerFluidHandlerTest` 6 项（tank 枚举与稳定序 / SIMULATE 不消耗 vs EXECUTE 删源 /
 全有或全无 / 异种 EMPTY / fill 恒 0 + isFluidValid / 非容器无害 + provider 四段让位）；
 2026-10-06 统一时钟：`ContainerFluidDataTest`
@@ -198,6 +201,7 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
 | 2026-10-06 | 🏗 **架构分层第一步**：`interaction` 的 9 个领域专用 handler 归位（farmland×3 / redstone×4 / tnt×2）⇒ 该包只剩通用机制，**`InteractionRegistry` 一行未改**。**R1 分层违规 113 → 101**，基线 42→39 对。**484 全绿**（纯重构） | `buffer/architecture-layering-plan.md` ① |
+| 2026-10-06 | 🔧 **实测三修**：① **末影箱流体不渲染** —— 客户端无法推断界面容器身份（末影箱 GUI 在客户端是 `GENERIC_9x3` + `SimpleContainer` 替身，与普通箱子同形）⇒ `instanceof PlayerEnderChestContainer` 是**死分支**；修：包加 **`RenderTarget`（服务端权威告知）**，客户端按它路由。🔴 **约束成文：客户端不得靠槽位容器类型推断容器身份**（两次踩坑同源：键前缀猜 ⇒ 泄漏；类型判 ⇒ 不画）。② **创造模式背包倒不进活流体** —— 客户端 `ItemPickerMenu` vs 服务端 `InventoryMenu` 索引错位，索引直查落到无关空槽（合成结果槽）⇒ 静默失败；修：空槽目标加「必须能解析出活容器」的门 + 回退 `containerSlot`。③ **管道瞬间抽空** —— v1「全有或全无」吞整源只返请求量；修：**源余额账本**（`sourceRemaining`/`consumeSourceAmount`，**落盘** `SourceEntry.amount` 可选字段），扣到 0 才删源。**497 测试全绿** | `living-fluid-tech.md` §7 / §10.3；`changelog.md`（2026-10-06） |
 | 2026-10-06 | ✅ **管道抽取（活水源对外流体能力）**：新 `ContainerFluidHandler`（NeoForge `IFluidHandler`）—— **tank 数 = 派生源数、drain 直接消耗源、fill 恒 0（只出不进）、isFluidValid 如实答「是否持有」**；宽注册全部 BE + provider 四段让位（与红电同款）。活数据反查把 `processContainerAt` 的上下文构建抽成 `resolveContextAt`（**与 tick 路径同源同键**）+ `peekContainerData` 只读不创建。🔍 **Create 6 / Mekanism / Pipez 通用、无需兼容代码**（Create 6 内部 tank 就是 NeoForge `FluidTank` 模板，管道只拉不推）。⚠️ 速率模型修正：单源再生间隔 = `flowSpeed`（水 ≤5t）。**493 测试全绿** | `living-fluid-tech.md` §10 |
 | 2026-10-06 | ✅ **统一时钟：生长类逻辑一律走该流体自己的节拍**（同日第四批次）：此前引擎有**三个时钟**（目标层每 tick / 实际层每流体节拍 / 推动固定 4t）⇒ 错配：岩浆 30t 爬一格却 4t 推物品、水 5t 长一格却 4t 推。定稿「**流动的事按流体节拍走；外界引起的事当拍生效**」：**晋升搬到实际层 + 该流体推进拍**（判定改读实际层邻源，要求本格真有流体；收敛循环删除，目标层退化为纯 BFS）、**物品推动按流体分组随蔓延同拍**（水 5t / 岩浆 30t，`FLOW_STEP_TICKS` 删除）。焚毁/前沿反应/转化/挤没**故意不上时钟**（外部输入等 30t 手感说不过去）。⚠️ 三连源再生 1t ⇒ ≤5t。**487 测试全绿** | `living-fluid-tech.md` §3.2/§3.3/§3.6；`buffer/living-fluid-single-clock-plan.md` |
 | 2026-10-06 | ✅ **黑曜石循环 + 转化表作用域收窄**（同日第三批次）：① 契约加 default `frontierSourceReaction`（默认回退 `frontierReaction`）⇒ **源格遇水 = 黑曜石、流动格 = 圆石**，循环闭合（圆石累加 → 满 64 → 岩浆源 → 黑曜石 → 焚毁 → 回圆石；黑曜石存活窗口 ≈ 1.5s 待实测）；② **取消「非活空桶 → 水桶」** —— 对称性：活化影响非活化 ✓，非活化消耗活化资产 ✗ ⇒ 转化改为**催化剂语义（永不消耗源）**，删 `consumeSource` 整套机制，自动化水桶农场随之不成立。**484 测试全绿** | `living-fluid-tech.md` §3.7 / §6.1；`buffer/living-fluid-obsidian-plan.md` |
@@ -206,7 +210,7 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 | 2026-10-06 | ✅ **实测三连修 + 转化消耗源**：① 末影箱渲染泄漏（缓存键同前缀撞车 ⇒ `FluidFlowClientCache` 三分路由）；② 创造汲水光标不变身（GUI 语义改光标变身/倒水不消耗）；③ 转化消耗源（`consumeSource` 表标记 + 契约 + 引擎；三连源晋升再生 = 水桶农场闭环）。🔴 附带发现 `setItem` 抽干活引用的基建坑。**475 测试全绿** | `changelog.md`（2026-10-06） |
 | 2026-10-05 | 🛠 **新增开发工具 `tools/gen_code_map.py`（代码关系图）**：从源码**派生**可交互关系图，回答「改这个类会牵动谁」（类 / 包 / **层次**三视图 + **上游/下游高亮** + **分层违规报告**）。🔴 **定位 = 派生视图，不是第二份真相** —— 产物落 `build/`（gitignore），唯一真相永远是 `src/`。**未改动 mod 代码** | `docs/guides/code-map.md` |
 | 2026-10-05 | **框架侧待办移交收口（F-1 + F-2）**：**F-1** `ContainerContexts.resolve` 补**末影箱分支**（`PlayerEnderChestContainer` —— 原版末影箱 GUI 的槽位容器不是 BE）⇒ 解锁末影箱汲/倒；`EnderChestContainerContext` 迁出为独立类（避免共享内核反向依赖 God class）。**F-2** 新 `living/util/StaticCacheRegistry`（static 缓存清理注册表，首批登记 7+2 项）—— 把「自愿挂靠（靠记性）」改为「**登记一行即被生命周期覆盖**」；🔴 **A1 铁律成文**（infra §3.4）。**469 测试全绿** | `living-item-infrastructure.md` §3.4；`archive/infrastructure-refactoring-plan.md` §7 |
-| 2026-10-04 | **活化时机钩子收编（A3）**：`LivingTagPacket` 5 段内联类型判断收编为 `LivingItemFunction#onActivated`/`#onDeactivated`（与 A2 `getOwnedComponentTypes()` 同构）；新门面 `LivingItemActivation.apply` 成三个入口唯一通道，`setLiving` 的 `owner` 参数删除 ⇒ **owner 读写归一**（非工具不再带冗余 UUID）。`Player` 改**可空**（缺席是合法态，行为由各功能自决）；`onDeactivated` 返回 false = **下游自决否决 ⇒ 框架零改动**。**467 测试全绿** | `activation-hook-refactoring-plan.md`（已归档）；`api-contract.md` §1.5 |
+
 
 
 
