@@ -10,8 +10,6 @@ import java.util.function.Consumer;
 import javax.annotation.Nullable;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.network.chat.Component;
-import net.minecraft.world.inventory.ChestMenu;
-import net.minecraft.world.inventory.PlayerEnderChestContainer;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -72,8 +70,8 @@ public class LivingEnderChestFunction implements LivingItemFunction {
 
     /** 玩家当前是否正打开着自己的末影箱 —— 「在末影箱界面里」是唯一会绑定的前提。 */
     private static boolean isInEnderChestGui(Player player) {
-        return player.containerMenu instanceof ChestMenu chestMenu
-            && chestMenu.getContainer() instanceof PlayerEnderChestContainer;
+        // 判据唯一实现点在 ContainerContexts（2026-10-06 第 ③ 次泄漏修复后与快照派发共用）
+        return com.qiqi.li.living.container.ContainerContexts.isViewingEnderChest(player);
     }
 
     @Override

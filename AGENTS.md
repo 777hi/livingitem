@@ -146,8 +146,12 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 496 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
-全绿基线：`495 passed / 0 failed / 1 skipped`（2026-10-06 实测三修：新增
+**合计测试用例 506 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
+全绿基线：`505 passed / 0 failed / 1 skipped`（2026-10-06 回退+末影箱派发判viewer：
+`ContainerContextsTest` 新增 `IsViewingEnderChest` 6 项（末影箱菜单 true / `ChestMenu` 但普通箱容器
+false / 非 `ChestMenu` false / null false / 玩家侧两条）+ 重建 `FluidFlowClientCacheTest` 4 项
+（三份快照互不串 / `PLAYER_INV` 不翻转「非背包组」提示 / `clear()` 复位）；
+2026-10-06 实测三修：新增
 `ContainerFluidHandlerTest` ㊾⁺（慢管道抽不到 / 整源逐个抽）、
 `GuiInteractionPacketTest` 2 项索引错位回退；
 2026-10-06 管道抽取：新增
@@ -200,6 +204,7 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-06 | ↩️ **回退「砍掉原版末影箱当流体容器」+ 🔧 修第 ③ 次渲染泄漏**（同日第五批次）：砍掉那次把 `processEnderChest` 一并删了，而它是**第 4 条完整 tick 入口**（与玩家背包同一条 `processContext`）⇒ 末影箱里**全部**活物品机制失效（打火石/耕地/漏斗/锁/活末影箱物品路由 + 红电），**超出「砍流体」范围、破坏硬边界「不动活末影箱物品」** ⇒ 用户改判为「回退 + 修 bug」。修法：末影箱派发**判 viewer**（`ContainerContexts.isViewingEnderChest`，唯一判据实现点，活化绑定改为委托）—— 此前无条件每 tick 直发 ⇒ 关末影箱开普通箱子后包仍在来 ⇒ 客户端 `chestLikeTarget` 提示翻转 ⇒ **末影箱的水渲染到别的箱子界面**（三次泄漏里唯一没修过的那个）。**506 测试全绿** | `living-fluid-tech.md` §7/§9；`buffer/living-ender-viewer-dispatch-fix.md` |
 | 2026-10-06 | 🏗 **架构分层第一步**：`interaction` 的 9 个领域专用 handler 归位（farmland×3 / redstone×4 / tnt×2）⇒ 该包只剩通用机制，**`InteractionRegistry` 一行未改**。**R1 分层违规 113 → 101**，基线 42→39 对。**484 全绿**（纯重构） | `buffer/architecture-layering-plan.md` ① |
 | 2026-10-06 | 🔧 **实测三修**：① **末影箱流体不渲染** —— 客户端无法推断界面容器身份（末影箱 GUI 在客户端是 `GENERIC_9x3` + `SimpleContainer` 替身，与普通箱子同形）⇒ `instanceof PlayerEnderChestContainer` 是**死分支**；修：包加 **`RenderTarget`（服务端权威告知）**，客户端按它路由。🔴 **约束成文：客户端不得靠槽位容器类型推断容器身份**（两次踩坑同源：键前缀猜 ⇒ 泄漏；类型判 ⇒ 不画）。② **创造模式背包倒不进活流体** —— 客户端 `ItemPickerMenu` vs 服务端 `InventoryMenu` 索引错位，索引直查落到无关空槽（合成结果槽）⇒ 静默失败；修：空槽目标加「必须能解析出活容器」的门 + 回退 `containerSlot`。③ **管道瞬间抽空** —— v1「任意请求吞整源只返请求量」；定稿（用户拍板）**整源单位**：drain 请求 ≥1000 才给满 1000 并删源，<1000 **一分不给**。曾短暂上「源余额账本」（部分抽取）并**撤回** —— 源到处是二进制语义（挤没/晋升/汲走/刷石机/黑曜石/渲染/落盘），分数源污染每条路径；「无限源」也撤回。细水长流留给**专用流体活物品**（照抄活涂蜡铜灯存电）。**496 测试全绿** | `living-fluid-tech.md` §7 / §10.3；`changelog.md`（2026-10-06） |
 | 2026-10-06 | ✅ **管道抽取（活水源对外流体能力）**：新 `ContainerFluidHandler`（NeoForge `IFluidHandler`）—— **tank 数 = 派生源数、drain 直接消耗源、fill 恒 0（只出不进）、isFluidValid 如实答「是否持有」**；宽注册全部 BE + provider 四段让位（与红电同款）。活数据反查把 `processContainerAt` 的上下文构建抽成 `resolveContextAt`（**与 tick 路径同源同键**）+ `peekContainerData` 只读不创建。🔍 **Create 6 / Mekanism / Pipez 通用、无需兼容代码**（Create 6 内部 tank 就是 NeoForge `FluidTank` 模板，管道只拉不推）。⚠️ 速率模型修正：单源再生间隔 = `flowSpeed`（水 ≤5t）。**493 测试全绿** | `living-fluid-tech.md` §10 |
@@ -208,7 +213,6 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 | 2026-10-06 | 🔧 **活熔岩口径更正**（同日第二批次）：① **源格同样焚毁**（「源格 = 转化台」只对**水**成立，岩浆不转化）；② **产物格不是墙** ⇒ 岩浆重新流入再反应，**圆石持续累加**（删整套 `solidified`）；③ 相位改「**反应先于焚毁**」（否则岩浆一流入就把不满组的圆石烧掉，数量永远停在 1）；④ **岩浆不转化** —— 删 `lava_empty_bucket` 死条目，非活空桶放岩浆源 = **被焚毁**。**481 测试全绿** | `living-fluid-tech.md` §3.7；`changelog.md`（2026-10-06） |
 | 2026-10-06 | ✅ **活熔岩接入（第三条流体，引擎零改动）**：`WaterRegistration` 注册熔岩行为（参数全派生原版：maxLevel 3 / 30t·格 / 永不晋升）；机制① **焚毁**（满组石头系 → 诞生活熔岩源「新配方」/ 防火物品共存 / 其余销毁）+ 机制② **前沿反应·刷石机**（熔岩遇水 → 圆石落格；岩浆源须离水 ≥2 格，贴水的源会被湮灭）。⚠️ 岩浆不晋升 ⇒ 消耗即耗尽（矿脉型，与水的三连源农场对偶） | `living-fluid-tech.md` §3.7；`changelog.md`（2026-10-06） |
 | 2026-10-06 | ✅ **实测三连修 + 转化消耗源**：① 末影箱渲染泄漏（缓存键同前缀撞车 ⇒ `FluidFlowClientCache` 三分路由）；② 创造汲水光标不变身（GUI 语义改光标变身/倒水不消耗）；③ 转化消耗源（`consumeSource` 表标记 + 契约 + 引擎；三连源晋升再生 = 水桶农场闭环）。🔴 附带发现 `setItem` 抽干活引用的基建坑。**475 测试全绿** | `changelog.md`（2026-10-06） |
-| 2026-10-05 | 🛠 **新增开发工具 `tools/gen_code_map.py`（代码关系图）**：从源码**派生**可交互关系图，回答「改这个类会牵动谁」（类 / 包 / **层次**三视图 + **上游/下游高亮** + **分层违规报告**）。🔴 **定位 = 派生视图，不是第二份真相** —— 产物落 `build/`（gitignore），唯一真相永远是 `src/`。**未改动 mod 代码** | `docs/guides/code-map.md` |
 | 2026-10-05 | **框架侧待办移交收口（F-1 + F-2）**：**F-1** `ContainerContexts.resolve` 补**末影箱分支**（`PlayerEnderChestContainer` —— 原版末影箱 GUI 的槽位容器不是 BE）⇒ 解锁末影箱汲/倒；`EnderChestContainerContext` 迁出为独立类（避免共享内核反向依赖 God class）。**F-2** 新 `living/util/StaticCacheRegistry`（static 缓存清理注册表，首批登记 7+2 项）—— 把「自愿挂靠（靠记性）」改为「**登记一行即被生命周期覆盖**」；🔴 **A1 铁律成文**（infra §3.4）。**469 测试全绿** | `living-item-infrastructure.md` §3.4；`archive/infrastructure-refactoring-plan.md` §7 |
 
 

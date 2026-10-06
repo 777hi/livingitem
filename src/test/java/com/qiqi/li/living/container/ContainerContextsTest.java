@@ -17,6 +17,9 @@ import org.junit.jupiter.api.Test;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.CompoundContainer;
 import net.minecraft.world.SimpleContainer;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ChestMenu;
 import net.minecraft.world.inventory.PlayerEnderChestContainer;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
@@ -159,6 +162,64 @@ class ContainerContextsTest {
             Slot slot = new Slot(new SimpleContainer(1), 0, 0, 0);
 
             assertNull(ContainerContexts.resolve(player, slot));
+        }
+    }
+
+    @Nested
+    @DisplayName("isViewingEnderChest —— 第 ③ 次泄漏修复的 viewer 判据（2026-10-06）")
+    class IsViewingEnderChest {
+
+        @Test
+        @DisplayName("末影箱菜单 → true")
+        void enderChestMenu_true() {
+            ChestMenu menu = mock(ChestMenu.class);
+            when(menu.getContainer()).thenReturn(new PlayerEnderChestContainer());
+
+            assertTrue(ContainerContexts.isEnderChestMenu(menu));
+        }
+
+        @Test
+        @DisplayName("ChestMenu 但容器是普通箱 → false（客户端同形，靠这一条区分）")
+        void chestMenuWithPlainContainer_false() {
+            ChestMenu menu = mock(ChestMenu.class);
+            when(menu.getContainer()).thenReturn(new SimpleContainer(27));
+
+            assertFalse(ContainerContexts.isEnderChestMenu(menu));
+        }
+
+        @Test
+        @DisplayName("非 ChestMenu 菜单（如工作台/熔炉）→ false")
+        void otherMenu_false() {
+            assertFalse(ContainerContexts.isEnderChestMenu(mock(AbstractContainerMenu.class)));
+        }
+
+        @Test
+        @DisplayName("null 菜单 → false（不抛）")
+        void nullMenu_false() {
+            assertFalse(ContainerContexts.isEnderChestMenu(null));
+        }
+
+        @Test
+        @DisplayName("玩家侧入口：containerMenu 是末影箱菜单 → true")
+        void playerEntry_true() {
+            Player player = mock(Player.class);
+            ChestMenu menu = mock(ChestMenu.class);
+            when(menu.getContainer()).thenReturn(new PlayerEnderChestContainer());
+            player.containerMenu = menu;
+
+            assertTrue(ContainerContexts.isViewingEnderChest(player));
+        }
+
+        @Test
+        @DisplayName("玩家侧入口：玩家正在看普通箱子 → false（这正是泄漏③的判别点）")
+        void playerEntry_chestViewer_false() {
+            Player player = mock(Player.class);
+            ChestMenu menu = mock(ChestMenu.class);
+            when(menu.getContainer()).thenReturn(new SimpleContainer(27));
+            player.containerMenu = menu;
+
+            assertFalse(ContainerContexts.isViewingEnderChest(player),
+                "玩家看的是普通箱子 ⇒ 末影箱快照不得下发（否则串台）");
         }
     }
 }

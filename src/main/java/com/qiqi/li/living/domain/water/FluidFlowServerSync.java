@@ -172,10 +172,17 @@ public final class FluidFlowServerSync {
         }
 
         // 末影箱（F-1 配套，2026-10-05）：context 持有 player（inventory 为 null），
-        // 直发主人本人 —— 末影箱汲/倒解锁后渲染同轨
+        // 直发主人本人 —— 末影箱汲/倒解锁后渲染同轨。
+        // ⚠️ 2026-10-06 第 ③ 次泄漏修复：**必须判 viewer**。此前无条件每 tick 直发 ⇒
+        //   玩家关掉末影箱打开普通箱子后包仍在来 ⇒ 客户端 chestLikeTarget 提示被翻成
+        //   ENDER_CHEST ⇒ 末影箱的水渲染到别的箱子界面上。判据与 BE 路径同构
+        //   （BE 用 isViewing 匹配菜单槽位；末影箱无 BE 槽位，只能问「菜单是不是末影箱」）。
+        //   不发时也要 return：末影箱无关联 BE，不能落到下面的 BE 匹配分支。
         if (ctx instanceof com.qiqi.li.living.container.EnderChestContainerContext ender
                 && ender.getOwner() instanceof ServerPlayer owner) {
-            owner.connection.send(packet);
+            if (com.qiqi.li.living.container.ContainerContexts.isViewingEnderChest(owner)) {
+                owner.connection.send(packet);
+            }
             return;
         }
 

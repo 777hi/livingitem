@@ -170,6 +170,24 @@
   测试：`ContainerFluidHandlerTest` ㊼（拿不满不给 / 给满删源 / tank 恒 1000）、
   ㊾⁺（慢管道 20 次抽不到且源不丢、整源管道逐个抽不连带）；`GuiInteractionPacketTest` 新增 2 项
   （索引错位回退 / 索引优先语义保留）。
+- ↩️ **回退「砍掉原版末影箱当流体容器」+ 🔧 修第 ③ 次渲染泄漏**（**506 测试全绿**，同日第四/五批次）：
+  当日先做了「砍掉末影箱流体兼容」（三次渲染泄漏 + 复杂度渗进架构层，用户拍板「太费劲、无玩法」），
+  **随后用户改判：回退，改修 bug** —— 因为那次把 `processEnderChest` 一并删了，而它是
+  **第 4 条完整 tick 入口**（build context + `processContext`，与玩家背包同一条路）⇒
+  末影箱里**全部**活物品机制失效（活打火石/耕地/漏斗/锁/活末影箱物品的刷名与 `validateRoutes`
+  + 红电/应力），而撤除清单与文档只写了流体那一层 ⇒ **超出范围，破坏用户硬边界「不动活末影箱物品」**。
+  ① **回退**（`git revert 1613b65`）：完整恢复末影箱作为流体容器 + 物品 tick 容器。
+  ② **修第 ③ 次泄漏（末影箱的水渲染到别的箱子界面 —— 三次里唯一没修过的那个）**：
+  根因是**服务端末影箱派发不判 viewer**（`FluidFlowServerSync.dispatch` 无条件每 tick 直发主人）
+  ⇒ 玩家关掉末影箱打开普通箱子后包仍在来 ⇒ 客户端 `chestLikeTarget`「非背包组用哪个桶」的
+  全局提示被翻成 `ENDER_CHEST` ⇒ 串台。BE 容器那条路径本来就有 `isViewing` 过滤，只有末影箱漏了。
+  修：新增 `ContainerContexts.isViewingEnderChest`（唯一判据实现点，`LivingEnderChestFunction`
+  的活化绑定改为委托它，消掉重复判据）；末影箱分支判 viewer 后 return（无关联 BE 不能落到
+  BE 匹配分支）。方案留痕 `docs/buffer/living-ender-viewer-dispatch-fix.md`（含三次泄漏现状表、
+  根因链条、被否的 4 个选项）。测试：`ContainerContextsTest` 新增 Nested 6 项（末影箱菜单 true /
+  `ChestMenu` 但普通箱容器 false / 非 `ChestMenu` false / null false / 玩家侧两条）+
+  重建 `FluidFlowClientCacheTest` 4 项（三份快照互不串 + `PLAYER_INV` 不翻转提示 + `clear()` 复位）。
+  文档：tech §7 / §9 + TODO 第 1 项（改回「已完成」+ 三次泄漏史指针）+ AGENTS。
 ## 2026-10-05
 
 - ✅ **引擎时序化（flowSpeed 消费，跨流体反应的时间地基）**（**473 测试全绿**）：

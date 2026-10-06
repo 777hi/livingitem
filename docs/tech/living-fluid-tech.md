@@ -461,7 +461,13 @@ slot/level/fromSlot）→ 客户端 `FluidFlowClientCache` → `AbstractContaine
   再按 `slot.container instanceof PlayerEnderChestContainer` 判（客户端**死分支** ⇒ **一点不画**）。
   **约束：客户端不得靠槽位容器类型推断容器身份，只能听服务端的。**
 - 玩家背包直发本人 / BE 容器菜单匹配（大箱子 `CompoundContainer` 特判）；
-  末影箱：context 持 player（inventory 为 null）⇒ **直发主人本人**（第三条派发，2026-10-05）；
+  末影箱：context 持 player（inventory 为 null）⇒ 直发主人本人（第三条派发，2026-10-05）；
+  🔴 **末影箱这条派发必须判 viewer**（2026-10-06 第 ③ 次泄漏修复）：原先无条件每 tick 直发 ⇒
+  玩家**关掉末影箱、打开普通箱子**后包仍在来 ⇒ `chestLikeTarget` 提示被翻成 `ENDER_CHEST`
+  ⇒ **末影箱的水渲染到别的箱子界面上**。末影箱既非 BE 又不在玩家 `Inventory` 里，
+  不能用 `isViewing` 匹配菜单槽位 ⇒ 专用判据 `ContainerContexts.isViewingEnderChest`
+  （`menu instanceof ChestMenu && getContainer() instanceof PlayerEnderChestContainer`），
+  与 BE 路径同构；不发时也要 `return`（末影箱无关联 BE，不能落到 BE 匹配分支）；
 - **边沿清屏**：数据从有变无（汲走最后一个源）⇒ 一次性下发空快照
   （`CLIENT_ACTIVE` 状态机），否则客户端旧水永不清除；
 - **跨存档**：`CLIENT_ACTIVE` 挂 `onServerStopped`；客户端缓存挂
@@ -484,7 +490,11 @@ slot/level/fromSlot）→ 客户端 `FluidFlowClientCache` → `AbstractContaine
 
 ## 9. 已知缺口与挂起项
 
-- ~~末影箱汲/倒~~：**已修**（2026-10-05，F-1 分支 `ContainerContexts.resolve` 末影箱分支）；
+- ~~末影箱汲/倒~~：**已修**（2026-10-05，F-1 分支 `ContainerContexts.resolve` 末影箱分支），
+  **渲染侧第 ③ 次泄漏已修**（2026-10-06，末影箱派发判 viewer，见 §7）；
+  ⚠️ 同日一度「砍掉末影箱流体兼容」，**当日回退** —— 那次把 `processEnderChest`（第 4 条完整
+  tick 入口）也删了，导致末影箱里**全部**活物品机制失效（超范围误伤）；
+  方案留痕：`buffer/living-ender-viewer-dispatch-fix.md`；
 - **活熔岩已接入**（§3.7，2026-10-06，含黑曜石循环）；仍挂起：**倒水进岩浆源 → 黑曜石**
   （`pour` 处理器路径）、**模组流体接入**（一行行为注册，等有具体流体再说）；
 - **黑曜石存活窗口 ≈ 1.5s**（§3.7）是否够玩家/漏斗抽走 —— 待实测；

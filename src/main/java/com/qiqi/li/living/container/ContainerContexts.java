@@ -11,7 +11,9 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.CompoundContainer;
 import net.minecraft.world.Container;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ChestMenu;
 import net.minecraft.world.inventory.PlayerEnderChestContainer;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
@@ -177,6 +179,29 @@ public final class ContainerContexts {
             if (ownsContainer(slot.container, containerInstances)) return true;
         }
         return false;
+    }
+
+    /**
+     * 玩家当前是否<b>正打开自己的末影箱界面</b>。
+     *
+     * <p><b>用途（2026-10-06 第 ③ 次泄漏修复）</b>：原版末影箱既不是 BE 也不在玩家
+     * {@code Inventory} 里 ⇒ 流体快照派发无法像BE 容器那样用 {@link #isViewing} 过滤
+     * 「菜单槽位是否属于该容器」，只能问「这个菜单是不是末影箱」。此前该分支
+     * <b>不判 viewer</b>、每 tick 直发主人 ⇒ 玩家关掉末影箱打开普通箱子后，包仍在来，
+     * 客户端 {@code chestLikeTarget} 提示被翻成 {@code ENDER_CHEST} ⇒
+     * <b>末影箱的水渲染到别的箱子界面上</b>。</p>
+     *
+     * <p>判据（服务端侧真实容器可达，与 {@code LivingEnderChestFunction} 原有实现逐字一致）：
+     * {@code menu instanceof ChestMenu && menu.getContainer() instanceof PlayerEnderChestContainer}。
+     * 本类是<b>唯一实现点</b>，活化绑定与快照派发共用。</p>
+     */
+    public static boolean isViewingEnderChest(Player player) {
+        return isEnderChestMenu(player.containerMenu);
+    }
+
+    /** 包级私有（供单测构造菜单替身）：菜单是否为末影箱菜单。 */
+    static boolean isEnderChestMenu(AbstractContainerMenu menu) {
+        return menu instanceof ChestMenu chest && chest.getContainer() instanceof PlayerEnderChestContainer;
     }
 
     // ── ownsContainer：菜单槽位的容器实例是否属于给定集合 ──────────

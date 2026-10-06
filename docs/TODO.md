@@ -39,9 +39,13 @@
 
 ## 活流体（流体侧挂起项，细节以 [idea.md](idea.md) 任务队列为准）
 
-1. **末影箱汲/倒** —— 框架侧 F-1 **已完成**（2026-10-05：`ContainerContexts.resolve` 加末影箱分支，
-   `EnderChestContainerContext` 迁出为独立类）；**待流体侧补 `FluidFlowServerSync.flushAfterTick`
-   第三条派发**（末影箱 `player` 直发）即通。
+1. ~~**末影箱汲/倒**~~ —— **已完成**（2026-10-05 F-1：`ContainerContexts.resolve` 末影箱分支 +
+   `EnderChestContainerContext` 独立类；同日补 `FluidFlowServerSync` 第三条派发）。
+   🔴 **渲染侧踩过三次泄漏**（① 泄漏到玩家物品栏 ② 一点不渲染 ③ 末影箱的水渲染到别的箱子界面），
+   前两次靠「服务端下发 `RenderTarget` 权威告知容器身份」解决，第三次靠**派发判 viewer**
+   （2026-10-06 修）。⚠️ 同日一度「砍掉末影箱流体兼容」，**当日回退**（误伤了
+   `processEnderChest` 这条 tick 入口 ⇒ 末影箱里全部活物品机制失效）。
+   方案留痕：`buffer/living-ender-viewer-dispatch-fix.md`。
 2. ~~**岩浆/模组流体接入**~~ —— **活熔岩已接入**（2026-10-06，`living-fluid-tech.md` §3.7）：
    一行行为注册（引擎零改动），产物形态已拍板 —— **流动格遇水 ⇒ 圆石、源格遇水 ⇒ 黑曜石**
    （原版 `shouldSpreadLiquid`，与「谁撞谁」无关）。仍挂起：① **倒水进岩浆源 ⇒ 黑曜石**
