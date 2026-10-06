@@ -526,9 +526,9 @@ class ContainerFluidDataTest {
                 return neighbor == Fluids.WATER.getFluidType()
                     ? new ItemStack(Items.OBSIDIAN) : null;
             }
-            // 源格替换（2026-10-06 B 档）：同生产口径，源格可被水替换
-            @Override public boolean canBeReplacedBy(FluidType incoming, boolean selfIsSource) {
-                return selfIsSource && incoming == Fluids.WATER.getFluidType();
+            // 源格替换（2026-10-06 A 档）：同生产口径，源格可被水替换
+            @Override public boolean canBeReplacedBy(FluidType incoming) {
+                return incoming == Fluids.WATER.getFluidType();
             }
         });
     }
@@ -809,6 +809,40 @@ class ContainerFluidDataTest {
         var down = fluid.getFlows().get(1);
         assertTrue(down == null || down.fluid() != Fluids.LAVA.getFluidType(),
             "失去供给的岩浆下游退走（目标层收敛 + 移除即时）");
+    }
+
+    @Test
+    @DisplayName("㊼ 源格替换·反向：活岩浆桶倒进**活水源格** ⇒ 该格变成岩浆源（原版同样替换）")
+    void pour_overwritesWaterSourceWithLava() {
+        registerSlowLava();
+        FakeHandler h = new FakeHandler(9);
+        var ctx = new SimpleContainerContext(h);
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
+        for (int t = 0; t < 12; t++) fluid.tick(ctx);          // 先让水蔓延开（5t/格）
+        assertEquals(Fluids.WATER.getFluidType(), fluid.sourceFluid(0), "前置：slot 0 是活水源");
+        assertNotNull(fluid.getFlows().get(1), "前置：水已蔓延到 slot 1");
+
+        // 对称性：默认注册表里**水行为不覆写** canBeReplacedBy（registerSlowLava 只覆盖岩浆），
+        // 生产口径的覆写在 WaterRegistration —— 这里显式注册水的生产口径覆写。
+        FluidFlowBehaviors.register(Fluids.WATER.getFluidType(), new FluidFlowBehavior() {
+            @Override public boolean canFlow() { return true; }
+            @Override public int maxLevel() { return ContainerFluidData.MAX_FLOW_LEVEL; }
+            @Override public int flowSpeed() { return 0; }
+            @Override public boolean canBeReplacedBy(FluidType incoming) {
+                return incoming == Fluids.LAVA.getFluidType();
+            }
+        });
+        assertTrue(LivingBucketInteractSupport.replacesResidentSource(
+            fluid.sourceFluid(0), Fluids.LAVA.getFluidType()), "水源允许被岩浆替换（对称）");
+        fluid.registerGeneratedSource(0, Fluids.LAVA.getFluidType());
+        fluid.tick(ctx);
+
+        assertEquals(Fluids.LAVA.getFluidType(), fluid.sourceFluid(0), "该格已是活熔岩源");
+        assertEquals(Fluids.LAVA.getFluidType(), fluid.getFlows().get(0).fluid(), "实际层当拍改写为岩浆");
+        var down = fluid.getFlows().get(1);
+        assertTrue(down == null || down.fluid() != Fluids.WATER.getFluidType(),
+            "失去供给的水下游退走（不会两种流体共存）");
     }
 
     @Test

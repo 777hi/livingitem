@@ -88,27 +88,27 @@ public interface FluidFlowBehavior {
     }
 
     /**
-     * **源格替换**判定（2026-10-06 B 档对齐原版）：倒桶时目标格<b>已是源</b>且流体与倒进来的
+     * **源格替换**判定（2026-10-06 B/A 档对齐原版）：倒桶时目标格<b>已是源</b>且流体与倒进来的
      * <b>不同种</b>时，询问该源是否允许被替换 —— 允许则<b>同键改写源类型</b>
-     * （水倒进岩浆源格 ⇒ 该格变成水源，原岩浆源湮灭）。
+     * （水倒进岩浆源格 ⇒ 该格变成水源，原岩浆源湮灭；反向亦然）。
      *
-     * <p>对齐原版 {@code Fluid.canBeReplacedWith}：
-     * <ul>
-     *   <li>岩浆：{@code getHeight() >= 0.444 && incoming.is(WATER)} —— 在 2D 容器里流动 level
-     *       只有 1~3（高度 0.111~0.333）⇒ 门槛<b>只对源格成立</b>（源高度 0.889）；</li>
-     *   <li>水：{@code direction == DOWN && !is(WATER)} —— 2D 无 DOWN ⇒ <b>永不可被替换</b>
-     *       ⇒ 水行为<b>不覆写</b>本方法。</li>
-     * </ul>
+     * <p>🔴 <b>对齐依据（更正早期误读）</b>：原版倒桶（{@code BucketItem.emptyContents}）
+     * <b>不查</b> {@code Fluid.canBeReplacedWith}，只问
+     * {@code blockstate.canBeReplaced(fluid) = state.canBeReplaced() || !state.isSolid()}
+     * ⇒ <b>液体块一律可替换</b>（{@code legacySolid=false}）⇒ 倒桶对水/岩浆、源/流动
+     * <b>一律替换</b>。原版<b>没有</b>「源格 vs 流动格」的区分 —— 那个 0.444 高度门槛
+     * （{@code LavaFluid.canBeReplacedWith}）属于<b>蔓延</b>路径（能否流进这一格），
+     * 在 2D 容器里流动 level 1~3恒不达标。</p>
      *
-     * <p>默认 {@code false}：未覆写的流体既不阻止也不鼓励替换（安全默认）。</p>
+     * <p>本接缝的意义是<b>让未覆写的流体保守拒绝</b>（default {@code false}），
+     * 而不是复刻原版那个「液体一律可替换」的方块规则 —— 未来接入模组流体时，
+     * 由它各自表态是否允许被倒进来的流体顶替。</p>
      *
-     * <p>⚠️ 只用于<b>源格</b>；倒进异种<b>流动</b>格一律直接覆盖（B 档明确保留的宽松口子，
-     * 原版因 3D 高度门槛会拒绝，2D 无「高度」概念故不放这条例外）。</p>
+     * <p>⚠️ 只用于<b>源格</b>；倒进任何<b>流动</b>格一律直接诞生源（覆盖），与原版一致。</p>
      *
-     * @param incoming    倒进来的流体类型
-     * @param selfIsSource 该格是否源格（当前恒为 true，保留参数以便将来支持流动格门槛）
+     * @param incoming 倒进来的流体类型
      */
-    default boolean canBeReplacedBy(FluidType incoming, boolean selfIsSource) {
+    default boolean canBeReplacedBy(FluidType incoming) {
         return false;
     }
 

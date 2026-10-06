@@ -76,13 +76,12 @@ public final class WaterRegistration {
                     ? new ItemStack(Items.OBSIDIAN)
                     : null;
             }
-            // 源格替换（2026-10-06 B 档对齐原版 LavaFluid.canBeReplacedWith）：
-            // 原版门槛 getHeight() >= 0.444 ⇒ 在 2D（流动 level 1~3 ⇒ 高度 0.111~0.333）里
-            // **只有源格**（高度 0.889）够格 ⇒ 活水桶倒进活熔岩源格 = 该格变成水源（浇灭矿脉）。
-            // ⚠️ 水行为**不覆写** canBeReplacedBy ⇒ 水源格永不被替换（对齐 WaterFluid 的
-            // 「仅 DOWN + 非水」规则，2D 无 DOWN）—— 活岩浆桶倒不进活水源格。
-            @Override public boolean canBeReplacedBy(FluidType incoming, boolean selfIsSource) {
-                return selfIsSource && incoming == Fluids.WATER.getFluidType();
+            // 源格替换（2026-10-06 A 档对齐原版）：原版倒桶对**任何液体格**一律替换
+            // （blockstate.canBeReplaced(f) = ... || !isSolid() ⇒ 液体块 legacySolid=false），
+            // 无「源/流动」之分 ⇒ 熔岩源允许被水顶替（浇灭矿脉）。
+            // ⚠️ 反向也允许：见水行为的对称覆写（活岩浆桶倒进水格 ⇒ 该格变岩浆源）。
+            @Override public boolean canBeReplacedBy(FluidType incoming) {
+                return incoming == Fluids.WATER.getFluidType();
             }
         });
 
@@ -100,6 +99,11 @@ public final class WaterRegistration {
             }
             @Override public ItemStack transformItem(ItemStack item) {
                 return FluidTransformTable.transform(Fluids.WATER.getFluidType(), item);
+            }
+            // 源格替换的**对称**一半（2026-10-06 A 档）：原版倒桶对任何液体格一律替换 ⇒
+            // 活岩浆桶倒进活水源格 ⇒ 该格变成岩浆源（原岩浆被覆盖、同格改写）。
+            @Override public boolean canBeReplacedBy(FluidType incoming) {
+                return incoming == Fluids.LAVA.getFluidType();
             }
         });
     }

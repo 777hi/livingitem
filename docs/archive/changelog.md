@@ -203,6 +203,20 @@
   测试：新增 `LivingBucketInteractSupportTest` 3 项（契约默认 false / 熔岩三条分支 / 倒桶判定四例）+
   `ContainerFluidDataTest` ㊻ 覆盖语义（源被覆盖成水 + 实际层当拍改写 + 下游岩浆退走）。
   方案留痕 `docs/buffer/living-pour-source-replace.md`。
+- 🔧 **倒桶口径对称化（A 档，同日第七批次，511 全绿）** —— 起因是「为什么异种源格语义要不同」这个
+  追问，查实后确认**上一批的论据用错了函数**：
+  - `Fluid.canBeReplacedWith`（含 `LavaFluid` 的 `getHeight() >= 0.444` 门槛）属于**蔓延**路径
+    （能否**流进**这一格），`BucketItem` 全程**不查**它；
+  - 倒桶只问 `blockstate.canBeReplaced(fluid) = state.canBeReplaced() || !state.isSolid()`
+    ⇒ 液体块 `legacySolid=false` ⇒ **一律可替换**；另一条 `LiquidBlockContainer.canPlaceLiquid`
+    分支永不命中（`LiquidBlock` 未实现该接口）⇒ **原版对水/岩浆、源/流动一律替换，没有区别对待**。
+  ⇒ 修正：契约去掉 `selfIsSource` 参数（源/流动之分原版没有，0.444 门槛在 2D 也恒不达标），
+  **水与岩浆对称覆写** ⇒ 活岩浆桶倒进活水源格从「拒绝」改为「该格变岩浆源」；
+  default `false` 的职责重新定位为「**未覆写的流体保守拒绝**」（不复刻原版方块规则，
+  避免将来接入不可置换流体时被静默冲掉）。`pour` 简化为：空格/任意流动格 ⇒ 诞生源、
+  同种源 ⇒ 不变、异种源 ⇒ 问一句再决定。文档 §5 / §3.5 与记录文档 §0 更正了错论据。
+  测试：`LivingBucketInteractSupportTest` 改写为对称口径 3 项 + `ContainerFluidDataTest` ㊼
+  反向覆盖（水源被岩浆覆盖 + 下游水退走）。
 ## 2026-10-05
 
 - ✅ **引擎时序化（flowSpeed 消费，跨流体反应的时间地基）**（**473 测试全绿**）：
