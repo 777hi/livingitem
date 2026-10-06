@@ -427,49 +427,16 @@ class SimpleContainerContextTest {
     }
 
     @Nested
-    class ExplicitKeyAndEnderChestRegression {
+    class IdentityFallback {
 
         private IItemHandler handler = new FakeHandler(9);
 
-        private Player playerWithUuid(String uuid) {
-            Player player = mock(Player.class);
-            when(player.getStringUUID()).thenReturn(uuid);
-            return player;
-        }
-
         @Test
-        @DisplayName("崩溃回归（crash-2026-10-04）：末影箱上下文可构造，键 = player_<uuid>_ender_chest")
-        void enderChestContext_constructs_stableKey() {
-            var ctx = new EnderChestContainerContext(
-                handler, playerWithUuid("uuid-ender-1"), null);
-
-            assertEquals("player_uuid-ender-1_ender_chest", ctx.getContainerKey(),
-                "末影箱走显式稳定键（玩家作用域 UUID，无 BE ⇒ 无键漂移）");
-        }
-
-        @Test
-        @DisplayName("显式稳定键构造器：给定键生效（第三条合法身份形态）")
-        void explicitKey_wins() {
-            var ctx = new SimpleContainerContext(handler, null, java.util.List.of(),
-                java.util.List.of(), null, "player_uuid-x_ender_chest");
-            assertEquals("player_uuid-x_ender_chest", ctx.getContainerKey());
-        }
-
-        @Test
-        @DisplayName("显式稳定键构造器：空白键等同无身份 ⇒ 抛异常")
-        void explicitKey_blank_throws() {
-            var e = org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
-                () -> new SimpleContainerContext(handler, null, java.util.List.of(),
-                    java.util.List.of(), null, "  "));
-            assertTrue(e.getMessage().contains("空白"), "异常信息应指出空白键");
-        }
-
-        @Test
-        @DisplayName("无显式键且无身份 ⇒ 仍抛异常（1a-2 失败语义不回退）")
+        @DisplayName("无身份（无背包 / 无坐标）⇒ 抛异常（1a-2 失败语义不回退）")
         void identityless_stillThrows() {
             org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
                 () -> new SimpleContainerContext(handler, null, java.util.List.of(),
-                    java.util.List.of(), null, null));
+                    java.util.List.of(), null));
         }
     }
 }

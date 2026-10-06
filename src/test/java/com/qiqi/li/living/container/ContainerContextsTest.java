@@ -131,24 +131,22 @@ class ContainerContextsTest {
     }
 
     @Nested
-    @DisplayName("resolve —— 菜单槽位 → tick 上下文（F-1 末影箱分支）")
+    @DisplayName("resolve —— 菜单槽位 → tick 上下文")
     class Resolve {
 
         @Test
-        @DisplayName("末影箱菜单槽位可解析：PlayerEnderChestContainer → EnderChestContainerContext")
-        void enderChest_resolves() {
+        @DisplayName("原版末影箱槽位返回 null —— 明确「不支持流体」，不是误解析成别的容器")
+        void enderChest_notSupported() {
             ServerPlayer player = mock(ServerPlayer.class);
             when(player.level()).thenReturn(mock(Level.class));
-            when(player.getStringUUID()).thenReturn("uuid-ec");
 
-            // 原版末影箱 GUI 的槽位容器就是 PlayerEnderChestContainer（不是 BE）
+            // 2026-10-06：末影箱兼容层整体撤除（见 docs/buffer/living-ender-fluid-removal.md）
             PlayerEnderChestContainer enderChest = new PlayerEnderChestContainer();
             when(player.getEnderChestInventory()).thenReturn(enderChest);
             Slot slot = new Slot(enderChest, 0, 0, 0);
 
-            TickableContainerContext ctx = ContainerContexts.resolve(player, slot);
-            assertNotNull(ctx, "末影箱菜单槽位应能解析（F-1 之前恒 null ⇒ 末影箱汲/倒静默无效）");
-            assertEquals("player_uuid-ec_ender_chest", ctx.getContainerKey());
+            assertNull(ContainerContexts.resolve(player, slot),
+                "末影箱不再解析 ⇒ 末影箱内不能倒活水 / 汲水（预期行为）");
         }
 
         @Test

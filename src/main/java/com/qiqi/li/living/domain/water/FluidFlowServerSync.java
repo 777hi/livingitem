@@ -77,7 +77,7 @@ public final class FluidFlowServerSync {
             if (key == null) return;
             if (!CLIENT_ACTIVE.contains(key)) return;   // 从未向其同步过 ⇒ 无残留可清
             player.connection.send(new FluidFlowSyncPacket(
-                key, Math.max(1, ctx.getWidth()), List.of(), Map.of(), renderTargetOf(ctx)));
+                key, Math.max(1, ctx.getWidth()), List.of(), Map.of()));
             return;   // 一个容器一条键，首个可解析槽位即定
         }
     }
@@ -92,25 +92,8 @@ public final class FluidFlowServerSync {
         CLIENT_ACTIVE.clear();
     }
 
-    /**
-     * 快照的渲染目标（服务端权威判定，2026-10-06）—— 客户端<b>无法</b>从界面推断容器身份：
-     * 末影箱 GUI 在客户端是 {@code GENERIC_9x3} + 27 格 {@code SimpleContainer} 替身，
-     * 与普通 3 行箱子同形 ⇒ 只能由服务端告知。
-     */
-    public static com.qiqi.li.living.domain.water.FluidFlowClientCache.RenderTarget renderTargetOf(
-            TickableContainerContext ctx) {
-        if (ctx instanceof com.qiqi.li.living.container.EnderChestContainerContext) {
-            return com.qiqi.li.living.domain.water.FluidFlowClientCache.RenderTarget.ENDER_CHEST;
-        }
-        if (ctx.getInventory() != null) {
-            return com.qiqi.li.living.domain.water.FluidFlowClientCache.RenderTarget.PLAYER_INV;
-        }
-        return com.qiqi.li.living.domain.water.FluidFlowClientCache.RenderTarget.BLOCK;
-    }
-
     /** 构建 flow 快照包；无流体数据时返回 null。流体按调色板去重（只用 Registry.getKey 接口）。 */
-    public static FluidFlowSyncPacket buildPacket(String containerKey, int width, ContainerFluidData fluidData,
-                                                  com.qiqi.li.living.domain.water.FluidFlowClientCache.RenderTarget target) {
+    public static FluidFlowSyncPacket buildPacket(String containerKey, int width, ContainerFluidData fluidData) {
         var flows = fluidData.getFlows();
         if (flows.isEmpty()) return null;
 
@@ -131,7 +114,7 @@ public final class FluidFlowServerSync {
             cells.put(e.getKey(), new int[]{e.getValue().level(), e.getValue().fromSlot(), idx});
         }
         if (cells.isEmpty()) return null;
-        return new FluidFlowSyncPacket(containerKey, width, palette, cells, target);
+        return new FluidFlowSyncPacket(containerKey, width, palette, cells);
     }
 
     /**
@@ -146,17 +129,15 @@ public final class FluidFlowServerSync {
 
         boolean hasData = fluidData != null && fluidData != ContainerFluidData.EMPTY && !fluidData.isEmpty();
         boolean needClear = markActiveAndCheckClear(key, hasData);
-        var target = renderTargetOf(ctx);
         if (!hasData) {
             if (needClear) {
                 // 数据刚清空（最后一个源被汲走/挤没）⇒ 下发一次空快照，清掉客户端残留渲染
-                dispatch(level, ctx,
-                    new FluidFlowSyncPacket(key, ctx.getWidth(), List.of(), Map.of(), target));
+                dispatch(level, ctx, new FluidFlowSyncPacket(key, ctx.getWidth(), List.of(), Map.of()));
             }
             return;
         }
 
-        CustomPacketPayload packet = buildPacket(key, ctx.getWidth(), fluidData, target);
+        CustomPacketPayload packet = buildPacket(key, ctx.getWidth(), fluidData);
         if (packet == null) return;
         dispatch(level, ctx, packet);
     }
@@ -171,13 +152,8 @@ public final class FluidFlowServerSync {
             return;
         }
 
-        // 末影箱（F-1 配套，2026-10-05）：context 持有 player（inventory 为 null），
-        // 直发主人本人 —— 末影箱汲/倒解锁后渲染同轨
-        if (ctx instanceof com.qiqi.li.living.container.EnderChestContainerContext ender
-                && ender.getOwner() instanceof ServerPlayer owner) {
-            owner.connection.send(packet);
-            return;
-        }
+        // ⚠️ 末影箱曾在此有第三条派发（直发主人）—— 2026-10-06 随兼容层整体撤除：
+        //   原版末影箱不支持流体，既不 tick 也不渲染（见 docs/buffer/living-ender-fluid-removal.md）。
 
         // BE 容器：关联 BlockEntity 中的 Container 实例 ↔ 玩家菜单匹配
         List<Container> containers = new ArrayList<>();

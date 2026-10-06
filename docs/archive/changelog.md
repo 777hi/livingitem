@@ -170,6 +170,11 @@
   测试：`ContainerFluidHandlerTest` ㊼（拿不满不给 / 给满删源 / tank 恒 1000）、
   ㊾⁺（慢管道 20 次抽不到且源不丢、整源管道逐个抽不连带）；`GuiInteractionPacketTest` 新增 2 项
   （索引错位回退 / 索引优先语义保留）。
+- 🔨 **砍掉「原版末影箱当流体容器」的兼容**（用户拍板：太费劲、无玩法收益）。同一概念三次实测泄漏
+  （渲染到物品栏 → 不渲染 → 渲染到别的箱子），复杂度已渗进架构层。撤除 `EnderChestContainerContext`、
+  `processEnderChest`、`ContainerContexts` F-1 分支、`SimpleContainerContext` 显式键构造器、
+  快照第三条派发、`FluidFlowSyncPacket.target` 字段、客户端 `RenderTarget` + ender 桶
+  （**回到按键前缀两槽位**）。不动活末影箱物品。详见 `buffer/living-ender-fluid-removal.md`。**496 全绿**。
 ## 2026-10-05
 
 - ✅ **引擎时序化（flowSpeed 消费，跨流体反应的时间地基）**（**473 测试全绿**）：

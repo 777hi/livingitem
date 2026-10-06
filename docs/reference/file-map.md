@@ -28,8 +28,7 @@ src/main/java/com/qiqi/li/
 │   │   ├── ContainerSync.java               #   容器同步
 │   │   ├── SlotInfoProvider.java            #   槽位信息提供
 │   │   ├── ContainerIdentity.java           #   容器标识
-│   │   ├── LivingContainer.java             #   活容器
-│   │   └── EnderChestContainerContext.java  #   末影箱上下文（F-1：tick 主链路 + 菜单槽位反查共用）
+│   │   └── LivingContainer.java             #   活容器
 │   │
 │   ├── domain/                              # 领域模块（每个活物品内聚到此）
 │   │   ├── hopper/                           #   活漏斗领域
@@ -334,7 +333,8 @@ src/test/java/com/qiqi/li/
 │   └── MapCoordHelperTest.java                # 地图坐标换算（29 项）
 ├── living/domain/water/
 │   ├── ContainerFluidDataTest.java            # 流体引擎行为快照·单源扩散/上限7/活物阻挡/非活物穿过/源移除/水流推动/二维扩散 + 行为接缝·按maxLevel/静止不扩散 + TickContext 建流体数据回归 + 通用驱动·自维持/驱动BFS + 源查询API + 派生源·独立存活/挤没/共存/同格无豁免/异种覆盖/EMPTY noop + 落盘CODEC往返 + 晋升接缝 + 转化接缝（26 项）
-│   ├── ContainerFluidHandlerTest.java          # 管道抽取能力（§10）·tank 枚举与稳定序 / SIMULATE 不消耗 vs EXECUTE 删源 / 源全有或全无 / 异种 EMPTY / fill 恒 0 + isFluidValid / 非容器无害 / provider 四段让位（6 项）
+│   ├── ContainerFluidHandlerTest.java          # 管道抽取能力（§10）·tank 枚举与稳定序 / SIMULATE 不消耗 vs EXECUTE 删源 / 整源单位（拿不满不给） / 异种 EMPTY / fill 恒 0 + isFluidValid / 非容器无害 / provider 四段让位（7 项）
+│   ├── FluidFlowClientCacheTest.java           # 客户端快照按键路由·背包键⇒背包桶 / 方块键⇒BE 桶 / clear 归零（防同前缀泄漏，3 项）
 │   ├── ContainerFluidIntegrationTest.java     # 流体端到端（走真实 processContext）·预置派生源+驱动跑BFS / 驱动进自维持清单 / 残留红石在非空容器仍归零（1b-2c 守卫）（3 项）
 │   ├── FluidTransformTableTest.java           # 流体转化表 JSON 语义·内置装载/玩家差异(覆盖/removed)/坏文件跳过/坏条目跳过/缩容等待/活物品过滤（6 项）
 │   ├── FluidFlowServerSyncTest.java           # 流体快照同步边沿·数据清空恰好一次清屏/从未激活不发/反复汲倒重新武装（3 项）

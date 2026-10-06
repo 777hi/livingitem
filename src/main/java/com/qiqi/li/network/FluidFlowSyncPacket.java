@@ -43,8 +43,7 @@ public record FluidFlowSyncPacket(
     String containerKey,
     int width,
     List<String> palette,
-    Map<Integer, int[]> cells,
-    FluidFlowClientCache.RenderTarget target
+    Map<Integer, int[]> cells
 ) implements CustomPacketPayload {
 
     public static final ResourceLocation ID =
@@ -75,7 +74,6 @@ public record FluidFlowSyncPacket(
             buf.writeVarInt(cell[1] + 1);   // fromSlot + 1，-1 → 0（varint 无负数）
             buf.writeVarInt(cell[2]);
         }
-        buf.writeVarInt(pkt.target().ordinal());
     }
 
     private static FluidFlowSyncPacket decode(FriendlyByteBuf buf) {
@@ -95,11 +93,7 @@ public record FluidFlowSyncPacket(
             int fluidIndex = buf.readVarInt();
             cells.put(slot, new int[]{level, fromSlot, fluidIndex});
         }
-        var targets = FluidFlowClientCache.RenderTarget.values();
-        int ordinal = buf.readVarInt();
-        FluidFlowClientCache.RenderTarget target =
-            ordinal >= 0 && ordinal < targets.length ? targets[ordinal] : FluidFlowClientCache.RenderTarget.BLOCK;
-        return new FluidFlowSyncPacket(containerKey, width, palette, cells, target);
+        return new FluidFlowSyncPacket(containerKey, width, palette, cells);
     }
 
     public static void handle(FluidFlowSyncPacket packet, IPayloadContext context) {
@@ -110,7 +104,7 @@ public record FluidFlowSyncPacket(
                 FluidType type = rl == null ? null : NeoForgeRegistries.FLUID_TYPES.get(rl);
                 fluids.add(type);
             }
-            FluidFlowClientCache.update(packet.target(),
+            FluidFlowClientCache.update(packet.containerKey(),
                 FluidFlowClientCache.copyOf(packet.width(), fluids, packet.cells()));
         });
     }

@@ -361,7 +361,7 @@ tick(ctx)
 所以现在**没有量产通道**，桶只能玩家手动 GUI 汲。
 
 **跨容器口径**：物品过境、水不过境。每容器封闭水盆；桶 = 源的手提箱；
-vanilla 双箱 = CompoundContainer 单容器天然一网；末影箱路由模式共享 containerKey ⇒ 共享水网。
+vanilla 双箱 = CompoundContainer 单容器天然一网；⚠️ 2026-10-06 起原版末影箱不支持流体（兼容层已撤除）。
 容器破坏 → `removeDataByPos` + BE 消亡 → 源湮灭。
 
 ---
@@ -405,7 +405,7 @@ vanilla 双箱 = CompoundContainer 单容器天然一网；末影箱路由模式
 - 倒水语义：无源格诞生派生源；**已有源「源不变」仅排空**（原版往水源里倒水）；
 - 汲水语义：源消失（桶源退役后一切源可汲）+ 桶灌入；
 - ⚠️ 踩坑：目标槽是空槽而 `resolveSlot` 曾只认活物品 ⇒ 包被丢（已放宽「活物品或空槽」）；
-- 已知缺口：末影箱汲/倒（`ContainerContexts` 无末影箱分支，见 TODO.md）。
+- 已知缺口：~~末影箱汲/倒~~ —— **2026-10-06 明确不做**（原版末影箱整体不支持流体，见 §9）。
 
 ---
 
@@ -451,17 +451,12 @@ slot/level/fromSlot）→ 客户端 `FluidFlowClientCache` → `AbstractContaine
 自适应渲染（`IClientFluidTypeExtensions` 贴图/染色，alpha 按 `maxLevel` 归一；动画白拿）。
 
 - **不依赖任何活桶物品**——纯源容器的水也能画；
-- **派发目标由服务端权威告知**（`FluidFlowSyncPacket.target`，2026-10-06 修正）：
-  客户端**无法**推断「当前界面是哪个容器」—— 原版末影箱 GUI 在客户端是
-  `MenuType.GENERIC_9x3` + 27 格 `SimpleContainer` **替身**（真实容器
-  `PlayerEnderChestContainer` 只在服务端），与「普通 3 行箱子界面」**完全同形**；
-  ⇒ 客户端渲染按 `FluidFlowClientCache.getChestLike()` 取「非背包组」快照，
-  具体取末影还是 BE 由最近一次下发的 `target` 决定（`clear()` 时重置）。
-  🔴 两次踩坑都出在这条：先按「键前缀」猜（末影箱键与背包键同前缀 ⇒ **泄漏到物品栏**），
-  再按 `slot.container instanceof PlayerEnderChestContainer` 判（客户端**死分支** ⇒ **一点不画**）。
-  **约束：客户端不得靠槽位容器类型推断容器身份，只能听服务端的。**
+- **两分路由**（客户端）：玩家背包组 → `getPlayer()`；其余组 → `get()`（BE 容器桶）。
+  🔴 键前缀是安全的：容器键只有两种形态 —— `player_<uuid>`（背包）与 `chest…`（方块容器，含维度）。
+  **原版末影箱已于 2026-10-06 撤除兼容**（见 §9），它曾用 `player_<uuid>_ender_chest`
+  与背包键**同前缀** ⇒ 末影箱的水泄漏到玩家物品栏；也正因它在客户端与普通 3 行箱子**同形**，
+  「按 `slot.container` 类型推断容器身份」这条路在客户端根本不成立（死分支）。
 - 玩家背包直发本人 / BE 容器菜单匹配（大箱子 `CompoundContainer` 特判）；
-  末影箱：context 持 player（inventory 为 null）⇒ **直发主人本人**（第三条派发，2026-10-05）；
 - **边沿清屏**：数据从有变无（汲走最后一个源）⇒ 一次性下发空快照
   （`CLIENT_ACTIVE` 状态机），否则客户端旧水永不清除；
 - **跨存档**：`CLIENT_ACTIVE` 挂 `onServerStopped`；客户端缓存挂
@@ -475,7 +470,7 @@ slot/level/fromSlot）→ 客户端 `FluidFlowClientCache` → `AbstractContaine
 | 容器 | 载体 | 内容 |
 |---|---|---|
 | BE 容器 | `CONTAINER_FLUID_DATA` attachment（`.serialize(CODEC)`） | 只存 `generatedSources`（流动每 tick 重算，不落） |
-| 玩家背包 / 末影箱 | **Player attachment** `CONTAINER_FLUID_DATA_PLAYER`（`KEYED_CODEC`，一个玩家两个容器键） | 同上 |
+| 玩家背包 | **Player attachment** `CONTAINER_FLUID_DATA_PLAYER`（`KEYED_CODEC`；Map 形态保留 —— 现只有一个用户，改单值要动落盘格式、零玩法收益） | 同上 |
 
 ⚠️ 数据变空时**必须写回 EMPTY**（BE 与玩家两条路径都要）——不清则重进存档
 从附件回填**源复活**（跨存档残留，2026-10-04 修）。
@@ -484,12 +479,15 @@ slot/level/fromSlot）→ 客户端 `FluidFlowClientCache` → `AbstractContaine
 
 ## 9. 已知缺口与挂起项
 
-- ~~末影箱汲/倒~~：**已修**（2026-10-05，F-1 分支 `ContainerContexts.resolve` 末影箱分支）；
+- ~~末影箱汲/倒~~：**已撤销**（2026-06，见下）；
 - **活熔岩已接入**（§3.7，2026-10-06，含黑曜石循环）；仍挂起：**倒水进岩浆源 → 黑曜石**
   （`pour` 处理器路径）、**模组流体接入**（一行行为注册，等有具体流体再说）；
 - **黑曜石存活窗口 ≈ 1.5s**（§3.7）是否够玩家/漏斗抽走 —— 待实测；
 - **装桶自动化**已明确取消（§6.1 对称性论证）：容器内的装桶只能玩家手动 GUI 汲；
 - 满活桶对世界放水（复用 `emptyContents`）+ 满桶对世界无反馈 UX；
+- **原版末影箱不支持流体**（2026-10-06 撤除兼容，见 `buffer/living-ender-fluid-removal.md`）：
+  不能倒活水 / 汲水 / 装活物品，也不渲染流体。想要"随身存流体"走**活末影箱物品**
+  （`domain/ender/` 子系统，独立）；
 - ~~慢蔓延~~：**已实施**（§3.6 时序化，flowSpeed 派生原版 tickDelay）；
 - ~~岩浆烧毁物品~~：**已实施**为机制一·焚毁（§3.7，含满组石头系喂养生源的「新配方」）；
 - 游戏实测：漏斗自动化活锁、多流体同屏渲染、创造模式。
@@ -506,9 +504,9 @@ slot/level/fromSlot）→ 客户端 `FluidFlowClientCache` → `AbstractContaine
 |---|---|---|
 | 抽取消耗源 | **消耗**——管道抽取 = 自动化汲走；晋升邻域自动再生 ⇒ **原版无限水源的工业化形态**（两源夹一格 + 管道抽中间 + 晋升补中间） | 取电消耗发电量 ← 铜灯再生；同构 |
 | 覆盖范围 | **宽注册全部 BE 类型** + provider 判定链（战利品跳过 / 已有 FluidHandler 让位 / 返回实例——永不 null 切换） | 同款判定链照抄 |
-| 缓冲 | **无**——drain 直接消耗源（任意抽取 ≥1mB 即耗整源，返回请求量 ≤1000）；部分抽取需 SourceEntry 加 amount（挂起） | 无容器池直接扣 |
+| 缓冲 | **无**——drain 直接消耗源；**整源单位**（请求 ≥1000 给满并删源，<1000 一分不给，§10.3） | 无容器池直接扣 |
 | 注水成源 | **v1 不做**（fill 返回 0）——守住活桶的种子工具地位；「源充能」将来独立设计 | 只出不进先例 |
-| 末影箱 | **不做**（流体数据在玩家附件，管道无归属语义） | — |
+| 末影箱 | **不做**（2026-10-06 起原版末影箱整体不支持流体，无 BE 也无管道归属语义） | — |
 | 侧面 | 忽略（GUI 网格与世界朝向无对应） | — |
 | 流体范围 | 自动覆盖全部已注册源流体（岩浆接入即抽岩浆） | — |
 
@@ -606,7 +604,7 @@ Create 6.0.10 的 `SmartFluidTank extends net.neoforged.neoforge.fluids.capabili
 - [ ] 渲染不依赖活桶物品（纯源容器可见）
 - [ ] 汲走最后一个源 ⇒ 渲染当拍清除（边沿清屏）
 - [ ] 跨存档：换存档后首次打开不残留（LoggingOut 兜底）
-- [ ] 大箱子 / 背包 / 末影箱（除汲/倒缺口）渲染正常
+- [ ] 大箱子 / 背包渲染正常（末影箱不再属流体容器，见 §9）
 
 ### 落盘
 - [ ] BE attachment 与 Player attachment 往返

@@ -118,24 +118,6 @@ public class SimpleContainerContext implements TickableContainerContext {
     public SimpleContainerContext(IItemHandler handler, Inventory inventory,
                                   List<BlockPos> positions, List<BlockEntity> blockEntities,
                                   Level overrideLevel) {
-        this(handler, inventory, positions, blockEntities, overrideLevel, null);
-    }
-
-    /**
-     * 完整构造器 + <b>显式稳定键</b> —— 第三条合法身份形态（2026-10-04 崩溃修复）。
-     *
-     * <p>用于「有稳定身份但不落在背包/坐标两分支」的容器，当前唯一调用者是
-     * 末影箱：{@code player_<uuid>_ender_chest}（玩家作用域 UUID 键，无 BE ⇒ 无键漂移）。
-     * 1a-2 删 hashCode 第三档时，其「不可达」静态证明只枚举了 {@code processContainerAt}
-     * 两条路径，<b>漏了这个调用者</b> ⇒ 末影箱 tick 每拍抛异常（crash-2026-10-04）。
-     * 显式键不是 hashCode 回退的复辟 —— 调用方必须给出<b>跨会话稳定</b>的键，
-     * 否则等同两条内建分支的失败语义。</p>
-     *
-     * @param explicitContainerKey 外部给定的稳定键（null = 走 {@code buildContainerKey} 推导）
-     */
-    public SimpleContainerContext(IItemHandler handler, Inventory inventory,
-                                  List<BlockPos> positions, List<BlockEntity> blockEntities,
-                                  Level overrideLevel, String explicitContainerKey) {
         this.handler = handler;
         this.inventory = inventory;
         this.overrideLevel = overrideLevel;
@@ -150,14 +132,7 @@ public class SimpleContainerContext implements TickableContainerContext {
             this.associatedBlockEntities.addAll(blockEntities);
         }
 
-        if (explicitContainerKey != null) {
-            if (explicitContainerKey.isBlank()) {
-                throw new IllegalStateException("显式容器键不得为空白 —— 空白键等同无身份");
-            }
-            this.containerKey = explicitContainerKey;
-        } else {
-            this.containerKey = buildContainerKey(inventory, this.associatedBlockPositions, this.associatedBlockEntities);
-        }
+        this.containerKey = buildContainerKey(inventory, this.associatedBlockPositions, this.associatedBlockEntities);
     }
 
     /**
@@ -168,11 +143,10 @@ public class SimpleContainerContext implements TickableContainerContext {
      *
      * <p>⚠️ <b>hashCode 第三档已被显式删除</b>（2026-10-03）：对象身份哈希在 BE 重建后
      * 会变 ⇒ <b>键漂移 ⇒ 数据静默丢失</b>，故改为显式失败而不是保留隐患。
-     * ⚠️ 2026-10-04 崩溃教训：当时的「不可达」静态证明<b>漏了末影箱调用者</b>
-     * （{@code EnderChestContainerContext} 传空 positions + null inventory）——
-     * 证明必须枚举全部调用点。有稳定键但落在两分支之外的容器走
-     * {@linkplain #SimpleContainerContext(IItemHandler, Inventory, List, List, Level, String)
-     * 显式键构造器}（如末影箱的玩家作用域键）。</p>
+     * ⚠️ 两条教训仍然有效：① 20-04 的崩溃源于「不可达证明漏了末影箱调用者」⇒
+     * <b>证明必须枚举全部调用点</b>；② 「有稳定身份但落在两分支之外」的容器
+     * （原为末影箱）需要显式键构造器 —— 该构造器随末影箱兼容层于 2026-10-06 撤除，
+     * 若将来再引入这类容器，需重新提供（并同样配套测试）。</p>
      */
     private static String buildContainerKey(Inventory inventory, List<BlockPos> positions, List<BlockEntity> entities) {
         if (inventory != null) {

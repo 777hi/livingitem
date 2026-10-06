@@ -971,21 +971,21 @@ class ContainerFluidDataTest {
     void playerKeyedCodec_roundTrips() {
         var inv = new ContainerFluidData();
         inv.registerGeneratedSource(2, Fluids.WATER.getFluidType());
-        var ender = new ContainerFluidData();
-        ender.registerGeneratedSource(5, Fluids.LAVA.getFluidType());
+        var other = new ContainerFluidData();
+        other.registerGeneratedSource(5, Fluids.LAVA.getFluidType());
 
         var map = new java.util.HashMap<String, ContainerFluidData>();
         map.put("player_abc", inv);
-        map.put("player_abc_ender_chest", ender);
+        map.put("some_other_key", other);   // Map 形态保留（2026-10-06：末影箱撤除后只剩背包一个用户）
 
         var ops = net.minecraft.nbt.NbtOps.INSTANCE;
         var tag = ContainerFluidData.KEYED_CODEC.encodeStart(ops, map).getOrThrow();
         var restored = ContainerFluidData.KEYED_CODEC.parse(ops, tag).getOrThrow();
 
-        assertEquals(2, restored.size(), "背包 + 末影箱两个键都应往返");
+        assertEquals(2, restored.size(), "两个容器键都应往返（KEYED_CODEC 仍是 Map 形态）");
         assertEquals(java.util.Map.of(2, Fluids.WATER.getFluidType()),
             restored.get("player_abc").getGeneratedSources());
         assertEquals(java.util.Map.of(5, Fluids.LAVA.getFluidType()),
-            restored.get("player_abc_ender_chest").getGeneratedSources());
+            restored.get("some_other_key").getGeneratedSources());
     }
 }

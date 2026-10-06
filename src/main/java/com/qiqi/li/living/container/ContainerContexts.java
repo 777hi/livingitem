@@ -12,7 +12,6 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.CompoundContainer;
 import net.minecraft.world.Container;
 import net.minecraft.world.inventory.AbstractContainerMenu;
-import net.minecraft.world.inventory.PlayerEnderChestContainer;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
@@ -65,11 +64,12 @@ public final class ContainerContexts {
      *   <li>单 BE 容器：{@code slot.container instanceof BlockEntity}</li>
      *   <li>原版大箱子：{@code CompoundContainer}（半箱无公开访问器 ⇒ 反射取两半，
      *       顺序经 {@link DoubleChestPositions#find} 规范化为 LEFT 在前，与 tick 构建同源）</li>
-     *   <li>末影箱（F-1，2026-10-05）：{@code slot.container instanceof PlayerEnderChestContainer}
-     *       —— 原版末影箱 GUI 的槽位容器<b>不是 BE</b>（这正是它原先走不进上面三分支的原因）
-     *       ⇒ 构造 {@link EnderChestContainerContext}，键 = {@code player_<uuid>_ender_chest}，
-     *       与 tick 路径 {@code processEnderChest} 同源</li>
      * </ul>
+     *
+     * <p>⚠️ <b>原版末影箱不支持</b>（2026-10-06 兼容层整体撤除，见
+     * {@code docs/buffer/living-ender-fluid-removal.md}）：末影箱 GUI 的槽位容器
+     * （{@code PlayerEnderChestContainer}）既不是 BE 也不是背包的一部分 ⇒ 落到末尾返回
+     * {@code null}，即「明确不支持」而非误解析成别的容器。</p>
      */
     public static TickableContainerContext resolve(ServerPlayer player, Slot slot) {
         Level level = player.level();
@@ -89,14 +89,6 @@ public final class ContainerContexts {
 
         if (container instanceof CompoundContainer) {
             return compoundContext(level, container);
-        }
-
-        // 末影箱（F-1，2026-10-05）：原版末影箱 GUI 的槽位容器是 PlayerEnderChestContainer
-        // （不是 BE）—— 这正是它走不进上面三分支的原因。与 tick 路径（processEnderChest）同源构造。
-        if (container instanceof PlayerEnderChestContainer) {
-            PlayerEnderChestContainer enderChest = player.getEnderChestInventory();
-            if (enderChest == null) return null;
-            return new EnderChestContainerContext(new InvWrapper(enderChest), player, level);
         }
 
         return null;
