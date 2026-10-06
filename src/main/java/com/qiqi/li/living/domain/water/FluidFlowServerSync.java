@@ -138,7 +138,11 @@ public final class FluidFlowServerSync {
 
     /**
      * 流体 tick 后调用：向正在查看该容器的玩家下发快照。
-     * 玩家背包（key = "player_<uuid>"）直发本人；BE 容器按菜单槽位匹配查看者。
+     *
+     * <p>⚠️ 2026-10-07 性能收尾（零行为变化）：两道短路提到最前面 ——
+     * <b>① 空容器</b>（无数据且从未下发过 ⇒ 直接返回；真实存档里绝大多数容器没流体）；
+     * <b>② 无 viewer</b>（先收集查看者，空则<b>连包都不建</b>）。
+     * 详见 {@code docs/buffer/living-fluid-perf-2026-10-07.md}。</p>
      */
     public static void flushAfterTick(TickableContainerContext ctx, ContainerFluidData fluidData) {
         Level level = ctx.getLevel();
@@ -147,45 +151,62 @@ public final class FluidFlowServerSync {
         if (key == null) return;
 
         boolean hasData = fluidData != null && fluidData != ContainerFluidData.EMPTY && !fluidData.isEmpty();
-        boolean needClear = markActiveAndCheckClear(key, hasData);
-        var target = renderTargetOf(ctx);
+
+        // ① 空容器短路：无数据 **且** 从未向其下发过 ⇒ 没有任何事要做（零开销）
+        if (!hasData && !CLIENT_ACTIVE.contains(key)) return;
+
         if (!hasData) {
-            if (needClear) {
-                // 数据刚清空（最后一个源被汲走/挤没）⇒ 下发一次空快照，清掉客户端残留渲染
-                dispatch(level, ctx,
-                    new FluidFlowSyncPacket(key, ctx.getWidth(), List.of(), Map.of(), target));
+            // 数据刚清空（最后一个源被汲走/挤没）⇒ 下发一次空快照，清掉客户端残留渲染
+            if (markActiveAndCheckClear(key, false)) {
+                dispatch(level, ctx, new FluidFlowSyncPacket(
+                    key, ctx.getWidth(), List.of(), Map.of(), renderTargetOf(ctx)));
             }
             return;
         }
 
-        CustomPacketPayload packet = buildPacket(key, ctx.getWidth(), fluidData, target);
+        // ② 无 viewer 短路：没人看 ⇒ 不构建快照包（真实场景里同时被看的容器是个位数）
+        List<ServerPlayer> viewers = viewersOf(level, ctx);
+        if (viewers.isEmpty()) {
+            markActiveAndCheckClear(key, true);   // 仍登记"活跃"，供将来打开时/清空边沿使用
+            return;
+        }
+
+        CustomPacketPayload packet = buildPacket(key, ctx.getWidth(), fluidData, renderTargetOf(ctx));
         if (packet == null) return;
-        dispatch(level, ctx, packet);
+        markActiveAndCheckClear(key, true);
+        for (ServerPlayer player : viewers) {
+            player.connection.send(packet);
+        }
     }
 
-    /** 按容器归属派发：玩家背包直发本人；BE 容器按菜单匹配查看者（含大箱子特判）。 */
-    private static void dispatch(Level level, TickableContainerContext ctx, CustomPacketPayload packet) {
+    /**
+     * 收集该容器的<b>查看者</b>（2026-10-07：从 {@code dispatch} 拆出，供"无 viewer 不建包"复用）。
+     *
+     * <p>按容器归属：玩家背包 ⇒ 主人本人；末影箱 ⇒ 主人本人 <b>且必须正在看末影箱</b>；
+     * BE 容器 ⇒ 按菜单槽位匹配（大箱子 {@code CompoundContainer} 特判）。</p>
+     *
+     * <p>未打开容器菜单的玩家在 {@code ContainerContexts.isViewing} 首行 O(1) 短路 ⇒
+     * 百人服的实际开销只在"开着菜单的那几个人"身上。</p>
+     */
+    private static List<ServerPlayer> viewersOf(Level level, TickableContainerContext ctx) {
+        List<ServerPlayer> out = new ArrayList<>(2);
 
         // 玩家背包：背包没有 BE 实例可匹配，直发主人本人（同 ContainerRuntimeCache 的玩家路径）
         Inventory inv = ctx.getInventory();
         if (inv != null && inv.player instanceof ServerPlayer owner) {
-            owner.connection.send(packet);
-            return;
+            out.add(owner);
+            return out;
         }
 
-        // 末影箱（F-1 配套，2026-10-05）：context 持有 player（inventory 为 null），
-        // 直发主人本人 —— 末影箱汲/倒解锁后渲染同轨。
+        // 末影箱（F-1 配套，2026-10-05）：context 持有 player（inventory 为 null）。
         // ⚠️ 2026-10-06 第 ③ 次泄漏修复：**必须判 viewer**。此前无条件每 tick 直发 ⇒
         //   玩家关掉末影箱打开普通箱子后包仍在来 ⇒ 客户端 chestLikeTarget 提示被翻成
-        //   ENDER_CHEST ⇒ 末影箱的水渲染到别的箱子界面上。判据与 BE 路径同构
-        //   （BE 用 isViewing 匹配菜单槽位；末影箱无 BE 槽位，只能问「菜单是不是末影箱」）。
-        //   不发时也要 return：末影箱无关联 BE，不能落到下面的 BE 匹配分支。
+        //   ENDER_CHEST ⇒ 末影箱的水渲染到别的箱子界面上。
+        //   末影箱无关联 BE ⇒ 必须 return，不能落到下面的 BE 匹配分支。
         if (ctx instanceof com.qiqi.li.living.container.EnderChestContainerContext ender
                 && ender.getOwner() instanceof ServerPlayer owner) {
-            if (shouldDispatch(ender, owner)) {
-                owner.connection.send(packet);
-            }
-            return;
+            if (shouldDispatch(ender, owner)) out.add(owner);
+            return out;
         }
 
         // BE 容器：关联 BlockEntity 中的 Container 实例 ↔ 玩家菜单匹配
@@ -193,12 +214,18 @@ public final class FluidFlowServerSync {
         for (BlockEntity be : ctx.getAssociatedBlockEntities()) {
             if (be instanceof Container c) containers.add(c);
         }
-        if (containers.isEmpty()) return;
+        if (containers.isEmpty()) return out;
 
         for (ServerPlayer player : level.getServer().getPlayerList().getPlayers()) {
-            if (isViewingContainer(player, containers)) {
-                player.connection.send(packet);
-            }
+            if (isViewingContainer(player, containers)) out.add(player);
+        }
+        return out;
+    }
+
+    /** 按容器归属派发（保留：关闭清理等单次场景用）。 */
+    private static void dispatch(Level level, TickableContainerContext ctx, CustomPacketPayload packet) {
+        for (ServerPlayer player : viewersOf(level, ctx)) {
+            player.connection.send(packet);
         }
     }
 

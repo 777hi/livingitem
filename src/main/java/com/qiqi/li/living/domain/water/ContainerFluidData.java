@@ -310,6 +310,7 @@ public class ContainerFluidData {
     private void reactFrontiers(ContainerContext ctx) {
         record Reaction(int slot, ItemStack product, boolean wasSource) {}
         List<Reaction> reactions = new ArrayList<>();
+        int[] buf = new int[4];   // 2026-10-07：本相位复用缓冲（每容器每拍 1 次分配，而非每格 1 次）
 
         for (var e : flows.entrySet()) {
             FlowEntry fe = e.getValue();
@@ -319,8 +320,9 @@ public class ContainerFluidData {
             // 异种流体邻居 ⇒ 问本格行为「前沿反应」；null = 共存不反应
             // ⚠️ 源格走 frontierSourceReaction（黑曜石），流动格走 frontierReaction（圆石）
             ItemStack product = null;
-            for (int n : ContainerContext.getNeighbors(slot, ctx.getSize(), ctx.getWidth())) {
-                FlowEntry neighbor = flows.get(n);
+            int nbCount = ContainerContext.fillNeighbors(buf, slot, ctx.getSize(), ctx.getWidth());
+            for (int i = 0; i < nbCount; i++) {
+                FlowEntry neighbor = flows.get(buf[i]);
                 if (neighbor == null || neighbor.fluid() == fluid) continue;
                 ItemStack candidate = frontierProduct(behavior, fe.isSource(), neighbor.fluid());
                 if (candidate != null) {
@@ -460,6 +462,7 @@ public class ContainerFluidData {
                                          ContainerContext ctx) {
         Level level = ctx.getLevel();
         Set<FluidType> advanced = new LinkedHashSet<>();
+        int[] buf = new int[4];   // 2026-10-07：本相位复用缓冲（每容器每拍 1 次分配，而非每格 1 次）
         // 按流体分组非源目标格
         Map<FluidType, List<Integer>> byFluid = new LinkedHashMap<>();
         for (var e : targets.entrySet()) {
@@ -495,12 +498,13 @@ public class ContainerFluidData {
                 FlowEntry target = targets.get(slot);
                 int bestFeeder = Integer.MAX_VALUE;
                 int feederSlot = -1;
-                for (int n : ContainerContext.getNeighbors(slot, containerSize, width)) {
-                    FlowEntry neighbor = flows.get(n);
+                int nbCount = ContainerContext.fillNeighbors(buf, slot, containerSize, width);
+                for (int i = 0; i < nbCount; i++) {
+                    FlowEntry neighbor = flows.get(buf[i]);
                     if (neighbor == null || neighbor.fluid() != fluid) continue;
                     if (neighbor.level() + 1 < bestFeeder) {
                         bestFeeder = neighbor.level() + 1;
-                        feederSlot = n;
+                        feederSlot = buf[i];
                     }
                 }
                 if (bestFeeder == Integer.MAX_VALUE) continue;   // 前沿未到：不出现/不推进
@@ -529,6 +533,7 @@ public class ContainerFluidData {
      * 用户 2026-10-06 确认接受：一致性优先，要高供水速率靠多源并行。</p>
      */
     private void promoteInActualLayer(Set<FluidType> advanced, int containerSize, int width) {
+        int[] buf = new int[4];   // 2026-10-07：本相位复用缓冲（晋升会嵌套调用邻源计数，故单独持有）
         for (FluidType fluid : advanced) {
             FluidFlowBehavior behavior = FluidFlowBehaviors.of(fluid);
             List<Integer> candidates = new ArrayList<>();
@@ -536,7 +541,7 @@ public class ContainerFluidData {
                 FlowEntry fe = e.getValue();
                 if (fe.isSource || fe.fluid() != fluid) continue;
                 if (behavior.shouldPromote(e.getKey(),
-                        countSourceNeighbors(flows, e.getKey(), containerSize, width, fluid))) {
+                        countSourceNeighbors(flows, e.getKey(), containerSize, width, fluid, buf))) {
                     candidates.add(e.getKey());
                 }
             }
@@ -612,6 +617,7 @@ public class ContainerFluidData {
     private Map<Integer, FlowEntry> spread(int containerSize, int width, ContainerContext ctx) {
         Map<Integer, FlowEntry> newFlows = new LinkedHashMap<>();
         Map<Integer, Integer> bestArrival = new HashMap<>();
+        int[] buf = new int[4];   // 2026-10-07：本相位复用缓冲（每容器每拍 1 次分配，而非每格 1 次）
         PriorityQueue<SpreadNode> queue = new PriorityQueue<>(
             Comparator.comparingInt(SpreadNode::arrival).thenComparingInt(SpreadNode::slot));
 
@@ -648,8 +654,9 @@ public class ContainerFluidData {
             if (!behavior.canFlow() || node.level() >= behavior.maxLevel()) continue;
             int cost = perCellCost(behavior, node.fluid(), ctx.getLevel());
 
-            int[] neighbors = ContainerContext.getNeighbors(node.slot(), containerSize, width);
-            for (int neighbor : neighbors) {
+            int nbCount = ContainerContext.fillNeighbors(buf, node.slot(), containerSize, width);
+            for (int k = 0; k < nbCount; k++) {
+                int neighbor = buf[k];
                 // 源格永不被蔓延抢占（源只能由反应湮灭 / 汲走 / 挤没）—— 否则快流体会把源圈走
                 FlowEntry claimed = newFlows.get(neighbor);
                 if (claimed != null && claimed.isSource()) continue;
@@ -689,10 +696,11 @@ public class ContainerFluidData {
      * 一格流动水夹在两个岩浆源之间会<b>错误晋升成水源</b>。</p>
      */
     private static int countSourceNeighbors(Map<Integer, FlowEntry> flows, int slot, int containerSize,
-                                            int width, FluidType fluid) {
+                                            int width, FluidType fluid, int[] buf) {
         int count = 0;
-        for (int n : ContainerContext.getNeighbors(slot, containerSize, width)) {
-            FlowEntry fe = flows.get(n);
+        int nbCount = ContainerContext.fillNeighbors(buf, slot, containerSize, width);
+        for (int i = 0; i < nbCount; i++) {
+            FlowEntry fe = flows.get(buf[i]);
             if (fe != null && fe.isSource && fe.fluid() == fluid) count++;
         }
         return count;

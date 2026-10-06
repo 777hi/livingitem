@@ -83,24 +83,32 @@ public interface ContainerContext extends SlotInfoProvider, ContainerSync, Conta
     }
 
     static int[] getNeighbors(int slot, int containerSize, int width) {
-        int count = 0;
-        boolean left = slot % width > 0;
-        boolean right = (slot + 1) % width != 0;
-        boolean up = slot >= width;
-        boolean down = slot + width < containerSize;
+        int[] result = new int[4];
+        int count = fillNeighbors(result, slot, containerSize, width);
+        return count == 4 ? result : java.util.Arrays.copyOf(result, count);
+    }
 
-        if (left) count++;
-        if (right) count++;
-        if (up) count++;
-        if (down) count++;
-
-        int[] result = new int[count];
+    /**
+     * 邻居写入调用方提供的缓冲，**返回个数**（2026-10-07 性能收尾）。
+     *
+     * <p>流体引擎的内层循环（扩散 / 生长 / 前沿反应 / 晋升邻源计数）每格都要取四邻，
+     * 原实现每次 {@code new int[count]} ⇒ 万级容器下每拍百万量级的小数组分配。
+     * 改为<b>每个相位一个复用缓冲</b>（每容器每拍 1 次分配，而非每格 1 次）⇒ ~200× 减少分配。</p>
+     *
+     * <p>⚠️ <b>不要用全局/静态共享缓冲</b>：晋升相位会在循环内嵌套调用
+     * （{@code countSourceNeighbors}）⇒ 共享缓冲会被覆盖（别名 bug）。
+     * 每个相位各自持有一个缓冲即无此问题。</p>
+     *
+     * @param out 长度 ≥4 的缓冲
+     * @return 写入的邻居个数（0..4），有效值在 {@code out[0..count-1]}
+     */
+    static int fillNeighbors(int[] out, int slot, int containerSize, int width) {
         int i = 0;
-        if (left) result[i++] = resolveNeighbor(slot, E_LEFT, containerSize, width);
-        if (right) result[i++] = resolveNeighbor(slot, E_RIGHT, containerSize, width);
-        if (up) result[i++] = resolveNeighbor(slot, E_UP, containerSize, width);
-        if (down) result[i++] = resolveNeighbor(slot, E_DOWN, containerSize, width);
-        return result;
+        if (slot % width > 0) out[i++] = resolveNeighbor(slot, E_LEFT, containerSize, width);
+        if ((slot + 1) % width != 0) out[i++] = resolveNeighbor(slot, E_RIGHT, containerSize, width);
+        if (slot >= width) out[i++] = resolveNeighbor(slot, E_UP, containerSize, width);
+        if (slot + width < containerSize) out[i++] = resolveNeighbor(slot, E_DOWN, containerSize, width);
+        return i;
     }
 
     /**
