@@ -146,8 +146,11 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 528 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
-全绿基线：`527 passed / 0 failed / 1 skipped`（2026-10-07 玩家路径落盘守卫：
+**合计测试用例 533 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
+全绿基线：`532 passed / 0 failed / 1 skipped`（2026-10-07 活桶 tooltip 定稿删行：
+新增 `LivingItemTooltipTest` 4 项（零行整段不输出 / 不适用功能视同零行 / 有行则空行+标题+行 /
+多功能标题只出现一次且行序保持）+ `LivingBucketFunctionTest` 1 项（活桶零 tooltip 行）；
+2026-10-07 玩家路径落盘守卫：
 新增 `PlayerFluidDataPersistenceTest` 4 项（有源写回 / 变空移除 / 重进不复活 / 两键隔离 / 回填）；
 2026-10-07 性能收尾：新增
 `ContainerFluidPerfTest` 2 项（量测 + 病态回归宽松阈值）、`ContainerNeighborsTest` 3 项
@@ -223,6 +226,7 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-07 | 🧹 **活桶 tooltip 定稿：删行+ 标题惰性化**（533 全绿）：实测见 tooltip 漏出 `储存: %1$s × %2$s mB` ⇒ 根因三层：lang 两个占位符 vs 代码只传 1 个参数（`e2d7aa1` FluidStack 时代传 2 个，`getBucketFluid` 改回返回 `Fluid` 后没同步）→ 原版 `TranslatableContents.decompose` 抛 `TranslatableFormatException` →**整条模板当纯文本渲染**（所以两个占位符一起漏）。全仓审计（一次性脚本扫字面量 key × zh/en 占位符）：参数不足**仅此 1 处**、zh/en 不一致 0 处、参数多余 145 处无害（原版忽略多余参数）。用户拍板「**没有可以显示的信息在tooltip 上**」⇒ 删掉该行 + lang 键（形态本身就是信息：水桶/岩浆桶/空桶）；配套把 `LivingItemTooltip` 的「空行 + `--- 活物品 ---`」改**惰性**（先收集功能行、非空才输出整段）—— 否则零行物品会留空标题，**通用**修复不只桶。测试 +5 | `buffer/living-bucket-tooltip-removal.md` |
 | 2026-10-07 | ✅ **玩家路径落盘守卫补齐**（528 全绿）：玩家容器（背包 / 末影箱）无 BE 可挂、只落 `CONTAINER_FLUID_DATA_PLAYER`（`Map<容器键,数据>`，一人两键），此前**零用例**。用户实测确认 happy path（源重进都在）⇒ 自动化补**反方向**：「数据变空 ⇒ map 条目移除 ⇒ **重进不复活**」（同层 2026-10-04 BE 侧出过"源复活"事故），另加「两容器键互不干扰」+「重进从附件回填」正向用例。测试 `PlayerFluidDataPersistenceTest` 4 项（放 `container` 包：`EnderChestContainerContext` 构造器包级私有；用 `clearAllCaches()` 模拟重进） | `living-fluid-tech.md` §8 |
 | 2026-10-07 | ✅ **性能收尾：四处零行为变化短路 + 量测基线**（"1 万容器"只当**探针**，按真实条件排序动手）：① `flushAfterTick` 对"无数据且从未下发过"短路；② 先收集 viewers，**空则不建包**；③ 未开菜单玩家 O(1) 跳过；④ 新增 `ContainerContext.fillNeighbors`，四个热点改**每相位一个复用缓冲**（不用全局共享——晋升会嵌套调用 ⇒ 别名 bug）。🔴 **实测与预估相反：14.42 → 12.36 µs/容器/拍（−14%）**；空容器 28→26 ns。**分配不是瓶颈**，大头是"每拍全量重算"；外推 1 万**有流体**容器 = 124 ms/拍（撑不住）但真实规模几百个 ≈ 2~3 ms/拍（够用）⇒ **结构性节流不做**。⚠️ 教训：不量就会把"~200× 减少分配"当收益写进 changelog。**524 测试全绿** | `buffer/living-fluid-perf-2026-10-07.md` |
 | 2026-10-07 | 🔧 **收尾审查批次（六维度审查后修复）**：① 🔴 **晋升邻源计数不分流体**（真 bug）⇒ 岩浆源会被算进水的「≥2邻源」⇒ 流动水夹在两个岩浆源之间错误晋升；② 删零调用的 `exportFlowData()`；③ `onContainerClose` 两处 `return` ⇒ `continue`（多容器菜单漏清）；④ `representativeFluid` 重复实现 + ConcurrentHashMap `put(null)` 潜在 NPE ⇒ 统一委托；⑤ `isFluidValid` 改按 tank（NeoForge 契约）；⑥ 客户端 javadoc。⚠️ 口径更正：晋升/焚毁 SPAWN_SOURCE **直接写实际层（当拍）**，倒桶/汲走/管道**只写 generatedSources（下一拍）**。测试 +5：同流体邻源、慢者让位、**末影箱派发判 viewer 的接线守卫**（此前只有判据用例）、renderTargetOf。**519 测试全绿** | `living-fluid-tech.md` §3.2；`buffer/living-fluid-review-2026-10-07.md` |
@@ -232,7 +236,6 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 | 2026-10-06 | ✅ **倒桶路径对齐原版（B 档，后被 A 档取代）**：契约加 default `canBeReplacedBy(incoming, selfIsSource)`（未覆写 ⇒永不被替换），熔岩覆写 `源格+水`、**水不覆写**。`pour` 改为三态：空格/流动格 ⇒ 诞生源（**异种流动格仍覆盖** = B 档保留的宽松口子）、同种源 ⇒ 源不变、**异种源格 ⇒ 该格变成水源**（活水桶浇灭活熔岩源，同键覆盖 + 下游自然退走）；活岩浆桶倒进水格**被拒**（对齐 `WaterFluid`）。🔴 2D 投影结论：原版 0.444 高度门槛在 `maxLevel 3` 下恒不达标 ⇒ 严格对齐 ≡「只有源格可替换」。⚠️ 认知更正：原版「倒水进岩浆源 ⇒ 黑曜石」**不存在**（黑曜石只来自熔岩蔓延到水格 = 机制五），此前记成待做是错的。**510 测试全绿** | `living-fluid-tech.md` §5 / §3.5；`buffer/living-pour-source-replace.md` |
 | 2026-10-06 | ↩️ **回退「砍掉原版末影箱当流体容器」+ 🔧 修第 ③ 次渲染泄漏**（同日第五批次）：砍掉那次把 `processEnderChest` 一并删了，而它是**第 4 条完整 tick 入口**（与玩家背包同一条 `processContext`）⇒ 末影箱里**全部**活物品机制失效（打火石/耕地/漏斗/锁/活末影箱物品路由 + 红电），**超出「砍流体」范围、破坏硬边界「不动活末影箱物品」** ⇒ 用户改判为「回退 + 修 bug」。修法：末影箱派发**判 viewer**（`ContainerContexts.isViewingEnderChest`，唯一判据实现点，活化绑定改为委托）—— 此前无条件每 tick 直发 ⇒ 关末影箱开普通箱子后包仍在来 ⇒ 客户端 `chestLikeTarget` 提示翻转 ⇒ **末影箱的水渲染到别的箱子界面**（三次泄漏里唯一没修过的那个）。**506 测试全绿** | `living-fluid-tech.md` §7/§9；`buffer/living-ender-viewer-dispatch-fix.md` |
 | 2026-10-06 | 🏗 **架构分层第一步**：`interaction` 的 9 个领域专用 handler 归位（farmland×3 / redstone×4 / tnt×2）⇒ 该包只剩通用机制，**`InteractionRegistry` 一行未改**。**R1 分层违规 113 → 101**，基线 42→39 对。**484 全绿**（纯重构） | `buffer/architecture-layering-plan.md` ① |
-| 2026-10-06 | 🔧 **实测三修**：① **末影箱流体不渲染** —— 客户端无法推断界面容器身份（末影箱 GUI 在客户端是 `GENERIC_9x3` + `SimpleContainer` 替身，与普通箱子同形）⇒ `instanceof PlayerEnderChestContainer` 是**死分支**；修：包加 **`RenderTarget`（服务端权威告知）**，客户端按它路由。🔴 **约束成文：客户端不得靠槽位容器类型推断容器身份**（两次踩坑同源：键前缀猜 ⇒ 泄漏；类型判 ⇒ 不画）。② **创造模式背包倒不进活流体** —— 客户端 `ItemPickerMenu` vs 服务端 `InventoryMenu` 索引错位，索引直查落到无关空槽（合成结果槽）⇒ 静默失败；修：空槽目标加「必须能解析出活容器」的门 + 回退 `containerSlot`。③ **管道瞬间抽空** —— v1「任意请求吞整源只返请求量」；定稿（用户拍板）**整源单位**：drain 请求 ≥1000 才给满 1000 并删源，<1000 **一分不给**。曾短暂上「源余额账本」（部分抽取）并**撤回** —— 源到处是二进制语义（挤没/晋升/汲走/刷石机/黑曜石/渲染/落盘），分数源污染每条路径；「无限源」也撤回。细水长流留给**专用流体活物品**（照抄活涂蜡铜灯存电）。**496 测试全绿** | `living-fluid-tech.md` §7 / §10.3；`changelog.md`（2026-10-06） |
 
 
 

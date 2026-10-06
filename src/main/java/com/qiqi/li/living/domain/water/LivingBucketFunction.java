@@ -2,12 +2,10 @@ package com.qiqi.li.living.domain.water;
 
 import java.util.List;
 
-import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.BucketItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.material.Fluids;
@@ -31,6 +29,13 @@ import com.qiqi.li.living.container.TickContext;
  * <p>汲/倒调用方：{@code LivingBucketInteractHandlers}（GUI，走 GuiInteractionPacket 管道）。
  * <b>世界侧零拦截</b>（2026-10-04 定稿）：活桶在世界里就是普通桶（原版取/放水原生行为，
  * swap 会丢活标记——丢了就再点活按钮，不做兜底）；priming = 活化水桶直取。</p>
+ *
+ * <p><b>无 tooltip（2026-10-07 定稿）</b>：桶不覆写 {@code addToTooltip} ——
+ * <b>形态本身就是信息</b>（{@code X.getBucket()} / {@code Items.BUCKET}，见 {@link #withFluid}），
+ * tooltip 再写一遍内容是冗余；「储存 × mB」对桶（恒1 个源 = 1000 mB）也是废话。
+ * 连带删除 lang 键 {@code tooltip.livingitem.bucket.content}
+ * （那条文案自 {@code e2d7aa1} FluidStack 时代起就与本类参数不匹配 ⇒ 占位符漏出，
+ * 根因与来历见 {@code docs/buffer/living-bucket-tooltip-removal.md}）。</p>
  */
 public class LivingBucketFunction implements LivingItemFunction {
 
@@ -50,17 +55,6 @@ public class LivingBucketFunction implements LivingItemFunction {
     @Override
     public void tick(List<SlotEntry> entries, ContainerContext context, TickContext tick, Level level) {
         // no-op
-    }
-
-    @Override
-    public void addToTooltip(Item.TooltipContext context,
-                             java.util.function.Consumer<Component> tooltipAdder,
-                             TooltipFlag flag,
-                             ItemStack stack) {
-        Fluid fluid = getBucketFluid(stack);
-        if (fluid == Fluids.EMPTY) return;
-        tooltipAdder.accept(Component.translatable("tooltip.livingitem.bucket.content",
-            fluid.getFluidType().getDescription()));
     }
 
     // ── 静态判定与变换（桶 = 载体，逻辑就这几行）────────────────

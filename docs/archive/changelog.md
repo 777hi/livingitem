@@ -17,6 +17,26 @@
 
 ## 2026-10-07
 
+- 🧹 **活桶 tooltip 定稿：删行 + 活物品段标题惰性化**（**533 全绿**）：用户实测发现活水桶 tooltip 里
+  漏出字面量 `储存: %1$s × %2$s mB`。根因三层：① lang 键`tooltip.livingitem.bucket.content`
+  有**两个**占位符，而 `LivingBucketFunction.addToTooltip` 只传**一个**参数；② 原版
+  `TranslatableContents.decompose` 取不到第 2 个参数时抛 `TranslatableFormatException`，
+  兜底是 `ImmutableList.of(FormattedText.of(s))` ⇒ **整条模板当纯文本渲染**（所以两个占位符一起漏，
+  而不是只漏一个）；③ 来历 = `e2d7aa1`（FluidStack 时代）当时传 2 个参数（名字 × 量），
+  `getBucketFluid` 改回返回 `Fluid` 后参数减到 1 个、**lang 没同步** ⇒ 从那批起一直是坏的。
+  全仓审计（一次性脚本扫「字面量 key 调用点 × zh/en 占位符数」）：**参数不足仅此 1 处**、
+  zh/en 占位符数不一致 0 处、参数多余 145 处**无害**（原版忽略多余参数 —— 这也是只有这一处出问题的原因）。
+  定稿（用户拍板「**其实，没有可以显示的信息在tooltip 上的**」）：**删掉该行 + 删 lang 键**
+  （形态本身就是信息 —— 水桶 / 岩浆桶 / 空桶；「储存 × mB」对恒 1 个源的桶是废话），
+  已否的 B 档（补第二个参数显示 `× 1000 mB`）不做。
+  配套：`LivingItemTooltip` 的「空行 + `--- 活物品 ---`」从**无条件**改为**惰性**
+  （先收集所有适用功能的行，**非空才**输出整段）—— 否则零 tooltip 行的物品会留下空标题，
+  这是**通用**修复而不只桶；为此把渲染体抽成可测静态方法 `renderSection(functions, …)`
+  （functions 由调用方传入，测试可喂 stub）。
+  测试 +5：`LivingItemTooltipTest` 4 项 + `LivingBucketFunctionTest` 1 项（活桶零 tooltip 行）。
+  方案留痕 `docs/buffer/living-bucket-tooltip-removal.md`（含顺手发现的死 lang 键
+  `tooltip.livingitem.water_bucket.status` / `.flow`，待实测收口清理）。
+
 - ✅ **玩家路径落盘守卫补齐**（**528 全绿**）：玩家容器（背包 / 末影箱）没有 BE 可挂，只能落
   `CONTAINER_FLUID_DATA_PLAYER`（`Map<容器键, 数据>`，一个玩家两个键）—— 这层此前**零用例**。
   用户 2026-10-07 实测确认 happy path（源重进都在），自动化补的是**反方向**：

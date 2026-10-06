@@ -1,5 +1,7 @@
 package com.qiqi.li.client.render;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.Consumer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
@@ -55,20 +57,42 @@ public class LivingItemTooltip {
         }
         LivingItemClientCache.setCurrentTooltipData(runtimeData);
         try {
-            Item.TooltipContext context = Item.TooltipContext.EMPTY;
-            TooltipFlag flag = event.getFlags();
-            Consumer<Component> tooltipAdder = event.getToolTip()::add;
-
-            tooltipAdder.accept(Component.nullToEmpty(""));
-            tooltipAdder.accept(Component.translatable("tooltip.livingitem.title"));
-
-            for (LivingItemFunction function : LivingItemManager.getAllFunctions()) {
-                if (function.canApply(stack)) {
-                    function.addToTooltip(context, tooltipAdder, flag, stack);
-                }
-            }
+            renderSection(LivingItemManager.getAllFunctions(), Item.TooltipContext.EMPTY,
+                event.getFlags(), stack, event.getToolTip()::add);
         } finally {
             LivingItemClientCache.clearCurrentTooltipData();
         }
+    }
+
+    /**
+     * 输出「活物品」段：**惰性标题**（2026-10-07）。
+     *
+     * <p>先前是<b>无条件</b>先输出「空行 + {@code tooltip.livingitem.title}（--- 活物品 ---）」，
+     * 再逐个功能追加行 —— 于是「零 tooltip 行」的活物品（活桶：形态本身就是信息，定稿不写 tooltip）
+     * 会留下一个<b>空标题</b>。现改为：先把所有适用功能的行收集起来，
+     * <b>非空才</b>输出「空行 + 标题 + 各行」；零行 ⇒ 整段不输出。</p>
+     *
+     * <p>通用价值：任何「没有可显示信息」的活物品都不会再出现空标题，不只是桶。
+     * {@code functions} 由调用方传入（本项目传 {@link LivingItemManager#getAllFunctions()}），
+     * 便于单测喂 stub 功能列表。</p>
+     *
+     * @param functions 候选功能列表（按注册顺序）
+     * @param sink      最终 tooltip 输出器
+     */
+    static void renderSection(List<LivingItemFunction> functions,
+                              Item.TooltipContext context,
+                              TooltipFlag flag,
+                              ItemStack stack,
+                              Consumer<Component> sink) {
+        List<Component> lines = new ArrayList<>();
+        for (LivingItemFunction function : functions) {
+            if (function.canApply(stack)) {
+                function.addToTooltip(context, lines::add, flag, stack);
+            }
+        }
+        if (lines.isEmpty()) return;                 // 零行 ⇒ 整段不输出（不写空标题）
+        sink.accept(Component.nullToEmpty(""));
+        sink.accept(Component.translatable("tooltip.livingitem.title"));
+        lines.forEach(sink);
     }
 }

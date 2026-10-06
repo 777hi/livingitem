@@ -5,8 +5,14 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.ArrayList;
+import java.util.List;
+
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.material.Fluids;
 
 import org.junit.jupiter.api.DisplayName;
@@ -95,5 +101,23 @@ class LivingBucketFunctionTest {
         var held = living(new ItemStack(Items.WATER_BUCKET));
         assertSame(held, LivingBucketFunction.withFluid(held, Fluids.WATER),
             "已是水桶形态再灌水 ⇒ 无需变换");
+    }
+
+    // ── tooltip（2026-10-07 定稿：桶无 tooltip）────────────────────────
+
+    @Test
+    @DisplayName("tooltip：活桶**不产出任何行**（形态本身就是信息）")
+    void noTooltipLines_atAll() {
+        var fn = new LivingBucketFunction();
+        for (ItemStack stack : new ItemStack[] {
+                living(new ItemStack(Items.WATER_BUCKET)),
+                living(new ItemStack(Items.LAVA_BUCKET)),
+                living(new ItemStack(Items.BUCKET)) }) {
+            List<Component> out = new ArrayList<>();
+            fn.addToTooltip(Item.TooltipContext.EMPTY, out::add, TooltipFlag.NORMAL, stack);
+            assertTrue(out.isEmpty(),
+                "活桶不应有任何 tooltip 行 —— 曾漏出「储存: %1$s × %2$s mB」占位符"
+                + "（lang 两个占位符 vs 代码一个参数 ⇒ 原版整条模板当纯文本渲染）");
+        }
     }
 }
