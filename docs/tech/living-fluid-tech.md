@@ -487,10 +487,9 @@ slot/level/fromSlot）→ 客户端 `FluidFlowClientCache` → `AbstractContaine
 
 ---
 
-## 10. 管道抽取——设计存档（2026-10-05，待实现）
+## 10. 管道抽取（2026-10-05 设计存档 → **2026-10-06 已实施**）
 
-**需求**：容器里的活水源可被模组流体管道抽取（Pipez/Mekanism/Create 全走
-NeoForge `IFluidHandler` capability 方言）。**红电对外供电接口
+**需求**：容器里的活水源可被模组流体管道抽取。**红电对外供电接口
 （`ContainerEnergyStorage`）为完整范本**，设计决策全部有先例：
 
 | 决策 | 定案 | 红电先例 |
@@ -503,11 +502,29 @@ NeoForge `IFluidHandler` capability 方言）。**红电对外供电接口
 | 侧面 | 忽略（GUI 网格与世界朝向无对应） | — |
 | 流体范围 | 自动覆盖全部已注册源流体（岩浆接入即抽岩浆） | — |
 
-**实现清单**：`LivingFluidSourceHandler implements IFluidHandler`（getTanks = 派生源数、
-getFluidInTank = 源流体 ×1000mB、drain 消耗源 + SIMULATE、fill = 0）+ provider 判定链 +
-活数据反查（BE → 双箱规范化 → `getFluidData`，同源原则）。**一个自动成立的边界**：
-管道搬不动活物品（活物品隔离）⇒ 管道只能抽已有的源，不能自动化「倒水」——
-活桶作为源的唯一种子工具的地位不受威胁，守恒律完好。
+### 10.1 实施落点
+
+| 件 | 位置 |
+|---|---|
+| 能力本体 | `domain/water/ContainerFluidHandler`（`implements IFluidHandler`）：tank 数 = 派生源数、`getFluidInTank` = 源流体 ×1000mB、`drain` 消耗源（SIMULATE 只算）、`fill` = 0、`isFluidValid` 如实回答「是否持有」 |
+| 注册 | `LivingItem#onRegisterCapabilities` 宽注册 `Capabilities.FluidHandler.BLOCK`（全部 `BlockEntityType`） |
+| 活数据反查 | `ContainerLivingItemHandler.resolveContextAt`（**从 `processContainerAt` 抽出**：`ItemHandler.BLOCK` 兼容面 + `DoubleChestPositions` 双箱规范化 + 战利品跳过 ⇒ 与 tick 路径**同源同键**）→ `peekContainerData(ContainerDataKeys.FLUID)`（只读不创建） |
+| `FluidType → Fluid` | `ContainerFluidData.representativeFluidOf`（原私有方法对外开放，能力层造 `FluidStack` 需要 vanilla `Fluid`） |
+
+**Create 6 兼容性（已查证 `libs/src/Create`）**：**无需任何兼容代码** ——
+Create 6.0.10 的 `SmartFluidTank extends net.neoforged.neoforge.fluids.capability.templates.FluidTank`，
+储液罐/锅炉/漏斗/物品漏斗都注册 `Capabilities.FluidHandler.BLOCK`；管道与机械泵通过
+`FlowSource` / `FluidPropagator.hasFluidCapability` **拉取**邻居的该能力。
+⚠️ 但注意管道**只拉不推**（泵也是拉取方）⇒ 与「fill 恒 0」天然一致；
+且 `FlowSource` 先 `drain(1, SIMULATE)` 探测 ⇒ 我们的 `getFluidInTank` 必须对源格返回非空
+（无源 ⇒ 0 tank ⇒ 被判「无流体」直接跳过，这是期望行为）。
+
+### 10.2 速率模型修正（2026-10-06 统一时钟后）
+
+原设计的「无限水 = 每源每 tick 再生一个」已随 §3.6 统一时钟变为
+**每源每 `<flowSpeed>` tick 再生一个（水 ≤5t）**。结论方向不变（多源并行堆速率），
+但单源的**再生间隔**从 1t 变成 5t —— 抽速上限 = `1000mB / 5t`（水）。
+想要更高供水速率：并排放更多源，而不是指望单源秒补。
 
 ## 附录：容器水流示例
 

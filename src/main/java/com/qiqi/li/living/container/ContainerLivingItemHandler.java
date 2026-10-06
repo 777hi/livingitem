@@ -826,6 +826,33 @@ public class ContainerLivingItemHandler {
         if (handler == null) return false;
         if (processedHandlers != null && processedHandlers.put(handler, Boolean.TRUE) != null) return false;
 
+        TickableContainerContext context = resolveContextAt(level, pos, handler);
+        if (context == null) return false;
+        if (processedKeys != null && !processedKeys.add(context.getContainerKey())) return false;
+
+        processContext(context, level);
+        return true;
+    }
+
+    /**
+     * 方块容器位置的**上下文反查**（2026-10-06 抽出，供能力查询等只读用途复用）。
+     *
+     * <p>与 tick 路径<b>同源同键</b>：同样走 {@code ItemHandler.BLOCK} 兼容面 + 同样的双箱
+     * 规范化（{@link DoubleChestPositions#find}，LEFT 在前）⇒ 算出的 {@code containerKey} 与
+     * tick 路径一致，<b>拿到的是同一份活数据实例</b>（同源原则）。</p>
+     *
+     * <p>跳过随机战利品容器（未开箱），与 {@link #processContainerAt} 同款规则。</p>
+     *
+     * @param handler 已获取的 {@link IItemHandler}（null = 从能力系统取）
+     * @return 容器上下文；非容器 / 战利品未开箱 ⇒ {@code null}
+     */
+    public static TickableContainerContext resolveContextAt(Level level, BlockPos pos,
+                                                            @javax.annotation.Nullable IItemHandler handler) {
+        if (handler == null) {
+            handler = level.getCapability(Capabilities.ItemHandler.BLOCK, pos, null);
+        }
+        if (handler == null) return null;
+
         List<BlockPos> positions = new ArrayList<>();
         List<BlockEntity> blockEntities = new ArrayList<>();
 
@@ -836,7 +863,7 @@ public class ContainerLivingItemHandler {
                 BlockEntity halfBe = level.getBlockEntity(cp);
                 if (halfBe != null) {
                     if (halfBe instanceof RandomizableContainer rc && rc.getLootTable() != null) {
-                        return false;
+                        return null;
                     }
                     blockEntities.add(halfBe);
                 }
@@ -846,18 +873,13 @@ public class ContainerLivingItemHandler {
             BlockEntity be = level.getBlockEntity(pos);
             if (be != null) {
                 if (be instanceof RandomizableContainer rc && rc.getLootTable() != null) {
-                    return false;
+                    return null;
                 }
                 blockEntities.add(be);
             }
         }
 
-        TickableContainerContext context = new SimpleContainerContext(handler, null, positions, blockEntities, level);
-        String key = context.getContainerKey();
-        if (processedKeys != null && !processedKeys.add(key)) return false;
-
-        processContext(context, level);
-        return true;
+        return new SimpleContainerContext(handler, null, positions, blockEntities, level);
     }
 
     /**

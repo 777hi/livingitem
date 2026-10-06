@@ -54,8 +54,10 @@
    派生原版 `getTickDelay`，水 5t / 岩浆 30t）。
 4. ~~**岩浆烧毁物品**~~ —— **已实施**为机制一·焚毁（§3.7，含满组石头系喂养 ⇒ 诞生岩浆源的
    「新配方」；源格同样焚毁）。
-5. **管道抽取活水源** —— 设计已存档（[living-fluid-tech.md](tech/living-fluid-tech.md) §10，
-   红电 `ContainerEnergyStorage` 为范本：消耗源 + 晋升再生 = 无限水工业化），待实现。
+5. ~~**管道抽取活水源**~~ —— **已实施**（2026-10-06，`living-fluid-tech.md` §10）：新
+   `ContainerFluidHandler`（NeoForge `IFluidHandler`，宽注册全部 BE + 四段让位判定），
+   抽取即消耗源、只出不进；**Create 6 / Mekanism / Pipez 通用，无需兼容代码**。
+   ⚠️ 速率模型随统一时钟修正：单源再生间隔 = `flowSpeed`（水 ≤5t），抽速上限 = 1000mB/5t。
 
 ## 活水车
 

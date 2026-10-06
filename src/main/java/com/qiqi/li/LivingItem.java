@@ -417,6 +417,15 @@ public class LivingItem {
             Items.WAXED_COPPER_BULB, Items.WAXED_EXPOSED_COPPER_BULB,
             Items.WAXED_WEATHERED_COPPER_BULB, Items.WAXED_OXIDIZED_COPPER_BULB);
 
+        // ── 活水源对外流体接口（§10 管道抽取，2026-10-06）：宽注册 + 让位 ──
+        // 方言 = NeoForge IFluidHandler：Pipez / Mekanism / Create 6 通用（Create 也走这个）
+        // 语义 = 抽取即消耗源、只出不进（fill 恒 0）⇒ 活桶仍是源的唯一种子工具
+        net.neoforged.neoforge.capabilities.ICapabilityProvider<BlockEntity, Direction, net.neoforged.neoforge.fluids.capability.IFluidHandler> blockFluidProvider =
+            (be, side) -> com.qiqi.li.living.domain.water.ContainerFluidHandler.resolveProvider(be, side);
+        for (var beType : BuiltInRegistries.BLOCK_ENTITY_TYPE) {
+            event.registerBlockEntity(Capabilities.FluidHandler.BLOCK, beType, blockFluidProvider);
+        }
+
         LOGGER.info("Registered living item capabilities");
     }
 

@@ -555,8 +555,17 @@ public class ContainerFluidData {
     /** FluidType → 代表 {@link net.minecraft.world.level.material.Fluid}（读原版参数用），缓存。 */
     private static final Map<FluidType, net.minecraft.world.level.material.Fluid> REPRESENTATIVE = new HashMap<>();
 
-    private static net.minecraft.world.level.material.Fluid representativeFluid(FluidType type) {
-        if (REPRESENTATIVE.containsKey(type)) return REPRESENTATIVE.get(type);
+    /**
+     * {@link FluidType} → 代表 {@link net.minecraft.world.level.material.Fluid}（优先 still 态）。
+     *
+     * <p>**对外能力用**（{@link ContainerFluidHandler} 造 {@code FluidStack} 需要 vanilla Fluid）；
+     * 未注册的模组流体返回 {@code null}（调用方按 EMPTY 处理）。</p>
+     */
+    public static net.minecraft.world.level.material.Fluid representativeFluidOf(FluidType type) {
+        return representativeFluid(type);
+    }
+
+    private static net.minecraft.world.level.material.Fluid representativeFluid(FluidType type) {        if (REPRESENTATIVE.containsKey(type)) return REPRESENTATIVE.get(type);
         net.minecraft.world.level.material.Fluid found = null;
         for (var f : net.minecraft.core.registries.BuiltInRegistries.FLUID) {
             if (f.getFluidType() != type) continue;

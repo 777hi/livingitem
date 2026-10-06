@@ -114,6 +114,27 @@
   测试：⑥ 改钉「随蔓延同拍推动」；新增 ㊸（晋升只在推进拍）/ ㊹（**等价性**：晋升只变慢、
   终态与瞬时基线相同）/ ㊺（推动按流体节拍，慢岩浆不再 4t 一次）。
   方案留痕：`docs/buffer/living-fluid-single-clock-plan.md`。
+- ✅ **管道抽取（活水源对外流体能力，493 测试全绿）** —— 容器里的活水源可被模组流体管道抽取
+  （`living-fluid-tech.md` §10 由「设计存档」转「已实施」）。新 `domain/water/ContainerFluidHandler`
+  （`implements` NeoForge `IFluidHandler`）：**tank 数 = 派生源数**、`getFluidInTank` = 源流体 ×1000mB、
+  `drain` **直接消耗源**（≡ 自动化汲走；SIMULATE 只算不消耗）、`fill` **恒 0**（只出不进 ——
+  守住活桶的种子工具地位，与 §6.1 对称性一致）、`isFluidValid` 如实回答「是否持有该流体」
+  （免得按它过滤的消费者把整台机器判死）。`LivingItem#onRegisterCapabilities` **宽注册全部
+  BlockEntityType** + provider 四段让位判定（战利品跳过 / `instanceof IFluidHandler` 让位 /
+  level null / 已有主人让位；返回实例内部自适应 ⇒ 永不 null 切换），与红电
+  `ContainerEnergyStorage.resolveProvider` 同款。**活数据反查**：把 `processContainerAt` 里的
+  上下文构建抽成 `ContainerLivingItemHandler.resolveContextAt`（`ItemHandler.BLOCK` 兼容面 +
+  `DoubleChestPositions` 双箱规范化 + 战利品跳过 ⇒ 与 tick 路径**同源同键**），
+  再 `peekContainerData(ContainerDataKeys.FLUID)` **只读不创建**（查询不该凭空造数据）；
+  `ContainerFluidData.representativeFluidOf` 开放给能力层造 `FluidStack`。
+  🔍 **Create 6 兼容性已查证**（`libs/src/Create`）：**不需要任何兼容代码** ——
+  `SmartFluidTank extends` NeoForge 的 `FluidTank` 模板，储液罐/锅炉/漏斗都注册
+  `Capabilities.FluidHandler.BLOCK`，管道与机械泵经 `FlowSource` 拉取；管道**只拉不推**
+  ⇒ 与「fill 恒 0」天然一致。
+  ⚠️ **速率模型修正**（统一时钟后）：单源再生间隔从 1t 变成 `flowSpeed`（水 ≤5t）⇒
+  抽速上限 = 1000mB/5t，要更高速率靠**并排更多源**。
+  测试新增 `ContainerFluidHandlerTest` 6 项（tank 枚举/稳定序、SIMULATE vs EXECUTE、
+  全有或全无、异种 EMPTY、fill 恒 0 + isFluidValid、非容器无害、provider 四段让位）。
 ## 2026-10-05
 
 - ✅ **引擎时序化（flowSpeed 消费，跨流体反应的时间地基）**（**473 测试全绿**）：
