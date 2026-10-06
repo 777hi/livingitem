@@ -525,6 +525,11 @@ slot/level/fromSlot）→ 客户端 `FluidFlowClientCache` → `AbstractContaine
 | BE 容器 | `CONTAINER_FLUID_DATA` attachment（`.serialize(CODEC)`） | 只存 `generatedSources`（流动每 tick 重算，不落） |
 | 玩家背包 / 末影箱 | **Player attachment** `CONTAINER_FLUID_DATA_PLAYER`（`KEYED_CODEC`，一个玩家两个容器键） | 同上 |
 
+**玩家路径守卫**（2026-10-07，`PlayerFluidDataPersistenceTest` 4 项）：happy path 已由用户实测确认
+（背包 / 末影箱的源重进都在）；自动化钉的是**反方向** —— 数据变空 ⇒ map 条目被移除
+⇒ **重进不复活**（同层历史事故：2026-10-04 BE 侧"源复活"），外加「两容器键互不干扰」与
+「重进从附件回填」的正向用例。
+
 ⚠️ 数据变空时**必须写回 EMPTY**（BE 与玩家两条路径都要）——不清则重进存档
 从附件回填**源复活**（跨存档残留，2026-10-04 修）。
 

@@ -146,8 +146,10 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 524 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
-全绿基线：`523 passed / 0 failed / 1 skipped`（2026-10-07 性能收尾：新增
+**合计测试用例 528 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
+全绿基线：`527 passed / 0 failed / 1 skipped`（2026-10-07 玩家路径落盘守卫：
+新增 `PlayerFluidDataPersistenceTest` 4 项（有源写回 / 变空移除 / 重进不复活 / 两键隔离 / 回填）；
+2026-10-07 性能收尾：新增
 `ContainerFluidPerfTest` 2 项（量测 + 病态回归宽松阈值）、`ContainerNeighborsTest` 3 项
 （fillNeighbors 与 getNeighbors 逐格一致 / 单行 / 复用不污染）；
 2026-10-07 收尾审查：`ContainerFluidDataTest`
@@ -221,6 +223,7 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-07 | ✅ **玩家路径落盘守卫补齐**（528 全绿）：玩家容器（背包 / 末影箱）无 BE 可挂、只落 `CONTAINER_FLUID_DATA_PLAYER`（`Map<容器键,数据>`，一人两键），此前**零用例**。用户实测确认 happy path（源重进都在）⇒ 自动化补**反方向**：「数据变空 ⇒ map 条目移除 ⇒ **重进不复活**」（同层 2026-10-04 BE 侧出过"源复活"事故），另加「两容器键互不干扰」+「重进从附件回填」正向用例。测试 `PlayerFluidDataPersistenceTest` 4 项（放 `container` 包：`EnderChestContainerContext` 构造器包级私有；用 `clearAllCaches()` 模拟重进） | `living-fluid-tech.md` §8 |
 | 2026-10-07 | ✅ **性能收尾：四处零行为变化短路 + 量测基线**（"1 万容器"只当**探针**，按真实条件排序动手）：① `flushAfterTick` 对"无数据且从未下发过"短路；② 先收集 viewers，**空则不建包**；③ 未开菜单玩家 O(1) 跳过；④ 新增 `ContainerContext.fillNeighbors`，四个热点改**每相位一个复用缓冲**（不用全局共享——晋升会嵌套调用 ⇒ 别名 bug）。🔴 **实测与预估相反：14.42 → 12.36 µs/容器/拍（−14%）**；空容器 28→26 ns。**分配不是瓶颈**，大头是"每拍全量重算"；外推 1 万**有流体**容器 = 124 ms/拍（撑不住）但真实规模几百个 ≈ 2~3 ms/拍（够用）⇒ **结构性节流不做**。⚠️ 教训：不量就会把"~200× 减少分配"当收益写进 changelog。**524 测试全绿** | `buffer/living-fluid-perf-2026-10-07.md` |
 | 2026-10-07 | 🔧 **收尾审查批次（六维度审查后修复）**：① 🔴 **晋升邻源计数不分流体**（真 bug）⇒ 岩浆源会被算进水的「≥2邻源」⇒ 流动水夹在两个岩浆源之间错误晋升；② 删零调用的 `exportFlowData()`；③ `onContainerClose` 两处 `return` ⇒ `continue`（多容器菜单漏清）；④ `representativeFluid` 重复实现 + ConcurrentHashMap `put(null)` 潜在 NPE ⇒ 统一委托；⑤ `isFluidValid` 改按 tank（NeoForge 契约）；⑥ 客户端 javadoc。⚠️ 口径更正：晋升/焚毁 SPAWN_SOURCE **直接写实际层（当拍）**，倒桶/汲走/管道**只写 generatedSources（下一拍）**。测试 +5：同流体邻源、慢者让位、**末影箱派发判 viewer 的接线守卫**（此前只有判据用例）、renderTargetOf。**519 测试全绿** | `living-fluid-tech.md` §3.2；`buffer/living-fluid-review-2026-10-07.md` |
 | 2026-10-07 | 🔧 **目标层抢占：距离 ⇒ 到达时间**（消掉刷石机的"看不见的墙"）：那格在活水源流域内、水到得更快却永不进水 —— 根因是分配用**距离+入队顺序**、与"实际多久流到"无关（统一时钟只管蔓延、不管分配）。定档：多源 Dijkstra 按到达时间抢占（每格成本=该流体节拍，源格永不被蔓延抢占）。🔴 **实测**几何结论：岩浆守得住 ≈ 两源间距的 1/7 ⇒ 太近（曼哈顿 ≲6）则水贴到岩浆源 ⇒ 黑曜石+源湮灭（刷石机自毁），**D≥7 则源存活 + 圆石照常累加**（27 格 D=7、9 格单行 D=8 实测圆石累加到 x7）。⚠️ 我先前" A 会毁掉刷石机 / 必须配产物挡路"两处断言**都是错的**（以偏概全 + 归因错误），已留痕。**514 测试全绿** | `living-fluid-tech.md` §3.1；`buffer/living-fluid-arrival-time-claim.md` |
@@ -230,7 +233,6 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 | 2026-10-06 | ↩️ **回退「砍掉原版末影箱当流体容器」+ 🔧 修第 ③ 次渲染泄漏**（同日第五批次）：砍掉那次把 `processEnderChest` 一并删了，而它是**第 4 条完整 tick 入口**（与玩家背包同一条 `processContext`）⇒ 末影箱里**全部**活物品机制失效（打火石/耕地/漏斗/锁/活末影箱物品路由 + 红电），**超出「砍流体」范围、破坏硬边界「不动活末影箱物品」** ⇒ 用户改判为「回退 + 修 bug」。修法：末影箱派发**判 viewer**（`ContainerContexts.isViewingEnderChest`，唯一判据实现点，活化绑定改为委托）—— 此前无条件每 tick 直发 ⇒ 关末影箱开普通箱子后包仍在来 ⇒ 客户端 `chestLikeTarget` 提示翻转 ⇒ **末影箱的水渲染到别的箱子界面**（三次泄漏里唯一没修过的那个）。**506 测试全绿** | `living-fluid-tech.md` §7/§9；`buffer/living-ender-viewer-dispatch-fix.md` |
 | 2026-10-06 | 🏗 **架构分层第一步**：`interaction` 的 9 个领域专用 handler 归位（farmland×3 / redstone×4 / tnt×2）⇒ 该包只剩通用机制，**`InteractionRegistry` 一行未改**。**R1 分层违规 113 → 101**，基线 42→39 对。**484 全绿**（纯重构） | `buffer/architecture-layering-plan.md` ① |
 | 2026-10-06 | 🔧 **实测三修**：① **末影箱流体不渲染** —— 客户端无法推断界面容器身份（末影箱 GUI 在客户端是 `GENERIC_9x3` + `SimpleContainer` 替身，与普通箱子同形）⇒ `instanceof PlayerEnderChestContainer` 是**死分支**；修：包加 **`RenderTarget`（服务端权威告知）**，客户端按它路由。🔴 **约束成文：客户端不得靠槽位容器类型推断容器身份**（两次踩坑同源：键前缀猜 ⇒ 泄漏；类型判 ⇒ 不画）。② **创造模式背包倒不进活流体** —— 客户端 `ItemPickerMenu` vs 服务端 `InventoryMenu` 索引错位，索引直查落到无关空槽（合成结果槽）⇒ 静默失败；修：空槽目标加「必须能解析出活容器」的门 + 回退 `containerSlot`。③ **管道瞬间抽空** —— v1「任意请求吞整源只返请求量」；定稿（用户拍板）**整源单位**：drain 请求 ≥1000 才给满 1000 并删源，<1000 **一分不给**。曾短暂上「源余额账本」（部分抽取）并**撤回** —— 源到处是二进制语义（挤没/晋升/汲走/刷石机/黑曜石/渲染/落盘），分数源污染每条路径；「无限源」也撤回。细水长流留给**专用流体活物品**（照抄活涂蜡铜灯存电）。**496 测试全绿** | `living-fluid-tech.md` §7 / §10.3；`changelog.md`（2026-10-06） |
-| 2026-10-06 | ✅ **管道抽取（活水源对外流体能力）**：新 `ContainerFluidHandler`（NeoForge `IFluidHandler`）—— **tank 数 = 派生源数、drain 直接消耗源、fill 恒 0（只出不进）、isFluidValid 如实答「是否持有」**；宽注册全部 BE + provider 四段让位（与红电同款）。活数据反查把 `processContainerAt` 的上下文构建抽成 `resolveContextAt`（**与 tick 路径同源同键**）+ `peekContainerData` 只读不创建。🔍 **Create 6 / Mekanism / Pipez 通用、无需兼容代码**（Create 6 内部 tank 就是 NeoForge `FluidTank` 模板，管道只拉不推）。⚠️ 速率模型修正：单源再生间隔 = `flowSpeed`（水 ≤5t）。**493 测试全绿** | `living-fluid-tech.md` §10 |
 
 
 
