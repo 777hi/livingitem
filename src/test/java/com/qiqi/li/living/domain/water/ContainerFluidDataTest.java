@@ -204,17 +204,18 @@ class ContainerFluidDataTest {
     }
 
     @Test
-    @DisplayName("⑥ 水流推动：第 4 tick 沿水流方向把非活物品推下游")
-    void pushItems_movesItemDownstreamOn4thTick() {
+    @DisplayName("⑥ 水流推动：随该流体的蔓延**同拍**推动（瞬时水 = 每拍推进一格）")
+    void pushItems_movesItemDownstreamWithGrowth() {
         var ctx = row(ItemStack.EMPTY, new ItemStack(Items.REDSTONE, 1));
         var fluid = new ContainerFluidData();
         fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
 
-        for (int t = 0; t < 4; t++) fluid.tick(ctx);
-
+        fluid.tick(ctx);
+        assertEquals(Items.REDSTONE, ctx.getItem(2).getItem(), "第 1 拍：随蔓延同拍推到下游 slot 2");
         assertTrue(ctx.getItem(1).isEmpty(), "slot 1 的物品应被推走");
-        assertEquals(Items.REDSTONE, ctx.getItem(2).getItem(), "物品应到下游 slot 2");
-        assertEquals(1, ctx.getItem(2).getCount());
+
+        for (int t = 0; t < 3; t++) fluid.tick(ctx);
+        assertEquals(Items.REDSTONE, ctx.getItem(5).getItem(), "每拍一格 ⇒ 4 拍后到 slot 5");
     }
 
     @Test
@@ -800,6 +801,81 @@ class ContainerFluidDataTest {
 
         assertEquals(Items.COBBLESTONE, ctx.getItem(0).getItem(),
             "default 回退 ⇒ 不区分源/流动的流体行为零变化（源格也是圆石）");
+    }
+
+    // ── 统一时钟（2026-10-06）：生长类逻辑一律走该流体自己的节拍 ──────────
+
+    @Test
+    @DisplayName("㊸ 时钟①：晋升只在该流体的**推进拍**发生（水 flowSpeed=5 ⇒ 汲走后第 5 个推进拍才补回）")
+    void promotion_followsFluidClock() {
+        FluidFlowBehaviors.register(Fluids.WATER.getFluidType(), new FluidFlowBehavior() {
+            @Override public boolean canFlow() { return true; }
+            @Override public int maxLevel() { return ContainerFluidData.MAX_FLOW_LEVEL; }
+            @Override public int flowSpeed() { return 5; }   // 与生产水同节拍
+            @Override public boolean shouldPromote(int slot, int sourceNeighborCount) {
+                return sourceNeighborCount >= 2;
+            }
+        });
+        FakeHandler h = new FakeHandler(9);
+        var ctx = new SimpleContainerContext(h);
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
+        fluid.registerGeneratedSource(2, Fluids.WATER.getFluidType());
+        for (int t = 0; t < 6; t++) fluid.tick(ctx);
+        assertTrue(fluid.isGeneratedSource(1), "首个推进拍即完成晋升（水真的流到那格才升源）");
+
+        fluid.removeGeneratedSource(1);   // 汲走中间源
+        for (int t = 0; t < 4; t++) {
+            fluid.tick(ctx);
+            assertFalse(fluid.isGeneratedSource(1), "未到推进拍 ⇒ 不补回（第 " + (t + 1) + " 拍）");
+        }
+        fluid.tick(ctx);
+        assertTrue(fluid.isGeneratedSource(1), "下一个推进拍 ⇒ 升格补回");
+        assertTrue(fluid.isSource(1), "补回后当拍可用（源即时）");
+    }
+
+    @Test
+    @DisplayName("㊹ 时钟② 等价性：晋升只是变慢，**终态与瞬时基线相同**（慢流体跑够拍数 ≡ 瞬时）")
+    void promotion_slowButSameSteadyState() {
+        String instant = trioSteadyState(0, 12);
+        String slow = trioSteadyState(5, 60);
+        assertEquals(instant, slow, "晋升上时钟只改时序，不改终态（源集合 + 流动覆盖）");
+    }
+
+    /** 三连源场景跑 N 拍，返回「源集合 | 流动覆盖」终态签名（供等价性对比）。 */
+    private static String trioSteadyState(int flowSpeed, int ticks) {
+        FluidFlowBehaviors.register(Fluids.WATER.getFluidType(), new FluidFlowBehavior() {
+            @Override public boolean canFlow() { return true; }
+            @Override public int maxLevel() { return ContainerFluidData.MAX_FLOW_LEVEL; }
+            @Override public int flowSpeed() { return flowSpeed; }
+            @Override public boolean shouldPromote(int slot, int sourceNeighborCount) {
+                return sourceNeighborCount >= 2;
+            }
+        });
+        FakeHandler h = new FakeHandler(9);
+        var ctx = new SimpleContainerContext(h);
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
+        fluid.registerGeneratedSource(2, Fluids.WATER.getFluidType());
+        for (int t = 0; t < ticks; t++) fluid.tick(ctx);
+        return new java.util.TreeSet<>(fluid.getGeneratedSources().keySet())
+            + " | " + new java.util.TreeSet<>(fluid.getFlows().keySet());
+    }
+
+    @Test
+    @DisplayName("㊺ 时钟③：物品推动按流体节拍（慢岩浆 flowSpeed=10 ⇒ 只在推进拍推，不做 4t 一次）")
+    void pushItems_followsFluidClock() {
+        registerSlowLava();   // flowSpeed 10
+        var ctx = row(ItemStack.EMPTY, new ItemStack(Items.NETHERITE_INGOT));  // 防火物品：不被焚毁，只会被推
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(0, Fluids.LAVA.getFluidType());
+
+        for (int t = 0; t < 10; t++) fluid.tick(ctx);
+        assertEquals(1, ctx.getItem(1).getCount(), "未到推进拍 ⇒ 物品不动（旧实现会每 4t 推一次）");
+
+        fluid.tick(ctx);   // 下一个推进拍：岩浆长出下一格 ⇒ 同拍推动
+        assertTrue(ctx.getItem(1).isEmpty(), "推进拍上物品被推走");
+        assertEquals(Items.NETHERITE_INGOT, ctx.getItem(2).getItem(), "推到下游 slot 2");
     }
 
     @Test

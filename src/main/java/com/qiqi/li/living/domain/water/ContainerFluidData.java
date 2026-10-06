@@ -6,6 +6,7 @@ import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -64,7 +65,6 @@ public class ContainerFluidData {
 
     public static final int SOURCE_LEVEL = 0;
     public static final int MAX_FLOW_LEVEL = 7;
-    public static final int FLOW_STEP_TICKS = 4;
 
     public static class FlowEntry {
         int level;
@@ -238,25 +238,27 @@ public class ContainerFluidData {
 
         tickCounter++;
 
-        // 目标层：拓扑每 tick 全量重算（播种挤没 + BFS + 晋升收敛）—— 移除/挤没/拓扑即时
+        // 目标层：拓扑每 tick 全量重算（播种挤没 + BFS）—— 移除/挤没/拓扑即时
         Map<Integer, FlowEntry> targets = computeTargets(containerSize, width, ctx);
 
         // 实际层：flows 向目标推进（生长按流体节拍渐进，移除/源即时）
         pruneActual(targets);
         ensureSourceCells(targets);
-        advanceGrowth(targets, containerSize, width, ctx);
+        Set<FluidType> advanced = advanceGrowth(targets, containerSize, width, ctx);
 
-        // ⚠️ 相位顺序（2026-10-06 定稿）：**反应（机制五）先于焚毁（机制一）** ——
-        // 岩浆重新流入产物格时先反应（产物 +1、岩浆退去），焚毁就看不到该格 ⇒
-        // 凝固产物不会被岩浆自己烧掉，圆石才能持续累加（刷石机自动产出）。
-        transformSourceItems(ctx);   // 机制三：源格 = 转化台（水的表条目转化；岩浆不转化）
-        reactFrontiers(ctx);         // 机制五：熔岩格四邻有水 ⇒ 产物凝固落格（刷石机）
-        incinerateFlowItems(ctx);    // 机制一：熔岩格（**含源格**）非活物品焚毁/源诞生
+        // ── 生长类逻辑：一律走**该流体自己的节拍**（2026-10-06 统一时钟）──
+        // 晋升：实际层 + 该流体推进拍（升格当拍改写为源）
+        promoteInActualLayer(advanced, containerSize, width);
+        // 推动：与该流体的蔓延同拍同频，排在蔓延之后（物品跟着刚长出的前沿走）
+        pushItems(ctx, containerSize, width, advanced);
 
-
-        if (tickCounter % FLOW_STEP_TICKS == 0) {
-            pushItems(ctx, containerSize, width);
-        }
+        // ── 反应类逻辑：当拍生效（外部投放 / 异种流体接触）──
+        // 机制三：源格 = 转化台（水的表条目转化；岩浆不转化）
+        transformSourceItems(ctx);
+        // 机制五：熔岩格四邻有水 ⇒ 产物凝固落格（刷石机 / 黑曜石）
+        reactFrontiers(ctx);
+        // 机制一：熔岩格（含源格）非活物品焚毁/源诞生
+        incinerateFlowItems(ctx);
     }
 
     /** 每流体推进节拍记忆（tickCounter）；跨存档不保留（重进流体重新生长，已拍板）。 */
@@ -394,19 +396,16 @@ public class ContainerFluidData {
      * - 每个槽位取最近水源的 level（多水源取最小值）
      */
     /**
-     * 目标层计算（时序化后改名）：拓扑每 tick 全量重算 —— 播种（挤没判定）+ BFS + 晋升收敛。
+     * 目标层计算：拓扑每 tick 全量重算 —— 播种（挤没判定）+ BFS，<b>纯函数</b>。
      * 返回<b>目标流表</b>（每个格子的流体最终应到哪），不直接写 {@link #flows} ——
      * 实际层（flows）由 {@link #advanceGrowth} 按流体节拍向目标推进。
+     *
+     * <p>⚠️ 2026-10-06：晋升收敛循环已**删除** —— 晋升改到实际层、随该流体节拍发生
+     * （见 {@link #promoteInActualLayer}），升格后的水网扩张由逐拍生长自然承担，
+     * 不再需要同拍重跑 BFS。</p>
      */
     private Map<Integer, FlowEntry> computeTargets(int containerSize, int width, ContainerContext ctx) {
-        Map<Integer, FlowEntry> newFlows;
-        // 晋升收敛循环（1b-2 接缝）：升格为源后水网会扩张 ⇒ 重跑 BFS，直到无新升格。
-        // 默认行为不晋升（shouldPromote 恒 false）⇒ 恰好一轮，与旧行为一致。
-        while (true) {
-            newFlows = spread(containerSize, width, ctx);
-            if (!tryPromote(newFlows, containerSize, width)) break;
-        }
-        return newFlows;
+        return spread(containerSize, width, ctx);
     }
 
     // ── 实际层三相位（时序化，2026-10-05）────────────────────
@@ -449,10 +448,16 @@ public class ContainerFluidData {
      * <p>节拍：{@code flowSpeed() < 0} = 派生自原版 {@code getTickDelay}
      * （水 5 / 岩浆 30，下界加速自动成立）；{@code 0} = 瞬时（实际直接取目标）；
      * {@code N} = 每 N tick 推进一格。静止流体（canFlow=false）无生长。</p>
+     *
+     * <p>⚠️ 返回<b>本拍真正推进过的流体集合</b>（2026-10-06 统一时钟）：晋升与物品推动
+     * 只对本集合里的流体执行 ⇒ 二者与该流体的蔓延<b>同拍同频</b>。</p>
+     *
+     * @return 本拍推进过的流体（瞬时模式 = 全部会流动的目标流体）
      */
-    private void advanceGrowth(Map<Integer, FlowEntry> targets, int containerSize, int width,
-                               ContainerContext ctx) {
+    private Set<FluidType> advanceGrowth(Map<Integer, FlowEntry> targets, int containerSize, int width,
+                                         ContainerContext ctx) {
         Level level = ctx.getLevel();
+        Set<FluidType> advanced = new LinkedHashSet<>();
         // 按流体分组非源目标格
         Map<FluidType, List<Integer>> byFluid = new LinkedHashMap<>();
         for (var e : targets.entrySet()) {
@@ -468,17 +473,19 @@ public class ContainerFluidData {
             int speed = behavior.flowSpeed();
             if (speed < 0) speed = vanillaTickDelay(fluid, level);
             if (speed <= 0) {
-                // 瞬时模式：实际直接取目标
+                // 瞬时模式：实际直接取目标（每拍都算推进过）
                 for (int slot : group.getValue()) {
                     FlowEntry t = targets.get(slot);
                     flows.put(slot, new FlowEntry(t.level(), t.isSource(), t.fromSlot(), fluid));
                 }
+                advanced.add(fluid);
                 continue;
             }
 
             Integer last = lastAdvance.get(fluid);
             if (last != null && tickCounter - last < speed) continue;   // 未到节拍
             lastAdvance.put(fluid, tickCounter);
+            advanced.add(fluid);
 
             // 同步快照语义：全部新值基于推进前快照计算，随后统一应用
             List<Runnable> updates = new ArrayList<>();
@@ -502,6 +509,38 @@ public class ContainerFluidData {
                 updates.add(() -> flows.put(slot, new FlowEntry(lv, false, fs, fluid)));
             }
             updates.forEach(Runnable::run);
+        }
+        return advanced;
+    }
+
+    /**
+     * 晋升（2026-10-06 统一时钟：从目标层搬到<b>实际层</b> + 该流体节拍）。
+     *
+     * <p>判定输入 = <b>实际层</b>四邻中已是源的个数（原版 {@code getNewLiquid}：
+     * 「本格有流体」+「水平相邻同流体源 ≥2」⇒ 升源）—— 不再在目标层做「预见式升源」。
+     * 只对本拍<b>推进过</b>的流体执行（与蔓延同频）；升格<b>当拍</b>改写实际层为源（源即时）。</p>
+     *
+     * <p>候选必然是「实际存在的流动格」：活物品格在 {@link #pruneActual} 已被清除
+     * （活物品阻挡 BFS ⇒ 目标层无该格），因此不会出现「格里有活物品却被升源」。</p>
+     *
+     * <p>⚠️ 再生时序由「下一 tick」变为「下一推进拍」（水 ≤5t / 瞬时模式 = 每拍）——
+     * 用户 2026-10-06 确认接受：一致性优先，要高供水速率靠多源并行。</p>
+     */
+    private void promoteInActualLayer(Set<FluidType> advanced, int containerSize, int width) {
+        for (FluidType fluid : advanced) {
+            FluidFlowBehavior behavior = FluidFlowBehaviors.of(fluid);
+            List<Integer> candidates = new ArrayList<>();
+            for (var e : flows.entrySet()) {
+                FlowEntry fe = e.getValue();
+                if (fe.isSource || fe.fluid() != fluid) continue;
+                if (behavior.shouldPromote(e.getKey(), countSourceNeighbors(flows, e.getKey(), containerSize, width))) {
+                    candidates.add(e.getKey());
+                }
+            }
+            for (int slot : candidates) {
+                generatedSources.put(slot, fluid);
+                flows.put(slot, new FlowEntry(SOURCE_LEVEL, true, -1, fluid));   // 源即时
+            }
         }
     }
 
@@ -579,27 +618,6 @@ public class ContainerFluidData {
         return newFlows;
     }
 
-    /**
-     * 晋升检查（1b-2 接缝）：问每个<b>流动格</b>的行为「是否升格为源」；有升格则写入
-     * {@link #generatedSources}（永久资产）并返回 {@code true}（外层据此重跑 BFS）。
-     *
-     * <p>默认行为 {@link FluidFlowBehavior#shouldPromote} 恒 false ⇒ 永不晋升，与旧行为一致。</p>
-     */
-    private boolean tryPromote(Map<Integer, FlowEntry> newFlows, int containerSize, int width) {
-        boolean promoted = false;
-        for (var e : newFlows.entrySet()) {
-            FlowEntry fe = e.getValue();
-            if (fe.isSource) continue;
-            int slot = e.getKey();
-            FluidFlowBehavior behavior = FluidFlowBehaviors.of(fe.fluid);
-            if (behavior.shouldPromote(slot, countSourceNeighbors(newFlows, slot, containerSize, width))) {
-                generatedSources.put(slot, fe.fluid);
-                promoted = true;
-            }
-        }
-        return promoted;
-    }
-
     /** 该格四邻中已是源的个数（晋升判定的输入）。 */
     private static int countSourceNeighbors(Map<Integer, FlowEntry> flows, int slot, int containerSize, int width) {
         int count = 0;
@@ -625,9 +643,22 @@ public class ContainerFluidData {
      * - 堆叠合并通过 ctx.setItem() 确保容器变更通知
      * - 使用 moved 标记避免同一物品被级联推动两次
      */
-    private void pushItems(ContainerContext ctx, int containerSize, int width) {
+    private void pushItems(ContainerContext ctx, int containerSize, int width, Set<FluidType> advanced) {
+        for (FluidType fluid : advanced) {
+            pushFluidItems(ctx, containerSize, width, fluid);
+        }
+    }
+
+    /**
+     * 某一流体自己的流树推动（2026-10-06 统一时钟：<b>每流体节拍一次</b>，不再是全局 4t）。
+     *
+     * <p>只处理该流体的格：下游映射、level 升序遍历、{@code moved} 集合全部按流体切片，
+     * 避免「A 流体的物品被 B 流体的树推动」。水 5t / 岩浆 30t（黏性对上）。</p>
+     */
+    private void pushFluidItems(ContainerContext ctx, int containerSize, int width, FluidType fluid) {
         Map<Integer, List<Integer>> downstream = new HashMap<>();
         for (var entry : flows.entrySet()) {
+            if (entry.getValue().fluid() != fluid) continue;
             int slot = entry.getKey();
             FlowEntry fe = entry.getValue();
             if (fe.fromSlot >= 0) {
@@ -635,7 +666,10 @@ public class ContainerFluidData {
             }
         }
 
-        List<Map.Entry<Integer, FlowEntry>> sorted = new ArrayList<>(flows.entrySet());
+        List<Map.Entry<Integer, FlowEntry>> sorted = new ArrayList<>();
+        for (var entry : flows.entrySet()) {
+            if (entry.getValue().fluid() == fluid) sorted.add(entry);
+        }
         sorted.sort((a, b) -> Integer.compare(a.getValue().level, b.getValue().level));
 
         Set<Integer> moved = new HashSet<>();
