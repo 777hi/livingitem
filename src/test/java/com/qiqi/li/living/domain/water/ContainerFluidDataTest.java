@@ -509,10 +509,20 @@ class ContainerFluidDataTest {
      * 产物对同生产口径（{@code WaterRegistration}）：**流动格 → 圆石，源格 → 黑曜石**。
      */
     private static void registerSlowLava() {
+        registerSlowLava(10);
+    }
+
+    /**
+     * 注册慢流体（岩浆 FluidType）：maxLevel 3 + 焚毁 / 前沿反应 —— CA 渐进生长。
+     * 产物对同生产口径（{@code WaterRegistration}）：**流动格 → 圆石，源格 → 黑曜石**。
+     *
+     * @param flowSpeed 岩浆节拍（默认 10；生产口径是 30 —— 见 {@link #registerProductionCadence()}）
+     */
+    private static void registerSlowLava(int flowSpeed) {
         FluidFlowBehaviors.register(Fluids.LAVA.getFluidType(), new FluidFlowBehavior() {
             @Override public boolean canFlow() { return true; }
             @Override public int maxLevel() { return 3; }
-            @Override public int flowSpeed() { return 10; }
+            @Override public int flowSpeed() { return flowSpeed; }
             @Override public IncinerateResult incinerateResult(ItemStack item) {
                 if (isStoneFamilyFull(item)) return IncinerateResult.SPAWN_SOURCE;
                 if (item.has(net.minecraft.core.component.DataComponents.FIRE_RESISTANT)) return IncinerateResult.SURVIVE;
@@ -531,6 +541,18 @@ class ContainerFluidDataTest {
                 return incoming == Fluids.WATER.getFluidType();
             }
         });
+    }
+
+    /**
+     * 注册**生产节拍**：水 5t/格、岩浆 30t/格（原版 getTickDelay 派生值）。
+     *
+     * <p>跨流体几何的用例必须用它 —— 基线水是<b>瞬时</b>（speed 0）⇒ 到达时间恒 0 ⇒
+     * 会赢走所有争用格（岩浆只剩源格）⇒ 看到的是"退化后的"几何，不是生产行为。</p>
+     */
+    private static void registerProductionCadence() {
+        FluidFlowBehaviors.register(Fluids.WATER.getFluidType(),
+            FluidFlowBehavior.flowing(ContainerFluidData.MAX_FLOW_LEVEL, 5));
+        registerSlowLava(30);
     }
 
     private static boolean isStoneFamilyFull(ItemStack item) {
@@ -625,22 +647,45 @@ class ContainerFluidDataTest {
     @Test
     @DisplayName("㉝ 刷石机：熔岩前沿遇水凝固为圆石（frontierReaction），产物格不是墙 ⇒ 圆石持续累加")
     void frontierReaction_cobblestoneAtContact() {
-        registerSlowLava();   // 岩浆 flowing(3, 10)
+        // 生产节拍 + **够远的几何**（9 格单行两端）：岩浆 30t/格、水 5t/格 ⇒
+        // 岩浆守得住紧贴自己的一格（30 < 5×7），刷石机才成立（见 buffer/living-fluid-arrival-time-claim.md §4）
+        registerProductionCadence();
         var ctx = row();
         var fluid = new ContainerFluidData();
         fluid.registerGeneratedSource(0, Fluids.LAVA.getFluidType());
-        fluid.registerGeneratedSource(4, Fluids.WATER.getFluidType());
+        fluid.registerGeneratedSource(8, Fluids.WATER.getFluidType());
 
-        for (int t = 0; t < 45; t++) fluid.tick(ctx);
+        for (int t = 0; t < 120; t++) fluid.tick(ctx);
 
-        assertTrue(ctx.getItem(2).is(Items.COBBLESTONE), "圆石落在**熔岩侧**接触格（slot 2），水格不动");
-        assertTrue(fluid.isSource(0) && fluid.isSource(4), "两侧源保留（岩浆源离水 ≥2 格）");
-        assertFalse(fluid.isSource(2), "接触格已凝固退去（不是源）");
+        assertTrue(fluid.isSource(0), "岩浆源存活（几何够远 ⇒ 水不会贴到源格）");
+        assertTrue(fluid.isSource(8), "水源存活");
+        assertTrue(ctx.getItem(1).is(Items.COBBLESTONE),
+            "圆石落在**熔岩侧**接触格（slot 1 = 岩浆守住的那一格），水格不动");
+        assertEquals(Fluids.WATER.getFluidType(), fluid.getFlows().get(2).fluid(),
+            "水占满它在时间上先到的格子（slot 2 起）—— 不再有「在水的流域内却进不去」的墙");
 
-        int before = ctx.getItem(2).getCount();
-        for (int t = 0; t < 25; t++) fluid.tick(ctx);   // 再跑两轮岩浆节拍
-        assertTrue(ctx.getItem(2).getCount() > before,
+        int before = ctx.getItem(1).getCount();
+        for (int t = 0; t < 120; t++) fluid.tick(ctx);   // 再跑几轮岩浆节拍
+        assertTrue(ctx.getItem(1).getCount() > before,
             "产物格不是墙：岩浆重新流入同一格再反应 ⇒ 圆石累加（刷石机自动产出，无需玩家挖）");
+    }
+
+    @Test
+    @DisplayName("㊿⁺ 几何约束（到达时间分配的代价）：两源太近 ⇒ 水贴到岩浆源 ⇒ 黑曜石 + 源湮灭")
+    void tooCloseGeometry_lavaSourcePetrifies() {
+        registerProductionCadence();
+        var ctx = row();
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(0, Fluids.LAVA.getFluidType());
+        fluid.registerGeneratedSource(4, Fluids.WATER.getFluidType());   // 仅 4 格 ⇒ 岩浆守不住前沿
+
+        for (int t = 0; t < 120; t++) fluid.tick(ctx);
+
+        assertEquals(Items.OBSIDIAN, ctx.getItem(0).getItem(),
+            "水在时间上先到 ⇒ 贴到岩浆源 ⇒ 源格反应 ⇒ 黑曜石（原版同款：水够得着岩浆源就报废）");
+        assertFalse(fluid.isGeneratedSource(0), "岩浆源被反应湮灭");
+        assertEquals(Fluids.WATER.getFluidType(), fluid.getFlows().get(1).fluid(),
+            "岩浆领地收缩为 0 ⇒ 水接管（刷石机在内的近距离玩法不成立，需把两源摆远）");
     }
 
     @Test
@@ -760,28 +805,34 @@ class ContainerFluidDataTest {
     @Test
     @DisplayName("㊶ 黑曜石③：端到端循环 —— 满组圆石 ⇒ 岩浆源 ⇒ 黑曜石 ⇒ 焚毁 ⇒ 回到圆石")
     void obsidianLoop_endToEnd() {
-        registerSlowLava();
+        registerProductionCadence();   // 生产节拍 + 够远几何（同 ㉝）：岩浆守得住 slot 1
         FakeHandler h = new FakeHandler(9);
         var ctx = new SimpleContainerContext(h);
         var fluid = new ContainerFluidData();
-        fluid.registerGeneratedSource(0, Fluids.LAVA.getFluidType());   // 岩浆源（离水 ≥2 格）
-        fluid.registerGeneratedSource(4, Fluids.WATER.getFluidType());
-        h.slots[2] = new ItemStack(Items.COBBLESTONE, 64);              // 接触格已攒满
+        fluid.registerGeneratedSource(0, Fluids.LAVA.getFluidType());
+        fluid.registerGeneratedSource(8, Fluids.WATER.getFluidType());
+
+        // 先跑到稳态：岩浆守住 slot 1、水占满 slot 2 起、圆石在 slot 1 累加
+        for (int t = 0; t < 120; t++) fluid.tick(ctx);
+        assertEquals(Fluids.WATER.getFluidType(), fluid.getFlows().get(2).fluid(),
+            "前置：水已推进到 slot 2（与岩浆接触格相邻）");
+
+        h.slots[1] = new ItemStack(Items.COBBLESTONE, 64);   // 接触格攒满 ⇒ 焚毁走 SPAWN_SOURCE
 
         boolean sawSource = false, sawObsidian = false;
-        for (int t = 0; t < 60 && !sawObsidian; t++) {
+        for (int t = 0; t < 200 && !sawObsidian; t++) {
             fluid.tick(ctx);
-            if (fluid.isGeneratedSource(2)) sawSource = true;
-            sawObsidian = ctx.getItem(2).is(Items.OBSIDIAN);
+            if (fluid.isGeneratedSource(1)) sawSource = true;
+            sawObsidian = ctx.getItem(1).is(Items.OBSIDIAN);
         }
         assertTrue(sawSource, "满组圆石（石头系）⇒ 该格诞生活熔岩源（循环的驱动步）");
         assertTrue(sawObsidian, "新生源邻水 ⇒ 黑曜石");
-        assertFalse(fluid.isGeneratedSource(2), "源格反应 ⇒ 源湮灭");
+        assertFalse(fluid.isGeneratedSource(1), "源格反应 ⇒ 源湮灭");
 
         boolean backToCobble = false;
-        for (int t = 0; t < 60 && !backToCobble; t++) {
+        for (int t = 0; t < 200 && !backToCobble; t++) {
             fluid.tick(ctx);
-            backToCobble = ctx.getItem(2).is(Items.COBBLESTONE);
+            backToCobble = ctx.getItem(1).is(Items.COBBLESTONE);
         }
         assertTrue(backToCobble, "黑曜石被蔓延回来的岩浆焚毁 ⇒ 重新反应 ⇒ 回到圆石（循环闭合）");
     }

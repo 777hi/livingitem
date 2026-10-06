@@ -2,6 +2,7 @@ package com.qiqi.li.living.domain.water;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -9,6 +10,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.PriorityQueue;
 import java.util.Set;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
@@ -576,10 +578,41 @@ public class ContainerFluidData {
         return found;
     }
 
-    /** 播种（派生源）+ BFS 扩散**一轮**，返回流动表（不改 {@link #flows}）。 */
+    /**
+     * 扩散的一格候选（按<b>到达时间</b>排序，2026-10-07：距离 ⇒ 到达时间）。
+     *
+     * @param arrival 从源算起的累计到达时间（tick）
+     * @param slot    目标格
+     * @param level   BFS 步数（= 流体 level）
+     * @param fromSlot 上游供给格
+     * @param fluid   该路径所属流体
+     */
+    private record SpreadNode(int arrival, int slot, int level, int fromSlot, FluidType fluid) {}
+
+    /** 该流体每蔓延一格的<b>时间成本</b>（0 = 瞬时 ⇒ 立刻铺满领地）。 */
+    private static int perCellCost(FluidFlowBehavior behavior, FluidType fluid, Level level) {
+        int speed = behavior.flowSpeed();
+        if (speed < 0) speed = vanillaTickDelay(fluid, level);
+        return Math.max(0, speed);
+    }
+
+    /**
+     * 播种（派生源）+ 扩散**一轮**，返回流动表（不改 {@link #flows}）。
+     *
+     * <p><b>抢占规则 = 到达时间</b>（2026-10-07 定档，方案见
+     * {@code docs/buffer/living-fluid-arrival-time-claim.md}）：每个流体的每格成本 = 它自己的节拍
+     * （水 5 / 岩浆 30，下界 10；瞬时 0），多源 Dijkstra 按到达时间升序定型 ⇒
+     * <b>分配与实际到达用同一个时钟</b>。此前按距离抢占 ⇒ 分配与到达脱节 ⇒ 出现「在水的流域内
+     * 却永远进不去」的墙（岩浆按距离/注册顺序守住接触格，哪怕它到得更慢）。</p>
+     *
+     * <p>不变量：<b>源格永不被蔓延抢占</b>（只能被反应湮灭）；<b>实际层被异种占据的格不抢</b>
+     * （上一批的「不驱逐」）；maxLevel / 活物品阻挡 / 挤没播种语义不变。</p>
+     */
     private Map<Integer, FlowEntry> spread(int containerSize, int width, ContainerContext ctx) {
         Map<Integer, FlowEntry> newFlows = new LinkedHashMap<>();
-        Deque<Integer> queue = new ArrayDeque<>();
+        Map<Integer, Integer> bestArrival = new HashMap<>();
+        PriorityQueue<SpreadNode> queue = new PriorityQueue<>(
+            Comparator.comparingInt(SpreadNode::arrival).thenComparingInt(SpreadNode::slot));
 
         // 播种：派生源（活水源）—— 无条件并入，不依赖任何物品在场。
         // 挤没判定在此进行：任何活物品进入派生源格 ⇒ 源被挤没（永久销毁，原版「放方块进水源」语义）。
@@ -599,21 +632,26 @@ public class ContainerFluidData {
                     continue;
                 }
                 newFlows.put(slot, new FlowEntry(SOURCE_LEVEL, true, -1, entry.getValue()));
-                queue.add(slot);
+                bestArrival.put(slot, 0);
+                queue.add(new SpreadNode(0, slot, SOURCE_LEVEL, -1, entry.getValue()));
             }
         }
 
         while (!queue.isEmpty()) {
-            int slot = queue.poll();
-            FlowEntry fe = newFlows.get(slot);
-            // 行为分档（1b-2）：静止流体不扩散；会流动的按各自的 level 上限（水 7 / 岩浆 3）
-            FluidFlowBehavior behavior = FluidFlowBehaviors.of(fe.fluid);
-            if (!behavior.canFlow() || fe.level >= behavior.maxLevel()) continue;
+            SpreadNode node = queue.poll();
+            // 已有更短到达时间的路径定型过 ⇒ 本条废弃（多源 Dijkstra 的松弛）
+            if (node.arrival() > bestArrival.getOrDefault(node.slot(), Integer.MAX_VALUE)) continue;
 
-            int[] neighbors = ContainerContext.getNeighbors(slot, containerSize, width);
+            // 行为分档（1b-2）：静止流体不扩散；会流动的按各自的 level 上限（水 7 / 岩浆 3）
+            FluidFlowBehavior behavior = FluidFlowBehaviors.of(node.fluid());
+            if (!behavior.canFlow() || node.level() >= behavior.maxLevel()) continue;
+            int cost = perCellCost(behavior, node.fluid(), ctx.getLevel());
+
+            int[] neighbors = ContainerContext.getNeighbors(node.slot(), containerSize, width);
             for (int neighbor : neighbors) {
-                // 已被占用（含被别的流体占用）⇒ 不覆盖 —— 流体不混色
-                if (newFlows.containsKey(neighbor)) continue;
+                // 源格永不被蔓延抢占（源只能由反应湮灭 / 汲走 / 挤没）—— 否则快流体会把源圈走
+                FlowEntry claimed = newFlows.get(neighbor);
+                if (claimed != null && claimed.isSource()) continue;
 
                 ItemStack item = ctx.getItem(neighbor);
                 if (LivingItemManager.isLivingItem(item)) continue;
@@ -626,11 +664,16 @@ public class ContainerFluidData {
                 // 「目标消失」一个职责（异种驱逐的决策权挪进这里）。
                 // ⚠️ 播种（generatedSources）**仍然覆盖**：倒桶是玩家显式行为，见 §5。
                 FlowEntry occupied = flows.get(neighbor);
-                if (occupied != null && occupied.fluid() != fe.fluid) continue;
+                if (occupied != null && occupied.fluid() != node.fluid()) continue;
 
-                int newLevel = fe.level + 1;
-                newFlows.put(neighbor, new FlowEntry(newLevel, false, slot, fe.fluid));
-                queue.add(neighbor);
+                // 到达时间更早 ⇒ 抢占（含改判：先前被更慢流体占下的格会被松弛掉）
+                int arrival = node.arrival() + cost;
+                if (arrival >= bestArrival.getOrDefault(neighbor, Integer.MAX_VALUE)) continue;
+
+                int newLevel = node.level() + 1;
+                bestArrival.put(neighbor, arrival);
+                newFlows.put(neighbor, new FlowEntry(newLevel, false, node.slot(), node.fluid()));
+                queue.add(new SpreadNode(arrival, neighbor, newLevel, node.slot(), node.fluid()));
             }
         }
 
