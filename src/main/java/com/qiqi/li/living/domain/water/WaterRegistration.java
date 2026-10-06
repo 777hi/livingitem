@@ -76,6 +76,14 @@ public final class WaterRegistration {
                     ? new ItemStack(Items.OBSIDIAN)
                     : null;
             }
+            // 源格替换（2026-10-06 B 档对齐原版 LavaFluid.canBeReplacedWith）：
+            // 原版门槛 getHeight() >= 0.444 ⇒ 在 2D（流动 level 1~3 ⇒ 高度 0.111~0.333）里
+            // **只有源格**（高度 0.889）够格 ⇒ 活水桶倒进活熔岩源格 = 该格变成水源（浇灭矿脉）。
+            // ⚠️ 水行为**不覆写** canBeReplacedBy ⇒ 水源格永不被替换（对齐 WaterFluid 的
+            // 「仅 DOWN + 非水」规则，2D 无 DOWN）—— 活岩浆桶倒不进活水源格。
+            @Override public boolean canBeReplacedBy(FluidType incoming, boolean selfIsSource) {
+                return selfIsSource && incoming == Fluids.WATER.getFluidType();
+            }
         });
 
         // 流体流动行为（1b-2 契约 + 流体侧 F2/F4）：

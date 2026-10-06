@@ -87,6 +87,31 @@ public interface FluidFlowBehavior {
         return null;
     }
 
+    /**
+     * **源格替换**判定（2026-10-06 B 档对齐原版）：倒桶时目标格<b>已是源</b>且流体与倒进来的
+     * <b>不同种</b>时，询问该源是否允许被替换 —— 允许则<b>同键改写源类型</b>
+     * （水倒进岩浆源格 ⇒ 该格变成水源，原岩浆源湮灭）。
+     *
+     * <p>对齐原版 {@code Fluid.canBeReplacedWith}：
+     * <ul>
+     *   <li>岩浆：{@code getHeight() >= 0.444 && incoming.is(WATER)} —— 在 2D 容器里流动 level
+     *       只有 1~3（高度 0.111~0.333）⇒ 门槛<b>只对源格成立</b>（源高度 0.889）；</li>
+     *   <li>水：{@code direction == DOWN && !is(WATER)} —— 2D 无 DOWN ⇒ <b>永不可被替换</b>
+     *       ⇒ 水行为<b>不覆写</b>本方法。</li>
+     * </ul>
+     *
+     * <p>默认 {@code false}：未覆写的流体既不阻止也不鼓励替换（安全默认）。</p>
+     *
+     * <p>⚠️ 只用于<b>源格</b>；倒进异种<b>流动</b>格一律直接覆盖（B 档明确保留的宽松口子，
+     * 原版因 3D 高度门槛会拒绝，2D 无「高度」概念故不放这条例外）。</p>
+     *
+     * @param incoming    倒进来的流体类型
+     * @param selfIsSource 该格是否源格（当前恒为 true，保留参数以便将来支持流动格门槛）
+     */
+    default boolean canBeReplacedBy(FluidType incoming, boolean selfIsSource) {
+        return false;
+    }
+
     // ── 活熔岩接缝（2026-10-05/06，流体侧填行为）────────────────
 
     /**

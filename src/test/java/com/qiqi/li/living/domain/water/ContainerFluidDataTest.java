@@ -2,6 +2,7 @@ package com.qiqi.li.living.domain.water;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -525,6 +526,10 @@ class ContainerFluidDataTest {
                 return neighbor == Fluids.WATER.getFluidType()
                     ? new ItemStack(Items.OBSIDIAN) : null;
             }
+            // 源格替换（2026-10-06 B 档）：同生产口径，源格可被水替换
+            @Override public boolean canBeReplacedBy(FluidType incoming, boolean selfIsSource) {
+                return selfIsSource && incoming == Fluids.WATER.getFluidType();
+            }
         });
     }
 
@@ -779,6 +784,31 @@ class ContainerFluidDataTest {
             backToCobble = ctx.getItem(2).is(Items.COBBLESTONE);
         }
         assertTrue(backToCobble, "黑曜石被蔓延回来的岩浆焚毁 ⇒ 重新反应 ⇒ 回到圆石（循环闭合）");
+    }
+
+    @Test
+    @DisplayName("㊻ 源格替换（对齐原版）：活水桶倒进**活熔岩源格** ⇒ 该格变成水源，原岩浆及下游退走")
+    void pour_overwritesLavaSourceWithWater() {
+        registerSlowLava();
+        FakeHandler h = new FakeHandler(9);
+        var ctx = new SimpleContainerContext(h);
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(0, Fluids.LAVA.getFluidType());
+        for (int t = 0; t < 40; t++) fluid.tick(ctx);          // 先让岩浆流开（30t/格）
+        assertEquals(Fluids.LAVA.getFluidType(), fluid.sourceFluid(0), "前置：slot 0 是活熔岩源");
+        assertNotNull(fluid.getFlows().get(1), "前置：岩浆已蔓延到 slot 1");
+
+        // 倒水：pour 的「异种源格 + 允许替换」分支 ⇒ 同键覆盖源类型
+        assertTrue(LivingBucketInteractSupport.replacesResidentSource(
+            fluid.sourceFluid(0), Fluids.WATER.getFluidType()), "熔岩源允许被水替换（0.444 门槛的 2D 投影）");
+        fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
+        fluid.tick(ctx);
+
+        assertEquals(Fluids.WATER.getFluidType(), fluid.sourceFluid(0), "该格已是水源（原岩浆源被覆盖湮灭）");
+        assertEquals(Fluids.WATER.getFluidType(), fluid.getFlows().get(0).fluid(), "实际层当拍改写为水");
+        var down = fluid.getFlows().get(1);
+        assertTrue(down == null || down.fluid() != Fluids.LAVA.getFluidType(),
+            "失去供给的岩浆下游退走（目标层收敛 + 移除即时）");
     }
 
     @Test

@@ -65,6 +65,12 @@ public final class LivingBucketInteractSupport {
     /**
      * 倒水服务端执行：目标格空且无源 → 诞生派生源；已有源 → 源不变（原版语义）。
      * 桶排空（换宿主 → 空桶形态）。前置校验由调用方完成（光标是满活桶 + 目标格无物品）。
+     *
+     * <p><b>异种源格</b>（2026-10-06 B 档对齐原版）：源格流体与倒进来的不同种时，问
+     * {@link FluidFlowBehavior#canBeReplacedBy} —— 允许则<b>同键改写源类型</b>
+     *（活水桶浇活熔岩源 ⇒ 该格变水源、原岩浆源湮灭，下游岩浆下一拍自然退走）；
+     * 不允许则源不变（如岩浆桶倒进水格：{@code WaterFluid.canBeReplacedWith} 在 2D 里恒false）。
+     * 倒进异种<b>流动</b>格一律直接覆盖（B 档保留的宽松口子）。</p>
      */
     public static void pour(ServerPlayer player, Slot slot, ItemStack carried) {
         Fluid fluid = LivingBucketFunction.getBucketFluid(carried);
@@ -74,10 +80,29 @@ public final class LivingBucketInteractSupport {
         if (fluidData == null) return;
 
         int containerSlot = slot.getContainerSlot();
-        if (!fluidData.isSource(containerSlot)) {
-            fluidData.registerGeneratedSource(containerSlot, fluid.getFluidType());
+        FluidType incoming = fluid.getFluidType();
+        FluidType resident = fluidData.sourceFluid(containerSlot);   // 实际层；非源格返回 null
+        if (resident == null) {
+            // 空格 / 任意流动格 ⇒ 诞生源（原版倒水成源；B 档：异种流动格也直接覆盖）
+            fluidData.registerGeneratedSource(containerSlot, incoming);
+        } else if (replacesResidentSource(resident, incoming)) {
+            // 异种源格且允许替换 ⇒ 同键覆盖（registerGeneratedSource 是 put，类型直接改写）
+            fluidData.registerGeneratedSource(containerSlot, incoming);
         }
+        // 同种源 / 不可替换的异种源 ⇒ 源不变（原版语义：往源里倒同种流体只是排空桶）
         player.containerMenu.setCarried(LivingBucketFunction.withFluid(carried, Fluids.EMPTY));
+    }
+
+    /**
+     * 倒桶判定：目标格已有的<b>源</b>是否被倒进来的流体<b>替换</b>（包级私有，供单测）。
+     *
+     * <p>同种源恒 {@code false}（原版语义：往水里倒水 nothing happens，只排空桶）。
+     * 跨流体规则问<b>被替换方</b>的行为（{@code canBeReplacedBy}）—— 知识留在流体侧，
+     * 与 {@code frontierReaction} / {@code incinerateResult} 同一接缝风格。</p>
+     */
+    static boolean replacesResidentSource(FluidType resident, FluidType incoming) {
+        if (resident == null || resident == incoming) return false;
+        return FluidFlowBehaviors.of(resident).canBeReplacedBy(incoming, true);
     }
 
     /**

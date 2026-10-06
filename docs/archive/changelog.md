@@ -188,6 +188,21 @@
   `ChestMenu` 但普通箱容器 false / 非 `ChestMenu` false / null false / 玩家侧两条）+
   重建 `FluidFlowClientCacheTest` 4 项（三份快照互不串 + `PLAYER_INV` 不翻转提示 + `clear()` 复位）。
   文档：tech §7 / §9 + TODO 第 1 项（改回「已完成」+ 三次泄漏史指针）+ AGENTS。
+- ✅ **倒桶路径对齐原版（B 档，510 测试全绿，同日第六批次）**：契约加 default
+  `canBeReplacedBy(incoming, selfIsSource)`（default `false` ⇒ 未覆写的流体永不被替换），
+  熔岩覆写 `selfIsSource && incoming == WATER`，**水不覆写**。`pour` 改为：空格/任意流动格 ⇒ 诞生源；
+  **同种源 ⇒ 源不变**（原版语义）；**异种源格 ⇒ 问该源可不可替换** —— 活水桶倒进活熔岩源格
+  ⇒ 该格**变成水源**（同键覆盖源类型，原岩浆源湮灭、下游岩浆下一拍自然退走，**不需要额外清理逻辑**）；
+  活岩浆桶倒进活水源格**被拒**（对齐 `WaterFluid.canBeReplacedWith`「仅 DOWN + 非水」= 2D 恒 false）。
+  🔴 **一个有用的 2D 投影结论**：原版 `LavaFluid.canBeReplacedWith` 的 `getHeight() >= 0.444` 门槛，
+  在我们的 `maxLevel 3` 下（流动 level 1~3 ⇒ 高度 0.111~0.333）**永远达不到** ⇒ 严格对齐等价于
+  「**只有源格可被水替换**」；而「倒进异种**流动**格」原版会拒绝，2D 无「高度」概念故 **B 档明确保留
+  覆盖**这条口子。客户端**不预判**（拒绝时表现为「右键无反应」= 原版倒不进，规则只留一份）。
+  ⚠️ **认知更正**：原版**「倒水进岩浆源 ⇒ 黑曜石」不存在** —— 倒桶只做「替换流体」，黑曜石/圆石只来自
+  熔岩**蔓延**到水格（机制五，已落地）。此前 §3.5 把这一格记成「待做」是错的，已更正。
+  测试：新增 `LivingBucketInteractSupportTest` 3 项（契约默认 false / 熔岩三条分支 / 倒桶判定四例）+
+  `ContainerFluidDataTest` ㊻ 覆盖语义（源被覆盖成水 + 实际层当拍改写 + 下游岩浆退走）。
+  方案留痕 `docs/buffer/living-pour-source-replace.md`。
 ## 2026-10-05
 
 - ✅ **引擎时序化（flowSpeed 消费，跨流体反应的时间地基）**（**473 测试全绿**）：
