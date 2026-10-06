@@ -29,11 +29,14 @@
   定稿（用户拍板「**其实，没有可以显示的信息在tooltip 上的**」）：**删掉该行 + 删 lang 键**
   （形态本身就是信息 —— 水桶 / 岩浆桶 / 空桶；「储存 × mB」对恒 1 个源的桶是废话），
   已否的 B 档（补第二个参数显示 `× 1000 mB`）不做。
-  配套：`LivingItemTooltip` 的「空行 + `--- 活物品 ---`」从**无条件**改为**惰性**
-  （先收集所有适用功能的行，**非空才**输出整段）—— 否则零 tooltip 行的物品会留下空标题，
-  这是**通用**修复而不只桶；为此把渲染体抽成可测静态方法 `renderSection(functions, …)`
-  （functions 由调用方传入，测试可喂 stub）。
-  测试 +5：`LivingItemTooltipTest` 4 项 + `LivingBucketFunctionTest` 1 项（活桶零 tooltip 行）。
+  配套：活物品段标题**保留**（用户二次拍板「标题不要删，标题是正常的」——
+  「`--- 活物品 ---`」是**「这是活物品」标记**而非内容行，零内容行时照旧输出）。
+  🔴 我曾实现「零行 ⇒ 整段不输出」的**惰性标题**（怕留空标题）并**被否**：那会把标记一起丢掉。
+  活桶 tooltip 定稿后就是「空行 + `--- 活物品 ---` + 无内容行」。
+  保留的改动只有「渲染体抽成可测静态方法 `renderSection(functions, …)`」（行为不变，
+  但去掉对全局注册表的依赖，测试可喂 stub）。
+  测试 +6：`LivingItemTooltipTest` 5 项（含**真实活桶 ⇒ 只有标题没有内容行**这条合起来的表现）
+  + `LivingBucketFunctionTest` 1 项（活桶零内容行）。**534 全绿**。
   方案留痕 `docs/buffer/living-bucket-tooltip-removal.md`（含顺手发现的死 lang 键
   `tooltip.livingitem.water_bucket.status` / `.flow`，待实测收口清理）。
 

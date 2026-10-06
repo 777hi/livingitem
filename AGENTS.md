@@ -146,10 +146,11 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 533 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
-全绿基线：`532 passed / 0 failed / 1 skipped`（2026-10-07 活桶 tooltip 定稿删行：
-新增 `LivingItemTooltipTest` 4 项（零行整段不输出 / 不适用功能视同零行 / 有行则空行+标题+行 /
-多功能标题只出现一次且行序保持）+ `LivingBucketFunctionTest` 1 项（活桶零 tooltip 行）；
+**合计测试用例 534 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
+全绿基线：`533 passed / 0 failed / 1 skipped`（2026-10-07 活桶 tooltip 定稿：
+新增 `LivingItemTooltipTest` 5 项（零内容行**仍输出**标题 / 不适用功能同样保留标题 /
+**真实活桶 ⇒ 只有标题没有内容行** / 有内容行则空行+标题+行 / 多功能标题只一次且行序保持）
++ `LivingBucketFunctionTest` 1 项（活桶零内容行）；
 2026-10-07 玩家路径落盘守卫：
 新增 `PlayerFluidDataPersistenceTest` 4 项（有源写回 / 变空移除 / 重进不复活 / 两键隔离 / 回填）；
 2026-10-07 性能收尾：新增
@@ -226,7 +227,7 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
-| 2026-10-07 | 🧹 **活桶 tooltip 定稿：删行+ 标题惰性化**（533 全绿）：实测见 tooltip 漏出 `储存: %1$s × %2$s mB` ⇒ 根因三层：lang 两个占位符 vs 代码只传 1 个参数（`e2d7aa1` FluidStack 时代传 2 个，`getBucketFluid` 改回返回 `Fluid` 后没同步）→ 原版 `TranslatableContents.decompose` 抛 `TranslatableFormatException` →**整条模板当纯文本渲染**（所以两个占位符一起漏）。全仓审计（一次性脚本扫字面量 key × zh/en 占位符）：参数不足**仅此 1 处**、zh/en 不一致 0 处、参数多余 145 处无害（原版忽略多余参数）。用户拍板「**没有可以显示的信息在tooltip 上**」⇒ 删掉该行 + lang 键（形态本身就是信息：水桶/岩浆桶/空桶）；配套把 `LivingItemTooltip` 的「空行 + `--- 活物品 ---`」改**惰性**（先收集功能行、非空才输出整段）—— 否则零行物品会留空标题，**通用**修复不只桶。测试 +5 | `buffer/living-bucket-tooltip-removal.md` |
+| 2026-10-07 | 🧹 **活桶 tooltip 定稿：删内容行、保留标题**（534 全绿）：实测见 tooltip 漏出 `储存: %1$s × %2$s mB` ⇒ 根因三层：lang 两个占位符 vs 代码只传 1 个参数（`e2d7aa1` FluidStack 时代传 2 个，`getBucketFluid` 改回返回 `Fluid` 后没同步）→ 原版 `TranslatableContents.decompose` 抛 `TranslatableFormatException` →**整条模板当纯文本渲染**（所以两个占位符一起漏）。全仓审计：参数不足**仅此 1 处**、zh/en 不一致 0 处、参数多余 145 处无害（原版忽略多余参数）。用户拍板「**没有可以显示的信息在tooltip 上**」⇒ 删该行 + 删 lang 键（形态本身就是信息：水桶/岩浆桶/空桶）。⚠️ 我顺手加的「零行则整段不输出」惰性标题**被否**（用户：「标题不要删，标题是正常的」）—— `--- 活物品 ---` 是**「这是活物品」标记**不是内容行，零内容行时照旧输出；只保留「渲染体抽成可测静态方法」这个零行为变化的改动。测试 +6 | `buffer/living-bucket-tooltip-removal.md` |
 | 2026-10-07 | ✅ **玩家路径落盘守卫补齐**（528 全绿）：玩家容器（背包 / 末影箱）无 BE 可挂、只落 `CONTAINER_FLUID_DATA_PLAYER`（`Map<容器键,数据>`，一人两键），此前**零用例**。用户实测确认 happy path（源重进都在）⇒ 自动化补**反方向**：「数据变空 ⇒ map 条目移除 ⇒ **重进不复活**」（同层 2026-10-04 BE 侧出过"源复活"事故），另加「两容器键互不干扰」+「重进从附件回填」正向用例。测试 `PlayerFluidDataPersistenceTest` 4 项（放 `container` 包：`EnderChestContainerContext` 构造器包级私有；用 `clearAllCaches()` 模拟重进） | `living-fluid-tech.md` §8 |
 | 2026-10-07 | ✅ **性能收尾：四处零行为变化短路 + 量测基线**（"1 万容器"只当**探针**，按真实条件排序动手）：① `flushAfterTick` 对"无数据且从未下发过"短路；② 先收集 viewers，**空则不建包**；③ 未开菜单玩家 O(1) 跳过；④ 新增 `ContainerContext.fillNeighbors`，四个热点改**每相位一个复用缓冲**（不用全局共享——晋升会嵌套调用 ⇒ 别名 bug）。🔴 **实测与预估相反：14.42 → 12.36 µs/容器/拍（−14%）**；空容器 28→26 ns。**分配不是瓶颈**，大头是"每拍全量重算"；外推 1 万**有流体**容器 = 124 ms/拍（撑不住）但真实规模几百个 ≈ 2~3 ms/拍（够用）⇒ **结构性节流不做**。⚠️ 教训：不量就会把"~200× 减少分配"当收益写进 changelog。**524 测试全绿** | `buffer/living-fluid-perf-2026-10-07.md` |
 | 2026-10-07 | 🔧 **收尾审查批次（六维度审查后修复）**：① 🔴 **晋升邻源计数不分流体**（真 bug）⇒ 岩浆源会被算进水的「≥2邻源」⇒ 流动水夹在两个岩浆源之间错误晋升；② 删零调用的 `exportFlowData()`；③ `onContainerClose` 两处 `return` ⇒ `continue`（多容器菜单漏清）；④ `representativeFluid` 重复实现 + ConcurrentHashMap `put(null)` 潜在 NPE ⇒ 统一委托；⑤ `isFluidValid` 改按 tank（NeoForge 契约）；⑥ 客户端 javadoc。⚠️ 口径更正：晋升/焚毁 SPAWN_SOURCE **直接写实际层（当拍）**，倒桶/汲走/管道**只写 generatedSources（下一拍）**。测试 +5：同流体邻源、慢者让位、**末影箱派发判 viewer 的接线守卫**（此前只有判据用例）、renderTargetOf。**519 测试全绿** | `living-fluid-tech.md` §3.2；`buffer/living-fluid-review-2026-10-07.md` |

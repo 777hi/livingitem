@@ -55,26 +55,38 @@ tooltip 再写一遍内容是**冗余**，而且"储存 × mB"对桶物品（恒
    连带清掉随之无用的 `Component` / `TooltipFlag` import；
 2. lang（zh + en）：**删掉 `tooltip.livingitem.bucket.content`**。
 
-## 3. 配套：活物品标题改惰性（否则会留下空标题）
+## 3. 配套：「活物品」标题**保留**（用户二次拍板）
 
-`LivingItemTooltip` 现状是**无条件**先输出「空行 + `tooltip.livingitem.title`（`--- 活物品 ---`）」，
-再逐个功能追加行。删掉桶那行后 ⇒ 活桶 tooltip 变成「空行 + 空标题」。
+> 原话：「标题不要删，标题是正常的。」
 
-⇒ 改为**惰性**：先把所有适用功能的行收集起来，**非空才**输出「空行 + 标题 + 各行」；
-零行 ⇒ 整段不输出（活桶 tooltip 回到与普通物品一致）。
+**注意：这不是 bug，是标记。** `--- 活物品 ---` 是「这个物品是活物品」的**标记**，
+不是内容行 —— 哪怕功能一行都不产出（活桶），标题与其上方的分隔空行**照旧输出**。
 
-实现要点：抽成可测静态方法 `renderSection(functions, ctx, flag, stack, sink)`
-（functions 由调用方传入，事件处理器传 `LivingItemManager.getAllFunctions()`）
-—— 顺带去掉对全局单例的依赖，测试可喂stub 功能列表。
+我曾实现过「零行 ⇒ 整段不输出」的**惰性标题**（怕留空标题），**已被否**：
+那会把「这是活物品」这个标记一起丢掉。tooltip 变成：
 
-**通用价值**：任何"零 tooltip 行"的活物品都不会再出现空标题，不只是桶。
+```
+水桶
+minecraft:water_bucket
+7个组件
+
+--- 活物品 ---
+Minecraft
+```
+
+—— 这就是定稿后的样子（标题在、内容行没有）。
+
+保留的实现改动：**渲染体抽成可测静态方法** `renderSection(functions, ctx, flag, stack, sink)`
+（functions 由调用方传入，事件处理器传 `LivingItemManager.getAllFunctions()`）——
+ 行为与原先一致（无条件先输出「空行 + 标题」），但去掉了对全局单例的依赖，测试可喂 stub。
 
 ## 4. 测试
 
-- `LivingBucketFunctionTest` +1：**活桶不产出任何 tooltip 行**（钉住"桶无 tooltip"这条定稿，
+- `LivingBucketFunctionTest` +1：**活桶不产出任何 tooltip 行**（钉住"桶无内容行"这条定稿，
   以后有人再加回冗余行会红）；
-- 新增 `LivingItemTooltipTest`（client/render）3 项：零功能行 ⇒ 整段不输出 / 有 1 行 ⇒
-  空行+标题+该行 / 多功能 ⇒ 行序保持。
+- 新增 `LivingItemTooltipTest`（client/render）5 项：零功能行 ⇒ **仍输出**标题 /
+  不适用该 stack 的功能 ⇒ 同样保留标题 / **真实活桶 ⇒ 只有标题没有内容行**（两条定稿合起来的表现）/
+  有内容行 ⇒ 空行+标题+行 / 多功能 ⇒ 标题只出现一次、行序保持。
 
 ## 5. 顺手发现（**本批不做**，只记档）
 
