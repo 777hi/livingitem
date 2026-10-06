@@ -146,9 +146,9 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 497 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
-全绿基线：`496 passed / 0 failed / 1 skipped`（2026-10-06 实测三修：新增
-`ContainerFluidHandlerTest` ㊾⁺ 慢管道逐滴抽干、`ContainerFluidDataTest` ⑳⁺ 余额落盘往返、
+**合计测试用例 496 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
+全绿基线：`495 passed / 0 failed / 1 skipped`（2026-10-06 实测三修：新增
+`ContainerFluidHandlerTest` ㊾⁺（慢管道抽不到 / 整源逐个抽）、
 `GuiInteractionPacketTest` 2 项索引错位回退；
 2026-10-06 管道抽取：新增
 `ContainerFluidHandlerTest` 6 项（tank 枚举与稳定序 / SIMULATE 不消耗 vs EXECUTE 删源 /
@@ -201,7 +201,7 @@ FML unit test 不加载 item tags，已游戏内验证通过）+
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
 | 2026-10-06 | 🏗 **架构分层第一步**：`interaction` 的 9 个领域专用 handler 归位（farmland×3 / redstone×4 / tnt×2）⇒ 该包只剩通用机制，**`InteractionRegistry` 一行未改**。**R1 分层违规 113 → 101**，基线 42→39 对。**484 全绿**（纯重构） | `buffer/architecture-layering-plan.md` ① |
-| 2026-10-06 | 🔧 **实测三修**：① **末影箱流体不渲染** —— 客户端无法推断界面容器身份（末影箱 GUI 在客户端是 `GENERIC_9x3` + `SimpleContainer` 替身，与普通箱子同形）⇒ `instanceof PlayerEnderChestContainer` 是**死分支**；修：包加 **`RenderTarget`（服务端权威告知）**，客户端按它路由。🔴 **约束成文：客户端不得靠槽位容器类型推断容器身份**（两次踩坑同源：键前缀猜 ⇒ 泄漏；类型判 ⇒ 不画）。② **创造模式背包倒不进活流体** —— 客户端 `ItemPickerMenu` vs 服务端 `InventoryMenu` 索引错位，索引直查落到无关空槽（合成结果槽）⇒ 静默失败；修：空槽目标加「必须能解析出活容器」的门 + 回退 `containerSlot`。③ **管道瞬间抽空** —— v1「全有或全无」吞整源只返请求量；修：**源余额账本**（`sourceRemaining`/`consumeSourceAmount`，**落盘** `SourceEntry.amount` 可选字段），扣到 0 才删源。**497 测试全绿** | `living-fluid-tech.md` §7 / §10.3；`changelog.md`（2026-10-06） |
+| 2026-10-06 | 🔧 **实测三修**：① **末影箱流体不渲染** —— 客户端无法推断界面容器身份（末影箱 GUI 在客户端是 `GENERIC_9x3` + `SimpleContainer` 替身，与普通箱子同形）⇒ `instanceof PlayerEnderChestContainer` 是**死分支**；修：包加 **`RenderTarget`（服务端权威告知）**，客户端按它路由。🔴 **约束成文：客户端不得靠槽位容器类型推断容器身份**（两次踩坑同源：键前缀猜 ⇒ 泄漏；类型判 ⇒ 不画）。② **创造模式背包倒不进活流体** —— 客户端 `ItemPickerMenu` vs 服务端 `InventoryMenu` 索引错位，索引直查落到无关空槽（合成结果槽）⇒ 静默失败；修：空槽目标加「必须能解析出活容器」的门 + 回退 `containerSlot`。③ **管道瞬间抽空** —— v1「任意请求吞整源只返请求量」；定稿（用户拍板）**整源单位**：drain 请求 ≥1000 才给满 1000 并删源，<1000 **一分不给**。曾短暂上「源余额账本」（部分抽取）并**撤回** —— 源到处是二进制语义（挤没/晋升/汲走/刷石机/黑曜石/渲染/落盘），分数源污染每条路径；「无限源」也撤回。细水长流留给**专用流体活物品**（照抄活涂蜡铜灯存电）。**496 测试全绿** | `living-fluid-tech.md` §7 / §10.3；`changelog.md`（2026-10-06） |
 | 2026-10-06 | ✅ **管道抽取（活水源对外流体能力）**：新 `ContainerFluidHandler`（NeoForge `IFluidHandler`）—— **tank 数 = 派生源数、drain 直接消耗源、fill 恒 0（只出不进）、isFluidValid 如实答「是否持有」**；宽注册全部 BE + provider 四段让位（与红电同款）。活数据反查把 `processContainerAt` 的上下文构建抽成 `resolveContextAt`（**与 tick 路径同源同键**）+ `peekContainerData` 只读不创建。🔍 **Create 6 / Mekanism / Pipez 通用、无需兼容代码**（Create 6 内部 tank 就是 NeoForge `FluidTank` 模板，管道只拉不推）。⚠️ 速率模型修正：单源再生间隔 = `flowSpeed`（水 ≤5t）。**493 测试全绿** | `living-fluid-tech.md` §10 |
 | 2026-10-06 | ✅ **统一时钟：生长类逻辑一律走该流体自己的节拍**（同日第四批次）：此前引擎有**三个时钟**（目标层每 tick / 实际层每流体节拍 / 推动固定 4t）⇒ 错配：岩浆 30t 爬一格却 4t 推物品、水 5t 长一格却 4t 推。定稿「**流动的事按流体节拍走；外界引起的事当拍生效**」：**晋升搬到实际层 + 该流体推进拍**（判定改读实际层邻源，要求本格真有流体；收敛循环删除，目标层退化为纯 BFS）、**物品推动按流体分组随蔓延同拍**（水 5t / 岩浆 30t，`FLOW_STEP_TICKS` 删除）。焚毁/前沿反应/转化/挤没**故意不上时钟**（外部输入等 30t 手感说不过去）。⚠️ 三连源再生 1t ⇒ ≤5t。**487 测试全绿** | `living-fluid-tech.md` §3.2/§3.3/§3.6；`buffer/living-fluid-single-clock-plan.md` |
 | 2026-10-06 | ✅ **黑曜石循环 + 转化表作用域收窄**（同日第三批次）：① 契约加 default `frontierSourceReaction`（默认回退 `frontierReaction`）⇒ **源格遇水 = 黑曜石、流动格 = 圆石**，循环闭合（圆石累加 → 满 64 → 岩浆源 → 黑曜石 → 焚毁 → 回圆石；黑曜石存活窗口 ≈ 1.5s 待实测）；② **取消「非活空桶 → 水桶」** —— 对称性：活化影响非活化 ✓，非活化消耗活化资产 ✗ ⇒ 转化改为**催化剂语义（永不消耗源）**，删 `consumeSource` 整套机制，自动化水桶农场随之不成立。**484 测试全绿** | `living-fluid-tech.md` §3.7 / §6.1；`buffer/living-fluid-obsidian-plan.md` |

@@ -124,45 +124,40 @@ class ContainerFluidHandlerTest {
     }
 
     @Test
-    @DisplayName("㊼ 部分抽取（慢管道）：请求 500 ⇒ 得 500，源只剩 500 —— 不是整源蒸发")
-    void drain_partialRequestKeepsRemainder() {
+    @DisplayName("㊼ 整源语义：拿不满 1000 ⇒ 一分不给（源不丢）；给满 ⇒ 删源")
+    void drain_requiresWholeSource() {
         Level level = mockLevel(mock(BlockEntity.class));
         BlockEntity be = mockBe(level);
         ContainerFluidData data = seed(level, 0);
         IFluidHandler h = handlerFor(be);
 
-        FluidStack got = h.drain(500, IFluidHandler.FluidAction.EXECUTE);
-        assertEquals(500, got.getAmount(), "按请求量返回（不限整源）");
-        assertTrue(data.isGeneratedSource(0), "源还在（余额未扣完）");
-        assertEquals(500, data.sourceRemaining(0), "余额 500（落盘账本）");
-        assertEquals(500, h.getFluidInTank(0).getAmount(), "tank 如实报余额");
-        assertEquals(1000, h.getTankCapacity(0), "容量口径不变");
+        assertTrue(h.drain(500, IFluidHandler.FluidAction.EXECUTE).isEmpty(),
+            "请求 500 < 整源 1000 ⇒ 不给（否则慢管道会白耗整源）");
+        assertTrue(h.drain(999, IFluidHandler.FluidAction.SIMULATE).isEmpty(), "999 也不给（SIMULATE 同口径）");
+        assertTrue(data.isGeneratedSource(0), "源纹丝不动");
+        assertEquals(1000, h.getFluidInTank(0).getAmount(), "tank 恒报整源 1000mB（无分数源）");
 
-        assertEquals(500, h.drain(1000, IFluidHandler.FluidAction.EXECUTE).getAmount(),
-            "再抽 ⇒ 只拿剩余 500");
-        assertFalse(data.isGeneratedSource(0), "抽干 ⇒ 源消失");
+        assertEquals(1000, h.drain(1000, IFluidHandler.FluidAction.EXECUTE).getAmount(), "给满 ⇒ 拿到 1000");
+        assertFalse(data.isGeneratedSource(0), "整源消耗 ⇒ 源消失");
         assertEquals(0, h.getTanks());
     }
 
     @Test
-    @DisplayName("㊾⁺ 慢管道逐滴抽：100mB × 10 次抽干一个源（不瞬间抽空整个容器）")
-    void slowPipe_drainsGradually() {
+    @DisplayName("㊾⁺ 慢管道（每次 <1000）不消耗任何源；整源管道按源个数逐个抽")
+    void slowPipe_consumesNothing_fastPipeDrainsOneByOne() {
         Level level = mockLevel(mock(BlockEntity.class));
         BlockEntity be = mockBe(level);
         ContainerFluidData data = seed(level, 0, 1);   // 两个源
         IFluidHandler h = handlerFor(be);
 
-        for (int i = 0; i < 9; i++) {
-            assertEquals(100, h.drain(100, IFluidHandler.FluidAction.EXECUTE).getAmount(),
-                "第 " + (i + 1) + " 滴");
+        for (int i = 0; i < 20; i++) {
+            assertTrue(h.drain(100, IFluidHandler.FluidAction.EXECUTE).isEmpty(), "慢管道第 " + (i + 1) + " 次抽不到");
         }
-        assertEquals(2, h.getTanks(), "抽了 900mB ⇒ 两个源都还在");
-        assertEquals(100, data.sourceRemaining(0), "源 0 只剩 100");
+        assertEquals(2, h.getTanks(), "慢管道一个源都拿不到（不是瞬间抽空，也不是白耗）");
 
-        assertEquals(100, h.drain(100, IFluidHandler.FluidAction.EXECUTE).getAmount(), "第 10 滴抽干源 0");
-        assertFalse(data.isGeneratedSource(0), "源 0 消失");
-        assertEquals(1, h.getTanks(), "源 1 不受影响（不会连带抽空）");
-        assertTrue(data.isGeneratedSource(1));
+        assertEquals(1000, h.drain(1000, IFluidHandler.FluidAction.EXECUTE).getAmount(), "整源管道拿到 1000");
+        assertFalse(data.isGeneratedSource(0));
+        assertTrue(data.isGeneratedSource(1), "源 1 不受影响（逐个消耗，不连带）");
     }
     // MARK
 

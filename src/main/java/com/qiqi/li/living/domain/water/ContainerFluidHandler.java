@@ -29,12 +29,11 @@ import com.qiqi.li.living.container.TickableContainerContext;
  *
  * <h3>语义（逐条对应 §10 定案）</h3>
  * <ul>
- *   <li><b>抽取 = 消耗源</b>：drain 扣该源余额，扣到 0 ⇒ 源消失（{@code removeGeneratedSource}），
- *       等价「自动化汲走」；两源夹一格 + 抽中间 + 晋升补中间 ⇒ 原版无限水的工业化形态。</li>
- *   <li><b>一源 = 一 tank = 1000mB</b>，且支持<b>部分抽取</b>（2026-10-06 实测修正）：drain 按请求量
- *       扣该源<b>余额</b>（{@code ContainerFluidData.sourceRemaining}，<b>落盘</b>）⇒ 慢管道
- *       （如 100mB/t）一滴滴抽、按自己的速率抽空一个源。源在游戏层仍是二进制资产（有 / 无），
- *       余额只是管道账本（汲走 / 挤没 / 转化消耗一律按整源处理）。</li>
+ *   <li><b>抽取 = 消耗整源</b>：drain 请求量 ≥ 1000mB 时给满 1000 并删源；<b>拿不满就不给</b>。
+ *       等价「自动化汲走」；两源夹一格 + 抽中间 + 晋升补中间 ⇒ 有限速率的无限水（§10.3）。</li>
+ *   <li><b>一源 = 一个 tank = 1000mB 整单位</b>：<b>无分数源、无余额</b>。源在本系统里到处是
+ *       二进制语义（挤没 / 晋升 / 汲走 / 刷石机 / 黑曜石 / 落盘 / 渲染）⇒ 分数源会污染每条路径；
+ *       自动化流体交互留给<b>专用流体活物品</b>（活涂蜡铜灯存电那套逻辑），不在此扩展。</li>
  *   <li><b>无缓冲</b>：不缓存 FluidStack，每次调用现场读活数据（源随时被汲走 / 晋升）。</li>
  *   <li><b>只出不进</b>：{@link #fill} 恒 0 —— 守住「活桶是源的唯一种子工具」，与 §6.1 对称性一致。</li>
  *   <li><b>范围</b>：tank 数 = 当前<b>派生源</b>个数（权威资产表）；流动格不算（每 tick 由 BFS 重算）。</li>
@@ -45,8 +44,8 @@ import com.qiqi.li.living.container.TickableContainerContext;
  */
 public final class ContainerFluidHandler implements IFluidHandler {
 
-    /** 一个源格对外的容量口径（mB）—— 单一真相在 {@link ContainerFluidData#SOURCE_MB}。 */
-    public static final int SOURCE_MB = ContainerFluidData.SOURCE_MB;
+    /** 一个源格对外的容量口径（mB）—— 与 Create 的 tank 容量一致；源是**整源**单位（§10.3）。 */
+    public static final int SOURCE_MB = 1000;
 
     private final BlockEntity be;
 
@@ -129,11 +128,9 @@ public final class ContainerFluidHandler implements IFluidHandler {
 
     @Override
     public FluidStack getFluidInTank(int tank) {
-        ContainerFluidData data = peekFluidData();
         List<Source> list = sources();
-        if (data == null || tank < 0 || tank >= list.size()) return FluidStack.EMPTY;
-        // 报**余额**（部分抽取后 < 1000）—— 管道据此知道还能抽多少
-        return stackOf(list.get(tank).type(), data.sourceRemaining(list.get(tank).slot()));
+        if (tank < 0 || tank >= list.size()) return FluidStack.EMPTY;
+        return stackOf(list.get(tank).type(), SOURCE_MB);   // 整源：恒 1000mB（无分数源）
     }
 
     @Override
@@ -187,28 +184,29 @@ public final class ContainerFluidHandler implements IFluidHandler {
     }
 
     /**
-     * 按请求量抽取该源（**部分抽取**，2026-10-06 实测修正）：
-     * 返回 {@code min(请求量, 该源余额)}，余额扣减；扣到 0 ⇒ 源消失。
+     * <b>整源抽取</b>（A 方案，2026-10-06 实测修正）：源是<b>整单位</b>资产 ——
+     * 请求量 ≥ {@link #SOURCE_MB} 才给 1000mB 并删源；<b>拿不满 1000 就一分不给</b>（EMPTY）。
      *
-     * <p>⚠️ 原实现是「任意请求都吞整源、返回请求量」的<b>全有或全无</b>语义 ⇒ 慢管道
-     * （如 100mB/t）每拍请求 100 却整源蒸发，几拍就把容器抽干（用户实测：瞬间抽完、且
-     * 每次只拿到 100 不是 1000）。现在余额记在 {@link ContainerFluidData#sourceRemaining} 上
-     * 并落盘 ⇒ 慢管道一滴滴抽，抽干才删源。</p>
+     * <p>⚠️ 之前是「任意 ≥1mB 请求都吞整源、只返请求量」⇒ 慢管道（如 100mB/t）每拍蒸发一个源
+     * 却只换回 100mB，几拍就把容器抽干（用户实测：瞬间抽空 + 每次不是 1000）。</p>
      *
-     * <p>{@code simulate()} 时只算不消耗（Create 的探测走这条路）。</p>
+     * <p><b>为什么不做部分抽取 / 无限源</b>（2026-10-06 用户拍板）：源在本系统里到处是
+     * <b>二进制语义</b>（挤没 / 晋升 / 汲走 / 刷石机 / 黑曜石 / 落盘 / 渲染），
+     * 引入「1000mB 的源只放得出 100mB」这种分数源会污染每一条路径；无限源（舀水不删源）
+     * 则让源彻底失去「资产」意义。真正的自动化流体交互留给<b>专用流体活物品</b>
+     * （如活涂蜡铜灯存电那套：自带缓冲与规则），不在通用源能力上做文章。</p>
+     *
+     * <p>{@code simulate()} 时只算不删源（Create 的探测走这条路）。</p>
      */
     private FluidStack drainSlot(Source source, int requested, FluidAction action) {
         FluidStack probe = stackOf(source.type(), 1);
         if (probe.isEmpty()) return FluidStack.EMPTY;
+        if (requested < SOURCE_MB) return FluidStack.EMPTY;   // 拿不满整源 ⇒ 不给（不浪费源）
+        if (action.simulate()) return new FluidStack(probe.getFluid(), SOURCE_MB);
         ContainerFluidData data = peekFluidData();
         if (data == null) return FluidStack.EMPTY;
-
-        if (action.simulate()) {
-            return new FluidStack(probe.getFluid(), Math.min(requested, data.sourceRemaining(source.slot())));
-        }
-        int taken = data.consumeSourceAmount(source.slot(), requested);
-        if (taken <= 0) return FluidStack.EMPTY;
+        data.removeGeneratedSource(source.slot());             // 整源消耗（≡ 汲走，唯一正确的删源口径）
         be.setChanged();
-        return new FluidStack(probe.getFluid(), taken);
+        return new FluidStack(probe.getFluid(), SOURCE_MB);
     }
 }
