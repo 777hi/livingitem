@@ -30,7 +30,7 @@
 | 9 | `LivingCopperFunction`（涂蜡铜块感知） | `domain/redstone` | 2 | 同上 |
 | 10 | `LivingTntFunction` | `domain/tnt` | **1** | 同上（**跨域抄样板**） |
 
-**对照 —— 真正拥有容器级数据的另外 3 个**（`HasContainerData` 全库共 13 个实现者）：
+**对照 —— 另外 3 个 `HasContainerData` 实现者**（**全库共 13 个**，其中 10 个就是上表）：
 
 | 类 | prio | `tickContainerData` |
 |---|---|---|
@@ -38,7 +38,22 @@
 | `LivingWaterWheelFunction` | 1 | **真逻辑**：读流体算应力 + postTickSync |
 | `LivingWaxedCopperFunction` | 3 | **真逻辑**：发电记账 + 共振 EMA |
 
-⇒ 13 个实现者里，**10 个是同一段样板**，只有 3 个名副其实。
+⇒ **13 = 10 个样板 + 3 个真逻辑**。删掉 9 处后剩 **4 个**
+（1 个唯一驱动 `LivingRedstoneFunction` + 上面 3 个真逻辑）。
+
+### 1.1 红石层的「消费者」是 3 个，不是 1 个
+
+⚠️ **这一点决定了方案的影响面**（初稿曾误记为"只有 TNT"，复核时更正）。
+`RedstoneSensor` 端口的消费者（见 `docs/buffer/redstone-evolution-roadmap.md` §1）：
+
+| 消费者 | 读取方式 | 是否驱动 `calculate` |
+|---|---|---|
+| `LivingTntFunction` | `getSensor(ctx).maxSensedSignal(slot)`（`tick()` 内） | ✗（**现在靠抄来的样板**驱动） |
+| `LivingHopperFunction` | `getSensor(ctx).maxSensedSignal(slot)`（`tick()` 内） | ✗（**从不驱动**） |
+| `LivingWaxedCopperFunction` | `getSensor(ctx)`（`tickContainerData` prio 3） | ✗（**从不驱动**，只依赖 prio 2 已算完） |
+
+⇒ **活漏斗和电力层从来不驱动红石重算** —— 它们依赖「别处有人算」。
+这是「驱动权分散」的第二个证据：**驱动者与消费者完全错位**（驱动的是 9 个元件，消费的是另外 3 个）。
 
 ---
 
@@ -79,7 +94,19 @@ public void calculate(ContainerContext context, TickContext tick) {
 
 ⇒ tnt 的 `tickContainerData`（prio 1）跑在**它自己的 `tick()` 之后**
 ⇒ tnt 读到的永远是**上一 tick** 的 edgeGrid。所谓「确保在 TNT tick 之前」不成立。
-这条误解**至今留在代码注释里**。
+
+**而且 prio 1 本身毫无作用**：prio 只决定 `runContainerDataTicks` 内部的顺序，
+而 tnt 是**唯一** prio 1 的红石调用者，其余 9 个都是 prio 2 —— 加上幂等短路，
+「谁先调」对结果没有任何影响。**这行 prio 和它的注释一样，是抄来的装饰品。**
+
+⚠️ 这条错注释**同时污染了两份文档**：`living-tnt-tech.md` §3.3 原样写着
+「*优先级 1：在红石数据计算（优先级 2）之前执行*」。
+（准确说法：**prio 1 的 `tickContainerData` 确实在 prio 2 之前跑**，
+但 `tick()` 在阶段 2、`tickContainerData` 在阶段 4 ⇒ 这个"之前"对 TNT 的读取时机毫无帮助。）
+
+**另外**：tnt 用的是 `maxSensedSignal`，它只读 `edgeGrid`（`sensedSignal` 邻居越界返 0）
+⇒ **不含容器外输入**。changelog 里那句「`getSlotSignal` 同时检查 `faceInput`，确保跨容器信号也能点燃 TNT」
+描述的是**旧实现** —— `getSlotSignal` 方法**现已不在代码里**（但仍有 3 处文档在引用它，见 §9）。
 
 ### ② 项目当时就承认了这是冗余
 
@@ -153,6 +180,16 @@ public void tickContainerData(List<SlotEntry> entries, ContainerContext ctx, Tic
 都会创建 `ContainerRedstoneData` 并每 tick 跑一次 `calculate`
 （其中含 `notifyBoundaryChange` ⇒ `level.updateNeighborsAt`，代价不可忽略）。
 
+⭐ **守卫为什么不会漏掉消费者**：`TickContext.getSensor(ctx)` **就是**
+`getOrCreateRedstoneData(ctx)`（`TickContext.java:117-119`）——
+⇒ 三个消费者（TNT / 漏斗 / 电力）在 `tick()` 里**一读就创建了账本**
+⇒ 等 `runContainerDataTicks` 跑到 prio 2 时，守卫的 `peek != null` **必然成立**
+⇒ 该跑的一定跑。守卫只拦住「**连账本都没有、也没有元件**」的容器（纯熔炉/纯箱子）——
+那些容器本来就与红石无关。
+
+⇒ 守卫判据 `peek == null && !hasRedstoneElements` 的**真实语义**是
+「**这个容器从来与红石无关**」，而不是「有没有人需要红石」。
+
 ### 改动 3｜删掉 9 处样板
 
 - `domain/redstone/`：`LivingButtonFunction` / `LivingLeverFunction` / `LivingRepeaterFunction` /
@@ -163,7 +200,8 @@ public void tickContainerData(List<SlotEntry> entries, ContainerContext ctx, Tic
   以及随之无用的 import（`HasContainerData` / `ContainerRedstoneData` / 可能 `TickContext`）
 - ⚠️ `HasDirection`（`getPriority()` 是 `HasContainerData` 的，别误删 `HasDirection` 相关）
 
-⇒ **`HasContainerData` 的实现者从 13 个 → 3 个**。接口语义回归本义：
+⇒ 删除 **9 个**实现者（8 个元件 + TNT）⇒ **`HasContainerData` 从 13 个 → 4 个**
+（1 个唯一驱动 + 3 个真逻辑）。接口语义回归本义：
 **「谁真正拥有容器级数据」**，而不是「谁想蹭一下红石」。
 
 ### 改动 4｜框架层：删 `zeroResidualRedstone`
@@ -214,7 +252,9 @@ public void tickContainerData(List<SlotEntry> entries, ContainerContext ctx, Tic
 | **执行顺序** | **不变**。红石仍在 `runContainerDataTicks` 的 prio 2 位置（`LivingRedstoneFunction` 保留 `HasContainerData`）⇒ 流体(0) → 水车(1) → 红石(2) → 电力(3) |
 | **新增开销** | 每个 tick 的容器多一次「`peek` + 最多 9 次 `Set.isEmpty()`」。**无红石容器在守卫处 return ⇒ 不创建数据、不跑 `calculate`** ⇒ 实质零开销 |
 | **有红石容器的开销** | **与现在完全相同**（都是每 tick 一次 `calculate`） |
-| **TNT 首拍** | **等价**。现在首拍由 tnt 的 `tickContainerData` 创建账本并算（此时 `hasHistory=false`，边检测被跳过 ⇒ 读不到信号）；改后首拍 `peek == null` 且无红石元件 ⇒ 跳过（同样读不到信号），第二拍起由 `LivingRedstoneFunction` 正常算 |
+| **TNT 首拍** | **等价**（连首拍都不差）。首拍阶段 2 `tnt.tick()` 已调 `getOrCreateRedstoneData` 创建账本 ⇒ 阶段 4 守卫 `peek != null` 通过 ⇒ `LivingRedstoneFunction` 照常算。差别仅在于「谁在阶段 4 第一个调 `calculate`」——而幂等短路使这个差别无意义 |
+| **电力层不变量** | **不破坏**。`living-power-tech.md` / `红电系统.md` 的硬约束是「电力 prio **必须 > 2**，依赖红石已算完的 `edgeGrid`」⇒ 本方案**保持红石在 prio 2**，电力仍在 prio 3 读到本 tick 的新值 ✓ |
+| **漏斗** | **行为不变**。漏斗只读不驱动；现在由 `zeroResidualRedstone` 兜底算，改后由守卫分支算 —— 两者都在漏斗 `tick()` **之后**（阶段 4）⇒ 读取时机不变 |
 | **测试** | 9 个类的 `tickContainerData` **没有任何测试调用**（`ComponentOwnershipTest` 只 `new` 它们做组件归属校验）⇒ 删除安全 |
 | **幂等标志** | **保留** `processedThisTick` 与 `resetProcessedFlag()`。`ContainerRedstoneDataTest.calculate_isIdempotentWithinSameTick` 依赖它；且它是「未来若又出现第二个调用者」的防御 |
 | **跨域依赖** | 本方案**不新增** R3（领域互依赖）：守卫判据全在红石包内 + 框架的 `ContainerDataKeys`（域→框架是正向依赖） |
@@ -226,34 +266,73 @@ public void tickContainerData(List<SlotEntry> entries, ContainerContext ctx, Tic
 - **全量单测**（534 例 / 57 个测试类，口径见 `tools/doc_check.py`）
   - `ContainerRedstoneDataTest` 直接驱动 `calculate` ⇒ 不受影响
   - power 系列测试驱动的是 `LivingWaxedCopperFunction.tickContainerData`（prio 3，**不动**）
-- **手动清单**（红石层**没有**「容器内元件互联」的集成测试，只能手测）：
+- **手动清单**（红石层**没有**「容器内元件互联」的集成测试，只能手测）
+  —— **务必覆盖 3 个消费者，它们都不驱动重算，最容易成为盲区**：
   1. 活红石粉 + 活按钮 / 拉杆 / 中继器 / 比较器 / 火把 / 灯 / 红石块 各自功能
   2. 与**外部世界**红石双向互通（箱子边上的红石线）
-  3. 活 TNT 被红石信号点燃
-  4. 电力层发电（涂蜡铜块 + 红电）
-  5. **纯活熔炉容器**（无任何红石）—— 确认 TPS 无变化（验证守卫生效）
+  3. **活 TNT** 被红石信号点燃（消费者 ①）
+  4. **活漏斗被红石锁定**（消费者 ②）—— 单独放一个漏斗 + 红石块，确认"锁定/解除"正常
+  5. **电力层发电**（消费者 ③，涂蜡铜块 + 红电）
+  6. **纯活熔炉容器**（无任何红石、无消费者）—— 确认 TPS 无变化（验证守卫生效）
+  7. **残留归零**：容器里放活红石块 → 拿走 → 确认箱子边上世界的红石线熄灭（验证 `zeroResidualRedstone` 的职责确实被接管）
 
 ---
 
-## 9. 文档同步点（实施时必须改）
+## 9. 与 `redstone-evolution-roadmap.md` 的关系（复核时补）
+
+红电已有一条**在册的演进路线**（`docs/buffer/redstone-evolution-roadmap.md`，三个方向）：
+
+| 方向 | 状态 | 与本方案的关系 |
+|---|---|---|
+| **② SensorPort 感知端口** | **已完成**（2026-10-08 C 收尾，接口上移 `living/api/`） | **本方案的上游**。端口切断了「消费者 → 信号层实现」的依赖，但**没有动「谁驱动重算」**——本方案补的正是这半边 |
+| ① 跳变检测前移到写入点（事件流） | 规划中（等电力层新功能） | **不冲突**。事件流要收口的是 `edgeGrid.set` 的写入口径，本方案不碰 phase 内部 |
+| ③ 信号层元件接口化 | 规划中（等铜门立项） | **不冲突，且本方案降低它的风险**：接口化时要搬 phase1-5 的分支，若此时还有 10 处驱动样板，搬迁面会更大 |
+
+⭐ **本方案是该路线图 §5「隐式契约的显式化」的又一次应用** ——
+它要显式化的契约是「**谁负责驱动容器级数据重算**」。
+目前这个契约是隐式的：靠 10 处复制 + 一个去重标志**涌现**出来，而不是被任何签名声明。
+收归单点后，它变成 `shouldTickWithoutOwnItems` 的一行显式声明。
+
+---
+
+## 10. 文档同步点（实施时必须改）
+
+### 10.1 本方案引起的改动
 
 | 文档 | 位置 | 改什么 |
 |---|---|---|
-| `docs/tech/living-redstone-tech.md` | 驱动权 / prio 小节 | 驱动权收归单点 + 新守卫 |
-| `docs/tech/living-tnt-tech.md` | `getPriority()` 段 | 删 prio 1 段落 → 改为「TNT 是红石**消费者**，不驱动」+ 修正那条错注释 |
-| `docs/tech/living-power-tech.md` | 行 68 / 78 | prio 2 的表述（时机不变，但不再是元件驱动） |
-| `docs/system-design/红电系统.md` | 行 439-442 架构图 | 去掉 7 个元件的 prio 2 标注 |
+| `docs/tech/living-redstone-tech.md` | §3.1 触发时机 / §4.4 火把独立存在 / §8.1 / §8.2 / §8.4 | 驱动权收归单点 + 新守卫 + 删「火把自触发」说明 |
+| `docs/tech/living-tnt-tech.md` | §3.3 红石信号点火 | 删 prio 1 段 → 「TNT 是红石**消费者**，不驱动」+ 修正错注释 |
+| `docs/tech/living-power-tech.md` | §1.3 调度与数据流（行 68 / 78） | prio 2 的表述（时机不变，但不再是元件驱动） |
+| `docs/tech/living-copper-tech.md` | 行 94 / 225 | 同上 |
+| `docs/system-design/红电系统.md` | 行 439-442 架构图 · 行 1402-1404 prio 说明 | 去掉元件的 prio 2 标注 |
 | `docs/system-design/living-item-infrastructure.md` | 行 1353 | 同上 |
 | `docs/system-design/tooltip-system.md` | 行 105 | 同上 |
-| `docs/system-design/power-invariants.md` | 若有 prio 断言 | 核对 |
-| `docs/tech/living-copper-tech.md` | prio 2 相关 | 核对 |
 | `AGENTS.md` | 架构图 `LivingRedstoneFunction(prio 2)` 标注 + 开发进展一行 | 同步 |
 | `docs/reference/subsystem-index.md` | 红石子系统行 | 概述同步 |
 | `docs/archive/changelog.md` | 新增一条 | 结论 + 指针 |
 
+### 10.2 ⚠️ 复核时发现的**既存陈旧**（与本方案无关，但同属红电文档，建议一并修）
+
+这些不是本方案造成的，是**红电文档漂移**。因为本方案要改的就是这些段落，**顺手修正成本最低**：
+
+| # | 位置 | 陈旧内容 | 实际 |
+|---|---|---|---|
+| 1 | `living-redstone-tech.md:383,385-386,391` | 「每 **2 tick** 触发一次」「传播 tick（偶数 tick）/ 非传播 tick（奇数 tick）直接返回」 | **跳帧已取消**（v17.2 起 1 tick）；同文档 `:395` 自己写了「每 game tick 一次」⇒ **文档自相矛盾** |
+| 2 | `living-redstone-tech.md:389` | 「`calculate()` 由 `LivingRedstoneFunction` 和 `LivingRedstoneTorchFunction` 触发」 | **10 处** |
+| 3 | `living-redstone-tech.md:1548` | 「所有红石功能类（红石粉、火把、中继器、比较器、按钮、拉杆、灯）」（7 个） | 8 红石 + 铜 + TNT |
+| 4 | `living-redstone-tech.md:1587-1592` | prio 表：`0: LivingWaterBucketFunction` | 0 位是 **`LivingFluidFunction`**（活水源 → 活流体重构后已换）；且表里缺 6 个 prio 2 |
+| 5 | `living-redstone-tech.md:169` · `:533` · `living-tnt-tech.md:37,79` | 引用 `getSlotSignal(int, int, int)` | ⚠️ **该方法已不在代码里**（TNT 现用 `maxSensedSignal`）⇒ 文档引用了**不存在的方法**（`doc_check` 第 7 项只校验类名，漏掉方法名） |
+| 6 | `红电系统.md:1402-1404` · `living-power-tech.md:78` | 「水桶 0、水车 1、红石 2」 | 0 位同上；「红石与红石火把均为 2」也只提了 2 个 |
+| 7 | `living-redstone-tech.md:1606-1617`（§8.4） | 「当 `grouped.isEmpty()`（无任何红石物品）时…直接调用 `calculate()`」 | 该分支**从 1b-2b 起已死**（自维持使 `grouped` 恒非空）；现由 `zeroResidualRedstone` 承担 |
+
+> 第 5 项是**机械检查的盲区**：`doc_check` 第 7 项只断言「文档提到的 `Living*.java` 文件必须存在」，
+> 不校验方法名 ⇒ 删掉的方法会永远留在文档里。**若要堵这个洞，需要给 doc_check 加一条「方法名真实性」检查**
+> —— 但那属于工具演进，不在本次范围（**列为待拍板第 4 项**）。
+
 ---
 
-## 10. 待拍板
+## 11. 待拍板
 
 1. **是否一并删 `handleEmptyContainer`**（改动 5，死代码 —— 且从 1b-2b 起就已死）
 2. **是否一并删 `zeroResidualRedstone`**（改动 4 —— 不删会留下「永不执行的方法」，比删更糟；
@@ -262,3 +341,5 @@ public void tickContainerData(List<SlotEntry> entries, ContainerContext ctx, Tic
    删掉 9 处后它只剩 2 个调用者（`LivingRedstoneFunction` + `TickContext.getSensor`），
    但两者都在不同包，做不到包私有；真要收窄需要「容器级数据生产者声明」这类**新机制**
    （属 B 类框架演进），**不应塞进本次**。
+4. **是否顺手修 §10.2 的 7 项既存陈旧**（尤其第 1、5 项 —— 自相矛盾 + 引用不存在的方法）
+5. **是否给 `doc_check` 加「方法名真实性」检查**（堵住 §10.2 第 5 项的盲区）
