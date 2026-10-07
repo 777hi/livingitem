@@ -1071,7 +1071,7 @@ public record EnderChannelKey(@Nullable UUID owner, int count) {}
 | `EnderChannelRegistry.dirtyChannels` | `Set<Integer>` | `Set<EnderChannelKey>` |
 | `EnderChannelSyncPacket.channel` | `int` | `EnderChannelKey` |
 | `EnderChannelClientCache` 缓存键 | `int` | `EnderChannelKey` |
-| `LivingEnderChestAccessor.getChannel()` | `int` | `getChannelKey()` → `EnderChannelKey` |
+| `LivingEnderChestAccessor.getChannel()`（旧名，已废弃） | `int` | `getChannelKey()` → `EnderChannelKey` |
 | `validateRoutes` 第三参数 | `Set<Integer> activeTargetSlots` | `Map<Integer, EnderChannelKey> targetKeysBySlot` |
 
 **协议编码**：`writeBoolean(hasOwner)` +（可选）`writeUUID` + `writeVarInt(count)`。

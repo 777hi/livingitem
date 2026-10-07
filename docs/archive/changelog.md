@@ -59,6 +59,22 @@
   - 「残留红石归零」的端到端测试从 `ContainerFluidIntegrationTest` **搬入**本类
     （它测的是红石，住在流体测试类里属位置错误；且 1b-2c 的 `zeroResidualRedstone` 已删，
     归零职责改由 `LivingRedstoneFunction` 的守卫接管）。
+- 🧹 **`doc_check` 第 9 项清完 13 处陈旧引用，并升回失败级**（**9/9 全绿、0 警告**）：
+  上线首日以 warning 级试运行（报出 13 处、跨 8 个文档，超出当日任务范围）。清理分两类：
+  - **真漂移（改成实际名）**：
+    `CrossContainerTransfer.getNeighborContainer` → **`ContainerContext.getContainer`**（3 处）；
+    `ExplosionComponent.tickAll` + `SuperExplosionTask` → **`ExplosionLedger.flushAll`** + `schedule`/`onChunkLoaded`
+    （超级爆炸分帧机制已换；且「每 tick 消除**一个**整区块」实为**每 tick 32 个区块**）；
+    `ServerPacketHandler.handleLoad` / `sendLivingChestContents` → **`handleLivingChestAccess`**
+    （⚠️ 顺带发现 **LOAD 操作已不存在**、`LivingChestContentsCache` 类亦已删除 ⇒ 该流程图整体过时，已标注）；
+    `ContainerLivingItemHandler.cleanupStaleRedstoneData` → `cleanupStaleData`。
+  - **旧名 / 规划中（标注豁免）**：`LivingEnderChestAccessor.getChannel`、
+    `LivingHopperFunction.buildFilterChain`、`ContainerChunkCache.getCachedChunks`
+    （均为迁移对照表里的旧名 ⇒ 标注「已废弃」）；`PinyinHelper.extendDictionary` / `resetToDefault`
+    （**规划中、尚未实现** ⇒ 标注）。
+  - 顺带删掉 `AGENTS.md` 架构图里的 `LivingWaterBucketFunction → LivingWaterBucketData`
+    （类与 Data 均已不存在）。
+  - ⚠️ **踩坑记录**：豁免是**行级**的 —— 说明文字必须与 `Class.method` 在**同一行**，否则检查照报。
 - 🧹 **`doc_check` 新增第 9 项「方法名真实性」**（首轮为**警告级**）：
   文档里 `ClassName.method(...)` 引用的方法必须存在于源码 —— 堵住第 7 项「只校验类名、不校验方法名」的盲区。
   上线即报出 **13 处陈旧引用**（跨 8 个文档，含拼音搜索 / 配方书等非红电领域）⇒

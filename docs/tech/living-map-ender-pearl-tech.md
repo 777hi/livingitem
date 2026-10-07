@@ -1977,7 +1977,7 @@ for (var chunkPos : toRemove) {
 }
 ```
 
-**修复2**：`ContainerChunkCache.getCachedChunks()` 返回快照副本 — 从 `Collections.unmodifiableSet(raw)` 改为 `new HashSet<>(raw)`，确保即使区块加载/卸载事件在遍历期间修改了底层集合，也不会影响正在进行的遍历：
+**修复2**：`ContainerChunkCache.getCachedChunks()`（旧名，已废弃）返回快照副本 — 从 `Collections.unmodifiableSet(raw)` 改为 `new HashSet<>(raw)`，确保即使区块加载/卸载事件在遍历期间修改了底层集合，也不会影响正在进行的遍历：
 
 ```java
 public Set<ChunkPos> getCachedChunks(ResourceKey<Level> dim) {

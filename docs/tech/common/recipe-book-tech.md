@@ -363,9 +363,10 @@
 客户端操作触发
          ↓
     发送 LivingChestAccessPacket (客户端 → 服务器)
-    ├── LOAD 操作:
-    │   └── ServerPacketHandler.handleLoad(player, server)
-    │       └── sendLivingChestContents(player, server) ⬇️
+    ├── ⚠️ **LOAD 操作：已废弃** —— 当前 `LivingChestAccessPacket` 只处理
+    │   DEPOSIT / WITHDRAW / WITHDRAW_INVENTORY / DEPOSIT_SLOT
+    │   （见 `ServerPacketHandler.handleLivingChestAccess`）；
+    │   箱子内容的客户端同步机制已变更，**本节流程图待更新**
     │
     ├── DEPOSIT 操作:
     │   └── ServerPacketHandler.handleDeposit(player, server, packet)
@@ -580,7 +581,8 @@ if (forceRefresh && isDirty()) {
 RecipeBookComponentMixin
     ├── LivingChestContentsCache (数据源)
     │   └── 由 LivingChestAccessPacket 更新
-    │       └── 由 ServerPacketHandler.sendLivingChestContents() 发送
+    │       └── ⚠️ 原由 ServerPacketHandler.sendLivingChestContents() 发送（**该方法已废弃**）
+    │           其配套的 LivingChestContentsCache 亦已废弃，本图待更新
     │           └── 由 LivingChestAccessPacket.LOAD 触发
     │
     ├── LivingChestAccessPacket (操作请求)

@@ -646,7 +646,7 @@ LivingHopperFunction.tick()                                 [每 tick]
 **关键变化**（v8 → v9）：
 
 **v9 变化**（2026-08-17）：
-- **Container 接口模拟玩家操作**：`executeInContainer()` 新增 `Container.canTakeItem()` 和 `Container.canPlaceItem()` 检查（步骤 [6] 和 [10]），通过 `CrossContainerTransfer.getNeighborContainer()` 获取容器实例，利用原版 Container 接口模拟玩家取出/放入逻辑，过滤不可交互的槽位（如幽灵槽、输出槽等），解决跨模组容器兼容性问题
+- **Container 接口模拟玩家操作**：`executeInContainer()` 新增 `Container.canTakeItem()` 和 `Container.canPlaceItem()` 检查（步骤 [6] 和 [10]），通过 `ContainerContext.getContainer()` 获取容器实例（旧名 `CrossContainerTransfer.getNeighborContainer()`，已废弃），利用原版 Container 接口模拟玩家取出/放入逻辑，过滤不可交互的槽位（如幽灵槽、输出槽等），解决跨模组容器兼容性问题
 - **`getNeighborContainer` 空安全**：添加 `neighborPos == null` 检查，修复玩家背包场景下 `getBlockPos()` 返回 null 导致的 NPE 崩溃
 - **`transferAmount` 变量提取**：`Math.min(stackSize, maxTransfer)` 从 3 次重复计算减少为 1 次
 - **末影箱决策统一**：`EnderRouteManager.resolveTarget()` 返回 `Decision` 枚举（`NOT_ENDER_CHEST` / `REJECTED` / `HANDLED`），`TransferPipeline` 通过 `switch` 分流，替代了分散的 `registerRoute` + `doTransfer` 调用
@@ -1655,7 +1655,7 @@ if (!chainFilter.equals(storedFilter)) {
 |---------|-------------------|---------------------|
 | `LivingEnderChestFunction.tick()` | 遍历全容器找活末影箱槽位 | 直接从 `entries` 参数读取槽位 |
 | `LivingWaterBucketFunction.postTickSync()` | 遍历全容器找水桶槽位 | 接收 `waterBucketEntries` 参数，直接遍历 |
-| `LivingHopperFunction.buildFilterChain()` | 遍历全容器 + `isLivingHopper` + `getHopperData` + `SlotResolver.resolve` | 读取 `ContainerSnapshot` 预计算数组 |
+| `LivingHopperFunction.buildFilterChain()`（旧名，已废弃） | 遍历全容器 + `isLivingHopper` + `getHopperData` + `SlotResolver.resolve` | 读取 `ContainerSnapshot` 预计算数组 |
 
 **具体改动**：
 
@@ -1734,7 +1734,7 @@ public static void postTickSync(ContainerContext ctx, ContainerFluidData fluidDa
 
 ```java
 // 步骤 [6]：取出前模拟玩家操作
-Container hostContainer = CrossContainerTransfer.getNeighborContainer(level, ctx.getBlockPos());
+Container hostContainer = ContainerContext.getContainer(level, neighborPos);
 if (hostContainer != null && !hostContainer.canTakeItem(hostContainer, sourceSlot, sourceStack)) {
     return false;  // 不可取出的槽位（如幽灵槽、输出槽）被过滤
 }

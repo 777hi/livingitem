@@ -45,7 +45,6 @@ LivingItemFunction.tick() (各功能类自行实现 tick 逻辑)
     ↓
 功能类直接管理 DataComponent，无中间层
     ├── LivingTntFunction        → LivingTntData
-    ├── LivingWaterBucketFunction→ LivingWaterBucketData
     ├── LivingFurnaceFunction    → LivingFurnaceData
     ├── LivingHopperFunction     → TransferPipeline (统一传输入口)
     ├── LivingEnderChestFunction → LivingEnderChestData

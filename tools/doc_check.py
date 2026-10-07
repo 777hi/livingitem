@@ -13,10 +13,8 @@ Verifies the invariants declared in docs/README.md §7 ("改完必查"):
   8. Commands          - docs 引用的 /livingitem 子命令必须已注册
   9. Method refs       - docs 里 ClassName.method(...) 的方法必须存在于源码
 
-Checks 1-4 and 6-8 fail the run (exit 1). Check 5 only warns (entry budget is a
-maintenance signal, not a correctness error). Check 9 is **warning-only on first
-rollout** (2026-10-08): it immediately surfaced 13 stale references across 8 docs
-outside the current task's scope — flip it to failing once those are cleaned up.
+Checks 1-4 and 6-9 fail the run (exit 1). Check 5 only warns (entry budget is a
+maintenance signal, not a correctness error).
 
 Usage: python tools/doc_check.py [-v]
 """
@@ -478,14 +476,12 @@ def check_method_refs():
                 if meth not in known_methods:
                     bad.append("%s:%d 提到不存在的 %s.%s" % (rel(p), i, cls, meth))
 
-    # ⚠️ 首轮（2026-10-08）**只警告不失败**：本检查一上线就报出 13 处陈旧引用，
-    # 分布在 8 个文档、跨多个与当前任务无关的领域 ⇒ 不阻塞主线工作。
-    # **清理完后请把下面的 warnings.append 改成 failures.append，恢复 fail 级**
-    # （与第 5 项「入口体量」同为过渡期 warning 的先例）。
+    # 历史：2026-10-08 上线首日曾以 **warning 级**试运行（当时报出 13 处陈旧引用、
+    # 跨 8 个文档，超出当日任务范围）⇒ 同日清完后**已恢复 fail 级**。
     if bad:
         for b in bad:
-            warnings.append("[方法·待清理] " + b)
-        print("9. 方法名真实性    : WARN（%d 处陈旧引用，待清理）" % len(bad))
+            failures.append("[方法] " + b)
+        print("9. 方法名真实性    : FAIL（%d 处）" % len(bad))
         if VERBOSE:
             for b in bad:
                 print("      " + b)

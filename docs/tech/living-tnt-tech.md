@@ -612,9 +612,11 @@ Tooltip 状态标题改为使用 `Component.translatable()` 国际化键，支�
 新增第三种爆炸模式，当 TNT 数量超过 3456（54×64）时启用：
 
 - 爆炸触发时立即应用实体伤害和音效/粒子
-- 区块破坏改为渐进式：每 tick 消除一个整区块，从爆炸中心逐步向外扩散
-- 使用 `LinkedHashMap<UUID, SuperExplosionTask>` 调度队列，支持多个爆炸同时进行
-- 通过 `ExplosionComponent.tickAll()` 在 `LivingItem.onServerTick()` 中每 tick 驱动
+- 区块破坏改为渐进式：**由待炸账本按区块分帧推进（每 tick 32 个区块）**，从爆炸中心逐步向外扩散
+- 爆炸登记进世界级 `ExplosionLedger`（`ExplosionLedger.schedule`），支持多个爆炸同时进行；
+  未加载的区块等自然加载时补炸（`ExplosionLedger.onChunkLoaded`）
+- 通过 `ExplosionLedger.flushAll(server)` 在 `LivingItem.onServerTick()` 中每 tick 驱动
+  （旧实现为 `ExplosionComponent.tickAll()` + `SuperExplosionTask` 队列，已废弃）
 - 清除区块：移除所有方块实体 → 遍历 Section 设空气 → 标记区块 → 通知客户端
 
 ---

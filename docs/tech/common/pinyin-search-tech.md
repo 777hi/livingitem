@@ -166,11 +166,10 @@ private boolean matchesSearchText(ItemStack stack, String searchText) {
 
 #### **运行时动态扩展**
 ```java
-// 添加自定义汉字
-PinyinHelper.extendDictionary('自定义', 'zidingyi', 'zdy');
-
-// 重置为默认字典
-PinyinHelper.resetToDefault();
+// ⚠️ 以下为**规划中**的 API，尚未实现（PinyinHelper 当前只提供只读接口：
+// getPinyin / toPinyin / toPinyinInitials / isPinyinMatch / getDictionarySize）
+PinyinHelper.extendDictionary('自定义', 'zidingyi', 'zdy');   // 未实现
+PinyinHelper.resetToDefault();                                 // 未实现
 ```
 
 #### **建议扩展场景**
@@ -220,8 +219,8 @@ PinyinHelper.resetToDefault();
 - **影响**: 生僻字或模组特有汉字可能无法识别
 - **解决**:
   ```java
-  // 运行时动态添加
-  PinyinHelper.extendDictionary('生僻', 'shengpi', 'sp');
+  // 运行时动态添加 —— ⚠️ 规划中，尚未实现（见上「扩展性」小节的说明）
+  PinyinHelper.extendDictionary('生僻', 'shengpi', 'sp');   // 未实现
   ```
 
 #### 2️⃣ **不支持多音字**

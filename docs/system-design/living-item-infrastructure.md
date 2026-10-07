@@ -989,7 +989,7 @@ private static boolean tryPushToNeighbor(IItemHandler handler, BlockPos pos, Lev
 
 ```java
 // TransferPipeline.executeInContainer() — 提取前检查
-Container hostContainer = CrossContainerTransfer.getNeighborContainer(level, ctx.getBlockPos());
+Container hostContainer = ContainerContext.getContainer(level, neighborPos);
 if (hostContainer != null && !hostContainer.canTakeItem(hostContainer, sourceSlot, sourceStack)) {
     return false;
 }
