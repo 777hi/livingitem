@@ -5,7 +5,7 @@ import javax.annotation.Nullable;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 
-import com.qiqi.li.living.transfer.LivingComponents;
+import com.qiqi.li.living.components.LivingComponents;
 
 /**
  * 活工具/活武器主人名字的<b>显示缓存</b>（{@code LIVING_TOOL_OWNER_NAME} 组件）。

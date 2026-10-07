@@ -168,7 +168,8 @@ src/main/java/com/qiqi/li/
 │   │   └── sable/                           #   Sable 飞艇兼容（软依赖）
 │   │
 │   ├── components/                          # 无状态工具组件
-│   │   └── ItemFilterComponent.java         #   黑白名单过滤
+│   │   ├── ItemFilterComponent.java         #   黑白名单过滤
+│   │   └── LivingComponents.java            #   全部持久化类型注册站（A1 迁入 2026-09-28；**2026-10-08 ③ 从 transfer 迁出**：28 个组件/附件常量；纯注册无逻辑）
 │   │
 │   ├── transfer/                            # 传输基础设施
 │   │   ├── SlotAccessor.java                #   接口：模拟优先传输
@@ -180,7 +181,6 @@ src/main/java/com/qiqi/li/
 │   │   ├── SlotInteractions.java            #   槽位交互注册表 + 分发器（三处传输分支唯一入口）
 │   │   ├── SlotResolver.java                #   槽位解析
 │   │   ├── ContainerCompatibilityConfig.java #  容器兼容性配置
-│   │   ├── LivingComponents.java            #   全部持久化类型注册站（A1 迁入：28 个组件/附件常量；纯注册无逻辑）
 │   │   └── FilterData.java                  #   过滤数据（从 data/ 迁入，跨领域共享；自带 of()/set()）
 │   │
 │   ├── util/                                # 跨领域工具

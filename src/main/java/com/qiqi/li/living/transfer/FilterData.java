@@ -2,6 +2,7 @@ package com.qiqi.li.living.transfer;import net.minecraft.world.item.ItemStack;
 
 
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.components.LivingComponents;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;

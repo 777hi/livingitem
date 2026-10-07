@@ -3,7 +3,7 @@ package com.qiqi.li;
 import com.qiqi.li.living.domain.tnt.ExplosionLedger;
 import com.qiqi.li.living.domain.ender.EnderChannelRegistry;
 import com.qiqi.li.living.transfer.ContainerRuleConfig;
-import com.qiqi.li.living.transfer.LivingComponents;
+import com.qiqi.li.living.components.LivingComponents;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.RandomizableContainer;

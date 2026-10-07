@@ -4,26 +4,32 @@
 # 格式：规则 <TAB> 源 <TAB> 目标 <TAB> 条数
 
 # R1 跨模块方向违规（下层依赖上层）
-module	living/transfer	living/domain/redstone	11
+module	living/components	living/domain/redstone	11
 module	living/container	living/domain/water	9
 module	living/container	living/domain/redstone	6
 module	living/container	living/domain/power	5
-module	living/container	living/transfer	5
 module	living/domain/tools	network	5
 module	(root)	client/render	4
 module	living/api	living/container	4
-module	living/transfer	living/domain/ender	4
-module	living/transfer	living/domain/power	4
-module	living/transfer	living/domain/tools	4
+module	living/components	living/domain/power	4
+module	living/components	living/domain/tools	4
 module	living/compat	living/domain/water	3
+module	living/components	living/domain/water	3
+module	living/container	living/transfer	3
 module	living/domain/tools	(root)	3
 module	living/transfer	living/domain/chest	3
-module	living/transfer	living/domain/water	3
+module	living/transfer	living/domain/ender	3
+module	living/container	living/components	2
 module	living/domain/tnt	(root)	2
-module	living/transfer	living/domain/farmland	2
 module	(root)	client/icon	1
+module	living/api	living/components	1
 module	living/api	living/domain/tools	1
-module	living/api	living/transfer	1
+module	living/components	(root)	1
+module	living/components	living/domain/ender	1
+module	living/components	living/domain/farmland	1
+module	living/components	living/domain/furnace	1
+module	living/components	living/domain/hopper	1
+module	living/components	living/domain/tnt	1
 module	living/container	living/compat	1
 module	living/container	living/debug	1
 module	living/container	living/domain/ender	1
@@ -34,10 +40,7 @@ module	living/domain/map	network	1
 module	living/domain/runtime	network	1
 module	living/domain/water	(root)	1
 module	living/domain/water	network	1
-module	living/transfer	(root)	1
-module	living/transfer	living/domain/furnace	1
-module	living/transfer	living/domain/hopper	1
-module	living/transfer	living/domain/tnt	1
+module	living/transfer	living/domain/farmland	1
 
 # R2 Mixin 位置违规（只能声明在 L4 / L5）
 #   （无）

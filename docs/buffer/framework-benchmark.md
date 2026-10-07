@@ -406,7 +406,7 @@ static <B extends Block> NonNullConsumer<? super B> movementBehaviour(MovementBe
 ### 3.16 DataComponent 成对声明 persistent + networkSynchronized（**定稿：已达标**，不抄）
 
 **Create**（`AllDataComponents.java:57-66`）：统一 `builder.persistent(codec).networkSynchronized(streamCodec)`。
-**我们**（`src/main/java/com/qiqi/li/living/transfer/LivingComponents.java:62-67`）：已是同款：
+**我们**（`src/main/java/com/qiqi/li/living/components/LivingComponents.java:62-67`）：已是同款：
 
 ```java
 DataComponentType.<Boolean>builder().persistent(Codec.BOOL)

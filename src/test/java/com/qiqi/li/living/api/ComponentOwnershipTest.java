@@ -28,7 +28,7 @@ import com.qiqi.li.living.domain.power.LivingWaxedCopperFunction;
 import com.qiqi.li.living.domain.redstone.LivingButtonFunction;
 import com.qiqi.li.living.domain.redstone.LivingComparatorFunction;
 import com.qiqi.li.living.api.LivingItemManager;
-import com.qiqi.li.living.transfer.LivingComponents;
+import com.qiqi.li.living.components.LivingComponents;
 import com.qiqi.li.living.domain.redstone.LivingCopperFunction;
 import com.qiqi.li.living.domain.redstone.LivingLeverFunction;
 import com.qiqi.li.living.domain.redstone.LivingRedstoneBlockFunction;

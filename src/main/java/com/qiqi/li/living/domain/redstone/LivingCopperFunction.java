@@ -1,5 +1,5 @@
 package com.qiqi.li.living.domain.redstone;
-import com.qiqi.li.living.transfer.LivingComponents;
+import com.qiqi.li.living.components.LivingComponents;
 import com.qiqi.li.living.domain.redstone.LivingGrateData;
 import com.qiqi.li.living.domain.redstone.LivingCutCopperData;
 import com.qiqi.li.living.domain.redstone.LivingCopperSignalData;

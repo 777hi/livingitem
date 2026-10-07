@@ -1,5 +1,5 @@
 package com.qiqi.li.living.domain.water;
-import com.qiqi.li.living.transfer.LivingComponents;
+import com.qiqi.li.living.components.LivingComponents;
 
 import java.util.HashSet;
 import java.util.List;

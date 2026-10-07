@@ -1,6 +1,6 @@
 package com.qiqi.li.living.domain.tools;
 
-import com.qiqi.li.living.transfer.LivingComponents;
+import com.qiqi.li.living.components.LivingComponents;
 import javax.annotation.Nullable;
 import net.minecraft.world.item.ItemStack;
 import com.mojang.serialization.Codec;

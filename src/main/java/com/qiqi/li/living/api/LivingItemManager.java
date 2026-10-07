@@ -1,6 +1,6 @@
 package com.qiqi.li.living.api;
 
-import com.qiqi.li.living.transfer.LivingComponents;
+import com.qiqi.li.living.components.LivingComponents;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;

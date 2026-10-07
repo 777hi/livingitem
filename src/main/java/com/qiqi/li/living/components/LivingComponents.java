@@ -1,4 +1,4 @@
-package com.qiqi.li.living.transfer;
+package com.qiqi.li.living.components;
 
 import com.mojang.serialization.Codec;
 import net.minecraft.core.UUIDUtil;

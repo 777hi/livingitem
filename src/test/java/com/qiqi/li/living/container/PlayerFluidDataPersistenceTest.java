@@ -25,7 +25,7 @@ import net.neoforged.neoforge.items.ItemStackHandler;
 import net.neoforged.neoforge.items.wrapper.InvWrapper;
 
 import com.qiqi.li.living.domain.water.ContainerFluidData;
-import com.qiqi.li.living.transfer.LivingComponents;
+import com.qiqi.li.living.components.LivingComponents;
 
 /**
  * 玩家路径的流体落盘守卫（2026-10-07）——

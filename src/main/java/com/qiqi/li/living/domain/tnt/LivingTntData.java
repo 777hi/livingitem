@@ -2,7 +2,7 @@ package com.qiqi.li.living.domain.tnt;import net.minecraft.world.item.ItemStack;
 
 
 import com.qiqi.li.living.api.LivingItemManager;
-import com.qiqi.li.living.transfer.LivingComponents;
+import com.qiqi.li.living.components.LivingComponents;
 import java.util.function.Consumer;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;

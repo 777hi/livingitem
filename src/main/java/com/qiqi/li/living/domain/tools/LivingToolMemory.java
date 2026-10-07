@@ -1,7 +1,7 @@
 package com.qiqi.li.living.domain.tools;
 
 import com.qiqi.li.living.api.LivingItemManager;
-import com.qiqi.li.living.transfer.LivingComponents;
+import com.qiqi.li.living.components.LivingComponents;
 import net.minecraft.world.item.ItemStack;
 import java.util.Optional;
 import javax.annotation.Nullable;

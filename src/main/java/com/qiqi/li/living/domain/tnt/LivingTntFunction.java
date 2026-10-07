@@ -1,5 +1,5 @@
 package com.qiqi.li.living.domain.tnt;
-import com.qiqi.li.living.transfer.LivingComponents;
+import com.qiqi.li.living.components.LivingComponents;
 
 import java.util.List;
 import java.util.Set;

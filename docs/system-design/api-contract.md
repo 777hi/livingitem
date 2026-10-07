@@ -81,7 +81,7 @@ javadoc 明写「新增 LivingItemFunction 必须回来手添」⇒ **第三方�
 | 扩展点 | 位置 | 状态 |
 |---|---|---|
 | `LivingItemManager.registerFunction` | `LivingItemManager.java` | ✅ 可用 |
-| **数据组件注册** `LivingComponents.*` | `transfer/LivingComponents.java`（A1 迁入，2026-09-28） | ✅ 可用 —— 内容组件的常量与注册站；`LivingItemManager` 自此为纯框架类，不再牵出 domain 类型 |
+| **数据组件注册** `LivingComponents.*` | `components/LivingComponents.java`（A1 迁入 2026-09-28；**2026-10-08 ③ 从 transfer 迁出**） | ✅ 可用 —— 内容组件的常量与注册站；`LivingItemManager` 自此为纯框架类，不再牵出 domain 类型 |
 | `InteractionRegistry.register` / `registerHandler` | `LivingItem.java` | ✅ 声明式规则 + 谓词收窄（活耕地案例已证明无需枚举物品类） |
 | `ContainerSnapshot.registerProvider` | `LivingItem.java` | ✅ 注册驱动，已解除 container 包对 domain 类的依赖 |
 | 可选接口 `HasDirection` / `HasContainerData` | `living/api/` | ✅ 新增活物品无需改核心文件 |

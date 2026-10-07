@@ -2,7 +2,7 @@ package com.qiqi.li.living.domain.power;import net.minecraft.world.item.ItemStac
 
 
 import com.qiqi.li.living.api.LivingItemManager;
-import com.qiqi.li.living.transfer.LivingComponents;
+import com.qiqi.li.living.components.LivingComponents;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.function.Consumer;

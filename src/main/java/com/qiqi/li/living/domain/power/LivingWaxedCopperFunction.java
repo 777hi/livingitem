@@ -1,5 +1,5 @@
 package com.qiqi.li.living.domain.power;
-import com.qiqi.li.living.transfer.LivingComponents;
+import com.qiqi.li.living.components.LivingComponents;
 import com.qiqi.li.living.domain.power.LivingWaxedGeneratorData;
 import com.qiqi.li.living.domain.power.LivingWaxedChiseledData;
 import com.qiqi.li.living.domain.power.LivingWaxedBulbData;

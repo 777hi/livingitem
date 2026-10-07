@@ -19,6 +19,16 @@
 
 > 框架侧（流体侧已于 10-07 完工，此后不再改动）。
 
+- 🏗 **架构分层第三步：`LivingComponents` 迁出 `living/transfer`**（**534 全绿**，纯重构）：
+  `living/transfer/` 的 12 个文件里只有它是异类（其余全是槽位 / 传输相关），
+  而 `living/components/` **已存在且名字正好对上** ⇒ `transfer/LivingComponents.java` → `components/`。
+  **48 个 import** 一次改完 + 补 `FilterData` 的**同包引用**（它原先在 `transfer` 包里无需 import，
+  **正是 ① 踩过的同一个坑**）+ 修 `transfer/package-info.java` 的失效 javadoc 链接
+  + 三处文档路径（`framework-benchmark` / `api-contract` / `file-map`）。
+  ⚠️ **本步不减违规计数**：`transfer` 与 `components` **同层**（L2）⇒ `components → domain` 仍是 27 条 R1 违规。
+  它买的是**归属诚实** —— 原先"`transfer` 认识 11 个领域"是**假象**（真正认识领域的是 `LivingComponents` 一个类）。
+  `R1` 仍 **94 条**，但违规**配对数 34 → 37**（同一批边换了模块标签）。
+
 - 🏗 **架构分层第二步：static 缓存登记点归属修正**（**534 全绿**，纯重构）：
   `StaticCacheRegistry` 原先**自己登记了 7 项领域缓存** ⇒ 该类（L1 基础）必须 import
   `ender` / `runtime` / `tnt` / `tools` / `water` 五个领域（L3），**构成 7 条跨层反向依赖**。

@@ -4,7 +4,7 @@ import com.qiqi.li.living.domain.power.ContainerPowerData;
 import com.qiqi.li.living.domain.redstone.ContainerRedstoneData;
 import com.qiqi.li.living.domain.water.ContainerFluidData;
 import com.qiqi.li.living.domain.water.ContainerStressData;
-import com.qiqi.li.living.transfer.LivingComponents;
+import com.qiqi.li.living.components.LivingComponents;
 
 /**
  * 全部容器级数据的 key 清单。

@@ -1,5 +1,5 @@
 package com.qiqi.li.living.domain.farmland;
-import com.qiqi.li.living.transfer.LivingComponents;
+import com.qiqi.li.living.components.LivingComponents;
 import com.qiqi.li.living.domain.farmland.FarmlandPlantComponent;
 
 import java.util.ArrayList;

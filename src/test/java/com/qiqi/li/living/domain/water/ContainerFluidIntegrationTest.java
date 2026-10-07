@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerDataKeys;
 import com.qiqi.li.living.container.ContainerLivingItemHandler;
-import com.qiqi.li.living.transfer.LivingComponents;
+import com.qiqi.li.living.components.LivingComponents;
 import com.qiqi.li.living.container.SimpleContainerContext;
 
 import net.minecraft.world.item.ItemStack;

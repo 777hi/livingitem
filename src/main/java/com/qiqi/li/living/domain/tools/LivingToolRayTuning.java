@@ -16,7 +16,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
 
 import com.qiqi.li.living.api.LivingItemManager;
-import com.qiqi.li.living.transfer.LivingComponents;
+import com.qiqi.li.living.components.LivingComponents;
 
 /**
  * 活工具/活武器的<b>射线微调配置</b>（主动模式 · 仅玩家形态生效 · 2026-09-30 用户定）。
