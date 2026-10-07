@@ -92,7 +92,7 @@ class SlotInteractionCargoGateTest {
         assertTrue(SlotInteractions.isEligibleCargo(new ItemStack(Items.BONE_MEAL, 1)), "普通骨粉合法");
         assertTrue(SlotInteractions.isEligibleCargo(new ItemStack(Items.WHEAT, 1)), "普通物品合法");
         assertTrue(SlotInteractions.isEligibleCargo(living(new ItemStack(Items.CHEST, 1))),
-            "活箱子是存储容器，本身可被搬运 → 合法");
+            "活箱子是存储容器，其槽位可展开为虚拟存储参与搬运（本体不被移动）→ 合法");
         assertTrue(SlotInteractions.isEligibleCargo(living(new ItemStack(Items.ENDER_CHEST, 1))),
             "活末影箱同理");
         assertFalse(SlotInteractions.isEligibleCargo(living(new ItemStack(Items.BONE_MEAL, 1))),

@@ -126,7 +126,8 @@ public final class TransferPipeline {
     }
 
     /**
-     * 活漏斗的货物准入：活物品不作货物，活箱子/活末影箱除外（它们是存储容器）。
+     * 活漏斗的货物准入：活物品不作货物，活箱子/活末影箱除外（它们是<b>存储容器</b>，
+     * 其槽位可被展开为虚拟存储参与搬运——作源取内部、作目标写内部，<b>箱子本体不被移动</b>）。
      * 唯一定义点在 {@link SlotInteractions#isEligibleCargo}——传输层与交互层共用，
      * 避免「隔离规则」两处漂移（2026-09-15）。
      */
@@ -134,6 +135,7 @@ public final class TransferPipeline {
         return SlotInteractions.isEligibleCargo(stack);
     }
 
+    /** 存储容器（活箱子/活末影箱）：其槽位可展开为虚拟存储，故上面那道隔离门放行。 */
     private static boolean isStorageContainer(ItemStack stack) {
         return com.qiqi.li.living.domain.chest.LivingChestFunction.isLivingChest(stack)
             || LivingEnderChestFunction.isLivingEnderChest(stack);

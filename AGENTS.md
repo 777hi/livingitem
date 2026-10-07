@@ -165,6 +165,7 @@ src/main/java/com/qiqi/li/
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-08 | 📝 **措辞纠错：活箱子/活末影箱「可被搬运」的对象是内容而非本体** —— 5 处改为「其槽位可展开为虚拟存储」（作源取内部/作目标写内部，**本体不动**）；流体侧补「为何只推非活物品」（推动=本体移位，与展开语义不同类）（**538 全绿**） | `living-hopper-tech.md` §6.2.1/§6.2.2 |
 | 2026-10-08 | 🏗 **架构分层第四步（C 收尾）**：`RedstoneSensor` 接口上移 `living/api/` + 方向常量收归契约层 ⇒ `power`/`hopper` 完全不引用 redstone 域。**R3 28 → 25**，顺带 **R1 94 → 93**（纯重构，**534 全绿**） | `buffer/redstone-evolution-roadmap.md` §1 |
 | 2026-10-08 | 🏗 **架构分层第三步**：`LivingComponents` 从 `living/transfer/` 迁入 `living/components/`（48 个 import + 1 处同包引用）—— **不减违规，买归属诚实**（原先"transfer 认识 11 个领域"是假象）。**534 全绿** | `reference/file-map.md` |
 | 2026-10-08 | 🏗 **架构分层第二步**：`StaticCacheRegistry` 的 7 项**领域**缓存登记搬进各自 `XxxRegistration`（新建 `RuntimeRegistration`）⇒ 它只认识框架自己。**R1 101 → 94**，基线 39→34 对（纯重构，**534 全绿**） | `living-item-infrastructure.md` §3.4 |
@@ -174,7 +175,6 @@ src/main/java/com/qiqi/li/
 | 2026-10-07 | 🧹 **活桶 tooltip 定稿：删内容行、保留标题** —— 根因是 lang 占位符数与代码传参不符（**534 全绿**） | `living-fluid-tech.md` §5 |
 | 2026-10-07 | ✅ **玩家路径落盘守卫补齐**：玩家容器此前零用例 ⇒ 补「变空移除 / 重进不复活 / 两键隔离 / 回填」（**528 全绿**） | `living-fluid-tech.md` §8 |
 | 2026-10-07 | ✅ **性能收尾**：四处零行为变化短路（含 `fillNeighbors` 每相位复用缓冲）+ 量测基线（**524 全绿**） | `living-fluid-tech.md` §11 |
-| 2026-10-07 | 🔧 **收尾审查批次**：🔴 修**晋升邻源计数不分流体**（岩浆源被算进水邻源 ⇒ 错误晋升）+ 三处健壮性（**519 全绿**） | `living-fluid-tech.md` §3.2 |
 
 ## 排查铁律：原版机制挡路时
 
