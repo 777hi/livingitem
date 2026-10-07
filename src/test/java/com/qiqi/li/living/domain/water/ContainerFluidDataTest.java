@@ -648,7 +648,7 @@ class ContainerFluidDataTest {
     @DisplayName("㉝ 刷石机：熔岩前沿遇水凝固为圆石（frontierReaction），产物格不是墙 ⇒ 圆石持续累加")
     void frontierReaction_cobblestoneAtContact() {
         // 生产节拍 + **够远的几何**（9 格单行两端）：岩浆 30t/格、水 5t/格 ⇒
-        // 岩浆守得住紧贴自己的一格（30 < 5×7），刷石机才成立（见 buffer/living-fluid-arrival-time-claim.md §4）
+        // 岩浆守得住紧贴自己的一格（30 < 5×7），刷石机才成立（见 archive/living-fluid-arrival-time-claim.md §4）
         registerProductionCadence();
         var ctx = row();
         var fluid = new ContainerFluidData();

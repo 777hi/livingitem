@@ -142,7 +142,7 @@ public final class FluidFlowServerSync {
      * <p>⚠️ 2026-10-07 性能收尾（零行为变化）：两道短路提到最前面 ——
      * <b>① 空容器</b>（无数据且从未下发过 ⇒ 直接返回；真实存档里绝大多数容器没流体）；
      * <b>② 无 viewer</b>（先收集查看者，空则<b>连包都不建</b>）。
-     * 详见 {@code docs/buffer/living-fluid-perf-2026-10-07.md}。</p>
+     * 详见 {@code docs/archive/living-fluid-perf-2026-10-07.md}。</p>
      */
     public static void flushAfterTick(TickableContainerContext ctx, ContainerFluidData fluidData) {
         Level level = ctx.getLevel();

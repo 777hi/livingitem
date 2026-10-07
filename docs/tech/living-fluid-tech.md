@@ -541,7 +541,7 @@ slot/level/fromSlot）→ 客户端 `FluidFlowClientCache` → `AbstractContaine
   **渲染侧第 ③ 次泄漏已修**（2026-10-06，末影箱派发判 viewer，见 §7）；
   ⚠️ 同日一度「砍掉末影箱流体兼容」，**当日回退** —— 那次把 `processEnderChest`（第 4 条完整
   tick 入口）也删了，导致末影箱里**全部**活物品机制失效（超范围误伤）；
-  方案留痕：`buffer/living-ender-viewer-dispatch-fix.md`；
+  方案留痕：`archive/living-ender-viewer-dispatch-fix.md`；
 - **活熔岩已接入**（§3.7，2026-10-06，含黑曜石循环 +倒桶源格替换 §5）；仍挂起：
   **DOWN 特例（石头）**、**soul soil + blue ice ⇒ 玄武岩**、反应音效、**模组流体接入**
   （一行行为注册，等有具体流体再说）；

@@ -37,7 +37,7 @@
   但去掉对全局注册表的依赖，测试可喂 stub）。
   测试 +6：`LivingItemTooltipTest` 5 项（含**真实活桶 ⇒ 只有标题没有内容行**这条合起来的表现）
   + `LivingBucketFunctionTest` 1 项（活桶零内容行）。**534 全绿**。
-  方案留痕 `docs/buffer/living-bucket-tooltip-removal.md`（含顺手发现的死 lang 键
+  方案留痕 `docs/archive/living-bucket-tooltip-removal.md`（含顺手发现的死 lang 键
   `tooltip.livingitem.water_bucket.status` / `.flow`，待实测收口清理）。
 
 - ✅ **玩家路径落盘守卫补齐**（**528 全绿**）：玩家容器（背包 / 末影箱）没有 BE 可挂，只能落
@@ -66,7 +66,7 @@
   写进 changelog** ⇒ 「先量后改」的规矩救了这一批。
   测试：新增 `ContainerFluidPerfTest`（量测 + 病态回归宽松阈值 + 落盘 `build/_perf.txt`）、
   `ContainerNeighborsTest`（`fillNeighbors` 与 `getNeighbors` 逐格一致 / 单行 / 复用不污染）。
-  方案留痕 `docs/buffer/living-fluid-perf-2026-10-07.md`。
+  方案留痕 `docs/archive/living-fluid-perf-2026-10-07.md`。
 - 🔧 **目标层抢占从「距离」改为「到达时间」（514 全绿）**：起因是"刷石机接触格像一堵墙" ——
   那格明明在活水源的流域内、水到得更快，却永远不进水。根因：目标层按**距离 + 入队顺序**分配，
   **与该流体实际多久才流到完全无关**（统一时钟只让*蔓延*走节拍，*分配*仍用距离）
@@ -88,9 +88,9 @@
   ㊶ 改为"先达稳态再喂满组圆石"才出黑曜石、新增「两源太近 ⇒ 岩浆源变黑曜石」守卫；
   新增测试帮手 `registerProductionCadence()`（**基线水是瞬时 ⇒ 到达时间恒 0 ⇒ 会赢走所有争用格**，
   跨流体几何必须用生产节拍，否则看到的是退化几何）。
-  方案留痕 `docs/buffer/living-fluid-arrival-time-claim.md`。
+  方案留痕 `docs/archive/living-fluid-arrival-time-claim.md`。
 - 🔧 **收尾审查批次（519 全绿）** —— 六维度审查（契约接缝 / 相位 / 时钟 / IO / 落盘 / 性能）
-  后的修复，方案留痕 `docs/buffer/living-fluid-review-2026-10-07.md`：
+  后的修复，方案留痕 `docs/archive/living-fluid-review-2026-10-07.md`：
   ① 🔴 **晋升邻源计数不分流体**（真 bug）：`countSourceNeighbors` 只看 `isSource` ⇒
   岩浆源会被算进水的「≥2 邻源」⇒ 一格流动水夹在两个岩浆源之间**错误晋升成水源**；
   加 `fe.fluid() == fluid` 过滤。② 删 `exportFlowData()`（全仓库零调用）。
@@ -121,7 +121,7 @@
   改用「水的 maxLevel 限 4」构造真正的空档场景（记下来：**基线水瞬时，别用「跑 N 拍」假设
   它只流了 N 格**）。
   测试：新增 ㊾ 不驱逐 + 接触面圆石（水全程不动）/ ㊿ 倒进异种流动格 ⇒ 黑曜石 + 源湮灭 + 水灌回。
-  方案留痕 `docs/buffer/living-fluid-no-displace-fix.md`。
+  方案留痕 `docs/archive/living-fluid-no-displace-fix.md`。
 ## 2026-10-06
 
 - 📉 **入口瘦身：子系统索引改「族级路由 + 子系统直链」**（**文档系统改动，代码未动**）：
@@ -214,7 +214,7 @@
   或走管道抽取（§10）。晋升再生不变量独立保留（中间源被**汲走**后下一拍补回）。
   测试：㉕ 改钉「空桶不变、源不消耗」/ ㉛ 改钉催化剂语义 / ㉜ 改钉汲走后再生 /
   缩容守卫移到表侧（引擎接缝不重复实现）。
-  方案与选项留痕：`docs/buffer/living-fluid-obsidian-plan.md`。
+  方案与选项留痕：`docs/archive/living-fluid-obsidian-plan.md`。
 - ✅ **统一时钟：生长类逻辑一律走该流体自己的节拍**（同日第四批次，**487 测试全绿**，
   用户逐条确认划界与 D1~D5）：此前引擎里有**三个时钟** —— 目标层每 tick、实际层每流体节拍、
   物品推动固定 `FLOW_STEP_TICKS = 4`（不分流体），产生两处真实错配：
@@ -232,7 +232,7 @@
   （用户确认接受：一致性优先，要速率靠多源并行）。
   测试：⑥ 改钉「随蔓延同拍推动」；新增 ㊸（晋升只在推进拍）/ ㊹（**等价性**：晋升只变慢、
   终态与瞬时基线相同）/ ㊺（推动按流体节拍，慢岩浆不再 4t 一次）。
-  方案留痕：`docs/buffer/living-fluid-single-clock-plan.md`。
+  方案留痕：`docs/archive/living-fluid-single-clock-plan.md`。
 - ✅ **管道抽取（活水源对外流体能力，493 测试全绿）** —— 容器里的活水源可被模组流体管道抽取
   （`living-fluid-tech.md` §10 由「设计存档」转「已实施」）。新 `domain/water/ContainerFluidHandler`
   （`implements` NeoForge `IFluidHandler`）：**tank 数 = 派生源数**、`getFluidInTank` = 源流体 ×1000mB、
@@ -290,7 +290,7 @@
   全局提示被翻成 `ENDER_CHEST` ⇒ 串台。BE 容器那条路径本来就有 `isViewing` 过滤，只有末影箱漏了。
   修：新增 `ContainerContexts.isViewingEnderChest`（唯一判据实现点，`LivingEnderChestFunction`
   的活化绑定改为委托它，消掉重复判据）；末影箱分支判 viewer 后 return（无关联 BE 不能落到
-  BE 匹配分支）。方案留痕 `docs/buffer/living-ender-viewer-dispatch-fix.md`（含三次泄漏现状表、
+  BE 匹配分支）。方案留痕 `docs/archive/living-ender-viewer-dispatch-fix.md`（含三次泄漏现状表、
   根因链条、被否的 4 个选项）。测试：`ContainerContextsTest` 新增 Nested 6 项（末影箱菜单 true /
   `ChestMenu` 但普通箱容器 false / 非 `ChestMenu` false / null false / 玩家侧两条）+
   重建 `FluidFlowClientCacheTest` 4 项（三份快照互不串 + `PLAYER_INV` 不翻转提示 + `clear()` 复位）。
@@ -309,7 +309,7 @@
   熔岩**蔓延**到水格（机制五，已落地）。此前 §3.5 把这一格记成「待做」是错的，已更正。
   测试：新增 `LivingBucketInteractSupportTest` 3 项（契约默认 false / 熔岩三条分支 / 倒桶判定四例）+
   `ContainerFluidDataTest` ㊻ 覆盖语义（源被覆盖成水 + 实际层当拍改写 + 下游岩浆退走）。
-  方案留痕 `docs/buffer/living-pour-source-replace.md`。
+  方案留痕 `docs/archive/living-pour-source-replace.md`。
 - 🔧 **倒桶口径对称化（A 档，同日第七批次，511 全绿）** —— 起因是「为什么异种源格语义要不同」这个
   追问，查实后确认**上一批的论据用错了函数**：
   - `Fluid.canBeReplacedWith`（含 `LavaFluid` 的 `getHeight() >= 0.444` 门槛）属于**蔓延**路径
