@@ -288,13 +288,9 @@ public class ContainerFluidData {
             ItemStack item = ctx.getItem(slot);
             if (item.isEmpty() || LivingItemManager.isLivingItem(item)) continue;
             switch (behavior.incinerateResult(item)) {
-                case BURN -> {
-                    ctx.setItem(slot, ItemStack.EMPTY);
-                    ctx.syncSlotToClients(slot, ItemStack.EMPTY);   // setItem 不管 GUI 刷新，须显式同步
-                }
+                case BURN -> ctx.setItem(slot, ItemStack.EMPTY);
                 case SPAWN_SOURCE -> {
                     ctx.setItem(slot, ItemStack.EMPTY);
-                    ctx.syncSlotToClients(slot, ItemStack.EMPTY);   // 同上
                     registerGeneratedSource(slot, fe.fluid());
                     // 源即时：实际层当拍改写为源（渲染/转化/汲倒查询立即正确，不等下一拍）
                     flows.put(slot, new FlowEntry(SOURCE_LEVEL, true, -1, fe.fluid()));
@@ -343,12 +339,10 @@ public class ContainerFluidData {
             ItemStack existing = ctx.getItem(r.slot());
             if (existing.isEmpty()) {
                 ctx.setItem(r.slot(), r.product());
-                ctx.syncSlotToClients(r.slot(), r.product());   // setItem 不管 GUI 刷新，须显式同步
             } else if (ItemStack.isSameItemSameComponents(existing, r.product())
                     && existing.getCount() < existing.getMaxStackSize()) {
                 existing.grow(1);
                 ctx.setItem(r.slot(), existing);
-                ctx.syncSlotToClients(r.slot(), existing);      // 同上（数量累加也要刷）
             } else {
                 continue;   // 产物放不下（满组 / 异种物品占据）⇒ 本拍不反应，岩浆留在格内
             }
@@ -391,7 +385,6 @@ public class ContainerFluidData {
                 // 另注：setItem 的实现是「先 extractItem 抽干槽位、再 insertItem 插入新栈」，
                 // 调用方持有的旧栈活引用会被抽干成空栈 —— 任何「setItem 后再读旧引用」的写法都会中招。
                 ctx.setItem(slot, transformed);
-                ctx.syncSlotToClients(slot, ctx.getItem(slot));   // setItem 不管 GUI 刷新，须显式同步
             }
         }
     }
