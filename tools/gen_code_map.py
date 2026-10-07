@@ -79,7 +79,7 @@ for _m in ("living/api", "living/model"):
 for _m in ("living/container", "living/perf", "living/util", "logging"):
     MODULE_LAYER[_m] = 1
 for _m in ("living/compat", "living/components", "living/debug", "living/function",
-           "living/interaction", "living/transfer"):
+           "living/interaction", "living/runtime", "living/transfer"):
     MODULE_LAYER[_m] = 2
 for _m in ("(root)", "living/command", "living/mixin", "network"):
     MODULE_LAYER[_m] = 4
