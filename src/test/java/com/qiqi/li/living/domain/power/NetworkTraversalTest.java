@@ -26,8 +26,9 @@ import com.qiqi.li.living.domain.redstone.ContainerRedstoneData;
 import com.qiqi.li.living.domain.redstone.LivingLeverFunction;
 import com.qiqi.li.living.domain.redstone.LivingRedstoneBlockFunction;
 import com.qiqi.li.living.domain.redstone.RedstoneSnapshotProvider;
-import com.qiqi.li.living.domain.runtime.ContainerRuntimeCache;
-import com.qiqi.li.living.domain.runtime.LivingItemRuntimeData;
+import com.qiqi.li.living.runtime.ContainerRuntimeCache;
+import com.qiqi.li.living.domain.power.GeneratorSegment;
+import com.qiqi.li.living.domain.power.LivingWaxedGeneratorData;
 import com.qiqi.li.living.domain.power.PhaseEvent;
 
 /**
@@ -308,11 +309,11 @@ class NetworkTraversalTest {
 
         // 前置：场景确实在多锈级共振稳态（否则「不脏写」会平凡成立，失去意义）
         // 遥测数据已写入运行时缓存，不再写入 DataComponent
-        var gd = ContainerRuntimeCache.get(ctx.getContainerKey(), 0);
-        assertTrue(gd.isGenerator(), "应有发电机遥测数据（运行时缓存）");
-        assertEquals(2, gd.generatorTelemetry().activeLevels(), "应有两个活跃锈级（共振生效）");
-        assertTrue(gd.generatorTelemetry().emaPowerMilliFe() > 0, "应有发电量");
-        assertTrue(gd.generatorTelemetry().resonanceGain() > 1.0, "共振增益应 > 1（多锈级共振）");
+        var gd = ContainerRuntimeCache.get(ctx.getContainerKey(), 0).get(GeneratorSegment.INSTANCE);
+        assertNotNull(gd, "应有发电机遥测数据（运行时缓存）");
+        assertEquals(2, gd.activeLevels(), "应有两个活跃锈级（共振生效）");
+        assertTrue(gd.emaPowerMilliFe() > 0, "应有发电量");
+        assertTrue(gd.resonanceGain() > 1.0, "共振增益应 > 1（多锈级共振）");
 
         // 收敛后稳态：遥测被量化钉死 → 发电机槽位不再每 tick 标脏
         assertFalse(lastTick.dirtySlots.contains(0),

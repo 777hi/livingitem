@@ -19,7 +19,7 @@ import net.minecraft.world.level.Level;
 import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.TickContext;
-import com.qiqi.li.living.domain.runtime.ContainerRuntimeCache;
+import com.qiqi.li.living.runtime.ContainerRuntimeCache;
 import com.qiqi.li.living.model.Pos2D;
 import com.qiqi.li.testutil.FakeContainerContext;
 

@@ -1,15 +1,11 @@
 package com.qiqi.li.network;
 
-import com.qiqi.li.living.domain.furnace.TransformData;
-import com.qiqi.li.living.domain.hopper.ResolvedSlotData;
-import com.qiqi.li.living.domain.power.LivingWaxedGeneratorData;
-import com.qiqi.li.living.domain.runtime.LivingItemClientCache;
-import com.qiqi.li.living.domain.runtime.LivingItemRuntimeData;
-import com.qiqi.li.living.domain.runtime.LivingItemRuntimeData.FurnaceRuntime;
-import com.qiqi.li.living.domain.runtime.LivingItemRuntimeData.HopperRuntime;
+import com.qiqi.li.living.runtime.LivingItemClientCache;
+import com.qiqi.li.living.runtime.RuntimeSegmentRegistry;
+import com.qiqi.li.living.runtime.RuntimeSegmentType;
+import com.qiqi.li.living.runtime.RuntimeSegments;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.RegistryFriendlyByteBuf;
-import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
@@ -20,9 +16,13 @@ import java.util.*;
 /**
  * S2C 活物品运行时数据同步包。
  *
- * <p>将服务端 {@link com.qiqi.li.living.domain.runtime.ContainerRuntimeCache} 中的
+ * <p>将服务端 {@link com.qiqi.li.living.runtime.ContainerRuntimeCache} 中的
  * 运行时数据下发到客户端，用于 Tooltip 渲染。数据不经过 DataComponent，
  * 因此不影响物品堆叠。</p>
+ *
+ * <p><b>本包不认识任何具体片段</b>（档 2）：每段的载荷由
+ * {@code segmentId} 在 {@link RuntimeSegmentRegistry} 查到的 codec 编解码。
+ * 新增一种遥测只需在领域侧实现 {@link RuntimeSegmentType} 并登记 —— 网络包无需改动。</p>
  *
  * <p>编码格式：</p>
  * <pre>
@@ -30,15 +30,18 @@ import java.util.*;
  *   slotCount (varint)
  *   for each slot:
  *     slotIndex (varint)
- *     flags (byte) — bit0=generator, bit1=hopper, bit2=furnace
- *     [generator fields if flags & 1]
- *     [hopper fields if flags & 2]
- *     [furnace fields if flags & 4]
+ *     segmentCount (varint)
+ *     for each segment:
+ *       segmentId (string)
+ *       payload (由该 id 登记的 codec 编解码)
  * </pre>
+ *
+ * <p>⚠️ <b>与改造前（flags 字节 + 三组硬编码字段）的线上格式不同</b> —— 旧客户端/新服务端
+ * 不互通。本模组 alpha 阶段不做旧存档/跨版本兼容，故可接受。</p>
  */
 public record LivingItemSyncPacket(
     String containerKey,
-    Map<Integer, LivingItemRuntimeData> slotData
+    Map<Integer, RuntimeSegments> slotData
 ) implements CustomPacketPayload {
 
     public static final ResourceLocation ID =
@@ -65,82 +68,24 @@ public record LivingItemSyncPacket(
         }
     }
 
-    private static void encodeRuntimeData(FriendlyByteBuf buf, LivingItemRuntimeData data) {
-        byte flags = 0;
-        if (data.isGenerator()) flags |= 1;
-        if (data.isHopper())   flags |= 2;
-        if (data.isFurnace())  flags |= 4;
-        buf.writeByte(flags);
-
-        if (data.isGenerator()) {
-            encodeGenerator(buf, data.generatorTelemetry());
-        }
-        if (data.isHopper()) {
-            encodeHopper(buf, data.hopper());
-        }
-        if (data.isFurnace()) {
-            encodeFurnace(buf, data.furnace());
-        }
-    }
-
-    private static void encodeGenerator(FriendlyByteBuf buf, LivingWaxedGeneratorData g) {
+    private static void encodeRuntimeData(FriendlyByteBuf buf, RuntimeSegments data) {
         RegistryFriendlyByteBuf regBuf = (RegistryFriendlyByteBuf) buf;
-        ByteBufCodecs.VAR_INT.encode(buf, g.detectedPeriod());
-        ByteBufCodecs.VAR_INT.encode(buf, g.phaseCount());
-        ByteBufCodecs.VAR_INT.encode(buf, g.unlockPermille());
-        ByteBufCodecs.VAR_INT.encode(buf, g.lastDelta());
-        ByteBufCodecs.VAR_INT.encode(buf, g.effDeltaSumPermille());
-        ByteBufCodecs.VAR_INT.encode(buf, g.coilForm());
-        ByteBufCodecs.VAR_LONG.encode(buf, g.emaPowerMilliFe());
-        ByteBufCodecs.VAR_LONG.encode(buf, g.levelEmaPowerMilliFe());
-        com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.DomainSnapshot.STREAM_CODEC
-            .apply(ByteBufCodecs.list()).encode(regBuf, g.domains());
-        ByteBufCodecs.DOUBLE.encode(buf, g.resonanceGain());
-        ByteBufCodecs.DOUBLE.encode(buf, g.resonanceBalance());
-        ByteBufCodecs.VAR_INT.encode(buf, g.activeLevels());
-        ByteBufCodecs.VAR_LONG.apply(ByteBufCodecs.list()).encode(buf, g.levelPowerMilliFe());
-    }
-
-    private static void encodeHopper(FriendlyByteBuf buf, HopperRuntime h) {
-        buf.writeVarInt(h.cooldown());
-        ResolvedSlotData slot = h.slotInfo();
-        if (slot != null) {
-            buf.writeBoolean(true);
-            encodeResolvedSlotData(buf, slot);
-        } else {
-            buf.writeBoolean(false);
+        Set<String> ids = data.ids();
+        buf.writeVarInt(ids.size());
+        for (String id : ids) {
+            RuntimeSegmentType<?> type = RuntimeSegmentRegistry.byId(id);
+            if (type == null) {
+                throw new IllegalStateException("未登记的 runtime 片段 id: " + id);
+            }
+            buf.writeUtf(id);
+            encodeSegment(regBuf, type, data.rawById(id));
         }
     }
 
-    private static void encodeFurnace(FriendlyByteBuf buf, FurnaceRuntime f) {
-        buf.writeVarInt(f.progress());
-        buf.writeVarInt(f.total());
-        buf.writeVarInt(f.burnTime());
-        TransformData t = f.transform();
-        if (t != null) {
-            buf.writeBoolean(true);
-            encodeTransformData(buf, t);
-        } else {
-            buf.writeBoolean(false);
-        }
-    }
-
-    private static void encodeResolvedSlotData(FriendlyByteBuf buf, ResolvedSlotData s) {
-        buf.writeInt(s.hostSlot());
-        buf.writeInt(s.sourceSlot());
-        buf.writeInt(s.targetSlot());
-        buf.writeInt(s.containerSize());
-        buf.writeInt(s.containerWidth());
-    }
-
-    private static void encodeTransformData(FriendlyByteBuf buf, TransformData t) {
-        buf.writeUtf(t.inputItem());
-        buf.writeUtf(t.outputItem());
-        buf.writeUtf(t.cachedInput());
-        buf.writeVarInt(t.cachedResult());
-        buf.writeUtf(t.cachedOutput());
-        buf.writeVarInt(t.cachedOutputCount());
-        buf.writeVarInt(t.cookingTime());
+    @SuppressWarnings("unchecked")
+    private static <T> void encodeSegment(RegistryFriendlyByteBuf buf,
+                                          RuntimeSegmentType<T> type, Object value) {
+        type.codec().encode(buf, (T) value);
     }
 
     // ── 解码 ────────────────────────────────────────────────
@@ -148,7 +93,7 @@ public record LivingItemSyncPacket(
     private static LivingItemSyncPacket decode(FriendlyByteBuf buf) {
         String containerKey = buf.readUtf();
         int slotCount = buf.readVarInt();
-        Map<Integer, LivingItemRuntimeData> slotData = new HashMap<>(slotCount);
+        Map<Integer, RuntimeSegments> slotData = new HashMap<>(slotCount);
         for (int i = 0; i < slotCount; i++) {
             int slot = buf.readVarInt();
             slotData.put(slot, decodeRuntimeData(buf));
@@ -156,70 +101,27 @@ public record LivingItemSyncPacket(
         return new LivingItemSyncPacket(containerKey, slotData);
     }
 
-    private static LivingItemRuntimeData decodeRuntimeData(FriendlyByteBuf buf) {
-        byte flags = buf.readByte();
-
-        LivingWaxedGeneratorData generator = null;
-        HopperRuntime hopper = null;
-        FurnaceRuntime furnace = null;
-
-        if ((flags & 1) != 0) {
-            generator = decodeGenerator(buf);
-        }
-        if ((flags & 2) != 0) {
-            hopper = decodeHopper(buf);
-        }
-        if ((flags & 4) != 0) {
-            furnace = decodeFurnace(buf);
-        }
-
-        return new LivingItemRuntimeData(generator, hopper, furnace);
-    }
-
-    private static LivingWaxedGeneratorData decodeGenerator(FriendlyByteBuf buf) {
+    private static RuntimeSegments decodeRuntimeData(FriendlyByteBuf buf) {
         RegistryFriendlyByteBuf regBuf = (RegistryFriendlyByteBuf) buf;
-        int dp = ByteBufCodecs.VAR_INT.decode(buf);
-        int pc = ByteBufCodecs.VAR_INT.decode(buf);
-        int up = ByteBufCodecs.VAR_INT.decode(buf);
-        int ld = ByteBufCodecs.VAR_INT.decode(buf);
-        int es = ByteBufCodecs.VAR_INT.decode(buf);
-        int cf = ByteBufCodecs.VAR_INT.decode(buf);
-        long epf = ByteBufCodecs.VAR_LONG.decode(buf);
-        long cepf = ByteBufCodecs.VAR_LONG.decode(buf);
-        var ds = com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.DomainSnapshot.STREAM_CODEC
-            .apply(ByteBufCodecs.list()).decode(regBuf);
-        double rg = ByteBufCodecs.DOUBLE.decode(buf);
-        double rb = ByteBufCodecs.DOUBLE.decode(buf);
-        int av = ByteBufCodecs.VAR_INT.decode(buf);
-        var vp = ByteBufCodecs.VAR_LONG.apply(ByteBufCodecs.list()).decode(buf);
-        return new LivingWaxedGeneratorData(dp, pc, up, ld, es, cf, epf, cepf, ds, rg, rb, av, vp);
+        int segmentCount = buf.readVarInt();
+        RuntimeSegments result = RuntimeSegments.EMPTY;
+        for (int i = 0; i < segmentCount; i++) {
+            String id = buf.readUtf();
+            RuntimeSegmentType<?> type = RuntimeSegmentRegistry.byId(id);
+            if (type == null) {
+                throw new IllegalStateException("未登记的 runtime 片段 id: " + id);
+            }
+            result = decodeSegmentInto(regBuf, result, type);
+        }
+        return result;
     }
 
-    private static HopperRuntime decodeHopper(FriendlyByteBuf buf) {
-        int cooldown = buf.readVarInt();
-        ResolvedSlotData slot = buf.readBoolean() ? decodeResolvedSlotData(buf) : null;
-        return new HopperRuntime(cooldown, slot);
-    }
-
-    private static FurnaceRuntime decodeFurnace(FriendlyByteBuf buf) {
-        int progress = buf.readVarInt();
-        int total = buf.readVarInt();
-        int burnTime = buf.readVarInt();
-        TransformData transform = buf.readBoolean() ? decodeTransformData(buf) : null;
-        return new FurnaceRuntime(progress, total, burnTime, transform);
-    }
-
-    private static ResolvedSlotData decodeResolvedSlotData(FriendlyByteBuf buf) {
-        return new ResolvedSlotData(
-            buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt(), buf.readInt()
-        );
-    }
-
-    private static TransformData decodeTransformData(FriendlyByteBuf buf) {
-        return new TransformData(
-            buf.readUtf(), buf.readUtf(), buf.readUtf(),
-            buf.readVarInt(), buf.readUtf(), buf.readVarInt(), buf.readVarInt()
-        );
+    @SuppressWarnings("unchecked")
+    private static <T> RuntimeSegments decodeSegmentInto(RegistryFriendlyByteBuf buf,
+                                                         RuntimeSegments acc,
+                                                         RuntimeSegmentType<T> type) {
+        T value = type.codec().decode(buf);
+        return acc.with(type, value);
     }
 
     // ── 客户端处理 ───────────────────────────────────────────

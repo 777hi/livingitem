@@ -16,8 +16,8 @@ import net.neoforged.neoforge.event.entity.player.ItemTooltipEvent;
 import com.qiqi.li.LivingItem;
 import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
-import com.qiqi.li.living.domain.runtime.LivingItemClientCache;
-import com.qiqi.li.living.domain.runtime.LivingItemRuntimeData;
+import com.qiqi.li.living.runtime.LivingItemClientCache;
+import com.qiqi.li.living.runtime.RuntimeSegments;
 
 @EventBusSubscriber(value = Dist.CLIENT, modid = LivingItem.MOD_ID)
 public class LivingItemTooltip {
@@ -31,7 +31,7 @@ public class LivingItemTooltip {
         // 从当前屏幕获取悬停槽位，查找对应的运行时数据（用于 tooltip 渲染）。
         // 玩家背包 GUI 的遥测存放在独立的 player 缓存（服务端背包包直发本人，
         // 与 BE 容器缓存分离避免串台，v19.1）。
-        LivingItemRuntimeData runtimeData = LivingItemRuntimeData.EMPTY;
+        RuntimeSegments runtimeData = RuntimeSegments.EMPTY;
         Minecraft mc = Minecraft.getInstance();
         boolean playerGui = mc.screen instanceof net.minecraft.client.gui.screens.inventory.InventoryScreen
             || mc.screen instanceof net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen;
@@ -45,7 +45,7 @@ public class LivingItemTooltip {
         }
         // 兜底：特殊 GUI（如创造模式物品栏 tab）的槽位索引与 Inventory 不对齐时，
         // 按物品引用在玩家背包中定位——玩家背包的 wrapper 索引 = Inventory 索引。
-        if (runtimeData == LivingItemRuntimeData.EMPTY && mc.player != null) {
+        if (runtimeData == RuntimeSegments.EMPTY && mc.player != null) {
             var inv = mc.player.getInventory();
             for (int i = 0; i < inv.getContainerSize(); i++) {
                 if (inv.getItem(i) == stack) {

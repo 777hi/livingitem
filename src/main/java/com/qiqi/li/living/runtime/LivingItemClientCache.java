@@ -1,6 +1,5 @@
-package com.qiqi.li.living.domain.runtime;
+package com.qiqi.li.living.runtime;
 
-import javax.annotation.Nullable;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -16,18 +15,18 @@ import java.util.Map;
 public class LivingItemClientCache {
 
     private static String currentContainerKey = "";
-    private static Map<Integer, LivingItemRuntimeData> slotData = Map.of();
+    private static Map<Integer, RuntimeSegments> slotData = Map.of();
 
     /** 玩家背包遥测（独立槽，避免与 BE 容器的通用缓存互相覆盖串台） */
-    private static Map<Integer, LivingItemRuntimeData> playerSlotData = Map.of();
+    private static Map<Integer, RuntimeSegments> playerSlotData = Map.of();
 
     /** 当前 tooltip 渲染的运行时数据（由 {@code LivingItemTooltip} 设置）。 */
-    private static final ThreadLocal<LivingItemRuntimeData> currentTooltipData = new ThreadLocal<>();
+    private static final ThreadLocal<RuntimeSegments> currentTooltipData = new ThreadLocal<>();
 
     /**
      * 更新缓存（由网络包线程调用）。
      */
-    public static void update(String containerKey, Map<Integer, LivingItemRuntimeData> data) {
+    public static void update(String containerKey, Map<Integer, RuntimeSegments> data) {
         currentContainerKey = containerKey;
         slotData = new HashMap<>(data);
     }
@@ -35,25 +34,25 @@ public class LivingItemClientCache {
     /**
      * 获取当前容器中指定槽位的运行时数据。
      */
-    public static LivingItemRuntimeData get(int slot) {
-        return slotData.getOrDefault(slot, LivingItemRuntimeData.EMPTY);
+    public static RuntimeSegments get(int slot) {
+        return slotData.getOrDefault(slot, RuntimeSegments.EMPTY);
     }
 
     /** 写入玩家背包遥测（key = "player_UUID" 的同步包专用） */
-    public static void updatePlayer(Map<Integer, LivingItemRuntimeData> data) {
+    public static void updatePlayer(Map<Integer, RuntimeSegments> data) {
         playerSlotData = new HashMap<>(data);
     }
 
     /** 获取玩家背包中指定槽位的遥测（悬停槽位 containerSlot = Inventory 索引 0-35，与服务端对齐） */
-    public static LivingItemRuntimeData getPlayer(int slot) {
-        return playerSlotData.getOrDefault(slot, LivingItemRuntimeData.EMPTY);
+    public static RuntimeSegments getPlayer(int slot) {
+        return playerSlotData.getOrDefault(slot, RuntimeSegments.EMPTY);
     }
 
     /**
      * 设置当前 tooltip 渲染的运行时数据（由 {@code LivingItemTooltip} 在调用
      * {@code function.addToTooltip()} 之前设置）。
      */
-    public static void setCurrentTooltipData(LivingItemRuntimeData data) {
+    public static void setCurrentTooltipData(RuntimeSegments data) {
         currentTooltipData.set(data);
     }
 
@@ -61,9 +60,9 @@ public class LivingItemClientCache {
      * 获取当前 tooltip 渲染的运行时数据。
      * <p>在 {@code function.addToTooltip()} 中调用，用于读取运行时数据替代组件数据。</p>
      */
-    public static LivingItemRuntimeData getCurrentTooltipData() {
-        LivingItemRuntimeData data = currentTooltipData.get();
-        return data != null ? data : LivingItemRuntimeData.EMPTY;
+    public static RuntimeSegments getCurrentTooltipData() {
+        RuntimeSegments data = currentTooltipData.get();
+        return data != null ? data : RuntimeSegments.EMPTY;
     }
 
     /**

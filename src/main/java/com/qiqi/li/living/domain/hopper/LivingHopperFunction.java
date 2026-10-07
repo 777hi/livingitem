@@ -30,9 +30,10 @@ import com.qiqi.li.living.transfer.FilterData;
 import com.qiqi.li.living.domain.hopper.LivingHopperData;
 import com.qiqi.li.living.domain.hopper.TransferData;
 import com.qiqi.li.living.components.ItemFilterComponent;
-import com.qiqi.li.living.domain.runtime.ContainerRuntimeCache;
-import com.qiqi.li.living.domain.runtime.LivingItemRuntimeData;
-import com.qiqi.li.living.domain.runtime.LivingItemClientCache;
+import com.qiqi.li.living.domain.hopper.HopperSegment.HopperRuntime;
+import com.qiqi.li.living.runtime.ContainerRuntimeCache;
+import com.qiqi.li.living.runtime.LivingItemClientCache;
+import com.qiqi.li.living.runtime.RuntimeSegments;
 import com.mojang.logging.LogUtils;
 import org.slf4j.Logger;
 
@@ -64,10 +65,11 @@ public class LivingHopperFunction implements LivingItemFunction {
             String containerKey = context.getContainerKey();
 
             // 从运行时缓存读取瞬态数据（不影响物品堆叠的 DataComponent）
-            LivingItemRuntimeData cached = ContainerRuntimeCache.get(containerKey, slot);
-            int cooldown = cached.isHopper() ? cached.hopper().cooldown() : 0;
-            ResolvedSlotData slotInfo = cached.isHopper() && cached.hopper().slotInfo() != null
-                ? cached.hopper().slotInfo() : ResolvedSlotData.EMPTY;
+            RuntimeSegments cached = ContainerRuntimeCache.get(containerKey, slot);
+            HopperRuntime hr = cached.get(HopperSegment.INSTANCE);
+            int cooldown = hr != null ? hr.cooldown() : 0;
+            ResolvedSlotData slotInfo = hr != null && hr.slotInfo() != null
+                ? hr.slotInfo() : ResolvedSlotData.EMPTY;
             data = data.withTransfer(new TransferData(cooldown)).withSlotInfo(slotInfo);
 
                 boolean hasRedstoneSignal = tick.getSensor(context).maxSensedSignal(slot) > 0;
@@ -102,7 +104,8 @@ public class LivingHopperFunction implements LivingItemFunction {
                 transfer = transfer.tick();
                 // 只更新运行时缓存，不写入 DataComponent
                 ContainerRuntimeCache.update(containerKey, slot,
-                    LivingItemRuntimeData.forHopper(transfer.cooldown(), slotInfo));
+                    RuntimeSegments.EMPTY.with(HopperSegment.INSTANCE,
+                        new HopperRuntime(transfer.cooldown(), slotInfo)));
                 continue;
             }
 
@@ -130,7 +133,8 @@ public class LivingHopperFunction implements LivingItemFunction {
             slotInfo = new ResolvedSlotData(slot, sourceSlot, targetSlot, containerSize, containerWidth);
             // 只更新运行时缓存（cooldown、slotInfo），不写入 DataComponent
             ContainerRuntimeCache.update(containerKey, slot,
-                LivingItemRuntimeData.forHopper(transfer.cooldown(), slotInfo));
+                RuntimeSegments.EMPTY.with(HopperSegment.INSTANCE,
+                    new HopperRuntime(transfer.cooldown(), slotInfo)));
         }
 
         cleanupStaleRoutes(entries, context, tick);
@@ -167,13 +171,13 @@ public class LivingHopperFunction implements LivingItemFunction {
         LivingHopperData data = LivingHopperData.of(stack);
 
         // 从客户端缓存读取运行时数据（不影响物品堆叠）
-        LivingItemRuntimeData runtimeData = LivingItemClientCache.getCurrentTooltipData();
+        RuntimeSegments runtimeData = LivingItemClientCache.getCurrentTooltipData();
         TransferData transfer;
         ResolvedSlotData slotInfo;
-        if (runtimeData.isHopper()) {
-            transfer = new TransferData(runtimeData.hopper().cooldown());
-            slotInfo = runtimeData.hopper().slotInfo() != null
-                ? runtimeData.hopper().slotInfo() : ResolvedSlotData.EMPTY;
+        HopperRuntime hr = runtimeData.get(HopperSegment.INSTANCE);
+        if (hr != null) {
+            transfer = new TransferData(hr.cooldown());
+            slotInfo = hr.slotInfo() != null ? hr.slotInfo() : ResolvedSlotData.EMPTY;
         } else {
             transfer = data.transfer();
             slotInfo = data.slotInfo();

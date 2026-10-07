@@ -15,18 +15,25 @@ import io.netty.buffer.Unpooled;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 
+import com.qiqi.li.living.domain.furnace.FurnaceSegment;
+import com.qiqi.li.living.domain.furnace.FurnaceSegment.FurnaceRuntime;
 import com.qiqi.li.living.domain.furnace.TransformData;
+import com.qiqi.li.living.domain.hopper.HopperSegment;
+import com.qiqi.li.living.domain.hopper.HopperSegment.HopperRuntime;
 import com.qiqi.li.living.domain.hopper.ResolvedSlotData;
+import com.qiqi.li.living.domain.power.GeneratorSegment;
 import com.qiqi.li.living.domain.power.LivingWaxedGeneratorData;
-import com.qiqi.li.living.domain.runtime.LivingItemRuntimeData;
-import com.qiqi.li.living.domain.runtime.LivingItemRuntimeData.FurnaceRuntime;
-import com.qiqi.li.living.domain.runtime.LivingItemRuntimeData.HopperRuntime;
+import com.qiqi.li.living.runtime.RuntimeSegments;
 
 /**
  * {@link LivingItemSyncPacket} 编解码往返测试（2026-10-08，档 2 步骤 B）。
  *
  * <p><b>为什么先有它</b>：它给「runtime 片段泛化」（档 2 步骤 C）当<b>安全网</b> ——
- * 改完 C 之后，本测试<b>不改一行仍须全绿</b>，即为「线上字节格式语义未变」的机械证明。</p>
+ * 改完 C 之后，本测试的<b>断言不改一行仍须全绿</b>，即为「线上字节语义未变」的机械证明。</p>
+ *
+ * <p>⚠️ <b>C 之后本测试的构造方式被迫改</b>：原先用 {@code LivingItemRuntimeData.forGenerator(...)}
+ * 等工厂（该类已被删除，片段定义改归各领域）。改的只是「怎么造出这个对象」，
+ * <b>断言与字节布局一字未动</b> —— 这正是本条测试的证明力所在。</p>
  *
  * <p>覆盖：三组数据各自的字段往返、空数据、多槽混合、以及 key 的两种形态
  * （普通容器键 / {@code player_<uuid>}）。</p>
@@ -40,6 +47,20 @@ class LivingItemSyncPacketTest {
         RegistryFriendlyByteBuf buf = new RegistryFriendlyByteBuf(Unpooled.buffer(), RegistryAccess.EMPTY);
         LivingItemSyncPacket.STREAM_CODEC.encode(buf, pkt);
         return LivingItemSyncPacket.STREAM_CODEC.decode(buf);
+    }
+
+    /** 只装发电机片段的运行时数据（档 2 后取代 {@code forGenerator}）。 */
+    private static RuntimeSegments gen(LivingWaxedGeneratorData g) {
+        return RuntimeSegments.EMPTY.with(GeneratorSegment.INSTANCE, g);
+    }
+
+    private static RuntimeSegments hop(int cooldown, ResolvedSlotData slot) {
+        return RuntimeSegments.EMPTY.with(HopperSegment.INSTANCE, new HopperRuntime(cooldown, slot));
+    }
+
+    private static RuntimeSegments fur(int progress, int total, int burnTime, TransformData transform) {
+        return RuntimeSegments.EMPTY.with(FurnaceSegment.INSTANCE,
+            new FurnaceRuntime(progress, total, burnTime, transform));
     }
 
     private static LivingWaxedGeneratorData sampleGenerator() {
@@ -66,22 +87,22 @@ class LivingItemSyncPacketTest {
     @Test
     @DisplayName("仅发电机：13 个遥测字段往返一致")
     void generator_only_roundTrips() {
-        var data = LivingItemRuntimeData.forGenerator(sampleGenerator());
+        var data = gen(sampleGenerator());
         var got = roundTrip(new LivingItemSyncPacket("chest_0_64_0", Map.of(3, data)));
 
-        var g = got.slotData().get(3).generatorTelemetry();
+        var g = got.slotData().get(3).get(GeneratorSegment.INSTANCE);
         assertEquals(sampleGenerator(), g, "发电机遥测往返后应逐字段相等");
-        assertNull(got.slotData().get(3).hopper(), "未写的段应为 null");
-        assertNull(got.slotData().get(3).furnace(), "未写的段应为 null");
+        assertNull(got.slotData().get(3).get(HopperSegment.INSTANCE), "未写的段应为 null");
+        assertNull(got.slotData().get(3).get(FurnaceSegment.INSTANCE), "未写的段应为 null");
     }
 
     @Test
     @DisplayName("仅漏斗：cooldown + slotInfo 往返一致")
     void hopper_only_roundTrips() {
-        var data = LivingItemRuntimeData.forHopper(42, sampleSlot());
+        var data = hop(42, sampleSlot());
         var got = roundTrip(new LivingItemSyncPacket("chest_0_64_0", Map.of(7, data)));
 
-        var h = got.slotData().get(7).hopper();
+        var h = got.slotData().get(7).get(HopperSegment.INSTANCE);
         assertEquals(42, h.cooldown());
         assertEquals(sampleSlot(), h.slotInfo());
     }
@@ -89,21 +110,21 @@ class LivingItemSyncPacketTest {
     @Test
     @DisplayName("漏斗无槽位信息（slotInfo = null）：标志位往返正确")
     void hopper_withoutSlotInfo_roundTrips() {
-        var data = LivingItemRuntimeData.forHopper(11, null);
+        var data = hop(11, null);
         var got = roundTrip(new LivingItemSyncPacket("chest_0_64_0", Map.of(1, data)));
 
-        assertEquals(11, got.slotData().get(1).hopper().cooldown());
-        assertNull(got.slotData().get(1).hopper().slotInfo(),
+        assertEquals(11, got.slotData().get(1).get(HopperSegment.INSTANCE).cooldown());
+        assertNull(got.slotData().get(1).get(HopperSegment.INSTANCE).slotInfo(),
             "slotInfo 为 null 必须能往返（布尔标志位不能丢）");
     }
 
     @Test
     @DisplayName("仅熔炉：progress/total/burnTime + transform 往返一致")
     void furnace_only_roundTrips() {
-        var data = LivingItemRuntimeData.forFurnace(37, 200, 1600, sampleTransform());
+        var data = fur(37, 200, 1600, sampleTransform());
         var got = roundTrip(new LivingItemSyncPacket("chest_0_64_0", Map.of(5, data)));
 
-        var f = got.slotData().get(5).furnace();
+        var f = got.slotData().get(5).get(FurnaceSegment.INSTANCE);
         assertEquals(37, f.progress());
         assertEquals(200, f.total());
         assertEquals(1600, f.burnTime());
@@ -113,10 +134,10 @@ class LivingItemSyncPacketTest {
     @Test
     @DisplayName("熔炉无配方缓存（transform = null）：标志位往返正确")
     void furnace_withoutTransform_roundTrips() {
-        var data = LivingItemRuntimeData.forFurnace(1, 0, 0, null);
+        var data = fur(1, 0, 0, null);
         var got = roundTrip(new LivingItemSyncPacket("chest_0_64_0", Map.of(2, data)));
 
-        assertNull(got.slotData().get(2).furnace().transform());
+        assertNull(got.slotData().get(2).get(FurnaceSegment.INSTANCE).transform());
     }
 
     // ── 边界 ────────────────────────────────────────────────
@@ -125,38 +146,35 @@ class LivingItemSyncPacketTest {
     @DisplayName("空快照（EMPTY）：三组全 null，可往返")
     void emptyData_roundTrips() {
         var got = roundTrip(new LivingItemSyncPacket("chest_0_64_0",
-            Map.of(0, LivingItemRuntimeData.EMPTY)));
+            Map.of(0, RuntimeSegments.EMPTY)));
 
         var d = got.slotData().get(0);
-        assertFalse(d.isGenerator());
-        assertFalse(d.isHopper());
-        assertFalse(d.isFurnace());
+        assertNull(d.get(GeneratorSegment.INSTANCE));
+        assertNull(d.get(HopperSegment.INSTANCE));
+        assertNull(d.get(FurnaceSegment.INSTANCE));
     }
 
     @Test
     @DisplayName("多槽混合：三个槽各自承担不同类型的段，互不串台")
     void multiSlot_mixedSegments_doNotInterfere() {
         var pkt = new LivingItemSyncPacket("chest_1_2_3", Map.of(
-            0, LivingItemRuntimeData.forGenerator(sampleGenerator()),
-            5, LivingItemRuntimeData.forHopper(9, sampleSlot()),
-            26, LivingItemRuntimeData.forFurnace(3, 100, 800, sampleTransform())
+            0, gen(sampleGenerator()),
+            5, hop(9, sampleSlot()),
+            26, fur(3, 100, 800, sampleTransform())
         ));
         var got = roundTrip(pkt);
 
         assertEquals(3, got.slotData().size(), "槽数应保持");
-        assertTrue(got.slotData().get(0).isGenerator());
-        assertTrue(got.slotData().get(5).isHopper());
-        assertTrue(got.slotData().get(26).isFurnace());
-        assertEquals(sampleGenerator(), got.slotData().get(0).generatorTelemetry());
-        assertEquals(9, got.slotData().get(5).hopper().cooldown());
-        assertEquals(3, got.slotData().get(26).furnace().progress());
+        assertEquals(sampleGenerator(), got.slotData().get(0).get(GeneratorSegment.INSTANCE));
+        assertEquals(9, got.slotData().get(5).get(HopperSegment.INSTANCE).cooldown());
+        assertEquals(3, got.slotData().get(26).get(FurnaceSegment.INSTANCE).progress());
     }
 
     @Test
     @DisplayName("容器键两种形态（普通 / player_<uuid>）都能往返")
     void containerKey_bothForms_survive() {
         String uuidKey = "player_550e8400-e29b-41d4-a716-446655440000";
-        var data = LivingItemRuntimeData.forHopper(1, null);
+        var data = hop(1, null);
 
         assertEquals("chest_0_64_0",
             roundTrip(new LivingItemSyncPacket("chest_0_64_0", Map.of(0, data))).containerKey());
@@ -177,10 +195,10 @@ class LivingItemSyncPacketTest {
     @Test
     @DisplayName("漏斗子记录哨兵：cooldown=0 与 slotInfo=EMPTY 的区分")
     void hopper_sentinel_distinguishesNullOrPresent() {
-        var withEmptySlot = LivingItemRuntimeData.forHopper(0, ResolvedSlotData.EMPTY);
+        var withEmptySlot = hop(0, ResolvedSlotData.EMPTY);
         var got = roundTrip(new LivingItemSyncPacket("k", Map.of(0, withEmptySlot)));
 
-        assertEquals(ResolvedSlotData.EMPTY, got.slotData().get(0).hopper().slotInfo(),
+        assertEquals(ResolvedSlotData.EMPTY, got.slotData().get(0).get(HopperSegment.INSTANCE).slotInfo(),
             "EMPTY（非 null）必须在往返后仍是 EMPTY，不能被当成 null");
     }
 
@@ -189,21 +207,43 @@ class LivingItemSyncPacketTest {
     void generator_emptyCollections_roundTrip() {
         var g = new LivingWaxedGeneratorData(0, 0, 0, 0, 0, 0, 0L, 0L,
             List.of(), 1.0, 0.0, 0, List.of());
-        var got = roundTrip(new LivingItemSyncPacket("k",
-            Map.of(0, LivingItemRuntimeData.forGenerator(g))));
+        var got = roundTrip(new LivingItemSyncPacket("k", Map.of(0, gen(g))));
 
-        assertEquals(g, got.slotData().get(0).generatorTelemetry());
+        assertEquals(g, got.slotData().get(0).get(GeneratorSegment.INSTANCE));
     }
 
     @Test
     @DisplayName("HopperRuntime / FurnaceRuntime 哨兵常量不被编解码改写")
     void runtimeSentinels_survive() {
         var h = roundTrip(new LivingItemSyncPacket("k",
-            Map.of(0, new LivingItemRuntimeData(null, HopperRuntime.EMPTY, null))));
-        assertEquals(HopperRuntime.EMPTY, h.slotData().get(0).hopper());
+            Map.of(0, RuntimeSegments.EMPTY.with(HopperSegment.INSTANCE, HopperRuntime.EMPTY))));
+        assertEquals(HopperRuntime.EMPTY, h.slotData().get(0).get(HopperSegment.INSTANCE));
 
         var f = roundTrip(new LivingItemSyncPacket("k",
-            Map.of(0, new LivingItemRuntimeData(null, null, FurnaceRuntime.EMPTY))));
-        assertEquals(FurnaceRuntime.EMPTY, f.slotData().get(0).furnace());
+            Map.of(0, RuntimeSegments.EMPTY.with(FurnaceSegment.INSTANCE, FurnaceRuntime.EMPTY))));
+        assertEquals(FurnaceRuntime.EMPTY, f.slotData().get(0).get(FurnaceSegment.INSTANCE));
+    }
+
+    // ── 注册表驱动的线格式（档 2 新增）───────────────────────
+
+    @Test
+    @DisplayName("未登记的 id 在解码时报错（线格式契约的护栏）")
+    void unknownSegmentId_failsFast() {
+        // 手工造一个含未知 id 的包体：count=1 + id="not_registered" + 无 payload
+        RegistryFriendlyByteBuf buf = new RegistryFriendlyByteBuf(Unpooled.buffer(), RegistryAccess.EMPTY);
+        buf.writeUtf("chest_0_64_0");
+        buf.writeVarInt(1);            // 1 个槽
+        buf.writeVarInt(0);            // slot 0
+        buf.writeVarInt(1);            // 1 个段
+        buf.writeUtf("not_registered"); // 未登记 id
+
+        assertFalse(RuntimeSegmentsHasId("not_registered"), "前提：测试 id 确实未登记");
+        org.junit.jupiter.api.Assertions.assertThrows(RuntimeException.class,
+            () -> LivingItemSyncPacket.STREAM_CODEC.decode(buf),
+            "未登记段 id 必须显式失败，不得静默丢弃");
+    }
+
+    private static boolean RuntimeSegmentsHasId(String id) {
+        return com.qiqi.li.living.runtime.RuntimeSegmentRegistry.ids().contains(id);
     }
 }

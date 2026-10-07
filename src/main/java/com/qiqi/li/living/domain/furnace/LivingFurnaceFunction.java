@@ -29,9 +29,10 @@ import com.qiqi.li.living.domain.furnace.FuelData;
 import com.qiqi.li.living.domain.furnace.LivingFurnaceData;
 import com.qiqi.li.living.domain.furnace.ProgressData;
 import com.qiqi.li.living.domain.furnace.TransformData;
-import com.qiqi.li.living.domain.runtime.ContainerRuntimeCache;
-import com.qiqi.li.living.domain.runtime.LivingItemRuntimeData;
-import com.qiqi.li.living.domain.runtime.LivingItemClientCache;
+import com.qiqi.li.living.domain.furnace.FurnaceSegment.FurnaceRuntime;
+import com.qiqi.li.living.runtime.ContainerRuntimeCache;
+import com.qiqi.li.living.runtime.LivingItemClientCache;
+import com.qiqi.li.living.runtime.RuntimeSegments;
 
 public class LivingFurnaceFunction implements LivingItemFunction, HasDirection {
 
@@ -62,9 +63,9 @@ public class LivingFurnaceFunction implements LivingItemFunction, HasDirection {
             String containerKey = context.getContainerKey();
 
             // 从运行时缓存读取瞬态数据（不影响物品堆叠的 DataComponent）
-            LivingItemRuntimeData cached = ContainerRuntimeCache.get(containerKey, slot);
-            if (cached.isFurnace()) {
-                var fr = cached.furnace();
+            RuntimeSegments cached = ContainerRuntimeCache.get(containerKey, slot);
+            FurnaceRuntime fr = cached.get(FurnaceSegment.INSTANCE);
+            if (fr != null) {
                 data = data.withProgress(new ProgressData(fr.progress(), data.progress().total()))
                            .withFuel(new FuelData(fr.burnTime()))
                            .withTransform(fr.transform() != null ? fr.transform() : TransformData.EMPTY);
@@ -105,9 +106,10 @@ public class LivingFurnaceFunction implements LivingItemFunction, HasDirection {
 
             // 写入运行时缓存（progress、fuel、transform），不写入 DataComponent
             ContainerRuntimeCache.update(containerKey, slot,
-                LivingItemRuntimeData.forFurnace(
-                    data.progress().progress(), data.progress().total(),
-                    data.fuel().burnTime(), data.transform()));
+                RuntimeSegments.EMPTY.with(FurnaceSegment.INSTANCE,
+                    new FurnaceRuntime(
+                        data.progress().progress(), data.progress().total(),
+                        data.fuel().burnTime(), data.transform())));
 
             // 燃烧标志与图标同步：图标谓词（furnace_active/furnace_idle）只读物品组件，
             // 而 burnTime 已迁运行时缓存，故在状态变化时写一个轻量布尔组件。
@@ -329,12 +331,12 @@ public class LivingFurnaceFunction implements LivingItemFunction, HasDirection {
         LivingFurnaceData data = LivingFurnaceData.of(stack);
 
         // 从客户端缓存读取运行时数据（不影响物品堆叠）
-        LivingItemRuntimeData runtimeData = LivingItemClientCache.getCurrentTooltipData();
+        RuntimeSegments runtimeData = LivingItemClientCache.getCurrentTooltipData();
         FuelData runtimeFuel;
         ProgressData runtimeProgress;
         TransformData runtimeTransform;
-        if (runtimeData.isFurnace()) {
-            var fr = runtimeData.furnace();
+        FurnaceRuntime fr = runtimeData.get(FurnaceSegment.INSTANCE);
+        if (fr != null) {
             runtimeFuel = new FuelData(fr.burnTime());
             runtimeProgress = new ProgressData(fr.progress(), fr.total() > 0 ? fr.total() : data.progress().total());
             runtimeTransform = fr.transform() != null ? fr.transform() : data.transform();

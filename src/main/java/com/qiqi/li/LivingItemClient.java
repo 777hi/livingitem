@@ -13,8 +13,8 @@ import com.qiqi.li.living.domain.chest.LivingChestTooltipComponent;
 import com.qiqi.li.living.domain.power.LivingWaxedCopperFunction;
 import com.qiqi.li.living.domain.power.LivingWaxedCopperTooltipComponent;
 import com.qiqi.li.living.domain.power.LivingWaxedGeneratorData;
-import com.qiqi.li.living.domain.runtime.LivingItemClientCache;
-import com.qiqi.li.living.domain.runtime.LivingItemRuntimeData;
+import com.qiqi.li.living.domain.power.GeneratorSegment;
+import com.qiqi.li.living.runtime.LivingItemClientCache;
 import com.qiqi.li.living.util.WaxedCopperFamily;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
@@ -174,7 +174,8 @@ public class LivingItemClient {
                     || mc.screen instanceof net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen
                     ? LivingItemClientCache.getPlayer(hoveredSlot.getContainerSlot())
                     : LivingItemClientCache.get(hoveredSlot.getContainerSlot());
-                if (runtimeData.isGenerator()) return runtimeData.generatorTelemetry();
+                var gen = runtimeData.get(GeneratorSegment.INSTANCE);
+                if (gen != null) return gen;
             }
         }
         // 兜底：特殊 GUI（创造模式物品栏 tab 等）槽位索引与 Inventory 不对齐时，
@@ -184,7 +185,8 @@ public class LivingItemClient {
             for (int i = 0; i < inv.getContainerSize(); i++) {
                 if (inv.getItem(i) == stack) {
                     var runtimeData = LivingItemClientCache.getPlayer(i);
-                    if (runtimeData.isGenerator()) return runtimeData.generatorTelemetry();
+                    var gen = runtimeData.get(GeneratorSegment.INSTANCE);
+                    if (gen != null) return gen;
                     break;
                 }
             }
