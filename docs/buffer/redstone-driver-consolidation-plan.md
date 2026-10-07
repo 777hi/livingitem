@@ -190,6 +190,14 @@ public void tickContainerData(List<SlotEntry> entries, ContainerContext ctx, Tic
 ⇒ 守卫判据 `peek == null && !hasRedstoneElements` 的**真实语义**是
 「**这个容器从来与红石无关**」，而不是「有没有人需要红石」。
 
+⚠️ **但这依赖 `getSensor` 有创建副作用 —— 这是一个残留脆弱点**：
+若有人把 `getSensor` 改成「只读不创建」（**语义上更干净**），漏斗容器将无人创建账本
+⇒ 守卫拦住 ⇒ **漏斗锁定静默失灵**。
+本次**不解决**（要解决需引入「消费者声明」这类新机制，而把 tnt/hopper/power 的 ID 写进红石包
+会新增 R3 领域互依赖）。
+**但必须把这个隐式契约写下来**：在 `getSensor` 的 javadoc 里显式声明
+「**本方法有创建副作用，红石层守卫依赖它**」。
+
 ### 改动 3｜删掉 9 处样板
 
 - `domain/redstone/`：`LivingButtonFunction` / `LivingLeverFunction` / `LivingRepeaterFunction` /
@@ -242,6 +250,30 @@ public void tickContainerData(List<SlotEntry> entries, ContainerContext ctx, Tic
 **之前**）会打乱优先级（红石将早于 prio 0 的流体 BFS）。
 
 ⇒ **唯一自洽的落点就是 `LivingRedstoneFunction` 自维持。**
+
+### 6.1 「错位」的真实代价：更合理的写法会弄坏功能
+
+「驱动者与消费者错位」不只是抽象的正确性担忧 —— 它让**看起来更合理的改动**变成事故：
+
+| 如果有人这样「优化」 | 理由（听起来都对） | 后果 |
+|---|---|---|
+| 删掉 `zeroResidualRedstone` | 「红石元件自己会算，这个方法冗余」 | **漏斗锁定当场失灵** |
+| 把 `getSensor` 改成只读不创建 | 「读操作不该有副作用」——**语义上更干净** | **漏斗锁定当场失灵** |
+| 挪动 `resetProcessedFlag` 的位置 | 整理 `setTickContext` | 全盘失效（**历史上真发生过**，见 changelog「中继器不熄灭」） |
+
+**判据：把「让它更合理」当成优化去做，会不会弄坏功能。**
+这里会 —— 因为「**漏斗 / TNT / 电力需要红石**」这件事**在代码里没有任何地方被声明**，
+它只存在于「三处巧合恰好同时成立」之中：
+
+```
+漏斗读信号 → 顺手创建了账本 → 「残留归零」方法恰好条件成立 → 去重标志恰好每轮重置
+```
+
+其中「残留归零」方法的**本意是清掉旧信号**（注释写的就是这个），给漏斗供数据纯属副产品。
+⇒ 这是**职责错位**：一个叫「归零」的方法在承担「供数据」的职责。
+
+**收归单点后**，这条链变成一处显式声明（`shouldTickWithoutOwnItems = true`），
+且判据可被**单测直接断言**，不再依赖巧合。
 
 ---
 
