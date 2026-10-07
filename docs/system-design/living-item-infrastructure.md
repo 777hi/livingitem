@@ -155,6 +155,9 @@ public interface ContainerSync extends LivingContainer {
 | **缓存失效**（`bumpContainerRevision`） | ✅ 需要 | 这是模组内部的 revision 计数，原版**根本不知道**有这回事 |
 | **运行时数据下发** | 另有通道 | 由 `LivingItemRuntimeSync.flush`（L4，`LivingItem.onServerTick` 收尾）负责，**不经** `syncSlotToClients` |
 
+> ⚠️ **「运行时数据下发」这一行是 2026-10-08 档 2 反转发包后的形态，代码已通过单测/分层/文档三重校验，
+> 但游戏内手测尚未做** —— 详见 [runtime-mechanization-plan.md](../buffer/runtime-mechanization-plan.md) 文件头的「待测清单」。
+
 > ⚠️ **`syncSlotToClients` 是解决实际问题的机制，不是冗余**（2026-10-08 用户明确）。
 > 它同时承担三件事：① 补原版对「只改自定义组件」的失效；② 触发 `bumpContainerRevision` 让缓存失效；
 > ③ 把槽位变化登记进 `dirtySlots` 延迟批处理。**不要因为「原版也会广播」就删掉它** ——
