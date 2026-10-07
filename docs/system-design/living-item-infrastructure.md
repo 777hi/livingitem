@@ -119,10 +119,6 @@ public interface SlotInfoProvider extends LivingContainer {
 
 ContainerSync.java 负责将服务端修改后的物品数据同步到客户端。
 
-**为什么需要手动同步？**
-
-原版 `broadcastChanges()` 依赖 `ItemStack.matches()` 检测变化，而 `PatchedDataComponentMap.equals()` 无法检测到自定义 DataComponent 的变化。因此活物品修改 DataComponent 后，必须手动发送 `ClientboundContainerSetSlotPacket`。
-
 ```java
 public interface ContainerSync extends LivingContainer {
     void syncSlotToClients(int logicalSlot, ItemStack stack);
@@ -132,6 +128,44 @@ public interface ContainerSync extends LivingContainer {
 同步策略分两种：
 - **玩家背包**：通过 `-2` 窗口 ID 发送，同时更新 `inventoryMenu` 和 `containerMenu`
 - **世界容器**：遍历所有正在查看该容器的玩家，发送对应槽位的同步包
+
+#### 2.4.1 原版广播能兜住什么、兜不住什么（2026-10-08 核实）
+
+**先看原版机制**（源码事实，非推测）：
+
+| 位置 | 行为 |
+|------|------|
+| `ServerPlayer.tick()` | **每 tick 无条件**调用 `containerMenu.broadcastChanges()` |
+| `AbstractContainerMenu.broadcastChanges()` | 逐槽调 `synchronizeSlotToRemote(i, stack)` |
+| `synchronizeSlotToRemote` | 判据 `if (!ItemStack.matches(remoteSlots.get(i), stack))` → 发 `ClientboundContainerSetSlotPacket` |
+| `ItemStack.matches` | 数量相同 **且** `isSameItemSameComponents`（= `Objects.equals(stack.components, other.components)`） |
+
+**探针实测结论**（`ItemStack.matches` 对以下变化**全部返回 `false`，即能检测**）：
+置空 / 换成另一种物品 id / 数量变化。
+
+**时序**：`MinecraftServer.tickServer()` → `fireServerTickPre()`（**活物品 tick 在此**）→ `tickChildren()` → `ServerPlayer.tick()` → `broadcastChanges()`。
+⇒ 活物品 tick 跑在**原版广播之前**，同 tick 内的改动原版广播**当拍就能看到**。
+
+**由此得出边界**：
+
+| 改动类型 | 是否需要手动 sync | 原因 |
+|---------|------------------|------|
+| 物品置空 / 换 id / 数量变化（焚毁、转化、作物产出、熔炉烧炼…） | ❌ 不需要 | `ItemStack.matches` 能检测，原版广播兜住 |
+| **只改自定义 DataComponent**（id/数量都没变） | ✅ 需要 | `PatchedDataComponentMap.equals()` 检测不到，原版判据失效 |
+| **缓存失效**（`bumpContainerRevision`） | ✅ 需要 | 这是模组内部的 revision 计数，原版**根本不知道**有这回事 |
+| **运行时数据下发** | 另有通道 | 由 `ContainerRuntimeCache.flushToClients`（`ContainerLivingItemHandler` tick 阶段 4.5）负责，**不经** `syncSlotToClients` |
+
+> ⚠️ **`syncSlotToClients` 是解决实际问题的机制，不是冗余**（2026-10-08 用户明确）。
+> 它同时承担三件事：① 补原版对「只改自定义组件」的失效；② 触发 `bumpContainerRevision` 让缓存失效；
+> ③ 把槽位变化登记进 `dirtySlots` 延迟批处理。**不要因为「原版也会广播」就删掉它** ——
+> 原版广播管不到②③，而①在只改组件时本来就不触发。
+>
+> **`setItem` 不会自动 sync**：`SimpleContainerContext.setItem` 只做「抽旧 + 插新 + `setChanged()` + `bumpContainerRevision`」，
+> **不写** `TickContext.dirtySlots`（即不直接触达客户端包）。要发物品包必须显式调 `syncSlotToClients`。
+
+> 📌 **历史坑（别再踩）**：2026-10-08 曾据「流体焚毁/转化/凝固反应没调 sync」断言存在客户端不刷新 bug 并提交修复（`12ff45b`），
+> 随后被实测证伪并 `git revert`（`1b8bc3a`）。教训：这些操作**改的是 id/数量**，原版广播本就能检测；
+> 断言「某处漏了 sync」前必须先回答「那原版广播为什么没兜住」，否则就是误报。
 
 ### 2.5 ContainerIdentity — 身份标识
 

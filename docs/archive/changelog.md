@@ -19,6 +19,25 @@
 
 > 框架侧（流体侧已于 10-07 完工，此后不再改动）。
 
+- 📝 **`syncSlotToClients` 职责边界入档：它不是冗余，别删**（纯文档，零行为变化）：
+  起因是 10-08 早先**误报**「流体焚毁/转化/凝固反应漏 sync」并提交修复（`12ff45b`），
+  随后被用户实测否决、`git revert`（`1b8bc3a`）。复盘查清原版机制边界：
+  - `ServerPlayer.tick()` **每 tick 无条件**调 `containerMenu.broadcastChanges()` →
+    `synchronizeSlotToRemote` 判据 `!ItemStack.matches(...)`；
+    探针实测 `matches` 对**置空 / 换 id / 数量变化**全部返回 `false`（**能检测**）；
+    且活物品 tick（`ServerTickEvent.Pre`）跑在 `broadcastChanges` **之前** ⇒ 原版同拍可见。
+  - ⇒ 焚毁 / 转化 / 作物产出 / 熔炉烧炼这类**改 id/数量**的操作**本不需要手动 sync**。
+  - `syncSlotToClients` 真正兜的是原版兜不住的三类：
+    ① **只改自定义 DataComponent**（`PatchedDataComponentMap.equals` 坑）；
+    ② **缓存失效**（`bumpContainerRevision`，原版完全不知道）；
+    ③ 登记 `TickContext.dirtySlots` 延迟批处理。
+    （运行时数据下发另有通道：`ContainerRuntimeCache.flushToClients`。）
+  - 顺带澄清：`SimpleContainerContext.setItem` **不写** `dirtySlots` ⇒ **不会自动 sync**。
+  - 落点：`living-item-infrastructure.md` **§2.4.1**（含机制表 + 时序 + 「是否需要手动 sync」四分行 + 误报复盘）。
+  - ⇒ **「消灭手动 sync」这个目标就此撤销**（用户：「这东西当时就是解决相关问题才存在的」）。
+  - 教训沉淀：断言「某处漏了 sync」前，必须先回答「**那原版广播为什么没兜住**」——
+    否则就是把「静态代码里没看到」误当「运行时不会发生」（当日第三次同类误判）。
+
 - 🧹 **红石重算收归单点**（**534 全绿**，纯重构 + 零行为变化）：
   `ContainerRedstoneData.calculate()` 原先被 **10 个类各写一遍**（9 个红石元件 + 活 TNT），
   靠 `processedThisTick` 幂等短路兜底才没算重。收归为**单点驱动**：
