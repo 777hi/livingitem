@@ -146,69 +146,9 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 534 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）。
-全绿基线：`533 passed / 0 failed / 1 skipped`（2026-10-07 活桶 tooltip 定稿：
-新增 `LivingItemTooltipTest` 5 项（零内容行**仍输出**标题 / 不适用功能同样保留标题 /
-**真实活桶 ⇒ 只有标题没有内容行** / 有内容行则空行+标题+行 / 多功能标题只一次且行序保持）
-+ `LivingBucketFunctionTest` 1 项（活桶零内容行）；
-2026-10-07 玩家路径落盘守卫：
-新增 `PlayerFluidDataPersistenceTest` 4 项（有源写回 / 变空移除 / 重进不复活 / 两键隔离 / 回填）；
-2026-10-07 性能收尾：新增
-`ContainerFluidPerfTest` 2 项（量测 + 病态回归宽松阈值）、`ContainerNeighborsTest` 3 项
-（fillNeighbors 与 getNeighbors 逐格一致 / 单行 / 复用不污染）；
-2026-10-07 收尾审查：`ContainerFluidDataTest`
-新增 2 项（晋升只数同流体邻源 / 到达时间竞争慢者让位）、`FluidFlowServerSyncTest` 新增 3 项
-（末影箱派发必须判 viewer / renderTargetOf 两类 / 非末影箱不受 viewer 门影响）；
-2026-10-07 到达时间抢占：新增「两源太近 ⇒
-岩浆源变黑曜石」守卫 1 项，㉝/㊶ 改为生产节拍下的可用几何；
-2026-10-07 消除异种驱逐空档：
-`ContainerFluidDataTest` 新增 2 项 —— ㊾ 不驱逐 + 接触面圆石（水全程不动）、
-㊿ 倒进异种流动格 ⇒ 黑曜石 + 源湮灭 + 水灌回；
-2026-10-06 倒桶口径对称化 A 档：
-`ContainerFluidDataTest` 新增 ㊼ 反向覆盖（水源被岩浆覆盖 + 下游水退走），
-`LivingBucketInteractSupportTest` 改写为对称口径 3 项；
-2026-10-06 倒桶对齐原版 B 档：
-新增 `LivingBucketInteractSupportTest` 3 项（契约默认 false / 熔岩三条分支 / 倒桶判定四例）+
-`ContainerFluidDataTest` ㊻ 覆盖语义；
-2026-10-06 回退+末影箱派发判 viewer：
-`ContainerContextsTest` 新增 `IsViewingEnderChest` 6 项（末影箱菜单 true / `ChestMenu` 但普通箱容器
-false / 非 `ChestMenu` false / null false / 玩家侧两条）+ 重建 `FluidFlowClientCacheTest` 4 项
-（三份快照互不串 / `PLAYER_INV` 不翻转「非背包组」提示 / `clear()` 复位）；
-2026-10-06 实测三修：新增
-`ContainerFluidHandlerTest` ㊾⁺（慢管道抽不到 / 整源逐个抽）、
-`GuiInteractionPacketTest` 2 项索引错位回退；
-2026-10-06 管道抽取：新增
-`ContainerFluidHandlerTest` 6 项（tank 枚举与稳定序 / SIMULATE 不消耗 vs EXECUTE 删源 /
-全有或全无 / 异种 EMPTY / fill 恒 0 + isFluidValid / 非容器无害 + provider 四段让位）；
-2026-10-06 统一时钟：`ContainerFluidDataTest`
-新增 3 项 —— ㊸ 晋升只在推进拍 / ㊹ 等价性（晋升只变慢、终态同瞬时基线）/ ㊺ 推动按流体节拍，
-⑥ 改钉「随蔓延同拍推动」；
-2026-10-06 黑曜石循环 + 转化表收窄：
-`ContainerFluidDataTest` 新增 4 项 —— ㊴ 源格遇水⇒黑曜石 / ㊵ 黑曜石被焚毁 /
-㊶ 端到端循环 / ㊷ 契约默认回退，另 3 项随口径改写、缩容守卫移至 `FluidTransformTableTest`；
-2026-10-06 活熔岩口径更正：`ContainerFluidDataTest` 新增 2 项 —— ㊲ 源格也焚毁 / ㊳ 岩浆不转化；
-2026-10-05 F-1：`ContainerContextsTest` 新增 2 项 ——
-末影箱菜单槽位可解析 / 非容器槽位仍返回 null；
-2026-10-04 活化时机钩子收编：
-`ActivationHookTest` 新增 7 项 —— 派发参数原样送达 / 顺序不变量 / 未认领物品不派发 /
-数据安全否决 / 箱子无玩家拒绝且内容保住 / 末影箱不绑定且照常解绑 / owner 只由活工具钩子写；
-2026-10-04 活桶汲/倒包修复：`GuiInteractionPacketTest` 新增 3 项；
-2026-10-04 末影箱崩溃修复：`SimpleContainerContextTest` 新增 4 项；
-2026-10-04 流体侧批次三 F4：`FluidTransformTableTest` 新增 6 项；
-2026-10-04 B.5 第三项：`ContainerFluidDataTest` 新增 1 项 ——
-玩家背包/末影箱落盘 `KEYED_CODEC` 往返；2026-10-04 Q6 批次 B：`ContainerContextsTest` 新增 10 项 ——
-边界带共享内核 `ownsContainer`（大箱 `CompoundContainer` 特判）/ `isSameSlotSpace`（槽位体系探针）；
-此前 2026-10-03 流体侧批次二 F2/F3 + 批次一 F1：`ContainerFluidDataTest`
-新增派生源 6 项 —— 独立存活/挤没/与非活物品共存/桶源同格无豁免/异种覆盖/生命周期与 EMPTY noop；
-此前 2026-10-03 1b 系列至 413（引擎行为快照/驱动/红石归零解耦/源查询 API）；
-2026-09-28 新增交互规则 JSON 加载语义 9 项 +
-tick 顺序契约守卫 4 项 + 活化目标参数解析守卫 4 项；
-2026-09-27 新增活化规则 JSON 加载语义 14 项
-（含指令侧 put/remove/校验/**持久化往返**；tag 路径 1 项 @Disabled ——
-FML unit test 不加载 item tags，已游戏内验证通过）+
-活化门面守卫 5 项（含「零配置全放行」口径锁定）+ DataComponent 归属守卫 3 项；
-此前 2026-09-22 光照刷新 + 爆炸受影响区块判据修复
-+ 大箱子槽位体系探针 §10.25 / 跨容器面选取 §6.4）。
+**合计测试用例 534 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
+全绿基线：`533 passed / 0 failed / 1 skipped`。**逐次新增明细见 [changelog.md](docs/archive/changelog.md)。**
+
 > 📄 测试环境配置与编写约定见 [unit-testing.md](docs/guides/unit-testing.md)；
 > 测试文件树见 [file-map.md](docs/reference/file-map.md)「测试文件树」。
 
