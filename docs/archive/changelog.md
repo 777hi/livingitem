@@ -19,6 +19,42 @@
 
 > 框架侧（流体侧已于 10-07 完工，此后不再改动）。
 
+- 🏗 **`runtime` 机制化（档 2）完成：拆掉 `domain/runtime/` 这个「假领域」**（**551 全绿**；
+  R3 **22 → 10**、R1 **93 → 91**）。方案与实施记录见
+  [runtime-mechanization-plan.md](../buffer/runtime-mechanization-plan.md) §7（计划）/ §8（实现）。
+
+  **问题**：`living/domain/runtime/` 挂名领域，实际是 4 种性质的东西塞一起 —— 其中
+  `LivingItemRuntimeData` 是**聚合三个领域运行时数据的 God record**（硬编码
+  `generatorTelemetry` / `hopper` / `furnace`），`ContainerRuntimeCache` 还**主动 `new` 网络包**
+  （L2 依赖 L4）。⇒ 领域互依赖 R3 有 12 条由它贡献；单纯搬层只会把违规方向反过来。
+
+  **做法**（`A → B → C → D → E` 五步，**B 必须在 C 前**）：
+  - **A 建机制**：`living/runtime/` 三件 —— `RuntimeSegmentType<T>`（契约：`id` + `codec`）、
+    `RuntimeSegmentRegistry`（`id → 类型`，带 `clearForTest`）、`RuntimeSegments`（不可变聚合容器）。
+    刻意用 **`get(RuntimeSegmentType<T>)` 而非 `get(String)`** ⇒ 编译期杜绝「拿错段」的强转。
+  - **B 先补安全网**：`LivingItemSyncPacketTest` 12 例**编解码往返**（此前**零覆盖**）。
+    ⚠️ 顺序是刻意的 —— 改完 C 之后**断言一字不改仍须全绿**，即为「线上字节语义未变」的机械证明。
+  - **C 泛化**：三个段定义**归各领域**（`power/GeneratorSegment`、`hopper/HopperSegment`、
+    `furnace/FurnaceSegment`，各自内嵌 `XxxRuntime` record + `STREAM_CODEC`，**字节布局逐位一致**），
+    在各自 `*Registration` 登记；`LivingItemSyncPacket` 改为**遍历注册表**编解码（不再认识任何具体字段，
+    未登记 id 显式报错）；`LivingItemRuntimeData` **删除**；改 9 处读写点。
+  - **D 反转发包**：`ContainerRuntimeCache` 删掉 `flushToClients`，只暴露 `drainDirty()` / `findViewers()`；
+    新增 L4 `network/LivingItemRuntimeSync.flush(...)` 在 `LivingItem.onServerTick` 收口发包；
+    删 `ContainerLivingItemHandler` 的阶段 4.5；§7.3.1 的**背包空转发包优化已顺带实现**
+    （`player_` 前缀分支加 `isJustInventoryMenu` 守卫）。
+  - **E 收尾**：三篇文档同步 + 基线收紧 + 本记录。
+
+  **⚠️ 实施中真正踩到的坑（最值得记住）**：`runtime` **不只是「给客户端看的」** ——
+  漏斗把 `cooldown`、熔炉把 `progress` **当作跨 tick 瞬态状态**存在这里，
+  下一 tick 会**读回**自己写的值（`LivingHopperFunction:68`、`LivingFurnaceFunction:66`）。
+  ⇒ 泛化后**服务端本地回读路径必须保留**，否则冷却丢失、熔炉进度重置。
+  （另两个小坑：嵌套 record 在 `implements` 子句里必须写限定名 `FurnaceSegment.FurnaceRuntime`；
+  测试替身的键不匹配 `chest_x_y_z` 形态 ⇒ 单测里天然「不漏发」，是安全的。）
+
+  **验收**：`551 tests / 0 failures`；`check_layers.py` R1 91 / R3 10（8 条已消除项已 `--update-baseline`）；
+  `doc_check.py` 9/9。
+  ⚠️ **游戏内手测四项（发电机遥测 / 漏斗冷却 / 熔炉进度 / 背包路径）尚未做** —— 待补。
+
 - 📝 **`syncSlotToClients` 职责边界入档：它不是冗余，别删**（纯文档，零行为变化）：
   起因是 10-08 早先**误报**「流体焚毁/转化/凝固反应漏 sync」并提交修复（`12ff45b`），
   随后被用户实测否决、`git revert`（`1b8bc3a`）。复盘查清原版机制边界：

@@ -144,8 +144,8 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 538 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
-全绿基线：`533 passed / 0 failed / 1 skipped`。**逐次新增明细见 [changelog.md](docs/archive/changelog.md)。**
+**合计测试用例 551 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
+全绿基线：`550 passed / 0 failed / 1 skipped`。**逐次新增明细见 [changelog.md](docs/archive/changelog.md)。**
 
 > 📄 测试环境配置与编写约定见 [unit-testing.md](docs/guides/unit-testing.md)；
 > 测试文件树见 [file-map.md](docs/reference/file-map.md)「测试文件树」。
@@ -165,6 +165,7 @@ src/main/java/com/qiqi/li/
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-08 | 🏗 **`runtime` 机制化（档 2）完成**：拆掉 `domain/runtime/` 假领域 —— 机制（注册表 + `RuntimeSegments`）落 L2 `living/runtime/`，**片段定义归各领域**（`GeneratorSegment`/`HopperSegment`/`FurnaceSegment`），发包反转到 L4 `LivingItemRuntimeSync`。**R3 22 → 10、R1 93 → 91**；编解码注册表驱动，**字节语义等价**（B 步往返测试断言一字未改仍全绿） | `buffer/runtime-mechanization-plan.md` §7/§8 |
 | 2026-10-08 | 📝 **`syncSlotToClients` 职责边界入档：不是冗余，别删** —— 原版 `broadcastChanges` 每 tick 无条件跑、对 id/数量变化有效（探针实测 `ItemStack.matches`），但**管不到「只改自定义组件」与「缓存 revision」**；补三层职责表 + 历史误报复盘（`12ff45b`→`1b8bc3a`） | `living-item-infrastructure.md` §2.4.1 |
 | 2026-10-08 | 📝 **措辞纠错：活箱子/活末影箱「可被搬运」的对象是内容而非本体** —— 5 处改为「其槽位可展开为虚拟存储」（作源取内部/作目标写内部，**本体不动**）；流体侧补「为何只推非活物品」（推动=本体移位，与展开语义不同类）（**538 全绿**） | `living-hopper-tech.md` §6.2.1/§6.2.2 |
 | 2026-10-08 | 🏗 **架构分层第四步（C 收尾）**：`RedstoneSensor` 接口上移 `living/api/` + 方向常量收归契约层 ⇒ `power`/`hopper` 完全不引用 redstone 域。**R3 28 → 25**，顺带 **R1 94 → 93**（纯重构，**534 全绿**） | `buffer/redstone-evolution-roadmap.md` §1 |
@@ -174,7 +175,6 @@ src/main/java/com/qiqi/li/
 | 2026-10-08 | 🧹 **红石重算收归单点**：删 9 个元件 + 活 TNT 的重复样板（`HasContainerData` **13 → 4**），改由 `LivingRedstoneFunction` 自维持单点驱动 + 廉价守卫；删两个永不执行的框架兜底 + 补**驱动链路集成测试**（5 项，上线即抓出「守卫零开销」失效的真因：`setTickContext` 无条件创建账本）（**538 全绿**） | `living-redstone-tech.md` §3.1 / §8 |
 | 2026-10-08 | 🧹 **入口清淤**：模块地图尾部 62 行测试流水搬离（**补录 2026-09-27 防丢历史**）+ 开发进展回归「一行结论」体例 —— 入口 **18171 → 11935 字符（余量 8065）** | `docs/README.md` §1/§4 |
 | 2026-10-07 | 🧹 **活桶 tooltip 定稿：删内容行、保留标题** —— 根因是 lang 占位符数与代码传参不符（**534 全绿**） | `living-fluid-tech.md` §5 |
-| 2026-10-07 | ✅ **玩家路径落盘守卫补齐**：玩家容器此前零用例 ⇒ 补「变空移除 / 重进不复活 / 两键隔离 / 回填」（**528 全绿**） | `living-fluid-tech.md` §8 |
 
 ## 排查铁律：原版机制挡路时
 

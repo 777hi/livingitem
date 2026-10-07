@@ -1,11 +1,11 @@
 # runtime 机制化方案（runtime mechanization）
 
-*创建: 2026-10-08 · 状态: **档 2 已拍板，实施计划见 §7（仍未动代码）***
+*创建: 2026-10-08 · 状态: ✅ **档 2 已实现（A~E 全部完成，2026-10-08）***
 
-> ⚠️ **本文件是设计稿（未实现）**。文中「改后」段落描述**目标状态**，不是现状。现状以 `src/` 为准。
+> ✅ **本方案已落地**。目标状态即现状，实现记录见 §8；文中 §1~§6 保留为**当时的调研与取舍依据**。
+> 新增片段请照 §7.1 / §7.2 的契约做（`RuntimeSegmentType` + 领域内 `*Registration` 登记）。
 >
-> 📌 **2026-10-08 用户拍板：走档 2**（「档2吧，是实现先计划好就行」）——
-> §1~§6 是调研与取舍，**§7 是实施计划正文**（含逐步改动清单 / 序列化设计 / 验收 / 回滚）。
+> 📌 用户拍板原话：「档2吧，是实现先计划好就行」→ 随后授权「一次性做好 A~E」。
 
 ---
 
@@ -431,13 +431,13 @@ owner.connection.send(packet);
 - `python tools/doc_check.py` 9/9
 
 **总验收**（D 步后）：
-| 项 | 期望 |
-|---|---|
-| R3 | 22 → **19** |
-| R1 | 93 → **92** |
-| `LivingItemRuntimeData` | **已删除**（零引用） |
-| `runtime` 包的出边 | **零**（不再认识任何领域 / 网络层） |
-| 字节格式 | 与改前**语义等价**（步骤 B 测试不改仍绿） |
+| 项 | 期望 | 实测 |
+|---|---|---|
+| R3 | 22 → **19** | ✅ **10**（比预估更好：领域侧 3 对出边随 God record 一起消失） |
+| R1 | 93 → **92** | ✅ **91** |
+| `LivingItemRuntimeData` | **已删除**（零引用） | ✅ |
+| `runtime` 包的出边 | **零**（不再认识任何领域 / 网络层） | ✅ |
+| 字节格式 | 与改前**语义等价**（步骤 B 测试不改仍绿） | ✅ 断言一字未动，551 全绿 |
 
 **手测**（⚠️ 唯一无法机械保证的环节，三种都要看）：
 1. **发电机遥测**：涂蜡铜块放容器里 → 悬停看仪表盘数字（核心三行 + 相位）
@@ -465,3 +465,73 @@ owner.connection.send(packet);
 - E：**3 篇文档 + 基线**
 
 ⇒ **C 是重心**（唯一碰网络的一步），建议**单独一个会话做**，前 A/B 可合并。
+
+---
+
+## 8. 实现记录（2026-10-08，A~E 全部完成）
+
+### 8.1 实际落点（与 §7.1 设计的差异）
+
+| 设计稿 §7.1 | 实际落点 | 差异原因 |
+|---|---|---|
+| `living/runtime/` 放三机制类 | ✅ 同 | — |
+| `LivingItemClientCache` 迁 L5 | ⚠️ **仍在 `living/runtime/`（L2）** | 它有客户端 `ThreadLocal`（悬停数据）但**无 L5 专属依赖**（不 import `client/*`）；放 L2 避免让下游领域反向依赖 L5（会新增 R1）。**待定**：若将来它 import `client/*`，必须迁 L5 |
+| 包结构 `domain/runtime/` → `living/runtime/` | ✅ 4 文件全部 `git rm`，3 个迁入 `living/runtime/`（`LivingItemRuntimeData` 删除） | — |
+| `RuntimeSegments.get(String)` | ✅ 改为 **`get(RuntimeSegmentType<T>)`** | 编译期杜绝「拿错段」强转（§7.2 已定稿） |
+
+### 8.2 新增文件
+
+**L2 机制（`living/runtime/`）**
+- `RuntimeSegmentType<T>` —— 契约：`id()` + `codec()`
+- `RuntimeSegmentRegistry` —— `id → 类型` 静态注册表（含 `clearForTest()`，单测红线）
+- `RuntimeSegments` —— 不可变聚合容器；`with(type,value)` / `get(type)` / `EMPTY`
+- `ContainerRuntimeCache` —— 迁入并**反转发包**（新增 `drainDirty()` / `hasDirty()` / `findViewers()` / `isJustInventoryMenu()`；删除 `flushToClients`）
+- `LivingItemClientCache` —— 迁入（无改动语义）
+- `RuntimeRegistration` —— 迁入（只登记客户端缓存清理）
+
+**各领域的段定义**
+- `power/GeneratorSegment`（`id="generator"`）/ `hopper/HopperSegment`（`"hopper"`）/ `furnace/FurnaceSegment`（`"furnace"`）
+- 各段内含自己的 `XxxRuntime` record + `STREAM_CODEC`（**字节布局与改造前逐位一致**）
+- 各自的 `*Registration.register()` 里追加 `RuntimeSegmentRegistry.register(XxxSegment.INSTANCE)`
+
+**L4 发包端**
+- `network/LivingItemRuntimeSync` —— `flush(players, containerLookup)`：
+  - `drainDirty()` 取脏 → `player_` 前缀走**直发主人 + `isJustInventoryMenu` 守卫**（§7.3.1 可选优化**已实现**）
+  - 其余走 `findViewers`（菜单槽位匹配，含大箱 `CompoundContainer.contains` 特判）
+- `LivingItemRuntimeSync.sendSnapshotToPlayer` —— 补发入口，**当前无调用者**（保留）
+
+### 8.3 调用点变更
+
+| 位置 | 变更 |
+|---|---|
+| `LivingItem.onServerTick` | **新增** `LivingItemRuntimeSync.flush(players, this::runtimeContainerInstances)`，放在**所有**容器处理之后 |
+| `LivingItem.runtimeContainerInstances` / `parsePosFromContainerKey` | **新增**（容器键 → `Container` 实例集合；解析 `chest_x_y_z` 单箱与 `chest_x1_y1_z1_x2_y2_z2` 大箱） |
+| `ContainerLivingItemHandler.processContext` | **删除**阶段 4.5（`ContainerRuntimeCache.flushToClients`）及其 `BlockEntity` 收集 |
+| `LivingItemSyncPacket` | 记录类型改 `(String, Map<Integer, RuntimeSegments>)`；编解码**遍历注册表**，不再认识任何具体字段；未登记 id 抛 `IllegalStateException` |
+| 9 处读写点 | furnace 3 / hopper 3 / power 2 / client 2 → `RuntimeSegments.EMPTY.with(XxxSegment.INSTANCE, …)` 与 `.get(XxxSegment.INSTANCE)` |
+
+### 8.4 ⚠️ 实施中新发现的坑（值得记住）
+
+1. **`runtime` 不只是「给客户端看的」**：漏斗把 `cooldown`、熔炉把 `progress` **当作跨 tick 瞬态状态**存在这里
+   （`LivingHopperFunction:68`、`LivingFurnaceFunction:66` 会**读回**自己上一 tick 写的值）。
+   ⇒ 泛化后**服务端本地回读路径必须保留**，否则冷却丢失、熔炉进度重置。这是本方案最易踩的坑。
+2. **嵌套 record 的泛型限定名**：`class FurnaceSegment implements RuntimeSegmentType<FurnaceRuntime>` 里
+   `FurnaceRuntime` 是**内部类**，在 `implements` 子句里尚不可见为简单名 ⇒ 必须写 `FurnaceSegment.FurnaceRuntime`。
+3. **测试替身的键**：`FakeContainerContext` 的 `getContainerKey()` 是**测试键**，**不匹配** `chest_x_y_z` 形态
+   ⇒ 新发包查找对它返回空集合 ⇒ 「不漏发」—— 单测不因此破。但**测试若断言单测里真的发了包，会失败**（当前无此类断言）。
+4. **`registry.clearForTest()` 必须在测试里用**（项目红线）：Gradle 同一 JVM 跑全部测试，静态注册表会跨类残留。
+
+### 8.5 验收实测
+
+| 项 | 结果 |
+|---|---|
+| `./gradlew test --rerun` | ✅ **551 tests / 0 failures / 0 errors / 1 skipped**（538 → 550 为 B 步 12 例，550 → 551 为新增「未登记 id 报错」护栏） |
+| `python tools/check_layers.py` | ✅ R1 **93 → 91**；R3 **22 → 10**；R2/R4 恒 0（8 条已消除项可 `--update-baseline` 收紧） |
+| `python tools/doc_check.py` | ✅ 9/9 |
+
+### 8.6 后续可选
+
+- `tools/layer_baseline.txt` 跑 `--update-baseline` **收紧基线**（棘轮只降不升）
+- 手测四项（§7.5）：发电机遥测 / 漏斗冷却 / 熔炉进度 / 背包路径 —— ⚠️ **尚未做**（用户休息前授权代码改造，未涉及游戏内实测）
+- `LivingItemClientCache` 的层次归属复核（见 §8.1）
+

@@ -268,7 +268,8 @@ src/main/java/com/qiqi/li/
     ├── HopperDirectionPacket.java           #   漏斗方向配置包
     ├── SlotDirectionPacket.java             #   通用槽位方向配置包
     ├── EnderChannelSyncPacket.java          #   末影箱频道同步包
-    ├── LivingItemSyncPacket.java           #   活物品遥测同步包（运行时缓存→客户端 tooltip）
+    ├── LivingItemSyncPacket.java           #   活物品遥测同步包（运行时缓存→客户端 tooltip，**注册表驱动编解码**）
+    ├── LivingItemRuntimeSync.java           #   运行时数据发包端（L4：drainDirty → 按 viewer 派发）
     ├── LivingChestAccessPacket.java         #   活箱子访问包
     ├── LivingMapGuiTeleportPacket.java      #   活地图 GUI 传送包
     ├── LivingMapMetadataPacket.java         #   活地图元数据包
@@ -357,5 +358,6 @@ src/test/java/com/qiqi/li/
 │   ├── ContainerRuleConfigTest.java           # 玩家差异持久化·覆盖内置+删除不复活+导出全量快照+社区闭环（11 项）
 │   └── SlotInteractionCargoGateTest.java      # 槽位交互货物准入真值表·活骨粉不施肥（5 项）
 └── network/
-    └── GuiInteractionPacketTest.java          # 目标槽判据·空槽可解析（活桶汲/倒包的回归守卫）/活物品可解析/非活物品不可解析（3 项）
+    ├── GuiInteractionPacketTest.java          # 目标槽判据·空槽可解析（活桶汲/倒包的回归守卫）/活物品可解析/非活物品不可解析（3 项）
+    └── LivingItemSyncPacketTest.java          # 运行时同步包编解码往返（档 2 安全网）·三组字段往返/空数据/多槽混合/两种键形态/子记录哨兵/未登记 id 报错（13 项）
 ```

@@ -125,8 +125,9 @@ public void tick(List<SlotEntry> entries, ContainerContext context, TickContext 
         LivingFurnaceData data = LivingFurnaceData.of(stack);
 
         // 0. 从运行时缓存恢复瞬态数据（progress/fuel/transform 不再写 DataComponent）
-        LivingItemRuntimeData cached = ContainerRuntimeCache.get(containerKey, slot);
-        if (cached.isFurnace()) { data = data.mergeRuntime(cached.furnace()); }
+        RuntimeSegments cached = ContainerRuntimeCache.get(containerKey, slot);
+        FurnaceRuntime fr = cached.get(FurnaceSegment.INSTANCE);
+        if (fr != null) { data = data.withProgress(...).withFuel(...).withTransform(...); }
 
         // 1. 解析方向 → 计算槽位
         DirectionSlotsData dir = data.direction();
@@ -150,7 +151,9 @@ public void tick(List<SlotEntry> entries, ContainerContext context, TickContext 
         }
 
         // 4. 写运行时缓存（tooltip 数据源，不写 DataComponent）
-        ContainerRuntimeCache.update(containerKey, slot, LivingItemRuntimeData.forFurnace(...));
+        ContainerRuntimeCache.update(containerKey, slot, RuntimeSegments.EMPTY.with(FurnaceSegment.INSTANCE,
+            new FurnaceRuntime(data.progress().progress(), data.progress().total(),
+                               data.fuel().burnTime(), data.transform())));
 
         // 5. 燃烧状态翻转 → 写 LIVING_FURNACE_BURNING 标志组件 + 槽位同步（图标切换）
         boolean nowBurning = data.fuel().isBurning();

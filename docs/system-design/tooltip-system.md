@@ -14,7 +14,7 @@
   - [1. 概述与设计目标](#1-概述与设计目标)
   - [2. 双层渲染架构（文本层 + 图形层）](#2-双层渲染架构文本层--图形层)
     - [2.1 事件顺序与数据获取方式](#21-事件顺序与数据获取方式)
-    - [2.2 运行时数据（LivingItemRuntimeData）](#22-运行时数据livingitemruntimedata)
+    - [2.2 运行时数据（RuntimeSegments）](#22-运行时数据runtimesegments档-2-泛化)
   - [3. 数据链路：服务端 → 客户端](#3-数据链路服务端--客户端)
     - [3.1 服务端：telemetry 构建 → 运行时缓存 → 脏标记](#31-服务端telemetry-构建--运行时缓存--脏标记)
     - [3.2 大箱子匹配（CompoundContainer）与玩家背包直发](#32-大箱子匹配compoundcontainer与玩家背包直发)
@@ -87,31 +87,48 @@ if (mc.screen instanceof AbstractContainerScreen<?> containerScreen) {
 }
 ```
 
-### 2.2 运行时数据（LivingItemRuntimeData）
+### 2.2 运行时数据（`RuntimeSegments`，档 2 泛化）
 
-per-slot 的运行时快照 record，按数据种类分变体（generatorTelemetry / hopperRuntime / …）：
-- **服务端**：`ContainerRuntimeCache.update(containerKey, slot, data)`，telemetry 由各功能的容器级 tick 构建（如 `LivingWaxedCopperFunction.buildTelemetry`——纯函数，可 JUnit 驱动）；
-- **客户端**：`LivingItemSyncPacket` → `LivingItemClientCache.update`。
+per-slot 的运行时快照 —— **不是**静态 record，而是一个「段类型 → 值」的不可变聚合容器：
+
+- **段类型归各领域**：`power/GeneratorSegment`、`hopper/HopperSegment`、`furnace/FurnaceSegment`
+  各自实现 `living.runtime.RuntimeSegmentType<T>`（声明 `id()` + `codec()`）并登记到
+  `RuntimeSegmentRegistry`（在各领域自己的 `*Registration` 里）；
+- **机制归 L2**：`living.runtime.RuntimeSegments` 只提供 `with(type, value)` / `get(type)`
+  —— `get` 取 `Type` 而非 `String`，编译期就杜绝「拿错段」的强转；
+- **读写**：服务端 `ContainerRuntimeCache.update(containerKey, slot, RuntimeSegments.EMPTY.with(XxxSegment.INSTANCE, …))`；
+  客户端 `LivingItemClientCache.get(slot).get(XxxSegment.INSTANCE)`；
+- **线上格式**：`segmentCount` + 每段 `id` + payload（由注册表驱动，`LivingItemSyncPacket` 不再认识任何具体字段）。
+  ⚠️ **`id` 是线格式契约，发布后不可改名**。
+
+> 设计取舍与搬迁过程见 [runtime-mechanization-plan.md](../buffer/runtime-mechanization-plan.md) §7。
+> 收益：原本 `domain/runtime` 这个「假领域」被拆掉 —— 领域互依赖 R3 从 22 条降到 10 条。
 
 ---
 
 ## 3. 数据链路：服务端 → 客户端
 
-### 3.1 服务端：telemetry 构建 → 运行时缓存 → 脏标记
+### 3.1 服务端：telemetry 构建 → 运行时缓存 → 脏标记 → L4 发包
 
 ```
 processContext（每容器每 tick）
   ├─ 阶段 4：runContainerDataTicks（priority 排序）
   │    ├─ priority 2：红石 calculate（edgeGrid 双缓冲；LivingRedstoneFunction 单点驱动）
-  │    ├─ priority 3：LivingWaxedCopperFunction.tickContainerData
-  │    │    ├─ BFS 采样 → 相位解读 → 门控记账 → 发电直存
-  │    │    ├─ buildTelemetry（检测值快照，纯函数）      ← 遥测构建
-  │    │    └─ ContainerRuntimeCache.update(...)         ← 标脏
-  │    └─ 阶段 4.5：flushToClients（脏容器 → 同步包）
+  │    └─ priority 3：LivingWaxedCopperFunction.tickContainerData
+  │         ├─ BFS 采样 → 相位解读 → 门控记账 → 发电直存
+  │         ├─ buildTelemetry（检测值快照，纯函数）          ← 遥测构建
+  │         └─ ContainerRuntimeCache.update(...)             ← 只标脏（L2，不发包）
+  │
+LivingItem.onServerTick（所有容器处理之后，收口一次）
+  └─ LivingItemRuntimeSync.flush(players, containerLookup)   ← L4 才发包
+       ├─ drainDirty() 取走本 tick 脏快照并清脏
+       ├─ player_ 前缀 → 直发背包主人（+「开着容器界面」守卫）
+       └─ 其余 → findViewers（菜单槽位匹配）逐个发
 ```
 
 - 运行时缓存按 `containerKey`（稳定位置身份，如 `chest_x1_y1_z1_x2_y2_z2`）+ `slot`（**容器绝对槽位索引**，大箱为 0–53 全箱索引）存储；
-- `update` 标脏，`flushToClients` 每容器 tick 末尾调用一次（发完即清脏）。
+- **脏标记在 L2，发包在 L4**（档 2 反转发包）：缓存只暴露 `drainDirty()` / `findViewers()`，
+  网络包由一个 L4 类统一发送 —— 避免 L2 依赖 L4（R1）。
 
 ### 3.2 大箱子匹配（CompoundContainer）与玩家背包直发
 
@@ -273,11 +290,17 @@ src/main/java/com/qiqi/li/
 ├── LivingItemClient.java                    # 客户端入口：GatherComponents 挂载（图形层）
 ├── client/render/LivingItemTooltip.java     # 文本层桥接：ItemTooltipEvent + ThreadLocal
 ├── client/render/LivingWaxedCopperTooltipRenderer.java  # 仪器面板绘制（相位圆盘 + 展开条 + 锈级柱状图）
-├── living/domain/runtime/
-│   ├── ContainerRuntimeCache.java           # 服务端运行时缓存 + 脏标记 + flushToClients + 大箱匹配
-│   ├── LivingItemClientCache.java           # 客户端单键缓存 + 悬停 ThreadLocal
-│   └── LivingItemRuntimeData.java           # per-slot 运行时快照 record
-├── network/LivingItemSyncPacket.java        # 遥测同步包（STREAM_CODEC）
+├── living/runtime/                          # L2 机制（档 2 从 domain/runtime/ 泛化而来）
+│   ├── RuntimeSegments.java                 # 段聚合容器（不可变，with/get）
+│   ├── RuntimeSegmentType.java              # 段类型契约（id + codec）
+│   ├── RuntimeSegmentRegistry.java          # id → 段类型 注册表（线格式契约）
+│   ├── ContainerRuntimeCache.java           # 服务端缓存 + 脏标记 + drainDirty（**不发包**）
+│   └── LivingItemClientCache.java           # 客户端单键缓存 + 悬停 ThreadLocal
+├── network/LivingItemSyncPacket.java        # 遥测同步包（注册表驱动编解码）
+├── network/LivingItemRuntimeSync.java       # L4 发包端（drainDirty → 按 viewer 派发）
+├── living/domain/{power,hopper,furnace}/
+│   ├── GeneratorSegment.java | HopperSegment.java | FurnaceSegment.java   # 各领域的段定义
+│   └── …（段内子记录随段一起归本领域）
 └── living/domain/power/
     ├── LivingWaxedCopperFunction.java       # buildTelemetry（telemetry 构建，纯函数）+ addToTooltip（文本）
     ├── LivingWaxedGeneratorData.java        # 仪表盘 record（DataComponent 兼容 + 网络编码）

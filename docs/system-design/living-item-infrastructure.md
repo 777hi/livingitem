@@ -153,7 +153,7 @@ public interface ContainerSync extends LivingContainer {
 | 物品置空 / 换 id / 数量变化（焚毁、转化、作物产出、熔炉烧炼…） | ❌ 不需要 | `ItemStack.matches` 能检测，原版广播兜住 |
 | **只改自定义 DataComponent**（id/数量都没变） | ✅ 需要 | `PatchedDataComponentMap.equals()` 检测不到，原版判据失效 |
 | **缓存失效**（`bumpContainerRevision`） | ✅ 需要 | 这是模组内部的 revision 计数，原版**根本不知道**有这回事 |
-| **运行时数据下发** | 另有通道 | 由 `ContainerRuntimeCache.flushToClients`（`ContainerLivingItemHandler` tick 阶段 4.5）负责，**不经** `syncSlotToClients` |
+| **运行时数据下发** | 另有通道 | 由 `LivingItemRuntimeSync.flush`（L4，`LivingItem.onServerTick` 收尾）负责，**不经** `syncSlotToClients` |
 
 > ⚠️ **`syncSlotToClients` 是解决实际问题的机制，不是冗余**（2026-10-08 用户明确）。
 > 它同时承担三件事：① 补原版对「只改自定义组件」的失效；② 触发 `bumpContainerRevision` 让缓存失效；
@@ -1331,8 +1331,6 @@ processContext(context, level)
   ├─ 阶段 4：容器级数据（runContainerDataTicks）
   │   └─ 收集 HasContainerData 实现者，按优先级排序后依次执行
   │
-  ├─ 阶段 4.5：运行时缓存下发（ContainerRuntimeCache.flushToClients）
-  │
   ├─ 阶段 5：写回 BlockEntity（writebackBlockEntities + incrementCleanup）
   │   ├─ 应力与流体数据（按 ContainerDataKey 声明的 attachment）写回关联的 BlockEntity
   │   └─ 达到清理间隔时执行过期数据清理
@@ -1343,6 +1341,11 @@ processContext(context, level)
   │
   └─ [finally] 脏槽同步 + TickContext 清理（flushDirtySlots + setTickContext(null)）
 ```
+
+> 📌 **运行时数据下发已迁出本流程**（档 2，2026-10-08）：buff 缓存在 L2 只攒脏，发包由 L4 的
+> `LivingItemRuntimeSync.flush` 在 `LivingItem.onServerTick` 的**所有**容器处理之后统一收口
+> —— 见 [runtime-mechanization-plan.md](../buffer/runtime-mechanization-plan.md) §7。
+> 原「阶段 4.5」只是调用点，不是职责归属；反转发包后 L2 不再认识网络包（消 R1）。
 
 **阶段 1 — 扫描**：遍历容器中所有物品，将活物品按功能类型分组收集，同时校验内容签名以打破稳态跳过死锁。
 

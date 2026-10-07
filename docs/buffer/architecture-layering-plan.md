@@ -86,9 +86,12 @@ python tools/gen_code_map.py      # 出 build/code-map.html（人看）/ --query
 2. **中介 / 编排** —— 逻辑放在**两个领域之上**的模块，不是塞进其中一个
 3. **共享契约下移** —— 只是共用类型时，类型下移到框架层，两边都依赖它
 
-> ⚠️ **B 的坑（动之前必须看清）**：`LivingItemRuntimeData` **反过来继承了 `LivingWaxedGeneratorData`**、
+> ⚠️ **B 的坑（动之前必须看清）**：原先的 `LivingItemRuntimeData` **反过来继承了 `LivingWaxedGeneratorData`**、
 > 引用了 `TransformData` / `ResolvedSlotData` —— 它是**聚合所有领域运行时数据的 God data class**。
-> 单纯把 `runtime` 下移只会把违规**方向反过来**，条数一条不减。
+>
+> ✅ **2026-10-08 已按下面「定稿」实现（档 2）**：God record 已删，拆成
+> 「L2 机制 `living/runtime/` + 各领域自带 `XxxSegment`」。结果：R3 22 → 10。
+> 实施记录见 [runtime-mechanization-plan.md](runtime-mechanization-plan.md) §7；本节保留为**决策依据**。
 
 ### 3.1 B 详析：`runtime` 不是领域，是**稳定机制**
 
