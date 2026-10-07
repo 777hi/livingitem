@@ -91,7 +91,7 @@ public class LivingCopperFunction implements LivingItemFunction, HasContainerDat
     public static final String ID = "living_copper";
 
     public boolean canApply(ItemStack stack)  // 仅未涂蜡铜块
-    public void tickContainerData(...)         // 触发 ContainerRedstoneData.calculate()
+    // ⚠️ 2026-10-08 起不再实现 HasContainerData（原先它的 tickContainerData 与红石元件是同一段样板）
 
     // HasDirection 接口
     public int getDirectionKeyCount()          // 2（输入方向 + 输出方向）
@@ -222,7 +222,7 @@ ItemStack (minecraft:copper_bulb)
 
 ### 3.1 触发与集成
 
-活铜块的信号传播完全集成在 `ContainerRedstoneData.calculate()` 的六阶段算法中，与活红石系统共享同一 `EdgeGrid` 和传播时序。`LivingCopperFunction.tickContainerData()` 与 `LivingRedstoneFunction.tickContainerData()` 同样触发 `calculate()`，`processedThisTick` 去重确保同一 tick 内只计算一次。
+活铜块的信号传播完全集成在 `ContainerRedstoneData.calculate()` 的六阶段算法中，与活红石系统共享同一 `EdgeGrid` 和传播时序。驱动权已收归单点（2026-10-08）：`calculate()` 只由 `LivingRedstoneFunction.tickContainerData()` 触发 —— `LivingCopperFunction` 原先那段与红石元件完全相同的样板已删除（铜块家族本身仍是 `calculate()` 内部的 9 类元件之一）。
 
 ### 3.2 槽位分类
 

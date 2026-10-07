@@ -64,8 +64,8 @@
 
 | 类名 | 文件位置 | 职责 |
 |------|---------|------|
-| `LivingRedstoneFunction` | `domain/redstone/LivingRedstoneFunction.java` | 活红石粉功能入口，实现 `HasContainerData`，触发容器级信号计算 |
-| `LivingRedstoneTorchFunction` | `domain/redstone/LivingRedstoneTorchFunction.java` | 活红石火把功能入口，实现 `HasDirection` + `HasContainerData` |
+| `LivingRedstoneFunction` | `domain/redstone/LivingRedstoneFunction.java` | 活红石粉功能入口；**红石层唯一驱动点** —— 唯一实现 `HasContainerData`，自维持 + 带守卫 |
+| `LivingRedstoneTorchFunction` | `domain/redstone/LivingRedstoneTorchFunction.java` | 活红石火把功能入口，实现 `HasDirection`（2026-10-08 起不再实现 `HasContainerData`） |
 | `LivingButtonFunction` | `domain/redstone/LivingButtonFunction.java` | 活按钮功能，右键长按输出信号 |
 | `LivingLeverFunction` | `domain/redstone/LivingLeverFunction.java` | 活拉杆功能，右键切换开关 |
 | `LivingRedstoneLampFunction` | `domain/redstone/LivingRedstoneLampFunction.java` | 活红石灯功能，信号消费者 |
@@ -166,7 +166,8 @@ public class ContainerRedstoneData {
     public ContainerRedstoneData() { ... }  // 无参构造，edgeGrid 在首次 calculate() 时按需创建
     public void calculate(ContainerContext context, TickContext tick) { ... }
     public void resetProcessedFlag() { ... }
-    public int getSlotSignal(int slot, int size, int width) { ... }  // 查询槽位有效信号（含外部输入）
+    public static boolean hasRedstoneElements(TickContext tick) { ... }  // 本容器有无红石元件（驱动守卫共用）
+    public int getSignal(int slot) { ... }  // 便捷别名 = maxSensedSignal（四方向入边最大值）
     public int getBoundarySignal(int dir) { ... }  // 查询指定边界面的输出信号
 }
 ```
@@ -180,7 +181,7 @@ public class ContainerRedstoneData {
 | `prevFaceOutput[4]` | int[4] | 上一帧 faceOutput，用于变化检测避免不必要的方块更新 |
 | `slotMask` | int[] | 每槽位的元件类型位图（`BIT_DUST`/`BIT_TORCH`/…），每 tick 由 `buildSlotMask()` 重建。传播热路径的类型判定走 O(1) 数组访问，替代 `Set<Integer>.contains` 的装箱 + 哈希 |
 | `processedThisTick` | boolean | 同一 tick 内多个 Function 触发时，保证只计算一次。每 tick 开始时由 `SimpleContainerContext.setTickContext()` 重置 |
-| `lastTickTime` | long | 最后访问时间戳，`ContainerLivingItemHandler.cleanupStaleRedstoneData()` 每 120 秒清理超过 120 秒未访问的条目 |
+| `lastTickTime` | long | 最后访问时间戳，`ContainerLivingItemHandler.cleanupStaleData()` 周期性清理超过 120 秒未访问的条目 |
 | `TICKS_PER_REPEATER_STEP` | int (static) | 中继器档位到 game tick 的换算系数。档位 N 充能时 `delayTimer = N × 2`，保持原版「1 红石刻 = 2 game tick」语义 |
 
 > **时间分辨率 = 1 game tick**。早期实现每 2 tick 才传播一次（先用容器私有 `tickCounter`，
@@ -380,15 +381,24 @@ ItemStack (minecraft:comparator)
 
 ### 3.1 触发时机
 
-信号传播由 `ContainerRedstoneData.calculate()` 执行，每 **2 tick** 触发一次全量传播重算。内部逻辑分为两个层级：
+信号传播由 `ContainerRedstoneData.calculate()` 执行，**每 game tick 一次**全量传播重算
+（v17.2 起取消跳帧，1 tick 分辨率；⚠️ 本文早先版本写的「每 2 tick / 偶数 tick 传播」已作废）。
+单次执行：
 
-- **传播 tick（偶数 tick）**：`injectExternalInputs` → `reset` → 6 阶段传播 → `computeFaceOutput` → `notifyBoundaryChange`
-- **非传播 tick（奇数 tick）**：直接返回，不做任何操作。`edgeGrid` 不变，`faceOutput` 必然不变，无需重复计算
-- **无红石物品时**：立即 `edgeGrid.zero()` → `computeFaceOutput`（全 0）→ `notifyBoundaryChange`（通知世界信号消失）
+`injectExternalInputs` → `reset` → 6 阶段传播 → `computeFaceOutput` → `notifyBoundaryChange`
 
-`calculate()` 由 `LivingRedstoneFunction` 和 `LivingRedstoneTorchFunction` 的 `tickContainerData()` 方法触发，两者均通过 `HasContainerData` 接口（优先级 2）被容器处理器调用。当容器内无任何红石物品时，`ContainerLivingItemHandler.processContext()` 也会调用 `calculate()` 以清零残留信号。
+**驱动权已收归单点**（2026-10-08）：`calculate()` 只由 `LivingRedstoneFunction.tickContainerData()`
+**一处**触发。该类**自维持**（`shouldTickWithoutOwnItems` 恒真）—— 即便容器里没有活红石粉，
+也进入容器级数据流程，按 `HasContainerData` 优先级 2 被容器处理器调用。
 
-**非传播 tick 直接返回**：`tickCounter % 2 != 0` 时不做任何操作，`injectExternalInputs`、`computeFaceOutput`、`notifyBoundaryChange` 均只在传播 tick 执行。因为非传播 tick 上 `edgeGrid` 不变，`faceOutput` 必然不变，执行这些操作是冗余的。
+> ⚠️ **收归前**：9 个红石元件 + 活 TNT **各写一段完全相同的调用**，靠 `processedThisTick`
+> 幂等短路兜底才没算重 —— 那是「**错误样板的产地**」（活 TNT 那处就是照抄来的，连注释一起抄错）。
+> 决策与代价见 [redstone-driver-consolidation-plan.md](../buffer/redstone-driver-consolidation-plan.md) §5。
+
+**无红石元件时**（`hasAny == false`）：`edgeGrid.zero()` → `computeFaceOutput`（全 0）→
+`notifyBoundaryChange`（通知世界信号消失）。这条分支**同时承担残留归零职责** ——
+容器里的活红石被移走后账本仍在（`REDSTONE` 数据未删），下一次 `calculate` 走此分支把信号清掉。
+（2026-10-08 前这项工作由 `ContainerLivingItemHandler.zeroResidualRedstone` 兜底，该方法已删除。）
 
 ### 3.2 六阶段边信号传播算法
 
@@ -530,7 +540,11 @@ while queue not empty:
 **活漏斗红石信号控制**：
 活漏斗在 `LivingHopperFunction.tick()` 中通过 `ContainerRedstoneData.getSignal(slot)` 检测槽位 4 条边是否有信号。任意边信号 > 0 时，漏斗被禁用（跳过传输和冷却倒计时），tooltip 显示红色警告。信号消失后自动恢复传输。
 
-**读取语义（v19.1 修正）**：v15 出边模型下，漏斗/TNT 是非红石组件——信号层从不为它们写边，槽位自身出边恒 0。`getSignal`/`getSlotSignal` 改读**四方向入边**的最大值（= 邻居朝本槽发出的出边），与电力层涂蜡采样同语义。旧实现 `edgeGrid.maxOfSlot()`（读自身出边）在 v15 后恒 0，曾导致漏斗锁定 / TNT 点燃永久失效。活 TNT 的点燃检测（`getSlotSignal`）同款修复。
+**读取语义（v19.1 修正）**：v15 出边模型下，漏斗/TNT 是非红石组件——信号层从不为它们写边，槽位自身出边恒 0。`getSignal`（= `maxSensedSignal`）改读**四方向入边**的最大值（= 邻居朝本槽发出的出边），与电力层涂蜡采样同语义。旧实现 `edgeGrid.maxOfSlot()`（读自身出边）在 v15 后恒 0，曾导致漏斗锁定 / TNT 点燃永久失效。活 TNT 的点燃检测同款修复。
+
+> ⚠️ 早期版本提到的 `getSlotSignal(slot, size, width)`（额外并入边界 `faceInput`）**已从代码删除** ——
+> TNT 现用 `maxSensedSignal`，**不含容器外输入**。这是刻意的：外部信号只对**方向性元件**开放
+> （见 §「面信号模型」与 `红电系统.md` 的反馈循环防护），漏斗 / TNT 没有方向概念 ⇒ 天然不在其列。
 
 **Phase 3 — 重新检测输入**：
 ```
@@ -1296,7 +1310,10 @@ for each torch slot:
 
 ### 4.4 火把独立存在
 
-当容器中只有活红石火把（没有活红石粉）时，`LivingRedstoneTorchFunction` 自身的 `tickContainerData()` 也会触发 `ContainerRedstoneData.calculate()`。此时火把不需要红石粉中介，直接代表信号源的存在——点亮状态表示"有信号在输出"，但因为没有红石粉作为传输介质，信号不会在容器中传播。
+当容器中只有活红石火把（没有活红石粉）时，红石层的**单点驱动**（`LivingRedstoneFunction`，自维持）
+仍会跑 `ContainerRedstoneData.calculate()` —— 它的判据是「**容器里有没有红石元件**」，不要求活红石粉在场。
+此时火把不需要红石粉中介，直接代表信号源的存在——点亮状态表示"有信号在输出"，
+但因为没有红石粉作为传输介质，信号不会在容器中传播。
 
 ---
 
@@ -1543,76 +1560,93 @@ newSignal = min(邻居信号 - 1, getSignalCap(自身堆叠数))
 
 ## 8. 与框架的集成
 
-### 8.1 HasContainerData 接口
+### 8.1 HasContainerData 接口 —— 红石层只有一个实现者
 
-活红石系统通过 `HasContainerData` 接口融入容器级数据计算流程。所有红石功能类（红石粉、火把、中继器、比较器、按钮、拉杆、灯）均实现此接口，各自在 `tickContainerData()` 中调用 `redstoneData.calculate()`：
+活红石系统通过 `HasContainerData` 接口融入容器级数据计算流程，但**全层只有 `LivingRedstoneFunction`
+一个类实现它**（2026-10-08 收归）—— 它是红石层的**唯一驱动点**，且**自维持**：
 
 ```java
-// LivingRepeaterFunction（及其他红石功能类）
-public class LivingRepeaterFunction implements LivingItemFunction, HasContainerData {
+public class LivingRedstoneFunction implements LivingItemFunction, HasContainerData {
+
+    @Override
+    public boolean shouldTickWithoutOwnItems(ContainerContext ctx) {
+        return true;   // 容器里没有活红石粉也要跑（否则「只有活按钮」的容器无人驱动）
+    }
 
     @Override
     public int getPriority() {
-        return 2;  // 在流体(0)和应力(1)之后执行
+        return 2;      // 流体 0 → 水车 1 → 红石 2 → 电力 3（电力依赖本层已算完）
     }
 
     @Override
     public void tickContainerData(List<SlotEntry> entries, ContainerContext ctx, TickContext tick) {
-        ContainerRedstoneData redstoneData = tick.getOrCreateRedstoneData(ctx);
-        redstoneData.calculate(ctx, tick);
+        // 廉价守卫：容器既无红石元件、也无历史账本 ⇒ 与红石无关，零开销跳过
+        if (ctx.peekContainerData(ContainerDataKeys.REDSTONE) == null
+                && !ContainerRedstoneData.hasRedstoneElements(tick)) {
+            return;
+        }
+        tick.getOrCreateRedstoneData(ctx).calculate(ctx, tick);
     }
 }
 ```
 
-**关键设计**：`calculate()` 内部有 `processedThisTick` 去重守卫，确保同一 tick 内多个红石功能类调用时只执行一次计算。`ContainerRedstoneData` 实例通过 `ContainerLivingItemHandler.CONTAINER_DATA`（嵌套 `redstone` 字段）静态缓存持久化，`SimpleContainerContext.setTickContext()` 在每 tick 开始时调用 `resetProcessedFlag()` 重置去重标志。
+> ⚠️ **收归前**（2026-10-08 之前）：9 个红石元件 + 活 TNT **各自实现本接口、各写一段相同的
+> `calculate()` 调用**，靠 `processedThisTick` 幂等短路兜底。收归后那 9 处全部删除。
+> 决策与代价见 [redstone-driver-consolidation-plan.md](../buffer/redstone-driver-consolidation-plan.md) §5。
+
+**`processedThisTick` 保留**（不再是正确性依赖，退化为防御性幂等）：
+`ContainerRedstoneData` 实例由容器级持久 store 跨 tick 保存，
+`SimpleContainerContext.setTickContext()` 每 tick 开始时调用 `resetProcessedFlag()` 重置。
 
 **数据获取链路**：
 ```
-tick.getOrCreateRedstoneData(ctx)
-  → TickContext.redstoneData 为 null 时
-    → SimpleContainerContext.getOrCreateRedstoneData()
-      → SimpleContainerContext.redstoneData 为 null 时
-        → ContainerLivingItemHandler.getRedstoneData(containerKey)
-          → CONTAINER_DATA.computeIfAbsent(containerKey, ...).redstone
-          → 返回持久化的 ContainerRedstoneData 实例
+tick.getOrCreateRedstoneData(ctx)          // TickContext
+  → context.getOrCreateContainerData(ContainerDataKeys.REDSTONE)
+    → 容器持久 store 里的 ContainerRedstoneData 实例（跨 tick 保持 edgeGrid）
 ```
 
 ### 8.2 容器级数据计算流程
 
 ```
-ContainerLivingItemHandler.processContext()
+ContainerLivingItemHandler.processContext()   阶段 4
   │
-  ├─ 收集 HasContainerData 实现者
+  ├─ 收集 HasContainerData 实现者（全库仅 4 个）
   ├─ 按优先级排序
-  │   ├─ 0: LivingWaterBucketFunction  — 流体蔓延
+  │   ├─ 0: LivingFluidFunction        — 流体 BFS（自维持）
   │   ├─ 1: LivingWaterWheelFunction   — 应力计算
-  │   ├─ 2: LivingRedstoneFunction     — 红石信号传播
-  │   ├─ 2: LivingRedstoneTorchFunction — 红石信号传播
-  │   ├─ 2: LivingRepeaterFunction     — 中继器延迟处理
-  │   └─ 2: LivingComparatorFunction   — 比较器计算
+  │   ├─ 2: LivingRedstoneFunction     — 红石信号传播（自维持，唯一驱动点）
+  │   └─ 3: LivingWaxedCopperFunction  — 电力记账（依赖红石已算完）
   │
   └─ 依次调用 tickContainerData()
 ```
+
+> ⚠️ **2026-10-08 前**：优先级 2 上并列 9 个红石元件（红石粉 / 火把 / 中继器 / 比较器 / 按钮 /
+> 拉杆 / 灯 / 红石块 / 涂蜡铜块），另有活 TNT 占优先级 1。收归后只剩 `LivingRedstoneFunction` 一个。
 
 ### 8.3 HasDirection 接口（火把/中继器/比较器）
 
 火把的 WASD 朝向配置通过 `HasDirection` 接口自动集成到输入处理和网络处理中，无需修改 `LivingItemInputHandler` 或 `ServerPacketHandler`。
 
-### 8.4 僵尸数据清理（v12 修复）
+### 8.4 僵尸数据清理（v12 修复 → 2026-10-08 职责转移）
 
-**背景**：当容器内所有红石物品被移除后，`ContainerRedstoneData` 缓存中的 `faceOutput` 可能残留旧信号值，导致外部世界持续读取到已经不存在的红石信号。
+**背景**：当容器内所有红石物品被移除后，`ContainerRedstoneData` 缓存中的 `faceOutput` 可能残留旧信号值，
+导致外部世界持续读取到已经不存在的红石信号（`BlockStateBaseMixin` 注入的 `getSignal` 会返回它）。
 
-**v12 修复**：
-1. `ContainerLivingItemHandler.processContext()` 中，当 `grouped.isEmpty()`（无任何红石物品）时，移除 `rd.getSize() > 0` 的无效守卫条件（该条件因 `ContainerRedstoneData(0)` 初始化 `slotCount=0` 而永远为 `false`），直接调用 `calculate()` 触发清零逻辑
-2. `calculate()` 中 `hasAny=false` 分支执行 `edgeGrid.zero()` → `computeFaceOutput`（全 0）→ `notifyBoundaryChange`（通知邻居信号消失）
+**归零机制**：`calculate()` 中 `hasAny=false` 分支执行
+`edgeGrid.zero()` → `computeFaceOutput`（全 0）→ `notifyBoundaryChange`（通知邻居信号消失）。
+
+**职责归属变更（2026-10-08）**：原先由 `ContainerLivingItemHandler.zeroResidualRedstone`
+（更早是 `handleEmptyContainer`）在容器级数据之前**兜底**跑一次 `calculate()` —— 但自 1b-2b
+起 `grouped` 恒非空，那个兜底的守卫条件恒真、方法体永不执行。收归单点后两个方法均已删除：
+`LivingRedstoneFunction` 自维持 ⇒ 恒在分组里 ⇒ **只要账本存在（`REDSTONE` 数据未删）它就必跑**，
+归零自然发生。
 
 **流程**：
 ```
 容器内所有红石物品被移除
-  → processContext() 检测 grouped.isEmpty()
-  → 获取缓存的 ContainerRedstoneData
-  → rd.calculate(context, tick)  // hasAny=false
-  → edgeGrid.zero() → faceOutput = 0 → notifyBoundaryChange
+  → 账本仍在（REDSTONE 数据未删）⇒ 驱动守卫放行
+  → LivingRedstoneFunction.tickContainerData() 跑 calculate
+  → hasAny=false ⇒ edgeGrid.zero() → faceOutput = 0 → notifyBoundaryChange
   → 世界邻居收到更新，重新读取信号 → 0 ✓
 ```
 

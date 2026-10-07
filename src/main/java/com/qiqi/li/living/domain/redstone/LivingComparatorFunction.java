@@ -16,12 +16,11 @@ import net.minecraft.world.level.Level;
 import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.api.HasDirection;
-import com.qiqi.li.living.api.HasContainerData;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.model.Pos2D;
 
-public class LivingComparatorFunction implements LivingItemFunction, HasDirection, HasContainerData {
+public class LivingComparatorFunction implements LivingItemFunction, HasDirection {
 
     public static final String ID = "living_comparator";
     private static final String[] SLOT_NAMES = {"direction"};
@@ -107,17 +106,6 @@ public class LivingComparatorFunction implements LivingItemFunction, HasDirectio
     @Override
     public boolean updateSlotDirection(ItemStack stack, String slotName, Pos2D direction) {
         return updateComparatorDirection(stack, direction);
-    }
-
-    @Override
-    public int getPriority() {
-        return 2;
-    }
-
-    @Override
-    public void tickContainerData(List<SlotEntry> entries, ContainerContext ctx, TickContext tick) {
-        ContainerRedstoneData redstoneData = tick.getOrCreateRedstoneData(ctx);
-        redstoneData.calculate(ctx, tick);
     }
 
     public static boolean updateComparatorDirection(ItemStack stack, Pos2D direction) {

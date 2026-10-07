@@ -57,7 +57,6 @@ domain	living/domain/redstone	living/domain/power	1
 domain	living/domain/runtime	living/domain/furnace	1
 domain	living/domain/runtime	living/domain/hopper	1
 domain	living/domain/runtime	living/domain/power	1
-domain	living/domain/tnt	living/domain/redstone	1
 
 # R4 注册入口不唯一（注册调用散落在 *Registration.java 之外）
 #   （无）

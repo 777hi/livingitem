@@ -19,6 +19,31 @@
 
 > 框架侧（流体侧已于 10-07 完工，此后不再改动）。
 
+- 🧹 **红石重算收归单点**（**534 全绿**，纯重构 + 零行为变化）：
+  `ContainerRedstoneData.calculate()` 原先被 **10 个类各写一遍**（9 个红石元件 + 活 TNT），
+  靠 `processedThisTick` 幂等短路兜底才没算重。收归为**单点驱动**：
+  - `LivingRedstoneFunction` 改**自维持**（`shouldTickWithoutOwnItems` 恒真，对称流体侧 `LivingFluidFunction`）
+    + 加**廉价守卫**（`peek(REDSTONE) == null && !hasRedstoneElements(tick)` ⇒ 零开销跳过）——
+    守卫不可省：自维持 = 每个被 tick 的容器都会走到这里，无守卫则纯熔炉容器也会每 tick 跑 `calculate`
+    （含 `notifyBoundaryChange` → `level.updateNeighborsAt`）。
+    ⭐ 守卫**不会漏掉消费者**：`TickContext.getSensor` 就是 `getOrCreateRedstoneData` ⇒ 消费者一读就创建账本。
+  - 删 9 处重复样板（8 个 redstone 元件 + `LivingTntFunction`）⇒ **`HasContainerData` 实现者 13 → 4**
+    （流体 / 水车 / 红石 / 电力）。接口语义回归「谁真正拥有容器级数据」。
+  - 抽 `ContainerRedstoneData.hasRedstoneElements(TickContext)` 供守卫与 `calculate` 共用判据。
+  - 删两个**永不执行**的框架兜底：`zeroResidualRedstone`（自维持后守卫恒真）与
+    `handleEmptyContainer`（自 1b-2b 起 `grouped` 恒非空 ⇒ 早已死代码）；归零职责由守卫分支接管。
+  - **为什么重要**：那 10 处是「**错误样板的产地**」—— 活 TNT 就是照抄周围红石元件来的，
+    连注释一起抄错（原注释称「优先级 1 确保红石数据在 TNT tick 之前计算完毕」，
+    但 `tick()` 在阶段 2、`tickContainerData()` 在阶段 4 ⇒ 该「之前」对读取时机毫无帮助）。
+    方案与终点形态见 [redstone-driver-consolidation-plan.md](../buffer/redstone-driver-consolidation-plan.md)。
+  - 同步文档：`living-redstone-tech.md`（§3.1 触发时机 / §4.4 / §8.1 / §8.2 / §8.4）、
+    `living-tnt-tech.md` §3.3、`living-power-tech.md` §1.3、`living-copper-tech.md` §3.1、
+    `红电系统.md` 架构图 + prio 说明、`living-item-infrastructure.md` 优先级表、`tooltip-system.md` §3.1。
+- 🧹 **`doc_check` 新增第 9 项「方法名真实性」**（首轮为**警告级**）：
+  文档里 `ClassName.method(...)` 引用的方法必须存在于源码 —— 堵住第 7 项「只校验类名、不校验方法名」的盲区。
+  上线即报出 **13 处陈旧引用**（跨 8 个文档，含拼音搜索 / 配方书等非红电领域）⇒
+  清理完后应把 `warnings.append` 改回 `failures.append`。
+
 - 🏗 **架构分层第四步（C 收尾）：`RedstoneSensor` 接口上移到契约层**（**534 全绿**，纯重构）：
   该端口（v19.1 架构演进 ②）**已经是接口**，但**住在 `domain/redstone/`** ⇒
   消费者（`power` / `hopper` / `tnt`）**用端口仍要 import 领域**，模块级依赖并未真正切断。

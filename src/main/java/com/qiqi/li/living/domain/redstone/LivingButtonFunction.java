@@ -15,11 +15,10 @@ import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
 import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
-import com.qiqi.li.living.api.HasContainerData;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
 
-public class LivingButtonFunction implements LivingItemFunction, HasContainerData {
+public class LivingButtonFunction implements LivingItemFunction {
 
     public static final String ID = "living_button";
 
@@ -89,17 +88,6 @@ public class LivingButtonFunction implements LivingItemFunction, HasContainerDat
         tooltipAdder.accept(Component.translatable("tooltip.livingitem.button.max_signal")
             .append(Component.literal(": " + ContainerRedstoneData.getSignalCap(stack.getCount())))
             .withStyle(ChatFormatting.GRAY));
-    }
-
-    @Override
-    public int getPriority() {
-        return 2;
-    }
-
-    @Override
-    public void tickContainerData(List<SlotEntry> entries, ContainerContext ctx, TickContext tick) {
-        ContainerRedstoneData redstoneData = tick.getOrCreateRedstoneData(ctx);
-        redstoneData.calculate(ctx, tick);
     }
 
     public static boolean isWoodButton(ItemStack stack) {

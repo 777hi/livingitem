@@ -18,13 +18,12 @@ import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
 import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
-import com.qiqi.li.living.api.HasContainerData;
 import com.qiqi.li.living.api.HasDirection;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.model.Pos2D;
 
-public class LivingCopperFunction implements LivingItemFunction, HasContainerData, HasDirection {
+public class LivingCopperFunction implements LivingItemFunction, HasDirection {
 
     public static final String ID = "living_copper";
 
@@ -115,17 +114,6 @@ public class LivingCopperFunction implements LivingItemFunction, HasContainerDat
             return data.recordedSignal();
         }
         return 0;
-    }
-
-    @Override
-    public int getPriority() {
-        return 2;
-    }
-
-    @Override
-    public void tickContainerData(List<SlotEntry> entries, ContainerContext ctx, TickContext tick) {
-        ContainerRedstoneData redstoneData = tick.getOrCreateRedstoneData(ctx);
-        redstoneData.calculate(ctx, tick);
     }
 
     // ── 静态工具方法 ──

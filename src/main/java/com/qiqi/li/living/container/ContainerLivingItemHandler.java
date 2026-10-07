@@ -498,9 +498,12 @@ public class ContainerLivingItemHandler {
             grouped.computeIfAbsent(f, k -> new ArrayList<>());
         }
 
-        // 空容器：仅残留红石归零
+        // 空容器早退 —— ⚠️ **理论不可达**：自维持函数（LivingFluidFunction / LivingRedstoneFunction）
+        // 使 grouped 恒非空。保留本分支仅作防御。
+        // 2026-10-08：原 handleEmptyContainer（「空容器时让残留红石归零」）已删 ——
+        // 归零职责由 LivingRedstoneFunction 的驱动守卫接管（它有 REDSTONE 数据就会跑 calculate，
+        // 内部 hasAny=false 分支自然归零）。见 docs/buffer/redstone-driver-consolidation-plan.md §5 改动 4/5。
         if (grouped.isEmpty()) {
-            handleEmptyContainer(context, startNanos, monitorKey);
             return;
         }
 
@@ -526,11 +529,10 @@ public class ContainerLivingItemHandler {
             long flushChEndNanos = System.nanoTime();
             PerfMetrics.recordPhase("flush_channels", flushChEndNanos - funcTickEndNanos);
 
-            // 阶段 4：容器级数据（红石、流体等按优先级传播）
-            // 1b-2c 红石归零解耦：容器有 REDSTONE 数据但 grouped 里没有 LivingRedstoneFunction（残留红石）
-            // ⇒ 主动归零，**不再依赖 `grouped.isEmpty()`**（自维持函数使其恒非空）。放在容器级数据之前，
-            // 让下游（电力 prio 3）读到归零后的值。
-            zeroResidualRedstone(grouped, context, tick);
+            // 阶段 4：容器级数据（流体 → 水车 → 红石 → 电力，按 prio 排序传播）
+            // 2026-10-08：原 zeroResidualRedstone（1b-2c 的「残留红石归零」兜底）已删 ——
+            // LivingRedstoneFunction 改为自维持后恒在 grouped 里，该兜底的守卫条件恒真、方法体永不执行；
+            // 归零由它的驱动守卫接管（有 REDSTONE 数据 ⇒ 跑 calculate ⇒ hasAny=false 分支归零）。
             runContainerDataTicks(grouped, context, tick);
 
             long containerDataEndNanos = System.nanoTime();
@@ -568,56 +570,6 @@ public class ContainerLivingItemHandler {
 
         com.qiqi.li.living.debug.ContainerMonitor.afterProcess(monitorKey, context);
 
-        if (PerfMetrics.shouldReport()) {
-            PerfMetrics.printReport();
-        }
-    }
-
-    /**
-     * 残留红石归零（1b-2c 解耦）：容器有 {@code REDSTONE} 数据、但本 tick 的分组里**没有**
-     * {@link LivingRedstoneFunction}（如活红石被移走后残留的账本）⇒ 主动跑一次
-     * {@link ContainerRedstoneData#calculate} 让信号归零。
-     *
-     * <p>⚠️ 判据与 {@code grouped} 是否为空<b>无关</b>：自维持函数（如流体驱动 {@code LivingFluidFunction}）
-     * 使 {@code grouped} <b>恒非空</b>，原先寄生在 {@code grouped.isEmpty()} 分支里的归零会失效。
-     * 有活红石时由它自己按 prio 2 计算，本方法直接跳过。</p>
-     */
-    private static void zeroResidualRedstone(
-            Map<LivingItemFunction, List<LivingItemFunction.SlotEntry>> grouped,
-            ContainerContext context, TickContext tick) {
-        for (var f : grouped.keySet()) {
-            if (f instanceof LivingRedstoneFunction) return;
-        }
-        ContainerRedstoneData rd = context.peekContainerData(ContainerDataKeys.REDSTONE);
-        if (rd == null) return;
-        rd.calculate(context, tick);
-    }
-
-    /**
-     * 容器内无活物品时，仅需让残留红石信号归零。
-     * 若容器有红石数据且已计算过，再跑一次 {@link ContainerRedstoneData#calculate} 使其归零。
-     */
-    private static void handleEmptyContainer(TickableContainerContext context, long startNanos, String monitorKey) {
-        String key = cacheKey(context);
-        ContainerRedstoneData rd = null;
-        if (key != null) {
-            ContainerEntry re = CONTAINER_DATA.get(key);
-            rd = re == null ? null : re.store.peek(ContainerDataKeys.REDSTONE);
-        }
-        if (rd != null) {
-            TickContext tick = new TickContext(context);
-            context.setTickContext(tick);
-            try {
-                rd.calculate(context, tick);
-            } finally {
-                context.flushDirtySlots();
-                context.setTickContext(null);
-            }
-        }
-
-        long elapsedNanos = System.nanoTime() - startNanos;
-        PerfMetrics.recordPhase("scan", elapsedNanos);
-        PerfMetrics.recordTick(elapsedNanos);
         if (PerfMetrics.shouldReport()) {
             PerfMetrics.printReport();
         }

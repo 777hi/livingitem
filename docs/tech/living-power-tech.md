@@ -65,7 +65,7 @@ FE               = RE × K，K = 1/16
 
 ```
 processContext() 每 game tick：
-  ├─ priority 2：红石 calculate()（edgeGrid 双缓冲刷新）
+  ├─ priority 2：红石 calculate()（edgeGrid 双缓冲刷新；由 LivingRedstoneFunction 单点驱动）
   └─ priority 3：LivingWaxedCopperFunction.tickContainerData()
        ├─ 收集发电机槽位（铜灯跳过）
        ├─ 按网络组件遍历：每台发电机按形态归入组件 ComponentId = (TopoKey, rep, channelIdx)
@@ -76,7 +76,7 @@ processContext() 每 game tick：
 ```
 
 > ⚠️ **priority 必须保持 3**：电力采样依赖红石（priority 2）已算完的 edgeGrid。
-> 当前占用：水桶 0、水车 1、红石 2、**电力 3**。
+> 当前占用：流体 0、水车 1、红石 2、**电力 3**（全库 `HasContainerData` 实现者仅这 4 个）。
 
 ---
 

@@ -15,11 +15,10 @@ import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
 import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
-import com.qiqi.li.living.api.HasContainerData;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
 
-public class LivingRedstoneLampFunction implements LivingItemFunction, HasContainerData {
+public class LivingRedstoneLampFunction implements LivingItemFunction {
 
     public static final String ID = "living_redstone_lamp";
 
@@ -66,14 +65,4 @@ public class LivingRedstoneLampFunction implements LivingItemFunction, HasContai
         }
     }
 
-    @Override
-    public int getPriority() {
-        return 2;
-    }
-
-    @Override
-    public void tickContainerData(List<SlotEntry> entries, ContainerContext ctx, TickContext tick) {
-        ContainerRedstoneData redstoneData = tick.getOrCreateRedstoneData(ctx);
-        redstoneData.calculate(ctx, tick);
-    }
 }

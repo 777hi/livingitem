@@ -11,9 +11,12 @@ Verifies the invariants declared in docs/README.md §7 ("改完必查"):
   6. Decisions         - decisions.md 的 supersedes 链双向一致
   7. Java symbols      - docs 提到的 Living*.java / *Mixin.java 必须存在
   8. Commands          - docs 引用的 /livingitem 子命令必须已注册
+  9. Method refs       - docs 里 ClassName.method(...) 的方法必须存在于源码
 
-Checks 1-4 and 6-8 fail the run (exit 1). Check 5 only warns: the entry being
-slightly over budget is a maintenance signal, not a correctness error.
+Checks 1-4 and 6-8 fail the run (exit 1). Check 5 only warns (entry budget is a
+maintenance signal, not a correctness error). Check 9 is **warning-only on first
+rollout** (2026-10-08): it immediately surfaced 13 stale references across 8 docs
+outside the current task's scope — flip it to failing once those are cleaned up.
 
 Usage: python tools/doc_check.py [-v]
 """
@@ -414,6 +417,82 @@ def check_commands():
         print("8. 命令真实性      : OK")
 
 
+# ---------------------------------------------------------------- 9. method refs
+
+# 只检查「本项目类 + 方法」的组合引用（`ClassName.method(`）。
+# ⚠️ **已知盲区**：**不带类名的裸方法名**（如 `getSlotSignal()`）不在检查范围 ——
+# 方法名太泛（`getSignal` / `tick` / `calculate` 都是原版或通用名），放宽会误报爆炸。
+# 口径与第 7 项一致：**窄而准 > 宽而吵**。
+METHOD_REF_RE = re.compile(r"\b([A-Z][A-Za-z0-9_]*)\.([a-zA-Z_][A-Za-z0-9_]*)\s*\(")
+
+
+def check_method_refs():
+    """文档里 `ClassName.method(...)` 引用的方法必须在本项目源码中存在（2026-10-08 新增）。
+
+    **为什么需要**：第 7 项只断言「文档提到的 `Living*.java` 文件必须存在」，
+    **不校验方法名** ⇒ 删掉的方法会永远留在文档里。
+    实测（2026-10-08）：`ContainerRedstoneData.getSlotSignal` 已从代码删除，
+    但 `living-redstone-tech.md` / `living-tnt-tech.md` 仍有 4 处引用，无任何机械检查能发现。
+    用户原则同第 7 项：「**文档不是误导我们的**」。
+
+    判据：文档（**排除 archive / buffer** —— 冻结历史与设计稿可以引用未实现的东西）
+    里出现 `ClassName.method(` 形式，若 `ClassName` 是**本项目已有类**，
+    则 `method` 必须能在 `src/**` 任意位置找到（跨文件 / 继承 / 接口都算存在）。
+    豁免：讲历史 / 计划的行（复用 `JAVA_SKIP_WORDS`）。
+
+    ⚠️ **不带类名的裸方法名不在检查范围**（已知盲区，理由见上方 `METHOD_REF_RE` 注释）。
+    """
+    class_names = set()
+    for root, _dirs, files in os.walk(os.path.join(ROOT, "src")):
+        for f in files:
+            if f.endswith(".java"):
+                class_names.add(f[:-5])
+
+    src_files = []
+    for root, _dirs, files in os.walk(os.path.join(ROOT, "src")):
+        for f in files:
+            if f.endswith(".java"):
+                src_files.append(os.path.join(root, f))
+    all_src = "\n".join(read(p) for p in src_files)
+    # 粗粒度即可：任何位置出现过 `name(` 就认为该方法名存在（含调用点，宽松 ⇒ 少误报）
+    known_methods = set(re.findall(r"\b([a-zA-Z_][A-Za-z0-9_]*)\s*\(", all_src))
+
+    docs = [ENTRY]
+    for f in glob.glob(os.path.join(ROOT, "docs", "**", "*.md"), recursive=True):
+        parts = f.replace("\\", "/").split("/")
+        if "archive" in parts or "buffer" in parts:
+            continue
+        docs.append(f)
+
+    bad = []
+    for p in docs:
+        for i, line in enumerate(read(p).split("\n"), 1):
+            if any(w in line for w in JAVA_SKIP_WORDS):
+                continue
+            if any(w in line for w in JAVA_SKIP_PATHS):
+                continue
+            for m in METHOD_REF_RE.finditer(line):
+                cls, meth = m.group(1), m.group(2)
+                if cls not in class_names:
+                    continue          # 原版 / 第三方类，不管
+                if meth not in known_methods:
+                    bad.append("%s:%d 提到不存在的 %s.%s" % (rel(p), i, cls, meth))
+
+    # ⚠️ 首轮（2026-10-08）**只警告不失败**：本检查一上线就报出 13 处陈旧引用，
+    # 分布在 8 个文档、跨多个与当前任务无关的领域 ⇒ 不阻塞主线工作。
+    # **清理完后请把下面的 warnings.append 改成 failures.append，恢复 fail 级**
+    # （与第 5 项「入口体量」同为过渡期 warning 的先例）。
+    if bad:
+        for b in bad:
+            warnings.append("[方法·待清理] " + b)
+        print("9. 方法名真实性    : WARN（%d 处陈旧引用，待清理）" % len(bad))
+        if VERBOSE:
+            for b in bad:
+                print("      " + b)
+    else:
+        print("9. 方法名真实性    : OK")
+
+
 def main():
     print("=== 文档系统一致性检查（docs/README.md §7）===\n")
     check_paths()
@@ -424,6 +503,7 @@ def main():
     check_decisions()
     check_java_symbols()
     check_commands()
+    check_method_refs()
 
     print()
     for w in warnings:

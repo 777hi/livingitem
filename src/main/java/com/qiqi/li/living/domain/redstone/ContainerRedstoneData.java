@@ -234,6 +234,30 @@ public class ContainerRedstoneData implements RedstoneSensor {
         return result;
     }
 
+    /**
+     * 本容器是否存在任何红石元件（含涂蜡铜块家族）。
+     *
+     * <p><b>2026-10-08 抽出</b>：驱动守卫（{@code LivingRedstoneFunction} 的
+     * 「容器与红石无关则跳过」判定）需要同一份判据 —— 原先它是 {@link #calculate} 内部
+     * 内联的 {@code hasAny} 表达式，外部拿不到，只能各写一份。</p>
+     *
+     * <p>⚠️ <b>本清单与 {@link #calculate} 内部的 {@code xxxSlots} 变量必须同步</b> ——
+     * 新增红石元件时两处都要加。这是「硬编码清单」的固有代价；
+     * 终点形态（元件自声明 {@code ProvidesContainerData}）会消灭它，
+     * 见 {@code docs/buffer/redstone-driver-consolidation-plan.md} §12.5 收益 4。</p>
+     */
+    public static boolean hasRedstoneElements(TickContext tick) {
+        return !tick.getFunctionSlots(LivingRedstoneTorchFunction.ID).isEmpty()
+            || !tick.getFunctionSlots(LivingRedstoneFunction.ID).isEmpty()
+            || !tick.getFunctionSlots(LivingButtonFunction.ID).isEmpty()
+            || !tick.getFunctionSlots(LivingLeverFunction.ID).isEmpty()
+            || !tick.getFunctionSlots(LivingRedstoneLampFunction.ID).isEmpty()
+            || !tick.getFunctionSlots(LivingRepeaterFunction.ID).isEmpty()
+            || !tick.getFunctionSlots(LivingComparatorFunction.ID).isEmpty()
+            || !tick.getFunctionSlots(LivingRedstoneBlockFunction.ID).isEmpty()
+            || !tick.getFunctionSlots(LivingCopperFunction.ID).isEmpty();
+    }
+
     public void calculate(ContainerContext context, TickContext tick) {
         if (processedThisTick) return;
         processedThisTick = true;
@@ -265,10 +289,8 @@ public class ContainerRedstoneData implements RedstoneSensor {
         Set<Integer> redstoneBlockSlots = tick.getFunctionSlots(LivingRedstoneBlockFunction.ID);
         Set<Integer> copperSlots = tick.getFunctionSlots(LivingCopperFunction.ID);
 
-        boolean hasAny = !torchSlots.isEmpty() || !dustSlots.isEmpty()
-            || !buttonSlots.isEmpty() || !leverSlots.isEmpty() || !lampSlots.isEmpty()
-            || !repeaterSlots.isEmpty() || !comparatorSlots.isEmpty()
-            || !redstoneBlockSlots.isEmpty() || !copperSlots.isEmpty();
+        // 判据抽到 hasRedstoneElements()（驱动守卫共用同一份清单，见该方法 javadoc）
+        boolean hasAny = hasRedstoneElements(tick);
         if (edgeGrid == null || edgeGrid.width != width || edgeGrid.height != height) {
             edgeGrid = new EdgeGrid(width, height);
             prevEdgeGrid = new EdgeGrid(width, height);

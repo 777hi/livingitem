@@ -34,7 +34,7 @@
 │                                          │ 每 tick              │
 │  ┌──────────────┐                        │                      │
 │  │ 活红石信号    │ ──→ 红石信号检测 ──→   │                      │
-│  │ getSlotSignal │   (信号>0则点燃)      │                      │
+│  │ getSensor     │   (信号>0则点燃)      │                      │
 │  └──────────────┘                        ▼ fuseTimer--          │
 │                              ┌──────────────────┐              │
 │                              │ fuseTimer == 0?  │              │
@@ -76,7 +76,7 @@
 | `ExplosionParams` | `domain/tnt/ExplosionParams.java` | 一次爆炸的参数 record（中心/半径/模式/掉落模式）+ **位图索引映射**（`bitIndex ↔ chunkAt` 互逆） |
 | `ExplosionLedger` | `domain/tnt/ExplosionLedger.java` | **待炸账本**：世界级 `SavedData`，承载"哪些区块还没炸"的位图；已加载的分帧应用，未加载的等自然加载 |
 | `LivingFlintAndSteelFunction` | `domain/tnt/LivingFlintAndSteelFunction.java` | 活打火石，提供点火触发标记 |
-| `ContainerRedstoneData` | `domain/redstone/ContainerRedstoneData.java` | 容器级红石数据，提供 `getSlotSignal()` 供 TNT 检测红石信号 |
+| `ContainerRedstoneData` | `domain/redstone/ContainerRedstoneData.java` | 容器级红石数据；TNT 经 `RedstoneSensor` 端口读 `maxSensedSignal()` 检测信号 |
 
 ---
 
@@ -144,59 +144,41 @@ public static boolean startFuse(ItemStack tntStack) {
 
 ### 3.3 红石信号点火
 
-活TNT通过实现 `HasContainerData` 接口融入容器级红石计算流程。当槽位收到红石信号时自动点燃：
+活 TNT 是红石信号的**借用者**（消费者）—— 它在自己的 `tick()` 里读「本槽位是否被充能」，
+**不驱动**红石层重算（2026-10-08 收归后，那件事由 `LivingRedstoneFunction` 单点负责）：
 
 ```java
-public class LivingTntFunction implements LivingItemFunction, HasContainerData {
-
-    // 优先级 1：在红石数据计算（优先级 2）之前执行
-    @Override
-    public int getPriority() {
-        return 1;
-    }
-
-    // 触发红石数据计算
-    @Override
-    public void tickContainerData(List<SlotEntry> entries, ContainerContext ctx, TickContext tick) {
-        ContainerRedstoneData redstoneData = tick.getOrCreateRedstoneData(ctx);
-        redstoneData.calculate(ctx, tick);
-    }
+public class LivingTntFunction implements LivingItemFunction {   // ← 不再实现 HasContainerData
 
     @Override
     public void tick(List<SlotEntry> entries, ContainerContext context, TickContext tick, Level level) {
         if (level.isClientSide) return;
 
-        ContainerRedstoneData redstoneData = tick.getOrCreateRedstoneData(context);
+        // 确保红石账本存在 —— ⚠️ 不是冗余代码：红石层驱动守卫以「账本已存在」为放行判据之一，
+        // 容器里只有活 TNT 时正是靠这行让守卫放行。
+        tick.getOrCreateRedstoneData(context);
         int size = context.getSize();
-        int width = context.getWidth();
 
         for (SlotEntry entry : entries) {
-            int slot = entry.slotIndex();
-            ItemStack stack = entry.stack();
-            LivingTntData data = LivingTntData.of(stack);
-            ExplosionData explosion = data.explosion();
-
-            // 红石信号点火（仅对未点燃的 TNT）
-            if (!explosion.ignited()) {
-                int signal = tick.getSensor(context).maxSensedSignal(slot);
-                if (signal > 0) {
-                    explosion = explosion.ignite();
-                    LivingTntData.set(stack, data.withExplosion(explosion));
-                    context.syncSlotToClients(slot, stack);
-                    continue;
-                }
-                continue;
-            }
-
-            // ... 已点燃则继续倒计时逻辑 ...
+            // ... 红石信号点火（仅对未点燃的 TNT）...
+            int signal = tick.getSensor(context).maxSensedSignal(slot);   // 读四方向入边最大值
+            if (signal > 0) { /* 点燃 */ }
         }
     }
 }
 ```
 
+> ⚠️ **收归前**：本类曾实现 `HasContainerData` 并写一段与 9 个红石元件**完全相同**的
+> `tickContainerData`，连注释一起抄错 —— 原注释称「优先级 1 确保红石数据在 TNT tick 之前计算完毕」，
+> 但 `tick()` 在阶段 2、`tickContainerData()` 在阶段 4 ⇒ 这个「之前」对读取时机毫无帮助。
+> 那 10 处重复正是「**错误样板的产地**」，详见
+> [redstone-driver-consolidation-plan.md](../buffer/redstone-driver-consolidation-plan.md) §3。
+
 **`RedstoneSensor.maxSensedSignal()` 方法（v19.1）**：通过感知端口 `TickContext.getSensor()` 读取槽位**四方向入边**的最大值（= 邻居朝 TNT 发出的出边）。
 
-> **v19.1 语义修正**：v15 出边模型下，TNT 是非红石组件——信号层从不为它写边，旧实现 `maxOfSlot`（读自身出边）恒 0，红石信号点燃永久失效。修正后与电力层涂蜡采样同语义（读邻居出边）。边界（邻居越界）返回 0：TNT 不感应容器外信号。
+> **v19.1 语义修正**：v15 出边模型下，TNT 是非红石组件——信号层从不为它写边，旧实现 `maxOfSlot`（读自身出边）恒 0，红石信号点燃永久失效。修正后与电力层涂蜡采样同语义（读邻居出边）。
+>
+> **边界（邻居越界）返回 0 ⇒ TNT 不感应容器外信号** —— 外部信号只对**方向性元件**（火把/中继器/比较器）开放（反馈循环防护，见 `红电系统.md`）。⇒ 只有「红石火把 / 红石块**紧挨着** TNT 所在槽位」才有效，**容器外的红石不算**。
 
 **红石信号链路**：
 

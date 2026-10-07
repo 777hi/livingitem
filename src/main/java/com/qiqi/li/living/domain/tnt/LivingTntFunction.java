@@ -13,14 +13,12 @@ import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
 import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
-import com.qiqi.li.living.api.HasContainerData;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
-import com.qiqi.li.living.domain.redstone.ContainerRedstoneData;
 import com.qiqi.li.living.domain.tnt.ExplosionData;
 import com.qiqi.li.living.domain.tnt.LivingTntData;
 
-public class LivingTntFunction implements LivingItemFunction, HasContainerData {
+public class LivingTntFunction implements LivingItemFunction {
 
     public static final String ID = "living_tnt";
 
@@ -36,9 +34,12 @@ public class LivingTntFunction implements LivingItemFunction, HasContainerData {
     public void tick(List<SlotEntry> entries, ContainerContext context, TickContext tick, Level level) {
         if (level.isClientSide) return;
 
-        ContainerRedstoneData redstoneData = tick.getOrCreateRedstoneData(context);
+        // 确保红石账本存在 —— ⚠️ **这行不是冗余代码，别删**：
+        // 红石层的驱动守卫（LivingRedstoneFunction.tickContainerData）以「账本已存在」为放行判据之一，
+        // 容器里只有活 TNT 时正是靠这行让守卫放行。见
+        // docs/buffer/redstone-driver-consolidation-plan.md §5 改动 2。
+        tick.getOrCreateRedstoneData(context);
         int size = context.getSize();
-        int width = context.getWidth();
 
         for (SlotEntry entry : entries) {
             int slot = entry.slotIndex();
@@ -118,14 +119,4 @@ public class LivingTntFunction implements LivingItemFunction, HasContainerData {
         return true;
     }
 
-    @Override
-    public int getPriority() {
-        return 1;
-    }
-
-    @Override
-    public void tickContainerData(List<SlotEntry> entries, ContainerContext ctx, TickContext tick) {
-        ContainerRedstoneData redstoneData = tick.getOrCreateRedstoneData(ctx);
-        redstoneData.calculate(ctx, tick);
-    }
 }

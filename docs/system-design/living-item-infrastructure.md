@@ -1345,8 +1345,8 @@ runContainerDataTicks(grouped, context, tick);
 |--------|--------|--------------|
 | 0 | `LivingFluidFunction`（自维持） | 容器级流体 BFS + 快照下发（FluidFlowServerSync） |
 | 1 | `LivingWaterWheelFunction` | 应力计算 + postTickSync |
-| 2 | `LivingRedstoneFunction` | 红石信号传播 |
-| 2 | `LivingRedstoneTorchFunction` | 红石信号传播（火把独立存在时） |
+| 2 | `LivingRedstoneFunction`（自维持） | 红石信号传播 —— **唯一驱动点**（2026-10-08 收归） |
+| 3 | `LivingWaxedCopperFunction` | 电力记账（依赖红石已算完的 edgeGrid） |
 
 > 旧 `LivingWaterBucketFunction`（prio 0 流体驱动 + postTickSync）已拆分：驱动收归
 > `LivingFluidFunction`（1b-2b，自维持），桶物品侧随桶源退役整体删除（2026-10-03）。

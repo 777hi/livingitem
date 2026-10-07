@@ -102,7 +102,7 @@ per-slot 的运行时快照 record，按数据种类分变体（generatorTelemet
 ```
 processContext（每容器每 tick）
   ├─ 阶段 4：runContainerDataTicks（priority 排序）
-  │    ├─ priority 2：红石 calculate（edgeGrid 双缓冲）
+  │    ├─ priority 2：红石 calculate（edgeGrid 双缓冲；LivingRedstoneFunction 单点驱动）
   │    ├─ priority 3：LivingWaxedCopperFunction.tickContainerData
   │    │    ├─ BFS 采样 → 相位解读 → 门控记账 → 发电直存
   │    │    ├─ buildTelemetry（检测值快照，纯函数）      ← 遥测构建
