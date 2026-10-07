@@ -72,6 +72,10 @@ PLANNED_MARKERS = ("未建", "待建", "规划中", "已删除", "待补")
 def check_paths():
     bad = []
     for f in doc_files():
+        # buffer 层（设计稿 / 计划 / 路线图）整体豁免：它天然会描述**尚未创建**的文件路径，
+        # 与第 7 项（Java 符号）、第 9 项（方法名）同一口径 —— 「设计稿可以引用未实现的东西」。
+        if "buffer" in os.path.relpath(f, ROOT).replace("\\", "/").split("/"):
+            continue
         text = read(f)
         base = os.path.dirname(f)
 
