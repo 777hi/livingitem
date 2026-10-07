@@ -17,8 +17,9 @@ import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.ContainerLivingItemHandler;
 import com.qiqi.li.living.container.ContainerSnapshot;
 import com.qiqi.li.living.container.TickContext;
-import com.qiqi.li.living.domain.hopper.CrossContainerTransfer;
+import com.qiqi.li.living.model.GridDirections;
 import com.qiqi.li.living.model.Pos2D;
+import com.qiqi.li.living.util.WaxedCopperFamily;
 
 public class ContainerRedstoneData implements RedstoneSensor {
 
@@ -343,7 +344,7 @@ public class ContainerRedstoneData implements RedstoneSensor {
             BlockState state = level.getBlockState(pos);
             if (state == null) continue;
 
-            Direction facing = CrossContainerTransfer.getBlockFacing(state);
+            Direction facing = GridDirections.getBlockFacing(state);
             if (facing == null) continue;
 
             for (Direction worldDir : Direction.Plane.HORIZONTAL) {
@@ -353,9 +354,9 @@ public class ContainerRedstoneData implements RedstoneSensor {
                 ContainerRedstoneData neighborData = ContainerLivingItemHandler.getRedstoneDataByPos(level, neighborPos);
                 if (neighborData != null) {
                     BlockState neighborState = level.getBlockState(neighborPos);
-                    Direction neighborFacing = CrossContainerTransfer.getBlockFacing(neighborState);
+                    Direction neighborFacing = GridDirections.getBlockFacing(neighborState);
                     if (neighborFacing != null) {
-                        Pos2D neighborGridDir = CrossContainerTransfer.worldToGrid(worldDir.getOpposite(), neighborFacing);
+                        Pos2D neighborGridDir = GridDirections.worldToGrid(worldDir.getOpposite(), neighborFacing);
                         if (neighborGridDir != null && !neighborGridDir.isNone()) {
                             int neighborInternalDir = edgeIndex(neighborGridDir);
                             signal = Math.max(signal, neighborData.getBoundarySignal(neighborInternalDir));
@@ -364,7 +365,7 @@ public class ContainerRedstoneData implements RedstoneSensor {
                 }
 
                 if (signal > 0) {
-                    Pos2D gridDir = CrossContainerTransfer.worldToGrid(worldDir, facing);
+                    Pos2D gridDir = GridDirections.worldToGrid(worldDir, facing);
                     if (gridDir != null && !gridDir.isNone()) {
                         int internalDir = edgeIndex(gridDir);
                         faceInput[internalDir] = Math.max(faceInput[internalDir], signal);
@@ -429,7 +430,7 @@ public class ContainerRedstoneData implements RedstoneSensor {
         if (stack.getItem() instanceof BlockItem blockItem) {
             if (!LivingItemManager.isLivingItem(stack)) return false;
             // 涂蜡 = 绝缘（§3.2）：不参与信号层的充能/发射，电力层走感应耦合
-            if (com.qiqi.li.living.domain.power.LivingWaxedCopperFunction.isWaxedCopperBlock(stack.getItem())) {
+            if (WaxedCopperFamily.isWaxedCopperBlock(stack.getItem())) {
                 return false;
             }
             return blockItem.getBlock().defaultBlockState()

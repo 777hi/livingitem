@@ -185,7 +185,8 @@ src/main/java/com/qiqi/li/
 │   │
 │   ├── util/                                # 跨领域工具
 │   │   ├── DoubleChestPositions.java        #   大箱子双半箱位置查找（LEFT/RIGHT 规范序）
-│   │   └── StaticCacheRegistry.java         #   进程级 static 缓存清理注册表（F-2：登记一行即被生命周期覆盖）
+│   │   ├── StaticCacheRegistry.java         #   进程级 static 缓存清理注册表（F-2：登记一行即被生命周期覆盖）
+│   │   └── WaxedCopperFamily.java           #   涂蜡铜块家族分类谓词（20 件；从 power 域上移，redstone/client 共用）
 │   │
 │   ├── interaction/                         # GUI交互
 │   │   ├── InteractionEntry.java            #   交互规则 record
@@ -203,7 +204,8 @@ src/main/java/com/qiqi/li/
 │   │
 │   ├── model/                               # 配置/方向模型
 │   │   ├── Pos2D.java                       #   不可变 2D 坐标
-│   │   └── SlotMapping.java                 #   不可变槽位映射
+│   │   ├── SlotMapping.java                 #   不可变槽位映射
+│   │   └── GridDirections.java              #   GUI 方向 ⇄ 世界方向映射（从 hopper 域上移，redstone/mixin 共用）
 │   │
 │   ├── mixin/                               # 服务端 Mixin
 │   │   ├── ItemStackMixin.java              #   活箱子堆叠操作拦截

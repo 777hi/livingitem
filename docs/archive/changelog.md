@@ -59,6 +59,22 @@
   - 「残留红石归零」的端到端测试从 `ContainerFluidIntegrationTest` **搬入**本类
     （它测的是红石，住在流体测试类里属位置错误；且 1b-2c 的 `zeroResidualRedstone` 已删，
     归零职责改由 `LivingRedstoneFunction` 的守卫接管）。
+- 🏗 **架构分层第五步：反向边 ×2 下移（`redstone → hopper` / `redstone → power`）**（**538 全绿**，纯重构）：
+  `ContainerRedstoneData` 曾同时依赖 hopper 域与 power 域 —— 但依赖的东西**都不是那两个域的实现**，
+  而是**放错盒子的共享知识**。两处各建一个公共类：
+  - **几何映射** → 新建 `living/model/GridDirections`（**L0 契约层**，与 `Pos2D` 同包）：
+    搬入 `gridToWorld` / `worldToGrid` / `getBlockFacing`（纯几何，只依赖 `Pos2D` + 原版）。
+    使用者除 redstone 外还有 **`BlockStateBaseMixin`**（L4）⇒ 留在 hopper 域等于制造
+    「mixin → hopper」的反向依赖。`CrossContainerTransfer` 内部 5 处调用改为 `GridDirections.*`，
+    并删掉随之无用的 `BlockStateProperties` / `DirectionProperty` import。
+  - **涂蜡铜块家族谓词** → 新建 `living/util/WaxedCopperFamily`（**L1 基础层**）：
+    搬入 `isWaxedCopperBlock`（硬编码 20 个 `Items`，零域依赖）。使用者除 redstone 外还有
+    `LivingItemClient`（L5）⇒ 留在 power 域等于制造「redstone → power」。
+    ⚠️ **家族分类尚未完全收拢**：`isWaxedBase` / `isWaxedChiseled` / `isWaxedCut` / `isWaxedGrate` /
+    `isWaxedBulb` / `getCoilForm` 等**子集判定**仍留在 `LivingWaxedCopperFunction`（目前只被 power 用），
+    将来别的域需要时应一并迁入。
+  - **结果**：**R3 24 → 22**（两条边各减 1）· R1 93 不变 · 基线已收紧；
+    顺带补 `file-map.md` 的两处文件树条目。
 - 🧹 **`doc_check` 第 9 项清完 13 处陈旧引用，并升回失败级**（**9/9 全绿、0 警告**）：
   上线首日以 warning 级试运行（报出 13 处、跨 8 个文档，超出当日任务范围）。清理分两类：
   - **真漂移（改成实际名）**：

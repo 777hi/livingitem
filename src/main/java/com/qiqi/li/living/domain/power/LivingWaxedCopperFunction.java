@@ -15,6 +15,7 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.Item;
+import com.qiqi.li.living.util.WaxedCopperFamily;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.TooltipFlag;
@@ -66,7 +67,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
     @Override
     public boolean canApply(ItemStack stack) {
         if (!LivingItemManager.isLivingItem(stack)) return false;
-        return isWaxedCopperBlock(stack.getItem());
+        return WaxedCopperFamily.isWaxedCopperBlock(stack.getItem());
     }
 
     @Override
@@ -386,7 +387,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         if (neighbor < 0 || neighbor >= size) return -1;
         ItemStack ns = ctx.getItem(neighbor);
         if (ns.isEmpty()) return -1;
-        if (!isWaxedCopperBlock(ns.getItem())) return -1;
+        if (!WaxedCopperFamily.isWaxedCopperBlock(ns.getItem())) return -1;
         if (isWaxedBulb(ns.getItem())) return -1; // 铜灯不导电
         if (getOxidationLevel(ns.getItem()) != oxidation) return -1;
         return neighbor;
@@ -407,7 +408,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             for (int s = 0; s < size; s++) {
                 if (arr[s] != -1) continue;
                 ItemStack st = ctx.getItem(s);
-                if (st.isEmpty() || !isWaxedCopperBlock(st.getItem()) || isWaxedBulb(st.getItem())) continue;
+                if (st.isEmpty() || !WaxedCopperFamily.isWaxedCopperBlock(st.getItem()) || isWaxedBulb(st.getItem())) continue;
                 if (getOxidationLevel(st.getItem()) != oxidation) continue;
                 // 收集该组件全部槽位（弱连通）
                 int cn = 0, h = 0, t = 0;
@@ -1207,19 +1208,6 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         return LivingWaxedGeneratorData.FORM_BLOCK;
     }
 
-    /** 全部涂蜡铜块家族（发电机体 + 电池），共 20 件 */
-    public static boolean isWaxedCopperBlock(Item item) {
-        return item == Items.WAXED_COPPER_BLOCK || item == Items.WAXED_EXPOSED_COPPER
-            || item == Items.WAXED_WEATHERED_COPPER || item == Items.WAXED_OXIDIZED_COPPER
-            || item == Items.WAXED_CHISELED_COPPER || item == Items.WAXED_EXPOSED_CHISELED_COPPER
-            || item == Items.WAXED_WEATHERED_CHISELED_COPPER || item == Items.WAXED_OXIDIZED_CHISELED_COPPER
-            || item == Items.WAXED_CUT_COPPER || item == Items.WAXED_EXPOSED_CUT_COPPER
-            || item == Items.WAXED_WEATHERED_CUT_COPPER || item == Items.WAXED_OXIDIZED_CUT_COPPER
-            || item == Items.WAXED_COPPER_GRATE || item == Items.WAXED_EXPOSED_COPPER_GRATE
-            || item == Items.WAXED_WEATHERED_COPPER_GRATE || item == Items.WAXED_OXIDIZED_COPPER_GRATE
-            || item == Items.WAXED_COPPER_BULB || item == Items.WAXED_EXPOSED_COPPER_BULB
-            || item == Items.WAXED_WEATHERED_COPPER_BULB || item == Items.WAXED_OXIDIZED_COPPER_BULB;
-    }
 
     /** 涂蜡铜块本体（1 线圈 × 4 向全叠加） */
     public static boolean isWaxedBase(Item item) {

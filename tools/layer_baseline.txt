@@ -52,8 +52,6 @@ domain	living/domain/hopper	living/domain/runtime	3
 domain	living/domain/power	living/domain/runtime	3
 domain	living/domain/hopper	living/domain/chest	2
 domain	living/domain/ender	living/domain/hopper	1
-domain	living/domain/redstone	living/domain/hopper	1
-domain	living/domain/redstone	living/domain/power	1
 domain	living/domain/runtime	living/domain/furnace	1
 domain	living/domain/runtime	living/domain/hopper	1
 domain	living/domain/runtime	living/domain/power	1

@@ -15,6 +15,7 @@ import com.qiqi.li.living.domain.power.LivingWaxedCopperTooltipComponent;
 import com.qiqi.li.living.domain.power.LivingWaxedGeneratorData;
 import com.qiqi.li.living.domain.runtime.LivingItemClientCache;
 import com.qiqi.li.living.domain.runtime.LivingItemRuntimeData;
+import com.qiqi.li.living.util.WaxedCopperFamily;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.world.inventory.Slot;
@@ -129,7 +130,7 @@ public class LivingItemClient {
         ItemStack stack = event.getItemStack();
         if (stack.isEmpty()) return;
         if (!LivingItemManager.isLivingItem(stack)) return;
-        if (!LivingWaxedCopperFunction.isWaxedCopperBlock(stack.getItem())) return;
+        if (!WaxedCopperFamily.isWaxedCopperBlock(stack.getItem())) return;
         if (LivingWaxedCopperFunction.isWaxedBulb(stack.getItem())) return;
 
         event.getTooltipElements().add(

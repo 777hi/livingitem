@@ -1,7 +1,7 @@
 package com.qiqi.li.living.mixin;
 
 import com.qiqi.li.living.container.ContainerLivingItemHandler;
-import com.qiqi.li.living.domain.hopper.CrossContainerTransfer;
+import com.qiqi.li.living.model.GridDirections;
 import com.qiqi.li.living.domain.redstone.ContainerRedstoneData;
 import com.qiqi.li.living.model.Pos2D;
 import net.minecraft.core.BlockPos;
@@ -30,10 +30,10 @@ public abstract class BlockStateBaseMixin {
         BlockState state = realLevel.getBlockState(pos);
         if (state == null) return;
 
-        Direction facing = CrossContainerTransfer.getBlockFacing(state);
+        Direction facing = GridDirections.getBlockFacing(state);
         if (facing == null) return;
 
-        Pos2D gridDir = CrossContainerTransfer.worldToGrid(direction.getOpposite(), facing);
+        Pos2D gridDir = GridDirections.worldToGrid(direction.getOpposite(), facing);
         if (gridDir == null || gridDir.isNone()) return;
 
         int internalDir = edgeIndexOf(gridDir);

@@ -39,9 +39,8 @@ import net.minecraft.world.Container;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.block.state.properties.BlockStateProperties;
-import net.minecraft.world.level.block.state.properties.DirectionProperty;
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.model.GridDirections;
 import com.qiqi.li.living.transfer.SlotAccessor;
 import com.qiqi.li.living.transfer.SlotAccessorFactory;
 import com.qiqi.li.living.transfer.SlotInteractions;
@@ -78,7 +77,7 @@ public final class CrossContainerTransfer {
         if (level == null || containerPos == null) return false;
 
         BlockState blockState = level.getBlockState(containerPos);
-        Direction blockFacing = getBlockFacing(blockState);
+        Direction blockFacing = GridDirections.getBlockFacing(blockState);
         if (blockFacing == null) return false;
 
         List<BlockPos> chestPositions = DoubleChestPositions.find(level, containerPos);
@@ -195,7 +194,7 @@ public final class CrossContainerTransfer {
                                              int hostSlot,
                                              TickContext tick) {
         Pos2D sourceOffset = resolvedSlots.sourceOffset();
-        Direction sourceWorldDir = gridToWorld(sourceOffset, blockFacing);
+        Direction sourceWorldDir = GridDirections.gridToWorld(sourceOffset, blockFacing);
         if (sourceWorldDir == null) return false;
 
         IItemHandler neighborHandler = getNeighborHandler(level, basePos, sourceWorldDir, chestPositions);
@@ -284,7 +283,7 @@ public final class CrossContainerTransfer {
         if (!sourceIsChest && !sourceIsEnderChest && LivingItemManager.isLivingItem(sourceStack)) return false;
 
         Pos2D targetOffset = resolvedSlots.targetOffset();
-        Direction targetWorldDir = gridToWorld(targetOffset, blockFacing);
+        Direction targetWorldDir = GridDirections.gridToWorld(targetOffset, blockFacing);
         if (targetWorldDir == null) return false;
 
         IItemHandler neighborHandler = getNeighborHandler(level, basePos, targetWorldDir, chestPositions);
@@ -317,11 +316,11 @@ public final class CrossContainerTransfer {
                                                      FilterData filterData,
                                                      TickContext tick) {
         Pos2D sourceOffset = resolvedSlots.sourceOffset();
-        Direction sourceWorldDir = gridToWorld(sourceOffset, blockFacing);
+        Direction sourceWorldDir = GridDirections.gridToWorld(sourceOffset, blockFacing);
         if (sourceWorldDir == null) return false;
 
         Pos2D targetOffset = resolvedSlots.targetOffset();
-        Direction targetWorldDir = gridToWorld(targetOffset, blockFacing);
+        Direction targetWorldDir = GridDirections.gridToWorld(targetOffset, blockFacing);
         if (targetWorldDir == null) return false;
 
         IItemHandler sourceHandler = getNeighborHandler(level, sourceBasePos, sourceWorldDir, chestPositions);
@@ -353,62 +352,10 @@ public final class CrossContainerTransfer {
     }
 
     // ========== 方向映射系统 ==========
-
-    public static Direction gridToWorld(Pos2D gridDir, Direction blockFacing) {
-        if (gridDir == null || gridDir.isNone()) return null;
-
-        Direction normalized;
-        if (gridDir.equals(Pos2D.UP))         normalized = Direction.SOUTH;
-        else if (gridDir.equals(Pos2D.DOWN))  normalized = Direction.NORTH;
-        else if (gridDir.equals(Pos2D.LEFT))  normalized = Direction.EAST;
-        else if (gridDir.equals(Pos2D.RIGHT)) normalized = Direction.WEST;
-        else return null;
-
-        int rotations = getRotationCount(blockFacing);
-        for (int i = 0; i < rotations; i++) {
-            normalized = normalized.getClockWise(Direction.Axis.Y);
-        }
-
-        return normalized;
-    }
-
-    public static Pos2D worldToGrid(Direction worldDir, Direction blockFacing) {
-        if (worldDir == null || worldDir.getAxis() == Direction.Axis.Y) return Pos2D.NONE;
-
-        int rotations = getRotationCount(blockFacing);
-        Direction normalized = worldDir;
-        for (int i = 0; i < rotations; i++) {
-            normalized = normalized.getCounterClockWise(Direction.Axis.Y);
-        }
-
-        return switch (normalized) {
-            case NORTH -> Pos2D.DOWN;
-            case SOUTH -> Pos2D.UP;
-            case WEST  -> Pos2D.RIGHT;
-            case EAST  -> Pos2D.LEFT;
-            default    -> Pos2D.NONE;
-        };
-    }
-
-    private static int getRotationCount(Direction blockFacing) {
-        return switch (blockFacing) {
-            case NORTH -> 0;
-            case EAST  -> 1;
-            case SOUTH -> 2;
-            case WEST  -> 3;
-            default    -> 0;
-        };
-    }
-
-    public static Direction getBlockFacing(BlockState state) {
-        for (DirectionProperty prop : new DirectionProperty[]{
-            BlockStateProperties.FACING, BlockStateProperties.HORIZONTAL_FACING}) {
-            if (state.hasProperty(prop)) {
-                return state.getValue(prop);
-            }
-        }
-        return null;
-    }
+    //
+    // ⚠️ 2026-10-08：gridToWorld / worldToGrid / getBlockFacing 已上移到
+    // living/model/GridDirections（纯几何工具，非 hopper 域专属 —— redstone 与 mixin 也在用，
+    // 留在本类会制造「redstone/mixin → hopper」的反向依赖）。本类内部改为调用 GridDirections.*。
 
     // ========== 大箱子处理 ==========
 
