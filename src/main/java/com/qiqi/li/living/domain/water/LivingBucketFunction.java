@@ -35,7 +35,7 @@ import com.qiqi.li.living.container.TickContext;
  * tooltip 再写一遍内容是冗余；「储存 × mB」对桶（恒1 个源 = 1000 mB）也是废话。
  * 连带删除 lang 键 {@code tooltip.livingitem.bucket.content}
  * （那条文案自 {@code e2d7aa1} FluidStack 时代起就与本类参数不匹配 ⇒ 占位符漏出，
- * 根因与来历见 {@code docs/archive/living-bucket-tooltip-removal.md}）。</p>
+ * 根因与来历见 {@code docs/tech/living-fluid-tech.md §5}）。</p>
  */
 public class LivingBucketFunction implements LivingItemFunction {
 

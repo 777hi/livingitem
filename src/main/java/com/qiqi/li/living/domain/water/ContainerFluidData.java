@@ -606,7 +606,7 @@ public class ContainerFluidData {
      * 播种（派生源）+ 扩散**一轮**，返回流动表（不改 {@link #flows}）。
      *
      * <p><b>抢占规则 = 到达时间</b>（2026-10-07 定档，方案见
-     * {@code docs/archive/living-fluid-arrival-time-claim.md}）：每个流体的每格成本 = 它自己的节拍
+     * {@code docs/tech/living-fluid-tech.md §3.1}）：每个流体的每格成本 = 它自己的节拍
      * （水 5 / 岩浆 30，下界 10；瞬时 0），多源 Dijkstra 按到达时间升序定型 ⇒
      * <b>分配与实际到达用同一个时钟</b>。此前按距离抢占 ⇒ 分配与到达脱节 ⇒ 出现「在水的流域内
      * 却永远进不去」的墙（岩浆按距离/注册顺序守住接触格，哪怕它到得更慢）。</p>
@@ -664,7 +664,7 @@ public class ContainerFluidData {
                 ItemStack item = ctx.getItem(neighbor);
                 if (LivingItemManager.isLivingItem(item)) continue;
 
-                // 异种流体已**实际**占据该格 ⇒ 不抢（2026-10-07 定档，docs/archive/living-fluid-no-displace-fix.md）：
+                // 异种流体已**实际**占据该格 ⇒ 不抢（2026-10-07 定档，docs/tech/living-fluid-tech.md §3.1）：
                 // 原版语义是「接触面直接反应」（shouldSpreadLiquid 在岩浆格上凝固），熔岩前沿
                 // 停在接触面、逐格凝固，**从不驱逐对方**。此前目标层按距离抢占 ⇒ pruneActual
                 // 当拍删掉对方 ⇒ 接触前露出 1.5s 空档（水凭空消失一格，像 bug）。
