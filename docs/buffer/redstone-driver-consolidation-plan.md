@@ -400,7 +400,7 @@ public void tickContainerData(List<SlotEntry> entries, ContainerContext ctx, Tic
 |---|---|---|---|
 | **现在** | 9 个元件（兼职） | 有没有元件在场 | 无（驱动者与消费者不相干） |
 | **本次中间态** | 1 个专职 | **有元件 ∨ 账本已存在** | 供给驱动（有人算就行） |
-| **终点** | 框架按需 | **有任一声明**（生产者 ∨ 消费者） | **双向声明**（见 §12.3） |
+| **终点** | 框架按需 | **有任一声明**（生产者 ∨ 消费者） | **双向声明**（见 §12.2 / §12.4） |
 
 ⚠️ **中间态没有消除 §6.1 的脆弱性** —— 判据仍是「有元件 ∨ 账本存在」，
 而「账本存在」依赖 `getSensor` 的创建副作用。它只做到：**消除样板** + **让「谁驱动」可见**。
@@ -466,7 +466,53 @@ public interface ProvidesContainerData {
 ⇒ 这正是「**有元件在场**」这个判据**在逻辑上不可省**的原因。
 | 框架 | 汇总需求 → **有需求才驱动；无需求零开销** |
 
-### 12.4 四个附带收益（终点顺带解决的）
+### 12.4 新形态的具体写法（各类对照）
+
+| 类 | 现在 | 新形态 |
+|---|---|---|
+| `LivingRedstoneFunction`（红石粉） | `HasContainerData` + `prio 2` + 3 行样板 | `ProvidesContainerData` → `REDSTONE` + `NeedsContainerData` → `{REDSTONE}`（它自己也参与传播） |
+| 8 个红石元件 | `HasContainerData` + `prio 2` + **同样 3 行样板** | `NeedsContainerData` → `{REDSTONE}` —— **一行** |
+| `LivingTntFunction` | `HasContainerData` + `prio 1` + 样板 | `NeedsContainerData` → `{REDSTONE}` —— **一行** |
+| `LivingHopperFunction` | ⚠️ **什么都不实现**（需求隐式，靠副作用） | `NeedsContainerData` → `{REDSTONE}` —— **一行** |
+| `LivingWaxedCopperFunction`（电力层） | `HasContainerData` + `prio 3` | `ProvidesContainerData` → `POWER`（`dependsOn: REDSTONE`） |
+| `LivingFluidFunction`（流体驱动） | `HasContainerData` + `prio 0` | `ProvidesContainerData` → `FLUID` |
+| `LivingWaterWheelFunction`（水车） | `HasContainerData` + `prio 1` | `NeedsContainerData` → `{FLUID}` + `ProvidesContainerData` → `STRESS`（`dependsOn: FLUID`） |
+
+**⭐ 本质变化：红石元件从「驱动者」变成「需求者」** —— 这是**纠正了一个身份错误**：
+
+> 红石元件（按钮 / 中继器 / 比较器…）的真实身份是**数据的参与者**（它要读邻居给的信号才能工作），
+> 但现在的代码让它们当**数据的主人**（"我来决定要不要算"）。
+> 比喻：现在是每个元件都「自己开车」（谁在场谁开），新形态是「一个专职司机 + 所有元件当乘客」。
+
+**提供者在终点形态下连守卫都不需要**（守卫是「把框架的判断塞进提供者」，终点把它还给框架）：
+
+```java
+public class LivingRedstoneFunction implements LivingItemFunction, ProvidesContainerData {
+    @Override
+    public ContainerDataKey providedData() { return ContainerDataKeys.REDSTONE; }
+
+    // 唯一一处 calculate —— 没有守卫
+    // 「要不要算」由框架判定（有需求才驱动），不该塞在提供者内部
+    @Override
+    public void tickContainerData(List<SlotEntry> entries, ContainerContext ctx, TickContext tick) {
+        ctx.getOrCreateContainerData(ContainerDataKeys.REDSTONE).calculate(ctx, tick);
+    }
+}
+```
+
+⇒ **「消除样板」是一条三步收敛**：
+
+| | 样板处数 | 硬编码元件清单 | 守卫 |
+|---|---|---|---|
+| **现在** | 10 处 | 9 个 ID（在 `calculate` 里） | 无 |
+| **本次中间态** | **1 处** | 9 个 ID（抽成 `hasRedstoneElements`） | 有（在提供者内部） |
+| **终点** | **0 处** | **0**（元件自己声明） | **无**（还给框架） |
+
+⚠️ 本节是**设计推演**，未实施、未验证。「元件从驱动者变需求者」这一重新归类，
+实施时需逐个核对语义（尤其 `LivingCopperFunction` 在信号层 vs `LivingWaxedCopperFunction` 在电力层
+是两个不同的类，别混）。
+
+### 12.5 四个附带收益（终点顺带解决的）
 
 1. **巧合链彻底消失** —— 生产者和消费者**都显式声明**，不再靠 `getSensor` 的副作用
 2. **`getSensor` 可以变回纯读**（无副作用）⇒ §5 标注的残留脆弱点**自然消失**
@@ -479,7 +525,7 @@ public interface ProvidesContainerData {
 **同一机制对流体同样适用**：`LivingWaterWheelFunction` 现在是「prio 1 顺手跑一遍」，
 本质是「我需要 `FLUID`」⇒ 也该走声明。⇒ 四类容器级数据（流体 / 应力 / 红石 / 电力）可统一到一条机制。
 
-### 12.5 为什么本次不做 + 顺序不能反
+### 12.6 为什么本次不做 + 顺序不能反
 
 1. 它是**新机制**（新接口 + 框架调度改造），不是「消除样板」⇒ 属 B 类框架演进
 2. 要同时动 5 个领域（redstone / tnt / hopper / power / water），影响面比本次大一个量级
