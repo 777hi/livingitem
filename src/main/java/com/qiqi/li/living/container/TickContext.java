@@ -110,8 +110,11 @@ public class TickContext {
     /**
      * 获取感知端口（v19.1 架构演进 ②）：电力层与跨层消费者读取信号层的唯一接口。
      * 依赖收窄到接口——edgeGrid 的边模型后续重构只改端口实现。
+     *
+     * <p>⚠️ 接口**已上移到契约层** `living/api/`（2026-10-08 C 收尾）——
+     * 否则消费者用端口仍要 import `domain/redstone`，模块级依赖并未真正切断。</p>
      */
-    public com.qiqi.li.living.domain.redstone.RedstoneSensor getSensor(ContainerContext context) {
+    public com.qiqi.li.living.api.RedstoneSensor getSensor(ContainerContext context) {
         return getOrCreateRedstoneData(context);
     }
 

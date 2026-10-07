@@ -29,7 +29,6 @@ import com.qiqi.li.living.domain.hopper.DirectionTransferData;
 import com.qiqi.li.living.transfer.FilterData;
 import com.qiqi.li.living.domain.hopper.LivingHopperData;
 import com.qiqi.li.living.domain.hopper.TransferData;
-import com.qiqi.li.living.domain.redstone.ContainerRedstoneData;
 import com.qiqi.li.living.components.ItemFilterComponent;
 import com.qiqi.li.living.domain.runtime.ContainerRuntimeCache;
 import com.qiqi.li.living.domain.runtime.LivingItemRuntimeData;

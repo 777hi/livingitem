@@ -25,8 +25,7 @@ import com.qiqi.li.living.api.HasContainerData;
 import com.qiqi.li.living.api.HasDirection;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
-import com.qiqi.li.living.domain.redstone.ContainerRedstoneData;
-import com.qiqi.li.living.domain.redstone.RedstoneSensor;
+import com.qiqi.li.living.api.RedstoneSensor;
 import com.qiqi.li.living.domain.runtime.ContainerRuntimeCache;
 import com.qiqi.li.living.domain.runtime.LivingItemClientCache;
 import com.qiqi.li.living.domain.runtime.LivingItemRuntimeData;
@@ -272,9 +271,9 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         // v19.1：值比较而非引用比较——Pos2D 经序列化/反序列化后是值相等的新实例，
         // 引用比较会让配置过的方向全部落入 fallback（恒 UP）。
         if (dir.x() == 0) {
-            return dir.y() < 0 ? ContainerRedstoneData.EDGE_UP : ContainerRedstoneData.EDGE_DOWN;
+            return dir.y() < 0 ? RedstoneSensor.EDGE_UP : RedstoneSensor.EDGE_DOWN;
         }
-        return dir.x() < 0 ? ContainerRedstoneData.EDGE_LEFT : ContainerRedstoneData.EDGE_RIGHT;
+        return dir.x() < 0 ? RedstoneSensor.EDGE_LEFT : RedstoneSensor.EDGE_RIGHT;
     }
 
     /**
@@ -325,7 +324,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             if (!firstFrame) {
                 // 检查该槽位的边信号（v15 每槽自有出边模型：涂蜡槽绝缘，采样读「入边」
                 // = 邻居朝本槽的出边）
-                for (int dir = 0; dir < ContainerRedstoneData.EDGE_COUNT; dir++) {
+                for (int dir = 0; dir < RedstoneSensor.DIRECTIONS; dir++) {
                     if (chiseledInEdge >= 0 && dir != chiseledInEdge) continue;
                     int signal = sensor.sensedSignal(current, dir);
                     int prevSignal = sensor.prevSensedSignal(current, dir);
@@ -361,7 +360,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             }
 
             // 遍历四方向找同氧化等级的铜块邻居
-            for (int dir = 0; dir < ContainerRedstoneData.EDGE_COUNT; dir++) {
+            for (int dir = 0; dir < RedstoneSensor.DIRECTIONS; dir++) {
                 int neighbor = traversableNeighbor(ctx, size, containerWidth, current, dir, oxidation);
                 if (neighbor < 0) continue;
                 if (visited[neighbor]) continue;
@@ -415,7 +414,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
                 q[t++] = s; arr[s] = s; comp[cn++] = s;
                 while (h < t) {
                     int cur = q[h++];
-                    for (int dir = 0; dir < ContainerRedstoneData.EDGE_COUNT; dir++) {
+                    for (int dir = 0; dir < RedstoneSensor.DIRECTIONS; dir++) {
                         int nb = traversableNeighbor(ctx, size, width, cur, dir, oxidation);
                         if (nb < 0 || arr[nb] != -1) continue;
                         arr[nb] = s; comp[cn++] = nb; q[t++] = nb;
@@ -467,12 +466,12 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             int slot = e.getKey();
             GeneratorState gen = e.getValue();
             StringBuilder edges = new StringBuilder();
-            for (int dir = 0; dir < ContainerRedstoneData.EDGE_COUNT; dir++) {
+            for (int dir = 0; dir < RedstoneSensor.DIRECTIONS; dir++) {
                 int v = sensor.sensedSignal(slot, dir);
                 SignalTracker t = powerData.getEdgeTracker(((long) slot << 2) | dir);
                 edges.append("[dir").append(dir).append("]v=").append(v)
                     .append("/P=").append(t == null ? "-" : String.valueOf(t.period()));
-                if (dir < ContainerRedstoneData.EDGE_COUNT - 1) edges.append(' ');
+                if (dir < RedstoneSensor.DIRECTIONS - 1) edges.append(' ');
             }
             ChannelState ch = gen.channel();
             int pref = gen.preferredPeriod();
@@ -594,7 +593,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
     private static void interpretSplitter(int slot, ContainerPowerData powerData, long now,
             Map<Integer, List<DerivedPhase>> draft) {
         List<DerivedPhase> out = new ArrayList<>();
-        for (int dir = 0; dir < ContainerRedstoneData.EDGE_COUNT; dir++) {
+        for (int dir = 0; dir < RedstoneSensor.DIRECTIONS; dir++) {
             SignalTracker t = powerData.getEdgeTracker(FALLING_BIT | edgeKey(slot, dir));
             if (t != null && t.period() > 0
                     && now - t.lastRisingTick() <= PowerMath.aliveWindow(t.period())) {
@@ -619,7 +618,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
     private static void interpretAdder(int slot, ContainerPowerData powerData, long now,
             Map<Integer, List<DerivedPhase>> draft) {
         Map<Integer, List<int[]>> byPeriod = new HashMap<>(); // period → [offset, delta]
-        for (int dir = 0; dir < ContainerRedstoneData.EDGE_COUNT; dir++) {
+        for (int dir = 0; dir < RedstoneSensor.DIRECTIONS; dir++) {
             SignalTracker t = powerData.getEdgeTracker(edgeKey(slot, dir));
             if (t == null || t.period() <= 0) continue;
             if (now - t.lastRisingTick() > PowerMath.aliveWindow(t.period())) continue;

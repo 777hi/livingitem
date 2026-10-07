@@ -12,6 +12,7 @@ import net.minecraft.world.level.EmptyBlockGetter;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.api.RedstoneSensor;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.ContainerLivingItemHandler;
 import com.qiqi.li.living.container.ContainerSnapshot;
@@ -24,11 +25,12 @@ public class ContainerRedstoneData implements RedstoneSensor {
     // ── 槽位类型位掩码 ──
     // 传播热路径上每格要做十几次「邻居是什么元件」的判定。
     // 用 Set<Integer>.contains 会带来装箱 + 哈希查找，改为按槽位索引的位图。
-    // EDGE_* 常量公开供电力层（domain/power）使用。
-    public static final int EDGE_UP = 0;
-    public static final int EDGE_DOWN = 1;
-    public static final int EDGE_LEFT = 2;
-    public static final int EDGE_RIGHT = 3;
+    // ⚠️ 方向常量的**唯一定义点已上移到 `RedstoneSensor`**（2026-10-08 C 收尾）——
+    // 电力层原先为此 import 本类，现已直接依赖契约层。此处保留别名以免本类内部大改。
+    public static final int EDGE_UP = RedstoneSensor.EDGE_UP;
+    public static final int EDGE_DOWN = RedstoneSensor.EDGE_DOWN;
+    public static final int EDGE_LEFT = RedstoneSensor.EDGE_LEFT;
+    public static final int EDGE_RIGHT = RedstoneSensor.EDGE_RIGHT;
     private static final int E_UP = EDGE_UP;
     private static final int E_DOWN = EDGE_DOWN;
     private static final int E_LEFT = EDGE_LEFT;

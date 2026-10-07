@@ -19,6 +19,21 @@
 
 > 框架侧（流体侧已于 10-07 完工，此后不再改动）。
 
+- 🏗 **架构分层第四步（C 收尾）：`RedstoneSensor` 接口上移到契约层**（**534 全绿**，纯重构）：
+  该端口（v19.1 架构演进 ②）**已经是接口**，但**住在 `domain/redstone/`** ⇒
+  消费者（`power` / `hopper` / `tnt`）**用端口仍要 import 领域**，模块级依赖并未真正切断。
+  改为：**接口迁 `living/api/`** + **方向常量（`EDGE_*` / `DIRECTIONS`）收归契约层**
+  （`ContainerRedstoneData` 的公开常量改为**别名**，内部实现不动）。
+  ⇒ `power` / `hopper` **已完全不引用** redstone 域：
+  `LivingWaxedCopperFunction` 11 处常量引用改走契约层 + 去 import；
+  `LivingHopperFunction` 的 `ContainerRedstoneData` **是未使用的 import**（正文零引用，已删）。
+  **R3 领域互依赖 28 → 25**，顺带 **R1 94 → 93**（`TickContext.getSensor` 返回类型改契约层 ⇒ 少一条 `container → redstone`）。
+  ⚠️ **实测比预想少 3 条**，因为另两条边**不属于本项**（详见 `buffer/architecture-layering-plan.md` §4）：
+  ① `tnt → redstone`：`LivingTntFunction` 调的是 `ContainerRedstoneData.calculate` ——
+  **信号层内部方法、不在端口上**，且它挂在 `tickContainerData` 上**每 tick 强制重算** ⇒ **设计问题，未动**；
+  ② `redstone → hopper` / `redstone → power` 是**反向边**（redstone 调 hopper 的纯几何工具 /
+  power 的涂蜡谓词）⇒ 属「共享契约下移」，独立项。
+
 - 🏗 **架构分层第三步：`LivingComponents` 迁出 `living/transfer`**（**534 全绿**，纯重构）：
   `living/transfer/` 的 12 个文件里只有它是异类（其余全是槽位 / 传输相关），
   而 `living/components/` **已存在且名字正好对上** ⇒ `transfer/LivingComponents.java` → `components/`。

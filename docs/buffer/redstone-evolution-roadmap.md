@@ -48,16 +48,22 @@
 
 ## 1. 已完成：SensorPort 感知端口（②）
 
-**`RedstoneSensor`**（`domain/redstone/`）——电力层与跨层消费者读取信号层的唯一接口：
+**`RedstoneSensor`**（**`living/api/`** —— 2026-10-08 从 `domain/redstone/` **上移到契约层**）
+——电力层与跨层消费者读取信号层的唯一接口：
 
 ```java
 public interface RedstoneSensor {
     int DIRECTIONS = 4;
+    int EDGE_UP = 0; int EDGE_DOWN = 1; int EDGE_LEFT = 2; int EDGE_RIGHT = 3;  // 唯一定义点
     int sensedSignal(int slot, int dir);       // dir 方向邻居朝本槽发出的出边值
     int prevSensedSignal(int slot, int dir);   // 上一 tick 同方向值
     int maxSensedSignal(int slot);             // 四方向最大值（漏斗锁定/TNT 点燃语义）
 }
 ```
+
+> ⚠️ **为什么必须上移**：接口原先住在 `domain/redstone/` ⇒ 消费者（`power` / `hopper` / `tnt`）
+> **用端口仍要 import 领域**，模块级依赖并未真正切断。上移后 `power` / `hopper` 已**完全不引用** redstone 域
+> ⇒ **R3 领域互依赖 28 → 25**（顺带 `container → redstone` 也少一条 ⇒ R1 94 → 93）。
 
 - `ContainerRedstoneData implements RedstoneSensor`；`TickContext.getSensor(ctx)` 提供实例；
 - 感知语义：**dir 方向邻居朝本槽发出的出边**；边界（邻居越界）返回 0——涂蜡元件不感应容器外信号（设计决策）；

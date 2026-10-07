@@ -6,8 +6,8 @@
 # R1 跨模块方向违规（下层依赖上层）
 module	living/components	living/domain/redstone	11
 module	living/container	living/domain/water	9
-module	living/container	living/domain/redstone	6
 module	living/container	living/domain/power	5
+module	living/container	living/domain/redstone	5
 module	living/domain/tools	network	5
 module	(root)	client/render	4
 module	living/api	living/container	4
@@ -51,9 +51,7 @@ domain	living/domain/furnace	living/domain/runtime	3
 domain	living/domain/hopper	living/domain/runtime	3
 domain	living/domain/power	living/domain/runtime	3
 domain	living/domain/hopper	living/domain/chest	2
-domain	living/domain/power	living/domain/redstone	2
 domain	living/domain/ender	living/domain/hopper	1
-domain	living/domain/hopper	living/domain/redstone	1
 domain	living/domain/redstone	living/domain/hopper	1
 domain	living/domain/redstone	living/domain/power	1
 domain	living/domain/runtime	living/domain/furnace	1

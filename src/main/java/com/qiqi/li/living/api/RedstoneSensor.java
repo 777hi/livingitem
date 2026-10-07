@@ -1,4 +1,4 @@
-package com.qiqi.li.living.domain.redstone;
+package com.qiqi.li.living.api;
 
 /**
  * 红电感知端口 —— 电力层与跨层消费者（漏斗锁定 / TNT 点燃）读取信号层的**唯一**接口。
@@ -18,6 +18,12 @@ public interface RedstoneSensor {
 
     /** 边方向数（UP/DOWN/LEFT/RIGHT） */
     int DIRECTIONS = 4;
+
+    /** 边方向索引 —— **唯一定义点**（原先在 `ContainerRedstoneData`，2026-10-08 C 收尾上移）。 */
+    int EDGE_UP = 0;
+    int EDGE_DOWN = 1;
+    int EDGE_LEFT = 2;
+    int EDGE_RIGHT = 3;
 
     /**
      * 当前 tick：slot 从 dir 方向感知到的信号值。

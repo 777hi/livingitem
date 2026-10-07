@@ -174,6 +174,16 @@ javadoc 明写「红电感知端口 —— 电力层与跨层消费者（漏斗�
 ⇒ `power` / `hopper` / `tnt` 完全不依赖 redstone 领域，**6 条 R3 边全清**，
 而这正是 roadmap 写的**「信号层 ⇄ 电力层解耦」**（属「共享契约下移」）。
 
+> ✅ **2026-10-08 C 收尾已完成**（提交见 changelog）：接口上移 `living/api/` + 方向常量收归契约层
+> ⇒ `power` / `hopper` **已完全不引用 redstone 域**，**R3 28 → 25**，顺带 **R1 94 → 93**。
+>
+> ⚠️ **实测比预想少 3 条，原因是两条边不属于本项**：
+> | 边 | 性质 | 处置 |
+> |---|---|---|
+> | `tnt → redstone`（`LivingTntFunction` 调 `ContainerRedstoneData.calculate`） | **信号层内部方法**，不在端口上；且它挂在 `tickContainerData` 上**每 tick 强制重算** | **设计问题，未动** —— 需要先想清「TNT 为何要驱动信号层重算」 |
+> | `redstone → hopper`（`ContainerRedstoneData` 调 `CrossContainerTransfer.getBlockFacing` / `worldToGrid`） | 那两个是**纯几何工具**，放在 hopper 域是**放错盒子** | **独立项**（属「共享契约下移」，可另开一批） |
+> | `redstone → power`（`ContainerRedstoneData` 调 `LivingWaxedCopperFunction.isWaxedCopperBlock`） | redstone 需要「这是不是涂蜡铜块」= **power 侧应暴露的谓词** | **独立项**（端口/谓词下移） |
+
 ## 5. 推荐顺序与验证方式
 
 **顺序**：`①②`（低垂果实，真减 19）→ `③`（修正归属）→ `C 收尾`（接口上移，减 6）→ `④`
@@ -187,6 +197,7 @@ javadoc 明写「红电感知端口 —— 电力层与跨层消费者（漏斗�
 | **① ✅ 已完成** | R1 **113 → 101** ✓；`./gradlew test --rerun` **484 全绿** ✓；基线已收紧（42 对 → 39 对） |
 | **② ✅ 已完成** | R1 **101 → 94** ✓；**534 全绿** ✓；基线已收紧（39 对 → 34 对）；铁律正文（infra §3.4）按「归属」重写 |
 | **③ ✅ 已完成** | R1 **仍 94**（**同层搬迁，不减** —— 买的是归属诚实）；**534 全绿** ✓；配对数 34 → 37；48 个 import + 1 处同包引用 |
+| **C 收尾 ✅ 已完成** | **R3 28 → 25** ✓（+ 顺带 **R1 94 → 93**）；**534 全绿** ✓；接口上移 `living/api/` + 方向常量收归契约层 |
 | ①+② 之后 | 跑 `check_layers.py --update-baseline` 收紧基线 |
 | C 收尾 | R3 **28 → 22** |
 

@@ -15,7 +15,8 @@ src/main/java/com/qiqi/li/
 │   │   ├── LivingItemFunction.java          # 功能接口（tick + tooltip + canApply + getFunctionId）
 │   │   ├── HasDirection.java                # WASD 朝向配置接口
 │   │   ├── HasContainerData.java            # 容器级数据计算接口
-│   │   └── LivingItemManager.java           # 纯框架管理器：功能注册表、IS_LIVING、活化/清除、getData/setData 泛型语义、排序冻结（A1 后不再含内容组件常量）
+│   │   ├── LivingItemManager.java           # 纯框架管理器：功能注册表、IS_LIVING、活化/清除、getData/setData 泛型语义、排序冻结（A1 后不再含内容组件常量）
+│   │   └── RedstoneSensor.java              # 红电感知端口接口（电力层/漏斗/TNT 读信号的唯一入口，v19.1；**2026-10-08 从 domain/redstone/ 上移**——否则消费者用端口仍要 import 领域）
 │   │
 │   ├── container/                           # 容器抽象层（跨活物品共享基础设施）
 │   │   ├── ContainerContext.java            #   组合接口
@@ -129,7 +130,6 @@ src/main/java/com/qiqi/li/
 │   │   ├── LivingRedstoneBlockFunction.java  #     活红石块
 │   │   ├── LivingCopperFunction.java         #     活铜块（锈蚀等级即导通性）
 │   │   ├── RedstonePropagation.java          #     传播算法核心（BFS，逐 tick 全量重算）
-│   │   ├── RedstoneSensor.java               #     感知端口接口（电力层/漏斗/TNT 读信号的唯一入口，v19.1）
 │   │   ├── RedstoneSnapshotProvider.java     #     红石槽位快照提供器
 │   │   ├── LivingRedstoneData.java           #     活红石粉数据
 │   │   ├── LivingRedstoneTorchData.java      #     活红石火把数据

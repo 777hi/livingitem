@@ -167,6 +167,7 @@ src/main/java/com/qiqi/li/
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-08 | 🏗 **架构分层第四步（C 收尾）**：`RedstoneSensor` 接口上移 `living/api/` + 方向常量收归契约层 ⇒ `power`/`hopper` 完全不引用 redstone 域。**R3 28 → 25**，顺带 **R1 94 → 93**（纯重构，**534 全绿**） | `buffer/redstone-evolution-roadmap.md` §1 |
 | 2026-10-08 | 🏗 **架构分层第三步**：`LivingComponents` 从 `living/transfer/` 迁入 `living/components/`（48 个 import + 1 处同包引用）—— **不减违规，买归属诚实**（原先"transfer 认识 11 个领域"是假象）。**534 全绿** | `reference/file-map.md` |
 | 2026-10-08 | 🏗 **架构分层第二步**：`StaticCacheRegistry` 的 7 项**领域**缓存登记搬进各自 `XxxRegistration`（新建 `RuntimeRegistration`）⇒ 它只认识框架自己。**R1 101 → 94**，基线 39→34 对（纯重构，**534 全绿**） | `living-item-infrastructure.md` §3.4 |
 | 2026-10-08 | 🧹 **入口清淤**：模块地图尾部 62 行测试流水搬离（**补录 2026-09-27 防丢历史**）+ 开发进展回归「一行结论」体例 —— 入口 **18171 → 11935 字符（余量 8065）** | `docs/README.md` §1/§4 |
@@ -176,7 +177,6 @@ src/main/java/com/qiqi/li/
 | 2026-10-07 | 🔧 **收尾审查批次**：🔴 修**晋升邻源计数不分流体**（岩浆源被算进水邻源 ⇒ 错误晋升）+ 三处健壮性（**519 全绿**） | `living-fluid-tech.md` §3.2 |
 | 2026-10-07 | 🔧 **目标层抢占改「到达时间」**：消掉刷石机的「看不见的墙」；**两源曼哈顿 ≲6 则自毁**（**514 全绿**） | `living-fluid-tech.md` §3.1 |
 | 2026-10-07 | 🔧 **消除「异种流体被当拍驱逐 ⇒ 接触前空档」**：目标层 BFS 跳过实际层已被异种占据的格（**513 全绿**） | `living-fluid-tech.md` §3.7 |
-| 2026-10-06 | 🔧 **倒桶口径对称化（A 档）**：查实上一批**用错了函数**（`canBeReplacedWith` 属蔓延路径，倒桶不查它）（**511 全绿**） | `living-fluid-tech.md` §5 |
 
 ## 排查铁律：原版机制挡路时
 
