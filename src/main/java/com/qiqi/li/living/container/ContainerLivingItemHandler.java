@@ -14,7 +14,6 @@ import java.util.Set;
 import com.qiqi.li.living.api.HasContainerData;
 import com.qiqi.li.living.domain.redstone.ContainerRedstoneData;
 import com.qiqi.li.living.domain.redstone.LivingRedstoneFunction;
-import com.qiqi.li.living.domain.runtime.ContainerRuntimeCache;
 import com.qiqi.li.living.domain.water.ContainerFluidData;
 import com.qiqi.li.living.domain.water.ContainerStressData;
 import com.qiqi.li.living.util.DoubleChestPositions;
@@ -537,17 +536,6 @@ public class ContainerLivingItemHandler {
 
             long containerDataEndNanos = System.nanoTime();
             PerfMetrics.recordPhase("container_data", containerDataEndNanos - flushChEndNanos);
-
-            // 阶段 4.5：刷新运行时数据缓存到客户端（用于 tooltip 展示，不影响物品堆叠）
-            java.util.List<Container> containers = new java.util.ArrayList<>();
-            for (BlockEntity be : context.getAssociatedBlockEntities()) {
-                if (be instanceof Container c) {
-                    containers.add(c);
-                }
-            }
-            if (!containers.isEmpty()) {
-                ContainerRuntimeCache.flushToClients(level, containers);
-            }
 
             // 阶段 5：写回 BlockEntity（应力 + 流体）与过期清理
             writebackBlockEntities(context, tick);

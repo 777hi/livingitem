@@ -39,9 +39,17 @@ import com.qiqi.li.living.domain.ender.LivingEnderChestFunction;
 import com.qiqi.li.logging.ModLog;
 import com.qiqi.li.living.perf.PerfMetrics;
 
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Set;
+import net.minecraft.world.Container;
+import net.minecraft.core.BlockPos;
+import com.qiqi.li.living.container.ContainerContexts;
+import com.qiqi.li.living.util.DoubleChestPositions;
+import com.qiqi.li.network.LivingItemRuntimeSync;
 import com.qiqi.li.living.container.ContainerChunkCache;
 import com.qiqi.li.living.container.ContainerLivingItemHandler;
 import com.qiqi.li.living.util.StaticCacheRegistry;
@@ -79,7 +87,7 @@ import com.qiqi.li.living.domain.hopper.HopperRegistration;
 import com.qiqi.li.living.domain.map.MapRegistration;
 import com.qiqi.li.living.domain.power.PowerRegistration;
 import com.qiqi.li.living.domain.redstone.RedstoneRegistration;
-import com.qiqi.li.living.domain.runtime.RuntimeRegistration;
+import com.qiqi.li.living.runtime.RuntimeRegistration;
 import com.qiqi.li.living.domain.tnt.TntRegistration;
 import com.qiqi.li.living.domain.tools.ToolRegistration;
 import com.qiqi.li.living.domain.water.FluidTransformTable;
@@ -214,6 +222,10 @@ public class LivingItem {
             com.qiqi.li.living.domain.tools.LivingToolPlayerSync.flush(level);
         }
 
+        // 运行时数据下发（档 2：缓存在 L2 只攒脏，发包归 L4 本调用）——
+        // 必须在【所有】容器处理之后，才能收齐本 tick 各容器的登记。
+        LivingItemRuntimeSync.flush(server.getPlayerList().getPlayers(), this::runtimeContainerInstances);
+
         // 待炸账本：按区块分帧推进爆炸破坏（已加载的按预算处理，未加载的等自然加载）
         ExplosionLedger.flushAll(server);
     }
@@ -246,6 +258,69 @@ public class LivingItem {
                 ContainerLivingItemHandler.processContext(
                     new ItemEntityContainerContext(itemEntity, level), level);
             }
+        }
+    }
+
+    /**
+     * 运行时数据下发时的「容器键 → 该容器的 {@link Container} 实例集合」查找（档 2）。
+     *
+     * <p>用途：{@code LivingItemRuntimeSync.flush} 需要按容器键反查玩家菜单槽位的容器实例，
+     * 才能判断「谁正看着这个容器」。找 instances 的规则与 {@link ContainerContexts#isViewing}
+     * 的匹配规则同源：单 BE 容器 = BE 本身，大箱子 = 两半 BE 都放进去
+     * （{@code ownsContainer} 会用 {@code CompoundContainer.contains} 匹配它们）。</p>
+     *
+     * <p>⚠️ <b>返回空集合 = 不发包</b>（见 {@code LivingItemRuntimeSync.flush}）——
+     * 所以这里是安全的：键解析不出位置（异常形态）时宁可不发，也不发错人。</p>
+     */
+    private Collection<Container> runtimeContainerInstances(String containerKey) {
+        BlockPos pos = parsePosFromContainerKey(containerKey);
+        if (pos == null) return List.of();
+
+        for (var level : currentServerLevels()) {
+            BlockEntity be = level.getBlockEntity(pos);
+            if (be == null) continue;
+
+            List<BlockPos> halves = DoubleChestPositions.find(level, pos);
+            if (halves.isEmpty()) {
+                return List.of((Container) be);
+            }
+            List<Container> instances = new ArrayList<>(halves.size());
+            for (BlockPos half : halves) {
+                if (level.getBlockEntity(half) instanceof Container c) {
+                    instances.add(c);
+                }
+            }
+            return instances;
+        }
+        return List.of();
+    }
+
+    /** 运行期可见的所有世界（发包查找用；找不到容器即视为「无人查看」）。 */
+    private List<ServerLevel> currentServerLevels() {
+        var server = net.neoforged.neoforge.server.ServerLifecycleHooks.getCurrentServer();
+        if (server == null) return List.of();
+        List<ServerLevel> levels = new ArrayList<>();
+        for (ServerLevel level : server.getAllLevels()) {
+            levels.add(level);
+        }
+        return levels;
+    }
+
+    /**
+     * 从容器键解析方块坐标。格式见 {@code SimpleContainerContext.buildContainerKey}：
+     * 单方块 {@code chest_x_y_z}；大箱子 {@code chest_x1_y1_z1_x2_y2_z2}（只取第一个）。
+     * 玩家背包键（{@code player_&lt;uuid&gt;}）由 {@code LivingItemRuntimeSync} 的独立分支处理，
+     * 不会走到这里 ⇒ 返回 {@code null}。
+     */
+    private static BlockPos parsePosFromContainerKey(String containerKey) {
+        if (containerKey == null || !containerKey.startsWith("chest_")) return null;
+        String[] parts = containerKey.split("_");
+        if (parts.length < 4) return null;
+        try {
+            return new BlockPos(Integer.parseInt(parts[1]), Integer.parseInt(parts[2]),
+                Integer.parseInt(parts[3]));
+        } catch (NumberFormatException ignored) {
+            return null;
         }
     }
 
