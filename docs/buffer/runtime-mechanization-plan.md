@@ -350,6 +350,7 @@ for each slot:
 13. 把发包逻辑搬到 L4：`LivingItem` tick 里（或 `ContainerLivingItemHandler:549` 调用点）
     消费 `drainDirty()` → `new LivingItemSyncPacket(...)` → 按 `player_` 前缀分流发送
     ⚠️ **`player_` 特例必须一起搬过去**（§6.4）
+13b. **（可选优化）背包分支加「正在看容器界面」守卫** —— 见 §7.3.1
 14. `git mv` 两个包：
     - `living/domain/runtime/*` → `living/runtime/`（`LivingItemClientCache` 除外）
     - `LivingItemClientCache` → `client/runtime/`
@@ -357,6 +358,49 @@ for each slot:
 16. `RuntimeRegistration` 的客户端缓存登记随之调整（按 A1「登记点归属」）
 
 **验收**：`check_layers` **R3 22 → 19 · R1 93 → 92**（预期）· 538 全绿 · 配对数收紧基线
+
+#### 7.3.1 背包分支的空转发包（**可选优化，不单独做**）
+
+**问题（2026-10-08 用户指出）**：`flushToClients` 的两个分支过滤强度不同 ——
+
+| 分支 | 脏过滤 | viewer 过滤 | 结论 |
+|---|---|---|---|
+| BE 容器 | ✅ | ✅ `isViewing` | **已是「脏 + 有人看」** |
+| **玩家背包**（`player_<uuid>`） | ✅ | ❌ **无条件直发主人** | ⚠️ 玩家没开界面时，包发了**没人读** |
+
+**为什么"没人读"**：`LivingItemTooltip` 只在 `AbstractContainerScreen` 里渲染
+（`LivingItemTooltip:39`）⇒ 玩家在普通游戏画面里根本不会读这个包。
+而**背包每 tick 都被无条件 tick**（`LivingItem:202`，与开不开界面无关）
+⇒ 背包里有活漏斗/熔炉/发电机时，**每 tick 一个废包**（20 包/秒/玩家）。
+
+**为什么不单独做（用户问「有必要吗，对玩家而言」→ 结论：收益/风险不对称）**：
+
+| 维度 | 评估 |
+|---|---|
+| 收益 | ⚠️ **玩家无感** —— 不卡、不掉帧、延迟不变。省的是**几 KB/s 带宽**（最坏 ~100-200 字节 × 20/s/玩家）+ 每 tick 一次 `snapshot` 遍历。联机服务器上多玩家叠加才是"本来不该有的持续流量" |
+| 风险 | ⚠️ **玩家有感** —— ① 引入「打开背包后第一帧是旧值」（1 tick，通常看不出）；② 判据写错会**复现 v19.1 的 tooltip 全 0**（那是玩家能看见的回归） |
+| ⇒ 结论 | **「改对了玩家无感，改错了玩家有感」** ⇒ 不值得**独立一次改动 + 专门手测**（要测开背包/关背包/创造模式物品栏三种） |
+
+⇒ **作为 D 步的附带项**（D 步本来就要重写发包职责 ⇒ 零边际成本，且 §7.5 手测第 4 条正好覆盖）。
+
+**若要做，正确写法**：
+
+```java
+// 玩家背包（player_ 前缀）：仅当**开着某个容器界面**时才发
+// ⚠️ 不可复用 isViewing —— 它对背包恒 false（menu == inventoryMenu 早退，见 ContainerContexts:177）
+// ⇒ 复用即复现 v19.1「背包 tooltip 全 0」bug。
+// 也不可用「是不是 InventoryScreen」—— 背包 GUI 里的 tooltip 同样要显示。
+if (owner.containerMenu == owner.inventoryMenu) {
+    continue;   // 没开任何容器界面 ⇒ 无人读 tooltip ⇒ 不发
+}
+owner.connection.send(packet);
+```
+
+⚠️ **附带发现**：若担心「打开背包第一帧」的即时性，`sendSnapshotToPlayer`
+（`ContainerRuntimeCache:116`，**零调用者**，保留的公开 API）正好是现成的补发入口。
+**本次不做**，仅在需要时启用。
+
+
 
 #### 步骤 E：收尾
 
@@ -377,6 +421,7 @@ for each slot:
 | R5 | `drainDirty` 语义写错（发漏/发重） | 保留现有「取快照 → 清脏」顺序；脏集合用 `ConcurrentHashMap.newKeySet()` |
 | R6 | 静态注册表污染单测 | 注册表加 `clearForTest()`（项目红线） |
 | R7 | 触及网络 ⇒ 单测覆盖不足 | 步骤 B + §7.5 手测兜底 |
+| R8 | **（若做可选优化）背包守卫写错** ⇒ 复现 v19.1「背包 tooltip 全 0」 | 用 `containerMenu == inventoryMenu` 而非 `isViewing`（§7.3.1）；手测第 4 条专门覆盖 |
 
 ### 7.5 验收清单（每步 + 总）
 
@@ -399,6 +444,8 @@ for each slot:
 2. **漏斗冷却**：活漏斗放容器里 → 悬停看冷却/槽位信息
 3. **熔炉进度**：活熔炉烧炼中 → 悬停看进度条 + 燃料
 4. **玩家背包路径**（`player_` 特例）：上述活物品放**自己背包**里悬停（走直发通道）
+   - ⚠️ **若做了 §7.3.1 可选优化**：额外测「**关掉所有容器界面 → 打开背包 → 第一帧 tooltip**」
+     （验证 1 tick 延迟不可感知）与「**创造模式物品栏**」路径
 5. **回归**：关容器再开（快照重发）/ 跨容器搬运（运行时缓存清零，tooltip 回退组件值）
 
 ### 7.6 回滚策略
@@ -414,7 +461,7 @@ for each slot:
 - A：**3 新建 + 1 改**（`LAYERS` 表）
 - B：**1 新建测试**
 - C：**3 新建片段 + 改 9 处读写点 + 改 1 网络包 + 删 1 类**
-- D：**改 1 缓存 + 改 1 调用点 + 迁 2 个包 + 脚本改 import**
+- D：**改 1 缓存 + 改 1 调用点 + 迁 2 个包 + 脚本改 import**（+ 可选：§7.3.1 背包守卫）
 - E：**3 篇文档 + 基线**
 
 ⇒ **C 是重心**（唯一碰网络的一步），建议**单独一个会话做**，前 A/B 可合并。
