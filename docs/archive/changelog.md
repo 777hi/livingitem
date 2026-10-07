@@ -19,6 +19,18 @@
 
 > 框架侧（流体侧已于 10-07 完工，此后不再改动）。
 
+- 🏗 **架构分层第二步：static 缓存登记点归属修正**（**534 全绿**，纯重构）：
+  `StaticCacheRegistry` 原先**自己登记了 7 项领域缓存** ⇒ 该类（L1 基础）必须 import
+  `ender` / `runtime` / `tnt` / `tools` / `water` 五个领域（L3），**构成 7 条跨层反向依赖**。
+  改为 —— **框架自己的 2 项留在注册表**（`ContainerChunkCache` / `ContainerLivingItemHandler`），
+  **7 项领域缓存搬进各自的 `XxxRegistration.register()`**：
+  `EnderRegistration` 1 / `WaterRegistration` 2（含客户端 1）/ `TntRegistration` 1 /
+  `ToolRegistration` 2 / **新建 `RuntimeRegistration`** 1（`runtime` 域原先**没有** Registration）。
+  **`StaticCacheRegistry` 现在只认识框架自己**（`grep domain.` = 0）。
+  ⇒ **R1 101 → 94**，基线 39 → 34 对。**铁律正文（infra §3.4）按「归属」重写**：
+  「框架缓存 → 注册表；**领域缓存 → 该领域的 Registration**」。
+  📌 判据可复算：`python tools/check_layers.py`。
+
 - 🧹 **入口清淤：两处「流水」搬离入口**（**文档系统改动，代码未动**）：
   ① **模块地图尾部 62 行测试流水**（2026-09-22 → 10-07 逐次「新增 XxxTest N 项」）——
   按 §4.0「changelog 是流水不是档案」**本不该在入口**。

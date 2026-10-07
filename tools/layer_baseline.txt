@@ -21,8 +21,6 @@ module	living/transfer	living/domain/chest	3
 module	living/transfer	living/domain/water	3
 module	living/domain/tnt	(root)	2
 module	living/transfer	living/domain/farmland	2
-module	living/util	living/domain/tools	2
-module	living/util	living/domain/water	2
 module	(root)	client/icon	1
 module	living/api	living/domain/tools	1
 module	living/api	living/transfer	1
@@ -40,9 +38,6 @@ module	living/transfer	(root)	1
 module	living/transfer	living/domain/furnace	1
 module	living/transfer	living/domain/hopper	1
 module	living/transfer	living/domain/tnt	1
-module	living/util	living/domain/ender	1
-module	living/util	living/domain/runtime	1
-module	living/util	living/domain/tnt	1
 
 # R2 Mixin 位置违规（只能声明在 L4 / L5）
 #   （无）

@@ -3,6 +3,7 @@ package com.qiqi.li.living.domain.tnt;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.function.LivingFlintAndSteelFunction;
 import com.qiqi.li.living.interaction.InteractionRegistry;
+import com.qiqi.li.living.util.StaticCacheRegistry;
 
 /**
  * 活TNT 域注册入口 —— 见 {@code RedstoneRegistration} 的类注释了解为何有这个类（A1）。
@@ -24,5 +25,9 @@ public final class TntRegistration {
         // 规则（谁触发谁）在 interaction_rules.json（D2 全迁）；这里只注册行为（handler）。
         InteractionRegistry.registerHandler("ignite", new IgniteHandler());
         InteractionRegistry.registerHandler("ignite_carried", new IgniteCarriedHandler());
+
+        // ── static 缓存清理（登记点归属见 StaticCacheRegistry 类注释）──
+        // 待炸账本的**内存调度表**要清（条目本身随存档走，不需要清）
+        StaticCacheRegistry.onServerStop(ExplosionLedger::clearAllRuntimeState);
     }
 }

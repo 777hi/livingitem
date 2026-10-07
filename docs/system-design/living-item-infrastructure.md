@@ -642,14 +642,27 @@ private final Set<String> reusableKeySet = new HashSet<>();
 
 单机「退出存档 → 进另一个存档」**不重启 JVM** ⇒ `static` 字段跨存档存活，必须显式清理。
 
-> 🔴 **铁律（A1 成文）：新增 static 缓存 ⇒ 必须在 `StaticCacheRegistry` 登记一行。**
-> - 服务端缓存 → `StaticCacheRegistry.onServerStop(...)`（`ServerStoppedEvent` 时执行，可读 `MinecraftServer` 上下文）；
-> - 客户端缓存 → `StaticCacheRegistry.onClientLogout(...)`（`ClientPlayerNetworkEvent.LoggingOut` 时执行）。
+> 🔴 **铁律（A1 成文）：新增 static 缓存 ⇒ 必须登记一行。**
+> **登记在哪，看它属于谁**（2026-10-08 ② 修正）：
+>
+> | 缓存归属 | 登记点 | 理由 |
+> |---|---|---|
+> | **框架自己的**（`container` 包） | `StaticCacheRegistry` 的 `static{}` 块 | 它就在框架层 |
+> | **某个领域的** | 该领域的 **`XxxRegistration.register()`** | 否则 `StaticCacheRegistry`（L1）必须 import 领域（L3）⇒ **跨层反向依赖** |
+>
+> 两种登记都走同一对 API：
+> - 服务端缓存 → `onServerStop(...)`（`ServerStoppedEvent` 时执行，可读 `MinecraftServer` 上下文）；
+> - 客户端缓存 → `onClientLogout(...)`（`ClientPlayerNetworkEvent.LoggingOut` 时执行）。
 >
 > 两个生命周期钩子（`LivingItem.onServerStopped` / `FluidClientCacheCleanup.onLoggingOut`）**只调
 > `runServer` / `runClient`，不再往钩子里加**。登记一行即被覆盖 —— 这是把「自愿挂靠（靠记性）」
 > 改为「登记表」的治本：两次漏挂事故（Q3「测试也是调用者」、流体侧 `CLIENT_ACTIVE` 未挂
 > `ServerStopped`）都源于散落挂靠。
+>
+> ⚠️ **归属修正的由来**：原先 7 项领域缓存登记在 `StaticCacheRegistry` 里 ⇒
+> 该类必须 import `ender` / `runtime` / `tnt` / `tools` / `water` 五个领域，
+> **构成 7 条跨层反向依赖**（`check_layers.py` R1）。现已全部搬进各领域 Registration，
+> **R1 101 → 94**。`StaticCacheRegistry` 现在**只认识框架自己**。
 
 ---
 

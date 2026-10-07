@@ -79,6 +79,7 @@ import com.qiqi.li.living.domain.hopper.HopperRegistration;
 import com.qiqi.li.living.domain.map.MapRegistration;
 import com.qiqi.li.living.domain.power.PowerRegistration;
 import com.qiqi.li.living.domain.redstone.RedstoneRegistration;
+import com.qiqi.li.living.domain.runtime.RuntimeRegistration;
 import com.qiqi.li.living.domain.tnt.TntRegistration;
 import com.qiqi.li.living.domain.tools.ToolRegistration;
 import com.qiqi.li.living.domain.water.FluidTransformTable;
@@ -164,6 +165,7 @@ public class LivingItem {
         FarmlandRegistration.register();
         ToolRegistration.register();
         MapRegistration.register();
+        RuntimeRegistration.register();   // 无 Function，只登记 static 缓存清理（见该类注释）
 
         // 规则装载（handler / 谓词全部就位之后）：内置 JSON + 玩家差异 → InteractionRegistry
         InteractionRuleConfig.load();
