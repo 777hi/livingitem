@@ -290,7 +290,8 @@ public void tickContainerData(List<SlotEntry> entries, ContainerContext ctx, Tic
 | 项 | 评估 |
 |---|---|
 | **执行顺序** | **不变**。红石仍在 `runContainerDataTicks` 的 prio 2 位置（`LivingRedstoneFunction` 保留 `HasContainerData`）⇒ 流体(0) → 水车(1) → 红石(2) → 电力(3) |
-| **新增开销** | 每个 tick 的容器多一次「`peek` + 最多 9 次 `Set.isEmpty()`」。**无红石容器在守卫处 return ⇒ 不创建数据、不跑 `calculate`** ⇒ 实质零开销 |
+| **新增开销** | 每个 tick 的容器多一次「`peek` + 最多 9 次 `Set.isEmpty()`」。**无红石容器在守卫处 return ⇒ 不跑 `calculate`** ⇒ 实质零开销 |
+| ⚠️ **配套修复（实施时由集成测试抓出）** | 守卫判据之一是 `peek(REDSTONE) != null`，而 `SimpleContainerContext.setTickContext()` **原先无条件调 `getOrCreateRedstoneData()`** ⇒ 账本每 tick 都被创建 ⇒ **`peek == null` 恒假、零开销路径永不生效**（本表上一行当时是**假的**）。已改为 `peekContainerData`（**不创建**）。安全性依据：新建账本的 `processedThisTick` 在构造器里默认 `false` ⇒ 首次无需 `reset`；此后账本已存在 ⇒ 照常 reset（正是历史上「中继器不熄灭」的根因修复点）。**这条是补集成测试时才暴露的** —— 见 §8 |
 | **有红石容器的开销** | **与现在完全相同**（都是每 tick 一次 `calculate`） |
 | **TNT 首拍** | **等价**（连首拍都不差）。首拍阶段 2 `tnt.tick()` 已调 `getOrCreateRedstoneData` 创建账本 ⇒ 阶段 4 守卫 `peek != null` 通过 ⇒ `LivingRedstoneFunction` 照常算。差别仅在于「谁在阶段 4 第一个调 `calculate`」——而幂等短路使这个差别无意义 |
 | **电力层不变量** | **不破坏**。`living-power-tech.md` / `红电系统.md` 的硬约束是「电力 prio **必须 > 2**，依赖红石已算完的 `edgeGrid`」⇒ 本方案**保持红石在 prio 2**，电力仍在 prio 3 读到本 tick 的新值 ✓ |
@@ -307,7 +308,13 @@ public void tickContainerData(List<SlotEntry> entries, ContainerContext ctx, Tic
 - **全量单测**（534 例 / 57 个测试类，口径见 `tools/doc_check.py`）
   - `ContainerRedstoneDataTest` 直接驱动 `calculate` ⇒ 不受影响
   - power 系列测试驱动的是 `LivingWaxedCopperFunction.tickContainerData`（prio 3，**不动**）
-- **手动清单**（红石层**没有**「容器内元件互联」的集成测试，只能手测）
+- **自动化：`ContainerRedstoneIntegrationTest`**（2026-10-08 新增，5 项）—— 覆盖**驱动链路**：
+  自维持注册 / 守卫放行消费者 / **守卫拦截无关容器（零开销）** / 残留归零 / prio 顺序。
+  ⚠️ **更正**：本文早先写的「红石层**没有**容器内元件互联的集成测试」**是错的** ——
+  `ContainerRedstoneDataTest` 有 **20+ 例**覆盖元件互联（传播 / 衰减 / 中继器 / 比较器 / 火把振荡…）。
+  它缺的是**驱动链路**那一层（它全部直接调 `calculate()`，绕过 `processContext`），本类补的正是这层。
+  ⭐ 该测试上线即抓出 §7「配套修复」那条 —— 说明「零开销」此前只有论证、**没有验证**。
+- **手动清单**（驱动链路已自动化，但端到端观感仍建议手测）
   —— **务必覆盖 3 个消费者，它们都不驱动重算，最容易成为盲区**：
   1. 活红石粉 + 活按钮 / 拉杆 / 中继器 / 比较器 / 火把 / 灯 / 红石块 各自功能
   2. 与**外部世界**红石双向互通（箱子边上的红石线）

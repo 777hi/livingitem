@@ -39,6 +39,26 @@
   - 同步文档：`living-redstone-tech.md`（§3.1 触发时机 / §4.4 / §8.1 / §8.2 / §8.4）、
     `living-tnt-tech.md` §3.3、`living-power-tech.md` §1.3、`living-copper-tech.md` §3.1、
     `红电系统.md` 架构图 + prio 说明、`living-item-infrastructure.md` 优先级表、`tooltip-system.md` §3.1。
+- ✅ **红石「驱动链路」集成测试（5 项）—— 上线即抓出「零开销」失效的真因**（**538 全绿**）：
+  新增 `ContainerRedstoneIntegrationTest`（走真实 `processContext`），覆盖：自维持注册 /
+  守卫放行消费者（只有活 TNT 时账本被创建**且** `calculate` 跑过）/ **守卫拦截无关容器** /
+  残留归零 / prio 顺序（红石 2 < 电力 3）。
+  - ⚠️ **为什么需要**：`ContainerRedstoneDataTest`（754 行 / 20+ 例：传播 / 衰减 / 中继器 /
+    比较器 / 火把反相环振荡…）覆盖的是**引擎内部**，它全部**直接调 `calculate()`** ⇒
+    **绕过了驱动链路** —— 而本次重构改的恰恰是这一层。
+    （📌 **更正**：早先「红石层没有容器内元件互联的集成测试」的说法**是错的**。）
+  - ⭐ **测试首次运行失败 1 例**（`unrelatedContainer_neverCreatesRedstoneData`）⇒ 查出：
+    `SimpleContainerContext.setTickContext()` **无条件调 `getOrCreateRedstoneData()`**
+    ⇒ 红石账本每 tick 都被创建 ⇒ 守卫的 `peek == null` **恒假** ⇒
+    「无关容器零开销」**从未生效**（方案 §7 当时那条论断是**假的**）。
+    修复：`setTickContext` 改用 `peekContainerData`（**不创建**）。安全性依据：新建账本的
+    `processedThisTick` 在构造器里默认 `false` ⇒ 首次无需 reset；此后账本已存在 ⇒ 照常 reset
+    （正是历史上「中继器不熄灭」的根因修复点）。
+  - ⇒ **实证价值**：补测试把「零开销」从**论证**变成**断言**，并立刻证明原论证有误 ——
+    这是「防线②：写了就红」的又一个实例。
+  - 「残留红石归零」的端到端测试从 `ContainerFluidIntegrationTest` **搬入**本类
+    （它测的是红石，住在流体测试类里属位置错误；且 1b-2c 的 `zeroResidualRedstone` 已删，
+    归零职责改由 `LivingRedstoneFunction` 的守卫接管）。
 - 🧹 **`doc_check` 新增第 9 项「方法名真实性」**（首轮为**警告级**）：
   文档里 `ClassName.method(...)` 引用的方法必须存在于源码 —— 堵住第 7 项「只校验类名、不校验方法名」的盲区。
   上线即报出 **13 处陈旧引用**（跨 8 个文档，含拼音搜索 / 配方书等非红电领域）⇒

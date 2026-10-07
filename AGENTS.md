@@ -145,7 +145,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 534 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
+**合计测试用例 538 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
 全绿基线：`533 passed / 0 failed / 1 skipped`。**逐次新增明细见 [changelog.md](docs/archive/changelog.md)。**
 
 > 📄 测试环境配置与编写约定见 [unit-testing.md](docs/guides/unit-testing.md)；
@@ -169,7 +169,7 @@ src/main/java/com/qiqi/li/
 | 2026-10-08 | 🏗 **架构分层第四步（C 收尾）**：`RedstoneSensor` 接口上移 `living/api/` + 方向常量收归契约层 ⇒ `power`/`hopper` 完全不引用 redstone 域。**R3 28 → 25**，顺带 **R1 94 → 93**（纯重构，**534 全绿**） | `buffer/redstone-evolution-roadmap.md` §1 |
 | 2026-10-08 | 🏗 **架构分层第三步**：`LivingComponents` 从 `living/transfer/` 迁入 `living/components/`（48 个 import + 1 处同包引用）—— **不减违规，买归属诚实**（原先"transfer 认识 11 个领域"是假象）。**534 全绿** | `reference/file-map.md` |
 | 2026-10-08 | 🏗 **架构分层第二步**：`StaticCacheRegistry` 的 7 项**领域**缓存登记搬进各自 `XxxRegistration`（新建 `RuntimeRegistration`）⇒ 它只认识框架自己。**R1 101 → 94**，基线 39→34 对（纯重构，**534 全绿**） | `living-item-infrastructure.md` §3.4 |
-| 2026-10-08 | 🧹 **红石重算收归单点**：删 9 个元件 + 活 TNT 的重复样板（`HasContainerData` 实现者 **13 → 4**），改由 `LivingRedstoneFunction` 自维持单点驱动 + 廉价守卫；删两个永不执行的框架兜底（**534 全绿**） | `living-redstone-tech.md` §3.1 / §8 |
+| 2026-10-08 | 🧹 **红石重算收归单点**：删 9 个元件 + 活 TNT 的重复样板（`HasContainerData` **13 → 4**），改由 `LivingRedstoneFunction` 自维持单点驱动 + 廉价守卫；删两个永不执行的框架兜底 + 补**驱动链路集成测试**（5 项，上线即抓出「守卫零开销」失效的真因：`setTickContext` 无条件创建账本）（**538 全绿**） | `living-redstone-tech.md` §3.1 / §8 |
 | 2026-10-08 | 🧹 **入口清淤**：模块地图尾部 62 行测试流水搬离（**补录 2026-09-27 防丢历史**）+ 开发进展回归「一行结论」体例 —— 入口 **18171 → 11935 字符（余量 8065）** | `docs/README.md` §1/§4 |
 | 2026-10-07 | 🧹 **活桶 tooltip 定稿：删内容行、保留标题** —— 根因是 lang 占位符数与代码传参不符（**534 全绿**） | `living-fluid-tech.md` §5 |
 | 2026-10-07 | ✅ **玩家路径落盘守卫补齐**：玩家容器此前零用例 ⇒ 补「变空移除 / 重进不复活 / 两键隔离 / 回填」（**528 全绿**） | `living-fluid-tech.md` §8 |
