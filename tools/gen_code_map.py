@@ -725,6 +725,14 @@ function layeredLayout(){
   var keys=Object.keys(byLayer).map(Number).sort(function(a,b){return a-b;});
   if(!keys.length) return;
 
+  // 领域块标识：L3 层内按领域子包分组（2026-10-08 用户建议 —— 便于观察领域之间的关系）。
+  // 非 L3 节点为空串，排序时不参与分块。
+  function domOf(n){
+    var m = n.module || '';
+    return m.indexOf('living/domain/') === 0 ? m.split('/')[2] : '';
+  }
+  nodes.forEach(function(n){ n._dom = domOf(n); });
+
   keys.forEach(function(L){
     byLayer[L].sort(function(a,b){return (a.module+'/'+a.id).localeCompare(b.module+'/'+b.id);});
   });
@@ -742,7 +750,12 @@ function layeredLayout(){
         }
         n._bc = c ? s/c : (xpos[n.id]!==undefined ? xpos[n.id] : 1e6);
       });
-      arr.sort(function(a,b){ return a._bc-b._bc; });
+      // L3：**领域优先** —— 同领域的节点聚成连续块，块内再按重心排（减少块内交叉）。
+      // 非 L3 层保持纯重心排序。
+      arr.sort(function(a,b){
+        if(a.layer===3 && b.layer===3 && a._dom!==b._dom) return a._dom < b._dom ? -1 : 1;
+        return a._bc-b._bc;
+      });
       arr.forEach(function(n,i){ xpos[n.id]=i; });
     });
   }
@@ -753,14 +766,26 @@ function layeredLayout(){
   var h=0;
   keys.forEach(function(L){
     var arr=byLayer[L];
-    var rows=Math.max(1,Math.ceil(arr.length/PER_ROW));
+    // 行/列分配：**L3 的每个领域块从新行开始** ⇒ 块之间自然留出垂直间隔，形成视觉分组。
+    // 非 L3 层 isDom=false ⇒ 退化为原来的「每行 PER_ROW 个」，行为不变。
+    var rowOf=[], colOf=[], r=0, c=0, prevDom=null, isDom=(L===3);
+    for(var i=0;i<arr.length;i++){
+      var n=arr[i];
+      if(isDom && n._dom!==prevDom){ if(c>0){ r++; c=0; } prevDom=n._dom; }
+      rowOf[i]=r; colOf[i]=c;
+      c++;
+      if(c>=PER_ROW){ c=0; r++; }
+    }
+    var rows=Math.max(1, r+(c>0?1:0));
     var y0=h, y1=h+rows*ROW_H;
     bands.push({L:L, y0:y0, y1:y1, count:arr.length});
     h=y1+LAYER_GAP;
-    var span=Math.min(PER_ROW, arr.length);
+    var rowCount={};
+    for(var i2=0;i2<arr.length;i2++) rowCount[rowOf[i2]]=(rowCount[rowOf[i2]]||0)+1;
     arr.forEach(function(n,i){
-      var row=Math.floor(i/PER_ROW), col=i%PER_ROW;
-      var inRow=Math.min(PER_ROW, arr.length-row*PER_ROW);
+      var row=rowOf[i], col=colOf[i];
+      var inRow=rowCount[row]||1;
+      var span=Math.min(PER_ROW, inRow);
       n.x=(col+0.5)/span*bandW + (span-inRow)*SLOT/2;
       n.y=-(y0+row*ROW_H+ROW_H/2);
     });
@@ -834,6 +859,20 @@ function draw(){
       ctx.font=Math.min(12,Math.max(9.5,10*view.k))+'px "Segoe UI","Microsoft YaHei",sans-serif';
       ctx.fillStyle='#6f6a62';
       ctx.fillText(bd.count+' 个类', lb2[0], lb2[1]);
+      // L3：额外标出「领域互依赖」条数 —— 与橙边对上（2026-10-08 用户建议）
+      if(bd.L===3){
+        var n3=0;
+        for(var vi2=0;vi2<edges.length;vi2++){
+          var e3=edges[vi2], x3=idx[e3.s], y3=idx[e3.d];
+          if(!x3||!y3)continue;
+          if(x3.layer===3 && y3.layer===3 && x3._dom && y3._dom && x3._dom!==y3._dom) n3++;
+        }
+        if(n3){
+          var lb3=toScreen({x:bandW+BAND_PAD+12, y:midY+17});
+          ctx.fillStyle='#e0963c';
+          ctx.fillText('领域互依赖 '+n3+' 条', lb3[0], lb3[1]);
+        }
+      }
     }
     // 相邻层之间直接标出违规条数 —— 把「红边」和「数字」对上
     var vc={};
@@ -874,9 +913,14 @@ function draw(){
                      (e.d===sel||selUp[e.d]||selDown[e.d])) : false;
     // 层次视图：**下层依赖上层 = 违规** ⇒ 标红（这是「层次在哪断的」）
     var viol = (viewMode==='layer') && (a.layer!==undefined) && (b.layer!==undefined) && (a.layer<b.layer);
-    ctx.lineWidth = e.w ? Math.min(4.5, 0.6+e.w*0.16) : (viol?1.3:1);   // 包视图：粗细 = 耦合强度
+    // 领域互依赖（R3）：同层（L3）且**跨领域** ⇒ 标橙（2026-10-08 用户建议：
+    // 层次视图原先只标 R1，同层内的领域间依赖完全看不见 ⇒ 无从观察「领域之间的关系」）
+    var crossDom = (viewMode==='layer') && a.layer===3 && b.layer===3 &&
+                   a._dom && b._dom && a._dom!==b._dom;
+    ctx.lineWidth = e.w ? Math.min(4.5, 0.6+e.w*0.16) : ((viol||crossDom)?1.3:1);   // 包视图：粗细 = 耦合强度
     if(dimAll && !rel){ ctx.strokeStyle='rgba(120,113,102,0.055)'; }
     else if(viol){ ctx.strokeStyle=rel?'rgba(232,86,74,0.95)':'rgba(232,86,74,0.42)'; }
+    else if(crossDom){ ctx.strokeStyle=rel?'rgba(224,150,60,0.95)':'rgba(224,150,60,0.50)'; }
     else if(e.k==='inherit'){ ctx.strokeStyle=rel?'rgba(224,162,74,0.85)':'rgba(224,162,74,0.26)'; }
     else if(e.k==='mixin'){ ctx.strokeStyle=rel?'rgba(190,120,220,0.9)':'rgba(190,120,220,0.24)'; }
     else { ctx.strokeStyle=rel?'rgba(150,190,220,0.75)':(e.w?'rgba(150,175,195,0.34)':'rgba(140,160,175,0.12)'); }
