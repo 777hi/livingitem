@@ -384,6 +384,8 @@ public void tickContainerData(List<SlotEntry> entries, ContainerContext ctx, Tic
    （属 B 类框架演进），**不应塞进本次**。
 4. **是否顺手修 §10.2 的 7 项既存陈旧**（尤其第 1、5 项 —— 自相矛盾 + 引用不存在的方法）
 5. **是否给 `doc_check` 加「方法名真实性」检查**（堵住 §10.2 第 5 项的盲区）
+6. **确认「活漏斗不响应容器外红石」是设计还是缺陷**（§12.2 末尾的既存行为）——
+   若是缺陷，需另开一项（与本次无关）
 
 ---
 
@@ -408,19 +410,46 @@ public void tickContainerData(List<SlotEntry> entries, ContainerContext ctx, Tic
 ⭐ **但中间态的判据在逻辑上是完备的**（§12.2 证明「有元件在场」不可省），
 这也正是 §7 敢说「行为等价」的原因 —— **终点换的是实现方式，不是判据**。
 
-### 12.2 ⚠️ 「需求」的边界：三个来源，「元件在场」不可省
+### 12.2 ⚠️ 「需求」的边界：**两个**来源，且**消费者不构成来源**
 
-> 用户追问：「**如果没有需求，红电信号还会计算吗**」。
-> 会漏 —— 如果「需求」只算容器内的消费者的话。
+> 用户追问：「**如果没有需求，红电信号还会计算吗**」→ 会漏，如果「需求」只算容器内消费者。
+> 用户进一步指出：「**活 TNT 和活漏斗其实不是和红电强相关的，只是借助红电信号满足自己的一点小特性；
+> 电力层也一样借助，但电力层和信号层强相关**」⇒ 本节据此修正。
 
-| # | 需求来源 | 消费者在哪 | 怎么知道有需求 |
+**判据：按耦合深度分三层**（不是并列，是嵌套）：
+
+| 层 | 谁 | 关系 | 是否产生计算需求 |
 |---|---|---|---|
-| 1 | 容器内消费者（TNT / 漏斗 / 电力） | 容器内 | **显式声明**「我需要」 |
-| 2 | 元件之间传播（粉 / 中继器 / 比较器…） | 容器内 | **元件在场**（它自己就是网络的一部分） |
-| 3 | **对外输出** | ⚠️ **容器外的世界** | **元件在场**（它可能在驱动外面的线） |
+| **本层自身** | 红石粉 + 8 个元件 | 就是信号网络 | ✅ |
+| **强相关（下游层）** | 电力层 | 是本层的下游，依赖本层的边模型 | ✅ |
+| **借用者** | 活 TNT · 活漏斗 | ⚠️ **只读，不改变本层语义** | ❌ **不产生** |
 
-**第 3 条最容易漏。** 反例：容器里只有一个活红石块，无任何容器内消费者 ——
-若判据只认「容器内消费者声明」⇒ 无人声明 ⇒ 不算 ⇒ **活红石块不再对外输出**。
+**判据一句话**：「**强相关」= 你的存在会改变这一层的语义；「借用」= 你只是读取者。**
+
+⭐ **代码证据**：借用者读信号的路径是
+`maxSensedSignal(slot)` → `sensedSignal(slot, dir)` → `edgeGrid.get(邻居, 反向)`
+—— **只读容器内的边，完全不碰 `faceInput`（外部信号）**。
+
+⇒ 借用者借的是「**容器内红石系统当前的状态**」，而容器内状态**由元件决定**
+⇒ **借用者不产生任何新的计算需求**：有元件就有的算，没元件就没得借 —— **与谁在借无关**。
+
+（「外部信号不参与内部传播」是**故意的** —— 为打破「容器输出 → 世界 → 再注入 → 内部传播」的反馈回路。）
+
+**⇒ 需求来源只有两个：**
+
+| # | 需求来源 | 怎么知道 |
+|---|---|---|
+| 1 | **有红石元件在场** | 元件自声明（含内部传播 + 对外输出两重含义） |
+| 2 | **有残留账本** | 归零，否则世界读到僵尸信号 |
+
+⚠️ 反例（来源 1 为何不可省）：容器里只有一个活红石块 —— 若判据只认「容器内消费者声明」
+⇒ 无人声明 ⇒ 不算 ⇒ **活红石块不再对外输出**。
+
+⚠️ **顺带发现的既存行为（待确认）**：既然借用者只读容器内的边
+⇒ **活漏斗不响应「容器外的红石」**（除非容器里恰好有红石元件当中介）。
+具体说：容器里只放一个活漏斗、容器外贴一根充能的红石线 ⇒ 按代码看**锁不住**该漏斗。
+这是**既存行为**（不是本方案造成的），且与「借用者借的是容器内状态」自洽 ——
+但需确认是**设计**还是**缺陷**（原版漏斗会响应外部红石）。
 
 **对外输出的链路（已查证）**：
 
@@ -446,43 +475,51 @@ public interface HasContainerData {
     void tickContainerData(...);
 }
 
-// 终点：消费者声明需求，生产者声明提供
-public interface NeedsContainerData {
-    Set<ContainerDataKey> neededData();       // 「我需要 REDSTONE」
-}
+// 终点：只需要「提供者」声明（借用者不声明，见 §12.2）
 public interface ProvidesContainerData {
-    ContainerDataKey providedData();          // 「我负责算 REDSTONE」
+    ContainerDataKey providedData();               // 「我提供 REDSTONE」
+    Set<ContainerDataKey> dependsOn();             // 默认空；电力层返回 {REDSTONE}
     void tickContainerData(...);
 }
 ```
 
-| 谁 | 声明 | 对应 §12.2 的来源 |
-|---|---|---|
-| TNT / 漏斗 / 电力 | `NeedsContainerData` → 我要 `REDSTONE` | 来源 1 |
-| 9 个红石元件（粉 / 火把 / 中继器 / 比较器 / 按钮 / 拉杆 / 灯 / 红石块 / 涂蜡铜块） | `ProvidesContainerData` → 我提供 `REDSTONE` | 来源 2 **和** 来源 3 |
+| 谁 | 声明 |
+|---|---|
+| 9 个红石元件（粉 / 火把 / 中继器 / 比较器 / 按钮 / 拉杆 / 灯 / 红石块 / 涂蜡铜块） | `ProvidesContainerData` → `REDSTONE` |
+| 电力层 | `ProvidesContainerData` → `POWER`（`dependsOn: REDSTONE`） |
+| 流体驱动 / 水车 | `FLUID` / `STRESS`（`dependsOn: FLUID`） |
+| **活 TNT · 活漏斗** | ⭐ **什么都不声明**（借用者，见 §12.2） |
 
-⚠️ **注意 `ProvidesContainerData` 一个声明同时覆盖了来源 2 和来源 3** ——
-因为「元件在场」既意味着「它自己要传播」，也意味着「它可能对外输出」。
-⇒ 这正是「**有元件在场**」这个判据**在逻辑上不可省**的原因。
+⚠️ **`NeedsContainerData` 被砍掉了。** 初稿设计它是为了让 TNT / 漏斗声明需求，
+但按 §12.2 的耦合深度分类，**借用者不产生计算需求** ⇒ 它是多余的。
+（「强相关」的电力层本身就是红石元件 —— 涂蜡铜块 = `BIT_COPPER`，已在 9 个元件里。）
+
+⇒ **终点形态因此比初稿更简单：只有一种声明。**
 | 框架 | 汇总需求 → **有需求才驱动；无需求零开销** |
 
 ### 12.4 新形态的具体写法（各类对照）
 
 | 类 | 现在 | 新形态 |
 |---|---|---|
-| `LivingRedstoneFunction`（红石粉） | `HasContainerData` + `prio 2` + 3 行样板 | `ProvidesContainerData` → `REDSTONE` + `NeedsContainerData` → `{REDSTONE}`（它自己也参与传播） |
-| 8 个红石元件 | `HasContainerData` + `prio 2` + **同样 3 行样板** | `NeedsContainerData` → `{REDSTONE}` —— **一行** |
-| `LivingTntFunction` | `HasContainerData` + `prio 1` + 样板 | `NeedsContainerData` → `{REDSTONE}` —— **一行** |
-| `LivingHopperFunction` | ⚠️ **什么都不实现**（需求隐式，靠副作用） | `NeedsContainerData` → `{REDSTONE}` —— **一行** |
+| `LivingRedstoneFunction`（红石粉） | `HasContainerData` + `prio 2` + 3 行样板 | `ProvidesContainerData` → `REDSTONE` |
+| 8 个红石元件 | `HasContainerData` + `prio 2` + **同样 3 行样板** | `ProvidesContainerData` → `REDSTONE` —— **一行** |
+| `LivingTntFunction` | `HasContainerData` + `prio 1` + 样板 | ⭐ **什么都不声明**（借用者）—— 删掉样板即可 |
+| `LivingHopperFunction` | ⚠️ **什么都不实现**（需求隐式，靠副作用） | ⭐ **什么都不声明**（借用者）—— **不变** |
 | `LivingWaxedCopperFunction`（电力层） | `HasContainerData` + `prio 3` | `ProvidesContainerData` → `POWER`（`dependsOn: REDSTONE`） |
 | `LivingFluidFunction`（流体驱动） | `HasContainerData` + `prio 0` | `ProvidesContainerData` → `FLUID` |
-| `LivingWaterWheelFunction`（水车） | `HasContainerData` + `prio 1` | `NeedsContainerData` → `{FLUID}` + `ProvidesContainerData` → `STRESS`（`dependsOn: FLUID`） |
+| `LivingWaterWheelFunction`（水车） | `HasContainerData` + `prio 1` | `ProvidesContainerData` → `STRESS`（`dependsOn: FLUID`） |
 
-**⭐ 本质变化：红石元件从「驱动者」变成「需求者」** —— 这是**纠正了一个身份错误**：
+**⭐ 本质变化：红石元件从「驱动者」变成「参与者」** —— 这是**纠正了一个身份错误**：
 
-> 红石元件（按钮 / 中继器 / 比较器…）的真实身份是**数据的参与者**（它要读邻居给的信号才能工作），
-> 但现在的代码让它们当**数据的主人**（"我来决定要不要算"）。
-> 比喻：现在是每个元件都「自己开车」（谁在场谁开），新形态是「一个专职司机 + 所有元件当乘客」。
+> 元件的真实身份是**红石网络的一部分**（既产生信号、又读邻居信号），
+> 但现在的代码让它当**数据的主人**（"我来决定要不要算"）。
+> 新形态下它只需声明「**我在场**」—— **不再需要"喊"了**，
+> 因为「我在场」本身就是红石层该算的理由。
+> 比喻：现在是每个元件都「自己开车」（谁在场谁开），新形态是「框架当调度员 + 元件只需报名」。
+
+⚠️ **机制细节未定**（本节是设计推演）：9 个元件都声明同一个 `REDSTONE` ⇒ 框架需要一个
+「**谁来算**」的约定（例如「每个数据键注册一个计算器」）。
+方向是清楚的 —— **元件只负责声明，"谁算、什么顺序算"全部由框架决定** —— 具体形式留待实施时定。
 
 **提供者在终点形态下连守卫都不需要**（守卫是「把框架的判断塞进提供者」，终点把它还给框架）：
 
@@ -514,7 +551,8 @@ public class LivingRedstoneFunction implements LivingItemFunction, ProvidesConta
 
 ### 12.5 四个附带收益（终点顺带解决的）
 
-1. **巧合链彻底消失** —— 生产者和消费者**都显式声明**，不再靠 `getSensor` 的副作用
+1. **巧合链彻底消失** —— 元件**自声明** ⇒ 不再靠 `getSensor` 的副作用。
+   （借用者本来就不需要声明 —— 它们只读容器内已有状态、不产生需求，见 §12.2）
 2. **`getSensor` 可以变回纯读**（无副作用）⇒ §5 标注的残留脆弱点**自然消失**
 3. ⭐ **`getPriority()` 这张手工排序表可以整个删掉** —— 「谁先跑」可从「谁需要谁」**推导**出来
    （电力需要红石 ⇒ 红石先跑）。现状是手工维护，且**已经漂移**（文档里的表还是旧的，见 §10.2 第 4 项）
@@ -528,7 +566,8 @@ public class LivingRedstoneFunction implements LivingItemFunction, ProvidesConta
 ### 12.6 为什么本次不做 + 顺序不能反
 
 1. 它是**新机制**（新接口 + 框架调度改造），不是「消除样板」⇒ 属 B 类框架演进
-2. 要同时动 5 个领域（redstone / tnt / hopper / power / water），影响面比本次大一个量级
+2. 要同时动 **3 个领域**（redstone 9 个元件声明 / power 电力层 / water 流体+水车），
+   影响面比本次大一个量级（**tnt / hopper 反而不用动** —— 借用者什么都不声明，见 §12.2）
 3. ⚠️ **顺序不能反**：先消除样板（9 → 1），再引入声明（1 个生产者）。
    反过来的话，要在 10 个地方**同时**改声明 —— 改错一个就是**静默失效**（§6.1 那张表）
 
