@@ -341,23 +341,6 @@ public class LivingItemManager {
         }
     }
 
-    /** 活熔炉是否在燃烧（派生标志，仅网络同步；图标 active/idle 变体数据源）。 */
-    public static boolean isFurnaceBurning(ItemStack stack) {
-        Boolean burning = stack.get(LivingComponents.LIVING_FURNACE_BURNING.value());
-        return burning != null && burning;
-    }
-
-    /**
-     * 便捷方法：写入熔炉燃烧标志（false 时移除组件，节省 NBT）。
-     */
-    public static void setFurnaceBurning(ItemStack stack, boolean burning) {
-        if (burning) {
-            stack.set(LivingComponents.LIVING_FURNACE_BURNING.value(), true);
-        } else {
-            stack.remove(LivingComponents.LIVING_FURNACE_BURNING.value());
-        }
-    }
-
     /**
      * 挖掘预计总 tick（{@code K} 组动画用）。
      *
@@ -391,15 +374,6 @@ public class LivingItemManager {
         } else {
             stack.set(LivingComponents.LIVING_TOOL_OWNER.value(), owner);
         }
-    }
-
-    /** 活耕地湿润标志（未打标志 = 干燥；图标 moist/dry 变体切换数据源） */
-    public static boolean isFarmlandMoist(ItemStack stack) {
-        return getData(stack, LivingComponents.LIVING_FARMLAND_MOIST.value(), Boolean.FALSE);
-    }
-
-    public static void setFarmlandMoist(ItemStack stack, boolean moist) {
-        setData(stack, LivingComponents.LIVING_FARMLAND_MOIST.value(), moist, Boolean.FALSE);
     }
 
 }

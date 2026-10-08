@@ -62,7 +62,7 @@ public record LivingHopperData(
 
     /** 读取：缺失返回默认值。（A1 迁移：原 LivingItemManager.getHopperData） */
     public static LivingHopperData of(ItemStack stack) {
-        return LivingItemManager.getData(stack, LivingComponents.LIVING_HOPPER_DATA.value(), LivingHopperData.DEFAULT);
+        return LivingItemManager.getData(stack, HopperComponents.LIVING_HOPPER_DATA.value(), LivingHopperData.DEFAULT);
     }
 
     /**
@@ -71,7 +71,7 @@ public record LivingHopperData(
 
     /** 写入：等于默认值时移除组件。（A1 迁移：原 LivingItemManager.setHopperData） */
     public static void set(ItemStack stack, LivingHopperData data) {
-        LivingItemManager.setData(stack, LivingComponents.LIVING_HOPPER_DATA.value(), data, LivingHopperData.DEFAULT);
+        LivingItemManager.setData(stack, HopperComponents.LIVING_HOPPER_DATA.value(), data, LivingHopperData.DEFAULT);
     }
 
     /**

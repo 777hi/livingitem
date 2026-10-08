@@ -40,7 +40,7 @@ public record LivingTntData(ExplosionData explosion) implements TooltipProvider 
 
     /** 读取：缺失返回默认值。（A1 迁移：原 LivingItemManager.getTntData） */
     public static LivingTntData of(ItemStack stack) {
-        return LivingItemManager.getData(stack, LivingComponents.LIVING_TNT_DATA.value(), LivingTntData.DEFAULT);
+        return LivingItemManager.getData(stack, TntComponents.LIVING_TNT_DATA.value(), LivingTntData.DEFAULT);
     }
 
     /**
@@ -49,7 +49,7 @@ public record LivingTntData(ExplosionData explosion) implements TooltipProvider 
 
     /** 写入：等于默认值时移除组件。（A1 迁移：原 LivingItemManager.setTntData） */
     public static void set(ItemStack stack, LivingTntData data) {
-        LivingItemManager.setData(stack, LivingComponents.LIVING_TNT_DATA.value(), data, LivingTntData.DEFAULT);
+        LivingItemManager.setData(stack, TntComponents.LIVING_TNT_DATA.value(), data, LivingTntData.DEFAULT);
     }
 
     /**

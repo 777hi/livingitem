@@ -67,7 +67,7 @@ class FurnaceBurningFlagTest {
 
         tickOnce(ctx, FURNACE_SLOT);
 
-        assertTrue(LivingItemManager.isFurnaceBurning(ctx.getItem(FURNACE_SLOT)),
+        assertTrue(FurnaceComponents.isBurning(ctx.getItem(FURNACE_SLOT)),
             "燃烧中应写入标志组件，图标才能切到 furnace_active");
         assertTrue(ctx.syncedSlots.contains(FURNACE_SLOT), "标志翻转应触发槽位同步");
     }
@@ -77,7 +77,7 @@ class FurnaceBurningFlagTest {
     void burningFlag_clearedOnExtinguish() {
         FakeContainerContext ctx = new FakeContainerContext(27, 9);
         ItemStack furnace = livingFurnace();
-        LivingItemManager.setFurnaceBurning(furnace, true); // 模拟先前燃烧中
+        FurnaceComponents.setBurning(furnace, true); // 模拟先前燃烧中
         ctx.set(FURNACE_SLOT, furnace);
         // 运行时缓存：burnTime=0（熄灭）
         ContainerRuntimeCache.update(ctx.getContainerKey(), FURNACE_SLOT,
@@ -85,7 +85,7 @@ class FurnaceBurningFlagTest {
 
         tickOnce(ctx, FURNACE_SLOT);
 
-        assertFalse(LivingItemManager.isFurnaceBurning(ctx.getItem(FURNACE_SLOT)),
+        assertFalse(FurnaceComponents.isBurning(ctx.getItem(FURNACE_SLOT)),
             "熄灭应移除标志组件，图标切回 furnace_idle");
         assertTrue(ctx.syncedSlots.contains(FURNACE_SLOT), "标志翻转应触发槽位同步");
     }
@@ -100,7 +100,7 @@ class FurnaceBurningFlagTest {
 
         tickOnce(ctx, FURNACE_SLOT);
 
-        assertFalse(LivingItemManager.isFurnaceBurning(ctx.getItem(FURNACE_SLOT)));
+        assertFalse(FurnaceComponents.isBurning(ctx.getItem(FURNACE_SLOT)));
         assertEquals(0, ctx.syncedSlots.size(), "稳态下不应有任何槽位同步");
     }
 
@@ -109,13 +109,13 @@ class FurnaceBurningFlagTest {
     void burningFlag_selfHeals_staleTrueFlag() {
         FakeContainerContext ctx = new FakeContainerContext(27, 9);
         ItemStack furnace = livingFurnace();
-        LivingItemManager.setFurnaceBurning(furnace, true); // 搬运前燃烧中，标志过期
+        FurnaceComponents.setBurning(furnace, true); // 搬运前燃烧中，标志过期
         ctx.set(FURNACE_SLOT, furnace);
         ContainerRuntimeCache.removeContainer(ctx.getContainerKey()); // 新容器无缓存
 
         tickOnce(ctx, FURNACE_SLOT);
 
-        assertFalse(LivingItemManager.isFurnaceBurning(ctx.getItem(FURNACE_SLOT)),
+        assertFalse(FurnaceComponents.isBurning(ctx.getItem(FURNACE_SLOT)),
             "无燃料无缓存时，过期 true 标志应被修正（自愈）");
     }
 
@@ -123,7 +123,7 @@ class FurnaceBurningFlagTest {
     @DisplayName("堆叠兼容：燃烧标志在 getIgnoredComponentTypes 中，不同燃烧状态可堆叠")
     void burningFlag_ignoredForStacking() {
         ItemStack burning = livingFurnace();
-        LivingItemManager.setFurnaceBurning(burning, true);
+        FurnaceComponents.setBurning(burning, true);
         ItemStack idle = livingFurnace();
 
         assertTrue(ItemStack.isSameItemSameComponents(burning, idle),

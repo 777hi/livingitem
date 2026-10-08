@@ -4,6 +4,7 @@ import com.qiqi.li.living.api.LivingMod;
 
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.registries.Registries;
+import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
 /**
@@ -16,6 +17,14 @@ public final class HopperComponents {
 
     public static final DeferredRegister<DataComponentType<?>> REG =
         DeferredRegister.create(Registries.DATA_COMPONENT_TYPE, LivingMod.ID);
+
+    /** 活漏斗数据（冷却 / 槽位信息）。 */
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingHopperData>> LIVING_HOPPER_DATA =
+        REG.register("living_hopper_data", () ->
+            DataComponentType.<LivingHopperData>builder()
+                .persistent(LivingHopperData.CODEC)
+                .networkSynchronized(LivingHopperData.STREAM_CODEC)
+                .build());
 
     private HopperComponents() {}
 }

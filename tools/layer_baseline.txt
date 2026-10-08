@@ -20,10 +20,6 @@ module	(root)	client/icon	1
 module	living/api	living/components	1
 module	living/api	living/domain/tools	1
 module	living/components	(root)	1
-module	living/components	living/domain/farmland	1
-module	living/components	living/domain/furnace	1
-module	living/components	living/domain/hopper	1
-module	living/components	living/domain/tnt	1
 module	living/container	living/components	1
 module	living/container	living/debug	1
 module	living/domain/ender	(root)	1

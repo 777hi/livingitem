@@ -11,29 +11,25 @@ import net.neoforged.neoforge.registries.DeferredRegister;
 
 import java.util.Map;
 import java.util.UUID;
-import com.qiqi.li.living.domain.furnace.LivingFurnaceData;
-import com.qiqi.li.living.domain.hopper.LivingHopperData;
 import com.qiqi.li.living.transfer.FilterData;
-import com.qiqi.li.living.domain.tnt.LivingTntData;
 import com.qiqi.li.living.domain.water.LivingWaterWheelData;
 import com.qiqi.li.living.domain.water.ContainerStressData;
 import com.qiqi.li.living.domain.water.ContainerFluidData;
 import com.qiqi.li.living.domain.power.PhaseSnapshot;
+import com.qiqi.li.living.domain.power.LivingWaxedChiseledData;
+import com.qiqi.li.living.domain.power.LivingWaxedGeneratorData;
+import com.qiqi.li.living.domain.power.LivingWaxedBulbData;
 import com.qiqi.li.living.domain.redstone.LivingRedstoneData;
 import com.qiqi.li.living.domain.redstone.LivingRedstoneTorchData;
+import com.qiqi.li.living.domain.redstone.LivingRedstoneLampData;
 import com.qiqi.li.living.domain.redstone.LivingButtonData;
 import com.qiqi.li.living.domain.redstone.LivingLeverData;
-import com.qiqi.li.living.domain.farmland.FarmlandPlantComponent;
-import com.qiqi.li.living.domain.redstone.LivingRedstoneLampData;
 import com.qiqi.li.living.domain.redstone.LivingRepeaterData;
 import com.qiqi.li.living.domain.redstone.LivingComparatorData;
 import com.qiqi.li.living.domain.redstone.LivingCutCopperData;
 import com.qiqi.li.living.domain.redstone.LivingGrateData;
 import com.qiqi.li.living.domain.redstone.LivingCopperBulbData;
 import com.qiqi.li.living.domain.redstone.LivingCopperSignalData;
-import com.qiqi.li.living.domain.power.LivingWaxedChiseledData;
-import com.qiqi.li.living.domain.power.LivingWaxedGeneratorData;
-import com.qiqi.li.living.domain.power.LivingWaxedBulbData;
 import com.qiqi.li.living.domain.tools.LivingToolMemory;
 import com.qiqi.li.living.domain.tools.LivingToolProgress;
 import com.qiqi.li.living.domain.tools.LivingToolAction;
@@ -105,45 +101,16 @@ public final class LivingComponents {
                             .networkSynchronized(ByteBufCodecs.VAR_INT)
                             .build());
 
-    /** 熔炉燃烧标志：燃烧状态翻转时写入，供客户端图标谓词（active/idle）读取。派生数据不落盘（仅网络同步，MAP_POST_PROCESSING 先例） */
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<Boolean>> LIVING_FURNACE_BURNING =
-            DATA_COMPONENT_TYPES.register("living_furnace_burning", () ->
-                    DataComponentType.<Boolean>builder()
-                            .networkSynchronized(ByteBufCodecs.BOOL)
-                            .build());
-
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<Boolean>> LIVING_FARMLAND_MOIST =
-            DATA_COMPONENT_TYPES.register("living_farmland_moist", () ->
-                    DataComponentType.<Boolean>builder()
-                            .networkSynchronized(ByteBufCodecs.BOOL)
-                            .build());
-
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingFurnaceData>> LIVING_FURNACE_DATA =
-            DATA_COMPONENT_TYPES.register("living_furnace_data", () ->
-                    DataComponentType.<LivingFurnaceData>builder()
-                            .persistent(LivingFurnaceData.CODEC)
-                            .networkSynchronized(LivingFurnaceData.STREAM_CODEC)
-                            .build());
-
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingHopperData>> LIVING_HOPPER_DATA =
-            DATA_COMPONENT_TYPES.register("living_hopper_data", () ->
-                    DataComponentType.<LivingHopperData>builder()
-                            .persistent(LivingHopperData.CODEC)
-                            .networkSynchronized(LivingHopperData.STREAM_CODEC)
-                            .build());
-
-    /** 漏斗黑白名单过滤链：容器派生数据不落盘（仅网络同步供 tooltip，MAP_POST_PROCESSING 先例），每 tick 由快照重建 */
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<com.qiqi.li.living.transfer.FilterData>> LIVING_HOPPER_FILTER =
+    /**
+     * 漏斗黑白名单过滤链：容器派生数据不落盘（仅网络同步供 tooltip），每 tick 由快照重建。
+     *
+     * <p>⚠️ <b>留在框架侧</b>：它的类型 {@code FilterData} 属于 {@code transfer}（L2），
+     * 与框架侧同层 ⇒ 放进 hopper 领域会制造 L2 → L3 反向依赖。</p>
+     */
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<FilterData>> LIVING_HOPPER_FILTER =
             DATA_COMPONENT_TYPES.register("living_hopper_filter", () ->
-                    DataComponentType.<com.qiqi.li.living.transfer.FilterData>builder()
-                            .networkSynchronized(com.qiqi.li.living.transfer.FilterData.STREAM_CODEC)
-                            .build());
-
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingTntData>> LIVING_TNT_DATA =
-            DATA_COMPONENT_TYPES.register("living_tnt_data", () ->
-                    DataComponentType.<LivingTntData>builder()
-                            .persistent(LivingTntData.CODEC)
-                            .networkSynchronized(LivingTntData.STREAM_CODEC)
+                    DataComponentType.<FilterData>builder()
+                            .networkSynchronized(FilterData.STREAM_CODEC)
                             .build());
 
     public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingWaterWheelData>> LIVING_WATER_WHEEL_DATA =
@@ -179,14 +146,6 @@ public final class LivingComponents {
                     DataComponentType.<LivingLeverData>builder()
                             .persistent(LivingLeverData.CODEC)
                             .networkSynchronized(LivingLeverData.STREAM_CODEC)
-                            .build());
-
-    /** 活耕地种植数据（作物类型标记 + 生长阶段 + round-robin 产出状态，客户端渲染数据源） */
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<FarmlandPlantComponent>> FARMLAND_PLANT =
-            DATA_COMPONENT_TYPES.register("farmland_plant", () ->
-                    DataComponentType.<FarmlandPlantComponent>builder()
-                            .persistent(FarmlandPlantComponent.CODEC)
-                            .networkSynchronized(FarmlandPlantComponent.STREAM_CODEC)
                             .build());
 
     public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingRedstoneLampData>> LIVING_REDSTONE_LAMP_DATA =

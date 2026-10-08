@@ -189,11 +189,11 @@ class ComponentOwnershipTest {
 
         ItemStack stack = new ItemStack(Items.FURNACE);
         LivingItemManager.setLiving(stack, true);
-        LivingItemManager.setFurnaceBurning(stack, true);
+        com.qiqi.li.living.domain.furnace.FurnaceComponents.setBurning(stack, true);
 
         LivingItemManager.setLiving(stack, false);
 
-        assertFalse(stack.has(LivingComponents.LIVING_FURNACE_BURNING.value()),
+        assertFalse(stack.has(com.qiqi.li.living.domain.furnace.FurnaceComponents.LIVING_FURNACE_BURNING.value()),
             "LIVING_FURNACE_BURNING 已由 LivingFurnaceFunction 声明，取消活化时应当被清除");
         assertFalse(stack.has(LivingComponents.IS_LIVING.value()),
             "IS_LIVING 属框架本身，取消活化时必须被清除");

@@ -103,7 +103,7 @@ public class LivingTntFunction implements LivingItemFunction {
 
     @Override
     public Set<DataComponentType<?>> getOwnedComponentTypes() {
-        return Set.of(LivingComponents.LIVING_TNT_DATA.value());
+        return Set.of(TntComponents.LIVING_TNT_DATA.value());
     }
 
     @Override

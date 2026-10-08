@@ -75,12 +75,12 @@ public class LivingFarmlandFunction implements LivingItemFunction {
      */
     @Override
     public Set<DataComponentType<?>> getOwnedComponentTypes() {
-        return Set.of(LivingComponents.FARMLAND_PLANT.value(), LivingComponents.LIVING_FARMLAND_MOIST.value());
+        return Set.of(FarmlandComponents.FARMLAND_PLANT.value(), FarmlandComponents.LIVING_FARMLAND_MOIST.value());
     }
 
     @Override
     public Set<DataComponentType<?>> getIgnoredComponentTypes() {
-        return Set.of(LivingComponents.LIVING_FARMLAND_MOIST.value());
+        return Set.of(FarmlandComponents.LIVING_FARMLAND_MOIST.value());
     }
 
     @Override
@@ -155,8 +155,8 @@ public class LivingFarmlandFunction implements LivingItemFunction {
         // 【湿润标志】level ≥ 1 即湿润，翻转才写 + 主动同步（ignored 组件需手动推）。
         // 未种植耕地也更新——湿润是耕地属性与种植无关。
         boolean moist = moistureLevel >= 1;
-        if (LivingItemManager.isFarmlandMoist(farmland) != moist) {
-            LivingItemManager.setFarmlandMoist(farmland, moist);
+        if (FarmlandComponents.isMoist(farmland) != moist) {
+            FarmlandComponents.setMoist(farmland, moist);
             ctx.syncSlotToClients(slot, farmland);
         }
 

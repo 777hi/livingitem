@@ -212,7 +212,7 @@ public final class LivingIconRegistry {
         // 一份代码全覆盖（2026-09-16 从 AbstractContainerScreenMixin 迁入）。
         register(LivingIconSpec.builder(net.minecraft.world.item.Items.FARMLAND)
             .addVariant("moist", "item/farmland_living_moist",
-                stack -> com.qiqi.li.living.api.LivingItemManager.isFarmlandMoist(stack))
+                stack -> com.qiqi.li.living.domain.farmland.FarmlandComponents.isMoist(stack))
             .addVariant("dry", "item/farmland_living", stack -> true)
             .decorator(new LivingFarmlandSeedDecorator())
             .build());

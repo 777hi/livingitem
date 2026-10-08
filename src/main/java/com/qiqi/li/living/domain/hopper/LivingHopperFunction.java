@@ -366,7 +366,7 @@ public class LivingHopperFunction implements LivingItemFunction {
 
     @Override
     public Set<DataComponentType<?>> getOwnedComponentTypes() {
-        return Set.of(LivingComponents.LIVING_HOPPER_DATA.value(), LivingComponents.LIVING_HOPPER_FILTER.value());
+        return Set.of(HopperComponents.LIVING_HOPPER_DATA.value(), LivingComponents.LIVING_HOPPER_FILTER.value());
     }
 
     @Override

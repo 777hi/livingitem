@@ -58,7 +58,7 @@ public record LivingFurnaceData(
 
     /** 读取：缺失返回默认值。（A1 迁移：原 LivingItemManager.getFurnaceData） */
     public static LivingFurnaceData of(ItemStack stack) {
-        return LivingItemManager.getData(stack, LivingComponents.LIVING_FURNACE_DATA.value(), LivingFurnaceData.DEFAULT);
+        return LivingItemManager.getData(stack, FurnaceComponents.LIVING_FURNACE_DATA.value(), LivingFurnaceData.DEFAULT);
     }
 
     /**
@@ -67,7 +67,7 @@ public record LivingFurnaceData(
 
     /** 写入：等于默认值时移除组件。（A1 迁移：原 LivingItemManager.setFurnaceData） */
     public static void set(ItemStack stack, LivingFurnaceData data) {
-        LivingItemManager.setData(stack, LivingComponents.LIVING_FURNACE_DATA.value(), data, LivingFurnaceData.DEFAULT);
+        LivingItemManager.setData(stack, FurnaceComponents.LIVING_FURNACE_DATA.value(), data, LivingFurnaceData.DEFAULT);
     }
 
     /**

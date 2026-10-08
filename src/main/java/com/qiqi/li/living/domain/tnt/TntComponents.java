@@ -4,6 +4,7 @@ import com.qiqi.li.living.api.LivingMod;
 
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.registries.Registries;
+import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
 /**
@@ -16,6 +17,14 @@ public final class TntComponents {
 
     public static final DeferredRegister<DataComponentType<?>> REG =
         DeferredRegister.create(Registries.DATA_COMPONENT_TYPE, LivingMod.ID);
+
+    /** 活 TNT 数据（引信/爆炸状态）。 */
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingTntData>> LIVING_TNT_DATA =
+        REG.register("living_tnt_data", () ->
+            DataComponentType.<LivingTntData>builder()
+                .persistent(LivingTntData.CODEC)
+                .networkSynchronized(LivingTntData.STREAM_CODEC)
+                .build());
 
     private TntComponents() {}
 }
