@@ -20,6 +20,12 @@ import javax.annotation.Nullable;
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * 活地图的物品图标装饰器（{@link IItemDecorator}）。
+ *
+ * <p>在物品模型之上叠加地图缩略图，由 {@link MapItemSavedData} 生成并缓存一张缩放后的 {@link DynamicTexture}，
+ * 随地图数据更新而惰性刷新；底图羊皮纸由物品模型提供，装饰器只绘制缩略图。</p>
+ */
 public class LivingMapIconDecorator implements IItemDecorator {
 
     private static final int MAP_SIZE = 128;

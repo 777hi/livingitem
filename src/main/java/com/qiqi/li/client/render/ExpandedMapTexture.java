@@ -6,6 +6,13 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.material.MapColor;
 import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
 
+/**
+ * 活地图的「展开纹理」封装。
+ *
+ * <p>把 {@link MapItemSavedData} 的 128×128 颜色数据上传到一张 {@link DynamicTexture}，
+ * 未探索像素替换为羊皮纸色（{@code UNEXPLORED_ABGR}），供容器界面在地图槽位上平铺渲染；
+ * 按数据哈希惰性刷新，避免每帧重传。</p>
+ */
 public class ExpandedMapTexture {
 
     private static final int TEX_SIZE = 128;

@@ -8,6 +8,12 @@ import net.minecraft.world.item.ItemStack;
 
 import java.util.List;
 
+/**
+ * 活箱子收纳内容的悬浮提示渲染器。
+ *
+ * <p>实现 {@link ClientTooltipComponent}，把 {@link LivingChestTooltipComponent} 携带的物品网格
+ * 按槽位绘制成带边框背景的收纳预览图。</p>
+ */
 public class LivingChestTooltipRenderer implements ClientTooltipComponent {
 
     private static final int SLOT_SIZE = 18;

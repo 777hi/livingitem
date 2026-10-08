@@ -15,6 +15,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 活地图在容器界面中的布局扫描与坐标换算。
+ *
+ * <p>从菜单槽位中找出相邻的「已展开活地图 + 空格地图」方块，合并为 {@link MapGroup}，
+ * 并提供鼠标坐标 ↔ 地图 UV、地图像素的换算与命中查询，供展开渲染与右键传送使用。</p>
+ */
 public final class LivingMapLayout {
 
     public static final int SLOT_SIZE = 18;
@@ -143,6 +149,12 @@ public final class LivingMapLayout {
         return ((long) x << 32) | (y & 0xFFFFFFFFL);
     }
 
+    /**
+     * 活地图布局中的一个方形地图组。
+     *
+     * <p>记录左上角槽位索引、边长（格数）、屏幕坐标、地图 ID 与所覆盖的槽位索引集合，
+     * 是展开渲染与传送命中的基本单位。</p>
+     */
     public record MapGroup(
         int topLeftSlotIndex,
         int n,

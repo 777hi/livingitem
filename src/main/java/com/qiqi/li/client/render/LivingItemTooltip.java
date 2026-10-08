@@ -19,6 +19,12 @@ import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.runtime.LivingItemClientCache;
 import com.qiqi.li.living.runtime.RuntimeSegments;
 
+/**
+ * 活物品 tooltip 的统一渲染入口。
+ *
+ * <p>监听 {@code ItemTooltipEvent}，从当前屏幕的悬停槽位取出运行时数据（{@link RuntimeSegments}），
+ * 再遍历所有活物品功能调用其 {@code addToTooltip} 输出「活物品」段（标题 + 各功能追加的内容行）。</p>
+ */
 @EventBusSubscriber(value = Dist.CLIENT, modid = LivingItem.MOD_ID)
 public class LivingItemTooltip {
 

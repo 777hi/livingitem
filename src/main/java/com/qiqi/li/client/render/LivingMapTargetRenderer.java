@@ -10,6 +10,12 @@ import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.resources.ResourceLocation;
 import org.joml.Matrix4f;
 
+/**
+ * 活地图传送准心渲染器（无状态）。
+ *
+ * <p>在 3D（手持 / 展示框）与 GUI（容器界面）两条路径上绘制十字准心标记，
+ * 按命中状态（可传送装饰 / 已探索 / 未探索）选择颜色，供手持活末影珍珠时指示当前瞄准的地图像素。</p>
+ */
 public final class LivingMapTargetRenderer {
 
     private static final ResourceLocation CROSSHAIR_SPRITE = ResourceLocation.withDefaultNamespace("hud/crosshair");

@@ -14,6 +14,12 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.level.block.RedStoneWireBlock;
 import net.neoforged.neoforge.client.IItemDecorator;
 
+/**
+ * 活红石物品图标的装饰器（{@link IItemDecorator}）。
+ *
+ * <p>在红石物品图标上叠加信号强度的红点与直线，按 {@link LivingRedstoneData} 的
+ * {@code signalStrength} 染色、按 {@code connections} 决定四向连接线的显示。</p>
+ */
 public class LivingRedstoneDecorator implements IItemDecorator {
 
     // ⚠️ 直接引用**原版**的白色点图 —— 本模组不再随包分发该纹理（2026-09-22 去原版化）。
