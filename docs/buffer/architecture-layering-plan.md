@@ -47,7 +47,7 @@ python tools/gen_code_map.py      # 出 build/code-map.html（人看）/ --query
 | ② | `StaticCacheRegistry` 改为各领域自己登记 | ~~7~~ **0 ✅ 已做** | 低 | **真减 7**（101 → 94） |
 | ③ | `LivingComponents` 挪出 `living/transfer` | ~~27~~ **0 ✅ 已做** | 极低 | **不减**（只修正归属） |
 | ④ | `network/` 是第二个 interaction —— 拆包回领域 | ~10 | 中 | 减 ~10 |
-| ⑤ | `container` 认识 8 个领域（分散在 6 个类） | 22 | 高 | 减 22 |
+| ⑤ | `container` 认识 4 个领域（分散在 6 个类） | ~~22~~ **20** | 高 | 减 20 → [细化方案](container-domain-decoupling-plan.md) |
 | ⑥ | 领域互依赖 | 28 | 中 | 分情况 |
 
 > 🔑 **判据：搬家 ≠ 减违规。要减必须「同时反转依赖方向」。**
@@ -63,8 +63,10 @@ python tools/gen_code_map.py      # 出 build/code-map.html（人看）/ --query
   （`onServerStop(s -> LivingToolFakePlayerCache.clear())`）—— 修法 = 领域在 `XxxRegistration` 里登记
 - ③ `LivingComponents` 认识 27 个领域类（它持有全部 `DataComponentType` 常量）——
   **这是 A1 迁移有意集中的结果** ⇒ 治本 = 反转 A1 决策，改动面大（所有调用点）
-- ⑤ 分散：`ContainerLivingItemHandler` 8 / `TickContext` 5 / `ContainerDataKeys` 4 /
-  `SimpleContainerContext` 3 / `ContainerSnapshot` 1 / `MutableSnapshot` 1 —— **贵在涉及 tick 调度热路径**
+- ⑤ 分散：`ContainerLivingItemHandler` 7 / `TickContext` 4 / `ContainerDataKeys` 4 /
+  `SimpleContainerContext` 3 / `ContainerSnapshot` 1 / `MutableSnapshot` 1 = **20** ——
+  **贵在涉及 tick 调度热路径**（档 2 已顺带消 2 条；细化方案见
+  [container-domain-decoupling-plan.md](container-domain-decoupling-plan.md)）
 
 ## 3. 跨领域耦合：四类，治法完全不同 ⭐
 
@@ -191,7 +193,7 @@ javadoc 明写「红电感知端口 —— 电力层与跨层消费者（漏斗�
 
 **顺序**：`①②`（低垂果实，真减 19）→ `③`（修正归属）→ `C 收尾`（接口上移，减 6）→ `④`
 → `⑥` → **`B 机制化`**（§3.1，**框架级 + 碰 `LivingItemSyncPacket` ⇒ 必须排在流体领域之后**）
-→ `⑤`（最贵放最后）
+→ `⑤`（最贵放最后）—— **已出细化方案**（[container-domain-decoupling-plan.md](container-domain-decoupling-plan.md)）
 
 **每一批都是纯重构**：行为零变化 + 全量测试全绿 + 跑 `check_layers.py` 看 R1 数字下降。
 
@@ -213,7 +215,7 @@ javadoc 明写「红电感知端口 —— 电力层与跨层消费者（漏斗�
 | Q1 | ① 的 9 个 handler 搬走后，`InteractionRegistry` 要不要加确定性排序？（对齐 [framework-benchmark.md](framework-benchmark.md) §3.4） | ① 与那份文档的**唯一可能重叠点** |
 | Q2 | ③ `LivingComponents` 是只搬家，还是治本（各领域自己声明并注册 `DataComponentType`）？ | ③ |
 | Q3 | **B 的机制化设计**：框架层「不透明分组容器」的载荷用什么？（`CompoundTag` 不透明透传 vs 注册式 codec）—— 前者轻、后者类型安全 | §3.1 |
-| Q4 | ⑤ `container → 领域` 抽什么接口？会动 tick 调度热路径 | ⑤ |
+| Q4 | ~~⑤ `container → 领域` 抽什么接口？~~ **✅ 已答（2026-10-08）**：不新造接口 —— 优先给 `HasContainerData` 加 `default afterTick` 钩子；A/B/C/D 四组（13 条）是纯归属搬运 | [container-domain-decoupling-plan.md](container-domain-decoupling-plan.md) §4 |
 | Q5 | 领域内**不分子包**（2026-10-06 用户拍板）—— 判据是「>30 个类 **且** 存在跨组 <35% 的切法」 | 未来 |
 
 ## 7. 文档跟进清单
