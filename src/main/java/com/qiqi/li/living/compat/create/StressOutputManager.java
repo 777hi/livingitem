@@ -4,7 +4,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 
-import com.qiqi.li.living.domain.water.ContainerStressData;
+import com.qiqi.li.living.api.StressSource;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,7 +12,7 @@ import org.slf4j.LoggerFactory;
 /**
  * 活水车应力输出管理器 —— 合并原 {@link ModCreate} 和 {@link CreateIntegration} 的职责。
  *
- * <p>单一入口方法 {@link #apply(Level, BlockPos, ContainerStressData)} 完成：
+ * <p>单一入口方法 {@link #apply(Level, BlockPos, com.qiqi.li.living.api.StressSource)} 完成：
  * 找下方 BE → 白名单检查 → 方向兼容性检查 → RPM/SU 换算 → 注入应力。</p>
  *
  * <p>使用 {@link LivingItemStressOutput#livingItem$applyStress} 统一接口，
@@ -25,7 +25,7 @@ public class StressOutputManager {
     public static final float BASE_RPM = 8.0f;
     public static final float BASE_SU_CAPACITY = 32.0f;
 
-    public static void apply(Level level, BlockPos containerPos, ContainerStressData stressData) {
+    public static void apply(Level level, BlockPos containerPos, com.qiqi.li.living.api.StressSource stressData) {
         if (!CreateCompat.isLoaded()) return;
         if (level == null || level.isClientSide) return;
 

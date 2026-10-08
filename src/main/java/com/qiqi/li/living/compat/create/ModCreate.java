@@ -3,7 +3,7 @@ package com.qiqi.li.living.compat.create;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
 
-import com.qiqi.li.living.domain.water.ContainerStressData;
+import com.qiqi.li.living.api.StressSource;
 
 /**
  * 活物品与 Create 模组的集成入口。
@@ -20,7 +20,7 @@ public class ModCreate {
         if (!CreateCompat.isLoaded()) return;
     }
 
-    public static void updateStressOutput(Level level, BlockPos containerPos, ContainerStressData stressData) {
+    public static void updateStressOutput(Level level, BlockPos containerPos, com.qiqi.li.living.api.StressSource stressData) {
         StressOutputManager.apply(level, containerPos, stressData);
     }
 }

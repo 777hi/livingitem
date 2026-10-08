@@ -23,7 +23,7 @@ import net.minecraft.world.item.ItemStack;
  * 应力计算在 ContainerFluidData.recalculate() 之后执行，
  * 读取 BFS 水流状态计算每个水车的力矩。
  */
-public class ContainerStressData {
+public class ContainerStressData implements com.qiqi.li.living.api.StressSource {
 
     /**
      * 容器应力的 key（tick 级：每 tick 重建，tick 末写回 BE 供 Create 读取）。
