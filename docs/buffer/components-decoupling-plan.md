@@ -2,20 +2,23 @@
 
 *创建: 2026-10-08 · 状态: 📋 **调研完成，待拍板**（尚未改任何代码）*
 
-> ### 📌 当前状态：只出方案，未动代码
+> ### ✅ 当前状态：**已完成 —— R1 61 → 34，`components → domain` 归零**
 >
 > | 项 | 状态 |
 > |---|---|
-> | 现状核算 | ✅ 35 个组件 / 123 个调用点 / 53 个文件 / **27 条 R1** |
-> | 药方设计 | ✅ 见 §3（组件定义**进各 Data 类**，靠同 `<clinit>` 保证安全） |
-> | 代码改动 | ❌ **未开始**（等拍板） |
+> | 现状核算 | ✅ 35 个组件 / 123 个调用点 / 27 条 R1 |
+> | 药方设计 | ✅ 见 §3（**已修正**：定义放 `XxxComponents`，不是 Data 类） |
+> | 代码改动 | ✅ **已完成**（7 个提交，R1 61 → 34） |
+> | `LivingComponents` | ✅ 321 行 → **78 行**，只剩 4 个框架级注册项，**零 domain import** |
+>
+> **实施记录与踩坑见 §8。**
 
 ---
 
 ## 0. 一句话结论
 
-`LivingComponents` 是**当前 R1 最大的一块**（27 条，占剩余 61 条的 44%）。
-它是 A1 迁移（2026-09-28）**有意集中**的结果 —— 而**集中的理由（消灭静态初始化时序问题）今天依然成立**
+`LivingComponents` 是**当时 R1 最大的一块**（27 条，占 61 条的 44%）。
+它是 A1 迁移（2026-09-28）**有意集中**的结果 —— 而**集中的理由（注册时序）今天依然成立**
 ⇒ 所以拆解方案**必须保留那个保证**，不能只是「把常量搬走」。
 
 ---
@@ -61,21 +64,21 @@
 
 ---
 
-## 3. 药方：组件定义**放进各自的 `XxxData` 类**
+## 3. 药方：组件定义放进**各领域的 `XxxComponents`**
+
+> ⚠️ **本节初判有误，已修正**（见 §8 踩坑记录）。
+> 初版认为「放 `XxxData` 类最安全（定义与 `of()` 同 `<clinit>`）」—— **实测不可行**：
+> `DeferredRegister.register(...)` 必须在 `RegisterEvent` **之前**调用，而 Data 类的 `<clinit>`
+> 由**首次使用**触发（可能在 `RegisterEvent` 之后）⇒ 抛
+> `Cannot register new entries after RegisterEvent has been fired`。
 
 ### 核心洞察
 
-现状里每个组件都被**它自己的 Data 类**使用：
+**触发时机由「谁在构造阶段被引用」决定**：
+- `LivingItem` 构造里 `XxxComponents.REG.register(bus)` ⇒ 加载 `XxxComponents` ⇒ 它的 `<clinit>` **在构造阶段跑** ✓
+- 组件的 `of()` / `set()` 是**方法**（运行时才调用）⇒ 不会在 `<clinit>` 里反向触发 ✓
 
-```java
-// LivingButtonData.of(stack) —— 同一个类里用同一个组件
-return LivingItemManager.getData(stack, LivingComponents.LIVING_BUTTON_DATA.value(), DEFAULT);
-```
-
-⇒ 如果把组件定义**搬进 `LivingButtonData` 自己**，那么：
-- 「定义组件」与「使用组件」落在**同一个 `<clinit>`** ⇒ 原子完成 ✓
-- `of()` 里读的是**同类**的静态字段 ⇒ **不可能产生循环初始化** ✓
-- 这正是 A1 那句话想保证的性质，只是粒度从「全库一个类」缩到「每个 Data 类」
+⇒ 所以组件定义放 `XxxComponents`（领域内的独立登记类），**它的 `<clinit>` 由 `LivingItem` 构造触发** ✓
 
 ### 具体形态
 
@@ -174,3 +177,51 @@ LivingComponentRegistries.add(RedstoneComponents.REG);
 | **P1** | **是否开工**？若开工，按 §4 的领域顺序分批做，还是先只做 1~2 个领域试水？ |
 | **P2** | 组件定义的落点：**进 `XxxData` 类**（推荐 —— 同 `<clinit>` 最安全），还是独立 `XxxComponents` 类？ |
 | **P3** | `LivingComponents` 拆分后**改名**吗？（如 `FrameworkComponents`，语义更准） |
+
+---
+
+## 8. 实施记录（2026-10-08）
+
+### 8.1 结果
+
+**R1 61 → 34（-27）**，`components → domain` **全部归零**；`LivingComponents` **321 → 78 行**。
+
+| 步 | 提交 | 领域 | 消边 |
+|---|---|---|---|
+| 机制 + 试水 | `4e9eb4b` 之后 | 9 个总线类 + `ender` | 1 |
+| 2 | `a9ced7d` | `tnt` / `farmland` / `furnace` / `hopper` | 5 |
+| 3 | `6db6d1f` | `water` / `power` | 7 |
+| 4 | `c264759` | `tools` | 4 |
+| 5 | `d645f7c` | `redstone` | 11 |
+
+**每步 551 全绿 + 基线收紧。**
+
+### 8.2 ⚠️ 三个必须记住的坑
+
+**坑 1：注册时机（本节 §3 初判被实测推翻）**
+
+`DeferredRegister.register(...)` 必须在 `RegisterEvent` **之前**调用。
+组件定义放 Data 类 ⇒ 其 `<clinit>` 由**首次使用**触发 ⇒ 可能太晚 ⇒
+`IllegalStateException: Cannot register new entries after RegisterEvent has been fired`
+（表现为**测试 JVM 启动失败**）。
+
+⇒ 放 `XxxComponents`，其 `<clinit>` 由 `LivingItem` 构造的 `REG.register(bus)` 触发 ✓
+
+**坑 2：搬组件会制造新违规（与计划 ④ 同款）**
+
+- `LivingItemManager`（L0 契约层）里有 5 个**领域便利方法**（`isFurnaceBurning` /
+  `setFurnaceBurning` / `isFarmlandMoist` / `setFarmlandMoist` / `getToolDigTicks`）⇒
+  组件搬到 L3 后，这些调用会变成 **L0 → L3 新增违规**。
+  ⇒ 顺带把方法也迁到领域（`FurnaceComponents.isBurning` / `FarmlandComponents.isMoist` /
+  `ToolComponents.getDigTicks`）—— 它们本来就该在领域层。
+- `LIVING_HOPPER_FILTER` 的类型 `FilterData` 属 `transfer`（L2），与框架侧同层
+  ⇒ **刻意留在 `LivingComponents`**，不搬（否则 L2 → L3 反向依赖）。
+
+**坑 3：注册重复** —— 初版同时在 `HopperComponents` 和 `LivingComponents` 定义了
+`LIVING_HOPPER_FILTER` ⇒ `Adding duplicate key` ⇒ 已删除领域侧那份。
+
+### 8.3 新增的机制
+
+- **9 个领域各建 `XxxComponents`**（含 `REG`；`water` / `power` 另含 `ATTACH_REG`）
+- `LivingItem` **构造阶段**逐个 `XxxComponents.REG.register(bus)`（**早于** `commonSetup` 的领域注册）
+- 领域组件定义的模板与理由见 §3 与 `EnderComponents` 的类注释

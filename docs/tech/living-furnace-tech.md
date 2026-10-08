@@ -157,8 +157,8 @@ public void tick(List<SlotEntry> entries, ContainerContext context, TickContext 
 
         // 5. 燃烧状态翻转 → 写 LIVING_FURNACE_BURNING 标志组件 + 槽位同步（图标切换）
         boolean nowBurning = data.fuel().isBurning();
-        if (nowBurning != LivingItemManager.isFurnaceBurning(stack)) {
-            LivingItemManager.setFurnaceBurning(stack, nowBurning);
+        if (nowBurning != FurnaceComponents.isBurning(stack)) {
+            FurnaceComponents.setBurning(stack, nowBurning);
             context.syncSlotToClients(slot, stack);
         }
         // （方向变化时的 DataComponent 写入与同步此处省略）

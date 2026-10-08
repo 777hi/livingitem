@@ -14,15 +14,21 @@ import java.util.UUID;
 import com.qiqi.li.living.transfer.FilterData;
 
 /**
- * 全部持久化类型的注册站（A1 迁移，2026-09-28）—— 原散在 LivingItemManager（api 包）
- * 的组件/附件常量整体迁此，使 api 面不再牵出 domain 类型。
+ * <b>框架级</b>持久化类型的注册站（A1 迁移 2026-09-28；2026-10-08 拆解后只剩框架级）。
  *
- * <p>本类是<b>纯注册站</b>：每个常量 2 行（机制要求 DeferredRegister 集中挂总线），
- * 无逻辑、不随功能增长。读写数据的便捷访问器在各 Data 类自己的 of() / set()；
- * 框架级组件（IS_LIVING、工具 owner 等原始类型组件）仍留在 LivingItemManager。</p>
+ * <p>历史：A1 迁移时全部 35 个组件/附件常量集中于此，使 api 面不再牵出 domain 类型；
+ * 但集中也让 {@code components}（L2）反向认识 8 个领域（27 条 R1）。2026-10-08 把
+ * <b>领域组件</b>拆回各自的 {@code XxxComponents}（同领域内，由 {@code LivingItem}
+ * 构造阶段挂总线），本类只保留<b>不依赖任何领域类型</b>的框架级组件。</p>
  *
- * <p>⚠️ 为什么常量集中在一个类：静态初始化顺序由 JVM 决定、无法声明 ——
- * 一个类一个 &lt;clinit&gt; 原子完成，从结构上消灭注册时序问题。</p>
+ * <p>现存 4 项：{@code is_living} / {@code living_tool_owner} / {@code living_tool_owner_name}
+ * （原始类型），以及 {@code living_hopper_filter}（类型 {@code FilterData} 属 {@code transfer}，
+ * 与本类同层 ⇒ 留在框架侧不产生跨层依赖）。</p>
+ *
+ * <p>⚠️ <b>领域组件不要往这里加</b> —— 加回一个就重新产生一条 {@code components → domain} 边。
+ * 新组件请定义在<b>所属领域的 {@code XxxComponents}</b> 里 —— 那里由 {@code LivingItem}
+ * 构造阶段挂总线，保证 {@code DeferredRegister.register} 早于 {@code RegisterEvent}
+ * （否则抛 {@code Cannot register new entries after RegisterEvent has been fired}）。</p>
  */
 public final class LivingComponents {
     public static final DeferredRegister<DataComponentType<?>> DATA_COMPONENT_TYPES =
