@@ -36,7 +36,6 @@ import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
 import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
-import com.qiqi.li.living.domain.ender.EnderChannelRegistry;
 import com.qiqi.li.living.compat.create.StressOutputManager;
 import com.qiqi.li.living.domain.water.ContainerFluidData;
 import com.qiqi.li.living.perf.PerfMetrics;
@@ -520,22 +519,19 @@ public class ContainerLivingItemHandler {
             long funcTickEndNanos = System.nanoTime();
             PerfMetrics.recordPhase("func_tick", funcTickEndNanos - scanEndNanos);
 
-            // 阶段 3：EnderChannel 脏通道刷新 + 水桶冗余流清理
-            flushEnderChannels(tick, grouped);
-
-            long flushChEndNanos = System.nanoTime();
-            PerfMetrics.recordPhase("flush_channels", flushChEndNanos - funcTickEndNanos);
-
-            // 阶段 4：容器级数据（流体 → 水车 → 红石 → 电力，按 prio 排序传播）
+            // 阶段 3：容器级数据（流体 → 水车 → 红石 → 电力，按 prio 排序传播）
+            // ⚠️ 原「EnderChannel 脏通道刷新」阶段已移出（2026-10-08 计划 ⑤）——
+            // 它是全局幂等动作，改为在 L4 `LivingItem.onServerTick` 每 tick 收口，
+            // 不再每容器重复调用（见 docs/buffer/container-domain-decoupling-plan.md）。
             // 2026-10-08：原 zeroResidualRedstone（1b-2c 的「残留红石归零」兜底）已删 ——
             // LivingRedstoneFunction 改为自维持后恒在 grouped 里，该兜底的守卫条件恒真、方法体永不执行；
             // 归零由它的驱动守卫接管（有 REDSTONE 数据 ⇒ 跑 calculate ⇒ hasAny=false 分支归零）。
             runContainerDataTicks(grouped, context, tick);
 
             long containerDataEndNanos = System.nanoTime();
-            PerfMetrics.recordPhase("container_data", containerDataEndNanos - flushChEndNanos);
+            PerfMetrics.recordPhase("container_data", containerDataEndNanos - funcTickEndNanos);
 
-            // 阶段 5：写回 BlockEntity（应力 + 流体）与过期清理
+            // 阶段 4：写回 BlockEntity（应力 + 流体）与过期清理
             writebackBlockEntities(context, tick);
             incrementCleanup();
 
@@ -593,17 +589,6 @@ public class ContainerLivingItemHandler {
         for (var entry : grouped.entrySet()) {
             entry.getKey().tick(entry.getValue(), context, tick, level);
         }
-    }
-
-    /**
-     * 刷新 EnderChannel 脏通道，并清理无活水桶容器中的冗余流数据。
-     */
-    private static void flushEnderChannels(TickContext tick,
-                                            Map<LivingItemFunction, List<LivingItemFunction.SlotEntry>> grouped) {
-        EnderChannelRegistry.getInstance().flushDirtyChannels();
-        // （桶源退役，2026-10-03）原「无活水桶清空流体冗余流」逻辑删除：
-        // 源唯一形态为派生源（generatedSources），流动表每 tick 由 BFS 重播种，
-        // 无源容器 flows 自然为空，无需按物品在场清理。
     }
 
     /**
