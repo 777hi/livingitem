@@ -7,6 +7,12 @@ import net.neoforged.neoforge.items.wrapper.InvWrapper;
 
 import com.qiqi.li.living.domain.ender.LivingEnderChestFunction;
 
+/**
+ * 活末影箱的 Forge 物品处理器。
+ *
+ * <p>若活末影箱已绑定玩家，则把读写作代理到该玩家的末影箱背包（{@code IItemHandler}），
+ * 供外部传输系统访问；未绑定或玩家离线时槽位为 0、读写无效。</p>
+ */
 public class LivingEnderChestItemHandler implements IItemHandler {
 
     private final ItemStack enderChestStack;

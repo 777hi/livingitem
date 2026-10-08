@@ -29,6 +29,12 @@ import com.qiqi.li.living.domain.ender.EnderChannelData;
 import com.qiqi.li.living.domain.ender.LivingEnderChestData;
 import com.qiqi.li.living.domain.hopper.LivingHopperFunction;
 
+/**
+ * 活末影箱的功能实现。
+ *
+ * <p>玩家在末影箱 GUI 内活化时绑定到该玩家（直连其末影箱背包），取消活化解绑；每 tick 通过
+ * {@code EnderChannelRegistry} 维护与活漏斗之间的路由表。未绑定时落回「路由 / 公共频道」模式——这是其一等公民形态。</p>
+ */
 public class LivingEnderChestFunction implements LivingItemFunction {
 
     public static final String ID = "living_ender_chest";
