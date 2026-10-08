@@ -551,7 +551,7 @@ HTML = r"""<!DOCTYPE html>
   <label><input type="checkbox" id="eUse" checked>引用</label>
   <label><input type="checkbox" id="eMixin" checked>Mixin</label>
   <label><input type="checkbox" id="eLabel" checked>标签</label>
-  <label><input type="checkbox" id="eStar">只连选中</label>
+  <label><input type="checkbox" id="eStar" checked>只连选中</label>
 </div>
 <div id="wrap">
   <canvas id="c"></canvas>
@@ -833,7 +833,7 @@ function visibleEdges(){
 function nodeVisible(n){ return !hidden[n.module]; }
 
 var showLabel=true;
-var starMode=false;
+var starMode=true;
 function draw(){
   ctx.setTransform(DPR,0,0,DPR,0,0);
   ctx.clearRect(0,0,W,H);
