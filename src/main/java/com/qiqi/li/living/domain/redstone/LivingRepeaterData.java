@@ -15,6 +15,13 @@ import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.component.TooltipProvider;
 import com.qiqi.li.living.model.Pos2D;
 
+/**
+ * 活中继器的数据组件。
+ *
+ * <p>封装朝向（{@link Pos2D}）、延迟档位、充能状态、延迟计时与锁定状态，
+ * 延迟档位经 {@link #cycleDelay} 在 1–4 档间切换。
+ * 经 {@link #of} / {@link #set} 读写，并实现编解码（{@code CODEC} / {@code STREAM_CODEC}）与悬浮提示接口。</p>
+ */
 public record LivingRepeaterData(
     Pos2D direction,
     int delay,

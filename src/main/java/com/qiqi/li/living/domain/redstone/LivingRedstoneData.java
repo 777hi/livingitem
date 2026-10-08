@@ -14,6 +14,13 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.component.TooltipProvider;
 
+/**
+ * 活红石粉的数据组件。
+ *
+ * <p>封装信号强度、充能状态与四向连接位掩码（{@code CONN_UP}/{@code CONN_DOWN}/{@code CONN_LEFT}/{@code CONN_RIGHT}），
+ * 连接位用于决定红石粉向哪些相邻方块传播。
+ * 经 {@link #of} / {@link #set} 读写，并实现编解码（{@code CODEC} / {@code STREAM_CODEC}）与悬浮提示接口。</p>
+ */
 public record LivingRedstoneData(
     int signalStrength,
     boolean isPowered,

@@ -14,6 +14,12 @@ import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.component.TooltipProvider;
 import com.qiqi.li.living.model.Pos2D;
 
+/**
+ * 活切制铜块的数据组件。
+ *
+ * <p>封装信号输入方向与输出方向（均为 {@link Pos2D}），用于引导红石信号在切制铜块上的走向。
+ * 经 {@link #of} / {@link #set} 读写，并实现编解码（{@code CODEC} / {@code STREAM_CODEC}）与悬浮提示接口。</p>
+ */
 public record LivingCutCopperData(
     Pos2D inputDir,
     Pos2D outputDir

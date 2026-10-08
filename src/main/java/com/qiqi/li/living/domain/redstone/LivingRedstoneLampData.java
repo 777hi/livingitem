@@ -14,6 +14,12 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.component.TooltipProvider;
 
+/**
+ * 活红石灯的数据组件。
+ *
+ * <p>封装点亮状态（{@code lit}）。
+ * 经 {@link #of} / {@link #set} 读写，并实现编解码（{@code CODEC} / {@code STREAM_CODEC}）与悬浮提示接口。</p>
+ */
 public record LivingRedstoneLampData(
     boolean lit
 ) implements TooltipProvider {

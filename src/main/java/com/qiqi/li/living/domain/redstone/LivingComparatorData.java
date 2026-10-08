@@ -15,6 +15,12 @@ import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.component.TooltipProvider;
 import com.qiqi.li.living.model.Pos2D;
 
+/**
+ * 活比较器的数据组件。
+ *
+ * <p>封装比较器朝向（{@link Pos2D}）、减法模式与主次输出端的充能状态，
+ * 经 {@link #of} / {@link #set} 读写，并实现编解码（{@code CODEC} / {@code STREAM_CODEC}）与悬浮提示接口。</p>
+ */
 public record LivingComparatorData(
     Pos2D direction,
     boolean subtractMode,

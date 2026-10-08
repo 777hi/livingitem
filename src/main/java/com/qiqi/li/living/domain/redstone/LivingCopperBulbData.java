@@ -14,6 +14,12 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.component.TooltipProvider;
 
+/**
+ * 活铜灯泡的数据组件。
+ *
+ * <p>封装记录信号强度与上一刻输入，据此决定灯泡是否点亮（{@link #isLit}）。
+ * 经 {@link #of} / {@link #set} 读写，并实现编解码（{@code CODEC} / {@code STREAM_CODEC}）与悬浮提示接口。</p>
+ */
 public record LivingCopperBulbData(
     int recordedSignal,
     boolean prevInput

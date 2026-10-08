@@ -15,6 +15,12 @@ import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.component.TooltipProvider;
 import com.qiqi.li.living.model.Pos2D;
 
+/**
+ * 活红石火把的数据组件。
+ *
+ * <p>封装朝向（{@link Pos2D}）与是否点亮（{@code isLit}）。
+ * 经 {@link #of} / {@link #set} 读写，并实现编解码（{@code CODEC} / {@code STREAM_CODEC}）与悬浮提示接口。</p>
+ */
 public record LivingRedstoneTorchData(
     Pos2D direction,
     boolean isLit

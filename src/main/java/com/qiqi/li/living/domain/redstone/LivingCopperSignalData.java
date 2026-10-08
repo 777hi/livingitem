@@ -14,6 +14,12 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.component.TooltipProvider;
 
+/**
+ * 活铜信号源的数据组件。
+ *
+ * <p>封装当前向外输出的信号强度（{@code signalStrength}）。
+ * 经 {@link #of} / {@link #set} 读写，并实现编解码（{@code CODEC} / {@code STREAM_CODEC}）与悬浮提示接口。</p>
+ */
 public record LivingCopperSignalData(
     int signalStrength
 ) implements TooltipProvider {
