@@ -16,6 +16,13 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
+/**
+ * 把活箱子收纳的物品纳入原版合成摆放流程。
+ *
+ * <p>拦截 {@code recipeClicked} 后把活箱子内容补充到 {@code StackedContents}，
+ * 并在 {@code moveItemToGrid} 时优先从活箱子抽取所需物品，
+ * 使活箱子能像普通背包一样参与快捷合成。</p>
+ */
 @Mixin(ServerPlaceRecipe.class)
 public abstract class ServerPlaceRecipeMixin {
 

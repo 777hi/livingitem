@@ -15,6 +15,12 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
+/**
+ * 把活红石账本（{@link ContainerRedstoneData}）的信号接入原版红石传播。
+ *
+ * <p>拦截 {@code getSignal}，当方块位置对应容器存在边界出边信号时，
+ * 取其与 vanilla 信号的最大值返回，使活红石能向相邻方块供电。</p>
+ */
 @Mixin(BlockBehaviour.BlockStateBase.class)
 public abstract class BlockStateBaseMixin {
 

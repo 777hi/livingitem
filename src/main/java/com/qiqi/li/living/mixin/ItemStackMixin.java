@@ -15,6 +15,13 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
+/**
+ * 让活物品在物品栈层面表现正确。
+ *
+ * <p>两处注入：{@code getTooltipImage} 为活箱子提供收纳内容预览；
+ * {@code isSameItemSameComponents} 在比较堆叠时忽略各功能声明的运行时状态组件，
+ * 保证活物品在背包内可正常堆叠。</p>
+ */
 @Mixin(ItemStack.class)
 public abstract class ItemStackMixin {
 

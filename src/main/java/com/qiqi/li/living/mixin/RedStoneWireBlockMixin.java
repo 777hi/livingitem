@@ -13,6 +13,12 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
+/**
+ * 让红石线能连接到活红石容器。
+ *
+ * <p>拦截 {@code getConnectingSide}，当相邻方块存在红石账本（{@link ContainerRedstoneData}）时，
+ * 返回侧向连接（{@code RedstoneSide.SIDE}），使红石粉与活物品之间能建立视觉与逻辑连接。</p>
+ */
 @Mixin(RedStoneWireBlock.class)
 public abstract class RedStoneWireBlockMixin {
 

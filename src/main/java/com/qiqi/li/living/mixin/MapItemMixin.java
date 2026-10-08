@@ -11,6 +11,12 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+/**
+ * 让活地图在玩家处于「跳过更新」场景时停止 tick。
+ *
+ * <p>两处注入分别拦截 {@code inventoryTick} 的整体调用与 {@code update} 前的实际刷新，
+ * 由 {@link MapUpdateSkipHelper} 决定是否需要跳过，避免无谓的地图重绘开销。</p>
+ */
 @Mixin(MapItem.class)
 public class MapItemMixin {
 

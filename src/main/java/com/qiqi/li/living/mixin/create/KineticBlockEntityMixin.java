@@ -11,6 +11,13 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
+/**
+ * 将活物品产生的应力注入 Create 的 {@link KineticBlockEntity}。
+ *
+ * <p>实现 {@link LivingItemStressOutput}，用 {@link StressStateMachine} 维护 RPM 与应力容量，
+ * 并在 {@code getGeneratedSpeed} / {@code isSource} / {@code calculateAddedStressCapacity} /
+ * {@code calculateStressApplied} 等处覆盖 Create 的默认值，使活物品表现为动力源。</p>
+ */
 @Mixin(KineticBlockEntity.class)
 public abstract class KineticBlockEntityMixin implements LivingItemStressOutput {
 
