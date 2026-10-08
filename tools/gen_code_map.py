@@ -551,6 +551,7 @@ HTML = r"""<!DOCTYPE html>
   <label><input type="checkbox" id="eUse" checked>引用</label>
   <label><input type="checkbox" id="eMixin" checked>Mixin</label>
   <label><input type="checkbox" id="eLabel" checked>标签</label>
+  <label><input type="checkbox" id="eStar">只连选中</label>
 </div>
 <div id="wrap">
   <canvas id="c"></canvas>
@@ -832,6 +833,7 @@ function visibleEdges(){
 function nodeVisible(n){ return !hidden[n.module]; }
 
 var showLabel=true;
+var starMode=false;
 function draw(){
   ctx.setTransform(DPR,0,0,DPR,0,0);
   ctx.clearRect(0,0,W,H);
@@ -906,11 +908,19 @@ function draw(){
   for(var i=0;i<es.length;i++){
     var e=es[i], a=idx[e.s], b=idx[e.d];
     if(!a||!b||!nodeVisible(a)||!nodeVisible(b))continue;
-    // 高亮判定：**两端都在高亮集合里**才算这条线「在邻域内」。
+    // 高亮判定：**两端都在高亮集合里**才算这条线「在邻域内」（默认行为）。
     // ⚠️ 不能写成 `selUp[e.s] || selDown[e.d]` 之类 —— 那会把「上游的上游」
     // 也点亮 ⇒ 深度 1 时线跑到 2 层（2026-10-06 用户实测发现）。
-    var rel = sel ? ((e.s===sel||selUp[e.s]||selDown[e.s]) &&
-                     (e.d===sel||selUp[e.d]||selDown[e.d])) : false;
+    // 「只连选中」模式（starMode）：只画**与选中节点相连的边**（星状），
+    // 高亮节点之间彼此相连的边不画（2026-10-08 用户要求，默认关闭）。
+    var rel;
+    if(!sel){ rel=false; }
+    else if(starMode){
+      rel = (e.s===sel && (e.d===sel||selUp[e.d]||selDown[e.d])) ||
+            (e.d===sel && (e.s===sel||selUp[e.s]||selDown[e.s]));
+    } else {
+      rel = ((e.s===sel||selUp[e.s]||selDown[e.s]) && (e.d===sel||selUp[e.d]||selDown[e.d]));
+    }
     // 层次视图：**下层依赖上层 = 违规** ⇒ 标红（这是「层次在哪断的」）
     var viol = (viewMode==='layer') && (a.layer!==undefined) && (b.layer!==undefined) && (a.layer<b.layer);
     // 领域互依赖（R3）：同层（L3）且**跨领域** ⇒ 标橙（2026-10-08 用户建议：
@@ -1121,6 +1131,7 @@ function bindHead(){
     document.getElementById(id).addEventListener('change',draw);
   });
   document.getElementById('eLabel').addEventListener('change',function(){showLabel=this.checked;draw();});
+  document.getElementById('eStar').addEventListener('change',function(){starMode=this.checked;draw();});
   document.getElementById('depth').addEventListener('input',function(){
     document.getElementById('depthv').textContent=this.value;
     if(sel){computeSel();renderPanel();draw();}
