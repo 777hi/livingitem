@@ -20,6 +20,12 @@ import net.minecraft.world.level.saveddata.maps.MapId;
 import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
+/**
+ * 活地图 GUI 传送数据包。
+ *
+ * <p>携带被点击地图组的左上角槽位索引与归一化 UV 坐标，由客户端在容器界面点击活地图时发往服务端，
+ * 触发 {@link MapTeleportExecutor} 完成传送。</p>
+ */
 public record LivingMapGuiTeleportPacket(
     int topLeftSlotIndex,
     float u,

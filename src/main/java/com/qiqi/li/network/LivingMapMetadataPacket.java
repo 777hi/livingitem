@@ -7,6 +7,12 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 
+/**
+ * 活地图元数据同步数据包。
+ *
+ * <p>由服务端在玩家 tick 时下发，携带地图中心坐标与所在维度，
+ * 供客户端 {@link LivingMapClientCache} 缓存以推算准心目标点。</p>
+ */
 public record LivingMapMetadataPacket(
     int mapId,
     int centerX,

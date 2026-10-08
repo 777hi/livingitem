@@ -16,6 +16,12 @@ import net.minecraft.world.item.ItemStack;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * 服务端自定义数据包处理入口。
+ *
+ * <p>集中处理各客户端 → 服务端数据包（如活工具记忆清除、活箱子存取、活地图传送等），
+ * 调用对应功能完成逻辑或回发响应；各处理方法为静态入口，按数据包类型分发。</p>
+ */
 public class ServerPacketHandler {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ServerPacketHandler.class);
