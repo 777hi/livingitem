@@ -15,9 +15,57 @@
 
 ---
 
+## 2026-10-09
+
+> 架构分层收尾（续 10-08 框架侧）—— 反向边清到「只剩低 ROI 的层归属微调」。
+
+- 🏗 **架构分层收尾：`transfer` / `compat` / `(root)` 反向边清零 —— R1 34 → 15**
+  （连同 10-08 深夜的 ⑤/④/components，**底座（L1/L2）→ 领域 = 0**）：
+
+  - **`transfer → domain`（A 类「抽象缺失」）**：新增 `transfer/ContainerLikeItems`（容器类活物品**谓词注册表**）；
+    `Chest` / `Ender` / `Farmland` 三个 `*Registration` 各自登记 Provider / 谓词 / 交互
+    ⇒ `SlotAccessorFactory` 的 `static{}` 不再认识领域实现。⚠️ `defaultProvider` 匹配一切、**必须最后**
+    ⇒ 改在 `create()` 的兜底位置调用（领域 Provider 在 `commonSetup` 才注册）。
+  - **`compat → water`**：新增 `api/StressSource`（`isEmpty` + `getNetStress`），`ContainerStressData` 实现它。
+  - **`domain → (root)` / `components → (root)`**：日志门面统一 `ModLog`；命名空间常量改用 `LivingMod.ID`。
+  - **`api → domain`（注释假边）**：`LivingItemManager` 的 `LivingToolAction` import **未被代码使用**、
+    仅 javadoc `{@link}` 引用 ⇒ 删 import + 降为纯文字。
+
+  ⚠️ **通用判据**：**注释假边** —— 边判据含注释 tokens，javadoc 里写具体类名
+  （哪怕写的是「本类不认识 `XxxData`」）**也会产生一条依赖边** ⇒ 去耦合说明改用**描述性措辞**。
+  验收：`551 全绿`、R1 **15**、R3 **10**、`doc_check` 9/9。
+
+- 🧹 **文档卫生**：3 份已完成计划归档进 `docs/archive/`
+  （`components-decoupling-plan` / `container-domain-decoupling-plan` / `redstone-driver-consolidation-plan`，
+  均加归档指针）；`architecture-layering-plan` / `open-plan` 的**过期状态行**改为实际状态
+  （原写「未定案 / 未开工」，实际已完成）。`doc_check` 9/9。
+
+- 🧹 **清理 `LivingItemManager` 的孤儿 javadoc**：A1 迁移残留的 7 个空壳 `/** */` 块
+  （底下无对应成员），**361 → 277 行**。`551 全绿`。
+
+---
+
 ## 2026-10-08
 
 > 框架侧（流体侧已于 10-07 完工，此后不再改动）。
+
+- 🏗 **架构分层收尾（一）：三块反向边清零 —— R1 91 → 34**（10-08 深夜完成 ⑤/④/components）：
+
+  - **⑤ `container` 去领域耦合（-22）**：容器内核不再认识任何领域 —— 4 个容器数据 key 归各领域数据类
+    （删 `ContainerDataKeys`）；新增契约接口 `api/ContainerDataLifecycle` / `api/FluidPresence`；
+    新增生命周期钩子 `ContainerTickHook`（对标 `SnapshotProvider`）；`TickContext` 的跨领域访问改
+    **注册制中继**（⚠️ 直接删会**转成 R3 违规**，见方案 §10）；末影刷脏移到 L4 每 tick 收口。
+    细化方案（已归档）：[container-domain-decoupling-plan.md](container-domain-decoupling-plan.md)。
+  - **④ `network` 拆包（-8）**：5 个领域专用网络包从 `network/`（L4）搬回各自领域（L3）——
+    `EnderChannelSyncPacket` / `FluidFlowSyncPacket` / `LivingMapMetadataPacket` /
+    `LivingTool{Host,Player}Packet`；顺带新增 `api/LivingMod.ID`（避免搬包后 L3→L4 新增违规）。
+  - **components 拆解（-27）**：`LivingComponents` **321 → 78 行**，只剩 4 个框架级注册项、**零 domain import**。
+    9 个领域各建 `XxxComponents`（自带 `DeferredRegister`），`LivingItem` 构造阶段挂总线。
+    ⚠️ **关键坑**：组件定义**不能**放 `XxxData` 类 —— `DeferredRegister.register` 必须早于
+    `RegisterEvent`，而 Data 类的 `<clinit>` 由首次使用触发（可能已太晚，表现为**测试 JVM 启动失败**）
+    ⇒ 放 `XxxComponents`。细化方案（已归档）：[components-decoupling-plan.md](components-decoupling-plan.md)。
+
+  验收：`551 tests / 0 failures`；`check_layers.py` R1 **91 → 34**、R3 10；`doc_check` 9/9。
 
 - 🔧 **可复现构建修复：GitHub Actions 从「每次失败」变为可构建**。根因**两个**：
   ① `compileOnly files("libs/sable-*.jar")` 的 jar 在被 gitignore 的 `libs/` 里 ⇒
