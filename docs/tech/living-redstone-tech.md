@@ -983,7 +983,7 @@ Minecraft 原版红石粉不会主动连接容器方块。通过 `RedStoneWireBl
 │  │    │                                                             │ │
 │  │    ├── 额外直读：邻居容器A                                        │ │
 │  │    │     ContainerRedstoneData neighborData =                     │ │
-│  │    │         getRedstoneDataByPos(level, neighborPos)             │ │
+│  │    │         peekContainerDataByPos(level, neighborPos, KEY)     │ │
 │  │    │     if (neighborData != null) {                              │ │
 │  │    │         signal = max(signal,                                 │ │
 │  │    │           neighborData.getBoundarySignal(                     │ │
@@ -1045,7 +1045,7 @@ injectExternalInputs() —— 每传播周期调用
   → 对每个位置，遍历 4 个水平方向:
     → level.getSignal(neighborPos, worldDir)  // 原版路径
     → 额外检查邻居是否为容器:
-      → getRedstoneDataByPos(level, neighborPos)  // 直接读邻居容器数据
+      → peekContainerDataByPos(level, neighborPos, KEY)  // 直接读邻居容器数据
       → neighborData.getBoundarySignal(dir)  // 绕过原版 0-15 截断
     → worldToGrid(worldDir, facing) → faceInput[dir] = signal
 ```
@@ -1098,7 +1098,7 @@ injectExternalInputs(context):
       neighborState = level.getBlockState(neighborPos)
 
       if neighborState 是容器方块：
-        neighborData = ContainerLivingItemHandler.getRedstoneDataByPos(neighborPos)
+        neighborData = ContainerLivingItemHandler.peekContainerDataByPos(level, neighborPos, KEY)
         if neighborData != null：
           neighborFacing = CrossContainerTransfer.getBlockFacing(neighborState)
           neighborGridDir = CrossContainerTransfer.worldToGrid(worldDir.getOpposite(), neighborFacing)

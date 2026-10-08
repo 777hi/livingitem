@@ -2,19 +2,19 @@
 
 *创建: 2026-10-08 · 状态: 📋 **调研完成，待拍板**（尚未改任何代码）*
 
-> ### 📌 当前状态：**A / D / C(部分) 已实施 —— R1 91 → 82**；B / E 待做
+> ### ✅ 当前状态：**⑤ 全部完成 —— R1 91 → 69，`container → living/domain/*` 归零**
 >
 > | 项 | 状态 |
 > |---|---|
 > | 现状核算 | ✅ 精确到类对（20 条，见 §1） |
-> | 药方设计 | ✅ 三条原则 + 五步计划（见 §4/§5） |
-> | **A（key 归领域）** | ✅ 已做（`195b41a`，**消 5 条**：4 domain + 1 components） |
-> | **D（快照去 fluidData）** | ✅ 已做（`8e6184a`，**消 2 条**） |
-> | **C（SimpleContainerContext 便利方法）** | ⚠️ **部分**（`d828927`，消 2 条；RedstoneData 那条卡住） |
-> | **B（TickContext 便利方法）** | ❌ **不能简单删** —— 见 §10，会**转成 R3 违规** |
-> | **E（生命周期钩子）** | ❌ 待做（与 B 一起，需注册制机制） |
+> | **A（key 归领域）** | ✅ `195b41a`（消 5：4 domain + 1 components） |
+> | **D（快照去 fluidData）** | ✅ `8e6184a`（消 2） |
+> | **C（SimpleContainerContext）** | ✅ `d828927` + `4e9eb4b`（消 3） |
+> | **B（TickContext → 注册制 + 接口）** | ✅ `53169b8`（消 4） |
+> | **E（ContainerLivingItemHandler）** | ✅ `4e9eb4b` / `8e9d258` / `54bfa54` / `651a469`（消 8） |
 >
-> ⇒ 实际：**R1 91 → 82（-9）**；`container → domain` 剩 **12 条**。
+> ⇒ **R1 91 → 69**（-22）；`container → domain` **全部归零**；551 全绿 / doc_check 9/9 / 基线逐次收紧。
+> 实施详情与踩坑见 §10。
 >
 > 上游：本方案是 [architecture-layering-plan.md](architecture-layering-plan.md) §2 计划 **⑤** 的细化，
 > 同时回答该文 §6 **Q4**（「⑤ 抽什么接口？」）。
@@ -300,3 +300,39 @@ if (rd != null) rd.resetProcessedFlag();   // 每 tick 重置红石账本的 pro
 
 ⇒ **B / C残留 / E 应合并为一次「机制化」实施**（性质对标档 2），而不是「纯搬运」。
 当前 `container → domain` 剩 **12 条**（water 4 / power 3 / redstone 4 / ender 1）。
+
+### 10.5 ✅ 完成（2026-10-08）：container 对 domain 依赖归零
+
+在上述机制化方案基础上继续实施，**共 10 个提交**，R1 **91 → 69**：
+
+| 步 | 提交 | 内容 | 消边 |
+|---|---|---|---|
+| A | `195b41a` | key 归领域，删 `ContainerDataKeys` | 5 |
+| D | `8e6184a` | 删 `ContainerSnapshot.fluidData` | 2 |
+| C | `d828927` | 删 `SimpleContainerContext` 死方法 / 测试便利方法 | 2 |
+| E1 | `4e9eb4b` | 末影频道刷脏移到 L4 每 tick 收口 | 1 |
+| E2 | `8e9d258` | 泛化过期清理 + 泛化按位置查询 | 2 |
+| B | `53169b8` | `TickContext` 注册制 + `api/FluidPresence` | 4 |
+| C残留 | `4e9eb4b` | 红石账本归位改走 tick 钩子 | 1 |
+| E3 | `4e9eb4b` | 写回逻辑移入领域钩子（流体 / 应力 / 相位） | 2 |
+| E4 | `54bfa54` | 电力账本访问器移入领域 | 2 |
+| E5 | `651a469` | 流体数据取用移入水领域 | 1 |
+
+**新增的机制 / 契约**（全部对标既有先例，非新发明）：
+- `container/ContainerTickHook`（+ `ContainerTickHooks` 注册表）—— 对标 `SnapshotProvider`
+- `api/ContainerDataLifecycle` —— 框架按接口询问「数据是否活跃」
+- `api/FluidPresence` —— 跨领域消费者（活耕地）只依赖契约层
+- `ContainerContext.getOwnerPlayer()` —— 对齐 `living-tool-design.md` §2.1 ③ 的既有建议
+- `TickContext.registerSensorResolver` / `registerFluidPresenceResolver` —— 注册制中继
+
+**⚠️ 实施中新增的两条教训**（详见工具侧日工作日志）：
+1. **类初始化时机**：key 从「集中懒加载类」挪到「领域静态字段」⇒ 求值提前到**类加载**，
+   而 `DeferredHolder.value()` 必须等注册完成 ⇒ 抛 unbound value。修法：attachment 改
+   `Supplier` 延迟求值。表现形式是**测试 JVM 启动失败**（不是断言失败），易误判。
+2. **注释假边**：边判据是 tokens（**含注释**）—— 在 javadoc 里写「不认识 `XxxData`」
+   **反而制造了边**。本次清掉 4 处。
+
+**⚠️ 顺带发现的既有问题（未改行为，已记录在类注释）**：
+`ContainerLivingItemHandler.getPowerData` 的相位快照回填（`restoreInto`）**零调用者**
+⇒ 快照「只写（`ContainerPhaseWriteback`）不读」，回填路径当前未生效。逻辑已随迁移
+落到 `power/ContainerPowerAccess`；是否接上属**功能决策**，留待拍板。
