@@ -134,7 +134,7 @@ class NetworkTraversalTest {
             function.tickContainerData(entries, ctx, tick);
         }
 
-        return new Scenario(ctx, ctx.getOrCreatePowerData());
+        return new Scenario(ctx, ctx.getOrCreateContainerData(ContainerPowerData.KEY));
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -256,7 +256,7 @@ class NetworkTraversalTest {
             function.tickContainerData(entries, ctx, tick);
         }
 
-        ContainerPowerData power = ctx.getOrCreatePowerData();
+        ContainerPowerData power = ctx.getOrCreateContainerData(ContainerPowerData.KEY);
         GeneratorState fresh = power.getGenerator(0);
         GeneratorState oxidized = power.getGenerator(1);
 
@@ -377,7 +377,7 @@ class NetworkTraversalTest {
             function.tickContainerData(entries, ctx, tick);
         }
 
-        ContainerPowerData power = ctx.getOrCreatePowerData();
+        ContainerPowerData power = ctx.getOrCreateContainerData(ContainerPowerData.KEY);
         GeneratorState gen = power.getGenerator(1);
         assertTrue(gen != null, "应有发电机状态");
         assertEquals(4, gen.channel().bestPeriod(4), "发电机应锁相 4t（拉杆方波上升沿间隔）");

@@ -4,8 +4,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import com.qiqi.li.living.domain.power.ContainerPowerData;
-import com.qiqi.li.living.domain.water.ContainerFluidData;
 import com.qiqi.li.living.domain.redstone.ContainerRedstoneData;
 import com.qiqi.li.living.transfer.ContainerCompatibilityConfig;
 import net.minecraft.core.BlockPos;
@@ -447,22 +445,8 @@ public class SimpleContainerContext implements TickableContainerContext {
         }
     }
 
-    /**
-     * 获取或创建容器流体数据。
-     */
-    ContainerFluidData getOrCreateFluidData() {
-        return getOrCreateContainerData(ContainerFluidData.KEY);
-    }
-
     public ContainerRedstoneData getOrCreateRedstoneData() {
         return getOrCreateContainerData(ContainerRedstoneData.KEY);
-    }
-
-    /**
-     * 获取或创建容器红电数据（电力层账本，跨 tick 持久）。
-     */
-    public ContainerPowerData getOrCreatePowerData() {
-        return getOrCreateContainerData(ContainerPowerData.KEY);
     }
 
     /**

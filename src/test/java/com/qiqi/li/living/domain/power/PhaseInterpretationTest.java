@@ -94,7 +94,7 @@ class PhaseInterpretationTest {
             }
             function.tickContainerData(entries, ctx, new TickContext(ctx));
         }
-        return new Scenario(ctx, ctx.getOrCreatePowerData());
+        return new Scenario(ctx, ctx.getOrCreateContainerData(ContainerPowerData.KEY));
     }
 
     /** 同 run()，但逐 tick 累计发电量（drain 语义），用于冻结验证 */
@@ -110,7 +110,7 @@ class PhaseInterpretationTest {
             }
             function.tickContainerData(entries, ctx, new TickContext(ctx));
             for (LivingItemFunction.SlotEntry e : entries) {
-                GeneratorState g = ctx.getOrCreatePowerData().getGenerator(e.slotIndex());
+                GeneratorState g = ctx.getOrCreateContainerData(ContainerPowerData.KEY).getGenerator(e.slotIndex());
                 if (g != null) total += g.drainAndEndTick();
             }
         }
@@ -166,7 +166,7 @@ class PhaseInterpretationTest {
             function.tickContainerData(entries, ctx, new TickContext(ctx));
         }
 
-        ContainerPowerData power = ctx.getOrCreatePowerData();
+        ContainerPowerData power = ctx.getOrCreateContainerData(ContainerPowerData.KEY);
         assertTrue(power.getRegistry(4).isEmpty(), "非输入方向的信号不得派生任何相位");
         assertEquals(0, power.getGenerator(4).channel().bestN(4), "发电采样面应为输入方向单边，n=0");
         assertEquals(0.0, power.getGenerator(4).getEmaPowerRe(), 1e-9, "不应发电");
@@ -211,7 +211,7 @@ class PhaseInterpretationTest {
         for (long t = 0; t < 24; t++) {
             function.tickContainerData(entries, ctx, new TickContext(ctx));
         }
-        ContainerPowerData power = ctx.getOrCreatePowerData();
+        ContainerPowerData power = ctx.getOrCreateContainerData(ContainerPowerData.KEY);
 
         assertTrue(power.getRegistry(1).isEmpty(), "环上无种子，A 的注册表应恒空");
         assertTrue(power.getRegistry(2).isEmpty(), "环上无种子，B 的注册表应恒空");
@@ -280,11 +280,11 @@ class PhaseInterpretationTest {
             function.tickContainerData(entries, ctx, new TickContext(ctx));
         }
 
-        ChannelState ch = ctx.getOrCreatePowerData().getGenerator(1).channel();
+        ChannelState ch = ctx.getOrCreateContainerData(ContainerPowerData.KEY).getGenerator(1).channel();
         assertEquals(4, ch.bestPeriod(PREF), "应锁相 4t");
         assertEquals(3, ch.bestN(PREF), "真实 φ=1、φ=2 + 派生 Σ=3 → n=3");
 
-        List<DerivedPhase> reg = ctx.getOrCreatePowerData().getRegistry(1);
+        List<DerivedPhase> reg = ctx.getOrCreateContainerData(ContainerPowerData.KEY).getRegistry(1);
         assertEquals(1, reg.size(), "加法器应登记 1 条和驻波");
         assertEquals(3, reg.get(0).offset(), "Σφ = 1 + 2 = 3");
         assertEquals(DerivedPhase.KIND_ADD, reg.get(0).kind());
@@ -306,9 +306,9 @@ class PhaseInterpretationTest {
             function.tickContainerData(entries, ctx, new TickContext(ctx));
         }
 
-        ChannelState ch = ctx.getOrCreatePowerData().getGenerator(1).channel();
+        ChannelState ch = ctx.getOrCreateContainerData(ContainerPowerData.KEY).getGenerator(1).channel();
         assertEquals(2, ch.bestN(PREF), "Σ=2 与真实 φ=2 同偏移 → 去重，n 停在 2");
-        assertEquals(2, ctx.getOrCreatePowerData().getRegistry(1).get(0).offset(),
+        assertEquals(2, ctx.getOrCreateContainerData(ContainerPowerData.KEY).getRegistry(1).get(0).offset(),
             "派生条目仍登记（Σ=2），但域内去重不虚增 n");
     }
 }

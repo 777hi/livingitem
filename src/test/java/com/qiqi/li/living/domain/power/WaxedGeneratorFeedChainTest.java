@@ -156,7 +156,7 @@ class WaxedGeneratorFeedChainTest {
 
             function.tickContainerData(entries, ctx, tick);
         }
-        return new Scenario(ctx, ctx.getOrCreatePowerData(), lever, genSlot);
+        return new Scenario(ctx, ctx.getOrCreateContainerData(ContainerPowerData.KEY), lever, genSlot);
     }
 
     private static List<Integer> range(int from, int len) {
@@ -248,7 +248,7 @@ class WaxedGeneratorFeedChainTest {
         assertTrue(sawEdgeHigh && sawEdgeLow,
             "发电机入边应随火把环振荡（观察到 high=" + sawEdgeHigh + " low=" + sawEdgeLow + "）");
 
-        GeneratorState gen = ctx.getOrCreatePowerData().getGenerator(genSlot);
+        GeneratorState gen = ctx.getOrCreateContainerData(ContainerPowerData.KEY).getGenerator(genSlot);
         assertTrue(gen != null, "应有发电机状态");
         assertEquals(2, gen.channel().bestPeriod(4), "火把环逐 tick 翻转 → 2t 方波，应锁相 2t");
         assertTrue(gen.getEmaPowerRe() > 0, "贴环涂蜡发电机应发电");
@@ -283,7 +283,7 @@ class WaxedGeneratorFeedChainTest {
             ContainerLivingItemHandler.processContext(ctx, null);
         }
 
-        GeneratorState gen = ctx.getOrCreatePowerData().getGenerator(genSlot);
+        GeneratorState gen = ctx.getOrCreateContainerData(ContainerPowerData.KEY).getGenerator(genSlot);
         assertTrue(gen != null, "应有发电机状态");
         assertEquals(2, gen.channel().bestPeriod(4), "生产路径下应锁相 2t");
         assertTrue(gen.getEmaPowerRe() > 0, "生产路径下应发电");
@@ -320,7 +320,7 @@ class WaxedGeneratorFeedChainTest {
             ContainerLivingItemHandler.processContext(ctx, null);
         }
 
-        GeneratorState gen = ctx.getOrCreatePowerData().getGenerator(genSlot);
+        GeneratorState gen = ctx.getOrCreateContainerData(ContainerPowerData.KEY).getGenerator(genSlot);
         assertTrue(gen != null, "应有发电机状态");
         assertTrue(gen.getEmaPowerRe() > 0, "大箱形状下涂蜡发电机应发电");
     }
@@ -491,7 +491,7 @@ class WaxedGeneratorFeedChainTest {
             redstone.setIncomingEdgeForTest(4, ContainerRedstoneData.EDGE_RIGHT, cur);
             function.tickContainerData(entries, ctx, tick);
         }
-        var reg = ctx.getOrCreatePowerData().getRegistry(4);
+        var reg = ctx.getOrCreateContainerData(ContainerPowerData.KEY).getRegistry(4);
         assertEquals(1, reg.size(), "右侧注入应派生 1 条驻波");
         assertEquals(1, reg.get(0).offset(), "派生偏移 = 源偏移 + 1");
     }
@@ -549,7 +549,7 @@ class WaxedGeneratorFeedChainTest {
                         "DOWN 边 tracker 应锁相 4t，实际 period=" + (trProbe == null ? "null" : trProbe.period()));
                 }
             }
-            var reg = ctx.getOrCreatePowerData().getRegistry(13);
+            var reg = ctx.getOrCreateContainerData(ContainerPowerData.KEY).getRegistry(13);
             assertTrue(reg.size() >= 1 && reg.get(0).offset() == 1,
                 "配置输入=" + c.name() + "：对应方向注入应派生 φ+1，实际 reg=" + reg);
         }
