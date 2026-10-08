@@ -14,6 +14,12 @@ import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.component.TooltipProvider;
 import com.qiqi.li.LivingItem;
 
+/**
+ * 活水车的数据组件。
+ *
+ * <p>封装水车的应力状态（{@link WaterWheelData}），经 {@link #of} / {@link #set} 读写，
+ * 并实现编解码与悬浮提示接口。与 Create 的 water_wheel 互通，悬浮提示显示顺 / 逆时针应力与净应力。</p>
+ */
 public record LivingWaterWheelData(WaterWheelData wheel) implements TooltipProvider {
 
     public static final LivingWaterWheelData EMPTY = new LivingWaterWheelData(WaterWheelData.EMPTY);

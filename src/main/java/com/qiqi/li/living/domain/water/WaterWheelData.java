@@ -5,6 +5,11 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 
+/**
+ * 水车的应力状态数据（不可变）。
+ *
+ * <p>记录顺时针应力（{@code cwStress}）、逆时针应力（{@code ccwStress}）与净应力（{@code netStress} = 顺时针 − 逆时针）。</p>
+ */
 public record WaterWheelData(
     int cwStress,
     int ccwStress,

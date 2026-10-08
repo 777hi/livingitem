@@ -24,6 +24,12 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
 
+/**
+ * 活水车的功能实现（对接 Create 的 water_wheel）。
+ *
+ * <p>识别 Create 的 {@code water_wheel} 物品；在容器级数据流程（prio 1，介于流体层与红石层之间）中，
+ * 根据容器流体分布计算各水车的顺时针 / 逆时针应力与净应力，并同步到数据组件供悬浮提示显示。</p>
+ */
 public class LivingWaterWheelFunction implements LivingItemFunction, HasContainerData {
 
     public static final String ID = "living_water_wheel";
