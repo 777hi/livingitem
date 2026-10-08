@@ -213,7 +213,7 @@ javadoc 明写「红电感知端口 —— 电力层与跨层消费者（漏斗�
 | # | 问题 | 影响 |
 |---|---|---|
 | Q1 | ① 的 9 个 handler 搬走后，`InteractionRegistry` 要不要加确定性排序？（对齐 [framework-benchmark.md](framework-benchmark.md) §3.4） | ① 与那份文档的**唯一可能重叠点** |
-| Q2 | ③ `LivingComponents` 是只搬家，还是治本（各领域自己声明并注册 `DataComponentType`）？ | ③ |
+| Q2 | ~~③ `LivingComponents` 是只搬家，还是治本（各领域自己声明并注册 `DataComponentType`）？~~ **✅ 已答并实施（2026-10-08）**：治本 —— 各领域建 `XxxComponents` 定义自己的组件，`LivingItem` 构造阶段挂总线；R1 61→34，`components → domain` 归零 | [components-decoupling-plan.md](components-decoupling-plan.md) §8 |
 | Q3 | **B 的机制化设计**：框架层「不透明分组容器」的载荷用什么？（`CompoundTag` 不透明透传 vs 注册式 codec）—— 前者轻、后者类型安全 | §3.1 |
 | Q4 | ~~⑤ `container → 领域` 抽什么接口？~~ **✅ 已答（2026-10-08）**：不新造接口 —— 优先给 `HasContainerData` 加 `default afterTick` 钩子；A/B/C/D 四组（13 条）是纯归属搬运 | [container-domain-decoupling-plan.md](container-domain-decoupling-plan.md) §4 |
 | Q5 | 领域内**不分子包**（2026-10-06 用户拍板）—— 判据是「>30 个类 **且** 存在跨组 <35% 的切法」 | 未来 |
@@ -264,7 +264,6 @@ javadoc 明写「红电感知端口 —— 电力层与跨层消费者（漏斗�
 
 ### 下一步指向
 
-底座 → 领域的 37 条里，**27 条来自 `LivingComponents`**（它持有所有领域的 `DataComponentType`，
-是 A1 迁移「有意集中」的结果）⇒ 修它 = 让各领域自己声明并注册 `DataComponentType`
-（**A1 决策的反转**），是本形态下**最后一块成规模的反向边**
-→ 细化方案：[components-decoupling-plan.md](components-decoupling-plan.md)。
+底座 → 领域的 37 条已**全部归零**（`container` 20 条见 ⑤；`components` 27 条见
+[components-decoupling-plan.md](components-decoupling-plan.md)）。
+剩余 R1 34 条里已无「底座认识领域」这类结构性问题，主要是零散的 L0/L3/L4 边。
