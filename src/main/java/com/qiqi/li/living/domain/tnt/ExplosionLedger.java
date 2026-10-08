@@ -5,7 +5,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import com.qiqi.li.LivingItem;
 import com.qiqi.li.logging.ModLog;
 
 import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
@@ -346,7 +345,7 @@ public class ExplosionLedger extends SavedData {
             try {
                 mode = ExplosionParams.Mode.valueOf(t.getString(KEY_MODE));
             } catch (IllegalArgumentException ex) {
-                LivingItem.LOGGER.warn("待炸账本: 未知模式 '{}'，跳过该条", t.getString(KEY_MODE));
+                ModLog.CONTAINER.warn("待炸账本: 未知模式 '{}'，跳过该条", t.getString(KEY_MODE));
                 continue;
             }
             ExplosionParams params = new ExplosionParams(

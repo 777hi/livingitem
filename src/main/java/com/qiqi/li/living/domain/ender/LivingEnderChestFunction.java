@@ -16,7 +16,6 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
-import com.qiqi.li.LivingItem;
 import com.qiqi.li.living.api.LivingItemActivation;
 import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
@@ -63,7 +62,7 @@ public class LivingEnderChestFunction implements LivingItemFunction {
         if (player == null) return;                 // 无玩家 ⇒ 不绑定，落回路由模式
         if (!isInEnderChestGui(player)) return;     // 不在末影箱界面 ⇒ 不绑定
         setBoundPlayer(stack, player.getUUID(), player.getName().getString());
-        LivingItem.LOGGER.info("活末影箱绑定玩家: {}", player.getName().getString());
+        com.qiqi.li.logging.ModLog.CONTAINER.info("活末影箱绑定玩家: {}", player.getName().getString());
     }
 
     /** 【活化时机】取消活化时清空绑定（原本就是网络包里的内联判断，收编到此处）。 */

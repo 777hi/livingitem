@@ -43,7 +43,7 @@ import net.neoforged.neoforge.event.entity.living.LivingKnockBackEvent;
  *   <li>自主模式（有记忆、每 tick 打）<b>不受影响</b> —— 否则 DPS 会失控</li>
  * </ul>
  */
-@EventBusSubscriber(modid = LivingItem.MOD_ID)
+@EventBusSubscriber(modid = com.qiqi.li.living.api.LivingMod.ID)
 public final class LivingWeaponAssist {
 
     /**
