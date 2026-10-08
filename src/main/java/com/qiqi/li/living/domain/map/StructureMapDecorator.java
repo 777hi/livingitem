@@ -22,6 +22,12 @@ import it.unimi.dsi.fastutil.longs.LongSet;
 
 import java.util.*;
 
+/**
+ * 结构地图装饰器（服务端）。
+ *
+ * <p>惰性扫描地图覆盖区块，把命中的结构以旗帜图标 / 靶心 / 红叉装饰画到活地图上。
+ * 图标映射按原版结构标签与生成阶段（地下 / 地表）区分；所有跨存档缓存（图标表 / 已扫描区块）在服务器停止时由 {@link #reset} 清空。</p>
+ */
 public final class StructureMapDecorator {
 
     private record TagIconEntry(

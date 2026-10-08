@@ -15,6 +15,12 @@ import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
 
+/**
+ * 活地图的功能实现。
+ *
+ * <p>识别活地图，并在悬浮提示中显示其传送距离——随堆叠数量平方增长（{@code 128 × 数量²}），
+ * 提示玩家堆叠越多可传送越远。</p>
+ */
 public class LivingMapFunction implements LivingItemFunction {
 
     public static final String ID = "living_map";

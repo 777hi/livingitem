@@ -18,6 +18,12 @@ import net.minecraft.world.level.saveddata.maps.MapDecoration;
 import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
 import net.minecraft.world.phys.Vec3;
 
+/**
+ * 地图坐标换算工具类（无状态）。
+ *
+ * <p>封装「世界坐标 ⇄ 地图像素 / UV」以及展示框命中、目标点推算、结构坐标查找等数学换算。
+ * 这是准心显示与实际传送落点的<b>唯一真源</b>：服务端与客户端都必须走这里，否则会出现「准心指 A、传到 B」的错位。</p>
+ */
 public final class MapCoordHelper {
 
     public static final int MAP_SIZE = 128;

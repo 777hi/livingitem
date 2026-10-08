@@ -11,6 +11,12 @@ import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
 
 import javax.annotation.Nullable;
 
+/**
+ * 地图传送执行器。
+ *
+ * <p>根据点击处命中的是旗帜 / 目标点装饰 / 未探索区域，分别派发到 {@link TeleportHelper} 完成传送，
+ * 并结算跨维度提示与珍珠消费（未探索区域需更多珍珠）。{@link #resolvePearlStack} 负责在创造模式与手持珍珠间解析支付物。</p>
+ */
 public final class MapTeleportExecutor {
 
     public static final int UNEXPLORED_PEARL_COST = 16;

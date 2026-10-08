@@ -8,6 +8,12 @@ import javax.annotation.Nullable;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+/**
+ * 客户端地图元数据缓存。
+ *
+ * <p>以 mapId 为键缓存地图中心坐标与所在维度（LRU，上限 64 条），供客户端渲染准心目标点使用。
+ * 元数据来自服务端在玩家 tick 时下发的数据包；客户端断线时调用 {@link #clear} 避免残留旧 mapId。</p>
+ */
 public final class LivingMapClientCache {
 
     private static final int MAX_CACHE_SIZE = 64;

@@ -18,6 +18,13 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 
+/**
+ * 物品展示框地图传送处理器（服务端事件监听）。
+ *
+ * <p>监听「右键点击装着活地图的物品展示框」事件：取消原版旋转逻辑，改用玩家手持的活末影珍珠
+ * 作支付，把玩家传送到地图上被点击像素对应的世界坐标（支持跨维度）。坐标换算委托
+ * {@link MapCoordHelper}，实际传送委托 {@link MapTeleportExecutor}。</p>
+ */
 public final class ItemFrameMapTeleportHandler {
 
     private ItemFrameMapTeleportHandler() {}

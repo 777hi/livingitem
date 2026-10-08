@@ -16,6 +16,13 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
 
+/**
+ * 活末影珍珠的功能实现。
+ *
+ * <p>识别活末影珍珠（羊皮纸地图传送的支付物），并集中提供冷却查询（{@link #isOnCooldown}）、
+ * 背包查找（{@link #findInInventory} / {@link #countInInventory}）与消耗（{@link #consumeFromInventory}）
+ * 等静态工具，让各传送入口复用同一套代价与冷却规则。</p>
+ */
 public class LivingEnderPearlFunction implements LivingItemFunction {
 
     public static final String ID = "living_ender_pearl";

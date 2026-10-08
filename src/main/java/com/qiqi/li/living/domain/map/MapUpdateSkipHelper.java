@@ -8,6 +8,12 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * 传送后地图更新跳过的节流器（服务端）。
+ *
+ * <p>传送完成后的若干 tick 内，跳过 {@code MapItem.update()} 的同步阻塞调用，避免客户端空白卡顿；
+ * 同时对活地图限制单 tick 内的刷新频率，防止高频重复刷新。</p>
+ */
 public final class MapUpdateSkipHelper {
 
     private static final int SKIP_TICKS = 40;

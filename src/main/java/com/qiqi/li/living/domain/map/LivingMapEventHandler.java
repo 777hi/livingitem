@@ -36,6 +36,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * 活地图相关世界事件的监听器（服务端）。
+ *
+ * <p>职责：① 容器打开时主动把容器内活地图的完整数据推送给客户端（原版同步链只覆盖玩家背包）；
+ * ② 玩家手持活地图每 20 tick 同步地图元数据并触发结构装饰惰性扫描；
+ * ③ 处理空地图创建与手持活地图右键触发的传送。所有注册集中在 {@code MapRegistration}。</p>
+ */
 public final class LivingMapEventHandler {
 
     /**
