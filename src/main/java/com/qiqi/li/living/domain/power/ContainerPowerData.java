@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import com.qiqi.li.living.container.ContainerDataKey;
 import com.qiqi.li.living.domain.power.LivingWaxedCopperFunction.SignalTracker;
 
 /**
@@ -24,6 +25,15 @@ import com.qiqi.li.living.domain.power.LivingWaxedCopperFunction.SignalTracker;
  * </ul>
  */
 public class ContainerPowerData {
+
+    /**
+     * 容器红电账本的 key（跨 tick 持久；不落盘 attachment —— 相位快照走专用机制）。
+     *
+     * <p>key 归领域所有（计划 ⑤，2026-10-08）—— 原集中在 {@code container/ContainerDataKeys}，
+     * 使 container 包被迫 import 本领域类。</p>
+     */
+    public static final ContainerDataKey<ContainerPowerData> KEY =
+        ContainerDataKey.persistent("power", ContainerPowerData::new);
 
     /** EMA 平滑系数（约 8 tick 记忆） */
     private static final double EMA_ALPHA = 0.125;

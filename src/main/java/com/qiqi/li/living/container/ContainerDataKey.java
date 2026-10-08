@@ -18,7 +18,7 @@ import net.neoforged.neoforge.attachment.AttachmentType;
  * <ul>
  *   <li><b>层级</b> —— {@link #of(String, Supplier)} 是 <b>tick 级</b>（每次 tick 重建，
  *       存 {@code TickContext}）；{@link #persistent(String, Supplier)} 与
- *       {@link #persistentWith(String, Supplier, AttachmentType)} 是 <b>容器级</b>
+ *       {@link #persistentWith(String, Supplier, Supplier)} 是 <b>容器级</b>
  *       （跨 tick 持久，存 {@code ContainerEntry}）。</li>
  *   <li><b>落盘</b> —— 仅 {@link #persistentWith} 声明了 BE attachment，写回时按它落盘；
  *       其余 key 不参与 attachment 写回（红石 / 电力靠相位快照等专用机制落盘）。</li>
@@ -35,9 +35,9 @@ public final class ContainerDataKey<T> {
     private final String id;
     private final Supplier<T> factory;
     private final boolean persistent;
-    private final AttachmentType<T> attachment;   // null ⇒ 不参与 attachment 写回
+    private final Supplier<AttachmentType<T>> attachment;   // null ⇒ 不参与 attachment 写回
 
-    private ContainerDataKey(String id, Supplier<T> factory, boolean persistent, AttachmentType<T> attachment) {
+    private ContainerDataKey(String id, Supplier<T> factory, boolean persistent, Supplier<AttachmentType<T>> attachment) {
         this.id = id;
         this.factory = factory;
         this.persistent = persistent;
@@ -55,8 +55,15 @@ public final class ContainerDataKey<T> {
         return new ContainerDataKey<>(id, factory, true, null);
     }
 
-    /** 容器级 key：数据跨 tick 持久，且落盘到声明的 BE attachment。 */
-    public static <T> ContainerDataKey<T> persistentWith(String id, Supplier<T> factory, AttachmentType<T> attachment) {
+    /**
+     * 容器级 key：数据跨 tick 持久，且落盘到声明的 BE attachment。
+     *
+     * <p>⚠️ attachment 用 {@link Supplier} <b>延迟求值</b>（2026-10-08，计划 ⑤）——
+     * key 现由各领域数据类在<b>类加载时</b>定义，而 {@code DeferredHolder.value()}
+     * 必须等注册完成后才可读（提前读抛「unbound value」）。</p>
+     */
+    public static <T> ContainerDataKey<T> persistentWith(String id, Supplier<T> factory,
+                                                         Supplier<AttachmentType<T>> attachment) {
         return new ContainerDataKey<>(id, factory, true, attachment);
     }
 
@@ -71,8 +78,8 @@ public final class ContainerDataKey<T> {
     /** 是否容器级（跨 tick 持久）。 */
     public boolean isPersistent() { return persistent; }
 
-    /** 落盘目标；仅容器级且声明了 attachment 的 key 有值。 */
-    public AttachmentType<T> attachment() { return attachment; }
+    /** 落盘目标；仅容器级且声明了 attachment 的 key 有值（延迟求值，须在注册后调用）。 */
+    public AttachmentType<T> attachment() { return attachment != null ? attachment.get() : null; }
 
     /** 所有已定义的 key（类加载顺序）。供写回遍历使用。 */
     public static List<ContainerDataKey<?>> all() {

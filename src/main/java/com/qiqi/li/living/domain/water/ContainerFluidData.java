@@ -15,7 +15,9 @@ import java.util.Set;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.components.LivingComponents;
 import com.qiqi.li.living.container.ContainerContext;
+import com.qiqi.li.living.container.ContainerDataKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.world.item.ItemStack;
@@ -51,6 +53,16 @@ import net.neoforged.neoforge.registries.NeoForgeRegistries;
  * - 流动水记录 fromSlot（BFS 父节点），物品沿水流方向推动
  */
 public class ContainerFluidData {
+
+    /**
+     * 容器级流体数据的 key（跨 tick 持久 + 落盘到 BE attachment）。
+     *
+     * <p>key 归领域所有（计划 ⑤，2026-10-08）—— 原集中在 {@code container/ContainerDataKeys}，
+     * 使 container 包被迫 import 本领域类。</p>
+     */
+    public static final ContainerDataKey<ContainerFluidData> KEY =
+        ContainerDataKey.persistentWith("fluid", ContainerFluidData::new,
+            () -> LivingComponents.CONTAINER_FLUID_DATA.value());
 
     public static final ContainerFluidData EMPTY = new ContainerFluidData() {
         @Override

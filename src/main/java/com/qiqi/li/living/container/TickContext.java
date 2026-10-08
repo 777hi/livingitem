@@ -5,6 +5,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
+import com.qiqi.li.living.domain.power.ContainerPowerData;
 import com.qiqi.li.living.domain.water.ContainerFluidData;
 import com.qiqi.li.living.domain.water.ContainerStressData;
 import com.qiqi.li.living.domain.redstone.ContainerRedstoneData;
@@ -46,7 +47,7 @@ public class TickContext {
     public TickContext(ContainerContext ctx) {
         this.ctx = ctx;
         // 应力是 tick 级新建数据：每 tick 一个新实例，tick 末写回 BE（供 Create 读取）
-        tickData.put(ContainerDataKeys.STRESS, new ContainerStressData());
+        tickData.put(ContainerStressData.KEY, new ContainerStressData());
         // ⚠️ 必须在此创建容器的流体数据 —— 1a-4「容器级数据统一存储」曾漏掉此调用
         // （旧版由 getOrCreateFluidData() 在此创建），导致 tick.fluidData() 恒为 EMPTY
         // ⇒ 活水桶的 registerSource 被跳过 ⇒ 水流整体失效。
@@ -71,19 +72,19 @@ public class TickContext {
 
     /** 本容器的流体数据（保证非 null：无数据时返回 {@link ContainerFluidData#EMPTY}）。 */
     public ContainerFluidData fluidData() {
-        ContainerFluidData f = data(ContainerDataKeys.FLUID);
+        ContainerFluidData f = data(ContainerFluidData.KEY);
         return f != null ? f : ContainerFluidData.EMPTY;
     }
 
     /** 本 tick 的应力数据（构造时新建，保证非 null）。 */
     public ContainerStressData stressData() {
-        ContainerStressData s = data(ContainerDataKeys.STRESS);
+        ContainerStressData s = data(ContainerStressData.KEY);
         return s != null ? s : new ContainerStressData();
     }
 
     /** 本容器的红电账本（可能为 null：容器不支持时）。 */
-    public com.qiqi.li.living.domain.power.ContainerPowerData powerData() {
-        return data(ContainerDataKeys.POWER);
+    public ContainerPowerData powerData() {
+        return data(ContainerPowerData.KEY);
     }
 
     /**
@@ -104,7 +105,7 @@ public class TickContext {
      * 统一走容器的持久 store（1a-4），确保 edgeGrid 跨 tick 保持。
      */
     public ContainerRedstoneData getOrCreateRedstoneData(ContainerContext context) {
-        return context.getOrCreateContainerData(ContainerDataKeys.REDSTONE);
+        return context.getOrCreateContainerData(ContainerRedstoneData.KEY);
     }
 
     /**
@@ -122,8 +123,8 @@ public class TickContext {
      * 获取或创建容器红电数据（电力层账本）。
      * 统一走容器的持久 store（1a-4），确保事件状态跨 tick 保持。
      */
-    public com.qiqi.li.living.domain.power.ContainerPowerData getOrCreatePowerData(ContainerContext context) {
-        return context.getOrCreateContainerData(ContainerDataKeys.POWER);
+    public ContainerPowerData getOrCreatePowerData(ContainerContext context) {
+        return context.getOrCreateContainerData(ContainerPowerData.KEY);
     }
 
     /**

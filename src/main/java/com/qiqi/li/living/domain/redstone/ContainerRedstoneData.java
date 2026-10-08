@@ -14,6 +14,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.api.RedstoneSensor;
 import com.qiqi.li.living.container.ContainerContext;
+import com.qiqi.li.living.container.ContainerDataKey;
 import com.qiqi.li.living.container.ContainerLivingItemHandler;
 import com.qiqi.li.living.container.ContainerSnapshot;
 import com.qiqi.li.living.container.TickContext;
@@ -29,6 +30,15 @@ import com.qiqi.li.living.util.WaxedCopperFamily;
  * 完成「收集信号源 → 传播 → 充能导体 → 复检 → 更新显示」的传播节拍，最后结算边界输出并向世界通知邻居变化。</p>
  */
 public class ContainerRedstoneData implements RedstoneSensor {
+
+    /**
+     * 容器红石账本的 key（跨 tick 持久；不落盘 attachment）。
+     *
+     * <p>key 归领域所有（计划 ⑤，2026-10-08）—— 原集中在 {@code container/ContainerDataKeys}，
+     * 使 container 包被迫 import 本领域类。</p>
+     */
+    public static final ContainerDataKey<ContainerRedstoneData> KEY =
+        ContainerDataKey.persistent("redstone", ContainerRedstoneData::new);
 
     // ── 槽位类型位掩码 ──
     // 传播热路径上每格要做十几次「邻居是什么元件」的判定。

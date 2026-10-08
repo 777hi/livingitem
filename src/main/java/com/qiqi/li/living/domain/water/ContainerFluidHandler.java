@@ -16,7 +16,6 @@ import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.FluidType;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 
-import com.qiqi.li.living.container.ContainerDataKeys;
 import com.qiqi.li.living.container.ContainerLivingItemHandler;
 import com.qiqi.li.living.container.TickableContainerContext;
 
@@ -86,7 +85,7 @@ public final class ContainerFluidHandler implements IFluidHandler {
      *
      * <p>反查链 = {@link ContainerLivingItemHandler#resolveContextAt}（{@code ItemHandler.BLOCK}
      * 兼容面 + 双箱规范化 + 战利品跳过 ⇒ containerKey 与 tick 路径相同）
-     * → {@code peekContainerData(ContainerDataKeys.FLUID)}。</p>
+     * → {@code peekContainerData(ContainerFluidData.KEY)}。</p>
      *
      * @return 流体数据；非容器 / 无数据 / EMPTY 哨兵 ⇒ {@code null}
      */
@@ -97,7 +96,7 @@ public final class ContainerFluidHandler implements IFluidHandler {
         TickableContainerContext ctx =
             ContainerLivingItemHandler.resolveContextAt(level, be.getBlockPos(), null);
         if (ctx == null) return null;
-        ContainerFluidData data = ctx.peekContainerData(ContainerDataKeys.FLUID);
+        ContainerFluidData data = ctx.peekContainerData(ContainerFluidData.KEY);
         return (data == null || data == ContainerFluidData.EMPTY) ? null : data;
     }
 

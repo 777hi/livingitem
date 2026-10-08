@@ -10,7 +10,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import com.qiqi.li.living.api.LivingItemManager;
-import com.qiqi.li.living.container.ContainerDataKeys;
 import com.qiqi.li.living.container.ContainerLivingItemHandler;
 import com.qiqi.li.living.components.LivingComponents;
 import com.qiqi.li.living.container.SimpleContainerContext;
@@ -111,7 +110,7 @@ class ContainerFluidIntegrationTest {
             .registerGeneratedSource(0, Fluids.WATER.getFluidType());
         ContainerLivingItemHandler.processContext(ctx, level);
 
-        var fluid = ctx.peekContainerData(ContainerDataKeys.FLUID);
+        var fluid = ctx.peekContainerData(ContainerFluidData.KEY);
         assertNotNull(fluid, "流体数据应已创建（1a-4 回归的端到端守卫）");
         assertEquals(8, fluid.getFlows().size(), "应完成 BFS（slot 0..7）");
         assertTrue(fluid.getFlows().get(0).isSource(), "slot 0 应为源（桶在真实流程里注册）");

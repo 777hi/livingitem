@@ -15,7 +15,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import com.qiqi.li.living.api.LivingItemManager;
-import com.qiqi.li.living.container.ContainerDataKeys;
 import com.qiqi.li.living.container.SimpleContainerContext;
 import com.qiqi.li.living.container.TickContext;
 
@@ -269,7 +268,7 @@ class ContainerFluidDataTest {
     void fluidDriver_drivesBfs() {
         var ctx = row();
         var tick = new TickContext(ctx);
-        var fluid = ctx.peekContainerData(ContainerDataKeys.FLUID);
+        var fluid = ctx.peekContainerData(ContainerFluidData.KEY);
         fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
 
         new LivingFluidFunction().tickContainerData(List.of(), ctx, tick);

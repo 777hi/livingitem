@@ -17,7 +17,6 @@ import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.api.HasContainerData;
 import com.qiqi.li.living.container.ContainerContext;
-import com.qiqi.li.living.container.ContainerDataKeys;
 import com.qiqi.li.living.container.TickContext;
 
 /**
@@ -117,7 +116,7 @@ public class LivingRedstoneFunction implements LivingItemFunction, HasContainerD
      */
     @Override
     public void tickContainerData(List<SlotEntry> entries, ContainerContext ctx, TickContext tick) {
-        if (ctx.peekContainerData(ContainerDataKeys.REDSTONE) == null
+        if (ctx.peekContainerData(ContainerRedstoneData.KEY) == null
                 && !ContainerRedstoneData.hasRedstoneElements(tick)) {
             return;
         }

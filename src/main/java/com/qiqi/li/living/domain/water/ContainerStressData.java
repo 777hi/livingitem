@@ -5,6 +5,7 @@ import java.util.Map;
 import java.util.Set;
 
 import com.qiqi.li.living.container.ContainerContext;
+import com.qiqi.li.living.container.ContainerDataKey;
 import com.qiqi.li.living.domain.water.LivingWaterWheelFunction;
 
 import net.minecraft.world.item.ItemStack;
@@ -23,6 +24,14 @@ import net.minecraft.world.item.ItemStack;
  * 读取 BFS 水流状态计算每个水车的力矩。
  */
 public class ContainerStressData {
+
+    /**
+     * 容器应力的 key（tick 级：每 tick 重建，tick 末写回 BE 供 Create 读取）。
+     *
+     * <p>key 归领域所有（计划 ⑤，2026-10-08）—— 原集中在 {@code container/ContainerDataKeys}。</p>
+     */
+    public static final ContainerDataKey<ContainerStressData> KEY =
+        ContainerDataKey.of("stress", ContainerStressData::new);
 
     public static final ContainerStressData EMPTY = new ContainerStressData();
 

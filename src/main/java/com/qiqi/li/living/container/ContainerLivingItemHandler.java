@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Set;
 
 import com.qiqi.li.living.api.HasContainerData;
+import com.qiqi.li.living.domain.power.ContainerPowerData;
 import com.qiqi.li.living.domain.redstone.ContainerRedstoneData;
 import com.qiqi.li.living.domain.redstone.LivingRedstoneFunction;
 import com.qiqi.li.living.domain.water.ContainerFluidData;
@@ -74,7 +75,7 @@ public class ContainerLivingItemHandler {
     /**
      * 每容器聚合数据；rev/contentSig/snapshot 跨 tick 持久。
      * 容器级数据（流体 / 红石 / 电力）改由 {@link ContainerDataStore} 统一存储
-     * （2026-10-03，1a-4）：新增一种数据只需在 {@link ContainerDataKeys} 定义 key，
+     * （2026-10-03，1a-4）：新增一种数据只需定义一个 {@link ContainerDataKey} 常量，
      * 本类与 store 零改动。
      */
     private static final class ContainerEntry {
@@ -142,14 +143,14 @@ public class ContainerLivingItemHandler {
     public static ContainerFluidData getFluidData(ContainerContext ctx) {
         ContainerEntry e = entry(ctx);
         if (e == null) return null;
-        ContainerFluidData existing = e.store.peek(ContainerDataKeys.FLUID);
+        ContainerFluidData existing = e.store.peek(ContainerFluidData.KEY);
         if (existing != null) return existing;
 
         if (ctx instanceof SimpleContainerContext simpleCtx) {
             for (BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {
                 ContainerFluidData persisted = be.getData(LivingComponents.CONTAINER_FLUID_DATA);
                 if (persisted != null && persisted != ContainerFluidData.EMPTY && !persisted.isEmpty()) {
-                    e.store.put(ContainerDataKeys.FLUID, persisted);
+                    e.store.put(ContainerFluidData.KEY, persisted);
                     return persisted;
                 }
             }
@@ -165,13 +166,13 @@ public class ContainerLivingItemHandler {
                     owner.getData(LivingComponents.CONTAINER_FLUID_DATA_PLAYER);
                 ContainerFluidData persisted = playerMap == null ? null : playerMap.get(ownerKey);
                 if (persisted != null && persisted != ContainerFluidData.EMPTY && !persisted.isEmpty()) {
-                    e.store.put(ContainerDataKeys.FLUID, persisted);
+                    e.store.put(ContainerFluidData.KEY, persisted);
                     return persisted;
                 }
             }
         }
 
-        return e.store.getOrCreate(ContainerDataKeys.FLUID);
+        return e.store.getOrCreate(ContainerFluidData.KEY);
     }
 
     /**
@@ -206,9 +207,9 @@ public class ContainerLivingItemHandler {
     private static void cleanupStaleData(long currentTimeMs) {
         CONTAINER_DATA.entrySet().removeIf(en -> {
             ContainerEntry e = en.getValue();
-            ContainerFluidData fluid = e.store.peek(ContainerDataKeys.FLUID);
-            ContainerRedstoneData redstone = e.store.peek(ContainerDataKeys.REDSTONE);
-            com.qiqi.li.living.domain.power.ContainerPowerData power = e.store.peek(ContainerDataKeys.POWER);
+            ContainerFluidData fluid = e.store.peek(ContainerFluidData.KEY);
+            ContainerRedstoneData redstone = e.store.peek(ContainerRedstoneData.KEY);
+            ContainerPowerData power = e.store.peek(ContainerPowerData.KEY);
             boolean fluidStale = fluid == null || currentTimeMs - fluid.getLastTickTime() > 120_000;
             boolean redstoneStale = redstone == null
                 || currentTimeMs - redstone.getLastTickTime() > 120_000;
@@ -225,7 +226,7 @@ public class ContainerLivingItemHandler {
     public static ContainerRedstoneData getRedstoneData(ContainerContext ctx) {
         ContainerEntry e = entry(ctx);
         if (e == null) return null;
-        return e.store.getOrCreate(ContainerDataKeys.REDSTONE);
+        return e.store.getOrCreate(ContainerRedstoneData.KEY);
     }
 
     /**
@@ -239,12 +240,12 @@ public class ContainerLivingItemHandler {
      * Level 不可达时回退容器本地轴。快照为空（首次使用 / 无振荡器）则保持
      * 默认 warmup（首拍无沿宽限）。见 PhaseSnapshot javadoc。</p>
      */
-    public static com.qiqi.li.living.domain.power.ContainerPowerData getPowerData(ContainerContext ctx) {
+    public static ContainerPowerData getPowerData(ContainerContext ctx) {
         ContainerEntry e = entry(ctx);
         if (e == null) return null;
-        com.qiqi.li.living.domain.power.ContainerPowerData power = e.store.peek(ContainerDataKeys.POWER);
+        ContainerPowerData power = e.store.peek(ContainerPowerData.KEY);
         if (power == null) {
-            power = e.store.getOrCreate(ContainerDataKeys.POWER);
+            power = e.store.getOrCreate(ContainerPowerData.KEY);
             // 相位快照回填（2026-09-09）：BE 附件里存有退出前的锁相状态则无缝续接
             if (ctx instanceof SimpleContainerContext simpleCtx) {
                 long base = 0;
@@ -274,15 +275,15 @@ public class ContainerLivingItemHandler {
         String key = POS_TO_CACHE_KEY.get(new PosKey(level.dimension(), pos));
         if (key == null) return null;
         ContainerEntry e = CONTAINER_DATA.get(key);
-        return e == null ? null : e.store.peek(ContainerDataKeys.REDSTONE);
+        return e == null ? null : e.store.peek(ContainerRedstoneData.KEY);
     }
 
     /** 按位置 O(1) 查询红电数据（电力层，供对外能量接口调用） */
-    public static com.qiqi.li.living.domain.power.ContainerPowerData getPowerDataByPos(Level level, BlockPos pos) {
+    public static ContainerPowerData getPowerDataByPos(Level level, BlockPos pos) {
         String key = POS_TO_CACHE_KEY.get(new PosKey(level.dimension(), pos));
         if (key == null) return null;
         ContainerEntry e = CONTAINER_DATA.get(key);
-        return e == null ? null : e.store.peek(ContainerDataKeys.POWER);
+        return e == null ? null : e.store.peek(ContainerPowerData.KEY);
     }
 
     /**
@@ -660,7 +661,7 @@ public class ContainerLivingItemHandler {
             String fluidKey = cacheKey(context);
             if (fluidKey != null) {
                 ContainerEntry fe = CONTAINER_DATA.get(fluidKey);
-                if (fe != null) fe.store.put(ContainerDataKeys.FLUID, null);
+                if (fe != null) fe.store.put(ContainerFluidData.KEY, null);
             }
         }
 
@@ -669,7 +670,7 @@ public class ContainerLivingItemHandler {
         // 零成本。退出重进 / LRU 回收后由 getPowerData 回填，相位无缝续接。
         // 2026-09-11 换轴：capture 时钟与 tickContainerData 的 resolvePhaseClock 同源
         // （世界 game time 优先，回退本地轴）——快照必须存与驱动同坐标系的值。
-        com.qiqi.li.living.domain.power.ContainerPowerData powerData = tick.powerData();
+        ContainerPowerData powerData = tick.powerData();
         if (powerData != null && !context.getAssociatedBlockEntities().isEmpty()) {
             long clock = powerData.currentTick();   // 回退轴（无 Level / 测试环境）
             for (BlockEntity be : context.getAssociatedBlockEntities()) {

@@ -10,7 +10,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import com.qiqi.li.living.api.LivingItemManager;
-import com.qiqi.li.living.container.ContainerDataKeys;
 import com.qiqi.li.living.container.ContainerLivingItemHandler;
 import com.qiqi.li.living.container.SimpleContainerContext;
 import com.qiqi.li.living.domain.power.LivingWaxedCopperFunction;
@@ -97,11 +96,11 @@ class ContainerRedstoneIntegrationTest {
         Level level = mockServerLevel();
         var ctx = new SimpleContainerContext(new FakeHandler(slots), level);
 
-        assertNull(ctx.peekContainerData(ContainerDataKeys.REDSTONE), "前置：尚无红石账本");
+        assertNull(ctx.peekContainerData(ContainerRedstoneData.KEY), "前置：尚无红石账本");
 
         ContainerLivingItemHandler.processContext(ctx, level);
 
-        var rd = ctx.peekContainerData(ContainerDataKeys.REDSTONE);
+        var rd = ctx.peekContainerData(ContainerRedstoneData.KEY);
         assertNotNull(rd,
             "TNT 在 tick() 里调 getOrCreateRedstoneData ⇒ 账本必然被创建（守卫判据之一）");
         assertTrue(rd.hasEdgeHistory(),
@@ -122,7 +121,7 @@ class ContainerRedstoneIntegrationTest {
 
         ContainerLivingItemHandler.processContext(ctx, level);
 
-        assertNull(ctx.peekContainerData(ContainerDataKeys.REDSTONE),
+        assertNull(ctx.peekContainerData(ContainerRedstoneData.KEY),
             "与红石无关的容器不该创建账本 —— 守卫必须拦住。"
             + "（自维持 + 无守卫 = 每个被 tick 的容器每 tick 白跑一次 calculate，"
             + "内含 notifyBoundaryChange → level.updateNeighborsAt）");
@@ -139,7 +138,7 @@ class ContainerRedstoneIntegrationTest {
         Level level = mockServerLevel();
         var ctx = new SimpleContainerContext(new FakeHandler(slots), level);
 
-        var rd = ctx.getOrCreateContainerData(ContainerDataKeys.REDSTONE);
+        var rd = ctx.getOrCreateContainerData(ContainerRedstoneData.KEY);
         assertFalse(rd.hasEdgeHistory(), "前置：本会话尚未 calculate 过");
 
         ContainerLivingItemHandler.processContext(ctx, level);

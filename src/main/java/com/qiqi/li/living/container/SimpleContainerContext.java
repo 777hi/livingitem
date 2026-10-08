@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import com.qiqi.li.living.domain.power.ContainerPowerData;
 import com.qiqi.li.living.domain.water.ContainerFluidData;
 import com.qiqi.li.living.domain.redstone.ContainerRedstoneData;
 import com.qiqi.li.living.transfer.ContainerCompatibilityConfig;
@@ -58,7 +59,7 @@ public class SimpleContainerContext implements TickableContainerContext {
             // `peek == null` 恒假 ⇒「无关容器零开销」那条路径**永不生效**。
             // 安全性：新建账本的 processedThisTick 在构造器里默认 false ⇒ 首次无需 reset；
             // 此后每 tick 账本已存在 ⇒ 照常 reset（这正是历史上「中继器不熄灭」的根因修复点）。
-            ContainerRedstoneData rd = peekContainerData(ContainerDataKeys.REDSTONE);
+            ContainerRedstoneData rd = peekContainerData(ContainerRedstoneData.KEY);
             if (rd != null) {
                 rd.resetProcessedFlag();
             }
@@ -450,24 +451,24 @@ public class SimpleContainerContext implements TickableContainerContext {
      * 获取或创建容器流体数据。
      */
     ContainerFluidData getOrCreateFluidData() {
-        return getOrCreateContainerData(ContainerDataKeys.FLUID);
+        return getOrCreateContainerData(ContainerFluidData.KEY);
     }
 
     public ContainerRedstoneData getOrCreateRedstoneData() {
-        return getOrCreateContainerData(ContainerDataKeys.REDSTONE);
+        return getOrCreateContainerData(ContainerRedstoneData.KEY);
     }
 
     /**
      * 获取或创建容器红电数据（电力层账本，跨 tick 持久）。
      */
-    public com.qiqi.li.living.domain.power.ContainerPowerData getOrCreatePowerData() {
-        return getOrCreateContainerData(ContainerDataKeys.POWER);
+    public ContainerPowerData getOrCreatePowerData() {
+        return getOrCreateContainerData(ContainerPowerData.KEY);
     }
 
     /**
      * 容器级持久数据的统一访问入口（1a-4）：委托给 Handler 的统一 store。
      * 旧实现是「每个类型一个字段 + 一个方法」，新增一种数据要改三处；
-     * 现在新增一种只需在 {@link ContainerDataKeys} 定义 key。
+     * 现在新增一种只需定义一个 {@link ContainerDataKey} 常量。
      */
     @Override
     public <T> T peekContainerData(ContainerDataKey<T> key) {
