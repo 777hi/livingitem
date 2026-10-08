@@ -3,7 +3,6 @@ package com.qiqi.li.living.container;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.qiqi.li.living.domain.water.ContainerFluidData;
 import com.qiqi.li.living.transfer.FilterData;
 
 /**
@@ -32,7 +31,7 @@ public class ContainerSnapshot {
     }
 
     public static final ContainerSnapshot EMPTY = new ContainerSnapshot(0, new int[0], new int[0],
-        new FilterData[0], new ChestSnapshot[0], new int[0], new int[0], ContainerFluidData.EMPTY);
+        new FilterData[0], new ChestSnapshot[0], new int[0], new int[0]);
 
     private final int containerSize;
     private final int[] sourceOf;
@@ -41,11 +40,10 @@ public class ContainerSnapshot {
     private final ChestSnapshot[] chestOf;
     private final int[] redstoneMaskOf;
     private final int[] capOf;
-    private final ContainerFluidData fluidData;
 
     ContainerSnapshot(int containerSize, int[] sourceOf, int[] targetOf,
                       FilterData[] filterOf, ChestSnapshot[] chestOf,
-                      int[] redstoneMaskOf, int[] capOf, ContainerFluidData fluidData) {
+                      int[] redstoneMaskOf, int[] capOf) {
         this.containerSize = containerSize;
         this.sourceOf = sourceOf;
         this.targetOf = targetOf;
@@ -53,21 +51,20 @@ public class ContainerSnapshot {
         this.chestOf = chestOf;
         this.redstoneMaskOf = redstoneMaskOf;
         this.capOf = capOf;
-        this.fluidData = fluidData;
     }
 
     /**
      * 捕获容器快照。遍历所有已注册贡献者填入各自字段。
      * 红电位图与 capOf 由红电贡献者填充；漏斗/箱子贡献者填充各自字段。
      */
-    public static ContainerSnapshot capture(ContainerContext context, TickContext tick, ContainerFluidData fluidData) {
+    public static ContainerSnapshot capture(ContainerContext context, TickContext tick) {
         int containerSize = context.getSize();
         int containerWidth = context.getWidth();
         MutableSnapshot builder = new MutableSnapshot(containerSize);
         for (SnapshotProvider provider : PROVIDERS) {
             provider.contribute(context, tick, containerSize, containerWidth, builder);
         }
-        return builder.build(fluidData);
+        return builder.build();
     }
 
     public int getContainerSize() {
@@ -98,10 +95,6 @@ public class ContainerSnapshot {
         // 用 filterOf.length 而非 containerSize 守卫：MutableSnapshot.filterOf 默认长度为 0，
         // 若某 SnapshotProvider 未重新赋值，越界访问会抛 AIOOBE。无过滤数据时回退 EMPTY 更稳健。
         return slot >= 0 && slot < filterOf.length ? filterOf[slot] : FilterData.EMPTY;
-    }
-
-    public ContainerFluidData getFluidData() {
-        return fluidData;
     }
 
     public ChestSnapshot getChestSnapshot(int slot) {

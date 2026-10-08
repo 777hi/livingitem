@@ -94,7 +94,7 @@ public class TickContext {
     public ContainerSnapshot getSnapshot() {
         if (!snapshotBuilt) {
             long rev = ContainerLivingItemHandler.getContainerRevision(ctx);
-            _snapshot = ContainerLivingItemHandler.getCachedSnapshot(ctx, rev, fluidData(), this);
+            _snapshot = ContainerLivingItemHandler.getCachedSnapshot(ctx, rev, this);
             snapshotBuilt = true;
         }
         return _snapshot;

@@ -3,7 +3,6 @@ package com.qiqi.li.living.container;
 import java.util.Arrays;
 import java.util.Set;
 
-import com.qiqi.li.living.domain.water.ContainerFluidData;
 import com.qiqi.li.living.transfer.FilterData;
 
 /**
@@ -56,8 +55,8 @@ public class MutableSnapshot {
         if (slot >= 0 && slot < size) capOf[slot] = level;
     }
 
-    ContainerSnapshot build(ContainerFluidData fluidData) {
+    ContainerSnapshot build() {
         return new ContainerSnapshot(size, sourceOf, targetOf, filterOf, chestOf,
-            redstoneMaskOf, capOf, fluidData);
+            redstoneMaskOf, capOf);
     }
 }

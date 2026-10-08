@@ -359,16 +359,13 @@ public class ContainerLivingItemHandler {
     /**
      * 取（或构建并缓存）容器快照。仅当修订计数相对上次构建发生变化时才重建，
      * 否则复用跨 tick 缓存的同一快照，避免每个 tick 重复扫描全部物品。
-     *
-     * <p>快照内的流体数据持有跨 tick 持久对象引用，其字段被就地更新，
-     * 因此即便快照按修订计数缓存，流体状态仍反映当前值。</p>
      */
     public static ContainerSnapshot getCachedSnapshot(ContainerContext ctx, long revision,
-                                                      ContainerFluidData fluidData, TickContext tick) {
+                                                      TickContext tick) {
         ContainerEntry e = entry(ctx);
-        if (e == null) return ContainerSnapshot.capture(ctx, tick, fluidData);
+        if (e == null) return ContainerSnapshot.capture(ctx, tick);
         if (e.cachedSnapshot != null && e.cachedSnapshotRevision == revision) return e.cachedSnapshot;
-        ContainerSnapshot snap = ContainerSnapshot.capture(ctx, tick, fluidData);
+        ContainerSnapshot snap = ContainerSnapshot.capture(ctx, tick);
         e.cachedSnapshotRevision = revision;
         e.cachedSnapshot = snap;
         return snap;
