@@ -4,11 +4,10 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 
-import com.qiqi.li.living.domain.power.ContainerPowerData;
-import com.qiqi.li.living.domain.water.ContainerFluidData;
-import com.qiqi.li.living.domain.water.ContainerStressData;
-import com.qiqi.li.living.domain.redstone.ContainerRedstoneData;
+import com.qiqi.li.living.api.FluidPresence;
+import com.qiqi.li.living.api.RedstoneSensor;
 
 /**
  * Tick 级上下文 —— 每次容器 tick 时创建的临时状态。
@@ -26,6 +25,25 @@ import com.qiqi.li.living.domain.redstone.ContainerRedstoneData;
  * 生命周期短、对象小，JVM 年轻代 GC 可高效回收，无需池化。</p>
  */
 public class TickContext {
+
+    /**
+     * 感知端口解析器（由红石领域在自己的 Registration 里注册）。
+     * 让本类只认契约层 {@link RedstoneSensor}，不认识 {@code ContainerRedstoneData}。
+     */
+    private static volatile Function<ContainerContext, RedstoneSensor> sensorResolver = c -> null;
+
+    /** 流体存在性视图解析器（由水领域注册）—— 本类只认契约层 {@link FluidPresence}。 */
+    private static volatile Function<TickContext, FluidPresence> fluidPresenceResolver = t -> null;
+
+    /** 注册感知端口解析器（红石领域调用）。 */
+    public static void registerSensorResolver(Function<ContainerContext, RedstoneSensor> resolver) {
+        sensorResolver = resolver;
+    }
+
+    /** 注册流体存在性视图解析器（水领域调用）。 */
+    public static void registerFluidPresenceResolver(Function<TickContext, FluidPresence> resolver) {
+        fluidPresenceResolver = resolver;
+    }
 
     public final Set<String> occupiedSlots = new HashSet<>();
     public final Set<Integer> transferredTargetSlots = new HashSet<>();
@@ -46,10 +64,8 @@ public class TickContext {
 
     public TickContext(ContainerContext ctx) {
         this.ctx = ctx;
-        // 应力是 tick 级新建数据：每 tick 一个新实例，tick 末写回 BE（供 Create 读取）
-        tickData.put(ContainerStressData.KEY, new ContainerStressData());
         // ⚠️ 必须在此创建容器的流体数据 —— 1a-4「容器级数据统一存储」曾漏掉此调用
-        // （旧版由 getOrCreateFluidData() 在此创建），导致 tick.fluidData() 恒为 EMPTY
+        // （旧版由 getOrCreateFluidData() 在此创建），导致 tick 读流体恒为 EMPTY
         // ⇒ 活水桶的 registerSource 被跳过 ⇒ 水流整体失效。
         // 与 1a-4 之前一致：仅对 SimpleContainerContext 创建，且含 BE 附件回填（LRU 驱逐后恢复）。
         if (ctx instanceof SimpleContainerContext) {
@@ -70,21 +86,21 @@ public class TickContext {
         tickData.put(key, value);
     }
 
-    /** 本容器的流体数据（保证非 null：无数据时返回 {@link ContainerFluidData#EMPTY}）。 */
-    public ContainerFluidData fluidData() {
-        ContainerFluidData f = data(ContainerFluidData.KEY);
-        return f != null ? f : ContainerFluidData.EMPTY;
-    }
-
-    /** 本 tick 的应力数据（构造时新建，保证非 null）。 */
-    public ContainerStressData stressData() {
-        ContainerStressData s = data(ContainerStressData.KEY);
-        return s != null ? s : new ContainerStressData();
-    }
-
-    /** 本容器的红电账本（可能为 null：容器不支持时）。 */
-    public ContainerPowerData powerData() {
-        return data(ContainerPowerData.KEY);
+    /**
+     * 读或创建容器级 / tick 级数据（1a-4 的统一入口，带创建语义）。
+     *
+     * <p>持久 key 委托给容器的 store；tick 级 key 查本 tick 的 store，缺失时用 key 的工厂创建。</p>
+     */
+    public <T> T getOrCreateData(ContainerDataKey<T> key) {
+        if (key.isPersistent()) {
+            return ctx.getOrCreateContainerData(key);
+        }
+        T v = tickData.peek(key);
+        if (v == null) {
+            v = key.create();
+            tickData.put(key, v);
+        }
+        return v;
     }
 
     /**
@@ -101,30 +117,27 @@ public class TickContext {
     }
 
     /**
-     * 获取或创建容器红石数据。
-     * 统一走容器的持久 store（1a-4），确保 edgeGrid 跨 tick 保持。
-     */
-    public ContainerRedstoneData getOrCreateRedstoneData(ContainerContext context) {
-        return context.getOrCreateContainerData(ContainerRedstoneData.KEY);
-    }
-
-    /**
      * 获取感知端口（v19.1 架构演进 ②）：电力层与跨层消费者读取信号层的唯一接口。
      * 依赖收窄到接口——edgeGrid 的边模型后续重构只改端口实现。
      *
      * <p>⚠️ 接口**已上移到契约层** `living/api/`（2026-10-08 C 收尾）——
      * 否则消费者用端口仍要 import `domain/redstone`，模块级依赖并未真正切断。</p>
+     *
+     * <p>实现由红石领域<b>注册</b>（2026-10-08 计划 ⑤）—— 本类只认契约层
+     * {@link RedstoneSensor}，不认识 {@code ContainerRedstoneData}。</p>
      */
-    public com.qiqi.li.living.api.RedstoneSensor getSensor(ContainerContext context) {
-        return getOrCreateRedstoneData(context);
+    public RedstoneSensor getSensor(ContainerContext context) {
+        return sensorResolver.apply(context);
     }
 
     /**
-     * 获取或创建容器红电数据（电力层账本）。
-     * 统一走容器的持久 store（1a-4），确保事件状态跨 tick 保持。
+     * 获取流体「存在性」视图（供<b>跨领域</b>消费者，如活耕地判湿）。
+     *
+     * <p>返回契约层 {@link FluidPresence} 而非具体的 {@code ContainerFluidData} ⇒
+     * 消费者不必 import 水领域。实现由水领域注册。</p>
      */
-    public ContainerPowerData getOrCreatePowerData(ContainerContext context) {
-        return context.getOrCreateContainerData(ContainerPowerData.KEY);
+    public FluidPresence getFluidPresence() {
+        return fluidPresenceResolver.apply(this);
     }
 
     /**

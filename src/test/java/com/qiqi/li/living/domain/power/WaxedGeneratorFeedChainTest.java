@@ -120,7 +120,7 @@ class WaxedGeneratorFeedChainTest {
 
         IItemHandler handler = new FakeHandler(slots);
         SimpleContainerContext ctx = new SimpleContainerContext(handler);
-        ContainerRedstoneData redstone = ctx.getOrCreateRedstoneData();
+        ContainerRedstoneData redstone = ctx.getOrCreateContainerData(ContainerRedstoneData.KEY);
         ContainerSnapshot.registerProvider(new RedstoneSnapshotProvider());
 
         // 红石功能槽位（拉杆 + 粉链；涂蜡是绝缘体不参与信号层）
@@ -210,7 +210,7 @@ class WaxedGeneratorFeedChainTest {
 
         IItemHandler handler = new FakeHandler(slots);
         SimpleContainerContext ctx = new SimpleContainerContext(handler);
-        ContainerRedstoneData redstone = ctx.getOrCreateRedstoneData();
+        ContainerRedstoneData redstone = ctx.getOrCreateContainerData(ContainerRedstoneData.KEY);
         ContainerSnapshot.registerProvider(new RedstoneSnapshotProvider());
 
         var redSlots = new java.util.HashMap<String, java.util.Set<Integer>>();
@@ -484,7 +484,7 @@ class WaxedGeneratorFeedChainTest {
         // 右侧注入：采样面 = 输入方向（RIGHT）→ 派生应出现
         for (int t = 0; t < 24; t++) {
             TickContext tick = new TickContext(ctx);
-            ContainerRedstoneData redstone = tick.getOrCreateRedstoneData(ctx);
+            ContainerRedstoneData redstone = ctx.getOrCreateContainerData(ContainerRedstoneData.KEY);
             int cur = Math.floorMod(t, 4) < 2 ? 4096 : 0;
             int prev = Math.floorMod(t - 1, 4) < 2 ? 4096 : 0;
             redstone.setPrevIncomingEdgeForTest(4, ContainerRedstoneData.EDGE_RIGHT, prev);
@@ -526,7 +526,7 @@ class WaxedGeneratorFeedChainTest {
             // 预建容器尺寸的 edgeGrid（模拟生产中 calculate 创建的网格），
             // 否则测试 seam 的 9×1 默认网格会让 UP/DOWN 注入越界失效
             TickContext preTick = new TickContext(ctx);
-            ContainerRedstoneData redstone = preTick.getOrCreateRedstoneData(ctx);
+            ContainerRedstoneData redstone = ctx.getOrCreateContainerData(ContainerRedstoneData.KEY);
 
             boolean sawRising = false;
             int neighborSlot = 13 + c.neighborOffset();
@@ -556,7 +556,7 @@ class WaxedGeneratorFeedChainTest {
     }
 
     private static ContainerPowerData powerData(TickContext tick, com.qiqi.li.living.container.ContainerContext ctx) {
-        return tick.getOrCreatePowerData(ctx);
+        return ctx.getOrCreateContainerData(ContainerPowerData.KEY);
     }
 
     private static List<LivingItemFunction.SlotEntry> entries(

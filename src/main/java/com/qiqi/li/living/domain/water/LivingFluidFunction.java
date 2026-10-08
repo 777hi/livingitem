@@ -68,7 +68,7 @@ public class LivingFluidFunction implements LivingItemFunction, HasContainerData
      */
     @Override
     public void tickContainerData(List<SlotEntry> entries, ContainerContext ctx, TickContext tick) {
-        ContainerFluidData fluidData = tick.fluidData();
+        ContainerFluidData fluidData = tick.data(ContainerFluidData.KEY);
         if (fluidData == null || fluidData == ContainerFluidData.EMPTY) return;
         if (!fluidData.isEmpty()) {
             fluidData.setLastTickTime(System.currentTimeMillis());

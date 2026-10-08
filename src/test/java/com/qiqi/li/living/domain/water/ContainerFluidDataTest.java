@@ -249,7 +249,7 @@ class ContainerFluidDataTest {
     void tickContext_createsFluidData() {
         var ctx = row();
         var tick = new TickContext(ctx);
-        assertNotSame(ContainerFluidData.EMPTY, tick.fluidData(),
+        assertNotSame(ContainerFluidData.EMPTY, tick.data(ContainerFluidData.KEY),
             "1a-4 曾漏掉创建 ⇒ tick.fluidData() 恒 EMPTY ⇒ 流体数据无处着落 ⇒ 水流失效");
     }
 

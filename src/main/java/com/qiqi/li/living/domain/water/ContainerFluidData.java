@@ -15,6 +15,7 @@ import java.util.Set;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import com.qiqi.li.living.api.ContainerDataLifecycle;
+import com.qiqi.li.living.api.FluidPresence;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.components.LivingComponents;
 import com.qiqi.li.living.container.ContainerContext;
@@ -53,7 +54,7 @@ import net.neoforged.neoforge.registries.NeoForgeRegistries;
  * - 多水源时，每个槽位取最近水源的 level
  * - 流动水记录 fromSlot（BFS 父节点），物品沿水流方向推动
  */
-public class ContainerFluidData implements ContainerDataLifecycle {
+public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence {
 
     /**
      * 容器级流体数据的 key（跨 tick 持久 + 落盘到 BE attachment）。
@@ -125,6 +126,12 @@ public class ContainerFluidData implements ContainerDataLifecycle {
         // ⚠️ 必须计入派生源：纯源容器（flows 尚空、仅 generatedSources 非空）不是空数据 ——
         // 否则驱动的 !isEmpty() 门会把它们永远挡在 tick 之外，BFS 无从启动、落盘也会漏。
         return flows.isEmpty() && generatedSources.isEmpty();
+    }
+
+    /** {@link FluidPresence} 实现：该槽位是否有流体（供跨领域消费者，如活耕地判湿）。 */
+    @Override
+    public boolean hasFluidAt(int slot) {
+        return flows.containsKey(slot);
     }
 
     public long getLastTickTime() {

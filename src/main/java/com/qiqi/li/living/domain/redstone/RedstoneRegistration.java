@@ -2,6 +2,7 @@ package com.qiqi.li.living.domain.redstone;
 
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerSnapshot;
+import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.interaction.InteractionRegistry;
 
 /**
@@ -35,6 +36,12 @@ public final class RedstoneRegistration {
 
         // ── 容器快照贡献者 ──
         ContainerSnapshot.registerProvider(new RedstoneSnapshotProvider());
+
+        // ── 框架中继：感知端口解析器（2026-10-08 计划 ⑤）──
+        // 让 TickContext 只认契约层 RedstoneSensor，不认识 ContainerRedstoneData
+        // ⇒ container 包不再 import 红石领域。
+        TickContext.registerSensorResolver(
+            ctx -> ctx.getOrCreateContainerData(ContainerRedstoneData.KEY));
 
         // ── 交互：按钮按压 ──
         // 十三种按钮曾在此逐条注册；D2 全迁 JSON 后由 #minecraft:buttons tag 一条覆盖

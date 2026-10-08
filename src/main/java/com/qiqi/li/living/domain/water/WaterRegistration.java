@@ -3,6 +3,7 @@ package com.qiqi.li.living.domain.water;
 import java.util.Set;
 
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.container.TickContext;
 
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
@@ -33,6 +34,12 @@ public final class WaterRegistration {
     }
 
     public static void register() {
+        // ── 框架中继：流体存在性视图解析器（2026-10-08 计划 ⑤）──
+        // 让 TickContext 只认契约层 FluidPresence，不认识 ContainerFluidData
+        // ⇒ container 包不再 import 水领域；跨领域消费者（活耕地判湿）也不必 import。
+        TickContext.registerFluidPresenceResolver(
+            tick -> tick.data(ContainerFluidData.KEY));
+
         // 容器级流体 tick 驱动（1b-2b，框架）：自维持 + HasContainerData prio 0
         LivingItemManager.registerFunction(new LivingFluidFunction());
         // 活桶（流体侧批次二，2026-10-03）：交互型，无 tick —— 汲/倒走 GUI 交互管道。

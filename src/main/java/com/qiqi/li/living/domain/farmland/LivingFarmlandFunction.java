@@ -111,8 +111,8 @@ public class LivingFarmlandFunction implements LivingItemFunction {
     private int[] computeMoisture(ContainerContext ctx, TickContext tick, int size, int width,
                                   List<SlotEntry> entries) {
         int[] levels = new int[size];
-        if (tick.fluidData() == null || tick.fluidData().isEmpty()) return levels;
-        var flows = tick.fluidData().getFlows();
+        var fluid = tick.getFluidPresence();
+        if (fluid == null || fluid.isEmpty()) return levels;
 
         java.util.Deque<Integer> queue = new java.util.ArrayDeque<>();
         // 源：与水流相邻的活耕地 = 源 4 级（MAX_MOISTURE_LEVEL）
@@ -120,7 +120,7 @@ public class LivingFarmlandFunction implements LivingItemFunction {
             int slot = e.slotIndex();
             for (int dir : DIRS) {
                 int neighbor = ContainerContext.resolveNeighbor(slot, dir, size, width);
-                if (neighbor >= 0 && flows.containsKey(neighbor)) {
+                if (neighbor >= 0 && fluid.hasFluidAt(neighbor)) {
                     if (levels[slot] < MAX_MOISTURE_LEVEL) {
                         levels[slot] = MAX_MOISTURE_LEVEL;
                         queue.add(slot);

@@ -44,7 +44,9 @@ public class LivingTntFunction implements LivingItemFunction {
         // 红石层的驱动守卫（LivingRedstoneFunction.tickContainerData）以「账本已存在」为放行判据之一，
         // 容器里只有活 TNT 时正是靠这行让守卫放行。见
         // docs/buffer/redstone-driver-consolidation-plan.md §5 改动 2。
-        tick.getOrCreateRedstoneData(context);
+        // （2026-10-08 计划 ⑤：getSensor 内部即「取或创建账本」，故改走端口 ——
+        //  这样 TNT 不必 import redstone 领域，中继由 TickContext 承担。）
+        tick.getSensor(context);
         int size = context.getSize();
 
         for (SlotEntry entry : entries) {

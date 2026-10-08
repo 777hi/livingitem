@@ -585,7 +585,7 @@ public class ContainerLivingItemHandler {
      * 将应力与流体数据写回 BlockEntity（或玩家脚底），并清理空流体缓存。
      */
     private static void writebackBlockEntities(TickableContainerContext context, TickContext tick) {
-        ContainerStressData stressData = tick.stressData();
+        ContainerStressData stressData = tick.data(ContainerStressData.KEY);
         if (stressData != null) {
             for (BlockEntity be : context.getAssociatedBlockEntities()) {
                 be.setData(LivingComponents.CONTAINER_STRESS_DATA.value(), stressData);
@@ -597,7 +597,7 @@ public class ContainerLivingItemHandler {
             }
         }
 
-        ContainerFluidData fluidData = tick.fluidData();
+        ContainerFluidData fluidData = tick.data(ContainerFluidData.KEY);
         if (fluidData != null && !fluidData.isEmpty()) {
             for (BlockEntity be : context.getAssociatedBlockEntities()) {
                 be.setData(LivingComponents.CONTAINER_FLUID_DATA.value(), fluidData);
@@ -642,7 +642,7 @@ public class ContainerLivingItemHandler {
         // 零成本。退出重进 / LRU 回收后由 getPowerData 回填，相位无缝续接。
         // 2026-09-11 换轴：capture 时钟与 tickContainerData 的 resolvePhaseClock 同源
         // （世界 game time 优先，回退本地轴）——快照必须存与驱动同坐标系的值。
-        ContainerPowerData powerData = tick.powerData();
+        ContainerPowerData powerData = tick.data(ContainerPowerData.KEY);
         if (powerData != null && !context.getAssociatedBlockEntities().isEmpty()) {
             long clock = powerData.currentTick();   // 回退轴（无 Level / 测试环境）
             for (BlockEntity be : context.getAssociatedBlockEntities()) {

@@ -120,6 +120,6 @@ public class LivingRedstoneFunction implements LivingItemFunction, HasContainerD
                 && !ContainerRedstoneData.hasRedstoneElements(tick)) {
             return;
         }
-        tick.getOrCreateRedstoneData(ctx).calculate(ctx, tick);
+        ctx.getOrCreateContainerData(ContainerRedstoneData.KEY).calculate(ctx, tick);
     }
 }

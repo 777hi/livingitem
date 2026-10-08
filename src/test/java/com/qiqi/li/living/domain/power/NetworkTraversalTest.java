@@ -104,7 +104,7 @@ class NetworkTraversalTest {
         }
         IItemHandler handler = new FakeHandler(slots);
         SimpleContainerContext ctx = new SimpleContainerContext(handler);
-        ContainerRedstoneData redstone = ctx.getOrCreateRedstoneData();
+        ContainerRedstoneData redstone = ctx.getOrCreateContainerData(ContainerRedstoneData.KEY);
 
         List<LivingItemFunction.SlotEntry> entries = new ArrayList<>();
         for (int i = 0; i < numGens; i++) {
@@ -234,7 +234,7 @@ class NetworkTraversalTest {
 
         IItemHandler handler = new FakeHandler(slots);
         SimpleContainerContext ctx = new SimpleContainerContext(handler);
-        ContainerRedstoneData redstone = ctx.getOrCreateRedstoneData();
+        ContainerRedstoneData redstone = ctx.getOrCreateContainerData(ContainerRedstoneData.KEY);
 
         List<LivingItemFunction.SlotEntry> entries = new ArrayList<>();
         entries.add(new LivingItemFunction.SlotEntry(0, slots[0]));
@@ -281,7 +281,7 @@ class NetworkTraversalTest {
         slots[1] = living(Items.WAXED_OXIDIZED_COPPER, 8);     // 锈级 3
         IItemHandler handler = new FakeHandler(slots);
         SimpleContainerContext ctx = new SimpleContainerContext(handler);
-        ContainerRedstoneData redstone = ctx.getOrCreateRedstoneData();
+        ContainerRedstoneData redstone = ctx.getOrCreateContainerData(ContainerRedstoneData.KEY);
 
         List<LivingItemFunction.SlotEntry> entries = new ArrayList<>();
         entries.add(new LivingItemFunction.SlotEntry(0, slots[0]));
@@ -348,7 +348,7 @@ class NetworkTraversalTest {
         slots[1] = genStack;
         IItemHandler handler = new FakeHandler(slots);
         SimpleContainerContext ctx = new SimpleContainerContext(handler);
-        ContainerRedstoneData redstone = ctx.getOrCreateRedstoneData();
+        ContainerRedstoneData redstone = ctx.getOrCreateContainerData(ContainerRedstoneData.KEY);
 
         // 电力层 entries（发电机）
         List<LivingItemFunction.SlotEntry> entries = new ArrayList<>();

@@ -105,9 +105,9 @@ public class LivingWaterWheelFunction implements LivingItemFunction, HasContaine
 
     @Override
     public void tickContainerData(List<SlotEntry> entries, ContainerContext ctx, TickContext tick) {
-        ContainerFluidData fluidData = tick.fluidData();
+        ContainerFluidData fluidData = tick.data(ContainerFluidData.KEY);
         if (fluidData == ContainerFluidData.EMPTY) return;
-        ContainerStressData stressData = tick.stressData();
+        ContainerStressData stressData = tick.getOrCreateData(ContainerStressData.KEY);
         if (stressData != null && fluidData != null && !fluidData.isEmpty()) {
             Set<Integer> waterWheelSlots = new HashSet<>();
             for (var entry : entries) {

@@ -95,7 +95,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
 
     @Override
     public void tickContainerData(List<SlotEntry> entries, ContainerContext ctx, TickContext tick) {
-        ContainerPowerData powerData = tick.getOrCreatePowerData(ctx);
+        ContainerPowerData powerData = ctx.getOrCreateContainerData(ContainerPowerData.KEY);
         if (powerData == null) return;
 
         // 各锈蚟级本 tick 基础出力累加器（共振用，§3.7）。

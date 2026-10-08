@@ -84,7 +84,7 @@ class PhaseInterpretationTest {
     private static Scenario run(ItemStack[] slots, List<LivingItemFunction.SlotEntry> entries,
             int totalTicks, int lastInjectTick) {
         SimpleContainerContext ctx = new SimpleContainerContext(new FakeHandler(slots));
-        ContainerRedstoneData redstone = ctx.getOrCreateRedstoneData();
+        ContainerRedstoneData redstone = ctx.getOrCreateContainerData(ContainerRedstoneData.KEY);
         // 首拍热身（2026-09-09 根修对齐）：真实游戏容器已跑多 tick 才有振荡；
         // 红石账本首拍 hasEdgeHistory=false 跳过边检测——测试须先空跑一拍建立历史
         function.tickContainerData(entries, ctx, new TickContext(ctx));
@@ -101,7 +101,7 @@ class PhaseInterpretationTest {
     private static long runTotal(ItemStack[] slots, List<LivingItemFunction.SlotEntry> entries,
             int totalTicks, int lastInjectTick) {
         SimpleContainerContext ctx = new SimpleContainerContext(new FakeHandler(slots));
-        ContainerRedstoneData redstone = ctx.getOrCreateRedstoneData();
+        ContainerRedstoneData redstone = ctx.getOrCreateContainerData(ContainerRedstoneData.KEY);
         function.tickContainerData(entries, ctx, new TickContext(ctx));   // 首拍热身（同上）
         long total = 0;
         for (long t = 0; t < totalTicks; t++) {
@@ -154,7 +154,7 @@ class PhaseInterpretationTest {
         for (int idx : new int[] {3, 4, 5}) entries.add(new LivingItemFunction.SlotEntry(idx, slots[idx]));
 
         SimpleContainerContext ctx = new SimpleContainerContext(new FakeHandler(slots));
-        ContainerRedstoneData redstone = ctx.getOrCreateRedstoneData();
+        ContainerRedstoneData redstone = ctx.getOrCreateContainerData(ContainerRedstoneData.KEY);
         // 首拍热身（根修对齐）：先空跑一拍建立边历史（该测试断言 n=0，热身不注入不破坏语义）
         function.tickContainerData(entries, ctx, new TickContext(ctx));
         // 只往雕文的 RIGHT 边注入 4t 方波（非输入方向）
@@ -273,7 +273,7 @@ class PhaseInterpretationTest {
         entries.add(new LivingItemFunction.SlotEntry(1, slots[1]));
 
         SimpleContainerContext ctx = new SimpleContainerContext(new FakeHandler(slots));
-        ContainerRedstoneData redstone = ctx.getOrCreateRedstoneData();
+        ContainerRedstoneData redstone = ctx.getOrCreateContainerData(ContainerRedstoneData.KEY);
         for (long t = 0; t < 24; t++) {
             inject(redstone, 1, ContainerRedstoneData.EDGE_LEFT, t, 1);   // φ=1
             inject(redstone, 1, ContainerRedstoneData.EDGE_RIGHT, t, 2);  // φ=2
@@ -299,7 +299,7 @@ class PhaseInterpretationTest {
         entries.add(new LivingItemFunction.SlotEntry(1, slots[1]));
 
         SimpleContainerContext ctx = new SimpleContainerContext(new FakeHandler(slots));
-        ContainerRedstoneData redstone = ctx.getOrCreateRedstoneData();
+        ContainerRedstoneData redstone = ctx.getOrCreateContainerData(ContainerRedstoneData.KEY);
         for (long t = 0; t < 24; t++) {
             inject(redstone, 1, ContainerRedstoneData.EDGE_LEFT, t, 0);   // φ=0
             inject(redstone, 1, ContainerRedstoneData.EDGE_RIGHT, t, 2);  // φ=2
