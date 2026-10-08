@@ -9,7 +9,6 @@ module	living/api	living/container	4
 module	living/container	living/transfer	3
 module	(root)	client/icon	1
 module	living/api	living/components	1
-module	living/api	living/domain/tools	1
 module	living/container	living/components	1
 module	living/container	living/debug	1
 

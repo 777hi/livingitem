@@ -13,7 +13,6 @@ import java.util.UUID;
 import javax.annotation.Nullable;
 import java.util.Set;
 
-import com.qiqi.li.living.domain.tools.LivingToolAction;
 import net.minecraft.world.item.Items;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.UUIDUtil;
@@ -103,7 +102,7 @@ public class LivingItemManager {
     /**
      * 活工具<b>最近一次瞬时动作</b>（{@code K} 组动画用，<b>仅网络同步、不落盘</b>）。
      *
-     * <p>见 {@link com.qiqi.li.living.domain.tools.LivingToolAction} —— 交互是瞬时的，
+     * <p>见「最近一次瞬时动作」组件（{@code living_tool_last_action}）—— 交互是瞬时的，
      * 客户端无从得知"刚刚发生了交互"，也拿不到"交互在哪一格"（容器形态起点埋在方块里）。</p>
      */
 
