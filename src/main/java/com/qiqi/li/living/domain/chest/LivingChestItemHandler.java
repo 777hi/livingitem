@@ -7,6 +7,12 @@ import net.neoforged.neoforge.items.IItemHandler;
 
 import com.qiqi.li.living.domain.chest.LivingChestFunction;
 
+/**
+ * 活箱子的 Forge 物品处理器。
+ *
+ * <p>以 {@code IItemHandler} 形式暴露活箱子内部存储（27 槽），供原版 / Forge 传输系统与外部接口读写；
+ * 读写均委托 {@link LivingChestFunction} 并受堆叠数与字节上限约束。</p>
+ */
 public class LivingChestItemHandler implements IItemHandler {
 
     private final ItemStack chestStack;

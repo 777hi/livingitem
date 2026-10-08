@@ -16,6 +16,12 @@ import com.qiqi.li.living.transfer.FilterData;
 import com.qiqi.li.living.domain.chest.LivingChestFunction;
 import net.minecraft.server.MinecraftServer;
 
+/**
+ * 活箱子的槽位访问适配。
+ *
+ * <p>把「装在红石容器某槽位里的活箱子」包装成跨容器传输用的 {@code SlotAccessor}，代理到该箱子物品堆
+ * 内部的 27 格 / 16384 字节容量存储，并受堆叠数（{@code count > 1} 时停用）与字节上限约束。</p>
+ */
 public class LivingChestAccessor implements SlotAccessor {
 
     private final ContainerIdentity identity;

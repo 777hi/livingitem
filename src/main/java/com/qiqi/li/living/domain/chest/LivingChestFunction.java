@@ -23,6 +23,13 @@ import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
 
+/**
+ * 活箱子的功能实现。
+ *
+ * <p>把红石容器里的活箱子变成「可装物品的箱子」：内容存于原版 {@code DataComponents.CONTAINER}
+ * （因此取消活化<b>不清空</b>内容），提供 27 槽 / 16384 字节容量的存取、字节占用计算与取消活化掉落逻辑；
+ * 同时向外提供 {@link #getItems} / {@link #insertItem} / {@link #extractItem} 等跨容器传输读写入口。</p>
+ */
 public class LivingChestFunction implements LivingItemFunction {
 
     public static final String ID = "living_chest";
