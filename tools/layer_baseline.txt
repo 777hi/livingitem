@@ -13,7 +13,6 @@ module	living/api	living/components	1
 module	living/api	living/domain/tools	1
 module	living/container	living/components	1
 module	living/container	living/debug	1
-module	living/domain/tnt	(root)	1
 
 # R2 Mixin 位置违规（只能声明在 L4 / L5）
 #   （无）

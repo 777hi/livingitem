@@ -164,7 +164,7 @@ public class ExplosionComponent {
             : ExplosionParams.Mode.SUPER;
         ExplosionParams params = new ExplosionParams(center.x, center.y, center.z, radius, mode, vanillaDrops);
 
-        com.qiqi.li.LivingItem.LOGGER.info(
+        com.qiqi.li.logging.ModLog.CONTAINER.info(
             "爆炸触发: TNT数量={}, radius={}, 位置=({},{},{}), 模式={}, 掉落模式={}, 覆盖区块={}",
             totalTntCount, String.format("%.1f", radius), center.x, center.y, center.z,
             mode, vanillaDrops ? "原版衰减" : "100%掉落", params.chunkCount());
