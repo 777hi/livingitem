@@ -11,6 +11,12 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 
+/**
+ * 活漏斗过滤链数据（不可变）。
+ *
+ * <p>记录黑名单 / 白名单，以及各自按 ID / NBT 复合 / Tag 三种匹配模式与对应槽位；经 {@link #of} / {@link #set}
+ * 读写，由 {@code HopperFilterBuilder} 每 tick 从容器布局与物品重建（不落盘）。</p>
+ */
 public record FilterData(
     List<String> blacklist,
     List<String> whitelist,

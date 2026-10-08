@@ -15,6 +15,11 @@ import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
 
+/**
+ * 活打火石的功能实现。
+ *
+ * <p>识别活打火石（用于点燃活 TNT / 活红石等），在悬浮提示中标注其活化状态；本身无每 tick 逻辑。</p>
+ */
 public class LivingFlintAndSteelFunction implements LivingItemFunction {
 
     public static final String ID = "living_flint_and_steel";

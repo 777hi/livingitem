@@ -8,6 +8,12 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 
+/**
+ * 二维整数坐标 / 方向向量。
+ *
+ * <p>广泛用于描述 GUI 内的相对方向（上 / 下 / 左 / 右及四个对角），并提供符号显示
+ * （{@link #getSymbol}）、取反、相反方向、基本 / 对角判定与 NBT 读写等工具方法。</p>
+ */
 public record Pos2D(int x, int y) {
 
     public static final Pos2D NONE = new Pos2D(0, 0);

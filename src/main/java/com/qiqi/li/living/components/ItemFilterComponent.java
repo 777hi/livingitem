@@ -15,6 +15,12 @@ import net.minecraft.tags.TagKey;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 
+/**
+ * 活漏斗过滤规则引擎。
+ *
+ * <p>集中实现黑名单 / 白名单的「按优先级匹配」（NBT 复合 &gt; ID &gt; Tag），并提供 {@link #allows} 判定、
+ * 模式归一化（随堆叠数在 ID / NBT / Tag 间切换）与悬浮提示渲染。</p>
+ */
 public final class ItemFilterComponent {
 
     public static final String ID = "item_filter";
