@@ -85,7 +85,7 @@ class ContainerFluidHandlerTest {
     private ContainerFluidData seed(Level level, int... sourceSlots) {
         var ctx = ContainerLivingItemHandler.resolveContextAt(level, pos, null);
         assertNotNull(ctx, "反查链应产出容器上下文");
-        ContainerFluidData data = ContainerLivingItemHandler.getFluidData(ctx);
+        ContainerFluidData data = ContainerFluidHandler.getOrCreateFluidData(ctx);
         for (int slot : sourceSlots) {
             data.registerGeneratedSource(slot, Fluids.WATER.getFluidType());
         }

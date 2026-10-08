@@ -106,7 +106,7 @@ class ContainerFluidIntegrationTest {
         var ctx = new SimpleContainerContext(new FakeHandler(slots), level);
 
         // 桶源退役（2026-10-03）：源由倒水/落盘而来，预置派生源验证端到端 BFS
-        ContainerLivingItemHandler.getFluidData(ctx)
+        ContainerFluidHandler.getOrCreateFluidData(ctx)
             .registerGeneratedSource(0, Fluids.WATER.getFluidType());
         ContainerLivingItemHandler.processContext(ctx, level);
 
@@ -126,7 +126,7 @@ class ContainerFluidIntegrationTest {
 
         var ctx = new SimpleContainerContext(new FakeHandler(new ItemStack[9]),
             java.util.List.of(BlockPos.ZERO), java.util.List.of(be));
-        ContainerLivingItemHandler.getFluidData(ctx)
+        ContainerFluidHandler.getOrCreateFluidData(ctx)
             .registerGeneratedSource(0, Fluids.WATER.getFluidType());
 
         var captor = org.mockito.ArgumentCaptor.forClass(ContainerFluidData.class);
@@ -135,7 +135,7 @@ class ContainerFluidIntegrationTest {
             .setData(org.mockito.Mockito.eq(LivingComponents.CONTAINER_FLUID_DATA.value()), captor.capture());
         assertFalse(captor.getValue().isEmpty(), "有源 ⇒ 附件写回非空（源落盘）");
 
-        ContainerLivingItemHandler.getFluidData(ctx).removeGeneratedSource(0);
+        ContainerFluidHandler.getOrCreateFluidData(ctx).removeGeneratedSource(0);
         ContainerLivingItemHandler.processContext(ctx, level);
         org.mockito.Mockito.verify(be, org.mockito.Mockito.atLeastOnce())
             .setData(org.mockito.Mockito.eq(LivingComponents.CONTAINER_FLUID_DATA.value()), captor.capture());

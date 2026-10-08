@@ -245,12 +245,15 @@ class ContainerFluidDataTest {
     }
 
     @Test
-    @DisplayName("⑨ 集成回归：TickContext 构造时创建容器流体数据（1a-4 漏建 ⇒ 水流失效）")
+    @DisplayName("⑨ 集成回归：容器 tick 开始时创建流体数据（1a-4 漏建 ⇒ 水流失效）")
     void tickContext_createsFluidData() {
         var ctx = row();
         var tick = new TickContext(ctx);
+        // 2026-10-08 计划 ⑤：创建从「TickContext 构造」移到领域钩子（由 setTickContext 触发）。
+        // 这里直接调领域访问器 —— 等价于生产路径上钩子所做的事（测试自足，不依赖 mod 引导注册）。
+        ContainerFluidHandler.getOrCreateFluidData(ctx);
         assertNotSame(ContainerFluidData.EMPTY, tick.data(ContainerFluidData.KEY),
-            "1a-4 曾漏掉创建 ⇒ tick.fluidData() 恒 EMPTY ⇒ 流体数据无处着落 ⇒ 水流失效");
+            "1a-4 曾漏掉创建 ⇒ 流体数据无处着落 ⇒ 水流失效");
     }
 
     @Test
@@ -268,6 +271,9 @@ class ContainerFluidDataTest {
     void fluidDriver_drivesBfs() {
         var ctx = row();
         var tick = new TickContext(ctx);
+        // 2026-10-08 计划 ⑤：流体数据创建从「TickContext 构造」移到领域钩子（setTickContext 触发）——
+        // 测试自足，直接调领域访问器（等价于生产路径上钩子所做的事）。
+        ContainerFluidHandler.getOrCreateFluidData(ctx);
         var fluid = ctx.peekContainerData(ContainerFluidData.KEY);
         fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
 

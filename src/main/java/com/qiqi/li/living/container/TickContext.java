@@ -28,7 +28,7 @@ public class TickContext {
 
     /**
      * 感知端口解析器（由红石领域在自己的 Registration 里注册）。
-     * 让本类只认契约层 {@link RedstoneSensor}，不认识 {@code ContainerRedstoneData}。
+     * 让本类只认契约层 {@link RedstoneSensor}，不认识具体的红石账本实现。
      */
     private static volatile Function<ContainerContext, RedstoneSensor> sensorResolver = c -> null;
 
@@ -64,13 +64,9 @@ public class TickContext {
 
     public TickContext(ContainerContext ctx) {
         this.ctx = ctx;
-        // ⚠️ 必须在此创建容器的流体数据 —— 1a-4「容器级数据统一存储」曾漏掉此调用
-        // （旧版由 getOrCreateFluidData() 在此创建），导致 tick 读流体恒为 EMPTY
-        // ⇒ 活水桶的 registerSource 被跳过 ⇒ 水流整体失效。
-        // 与 1a-4 之前一致：仅对 SimpleContainerContext 创建，且含 BE 附件回填（LRU 驱逐后恢复）。
-        if (ctx instanceof SimpleContainerContext) {
-            ContainerLivingItemHandler.getFluidData(ctx);
-        }
+        // ⚠️ 容器级数据的「首次创建 + 附件回填」（如流体数据）由各领域注册的
+        // ContainerTickHook#onTickStart 负责 —— 它在紧随本构造的 setTickContext 里触发，
+        // 时机与原「在此调 getFluidData」等价（2026-10-08 计划 ⑤ 移出）。
     }
 
     /**
@@ -124,7 +120,7 @@ public class TickContext {
      * 否则消费者用端口仍要 import `domain/redstone`，模块级依赖并未真正切断。</p>
      *
      * <p>实现由红石领域<b>注册</b>（2026-10-08 计划 ⑤）—— 本类只认契约层
-     * {@link RedstoneSensor}，不认识 {@code ContainerRedstoneData}。</p>
+     * {@link RedstoneSensor}，不认识具体的红石账本实现。</p>
      */
     public RedstoneSensor getSensor(ContainerContext context) {
         return sensorResolver.apply(context);
@@ -133,7 +129,7 @@ public class TickContext {
     /**
      * 获取流体「存在性」视图（供<b>跨领域</b>消费者，如活耕地判湿）。
      *
-     * <p>返回契约层 {@link FluidPresence} 而非具体的 {@code ContainerFluidData} ⇒
+     * <p>返回契约层 {@link FluidPresence} 而非具体的流体数据实现 ⇒
      * 消费者不必 import 水领域。实现由水领域注册。</p>
      */
     public FluidPresence getFluidPresence() {

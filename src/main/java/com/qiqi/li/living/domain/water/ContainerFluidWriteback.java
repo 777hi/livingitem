@@ -7,6 +7,7 @@ import com.qiqi.li.living.components.LivingComponents;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.ContainerLivingItemHandler;
 import com.qiqi.li.living.container.ContainerTickHook;
+import com.qiqi.li.living.container.SimpleContainerContext;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.container.TickableContainerContext;
 
@@ -21,6 +22,19 @@ import net.minecraft.world.level.block.entity.BlockEntity;
  * ⇒ 落到 Player 附件（按容器键）。</p>
  */
 public final class ContainerFluidWriteback implements ContainerTickHook {
+
+    /**
+     * tick 开始：确保容器的流体数据已创建（含 BE / Player 附件回填）。
+     *
+     * <p>原在 {@code TickContext} 构造里调 {@code ContainerLivingItemHandler#getFluidData}，
+     * 2026-10-08 计划 ⑤ 移入本领域 —— 时机不变（钩子在紧随构造的 {@code setTickContext} 触发）。</p>
+     */
+    @Override
+    public void onTickStart(ContainerContext ctx, TickContext tick) {
+        if (ctx instanceof SimpleContainerContext) {
+            ContainerFluidHandler.getOrCreateFluidData(ctx);
+        }
+    }
 
     @Override
     public void onWriteback(TickableContainerContext ctx, TickContext tick) {

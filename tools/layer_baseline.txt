@@ -28,7 +28,6 @@ module	living/components	living/domain/hopper	1
 module	living/components	living/domain/tnt	1
 module	living/container	living/components	1
 module	living/container	living/debug	1
-module	living/container	living/domain/water	1
 module	living/domain/ender	(root)	1
 module	living/domain/ender	network	1
 module	living/domain/map	network	1

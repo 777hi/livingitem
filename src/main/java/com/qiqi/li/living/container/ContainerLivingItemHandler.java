@@ -13,7 +13,6 @@ import java.util.Set;
 
 import com.qiqi.li.living.api.ContainerDataLifecycle;
 import com.qiqi.li.living.api.HasContainerData;
-import com.qiqi.li.living.domain.water.ContainerFluidData;
 import com.qiqi.li.living.util.DoubleChestPositions;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceKey;
@@ -91,7 +90,7 @@ public class ContainerLivingItemHandler {
      *
      * <p>在 {@code containerKey} 前拼接维度，避免主世界与下界同坐标的两个容器
      * 共用同一条流体/红石数据。{@code containerKey} 自身格式保持不变，
-     * 以兼容 {@code EnderChannelRegistry} 对其的解析。</p>
+     * 以兼容末影频道对其的解析。</p>
      *
      * @return 缓存键，容器无 containerKey 时返回 null
      */
@@ -131,55 +130,6 @@ public class ContainerLivingItemHandler {
     }
 
     /**
-     * 获取或创建容器持久化流体数据。
-     * 返回 null 表示容器不支持流体数据（如没有 containerKey）。
-     */
-    public static ContainerFluidData getFluidData(ContainerContext ctx) {
-        ContainerEntry e = entry(ctx);
-        if (e == null) return null;
-        ContainerFluidData existing = e.store.peek(ContainerFluidData.KEY);
-        if (existing != null) return existing;
-
-        if (ctx instanceof SimpleContainerContext simpleCtx) {
-            for (BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {
-                ContainerFluidData persisted = be.getData(LivingComponents.CONTAINER_FLUID_DATA);
-                if (persisted != null && persisted != ContainerFluidData.EMPTY && !persisted.isEmpty()) {
-                    e.store.put(ContainerFluidData.KEY, persisted);
-                    return persisted;
-                }
-            }
-        }
-
-        // 玩家背包 / 末影箱（B.5 第三项）：无 BE 可挂 ⇒ 从 Player attachment 回填（按容器键）。
-        // ⚠️ getData 可能返回 null（测试替身 / 附件未注册），必须判空。
-        Player owner = ownerPlayer(ctx);
-        if (owner != null) {
-            String ownerKey = ctx.getContainerKey();
-            if (ownerKey != null) {
-                Map<String, ContainerFluidData> playerMap =
-                    owner.getData(LivingComponents.CONTAINER_FLUID_DATA_PLAYER);
-                ContainerFluidData persisted = playerMap == null ? null : playerMap.get(ownerKey);
-                if (persisted != null && persisted != ContainerFluidData.EMPTY && !persisted.isEmpty()) {
-                    e.store.put(ContainerFluidData.KEY, persisted);
-                    return persisted;
-                }
-            }
-        }
-
-        return e.store.getOrCreate(ContainerFluidData.KEY);
-    }
-
-    /**
-     * 取容器的「所属玩家」—— 仅玩家背包 / 末影箱有；方块容器返回 {@code null}。
-     *
-     * <p>用于把容器级流体数据落到 <b>Player attachment</b>（B.5 第三项）：背包走
-     * {@code getInventory().player}；末影箱 inventory 为 null ⇒ 直接取 context 持有的 player。</p>
-     */
-    private static Player ownerPlayer(ContainerContext ctx) {
-        return ctx.getOwnerPlayer();
-    }
-
-    /**
      * 清理指定位置容器的流体/红石/电力数据（容器方块被破坏时调用）。
      */
     public static void removeDataByPos(Level level, BlockPos pos) {
@@ -215,6 +165,14 @@ public class ContainerLivingItemHandler {
         if (cacheKey == null) return null;
         ContainerEntry e = CONTAINER_DATA.get(cacheKey);
         return e == null ? null : e.store.peek(key);
+    }
+
+    /**
+     * 写入容器级数据（按 key）—— 供领域做「附件回填」等需要替换实例的场景。
+     */
+    public static <T> void putContainerData(ContainerContext ctx, ContainerDataKey<T> key, T value) {
+        ContainerEntry e = entry(ctx);
+        if (e != null) e.store.put(key, value);
     }
 
     /**

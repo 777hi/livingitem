@@ -25,6 +25,7 @@ import net.neoforged.neoforge.items.ItemStackHandler;
 import net.neoforged.neoforge.items.wrapper.InvWrapper;
 
 import com.qiqi.li.living.domain.water.ContainerFluidData;
+import com.qiqi.li.living.domain.water.ContainerFluidHandler;
 import com.qiqi.li.living.components.LivingComponents;
 
 /**
@@ -110,14 +111,14 @@ class PlayerFluidDataPersistenceTest {
         assertEquals("player_uuid-p", ctx.getContainerKey(), "背包容器键");
 
         // ① 有源 ⇒ 落盘
-        ContainerLivingItemHandler.getFluidData(ctx)
+        ContainerFluidHandler.getOrCreateFluidData(ctx)
             .registerGeneratedSource(0, Fluids.WATER.getFluidType());
         ContainerLivingItemHandler.processContext(ctx, level());
         assertTrue(attachment.containsKey("player_uuid-p"), "有源 ⇒ 附件里应有该容器键");
         assertFalse(attachment.get("player_uuid-p").isEmpty(), "落盘内容非空");
 
         // ② 源被汲走 ⇒ 数据变空 ⇒ 条目必须被移除
-        ContainerLivingItemHandler.getFluidData(ctx).removeGeneratedSource(0);
+        ContainerFluidHandler.getOrCreateFluidData(ctx).removeGeneratedSource(0);
         ContainerLivingItemHandler.processContext(ctx, level());
         assertFalse(attachment.containsKey("player_uuid-p"),
             "数据变空 ⇒ 附件条目必须被移除（否则重进存档从附件回填复活源）");
@@ -125,7 +126,7 @@ class PlayerFluidDataPersistenceTest {
         // ③ 重进存档：静态缓存已清 ⇒ 只能从附件回填 ⇒ 必须拿不到源
         simulateReload();
         var reloaded = playerInvCtx(inv, level());
-        assertTrue(ContainerLivingItemHandler.getFluidData(reloaded).isEmpty(),
+        assertTrue(ContainerFluidHandler.getOrCreateFluidData(reloaded).isEmpty(),
             "重进后不得复活（跨存档残留守卫）");
     }
 
@@ -136,20 +137,20 @@ class PlayerFluidDataPersistenceTest {
             new InvWrapper(new PlayerEnderChestContainer()), player, level());
         assertEquals("player_uuid-p_ender_chest", ctx.getContainerKey(), "末影箱容器键");
 
-        ContainerLivingItemHandler.getFluidData(ctx)
+        ContainerFluidHandler.getOrCreateFluidData(ctx)
             .registerGeneratedSource(0, Fluids.LAVA.getFluidType());
         ContainerLivingItemHandler.processContext(ctx, level());
         assertTrue(attachment.containsKey("player_uuid-p_ender_chest"),
             "有源 ⇒ 末影箱的容器键也落进同一份 map（一个玩家两个容器键）");
 
-        ContainerLivingItemHandler.getFluidData(ctx).removeGeneratedSource(0);
+        ContainerFluidHandler.getOrCreateFluidData(ctx).removeGeneratedSource(0);
         ContainerLivingItemHandler.processContext(ctx, level());
         assertFalse(attachment.containsKey("player_uuid-p_ender_chest"), "清空 ⇒ 该键被移除");
 
         simulateReload();
         var reloadedCtx = new EnderChestContainerContext(
             new InvWrapper(new PlayerEnderChestContainer()), player, level());
-        assertTrue(ContainerLivingItemHandler.getFluidData(reloadedCtx).isEmpty(), "重进后末影箱不复活");
+        assertTrue(ContainerFluidHandler.getOrCreateFluidData(reloadedCtx).isEmpty(), "重进后末影箱不复活");
     }
 
     @Test
@@ -160,16 +161,16 @@ class PlayerFluidDataPersistenceTest {
         var enderCtx = new EnderChestContainerContext(
             new InvWrapper(new PlayerEnderChestContainer()), player, level());
 
-        ContainerLivingItemHandler.getFluidData(invCtx)
+        ContainerFluidHandler.getOrCreateFluidData(invCtx)
             .registerGeneratedSource(0, Fluids.WATER.getFluidType());
-        ContainerLivingItemHandler.getFluidData(enderCtx)
+        ContainerFluidHandler.getOrCreateFluidData(enderCtx)
             .registerGeneratedSource(1, Fluids.LAVA.getFluidType());
         ContainerLivingItemHandler.processContext(invCtx, level());
         ContainerLivingItemHandler.processContext(enderCtx, level());
         assertEquals(2, attachment.size(), "两个容器键都在");
 
         // 只清末影箱 ⇒ 背包条目必须还在
-        ContainerLivingItemHandler.getFluidData(enderCtx).removeGeneratedSource(1);
+        ContainerFluidHandler.getOrCreateFluidData(enderCtx).removeGeneratedSource(1);
         ContainerLivingItemHandler.processContext(enderCtx, level());
         assertFalse(attachment.containsKey("player_uuid-p_ender_chest"), "末影箱条目被移除");
         assertTrue(attachment.containsKey("player_uuid-p"), "背包条目不受影响（键隔离）");
@@ -180,14 +181,14 @@ class PlayerFluidDataPersistenceTest {
     void reload_backfillsNonEmptyEntry() {
         var inv = new Inventory(player);
         var ctx = playerInvCtx(inv, level());
-        ContainerLivingItemHandler.getFluidData(ctx)
+        ContainerFluidHandler.getOrCreateFluidData(ctx)
             .registerGeneratedSource(0, Fluids.WATER.getFluidType());
         ContainerLivingItemHandler.processContext(ctx, level());
 
         simulateReload();   // 静态缓存清空 ⇒ 下一句只能从附件回填
 
         var reloaded = playerInvCtx(inv, level());
-        var data = ContainerLivingItemHandler.getFluidData(reloaded);
+        var data = ContainerFluidHandler.getOrCreateFluidData(reloaded);
         assertTrue(data.isGeneratedSource(0), "重进后源从附件回填（正向持久化生效）");
     }
 }

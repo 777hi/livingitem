@@ -3,11 +3,13 @@ package com.qiqi.li.living.domain.water;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 
 import javax.annotation.Nullable;
 
 import net.minecraft.core.Direction;
 import net.minecraft.world.RandomizableContainer;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.material.Fluid;
@@ -16,7 +18,10 @@ import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.FluidType;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 
+import com.qiqi.li.living.components.LivingComponents;
+import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.ContainerLivingItemHandler;
+import com.qiqi.li.living.container.SimpleContainerContext;
 import com.qiqi.li.living.container.TickableContainerContext;
 
 /**
@@ -77,6 +82,49 @@ public final class ContainerFluidHandler implements IFluidHandler {
     }
 
     private static final ThreadLocal<Boolean> DEFER_QUERY = ThreadLocal.withInitial(() -> false);
+
+    // ── 容器级流体数据的取用（原 ContainerLivingItemHandler#getFluidData，2026-10-08 计划 ⑤ 移入）──
+
+    /**
+     * 取或创建容器级持久化流体数据（含 BE / Player 附件的<b>回填</b>）。
+     *
+     * <p>回填路径（LRU 驱逐 / 退出重进后首访）：① 先看 BE 附件的 {@code CONTAINER_FLUID_DATA}；
+     * ② 玩家背包 / 末影箱无 BE 可挂 ⇒ 看 Player 附件的按容器键映射。</p>
+     *
+     * @return 流体数据；容器不支持容器级数据（无稳定键）时返回 {@code null}
+     */
+    public static ContainerFluidData getOrCreateFluidData(ContainerContext ctx) {
+        ContainerFluidData existing = ctx.peekContainerData(ContainerFluidData.KEY);
+        if (existing != null) return existing;
+
+        if (ctx instanceof SimpleContainerContext simpleCtx) {
+            for (BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {
+                ContainerFluidData persisted = be.getData(LivingComponents.CONTAINER_FLUID_DATA);
+                if (persisted != null && persisted != ContainerFluidData.EMPTY && !persisted.isEmpty()) {
+                    ContainerLivingItemHandler.putContainerData(ctx, ContainerFluidData.KEY, persisted);
+                    return persisted;
+                }
+            }
+        }
+
+        // 玩家背包 / 末影箱（B.5 第三项）：无 BE 可挂 ⇒ 从 Player attachment 回填（按容器键）。
+        // ⚠️ getData 可能返回 null（测试替身 / 附件未注册），必须判空。
+        Player owner = ctx.getOwnerPlayer();
+        if (owner != null) {
+            String ownerKey = ctx.getContainerKey();
+            if (ownerKey != null) {
+                Map<String, ContainerFluidData> playerMap =
+                    owner.getData(LivingComponents.CONTAINER_FLUID_DATA_PLAYER);
+                ContainerFluidData persisted = playerMap == null ? null : playerMap.get(ownerKey);
+                if (persisted != null && persisted != ContainerFluidData.EMPTY && !persisted.isEmpty()) {
+                    ContainerLivingItemHandler.putContainerData(ctx, ContainerFluidData.KEY, persisted);
+                    return persisted;
+                }
+            }
+        }
+
+        return ctx.getOrCreateContainerData(ContainerFluidData.KEY);
+    }
 
     // ── 活数据反查（BE → 容器 → 流体数据，与 tick 路径同源同键）────────
 

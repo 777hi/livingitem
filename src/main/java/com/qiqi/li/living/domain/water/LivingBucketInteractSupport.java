@@ -42,7 +42,7 @@ public final class LivingBucketInteractSupport {
     public static ContainerFluidData resolveFluidData(ServerPlayer player, Slot slot) {
         ContainerContext ctx = resolveContext(player, slot);
         if (ctx == null) return null;
-        ContainerFluidData fluidData = ContainerLivingItemHandler.getFluidData(ctx);
+        ContainerFluidData fluidData = ContainerFluidHandler.getOrCreateFluidData(ctx);
         return fluidData == null || fluidData == ContainerFluidData.EMPTY ? null : fluidData;
     }
 
