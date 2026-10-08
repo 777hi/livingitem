@@ -31,7 +31,6 @@ module	living/components	living/domain/tnt	1
 module	living/container	living/compat	1
 module	living/container	living/components	1
 module	living/container	living/debug	1
-module	living/container	living/domain/redstone	1
 module	living/domain/ender	(root)	1
 module	living/domain/ender	network	1
 module	living/domain/map	network	1

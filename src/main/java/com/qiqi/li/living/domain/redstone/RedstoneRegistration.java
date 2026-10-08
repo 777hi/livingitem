@@ -1,7 +1,10 @@
 package com.qiqi.li.living.domain.redstone;
 
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.ContainerSnapshot;
+import com.qiqi.li.living.container.ContainerTickHook;
+import com.qiqi.li.living.container.ContainerTickHooks;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.interaction.InteractionRegistry;
 
@@ -42,6 +45,23 @@ public final class RedstoneRegistration {
         // ⇒ container 包不再 import 红石领域。
         TickContext.registerSensorResolver(
             ctx -> ctx.getOrCreateContainerData(ContainerRedstoneData.KEY));
+
+        // ── 框架中继：tick 开始钩子（2026-10-08 计划 ⑤）──
+        // 原「每 tick 归位账本 processed 标志」硬编码在 SimpleContainerContext#setTickContext，
+        // 使 container 被迫认识红石账本 ⇒ 移到这里，时机不变。
+        // ⚠️ 用 peek（**不创建**）：账本只在「容器与红石有关」时才有必要存在；
+        // 若改成 getOrCreate，则每个被 tick 的容器都无条件创建账本，红石驱动守卫的
+        // `peek == null` 恒假 ⇒「无关容器零开销」那条路径永不生效。
+        // 安全性：新建账本的 processedThisTick 构造时默认 false ⇒ 首次无需 reset。
+        ContainerTickHooks.register(new ContainerTickHook() {
+            @Override
+            public void onTickStart(ContainerContext ctx, TickContext tick) {
+                ContainerRedstoneData rd = ctx.peekContainerData(ContainerRedstoneData.KEY);
+                if (rd != null) {
+                    rd.resetProcessedFlag();
+                }
+            }
+        });
 
         // ── 交互：按钮按压 ──
         // 十三种按钮曾在此逐条注册；D2 全迁 JSON 后由 #minecraft:buttons tag 一条覆盖

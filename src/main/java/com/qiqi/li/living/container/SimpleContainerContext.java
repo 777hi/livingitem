@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import com.qiqi.li.living.domain.redstone.ContainerRedstoneData;
 import com.qiqi.li.living.transfer.ContainerCompatibilityConfig;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket;
@@ -51,16 +50,9 @@ public class SimpleContainerContext implements TickableContainerContext {
     public void setTickContext(TickContext tick) {
         this.currentTickContext = tick;
         if (tick != null) {
-            // ⚠️ 用 peek（**不创建**）：红石账本只在「容器与红石有关」时才有必要存在。
-            // 2026-10-08 前这里调的是 getOrCreateRedstoneData() ⇒ **每个被 tick 的容器都无条件
-            // 创建账本**，使红石驱动守卫（LivingRedstoneFunction.tickContainerData）的
-            // `peek == null` 恒假 ⇒「无关容器零开销」那条路径**永不生效**。
-            // 安全性：新建账本的 processedThisTick 在构造器里默认 false ⇒ 首次无需 reset；
-            // 此后每 tick 账本已存在 ⇒ 照常 reset（这正是历史上「中继器不熄灭」的根因修复点）。
-            ContainerRedstoneData rd = peekContainerData(ContainerRedstoneData.KEY);
-            if (rd != null) {
-                rd.resetProcessedFlag();
-            }
+            // 本 tick 的领域初始化 —— 原「红石账本 resetProcessedFlag」硬编码在此，
+            // 2026-10-08 计划 ⑤ 移入红石领域注册的 ContainerTickHook（时机不变，实现换位置）。
+            ContainerTickHooks.fireTickStart(this, tick);
         }
     }
 
@@ -443,10 +435,6 @@ public class SimpleContainerContext implements TickableContainerContext {
         } else {
             syncWorldContainer(logicalSlot, stack);
         }
-    }
-
-    public ContainerRedstoneData getOrCreateRedstoneData() {
-        return getOrCreateContainerData(ContainerRedstoneData.KEY);
     }
 
     /**
