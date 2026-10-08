@@ -87,6 +87,17 @@ import com.qiqi.li.living.container.SimpleContainerContext;
  * ╚══════════════════════════════════════════════════════════════╝
  */
 
+/**
+ * 活 TNT 的爆炸组件 —— 容器里活 TNT 爆炸的唯一入口。
+ *
+ * <p>生命周期四段：引信倒计时（{@code tick()}）→ 点燃（{@link #ignite}，统计 TNT 数、算半径、清空物品、
+ * 造成声光与实体伤害）→ 方块破坏交给 {@link ExplosionLedger} 按区块分帧推进（已加载区块每 tick 32 个，
+ * 未加载区块等其自然加载，避免 {@code getChunk} 强制加载）。</p>
+ *
+ * <p>按 TNT 数量分三档破坏策略：{@code NORMAL}（≤64 逐个 {@code setBlock}，有掉落物）、
+ * {@code HIGH_YIELD}（&gt;64 直接改 Section 数据，无掉落物）、{@code SUPER}（&gt;3456 整区块清空）；
+ * 后两档绕过原版方块变更回调，必须由 {@code refreshLightAfterBulkEdit} 补光照。</p>
+ */
 public class ExplosionComponent {
 
     public static final String ID = "explosion";
