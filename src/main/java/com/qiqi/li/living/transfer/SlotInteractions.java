@@ -6,9 +6,6 @@ import java.util.List;
 
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerContext;
-import com.qiqi.li.living.domain.chest.LivingChestFunction;
-import com.qiqi.li.living.domain.ender.LivingEnderChestFunction;
-import com.qiqi.li.living.domain.farmland.FarmlandBonemealInteraction;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.Container;
@@ -59,8 +56,8 @@ public final class SlotInteractions {
         Collections.synchronizedList(new ArrayList<>());
 
     static {
-        // 内置：骨粉 → 活耕地 = 施肥（只认普通骨粉——活物品不作货物，见 isEligibleCargo）
-        register(new FarmlandBonemealInteraction());
+        // ⚠️ 领域交互（骨粉 → 活耕地）**不在这里注册**（2026-10-08：transfer 不再认识领域）——
+        // 由 FarmlandRegistration 调 register(...) 登记。
     }
 
     private SlotInteractions() {}
@@ -93,8 +90,7 @@ public final class SlotInteractions {
      */
     public static boolean isEligibleCargo(ItemStack stack) {
         if (!LivingItemManager.isLivingItem(stack)) return true;
-        return LivingChestFunction.isLivingChest(stack)
-            || LivingEnderChestFunction.isLivingEnderChest(stack);
+        return ContainerLikeItems.isContainerLike(stack);
     }
 
     /**

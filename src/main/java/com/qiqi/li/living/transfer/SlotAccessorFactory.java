@@ -5,8 +5,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 
-import com.qiqi.li.living.domain.chest.LivingChestAccessor;
-import com.qiqi.li.living.domain.ender.LivingEnderChestAccessor;
+import com.qiqi.li.living.api.LivingItemManager;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.items.IItemHandler;
@@ -17,8 +16,6 @@ import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.ContainerSnapshot;
 import com.qiqi.li.living.transfer.FilterData;
-import com.qiqi.li.living.domain.chest.LivingChestFunction;
-import com.qiqi.li.living.domain.ender.LivingEnderChestFunction;
 import net.minecraft.server.MinecraftServer;
 import org.slf4j.Logger;
 
@@ -61,12 +58,9 @@ public final class SlotAccessorFactory {
     /** 注册的 Provider 列表（按优先级排序）。 */
     private static final List<Provider> PROVIDERS = Collections.synchronizedList(new ArrayList<>());
 
-    static {
-        // 注册内置 Provider（按优先级从高到低）
-        registerProvider(LivingChestAccessor::tryCreate);
-        registerProvider(LivingEnderChestAccessor::tryCreate);
-        registerProvider(SlotAccessorFactory::defaultProvider);
-    }
+    // ⚠️ 领域 Provider（活箱子 / 活末影箱）**不在这里注册**（2026-10-08：transfer 不再认识领域）——
+    // 由各领域在自己的 *Registration 里调 registerProvider 登记。
+    // 框架自带的 defaultProvider 改为在 create(...) 的**兜底位置**调用（它匹配一切，必须最后）。
 
     private SlotAccessorFactory() {}
 
@@ -94,14 +88,12 @@ public final class SlotAccessorFactory {
                                        ContainerSnapshot snapshot) {
         ItemStack stack = containerCtx.getItem(slot);
 
-        // 活物品（非活箱子/活末影箱）不参与传输
-        if (LivingItemManager.isLivingItem(stack) &&
-            !LivingChestFunction.isLivingChest(stack) &&
-            !LivingEnderChestFunction.isLivingEnderChest(stack)) {
+        // 活物品（非容器类）不参与传输
+        if (LivingItemManager.isLivingItem(stack) && !ContainerLikeItems.isContainerLike(stack)) {
             return null;
         }
 
-        // 遍历注册的 Provider，找到第一个匹配的
+        // 遍历注册的 Provider（领域 Provider 由 *Registration 登记），找到第一个匹配的
         for (Provider provider : PROVIDERS) {
             SlotAccessor raw = provider.create(server, containerCtx, slot, filterData, transferredTargetSlots, snapshot);
             if (raw != null) {
@@ -109,7 +101,13 @@ public final class SlotAccessorFactory {
             }
         }
 
-        // 理论上不会到这里（defaultProvider 总会匹配）
+        // 兜底：框架自带的默认 Provider —— **必须在领域之后**（它匹配一切）
+        SlotAccessor fallback = defaultProvider(server, containerCtx, slot, filterData,
+            transferredTargetSlots, snapshot);
+        if (fallback != null) {
+            return new FilteredSlotAccessor(fallback, filterData);
+        }
+
         LOGGER.warn("No SlotAccessor provider matched for slot {} in container {}", slot, containerCtx.getContainerKey());
         return null;
     }

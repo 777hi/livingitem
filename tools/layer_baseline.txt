@@ -8,15 +8,12 @@ module	(root)	client/render	4
 module	living/api	living/container	4
 module	living/compat	living/domain/water	3
 module	living/container	living/transfer	3
-module	living/transfer	living/domain/chest	3
-module	living/transfer	living/domain/ender	3
 module	(root)	client/icon	1
 module	living/api	living/components	1
 module	living/api	living/domain/tools	1
 module	living/container	living/components	1
 module	living/container	living/debug	1
 module	living/domain/tnt	(root)	1
-module	living/transfer	living/domain/farmland	1
 
 # R2 Mixin 位置违规（只能声明在 L4 / L5）
 #   （无）

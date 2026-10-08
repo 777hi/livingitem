@@ -19,6 +19,10 @@ public final class FarmlandRegistration {
         // ── 功能 ──
         LivingItemManager.registerFunction(new LivingFarmlandFunction());
 
+        // ── 框架中继（2026-10-08：transfer 不再认识本领域）──
+        // 骨粉 → 活耕地 = 施肥（只认普通骨粉——活物品不作货物，见 isEligibleCargo）
+        com.qiqi.li.living.transfer.SlotInteractions.register(new FarmlandBonemealInteraction());
+
         // ── 交互：活锄头耕活土 / 种植 / 骨粉 ──
         // 规则在 interaction_rules.json（D2 全迁）；这里注册行为（handler）
         // 与规则引用的谓词（JSON 写谓词 ID，Java 提供实现 —— 见 InteractionPredicates）。
