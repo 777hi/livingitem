@@ -266,4 +266,5 @@ javadoc 明写「红电感知端口 —— 电力层与跨层消费者（漏斗�
 
 底座 → 领域的 37 条里，**27 条来自 `LivingComponents`**（它持有所有领域的 `DataComponentType`，
 是 A1 迁移「有意集中」的结果）⇒ 修它 = 让各领域自己声明并注册 `DataComponentType`
-（**A1 决策的反转**），是本形态下**最后一块成规模的反向边**。
+（**A1 决策的反转**），是本形态下**最后一块成规模的反向边**
+→ 细化方案：[components-decoupling-plan.md](components-decoupling-plan.md)。
