@@ -34,6 +34,13 @@ import com.qiqi.li.living.runtime.ContainerRuntimeCache;
 import com.qiqi.li.living.runtime.LivingItemClientCache;
 import com.qiqi.li.living.runtime.RuntimeSegments;
 
+/**
+ * 活熔炉的功能实现。
+ *
+ * <p>每 tick 依据方向解析出输入 / 燃料 / 输出槽位，查找冶炼配方并推进冶炼进度、消耗燃料；
+ * 瞬态进度与燃烧时间写入<b>运行时缓存</b>（不影响物品堆叠，已激活的熔炉仍可正常堆叠），
+ * 仅方向与燃烧标志等持久 / 图标状态写入 {@code DataComponent}。</p>
+ */
 public class LivingFurnaceFunction implements LivingItemFunction, HasDirection {
 
     public static final String ID = "living_furnace";

@@ -5,6 +5,11 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 
+/**
+ * 活熔炉的燃料状态数据（不可变）。
+ *
+ * <p>记录剩余燃烧时间（{@code burnTime}），提供「是否燃烧中」「每 tick 递减」等状态转移方法——所有方法返回新实例。</p>
+ */
 public record FuelData(int burnTime) {
 
     public static final FuelData DEFAULT = new FuelData(0);

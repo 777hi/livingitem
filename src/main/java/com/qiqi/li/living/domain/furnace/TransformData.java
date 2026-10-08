@@ -5,6 +5,12 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 
+/**
+ * 活熔炉的配方缓存数据。
+ *
+ * <p>记录当前输入 / 输出物品，以及最近一次配方查询结果（输入键、是否可熔炼、输出物品与耗时），
+ * 避免每 tick 重复查配方；同时提供输出槽容量校验，决定冶炼产物能否继续堆积。</p>
+ */
 public record TransformData(
     String inputItem,
     String outputItem,

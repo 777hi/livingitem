@@ -13,6 +13,13 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.component.TooltipProvider;
 
+/**
+ * 活熔炉的数据组件。
+ *
+ * <p>聚合进度 / 燃料 / 方向 / 配方缓存四类子状态，经 {@link #of} / {@link #set} 读写，
+ * 并实现编解码与悬浮提示接口。注意：进度、燃烧时间等<b>运行时瞬态数据走运行时缓存</b>，不进本组件，
+ * 本组件只保存方向与配方缓存等持久状态。</p>
+ */
 public record LivingFurnaceData(
     ProgressData progress,
     FuelData fuel,

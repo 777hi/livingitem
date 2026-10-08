@@ -9,6 +9,12 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import com.qiqi.li.living.model.Pos2D;
 
+/**
+ * 活熔炉的方向槽位数据。
+ *
+ * <p>记录每个功能槽（input / output / fuel）相对熔炉本体的方向，以及当前激活的功能槽索引。
+ * 默认布局为「输入在左、输出在右、燃料在下」。</p>
+ */
 public record DirectionSlotsData(Map<String, Pos2D> directions, int activeSlotIndex) {
 
     public static final DirectionSlotsData EMPTY = new DirectionSlotsData(Map.of(), 0);

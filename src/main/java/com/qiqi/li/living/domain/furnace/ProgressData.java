@@ -5,6 +5,11 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 
+/**
+ * 活熔炉的冶炼进度数据（不可变）。
+ *
+ * <p>记录当前进度与总时长，提供推进 / 回退 / 是否完成 / 进度比例等计算——所有方法返回新实例。</p>
+ */
 public record ProgressData(int progress, int total) {
 
     public static final ProgressData DEFAULT = new ProgressData(0, 200);
