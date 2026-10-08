@@ -13,7 +13,6 @@ import java.util.Set;
 
 import com.qiqi.li.living.api.ContainerDataLifecycle;
 import com.qiqi.li.living.api.HasContainerData;
-import com.qiqi.li.living.domain.power.ContainerPowerData;
 import com.qiqi.li.living.domain.water.ContainerFluidData;
 import com.qiqi.li.living.util.DoubleChestPositions;
 import net.minecraft.core.BlockPos;
@@ -210,61 +209,12 @@ public class ContainerLivingItemHandler {
         });
     }
 
-    /**
-     * 获取或创建容器持久化红电数据（电力层账本）。
-     * 返回 null 表示容器不支持（如没有 containerKey）。
-     *
-     * <p>账本首次创建时（退出重进 / LRU 回收后首访），尝试从 BE 附件的
-     * {@code PhaseSnapshot} 回填锁相状态。回填基准时钟取 BE 所在世界的
-     * game time（2026-09-11 换轴：与 capture 同坐标系——快照存的就是退出前
-     * 的世界 tick，同轴回填后 φ 与快照一致，首跳 interval=P 精确续接不再重锚）；
-     * Level 不可达时回退容器本地轴。快照为空（首次使用 / 无振荡器）则保持
-     * 默认 warmup（首拍无沿宽限）。见 PhaseSnapshot javadoc。</p>
-     */
-    public static ContainerPowerData getPowerData(ContainerContext ctx) {
-        ContainerEntry e = entry(ctx);
-        if (e == null) return null;
-        ContainerPowerData power = e.store.peek(ContainerPowerData.KEY);
-        if (power == null) {
-            power = e.store.getOrCreate(ContainerPowerData.KEY);
-            // 相位快照回填（2026-09-09）：BE 附件里存有退出前的锁相状态则无缝续接
-            if (ctx instanceof SimpleContainerContext simpleCtx) {
-                long base = 0;
-                boolean hasWorldClock = false;
-                for (BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {
-                    com.qiqi.li.living.domain.power.PhaseSnapshot snapshot =
-                        be.getData(LivingComponents.CONTAINER_PHASE_SNAPSHOT);
-                    if (snapshot == null) continue;
-                    // 世界轴基准（与 capture 同源）：服务端 BE 挂着 Level 才可信
-                    if (!hasWorldClock) {
-                        Level beLevel = be.getLevel();
-                        if (beLevel != null && !beLevel.isClientSide()) {
-                            base = beLevel.getGameTime();
-                            hasWorldClock = true;
-                        }
-                    }
-                    long clock = hasWorldClock ? base : power.currentTick();
-                    if (snapshot.restoreInto(power, clock) > 0) break;
-                }
-            }
-        }
-        return power;
-    }
-
     /** 按位置 O(1) 查询容器级数据（泛化；供 mixin 热路径与领域侧调用）。 */
     public static <T> T peekContainerDataByPos(Level level, BlockPos pos, ContainerDataKey<T> key) {
         String cacheKey = POS_TO_CACHE_KEY.get(new PosKey(level.dimension(), pos));
         if (cacheKey == null) return null;
         ContainerEntry e = CONTAINER_DATA.get(cacheKey);
         return e == null ? null : e.store.peek(key);
-    }
-
-    /** 按位置 O(1) 查询红电数据（电力层，供对外能量接口调用） */
-    public static ContainerPowerData getPowerDataByPos(Level level, BlockPos pos) {
-        String key = POS_TO_CACHE_KEY.get(new PosKey(level.dimension(), pos));
-        if (key == null) return null;
-        ContainerEntry e = CONTAINER_DATA.get(key);
-        return e == null ? null : e.store.peek(ContainerPowerData.KEY);
     }
 
     /**
