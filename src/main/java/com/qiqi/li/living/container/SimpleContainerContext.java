@@ -10,6 +10,7 @@ import net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.Container;
 import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
@@ -450,6 +451,12 @@ public class SimpleContainerContext implements TickableContainerContext {
     @Override
     public <T> T getOrCreateContainerData(ContainerDataKey<T> key) {
         return ContainerLivingItemHandler.getOrCreateContainerData(this, key);
+    }
+
+    /** 所属玩家 —— 玩家背包有 inventory；方块容器没有（末影箱另行覆写）。 */
+    @Override
+    public Player getOwnerPlayer() {
+        return inventory != null ? inventory.player : null;
     }
 
     private void syncPlayerInventory(Inventory inv, int logicalSlot, ItemStack stack) {

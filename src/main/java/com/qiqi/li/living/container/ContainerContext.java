@@ -2,6 +2,7 @@ package com.qiqi.li.living.container;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.Container;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 
 /**
@@ -50,6 +51,17 @@ public interface ContainerContext extends SlotInfoProvider, ContainerSync, Conta
      */
     default <T> T getOrCreateContainerData(ContainerDataKey<T> key) {
         return key.create();
+    }
+
+    /**
+     * 容器所属玩家 —— 仅玩家背包 / 末影箱有；方块容器返回 {@code null}。
+     *
+     * <p>供领域侧取「容器的主人」（如把容器级数据落到 Player attachment）而<b>不必
+     * {@code instanceof} 具体实现类</b>（2026-10-08 计划 ⑤ 补；对齐
+     * {@code docs/buffer/living-tool-design.md} §2.1 ③ 的建议）。</p>
+     */
+    default Player getOwnerPlayer() {
+        return null;
     }
 
     /** 方向编码：与红电 EDGE_* 一致（0=上 1=下 2=左 3=右） */

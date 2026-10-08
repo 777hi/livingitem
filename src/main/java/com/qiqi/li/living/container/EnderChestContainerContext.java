@@ -46,7 +46,8 @@ public class EnderChestContainerContext extends SimpleContainerContext {
     }
 
     /** 所属玩家 —— B.5 落盘需要 owner（inventory 为 null，无法从 {@code getInventory()} 反查）。 */
-    Player owner() {
+    @Override
+    public Player getOwnerPlayer() {
         return player;
     }
 }

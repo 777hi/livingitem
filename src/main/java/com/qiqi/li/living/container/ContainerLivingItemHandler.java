@@ -15,7 +15,6 @@ import com.qiqi.li.living.api.ContainerDataLifecycle;
 import com.qiqi.li.living.api.HasContainerData;
 import com.qiqi.li.living.domain.power.ContainerPowerData;
 import com.qiqi.li.living.domain.water.ContainerFluidData;
-import com.qiqi.li.living.domain.water.ContainerStressData;
 import com.qiqi.li.living.util.DoubleChestPositions;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceKey;
@@ -35,8 +34,6 @@ import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
 import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
-import com.qiqi.li.living.compat.create.StressOutputManager;
-import com.qiqi.li.living.domain.water.ContainerFluidData;
 import com.qiqi.li.living.perf.PerfMetrics;
 
 /**
@@ -180,12 +177,7 @@ public class ContainerLivingItemHandler {
      * {@code getInventory().player}；末影箱 inventory 为 null ⇒ 直接取 context 持有的 player。</p>
      */
     private static Player ownerPlayer(ContainerContext ctx) {
-        if (ctx instanceof EnderChestContainerContext ec) return ec.owner();
-        if (ctx instanceof TickableContainerContext tctx) {
-            Inventory inv = tctx.getInventory();
-            if (inv != null) return inv.player;
-        }
-        return null;
+        return ctx.getOwnerPlayer();
     }
 
     /**
@@ -273,6 +265,16 @@ public class ContainerLivingItemHandler {
         if (key == null) return null;
         ContainerEntry e = CONTAINER_DATA.get(key);
         return e == null ? null : e.store.peek(ContainerPowerData.KEY);
+    }
+
+    /**
+     * 移除容器级数据（按 key；不存在则忽略）—— 供领域写回钩子在「数据已清空」时回收 store 槽。
+     */
+    public static <T> void removeContainerData(ContainerContext ctx, ContainerDataKey<T> key) {
+        String cacheKey = cacheKey(ctx);
+        if (cacheKey == null) return;
+        ContainerEntry e = CONTAINER_DATA.get(cacheKey);
+        if (e != null) e.store.put(key, null);
     }
 
     /**
@@ -380,22 +382,6 @@ public class ContainerLivingItemHandler {
         cleanupCounter = 0;
     }
 
-    private static void updateStressOutput(TickableContainerContext ctx, BlockEntity containerBE,
-                                            ContainerStressData stressData) {
-        StressOutputManager.apply(containerBE.getLevel(), containerBE.getBlockPos(), stressData);
-    }
-
-    private static void updatePlayerFeetStressOutput(TickableContainerContext ctx,
-                                                      ContainerStressData stressData) {
-        Inventory inventory = ctx.getInventory();
-        if (inventory == null) return;
-        Player player = inventory.player;
-        Level level = player.level();
-        if (level.isClientSide) return;
-
-        BlockPos feetPos = player.blockPosition();
-        StressOutputManager.apply(level, feetPos, stressData);
-    }
 
     /**
      * 处理玩家背包中的所有活物品。
@@ -521,8 +507,9 @@ public class ContainerLivingItemHandler {
             long containerDataEndNanos = System.nanoTime();
             PerfMetrics.recordPhase("container_data", containerDataEndNanos - funcTickEndNanos);
 
-            // 阶段 4：写回 BlockEntity（应力 + 流体）与过期清理
-            writebackBlockEntities(context, tick);
+            // 阶段 4：写回（应力 / 流体 / 相位快照 —— 由各领域注册的 ContainerTickHook 完成）
+            // 与过期清理。2026-10-08 计划 ⑤：原 writebackBlockEntities 的领域逻辑已移入各领域。
+            ContainerTickHooks.fireWriteback(context, tick);
             incrementCleanup();
 
             stressEndNanos = System.nanoTime();
@@ -578,85 +565,6 @@ public class ContainerLivingItemHandler {
             ContainerContext context, TickContext tick, Level level) {
         for (var entry : grouped.entrySet()) {
             entry.getKey().tick(entry.getValue(), context, tick, level);
-        }
-    }
-
-    /**
-     * 将应力与流体数据写回 BlockEntity（或玩家脚底），并清理空流体缓存。
-     */
-    private static void writebackBlockEntities(TickableContainerContext context, TickContext tick) {
-        ContainerStressData stressData = tick.data(ContainerStressData.KEY);
-        if (stressData != null) {
-            for (BlockEntity be : context.getAssociatedBlockEntities()) {
-                be.setData(LivingComponents.CONTAINER_STRESS_DATA.value(), stressData);
-                updateStressOutput(context, be, stressData);
-            }
-
-            if (context.getAssociatedBlockEntities().isEmpty() && context.getInventory() != null) {
-                updatePlayerFeetStressOutput(context, stressData);
-            }
-        }
-
-        ContainerFluidData fluidData = tick.data(ContainerFluidData.KEY);
-        if (fluidData != null && !fluidData.isEmpty()) {
-            for (BlockEntity be : context.getAssociatedBlockEntities()) {
-                be.setData(LivingComponents.CONTAINER_FLUID_DATA.value(), fluidData);
-            }
-        }
-        // 玩家背包 / 末影箱（B.5 第三项）：无 BE 可挂 ⇒ 落到 Player attachment（按容器键）。
-        // 一个玩家有背包 + 末影箱两个容器 ⇒ 读-改-写一份 map（Codec 解码得到不可变 map，先复制）。
-        // ⚠️ getData 可能返回 null（测试替身 / 附件未注册），必须判空。
-        Player owner = ownerPlayer(context);
-        if (owner != null && fluidData != null) {
-            String ownerKey = context.getContainerKey();
-            if (ownerKey != null) {
-                Map<String, ContainerFluidData> current =
-                    owner.getData(LivingComponents.CONTAINER_FLUID_DATA_PLAYER);
-                Map<String, ContainerFluidData> persistedMap =
-                    current != null ? new HashMap<>(current) : new HashMap<>();
-                if (fluidData.isEmpty()) {
-                    persistedMap.remove(ownerKey);
-                } else {
-                    persistedMap.put(ownerKey, fluidData);
-                }
-                owner.setData(LivingComponents.CONTAINER_FLUID_DATA_PLAYER.value(), persistedMap);
-            }
-        }
-        if (fluidData != null && fluidData.isEmpty()) {
-            // ⚠️ BE 附件同样要清（对齐上方玩家路径的 persistedMap.remove）：
-            // 非空期间最后一次写回会把源留在附件里 ⇒ 不清则重进存档从附件回填复活
-            // （汲走的源跨存档残留，2026-10-04 游戏实测）。EMPTY 序列化为空表，
-            // 加载端 !isEmpty() 守卫会跳过 ⇒ 不会复活。
-            for (BlockEntity be : context.getAssociatedBlockEntities()) {
-                be.setData(LivingComponents.CONTAINER_FLUID_DATA.value(), ContainerFluidData.EMPTY);
-            }
-            String fluidKey = cacheKey(context);
-            if (fluidKey != null) {
-                ContainerEntry fe = CONTAINER_DATA.get(fluidKey);
-                if (fe != null) fe.store.put(ContainerFluidData.KEY, null);
-            }
-        }
-
-        // 相位快照写回（2026-09-09）：每 tick 末把锁相状态冻结到 BE 附件（带 Codec 落盘）。
-        // 快照只含已锁相且存活窗口内的边（worthSaving 过滤），稳态无振荡器时为 EMPTY——
-        // 零成本。退出重进 / LRU 回收后由 getPowerData 回填，相位无缝续接。
-        // 2026-09-11 换轴：capture 时钟与 tickContainerData 的 resolvePhaseClock 同源
-        // （世界 game time 优先，回退本地轴）——快照必须存与驱动同坐标系的值。
-        ContainerPowerData powerData = tick.data(ContainerPowerData.KEY);
-        if (powerData != null && !context.getAssociatedBlockEntities().isEmpty()) {
-            long clock = powerData.currentTick();   // 回退轴（无 Level / 测试环境）
-            for (BlockEntity be : context.getAssociatedBlockEntities()) {
-                Level beLevel = be.getLevel();
-                if (beLevel != null && !beLevel.isClientSide()) {
-                    clock = beLevel.getGameTime();
-                    break;
-                }
-            }
-            com.qiqi.li.living.domain.power.PhaseSnapshot snapshot =
-                com.qiqi.li.living.domain.power.PhaseSnapshot.capture(powerData, clock);
-            for (BlockEntity be : context.getAssociatedBlockEntities()) {
-                be.setData(LivingComponents.CONTAINER_PHASE_SNAPSHOT.value(), snapshot);
-            }
         }
     }
 

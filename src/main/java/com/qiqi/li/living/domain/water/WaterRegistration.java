@@ -3,6 +3,7 @@ package com.qiqi.li.living.domain.water;
 import java.util.Set;
 
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.container.ContainerTickHooks;
 import com.qiqi.li.living.container.TickContext;
 
 import net.minecraft.world.item.Item;
@@ -39,6 +40,12 @@ public final class WaterRegistration {
         // ⇒ container 包不再 import 水领域；跨领域消费者（活耕地判湿）也不必 import。
         TickContext.registerFluidPresenceResolver(
             tick -> tick.data(ContainerFluidData.KEY));
+
+        // ── 框架中继：写回钩子（2026-10-08 计划 ⑤）──
+        // 原逻辑硬编码在 ContainerLivingItemHandler#writebackBlockEntities，现移入各领域：
+        // 流体数据落盘（BE / Player attachment）+ 应力写回（BE 附件 + Create 应力输出 / 玩家脚底）。
+        ContainerTickHooks.register(new ContainerFluidWriteback());
+        ContainerTickHooks.register(new ContainerStressWriteback());
 
         // 容器级流体 tick 驱动（1b-2b，框架）：自维持 + HasContainerData prio 0
         LivingItemManager.registerFunction(new LivingFluidFunction());
