@@ -13,6 +13,11 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.component.TooltipProvider;
 
+/**
+ * 活 TNT 的数据组件。
+ *
+ * <p>封装 {@link ExplosionData} 爆炸状态，经 {@link #of} / {@link #set} 读写，并实现编解码与悬浮提示接口。</p>
+ */
 public record LivingTntData(ExplosionData explosion) implements TooltipProvider {
 
     public static final LivingTntData DEFAULT = new LivingTntData(ExplosionData.DEFAULT);

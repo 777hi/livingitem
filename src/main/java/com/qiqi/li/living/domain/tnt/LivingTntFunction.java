@@ -18,6 +18,12 @@ import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.domain.tnt.ExplosionData;
 import com.qiqi.li.living.domain.tnt.LivingTntData;
 
+/**
+ * 活 TNT 的功能实现。
+ *
+ * <p>每 tick 检测所在槽位的红石信号：收到信号即点燃并启动引信倒计时，归零时经
+ * {@link ExplosionComponent#ignite} 触发爆炸；同时维持红石账本以放行红石层的驱动守卫（容器里只有活 TNT 时也是如此）。</p>
+ */
 public class LivingTntFunction implements LivingItemFunction {
 
     public static final String ID = "living_tnt";
