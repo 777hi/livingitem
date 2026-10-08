@@ -59,16 +59,16 @@ import com.qiqi.li.network.HopperDirectionPacket;
 import com.qiqi.li.network.SlotDirectionPacket;
 import com.qiqi.li.network.GuiInteractionPacket;
 import com.qiqi.li.network.CarriedUpdatePacket;
-import com.qiqi.li.network.EnderChannelSyncPacket;
+import com.qiqi.li.living.domain.ender.EnderChannelSyncPacket;
 import com.qiqi.li.network.LivingChestAccessPacket;
-import com.qiqi.li.network.LivingMapMetadataPacket;
+import com.qiqi.li.living.domain.map.LivingMapMetadataPacket;
 import com.qiqi.li.network.LivingMapGuiTeleportPacket;
 import com.qiqi.li.network.LivingItemSyncPacket;
-import com.qiqi.li.network.FluidFlowSyncPacket;
+import com.qiqi.li.living.domain.water.FluidFlowSyncPacket;
 import com.qiqi.li.network.ToolMemoryClearPacket;
 import com.qiqi.li.network.ToolRayTuningPacket;
-import com.qiqi.li.network.LivingToolHostPacket;
-import com.qiqi.li.network.LivingToolPlayerPacket;
+import com.qiqi.li.living.domain.tools.LivingToolHostPacket;
+import com.qiqi.li.living.domain.tools.LivingToolPlayerPacket;
 import com.qiqi.li.living.api.ActivationRuleConfig;
 import com.qiqi.li.living.interaction.InteractionRuleConfig;
 import com.qiqi.li.living.api.LivingItemManager;
@@ -113,7 +113,7 @@ import com.qiqi.li.living.domain.ender.LivingEnderChestItemHandler;
  */
 @Mod(LivingItem.MOD_ID)
 public class LivingItem {
-    public static final String MOD_ID = "living_item";
+    public static final String MOD_ID = com.qiqi.li.living.api.LivingMod.ID;
     public static final Logger LOGGER = LogUtils.getLogger();
 
     public static final DeferredRegister.Items ITEMS = DeferredRegister.createItems(MOD_ID);

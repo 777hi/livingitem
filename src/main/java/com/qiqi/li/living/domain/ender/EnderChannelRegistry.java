@@ -17,7 +17,6 @@ import javax.annotation.Nullable;
 import com.qiqi.li.living.transfer.FilterData;
 import com.qiqi.li.living.components.ItemFilterComponent;
 import com.qiqi.li.living.container.ContainerContext;
-import com.qiqi.li.network.EnderChannelSyncPacket;
 import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;

@@ -1,6 +1,5 @@
-package com.qiqi.li.network;
+package com.qiqi.li.living.domain.map;
 
-import com.qiqi.li.living.domain.map.LivingMapClientCache;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;

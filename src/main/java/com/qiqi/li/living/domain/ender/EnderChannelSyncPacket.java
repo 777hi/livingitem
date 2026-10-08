@@ -1,8 +1,5 @@
-package com.qiqi.li.network;
+package com.qiqi.li.living.domain.ender;
 
-import com.qiqi.li.living.domain.ender.EnderChannelClientCache;
-import com.qiqi.li.living.domain.ender.EnderChannelEntry;
-import com.qiqi.li.living.domain.ender.EnderChannelKey;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;

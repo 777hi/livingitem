@@ -27,7 +27,6 @@ import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
 
-import com.qiqi.li.network.LivingMapMetadataPacket;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;

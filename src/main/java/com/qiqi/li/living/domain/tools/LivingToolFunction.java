@@ -22,7 +22,6 @@ import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.ItemEntityContainerContext;
 import com.qiqi.li.living.container.SimpleContainerContext;
 import com.qiqi.li.living.container.TickContext;
-import com.qiqi.li.network.LivingToolHostPacket;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponentType;

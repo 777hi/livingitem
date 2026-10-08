@@ -8,7 +8,6 @@ import java.util.Map;
 import java.util.UUID;
 
 import com.qiqi.li.living.api.LivingItemManager;
-import com.qiqi.li.network.LivingToolPlayerPacket;
 
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;

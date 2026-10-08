@@ -1,10 +1,9 @@
-package com.qiqi.li.network;
+package com.qiqi.li.living.domain.tools;
 
 import java.util.ArrayList;
 import java.util.List;
 
-import com.qiqi.li.LivingItem;
-import com.qiqi.li.living.domain.tools.LivingToolHostClientCache;
+import com.qiqi.li.living.api.LivingMod;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
@@ -73,7 +72,7 @@ public record LivingToolHostPacket(
     }
 
     public static final Type<LivingToolHostPacket> TYPE =
-        new Type<>(ResourceLocation.fromNamespaceAndPath(LivingItem.MOD_ID, "living_tool_host"));
+        new Type<>(ResourceLocation.fromNamespaceAndPath(LivingMod.ID, "living_tool_host"));
 
     public static final StreamCodec<FriendlyByteBuf, LivingToolHostPacket> STREAM_CODEC =
         StreamCodec.of(LivingToolHostPacket::encode, LivingToolHostPacket::decode);

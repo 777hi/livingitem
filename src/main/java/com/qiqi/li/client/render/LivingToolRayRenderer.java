@@ -10,8 +10,8 @@ import com.qiqi.li.living.domain.tools.LivingToolHostClientCache;
 import com.qiqi.li.living.domain.tools.LivingToolMemory;
 import com.qiqi.li.living.domain.tools.LivingToolRayTuning;
 import com.qiqi.li.living.domain.tools.LivingToolPlayerClientCache;
-import com.qiqi.li.network.LivingToolHostPacket;
-import com.qiqi.li.network.LivingToolPlayerPacket;
+import com.qiqi.li.living.domain.tools.LivingToolHostPacket;
+import com.qiqi.li.living.domain.tools.LivingToolPlayerPacket;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;

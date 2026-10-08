@@ -1,4 +1,4 @@
-package com.qiqi.li.network;
+package com.qiqi.li.living.domain.water;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -12,8 +12,6 @@ import net.minecraft.resources.ResourceLocation;
 import net.neoforged.neoforge.fluids.FluidType;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import net.neoforged.neoforge.registries.NeoForgeRegistries;
-
-import com.qiqi.li.living.domain.water.FluidFlowClientCache;
 
 /**
  * S2C 容器流体快照同步包（Q5 渲染轨，2026-10-03）。

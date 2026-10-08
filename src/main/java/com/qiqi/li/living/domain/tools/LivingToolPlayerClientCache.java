@@ -3,7 +3,6 @@ package com.qiqi.li.living.domain.tools;
 import java.util.List;
 import java.util.UUID;
 
-import com.qiqi.li.network.LivingToolPlayerPacket;
 
 import net.minecraft.resources.ResourceLocation;
 

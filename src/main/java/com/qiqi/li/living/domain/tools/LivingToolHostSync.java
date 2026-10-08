@@ -10,7 +10,6 @@ import java.util.Objects;
 import java.util.UUID;
 
 import com.qiqi.li.living.api.LivingItemManager;
-import com.qiqi.li.network.LivingToolHostPacket;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;

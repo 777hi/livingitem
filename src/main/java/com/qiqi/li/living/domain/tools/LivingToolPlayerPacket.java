@@ -1,11 +1,10 @@
-package com.qiqi.li.network;
+package com.qiqi.li.living.domain.tools;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
-import com.qiqi.li.LivingItem;
-import com.qiqi.li.living.domain.tools.LivingToolPlayerClientCache;
+import com.qiqi.li.living.api.LivingMod;
 
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
@@ -40,7 +39,7 @@ public record LivingToolPlayerPacket(
     }
 
     public static final Type<LivingToolPlayerPacket> TYPE =
-        new Type<>(ResourceLocation.fromNamespaceAndPath(LivingItem.MOD_ID, "living_tool_player"));
+        new Type<>(ResourceLocation.fromNamespaceAndPath(LivingMod.ID, "living_tool_player"));
 
     public static final StreamCodec<RegistryFriendlyByteBuf, LivingToolPlayerPacket> STREAM_CODEC =
         StreamCodec.of(LivingToolPlayerPacket::encode, LivingToolPlayerPacket::decode);
