@@ -16,6 +16,14 @@ import org.joml.Quaternionf;
 import javax.annotation.Nullable;
 import java.util.List;
 
+/**
+ * 活水车的旋转渲染模型。
+ *
+ * <p>包装原版 {@link BakedModel}，在 GUI / 地面 / 固定展示场景下按
+ * {@link WaterWheelRenderState#getRpm()} 返回的当前转速对模型做绕 X 轴的旋转变换，
+ * 使水车图标呈现转动效果。{@link #usesBlockLight()} 恒返回 false，
+ * 以保持 GUI 图标统一全亮（避免 3D 模型法线漫反射导致图标发暗）。</p>
+ */
 public class RotatingWaterWheelModel implements BakedModel {
 
     private final BakedModel baseModel;

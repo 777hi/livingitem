@@ -2,6 +2,12 @@ package com.qiqi.li.client.util;
 
 import java.util.Locale;
 
+/**
+ * 中文字符转拼音的辅助工具。
+ *
+ * <p>内置汉字到拼音的映射表（{@code CHARS} 与对应拼音序列），
+ * 提供将中文名称（如物品 / 标签页的排序与搜索）转换为拼音或拼音首字母的能力。</p>
+ */
 public class PinyinHelper {
 
     private static final String CHARS =
