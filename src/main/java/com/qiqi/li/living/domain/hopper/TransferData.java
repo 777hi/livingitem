@@ -5,6 +5,11 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 
+/**
+ * 活漏斗的传输节奏数据（不可变）。
+ *
+ * <p>记录当前冷却计数（{@code cooldown}），提供递减与「是否在冷却中」判定——所有方法返回新实例。</p>
+ */
 public record TransferData(int cooldown) {
 
     public static final TransferData DEFAULT = new TransferData(0);

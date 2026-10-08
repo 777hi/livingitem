@@ -6,6 +6,12 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import com.qiqi.li.living.model.Pos2D;
 
+/**
+ * 活漏斗的方向传输数据。
+ *
+ * <p>记录传输的源方向（{@code sourceOffset}，拉取侧）与目标方向（{@code targetOffset}，推送侧），
+ * 默认布局为「上 ↔ 下」。</p>
+ */
 public record DirectionTransferData(Pos2D sourceOffset, Pos2D targetOffset) {
 
     public static final DirectionTransferData DEFAULT = new DirectionTransferData(Pos2D.UP, Pos2D.DOWN);

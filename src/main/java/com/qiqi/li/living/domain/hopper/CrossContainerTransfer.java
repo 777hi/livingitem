@@ -1,30 +1,3 @@
-/**
- * 跨容器传输工具类
- * 
- * 该类负责处理活漏斗在容器边界时与相邻容器的物品交互。
- * 当活漏斗的输入或输出槽位超出当前容器的范围时，会触发跨容器传输逻辑。
- * 
- * 核心功能：
- * 1. 从相邻容器拉取物品（pullFromNeighbor）
- * 2. 向相邻容器推送物品（pushToNeighbor）
- * 3. 在两个相邻容器之间直接传输（transferBetweenNeighbors）
- * 
- * 架构设计：
- * - 普通物品传输统一使用 SlotAccessor 架构（NeighborSlotAccessor + SlotAccessor.transfer）
- * - 活箱子/末影箱保留特殊逻辑（内部存储/路由注册/直连模式）
- * - 过滤由 FilteredSlotAccessor 自动处理，无需手动检查 filterState
- * - Container 接口过滤（canTakeItem/canPlaceItem）模拟玩家操作，兼容各类容器
- * 
- * 方向映射系统：
- * - 容器GUI的上下左右方向需要根据方块朝向转换为世界坐标方向
- * - 例如：当方块朝向北方时，GUI上方对应世界南方，GUI下方对应世界北方
- * 
- * 大箱子处理：
- * - 自动检测并合并大箱子的双容器实例
- * - 防止大箱子内部的无效传输（左侧箱子不会向右侧箱子传输）
- * - 根据传输方向选择正确的半箱作为基准位置：
- *   上方/左侧边界以LEFT半箱为基础，下方/右侧边界以RIGHT半箱为基础
- */
 package com.qiqi.li.living.domain.hopper;
 
 import java.util.ArrayList;
@@ -52,6 +25,35 @@ import com.qiqi.li.living.domain.ender.LivingEnderChestFunction;
 import net.minecraft.server.MinecraftServer;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.items.IItemHandler;
+
+
+/**
+ * 跨容器传输工具类
+ * 
+ * 该类负责处理活漏斗在容器边界时与相邻容器的物品交互。
+ * 当活漏斗的输入或输出槽位超出当前容器的范围时，会触发跨容器传输逻辑。
+ * 
+ * 核心功能：
+ * 1. 从相邻容器拉取物品（pullFromNeighbor）
+ * 2. 向相邻容器推送物品（pushToNeighbor）
+ * 3. 在两个相邻容器之间直接传输（transferBetweenNeighbors）
+ * 
+ * 架构设计：
+ * - 普通物品传输统一使用 SlotAccessor 架构（NeighborSlotAccessor + SlotAccessor.transfer）
+ * - 活箱子/末影箱保留特殊逻辑（内部存储/路由注册/直连模式）
+ * - 过滤由 FilteredSlotAccessor 自动处理，无需手动检查 filterState
+ * - Container 接口过滤（canTakeItem/canPlaceItem）模拟玩家操作，兼容各类容器
+ * 
+ * 方向映射系统：
+ * - 容器GUI的上下左右方向需要根据方块朝向转换为世界坐标方向
+ * - 例如：当方块朝向北方时，GUI上方对应世界南方，GUI下方对应世界北方
+ * 
+ * 大箱子处理：
+ * - 自动检测并合并大箱子的双容器实例
+ * - 防止大箱子内部的无效传输（左侧箱子不会向右侧箱子传输）
+ * - 根据传输方向选择正确的半箱作为基准位置：
+ *   上方/左侧边界以LEFT半箱为基础，下方/右侧边界以RIGHT半箱为基础
+ */
 
 public final class CrossContainerTransfer {
 

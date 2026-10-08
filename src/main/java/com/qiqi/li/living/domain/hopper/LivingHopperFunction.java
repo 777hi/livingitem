@@ -37,6 +37,13 @@ import com.qiqi.li.living.runtime.RuntimeSegments;
 import com.mojang.logging.LogUtils;
 import org.slf4j.Logger;
 
+/**
+ * 活漏斗的功能实现。
+ *
+ * <p>每 tick 依据方向解析出源 / 目标槽位，受红石信号可临时禁用，并按冷却节奏通过
+ * {@code TransferPipeline} 执行传输（含跨容器与活箱子 / 活末影箱特殊路径）；瞬态冷却与槽位信息写入
+ * <b>运行时缓存</b>，仅方向与过滤链等持久 / 同步状态写入 {@code DataComponent}。同时每 tick 维护与活末影箱之间的路由表。</p>
+ */
 public class LivingHopperFunction implements LivingItemFunction {
 
     public static final String ID = "living_hopper";

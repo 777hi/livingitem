@@ -6,6 +6,12 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
 
+/**
+ * 活漏斗的解析槽位数据。
+ *
+ * <p>记录发起槽位（host）、解析出的源 / 目标槽位与容器尺寸 / 宽度，并提供「是否越界（跨容器）」等判定，
+ * 供悬浮提示与 {@code CrossContainerTransfer} 使用。</p>
+ */
 public record ResolvedSlotData(
     int hostSlot,
     int sourceSlot,
