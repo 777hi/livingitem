@@ -110,7 +110,7 @@
   - **为什么重要**：那 10 处是「**错误样板的产地**」—— 活 TNT 就是照抄周围红石元件来的，
     连注释一起抄错（原注释称「优先级 1 确保红石数据在 TNT tick 之前计算完毕」，
     但 `tick()` 在阶段 2、`tickContainerData()` 在阶段 4 ⇒ 该「之前」对读取时机毫无帮助）。
-    方案与终点形态见 [redstone-driver-consolidation-plan.md](../buffer/redstone-driver-consolidation-plan.md)。
+    方案与终点形态见 [redstone-driver-consolidation-plan.md](redstone-driver-consolidation-plan.md)。
   - 同步文档：`living-redstone-tech.md`（§3.1 触发时机 / §4.4 / §8.1 / §8.2 / §8.4）、
     `living-tnt-tech.md` §3.3、`living-power-tech.md` §1.3、`living-copper-tech.md` §3.1、
     `红电系统.md` 架构图 + prio 说明、`living-item-infrastructure.md` 优先级表、`tooltip-system.md` §3.1。

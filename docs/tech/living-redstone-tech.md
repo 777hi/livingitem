@@ -393,7 +393,7 @@ ItemStack (minecraft:comparator)
 
 > ⚠️ **收归前**：9 个红石元件 + 活 TNT **各写一段完全相同的调用**，靠 `processedThisTick`
 > 幂等短路兜底才没算重 —— 那是「**错误样板的产地**」（活 TNT 那处就是照抄来的，连注释一起抄错）。
-> 决策与代价见 [redstone-driver-consolidation-plan.md](../buffer/redstone-driver-consolidation-plan.md) §5。
+> 决策与代价见 [redstone-driver-consolidation-plan.md](../archive/redstone-driver-consolidation-plan.md) §5。
 
 **无红石元件时**（`hasAny == false`）：`edgeGrid.zero()` → `computeFaceOutput`（全 0）→
 `notifyBoundaryChange`（通知世界信号消失）。这条分支**同时承担残留归零职责** ——
@@ -1592,7 +1592,7 @@ public class LivingRedstoneFunction implements LivingItemFunction, HasContainerD
 
 > ⚠️ **收归前**（2026-10-08 之前）：9 个红石元件 + 活 TNT **各自实现本接口、各写一段相同的
 > `calculate()` 调用**，靠 `processedThisTick` 幂等短路兜底。收归后那 9 处全部删除。
-> 决策与代价见 [redstone-driver-consolidation-plan.md](../buffer/redstone-driver-consolidation-plan.md) §5。
+> 决策与代价见 [redstone-driver-consolidation-plan.md](../archive/redstone-driver-consolidation-plan.md) §5。
 
 **`processedThisTick` 保留**（不再是正确性依赖，退化为防御性幂等）：
 `ContainerRedstoneData` 实例由容器级持久 store 跨 tick 保存，

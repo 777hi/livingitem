@@ -1,9 +1,11 @@
-# 架构分层诊断与优化计划（未定案 · 执行计划）
+# 架构分层诊断与优化计划
 
-*创建: 2026-10-06 · 状态: **未定案**，代码尚未改动*
+*创建: 2026-10-06 · 状态: ✅ **①~⑤ + components 拆解全部完成** —— R1 113 → 15、R3 28 → 10（2026-10-09）*
 *配套工具: `tools/gen_code_map.py`（看）· `tools/check_layers.py`（守）*
 
-> ⚠️ **本文是「探讨层」，不是现状描述。** 动代码前必须先回到本文逐条确认。
+> 📌 **本文已从「探讨层」转为「执行记录 + 现状表」**：§2 的 ①~⑤ 与 components 拆解**均已落地**
+> （细化方案已归档：[components](../archive/components-decoupling-plan.md)、[container-domain](../archive/container-domain-decoupling-plan.md)）。
+> **剩余 R1 15 条经评估为「低 ROI 层归属微调」，暂不做**；再推进前先回到本文确认。
 >
 > ⚠️ **与并行文档的边界（2026-10-06）**：本文只谈**分层与模块归属**；
 > [framework-benchmark.md](framework-benchmark.md) 谈**向 AnvilCraft / Cataclysm 学什么**
@@ -47,9 +49,9 @@ python tools/gen_code_map.py      # 出 build/code-map.html（人看）/ --query
 | ② | `StaticCacheRegistry` 改为各领域自己登记 | ~~7~~ **0 ✅ 已做** | 低 | **真减 7**（101 → 94） |
 | ③ | `LivingComponents` 挪出 `living/transfer` | ~~27~~ **0 ✅ 已做** | 极低 | **不减**（只修正归属） |
 | ④ | `network/` 是第二个 interaction —— 拆包回领域 | ~~10~~ **0 ✅ 已做** | 中 | **减 8**（69 → 61） |
-| ⑤ | `container` 认识 4 个领域（分散在 6 个类） | ~~20~~ **0 ✅ 已做** | 高 | **减 20** → [细化方案](container-domain-decoupling-plan.md) |
+| ⑤ | `container` 认识 4 个领域（分散在 6 个类） | ~~20~~ **0 ✅ 已做** | 高 | **减 20** → [细化方案](../archive/container-domain-decoupling-plan.md) |
 | ⑥ | 领域互依赖 | ~~28~~ **10** | 中 | 分情况（剩 hopper⇄ender/chest） |
-| ⑦ | **`components` 认识 8 个领域**（A1 有意集中） | ~~27~~ **0 ✅ 已做** | 中 | **减 27** → [细化方案](components-decoupling-plan.md) |
+| ⑦ | **`components` 认识 8 个领域**（A1 有意集中） | ~~27~~ **0 ✅ 已做** | 中 | **减 27** → [细化方案](../archive/components-decoupling-plan.md) |
 
 > 🔑 **判据：搬家 ≠ 减违规。要减必须「同时反转依赖方向」。**
 > - ①② 是**真减**：领域自己去 `register` ⇒ 边变成 `domain → interaction/util` = L3→L2 = **合规**
@@ -67,7 +69,7 @@ python tools/gen_code_map.py      # 出 build/code-map.html（人看）/ --query
 - ⑤ 分散：`ContainerLivingItemHandler` 7 / `TickContext` 4 / `ContainerDataKeys` 4 /
   `SimpleContainerContext` 3 / `ContainerSnapshot` 1 / `MutableSnapshot` 1 = **20** ——
   **贵在涉及 tick 调度热路径**（档 2 已顺带消 2 条；细化方案见
-  [container-domain-decoupling-plan.md](container-domain-decoupling-plan.md)）
+  [container-domain-decoupling-plan.md](../archive/container-domain-decoupling-plan.md)）
 
 ## 3. 跨领域耦合：四类，治法完全不同 ⭐
 
@@ -194,7 +196,7 @@ javadoc 明写「红电感知端口 —— 电力层与跨层消费者（漏斗�
 
 **顺序**：`①②`（低垂果实，真减 19）→ `③`（修正归属）→ `C 收尾`（接口上移，减 6）→ `④`
 → `⑥` → **`B 机制化`**（§3.1，**框架级 + 碰 `LivingItemSyncPacket` ⇒ 必须排在流体领域之后**）
-→ `⑤`（最贵放最后）—— **已出细化方案**（[container-domain-decoupling-plan.md](container-domain-decoupling-plan.md)）
+→ `⑤`（最贵放最后）—— **已出细化方案**（[container-domain-decoupling-plan.md](../archive/container-domain-decoupling-plan.md)）
 
 **每一批都是纯重构**：行为零变化 + 全量测试全绿 + 跑 `check_layers.py` 看 R1 数字下降。
 
@@ -214,9 +216,9 @@ javadoc 明写「红电感知端口 —— 电力层与跨层消费者（漏斗�
 | # | 问题 | 影响 |
 |---|---|---|
 | Q1 | ① 的 9 个 handler 搬走后，`InteractionRegistry` 要不要加确定性排序？（对齐 [framework-benchmark.md](framework-benchmark.md) §3.4） | ① 与那份文档的**唯一可能重叠点** |
-| Q2 | ~~③ `LivingComponents` 是只搬家，还是治本（各领域自己声明并注册 `DataComponentType`）？~~ **✅ 已答并实施（2026-10-08）**：治本 —— 各领域建 `XxxComponents` 定义自己的组件，`LivingItem` 构造阶段挂总线；R1 61→34，`components → domain` 归零 | [components-decoupling-plan.md](components-decoupling-plan.md) §8 |
+| Q2 | ~~③ `LivingComponents` 是只搬家，还是治本（各领域自己声明并注册 `DataComponentType`）？~~ **✅ 已答并实施（2026-10-08）**：治本 —— 各领域建 `XxxComponents` 定义自己的组件，`LivingItem` 构造阶段挂总线；R1 61→34，`components → domain` 归零 | [components-decoupling-plan.md](../archive/components-decoupling-plan.md) §8 |
 | Q3 | **B 的机制化设计**：框架层「不透明分组容器」的载荷用什么？（`CompoundTag` 不透明透传 vs 注册式 codec）—— 前者轻、后者类型安全 | §3.1 |
-| Q4 | ~~⑤ `container → 领域` 抽什么接口？~~ **✅ 已答（2026-10-08）**：不新造接口 —— 优先给 `HasContainerData` 加 `default afterTick` 钩子；A/B/C/D 四组（13 条）是纯归属搬运 | [container-domain-decoupling-plan.md](container-domain-decoupling-plan.md) §4 |
+| Q4 | ~~⑤ `container → 领域` 抽什么接口？~~ **✅ 已答（2026-10-08）**：不新造接口 —— 优先给 `HasContainerData` 加 `default afterTick` 钩子；A/B/C/D 四组（13 条）是纯归属搬运 | [container-domain-decoupling-plan.md](../archive/container-domain-decoupling-plan.md) §4 |
 | Q5 | 领域内**不分子包**（2026-10-06 用户拍板）—— 判据是「>30 个类 **且** 存在跨组 <35% 的切法」 | 未来 |
 
 ## 7. 文档跟进清单
@@ -266,5 +268,5 @@ javadoc 明写「红电感知端口 —— 电力层与跨层消费者（漏斗�
 ### 下一步指向
 
 底座 → 领域的 37 条已**全部归零**（`container` 20 条见 ⑤；`components` 27 条见
-[components-decoupling-plan.md](components-decoupling-plan.md)）。
+[components-decoupling-plan.md](../archive/components-decoupling-plan.md)）。
 剩余 R1 34 条里已无「底座认识领域」这类结构性问题，主要是零散的 L0/L3/L4 边。

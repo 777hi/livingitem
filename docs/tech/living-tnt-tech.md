@@ -172,7 +172,7 @@ public class LivingTntFunction implements LivingItemFunction {   // ← 不再�
 > `tickContainerData`，连注释一起抄错 —— 原注释称「优先级 1 确保红石数据在 TNT tick 之前计算完毕」，
 > 但 `tick()` 在阶段 2、`tickContainerData()` 在阶段 4 ⇒ 这个「之前」对读取时机毫无帮助。
 > 那 10 处重复正是「**错误样板的产地**」，详见
-> [redstone-driver-consolidation-plan.md](../buffer/redstone-driver-consolidation-plan.md) §3。
+> [redstone-driver-consolidation-plan.md](../archive/redstone-driver-consolidation-plan.md) §3。
 
 **`RedstoneSensor.maxSensedSignal()` 方法（v19.1）**：通过感知端口 `TickContext.getSensor()` 读取槽位**四方向入边**的最大值（= 邻居朝 TNT 发出的出边）。
 
