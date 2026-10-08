@@ -51,7 +51,7 @@
 | `LivingBucketFunction` | `domain/water/` | **活桶**（载体，交互型无 tick）：判定 / 内容读取 / 形态变换 |
 | `LivingBucketInteractSupport` / `Handlers` | `domain/water/` | GUI 汲/倒：活流体数据反查 + 服务端权威执行 |
 | `LivingBucketWorldUse` | `domain/water/` | 世界取水 priming（`BucketPickup`） |
-| `FluidFlowSyncPacket` / `ServerSync` / `ClientCache` | `network/` + `domain/water/` | 渲染轨：容器级快照下发 + 客户端缓存 |
+| `FluidFlowSyncPacket` / `ServerSync` / `ClientCache` | `domain/water/` | 渲染轨：容器级快照下发 + 客户端缓存 |
 
 ---
 

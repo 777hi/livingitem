@@ -67,7 +67,7 @@
 | `EnderRouteManager` | `domain/ender/EnderRouteManager.java` | 路由逻辑集中管理，路由注册/提取/验证/同通道防护/偏好类型/直连模式 |
 | `EnderChannelRegistry` | `domain/ender/EnderChannelRegistry.java` | 全局路由表单例（服务端），维护频道→路由条目列表的映射，轮询调度，路由清理 |
 | `EnderChannelClientCache` | `domain/ender/EnderChannelClientCache.java` | 客户端路由缓存，存储频道快照供 Tooltip 读取（ConcurrentHashMap，线程安全） |
-| `EnderChannelSyncPacket` | `network/EnderChannelSyncPacket.java` | S2C 同步包，将路由快照从服务端发送到客户端 |
+| `EnderChannelSyncPacket` | `domain/ender/EnderChannelSyncPacket.java` | S2C 同步包，将路由快照从服务端发送到客户端 |
 | `EnderChannelEntry` | `domain/ender/EnderChannelEntry.java` | 路由条目 record，描述源物品的"指针"，支持方块容器和玩家背包两种类型 |
 | `SlotAccessorFactory` | `transfer/SlotAccessorFactory.java` | 工厂类，检测到活末影箱时创建 LivingEnderChestAccessor |
 | `CrossContainerTransfer` | `domain/hopper/CrossContainerTransfer.java` | 跨容器传输工具类，处理相邻容器与活末影箱之间的路由注册和物品拉取 |

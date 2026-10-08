@@ -1604,7 +1604,7 @@ private float incrementDestroyProgress(...) {
 
 | 文件 | 职责 |
 |---|---|
-| `network/LivingToolPlayerPacket` | S2C：`维度 + [(玩家UUID, 工具列表)]` |
+| `domain/tools/LivingToolPlayerPacket` | S2C：`维度 + [(玩家UUID, 工具列表)]` |
 | `domain/tools/LivingToolPlayerClientCache` | 客户端缓存（整体替换 + 维度校验） |
 | `domain/tools/LivingToolPlayerSync` | 服务端广播（`RADIUS = 32` + 内容去重） |
 
@@ -1757,7 +1757,7 @@ cast 到 `RegistryFriendlyByteBuf`（`ItemStack.STREAM_CODEC` 需要注册表访
 
 | 文件 | 职责 |
 |---|---|
-| `network/LivingToolHostPacket.java` | 新 S2C 包 |
+| `domain/tools/LivingToolHostPacket.java` | 新 S2C 包 |
 | `domain/tools/LivingToolHostSync.java` | 服务端：收集活跃容器 + 节流 + 定向广播 |
 | `domain/tools/LivingToolHostClientCache.java` | 客户端缓存（整体替换） |
 | `client/render/LivingToolRayRenderer.java` | 新增容器形态的读取分支 |
