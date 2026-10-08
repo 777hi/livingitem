@@ -2,16 +2,17 @@ package com.qiqi.li.living.domain.ender;import net.minecraft.world.item.ItemStac
 
 
 import com.qiqi.li.living.api.LivingItemManager;
-import com.qiqi.li.living.components.LivingComponents;
 import java.util.function.Consumer;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
+import net.minecraft.core.component.DataComponentType;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.component.TooltipProvider;
+import net.neoforged.neoforge.registries.DeferredHolder;
 
 /**
  * 活末影箱的数据组件。
@@ -34,6 +35,13 @@ public record LivingEnderChestData(EnderChannelData channel) implements TooltipP
         LivingEnderChestData::new
     );
 
+    /**
+     * 组件注册（2026-10-08：从 {@code LivingComponents} 拆回本领域）。
+     *
+     * <p>定义在 {@link EnderComponents}（而非本类）—— 那里在 {@code RegisterEvent} 之前完成登记。</p>
+     */
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingEnderChestData>> COMPONENT =
+        EnderComponents.LIVING_ENDER_CHEST_DATA;
     public LivingEnderChestData withChannel(EnderChannelData c) { return new LivingEnderChestData(c); }
 
     @Override
@@ -41,7 +49,7 @@ public record LivingEnderChestData(EnderChannelData channel) implements TooltipP
 
     /** 读取：缺失返回默认值。（A1 迁移：原 LivingItemManager.getEnderChestData） */
     public static LivingEnderChestData of(ItemStack stack) {
-        return LivingItemManager.getData(stack, LivingComponents.LIVING_ENDER_CHEST_DATA.value(), LivingEnderChestData.EMPTY);
+        return LivingItemManager.getData(stack, COMPONENT.value(), LivingEnderChestData.EMPTY);
     }
 
     /**
@@ -50,6 +58,6 @@ public record LivingEnderChestData(EnderChannelData channel) implements TooltipP
 
     /** 写入：等于默认值时移除组件。（A1 迁移：原 LivingItemManager.setEnderChestData） */
     public static void set(ItemStack stack, LivingEnderChestData data) {
-        LivingItemManager.setData(stack, LivingComponents.LIVING_ENDER_CHEST_DATA.value(), data, LivingEnderChestData.EMPTY);
+        LivingItemManager.setData(stack, COMPONENT.value(), data, LivingEnderChestData.EMPTY);
     }
 }

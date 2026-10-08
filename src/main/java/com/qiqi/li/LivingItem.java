@@ -128,6 +128,17 @@ public class LivingItem {
         ITEMS.register(modEventBus);
         LivingComponents.DATA_COMPONENT_TYPES.register(modEventBus);
         LivingComponents.ATTACHMENT_TYPES.register(modEventBus);
+        // 各领域组件总线（2026-10-08：组件定义从 LivingComponents 拆回各领域后，各自挂总线）。
+        // ⚠️ 必须在【构造阶段】挂 —— 早于 commonSetup 的领域注册（那里太晚，总线已错过注册窗口）。
+        com.qiqi.li.living.domain.ender.EnderComponents.REG.register(modEventBus);
+        com.qiqi.li.living.domain.tnt.TntComponents.REG.register(modEventBus);
+        com.qiqi.li.living.domain.farmland.FarmlandComponents.REG.register(modEventBus);
+        com.qiqi.li.living.domain.furnace.FurnaceComponents.REG.register(modEventBus);
+        com.qiqi.li.living.domain.hopper.HopperComponents.REG.register(modEventBus);
+        com.qiqi.li.living.domain.water.WaterComponents.REG.register(modEventBus);
+        com.qiqi.li.living.domain.power.PowerComponents.REG.register(modEventBus);
+        com.qiqi.li.living.domain.redstone.RedstoneComponents.REG.register(modEventBus);
+        com.qiqi.li.living.domain.tools.ToolComponents.REG.register(modEventBus);
         NeoForge.EVENT_BUS.register(this);
         NeoForge.EVENT_BUS.register(ContainerChunkCache.getInstance());
         NeoForge.EVENT_BUS.register(LivingToolRecorder.class);

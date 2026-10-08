@@ -231,7 +231,7 @@ public class LivingEnderChestFunction implements LivingItemFunction {
 
     @Override
     public Set<DataComponentType<?>> getOwnedComponentTypes() {
-        return Set.of(LivingComponents.LIVING_ENDER_CHEST_DATA.value());
+        return Set.of(LivingEnderChestData.COMPONENT.value());
     }
 
     @Override

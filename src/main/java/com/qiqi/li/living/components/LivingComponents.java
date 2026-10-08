@@ -19,7 +19,6 @@ import com.qiqi.li.living.domain.water.LivingWaterWheelData;
 import com.qiqi.li.living.domain.water.ContainerStressData;
 import com.qiqi.li.living.domain.water.ContainerFluidData;
 import com.qiqi.li.living.domain.power.PhaseSnapshot;
-import com.qiqi.li.living.domain.ender.LivingEnderChestData;
 import com.qiqi.li.living.domain.redstone.LivingRedstoneData;
 import com.qiqi.li.living.domain.redstone.LivingRedstoneTorchData;
 import com.qiqi.li.living.domain.redstone.LivingButtonData;
@@ -152,13 +151,6 @@ public final class LivingComponents {
                     DataComponentType.<LivingWaterWheelData>builder()
                             .persistent(LivingWaterWheelData.CODEC)
                             .networkSynchronized(LivingWaterWheelData.STREAM_CODEC)
-                            .build());
-
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingEnderChestData>> LIVING_ENDER_CHEST_DATA =
-            DATA_COMPONENT_TYPES.register("living_ender_chest_data", () ->
-                    DataComponentType.<LivingEnderChestData>builder()
-                            .persistent(LivingEnderChestData.CODEC)
-                            .networkSynchronized(LivingEnderChestData.STREAM_CODEC)
                             .build());
 
     public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingRedstoneData>> LIVING_REDSTONE_DATA =
