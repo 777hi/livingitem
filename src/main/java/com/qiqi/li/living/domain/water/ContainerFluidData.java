@@ -14,6 +14,7 @@ import java.util.PriorityQueue;
 import java.util.Set;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
+import com.qiqi.li.living.api.ContainerDataLifecycle;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.components.LivingComponents;
 import com.qiqi.li.living.container.ContainerContext;
@@ -52,7 +53,7 @@ import net.neoforged.neoforge.registries.NeoForgeRegistries;
  * - 多水源时，每个槽位取最近水源的 level
  * - 流动水记录 fromSlot（BFS 父节点），物品沿水流方向推动
  */
-public class ContainerFluidData {
+public class ContainerFluidData implements ContainerDataLifecycle {
 
     /**
      * 容器级流体数据的 key（跨 tick 持久 + 落盘到 BE attachment）。

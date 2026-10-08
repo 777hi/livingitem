@@ -1,6 +1,7 @@
 package com.qiqi.li.living.mixin;
 
 import com.qiqi.li.living.container.ContainerLivingItemHandler;
+import com.qiqi.li.living.domain.redstone.ContainerRedstoneData;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.BlockGetter;
@@ -30,7 +31,7 @@ public abstract class RedStoneWireBlockMixin {
         if (realLevel.isClientSide) return;
 
         BlockPos neighborPos = pos.relative(direction);
-        if (ContainerLivingItemHandler.getRedstoneDataByPos(realLevel, neighborPos) != null) {
+        if (ContainerLivingItemHandler.peekContainerDataByPos(realLevel, neighborPos, ContainerRedstoneData.KEY) != null) {
             cir.setReturnValue(RedstoneSide.SIDE);
         }
     }

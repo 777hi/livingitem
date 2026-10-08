@@ -11,6 +11,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.EmptyBlockGetter;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
+import com.qiqi.li.living.api.ContainerDataLifecycle;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.api.RedstoneSensor;
 import com.qiqi.li.living.container.ContainerContext;
@@ -29,7 +30,7 @@ import com.qiqi.li.living.util.WaxedCopperFamily;
  * <p>{@link #calculate} 是每 tick 的入口：从容器快照重建槽位位图，再经 {@link RedstonePropagation}
  * 完成「收集信号源 → 传播 → 充能导体 → 复检 → 更新显示」的传播节拍，最后结算边界输出并向世界通知邻居变化。</p>
  */
-public class ContainerRedstoneData implements RedstoneSensor {
+public class ContainerRedstoneData implements RedstoneSensor, ContainerDataLifecycle {
 
     /**
      * 容器红石账本的 key（跨 tick 持久；不落盘 attachment）。
@@ -368,7 +369,7 @@ public class ContainerRedstoneData implements RedstoneSensor {
                 BlockPos neighborPos = pos.relative(worldDir);
                 int signal = level.getSignal(neighborPos, worldDir);
 
-                ContainerRedstoneData neighborData = ContainerLivingItemHandler.getRedstoneDataByPos(level, neighborPos);
+                ContainerRedstoneData neighborData = ContainerLivingItemHandler.peekContainerDataByPos(level, neighborPos, KEY);
                 if (neighborData != null) {
                     BlockState neighborState = level.getBlockState(neighborPos);
                     Direction neighborFacing = GridDirections.getBlockFacing(neighborState);

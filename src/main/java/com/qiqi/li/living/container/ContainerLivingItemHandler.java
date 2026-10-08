@@ -11,10 +11,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import com.qiqi.li.living.api.ContainerDataLifecycle;
 import com.qiqi.li.living.api.HasContainerData;
 import com.qiqi.li.living.domain.power.ContainerPowerData;
-import com.qiqi.li.living.domain.redstone.ContainerRedstoneData;
-import com.qiqi.li.living.domain.redstone.LivingRedstoneFunction;
 import com.qiqi.li.living.domain.water.ContainerFluidData;
 import com.qiqi.li.living.domain.water.ContainerStressData;
 import com.qiqi.li.living.util.DoubleChestPositions;
@@ -206,26 +205,17 @@ public class ContainerLivingItemHandler {
     private static void cleanupStaleData(long currentTimeMs) {
         CONTAINER_DATA.entrySet().removeIf(en -> {
             ContainerEntry e = en.getValue();
-            ContainerFluidData fluid = e.store.peek(ContainerFluidData.KEY);
-            ContainerRedstoneData redstone = e.store.peek(ContainerRedstoneData.KEY);
-            ContainerPowerData power = e.store.peek(ContainerPowerData.KEY);
-            boolean fluidStale = fluid == null || currentTimeMs - fluid.getLastTickTime() > 120_000;
-            boolean redstoneStale = redstone == null
-                || currentTimeMs - redstone.getLastTickTime() > 120_000;
-            boolean powerStale = power == null
-                || currentTimeMs - power.getLastTickTime() > 120_000;
-            return fluidStale && redstoneStale && powerStale;
+            // 泛化（2026-10-08 计划 ⑤）：遍历已登记的 key，只问「实现了生命周期接口」的数据
+            // （跨 tick 持久那几种）；tick 级数据（如应力）每 tick 重建，不参与过期判定。
+            for (ContainerDataKey<?> key : ContainerDataKey.all()) {
+                Object v = e.store.peek(key);
+                if (v instanceof ContainerDataLifecycle lc
+                        && currentTimeMs - lc.getLastTickTime() <= 120_000) {
+                    return false;   // 有任一数据仍活跃 ⇒ 不回收整条
+                }
+            }
+            return true;
         });
-    }
-
-    /**
-     * 获取或创建容器持久化红石数据。
-     * 返回 null 表示容器不支持红石数据（如没有 containerKey）。
-     */
-    public static ContainerRedstoneData getRedstoneData(ContainerContext ctx) {
-        ContainerEntry e = entry(ctx);
-        if (e == null) return null;
-        return e.store.getOrCreate(ContainerRedstoneData.KEY);
     }
 
     /**
@@ -269,12 +259,12 @@ public class ContainerLivingItemHandler {
         return power;
     }
 
-    /** 按位置 O(1) 查询红石数据，供 mixin 热路径调用 */
-    public static ContainerRedstoneData getRedstoneDataByPos(Level level, BlockPos pos) {
-        String key = POS_TO_CACHE_KEY.get(new PosKey(level.dimension(), pos));
-        if (key == null) return null;
-        ContainerEntry e = CONTAINER_DATA.get(key);
-        return e == null ? null : e.store.peek(ContainerRedstoneData.KEY);
+    /** 按位置 O(1) 查询容器级数据（泛化；供 mixin 热路径与领域侧调用）。 */
+    public static <T> T peekContainerDataByPos(Level level, BlockPos pos, ContainerDataKey<T> key) {
+        String cacheKey = POS_TO_CACHE_KEY.get(new PosKey(level.dimension(), pos));
+        if (cacheKey == null) return null;
+        ContainerEntry e = CONTAINER_DATA.get(cacheKey);
+        return e == null ? null : e.store.peek(key);
     }
 
     /** 按位置 O(1) 查询红电数据（电力层，供对外能量接口调用） */
@@ -494,10 +484,10 @@ public class ContainerLivingItemHandler {
             grouped.computeIfAbsent(f, k -> new ArrayList<>());
         }
 
-        // 空容器早退 —— ⚠️ **理论不可达**：自维持函数（LivingFluidFunction / LivingRedstoneFunction）
+        // 空容器早退 —— ⚠️ **理论不可达**：自维持函数（流体 / 红石领域的驱动函数）
         // 使 grouped 恒非空。保留本分支仅作防御。
         // 2026-10-08：原 handleEmptyContainer（「空容器时让残留红石归零」）已删 ——
-        // 归零职责由 LivingRedstoneFunction 的驱动守卫接管（它有 REDSTONE 数据就会跑 calculate，
+        // 归零职责由红石领域的自维持驱动守卫接管（它有 REDSTONE 数据就会跑 calculate，
         // 内部 hasAny=false 分支自然归零）。见 docs/buffer/redstone-driver-consolidation-plan.md §5 改动 4/5。
         if (grouped.isEmpty()) {
             return;
@@ -524,7 +514,7 @@ public class ContainerLivingItemHandler {
             // 它是全局幂等动作，改为在 L4 `LivingItem.onServerTick` 每 tick 收口，
             // 不再每容器重复调用（见 docs/buffer/container-domain-decoupling-plan.md）。
             // 2026-10-08：原 zeroResidualRedstone（1b-2c 的「残留红石归零」兜底）已删 ——
-            // LivingRedstoneFunction 改为自维持后恒在 grouped 里，该兜底的守卫条件恒真、方法体永不执行；
+            // 红石领域改为自维持后恒在 grouped 里，该兜底的守卫条件恒真、方法体永不执行；
             // 归零由它的驱动守卫接管（有 REDSTONE 数据 ⇒ 跑 calculate ⇒ hasAny=false 分支归零）。
             runContainerDataTicks(grouped, context, tick);
 

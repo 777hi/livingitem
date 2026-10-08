@@ -10,7 +10,6 @@ module	(root)	client/render	4
 module	living/api	living/container	4
 module	living/components	living/domain/power	4
 module	living/components	living/domain/tools	4
-module	living/container	living/domain/redstone	4
 module	living/container	living/domain/water	4
 module	living/compat	living/domain/water	3
 module	living/components	living/domain/water	3
@@ -19,6 +18,7 @@ module	living/container	living/transfer	3
 module	living/domain/tools	(root)	3
 module	living/transfer	living/domain/chest	3
 module	living/transfer	living/domain/ender	3
+module	living/container	living/domain/redstone	2
 module	living/domain/tnt	(root)	2
 module	(root)	client/icon	1
 module	living/api	living/components	1

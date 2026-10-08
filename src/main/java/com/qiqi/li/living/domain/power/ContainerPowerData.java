@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import com.qiqi.li.living.api.ContainerDataLifecycle;
 import com.qiqi.li.living.container.ContainerDataKey;
 import com.qiqi.li.living.domain.power.LivingWaxedCopperFunction.SignalTracker;
 
@@ -24,7 +25,7 @@ import com.qiqi.li.living.domain.power.LivingWaxedCopperFunction.SignalTracker;
  *       电按锈级分账后容器级「总功率」没有消费方，读数口径 = 各锈级 EMA。</li>
  * </ul>
  */
-public class ContainerPowerData {
+public class ContainerPowerData implements ContainerDataLifecycle {
 
     /**
      * 容器红电账本的 key（跨 tick 持久；不落盘 attachment —— 相位快照走专用机制）。
