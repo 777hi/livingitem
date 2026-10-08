@@ -4,6 +4,13 @@ import net.minecraft.server.level.ServerPlayer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * 活物品与 Sable 模组（飞艇 / SubLevel 物理）的集成门面。
+ *
+ * <p>在 Sable 未加载或集成类不可用时安全地降级（返回 false / 禁用传送），
+ * 对外提供「玩家是否在 SubLevel」「是否存在软连接」「SubLevel 传送」三类能力，
+ * 实际实现委托给 {@link SableIntegration}。</p>
+ */
 public class ModSable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("LivingItem/Sable");

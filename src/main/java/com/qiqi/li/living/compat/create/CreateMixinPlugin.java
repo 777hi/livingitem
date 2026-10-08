@@ -9,6 +9,12 @@ import org.spongepowered.asm.mixin.extensibility.IMixinInfo;
 import java.util.List;
 import java.util.Set;
 
+/**
+ * Create 的 Mixin 配置插件（{@link IMixinConfigPlugin}）。
+ *
+ * <p>在加载期通过资源探测 {@code create} 模组是否存在，仅当存在时才应用相关 Mixin，
+ * 从而避免无 Create 时因类缺失导致加载失败。</p>
+ */
 public class CreateMixinPlugin implements IMixinConfigPlugin {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("LivingItem/CreateMixinPlugin");

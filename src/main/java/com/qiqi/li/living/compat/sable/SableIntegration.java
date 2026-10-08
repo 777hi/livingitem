@@ -24,6 +24,13 @@ import org.joml.Vector3dc;
 import java.util.Collection;
 import java.util.Set;
 
+/**
+ * Sable 飞艇 SubLevel 传送的具体实现。
+ *
+ * <p>处理玩家所在载具的 SubLevel 姿态变换与客户端位置同步，
+ * 并在检测到跨 SubLevel 软连接（绳索 / 关节）时拒绝传送，避免物理约束被拉裂。
+ * 仅在 Sable 加载且集成可用时由 {@link ModSable} 调用。</p>
+ */
 public class SableIntegration {
 
     /**

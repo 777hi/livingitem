@@ -9,6 +9,13 @@ import com.qiqi.li.living.domain.water.ContainerStressData;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * Create 应力输出的集成逻辑。
+ *
+ * <p>将活物品的 {@link ContainerStressData} 转为 Create 的 RPM 与应力容量，
+ * 注入到容器下方实现了 {@link LivingItemStressOutput} 的方块实体；
+ * 当方向与既有转速冲突时清零输出，避免破坏 Create 动力网。</p>
+ */
 public class CreateIntegration {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("LivingItem/Create");
