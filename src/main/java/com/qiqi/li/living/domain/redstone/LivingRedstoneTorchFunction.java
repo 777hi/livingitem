@@ -20,6 +20,12 @@ import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.model.Pos2D;
 
+/**
+ * 活红石火把的功能实现。
+ *
+ * <p>红石火把是反相信号源：亮时（未接地）向外输出满信号，被侧边输入强信号「压灭」时熄灭且不输出。
+ * 本类管理火把的朝向（{@link HasDirection}，由 {@link #updateTorchDirection} 设置）与亮灭状态。</p>
+ */
 public class LivingRedstoneTorchFunction implements LivingItemFunction, HasDirection {
 
     public static final String ID = "living_redstone_torch";

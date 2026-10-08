@@ -20,6 +20,12 @@ import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.model.Pos2D;
 
+/**
+ * 活比较器的功能实现。
+ *
+ * <p>管理比较器的朝向（{@link HasDirection}）与比较 / 减法模式（{@link #toggleMode}），
+ * 并提供 {@link #readComparatorOutput} 读取其对外输出的比较器信号（受本容器信号上限约束）。</p>
+ */
 public class LivingComparatorFunction implements LivingItemFunction, HasDirection {
 
     public static final String ID = "living_comparator";

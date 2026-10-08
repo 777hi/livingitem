@@ -18,6 +18,12 @@ import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
 
+/**
+ * 活红石灯的功能实现。
+ *
+ * <p>红石灯是纯显示元件：亮 / 灭状态由红石层的传播结果决定（收到信号则亮），本类只负责把红石灯
+ * 识别为红石层元件并在悬浮提示里反映其亮灭状态，不持有可切换的内部状态。</p>
+ */
 public class LivingRedstoneLampFunction implements LivingItemFunction {
 
     public static final String ID = "living_redstone_lamp";

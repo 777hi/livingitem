@@ -18,6 +18,12 @@ import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
 
+/**
+ * 活按钮（木 / 石）的功能实现。
+ *
+ * <p>管理按钮的按下 / 弹起状态与脉冲计时：{@link #pressButton} 切换为按下并开始倒计时
+ * （木按钮 30 tick、石按钮 20 tick），倒计时归零自动弹起。木 / 石由 {@link #isWoodButton} 区分。</p>
+ */
 public class LivingButtonFunction implements LivingItemFunction {
 
     public static final String ID = "living_button";

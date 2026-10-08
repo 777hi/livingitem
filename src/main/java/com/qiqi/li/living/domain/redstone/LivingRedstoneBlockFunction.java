@@ -16,6 +16,12 @@ import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
 
+/**
+ * 活红石块的功能实现。
+ *
+ * <p>红石块是恒定强信号源，无论数量多少对外恒输出满信号（受 {@link ContainerRedstoneData#getSignalCap}
+ * 信号上限约束）。本类不含状态，仅负责把红石块识别为红石层元件并参与传播。</p>
+ */
 public class LivingRedstoneBlockFunction implements LivingItemFunction {
 
     public static final String ID = "living_redstone_block";

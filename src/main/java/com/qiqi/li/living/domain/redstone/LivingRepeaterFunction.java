@@ -20,6 +20,12 @@ import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.model.Pos2D;
 
+/**
+ * 活中继器的功能实现。
+ *
+ * <p>中继器管理朝向（{@link HasDirection}）、延迟档位（{@link #cycleDelay} 在 1~4 间循环，
+ * 每档 2 tick）、锁定与充能状态。它既放大并单向转发信号（带延迟），也可被背后同向中继器锁定以固定输出。</p>
+ */
 public class LivingRepeaterFunction implements LivingItemFunction, HasDirection {
 
     public static final String ID = "living_repeater";

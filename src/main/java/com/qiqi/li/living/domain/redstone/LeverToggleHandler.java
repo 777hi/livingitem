@@ -5,6 +5,12 @@ import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import com.qiqi.li.living.interaction.InteractionHandler;
 
+/**
+ * 活拉杆的交互处理器。
+ *
+ * <p>玩家点击装有活拉杆的槽位时触发，调用 {@link LivingLeverFunction#toggleLever} 切换拉杆的
+ * 开 / 关（powered）状态，从而改变其对外的红石信号。</p>
+ */
 public class LeverToggleHandler implements InteractionHandler {
 
     @Override

@@ -23,6 +23,13 @@ import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.model.Pos2D;
 
+/**
+ * 活铜家族（裸铜 / 雕纹铜 / 切铜 / 铜格栅 / 铜灯泡）的功能实现。
+ *
+ * <p>按氧化等级与子类型（{@link #isChiseled} / {@link #isCut} / {@link #isGrate} / {@link #isBulb}）
+ * 提供不同的信号行为：雕纹铜是带输入 / 输出方向的二极管，切铜是立交桥，格栅对四向输入求和，
+ * 灯泡记录并显示信号，裸铜作为可感应耦合的信号线。所有子类型均受氧化等级影响。</p>
+ */
 public class LivingCopperFunction implements LivingItemFunction, HasDirection {
 
     public static final String ID = "living_copper";

@@ -21,6 +21,13 @@ import com.qiqi.li.living.model.GridDirections;
 import com.qiqi.li.living.model.Pos2D;
 import com.qiqi.li.living.util.WaxedCopperFamily;
 
+/**
+ * 红石层的「账本」（信号层）。实现 {@link RedstoneSensor}，持有每槽四方向出边的 {@code EdgeGrid}、
+ * 槽位类型位图与四面输入输出，供电力层 / 活 TNT / 活漏斗等跨层消费者查询信号。
+ *
+ * <p>{@link #calculate} 是每 tick 的入口：从容器快照重建槽位位图，再经 {@link RedstonePropagation}
+ * 完成「收集信号源 → 传播 → 充能导体 → 复检 → 更新显示」的传播节拍，最后结算边界输出并向世界通知邻居变化。</p>
+ */
 public class ContainerRedstoneData implements RedstoneSensor {
 
     // ── 槽位类型位掩码 ──

@@ -18,6 +18,12 @@ import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
 
+/**
+ * 活拉杆的功能实现。
+ *
+ * <p>管理拉杆的开 / 关（powered）状态：{@link #toggleLever} 翻转该状态，从而改变其对外的红石信号。
+ * 拉杆是持续信号源（打开即恒输出），区别于按钮的脉冲。</p>
+ */
 public class LivingLeverFunction implements LivingItemFunction {
 
     public static final String ID = "living_lever";

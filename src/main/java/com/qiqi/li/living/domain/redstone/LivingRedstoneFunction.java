@@ -20,6 +20,14 @@ import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.ContainerDataKeys;
 import com.qiqi.li.living.container.TickContext;
 
+/**
+ * 活红石粉的功能实现，也是红石层的<b>唯一驱动点</b>。
+ *
+ * <p>红石粉本身只是被驱动的元件，但本类通过 {@code HasContainerData} 自维持（{@link #shouldTickWithoutOwnItems}
+ * 与 {@link #getPriority} prio 2），在容器级数据流程里单点驱动 {@code ContainerRedstoneData#calculate}——
+ * 即使容器里只有活按钮 / 拉杆 / 中继器（没有活红石粉），也能让它们正常联动。{@link #tickContainerData}
+ * 用 {@link ContainerRedstoneData#hasRedstoneElements} 守卫「与红石无关」的容器，避免无谓计算。</p>
+ */
 public class LivingRedstoneFunction implements LivingItemFunction, HasContainerData {
 
     public static final String ID = "living_redstone";
