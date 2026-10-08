@@ -1,4 +1,4 @@
-# 框架层对标：AnvilCraft + Cataclysm（未定案 · 参考输入）
+# 框架层对标：AnvilCraft / Cataclysm / Create（未定案 · 参考输入）
 
 *创建: 2026-10-06 · 状态: **未定案**，本文只是**对标记录**，不是执行排期*
 
@@ -65,6 +65,7 @@ Create（addon 生态最繁荣）用的是**静态注册表**而非注册期事�
 
 > 📌 **定稿口径**：对标时**不许**用"人家大模组都这么干"作为理由。
 > 判据只有一条：**这条抽象解决的是我们真实存在的问题吗？** 存在 ⇒ 学；不存在 ⇒ 记下来但不做。
+> （**为什么这条成立**：§9.1 —— 它们的复杂度是"宽"的、我们的是"深"的，**规模不可比**。）
 
 ## 2. 对象 A · AnvilCraft —— 逐条结论（体例：定稿值 / 被否掉的选项及理由 / 待决项 / 测试守卫）
 
@@ -517,6 +518,7 @@ DataComponentType.<Boolean>builder().persistent(Codec.BOOL)
 | **Q10** | 要不要建 `living/impl/` + `@ApiStatus.Internal`？还是只标注不建包？ | §3.15 | 倾向先只标注（成本低），真有第二个 impl 类再建包 |
 | **Q11** | 要不要上 gametest？（我们 475 JUnit / 0 gametest） | §3.17 | 倾向不为对齐而做；触发条件见 §6 |
 | **Q12** | `tools/gen_code_map.py` 的**分层违规报告**要不要接进 `doc_check.py` / CI？ | §3.15 | Create 因没有机械检查而泄漏；我们有工具但没自动跑 ⇒ **潜在领先项** |
+| ~~**Q13**~~ | ~~可复现构建怎么修？~~ | §9.4 | ✅ **已定稿并落地**（2026-10-08）：Sable 走 Modrinth Maven + companion 自动提取 + 辅助 jar 条件化 + 删 `org.gradle.java.home` |
 
 ## 8. 文档跟进清单
 
@@ -526,3 +528,96 @@ DataComponentType.<Boolean>builder().persistent(Codec.BOOL)
 - [ ] 落地后按 [README.md](../README.md) §4 写 changelog 一行 + `AGENTS.md` 进展一行
 - [ ] 全部完成或决定放弃某条 ⇒ 本文从 `docs/buffer/` 搬 `docs/archive/`，并在 `docs/decisions.md` 留 supersedes 链
 - [ ] ⚠️ 若与并行会话的架构优化重叠 ⇒ **本文降级为背景与理由，正文迁对方文档**
+- [ ] §9.4 的可复现构建问题（compileOnly 的 jar 不在版本控制）⇒ **单独处理**，不属于框架层
+
+## 9. 附：它们是怎么撑住的（维护机制与依赖库，2026-10-08 补充）
+
+> 前三轮都在问「学什么」。这一节回答一个前提问题：**体量这么大的项目，靠什么维持不塌？**
+> 结论是「它们维护得并不好，只是**规模的性质**允许它们糙」——而这个结论反过来给出了
+> 评估每一条"要不要抄"的**元判据**。
+
+### 9.1 元判据：复杂度是「宽」的，还是「深」的
+
+| | 文件分布 | 文件间关系 | 维护负担 |
+|---|---|---|---|
+| **Create** | `content/` **1304 / 2016**，按玩法域分包（contraptions / kinetics / logistics / trains…） | 各域之间**基本独立**：加一个方块不改旧方块 | 随文件数**线性**增长 |
+| **AnvilCraft** | 516 block / 146 item，彼此独立 | 同上 | 线性 |
+| **我们** | 290，**大部分是共享机制**——`ContainerLivingItemHandler`（41 KB）是唯一 tick 调度中心、`ContainerContexts` 是所有容器的身份解析内核 | 改一处 ⇒ 13 个活物品全部受影响 | 随**耦合面**增长（非线性） |
+
+⇒ **规模大 ≠ 复杂。它们的复杂度是"宽"的（可线性累加），我们的是"深"的（横向耦合）。**
+
+**这就是为什么「大模组没测试也能活，我们不行」**——**不是勤奋程度不同，是复杂度形状不同**。
+我们的 475 个测试、`doc_check.py`、`gen_code_map.py`、`AGENTS.md` 导航，不是可选的洁癖，
+是深耦合结构的必需品。
+
+⚠️ 本条是**元判据**：§1 那条「不许用"人家大模组都这么干"当理由」的**理由就在这里**。
+以后遇到任何"抄不抄"的问题，先问：**这个文件的改动会牵动多少人？** 而不是"大模组有没有这么大的文件"。
+（`AllBlocks.java` 2711 行能活 ≠ 我们的 `RecipeBookComponentMixin` 50 KB 能活。）
+
+**它们的"维护"实际水平（证据）**：三个项目**都是 0 JUnit 单测**；Cataclysm 的 README 还是 MDK 模板原文；
+Create 源码自认技术债（`Create.java:142` `TODO`、`:147/163` `FIXME: not thread-safe`）；`AllBlocks.java` 2711 行 / import 占 325 行。
+
+### 9.2 依赖的库：不是"引入框架"，是"长出了库"
+
+按**引用该库的文件数**统计（可复算：`Get-ChildItem -Recurse -Filter *.java <src> | Select-String '^import <pkg>' -List`）：
+
+| 项目 | 自研库 | 引用文件数 | 占比 | 第三方库 |
+|---|---|---|---|---|
+| Create（2016） | **Catnip** | **997** | **49%** | Flywheel 235 / Registrate 93 / Ponder 77 |
+| AnvilCraft（2539） | **AnvilLib** | 593 | 23% | Ageratum（jarJar 内嵌） |
+| Cataclysm（842） | **Lionfish API** | 131 | 16% | Curios 23（**硬依赖**）/ JEI 4 |
+
+**关键观察：三个都是「作者自己的库」。** 不是站在别人框架上，是**规模到了自然长出**——
+这是结果不是起点。⇒ **我们 290 文件的量级（差 3~9 倍）现在抽库是负债，不是资产。**
+
+**库里装什么，决定抽库成败（Catnip 干净 / AnvilLib 渗漏）**：
+
+| 库 | 子包（按引用次数） | 边界 |
+|---|---|---|
+| **Catnip** | `data` 394 / `math` 384 / `animation` 193 / `render` 186 / `platform` 150 / `nbt` 114 / `codecs` 102 / `net` 86 / `lang` 82 | ✅ **守住了**：全是与"机械动力"无关的通用设施——`Couple`/`Pair`/`Iterate`/`WorldAttached`（数据结构 + 世界绑定缓存）、`VecHelper`/`AngleHelper`/`VoxelShaper`（几何）、`CatnipServices`（平台抽象） |
+| **AnvilLib** | `util` 425 / `network` 217 / `registrum` 121 / `recipe` 90 / `codec` 60 / **`piston` 23 / `multiblock` 23 / `wheel` 19 / `cube` 30** | ❌ **渗漏**：`piston`/`wheel`/`cube`/`multiblock` 是 AnvilCraft 的**玩法本身**被塞进"通用库" |
+
+⇒ **判据：抽库的成败 = 边界能不能守住「与本项目玩法无关」。**
+（这也解释了为什么 AnvilLib 只能 jarJar 内嵌、无人复用，而 Catnip/Flywheel/Ponder 成了独立生态。）
+⇒ 若将来我们要抽，候选只能是"与活物品无关的"（`living/container/` 容器抽象、`living/transfer/` 槽位工具），
+**绝不能**把活物品逻辑抽进去。
+
+### 9.3 我们已经在这些库上面，但故意不用（这是对的）
+
+`build.gradle:202-209`：`compileOnly` + `runtimeOnly` 了 **Create（slim）/ Ponder / Flywheel / Registrate** 四个。
+但 `grep` 我们 `src/` 下引用它们 API 的次数 = **0** ⇒ 挂它们纯粹为了编译 Create 兼容层。
+
+**定稿：保持不用。** 理由：我们注册量小（不需要 Registrate 的 builder 链 + 自动 datagen）、
+渲染量小（不需要 Flywheel 的 instancing）、alpha 阶段（不需要 Ponder 教程引擎）。
+**别因为"Create 在用"就去用**——这正是 §1 那条口径要防的。
+
+### 9.4 可复现构建（✅ 已修 2026-10-08，本文档写作时它还是唯一的差距）
+
+三个对标项目的依赖**全是 maven 坐标**（curse.maven / blamejared / modrinth / illusivesoulworks）⇒ 干净克隆可构建。
+
+**我们**：`build.gradle` 里有 12 个 `files("libs/*.jar")` 依赖，其中
+**`compileOnly files("libs/sable-neoforge-1.21.1-2.0.3.jar")` 是编译必需的**；而：
+
+```
+.gitignore:41  libs/            ← 整个 libs/ 被忽略
+git ls-files 'libs/*.jar'  →  0 个   ← 没有任何 jar 进版本控制
+```
+
+⇒ 当时**从干净克隆编译不过**（缺 sable jar），且仓库里没有任何说明去哪拿。
+
+**已定稿的修法（2026-10-08 落地，Q13 关闭）**：
+
+| 改动 | 做法 | 理由 |
+|---|---|---|
+| **Sable 主 jar** | 改 **Modrinth Maven**：`maven.modrinth:sable:2.0.3+mc1.21.1`（`transitive = false`） | 🔴 **不能提交 jar** —— Sable 是 **PolyForm Shield License 1.0.0**（非 OSI），再分发有许可风险 |
+| **sable-companion** | 新增 `extractSableCompanion` 任务：从 sable jar 的 `META-INF/jarjar/` **自动抽出**并扁平化为 `build/sable-companion/sable-companion.jar` | companion 未单独发布到 Modrinth（API 404），但它内嵌在 sable jar 里 ⇒ 版本永远一致、无需第二个来源；companion 本身是 MIT |
+| **10 个开发辅助 jar**（tagtooltips / componentviewer / CustomSkinLoader / observable / spark / sodium / jei / architectury / kotlinforforge / ironchest） | 条件化声明：文件存在才进 classpath | 测试代码对它们 **0 引用** ⇒ CI 上缺失无影响；`flatDir` 指向不存在目录也不会失败（已实测） |
+| **`gradle.properties` 的 `org.gradle.java.home`** | **删除** | 它写死了本机路径 `G:/777hi/program/Java/jdk-17.0.4.1` ⇒ CI 上 Gradle 找不到 JDK（**这是 CI 失败的第二个原因**） |
+
+🔴 **新增约束（写进契约层）**：**第三方模组 jar 一律不进版本控制** ——
+要么 maven 坐标，要么运行时条件化；`libs/` 保持 gitignore。
+（例外只有一个前提：许可证允许再分发，且体积可接受。）
+
+**验证手段（可复算）**：`-Plivingitem.devModsDir=nonexistent_dir_ci_sim`
+（在本地复现「干净克隆」：`libs/` 不存在）+ `--no-build-cache --rerun-tasks` 强制全量重编。
+已实测：`compileJava` ✅、`test` 551 项 ✅。**任何改动 `libs/` 依赖后都必须用这条命令复验。**

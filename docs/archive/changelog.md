@@ -19,6 +19,23 @@
 
 > 框架侧（流体侧已于 10-07 完工，此后不再改动）。
 
+- 🔧 **可复现构建修复：GitHub Actions 从「每次失败」变为可构建**。根因**两个**：
+  ① `compileOnly files("libs/sable-*.jar")` 的 jar 在被 gitignore 的 `libs/` 里 ⇒
+  干净克隆没有它，javac 找不到 `dev.ryanhcode.sable.*`（`SableIntegration` 12 处报错）；
+  ② `gradle.properties` 写死了本机路径 `org.gradle.java.home=G:/...jdk-17.0.4.1` ⇒ CI 上 Gradle 找不到 JDK。
+
+  修法：**Sable 改走 Modrinth Maven**（`maven.modrinth:sable:2.0.3+mc1.21.1`，
+  🔴 **不能把 jar 提交进仓库** —— Sable 是 **PolyForm Shield License 1.0.0**，非 OSI、再分发有许可风险）；
+  新增 `extractSableCompanion` 任务**从 sable jar 的 `META-INF/jarjar/` 自动抽出 companion**
+  （companion 未单独发布到 Modrinth，但它内嵌在 sable jar 里 ⇒ 版本永远一致；companion 本身是 MIT）；
+  10 个开发辅助模组 jar 改**条件化声明**（文件存在才进 classpath —— 测试代码对它们 0 引用，CI 缺失无影响）；
+  删除 `org.gradle.java.home`。
+
+  🔴 **新增约束**：**第三方模组 jar 一律不进版本控制** —— 要么 maven 坐标，要么运行时条件化。
+  **复验命令**（任何改动 `libs/` 依赖后必跑）：`./gradlew build -Plivingitem.devModsDir=nonexistent_dir_ci_sim --rerun-tasks`
+  —— 该开关在本地复现「干净克隆」。已实测 `compileJava` ✅ / `test` 551 项 ✅。
+  背景与判据见 [framework-benchmark.md](../buffer/framework-benchmark.md) §9.4。
+
 - 🏗 **`runtime` 机制化（档 2）完成：拆掉 `domain/runtime/` 这个「假领域」**（**551 全绿**；
   R3 **22 → 10**、R1 **93 → 91**）。方案与实施记录见
   [runtime-mechanization-plan.md](../buffer/runtime-mechanization-plan.md) §7（计划）/ §8（实现）。
