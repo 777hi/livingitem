@@ -2,13 +2,19 @@
 
 *创建: 2026-10-08 · 状态: 📋 **调研完成，待拍板**（尚未改任何代码）*
 
-> ### 📌 当前状态：只出方案，未动代码
+> ### 📌 当前状态：**A / D / C(部分) 已实施 —— R1 91 → 82**；B / E 待做
 >
 > | 项 | 状态 |
 > |---|---|
 > | 现状核算 | ✅ 精确到类对（20 条，见 §1） |
 > | 药方设计 | ✅ 三条原则 + 五步计划（见 §4/§5） |
-> | 代码改动 | ❌ **未开始**（等用户拍板） |
+> | **A（key 归领域）** | ✅ 已做（`195b41a`，**消 5 条**：4 domain + 1 components） |
+> | **D（快照去 fluidData）** | ✅ 已做（`8e6184a`，**消 2 条**） |
+> | **C（SimpleContainerContext 便利方法）** | ⚠️ **部分**（`d828927`，消 2 条；RedstoneData 那条卡住） |
+> | **B（TickContext 便利方法）** | ❌ **不能简单删** —— 见 §10，会**转成 R3 违规** |
+> | **E（生命周期钩子）** | ❌ 待做（与 B 一起，需注册制机制） |
+>
+> ⇒ 实际：**R1 91 → 82（-9）**；`container → domain` 剩 **12 条**。
 >
 > 上游：本方案是 [architecture-layering-plan.md](architecture-layering-plan.md) §2 计划 **⑤** 的细化，
 > 同时回答该文 §6 **Q4**（「⑤ 抽什么接口？」）。
@@ -230,7 +236,67 @@ container 侧**不再出现** `getRedstoneData(ctx)` 这类返回具体领域类
 
 | # | 问题 |
 |---|---|
-| **P1** | **是否开工**？若开工，**先做 A/B/C/D 四组**（13 条、低风险、纯搬运），还是**一次性 A~E 全做**？ |
+| **P1** | ✅ **已答**：先做 A/B/C/D。实际执行后 B 卡住（见 §10） |
 | **P2** | 步 4 的钩子落点：**方案 a**（`HasContainerData` 加 default `afterTick`，推荐）还是**方案 b**（新建 `ContainerLifecycleHook` 注册表）？ |
 | **P3** | 「末影刷脏」是否**顺带**从「每容器」改成「每 tick 收口」（R2）？还是**只抽钩子、不优化**？ |
 | **P4** | 「注释假边」（R4）是否值得改注释措辞？**默认不做**。 |
+
+---
+
+## 10. 实施记录（2026-10-08）
+
+### 10.1 已落地（3 个提交，R1 91 → 82）
+
+| 步 | 提交 | 内容 | 消边 |
+|---|---|---|---|
+| **A** | `195b41a` | 4 个 key 挪进各自数据类，删 `ContainerDataKeys` | **5**（4 domain + 1 components） |
+| **D** | `8e6184a` | 删 `ContainerSnapshot.fluidData`（死字段） | **2** |
+| **C** | `d828927` | 删 `SimpleContainerContext.getOrCreateFluidData`（死代码）/ `getOrCreatePowerData`（仅测试用） | **2** |
+
+**A 步踩到的真坑（值得记住）**：`ContainerDataKey.persistentWith` 原本直接吃 `AttachmentType`。
+key 从「集中定义的懒加载类」挪到「领域数据类的静态字段」后，**求值时机提前到类加载**，
+而 `DeferredHolder.value()` 必须等注册完成 ⇒ 抛
+`NullPointerException: Trying to access unbound value: ResourceKey[...container_fluid_data]`。
+⇒ 修法：**attachment 改 `Supplier` 延迟求值**。
+
+### 10.2 ⚠️ 关键发现：**B 组不能简单删** —— 会把 R1 违规转成 R3
+
+原方案（§3）把 B 组判为「便利方法放错包 ⇒ 搬走即可」。**实测发现这个判断是错的**：
+这些方法是**跨领域访问的中继**。
+
+| 方法 | 调用者 | 若删掉，调用者必须… | 后果 |
+|---|---|---|---|
+| `getSensor(ctx)`（返回 `RedstoneSensor` 接口） | tnt / power / hopper | `ctx.getOrCreateContainerData(ContainerRedstoneData.KEY)` | **新增 3 条 R3** |
+| `fluidData()` | farmland / water×2 | `tick.data(ContainerFluidData.KEY)` | farmland **新增 1 条 R3** |
+| `stressData()` / `powerData()` | water / container 自身 | 同上 | water 同包（无害） |
+
+⇒ **净效果：消 4 条 R1，却增 4 条 R3** —— R3（领域互依赖）比 R1 更该避免 ⇒ **不划算，不做**。
+
+**正确解法**（与 E 组同构，属「机制化」）：
+1. **`getSensor` 用注册制**：redstone 领域向框架注册「如何从 ctx 取 sensor」的解析器
+   ⇒ `TickContext` 只认 `RedstoneSensor`（api），不认 `ContainerRedstoneData`。
+2. **`fluidData` 需接口提取**：把 farmland 真正需要的流体视图抽成 api 接口，
+   让 `TickContext` 返回接口而非 `ContainerFluidData`。
+
+### 10.3 同理：C 组的 `RedstoneData` 那条也卡住
+
+`SimpleContainerContext.setTickContext` 里有**逻辑代码**（不是便利方法）：
+
+```java
+ContainerRedstoneData rd = peekContainerData(ContainerRedstoneData.KEY);
+if (rd != null) rd.resetProcessedFlag();   // 每 tick 重置红石账本的 processed 标志
+```
+
+⇒ 要消这条，得把「tick 开始 reset」的职责移给红石领域（`LivingRedstoneFunction`）——
+⚠️ 但**时机变了**（现在在 tick 开始，移过去在阶段 4），**行为等价性需专门验证** ⇒ 与 E 组一起做。
+
+### 10.4 结论：剩余 12 条 = 一个「机制化」步骤
+
+| 组 | 条数 | 需要的机制 |
+|---|---|---|
+| B（TickContext） | 4 | 注册制（sensor 解析器）+ 接口提取（流体视图） |
+| C 残留（SimpleContainerContext） | 1 | 职责迁移（红石 reset） |
+| E（ContainerLivingItemHandler） | 7 | 生命周期钩子（`HasContainerData.afterTick`）+ 泛化 |
+
+⇒ **B / C残留 / E 应合并为一次「机制化」实施**（性质对标档 2），而不是「纯搬运」。
+当前 `container → domain` 剩 **12 条**（water 4 / power 3 / redstone 4 / ender 1）。
