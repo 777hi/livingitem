@@ -136,7 +136,9 @@ public class LivingItem {
         com.qiqi.li.living.domain.furnace.FurnaceComponents.REG.register(modEventBus);
         com.qiqi.li.living.domain.hopper.HopperComponents.REG.register(modEventBus);
         com.qiqi.li.living.domain.water.WaterComponents.REG.register(modEventBus);
+        com.qiqi.li.living.domain.water.WaterComponents.ATTACH_REG.register(modEventBus);
         com.qiqi.li.living.domain.power.PowerComponents.REG.register(modEventBus);
+        com.qiqi.li.living.domain.power.PowerComponents.ATTACH_REG.register(modEventBus);
         com.qiqi.li.living.domain.redstone.RedstoneComponents.REG.register(modEventBus);
         com.qiqi.li.living.domain.tools.ToolComponents.REG.register(modEventBus);
         NeoForge.EVENT_BUS.register(this);

@@ -191,14 +191,14 @@ public record LivingWaxedGeneratorData(
 
     /** 读取：缺失返回默认值。（A1 迁移：原 LivingItemManager.getGeneratorData） */
     public static com.qiqi.li.living.domain.power.LivingWaxedGeneratorData of(ItemStack stack) {
-        return LivingItemManager.getData(stack, LivingComponents.LIVING_GENERATOR_DATA.value(),
+        return LivingItemManager.getData(stack, PowerComponents.LIVING_GENERATOR_DATA.value(),
                 com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.DEFAULT);
     }
 
     /** 写入：等于默认值时移除组件。（A1 迁移：原 LivingItemManager.setGeneratorData） */
     public static void set(ItemStack stack,
                                         com.qiqi.li.living.domain.power.LivingWaxedGeneratorData data) {
-        LivingItemManager.setData(stack, LivingComponents.LIVING_GENERATOR_DATA.value(), data,
+        LivingItemManager.setData(stack, PowerComponents.LIVING_GENERATOR_DATA.value(), data,
                 com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.DEFAULT);
     }
 }

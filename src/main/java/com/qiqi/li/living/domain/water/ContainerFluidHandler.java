@@ -99,7 +99,7 @@ public final class ContainerFluidHandler implements IFluidHandler {
 
         if (ctx instanceof SimpleContainerContext simpleCtx) {
             for (BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {
-                ContainerFluidData persisted = be.getData(LivingComponents.CONTAINER_FLUID_DATA);
+                ContainerFluidData persisted = be.getData(WaterComponents.CONTAINER_FLUID_DATA);
                 if (persisted != null && persisted != ContainerFluidData.EMPTY && !persisted.isEmpty()) {
                     ContainerLivingItemHandler.putContainerData(ctx, ContainerFluidData.KEY, persisted);
                     return persisted;
@@ -114,7 +114,7 @@ public final class ContainerFluidHandler implements IFluidHandler {
             String ownerKey = ctx.getContainerKey();
             if (ownerKey != null) {
                 Map<String, ContainerFluidData> playerMap =
-                    owner.getData(LivingComponents.CONTAINER_FLUID_DATA_PLAYER);
+                    owner.getData(WaterComponents.CONTAINER_FLUID_DATA_PLAYER);
                 ContainerFluidData persisted = playerMap == null ? null : playerMap.get(ownerKey);
                 if (persisted != null && persisted != ContainerFluidData.EMPTY && !persisted.isEmpty()) {
                     ContainerLivingItemHandler.putContainerData(ctx, ContainerFluidData.KEY, persisted);

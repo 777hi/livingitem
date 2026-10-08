@@ -36,7 +36,7 @@ public final class ContainerPhaseWriteback implements ContainerTickHook {
         }
         PhaseSnapshot snapshot = PhaseSnapshot.capture(powerData, clock);
         for (BlockEntity be : ctx.getAssociatedBlockEntities()) {
-            be.setData(LivingComponents.CONTAINER_PHASE_SNAPSHOT.value(), snapshot);
+            be.setData(PowerComponents.CONTAINER_PHASE_SNAPSHOT.value(), snapshot);
         }
     }
 }

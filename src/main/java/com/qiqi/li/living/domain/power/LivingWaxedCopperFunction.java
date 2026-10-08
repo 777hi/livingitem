@@ -78,9 +78,9 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
     @Override
     public Set<DataComponentType<?>> getOwnedComponentTypes() {
         return Set.of(
-            LivingComponents.LIVING_WAXED_CHISELED_DATA.value(),
-            LivingComponents.LIVING_GENERATOR_DATA.value(),
-            LivingComponents.LIVING_WAXED_BULB_DATA.value()
+            PowerComponents.LIVING_WAXED_CHISELED_DATA.value(),
+            PowerComponents.LIVING_GENERATOR_DATA.value(),
+            PowerComponents.LIVING_WAXED_BULB_DATA.value()
         );
     }
 

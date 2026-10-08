@@ -64,7 +64,7 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
      */
     public static final ContainerDataKey<ContainerFluidData> KEY =
         ContainerDataKey.persistentWith("fluid", ContainerFluidData::new,
-            () -> LivingComponents.CONTAINER_FLUID_DATA.value());
+            () -> WaterComponents.CONTAINER_FLUID_DATA.value());
 
     public static final ContainerFluidData EMPTY = new ContainerFluidData() {
         @Override

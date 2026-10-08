@@ -28,7 +28,7 @@ public final class ContainerStressWriteback implements ContainerTickHook {
         if (stressData == null) return;
 
         for (BlockEntity be : ctx.getAssociatedBlockEntities()) {
-            be.setData(LivingComponents.CONTAINER_STRESS_DATA.value(), stressData);
+            be.setData(WaterComponents.CONTAINER_STRESS_DATA.value(), stressData);
             StressOutputManager.apply(be.getLevel(), be.getBlockPos(), stressData);
         }
 

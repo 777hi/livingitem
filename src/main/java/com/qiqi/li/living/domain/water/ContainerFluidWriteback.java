@@ -43,7 +43,7 @@ public final class ContainerFluidWriteback implements ContainerTickHook {
 
         if (!fluidData.isEmpty()) {
             for (BlockEntity be : ctx.getAssociatedBlockEntities()) {
-                be.setData(LivingComponents.CONTAINER_FLUID_DATA.value(), fluidData);
+                be.setData(WaterComponents.CONTAINER_FLUID_DATA.value(), fluidData);
             }
         }
 
@@ -55,7 +55,7 @@ public final class ContainerFluidWriteback implements ContainerTickHook {
             String ownerKey = ctx.getContainerKey();
             if (ownerKey != null) {
                 Map<String, ContainerFluidData> current =
-                    owner.getData(LivingComponents.CONTAINER_FLUID_DATA_PLAYER);
+                    owner.getData(WaterComponents.CONTAINER_FLUID_DATA_PLAYER);
                 Map<String, ContainerFluidData> persistedMap =
                     current != null ? new HashMap<>(current) : new HashMap<>();
                 if (fluidData.isEmpty()) {
@@ -63,7 +63,7 @@ public final class ContainerFluidWriteback implements ContainerTickHook {
                 } else {
                     persistedMap.put(ownerKey, fluidData);
                 }
-                owner.setData(LivingComponents.CONTAINER_FLUID_DATA_PLAYER.value(), persistedMap);
+                owner.setData(WaterComponents.CONTAINER_FLUID_DATA_PLAYER.value(), persistedMap);
             }
         }
 
@@ -73,7 +73,7 @@ public final class ContainerFluidWriteback implements ContainerTickHook {
             // （汲走的源跨存档残留，2026-10-04 游戏实测）。EMPTY 序列化为空表，
             // 加载端 !isEmpty() 守卫会跳过 ⇒ 不会复活。
             for (BlockEntity be : ctx.getAssociatedBlockEntities()) {
-                be.setData(LivingComponents.CONTAINER_FLUID_DATA.value(), ContainerFluidData.EMPTY);
+                be.setData(WaterComponents.CONTAINER_FLUID_DATA.value(), ContainerFluidData.EMPTY);
             }
             ContainerLivingItemHandler.removeContainerData(ctx, ContainerFluidData.KEY);
         }

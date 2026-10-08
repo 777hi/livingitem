@@ -12,13 +12,6 @@ import net.neoforged.neoforge.registries.DeferredRegister;
 import java.util.Map;
 import java.util.UUID;
 import com.qiqi.li.living.transfer.FilterData;
-import com.qiqi.li.living.domain.water.LivingWaterWheelData;
-import com.qiqi.li.living.domain.water.ContainerStressData;
-import com.qiqi.li.living.domain.water.ContainerFluidData;
-import com.qiqi.li.living.domain.power.PhaseSnapshot;
-import com.qiqi.li.living.domain.power.LivingWaxedChiseledData;
-import com.qiqi.li.living.domain.power.LivingWaxedGeneratorData;
-import com.qiqi.li.living.domain.power.LivingWaxedBulbData;
 import com.qiqi.li.living.domain.redstone.LivingRedstoneData;
 import com.qiqi.li.living.domain.redstone.LivingRedstoneTorchData;
 import com.qiqi.li.living.domain.redstone.LivingRedstoneLampData;
@@ -113,13 +106,6 @@ public final class LivingComponents {
                             .networkSynchronized(FilterData.STREAM_CODEC)
                             .build());
 
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingWaterWheelData>> LIVING_WATER_WHEEL_DATA =
-            DATA_COMPONENT_TYPES.register("living_water_wheel_data", () ->
-                    DataComponentType.<LivingWaterWheelData>builder()
-                            .persistent(LivingWaterWheelData.CODEC)
-                            .networkSynchronized(LivingWaterWheelData.STREAM_CODEC)
-                            .build());
-
     public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingRedstoneData>> LIVING_REDSTONE_DATA =
             DATA_COMPONENT_TYPES.register("living_redstone_data", () ->
                     DataComponentType.<LivingRedstoneData>builder()
@@ -197,27 +183,6 @@ public final class LivingComponents {
                             .networkSynchronized(LivingCopperSignalData.STREAM_CODEC)
                             .build());
 
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<com.qiqi.li.living.domain.power.LivingWaxedChiseledData>> LIVING_WAXED_CHISELED_DATA =
-            DATA_COMPONENT_TYPES.register("living_waxed_chiseled_data", () ->
-                    DataComponentType.<com.qiqi.li.living.domain.power.LivingWaxedChiseledData>builder()
-                            .persistent(com.qiqi.li.living.domain.power.LivingWaxedChiseledData.CODEC)
-                            .networkSynchronized(com.qiqi.li.living.domain.power.LivingWaxedChiseledData.STREAM_CODEC)
-                            .build());
-
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<com.qiqi.li.living.domain.power.LivingWaxedGeneratorData>> LIVING_GENERATOR_DATA =
-            DATA_COMPONENT_TYPES.register("living_generator_data", () ->
-                    DataComponentType.<com.qiqi.li.living.domain.power.LivingWaxedGeneratorData>builder()
-                            .persistent(com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.CODEC)
-                            .networkSynchronized(com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.STREAM_CODEC)
-                            .build());
-
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<com.qiqi.li.living.domain.power.LivingWaxedBulbData>> LIVING_WAXED_BULB_DATA =
-            DATA_COMPONENT_TYPES.register("living_waxed_bulb_data", () ->
-                    DataComponentType.<com.qiqi.li.living.domain.power.LivingWaxedBulbData>builder()
-                            .persistent(com.qiqi.li.living.domain.power.LivingWaxedBulbData.CODEC)
-                            .networkSynchronized(com.qiqi.li.living.domain.power.LivingWaxedBulbData.STREAM_CODEC)
-                            .build());
-
     public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingToolMemory>> LIVING_TOOL_MEMORY =
             DATA_COMPONENT_TYPES.register("living_tool_memory", () ->
                     DataComponentType.<LivingToolMemory>builder()
@@ -236,37 +201,6 @@ public final class LivingComponents {
             DATA_COMPONENT_TYPES.register("living_tool_last_action", () ->
                     DataComponentType.<LivingToolAction>builder()
                             .networkSynchronized(LivingToolAction.STREAM_CODEC)
-                            .build());
-
-    public static final DeferredHolder<AttachmentType<?>, AttachmentType<ContainerStressData>> CONTAINER_STRESS_DATA =
-            ATTACHMENT_TYPES.register("container_stress_data", () ->
-                    AttachmentType.builder(() -> ContainerStressData.EMPTY).build());
-
-    public static final DeferredHolder<AttachmentType<?>, AttachmentType<ContainerFluidData>> CONTAINER_FLUID_DATA =
-            ATTACHMENT_TYPES.register("container_fluid_data", () ->
-                    AttachmentType.builder(() -> ContainerFluidData.EMPTY)
-                            .serialize(ContainerFluidData.CODEC)
-                            .build());
-
-    /**
-     * 玩家背包 / 末影箱的容器级流体数据（B.5 第三项，2026-10-04）。
-     *
-     * <p>背包与末影箱<b>没有 BE</b> 可挂 {@link #CONTAINER_FLUID_DATA} ⇒ 落到 <b>Player</b> 上；
-     * 一个玩家有背包（{@code player_<uuid>}）+ 末影箱（{@code player_<uuid>_ender_chest}）<b>两个</b>容器
-     * ⇒ 用「容器键 → 流体数据」映射。默认空 map；{@code copyOnDeath} 默认 false ⇒ 玩家死亡清空
-     * （与「背包清空」语义一致）。</p>
-     */
-    public static final DeferredHolder<AttachmentType<?>, AttachmentType<Map<String, ContainerFluidData>>> CONTAINER_FLUID_DATA_PLAYER =
-            ATTACHMENT_TYPES.register("container_fluid_data_player", () ->
-                    AttachmentType.<Map<String, ContainerFluidData>>builder(() -> Map.of())
-                            .serialize(ContainerFluidData.KEYED_CODEC)
-                            .build());
-
-
-    public static final DeferredHolder<AttachmentType<?>, AttachmentType<com.qiqi.li.living.domain.power.PhaseSnapshot>> CONTAINER_PHASE_SNAPSHOT =
-            ATTACHMENT_TYPES.register("container_phase_snapshot", () ->
-                    AttachmentType.builder(() -> com.qiqi.li.living.domain.power.PhaseSnapshot.EMPTY)
-                            .serialize(com.qiqi.li.living.domain.power.PhaseSnapshot.CODEC)
                             .build());
 
 }

@@ -71,7 +71,7 @@ class PlayerFluidDataPersistenceTest {
         // 写回阶段会走「玩家脚下应力」路径（updatePlayerFeetStressOutput 读 player.level() 与脚下方块位置）
         when(player.level()).thenReturn(level);
         when(player.blockPosition()).thenReturn(net.minecraft.core.BlockPos.ZERO);
-        when(player.getData(LivingComponents.CONTAINER_FLUID_DATA_PLAYER)).thenReturn(attachment);
+        when(player.getData(com.qiqi.li.living.domain.water.WaterComponents.CONTAINER_FLUID_DATA_PLAYER)).thenReturn(attachment);
         doAnswer(inv -> {
             Map<String, ContainerFluidData> v = inv.getArgument(1);
             attachment.clear();

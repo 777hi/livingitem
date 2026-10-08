@@ -43,11 +43,11 @@ public record LivingWaterWheelData(WaterWheelData wheel) implements TooltipProvi
 
     /** 读取：缺失返回默认值。（A1 迁移：原 LivingItemManager.getWaterWheelData） */
     public static LivingWaterWheelData of(ItemStack stack) {
-        return LivingItemManager.getData(stack, LivingComponents.LIVING_WATER_WHEEL_DATA.value(), LivingWaterWheelData.EMPTY);
+        return LivingItemManager.getData(stack, WaterComponents.LIVING_WATER_WHEEL_DATA.value(), LivingWaterWheelData.EMPTY);
     }
 
     /** 写入：等于默认值时移除组件。（A1 迁移：原 LivingItemManager.setWaterWheelData） */
     public static void set(ItemStack stack, LivingWaterWheelData data) {
-        LivingItemManager.setData(stack, LivingComponents.LIVING_WATER_WHEEL_DATA.value(), data, LivingWaterWheelData.EMPTY);
+        LivingItemManager.setData(stack, WaterComponents.LIVING_WATER_WHEEL_DATA.value(), data, LivingWaterWheelData.EMPTY);
     }
 }

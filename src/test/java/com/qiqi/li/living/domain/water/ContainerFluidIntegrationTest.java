@@ -132,13 +132,13 @@ class ContainerFluidIntegrationTest {
         var captor = org.mockito.ArgumentCaptor.forClass(ContainerFluidData.class);
         ContainerLivingItemHandler.processContext(ctx, level);
         org.mockito.Mockito.verify(be, org.mockito.Mockito.atLeastOnce())
-            .setData(org.mockito.Mockito.eq(LivingComponents.CONTAINER_FLUID_DATA.value()), captor.capture());
+            .setData(org.mockito.Mockito.eq(WaterComponents.CONTAINER_FLUID_DATA.value()), captor.capture());
         assertFalse(captor.getValue().isEmpty(), "有源 ⇒ 附件写回非空（源落盘）");
 
         ContainerFluidHandler.getOrCreateFluidData(ctx).removeGeneratedSource(0);
         ContainerLivingItemHandler.processContext(ctx, level);
         org.mockito.Mockito.verify(be, org.mockito.Mockito.atLeastOnce())
-            .setData(org.mockito.Mockito.eq(LivingComponents.CONTAINER_FLUID_DATA.value()), captor.capture());
+            .setData(org.mockito.Mockito.eq(WaterComponents.CONTAINER_FLUID_DATA.value()), captor.capture());
         assertTrue(captor.getValue().isEmpty(),
             "源清空 ⇒ 附件必须写回 EMPTY —— 否则重进存档从附件回填复活（跨存档残留）");
     }

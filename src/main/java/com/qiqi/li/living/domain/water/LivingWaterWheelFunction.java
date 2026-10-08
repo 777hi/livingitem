@@ -90,12 +90,12 @@ public class LivingWaterWheelFunction implements LivingItemFunction, HasContaine
 
     @Override
     public Set<DataComponentType<?>> getOwnedComponentTypes() {
-        return Set.of(LivingComponents.LIVING_WATER_WHEEL_DATA.value());
+        return Set.of(WaterComponents.LIVING_WATER_WHEEL_DATA.value());
     }
 
     @Override
     public Set<DataComponentType<?>> getIgnoredComponentTypes() {
-        return Set.of(LivingComponents.LIVING_WATER_WHEEL_DATA.value());
+        return Set.of(WaterComponents.LIVING_WATER_WHEEL_DATA.value());
     }
 
     @Override

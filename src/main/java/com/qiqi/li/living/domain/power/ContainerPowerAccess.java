@@ -41,7 +41,7 @@ public final class ContainerPowerAccess {
             long base = 0;
             boolean hasWorldClock = false;
             for (BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {
-                PhaseSnapshot snapshot = be.getData(LivingComponents.CONTAINER_PHASE_SNAPSHOT);
+                PhaseSnapshot snapshot = be.getData(PowerComponents.CONTAINER_PHASE_SNAPSHOT);
                 if (snapshot == null) continue;
                 // 世界轴基准（与 capture 同源）：服务端 BE 挂着 Level 才可信
                 if (!hasWorldClock) {
