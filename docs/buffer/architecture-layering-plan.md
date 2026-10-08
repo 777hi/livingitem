@@ -47,8 +47,9 @@ python tools/gen_code_map.py      # 出 build/code-map.html（人看）/ --query
 | ② | `StaticCacheRegistry` 改为各领域自己登记 | ~~7~~ **0 ✅ 已做** | 低 | **真减 7**（101 → 94） |
 | ③ | `LivingComponents` 挪出 `living/transfer` | ~~27~~ **0 ✅ 已做** | 极低 | **不减**（只修正归属） |
 | ④ | `network/` 是第二个 interaction —— 拆包回领域 | ~~10~~ **0 ✅ 已做** | 中 | **减 8**（69 → 61） |
-| ⑤ | `container` 认识 4 个领域（分散在 6 个类） | ~~22~~ **20** | 高 | 减 20 → [细化方案](container-domain-decoupling-plan.md) |
-| ⑥ | 领域互依赖 | 28 | 中 | 分情况 |
+| ⑤ | `container` 认识 4 个领域（分散在 6 个类） | ~~20~~ **0 ✅ 已做** | 高 | **减 20** → [细化方案](container-domain-decoupling-plan.md) |
+| ⑥ | 领域互依赖 | ~~28~~ **10** | 中 | 分情况（剩 hopper⇄ender/chest） |
+| ⑦ | **`components` 认识 8 个领域**（A1 有意集中） | ~~27~~ **0 ✅ 已做** | 中 | **减 27** → [细化方案](components-decoupling-plan.md) |
 
 > 🔑 **判据：搬家 ≠ 减违规。要减必须「同时反转依赖方向」。**
 > - ①② 是**真减**：领域自己去 `register` ⇒ 边变成 `domain → interaction/util` = L3→L2 = **合规**
