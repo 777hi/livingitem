@@ -46,7 +46,7 @@ python tools/gen_code_map.py      # 出 build/code-map.html（人看）/ --query
 | ① | `interaction` 的 9 个 handler 搬进各自领域 | ~~12~~ **0 ✅ 已做** | 低 | **真减 12**（113 → 101） |
 | ② | `StaticCacheRegistry` 改为各领域自己登记 | ~~7~~ **0 ✅ 已做** | 低 | **真减 7**（101 → 94） |
 | ③ | `LivingComponents` 挪出 `living/transfer` | ~~27~~ **0 ✅ 已做** | 极低 | **不减**（只修正归属） |
-| ④ | `network/` 是第二个 interaction —— 拆包回领域 | ~10 | 中 | 减 ~10 |
+| ④ | `network/` 是第二个 interaction —— 拆包回领域 | ~~10~~ **0 ✅ 已做** | 中 | **减 8**（69 → 61） |
 | ⑤ | `container` 认识 4 个领域（分散在 6 个类） | ~~22~~ **20** | 高 | 减 20 → [细化方案](container-domain-decoupling-plan.md) |
 | ⑥ | 领域互依赖 | 28 | 中 | 分情况 |
 
