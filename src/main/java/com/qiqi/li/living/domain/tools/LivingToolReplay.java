@@ -176,8 +176,8 @@ public final class LivingToolReplay {
             // K 组动画：本次挖掘的【预计总 tick】—— 挖掘期间速度恒定，故只写这一次。
             // ⚠️ 两端都要写：held 在步骤 3 就 copy 了，只写 tool 的话写回槽位的那份没有。
             int digTicks = Math.max(1, (int) Math.ceil(1.0F / perTick));
-            LivingItemManager.setToolDigTicks(tool, digTicks);
-            LivingItemManager.setToolDigTicks(held, digTicks);
+            ToolComponents.setDigTicks(tool, digTicks);
+            ToolComponents.setDigTicks(held, digTicks);
         }
 
         float total = perTick * (float) (now - progress.startTick() + 1);

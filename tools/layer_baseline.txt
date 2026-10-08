@@ -7,7 +7,6 @@
 module	living/components	living/domain/redstone	11
 module	(root)	client/render	4
 module	living/api	living/container	4
-module	living/components	living/domain/tools	4
 module	living/compat	living/domain/water	3
 module	living/container	living/transfer	3
 module	living/domain/tools	(root)	3

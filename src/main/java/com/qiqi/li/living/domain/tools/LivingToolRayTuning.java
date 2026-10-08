@@ -191,11 +191,11 @@ RayAnchor.CODEC
 
     /** 读取：缺失 = 默认（无微调）。 */
     public static LivingToolRayTuning of(ItemStack stack) {
-        return LivingItemManager.getData(stack, LivingComponents.LIVING_TOOL_RAY_TUNING.value(), DEFAULT);
+        return LivingItemManager.getData(stack, ToolComponents.LIVING_TOOL_RAY_TUNING.value(), DEFAULT);
     }
 
     /** 写入：等于 DEFAULT 时自动移除组件（与 LivingToolMemory.set 同款口径）。 */
     public static void set(ItemStack stack, LivingToolRayTuning tuning) {
-        LivingItemManager.setData(stack, LivingComponents.LIVING_TOOL_RAY_TUNING.value(), tuning, DEFAULT);
+        LivingItemManager.setData(stack, ToolComponents.LIVING_TOOL_RAY_TUNING.value(), tuning, DEFAULT);
     }
 }

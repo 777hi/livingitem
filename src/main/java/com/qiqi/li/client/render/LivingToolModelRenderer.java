@@ -881,7 +881,7 @@ public final class LivingToolModelRenderer {
         if (progress != null) {
             // 挖掘中：瞬现到交互位 + 风车式转圈（转速由服务端给的预计 tick 决定）
             pos = surfacePoint(level, origin, progress.target());
-            int period = spinPeriod(LivingItemManager.getToolDigTicks(stack));
+            int period = spinPeriod(com.qiqi.li.living.domain.tools.ToolComponents.getDigTicks(stack));
             spinRad = spinAngle(now, partialTick, period);
             remember(key, now, pos);
         } else if (action != null && action.target() != null

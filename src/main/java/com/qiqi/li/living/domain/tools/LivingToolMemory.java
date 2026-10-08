@@ -289,11 +289,11 @@ public record LivingToolMemory(
 
     /** 读取：缺失返回默认（无记忆）。（A1 迁移：原 LivingItemManager.getToolMemory） */
     public static LivingToolMemory of(ItemStack stack) {
-        return LivingItemManager.getData(stack, LivingComponents.LIVING_TOOL_MEMORY.value(), LivingToolMemory.DEFAULT);
+        return LivingItemManager.getData(stack, ToolComponents.LIVING_TOOL_MEMORY.value(), LivingToolMemory.DEFAULT);
     }
 
     /** 写入：等于 DEFAULT（无记忆）时自动移除组件。（A1 迁移：原 LivingItemManager.setToolMemory） */
     public static void set(ItemStack stack, LivingToolMemory memory) {
-        LivingItemManager.setData(stack, LivingComponents.LIVING_TOOL_MEMORY.value(), memory, LivingToolMemory.DEFAULT);
+        LivingItemManager.setData(stack, ToolComponents.LIVING_TOOL_MEMORY.value(), memory, LivingToolMemory.DEFAULT);
     }
 }

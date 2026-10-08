@@ -74,15 +74,15 @@ public record LivingToolAction(long tick, @Nullable BlockPos target) {
     /** 读取：组件缺失 = 从没发生过。（A1 迁移：原 LivingItemManager.getToolLastAction） */
     @Nullable
     public static LivingToolAction of(ItemStack stack) {
-        return stack.get(LivingComponents.LIVING_TOOL_LAST_ACTION.value());
+        return stack.get(ToolComponents.LIVING_TOOL_LAST_ACTION.value());
     }
 
     /** 写入：null = 清除。（A1 迁移：原 LivingItemManager.setToolLastAction） */
     public static void set(ItemStack stack, @Nullable LivingToolAction action) {
         if (action == null) {
-            stack.remove(LivingComponents.LIVING_TOOL_LAST_ACTION.value());
+            stack.remove(ToolComponents.LIVING_TOOL_LAST_ACTION.value());
         } else {
-            stack.set(LivingComponents.LIVING_TOOL_LAST_ACTION.value(), action);
+            stack.set(ToolComponents.LIVING_TOOL_LAST_ACTION.value(), action);
         }
     }
 }

@@ -89,15 +89,15 @@ public class LivingToolFunction implements LivingItemFunction {
     @Override
     public Set<DataComponentType<?>> getOwnedComponentTypes() {
         return Set.of(
-            LivingComponents.LIVING_TOOL_MEMORY.value(),
-            LivingComponents.LIVING_TOOL_PROGRESS.value(),
-            LivingComponents.LIVING_TOOL_DIG_TICKS.value(),
-            LivingComponents.LIVING_TOOL_LAST_ACTION.value(),
+            ToolComponents.LIVING_TOOL_MEMORY.value(),
+            ToolComponents.LIVING_TOOL_PROGRESS.value(),
+            ToolComponents.LIVING_TOOL_DIG_TICKS.value(),
+            ToolComponents.LIVING_TOOL_LAST_ACTION.value(),
             LivingComponents.LIVING_TOOL_OWNER.value(),
             // 主人名字的显示缓存（tooltip 兜底）—— 取消活化时随 owned-types 一起清
             LivingComponents.LIVING_TOOL_OWNER_NAME.value(),
             // 射线微调配置（起点锚点 + 朝向跟随）—— 录制新记忆时重置
-            LivingComponents.LIVING_TOOL_RAY_TUNING.value()
+            ToolComponents.LIVING_TOOL_RAY_TUNING.value()
         );
     }
 

@@ -342,24 +342,6 @@ public class LivingItemManager {
     }
 
     /**
-     * 挖掘预计总 tick（{@code K} 组动画用）。
-     *
-     * @return 预计 tick 数；{@code null} = 未知（用默认转速）
-     */
-    public static Integer getToolDigTicks(ItemStack stack) {
-        return stack.get(LivingComponents.LIVING_TOOL_DIG_TICKS.value());
-    }
-
-    /** 便捷方法：写入挖掘预计总 tick（null = 清除）。 */
-    public static void setToolDigTicks(ItemStack stack, @Nullable Integer ticks) {
-        if (ticks == null) {
-            stack.remove(LivingComponents.LIVING_TOOL_DIG_TICKS.value());
-        } else {
-            stack.set(LivingComponents.LIVING_TOOL_DIG_TICKS.value(), ticks);
-        }
-    }
-
-    /**
      * 活工具主人 UUID（A2 建立绑定；null = 无主）。
      */
     @Nullable

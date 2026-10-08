@@ -23,9 +23,6 @@ import com.qiqi.li.living.domain.redstone.LivingCutCopperData;
 import com.qiqi.li.living.domain.redstone.LivingGrateData;
 import com.qiqi.li.living.domain.redstone.LivingCopperBulbData;
 import com.qiqi.li.living.domain.redstone.LivingCopperSignalData;
-import com.qiqi.li.living.domain.tools.LivingToolMemory;
-import com.qiqi.li.living.domain.tools.LivingToolProgress;
-import com.qiqi.li.living.domain.tools.LivingToolAction;
 
 /**
  * 全部持久化类型的注册站（A1 迁移，2026-09-28）—— 原散在 LivingItemManager（api 包）
@@ -75,23 +72,6 @@ public final class LivingComponents {
                     DataComponentType.<String>builder()
                             .persistent(Codec.STRING)
                             .networkSynchronized(ByteBufCodecs.STRING_UTF8)
-                            .build());
-
-    /**
-     * 活工具/活武器射线微调配置（起点锚点 + 朝向跟随，仅玩家形态生效 —— 2026-09-30）。
-     * 录制新记忆时由 {@code LivingToolRecorder} 整体重置。
-     */
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<com.qiqi.li.living.domain.tools.LivingToolRayTuning>> LIVING_TOOL_RAY_TUNING =
-            DATA_COMPONENT_TYPES.register("living_tool_ray_tuning", () ->
-                    DataComponentType.<com.qiqi.li.living.domain.tools.LivingToolRayTuning>builder()
-                            .persistent(com.qiqi.li.living.domain.tools.LivingToolRayTuning.CODEC)
-                            .networkSynchronized(com.qiqi.li.living.domain.tools.LivingToolRayTuning.STREAM_CODEC)
-                            .build());
-
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<Integer>> LIVING_TOOL_DIG_TICKS =
-            DATA_COMPONENT_TYPES.register("living_tool_dig_ticks", () ->
-                    DataComponentType.<Integer>builder()
-                            .networkSynchronized(ByteBufCodecs.VAR_INT)
                             .build());
 
     /**
@@ -181,26 +161,6 @@ public final class LivingComponents {
                     DataComponentType.<LivingCopperSignalData>builder()
                             .persistent(LivingCopperSignalData.CODEC)
                             .networkSynchronized(LivingCopperSignalData.STREAM_CODEC)
-                            .build());
-
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingToolMemory>> LIVING_TOOL_MEMORY =
-            DATA_COMPONENT_TYPES.register("living_tool_memory", () ->
-                    DataComponentType.<LivingToolMemory>builder()
-                            .persistent(LivingToolMemory.CODEC)
-                            .networkSynchronized(LivingToolMemory.STREAM_CODEC)
-                            .build());
-
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingToolProgress>> LIVING_TOOL_PROGRESS =
-            DATA_COMPONENT_TYPES.register("living_tool_progress", () ->
-                    DataComponentType.<LivingToolProgress>builder()
-                            .persistent(LivingToolProgress.CODEC)
-                            .networkSynchronized(LivingToolProgress.STREAM_CODEC)
-                            .build());
-
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingToolAction>> LIVING_TOOL_LAST_ACTION =
-            DATA_COMPONENT_TYPES.register("living_tool_last_action", () ->
-                    DataComponentType.<LivingToolAction>builder()
-                            .networkSynchronized(LivingToolAction.STREAM_CODEC)
                             .build());
 
 }

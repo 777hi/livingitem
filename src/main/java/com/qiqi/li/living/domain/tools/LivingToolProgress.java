@@ -52,15 +52,15 @@ public record LivingToolProgress(BlockPos target, long startTick) {
     /** 读取：null = 当前没在挖。（A1 迁移：原 LivingItemManager.getToolProgress） */
     @Nullable
     public static LivingToolProgress of(ItemStack stack) {
-        return stack.get(LivingComponents.LIVING_TOOL_PROGRESS.value());
+        return stack.get(ToolComponents.LIVING_TOOL_PROGRESS.value());
     }
 
     /** 写入：null = 清除（停止挖掘）。（A1 迁移：原 LivingItemManager.setToolProgress） */
     public static void set(ItemStack stack, @Nullable LivingToolProgress progress) {
         if (progress == null) {
-            stack.remove(LivingComponents.LIVING_TOOL_PROGRESS.value());
+            stack.remove(ToolComponents.LIVING_TOOL_PROGRESS.value());
         } else {
-            stack.set(LivingComponents.LIVING_TOOL_PROGRESS.value(), progress);
+            stack.set(ToolComponents.LIVING_TOOL_PROGRESS.value(), progress);
         }
     }
 }
