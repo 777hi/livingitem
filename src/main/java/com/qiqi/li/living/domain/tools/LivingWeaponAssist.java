@@ -2,7 +2,7 @@ package com.qiqi.li.living.domain.tools;
 
 import java.util.Set;
 
-import com.qiqi.li.LivingItem;
+import com.qiqi.li.living.api.LivingMod;
 
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -43,7 +43,7 @@ import net.neoforged.neoforge.event.entity.living.LivingKnockBackEvent;
  *   <li>自主模式（有记忆、每 tick 打）<b>不受影响</b> —— 否则 DPS 会失控</li>
  * </ul>
  */
-@EventBusSubscriber(modid = com.qiqi.li.living.api.LivingMod.ID)
+@EventBusSubscriber(modid = LivingMod.ID)
 public final class LivingWeaponAssist {
 
     /**

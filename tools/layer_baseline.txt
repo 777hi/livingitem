@@ -8,7 +8,6 @@ module	(root)	client/render	4
 module	living/api	living/container	4
 module	living/compat	living/domain/water	3
 module	living/container	living/transfer	3
-module	living/domain/tools	(root)	3
 module	living/transfer	living/domain/chest	3
 module	living/transfer	living/domain/ender	3
 module	(root)	client/icon	1

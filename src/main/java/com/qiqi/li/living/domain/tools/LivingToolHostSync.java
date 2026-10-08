@@ -103,7 +103,7 @@ public final class LivingToolHostSync {
             List<LivingToolHostPacket.Entry> mine = filterInRange(all, player);
             if (!same(mine, lastSent.get(player.getUUID()))) {
                 player.connection.send(new LivingToolHostPacket(dimension, mine));
-                com.qiqi.li.LivingItem.LOGGER.info("[K2] 发送 {}/{} 个宿主 给 {}（维度 {}）",
+                com.qiqi.li.logging.ModLog.CONTAINER.info("[K2] 发送 {}/{} 个宿主 给 {}（维度 {}）",
                     mine.size(), all.size(), player.getName().getString(), dimension);
             }
             next.put(player.getUUID(), mine);

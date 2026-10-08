@@ -33,7 +33,7 @@ public final class LivingToolHostClientCache {
     public static void update(ResourceLocation dim, List<LivingToolHostPacket.Entry> list) {
         dimension = dim;
         entries = List.copyOf(list);
-        com.qiqi.li.LivingItem.LOGGER.info("[K2] 收到 {} 个宿主（维度 {}）", list.size(), dim);
+        com.qiqi.li.logging.ModLog.CONTAINER.info("[K2] 收到 {} 个宿主（维度 {}）", list.size(), dim);
     }
 
     /**
