@@ -65,11 +65,11 @@ public record LivingButtonData(
 
     /** 读取：缺失返回默认值。（A1 迁移：原 LivingItemManager.getButtonData） */
     public static LivingButtonData of(ItemStack stack) {
-        return LivingItemManager.getData(stack, LivingComponents.LIVING_BUTTON_DATA.value(), LivingButtonData.DEFAULT);
+        return LivingItemManager.getData(stack, RedstoneComponents.LIVING_BUTTON_DATA.value(), LivingButtonData.DEFAULT);
     }
 
     /** 写入：等于默认值时移除组件。（A1 迁移：原 LivingItemManager.setButtonData） */
     public static void set(ItemStack stack, LivingButtonData data) {
-        LivingItemManager.setData(stack, LivingComponents.LIVING_BUTTON_DATA.value(), data, LivingButtonData.DEFAULT);
+        LivingItemManager.setData(stack, RedstoneComponents.LIVING_BUTTON_DATA.value(), data, LivingButtonData.DEFAULT);
     }
 }

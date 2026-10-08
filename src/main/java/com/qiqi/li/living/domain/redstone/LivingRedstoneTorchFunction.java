@@ -47,7 +47,7 @@ public class LivingRedstoneTorchFunction implements LivingItemFunction, HasDirec
 
     @Override
     public Set<DataComponentType<?>> getOwnedComponentTypes() {
-        return Set.of(LivingComponents.LIVING_REDSTONE_TORCH_DATA.value());
+        return Set.of(RedstoneComponents.LIVING_REDSTONE_TORCH_DATA.value());
     }
 
     @Override

@@ -12,17 +12,6 @@ import net.neoforged.neoforge.registries.DeferredRegister;
 import java.util.Map;
 import java.util.UUID;
 import com.qiqi.li.living.transfer.FilterData;
-import com.qiqi.li.living.domain.redstone.LivingRedstoneData;
-import com.qiqi.li.living.domain.redstone.LivingRedstoneTorchData;
-import com.qiqi.li.living.domain.redstone.LivingRedstoneLampData;
-import com.qiqi.li.living.domain.redstone.LivingButtonData;
-import com.qiqi.li.living.domain.redstone.LivingLeverData;
-import com.qiqi.li.living.domain.redstone.LivingRepeaterData;
-import com.qiqi.li.living.domain.redstone.LivingComparatorData;
-import com.qiqi.li.living.domain.redstone.LivingCutCopperData;
-import com.qiqi.li.living.domain.redstone.LivingGrateData;
-import com.qiqi.li.living.domain.redstone.LivingCopperBulbData;
-import com.qiqi.li.living.domain.redstone.LivingCopperSignalData;
 
 /**
  * 全部持久化类型的注册站（A1 迁移，2026-09-28）—— 原散在 LivingItemManager（api 包）
@@ -84,83 +73,6 @@ public final class LivingComponents {
             DATA_COMPONENT_TYPES.register("living_hopper_filter", () ->
                     DataComponentType.<FilterData>builder()
                             .networkSynchronized(FilterData.STREAM_CODEC)
-                            .build());
-
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingRedstoneData>> LIVING_REDSTONE_DATA =
-            DATA_COMPONENT_TYPES.register("living_redstone_data", () ->
-                    DataComponentType.<LivingRedstoneData>builder()
-                            .persistent(LivingRedstoneData.CODEC)
-                            .networkSynchronized(LivingRedstoneData.STREAM_CODEC)
-                            .build());
-
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingRedstoneTorchData>> LIVING_REDSTONE_TORCH_DATA =
-            DATA_COMPONENT_TYPES.register("living_redstone_torch_data", () ->
-                    DataComponentType.<LivingRedstoneTorchData>builder()
-                            .persistent(LivingRedstoneTorchData.CODEC)
-                            .networkSynchronized(LivingRedstoneTorchData.STREAM_CODEC)
-                            .build());
-
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingButtonData>> LIVING_BUTTON_DATA =
-            DATA_COMPONENT_TYPES.register("living_button_data", () ->
-                    DataComponentType.<LivingButtonData>builder()
-                            .persistent(LivingButtonData.CODEC)
-                            .networkSynchronized(LivingButtonData.STREAM_CODEC)
-                            .build());
-
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingLeverData>> LIVING_LEVER_DATA =
-            DATA_COMPONENT_TYPES.register("living_lever_data", () ->
-                    DataComponentType.<LivingLeverData>builder()
-                            .persistent(LivingLeverData.CODEC)
-                            .networkSynchronized(LivingLeverData.STREAM_CODEC)
-                            .build());
-
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingRedstoneLampData>> LIVING_REDSTONE_LAMP_DATA =
-            DATA_COMPONENT_TYPES.register("living_redstone_lamp_data", () ->
-                    DataComponentType.<LivingRedstoneLampData>builder()
-                            .persistent(LivingRedstoneLampData.CODEC)
-                            .networkSynchronized(LivingRedstoneLampData.STREAM_CODEC)
-                            .build());
-
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingRepeaterData>> LIVING_REPEATER_DATA =
-            DATA_COMPONENT_TYPES.register("living_repeater_data", () ->
-                    DataComponentType.<LivingRepeaterData>builder()
-                            .persistent(LivingRepeaterData.CODEC)
-                            .networkSynchronized(LivingRepeaterData.STREAM_CODEC)
-                            .build());
-
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingComparatorData>> LIVING_COMPARATOR_DATA =
-            DATA_COMPONENT_TYPES.register("living_comparator_data", () ->
-                    DataComponentType.<LivingComparatorData>builder()
-                            .persistent(LivingComparatorData.CODEC)
-                            .networkSynchronized(LivingComparatorData.STREAM_CODEC)
-                            .build());
-
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingCutCopperData>> LIVING_CUT_COPPER_DATA =
-            DATA_COMPONENT_TYPES.register("living_cut_copper_data", () ->
-                    DataComponentType.<LivingCutCopperData>builder()
-                            .persistent(LivingCutCopperData.CODEC)
-                            .networkSynchronized(LivingCutCopperData.STREAM_CODEC)
-                            .build());
-
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingGrateData>> LIVING_GRATE_DATA =
-            DATA_COMPONENT_TYPES.register("living_grate_data", () ->
-                    DataComponentType.<LivingGrateData>builder()
-                            .persistent(LivingGrateData.CODEC)
-                            .networkSynchronized(LivingGrateData.STREAM_CODEC)
-                            .build());
-
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingCopperBulbData>> LIVING_COPPER_BULB_DATA =
-            DATA_COMPONENT_TYPES.register("living_copper_bulb_data", () ->
-                    DataComponentType.<LivingCopperBulbData>builder()
-                            .persistent(LivingCopperBulbData.CODEC)
-                            .networkSynchronized(LivingCopperBulbData.STREAM_CODEC)
-                            .build());
-
-    public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingCopperSignalData>> LIVING_COPPER_SIGNAL =
-            DATA_COMPONENT_TYPES.register("living_copper_signal", () ->
-                    DataComponentType.<LivingCopperSignalData>builder()
-                            .persistent(LivingCopperSignalData.CODEC)
-                            .networkSynchronized(LivingCopperSignalData.STREAM_CODEC)
                             .build());
 
 }

@@ -54,11 +54,11 @@ public record LivingCutCopperData(
 
     /** 读取：缺失返回默认值。（A1 迁移：原 LivingItemManager.getCutCopperData） */
     public static LivingCutCopperData of(ItemStack stack) {
-        return LivingItemManager.getData(stack, LivingComponents.LIVING_CUT_COPPER_DATA.value(), LivingCutCopperData.DEFAULT);
+        return LivingItemManager.getData(stack, RedstoneComponents.LIVING_CUT_COPPER_DATA.value(), LivingCutCopperData.DEFAULT);
     }
 
     /** 写入：等于默认值时移除组件。（A1 迁移：原 LivingItemManager.setCutCopperData） */
     public static void set(ItemStack stack, LivingCutCopperData data) {
-        LivingItemManager.setData(stack, LivingComponents.LIVING_CUT_COPPER_DATA.value(), data, LivingCutCopperData.DEFAULT);
+        LivingItemManager.setData(stack, RedstoneComponents.LIVING_CUT_COPPER_DATA.value(), data, LivingCutCopperData.DEFAULT);
     }
 }

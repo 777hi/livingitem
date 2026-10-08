@@ -47,7 +47,7 @@ public class LivingRepeaterFunction implements LivingItemFunction, HasDirection 
 
     @Override
     public Set<DataComponentType<?>> getOwnedComponentTypes() {
-        return Set.of(LivingComponents.LIVING_REPEATER_DATA.value());
+        return Set.of(RedstoneComponents.LIVING_REPEATER_DATA.value());
     }
 
     @Override

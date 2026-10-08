@@ -52,10 +52,10 @@ public class LivingCopperFunction implements LivingItemFunction, HasDirection {
     @Override
     public Set<DataComponentType<?>> getOwnedComponentTypes() {
         return Set.of(
-            LivingComponents.LIVING_CUT_COPPER_DATA.value(),
-            LivingComponents.LIVING_GRATE_DATA.value(),
-            LivingComponents.LIVING_COPPER_BULB_DATA.value(),
-            LivingComponents.LIVING_COPPER_SIGNAL.value()
+            RedstoneComponents.LIVING_CUT_COPPER_DATA.value(),
+            RedstoneComponents.LIVING_GRATE_DATA.value(),
+            RedstoneComponents.LIVING_COPPER_BULB_DATA.value(),
+            RedstoneComponents.LIVING_COPPER_SIGNAL.value()
         );
     }
 

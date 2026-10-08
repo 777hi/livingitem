@@ -47,7 +47,7 @@ public class LivingComparatorFunction implements LivingItemFunction, HasDirectio
 
     @Override
     public Set<DataComponentType<?>> getOwnedComponentTypes() {
-        return Set.of(LivingComponents.LIVING_COMPARATOR_DATA.value());
+        return Set.of(RedstoneComponents.LIVING_COMPARATOR_DATA.value());
     }
 
     @Override

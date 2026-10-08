@@ -47,7 +47,7 @@ public class LivingRedstoneFunction implements LivingItemFunction, HasContainerD
 
     @Override
     public Set<DataComponentType<?>> getOwnedComponentTypes() {
-        return Set.of(LivingComponents.LIVING_REDSTONE_DATA.value());
+        return Set.of(RedstoneComponents.LIVING_REDSTONE_DATA.value());
     }
 
     @Override

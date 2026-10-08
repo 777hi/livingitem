@@ -62,11 +62,11 @@ public record LivingComparatorData(
 
     /** 读取：缺失返回默认值。（A1 迁移：原 LivingItemManager.getComparatorData） */
     public static LivingComparatorData of(ItemStack stack) {
-        return LivingItemManager.getData(stack, LivingComponents.LIVING_COMPARATOR_DATA.value(), LivingComparatorData.DEFAULT);
+        return LivingItemManager.getData(stack, RedstoneComponents.LIVING_COMPARATOR_DATA.value(), LivingComparatorData.DEFAULT);
     }
 
     /** 写入：等于默认值时移除组件。（A1 迁移：原 LivingItemManager.setComparatorData） */
     public static void set(ItemStack stack, LivingComparatorData data) {
-        LivingItemManager.setData(stack, LivingComponents.LIVING_COMPARATOR_DATA.value(), data, LivingComparatorData.DEFAULT);
+        LivingItemManager.setData(stack, RedstoneComponents.LIVING_COMPARATOR_DATA.value(), data, LivingComparatorData.DEFAULT);
     }
 }

@@ -55,11 +55,11 @@ public record LivingRedstoneTorchData(
 
     /** 读取：缺失返回默认值。（A1 迁移：原 LivingItemManager.getRedstoneTorchData） */
     public static LivingRedstoneTorchData of(ItemStack stack) {
-        return LivingItemManager.getData(stack, LivingComponents.LIVING_REDSTONE_TORCH_DATA.value(), LivingRedstoneTorchData.DEFAULT);
+        return LivingItemManager.getData(stack, RedstoneComponents.LIVING_REDSTONE_TORCH_DATA.value(), LivingRedstoneTorchData.DEFAULT);
     }
 
     /** 写入：等于默认值时移除组件。（A1 迁移：原 LivingItemManager.setRedstoneTorchData） */
     public static void set(ItemStack stack, LivingRedstoneTorchData data) {
-        LivingItemManager.setData(stack, LivingComponents.LIVING_REDSTONE_TORCH_DATA.value(), data, LivingRedstoneTorchData.DEFAULT);
+        LivingItemManager.setData(stack, RedstoneComponents.LIVING_REDSTONE_TORCH_DATA.value(), data, LivingRedstoneTorchData.DEFAULT);
     }
 }

@@ -47,11 +47,11 @@ public record LivingCopperSignalData(
 
     /** 读取：缺失返回默认值。（A1 迁移：原 LivingItemManager.getCopperSignal） */
     public static LivingCopperSignalData of(ItemStack stack) {
-        return LivingItemManager.getData(stack, LivingComponents.LIVING_COPPER_SIGNAL.value(), LivingCopperSignalData.DEFAULT);
+        return LivingItemManager.getData(stack, RedstoneComponents.LIVING_COPPER_SIGNAL.value(), LivingCopperSignalData.DEFAULT);
     }
 
     /** 写入：等于默认值时移除组件。（A1 迁移：原 LivingItemManager.setCopperSignal） */
     public static void set(ItemStack stack, LivingCopperSignalData data) {
-        LivingItemManager.setData(stack, LivingComponents.LIVING_COPPER_SIGNAL.value(), data, LivingCopperSignalData.DEFAULT);
+        LivingItemManager.setData(stack, RedstoneComponents.LIVING_COPPER_SIGNAL.value(), data, LivingCopperSignalData.DEFAULT);
     }
 }

@@ -4,7 +4,6 @@
 # 格式：规则 <TAB> 源 <TAB> 目标 <TAB> 条数
 
 # R1 跨模块方向违规（下层依赖上层）
-module	living/components	living/domain/redstone	11
 module	(root)	client/render	4
 module	living/api	living/container	4
 module	living/compat	living/domain/water	3

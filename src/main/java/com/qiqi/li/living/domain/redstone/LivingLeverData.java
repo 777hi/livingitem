@@ -47,11 +47,11 @@ public record LivingLeverData(
 
     /** 读取：缺失返回默认值。（A1 迁移：原 LivingItemManager.getLeverData） */
     public static LivingLeverData of(ItemStack stack) {
-        return LivingItemManager.getData(stack, LivingComponents.LIVING_LEVER_DATA.value(), LivingLeverData.DEFAULT);
+        return LivingItemManager.getData(stack, RedstoneComponents.LIVING_LEVER_DATA.value(), LivingLeverData.DEFAULT);
     }
 
     /** 写入：等于默认值时移除组件。（A1 迁移：原 LivingItemManager.setLeverData） */
     public static void set(ItemStack stack, LivingLeverData data) {
-        LivingItemManager.setData(stack, LivingComponents.LIVING_LEVER_DATA.value(), data, LivingLeverData.DEFAULT);
+        LivingItemManager.setData(stack, RedstoneComponents.LIVING_LEVER_DATA.value(), data, LivingLeverData.DEFAULT);
     }
 }

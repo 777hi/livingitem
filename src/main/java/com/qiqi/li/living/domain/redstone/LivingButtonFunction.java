@@ -56,7 +56,7 @@ public class LivingButtonFunction implements LivingItemFunction {
 
     @Override
     public Set<DataComponentType<?>> getOwnedComponentTypes() {
-        return Set.of(LivingComponents.LIVING_BUTTON_DATA.value());
+        return Set.of(RedstoneComponents.LIVING_BUTTON_DATA.value());
     }
 
     @Override

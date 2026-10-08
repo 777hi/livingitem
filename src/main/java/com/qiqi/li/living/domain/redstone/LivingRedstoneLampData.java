@@ -47,11 +47,11 @@ public record LivingRedstoneLampData(
 
     /** 读取：缺失返回默认值。（A1 迁移：原 LivingItemManager.getLampData） */
     public static LivingRedstoneLampData of(ItemStack stack) {
-        return LivingItemManager.getData(stack, LivingComponents.LIVING_REDSTONE_LAMP_DATA.value(), LivingRedstoneLampData.DEFAULT);
+        return LivingItemManager.getData(stack, RedstoneComponents.LIVING_REDSTONE_LAMP_DATA.value(), LivingRedstoneLampData.DEFAULT);
     }
 
     /** 写入：等于默认值时移除组件。（A1 迁移：原 LivingItemManager.setLampData） */
     public static void set(ItemStack stack, LivingRedstoneLampData data) {
-        LivingItemManager.setData(stack, LivingComponents.LIVING_REDSTONE_LAMP_DATA.value(), data, LivingRedstoneLampData.DEFAULT);
+        LivingItemManager.setData(stack, RedstoneComponents.LIVING_REDSTONE_LAMP_DATA.value(), data, LivingRedstoneLampData.DEFAULT);
     }
 }

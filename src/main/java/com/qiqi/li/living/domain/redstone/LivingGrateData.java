@@ -47,11 +47,11 @@ public record LivingGrateData(
 
     /** 读取：缺失返回默认值。（A1 迁移：原 LivingItemManager.getGrateData） */
     public static LivingGrateData of(ItemStack stack) {
-        return LivingItemManager.getData(stack, LivingComponents.LIVING_GRATE_DATA.value(), LivingGrateData.DEFAULT);
+        return LivingItemManager.getData(stack, RedstoneComponents.LIVING_GRATE_DATA.value(), LivingGrateData.DEFAULT);
     }
 
     /** 写入：等于默认值时移除组件。（A1 迁移：原 LivingItemManager.setGrateData） */
     public static void set(ItemStack stack, LivingGrateData data) {
-        LivingItemManager.setData(stack, LivingComponents.LIVING_GRATE_DATA.value(), data, LivingGrateData.DEFAULT);
+        LivingItemManager.setData(stack, RedstoneComponents.LIVING_GRATE_DATA.value(), data, LivingGrateData.DEFAULT);
     }
 }
