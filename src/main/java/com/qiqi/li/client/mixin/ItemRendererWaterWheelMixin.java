@@ -22,6 +22,13 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+/**
+ * 物品渲染管线中 Create 水车的旋转处理。
+ *
+ * <p>重定向 {@code handleCameraTransforms}，对 Create 的水车物品按
+ * {@link LivingWaterWheelData} 的净应力换算 RPM 并施加绕轴旋转，
+ * 同时切换为正向光照，避免 3D 模型在 GUI 中发暗。</p>
+ */
 @Mixin(ItemRenderer.class)
 public class ItemRendererWaterWheelMixin {
 

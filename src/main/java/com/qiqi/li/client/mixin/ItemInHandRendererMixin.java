@@ -19,6 +19,12 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+/**
+ * 第一人称手持渲染中的活地图传送准心叠加。
+ *
+ * <p>拦截 {@code renderMap}，当手持物品为活地图且玩家持有活末影珍珠时，
+ * 调用 {@link LivingMapTargetRenderer} 在地图表面绘制当前准心对应的可传送标记。</p>
+ */
 @Mixin(net.minecraft.client.renderer.ItemInHandRenderer.class)
 public class ItemInHandRendererMixin {
 

@@ -70,6 +70,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * 活物品容器界面的客户端增强。
+ *
+ * <p>在 {@link AbstractContainerScreen} 上叠加多项活物品特性：活地图的展开渲染与右键传送准心、
+ * 手持活末影珍珠的传送交互、活箱子标签页的收纳存取，以及容器槽位内的流体与活耕地作物渲染；
+ * 并在界面关闭 / 重开时管理相关渲染态缓存（扩展地图纹理、流体快照）的创建与释放。</p>
+ */
 @Mixin(AbstractContainerScreen.class)
 public class AbstractContainerScreenMixin extends Screen {
     protected AbstractContainerScreenMixin(Component title) {

@@ -21,6 +21,12 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+/**
+ * 物品展示框渲染地图时的活地图传送准心叠加。
+ *
+ * <p>拦截 {@code MapRenderer#render}，当玩家手持活末影珍珠且展示框内是活地图时，
+ * 按命中位置换算地图像素并调用 {@link LivingMapTargetRenderer} 绘制可传送标记。</p>
+ */
 @Mixin(net.minecraft.client.gui.MapRenderer.class)
 public class MapRendererMixin {
 
