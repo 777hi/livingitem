@@ -493,6 +493,28 @@ def check_method_refs():
         print("9. 方法名真实性    : OK")
 
 
+# ---------------------------------------------------------------- 10. §0 play section
+
+def check_play_sections():
+    """每份 docs/tech/living-*-tech.md 必须含「## §0 玩法定义」（规约见 docs/README.md §2）。
+
+    为什么值得自动检查：§0 是**功能需求的来源**与**行为对错的判据**，也是 AI 读子系统的
+    **第一站**（AGENTS 子系统索引已注明「读子系统先读 §0」）。新加活物品时**漏写 §0
+    没有别的地方会报** —— 文档系统里其它检查都只看链接 / 条数 / 符号，看不到"这一节缺失"。
+    """
+    files = sorted(glob.glob(os.path.join(ROOT, "docs", "tech", "living-*-tech.md")))
+    missing = []
+    for f in files:
+        # 接受「§0 玩法定义」及带后缀写法；亦兼容活武器原有的「§0 定位与铁律」标题
+        if not re.search(r"^## §0 (玩法定义|定位与铁律)", read(f), re.M):
+            missing.append(os.path.basename(f))
+    if missing:
+        failures.append(f"[§0 玩法定义] 以下 tech 文档缺 §0: {missing}")
+        print(f"10. §0 玩法定义    : FAIL（{len(missing)}/{len(files)} 份缺失）")
+    else:
+        print(f"10. §0 玩法定义    : OK（{len(files)} 份全覆盖）")
+
+
 def main():
     print("=== 文档系统一致性检查（docs/README.md §7）===\n")
     check_paths()
@@ -504,6 +526,7 @@ def main():
     check_java_symbols()
     check_commands()
     check_method_refs()
+    check_play_sections()
 
     print()
     for w in warnings:
