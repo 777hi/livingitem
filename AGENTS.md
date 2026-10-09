@@ -86,6 +86,9 @@ SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 > 每个子系统「做什么」的完整概述见 [subsystem-index.md](docs/reference/subsystem-index.md)，
 > 逐项能力清单见 [completed-features.md](docs/reference/completed-features.md)。
 > **能力口径与不变量以各子系统文档为准**，本文只作路由。
+>
+> ⭐ **读子系统先读它 tech 文档最前面的「§0 玩法定义」**（是什么 / 怎么玩 / 规则 / 能力清单）
+> —— 它是**功能需求的来源**与**行为对错的判据**（规约见 [docs/README.md](docs/README.md)）。
 
 | 族 | 子系统（点击直达文档） |
 |----|----------------------|
