@@ -109,6 +109,21 @@
   ✅ **破坏性验证**（方案 §6 协议）：临时移除 `deposit` 的整 FE 量化 ⇒ **1 个测试挂**
   （证明调用点真的经过 `BulbBank`，而非新写的死代码），已还原。`551 全绿`。
 
+- 🏗 **power 收口 步骤 2 第 2 步：`distributeToBulbs` 收归 `BulbBank`**（`3578601`）——
+  **溢出 bug 的第二份拷贝绝迹**（第一份在 `receive()` 里，第 1 步已收）。
+  - `FePolicy` 新增 **`ANY_MOVEMENT`**（不量化 + 不做零头回收）—— 与 `FLOOR_WHOLE_FE`
+    的差异**参数化，不抹平**（`ANY_MOVEMENT` 的语义：「够用即可，只关心有没有充进去」）
+  - `BulbBank.scan` 的槽位过滤 `IntPredicate` → **`Predicate<ItemStack>`**（原 `slotFilter`
+    表达不了「按物品判锈级」）；新增 `scanEntries(List<SlotEntry>, ...)`，两者共用内核 `collect`
+  - `distributeToBulbs` 改为委托：锈级专属通道（v18）改由 `itemFilter` 表达；
+    返回 `boolean` 改看 `isDirty()`（与原先 `distributed > 0` 等价）。主类 **845 → 824 行**
+  - **零行为变化的依据**（逐条核对）：`mulDivFloor` 内部已夹 `a≤c` 且结果夹 `r≤b`
+    ⇒ 份额恒 ≤ 该堆剩余 ⇒ 旧代码那次 `Math.min(CAP, ...)` **纯防御、永不生效**（去掉等价）；
+    `totalCapacityMilliFe(count) ≡ BULB_UNIT_CAPACITY_MFE * count`（同一常量）；
+    `entries` 由 `canApply`（活物品 + 涂蜡铜块）筛过 ⇒ `isBulb` 与原 `isWaxedBulb` 判据等价
+  - ✅ **破坏性验证**：临时让 `scanEntries` 返回空 bank ⇒ **5 个测试挂**（证明发电路径
+    真经过 `BulbBank`），已还原。`check_layers` R1 15 / R3 10 无新增违规；`551 全绿`。
+
 ---
 
 ## 2026-10-08

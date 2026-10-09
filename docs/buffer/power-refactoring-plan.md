@@ -74,12 +74,14 @@ grep -rn "[a-zA-Z0-9_)] \* [a-zA-Z0-9_(][a-zA-Z0-9_()]* */ *[a-zA-Z0-9_(]" \
 
 ## 3. 步骤 2 —— 抽 `BulbBank`（收益最高，建议第二个做）
 
-> **进度：第 1 步 ✅（2026-10-09，`e23586c`）** —— 新建 `BulbBank`（205 行）+
-> `ContainerEnergyStorage.receive` 改为委托（312 → 210 行）。
-> ⚠️ **只接了 `FePolicy.FLOOR_WHOLE_FE`**；另两种口径（`CEIL_DECLARED` / `ANY_MOVEMENT`）
-> **待各自调用方迁移时再加** —— 由真实调用点定义语义，不预先发明。
-> **待做**：② `distributeToBulbs` ③ `BulbItemEnergyStorage` ④ `ContainerEnergyStorage.extract`。
-> ✅ 破坏性验证已做：临时移除 `deposit` 的整 FE 量化 ⇒ 1 个测试挂（证明调用点真经过 `BulbBank`）。
+> **进度：第 1+2 步 ✅（2026-10-09，`e23586c` / `3578601`）** —— 新建 `BulbBank` +
+> 两个调用方改为委托：`ContainerEnergyStorage.receive`（312 → 210 行）与
+> `LivingWaxedCopperFunction.distributeToBulbs`（845 → 824 行）。
+> ⚠️ **已接两种口径**：`FLOOR_WHOLE_FE`（容器对外接口）/ `ANY_MOVEMENT`（发电直存）。
+> 剩余两种待各自调用方迁移时再加 —— 由真实调用点定义语义，**不预先发明**。
+> **待做**：③ `BulbItemEnergyStorage` ④ `ContainerEnergyStorage.extract`。
+> ✅ 破坏性验证各做一次：① 临时移除 `deposit` 的整 FE 量化 ⇒ 1 个测试挂；
+> ② 临时让 `scanEntries` 返回空 bank ⇒ 5 个测试挂（均证明调用点真经过 `BulbBank`）。
 
 把「扫铜灯堆 → 收集 (stack, count, remaining) → 比例分配 → 每盏取整写入 →
 零头回收」收成一处。
@@ -118,8 +120,12 @@ enum FePolicy {
 
 1. `ContainerEnergyStorage.receive` → `BulbBank.scan(...).deposit(..., FLOOR_WHOLE_FE)`
    —— 已有 20 个 `WaxedCopperStorageTest` 用例 + `RoundTripConservationIT` 守着，**先动这里最安全**。
-2. `LivingWaxedCopperFunction.distributeToBulbs` → `BulbBank.scan(entries 过滤锈级).deposit(..., ANY_MOVEMENT)`
-   —— 注意它需要 `slotFilter`（锈级专属通道）。
+2. `LivingWaxedCopperFunction.distributeToBulbs` → `BulbBank.scanEntries(entries, 锈级过滤).deposit(..., ANY_MOVEMENT)`
+   —— ✅ 已做（`3578601`）。锈级专属通道改由 **`Predicate<ItemStack>` itemFilter** 表达
+   （原方案写的 `slotFilter` 是 `IntPredicate`，表达不了「按物品判锈级」）；
+   返回 `boolean` 改看 `isDirty()`。⚠️ 另发现一处**原方案的过判**：旧代码里那次
+   `Math.min(CAP, ...)` 其实**永不生效**（`mulDivFloor` 内部已夹 `a≤c` 且结果夹 `r≤b`
+   ⇒ 份额恒 ≤ 该堆剩余）⇒ 去掉后行为等价。
 3. `BulbItemEnergyStorage` 双向 → `BulbBank.of(stack)`，策略 `CEIL_DECLARED`。
 4. `ContainerEnergyStorage.extract` → `withdraw(..., 余数向上取整)`。
 
