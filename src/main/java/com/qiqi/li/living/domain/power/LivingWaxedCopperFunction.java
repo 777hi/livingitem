@@ -750,6 +750,10 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
      * <p>隔离只发生在「发电 → 充电」这一跳：k 锈级灯只接收 k 锈级网络的发电
      * （含共振增益）；入灯后仍是通用 FE，放电 / 外部充电无锈级限制。</p>
      *
+     * <p>算法（比例分配 + 完整步进保护）已收归 {@link BulbBank}（2026-10-09 power 收口
+     * 步骤 2 第 2 步）—— 原先这里是同一份「按剩余容量比例分配」的<b>第二份拷贝</b>
+     * （历史上同一个 long 溢出 bug 修完 {@code receive()} 后本方法里还有一份）。</p>
+     *
      * @param generatedRe 本锈级发电量（RE，已含共振增益）
      * @param oxidation   目标锈蚀级（0~3），只分配给 {@code WaxedCopperFamily.getOxidationLevel(bulb) == oxidation} 的灯堆
      * @return true 表示有铜灯实际充入了电量（需 setChanged 落盘）
@@ -758,39 +762,14 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         long mfe = Math.round(generatedRe * PowerMath.RE_TO_FE * 1000.0);
         if (mfe <= 0) return false;
 
-        record BulbRef(ItemStack stack, int count, long remaining) {}
-        List<BulbRef> bulbs = new ArrayList<>();
-        long totalRemaining = 0;
-        for (SlotEntry entry : entries) {
-            ItemStack stack = entry.stack();
-            if (stack.isEmpty() || !WaxedCopperFamily.isWaxedBulb(stack.getItem())) continue;
-            if (WaxedCopperFamily.getOxidationLevel(stack.getItem()) != oxidation) continue;   // v18：锈级专属通道
-            long rem = LivingWaxedBulbData.totalCapacityMilliFe(stack.getCount())
-                - LivingWaxedBulbData.of(stack).totalChargeMilliFe(stack.getCount());
-            if (rem <= 0) continue;
-            bulbs.add(new BulbRef(stack, stack.getCount(), rem));
-            totalRemaining += rem;
-        }
-        if (bulbs.isEmpty()) return false;
-
-        long distributed = 0;
-        for (BulbRef ref : bulbs) {
-            // 份额统一走 PowerMath.mulDivFloor（与容器充电同源，2026-09-11）：
-            // mfe 是全部发电机按锈级累加的值（单机 = 合因子×周期×跳变路数，可到 1e6 RE
-            // ⇒ mfe ~ 6e7），remaining 可达 6.4e10（64 盏空灯）⇒ 直接相乘越过 Long.MAX。
-            // 后果比容器那边更隐蔽：份额为负 → 本 tick 发电被静默丢弃；
-            // 份额变巨大正数 → newQ 被夹到 CAP → **凭空造出上百万 FE**。
-            // mulDivFloor 会把份额夹到 ≤ remaining，perLamp ≤ 每盏剩余容量，两条路都堵死。
-            long share = PowerMath.mulDivFloor(mfe, ref.remaining(), totalRemaining);
-            long perLamp = share / ref.count();
-            if (perLamp <= 0) continue;
-            LivingWaxedBulbData data = LivingWaxedBulbData.of(ref.stack());
-            long newQ = Math.min(PowerMath.BULB_UNIT_CAPACITY_MFE,
-                data.chargeMilliFe() + perLamp);
-            LivingWaxedBulbData.set(ref.stack(), data.withChargeMilliFe(newQ));
-            distributed += (newQ - data.chargeMilliFe()) * ref.count();
-        }
-        return distributed > 0;
+        // 与容器充电（FLOOR_WHOLE_FE）的【故意差异】由 FePolicy.ANY_MOVEMENT 承载：
+        // 不量化、不做零头回收 —— 发电量已由 RE→mFE 换算取整，够用即可。
+        // 锈级专属通道（v18）改由 itemFilter 表达；「是否真有充入」改看 isDirty()
+        // （与原先 `distributed > 0` 等价：dirty 只在真的 set 过时置位）。
+        BulbBank bank = BulbBank.scanEntries(entries,
+            stack -> WaxedCopperFamily.getOxidationLevel(stack.getItem()) == oxidation);
+        bank.deposit(mfe, false, BulbBank.FePolicy.ANY_MOVEMENT);
+        return bank.isDirty();
     }
 
 

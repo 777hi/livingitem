@@ -2,11 +2,14 @@ package com.qiqi.li.living.domain.power;
 
 import javax.annotation.Nullable;
 
-import java.util.function.IntPredicate;
+import java.util.List;
+import java.util.function.IntFunction;
+import java.util.function.Predicate;
 
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.items.IItemHandler;
 
+import com.qiqi.li.living.api.LivingItemFunction.SlotEntry;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.util.WaxedCopperFamily;
 
@@ -18,12 +21,12 @@ import com.qiqi.li.living.util.WaxedCopperFamily;
  * {@code BulbItemEnergyStorage}），没有单一归属地 —— 历史上同一个 long 溢出 bug 因此
  * <b>被复制到两处</b>（修完 {@code receive()} 后 {@code distributeToBulbs} 里还有一份）。
  * 本类把「扫铜灯堆 → 收集 → 比例分配 → 取整写入 → 零头回收」收成一处，
- * 把三处<b>故意的口径差异</b>变成<b>显式参数</b>（{@link FePolicy}）——<b>参数化差异，不抹平差异</b>。</p>
+ * 把各处<b>故意的口径差异</b>变成<b>显式参数</b>（{@link FePolicy}）——<b>参数化差异，不抹平差异</b>。</p>
  *
  * <p><b>性能契约（硬约束，勿破）</b>：</p>
  * <ul>
- *   <li>{@link #scan} 是热路径（外部电力 mod 每 tick 高频调用）——<b>只扫一遍</b>
- *       {@code getStackInSlot}，把铜灯堆的引用与剩余容量留在数组里（非铜灯槽位为 null），
+ *   <li>{@link #scan} / {@link #scanEntries} 是热路径（外部电力 mod 每 tick 高频调用）——<b>只扫一遍</b>
+ *       取栈，把铜灯堆的引用与剩余容量留在数组里（非铜灯槽位为 null），
  *       后续所有分配/回收走数组。<b>不要改成「每堆重新取物品」</b>。</li>
  *   <li><b>无跨调用状态</b>：不引入 ThreadLocal 暂存池 / 指纹缓存（同类方案在配方书
  *       Mixin 上因重入风险被否决过）。</li>
@@ -36,15 +39,27 @@ import com.qiqi.li.living.util.WaxedCopperFamily;
 final class BulbBank {
 
     /**
-     * 分配口径 —— 三处调用方的<b>故意差异</b>显式化。
+     * 分配口径 —— 各调用方的<b>故意差异</b>显式化。
      *
-     * <p>⚠️ 目前只接了 {@link #FLOOR_WHOLE_FE}（{@code ContainerEnergyStorage.receive}）。
-     * 另两种口径待各自的调用方迁移时再加入 —— <b>届时由真实调用点定义语义，
-     * 不预先发明</b>（方案 §3 的迁移顺序：① receive → ② distributeToBulbs → ③ BulbItemEnergyStorage → ④ extract）。</p>
+     * <p>本枚举同时决定<b>量化</b>与<b>零头回收</b>两项 —— 二者语义耦合：量化产生的取整损耗，
+     * 只有需要「对外报账声明值」的接口才需要回收补回（否则声明与实充差太大）。</p>
+     *
+     * <p>迁移进度（方案 §3）：① {@code receive} ✅ → ② {@code distributeToBulbs} ✅ →
+     * ③ {@code BulbItemEnergyStorage} / ④ {@code extract} 待做 —— 届时由真实调用点定义语义，
+     * <b>不预先发明</b>。</p>
      */
     enum FePolicy {
-        /** 整 FE 向下量化（容器对外接口：声明 = accept，杜绝取整零头凭空造电） */
-        FLOOR_WHOLE_FE
+        /**
+         * 容器对外接口（{@code IEnergyStorage}）：整 FE 向下量化 + 零头回收。
+         * 声明值 = 量化后的 {@code accept}，实充 ≤ 声明（宁损勿造，防往返凭空造电）。
+         */
+        FLOOR_WHOLE_FE,
+        /**
+         * 发电直存（锈级专属通道）：<b>不量化、不做零头回收</b> ——
+         * 发电量已由 RE→mFE 换算取整，够用即可；调用方只关心「有没有真的充进去」
+         * （看 {@link #isDirty()}，不依赖本方法的返回值）。
+         */
+        ANY_MOVEMENT
     }
 
     /**
@@ -74,24 +89,44 @@ final class BulbBank {
     }
 
     /**
-     * 扫描容器内的铜灯堆（<b>单遍</b> {@code getStackInSlot}）。
+     * 扫描容器内的铜灯堆（<b>单遍</b> {@code getStackInSlot}）—— 容器对外接口入口。
      *
      * @param items      物品访问器
-     * @param slotFilter 可选的槽位过滤（锈级专属通道用）；null = 全收
+     * @param itemFilter 可选的栈级过滤（锈级专属通道用）；null = 全收
      */
-    static BulbBank scan(IItemHandler items, @Nullable IntPredicate slotFilter) {
-        int slots = items.getSlots();
-        ItemStack[] stacks = new ItemStack[slots];
-        long[] remaining = new long[slots];
+    static BulbBank scan(IItemHandler items, @Nullable Predicate<ItemStack> itemFilter) {
+        return collect(items.getSlots(), items::getStackInSlot, itemFilter);
+    }
+
+    /**
+     * 从活物品功能的槽位条目扫描 —— 发电直存入口。
+     *
+     * <p>{@code entries} 已由框架筛成「本功能适用的槽位」（{@code canApply} = 活物品 + 涂蜡铜块）
+     * ⇒ 其中满足 {@code isWaxedBulb} 的必然也是活物品，与 {@link #isBulb} 的
+     * {@code isLivingItem} 条件等价。</p>
+     *
+     * @param entries    功能槽位条目（含栈引用）
+     * @param itemFilter 可选的栈级过滤（锈级专属通道用）；null = 全收
+     */
+    static BulbBank scanEntries(List<SlotEntry> entries, @Nullable Predicate<ItemStack> itemFilter) {
+        return collect(entries.size(), i -> entries.get(i).stack(), itemFilter);
+    }
+
+    /** 单遍扫描的共用内核：只取一遍栈，其余全在数组上算。 */
+    private static BulbBank collect(int size, IntFunction<ItemStack> stackAt,
+                                    @Nullable Predicate<ItemStack> itemFilter) {
+        ItemStack[] stacks = new ItemStack[size];
+        long[] remaining = new long[size];
         long totalRemaining = 0;
         long totalCharge = 0;
-        for (int i = 0; i < slots; i++) {
-            if (slotFilter != null && !slotFilter.test(i)) continue;
-            ItemStack stack = items.getStackInSlot(i);
+        for (int i = 0; i < size; i++) {
+            ItemStack stack = stackAt.apply(i);
             if (!isBulb(stack)) continue;
+            if (itemFilter != null && !itemFilter.test(stack)) continue;
             int count = stack.getCount();
             long charge = LivingWaxedBulbData.of(stack).totalChargeMilliFe(count);
             long rem = PowerMath.BULB_UNIT_CAPACITY_MFE * count - charge;
+            if (rem <= 0) continue;      // 已满的堆不进账（等价于分配时的 remaining<=0 跳过）
             stacks[i] = stack;
             remaining[i] = rem;
             totalRemaining += rem;
@@ -127,20 +162,24 @@ final class BulbBank {
 
     /**
      * 充入：外部来的电按「剩余容量比例」分配入各铜灯堆
-     * （每盏 q += share/count 向下取整，零头保守丢弃），受每盏容量上限。
+     * （每盏 q += share/count 向下取整，零头按 {@link FePolicy} 处理），受每盏容量上限。
      *
      * <p>原 {@code ContainerEnergyStorage.receive} 的逐字搬迁（步骤 2 第 1 步），
-     * 语义逐一对应：整 FE 量化 + 比例分配 + 零头回收 + 完整步进保护。</p>
+     * 语义逐一对应：比例分配 + 完整步进保护 + 按 policy 决定量化与零头回收。
+     * 数学安全性：份额走 {@link PowerMath#mulDivFloor}（内部已夹 {@code a ≤ c} 与
+     * {@code r ≤ b}）⇒ 份额恒 ≤ 该堆剩余容量 ⇒ 每盏写入永不越容量上限，
+     * 因此无需像旧 {@code distributeToBulbs} 那样再夹一次 CAP。</p>
      *
-     * @return 声明收下的 mFE（{@link FePolicy#FLOOR_WHOLE_FE} 下 = 量化后的 accept，
-     *         恒满足「实充 ≤ 声明」）
+     * @return 声明收下的 mFE。{@link FePolicy#FLOOR_WHOLE_FE} 下 = 量化后的 accept
+     *         （恒满足「实充 ≤ 声明」）；{@link FePolicy#ANY_MOVEMENT} 下 = min(需求, 总剩余)，
+     *         调用方应改用 {@link #isDirty()} 判定「是否真的有充入」。
      */
     long deposit(long wantMilliFe, boolean simulate, FePolicy policy) {
         if (totalRemaining <= 0) return 0;   // 全满（或无铜灯）
 
-        // 整 FE 量化：机器支付多少 FE，铜灯就收多少 mFE×1000——杜绝取整零头凭空造电
         long accept = Math.min(wantMilliFe, totalRemaining);
         if (policy == FePolicy.FLOOR_WHOLE_FE) {
+            // 整 FE 量化：机器支付多少 FE，铜灯就收多少 mFE×1000——杜绝取整零头凭空造电
             accept -= accept % 1000;
         }
         if (accept <= 0) return 0;
@@ -169,33 +208,35 @@ final class BulbBank {
             distributed += perLamp * count;
         }
 
-        // 零头回收（2026-09-09 修复记账）：每堆一次写入 = 每盏 q+1 → 实际充入 count mFE，
-        // 账面必须同样按 count 计——旧实现按 1 mFE 计账，实充是记账的 count 倍，
-        // 每 tick 按「堆数 × count」凭空造电（RoundTripConservationIT 实测 1000t +2043 FE）。
-        // 完整步进保护：count > leftover 时跳过（一次写入不得越过 accept）；
-        // 不足一个完整步进的残余（< 最小有空间堆的 count，≤63 mFE）保守丢弃——
-        // 与整 FE 量化同一「宁损勿造」方向。
-        long leftover = accept - distributed;
-        int passes = 0;
-        while (leftover > 0 && passes++ < MAX_LEFTOVER_PASSES) {
-            boolean progressed = false;
-            for (int i = 0; i < stacks.length && leftover > 0; i++) {
-                ItemStack stack = stacks[i];
-                if (stack == null) continue;
-                int count = stack.getCount();
-                if (count > leftover) continue;   // 完整步进保护
-                long q = LivingWaxedBulbData.of(stack).chargeMilliFe();
-                if (q >= PowerMath.BULB_UNIT_CAPACITY_MFE) continue;
-                if (!simulate) {
-                    LivingWaxedBulbData.set(stack,
-                        LivingWaxedBulbData.of(stack).withChargeMilliFe(q + 1));
-                    dirty = true;
+        if (policy == FePolicy.FLOOR_WHOLE_FE) {
+            // 零头回收（2026-09-09 修复记账）：每堆一次写入 = 每盏 q+1 → 实际充入 count mFE，
+            // 账面必须同样按 count 计——旧实现按 1 mFE 计账，实充是记账的 count 倍，
+            // 每 tick 按「堆数 × count」凭空造电（RoundTripConservationIT 实测 1000t +2043 FE）。
+            // 完整步进保护：count > leftover 时跳过（一次写入不得越过 accept）；
+            // 不足一个完整步进的残余（< 最小有空间堆的 count，≤63 mFE）保守丢弃——
+            // 与整 FE 量化同一「宁损勿造」方向。
+            long leftover = accept - distributed;
+            int passes = 0;
+            while (leftover > 0 && passes++ < MAX_LEFTOVER_PASSES) {
+                boolean progressed = false;
+                for (int i = 0; i < stacks.length && leftover > 0; i++) {
+                    ItemStack stack = stacks[i];
+                    if (stack == null) continue;
+                    int count = stack.getCount();
+                    if (count > leftover) continue;   // 完整步进保护
+                    long q = LivingWaxedBulbData.of(stack).chargeMilliFe();
+                    if (q >= PowerMath.BULB_UNIT_CAPACITY_MFE) continue;
+                    if (!simulate) {
+                        LivingWaxedBulbData.set(stack,
+                            LivingWaxedBulbData.of(stack).withChargeMilliFe(q + 1));
+                        dirty = true;
+                    }
+                    distributed += count;             // 记账 = 实充（count mFE）
+                    leftover -= count;
+                    progressed = true;
                 }
-                distributed += count;             // 记账 = 实充（count mFE）
-                leftover -= count;
-                progressed = true;
+                if (!progressed) break;
             }
-            if (!progressed) break;
         }
 
         // 声明口径 = accept（整 FE）：实充 ≤ accept，残余 ≤ 最小堆 count−1 mFE 保守丢弃，
