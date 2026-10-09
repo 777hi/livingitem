@@ -124,6 +124,23 @@
   - ✅ **破坏性验证**：临时让 `scanEntries` 返回空 bank ⇒ **5 个测试挂**（证明发电路径
     真经过 `BulbBank`），已还原。`check_layers` R1 15 / R3 10 无新增违规；`551 全绿`。
 
+- 🏗 **power 收口 步骤 2 第 3 步：`BulbItemEnergyStorage` 充电收归 `BulbBank`**（`e7200bd`）——
+  物品能量 capability 的充电也走同一份「比例分配」实现（单堆时退化为「全部」）。
+  - `BulbBank` 新增 `of(ItemStack)`（单堆视图）+ `distributedMilliFe()`（本次实充 mFE）；
+    `deposit` 的局部 `distributed` 提为字段（提前返回路径也重置）
+  - **等价性**：单堆时 `share = mulDivFloor(accept, space, space) = accept` ⇒ `perLamp = accept/count`
+    与旧代码逐字一致；`space ≤ 0`（满）⇒ 提前返回 0，与旧 `perLamp ≤ 0` 一致
+  - ⚠️ **`of()` 刻意不过滤 `isBulb`**：该 capability 在 `LivingItem` 里按**原版物品**注册
+    （`Items.WAXED_COPPER_BULB` 等 4 个，**含未活化的灯**），且 `setData`/`getData` 无
+    `isLivingItem` 守卫 ⇒ 未活化灯**本来就能被充**；套 `isBulb` 会静默改变该行为。
+    「仅已活化」是**容器路径**（`scan`）的判据 —— 两条路径口径本就不同
+    （已记为方案 §3「遗留观察」，收紧属独立决策）
+  - ✅ **破坏性验证**：临时让 `of()` 返回空 bank ⇒ **3 个测试挂**，已还原。`551 全绿`
+  - ❌ **放电（`extractEnergy`）与步骤 4（`ContainerEnergyStorage.extract`）经评估决定不做**：
+    单调用方 ⇒ 无重复可消；`extract` 依赖「抽够即停」的提前退出，而 `scan` 必须全扫
+    ⇒ 热路径性能退化。**判据沉淀：统一针对「复杂 + 有 bug 史 + 多份拷贝」，
+    不为形式上的「全收」而搬** —— 单调用方且逻辑简单的实现搬进新类只是换位置、不产生价值。
+
 ---
 
 ## 2026-10-08

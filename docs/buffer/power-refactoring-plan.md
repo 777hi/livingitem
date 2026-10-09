@@ -74,14 +74,13 @@ grep -rn "[a-zA-Z0-9_)] \* [a-zA-Z0-9_(][a-zA-Z0-9_()]* */ *[a-zA-Z0-9_(]" \
 
 ## 3. 步骤 2 —— 抽 `BulbBank`（收益最高，建议第二个做）
 
-> **进度：第 1+2 步 ✅（2026-10-09，`e23586c` / `3578601`）** —— 新建 `BulbBank` +
-> 两个调用方改为委托：`ContainerEnergyStorage.receive`（312 → 210 行）与
-> `LivingWaxedCopperFunction.distributeToBulbs`（845 → 824 行）。
-> ⚠️ **已接两种口径**：`FLOOR_WHOLE_FE`（容器对外接口）/ `ANY_MOVEMENT`（发电直存）。
-> 剩余两种待各自调用方迁移时再加 —— 由真实调用点定义语义，**不预先发明**。
-> **待做**：③ `BulbItemEnergyStorage` ④ `ContainerEnergyStorage.extract`。
-> ✅ 破坏性验证各做一次：① 临时移除 `deposit` 的整 FE 量化 ⇒ 1 个测试挂；
-> ② 临时让 `scanEntries` 返回空 bank ⇒ 5 个测试挂（均证明调用点真经过 `BulbBank`）。
+> **进度：第 1+2 步 ✅、第 3 步（充电）✅（2026-10-09，`e23586c` / `3578601` / `e7200bd`）** ——
+> 新建 `BulbBank` + 三个调用方改为委托：`ContainerEnergyStorage.receive`（312 → 210 行）、
+> `LivingWaxedCopperFunction.distributeToBulbs`（845 → 824 行）、`BulbItemEnergyStorage.receiveEnergy`。
+> ⚠️ **已接两种口径**：`FLOOR_WHOLE_FE`（容器对外接口）/ `ANY_MOVEMENT`（发电直存 + 物品接口）。
+> **第 3 步的放电、第 4 步（`extract`）经评估决定不做** —— 理由见下方迁移顺序。
+> ✅ 破坏性验证各做一次：① 移除整 FE 量化 ⇒ **1 挂**；② `scanEntries` 返回空 ⇒ **5 挂**；
+> ③ `of()` 返回空 ⇒ **3 挂**（均证明对应调用点真经过 `BulbBank`）。
 
 把「扫铜灯堆 → 收集 (stack, count, remaining) → 比例分配 → 每盏取整写入 →
 零头回收」收成一处。
@@ -126,8 +125,24 @@ enum FePolicy {
    返回 `boolean` 改看 `isDirty()`。⚠️ 另发现一处**原方案的过判**：旧代码里那次
    `Math.min(CAP, ...)` 其实**永不生效**（`mulDivFloor` 内部已夹 `a≤c` 且结果夹 `r≤b`
    ⇒ 份额恒 ≤ 该堆剩余）⇒ 去掉后行为等价。
-3. `BulbItemEnergyStorage` 双向 → `BulbBank.of(stack)`，策略 `CEIL_DECLARED`。
-4. `ContainerEnergyStorage.extract` → `withdraw(..., 余数向上取整)`。
+3. `BulbItemEnergyStorage` **充电** → `BulbBank.of(stack).deposit(..., ANY_MOVEMENT)`
+   —— ✅ 已做（`e7200bd`）。
+   ⚠️ **返回值口径**：本接口返回的是「**实充的 ceil**」（`ceil(perLamp×count/1000)`），
+   不是声明值 ⇒ 取 `distributedMilliFe()` 而非 `deposit` 的返回值
+   （原方案写的 `CEIL_DECLARED` 描述不准，故**未新增该枚举值**）。
+   ⚠️ **`of()` 刻意不过滤 `isBulb`**：该 capability 在 `LivingItem` 里按**原版物品**注册
+   （`Items.WAXED_COPPER_BULB` 等 4 个，**含未活化的灯**），而 `setData`/`getData` 无
+   `isLivingItem` 守卫 ⇒ 未活化灯**本来就能被充**；套 `isBulb` 会静默改变该行为。
+   「仅已活化」是**容器路径**（`scan`）的判据 —— 两条路径口径本就不同（见 §3 下方「遗留观察」）。
+   ⚠️ **放电（`extractEnergy`）不收**：它是**单堆、无循环**，口径也独特
+   （**无**余数跨 FE 边界取整 + **有**「不足 1 FE 清空零头」副作用）⇒ 硬统一需再加 2 个参数，
+   收益（消除 ~20 行）不抵复杂度。
+4. `ContainerEnergyStorage.extract` → `withdraw(...)` —— ❌ **决定不做**，理由三条：
+   ① 它是**唯一**调用方 ⇒ **没有重复可消**（`withdraw` 只是把代码从 A 搬到 B）；
+   ② 原实现「抽够即停」**提前退出**，而 `scan` 必须**全扫**所有槽位 ⇒ 热路径**性能退化**；
+   ③ 口径独特（余数跨 FE 边界向上取整）。
+   ⇒ **判据沉淀**：统一应针对「**复杂 + 有 bug 史 + 有多份拷贝**」的部分，
+   **不为形式上的「全收」而搬** —— 单调用方且逻辑简单的实现，搬进新类只是换了位置、不产生价值。
 
 ### 硬约束（迁移时不许破坏）
 
@@ -137,6 +152,23 @@ enum FePolicy {
 - **语义红线**：整 FE 量化、完整步进保护（`count > leftover` 跳过）、
   「宁损勿造」（实充 ≤ 记账）、零头回收的 `MAX_LEFTOVER_PASSES` 防御上限，全部保留。
 - `RoundTripConservationIT` 是这条红线的守护者，**不许为了让它过而改它**。
+
+### 遗留观察（2026-10-09 收归时发现，**未改行为**）
+
+**「未活化涂蜡铜灯」在两条路径上的判据不一致**：
+
+| 路径 | 判据 | 后果 |
+|---|---|---|
+| 容器（`ContainerEnergyStorage` → `BulbBank.isBulb`） | 要求 `isLivingItem` | 未活化灯**不**参与 |
+| 物品 capability（`BulbItemEnergyStorage`） | **无**（按原版物品注册） | 未活化灯**能**被充/放 |
+
+原因：`Capabilities.EnergyStorage.ITEM` 在 `LivingItem` 里按**原版物品**注册
+（`Items.WAXED_COPPER_BULB` 等 4 个）—— 注册期无法区分「是否活化」；
+且 `LivingItemManager.setData` / `getData` **无** `isLivingItem` 守卫 ⇒ 充电会真的写进组件。
+
+⇒ 这与 `BulbBank.isBulb` 注释里的「取消活化 = 普通物品，电量保留但不进出」**不一致**。
+本次收归**刻意保持现状**（零行为变化）；是否收紧**属独立决策** ——
+若决定收紧，需改 `LivingItem` 的 capability 注册方式或 `BulbItemEnergyStorage` 入口。
 
 ## 4. 步骤 3 —— 单位值类型（成本最高，可延后或不做）
 
