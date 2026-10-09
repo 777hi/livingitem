@@ -153,22 +153,45 @@ enum FePolicy {
   「宁损勿造」（实充 ≤ 记账）、零头回收的 `MAX_LEFTOVER_PASSES` 防御上限，全部保留。
 - `RoundTripConservationIT` 是这条红线的守护者，**不许为了让它过而改它**。
 
-### 遗留观察（2026-10-09 收归时发现，**未改行为**）
+### 遗留观察 → ✅ 已收紧（2026-10-09 当日闭环）
 
-**「未活化涂蜡铜灯」在两条路径上的判据不一致**：
+**发现**：「未活化涂蜡铜灯」在两条路径上判据不一致 ——
 
-| 路径 | 判据 | 后果 |
+| 路径 | 判据 | 未活化灯 |
 |---|---|---|
-| 容器（`ContainerEnergyStorage` → `BulbBank.isBulb`） | 要求 `isLivingItem` | 未活化灯**不**参与 |
-| 物品 capability（`BulbItemEnergyStorage`） | **无**（按原版物品注册） | 未活化灯**能**被充/放 |
+| 容器（`ContainerEnergyStorage` → `BulbBank.isBulb`） | 要求 `isLivingItem` | **不**参与 ✓ |
+| 物品 capability（`BulbItemEnergyStorage`） | **无**（按原版物品注册 + provider 未判） | **能**被充/放 ✗ |
 
-原因：`Capabilities.EnergyStorage.ITEM` 在 `LivingItem` 里按**原版物品**注册
-（`Items.WAXED_COPPER_BULB` 等 4 个）—— 注册期无法区分「是否活化」；
-且 `LivingItemManager.setData` / `getData` **无** `isLivingItem` 守卫 ⇒ 充电会真的写进组件。
+**根因（决定性对比）**：`LivingItem.onRegisterCapabilities` 里**同一个方法内**，
+活箱子 / 活末影箱的 provider **都判了** `if (!isLivingItem(stack)) return null;`，
+**铜灯那一处漏了** ⇒ provider 无条件返回实例。**是漏写，不是 API 限制** ——
+provider 拿到的是**运行时 stack**，完全可以在里面判、返回 `null` 表示「无此能力」。
 
-⇒ 这与 `BulbBank.isBulb` 注释里的「取消活化 = 普通物品，电量保留但不进出」**不一致**。
-本次收归**刻意保持现状**（零行为变化）；是否收紧**属独立决策** ——
-若决定收紧，需改 `LivingItem` 的 capability 注册方式或 `BulbItemEnergyStorage` 入口。
+**⚠️ 一处被推翻的推理**：曾以为「取消活化后电量保留」（依据 `WaxedCopperStorageTest`
+那条 DisplayName 写着「电量保留但不进出」）。**探针实测推翻了它**：
+
+```
+[PROBE] 活化后    : living=true  charge=4000  hasComponent=true
+[PROBE] 取消活化后: living=false charge=0     hasComponent=false
+```
+
+机制：`setLiving(false)` → `clearLivingData` → 遍历各功能的 `getOwnedComponentTypes()`
+逐个 `remove`，而 `LivingWaxedCopperFunction` 的清单**包含** `LIVING_WAXED_BULB_DATA`。
+⇒ 那条测试用**手动构造**（直接 set 电量 + 不打 `IS_LIVING`），根本没走取消活化流程，
+DisplayName 的「电量保留」**与真实行为相反**（已修正措辞）。
+
+**⇒ 收紧零风险**：正常流程下未活化灯**恒为空**（取消活化清电 + 容器路径不充），
+「带电的未活化灯」只可能是该漏洞的产物 ⇒ 收紧**不丢任何数据**。
+
+**实施**：准入判据收在 `BulbItemEnergyStorage.of(ItemStack)`（未活化返回 `null`），
+`LivingItem` 只透传（L4 只接线，判据归领域）；补测试锁住「未活化 ⇒ 拿不到电池」；
+修正那条误导的 DisplayName。✅ 反向验证：去掉守卫 ⇒ 1 个测试挂。
+
+### 另一处独立观察（**未处理**，属玩法语义决策）
+
+**取消活化会清空电量**（上表实测）：玩家取消活化一个满电铜灯 ⇒ 电归零。
+从 `getOwnedComponentTypes` 的 javadoc 看这是**有意**的（「取消活化 = 清掉活物品数据，
+避免孤儿」）。但玩家视角可能觉得「亏」。**是否保留电量属独立决策，本次未动。**
 
 ## 4. 步骤 3 —— 单位值类型（成本最高，可延后或不做）
 

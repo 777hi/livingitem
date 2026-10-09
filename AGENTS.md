@@ -144,8 +144,8 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 551 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
-全绿基线：`550 passed / 0 failed / 1 skipped`。**逐次新增明细见 [changelog.md](docs/archive/changelog.md)。**
+**合计测试用例 552 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
+全绿基线：`551 passed / 0 failed / 1 skipped`。**逐次新增明细见 [changelog.md](docs/archive/changelog.md)。**
 
 > 📄 测试环境配置与编写约定见 [unit-testing.md](docs/guides/unit-testing.md)；
 > 测试文件树见 [file-map.md](docs/reference/file-map.md)「测试文件树」。
@@ -165,6 +165,7 @@ src/main/java/com/qiqi/li/
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-09 | 🐛 **修复（行为变化）：未活化的原版涂蜡铜灯也能被外部 mod 充放电** —— `LivingItem` 的 `EnergyStorage.ITEM` provider **漏判活化**（同一方法内活箱子 / 活末影箱都判了）⇒ 「活化 = 进入能量系统」的门槛被绕过；修法：准入判据收在 `BulbItemEnergyStorage.of()`，provider 只透传。⚠️ 曾以为「取消活化保留电量」，**探针实测推翻**（`clearLivingData` 会清电量组件）⇒ 收紧零风险。测试 551→552 | `buffer/power-refactoring-plan.md` §3 |
 | 2026-10-09 | 🏗 **power 收口 步骤2：抽出 `BulbBank` 并收归三处调用**（容器充电 / 发电直存 / 物品接口充电）—— 「按剩余容量比例分配」从**三份实现/三种口径**收成一处，差异变显式参数（`FePolicy`）；**溢出 bug 的第二份拷贝（`distributeToBulbs`）绝迹** ⇒ `ContainerEnergyStorage` **312 → 210**、`LivingWaxedCopperFunction` **845 → 824 行**。⚠️ 放电与 `extract` **经评估不做**（单调用方无重复可消 + 提前退出是性能特性）—— 判据：统一只针对「复杂 + 有 bug 史 + 多份拷贝」。✅ 破坏性验证 3 次（1 / 5 / 3 挂，均证明对应调用点真经过 `BulbBank`） | `buffer/power-refactoring-plan.md` §3 |
 | 2026-10-09 | 🏗 **power 收口 步骤4 第1+2+3刀**（纯搬迁）—— ① 抽出 `LivingWaxedCopperTooltip`（Tooltip 283 行）② 6 个纯谓词收进 L1 `WaxedCopperFamily`（⚠️ `getCoilForm` **刻意不迁**：映射 power 域 `FORM_*`，迁了造 L1→L3 反向依赖）③ 抽出 `CopperNetworkTopology`（纯图/键原语；⚠️ `runBfs` 留下 —— 属 tick 流程且依赖 `SignalTracker`（`PhaseSnapshot` 外部引用））⇒ `LivingWaxedCopperFunction` **1265 → 845 行（-420）**；顺带删 2 个死方法 + 1 个死局部变量。R1/R3 无新增违规 | `buffer/power-refactoring-plan.md` §5 |
 | 2026-10-09 | 🐛 **修复（回归）：相位快照「只写不读」** —— `ContainerPowerAccess`（账本创建时从 BE 附件回填锁相状态）**零调用者**：回填接线在 `a52a3ea`（1a-4「容器级数据统一存储」）被**改道**绕过（`2c78623` 时链路完整）⇒ 退出重进后振荡器相位不再续接、而 `ContainerPhaseWriteback` 每 tick 仍在写。账本创建处改调 `ContainerPowerAccess.getOrCreatePowerData(ctx)` 接回（1 行） | `living-power-tech.md`（相位快照节） |
@@ -174,7 +175,6 @@ src/main/java/com/qiqi/li/
 | 2026-10-08 | 🏗 **`runtime` 机制化（档 2）完成并验收**：拆掉 `domain/runtime/` 假领域 —— 机制（注册表 + `RuntimeSegments`）落 L2 `living/runtime/`，**片段定义归各领域**（`GeneratorSegment`/`HopperSegment`/`FurnaceSegment`），发包反转到 L4 `LivingItemRuntimeSync`。**R3 22 → 10、R1 93 → 91**；编解码注册表驱动，**字节语义等价**（B 步往返测试断言一字未改仍全绿）。✅ **游戏内手测五项已通过**（发电机遥测 / 漏斗冷却 / 熔炉进度 / 背包路径 / 回归） | `buffer/runtime-mechanization-plan.md` §7/§8 |
 | 2026-10-08 | 📝 **`syncSlotToClients` 职责边界入档：不是冗余，别删** —— 原版 `broadcastChanges` 每 tick 无条件跑、对 id/数量变化有效（探针实测 `ItemStack.matches`），但**管不到「只改自定义组件」与「缓存 revision」**；补三层职责表 + 历史误报复盘（`12ff45b`→`1b8bc3a`） | `living-item-infrastructure.md` §2.4.1 |
 | 2026-10-08 | 📝 **措辞纠错：活箱子/活末影箱「可被搬运」的对象是内容而非本体** —— 5 处改为「其槽位可展开为虚拟存储」（作源取内部/作目标写内部，**本体不动**）；流体侧补「为何只推非活物品」（推动=本体移位，与展开语义不同类）（**538 全绿**） | `living-hopper-tech.md` §6.2.1/§6.2.2 |
-| 2026-10-08 | 🏗 **架构分层第四步（C 收尾）**：`RedstoneSensor` 接口上移 `living/api/` + 方向常量收归契约层 ⇒ `power`/`hopper` 完全不引用 redstone 域。**R3 28 → 25**，顺带 **R1 94 → 93**（纯重构，**534 全绿**） | `buffer/redstone-evolution-roadmap.md` §1 |
 
 ## 排查铁律：原版机制挡路时
 
