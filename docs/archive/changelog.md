@@ -96,6 +96,19 @@
   **外部**引用，搬动会连锁改 3 个文件）⇒ 超出「纯搬迁」边界。理由已写进新类 javadoc。
   `check_layers` R1 15 / R3 10 **无新增违规**。`551 全绿`。
 
+- 🏗 **power 收口 步骤 2 第 1 步：抽出 `BulbBank`**（`e23586c`）—— 治的是**真设计病**。
+  「按剩余容量比例分配」原先**三份实现、三种口径、没有单一归属地**（历史上同一个 long
+  溢出 bug 因此被复制到两处：修完 `receive()` 后 `distributeToBulbs` 里还有一份）。
+  本步把「扫铜灯堆 → 收集 → 比例分配 → 取整写入 → 零头回收」收成一处，把三处**故意的
+  口径差异**变成**显式参数**（`FePolicy`）—— **参数化差异，不抹平差异**。
+  本次只接 `FLOOR_WHOLE_FE`（`ContainerEnergyStorage.receive`，方案称「先动这里最安全」，
+  20 个 `WaxedCopperStorageTest` + `RoundTripConservationIT` 守着）；
+  ⚠️ 另两种口径**待各自调用方迁移时再加** —— 由真实调用点定义语义，不预先发明。
+  硬约束原样保留（单遍 `getStackInSlot` / 无跨调用状态 / 整 FE 量化 / 完整步进保护 /
+  「宁损勿造」/ `MAX_LEFTOVER_PASSES`）。`ContainerEnergyStorage` **312 → 210 行**。
+  ✅ **破坏性验证**（方案 §6 协议）：临时移除 `deposit` 的整 FE 量化 ⇒ **1 个测试挂**
+  （证明调用点真的经过 `BulbBank`，而非新写的死代码），已还原。`551 全绿`。
+
 ---
 
 ## 2026-10-08

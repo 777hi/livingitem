@@ -165,6 +165,7 @@ src/main/java/com/qiqi/li/
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-09 | 🏗 **power 收口 步骤2 第1步：抽出 `BulbBank`** —— 「按剩余容量比例分配」从**三份实现/三种口径**收成一处，口径差异变显式参数（`FePolicy`）；本次只接 `FLOOR_WHOLE_FE`（`ContainerEnergyStorage.receive`，20 用例 + `RoundTripConservationIT` 守着）⇒ `ContainerEnergyStorage` **312 → 210 行**。✅ 破坏性验证：移除量化 ⇒ 1 测试挂（证明调用点真经过 `BulbBank`） | `buffer/power-refactoring-plan.md` §3 |
 | 2026-10-09 | 🏗 **power 收口 步骤4 第1+2+3刀**（纯搬迁）—— ① 抽出 `LivingWaxedCopperTooltip`（Tooltip 283 行）② 6 个纯谓词收进 L1 `WaxedCopperFamily`（⚠️ `getCoilForm` **刻意不迁**：映射 power 域 `FORM_*`，迁了造 L1→L3 反向依赖）③ 抽出 `CopperNetworkTopology`（纯图/键原语；⚠️ `runBfs` 留下 —— 属 tick 流程且依赖 `SignalTracker`（`PhaseSnapshot` 外部引用））⇒ `LivingWaxedCopperFunction` **1265 → 845 行（-420）**；顺带删 2 个死方法 + 1 个死局部变量。R1/R3 无新增违规 | `buffer/power-refactoring-plan.md` §5 |
 | 2026-10-09 | 🐛 **修复（回归）：相位快照「只写不读」** —— `ContainerPowerAccess`（账本创建时从 BE 附件回填锁相状态）**零调用者**：回填接线在 `a52a3ea`（1a-4「容器级数据统一存储」）被**改道**绕过（`2c78623` 时链路完整）⇒ 退出重进后振荡器相位不再续接、而 `ContainerPhaseWriteback` 每 tick 仍在写。账本创建处改调 `ContainerPowerAccess.getOrCreatePowerData(ctx)` 接回（1 行） | `living-power-tech.md`（相位快照节） |
 | 2026-10-09 | 🐛 **修复：活水车应力导致 Create 小齿轮「重进存档变成掉落物」**（每次都发生）—— 根因 Create 的 `RotationPropagator.propagateNewSource` 判定「压制自身网络」⇒ `world.destroyBlock(pos,true)`；重载后本块 `network` 从 NBT 恢复成**自身坐标**、邻居同网、邻居转速又被 Create 清 0。修：① 激活分支改「**先 setSpeed、再 detachKinetics**」（`handleRemoved` 在 `speed==0` 时直接 return）② **rpm 落盘**（注入 Create `write`/`read`）⇒ 重载后注入退化为「无变化」，**从根上不触发** | `living-water-wheel-tech.md` §9.25 |
@@ -174,7 +175,6 @@ src/main/java/com/qiqi/li/
 | 2026-10-08 | 📝 **`syncSlotToClients` 职责边界入档：不是冗余，别删** —— 原版 `broadcastChanges` 每 tick 无条件跑、对 id/数量变化有效（探针实测 `ItemStack.matches`），但**管不到「只改自定义组件」与「缓存 revision」**；补三层职责表 + 历史误报复盘（`12ff45b`→`1b8bc3a`） | `living-item-infrastructure.md` §2.4.1 |
 | 2026-10-08 | 📝 **措辞纠错：活箱子/活末影箱「可被搬运」的对象是内容而非本体** —— 5 处改为「其槽位可展开为虚拟存储」（作源取内部/作目标写内部，**本体不动**）；流体侧补「为何只推非活物品」（推动=本体移位，与展开语义不同类）（**538 全绿**） | `living-hopper-tech.md` §6.2.1/§6.2.2 |
 | 2026-10-08 | 🏗 **架构分层第四步（C 收尾）**：`RedstoneSensor` 接口上移 `living/api/` + 方向常量收归契约层 ⇒ `power`/`hopper` 完全不引用 redstone 域。**R3 28 → 25**，顺带 **R1 94 → 93**（纯重构，**534 全绿**） | `buffer/redstone-evolution-roadmap.md` §1 |
-| 2026-10-08 | 🏗 **架构分层第三步**：`LivingComponents` 从 `living/transfer/` 迁入 `living/components/`（48 个 import + 1 处同包引用）—— **不减违规，买归属诚实**（原先"transfer 认识 11 个领域"是假象）。**534 全绿** | `reference/file-map.md` |
 
 ## 排查铁律：原版机制挡路时
 
