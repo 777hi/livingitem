@@ -95,7 +95,13 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
 
     @Override
     public void tickContainerData(List<SlotEntry> entries, ContainerContext ctx, TickContext tick) {
-        ContainerPowerData powerData = ctx.getOrCreateContainerData(ContainerPowerData.KEY);
+        // ⚠️ 必须走领域访问器 `ContainerPowerAccess`，**不能**直接 `ctx.getOrCreateContainerData` ——
+        // 前者在账本【首次创建】时从 BE 附件回填相位快照（退出重进 / LRU 回收后振荡器相位无缝续接）。
+        // 2026-10-09 修复：该调用在 `a52a3ea`（1a-4「容器级数据统一存储」）重构中**静默丢失**，
+        // 导致快照「只写（ContainerPhaseWriteback）不读」—— 回填路径长期未生效。
+        // 历史：`2c78623` 时链路为 本方法 → TickContext.getOrCreatePowerData → SimpleContainerContext
+        // .getOrCreatePowerData() → ContainerLivingItemHandler.getPowerData(this)（含回填）。
+        ContainerPowerData powerData = ContainerPowerAccess.getOrCreatePowerData(ctx);
         if (powerData == null) return;
 
         // 各锈蚟级本 tick 基础出力累加器（共振用，§3.7）。

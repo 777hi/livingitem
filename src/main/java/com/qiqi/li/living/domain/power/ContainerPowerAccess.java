@@ -18,9 +18,17 @@ import net.minecraft.world.level.block.entity.BlockEntity;
  * 则保持默认 warmup（首拍无沿宽限）。见 {@link PhaseSnapshot} javadoc。</p>
  *
  * <p>⚠️ <b>迁移时的既有状态</b>：原 {@code getPowerData} 全仓库<b>零调用者</b>
- * ⇒ 快照「只写（{@code ContainerPhaseWriteback}）不读」—— 回填路径当前未生效。
+ * ⇒ 快照「只写（{@code ContainerPhaseWriteback}）不读」—— 回填路径长期未生效。
  * 本次<b>只做归属迁移、不改变调用行为</b>；是否接上（在账本创建处调用本方法）
  * 属功能决策，留给后续拍板。</p>
+ *
+ * <p><b>2026-10-09 已接上</b>：git 考古确认这是一次<b>回归</b>而非未完成的功能 ——
+ * {@code 2c78623} 时链路为「{@code LivingWaxedCopperFunction} → {@code TickContext
+ * .getOrCreatePowerData} → {@code SimpleContainerContext.getOrCreatePowerData()} →
+ * {@code ContainerLivingItemHandler.getPowerData(this)}（含回填）」，
+ * 而 {@code a52a3ea}（1a-4「容器级数据统一存储」）把调用**改道**到
+ * {@code getOrCreateContainerData(KEY)} ⇒ 回填被静默跳过。
+ * 现由 {@link LivingWaxedCopperFunction#tickContainerData} 在<b>账本创建处</b>调用本方法。</p>
  */
 public final class ContainerPowerAccess {
 
