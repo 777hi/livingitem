@@ -41,6 +41,26 @@ public class StressStateMachine {
         return rpm != 0;
     }
 
+    /**
+     * 从存档**静默恢复**应力状态（不触发任何网络操作）—— 2026-10-09「彻底方案」。
+     *
+     * <p>目的：让 {@link #getRPM()} 在 <b>Create 重建动力网之前</b>（即 {@code read()} 阶段）
+     * 就返回正确转速 ⇒ 混入的 {@code getGeneratedSpeed()} 一开始就非 0、{@code isSource()} 为真
+     * ⇒ Create 的 {@code KineticBlockEntity.read()} 不会把本块转速清 0、邻居转速得以保留 ⇒
+     * 容器 tick 的注入变成「<b>无变化</b>」（只 {@code updateNetwork}）⇒ <b>不再走 detach/attach</b>
+     * ⇒ 从根上不触发 {@code propagateNewSource} 的销毁分支（见 {@link #applyStress} 注释）。</p>
+     *
+     * <p>{@code refreshedThisTick = true} 给首个 BE tick 一个宽限：万一容器 tick 未先跑，
+     * 也还有 1 tick 余量，随后 {@link #tick} 会照常过期清理（源真的没了不会残留）。</p>
+     */
+    public void restoreFromDisk(float rpm, float capacity) {
+        this.rpm = rpm;
+        this.capacity = capacity;
+        this.refreshedThisTick = true;
+        // ⚠️ 临时诊断（2026-10-09）—— 确认落盘往返生效；诊断完成后与 applyStress 里的那条一并删除。
+        LOGGER.warn("[StressDiag] 从存档恢复应力 rpm={} cap={}", rpm, capacity);
+    }
+
     public void tick(KineticBlockEntity self) {
         if (self.getLevel() == null || self.getLevel().isClientSide) return;
 

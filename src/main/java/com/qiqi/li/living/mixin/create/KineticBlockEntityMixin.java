@@ -4,6 +4,9 @@ import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
 import com.qiqi.li.living.compat.create.LivingItemStressOutput;
 import com.qiqi.li.living.compat.create.StressStateMachine;
 
+import net.minecraft.core.HolderLookup;
+import net.minecraft.nbt.CompoundTag;
+
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -28,6 +31,40 @@ public abstract class KineticBlockEntityMixin implements LivingItemStressOutput 
     protected float lastStressApplied;
 
     private final StressStateMachine stressState = new StressStateMachine();
+
+    /** NBT 键：注入的转速 / 应力容量（仅磁盘，2026-10-09「彻底方案」）。 */
+    private static final String NBT_RPM = "LivingItemRpm";
+    private static final String NBT_CAP = "LivingItemCapacity";
+
+    /**
+     * 落盘：把当前注入的转速/容量写进 BE 的 NBT（<b>仅磁盘保存</b>，不改网络包）。
+     *
+     * <p>配合 {@link StressStateMachine#restoreFromDisk} —— 让重载后 {@code getGeneratedSpeed()}
+     * 立即正确，Create 就不会把本块转速清 0，我们也不必重新 {@code attachKinetics()}
+     * （那会触发 {@code propagateNewSource} 的销毁分支，见 2026-10-09 修复）。</p>
+     */
+    @Inject(method = "write(Lnet/minecraft/nbt/CompoundTag;Lnet/minecraft/core/HolderLookup$Provider;Z)V",
+            at = @At("TAIL"), remap = false)
+    private void livingItem$writeStress(CompoundTag compound, HolderLookup.Provider registries,
+                                        boolean clientPacket, CallbackInfo ci) {
+        if (clientPacket) return;
+        float rpm = stressState.getRPM();
+        if (rpm != 0) {
+            compound.putFloat(NBT_RPM, rpm);
+            compound.putFloat(NBT_CAP, stressState.getCapacity());
+        }
+    }
+
+    /** 读盘：恢复转速/容量（<b>仅磁盘加载</b>，不碰网络包）。 */
+    @Inject(method = "read(Lnet/minecraft/nbt/CompoundTag;Lnet/minecraft/core/HolderLookup$Provider;Z)V",
+            at = @At("TAIL"), remap = false)
+    private void livingItem$readStress(CompoundTag compound, HolderLookup.Provider registries,
+                                       boolean clientPacket, CallbackInfo ci) {
+        if (clientPacket) return;
+        if (compound.contains(NBT_RPM)) {
+            stressState.restoreFromDisk(compound.getFloat(NBT_RPM), compound.getFloat(NBT_CAP));
+        }
+    }
 
     @Inject(method = "getGeneratedSpeed", at = @At("HEAD"), cancellable = true, remap = false)
     private void livingItem$getGeneratedSpeed(CallbackInfoReturnable<Float> cir) {
