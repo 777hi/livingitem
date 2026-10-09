@@ -145,6 +145,13 @@ public class StressStateMachine {
             return;
         }
 
+        // ⚠️ 临时诊断（2026-10-09，定位「重进存档后第二个小齿轮被 Create 销毁」）——
+        // 诊断完成后删除。只在实际变更时打一次，不会每 tick 刷屏。
+        LOGGER.warn("[StressDiag] 注入变更 pos={} prevRpm={} newRpm={} cap={} | 现状 speed={} hasNet={} net={} flicker={} genSpeed={} isSource={}",
+            self.getBlockPos(), prev, newRpm, newCap, self.getTheoreticalSpeed(),
+            self.hasNetwork(), self.network, self.getFlickerScore(),
+            self.getGeneratedSpeed(), self.isSource());
+
         try {
             if (prev != 0 && newRpm == 0) {
                 if (self.hasNetwork()) {
