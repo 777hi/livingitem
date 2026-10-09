@@ -326,7 +326,7 @@ class WaxedCopperStorageTest {
             channel.onPhaseEvent(new PhaseEvent(0, 4, t % 4, 4096, t), gen.preferredPeriod());
         }
 
-        var telemetry = LivingWaxedCopperFunction.buildTelemetry(gen, 4,
+        var telemetry = PowerTelemetry.buildTelemetry(gen, 4,
             com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.FORM_BLOCK, 0, null);
         assertEquals(4, telemetry.detectedPeriod());
         assertEquals(1, telemetry.phaseCount());
@@ -339,7 +339,7 @@ class WaxedCopperStorageTest {
     void telemetry_noSignal() {
         GeneratorState gen = new GeneratorState();
         gen.setPreferredPeriodFromStack(4);
-        var telemetry = LivingWaxedCopperFunction.buildTelemetry(gen, 4,
+        var telemetry = PowerTelemetry.buildTelemetry(gen, 4,
             com.qiqi.li.living.domain.power.LivingWaxedGeneratorData.FORM_BLOCK, 0, null);
         assertEquals(0, telemetry.detectedPeriod());
         assertEquals(0, telemetry.phaseCount());

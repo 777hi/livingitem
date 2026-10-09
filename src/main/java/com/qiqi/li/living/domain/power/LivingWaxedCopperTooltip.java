@@ -29,8 +29,8 @@ import com.qiqi.li.living.util.WaxedCopperFamily;
  * </ul>
  *
  * <p>谓词（{@code isWaxed*} / {@code getOxidationLevel}）已随「收口 步骤 4 第 2 刀」
- * 迁到 L1 {@link WaxedCopperFamily}；{@code formatMilliFe} 仍在
- * {@link LivingWaxedCopperFunction}（待步骤 5 与遥测一并归位）。</p>
+ * 迁到 L1 {@link WaxedCopperFamily}；{@code formatMilliFe} 与遥测快照构建已随
+ *「步骤 4 第 5 刀」归入 {@link PowerTelemetry}。</p>
  */
 final class LivingWaxedCopperTooltip {
 
@@ -90,7 +90,7 @@ final class LivingWaxedCopperTooltip {
             if (t.emaPowerMilliFe() > 0) {
                 tooltipAdder.accept(Component.literal("  ")
                     .append(Component.translatable("tooltip.livingitem.waxed_copper.ema_power"))
-                    .append(Component.literal(": " + LivingWaxedCopperFunction.formatMilliFe(t.emaPowerMilliFe()) + " FE/t"))
+                    .append(Component.literal(": " + PowerTelemetry.formatMilliFe(t.emaPowerMilliFe()) + " FE/t"))
                     .withStyle(ChatFormatting.YELLOW));
             }
 
@@ -98,7 +98,7 @@ final class LivingWaxedCopperTooltip {
             if (t.levelEmaPowerMilliFe() > 0) {
                 tooltipAdder.accept(Component.literal("  ")
                     .append(Component.translatable("tooltip.livingitem.waxed_copper.level_power"))
-                    .append(Component.literal(": " + LivingWaxedCopperFunction.formatMilliFe(t.levelEmaPowerMilliFe()) + " FE/t"))
+                    .append(Component.literal(": " + PowerTelemetry.formatMilliFe(t.levelEmaPowerMilliFe()) + " FE/t"))
                     .withStyle(ChatFormatting.GREEN));
             }
 
@@ -110,7 +110,7 @@ final class LivingWaxedCopperTooltip {
                 ChatFormatting fmt = t.resonanceGain() > 1.0 ? ChatFormatting.GOLD : ChatFormatting.GRAY;
                 tooltipAdder.accept(Component.literal("  ")
                     .append(Component.translatable("tooltip.livingitem.waxed_copper.resonance").withStyle(ChatFormatting.GOLD))
-                    .append(Component.literal(": " + LivingWaxedCopperFunction.formatMilliFe(actualMilliFe) + " FE/t").withStyle(fmt)));
+                    .append(Component.literal(": " + PowerTelemetry.formatMilliFe(actualMilliFe) + " FE/t").withStyle(fmt)));
             }
 
             // ── 状态：无信号时一句「检测中」──
@@ -149,12 +149,12 @@ final class LivingWaxedCopperTooltip {
                         long actualMilliFe = Math.round(t.levelEmaPowerMilliFe() * t.resonanceGain());
                         tooltipAdder.accept(Component.literal("  §7共振:  §8(1+(N-1)×s)² §e= (1+" + (levels - 1) + "×"
                             + String.format("%.2f", s) + ")²"
-                            + "  §7×  §e" + LivingWaxedCopperFunction.formatMilliFe(t.levelEmaPowerMilliFe())
-                            + "  §7=  §e" + LivingWaxedCopperFunction.formatMilliFe(actualMilliFe) + " FE/t")
+                            + "  §7×  §e" + PowerTelemetry.formatMilliFe(t.levelEmaPowerMilliFe())
+                            + "  §7=  §e" + PowerTelemetry.formatMilliFe(actualMilliFe) + " FE/t")
                             .withStyle(ChatFormatting.GRAY));
                     } else {
                         // 单锈级，无共振——直接显示
-                        tooltipAdder.accept(Component.literal("  §7共振:  " + LivingWaxedCopperFunction.formatMilliFe(t.levelEmaPowerMilliFe()) + " FE/t  §8(单锈级，无共振)")
+                        tooltipAdder.accept(Component.literal("  §7共振:  " + PowerTelemetry.formatMilliFe(t.levelEmaPowerMilliFe()) + " FE/t  §8(单锈级，无共振)")
                             .withStyle(ChatFormatting.GRAY));
                     }
                 }

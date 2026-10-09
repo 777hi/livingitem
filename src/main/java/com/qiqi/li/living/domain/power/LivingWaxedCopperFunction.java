@@ -47,9 +47,6 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
     public static final String ID = "living_waxed_copper";
 
 
-    /** 遥测快照有效数字位数：EMA 类读数量化到 3 位，稳态下钉死值以降低脏写频率（量化降脏化优化） */
-    private static final int TELEMETRY_SIG_FIGS = 3;
-
     /**
      * 感应诊断开关（-Dlivingitem.debug.sensing=true 启用）：
      * 每 20 tick 打印每台发电机的 4 向入边值 / 跟踪器锁相状态 / 通道状态，
@@ -144,7 +141,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         // 组件 = (锈级, rep)（v19：连通性唯一维度 = 氧化等级，形态个性全部迁移到解读规则），
         // 每组件仅锚点跑一次 runBfs，其余发电机 copyFrom 锚点的 ChannelState
         // （相位历史随之同步，O(域) 极廉价）。
-        // accountEnergy 仍逐发电机调用，用各自 pref 读共享域 —— 逐发电机 pref 敏感保留。
+        // EnergyAccounting.accountEnergy 仍逐发电机调用，用各自 pref 读共享域 —— 逐发电机 pref 敏感保留。
 
         // 每 tick 每锈级建一次组件 rep 表（≤54 槽，O(N) 可忽略）
         Map<Integer, int[]> repCache = new HashMap<>();
@@ -186,7 +183,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             GeneratorState gen = e.getValue();
             ItemStack genStack = ctx.getItem(genSlot);
             int genOxidation = WaxedCopperFamily.getOxidationLevel(genStack.getItem());
-            accountEnergy(gen, gen.channel(), gen.preferredPeriod(), baseReByOx, genOxidation, now);
+            EnergyAccounting.accountEnergy(gen, gen.channel(), gen.preferredPeriod(), baseReByOx, genOxidation, now);
         }
 
         if (DEBUG_SENSING) {
@@ -201,7 +198,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             if (stack.isEmpty()) continue;
             int cf = getCoilForm(stack.getItem());
             int ox = WaxedCopperFamily.getOxidationLevel(stack.getItem());
-            var telemetry = buildTelemetry(gen, stack.getCount(), cf, ox, powerData);
+            var telemetry = PowerTelemetry.buildTelemetry(gen, stack.getCount(), cf, ox, powerData);
             ContainerRuntimeCache.update(ctx.getContainerKey(), slot,
                 RuntimeSegments.EMPTY.with(GeneratorSegment.INSTANCE, telemetry));
         }
@@ -396,116 +393,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
 
     // ── 相位解读 pass（v19）：委托纯相位解读器 ──
 
-    // ── 能量记账 ──
-
-    /**
-     * 从通道最佳域计算能量并记入发电机（v18：容器级无总账，改走 baseReByOx 按锈级累加）。
-     *
-     * <p><b>跳变门控（v19）</b>：只从「本 tick 有跳变」的最佳域入账，能量 = 合因子 × P ×
-     * 本 tick 跳变路数。域活着但本 tick 无上升沿 → 产出 0，防止慢时钟碾压快时钟及停机后白拿电。</p>
-     *
-     * <p>同时按锈蚀级累加共振前的基础出力到 {@code baseReByOx}；共振增益只在 tick 末统一套用一次。</p>
-     */
-    static void accountEnergy(GeneratorState gen, ChannelState channel, int pref,
-            long[] baseReByOx, int oxidation, long now) {
-        ChannelState.PhaseDomain active = channel.bestActiveDomain(pref, now);
-        if (active == null) return;
-        double factor = channel.factorOf(active, pref);
-        int period = active.period();
-        if (factor > 0 && period > 0) {
-            long re = PowerMath.eventEnergyRe(factor, period) * active.jumpCount(now);
-            if (re > 0) {
-                gen.onEventEnergy(re);
-                if (baseReByOx != null && oxidation >= 0 && oxidation < baseReByOx.length) {
-                    baseReByOx[oxidation] += re;
-                }
-            }
-        }
-    }
-
-    // ── 仪表盘构建 ──
-
-    /**
-     * 从发电机状态构建检测仪表盘快照（纯逻辑，可单测）。
-     *
-     * @param oxidation 该发电机所属锈蚀级（0~3）——容器级读数口径：本锈级 EMA 功率
-     */
-    static LivingWaxedGeneratorData buildTelemetry(
-            GeneratorState gen, int stackCount, int coilForm, int oxidation, ContainerPowerData powerData) {
-        ChannelState channel = gen.channel();
-        int pref = gen.preferredPeriod();
-        int bestPeriod = channel.bestPeriod(pref);
-        int bestN = channel.bestN(pref);
-        int bestDelta = channel.bestDelta();
-        double effDeltaSum = channel.bestEffDeltaSum(pref);
-
-        // 全部域快照（F3+H 显示用；v19 单通道——切制双通道已随相位解读重构退役）
-        List<DomainSnapshot> domainSnapshots = new ArrayList<>();
-        collectDomains(channel, domainSnapshots);
-
-        // 每个发电机独立显示均值功率（窗口均值，无逐 tick 纹波；毫 FE 定点）+ 本锈级显示功率
-        long emaFe = gen.getDisplayEmaPowerMilliFe();
-        long levelEmaFe = powerData != null ? powerData.getLevelDisplayEmaPowerMilliFe(oxidation) : 0;
-
-        // 网络级共振（容器级，§3.6.1）：只读 powerData 的 EMA 基础值，绝不回灌
-        double resonanceGain = powerData != null ? PowerMath.quantize(powerData.resonanceGain(), TELEMETRY_SIG_FIGS) : 1.0;
-        double resonanceBalance = powerData != null ? PowerMath.quantize(powerData.resonanceBalance(), TELEMETRY_SIG_FIGS) : 0.0;
-        int activeLevels = powerData != null ? powerData.activeOxidationLevels() : 0;
-        List<Long> levelPower = (powerData != null)
-            ? toLevelPowerMilliFeList(powerData.getDisplayEmaByOxidationMilliFe())
-            : List.of(0L, 0L, 0L, 0L);
-
-        if (bestN <= 0) {
-            return new LivingWaxedGeneratorData(
-                0, 0, 0, 0, 0, coilForm, emaFe, levelEmaFe, domainSnapshots,
-                resonanceGain, resonanceBalance, activeLevels, levelPower);
-        }
-        double eff = PowerMath.tuningEfficiency(
-            Math.abs(bestPeriod - pref), pref);
-        double unlock = Math.min(1.0, eff * bestN / pref);
-        int unlockPermille = (int) Math.round(unlock * 1000);
-        int effDeltaSumPermille = (int) Math.round(effDeltaSum * 1000);
-        return new LivingWaxedGeneratorData(
-            bestPeriod, bestN, unlockPermille, bestDelta, effDeltaSumPermille,
-            coilForm, emaFe, levelEmaFe, domainSnapshots,
-            resonanceGain, resonanceBalance, activeLevels, levelPower);
-    }
-
-    /** long[]（各锈级显示均值功率，毫 FE 定点）→ List<Long>（锈级柱状图数据源） */
-    private static List<Long> toLevelPowerMilliFeList(long[] milliFe) {
-        List<Long> out = new ArrayList<>(milliFe.length);
-        for (long v : milliFe) out.add(v);
-        return out;
-    }
-
-    /** 毫 FE 定点 → 人类可读功率串（≥1 FE 显示整数，否则两位小数） */
-    static String formatMilliFe(long milliFe) {
-        return milliFe >= 1000
-            ? String.valueOf(milliFe / 1000)
-            : String.format("%.2f", milliFe / 1000.0);
-    }
-
-    /**
-     * 收集通道的全部域快照到 list。
-     *
-     * <p>相位必须走 {@code phasesSorted()} 而非 {@code deltaByOffset().values()}：
-     * 后者是 HashMap 的值视图，顺序为哈希序，且会丢掉 offset 本身——
-     * 客户端因此拿不到相位位置，相位圆盘无从画起。</p>
-     */
-    private static void collectDomains(ChannelState ch, List<DomainSnapshot> out) {
-        for (var e : ch.domains().entrySet()) {
-            ChannelState.PhaseDomain d = e.getValue();
-            List<Integer> offsets = new ArrayList<>();
-            List<Integer> deltas = new ArrayList<>();
-            for (var phase : d.phasesSorted()) {
-                offsets.add(phase.getKey());
-                deltas.add(phase.getValue());
-            }
-            out.add(new DomainSnapshot(
-                d.period(), d.n(), d.maxDelta(), PowerMath.quantize(d.effDeltaSum(), TELEMETRY_SIG_FIGS),
-                offsets, deltas));
-        }
-    }
+    // ── 遥测构建委托至 PowerTelemetry ──
 
     /**
      * 发电直存（§3.6 v18 锈级专属通道）：本锈级发电量按「剩余容量比例」

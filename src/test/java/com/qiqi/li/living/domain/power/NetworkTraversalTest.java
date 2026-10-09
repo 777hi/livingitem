@@ -197,9 +197,9 @@ class NetworkTraversalTest {
         assertEquals(a.channel().bestFactor(PREF), b.channel().bestFactor(PREF), 1e-6, "合因子应相等");
 
         // (2') DomainSnapshot 的 n/period 相等（用户显式要求）
-        var ta = LivingWaxedCopperFunction.buildTelemetry(a, PREF,
+        var ta = PowerTelemetry.buildTelemetry(a, PREF,
             LivingWaxedGeneratorData.FORM_BLOCK, 0, two.power);
-        var tb = LivingWaxedCopperFunction.buildTelemetry(b, PREF,
+        var tb = PowerTelemetry.buildTelemetry(b, PREF,
             LivingWaxedGeneratorData.FORM_BLOCK, 0, two.power);
         assertEquals(ta.domains().size(), tb.domains().size(), "域数量应相等");
         for (int i = 0; i < ta.domains().size(); i++) {

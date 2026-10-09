@@ -37,7 +37,7 @@ class AccountingGateTest {
                 gen.channel().onPhaseEvent(
                     new PhaseEvent(0, period, (int) (t % period), HIGH, t), gen.preferredPeriod());
             }
-            LivingWaxedCopperFunction.accountEnergy(gen, gen.channel(), gen.preferredPeriod(), null, -1, t);
+            EnergyAccounting.accountEnergy(gen, gen.channel(), gen.preferredPeriod(), null, -1, t);
             totalRe += gen.drainAndEndTick();
         }
         return totalRe;
@@ -52,12 +52,12 @@ class AccountingGateTest {
 
         // t=0：一次跳变 → 有产出
         gen.channel().onPhaseEvent(new PhaseEvent(0, 4, 0, HIGH, 0), 4);
-        LivingWaxedCopperFunction.accountEnergy(gen, gen.channel(), 4, null, -1, 0);
+        EnergyAccounting.accountEnergy(gen, gen.channel(), 4, null, -1, 0);
         assertTrue(gen.drainAndEndTick() > 0, "跳变 tick 应有产出");
 
         // t=1..30：无跳变。旧实现在域存活窗口内每 tick 白拿合因子×P，门控后必须为 0
         for (long t = 1; t <= 30; t++) {
-            LivingWaxedCopperFunction.accountEnergy(gen, gen.channel(), 4, null, -1, t);
+            EnergyAccounting.accountEnergy(gen, gen.channel(), 4, null, -1, t);
             assertEquals(0, gen.drainAndEndTick(), "无跳变 tick（t=" + t + "）必须产出 0");
         }
     }
@@ -87,7 +87,7 @@ class AccountingGateTest {
         assertEquals(1, active.jumpCount(0), "同偏移的两条边应去重为 1 跳");
         assertEquals(1, active.n(), "同偏移合并 n=1");
 
-        LivingWaxedCopperFunction.accountEnergy(gen, ch, 4, null, -1, 0);
+        EnergyAccounting.accountEnergy(gen, ch, 4, null, -1, 0);
         long expected = PowerMath.eventEnergyRe(Math.pow(64, 1.25), 4);
         assertEquals(expected, gen.drainAndEndTick(), "1 跳产出 = 合因子 × P（不因多边重复计）");
 

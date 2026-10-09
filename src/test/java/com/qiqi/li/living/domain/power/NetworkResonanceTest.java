@@ -238,7 +238,7 @@ class NetworkResonanceTest {
     void telemetry_fullResonance() {
         ContainerPowerData pd = new ContainerPowerData();
         for (int i = 0; i < 300; i++) pd.updateOxidationEma(new long[]{2700, 2700, 2700, 2700});
-        LivingWaxedGeneratorData t = LivingWaxedCopperFunction.buildTelemetry(
+        LivingWaxedGeneratorData t = PowerTelemetry.buildTelemetry(
             new GeneratorState(), 1, LivingWaxedGeneratorData.FORM_BLOCK, 0, pd);
         assertEquals(4, t.activeLevels());
         assertEquals(16.0, t.resonanceGain(), LOOSE);
@@ -253,7 +253,7 @@ class NetworkResonanceTest {
     void telemetry_singleVoice() {
         ContainerPowerData pd = new ContainerPowerData();
         for (int i = 0; i < 300; i++) pd.updateOxidationEma(new long[]{2700, 0, 0, 0});
-        LivingWaxedGeneratorData t = LivingWaxedCopperFunction.buildTelemetry(
+        LivingWaxedGeneratorData t = PowerTelemetry.buildTelemetry(
             new GeneratorState(), 1, LivingWaxedGeneratorData.FORM_BLOCK, 0, pd);
         assertEquals(1, t.activeLevels());
         assertEquals(1.0, t.resonanceGain(), EPS);
