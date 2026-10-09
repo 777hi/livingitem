@@ -1751,7 +1751,7 @@ if (be.getLevel().getBlockEntity(be.getBlockPos()) != be) {
 | 转速来源 | 方块实体自身决定（`getGeneratedSpeed()` 读取世界状态） | 由容器中的物品计算得出，注入到下方方块实体 |
 | 恢复时机 | `initialize()` 阶段即可恢复（区块加载时同步调用） | 依赖 `processLevelContainers()` 在 tick 事件中重新计算 |
 | 网络归属 | 动力源方块实体**就是**网络成员 | 下方方块实体（轴/齿轮）是网络成员，但它本身不是自主动力源 |
-| 状态存储 | NBT 序列化（`speed`/`stress`/`capacity`/`network`） | 容器 Attachment（`ContainerStressData`）+ 下方 BE 的 NBT |
+| 状态存储 | NBT 序列化（`speed`/`stress`/`capacity`/`network`） | 容器 Attachment（`ContainerStressData`）+ 下方 BE 的 NBT（**含注入的 rpm/capacity，2026-10-09 起**，见 §9.25） |
 
 **核心矛盾**：我们的"动力源逻辑"不在方块实体上，而在容器处理循环中。这使得区块重载后，下方方块实体无法像 Create 原版动力源那样在 `initialize()` 中自主恢复转速——它必须等容器处理循环跑完才知道自己的转速。
 
@@ -1806,7 +1806,7 @@ ServerTickEvent.Pre → processLevelContainers() → chunk 在缓存 → 处理 
 
 以下风险点是基于代码分析推测的，**未经实际测试验证**，可能根本不会触发：
 
-1. **1 tick 真空期 + 网络重组**：区块重载后第 1 tick，下方 BE 的 rpm=0，`getGeneratedSpeed()` 返回 0。如果该 BE 恰好是一个网络中的关键节点（如齿轮箱），其 rpm 归零可能导致 Create 的 `RotationPropagator` 触发网络重组。当下一个 tick 应力恢复时，网络需要重新建立连接。这个过程中，如果网络中有变速结构（大小齿轮、变速器），方向变化可能导致方块销毁。不过，当前代码中 `StressStateMachine.applyStress()` 在 rpm=0 时不会调用 `attachKinetics()`，所以网络重组应该不会发生。
+1. **1 tick 真空期 + 网络重组**：区块重载后第 1 tick，下方 BE 的 rpm=0，`getGeneratedSpeed()` 返回 0。如果该 BE 恰好是一个网络中的关键节点（如齿轮箱），其 rpm 归零可能导致 Create 的 `RotationPropagator` 触发网络重组。当下一个 tick 应力恢复时，网络需要重新建立连接。这个过程中，如果网络中有变速结构（大小齿轮、变速器），方向变化可能导致方块销毁。🔴 **2026-10-09：本风险真的发生了，原判断被推翻** —— 见 **§9.25**。原判断只看了「rpm=0 时不 `attachKinetics()`」，**漏掉了下一 tick 的 `0 → 非0` 激活路径同样会 `attachKinetics()`**，且那时邻居已被 Create 清零 ⇒ 命中 `propagateNewSource` 的「压制自身网络」销毁分支。已由 §9.25 的两处修复（激活分支先 setSpeed 再 detach + rpm 落盘）解决。
 
 2. **`getChunkNow()` 在异步加载中返回 null**：`processLevelContainers` 使用 `getChunkNow()` 检查区块是否加载。如果区块正在异步加载中，`getChunkNow()` 可能返回 null，导致区块被从缓存中移除。虽然 `ChunkEvent.Load` 会在同 tick 内重新加回，但如果 `ChunkEvent.Load` 在更早的 tick 已经触发过（区块"逻辑上已加载"但数据还在异步传输），则没有事件能重新加回。不过，`ChunkEvent.Load` 是在区块**完全加载完成后**才触发的，此时 `getChunkNow()` 应该返回非 null，所以这个场景在实际中几乎不可能发生。
 
@@ -1978,3 +1978,58 @@ void livingItem$onChunkUnloaded();
 2. **Mixin 类中任何一个注入失败都会导致整个类失效**——这是最危险的特性，因为其他看似无关的注入也会被连带取消
 3. **启动时检查 Mixin 应用日志**：搜索 `Mixin apply.*failed` 或 `InvalidInjectionException`，不要只关注运行时日志
 4. **`@Shadow` 字段必须显式赋值**：当 Mixin 用 `cancellable = true` 取消原始方法时，原始方法中的字段赋值（如 `this.lastCapacityProvided = capacity`）不会执行，必须在 Mixin 中手动赋值
+
+### 9.25 重进存档后下方小齿轮被销毁（rpm 未落盘 + 激活分支未 detach）
+
+**现象**（2026-10-09）：活水车向容器下方输出应力，第一个小齿轮正常，**啮合它的第二个小齿轮在每次重进存档后变成掉落物**（每次都发生，非累积）。
+
+**根因**：Create 的 `RotationPropagator.propagateNewSource()` 主动销毁了方块（`world.destroyBlock(pos, true)`，`true` = 掉落物品）。命中的是它的「**不要压制自己所在的网络（cycle）**」分支：
+
+```java
+if (Math.abs(newSpeed) >= Math.abs(speedOfNeighbour)) {
+    if (!currentTE.hasNetwork() || currentTE.network.equals(neighbourTE.network)) {
+        float epsilon = Math.abs(speedOfNeighbour) / 256f / 256f;
+        if (Math.abs(newSpeed) > Math.abs(speedOfNeighbour) + epsilon)
+            world.destroyBlock(pos, true);   // ← 销毁并掉落
+        continue;
+    }
+    ...
+}
+```
+
+**实测日志**（临时 `[StressDiag]`，诊断后已删）：
+
+```
+prevRpm=-0.0 newRpm=-8.0 cap=288.0 | speed=0.0 hasNet=true net=822709575544902 flicker=0 genSpeed=0.0 isSource=false
+```
+
+- `flicker=0` ⇒ 排除 `flickerScore > 128` 分支
+- `net=822709575544902` **恰好等于 `BlockPos(2993,70,15).asLong()`** ⇒ 重载后 `network` 从 NBT 恢复成「自身坐标」，而邻居在 `setSource(本块)` 时也 `setNetwork(源.network)` ⇒ **同网**
+- 邻居转速被 Create 清 0（它认为本块没源）⇒ `|newSpeed| > 0 + 0` 恒真 ⇒ **每次都销毁**
+
+**为什么重载才触发**：`StressStateMachine` 的 `rpm` 是 Mixin 的**内存字段、不落盘** ⇒ 重载后 `getGeneratedSpeed()` 返回 0 ⇒ Create 的 `read()` 恢复的 `speed` 被 tick 清零；随后我们的激活分支（`prev==0 → 非0`）**未先 detach** 就 `setNetwork + attachKinetics()` ⇒ 命中上面的 cycle 分支。
+
+⚠️ **这推翻了 §9.22.4「潜在风险 1」的乐观判断** —— 那里认为「`applyStress()` 在 rpm=0 时不 attachKinetics，所以网络重组不会发生」，但漏掉了**下一 tick 的 `0 → 非0` 激活路径**同样会 `attachKinetics`。
+
+**修复（两处，互补）**：
+
+1. **激活分支改为「先 setSpeed、再 detachKinetics」**（`StressStateMachine.applyStress`）。
+   Create 的 `RotationPropagator.handleRemoved`（`detachKinetics` 的实现）在
+   `getTheoreticalSpeed() == 0` 时**直接 return** —— 重载后 speed 已被清 0，
+   所以必须**先设速度**，detach 才真正把邻居从「以本块为源的旧网络」里摘出来；
+   摘干净后 `attachKinetics` 走 `overpower` 分支正常接管，不再销毁。
+
+2. **rpm 落盘（治本）**：`KineticBlockEntityMixin` 注入 Create 的 `write` / `read`
+   （`@At("TAIL")`，仅 `clientPacket == false` 即磁盘，**不改网络包**），写 `LivingItemRpm`；
+   重载时 `StressStateMachine.restoreFromDisk()` 静默恢复 ⇒ `getGeneratedSpeed()`
+   **在 Create 重建动力网之前**就非 0 ⇒ Create 不清转速、邻居转速保留 ⇒
+   容器 tick 的注入退化为「无变化」（只 `updateNetwork`）⇒ **完全不走 detach/attach**。
+
+**教训**：
+1. **凡是「跨 tick 的运行时状态」，都要问一句：重载后它还成立吗？** 我们的 rpm 不落盘，
+   导致重载后「我方方块在 Create 眼里不是源」—— 这是与 Create 原版动力源最大的行为差异
+   （原版 `getGeneratedSpeed()` 从方块状态直接算得，`initialize()` 时即正确）。
+2. **`detachKinetics()` 不是无条件生效的**：`handleRemoved` 有 `speed == 0` 早退守卫 ⇒
+   想清理网络，必须保证调用时转速非 0。
+3. **Create 会主动销毁方块**（`destroyBlock(pos, true)`）：任何让它判定「方向冲突 / 超速 /
+   抖动过频 / 压制自身网络」的注入，都会把方块变成掉落物。注入前必须先把状态摆正。

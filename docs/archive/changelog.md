@@ -43,6 +43,20 @@
 - 🧹 **清理 `LivingItemManager` 的孤儿 javadoc**：A1 迁移残留的 7 个空壳 `/** */` 块
   （底下无对应成员），**361 → 277 行**。`551 全绿`。
 
+- 🐛 **修复：活水车应力输出导致 Create 小齿轮「重进存档后变成掉落物」**（每次都发生）。
+  根因是 **Create 主动销毁** —— `RotationPropagator.propagateNewSource` 的
+  「不要压制自己所在的网络（cycle）」分支 `world.destroyBlock(pos, true)`：
+  重载后本块 `network` 从 NBT 恢复成「自身坐标」、邻居同网，而我们的激活分支
+  （`prev==0 → 非0`）**未先 detach** 就 `setNetwork + attachKinetics()`；邻居转速又被
+  Create 清 0 ⇒ `|newSpeed| > 0 + ε` 恒真。（实测日志 `hasNet=true net=<自身坐标>
+  flicker=0 speed=0` ⇒ 排除 flicker 分支。）
+  **两处修复**：① 激活分支改「**先 setSpeed、再 detachKinetics**」—— Create 的
+  `handleRemoved` 在 `speed==0` 时直接 return，必须先设速度 detach 才生效；
+  ② **rpm 落盘**（`KineticBlockEntityMixin` 注入 Create 的 `write`/`read`，仅磁盘）
+  ⇒ 重载后 `getGeneratedSpeed()` 立即非 0 ⇒ 容器 tick 的注入退化为「无变化」
+  ⇒ **从根上不触发 `propagateNewSource`**。
+  文档：`living-water-wheel-tech.md` §9.25（并修正 §9.22.4 被推翻的风险预测）。`551 全绿`。
+
 ---
 
 ## 2026-10-08
