@@ -297,8 +297,14 @@ class WaxedCopperStorageTest {
     }
 
     @Test
-    @DisplayName("取消活化的铜灯不参与能源系统（电量保留但不进出）")
+    @DisplayName("未活化的铜灯不参与容器能源系统 —— 手动构造「未活化 + 带电」栈，仍不进出")
     void deactivatedBulb_excluded() {
+        // ⚠️ 本用例【手动构造】带电的未活化栈。真实流程下未活化灯恒为空 ——
+        //    setLiving(false) → clearLivingData 会按各功能的 getOwnedComponentTypes()
+        //    逐个移除组件，其中就含 LIVING_WAXED_BULB_DATA（2026-10-09 探针实测：charge 4000 → 0）。
+        //    这里刻意造出「万一带电」的边界，验证容器路径的排除判据（BulbBank.isBulb 要求
+        //    isLivingItem）依然成立。
+        //    ⚠️ 原 DisplayName 写「电量保留但不进出」是误导 —— 取消活化【不】保留电量。
         ItemStack stack = new ItemStack(Items.WAXED_COPPER_BULB, 16);   // 未打 IS_LIVING
         LivingWaxedBulbData.set(stack, new LivingWaxedBulbData(4_000));
         IItemHandler handler = new FakeHandler(stack);

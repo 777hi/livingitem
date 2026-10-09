@@ -6,12 +6,34 @@ import net.neoforged.neoforge.energy.IEnergyStorage;
 import com.qiqi.li.living.api.LivingItemManager;
 
 /**
- * 涂蜡铜灯物品能量接口 —— 通用电池（双向，§3.6 v17.5）。
+ * <b>活</b>涂蜡铜灯物品能量接口 —— 通用电池（双向，§3.6 v17.5）。
  *
  * <p>每盏等量充/放（q ± Δ/count，向下取整），拆分/合并/搬运天然守恒。
  * 充电受每盏容量 C 限制；无出身论——外部充的电与红电发的电混存不分来源。</p>
+ *
+ * <p>⚠️ <b>仅「已活化」的涂蜡铜灯能拿到本接口</b>（2026-10-09 收紧）。准入判据在
+ * {@link #of(ItemStack)}：未活化返回 {@code null}，由 {@code LivingItem} 的 capability
+ * provider 直接透传。原因：capability 按<b>原版物品</b>注册 ⇒ 未活化灯也会被问到；
+ * 不判则外部 mod 能对「原版方块」充放电，绕过「活化 = 进入能量系统」的门槛，
+ * 且与容器路径（{@link BulbBank#isBulb} 要求 {@code isLivingItem}）不一致。</p>
+ *
+ * <p>另：取消活化会清空电量组件（{@code clearLivingData} 按各功能的
+ * {@code getOwnedComponentTypes()} 逐个移除）⇒ <b>不存在「带电的未活化灯」这一状态</b>，
+ * 因此收紧不会丢任何数据。</p>
  */
 public class BulbItemEnergyStorage implements IEnergyStorage {
+
+    /**
+     * 取某栈的能量接口 —— <b>准入判据的唯一归属地</b>。
+     *
+     * <p>供 {@code LivingItem} 的 {@code Capabilities.EnergyStorage.ITEM} provider 直接透传：
+     * 返回 {@code null} 表示「这个栈不提供能量能力」（NeoForge 约定 = 无该能力）。</p>
+     *
+     * @return 已活化的涂蜡铜灯 → 实例；否则 {@code null}
+     */
+    public static BulbItemEnergyStorage of(ItemStack stack) {
+        return LivingItemManager.isLivingItem(stack) ? new BulbItemEnergyStorage(stack) : null;
+    }
 
     private final ItemStack stack;
 

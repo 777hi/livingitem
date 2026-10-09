@@ -2,6 +2,9 @@ package com.qiqi.li.living.domain.power;
 import com.qiqi.li.living.domain.power.LivingWaxedBulbData;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.DisplayName;
@@ -45,6 +48,21 @@ class BulbItemEnergyStorageTest {
 
         assertEquals(32, storage.receiveEnergy(32, false));
         assertEquals(2_000, LivingWaxedBulbData.of(stack).chargeMilliFe());
+    }
+
+    @Test
+    @DisplayName("⚠️ 未活化灯拿不到电池实例（2026-10-09 收紧）—— capability provider 返回 null")
+    void notLiving_yieldsNoStorage() {
+        // 收紧前：EnergyStorage.ITEM 按【原版物品】注册、provider 又不判活化
+        // ⇒ 未活化灯也能被外部 mod 充放电，绕过「活化 = 进入能量系统」的门槛，
+        // 且与容器路径（BulbBank.isBulb 要求 isLivingItem）不一致。
+        // 收紧后：准入判据收在 BulbItemEnergyStorage.of()，LivingItem 只透传。
+        ItemStack notLiving = new ItemStack(Items.WAXED_COPPER_BULB, 16);   // 刻意不 setLiving
+        assertFalse(LivingItemManager.isLivingItem(notLiving));
+        assertNull(BulbItemEnergyStorage.of(notLiving),
+            "未活化灯不该提供能量能力 —— 否则外部 mod 能给「原版方块」充放电");
+
+        assertNotNull(BulbItemEnergyStorage.of(bulb(16)), "活化灯照常提供能量能力");
     }
 
     @Test

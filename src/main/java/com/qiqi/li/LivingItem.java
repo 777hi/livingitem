@@ -506,9 +506,14 @@ public class LivingItem {
             event.registerBlockEntity(Capabilities.EnergyStorage.BLOCK, beType, blockEnergyProvider);
         }
 
-        // ── 铜灯物品 = 通用电池（双向：电池槽放电 + 充能槽充电，§3.6） ──
+        // ── 活铜灯 = 通用电池（双向：电池槽放电 + 充能槽充电，§3.6） ──
+        // ⚠️ 必须判活化（与上方活箱子 / 活末影箱同款）：capability 按【原版物品】注册
+        // ⇒ 未活化的涂蜡铜灯也会被问到；不判则外部 mod 能给「原版方块」充放电，
+        // 绕过「活化 = 进入能量系统」的门槛，且与容器路径的 BulbBank.isBulb 不一致。
+        // 2026-10-09 收紧（此前漏判）—— 准入判据在 BulbItemEnergyStorage.of()，
+        // 本处只透传（L4 只接线，判据归领域）。
         event.registerItem(Capabilities.EnergyStorage.ITEM,
-            (stack, context) -> new com.qiqi.li.living.domain.power.BulbItemEnergyStorage(stack),
+            (stack, context) -> com.qiqi.li.living.domain.power.BulbItemEnergyStorage.of(stack),
             Items.WAXED_COPPER_BULB, Items.WAXED_EXPOSED_COPPER_BULB,
             Items.WAXED_WEATHERED_COPPER_BULB, Items.WAXED_OXIDIZED_COPPER_BULB);
 
