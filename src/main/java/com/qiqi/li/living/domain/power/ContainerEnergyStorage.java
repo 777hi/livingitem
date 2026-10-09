@@ -30,15 +30,6 @@ import com.qiqi.li.living.api.LivingItemManager;
  */
 public class ContainerEnergyStorage implements IEnergyStorage {
 
-    /**
-     * 零头回收循环的防御性轮数上限。
-     *
-     * <p>合法情形下 leftover = Σ(share mod count) ≤ Σ(count−1)，且每轮至少扣掉
-     * 一堆的 count，正常 1~2 轮就回收完（最坏 count=1 的堆参与时约 63 轮）。
-     * 超过这个数说明份额算错了（历史上是 long 溢出），此时<b>宁可少充也不能让服务端
-     * 卡死</b>——少充依然满足「实充 ≤ 记账」的口径。</p>
-     */
-    private static final int MAX_LEFTOVER_PASSES = 256;
 
     private final BlockEntity be;
 
@@ -132,7 +123,7 @@ public class ContainerEnergyStorage implements IEnergyStorage {
         long m = 0;
         for (int i = 0; i < items.getSlots(); i++) {
             ItemStack stack = items.getStackInSlot(i);
-            if (isBulb(stack)) {
+            if (BulbBank.isBulb(stack)) {
                 m += LivingWaxedBulbData.of(stack).totalChargeMilliFe(stack.getCount());
             }
         }
@@ -149,124 +140,30 @@ public class ContainerEnergyStorage implements IEnergyStorage {
         long m = 0;
         for (int i = 0; i < items.getSlots(); i++) {
             ItemStack stack = items.getStackInSlot(i);
-            if (isBulb(stack)) {
+            if (BulbBank.isBulb(stack)) {
                 m += LivingWaxedBulbData.totalCapacityMilliFe(stack.getCount());
             }
         }
         return (int) Math.min(m / 1000L, Integer.MAX_VALUE);   // 同上：clamp 到 int 公约上限
     }
 
-    private static boolean isBulb(ItemStack stack) {
-        // 仅活化的涂蜡铜灯参与能源系统（取消活化 = 普通物品，电量保留但不进出）
-        //
-        // 短路顺序很重要：isWaxedBulb 是 4 次 Item 引用比较（纳秒级、无内存访问），
-        // isLivingItem 要查 DataComponentMap（PatchedDataComponentMap →
-        // Reference2ObjectArrayMap 线性扫描，且是随机内存访问 = cache miss）。
-        // 容器里绝大多数槽位不是铜灯，先做便宜的判断能省掉几乎全部组件查询。
-        // 热路径：Flux Networks 等外部电力 mod 每 tick 高频调用 receiveEnergy，
-        // 每次都全量扫所有槽位 —— 这里是主要的放大点。
-        return !stack.isEmpty() && WaxedCopperFamily.isWaxedBulb(stack.getItem())
-            && LivingItemManager.isLivingItem(stack);
-    }
 
     // ── 充电核心（mFE）──
 
+
     /**
-     * 充电：外部来的电按「剩余容量比例」分配入各铜灯堆
-     * （每盏 q += share/count 向下取整，零头保守丢弃），受每盏容量 C 上限。
-     * 有实际充入时回调 {@code onChanged}（落盘持久化）。
+     * 充电：委托 {@link BulbBank}（2026-10-09 power 收口 步骤 2 第 1 步）。
+     *
+     * <p>算法（按剩余容量比例分配 + 整 FE 量化 + 零头回收 + 完整步进保护）原样搬进
+     * {@link BulbBank#deposit}，本方法只做「扫描 → 充入 → 落盘回调」的编排。
+     * 性能契约（单遍 {@code getStackInSlot}）与语义红线（宁损勿造）见该类 javadoc。</p>
      */
     static long receive(IItemHandler items,
                         long wantMilliFe, boolean simulate, @Nullable Runnable onChanged) {
-        int slots = items.getSlots();
-        // 单遍收集：只取一次 getStackInSlot，把铜灯堆的引用与剩余容量留在数组里，
-        // 后续「比例分配」与「零头回收」两遍全部走数组（非铜灯槽位保持 null）。
-        //
-        // 原实现把同一批槽位取了 3 遍（收集 / 分配 / leftover 每轮），每遍都是
-        // SidedInvWrapper → Container.getItem → NonNullList.get 的随机内存访问。
-        // 外部电力 mod（Flux Networks）每 tick 高频调用 receiveEnergy，spark 实测
-        // 60s 窗口内本方法独占 19s（服务端线程 98.79%），其中 81% 落在 getStackInSlot 上。
-        //
-        // 只多分配 stacks[] 一个数组（比原实现的 remaining[] 多一个），不引入任何
-        // 跨调用状态——本方法保持无状态，语义与原实现逐一对应。
-        ItemStack[] stacks = new ItemStack[slots];
-        long[] remaining = new long[slots];
-        long totalRemaining = 0;
-        for (int i = 0; i < slots; i++) {
-            ItemStack stack = items.getStackInSlot(i);
-            if (!isBulb(stack)) continue;
-            int count = stack.getCount();
-            long rem = PowerMath.BULB_UNIT_CAPACITY_MFE * count
-                - LivingWaxedBulbData.of(stack).totalChargeMilliFe(count);
-            stacks[i] = stack;
-            remaining[i] = rem;
-            totalRemaining += rem;
-        }
-        if (totalRemaining <= 0) return 0;   // 全满（或无铜灯）
-
-        // 整 FE 量化：机器支付多少 FE，铜灯就收多少 mFE×1000——杜绝取整零头凭空造电
-        long accept = Math.min(wantMilliFe, totalRemaining);
-        accept -= accept % 1000;
-        if (accept <= 0) return 0;
-
-        // 按剩余容量比例分配（两遍式：先算各堆份额，再统一落账）
-        long distributed = 0;
-        boolean changed = false;
-        for (int i = 0; i < slots; i++) {
-            ItemStack stack = stacks[i];
-            if (stack == null || remaining[i] <= 0) continue;
-            // 份额统一走 PowerMath.mulDivFloor —— 那里集中了 long 溢出的防护。
-            // 本处的量级：accept 可到 1e12、remaining[i] 可到 6.4e10，直接相乘 = 1.1e23
-            // ≫ Long.MAX（9.22e18）→ 商变负数/乱值 → 本轮几乎分不出去 → leftover = accept
-            // → 零头回收的 while 每轮只扣 count mFE，退化成 ~10 亿轮全槽扫描
-            // （实测 27 槽 × 64 盏 + 外部请求 50 万 FE ⇒ 7.8e6 次 getStackInSlot
-            // ≈ 1.17s/tick，与 spark 的 1094ms 慢 tick 吻合）。详见 PowerMath#mulDivFloor。
-            long share = PowerMath.mulDivFloor(accept, remaining[i], totalRemaining);
-            int count = stack.getCount();
-            long perLamp = share / count;
-            if (perLamp <= 0) continue;
-            if (!simulate) {
-                LivingWaxedBulbData data = LivingWaxedBulbData.of(stack);
-                LivingWaxedBulbData.set(stack,
-                    data.withChargeMilliFe(data.chargeMilliFe() + perLamp));
-                changed = true;
-            }
-            distributed += perLamp * count;
-        }
-
-        // 零头回收（2026-09-09 修复记账）：每堆一次写入 = 每盏 q+1 → 实际充入 count mFE，
-        // 账面必须同样按 count 计——旧实现按 1 mFE 计账，实充是记账的 count 倍，
-        // 每 tick 按「堆数 × count」凭空造电（RoundTripConservationIT 实测 1000t +2043 FE）。
-        // 完整步进保护：count > leftover 时跳过（一次写入不得越过 accept）；
-        // 不足一个完整步进的残余（< 最小有空间堆的 count，≤63 mFE）保守丢弃——
-        // 与整 FE 量化同一「宁损勿造」方向。
-        long leftover = accept - distributed;
-        int passes = 0;
-        while (leftover > 0 && passes++ < MAX_LEFTOVER_PASSES) {
-            boolean progressed = false;
-            for (int i = 0; i < slots && leftover > 0; i++) {
-                ItemStack stack = stacks[i];
-                if (stack == null) continue;
-                int count = stack.getCount();
-                if (count > leftover) continue;   // 完整步进保护
-                long q = LivingWaxedBulbData.of(stack).chargeMilliFe();
-                if (q >= PowerMath.BULB_UNIT_CAPACITY_MFE) continue;
-                if (!simulate) {
-                    LivingWaxedBulbData.set(stack,
-                        LivingWaxedBulbData.of(stack).withChargeMilliFe(q + 1));
-                    changed = true;
-                }
-                distributed += count;             // 记账 = 实充（count mFE）
-                leftover -= count;
-                progressed = true;
-            }
-            if (!progressed) break;
-        }
-
-        if (changed && onChanged != null && !simulate) onChanged.run();
-        // 声明口径 = accept（整 FE）：实充 ≤ accept，残余 ≤ 最小堆 count−1 mFE 保守丢弃，
-        // 灯实收恒 ≤ 支付方按返回值记账的量——只许损耗、不许凭空产生。
-        return accept;
+        BulbBank bank = BulbBank.scan(items, null);
+        long declared = bank.deposit(wantMilliFe, simulate, BulbBank.FePolicy.FLOOR_WHOLE_FE);
+        if (bank.isDirty() && onChanged != null && !simulate) onChanged.run();
+        return declared;
     }
 
     // ── 取电核心（mFE）──
@@ -284,7 +181,7 @@ public class ContainerEnergyStorage implements IEnergyStorage {
         boolean changed = false;
         for (int i = 0; i < items.getSlots() && remaining > 0; i++) {
             ItemStack stack = items.getStackInSlot(i);
-            if (!isBulb(stack)) continue;
+            if (!BulbBank.isBulb(stack)) continue;
             int count = stack.getCount();
             long q = LivingWaxedBulbData.of(stack).chargeMilliFe();
             long takeTotal = Math.min(q * count, remaining);
