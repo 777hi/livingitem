@@ -16,7 +16,6 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.Item;
 import com.qiqi.li.living.util.WaxedCopperFamily;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
 import com.qiqi.li.living.api.LivingItemFunction;
@@ -130,7 +129,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         Map<Integer, GeneratorState> active = new HashMap<>();
         for (SlotEntry entry : entries) {
             ItemStack stack = entry.stack();
-            if (stack.isEmpty() || isWaxedBulb(stack.getItem())) continue;
+            if (stack.isEmpty() || WaxedCopperFamily.isWaxedBulb(stack.getItem())) continue;
             int slot = entry.slotIndex();
             if (slot < 0 || slot >= size) continue;
             GeneratorState gen = powerData.getOrCreateGenerator(slot);
@@ -158,7 +157,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
 
         for (var e : active.entrySet()) {
             int genSlot = e.getKey();
-            int ox = getOxidationLevel(ctx.getItem(genSlot).getItem());
+            int ox = WaxedCopperFamily.getOxidationLevel(ctx.getItem(genSlot).getItem());
             int rep = repOf(ox, genSlot, repCache, ctx, size, containerWidth);
             groups.computeIfAbsent(new NetworkKey(ox, rep), k -> new ArrayList<>()).add(genSlot);
         }
@@ -190,7 +189,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             int genSlot = e.getKey();
             GeneratorState gen = e.getValue();
             ItemStack genStack = ctx.getItem(genSlot);
-            int genOxidation = getOxidationLevel(genStack.getItem());
+            int genOxidation = WaxedCopperFamily.getOxidationLevel(genStack.getItem());
             accountEnergy(gen, gen.channel(), gen.preferredPeriod(), baseReByOx, genOxidation, now);
         }
 
@@ -205,7 +204,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             ItemStack stack = ctx.getItem(slot);
             if (stack.isEmpty()) continue;
             int cf = getCoilForm(stack.getItem());
-            int ox = getOxidationLevel(stack.getItem());
+            int ox = WaxedCopperFamily.getOxidationLevel(stack.getItem());
             var telemetry = buildTelemetry(gen, stack.getCount(), cf, ox, powerData);
             ContainerRuntimeCache.update(ctx.getContainerKey(), slot,
                 RuntimeSegments.EMPTY.with(GeneratorSegment.INSTANCE, telemetry));
@@ -393,8 +392,8 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         ItemStack ns = ctx.getItem(neighbor);
         if (ns.isEmpty()) return -1;
         if (!WaxedCopperFamily.isWaxedCopperBlock(ns.getItem())) return -1;
-        if (isWaxedBulb(ns.getItem())) return -1; // 铜灯不导电
-        if (getOxidationLevel(ns.getItem()) != oxidation) return -1;
+        if (WaxedCopperFamily.isWaxedBulb(ns.getItem())) return -1; // 铜灯不导电
+        if (WaxedCopperFamily.getOxidationLevel(ns.getItem()) != oxidation) return -1;
         return neighbor;
     }
 
@@ -413,8 +412,8 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             for (int s = 0; s < size; s++) {
                 if (arr[s] != -1) continue;
                 ItemStack st = ctx.getItem(s);
-                if (st.isEmpty() || !WaxedCopperFamily.isWaxedCopperBlock(st.getItem()) || isWaxedBulb(st.getItem())) continue;
-                if (getOxidationLevel(st.getItem()) != oxidation) continue;
+                if (st.isEmpty() || !WaxedCopperFamily.isWaxedCopperBlock(st.getItem()) || WaxedCopperFamily.isWaxedBulb(st.getItem())) continue;
+                if (WaxedCopperFamily.getOxidationLevel(st.getItem()) != oxidation) continue;
                 // 收集该组件全部槽位（弱连通）
                 int cn = 0, h = 0, t = 0;
                 q[t++] = s; arr[s] = s; comp[cn++] = s;
@@ -453,7 +452,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
 
     private static int chiseledInputEdge(ContainerContext ctx, int slot) {
         ItemStack stack = ctx.getItem(slot);
-        if (stack.isEmpty() || !isWaxedChiseled(stack.getItem())) return -1;
+        if (stack.isEmpty() || !WaxedCopperFamily.isWaxedChiseled(stack.getItem())) return -1;
         return pos2dToEdgeDir(LivingWaxedChiseledData.of(stack).inputDir());
     }
 
@@ -483,7 +482,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             int pref = gen.preferredPeriod();
             String inputDirStr = "";
             ItemStack genStack = ctx.getItem(slot);
-            if (isWaxedChiseled(genStack.getItem())) {
+            if (WaxedCopperFamily.isWaxedChiseled(genStack.getItem())) {
                 inputDirStr = " inputDir=" + LivingWaxedChiseledData.of(genStack).inputDir().getSymbol();
             }
             ModLog.CONTAINER.info("[涂蜡感知] {} slot={} pref={} bestP={} n={} Σ√|Δ|={} emaFe={}{} | {}",
@@ -851,7 +850,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
      * （含共振增益）；入灯后仍是通用 FE，放电 / 外部充电无锈级限制。</p>
      *
      * @param generatedRe 本锈级发电量（RE，已含共振增益）
-     * @param oxidation   目标锈蚀级（0~3），只分配给 {@code getOxidationLevel(bulb) == oxidation} 的灯堆
+     * @param oxidation   目标锈蚀级（0~3），只分配给 {@code WaxedCopperFamily.getOxidationLevel(bulb) == oxidation} 的灯堆
      * @return true 表示有铜灯实际充入了电量（需 setChanged 落盘）
      */
     static boolean distributeToBulbs(long generatedRe, int oxidation, List<SlotEntry> entries) {
@@ -863,8 +862,8 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         long totalRemaining = 0;
         for (SlotEntry entry : entries) {
             ItemStack stack = entry.stack();
-            if (stack.isEmpty() || !isWaxedBulb(stack.getItem())) continue;
-            if (getOxidationLevel(stack.getItem()) != oxidation) continue;   // v18：锈级专属通道
+            if (stack.isEmpty() || !WaxedCopperFamily.isWaxedBulb(stack.getItem())) continue;
+            if (WaxedCopperFamily.getOxidationLevel(stack.getItem()) != oxidation) continue;   // v18：锈级专属通道
             long rem = LivingWaxedBulbData.totalCapacityMilliFe(stack.getCount())
                 - LivingWaxedBulbData.of(stack).totalChargeMilliFe(stack.getCount());
             if (rem <= 0) continue;
@@ -924,7 +923,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
 
     @Override
     public boolean updateSlotDirection(ItemStack stack, String slotName, Pos2D direction) {
-        if (!isWaxedChiseled(stack.getItem())) return false;
+        if (!WaxedCopperFamily.isWaxedChiseled(stack.getItem())) return false;
         var data = LivingWaxedChiseledData.of(stack);
         if ("input".equals(slotName)) {
             LivingWaxedChiseledData.set(stack, data.withInputDir(direction));
@@ -937,60 +936,10 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
 
     /** 从物品取线圈形态（用于 telemetry 和 tooltip 显示） */
     static int getCoilForm(Item item) {
-        if (isWaxedChiseled(item)) return LivingWaxedGeneratorData.FORM_CHISELED;
-        if (isWaxedCut(item)) return LivingWaxedGeneratorData.FORM_CUT;
-        if (isWaxedGrate(item)) return LivingWaxedGeneratorData.FORM_GRATE;
+        if (WaxedCopperFamily.isWaxedChiseled(item)) return LivingWaxedGeneratorData.FORM_CHISELED;
+        if (WaxedCopperFamily.isWaxedCut(item)) return LivingWaxedGeneratorData.FORM_CUT;
+        if (WaxedCopperFamily.isWaxedGrate(item)) return LivingWaxedGeneratorData.FORM_GRATE;
         return LivingWaxedGeneratorData.FORM_BLOCK;
     }
 
-
-    /** 涂蜡铜块本体（1 线圈 × 4 向全叠加） */
-    public static boolean isWaxedBase(Item item) {
-        return item == Items.WAXED_COPPER_BLOCK || item == Items.WAXED_EXPOSED_COPPER
-            || item == Items.WAXED_WEATHERED_COPPER || item == Items.WAXED_OXIDIZED_COPPER;
-    }
-
-    /** 涂蜡雕文（1 线圈 × 1 向，输入/输出双方向 WASD 配置） */
-    public static boolean isWaxedChiseled(Item item) {
-        return item == Items.WAXED_CHISELED_COPPER || item == Items.WAXED_EXPOSED_CHISELED_COPPER
-            || item == Items.WAXED_WEATHERED_CHISELED_COPPER || item == Items.WAXED_OXIDIZED_CHISELED_COPPER;
-    }
-
-    /** 涂蜡切制（2 线圈 H/V 隔离） */
-    public static boolean isWaxedCut(Item item) {
-        return item == Items.WAXED_CUT_COPPER || item == Items.WAXED_EXPOSED_CUT_COPPER
-            || item == Items.WAXED_WEATHERED_CUT_COPPER || item == Items.WAXED_OXIDIZED_CUT_COPPER;
-    }
-
-    /** 涂蜡格栅（1 线圈 × 4 向 + 频率过滤，过滤待定） */
-    public static boolean isWaxedGrate(Item item) {
-        return item == Items.WAXED_COPPER_GRATE || item == Items.WAXED_EXPOSED_COPPER_GRATE
-            || item == Items.WAXED_WEATHERED_COPPER_GRATE || item == Items.WAXED_OXIDIZED_COPPER_GRATE;
-    }
-
-    /** 涂蜡铜灯（电池，专职储能不发电） */
-    public static boolean isWaxedBulb(Item item) {
-        return item == Items.WAXED_COPPER_BULB || item == Items.WAXED_EXPOSED_COPPER_BULB
-            || item == Items.WAXED_WEATHERED_COPPER_BULB || item == Items.WAXED_OXIDIZED_COPPER_BULB;
-    }
-
-    /** 锈蚀档位 0~3（用于铜块网络分组，同等级才互通） */
-    public static int getOxidationLevel(Item item) {
-        if (item == Items.WAXED_COPPER_BLOCK || item == Items.WAXED_CHISELED_COPPER
-            || item == Items.WAXED_CUT_COPPER || item == Items.WAXED_COPPER_GRATE
-            || item == Items.WAXED_COPPER_BULB) {
-            return 0;
-        }
-        if (item == Items.WAXED_EXPOSED_COPPER || item == Items.WAXED_EXPOSED_CHISELED_COPPER
-            || item == Items.WAXED_EXPOSED_CUT_COPPER || item == Items.WAXED_EXPOSED_COPPER_GRATE
-            || item == Items.WAXED_EXPOSED_COPPER_BULB) {
-            return 1;
-        }
-        if (item == Items.WAXED_WEATHERED_COPPER || item == Items.WAXED_WEATHERED_CHISELED_COPPER
-            || item == Items.WAXED_WEATHERED_CUT_COPPER || item == Items.WAXED_WEATHERED_COPPER_GRATE
-            || item == Items.WAXED_WEATHERED_COPPER_BULB) {
-            return 2;
-        }
-        return 3;
-    }
 }

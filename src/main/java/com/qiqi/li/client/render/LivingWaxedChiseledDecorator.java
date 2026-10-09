@@ -3,6 +3,7 @@ package com.qiqi.li.client.render;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import com.qiqi.li.LivingItem;
+import com.qiqi.li.living.util.WaxedCopperFamily;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.domain.power.LivingWaxedChiseledData;
 import com.qiqi.li.living.domain.power.LivingWaxedCopperFunction;
@@ -31,7 +32,7 @@ public class LivingWaxedChiseledDecorator implements IItemDecorator {
     @Override
     public boolean render(GuiGraphics guiGraphics, Font font, ItemStack stack, int xOffset, int yOffset) {
         if (!LivingItemManager.isLivingItem(stack)) return false;
-        if (!LivingWaxedCopperFunction.isWaxedChiseled(stack.getItem())) return false;
+        if (!WaxedCopperFamily.isWaxedChiseled(stack.getItem())) return false;
 
         LivingWaxedChiseledData data = LivingWaxedChiseledData.of(stack);
         if (data == null) return false;

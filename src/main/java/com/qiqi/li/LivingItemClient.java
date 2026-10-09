@@ -131,7 +131,7 @@ public class LivingItemClient {
         if (stack.isEmpty()) return;
         if (!LivingItemManager.isLivingItem(stack)) return;
         if (!WaxedCopperFamily.isWaxedCopperBlock(stack.getItem())) return;
-        if (LivingWaxedCopperFunction.isWaxedBulb(stack.getItem())) return;
+        if (WaxedCopperFamily.isWaxedBulb(stack.getItem())) return;
 
         event.getTooltipElements().add(
             Either.right(LivingWaxedCopperTooltipComponent.from(generatorDataFor(stack), stack.getCount())));

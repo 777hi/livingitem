@@ -1,5 +1,6 @@
 package com.qiqi.li.living.domain.power;
 import com.qiqi.li.living.domain.power.LivingWaxedBulbData;
+import com.qiqi.li.living.util.WaxedCopperFamily;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -149,7 +150,7 @@ class RoundTripConservationIT {
         for (int i = 0; i < h.getSlots(); i++) {
             ItemStack s = h.getStackInSlot(i);
             if (!s.isEmpty() && LivingItemManager.isLivingItem(s)
-                    && LivingWaxedCopperFunction.isWaxedBulb(s.getItem())) {
+                    && WaxedCopperFamily.isWaxedBulb(s.getItem())) {
                 sum += LivingWaxedBulbData.of(s).chargeMilliFe() * s.getCount();
             }
         }

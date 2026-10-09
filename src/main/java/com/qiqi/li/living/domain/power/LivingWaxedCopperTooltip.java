@@ -11,6 +11,7 @@ import net.minecraft.world.item.TooltipFlag;
 
 import com.qiqi.li.living.runtime.LivingItemClientCache;
 import com.qiqi.li.living.runtime.RuntimeSegments;
+import com.qiqi.li.living.util.WaxedCopperFamily;
 
 /**
  * 活涂蜡铜块的 tooltip 渲染 —— 2026-10-09 从 {@link LivingWaxedCopperFunction} 抽出
@@ -27,8 +28,9 @@ import com.qiqi.li.living.runtime.RuntimeSegments;
  *   <li>原 {@code addToTooltip} 开头未使用的局部变量 {@code oxidation}。</li>
  * </ul>
  *
- * <p>谓词（{@code isWaxed*} / {@code getOxidationLevel}）与 {@code formatMilliFe} 仍在
- * {@link LivingWaxedCopperFunction}（前者被多处引用；后者待步骤 5 与遥测一并归位）。</p>
+ * <p>谓词（{@code isWaxed*} / {@code getOxidationLevel}）已随「收口 步骤 4 第 2 刀」
+ * 迁到 L1 {@link WaxedCopperFamily}；{@code formatMilliFe} 仍在
+ * {@link LivingWaxedCopperFunction}（待步骤 5 与遥测一并归位）。</p>
  */
 final class LivingWaxedCopperTooltip {
 
@@ -51,7 +53,7 @@ final class LivingWaxedCopperTooltip {
             .withStyle(ChatFormatting.GRAY));
 
         // ── 雕文感应方向（仅涂蜡雕文；v19.1 只感应输入方向）──
-        if (LivingWaxedCopperFunction.isWaxedChiseled(item)) {
+        if (WaxedCopperFamily.isWaxedChiseled(item)) {
             var chiseledData = LivingWaxedChiseledData.of(stack);
             tooltipAdder.accept(Component.translatable(
                     "tooltip.livingitem.waxed_copper.chiseled_dir",
@@ -59,7 +61,7 @@ final class LivingWaxedCopperTooltip {
                 .withStyle(ChatFormatting.GRAY));
         }
 
-        if (!LivingWaxedCopperFunction.isWaxedBulb(item)) {
+        if (!WaxedCopperFamily.isWaxedBulb(item)) {
             // 优先从运行时缓存读取遥测数据（不影响物品堆叠），回退到 DataComponent
             RuntimeSegments runtimeData = LivingItemClientCache.getCurrentTooltipData();
             LivingWaxedGeneratorData t = runtimeData.get(GeneratorSegment.INSTANCE);
@@ -207,8 +209,8 @@ final class LivingWaxedCopperTooltip {
             }
         }
         // ── 铜灯电量 + 锈级专属通道（v18）──
-        if (LivingWaxedCopperFunction.isWaxedBulb(item)) {
-            int ox = LivingWaxedCopperFunction.getOxidationLevel(item);
+        if (WaxedCopperFamily.isWaxedBulb(item)) {
+            int ox = WaxedCopperFamily.getOxidationLevel(item);
             tooltipAdder.accept(Component.literal("  ")
                 .append(Component.translatable("tooltip.livingitem.waxed_copper.bulb_channel",
                     Component.translatable("tooltip.livingitem.waxed_copper.oxidation." + ox)))
@@ -242,19 +244,19 @@ final class LivingWaxedCopperTooltip {
 
     /** 从物品取形态功能说明翻译键（三变体差异说明，v19.1） */
     private static String formDescKey(Item item) {
-        if (LivingWaxedCopperFunction.isWaxedBulb(item)) return "tooltip.livingitem.waxed_copper.form_desc.bulb";
-        if (LivingWaxedCopperFunction.isWaxedChiseled(item)) return "tooltip.livingitem.waxed_copper.form_desc.chiseled";
-        if (LivingWaxedCopperFunction.isWaxedCut(item)) return "tooltip.livingitem.waxed_copper.form_desc.cut";
-        if (LivingWaxedCopperFunction.isWaxedGrate(item)) return "tooltip.livingitem.waxed_copper.form_desc.grate";
+        if (WaxedCopperFamily.isWaxedBulb(item)) return "tooltip.livingitem.waxed_copper.form_desc.bulb";
+        if (WaxedCopperFamily.isWaxedChiseled(item)) return "tooltip.livingitem.waxed_copper.form_desc.chiseled";
+        if (WaxedCopperFamily.isWaxedCut(item)) return "tooltip.livingitem.waxed_copper.form_desc.cut";
+        if (WaxedCopperFamily.isWaxedGrate(item)) return "tooltip.livingitem.waxed_copper.form_desc.grate";
         return "tooltip.livingitem.waxed_copper.form_desc.block";
     }
 
     /** 从物品取形态翻译键 */
     private static String formTranslationKey(Item item) {
-        if (LivingWaxedCopperFunction.isWaxedBulb(item)) return "tooltip.livingitem.waxed_copper.form.bulb";
-        if (LivingWaxedCopperFunction.isWaxedChiseled(item)) return "tooltip.livingitem.waxed_copper.form.chiseled";
-        if (LivingWaxedCopperFunction.isWaxedCut(item)) return "tooltip.livingitem.waxed_copper.form.cut";
-        if (LivingWaxedCopperFunction.isWaxedGrate(item)) return "tooltip.livingitem.waxed_copper.form.grate";
+        if (WaxedCopperFamily.isWaxedBulb(item)) return "tooltip.livingitem.waxed_copper.form.bulb";
+        if (WaxedCopperFamily.isWaxedChiseled(item)) return "tooltip.livingitem.waxed_copper.form.chiseled";
+        if (WaxedCopperFamily.isWaxedCut(item)) return "tooltip.livingitem.waxed_copper.form.cut";
+        if (WaxedCopperFamily.isWaxedGrate(item)) return "tooltip.livingitem.waxed_copper.form.grate";
         return "tooltip.livingitem.waxed_copper.form.block";
     }
 }

@@ -1,5 +1,6 @@
 package com.qiqi.li.living.domain.power;
 import com.qiqi.li.living.domain.power.LivingWaxedBulbData;
+import com.qiqi.li.living.util.WaxedCopperFamily;
 
 import javax.annotation.Nullable;
 
@@ -164,7 +165,7 @@ public class ContainerEnergyStorage implements IEnergyStorage {
         // 容器里绝大多数槽位不是铜灯，先做便宜的判断能省掉几乎全部组件查询。
         // 热路径：Flux Networks 等外部电力 mod 每 tick 高频调用 receiveEnergy，
         // 每次都全量扫所有槽位 —— 这里是主要的放大点。
-        return !stack.isEmpty() && LivingWaxedCopperFunction.isWaxedBulb(stack.getItem())
+        return !stack.isEmpty() && WaxedCopperFamily.isWaxedBulb(stack.getItem())
             && LivingItemManager.isLivingItem(stack);
     }
 
