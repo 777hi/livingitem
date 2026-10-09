@@ -171,7 +171,18 @@ public class StressStateMachine {
                 rpm = newRpm;
                 capacity = newCap;
                 if (prev == 0 && newRpm != 0) {
+                    // ⚠️ 顺序关键：**先设速度、再 detach**（2026-10-09 修「重进存档后小齿轮被销毁」）。
+                    //
+                    // Create 的 `RotationPropagator.handleRemoved` 在 `getTheoreticalSpeed()==0`
+                    // 时【直接 return】。重载后 Create 已把本块 speed 清 0（实测日志 speed=0.0），
+                    // 而本块的 `network` 会从 NBT 恢复成「自身坐标」—— 邻居因此仍留在
+                    // 「以本块为源的旧网络」里。此时若直接 attachKinetics()：
+                    //   propagateNewSource 命中 Create 的「不要压制自己所在的网络（cycle）」判定
+                    //   ⇒ `world.destroyBlock(pos, true)` 销毁本块并掉落。
+                    // 先设速度 ⇒ handleRemoved 才会真正把邻居从旧网络摘出 ⇒
+                    // 随后 attachKinetics 走 overpower 分支（正常接管），不再销毁。
                     self.setSpeed(newRpm);
+                    self.detachKinetics();
                     self.setNetwork(self.getBlockPos().asLong());
                     self.attachKinetics();
                     updateNetwork(self, newCap);
