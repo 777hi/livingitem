@@ -1,6 +1,8 @@
 # 红电包收口方案（power refactoring plan）
 
-*创建: 2026-09-11 · 状态: **进行中** —— 步骤 1 ✅（2026-09-11）· **步骤 4 第 1+2 刀 ✅（2026-10-09，`0769957` / `1d16160`）**；步骤 2（BulbBank）/ 步骤 4 第 3~5 刀待做*
+*创建: 2026-09-11 · 状态: **进行中** —— 步骤 1 ✅（2026-09-11）· **步骤 4 第 1+2+3 刀 ✅（2026-10-09，`0769957` / `1d16160` / `f7296c4`）**；步骤 2（BulbBank）/ 步骤 4 第 4~5 刀待做*
+>
+> 📉 **主类行数**：1265 → **845**（本轮 -420）。
 
 > ⚠️ **本文件尚未登记到 `AGENTS.md` 子系统索引** —— 因为 `AGENTS.md` 当时正被另一个
 > 并行会话修改，避免冲突故暂缓。收口工作排期时请补上索引条目。
@@ -147,7 +149,7 @@ record Re(long value) { ... }        // 1 RE = 1/16 FE
 |---|---|---|---|
 | 1 | `LivingWaxedCopperTooltip` | ~~~287~~ **✅ 已做（2026-10-09，`0769957`）** | **完全无 tick 依赖**，纯客户端展示。包里已有 `LivingWaxedCopperTooltipComponent` / `...TooltipRenderer`，命名惯例现成。`addToTooltip` 保留为一行委托（接口要求）。实际 **1265 → 995 行（-270）**；顺带删除两个死方法（`renderResonanceTooltip` / `renderResonanceFormula`）+ 一个死局部变量（`oxidation`）。保真验证：用翻译键逐键 diff，原 body 的 14 个键一个不少。 |
 | 2 | ~~`WaxedCopperItems`~~ → **`living/util/WaxedCopperFamily`** | ~~~98~~ **✅ 已做（2026-10-09，`1d16160`）** | 纯 `Item` 谓词，无状态。**改去 L1 `WaxedCopperFamily` 而非 power 包内** —— 它的 javadoc 早已写明迁入条件（「若将来其它域也需要，应一并迁到本类」），且 `isWaxedBulb` / `isWaxedChiseled` 确已被 power 域**之外**的类使用（`ContainerEnergyStorage` / `LivingItemClient` / `LivingWaxedChiseledDecorator`）。⚠️ **`getCoilForm` 刻意不迁** —— 它映射 power 域的 `LivingWaxedGeneratorData.FORM_*`，迁到 L1 会造 **L1 → L3 反向依赖**。实际 **995 → 945 行**；R1/R3 无新增违规。 |
-| 3 | `CopperNetworkTopology` | ~244 | BFS + `repOf` + `edgeKey`。被 `tickContainerData` 调用，无外部引用。 |
+| 3 | `CopperNetworkTopology` | ~~~244~~ **✅ 部分（2026-10-09，`f7296c4`，实抽 135 行）** | **边界比原表更窄**：只抽「与 tick 流程无关的纯图/键运算」（`DIR_ROW/COL` · `pos2dToEdgeDir` · `traversableNeighbor` · `repOf`+`NetworkKey` · `edgeKey` · `FALLING_BIT` · `chiseledInputEdge`）。⚠️ **`runBfs` 留下** —— 它混合「拓扑遍历 + 边信号检测 + 通道事件注入」，属 tick 流程；且依赖 `derivedSourceId`（第 4 刀）与 `SignalTracker`（被 `PhaseSnapshot` **外部**引用，搬动会连锁改 3 个文件）。主类 **945 → 845 行**。 |
 | 4 | `PhaseInterpreter` | ~153 | `phaseInterpretation` / `interpretShifter` / `interpretSplitter` / `interpretAdder` / `derivedSourceId`。 |
 | 5 | `EnergyAccounting` + `PowerTelemetry` | ~130 | `accountEnergy` / `buildTelemetry` / `formatMilliFe` / `collectDomains`。 |
 

@@ -87,6 +87,15 @@
   迁到 L1 会造 **L1 → L3 反向依赖**。实际 **995 → 945 行**；`check_layers` R1 15 / R3 10
   **无新增违规**。`551 全绿`。
 
+- 🏗 **power 收口 步骤 4 第 3 刀：抽出 `CopperNetworkTopology`**（纯搬迁，`f7296c4`）。
+  抽出「与 tick 流程无关的纯图/键运算」（`DIR_ROW/COL` · `pos2dToEdgeDir` ·
+  `traversableNeighbor` · `repOf`+`NetworkKey` · `edgeKey` · `FALLING_BIT` ·
+  `chiseledInputEdge`）⇒ 主类 **945 → 845 行**（本轮累计 1265 → 845，**-420**）。
+  ⚠️ **边界比方案原表更窄**：`runBfs` **留下** —— 它混合「拓扑遍历 + 边信号检测 + 通道事件注入」，
+  属 tick 流程；且依赖 `derivedSourceId`（第 4 刀）与 `SignalTracker`（被 `PhaseSnapshot`
+  **外部**引用，搬动会连锁改 3 个文件）⇒ 超出「纯搬迁」边界。理由已写进新类 javadoc。
+  `check_layers` R1 15 / R3 10 **无新增违规**。`551 全绿`。
+
 ---
 
 ## 2026-10-08
