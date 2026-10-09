@@ -77,6 +77,16 @@
   `renderResonanceFormula` 两个死方法 + `addToTooltip` 开头未使用的 `oxidation` 局部变量。
   方案与后续刀序：`buffer/power-refactoring-plan.md` §5。`551 全绿`。
 
+- 🏗 **power 收口 步骤 4 第 2 刀：谓词收进 L1 `WaxedCopperFamily`**（纯搬迁，`1d16160`）。
+  6 个纯 `Item` 谓词（`isWaxedBase` / `isWaxedChiseled` / `isWaxedCut` / `isWaxedGrate` /
+  `isWaxedBulb` / `getOxidationLevel`）从 `LivingWaxedCopperFunction` 迁到
+  `living/util/WaxedCopperFamily` —— **改去 L1 而非方案原定的 power 包内**
+  （该类的 javadoc 早已写明迁入条件，且这些谓词已被 `ContainerEnergyStorage` /
+  `LivingItemClient` / `LivingWaxedChiseledDecorator` 等 power 域**之外**的类使用）。
+  ⚠️ **`getCoilForm` 刻意不迁** —— 它映射 power 域的 `LivingWaxedGeneratorData.FORM_*`，
+  迁到 L1 会造 **L1 → L3 反向依赖**。实际 **995 → 945 行**；`check_layers` R1 15 / R3 10
+  **无新增违规**。`551 全绿`。
+
 ---
 
 ## 2026-10-08
