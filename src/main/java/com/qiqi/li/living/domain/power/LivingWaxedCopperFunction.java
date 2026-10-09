@@ -5,7 +5,6 @@ import com.qiqi.li.living.domain.power.LivingWaxedChiseledData;
 import com.qiqi.li.living.domain.power.LivingWaxedBulbData;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -47,9 +46,6 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
 
     public static final String ID = "living_waxed_copper";
 
-    /** BFS 方向偏移：EDGE_UP/DOWN/LEFT/RIGHT 对应的 (行,列) 增量 */
-    private static final int[] DIR_ROW = {-1, 1, 0, 0};
-    private static final int[] DIR_COL = {0, 0, -1, 1};
 
     /** 遥测快照有效数字位数：EMA 类读数量化到 3 位，稳态下钉死值以降低脏写频率（量化降脏化优化） */
     private static final int TELEMETRY_SIG_FIGS = 3;
@@ -153,18 +149,18 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         // 每 tick 每锈级建一次组件 rep 表（≤54 槽，O(N) 可忽略）
         Map<Integer, int[]> repCache = new HashMap<>();
         // 组件标识（锈级 + rep）→ 该组件内的发电机槽位列表
-        Map<NetworkKey, List<Integer>> groups = new LinkedHashMap<>();
+        Map<CopperNetworkTopology.NetworkKey, List<Integer>> groups = new LinkedHashMap<>();
 
         for (var e : active.entrySet()) {
             int genSlot = e.getKey();
             int ox = WaxedCopperFamily.getOxidationLevel(ctx.getItem(genSlot).getItem());
-            int rep = repOf(ox, genSlot, repCache, ctx, size, containerWidth);
-            groups.computeIfAbsent(new NetworkKey(ox, rep), k -> new ArrayList<>()).add(genSlot);
+            int rep = CopperNetworkTopology.repOf(ox, genSlot, repCache, ctx, size, containerWidth);
+            groups.computeIfAbsent(new CopperNetworkTopology.NetworkKey(ox, rep), k -> new ArrayList<>()).add(genSlot);
         }
 
         // 每组件只算一次：锚点 BFS + tickCleanup(maxPref)，其余 copyFrom
         for (var en : groups.entrySet()) {
-            NetworkKey key = en.getKey();
+            CopperNetworkTopology.NetworkKey key = en.getKey();
             List<Integer> members = en.getValue();
             int anchorSlot = members.get(0);
             GeneratorState anchor = active.get(anchorSlot);
@@ -266,20 +262,8 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         return powerData.currentTick();
     }
 
-    // ── 铜块网络传播：BFS 辅助方法 ──
+    // ── 铜块网络传播：BFS 驱动（拓扑原语见 {@link CopperNetworkTopology}）──
 
-    /**
-     * 将 Pos2D 方向映射为 ContainerRedstoneData 的边方向索引。
-     * UP=(0,-1) → 0, DOWN=(0,1) → 1, LEFT=(-1,0) → 2, RIGHT=(1,0) → 3
-     */
-    private static int pos2dToEdgeDir(Pos2D dir) {
-        // v19.1：值比较而非引用比较——Pos2D 经序列化/反序列化后是值相等的新实例，
-        // 引用比较会让配置过的方向全部落入 fallback（恒 UP）。
-        if (dir.x() == 0) {
-            return dir.y() < 0 ? RedstoneSensor.EDGE_UP : RedstoneSensor.EDGE_DOWN;
-        }
-        return dir.x() < 0 ? RedstoneSensor.EDGE_LEFT : RedstoneSensor.EDGE_RIGHT;
-    }
 
     /**
      * 单次 BFS：从发电机槽位出发，遍历同氧化等级铜块网络，
@@ -316,7 +300,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
 
             // 雕文 = 移相器（v19.1）：发电采样面与信号层二极管镜像——只感应输入方向。
             // 相位解读（interpretShifter）也只读输入方向，两层语义一致。
-            int chiseledInEdge = chiseledInputEdge(ctx, current);
+            int chiseledInEdge = CopperNetworkTopology.chiseledInputEdge(ctx, current);
 
             // 根修（2026-09-09）：首拍无沿——红石账本重建后的首个 calculate，
             // prevEdgeGrid 全零是「历史未知」而非「上一 tick 全 0」，稳态高电平边
@@ -336,7 +320,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
                     if (signal == prevSignal) continue;
                     int delta = signal - prevSignal;
                     int absDelta = Math.abs(delta);
-                    long edgeKey = edgeKey(current, dir);
+                    long edgeKey = CopperNetworkTopology.edgeKey(current, dir);
                     if (delta > 0) {
                         SignalTracker tracker = powerData.getOrCreateEdgeTracker(edgeKey);
                         tracker.onRisingEdge(now, absDelta);
@@ -347,7 +331,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
                         }
                     } else {
                         // 下降沿 → 裂相器（切制）的解读输入：独立命名空间的下降沿跟踪器
-                        SignalTracker falling = powerData.getOrCreateEdgeTracker(FALLING_BIT | edgeKey);
+                        SignalTracker falling = powerData.getOrCreateEdgeTracker(CopperNetworkTopology.FALLING_BIT | edgeKey);
                         falling.onRisingEdge(now, absDelta);
                     }
                 }
@@ -366,7 +350,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
 
             // 遍历四方向找同氧化等级的铜块邻居
             for (int dir = 0; dir < RedstoneSensor.DIRECTIONS; dir++) {
-                int neighbor = traversableNeighbor(ctx, size, containerWidth, current, dir, oxidation);
+                int neighbor = CopperNetworkTopology.traversableNeighbor(ctx, size, containerWidth, current, dir, oxidation);
                 if (neighbor < 0) continue;
                 if (visited[neighbor]) continue;
                 visited[neighbor] = true;
@@ -375,89 +359,6 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         }
     }
 
-    /**
-     * 从 current 沿 dir 是否可达同氧化级铜块邻居；可达返回邻居槽位，否则 -1。
-     * v19：网络连通性只由氧化等级决定（形态不再约束连通——个性迁移到解读规则）。
-     * runBfs 与组件分组共用，避免两套邻接逻辑分叉。
-     */
-    private static int traversableNeighbor(ContainerContext ctx, int size, int width,
-            int current, int dir, int oxidation) {
-        int row = current / width;
-        int col = current % width;
-        int nr = row + DIR_ROW[dir];
-        int nc = col + DIR_COL[dir];
-        if (nr < 0 || nc < 0 || nc >= width) return -1;
-        int neighbor = nr * width + nc;
-        if (neighbor < 0 || neighbor >= size) return -1;
-        ItemStack ns = ctx.getItem(neighbor);
-        if (ns.isEmpty()) return -1;
-        if (!WaxedCopperFamily.isWaxedCopperBlock(ns.getItem())) return -1;
-        if (WaxedCopperFamily.isWaxedBulb(ns.getItem())) return -1; // 铜灯不导电
-        if (WaxedCopperFamily.getOxidationLevel(ns.getItem()) != oxidation) return -1;
-        return neighbor;
-    }
-
-    /**
-     * 每 tick 每锈级建一次组件 rep 表；返回 slot 所属组件 rep（组件内最小槽位）。
-     * rep 稳定（= 最小铜块槽位），保证跨 tick 同一网络映射到同一 ChannelState 实例。
-     */
-    private static int repOf(int oxidation, int slot, Map<Integer, int[]> cache,
-            ContainerContext ctx, int size, int width) {
-        int[] arr = cache.get(oxidation);
-        if (arr == null) {
-            arr = new int[size];
-            Arrays.fill(arr, -1);
-            int[] comp = new int[size];
-            int[] q = new int[size];
-            for (int s = 0; s < size; s++) {
-                if (arr[s] != -1) continue;
-                ItemStack st = ctx.getItem(s);
-                if (st.isEmpty() || !WaxedCopperFamily.isWaxedCopperBlock(st.getItem()) || WaxedCopperFamily.isWaxedBulb(st.getItem())) continue;
-                if (WaxedCopperFamily.getOxidationLevel(st.getItem()) != oxidation) continue;
-                // 收集该组件全部槽位（弱连通）
-                int cn = 0, h = 0, t = 0;
-                q[t++] = s; arr[s] = s; comp[cn++] = s;
-                while (h < t) {
-                    int cur = q[h++];
-                    for (int dir = 0; dir < RedstoneSensor.DIRECTIONS; dir++) {
-                        int nb = traversableNeighbor(ctx, size, width, cur, dir, oxidation);
-                        if (nb < 0 || arr[nb] != -1) continue;
-                        arr[nb] = s; comp[cn++] = nb; q[t++] = nb;
-                    }
-                }
-                int rep = s;
-                for (int i = 0; i < cn; i++) rep = Math.min(rep, comp[i]);
-                for (int i = 0; i < cn; i++) arr[comp[i]] = rep;
-            }
-            cache.put(oxidation, arr);
-        }
-        return arr[slot];
-    }
-
-    /** 组件标识：氧化等级 + 组件内最小铜块槽位（v19：连通性唯一维度 = 氧化等级） */
-    private record NetworkKey(int oxidation, int rep) {}
-
-    /** 边跟踪器键：(slot << 2) | dir */
-    private static long edgeKey(int slot, int dir) {
-        return ((long) slot << 2) | dir;
-    }
-
-    /**
-     * 雕文槽位的发电采样方向（仅感应输入方向，镜像信号层二极管语义）；非雕文返回 -1（全向）。
-     */
-    /** 测试可见：Pos2D → 边方向的映射（值比较，序列化实例安全） */
-    static int chiseledInputEdgeForTest(Pos2D dir) {
-        return pos2dToEdgeDir(dir);
-    }
-
-    private static int chiseledInputEdge(ContainerContext ctx, int slot) {
-        ItemStack stack = ctx.getItem(slot);
-        if (stack.isEmpty() || !WaxedCopperFamily.isWaxedChiseled(stack.getItem())) return -1;
-        return pos2dToEdgeDir(LivingWaxedChiseledData.of(stack).inputDir());
-    }
-
-    /** 下降沿跟踪器命名空间位（与上升沿跟踪器同表，位隔离） */
-    private static final long FALLING_BIT = 1L << 32;
 
     /**
      * 感应诊断日志（-Dlivingitem.debug.sensing=true）：每 20 tick 打印每台发电机的
@@ -560,11 +461,11 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             int size, int width, ContainerPowerData powerData, long now,
             Map<Integer, List<DerivedPhase>> draft) {
         var data = LivingWaxedChiseledData.of(stack);
-        int inEdge = pos2dToEdgeDir(data.inputDir());
+        int inEdge = CopperNetworkTopology.pos2dToEdgeDir(data.inputDir());
         List<DerivedPhase> out = new ArrayList<>();
 
         // 输入一：输入方向边上的真实波形（锁相状态，活性窗口内）
-        SignalTracker t = powerData.getEdgeTracker(edgeKey(slot, inEdge));
+        SignalTracker t = powerData.getEdgeTracker(CopperNetworkTopology.edgeKey(slot, inEdge));
         if (t != null && t.period() > 0
                 && now - t.lastRisingTick() <= PowerMath.aliveWindow(t.period())) {
             out.add(new DerivedPhase(t.period(), Math.floorMod(t.offset() + 1, t.period()),
@@ -599,7 +500,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             Map<Integer, List<DerivedPhase>> draft) {
         List<DerivedPhase> out = new ArrayList<>();
         for (int dir = 0; dir < RedstoneSensor.DIRECTIONS; dir++) {
-            SignalTracker t = powerData.getEdgeTracker(FALLING_BIT | edgeKey(slot, dir));
+            SignalTracker t = powerData.getEdgeTracker(CopperNetworkTopology.FALLING_BIT | CopperNetworkTopology.edgeKey(slot, dir));
             if (t != null && t.period() > 0
                     && now - t.lastRisingTick() <= PowerMath.aliveWindow(t.period())) {
                 out.add(new DerivedPhase(t.period(), t.offset(),
@@ -624,7 +525,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             Map<Integer, List<DerivedPhase>> draft) {
         Map<Integer, List<int[]>> byPeriod = new HashMap<>(); // period → [offset, delta]
         for (int dir = 0; dir < RedstoneSensor.DIRECTIONS; dir++) {
-            SignalTracker t = powerData.getEdgeTracker(edgeKey(slot, dir));
+            SignalTracker t = powerData.getEdgeTracker(CopperNetworkTopology.edgeKey(slot, dir));
             if (t == null || t.period() <= 0) continue;
             if (now - t.lastRisingTick() > PowerMath.aliveWindow(t.period())) continue;
             byPeriod.computeIfAbsent(t.period(), k -> new ArrayList<>())

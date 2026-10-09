@@ -594,7 +594,7 @@ class WaxedGeneratorFeedChainTest {
             ItemStack stack = living(Items.WAXED_CHISELED_COPPER, 4);
             LivingWaxedChiseledData.set(stack,
                 LivingWaxedChiseledData.of(stack).withInputDir(roundTrip));
-            int edge = LivingWaxedCopperFunction.chiseledInputEdgeForTest(roundTrip);
+            int edge = CopperNetworkTopology.chiseledInputEdgeForTest(roundTrip);
             assertEquals(expected.get(i).intValue(), edge,
                 "方向 " + roundTrip + "（反序列化实例）应映射到 " + expected.get(i));
         }
