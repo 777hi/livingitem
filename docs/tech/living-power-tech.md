@@ -661,6 +661,17 @@ tick 电网即恢复真实运行。
 边跟踪器 `(P, φ, sinceRise, δ)`；账本重建时回填：`lastRisingTick = 新 tickCounter −
 sinceRise` 平移，整数周期下 φ 不变——**多路相对相位跨会话无缝续接**。
 
+> 🔴 **2026-10-09 补记：本机制的「接线」曾因重构静默断掉** —— `a52a3ea`（1a-4
+> 「容器级数据统一存储」）把账本创建**改道**到 `getOrCreateContainerData(KEY)`，
+> 绕过了带回填的 `ContainerLivingItemHandler.getPowerData`（后迁为
+> `domain/power/ContainerPowerAccess`）⇒ 快照**只写不读**，回填长期未生效
+> （`2c78623` 时链路完整：`LivingWaxedCopperFunction → TickContext.getOrCreatePowerData
+> → SimpleContainerContext.getOrCreatePowerData() → getPowerData(this)`）。
+> **已恢复**：`LivingWaxedCopperFunction.tickContainerData` 在账本创建处调用
+> `ContainerPowerAccess.getOrCreatePowerData(ctx)`。
+> ⚠️ **教训**：这类「重构把调用点改道、绕过带副作用的入口」的回归，**单测抓不到**
+> （现有测试只覆盖 `PhaseSnapshot` 本体，不覆盖接线）⇒ 入口方法上留了强注释指明历史链路。
+
 **设计取舍**：
 
 - 只存**慢变量**（锁相结果），不存快变量（EMA/共振窗口/派生注册表）——快变量

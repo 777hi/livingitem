@@ -57,6 +57,18 @@
   ⇒ **从根上不触发 `propagateNewSource`**。
   文档：`living-water-wheel-tech.md` §9.25（并修正 §9.22.4 被推翻的风险预测）。`551 全绿`。
 
+- 🐛 **修复（回归）：相位快照「只写不读」—— 回填接线在 1a-4 重构中丢失**。
+  `ContainerPowerAccess.getOrCreatePowerData`（账本首次创建时从 BE 附件回填锁相状态）
+  **零调用者**：`LivingWaxedCopperFunction.tickContainerData` 直接走
+  `ctx.getOrCreateContainerData(ContainerPowerData.KEY)` ⇒ 退出重进 / LRU 回收后
+  振荡器相位**不再续接**，而 `ContainerPhaseWriteback` 每 tick 仍在写快照（白费）。
+  git 考古确认是**回归**而非未完成的功能：`2c78623` 链路完整
+  （`LivingWaxedCopperFunction` → `TickContext.getOrCreatePowerData` →
+  `SimpleContainerContext.getOrCreatePowerData()` → `ContainerLivingItemHandler.getPowerData(this)`），
+  `a52a3ea`（1a-4「容器级数据统一存储」）把调用**改道**绕过回填。
+  修：账本创建处改调 `ContainerPowerAccess.getOrCreatePowerData(ctx)`（1 行）。
+  文档：`living-power-tech.md` 相位快照节补记 + `ContainerPowerAccess` javadoc 同步。`551 全绿`。
+
 ---
 
 ## 2026-10-08
