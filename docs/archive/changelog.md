@@ -68,6 +68,7 @@
   `a52a3ea`（1a-4「容器级数据统一存储」）把调用**改道**绕过回填。
   修：账本创建处改调 `ContainerPowerAccess.getOrCreatePowerData(ctx)`（1 行）。
   文档：`living-power-tech.md` 相位快照节补记 + `ContainerPowerAccess` javadoc 同步。`551 全绿`。
+  ✅ **2026-10-09 游戏内实测通过**：振荡器调相 → 退出重进 → 相对相位保留（用户实测）。
 
 - 🏗 **power 收口 步骤 4 第 1 刀：抽出 `LivingWaxedCopperTooltip`**（纯搬迁，`0769957`）。
   `LivingWaxedCopperFunction.addToTooltip`（202 行）+ `renderSection` / `formDescKey` /
@@ -158,6 +159,8 @@
     「带电的未活化灯」只可能是该漏洞的产物 ⇒ **不丢任何数据**
   - ✅ 反向验证：去掉守卫 ⇒ 1 个测试挂；新增「未活化 ⇒ 拿不到电池」护栏。
     测试 **551 → 552**；`check_layers` R1 15 / R3 10 无新增违规
+  - ✅ **2026-10-09 游戏内实测通过**：未活化的原版涂蜡铜灯放进外部充能槽 ⇒ **充不进**；
+    活化后照常能充（用户实测）
   - 📌 **另一处独立观察（未处理）**：取消活化会清空电量（玩家取消活化满电铜灯 ⇒ 电归零）。
     从 `getOwnedComponentTypes` 的 javadoc 看是**有意**的（避免孤儿数据），
     但玩家可能觉得亏 —— 属玩法语义决策，本次未动
