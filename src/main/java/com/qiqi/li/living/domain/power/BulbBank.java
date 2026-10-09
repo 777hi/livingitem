@@ -80,6 +80,8 @@ final class BulbBank {
     private final long totalCharge;
 
     private boolean dirty;
+    /** 本次 {@link #deposit} 实际写入各灯的 mFE 总量（{@code simulate} 下 = 若真写会写多少）。 */
+    private long lastDistributed;
 
     private BulbBank(ItemStack[] stacks, long[] remaining, long totalRemaining, long totalCharge) {
         this.stacks = stacks;
@@ -112,8 +114,28 @@ final class BulbBank {
         return collect(entries.size(), i -> entries.get(i).stack(), itemFilter);
     }
 
-    /** 单遍扫描的共用内核：只取一遍栈，其余全在数组上算。 */
-    private static BulbBank collect(int size, IntFunction<ItemStack> stackAt,
+    /**
+     * 单堆视图 —— 物品能量 capability（{@code Capabilities.EnergyStorage.ITEM}）用。
+     *
+     * <p>⚠️ <b>刻意不做 {@link #isBulb} 过滤</b>：该 capability 在 {@code LivingItem} 里按
+     * <b>原版物品</b>注册（{@code Items.WAXED_COPPER_BULB} 等 4 个），<b>包含未活化的灯</b>；
+     * 「仅已活化」是<b>容器路径</b>（{@link #scan}）的判据，两者口径本就不同。
+     * 调用方保证传入的是涂蜡铜灯堆。</p>
+     */
+    static BulbBank of(ItemStack single) {
+        ItemStack[] stacks = new ItemStack[1];
+        long[] remaining = new long[1];
+        long charge = 0;
+        if (!single.isEmpty()) {
+            int count = single.getCount();
+            charge = LivingWaxedBulbData.of(single).totalChargeMilliFe(count);
+            stacks[0] = single;
+            remaining[0] = PowerMath.BULB_UNIT_CAPACITY_MFE * count - charge;
+        }
+        return new BulbBank(stacks, remaining, remaining[0], charge);
+    }
+
+    /** 单遍扫描的共用内核：只取一遍栈，其余全在数组上算。 */    private static BulbBank collect(int size, IntFunction<ItemStack> stackAt,
                                     @Nullable Predicate<ItemStack> itemFilter) {
         ItemStack[] stacks = new ItemStack[size];
         long[] remaining = new long[size];
@@ -126,7 +148,9 @@ final class BulbBank {
             int count = stack.getCount();
             long charge = LivingWaxedBulbData.of(stack).totalChargeMilliFe(count);
             long rem = PowerMath.BULB_UNIT_CAPACITY_MFE * count - charge;
-            if (rem <= 0) continue;      // 已满的堆不进账（等价于分配时的 remaining<=0 跳过）
+            // ⚠️ 满堆（rem ≤ 0）也进数组 —— deposit 的两处循环各自判满跳过
+            // （分配判 remaining ≤ 0、零头回收判 q ≥ CAP）⇒ 行为等价；
+            // 而「按电荷抽取」类操作反而需要这些堆在场（不能靠 rem 把它们滤掉）。
             stacks[i] = stack;
             remaining[i] = rem;
             totalRemaining += rem;
@@ -146,6 +170,16 @@ final class BulbBank {
     /** 本次操作是否真的改动了物品（供调用方决定是否 {@code setChanged()} 落盘）。 */
     boolean isDirty() {
         return dirty;
+    }
+
+    /**
+     * 本次 {@link #deposit} 实际写入的 mFE 总量。
+     *
+     * <p>供需要「按实充报账」的调用方使用（物品接口返回 {@code ceil(实充)} —— 报账 ≥ 实充，
+     * 差额损耗向）。容器对外接口不用它（那边返回的是<b>声明值</b> {@code accept}）。</p>
+     */
+    long distributedMilliFe() {
+        return lastDistributed;
     }
 
     /** 铜灯判定：仅<b>已活化</b>的涂蜡铜灯参与能源系统（取消活化 = 普通物品，电量保留但不进出）。 */
@@ -175,6 +209,7 @@ final class BulbBank {
      *         调用方应改用 {@link #isDirty()} 判定「是否真的有充入」。
      */
     long deposit(long wantMilliFe, boolean simulate, FePolicy policy) {
+        lastDistributed = 0;                 // 提前返回路径也必须清（否则残留上次的值）
         if (totalRemaining <= 0) return 0;   // 全满（或无铜灯）
 
         long accept = Math.min(wantMilliFe, totalRemaining);
@@ -185,7 +220,6 @@ final class BulbBank {
         if (accept <= 0) return 0;
 
         // 按剩余容量比例分配（两遍式：先算各堆份额，再统一落账）
-        long distributed = 0;
         for (int i = 0; i < stacks.length; i++) {
             ItemStack stack = stacks[i];
             if (stack == null || remaining[i] <= 0) continue;
@@ -205,7 +239,7 @@ final class BulbBank {
                     data.withChargeMilliFe(data.chargeMilliFe() + perLamp));
                 dirty = true;
             }
-            distributed += perLamp * count;
+            lastDistributed += perLamp * count;
         }
 
         if (policy == FePolicy.FLOOR_WHOLE_FE) {
@@ -215,7 +249,7 @@ final class BulbBank {
             // 完整步进保护：count > leftover 时跳过（一次写入不得越过 accept）；
             // 不足一个完整步进的残余（< 最小有空间堆的 count，≤63 mFE）保守丢弃——
             // 与整 FE 量化同一「宁损勿造」方向。
-            long leftover = accept - distributed;
+            long leftover = accept - lastDistributed;
             int passes = 0;
             while (leftover > 0 && passes++ < MAX_LEFTOVER_PASSES) {
                 boolean progressed = false;
@@ -231,7 +265,7 @@ final class BulbBank {
                             LivingWaxedBulbData.of(stack).withChargeMilliFe(q + 1));
                         dirty = true;
                     }
-                    distributed += count;             // 记账 = 实充（count mFE）
+                    lastDistributed += count;             // 记账 = 实充（count mFE）
                     leftover -= count;
                     progressed = true;
                 }

@@ -60,18 +60,18 @@ public class BulbItemEnergyStorage implements IEnergyStorage {
     @Override
     public int receiveEnergy(int toReceive, boolean simulate) {
         if (toReceive <= 0) return 0;
-        long want = (long) toReceive * 1000L;
-        long space = PowerMath.BULB_UNIT_CAPACITY_MFE * stack.getCount() - chargeMilliFe() * stack.getCount();
-        long accept = Math.min(want, space);
-        long perLamp = accept / stack.getCount();
-        if (perLamp <= 0) return 0;
-        if (!simulate) {
-            setChargeMilliFe(chargeMilliFe() + perLamp);
-        }
-        // 2026-09-09 口径修正：返回声明值（= 支付方将扣的账），实充 perLamp×count 可能比声明少
-        // count−1 mFE（按盏向下取整残余）——声明 ≥ 实充，差额损耗向（防往返凭空造电，
-        // 与 ContainerEnergyStorage.receive 同族修复，见 RoundTripConservationIT）。
-        return (int) Math.min(toReceive, (perLamp * stack.getCount() + 999) / 1000L);
+        // 算法收归 BulbBank（2026-10-09 power 收口 步骤 2 第 3 步）：单堆时「按剩余容量比例
+        // 分配」退化为「全部」，与容器充电同源 ⇒ 不再各自维护一份 perLamp 计算。
+        // ⚠️ 口径 = ANY_MOVEMENT（不量化、不做零头回收）；返回值沿用本接口的
+        // 「实充 ceil」口径（见下），故取 distributedMilliFe() 而非 deposit 的声明值。
+        // ⚠️ BulbBank.of 刻意不过滤 isBulb —— 本 capability 按原版物品注册（含未活化灯）。
+        BulbBank bank = BulbBank.of(stack);
+        bank.deposit((long) toReceive * 1000L, simulate, BulbBank.FePolicy.ANY_MOVEMENT);
+        // 2026-09-09 口径修正（保留）：返回「实充的 ceil」（= 支付方将扣的账），实充
+        // perLamp×count 可能比请求少 count−1 mFE（按盏向下取整残余）——报账 ≥ 实充，
+        // 差额损耗向（防往返凭空造电，与 ContainerEnergyStorage.receive 同族修复，
+        // 见 RoundTripConservationIT）。
+        return (int) Math.min(toReceive, (bank.distributedMilliFe() + 999L) / 1000L);
     }
 
     @Override
