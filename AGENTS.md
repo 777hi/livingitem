@@ -165,6 +165,7 @@ src/main/java/com/qiqi/li/
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-09 | 🏗 **power 收口 步骤4 第1刀：抽出 `LivingWaxedCopperTooltip`**（纯搬迁）—— `LivingWaxedCopperFunction` **1265 → 995 行（-270）**，主类只留一行委托；顺带删两个死方法 + 一个死局部变量。保真用翻译键逐键 diff 验证 | `buffer/power-refactoring-plan.md` §5 |
 | 2026-10-09 | 🐛 **修复（回归）：相位快照「只写不读」** —— `ContainerPowerAccess`（账本创建时从 BE 附件回填锁相状态）**零调用者**：回填接线在 `a52a3ea`（1a-4「容器级数据统一存储」）被**改道**绕过（`2c78623` 时链路完整）⇒ 退出重进后振荡器相位不再续接、而 `ContainerPhaseWriteback` 每 tick 仍在写。账本创建处改调 `ContainerPowerAccess.getOrCreatePowerData(ctx)` 接回（1 行） | `living-power-tech.md`（相位快照节） |
 | 2026-10-09 | 🐛 **修复：活水车应力导致 Create 小齿轮「重进存档变成掉落物」**（每次都发生）—— 根因 Create 的 `RotationPropagator.propagateNewSource` 判定「压制自身网络」⇒ `world.destroyBlock(pos,true)`；重载后本块 `network` 从 NBT 恢复成**自身坐标**、邻居同网、邻居转速又被 Create 清 0。修：① 激活分支改「**先 setSpeed、再 detachKinetics**」（`handleRemoved` 在 `speed==0` 时直接 return）② **rpm 落盘**（注入 Create `write`/`read`）⇒ 重载后注入退化为「无变化」，**从根上不触发** | `living-water-wheel-tech.md` §9.25 |
 | 2026-10-09 | 🏗 **架构分层收尾：底座 → 领域反向边全部归零**（⑤ container -22 · ④ network -8 · components -27 · 其余边清理 -19）—— **R1 113 → 15、R3 28 → 10**；`container` / `components` / `transfer` 均不再认识任何领域。顺带：3 份已完成计划归档 + 过期状态行修正 | `docs/archive/container-domain-decoupling-plan.md` · `docs/archive/components-decoupling-plan.md` |
@@ -174,7 +175,6 @@ src/main/java/com/qiqi/li/
 | 2026-10-08 | 📝 **措辞纠错：活箱子/活末影箱「可被搬运」的对象是内容而非本体** —— 5 处改为「其槽位可展开为虚拟存储」（作源取内部/作目标写内部，**本体不动**）；流体侧补「为何只推非活物品」（推动=本体移位，与展开语义不同类）（**538 全绿**） | `living-hopper-tech.md` §6.2.1/§6.2.2 |
 | 2026-10-08 | 🏗 **架构分层第四步（C 收尾）**：`RedstoneSensor` 接口上移 `living/api/` + 方向常量收归契约层 ⇒ `power`/`hopper` 完全不引用 redstone 域。**R3 28 → 25**，顺带 **R1 94 → 93**（纯重构，**534 全绿**） | `buffer/redstone-evolution-roadmap.md` §1 |
 | 2026-10-08 | 🏗 **架构分层第三步**：`LivingComponents` 从 `living/transfer/` 迁入 `living/components/`（48 个 import + 1 处同包引用）—— **不减违规，买归属诚实**（原先"transfer 认识 11 个领域"是假象）。**534 全绿** | `reference/file-map.md` |
-| 2026-10-08 | 🏗 **架构分层第二步**：`StaticCacheRegistry` 的 7 项**领域**缓存登记搬进各自 `XxxRegistration`（新建 `RuntimeRegistration`）⇒ 它只认识框架自己。**R1 101 → 94**，基线 39→34 对（纯重构，**534 全绿**） | `living-item-infrastructure.md` §3.4 |
 
 ## 排查铁律：原版机制挡路时
 

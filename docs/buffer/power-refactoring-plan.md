@@ -1,6 +1,6 @@
 # 红电包收口方案（power refactoring plan）
 
-*创建: 2026-09-11 · 状态: 未执行（待并行工作收口后按序推进）*
+*创建: 2026-09-11 · 状态: **进行中** —— 步骤 1 ✅（2026-09-11）· **步骤 4 第 1 刀 ✅（2026-10-09，`0769957`）**；步骤 2 / 步骤 4 其余刀待做*
 
 > ⚠️ **本文件尚未登记到 `AGENTS.md` 子系统索引** —— 因为 `AGENTS.md` 当时正被另一个
 > 并行会话修改，避免冲突故暂缓。收口工作排期时请补上索引条目。
@@ -145,7 +145,7 @@ record Re(long value) { ... }        // 1 RE = 1/16 FE
 
 | 顺序 | 拆出 | 行数 | 为什么先拆它 |
 |---|---|---|---|
-| 1 | `LivingWaxedCopperTooltip` | ~287 | **完全无 tick 依赖**，纯客户端展示。包里已有 `LivingWaxedCopperTooltipComponent` / `...TooltipRenderer`，命名惯例现成。`addToTooltip` 保留为一行委托（接口要求）。 |
+| 1 | `LivingWaxedCopperTooltip` | ~~~287~~ **✅ 已做（2026-10-09，`0769957`）** | **完全无 tick 依赖**，纯客户端展示。包里已有 `LivingWaxedCopperTooltipComponent` / `...TooltipRenderer`，命名惯例现成。`addToTooltip` 保留为一行委托（接口要求）。实际 **1265 → 995 行（-270）**；顺带删除两个死方法（`renderResonanceTooltip` / `renderResonanceFormula`）+ 一个死局部变量（`oxidation`）。保真验证：用翻译键逐键 diff，原 body 的 14 个键一个不少。 |
 | 2 | `WaxedCopperItems` | ~98 | 纯 `Item` 谓词，无状态。`isWaxedBulb` 被 3 个文件引用（含 `ContainerEnergyStorage`），`buildTelemetry` 被 3 个引用 —— 搬完统一改 import。 |
 | 3 | `CopperNetworkTopology` | ~244 | BFS + `repOf` + `edgeKey`。被 `tickContainerData` 调用，无外部引用。 |
 | 4 | `PhaseInterpreter` | ~153 | `phaseInterpretation` / `interpretShifter` / `interpretSplitter` / `interpretAdder` / `derivedSourceId`。 |

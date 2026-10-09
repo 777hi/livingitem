@@ -69,6 +69,14 @@
   修：账本创建处改调 `ContainerPowerAccess.getOrCreatePowerData(ctx)`（1 行）。
   文档：`living-power-tech.md` 相位快照节补记 + `ContainerPowerAccess` javadoc 同步。`551 全绿`。
 
+- 🏗 **power 收口 步骤 4 第 1 刀：抽出 `LivingWaxedCopperTooltip`**（纯搬迁，`0769957`）。
+  `LivingWaxedCopperFunction.addToTooltip`（202 行）+ `renderSection` / `formDescKey` /
+  `formTranslationKey` → 新类 `LivingWaxedCopperTooltip`（260 行），主类只留一行委托
+  ⇒ **1265 → 995 行（-270）**。保真验证：翻译键逐键 diff，原 body 的 14 个键一个不少。
+  顺带清死代码（抽离时发现、已确认全库零调用）：`renderResonanceTooltip` /
+  `renderResonanceFormula` 两个死方法 + `addToTooltip` 开头未使用的 `oxidation` 局部变量。
+  方案与后续刀序：`buffer/power-refactoring-plan.md` §5。`551 全绿`。
+
 ---
 
 ## 2026-10-08
