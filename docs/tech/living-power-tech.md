@@ -613,14 +613,14 @@ fail-safe 不崩不刷（详见 oversized-stack-audit.md §2.8），long 内部�
 | `ContainerPowerDataTest` | 6+ | 单路锁相、三相 6t 部分解锁、五相 5t 满相、杂讯排除、同相合并、EMA 账本 |
 | `AccountingGateTest` | 4 | **v19 跳变门控**：无跳变 tick 零产出、停机冻结、offset 去重、4t vs 12t 谐波中性化 |
 | `PhaseInterpretationTest` | 8 | **v19 相位解读三元件**：移相、移相链（奇数偏移）、移相环自熄、死源熄灭、裂相、加法求和、去重诚实 |
-| `ChannelStateTest` | 5 | 偏移活性剪枝（拆振荡器 n 回落）、稳态不误剪、长周期跨心跳存活 |
+| `ChannelStateTest` | 10 | 偏移活性剪枝（拆振荡器 n 回落）、稳态不误剪、长周期跨心跳存活 |
 | `CoilGroupingTest` | 5 | 形态识别 + 单通道状态机 |
-| `NetworkTraversalTest` | 6 | copyFrom 深拷贝、同组件共享历史、能量可加、锈级隔离、E2E 真实传播 |
+| `NetworkTraversalTest` | 5 | copyFrom 深拷贝、同组件共享历史、能量可加、锈级隔离、E2E 真实传播 |
 | `NetworkResonanceTest` | 18 | 网络级共振（含回代安全、上界、EMA 衰减） |
 | `WaxedCopperCouplingIT` | 3 | 多跳耦合链集成 |
 | `WaxedCopperOscillatorIT` | 5 | 振荡器→发电全链路 |
-| `WaxedCopperStorageTest` | 16 | 发电直存分配、无铜灯弃、满溢、模组容器取电、充电、容量 clamp、超取、取消活化排除、EMA 功率 |
-| `BulbItemEnergyStorageTest` | 6 | 双向充放、容量 clamp、simulate、拆分守恒、线性读数 |
+| `WaxedCopperStorageTest` | 20 | 发电直存分配、无铜灯弃、满溢、模组容器取电、充电、容量 clamp、超取、未活化排除、EMA 功率 |
+| `BulbItemEnergyStorageTest` | 8 | 双向充放、容量 clamp、simulate、拆分守恒、线性读数、未活化无能力 |
 | `RoundTripConservationIT` | 4 | **往返守恒（2026-09-09）**：箱A灯→电缆→箱B灯 1000t 原样往返断言总能量不增（精确复刻 Mekanism UniversalCable + ForgeStrictEnergyHandler 传输协议：SIMULATE 探测→convertFromAndBack 钳制→EXECUTE、按返回值记账，feConversionRate=2.5）+ 拉侧/推侧单侧拆解诊断 + extract 记账契约最小复现 |
 | `PhaseSnapshotWarmupTest` | 8 | **账本重生相位连续性（2026-09-09~11 三轮）**：新账本默认 warmup / 回填保留宽限 / 快照过滤未锁相与死边 / φ 跨会话平移守恒 / 空快照保持宽限 / 回填锚存活（二次退出不丢相位）/ 首跳 interval=P（φ 反推锚自洽）/ **世界轴快照往返（重进场景直接守卫）**（§6.5） |
 

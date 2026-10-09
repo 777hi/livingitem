@@ -227,13 +227,14 @@ k 锈级发电无同色灯 → 电量**不落任何池**（无容器池）、不
 **I-D4 容量界**
 任意充/放/拆/合操作序列后，恒 `0 ≤ q ≤ C`（C = `BULB_UNIT_CAPACITY_MFE`）。
 线性容量（count×C）是拆分安全的根基——平方容量在此断言下会坍缩。
-- 入口：`distributeToBulbs` 的 `Math.min(C, q+perLamp)` / `BulbItemEnergyStorage`
+- 入口：`BulbBank.deposit`（份额经 `PowerMath.mulDivFloor` 夹取 ⇒ 恒 ≤ 该堆剩余 ⇒ 每盏不越界；
+  原 `Math.min(C, q+perLamp)` 是纯防御、永不生效，2026-10-09 随收归删除）/ `BulbItemEnergyStorage`
 - 断言：随机操作序列（含超量充电、超量抽取）后逐灯检查界。
 
 **I-D5 双向等量**
 外部充电 X mFE → 红电侧可取 X mFE；往返（取 X → 充 X）q 复原。
 跨系统能量等量转换、无套利。
-- 入口：`BulbItemEnergyStorage`（双向 `EnergyStorage.ITEM`）+ `ContainerEnergyStorage`
+- 入口：`BulbItemEnergyStorage`（双向 `EnergyStorage.ITEM`，**仅已活化灯**）+ `ContainerEnergyStorage`
 - 断言：随机 X 的充-取 / 取-充往返后 q 与初值相等（`BulbItemEnergyStorageTest` 的参数化推广）。
 
 ### 2.E 集成（Integration）—— 信号层 ⇄ 电力层接口的跨场景性质
