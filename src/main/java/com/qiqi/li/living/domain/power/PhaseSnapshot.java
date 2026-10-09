@@ -7,7 +7,6 @@ import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import com.mojang.serialization.DataResult;
 
-import com.qiqi.li.living.domain.power.LivingWaxedCopperFunction.SignalTracker;
 
 /**
  * 相位快照 —— 容器红电账本的跨会话持久化形态（2026-09-09 相位快照落盘）。

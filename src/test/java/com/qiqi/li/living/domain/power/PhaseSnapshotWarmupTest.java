@@ -10,7 +10,6 @@ import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import com.qiqi.li.living.domain.power.LivingWaxedCopperFunction.SignalTracker;
 
 /**
  * 账本重生的相位连续性测试（2026-09-09 相位快照落盘 + 首拍无沿宽限）。

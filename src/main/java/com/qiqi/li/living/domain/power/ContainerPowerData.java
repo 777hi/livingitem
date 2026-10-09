@@ -6,7 +6,6 @@ import java.util.List;
 import java.util.Map;
 import com.qiqi.li.living.api.ContainerDataLifecycle;
 import com.qiqi.li.living.container.ContainerDataKey;
-import com.qiqi.li.living.domain.power.LivingWaxedCopperFunction.SignalTracker;
 
 /**
  * 容器级红电数据 —— 与 {@code ContainerRedstoneData} 并列的电力层账本。

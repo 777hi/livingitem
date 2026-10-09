@@ -19,12 +19,12 @@ import com.qiqi.li.living.util.WaxedCopperFamily;
  * （{@code runBfs}）与感应诊断日志仍留在 {@link LivingWaxedCopperFunction}</b>：</p>
  * <ul>
  *   <li>{@code runBfs} 混合了「拓扑遍历 + 边信号检测 + 通道事件注入」，属 tick 流程；</li>
- *   <li>它还依赖 {@code derivedSourceId}（相位解读段）与 {@code SignalTracker}
- *       —— 后者被 {@link PhaseSnapshot} 外部引用，搬动会连锁改 3 个文件，
- *       超出「纯搬迁」的边界。</li>
+ *   <li>它会调用 {@link PhaseInterpreter#derivedSourceId} 并操作顶层 {@link SignalTracker}；
+ *       两者现在均已从功能类解耦，但 BFS 仍留在编排类，因为它负责把拓扑遍历接到通道事件流，
+ *       而不只是纯拓扑计算。</li>
  * </ul>
  *
- * <p>这些原语被 BFS 驱动<b>与</b>相位解读段共用（{@code edgeKey} / {@code FALLING_BIT}
+ * <p>这些原语被 BFS 驱动<b>与</b> {@link PhaseInterpreter} 共用（{@code edgeKey} / {@code FALLING_BIT}
  * 在 {@code interpretShifter} / {@code interpretSplitter} 里也用到），故独立成类不会造成
  * 单向依赖。</p>
  */
