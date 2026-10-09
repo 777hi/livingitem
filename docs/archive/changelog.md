@@ -165,9 +165,16 @@
     （玩家取消活化满电铜灯 ⇒ 电归零）—— 这是**有意**设计（避免孤儿数据），
     与活箱子「取消活化掉内容」同族语义（离开即结算），**保持现状**
 
----
-
-## 2026-10-08
+- 🏗 **power 收口 步骤 4 第 4 刀：相位解读 + `SignalTracker` 提升为顶层类**（纯搬迁，2026-10-09）。
+  - `PhaseInterpreter` 新类接管 `phaseInterpretation` / `interpretShifter` /
+    `interpretSplitter` / `interpretAdder` / `derivedSourceId`；入口调用改为委托。
+    相位解读只读波形 / 注册表、写派生草稿，不碰 tick 内事件注入与物品状态 ⇒ 边界可独立。
+  - `SignalTracker` 从 `LivingWaxedCopperFunction` 内部类提升为顶层类：被
+    `ContainerPowerData`、`PhaseInterpreter`、tick 编排三方共用；原嵌套位置令账本
+    反向依赖功能类。`PhaseSnapshot` 继续用同一数据实现。
+  - 主类 **824 → 588 行（-236）**。定向测试（`PhaseInterpretationTest` +
+    `PhaseSnapshotWarmupTest`）通过；全量 **552 全绿**；`check_layers` R1 15 / R3 10 无新增；
+    `doc_check` 10/10。
 
 > 框架侧（流体侧已于 10-07 完工，此后不再改动）。
 

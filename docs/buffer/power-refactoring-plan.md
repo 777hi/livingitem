@@ -1,10 +1,10 @@
 # 红电包收口方案（power refactoring plan）
 
-*创建: 2026-09-11 · 状态: **进行中** —— 步骤 1 ✅ · **步骤 4 第 1~3 刀 ✅** ·
+*创建: 2026-09-11 · 状态: **进行中** —— 步骤 1 ✅ · **步骤 4 第 1~4 刀 ✅** ·
 **步骤 2 第 1~3 步 ✅**（③ 的放电与 ④ 经评估**不做**，理由见 §3，2026-10-09）；
-步骤 4 第 4~5 刀 / 步骤 3 待做*
+**步骤 4 第 5 刀 / 步骤 3 待做*
 >
-> 📉 **主类行数**：1265 → **824**（步骤 4 第 1~3 刀 -420 + 步骤 2 第 2 步 -21）。
+> 📉 **主类行数**：1265 → **588**（步骤 4 第 1~4 刀；第 4 刀拆出 `PhaseInterpreter` + 顶层 `SignalTracker`）。
 > **`ContainerEnergyStorage`**：312 → **210**（步骤 2 第 1 步）。
 >
 > 📌 已登记到 `AGENTS.md` 子系统索引「红电 · 电力」族（2026-10-09）。
@@ -225,16 +225,15 @@ record Re(long value) { ... }        // 1 RE = 1/16 FE
 |---|---|---|---|
 | 1 | `LivingWaxedCopperTooltip` | ~~~287~~ **✅ 已做（2026-10-09，`0769957`）** | **完全无 tick 依赖**，纯客户端展示。包里已有 `LivingWaxedCopperTooltipComponent` / `...TooltipRenderer`，命名惯例现成。`addToTooltip` 保留为一行委托（接口要求）。实际 **1265 → 995 行（-270）**；顺带删除两个死方法（`renderResonanceTooltip` / `renderResonanceFormula`）+ 一个死局部变量（`oxidation`）。保真验证：用翻译键逐键 diff，原 body 的 14 个键一个不少。 |
 | 2 | ~~`WaxedCopperItems`~~ → **`living/util/WaxedCopperFamily`** | ~~~98~~ **✅ 已做（2026-10-09，`1d16160`）** | 纯 `Item` 谓词，无状态。**改去 L1 `WaxedCopperFamily` 而非 power 包内** —— 它的 javadoc 早已写明迁入条件（「若将来其它域也需要，应一并迁到本类」），且 `isWaxedBulb` / `isWaxedChiseled` 确已被 power 域**之外**的类使用（`ContainerEnergyStorage` / `LivingItemClient` / `LivingWaxedChiseledDecorator`）。⚠️ **`getCoilForm` 刻意不迁** —— 它映射 power 域的 `LivingWaxedGeneratorData.FORM_*`，迁到 L1 会造 **L1 → L3 反向依赖**。实际 **995 → 945 行**；R1/R3 无新增违规。 |
-| 3 | `CopperNetworkTopology` | ~~~244~~ **✅ 部分（2026-10-09，`f7296c4`，实抽 135 行）** | **边界比原表更窄**：只抽「与 tick 流程无关的纯图/键运算」（`DIR_ROW/COL` · `pos2dToEdgeDir` · `traversableNeighbor` · `repOf`+`NetworkKey` · `edgeKey` · `FALLING_BIT` · `chiseledInputEdge`）。⚠️ **`runBfs` 留下** —— 它混合「拓扑遍历 + 边信号检测 + 通道事件注入」，属 tick 流程；且依赖 `derivedSourceId`（第 4 刀）与 `SignalTracker`（被 `PhaseSnapshot` **外部**引用，搬动会连锁改 3 个文件）。主类 **945 → 845 行**。 |
-| 4 | `PhaseInterpreter` | ~153 | `phaseInterpretation` / `interpretShifter` / `interpretSplitter` / `interpretAdder` / `derivedSourceId`。 |
-| 5 | `EnergyAccounting` + `PowerTelemetry` | ~130 | `accountEnergy` / `buildTelemetry` / `formatMilliFe` / `collectDomains`。 |
+| 3 | `CopperNetworkTopology` | ~~~244~~ **✅ 部分（2026-10-09，`f7296c4`，实抽 135 行）** | **边界比原表更窄**：只抽「与 tick 流程无关的纯图/键运算」（`DIR_ROW/COL` · `pos2dToEdgeDir` · `traversableNeighbor` · `repOf`+`NetworkKey` · `edgeKey` · `FALLING_BIT` · `chiseledInputEdge`）。⚠️ **`runBfs` 留下** —— 它混合「拓扑遍历 + 边信号检测 + 通道事件注入」，属 tick 流程；第 4 刀已将纯相位解读拆出，但 BFS 本身仍留在编排类。主类后续行数随第 4 刀更新。 |
+| 4 | `PhaseInterpreter` + 顶层 `SignalTracker` | ~153 + 内部类 74 | **✅ 已做（2026-10-09，本轮）**。`phaseInterpretation` / `interpretShifter` / `interpretSplitter` / `interpretAdder` / `derivedSourceId` 搬入 `PhaseInterpreter`；`SignalTracker` 从功能类内部类提升为顶层类，因为被 `ContainerPowerData`（持有两张 tracker 表）、`PhaseInterpreter`、tick 编排三方共用。消除 `ContainerPowerData → LivingWaxedCopperFunction` 的层内倒挂；`PhaseSnapshot` 现在直接用顶层 `SignalTracker`。纯搬迁，不改相位算法。主类 **824 → 588 行（-236）**。 |
+| 5 | `EnergyAccounting` + `PowerTelemetry` | ~130 | `accountEnergy` / `buildTelemetry` / `formatMilliFe` / `collectDomains`。下一刀仍可纯搬迁；`accountEnergy` 本轮保留在功能类（tick 编排直接调用）。 |
 
 拆完 `LivingWaxedCopperFunction` 剩 ~350 行，只剩「接口实现 + tick 编排」——
 **那才是一个功能类该有的样子**。
 
-**建议只做第 1、2 刀。** 它们无状态、无 tick 依赖、收益立竿见影（文件立减 385 行），
-风险几乎为零。第 3~5 刀涉及 tick 内部状态流转，等 `PhaseInterpretationTest` 全绿、
-相位相关工作彻底收口之后再说。
+**当前剩余**：步骤 4 第 5 刀（记账 + 遥测，~130 行）与步骤 3（单位值类型，成本最高、可延后）。
+原「建议只做第 1、2 刀」是早期建议，已由 1~4 刀完成**取代**；此处若保留会误导后续执行者。
 
 ## 6. 每一步都必须做的验证协议
 

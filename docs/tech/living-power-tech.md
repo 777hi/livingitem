@@ -109,11 +109,12 @@ FE               = RE × K，K = 1/16
 | `PhaseEvent` | `domain/power/` | 相位事件记录：sourceId、period、offset、delta、tick |
 | `ChannelState` | `domain/power/` | 通道状态：相位域分组计 n、eff_δ_sum 计算、合因子 |
 | `PhaseDomain` | `domain/power/`（ChannelState 内部类） | 周期域：按 period 分域，offset 去重，Δ 跟踪 |
-| `SignalTracker` | `domain/power/`（LivingWaxedCopperFunction 内部类） | 上升沿跟踪器：间隔 EMA 估计周期、偏移量计算 |
+| `SignalTracker` | `domain/power/SignalTracker.java`（顶层类，2026-10-09 从功能类内提升） | 上升沿跟踪器：间隔 EMA 估计周期、偏移量计算；由账本、相位解读器、tick 编排三方共用 |
+| `PhaseInterpreter` | `domain/power/PhaseInterpreter.java`（2026-10-09 从功能类纯搬迁） | 相位解读三元件：雕文移相 / 切制裂相 / 格栅加法；只读真实边跟踪器与注册表，草稿统一提交 |
 | `GeneratorState` | `domain/power/` | 单台发电机状态：偏好周期（= 堆叠数）、单通道事件接收 |
 | `ContainerPowerData` | `domain/power/` | 容器级账本：RE 事件累加、EMA 功率、tick 计数、边信号跟踪器持久化、按锈级基础 EMA（共振 + v18 分账） |
 
-除 `LivingWaxedCopperFunction` 外全部为**纯 Java 类**（零 MC 依赖），可直接 JUnit 驱动。
+`PhaseInterpreter` 是相位解读逻辑（依赖 `ItemStack` / `ContainerContext`）；`SignalTracker`、`PowerMath`、`PhaseEvent`、`ChannelState`、`GeneratorState`、`ContainerPowerData` 为纯 Java（零 Minecraft 依赖）。
 
 ### 1.3 调度与数据流
 
@@ -125,7 +126,8 @@ processContext() 每 game tick：
        ├─ 按网络组件遍历：每台发电机按形态归入组件 ComponentId = (TopoKey, rep, channelIdx)
        ├─ 每组件仅锚点（最小槽位 rep）跑一次 BFS，检测边信号 → PhaseEvent → ChannelState
        ├─ 其余发电机 copyFrom 锚点 ChannelState（相位历史深拷贝同步，O(域) 极廉价）
-       ├─ 上升沿 → 持久化 SignalTracker 获取周期 → ChannelState.onPhaseEvent()
+       ├─ PhaseInterpreter.phaseInterpretation：三形态解读真实锁相波形 → 派生相位草稿 → 统一写注册表
+       ├─ 上升沿 → 顶层 SignalTracker 获取周期 → ChannelState.onPhaseEvent()
        └─ 逐发电机 accountEnergy：用各自 pref 从共享/复制域取最佳 → RE → endTick()
 ```
 
@@ -526,6 +528,9 @@ tick + 网络不同位置边各自采样），`PhaseDomain` 去重后即得 n=7 
 | **雕文 = 移相器** | 信号的「位置」 | 对输入方向上的每路锁相波形 (P, φ, δ)（真实边 ~~+ 输入方向邻居的注册表驻波~~【链式组合已暂时关闭，见下】），派生 (P, (φ+1) mod P, δ) | 单级移相：给一路真实输入延迟 1 tick；~~k 台首尾相连 = 任意偏移延迟线，解锁奇数偏移制造~~（链已关） |
 | **切制 = 裂相器** | 信号的「另一半」 | 每条边的下降沿波形（独立跟踪器）直接登记为派生相位 (P, φ_f, \|Δ\|) | 一个方波贡献 2 个反相相位；P=2 时钟 + 1 台切制 → n=2 满相 |
 | **格栅 = 相位加法器** | 信号间的「关系」 | 汇集 4 条边的真实锁相波形按周期分桶，对 ≥2 路的桶派生 (P, Σφᵢ mod P, min δᵢ) | 多路相位合并出新相位；去重诚实（和撞已有相位不虚增 n） |
+
+> **实现落点（2026-10-09）**：算法在独立类 `PhaseInterpreter`；上升沿 / 下降沿锁相数据由顶层
+> `SignalTracker` 提供。`LivingWaxedCopperFunction` 仅在 tick 编排时调用解读 pass，BFS 事件注入仍留在编排类。
 
 > **⚠️ 移相链暂时关闭（2026-09-08）**：`interpretShifter` 的「输入二：读输入方向
 > 邻居的注册表驻波」已注释停用（代码保留）。原因：链式组合允许任意频率信号
