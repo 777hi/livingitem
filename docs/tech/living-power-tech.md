@@ -27,9 +27,10 @@
 > **功能需求的来源**与**行为对错的判据**（没有它，「该有哪些功能」只能从代码反推）。
 > ⚠️ **只写规则与语义**；数值与操作步骤归实现层（见 §4 与 `PowerMath`）。
 
-**语义**：**活涂蜡铜块 = 电力层**。涂蜡即**绝缘** —— 它自己**不参与信号层传播**，
+**语义**：**活涂蜡铜块 = 发电层**。涂蜡即**绝缘** —— 它自己**不参与信号层传播**，
 而是**检测**同氧化等级铜块网络（[活铜](living-copper-tech.md)，信号层）上的**相位事件**来发电。
-与「活红石信号层」合称**红电**（见 [glossary.md](../glossary.md)）。
+与「活红石信号层」合称**红电**（[glossary.md](../glossary.md) 口径：红电 = 活红石信号层 +
+活涂蜡铜块**发电层**）。
 
 **获取**：原版涂蜡铜块族（涂蜡铜块 / 涂蜡铜灯 / 涂蜡雕文 / 涂蜡切制 / 涂蜡格栅）+ 活化。
 
@@ -54,8 +55,22 @@
 · ✅ 网络级共振（不同锈级之间的和声，§3.7）· ✅ 相位快照跨会话续接（§6.5）
 · ✅ Tooltip 仪表盘
 
-**未实现 / 待定**：⏳ 活避雷针（供需分配，阶段四后）· ⚠️ Pipez 管道（用新 Transfer API，
-见 §8）· ℹ️ 锈级专属通道（v18）**已实现**（§7 旧表述已过时，见下）
+**未实现 / 待定**：
+- ⏳ **活避雷针**（Step 13：**供需分配** —— 让雷电给容器充电；排期在阶段四后）
+- ⚠️ **Pipez 能量管道**不兼容（它用新 Transfer API 的 `Energy.BLOCK`，非 FE 的
+  `EnergyStorage.BLOCK`；改用 Mekanism 电缆取电，见 §8）
+- ⚠️ **Flux Networks 的 Flux Plug 不取电**（它只等邻块推电，我方是被动电池面；
+  设计上不跟，见 §8）
+
+**验证入口**（每条规则 / 能力**在哪被守卫** —— 供 AI 自查，不必读全篇）：
+
+| 规则 / 能力 | 守卫 |
+|---|---|
+| 3 每盏守恒 · 7 容量线性 | `WaxedCopperStorageTest` · [power-invariants.md](../system-design/power-invariants.md) **I-D4** |
+| 4 仅活化灯参与 | `WaxedCopperStorageTest#deactivatedBulb_excluded` · `BulbItemEnergyStorageTest#notLiving_yieldsNoStorage` |
+| 5 取消活化清电 | `LivingWaxedCopperFunction.getOwnedComponentTypes()`（**声明式**清理，漏列即孤儿数据） |
+| 8 无出身论 · 双向充放 | `BulbItemEnergyStorageTest` · `RoundTripConservationIT`（往返守恒） |
+| 相位快照跨会话续接 | `PhaseSnapshotWarmupTest`（8 例，含世界轴往返） |
 
 ---
 

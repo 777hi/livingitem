@@ -19,7 +19,7 @@
 | **活耕地** | GUI 交互获取/种植/骨粉 + **放置回世界模拟右键种植** + 世界轴节拍生长 + round-robin 逐项产出 + 双槽渲染 | [living-farmland-tech.md](../tech/living-farmland-tech.md) §3.5 / §8 |
 | **活工具**（镐/斧/铲/锄） | **记忆玩家操作行为**（左键挖掘 / 右键交互；**活斧子还含攻击记忆 —— 三类记忆齐全**）→ 以宿主为原点沿射线回放；FakePlayer 模拟完整操作 + 逐格扫描黑名单 | [living-tool-tech.md](../tech/living-tool-tech.md)（设计池见 [living-tool-design.md](../buffer/living-tool-design.md) §3.12） |
 | **活武器**（剑/斧/重锤） | **不实现攻击逻辑，只「代玩家出手」**：攻击记忆（射线）+ `fake.attack()` 走原版管线；攻击缩放 per-weapon 注入（受控 tick 驱动）。**仅近战** | [living-weapon-tech.md](../tech/living-weapon-tech.md)（设计池见 [living-weapon-design.md](../buffer/living-weapon-design.md)，含蓄力型设计稿指引） |
-| **活红石** | 红石信号传播 + BFS 算法 + 反相器 + 堆叠数影响；**驱动权已收归单点**（`LivingRedstoneFunction` 自维持 + 守卫，2026-10-08） | [living-redstone-tech.md](../tech/living-redstone-tech.md) |
+| **活红石** | 红石信号传播 + BFS 算法 + 反相器 + 堆叠数影响；**驱动权已收归单点**（`LivingRedstoneFunction` 自维持 + 守卫，2026-10-08）。**信号层另含「活铜」** —— 铜块线缆 / 雕文二极管 / 切制立交桥 / 铜格栅加法器 / 铜灯信号记忆（2026-10-09 补登记） | [living-redstone-tech.md](../tech/living-redstone-tech.md) · [living-copper-tech.md](../tech/living-copper-tech.md) |
 | **活涂蜡铜块（红电发电）** | 双因子感应发电 + 事件驱动记账 + RE/FE 单位制 | [living-power-tech.md](../tech/living-power-tech.md) |
 | **活打火石** | 交互触发器，无 tick 逻辑 | [living-flint-and-steel-tech.md](../tech/living-flint-and-steel-tech.md) |
 | **GUI交互** | 声明式规则 + 统一拦截 + 创造模式兼容 | [gui-interaction-system.md](../system-design/gui-interaction-system.md) |
