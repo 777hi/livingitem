@@ -111,10 +111,12 @@ FE               = RE × K，K = 1/16
 | `PhaseDomain` | `domain/power/`（ChannelState 内部类） | 周期域：按 period 分域，offset 去重，Δ 跟踪 |
 | `SignalTracker` | `domain/power/SignalTracker.java`（顶层类，2026-10-09 从功能类内提升） | 上升沿跟踪器：间隔 EMA 估计周期、偏移量计算；由账本、相位解读器、tick 编排三方共用 |
 | `PhaseInterpreter` | `domain/power/PhaseInterpreter.java`（2026-10-09 从功能类纯搬迁） | 相位解读三元件：雕文移相 / 切制裂相 / 格栅加法；只读真实边跟踪器与注册表，草稿统一提交 |
+| `EnergyAccounting` | `domain/power/EnergyAccounting.java`（2026-10-09 从功能类纯搬迁） | 跳变门控：最佳活动域 → RE；按锈级记录共振前基础出力 |
+| `PowerTelemetry` | `domain/power/PowerTelemetry.java`（2026-10-09 从功能类纯搬迁） | 将通道 / 容器账本投影为仪表盘快照；有效数字量化 + FE 可读格式化 |
 | `GeneratorState` | `domain/power/` | 单台发电机状态：偏好周期（= 堆叠数）、单通道事件接收 |
 | `ContainerPowerData` | `domain/power/` | 容器级账本：RE 事件累加、EMA 功率、tick 计数、边信号跟踪器持久化、按锈级基础 EMA（共振 + v18 分账） |
 
-`PhaseInterpreter` 是相位解读逻辑（依赖 `ItemStack` / `ContainerContext`）；`SignalTracker`、`PowerMath`、`PhaseEvent`、`ChannelState`、`GeneratorState`、`ContainerPowerData` 为纯 Java（零 Minecraft 依赖）。
+`PhaseInterpreter` 是相位解读逻辑（依赖 `ItemStack` / `ContainerContext`）；`SignalTracker`、`EnergyAccounting`、`PowerTelemetry`、`PowerMath`、`PhaseEvent`、`ChannelState`、`GeneratorState`、`ContainerPowerData` 为纯 Java（零 Minecraft 依赖）。
 
 ### 1.3 调度与数据流
 
@@ -128,7 +130,7 @@ processContext() 每 game tick：
        ├─ 其余发电机 copyFrom 锚点 ChannelState（相位历史深拷贝同步，O(域) 极廉价）
        ├─ PhaseInterpreter.phaseInterpretation：三形态解读真实锁相波形 → 派生相位草稿 → 统一写注册表
        ├─ 上升沿 → 顶层 SignalTracker 获取周期 → ChannelState.onPhaseEvent()
-       └─ 逐发电机 accountEnergy：用各自 pref 从共享/复制域取最佳 → RE → endTick()
+       └─ 逐发电机 `EnergyAccounting.accountEnergy`：用各自 pref 从共享/复制域取最佳 → RE → endTick()
 ```
 
 > ⚠️ **priority 必须保持 3**：电力采样依赖红石（priority 2）已算完的 edgeGrid。

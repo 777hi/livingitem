@@ -176,6 +176,17 @@
     `PhaseSnapshotWarmupTest`）通过；全量 **552 全绿**；`check_layers` R1 15 / R3 10 无新增；
     `doc_check` 10/10。
 
+- 🏗 **power 收口 步骤 4 第 5 刀：记账与遥测抽为 `EnergyAccounting` / `PowerTelemetry`**（纯搬迁，2026-10-09）。
+  - `accountEnergy` → `EnergyAccounting`；`buildTelemetry` / `formatMilliFe` /
+    `collectDomains` → `PowerTelemetry`；主类 tick 内调用改委托，Tooltip 与单测改指向新归属。
+  - 遥测只是状态投影、不改账本；记账仍按原 tick 顺序逐发电机执行、各自 pref 敏感不变。
+  - 主类 **588 → 476 行（-112）**。记账 / 共振 / 网络遍历 / 储能相关定向测试通过；全量 **552 全绿**。
+    `check_layers` R1 15 / R3 10 无新增；`doc_check` 10/10。
+
+---
+
+## 2026-10-08
+
 > 框架侧（流体侧已于 10-07 完工，此后不再改动）。
 
 - 🏗 **架构分层收尾（一）：三块反向边清零 —— R1 91 → 34**（10-08 深夜完成 ⑤/④/components）：
