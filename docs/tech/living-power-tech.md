@@ -584,6 +584,13 @@ q 按 mFE 绝对值存储，扩容无迁移问题。**int 收窄警戒线**：�
 int FE，单堆读数溢出需 count ≥ 2,148 盏（2³¹ / 1M = 2,147.48）——超大堆叠容器（抽屉类）已可触达，
 fail-safe 不崩不刷（详见 oversized-stack-audit.md §2.8），long 内部全程无损）。
 
+**电量与活化状态**（2026-10-09 定案）：`q` 存在 `living_waxed_bulb_data` 组件里，
+该组件登记在 `LivingWaxedCopperFunction.getOwnedComponentTypes()` ⇒ **取消活化即清空**
+（`clearLivingData` 按声明逐个 `remove`）。语义与活箱子「取消活化掉内容」**同族**：
+**离开系统即结算** —— 用户确认此为正常行为。
+⇒ 因此未活化的涂蜡铜灯**恒为空**，且它不提供 `EnergyStorage.ITEM`
+（准入判据见 `BulbItemEnergyStorage.of`；另见 红电系统.md「活铜灯物品 = 通用电池」）。
+
 ---
 
 ## 5. 与红石系统的集成
