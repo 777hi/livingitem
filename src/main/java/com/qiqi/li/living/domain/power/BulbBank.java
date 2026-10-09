@@ -18,10 +18,14 @@ import com.qiqi.li.living.util.WaxedCopperFamily;
  *
  * <p><b>为什么要有这个类</b>：原先「按剩余容量比例分配」这个操作<b>有三份实现、三种口径</b>
  * （{@code ContainerEnergyStorage.receive} / {@code LivingWaxedCopperFunction.distributeToBulbs} /
- * {@code BulbItemEnergyStorage}），没有单一归属地 —— 历史上同一个 long 溢出 bug 因此
- * <b>被复制到两处</b>（修完 {@code receive()} 后 {@code distributeToBulbs} 里还有一份）。
+ * {@code BulbItemEnergyStorage.receiveEnergy}），没有单一归属地 —— 历史上同一个 long 溢出 bug
+ * 因此<b>被复制到两处</b>（修完 {@code receive()} 后 {@code distributeToBulbs} 里还有一份）。
  * 本类把「扫铜灯堆 → 收集 → 比例分配 → 取整写入 → 零头回收」收成一处，
  * 把各处<b>故意的口径差异</b>变成<b>显式参数</b>（{@link FePolicy}）——<b>参数化差异，不抹平差异</b>。</p>
+ *
+ * <p>⚠️ <b>「按电荷抽取」（{@code extract}）不在此类内</b>：它是唯一调用方、无重复可消，
+ * 且依赖「抽够即停」的提前退出（本类的 {@link #scan} 必须全扫）—— 搬进来只会丢掉性能特性。
+ * 判据：<b>统一针对「复杂 + 有 bug 史 + 多份拷贝」，不为形式上的「全收」而搬</b>。</p>
  *
  * <p><b>性能契约（硬约束，勿破）</b>：</p>
  * <ul>
@@ -45,8 +49,9 @@ final class BulbBank {
      * 只有需要「对外报账声明值」的接口才需要回收补回（否则声明与实充差太大）。</p>
      *
      * <p>迁移进度（方案 §3）：① {@code receive} ✅ → ② {@code distributeToBulbs} ✅ →
-     * ③ {@code BulbItemEnergyStorage} / ④ {@code extract} 待做 —— 届时由真实调用点定义语义，
-     * <b>不预先发明</b>。</p>
+     * ③ {@code BulbItemEnergyStorage} 充电 ✅（放电与 ④ {@code extract} 经评估<b>不做</b> ——
+     * 单调用方、无重复可消、且 {@code extract} 依赖「抽够即停」的提前退出）——
+     * 新增口径时由真实调用点定义语义，<b>不预先发明</b>。</p>
      */
     enum FePolicy {
         /**
