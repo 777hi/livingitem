@@ -224,6 +224,11 @@ public class LivingItemInputHandler {
 
     private static DirectionHudState activeHud = null;
 
+    /** 方向输入会话是否进行中（活按钮据此让位自己的 tooltip，避免与输入 HUD 重叠）。 */
+    public static boolean hasActiveDirectionSession() {
+        return activeHud != null;
+    }
+
     /** HUD 渲染行（null = 无会话）。 */
     public static List<Component> getActiveHudLines() {
         if (activeHud == null) return null;

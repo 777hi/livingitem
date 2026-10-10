@@ -62,7 +62,9 @@ public class LivingButton extends SpriteIconButton.CenteredIcon {
     @Override
     public void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         ((MutableSpriteSpriteIconButton) this).setSprite(this.isHovered() ? HOVERED_SPRITE : SPRITE);
-        this.setTooltip(Tooltip.create(buildTooltip()));
+        // 方向输入会话进行中 → 按钮 tooltip 让位（信息已在输入 HUD 里，两个 tooltip 会重叠）
+        this.setTooltip(com.qiqi.li.client.input.LivingItemInputHandler.hasActiveDirectionSession()
+            ? null : Tooltip.create(buildTooltip()));
         super.renderWidget(guiGraphics, mouseX, mouseY, partialTick);
     }
 
