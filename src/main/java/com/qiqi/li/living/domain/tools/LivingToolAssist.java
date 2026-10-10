@@ -37,7 +37,7 @@ import net.neoforged.neoforge.event.level.BlockDropsEvent;
  *   <li><b>没记忆</b> → 它<b>帮玩家</b>挖（本类）</li>
  * </ul>
  *
- * <h3>⭐ 零 mixin —— 全靠 NeoForge 官方钩子</h3>
+ * <h3>⭐ 近乎零 mixin —— 只有「直读入口」这一处</h3>
  * 原设计里标着"唯一技术难点"的 {@code B1}（Mixin {@code ServerPlayerGameMode} 拿破坏进度）
  * <b>整个不需要</b>：原版每 tick 调 {@code getDigSpeed} / {@code hasCorrectToolForDrops}，
  * 这两个位置正好都有钩子，"玩家正在挖哪一格"它自己会告诉我们，中断 / 换目标天然被处理。
@@ -46,8 +46,13 @@ import net.neoforged.neoforge.event.level.BlockDropsEvent;
  *   <tr><th>维度</th><th>钩子</th><th>做法</th></tr>
  *   <tr><td><b>加速</b></td><td>{@link PlayerEvent.BreakSpeed}</td>
  *       <td>{@code setNewSpeed(原速 + Σ 各活工具速度)}</td></tr>
- *   <tr><td><b>材质门槛</b></td><td>{@link PlayerEvent.HarvestCheck}</td>
+ *   <tr><td><b>材质门槛</b>（事件入口）</td><td>{@link PlayerEvent.HarvestCheck}</td>
  *       <td>任意一把活工具挖得动 → {@code setCanHarvest(true)}</td></tr>
+ *   <tr><td><b>材质门槛</b>（直读入口）</td>
+ *       <td>{@code PlayerAssistHarvestMixin} —— <b>本类唯一的 mixin</b></td>
+ *       <td>{@code Player#hasCorrectToolForDrops(BlockState)} 判 false 时再问一次
+ *           {@link #hasBackpackToolFor}：该重载被 NeoForge 标 {@code @Deprecated} 且
+ *           <b>不发事件</b>，事件钩子挂不上（2026-10-10 传送石碑掉落闸门零掉落）</td></tr>
  *   <tr><td><b>附魔归属</b></td><td>{@link BlockDropsEvent}</td>
  *       <td>用<b>槽位最靠前</b>那把活工具重算掉落与经验（{@code E6}，原始需求原文）</td></tr>
  *   <tr><td><b>耐久</b></td><td>同上</td>
@@ -109,21 +114,51 @@ public final class LivingToolAssist {
     // ── ② 材质门槛 ──────────────────────────────────────────────────────────
 
     /**
+     * 「背包里是否有活工具挖得动这个方块」—— 材质门槛判据的<b>单一来源</b>。
+     *
+     * <p>⭐ <b>两条入口共用本方法</b>，不许各写一遍：</p>
+     * <table>
+     *   <tr><th>入口</th><th>谁会走</th><th>接入点</th></tr>
+     *   <tr><td><b>事件</b>（位置敏感）</td>
+     *       <td>原版 {@code canHarvestBlock} → {@code doPlayerHarvestCheck} 发事件；
+     *           以及跟进了 NeoForge 的模组（{@code canHarvestBlock(level, pos, player)}）</td>
+     *       <td>{@link #onHarvestCheck}</td></tr>
+     *   <tr><td><b>直读</b>（只有 BlockState）</td>
+     *       <td>模组直接调 {@code Player#hasCorrectToolForDrops(BlockState)} ——
+     *           该重载被 NeoForge 标 {@code @Deprecated}（"use position sensitive version below"），
+     *           <b>不发任何事件</b>。实例：传送石碑的掉落闸门
+     *           （{@code WaystoneBlockBase#playerWillDestroy}，2026-10-10 实测石碑零掉落）</td>
+     *       <td>{@code PlayerAssistHarvestMixin}</td></tr>
+     * </table>
+     *
+     * <p>⚠️ 判据口径 = 「<b>背包（非主手槽）</b>里有无记忆的活工具挖得动」：
+     * 主手那一格由原版自己算（{@link #assistTools} 显式跳过）；
+     * <b>未活化的普通工具</b>与<b>有记忆的活工具</b>（主动模式，它自己干活、不借手）都不算。</p>
+     *
+     * @return true = 视同玩家"持有正确工具"
+     */
+    public static boolean hasBackpackToolFor(@Nullable Player player, BlockState state) {
+        // 方块本来就不要求正确工具 ⇒ 原版恒放行，不必插手（也省一次背包扫描）
+        if (!state.requiresCorrectToolForDrops() || !isAssistable(player)) {
+            return false;
+        }
+        return !assistTools(player, s -> s.isCorrectToolForDrops(state)).isEmpty();
+    }
+
+    /**
      * 玩家判定"能否收获"时触发 —— 只要背包里有<b>任意一把</b>活工具挖得动，就放行。
      *
      * <p>注意这里<b>只改"能不能"</b>：掉什么由 ③ 接管。两者分工明确。</p>
+     *
+     * <p>判据本体在 {@link #hasBackpackToolFor} —— 与「直读入口」
+     * （{@code PlayerAssistHarvestMixin}）<b>共用同一份实现</b>，见那里的入口表。</p>
      */
     @SubscribeEvent
     public static void onHarvestCheck(PlayerEvent.HarvestCheck event) {
-        if (event.canHarvest() || !isAssistable(event.getEntity())) {
+        if (event.canHarvest() || !hasBackpackToolFor(event.getEntity(), event.getTargetBlock())) {
             return;
         }
-        Player player = event.getEntity();
-        BlockState state = event.getTargetBlock();
-
-        if (!assistTools(player, s -> s.isCorrectToolForDrops(state)).isEmpty()) {
-            event.setCanHarvest(true);
-        }
+        event.setCanHarvest(true);
     }
 
     // ── ③ 附魔归属 + ④ 耐久 ────────────────────────────────────────────────

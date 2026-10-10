@@ -9,7 +9,8 @@
     "ServerPlaceRecipeMixin",
     "BlockStateBaseMixin",
     "RedStoneWireBlockMixin",
-    "BlockItemMixin"
+    "BlockItemMixin",
+    "PlayerAssistHarvestMixin"
   ],
   "injectors": {
     "defaultRequire": 1

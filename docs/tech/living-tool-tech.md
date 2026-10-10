@@ -1435,18 +1435,54 @@ poseStack.mulPose(Axis.ZP.rotation(MODEL_UPRIGHT_FIX));  // 立正（更内层�
 - **有记忆** → 它**自己**干活（`L` 组回放），不帮忙
 - **没记忆** → 它**帮玩家**挖
 
-**⭐ 零 mixin —— NeoForge 官方钩子全覆盖**
+**⭐ 近乎零 mixin —— 只有「直读入口」这一处（2026-10-10 修订）**
 
 原设计里标着"唯一技术难点"的 `B1`（Mixin `ServerPlayerGameMode` 拿破坏进度）**整个不需要**：
-原版每 tick 调 `getDigSpeed` / `hasCorrectToolForDrops`，这两个位置正好都有钩子 ——
+原版每 tick 调 `getDigSpeed` / `hasCorrectToolForDrops`（后者的**位置敏感重载**会发钩子）——
 **"玩家正在挖哪一格"它自己会告诉我们**，中断 / 换目标天然被处理 ⇒ `B2`、`B3` 也一并消失。
 
-| 维度 | 钩子 | 做法 |
+| 维度 | 入口 | 接法 |
 |---|---|---|
-| **加速** | `PlayerEvent.BreakSpeed` | `setNewSpeed(原速 + Σ 各活工具速度)` |
-| **材质门槛** | `PlayerEvent.HarvestCheck` | 任意一把挖得动 → `setCanHarvest(true)` |
-| **附魔归属** | `BlockDropsEvent` | 用**槽位最靠前**那把重算掉落与经验（`E6`） |
-| **耐久** | 同上 | 每把出过力的扣 1 点（`F`） |
+| **加速** | 事件 | `PlayerEvent.BreakSpeed` → `setNewSpeed(原速 + Σ 各活工具速度)` |
+| **材质门槛** | 事件 | `PlayerEvent.HarvestCheck` → 任意一把挖得动 → `setCanHarvest(true)` |
+| **材质门槛** | **直读**（⚠️ mixin） | `PlayerAssistHarvestMixin` → `Player#hasCorrectToolForDrops(BlockState)` 判 false 时，再问一次 `hasBackpackToolFor` |
+| **附魔归属** | 事件 | `BlockDropsEvent` → 用**槽位最靠前**那把重算掉落与经验（`E6`） |
+| **耐久** | 事件 | 同上，每把出过力的扣 1 点（`F`） |
+
+#### ⭐ 为什么「材质门槛」必须有两条入口（2026-10-10，传送石碑不掉落）
+
+同一件事（"玩家算不算持有正确工具"）在 NeoForge 上有两个查询入口，**只有事件那个发钩子**：
+
+| 入口 | 谁会走 | 覆盖 |
+|---|---|---|
+| `BlockState#canHarvestBlock(level, pos, player)`（位置敏感）<br>→ `EventHooks.doPlayerHarvestCheck` | 原版 `ServerPlayerGameMode`；跟进 NeoForge 的模组 | ✅ 事件钩子 |
+| `Player#hasCorrectToolForDrops(BlockState)`（1 参数） | **模组直读**。该重载被 NeoForge 标 `@Deprecated // Neo: use position sensitive version below`，**不发任何事件** | ❌ 钩子挂不上 ⇒ 只能 mixin |
+
+**实例**：传送石碑（Waystones 1.21.1）的 `WaystoneBlockBase#playerWillDestroy` 拿 1 参数版当**掉落闸门**：
+
+```java
+if (!player.getAbilities().instabuild && player.hasCorrectToolForDrops(state)) {
+    dropResources(state, ...); dropResources(offsetState, ...);   // ← 石碑物品的唯一来源
+}
+```
+
+辅助模式玩家**空手**（活工具在背包）⇒ 该判据 false ⇒ 手动掉落整段跳过；
+紧接着 `playerDestroy` 又因"双格方块"把状态换成 `Blocks.AIR` ⇒ **石碑消失但零掉落**。
+
+> ⚠️ **为什么只有辅助模式中招**：主动模式的破坏者是 `LivingToolFakePlayer`，活工具经
+> `equipTool` 装进**假玩家主手** ⇒ 同一个判据自然为 true。
+> **两条路径的唯一差别就是"执行者主手有没有工具"。**
+
+**判据同源**：两条入口共用 `LivingToolAssist#hasBackpackToolFor`
+（= 背包**非主手槽**里有无记忆的活工具挖得动；未活化的普通工具、有记忆的活工具都不算）
+⇒ 口径只有一处，将来改 `LivingToolRecorder#isAssistTool` 两边自动跟上。
+
+**不影响挖掘速度**：`getDestroyProgress` 里的 30 / 100 走的是 `doPlayerHarvestCheck`（**发事件**），
+那条早已放行 ⇒ 本 mixin 一个 tick 都不影响速度。
+
+> ⚠️ **仍有边界**：直接读**主手物品内容**（`player.getMainHandItem().isCorrectToolForDrops(...)`）
+> 的模组我们覆盖不了 —— 改 `getMainHandItem` 会污染所有读主手的代码（渲染 / 其他模组 / 拾取），
+> 不划算。那类只能靠模组自己改用能力判据。
 
 **⭐ 速度用 `LivingToolFakePlayer` 精算，而不是自己读 `ItemStack#getDestroySpeed`**
 
