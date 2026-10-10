@@ -7,12 +7,18 @@ import com.qiqi.li.network.LivingTagPacket;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.SpriteIconButton;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.neoforged.neoforge.network.PacketDistributor;
+import com.qiqi.li.living.api.HasDirection;
+import com.qiqi.li.living.api.LivingItemFunction;
+import com.qiqi.li.living.api.LivingItemManager;
 import org.slf4j.Logger;
 
 /**
@@ -56,7 +62,33 @@ public class LivingButton extends SpriteIconButton.CenteredIcon {
     @Override
     public void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         ((MutableSpriteSpriteIconButton) this).setSprite(this.isHovered() ? HOVERED_SPRITE : SPRITE);
+        this.setTooltip(Tooltip.create(buildTooltip()));
         super.renderWidget(guiGraphics, mouseX, mouseY, partialTick);
+    }
+
+    /**
+     * 动态 tooltip（2026-10-10）：按钮作用 + 手持活物品的方向配置提示。
+     * 每帧重建（内容随光标物品变化），分配量可忽略。
+     */
+    private Component buildTooltip() {
+        MutableComponent tip = Component.empty()
+            .append(Component.translatable("text.livingitem.living_button.tooltip"));
+        ItemStack carried = menu.getCarried();
+        if (!carried.isEmpty() && LivingItemManager.isLivingItem(carried)) {
+            boolean directional = false;
+            for (LivingItemFunction func : LivingItemManager.getApplicableFunctions(carried)) {
+                if (func instanceof HasDirection) {
+                    directional = true;
+                    break;
+                }
+            }
+            if (directional) {
+                tip.append("\n").append(Component.translatable("text.livingitem.living_button.direction_hint"));
+            } else if (carried.is(Items.HOPPER)) {
+                tip.append("\n").append(Component.translatable("text.livingitem.living_button.hopper_hint"));
+            }
+        }
+        return tip;
     }
 
     /**

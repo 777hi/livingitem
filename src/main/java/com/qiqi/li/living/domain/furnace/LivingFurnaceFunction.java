@@ -452,6 +452,12 @@ public class LivingFurnaceFunction implements LivingItemFunction, HasDirection {
     }
 
     @Override
+    public Pos2D getSlotDirection(ItemStack stack, String slotName) {
+        if (stack == null || stack.isEmpty() || slotName == null) return null;
+        return LivingFurnaceData.of(stack).direction().getDirection(slotName);
+    }
+
+    @Override
     public Set<DataComponentType<?>> getOwnedComponentTypes() {
         return Set.of(FurnaceComponents.LIVING_FURNACE_DATA.value(), FurnaceComponents.LIVING_FURNACE_BURNING.value());
     }

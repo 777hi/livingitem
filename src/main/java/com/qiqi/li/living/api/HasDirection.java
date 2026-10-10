@@ -17,4 +17,19 @@ public interface HasDirection {
     String[] getDirectionSlotNames();
 
     boolean updateSlotDirection(ItemStack stack, String slotName, Pos2D direction);
+
+    /**
+     * 【读数】读取某槽位当前配置的方向（可选，供客户端 HUD / tooltip 显示）。
+     *
+     * <p>返回 {@code null} 表示「本功能不提供读数」（HUD 显示为未知）；
+     * 返回 {@code Pos2D.NONE} 表示「未配置」。二者语义不同，勿混淆。</p>
+     *
+     * @param stack 物品
+     * @param slotName 槽位名（与 {@link #getDirectionSlotNames()} 对应）
+     * @return 当前方向；null = 不提供读数
+     */
+    @javax.annotation.Nullable
+    default Pos2D getSlotDirection(ItemStack stack, String slotName) {
+        return null;
+    }
 }

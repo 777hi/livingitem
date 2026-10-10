@@ -1,6 +1,11 @@
 package com.qiqi.li.client.input;
 
+import java.util.ArrayList;
+import java.util.List;
+
+import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.world.item.ItemStack;
@@ -27,6 +32,8 @@ import com.qiqi.li.network.ToolMemoryClearPacket;
 import com.qiqi.li.living.domain.tools.LivingToolMemory;
 import com.qiqi.li.living.domain.tools.LivingToolRecorder;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
+import net.minecraft.network.chat.Component;
+import org.lwjgl.glfw.GLFW;
 
 /**
  * 活物品客户端输入处理器 —— 处理 WASD 键入配置活漏斗传输方向。
@@ -151,14 +158,128 @@ public class LivingItemInputHandler {
 
         if (currentSession == null) {
             currentSession = new InputSession();
+            beginHopperHud();
         }
 
         currentSession.appendKey(upperChar);
+        refreshHudTyped();
 
         if (currentSession.isComplete()) {
             processInput(currentSession.getRawInput(), carried);
             currentSession = null;
+            activeHud = null;
         }
+    }
+
+    // ==================== 按键屏蔽 + HUD（2026-10-10，九宫格方案） ====================
+
+    /**
+     * ⭐ 九宫格屏蔽：「光标持活物品 + 悬停活按钮」时拦截 8 个方向键的<b>按键事件</b>。
+     *
+     * <p>为什么必须拦在 KeyPressed 而不只是 CharacterTyped：GLFW 的按键事件<b>先于</b>字符事件 ——
+     * 等字符事件到来时，Q 的丢弃 / E 的关界面已经发生。故在按键阶段直接 cancel，
+     * 让这 8 个键在该场景下只服务于方向输入。</p>
+     */
+    @SubscribeEvent
+    public static void onKeyPressed(ScreenEvent.KeyPressed.Pre event) {
+        if (!shouldCaptureDirectionInput()) return;
+        if (!isDirectionKeyCode(event.getKeyCode())) return;
+        event.setCanceled(true);
+    }
+
+    /** 会话进行到一半时关闭界面 → 丢弃半输入状态（避免残留到下一个界面）。 */
+    @SubscribeEvent
+    public static void onScreenClosing(ScreenEvent.Closing event) {
+        currentSession = null;
+        directionSession = null;
+        activeHud = null;
+    }
+
+    /**
+     * 方向输入的总前置条件 —— 按键拦截与字符输入<b>共用同一判据</b>（改一处即改两处）。
+     */
+    private static boolean shouldCaptureDirectionInput() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) return false;
+        if (!(mc.screen instanceof AbstractContainerScreen)) return false;
+        if (mc.screen.getFocused() instanceof EditBox) return false; // 文本框（重命名等）输入不受影响
+        if (!isLivingButtonHovered()) return false;
+        ItemStack carried = mc.player.containerMenu.getCarried();
+        if (carried.isEmpty() || !LivingItemManager.isLivingItem(carried)) return false;
+        return findDirectionFunction(carried) != null || isHopperItem(carried);
+    }
+
+    // -------------------- 方向输入 HUD --------------------
+
+    /**
+     * 方向输入会话的 HUD 快照 —— 供容器界面 render TAIL 绘制（mixin 只画框，不解析业务）。
+     *
+     * @param slotNameKeys 槽位名的翻译键（如 "slot.livingitem.input"）
+     * @param typedSymbols 已输入的方向符号（与槽位顺序对齐）
+     * @param currentSymbols 会话开始时各槽位的旧方向符号（"—" = 未配置 / 未知）
+     * @param hopperMode true = 活漏斗两键模式（源 → 目标）
+     */
+    public record DirectionHudState(List<String> slotNameKeys, List<String> typedSymbols,
+                                    List<String> currentSymbols, boolean hopperMode) {}
+
+    private static DirectionHudState activeHud = null;
+
+    /** HUD 渲染行（null = 无会话）。 */
+    public static List<Component> getActiveHudLines() {
+        if (activeHud == null) return null;
+        List<Component> lines = new ArrayList<>();
+        int total = activeHud.slotNameKeys().size();
+        int typed = activeHud.typedSymbols().size();
+        lines.add(Component.translatable(
+            activeHud.hopperMode() ? "hud.livingitem.hopper.title" : "hud.livingitem.direction.title",
+            typed, total));
+        for (int i = 0; i < total; i++) {
+            String symbol = i < typed ? activeHud.typedSymbols().get(i)
+                : i < activeHud.currentSymbols().size() ? activeHud.currentSymbols().get(i) : "—";
+            lines.add(Component.translatable("tooltip.livingitem.direction.slot",
+                Component.translatable(activeHud.slotNameKeys().get(i)), symbol));
+        }
+        lines.add(Component.translatable(
+                activeHud.hopperMode() ? "hud.livingitem.hopper.hint" : "hud.livingitem.direction.hint")
+            .withStyle(ChatFormatting.GRAY));
+        return lines;
+    }
+
+    private static void beginHopperHud() {
+        ItemStack carried = Minecraft.getInstance().player.containerMenu.getCarried();
+        List<String> current = new ArrayList<>();
+        DirectionTransferData dirData = LivingHopperFunction.readDirectionData(carried);
+        current.add(dirData != null ? dirData.sourceOffset().getSymbol() : "—");
+        current.add(dirData != null ? dirData.targetOffset().getSymbol() : "—");
+        activeHud = new DirectionHudState(
+            List.of("hud.livingitem.hopper.source", "hud.livingitem.hopper.target"),
+            new ArrayList<>(), current, true);
+    }
+
+    private static void beginDirectionHud(HasDirection dirFunc, ItemStack carried) {
+        String[] names = dirFunc.getDirectionSlotNames();
+        List<String> keys = new ArrayList<>();
+        List<String> current = new ArrayList<>();
+        for (String name : names) {
+            keys.add("slot.livingitem." + name);
+            Pos2D d = dirFunc.getSlotDirection(carried, name);
+            current.add(d != null ? d.getSymbol() : "—");
+        }
+        activeHud = new DirectionHudState(keys, new ArrayList<>(), current, false);
+    }
+
+    /** 会话追加按键后，刷新「已输入」符号列（两个会话类型共用）。 */
+    private static void refreshHudTyped() {
+        if (activeHud == null) return;
+        String raw = directionSession != null ? directionSession.getRawInput()
+            : currentSession != null ? currentSession.getRawInput() : "";
+        List<String> typed = new ArrayList<>();
+        for (char k : raw.toCharArray()) {
+            Pos2D d = keyToDirection(k);
+            typed.add(d != null ? d.getSymbol() : "?");
+        }
+        activeHud = new DirectionHudState(activeHud.slotNameKeys(), typed,
+            activeHud.currentSymbols(), activeHud.hopperMode());
     }
 
     /** 检查鼠标是否悬停在活按钮上 */
@@ -185,10 +306,12 @@ public class LivingItemInputHandler {
         if (currentSession != null && currentSession.isTimedOut()) {
             LOGGER.debug("Input session timed out: {}", currentSession.getRawInput());
             currentSession = null;
+            activeHud = null;
         }
         if (directionSession != null && directionSession.isTimedOut()) {
             LOGGER.debug("Direction session timed out: {}", directionSession.getRawInput());
             directionSession = null;
+            activeHud = null;
         }
     }
 
@@ -239,7 +362,21 @@ public class LivingItemInputHandler {
             case 'S' -> Pos2D.DOWN;
             case 'A' -> Pos2D.LEFT;
             case 'D' -> Pos2D.RIGHT;
+            // ⭐ 九宫格对角（2026-10-10）：键位 = 键盘左上角物理布局，天然对应九宫格
+            case 'Q' -> Pos2D.UP_LEFT;
+            case 'E' -> Pos2D.UP_RIGHT;
+            case 'Z' -> Pos2D.DOWN_LEFT;
+            case 'C' -> Pos2D.DOWN_RIGHT;
             default -> null;
+        };
+    }
+
+    /** 九宫格 8 键对应的 GLFW 键码 —— 按键阶段拦截用（Q=丢弃 / E=关界面，必须赶在原版之前）。 */
+    private static boolean isDirectionKeyCode(int keyCode) {
+        return switch (keyCode) {
+            case GLFW.GLFW_KEY_W, GLFW.GLFW_KEY_A, GLFW.GLFW_KEY_S, GLFW.GLFW_KEY_D,
+                 GLFW.GLFW_KEY_Q, GLFW.GLFW_KEY_E, GLFW.GLFW_KEY_Z, GLFW.GLFW_KEY_C -> true;
+            default -> false;
         };
     }
 
@@ -285,8 +422,10 @@ public class LivingItemInputHandler {
 
         if (directionSession == null) {
             directionSession = new DirectionSession(dirFunc.getDirectionKeyCount());
+            beginDirectionHud(dirFunc, Minecraft.getInstance().player.containerMenu.getCarried());
         }
         directionSession.appendKey(key);
+        refreshHudTyped();
 
         if (directionSession.isComplete()) {
             processDirectionSession(directionSession, functionId, dirFunc);
@@ -307,6 +446,7 @@ public class LivingItemInputHandler {
         }
 
         LOGGER.debug("Updated direction: {} total={}", keys, slotNames.length);
+        activeHud = null;
     }
 
     /** 发送槽位方向配置网络包到服务端 */

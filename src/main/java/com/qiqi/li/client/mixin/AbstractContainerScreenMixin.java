@@ -487,6 +487,28 @@ public class AbstractContainerScreenMixin extends Screen {
     private static final int DIR_LEFT = 3;
 
     @Inject(method = "render", at = @At("TAIL"))
+    private void living_item$renderDirectionHud(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick,
+                                                CallbackInfo ci) {
+        java.util.List<net.minecraft.network.chat.Component> lines =
+            com.qiqi.li.client.input.LivingItemInputHandler.getActiveHudLines();
+        if (lines == null || lines.isEmpty()) return;
+
+        final int boxW = 120;
+        final int lineH = 11;
+        int boxH = 6 + lines.size() * lineH + 2;
+        int boxX = this.leftPos + (this.imageWidth - boxW) / 2;
+        int boxY = this.topPos + this.imageHeight - 94 - boxH - 8;
+
+        guiGraphics.fill(boxX, boxY, boxX + boxW, boxY + boxH, 0xE0101018);
+        guiGraphics.renderOutline(boxX, boxY, boxW, boxH, 0xFF534AB7);
+        int y = boxY + 4;
+        for (net.minecraft.network.chat.Component line : lines) {
+            guiGraphics.drawString(this.font, line, boxX + 6, y, 0xFFFFFF, false);
+            y += lineH;
+        }
+    }
+
+    @Inject(method = "render", at = @At("TAIL"))
     private void living_item$renderWaterFlow(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick,
                                               CallbackInfo ci) {
         AbstractContainerScreen<?> self = (AbstractContainerScreen<?>) (Object) this;
