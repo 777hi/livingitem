@@ -18,7 +18,6 @@ import com.qiqi.li.living.api.HasDirection;
 import com.qiqi.li.living.domain.hopper.LivingHopperFunction;
 import com.qiqi.li.living.domain.hopper.DirectionTransferData;
 import com.qiqi.li.living.domain.map.LivingMapClientCache;
-import com.qiqi.li.living.model.DirectionSymbols;
 import com.qiqi.li.living.model.Pos2D;
 import com.qiqi.li.living.model.SlotMapping;
 import net.neoforged.bus.api.SubscribeEvent;
@@ -330,8 +329,7 @@ public class LivingItemInputHandler {
                 : isNext ? ChatFormatting.YELLOW : ChatFormatting.GRAY;
             Component nameComp = Component.literal(isNext ? "▶ " : "  ")
                 .append(slotNames.get(i)).withStyle(color);
-            // 符号走专用字体：对角箭头 ← 自绘字形，基本箭头 ← 原版（见 DirectionSymbols）
-            Component symbolComp = DirectionSymbols.literal(symbol).withStyle(color);
+            Component symbolComp = Component.literal(symbol).withStyle(color);
             lines.add(Component.translatable("hud.livingitem.slot.line", nameComp, symbolComp));
         }
         String hintKey = hopperMode ? "hud.livingitem.hopper.hint"

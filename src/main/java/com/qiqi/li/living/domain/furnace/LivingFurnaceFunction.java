@@ -23,7 +23,6 @@ import com.qiqi.li.living.api.HasDirection;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.transfer.SlotResolver;
-import com.qiqi.li.living.model.DirectionSymbols;
 import com.qiqi.li.living.model.Pos2D;
 import com.qiqi.li.living.domain.furnace.DirectionSlotsData;
 import com.qiqi.li.living.domain.furnace.FuelData;
@@ -403,7 +402,7 @@ public class LivingFurnaceFunction implements LivingItemFunction, HasDirection {
                 tooltipAdder.accept(Component.translatable(
                     "tooltip.livingitem.direction.slot",
                     Component.translatable("slot.livingitem." + slotName),
-                    DirectionSymbols.of(d)
+                    d.getSymbol()
                 ).withStyle(net.minecraft.ChatFormatting.GRAY));
             }
         }

@@ -9,7 +9,6 @@ import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
-import com.qiqi.li.living.model.DirectionSymbols;
 import com.qiqi.li.living.model.Pos2D;
 
 import net.minecraft.ChatFormatting;
@@ -96,7 +95,7 @@ public class LivingBrewingStandFunction implements LivingItemFunction, HasDirect
                 tooltipAdder.accept(Component.translatable(
                     "tooltip.livingitem.direction.slot",
                     Component.translatable("slot.livingitem." + slotName),
-                    DirectionSymbols.of(d)
+                    d.getSymbol()
                 ).withStyle(ChatFormatting.GRAY));
             }
         }
