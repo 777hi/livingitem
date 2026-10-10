@@ -43,8 +43,6 @@
 **能力清单**：✅ 两种点火 · ✅ 引信（默认 80 tick）· ✅ 爆炸（三档破坏策略）
 · ✅ 光照补偿 · ✅ 待炸账本（按区块分帧推进）· ✅ Tooltip
 
-**未实现 / 待定**：（无明确待办）
-
 **验证入口**：`ExplosionParamsTest`（参数）· `ExplosionLedgerTest`（待炸账本）·
 `ExplosionComponentLightTest`（光照补偿）· 发布前测试流程见
 [living-tnt-testing.md](../guides/living-tnt-testing.md)

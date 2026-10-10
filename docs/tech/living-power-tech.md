@@ -54,18 +54,15 @@
 | 6 | 铜灯**不导电**（不能作信号中继） | 铜灯**仅作储能** |
 | 7 | 容量与盏数**线性** | 平方容量会破坏拆分守恒（见 [power-invariants.md](../system-design/power-invariants.md)） |
 | 8 | **电无出身论** | 外部充的电与红电发的电混存、不分来源 |
+| 9 | **Pipez 能量管道不兼容** | 它用新 Transfer API 的 `Energy.BLOCK`，非 FE 的 `EnergyStorage.BLOCK`；取电改用 Mekanism 电缆（§8） |
+| 10 | **Flux Plug 不取电**（Flux Networks） | 它只等邻块推电，我方是被动电池面；设计上不跟（§8） |
 
 **能力清单**：✅ 相位检测与按锈级发电 · ✅ 铜灯储能（按盏 DataComponent，无池）
 · ✅ 双向充放（容器级 `ContainerEnergyStorage` + 物品级 `EnergyStorage.ITEM`）
 · ✅ 网络级共振（不同锈级之间的和声，§3.7）· ✅ 相位快照跨会话续接（§6.5）
 · ✅ Tooltip 仪表盘
 
-**未实现 / 待定**：
-- ⏳ **活避雷针**（Step 13：**供需分配** —— 让雷电给容器充电；排期在阶段四后）
-- ⚠️ **Pipez 能量管道**不兼容（它用新 Transfer API 的 `Energy.BLOCK`，非 FE 的
-  `EnergyStorage.BLOCK`；改用 Mekanism 电缆取电，见 §8）
-- ⚠️ **Flux Networks 的 Flux Plug 不取电**（它只等邻块推电，我方是被动电池面；
-  设计上不跟，见 §8）
+**未实现计划**统一登记在 [TODO.md](../TODO.md)「红电」节（2026-10-10 起，D-doc-06）。
 
 **验证入口**（每条规则 / 能力**在哪被守卫** —— 供 AI 自查，不必读全篇）：
 

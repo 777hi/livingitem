@@ -3,7 +3,7 @@
 > **状态**：设计探讨层（buffer）。⚠️ 描述的是**计划 / 未决**，不是现状。
 >
 > ⭐ **近战核心链路已实现**，现状见 [`docs/tech/living-weapon-tech.md`](../tech/living-weapon-tech.md)；
-> **蓄力型（活弓箭）设计已定稿**，见 `living-weapon-tech.md` §9.1（一期免录制）。
+> **蓄力型（活弓箭）设计已定稿**，全文见本文 §5（2026-10-10 自 tech §9.1 迁入；一期免录制）。
 > 本文件只保留仍有前瞻价值的内容：原始需求 / 官方入口盘点（蓄力型与法杖开工的 prep）/
 > 铁魔法联动调研 / 未决问题池（守卫型、真蓄力节奏、盾牌等）。
 >
@@ -459,6 +459,37 @@ PlayerInteractEvent.RightClickItem
 | — | R1 记的"距离"怎么用？ | ✅ **沿射线找**（不是"只在那个距离附近"） |
 | — | 攻击冷却怎么推进？ | ✅ **读物品属性**（攻击速度） |
 | — | 官方找方块的 API 为何不用？ | `level.clip` **不支持跳过方块**（宿主黑名单）⇒ 自己遍历；现已改用其底层 `traverseBlocks`（见 §2.8） |
+
+## §5 蓄力型设计稿（2026-09-30 定稿，待开工 —— 2026-10-10 自 `living-weapon-tech.md` §9.1 迁入）
+
+**可识别性（原版口径，铁律②）**：`getUseDuration > 0` + `getUseAnimation != NONE`
++ 武器标签收窄（`#enchantable/bow` / `trident`，mod 弓通常自带）—— 排除食物/盾/望远镜
+等非武器 use 物品。`CROSSBOW` 是"装填-稍后发射"语义，一期排除。
+
+**核心设计（用户定）：常驻满蓄力、触发直发、发射后慢慢回充** —— 免录制
+（不需要录玩家拉弓时长，此前"三步状态机 + 录制"的整个障碍随之消失）：
+
+- **发射**：`fake.releaseUsing(stack, level, fake, getUseDuration - 20)` ——
+  蓄力时长是 releaseUsing 的**调用参数**（原版 BowItem 威力从传入 remainingTicks 推导，
+  不读实体状态）⇒ 合成"满蓄力"参数直接调用，无需 startUsingItem
+- **方向**：记忆射线（复用 R1：箭命中生物造成伤害时录射线，与近战同构）+
+  faceTarget + 朝向跟随（射线微调全套复用，箭沿瞄准线飞，弹道下坠为原生行为）
+- **节流**：per-item 充能组件（`lastFireTick`），门 = `now - lastFireTick >= 回充时长`；
+  回充时长 **20 ticks**（原版弓满蓄力标准 ⇒ 连射 DPS 与真玩家持弓一致，免调平衡）
+- **蓄力姿态**：只做渲染层（模型画成拉弓姿态）；**不要真调 startUsingItem** ——
+  受控 tick 会推进 `useItemRemaining`，时长有限的武器被原生自动 release，
+  fresh copy 的续用判定（canContinueUsing）是新坑
+
+**待拍板**：① 弹药经济学（推荐：从主人背包抽箭，主人没箭不射 —— 与活熔炉
+"要燃料"语义一致；备选：假玩家常备箭无限弹药 / 照搬原版创造与无限规则；
+注意 fake 生存模式下 `BowItem.releaseUsing` 会找箭、找不到不射）；
+② 回充途中触发：不满不射（推荐，与近战 COOLING 对称）还是半功率可射；
+③ 回充时长是否可配置；④ Crossbow 一期排除（已定）。
+
+**受控 tick 的关系**：发射是原子调用（单次 releaseUsing），不依赖 onUseTick 推进；
+但受控 tick 仍承担弓的 inventoryTick（手持特效）/ 冷却 / 药效衰减 / 装备刷新 ——
+且 `updatingUsingItem` 状态机已就位，将来要真蓄力节奏（按玩家录制的拉弓时长）
+时地基已备。
 
 ---
 
