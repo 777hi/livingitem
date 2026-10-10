@@ -12,9 +12,11 @@ Verifies the invariants declared in docs/README.md §7 ("改完必查"):
   7. Java symbols      - docs 提到的 Living*.java / *Mixin.java 必须存在
   8. Commands          - docs 引用的 /livingitem 子命令必须已注册
   9. Method refs       - docs 里 ClassName.method(...) 的方法必须存在于源码
+ 10. §0 玩法定义        - 每份 docs/tech/living-*-tech.md 必含「§0 玩法定义」
+ 11. buffer 滞留       - 标着「已完成」却留在 buffer（不稳定层）的文档（soft warning）
 
-Checks 1-4 and 6-9 fail the run (exit 1). Check 5 only warns (entry budget is a
-maintenance signal, not a correctness error).
+Checks 1-4 and 6-10 fail the run (exit 1). Checks 5 and 11 only warn: both are
+maintenance signals that need a human decision, not correctness errors.
 
 Usage: python tools/doc_check.py [-v]
 """
@@ -30,7 +32,11 @@ VERBOSE = "-v" in sys.argv
 ENTRY = os.path.join(ROOT, "AGENTS.md")
 CHANGELOG = os.path.join(ROOT, "docs", "archive", "changelog.md")
 RESULTS = os.path.join(ROOT, "build", "test-results", "test", "TEST-*.xml")
+BUFFER = os.path.join(ROOT, "docs", "buffer")
 
+# chars（不是磁盘字节）：这是 AI 的**加载预算**，而 AI 按 token 消耗上下文，
+# 与文件在磁盘上占多少字节无关（中文 UTF-8 一个字符 3 字节，差 1.5 倍）。
+# 曾写「≤20KB」⇒ 22,377 字节的 AGENTS.md 被判 OK，红线形同虚设（2026-10-10 修正）。
 ENTRY_BUDGET = 20000            # chars, see docs/README.md §1
 MAX_PROGRESS_ROWS = 10          # 「开发进展」一行式滚动清单上限；see docs/README.md §4
 
@@ -515,6 +521,46 @@ def check_play_sections():
         print(f"10. §0 玩法定义    : OK（{len(files)} 份全覆盖）")
 
 
+# ---------------------------------------------------------------- 11. buffer 滞留
+
+# 完成态词 / 未完成态词。**未完成态词优先**：一份「部分落地」「进行中」的计划
+# 内部会用 ✅ 标记已完成步骤，只匹配完成词会误报（实测 open-plan.md、
+# power-refactoring-plan.md 都会命中）⇒ 双向判据。
+DONE_WORDS = ("已实现", "已验收", "全部完成", "已完成", "已落地", "已定案")
+OPEN_WORDS = ("进行中", "部分", "未定案", "待办", "待做", "待拍板", "探讨",
+              "设计中", "未实现", "规划中", "未完成", "待决")
+STATUS_WINDOW = 40              # 只取「状态:」后这几十字符 —— 再往后就是正文里的局部完成标记
+
+
+def check_buffer_staleness():
+    """buffer 层滞留检测（2026-10-10 新增，警告级）。
+
+    防的是 docs/README.md 铁律 0 点名的**头号误导**：buffer 的定义是
+    「不稳定 / 未定案，别当现状读」，一份标着「✅ 已实现并验收」的文档待在那里，
+    新 AI 会把它当成未定案的设计稿（或反过来，把未定案当现状）。
+
+    **只报警，不自动搬运**：AGENTS.md 的进展指针可能正指向它，
+    搬走必然断链（第 1 项随后会报）⇒ 搬 / 改状态标注由人决定，脚本只负责提醒。
+    """
+    stale = []
+    for p in sorted(glob.glob(os.path.join(BUFFER, "*.md"))):
+        head = read(p).split("\n")[:20]          # 状态横幅只出现在文件头
+        for line in head:
+            if not re.search(r"状态[:：]", line):
+                continue
+            val = line.split("状态", 1)[-1].lstrip("：: ")[:STATUS_WINDOW]
+            if any(w in val for w in DONE_WORDS) and not any(w in val for w in OPEN_WORDS):
+                stale.append(os.path.basename(p))
+            break                                 # 只看第一条状态行
+    if stale:
+        warnings.append(
+            "[buffer 滞留] 已完成文档仍在 buffer（会被当未定案读）: " + ", ".join(stale)
+            + " —— 搬 docs/archive/（**须同步改入口指针**，第 1 项会兜底）或就地改状态标注")
+        print(f"11. buffer 滞留      : WARN（{len(stale)} 份）")
+    else:
+        print("11. buffer 滞留      : OK")
+
+
 def main():
     print("=== 文档系统一致性检查（docs/README.md §7）===\n")
     check_paths()
@@ -527,6 +573,7 @@ def main():
     check_commands()
     check_method_refs()
     check_play_sections()
+    check_buffer_staleness()
 
     print()
     for w in warnings:

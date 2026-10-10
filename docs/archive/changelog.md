@@ -15,6 +15,98 @@
 
 ---
 
+## 2026-10-10
+
+> 文档系统维护（**代码未动**）—— 三项：修红线单位 · 新增一层 · 新增一项校验。
+> 判据：本次**翻转了一个旧结论**（入口体量「OK」实为误判）+ **新增一项校验能力**
+> ⇒ 按 `docs/README.md` §4.0 需进 changelog（先例见 2026-10-06「文档系统改动，代码未动」）。
+
+- 🧹 **入口体量红线修单位：`≤20KB` → `≤20,000 字符`**（`docs/README.md` §1/§2）：
+  实测 `AGENTS.md` 已 **22,377 字节（21.9 KiB）**，而 `doc_check` 第 5 项一直报 OK（14,402 字符）
+  ⇒ **红线形同虚设**（脚本按 `len()` 算字符，规约写的是 KB，中文 UTF-8 一个字符 3 字节）。
+  单位**不是新决定，而是回到 `D-doc-01`（2026-09-16）的本意** —— 该决策写的就是
+  「≤ 20,000 字符」，理由要点「**新会话加载预算**」。
+  🔴 **同一个坑 2026-10-06 已踩过一次**（入口索引瘦身时把 `wc -c` 字节数当字符数，
+  5933 vs 真实 3957，**诊断整个反了**）⇒ 本次在 README 与脚本常量旁**各写一行判据**，
+  不再只靠人记：**这是 AI 的加载预算 —— AI 按 token 消耗上下文，与文件占多少磁盘字节无关。**
+
+- 🧹 **`docs/README.md` §1 新增「工作层（`docs/*.md` 根）」** ——
+  `idea.md`（草稿纸）/ `TODO.md`（待办池）/ `INFO.md`（玩家文案）此前在分层表里**没有归宿**，
+  而 §3 同时写着「待办 → `docs/buffer/`」⇒ **规约自相矛盾**（§3 已同步：待办归工作层、
+  不归 buffer；另修掉该行重复文字与「决策 → `decisions/`（规划中）」的过期表述）。
+  ⚠️ **不搬文件**：`TODO.md` 被 6 处文档引用（含 `api-contract.md`），
+  **搬动的断链风险 > 分类整洁的收益** —— 这正是 §5「降级而非删除」的反面：**别为分类纯粹而搬运**。
+
+- 🧹 **`doc_check` 新增第 11 项「buffer 滞留」（警告级）**：
+  `docs/buffer/` 里**状态标了「已完成」**的文档会被当未定案读 —— **铁律 0 点名的头号误导**
+  （典型：`runtime-mechanization-plan.md` 标着「✅ 已实现并验收」却待在「不稳定」层）。
+  **只报警、不自动搬运**：AGENTS 进展指针可能正指向它（第 1 项随后会报断链）⇒ 由人决定。
+  **判据是双向的**（完成词 **且不含**未完成词）：`open-plan`「部分落地」、
+  `power-refactoring-plan`「进行中」内部都用 ✅ 标已完成步骤，**只匹配完成词会误报**；
+  实测精确命中 2 份（`architecture-layering-plan.md` / `runtime-mechanization-plan.md`）。
+  为什么是**警告级**：搬不搬需要人判断（入口指针），不是确定性错误 ⇒ 与第 5 项同级。
+
+---
+
+### 🐛 修复：辅助模式挖传送石碑「方块消失但零掉落」
+
+**现象**（用户实测）：活镐子挖传送石碑（Waystones 1.21.1）—— 方块消失、**零掉落**；
+真人手持同一把挖会掉；空手挖石头 / 铁矿 / 钻石矿照常掉；**主动模式（有记忆、自己挖）也正常**。
+
+**根因**：石碑的物品掉落**不走原版流程** —— `WaystoneBlockBase#playerWillDestroy` 手动调
+`dropResources`，并加了一道闸门：
+
+```java
+if (!player.getAbilities().instabuild && player.hasCorrectToolForDrops(state)) {
+    dropResources(state, ...); dropResources(offsetState, ...);   // ← 石碑物品的唯一来源
+}
+```
+
+而 `Player#hasCorrectToolForDrops(BlockState)`（1 参数）读的是**主手选中格**
+（`!requiresCorrectToolForDrops() || inventory.getSelected().isCorrectToolForDrops(state)`）：
+
+- **辅助模式**：破坏者是**真玩家**、主手**空** ⇒ false ⇒ 闸门不过；紧接着 `playerDestroy`
+  又因"双格方块"把状态换成 `Blocks.AIR` ⇒ **净结果零掉落**；
+- **主动模式**：破坏者是 `LivingToolFakePlayer`，活工具经 `equipTool` 装进**假玩家主手**
+  ⇒ 同一判据自然为 true ⇒ 正常掉落。
+  **两条路径的唯一差别就是"执行者主手有没有工具"** —— 这条反证把根因钉死。
+
+**为什么石头会掉**：辅助模式原有三条腿（加速 / 材质门槛 / 掉落重算）全挂在 **NeoForge 事件**上，
+事件覆盖的是**原版路径**（`canHarvestBlock` → `doPlayerHarvestCheck` 发事件）。
+而石碑读的 1 参数重载被 NeoForge 标
+`@Deprecated // Neo: use position sensitive version below`，**不发任何事件** ⇒ 钩子挂不上。
+
+**修法**（两步，各自独立可验）：
+
+1. **纯重构**：抽出 `LivingToolAssist#hasBackpackToolFor(player, state)` 作为材质门槛的
+   **单一来源**，`onHarvestCheck` 改调它 ⇒ 行为零变化，靠**全量单测**证明没改坏；
+2. **补入口**：新增 `mixin/PlayerAssistHarvestMixin` —— 在
+   `Player#hasCorrectToolForDrops(BlockState)` 判 false 时再问一次辅助层
+   （`@At("RETURN")`；原版判 true 直接短路 ⇒ 零额外开销）。这是 `LivingToolAssist` 的**唯一 mixin**。
+
+**边界（明确不做）**：不动 `getMainHandItem`（那是"玩家看起来拿着什么"，改它会污染
+渲染 / 其他模组 / 拾取）；不做"临时借手"；不做石碑专用 compat（治标，同类模组照踩）。
+
+**不变的东西（判据）**：
+- **挖掘速度**不变 —— `getDestroyProgress` 里的 30 / 100 走的是 `doPlayerHarvestCheck`（**发事件**），
+  那条早已放行；
+- **主动模式 / 假玩家**不受影响 —— `isAssistable` 已排除 FakePlayer；
+- **判据口径只有一处** —— `LivingToolRecorder#isAssistTool`（无记忆的活工具）；
+  未活化的普通工具、有记忆的活工具都不算。
+
+⚠️ **行为变化（唯一）**：任何**直读** `hasCorrectToolForDrops` 的模组，都会认为
+"背包里有活工具 = 玩家有工具"。这是**故意的**（正是辅助模式语义），石碑是第一个受益者。
+
+> ⚠️ **仍有边界**：直接读**主手物品内容**（`getMainHandItem().isCorrectToolForDrops(...)`）
+> 的模组覆盖不了 —— 改 `getMainHandItem` 不划算。那类只能靠模组自己改用能力判据。
+
+**验证**：全量单测 **552 全绿（551 passed / 0 failed / 1 skipped）**，与基线一致；
+✅ **游戏内实测通过**（2026-10-10：背包放活镐子 + **空手**挖传送石碑 ⇒ 正常掉落 1 个物品）。
+
+**参考源**：`libs/src/Waystones-1.21.1`（用户先给错成 26.3，已换）。
+
+---
+
 ## 2026-10-09
 
 > 架构分层收尾（续 10-08 框架侧）—— 反向边清到「只剩低 ROI 的层归属微调」。
