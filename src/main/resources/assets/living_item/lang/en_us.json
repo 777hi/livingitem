@@ -236,11 +236,16 @@
 
   "text.livingitem.living_button.tooltip": "Click: activate / deactivate the held item",
   "text.livingitem.living_button.direction_hint": "§eHover and press Q W E / A S D / Z C to set directions§r",
+  "text.livingitem.living_button.direction_hint_basic": "§eHover and press W A S D to set directions§r",
   "text.livingitem.living_button.hopper_hint": "§eHover and press two keys: 1st = source, 2nd = target§r",
   "hud.livingitem.direction.title": "§bDirection config §f%s§7/§f%s",
-  "hud.livingitem.direction.hint": "§8Q W E / A S D / Z C · cancels after 3s idle",
+  "hud.livingitem.direction.title_preview": "§bDirection config",
+  "hud.livingitem.direction.hint": "§8Q W E / A S D / Z C · move away to cancel",
+  "hud.livingitem.direction.hint_basic": "§8W A S D · move away to cancel",
+  "hud.livingitem.slot.line": "%s: %s",
   "hud.livingitem.hopper.title": "§bTransfer path §f%s§7/§f%s",
+  "hud.livingitem.hopper.title_preview": "§bTransfer path",
   "hud.livingitem.hopper.source": "Source",
   "hud.livingitem.hopper.target": "Target",
-  "hud.livingitem.hopper.hint": "§81st key = source · 2nd key = target"
+  "hud.livingitem.hopper.hint": "§81st key = source · 2nd key = target · move away to cancel"
 }

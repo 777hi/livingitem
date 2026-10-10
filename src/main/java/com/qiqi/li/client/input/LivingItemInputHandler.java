@@ -154,11 +154,15 @@ public class LivingItemInputHandler {
 
         if (!isHopperItem(carried)) return;
 
+        // 漏斗不支持对角槽位：对角键直接忽略（不进入会话、不 cancel）
+        Pos2D hopperDir = keyToDirection(upperChar);
+        if (hopperDir != null && hopperDir.isDiagonal()) return;
+
         event.setCanceled(true);
 
         if (currentSession == null) {
             currentSession = new InputSession();
-            beginHopperHud();
+            beginHud(true);
         }
 
         currentSession.appendKey(upperChar);
@@ -183,8 +187,19 @@ public class LivingItemInputHandler {
     @SubscribeEvent
     public static void onKeyPressed(ScreenEvent.KeyPressed.Pre event) {
         if (!shouldCaptureDirectionInput()) return;
-        if (!isDirectionKeyCode(event.getKeyCode())) return;
+        int keyCode = event.getKeyCode();
+        if (!isDirectionKeyCode(keyCode)) return;
+        // ⭐ 对角键只在目标功能声明支持时才屏蔽（supportsDiagonal 默认 false）——
+        // 否则会无谓地吃掉 Q（丢弃）/ E（关界面）：不支持对角的活物品上，这两键应保持原版行为
+        if (isDiagonalKeyCode(keyCode) && !targetSupportsDiagonal()) return;
         event.setCanceled(true);
+    }
+
+    /** 当前光标物品的方向功能是否声明支持对角槽位（漏斗不支持）。 */
+    private static boolean targetSupportsDiagonal() {
+        ItemStack carried = Minecraft.getInstance().player.containerMenu.getCarried();
+        LivingItemFunction func = findDirectionFunction(carried);
+        return func instanceof HasDirection dir && dir.supportsDiagonal();
     }
 
     /** 会话进行到一半时关闭界面 → 丢弃半输入状态（避免残留到下一个界面）。 */
@@ -209,68 +224,89 @@ public class LivingItemInputHandler {
         return findDirectionFunction(carried) != null || isHopperItem(carried);
     }
 
-    // -------------------- 方向输入 HUD --------------------
+    // -------------------- 方向配置 HUD（悬停即显示） --------------------
 
     /**
-     * 方向输入会话的 HUD 快照 —— 供容器界面 render TAIL 绘制（mixin 只画框，不解析业务）。
+     * HUD 的输入进度快照 —— 只承载「已输入」的符号列；槽位名与当前方向每帧从光标物品**实时读**
+     * （避免快照过期）。null = 尚未开始输入（预览态）。
      *
-     * @param slotNameKeys 槽位名的翻译键（如 "slot.livingitem.input"）
      * @param typedSymbols 已输入的方向符号（与槽位顺序对齐）
-     * @param currentSymbols 会话开始时各槽位的旧方向符号（"—" = 未配置 / 未知）
      * @param hopperMode true = 活漏斗两键模式（源 → 目标）
      */
-    public record DirectionHudState(List<String> slotNameKeys, List<String> typedSymbols,
-                                    List<String> currentSymbols, boolean hopperMode) {}
+    public record DirectionHudState(List<String> typedSymbols, boolean hopperMode) {}
 
     private static DirectionHudState activeHud = null;
 
-    /** 方向输入会话是否进行中（活按钮据此让位自己的 tooltip，避免与输入 HUD 重叠）。 */
-    public static boolean hasActiveDirectionSession() {
-        return activeHud != null;
+    /**
+     * 方向配置 HUD 是否可见 —— 「悬停活按钮 + 光标持方向类活物品」即显示
+     * （2026-10-10 起由「输入时显示」改为「**悬浮即显示**」：玩家不必先盲按一次才知道有这功能）。
+     * 活按钮据此让位自己的 tooltip（两者同为 tooltip 会重叠）。
+     */
+    public static boolean isDirectionHudVisible() {
+        return shouldCaptureDirectionInput();
     }
 
-    /** HUD 渲染行（null = 无会话）。 */
-    public static List<Component> getActiveHudLines() {
-        if (activeHud == null) return null;
-        List<Component> lines = new ArrayList<>();
-        int total = activeHud.slotNameKeys().size();
-        int typed = activeHud.typedSymbols().size();
-        lines.add(Component.translatable(
-            activeHud.hopperMode() ? "hud.livingitem.hopper.title" : "hud.livingitem.direction.title",
-            typed, total));
-        for (int i = 0; i < total; i++) {
-            String symbol = i < typed ? activeHud.typedSymbols().get(i)
-                : i < activeHud.currentSymbols().size() ? activeHud.currentSymbols().get(i) : "—";
-            lines.add(Component.translatable("tooltip.livingitem.direction.slot",
-                Component.translatable(activeHud.slotNameKeys().get(i)), symbol));
+    /**
+     * HUD 渲染行（null = 不显示）。预览态列出各槽位当前方向；输入态叠加进度与高亮
+     * （已输入=绿、下一待输入=黄并带 ▶ 前缀、其余=灰）。
+     */
+    public static List<Component> getHudLines() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || !shouldCaptureDirectionInput()) return null;
+        ItemStack carried = mc.player.containerMenu.getCarried();
+        LivingItemFunction func = findDirectionFunction(carried);
+        boolean hopperMode = func == null;               // 能走到这里且无 HasDirection ⇒ 漏斗
+        boolean diagonal;
+        List<Component> slotNames = new ArrayList<>();
+        List<String> currentSymbols = new ArrayList<>();
+        if (hopperMode) {
+            diagonal = false;
+            slotNames.add(Component.translatable("hud.livingitem.hopper.source"));
+            slotNames.add(Component.translatable("hud.livingitem.hopper.target"));
+            DirectionTransferData dirData = LivingHopperFunction.readDirectionData(carried);
+            currentSymbols.add(dirData != null ? dirData.sourceOffset().getSymbol() : "—");
+            currentSymbols.add(dirData != null ? dirData.targetOffset().getSymbol() : "—");
+        } else {
+            HasDirection dir = (HasDirection) func;
+            diagonal = dir.supportsDiagonal();
+            for (String name : dir.getDirectionSlotNames()) {
+                slotNames.add(Component.translatable("slot.livingitem." + name));
+                Pos2D d = dir.getSlotDirection(carried, name);
+                currentSymbols.add(d != null ? d.getSymbol() : "—");
+            }
         }
-        lines.add(Component.translatable(
-                activeHud.hopperMode() ? "hud.livingitem.hopper.hint" : "hud.livingitem.direction.hint")
-            .withStyle(ChatFormatting.GRAY));
+
+        int total = slotNames.size();
+        List<String> typed = activeHud != null ? activeHud.typedSymbols() : List.of();
+        int done = Math.min(typed.size(), total);
+
+        List<Component> lines = new ArrayList<>();
+        if (activeHud == null) {                         // 预览态：不显示进度
+            lines.add(Component.translatable(hopperMode
+                ? "hud.livingitem.hopper.title_preview" : "hud.livingitem.direction.title_preview"));
+        } else {
+            lines.add(Component.translatable(hopperMode
+                ? "hud.livingitem.hopper.title" : "hud.livingitem.direction.title", done, total));
+        }
+        for (int i = 0; i < total; i++) {
+            boolean isDone = i < done;
+            boolean isNext = i == done && done < total;
+            String symbol = isDone ? typed.get(i) : currentSymbols.get(i);
+            ChatFormatting color = isDone ? ChatFormatting.GREEN
+                : isNext ? ChatFormatting.YELLOW : ChatFormatting.GRAY;
+            Component nameComp = Component.literal(isNext ? "▶ " : "  ")
+                .append(slotNames.get(i)).withStyle(color);
+            Component symbolComp = Component.literal(symbol).withStyle(color);
+            lines.add(Component.translatable("hud.livingitem.slot.line", nameComp, symbolComp));
+        }
+        String hintKey = hopperMode ? "hud.livingitem.hopper.hint"
+            : diagonal ? "hud.livingitem.direction.hint" : "hud.livingitem.direction.hint_basic";
+        lines.add(Component.translatable(hintKey).withStyle(ChatFormatting.GRAY));
         return lines;
     }
 
-    private static void beginHopperHud() {
-        ItemStack carried = Minecraft.getInstance().player.containerMenu.getCarried();
-        List<String> current = new ArrayList<>();
-        DirectionTransferData dirData = LivingHopperFunction.readDirectionData(carried);
-        current.add(dirData != null ? dirData.sourceOffset().getSymbol() : "—");
-        current.add(dirData != null ? dirData.targetOffset().getSymbol() : "—");
-        activeHud = new DirectionHudState(
-            List.of("hud.livingitem.hopper.source", "hud.livingitem.hopper.target"),
-            new ArrayList<>(), current, true);
-    }
-
-    private static void beginDirectionHud(HasDirection dirFunc, ItemStack carried) {
-        String[] names = dirFunc.getDirectionSlotNames();
-        List<String> keys = new ArrayList<>();
-        List<String> current = new ArrayList<>();
-        for (String name : names) {
-            keys.add("slot.livingitem." + name);
-            Pos2D d = dirFunc.getSlotDirection(carried, name);
-            current.add(d != null ? d.getSymbol() : "—");
-        }
-        activeHud = new DirectionHudState(keys, new ArrayList<>(), current, false);
+    private static void beginHud(boolean hopperMode) {
+        activeHud = new DirectionHudState(new ArrayList<>(), hopperMode);
     }
 
     /** 会话追加按键后，刷新「已输入」符号列（两个会话类型共用）。 */
@@ -283,8 +319,7 @@ public class LivingItemInputHandler {
             Pos2D d = keyToDirection(k);
             typed.add(d != null ? d.getSymbol() : "?");
         }
-        activeHud = new DirectionHudState(activeHud.slotNameKeys(), typed,
-            activeHud.currentSymbols(), activeHud.hopperMode());
+        activeHud = new DirectionHudState(typed, activeHud.hopperMode());
     }
 
     /** 检查鼠标是否悬停在活按钮上 */
@@ -301,23 +336,18 @@ public class LivingItemInputHandler {
     }
 
     /**
-     * 监听世界 tick 事件，检查输入会话是否超时。
-     *
-     * 超时后会话自动失效，用户需要重新开始输入。
+     * 每 tick 检查会话存活：**鼠标离开活按钮即重置**（2026-10-10 起取代 3 秒超时——
+     * 只要一直悬浮在按钮上就保持输入窗口，符合直觉，不再中途丢失半输入）。
      */
     @SubscribeEvent
     public static void onLevelTick(net.neoforged.neoforge.event.tick.LevelTickEvent.Post event) {
         if (!(event.getLevel() instanceof net.minecraft.client.multiplayer.ClientLevel)) return;
-        if (currentSession != null && currentSession.isTimedOut()) {
-            LOGGER.debug("Input session timed out: {}", currentSession.getRawInput());
-            currentSession = null;
-            activeHud = null;
-        }
-        if (directionSession != null && directionSession.isTimedOut()) {
-            LOGGER.debug("Direction session timed out: {}", directionSession.getRawInput());
-            directionSession = null;
-            activeHud = null;
-        }
+        if (currentSession == null && directionSession == null) return;
+        if (isLivingButtonHovered()) return;
+        LOGGER.debug("Direction session reset (cursor left the living button)");
+        currentSession = null;
+        directionSession = null;
+        activeHud = null;
     }
 
     /**
@@ -386,6 +416,12 @@ public class LivingItemInputHandler {
         };
     }
 
+    /** 4 个对角键（屏蔽需按能力放行，见 {@link #targetSupportsDiagonal()}）。 */
+    private static boolean isDiagonalKeyCode(int keyCode) {
+        return keyCode == GLFW.GLFW_KEY_Q || keyCode == GLFW.GLFW_KEY_E
+            || keyCode == GLFW.GLFW_KEY_Z || keyCode == GLFW.GLFW_KEY_C;
+    }
+
     private static boolean isValidKey(char key) {
         return keyToDirection(key) != null;
     }
@@ -420,6 +456,8 @@ public class LivingItemInputHandler {
     private static void processDirectionInput(char key, String functionId, HasDirection dirFunc) {
         Pos2D direction = keyToDirection(key);
         if (direction == null) return;
+        // 对角槽位是声明式能力（supportsDiagonal 默认 false）：未声明 ⇒ 忽略对角键
+        if (direction.isDiagonal() && !dirFunc.supportsDiagonal()) return;
 
         if (dirFunc.getDirectionKeyCount() == 1) {
             sendSlotDirectionPacket(functionId, dirFunc.getDirectionSlotNames()[0], direction);
@@ -428,7 +466,7 @@ public class LivingItemInputHandler {
 
         if (directionSession == null) {
             directionSession = new DirectionSession(dirFunc.getDirectionKeyCount());
-            beginDirectionHud(dirFunc, Minecraft.getInstance().player.containerMenu.getCarried());
+            beginHud(false);
         }
         directionSession.appendKey(key);
         refreshHudTyped();
@@ -462,21 +500,17 @@ public class LivingItemInputHandler {
     }
 
     /**
-     * 通用方向输入会话 —— 管理多键 WASD 输入的生命周期。
+     * 通用方向输入会话 —— 管理多键方向输入的生命周期。
      *
-     * 适用于任意需要多键配向的活物品（如活熔炉 3 键）。
-     * 超时后会话自动失效，避免残留的半输入状态。
+     * <p>适用于任意需要多键配向的活物品（如活熔炉 3 键）。
+     * <b>不设超时</b>：存活由「鼠标是否仍在活按钮上」决定（{@link #onLevelTick}）。</p>
      */
     private static class DirectionSession {
         private final StringBuilder keys = new StringBuilder();
-        private final long startTime;
         private final int maxKeys;
-
-        private static final long TIMEOUT_MS = 3000;
 
         DirectionSession(int maxKeys) {
             this.maxKeys = maxKeys;
-            this.startTime = System.currentTimeMillis();
         }
 
         void appendKey(char key) {
@@ -489,10 +523,6 @@ public class LivingItemInputHandler {
             return keys.length() >= maxKeys;
         }
 
-        boolean isTimedOut() {
-            return System.currentTimeMillis() - startTime > TIMEOUT_MS;
-        }
-
         String getRawInput() {
             return keys.toString();
         }
@@ -501,23 +531,14 @@ public class LivingItemInputHandler {
     /**
      * 活漏斗输入会话 —— 管理 2 键 WASD 输入的生命周期。
      *
-     * 输入规则：
-     * - 第 1 个键：源方向
-     * - 第 2 个键：目标方向
-     * - 示例："WD" = 上传下
-     *
-     * 超时机制：2 秒内未完成输入则会话失效。
+     * <p>输入规则：第 1 个键 = 源方向，第 2 个键 = 目标方向；示例 "WD" = 上传下。
+     * <b>不支持对角</b>（漏斗的槽位映射只有 4 个基本方向）。
+     * <b>不设超时</b>：存活由「鼠标是否仍在活按钮上」决定。</p>
      */
     private static class InputSession {
         private final StringBuilder keys = new StringBuilder();
-        private final long startTime;
 
-        private static final long TIMEOUT_MS = 2000;
         private static final int MAX_KEYS = 2;
-
-        InputSession() {
-            this.startTime = System.currentTimeMillis();
-        }
 
         void appendKey(char key) {
             if (keys.length() < MAX_KEYS) {
@@ -527,10 +548,6 @@ public class LivingItemInputHandler {
 
         boolean isComplete() {
             return keys.length() >= MAX_KEYS;
-        }
-
-        boolean isTimedOut() {
-            return System.currentTimeMillis() - startTime > TIMEOUT_MS;
         }
 
         String getRawInput() {

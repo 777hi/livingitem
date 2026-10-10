@@ -32,4 +32,19 @@ public interface HasDirection {
     default Pos2D getSlotDirection(ItemStack stack, String slotName) {
         return null;
     }
+
+    /**
+     * 【能力】本功能是否支持**对角槽位**（斜向布局），默认 {@code false}。
+     *
+     * <p>⭐ <b>为什么默认关闭</b>：九宫格键位是<b>框架级</b>能力（一次对所有活物品生效），
+     * 而对角槽位只有「5+ 槽位 / 斜向布局」才需要（如活酿造台的 3 瓶并排）。
+     * 未声明即不支持 ⇒ 玩家不会在**未设计、未测试**的功能（熔炉 / 红石元件 / 漏斗）上
+     * 配出对角槽位；客户端据此忽略对角键，并**同步收窄按键屏蔽**
+     * （不支持的物品上，`Q`/`E` 保持原版行为，不被吞掉）。</p>
+     *
+     * <p>需要斜向布局的活物品自行 override 返回 true（如活酿造台）。</p>
+     */
+    default boolean supportsDiagonal() {
+        return false;
+    }
 }

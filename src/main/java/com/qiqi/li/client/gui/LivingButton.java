@@ -62,8 +62,8 @@ public class LivingButton extends SpriteIconButton.CenteredIcon {
     @Override
     public void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
         ((MutableSpriteSpriteIconButton) this).setSprite(this.isHovered() ? HOVERED_SPRITE : SPRITE);
-        // 方向输入会话进行中 → 按钮 tooltip 让位（信息已在输入 HUD 里，两个 tooltip 会重叠）
-        this.setTooltip(com.qiqi.li.client.input.LivingItemInputHandler.hasActiveDirectionSession()
+        // 方向配置 HUD 可见时 → 按钮 tooltip 让位（信息已在 HUD 里，两个 tooltip 会重叠）
+        this.setTooltip(com.qiqi.li.client.input.LivingItemInputHandler.isDirectionHudVisible()
             ? null : Tooltip.create(buildTooltip()));
         super.renderWidget(guiGraphics, mouseX, mouseY, partialTick);
     }
@@ -77,15 +77,18 @@ public class LivingButton extends SpriteIconButton.CenteredIcon {
             .append(Component.translatable("text.livingitem.living_button.tooltip"));
         ItemStack carried = menu.getCarried();
         if (!carried.isEmpty() && LivingItemManager.isLivingItem(carried)) {
-            boolean directional = false;
+            HasDirection dirFunc = null;
             for (LivingItemFunction func : LivingItemManager.getApplicableFunctions(carried)) {
-                if (func instanceof HasDirection) {
-                    directional = true;
+                if (func instanceof HasDirection d) {
+                    dirFunc = d;
                     break;
                 }
             }
-            if (directional) {
-                tip.append("\n").append(Component.translatable("text.livingitem.living_button.direction_hint"));
+            if (dirFunc != null) {
+                // 键位提示按能力切换：不支持对角的功能不提 Q/E/Z/C（见 HasDirection#supportsDiagonal）
+                tip.append("\n").append(Component.translatable(dirFunc.supportsDiagonal()
+                    ? "text.livingitem.living_button.direction_hint"
+                    : "text.livingitem.living_button.direction_hint_basic"));
             } else if (carried.is(Items.HOPPER)) {
                 tip.append("\n").append(Component.translatable("text.livingitem.living_button.hopper_hint"));
             }

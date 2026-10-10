@@ -490,7 +490,7 @@ public class AbstractContainerScreenMixin extends Screen {
     private void living_item$renderDirectionHud(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick,
                                                 CallbackInfo ci) {
         java.util.List<net.minecraft.network.chat.Component> lines =
-            com.qiqi.li.client.input.LivingItemInputHandler.getActiveHudLines();
+            com.qiqi.li.client.input.LivingItemInputHandler.getHudLines();
         if (lines == null || lines.isEmpty()) return;
 
         // HUD = 常驻自定义 tooltip（2026-10-10，用户拍板「排队」方案）：
