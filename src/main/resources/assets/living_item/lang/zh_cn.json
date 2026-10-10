@@ -235,10 +235,10 @@
   "command.livingitem.transforms_list_empty": "  §7（当前没有任何转化）§r",
 
   "text.livingitem.living_button.tooltip": "点击：活化 / 取消活化手持物品",
-  "text.livingitem.living_button.direction_hint": "§e悬停时按 Q W E / A S D / Z X C 配置方向§r",
+  "text.livingitem.living_button.direction_hint": "§e悬停时按 Q W E / A S D / Z C 配置方向§r",
   "text.livingitem.living_button.hopper_hint": "§e悬停时按两个键：第 1 键 = 源方向，第 2 键 = 目标方向§r",
   "hud.livingitem.direction.title": "§b方向配置 §f%s§7/§f%s",
-  "hud.livingitem.direction.hint": "§8Q W E / A S D / Z X C 输入 · 3 秒无输入自动取消",
+  "hud.livingitem.direction.hint": "§8Q W E / A S D / Z C 输入 · 3 秒无输入自动取消",
   "hud.livingitem.hopper.title": "§b传输方向 §f%s§7/§f%s",
   "hud.livingitem.hopper.source": "源",
   "hud.livingitem.hopper.target": "目标",

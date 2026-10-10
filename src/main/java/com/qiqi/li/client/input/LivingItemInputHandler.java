@@ -362,7 +362,8 @@ public class LivingItemInputHandler {
             case 'S' -> Pos2D.DOWN;
             case 'A' -> Pos2D.LEFT;
             case 'D' -> Pos2D.RIGHT;
-            // ⭐ 九宫格对角（2026-10-10）：键位 = 键盘左上角物理布局，天然对应九宫格
+            // ⭐ 九宫格对角（2026-10-10）：键位 = 键盘左上角物理布局。
+            // ⚠️ 不用 X（用户拍板：与 S 的「下」直觉冲突）——左下=Z、右下=C，提示文案同理不提 X
             case 'Q' -> Pos2D.UP_LEFT;
             case 'E' -> Pos2D.UP_RIGHT;
             case 'Z' -> Pos2D.DOWN_LEFT;

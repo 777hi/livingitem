@@ -235,10 +235,10 @@
   "command.livingitem.transforms_list_empty": "  §7(no fluid transforms yet)§r",
 
   "text.livingitem.living_button.tooltip": "Click: activate / deactivate the held item",
-  "text.livingitem.living_button.direction_hint": "§eHover and press Q W E / A S D / Z X C to set directions§r",
+  "text.livingitem.living_button.direction_hint": "§eHover and press Q W E / A S D / Z C to set directions§r",
   "text.livingitem.living_button.hopper_hint": "§eHover and press two keys: 1st = source, 2nd = target§r",
   "hud.livingitem.direction.title": "§bDirection config §f%s§7/§f%s",
-  "hud.livingitem.direction.hint": "§8Q W E / A S D / Z X C · cancels after 3s idle",
+  "hud.livingitem.direction.hint": "§8Q W E / A S D / Z C · cancels after 3s idle",
   "hud.livingitem.hopper.title": "§bTransfer path §f%s§7/§f%s",
   "hud.livingitem.hopper.source": "Source",
   "hud.livingitem.hopper.target": "Target",
