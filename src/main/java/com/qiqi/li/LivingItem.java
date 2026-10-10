@@ -10,6 +10,7 @@ import net.minecraft.world.RandomizableContainer;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.level.Level;
 import org.slf4j.Logger;
 import com.mojang.logging.LogUtils;
 
@@ -295,22 +296,46 @@ public class LivingItem {
         if (pos == null) return List.of();
 
         for (var level : currentServerLevels()) {
-            BlockEntity be = level.getBlockEntity(pos);
-            if (be == null) continue;
-
-            List<BlockPos> halves = DoubleChestPositions.find(level, pos);
-            if (halves.isEmpty()) {
-                return List.of((Container) be);
-            }
-            List<Container> instances = new ArrayList<>(halves.size());
-            for (BlockPos half : halves) {
-                if (level.getBlockEntity(half) instanceof Container c) {
-                    instances.add(c);
-                }
-            }
-            return instances;
+            // null = 该世界此位置无方块实体，继续查下一个世界；
+            // 非 null（可能为空集合）即代表命中，直接返回（见下方方法说明）。
+            Collection<Container> instances = runtimeContainerInstances(level, pos);
+            if (instances != null) return instances;
         }
         return List.of();
+    }
+
+    /**
+     * 单 level 的「容器键位置 → {@link Container} 实例集」查找（发包 viewer 匹配用，档 2）。
+     *
+     * <p><b>返回值语义</b>：</p>
+     * <ul>
+     *   <li>{@code null} —— 该位置在此世界上<b>没有方块实体</b>（让调用方继续查下一个世界）；</li>
+     *   <li><b>空集合</b> —— 有方块实体，但<b>不是原版 {@link Container}</b>
+     *       （如 ProjectE 炼金箱 {@code AlchBlockEntityChest}：暴露 {@code IItemHandler} 能力、
+     *       被当作活物品容器 tick，却不实现 {@code Container}）⇒ 无法走 viewer 匹配 = 不发包；
+     *       历史上这里曾无条件 {@code (Container) be} 强转，对这类模组容器抛
+     *       {@code ClassCastException}（crash-2026-10-10）；</li>
+     *   <li><b>非空</b> —— 命中一个或多个 {@code Container} 实例（单 BE / 大箱两半）。</li>
+     * </ul>
+     *
+     * <p>⚠️ 静态 + 包级私有：把原私有方法拆出单 level 分支，便于单测构造「非 Container 方块实体」
+     * 场景而不用拉起整个 {@code ServerLifecycleHooks}；本方法不读任何实例状态。</p>
+     */
+    static Collection<Container> runtimeContainerInstances(Level level, BlockPos pos) {
+        BlockEntity be = level.getBlockEntity(pos);
+        if (be == null) return null;
+
+        List<BlockPos> halves = DoubleChestPositions.find(level, pos);
+        if (halves.isEmpty()) {
+            return be instanceof Container c ? List.of(c) : List.of();
+        }
+        List<Container> instances = new ArrayList<>(halves.size());
+        for (BlockPos half : halves) {
+            if (level.getBlockEntity(half) instanceof Container c) {
+                instances.add(c);
+            }
+        }
+        return instances;
     }
 
     /** 运行期可见的所有世界（发包查找用；找不到容器即视为「无人查看」）。 */

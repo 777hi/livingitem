@@ -114,6 +114,17 @@
   `ContainerContexts.resolve` 解析不出 ⇒ 返回 `null`。按菜单槽位反查的功能（如汲/倒）
   对末影箱**静默无效**。
 
+- **「有物品能力、但不是原版 `Container`」的模组方块实体**（2026-10-10 踩坑，crash + 修复）：
+  扫描入口 `processContainerAt` 按 `IItemHandler.BLOCK` **能力面**把任何有物品能力的方块实体当成活物品容器
+  （分配 `chest_<x>_<y>_<z>` 键、每 tick 处理）。而运行时同步的 viewer 匹配（`runtimeContainerInstances`
+  → `isViewing`/`ownsContainer`）依赖**原版 `Container` 实例**。两套口径不一致 ⇒
+  - 这类 BE（如 ProjectE 炼金箱 `AlchBlockEntityChest`）**会被正常 tick**（活物品照常运转）；
+  - 但其 `Container` 实例取不到 ⇒ 运行时 tooltip 同步**永远不发包**（viewer 匹配不上）。
+  - **曾因单 BE 分支无条件 `(Container) be` 强转在此崩**（ClassCastException，crash-2026-10-10，已修为
+    `instanceof` 守卫，非 `Container` ⇒ 返回空集合 = 不发包）。
+  - **待决**：是否在扫描入口加「容器能力白/黑名单」排除此类容器，尚未拍板（见 TODO）。
+    `runtimeContainerInstances` 现已拆为静态包级私有单 level 分支，便于单测该边界。
+
 ---
 
 ## 6. 相关文档

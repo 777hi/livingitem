@@ -144,6 +144,39 @@ if (!player.getAbilities().instabuild && player.hasCorrectToolForDrops(state)) {
 
 **参考源**：`libs/src/Waystones-1.21.1`（用户先给错成 26.3，已换）。
 
+### 🐛 修复：ProjectE 炼金箱导致「运行时同步」每 tick 崩溃（ClassCastException）
+
+**现象**（用户崩溃报告 2026-10-10 19:34）：整合包（含 ProjectE 1.1.0）单人游戏的服务器 tick 循环抛
+`ClassCastException`：`moze_intel.projecte.gameObjs.block_entities.AlchBlockEntityChest cannot be cast to
+net.minecraft.world.Container`；调用栈 `LivingItem.runtimeContainerInstances` →
+`LivingItemRuntimeSync.flush` → `LivingItem.onServerTick`。
+
+**根因**：`LivingItem.runtimeContainerInstances`（运行时数据下发、按容器键反查该容器的 `Container` 实例供
+viewer 匹配）在「单 BE」分支**无条件 `(Container) be` 强转**。而扫描阶段 `processContainerAt` 按
+`IItemHandler.BLOCK` 能力面把**任何**有物品能力的方块实体当成活物品容器（分配 `chest_<x>_<y>_<z>` 键、每 tick 处理）。
+ProjectE 的炼金箱 `AlchBlockEntityChest` 暴露 `IItemHandler` 能力（被 tick），但其方块实体
+**不实现原版 `Container` 接口** ⇒ 强转失败。
+（双箱分支本就用了 `instanceof Container` 守卫，唯独单 BE 分支漏了。）
+
+**修法**（行为保持，仅修崩溃点）：
+1. 单 BE 分支改 `be instanceof Container c ? List.of(c) : List.of()` —— 非 `Container` 的 BE 返回空集合；
+2. 空集合语义早已闭环安全：`LivingItemRuntimeSync.flush` 第 59 行
+   `if (instances == null || instances.isEmpty()) continue;` ⇒ 空集合 = 不发包（无人查看），不会发错人；
+3. 顺手把原私有方法拆出**静态包级私有**单 level 分支 `runtimeContainerInstances(Level, BlockPos)` 便于单测，
+   **行为完全等价**（无 BE ⇒ null 继续查下一世界）。
+
+**边界（已知限制，非 bug）**：这类「有物品能力但不是原版 `Container`」的模组容器（ProjectE 炼金箱等）——
+- **会正常被 tick**（里面的活物品照常运转）；
+- 但**运行时 tooltip 同步不生效**：viewer 匹配依赖原版 `Container` 实例，匹配不上 ⇒ 永远不发包。
+这是当前实现的限制，不是崩溃。是否要在扫描入口（`processContainerAt` / `ContainerChunkCache` 登记处）加
+「容器能力白/黑名单」排除此类容器，是**待决设计**（见 TODO）。
+根子是「扫描按能力面、同步按 `Container` 实例」两套口径不一致，属 `container-identity.md` 边界带契约范畴。
+
+**验证**：新增回归测试 `LivingItemRuntimeContainerInstancesTest`（3 例：非 Container BE → 空集合不抛异常 /
+原版 Container BE → 返回自身 / 无 BE → null），全绿；其余 `getBlockEntity → Container` 站点
+（`ContainerContext` / `SimpleContainerContext` / `ContainerEnergyStorage` / `FluidFlowServerSync` /
+`LivingItemContainerCommand`）经核对**全部 `instanceof` 守卫**，无同类强转。
+
 ---
 
 ## 2026-10-09

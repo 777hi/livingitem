@@ -146,8 +146,8 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 552 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
-全绿基线：`551 passed / 0 failed / 1 skipped`。**逐次新增明细见 [changelog.md](docs/archive/changelog.md)。**
+**合计测试用例 555 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
+全绿基线：`554 passed / 0 failed / 1 skipped`。**逐次新增明细见 [changelog.md](docs/archive/changelog.md)。**
 
 > 📄 测试环境配置与编写约定见 [unit-testing.md](docs/guides/unit-testing.md)；
 > 测试文件树（每个测试类守什么）见 [test-map.md](docs/reference/test-map.md)。
@@ -167,6 +167,7 @@ src/main/java/com/qiqi/li/
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-10 | 🐛 **修复：ProjectE 炼金箱导致运行时同步每 tick 崩溃（ClassCastException）** —— `LivingItem.runtimeContainerInstances` 单 BE 分支**无条件 `(Container) be` 强转**；扫描按 `IItemHandler` 能力面把炼金箱 `AlchBlockEntityChest`（暴露能力但**不实现原版 `Container`**）当成活物品容器 ⇒ 强转失败。`flush` 空集合守卫已闭环安全，修法改 `instanceof Container` 守卫（非 Container ⇒ 空集合 = 不发包）；顺手拆出静态包级私有单 level 分支便于单测，行为等价。新增回归测试 `LivingItemRuntimeContainerInstancesTest`（3 例）全绿；其余 `getBlockEntity → Container` 站点经核**全部 `instanceof` 守卫**，无同类强转。⚠️ 边界：炼金箱等「能力容器」仍被 tick（活物品照常运转），但运行时 tooltip 同步不生效（viewer 匹配依赖原版 `Container`）；是否加容器白/黑名单 = 待决（TODO「容器边界」） | `docs/archive/changelog.md（2026-10-10 条目）` · `docs/system-design/container-identity.md` §5 · `docs/TODO.md` |
 | 2026-10-10 | 🐛 **修复：辅助模式挖传送石碑「方块消失但零掉落」** —— 根因在 Waystones：`WaystoneBlockBase#playerWillDestroy` 拿 `Player#hasCorrectToolForDrops(BlockState)` 当**掉落闸门**，而该重载被 NeoForge 标 `@Deprecated`（"use position sensitive version below"）且**不发任何事件** ⇒ 辅助模式（玩家**空手**、活工具在背包）判 false ⇒ 手动掉落整段跳过。修法：① 抽出 `LivingToolAssist#hasBackpackToolFor`（材质门槛**单一来源**，事件入口 `onHarvestCheck` 同步改调它）② 新增 `PlayerAssistHarvestMixin` 补「**直读入口**」（`LivingToolAssist` 的**唯一 mixin**）。⚠️ **行为变化**：任何直读该判据的模组都会认为"背包有活工具 = 玩家有工具"（正是辅助模式语义）。**挖掘速度不变**（30/100 走事件、早已放行）、**主动模式不受影响**（假玩家主手本就有工具，这正是"主动能掉、辅助不掉"的唯一差别）。测试 552 全绿（551/0/1）；✅ **游戏内实测通过**（2026-10-10：空手 + 背包活镐子挖传送石碑正常掉落） | `docs/tech/living-tool-tech.md` §11.6 |
 | 2026-10-10 | 🧹 **文档系统：入口体量红线修单位 + 新增第 11 项 buffer 滞留检测**（**代码未动**）—— ① `≤20KB` 实为 **`≤20,000 字符`**（`AGENTS.md` 已 **22,377 字节**却一直判 OK ⇒ 红线形同虚设；单位回到 `D-doc-01` 本意，**同一个坑 10-06 踩过一次**）② `docs/` 根加「**工作层**」层级（待办归 `TODO.md`，**不归 buffer**；§3 旧表述已同步）③ `doc_check` **10 → 11 项**，当前告警 2 份已完成计划滞留 buffer | `docs/README.md` §1/§7.1 |
 | 2026-10-10 | 🧹 **文档系统：清单型内容退出（D-doc-05）** —— 删 `file-map.md`（主树**自证漂移**：缺 112+、`tools/` 整域不在；同文件测试树有校验则不漂 ⇒ 对照实验）与 `completed-features.md`（自认不可信 + 与 subsystem-index 重合）；测试树拆 `test-map.md` 保留；**15 份 tech §0 新增「实现入口」**承接关键类指针；判据入铁律 3；`commands.md` 复核后保留（叙事型契约，执行中修正初判）。**校验不加反稳**：第 3 项改读 test-map | `docs/README.md` 铁律 3 · `docs/reference/test-map.md` |
@@ -176,7 +177,6 @@ src/main/java/com/qiqi/li/
 | 2026-10-09 | 🏗 **power 收口 步骤4 第1~5刀全部完成**（纯搬迁）—— ① Tooltip ② 谓词迁 L1 ③ 拓扑原语 ④ `PhaseInterpreter` + 顶层 `SignalTracker`（解开账本→功能类倒挂）⑤ `EnergyAccounting` + `PowerTelemetry`；`LivingWaxedCopperFunction` **1265 → 476 行（-789）**，各口径 / tick 顺序不改。测试 552 全绿，R1 15 / R3 10 无新增；doc_check 10/10。剩步骤3（单位值类型，成本最高，可延后或不做） | `buffer/power-refactoring-plan.md` §5 |
 | 2026-10-09 | 🐛 **修复（回归）：相位快照「只写不读」** —— `ContainerPowerAccess`（账本创建时从 BE 附件回填锁相状态）**零调用者**：回填接线在 `a52a3ea`（1a-4「容器级数据统一存储」）被**改道**绕过（`2c78623` 时链路完整）⇒ 退出重进后振荡器相位不再续接、而 `ContainerPhaseWriteback` 每 tick 仍在写。账本创建处改调 `ContainerPowerAccess.getOrCreatePowerData(ctx)` 接回（1 行）；✅ **游戏内实测通过** | `living-power-tech.md`（相位快照节） |
 | 2026-10-09 | 🐛 **修复：活水车应力导致 Create 小齿轮「重进存档变成掉落物」**（每次都发生）—— 根因 Create 的 `RotationPropagator.propagateNewSource` 判定「压制自身网络」⇒ `world.destroyBlock(pos,true)`；重载后本块 `network` 从 NBT 恢复成**自身坐标**、邻居同网、邻居转速又被 Create 清 0。修：① 激活分支改「**先 setSpeed、再 detachKinetics**」（`handleRemoved` 在 `speed==0` 时直接 return）② **rpm 落盘**（注入 Create `write`/`read`）⇒ 重载后注入退化为「无变化」，**从根上不触发** | `living-water-wheel-tech.md` §9.25 |
-| 2026-10-09 | 🏗 **架构分层收尾：底座 → 领域反向边全部归零**（⑤ container -22 · ④ network -8 · components -27 · 其余边清理 -19）—— **R1 113 → 15、R3 28 → 10**；`container` / `components` / `transfer` 均不再认识任何领域。顺带：3 份已完成计划归档 + 过期状态行修正 | `docs/archive/container-domain-decoupling-plan.md` · `docs/archive/components-decoupling-plan.md` |
 
 ## 排查铁律：原版机制挡路时
 

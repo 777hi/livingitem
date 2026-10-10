@@ -88,6 +88,19 @@
 3. ⏳ 铜块物品栏装饰器渲染（纯视觉）—— `living-copper-tech.md`
 4. 🔮 活潜影箱集成（信号穿透边界）—— 设计探讨见 `buffer/活潜影箱实现细节.md`
 
+## 容器边界（2026-10-10 记）
+
+> 扫描按 `IItemHandler.BLOCK` **能力面**把任何有物品能力的方块实体当成活物品容器；而运行时同步的
+> viewer 匹配依赖**原版 `Container` 实例**。两套口径不一致 ⇒ 详见
+> [container-identity.md §5](system-design/container-identity.md)。
+
+1. ⏳ **容器能力白/黑名单**（待拍板）—— 是否要在扫描入口（`processContainerAt` /
+   `ContainerChunkCache` 登记处）排除「有物品能力但非原版 `Container`」的模组容器
+   （如 ProjectE 炼金箱 `AlchBlockEntityChest`）？现状：这类容器**仍被 tick**（活物品照常运转），
+   但运行时 tooltip 同步不生效（viewer 匹配不上）。crash-2026-10-10 的 `ClassCastException`
+   已修（强转改 `instanceof` 守卫），但「该不该把这类容器纳入活物品体系」仍是未决设计。
+   ⚠️ 边界：不加名单 = 接受「能 tick、不能同步显示」；加名单 = 多一处类型过滤、需定义判定口径。
+
 ## 活武器（2026-10-10 自 `living-weapon-tech.md` §0/§9 迁入，D-doc-06）
 
 1. ⏳ **蓄力型**（弓 / 三叉戟）—— **设计已定稿**（免录制方案，2026-09-30），
