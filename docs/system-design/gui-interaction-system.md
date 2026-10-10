@@ -153,6 +153,16 @@ CropClassifier::isSeedPlantableOnFarmland)`）；**只有真·任意光标自交
   （表现为「被物品图标挡住」），而 `flush()` 只改绘制顺序、改不了深度 ⇒ 救不了。
   机制详见 [icon-system.md](icon-system.md) 的 z 深度订正。
 - 方向配置 HUD 可见时，活按钮自己的 tooltip **让位**（两者同为 tooltip，必然重叠）。
+- **方向符号走专用字体**（2026-10-10，实测反馈「斜向箭头小了一圈」）：
+  原版点阵字体**只含 4 个基本方向箭头**（U+2190–U+2194 `←↑→↓`），**不含对角箭头**
+  （U+2196–U+2199 `↖↗↙↘`）⇒ 对角符号落到**兜底字体**，风格与尺寸都不一致。
+  解法：模组自带字体 `living_item:direction`（`assets/living_item/font/direction.json`）——
+  provider 1 = **自绘点阵**（`textures/font/direction_arrows.png`，补 4 个对角箭头；
+  ⚠️ **必须放第一位**，字形查询取**第一个命中**的 provider）；provider 2 = `reference: minecraft:default`
+  （原样拿到全部原版字形，含空格宽度）。符号文本经 `DirectionSymbols.literal / of` 挂上该字体
+  ⇒ **8 个符号风格统一，其它文字完全不受影响**（`Font` 渲染时按 `style.getFont()` 取字体集）。
+  ⚠️ 点阵图规格：每格 **8×8**、PNG 像素**只有「纯白不透明 / 全透明」两种**
+  （颜色由游戏按字色**自动染色**）、推进宽度自动取「最右非透明像素」、`ascent` 与原版箭头同为 7。
 
 ### 6.2 活按钮：可拖动改位置
 

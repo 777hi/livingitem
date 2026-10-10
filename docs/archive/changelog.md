@@ -239,6 +239,14 @@ ProjectE 的炼金箱 `AlchBlockEntityChest` 暴露 `IItemHandler` 能力（被 
   （基类才做 active/visible/命中检查）—— 漏判会让空手在界面**任意位置**按下都起拖；
   ② **不要盲目委托 `super.mouseDragged`** —— `AbstractWidget.mouseDragged` 对左键**恒返回 `true`**
   ⇒ 会取消所有左键拖动、**打断原版快速合成**。
+- **方向符号专用字体（对角箭头自绘）**：实测反馈「斜向箭头 `↖↗↙↘` 看着小了一圈」——根因是
+  **原版点阵字体不含对角箭头**（实测 `include/default.json`：`nonlatin_european.png` 覆盖
+  U+2190–U+2194，**U+2196–2199 三张点阵图都没有**）⇒ 落兜底字体。解法：模组自带字体
+  `living_item:direction`（provider 1 = **自绘点阵**补 4 个对角箭头，**必须放第一位**；
+  provider 2 = `reference: minecraft:default` 拿到全部原版字形），符号文本经新增的
+  `DirectionSymbols` 挂字体（HUD + 熔炉/酿造台方向 tooltip）⇒ **8 个符号统一，其它文字不受影响**。
+  ⚠️ 规格：每格 8×8、像素只有「纯白不透明 / 全透明」两种（颜色靠游戏按字色染色）、
+  推进宽度自动取最右非透明像素。字形由**用户绘制**。
 - **验证**：每步编译 + 全量测试 555 绿；✅ **游戏内实测通过**（拖动、按容器分别记忆位置、
   空手任意位置按下不再起拖、快速合成不受影响）。
 
