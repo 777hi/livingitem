@@ -153,16 +153,29 @@ CropClassifier::isSeedPlantableOnFarmland)`）；**只有真·任意光标自交
   （表现为「被物品图标挡住」），而 `flush()` 只改绘制顺序、改不了深度 ⇒ 救不了。
   机制详见 [icon-system.md](icon-system.md) 的 z 深度订正。
 - 方向配置 HUD 可见时，活按钮自己的 tooltip **让位**（两者同为 tooltip，必然重叠）。
-- ⚠️ **对角箭头 `↖↗↙↘` 视觉偏小（已知瑕疵，暂不处理）**：原版点阵字体**只含 4 个基本方向箭头**
-  （U+2190–U+2194 `←↑→↓`，在 `nonlatin_european.png`），**不含对角箭头**（U+2196–2199）
-  ⇒ 对角符号落到**兜底字体**，风格与尺寸都与基本箭头不一致。
-  **试过的方案（已回退）**：模组自带字体（自绘点阵补对角字形 + `reference: minecraft:default`），
-  经 `Style.withFont` 挂到符号文本 —— 机制本身成立（`Font` 渲染时确按 `style.getFont()` 取字体集），
-  但**游戏内实测整条字体退化成缺字方块**（连原版有的基本箭头也变框）。
-  ⭐ **根因（已查明）**：bitmap provider 的 **`"file"` 字段必须带 `.png` 后缀** ——
-  原版写的是 `"minecraft:font/nonlatin_european.png"`，而当时写成了 `"living_item:font/direction_arrows"`
-  （漏后缀）⇒ 贴图查找失败 ⇒ provider 加载抛错 ⇒ **整个字体集退化成 `missingFontSet` ⇒ 全框**。
-  ⇒ 若重试，**照抄原版的字段格式**（`ResourceLocation` 不补后缀，`file` 必须自己写全 `.png`）。
+- **方向符号走专用字体**（2026-10-11 实现）—— 解决「对角箭头 `↖↗↙↘` 看着比基本箭头小」：
+  原版点阵字体**只含 4 个基本方向箭头**（U+2190–U+2194 `←↑→↓`，在 `nonlatin_european.png`），
+  **不含对角箭头**（U+2196–2199，三张点阵图都没有）⇒ 对角符号落到**兜底字体**、风格尺寸都不一致。
+  解法：模组自带字体 `living_item:direction`（`assets/living_item/font/direction.json`）——
+  provider 1 = **自绘点阵**（`textures/font/direction_arrows.png`，补 4 个对角字形；
+  ⚠️ **必须放第一位**，字形查询取**第一个命中**的 provider）；provider 2 = `reference: minecraft:default`
+  （原样拿到全部原版字形，含空格宽度）。符号文本经 `DirectionSymbols.literal / of` 挂字体
+  （HUD + 熔炉/酿造台方向 tooltip）⇒ **8 个符号风格统一，其它文字完全不受影响**。
+
+  **机制依据（均已读源码确认）**：`Font` 渲染时按 `style.getFont()` 取字体集；
+  `Style.applyFormat` 保留 `font` 字段 ⇒ **染色不会覆盖字体**；
+  `FontManager` 用 `DependencySorter` 按**依赖顺序**解析 `reference`（`UnresolvedBuilderBundle.dependencies`）
+  ⇒ 引用 `minecraft:default` 是安全的。
+
+  🔴 **必踩的坑：`file` 字段必须带 `.png` 后缀**。`file` 是普通 `ResourceLocation.CODEC`
+  （**不会自动补后缀**），而 `BitmapProvider.load` 只是 `file.withPrefix("textures/")` 后直接开资源。
+  漏后缀（写成 `living_item:font/direction_arrows`）⇒ 贴图找不到 ⇒ provider 加载抛错
+  ⇒ **整个字体集退化成 `missingFontSet` ⇒ 所有箭头（连原版有的基本箭头）全变缺字方块**。
+  ⇒ 写自定义字体时**照抄原版字段格式**：`"file": "minecraft:font/nonlatin_european.png"`（带后缀）。
+
+  **点阵图规格**：每格 **8×8**、PNG 像素**只有「纯白不透明 / 全透明」两种**
+  （颜色由游戏按字色**自动染色**，所以不能画彩色）、推进宽度自动取「最右非透明像素」、`ascent` 同原版箭头为 7。
+  字形对齐原版的三个指标：**墨量 ≈13**、**最右列 ≤ 6**（决定推进宽度）、**最下行 ≤ 6**（不压基线）。
 
 ### 6.2 活按钮：可拖动改位置
 
