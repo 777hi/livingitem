@@ -80,8 +80,10 @@ public class LivingButton extends SpriteIconButton.CenteredIcon {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (button == 0 && menu.getCarried().isEmpty()) {
-            // 光标空手 → 进入「按住拖动」手势（空手点击本来也没有其它语义，吞掉无副作用）
+        // ⚠️ 必须自己判命中：本方法绕过了 AbstractWidget.mouseClicked 的 active/visible/clicked 检查，
+        // 漏判会让「空手在界面任意位置按下」都启动拖动手势（2026-10-10 实测踩坑）。
+        if (button == 0 && this.isMouseOver(mouseX, mouseY) && menu.getCarried().isEmpty()) {
+            // 光标空手且按在按钮上 → 进入「按住拖动」手势（空手点击本来也没有其它语义）
             dragPressed = true;
             dragging = false;
             pressX = mouseX;
@@ -105,8 +107,12 @@ public class LivingButton extends SpriteIconButton.CenteredIcon {
      */
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
-        if (!dragPressed) {
-            return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
+        // 不在拖动手势 ⇒ 明确返回 false。
+        // ⚠️ **不能**委托 super：AbstractWidget.mouseDragged 对左键**恒返回 true**
+        // （它只看 isValidClickButton，不看拖动状态），会让事件被误取消 ⇒
+        // 手持物品时的原版快速合成拖动失效（2026-10-10 一并修掉）。
+        if (!dragPressed || button != 0) {
+            return false;
         }
         if (!dragging
             && Math.abs(mouseX - pressX) + Math.abs(mouseY - pressY) >= DRAG_THRESHOLD) {
