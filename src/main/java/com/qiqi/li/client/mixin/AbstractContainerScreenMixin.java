@@ -493,25 +493,10 @@ public class AbstractContainerScreenMixin extends Screen {
             com.qiqi.li.client.input.LivingItemInputHandler.getActiveHudLines();
         if (lines == null || lines.isEmpty()) return;
 
-        final int boxW = 120;
-        final int lineH = 11;
-        int boxH = 6 + lines.size() * lineH + 2;
-        int boxX = this.leftPos + (this.imageWidth - boxW) / 2;
-        int boxY = this.topPos + this.imageHeight - 94 - boxH - 8;
-
-        // ⭐ z 层修复（2026-10-10 实测反馈：HUD 被物品图标挡住）：
-        // 物品/文字走 bufferSource 批量缓冲、帧末才 flush；本方法的 fill 是立即绘制 ——
-        // 立即绘制先落笔、批量缓冲后落笔 ⇒ 物品反而盖住 HUD。
-        // 先 flush 把此前所有缓冲内容（物品、tooltip、标签）落盘，HUD 必然画在其上。
-        guiGraphics.flush();
-
-        guiGraphics.fill(boxX, boxY, boxX + boxW, boxY + boxH, 0xE0101018);
-        guiGraphics.renderOutline(boxX, boxY, boxW, boxH, 0xFF534AB7);
-        int y = boxY + 4;
-        for (net.minecraft.network.chat.Component line : lines) {
-            guiGraphics.drawString(this.font, line, boxX + 6, y, 0xFFFFFF, false);
-            y += lineH;
-        }
+        // HUD = 常驻自定义 tooltip（2026-10-10，用户拍板「排队」方案）：
+        // 背景/边框/文字整条走批量缓冲队列，按调用顺序排在所有物品图标之后 ⇒ 天然在其上，
+        // 无需 flush 强制清队；样式（黑底紫边、跟随鼠标、边缘不出屏）随原版/材质包。
+        guiGraphics.renderTooltip(this.font, lines, java.util.Optional.empty(), mouseX, mouseY);
     }
 
     @Inject(method = "render", at = @At("TAIL"))
