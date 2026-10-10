@@ -84,8 +84,7 @@ SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 
 > **下方全部子系统均已实现**（没有列在这里的就是没做）。**按族列出，族内每个子系统直链其文档**；
 > 每个子系统「做什么」的完整概述见 [subsystem-index.md](docs/reference/subsystem-index.md)，
-> 逐项能力清单见 [completed-features.md](docs/reference/completed-features.md)。
-> **能力口径与不变量以各子系统文档为准**，本文只作路由。
+> 逐项能力清单见各 tech 文档 §0（**能力口径与不变量以各子系统文档为准**，本文只作路由）。
 >
 > ⭐ **读子系统先读它 tech 文档最前面的「§0 玩法定义」**（是什么 / 怎么玩 / 规则 / 能力清单）
 > —— 它是**功能需求的来源**与**行为对错的判据**（规约见 [docs/README.md](docs/README.md)）。
@@ -103,8 +102,8 @@ SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 
 ## 模块地图
 
-> 只列**目录级职责**（根级文件与关键子目录随附）。**完整文件树见 [docs/reference/file-map.md](docs/reference/file-map.md)**
-> —— 那份是快照、会漂移；需要准确清单时用 `find src/main -name "*.java"`。
+> 只列**目录级职责**（根级文件与关键子目录随附）。**完整文件树用 `find src/main -name "*.java"`**
+> （人工文件树快照已于 2026-10-10 删除 —— 清单型内容必然漂移，不再维护）。
 
 ```
 src/main/java/com/qiqi/li/
@@ -151,7 +150,7 @@ src/main/java/com/qiqi/li/
 全绿基线：`551 passed / 0 failed / 1 skipped`。**逐次新增明细见 [changelog.md](docs/archive/changelog.md)。**
 
 > 📄 测试环境配置与编写约定见 [unit-testing.md](docs/guides/unit-testing.md)；
-> 测试文件树见 [file-map.md](docs/reference/file-map.md)「测试文件树」。
+> 测试文件树（每个测试类守什么）见 [test-map.md](docs/reference/test-map.md)。
 
 ## 开发进展
 
@@ -170,6 +169,7 @@ src/main/java/com/qiqi/li/
 |---|---|---|
 | 2026-10-10 | 🐛 **修复：辅助模式挖传送石碑「方块消失但零掉落」** —— 根因在 Waystones：`WaystoneBlockBase#playerWillDestroy` 拿 `Player#hasCorrectToolForDrops(BlockState)` 当**掉落闸门**，而该重载被 NeoForge 标 `@Deprecated`（"use position sensitive version below"）且**不发任何事件** ⇒ 辅助模式（玩家**空手**、活工具在背包）判 false ⇒ 手动掉落整段跳过。修法：① 抽出 `LivingToolAssist#hasBackpackToolFor`（材质门槛**单一来源**，事件入口 `onHarvestCheck` 同步改调它）② 新增 `PlayerAssistHarvestMixin` 补「**直读入口**」（`LivingToolAssist` 的**唯一 mixin**）。⚠️ **行为变化**：任何直读该判据的模组都会认为"背包有活工具 = 玩家有工具"（正是辅助模式语义）。**挖掘速度不变**（30/100 走事件、早已放行）、**主动模式不受影响**（假玩家主手本就有工具，这正是"主动能掉、辅助不掉"的唯一差别）。测试 552 全绿（551/0/1）；✅ **游戏内实测通过**（2026-10-10：空手 + 背包活镐子挖传送石碑正常掉落） | `docs/tech/living-tool-tech.md` §11.6 |
 | 2026-10-10 | 🧹 **文档系统：入口体量红线修单位 + 新增第 11 项 buffer 滞留检测**（**代码未动**）—— ① `≤20KB` 实为 **`≤20,000 字符`**（`AGENTS.md` 已 **22,377 字节**却一直判 OK ⇒ 红线形同虚设；单位回到 `D-doc-01` 本意，**同一个坑 10-06 踩过一次**）② `docs/` 根加「**工作层**」层级（待办归 `TODO.md`，**不归 buffer**；§3 旧表述已同步）③ `doc_check` **10 → 11 项**，当前告警 2 份已完成计划滞留 buffer | `docs/README.md` §1/§7.1 |
+| 2026-10-10 | 🧹 **文档系统：清单型内容退出（D-doc-05）** —— 删 `file-map.md`（主树**自证漂移**：缺 112+、`tools/` 整域不在；同文件测试树有校验则不漂 ⇒ 对照实验）与 `completed-features.md`（自认不可信 + 与 subsystem-index 重合）；测试树拆 `test-map.md` 保留；**15 份 tech §0 新增「实现入口」**承接关键类指针；判据入铁律 3；`commands.md` 复核后保留（叙事型契约，执行中修正初判）。**校验不加反稳**：第 3 项改读 test-map | `docs/README.md` 铁律 3 · `docs/reference/test-map.md` |
 | 2026-10-09 | 🐛 **修复（行为变化）：未活化的原版涂蜡铜灯也能被外部 mod 充放电** —— `LivingItem` 的 `EnergyStorage.ITEM` provider **漏判活化**（同一方法内活箱子 / 活末影箱都判了）⇒ 「活化 = 进入能量系统」的门槛被绕过；修法：准入判据收在 `BulbItemEnergyStorage.of()`，provider 只透传。⚠️ 曾以为「取消活化保留电量」，**探针实测推翻**（`clearLivingData` 会清电量组件）⇒ 收紧零风险。测试 551→552；✅ **游戏内实测通过** | `buffer/power-refactoring-plan.md` §3 |
 | 2026-10-09 | 🏗 **power 收口 步骤2：抽出 `BulbBank` 并收归三处调用**（容器充电 / 发电直存 / 物品接口充电）—— 「按剩余容量比例分配」从**三份实现/三种口径**收成一处，差异变显式参数（`FePolicy`）；**溢出 bug 的第二份拷贝（`distributeToBulbs`）绝迹** ⇒ `ContainerEnergyStorage` **312 → 210**、`LivingWaxedCopperFunction` **845 → 824 行**。⚠️ 放电与 `extract` **经评估不做**（单调用方无重复可消 + 提前退出是性能特性）—— 判据：统一只针对「复杂 + 有 bug 史 + 多份拷贝」。✅ 破坏性验证 3 次（1 / 5 / 3 挂，均证明对应调用点真经过 `BulbBank`） | `buffer/power-refactoring-plan.md` §3 |
 | 2026-10-09 | 🏗 **power 收口 步骤4 第1~5刀全部完成**（纯搬迁）—— ① Tooltip ② 谓词迁 L1 ③ 拓扑原语 ④ `PhaseInterpreter` + 顶层 `SignalTracker`（解开账本→功能类倒挂）⑤ `EnergyAccounting` + `PowerTelemetry`；`LivingWaxedCopperFunction` **1265 → 476 行（-789）**，各口径 / tick 顺序不改。测试 552 全绿，R1 15 / R3 10 无新增；doc_check 10/10。剩步骤3（单位值类型，成本最高，可延后或不做） | `buffer/power-refactoring-plan.md` §5 |
@@ -177,7 +177,6 @@ src/main/java/com/qiqi/li/
 | 2026-10-09 | 🐛 **修复：活水车应力导致 Create 小齿轮「重进存档变成掉落物」**（每次都发生）—— 根因 Create 的 `RotationPropagator.propagateNewSource` 判定「压制自身网络」⇒ `world.destroyBlock(pos,true)`；重载后本块 `network` 从 NBT 恢复成**自身坐标**、邻居同网、邻居转速又被 Create 清 0。修：① 激活分支改「**先 setSpeed、再 detachKinetics**」（`handleRemoved` 在 `speed==0` 时直接 return）② **rpm 落盘**（注入 Create `write`/`read`）⇒ 重载后注入退化为「无变化」，**从根上不触发** | `living-water-wheel-tech.md` §9.25 |
 | 2026-10-09 | 🏗 **架构分层收尾：底座 → 领域反向边全部归零**（⑤ container -22 · ④ network -8 · components -27 · 其余边清理 -19）—— **R1 113 → 15、R3 28 → 10**；`container` / `components` / `transfer` 均不再认识任何领域。顺带：3 份已完成计划归档 + 过期状态行修正 | `docs/archive/container-domain-decoupling-plan.md` · `docs/archive/components-decoupling-plan.md` |
 | 2026-10-08 | 🔧 **可复现构建修复：GitHub Actions 不再每次失败** —— 根因二：① Sable 的 jar 在被 gitignore 的 `libs/` 里（干净克隆没有 ⇒ javac 找不到 `dev.ryanhcode.sable.*`）② `gradle.properties` 写死本机 `org.gradle.java.home`。修法：Sable 走 **Modrinth Maven**（🔴 Sable 是 PolyForm Shield License，**不可再分发 jar**）+ `extractSableCompanion` 从其 `META-INF/jarjar/` 自动抽 companion + 10 个开发辅助 jar 改条件化。**复验命令**：`./gradlew build -Plivingitem.devModsDir=nonexistent_dir_ci_sim --rerun-tasks`（本地复现干净克隆） | `buffer/framework-benchmark.md` §9.4 |
-| 2026-10-08 | 🏗 **`runtime` 机制化（档 2）完成并验收**：拆掉 `domain/runtime/` 假领域 —— 机制（注册表 + `RuntimeSegments`）落 L2 `living/runtime/`，**片段定义归各领域**（`GeneratorSegment`/`HopperSegment`/`FurnaceSegment`），发包反转到 L4 `LivingItemRuntimeSync`。**R3 22 → 10、R1 93 → 91**；编解码注册表驱动，**字节语义等价**（B 步往返测试断言一字未改仍全绿）。✅ **游戏内手测五项已通过**（发电机遥测 / 漏斗冷却 / 熔炉进度 / 背包路径 / 回归） | `buffer/runtime-mechanization-plan.md` §7/§8 |
 
 ## 排查铁律：原版机制挡路时
 
@@ -215,7 +214,7 @@ src/main/java/com/qiqi/li/
 | 写测试 / 跑全量 / mock `Level` | [unit-testing.md](docs/guides/unit-testing.md) |
 | **梳理上下游 / 估改动爆炸半径 / 判断模块是否真解耦 / 查新增子系统的扩展点** | [code-map.md](docs/guides/code-map.md) —— 人看 HTML，**AI 直接调 `python tools/gen_code_map.py --query <类名>` / `--extend`**（文本输出、直接解析源码、**不会读到过期图**）；**改完代码跑 `python tools/check_layers.py`**（分层违规即退出 1，棘轮式「只减不增」） |
 | **发版本给群友测活TNT** | [living-tnt-testing.md](docs/guides/living-tnt-testing.md) §1~§6（**转发时只发这半段**） |
-| 找某个源文件 | [file-map.md](docs/reference/file-map.md)（完整文件树，快照） |
+| 找某个源文件 | `find src/main -name "*.java"` 或 `python tools/gen_code_map.py --query <类名>`（人工文件树快照已删，2026-10-10） |
 | 查指令用法 / 加新指令 | [commands.md](docs/reference/commands.md)（指令清单，快照） |
 | **查原版 / NeoForge / 第三方模组源码** | **直接搜 `libs/src/`，无需解压** —— `libs/src/neoforge-21.1.249-merged/` 是 ⭐ 首选（版本与 `neo_version` 一致）；第三方模组在 `libs/src/<ModName>/`。详见 [living-tool-design.md](docs/buffer/living-tool-design.md) §2.2.1 |
 | 查历史变更 | [changelog.md](docs/archive/changelog.md)（按日期倒序） |

@@ -22,6 +22,10 @@
 
 ## §0 玩法定义
 
+> **实现入口**：`living/domain/redstone/` —— 关键类：`LivingRedstoneFunction`（唯一驱动点，自维持）·
+> `RedstonePropagation`（BFS 传播核心）· `ContainerRedstoneData`（容器级信号数据，EdgeGrid）·
+> `RedstoneRegistration`（9 Function + 交互规则注册）
+
 > **性质**：本节「规则」是**契约**（违反即 bug），不是实现细节 —— 它是本子系统
 > **功能需求的来源**与**行为对错的判据**。⚠️ **只写规则与语义**；数值与操作步骤归实现层。
 

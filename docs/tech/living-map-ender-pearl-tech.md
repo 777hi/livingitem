@@ -24,6 +24,9 @@
 
 ## §0 玩法定义
 
+> **实现入口**：`living/domain/map/` —— 关键类：`LivingMapFunction` / `LivingEnderPearlFunction`（功能入口）·
+> `MapTeleportExecutor`（传送执行器）· `MapCoordHelper`（UV 坐标换算）· `MapRegistration`（域注册）
+
 > **性质**：本节「规则」是**契约**（违反即 bug），不是实现细节 —— 它是本子系统
 > **功能需求的来源**与**行为对错的判据**。⚠️ **只写规则与语义**；数值与操作步骤归实现层。
 

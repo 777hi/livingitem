@@ -5,7 +5,7 @@ Verifies the invariants declared in docs/README.md §7 ("改完必查"):
   1. Path reality      - every path mentioned in a doc (relative markdown links,
                          and repo-relative docs/... / src/... mentions) exists
   2. Test count        - AGENTS.md's declared total matches build/test-results/test/*.xml
-  3. Test tree         - the test file list in file-map.md matches src/test reality
+  3. Test tree         - the test file list in test-map.md matches src/test reality
   4. Progress rolling  - AGENTS「开发进展」一行式条数 / 日期对齐 / 指针含 .md
   5. Entry size        - AGENTS.md stays under the entry budget (soft warning)
   6. Decisions         - decisions.md 的 supersedes 链双向一致
@@ -149,16 +149,17 @@ def check_test_count():
 
 
 def check_test_tree():
-    """测试文件树住在 docs/reference/file-map.md（2026-09-16 从 AGENTS.md 迁入）。"""
-    fm = os.path.join(ROOT, "docs", "reference", "file-map.md")
+    """测试文件树住在 docs/reference/test-map.md（2026-10-10 从 file-map.md 拆出：
+    主文件树是清单型内容已删，测试树是叙事型意图说明保留）。"""
+    fm = os.path.join(ROOT, "docs", "reference", "test-map.md")
     if not os.path.exists(fm):
-        failures.append("[测试树] 找不到 docs/reference/file-map.md")
-        print("3. 测试树一致性    : FAIL（无 file-map.md）")
+        failures.append("[测试树] 找不到 docs/reference/test-map.md")
+        print("3. 测试树一致性    : FAIL（无 test-map.md）")
         return
     text = read(fm)
     anchor = "src/test/java/com/qiqi/li/"
     if anchor not in text:
-        failures.append("[测试树] file-map.md 里找不到测试文件树")
+        failures.append("[测试树] test-map.md 里找不到测试文件树")
         print("3. 测试树一致性    : FAIL（无测试树）")
         return
     i = text.index(anchor)
@@ -174,9 +175,9 @@ def check_test_tree():
     extra, missing = sorted(doc - real), sorted(real - doc)
     if extra or missing:
         if extra:
-            failures.append(f"[测试树] file-map.md 列了不存在的测试类: {extra}")
+            failures.append(f"[测试树] test-map.md 列了不存在的测试类: {extra}")
         if missing:
-            failures.append(f"[测试树] file-map.md 漏列测试类: {missing}")
+            failures.append(f"[测试树] test-map.md 漏列测试类: {missing}")
         print(f"3. 测试树一致性    : FAIL（多 {len(extra)} / 缺 {len(missing)}）")
     else:
         print(f"3. 测试树一致性    : OK（{len(real)} 个测试类）")

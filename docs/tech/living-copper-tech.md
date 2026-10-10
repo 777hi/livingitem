@@ -19,6 +19,9 @@
 
 ## §0 玩法定义
 
+> **实现入口**：`living/domain/redstone/`（信号层内）—— 关键类：`LivingCopperFunction`（铜块线缆，锈蚀等级即导通性）·
+> `LivingCopperSignalData` / `LivingCutCopperData` / `LivingGrateData` / `LivingCopperBulbData`（各元件数据）
+
 > **性质**：本节「规则」是**契约**（违反即 bug），不是实现细节 —— 它是本子系统
 > **功能需求的来源**与**行为对错的判据**。⚠️ **只写规则与语义**；数值与操作步骤归实现层。
 

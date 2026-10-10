@@ -23,6 +23,11 @@
 
 ## §0 玩法定义
 
+> **实现入口**：`living/domain/power/` —— 关键类：`LivingWaxedCopperFunction`（功能入口）·
+> `PowerMath`（发电数学）· `PhaseInterpreter` / `SignalTracker`（相位解读）·
+> `EnergyAccounting` / `PowerTelemetry`（记账 / 遥测）· `BulbBank`（按剩余容量分配）·
+> `ContainerEnergyStorage`（对外充放，FE 管理面）
+
 > **性质**：本节「规则」是**契约**（违反即 bug），不是实现细节 —— 它是本子系统
 > **功能需求的来源**与**行为对错的判据**（没有它，「该有哪些功能」只能从代码反推）。
 > ⚠️ **只写规则与语义**；数值与操作步骤归实现层（见 §4 与 `PowerMath`）。

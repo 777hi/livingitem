@@ -335,7 +335,7 @@ public static Direction gridToWorld(Pos2D gridDir, Direction blockFacing) {
 > ⚠️ **本节是快照**（2026-09-16 复核并修正）。原表列出的 `DirectionModeComponent`、
 > `HybridContainerResolver`、`ContainerCacheManager` **三个类在 v8 重构后已不存在**，已删除；
 > `SlotResolver` 实际在 `living/transfer/`（原写 `living/core/`）。
-> 准确清单用 `find src/main -name "*.java"` 或 [file-map.md](file-map.md)。
+> 准确清单用 `find src/main -name "*.java"`（人工文件树快照已删，2026-10-10）。
 
 | 文件 | 路径 | 用途 |
 |------|------|------|

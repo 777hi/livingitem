@@ -12,6 +12,9 @@
 
 ## §0 玩法定义（定位与铁律）
 
+> **实现入口**：`living/domain/tools/`（与活工具共用包）—— 关键类：`LivingWeaponAssist`（环上代出手）·
+> `LivingToolReplay`（攻击记忆回放）· `LivingToolFakePlayer`（代打实体）· `ToolRegistration`（per-weapon 攻击缩放注入）
+
 > **性质**：本节「规则」是**契约**（违反即 bug），不是实现细节 —— 它是本子系统
 > **功能需求的来源**与**行为对错的判据**。⚠️ **只写规则与语义**；数值与操作步骤归实现层。
 

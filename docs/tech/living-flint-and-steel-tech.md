@@ -15,6 +15,9 @@
 
 ## §0 玩法定义
 
+> **实现入口**：`living/function/LivingFlintAndSteelFunction`（交互触发器，无 tick 逻辑）——
+> 点燃规则注册在 `living/domain/tnt/TntRegistration`，GUI 交互处理器在 `living/interaction/IgniteHandler`
+
 > **性质**：本节「规则」是**契约**（违反即 bug），不是实现细节 —— 它是本子系统
 > **功能需求的来源**与**行为对错的判据**。⚠️ **只写规则与语义**；数值与操作步骤归实现层。
 

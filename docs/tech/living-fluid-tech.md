@@ -22,6 +22,10 @@
 
 ## §0 玩法定义
 
+> **实现入口**：`living/domain/water/` —— 关键类：`LivingFluidFunction`（自维持驱动）·
+> `ContainerFluidData`（引擎数据：派生源/蔓延/晋升/挤没/转化）· `FluidFlowBehaviors`（行为分档注册表）·
+> `ContainerFluidHandler`（对外 IFluidHandler，管道抽取）· `LivingBucketFunction`（活桶载体）
+
 > **性质**：本节「规则」是**契约**（违反即 bug），不是实现细节 —— 它是本子系统
 > **功能需求的来源**与**行为对错的判据**。⚠️ **只写规则与语义**；数值与操作步骤归实现层。
 

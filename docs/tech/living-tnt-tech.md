@@ -16,6 +16,10 @@
 
 ## §0 玩法定义
 
+> **实现入口**：`living/domain/tnt/` —— 关键类：`LivingTntFunction`（功能入口）·
+> `ExplosionComponent`（逐区块破坏引擎）· `ExplosionLedger`（待炸账本，世界级 SavedData）·
+> `ExplosionParams`（参数 record + 位图索引）
+
 > **性质**：本节「规则」是**契约**（违反即 bug），不是实现细节 —— 它是本子系统
 > **功能需求的来源**与**行为对错的判据**。⚠️ **只写规则与语义**；数值与操作步骤归实现层。
 

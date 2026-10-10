@@ -89,6 +89,7 @@
 | D-doc-02 | 2026-09-16 | doc | ~~「开发进展」只保留最近 3 个批次，其余迁 `changelog.md`；先查冗余再动历史~~ | 历史是资产，冗余是负债 | **已被取代** | → D-doc-04 | `docs/README.md` §4 |
 | D-doc-03 | 2026-09-16 | doc | 搬运文档时**搬走不删掉**，且**守恒校验必须逐段判定**（不能只验第一块） | 曾误删整段 | 生效 | | `docs/README.md` §5 / §7.2 |
 | D-doc-04 | 2026-09-22 | doc | 「开发进展」改**一行式滚动**（最近 10 条「结论 + 指针」），**完整正文直接写 changelog**，**取消归档环节** | 条目均 705 字符占入口 55%；归档高风险手工操作 | 生效 | ← D-doc-02 | `docs/README.md` §4 |
+| D-doc-05 | 2026-10-10 | doc | **清单型内容退出文档**：删 `file-map.md` 主树与 `completed-features.md`（可从代码枚举 ⇒ `find` / `gen_code_map.py` 替代），关键类指针下沉各 tech §0「实现入口」，测试树拆 `test-map.md` 保留；被否方案：脚本生成（生成物无注释 = 纯骨架）、就近年清单（必漂无解） | 人工清单必漂（实证缺 112+，同文件测试树有校验则不漂） | 生效 | | `docs/README.md` 铁律 3 / `docs/reference/test-map.md` |
 | D-fluid-01 | 2026-10-03 | fluid | **源只有一种（容器资产）**：取消「桶源」，水要么在桶里（`BucketItem.content`）要么在容器里（源），**互斥**，经倒/汲转换 | 桶源 = 重复计账 | 生效 | | `living-fluid-tech.md` §4 |
 | D-fluid-02 | 2026-10-04 | fluid | **桶 = 载体，零私有状态**：内容 = 原版 `BucketItem.content`，形态变换走 `Fluid.getBucket()` 注册映射 | 曾发明私有组件是负资产 | 生效 | | `living-fluid-tech.md` §5 |
 | D-fluid-03 | 2026-10-03 | fluid | **转化无独立节拍**（即时转化）；延迟会与漏斗节拍互锁成活锁 | 转化全是蓄意的 | 生效 | | `living-fluid-tech.md` §6 |
