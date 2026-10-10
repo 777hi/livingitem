@@ -51,11 +51,22 @@ public class LivingButton extends SpriteIconButton.CenteredIcon {
     // ==================== 拖动改位置（2026-10-10，第二步） ====================
     // 规则：**光标空手**时按住左键拖动 ⇒ 移动按钮，松手写盘（按 Screen 类名分别记住）。
     // 手持物品时点击 = 活化（走 onPress），两者互不干扰。
+    //
+    // ⚠️ 拖动事件**不由原版分发**：AbstractContainerScreen 重写了 mouseDragged 且不调 super，
+    // 子控件收不到（详见 LivingItemInputHandler#onMouseDragged 的说明）。转发由该类经
+    // ScreenEvent.MouseDragged.Pre 完成；松手则走原版路径（Forge 补丁调了 super）。
 
+    /** 左键按下在按钮上（光标空手）—— 拖动手势的起点。 */
+    private boolean dragPressed = false;
+    /** 已越过启动阈值，真正进入拖动（避免纯点击的像素抖动被误判为拖动）。 */
     private boolean dragging = false;
-    private boolean moved = false;
+    private double pressX;
+    private double pressY;
     private double dragOffsetX;
     private double dragOffsetY;
+
+    /** 启动拖动所需的最小位移（像素，曼哈顿距离）—— 低于此值视为「点击」。 */
+    private static final double DRAG_THRESHOLD = 2.0;
 
     public static final Logger LOGGER = LogUtils.getLogger();
 
@@ -70,17 +81,37 @@ public class LivingButton extends SpriteIconButton.CenteredIcon {
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (button == 0 && menu.getCarried().isEmpty()) {
-            dragging = true;
-            moved = false;
+            // 光标空手 → 进入「按住拖动」手势（空手点击本来也没有其它语义，吞掉无副作用）
+            dragPressed = true;
+            dragging = false;
+            pressX = mouseX;
+            pressY = mouseY;
             dragOffsetX = mouseX - this.getX();
             dragOffsetY = mouseY - this.getY();
-            return true;   // 吞掉本次点击：空手点击本来也不触发活化
+            return true;
         }
         return super.mouseClicked(mouseX, mouseY, button);
     }
 
+    /**
+     * 移动按钮。
+     *
+     * <p>⚠️ 本方法**不会被原版自动调用** —— 容器界面重写 mouseDragged 且不调 super，
+     * 子控件收不到拖动事件。实际由 {@link com.qiqi.li.client.input.LivingItemInputHandler#onMouseDragged}
+     * 经 {@code ScreenEvent.MouseDragged.Pre} 转发进来。</p>
+     *
+     * @return true = 本次拖动已被按钮消费（事件随之取消，原版槽位拖动逻辑跳过）；
+     *         false = 不在拖动手势中，让事件照常走原版。
+     */
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
+        if (!dragPressed) {
+            return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
+        }
+        if (!dragging
+            && Math.abs(mouseX - pressX) + Math.abs(mouseY - pressY) >= DRAG_THRESHOLD) {
+            dragging = true;   // 越过阈值才真正开始拖动
+        }
         if (dragging) {
             Minecraft mc = Minecraft.getInstance();
             int nx = (int) Math.round(mouseX - dragOffsetX);
@@ -88,21 +119,19 @@ public class LivingButton extends SpriteIconButton.CenteredIcon {
             // 夹在屏幕内 —— 防止按钮被拖到看不见的地方
             nx = Mth.clamp(nx, 0, Math.max(0, mc.getWindow().getGuiScaledWidth() - this.getWidth()));
             ny = Mth.clamp(ny, 0, Math.max(0, mc.getWindow().getGuiScaledHeight() - this.getHeight()));
-            if (nx != this.getX() || ny != this.getY()) {
-                moved = true;
-                this.setX(nx);
-                this.setY(ny);
-            }
-            return true;
+            this.setX(nx);
+            this.setY(ny);
         }
-        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
+        return true;
     }
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        if (dragging) {
+        if (dragPressed) {
+            boolean wasDragging = dragging;
+            dragPressed = false;
             dragging = false;
-            if (moved) savePosition();
+            if (wasDragging) savePosition();   // 没真正移动过则不写盘（避免无谓 IO）
             return true;
         }
         return super.mouseReleased(mouseX, mouseY, button);

@@ -180,9 +180,33 @@
 **✅ 定案（2026-10-10）：吸附 / 碰撞 / 显示开关 —— 三者都不做**（只做拖动 + 位置持久化）。
 
 **✅ 实现（2026-10-10）**：`client/gui/LivingButtonLayout`（懒加载 `config/living_item/button_layout.json`，
-`version` 字段 + 坏值 WARN 跳过、绝不崩）+ `LivingButton` 重写鼠标三事件
+`version` 字段 + 坏值 WARN 跳过、绝不崩）+ `LivingButton` 处理鼠标三事件
 （**空手**左键按住拖动、屏幕内夹取、松手写盘）+ mixin 按 Screen 类名应用保存位置。
 ⭐ **手持物品点击 = 活化、空手拖动 = 移动**，两者互不干扰（空手点击本来也不触发活化）。
+
+#### ⚠️ 拖动事件必须自己转发（2026-10-10 实测踩坑）
+
+**症状**：按钮拖不动（按住左键没反应）。
+
+**根因**：`AbstractContainerScreen.mouseDragged` **整个重写了** `ContainerEventHandler` 的默认实现
+（默认 = 焦点 + `isDragging` + 左键 ⇒ 转发给焦点控件），**且不调 `super`、恒返回 true**
+⇒ 任何子控件都收不到 `mouseDragged`。（`mouseReleased` 之所以能到，是因为 Forge 补丁在
+`AbstractContainerScreen.mouseReleased` 里补了 `super.mouseReleased` —— 注释 `//Forge, Call parent to release buttons`。）
+
+**为什么原版要这么重写**：容器界面的「拖动」是**槽位级手势**（快速合成、触屏拖物品），
+必须**无条件执行**，与「哪个控件有焦点」无关。证据：原版凡是要拖动自己控件的容器界面
+（`CreativeModeInventoryScreen` 滚动条 / `LoomScreen` / `BookEditScreen`）**都各自重写
+`mouseDragged` 自行处理** ⇒ 「不转发控件」是既定设计，不是漏写。
+
+**解法**：用 NeoForge 的 `ScreenEvent.MouseDragged.Pre` 转发，**不碰 mixin、不重写原版方法**。
+该事件在 `MouseHandler` 里、`screen.mouseDragged()` **之前**触发
+（`ClientHooks.onScreenMouseDragPre`，取消即跳过原版调用），**天然绕开那处重写**。
+实现在 `LivingItemInputHandler#onMouseDragged`：遍历 `screen.children()` 找 `LivingButton`，
+仅当它**真的处于拖动手势**（`mouseDragged` 返回 true）才取消事件 ⇒ 手持物品时的原版
+槽位拖动（快速合成）不受影响。
+
+**判据沉淀**：容器界面里做「控件级拖动」⇒ 走 `ScreenEvent.MouseDragged.Pre`
+（或像原版那样重写 `mouseDragged`），**别指望 `ContainerEventHandler` 的默认转发**。
 
 ⚠️ **TrashSlot 是 Architectury / 多加载器项目**（`common/` + `fabric/` + `forge/` + `neoforge/`，依赖 **Balm** 抽象库）  
 ⇒ **只借鉴思路，不照搬架构**。本项目仅 NeoForge，不需要 common/platform 分层，  
@@ -247,3 +271,4 @@
 | ---------- | ------------------------------------------------------- |
 | 2026-10-10 | 因活酿造台 5 槽位需求发现 UI 不支持对角；定九宫格方案；用户提出交互改进 + E1/E2 扩展；立本文档 |
 | 2026-10-10 | 第一步实装（`4892b95`）→ 实测迭代：HUD z 层（`9cdc8bf`→`7a93eba`，最终改 `renderTooltip`）、X 键与提示订正（`26fbc87`）、tooltip 让位（`df271e9`）；补定「对角 = 声明式能力」+ HUD 悬停即显示 / 无超时 / 高亮 |
+| 2026-10-10 | 第二步实装（`c0d9087`）→ 实测「按钮拖不动」：查明 `AbstractContainerScreen.mouseDragged` 不转发控件，改用 `ScreenEvent.MouseDragged.Pre` 转发（见 §4.1） |

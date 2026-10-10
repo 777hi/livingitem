@@ -202,6 +202,39 @@ public class LivingItemInputHandler {
         return func instanceof HasDirection dir && dir.supportsDiagonal();
     }
 
+    /**
+     * 活按钮拖动转发 —— 容器界面默认<b>不把拖动事件转发给子控件</b>。
+     *
+     * <p><b>为什么要这层</b>：{@code AbstractContainerScreen.mouseDragged} 整个重写了
+     * {@code ContainerEventHandler} 的默认实现（焦点 + isDragging + 左键 ⇒ 转发给焦点控件），
+     * 且<b>不调用 super</b>、恒返回 true —— 所以任何子控件都收不到 mouseDragged
+     * （对比 {@code mouseReleased}：Forge 补丁调了 super，所以松手能到）。
+     * 原版中需要拖动自己控件的容器界面（{@code CreativeModeInventoryScreen} 滚动条 /
+     * {@code LoomScreen} / {@code BookEditScreen}）**也都各自重写 mouseDragged 自行处理**
+     * —— 说明「拖动 = 槽位级手势、不转发控件」是容器界面的既定设计，不是漏写。</p>
+     *
+     * <p><b>为什么用事件而不是 mixin</b>：NeoForge 的 {@code MouseDragged.Pre} 在
+     * {@code MouseHandler} 里、{@code screen.mouseDragged()} <b>之前</b>触发
+     * （{@code ClientHooks.onScreenMouseDragPre}，取消即跳过原版调用），天然绕开那处重写，
+     * 且是官方扩展点 —— 无需再动 {@code AbstractContainerScreenMixin}。</p>
+     *
+     * <p>只在按钮真正处于拖动手势时才取消事件（{@code mouseDragged} 返回 true）：
+     * 手持物品时的原版槽位拖动（快速合成）不受影响。</p>
+     */
+    @SubscribeEvent
+    public static void onMouseDragged(ScreenEvent.MouseDragged.Pre event) {
+        if (event.getMouseButton() != GLFW.GLFW_MOUSE_BUTTON_LEFT) return;
+        if (!(event.getScreen() instanceof AbstractContainerScreen<?> screen)) return;
+        for (GuiEventListener child : screen.children()) {
+            if (child instanceof LivingButton button
+                && button.mouseDragged(event.getMouseX(), event.getMouseY(),
+                                       event.getMouseButton(), event.getDragX(), event.getDragY())) {
+                event.setCanceled(true);
+                return;
+            }
+        }
+    }
+
     /** 会话进行到一半时关闭界面 → 丢弃半输入状态（避免残留到下一个界面）。 */
     @SubscribeEvent
     public static void onScreenClosing(ScreenEvent.Closing event) {
