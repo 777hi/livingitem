@@ -179,6 +179,11 @@
 
 **✅ 定案（2026-10-10）：吸附 / 碰撞 / 显示开关 —— 三者都不做**（只做拖动 + 位置持久化）。
 
+**✅ 实现（2026-10-10）**：`client/gui/LivingButtonLayout`（懒加载 `config/living_item/button_layout.json`，
+`version` 字段 + 坏值 WARN 跳过、绝不崩）+ `LivingButton` 重写鼠标三事件
+（**空手**左键按住拖动、屏幕内夹取、松手写盘）+ mixin 按 Screen 类名应用保存位置。
+⭐ **手持物品点击 = 活化、空手拖动 = 移动**，两者互不干扰（空手点击本来也不触发活化）。
+
 ⚠️ **TrashSlot 是 Architectury / 多加载器项目**（`common/` + `fabric/` + `forge/` + `neoforge/`，依赖 **Balm** 抽象库）  
 ⇒ **只借鉴思路，不照搬架构**。本项目仅 NeoForge，不需要 common/platform 分层，  
 也不需要 accessor mixin（`AbstractContainerScreenAccessor`）——我们的 mixin 本身就能直接访问 `leftPos/topPos`。
@@ -228,7 +233,7 @@
 | 步 | 内容                  | 说明           |
 | - | ------------------- | ------------ |
 | 1 | 九宫格 + tooltip + HUD | **地基**，后续都依赖。✅ **已实现（提交 `4892b95`，编译 + 全量测试绿）** |
-| 2 | 拖动按钮 + 位置持久化        |              |
+| 2 | 拖动按钮 + 位置持久化        | ✅ **已实现（2026-10-10，编译 + 全量测试绿）** |
 | 3 | 活指针模式（点击活化 + 悬停配方向） |              |
 | 4 | 框选批量活化              |              |
 

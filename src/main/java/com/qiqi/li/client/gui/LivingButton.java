@@ -4,13 +4,16 @@ import com.mojang.logging.LogUtils;
 import com.qiqi.li.LivingItem;
 import com.qiqi.li.client.mixinsupport.MutableSpriteSpriteIconButton;
 import com.qiqi.li.network.LivingTagPacket;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.SpriteIconButton;
 import net.minecraft.client.gui.components.Tooltip;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.util.Mth;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
@@ -45,6 +48,15 @@ public class LivingButton extends SpriteIconButton.CenteredIcon {
     private final AbstractContainerMenu menu;
     private final Slot slot;
 
+    // ==================== 拖动改位置（2026-10-10，第二步） ====================
+    // 规则：**光标空手**时按住左键拖动 ⇒ 移动按钮，松手写盘（按 Screen 类名分别记住）。
+    // 手持物品时点击 = 活化（走 onPress），两者互不干扰。
+
+    private boolean dragging = false;
+    private boolean moved = false;
+    private double dragOffsetX;
+    private double dragOffsetY;
+
     public static final Logger LOGGER = LogUtils.getLogger();
 
     public LivingButton(int x, int y, AbstractContainerMenu menu, Slot slot) {
@@ -53,6 +65,54 @@ public class LivingButton extends SpriteIconButton.CenteredIcon {
         this.slot = slot;
         this.setX(x);
         this.setY(y);
+    }
+
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (button == 0 && menu.getCarried().isEmpty()) {
+            dragging = true;
+            moved = false;
+            dragOffsetX = mouseX - this.getX();
+            dragOffsetY = mouseY - this.getY();
+            return true;   // 吞掉本次点击：空手点击本来也不触发活化
+        }
+        return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
+        if (dragging) {
+            Minecraft mc = Minecraft.getInstance();
+            int nx = (int) Math.round(mouseX - dragOffsetX);
+            int ny = (int) Math.round(mouseY - dragOffsetY);
+            // 夹在屏幕内 —— 防止按钮被拖到看不见的地方
+            nx = Mth.clamp(nx, 0, Math.max(0, mc.getWindow().getGuiScaledWidth() - this.getWidth()));
+            ny = Mth.clamp(ny, 0, Math.max(0, mc.getWindow().getGuiScaledHeight() - this.getHeight()));
+            if (nx != this.getX() || ny != this.getY()) {
+                moved = true;
+                this.setX(nx);
+                this.setY(ny);
+            }
+            return true;
+        }
+        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
+    }
+
+    @Override
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (dragging) {
+            dragging = false;
+            if (moved) savePosition();
+            return true;
+        }
+        return super.mouseReleased(mouseX, mouseY, button);
+    }
+
+    /** 把当前屏幕坐标换算成「相对 GUI 左上角」的偏移并写盘（位置没变则不写）。 */
+    private void savePosition() {
+        if (!(Minecraft.getInstance().screen instanceof AbstractContainerScreen<?> screen)) return;
+        LivingButtonLayout.setPosition(LivingButtonLayout.screenId(screen),
+            this.getX() - screen.getGuiLeft(), this.getY() - screen.getGuiTop());
     }
 
     /**

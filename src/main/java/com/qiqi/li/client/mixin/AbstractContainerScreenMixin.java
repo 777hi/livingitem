@@ -462,8 +462,11 @@ public class AbstractContainerScreenMixin extends Screen {
 
         if (this.menu.slots.size() > 9) {
             Slot invSlot = this.menu.slots.get(9);
+            // 位置：默认「底部中央」，玩家拖动过则用其保存的「相对 GUI 左上角」偏移（按 Screen 类名分别存）
+            int[] pos = com.qiqi.li.client.gui.LivingButtonLayout.resolve(
+                (Screen) this, (this.imageWidth - 16) / 2, this.imageHeight - 94);
             this.addRenderableWidget(new LivingButton(
-                    this.leftPos + (this.imageWidth - 16) / 2, this.topPos + this.imageHeight - 94, this.menu, invSlot));
+                    this.leftPos + pos[0], this.topPos + pos[1], this.menu, invSlot));
         }
 
         this.living_item$previousLeftPos = this.leftPos;
