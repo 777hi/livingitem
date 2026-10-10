@@ -2,7 +2,8 @@
 
 # 活酿造台（Living Brewing Stand）设计稿
 
-> **状态：设计探讨中（未定案）—— 未实现。**
+> **状态：部分实现 —— 设计已定案（D1~D6）；第一段「纯框架接入」已落地（2026-10-10），
+> 第二段（酿造逻辑）待做。**
 >
 > ⚠️ **本文描述「计划」，不是「现状」。实现前不得当现状引用**
 > （`docs/README.md` 铁律 0：「未实现的设计稿写成现状口吻」是最典型的误导）。
@@ -236,8 +237,20 @@ BREWING 中材料失效 → 整批作废 → 回 IDLE
 | 阶段 | 内容 | 验证 |
 |---|---|---|
 | **前置** | 配套框架改造（方向配置九宫格 + 交互改进）见 [`gui-interaction-redesign.md`](gui-interaction-redesign.md) | 各步独立验证 |
-| **第一段：纯框架接入** | `domain/brewing/`（Function + Data + Components + Segment + Registration）+ 5 槽位 + 图标零改动 + 注册 | 全量回归（基线 552 测试不变） |
-| **第二段：酿造特有逻辑** | `PotionBrewing` 适配层 · 批次状态机 · 次数制燃料 · 堆叠加速 · tooltip | 新增单测 |
+| **第一段：纯框架接入** | `domain/brewing/`（Function + Data + Components + Registration）+ 5 槽位 + 图标零改动 + 注册 | ✅ **已落地（2026-10-10）**：编译 + 全量测试 552 绿 |
+| **第二段：酿造特有逻辑** | `PotionBrewing` 适配层 · 批次状态机 · 次数制燃料 · 堆叠加速 · tooltip · `BrewingStandSegment` | 新增单测 |
+
+**第一段的实际落地范围**（与草案的差异，均有理由）：
+
+- ✅ `domain/brewing/`：`BrewingDirectionData` · `LivingBrewingStandData` · `BrewingStandComponents` ·
+  `LivingBrewingStandFunction` · `BrewingStandRegistration`。
+- ✅ 5 槽位方向 + `supportsDiagonal() = true`（九宫格对角键的**首个消费者**）。
+- ✅ 图标零改动（不注册 spec ⇒ 自动挂默认活标记，D5）。
+- ✅ 活化规则零改动（`activation_rules.json` 是 `default: allow`）。
+- ✅ 顺带加了**方向 tooltip**（5 个槽位方向）—— 属方向能力的一部分，也是玩家不开容器就能核对配置的验证手段。
+- ⏸ **`Segment` 与 `tick` 逻辑留到第二段**：第一段无瞬态数据可展示（`tick` 为空实现），
+  空注册一个 Segment 只会是死代码。
+- ⏸ 燃料字段（D2 落盘）留到第二段随状态机一起加入组件。
 
 **待定的实现细节**（不影响设计定型）：
 
@@ -253,3 +266,5 @@ BREWING 中材料失效 → 整批作废 → 回 IDLE
 | 日期 | 内容 |
 |---|---|
 | 2026-10-10 | 立项；调研原版机制 / 配方 / 模组兼容 / 官方接口；**D1~D6 全部定案**；发现方向配置 UI 不支持对角 ⇒ 催生配套框架改造 |
+| 2026-10-10 | 配套框架改造（九宫格 + 活按钮交互改进）第一、二步落地并游戏内实测通过 ⇒ 前置条件齐备 |
+| 2026-10-10 | **第一段「纯框架接入」落地**（`domain/brewing/` 5 个类 + 5 槽位方向 + `supportsDiagonal`），编译 + 全量测试 555 绿；下一步第二段（`PotionBrewing` 适配 + 批次状态机） |

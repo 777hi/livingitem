@@ -1,7 +1,7 @@
 # GUI 交互系统设计
 
 > **文档版本**: 2026.08 v1
-> **最后更新**: 2026-08-09
+> **最后更新**: 2026-10-10
 > **适用版本**: Minecraft 1.21.1 + NeoForge 21.1.x
 
 ## 目录
@@ -11,6 +11,7 @@
 3. [声明式交互规则](#3-声明式交互规则)
 4. [创造模式兼容](#4-创造模式兼容)
 5. [新增交互](#5-新增交互)
+6. [方向配置与活按钮交互](#6-方向配置与活按钮交互)
 
 ---
 
@@ -129,6 +130,57 @@ CropClassifier::isSeedPlantableOnFarmland)`）；**只有真·任意光标自交
 发生在**释放阶段**，按下取消拦不住它；三个 Screen mixin 的按下拦截成功处已统一
 置位。新增交互类型无需关心（框架已处理），但新增**其他 Screen 的 mixin 拦截**时
 必须复制该置位。详见 [gui-click-interception.md](../guides/gui-click-interception.md) 坑 10。
+
+---
+
+## 6. 方向配置与活按钮交互
+
+> 2026-10-10 落地（设计稿 [gui-interaction-redesign.md](../buffer/gui-interaction-redesign.md)，
+> 缘起活酿造台的 5 槽位需求）。本节只写**契约与坑**，玩法取舍见设计稿。
+
+### 6.1 方向配置：九宫格键位
+
+- 键位 = 键盘左上角物理布局：`Q W E / A S D / Z C`（`X` 弃用 —— 与 `S`=下的直觉冲突，用户拍板）。
+  一个键对应一个方向（含 4 个对角），**零歧义**。
+- **拦截点必须在 `ScreenEvent.KeyPressed.Pre`**，不能只在 `CharacterTyped`：GLFW 按键事件**先于**
+  字符事件，等字符阶段 `Q`（丢弃）/ `E`（关界面）已经生效。两者共用同一判据
+  `LivingItemInputHandler#shouldCaptureDirectionInput`（含文本框焦点守卫，不影响铁砧重命名）。
+- **对角是声明式能力**：`HasDirection#supportsDiagonal` 默认 `false`，需要斜向布局的功能自行 override
+  （活酿造台返回 `true`）。未声明者：对角键**既不屏蔽也不认**（`Q`/`E` 保持原版行为），
+  HUD 与按钮提示只显示 `W A S D`。
+- **HUD 生命周期**：悬停活按钮即显示（预览态）；**鼠标离开按钮即重置**（无超时 —— 取代早期的 3 秒超时）。
+- **HUD 渲染必须走 `renderTooltip`**：自绘 `fill` 默认 **z=0**（比物品 z≈150 远）会被深度裁掉
+  （表现为「被物品图标挡住」），而 `flush()` 只改绘制顺序、改不了深度 ⇒ 救不了。
+  机制详见 [icon-system.md](icon-system.md) 的 z 深度订正。
+- 方向配置 HUD 可见时，活按钮自己的 tooltip **让位**（两者同为 tooltip，必然重叠）。
+
+### 6.2 活按钮：可拖动改位置
+
+- **持久化**：按 **Screen 类名**分别存（`LivingButtonLayout`，`config/living_item/button_layout.json`）；
+  坐标 = **相对 GUI 左上角的偏移**（`getGuiLeft` / `getGuiTop`）⇒ 界面位置变化时按钮跟随。
+  思路参考 TrashSlot，只取骨架（吸附 / 碰撞 / 显示开关三者不做）。
+- **手势**：**空手**左键按在按钮上并移动（阈值 2px）⇒ 拖动；屏幕内夹取；松手写盘。
+  手持物品点击仍是活化 —— 两者靠「光标是否空手」天然分开。
+- ⚠️ **拖动事件必须自己转发**：`AbstractContainerScreen.mouseDragged` **整个重写了**
+  `ContainerEventHandler` 的默认转发（焦点 + `isDragging` + 左键 ⇒ 转发焦点控件）**且不调 `super`**、
+  恒返回 `true` ⇒ 子控件永远收不到 `mouseDragged`。原版凡要拖动自己控件的容器界面
+  （`CreativeModeInventoryScreen` / `LoomScreen` / `BookEditScreen`）**也都各自重写 `mouseDragged`**
+  ⇒ **这是既定设计，不是漏写**。
+  解法：`LivingItemInputHandler#onMouseDragged` 订阅 `ScreenEvent.MouseDragged.Pre` ——
+  该事件在 `MouseHandler` 里、`screen.mouseDragged()` **之前**触发（`ClientHooks.onScreenMouseDragPre`，
+  取消即跳过原版），**天然绕开那处重写，且不必新增 mixin**。
+  仅当按钮真的处于拖动手势时才取消事件 ⇒ 手持物品的原版快速合成拖动不受影响。
+  （对比：`mouseReleased` 能到子控件，是因为 Forge 补丁在 `AbstractContainerScreen.mouseReleased`
+  里补了 `super.mouseReleased`。）
+
+### 6.3 ⚠️ 重写 `AbstractWidget` 鼠标事件的两条铁律（2026-10-10 实测踩坑）
+
+1. **命中判定要自己补**：基类只有 `mouseClicked` 做了 `active && visible && clicked(...)` 检查；
+   `mouseDragged` / `mouseReleased` **只看按键**。重写 `mouseClicked` 时漏判 ⇒
+   空手在界面**任意位置**按下都会启动拖动手势。
+2. **不要盲目委托 `super`**：`AbstractWidget.mouseDragged` 对**左键恒返回 `true`**
+   （只检查 `isValidClickButton`、不看拖动状态）⇒ 若把它当作「我没处理」的返回值，
+   会取消所有左键拖动、**打断原版快速合成**。不在手势中时**明确 `return false`**。
 
 ---
 

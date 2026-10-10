@@ -179,6 +179,75 @@ ProjectE 的炼金箱 `AlchBlockEntityChest` 暴露 `IItemHandler` 能力（被 
 
 ---
 
+### 🆕 活酿造台（Living Brewing Stand）第一段：纯框架接入
+
+设计稿：[`docs/buffer/living-brewing-stand-design.md`](../buffer/living-brewing-stand-design.md)（D1~D6 全部定案）。
+
+把原版酿造台虚拟化进容器槽位：5 个功能槽 = **3 个瓶子 + 燃料（烈焰粉）+ 材料**，
+默认布局「瓶-瓶-瓶 / 燃料-台-材料」（`↖ ↑ ↗ / ← · →`），方向可自定义（同活熔炉）。
+
+**本段不含任何酿造逻辑** —— 沿用「纯框架接入 → 特有逻辑」两段式，第一段用全量回归证明没改坏别的东西：
+
+- 新建 `living/domain/brewing/`：`BrewingDirectionData`（槽位名→方向映射 + 默认布局）·
+  `LivingBrewingStandData`（数据组件，当前只存方向）· `BrewingStandComponents`（组件总线）·
+  `LivingBrewingStandFunction`（`tick` 空实现）· `BrewingStandRegistration`（域注册入口）。
+- **斜向布局生效**：`supportsDiagonal()` 返回 `true` —— 这是九宫格对角键（`Q/E/Z/C`）的**首个消费者**，
+  顺带验证了 GUI 侧「声明式能力」的设计（见下方 GUI 条目）。
+- **图标零改动**（D5）：不注册 spec ⇒ 框架排除法自动挂 `LivingDefaultDecorator`（原版图标 + 活标记）。
+- **活化规则零改动**：`activation_rules.json` 是 `default: allow` ⇒ 活酿造台默认可活化。
+- 顺带：`BrewingDirectionData` 复用 `Pos2D.MAP_STREAM_CODEC`（该 codec 本就为「槽位名 → 方向」而存在）；
+  加了方向 tooltip（5 槽位），让玩家不开容器也能核对配置。
+- **与草案的差异**：`Segment` 与燃料字段留到第二段（第一段无瞬态数据可展示、无状态机可落盘，
+  空注册只会是死代码）。
+- **验证**：编译 + 全量测试 555 绿（无新增测试 —— 本段无新逻辑可测）。
+
+**第二段待做**：`PotionBrewing` 适配层（`level.potionBrewing()` 已在启动时聚合原版 + 所有模组配方
+⇒ **零兼容代码**）· 400 tick 批次状态机（中途换材料整批作废，D4）· 次数制燃料（烈焰粉 = 20 次，落盘，D2）·
+堆叠加速（**只加速酿造过程本身**，燃料与材料消耗不变，D3）· tooltip 状态行 · 运行时片段 `BrewingStandSegment`。
+
+---
+
+### 🏗 GUI 交互改进：方向配置升级九宫格 + 活按钮可拖动（第一、二步落地）
+
+设计稿：[`docs/buffer/gui-interaction-redesign.md`](../buffer/gui-interaction-redesign.md)（Q1~Q6 全部定案）。
+契约与坑已沉淀进 [`gui-interaction-system.md`](../system-design/gui-interaction-system.md) §6。
+
+**缘起**：活酿造台需要 5 个方向槽位（3 瓶 + 材料 + 燃料），而原方向配置只认 `W/A/S/D` 四个基本方向
+⇒「上方 3 格」要两个对角，**4 个方向放不下 5 个槽位** ⇒ 暴露出一串**框架级**交互问题（影响所有活物品）。
+
+- **第一步（`4892b95` + 4 轮实测迭代）—— 九宫格 + 提示层**：
+  - 方向键位扩到九宫格 `Q W E / A S D / Z C`（**`X` 弃用**：与 `S`=下的直觉冲突，用户拍板）。
+    键位 = 键盘左上角物理布局 ⇒ 一个键对一个方向，零歧义。
+  - **按键阶段拦截**：`Q`（丢弃）/ `E`（关界面）必须在 `ScreenEvent.KeyPressed.Pre` 拦 ——
+    GLFW 按键事件**先于**字符事件，等字符阶段原版动作已发生。
+  - **活按钮 tooltip** + **方向配置 HUD**（悬停即显示 / 鼠标离开按钮即重置 / 输入高亮「已输入=绿、下一=黄+▶」）。
+  - ⚠️ **HUD 渲染踩坑**（`9cdc8bf` → `7a93eba`）：自绘 `fill` 默认 **z=0**（比物品 z≈150 远）⇒ 被深度裁掉
+    （表现为「被物品图标挡住」）；`flush()` 只改绘制顺序、**改不了深度**，救不了。最终改为 **`renderTooltip`**
+    —— 整条进批量缓冲队列，天然在所有物品之上（机制已订正进 `icon-system.md`）。
+  - **对角槽位改为声明式能力**：`HasDirection#supportsDiagonal()` 默认 `false`，需要斜向布局的功能自己声明
+    ⇒ 未声明者不屏蔽 `Q`/`E`、HUD 只显示 `W A S D`（「精准拦截」的延续）。
+- **第二步（`c0d9087`）—— 活按钮可拖动改位置**：按 **Screen 类名**分别持久化到
+  `config/living_item/button_layout.json`（思路参考 TrashSlot，只取骨架；**吸附 / 碰撞 / 显示开关三者不做**）；
+  坐标 = **相对 GUI 左上角的偏移**；空手左键按住拖动、屏幕内夹取、松手写盘（未移动不写）。
+- ⚠️ **拖动事件必须自己转发（`b788e08`）**：`AbstractContainerScreen.mouseDragged` **整个重写了**
+  `ContainerEventHandler` 的默认转发、且**不调 `super`**、恒返回 `true` ⇒ 子控件永远收不到 `mouseDragged`。
+  原版凡要拖动自己控件的容器界面（`CreativeModeInventoryScreen` / `LoomScreen` / `BookEditScreen`）
+  也都各自重写 `mouseDragged` ⇒ **这是既定设计，不是漏写**。
+  解法：用 `ScreenEvent.MouseDragged.Pre`（在 `MouseHandler` 里、`screen.mouseDragged()` **之前**触发，
+  取消即跳过原版）⇒ **不碰 mixin、不重写原版方法**。
+- ⚠️ **两处命中 / 委托修正（`0a3a10a`）**：① 重写 `mouseClicked` 时**必须自己补** `isMouseOver`
+  （基类才做 active/visible/命中检查）—— 漏判会让空手在界面**任意位置**按下都起拖；
+  ② **不要盲目委托 `super.mouseDragged`** —— `AbstractWidget.mouseDragged` 对左键**恒返回 `true`**
+  ⇒ 会取消所有左键拖动、**打断原版快速合成**。
+- **验证**：每步编译 + 全量测试 555 绿；✅ **游戏内实测通过**（拖动、按容器分别记忆位置、
+  空手任意位置按下不再起拖、快速合成不受影响）。
+
+**判据沉淀**：① 容器界面里做「控件级拖动」⇒ 走 `ScreenEvent.MouseDragged.Pre`，别指望默认转发；
+② GUI 里做常驻悬浮信息 ⇒ `renderTooltip`（或显式传高 z，`fill` 默认 z=0 会被物品深度裁掉）；
+③ 重写 `AbstractWidget` 鼠标事件时**命中判定要自己补、不要盲目 `super`**。
+
+---
+
 ## 2026-10-09
 
 > 架构分层收尾（续 10-08 框架侧）—— 反向边清到「只剩低 ROI 的层归属微调」。

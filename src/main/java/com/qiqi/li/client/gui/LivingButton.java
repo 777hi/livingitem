@@ -133,7 +133,9 @@ public class LivingButton extends SpriteIconButton.CenteredIcon {
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        if (dragPressed) {
+        // 只认左键（与 mouseClicked / mouseDragged 对齐）：否则「左键按下拖动 → 再按右键释放」
+        // 会用右键的释放结束拖动手势，语义错位。
+        if (dragPressed && button == 0) {
             boolean wasDragging = dragging;
             dragPressed = false;
             dragging = false;

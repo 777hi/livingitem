@@ -80,6 +80,7 @@ import com.qiqi.li.living.domain.tools.LivingToolAssist;
 import com.qiqi.li.living.domain.tools.LivingToolRecorder;
 import net.neoforged.neoforge.registries.DeferredRegister;
 import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
+import com.qiqi.li.living.domain.brewing.BrewingStandRegistration;
 import com.qiqi.li.living.domain.chest.ChestRegistration;
 import com.qiqi.li.living.domain.ender.EnderRegistration;
 import com.qiqi.li.living.domain.farmland.FarmlandRegistration;
@@ -135,6 +136,7 @@ public class LivingItem {
         com.qiqi.li.living.domain.tnt.TntComponents.REG.register(modEventBus);
         com.qiqi.li.living.domain.farmland.FarmlandComponents.REG.register(modEventBus);
         com.qiqi.li.living.domain.furnace.FurnaceComponents.REG.register(modEventBus);
+        com.qiqi.li.living.domain.brewing.BrewingStandComponents.REG.register(modEventBus);
         com.qiqi.li.living.domain.hopper.HopperComponents.REG.register(modEventBus);
         com.qiqi.li.living.domain.water.WaterComponents.REG.register(modEventBus);
         com.qiqi.li.living.domain.water.WaterComponents.ATTACH_REG.register(modEventBus);
@@ -177,6 +179,7 @@ public class LivingItem {
         // D2 后各域只注册 Function / handler / 谓词；交互规则一律在
         // interaction_rules.json（内置 + 玩家差异），由下面的 load() 统一装载。
         FurnaceRegistration.register();
+        BrewingStandRegistration.register();
         HopperRegistration.register();
         ChestRegistration.register();
         EnderRegistration.register();
