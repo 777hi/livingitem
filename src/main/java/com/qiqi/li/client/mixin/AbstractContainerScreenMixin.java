@@ -496,13 +496,14 @@ public class AbstractContainerScreenMixin extends Screen {
         final int boxW = 120;
         final int lineH = 11;
         int boxH = 6 + lines.size() * lineH + 2;
-        // 跟随鼠标（tooltip 式定位）——固定在按钮上方会压在槽位物品图标上（2026-10-10 实测反馈）
-        int boxX = mouseX + 14;
-        int boxY = mouseY - boxH - 8;
-        if (boxX + boxW > this.width - 2) boxX = mouseX - boxW - 14; // 右侧出界 → 翻到鼠标左侧
-        if (boxX < 2) boxX = 2;
-        if (boxY < 2) boxY = mouseY + 16;                            // 顶部出界 → 挪到鼠标下方
-        if (boxY + boxH > this.height - 2) boxY = this.height - boxH - 2;
+        int boxX = this.leftPos + (this.imageWidth - boxW) / 2;
+        int boxY = this.topPos + this.imageHeight - 94 - boxH - 8;
+
+        // ⭐ z 层修复（2026-10-10 实测反馈：HUD 被物品图标挡住）：
+        // 物品/文字走 bufferSource 批量缓冲、帧末才 flush；本方法的 fill 是立即绘制 ——
+        // 立即绘制先落笔、批量缓冲后落笔 ⇒ 物品反而盖住 HUD。
+        // 先 flush 把此前所有缓冲内容（物品、tooltip、标签）落盘，HUD 必然画在其上。
+        guiGraphics.flush();
 
         guiGraphics.fill(boxX, boxY, boxX + boxW, boxY + boxH, 0xE0101018);
         guiGraphics.renderOutline(boxX, boxY, boxW, boxH, 0xFF534AB7);
