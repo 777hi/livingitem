@@ -143,6 +143,16 @@
   ④ **规则 → 验证入口对应表**（指不出来的规则 = 它没有验证手段）。
   AGENTS 路由已加（「工程实践」族 + 触发条件式导航）。
 
+- 🐛 **修复：活按钮位置在大箱 / 单箱之间互相覆盖**（用户指出）—— 位置持久化的 key 原本只用
+  **Screen 类名**，而**原版单箱与大箱是同一个 `ChestScreen` 类**（只有 `ChestMenu` 的槽位数不同）
+  ⇒ 两者**共享同一份位置**，但 GUI 高度差 56px（166 / 222）⇒ 拖过其中一个会破坏另一个的布局。
+  **修法**：key 改为 **Screen 类名 + GUI 尺寸**（`LivingButtonLayout.screenId(screen, width, height)`）；
+  配置 `version` 1 → 2（旧文件按「版本不识别」忽略，**不做迁移** —— 铁律 6：alpha 阶段不迁就旧数据）。
+  📌 **实现注记**：mixin 类 `extends Screen`（**不是**目标类 `AbstractContainerScreen`）
+  ⇒ 尺寸必须**显式传参**（`getXSize` / `getYSize` 只在 `AbstractContainerScreen` 上，
+  mixin 内拿不到该静态类型）。
+  ⚠️ 顺带覆盖同类：`GenericContainerScreen`（模组容器，尺寸可变）此前也受影响，一并修好。
+
 ## 2026-10-10
 
 > 文档系统维护（**代码未动**）—— 三项：修红线单位 · 新增一层 · 新增一项校验。

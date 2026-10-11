@@ -148,7 +148,8 @@ public class LivingButton extends SpriteIconButton.CenteredIcon {
     /** 把当前屏幕坐标换算成「相对 GUI 左上角」的偏移并写盘（位置没变则不写）。 */
     private void savePosition() {
         if (!(Minecraft.getInstance().screen instanceof AbstractContainerScreen<?> screen)) return;
-        LivingButtonLayout.setPosition(LivingButtonLayout.screenId(screen),
+        LivingButtonLayout.setPosition(
+            LivingButtonLayout.screenId(screen, screen.getXSize(), screen.getYSize()),
             this.getX() - screen.getGuiLeft(), this.getY() - screen.getGuiTop());
     }
 

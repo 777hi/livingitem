@@ -179,8 +179,10 @@ CropClassifier::isSeedPlantableOnFarmland)`）；**只有真·任意光标自交
 
 ### 6.2 活按钮：可拖动改位置
 
-- **持久化**：按 **Screen 类名**分别存（`LivingButtonLayout`，`config/living_item/button_layout.json`）；
+- **持久化**：按 **Screen 类名 + GUI 尺寸**分别存（`LivingButtonLayout`，`config/living_item/button_layout.json`）；
   坐标 = **相对 GUI 左上角的偏移**（`getGuiLeft` / `getGuiTop`）⇒ 界面位置变化时按钮跟随。
+  ⚠️ **必须带尺寸**：原版**单箱与大箱是同一个 `ChestScreen` 类**（只差 `ChestMenu` 槽位数）
+  ⇒ 只用类名会让两者共享同一份位置，而两者 GUI 高度差 56px（166 / 222）。
   思路参考 TrashSlot，只取骨架（吸附 / 碰撞 / 显示开关三者不做）。
 - **手势**：**空手**左键按在按钮上并移动（阈值 2px）⇒ 拖动；屏幕内夹取；松手写盘。
   手持物品点击仍是活化 —— 两者靠「光标是否空手」天然分开。

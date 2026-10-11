@@ -19,7 +19,7 @@ import net.neoforged.fml.loading.FMLPaths;
 import org.slf4j.Logger;
 
 /**
- * 活按钮位置布局 —— 按 <b>Screen 类名</b>分别持久化按钮位置。
+ * 活按钮位置布局 —— 按 <b>Screen 类名 + GUI 尺寸</b>分别持久化按钮位置。
  *
  * <p>思路参考 TrashSlot，只取骨架（**类名做键 + 客户端本地 JSON**）；
  * 它的吸附 / 碰撞 / 显示开关三者**不做**（2026-10-10 用户拍板）。</p>
@@ -31,7 +31,7 @@ import org.slf4j.Logger;
  * 多人服互不影响；首次拖动才生成文件）：</p>
  *
  * <pre>
- * { "version": 1, "buttons": { "net.minecraft...ShulkerBoxScreen": { "x": 12, "y": -8 } } }
+ * { "version": 2, "buttons": { "net.minecraft.client.gui.screens.inventory.ChestScreen#176x166": { "x": 12, "y": -8 } } }
  * </pre>
  *
  * <p><b>失败语义（沉默即缺陷）</b>：版本不识别 / 坏值 / 缺字段 ⇒ WARN 并退回默认位置，
@@ -40,7 +40,7 @@ import org.slf4j.Logger;
 public final class LivingButtonLayout {
 
     private static final Logger LOGGER = LogUtils.getLogger();
-    private static final int VERSION = 1;
+    private static final int VERSION = 2;
     private static final String FILE_NAME = "button_layout.json";
 
     /** screenId → {x, y}（相对 GUI 左上角的偏移）。 */
@@ -49,15 +49,21 @@ public final class LivingButtonLayout {
 
     private LivingButtonLayout() {}
 
-    /** 用 Screen 类名做键 —— 每个界面类型各存一份位置。 */
-    public static String screenId(Screen screen) {
-        return screen.getClass().getName();
+    /**
+     * 用 <b>Screen 类名 + GUI 尺寸</b>做键 —— 每个「界面类型 × 布局」各存一份位置。
+     *
+     * <p>⚠️ <b>为什么必须带尺寸</b>：原版<b>单箱与大箱是同一个 {@code ChestScreen} 类</b>
+     * （只有 {@code ChestMenu} 的槽位数不同）⇒ 只用类名会让两者<b>共享同一份位置</b>，
+     * 而两者 GUI 高度差 56px（166 / 222）⇒ 拖过其中一个会破坏另一个的布局。</p>
+     */
+    public static String screenId(Screen screen, int width, int height) {
+        return screen.getClass().getName() + "#" + width + "x" + height;
     }
 
     /** 读取该界面的按钮偏移；无记录 ⇒ 返回传入的默认值。 */
-    public static int[] resolve(Screen screen, int defaultX, int defaultY) {
+    public static int[] resolve(Screen screen, int width, int height, int defaultX, int defaultY) {
         ensureLoaded();
-        int[] pos = POSITIONS.get(screenId(screen));
+        int[] pos = POSITIONS.get(screenId(screen, width, height));
         return pos != null ? new int[]{pos[0], pos[1]} : new int[]{defaultX, defaultY};
     }
 

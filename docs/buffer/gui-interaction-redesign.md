@@ -174,7 +174,7 @@
 
 **⇒ 我们的方案（Q1 定案）**：
 
-- **按 Screen 类名分别保存**（每种界面一个位置）
+- **按 Screen 类名分别保存**（每种界面一个位置）—— ⚠️ **后修正为「类名 + GUI 尺寸」**，见下
 - 坐标存**相对 GUI 左上角**（`leftPos` / `topPos`）的偏移 —— GUI 位置变化时按钮跟着走
 - 存**客户端本地 JSON**（每个玩家自己的 ⇒ 多人服互不影响），路径用 `config/living_item/`（与项目现有客户端配置一致，不用 gameDir）
 
@@ -182,8 +182,15 @@
 
 **✅ 实现（2026-10-10）**：`client/gui/LivingButtonLayout`（懒加载 `config/living_item/button_layout.json`，  
 `version` 字段 + 坏值 WARN 跳过、绝不崩）+ `LivingButton` 处理鼠标三事件  
-（**空手**左键按住拖动、屏幕内夹取、松手写盘）+ mixin 按 Screen 类名应用保存位置。  
+（**空手**左键按住拖动、屏幕内夹取、松手写盘）+ mixin 按 **Screen 类名 + GUI 尺寸** 应用保存位置。  
 ⭐ **手持物品点击 = 活化、空手拖动 = 移动**，两者互不干扰（空手点击本来也不触发活化）。
+
+⚠️ **修正（2026-10-11，用户实测）**：key 从「Screen 类名」改为「**Screen 类名 + GUI 尺寸**」
+（`LivingButtonLayout.screenId(screen, width, height)`）。原因：**原版单箱与大箱是同一个
+`ChestScreen` 类**（只有 `ChestMenu` 的槽位数不同）⇒ 只用类名会让两者**共享同一份位置**，
+而两者 GUI 高度差 56px（166 / 222）⇒ 拖过其中一个会破坏另一个的布局。
+配置 `version` 1 → 2（旧文件按「版本不识别」忽略，**不做迁移** —— 铁律 6：alpha 阶段不迁就旧数据）。
+📌 实现注记：mixin 类 `extends Screen`（不是目标类）⇒ 尺寸**显式传参**，不在 `screenId` 里取。
 
 #### ⚠️ 拖动事件必须自己转发（2026-10-10 实测踩坑）
 
