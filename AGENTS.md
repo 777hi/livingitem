@@ -146,7 +146,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 573 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
+**合计测试用例 577 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
 全绿基线：`554 passed / 0 failed / 1 skipped`。**逐次新增明细见 [changelog.md](docs/archive/changelog.md)。**
 
 > 📄 测试环境配置与编写约定见 [unit-testing.md](docs/guides/unit-testing.md)；
@@ -167,6 +167,7 @@ src/main/java/com/qiqi/li/
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-11 | 🐛 **修复：活酿造台把活物品当耗材（隔离规则漏实现）** —— 用户实测「活红石被当材料消耗」。根因：首版**漏了 `isLivingItem` 检查**（材料 / 燃料 / 瓶子三处），而 §0 规则 7 已写「活物品不作材料 / 燃料」（活熔炉有该检查、酿造台没有）。危害：材料被 `consumeOne` 吃掉；瓶子侧更隐蔽 —— 原版 `hasMix` 只看 `POTION_CONTENTS` **不看活标记** ⇒「活药水」会被 `mix` **原地替换**。修法：抽 `isEligibleIngredient` / `isEligibleBottle` / `isBlazePowder` 三个准入判据，`isBrewable` 与 `doBrew` 共用。新增 `BrewingSlotEligibilityTest`（4 项），测试 573 → 577 绿。⭐ 教训：**§0 规则表每条都必须有实现点与验证入口** | `docs/tech/living-brewing-stand-tech.md` §3.5 / §9.5 |
 | 2026-10-11 | 🐛 **修复：活熔炉燃料「绑在槽位」+ 刷燃料漏洞（运行时缓存生命周期，方案 A）** —— `ContainerRuntimeCache` 键为 `(容器键, 槽位)` 且 `removeSlot/removeContainer` **零调用者** ⇒ 同槽位换物品会**继承**旧瞬态状态（熔炉燃料/进度 · 漏斗冷却 · 酿造台进度），**可刷燃料**；跨槽位搬运则丢。⭐ 语义定案（用户）：运行时数据属于「**当前槽位里的那台机器**」。修法：L1 每 tick 对比「槽位→物品类型」登记待清、**L4 执行**（拆开是为避开 L1→L2 的 R1 违规）；⚠️ 判据只看 `Item` **不看组件**（燃烧标志会被 tick 改写，纳入即误清）。新增 `ContainerRuntimeCacheLifecycleTest`（5 项），测试 568 → 573 绿，**分层零新增违规** | `docs/system-design/living-item-infrastructure.md` §3.5 |
 | 2026-10-11 | 🆕 **活酿造台第二段：酿造逻辑落地（功能完成，游戏内实测通过）** —— `domain/brewing/` 补 3 类：`BrewingRecipes`（`PotionBrewing` 适配层，把形参名陷阱包成自解释签名）· `BrewingBatchLogic`（**纯逻辑批次状态机**，不碰世界 ⇒ 可单测）· `BrewingStandSegment`（运行时片段）；`LivingBrewingStandFunction.tick` 落地 5 步（补燃料 → 算 canBrew → 推进状态机 → 写运行时 → 仅 dirty 写组件）。⭐ **燃料与材料在批次两端扣**（启动扣 1 次燃料 / 完成扣 1 份材料，作废不退不扣）· **作废判据只有材料**（瓶子不参与）· **堆叠 `step = count`**（每批成本固定 ⇒ 等价 N 台并行）。`fuel` 落盘（`optionalFieldOf` 保证旧数据可解码）。新增 `BrewingBatchLogicTest`（13 项），测试 555 → 568 绿。✅ 游戏内实测通过 | `docs/tech/living-brewing-stand-tech.md` |
 | 2026-10-11 | 🏗 **新增构建指纹：启动日志打印 `v<版本> commit=<短哈希> built=<时间>`** —— 兜住今天踩坑2（旧 jar 白跑一轮实测）：崩溃日志可自证构建版本，报错符号名与源码对不上时一眼判「旧产物」。注入复用 `generateModMetadata` 模式（`generateBuildProps` + `src/main/build-props/` 模板，裸占位符不进 jar；无 git 环境兜底 unknown 不阻断构建）。⚠️ 坑入档：`filteringCharset='UTF-8'` 必须显式（Windows GBK 写坏中文注释）；模板引擎展开**所有**花括号引用（注释也不能写）；`build.time` 刻意不作任务输入（防秒级时间戳触发全量重跑） | `build.gradle（构建指纹节）` · `LivingItem.logBuildFingerprint` · `docs/archive/changelog.md（2026-10-11 条目）` |
@@ -176,8 +177,6 @@ src/main/java/com/qiqi/li/
 | 2026-10-10 | 🐛 **修复：ProjectE 炼金箱导致运行时同步每 tick 崩溃（ClassCastException）** —— `LivingItem.runtimeContainerInstances` 单 BE 分支**无条件 `(Container) be` 强转**；扫描按 `IItemHandler` 能力面把炼金箱 `AlchBlockEntityChest`（暴露能力但**不实现原版 `Container`**）当成活物品容器 ⇒ 强转失败。`flush` 空集合守卫已闭环安全，修法改 `instanceof Container` 守卫（非 Container ⇒ 空集合 = 不发包）；顺手拆出静态包级私有单 level 分支便于单测，行为等价。新增回归测试 `LivingItemRuntimeContainerInstancesTest`（3 例）全绿；其余 `getBlockEntity → Container` 站点经核**全部 `instanceof` 守卫**，无同类强转。⚠️ 边界：炼金箱等「能力容器」仍被 tick（活物品照常运转），但运行时 tooltip 同步不生效（viewer 匹配依赖原版 `Container`）；是否加容器白/黑名单 = 待决（TODO「容器边界」） | `docs/archive/changelog.md（2026-10-10 条目）` · `docs/system-design/container-identity.md` §5 · `docs/TODO.md` |
 | 2026-10-10 | 🐛 **修复：辅助模式挖传送石碑「方块消失但零掉落」** —— 根因在 Waystones：`WaystoneBlockBase#playerWillDestroy` 拿 `Player#hasCorrectToolForDrops(BlockState)` 当**掉落闸门**，而该重载被 NeoForge 标 `@Deprecated`（"use position sensitive version below"）且**不发任何事件** ⇒ 辅助模式（玩家**空手**、活工具在背包）判 false ⇒ 手动掉落整段跳过。修法：① 抽出 `LivingToolAssist#hasBackpackToolFor`（材质门槛**单一来源**，事件入口 `onHarvestCheck` 同步改调它）② 新增 `PlayerAssistHarvestMixin` 补「**直读入口**」（`LivingToolAssist` 的**唯一 mixin**）。⚠️ **行为变化**：任何直读该判据的模组都会认为"背包有活工具 = 玩家有工具"（正是辅助模式语义）。**挖掘速度不变**（30/100 走事件、早已放行）、**主动模式不受影响**（假玩家主手本就有工具，这正是"主动能掉、辅助不掉"的唯一差别）。测试 552 全绿（551/0/1）；✅ **游戏内实测通过**（2026-10-10：空手 + 背包活镐子挖传送石碑正常掉落） | `docs/tech/living-tool-tech.md` §11.6 |
 | 2026-10-10 | 🧹 **文档系统：入口体量红线修单位 + 新增第 11 项 buffer 滞留检测**（**代码未动**）—— ① `≤20KB` 实为 **`≤20,000 字符`**（`AGENTS.md` 已 **22,377 字节**却一直判 OK ⇒ 红线形同虚设；单位回到 `D-doc-01` 本意，**同一个坑 10-06 踩过一次**）② `docs/` 根加「**工作层**」层级（待办归 `TODO.md`，**不归 buffer**；§3 旧表述已同步）③ `doc_check` **10 → 11 项**，当前告警 2 份已完成计划滞留 buffer | `docs/README.md` §1/§7.1 |
-| 2026-10-10 | 🧹 **文档系统：清单型内容退出（D-doc-05）** —— 删 `file-map.md`（主树**自证漂移**：缺 112+、`tools/` 整域不在；同文件测试树有校验则不漂 ⇒ 对照实验）与 `completed-features.md`（自认不可信 + 与 subsystem-index 重合）；测试树拆 `test-map.md` 保留；**15 份 tech §0 新增「实现入口」**承接关键类指针；判据入铁律 3；`commands.md` 复核后保留（叙事型契约，执行中修正初判）。**校验不加反稳**：第 3 项改读 test-map | `docs/README.md` 铁律 3 · `docs/reference/test-map.md` |
-
 ## 排查铁律：原版机制挡路时
 
 遇到「原版 / NeoForge 的某个机制限制了我们」时，**按顺序**做，别跳步：

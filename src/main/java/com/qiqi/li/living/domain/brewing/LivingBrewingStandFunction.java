@@ -175,16 +175,35 @@ public class LivingBrewingStandFunction implements LivingItemFunction, HasDirect
 
     // ==================== 世界侧辅助 ====================
 
-    /** 可酿造判定（照抄原版 {@code isBrewable}）：材料有效 + 至少 1 瓶 `hasMix(瓶, 材料)`。 */
+    /**
+     * 可酿造判定（照抄原版 {@code isBrewable}）：材料有效 + 至少 1 瓶 `hasMix(瓶, 材料)`。
+     *
+     * <p>⚠️ <b>活物品不作材料、也不作瓶子</b>（隔离规则，与活熔炉 / 活漏斗同族）——
+     * 活物品是「设备」不是「耗材 / 载体」：
+     * 材料侧会被 {@code consumeOne} 吃掉；瓶子侧会被 {@code mix} <b>原地转化</b>
+     * （丢掉活标记与内部状态）⇒ 两侧都必须挡在门外。</p>
+     */
     private static boolean isBrewable(PotionBrewing brewing, ContainerContext context,
                                       int[] bottleSlots, ItemStack ingredient) {
-        if (ingredient.isEmpty() || !BrewingRecipes.isIngredient(brewing, ingredient)) return false;
+        if (!isEligibleIngredient(brewing, ingredient)) return false;
         for (int bottleSlot : bottleSlots) {
             if (bottleSlot < 0) continue;
             ItemStack bottle = context.getItem(bottleSlot);
-            if (!bottle.isEmpty() && BrewingRecipes.hasMix(brewing, bottle, ingredient)) return true;
+            if (isEligibleBottle(bottle) && BrewingRecipes.hasMix(brewing, bottle, ingredient)) return true;
         }
         return false;
+    }
+
+    /** 材料槽准入：非空 + **非活物品** + 是有效酿造材料。 */
+    static boolean isEligibleIngredient(PotionBrewing brewing, ItemStack ingredient) {
+        return !ingredient.isEmpty()
+            && !LivingItemManager.isLivingItem(ingredient)
+            && BrewingRecipes.isIngredient(brewing, ingredient);
+    }
+
+    /** 瓶子槽准入：非空 + **非活物品**（活物品作瓶子会被 {@code mix} 原地转化掉）。 */
+    static boolean isEligibleBottle(ItemStack bottle) {
+        return !bottle.isEmpty() && !LivingItemManager.isLivingItem(bottle);
     }
 
     /**
@@ -199,6 +218,7 @@ public class LivingBrewingStandFunction implements LivingItemFunction, HasDirect
         for (int bottleSlot : bottleSlots) {
             if (bottleSlot < 0) continue;
             ItemStack bottle = context.getItem(bottleSlot);
+            if (!isEligibleBottle(bottle)) continue;   // 空槽 / 活物品 ⇒ 不转化（活物品会被 mix 原地改掉）
             context.setItem(bottleSlot, BrewingRecipes.brew(brewing, ingredient, bottle));
         }
         consumeOne(context, ingredientSlot);
@@ -222,8 +242,9 @@ public class LivingBrewingStandFunction implements LivingItemFunction, HasDirect
         context.setItem(slot, stack.copy());
     }
 
+    /** 燃料槽准入：烈焰粉，且**不是活物品**（隔离规则，与活熔炉同族）。 */
     private static boolean isBlazePowder(ItemStack stack) {
-        return stack.is(Items.BLAZE_POWDER);
+        return stack.is(Items.BLAZE_POWDER) && !LivingItemManager.isLivingItem(stack);
     }
 
     // ==================== Tooltip ====================
