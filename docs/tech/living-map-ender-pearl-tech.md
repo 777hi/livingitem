@@ -2116,8 +2116,8 @@ if (!(event.getEntity() instanceof ServerPlayer player)) return;
 ```java
 @Unique
 private int living_item$resolveServerSlotIndex(Slot slot) {
-    if (slot instanceof SlotWrapperAccessor accessor) {
-        return accessor.getTarget().index;
+    if (slot instanceof LivingItemSlotWrapperAccessor accessor) {
+        return accessor.living_item$getWrappedTarget().index;
     }
     return slot.index;
 }
@@ -2126,20 +2126,24 @@ private int living_item$resolveServerSlotIndex(Slot slot) {
 private int living_item$resolveServerSlotIndex(int clientSlotIndex) {
     if (clientSlotIndex >= 0 && clientSlotIndex < menu.slots.size()) {
         Slot slot = menu.slots.get(clientSlotIndex);
-        if (slot instanceof SlotWrapperAccessor accessor) {
-            return accessor.getTarget().index;
+        if (slot instanceof LivingItemSlotWrapperAccessor accessor) {
+            return accessor.living_item$getWrappedTarget().index;
         }
     }
     return clientSlotIndex;
 }
 ```
 
-`SlotWrapperAccessor` 是通过 Mixin `@Accessor` 暴露 `SlotWrapper.target` 字段的接口：
+`LivingItemSlotWrapperAccessor` 是通过 Mixin `@Accessor` 暴露 `SlotWrapper.target` 字段的接口
+（命名铁律见 AGENTS.md「Mixin 铁律」：方法名带 `living_item$` 前缀，防与其它模组在目标类上
+撞生成的合成方法名 ⇒ `Incompatible @Accessor` 崩溃；前缀会让 Mixin 的 `get`/`is` 推断失效，
+故字段名必须显式 ⇒ 否则 `InvalidAccessorException` 启动即崩）：
 
 ```java
-@Accessor(target = "net.minecraft.world.inventory.SlotWrapper", value = "target")
-public interface SlotWrapperAccessor {
-    Slot getTarget();
+@Mixin(targets = "net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen$SlotWrapper")
+public interface LivingItemSlotWrapperAccessor {
+    @Accessor("target")
+    Slot living_item$getWrappedTarget();
 }
 ```
 

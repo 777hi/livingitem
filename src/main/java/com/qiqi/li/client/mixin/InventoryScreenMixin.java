@@ -47,7 +47,7 @@ public abstract class InventoryScreenMixin extends EffectRenderingInventoryScree
     @Inject(method = "mouseClicked", at = @At("HEAD"), cancellable = true)
     private void living_item$interceptMouseClicked(double mouseX, double mouseY, int button, CallbackInfoReturnable<Boolean> cir) {
         if (GuiInteractionHelper.tryInteract(this.hoveredSlot, button, false, this.menu)) {
-            ((AbstractContainerScreenAccessor) this).setSkipNextRelease(true);
+            ((AbstractContainerScreenAccessor) this).living_item$setSkipNextRelease(true);
             cir.setReturnValue(true);
         }
 
@@ -58,7 +58,7 @@ public abstract class InventoryScreenMixin extends EffectRenderingInventoryScree
             && ToolRayTuningClicks.handle(mouseX, mouseY, button,
                 this.leftPos + 26, this.topPos + 8, this.leftPos + 75, this.topPos + 78,
                 this.menu.getCarried().isEmpty())) {
-            ((AbstractContainerScreenAccessor) this).setSkipNextRelease(true);
+            ((AbstractContainerScreenAccessor) this).living_item$setSkipNextRelease(true);
             cir.setReturnValue(true);
             return;
         }

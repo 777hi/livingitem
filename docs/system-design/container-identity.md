@@ -65,7 +65,7 @@
 （后者多一层反射兜底，统一保留）。
 
 > ⚠️ **为何不在 `ContainerContexts` 内**：创造模式 `SlotWrapper` 是原版**客户端**内部类，靠客户端 Mixin
-> `SlotWrapperAccessor` 访问 —— 若 common 包的 `ContainerContexts` 引用它，**专用服务端**加载时会崩。
+> `LivingItemSlotWrapperAccessor` 访问 —— 若 common 包的 `ContainerContexts` 引用它，**专用服务端**加载时会崩。
 > 故客户端解析被迫分居 `client/util/`，逻辑同属「槽位 ↔ 容器身份」收敛。
 
 ---

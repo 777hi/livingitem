@@ -23,7 +23,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * SlotWrapper 兼容：
  *   创造模式 INVENTORY 标签页中，快捷栏槽位被 SlotWrapper 包装，
  *   getContainerSlot() 返回的是 inventoryMenu 菜单索引而非真实容器索引。
- *   GuiInteractionHelper.tryInteract() 内部通过 SlotWrapperAccessor
+ *   GuiInteractionHelper.tryInteract() 内部通过 LivingItemSlotWrapperAccessor
  *   统一处理此差异，此 Mixin 无需额外关注。
  *
  * 创造模式 INVENTORY 标签页同步修复：
@@ -47,7 +47,7 @@ public abstract class CreativeModeInventoryScreenMixin extends EffectRenderingIn
     @Inject(method = "mouseClicked", at = @At("HEAD"), cancellable = true)
     private void living_item$interceptMouseClicked(double mouseX, double mouseY, int button, CallbackInfoReturnable<Boolean> cir) {
         if (GuiInteractionHelper.tryInteract(this.hoveredSlot, button, false, this.menu)) {
-            ((AbstractContainerScreenAccessor) this).setSkipNextRelease(true);
+            ((AbstractContainerScreenAccessor) this).living_item$setSkipNextRelease(true);
             cir.setReturnValue(true);
         }
 
@@ -58,7 +58,7 @@ public abstract class CreativeModeInventoryScreenMixin extends EffectRenderingIn
             && ToolRayTuningClicks.handle(mouseX, mouseY, button,
                 this.leftPos + 73, this.topPos + 6, this.leftPos + 105, this.topPos + 49,
                 this.menu.getCarried().isEmpty())) {
-            ((AbstractContainerScreenAccessor) this).setSkipNextRelease(true);
+            ((AbstractContainerScreenAccessor) this).living_item$setSkipNextRelease(true);
             cir.setReturnValue(true);
             return;
         }
@@ -76,17 +76,17 @@ public abstract class CreativeModeInventoryScreenMixin extends EffectRenderingIn
      *
      * 使用 @At("RETURN") 而非 @At.INVOKE 目标，因为后者在无 refmap
      * 的 dev 环境中可能解析失败(No refMap loaded)。
-     * 通过 slot instanceof SlotWrapperAccessor 判断是否在 INVENTORY 标签页；
+     * 通过 slot instanceof LivingItemSlotWrapperAccessor 判断是否在 INVENTORY 标签页；
      * 排除 THROW 类型(原版已调用 handleCreativeModeItemAdd)。
      */
     @Inject(method = "slotClicked", at = @At("RETURN"))
     private void living_item$syncCreativeInventorySlot(Slot slot, int slotId, int mouseButton, ClickType type, CallbackInfo ci) {
         if (slot == null) return;
         if (type == ClickType.THROW) return;
-        if (!(slot instanceof SlotWrapperAccessor)) return;
+        if (!(slot instanceof LivingItemSlotWrapperAccessor)) return;
 
-        SlotWrapperAccessor wrapper = (SlotWrapperAccessor) slot;
-        int index = wrapper.getTarget().index;
+        LivingItemSlotWrapperAccessor wrapper = (LivingItemSlotWrapperAccessor) slot;
+        int index = wrapper.living_item$getWrappedTarget().index;
         ItemStack item = slot.getItem();
         this.minecraft.gameMode.handleCreativeModeItemAdd(item, index);
     }

@@ -88,7 +88,7 @@ new InteractionEntry(Items.FLINT_AND_STEEL, Items.TNT, 1, "ignite_carried")
 - `hoveredSlot.index` = 客户端显示索引
 - `SlotWrapper.target.index` = 服务端实际槽位索引
 
-`GuiInteractionHelper.resolveContainerSlot()` 通过 `SlotWrapperAccessor` 获取 `target` 字段，统一处理此差异。`GuiInteractionPacket` 携带双索引（`slotIndex` + `containerSlot`），服务端优先通过 `containerSlot` 遍历匹配。
+`GuiInteractionHelper.resolveContainerSlot()` 通过 `LivingItemSlotWrapperAccessor` 获取 `target` 字段，统一处理此差异。`GuiInteractionPacket` 携带双索引（`slotIndex` + `containerSlot`），服务端优先通过 `containerSlot` 遍历匹配。
 
 ---
 
@@ -222,4 +222,4 @@ CropClassifier::isSeedPlantableOnFarmland)`）；**只有真·任意光标自交
 | `GuiInteractionHelper` | 客户端GUI交互统一工具（查询规则+解析槽位+序列化光标+发包） |
 | `GuiInteractionPacket` | 通用GUI交互包（客户端→服务端：slotIndex + containerSlot + actionId + carriedTag） |
 | `CarriedUpdatePacket` | 光标更新包（服务端→客户端：绕过创造模式光标同步限制） |
-| `SlotWrapperAccessor` | SlotWrapper 访问器接口（获取 target 字段） |
+| `LivingItemSlotWrapperAccessor` | SlotWrapper 访问器接口（获取 target 字段；命名铁律见 AGENTS.md「Mixin 铁律」） |

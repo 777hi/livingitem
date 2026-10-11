@@ -167,6 +167,7 @@ src/main/java/com/qiqi/li/
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-11 | 🐛 **修复 Mixin 访问器与 inventoryessentials 重名冲突（点创造标签页崩溃）+ 确立「Mixin 铁律」并落成 `tools/check_mixins.py` 自动校验** —— 同名 `SlotWrapperAccessor`+`getTarget` 命中同一 `SlotWrapper` ⇒ `Incompatible @Accessor`；改 `LivingItemSlotWrapperAccessor` + 方法 `living_item$` 前缀。🔴 两坑入档：①裸 `@Accessor`+前缀 ⇒ 推断失效启动即崩（**前缀必须配显式成员名**，已补 `@Accessor("skipNextRelease")`）②第一轮实测跑旧构建（判据：报错条目名=构建注册名，对不上⇒先怀疑产物过期）。⚠️ 更正：`@Shadow` 必须同名**不能**加前缀。R1 前缀/R2 显式成员/R3·R4 配置↔源码双向，违例退出 1，负面样本验证过；✅ 实测通过 | `AGENTS.md「Mixin 铁律」` · `tools/check_mixins.py` · `docs/archive/changelog.md（2026-10-11 条目）` |
 | 2026-10-10 | 🆕 **活酿造台第一段：纯框架接入（5 槽位方向，无酿造逻辑）** —— 新建 `living/domain/brewing/`（`BrewingDirectionData` / `LivingBrewingStandData` / `BrewingStandComponents` / `LivingBrewingStandFunction` / `BrewingStandRegistration`），5 槽 = 3 瓶 + 燃料 + 材料，默认布局「瓶-瓶-瓶 / 燃料-台-材料」（`↖ ↑ ↗ / ← · →`）；`supportsDiagonal()` = true ⇒ **九宫格对角键的首个消费者**；图标零改动（不注册 spec ⇒ 自动挂默认活标记）；`Segment` 与燃料字段留第二段（避免死代码）。测试 555 绿。第二段：`PotionBrewing` 适配 + 400t 批次状态机 + 次数制燃料 + 堆叠加速 | `docs/buffer/living-brewing-stand-design.md` §6 |
 | 2026-10-10 | 🏗 **GUI 交互改进 第一、二步落地：方向配置升级九宫格 + 活按钮可拖动** —— 缘起活酿造台 5 槽位（4 个基本方向放不下「上方 3 格」）。① 键位扩到 `QWE/ASD/ZC`（**`X` 弃用**，与 `S` 冲突）+ `KeyPressed` 阶段拦 `Q`/`E` + tooltip + 输入 HUD（悬停即显示 / 离开即重置 / 高亮）；② 活按钮按 **Screen 类名**存位置到 `config/living_item/button_layout.json`，空手左键拖动。⚠️ 三个坑入档：`AbstractContainerScreen.mouseDragged` **不转发控件**（改走 `ScreenEvent.MouseDragged.Pre`，不碰 mixin）· HUD 自绘 `fill` 默认 z=0 被深度裁掉（改 `renderTooltip`）· 重写 `AbstractWidget` 鼠标事件**命中判定要自己补、不要盲目 `super`**。③ 对角箭头 `↖↗↙↘` **原版点阵字体没有**（落兜底字体、看着小一圈）⇒ 模组自带字体 `living_item:direction`（用户自绘字形 + `reference: minecraft:default`），经 `DirectionSymbols` 挂字体。🔴 **踩坑：bitmap provider 的 `"file"` 字段必须带 `.png` 后缀**（漏了 ⇒ provider 抛错 ⇒ **整条字体集退化成 `missingFontSet` ⇒ 全框**），第一次因此回退、加上后缀后修好。测试 555 绿 | `docs/buffer/gui-interaction-redesign.md` · `docs/system-design/gui-interaction-system.md` §6 · `docs/system-design/icon-system.md` |
 | 2026-10-10 | 🐛 **修复：ProjectE 炼金箱导致运行时同步每 tick 崩溃（ClassCastException）** —— `LivingItem.runtimeContainerInstances` 单 BE 分支**无条件 `(Container) be` 强转**；扫描按 `IItemHandler` 能力面把炼金箱 `AlchBlockEntityChest`（暴露能力但**不实现原版 `Container`**）当成活物品容器 ⇒ 强转失败。`flush` 空集合守卫已闭环安全，修法改 `instanceof Container` 守卫（非 Container ⇒ 空集合 = 不发包）；顺手拆出静态包级私有单 level 分支便于单测，行为等价。新增回归测试 `LivingItemRuntimeContainerInstancesTest`（3 例）全绿；其余 `getBlockEntity → Container` 站点经核**全部 `instanceof` 守卫**，无同类强转。⚠️ 边界：炼金箱等「能力容器」仍被 tick（活物品照常运转），但运行时 tooltip 同步不生效（viewer 匹配依赖原版 `Container`）；是否加容器白/黑名单 = 待决（TODO「容器边界」） | `docs/archive/changelog.md（2026-10-10 条目）` · `docs/system-design/container-identity.md` §5 · `docs/TODO.md` |
@@ -176,7 +177,6 @@ src/main/java/com/qiqi/li/
 | 2026-10-10 | 🧹 **文档系统：需求池统一到 `TODO.md`（D-doc-06，用户拍板反转 §0 收敛方案）** —— 15 份 tech §0 删「未实现 / 待定」字段；计划迁 TODO 新分区（红电 / 活红石·活铜 / 活武器，**每条带 tech 指针**）；**「明确不做」边界不随迁**（Pipez/Flux 归位 power 规则表 9/10 条、装桶取消留 fluid §9）；蓄力型设计稿迁 `buffer/living-weapon-design.md` §5；weapon §9 错挂的已实现小节顺带归位 | `docs/TODO.md` · `docs/decisions.md` D-doc-06 |
 | 2026-10-09 | 🐛 **修复（行为变化）：未活化的原版涂蜡铜灯也能被外部 mod 充放电** —— `LivingItem` 的 `EnergyStorage.ITEM` provider **漏判活化**（同一方法内活箱子 / 活末影箱都判了）⇒ 「活化 = 进入能量系统」的门槛被绕过；修法：准入判据收在 `BulbItemEnergyStorage.of()`，provider 只透传。⚠️ 曾以为「取消活化保留电量」，**探针实测推翻**（`clearLivingData` 会清电量组件）⇒ 收紧零风险。测试 551→552；✅ **游戏内实测通过** | `buffer/power-refactoring-plan.md` §3 |
 | 2026-10-09 | 🏗 **power 收口 步骤2：抽出 `BulbBank` 并收归三处调用**（容器充电 / 发电直存 / 物品接口充电）—— 「按剩余容量比例分配」从**三份实现/三种口径**收成一处，差异变显式参数（`FePolicy`）；**溢出 bug 的第二份拷贝（`distributeToBulbs`）绝迹** ⇒ `ContainerEnergyStorage` **312 → 210**、`LivingWaxedCopperFunction` **845 → 824 行**。⚠️ 放电与 `extract` **经评估不做**（单调用方无重复可消 + 提前退出是性能特性）—— 判据：统一只针对「复杂 + 有 bug 史 + 多份拷贝」。✅ 破坏性验证 3 次（1 / 5 / 3 挂，均证明对应调用点真经过 `BulbBank`） | `buffer/power-refactoring-plan.md` §3 |
-| 2026-10-09 | 🏗 **power 收口 步骤4 第1~5刀全部完成**（纯搬迁）—— ① Tooltip ② 谓词迁 L1 ③ 拓扑原语 ④ `PhaseInterpreter` + 顶层 `SignalTracker`（解开账本→功能类倒挂）⑤ `EnergyAccounting` + `PowerTelemetry`；`LivingWaxedCopperFunction` **1265 → 476 行（-789）**，各口径 / tick 顺序不改。测试 552 全绿，R1 15 / R3 10 无新增；doc_check 10/10。剩步骤3（单位值类型，成本最高，可延后或不做） | `buffer/power-refactoring-plan.md` §5 |
 
 ## 排查铁律：原版机制挡路时
 
@@ -198,6 +198,44 @@ src/main/java/com/qiqi/li/
 > ⚠️ **跳步的代价**：野路子会在 MC / NeoForge 改内部实现时**静默失效**，
 > 且往往比官方接口**影响面更大**（波及本不该波及的场景）。
 > 📌 教训：**看到 getter 就该想到有 setter，看到 container 就该想到有事件入口。**
+
+## Mixin 铁律：@Accessor / @Invoker 方法名必须带 `living_item$` 前缀
+
+Mixin 的 `@Accessor` / `@Invoker` 会在**目标类上生成合成方法，名字直接取自接口里的方法名**。
+如果名字是从原版字段推导的通用名（如 `getTarget`、`getSkipNextRelease`），**任何其它模组**
+只要也访问同一个原版字段、起了同名方法，就会在加载该目标类时触发
+`Incompatible @Accessor ... previously written by ...` ⇒ `MixinApplyError` ⇒ **客户端崩溃**
+（本模组是「打开创造模式物品栏并点标签页、加载 `Slot` 时」触发）。
+
+📌 **硬性规则**：所有 `@Accessor` / `@Invoker` 方法名一律加 `living_item$` 前缀，
+**且必须同时显式指定目标成员** —— `@Accessor("字段名")` / `@Invoker("方法名")`。
+接口名可带 `LivingItem` 前缀，但**方法名前缀才是关键** —— 冲突判定以「在目标类上生成的
+方法名」为键，与接口名 / 包名无关。新增访问器 / 调用器前先确认方法名全局唯一。
+
+> 🔴 **前缀的代价（2026-10-11 实测踩坑，启动即 FATAL）**：Mixin 靠方法名的
+> `get` / `is` / `set`（Invoker：`call`）前缀**推断目标成员名**，裸 `@Accessor` + 带前缀方法名
+> ⇒ 推断失效 ⇒ `InvalidAccessorException: Failed to inflect target name ... supported
+> prefixes: [get, is]`。**「加前缀」与「显式指定成员名」必须成对出现，缺一即崩。**
+
+> 🔴 **反面案例（2026-10-11）**：
+> 1. `SlotWrapperAccessor.getTarget()` 与 inventoryessentials（背包必备）的同名 `@Accessor`
+>    命中同一 `CreativeModeInventoryScreen$SlotWrapper` ⇒ 崩溃。已改名
+>    `LivingItemSlotWrapperAccessor` + 方法 `living_item$getWrappedTarget()`。
+> 2. `AbstractContainerScreenAccessor.getSkipNextRelease / setSkipNextRelease` 是**原版私有字段
+>    `skipNextRelease` 推导出的通用名**，与 `getTarget` **同一类隐患**（只是暂未撞上其它模组）。
+>    已全部加 `living_item$` 前缀。
+>
+> ⚠️ `@Inject` / `@Mixin` 注入器的 handler 方法名任意（惯例 `living_item$xxx`），不在目标类生成
+> 同名合成方法 ⇒ 无此碰撞。**`@Shadow` 恰恰相反**：它是「别名目标已有成员」，必须与目标成员
+> **同名**、**不能**加前缀（加了 = 解析不到目标而失效）；且 shadow 成员被剥离、不生成新成员
+> ⇒ 无碰撞风险。（「建议 @Shadow 也加前缀」是 2026-10-11 更正掉的错误说法。）
+>
+> **「以小见大」原则**：通用名（原版字段派生 / 短方法名）一律默认有全局碰撞风险，
+> 先加前缀再写，别等撞了才改。
+>
+> **判据可复算**：`python tools/check_mixins.py` —— R1 前缀 / R2 显式成员 /
+> R3 mixins.json 条目·插件 ↔ 源文件 / R4 @Mixin 源文件 ↔ 配置双向一致；
+> 违例即退出码 1（先例同 `check_layers.py`，可挂 CI / 提交前检查）。
 
 ## 文档导航
 

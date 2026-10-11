@@ -1026,7 +1026,7 @@ CreateCompat.isLoaded()        ← Create 已安装
     "CreativeModeInventoryScreenMixin",
     "InventoryScreenMixin",
     "RecipeBookComponentMixin",
-    "SlotWrapperAccessor",
+    "LivingItemSlotWrapperAccessor",
     "SpriteIconButtonMixin",
     "ItemRendererWaterWheelMixin"
   ],

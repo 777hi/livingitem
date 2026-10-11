@@ -15,6 +15,58 @@
 
 ---
 
+## 2026-10-11
+
+> 🐛 修复 Mixin 访问器与 inventoryessentials 重名冲突（点创造标签页崩溃），
+> 由此确立「Mixin 铁律」并落成代码侧自动校验 `tools/check_mixins.py`。✅ 游戏内实测通过。
+
+- 🐛 **修复：Mixin 访问器重名冲突 ⇒ 打开创造模式标签页客户端崩溃（MixinApplyError）** ——
+  与 inventoryessentials（背包必备）各自声明同名 `SlotWrapperAccessor`，且都
+  `@Mixin(targets="...CreativeModeInventoryScreen$SlotWrapper")` + `@Accessor Slot getTarget()`
+  ⇒ 在目标类上生成的合成方法名 `getTarget` 撞车 ⇒ `Incompatible @Accessor getTarget
+  ... previously written by ...` ⇒ 加载 `Slot` 类（点创造标签页）时 `MixinApplyError` 崩溃。
+  **修法**：改名加 `living_item` 专属前缀 —— 接口 `LivingItemSlotWrapperAccessor` +
+  方法 `living_item$getWrappedTarget()`（`living_item.client.mixins.json` 与
+  `ClientSlotResolve` / `CreativeModeInventoryScreenMixin` / `AbstractContainerScreenMixin`
+  3 处调用点同步）。**冲突判定键 = 在目标类上生成的方法名，与接口名/包名无关**
+  ⇒ 方法名前缀才是关键。
+
+- 📌 **由此确立「Mixin 铁律」（AGENTS.md）并落成 `tools/check_mixins.py` 自动校验** ——
+  **R1**：`@Accessor`/`@Invoker` 方法名必须带 `living_item$` 前缀（通用名 = 原版字段
+  派生/短名默认有全局碰撞风险，「以小见大」：先加前缀再写，别等撞了才改）；
+  **R2**：必须显式指定目标成员（`@Accessor("字段名")` / `@Invoker("方法名")`）；
+  **R3**：`*mixins*.json` 条目/插件 ↔ 源文件一致（3 份配置全扫，含 `mixins-create`）；
+  **R4**：`@Mixin` 源文件 ↔ 配置双向登记一致。`AbstractContainerScreenAccessor` 的
+  `getSkipNextRelease/setSkipNextRelease`（原版私有字段 `skipNextRelease` 派生名）
+  属同类隐患 ⇒ 一并加前缀。校验器对标 `check_layers.py` 体例（违例即退出码 1，
+  可挂 CI / 提交前检查）；负面样本实测会报警（R1/R2/R4 各一条 → 退出 1）。
+
+- 🔴 **踩坑1：裸 `@Accessor` + 带前缀方法名 ⇒ 启动即 FATAL**（clean 重建后实测崩溃）——
+  Mixin 靠方法名 `get`/`is`/`set`（Invoker：`call`）前缀**推断**目标字段名，方法名带
+  `living_item$` 前缀后推断失效 ⇒ `InvalidAccessorException: Failed to inflect target
+  name ... supported prefixes: [get, is]`（`AbstractContainerScreenAccessor` 实测）。
+  **「加前缀」与「显式指定成员名」必须成对出现，缺一即崩** ⇒ 已补
+  `@Accessor("skipNextRelease")`。（`LivingItemSlotWrapperAccessor` 没踩，
+  因为它本来就写的显式 `@Accessor("target")`。）
+
+- 🔴 **踩坑2：第一轮实测跑的是旧构建 ⇒ 报错里还是旧名** —— 崩溃报告写的是
+  `living_item.client.mixins.json:SlotWrapperAccessor`（改名前的名字）⇒ 源码早已改对。
+  **判据：报错里的配置条目名 = 该构建实际注册的名**，与源码对不上 ⇒ 先怀疑构建产物过期
+  （重新 build + 部署），别急着怀疑改法本身。
+
+- 🧹 **更正文档错误说法：`@Shadow` 不能加前缀** —— shadow 是「别名目标已有成员」，
+  必须与目标成员**同名**（加前缀 = 解析不到目标而失效）；且 shadow 成员被剥离、
+  不生成新成员 ⇒ 无碰撞风险。此前铁律里「建议 @Shadow 也加前缀」是**错误说法**，
+  已更正留痕（与 R1 方向相反，别混淆）。
+
+- 🧹 **5 处 active 文档同步旧名**（`gui-interaction-system.md` 正文+组件表 ·
+  `container-identity.md` · `gui-click-interception.md` 坑9 代码示例 ·
+  `living-map-ender-pearl-tech.md` 解包代码 · `living-water-wheel-tech.md` mixin 清单）
+  —— 不改则文档示例还在教旧名，未来 AI 照着学错。`docs/archive/` 历史条目按约定不动。
+
+- ✅ **游戏内实测通过**（2026-10-11）：启动正常 + 打开创造模式物品栏点标签页不再崩
+  （与 inventoryessentials 共存）。
+
 ## 2026-10-10
 
 > 文档系统维护（**代码未动**）—— 三项：修红线单位 · 新增一层 · 新增一项校验。

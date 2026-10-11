@@ -9,7 +9,7 @@ import org.slf4j.LoggerFactory;
 
 import net.minecraft.world.inventory.Slot;
 
-import com.qiqi.li.client.mixin.SlotWrapperAccessor;
+import com.qiqi.li.client.mixin.LivingItemSlotWrapperAccessor;
 
 /**
  * 客户端槽位解析（Q6 批次 C，2026-10-04）—— 边界带共享内核
@@ -17,7 +17,7 @@ import com.qiqi.li.client.mixin.SlotWrapperAccessor;
  *
  * <h3>为什么不在 ContainerContexts 里</h3>
  * <p>创造模式的 {@code SlotWrapper} 是<b>原版客户端</b>内部类，靠客户端 Mixin
- * {@link SlotWrapperAccessor} 访问。若 common 包的 {@code ContainerContexts} 引用它，
+ * {@link LivingItemSlotWrapperAccessor} 访问。若 common 包的 {@code ContainerContexts} 引用它，
  * 专用服务端加载该类时会崩 —— 故客户端解析独立成此工具（逻辑同属「槽位 ↔ 容器身份」收敛，
  * 只是被迫分居两侧）。</p>
  *
@@ -46,8 +46,8 @@ public final class ClientSlotResolve {
      * （accessor 未命中时反射找被包装的 {@code Slot}，仍找不到才退回 {@code getContainerSlot()}）。</p>
      */
     public static int resolveContainerSlot(Slot slot) {
-        if (slot instanceof SlotWrapperAccessor accessor) {
-            return accessor.getTarget().getContainerSlot();
+        if (slot instanceof LivingItemSlotWrapperAccessor accessor) {
+            return accessor.living_item$getWrappedTarget().getContainerSlot();
         }
         if (slot.getClass().getSimpleName().contains("SlotWrapper")) {
             Slot target = unwrapSlotWrapper(slot);
@@ -61,7 +61,7 @@ public final class ClientSlotResolve {
     }
 
     /**
-     * 反射兜底：槽位类名含 {@code SlotWrapper} 但未实现 {@link SlotWrapperAccessor}
+     * 反射兜底：槽位类名含 {@code SlotWrapper} 但未实现 {@link LivingItemSlotWrapperAccessor}
      * （Mixin 未应用 / 第三方包装器）时，反射找被包装的 {@code Slot}。
      */
     private static Slot unwrapSlotWrapper(Slot wrapper) {

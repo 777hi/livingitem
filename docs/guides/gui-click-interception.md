@@ -199,15 +199,19 @@ if (targetSlot == null) {
 **解决**：通过 Mixin `@Accessor` 暴露 `SlotWrapper.target` 字段，发送网络包前解包获取底层 `InventoryMenu` 的真实索引：
 
 ```java
-@Accessor(target = "net.minecraft.world.inventory.SlotWrapper", value = "target")
-public interface SlotWrapperAccessor {
-    Slot getTarget();
+// ⚠️ 命名铁律（AGENTS.md「Mixin 铁律」）：@Accessor 方法名必须带 living_item$ 前缀
+//（防与其它模组在目标类上撞生成的合成方法名 ⇒ Incompatible @Accessor 崩溃），
+// 且必须显式写字段名（带前缀后 Mixin 的 get/is 推断失效 ⇒ InvalidAccessorException）。
+@Mixin(targets = "net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen$SlotWrapper")
+public interface LivingItemSlotWrapperAccessor {
+    @Accessor("target")
+    Slot living_item$getWrappedTarget();
 }
 
 // 发送前解包
 private int resolveServerSlotIndex(Slot slot) {
-    if (slot instanceof SlotWrapperAccessor accessor) {
-        return accessor.getTarget().index;  // 底层 InventoryMenu 的索引
+    if (slot instanceof LivingItemSlotWrapperAccessor accessor) {
+        return accessor.living_item$getWrappedTarget().index;  // 底层 InventoryMenu 的索引
     }
     return slot.index;  // 非 SlotWrapper 直接用原索引
 }

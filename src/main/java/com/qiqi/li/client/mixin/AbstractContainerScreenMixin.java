@@ -371,8 +371,8 @@ public class AbstractContainerScreenMixin extends Screen {
 
     @Unique
     private int living_item$resolveServerSlotIndex(Slot slot) {
-        if (slot instanceof SlotWrapperAccessor accessor) {
-            return accessor.getTarget().index;
+        if (slot instanceof LivingItemSlotWrapperAccessor accessor) {
+            return accessor.living_item$getWrappedTarget().index;
         }
         return slot.index;
     }
@@ -381,8 +381,8 @@ public class AbstractContainerScreenMixin extends Screen {
     private int living_item$resolveServerSlotIndex(int clientSlotIndex) {
         if (clientSlotIndex >= 0 && clientSlotIndex < menu.slots.size()) {
             Slot slot = menu.slots.get(clientSlotIndex);
-            if (slot instanceof SlotWrapperAccessor accessor) {
-                return accessor.getTarget().index;
+            if (slot instanceof LivingItemSlotWrapperAccessor accessor) {
+                return accessor.living_item$getWrappedTarget().index;
             }
         }
         return clientSlotIndex;
