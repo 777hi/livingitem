@@ -96,6 +96,13 @@
       "fluid": "minecraft:water",
       "input": "minecraft:black_concrete_powder",
       "output": "minecraft:black_concrete"
+    },
+    {
+      "id": "water_empty_bottle",
+      "fluid": "minecraft:water",
+      "input": "minecraft:glass_bottle",
+      "output": "minecraft:potion",
+      "output_potion": "minecraft:water"
     }
   ]
 }

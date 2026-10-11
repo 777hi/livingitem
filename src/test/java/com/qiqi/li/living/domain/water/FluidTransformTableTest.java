@@ -2,6 +2,7 @@ package com.qiqi.li.living.domain.water;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -15,8 +16,10 @@ import org.junit.jupiter.api.io.TempDir;
 
 import com.qiqi.li.living.api.LivingItemManager;
 
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.alchemy.Potions;
 import net.minecraft.world.level.material.Fluids;
 
 /**
@@ -42,12 +45,12 @@ class FluidTransformTableTest {
     // ── 1. 内置数据 ──────────────────────────────────────────
 
     @Test
-    @DisplayName("内置 JSON 全部装载成功：16 色混凝土（**无桶条目**），物品/流体真实存在")
+    @DisplayName("内置 JSON 全部装载成功：16 色混凝土 + 空瓶→水瓶（**无桶条目**），物品/流体真实存在")
     void bundledTransformsLoad() {
         FluidTransformTable.load();
 
         int count = FluidTransformTable.entryCount();
-        assertTrue(count >= 16, "内置转化应至少 16 条（16 混凝土），实际 " + count);
+        assertTrue(count >= 17, "内置转化应至少 17 条（16 混凝土 + 1 水瓶），实际 " + count);
         assertEquals(count, FluidTransformTable.bundledCount(),
             "无玩家文件时全部条目都应是内置的");
 
@@ -89,9 +92,9 @@ class FluidTransformTableTest {
             "玩家追加条目生效");
         assertNull(FluidTransformTable.transform(water, new ItemStack(Items.BLACK_CONCRETE_POWDER)),
             "removed 删除的内置条目不复活");
-        assertEquals(16, FluidTransformTable.entryCount(),
-            "15 内置生效（black_concrete 被 removed）+ 1 玩家追加");
-        assertEquals(16, FluidTransformTable.bundledCount(),
+        assertEquals(17, FluidTransformTable.entryCount(),
+            "16 内置生效（black_concrete 被 removed）+ 1 玩家追加");
+        assertEquals(17, FluidTransformTable.bundledCount(),
             "bundled 集合含全部内置锚点（removed/覆盖后仍是锚点，同 InteractionRuleConfig 口径）");
     }
 
@@ -182,5 +185,36 @@ class FluidTransformTableTest {
 
         var big = FluidTransformTable.transform(water, new ItemStack(Items.WHITE_CONCRETE_POWDER, 64));
         assertEquals(64, big.getCount(), "等比转化（64 ≤ 64 堆叠上限）整槽通过");
+    }
+
+    // ── 5. output_potion（2026-10-11）────────────────────────
+
+    @Test
+    @DisplayName("output_potion：空瓶→水瓶（带「水」内容，非 EMPTY）；一叠不转化；未知药水跳过整条")
+    void outputPotion() throws Exception {
+        FluidTransformTable.load();
+        var water = Fluids.WATER.getFluidType();
+
+        ItemStack bottle = FluidTransformTable.transform(water, new ItemStack(Items.GLASS_BOTTLE));
+        assertNotNull(bottle, "空瓶 ×1 应转化为水瓶");
+        assertEquals(Items.POTION, bottle.getItem());
+        assertEquals(Potions.WATER,
+            bottle.get(DataComponents.POTION_CONTENTS).potion().orElseThrow(),
+            "内容必须是「水」—— 只写 output: minecraft:potion 会得到 PotionContents.EMPTY（不可合成的药水）");
+
+        assertNull(FluidTransformTable.transform(water, new ItemStack(Items.GLASS_BOTTLE, 2)),
+            "空瓶 ×2 超过药水堆叠上限 1 ⇒ 缩容等待（只有单个才泡）");
+
+        writeUserFile("""
+            {
+              "version": 1,
+              "transforms": [
+                { "id": "bad_potion", "fluid": "minecraft:water", "input": "minecraft:dirt",
+                  "output": "minecraft:potion", "output_potion": "minecraft:not_a_real_potion" }
+              ]
+            }""");
+        FluidTransformTable.load();
+        assertNull(FluidTransformTable.transform(water, new ItemStack(Items.DIRT)),
+            "引用未知药水的条目整条跳过（不产出错东西）");
     }
 }

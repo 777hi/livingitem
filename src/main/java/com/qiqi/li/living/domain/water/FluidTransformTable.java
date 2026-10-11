@@ -21,11 +21,16 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.qiqi.li.living.api.LivingItemManager;
 
+import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.alchemy.Potion;
+import net.minecraft.world.item.alchemy.PotionContents;
 import net.neoforged.neoforge.fluids.FluidType;
 import net.neoforged.neoforge.registries.NeoForgeRegistries;
 
@@ -67,7 +72,7 @@ public final class FluidTransformTable {
     private static final int CONFIG_VERSION = 1;
 
     /** 条目对象允许的全部字段 —— 多出的都是拼写错误，WARN。 */
-    private static final Set<String> KNOWN_KEYS = Set.of("id", "fluid", "input", "output");
+    private static final Set<String> KNOWN_KEYS = Set.of("id", "fluid", "input", "output", "output_potion");
 
     /**
      * 一条转化：流体类型 + 输入物品 → 输出物品（等量替换）。
@@ -75,8 +80,14 @@ public final class FluidTransformTable {
      * <p>⚠️ <b>催化剂语义</b>（2026-10-06 定稿）：转化<b>永不消耗源</b>。
      * 曾有 {@code consumeSource} 字段服务于「空桶→水桶」，该条目已随
      * 「非活化物品不得消耗活化资产」的对称性论证删除（见 tech §6）。</p>
+     *
+     * <p><b>{@code output_potion}</b>（2026-10-11 新增）：可选的<b>药水类型</b> ——
+     * 用于产出<b>带内容的药水</b>（如「空瓶 → 水瓶」）。⚠️ 只写 {@code output: minecraft:potion}
+     * 会得到 {@code PotionContents.EMPTY}（"不可合成的药水"）而<b>不是水瓶</b>
+     * ⇒ 必须靠本字段指定内容（原版工厂 {@link PotionContents#createItemStack}）。</p>
      */
-    public record TransformEntry(String id, FluidType fluid, Item input, Item output) {}
+    public record TransformEntry(String id, FluidType fluid, Item input, Item output,
+                                 @Nullable Holder<Potion> outputPotion) {}
 
     /** 合并后的最终表（id → 条目，顺序 = 注册顺序）。 */
     private static final Map<String, TransformEntry> ENTRIES = new LinkedHashMap<>();
@@ -144,7 +155,8 @@ public final class FluidTransformTable {
             TransformEntry t = e.getValue();
             out.add("[" + e.getKey() + "]"
                 + (BUNDLED_IDS.contains(e.getKey()) ? "(bundled)" : "(user)")
-                + " " + key(t.fluid) + ": " + name(t.input()) + " -> " + name(t.output()));
+                + " " + key(t.fluid) + ": " + name(t.input()) + " -> " + name(t.output())
+                + (t.outputPotion() != null ? " (" + potionName(t.outputPotion()) + ")" : ""));
         }
         return out;
     }
@@ -163,7 +175,23 @@ public final class FluidTransformTable {
         if (entry == null) return null;
         // 缩容等待：整槽等量替换要求 产物最大堆叠 ≥ 当前数量
         if (stack.getCount() > new ItemStack(entry.output()).getMaxStackSize()) return null;
-        return new ItemStack(entry.output(), stack.getCount());
+        return buildOutput(entry, stack.getCount());
+    }
+
+    /**
+     * 构造产出栈：带 {@code output_potion} ⇒ 用原版工厂造**带内容的药水**
+     * （{@link PotionContents#createItemStack}）；否则普通物品。
+     *
+     * <p>⚠️ {@code createItemStack} 产出的 count 恒为 1 ⇒ 需显式 {@code setCount}
+     * 还原「等量替换」（药水 maxStack=1，故实际只会是 1，但口径不因产物而变）。</p>
+     */
+    private static ItemStack buildOutput(TransformEntry entry, int count) {
+        if (entry.outputPotion() == null) {
+            return new ItemStack(entry.output(), count);
+        }
+        ItemStack out = PotionContents.createItemStack(entry.output(), entry.outputPotion());
+        out.setCount(count);
+        return out;
     }
 
     // ── 解析（与 InteractionRuleConfig 同构）──────────────────
@@ -253,7 +281,19 @@ public final class FluidTransformTable {
             return;
         }
 
-        boolean replaced = merged.put(id, new TransformEntry(id, fluid, input, output)) != null;
+        // output_potion 可选：写了就必须能解析（引用未知药水 ⇒ 跳过整条，别产出错东西）
+        String potionId = string(obj, "output_potion");
+        Holder<Potion> potion = null;
+        if (potionId != null) {
+            potion = resolvePotion(potionId);
+            if (potion == null) {
+                LivingItemManager.LOGGER.warn(
+                    "[fluid-transforms/{}] 条目 {} 引用未知药水 {}，跳过", source, id, potionId);
+                return;
+            }
+        }
+
+        boolean replaced = merged.put(id, new TransformEntry(id, fluid, input, output, potion)) != null;
         if ("bundled".equals(source)) bundled.add(id);
         if (replaced) {
             LivingItemManager.LOGGER.info("[fluid-transforms/{}] 覆盖条目: {}", source, id);
@@ -270,6 +310,14 @@ public final class FluidTransformTable {
         return rl == null ? null : BuiltInRegistries.ITEM.getOptional(rl).orElse(null);
     }
 
+    /** 解析药水类型（{@code output_potion}）；未知 / 坏 id 返回 {@code null}。 */
+    @Nullable
+    private static Holder<Potion> resolvePotion(String id) {
+        ResourceLocation rl = ResourceLocation.tryParse(id);
+        if (rl == null) return null;
+        return BuiltInRegistries.POTION.getHolder(ResourceKey.create(Registries.POTION, rl)).orElse(null);
+    }
+
     private static String key(FluidType fluid) {
         ResourceLocation rl = NeoForgeRegistries.FLUID_TYPES.getKey(fluid);
         return rl != null ? rl.toString() : fluid.toString();
@@ -277,6 +325,10 @@ public final class FluidTransformTable {
 
     private static String name(Item item) {
         return BuiltInRegistries.ITEM.getKey(item).toString();
+    }
+
+    private static String potionName(Holder<Potion> potion) {
+        return potion.unwrapKey().map(k -> k.location().toString()).orElse("unknown");
     }
 
 }
