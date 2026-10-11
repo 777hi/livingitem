@@ -701,6 +701,45 @@ private final Set<String> reusableKeySet = new HashSet<>();
 > **构成 7 条跨层反向依赖**（`check_layers.py` R1）。现已全部搬进各领域 Registration，
 > **R1 101 → 94**。`StaticCacheRegistry` 现在**只认识框架自己**。
 
+### 3.5 运行时缓存（ContainerRuntimeCache）的生命周期（方案 A，2026-10-11）
+
+**缓存键 = （容器键, 槽位索引）** —— 存的是**跨 tick 的瞬态状态**（活熔炉的燃料 / 进度、
+活漏斗的冷却、活酿造台的批次进度），**不进 DataComponent**（否则每 tick 写入会破坏堆叠）。
+
+⚠️ **键里没有物品身份** ⇒ 默认语义是「数据属于**槽位**」。若不处理会出现：
+**物品离开槽位后数据残留** ⇒ 同一槽位放入新物品时**继承**旧物品的瞬态状态
+（实测：把烧了一半的活熔炉拿走、换个新的放进同一槽位 ⇒ 白得剩余燃烧时间 = **刷燃料**）；
+反过来跨槽位搬运则**丢**数据。
+（「跨容器搬运」看起来正常只是因为换了 `containerKey`、新键没有数据 —— 同容器内全都受影响。）
+
+> ⭐ **语义定案（用户 2026-10-11）**：**运行时数据属于「当前槽位里的那台机器」** ——
+> 机器换了，数据就该作废。
+
+**实现（`ContainerLivingItemHandler` 登记 + `LivingItem` 执行）**：
+
+- **L1 追踪**：`processContext` 每 tick 把「本容器活物品槽位 → 物品类型」与上次记录对比，
+  失效的槽位登记进待清队列（`RuntimeCacheInvalidation`，放在**早退分支之前** ——
+  「容器里已无活物品」正是要清理的场景）；容器卸载（`removeDataByPos`）登记**整容器**作废。
+- **L4 执行**：`LivingItem.onServerTick` 取走队列，调 `ContainerRuntimeCache.removeSlot` /
+  `removeContainer` —— 位置在 `LivingItemRuntimeSync.flush` **之前** ⇒ 作废也在本 tick 下发
+  （`removeSlot` 会标脏），客户端 tooltip 随即回退到组件值。
+- ⚠️ **为什么拆成两步（L1 登记 / L4 执行）**：`ContainerLivingItemHandler` 在 **L1**、
+  `ContainerRuntimeCache` 在 **L2** ⇒ L1 直接调用会新增 **R1 分层违规**。
+  拆开后 L1 只碰自己的队列、L4（接线层）执行跨层调用 ⇒ **零新增违规**。
+
+**两条判据红线**：
+
+1. **失效判据只看物品类型（`Item`），不看组件** —— 燃烧标志等组件会被 tick 改写，
+   若纳入判据，**每次状态翻转都会误清缓存**（燃料 / 进度丢失）。
+2. **容器卸载必须作废整容器** —— 否则容器被破坏后运行时数据永久残留（`removeContainer` 此前零调用者）。
+
+**已知边界（接受）**：**同类物品原地交换**（手持新熔炉直接点击槽位里的旧熔炉）判据看不出变化
+⇒ 不清缓存。该场景收益有限（最多继承一次剩余燃烧时间），要彻底解决需给物品加实例 id
+（会引入堆叠 / 拆堆语义问题，与活酿造台 D2「拆堆复制当特性」同族）⇒ 当前接受。
+
+**验证**：`ContainerRuntimeCacheLifecycleTest`（5 项：离开 / 换类型 ⇒ 作废 · 同类持续 ⇒ 不作废 ·
+drain 取走即空 · null 键忽略）。
+
 ---
 
 ## 4. 容器类型检测与访问

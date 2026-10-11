@@ -53,6 +53,7 @@ import com.qiqi.li.living.util.DoubleChestPositions;
 import com.qiqi.li.network.LivingItemRuntimeSync;
 import com.qiqi.li.living.container.ContainerChunkCache;
 import com.qiqi.li.living.container.ContainerLivingItemHandler;
+import com.qiqi.li.living.runtime.ContainerRuntimeCache;
 import com.qiqi.li.living.util.StaticCacheRegistry;
 import com.qiqi.li.living.container.ItemEntityContainerContext;
 import com.qiqi.li.network.LivingTagPacket;
@@ -267,6 +268,19 @@ public class LivingItem {
             LivingToolHostSync.flush(level);
             // 联机可见性（最小版）：把各玩家背包里的无记忆活工具广播给附近客户端
             com.qiqi.li.living.domain.tools.LivingToolPlayerSync.flush(level);
+        }
+
+        // 运行时缓存生命周期（方案 A，2026-10-11）：物品离开槽位 / 换物品 / 容器卸载
+        // ⇒ 作废该槽位（或整容器）的运行时数据。必须在下方 flush 之前 ——
+        // 让「作废」也在本 tick 下发（removeSlot 会标脏），客户端 tooltip 随即回退到组件值。
+        for (var invalidation : ContainerLivingItemHandler.drainRuntimeCacheInvalidations()) {
+            if (invalidation.wholeContainer()) {
+                ContainerRuntimeCache.removeContainer(invalidation.containerKey());
+            } else {
+                for (int slot : invalidation.slots()) {
+                    ContainerRuntimeCache.removeSlot(invalidation.containerKey(), slot);
+                }
+            }
         }
 
         // 运行时数据下发（档 2：缓存在 L2 只攒脏，发包归 L4 本调用）——

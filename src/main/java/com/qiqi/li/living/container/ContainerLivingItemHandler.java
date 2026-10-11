@@ -10,6 +10,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import com.qiqi.li.living.api.ContainerDataLifecycle;
 import com.qiqi.li.living.api.HasContainerData;
@@ -82,6 +83,27 @@ public class ContainerLivingItemHandler {
     private static final int CLEANUP_INTERVAL = 1200;
     private static int cleanupCounter;
 
+    /**
+     * 运行时缓存生命周期追踪（方案 A，2026-10-11）：容器键 → （槽位 → 上次的活物品类型）。
+     *
+     * <p>用于识别「物品离开槽位 / 被替换 / 取消活化」并作废该槽位的
+     * {@link com.qiqi.li.living.runtime.ContainerRuntimeCache} 数据 ——
+     * 运行时数据属于「当前槽位里的那台机器」，机器换了，数据就该作废。</p>
+     *
+     * <p>⚠️ 判据**只看物品类型、不看组件**：燃烧标志等组件会被 tick 改写，
+     * 若纳入判据会把正在运行的缓存误清（燃料 / 进度每次状态翻转就丢）。</p>
+     */
+    private static final Map<String, Map<Integer, Item>> LIVING_SLOT_ITEMS = new ConcurrentHashMap<>();
+
+    /**
+     * 本 tick 攒下的「待清运行时缓存」项，由 L4（{@code LivingItem.onServerTick}）取走并执行
+     * —— 让 L1 不直接依赖 L2 的 {@code ContainerRuntimeCache}（避免 R1 分层违规）。
+     */
+    private static final List<RuntimeCacheInvalidation> PENDING_RUNTIME_INVALIDATIONS = new ArrayList<>();
+
+    /** 一条待作废的运行时缓存记录（{@code wholeContainer} = 容器整体卸载）。 */
+    public record RuntimeCacheInvalidation(String containerKey, Set<Integer> slots, boolean wholeContainer) {}
+
     /** 维度 + 坐标，作为位置索引的键（含维度，避免跨维度同坐标冲突） */
     private record PosKey(ResourceKey<Level> dim, BlockPos pos) {}
 
@@ -137,6 +159,68 @@ public class ContainerLivingItemHandler {
         if (key == null) return;
         CONTAINER_DATA.remove(key);
         POS_TO_CACHE_KEY.values().removeIf(key::equals);
+        // 容器卸载 ⇒ 运行时缓存与追踪一并作废（方案 A，2026-10-11）
+        LIVING_SLOT_ITEMS.remove(key);
+        PENDING_RUNTIME_INVALIDATIONS.add(new RuntimeCacheInvalidation(key, Set.of(), true));
+    }
+
+    // ==================== 运行时缓存生命周期（方案 A，2026-10-11） ====================
+
+    /**
+     * 对比「本 tick 的活物品槽位」与「上次记录」，把<b>已失效</b>的槽位登记进待清队列。
+     *
+     * <p>失效判据（任一成立）：① 该槽位本 tick 不再是活物品（拿走 / 换成普通物品 / 取消活化）；
+     * ② 该槽位换成了<b>另一种</b>活物品（{@code Item} 变了）。</p>
+     *
+     * <p>⚠️ 已知边界：<b>同类物品原地交换</b>（手持新熔炉直接点击旧熔炉）判据看不出变化 ⇒ 不清。
+     * 要彻底解决需给物品加实例 id（会引入堆叠 / 拆堆语义问题）⇒ 当前接受。</p>
+     */
+    static void trackLivingSlots(String containerKey, Map<Integer, Item> currentSlots) {
+        if (containerKey == null) return;
+        Map<Integer, Item> previous = LIVING_SLOT_ITEMS.get(containerKey);
+        if (previous != null) {
+            Set<Integer> stale = null;
+            for (Map.Entry<Integer, Item> e : previous.entrySet()) {
+                if (currentSlots.get(e.getKey()) != e.getValue()) {
+                    if (stale == null) stale = new HashSet<>();
+                    stale.add(e.getKey());
+                }
+            }
+            if (stale != null) {
+                PENDING_RUNTIME_INVALIDATIONS.add(new RuntimeCacheInvalidation(containerKey, stale, false));
+            }
+        }
+        if (currentSlots.isEmpty()) {
+            LIVING_SLOT_ITEMS.remove(containerKey);
+        } else {
+            LIVING_SLOT_ITEMS.put(containerKey, new LinkedHashMap<>(currentSlots));
+        }
+    }
+
+    /** 从扫描结果收集「本 tick 的活物品槽位 → 物品类型」（同槽位多功能 ⇒ 去重）。 */
+    private static Map<Integer, Item> collectLivingSlots(
+            Map<LivingItemFunction, List<LivingItemFunction.SlotEntry>> grouped) {
+        Map<Integer, Item> slots = new LinkedHashMap<>();
+        for (var list : grouped.values()) {
+            for (var slotEntry : list) {
+                ItemStack st = slotEntry.stack();
+                if (!st.isEmpty()) {
+                    slots.put(slotEntry.slotIndex(), st.getItem());
+                }
+            }
+        }
+        return slots;
+    }
+
+    /**
+     * 取走本 tick 攒下的「待清运行时缓存」项（取走即清空）——
+     * 由 L4 消费并调用 {@code ContainerRuntimeCache}（保持 L1 不依赖 L2）。
+     */
+    public static List<RuntimeCacheInvalidation> drainRuntimeCacheInvalidations() {
+        if (PENDING_RUNTIME_INVALIDATIONS.isEmpty()) return List.of();
+        List<RuntimeCacheInvalidation> out = new ArrayList<>(PENDING_RUNTIME_INVALIDATIONS);
+        PENDING_RUNTIME_INVALIDATIONS.clear();
+        return out;
     }
 
     /**
@@ -287,6 +371,8 @@ public class ContainerLivingItemHandler {
     public static void clearAllCaches() {
         CONTAINER_DATA.clear();
         POS_TO_CACHE_KEY.clear();
+        LIVING_SLOT_ITEMS.clear();
+        PENDING_RUNTIME_INVALIDATIONS.clear();
         cleanupCounter = 0;
     }
 
@@ -370,6 +456,10 @@ public class ContainerLivingItemHandler {
         // 阶段 1：扫描容器全部槽位，将活物品按功能分组，同时校验内容签名
         Map<LivingItemFunction, List<LivingItemFunction.SlotEntry>> grouped = scanAndGroupLivingItems(context);
         syncContentRevision(context);
+
+        // ★ 运行时缓存生命周期（方案 A，2026-10-11）：物品离开槽位 / 被替换 ⇒ 作废该槽位的运行时数据。
+        // ⚠️ 必须在下方早退分支之前 —— 「容器里已无活物品」正是最需要清理的场景。
+        trackLivingSlots(context.getContainerKey(), collectLivingSlots(grouped));
 
         // 自维持功能（如活水源）：即便容器内没有它自己的活物品，也要进入主流程参与 tick。
         // 遍历的是注册期算好的静态清单（通常 0~1 个），不逐函数判定，保证成千上万个容器

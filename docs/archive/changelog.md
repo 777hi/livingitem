@@ -105,6 +105,23 @@
   现状文档 → [`docs/tech/living-brewing-stand-tech.md`](../tech/living-brewing-stand-tech.md)；
   设计稿归档 → [`docs/archive/living-brewing-stand-design.md`](../archive/living-brewing-stand-design.md)。
 
+- 🐛 **修复：活熔炉燃料「被绑在槽位上」+ 由此产生的刷燃料漏洞（运行时缓存生命周期，方案 A）** ——
+  用户实测报告：把活熔炉拿出来再放回去、或取消活化再活化，燃料值「又回来了」。
+  **根因**：`ContainerRuntimeCache` 的键是 `(容器键, 槽位索引)`、**不含物品身份**，
+  且 `removeSlot` / `removeContainer` **零调用者**（`cleanupStaleData` 只清容器级数据）
+  ⇒ 条目永不过期；「跨容器搬运」看起来正常只因换了 `containerKey`、新键没数据。
+  ⇒ 同一槽位换物品会**继承**旧物品的瞬态状态（熔炉燃料 / 进度 · 漏斗冷却 · 酿造台进度），
+  **可刷燃料**（拿走烧了一半的熔炉、换个新的进同一槽位 ⇒ 白得剩余燃烧时间）；跨槽位搬运则**丢**数据。
+  ⭐ **语义定案（用户拍板）**：运行时数据属于「**当前槽位里的那台机器**」—— 机器换了，数据就该作废。
+  **修法（方案 A）**：L1 `ContainerLivingItemHandler` 每 tick 对比「活物品槽位 → 物品类型」，
+  失效的槽位登记进待清队列（容器卸载登记整容器）；L4 `LivingItem.onServerTick` 取走队列并调
+  `ContainerRuntimeCache.removeSlot / removeContainer`（放在 flush **之前** ⇒ 作废也在本 tick 下发）。
+  ⚠️ **拆成「L1 登记 / L4 执行」是为了不新增 R1 分层违规**（container 在 L1、runtime 在 L2）。
+  ⚠️ **失效判据只看 `Item`、不看组件** —— 燃烧标志会被 tick 改写，纳入判据会每次状态翻转就误清缓存。
+  新增 `ContainerRuntimeCacheLifecycleTest`（5 项）；测试 568 → 573 绿；分层校验**零新增违规**。
+  已知边界：**同类物品原地交换**（手持新熔炉直接点旧熔炉）判据看不出变化 ⇒ 接受
+  （彻底解决需给物品加实例 id，与活酿造台 D2「拆堆复制当特性」同族）。
+
 ## 2026-10-10
 
 > 文档系统维护（**代码未动**）—— 三项：修红线单位 · 新增一层 · 新增一项校验。
