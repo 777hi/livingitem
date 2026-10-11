@@ -67,6 +67,21 @@
 - ✅ **游戏内实测通过**（2026-10-11）：启动正常 + 打开创造模式物品栏点标签页不再崩
   （与 inventoryessentials 共存）。
 
+- 🏗 **新增构建指纹：启动日志自证「跑的是哪个构建」** —— 缘起本文踩坑2（旧 jar 白跑一轮实测）：
+  主类构造器**首行**打印 `living_item 构建: v<版本> commit=<短哈希> built=<时间>`
+  （`LivingItem.logBuildFingerprint`，构造器最先执行保证指纹出现在日志最前；读取失败兜底
+  `unknown`，**不抛异常** —— 指纹只是观测信息，任何异常都不得影响模组启动）。
+  注入复用 `generateModMetadata` 的既有模式：新建 `generateBuildProps` 任务 +
+  模板 `src/main/build-props/living_item_build.properties`（**不放** `src/main/resources/` ——
+  裸占位符永不进 jar）；commit 经 `providers.exec git rev-parse --short HEAD` 解析，
+  无 git 环境（CI 干净克隆）兜底 unknown、不阻断构建。
+  🔴 **两个坑入档**：①`filteringCharset = 'UTF-8'` 必须显式声明 —— 不声明跟随平台默认编码，
+  Windows GBK 下模板中文注释写进产物即乱码；②Groovy 模板引擎会展开**所有**花括号引用，
+  注释里写 `${xxx}` 示例也会被替换（甚至未知引用直接报错）⇒ 模板注释措辞避开花括号。
+  ⚠️ **只把 commit 声明为任务输入**（commit 变了才重跑）；`build.time` 刻意不作输入 ——
+  否则秒级时间戳每次都变，每次构建（含 runClient）都全量重跑资源处理。
+  无新测试（纯观测日志，无业务逻辑 ⇒ 测试计数 555 不变）。
+
 ## 2026-10-10
 
 > 文档系统维护（**代码未动**）—— 三项：修红线单位 · 新增一层 · 新增一项校验。

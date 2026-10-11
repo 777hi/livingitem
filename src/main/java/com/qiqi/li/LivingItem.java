@@ -125,6 +125,7 @@ public class LivingItem {
     }
 
     public LivingItem(IEventBus modEventBus, ModContainer modContainer) {
+        logBuildFingerprint(modContainer);
         modEventBus.addListener(this::commonSetup);
         modEventBus.addListener(this::onRegisterCapabilities);
         ITEMS.register(modEventBus);
@@ -149,6 +150,35 @@ public class LivingItem {
         NeoForge.EVENT_BUS.register(LivingToolRecorder.class);
         NeoForge.EVENT_BUS.register(LivingToolAssist.class);
         modEventBus.addListener(this::onRegisterPayloadHandler);
+    }
+
+    /**
+     * 启动时打印构建指纹（版本 + git commit + 构建时间），一行即可自证「跑的是哪个构建」。
+     *
+     * <p>缘起（2026-10-11）：Mixin 冲突修复后第一轮实测，用户跑的是改名前的旧 jar，
+     * 崩溃报告里还写着旧符号名 {@code SlotWrapperAccessor} —— 源码早已改对，白白多排查一轮。
+     * 有了这行日志，「报错符号名/构建指纹与当前源码对不上 ⇒ 先怀疑旧产物」从人脑判据
+     * 变成日志里可直接比对的字段。</p>
+     *
+     * <p>资源由 Gradle {@code generateBuildProps} 任务注入（{@code src/main/build-props/} 模板，
+     * commit/时间在构建期展开）；读取失败或值缺失时兜底 {@code unknown}，<b>不抛异常</b> ——
+     * 指纹只是观测信息，任何异常都不能影响模组启动。</p>
+     */
+    private static void logBuildFingerprint(ModContainer modContainer) {
+        String commit = "unknown";
+        String time = "unknown";
+        try (var in = LivingItem.class.getResourceAsStream("/living_item_build.properties")) {
+            if (in != null) {
+                var props = new java.util.Properties();
+                props.load(in);
+                commit = props.getProperty("build.commit", commit);
+                time = props.getProperty("build.time", time);
+            }
+        } catch (Exception e) {
+            LOGGER.warn("living_item 构建指纹读取失败（不影响运行）", e);
+        }
+        LOGGER.info("living_item 构建: v{} commit={} built={}",
+                modContainer.getModInfo().getVersion(), commit, time);
     }
 
     private void commonSetup(FMLCommonSetupEvent event) {

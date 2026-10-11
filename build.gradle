@@ -310,6 +310,34 @@ sourceSets.main.resources.srcDir generateModMetadata
 // To avoid having to run "generateModMetadata" manually, make it run on every project reload
 neoForge.ideSyncTask generateModMetadata
 
+// ---------------------------------------------------------------- 构建指纹
+// 把 git commit + 构建时间注入 living_item_build.properties，主类启动时打印一行。
+// 判据目的（2026-10-11）：崩溃报告/日志可自证构建版本 —— 报错里的类名/符号名与当前源码
+// 对不上时（如出现改名前的旧名），先怀疑「跑的是旧构建产物」，别拿过期 jar 的报错排查新代码。
+// ⚠️ 只把 commit 声明为任务输入（commit 变了才重跑）；build.time 刻意不作为输入，
+//    否则每次构建（含 runClient）都会因秒级时间戳变化而全量重跑资源处理。
+def buildCommit = { ->
+    try {
+        def out = providers.exec {
+            commandLine 'git', 'rev-parse', '--short', 'HEAD'
+        }.standardOutput.asText.get().trim()
+        return out.isEmpty() ? 'unknown' : out
+    } catch (Exception ignored) {
+        return 'unknown'  // 无 git 环境（CI 干净克隆等）兜底，不阻断构建
+    }
+}()
+var generateBuildProps = tasks.register("generateBuildProps", ProcessResources) {
+    filteringCharset = 'UTF-8'  // 模板含中文注释；不显式声明则跟随平台默认编码，Windows GBK 下会写坏
+    inputs.property 'commit', buildCommit
+    expand 'commit': buildCommit,
+           'buildTime': java.time.LocalDateTime.now()
+               .format(java.time.format.DateTimeFormatter.ofPattern('yyyy-MM-dd HH:mm:ss'))
+    from 'src/main/build-props'
+    into layout.buildDirectory.dir('generated/buildProps')
+}
+sourceSets.main.resources.srcDir generateBuildProps
+neoForge.ideSyncTask generateBuildProps
+
 // Example configuration to allow publishing using the maven-publish plugin
 publishing {
     publications {
