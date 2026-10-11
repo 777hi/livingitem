@@ -65,6 +65,8 @@ src/test/java/com/qiqi/li/
 │   ├── TillablesTest.java                   # 耕作知识表·锄头判定+可耕映射+真值表（8 项）
 │   ├── FertilizeTransferTest.java           # 自动施肥·骨粉→活耕地零空转守卫（6 项）
 │   └── LivingFarmlandPlacementTest.java     # 放置回世界·落点/幼苗/客户端/异常不冒泡+端到端接线（5 项）
+├── living/domain/brewing/
+│   └── BrewingBatchLogicTest.java             # 批次状态机·启动/完成/作废两判据/堆叠倍率（13 项）
 ├── living/domain/furnace/
 │   ├── LivingFurnaceFunctionTest.java         # 燃料消耗合成残留物语义（4 项）
 │   └── FurnaceBurningFlagTest.java            # 燃烧标志组件·图标切换回归（5 项）

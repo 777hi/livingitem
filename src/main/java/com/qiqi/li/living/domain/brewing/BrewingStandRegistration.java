@@ -1,6 +1,7 @@
 package com.qiqi.li.living.domain.brewing;
 
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.runtime.RuntimeSegmentRegistry;
 
 /**
  * 活酿造台域注册入口 —— 见 {@code RedstoneRegistration} 的类注释了解为何有这个类（A1）。
@@ -13,7 +14,8 @@ public final class BrewingStandRegistration {
 
     public static void register() {
         LivingItemManager.registerFunction(new LivingBrewingStandFunction());
-        // 第二段再加入运行时片段（BrewingStandSegment）：承载「酿造进度 / 燃料次数」的
-        // 展示数据（tooltip 用），与 FurnaceSegment 同构。第一段无瞬态数据可展示，故不注册。
+        // 运行时片段：批次倒计时 + 本批次材料（瞬态，不进组件 ⇒ 不影响堆叠）。
+        // 与 FurnaceSegment 同构（档 2）。
+        RuntimeSegmentRegistry.register(BrewingStandSegment.INSTANCE);
     }
 }

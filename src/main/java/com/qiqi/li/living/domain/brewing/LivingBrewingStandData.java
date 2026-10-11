@@ -25,22 +25,36 @@ import net.minecraft.world.item.component.TooltipProvider;
  *       {@code fuel=20} 与 {@code fuel=19} 的堆叠不能互相合并（忠实反映真实状态，不算缺陷）。</li>
  * </ul>
  */
-public record LivingBrewingStandData(BrewingDirectionData direction) implements TooltipProvider {
+public record LivingBrewingStandData(BrewingDirectionData direction, int fuel) implements TooltipProvider {
 
     public static final LivingBrewingStandData DEFAULT =
-        new LivingBrewingStandData(BrewingDirectionData.DEFAULT_BREWING);
+        new LivingBrewingStandData(BrewingDirectionData.DEFAULT_BREWING, 0);
 
+    /**
+     * {@code fuel} 用 {@code optionalFieldOf} ⇒ <b>旧数据（只有 direction 字段）仍可解码</b>
+     * （第一段落地过、可能已写进存档）。
+     */
     public static final Codec<LivingBrewingStandData> CODEC = RecordCodecBuilder.create(instance ->
         instance.group(
-            BrewingDirectionData.CODEC.fieldOf("direction").forGetter(LivingBrewingStandData::direction)
+            BrewingDirectionData.CODEC.fieldOf("direction").forGetter(LivingBrewingStandData::direction),
+            Codec.INT.optionalFieldOf("fuel", 0).forGetter(LivingBrewingStandData::fuel)
         ).apply(instance, LivingBrewingStandData::new)
     );
 
     public static final StreamCodec<RegistryFriendlyByteBuf, LivingBrewingStandData> STREAM_CODEC =
-        BrewingDirectionData.STREAM_CODEC.map(LivingBrewingStandData::new, LivingBrewingStandData::direction);
+        StreamCodec.composite(
+            BrewingDirectionData.STREAM_CODEC, LivingBrewingStandData::direction,
+            net.minecraft.network.codec.ByteBufCodecs.VAR_INT, LivingBrewingStandData::fuel,
+            LivingBrewingStandData::new
+        );
 
     public LivingBrewingStandData withDirection(BrewingDirectionData d) {
-        return new LivingBrewingStandData(d);
+        return new LivingBrewingStandData(d, fuel);
+    }
+
+    /** 燃料次数（0..{@code BrewingBatchLogic.FUEL_USES}）。 */
+    public LivingBrewingStandData withFuel(int f) {
+        return new LivingBrewingStandData(direction, f);
     }
 
     @Override
