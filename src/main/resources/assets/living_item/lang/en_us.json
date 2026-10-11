@@ -127,6 +127,7 @@
   "tooltip.livingitem.brewing.status": "§6Brewing Stand",
   "tooltip.livingitem.brewing.fuel": "  §7Fuel: §f%s uses",
   "tooltip.livingitem.brewing.no_fuel": "  §8No fuel (needs blaze powder)",
+  "tooltip.livingitem.brewing.progress": "  §7Brewing: §f%s%%§7 (%ss left)",
   "tooltip.livingitem.direction.transfer": "  §6Transfer: %s -> %s (%s)§r",
   "tooltip.livingitem.hopper.advanced.title": "§8§o--- Hopper Details ---§r",
   "tooltip.livingitem.hopper.advanced.stack": "  §7Stack: %d (Cooldown: %d ticks, Rate: %s/s)§r",

@@ -14,6 +14,7 @@ import com.qiqi.li.living.domain.brewing.BrewingStandSegment.BrewingRuntime;
 import com.qiqi.li.living.model.DirectionSymbols;
 import com.qiqi.li.living.model.Pos2D;
 import com.qiqi.li.living.runtime.ContainerRuntimeCache;
+import com.qiqi.li.living.runtime.LivingItemClientCache;
 import com.qiqi.li.living.runtime.RuntimeSegments;
 import com.qiqi.li.living.transfer.SlotResolver;
 
@@ -241,6 +242,16 @@ public class LivingBrewingStandFunction implements LivingItemFunction, HasDirect
         } else {
             tooltipAdder.accept(Component.translatable("tooltip.livingitem.brewing.no_fuel")
                 .withStyle(ChatFormatting.DARK_GRAY));
+        }
+
+        // 批次进度：从客户端运行时缓存读（瞬态数据不在组件里；同活熔炉的 tooltip 口径）
+        BrewingRuntime runtime = LivingItemClientCache.getCurrentTooltipData()
+            .get(BrewingStandSegment.INSTANCE);
+        if (runtime != null && runtime.isBrewing()) {
+            int percent = (int) (runtime.brewTime() * 100.0f / BrewingBatchLogic.BREW_TIME);
+            tooltipAdder.accept(Component.translatable("tooltip.livingitem.brewing.progress",
+                percent, String.format("%.1f", runtime.brewTime() / 20.0))
+                .withStyle(ChatFormatting.GRAY));
         }
 
         BrewingDirectionData dir = data.direction();

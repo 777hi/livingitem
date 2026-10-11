@@ -127,6 +127,7 @@
   "tooltip.livingitem.brewing.status": "§6酿造台状态",
   "tooltip.livingitem.brewing.fuel": "  §7燃料: §f%s 次",
   "tooltip.livingitem.brewing.no_fuel": "  §8无燃料（需要烈焰粉）",
+  "tooltip.livingitem.brewing.progress": "  §7酿造中: §f%s%%§7（剩 %s 秒）",
   "tooltip.livingitem.direction.transfer": "  §6传输方向: %s → %s (%s)§r",
   "tooltip.livingitem.hopper.advanced.title": "§8§o--- 活漏斗详细信息 ---§r",
   "tooltip.livingitem.hopper.advanced.stack": "  §7堆叠数: %d (冷却: %d ticks, 速率: %s 次/秒)§r",
