@@ -17,6 +17,8 @@ src/test/java/com/qiqi/li/
 ├── LivingItemRuntimeContainerInstancesTest.java  # 运行时同步容器实例反查·非 Container BE(ProjectE 炼金箱)返回空集合不抛异常/原版 Container BE 返回自身/无 BE 返回 null（3 项；crash-2026-10-10 回归）
 ├── testutil/
 │   └── FakeContainerContext.java              # ContainerContext 测试替身（内存数组实现）
+├── client/gui/
+│   └── LivingButtonLayoutTest.java            # 活按钮位置布局·应用位置时的屏幕夹取（屏内不动/越界夹边缘/屏幕小于按钮取 max(0,…)）（1 项）
 ├── client/render/
 │   ├── LivingFarmlandSeedDecoratorTest.java   # 种子图标装饰器守卫·普通/未种植/已种植/非耕地（4 项）
 │   └── LivingItemTooltipTest.java             # 活物品段标题恒在（2026-10-07 定稿）·零内容行仍输出标题/不适用功能同样保留/真实活桶只有标题无内容行/有内容行则空行+标题+行/多功能标题只一次且行序保持（5 项）

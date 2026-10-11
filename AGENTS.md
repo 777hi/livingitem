@@ -146,7 +146,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 578 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
+**合计测试用例 579 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
 全绿基线：`554 passed / 0 failed / 1 skipped`。**逐次新增明细见 [changelog.md](docs/archive/changelog.md)。**
 
 > 📄 测试环境配置与编写约定见 [unit-testing.md](docs/guides/unit-testing.md)；
@@ -167,6 +167,7 @@ src/main/java/com/qiqi/li/
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-12 | 🐛 **修复：缩小窗口后活按钮跑到屏幕外** —— 拖动时的夹取只管**当时那一次**；保存的是「相对 GUI 的偏移」⇒ **缩小窗口 / 调大 GUI scale** 后换算坐标可能落到屏外（按钮"消失"）。修法：`LivingButtonLayout.clampToScreen` + **应用位置时再夹一次**（放在 `LivingButton` 构造 ⇒ 覆盖所有创建路径）；**只夹显示位置、不回写配置**（恢复窗口回原位）。新增 `LivingButtonLayoutTest`（1 项），测试 578 → 579 绿 | `docs/system-design/gui-interaction-system.md` §6.2 |
 | 2026-10-11 | 🆕 **活水源新增转化「空瓶 → 水瓶」+ 转化表支持 `output_potion`** —— ① 框架扩展：条目加可选字段 `output_potion`（药水类型）—— ⚠️ 只写 `output: minecraft:potion` 会得到 `PotionContents.EMPTY`（"不可合成的药水"）而非水瓶 ⇒ 走原版工厂 `createItemStack` 指定内容；未知药水 ⇒ 整条跳过。② 内置 **16 → 17** 条。③ 玩法边界论证：判据 =「**产物是否为活化资产载体**」—— 水桶能放水（载体）⇒ 取消；水瓶不能（非载体）⇒ 保留，且不引入新资源通道。⚠️ 空瓶必须**单个**才转化（水瓶 maxStack=1 ⇒ 缩容等待）。测试 577 → 578 绿 | `docs/tech/living-fluid-tech.md` §6 / §6.2 |
 | 2026-10-11 | 🐛 **修复：活按钮位置在大箱 / 单箱之间互相覆盖** —— key 原本只用 Screen 类名，而**原版单箱与大箱是同一个 `ChestScreen`**（只差 `ChestMenu` 槽位数）⇒ 共享同一份位置，但 GUI 高度差 56px（166/222）⇒ 拖一个坏另一个。修法：key 改 **类名 + GUI 尺寸**；配置 version 1→2（旧文件忽略、不迁移）。📌 mixin 类 `extends Screen` **非目标类** ⇒ 尺寸**显式传参**（`getXSize/getYSize` 只在 `AbstractContainerScreen` 上） | `docs/system-design/gui-interaction-system.md` §6.2 |
 | 2026-10-11 | 🐛 **修复：活酿造台把活物品当耗材（隔离规则漏实现）** —— 用户实测「活红石被当材料消耗」。根因：首版**漏了 `isLivingItem` 检查**（材料 / 燃料 / 瓶子三处），而 §0 规则 7 已写「活物品不作材料 / 燃料」（活熔炉有该检查、酿造台没有）。危害：材料被 `consumeOne` 吃掉；瓶子侧更隐蔽 —— 原版 `hasMix` 只看 `POTION_CONTENTS` **不看活标记** ⇒「活药水」会被 `mix` **原地替换**。修法：抽 `isEligibleIngredient` / `isEligibleBottle` / `isBlazePowder` 三个准入判据，`isBrewable` 与 `doBrew` 共用。新增 `BrewingSlotEligibilityTest`（4 项），测试 573 → 577 绿。⭐ 教训：**§0 规则表每条都必须有实现点与验证入口** | `docs/tech/living-brewing-stand-tech.md` §3.5 / §9.5 |
@@ -176,7 +177,6 @@ src/main/java/com/qiqi/li/
 | 2026-10-11 | 🐛 **修复 Mixin 访问器与 inventoryessentials 重名冲突（点创造标签页崩溃）+ 确立「Mixin 铁律」并落成 `tools/check_mixins.py` 自动校验** —— 同名 `SlotWrapperAccessor`+`getTarget` 命中同一 `SlotWrapper` ⇒ `Incompatible @Accessor`；改 `LivingItemSlotWrapperAccessor` + 方法 `living_item$` 前缀。🔴 两坑入档：①裸 `@Accessor`+前缀 ⇒ 推断失效启动即崩（**前缀必须配显式成员名**，已补 `@Accessor("skipNextRelease")`）②第一轮实测跑旧构建（判据：报错条目名=构建注册名，对不上⇒先怀疑产物过期）。⚠️ 更正：`@Shadow` 必须同名**不能**加前缀。R1 前缀/R2 显式成员/R3·R4 配置↔源码双向，违例退出 1，负面样本验证过；✅ 实测通过 | `AGENTS.md「Mixin 铁律」` · `tools/check_mixins.py` · `docs/archive/changelog.md（2026-10-11 条目）` |
 | 2026-10-10 | 🆕 **活酿造台第一段：纯框架接入（5 槽位方向，无酿造逻辑）** —— 新建 `living/domain/brewing/`（`BrewingDirectionData` / `LivingBrewingStandData` / `BrewingStandComponents` / `LivingBrewingStandFunction` / `BrewingStandRegistration`），5 槽 = 3 瓶 + 燃料 + 材料，默认布局「瓶-瓶-瓶 / 燃料-台-材料」（`↖ ↑ ↗ / ← · →`）；`supportsDiagonal()` = true ⇒ **九宫格对角键的首个消费者**；图标零改动（不注册 spec ⇒ 自动挂默认活标记）；`Segment` 与燃料字段留第二段（避免死代码）。测试 555 绿。第二段：`PotionBrewing` 适配 + 400t 批次状态机 + 次数制燃料 + 堆叠加速 | `docs/archive/living-brewing-stand-design.md` §6 |
 | 2026-10-10 | 🏗 **GUI 交互改进 第一、二步落地：方向配置升级九宫格 + 活按钮可拖动** —— 缘起活酿造台 5 槽位（4 个基本方向放不下「上方 3 格」）。① 键位扩到 `QWE/ASD/ZC`（**`X` 弃用**，与 `S` 冲突）+ `KeyPressed` 阶段拦 `Q`/`E` + tooltip + 输入 HUD（悬停即显示 / 离开即重置 / 高亮）；② 活按钮按 **Screen 类名**存位置到 `config/living_item/button_layout.json`，空手左键拖动。⚠️ 三个坑入档：`AbstractContainerScreen.mouseDragged` **不转发控件**（改走 `ScreenEvent.MouseDragged.Pre`，不碰 mixin）· HUD 自绘 `fill` 默认 z=0 被深度裁掉（改 `renderTooltip`）· 重写 `AbstractWidget` 鼠标事件**命中判定要自己补、不要盲目 `super`**。③ 对角箭头 `↖↗↙↘` **原版点阵字体没有**（落兜底字体、看着小一圈）⇒ 模组自带字体 `living_item:direction`（用户自绘字形 + `reference: minecraft:default`），经 `DirectionSymbols` 挂字体。🔴 **踩坑：bitmap provider 的 `"file"` 字段必须带 `.png` 后缀**（漏了 ⇒ provider 抛错 ⇒ **整条字体集退化成 `missingFontSet` ⇒ 全框**），第一次因此回退、加上后缀后修好。测试 555 绿 | `docs/buffer/gui-interaction-redesign.md` · `docs/system-design/gui-interaction-system.md` §6 · `docs/system-design/icon-system.md` |
-| 2026-10-10 | 🐛 **修复：ProjectE 炼金箱导致运行时同步每 tick 崩溃（ClassCastException）** —— `LivingItem.runtimeContainerInstances` 单 BE 分支**无条件 `(Container) be` 强转**；扫描按 `IItemHandler` 能力面把炼金箱 `AlchBlockEntityChest`（暴露能力但**不实现原版 `Container`**）当成活物品容器 ⇒ 强转失败。`flush` 空集合守卫已闭环安全，修法改 `instanceof Container` 守卫（非 Container ⇒ 空集合 = 不发包）；顺手拆出静态包级私有单 level 分支便于单测，行为等价。新增回归测试 `LivingItemRuntimeContainerInstancesTest`（3 例）全绿；其余 `getBlockEntity → Container` 站点经核**全部 `instanceof` 守卫**，无同类强转。⚠️ 边界：炼金箱等「能力容器」仍被 tick（活物品照常运转），但运行时 tooltip 同步不生效（viewer 匹配依赖原版 `Container`）；是否加容器白/黑名单 = 待决（TODO「容器边界」） | `docs/archive/changelog.md（2026-10-10 条目）` · `docs/system-design/container-identity.md` §5 · `docs/TODO.md` |
 
 ## 排查铁律：原版机制挡路时
 

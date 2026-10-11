@@ -15,6 +15,7 @@ import com.google.gson.JsonParser;
 import com.mojang.logging.LogUtils;
 
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.util.Mth;
 import net.neoforged.fml.loading.FMLPaths;
 import org.slf4j.Logger;
 
@@ -72,6 +73,23 @@ public final class LivingButtonLayout {
         ensureLoaded();
         POSITIONS.put(screenId, new int[]{x, y});
         save();
+    }
+
+    /**
+     * 把按钮的**屏幕坐标**夹进屏幕内。
+     *
+     * <p>⚠️ <b>为什么应用保存位置时也要夹</b>：拖动时的夹取只管**当时那一次**。
+     * 玩家之后**缩小窗口 / 调大 GUI scale** ⇒ 逻辑屏幕变小，而保存的偏移是**相对 GUI** 的
+     * ⇒ 换算出的屏幕坐标可能落到屏幕外（按钮"消失"）。</p>
+     *
+     * <p>只夹**显示位置**、**不回写配置** —— 恢复窗口后按钮应回到原位。</p>
+     */
+    public static int[] clampToScreen(int x, int y, int screenWidth, int screenHeight,
+                                      int buttonWidth, int buttonHeight) {
+        return new int[]{
+            Mth.clamp(x, 0, Math.max(0, screenWidth - buttonWidth)),
+            Mth.clamp(y, 0, Math.max(0, screenHeight - buttonHeight))
+        };
     }
 
     private static Path configFile() {

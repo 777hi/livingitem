@@ -74,8 +74,15 @@ public class LivingButton extends SpriteIconButton.CenteredIcon {
         super(WIDTH, HEIGHT, ANNOTATION, SPRITE_WIDTH, SPRITE_HEIGHT, SPRITE, LivingButton::onPress, null);
         this.menu = menu;
         this.slot = slot;
-        this.setX(x);
-        this.setY(y);
+        // ⚠️ 应用保存的位置时**再夹一次**：拖动时的夹取只管当时那一次；
+        // 之后缩小窗口 / 调大 GUI scale ⇒ 逻辑屏幕变小，而保存的偏移是相对 GUI 的
+        // ⇒ 换算出的屏幕坐标可能落到屏外（按钮"消失"，2026-10-12 实测反馈）。
+        // 只夹显示位置、不回写配置（恢复窗口后回到原位）。
+        var window = Minecraft.getInstance().getWindow();
+        int[] clamped = LivingButtonLayout.clampToScreen(
+            x, y, window.getGuiScaledWidth(), window.getGuiScaledHeight(), WIDTH, HEIGHT);
+        this.setX(clamped[0]);
+        this.setY(clamped[1]);
     }
 
     @Override

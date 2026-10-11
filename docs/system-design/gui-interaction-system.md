@@ -186,6 +186,10 @@ CropClassifier::isSeedPlantableOnFarmland)`）；**只有真·任意光标自交
   思路参考 TrashSlot，只取骨架（吸附 / 碰撞 / 显示开关三者不做）。
 - **手势**：**空手**左键按在按钮上并移动（阈值 2px）⇒ 拖动；屏幕内夹取；松手写盘。
   手持物品点击仍是活化 —— 两者靠「光标是否空手」天然分开。
+- ⚠️ **应用位置时必须再夹一次**（`LivingButtonLayout.clampToScreen`）：拖动时的夹取只管
+  **当时那一次**；玩家之后**缩小窗口 / 调大 GUI scale** ⇒ 逻辑屏幕变小，而保存的偏移是
+  **相对 GUI** 的 ⇒ 换算出的屏幕坐标可能落到屏外（按钮"消失"，2026-10-12 实测反馈）。
+  **只夹显示位置、不回写配置** —— 恢复窗口后按钮回到原位。
 - ⚠️ **拖动事件必须自己转发**：`AbstractContainerScreen.mouseDragged` **整个重写了**
   `ContainerEventHandler` 的默认转发（焦点 + `isDragging` + 左键 ⇒ 转发焦点控件）**且不调 `super`**、
   恒返回 `true` ⇒ 子控件永远收不到 `mouseDragged`。原版凡要拖动自己控件的容器界面
