@@ -163,7 +163,7 @@ src/main/java/com/qiqi/li/
 > （changelog 是流水，不是约束）。详见 [docs/README.md](docs/README.md) §4。
 > 判据可复算：`python tools/doc_check.py` 第 4 项（条数 ≤ 10，且最新日期与 changelog 顶部一致）。
 
-### 当前版本: 1.6.0（发布号随 `gradle.properties` 的 `mod_version`；alpha 阶段不做旧存档兼容）
+### 当前版本: 以 `gradle.properties` 的 `mod_version` 为准（**不放快照数字** —— 快照必漂，2026-10-11 实证漏同步一次；alpha 阶段不做旧存档兼容）
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
