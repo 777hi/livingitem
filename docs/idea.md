@@ -13,7 +13,7 @@
 | 桶源取消（源只有一种 = 容器资产） | `docs/decisions.md` D-fluid-01 |
 | **明确不做**：水流跨容器蔓延（渲染割裂 + 需求已被桶/漏斗/活塞覆盖） | `docs/decisions.md` D-fluid-11 |
 | 探讨过程、任务队列 F1~F5、批次修正（流水账） | `docs/archive/changelog.md` |
-| **活酿造台设计草稿（2026-10-10）** | `docs/buffer/living-brewing-stand-design.md`（配套交互改进 → `docs/buffer/gui-interaction-redesign.md`） |
+| **活酿造台设计草稿（2026-10-10）** | ✅ 已实现 ⇒ 现状 `docs/tech/living-brewing-stand-tech.md`；设计论证归档 `docs/archive/living-brewing-stand-design.md`（配套交互改进 → `docs/buffer/gui-interaction-redesign.md`） |
 
 ---
 

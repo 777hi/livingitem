@@ -1,19 +1,17 @@
+> 📦 **已归档（2026-10-11）**：本设计**已全部实现并游戏内实测通过** ——
+> 现状文档见 [tech/living-brewing-stand-tech.md](../tech/living-brewing-stand-tech.md)
+> （§0 玩法定义 + 实现链路 + 踩坑），决策索引见 [decisions.md](../decisions.md)。
+> 本文保留**设计论证 / 调研结论 / 决策理由 / 否决方案**，供追溯。
+
 <!-- markdownlint-disable -->
 
 # 活酿造台（Living Brewing Stand）设计稿
 
-> **状态：部分实现 —— 设计已定案（D1~D11）；第一段「纯框架接入」已落地（2026-10-10），
-> 第二段（酿造逻辑）待做。**
->
-> ⚠️ **本文描述「计划」，不是「现状」。实现前不得当现状引用**
-> （`docs/README.md` 铁律 0：「未实现的设计稿写成现状口吻」是最典型的误导）。
-> 定案 + 落地后：玩法定义迁 `docs/tech/living-brewing-stand-tech.md` §0，
-> 决策留痕迁 `docs/decisions.md`，本文归档或删除。
->
 > **结构**：`§0` 原始需求 → `§1` 调研结论 → `§2` 玩法定义 → `§3` 决策池 →
 > `§4` 状态设计 → `§5` 与活漏斗的交互 → `§6` 落地顺序 → `§7` 探讨日志。
 >
-> 📄 **配套框架改造**（方向配置九宫格 + 活按钮交互改进）见 [`gui-interaction-redesign.md`](gui-interaction-redesign.md)。
+> 📄 **配套框架改造**（方向配置九宫格 + 活按钮交互改进）见
+> [`../buffer/gui-interaction-redesign.md`](../buffer/gui-interaction-redesign.md)。
 >
 > 最后更新：2026-10-11
 

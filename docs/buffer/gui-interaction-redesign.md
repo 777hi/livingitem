@@ -6,7 +6,8 @@
 > ⚠️ **框架级改造** —— 影响**所有活物品**的配置交互，不限于活酿造台。
 >
 > **缘起**：活酿造台需要 5 个方向槽位（3 瓶 + 材料 + 燃料），而现有方向配置 UI 只支持 4 个基本方向  
-> ⇒ 暴露出一系列交互问题。详见 [`living-brewing-stand-design.md`](living-brewing-stand-design.md)。
+> ⇒ 暴露出一系列交互问题。详见 [活酿造台技术文档](../tech/living-brewing-stand-tech.md)
+> （设计论证见 [archive/living-brewing-stand-design.md](../archive/living-brewing-stand-design.md)）。
 >
 > **结构**：`§0` 原始需求 → `§1` 现状盘点 → `§2` 改进方案 → `§3` 九宫格升级 →  
 > `§4` 扩展需求 E1/E2 → `§5` 待拍板 → `§6` 落地顺序 → `§7` 探讨日志。

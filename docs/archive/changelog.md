@@ -19,6 +19,8 @@
 
 > 🐛 修复 Mixin 访问器与 inventoryessentials 重名冲突（点创造标签页崩溃），
 > 由此确立「Mixin 铁律」并落成代码侧自动校验 `tools/check_mixins.py`。✅ 游戏内实测通过。
+> 🆕 **活酿造台第二段：酿造逻辑落地**（功能完成）—— 批次状态机 + 次数制燃料 + 堆叠加速，
+> 测试 555 → 568 绿，✅ 游戏内实测通过。
 
 - 🐛 **修复：Mixin 访问器重名冲突 ⇒ 打开创造模式标签页客户端崩溃（MixinApplyError）** ——
   与 inventoryessentials（背包必备）各自声明同名 `SlotWrapperAccessor`，且都
@@ -81,6 +83,27 @@
   ⚠️ **只把 commit 声明为任务输入**（commit 变了才重跑）；`build.time` 刻意不作输入 ——
   否则秒级时间戳每次都变，每次构建（含 runClient）都全量重跑资源处理。
   无新测试（纯观测日志，无业务逻辑 ⇒ 测试计数 555 不变）。
+
+- 🆕 **活酿造台第二段：酿造逻辑落地（功能完成）** —— 第一段（2026-10-10）只做了 5 槽位方向与框架接入，
+  本次补上全部酿造逻辑，`living/domain/brewing/` 新增 3 类：
+  - `BrewingRecipes` —— `PotionBrewing` 薄适配层：原版 `hasMix` / `mix` 的**形参名与实际语义相反**
+    （原版自己注释了 "Parameters are swapped…"）⇒ 包成自解释签名，把坑收在一处；`level.potionBrewing()`
+    已聚合原版 + 全部模组配方 ⇒ **零兼容代码**。
+  - `BrewingBatchLogic` —— **纯逻辑批次状态机**（`Idle`/`Continue`/`Abort`/`Complete`/`Start`），
+    结构与判据顺序**完全照抄原版 `serverTick`**（含「完成那 tick 不再检查材料变化」这个 `else if` 细节），
+    只把「−1」换成「−step」；不碰世界 ⇒ 可单测。
+  - `BrewingStandSegment` —— 运行时片段（档 2）：批次倒计时 + 本批次材料 `Item`（瞬态 ⇒ 不影响堆叠）。
+  `LivingBrewingStandFunction.tick` 落地 5 步：补燃料 → 算 `canBrew` → 推进状态机 → 写运行时缓存
+  → **仅 dirty 时写 DataComponent**（燃料 / 首次方向 ⇒ 稳态零写入）。
+  ⭐ **三条核心语义**：① **燃料与材料在批次两端扣**（启动扣 1 次燃料、完成扣 1 份材料；作废不退不扣）
+  ② **作废判据只有材料**（不可酿造 / 材料 `Item` 变了；**瓶子完全不参与** ⇒ 中途换瓶子不作废）
+  ③ **堆叠 `step = count`**（唯一「过原点斜率 1」的线性 ⇒ 单个 = 原版 400t；**每批成本固定** ⇒
+  等价「N 台并行酿造台」，堆叠的唯一收益是槽位压缩）。`fuel` 落盘（D2），用 `optionalFieldOf`
+  保证第一段写过的旧数据仍可解码。⚠️ 已知：拆堆会复制燃料（组件随 `split` 复制）⇒ **按用户拍板当特性保留**。
+  新增 `BrewingBatchLogicTest`（13 项：启动 / 完成 / 作废两判据 / 堆叠 7t / 完成 tick 忽略材料变 /
+  成本不随堆叠变）；测试 555 → 568 绿。✅ **游戏内实测通过**（所有功能逻辑正常）。
+  现状文档 → [`docs/tech/living-brewing-stand-tech.md`](../tech/living-brewing-stand-tech.md)；
+  设计稿归档 → [`docs/archive/living-brewing-stand-design.md`](../archive/living-brewing-stand-design.md)。
 
 ## 2026-10-10
 
@@ -248,7 +271,7 @@ ProjectE 的炼金箱 `AlchBlockEntityChest` 暴露 `IItemHandler` 能力（被 
 
 ### 🆕 活酿造台（Living Brewing Stand）第一段：纯框架接入
 
-设计稿：[`docs/buffer/living-brewing-stand-design.md`](../buffer/living-brewing-stand-design.md)（D1~D6 全部定案）。
+设计稿：[`docs/archive/living-brewing-stand-design.md`](../archive/living-brewing-stand-design.md)（D1~D6 全部定案）。
 
 把原版酿造台虚拟化进容器槽位：5 个功能槽 = **3 个瓶子 + 燃料（烈焰粉）+ 材料**，
 默认布局「瓶-瓶-瓶 / 燃料-台-材料」（`↖ ↑ ↗ / ← · →`），方向可自定义（同活熔炉）。
