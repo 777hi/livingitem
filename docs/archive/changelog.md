@@ -23,6 +23,9 @@
 > 新增原版耐久条同款**燃料条**（`#F8A820`）；进度条做成框架级 `ProgressBarDecorator`
 > （横/竖几何为纯函数）；`LivingIconSpec.decorator` 支持多次调用（NeoForge 原生一物品多装饰器）。
 > 测试 612 → 622 绿。
+> 🔧 **修正：白幕颜色**从 `0xFFFFFFFF`（不透明纯白）改为 `Integer.MAX_VALUE`（`0x7FFFFFFF`
+> = 约 50% 半透明白），与原版逐像素一致 —— 初版核对源码时误把 `Integer.MAX_VALUE` 当成
+> `0xFFFFFFFF`，比原版实一倍（用户实测「白得不对劲」而复查发现）。
 
 - 🎨 **白幕简化为本地动画（纯客户端，不做跨机器时钟对齐）** —— 组件 `brewStartTick` 降级为
   **批次标记**（服务端三写点不变：开始写 gameTime、中止/完成写 -1）；客户端首次见到某标记时
@@ -46,6 +49,12 @@
 - 📌 **零兼容代码（用户判定）** —— 「不要为没发生过的场景写兼容逻辑」。陈旧 `brewStartTick`
   只可能在「重启存档 + 材料恰巧不够」时残留 ⇒ 白幕空播一轮后自己停，不写任何守卫；
   「拿进拿出」由状态机天然覆盖（无瓶 ⇒ `canBrew=false` ⇒ Abort ⇒ 组件写 -1，判据核实过）。
+- 🔧 **修正：白幕颜色与原版逐像素对齐** —— 原版 `GuiGraphics.renderItem` 用的是
+  `Integer.MAX_VALUE`（= `0x7FFFFFFF`，`A=0x7F` ⇒ **约 50% 半透明白**），初版误写成
+  `0xFFFFFFFF`（不透明）⇒ 白幕比原版实一倍、底下图标被完全盖住。用户实测觉得「白得不对劲」
+  而复查源码，改为 `Integer.MAX_VALUE`。
+  ⚠️ **教训**：`Integer.MAX_VALUE` = `0x7FFFFFFF` ≠ `0xFFFFFFFF` —— 前者 alpha 只有一半；
+  「照抄原版」时颜色常量必须逐位核对（原版用 `Integer.MAX_VALUE` 而非 `0xFFFFFFFF` 是刻意的半透明）。
 - **验证**：白幕测试 3 → 8 项（守卫 / 堆叠时长折算与 `stepFor` 同源 / 比例时间线 /
   动画起点与重播 / 播完不删 / 跨存档清理）、新增 `ProgressBarDecoratorTest` 5 项；
   全量测试 612 → 622 绿；`check_layers` 零新增。⚠️ 画面本身须游戏内验证（附录清单已更新：
@@ -79,7 +88,7 @@
   好点」。查证原版后落地：
   - **白幕**（`LivingBrewingStandDecorator`）：批次进行中图标**底部往上消退的纯白覆盖层**，
     几何 / 颜色 / 方向全部照抄原版物品冷却（`GuiGraphics.renderItem` 源码实证：底部对齐、
-    高度 16×剩余比例、`0xFFFFFFFF`）——玩家对「末影珍珠 / 盾牌白幕」已有条件反射，零学习成本。
+    高度 16×剩余比例、`Integer.MAX_VALUE` = 约 50% 半透明白）——玩家对「末影珍珠 / 盾牌白幕」已有条件反射，零学习成本。
     数据 = 新组件字段 **`brewStartTick`**（服务端 `level.getGameTime()`，`-1` = 不在酿造），
     **只在批次开始 / 中止 / 完成三个事件写**（稳态零写入，与熔炉燃烧标志同量级）；客户端读
     组件 + 本地 gameTime 自算宽度。

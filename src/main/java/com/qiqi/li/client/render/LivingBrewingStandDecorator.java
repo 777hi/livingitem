@@ -67,8 +67,15 @@ public class LivingBrewingStandDecorator implements IItemDecorator {
     /** 一个批次的基准时长（与 BrewingBatchLogic.BREW_TIME 同源，400 tick = 20 秒） */
     private static final int BREW_TICKS = BrewingBatchLogic.BREW_TIME;
 
-    /** 原版同款颜色：纯白不透明（Integer.MAX_VALUE = 0xFFFFFFFF，见 GuiGraphics.renderItem） */
-    private static final int WIPE_COLOR = 0xFFFFFFFF;
+    /**
+     * 原版同款颜色：{@code Integer.MAX_VALUE}（= {@code 0x7FFFFFFF}）—— 拆开是
+     * {@code A=0x7F, R=G=B=0xFF}，即 <b>约 50% 半透明白</b>。
+     *
+     * <p>⚠️ <b>不是</b>不透明白：原版末影珍珠冷却下能隐约看到物品图标，正是这个 alpha 的效果
+     * （2026-10-13 核对源码修正 —— 初版误写为 {@code 0xFFFFFFFF}，比原版实一倍，
+     * 用户实测观感不对而复查）。</p>
+     */
+    private static final int WIPE_COLOR = Integer.MAX_VALUE;
 
     /**
      * 批次标记 → 本地动画起点（客户端 gameTime）。键是组件的 {@code brewStartTick} 值。
