@@ -147,7 +147,7 @@ register(LivingIconSpec.builder(Items.REDSTONE_TORCH)
 | 方法 | 说明 | 默认值 |
 |------|------|--------|
 | `.addVariant(name, path, predicate)` | 添加图标变体（可多次调用） | 必选 |
-| `.decorator(IItemDecorator)` | 设置物品栏叠加层装饰器 | 无 |
+| `.decorator(IItemDecorator)` | 追加物品栏叠加层装饰器（**可多次调用**，按调用顺序渲染；NeoForge 原生支持一物品多装饰器） | 无 |
 | `.directional()` | 启用方向感知旋转（根据物品数据旋转图标） | 关闭 |
 | `.guiScale(float)` | 设置 GUI 中的缩放比例 | 1.0 |
 | `.rotating()` | 启用 3D 旋转渲染（用于活水车等） | 关闭 |
@@ -251,10 +251,11 @@ return vanillaModel.applyTransform(context, poseStack, applyLeftHandTransform); 
 | 掉落物 / 手持 / 展示框 | **原版漏斗**（模型层也回退了） |
 | 不跑 `renderItemDecorations` 的第三方 GUI | **只有中心圆**（模型层生效、叠加层缺失） |
 
-**同源影响的装饰器**（`grep -rln "implements IItemDecorator" src/main/java/` = 7 个，注册 6 个）：
+**同源影响的装饰器**（`grep -rln "implements IItemDecorator" src/main/java/` = 9 个，注册 7 个）：
 `LivingHopperDecorator`（漏斗方向箭头）· `LivingChiseledCopperDecorator` / `LivingWaxedChiseledDecorator`
 （雕文箭头）· `LivingMapIconDecorator`（地图缩略图）· `LivingFarmlandSeedDecorator`（耕地种子）·
-`LivingRedstoneDecorator`（红石连接线）· `LivingDefaultDecorator`
+`LivingRedstoneDecorator`（红石连接线）· `LivingBrewingStandDecorator`（酿造白幕）·
+`ProgressBarDecorator`（通用进度条，活酿造台燃料条是第一个接入方）· `LivingDefaultDecorator`
 
 ### 若要求「全形态一致」需要做什么（**未实施，备查**）
 
@@ -555,6 +556,8 @@ minecraft:item/chest (原版 BuiltInModel [30,45,0])
 | `WaterWheelRenderState` | 活水车渲染状态数据（ThreadLocal，存储 RPM） |
 | `LivingRedstoneDecorator` | 活红石粉连接纹理装饰器（根据 connections 位掩码绘制 4 方向红色连接线 + 动态着色） |
 | `LivingFarmlandSeedDecorator` | 活耕地种子图标装饰器（已种植时在耕地槽叠加所种作物的种子图标；走装饰器路径故快捷栏也生效） |
+| `LivingBrewingStandDecorator` | 活酿造台白幕装饰器（酿造中图标底部往上消退的纯白覆盖层，复刻原版物品冷却；**纯客户端本地动画**，数据 = 组件批次标记 `brewStartTick` + 本地时钟，时长按堆叠数折算） |
+| `ProgressBarDecorator` | **通用进度条装饰器**（注册「栈 → (比例, 颜色, 朝向)」函数；横 = 原版耐久条同款几何、竖 = 左缘液位条；只读「跟着物品走」的组件数据 —— 装饰器拿不到槽位索引） |
 
 ## 纹理约定（涂蜡铜灯图标）
 

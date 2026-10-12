@@ -14,7 +14,7 @@ import java.util.function.Predicate;
  *   <li>哪个原版物品需要图标替换</li>
  *   <li>有哪些变体模型（如空闲/熔炼中）</li>
  *   <li>如何根据 ItemStack 判断当前应该使用哪个变体</li>
- *   <li>是否需要 ItemDecorator 叠加层</li>
+ *   <li>需要哪些 ItemDecorator 叠加层（可多个，按顺序渲染）</li>
  * </ul>
  *
  * <p>示例 - 活熔炉（两种状态）：
@@ -41,19 +41,24 @@ public class LivingIconSpec {
     /** 变体列表，按注册顺序排列，resolve 时按顺序匹配第一个 predicate 为 true 的变体 */
     private final List<Variant> variants;
 
-    /** 可选的 ItemDecorator，为 null 则不注册叠加层 */
-    private final net.neoforged.neoforge.client.IItemDecorator decorator;
+    /**
+     * ItemDecorator 叠加层列表（按注册顺序依次渲染）。
+     *
+     * <p>可挂多个（如活酿造台 = 白幕 + 燃料条）。NeoForge 原生支持一个物品多个装饰器
+     * （{@code RegisterItemDecorationsEvent} 内部就是 {@code Map<Item, List<IItemDecorator>>}）。</p>
+     */
+    private final List<net.neoforged.neoforge.client.IItemDecorator> decorators;
 
     private final boolean rotating;
     private final boolean directional;
     private final float guiScale;
 
     private LivingIconSpec(Item item, List<Variant> variants,
-                           net.neoforged.neoforge.client.IItemDecorator decorator,
+                           List<net.neoforged.neoforge.client.IItemDecorator> decorators,
                            boolean rotating, boolean directional, float guiScale) {
         this.item = item;
         this.variants = variants;
-        this.decorator = decorator;
+        this.decorators = decorators;
         this.rotating = rotating;
         this.directional = directional;
         this.guiScale = guiScale;
@@ -61,7 +66,7 @@ public class LivingIconSpec {
 
     public Item getItem() { return item; }
     public List<Variant> getVariants() { return variants; }
-    public net.neoforged.neoforge.client.IItemDecorator getDecorator() { return decorator; }
+    public List<net.neoforged.neoforge.client.IItemDecorator> getDecorators() { return decorators; }
     public boolean isRotating() { return rotating; }
     public boolean isDirectional() { return directional; }
     public float getGuiScale() { return guiScale; }
@@ -116,7 +121,8 @@ public class LivingIconSpec {
     public static class Builder {
         private final Item item;
         private final java.util.ArrayList<Variant> variants = new java.util.ArrayList<>();
-        private net.neoforged.neoforge.client.IItemDecorator decorator;
+        private final java.util.ArrayList<net.neoforged.neoforge.client.IItemDecorator> decorators =
+            new java.util.ArrayList<>();
         private boolean rotating;
         private boolean directional;
         private float guiScale = 1.0f;
@@ -144,13 +150,18 @@ public class LivingIconSpec {
         }
 
         /**
-         * 设置 ItemDecorator 叠加层。
+         * 追加一个 ItemDecorator 叠加层（可多次调用，按调用顺序依次渲染）。
          *
-         * @param decorator 叠加层实现，为 null 则不注册
+         * <p>多个装饰器互不影响（NeoForge 逐个调用，各自返回是否改过渲染状态）。
+         * 例：活酿造台 = 白幕 + 燃料条。</p>
+         *
+         * @param decorator 叠加层实现，为 null 则忽略
          * @return 此建造者
          */
         public Builder decorator(net.neoforged.neoforge.client.IItemDecorator decorator) {
-            this.decorator = decorator;
+            if (decorator != null) {
+                this.decorators.add(decorator);
+            }
             return this;
         }
 
@@ -179,7 +190,8 @@ public class LivingIconSpec {
             if (variants.isEmpty()) {
                 throw new IllegalStateException("至少需要添加一个变体");
             }
-            return new LivingIconSpec(item, List.copyOf(variants), decorator, rotating, directional, guiScale);
+            return new LivingIconSpec(item, List.copyOf(variants), List.copyOf(decorators),
+                rotating, directional, guiScale);
         }
     }
 }

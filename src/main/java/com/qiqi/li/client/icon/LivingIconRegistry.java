@@ -54,6 +54,13 @@ public final class LivingIconRegistry {
 
     private static final LivingDefaultDecorator DEFAULT_DECORATOR = new LivingDefaultDecorator();
 
+    /**
+     * 活酿造台燃料条颜色 —— 取烈焰棒纹理（{@code assets/minecraft/textures/item/blaze_rod.png}）
+     * 的色相并提亮：细条画在浅灰槽位上，忠实平均色 {@code #C4861A} 偏暗会糊，
+     * 原版耐久条用的也是高亮全饱和色 ⇒ 取亮部 {@code #F8A820}。
+     */
+    private static final int BREWING_FUEL_BAR_COLOR = 0xFFF8A820;
+
     private LivingIconRegistry() {}
 
     /**
@@ -75,12 +82,22 @@ public final class LivingIconRegistry {
                 stack -> com.qiqi.li.living.domain.furnace.LivingFurnaceFunction.isBurning(stack))
             .build());
 
-        // 活酿造台（2026-10-12 反馈层）：原版物品图标 + living 标记（layer1 烘进模型，
-        // 保留此前默认装饰器给的「活」识别度；进 spec 后不再吃 DEFAULT_DECORATOR）。
-        // 本 spec 的存在意义就是挂白幕装饰器：酿造中图标底部往上消退的纯白覆盖层，
-        // 复刻原版物品冷却语言（末影珍珠同款），数据 = 组件的 brewStartTick。
+        // 活酿造台（2026-10-12 反馈层 / 2026-10-13 双装饰器）：原版物品图标 + living 标记
+        // （layer1 烘进模型，保留此前默认装饰器给的「活」识别度；进 spec 后不再吃 DEFAULT_DECORATOR）。
+        // 两个装饰器（NeoForge 原生支持一物品多装饰器）：
+        //   ① 燃料条 —— 原版耐久条同款几何（左下 13×2），颜色取烈焰棒提亮色，剩几次一目了然；
+        //   ② 白幕   —— 酿造中图标底部往上消退的纯白覆盖层，复刻原版物品冷却语言（末影珍珠同款）。
+        // z 已分层（条 190 < 白幕 200）⇒ 播放中白幕盖在条上（白幕是「进行中」横幅）。
         register(LivingIconSpec.builder(net.minecraft.world.item.Items.BREWING_STAND)
             .addVariant("base", "item/brewing_stand", stack -> true)
+            .decorator(new com.qiqi.li.client.render.ProgressBarDecorator(stack -> {
+                if (!com.qiqi.li.living.api.LivingItemManager.isLivingItem(stack)) return null;
+                int fuel = com.qiqi.li.living.domain.brewing.LivingBrewingStandData.of(stack).fuel();
+                if (fuel <= 0) return null;   // 「有货才画」（与耐久条「有损才画」互补）
+                return com.qiqi.li.client.render.ProgressBarDecorator.Bar.horizontal(
+                    fuel / (float) com.qiqi.li.living.domain.brewing.BrewingBatchLogic.FUEL_USES,
+                    BREWING_FUEL_BAR_COLOR);
+            }))
             .decorator(new LivingBrewingStandDecorator())
             .build());
 
@@ -379,8 +396,8 @@ public final class LivingIconRegistry {
         Set<Item> dedicatedItems = new HashSet<>();
         for (LivingIconSpec spec : SPECS) {
             dedicatedItems.add(spec.getItem());
-            if (spec.getDecorator() != null) {
-                event.register(spec.getItem(), spec.getDecorator());
+            for (var decorator : spec.getDecorators()) {
+                event.register(spec.getItem(), decorator);
             }
         }
 
