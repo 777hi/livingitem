@@ -53,6 +53,19 @@ public class ContainerRuntimeCache {
         dirtyContainers.remove(containerKey);
     }
 
+    /**
+     * 清空全部运行时缓存（服务端关闭时调用）。
+     *
+     * <p>⚠️ <b>必须登记</b>：单机「退出存档 → 进另一个存档」<b>不重启 JVM</b>，static 字段跨存档存活。
+     * 容器键 = 维度 + 坐标（+ 背包前缀）⇒ 两个存档里同一个箱子坐标相同 ⇒ <b>新存档会继承
+     * 上一个存档的燃料 / 进度 / 相位</b>（<code>StaticCacheRegistry</code> 铁律 A1）。
+     * 登记点在 {@link RuntimeRegistration}（本包 L2 的登记入口）。</p>
+     */
+    public static void clear() {
+        store.clear();
+        dirtyContainers.clear();
+    }
+
     // ── 读取 ────────────────────────────────────────────────
 
     public static RuntimeSegments get(String containerKey, int slot) {

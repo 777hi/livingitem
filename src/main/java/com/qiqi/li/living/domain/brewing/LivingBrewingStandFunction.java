@@ -269,7 +269,10 @@ public class LivingBrewingStandFunction implements LivingItemFunction, HasDirect
         BrewingRuntime runtime = LivingItemClientCache.getCurrentTooltipData()
             .get(BrewingStandSegment.INSTANCE);
         if (runtime != null && runtime.isBrewing()) {
-            int percent = (int) (runtime.brewTime() * 100.0f / BrewingBatchLogic.BREW_TIME);
+            // ⚠️ brewTime 是**剩余**倒计时（400 → 0）⇒ 进度 = 已走完的比例，不是它本身
+            // （写成 brewTime/BREW_TIME 会让刚启动的批次显示「进度 100%」，与文案的「剩 N 秒」自相矛盾）
+            int percent = (int) ((BrewingBatchLogic.BREW_TIME - runtime.brewTime())
+                * 100.0f / BrewingBatchLogic.BREW_TIME);
             tooltipAdder.accept(Component.translatable("tooltip.livingitem.brewing.progress",
                 percent, String.format("%.1f", runtime.brewTime() / 20.0))
                 .withStyle(ChatFormatting.GRAY));

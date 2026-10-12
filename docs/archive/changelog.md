@@ -18,6 +18,8 @@
 ## 2026-10-12
 
 > 🐛 修复：缩小窗口后活按钮跑到屏幕外（应用保存位置时未夹取）。
+> 🔍 **收尾审查**：修 tooltip 进度语义反了 · 补 `ContainerRuntimeCache` 服务端跨存档清理
+> （违反铁律 A1 的遗漏）· 删死代码 `isBottle`；测试 579 绿。
 
 - 🐛 **修复：缩小窗口后活按钮跑到屏幕外**（用户实测）—— 拖动时的夹取只管**当时那一次**；
   保存的位置是「相对 GUI 左上角」的偏移，玩家之后**缩小窗口 / 调大 GUI scale** ⇒ 逻辑屏幕变小
@@ -27,6 +29,28 @@
   ⇒ 恢复窗口后按钮回到原位。
   新增 `LivingButtonLayoutTest`（1 项：屏内不动 / 越界夹边缘 / 屏幕比按钮还小取 `max(0,…)`）；
   测试 578 → 579 绿。
+
+- 🔍 **收尾审查（本轮全部改动的复查）—— 修 3 处、留 3 条观察**：
+  - 🐛 **tooltip 批次进度百分比语义反了**（本轮 `f9d4d06` 引入）—— `percent` 用的是
+    `brewTime`（**剩余**倒计时 400 → 0），而文案是「酿造中: X%（剩 Y 秒）」⇒ 刚启动显示
+    「进度 100%（剩 20 秒）」自相矛盾。修：`percent = (BREW_TIME − brewTime) / BREW_TIME`
+    （进度 0% → 100%），与「剩 N 秒」一致。
+  - 🐛 **`ContainerRuntimeCache` 服务端零清理入口（跨存档继承）** —— 违反
+    `StaticCacheRegistry` 铁律 A1：单机「退出存档 → 进另一个存档」**不重启 JVM**，
+    而容器键 = 维度 + 坐标 ⇒ **同坐标箱子会继承上个存档的燃料 / 进度 / 相位**。
+    此前只登记了**客户端**遥测缓存（`RuntimeRegistration`），服务端 `store` / `dirtyContainers`
+    从未清。修：新增 `ContainerRuntimeCache.clear()`，在 `RuntimeRegistration` 登记
+    `onServerStop`（该包 L2 的登记点，同层依赖 ⇒ 零分层违规）。
+  - 🧹 **删死代码 `BrewingRecipes.isBottle`**（本轮 `a7aa94d` 引入，零调用者）——
+    原版 `isInput` 形参名无歧义，本不属「需包装的误导签名」；瓶子准入用
+    `isEligibleBottle`（非空 + 非活）已足够（`hasMix` 兜住无效物品，行为与原版一致）。
+  - 📌 **留观察（未改）**：① `drainDirty` 跳过空快照 ⇒ 单槽位容器作废后不下发（玩家拿走
+    物品后通常也不看该 tooltip，影响小）；② 规则 7 的**燃料侧**无单测（`isBlazePowder` 为
+    private）⇒ 仅游戏内验证；③ `FluidTransformTable` 未校验 `output` 必须为药水类物品
+    （配置错误时可能产出带 `POTION_CONTENTS` 的怪栈）。
+  - **验证**：编译 + 全量测试 **579 绿**（三处修复均未新增测试）；`doc_check` 11 项通过；
+    `check_layers` **零新增违规**。⚠️ 跨存档清理**须游戏内验证**（退出存档 → 进新存档，
+    同坐标箱子内的活熔炉燃料应归零）。
 
 ---
 

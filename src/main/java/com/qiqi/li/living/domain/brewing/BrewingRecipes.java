@@ -31,11 +31,6 @@ public final class BrewingRecipes {
         return level.potionBrewing();
     }
 
-    /** 该物品能否作为「输入瓶」（药水 / 喷溅 / 滞留 / 水瓶…）。 */
-    public static boolean isBottle(PotionBrewing brewing, ItemStack bottle) {
-        return brewing.isInput(bottle);
-    }
-
     /** 该物品能否作为「酿造材料」（地狱疣 / 萤石粉 / 红石 / 火药…）。 */
     public static boolean isIngredient(PotionBrewing brewing, ItemStack ingredient) {
         return brewing.isIngredient(ingredient);

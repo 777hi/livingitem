@@ -20,5 +20,7 @@ public final class RuntimeRegistration {
     public static void register() {
         // ── static 缓存清理（登记点归属见 StaticCacheRegistry 类注释）──
         com.qiqi.li.living.util.StaticCacheRegistry.onClientLogout(LivingItemClientCache::clear);
+        // 服务端同理：容器键 = 维度 + 坐标 ⇒ 跨存档同坐标会继承上个存档的燃料 / 进度 / 相位
+        com.qiqi.li.living.util.StaticCacheRegistry.onServerStop(s -> ContainerRuntimeCache.clear());
     }
 }

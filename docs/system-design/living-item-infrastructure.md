@@ -733,6 +733,14 @@ private final Set<String> reusableKeySet = new HashSet<>();
    若纳入判据，**每次状态翻转都会误清缓存**（燃料 / 进度丢失）。
 2. **容器卸载必须作废整容器** —— 否则容器被破坏后运行时数据永久残留（`removeContainer` 此前零调用者）。
 
+**③ 跨存档必须清空（登记义务）**：容器键 = 维度 + 坐标（+ 背包前缀）⇒ 单机
+「退出存档 → 进另一个存档」**不重启 JVM**，两个存档里**同一坐标的箱子会继承**
+上一个存档的燃料 / 进度 / 相位。⇒ `ContainerRuntimeCache.clear()` 登记进
+`StaticCacheRegistry.onServerStop`（登记点在 `RuntimeRegistration`，与客户端遥测缓存
+`LivingItemClientCache` 对称；归属判据见 `StaticCacheRegistry` 类注释）。
+⚠️ **2026-10-12 补**：此前只登记了客户端侧，服务端 `store` / `dirtyContainers`
+**零清理入口** —— 违反 `StaticCacheRegistry` 铁律 A1，属遗漏。
+
 **已知边界（接受）**：**同类物品原地交换**（手持新熔炉直接点击槽位里的旧熔炉）判据看不出变化
 ⇒ 不清缓存。该场景收益有限（最多继承一次剩余燃烧时间），要彻底解决需给物品加实例 id
 （会引入堆叠 / 拆堆语义问题，与活酿造台 D2「拆堆复制当特性」同族）⇒ 当前接受。

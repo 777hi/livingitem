@@ -74,7 +74,7 @@ class BrewingBatchLogicTest {
     }
 
     @Test
-    @DisplayName("堆叠 64：400 tick 的批次 7 tick 完成（step=count，D11）")
+    @DisplayName("堆叠 64：纯推进 7 tick 完成（step=count，D11；含启动那一 tick 实际 8 tick，见 tech §5）")
     void stacked_completesInSevenTicks() {
         int brewTime = FULL;
         int ticks = 0;
