@@ -6,6 +6,7 @@ import com.qiqi.li.living.domain.redstone.LivingCopperBulbData;
 import com.qiqi.li.living.domain.power.LivingWaxedBulbData;
 
 import com.qiqi.li.LivingItem;
+import com.qiqi.li.client.render.LivingBrewingStandDecorator;
 import com.qiqi.li.client.render.LivingChiseledCopperDecorator;
 import com.qiqi.li.client.render.LivingDefaultDecorator;
 import com.qiqi.li.client.render.LivingFarmlandSeedDecorator;
@@ -72,6 +73,15 @@ public final class LivingIconRegistry {
                 stack -> !com.qiqi.li.living.domain.furnace.LivingFurnaceFunction.isBurning(stack))
             .addVariant("active", "item/furnace_active",
                 stack -> com.qiqi.li.living.domain.furnace.LivingFurnaceFunction.isBurning(stack))
+            .build());
+
+        // 活酿造台（2026-10-12 反馈层）：原版物品图标 + living 标记（layer1 烘进模型，
+        // 保留此前默认装饰器给的「活」识别度；进 spec 后不再吃 DEFAULT_DECORATOR）。
+        // 本 spec 的存在意义就是挂白幕装饰器：酿造中图标底部往上消退的纯白覆盖层，
+        // 复刻原版物品冷却语言（末影珍珠同款），数据 = 组件的 brewStartTick。
+        register(LivingIconSpec.builder(net.minecraft.world.item.Items.BREWING_STAND)
+            .addVariant("base", "item/brewing_stand", stack -> true)
+            .decorator(new LivingBrewingStandDecorator())
             .build());
 
         register(LivingIconSpec.builder(net.minecraft.world.item.Items.TNT)

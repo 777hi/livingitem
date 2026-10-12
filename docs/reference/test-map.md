@@ -23,6 +23,7 @@ src/test/java/com/qiqi/li/
 │   └── FarmlandPlantHintTest.java             # 活耕地种植悬停提示·门槛与交互同源（非活种子/非活耕地/非耕地物品/不可种植/空栈→null）+ 四态文案键与参数（充足消耗数/创造免费/不足差额/已种植）（10 项）
 ├── client/render/
 │   ├── LivingFarmlandSeedDecoratorTest.java   # 种子图标装饰器守卫·普通/未种植/已种植/非耕地（4 项）
+│   ├── LivingBrewingStandDecoratorTest.java  # 酿造白幕·守卫(原版/非活/未酿造不画)+分数(整面白/过半/到点/过期clamp/未来clamp/时长同源)（3 项）
 │   └── LivingItemTooltipTest.java             # 活物品段标题恒在（2026-10-07 定稿）·零内容行仍输出标题/不适用功能同样保留/真实活桶只有标题无内容行/有内容行则空行+标题+行/多功能标题只一次且行序保持（5 项）
 ├── living/api/
 │   ├── ComponentOwnershipTest.java            # DataComponent 归属守卫·每组件必有主/不可重复归属/自声明会被清除（3 项）
@@ -72,7 +73,8 @@ src/test/java/com/qiqi/li/
 │   └── LivingFarmlandPlacementTest.java     # 放置回世界·落点/幼苗/客户端/异常不冒泡+端到端接线（5 项）
 ├── living/domain/brewing/
 │   ├── BrewingBatchLogicTest.java             # 批次状态机·启动/完成/作废两判据/堆叠倍率（13 项）
-│   └── BrewingSlotEligibilityTest.java        # 槽位准入隔离规则·活物品不作瓶子/材料/燃料（6 项）
+│   ├── BrewingSlotEligibilityTest.java        # 槽位准入隔离规则·活物品不作瓶子/材料/燃料（6 项）
+│   └── LivingBrewingStandDataTest.java        # 数据组件 codec·旧数据(只有direction)可解码/往返保留 fuel 与 brew_start_tick/withBrewStart 隔离改字段/默认即移除锚点（4 项）
 ├── living/domain/furnace/
 │   ├── LivingFurnaceFunctionTest.java         # 燃料消耗合成残留物语义（4 项）
 │   └── FurnaceBurningFlagTest.java            # 燃烧标志组件·图标切换回归（5 项）

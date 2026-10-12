@@ -1,0 +1,7 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "minecraft:item/brewing_stand",
+    "layer1": "living_item:item/living"
+  }
+}

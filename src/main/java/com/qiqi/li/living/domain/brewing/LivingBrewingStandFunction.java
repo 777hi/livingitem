@@ -1,5 +1,6 @@
 package com.qiqi.li.living.domain.brewing;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -9,7 +10,9 @@ import com.qiqi.li.living.api.HasDirection;
 import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerContext;
+import com.qiqi.li.living.container.ContainerContexts;
 import com.qiqi.li.living.container.TickContext;
+import com.qiqi.li.living.container.TickableContainerContext;
 import com.qiqi.li.living.domain.brewing.BrewingStandSegment.BrewingRuntime;
 import com.qiqi.li.living.model.DirectionSymbols;
 import com.qiqi.li.living.model.Pos2D;
@@ -19,14 +22,24 @@ import com.qiqi.li.living.runtime.RuntimeSegments;
 import com.qiqi.li.living.transfer.SlotResolver;
 
 import net.minecraft.ChatFormatting;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Holder;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ClientboundSoundPacket;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.Container;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.alchemy.PotionBrewing;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * 活酿造台的功能实现。
@@ -45,7 +58,9 @@ import net.minecraft.world.level.Level;
  * <h3>数据归属（设计稿 §4.2）</h3>
  * <ul>
  *   <li><b>燃料次数</b> → {@code DataComponent}（持久 + 同步，D2）；</li>
- *   <li><b>倒计时 / 本批次材料</b> → 运行时缓存（瞬态 ⇒ 不影响堆叠，{@link BrewingStandSegment}）。</li>
+ *   <li><b>倒计时 / 本批次材料</b> → 运行时缓存（瞬态 ⇒ 不影响堆叠，{@link BrewingStandSegment}）；</li>
+ *   <li><b>批次起始时刻</b>（{@code brewStartTick}）→ {@code DataComponent}（2026-10-12 反馈层：
+ *       唯一落盘的进度镜像，客户端据此画原版同款白幕；只在批次开始/中止/完成时写）。</li>
  * </ul>
  *
  * <h3>已定案的关键设计（设计稿 §3）</h3>
@@ -143,21 +158,31 @@ public class LivingBrewingStandFunction implements LivingItemFunction, HasDirect
 
             int nextBrewTime = runtime.brewTime();
             Optional<Item> nextBatchIngredient = runtime.batchIngredient();
+            // 白幕用的「批次起始时刻」镜像（唯一落盘的进度数据；-1 = 不在酿造）。
+            // 只在批次生命周期事件写 ⇒ 稳态零写入（与熔炉燃烧标志同量级）。
+            long brewStart = data.brewStartTick();
             switch (result) {
                 case BrewingBatchLogic.Step.Start start -> {
                     fuel--;                                              // D7：启动扣 1 次
                     nextBrewTime = start.brewTime();
                     nextBatchIngredient = Optional.of(start.ingredient());
+                    // Start 携带满 400 ⇒ 这一 tick 就是批次的第 0 刻，直接取当前 gameTime
+                    brewStart = level.getGameTime();
                     dirty = true;
                 }
                 case BrewingBatchLogic.Step.Complete ignored -> {
                     doBrew(brewing, context, bottleSlots, ingredientSlot); // D7：完成扣 1 份材料
                     nextBrewTime = 0;
                     nextBatchIngredient = Optional.empty();
+                    brewStart = -1L;                                      // 白幕收起（下一批若紧接着开始会重写）
+                    dirty = true;
+                    playBrewSound(context, level);                        // 完成音效（对齐原版 levelEvent 1035）
                 }
                 case BrewingBatchLogic.Step.Abort ignored -> {
                     nextBrewTime = 0;                                     // D8：作废（燃料不退、材料不扣）
                     nextBatchIngredient = Optional.empty();
+                    brewStart = -1L;                                      // 批次作废 ⇒ 白幕立刻收起
+                    dirty = true;
                 }
                 case BrewingBatchLogic.Step.Continue cont -> nextBrewTime = cont.brewTime();
                 case BrewingBatchLogic.Step.Idle ignored -> { /* 无事可做 */ }
@@ -167,12 +192,72 @@ public class LivingBrewingStandFunction implements LivingItemFunction, HasDirect
             ContainerRuntimeCache.update(cacheKey, slot, RuntimeSegments.EMPTY.with(
                 BrewingStandSegment.INSTANCE, new BrewingRuntime(nextBrewTime, nextBatchIngredient)));
 
-            // ── ⑤ 仅在持久数据变化时写组件（燃料 / 首次方向落盘）──
+            // ── ⑤ 仅在持久数据变化时写组件（燃料 / 方向 / 批次起始时刻）──
             if (dirty) {
-                LivingBrewingStandData.set(stack, data.withFuel(fuel));
+                LivingBrewingStandData.set(stack, data.withFuel(fuel).withBrewStart(brewStart));
                 context.syncSlotToClients(slot, stack);
             }
         }
+    }
+
+    // ==================== 完成音效（项目第一个活物品音效，2026-10-12） ====================
+
+    /**
+     * 批次完成时给「正在照看这台机器的人」播原版酿造完成音（{@code block.brewing_stand.brew}，
+     * 对齐原版 {@code BrewingStandBlockEntity.doBrew} 的 {@code levelEvent 1035}）。
+     *
+     * <p><b>为什么只发查看者、不做半径广播</b>：原版玩家站在方块旁 ⇒ 等价于「开着这个容器的 GUI」；
+     * 而活酿造台可能在玩家的背包 / 远处箱子里，按位置广播（16 格）要么听不到（在背包里人走远了）、
+     * 要么扰民（不该由远处的路人承担）。⇒ 判定 = {@link ContainerContexts#isViewing}；
+     * 背包 / 末影箱容器（无 BE）直接发主人本人 —— 自己的酿造完成自己听见，不管开没开 GUI。</p>
+     *
+     * <p>位置取容器方块中心；背包容器取玩家自身位置。客户端按距离衰减（{@code ClientboundSoundPacket}
+     * 是位置音）⇒ 离箱子远就轻，符合直觉。</p>
+     */
+    private static void playBrewSound(ContainerContext ctx, Level level) {
+        if (level.isClientSide) return;
+        List<ServerPlayer> targets = brewSoundTargets(ctx, level);
+        if (targets.isEmpty()) return;
+
+        BlockPos pos = ctx.getBlockPos();
+        for (ServerPlayer viewer : targets) {
+            double x, y, z;
+            if (pos != null) {
+                x = pos.getX() + 0.5; y = pos.getY() + 0.5; z = pos.getZ() + 0.5;
+            } else {
+                Vec3 p = viewer.position();                              // 背包容器：音就在人身上
+                x = p.x; y = p.y; z = p.z;
+            }
+            viewer.connection.send(new ClientboundSoundPacket(
+                Holder.direct(SoundEvents.BREWING_STAND_BREW), SoundSource.BLOCKS,
+                x, y, z, 1.0F, 1.0F, level.random.nextLong()));
+        }
+    }
+
+    /** 音效目标：背包容器 ⇒ 主人本人；世界容器 ⇒ 正在查看它的玩家（{@code isViewing}）。 */
+    private static List<ServerPlayer> brewSoundTargets(ContainerContext ctx, Level level) {
+        Player owner = ctx.getOwnerPlayer();
+        if (owner != null) {
+            return (owner instanceof ServerPlayer sp && sp.connection != null) ? List.of(sp) : List.of();
+        }
+        // tick 路径传入的运行时类型必为 TickableContainerContext（processContext 的入口契约），
+        // 但 tick() 的签名是 ContainerContext ⇒ 这里做带注释的收窄取关联 BE
+        if (!(ctx instanceof TickableContainerContext tickable)) return List.of();
+        List<Container> instances = new ArrayList<>();
+        for (BlockEntity be : tickable.getAssociatedBlockEntities()) {
+            if (be instanceof Container c) instances.add(c);
+        }
+        if (instances.isEmpty()) return List.of();
+        var server = level.getServer();
+        if (server == null) return List.of();
+
+        List<ServerPlayer> out = new ArrayList<>();
+        for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+            if (p.connection != null && ContainerContexts.isViewing(p, instances)) {
+                out.add(p);
+            }
+        }
+        return out;
     }
 
     // ==================== 世界侧辅助 ====================
