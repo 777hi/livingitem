@@ -14,6 +14,14 @@ import com.qiqi.li.living.util.StaticCacheRegistry;
  * <p>此类数据不写入 DataComponent，因此不会影响物品堆叠。数据由上层（L4）
  * 通过 {@link com.qiqi.li.network.LivingItemSyncPacket} 下发到客户端。</p>
  *
+ * <h3>键的形态（2026-10-12 统一）</h3>
+ * <p>本表的键是<b>缓存键</b>而非裸容器键：世界容器 = {@code <维度>|chest_<x>_<y>_<z>}
+ * （跨维度同坐标不串数据），玩家背包 / 末影箱 / 掉落物 = 裸键（数据跟人 / 跟实体走）。
+ * 唯一定义点 = {@link com.qiqi.li.living.container.ContainerIdentity#getCacheKey()}；
+ * 写入方一律传 {@code ctx.getCacheKey()}（<b>不要</b>传 {@code getContainerKey()} ——
+ * 那正是 2026-10-12 修复的跨维度串数据 bug：主世界与下界同坐标的两个箱子
+ * 共用一条燃料 / 进度，还每 tick 互相作废）。</p>
+ *
  * <h3>脏标记与同步（职责边界 —— 档 2 反转发包后）</h3>
  * <p>每次更新数据时标记对应容器为"脏"。<b>本类不发送网络包</b>：只提供</p>
  * <ul>
@@ -28,7 +36,13 @@ import com.qiqi.li.living.util.StaticCacheRegistry;
  */
 public class ContainerRuntimeCache {
 
-    /** 玩家背包容器键前缀（buildContainerKey 的 inventory 分支） */
+    /**
+     * 玩家背包容器键前缀（{@code ContainerIdentity#getContainerKey()} 的 inventory 分支）。
+     *
+     * <p>⚠️ 只有<b>裸键</b>才可能命中它：世界容器的缓存键是
+     * {@code <维度>|chest_…}（见 {@link ContainerIdentity#getCacheKey()}）⇒
+     * 发包侧的玩家分支判定（{@code LivingItemRuntimeSync}）不会误判世界容器。</p>
+     */
     public static final String PLAYER_KEY_PREFIX = "player_";
 
     private static final Map<String, Map<Integer, RuntimeSegments>> store = new ConcurrentHashMap<>();

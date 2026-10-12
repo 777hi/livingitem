@@ -107,8 +107,11 @@ public class ContainerLivingItemHandler {
      */
     private static final List<RuntimeCacheInvalidation> PENDING_RUNTIME_INVALIDATIONS = new ArrayList<>();
 
-    /** 一条待作废的运行时缓存记录（{@code wholeContainer} = 容器整体卸载）。 */
-    public record RuntimeCacheInvalidation(String containerKey, Set<Integer> slots, boolean wholeContainer) {}
+    /** 一条待作废的运行时缓存记录（{@code wholeContainer} = 容器整体卸载）。
+     * <p>{@code cacheKey} 存的是<b>缓存键</b>（{@link ContainerIdentity#getCacheKey()}，
+     * 世界容器带维度前缀）—— 与 {@code ContainerRuntimeCache} 的存储键同构，
+     * L4 直接拿去 removeSlot / removeContainer。</p> */
+    public record RuntimeCacheInvalidation(String cacheKey, Set<Integer> slots, boolean wholeContainer) {}
 
     /** 维度 + 坐标，作为位置索引的键（含维度，避免跨维度同坐标冲突） */
     private record PosKey(ResourceKey<Level> dim, BlockPos pos) {}
@@ -116,18 +119,15 @@ public class ContainerLivingItemHandler {
     /**
      * 构建容器数据的缓存键。
      *
-     * <p>在 {@code containerKey} 前拼接维度，避免主世界与下界同坐标的两个容器
-     * 共用同一条流体/红石数据。{@code containerKey} 自身格式保持不变，
-     * 以兼容末影频道对其的解析。</p>
+     * <p>⚠️ 2026-10-12 起<b>只是薄委托</b>：唯一定义点在
+     * {@link ContainerIdentity#getCacheKey()}（世界容器 = {@code <维度>|<稳定键>}，
+     * 玩家 / 掉落物 = 裸键）。本类原先各写一份前缀逻辑，导致 {@code CONTAINER_DATA}
+     * 带维度而运行时缓存 / 槽位追踪不带 ⇒ 跨维度同坐标容器串数据。</p>
      *
      * @return 缓存键，容器无 containerKey 时返回 null
      */
     private static String cacheKey(ContainerContext ctx) {
-        String key = ctx.getContainerKey();
-        if (key == null) return null;
-        Level level = ctx.getLevel();
-        if (level == null || level.dimension() == null) return key;
-        return level.dimension().location() + "|" + key;
+        return ctx.getCacheKey();
     }
 
     /** 为容器关联的所有方块位置建立反向索引 */
@@ -165,7 +165,12 @@ public class ContainerLivingItemHandler {
         if (key == null) return;
         CONTAINER_DATA.remove(key);
         POS_TO_CACHE_KEY.values().removeIf(key::equals);
-        // 容器卸载 ⇒ 运行时缓存与追踪一并作废（方案 A，2026-10-11）
+        // 容器卸载 ⇒ 运行时缓存与追踪一并作废（方案 A，2026-10-11）。
+        // ⚠️ key 与下方两行必须是<b>同一把缓存键</b>（ContainerIdentity.getCacheKey）：
+        // 2026-10-12 修复前这里用 POS 索引取出的「维度前缀键」去删 LIVING_SLOT_ITEMS /
+        // 登记作废，而 trackLivingSlots 与 ContainerRuntimeCache 用的是裸容器键
+        // ⇒ 两条 remove 全部落空，「拆箱子 ⇒ 运行时缓存作废」从未真正生效
+        // （拆掉原地放回 ⇒ 旧燃料/进度复活）。
         LIVING_SLOT_ITEMS.remove(key);
         PENDING_RUNTIME_INVALIDATIONS.add(new RuntimeCacheInvalidation(key, Set.of(), true));
     }
@@ -178,12 +183,17 @@ public class ContainerLivingItemHandler {
      * <p>失效判据（任一成立）：① 该槽位本 tick 不再是活物品（拿走 / 换成普通物品 / 取消活化）；
      * ② 该槽位换成了<b>另一种</b>活物品（{@code Item} 变了）。</p>
      *
+     * <p>⚠️ {@code cacheKey} 必须是 {@link ContainerIdentity#getCacheKey()}（带维度前缀的
+     * 缓存键）—— 2026-10-12 前这里收裸 {@code getContainerKey()}，而 {@link #removeDataByPos}
+     * 从 {@code POS_TO_CACHE_KEY} 取出的是带前缀的缓存键 ⇒ 两边永远对不上，
+     * 「容器整体卸载 ⇒ 作废整个运行时缓存」整条路径<b>登记即打空</b>。</p>
+     *
      * <p>⚠️ 已知边界：<b>同类物品原地交换</b>（手持新熔炉直接点击旧熔炉）判据看不出变化 ⇒ 不清。
      * 要彻底解决需给物品加实例 id（会引入堆叠 / 拆堆语义问题）⇒ 当前接受。</p>
      */
-    static void trackLivingSlots(String containerKey, Map<Integer, Item> currentSlots) {
-        if (containerKey == null) return;
-        Map<Integer, Item> previous = LIVING_SLOT_ITEMS.get(containerKey);
+    static void trackLivingSlots(String cacheKey, Map<Integer, Item> currentSlots) {
+        if (cacheKey == null) return;
+        Map<Integer, Item> previous = LIVING_SLOT_ITEMS.get(cacheKey);
         if (previous != null) {
             Set<Integer> stale = null;
             for (Map.Entry<Integer, Item> e : previous.entrySet()) {
@@ -193,13 +203,13 @@ public class ContainerLivingItemHandler {
                 }
             }
             if (stale != null) {
-                PENDING_RUNTIME_INVALIDATIONS.add(new RuntimeCacheInvalidation(containerKey, stale, false));
+                PENDING_RUNTIME_INVALIDATIONS.add(new RuntimeCacheInvalidation(cacheKey, stale, false));
             }
         }
         if (currentSlots.isEmpty()) {
-            LIVING_SLOT_ITEMS.remove(containerKey);
+            LIVING_SLOT_ITEMS.remove(cacheKey);
         } else {
-            LIVING_SLOT_ITEMS.put(containerKey, new LinkedHashMap<>(currentSlots));
+            LIVING_SLOT_ITEMS.put(cacheKey, new LinkedHashMap<>(currentSlots));
         }
     }
 
@@ -456,6 +466,9 @@ public class ContainerLivingItemHandler {
             return;
         }
 
+        // monitorKey 用<b>裸稳定键</b>（getContainerKey）而非缓存键 —— 调试开关
+        // （/living monitor enable chest_12_64_34）按玩家看得懂的坐标键下达，
+        // 与缓存表内部用的「维度|坐标」不同名是故意的。
         String monitorKey = context.getContainerKey();
         com.qiqi.li.living.debug.ContainerMonitor.beforeProcess(monitorKey, context);
 
@@ -465,7 +478,9 @@ public class ContainerLivingItemHandler {
 
         // ★ 运行时缓存生命周期（方案 A，2026-10-11）：物品离开槽位 / 被替换 ⇒ 作废该槽位的运行时数据。
         // ⚠️ 必须在下方早退分支之前 —— 「容器里已无活物品」正是最需要清理的场景。
-        trackLivingSlots(context.getContainerKey(), collectLivingSlots(grouped));
+        // 键用 getCacheKey()（世界容器带维度前缀）⇒ 与 ContainerRuntimeCache 的存储键、
+        // removeDataByPos 的作废键三方同构（2026-10-12 修三处键不一致）。
+        trackLivingSlots(context.getCacheKey(), collectLivingSlots(grouped));
 
         // 自维持功能（如活水源）：即便容器内没有它自己的活物品，也要进入主流程参与 tick。
         // 遍历的是注册期算好的静态清单（通常 0~1 个），不逐函数判定，保证成千上万个容器

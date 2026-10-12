@@ -116,8 +116,10 @@ public class LivingBrewingStandFunction implements LivingItemFunction, HasDirect
             int ingredientSlot = SlotResolver.resolve(slot, dir.getDirection("material"), size, width);
 
             // ── 读运行时（瞬态）──
-            String containerKey = context.getContainerKey();
-            BrewingRuntime runtime = ContainerRuntimeCache.get(containerKey, slot)
+            // 缓存键（世界容器带维度前缀，见 ContainerIdentity.getCacheKey）——
+            // 传裸 getContainerKey() 会让主世界/下界同坐标的两个箱子串酿造进度（2026-10-12 修）
+            String cacheKey = context.getCacheKey();
+            BrewingRuntime runtime = ContainerRuntimeCache.get(cacheKey, slot)
                 .get(BrewingStandSegment.INSTANCE);
             if (runtime == null) runtime = BrewingRuntime.EMPTY;
 
@@ -162,7 +164,7 @@ public class LivingBrewingStandFunction implements LivingItemFunction, HasDirect
             }
 
             // ── ④ 写运行时（瞬态，不进组件）──
-            ContainerRuntimeCache.update(containerKey, slot, RuntimeSegments.EMPTY.with(
+            ContainerRuntimeCache.update(cacheKey, slot, RuntimeSegments.EMPTY.with(
                 BrewingStandSegment.INSTANCE, new BrewingRuntime(nextBrewTime, nextBatchIngredient)));
 
             // ── ⑤ 仅在持久数据变化时写组件（燃料 / 首次方向落盘）──

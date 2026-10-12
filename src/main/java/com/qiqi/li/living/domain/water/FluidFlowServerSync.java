@@ -40,10 +40,14 @@ import com.qiqi.li.living.util.StaticCacheRegistry;
 public final class FluidFlowServerSync {
 
     /**
-     * 曾向客户端下发过快照的容器键 —— 用于「数据刚清空」的边沿检测：
+     * 曾向客户端下发过快照的<b>缓存键</b>—— 用于「数据刚清空」的边沿检测：
      * 汲走最后一个源后 fluidData 变空，驱动的 {@code !isEmpty()} 门会跳过 tick，
      * 若不同步下发一次<b>空快照</b>，客户端缓存里的旧水将永远不被清除。
      * 无流体容器不在此集合 ⇒ 每拍只多一次 Set 查询，零发包开销。
+     *
+     * <p>⚠️ 键取 {@code ctx.getCacheKey()}（2026-10-12 改，原为裸 containerKey）——
+     * 主世界 / 下界同坐标的两个容器会共用裸键 ⇒ 一边沿检测互相打脸
+     * （一维度的「刚清空」被另一维度的「仍有数据」吞掉 ⇒ 客户端旧水残留）。</p>
      */
     private static final Set<String> CLIENT_ACTIVE = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
@@ -78,7 +82,8 @@ public final class FluidFlowServerSync {
             if (slot.container == player.getInventory()) continue;
             TickableContainerContext ctx = com.qiqi.li.living.container.ContainerContexts.resolve(player, slot);
             if (ctx == null) continue;   // 末影箱等解析不出 ⇒ 跳过
-            String key = ctx.getContainerKey();
+            // 缓存键（世界容器带维度前缀）—— 必须与 flushAfterTick 登记的键同源
+            String key = ctx.getCacheKey();
             // ⚠️ 2026-10-07 收尾审查：这两处原为 return ⇒ 首个槽位不满足就放弃整个清理；
             //    改 continue 继续找下一个可解析槽位（大箱子 / 多容器菜单）。
             if (key == null) continue;
@@ -152,7 +157,9 @@ public final class FluidFlowServerSync {
     public static void flushAfterTick(TickableContainerContext ctx, ContainerFluidData fluidData) {
         Level level = ctx.getLevel();
         if (level == null || level.isClientSide) return;
-        String key = ctx.getContainerKey();
+        // 缓存键（世界容器带维度前缀，见 ContainerIdentity.getCacheKey）——
+        // 与 onContainerClose 的清理键同源，跨维度同坐标不互相打脸
+        String key = ctx.getCacheKey();
         if (key == null) return;
 
         boolean hasData = fluidData != null && fluidData != ContainerFluidData.EMPTY && !fluidData.isEmpty();

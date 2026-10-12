@@ -39,6 +39,12 @@ public final class LivingItemRuntimeSync {
     /**
      * 取出本 tick 攒下的脏容器快照并派发（由 L4 的 tick 调用）。
      *
+     * <p>⚠️ <b>键形</b>（{@code ContainerIdentity.getCacheKey()}）：玩家背包 / 末影箱 /
+     * 掉落物 = 裸键（{@code player_…} / {@code item_entity_…}）⇒ 命中下方
+     * {@code PLAYER_KEY_PREFIX} 分支；世界容器 = {@code <维度>|chest_…} ⇒ 走
+     * {@code containerLookup} 按坐标反查实例。<b>两类键都绝不会互相误判</b>
+     * （世界键以维度 id 开头，不含 {@code player_}）⇒ 拼了维度前缀也不需要改这里。</p>
+     *
      * @param players            在线玩家
      * @param containerLookup    容器键 → 该容器关联的 {@link Container} 实例集合
      *                           （用于 BE 容器的 viewer 匹配；背包键不需要）

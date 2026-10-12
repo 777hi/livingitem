@@ -15,12 +15,17 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
+import net.minecraft.core.BlockPos;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.items.IItemHandlerModifiable;
+
+import java.util.List;
 
 /**
  * {@link SimpleContainerContext} 的单元测试。
@@ -365,6 +370,93 @@ class SimpleContainerContextTest {
             // 唯一性：两个替身不能拿到同一个 key，否则容器级数据（CONTAINER_DATA 全局表）会串味
             var another = new SimpleContainerContext(new FakeHandler(27));
             assertFalse(key.equals(another.getContainerKey()), "不同替身必须拿到不同 key");
+        }
+    }
+
+    // ============================================================
+    // getCacheKey（缓存键 = 维度前缀 + 稳定键；2026-10-12 跨维度串数据修复）
+    // ============================================================
+
+    @Nested
+    @DisplayName("getCacheKey 缓存键推导")
+    class CacheKey {
+
+        /** mock 一个带维度 id 的服务端 Level（项目既有手法，见 ContainerChunkCacheChunkLoadTest）。 */
+        private Level levelOf(ResourceKey<Level> dim) {
+            Level level = mock(Level.class);
+            when(level.dimension()).thenReturn(dim);
+            return level;
+        }
+
+        private Player playerWithUuid(String uuid) {
+            Player player = mock(Player.class);
+            when(player.getStringUUID()).thenReturn(uuid);
+            return player;
+        }
+
+        @Test
+        @DisplayName("世界容器：缓存键 = <维度>|chest_<x>_<y>_<z>（稳定键本身不变）")
+        void worldContainer_prefixedWithDimension() {
+            var ctx = new SimpleContainerContext(new FakeHandler(27), null,
+                List.of(new BlockPos(12, 64, -34)), List.of(), levelOf(Level.OVERWORLD));
+
+            assertEquals("chest_12_64_-34", ctx.getContainerKey(), "稳定键保持可解析的裸坐标形态");
+            assertEquals("minecraft:overworld|chest_12_64_-34", ctx.getCacheKey(),
+                "缓存键拼维度前缀（主世界/下界同坐标的两个容器不再串数据）");
+        }
+
+        @Test
+        @DisplayName("跨维度同坐标：稳定键相同、缓存键不同（原 bug 的回归护栏）")
+        void samePosDifferentDimension_differentCacheKeys() {
+            BlockPos pos = new BlockPos(0, 64, 0);
+            var overworld = new SimpleContainerContext(new FakeHandler(27), null,
+                List.of(pos), List.of(), levelOf(Level.OVERWORLD));
+            var nether = new SimpleContainerContext(new FakeHandler(27), null,
+                List.of(pos), List.of(), levelOf(Level.NETHER));
+
+            assertEquals(overworld.getContainerKey(), nether.getContainerKey(),
+                "同坐标 ⇒ 稳定键相同（坐标即身份）");
+            assertFalse(overworld.getCacheKey().equals(nether.getCacheKey()),
+                "缓存键必须不同 —— 否则两个箱子的燃料/进度会共用一条记录");
+        }
+
+        @Test
+        @DisplayName("大箱子：缓存键保留两段坐标（半边间不会互串）")
+        void doubleChest_keepsBothPositions() {
+            var ctx = new SimpleContainerContext(new FakeHandler(54), null,
+                List.of(new BlockPos(1, 64, 2), new BlockPos(2, 64, 2)), List.of(),
+                levelOf(Level.OVERWORLD));
+
+            assertEquals("minecraft:overworld|chest_1_64_2_2_64_2", ctx.getCacheKey());
+        }
+
+        @Test
+        @DisplayName("玩家背包：裸键（数据跟人走，过传送门不清零身上活熔炉的燃料）")
+        void playerInventory_rawKey() {
+            Player player = playerWithUuid("uuid-p");
+            var ctx = new SimpleContainerContext(new FakeHandler(41), new Inventory(player));
+
+            assertEquals("player_uuid-p", ctx.getCacheKey(),
+                "玩家容器不加维度前缀 —— 一个玩家同一时刻只在一个维度，UUID 已全局唯一");
+        }
+
+        @Test
+        @DisplayName("末影箱：裸键（玩家作用域，与背包同理）")
+        void enderChest_rawKey() {
+            var ctx = new EnderChestContainerContext(
+                new FakeHandler(27), playerWithUuid("uuid-ec"), levelOf(Level.OVERWORLD));
+
+            assertEquals("player_uuid-ec_ender_chest", ctx.getCacheKey());
+        }
+
+        @Test
+        @DisplayName("维度不可见（mock 替身 / dimension()=null）：退化为裸键，测试零改动")
+        void noDimension_degradesToRawKey() {
+            Level noDim = mock(Level.class);   // dimension() 默认返回 null
+            var ctx = new SimpleContainerContext(new FakeHandler(27), null,
+                List.of(new BlockPos(7, 64, 7)), List.of(), noDim);
+
+            assertEquals("chest_7_64_7", ctx.getCacheKey());
         }
     }
 

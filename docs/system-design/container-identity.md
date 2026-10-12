@@ -129,7 +129,9 @@
 
 ## 6. 相关文档
 
-- **跨 tick 容器身份（containerKey 生成规则）**：[living-item-infrastructure.md §2.5](living-item-infrastructure.md)
+- **跨 tick 容器身份（containerKey / 缓存键 getCacheKey 生成规则）**：
+  [living-item-infrastructure.md §2.5](living-item-infrastructure.md)（2026-10-12 补：
+  缓存键 = 维度前缀 + 稳定键，世界容器加、玩家容器不加；`chest_<x>_<y>_<z>` 是稳定键不是缓存键）
 - **大箱子去重 / 容器归属验证**：[living-item-infrastructure.md §3.3 / §8.5](living-item-infrastructure.md)
 - **Tooltip 大箱匹配（CompoundContainer）**：[tooltip-system.md §3.2 / §7](tooltip-system.md)
 - **活漏斗槽位体系探针 / 跨容器面选取**：[living-hopper-tech.md §10.25 / §6.4](../tech/living-hopper-tech.md)

@@ -165,7 +165,8 @@ public void tick(List<SlotEntry> entries, ContainerContext context, TickContext 
         LivingFurnaceData data = LivingFurnaceData.of(stack);
 
         // 0. 从运行时缓存恢复瞬态数据（progress/fuel/transform 不再写 DataComponent）
-        RuntimeSegments cached = ContainerRuntimeCache.get(containerKey, slot);
+        // 键 = ctx.getCacheKey()（世界容器带维度前缀，跨维度同坐标不串燃料；见 infra §2.5）
+        RuntimeSegments cached = ContainerRuntimeCache.get(cacheKey, slot);
         FurnaceRuntime fr = cached.get(FurnaceSegment.INSTANCE);
         if (fr != null) { data = data.withProgress(...).withFuel(...).withTransform(...); }
 
@@ -191,7 +192,7 @@ public void tick(List<SlotEntry> entries, ContainerContext context, TickContext 
         }
 
         // 4. 写运行时缓存（tooltip 数据源，不写 DataComponent）
-        ContainerRuntimeCache.update(containerKey, slot, RuntimeSegments.EMPTY.with(FurnaceSegment.INSTANCE,
+        ContainerRuntimeCache.update(cacheKey, slot, RuntimeSegments.EMPTY.with(FurnaceSegment.INSTANCE,
             new FurnaceRuntime(data.progress().progress(), data.progress().total(),
                                data.fuel().burnTime(), data.transform())));
 

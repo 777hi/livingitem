@@ -41,6 +41,8 @@ public class SimpleContainerContext implements TickableContainerContext {
     private final IItemHandler handler;
     private final Inventory inventory;
     private final String containerKey;
+    /** 缓存键 memo（{@link #getCacheKey()} 每次调用都拼维度前缀，热路径按槽位频率调用）*/
+    private String cacheKey;
     private final List<BlockPos> associatedBlockPositions;
     private final List<BlockEntity> associatedBlockEntities;
     private final Level overrideLevel;
@@ -363,6 +365,22 @@ public class SimpleContainerContext implements TickableContainerContext {
     @Override
     public String getContainerKey() {
         return containerKey;
+    }
+
+    /**
+     * 缓存键 memo 化覆写 —— 规则与代价见 {@link ContainerIdentity#getCacheKey()}。
+     *
+     * <p>字段都是 final（{@code overrideLevel} / positions / BEs）⇒ 一个上下文实例内
+     * 只算一次；上下文本身每 tick 新建，不存在跨 tick 过期问题。</p>
+     */
+    @Override
+    public String getCacheKey() {
+        String k = cacheKey;
+        if (k == null) {
+            k = ContainerIdentity.cacheKeyOf(this);
+            cacheKey = k;
+        }
+        return k;
     }
 
     @Override

@@ -199,6 +199,29 @@ public interface ContainerIdentity {
 
 `getStableKey` 用于生成槽位级别的稳定标识，格式为 `containerKey_slot_<N>_func_<functionId>`，用于缓存和状态关联。
 
+**⭐ 缓存键 `getCacheKey()`（2026-10-12 新增）—— 容器级数据在静态表里的行号**：
+
+| 容器类型 | 缓存键 | 为什么 |
+|---|---|---|
+| 方块容器 / 大箱子 | `<维度>\|<containerKey>`（如 `minecraft:overworld\|chest_0_64_0`）| 主世界与下界允许存在**同坐标**的两个容器 ⇒ 裸坐标键会让它们串数据 |
+| 玩家背包 / 末影箱 / 掉落物 | 裸 `containerKey` | 身份是 UUID，全局唯一；且数据必须**跟着人走**（过传送门不清零身上活熔炉的燃料）|
+| 拿不到维度（`getLevel()==null` / `dimension()==null`，测试替身）| 裸 `containerKey` | 退化行为 ⇒ 现有测试零改动 |
+
+四张静态表用它当键：`ContainerRuntimeCache`（燃料/进度/冷却/遥测）、`CONTAINER_DATA`
+（流体/红石/电力）、`LIVING_SLOT_ITEMS`（槽位追踪）、`POS_TO_CACHE_KEY`（位置索引的值）。
+
+⚠️ **两种键的分工**：`getContainerKey()` 是**身份**（格式简单、可解析 —— 末影箱显式键、
+`LivingItemRuntimeSync` 的 `player_` 分支、`parsePosFromContainerKey` 都依赖它，**不改它的格式**）；
+`getCacheKey()` 是**表内行号**（只进静态 Map 与网络包载荷）。域侧写运行时缓存一律传
+`ctx.getCacheKey()`。
+
+📜 **历史**：2026-08-22 给 `CONTAINER_DATA` 补过维度前缀（changelog「容器级数据缓存键补齐维度」），
+但 `ContainerRuntimeCache` / 槽位追踪一直用裸键 ⇒ ① 跨维度同坐标的两个箱子**共享一条燃料/进度**，
+且每 tick 互相登记作废 ⇒ 进度永远攒不起来；② `removeDataByPos` 拿带前缀的键去删裸键表 ⇒
+「拆箱子 ⇒ 作废整容器」**登记即打空**（拆掉原地放回，旧燃料复活）。2026-10-12 收敛到
+`ContainerIdentity.getCacheKey()` 一处定义（世界容器加前缀、玩家容器不加），四张表同构。
+规则原文与取舍见该方法 javadoc。
+
 > 📄 **边界带身份解析**（菜单槽位 ↔ 容器上下文、查看者匹配、大箱 `CompoundContainer` 特判）
 > 另见 [container-identity.md](container-identity.md)（Q6 收敛，2026-10-04）——
 > 本文 §2.5 讲的是**跨 tick 的 containerKey**（稳定键），那篇讲的是**边界带的「槽位↔容器」解析**。
@@ -720,8 +743,10 @@ private final Set<String> reusableKeySet = new HashSet<>();
 
 ### 3.5 运行时缓存（ContainerRuntimeCache）的生命周期（方案 A，2026-10-11）
 
-**缓存键 = （容器键, 槽位索引）** —— 存的是**跨 tick 的瞬态状态**（活熔炉的燃料 / 进度、
+**缓存键 = （`getCacheKey()`, 槽位索引）** —— 存的是**跨 tick 的瞬态状态**（活熔炉的燃料 / 进度、
 活漏斗的冷却、活酿造台的批次进度），**不进 DataComponent**（否则每 tick 写入会破坏堆叠）。
+⚠️ 世界容器的缓存键带维度前缀（`<维度>|chest_…`）⇒ 主世界/下界同坐标的两个箱子不串数据；
+玩家容器是裸键 ⇒ 跟人走（规则见 §2.5）。
 
 ⚠️ **键里没有物品身份** ⇒ 默认语义是「数据属于**槽位**」。若不处理会出现：
 **物品离开槽位后数据残留** ⇒ 同一槽位放入新物品时**继承**旧物品的瞬态状态
@@ -749,8 +774,12 @@ private final Set<String> reusableKeySet = new HashSet<>();
 1. **失效判据只看物品类型（`Item`），不看组件** —— 燃烧标志等组件会被 tick 改写，
    若纳入判据，**每次状态翻转都会误清缓存**（燃料 / 进度丢失）。
 2. **容器卸载必须作废整容器** —— 否则容器被破坏后运行时数据永久残留（`removeContainer` 此前零调用者）。
+   ⚠️ 2026-10-12 修：作废链三处键此前不一致（`removeDataByPos` 从 `POS_TO_CACHE_KEY`
+   取维度前缀键、`trackLivingSlots` 与 `ContainerRuntimeCache` 用裸键）⇒ 整容器作废
+   **登记即打空**。现已全部统一到 `getCacheKey()`，回归见
+   `ContainerRuntimeCacheLifecycleTest.containerRemoval_invalidationKey_matchesRuntimeCacheKey`。
 
-**③ 跨存档必须清空（登记义务）**：容器键 = 维度 + 坐标（+ 背包前缀）⇒ 单机
+**③ 跨存档必须清空（登记义务）**：世界容器缓存键 = 维度 + 坐标、玩家容器 = UUID ⇒ 单机
 「退出存档 → 进另一个存档」**不重启 JVM**，两个存档里**同一坐标的箱子会继承**
 上一个存档的燃料 / 进度 / 相位。⇒ `ContainerRuntimeCache.clear()` 登记在
 **缓存类自己的静态块**里（2026-10-12 起，见下方「登记位置」）。
@@ -770,8 +799,10 @@ private final Set<String> reusableKeySet = new HashSet<>();
 ⇒ 不清缓存。该场景收益有限（最多继承一次剩余燃烧时间），要彻底解决需给物品加实例 id
 （会引入堆叠 / 拆堆语义问题，与活酿造台 D2「拆堆复制当特性」同族）⇒ 当前接受。
 
-**验证**：`ContainerRuntimeCacheLifecycleTest`（5 项：离开 / 换类型 ⇒ 作废 · 同类持续 ⇒ 不作废 ·
-drain 取走即空 · null 键忽略）。
+**验证**：`ContainerRuntimeCacheLifecycleTest`（6 项：离开 / 换类型 ⇒ 作废 · 同类持续 ⇒ 不作废 ·
+drain 取走即空 · null 键忽略 · **整容器作废键与运行时存储键同构**）；
+`SimpleContainerContextTest.CacheKey`（6 项：世界容器带维度前缀 · 跨维度同坐标键不同 ·
+大箱子保留两段坐标 · 背包/末影箱裸键 · 无维度退化）。
 
 ---
 

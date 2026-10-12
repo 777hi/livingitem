@@ -69,10 +69,12 @@ public class LivingHopperFunction implements LivingItemFunction {
 
             ItemStack stack = entry.stack();
             LivingHopperData data = LivingHopperData.of(stack);
-            String containerKey = context.getContainerKey();
+            // 缓存键（世界容器带维度前缀，见 ContainerIdentity.getCacheKey）——
+            // 传裸 getContainerKey() 会让主世界/下界同坐标的两个箱子串冷却（2026-10-12 修）
+            String cacheKey = context.getCacheKey();
 
             // 从运行时缓存读取瞬态数据（不影响物品堆叠的 DataComponent）
-            RuntimeSegments cached = ContainerRuntimeCache.get(containerKey, slot);
+            RuntimeSegments cached = ContainerRuntimeCache.get(cacheKey, slot);
             HopperRuntime hr = cached.get(HopperSegment.INSTANCE);
             int cooldown = hr != null ? hr.cooldown() : 0;
             ResolvedSlotData slotInfo = hr != null && hr.slotInfo() != null
@@ -110,7 +112,7 @@ public class LivingHopperFunction implements LivingItemFunction {
             if (transfer.isOnCooldown()) {
                 transfer = transfer.tick();
                 // 只更新运行时缓存，不写入 DataComponent
-                ContainerRuntimeCache.update(containerKey, slot,
+                ContainerRuntimeCache.update(cacheKey, slot,
                     RuntimeSegments.EMPTY.with(HopperSegment.INSTANCE,
                         new HopperRuntime(transfer.cooldown(), slotInfo)));
                 continue;
@@ -139,7 +141,7 @@ public class LivingHopperFunction implements LivingItemFunction {
 
             slotInfo = new ResolvedSlotData(slot, sourceSlot, targetSlot, containerSize, containerWidth);
             // 只更新运行时缓存（cooldown、slotInfo），不写入 DataComponent
-            ContainerRuntimeCache.update(containerKey, slot,
+            ContainerRuntimeCache.update(cacheKey, slot,
                 RuntimeSegments.EMPTY.with(HopperSegment.INSTANCE,
                     new HopperRuntime(transfer.cooldown(), slotInfo)));
         }

@@ -68,10 +68,12 @@ public class LivingFurnaceFunction implements LivingItemFunction, HasDirection {
 
             ItemStack stack = entry.stack();
             LivingFurnaceData data = LivingFurnaceData.of(stack);
-            String containerKey = context.getContainerKey();
+            // 缓存键（世界容器带维度前缀，见 ContainerIdentity.getCacheKey）——
+            // 传裸 getContainerKey() 会让主世界/下界同坐标的两个箱子串燃料（2026-10-12 修）
+            String cacheKey = context.getCacheKey();
 
             // 从运行时缓存读取瞬态数据（不影响物品堆叠的 DataComponent）
-            RuntimeSegments cached = ContainerRuntimeCache.get(containerKey, slot);
+            RuntimeSegments cached = ContainerRuntimeCache.get(cacheKey, slot);
             FurnaceRuntime fr = cached.get(FurnaceSegment.INSTANCE);
             if (fr != null) {
                 data = data.withProgress(new ProgressData(fr.progress(), data.progress().total()))
@@ -113,7 +115,7 @@ public class LivingFurnaceFunction implements LivingItemFunction, HasDirection {
             }
 
             // 写入运行时缓存（progress、fuel、transform），不写入 DataComponent
-            ContainerRuntimeCache.update(containerKey, slot,
+            ContainerRuntimeCache.update(cacheKey, slot,
                 RuntimeSegments.EMPTY.with(FurnaceSegment.INSTANCE,
                     new FurnaceRuntime(
                         data.progress().progress(), data.progress().total(),

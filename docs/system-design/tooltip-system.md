@@ -96,8 +96,11 @@ per-slot 的运行时快照 —— **不是**静态 record，而是一个「段�
   `RuntimeSegmentRegistry`（在各领域自己的 `*Registration` 里）；
 - **机制归 L2**：`living.runtime.RuntimeSegments` 只提供 `with(type, value)` / `get(type)`
   —— `get` 取 `Type` 而非 `String`，编译期就杜绝「拿错段」的强转；
-- **读写**：服务端 `ContainerRuntimeCache.update(containerKey, slot, RuntimeSegments.EMPTY.with(XxxSegment.INSTANCE, …))`；
+- **读写**：服务端 `ContainerRuntimeCache.update(ctx.getCacheKey(), slot, RuntimeSegments.EMPTY.with(XxxSegment.INSTANCE, …))`；
   客户端 `LivingItemClientCache.get(slot).get(XxxSegment.INSTANCE)`；
+  ⚠️ 键传 **`getCacheKey()`**（世界容器 = `<维度>|chest_…`，跨维度同坐标不串数据）而不是裸
+  `getContainerKey()`—— 后者会让主世界/下界同坐标的两个箱子共享一条遥测记录（2026-10-12 修）。
+  规则见 [living-item-infrastructure.md §2.5](living-item-infrastructure.md)；
 - **线上格式**：`segmentCount` + 每段 `id` + payload（由注册表驱动，`LivingItemSyncPacket` 不再认识任何具体字段）。
   ⚠️ **`id` 是线格式契约，发布后不可改名**。
 
