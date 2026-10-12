@@ -26,6 +26,9 @@
 > 🔧 **修正：白幕颜色**从 `0xFFFFFFFF`（不透明纯白）改为 `Integer.MAX_VALUE`（`0x7FFFFFFF`
 > = 约 50% 半透明白），与原版逐像素一致 —— 初版核对源码时误把 `Integer.MAX_VALUE` 当成
 > `0xFFFFFFFF`，比原版实一倍（用户实测「白得不对劲」而复查发现）。
+> 🔍 **收尾审查**（用户实测通过后复查本轮全部改动）：修 1 处文档笔误（横条方向写反）+
+> 1 处冗余（`animationStart` 双重查找）+ 1 处边界（`fillRect` 未 clamp）+ 语义措辞同步
+> （「起始时刻」→「批次标记」）；测试 623 绿。
 
 - 🎨 **白幕简化为本地动画（纯客户端，不做跨机器时钟对齐）** —— 组件 `brewStartTick` 降级为
   **批次标记**（服务端三写点不变：开始写 gameTime、中止/完成写 -1）；客户端首次见到某标记时
@@ -55,8 +58,18 @@
   而复查源码，改为 `Integer.MAX_VALUE`。
   ⚠️ **教训**：`Integer.MAX_VALUE` = `0x7FFFFFFF` ≠ `0xFFFFFFFF` —— 前者 alpha 只有一半；
   「照抄原版」时颜色常量必须逐位核对（原版用 `Integer.MAX_VALUE` 而非 `0xFFFFFFFF` 是刻意的半透明）。
+- 🔍 **收尾审查（用户实测通过后复查本轮全部改动）**：① 文档笔误 —— tech §8.2 把横条写成
+  「从右往左长」（与同页上文、代码注释、几何实现三处相反）⇒ 改「从左往右」；
+  ② 代码冗余 —— `LivingBrewingStandDecorator.animationStart` 的 `get` + `computeIfAbsent`
+  双重查找 ⇒ 单次 `computeIfAbsent`；③ 边界健全 —— `ProgressBarDecorator.fillRect` 未 clamp
+  `fraction`（render 侧已 clamp，但纯函数自身不该依赖调用方）⇒ 内部 clamp + 补 1 项测试；
+  ④ **语义措辞同步** —— 「起始时刻」→「批次标记」：语义降级后旧措辞散在 `LivingBrewingStandData`
+  （字段 javadoc ×2）、`LivingBrewingStandFunction`（数据归属 + 写点注释）、
+  `LivingBrewingStandDataTest`（断言消息）；历史描述（装饰器类头「📜 历史」段与 tech §8 修订说明）
+  刻意保留；⑤ icon-system 装饰器计数改实证口径（9 个实现 / 注册到 7 个专用物品 —— 酿造台挂 2 个
+  —— + 默认兜底）。验证：全量 623 绿；doc_check 全过；check_layers 零新增。
 - **验证**：白幕测试 3 → 8 项（守卫 / 堆叠时长折算与 `stepFor` 同源 / 比例时间线 /
-  动画起点与重播 / 播完不删 / 跨存档清理）、新增 `ProgressBarDecoratorTest` 5 项；
+  动画起点与重播 / 播完不删 / 跨存档清理）、新增 `ProgressBarDecoratorTest` 6 项；
   全量测试 612 → 622 绿；`check_layers` 零新增。⚠️ 画面本身须游戏内验证（附录清单已更新：
   白幕消退速度随堆叠数、燃料条刻度、z 层次、连续两批重播）。
 

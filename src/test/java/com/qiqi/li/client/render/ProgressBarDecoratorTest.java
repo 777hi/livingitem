@@ -94,4 +94,15 @@ class ProgressBarDecoratorTest {
         int[] full = ProgressBarDecorator.fillRect(Orientation.HORIZONTAL, 20 * oneUse);
         assertArrayEquals(new int[] {2, 13, 15, 14}, full, "20 次 = 满格");
     }
+
+    @Test
+    @DisplayName("彩条自带 clamp：比例越界按 0/1 处理（纯函数自身健全，不依赖调用方先 clamp）")
+    void fillRect_clamps() {
+        assertArrayEquals(ProgressBarDecorator.fillRect(Orientation.HORIZONTAL, 1.0F),
+            ProgressBarDecorator.fillRect(Orientation.HORIZONTAL, 1.5F), ">1 按满格");
+        assertArrayEquals(ProgressBarDecorator.fillRect(Orientation.HORIZONTAL, 0.0F),
+            ProgressBarDecorator.fillRect(Orientation.HORIZONTAL, -0.5F), "<0 按零宽");
+        assertArrayEquals(ProgressBarDecorator.fillRect(Orientation.VERTICAL, 1.0F),
+            ProgressBarDecorator.fillRect(Orientation.VERTICAL, 2.0F), "竖条同理（不会算出图标外的矩形）");
+    }
 }

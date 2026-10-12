@@ -127,10 +127,11 @@ public class ProgressBarDecorator implements IItemDecorator {
      * 彩条矩形（相对图标左上角）。
      *
      * <p>横：从左往右长，宽 = {@code round(13 × f)}；竖：从底往上长，高 = {@code round(13 × f)}。
-     * 比例与长度按原版用 {@code Math.round}（{@code Item#getBarWidth} 同款取整）。</p>
+     * 比例与长度按原版用 {@code Math.round}（{@code Item#getBarWidth} 同款取整）；
+     * 内部自带 clamp ⇒ 纯函数单独调用也健全（render 侧另有一次 clamp）。</p>
      */
     static int[] fillRect(Orientation orientation, float fraction) {
-        int len = Math.round(LENGTH * fraction);
+        int len = Math.round(LENGTH * Mth.clamp(fraction, 0.0F, 1.0F));
         if (orientation == Orientation.HORIZONTAL) {
             return new int[] {2, 13, 2 + len, 14};
         }

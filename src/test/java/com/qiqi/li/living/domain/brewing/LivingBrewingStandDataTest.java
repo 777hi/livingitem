@@ -77,6 +77,6 @@ class LivingBrewingStandDataTest {
         // 永久挂着一个组件（且 set() 的等值移除永远不触发）
         assertTrue(LivingBrewingStandData.DEFAULT.brewStartTick() < 0);
         assertFalse(LivingBrewingStandData.DEFAULT.withBrewStart(0).equals(LivingBrewingStandData.DEFAULT),
-            "起始时刻 >=0 必须与 DEFAULT 不等，否则白幕状态永远写不进物品");
+            "批次标记 >=0 必须与 DEFAULT 不等，否则白幕状态永远写不进物品");
     }
 }

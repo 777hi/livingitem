@@ -67,7 +67,7 @@
 |---|---|
 | 3 堆叠加速 · 4 / 9 作废判据 · 8 消耗时机 | `BrewingBatchLogicTest`（13 项） |
 | 7 活物品不作材料 / 瓶子 / 燃料 | `BrewingSlotEligibilityTest`（6 项：材料 · 瓶子 · 燃料三侧都有守卫） |
-| 12 酿造反馈（白幕 / 燃料条 / 音效） | `LivingBrewingStandDataTest`（4 项：codec 守卫）+ `LivingBrewingStandDecoratorTest`（8 项：守卫 / 堆叠时长 / 时间线 / 重播）+ `ProgressBarDecoratorTest`（5 项：几何 / 刻度）+ 游戏内（附录·酿造反馈） |
+| 12 酿造反馈（白幕 / 燃料条 / 音效） | `LivingBrewingStandDataTest`（4 项：codec 守卫）+ `LivingBrewingStandDecoratorTest`（8 项：守卫 / 堆叠时长 / 时间线 / 重播）+ `ProgressBarDecoratorTest`（6 项：几何 / 刻度 / clamp）+ 游戏内（附录·酿造反馈） |
 | 其余（燃料补满 / 转化 / 方向 / 漏斗） | 游戏内验证清单（见附录） |
 
 ---
@@ -408,7 +408,7 @@ brewTime == 0（待机）：
   **拿不到槽位索引** ⇒ 只能读「跟着物品走」的数据。燃料次数是落盘组件 ✅；
   运行时缓存里只发给 viewer 的瞬态量（酿造倒计时、漏斗冷却）❌ —— 那些归 tooltip 与白幕。
   这同时是进度条**天生全场景新鲜**的原因；
-- **框架**：`ProgressBarDecorator`（通用；横 = 左下从右往左长、竖 = 左缘从底往上长；
+- **框架**：`ProgressBarDecorator`（通用；横 = 左下从左往右长、竖 = 左缘从底往上长；
   几何为纯函数可单测）+ 每种活物品注册一个「栈 → (比例, 颜色, 朝向)」函数。
   酿造台是第一个接入方；下一个（活水源液位、活发电机能量）只需加一行注册；
 - **z 层次**：条 190 < 白幕 200 ⇒ 白幕播放时盖在条上（白幕是「进行中」横幅）；
@@ -446,7 +446,7 @@ brewTime == 0（待机）：
 - 组件 codec（旧数据可解码 / 新字段真在 codec 里）→ `LivingBrewingStandDataTest`（4 项）；
 - 白幕（守卫 / 时长堆叠折算 / 比例时间线 / 动画起点与重播 / 播完不删 / 跨存档清理）→
   `LivingBrewingStandDecoratorTest`（8 项）；
-- 进度条（守卫 / 横竖几何 / 燃料刻度）→ `ProgressBarDecoratorTest`（5 项）；
+- 进度条（守卫 / 横竖几何 / 燃料刻度 / 越界 clamp）→ `ProgressBarDecoratorTest`（6 项）；
 - 画面与声音本身 → 游戏内（附录·验证清单·酿造反馈）。
 
 ---

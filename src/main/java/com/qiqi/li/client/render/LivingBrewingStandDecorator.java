@@ -158,8 +158,6 @@ public class LivingBrewingStandDecorator implements IItemDecorator {
      * <p>「播完不删」见类注释：条目一旦建立不再移除，直到跨存档清空。</p>
      */
     static float animationStart(long batchMark, float now) {
-        Float existing = ANIMATION_START.get(batchMark);
-        if (existing != null) return existing;
         return ANIMATION_START.computeIfAbsent(batchMark, k -> now);
     }
 

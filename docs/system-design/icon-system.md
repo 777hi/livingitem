@@ -251,7 +251,9 @@ return vanillaModel.applyTransform(context, poseStack, applyLeftHandTransform); 
 | 掉落物 / 手持 / 展示框 | **原版漏斗**（模型层也回退了） |
 | 不跑 `renderItemDecorations` 的第三方 GUI | **只有中心圆**（模型层生效、叠加层缺失） |
 
-**同源影响的装饰器**（`grep -rln "implements IItemDecorator" src/main/java/` = 9 个，注册 7 个）：
+**同源影响的装饰器**（`grep -rln "implements IItemDecorator" src/main/java/` = 9 个实现；
+注册到 **7 个专用物品**——其中**活酿造台挂 2 个**（燃料条 + 白幕，NeoForge 原生支持一物品多装饰器）
+—— 外加 `LivingDefaultDecorator` 兜底其余全部物品）：
 `LivingHopperDecorator`（漏斗方向箭头）· `LivingChiseledCopperDecorator` / `LivingWaxedChiseledDecorator`
 （雕文箭头）· `LivingMapIconDecorator`（地图缩略图）· `LivingFarmlandSeedDecorator`（耕地种子）·
 `LivingRedstoneDecorator`（红石连接线）· `LivingBrewingStandDecorator`（酿造白幕）·

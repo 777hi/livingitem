@@ -59,8 +59,9 @@ import net.minecraft.world.phys.Vec3;
  * <ul>
  *   <li><b>燃料次数</b> → {@code DataComponent}（持久 + 同步，D2）；</li>
  *   <li><b>倒计时 / 本批次材料</b> → 运行时缓存（瞬态 ⇒ 不影响堆叠，{@link BrewingStandSegment}）；</li>
- *   <li><b>批次起始时刻</b>（{@code brewStartTick}）→ {@code DataComponent}（2026-10-12 反馈层：
- *       唯一落盘的进度镜像，客户端据此画原版同款白幕；只在批次开始/中止/完成时写）。</li>
+ *   <li><b>批次标记</b>（{@code brewStartTick}）→ {@code DataComponent}（2026-10-12 反馈层；
+ *       10-13 语义降级为「批次标记」）：白幕用它区分批次（新值 = 重播），客户端本地时钟自演；
+ *       只在批次开始/中止/完成时写。</li>
  * </ul>
  *
  * <h3>已定案的关键设计（设计稿 §3）</h3>
@@ -158,8 +159,8 @@ public class LivingBrewingStandFunction implements LivingItemFunction, HasDirect
 
             int nextBrewTime = runtime.brewTime();
             Optional<Item> nextBatchIngredient = runtime.batchIngredient();
-            // 白幕用的「批次起始时刻」镜像（唯一落盘的进度数据；-1 = 不在酿造）。
-            // 只在批次生命周期事件写 ⇒ 稳态零写入（与熔炉燃烧标志同量级）。
+            // 白幕的「批次标记」（-1 = 不在酿造）。只在批次生命周期事件写 ⇒ 稳态零写入
+            // （与熔炉燃烧标志同量级）。客户端只当 key 用（新值 ⇒ 白幕重播），不做时钟对齐。
             long brewStart = data.brewStartTick();
             switch (result) {
                 case BrewingBatchLogic.Step.Start start -> {
@@ -192,7 +193,7 @@ public class LivingBrewingStandFunction implements LivingItemFunction, HasDirect
             ContainerRuntimeCache.update(cacheKey, slot, RuntimeSegments.EMPTY.with(
                 BrewingStandSegment.INSTANCE, new BrewingRuntime(nextBrewTime, nextBatchIngredient)));
 
-            // ── ⑤ 仅在持久数据变化时写组件（燃料 / 方向 / 批次起始时刻）──
+            // ── ⑤ 仅在持久数据变化时写组件（燃料 / 方向 / 批次标记）──
             if (dirty) {
                 LivingBrewingStandData.set(stack, data.withFuel(fuel).withBrewStart(brewStart));
                 context.syncSlotToClients(slot, stack);
