@@ -52,6 +52,21 @@
     `check_layers` **零新增违规**。⚠️ 跨存档清理**须游戏内验证**（退出存档 → 进新存档，
     同坐标箱子内的活熔炉燃料应归零）。
 
+- 🆕 **活耕地种植悬停提示（客户端反馈）** —— 光标持活种子悬停活耕地时，鼠标处渲染
+  「种植 / 作物 / 消耗」提示；种子不足给差额（需要 N / 持有 M），已种植给「已种植」说明。
+  **缘起**：原版 `AbstractContainerScreen#renderTooltip` 对**光标非空**的悬停
+  **不渲染任何 tooltip**（判据 `menu.getCarried().isEmpty()`）⇒ 拿活种子悬停活耕地
+  零反馈，右键没反应也无从判断（数量不足 / 已种植两种静默失败）。
+  **契约**：提示门槛**复用 `PlantCropHandler.canPlantWith`**（活种子 + 可种植 +
+  种子数 ≥ 耕地堆叠数），不另写数量比较 —— 提示说「种得成」必须与真实交互零漂移；
+  文案四态分流（充足 / 创造免费 / 不足差额 / 已种植）。
+  **渲染**：`AbstractContainerScreenMixin` `render` TAIL 走 `GuiGraphics#renderTooltip`
+  批量队列（与方向配置 HUD 同款 ⇒ 天然压在物品图标上；原版 tooltip 被 carried 判据
+  抑制 ⇒ 两者永不重叠，无需抑制原版）。纯客户端、零发包。
+  协议与可复用模式（三件套：纯函数 / 门槛同源 / render TAIL）落
+  [gui-interaction-system.md](../system-design/gui-interaction-system.md) §7。
+  新增 `FarmlandPlantHintTest`（10 项：门槛 null 分流 + 四态文案键与参数），测试 579 → 589 绿。
+
 ---
 
 ## 2026-10-11

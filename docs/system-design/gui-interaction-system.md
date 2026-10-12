@@ -1,7 +1,7 @@
 # GUI 交互系统设计
 
 > **文档版本**: 2026.08 v1
-> **最后更新**: 2026-10-10
+> **最后更新**: 2026-10-12
 > **适用版本**: Minecraft 1.21.1 + NeoForge 21.1.x
 
 ## 目录
@@ -12,6 +12,7 @@
 4. [创造模式兼容](#4-创造模式兼容)
 5. [新增交互](#5-新增交互)
 6. [方向配置与活按钮交互](#6-方向配置与活按钮交互)
+7. [槽位悬停提示（客户端反馈）](#7-槽位悬停提示客户端反馈)
 
 ---
 
@@ -213,6 +214,39 @@ CropClassifier::isSeedPlantableOnFarmland)`）；**只有真·任意光标自交
 
 ---
 
+## 7. 槽位悬停提示（客户端反馈）
+
+> 2026-10-12 落地，首个消费者 = 活耕地种植提示（`FarmlandPlantHint`）。
+> 本节写**可复用模式与契约**；玩法侧（消耗语义）见
+> [living-farmland-tech.md](../tech/living-farmland-tech.md) §3.2。
+
+**问题**：原版 `AbstractContainerScreen#renderTooltip` 对「光标非空」的悬停
+**不渲染任何 tooltip**（源码判据 `this.menu.getCarried().isEmpty()`）⇒
+手持触发型交互（活种子 → 活耕地）悬停时零说明；交互**静默失败**（数量不足 /
+状态不符，见 §5.1 的「只拦种得成」策略）时玩家也得不到任何反馈 ——
+那是该策略的已知代价，用本模式补上。
+
+**模式（三件套，新增悬停提示照此办理）**：
+
+1. **纯函数出行**：`tryBuildLines(carried, target, …)` 返回 `List<Component>` 或
+   `null`（门槛不过）—— 不读 Minecraft 全局状态 ⇒ 可单测（画面本身交游戏实测）。
+2. **门槛与交互同源**：「能不能成」复用交互的 `triggerFilter` 谓词
+   （如 `PlantCropHandler::canPlantWith`），**不得另写一套数量比较** ——
+   否则提示说能种、交互却不接，比没有提示更糟。数量不足时提示**差额**
+   （需要 N / 持有 M），状态不符（已种植）给对应说明。
+3. **渲染挂 `render` TAIL**：`guiGraphics.renderTooltip(font, lines, Optional.empty(), mouseX, mouseY)`
+   —— 与方向配置 HUD（§6.1）同款批量队列：按调用顺序排在所有物品图标之后
+   ⇒ 天然在其上，无需 `flush()`。⚠️ 自绘 `fill` 默认 **z=0** 会被深度裁掉
+   （§6.1 同坑），必须走 `renderTooltip`。
+
+**与原版 tooltip 的关系**：原版 slot tooltip 在光标非空时**本就被抑制** ⇒
+本提示与原版 tooltip **永不重叠**，**不需要**照搬展开地图那套
+`renderTooltip` HEAD 取消（`living_item$suppressTooltipOnExpandedMap` 是给
+「光标空手也要抑制」的场景用的）。光标空手悬停时本提示不激活（门槛要求光标持
+触发物），原版 tooltip 照常。
+
+---
+
 ## 关键文件
 
 | 文件 | 职责 |
@@ -226,6 +260,7 @@ CropClassifier::isSeedPlantableOnFarmland)`）；**只有真·任意光标自交
 | `PlantCropHandler` | 活种子种植（通配条目 + handler 内校验） |
 | `BonemealHandler` | 活骨粉催熟（精确触发器条目） |
 | `GuiInteractionHelper` | 客户端GUI交互统一工具（查询规则+解析槽位+序列化光标+发包） |
+| `FarmlandPlantHint` | 活耕地种植悬停提示行（纯函数可单测；门槛复用 `canPlantWith`，渲染由 `AbstractContainerScreenMixin` 挂 `render` TAIL） |
 | `GuiInteractionPacket` | 通用GUI交互包（客户端→服务端：slotIndex + containerSlot + actionId + carriedTag） |
 | `CarriedUpdatePacket` | 光标更新包（服务端→客户端：绕过创造模式光标同步限制） |
 | `LivingItemSlotWrapperAccessor` | SlotWrapper 访问器接口（获取 target 字段；命名铁律见 AGENTS.md「Mixin 铁律」） |

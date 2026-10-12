@@ -255,5 +255,11 @@
   "hud.livingitem.hopper.title_preview": "§bTransfer path",
   "hud.livingitem.hopper.source": "Source",
   "hud.livingitem.hopper.target": "Target",
-  "hud.livingitem.hopper.hint": "§81st key = source · 2nd key = target · move away to cancel"
+  "hud.livingitem.hopper.hint": "§81st key = source · 2nd key = target · move away to cancel",
+  "hint.livingitem.farmland.title": "§bPlant§r",
+  "hint.livingitem.farmland.crop": "§7Crop: §f%s",
+  "hint.livingitem.farmland.cost": "§fCost: §a%s§f living seeds",
+  "hint.livingitem.farmland.cost_creative": "§fCost: §a%s§f living seeds §8(free in creative)",
+  "hint.livingitem.farmland.insufficient": "§cNot enough living seeds§f: need %s (have %s)",
+  "hint.livingitem.farmland.planted": "§7Already planted: %s §8(deactivate to replant)"
 }

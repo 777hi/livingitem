@@ -5,6 +5,7 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.math.Axis;
+import com.qiqi.li.client.input.FarmlandPlantHint;
 import com.qiqi.li.client.input.GuiInteractionHelper;
 import com.qiqi.li.client.gui.LivingButton;
 import com.qiqi.li.client.render.ExpandedMapTexture;
@@ -501,6 +502,21 @@ public class AbstractContainerScreenMixin extends Screen {
         // HUD = 常驻自定义 tooltip（2026-10-10，用户拍板「排队」方案）：
         // 背景/边框/文字整条走批量缓冲队列，按调用顺序排在所有物品图标之后 ⇒ 天然在其上，
         // 无需 flush 强制清队；样式（黑底紫边、跟随鼠标、边缘不出屏）随原版/材质包。
+        guiGraphics.renderTooltip(this.font, lines, java.util.Optional.empty(), mouseX, mouseY);
+    }
+
+    /**
+     * 活耕地种植悬停提示（2026-10-12）：光标持活种子 + 悬停活耕地时，在鼠标处
+     * 渲染「种植 / 消耗 / 不足」提示。与方向配置 HUD 同款批量队列入队 ⇒ 天然
+     * 排在物品图标之上。⚠️ 原版对「光标非空」的悬停不渲染 slot tooltip
+     * （AbstractContainerScreen#renderTooltip 判 carried.isEmpty()）⇒ 两者永不重叠，
+     * 无需抑制原版 tooltip。
+     */
+    @Inject(method = "render", at = @At("TAIL"))
+    private void living_item$renderPlantHint(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick,
+                                             CallbackInfo ci) {
+        List<Component> lines = FarmlandPlantHint.getHintLines(this.menu, this.hoveredSlot);
+        if (lines == null || lines.isEmpty()) return;
         guiGraphics.renderTooltip(this.font, lines, java.util.Optional.empty(), mouseX, mouseY);
     }
 

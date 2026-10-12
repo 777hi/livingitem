@@ -255,5 +255,11 @@
   "hud.livingitem.hopper.title_preview": "§b传输方向",
   "hud.livingitem.hopper.source": "源",
   "hud.livingitem.hopper.target": "目标",
-  "hud.livingitem.hopper.hint": "§8第 1 键 = 源 · 第 2 键 = 目标 · 移开鼠标取消"
+  "hud.livingitem.hopper.hint": "§8第 1 键 = 源 · 第 2 键 = 目标 · 移开鼠标取消",
+  "hint.livingitem.farmland.title": "§b种植§r",
+  "hint.livingitem.farmland.crop": "§7作物: §f%s",
+  "hint.livingitem.farmland.cost": "§f消耗 §a%s§f 个活种子",
+  "hint.livingitem.farmland.cost_creative": "§f消耗 §a%s§f 个活种子 §8(创造免费)",
+  "hint.livingitem.farmland.insufficient": "§c活种子不足§f: 需要 %s 个（持有 %s 个）",
+  "hint.livingitem.farmland.planted": "§7已种植: %s §8(取消活化后可重种)"
 }

@@ -146,7 +146,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 579 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
+**合计测试用例 589 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
 全绿基线：`554 passed / 0 failed / 1 skipped`。**逐次新增明细见 [changelog.md](docs/archive/changelog.md)。**
 
 > 📄 测试环境配置与编写约定见 [unit-testing.md](docs/guides/unit-testing.md)；
@@ -167,6 +167,7 @@ src/main/java/com/qiqi/li/
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-12 | 🆕 **活耕地种植悬停提示（客户端反馈）** —— 光标持活种子悬停活耕地时，鼠标处渲染「种植 / 作物 / 消耗」提示；种子不足给差额（需要 N / 持有 M），已种植给「已种植」说明。**缘起**：原版 `renderTooltip` 对**光标非空**的悬停不渲染 slot tooltip（判 `carried.isEmpty()`）⇒ 拿种子悬停耕地零反馈，右键没反应也无从判断。**契约**：门槛复用 `canPlantWith`（提示说「种得成」与真实交互零漂移），不另写数量比较。渲染走方向配置 HUD 同款批量队列（`render` TAIL），零发包。新增 `FarmlandPlantHintTest`（10 项），测试 579 → 589 绿 | `docs/tech/living-farmland-tech.md` §3.2 |
 | 2026-10-12 | 🔍 **收尾审查（本轮全部改动复查）：修 2 处 + 删 1 处死代码** —— ① 🐛 tooltip 批次进度**语义反了**：`percent` 用的是 `brewTime`（**剩余**倒计时）却当进度显示 ⇒ 刚启动显示「进度 100%（剩 20 秒）」自相矛盾；改为 `(BREW_TIME − brewTime)/BREW_TIME`（0% → 100%）。② 🐛 `ContainerRuntimeCache` 服务端 **`store`/`dirtyContainers` 零清理入口**（违反 `StaticCacheRegistry` 铁律 A1，此前只登记了客户端遥测缓存）⇒ 单机「退出存档 → 进另一存档」不重启 JVM，容器键 = 维度+坐标 ⇒ **同坐标箱子继承上个存档的燃料/进度/相位**；新增 `clear()` 并在 `RuntimeRegistration` 登记 `onServerStop`（同层 ⇒ 零分层违规）。③ 🧹 删 `BrewingRecipes.isBottle`（零调用者；原版 `isInput` 形参名无歧义，不属需包装的误导签名）。测试 579 绿，`check_layers` 零新增。⚠️ 跨存档清理**须游戏内验证** | `docs/system-design/living-item-infrastructure.md` §3.5 |
 | 2026-10-12 | 🐛 **修复：缩小窗口后活按钮跑到屏幕外** —— 拖动时的夹取只管**当时那一次**；保存的是「相对 GUI 的偏移」⇒ **缩小窗口 / 调大 GUI scale** 后换算坐标可能落到屏外（按钮"消失"）。修法：`LivingButtonLayout.clampToScreen` + **应用位置时再夹一次**（放在 `LivingButton` 构造 ⇒ 覆盖所有创建路径）；**只夹显示位置、不回写配置**（恢复窗口回原位）。新增 `LivingButtonLayoutTest`（1 项），测试 578 → 579 绿 | `docs/system-design/gui-interaction-system.md` §6.2 |
 | 2026-10-11 | 🆕 **活水源新增转化「空瓶 → 水瓶」+ 转化表支持 `output_potion`** —— ① 框架扩展：条目加可选字段 `output_potion`（药水类型）—— ⚠️ 只写 `output: minecraft:potion` 会得到 `PotionContents.EMPTY`（"不可合成的药水"）而非水瓶 ⇒ 走原版工厂 `createItemStack` 指定内容；未知药水 ⇒ 整条跳过。② 内置 **16 → 17** 条。③ 玩法边界论证：判据 =「**产物是否为活化资产载体**」—— 水桶能放水（载体）⇒ 取消；水瓶不能（非载体）⇒ 保留，且不引入新资源通道。⚠️ 空瓶必须**单个**才转化（水瓶 maxStack=1 ⇒ 缩容等待）。测试 577 → 578 绿 | `docs/tech/living-fluid-tech.md` §6 / §6.2 |
@@ -176,7 +177,6 @@ src/main/java/com/qiqi/li/
 | 2026-10-11 | 🆕 **活酿造台第二段：酿造逻辑落地（功能完成，游戏内实测通过）** —— `domain/brewing/` 补 3 类：`BrewingRecipes`（`PotionBrewing` 适配层，把形参名陷阱包成自解释签名）· `BrewingBatchLogic`（**纯逻辑批次状态机**，不碰世界 ⇒ 可单测）· `BrewingStandSegment`（运行时片段）；`LivingBrewingStandFunction.tick` 落地 5 步（补燃料 → 算 canBrew → 推进状态机 → 写运行时 → 仅 dirty 写组件）。⭐ **燃料与材料在批次两端扣**（启动扣 1 次燃料 / 完成扣 1 份材料，作废不退不扣）· **作废判据只有材料**（瓶子不参与）· **堆叠 `step = count`**（每批成本固定 ⇒ 等价 N 台并行）。`fuel` 落盘（`optionalFieldOf` 保证旧数据可解码）。新增 `BrewingBatchLogicTest`（13 项），测试 555 → 568 绿。✅ 游戏内实测通过 | `docs/tech/living-brewing-stand-tech.md` |
 | 2026-10-11 | 🏗 **新增构建指纹：启动日志打印 `v<版本> commit=<短哈希> built=<时间>`** —— 兜住今天踩坑2（旧 jar 白跑一轮实测）：崩溃日志可自证构建版本，报错符号名与源码对不上时一眼判「旧产物」。注入复用 `generateModMetadata` 模式（`generateBuildProps` + `src/main/build-props/` 模板，裸占位符不进 jar；无 git 环境兜底 unknown 不阻断构建）。⚠️ 坑入档：`filteringCharset='UTF-8'` 必须显式（Windows GBK 写坏中文注释）；模板引擎展开**所有**花括号引用（注释也不能写）；`build.time` 刻意不作任务输入（防秒级时间戳触发全量重跑） | `build.gradle（构建指纹节）` · `LivingItem.logBuildFingerprint` · `docs/archive/changelog.md（2026-10-11 条目）` |
 | 2026-10-11 | 🐛 **修复 Mixin 访问器与 inventoryessentials 重名冲突（点创造标签页崩溃）+ 确立「Mixin 铁律」并落成 `tools/check_mixins.py` 自动校验** —— 同名 `SlotWrapperAccessor`+`getTarget` 命中同一 `SlotWrapper` ⇒ `Incompatible @Accessor`；改 `LivingItemSlotWrapperAccessor` + 方法 `living_item$` 前缀。🔴 两坑入档：①裸 `@Accessor`+前缀 ⇒ 推断失效启动即崩（**前缀必须配显式成员名**，已补 `@Accessor("skipNextRelease")`）②第一轮实测跑旧构建（判据：报错条目名=构建注册名，对不上⇒先怀疑产物过期）。⚠️ 更正：`@Shadow` 必须同名**不能**加前缀。R1 前缀/R2 显式成员/R3·R4 配置↔源码双向，违例退出 1，负面样本验证过；✅ 实测通过 | `AGENTS.md「Mixin 铁律」` · `tools/check_mixins.py` · `docs/archive/changelog.md（2026-10-11 条目）` |
-| 2026-10-10 | 🆕 **活酿造台第一段：纯框架接入（5 槽位方向，无酿造逻辑）** —— 新建 `living/domain/brewing/`（`BrewingDirectionData` / `LivingBrewingStandData` / `BrewingStandComponents` / `LivingBrewingStandFunction` / `BrewingStandRegistration`），5 槽 = 3 瓶 + 燃料 + 材料，默认布局「瓶-瓶-瓶 / 燃料-台-材料」（`↖ ↑ ↗ / ← · →`）；`supportsDiagonal()` = true ⇒ **九宫格对角键的首个消费者**；图标零改动（不注册 spec ⇒ 自动挂默认活标记）；`Segment` 与燃料字段留第二段（避免死代码）。测试 555 绿。第二段：`PotionBrewing` 适配 + 400t 批次状态机 + 次数制燃料 + 堆叠加速 | `docs/archive/living-brewing-stand-design.md` §6 |
 
 ## 排查铁律：原版机制挡路时
 
