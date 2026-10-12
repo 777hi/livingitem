@@ -34,6 +34,7 @@ import com.mojang.logging.LogUtils;
 import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.perf.PerfMetrics;
+import com.qiqi.li.living.util.StaticCacheRegistry;
 
 /**
  * 活物品容器处理器 —— 负责遍历容器中的物品并执行活物品 tick。
@@ -82,6 +83,11 @@ public class ContainerLivingItemHandler {
 
     private static final int CLEANUP_INTERVAL = 1200;
     private static int cleanupCounter;
+
+    static {
+        // static 缓存清理：登记与 clearAllCaches() 同文件（见 StaticCacheRegistry 类注释「登记位置」）
+        StaticCacheRegistry.onServerStop(s -> ContainerLivingItemHandler.clearAllCaches());
+    }
 
     /**
      * 运行时缓存生命周期追踪（方案 A，2026-10-11）：容器键 → （槽位 → 上次的活物品类型）。

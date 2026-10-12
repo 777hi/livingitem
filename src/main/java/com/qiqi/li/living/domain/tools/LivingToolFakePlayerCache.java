@@ -10,6 +10,7 @@ import javax.annotation.Nullable;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
+import com.qiqi.li.living.util.StaticCacheRegistry;
 
 /**
  * 活工具 FakePlayer 缓存（{@code L26 = d}）：<b>按（维度, 主人 UUID）共享实例</b>。
@@ -32,6 +33,11 @@ import net.minecraft.world.level.Level;
 public final class LivingToolFakePlayerCache {
 
     private static final Map<CacheKey, LivingToolFakePlayer> CACHE = new HashMap<>();
+
+    static {
+        // static 缓存清理：登记与 clear() 同文件（见 StaticCacheRegistry 类注释「登记位置」）
+        StaticCacheRegistry.onServerStop(s -> LivingToolFakePlayerCache.clear());
+    }
 
     private LivingToolFakePlayerCache() {
     }

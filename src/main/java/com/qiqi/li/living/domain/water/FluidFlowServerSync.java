@@ -22,6 +22,7 @@ import net.neoforged.neoforge.fluids.FluidType;
 import net.neoforged.neoforge.registries.NeoForgeRegistries;
 
 import com.qiqi.li.living.container.TickableContainerContext;
+import com.qiqi.li.living.util.StaticCacheRegistry;
 
 /**
  * 服务端容器流体快照同步（Q5 渲染轨，2026-10-03）。
@@ -45,6 +46,11 @@ public final class FluidFlowServerSync {
      * 无流体容器不在此集合 ⇒ 每拍只多一次 Set 查询，零发包开销。
      */
     private static final Set<String> CLIENT_ACTIVE = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    static {
+        // static 缓存清理：登记与 clearRuntimeState() 同文件（见 StaticCacheRegistry 类注释「登记位置」）
+        StaticCacheRegistry.onServerStop(s -> FluidFlowServerSync.clearRuntimeState());
+    }
 
     private FluidFlowServerSync() {}
 

@@ -17,6 +17,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
+import com.qiqi.li.living.util.StaticCacheRegistry;
 
 /**
  * 服务端「哪些容器里有活工具」收集 + 广播（{@code K2}）。
@@ -56,6 +57,11 @@ public final class LivingToolHostSync {
 
     /** 每个玩家上次发出的条目（用于内容去重）。 */
     private static final Map<UUID, List<LivingToolHostPacket.Entry>> lastSent = new HashMap<>();
+
+    static {
+        // static 缓存清理：登记与 clear() 同文件（见 StaticCacheRegistry 类注释「登记位置」）
+        StaticCacheRegistry.onServerStop(s -> LivingToolHostSync.clear());
+    }
 
     private LivingToolHostSync() {
     }

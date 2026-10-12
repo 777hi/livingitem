@@ -2,6 +2,7 @@ package com.qiqi.li.living.runtime;
 
 import java.util.HashMap;
 import java.util.Map;
+import com.qiqi.li.living.util.StaticCacheRegistry;
 
 /**
  * 客户端活物品运行时缓存 —— 由 {@link com.qiqi.li.network.LivingItemSyncPacket} 更新。
@@ -13,6 +14,12 @@ import java.util.Map;
  * 获取当前悬停槽位的功能由客户端辅助类 {@code LivingItemTooltipBridge} 提供。</p>
  */
 public class LivingItemClientCache {
+
+    static {
+        // static 缓存清理：登记与 clear() 同文件（见 StaticCacheRegistry 类注释「登记位置」）
+        // 跨存档不清会把上个存档的 tooltip 遥测数据带到新世界
+        StaticCacheRegistry.onClientLogout(LivingItemClientCache::clear);
+    }
 
     private static String currentContainerKey = "";
     private static Map<Integer, RuntimeSegments> slotData = Map.of();

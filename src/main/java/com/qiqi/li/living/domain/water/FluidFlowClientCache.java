@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 
 import net.neoforged.neoforge.fluids.FluidType;
+import com.qiqi.li.living.util.StaticCacheRegistry;
 
 /**
  * 客户端容器流体快照缓存 —— 由 {@link com.qiqi.li.network.FluidFlowSyncPacket} 更新，
@@ -18,6 +19,12 @@ import net.neoforged.neoforge.fluids.FluidType;
  * {@code fluids} 调色板下标）。本类不依赖 Minecraft 客户端类，可在服务端安全加载。</p>
  */
 public final class FluidFlowClientCache {
+
+    static {
+        // static 缓存清理：登记与 clear() 同文件（见 StaticCacheRegistry 类注释「登记位置」）
+        // 界面 removed() 清缓存与「退出存档」之间有竞态窗口（服务端最后一拍仍可能发包）
+        StaticCacheRegistry.onClientLogout(FluidFlowClientCache::clear);
+    }
 
     /** 一次容器流体快照：宽度 + 流体调色板 + 槽位 → [level, fromSlot, fluidIndex]。 */
     public record FlowSnapshot(int width, List<FluidType> fluids, Map<Integer, int[]> cells) {

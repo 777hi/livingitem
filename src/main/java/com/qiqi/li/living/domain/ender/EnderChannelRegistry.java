@@ -28,6 +28,7 @@ import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.network.PacketDistributor;
 import org.slf4j.Logger;
+import com.qiqi.li.living.util.StaticCacheRegistry;
 
 /**
  * 活末影箱全局路由表 —— 服务端单例，维护频道键→路由条目双端队列的映射。
@@ -69,6 +70,11 @@ public final class EnderChannelRegistry {
     private static final Logger LOGGER = LogUtils.getLogger();
 
     private static final EnderChannelRegistry INSTANCE = new EnderChannelRegistry();
+
+    static {
+        // static 缓存清理：登记与 clearAll() 同文件（见 StaticCacheRegistry 类注释「登记位置」）
+        StaticCacheRegistry.onServerStop(s -> EnderChannelRegistry.getInstance().clearAll());
+    }
 
     private MinecraftServer server;
 

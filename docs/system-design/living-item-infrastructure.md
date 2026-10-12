@@ -679,27 +679,44 @@ private final Set<String> reusableKeySet = new HashSet<>();
 
 单机「退出存档 → 进另一个存档」**不重启 JVM** ⇒ `static` 字段跨存档存活，必须显式清理。
 
-> 🔴 **铁律（A1 成文）：新增 static 缓存 ⇒ 必须登记一行。**
-> **登记在哪，看它属于谁**（2026-10-08 ② 修正）：
+> 🔴 **铁律（A1 成文）：新增 static 缓存 ⇒ 必须登记。**
 >
-> | 缓存归属 | 登记点 | 理由 |
-> |---|---|---|
-> | **框架自己的**（`container` 包） | `StaticCacheRegistry` 的 `static{}` 块 | 它就在框架层 |
-> | **某个领域的** | 该领域的 **`XxxRegistration.register()`** | 否则 `StaticCacheRegistry`（L1）必须 import 领域（L3）⇒ **跨层反向依赖** |
+> **⭐ 登记位置（2026-10-12 改）：写在缓存类<b>自己</b>的 `static {}` 块里。**
+>
+> ```java
+> public final class XxxCache {
+>     private static final Map<K, V> store = new HashMap<>();
+>     static { StaticCacheRegistry.onServerStop(s -> XxxCache.clear()); }   // ← 与 clear() 同文件
+>     public static void clear() { store.clear(); }
+> }
+> ```
+>
+> **为什么改**：此前约定「在领域的 `XxxRegistration` 里登记」—— 缓存类与登记点在**两个文件**，
+> 写完 `clear()` 却忘接线时**静默失效**（2026-10-12 扫出 3 处零调用者的 `clear()`：
+> `LivingToolPlayerClientCache` / `LivingToolAssistState` / `EnderChannelClientCache`，
+> javadoc 却都写着「XX 时调用」）。改到缓存类自己后，**登记与 `clear()` 只隔几行**，
+> 「写了 clear 却漏登记」在结构上几乎不可能。
+> ⚠️ **分层更干净**：`StaticCacheRegistry` 在 **L1** ⇒ 任何缓存类调它都是**向下依赖**
+> （L3 → L1 合法）—— 此前担心的「L1 必须 import 领域」只针对**它自己的静态块**，
+> 缓存类自己调则无此问题。
+> ⚠️ **注册表类不参与**（跨存档无害、本就不写 `clear()`）；「写了 `clear()`」即「需要清」的信号。
+> 需要总览时调 `StaticCacheRegistry.describe()`（集中登记改分散后补回一览性）。
 >
 > 两种登记都走同一对 API：
 > - 服务端缓存 → `onServerStop(...)`（`ServerStoppedEvent` 时执行，可读 `MinecraftServer` 上下文）；
 > - 客户端缓存 → `onClientLogout(...)`（`ClientPlayerNetworkEvent.LoggingOut` 时执行）。
 >
 > 两个生命周期钩子（`LivingItem.onServerStopped` / `FluidClientCacheCleanup.onLoggingOut`）**只调
-> `runServer` / `runClient`，不再往钩子里加**。登记一行即被覆盖 —— 这是把「自愿挂靠（靠记性）」
+> `runServer` / `runClient`，不再往钩子里加**。登记即被覆盖 —— 这是把「自愿挂靠（靠记性）」
 > 改为「登记表」的治本：两次漏挂事故（Q3「测试也是调用者」、流体侧 `CLIENT_ACTIVE` 未挂
 > `ServerStopped`）都源于散落挂靠。
 >
-> ⚠️ **归属修正的由来**：原先 7 项领域缓存登记在 `StaticCacheRegistry` 里 ⇒
-> 该类必须 import `ender` / `runtime` / `tnt` / `tools` / `water` 五个领域，
-> **构成 7 条跨层反向依赖**（`check_layers.py` R1）。现已全部搬进各领域 Registration，
-> **R1 101 → 94**。`StaticCacheRegistry` 现在**只认识框架自己**。
+> 📜 **历史（2026-10-08 ~ 2026-10-12）**：曾按「框架的登记在 `StaticCacheRegistry` 静态块、
+> 领域的登记在该领域 `XxxRegistration`」分两处（当时理由：怕 `StaticCacheRegistry`（L1）
+> import 领域（L3）构成反向依赖，`R1 101 → 94`）。2026-10-12 改为「各缓存类自己登记」后该分工取消
+> —— 各 `XxxRegistration` 里的登记行已移除（保留一行注释指向缓存类）。
+> ⚠️ 同日**删除 `RuntimeRegistration`**：它只为「登记 runtime 包缓存清理」而存在，迁走后变空；
+> 且 `runtime` 是 L2 机制层，本就不该有「域注册入口」。
 
 ### 3.5 运行时缓存（ContainerRuntimeCache）的生命周期（方案 A，2026-10-11）
 
@@ -735,11 +752,19 @@ private final Set<String> reusableKeySet = new HashSet<>();
 
 **③ 跨存档必须清空（登记义务）**：容器键 = 维度 + 坐标（+ 背包前缀）⇒ 单机
 「退出存档 → 进另一个存档」**不重启 JVM**，两个存档里**同一坐标的箱子会继承**
-上一个存档的燃料 / 进度 / 相位。⇒ `ContainerRuntimeCache.clear()` 登记进
-`StaticCacheRegistry.onServerStop`（登记点在 `RuntimeRegistration`，与客户端遥测缓存
-`LivingItemClientCache` 对称；归属判据见 `StaticCacheRegistry` 类注释）。
+上一个存档的燃料 / 进度 / 相位。⇒ `ContainerRuntimeCache.clear()` 登记在
+**缓存类自己的静态块**里（2026-10-12 起，见下方「登记位置」）。
 ⚠️ **2026-10-12 补**：此前只登记了客户端侧，服务端 `store` / `dirtyContainers`
 **零清理入口** —— 违反 `StaticCacheRegistry` 铁律 A1，属遗漏。
+
+**登记位置（2026-10-12 改）**：清理登记一律写在**缓存类自己的 `static {}` 块**里
+（与 `clear()` 同文件、隔几行）—— 此前约定「在领域的 `XxxRegistration` 里登记」，
+实测出问题：缓存类与登记点在**两个文件**，写完 `clear()` 却忘接线时**静默失效**
+（2026-10-12 扫出 3 处零调用者的 `clear()`：`LivingToolPlayerClientCache` /
+`LivingToolAssistState` / `EnderChannelClientCache`，javadoc 却都写着「XX 时调用」）。
+分层也干净：`StaticCacheRegistry` 在 **L1** ⇒ 任何缓存类调它都是**向下依赖**（L3→L1 合法）。
+⚠️ **注册表类不参与**（跨存档无害、本就不写 `clear()`）；「写了 `clear()`」本身就是
+「需要清」的信号。需要总览时调 `StaticCacheRegistry.describe()`（集中登记改分散后补回一览性）。
 
 **已知边界（接受）**：**同类物品原地交换**（手持新熔炉直接点击槽位里的旧熔炉）判据看不出变化
 ⇒ 不清缓存。该场景收益有限（最多继承一次剩余燃烧时间），要彻底解决需给物品加实例 id

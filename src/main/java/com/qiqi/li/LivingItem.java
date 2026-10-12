@@ -90,7 +90,6 @@ import com.qiqi.li.living.domain.hopper.HopperRegistration;
 import com.qiqi.li.living.domain.map.MapRegistration;
 import com.qiqi.li.living.domain.power.PowerRegistration;
 import com.qiqi.li.living.domain.redstone.RedstoneRegistration;
-import com.qiqi.li.living.runtime.RuntimeRegistration;
 import com.qiqi.li.living.domain.tnt.TntRegistration;
 import com.qiqi.li.living.domain.tools.ToolRegistration;
 import com.qiqi.li.living.domain.water.FluidTransformTable;
@@ -221,7 +220,8 @@ public class LivingItem {
         FarmlandRegistration.register();
         ToolRegistration.register();
         MapRegistration.register();
-        RuntimeRegistration.register();   // 无 Function，只登记 static 缓存清理（见该类注释）
+        // 注：原 RuntimeRegistration 已删（2026-10-12）—— 它只为「登记 runtime 包缓存清理」而存在，
+        // 改由缓存类自己登记后即变空；且 runtime 是 L2 机制层，本就不该有「域注册入口」。
 
         // 规则装载（handler / 谓词全部就位之后）：内置 JSON + 玩家差异 → InteractionRegistry
         InteractionRuleConfig.load();
@@ -527,8 +527,9 @@ public class LivingItem {
      */
     @SubscribeEvent
     public void onServerStopped(ServerStoppedEvent event) {
-        // 清理项集中在 StaticCacheRegistry（F-2，2026-10-05）：把「自愿挂靠」改为「登记一行即被覆盖」。
-        // 🔴 新增 static 缓存 ⇒ 去 StaticCacheRegistry.onServerStop 登记一行，不要再往这里加。
+        // 清理项由各缓存类**自己在静态块**登记（2026-10-12 改，见 StaticCacheRegistry 类注释），
+        // 此处只负责统一执行。
+        // 🔴 新增 static 缓存 ⇒ 在**该缓存类自己的 `static {}`** 里登记（与 clear() 同文件），不要往这里加。
         StaticCacheRegistry.runServer(event.getServer());
         LOGGER.info("Cleared living item caches on server stop");
     }

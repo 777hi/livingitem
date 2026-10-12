@@ -13,7 +13,6 @@ import net.minecraft.world.level.material.Fluids;
 import net.neoforged.neoforge.fluids.FluidType;
 
 import com.qiqi.li.living.domain.water.FluidFlowBehavior.IncinerateResult;
-import com.qiqi.li.living.util.StaticCacheRegistry;
 
 /**
  * 活水域注册入口（活桶 / 活水车 / 流体行为）—— 见 {@code RedstoneRegistration} 的类注释了解为何有这个类（A1）。
@@ -122,10 +121,7 @@ public final class WaterRegistration {
             }
         });
 
-        // ── static 缓存清理（登记点归属见 StaticCacheRegistry 类注释）──
-        // 流体快照同步的「曾下发过」边沿集（2026-10-04）：跨存档不清会在新世界对同键容器误发一次空快照
-        StaticCacheRegistry.onServerStop(s -> FluidFlowServerSync.clearRuntimeState());
-        // 客户端：界面 removed() 清缓存与「退出存档」之间有竞态窗口（服务端最后一拍仍可能发包）
-        StaticCacheRegistry.onClientLogout(FluidFlowClientCache::clear);
+        // 注：static 缓存清理已改由缓存类**自己**登记（2026-10-12）——
+        // 见 FluidFlowServerSync / FluidFlowClientCache 的静态块与 StaticCacheRegistry 类注释
     }
 }

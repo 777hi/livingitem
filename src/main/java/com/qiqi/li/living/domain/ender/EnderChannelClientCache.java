@@ -6,6 +6,7 @@ import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import com.qiqi.li.living.util.StaticCacheRegistry;
 
 /**
  * 活末影箱路由表的客户端镜像缓存 —— 供 Tooltip 渲染读取。
@@ -23,6 +24,13 @@ import java.util.concurrent.ConcurrentHashMap;
 public class EnderChannelClientCache {
 
     private static final Map<EnderChannelKey, ChannelSnapshot> cache = new ConcurrentHashMap<>();
+
+    static {
+        // static 缓存清理：登记与 clear() 同文件（见 StaticCacheRegistry 类注释「登记位置」）
+        // ⚠️ 2026-10-12 补：此前 clear() **零调用者** ⇒ 跨存档（UUID 不变、堆叠数可能相同）
+        //    会把上个存档的频道快照带进新世界 ⇒ tooltip 显示错误内容
+        StaticCacheRegistry.onClientLogout(EnderChannelClientCache::clear);
+    }
 
     public record EntryDisplay(
         String itemType,

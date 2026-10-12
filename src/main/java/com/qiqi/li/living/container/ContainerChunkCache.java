@@ -19,6 +19,7 @@ import net.neoforged.neoforge.event.level.ChunkEvent;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Set;
+import com.qiqi.li.living.util.StaticCacheRegistry;
 
 /**
  * 容器区块缓存 —— 维护"包含容器方块实体的区块"列表，避免每 tick 全量扫描所有区块。
@@ -48,6 +49,11 @@ import java.util.Set;
  */
 public class ContainerChunkCache {
     private static final ContainerChunkCache INSTANCE = new ContainerChunkCache();
+
+    static {
+        // static 缓存清理：登记与 clear() 同文件（见 StaticCacheRegistry 类注释「登记位置」）
+        StaticCacheRegistry.onServerStop(s -> ContainerChunkCache.getInstance().clear());
+    }
 
     /** 按维度存储包含容器的区块坐标集合 */
     private final Map<ResourceKey<Level>, Set<ChunkPos>> chunkCache = new Object2ObjectOpenHashMap<>();

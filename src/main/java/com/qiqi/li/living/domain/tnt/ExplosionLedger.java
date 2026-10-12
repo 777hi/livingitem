@@ -20,6 +20,7 @@ import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.saveddata.SavedData;
+import com.qiqi.li.living.util.StaticCacheRegistry;
 
 /**
  * 待炸账本 —— 「未观测的地形变更推迟到观测时」（原版 TNT 引信模型的**爆炸范围**版本）。
@@ -59,6 +60,12 @@ public class ExplosionLedger extends SavedData {
 
     /** 单 tick 最多应用多少个区块（分帧预算）—— 见 §3.2.2「限速」安全阀。 */
     static final int MAX_CHUNKS_PER_TICK = 32;
+
+    static {
+        // static 缓存清理：登记与清理方法同文件（见 StaticCacheRegistry 类注释「登记位置」）
+        // ⚠️ 只清**内存调度表**（条目本身随存档走，不需要清）
+        StaticCacheRegistry.onServerStop(ExplosionLedger::clearAllRuntimeState);
+    }
 
     private static final String KEY_ENTRIES = "entries";
     private static final String KEY_X = "cx";

@@ -6,6 +6,7 @@ import net.minecraft.world.inventory.Slot;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import com.qiqi.li.living.util.StaticCacheRegistry;
 
 /**
  * 服务端活物品运行时缓存 —— 存储每容器每槽位的运行时数据（遥测 / 瞬态字段）。
@@ -33,6 +34,11 @@ public class ContainerRuntimeCache {
     private static final Map<String, Map<Integer, RuntimeSegments>> store = new ConcurrentHashMap<>();
     private static final Set<String> dirtyContainers = ConcurrentHashMap.newKeySet();
 
+    static {
+        // static 缓存清理：登记与 clear() 同文件（见 StaticCacheRegistry 类注释「登记位置」）
+        StaticCacheRegistry.onServerStop(s -> ContainerRuntimeCache.clear());
+    }
+
     // ── 更新 ────────────────────────────────────────────────
 
     public static void update(String containerKey, int slot, RuntimeSegments data) {
@@ -59,7 +65,7 @@ public class ContainerRuntimeCache {
      * <p>⚠️ <b>必须登记</b>：单机「退出存档 → 进另一个存档」<b>不重启 JVM</b>，static 字段跨存档存活。
      * 容器键 = 维度 + 坐标（+ 背包前缀）⇒ 两个存档里同一个箱子坐标相同 ⇒ <b>新存档会继承
      * 上一个存档的燃料 / 进度 / 相位</b>（<code>StaticCacheRegistry</code> 铁律 A1）。
-     * 登记点在 {@link RuntimeRegistration}（本包 L2 的登记入口）。</p>
+     * 登记就在<b>本类静态块</b>（2026-10-12 起：缓存类自己登记，见 StaticCacheRegistry 类注释）。</p>
      */
     public static void clear() {
         store.clear();

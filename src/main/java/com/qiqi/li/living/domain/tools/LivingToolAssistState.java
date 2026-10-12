@@ -3,6 +3,7 @@ package com.qiqi.li.living.domain.tools;
 import javax.annotation.Nullable;
 
 import net.minecraft.core.BlockPos;
+import com.qiqi.li.living.util.StaticCacheRegistry;
 
 /**
  * 客户端的「辅助挖掘进行中」状态（{@code A3} 模型的挖掘环用）。
@@ -26,6 +27,13 @@ public final class LivingToolAssistState {
     private static BlockPos target;
     private static long lastNotedTick;
     private static float digSpeed;
+
+    static {
+        // static 缓存清理：登记与 clear() 同文件（见 StaticCacheRegistry 类注释「登记位置」）
+        // ⚠️ 2026-10-12 补：此前 clear() **零调用者** ⇒ 跨存档残留 target/lastNotedTick
+        //    ⇒ 新存档 tick 更小 ⇒ `now - lastNotedTick` 为负 ⇒ 误判「还在挖」⇒ 画出错误的挖掘环
+        StaticCacheRegistry.onClientLogout(LivingToolAssistState::clear);
+    }
 
     private LivingToolAssistState() {
     }

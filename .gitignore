@@ -76,3 +76,7 @@ libs/
 ### 崩溃日志 ###
 # 注意 *.log 已在上面忽略，但崩溃报告是 .txt，需单独挡
 docs/crash-*.txt
+
+### Python 缓存（tools/ 脚本运行产物，非源码）###
+__pycache__/
+*.pyc

@@ -5,6 +5,7 @@ import java.util.UUID;
 
 
 import net.minecraft.resources.ResourceLocation;
+import com.qiqi.li.living.util.StaticCacheRegistry;
 
 /**
  * 客户端「附近玩家背包里的活工具」缓存（联机可见性 · 最小版）。
@@ -26,6 +27,12 @@ public final class LivingToolPlayerClientCache {
 
     private static volatile ResourceLocation dimension;
     private static volatile List<LivingToolPlayerPacket.Entry> entries = List.of();
+
+    static {
+        // static 缓存清理：登记与 clear() 同文件（见 StaticCacheRegistry 类注释「登记位置」）
+        // ⚠️ 2026-10-12 补：此前 clear() **零调用者** ⇒ 跨存档会把上个存档的活工具残留渲染出来
+        StaticCacheRegistry.onClientLogout(LivingToolPlayerClientCache::clear);
+    }
 
     private LivingToolPlayerClientCache() {
     }
