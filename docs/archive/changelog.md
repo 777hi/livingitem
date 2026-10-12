@@ -20,6 +20,9 @@
 > 🐛 修复：缩小窗口后活按钮跑到屏幕外（应用保存位置时未夹取）。
 > 🔍 **收尾审查**：修 tooltip 进度语义反了 · 补 `ContainerRuntimeCache` 服务端跨存档清理
 > （违反铁律 A1 的遗漏）· 删死代码 `isBottle`；测试 579 绿。
+> 🆕 活耕地种植悬停提示（另一路；测试 589 绿）。
+> 🔧 **重构：static 缓存清理改为「缓存类自己登记自己」** —— 治「忘接线」（扫出 3 处零调用者的
+> `clear()`）；13 项登记迁移 + 删 `RuntimeRegistration` + 新增 `describe()`；校验工具评估后放弃。
 
 - 🐛 **修复：缩小窗口后活按钮跑到屏幕外**（用户实测）—— 拖动时的夹取只管**当时那一次**；
   保存的位置是「相对 GUI 左上角」的偏移，玩家之后**缩小窗口 / 调大 GUI scale** ⇒ 逻辑屏幕变小
@@ -66,6 +69,26 @@
   协议与可复用模式（三件套：纯函数 / 门槛同源 / render TAIL）落
   [gui-interaction-system.md](../system-design/gui-interaction-system.md) §7。
   新增 `FarmlandPlantHintTest`（10 项：门槛 null 分流 + 四态文案键与参数），测试 579 → 589 绿。
+  ✅ 游戏内实测通过（悬停提示效果确认）。
+
+- 🔧 **重构：static 缓存清理改为「缓存类自己登记自己」（取代集中登记，治「忘接线」）** ——
+  **缘起**：2026-10-12 扫出 **3 处零调用者的 `clear()`**（`LivingToolPlayerClientCache` /
+  `LivingToolAssistState` / `EnderChannelClientCache`，javadoc 却都写着「XX 时调用」）——
+  根因是**缓存类与登记点在两个文件**，写完 `clear()` 忘接线时**静默失效**
+  （`ContainerRuntimeCache` 的漏登记是同一类，只是它连 `clear()` 都还没写）。
+  **改法**：登记搬进**缓存类自己的 `static {}` 块**（与 `clear()` 同文件、隔几行）⇒
+  「写了 clear 却漏登记」在结构上几乎不可能。分层干净（`StaticCacheRegistry` 在 **L1**
+  ⇒ 任何缓存类调它都是**向下依赖**；此前担心的「L1 import 领域」只针对**它自己的静态块**）。
+  **注册表类天然不参与**（跨存档无害、本就不写 `clear()`）——「写了 `clear()`」即「需要清」的信号。
+  **连带**：① 现有 10 项集中登记（`StaticCacheRegistry` 静态块 2 + 各 `XxxRegistration` 8）
+  全部迁到各缓存类，共 **13 项**（8 server + 5 client）；② 各 `XxxRegistration` 的登记行移除
+  （留一行注释指向缓存类）；③ **删除迁空的 `RuntimeRegistration`**（`runtime` 是 L2 机制层，
+  本就不该有「域注册入口」）；④ `StaticCacheRegistry` 新增 `describe()` 补回「集中登记」丢失的一览性。
+  ⚠️ **校验工具已评估并放弃**：曾写好「棘轮基线 + 三规则」脚本（能抓「有 clear 却零调用者」），
+  但结构消除后其主要价值（抓「忘接线」）**已不存在** ⇒ 按用户决定不做。
+  **验证**：编译 + 全量测试 **589 绿**；`check_layers` 零新增；`doc_check` 通过。
+  ⚠️ **须游戏内验证**：退出存档 → 进新存档，同坐标箱子的活熔炉燃料应归零；新存档开局不应
+  渲染出上个存档的活工具环 / 挖掘环 / 末影箱 tooltip。
 
 ---
 
