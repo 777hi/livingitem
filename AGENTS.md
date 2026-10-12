@@ -147,7 +147,11 @@ src/main/java/com/qiqi/li/
 ```
 
 **合计测试用例 589 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
-全绿基线：`554 passed / 0 failed / 1 skipped`。**逐次新增明细见 [changelog.md](docs/archive/changelog.md)。**
+**全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
+passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
+已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
+说明与回归入口住 [test-map.md](docs/reference/test-map.md)。
+**逐次新增明细见 [changelog.md](docs/archive/changelog.md)。**
 
 > 📄 测试环境配置与编写约定见 [unit-testing.md](docs/guides/unit-testing.md)；
 > 测试文件树（每个测试类守什么）见 [test-map.md](docs/reference/test-map.md)。
@@ -167,6 +171,7 @@ src/main/java/com/qiqi/li/
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-12 | 🏗 **doc_check 第 2 项扩为「条数 + 全绿」双核验，AGENTS.md 删手维护 passed 快照数** —— 原「全绿基线：554 passed」是无校验快照（2026-10-10 写下，两天后实测已 588：total 有人守、passed 没人守）⇒ 必漂。修法：doc_check 在同一批 XML 上加 `failures/errors` 恒 0 断言（「全绿」从手维护 claim 变机械断言）；AGENTS 只留已被核验的总数 + 指向 test-map 的 @Disabled 说明。否掉「三数全写全核」——强制执行一个每次加测试就要改的数字（churn），判据同第 7 项「窄而准 > 宽而吵」 | `tools/doc_check.py` · `AGENTS.md「测试基线」行` · `docs/README.md` §7.1 |
 | 2026-10-12 | 🔧 **重构：static 缓存清理改为「缓存类自己登记自己」**（取代集中登记，治「忘接线」）—— 缘起扫出 **3 处零调用者的 `clear()`**（`LivingToolPlayerClientCache` / `LivingToolAssistState` / `EnderChannelClientCache`，javadoc 却都写着「XX 时调用」）：根因是**缓存类与登记点在两个文件**，写完 `clear()` 忘接线即**静默失效**（`ContainerRuntimeCache` 的漏登记同类，只是它连 `clear()` 都还没写）。改法：登记搬进**缓存类自己的 `static {}` 块**（与 `clear()` 同文件、隔几行）⇒ 结构上几乎不可能漏；分层干净（`StaticCacheRegistry` 在 **L1** ⇒ 任何缓存类调它都是向下依赖）。**13 项**登记（8 server + 5 client）全部迁完，各 `XxxRegistration` 移除登记行（留注释指向），**删除迁空的 `RuntimeRegistration`**（runtime 是 L2 机制层，本就不该有「域注册入口」），新增 `describe()` 补总览。⚠️ 评估过「棘轮基线校验工具」并**放弃**（结构消除后其主要价值已不存在）。测试 589 绿，`check_layers` 零新增。⚠️ 跨存档清理**须游戏内验证** | `docs/system-design/living-item-infrastructure.md` §3.4 / §3.5 |
 | 2026-10-12 | 🆕 **活耕地种植悬停提示（客户端反馈）** —— 光标持活种子悬停活耕地时，鼠标处渲染「种植 / 作物 / 消耗」提示；种子不足给差额（需要 N / 持有 M），已种植给「已种植」说明。**缘起**：原版 `renderTooltip` 对**光标非空**的悬停不渲染 slot tooltip（判 `carried.isEmpty()`）⇒ 拿种子悬停耕地零反馈，右键没反应也无从判断。**契约**：门槛复用 `canPlantWith`（提示说「种得成」与真实交互零漂移），不另写数量比较。渲染走方向配置 HUD 同款批量队列（`render` TAIL），零发包。新增 `FarmlandPlantHintTest`（10 项），测试 579 → 589 绿。✅ 游戏内实测通过 | `docs/tech/living-farmland-tech.md` §3.2 |
 | 2026-10-12 | 🔍 **收尾审查（本轮全部改动复查）：修 2 处 + 删 1 处死代码** —— ① 🐛 tooltip 批次进度**语义反了**：`percent` 用的是 `brewTime`（**剩余**倒计时）却当进度显示 ⇒ 刚启动显示「进度 100%（剩 20 秒）」自相矛盾；改为 `(BREW_TIME − brewTime)/BREW_TIME`（0% → 100%）。② 🐛 `ContainerRuntimeCache` 服务端 **`store`/`dirtyContainers` 零清理入口**（违反 `StaticCacheRegistry` 铁律 A1，此前只登记了客户端遥测缓存）⇒ 单机「退出存档 → 进另一存档」不重启 JVM，容器键 = 维度+坐标 ⇒ **同坐标箱子继承上个存档的燃料/进度/相位**；新增 `clear()` 并在 `RuntimeRegistration` 登记 `onServerStop`（同层 ⇒ 零分层违规）。③ 🧹 删 `BrewingRecipes.isBottle`（零调用者；原版 `isInput` 形参名无歧义，不属需包装的误导签名）。测试 579 绿，`check_layers` 零新增。⚠️ 跨存档清理**须游戏内验证** | `docs/system-design/living-item-infrastructure.md` §3.5 |
@@ -176,7 +181,6 @@ src/main/java/com/qiqi/li/
 | 2026-10-11 | 🐛 **修复：活酿造台把活物品当耗材（隔离规则漏实现）** —— 用户实测「活红石被当材料消耗」。根因：首版**漏了 `isLivingItem` 检查**（材料 / 燃料 / 瓶子三处），而 §0 规则 7 已写「活物品不作材料 / 燃料」（活熔炉有该检查、酿造台没有）。危害：材料被 `consumeOne` 吃掉；瓶子侧更隐蔽 —— 原版 `hasMix` 只看 `POTION_CONTENTS` **不看活标记** ⇒「活药水」会被 `mix` **原地替换**。修法：抽 `isEligibleIngredient` / `isEligibleBottle` / `isBlazePowder` 三个准入判据，`isBrewable` 与 `doBrew` 共用。新增 `BrewingSlotEligibilityTest`（4 项），测试 573 → 577 绿。⭐ 教训：**§0 规则表每条都必须有实现点与验证入口** | `docs/tech/living-brewing-stand-tech.md` §3.5 / §9.5 |
 | 2026-10-11 | 🐛 **修复：活熔炉燃料「绑在槽位」+ 刷燃料漏洞（运行时缓存生命周期，方案 A）** —— `ContainerRuntimeCache` 键为 `(容器键, 槽位)` 且 `removeSlot/removeContainer` **零调用者** ⇒ 同槽位换物品会**继承**旧瞬态状态（熔炉燃料/进度 · 漏斗冷却 · 酿造台进度），**可刷燃料**；跨槽位搬运则丢。⭐ 语义定案（用户）：运行时数据属于「**当前槽位里的那台机器**」。修法：L1 每 tick 对比「槽位→物品类型」登记待清、**L4 执行**（拆开是为避开 L1→L2 的 R1 违规）；⚠️ 判据只看 `Item` **不看组件**（燃烧标志会被 tick 改写，纳入即误清）。新增 `ContainerRuntimeCacheLifecycleTest`（5 项），测试 568 → 573 绿，**分层零新增违规** | `docs/system-design/living-item-infrastructure.md` §3.5 |
 | 2026-10-11 | 🆕 **活酿造台第二段：酿造逻辑落地（功能完成，游戏内实测通过）** —— `domain/brewing/` 补 3 类：`BrewingRecipes`（`PotionBrewing` 适配层，把形参名陷阱包成自解释签名）· `BrewingBatchLogic`（**纯逻辑批次状态机**，不碰世界 ⇒ 可单测）· `BrewingStandSegment`（运行时片段）；`LivingBrewingStandFunction.tick` 落地 5 步（补燃料 → 算 canBrew → 推进状态机 → 写运行时 → 仅 dirty 写组件）。⭐ **燃料与材料在批次两端扣**（启动扣 1 次燃料 / 完成扣 1 份材料，作废不退不扣）· **作废判据只有材料**（瓶子不参与）· **堆叠 `step = count`**（每批成本固定 ⇒ 等价 N 台并行）。`fuel` 落盘（`optionalFieldOf` 保证旧数据可解码）。新增 `BrewingBatchLogicTest`（13 项），测试 555 → 568 绿。✅ 游戏内实测通过 | `docs/tech/living-brewing-stand-tech.md` |
-| 2026-10-11 | 🏗 **新增构建指纹：启动日志打印 `v<版本> commit=<短哈希> built=<时间>`** —— 兜住今天踩坑2（旧 jar 白跑一轮实测）：崩溃日志可自证构建版本，报错符号名与源码对不上时一眼判「旧产物」。注入复用 `generateModMetadata` 模式（`generateBuildProps` + `src/main/build-props/` 模板，裸占位符不进 jar；无 git 环境兜底 unknown 不阻断构建）。⚠️ 坑入档：`filteringCharset='UTF-8'` 必须显式（Windows GBK 写坏中文注释）；模板引擎展开**所有**花括号引用（注释也不能写）；`build.time` 刻意不作任务输入（防秒级时间戳触发全量重跑） | `build.gradle（构建指纹节）` · `LivingItem.logBuildFingerprint` · `docs/archive/changelog.md（2026-10-11 条目）` |
 
 ## 排查铁律：原版机制挡路时
 

@@ -132,10 +132,15 @@ def check_test_count():
         return
     declared = int(declared.group(1))
 
-    total = 0
+    sums = {"tests": 0, "skipped": 0, "failures": 0, "errors": 0}
     for f in glob.glob(RESULTS):
         h = re.search(r"<testsuite[^>]*>", read(f)).group(0)
-        total += int(re.search(r'tests="(\d+)"', h).group(1))
+        for key in sums:
+            m = re.search(r'%s="(\d+)"' % key, h)
+            if m:
+                sums[key] += int(m.group(1))
+    total, skipped = sums["tests"], sums["skipped"]
+    failed, errored = sums["failures"], sums["errors"]
 
     if total == 0:
         warnings.append("[条数] 没有测试结果 XML（先跑 ./gradlew test --rerun）—— 跳过条数核对")
@@ -144,8 +149,15 @@ def check_test_count():
     if declared != total:
         failures.append(f"[条数] AGENTS.md 声明 {declared}，实测 {total}")
         print(f"2. 测试条数一致性  : FAIL（声明 {declared} / 实测 {total}）")
-    else:
-        print(f"2. 测试条数一致性  : OK（{total}）")
+        return
+    # 全绿核验（2026-10-12）：把「全绿」从手维护快照数（passed N 随每次加测试必漂）
+    # 换成同一批 XML 上的机械断言。skipped 只报告不判定 —— 环境性 @Disabled 的
+    # 说明住 test-map 与测试注释，不在这里复述（入口只放路由，见 docs/README.md 铁律 1）。
+    if failed or errored:
+        failures.append(f"[全绿] XML 实测 failures={failed} errors={errored} —— 测试非全绿")
+        print(f"2. 测试条数一致性  : FAIL（条数 {total} 对，但 failures={failed} errors={errored}）")
+        return
+    print(f"2. 测试条数一致性  : OK（{total} = {total - skipped} passed + {skipped} skipped，failures=0 errors=0）")
 
 
 def check_test_tree():

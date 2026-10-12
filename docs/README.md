@@ -250,7 +250,7 @@ python tools/doc_check.py        # 退出码 0 = 通过
 | 检查 | 说明 |
 |---|---|
 | 1. 路径真实性 | 文档里的相对链接 / `file://` 链接 / `docs/…`·`src/…` 提及是否真实存在（**归档层豁免**；含「未建 / 待建 / 已删除」的行豁免） |
-| 2. 测试条数一致性 | AGENTS.md 声明的条数 vs `build/test-results/test/*.xml` 实测（先 `./gradlew test --rerun`） |
+| 2. 测试条数/全绿 | AGENTS.md 声明的条数 vs `build/test-results/test/*.xml` 实测，且 failures/errors 恒 0（先 `./gradlew test --rerun`） |
 | 3. 测试树一致性 | [test-map.md](reference/test-map.md) 的测试树 vs `src/test` 实际文件 |
 | 4. 进展滚动 | ① 一行式条数 ≤ 10 ② AGENTS 最新条目日期 == changelog 顶部日期 ③ 每行指针含 `.md` |
 | 5. 入口体量 | AGENTS.md ≤ 20,000 字符（**警告级**，超了先查冗余、再降级搬 `docs/reference/`） |
