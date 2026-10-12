@@ -22,6 +22,7 @@ import com.google.gson.JsonParser;
 import com.qiqi.li.living.api.LivingItemManager;
 
 import net.minecraft.core.Holder;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
@@ -81,10 +82,13 @@ public final class FluidTransformTable {
      * 曾有 {@code consumeSource} 字段服务于「空桶→水桶」，该条目已随
      * 「非活化物品不得消耗活化资产」的对称性论证删除（见 tech §6）。</p>
      *
-     * <p><b>{@code output_potion}</b>（2026-10-11 新增）：可选的<b>药水类型</b> ——
-     * 用于产出<b>带内容的药水</b>（如「空瓶 → 水瓶」）。⚠️ 只写 {@code output: minecraft:potion}
-     * 会得到 {@code PotionContents.EMPTY}（"不可合成的药水"）而<b>不是水瓶</b>
-     * ⇒ 必须靠本字段指定内容（原版工厂 {@link PotionContents#createItemStack}）。</p>
+ * <p><b>{@code output_potion}</b>（2026-10-11 新增）：可选的<b>药水类型</b> ——
+ * 用于产出<b>带内容的药水</b>（如「空瓶 → 水瓶」）。⚠️ 只写 {@code output: minecraft:potion}
+ * 会得到 {@code PotionContents.EMPTY}（"不可合成的药水"）而<b>不是水瓶</b>
+ * ⇒ 必须靠本字段指定内容（原版工厂 {@link PotionContents#createItemStack}）。
+ * ⚠️ 写了本字段 ⇒ {@code output} 必须是<b>声明支持</b> {@code POTION_CONTENTS} 的物品
+ * （原版药水类；{@code ItemStack.set} 不校验物品支持性，误配会造出带药水 tooltip 的怪栈
+ * ⇒ 装载期校验，不合法整条跳过）。</p>
      */
     public record TransformEntry(String id, FluidType fluid, Item input, Item output,
                                  @Nullable Holder<Potion> outputPotion) {}
@@ -289,6 +293,16 @@ public final class FluidTransformTable {
             if (potion == null) {
                 LivingItemManager.LOGGER.warn(
                     "[fluid-transforms/{}] 条目 {} 引用未知药水 {}，跳过", source, id, potionId);
+                return;
+            }
+            // output 必须是**声明支持** POTION_CONTENTS 的物品（原版药水类）——
+            // ItemStack.set 不校验物品支持性（PatchedDataComponentMap 直接写 patch，
+            // 见 1.21.1 源码）⇒ 误配（如 output: minecraft:dirt）会造出「带药水
+            // tooltip 的怪栈」而不报错 ⇒ 装载期按「沉默即缺陷」口径拦掉。
+            if (!output.components().has(DataComponents.POTION_CONTENTS)) {
+                LivingItemManager.LOGGER.warn(
+                    "[fluid-transforms/{}] 条目 {} 的 output {} 不支持药水内容"
+                        + "（output_potion 只能配药水类物品），跳过", source, id, outputId);
                 return;
             }
         }

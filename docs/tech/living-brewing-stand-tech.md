@@ -64,7 +64,7 @@
 | 规则 / 能力 | 守卫 |
 |---|---|
 | 3 堆叠加速 · 4 / 9 作废判据 · 8 消耗时机 | `BrewingBatchLogicTest`（13 项） |
-| 7 活物品不作材料 / 瓶子 | `BrewingSlotEligibilityTest`（4 项） |
+| 7 活物品不作材料 / 瓶子 / 燃料 | `BrewingSlotEligibilityTest`（6 项：材料 · 瓶子 · 燃料三侧都有守卫） |
 | 其余（燃料补满 / 转化 / 方向 / 漏斗） | 游戏内验证清单（见附录） |
 
 ---
@@ -243,7 +243,9 @@ brewTime == 0（待机）：
 见 `LivingItemActivation` 的 javadoc）⇒ 玩家活化的**水瓶 / 药水**会真实出现在瓶子槽里。
 
 **实现点**：`LivingBrewingStandFunction#isEligibleIngredient`（材料）· `#isEligibleBottle`（瓶子）·
-`#isBlazePowder`（燃料）。**验证**：`BrewingSlotEligibilityTest`（4 项）。
+`#isBlazePowder`（燃料，包级可见供测试）。**验证**：`BrewingSlotEligibilityTest`（6 项）。
+⚠️ 2026-10-12 补：燃料侧判据 2026-10-11 就在，唯独漏了测试守卫（材料/瓶子两侧都补了）——
+「规则表每一条都必须有验证入口」的又一次实证（§9.5 的教训当时只覆盖到实现，没覆盖到测试）。
 
 ---
 
@@ -446,6 +448,9 @@ D7（消耗时机）/ D8（作废条件）/ D10（搬运丢进度留燃料）全
 ⇒ **教训**：**§0 规则表里每一条都必须有对应的实现点与验证入口** ——
 只写在规则表里不构成实现，规则表反而会让人以为已经做了。
 本次补了 `isEligibleIngredient` / `isEligibleBottle` / `isBlazePowder` 三个准入判据 + 4 项单测。
+⚠️ **2026-10-12 复查发现**：4 项单测只覆盖了材料与瓶子两侧，**燃料侧的判据当时漏了测试守卫**
+（判据 `isBlazePowder` 是 private，测试够不着）⇒ 补 2 项（活烈焰粉 / 普通烈焰粉 + 空槽），
+共 6 项。教训升级为：**「规则 → 实现点 → 验证入口」三件套，当初复盘时也只核对到前两件**。
 
 ---
 

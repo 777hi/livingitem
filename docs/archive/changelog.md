@@ -26,6 +26,24 @@
 > 🏗 doc_check 扩「条数 + 全绿」双核验；AGENTS.md 删手维护 passed 快照数（必漂、无人守）。
 > 🐛 **修复：容器级数据跨维度串数据** —— 缓存键统一补维度（`getCacheKey()` 一处定义），
 > 四张静态表同构；顺手修掉「拆箱子 ⇒ 整容器作废」登记打空；新增 7 项测试，596 绿。
+> 🧹 **收尾两条遗留观察**：隔离规则**燃料侧**补测试守卫（判据在、测试漏）+ `output_potion`
+> 校验 `output` 必须是药水类物品；`drainDirty` 维持不改；测试 599 绿。
+
+- 🧹 **收尾两条遗留观察（2026-10-11 活酿造台审查时留下、未改）**：
+  - **隔离规则燃料侧补测试守卫** —— 规则 7「活物品不作材料 / 瓶子 / 燃料」三个判据
+    （`isEligibleIngredient` / `isEligibleBottle` / `isBlazePowder`）2026-10-11 都补了，
+    单测却只覆盖**材料 / 瓶子**两侧：燃料判据是 `private`，测试够不着 ⇒ 放开包级 +
+    补 2 项（活烈焰粉被拒 / 普通烈焰粉与空槽判据）。⭐ **教训升级**：「规则 → 实现点 →
+    验证入口」三件套，上次复盘只核对到前两件 —— 实现齐了≠有守卫。
+  - **`output_potion` 校验 `output` 必须是药水类物品** —— `ItemStack.set` **不校验物品
+    支持性**（`PatchedDataComponentMap#set` 直接写 patch，1.21.1 合并源码实证）⇒ 误配
+    （`output: minecraft:dirt` + `output_potion: minecraft:water`）会产出「**带药水
+    tooltip 的怪栈**」且**不报错**。修法：装载期判 `Item#components().has(POTION_CONTENTS)`，
+    不合法整条跳过（与「未知药水跳过」同族的沉默即缺陷口径）。
+  - 📌 **`drainDirty` 跳过空快照维持不改** —— 「单槽位容器作废后不下发」的影响趋近零：
+    槽位空了本就不渲染 tooltip；换成新活物品时新数据自会覆盖。不为它加每 tick 发包面。
+  - **验证**：`BrewingSlotEligibilityTest` 4 → 6 项、`FluidTransformTableTest` 7 → 8 项；
+    全量测试 **596 → 599 绿**。
 
 - 🐛 **修复：容器级数据跨维度串数据 + 整容器作废打空（缓存键统一补维度，方案 1 治本）** ——
   缘起：用户问「容器级数据是否与维度绑定」，排查发现项目里「绑维度」这件事

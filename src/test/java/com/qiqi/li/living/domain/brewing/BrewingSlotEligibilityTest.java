@@ -65,4 +65,25 @@ class BrewingSlotEligibilityTest {
     void emptyIsNotIngredient() {
         assertFalse(LivingBrewingStandFunction.isEligibleIngredient(null, ItemStack.EMPTY));
     }
+
+    // ── 燃料侧（2026-10-12 补：判据一直在，唯独没有测试守卫）───────────
+
+    @Test
+    @DisplayName("活物品不能作燃料（会被 consumeOne 吃掉）")
+    void livingItemIsNotFuel() {
+        assertFalse(LivingBrewingStandFunction.isBlazePowder(living(Items.BLAZE_POWDER)),
+            "活烈焰粉不该被当燃料消耗（材料/瓶子两侧修完漏掉的第三处）");
+        assertFalse(LivingBrewingStandFunction.isBlazePowder(living(Items.FURNACE)),
+            "任何活物品都不是燃料");
+    }
+
+    @Test
+    @DisplayName("普通烈焰粉可以作燃料；空槽不行")
+    void plainBlazePowderIsFuel() {
+        assertTrue(LivingBrewingStandFunction.isBlazePowder(new ItemStack(Items.BLAZE_POWDER)),
+            "烈焰粉是唯一燃料（对齐原版）");
+        assertFalse(LivingBrewingStandFunction.isBlazePowder(ItemStack.EMPTY), "空槽不是燃料");
+        assertFalse(LivingBrewingStandFunction.isBlazePowder(new ItemStack(Items.REDSTONE)),
+            "非烈焰粉物品不是燃料（原版同款判据）");
+    }
 }

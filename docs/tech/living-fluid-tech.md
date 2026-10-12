@@ -522,6 +522,10 @@ vanilla 双箱 = CompoundContainer 单容器天然一网；末影箱路由模式
   ⚠️ 只写 `output: minecraft:potion` 会得到 `PotionContents.EMPTY`（"**不可合成的药水**"）
   而**不是水瓶** ⇒ 必须靠本字段指定内容（走原版工厂 `PotionContents.createItemStack`）；
   引用了未知药水 ⇒ **整条跳过**（不产出错东西）；
+  ⚠️ **写了本字段 ⇒ `output` 必须是声明支持 `POTION_CONTENTS` 的物品**（原版药水类）——
+  `ItemStack.set` 不校验物品支持性（`PatchedDataComponentMap` 直接写 patch，1.21.1 源码）⇒
+  误配（如 `output: minecraft:dirt`）会造出「**带药水 tooltip 的怪栈**」且不报错 ⇒
+  装载期校验（`Item#components().has`），不合法整条跳过（2026-10-12 补，`FluidTransformTableTest` 8 项）；
 - 内置 **17 条**：16 色混凝土粉末 → 混凝土 + **空瓶 → 水瓶**（水）；
   ⚠️ **没有桶条目、没有岩浆条目**（2026-10-06 定稿）—— 见下；
 - 缩容等待（产物最大堆叠 < 整槽存量 ⇒ 不转化）是**表侧规则**，引擎 `transformItem` 接缝不重复实现；

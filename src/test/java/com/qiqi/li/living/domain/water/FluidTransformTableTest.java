@@ -217,4 +217,40 @@ class FluidTransformTableTest {
         assertNull(FluidTransformTable.transform(water, new ItemStack(Items.DIRT)),
             "引用未知药水的条目整条跳过（不产出错东西）");
     }
+
+    @Test
+    @DisplayName("output_potion 的 output 必须是药水类物品（ItemStack.set 不校验支持性，装载期拦掉）")
+    void outputPotion_outputMustSupportComponent() throws Exception {
+        FluidTransformTable.load();
+        var water = Fluids.WATER.getFluidType();
+
+        // dirt 不声明 POTION_CONTENTS ⇒ 整条跳过（否则会产出「带药水 tooltip 的怪栈」）
+        writeUserFile("""
+            {
+              "version": 1,
+              "transforms": [
+                { "id": "potion_on_dirt", "fluid": "minecraft:water", "input": "minecraft:dirt",
+                  "output": "minecraft:dirt", "output_potion": "minecraft:water" }
+              ]
+            }""");
+        FluidTransformTable.load();
+        assertNull(FluidTransformTable.transform(water, new ItemStack(Items.DIRT)),
+            "output 不支持药水内容 ⇒ 条目被跳过，dirt 不转化");
+        assertEquals(0, FluidTransformTable.entryCount() - FluidTransformTable.bundledCount(),
+            "坏条目不占位（生效条目仍是纯内置）");
+
+        // 合法形态（output = 药水类物品）仍照常生效
+        writeUserFile("""
+            {
+              "version": 1,
+              "transforms": [
+                { "id": "potion_ok", "fluid": "minecraft:water", "input": "minecraft:dirt",
+                  "output": "minecraft:potion", "output_potion": "minecraft:water" }
+              ]
+            }""");
+        FluidTransformTable.load();
+        var out = FluidTransformTable.transform(water, new ItemStack(Items.DIRT));
+        assertNotNull(out, "output 为药水类物品 ⇒ 条目生效");
+        assertEquals(Potions.WATER, out.get(DataComponents.POTION_CONTENTS).potion().orElseThrow());
+    }
 }

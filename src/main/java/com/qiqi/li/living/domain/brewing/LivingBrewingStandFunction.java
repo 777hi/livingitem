@@ -244,8 +244,14 @@ public class LivingBrewingStandFunction implements LivingItemFunction, HasDirect
         context.setItem(slot, stack.copy());
     }
 
-    /** 燃料槽准入：烈焰粉，且**不是活物品**（隔离规则，与活熔炉同族）。 */
-    private static boolean isBlazePowder(ItemStack stack) {
+    /**
+     * 燃料槽准入：烈焰粉，且**不是活物品**（隔离规则，与活熔炉同族）。
+     *
+     * <p>包级可见供 {@code BrewingSlotEligibilityTest} 钉判据 ——
+     * 2026-10-11 修「活红石被当材料」时材料/瓶子两侧都补了测试，燃料侧漏了
+     * （判据在却无守卫）；任何物品都能活化 ⇒ 活烈焰粉真实可达。</p>
+     */
+    static boolean isBlazePowder(ItemStack stack) {
         return stack.is(Items.BLAZE_POWDER) && !LivingItemManager.isLivingItem(stack);
     }
 
