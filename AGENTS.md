@@ -146,7 +146,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 599 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
+**合计测试用例 605 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -171,6 +171,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-12 | 🐛 **修复回归：世界容器 tooltip 遥测全停（缓存键前缀漏改解析方）** —— 用户实测「活熔炉 tooltip 进度不滚动、熔炼功能正常」。根因：`8ea9aad` 给缓存键加 `<维度>|` 前缀后，发包链路的 `LivingItem.parsePosFromContainerKey` 仍只认裸 `chest_` ⇒ 前缀键解析为 null ⇒ `runtimeContainerInstances` 恒空 ⇒ **运行时同步包停发**；功能逻辑读写同用一把新键所以不受影响（只冻遥测）。修：坐标解析剥前缀 + **有前缀 ⇒ 定向该维度**（dim 即权威，不越维度找补；无前缀裸键保持旧的扫全部世界兜底）。`LivingItemRuntimeContainerInstancesTest` 3 → 9 项。⭐ 教训：**改键形 = 改协议**，必须审计所有按格式解析的消费方（提交信息里点名「坐标解析依赖它」却恰恰漏改它） | `LivingItem.java`（`runtimeContainerInstances` / `parsePosFromContainerKey` / `dimPrefixOf`）· `docs/system-design/living-item-infrastructure.md` §2.5 |
 | 2026-10-12 | 🧹 **收尾两条遗留观察：隔离规则燃料侧补测试守卫 + `output_potion` 校验 output 必须是药水类物品** —— ① 活酿造台隔离规则（规则 7：活物品不作材料/瓶子/燃料）2026-10-11 修「活红石被当材料」时三个判据都补了，**单测却只覆盖材料/瓶子两侧**（燃料判据 `isBlazePowder` 是 private，测试够不着）⇒ 放开包级 + 补 2 项（活烈焰粉被拒/普通烈焰粉通过）。⭐ 教训升级：「规则 → 实现点 → 验证入口」三件套，上次复盘只核到前两件。② `FluidTransformTable` 的 `output_potion` 未校验 `output` 物品：`ItemStack.set` **不校验物品支持性**（`PatchedDataComponentMap` 直接写 patch，1.21.1 源码实证）⇒ 误配 `output: minecraft:dirt` 会造出「带药水 tooltip 的怪栈」且**不报错** ⇒ 装载期用 `Item#components().has(POTION_CONTENTS)` 拦掉（沉默即缺陷口径，与「未知药水跳过」同族）。`drainDirty` 跳过空快照**维持不改**（槽位空了本就不渲染 tooltip，影响趋近零，不为它加发包）。测试 596 → 599 绿 | `docs/tech/living-brewing-stand-tech.md` §3.5 / §9.5 · `docs/tech/living-fluid-tech.md` §6 |
 | 2026-10-12 | 🐛 **修复：容器级数据跨维度串数据（缓存键统一补维度，方案 1 治本）** —— `CONTAINER_DATA` 的键 2026-08-22 就带维度前缀，但 `ContainerRuntimeCache`（燃料/进度/冷却/遥测）与 `LIVING_SLOT_ITEMS` 一直用裸 `chest_x_y_z` ⇒ ① 主世界/下界**同坐标**两箱共享一条运行时记录（燃料互相顶）+ 槽位追踪每 tick 互覆盖 ⇒ 类型不同时**每 tick 互相作废，进度永远攒不起来**；② `removeDataByPos` 拿前缀键删裸键表 ⇒「拆箱子作废整容器」**登记即打空**（拆掉原地放回，旧燃料复活）。修法：`ContainerIdentity.getCacheKey()` 一处定义（世界容器 = 维度前缀+稳定键；玩家/末影箱/掉落物 = 裸键，数据跟人走），四张静态表同构；**裸稳定键格式不动**（末影箱显式键 / 发包 `player_` 分支 / 坐标解析依赖它）。新增 7 项测试，589 → 596 绿 | `docs/system-design/living-item-infrastructure.md` §2.5 / §3.5 |
 | 2026-10-12 | 🏗 **doc_check 第 2 项扩为「条数 + 全绿」双核验，AGENTS.md 删手维护 passed 快照数** —— 原「全绿基线：554 passed」是无校验快照（2026-10-10 写下，两天后实测已 588：total 有人守、passed 没人守）⇒ 必漂。修法：doc_check 在同一批 XML 上加 `failures/errors` 恒 0 断言（「全绿」从手维护 claim 变机械断言）；AGENTS 只留已被核验的总数 + 指向 test-map 的 @Disabled 说明。否掉「三数全写全核」——强制执行一个每次加测试就要改的数字（churn），判据同第 7 项「窄而准 > 宽而吵」 | `tools/doc_check.py` · `AGENTS.md「测试基线」行` · `docs/README.md` §7.1 |
@@ -180,7 +181,6 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-10-12 | 🐛 **修复：缩小窗口后活按钮跑到屏幕外** —— 拖动时的夹取只管**当时那一次**；保存的是「相对 GUI 的偏移」⇒ **缩小窗口 / 调大 GUI scale** 后换算坐标可能落到屏外（按钮"消失"）。修法：`LivingButtonLayout.clampToScreen` + **应用位置时再夹一次**（放在 `LivingButton` 构造 ⇒ 覆盖所有创建路径）；**只夹显示位置、不回写配置**（恢复窗口回原位）。新增 `LivingButtonLayoutTest`（1 项），测试 578 → 579 绿 | `docs/system-design/gui-interaction-system.md` §6.2 |
 | 2026-10-11 | 🆕 **活水源新增转化「空瓶 → 水瓶」+ 转化表支持 `output_potion`** —— ① 框架扩展：条目加可选字段 `output_potion`（药水类型）—— ⚠️ 只写 `output: minecraft:potion` 会得到 `PotionContents.EMPTY`（"不可合成的药水"）而非水瓶 ⇒ 走原版工厂 `createItemStack` 指定内容；未知药水 ⇒ 整条跳过。② 内置 **16 → 17** 条。③ 玩法边界论证：判据 =「**产物是否为活化资产载体**」—— 水桶能放水（载体）⇒ 取消；水瓶不能（非载体）⇒ 保留，且不引入新资源通道。⚠️ 空瓶必须**单个**才转化（水瓶 maxStack=1 ⇒ 缩容等待）。测试 577 → 578 绿 | `docs/tech/living-fluid-tech.md` §6 / §6.2 |
 | 2026-10-11 | 🐛 **修复：活按钮位置在大箱 / 单箱之间互相覆盖** —— key 原本只用 Screen 类名，而**原版单箱与大箱是同一个 `ChestScreen`**（只差 `ChestMenu` 槽位数）⇒ 共享同一份位置，但 GUI 高度差 56px（166/222）⇒ 拖一个坏另一个。修法：key 改 **类名 + GUI 尺寸**；配置 version 1→2（旧文件忽略、不迁移）。📌 mixin 类 `extends Screen` **非目标类** ⇒ 尺寸**显式传参**（`getXSize/getYSize` 只在 `AbstractContainerScreen` 上） | `docs/system-design/gui-interaction-system.md` §6.2 |
-| 2026-10-11 | 🐛 **修复：活酿造台把活物品当耗材（隔离规则漏实现）** —— 用户实测「活红石被当材料消耗」。根因：首版**漏了 `isLivingItem` 检查**（材料 / 燃料 / 瓶子三处），而 §0 规则 7 已写「活物品不作材料 / 燃料」（活熔炉有该检查、酿造台没有）。危害：材料被 `consumeOne` 吃掉；瓶子侧更隐蔽 —— 原版 `hasMix` 只看 `POTION_CONTENTS` **不看活标记** ⇒「活药水」会被 `mix` **原地替换**。修法：抽 `isEligibleIngredient` / `isEligibleBottle` / `isBlazePowder` 三个准入判据，`isBrewable` 与 `doBrew` 共用。新增 `BrewingSlotEligibilityTest`（4 项），测试 573 → 577 绿。⭐ 教训：**§0 规则表每条都必须有实现点与验证入口** | `docs/tech/living-brewing-stand-tech.md` §3.5 / §9.5 |
 
 ## 排查铁律：原版机制挡路时
 

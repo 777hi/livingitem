@@ -339,12 +339,44 @@ public class LivingItem {
      *
      * <p>⚠️ <b>返回空集合 = 不发包</b>（见 {@code LivingItemRuntimeSync.flush}）——
      * 所以这里是安全的：键解析不出位置（异常形态）时宁可不发，也不发错人。</p>
+     *
+     * <p>⚠️ <b>键形是缓存键</b>（{@code ContainerIdentity.getCacheKey()}）：世界容器 =
+     * {@code <维度>|chest_…}，背包类 = 裸键。2026-10-12 回归教训：加维度前缀后此处的
+     * 坐标解析没跟着改 ⇒ {@code parsePosFromContainerKey} 对前缀键返回 null ⇒
+     * **所有世界容器的 tooltip 遥测包停发**（功能逻辑不受影响——它读写同用一把键），
+     * 表现为「进度不滚动、熔炼正常」。现在按「有前缀 ⇒ 定向该维度」处理，见
+     * {@link #runtimeContainerInstances(List, String)}。</p>
      */
     private Collection<Container> runtimeContainerInstances(String containerKey) {
+        return runtimeContainerInstances(currentServerLevels(), containerKey);
+    }
+
+    /**
+     * 按**缓存键**在候选世界列表里反查容器实例（包级私有，供单测；生产入口是上面的实例方法）。
+     *
+     * <p>三种键形：{@code <维度>|chest_x_y_z}（世界容器，定向该维度——维度即权威，
+     * 跨维度同坐标不发错人）· 裸 {@code chest_x_y_z}（退化形态 / 测试替身，扫全部世界）·
+     * {@code player_…}（背包类，{@code LivingItemRuntimeSync} 的独立分支处理，到这里返回空）。</p>
+     */
+    static Collection<Container> runtimeContainerInstances(List<ServerLevel> levels, String containerKey) {
         BlockPos pos = parsePosFromContainerKey(containerKey);
         if (pos == null) return List.of();
 
-        for (var level : currentServerLevels()) {
+        String dim = dimPrefixOf(containerKey);
+        if (dim != null) {
+            // 键声明了维度 ⇒ 只认那个世界（找不到该世界 / 该位置无 BE ⇒ 空集合 = 不发包，
+            // 绝不落到别的维度——那正是本次修复要防的「跨维度同坐标发错人」）
+            for (ServerLevel level : levels) {
+                if (dim.equals(level.dimension().location().toString())) {
+                    Collection<Container> instances = runtimeContainerInstances(level, pos);
+                    return instances == null ? List.of() : instances;
+                }
+            }
+            return List.of();
+        }
+
+        // 无维度前缀（裸键 / 退化）：保持旧行为——扫全部世界，第一个有 BE 的命中
+        for (var level : levels) {
             // null = 该世界此位置无方块实体，继续查下一个世界；
             // 非 null（可能为空集合）即代表命中，直接返回（见下方方法说明）。
             Collection<Container> instances = runtimeContainerInstances(level, pos);
@@ -399,14 +431,19 @@ public class LivingItem {
     }
 
     /**
-     * 从容器键解析方块坐标。格式见 {@code SimpleContainerContext.buildContainerKey}：
-     * 单方块 {@code chest_x_y_z}；大箱子 {@code chest_x1_y1_z1_x2_y2_z2}（只取第一个）。
-     * 玩家背包键（{@code player_&lt;uuid&gt;}）由 {@code LivingItemRuntimeSync} 的独立分支处理，
-     * 不会走到这里 ⇒ 返回 {@code null}。
+     * 从**缓存键**解析方块坐标。键形见 {@code ContainerIdentity.getCacheKey()}：
+     * 世界容器 = {@code <维度>|chest_x_y_z}（2026-10-12 起带前缀），大箱子
+     * {@code <维度>|chest_x1_y1_z1_x2_y2_z2}（只取第一个）；裸 {@code chest_x_y_z}
+     * （退化形态 / 测试替身）同样受理。玩家背包键（{@code player_<uuid>}）由
+     * {@code LivingItemRuntimeSync} 的独立分支处理，不会走到这里 ⇒ 返回 {@code null}。
      */
     private static BlockPos parsePosFromContainerKey(String containerKey) {
-        if (containerKey == null || !containerKey.startsWith("chest_")) return null;
-        String[] parts = containerKey.split("_");
+        if (containerKey == null) return null;
+        // 剥掉可选的 "<维度>|" 前缀（裸键不含 '|' ⇒ lastIndexOf 为 -1 时原样）
+        int bar = containerKey.lastIndexOf('|');
+        String key = bar >= 0 ? containerKey.substring(bar + 1) : containerKey;
+        if (!key.startsWith("chest_")) return null;
+        String[] parts = key.split("_");
         if (parts.length < 4) return null;
         try {
             return new BlockPos(Integer.parseInt(parts[1]), Integer.parseInt(parts[2]),
@@ -414,6 +451,16 @@ public class LivingItem {
         } catch (NumberFormatException ignored) {
             return null;
         }
+    }
+
+    /**
+     * 取缓存键的维度前缀（{@code <维度>|…} 的 {@code <维度>} 部分）；裸键返回 {@code null}。
+     * 形如 {@code minecraft:overworld}。包级私有供单测。
+     */
+    static String dimPrefixOf(String containerKey) {
+        if (containerKey == null) return null;
+        int bar = containerKey.lastIndexOf('|');
+        return bar >= 0 ? containerKey.substring(0, bar) : null;
     }
 
     private void processLevelContainers(ServerLevel level) {

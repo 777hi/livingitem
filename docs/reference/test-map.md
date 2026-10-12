@@ -14,7 +14,7 @@
 
 ```
 src/test/java/com/qiqi/li/
-├── LivingItemRuntimeContainerInstancesTest.java  # 运行时同步容器实例反查·非 Container BE(ProjectE 炼金箱)返回空集合不抛异常/原版 Container BE 返回自身/无 BE 返回 null（3 项；crash-2026-10-10 回归）
+├── LivingItemRuntimeContainerInstancesTest.java  # 运行时同步容器实例反查·非 Container BE(ProjectE 炼金箱)返回空集合不抛异常/原版 Container BE 返回自身/无 BE 返回 null（3 项）+ 缓存键反查·带维度前缀定向该维度且不越维度找补/未知维度/裸键扫描兜底/背包坏键安全跳过/dimPrefixOf（6 项；2026-10-12「tooltip 遥测全停」回归）
 ├── testutil/
 │   └── FakeContainerContext.java              # ContainerContext 测试替身（内存数组实现）
 ├── client/gui/

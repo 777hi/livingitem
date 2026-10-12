@@ -222,6 +222,20 @@ public interface ContainerIdentity {
 `ContainerIdentity.getCacheKey()` 一处定义（世界容器加前缀、玩家容器不加），四张表同构。
 规则原文与取舍见该方法 javadoc。
 
+⚠️ **改缓存键形 = 改协议：格式敏感点清单**（2026-10-12 回归实证，改键形前必须逐项审计）：
+
+| 消费方 | 怎么认键 | 前缀改造后 |
+|---|---|---|
+| `LivingItem.parsePosFromContainerKey`（发包反查 viewer） | 按 `chest_` 前缀解析坐标 | **必须适配**——当时漏改 ⇒ 前缀键解析为 null ⇒ 世界容器 tooltip 遥测全停（现已修为剥前缀 + 定向维度） |
+| `LivingItemRuntimeSync` 发包的 `player_` 分支 | `startsWith("player_")` | 无需改——玩家键**故意不加前缀**（数据跟人走） |
+| 客户端 `LivingItemSyncPacket.handle` | `startsWith("player_")` | 同上；世界键以维度 id 开头，不会误判 |
+| `ContainerRuntimeCache` / `CONTAINER_DATA` / `LIVING_SLOT_ITEMS` / `POS_TO_CACHE_KEY` | 直接用 `getCacheKey()` | 一处定义，同构 |
+| `ContainerMonitor` 调试开关 | 按**裸稳定键**下达命令 | 故意不同名（玩家按坐标操作） |
+| 末影箱路由表（`EnderChannelEntry`） | 自带 `dimension()` 字段 + 裸键索引 | 另一套设计，不随缓存键改 |
+
+⭐ 回归的直接证据：提交 `8ea9aad` 的信息里点名「坐标解析依赖它（不改它的格式）」，
+却恰恰漏改了需要跟着适配的那一处——**点了名≠审了它**，清单化才防得住。
+
 > 📄 **边界带身份解析**（菜单槽位 ↔ 容器上下文、查看者匹配、大箱 `CompoundContainer` 特判）
 > 另见 [container-identity.md](container-identity.md)（Q6 收敛，2026-10-04）——
 > 本文 §2.5 讲的是**跨 tick 的 containerKey**（稳定键），那篇讲的是**边界带的「槽位↔容器」解析**。
