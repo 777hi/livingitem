@@ -108,6 +108,18 @@
    回充触发门槛 / 回充时长可配 / Crossbow 一期已定排除）见设计稿
 2. ⏳ **PVP** —— 需先定义「敌对关系」判据（现为硬排除所有 `Player`）—— `living-weapon-tech.md` §9
 
+## 活TNT（2026-10-13 记）
+
+1. ⏳ **爆炸规模化重构（未定案设计稿）** —— 堆叠上限 21 亿的多槽容器（抽屉类）塞满活TNT 是
+   真实可达的极限场景；现状四道墙（实体伤害巨型 AABB / pendingChecks 突发注入 / schedule 双循环 /
+   `chunkCount` int 溢出，阈值 N = 8,588,840,976）+ 求和溢出吞物品。定稿设计 = 惰性谓词 +
+   纪元水印（每区块 1 个 long，多重爆炸用持久 epoch 区分，成本与 N 无关）。
+   设计稿全文与修单顺序见 [buffer/living-tnt-explosion-design.md](buffer/living-tnt-explosion-design.md)
+2. 🔴 **求和溢出吞物品（今天的真 bug，建议先修）** —— `ExplosionComponent.ignite` 的
+   `int totalTntCount`：容器内总和 > 2,147,483,647 即回绕；偶数个满栈槽回绕成负数 ⇒
+   早退 `return false`，而物品已在同一循环清空 ⇒ **TNT 凭空消失、零爆炸、零日志**。
+   修法：求和改 long + 补「两满栈槽点火不丢物品」测试（详见设计稿 §1.4 / 修单 S1）
+
 ## 未来活物品（2026-10-04 用户提出，功能池）
 
 > ⭐ 三者**都不是**「新增一个功能」，而是**三台不同的机器**：
