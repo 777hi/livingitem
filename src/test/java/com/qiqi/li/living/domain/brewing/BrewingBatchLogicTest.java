@@ -150,4 +150,32 @@ class BrewingBatchLogicTest {
                 "堆叠 " + count + " 也应正常启动");
         }
     }
+
+    // ---------------- 批次标记（白幕）----------------
+
+    @Test
+    @DisplayName("批次标记：Start 写当下 / Continue 保持 / Complete·Abort·Idle 一律收起（Idle = 自愈）")
+    void batchMarkAfter_lifecycle() {
+        long now = 1000L;
+
+        assertEquals(now,
+            BrewingBatchLogic.batchMarkAfter(new BrewingBatchLogic.Step.Start(FULL, WART), -1L, now),
+            "Start ⇒ 记下当下（客户端据此起播白幕）");
+
+        assertEquals(777L,
+            BrewingBatchLogic.batchMarkAfter(new BrewingBatchLogic.Step.Continue(300), 777L, now),
+            "进行中保持原标记 ⇒ 稳态零写入");
+
+        assertEquals(-1L, BrewingBatchLogic.batchMarkAfter(new BrewingBatchLogic.Step.Complete(), 777L, now),
+            "完成 ⇒ 收起");
+        assertEquals(-1L, BrewingBatchLogic.batchMarkAfter(new BrewingBatchLogic.Step.Abort(), 777L, now),
+            "作废 ⇒ 收起");
+
+        assertEquals(-1L, BrewingBatchLogic.batchMarkAfter(new BrewingBatchLogic.Step.Idle(), 777L, now),
+            "🔴 自愈回归：无批次却留着标记 ⇒ 必须收起。物品移出容器后运行时缓存作废（brewTime 归零）"
+                + "⇒ 走不到 Complete/Abort ⇒ 标记残留 ⇒ 客户端白幕会在「没有进度」时继续播完一轮");
+
+        assertEquals(-1L, BrewingBatchLogic.batchMarkAfter(new BrewingBatchLogic.Step.Idle(), -1L, now),
+            "本来就是 -1 ⇒ 保持 -1（调用侧据此判定「无变化」⇒ 不写组件，稳态零写入）");
+    }
 }

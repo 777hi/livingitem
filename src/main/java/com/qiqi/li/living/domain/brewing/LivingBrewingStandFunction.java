@@ -159,35 +159,31 @@ public class LivingBrewingStandFunction implements LivingItemFunction, HasDirect
 
             int nextBrewTime = runtime.brewTime();
             Optional<Item> nextBatchIngredient = runtime.batchIngredient();
-            // 白幕的「批次标记」（-1 = 不在酿造）。只在批次生命周期事件写 ⇒ 稳态零写入
-            // （与熔炉燃烧标志同量级）。客户端只当 key 用（新值 ⇒ 白幕重播），不做时钟对齐。
-            long brewStart = data.brewStartTick();
             switch (result) {
                 case BrewingBatchLogic.Step.Start start -> {
                     fuel--;                                              // D7：启动扣 1 次
                     nextBrewTime = start.brewTime();
                     nextBatchIngredient = Optional.of(start.ingredient());
-                    // Start 携带满 400 ⇒ 这一 tick 就是批次的第 0 刻，直接取当前 gameTime
-                    brewStart = level.getGameTime();
-                    dirty = true;
                 }
                 case BrewingBatchLogic.Step.Complete ignored -> {
                     doBrew(brewing, context, bottleSlots, ingredientSlot); // D7：完成扣 1 份材料
                     nextBrewTime = 0;
                     nextBatchIngredient = Optional.empty();
-                    brewStart = -1L;                                      // 白幕收起（下一批若紧接着开始会重写）
-                    dirty = true;
                     playBrewSound(context, level);                        // 完成音效（对齐原版 levelEvent 1035）
                 }
                 case BrewingBatchLogic.Step.Abort ignored -> {
                     nextBrewTime = 0;                                     // D8：作废（燃料不退、材料不扣）
                     nextBatchIngredient = Optional.empty();
-                    brewStart = -1L;                                      // 批次作废 ⇒ 白幕立刻收起
-                    dirty = true;
                 }
                 case BrewingBatchLogic.Step.Continue cont -> nextBrewTime = cont.brewTime();
                 case BrewingBatchLogic.Step.Idle ignored -> { /* 无事可做 */ }
             }
+
+            // ── ④ 批次标记（白幕）：Start 写当下、Continue 保持、其余（含 Idle 自愈）收起 ──
+            // 只在「有↔无」翻转时写 ⇒ 稳态零写入。Idle 也收起的原因见 batchMarkAfter 的 javadoc
+            // （物品移出容器后 brewTime 归零 ⇒ 走不到 Complete/Abort ⇒ 标记残留 ⇒ 白幕空播）。
+            long brewStart = BrewingBatchLogic.batchMarkAfter(result, data.brewStartTick(), level.getGameTime());
+            if (brewStart != data.brewStartTick()) dirty = true;
 
             // ── ④ 写运行时（瞬态，不进组件）──
             ContainerRuntimeCache.update(cacheKey, slot, RuntimeSegments.EMPTY.with(

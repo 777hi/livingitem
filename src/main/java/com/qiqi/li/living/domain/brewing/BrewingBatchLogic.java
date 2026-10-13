@@ -104,6 +104,30 @@ public final class BrewingBatchLogic {
         return new Step.Idle();
     }
 
+    /**
+     * 状态机结果 → <b>新的批次标记</b>（白幕用；纯函数供单测）。
+     *
+     * <p>语义：标记<b>只在批次进行中有效</b> —— {@code Start} 写当前时刻、{@code Continue} 保持；
+     * {@code Complete} / {@code Abort} / {@code Idle} <b>一律收起</b>（{@code -1}）。</p>
+     *
+     * <p>⚠️ <b>{@code Idle} 也收起是「自愈」</b>（2026-10-13 修，用户实测「没有进度时白幕还在播放」）：
+     * 物品被移出容器后，运行时缓存按方案 A 作废（{@code brewTime} 归零）⇒ 状态机再也不会走到
+     * {@code Complete}/{@code Abort}（那两个分支要求 {@code brewTime > 0}）⇒ 组件里的标记会
+     * <b>永久残留</b>，而客户端拿它当「批次在跑」的凭据 ⇒ 白幕继续播完一轮。
+     * ⇒ 无批次即清标记（只在「从有到无」时写一次，稳态零写入）。</p>
+     *
+     * @param step    本 tick 的状态转移结果
+     * @param current 组件里现有的标记（{@code -1} = 无）
+     * @param now     当前 {@code level.getGameTime()}（{@code Start} 时写入）
+     */
+    public static long batchMarkAfter(Step step, long current, long now) {
+        return switch (step) {
+            case Step.Start ignored -> now;
+            case Step.Continue ignored -> current;
+            default -> -1L;   // Complete / Abort / Idle ⇒ 收起
+        };
+    }
+
     /** ⚠️ 只比 {@code Item} 身份，不比数量 / 内容（D8）。 */
     private static boolean sameItem(Optional<Item> batch, Item current) {
         return batch.isPresent() && batch.get() == current;
