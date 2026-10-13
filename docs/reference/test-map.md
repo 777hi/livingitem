@@ -18,7 +18,7 @@ src/test/java/com/qiqi/li/
 ├── testutil/
 │   └── FakeContainerContext.java              # ContainerContext 测试替身（内存数组实现）
 ├── client/gui/
-│   └── LivingButtonLayoutTest.java            # 活按钮位置布局·应用位置时的屏幕夹取（屏内不动/越界夹边缘/屏幕小于按钮取 max(0,…)）（1 项）
+│   └── LivingButtonLayoutTest.java            # 活按钮位置布局·应用位置时的屏幕夹取（屏内不动/越界夹边缘/屏幕小于按钮取 max(0,…)）+ 默认位分流（背包=小人框底居中 42,70 / 其余容器=底部中央）+ 小人框矩形常量对齐原版 (26,8)-(75,78)（4 项）
 ├── client/input/
 │   └── FarmlandPlantHintTest.java             # 活耕地种植悬停提示·门槛与交互同源（非活种子/非活耕地/非耕地物品/不可种植/空栈→null）+ 四态文案键与参数（充足消耗数/创造免费/不足差额/已种植）（10 项）
 ├── client/render/

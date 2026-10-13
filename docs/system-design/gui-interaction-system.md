@@ -203,6 +203,38 @@ CropClassifier::isSeedPlantableOnFarmland)`）；**只有真·任意光标自交
   （对比：`mouseReleased` 能到子控件，是因为 Forge 补丁在 `AbstractContainerScreen.mouseReleased`
   里补了 `super.mouseReleased`。）
 
+### 6.2.1 生存背包：小人框底居中 + 与射线微调的优先级（2026-10-13）
+
+- **默认位 = 原版小人渲染矩形 (26,8)-(75,78) 的框底居中 (42,70)**。矩形是
+  `InventoryScreen.renderBg` 的写死实参，常量提取到 `LivingButtonLayout.INVENTORY_PREVIEW_*`
+  （射线微调调用点同源，勿重复写魔法数）；已核对 `InventoryMenu` 全部槽位坐标，
+  框内无槽位（盔甲列 x8-24、副手 (77,62)、合成格 x98+ 全在框外）。
+- ⚠️ **与射线微调同矩形 → 按钮优先**：框内点击本属 `ToolRayTuningClicks`
+  （左 = 锚点分区 / 右 = 朝向跟随），且其 HEAD 拦截**先于控件分发** ——
+  不避让则门禁命中（空手 + 主手记忆活工具）时按钮永远点不到。
+  修法：`InventoryScreenMixin` 微调判定前加「光标在 LivingButton 上则跳过」；
+  微调只损失框底一条（按钮占 y70-78），「躯干底部」锚点在按钮上方照常可点。
+- ⚠️ **init 时序坑**：`InventoryScreen.init` 在 `super.init()`（initButtons 挂载点，
+  `AbstractContainerScreen.init` TAIL）**之后**才应用配方书 leftPos 偏移
+  （`updateScreenPosition`）⇒ 书展开时打开背包，initButtons 拿到偏移前的 leftPos，
+  按钮先错位 ≈77px、下个 containerTick 才自愈（闪一帧）。
+  修法：`InventoryScreen.init` TAIL 重摆注入（同一套 resolve 偏移；resize 走同一
+  init，同款时序一并覆盖）。
+- **配方书三形态**（均已核原版源码）：书关 = GUI 居中，正常 ✓；
+  书展开 + 窗口 ≥379 = GUI 右移与书**并排**，按钮跟随 leftPos（containerTick 链路
+  靠 `InventoryScreenMixin.callContainerTick` 补的 `super.containerTick()` 已通）✓；
+  书展开 + 窄窗口 <379 = **原版书独占模式**（`super.render` 与 `super.mouseClicked`
+  都不跑）⇒ 按钮（连同整个 GUI）不可见不可点 —— **与原版槽位行为一致，非缺陷**。
+- **创造界面维持排除（原因补考证）**：37bde65（2026-07-14）起排除但无记录。真实原因 =
+  **活化链路不通** —— `LivingTagPacket` 服务端读 `containerMenu.getCarried()`，而创造的
+  carried 是客户端虚拟物品（服务端从不打开创造界面，拾取只走
+  `ServerboundSetCreativeModeSlotPacket` 写槽位）⇒ 服务端视角恒空，点按钮必然静默无效。
+  修复方向：**carriedTag 往返**（复用 `GuiInteractionPacket` 先例，服务端权威 + 结果回包）
+  或**客户端活化**（判定/钩子跑客户端，创造语境可接受但口径脏）—— 待定稿单独开工；
+  另有标签页维度问题（`selectedTab` 是 static，`selectTab` 切页不重跑 init、不改
+  leftPos ⇒ 现有 leftPos 变化监听不触发，需按 `isInventoryOpen()` 同步按钮显隐）。
+  创造的小人框矩形也不同：(73,6)-(105,49)（32×43，scale 20，仅 INVENTORY 页）。
+
 ### 6.3 ⚠️ 重写 `AbstractWidget` 鼠标事件的两条铁律（2026-10-10 实测踩坑）
 
 1. **命中判定要自己补**：基类只有 `mouseClicked` 做了 `active && visible && clicked(...)` 检查；

@@ -36,8 +36,9 @@ import org.slf4j.Logger;
  *   因为 SpriteIconButton 的 sprite 字段是 final 的，需要 Mixin 修改。
  */
 public class LivingButton extends SpriteIconButton.CenteredIcon {
-    private static final int WIDTH = 16;
-    private static final int HEIGHT = 8;
+    /** 按钮尺寸（16×8 精灵）—— 默认位计算（LivingButtonLayout）与射线微调避让共用。 */
+    public static final int WIDTH = 16;
+    public static final int HEIGHT = 8;
     private static final int SPRITE_WIDTH = 16;
     private static final int SPRITE_HEIGHT = 8;
     private static final Component ANNOTATION = Component.translatable("text.livingitem.living");

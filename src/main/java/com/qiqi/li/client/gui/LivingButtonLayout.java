@@ -92,6 +92,41 @@ public final class LivingButtonLayout {
         };
     }
 
+    // ==================== 按钮默认位（2026-10-13，生存背包启用） ====================
+
+    /**
+     * 原版 {@code InventoryScreen} 小人渲染矩形 —— {@code renderBg} 对
+     * {@code renderEntityInInventoryFollowsMouse} 的写死实参：
+     * (leftPos+26, topPos+8) → (leftPos+75, topPos+78)，49×70。
+     * 按钮默认位与射线微调（ToolRayTuningClicks 调用点）共用，勿在调用点重复写魔法数。
+     */
+    public static final int INVENTORY_PREVIEW_X1 = 26;
+    public static final int INVENTORY_PREVIEW_Y1 = 8;
+    public static final int INVENTORY_PREVIEW_X2 = 75;
+    public static final int INVENTORY_PREVIEW_Y2 = 78;
+
+    /**
+     * 按钮默认位（相对 GUI 左上角），按界面类型分流：
+     * <ul>
+     *   <li><b>生存背包</b>：小人框底居中、底对齐 —— x = 26 + (49-16)/2 = 42，
+     *       y = 78 - 8 = 70。框内无槽位（盔甲列 x8-24、副手 (77,62)、合成格 x98+ 全在框外，
+     *       已核对 {@code InventoryMenu} 全部槽位坐标）。</li>
+     *   <li><b>其余容器</b>：GUI 底部中央（chest 原默认位，保持不变）。</li>
+     * </ul>
+     *
+     * @param playerInventory true = 生存背包（InventoryScreen）
+     */
+    public static int[] defaultOffset(boolean playerInventory, int imageWidth, int imageHeight) {
+        if (playerInventory) {
+            return new int[]{
+                INVENTORY_PREVIEW_X1
+                    + (INVENTORY_PREVIEW_X2 - INVENTORY_PREVIEW_X1 - LivingButton.WIDTH) / 2,
+                INVENTORY_PREVIEW_Y2 - LivingButton.HEIGHT
+            };
+        }
+        return new int[]{(imageWidth - 16) / 2, imageHeight - 94};
+    }
+
     private static Path configFile() {
         return FMLPaths.CONFIGDIR.get().resolve("living_item").resolve(FILE_NAME);
     }

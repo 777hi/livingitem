@@ -33,6 +33,9 @@
 > §1.3 **反馈层三问**（精度需求 / 数据通道 / 覆盖场景；判据「反馈的精度需求决定数据通道」）、
 > §2.2 附注 **改语义 / 改几何 ⇒ grep 相关词**（Java 注释 · 文档 · 测试消息三类落点）、
 > §三 **框架化时机**（已知多接入方 + 配置型成本 ⇒ 抽；否则过度设计，白幕与 `ProgressBarDecorator` 正反对照）。
+> 🆕 **生存背包界面启用活按钮**（小人框底居中 42,70）—— 与射线微调同矩形 ⇒ 按钮优先（避让判定）；
+> init 时序坑（配方书 leftPos 后置应用 ⇒ 书展开时错位一帧）用 init TAIL 重摆解决；
+> 配方书三形态核过；创造界面维持排除并**补考证原因 = 活化链路不通**。测试 623 → 625 绿。
 
 - 🎨 **白幕简化为本地动画（纯客户端，不做跨机器时钟对齐）** —— 组件 `brewStartTick` 降级为
   **批次标记**（服务端三写点不变：开始写 gameTime、中止/完成写 -1）；客户端首次见到某标记时
@@ -76,6 +79,32 @@
   动画起点与重播 / 播完不删 / 跨存档清理）、新增 `ProgressBarDecoratorTest` 6 项；
   全量测试 612 → 622 绿；`check_layers` 零新增。⚠️ 画面本身须游戏内验证（附录清单已更新：
   白幕消退速度随堆叠数、燃料条刻度、z 层次、连续两批重播）。
+- 🆕 **生存背包界面启用活按钮（小人框底居中 42,70）** —— 排除自 37bde65（2026-07-14）的
+  背包侧启用；创造侧维持排除（原因补考证见下）。**默认位** = 原版小人渲染矩形
+  (26,8)-(75,78) 的框底居中 —— 矩形常量提取到 `LivingButtonLayout.INVENTORY_PREVIEW_*`
+  （射线微调调用点同源，消掉一处魔法数重复）；已核对 `InventoryMenu` 全部槽位坐标，
+  框内无槽位（盔甲列 x8-24、副手 (77,62)、合成格 x98+ 全在框外）。
+  **⚠️ 与射线微调同矩形 → 按钮优先**：`InventoryScreenMixin` 微调判定前加「光标在
+  LivingButton 上则跳过」—— 微调的 HEAD 拦截**先于控件分发**，不避让则门禁命中
+  （空手 + 主手记忆活工具）时按钮永远点不到；微调只损失框底一条，「躯干底部」锚点
+  在按钮上方照常可点。
+  **⚠️ init 时序坑**：`InventoryScreen.init` 在 `super.init()`（initButtons 挂载点）
+  **之后**才应用配方书 leftPos 偏移（`updateScreenPosition`）⇒ 书展开时打开背包，
+  initButtons 拿到偏移前的 leftPos，按钮先错位 ≈77px、下个 containerTick 才自愈
+  （闪一帧）；`InventoryScreen.init` TAIL 补重摆注入（同一套 resolve 偏移；resize 走
+  同一个 init，同款时序一并覆盖）。
+  **配方书三形态核过（原版源码）**：书关 = GUI 居中 ✓；书展开 + 窗口 ≥379 = GUI 右移
+  与书**并排**，按钮跟随 leftPos（containerTick 链路靠 `InventoryScreenMixin`
+  `living_item$callContainerTick` 补的 `super.containerTick()` 已通）✓；
+  书展开 + 窄窗口 <379 = **原版书独占模式**（`super.render` 与 `super.mouseClicked`
+  都不跑）⇒ 按钮连同整个 GUI 不可见不可点 —— **与原版槽位行为一致，非缺陷**。
+  **创造界面维持排除（原因补考证）**：`LivingTagPacket` 服务端读
+  `containerMenu.getCarried()`，而创造的 carried 是客户端虚拟物品（服务端从不打开
+  创造界面，拾取只走 `ServerboundSetCreativeModeSlotPacket` 写槽位）⇒ 服务端恒空、
+  点按钮静默无效 —— 2026-07-14 无记录排除的真实原因。修复方向（**carriedTag 往返**
+  复用 GuiInteractionPacket 先例 / **客户端活化**）+ 标签页维度（`selectedTab` static，
+  切页不重跑 init）待定稿单独开工。`LivingButtonLayoutTest` +2（默认位分流 +
+  矩形常量对齐原版），测试 623 → 625 绿。
 
 ## 2026-10-12
 
