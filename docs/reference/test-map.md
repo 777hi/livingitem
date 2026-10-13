@@ -76,6 +76,7 @@ src/test/java/com/qiqi/li/
 ├── living/domain/brewing/
 │   ├── BrewingBatchLogicTest.java             # 批次状态机·启动/完成/作废两判据/堆叠倍率/批次标记生命周期(Start 写·Continue 保持·Complete·Abort·**Idle 自愈**)（14 项）
 │   ├── BrewingSlotEligibilityTest.java        # 槽位准入隔离规则·活物品不作瓶子/材料/燃料（6 项）
+│   ├── BrewingMaterialConsumeTest.java        # 材料消耗(consumeOne)·⭐龙息不整栈替换回归/空栈变玻璃瓶/并入未满堆/容器满丢弃/空槽 no-op（6 项）
 │   └── LivingBrewingStandDataTest.java        # 数据组件 codec·旧数据(只有direction)可解码/往返保留 fuel 与 brew_start_tick/withBrewStart 隔离改字段/默认即移除锚点（4 项）
 ├── living/domain/furnace/
 │   ├── LivingFurnaceFunctionTest.java         # 燃料消耗合成残留物语义（4 项）

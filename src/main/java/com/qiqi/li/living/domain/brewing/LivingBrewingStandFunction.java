@@ -311,19 +311,64 @@ public class LivingBrewingStandFunction implements LivingItemFunction, HasDirect
     /**
      * 从槽位消耗 1 个（燃料 / 材料通用）。
      *
-     * <p>有合成残留物时按<b>活熔炉先例</b>把残留物<b>放回槽位</b>（D9）——
-     * 原版是掉落到方块坐标，但活物品没有坐标（且玩家背包根本没有坐标）⇒ 无法对齐。
-     * ⚠️ 影响面≈0：原版全部酿造材料与烈焰粉都不带合成残留物。</p>
+     * <p><b>⚠️ 绝不能「整栈替换为合成残留物」</b>（2026-10-13 修，用户实测）：
+     * 龙息（{@code Items.DRAGON_BREATH}）带合成残留物（玻璃瓶）<b>且可堆叠</b>（默认 64）
+     * ⇒ 整栈替换会把「8 个龙息」变成「1 个玻璃瓶」，7 个凭空消失。原版
+     * {@code BrewingStandBlockEntity#doBrew} 的语义是 <b>先扣 1、再看残留物</b>：
+     * 扣完为空 ⇒ 槽位变成残留物；还有剩余 ⇒ 残留物<b>掉落</b>。</p>
+     *
+     * <p><b>「掉落」的活物品适配（D9）</b>：活物品没有坐标（背包容器更是完全没有坐标）
+     * ⇒ 残留物不掉落，改为<b>另寻归宿</b>（{@link #placeRemainder}）：优先并入容器中同物品的
+     * 未满槽，其次放进任意空槽；容器满则丢弃。⚠️ 原版<b>可堆叠</b>的带残留物酿造材料只有龙息一种
+     * （水 / 岩浆 / 牛奶桶都是 {@code stacksTo(1)}，蜂蜜瓶不是酿造材料）⇒ 实际极少触发。</p>
+     *
+     * <p>包级可见供 {@code BrewingMaterialConsumeTest} 钉判据（同 {@link #isBlazePowder} 的做法）。</p>
      */
-    private static void consumeOne(ContainerContext context, int slot) {
+    static void consumeOne(ContainerContext context, int slot) {
         ItemStack stack = context.getItem(slot);
         if (stack.isEmpty()) return;
-        if (stack.hasCraftingRemainingItem()) {
-            context.setItem(slot, stack.getCraftingRemainingItem());
+
+        ItemStack remainder = stack.hasCraftingRemainingItem()
+            ? stack.getCraftingRemainingItem()
+            : ItemStack.EMPTY;
+
+        stack.shrink(1);
+        if (stack.isEmpty()) {
+            context.setItem(slot, remainder);          // 原版同：扣完为空 ⇒ 槽位变残留物
             return;
         }
-        stack.shrink(1);
-        context.setItem(slot, stack.copy());
+        context.setItem(slot, stack.copy());           // 还有剩余 ⇒ 保留剩余（绝不整栈替换）
+        if (!remainder.isEmpty() && !placeRemainder(context, slot, remainder)) {
+            LivingItemManager.LOGGER.debug(
+                "brewing: 合成残留物无处安放（容器满）⇒ 丢弃 item={}", remainder.getItem());
+        }
+    }
+
+    /**
+     * 把合成残留物另寻归宿（D9「不掉落」的适配）。
+     *
+     * <p>扫描顺序：优先并入<b>同物品的未满槽</b>（可堆叠，避免碎片化），其次放进<b>任意空槽</b>。
+     * 都不行（容器满）返回 {@code false}，由调用方丢弃。</p>
+     *
+     * @param exclude 排除槽位（刚写过剩余材料的那个槽）
+     * @return 是否安置成功
+     */
+    private static boolean placeRemainder(ContainerContext context, int exclude, ItemStack remainder) {
+        int size = context.getSize();
+        for (int i = 0; i < size; i++) {
+            if (i == exclude) continue;
+            ItemStack s = context.getItem(i);
+            if (s.isEmpty()) {
+                context.setItem(i, remainder.copy());
+                return true;
+            }
+            if (ItemStack.isSameItemSameComponents(s, remainder)
+                    && s.getCount() < Math.min(context.getSlotLimit(i), s.getMaxStackSize())) {
+                context.setItem(i, s.copyWithCount(s.getCount() + 1));
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
