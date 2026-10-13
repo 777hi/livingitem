@@ -682,32 +682,7 @@ public final class EnderChannelRegistry {
     }
 
     private static List<BlockPos> extractBlockPositions(String containerKey) {
-        List<BlockPos> positions = new ArrayList<>();
-
-        if (containerKey.startsWith("chest_")) {
-            String[] parts = containerKey.substring(6).split("_");
-            for (int i = 0; i + 2 < parts.length; i += 3) {
-                try {
-                    int x = Integer.parseInt(parts[i]);
-                    int y = Integer.parseInt(parts[i + 1]);
-                    int z = Integer.parseInt(parts[i + 2]);
-                    positions.add(new BlockPos(x, y, z));
-                } catch (NumberFormatException ignored) {
-                }
-            }
-        } else if (containerKey.startsWith("container_")) {
-            String[] parts = containerKey.substring(10).split("_");
-            if (parts.length >= 3) {
-                try {
-                    int x = Integer.parseInt(parts[parts.length - 3]);
-                    int y = Integer.parseInt(parts[parts.length - 2]);
-                    int z = Integer.parseInt(parts[parts.length - 1]);
-                    positions.add(new BlockPos(x, y, z));
-                } catch (NumberFormatException ignored) {
-                }
-            }
-        }
-
-        return positions;
+        // 2026-10-13 收敛：键形解析唯一入口（本方法收的是裸稳定键，ContainerKeys 对裸键/缓存键都受理）
+        return com.qiqi.li.living.container.ContainerKeys.positionsOf(containerKey);
     }
 }

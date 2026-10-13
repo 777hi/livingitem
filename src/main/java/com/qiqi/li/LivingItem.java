@@ -438,29 +438,18 @@ public class LivingItem {
      * {@code LivingItemRuntimeSync} 的独立分支处理，不会走到这里 ⇒ 返回 {@code null}。
      */
     private static BlockPos parsePosFromContainerKey(String containerKey) {
-        if (containerKey == null) return null;
-        // 剥掉可选的 "<维度>|" 前缀（裸键不含 '|' ⇒ lastIndexOf 为 -1 时原样）
-        int bar = containerKey.lastIndexOf('|');
-        String key = bar >= 0 ? containerKey.substring(bar + 1) : containerKey;
-        if (!key.startsWith("chest_")) return null;
-        String[] parts = key.split("_");
-        if (parts.length < 4) return null;
-        try {
-            return new BlockPos(Integer.parseInt(parts[1]), Integer.parseInt(parts[2]),
-                Integer.parseInt(parts[3]));
-        } catch (NumberFormatException ignored) {
-            return null;
-        }
+        List<BlockPos> positions = com.qiqi.li.living.container.ContainerKeys.positionsOf(containerKey);
+        return positions.isEmpty() ? null : positions.get(0);   // 大箱子取第一段（既有语义）
     }
 
     /**
-     * 取缓存键的维度前缀（{@code <维度>|…} 的 {@code <维度>} 部分）；裸键返回 {@code null}。
+     * 取缓存键的维度前缀（{@code <dim>|…} 的 {@code <dim>} 部分）；裸键返回 {@code null}。
      * 形如 {@code minecraft:overworld}。包级私有供单测。
+     *
+     * <p>2026-10-13 起键形解析统一走 {@link com.qiqi.li.living.container.ContainerKeys}（唯一入口）。</p>
      */
     static String dimPrefixOf(String containerKey) {
-        if (containerKey == null) return null;
-        int bar = containerKey.lastIndexOf('|');
-        return bar >= 0 ? containerKey.substring(0, bar) : null;
+        return com.qiqi.li.living.container.ContainerKeys.dimPrefixOf(containerKey);
     }
 
     private void processLevelContainers(ServerLevel level) {

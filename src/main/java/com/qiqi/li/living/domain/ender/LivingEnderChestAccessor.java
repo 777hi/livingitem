@@ -323,7 +323,7 @@ public class LivingEnderChestAccessor implements SlotAccessor {
             } else {
                 // 玩家背包/末影箱：从 containerKey 解析玩家 UUID，获取玩家所在世界
                 String containerKey = entry.containerKey();
-                if (containerKey == null || !containerKey.startsWith("player_")) {
+                if (!com.qiqi.li.living.container.ContainerKeys.isOwnedByPlayer(containerKey)) {
                     LOGGER.debug("LivingEnderChestAccessor: extract invalid containerKey, key={}, key={}",
                         channelKey, containerKey);
                     continue;
@@ -474,7 +474,8 @@ public class LivingEnderChestAccessor implements SlotAccessor {
             }
             handler.insertItem(rollbackSlot, stack, false);
             notifySourceChanged(level, rollbackPos);
-        } else if (rollbackContainerKey != null && rollbackContainerKey.startsWith("player_")) {
+        } else if (rollbackContainerKey != null
+                && com.qiqi.li.living.container.ContainerKeys.isOwnedByPlayer(rollbackContainerKey)) {
             UUID playerId = parsePlayerUuid(rollbackContainerKey);
             if (playerId == null) {
                 LOGGER.warn("LivingEnderChestAccessor: rollback invalid containerKey, key={}, entryKey={}",
@@ -625,15 +626,7 @@ public class LivingEnderChestAccessor implements SlotAccessor {
      */
     @Nullable
     private static UUID parsePlayerUuid(@Nullable String containerKey) {
-        if (containerKey == null || !containerKey.startsWith("player_")) return null;
-        try {
-            if (containerKey.endsWith("_ender_chest")) {
-                return UUID.fromString(containerKey.substring(7, containerKey.length() - 12));
-            } else {
-                return UUID.fromString(containerKey.substring(7));
-            }
-        } catch (IllegalArgumentException e) {
-            return null;
-        }
+        // 2026-10-13 收敛：键形解析唯一入口（曾有三份实现，其中一份漏剥 _ender_chest 后缀 ⇒ 末影箱从不发包）
+        return com.qiqi.li.living.container.ContainerKeys.ownerOf(containerKey);
     }
 }

@@ -37,12 +37,14 @@ import com.qiqi.li.living.util.StaticCacheRegistry;
 public class ContainerRuntimeCache {
 
     /**
-     * 玩家背包容器键前缀（{@code ContainerIdentity#getContainerKey()} 的 inventory 分支）。
+     * 玩家容器键前缀 —— ⚠️ <b>2026-10-13 起键形解析的唯一入口是
+     * {@link com.qiqi.li.living.container.ContainerKeys#PLAYER_PREFIX}</b>，
+     * 本常量仅为历史引用保留，新代码请勿使用（发包侧已改用
+     * {@code ContainerKeys.kindOf} 判种类）。
      *
-     * <p>⚠️ 只有<b>裸键</b>才可能命中它：世界容器的缓存键是
-     * {@code <维度>|chest_…}（见 {@link ContainerIdentity#getCacheKey()}）⇒
-     * 发包侧的玩家分支判定（{@code LivingItemRuntimeSync}）不会误判世界容器。</p>
+     * @deprecated 用 {@link com.qiqi.li.living.container.ContainerKeys#PLAYER_PREFIX}
      */
+    @Deprecated
     public static final String PLAYER_KEY_PREFIX = "player_";
 
     private static final Map<String, Map<Integer, RuntimeSegments>> store = new ConcurrentHashMap<>();
@@ -175,12 +177,6 @@ public class ContainerRuntimeCache {
                                  Collection<Container> containerInstances) {
             return com.qiqi.li.living.container.ContainerContexts.isViewing(player, containerInstances);
         }
-    }
-
-    /** 判断玩家菜单是否只开着背包本身（=没开任何容器界面）—— 供 L4 过滤空转发包。 */
-    public static boolean isJustInventoryMenu(net.minecraft.server.level.ServerPlayer player) {
-        AbstractContainerMenu menu = player.containerMenu;
-        return menu == null || menu == player.inventoryMenu;
     }
 
     /** 供 `ContainerContexts` 反向使用（保留对称入口，避免 future 直接 import container）。 */

@@ -36,6 +36,11 @@
 > 🆕 **生存背包界面启用活按钮**（小人框底居中 42,70）—— 与射线微调同矩形 ⇒ 按钮优先（避让判定）；
 > init 时序坑（配方书 leftPos 后置应用 ⇒ 书展开时错位一帧）用 init TAIL 重摆解决；
 > 配方书三形态核过；创造界面维持排除并**补考证原因 = 活化链路不通**。测试 623 → 625 绿。
+> 🐛 **修复：容器键形反推导致的 3 处同源 bug（背包 / 末影箱 tooltip 遥测）+ 解析收敛唯一入口** ——
+> ① 删 `isJustInventoryMenu` 守卫（把「开着背包界面」误判为「没开界面」）；② 末影箱 UUID 解析
+> 补剥 `_ender_chest` 后缀（曾抛异常被吞 ⇒ **从不发包**）；③ 客户端按包里下发的 `ContainerKind`
+> 分流（不再按屏幕类型猜）。新增 `ContainerKeys` 唯一解析入口 + `ContainerKind` 枚举 +
+> 脚本 `check_container_keys.py`（窄而准）；测试 625 → 633 绿。
 
 - 🎨 **白幕简化为本地动画（纯客户端，不做跨机器时钟对齐）** —— 组件 `brewStartTick` 降级为
   **批次标记**（服务端三写点不变：开始写 gameTime、中止/完成写 -1）；客户端首次见到某标记时
@@ -103,8 +108,39 @@
   创造界面，拾取只走 `ServerboundSetCreativeModeSlotPacket` 写槽位）⇒ 服务端恒空、
   点按钮静默无效 —— 2026-07-14 无记录排除的真实原因。修复方向（**carriedTag 往返**
   复用 GuiInteractionPacket 先例 / **客户端活化**）+ 标签页维度（`selectedTab` static，
-  切页不重跑 init）待定稿单独开工。`LivingButtonLayoutTest` +2（默认位分流 +
-  矩形常量对齐原版），测试 623 → 625 绿。
+  切页不重跑 init）待  定稿单独开工。`LivingButtonLayoutTest` +2（默认位分流 +
+  矩形常量对齐原版），测试 623 → 625 绿。✅ 游戏内实测通过（2026-10-13：按钮可用、观感良好）。
+
+- 🐛 **修复：容器键形反推导致的 3 处同源 bug + 键解析收敛为唯一入口（2026-10-13）** ——
+  用户实测发现「活酿造台 tooltip 进度在只打开背包 GUI 时不显示」。排查确认是**同一根因的三个变体**：
+  容器类型在产生处（各 `*ContainerContext` 构造时）本来明确，但被压扁成字符串 key 后，
+  每个消费方各自 `startsWith` / `substring` 反推 ⇒ 规则不统一：
+  - ① `LivingItemRuntimeSync.sendToOwner` 的 `isJustInventoryMenu` 守卫用 `menu == inventoryMenu`
+    判「没开界面」，但**原版按 E 开背包不换菜单**（服务端根本区分不了二者）⇒ 背包里活物品的
+    tooltip 运行时行不刷新（燃料行是组件数据，故只有进度行缺 —— 与实测现象吻合）；
+  - ② 同方法 UUID 解析直接 `UUID.fromString(key.substring(7))`，对末影箱键
+    `player_<uuid>_ender_chest` 抛 `IllegalArgumentException` 被 catch 吞掉 ⇒ **末影箱从不发包**
+    （其 tooltip 运行时行**从未显示过**，与开不开界面无关）；
+  - ③ 客户端 `LivingItemSyncPacket.handle` 按 `startsWith("player_")` 分流 ⇒ 末影箱（若发了）
+    会写进背包缓存，而读取端（`LivingItemTooltip` 按「是不是 InventoryScreen」判）对末影箱界面
+    走 `get(slot)` ⇒ 读写错位（**即使修好 ② 也读不到**）。
+  **修法（两条腿）**：
+  - **种类成为一等公民** —— 新增 `ContainerKind`（`PLAYER_INV`/`ENDER_CHEST`/`WORLD_BLOCK`/
+    `ITEM_ENTITY`）随 `LivingItemSyncPacket` 下发（ordinal 编解码 + 越界回退，照
+    `FluidFlowSyncPacket` 现成做法）⇒ 客户端零推断；发包分派改用 `kind.isOwnedByPlayer()`；
+    **删界面守卫**（与流体轨一致 —— `FluidFlowServerSync` 对背包就是直发主人、不判界面）。
+  - **解析收敛到唯一入口** —— 新增 `ContainerKeys`（`kindOf` / `ownerOf` / `positionsOf` /
+    `isOwnedByPlayer` / `dimPrefixOf`）；`LivingItemRuntimeSync`、`EnderChannelSyncPacket`、
+    `LivingEnderChestAccessor`、`LivingEnderChestFunction`、`LivingItem.parsePosFromContainerKey`、
+    `EnderChannelRegistry.extractBlockPositions` 全部改调它（**原 5 份各自实现 → 1 份**）；
+    新增脚本 `tools/check_container_keys.py` 机械拦散落（C1 `UUID.fromString` / C2 键前缀字面量，
+    窄而准 ⇒ 零误报；注释行跳过）。
+  **影响面**：共享该链路的活物品（活熔炉 / 活漏斗 / 活酿造台 / 活蜡凝铜）在**背包与末影箱**场景的
+  tooltip 运行时行恢复；世界容器（箱子）场景本来就正常。**未做**：`ContainerKey` 结构化 record
+  （③ 级根治，编译期强制）—— 留待观察，若再出同类问题再上。
+  **验证**：新增 `ContainerKeysTest`（7 项：5 种键形 / 末影箱回归 / 未知形态 / 坐标 / 维度前缀）
+  + 包 `kind` 往返（4 种）；全量 625 → **633 绿**；`check_container_keys` 零散落；
+  `check_layers` 零新增。文档：infrastructure §2.5 清单重写 + 教训升级。
 
 ## 2026-10-12
 

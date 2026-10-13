@@ -224,17 +224,40 @@ public interface ContainerIdentity {
 
 ⚠️ **改缓存键形 = 改协议：格式敏感点清单**（2026-10-12 回归实证，改键形前必须逐项审计）：
 
-| 消费方 | 怎么认键 | 前缀改造后 |
+> ⭐ **2026-10-13 收敛：键形解析只剩一个入口** —— `ContainerKeys`（`kindOf` / `ownerOf` /
+> `positionsOf` / `isOwnedByPlayer` / `dimPrefixOf`）。**禁止在别处再写** `startsWith("player_")` /
+> `substring` + UUID 解析；脚本 `tools/check_container_keys.py` 机械拦截散落
+> （C1 `UUID.fromString` / C2 键前缀字面量 —— 收敛后合法点极少 ⇒ 零误报）。
+>
+> **动因**：2026-10-13 一次性暴露 **3 处同源 bug**，全部因为消费方各自反推键形 ——
+> ① `isJustInventoryMenu` 把「开着背包界面」误判为「没开界面」（原版按 E 开背包**不换菜单**，
+> 服务端根本区分不了）⇒ 背包 tooltip 运行时行不刷新；
+> ② `sendToOwner` 的 UUID 解析漏剥 `_ender_chest` 后缀 ⇒ `UUID.fromString` 抛异常被吞
+> ⇒ **末影箱从不发包**（其 tooltip 运行时行从未显示过）；
+> ③ 客户端按「是不是 `InventoryScreen`」推断种类 ⇒ 与服务端键前缀判断**相反**
+> ⇒ 读写分流错位（即使修好 ② 也读不到）。
+>
+> ⇒ 修法两条腿：**种类成为一等公民**（`ContainerKind` 随 `LivingItemSyncPacket` 下发，
+> 客户端零推断 —— 与 `FluidFlowSyncPacket` 的 `RenderTarget` 同款，那边 2026-10-06 已用同样方式
+> 解决过同一个坑）+ **解析收敛 + 脚本兜底**。
+
+| 消费方 | 怎么认键 | 现状 |
 |---|---|---|
-| `LivingItem.parsePosFromContainerKey`（发包反查 viewer） | 按 `chest_` 前缀解析坐标 | **必须适配**——当时漏改 ⇒ 前缀键解析为 null ⇒ 世界容器 tooltip 遥测全停（现已修为剥前缀 + 定向维度） |
-| `LivingItemRuntimeSync` 发包的 `player_` 分支 | `startsWith("player_")` | 无需改——玩家键**故意不加前缀**（数据跟人走） |
-| 客户端 `LivingItemSyncPacket.handle` | `startsWith("player_")` | 同上；世界键以维度 id 开头，不会误判 |
+| **全部** | `ContainerKeys`（唯一入口） | ✅ 2026-10-13 收敛 —— **新增键形只改这一处** |
+| `LivingItem.parsePosFromContainerKey`（发包反查 viewer） | 委托 `ContainerKeys.positionsOf` | ✅（2026-10-12 曾漏改 ⇒ 世界容器 tooltip 遥测全停） |
+| `LivingItemRuntimeSync` 发包分派 | `kindOf` → `kind.isOwnedByPlayer()`（背包/末影箱直发主人） | ✅ 2026-10-13 修（原为 `startsWith("player_")` + 界面守卫） |
+| 客户端 `LivingItemSyncPacket.handle` | 按**包里的 `kind`** 分流（零推断） | ✅ 2026-10-13 修（原为 `startsWith("player_")`） |
 | `ContainerRuntimeCache` / `CONTAINER_DATA` / `LIVING_SLOT_ITEMS` / `POS_TO_CACHE_KEY` | 直接用 `getCacheKey()` | 一处定义，同构 |
 | `ContainerMonitor` 调试开关 | 按**裸稳定键**下达命令 | 故意不同名（玩家按坐标操作） |
 | 末影箱路由表（`EnderChannelEntry`） | 自带 `dimension()` 字段 + 裸键索引 | 另一套设计，不随缓存键改 |
 
 ⭐ 回归的直接证据：提交 `8ea9aad` 的信息里点名「坐标解析依赖它（不改它的格式）」，
 却恰恰漏改了需要跟着适配的那一处——**点了名≠审了它**，清单化才防得住。
+
+⭐ **2026-10-13 的教训升级**：清单靠人守 ⇒ **仍会漏**（这次的 3 处**全在清单之外**）。
+⇒ 收敛成「唯一入口 + 编译期/脚本兜底」才是根治方向：`ContainerKind` 让未来新增容器种类
+被**编译器**点名（穷尽性检查），`check_container_keys.py` 让散落解析被**脚本**拦住。
+
 
 > 📄 **边界带身份解析**（菜单槽位 ↔ 容器上下文、查看者匹配、大箱 `CompoundContainer` 特判）
 > 另见 [container-identity.md](container-identity.md)（Q6 收敛，2026-10-04）——

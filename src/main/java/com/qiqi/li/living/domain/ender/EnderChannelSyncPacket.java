@@ -42,8 +42,8 @@ public record EnderChannelSyncPacket(
         for (EnderChannelEntry e : rawEntries) {
             String playerName = null;
             String ck = e.containerKey();
-            if (ck != null && ck.startsWith("player_") && server != null) {
-                UUID pid = parsePlayerUuid(ck);
+            if (ck != null && com.qiqi.li.living.container.ContainerKeys.isOwnedByPlayer(ck) && server != null) {
+                UUID pid = com.qiqi.li.living.container.ContainerKeys.ownerOf(ck);
                 if (pid != null) {
                     ServerPlayer p = server.getPlayerList().getPlayer(pid);
                     if (p != null) playerName = p.getGameProfile().getName();
@@ -61,18 +61,8 @@ public record EnderChannelSyncPacket(
         return new EnderChannelSyncPacket(channel, channelSize, displays);
     }
 
-    /** 从 "player_<uuid>" / "player_<uuid>_ender_chest" 解析玩家 UUID，失败返回 null。 */
-    private static UUID parsePlayerUuid(String containerKey) {
-        String s = containerKey.substring("player_".length());
-        if (s.endsWith("_ender_chest")) {
-            s = s.substring(0, s.length() - "_ender_chest".length());
-        }
-        try {
-            return UUID.fromString(s);
-        } catch (IllegalArgumentException ex) {
-            return null;
-        }
-    }
+    // 注：玩家 UUID 解析已收敛到 com.qiqi.li.living.container.ContainerKeys#ownerOf（2026-10-13）——
+    // 本类曾自带一份 parsePlayerUuid（剥 _ender_chest 后缀的正确实现），收敛后删除以免多份实现漂移。
 
     private static void encode(FriendlyByteBuf buf, EnderChannelSyncPacket pkt) {
         writeChannelKey(buf, pkt.channel);

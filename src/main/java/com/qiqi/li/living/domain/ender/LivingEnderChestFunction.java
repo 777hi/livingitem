@@ -151,7 +151,7 @@ public class LivingEnderChestFunction implements LivingItemFunction {
                     // 方块容器：维度 + 坐标（高级模式需显式标注维度，路由可跨维度）
                     String dim = entry.dimKey() != null ? entry.dimKey() : "?";
                     locStr = dim + " " + entry.sourcePos().toShortString();
-                } else if (entry.containerKey() != null && entry.containerKey().startsWith("player_")) {
+                } else if (com.qiqi.li.living.container.ContainerKeys.isOwnedByPlayer(entry.containerKey())) {
                     // 玩家背包 / 末影箱：优先显示玩家名，离线则回退到 UUID（维度附在前面）
                     String dim = entry.dimKey() != null ? entry.dimKey() + " " : "";
                     String name = entry.playerName() != null ? entry.playerName() : parsePlayerId(entry.containerKey());
@@ -170,13 +170,12 @@ public class LivingEnderChestFunction implements LivingItemFunction {
 
     /**
      * 从玩家容器 key（"player_&lt;uuid&gt;" 或 "player_&lt;uuid&gt;_ender_chest"）中提取玩家 UUID 字符串。
+     *
+     * <p>2026-10-13 收敛：解析走唯一入口 {@code ContainerKeys#ownerOf}（本类曾自带一份剥后缀实现）。</p>
      */
     private static String parsePlayerId(String containerKey) {
-        String s = containerKey.substring("player_".length());
-        if (s.endsWith("_ender_chest")) {
-            s = s.substring(0, s.length() - "_ender_chest".length());
-        }
-        return s;
+        java.util.UUID uuid = com.qiqi.li.living.container.ContainerKeys.ownerOf(containerKey);
+        return uuid != null ? uuid.toString() : containerKey;
     }
 
     public static boolean isLivingEnderChest(ItemStack stack) {
