@@ -91,4 +91,12 @@ public final class BeaconEffects {
     public static int amplifier(BeaconConfig.Entry entry) {
         return entry.amplified() ? 1 : 0;
     }
+
+    /**
+     * buff 时长（tick）—— 照原版 {@code BeaconBlockEntity.applyEffects}：
+     * {@code (9 + 等级×2) 秒 × 20}。每 80 tick 重刷一次 ⇒ 范围内永不掉效。
+     */
+    public static int buffDurationTicks(int level) {
+        return (9 + level * 2) * 20;
+    }
 }

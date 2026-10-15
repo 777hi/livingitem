@@ -27,6 +27,16 @@ class BeaconEffectsTest {
         return new BeaconConfig(List.of(entries));
     }
 
+    @Test
+    @DisplayName("buff 时长 = (9+等级×2)×20 刻（照原版 applyEffects）")
+    void buffDuration() {
+        assertEquals(180, BeaconEffects.buffDurationTicks(0));
+        assertEquals(220, BeaconEffects.buffDurationTicks(1));
+        assertEquals(260, BeaconEffects.buffDurationTicks(2));
+        assertEquals(300, BeaconEffects.buffDurationTicks(3));
+        assertEquals(340, BeaconEffects.buffDurationTicks(4));
+    }
+
     @Nested
     @DisplayName("喂锭（门控 + 加槽/升级）")
     class Feed {

@@ -15,12 +15,17 @@ import com.qiqi.li.living.transfer.SlotResolver;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.ChestBlockEntity;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * 活信标的功能实现（设计稿 {@code docs/buffer/living-beacon-design.md}）。
@@ -55,24 +60,87 @@ public class BeaconFunction implements LivingItemFunction {
                 continue;
             }
 
+            ItemStack stack = entry.stack();
             long[] heights = readColumnHeights(context, slot);
             int pyramidLevel = BeaconPyramid.resolveLevel(heights);
+
+            // 效果计算（纯逻辑，BeaconEffects）：生效矿石效果 + 免费再生三档
+            BeaconConfig config = BeaconConfig.of(stack);
+            int stackCount = stack.getCount();
+            List<BeaconConfig.Entry> active =
+                BeaconEffects.activeEntries(pyramidLevel, stackCount, config);
+            BeaconSegment.RegenTier regenTier =
+                BeaconEffects.regenTier(pyramidLevel, stackCount, active);
 
             // 遥测发布（tooltip 实时行 + 未来 F3+H 面板共用）；等级每 tick 现算，不进组件
             ContainerRuntimeCache.update(context.getCacheKey(), slot,
                 RuntimeSegments.EMPTY.with(BeaconSegment.INSTANCE,
-                    new BeaconSegment.BeaconRuntime(pyramidLevel, heights, BeaconSegment.RegenTier.NONE)));
+                    new BeaconSegment.BeaconRuntime(pyramidLevel, heights, regenTier)));
 
-            // 箱子宿主（规则 1：仅玩家 / 箱子）—— 未激活（level 0）不登记 ⇒ 不开盖不同步
-            BlockPos containerPos = context.getBlockPos();
-            if (containerPos != null && pyramidLevel >= 1
-                    && level.getBlockEntity(containerPos) instanceof ChestBlockEntity) {
-                List<BlockPos> lidPositions = context.getAssociatedBlockPositions();
-                // 光束起点 = 信标所在半箱（大箱按槽位落在前半/后半）
-                BlockPos hostPos = lidPositions.size() > 1
-                    ? lidPositions.get((int) ((long) slot * lidPositions.size() / context.getSize()))
-                    : containerPos;
-                BeaconChestHost.report(context.getCacheKey(), hostPos, lidPositions, pyramidLevel);
+            // 宿主（规则 1：仅玩家 / 箱子）—— 未激活 = 完全死物 ⇒ 无 buff / 无光束 / 不开盖
+            Vec3 hostPos = resolveHostPosition(context, level);
+            if (pyramidLevel >= 1 && hostPos != null) {
+                // buff 施加：照原版 80 刻节奏（时长 (9+等级×2) 秒 ⇒ 范围内永不掉效）
+                if (level.getGameTime() % 80L == 0L) {
+                    applyEffects(level, hostPos, pyramidLevel, active, regenTier);
+                }
+
+                // 箱子宿主：开盖保持 + 近处同步
+                BlockPos containerPos = context.getBlockPos();
+                if (containerPos != null && level.getBlockEntity(containerPos) instanceof ChestBlockEntity) {
+                    List<BlockPos> lidPositions = context.getAssociatedBlockPositions();
+                    // 光束起点 = 信标所在半箱（大箱按槽位落在前半/后半）
+                    BlockPos beamPos = lidPositions.size() > 1
+                        ? lidPositions.get((int) ((long) slot * lidPositions.size() / context.getSize()))
+                        : containerPos;
+                    BeaconChestHost.report(context.getCacheKey(), beamPos, lidPositions, pyramidLevel);
+                }
+            }
+        }
+    }
+
+    /**
+     * 宿主位置（规则 1：仅玩家 / 箱子）—— 无效宿主返回 {@code null}。
+     *
+     * <ul>
+     *   <li><b>方块容器</b>（{@code getBlockPos() != null}）：只有 {@code ChestBlockEntity}
+     *       算宿主（普通箱 + 陷阱箱共用该 BE）；木桶 / 潜影盒 / <b>末影箱</b> / 漏斗
+     *       等一律不是 —— 注意末影箱虽然 {@code getOwnerPlayer()} 有值，但它锚在方块上，
+     *       故先按方块容器判定 ⇒ 自然被排除。</li>
+     *   <li><b>非方块容器</b>：玩家背包（含末影箱以外的玩家锚定容器）取主人位置；
+     *       掉落物容器无主人 ⇒ null。</li>
+     * </ul>
+     */
+    private static Vec3 resolveHostPosition(ContainerContext context, Level level) {
+        BlockPos containerPos = context.getBlockPos();
+        if (containerPos != null) {
+            return level.getBlockEntity(containerPos) instanceof ChestBlockEntity
+                ? Vec3.atCenterOf(containerPos) : null;
+        }
+        Player owner = context.getOwnerPlayer();
+        return owner != null ? owner.position() : null;
+    }
+
+    /**
+     * 施加 buff —— 照原版 {@code BeaconBlockEntity.applyEffects} 等价逻辑：
+     * 范围 = {@code 等级×10+10} 的球体（AABB 撑到世界高度）；范围内所有玩家获得
+     * 「生效矿石效果 + 免费再生」，时长 {@code (9+等级×2)×20}、ambient + 显示粒子。
+     */
+    private static void applyEffects(Level level, Vec3 hostPos, int pyramidLevel,
+                                     List<BeaconConfig.Entry> active, BeaconSegment.RegenTier regenTier) {
+        double range = BeaconPyramid.rangeBlocks(pyramidLevel);
+        AABB area = new AABB(BlockPos.containing(hostPos)).inflate(range)
+            .expandTowards(0.0, level.getHeight(), 0.0);
+        int duration = BeaconEffects.buffDurationTicks(pyramidLevel);
+
+        for (Player player : level.getEntitiesOfClass(Player.class, area)) {
+            for (BeaconConfig.Entry entry : active) {
+                player.addEffect(new MobEffectInstance(entry.ore().effect,
+                    duration, BeaconEffects.amplifier(entry), true, true));
+            }
+            if (regenTier != BeaconSegment.RegenTier.NONE) {
+                player.addEffect(new MobEffectInstance(MobEffects.REGENERATION,
+                    duration, regenTier == BeaconSegment.RegenTier.II ? 1 : 0, true, true));
             }
         }
     }
@@ -118,37 +186,62 @@ public class BeaconFunction implements LivingItemFunction {
         tooltipAdder.accept(Component.nullToEmpty(""));
         tooltipAdder.accept(Component.translatable("tooltip.livingitem.beacon.status"));
 
-        // 运行时数据（等级 / 柱高）—— 遥测不写组件，tooltip 必须走运行时缓存
+        // 运行时数据（等级 / 柱高 / 再生档）—— 遥测不写组件，tooltip 必须走运行时缓存
         RuntimeSegments runtimeData = LivingItemClientCache.getCurrentTooltipData();
         BeaconSegment.BeaconRuntime rt = runtimeData.get(BeaconSegment.INSTANCE);
-        if (rt == null) {
-            return;
-        }
+        if (rt != null) {
+            if (rt.level() == 0) {
+                tooltipAdder.accept(Component.translatable("tooltip.livingitem.beacon.inactive"));
+            } else {
+                tooltipAdder.accept(Component.translatable(
+                    "tooltip.livingitem.beacon.level",
+                    rt.level(),
+                    String.format("%.0f", BeaconPyramid.rangeBlocks(rt.level()))));
 
-        if (rt.level() == 0) {
-            tooltipAdder.accept(Component.translatable("tooltip.livingitem.beacon.inactive"));
-            return;
-        }
-
-        tooltipAdder.accept(Component.translatable(
-            "tooltip.livingitem.beacon.level",
-            rt.level(),
-            String.format("%.0f", BeaconPyramid.rangeBlocks(rt.level()))));
-
-        if (rt.level() < BeaconPyramid.MAX_LEVEL) {
-            int[] deficits = BeaconPyramid.deficitsToNext(rt.level(), rt.columnHeights());
-            long blocks = BeaconPyramid.blocksToNext(rt.level(), rt.columnHeights());
-            StringBuilder shortColumns = new StringBuilder();
-            for (int c = 0; c < BeaconPyramid.COLUMNS; c++) {
-                if (deficits[c] > 0) {
-                    if (!shortColumns.isEmpty()) {
-                        shortColumns.append("、");
+                if (rt.level() < BeaconPyramid.MAX_LEVEL) {
+                    int[] deficits = BeaconPyramid.deficitsToNext(rt.level(), rt.columnHeights());
+                    long blocks = BeaconPyramid.blocksToNext(rt.level(), rt.columnHeights());
+                    StringBuilder shortColumns = new StringBuilder();
+                    for (int c = 0; c < BeaconPyramid.COLUMNS; c++) {
+                        if (deficits[c] > 0) {
+                            if (!shortColumns.isEmpty()) {
+                                shortColumns.append("、");
+                            }
+                            shortColumns.append(BeaconPyramid.columnLabel(c)).append(" 差").append(deficits[c]);
+                        }
                     }
-                    shortColumns.append(BeaconPyramid.columnLabel(c)).append(" 差").append(deficits[c]);
+                    tooltipAdder.accept(Component.translatable(
+                        "tooltip.livingitem.beacon.pyramid", blocks, shortColumns.toString()));
+                } else {
+                    // 免费再生（满级才有意义）—— 三档由 BeaconEffects 现算
+                    tooltipAdder.accept(Component.translatable("tooltip.livingitem.beacon.regen",
+                        Component.translatable(switch (rt.regenTier()) {
+                            case II -> "tooltip.livingitem.beacon.regen.ii";
+                            case I -> "tooltip.livingitem.beacon.regen.i";
+                            case NONE -> "tooltip.livingitem.beacon.regen.none";
+                        })));
                 }
             }
-            tooltipAdder.accept(Component.translatable(
-                "tooltip.livingitem.beacon.pyramid", blocks, shortColumns.toString()));
+        }
+
+        // 静态层：效果配置账本（读组件，不依赖遥测）
+        BeaconConfig config = BeaconConfig.of(stack);
+        tooltipAdder.accept(Component.translatable("tooltip.livingitem.beacon.config_title"));
+        if (config.entries().isEmpty()) {
+            tooltipAdder.accept(Component.translatable("tooltip.livingitem.beacon.config_empty"));
+        } else {
+            int index = 1;
+            for (BeaconConfig.Entry entry : config.entries()) {
+                boolean locked = rt != null && entry.ore().unlockTier > rt.level();
+                tooltipAdder.accept(Component.translatable(
+                    "tooltip.livingitem.beacon.config_entry",
+                    index++,
+                    Component.translatable(entry.ore().effectKey()),
+                    entry.amplified() ? "II" : "I",
+                    Component.translatable(entry.ore().ingot.getDescriptionId()),
+                    locked ? Component.translatable("tooltip.livingitem.beacon.config_locked")
+                           : Component.empty()));
+            }
         }
     }
 }
