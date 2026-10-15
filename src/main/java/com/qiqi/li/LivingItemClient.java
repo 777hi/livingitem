@@ -4,6 +4,7 @@ import com.mojang.datafixers.util.Either;
 import com.qiqi.li.client.icon.LivingIconRegistry;
 import com.qiqi.li.living.domain.tools.LivingToolHostClientCache;
 import com.qiqi.li.client.render.LivingChestTooltipRenderer;
+import com.qiqi.li.client.render.LivingBeamRenderer;
 import com.qiqi.li.client.render.LivingToolModelRenderer;
 import com.qiqi.li.client.render.LivingToolRayRenderer;
 import com.qiqi.li.client.render.LivingWaxedCopperTooltipRenderer;
@@ -159,6 +160,7 @@ public class LivingItemClient {
     static void onRenderLevelStage(RenderLevelStageEvent event) {
         LivingToolRayRenderer.render(event);
         LivingToolModelRenderer.render(event);
+        LivingBeamRenderer.render(event);
     }
 
     /**

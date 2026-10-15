@@ -81,6 +81,7 @@ import com.qiqi.li.living.domain.tools.LivingToolAssist;
 import com.qiqi.li.living.domain.tools.LivingToolRecorder;
 import net.neoforged.neoforge.registries.DeferredRegister;
 import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
+import com.qiqi.li.living.domain.beacon.BeaconRegistration;
 import com.qiqi.li.living.domain.brewing.BrewingStandRegistration;
 import com.qiqi.li.living.domain.chest.ChestRegistration;
 import com.qiqi.li.living.domain.ender.EnderRegistration;
@@ -220,6 +221,7 @@ public class LivingItem {
         FarmlandRegistration.register();
         ToolRegistration.register();
         MapRegistration.register();
+        BeaconRegistration.register();    // 活信标（Phase 1：仅功能骨架，光束为纯客户端渲染）
         // 注：原 RuntimeRegistration 已删（2026-10-12）—— 它只为「登记 runtime 包缓存清理」而存在，
         // 改由缓存类自己登记后即变空；且 runtime 是 L2 机制层，本就不该有「域注册入口」。
 
