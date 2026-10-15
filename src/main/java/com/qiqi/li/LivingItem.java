@@ -146,6 +146,7 @@ public class LivingItem {
         com.qiqi.li.living.domain.power.PowerComponents.ATTACH_REG.register(modEventBus);
         com.qiqi.li.living.domain.redstone.RedstoneComponents.REG.register(modEventBus);
         com.qiqi.li.living.domain.tools.ToolComponents.REG.register(modEventBus);
+        com.qiqi.li.living.domain.beacon.BeaconComponents.REG.register(modEventBus);
         NeoForge.EVENT_BUS.register(this);
         NeoForge.EVENT_BUS.register(ContainerChunkCache.getInstance());
         NeoForge.EVENT_BUS.register(LivingToolRecorder.class);

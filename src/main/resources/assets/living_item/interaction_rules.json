@@ -16,6 +16,7 @@
     { "id": "till_rooted_dirt",   "target": "minecraft:rooted_dirt",      "button": "right", "action": "till_to_farmland", "predicate": "can_till" },
 
     { "id": "farmland_plant",     "target": "minecraft:farmland",         "button": "right", "action": "plant_crop", "predicate": "can_plant" },
-    { "id": "farmland_bonemeal",  "target": "minecraft:farmland",         "trigger": "minecraft:bone_meal", "button": "right", "action": "bonemeal" }
+    { "id": "farmland_bonemeal",  "target": "minecraft:farmland",         "trigger": "minecraft:bone_meal", "button": "right", "action": "bonemeal" },
+    { "id": "beacon_feed",        "target": "minecraft:beacon",           "button": "right", "action": "beacon_feed", "predicate": "is_beacon_ore" }
   ]
 }
