@@ -271,6 +271,8 @@ public class LivingItem {
             LivingToolHostSync.flush(level);
         // 活信标：箱子宿主开盖（20 tick 重发）+ 近处位置同步（K2 同款模式）
         com.qiqi.li.living.domain.beacon.BeaconChestHost.flush(level);
+        // 活信标：玩家宿主联机广播（UUID + 等级，照 LivingToolPlayerSync 模式）
+        com.qiqi.li.living.domain.beacon.BeaconPlayerHostSync.flush(level);
             // 联机可见性（最小版）：把各玩家背包里的无记忆活工具广播给附近客户端
             com.qiqi.li.living.domain.tools.LivingToolPlayerSync.flush(level);
         }
@@ -554,6 +556,10 @@ public class LivingItem {
         registrar.playToClient(com.qiqi.li.living.domain.beacon.BeaconHostPacket.TYPE,
             com.qiqi.li.living.domain.beacon.BeaconHostPacket.STREAM_CODEC,
             com.qiqi.li.living.domain.beacon.BeaconHostPacket::handle);
+        // 活信标：近处玩家宿主（UUID + 等级），供客户端画其它玩家的光束
+        registrar.playToClient(com.qiqi.li.living.domain.beacon.BeaconPlayerHostPacket.TYPE,
+            com.qiqi.li.living.domain.beacon.BeaconPlayerHostPacket.STREAM_CODEC,
+            com.qiqi.li.living.domain.beacon.BeaconPlayerHostPacket::handle);
         // 联机可见性（最小版）：近处玩家背包里的无记忆活工具清单（UUID + ItemStack），
         // 供客户端给【其它玩家】画背后的待机环（自己那份不发 —— 本机渲染更实时，且能走挖掘环）
         registrar.playToClient(LivingToolPlayerPacket.TYPE, LivingToolPlayerPacket.STREAM_CODEC, LivingToolPlayerPacket::handle);

@@ -87,7 +87,13 @@ public class BeaconFunction implements LivingItemFunction {
 
                 // 箱子宿主：开盖保持 + 近处同步
                 BlockPos containerPos = context.getBlockPos();
-                if (containerPos != null && level.getBlockEntity(containerPos) instanceof ChestBlockEntity) {
+                if (containerPos == null) {
+                    // 玩家宿主：联机广播（自己那份客户端本机渲染，不需要发包）
+                    Player owner = context.getOwnerPlayer();
+                    if (owner != null) {
+                        BeaconPlayerHostSync.report(owner.getUUID(), pyramidLevel);
+                    }
+                } else if (level.getBlockEntity(containerPos) instanceof ChestBlockEntity) {
                     List<BlockPos> lidPositions = context.getAssociatedBlockPositions();
                     // 光束起点 = 信标所在半箱（大箱按槽位落在前半/后半）
                     BlockPos beamPos = lidPositions.size() > 1

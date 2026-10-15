@@ -149,6 +149,7 @@ public class LivingItemClient {
     static void onClientLogin(ClientPlayerNetworkEvent.LoggingIn event) {
         LivingToolHostClientCache.clear();
         com.qiqi.li.living.domain.beacon.BeaconHostClientCache.clear();
+        com.qiqi.li.living.domain.beacon.BeaconPlayerHostClientCache.clear();
     }
 
     /**

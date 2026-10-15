@@ -8,6 +8,8 @@ import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.domain.beacon.BeaconBaseBlocks;
 import com.qiqi.li.living.domain.beacon.BeaconHostClientCache;
 import com.qiqi.li.living.domain.beacon.BeaconHostPacket;
+import com.qiqi.li.living.domain.beacon.BeaconPlayerHostClientCache;
+import com.qiqi.li.living.domain.beacon.BeaconPlayerHostPacket;
 import com.qiqi.li.living.domain.beacon.BeaconPyramid;
 import com.qiqi.li.living.model.Pos2D;
 import com.qiqi.li.living.transfer.SlotResolver;
@@ -19,6 +21,7 @@ import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.blockentity.BeaconRenderer;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.ClipContext;
@@ -89,6 +92,7 @@ public final class LivingBeamRenderer {
         float partialTick = event.getPartialTick().getGameTimeDeltaPartialTick(false);
 
         boolean drew = renderPlayerHost(mc, level, poseStack, buffers, cameraPos, partialTick);
+        drew |= renderRemotePlayerHosts(mc, level, poseStack, buffers, cameraPos, partialTick);
         drew |= renderChestHosts(level, poseStack, buffers, cameraPos, partialTick);
 
         if (drew) {
@@ -122,6 +126,29 @@ public final class LivingBeamRenderer {
             return true;
         }
         return false;
+    }
+
+    /**
+     * 其它玩家宿主（联机可见 · 设计稿规则 6）：S2C 的 UUID + 等级 ⇒ 查实体取
+     * <b>他的</b>眼睛与视线（实体旋转本来就同步给客户端）⇒ 与自己的光束同款几何。
+     *
+     * <p>排除自己（本机渲染更实时）与等级 0（服务端只发 ≥ 1，双保险）。</p>
+     */
+    private static boolean renderRemotePlayerHosts(Minecraft mc, ClientLevel level, PoseStack poseStack,
+                                                   MultiBufferSource.BufferSource buffers, Vec3 cameraPos,
+                                                   float partialTick) {
+        List<BeaconPlayerHostPacket.Entry> hosts =
+            BeaconPlayerHostClientCache.get(level.dimension().location());
+        boolean drew = false;
+        for (BeaconPlayerHostPacket.Entry entry : hosts) {
+            Player owner = level.getPlayerByUUID(entry.playerId());
+            if (owner == null || owner == mc.player || entry.level() < 1) {
+                continue;
+            }
+            drew |= renderBeamAlong(poseStack, buffers, cameraPos, partialTick, level,
+                owner.getEyePosition(partialTick), owner.getViewVector(partialTick));
+        }
+        return drew;
     }
 
     /** 箱子宿主：S2C 位置集，垂直向上光束（本地 clip 截断）。 */
