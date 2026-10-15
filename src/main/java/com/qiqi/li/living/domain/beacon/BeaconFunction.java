@@ -13,12 +13,14 @@ import com.qiqi.li.living.runtime.LivingItemClientCache;
 import com.qiqi.li.living.runtime.RuntimeSegments;
 import com.qiqi.li.living.transfer.SlotResolver;
 
+import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.ChestBlockEntity;
 
 /**
  * 活信标的功能实现（设计稿 {@code docs/buffer/living-beacon-design.md}）。
@@ -60,6 +62,18 @@ public class BeaconFunction implements LivingItemFunction {
             ContainerRuntimeCache.update(context.getCacheKey(), slot,
                 RuntimeSegments.EMPTY.with(BeaconSegment.INSTANCE,
                     new BeaconSegment.BeaconRuntime(pyramidLevel, heights, BeaconSegment.RegenTier.NONE)));
+
+            // 箱子宿主（规则 1：仅玩家 / 箱子）—— 未激活（level 0）不登记 ⇒ 不开盖不同步
+            BlockPos containerPos = context.getBlockPos();
+            if (containerPos != null && pyramidLevel >= 1
+                    && level.getBlockEntity(containerPos) instanceof ChestBlockEntity) {
+                List<BlockPos> lidPositions = context.getAssociatedBlockPositions();
+                // 光束起点 = 信标所在半箱（大箱按槽位落在前半/后半）
+                BlockPos hostPos = lidPositions.size() > 1
+                    ? lidPositions.get((int) ((long) slot * lidPositions.size() / context.getSize()))
+                    : containerPos;
+                BeaconChestHost.report(context.getCacheKey(), hostPos, lidPositions, pyramidLevel);
+            }
         }
     }
 

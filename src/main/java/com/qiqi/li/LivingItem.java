@@ -268,6 +268,8 @@ public class LivingItem {
             processItemEntityContainers(level);
             // K2：必须在容器处理【之后】flush，才能收齐本 tick 的登记
             LivingToolHostSync.flush(level);
+        // 活信标：箱子宿主开盖（20 tick 重发）+ 近处位置同步（K2 同款模式）
+        com.qiqi.li.living.domain.beacon.BeaconChestHost.flush(level);
             // 联机可见性（最小版）：把各玩家背包里的无记忆活工具广播给附近客户端
             com.qiqi.li.living.domain.tools.LivingToolPlayerSync.flush(level);
         }
@@ -547,6 +549,10 @@ public class LivingItem {
         // 活工具（K2）：近处方块容器里的活工具清单（位置 + ItemStack），
         // 供客户端渲染记忆射线与（未来的）悬浮模型 —— 不开 GUI 时客户端拿不到箱子内容
         registrar.playToClient(LivingToolHostPacket.TYPE, LivingToolHostPacket.STREAM_CODEC, LivingToolHostPacket::handle);
+        // 活信标：近处箱子宿主（位置 + 激活等级），供客户端画垂直光束
+        registrar.playToClient(com.qiqi.li.living.domain.beacon.BeaconHostPacket.TYPE,
+            com.qiqi.li.living.domain.beacon.BeaconHostPacket.STREAM_CODEC,
+            com.qiqi.li.living.domain.beacon.BeaconHostPacket::handle);
         // 联机可见性（最小版）：近处玩家背包里的无记忆活工具清单（UUID + ItemStack），
         // 供客户端给【其它玩家】画背后的待机环（自己那份不发 —— 本机渲染更实时，且能走挖掘环）
         registrar.playToClient(LivingToolPlayerPacket.TYPE, LivingToolPlayerPacket.STREAM_CODEC, LivingToolPlayerPacket::handle);
