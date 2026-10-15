@@ -1,13 +1,12 @@
 package com.qiqi.li.living.domain.beacon;
 
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.runtime.RuntimeSegmentRegistry;
 
 /**
- * 活信标 域注册入口（A1 范式 —— 见 {@code RedstoneRegistration} 类注释：
- * 各域自注册，主类不再堆积注册逻辑）。
+ * 活信标 域注册入口（A1 范式 —— 见 {@code RedstoneRegistration} 类注释）。
  *
- * <p>Phase 1：只注册功能本体。交互规则（右键喂锭）/ 遥测段（BeaconSegment）/
- * 箱子宿主同步分别属 Phase 3 / Phase 2-3（见设计稿 §6、§2.7）。</p>
+ * <p>Phase 2：功能 + 运行时片段（遥测）。交互规则（右键喂锭）属 Phase 3。</p>
  */
 public final class BeaconRegistration {
 
@@ -16,5 +15,7 @@ public final class BeaconRegistration {
 
     public static void register() {
         LivingItemManager.registerFunction(new BeaconFunction());
+        // 运行时片段：激活等级 / 柱高 / 再生档的展示数据（档 2）
+        RuntimeSegmentRegistry.register(BeaconSegment.INSTANCE);
     }
 }
