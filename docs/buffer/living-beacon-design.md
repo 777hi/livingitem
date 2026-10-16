@@ -55,7 +55,7 @@
 | 2 | **玩家宿主**：光束起点 = **头顶上方**，方向 = 宿主**完整视线**（含俯仰） | 玩法定义 |
 | 3 | **箱子宿主**：光束起点 = **箱子顶部中心**，方向 = **垂直向上** | 玩法定义（箱内无视线，故固定） |
 | 4 | **箱子宿主：盖子保持打开** | 视觉语义（"从里面射出来"）；机制见 §2.3 |
-| 5 | 光束**被不透明方块截断** | 还原原版手感 |
+| 5 | 光束**被不透明方块截断**（透明方块穿过：玻璃 / 树叶 / 铁栏 / 台阶…，判据 `canOcclude()`） | 还原原版手感；⚠️ 曾用直接 `level.clip` ⇒ 玻璃也挡光（用户实测 2026-10-16 修） |
 | 6 | 光束**所有玩家可见**（联机） | 玩法定义 |
 | 7 | 对**周围玩家**施加信标 buff；**范围 / 时长随等级**（照原版公式） | 核心功能（照 `BeaconBlockEntity.applyEffects` 公式**等价自写**——原版该方法为 `private`，不可直调） |
 | 8 | **取消活化 / 移出有效宿主** ⇒ 光束消失 + 箱盖恢复 + buff 停止 | 生命周期（见 §3.1） |
@@ -125,7 +125,7 @@ public static void renderBeaconBeam(
 | 层 | 做什么 |
 |---|---|
 | **服务端** | ① 容器 tick 检测宿主类型（玩家 / 箱子）② 加 buff（照 `BeaconBlockEntity.applyEffects` 公式**等价自写**——原版 `private` 不可直调）③ 箱子宿主：发 `blockEvent` 保持盖子打开 ④ S2C 广播「谁 / 哪个箱子有活信标 + 颜色」 |
-| **客户端** | ① 玩家宿主：读玩家位置 / 视线（**原版已自动同步**）② 箱子宿主：读 S2C 缓存的箱子位置 ③ 沿方向 raycast 找截断点（同活工具 `level.clip`）④ 调 `renderBeaconBeam` 画光束 |
+| **客户端** | ① 玩家宿主：读玩家位置 / 视线（**原版已自动同步**）② 箱子宿主：读 S2C 缓存的箱子位置 ③ 沿方向 raycast 找截断点（`level.clip` + **跳过透明方块**，判据 `canOcclude`，见 §4 规则 5）④ 调 `renderBeaconBeam` 画光束 |
 
 **⭐ 同步最小化**：玩家宿主的位置与朝向**原版已自动同步**；箱子宿主只需广播**位置集合 + 颜色**。
 参考项目现成实现：`LivingToolHostSync`（按 32 格定向 + 内容去重）+ `LivingToolHostClientCache`（整表替换 + 维度校验）。
@@ -390,7 +390,7 @@ public static void renderBeaconBeam(
 | tooltip 运行时数据 | `living/runtime/`：`RuntimeSegmentType/Registry` + `ContainerRuntimeCache` + `LivingItemRuntimeSync` + `LivingItemClientCache` | 照 `FurnaceSegment` / `HopperSegment` 写一个段；背包悬停的 `player_` 直发通道已有 |
 | tooltip 静态文本 | `LivingItemFunction.addToTooltip` 钩子 + `client/render/LivingItemTooltip` | 组件直读 |
 | 箱子宿主同步（位置 + 颜色） | `LivingToolHostSync` / `LivingToolHostClientCache` 模式（32 格定向 + 内容去重 + 整表替换） | 信标内容更简单（只要位置），照抄 |
-| 客户端渲染挂载 | `RenderLevelStageEvent`（`LivingItemClient.onRenderLevelStage` 已转发）+ **原版 `BeaconRenderer.renderBeamBeam` 是 `public static` 可直调** | 光束纹理 / 流动白拿；方向算法抄 `LivingToolModelRenderer`；截断用 `level.clip` |
+| 客户端渲染挂载 | `RenderLevelStageEvent`（`LivingItemClient.onRenderLevelStage` 已转发）+ **原版 `BeaconRenderer.renderBeamBeam` 是 `public static` 可直调** | 光束纹理 / 流动白拿；方向算法抄 `LivingToolModelRenderer`；截断 = `level.clip` + **跳过透明方块**（`canOcclude`） |
 | 箱盖保持打开 | 原版 `blockEvent` 通道 | 不动 `openersCounter` ⇒ 不误触发陷阱箱（§2.3） |
 | 图标 | `LivingDefaultDecorator` 排除法自动活标记 | **零成本**，什么都不写（§2.6） |
 | 数据持久化 / 清理 | DataComponent record + `withXxx()` + `getOwnedComponentTypes()` | 项目通用模式；取消活化清空 |

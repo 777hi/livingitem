@@ -19,6 +19,7 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.blockentity.BeaconRenderer;
+import net.minecraft.core.BlockPos;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
@@ -69,6 +70,10 @@ public final class LivingBeamRenderer {
     /** 光束半径 / 光晕半径 —— 与原版信标一致。 */
     private static final float BEAM_RADIUS = 0.2F;
     private static final float GLOW_RADIUS = 0.25F;
+
+    /** 跳过透明方块时的推进步长（格）与最大重打次数（防死循环）。 */
+    private static final double CLIP_STEP = 0.02;
+    private static final int MAX_CLIP_STEPS = 64;
 
     private LivingBeamRenderer() {
     }
@@ -176,14 +181,44 @@ public final class LivingBeamRenderer {
         return drew;
     }
 
-    /** 通用光束：起点 + 方向（单位向量），本地 clip 求截断高度后调原版函数。 */
+    /**
+     * 求「被<b>不透明</b>方块截断」的终点（设计稿 §4 规则 5）。
+     *
+     * <p>⚠️ <b>不能直接用 {@code level.clip} 的结果</b>：玻璃 / 玻璃板 / 铁栏 / 树叶 / 台阶
+     * 都有完整碰撞形状 ⇒ 会被当成"挡住了"（用户实测 2026-10-16「光束不能穿透玻璃」）。
+     * 判据用 {@code BlockState.canOcclude()}：只有会遮住邻面的实心方块（石 / 土 / 木板 /
+     * 羊毛…）才截断；带 {@code noOcclusion()} 的一律穿过（玻璃 / 染色玻璃 / 树叶 / 铁栏 /
+     * 台阶 / 火把…）。流体本就 {@code Fluid.NONE} 不参与。</p>
+     *
+     * <p>实现：命中透明方块 ⇒ 从命中点往前挪一小步继续打；<b>同一方块只判一次</b>
+     * （{@code skipped} 守卫，避免从方块内部反复命中它而死循环），直到命中不透明方块或到长度上限。
+     * 常见场景（天空 / 实心地形）仍是单次 clip —— 只有真的遇到透明方块才会多打几发。</p>
+     */
+    private static Vec3 opaqueHitEnd(ClientLevel level, Vec3 start, Vec3 dir, int maxLength) {
+        Vec3 end = start.add(dir.scale(maxLength));
+        Vec3 from = start;
+        BlockPos skipped = null;
+        for (int guard = 0; guard < MAX_CLIP_STEPS; guard++) {
+            BlockHitResult hit = level.clip(new ClipContext(
+                from, end, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, CollisionContext.empty()));
+            if (hit.getType() != HitResult.Type.BLOCK) {
+                return end;                                  // 一路无遮挡
+            }
+            BlockPos pos = hit.getBlockPos();
+            if (!pos.equals(skipped) && level.getBlockState(pos).canOcclude()) {
+                return hit.getLocation();                    // 不透明 ⇒ 就在这里截断
+            }
+            skipped = pos;
+            from = hit.getLocation().add(dir.scale(CLIP_STEP));   // 透明 ⇒ 跳过继续
+        }
+        return end;
+    }
+
+    /** 通用光束：起点 + 方向（单位向量），本地求「被不透明方块截断」的高度后调原版函数。 */
     private static boolean renderBeamAlong(PoseStack poseStack, MultiBufferSource.BufferSource buffers,
                                            Vec3 cameraPos, float partialTick, ClientLevel level,
                                            Vec3 start, Vec3 look) {
-        Vec3 maxEnd = start.add(look.scale(MAX_BEAM_LENGTH));
-        BlockHitResult hit = level.clip(new ClipContext(
-            start, maxEnd, ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, CollisionContext.empty()));
-        Vec3 end = hit.getType() == HitResult.Type.BLOCK ? hit.getLocation() : maxEnd;
+        Vec3 end = opaqueHitEnd(level, start, look, MAX_BEAM_LENGTH);
         int height = (int) Math.min(Math.round(end.distanceTo(start)), MAX_BEAM_LENGTH);
         if (height <= 0) {
             return false;
