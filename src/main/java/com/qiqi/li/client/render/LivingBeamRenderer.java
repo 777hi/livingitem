@@ -41,7 +41,7 @@ import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
  *
  * <p><b>两种宿主</b>（规则 1：仅玩家 / 箱子）：</p>
  * <ul>
- *   <li><b>玩家宿主</b>：本机背包（含快捷栏 / 副手）里的活信标，从眼睛沿视线射出。
+ *   <li><b>玩家宿主</b>：本机背包（含快捷栏 / 副手）里的活信标，从<b>头颅顶面</b>沿视线射出。
  *       <b>本地判级门控</b>：客户端自己读下方 9 列柱高（本机背包可见）→ {@link BeaconPyramid}
  *       判级 → level ≥ 1 才亮（无条件亮是 Phase 1 临时口径，Phase 2 接入）。</li>
  *   <li><b>箱子宿主</b>：{@link BeaconHostClientCache}（S2C 同步的位置 + 等级），
@@ -120,12 +120,12 @@ public final class LivingBeamRenderer {
     }
 
     /**
-     * 玩家宿主：本机背包里第一个<b>已激活</b>（level ≥ 1）的活信标 ⇒ 头顶沿视线光束。
+     * 玩家宿主：本机背包里第一个<b>已激活</b>（level ≥ 1）的活信标 ⇒ 从<b>头颅顶面</b>沿视线射出。
      *
      * <p>多个信标同时存在时只画一条（同起点同方向，几何重合；第一个激活的优先）——
      * 若第一个信标未激活而后面有激活的，会继续找。</p>
      *
-     * <p>颜色（U3 方案 A，贴合原版）：从玩家<b>头顶上方</b>逐格扫描<b>世界方块</b>
+     * <p>颜色（U3 方案 A，贴合原版）：从<b>头颅顶面上方</b>逐格扫描<b>世界方块</b>
      * （{@link #scanAbove}）—— 与原版信标从自身往上扫同源，所以走进染色玻璃走廊会变色。</p>
      */
     private static boolean renderPlayerHost(Minecraft mc, ClientLevel level, PoseStack poseStack,
@@ -143,15 +143,25 @@ public final class LivingBeamRenderer {
                 continue;   // 未激活 ⇒ 不亮（Phase 2 门控）
             }
             renderBeamAlong(poseStack, buffers, cameraPos, partialTick, level,
-                mc.player.getEyePosition(partialTick), mc.player.getViewVector(partialTick),
-                playerColorSections(level, mc.player));
+                headTop(mc.player, partialTick), mc.player.getViewVector(partialTick),
+                playerColorSections(level, mc.player, partialTick));
             return true;
         }
         return false;
     }
 
     /**
-     * 玩家宿主的颜色分段（U3 方案 A）：从玩家<b>所在格上方</b>逐格扫描世界方块
+     * 光束起点 = <b>头颅顶面</b>（脚底插值位置 + 实体高度 ⇒ 随潜行 / 坐骑自动变化）。
+     *
+     * <p>用户 2026-10-16 定：**从玩家的头颅顶面射出**（取代早先实现里的眼睛位置 —— 眼睛在头部中心
+     * y+1.62，头顶面在 y+1.8，差约 0.2 格）。</p>
+     */
+    private static Vec3 headTop(Player player, float partialTick) {
+        return player.getPosition(partialTick).add(0.0, player.getBbHeight(), 0.0);
+    }
+
+    /**
+     * 玩家宿主的颜色分段（U3 方案 A）：从<b>头颅顶面上方</b>逐格扫描世界方块
      * （与箱子宿主同一条路径 —— 两个宿主用同一套原版算法）。
      *
      * <p>⭐ 客户端<b>本地</b>就能算：世界方块本来就同步给所有客户端，别人的光束也一样算得出来
@@ -160,9 +170,10 @@ public final class LivingBeamRenderer {
      * <p>⚠️ 分段高度是<b>竖直格数</b>，而玩家光束沿视线 —— 两者不严格对应；因"最后一段一直画到
      * 终点"，实际观感仍是"第一块染色玻璃决定整根颜色"（与原版一致）。</p>
      */
-    private static List<BeamColorSections.Section> playerColorSections(ClientLevel level, Player player) {
+    private static List<BeamColorSections.Section> playerColorSections(ClientLevel level, Player player,
+                                                                      float partialTick) {
         return BeamColorSections.build(
-            scanAbove(level, player.blockPosition().above(), COLOR_SCAN_LIMIT),
+            scanAbove(level, BlockPos.containing(headTop(player, partialTick)).above(), COLOR_SCAN_LIMIT),
             BeamColorSections.DEFAULT_COLOR);
     }
 
@@ -211,8 +222,8 @@ public final class LivingBeamRenderer {
             }
             // 颜色同样本地算（U3 方案 A：读世界方块，别人的也读得到）
             drew |= renderBeamAlong(poseStack, buffers, cameraPos, partialTick, level,
-                owner.getEyePosition(partialTick), owner.getViewVector(partialTick),
-                playerColorSections(level, owner));
+                headTop(owner, partialTick), owner.getViewVector(partialTick),
+                playerColorSections(level, owner, partialTick));
         }
         return drew;
     }
