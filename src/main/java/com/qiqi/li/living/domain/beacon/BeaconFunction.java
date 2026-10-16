@@ -90,10 +90,13 @@ public class BeaconFunction implements LivingItemFunction {
                 BlockPos containerPos = context.getBlockPos();
                 if (containerPos == null) {
                     // 玩家宿主：联机广播（自己那份客户端本机渲染，不需要发包）
-                    // 颜色不随包下发 —— U3 方案 A 下客户端本地读世界方块即可（含别人的光束）
+                    // 世界玻璃色不随包下发（U3 方案 A：客户端本地读世界方块即可，含别人的光束）；
+                    // 容器玻璃色必须下发（客户端看不到别人背包内容）
                     Player owner = context.getOwnerPlayer();
                     if (owner != null) {
-                        BeaconPlayerHostSync.report(owner.getUUID(), pyramidLevel);
+                        BeaconPlayerHostSync.report(owner.getUUID(), pyramidLevel,
+                            BeaconGlassColor.scanColumn(slot, context.getSize(), context.getWidth(),
+                                context::getItem));
                     }
                 } else if (level.getBlockEntity(containerPos) instanceof ChestBlockEntity) {
                     List<BlockPos> lidPositions = context.getAssociatedBlockPositions();
@@ -101,7 +104,11 @@ public class BeaconFunction implements LivingItemFunction {
                     BlockPos beamPos = lidPositions.size() > 1
                         ? lidPositions.get((int) ((long) slot * lidPositions.size() / context.getSize()))
                         : containerPos;
-                    BeaconChestHost.report(context.getCacheKey(), beamPos, lidPositions, pyramidLevel);
+                    // 信标同列向上的容器玻璃色（客户端不开 GUI 读不到容器内容 ⇒ 随包下发）
+                    List<Integer> glassColors = BeaconGlassColor.scanColumn(
+                        slot, context.getSize(), context.getWidth(), context::getItem);
+                    BeaconChestHost.report(context.getCacheKey(), beamPos, lidPositions,
+                        pyramidLevel, glassColors);
                 }
             }
         }

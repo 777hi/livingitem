@@ -13,19 +13,19 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
 
 /**
- * BeaconPlayerHostPacket 编解码往返测试（S2C：玩家宿主 UUID + 等级）。
+ * BeaconPlayerHostPacket 编解码往返测试（S2C：玩家宿主 UUID + 等级 + 容器玻璃色）。
  */
 class BeaconPlayerHostPacketTest {
 
     @Test
-    @DisplayName("往返一致（维度 + UUID + 等级）")
+    @DisplayName("往返一致（维度 + UUID + 等级 + 容器玻璃色）")
     void roundTrip() {
         var buf = new FriendlyByteBuf(Unpooled.buffer());
         UUID a = UUID.randomUUID();
         UUID b = UUID.randomUUID();
         var pkt = new BeaconPlayerHostPacket(
             ResourceLocation.withDefaultNamespace("overworld"),
-            List.of(new BeaconPlayerHostPacket.Entry(a, 4),
+            List.of(new BeaconPlayerHostPacket.Entry(a, 4, List.of(0xFFC41420)),
                 new BeaconPlayerHostPacket.Entry(b, 1)));
 
         BeaconPlayerHostPacket.STREAM_CODEC.encode(buf, pkt);
@@ -33,6 +33,8 @@ class BeaconPlayerHostPacketTest {
 
         assertEquals(pkt.dimension(), decoded.dimension());
         assertEquals(pkt.entries(), decoded.entries());
+        assertEquals(List.of(0xFFC41420), decoded.entries().get(0).glassColors());
+        assertEquals(List.of(), decoded.entries().get(1).glassColors());
     }
 
     @Test

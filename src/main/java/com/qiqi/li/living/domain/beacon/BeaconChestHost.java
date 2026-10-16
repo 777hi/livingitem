@@ -52,7 +52,8 @@ public final class BeaconChestHost {
      */
     private static final long NEVER = -1L;
 
-    private record Host(BlockPos hostPos, List<BlockPos> lidPositions, int level, long lastLidTick) {
+    private record Host(BlockPos hostPos, List<BlockPos> lidPositions, int level,
+                        List<Integer> glassColors, long lastLidTick) {
     }
 
     /** 本 tick 登记的宿主（由 {@code BeaconFunction#tick} 每 tick 填入，flush 取走清空）。 */
@@ -79,12 +80,15 @@ public final class BeaconChestHost {
      * @param hostPos      活信标所在半箱位置（光束起点；大箱取含信标的那半）
      * @param lidPositions 需要开盖的全部位置（大箱 = 双半箱）
      * @param level        激活等级（tick 已保证 ≥ 1 才登记）
+     * @param glassColors  信标同列向上的容器玻璃色序列（自下而上；空 = 无）
      */
-    public static void report(String cacheKey, BlockPos hostPos, List<BlockPos> lidPositions, int level) {
+    public static void report(String cacheKey, BlockPos hostPos, List<BlockPos> lidPositions, int level,
+                              List<Integer> glassColors) {
         if (cacheKey == null || hostPos == null || lidPositions == null || lidPositions.isEmpty()) {
             return;
         }
-        current.put(cacheKey, new Host(hostPos.immutable(), List.copyOf(lidPositions), level, NEVER));
+        current.put(cacheKey, new Host(hostPos.immutable(), List.copyOf(lidPositions), level,
+            List.copyOf(glassColors), NEVER));
     }
 
     /**
@@ -118,7 +122,8 @@ public final class BeaconChestHost {
                 }
                 last = gameTime;
             }
-            nextActive.put(e.getKey(), new Host(h.hostPos(), h.lidPositions(), h.level(), last));
+            nextActive.put(e.getKey(),
+                new Host(h.hostPos(), h.lidPositions(), h.level(), h.glassColors(), last));
         }
         active.clear();
         active.putAll(nextActive);
@@ -127,7 +132,7 @@ public final class BeaconChestHost {
         // ③ S2C：位置 + 等级，定向 32 格，内容去重
         List<BeaconHostPacket.Entry> all = new ArrayList<>(active.size());
         for (Host h : active.values()) {
-            all.add(new BeaconHostPacket.Entry(h.hostPos(), h.level()));
+            all.add(new BeaconHostPacket.Entry(h.hostPos(), h.level(), h.glassColors()));
         }
         ResourceLocation dimension = level.dimension().location();
         Map<UUID, List<BeaconHostPacket.Entry>> next = new HashMap<>();

@@ -39,6 +39,9 @@ public final class BeaconPlayerHostSync {
     /** 本 tick 登记的玩家宿主（UUID → 最高激活等级；由 {@code BeaconFunction#tick} 填入）。 */
     private static final Map<UUID, Integer> current = new LinkedHashMap<>();
 
+    /** 本 tick 登记的玩家宿主容器玻璃色（UUID → 最高等级那枚信标的同列玻璃色）。 */
+    private static final Map<UUID, List<Integer>> currentGlass = new LinkedHashMap<>();
+
     /** 每个观察者上次收到的条目（内容去重）。 */
     private static final Map<UUID, List<BeaconPlayerHostPacket.Entry>> lastSent = new HashMap<>();
 
@@ -52,11 +55,17 @@ public final class BeaconPlayerHostSync {
     /**
      * 登记一个玩家宿主（同一玩家多枚信标取<b>最高等级</b> —— 客户端一人只画一条光束）。
      *
-     * <p>只发等级不发颜色：U3 方案 A 下颜色由客户端读世界方块现算（含别人的光束）。</p>
+     * <p>世界玻璃的颜色不发（U3-A：客户端读世界方块现算）；<b>容器玻璃色随条目下发</b>——
+     * 客户端看不到别人背包内容（2026-10-16 用户需求「信标上方槽位的玻璃也影响颜色」联机侧）。
+     * 多枚信标取最高的那枚的玻璃色（与等级同源，一人一条光束）。</p>
      */
-    public static void report(UUID playerId, int level) {
+    public static void report(UUID playerId, int level, List<Integer> glassColors) {
         if (playerId == null || level < 1) {
             return;
+        }
+        Integer prev = current.get(playerId);
+        if (prev == null || level >= prev) {
+            currentGlass.put(playerId, glassColors);
         }
         current.merge(playerId, level, Math::max);
     }
@@ -72,9 +81,11 @@ public final class BeaconPlayerHostSync {
         // ① 本维度玩家宿主清单（快照后清空登记表）
         List<BeaconPlayerHostPacket.Entry> all = new ArrayList<>(current.size());
         for (Map.Entry<UUID, Integer> e : current.entrySet()) {
-            all.add(new BeaconPlayerHostPacket.Entry(e.getKey(), e.getValue()));
+            all.add(new BeaconPlayerHostPacket.Entry(e.getKey(), e.getValue(),
+                currentGlass.getOrDefault(e.getKey(), List.of())));
         }
         current.clear();
+        currentGlass.clear();
 
         // ② 逐个观察者：滤出"别人的、且在半径内的"，内容变了才发
         ResourceLocation dimension = level.dimension().location();
@@ -106,6 +117,7 @@ public final class BeaconPlayerHostSync {
     /** 清空全部状态（服务端关闭时调用，避免跨存档残留）。 */
     public static void clear() {
         current.clear();
+        currentGlass.clear();
         lastSent.clear();
     }
 

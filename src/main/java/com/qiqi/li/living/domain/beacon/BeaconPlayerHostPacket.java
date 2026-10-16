@@ -29,12 +29,19 @@ public record BeaconPlayerHostPacket(
 ) implements CustomPacketPayload {
 
     /**
-     * 一个玩家宿主 + 其最高激活等级（一个玩家多枚信标 ⇒ 取最高）。
+     * 一个玩家宿主 + 其最高激活等级（一个玩家多枚信标 ⇒ 取最高）+ 该信标的容器玻璃色序列。
      *
-     * <p>⚠️ <b>不带颜色</b>：U3 方案 A 下颜色取自世界方块，客户端本地就能算（含别人的光束）
-     * ⇒ 无需下发。</p>
+     * <p>⚠️ <b>世界玻璃的颜色不下发</b>：U3 方案 A 下取自世界方块，客户端本地就能算（含别人的
+     * 光束）。但<b>容器槽位里的玻璃必须下发</b>——客户端不开别人的背包 GUI 就看不到内容
+     * （2026-10-16 用户需求「信标上方槽位的玻璃也影响颜色」的联机侧）。</p>
+     *
+     * @param glassColors 该玩家最高等级信标同列向上的玻璃色（自下而上；空 = 无）
      */
-    public record Entry(UUID playerId, int level) {
+    public record Entry(UUID playerId, int level, List<Integer> glassColors) {
+
+        public Entry(UUID playerId, int level) {
+            this(playerId, level, List.of());
+        }
     }
 
     public static final Type<BeaconPlayerHostPacket> TYPE =
@@ -54,6 +61,10 @@ public record BeaconPlayerHostPacket(
         for (Entry entry : pkt.entries) {
             buf.writeUUID(entry.playerId());
             buf.writeVarInt(entry.level());
+            buf.writeVarInt(entry.glassColors().size());
+            for (int color : entry.glassColors()) {
+                buf.writeVarInt(color);
+            }
         }
     }
 
@@ -62,7 +73,14 @@ public record BeaconPlayerHostPacket(
         int count = buf.readVarInt();
         List<Entry> entries = new ArrayList<>(count);
         for (int i = 0; i < count; i++) {
-            entries.add(new Entry(buf.readUUID(), buf.readVarInt()));
+            UUID playerId = buf.readUUID();
+            int level = buf.readVarInt();
+            int colors = buf.readVarInt();
+            List<Integer> glassColors = new ArrayList<>(colors);
+            for (int c = 0; c < colors; c++) {
+                glassColors.add(buf.readVarInt());
+            }
+            entries.add(new Entry(playerId, level, glassColors));
         }
         return new BeaconPlayerHostPacket(dimension, entries);
     }

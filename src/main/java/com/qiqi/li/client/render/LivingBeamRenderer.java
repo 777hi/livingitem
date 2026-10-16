@@ -7,6 +7,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.domain.beacon.BeaconBaseBlocks;
+import com.qiqi.li.living.domain.beacon.BeaconGlassColor;
 import com.qiqi.li.living.domain.beacon.BeaconHostClientCache;
 import com.qiqi.li.living.domain.beacon.BeaconHostPacket;
 import com.qiqi.li.living.domain.beacon.BeaconPlayerHostClientCache;
@@ -155,7 +156,8 @@ public final class LivingBeamRenderer {
             }
             renderBeamAlong(poseStack, buffers, cameraPos, partialTick, level,
                 headTop(mc.player, partialTick), headNormal(mc.player),
-                playerColorSections(level, mc.player, partialTick));
+                playerColorSections(level, mc.player,
+                    BeaconGlassColor.scanColumn(slot, size, 9, inventory::getItem), partialTick));
             return true;
         }
         return false;
@@ -207,10 +209,16 @@ public final class LivingBeamRenderer {
      * 终点"，实际观感仍是"第一块染色玻璃决定整根颜色"（与原版一致）。</p>
      */
     private static List<BeamColorSections.Section> playerColorSections(ClientLevel level, Player player,
+                                                                      List<Integer> containerColors,
                                                                       float partialTick) {
-        return BeamColorSections.build(
-            scanAbove(level, BlockPos.containing(headTop(player, partialTick)).above(), COLOR_SCAN_LIMIT),
-            BeamColorSections.DEFAULT_COLOR);
+        List<BeamColorSections.Observation> observations = new ArrayList<>();
+        // 容器侧：信标同列向上的玻璃（本机背包可见，本地读；顺序在首位 = 紧贴信标上方）
+        for (int color : containerColors) {
+            observations.add(new BeamColorSections.Observation(color, false));
+        }
+        observations.addAll(
+            scanAbove(level, BlockPos.containing(headTop(player, partialTick)).above(), COLOR_SCAN_LIMIT));
+        return BeamColorSections.build(observations, BeamColorSections.DEFAULT_COLOR);
     }
 
     /**
@@ -277,10 +285,10 @@ public final class LivingBeamRenderer {
             if (owner == null || owner == mc.player || entry.level() < 1) {
                 continue;
             }
-            // 颜色同样本地算（U3 方案 A：读世界方块，别人的也读得到）
+            // 颜色同样本地算世界部分（U3 方案 A）；容器玻璃色随玩家宿主包下发
             drew |= renderBeamAlong(poseStack, buffers, cameraPos, partialTick, level,
                 headTop(owner, partialTick), headNormal(owner),
-                playerColorSections(level, owner, partialTick));
+                playerColorSections(level, owner, entry.glassColors(), partialTick));
         }
         return drew;
     }
@@ -300,9 +308,14 @@ public final class LivingBeamRenderer {
             }
             // 起点 = 箱口顶部中心（方块顶面；0.875 的盖面差在视觉上不可见）
             Vec3 start = Vec3.atBottomCenterOf(entry.pos()).add(0.0, 1.0, 0.0);
-            // 颜色：箱口上方逐格扫描（照原版算法，见 BeamColorSections）
+            // 颜色：容器玻璃色（S2C 下发，等价「信标正上方起可叠玻璃」）接世界逐格扫描
+            List<BeamColorSections.Observation> observations = new ArrayList<>();
+            for (int color : entry.glassColors()) {
+                observations.add(new BeamColorSections.Observation(color, false));
+            }
+            observations.addAll(scanAbove(level, entry.pos().above(), COLOR_SCAN_LIMIT));
             List<BeamColorSections.Section> sections = BeamColorSections.build(
-                scanAbove(level, entry.pos().above(), COLOR_SCAN_LIMIT), BeamColorSections.DEFAULT_COLOR);
+                observations, BeamColorSections.DEFAULT_COLOR);
             drew |= renderBeamAlong(poseStack, buffers, cameraPos, partialTick, level,
                 start, new Vec3(0.0, 1.0, 0.0), sections);
         }
