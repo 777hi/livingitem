@@ -9,10 +9,10 @@ Living Item
 Modrinth ：
 https://modrinth.com/mod/living-item
 Curseforge ：
-账号找回来了
+https://www.curseforge.com/minecraft/mc-mods/living-item
 
 当前已实现活物品：
-活TNT，活熔炉，活漏斗，活箱子，活末影箱，活桶（流体），活地图，活耕地，活工具，活武器
+活TNT，活熔炉，活漏斗，活箱子，活末影箱，活桶（流体），活地图，活耕地，活工具，活武器，活酿造台
 红电系统：
 活红石粉，活红石火把，活中继器，活比较器，活按钮，活拉杆，活红石灯，活红石块，
 活铜块，活雕纹铜块，活切制铜块，活铜格栅，活铜灯，

@@ -18,15 +18,15 @@ import net.minecraft.resources.ResourceLocation;
 class BeaconPlayerHostPacketTest {
 
     @Test
-    @DisplayName("往返一致（维度 + UUID + 等级）")
+    @DisplayName("往返一致（维度 + UUID + 等级 + 颜色）")
     void roundTrip() {
         var buf = new FriendlyByteBuf(Unpooled.buffer());
         UUID a = UUID.randomUUID();
         UUID b = UUID.randomUUID();
         var pkt = new BeaconPlayerHostPacket(
             ResourceLocation.withDefaultNamespace("overworld"),
-            List.of(new BeaconPlayerHostPacket.Entry(a, 4),
-                new BeaconPlayerHostPacket.Entry(b, 1)));
+            List.of(new BeaconPlayerHostPacket.Entry(a, 4, 0xFF00FF00),
+                new BeaconPlayerHostPacket.Entry(b, 1, 0xFFFFFF)));
 
         BeaconPlayerHostPacket.STREAM_CODEC.encode(buf, pkt);
         var decoded = BeaconPlayerHostPacket.STREAM_CODEC.decode(buf);

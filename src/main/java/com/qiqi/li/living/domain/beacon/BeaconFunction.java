@@ -91,7 +91,10 @@ public class BeaconFunction implements LivingItemFunction {
                     // 玩家宿主：联机广播（自己那份客户端本机渲染，不需要发包）
                     Player owner = context.getOwnerPlayer();
                     if (owner != null) {
-                        BeaconPlayerHostSync.report(owner.getUUID(), pyramidLevel);
+                        // 颜色（U3 方案 B）：信标上方那一格的染色玻璃 —— 服务端算好随包下发
+                        // （客户端读不到别人背包）
+                        BeaconPlayerHostSync.report(owner.getUUID(), pyramidLevel,
+                            BeaconGlassColor.of(colorSourceStack(context, slot)));
                     }
                 } else if (level.getBlockEntity(containerPos) instanceof ChestBlockEntity) {
                     List<BlockPos> lidPositions = context.getAssociatedBlockPositions();
@@ -167,6 +170,15 @@ public class BeaconFunction implements LivingItemFunction {
             }
         }
         return heights;
+    }
+
+    /**
+     * 颜色来源槽（U3 方案 B）：信标<b>上方那一格</b>（{@code Pos2D(0,-1)}）的物品堆叠 ——
+     * 染色玻璃 ⇒ 给光束染色（与"底座在下方一行"对称）。越界 ⇒ 空栈。
+     */
+    static ItemStack colorSourceStack(ContainerContext context, int slot) {
+        int above = SlotResolver.resolve(slot, new Pos2D(0, -1), context.getSize(), context.getWidth());
+        return above >= 0 ? context.getItem(above) : ItemStack.EMPTY;
     }
 
     /**

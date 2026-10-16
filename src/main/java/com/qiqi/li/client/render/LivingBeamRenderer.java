@@ -1,11 +1,13 @@
 package com.qiqi.li.client.render;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.domain.beacon.BeaconBaseBlocks;
+import com.qiqi.li.living.domain.beacon.BeaconGlassColor;
 import com.qiqi.li.living.domain.beacon.BeaconHostClientCache;
 import com.qiqi.li.living.domain.beacon.BeaconHostPacket;
 import com.qiqi.li.living.domain.beacon.BeaconPlayerHostClientCache;
@@ -20,12 +22,14 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.blockentity.BeaconRenderer;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
@@ -64,12 +68,16 @@ public final class LivingBeamRenderer {
      */
     public static final int MAX_BEAM_LENGTH = 1024;
 
-    /** 光束颜色 —— U3 未定，用原版信标白。 */
-    private static final int BEAM_COLOR = 0xFFFFFF;
-
     /** 光束半径 / 光晕半径 —— 与原版信标一致。 */
     private static final float BEAM_RADIUS = 0.2F;
     private static final float GLOW_RADIUS = 0.25F;
+
+    /**
+     * 箱子宿主的颜色扫描上限（格）—— 玻璃叠层实际很短，超出部分由"最后一段延伸到终点"兜住。
+     *
+     * <p>⚠️ 原版是方块实体、每 tick 增量扫 10 格；我们<b>每帧</b>渲染 ⇒ 不能无上限长扫。</p>
+     */
+    private static final int COLOR_SCAN_LIMIT = 32;
 
     /** 跳过透明方块时的推进步长（格）与最大重打次数（防死循环）。 */
     private static final double CLIP_STEP = 0.02;
@@ -115,6 +123,9 @@ public final class LivingBeamRenderer {
      *
      * <p>多个信标同时存在时只画一条（同起点同方向，几何重合；第一个激活的优先）——
      * 若第一个信标未激活而后面有激活的，会继续找。</p>
+     *
+     * <p>颜色（U3 方案 B）：读背包 9 列网格里信标<b>上方那一格</b>的染色玻璃（与"底座在下方一行"
+     * 对称）；非染色玻璃 ⇒ 原版白。</p>
      */
     private static boolean renderPlayerHost(Minecraft mc, ClientLevel level, PoseStack poseStack,
                                             MultiBufferSource.BufferSource buffers, Vec3 cameraPos,
@@ -130,11 +141,47 @@ public final class LivingBeamRenderer {
             if (BeaconPyramid.resolveLevel(localColumnHeights(inventory, slot)) < 1) {
                 continue;   // 未激活 ⇒ 不亮（Phase 2 门控）
             }
+            int color = colorAboveBeacon(inventory, slot);
             renderBeamAlong(poseStack, buffers, cameraPos, partialTick, level,
-                mc.player.getEyePosition(partialTick), mc.player.getViewVector(partialTick));
+                mc.player.getEyePosition(partialTick), mc.player.getViewVector(partialTick),
+                List.of(new BeamColorSections.Section(color, MAX_BEAM_LENGTH)));
             return true;
         }
         return false;
+    }
+
+    /**
+     * 玩家宿主颜色：背包 9 列网格里信标<b>上方那一格</b>（{@code Pos2D(0,-1)}）的染色玻璃；
+     * 越界 / 非玻璃 ⇒ 原版白。
+     */
+    private static int colorAboveBeacon(Inventory inventory, int slot) {
+        int above = SlotResolver.resolve(slot, new Pos2D(0, -1), inventory.getContainerSize(), 9);
+        if (above < 0) {
+            return BeaconGlassColor.DEFAULT;
+        }
+        return BeaconGlassColor.of(inventory.getItem(above));
+    }
+
+    /**
+     * 箱子宿主颜色：从箱口上方<b>逐格扫描</b>（照原版算法，见 {@link BeamColorSections}）。
+     *
+     * <p>⚠️ 上限 {@link #COLOR_SCAN_LIMIT} 格：原版是方块实体、每 tick 增量扫 10 格；我们是
+     * <b>每帧</b>渲染 ⇒ 长扫代价高。玻璃叠层实际都很短，超出部分由"最后一段延伸到终点"兜住。</p>
+     */
+    private static List<BeamColorSections.Observation> scanAbove(ClientLevel level, BlockPos from, int limit) {
+        List<BeamColorSections.Observation> out = new ArrayList<>(Math.min(limit, 16));
+        BlockPos.MutableBlockPos pos = from.mutable();
+        for (int i = 0; i < limit; i++) {
+            BlockState state = level.getBlockState(pos);
+            Integer color = state.getBeaconColorMultiplier(level, pos.immutable(), from);
+            boolean opaque = state.canOcclude();
+            out.add(new BeamColorSections.Observation(color, opaque));
+            if (opaque) {
+                break;   // 不透明 ⇒ 后面的颜色不算（与原版同口径）
+            }
+            pos.move(Direction.UP);
+        }
+        return out;
     }
 
     /**
@@ -154,8 +201,10 @@ public final class LivingBeamRenderer {
             if (owner == null || owner == mc.player || entry.level() < 1) {
                 continue;
             }
+            // 颜色由服务端随包下发（客户端读不到别人背包里"信标上方那一格"）
             drew |= renderBeamAlong(poseStack, buffers, cameraPos, partialTick, level,
-                owner.getEyePosition(partialTick), owner.getViewVector(partialTick));
+                owner.getEyePosition(partialTick), owner.getViewVector(partialTick),
+                List.of(new BeamColorSections.Section(entry.color(), MAX_BEAM_LENGTH)));
         }
         return drew;
     }
@@ -175,8 +224,11 @@ public final class LivingBeamRenderer {
             }
             // 起点 = 箱口顶部中心（方块顶面；0.875 的盖面差在视觉上不可见）
             Vec3 start = Vec3.atBottomCenterOf(entry.pos()).add(0.0, 1.0, 0.0);
+            // 颜色：箱口上方逐格扫描（照原版算法，见 BeamColorSections）
+            List<BeamColorSections.Section> sections = BeamColorSections.build(
+                scanAbove(level, entry.pos().above(), COLOR_SCAN_LIMIT), BeaconGlassColor.DEFAULT);
             drew |= renderBeamAlong(poseStack, buffers, cameraPos, partialTick, level,
-                start, new Vec3(0.0, 1.0, 0.0));
+                start, new Vec3(0.0, 1.0, 0.0), sections);
         }
         return drew;
     }
@@ -214,10 +266,14 @@ public final class LivingBeamRenderer {
         return end;
     }
 
-    /** 通用光束：起点 + 方向（单位向量），本地求「被不透明方块截断」的高度后调原版函数。 */
+    /**
+     * 通用光束：起点 + 方向（单位向量）+ 颜色分段 ⇒ 本地求截断高度，<b>逐段堆叠</b>调原版函数
+     * （照原版渲染器：最后一段一直画到终点）。
+     */
     private static boolean renderBeamAlong(PoseStack poseStack, MultiBufferSource.BufferSource buffers,
                                            Vec3 cameraPos, float partialTick, ClientLevel level,
-                                           Vec3 start, Vec3 look) {
+                                           Vec3 start, Vec3 look,
+                                           List<BeamColorSections.Section> sections) {
         Vec3 end = opaqueHitEnd(level, start, look, MAX_BEAM_LENGTH);
         int height = (int) Math.min(Math.round(end.distanceTo(start)), MAX_BEAM_LENGTH);
         if (height <= 0) {
@@ -237,9 +293,20 @@ public final class LivingBeamRenderer {
         // ⚠️ 预补偿 renderBeaconBeam 内部的 translate(0.5, 0, 0.5)（设计稿 §2.1 已知坑）
         poseStack.translate(-0.5F, 0.0F, -0.5F);
 
-        BeaconRenderer.renderBeaconBeam(
-            poseStack, buffers, BeaconRenderer.BEAM_LOCATION, partialTick, 1.0F,
-            level.getGameTime(), 0, height, BEAM_COLOR, BEAM_RADIUS, GLOW_RADIUS);
+        int yOffset = 0;
+        for (int i = 0; i < sections.size(); i++) {
+            BeamColorSections.Section section = sections.get(i);
+            int segHeight = (i == sections.size() - 1)
+                ? height - yOffset                                   // 最后一段 ⇒ 一直画到终点
+                : Math.min(section.height(), height - yOffset);
+            if (segHeight <= 0) {
+                break;
+            }
+            BeaconRenderer.renderBeaconBeam(
+                poseStack, buffers, BeaconRenderer.BEAM_LOCATION, partialTick, 1.0F,
+                level.getGameTime(), yOffset, segHeight, section.color(), BEAM_RADIUS, GLOW_RADIUS);
+            yOffset += segHeight;
+        }
 
         poseStack.popPose();
         return true;

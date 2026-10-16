@@ -36,8 +36,12 @@ public final class BeaconPlayerHostSync {
      */
     public static final double RADIUS = 256.0;
 
-    /** 本 tick 登记的玩家宿主（UUID → 最高激活等级；由 {@code BeaconFunction#tick} 填入）。 */
-    private static final Map<UUID, Integer> current = new LinkedHashMap<>();
+    /** 本 tick 登记的玩家宿主（UUID → 等级 + 颜色；由 {@code BeaconFunction#tick} 填入）。 */
+    private static final Map<UUID, Host> current = new LinkedHashMap<>();
+
+    /** 一个玩家宿主的聚合结果（同玩家多枚信标 ⇒ 取<b>最高等级</b>那条，颜色随它）。 */
+    private record Host(int level, int color) {
+    }
 
     /** 每个观察者上次收到的条目（内容去重）。 */
     private static final Map<UUID, List<BeaconPlayerHostPacket.Entry>> lastSent = new HashMap<>();
@@ -49,12 +53,16 @@ public final class BeaconPlayerHostSync {
     private BeaconPlayerHostSync() {
     }
 
-    /** 登记一个玩家宿主（同一玩家多枚信标取最高等级 —— 客户端一人只画一条光束）。 */
-    public static void report(UUID playerId, int level) {
+    /**
+     * 登记一个玩家宿主（同一玩家多枚信标取<b>最高等级</b>；颜色随最高等级那条 ——
+     * 客户端一人只画一条光束）。
+     */
+    public static void report(UUID playerId, int level, int color) {
         if (playerId == null || level < 1) {
             return;
         }
-        current.merge(playerId, level, Math::max);
+        current.merge(playerId, new Host(level, color),
+            (oldHost, newHost) -> newHost.level() >= oldHost.level() ? newHost : oldHost);
     }
 
     /** 每 tick 末尾调用（容器处理之后）：按距离定向 + 内容去重后发送。 */
@@ -67,8 +75,8 @@ public final class BeaconPlayerHostSync {
 
         // ① 本维度玩家宿主清单（快照后清空登记表）
         List<BeaconPlayerHostPacket.Entry> all = new ArrayList<>(current.size());
-        for (Map.Entry<UUID, Integer> e : current.entrySet()) {
-            all.add(new BeaconPlayerHostPacket.Entry(e.getKey(), e.getValue()));
+        for (Map.Entry<UUID, Host> e : current.entrySet()) {
+            all.add(new BeaconPlayerHostPacket.Entry(e.getKey(), e.getValue().level(), e.getValue().color()));
         }
         current.clear();
 
