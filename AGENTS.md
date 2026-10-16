@@ -2,7 +2,7 @@
 
 **Minecraft 1.21.1 + NeoForge 21.1.x**
 *最后更新: 2026-09-20*
-*状态: Alpha 测试阶段 - v8.1 接口化重构完成 + 红电相位解读三元件（v19.1）+ 注册式槽位交互扩展点（`SlotInteractions`，2026-09-15）+ 活耕地放置回世界（`BlockItemMixin`，2026-09-16）+ Create 跨区块传送带死锁修复（2026-09-18）+ 容器规则增量语义与开发期导出通道（2026-09-20，含 IronChests 数据勘误）*
+*状态: Alpha 测试阶段 - 活信标 Phase 4 完成（tooltip 重设计 + 9 柱面板）；v8.1 接口化重构 / 红电 v19.1 等更早变更见 [changelog](docs/archive/changelog.md)*
 
 ---
 
@@ -91,7 +91,7 @@ SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 
 | 族 | 子系统（点击直达文档） |
 |----|----------------------|
-| **活物品功能（15）** | [活TNT](docs/tech/living-tnt-tech.md) · [活流体](docs/tech/living-fluid-tech.md) · [活熔炉](docs/tech/living-furnace-tech.md) · [活酿造台](docs/tech/living-brewing-stand-tech.md) · [活漏斗](docs/tech/living-hopper-tech.md) · [活箱子](docs/tech/living-chest-tech.md) · [活末影箱](docs/tech/living-ender-chest-tech.md) · [活水车](docs/tech/living-water-wheel-tech.md) · [活地图传送](docs/tech/living-map-ender-pearl-tech.md) · [活耕地](docs/tech/living-farmland-tech.md) · [活工具](docs/tech/living-tool-tech.md) · [活武器](docs/tech/living-weapon-tech.md) · [活红石](docs/tech/living-redstone-tech.md)（信号层含 [活铜](docs/tech/living-copper-tech.md)） · [活涂蜡铜块（红电发电）](docs/tech/living-power-tech.md) · [活打火石](docs/tech/living-flint-and-steel-tech.md) |
+| **活物品功能（16）** | [活TNT](docs/tech/living-tnt-tech.md) · [活流体](docs/tech/living-fluid-tech.md) · [活熔炉](docs/tech/living-furnace-tech.md) · [活酿造台](docs/tech/living-brewing-stand-tech.md) · [活漏斗](docs/tech/living-hopper-tech.md) · [活箱子](docs/tech/living-chest-tech.md) · [活末影箱](docs/tech/living-ender-chest-tech.md) · [活水车](docs/tech/living-water-wheel-tech.md) · [活地图传送](docs/tech/living-map-ender-pearl-tech.md) · [活耕地](docs/tech/living-farmland-tech.md) · [活工具](docs/tech/living-tool-tech.md) · [活武器](docs/tech/living-weapon-tech.md) · [活红石](docs/tech/living-redstone-tech.md)（信号层含 [活铜](docs/tech/living-copper-tech.md)） · [活涂蜡铜块（红电发电）](docs/tech/living-power-tech.md) · [活打火石](docs/tech/living-flint-and-steel-tech.md) · [活信标](docs/buffer/living-beacon-design.md) |
 | **容器基础设施（4）** | [基础设施](docs/system-design/living-item-infrastructure.md) · [多方块容器身份解析](docs/system-design/container-identity.md) · [数据模型](docs/system-design/data-model.md) · [超大堆叠审计](docs/system-design/oversized-stack-audit.md) |
 | **红电 · 电力（3）** | [红电架构演进](docs/buffer/redstone-evolution-roadmap.md) · [红电包收口方案](docs/buffer/power-refactoring-plan.md) · [红电不变量测试](docs/system-design/power-invariants.md) |
 | **跨域机制（3）** | [GUI交互](docs/system-design/gui-interaction-system.md) · [图标系统](docs/system-design/icon-system.md) · [Tooltip 系统](docs/system-design/tooltip-system.md) |
@@ -146,7 +146,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 713 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
+**合计测试用例 722 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -171,6 +171,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-16 | 🆕 **活信标 Phase 4：tooltip 重设计 + 9 柱小金字塔面板** —— 原则「图形已表达的文本不双写」：文本层删差额行 / 范围 / 未激活三行 + 休眠三因（`需 L{n}` / `信标不足`，旧只有「等级不足」一种）+ 空槽规则提示；满级效果行定 C 方案（用户否掉「免费/赠送」味）⇒ `再生 II（满级）`。图形层 160×76 **始终可见**（U22 升级）：实心柱 = 现状、**9 段阶梯刻度 = 各列自己的目标**（各列高度各异 ⇒ 无水平线，mockup 阶段发现并修正上轮表述）、横纹 = 待填、金帽 = 溢出、竖虚线 = 越界列；**数字从差额改目标值**（行动指令）+ 底部双读数（`to L3: 48 more` / `51/83` 含放错列的料）。**不可达兜底**：`columnExists` 位图 ⇒ 信标贴边缘时「宽度不足，信标内移」而非 deficit。几何走 `BeaconPanelGeometry` 纯函数单测；mockup 两份留 `tools/`。单测 +9（713 → 722 绿） | `docs/buffer/living-beacon-design.md` §2.6 · `living/domain/beacon/` · `client/render/LivingBeaconTooltipRenderer.java` · `tools/_mock_beacon_*.html` |
 | 2026-10-16 | 🆕 **活信标 Phase 3：效果配置 + 喂锭 + 范围 buff + tooltip + 联机可见** —— ① `OreType`（铁速度/金急迫 L1、下界合金抗性/绿宝石跳跃 L2、钻石力量 L3）+ `BeaconConfig`（5 槽组件，不可变、跟物品走、取消活化清空）+ `BeaconComponents`；② `BeaconFeedHandler`（消耗制；档位不足 / II 非满级 / 未激活全拒 ⇒ **不消耗**；等级从**菜单容器现读**——handler 拿不到 `ContainerContext`；规则走**通配 trigger + predicate**，因精确条目要求 trigger 也是活物品）；③ `BeaconEffects`（生效数 = `min(堆叠数, 档内槽数)` 取前 N；再生三档：有空槽→II / 满配全 I→I / 满配且加倍→无，**5 案例逐字**）；④ 每 80 刻施加 buff（范围 `等级×10+10` 球体撑到世界高、时长 `(9+等级×2)` 秒、ambient；宿主 = 背包主人 / 箱子中心，**末影箱等方块容器自然排除**）；⑤ tooltip 静态账本（5 槽 + 等级不足标注 + 空槽提示）+ 再生档行；⑥ **联机可见收尾**：玩家宿主 S2C（UUID + 等级，256 格定向去重）+ 客户端画其它玩家光束；⑦ **可见性对齐原版**：半径 256 + 水平判据、长度 1024、未加载区块不画、透明方块不截断；⑧ **光束颜色**（U3-A）：两宿主均扫世界方块（头颅顶面上方 / 箱口上方，原版分段+平均），无需同步；⑨ **起点/方向均随头转**（"像帽子"：起点 = 头颅顶面中心、方向 = 顶面法线）。单测 +40（673 → 713 绿） | `docs/buffer/living-beacon-design.md`（§2.5 / §2.6）· `living/domain/beacon/` · lang 双份 |
 | 2026-10-16 | 🆕 **活信标 Phase 2：金字塔等级判定 + 箱子宿主 + tooltip 实时行** —— ① `BeaconPyramid`：下方一行 9 列柱高 → 0~4 级（每列 ≥ 目标取最高 N；合计 9/34/83/164 与原版一致、嵌套单调；`BeaconBaseBlocks` 对齐原版 `BEACON_BASE_BLOCKS` tag）② tick 判级 → `BeaconSegment` 遥测（id=beacon 线格式契约；柱高 long[] ⇒ **手写 equals 防数组字段恒脏**）③ tooltip 实时行：等级 / 范围（等级×10+10）/ 金字塔账本（距下一级差额 + 缺列明细）④ 箱子宿主：`blockEvent(1,1)` 开盖保持（20 tick 重发、大箱双半箱都发、**不动 openersCounter 不误触发陷阱箱红石**）+ `BeaconHostPacket` S2C 定向同步（32 格 + 内容去重，照 K2 模式）⑤ 玩家宿主改**本地判级门控**（无条件亮 → level≥1 才亮）。单测 +33（判定 20 / 编解码 4 / 槽位数学 6 / 包往返 2），640 → 673 绿 | `docs/buffer/living-beacon-design.md`（§2.4 / §2.6）· `living/domain/beacon/`（BeaconPyramid / BeaconSegment / BeaconChestHost / BeaconHostPacket…）· `client/render/LivingBeamRenderer.java` · lang 双份 |
 | 2026-10-16 | 🆕 **活信标 Phase 1：域包注册 + 玩家宿主光束（纯渲染）** —— 新活物品开工（设计稿同日定稿：1D 金字塔底座 / 等级门控矿石池 / II 仅 L4 / 免费再生三档 / 图标极简 / 两路 tooltip / 复用图谱 §2.7）。本段只落玩家宿主光束：`BeaconFunction` + `BeaconRegistration`（照 `TntRegistration` 范式）+ `LivingBeamRenderer`（挂 `RenderLevelStageEvent.AFTER_ENTITIES`，直调原版 `BeaconRenderer.renderBeaconBeam` 并做 −0.5 XZ 预补偿——该函数内部 `translate(0.5,0,0.5)` 是给方块坐标补中心用的；yaw/pitch 对齐视线与 `LivingToolModelRenderer` 同款；`level.clip` 截断；U4=256 白光）。**无条件亮**（等级门槛属 Phase 2）、不开箱子、不接 buff、无同步。无新逻辑 ⇒ 无新测试，全量回归 640 绿 | `docs/buffer/living-beacon-design.md` · `living/domain/beacon/` · `client/render/LivingBeamRenderer.java` |

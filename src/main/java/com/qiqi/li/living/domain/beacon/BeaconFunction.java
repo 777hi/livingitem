@@ -62,9 +62,10 @@ public class BeaconFunction implements LivingItemFunction {
 
             ItemStack stack = entry.stack();
             long[] heights = readColumnHeights(context, slot);
+            boolean[] exists = readColumnExists(context, slot);
             int pyramidLevel = BeaconPyramid.resolveLevel(heights);
 
-            // 效果计算（纯逻辑，BeaconEffects）：生效矿石效果 + 免费再生三档
+            // 效果计算（纯逻辑，BeaconEffects）：生效矿石效果 + 满级再生三档
             BeaconConfig config = BeaconConfig.of(stack);
             int stackCount = stack.getCount();
             List<BeaconConfig.Entry> active =
@@ -72,10 +73,10 @@ public class BeaconFunction implements LivingItemFunction {
             BeaconSegment.RegenTier regenTier =
                 BeaconEffects.regenTier(pyramidLevel, stackCount, active);
 
-            // 遥测发布（tooltip 实时行 + 未来 F3+H 面板共用）；等级每 tick 现算，不进组件
+            // 遥测发布（tooltip 实时行 + 9 柱小金字塔面板共用）；等级每 tick 现算，不进组件
             ContainerRuntimeCache.update(context.getCacheKey(), slot,
                 RuntimeSegments.EMPTY.with(BeaconSegment.INSTANCE,
-                    new BeaconSegment.BeaconRuntime(pyramidLevel, heights, regenTier)));
+                    new BeaconSegment.BeaconRuntime(pyramidLevel, heights, exists, regenTier)));
 
             // 宿主（规则 1：仅玩家 / 箱子）—— 未激活 = 完全死物 ⇒ 无 buff / 无光束 / 不开盖
             Vec3 hostPos = resolveHostPosition(context, level);
@@ -185,6 +186,39 @@ public class BeaconFunction implements LivingItemFunction {
         return targets;
     }
 
+    /**
+     * 读 9 列存在性 —— 越界列（信标贴容器边缘 ⇒ 9 列探出边界）为 {@code false}。
+     *
+     * <p>区分「空槽（差材料）」与「该列不存在（别填了）」：没有它，9 柱面板会把永远填不上的
+     * 列显示成缺口（设计稿 §2.6.2 越界列 / 不可达兜底）。</p>
+     */
+    static boolean[] readColumnExists(ContainerContext context, int slot) {
+        return columnExistsFrom(resolveColumnSlots(slot, context.getSize(), context.getWidth()));
+    }
+
+    /** 纯函数：槽位下标 ≥ 0 ⇒ 该列存在（单测直接喂 {@code targets}）。 */
+    static boolean[] columnExistsFrom(int[] targets) {
+        boolean[] exists = new boolean[BeaconPyramid.COLUMNS];
+        for (int c = 0; c < targets.length && c < exists.length; c++) {
+            exists[c] = targets[c] >= 0;
+        }
+        return exists;
+    }
+
+    /**
+     * tooltip（设计稿 §2.6.1 定稿的三层分工：图标零改动 / 文本层只留面板表达不了的 /
+     * 图形层管底座几何）。
+     *
+     * <ul>
+     *   <li><b>状态行</b>（遥测缺失 ⇒ 不猜，只有静态层）：等级 + 生效数
+     *       {@code min(堆叠数, 合格槽数)}——客户端本地算，与 buff 共用
+     *       {@link BeaconEffects#activeEntries} 单一事实源；</li>
+     *   <li><b>满级效果行</b>：{@code regenTier} 非满级恒 NONE ⇒ 只在满级出现，NONE 也明示原因；</li>
+     *   <li><b>账本</b>：未激活 ⇒ 折叠成一行（U17「完全死物」）；否则逐行列
+     *       <b>休眠三因</b>（档位不够 {@code 需 L{n}} / 堆叠数不够 {@code 信标不足}）；</li>
+     *   <li>底座几何与差额<b>不在文本层</b>（9 柱面板已表达，双写 = 双维护）。</li>
+     * </ul>
+     */
     @Override
     public void addToTooltip(Item.TooltipContext context,
                              Consumer<Component> tooltipAdder,
@@ -193,62 +227,86 @@ public class BeaconFunction implements LivingItemFunction {
         tooltipAdder.accept(Component.nullToEmpty(""));
         tooltipAdder.accept(Component.translatable("tooltip.livingitem.beacon.status"));
 
-        // 运行时数据（等级 / 柱高 / 再生档）—— 遥测不写组件，tooltip 必须走运行时缓存
-        RuntimeSegments runtimeData = LivingItemClientCache.getCurrentTooltipData();
-        BeaconSegment.BeaconRuntime rt = runtimeData.get(BeaconSegment.INSTANCE);
-        if (rt != null) {
-            if (rt.level() == 0) {
-                tooltipAdder.accept(Component.translatable("tooltip.livingitem.beacon.inactive"));
-            } else {
-                tooltipAdder.accept(Component.translatable(
-                    "tooltip.livingitem.beacon.level",
-                    rt.level(),
-                    String.format("%.0f", BeaconPyramid.rangeBlocks(rt.level()))));
+        BeaconSegment.BeaconRuntime rt = LivingItemClientCache.getCurrentTooltipData()
+            .get(BeaconSegment.INSTANCE);
+        BeaconConfig config = BeaconConfig.of(stack);
+        boolean inactive = rt != null && rt.level() == 0;
 
-                if (rt.level() < BeaconPyramid.MAX_LEVEL) {
-                    int[] deficits = BeaconPyramid.deficitsToNext(rt.level(), rt.columnHeights());
-                    long blocks = BeaconPyramid.blocksToNext(rt.level(), rt.columnHeights());
-                    StringBuilder shortColumns = new StringBuilder();
-                    for (int c = 0; c < BeaconPyramid.COLUMNS; c++) {
-                        if (deficits[c] > 0) {
-                            if (!shortColumns.isEmpty()) {
-                                shortColumns.append("、");
-                            }
-                            shortColumns.append(BeaconPyramid.columnLabel(c)).append(" 差").append(deficits[c]);
-                        }
-                    }
-                    tooltipAdder.accept(Component.translatable(
-                        "tooltip.livingitem.beacon.pyramid", blocks, shortColumns.toString()));
-                } else {
-                    // 免费再生（满级才有意义）—— 三档由 BeaconEffects 现算
-                    tooltipAdder.accept(Component.translatable("tooltip.livingitem.beacon.regen",
-                        Component.translatable(switch (rt.regenTier()) {
-                            case II -> "tooltip.livingitem.beacon.regen.ii";
-                            case I -> "tooltip.livingitem.beacon.regen.i";
-                            case NONE -> "tooltip.livingitem.beacon.regen.none";
-                        })));
+        // ── 运行时层 ────────────────────────────────────────────────
+        if (rt != null && rt.level() > 0) {
+            List<BeaconConfig.Entry> active =
+                BeaconEffects.activeEntries(rt.level(), stack.getCount(), config);
+            tooltipAdder.accept(Component.translatable(
+                "tooltip.livingitem.beacon.level",
+                rt.level(), active.size(), config.size()));
+
+            if (rt.level() >= BeaconPyramid.MAX_LEVEL) {
+                tooltipAdder.accept(Component.translatable(
+                    "tooltip.livingitem.beacon.regen",
+                    Component.translatable(switch (rt.regenTier()) {
+                        case II -> "tooltip.livingitem.beacon.regen.ii";
+                        case I -> "tooltip.livingitem.beacon.regen.i";
+                        case NONE -> "tooltip.livingitem.beacon.regen.none";
+                    })));
+            }
+        }
+
+        // ── 静态层：效果配置 ─────────────────────────────────────────
+        if (inactive) {
+            tooltipAdder.accept(Component.translatable(
+                "tooltip.livingitem.beacon.config_inactive", config.size()));
+            if (config.size() == 0) {
+                tooltipAdder.accept(Component.translatable("tooltip.livingitem.beacon.config_empty"));
+            }
+            return;
+        }
+
+        tooltipAdder.accept(Component.translatable("tooltip.livingitem.beacon.config_title"));
+        if (config.size() == 0) {
+            tooltipAdder.accept(Component.translatable("tooltip.livingitem.beacon.config_empty"));
+            return;
+        }
+
+        List<BeaconConfig.Entry> active = rt != null
+            ? BeaconEffects.activeEntries(rt.level(), stack.getCount(), config)
+            : List.of();
+        int index = 1;
+        for (BeaconConfig.Entry entry : config.entries()) {
+            Component suffix = Component.empty();
+            if (rt != null && rt.level() > 0 && !active.contains(entry)) {
+                suffix = entry.ore().unlockTier > rt.level()
+                    ? Component.translatable("tooltip.livingitem.beacon.sleep_level",
+                        entry.ore().unlockTier)
+                    : Component.translatable("tooltip.livingitem.beacon.sleep_ingot",
+                        requiredStacks(config, entry, rt.level()));
+            }
+            tooltipAdder.accept(Component.translatable(
+                "tooltip.livingitem.beacon.config_entry",
+                index++,
+                Component.translatable(entry.ore().effectKey()),
+                entry.amplified() ? "II" : "I",
+                Component.translatable(entry.ore().ingot.getDescriptionId()),
+                suffix));
+        }
+    }
+
+    /**
+     * 让某休眠槽生效所需的信标堆叠数（该槽在「档位合格」序列里的 1 基序号）。
+     *
+     * <p>休眠若非档位原因，必是 {@code min(堆叠数, 合格槽数)} 取前 N 时被截断 ⇒
+     * 所需堆叠数 = 它的合格序号。tooltip 与 buff 共用 {@link BeaconEffects#activeEntries}
+     * 同一口径，不会出现「tooltip 说生效、实际没 buff」。</p>
+     */
+    static int requiredStacks(BeaconConfig config, BeaconConfig.Entry entry, int level) {
+        int ordinal = 0;
+        for (BeaconConfig.Entry e : config.entries()) {
+            if (e.ore().unlockTier <= level) {
+                ordinal++;
+                if (e.equals(entry)) {
+                    return ordinal;
                 }
             }
         }
-
-        // 静态层：效果配置账本（读组件，不依赖遥测）
-        BeaconConfig config = BeaconConfig.of(stack);
-        tooltipAdder.accept(Component.translatable("tooltip.livingitem.beacon.config_title"));
-        if (config.entries().isEmpty()) {
-            tooltipAdder.accept(Component.translatable("tooltip.livingitem.beacon.config_empty"));
-        } else {
-            int index = 1;
-            for (BeaconConfig.Entry entry : config.entries()) {
-                boolean locked = rt != null && entry.ore().unlockTier > rt.level();
-                tooltipAdder.accept(Component.translatable(
-                    "tooltip.livingitem.beacon.config_entry",
-                    index++,
-                    Component.translatable(entry.ore().effectKey()),
-                    entry.amplified() ? "II" : "I",
-                    Component.translatable(entry.ore().ingot.getDescriptionId()),
-                    locked ? Component.translatable("tooltip.livingitem.beacon.config_locked")
-                           : Component.empty()));
-            }
-        }
+        return config.size();
     }
 }

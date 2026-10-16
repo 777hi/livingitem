@@ -108,6 +108,19 @@ public final class BeaconPyramid {
         return level * 10.0 + 10.0;
     }
 
+    /**
+     * 某等级（**0 基**：0 = L1 … 3 = L4）某列的目标柱高；越界 / 非参数返回 0。
+     *
+     * <p>9 柱面板（设计稿 §2.6.2）与可达性判定（{@code reachable}）的直接数据源；
+     * 满配单列上限 = L4 中心列目标 24，即面板柱高像素映射的满程。</p>
+     */
+    public static int targetAt(int level0, int column) {
+        if (level0 < 0 || level0 >= MAX_LEVEL || column < 0 || column >= COLUMNS) {
+            return 0;
+        }
+        return (int) TARGETS[level0][column];
+    }
+
     /** 该等级底座合计柱高（0 / 9 / 34 / 83 / 164）—— 信息展示用。 */
     public static long totalForLevel(int level) {
         if (level < 1 || level > MAX_LEVEL) return 0;
@@ -116,13 +129,6 @@ public final class BeaconPyramid {
             sum += v;
         }
         return sum;
-    }
-
-    /** 列的人读标签（tooltip 用）：中 / 左N / 右N。 */
-    public static String columnLabel(int column) {
-        if (column == CENTER) return "中";
-        int distance = Math.abs(column - CENTER);
-        return (column < CENTER ? "左" : "右") + distance;
     }
 
     private static long heightAt(@Nullable long[] heights, int column) {

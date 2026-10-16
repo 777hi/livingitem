@@ -167,16 +167,6 @@ class BeaconPyramidTest {
         }
 
         @Test
-        @DisplayName("列标签：中 / 左N / 右N")
-        void labels() {
-            assertEquals("中", BeaconPyramid.columnLabel(4));
-            assertEquals("左4", BeaconPyramid.columnLabel(0));
-            assertEquals("左1", BeaconPyramid.columnLabel(3));
-            assertEquals("右4", BeaconPyramid.columnLabel(8));
-            assertEquals("右2", BeaconPyramid.columnLabel(6));
-        }
-
-        @Test
         @DisplayName("meets 越界等级 ⇒ false")
         void meetsOutOfRange() {
             assertFalse(BeaconPyramid.meets(L4, 0));

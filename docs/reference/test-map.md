@@ -69,9 +69,11 @@ src/test/java/com/qiqi/li/
 ├── living/domain/chest/
 │   └── LivingChestFunctionTest.java           # 取消活化堆叠倍数返还（6 项）
 ├── living/domain/beacon/
-│   ├── BeaconPyramidTest.java                 # 1D 金字塔判级·各级精确目标/全0/null不足长/差一块掉档/多堆不亏/嵌套单调/L3 缺一列仍 L2/边界钳制封顶/单列无法激活/距下一级差额/范围公式/合计 9·34·83·164/列标签（20 项）
+│   ├── BeaconPyramidTest.java                 # 1D 金字塔判级·各级精确目标/全0/null不足长/差一块掉档/多堆不亏/嵌套单调/L3 缺一列仍 L2/边界钳制封顶/单列无法激活/距下一级差额/范围公式/合计 9·34·83·164（19 项）
 │   ├── BeaconColumnSlotsTest.java             # 下方 9 列槽位解析(纯数学)·居中/右边界钳制/左边界钳制/最底行全 -1/顶行居中/单行容器（6 项）
-│   ├── BeaconSegmentTest.java                 # 遥测段编解码往返(等级+9柱高+再生档)/id=beacon 线格式契约/equals 按数组内容比(稳态不脏写前提)/再生档越界回退（5 项）
+│   ├── BeaconSegmentTest.java                 # 遥测段编解码往返(等级+9柱高+列存在位图+再生档)/id=beacon 线格式契约/equals 按数组内容比(稳态不脏写前提,仅位图不同也判不等)/再生档越界回退（6 项）
+│   ├── BeaconPanelGeometryTest.java           # 9 柱面板几何纯函数·满程 24=L4 中心契约/柱位 x/刻度 y 四档/柱顶钳位/缺口高度/数字取舍(目标值·达标不画·溢出绝对高)/reachable 可达性(含列存在)/columnExistsFrom（8 项）
+│   ├── BeaconTooltipComponentTest.java        # 面板数据载体 from(BeaconRuntime) 字段直通+record equals（1 项）
 │   ├── BeaconHostPacketTest.java              # S2C 宿主包往返(维度+位置+等级)/空列表（2 项）
 │   ├── BeaconEffectsTest.java                 # 效果纯逻辑·喂锭门控(档位/II 仅 L4/5 槽满/未激活全拒)+生效数 min(堆叠,档内槽数)取前 N+再生三档(5 案例逐字)+buff 时长(9+等级×2)×20（22 项）
 │   ├── BeaconConfigTest.java                  # 配置组件·add/amplify 不可变+5 槽封顶+contains+编解码往返(含空配置)（4 项）
