@@ -7,7 +7,6 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.domain.beacon.BeaconBaseBlocks;
-import com.qiqi.li.living.domain.beacon.BeaconGlassColor;
 import com.qiqi.li.living.domain.beacon.BeaconHostClientCache;
 import com.qiqi.li.living.domain.beacon.BeaconHostPacket;
 import com.qiqi.li.living.domain.beacon.BeaconPlayerHostClientCache;
@@ -73,7 +72,9 @@ public final class LivingBeamRenderer {
     private static final float GLOW_RADIUS = 0.25F;
 
     /**
-     * 箱子宿主的颜色扫描上限（格）—— 玻璃叠层实际很短，超出部分由"最后一段延伸到终点"兜住。
+     * 颜色扫描上限（格）—— <b>两个宿主共用</b>（U3 方案 A：颜色一律取自<b>世界方块</b>，
+     * 玩家宿主从头顶上方扫、箱子宿主从箱口上方扫）。玻璃叠层实际很短，超出部分由
+     * "最后一段延伸到终点"兜住。
      *
      * <p>⚠️ 原版是方块实体、每 tick 增量扫 10 格；我们<b>每帧</b>渲染 ⇒ 不能无上限长扫。</p>
      */
@@ -124,8 +125,8 @@ public final class LivingBeamRenderer {
      * <p>多个信标同时存在时只画一条（同起点同方向，几何重合；第一个激活的优先）——
      * 若第一个信标未激活而后面有激活的，会继续找。</p>
      *
-     * <p>颜色（U3 方案 B）：读背包 9 列网格里信标<b>上方那一格</b>的染色玻璃（与"底座在下方一行"
-     * 对称）；非染色玻璃 ⇒ 原版白。</p>
+     * <p>颜色（U3 方案 A，贴合原版）：从玩家<b>头顶上方</b>逐格扫描<b>世界方块</b>
+     * （{@link #scanAbove}）—— 与原版信标从自身往上扫同源，所以走进染色玻璃走廊会变色。</p>
      */
     private static boolean renderPlayerHost(Minecraft mc, ClientLevel level, PoseStack poseStack,
                                             MultiBufferSource.BufferSource buffers, Vec3 cameraPos,
@@ -141,29 +142,36 @@ public final class LivingBeamRenderer {
             if (BeaconPyramid.resolveLevel(localColumnHeights(inventory, slot)) < 1) {
                 continue;   // 未激活 ⇒ 不亮（Phase 2 门控）
             }
-            int color = colorAboveBeacon(inventory, slot);
             renderBeamAlong(poseStack, buffers, cameraPos, partialTick, level,
                 mc.player.getEyePosition(partialTick), mc.player.getViewVector(partialTick),
-                List.of(new BeamColorSections.Section(color, MAX_BEAM_LENGTH)));
+                playerColorSections(level, mc.player));
             return true;
         }
         return false;
     }
 
     /**
-     * 玩家宿主颜色：背包 9 列网格里信标<b>上方那一格</b>（{@code Pos2D(0,-1)}）的染色玻璃；
-     * 越界 / 非玻璃 ⇒ 原版白。
+     * 玩家宿主的颜色分段（U3 方案 A）：从玩家<b>所在格上方</b>逐格扫描世界方块
+     * （与箱子宿主同一条路径 —— 两个宿主用同一套原版算法）。
+     *
+     * <p>⭐ 客户端<b>本地</b>就能算：世界方块本来就同步给所有客户端，别人的光束也一样算得出来
+     * ⇒ 颜色<b>不需要</b>随 S2C 下发（这是方案 A 相对方案 B 的主要好处）。</p>
+     *
+     * <p>⚠️ 分段高度是<b>竖直格数</b>，而玩家光束沿视线 —— 两者不严格对应；因"最后一段一直画到
+     * 终点"，实际观感仍是"第一块染色玻璃决定整根颜色"（与原版一致）。</p>
      */
-    private static int colorAboveBeacon(Inventory inventory, int slot) {
-        int above = SlotResolver.resolve(slot, new Pos2D(0, -1), inventory.getContainerSize(), 9);
-        if (above < 0) {
-            return BeaconGlassColor.DEFAULT;
-        }
-        return BeaconGlassColor.of(inventory.getItem(above));
+    private static List<BeamColorSections.Section> playerColorSections(ClientLevel level, Player player) {
+        return BeamColorSections.build(
+            scanAbove(level, player.blockPosition().above(), COLOR_SCAN_LIMIT),
+            BeamColorSections.DEFAULT_COLOR);
     }
 
     /**
-     * 箱子宿主颜色：从箱口上方<b>逐格扫描</b>（照原版算法，见 {@link BeamColorSections}）。
+     * 从 {@code from} 起<b>竖直向上</b>逐格扫描世界方块的颜色（U3 方案 A，两宿主共用：
+     * 玩家宿主从头顶上方、箱子宿主从箱口上方）。
+     *
+     * <p>取色走 NeoForge {@code BlockState#getBeaconColorMultiplier}（原版同一入口：染色玻璃 /
+     * 玻璃板 / 信标自身都实现 {@code BeaconBeamBlock}，第三方彩色玻璃只要实现该接口也自动生效）。</p>
      *
      * <p>⚠️ 上限 {@link #COLOR_SCAN_LIMIT} 格：原版是方块实体、每 tick 增量扫 10 格；我们是
      * <b>每帧</b>渲染 ⇒ 长扫代价高。玻璃叠层实际都很短，超出部分由"最后一段延伸到终点"兜住。</p>
@@ -201,10 +209,10 @@ public final class LivingBeamRenderer {
             if (owner == null || owner == mc.player || entry.level() < 1) {
                 continue;
             }
-            // 颜色由服务端随包下发（客户端读不到别人背包里"信标上方那一格"）
+            // 颜色同样本地算（U3 方案 A：读世界方块，别人的也读得到）
             drew |= renderBeamAlong(poseStack, buffers, cameraPos, partialTick, level,
                 owner.getEyePosition(partialTick), owner.getViewVector(partialTick),
-                List.of(new BeamColorSections.Section(entry.color(), MAX_BEAM_LENGTH)));
+                playerColorSections(level, owner));
         }
         return drew;
     }
@@ -226,7 +234,7 @@ public final class LivingBeamRenderer {
             Vec3 start = Vec3.atBottomCenterOf(entry.pos()).add(0.0, 1.0, 0.0);
             // 颜色：箱口上方逐格扫描（照原版算法，见 BeamColorSections）
             List<BeamColorSections.Section> sections = BeamColorSections.build(
-                scanAbove(level, entry.pos().above(), COLOR_SCAN_LIMIT), BeaconGlassColor.DEFAULT);
+                scanAbove(level, entry.pos().above(), COLOR_SCAN_LIMIT), BeamColorSections.DEFAULT_COLOR);
             drew |= renderBeamAlong(poseStack, buffers, cameraPos, partialTick, level,
                 start, new Vec3(0.0, 1.0, 0.0), sections);
         }

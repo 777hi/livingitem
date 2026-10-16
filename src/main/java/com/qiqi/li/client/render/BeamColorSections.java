@@ -30,6 +30,9 @@ import net.minecraft.util.FastColor;
  */
 public final class BeamColorSections {
 
+    /** 全程无染色方块时的颜色 —— 原版白光。 */
+    public static final int DEFAULT_COLOR = 0xFFFFFF;
+
     /** 一段光束：颜色（ARGB）+ 该段高度（格）。 */
     public record Section(int color, int height) {
     }
@@ -45,7 +48,7 @@ public final class BeamColorSections {
      * 把"起点往上逐格的观测"折成分段列表（见类注释的原版规则）。
      *
      * @param upward       从起点上方第一格开始的逐格观测（遇到不透明块应已由调用方截断）
-     * @param defaultColor 全程无染色方块时的颜色（{@code BeaconGlassColor.DEFAULT}）
+     * @param defaultColor 全程无染色方块时的颜色（{@link #DEFAULT_COLOR}）
      * @return 分段列表（高度之和 = 观测格数；最后一段由调用方延伸到光束终点）
      */
     public static List<Section> build(List<Observation> upward, int defaultColor) {
