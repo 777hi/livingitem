@@ -2,10 +2,7 @@
 
 <h1 align="center">Living Item<br>
 	<a href="https://modrinth.com/mod/living-item"><img src="https://img.shields.io/modrinth/dt/living-item?logo=modrinth&label=&suffix=%20&style=flat&color=242629&labelColor=5CA424&logoColor=1C1C1C" alt="Modrinth"></a>
-	<!-- TODO: CurseForge 发布后，把下面这行的 href 换成真实链接即可。
-	     若想跟 Modrinth 一样显示下载量，把 src 一起换成：
-	     https://img.shields.io/curseforge/dt/<项目ID>?logo=curseforge&label=&suffix=%20&style=flat&color=242629&labelColor=F16436&logoColor=1C1C1C -->
-	<a href="https://www.curseforge.com/minecraft/mc-mods/living-item"><img src="https://img.shields.io/badge/CurseForge-F16436?logo=curseforge&logoColor=white&style=flat" alt="CurseForge"></a>
+	<a href="https://www.curseforge.com/minecraft/mc-mods/living-item"><img src="https://img.shields.io/curseforge/dt/1742312?logo=curseforge&label=&suffix=%20&style=flat&color=242629&labelColor=F16436&logoColor=1C1C1C" alt="CurseForge"></a>
 	<br><br>
 </h1>
 
