@@ -41,7 +41,8 @@ import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
  *
  * <p><b>两种宿主</b>（规则 1：仅玩家 / 箱子）：</p>
  * <ul>
- *   <li><b>玩家宿主</b>：本机背包（含快捷栏 / 副手）里的活信标，从<b>头颅顶面</b>沿视线射出。
+ *   <li><b>玩家宿主</b>：本机背包（含快捷栏 / 副手）里的活信标，从<b>头颅顶面</b>沿<b>顶面法线</b>射出
+ *       （随头俯仰转动：平视 = 竖直向上、低头 = 朝前上方、抬头 = 朝后上方）。</li>
  *       <b>本地判级门控</b>：客户端自己读下方 9 列柱高（本机背包可见）→ {@link BeaconPyramid}
  *       判级 → level ≥ 1 才亮（无条件亮是 Phase 1 临时口径，Phase 2 接入）。</li>
  *   <li><b>箱子宿主</b>：{@link BeaconHostClientCache}（S2C 同步的位置 + 等级），
@@ -54,9 +55,10 @@ import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
  * 否则光束轴偏离起点（设计稿 §2.1 已知坑）。
  *
  * <h3>方向对齐</h3>
- * 玩家宿主与 {@link LivingToolModelRenderer#drawModel} 同款公式：
+ * 通用公式与 {@link LivingToolModelRenderer#drawModel} 同款：
  * {@code yaw = atan2(dir.x, dir.z)} 绕 Y + {@code pitch = atan2(h, dir.y)} 绕 X，
- * 把局部 +Y 对齐到视线方向；箱子宿主恒为垂直向上（局部 +Y 即向上，无需旋转）。
+ * 把局部 +Y 对齐到给定方向（玩家宿主 = {@link #headNormal} 顶面法线；箱子宿主 = 竖直向上，
+ * 局部 +Y 即向上、无需旋转）。
  */
 public final class LivingBeamRenderer {
 
@@ -120,7 +122,7 @@ public final class LivingBeamRenderer {
     }
 
     /**
-     * 玩家宿主：本机背包里第一个<b>已激活</b>（level ≥ 1）的活信标 ⇒ 从<b>头颅顶面</b>沿视线射出。
+     * 玩家宿主：本机背包里第一个<b>已激活</b>（level ≥ 1）的活信标 ⇒ 从<b>头颅顶面</b>沿<b>顶面法线</b>射出。
      *
      * <p>多个信标同时存在时只画一条（同起点同方向，几何重合；第一个激活的优先）——
      * 若第一个信标未激活而后面有激活的，会继续找。</p>
@@ -143,7 +145,7 @@ public final class LivingBeamRenderer {
                 continue;   // 未激活 ⇒ 不亮（Phase 2 门控）
             }
             renderBeamAlong(poseStack, buffers, cameraPos, partialTick, level,
-                headTop(mc.player, partialTick), mc.player.getViewVector(partialTick),
+                headTop(mc.player, partialTick), headNormal(mc.player),
                 playerColorSections(level, mc.player, partialTick));
             return true;
         }
@@ -161,13 +163,32 @@ public final class LivingBeamRenderer {
     }
 
     /**
+     * 光束方向 = <b>头颅顶面的法线</b>（世界坐标单位向量）—— 用户 2026-10-16 定。
+     *
+     * <p>几何：这个面<b>随头俯仰转动</b> ⇒ 平视时法线 = <b>竖直向上</b>；<b>低头</b>时头顶朝
+     * <b>前上方</b>；<b>抬头</b>时朝<b>后上方</b>。它与视线方向<b>垂直</b>（相差 90°）—— 别把两者
+     * 混为一谈（低头时视线朝前下、顶面法线朝前上）。</p>
+     *
+     * <p>推导（MC 约定：yaw 0 = +Z，pitch <b>低头为正</b>）：视线
+     * {@code L = (−sin y·cos p, −sin p, cos y·cos p)}；取与之垂直、且 {@code p=0} 时等于
+     * {@code (0,1,0)} 的那个方向 ⇒ {@code N = (−sin y·sin p, cos p, cos y·sin p)}。
+     * 三个校验点：p=0 ⇒ (0,1,0)（竖直向上）；p=+90° ⇒ (−sin y, 0, cos y)（水平<b>前</b>方）；
+     * p=−90° ⇒ 水平<b>后</b>方。且 {@code N·L = 0} 恒成立。</p>
+     */
+    private static Vec3 headNormal(Player player) {
+        float yaw = player.getYRot() * Mth.DEG_TO_RAD;
+        float pitch = player.getXRot() * Mth.DEG_TO_RAD;
+        return new Vec3(-Mth.sin(yaw) * Mth.sin(pitch), Mth.cos(pitch), Mth.cos(yaw) * Mth.sin(pitch));
+    }
+
+    /**
      * 玩家宿主的颜色分段（U3 方案 A）：从<b>头颅顶面上方</b>逐格扫描世界方块
      * （与箱子宿主同一条路径 —— 两个宿主用同一套原版算法）。
      *
      * <p>⭐ 客户端<b>本地</b>就能算：世界方块本来就同步给所有客户端，别人的光束也一样算得出来
      * ⇒ 颜色<b>不需要</b>随 S2C 下发（这是方案 A 相对方案 B 的主要好处）。</p>
      *
-     * <p>⚠️ 分段高度是<b>竖直格数</b>，而玩家光束沿视线 —— 两者不严格对应；因"最后一段一直画到
+     * <p>⚠️ 分段高度是<b>竖直格数</b>，而玩家光束沿<b>顶面法线</b> —— 两者不严格对应；因"最后一段一直画到
      * 终点"，实际观感仍是"第一块染色玻璃决定整根颜色"（与原版一致）。</p>
      */
     private static List<BeamColorSections.Section> playerColorSections(ClientLevel level, Player player,
@@ -205,7 +226,7 @@ public final class LivingBeamRenderer {
 
     /**
      * 其它玩家宿主（联机可见 · 设计稿规则 6）：S2C 的 UUID + 等级 ⇒ 查实体取
-     * <b>他的</b>眼睛与视线（实体旋转本来就同步给客户端）⇒ 与自己的光束同款几何。
+     * <b>他的</b>头顶与顶面法线（实体旋转本来就同步给客户端）⇒ 与自己的光束同款几何。
      *
      * <p>排除自己（本机渲染更实时）与等级 0（服务端只发 ≥ 1，双保险）。</p>
      */
@@ -222,7 +243,7 @@ public final class LivingBeamRenderer {
             }
             // 颜色同样本地算（U3 方案 A：读世界方块，别人的也读得到）
             drew |= renderBeamAlong(poseStack, buffers, cameraPos, partialTick, level,
-                headTop(owner, partialTick), owner.getViewVector(partialTick),
+                headTop(owner, partialTick), headNormal(owner),
                 playerColorSections(level, owner, partialTick));
         }
         return drew;
