@@ -98,15 +98,18 @@ public class LivingBeaconTooltipRenderer implements ClientTooltipComponent {
 
             if (!BeaconPanelGeometry.existsAt(exists, c)) {
                 // 越界列：柱位中央 1px 竖虚线（贯穿柱区）——「这列不存在，别填了」
+                // ⚠️ GuiGraphics.fill 是 (x1,y1,x2,y2) 坐标语义（右下排他），不是 (x,y,w,h)
                 g.fill(px + BeaconPanelGeometry.BAR_W / 2, y + BeaconPanelGeometry.PLOT_TOP,
-                    1, BeaconPanelGeometry.BASE_Y - BeaconPanelGeometry.PLOT_TOP, DEAD_COLOR);
+                    px + BeaconPanelGeometry.BAR_W / 2 + 1, y + BeaconPanelGeometry.BASE_Y,
+                    DEAD_COLOR);
                 continue;
             }
             if (t > 0 && h < t) {
                 deficit += t - h;
             }
             if (t > 0) {
-                g.fill(px, y + BeaconPanelGeometry.targetY(t) - 1, BeaconPanelGeometry.BAR_W, 1,
+                g.fill(px, y + BeaconPanelGeometry.targetY(t) - 1,
+                    px + BeaconPanelGeometry.BAR_W, y + BeaconPanelGeometry.targetY(t),
                     full ? TARGET_FULL_COLOR : TARGET_COLOR);
             }
             int gap = BeaconPanelGeometry.gapHeight(h, t);
@@ -114,18 +117,17 @@ public class LivingBeaconTooltipRenderer implements ClientTooltipComponent {
                 // 横纹从柱顶画到刻度（y 从 targetY 递增到 plotY）
                 int top = BeaconPanelGeometry.plotY(h);
                 for (int yy = BeaconPanelGeometry.targetY(t); yy < top; yy += 3) {
-                    g.fill(px, y + yy, BeaconPanelGeometry.BAR_W, 1, GAP_COLOR);
+                    g.fill(px, y + yy, px + BeaconPanelGeometry.BAR_W, y + yy + 1, GAP_COLOR);
                 }
             }
             if (h > 0) {
                 int top = BeaconPanelGeometry.plotY(h);
-                g.fill(px, y + top, BeaconPanelGeometry.BAR_W,
-                    BeaconPanelGeometry.BASE_Y - top,
+                g.fill(px, y + top, px + BeaconPanelGeometry.BAR_W, y + BeaconPanelGeometry.BASE_Y,
                     c == BeaconPyramid.CENTER ? BAR_COLOR : BAR_DIM_COLOR);
             }
             if (BeaconPanelGeometry.isOverflow(h)) {
                 g.fill(px, y + BeaconPanelGeometry.PLOT_TOP - BeaconPanelGeometry.CAP_H,
-                    BeaconPanelGeometry.BAR_W, BeaconPanelGeometry.CAP_H, CAP_COLOR);
+                    px + BeaconPanelGeometry.BAR_W, y + BeaconPanelGeometry.PLOT_TOP, CAP_COLOR);
             }
             drawColumnLabel(font, g, x, y, px, h, t);
         }

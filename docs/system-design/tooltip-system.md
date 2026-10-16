@@ -283,6 +283,7 @@ EMA 类 double 读数（共振增益 / 平衡度 / 域快照 effDeltaSum）写�
 10. **创造模式 GUI（CreativeModeInventoryScreen）槽位索引与 Inventory 不对齐**——悬停定位失败时按**物品引用**在 `player.getInventory()` 中兜底匹配（GUI 显示的就是真实背包物品，引用必然相等）；
 11. **相位顺序必须走 `PhaseDomain.phasesSorted()`**——`deltaByOffset()` 返回的是 HashMap 值视图：迭代顺序是哈希序而非 offset 序，且**不含 offset 本身**。曾因此把 offset 整个丢掉、只传 δ 值列表给客户端，导致相位圆盘根本没有数据可画。凡是要求「顺序」或「offset」的消费者（`collectDomains`、F3+H 文本、圆盘渲染）一律走 `phasesSorted()`；
 12. **DomainSnapshot 的 `offsets` 是 v19.2 必需字段**——不做旧 NBT 兼容。Codec 使用无默认值的 `fieldOf("offsets")`；缺失时直接暴露格式错误，避免把缺失的真实相位数据静默伪装成无辐条。
+13. **`GuiGraphics.fill` 是坐标语义 `(x1,y1,x2,y2)`（右下排他），不是 `(x,y,w,h)`**——按宽高误传时 `x2 < x1`，会画出从区域左上蔓延到目标柱位的巨大矩形（活信标 9 柱面板 2026-10-16 实测：琥珀刻度 / 金色帽「溢出一大块」，暗青柱体 / 横纹 / 虚线叠加「铺满整个屏幕」，用户两条反馈同源）。**纪律：新写绘制代码的 fill 一律写成 `px .. px + w` 形式，禁止传裸宽高**。几何纯函数单测拦得住「算错的 y」，拦不住「传错的 fill 参数」⇒ 新渲染器必须配游戏内实测环节。
 
 ---
 
