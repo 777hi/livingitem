@@ -152,14 +152,20 @@ public final class LivingBeamRenderer {
         return false;
     }
 
+    /** 头颅顶面相对<b>颈部枢轴</b>的高度（格）—— 站立 1.8 − 颈部 1.5。 */
+    private static final double HEAD_TOP_FROM_PIVOT = 0.3;
+
     /**
-     * 光束起点 = <b>头颅顶面</b>（脚底插值位置 + 实体高度 ⇒ 随潜行 / 坐骑自动变化）。
+     * 光束起点 = <b>头颅顶面中心</b>（像帽子一样贴在头顶 ⇒ <b>随头转动</b>）。
      *
-     * <p>用户 2026-10-16 定：**从玩家的头颅顶面射出**（取代早先实现里的眼睛位置 —— 眼睛在头部中心
-     * y+1.62，头顶面在 y+1.8，差约 0.2 格）。</p>
+     * <p>= 颈部枢轴 + 头部旋转后的"上方向"（{@link #headNormal}）× 顶面偏移。
+     * 平视时退化为「脚底 + 实体高度」（与更早的实现一致），但<b>低头时头顶面中心会往前、往下移动</b>
+     * —— 这才是"贴在头顶那个面上"的准确位置。潜行 / 坐骑的高度变化仍然保留。</p>
      */
     private static Vec3 headTop(Player player, float partialTick) {
-        return player.getPosition(partialTick).add(0.0, player.getBbHeight(), 0.0);
+        Vec3 pivot = player.getPosition(partialTick)
+            .add(0.0, player.getBbHeight() - HEAD_TOP_FROM_PIVOT, 0.0);
+        return pivot.add(headNormal(player).scale(HEAD_TOP_FROM_PIVOT));
     }
 
     /**
