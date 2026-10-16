@@ -53,7 +53,9 @@ import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
  * <h3>复用的原版函数</h3>
  * {@link BeaconRenderer#renderBeaconBeam} 是 public static，直接调。⚠️ 它内部
  * {@code translate(0.5, 0, 0.5)}（给方块坐标补中心用）⇒ 调用前必须做 −0.5 XZ 预补偿，
- * 否则光束轴偏离起点（设计稿 §2.1 已知坑）。
+ * 否则光束轴偏离起点（设计稿 §2.1 已知坑）。⚠️ 它内部画**两趟**（beam 不透明 + glow
+ * 半透明外晕，两个 RenderType）⇒ 调用方必须**两趟都 flush**，只 flush 不透明那趟会让
+ * 光晕残留在 Immediate 里被推迟提交（2026-10-16 修）。
  *
  * <h3>方向对齐</h3>
  * 通用公式与 {@link LivingToolModelRenderer#drawModel} 同款：
@@ -93,11 +95,14 @@ public final class LivingBeamRenderer {
     /**
      * 渲染入口 —— 由 {@code LivingItemClient} 转发 {@link RenderLevelStageEvent}。
      *
-     * <p>挂在 {@link RenderLevelStageEvent.Stage#AFTER_ENTITIES}：地形与实体的深度已写入，
-     * 光束被正确遮挡（与本地 clip 形成双保险）。</p>
+     * <p>挂在 {@link RenderLevelStageEvent.Stage#AFTER_BLOCK_ENTITIES}：<b>与原版信标
+     * （BlockEntityRenderer）同段</b>。这是 2026-10-16 用户实测「开光影时原版光束发光亮亮、
+     * 我们的暗淡」的修法——光影（Oculus/BSL 类延迟渲染）按渲染段分派 G-buffer / emissive
+     * 通道，原版 BE 发光体所在段才会被 bloom 捕获；此前挂在 {@code AFTER_ENTITIES}（早一段）
+     * ⇒ 不进后处理 ⇒ 暗。深度双保险不变：BE 段时地形 / 实体 / BE 深度均已写入。</p>
      */
     public static void render(RenderLevelStageEvent event) {
-        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_ENTITIES) {
+        if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_BLOCK_ENTITIES) {
             return;
         }
 
@@ -117,8 +122,11 @@ public final class LivingBeamRenderer {
         drew |= renderChestHosts(level, poseStack, buffers, cameraPos, partialTick);
 
         if (drew) {
-            // 必须显式 flush，否则本帧不保证会画出来
+            // ⚠️ 必须 flush 两趟：renderBeaconBeam 内部画 beam（不透明）+ glow（半透明外晕），
+            // 用的是两个不同 RenderType。此前只 flush 了不透明那趟 ⇒ glow 残留在 Immediate 里
+            // 被主线推迟到错误时机提交 ⇒ 光晕丢失/错乱（「光束暗淡」的共因，不开光影也在）。
             buffers.endBatch(RenderType.beaconBeam(BeaconRenderer.BEAM_LOCATION, false));
+            buffers.endBatch(RenderType.beaconBeam(BeaconRenderer.BEAM_LOCATION, true));
         }
     }
 

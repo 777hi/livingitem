@@ -112,9 +112,13 @@ public static void renderBeaconBeam(
 > （箱子宿主起点恰好是方块中心，天然对齐；玩家宿主需补偿。）
 
 **② 挂载点现成。**
-`RenderLevelStageEvent`（`AFTER_ENTITIES` 阶段）—— `LivingItemClient.onRenderLevelStage`
+`RenderLevelStageEvent`（**`AFTER_BLOCK_ENTITIES` 阶段**——2026-10-16 用户实测「开光影原版亮我们暗」
+后从 `AFTER_ENTITIES` 改：必须与原版信标（BlockEntityRenderer）同段，光影才把我们当同一类发光体
+送进 bloom；深度双保险不变）—— `LivingItemClient.onRenderLevelStage`
 已转发给 `LivingToolRayRenderer` / `LivingToolModelRenderer`
 ⇒ 活信标光束挂**同一事件**，是第 3 个消费者，**零新增基础设施**。
+⚠️ 直调 `renderBeaconBeam` 后必须**两趟 flush**（beam 不透明 + glow 半透明是两个 RenderType）——
+漏 glow 那趟 ⇒ 光晕被推迟提交 ⇒ 暗淡（不开光影也在）。
 
 **③ 方向对齐写法可复用。**
 玩家宿主（顶面法线方向）用 `LivingToolModelRenderer.drawModel` 的
