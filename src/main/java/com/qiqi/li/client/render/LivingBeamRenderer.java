@@ -28,6 +28,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
@@ -220,14 +221,34 @@ public final class LivingBeamRenderer {
         for (int i = 0; i < limit; i++) {
             BlockState state = level.getBlockState(pos);
             Integer color = state.getBeaconColorMultiplier(level, pos.immutable(), from);
-            boolean opaque = state.canOcclude();
-            out.add(new BeamColorSections.Observation(color, opaque));
-            if (opaque) {
-                break;   // 不透明 ⇒ 后面的颜色不算（与原版同口径）
+            // 截断判据与光束截断同一处口径（原版 tick 循环里就是同一支判断）
+            boolean blocking = blocksBeam(level, pos.immutable());
+            out.add(new BeamColorSections.Observation(color, blocking));
+            if (blocking) {
+                break;   // 遮光 ⇒ 后面的颜色不算（与原版同口径）
             }
             pos.move(Direction.UP);
         }
         return out;
+    }
+
+    /**
+     * 「遮光」判据 —— **逐字对齐原版** {@code BeaconBlockEntity.tick}：
+     * {@code blockstate.getLightBlock(level, pos) >= 15 && !blockstate.is(Blocks.BEDROCK)}。
+     *
+     * <p>2026-10-16 用户要求对齐。此前我们用 {@code canOcclude()}——绝大多数方块结论一致
+     * （石 / 土 / 木板挡，玻璃 / 玻璃板 / 铁栏 / 树叶 / 台阶过），但有两个边缘差异：
+     * ① <b>基岩</b>：原版特意排除 {@code BEDROCK} ⇒ 原版光束<b>能穿过基岩层</b>，
+     * canOcclude 会把它挡住；② 遮光等级口径比「能否遮挡邻面」更宽（存在 canOcclude=false
+     * 但遮光 ≥15 的方块，原版挡、我们不挡）。</p>
+     *
+     * <p>⚠️ 表现层仍未对齐（有意保留）：原版被遮光块盖住时 {@code clear()} 让
+     * {@code beamSections} 变空 ⇒ <b>整根消失</b>；我们截断到遮挡面，保留盖下一截
+     * （视觉差异极小，且「从箱口到盖底有一截」在活物品场景里更合理）。</p>
+     */
+    private static boolean blocksBeam(ClientLevel level, BlockPos pos) {
+        BlockState state = level.getBlockState(pos);
+        return state.getLightBlock(level, pos) >= 15 && !state.is(Blocks.BEDROCK);
     }
 
     /**
@@ -280,16 +301,16 @@ public final class LivingBeamRenderer {
     }
 
     /**
-     * 求「被<b>不透明</b>方块截断」的终点（设计稿 §4 规则 5）。
+     * 求「被<b>遮光</b>方块截断」的终点（设计稿 §4 规则 5；判据逐字对齐原版）。
      *
      * <p>⚠️ <b>不能直接用 {@code level.clip} 的结果</b>：玻璃 / 玻璃板 / 铁栏 / 树叶 / 台阶
      * 都有完整碰撞形状 ⇒ 会被当成"挡住了"（用户实测 2026-10-16「光束不能穿透玻璃」）。
-     * 判据用 {@code BlockState.canOcclude()}：只有会遮住邻面的实心方块（石 / 土 / 木板 /
-     * 羊毛…）才截断；带 {@code noOcclusion()} 的一律穿过（玻璃 / 染色玻璃 / 树叶 / 铁栏 /
-     * 台阶 / 火把…）。流体本就 {@code Fluid.NONE} 不参与。</p>
+     * 判据走 {@link #blocksBeam}（{@code getLightBlock ≥ 15 && !bedrock}，与原版
+     * {@code BeaconBlockEntity.tick} 逐字一致）：石头 / 土 / 木板 / 羊毛等实心方块截断；
+     * 玻璃 / 染色玻璃 / 树叶 / 铁栏 / 台阶 / <b>基岩</b>一律穿过。</p>
      *
-     * <p>实现：命中透明方块 ⇒ 从命中点往前挪一小步继续打；<b>同一方块只判一次</b>
-     * （{@code skipped} 守卫，避免从方块内部反复命中它而死循环），直到命中不透明方块或到长度上限。
+     * <p>实现：命中非遮光方块 ⇒ 从命中点往前挪一小步继续打；<b>同一方块只判一次</b>
+     * （{@code skipped} 守卫，避免从方块内部反复命中它而死循环），直到命中遮光方块或到长度上限。
      * 常见场景（天空 / 实心地形）仍是单次 clip —— 只有真的遇到透明方块才会多打几发。</p>
      */
     private static Vec3 opaqueHitEnd(ClientLevel level, Vec3 start, Vec3 dir, int maxLength) {
@@ -303,8 +324,8 @@ public final class LivingBeamRenderer {
                 return end;                                  // 一路无遮挡
             }
             BlockPos pos = hit.getBlockPos();
-            if (!pos.equals(skipped) && level.getBlockState(pos).canOcclude()) {
-                return hit.getLocation();                    // 不透明 ⇒ 就在这里截断
+            if (!pos.equals(skipped) && blocksBeam(level, pos)) {
+                return hit.getLocation();                    // 遮光 ⇒ 就在这里截断
             }
             skipped = pos;
             from = hit.getLocation().add(dir.scale(CLIP_STEP));   // 透明 ⇒ 跳过继续
