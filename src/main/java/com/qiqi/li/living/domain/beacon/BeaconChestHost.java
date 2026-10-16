@@ -45,6 +45,13 @@ public final class BeaconChestHost {
     /** 开盖重发周期（tick）—— 1 秒（U11 定值）。 */
     private static final long LID_RESEND_TICKS = 20;
 
+    /**
+     * 「从未开盖」哨兵 —— ⚠️ 不能用 {@code Long.MIN_VALUE}：{@code gameTime - Long.MIN_VALUE}
+     * 会 **long 溢出成负数** ⇒ 重发条件永假 ⇒ 一次都没发过 blockEvent（2026-10-16 用户实测
+     * 「箱子不会保持盖子开启」的根因）。gameTime 非负 ⇒ {@code -1} 安全无溢出。
+     */
+    private static final long NEVER = -1L;
+
     private record Host(BlockPos hostPos, List<BlockPos> lidPositions, int level, long lastLidTick) {
     }
 
@@ -77,7 +84,7 @@ public final class BeaconChestHost {
         if (cacheKey == null || hostPos == null || lidPositions == null || lidPositions.isEmpty()) {
             return;
         }
-        current.put(cacheKey, new Host(hostPos.immutable(), List.copyOf(lidPositions), level, Long.MIN_VALUE));
+        current.put(cacheKey, new Host(hostPos.immutable(), List.copyOf(lidPositions), level, NEVER));
     }
 
     /**
@@ -104,8 +111,8 @@ public final class BeaconChestHost {
         for (Map.Entry<String, Host> e : current.entrySet()) {
             Host h = e.getValue();
             Host prev = active.get(e.getKey());
-            long last = prev != null ? prev.lastLidTick() : Long.MIN_VALUE;
-            if (gameTime - last >= LID_RESEND_TICKS) {
+            long last = prev != null ? prev.lastLidTick() : NEVER;
+            if (last == NEVER || gameTime - last >= LID_RESEND_TICKS) {
                 for (BlockPos pos : h.lidPositions()) {
                     sendLid(level, pos, true);
                 }

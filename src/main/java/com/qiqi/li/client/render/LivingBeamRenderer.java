@@ -342,11 +342,15 @@ public final class LivingBeamRenderer {
         int yOffset = 0;
         for (int i = 0; i < sections.size(); i++) {
             BeamColorSections.Section section = sections.get(i);
+            int remain = height - yOffset;
+            if (remain <= 0) {
+                break;                       // 高度用尽 ⇒ 后面段无意义
+            }
             int segHeight = (i == sections.size() - 1)
-                ? height - yOffset                                   // 最后一段 ⇒ 一直画到终点
-                : Math.min(section.height(), height - yOffset);
+                ? remain                                           // 最后一段 ⇒ 一直画到终点
+                : Math.min(section.height(), remain);
             if (segHeight <= 0) {
-                break;
+                continue;                    // 0 高段跳过（信标自身格等），不是终止条件
             }
             BeaconRenderer.renderBeaconBeam(
                 poseStack, buffers, BeaconRenderer.BEAM_LOCATION, partialTick, 1.0F,

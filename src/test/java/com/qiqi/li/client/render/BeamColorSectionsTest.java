@@ -1,6 +1,7 @@
 package com.qiqi.li.client.render;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 
@@ -13,7 +14,8 @@ import net.minecraft.util.FastColor;
  * BeamColorSections 纯逻辑测试（照原版 {@code BeaconBlockEntity} 扫描算法）。
  *
  * <p>判据来源：原版源码（2026-10-16 核）—— 首块染色方块纯色、第 2 块仍纯色、
- * 第 3 块起异色取平均；非染色方块加高；不透明停止。我们以"白段高度 0"起步。</p>
+ * 第 3 块起异色取平均；非染色方块加高；不透明停止。我们以"白段高度 1"起步
+ * （= 原版信标自身那一格）。</p>
  */
 class BeamColorSectionsTest {
 
@@ -48,11 +50,14 @@ class BeamColorSectionsTest {
     }
 
     @Test
-    @DisplayName("第一格就是玻璃 ⇒ 白段高度 0 + 玻璃色段覆盖全部")
+    @DisplayName("第一格就是玻璃 ⇒ 白段高度 1（信标自身格）+ 玻璃色段覆盖其余")
     void glassAdjacent() {
         var sections = BeamColorSections.build(List.of(glass(RED), air(), air()), WHITE);
         assertEquals(2, sections.size());
-        assertEquals(new BeamColorSections.Section(WHITE, 0), sections.get(0));
+        // ⚠️ 契约：首段高度必须 ≥ 1 —— 渲染循环曾把 0 高段当终止条件 ⇒ 贴着放玻璃时一条不画
+        // （2026-10-16 用户实测「贴箱口放玻璃光束消失、隔一格正常」的根因）
+        assertTrue(sections.get(0).height() >= 1);
+        assertEquals(new BeamColorSections.Section(WHITE, 1), sections.get(0));
         assertEquals(new BeamColorSections.Section(RED, 3), sections.get(1));
     }
 
@@ -61,7 +66,7 @@ class BeamColorSectionsTest {
     void glassNotAdjacent() {
         var sections = BeamColorSections.build(List.of(air(), air(), glass(RED), air()), WHITE);
         assertEquals(2, sections.size());
-        assertEquals(new BeamColorSections.Section(WHITE, 2), sections.get(0));
+        assertEquals(new BeamColorSections.Section(WHITE, 3), sections.get(0));
         assertEquals(new BeamColorSections.Section(RED, 2), sections.get(1));
     }
 
@@ -79,7 +84,7 @@ class BeamColorSectionsTest {
         var sections = BeamColorSections.build(
             List.of(glass(RED), glass(RED), glass(BLUE), air()), WHITE);
         assertEquals(3, sections.size());
-        assertEquals(new BeamColorSections.Section(WHITE, 0), sections.get(0));
+        assertEquals(new BeamColorSections.Section(WHITE, 1), sections.get(0));
         assertEquals(new BeamColorSections.Section(RED, 2), sections.get(1));
         assertEquals(new BeamColorSections.Section(FastColor.ARGB32.average(RED, BLUE), 2), sections.get(2));
     }
@@ -98,7 +103,7 @@ class BeamColorSectionsTest {
     void airThenGlass() {
         var sections = BeamColorSections.build(List.of(air(), glass(BLUE), air(), air()), WHITE);
         assertEquals(2, sections.size());
-        assertEquals(new BeamColorSections.Section(WHITE, 1), sections.get(0));
+        assertEquals(new BeamColorSections.Section(WHITE, 2), sections.get(0));
         assertEquals(new BeamColorSections.Section(BLUE, 3), sections.get(1));
     }
 
