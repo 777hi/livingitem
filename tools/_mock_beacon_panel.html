@@ -120,14 +120,16 @@ function drawPanel(canvas, st){
       g.fillStyle = hex(C.gap);
       for(let y=targetY(t)-1; y>=plotY(h); y-=3) g.fillRect(x, y, BAR, 1);
     }
-    if(h>0){                                       // 现状柱（中心列高亮）
-      const top = plotY(Math.min(h,MAXH));
-      g.fillStyle = hex(c===4 ? C.bar : C.barDim);
-      g.fillRect(x, top, BAR, BASE_Y-top);
+    if(t>0){                                       // 柱高钳到该列目标 ⇒ 实心柱即金字塔填充版
+      const top = plotY(Math.min(h,t));
+      if(top < BASE_Y){
+        g.fillStyle = hex(c===4 ? C.bar : C.barDim);
+        g.fillRect(x, top, BAR, BASE_Y-top);
+      }
     }
-    if(h>MAXH){                                    // 溢出帽
+    if(t>0 && h>t){                                // 超额金帽：贴该列刻度线上方
       g.fillStyle = hex(C.cap);
-      g.fillRect(x, PLOT_TOP-3, BAR, 3);
+      g.fillRect(x, targetY(t)-3, BAR, 3);
     }
     let label=null, col=null, numTop=null;
     if(t>0 && h<t){ label=String(t); col=C.goalNum; numTop=targetY(t); }  // 未达标：目标值（溢出不标数字，金帽表意）

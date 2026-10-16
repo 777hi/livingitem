@@ -72,24 +72,34 @@ public final class BeaconPanelGeometry {
     }
 
     /**
-     * 溢出（{@code > MAX_H}）⇒ 压成 3px 金帽，**不伸高、不标数字**。
+     * 柱顶 y——**柱高钳到该列自己的目标**（而非全局满程 24）。
      *
-     * <p>2026-10-16 用户实测反馈：此前溢出列标绝对高度（玩家堆满 ⇒ 面板顶一排金色「64」），
-     * 而超过目标的部分设计上就是「多堆不亏」，该数字零决策价值还误导（像在说"需要 64"）。
-     * 改后**面板数字只剩一个语义：这列还没到位、要堆到这么多**；超额由金帽单独表意。</p>
+     * <p>2026-10-16 用户实测反馈「为什么都是平行的、不是金字塔状」：柱高若按实际堆叠数
+     * （clamp 24）绘制，玩家把 9 列堆成一样多时就是 9 根平顶柱，金字塔形状只存在于
+     * 1px 刻度线上，扛不住视觉。改为钳到该列目标后，**实心柱本身就是金字塔的填充版**：
+     * 达标列柱顶贴刻度线、超额列贴线 + 金帽、欠缺列凹下去 + 横纹 ⇒ 任何时刻看过去都是
+     * 一座「在建中的金字塔」，缺哪列凹哪里。非参与列（target=0）不画柱（基线即顶）。</p>
      */
-    public static boolean isOverflow(long height) {
-        return height > MAX_H;
+    public static int columnTopY(long height, int target) {
+        if (target <= 0) {
+            return BASE_Y;                    // 非参与列：不画柱
+        }
+        return plotY(Math.min(height, target));
     }
 
     /**
-     * 未达标列的<b>目标值</b>数字（行动指令口径，非差额）；达标 / 溢出 / 非参与列 ⇒ {@code -1}（不画）。
+     * 未达标列的<b>目标值</b>数字（行动指令口径，非差额）；达标 / 超额 / 非参与列 ⇒ {@code -1}（不画）。
      *
      * <p>「数字从差额 −7 改为目标值 15」——玩家不心算加法；数字贴着刻度线，
      * 「目标标记」是线 + 数的整体（设计稿 §2.6.2 提示逻辑 ①）。</p>
      */
     public static int goalLabel(long height, int target) {
-        return !isOverflow(height) && target > 0 && height < target ? target : -1;
+        return target > 0 && height < target ? target : -1;
+    }
+
+    /** 该列是否已超额（堆叠数 > 目标）⇒ 画金帽（贴刻度线上方，不伸高、不标数字）。 */
+    public static boolean isOverTarget(long height, int target) {
+        return target > 0 && height > target;
     }
 
     /**

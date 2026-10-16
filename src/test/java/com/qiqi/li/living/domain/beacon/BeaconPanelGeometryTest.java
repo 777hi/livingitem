@@ -72,16 +72,38 @@ class BeaconPanelGeometryTest {
     }
 
     @Test
-    @DisplayName("数字取舍：未达标⇒目标值；达标/超额/溢出/非参与⇒一律不画")
+    @DisplayName("数字取舍：未达标⇒目标值；达标/超额/非参与⇒一律不画")
     void labels() {
         assertEquals(15, BeaconPanelGeometry.goalLabel(8, 15));
         assertEquals(-1, BeaconPanelGeometry.goalLabel(15, 15));
-        assertEquals(-1, BeaconPanelGeometry.goalLabel(20, 15));  // 超额但不溢出 ⇒ 无数字
+        assertEquals(-1, BeaconPanelGeometry.goalLabel(20, 15));  // 超额 ⇒ 无数字（金帽表意）
         assertEquals(-1, BeaconPanelGeometry.goalLabel(0, 0));    // 非参与列
-        assertEquals(-1, BeaconPanelGeometry.goalLabel(32, 15));  // 溢出 ⇒ 无数字（金帽表意）
 
-        assertFalse(BeaconPanelGeometry.isOverflow(24));
-        assertTrue(BeaconPanelGeometry.isOverflow(25));
+        assertTrue(BeaconPanelGeometry.isOverTarget(16, 15));
+        assertFalse(BeaconPanelGeometry.isOverTarget(15, 15));
+        assertFalse(BeaconPanelGeometry.isOverTarget(64, 0));     // 非参与列无帽
+    }
+
+    @Test
+    @DisplayName("柱顶钳到该列目标 ⇒ 实心柱即金字塔填充版（中间高两边低天然成立）")
+    void columnTopClampsToTarget() {
+        // 达标 / 超额 ⇒ 柱顶贴该列刻度线
+        assertEquals(BeaconPanelGeometry.targetY(24), BeaconPanelGeometry.columnTopY(24, 24));
+        assertEquals(BeaconPanelGeometry.targetY(24), BeaconPanelGeometry.columnTopY(64, 24));
+        assertEquals(BeaconPanelGeometry.targetY(9), BeaconPanelGeometry.columnTopY(30, 9));
+        // 未达标 ⇒ 按实际高度
+        assertEquals(BeaconPanelGeometry.plotY(8), BeaconPanelGeometry.columnTopY(8, 15));
+        // 非参与列（target=0）⇒ 基线（不画柱）
+        assertEquals(BeaconPanelGeometry.BASE_Y, BeaconPanelGeometry.columnTopY(64, 0));
+        // L4 满配：9 根柱高度 = 9-16-21-24-24-24-21-16-9 ⇒ 金字塔剪影
+        int[] l4 = {9, 16, 21, 24, 24, 24, 21, 16, 9};
+        int center = BeaconPanelGeometry.columnTopY(l4[4], l4[4]);
+        int edge = BeaconPanelGeometry.columnTopY(l4[0], l4[0]);
+        assertTrue(center < edge);   // y 更小 = 更高 ⇒ 中间高两边低
+        for (int c = 0; c < 9; c++) {
+            assertEquals(BeaconPanelGeometry.targetY(l4[c]),
+                BeaconPanelGeometry.columnTopY(l4[c], l4[c]));
+        }
     }
 
     @Test

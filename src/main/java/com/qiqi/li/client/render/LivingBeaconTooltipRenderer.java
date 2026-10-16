@@ -18,10 +18,11 @@ import net.minecraft.network.chat.Component;
  *
  * <p><b>元素编码</b>（每列独立，9 段阶梯刻度而非水平目标线——各列目标高度各异）：</p>
  * <ul>
- *   <li><b>实心柱</b> = 现状（中心列 = 信标列亮青，其余列暗青）；</li>
+ *   <li><b>实心柱</b> = 现状，**柱高钳到该列自己的目标**（中间高两边低天然成立 ⇒
+ *       实心柱即「金字塔的填充版」，任何时刻都是一座在建中的金字塔）；</li>
  *   <li><b>阶梯刻度线</b> = 该列自己的目标高度（琥珀；满级档金色），仅未达标列；</li>
  *   <li><b>横纹缺口</b> = 待填区（柱顶 → 刻度，3px 一条 1px 线）；</li>
- *   <li><b>金帽</b> = 溢出（{@code >24}，不伸高、不标数字——超额无决策价值，金帽单独表意）；</li>
+ *   <li><b>金帽</b> = 该列已超额（堆叠 > 目标），贴刻度线上方 3px（不伸高、不标数字——超额无决策价值）；</li>
  *   <li><b>1px 竖虚线</b> = 越界列（被容器边界钳制，别填了）——与「空槽 = 什么都不画」区分；</li>
  *   <li><b>数字</b> = 未达标列标<b>目标值</b>（行动指令口径，非差额）；达标列无数字。</li>
  * </ul>
@@ -115,19 +116,25 @@ public class LivingBeaconTooltipRenderer implements ClientTooltipComponent {
             int gap = BeaconPanelGeometry.gapHeight(h, t);
             if (gap > 0) {
                 // 横纹从柱顶画到刻度（y 从 targetY 递增到 plotY）
-                int top = BeaconPanelGeometry.plotY(h);
+                int top = BeaconPanelGeometry.columnTopY(h, t);
                 for (int yy = BeaconPanelGeometry.targetY(t); yy < top; yy += 3) {
                     g.fill(px, y + yy, px + BeaconPanelGeometry.BAR_W, y + yy + 1, GAP_COLOR);
                 }
             }
-            if (h > 0) {
-                int top = BeaconPanelGeometry.plotY(h);
-                g.fill(px, y + top, px + BeaconPanelGeometry.BAR_W, y + BeaconPanelGeometry.BASE_Y,
-                    c == BeaconPyramid.CENTER ? BAR_COLOR : BAR_DIM_COLOR);
+            if (t > 0) {
+                // 柱高钳到该列目标 ⇒ 实心柱即「金字塔的填充版」（中间高两边低天然成立）
+                int top = BeaconPanelGeometry.columnTopY(h, t);
+                if (top < BeaconPanelGeometry.BASE_Y) {
+                    g.fill(px, y + top, px + BeaconPanelGeometry.BAR_W,
+                        y + BeaconPanelGeometry.BASE_Y,
+                        c == BeaconPyramid.CENTER ? BAR_COLOR : BAR_DIM_COLOR);
+                }
             }
-            if (BeaconPanelGeometry.isOverflow(h)) {
-                g.fill(px, y + BeaconPanelGeometry.PLOT_TOP - BeaconPanelGeometry.CAP_H,
-                    px + BeaconPanelGeometry.BAR_W, y + BeaconPanelGeometry.PLOT_TOP, CAP_COLOR);
+            if (BeaconPanelGeometry.isOverTarget(h, t)) {
+                // 超额：金帽贴该列刻度线上方（不伸高、不标数字——超额无决策价值）
+                g.fill(px, y + BeaconPanelGeometry.targetY(t) - BeaconPanelGeometry.CAP_H,
+                    px + BeaconPanelGeometry.BAR_W, y + BeaconPanelGeometry.targetY(t),
+                    CAP_COLOR);
             }
             drawColumnLabel(font, g, y, px, h, t);
         }
