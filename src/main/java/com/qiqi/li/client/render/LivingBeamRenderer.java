@@ -242,9 +242,10 @@ public final class LivingBeamRenderer {
      * canOcclude 会把它挡住；② 遮光等级口径比「能否遮挡邻面」更宽（存在 canOcclude=false
      * 但遮光 ≥15 的方块，原版挡、我们不挡）。</p>
      *
-     * <p>⚠️ 表现层仍未对齐（有意保留）：原版被遮光块盖住时 {@code clear()} 让
-     * {@code beamSections} 变空 ⇒ <b>整根消失</b>；我们截断到遮挡面，保留盖下一截
-     * （视觉差异极小，且「从箱口到盖底有一截」在活物品场景里更合理）。</p>
+     * <p>⚠️ 表现层**有意不对齐**（用户 2026-10-16 拍板）：原版被遮光块盖住时 {@code clear()} 让
+     * {@code beamSections} 变空 ⇒ <b>整根消失</b>，且连带 buff 停 / 等级重算停（原版"必须通天"）；
+     * 我们只截断到遮挡面、保留盖下一截，<b>buff 与等级完全不受影响</b>——密闭箱子 / 地下室也生效
+     * 是玩法增强，不强制玩家搭通天柱。</p>
      */
     private static boolean blocksBeam(ClientLevel level, BlockPos pos) {
         BlockState state = level.getBlockState(pos);
