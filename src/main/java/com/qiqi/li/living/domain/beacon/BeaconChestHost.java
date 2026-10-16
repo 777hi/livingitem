@@ -33,8 +33,14 @@ import net.minecraft.world.level.block.state.BlockState;
  */
 public final class BeaconChestHost {
 
-    /** 同步半径（格）—— 与原版破坏裂纹广播半径一致（K2 同款）。 */
-    private static final double RADIUS = 32.0;
+    /**
+     * 同步半径（格）—— <b>256，对齐原版</b>（{@code BeaconRenderer.getViewDistance()}，
+     * 2026-10-16 用户定「和原版差不多」，取代 K2 的 32）。
+     *
+     * <p>代价可忽略：条目只有位置 + 等级（十几字节），且<b>只在内容变化时才发</b>
+     * （不是每 tick）⇒ 稳态零流量。</p>
+     */
+    private static final double RADIUS = 256.0;
 
     /** 开盖重发周期（tick）—— 1 秒（U11 定值）。 */
     private static final long LID_RESEND_TICKS = 20;
@@ -150,11 +156,14 @@ public final class BeaconChestHost {
         level.blockEvent(pos, state.getBlock(), 1, open ? 1 : 0);
     }
 
-    /** 距离判定：玩家到方块中心的球面距离（R² = 32²，与原版破坏裂纹广播一致）。 */
+    /**
+     * 距离判定：<b>只算水平距离</b>（Y 清零）—— 对齐原版 {@code BeaconRenderer.shouldRender}
+     * 的判据（{@code Vec3.atCenterOf(pos).multiply(1,0,1).closerThan(camera.multiply(1,0,1), 256)}），
+     * 这样"谷底看山顶的箱子光束"也成立。
+     */
     private static boolean inRange(ServerPlayer player, BlockPos pos) {
-        double d0 = player.getX() - (pos.getX() + 0.5);
-        double d1 = player.getY() - (pos.getY() + 0.5);
-        double d2 = player.getZ() - (pos.getZ() + 0.5);
-        return d0 * d0 + d1 * d1 + d2 * d2 < RADIUS * RADIUS;
+        double dx = player.getX() - (pos.getX() + 0.5);
+        double dz = player.getZ() - (pos.getZ() + 0.5);
+        return dx * dx + dz * dz < RADIUS * RADIUS;
     }
 }

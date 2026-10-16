@@ -56,8 +56,12 @@ import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
  */
 public final class LivingBeamRenderer {
 
-    /** 无遮挡时光束长度上限（格）—— U4 定值 256。 */
-    public static final int MAX_BEAM_LENGTH = 256;
+    /**
+     * 无遮挡时光束长度上限（格）—— <b>1024，对齐原版</b>
+     * （{@code BeaconRenderer.MAX_RENDER_Y}；2026-10-16 用户定「和原版差不多」，
+     * 取代 U4 原值 256）。
+     */
+    public static final int MAX_BEAM_LENGTH = 1024;
 
     /** 光束颜色 —— U3 未定，用原版信标白。 */
     private static final int BEAM_COLOR = 0xFFFFFF;
@@ -159,6 +163,11 @@ public final class LivingBeamRenderer {
             BeaconHostClientCache.get(level.dimension().location());
         boolean drew = false;
         for (BeaconHostPacket.Entry entry : hosts) {
+            // 未加载区块不画 —— 否则会在"还没画出来的地形"上悬一条光束
+            // （半径 256 覆盖到视距之外时必然出现，原版是方块没这问题）
+            if (!level.hasChunkAt(entry.pos())) {
+                continue;
+            }
             // 起点 = 箱口顶部中心（方块顶面；0.875 的盖面差在视觉上不可见）
             Vec3 start = Vec3.atBottomCenterOf(entry.pos()).add(0.0, 1.0, 0.0);
             drew |= renderBeamAlong(poseStack, buffers, cameraPos, partialTick, level,

@@ -26,8 +26,15 @@ import net.minecraft.server.level.ServerPlayer;
  */
 public final class BeaconPlayerHostSync {
 
-    /** 广播半径（格）—— 与 {@code BeaconChestHost.RADIUS} 保持一致。 */
-    public static final double RADIUS = 32.0;
+    /**
+     * 广播半径（格）—— <b>256，对齐原版</b>（{@code BeaconRenderer.getViewDistance()}，
+     * 与 {@code BeaconChestHost.RADIUS} 保持一致）。
+     *
+     * <p>玩家宿主的<b>实际</b>上限另有天花板：对方玩家实体本身要同步给你（玩家实体
+     * {@code clientTrackingRange = 32} 区块，实际受你的视距限制）⇒ 半径 256 已足够
+     * "你看得见他，就看得见他的光束"。</p>
+     */
+    public static final double RADIUS = 256.0;
 
     /** 本 tick 登记的玩家宿主（UUID → 最高激活等级；由 {@code BeaconFunction#tick} 填入）。 */
     private static final Map<UUID, Integer> current = new LinkedHashMap<>();
@@ -67,7 +74,6 @@ public final class BeaconPlayerHostSync {
 
         // ② 逐个观察者：滤出"别人的、且在半径内的"，内容变了才发
         ResourceLocation dimension = level.dimension().location();
-        double r2 = RADIUS * RADIUS;
         Map<UUID, List<BeaconPlayerHostPacket.Entry>> next = new HashMap<>();
         for (ServerPlayer viewer : players) {
             if (viewer.level() != level) {
@@ -79,8 +85,7 @@ public final class BeaconPlayerHostSync {
                     continue;   // 自己那份走本机渲染
                 }
                 ServerPlayer owner = playerList.getPlayer(entry.playerId());
-                if (owner != null && owner.level() == level
-                        && owner.position().distanceToSqr(viewer.position()) < r2) {
+                if (owner != null && owner.level() == level && withinHorizontal(owner, viewer)) {
                     mine.add(entry);
                 }
             }
@@ -98,5 +103,15 @@ public final class BeaconPlayerHostSync {
     public static void clear() {
         current.clear();
         lastSent.clear();
+    }
+
+    /**
+     * 距离判定：<b>只算水平距离</b>（Y 清零）—— 对齐原版 {@code BeaconRenderer.shouldRender}
+     * 的判据，与 {@code BeaconChestHost} 同口径。
+     */
+    private static boolean withinHorizontal(ServerPlayer owner, ServerPlayer viewer) {
+        double dx = owner.getX() - viewer.getX();
+        double dz = owner.getZ() - viewer.getZ();
+        return dx * dx + dz * dz < RADIUS * RADIUS;
     }
 }
