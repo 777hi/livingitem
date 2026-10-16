@@ -21,7 +21,7 @@ import net.minecraft.network.chat.Component;
  *   <li><b>实心柱</b> = 现状（中心列 = 信标列亮青，其余列暗青）；</li>
  *   <li><b>阶梯刻度线</b> = 该列自己的目标高度（琥珀；满级档金色），仅未达标列；</li>
  *   <li><b>横纹缺口</b> = 待填区（柱顶 → 刻度，3px 一条 1px 线）；</li>
- *   <li><b>金帽 + 数字</b> = 溢出（{@code >24}），数字 = 实际高度；</li>
+ *   <li><b>金帽</b> = 溢出（{@code >24}，不伸高、不标数字——超额无决策价值，金帽单独表意）；</li>
  *   <li><b>1px 竖虚线</b> = 越界列（被容器边界钳制，别填了）——与「空槽 = 什么都不画」区分；</li>
  *   <li><b>数字</b> = 未达标列标<b>目标值</b>（行动指令口径，非差额）；达标列无数字。</li>
  * </ul>
@@ -129,7 +129,7 @@ public class LivingBeaconTooltipRenderer implements ClientTooltipComponent {
                 g.fill(px, y + BeaconPanelGeometry.PLOT_TOP - BeaconPanelGeometry.CAP_H,
                     px + BeaconPanelGeometry.BAR_W, y + BeaconPanelGeometry.PLOT_TOP, CAP_COLOR);
             }
-            drawColumnLabel(font, g, x, y, px, h, t);
+            drawColumnLabel(font, g, y, px, h, t);
         }
 
         // ── 底部双读数 ──────────────────────────────────────────
@@ -143,7 +143,8 @@ public class LivingBeaconTooltipRenderer implements ClientTooltipComponent {
                 level + 1, deficit);
         }
         Component right = full
-            ? Component.translatable("tooltip.livingitem.beacon.panel.stacked", (int) stacked)
+            ? Component.translatable("tooltip.livingitem.beacon.panel.need_total",
+                (int) BeaconPyramid.totalForLevel(BeaconPyramid.MAX_LEVEL))
             : Component.literal(stacked + "/" + BeaconPyramid.totalForLevel(level + 1));
 
         g.drawString(font, left, x + BeaconPanelGeometry.X0,
@@ -154,30 +155,20 @@ public class LivingBeaconTooltipRenderer implements ClientTooltipComponent {
     }
 
     /**
-     * 柱顶数字：溢出列标绝对高度（金帽上方），未达标列标<b>目标值</b>（刻度线上方）；
-     * 达标列与非参与列不画——「干净」本身就是「没问题」的表达。
+     * 柱顶数字：**只有未达标列标目标值**（贴着刻度线）；达标列 / 溢出列 / 非参与列一律不画——
+     * 「干净」本身就是「没问题」的表达，超额由金帽单独表意（2026-10-16 用户实测：
+     * 溢出列曾标绝对高度，堆满 64 时面板顶一排金色「64」，零决策价值还误导）。
      */
-    private void drawColumnLabel(Font font, GuiGraphics g, int panelX, int panelY,
+    private void drawColumnLabel(Font font, GuiGraphics g, int panelY,
                                  int px, long height, int target) {
-        long overflow = BeaconPanelGeometry.overflowLabel(height);
         int goal = BeaconPanelGeometry.goalLabel(height, target);
-        Component label;
-        int color;
-        int numTop;
-        if (overflow >= 0) {
-            label = Component.literal(String.valueOf(overflow));
-            color = CAP_COLOR;
-            numTop = BeaconPanelGeometry.PLOT_TOP - BeaconPanelGeometry.CAP_H;
-        } else if (goal > 0) {
-            label = Component.literal(String.valueOf(goal));
-            color = GOAL_NUM_COLOR;
-            numTop = BeaconPanelGeometry.targetY(target);
-        } else {
+        if (goal <= 0) {
             return;
         }
+        Component label = Component.literal(String.valueOf(goal));
         g.drawString(font, label,
             px + BeaconPanelGeometry.BAR_W / 2 - font.width(label) / 2,
-            panelY + numTop - 9, color, false);
+            panelY + BeaconPanelGeometry.targetY(target) - 9, GOAL_NUM_COLOR, false);
     }
 
     private long heightAt(int column) {

@@ -72,17 +72,16 @@ class BeaconPanelGeometryTest {
     }
 
     @Test
-    @DisplayName("数字取舍：未达标⇒目标值；达标/超额/非参与⇒不画；溢出⇒绝对高度")
+    @DisplayName("数字取舍：未达标⇒目标值；达标/超额/溢出/非参与⇒一律不画")
     void labels() {
         assertEquals(15, BeaconPanelGeometry.goalLabel(8, 15));
         assertEquals(-1, BeaconPanelGeometry.goalLabel(15, 15));
         assertEquals(-1, BeaconPanelGeometry.goalLabel(20, 15));  // 超额但不溢出 ⇒ 无数字
         assertEquals(-1, BeaconPanelGeometry.goalLabel(0, 0));    // 非参与列
+        assertEquals(-1, BeaconPanelGeometry.goalLabel(32, 15));  // 溢出 ⇒ 无数字（金帽表意）
 
         assertFalse(BeaconPanelGeometry.isOverflow(24));
         assertTrue(BeaconPanelGeometry.isOverflow(25));
-        assertEquals(32L, BeaconPanelGeometry.overflowLabel(32));
-        assertEquals(-1L, BeaconPanelGeometry.overflowLabel(24));
     }
 
     @Test

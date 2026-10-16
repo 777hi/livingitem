@@ -71,7 +71,13 @@ public final class BeaconPanelGeometry {
         return true;
     }
 
-    /** 溢出（{@code > MAX_H}）⇒ 压成金帽 + 数字，不伸高。 */
+    /**
+     * 溢出（{@code > MAX_H}）⇒ 压成 3px 金帽，**不伸高、不标数字**。
+     *
+     * <p>2026-10-16 用户实测反馈：此前溢出列标绝对高度（玩家堆满 ⇒ 面板顶一排金色「64」），
+     * 而超过目标的部分设计上就是「多堆不亏」，该数字零决策价值还误导（像在说"需要 64"）。
+     * 改后**面板数字只剩一个语义：这列还没到位、要堆到这么多**；超额由金帽单独表意。</p>
+     */
     public static boolean isOverflow(long height) {
         return height > MAX_H;
     }
@@ -84,11 +90,6 @@ public final class BeaconPanelGeometry {
      */
     public static int goalLabel(long height, int target) {
         return !isOverflow(height) && target > 0 && height < target ? target : -1;
-    }
-
-    /** 溢出列的绝对高度数字（非溢出 ⇒ {@code -1}）。 */
-    public static long overflowLabel(long height) {
-        return isOverflow(height) ? height : -1;
     }
 
     /**

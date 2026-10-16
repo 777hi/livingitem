@@ -131,7 +131,7 @@
   "tooltip.livingitem.beacon.panel.to_next": "to L%d: %d more",
   "tooltip.livingitem.beacon.panel.no_room": "no room - move beacon",
   "tooltip.livingitem.beacon.panel.full": "L4 full",
-  "tooltip.livingitem.beacon.panel.stacked": "%d stacked",
+  "tooltip.livingitem.beacon.panel.need_total": "needs %d",
   "slot.livingitem.input": "Input",
   "slot.livingitem.fuel": "Fuel",
   "slot.livingitem.output": "Output",

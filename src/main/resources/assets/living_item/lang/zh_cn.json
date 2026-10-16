@@ -131,7 +131,7 @@
   "tooltip.livingitem.beacon.panel.to_next": "距 L%d 差 %d 块",
   "tooltip.livingitem.beacon.panel.no_room": "宽度不足，信标内移",
   "tooltip.livingitem.beacon.panel.full": "L4 满配",
-  "tooltip.livingitem.beacon.panel.stacked": "共 %d 块",
+  "tooltip.livingitem.beacon.panel.need_total": "需 %d 块",
   "slot.livingitem.input": "输入",
   "slot.livingitem.fuel": "燃料",
   "slot.livingitem.output": "输出",

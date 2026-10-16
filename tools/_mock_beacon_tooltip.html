@@ -79,7 +79,7 @@
   <div class="g8">&nbsp;&nbsp;4. 跳跃提升 I（绿宝石锭）</div>
   <div class="g8">&nbsp;&nbsp;5. 力量 I（钻石锭）</div>
   <canvas id="c" width="160" height="76"></canvas>
-  <p class="panel-note">▲ L4 full · 164 stacked（满配零数字）</p>
+  <p class="panel-note">▲ L4 full · needs 164（满配零数字）</p>
 </div>
 <p class="diff">满级后底座行让位给免费再生行；面板 9 列全达标 ⇒ <b>一个目标数字都没有</b>，「干净」本身就是「没问题」的表达。</p>
 </div>
@@ -94,7 +94,7 @@
 <tr><td class="new">beacon.sleep_ingot</td><td class="new">新</td><td><code>休眠：信标不足（需 %d 个）</code></td></tr>
 <tr><td class="new">beacon.config_inactive</td><td class="new">新</td><td><code>效果配置 %d 槽（未激活，全部休眠）</code></td></tr>
 <tr><td class="new">beacon.config_empty</td><td class="chg">改</td><td>补规则：<code>…右键喂入：1 锭 = I，2 锭 = II（仅满级）</code></td></tr>
-<tr><td class="new">beacon.panel.*</td><td class="new">新</td><td>面板内文字 4 条（to L{n} / no room / L4 full / stacked）—— <b>canvas 走 drawString(Component)，同样要 zh/en 双份</b></td></tr>
+<tr><td class="new">beacon.panel.*</td><td class="new">新</td><td>面板内文字 4 条（to L{n} / no room / L4 full / needs N）—— <b>canvas 走 drawString(Component)，同样要 zh/en 双份</b></td></tr>
 <tr><td>beacon.status / regen* / config_entry* / config_locked</td><td>—</td><td>不变（标题、再生三档、账本行结构保持现状）</td></tr>
 </table>
 
@@ -145,8 +145,7 @@ function drawPanel(canvas, st){
     }
     if(h>MAXH){ g.fillStyle = hex(C.cap); g.fillRect(x, PLOT_TOP-3, BAR, 3); }
     let label=null, col=null, numTop=null;
-    if(h>MAXH){ label=String(h); col=C.cap; numTop=PLOT_TOP-3; }
-    else if(t>0 && h<t){ label=String(t); col=C.goalNum; numTop=targetY(t); }
+    if(t>0 && h<t){ label=String(t); col=C.goalNum; numTop=targetY(t); }  // 未达标：目标值（溢出不标数字，金帽表意）
     if(label){
       g.font='8px monospace'; g.textBaseline='top'; g.textAlign='center';
       g.fillStyle=hex(col); g.fillText(label, x+BAR/2, numTop-9);
@@ -157,7 +156,7 @@ function drawPanel(canvas, st){
   g.fillText(!reachable ? 'no room for L'+(st.level+1)+' - move beacon'
                         : full ? 'L4 full' : 'to L'+(st.level+1)+': '+deficit+' more', X0, 57);
   g.textAlign='right';
-  g.fillText(full ? stacked+' stacked' : stacked+'/'+TOTALS[st.level], W-8, 57);
+  g.fillText(full ? 'needs '+TOTALS[3] : stacked+'/'+TOTALS[st.level], W-8, 57);
 }
 const ALL = Array(9).fill(true);
 drawPanel(document.getElementById('a'), {heights:[0,0,6,8,8,8,5,0,0], exists:ALL, level:2, regen:'NONE'});

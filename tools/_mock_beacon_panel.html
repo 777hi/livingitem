@@ -34,7 +34,7 @@
 <table>
 <tr><th>元素</th><th>编码</th><th>元素</th><th>编码</th></tr>
 <tr><td>实心柱</td><td>现状（中心列亮青 / 其余暗青）</td><td>横纹缺口</td><td>待填区（柱顶 → 该列刻度）</td></tr>
-<tr><td>刻度线 + 数字</td><td>该列目标高度（琥珀，仅未达标列）</td><td>金帽 + 数字</td><td>溢出（&gt;24），数字 = 实际高度</td></tr>
+<tr><td>刻度线 + 数字</td><td>该列目标高度（琥珀，仅未达标列）</td><td>金帽（无数字）</td><td>溢出（&gt;24）——超额无决策价值，金帽单独表意</td></tr>
 <tr><td>1px 竖虚线</td><td>越界列（被容器边界钳制，别填了）</td><td>底部读数</td><td>左 deficit more / 右 已投/总需求</td></tr>
 </table>
 
@@ -47,7 +47,7 @@
 <h2>场景 2 · 溢出：中心 3 列堆到 32/30/28</h2>
 <div class="scene">
 <canvas id="c2" width="160" height="76"></canvas>
-<p class="note">柱高 <b>[0,0,9,32,30,28,9,0,0]</b> · 溢出列压成 3px 金帽 + <b>金色实际高度</b>（不占垂直空间）· 列 2/6 只差 3 ⇒ 标目标值 <b>12</b> · 底部 <b>to L3: 20 more · 116/83</b>（116 &gt; 83 = 多投了，提示料放多了/堆超了）。</p>
+<p class="note">柱高 <b>[0,0,9,32,30,28,9,0,0]</b> · 溢出列压成 3px 金帽、<b>不标数字</b>（2026-10-16 用户实测：堆满 64 时面板顶一排金色「64」，零决策价值还误导——改后面板数字只剩一个语义：这列没到位、要堆到这么多）· 列 2/6 只差 3 ⇒ 标目标值 <b>12</b> · 底部 <b>to L3: 20 more · 116/83</b>（116 &gt; 83 = 多投了，提示料放多了/堆超了）。</p>
 </div>
 
 <h2>场景 3 · L4 满配</h2>
@@ -130,8 +130,7 @@ function drawPanel(canvas, st){
       g.fillRect(x, PLOT_TOP-3, BAR, 3);
     }
     let label=null, col=null, numTop=null;
-    if(h>MAXH){ label=String(h); col=C.cap; numTop=PLOT_TOP-3; }            // 溢出：实际高度
-    else if(t>0 && h<t){ label=String(t); col=C.goalNum; numTop=targetY(t); }  // 未达标：目标值
+    if(t>0 && h<t){ label=String(t); col=C.goalNum; numTop=targetY(t); }  // 未达标：目标值（溢出不标数字，金帽表意）
     if(label){
       g.font='8px monospace'; g.textBaseline='top'; g.textAlign='center';
       g.fillStyle=hex(col);
@@ -144,7 +143,7 @@ function drawPanel(canvas, st){
   g.fillText(!reachable ? 'no room for L'+(st.level+1)+' - move beacon'
                         : full ? 'L4 full' : 'to L'+(st.level+1)+': '+deficit+' more', X0, 57);
   g.textAlign='right';
-  g.fillText(full ? stacked+' stacked' : stacked+'/'+TOTALS[st.level], W-8, 57);
+  g.fillText(full ? 'needs '+TOTALS[3] : stacked+'/'+TOTALS[st.level], W-8, 57);
 }
 
 const ALL = Array(9).fill(true);
