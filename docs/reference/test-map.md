@@ -81,7 +81,7 @@ src/test/java/com/qiqi/li/
 │   ├── BeaconGlassColorTest.java             # 容器玻璃取色·16 色玻璃/玻璃板/DyeColor 口径/非玻璃与空⇒null/同列扫描(自下而上·非玻璃跳过·顶行越界)（7 项）
 │   ├── BeaconEffectsTest.java                 # 效果纯逻辑·喂锭门控(档位/II 仅 L4/5 槽满/未激活全拒)+生效数 min(堆叠,档内槽数)取前 N+再生三档(5 案例逐字)+buff 时长(9+等级×2)×20（22 项）
 │   ├── BeaconConfigTest.java                  # 配置组件·add/amplify 不可变+5 槽封顶+contains+编解码往返(含空配置)（4 项）
-│   ├── BeaconFeedHandlerTest.java             # 喂锭 handler 可测部分·规则谓词(5 矿石锭通过/非矿石拒绝)+OreType 映射与档位（3 项；⚠️ 等级读取路径依赖 tag，单测环境不加载 ⇒ 游戏内验证）
+│   ├── BeaconFeedHandlerTest.java             # 喂锭 handler 可测部分·规则谓词(5 矿石锭通过/非矿石拒绝)+OreType 映射与档位+槽位解析列宽取自 context(12 列≠9 列)/size 越界（5 项；⚠️ 柱高数值依赖 tag，单测环境不加载 ⇒ 游戏内验证）
 │   └── BeaconPlayerHostPacketTest.java        # 玩家宿主包往返(维度+UUID+等级+容器玻璃色列表)/空列表（2 项）
 ├── living/domain/farmland/
 │   ├── CropClassifierTest.java               # 作物分类器·火把花/瓶子草/柱状段回归（10 项）

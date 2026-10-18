@@ -146,7 +146,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 749 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
+**合计测试用例 751 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -171,7 +171,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
-| 2026-10-18 | 🔍 **活信标最终审查：修 1 个阻断 + 一致性清理** —— ① 阻断：玩家宿主登记表全服一张却在 `flush`（逐维度调用）末尾清空 ⇒ **多维度服上玩家宿主光束只在第一维度有效**；改 `beginTick()` 在 tick 开头清（新增 3 例跨维度守卫测试）。② 残留：删 `BeaconChestHost.active` 无用中间层、柱高/存在性共用一次槽位解析、tooltip 生效数算一次、面板缺口收敛到 `deficitsToNext`。③ 健壮性：`OreType.byId/byOrdinal` 回落（脏存档不抛）、宿主包解码容量钳制、死代码 `BeaconRuntime.EMPTY` 删除。④ 注释/§4 口径订正 7 处（R=32→256、offhand 行号、球体→AABB、白底段 +1→0 等）。单测 746 → 749 绿 | `docs/tech/living-beacon-tech.md` §4 · `living/domain/beacon/BeaconPlayerHostSync.java`（beginTick） |
+| 2026-10-18 | 🔍 **活信标最终审查：修 1 个阻断 + 一致性清理** —— ① 阻断：玩家宿主登记表全服一张却在 `flush`（逐维度调用）末尾清空 ⇒ **多维度服上玩家宿主光束只在第一维度有效**；改 `beginTick()` 在 tick 开头清（新增 3 例跨维度守卫测试）。② 残留：删 `BeaconChestHost.active` 无用中间层、柱高/存在性共用一次槽位解析、tooltip 生效数算一次、面板缺口收敛到 `deficitsToNext`。③ 健壮性：`OreType.byId/byOrdinal` 回落（脏存档不抛）、宿主包解码容量钳制、死代码 `BeaconRuntime.EMPTY` 删除。④ 注释/§4 口径订正 7 处（R=32→256、offhand 行号、球体→AABB、白底段 +1→0 等）。⑤ 收尾补修：**喂锭列宽曾写死 9**，与 tick 的 `getWidth()`（108 槽铁箱子 = 12 列）分叉 ⇒ 改用 `ContainerContexts.resolve` 取同源上下文 + 解析失败回退旧 9 列；客户端那份只跑背包（恒 9）保持不动。单测 746 → 751 绿 | `docs/tech/living-beacon-tech.md` §4 · `living/domain/beacon/BeaconPlayerHostSync.java`（beginTick）· `BeaconFeedHandler.java`（columnSlotsFor） |
 | 2026-10-18 | ✅ **活信标收尾：迁入正式台账**（用户定「不专门测试、游玩时慢慢反馈」）—— 设计稿 `docs/buffer/` → `docs/tech/living-beacon-tech.md`（16 个活物品功能全部有 tech 台账）；状态行重写（746 绿）；§6.1 转「游玩对照表」，实测顺延挂 `docs/TODO.md`。 | `docs/tech/living-beacon-tech.md` · `docs/TODO.md` |
 | 2026-10-18 | 🆕 **活信标：同容器多枚信标每枚一条光束**（用户定案）—— 宿主键 `容器键#槽位`，各自的等级/玻璃色/光束互不覆盖（全同条目去重）；**开盖仍按容器**（取走一枚盖不关，整箱再无才关）。客户端与包格式零改动。 | `docs/tech/living-beacon-tech.md` §2.3 · `living/domain/beacon/BeaconChestHost.java` |
 | 2026-10-18 | 🐛 **框架：末影箱遥测包 viewer 门控**（根治「容器 GUI 里 tooltip 运行时行全丢」）—— 末影箱每 tick 直发主人（无门控无去重）⇒ 冲掉客户端单槽通用缓存；照流体轨 10-06 同款接线点加 `isViewingEnderChest` 门控（一击两治：止崩 + 流量回归「开着 GUI 才发」），读取端改按悬停槽位容器路由（三处消费方共用 helper）。 | `docs/tech/living-beacon-tech.md` §2.6 · `living/network/LivingItemRuntimeSync.java` |

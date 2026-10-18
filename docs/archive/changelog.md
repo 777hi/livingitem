@@ -17,6 +17,17 @@
 
 ## 2026-10-18
 
+> 🐛 **修复：喂锭判级的列宽与 tick 分叉（108 槽铁箱子 12 列）** —— 审查发现「柱高算法三处
+> 各写一遍」的第三处（喂锭 `readPyramidLevel`）把**列宽写死 9**，而 tick 用
+> `context.getWidth()`（`container_rules.json` 里铁箱子族 108 槽的钻石/水晶/黑曜石显式配置
+> **12 列**）⇒ **12 列容器里喂锭的等级判定与 tick 不一致** ⇒ 可能错误拒绝（正常操作被拦）
+> 或错误放行（配置写入但 tick 时该槽休眠）。修法：喂锭改用
+> `ContainerContexts.resolve(player, slot)` 拿与 tick **同一个**容器上下文（同 size/width/getItem），
+> 列宽自然一致；`resolve` 返回 null 的容器（战利品箱未开箱等）回退到原 9 列直读，行为不变。
+> 抽 `columnSlotsFor(ctx, slot)` 供单测钉住「宽度必须取自上下文」；客户端那份
+> （`LivingBeamRenderer.localColumnHeights`）**不动**——它只跑玩家背包（恒 9 列），
+> javadoc 已注明「第二份实现、改动需双侧同步」。单测 +2（749 → 751 绿）。
+
 > 🔍 **活信标：最终审查（修 1 个阻断 + 一批一致性清理）** —— 用户「最后审查一遍」。
 > **① 阻断：玩家宿主光束在多维度服务器上失效** —— `BeaconPlayerHostSync` 的登记表是
 > **全服一张**（玩家背包对所有维度统一处理），却在 `flush`（**逐维度**调用）末尾 `clear()`

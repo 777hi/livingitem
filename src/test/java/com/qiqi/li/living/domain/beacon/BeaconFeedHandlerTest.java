@@ -1,25 +1,32 @@
 package com.qiqi.li.living.domain.beacon;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+import java.util.Arrays;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+
+import com.qiqi.li.living.container.ContainerContext;
 
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
 /**
- * 喂锭 handler 的可测部分：规则谓词 + 矿石映射。
+ * 喂锭 handler 的可测部分：规则谓词 + 矿石映射 + <b>列宽来源</b>。
  *
- * <p>⚠️ <b>等级读取路径（{@code readPyramidLevel}）不进单测</b>：它依赖
- * {@link BeaconBaseBlocks} 的 {@code BEACON_BASE_BLOCKS} tag，而单测环境不加载 tag
- * （项目既有事实：{@code stack.is(TagKey)} 恒 false）⇒ 任何底座都读成 0 级，
- * 断言无意义。该路径由游戏内验证兜底；其纯槽位数学已由 {@code BeaconColumnSlotsTest}
- * 覆盖（{@code resolveColumnSlots} 与 {@code readPyramidLevel} 共用同一套偏移逻辑）。</p>
+ * <p>⚠️ <b>柱高数值</b>仍不进单测：它依赖 {@link BeaconBaseBlocks} 的
+ * {@code BEACON_BASE_BLOCKS} tag，而单测环境不加载 tag（项目既有事实：
+ * {@code stack.is(TagKey)} 恒 false）⇒ 任何底座都读成 0 级，断言无意义，由游戏内验证兜底。
+ * 但<b>槽位解析（宽度 / size 来源）</b>可测——2026-10-18 修的就是这一层：喂锭曾把列宽
+ * 写死 9，与 tick 的 {@code getWidth()}（108 槽铁箱子 = 12 列）分叉。</p>
  *
- * <p>完整 {@code handle()} 需要 {@code ServerPlayer}，同样属游戏内验证。</p>
+ * <p>完整 {@code handle()} 需要 {@code ServerPlayer}，属游戏内验证。</p>
  */
 class BeaconFeedHandlerTest {
 
@@ -39,6 +46,36 @@ class BeaconFeedHandlerTest {
         assertFalse(BeaconFeedHandler.isOreIngot(new ItemStack(Items.REDSTONE), ItemStack.EMPTY));
         assertFalse(BeaconFeedHandler.isOreIngot(new ItemStack(Items.IRON_BLOCK), ItemStack.EMPTY));
         assertFalse(BeaconFeedHandler.isOreIngot(ItemStack.EMPTY, ItemStack.EMPTY));
+    }
+
+    @Test
+    @DisplayName("槽位解析：列宽取自容器上下文（108 槽铁箱子 = 12 列，不是写死的 9）")
+    void columnSlots_usesContextWidth() {
+        ContainerContext ctx = mock(ContainerContext.class);
+        when(ctx.getSize()).thenReturn(108);
+        when(ctx.getWidth()).thenReturn(12);
+
+        int slot = 26;   // 12 列：第 3 行第 3 格；9 列：第 3 行末尾 ⇒ 两者下方一行不同
+        int[] wide = BeaconFunction.resolveColumnSlots(slot, 108, 12);
+        int[] narrow = BeaconFunction.resolveColumnSlots(slot, 108, 9);
+        assertFalse(Arrays.equals(wide, narrow),
+            "前提：该槽位在 12 列与 9 列下的映射必须不同，否则本测试无鉴别力");
+
+        assertArrayEquals(wide, BeaconFeedHandler.columnSlotsFor(ctx, slot),
+            "喂锭必须按 context.getWidth() 解析——写死 9 会与 tick 判级分叉");
+    }
+
+    @Test
+    @DisplayName("槽位解析：size 取自容器上下文（越界列 −1）")
+    void columnSlots_usesContextSize() {
+        ContainerContext ctx = mock(ContainerContext.class);
+        when(ctx.getSize()).thenReturn(20);
+        when(ctx.getWidth()).thenReturn(9);
+
+        int[] slots = BeaconFeedHandler.columnSlotsFor(ctx, 10);
+        assertArrayEquals(BeaconFunction.resolveColumnSlots(10, 20, 9), slots);
+        assertTrue(Arrays.stream(slots).anyMatch(s -> s == -1),
+            "20 槽容器里第 2 行中间的槽位，下方一行必然有越界列");
     }
 
     @Test
