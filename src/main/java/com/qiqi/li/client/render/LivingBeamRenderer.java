@@ -411,8 +411,12 @@ public final class LivingBeamRenderer {
     }
 
     /**
-     * 本地（客户端）读下方 9 列柱高 —— 与 {@code BeaconFunction.readColumnHeights} 同口径
-     * （9 列网格；背包 hotbar 第 0 行、主区 1~3 行、offhand 第 4 行）。
+     * 本地（客户端）读下方 9 列柱高 —— 与服务端 {@code BeaconFunction.resolveColumnSlots}
+     * <b>同口径</b>（9 列网格；背包 hotbar 第 0 行、主区 1~3 行、护甲 4 格、副手 index 40）。
+     *
+     * <p>⚠️ 这是<b>第二份</b>实现（原版算法没有可抄的客户端侧）——与服务端那份必须同步改。
+     * 两边当前都用 {@link net.neoforged.neoforge.items.SlotResolver SlotResolver} 的 9 列
+     * 网格算子，因此口径一致；改动任一侧时记得核对另一侧。</p>
      */
     static long[] localColumnHeights(Inventory inventory, int slot) {
         long[] heights = new long[BeaconPyramid.COLUMNS];

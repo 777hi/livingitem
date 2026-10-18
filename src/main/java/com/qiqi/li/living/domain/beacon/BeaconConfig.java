@@ -36,10 +36,11 @@ public record BeaconConfig(List<Entry> entries) {
             Codec.STRING.fieldOf("ore").forGetter(e -> e.ore().id()),
             Codec.BOOL.fieldOf("amplified").forGetter(Entry::amplified)
         ).apply(instance, (ore, amplified) ->
-            new Entry(OreType.valueOf(ore.toUpperCase(java.util.Locale.ROOT)), amplified)));
+            new Entry(OreType.byId(ore), amplified)));
 
+        /** ⚠️ 越界 / 非法值回落 {@link OreType#IRON}（脏存档与坏包不许抛，见 {@link OreType#byOrdinal}）。 */
         public static final StreamCodec<RegistryFriendlyByteBuf, Entry> STREAM_CODEC = StreamCodec.composite(
-            ByteBufCodecs.VAR_INT.map(i -> OreType.values()[i], OreType::ordinal), Entry::ore,
+            ByteBufCodecs.VAR_INT.map(OreType::byOrdinal, OreType::ordinal), Entry::ore,
             ByteBufCodecs.BOOL, Entry::amplified,
             Entry::new);
     }

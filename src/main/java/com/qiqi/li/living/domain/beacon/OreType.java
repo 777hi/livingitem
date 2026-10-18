@@ -77,4 +77,27 @@ public enum OreType {
     public String id() {
         return name().toLowerCase(Locale.ROOT);
     }
+
+    /**
+     * 按 {@link #id()} 反查；<b>未知 id 回落 {@link #IRON}</b>（不抛异常）。
+     *
+     * <p>为什么必须回落而不是 {@code valueOf}：这是<b>存档解码</b>路径（组件的持久 Codec），
+     * 手工改存档 / 跨版本删枚举项都会读到未知 id ⇒ 抛异常会让整个物品读不出来
+     * （2026-10-18 审查：原先 {@code valueOf(id.toUpperCase())} 直接抛）。
+     * 同类守卫见 {@link BeaconSegment.RegenTier#fromOrdinal}。</p>
+     */
+    public static OreType byId(String id) {
+        for (OreType ore : values()) {
+            if (ore.id().equals(id)) {
+                return ore;
+            }
+        }
+        return IRON;
+    }
+
+    /** 按下标反查（ordinal 解码用）；<b>越界回落 {@link #IRON}</b>（不抛 AIOOBE）。 */
+    public static OreType byOrdinal(int ordinal) {
+        OreType[] values = values();
+        return ordinal >= 0 && ordinal < values.length ? values[ordinal] : IRON;
+    }
 }

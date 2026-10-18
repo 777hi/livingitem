@@ -89,7 +89,7 @@ public class LivingBeaconTooltipRenderer implements ClientTooltipComponent {
         int targetLevel0 = full ? BeaconPyramid.MAX_LEVEL - 1 : level;
         boolean reachable = BeaconPanelGeometry.reachable(targetLevel0, exists);
 
-        int deficit = 0;
+        int deficit = sum(BeaconPyramid.deficitsToNext(targetLevel0, heights));
         long stacked = 0;
         for (int c = 0; c < BeaconPyramid.COLUMNS; c++) {
             int px = x + BeaconPanelGeometry.columnX(c);
@@ -104,9 +104,6 @@ public class LivingBeaconTooltipRenderer implements ClientTooltipComponent {
                     px + BeaconPanelGeometry.BAR_W / 2 + 1, y + BeaconPanelGeometry.BASE_Y,
                     DEAD_COLOR);
                 continue;
-            }
-            if (t > 0 && h < t) {
-                deficit += t - h;
             }
             if (t > 0) {
                 g.fill(px, y + BeaconPanelGeometry.targetY(t) - 1,
@@ -180,5 +177,13 @@ public class LivingBeaconTooltipRenderer implements ClientTooltipComponent {
 
     private long heightAt(int column) {
         return column >= 0 && column < heights.length ? heights[column] : 0L;
+    }
+
+    private static int sum(int[] values) {
+        int total = 0;
+        for (int v : values) {
+            total += v;
+        }
+        return total;
     }
 }

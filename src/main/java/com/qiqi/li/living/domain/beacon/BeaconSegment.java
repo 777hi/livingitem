@@ -63,10 +63,6 @@ public final class BeaconSegment implements RuntimeSegmentType<BeaconSegment.Bea
      */
     public record BeaconRuntime(int level, long[] columnHeights, boolean[] columnExists, RegenTier regenTier) {
 
-        public static final BeaconRuntime EMPTY =
-            new BeaconRuntime(0, new long[BeaconPyramid.COLUMNS],
-                new boolean[BeaconPyramid.COLUMNS], RegenTier.NONE);
-
         /**
          * 编解码：{@code varint level} + 9×{@code varLong 柱高} + {@code varint 列存在位图}
          * + {@code varint 再生档}。位图 bit {@code c} = 列 {@code c} 是否存在（9 位 ⇒ ≤ 511）。

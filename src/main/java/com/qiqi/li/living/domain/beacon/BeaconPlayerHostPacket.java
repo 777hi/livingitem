@@ -68,14 +68,23 @@ public record BeaconPlayerHostPacket(
         }
     }
 
+    /** 解码容量上限（防御脏包：负数 / 超大 varint 不许直接进 ArrayList 构造 ⇒ 不许 OOM）。 */
+    private static final int MAX_ENTRIES = 4096;
+    private static final int MAX_COLORS = 256;
+
+    private static int readClamped(FriendlyByteBuf buf, int max) {
+        int n = buf.readVarInt();
+        return n < 0 ? 0 : Math.min(n, max);
+    }
+
     private static BeaconPlayerHostPacket decode(FriendlyByteBuf buf) {
         ResourceLocation dimension = buf.readResourceLocation();
-        int count = buf.readVarInt();
+        int count = readClamped(buf, MAX_ENTRIES);
         List<Entry> entries = new ArrayList<>(count);
         for (int i = 0; i < count; i++) {
             UUID playerId = buf.readUUID();
             int level = buf.readVarInt();
-            int colors = buf.readVarInt();
+            int colors = readClamped(buf, MAX_COLORS);
             List<Integer> glassColors = new ArrayList<>(colors);
             for (int c = 0; c < colors; c++) {
                 glassColors.add(buf.readVarInt());

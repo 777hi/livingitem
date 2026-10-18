@@ -32,11 +32,11 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 /**
- * 活信标的功能实现（设计稿 {@code docs/tech/living-beacon-tech.md}）。
+ * 活信标的功能实现（技术文档 {@code docs/tech/living-beacon-tech.md}）。
  *
- * <p>Phase 2：tick 读下方一行 9 列底座柱高 → {@link BeaconPyramid} 判级 →
- * 遥测（{@link BeaconSegment}）发布；tooltip 显示等级 / 范围 / 金字塔账本。
- * 箱子宿主（开盖 + 同步）属 Step 3；效果配置与 buff 施加属 Phase 3。</p>
+ * <p>职责（Phase 1~4 已全部落地）：tick 读下方一行 9 列底座柱高 → {@link BeaconPyramid}
+ * 判级 → 遥测（{@link BeaconSegment}）发布 → 宿主（玩家 / 箱子）两路：buff 施加、
+ * 箱子开盖保持 + S2C 同步、玩家联机广播；tooltip 文本层（等级 / 生效数 / 休眠三因）。</p>
  */
 public class BeaconFunction implements LivingItemFunction {
 
@@ -79,8 +79,10 @@ public class BeaconFunction implements LivingItemFunction {
             }
 
             ItemStack stack = entry.stack();
-            long[] heights = readColumnHeights(context, slot);
-            boolean[] exists = readColumnExists(context, slot);
+            // 柱高与列存在性共用同一次槽位解析（2026-10-18 审查：原先各解析一次）
+            int[] columnSlots = resolveColumnSlots(slot, context.getSize(), context.getWidth());
+            long[] heights = heightsFrom(context, columnSlots);
+            boolean[] exists = columnExistsFrom(columnSlots);
             int pyramidLevel = BeaconPyramid.resolveLevel(heights);
 
             // 效果计算（纯逻辑，BeaconEffects）：生效矿石效果 + 满级再生三档
@@ -186,8 +188,9 @@ public class BeaconFunction implements LivingItemFunction {
 
     /**
      * 施加 buff —— 照原版 {@code BeaconBlockEntity.applyEffects} 等价逻辑：
-     * 范围 = {@code 等级×10+10} 的球体（AABB 撑到世界高度）；范围内所有玩家获得
-     * 「生效矿石效果 + 免费再生」，时长 {@code (9+等级×2)×20}、ambient + 显示粒子。
+     * 范围 = {@code 等级×10+10} 的**立方体**（原版就是 inflate 出的 AABB 撑到世界高度，
+     * 不是球体——审查时订正措辞）；范围内所有玩家获得「生效矿石效果 + 满级再生」，
+     * 时长 {@code (9+等级×2)×20}、ambient + 显示粒子。
      */
     private static void applyEffects(Level level, Vec3 hostPos, int pyramidLevel,
                                      List<BeaconConfig.Entry> active, BeaconSegment.RegenTier regenTier) {
@@ -214,9 +217,12 @@ public class BeaconFunction implements LivingItemFunction {
      * <p>⚠️ 底座材质判定走 {@link BeaconBaseBlocks}（原版 {@code BEACON_BASE_BLOCKS} tag），
      * tag 在单测环境不加载 ⇒ 材质部分由游戏内验证兜底，纯槽位数学见
      * {@link #resolveColumnSlots}（已单测）。</p>
+     *
+     * <p><b>⚠️ 传入的 {@code targets} 必须来自 {@link #resolveColumnSlots}</b> —— tick 里柱高与
+     * 列存在性<b>共用同一次解析</b>（2026-10-18 审查：原先两个包装方法各解析一次 ⇒ 每信标每 tick
+     * 多算一遍 + 多分配一组 9 个 {@code Pos2D}）。</p>
      */
-    static long[] readColumnHeights(ContainerContext context, int slot) {
-        int[] targets = resolveColumnSlots(slot, context.getSize(), context.getWidth());
+    static long[] heightsFrom(ContainerContext context, int[] targets) {
         long[] heights = new long[BeaconPyramid.COLUMNS];
         for (int c = 0; c < targets.length; c++) {
             if (targets[c] >= 0) {
@@ -242,16 +248,11 @@ public class BeaconFunction implements LivingItemFunction {
     }
 
     /**
-     * 读 9 列存在性 —— 越界列（信标贴容器边缘 ⇒ 9 列探出边界）为 {@code false}。
+     * 纯函数：槽位下标 ≥ 0 ⇒ 该列存在（单测直接喂 {@code targets}）。
      *
      * <p>区分「空槽（差材料）」与「该列不存在（别填了）」：没有它，9 柱面板会把永远填不上的
      * 列显示成缺口（设计稿 §2.6.2 越界列 / 不可达兜底）。</p>
      */
-    static boolean[] readColumnExists(ContainerContext context, int slot) {
-        return columnExistsFrom(resolveColumnSlots(slot, context.getSize(), context.getWidth()));
-    }
-
-    /** 纯函数：槽位下标 ≥ 0 ⇒ 该列存在（单测直接喂 {@code targets}）。 */
     static boolean[] columnExistsFrom(int[] targets) {
         boolean[] exists = new boolean[BeaconPyramid.COLUMNS];
         for (int c = 0; c < targets.length && c < exists.length; c++) {
@@ -286,11 +287,13 @@ public class BeaconFunction implements LivingItemFunction {
             .get(BeaconSegment.INSTANCE);
         BeaconConfig config = BeaconConfig.of(stack);
         boolean inactive = rt != null && rt.level() == 0;
+        // 生效槽算一次、状态行与账本共用（2026-10-18 审查：原先同一次渲染算两遍）
+        List<BeaconConfig.Entry> active = rt != null
+            ? BeaconEffects.activeEntries(rt.level(), stack.getCount(), config)
+            : List.of();
 
         // ── 运行时层 ────────────────────────────────────────────────
         if (rt != null && rt.level() > 0) {
-            List<BeaconConfig.Entry> active =
-                BeaconEffects.activeEntries(rt.level(), stack.getCount(), config);
             tooltipAdder.accept(Component.translatable(
                 "tooltip.livingitem.beacon.level",
                 rt.level(), active.size(), config.size()));
@@ -322,9 +325,6 @@ public class BeaconFunction implements LivingItemFunction {
             return;
         }
 
-        List<BeaconConfig.Entry> active = rt != null
-            ? BeaconEffects.activeEntries(rt.level(), stack.getCount(), config)
-            : List.of();
         int index = 1;
         for (BeaconConfig.Entry entry : config.entries()) {
             Component suffix = Component.empty();

@@ -17,12 +17,19 @@ import net.minecraft.server.level.ServerPlayer;
  * 玩家宿主的联机广播（联机可见 · 设计稿规则 6）—— 照 {@code LivingToolPlayerSync} 模式。
  *
  * <ul>
- *   <li><b>按距离定向</b>：R = 32（与 {@code BeaconChestHost} / K2 同口径 ——
- *       两处半径必须一致，否则会出现"看得到箱子光束、看不到玩家光束"）；</li>
+ *   <li><b>按距离定向</b>：R = 256（{@link #RADIUS}，对齐原版
+ *       {@code BeaconRenderer.getViewDistance()}，与 {@code BeaconChestHost.RADIUS} 同口径
+ *       —— 两处半径必须一致，否则会出现"看得到箱子光束、看不到玩家光束"）；</li>
  *   <li><b>内容去重</b>：等级 / 增删变化才发（稳态零发包）；</li>
  *   <li><b>整体替换 + 快照</b>：离线 / 换维度的记录自然消失，无需过期清理；</li>
  *   <li><b>自己那一份不发</b>：本机渲染读自己的背包，更实时。</li>
  * </ul>
+ *
+ * <p>⚠️ <b>跨维度铁律（2026-10-18 审查发现并修）</b>：本类的登记表是<b>全服一张</b>（玩家背包
+ * 对所有维度统一处理），而 {@code flush} 是<b>逐维度</b>调用的 ⇒ 登记表<b>绝不能在 flush 里清</b>
+ * ——原先在 flush 末尾 {@code clear()}，第一个维度就把全表抽干，后续维度的 flush 恒拿到空表
+ * ⇒ <b>多维度服务器上玩家宿主光束只在第一个维度有效</b>。清理由
+ * {@link #beginTick()} 在 tick 开头（所有容器处理之前）统一做一次。</p>
  */
 public final class BeaconPlayerHostSync {
 
@@ -70,6 +77,18 @@ public final class BeaconPlayerHostSync {
         current.merge(playerId, level, Math::max);
     }
 
+    /**
+     * <b>每 tick 开头清空登记表</b>（由 {@code LivingItem#onServerTick} 在玩家循环之前调用）。
+     *
+     * <p>为什么不能放在 {@link #flush} 里：flush 是<b>逐维度</b>调的，而登记表是全服一张
+     * （见类注释「跨维度铁律」）。单测用两个 {@code ServerLevel} 替身驱动 flush，两次都拿到
+     * 全量条目、各自按 {@code owner.level()} 过滤 ⇒ 维度隔离成立。</p>
+     */
+    public static void beginTick() {
+        current.clear();
+        currentGlass.clear();
+    }
+
     /** 每 tick 末尾调用（容器处理之后）：按距离定向 + 内容去重后发送。 */
     public static void flush(ServerLevel level) {
         if (level == null || level.isClientSide) {
@@ -78,14 +97,12 @@ public final class BeaconPlayerHostSync {
         var playerList = level.getServer().getPlayerList();
         List<ServerPlayer> players = playerList.getPlayers();
 
-        // ① 本维度玩家宿主清单（快照后清空登记表）
+        // ① 全服登记（⚠️ 不在此清空——跨维度铁律见类注释，清理由 beginTick() 负责）
         List<BeaconPlayerHostPacket.Entry> all = new ArrayList<>(current.size());
         for (Map.Entry<UUID, Integer> e : current.entrySet()) {
             all.add(new BeaconPlayerHostPacket.Entry(e.getKey(), e.getValue(),
                 currentGlass.getOrDefault(e.getKey(), List.of())));
         }
-        current.clear();
-        currentGlass.clear();
 
         // ② 逐个观察者：滤出"别人的、且在半径内的"，内容变了才发
         ResourceLocation dimension = level.dimension().location();

@@ -19,7 +19,11 @@ import net.minecraft.util.FastColor;
  *       拿到的是玻璃本色；</li>
  *   <li><b>第 3 个起</b>：同色 ⇒ 当前段加高；<b>异色 ⇒ 新段 = 前段色与新色的平均</b>
  *       （所以红+蓝叠出来是偏暗的混合色，不是清晰的两段）；</li>
- *   <li>非染色方块（空气等）⇒ 当前段加高；<b>不透明方块</b> ⇒ 停止扫描（后面的颜色不算）。</li>
+ *   <li>非染色方块（空气等）⇒ 当前段加高；<b>不透明方块</b> ⇒ 停止扫描（后面的颜色不算）。
+ *       ⚠️ 截断实际由<b>调用方</b>负责（{@code LivingBeamRenderer} 扫描时就按
+ *       {@code lightBlock >= 15 && !bedrock} 停）——本类的 {@code obs.opaque()} 只在
+ *       无色分支生效；染色方块本身都是半透 ⇒ 原版不存在「有色且不透明」的方块，
+ *       该分支差异不可达（2026-10-18 审查记录）。</li>
  * </ul>
  * 渲染端"最后一段一直画到顶"（原版写死 1024），所以<b>感知上</b>就是"第一块玻璃决定整根颜色"。
  *
@@ -53,7 +57,10 @@ public final class BeamColorSections {
      *
      * @param upward       从起点上方第一格开始的逐格观测（遇到不透明块应已由调用方截断）
      * @param defaultColor 全程无染色方块时的颜色（{@link #DEFAULT_COLOR}）
-     * @return 分段列表（高度之和 = 观测格数 + 1——首段白 = 信标自身那一格；最后一段由调用方延伸到光束终点）
+     * @return 分段列表；<b>高度之和 = 观测格数</b>（首段白底高度 <b>0</b>——活信标没有
+     *         「信标自身那一格」，见类注释；最后一段由调用方延伸到光束终点）。
+     *         ⚠️ 2026-10-18 审查订正：此前写「观测格数 **+ 1**」，与实现（0 高白段）和
+     *         类注释相反。
      */
     public static List<Section> build(List<Observation> upward, int defaultColor) {
         if (upward.isEmpty()) {

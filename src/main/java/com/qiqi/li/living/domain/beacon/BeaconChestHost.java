@@ -73,9 +73,6 @@ public final class BeaconChestHost {
     /** 本 tick 登记的宿主（每枚信标一条，由 {@code BeaconFunction#tick} 填入，flush 取走清空）。 */
     private static final Map<String, Host> current = new LinkedHashMap<>();
 
-    /** 上次 flush 时的宿主（S2C 内容去重的基线）。 */
-    private static final Map<String, Host> active = new LinkedHashMap<>();
-
     /** 每个容器上次开盖时刻（按容器节流——一箱多枚信标共享一份开盖状态）。 */
     private static final Map<String, Long> lidLastTick = new HashMap<>();
 
@@ -179,11 +176,8 @@ public final class BeaconChestHost {
         activeLids.putAll(liveLids);
 
         // ④ S2C：每枚信标一条（同箱多枚 = 同位置多条、颜色各自不同；全同的去重）
-        active.clear();
-        active.putAll(current);
+        List<BeaconHostPacket.Entry> all = assembleEntries(current.values());
         current.clear();
-
-        List<BeaconHostPacket.Entry> all = assembleEntries(active.values());
         ResourceLocation dimension = level.dimension().location();
         Map<UUID, List<BeaconHostPacket.Entry>> next = new HashMap<>();
         for (ServerPlayer player : level.getServer().getPlayerList().getPlayers()) {
@@ -208,7 +202,6 @@ public final class BeaconChestHost {
     /** 清空全部状态（服务端关闭时调用，避免跨存档残留）。 */
     public static void clear() {
         current.clear();
-        active.clear();
         lidLastTick.clear();
         activeLids.clear();
         lastSent.clear();

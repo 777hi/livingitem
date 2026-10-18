@@ -17,6 +17,26 @@
 
 ## 2026-10-18
 
+> 🔍 **活信标：最终审查（修 1 个阻断 + 一批一致性清理）** —— 用户「最后审查一遍」。
+> **① 阻断：玩家宿主光束在多维度服务器上失效** —— `BeaconPlayerHostSync` 的登记表是
+> **全服一张**（玩家背包对所有维度统一处理），却在 `flush`（**逐维度**调用）末尾 `clear()`
+> ⇒ 第一个维度抽干全表、后续维度恒拿到空表 ⇒ 多维度服上玩家宿主光束只在第一个维度有效
+> （单机 / 单维度测不出来）。修：新增 `beginTick()`，由 `onServerTick` 在玩家循环**之前**清一次；
+> flush 不再清。新增 `BeaconPlayerHostSyncTest` 3 例（两维度各自只发本维度 / beginTick 清残留 /
+> 自己那份不下发）。
+> **② 残留清理**：删 `BeaconChestHost.active`（昨天重构留下的无用中间层，注释所述「去重基线」
+> 实为 `lastSent`）；柱高与列存在性共用同一次 `resolveColumnSlots`（原先每信标每 tick 解析两遍）；
+> tooltip 生效数算一次（原先状态行与账本各算一遍）；面板缺口合计收敛回
+> `BeaconPyramid.deficitsToNext`（消除同一算法两份）。
+> **③ 健壮性**：`OreType.byId/byOrdinal` 未知值回落 IRON（原先 `valueOf` 遇脏存档直接抛）；
+> 两个宿主包解码容量钳制（负数 varint 炸 ArrayList / 超大 OOM）；`BeaconRuntime.EMPTY` 死代码删除。
+> **④ 注释 / 文档口径订正 7 处**：R=32→256（注释落后于常量）、offhand「第 4 行」→ index 40、
+> 「球体」→ AABB（原版就是立方范围）、`BeamColorSections` @return「+1」→ 0（与实现 / 类注释对齐）、
+> 客户端缓存 volatile 理由（写入已走 enqueueWork）、`BeaconHostPacket` 补 glassColors 字段、
+> 「不透明截断」注明实际由调用方做；§4 对齐表白底段「高 1」→ **高 0**。
+> 复核后**不成立**（未改）：副手已被本地渲染循环覆盖（`getContainerSize()` = 41）、
+> 客户端与服务端玩家背包口径一致（都是 41 格 / 9 列）。单测 746 → 749 绿。
+
 > 🆕 **活信标：同容器多枚信标每枚一条光束**（用户定案）—— 取代原先「按容器 merge
 > （等级取 max、颜色取胜出者）」的未定案行为。① **光束每枚一条**：宿主键从容器键改为
 > `容器键#槽位`（`BeaconChestHost.hostKey`）⇒ 各自的等级 / 容器玻璃色 / 光束互不覆盖；

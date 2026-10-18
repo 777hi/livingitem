@@ -16,8 +16,9 @@ import net.minecraft.resources.ResourceLocation;
  *   <li><b>维度校验</b>：包里带维度，读取时若与当前维度不符则返回空。</li>
  * </ul>
  *
- * <p>⚠️ 网络包在 Netty 线程解码、渲染在主线程 —— 故字段用 {@code volatile}
- * 且写入不可变 {@code List}。</p>
+ * <p>⚠️ 写入走 {@code IPayloadContext#enqueueWork}（主线程），与渲染同线程；{@code volatile}
+ * 与不可变 {@code List} 是<b>防御性</b>保留（若将来有人把写入挪回 Netty 线程，不至于读到半截
+ * 状态）。审查记录：此前注释称「包在 Netty 线程解码」已不成立（2026-10-18）。</p>
  */
 public final class BeaconHostClientCache {
 

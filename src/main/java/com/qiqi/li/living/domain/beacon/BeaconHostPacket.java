@@ -17,7 +17,8 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
  *
  * <h3>为什么需要它（现有 {@link LivingItemSyncPacket} 不行）</h3>
  * 遥测包只发给<b>正在开该容器 GUI 的玩家</b>；而箱子宿主的光束要"路过就能看见"
- * ⇒ 必须独立广播。只同步 <b>宿主半箱位置 + 激活等级</b>，不泄露容器内其它物品。
+ * ⇒ 必须独立广播。只同步 <b>宿主半箱位置 + 激活等级 + 该枚信标同列向上的容器玻璃色</b>
+ * （`glassColors`，2026-10-16 起；客户端不开 GUI 读不到容器内容）——**不泄露容器内其它物品**。
  *
  * <p>发送策略（见 {@link BeaconChestHost}）：按距离定向（R = 256）+ 内容去重
  * （等级 / 玻璃色变化/增删才发）。</p>
@@ -70,14 +71,23 @@ public record BeaconHostPacket(
         }
     }
 
+    /** 解码容量上限（防御脏包：负数 / 超大 varint 不许直接进 ArrayList 构造 ⇒ 不许 OOM）。 */
+    private static final int MAX_ENTRIES = 4096;
+    private static final int MAX_COLORS = 256;
+
+    private static int readClamped(FriendlyByteBuf buf, int max) {
+        int n = buf.readVarInt();
+        return n < 0 ? 0 : Math.min(n, max);
+    }
+
     private static BeaconHostPacket decode(FriendlyByteBuf buf) {
         ResourceLocation dimension = buf.readResourceLocation();
-        int count = buf.readVarInt();
+        int count = readClamped(buf, MAX_ENTRIES);
         List<Entry> entries = new ArrayList<>(count);
         for (int i = 0; i < count; i++) {
             BlockPos pos = buf.readBlockPos();
             int level = buf.readVarInt();
-            int colors = buf.readVarInt();
+            int colors = readClamped(buf, MAX_COLORS);
             List<Integer> glassColors = new ArrayList<>(colors);
             for (int c = 0; c < colors; c++) {
                 glassColors.add(buf.readVarInt());
