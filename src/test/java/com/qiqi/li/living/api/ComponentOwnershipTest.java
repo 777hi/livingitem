@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -75,7 +76,11 @@ class ComponentOwnershipTest {
     private static final String FRAMEWORK_COMPONENT = "IS_LIVING";
 
     /**
-     * 全部 22 个 LivingItemFunction 实现。
+     * 全部 23 个 LivingItemFunction 实现。
+     *
+     * <p>📌 2026-10-18 教训：活信标（第 23 个）接入时漏加本名单 ⇒ {@code BEACON_CONFIG}
+     * 无人声明 ⇒ 取消活化不清效果配置（用户实测 bug）。本名单与
+     * {@link #componentTypes()} 的扫描范围是这套守卫的两个盲区，均已补上。</p>
      *
      * <p>⚠️ 新增功能类时<b>同步此处</b>：忘加 ⇒ 若它带了新组件，测试 1 会报
      * 「该组件无人声明」，从而提示你补到这里（并补 Enhanced javadoc）。
@@ -103,7 +108,8 @@ class ComponentOwnershipTest {
             new LivingToolFunction(),
             new LivingBucketFunction(),
             new LivingWaterWheelFunction(),
-            new LivingFlintAndSteelFunction()
+            new LivingFlintAndSteelFunction(),
+            new com.qiqi.li.living.domain.beacon.BeaconFunction()
         );
     }
 
@@ -111,12 +117,18 @@ class ComponentOwnershipTest {
      * 反射取所有 DataComponent，字段名作为可读标识。
      *
      * <p>A1 迁移后组件常量分居两处：内容组件在 {@code LivingComponents}（注册站）、
-     * 框架级原始类型组件（IS_LIVING / 工具 owner 等）在 {@code LivingItemManager} ——
-     * 两处都枚举，AttachmentType 会被 {@code instanceof DataComponentType} 自动过滤。</p>
+     * 框架级原始类型组件（IS_LIVING / 工具 owner 等）在 {@code LivingItemManager}，
+     * <b>域级 holder</b>（{@code BeaconComponents} 等）在各自域包——三处都枚举，
+     * AttachmentType 会被 {@code instanceof DataComponentType} 自动过滤。</p>
+     *
+     * <p>⚠️ 2026-10-18：扫描范围原先只有前两处 ⇒ 域级 holder 里的组件（如
+     * {@code BEACON_CONFIG}）是这套守卫的盲区——信标漏声明时测试 1 全绿。
+     * 新增域级组件 holder ⇒ 同步加进这个列表。</p>
      */
     private static Map<DataComponentType<?>, String> componentTypes() {
         Map<DataComponentType<?>, String> out = new LinkedHashMap<>();
-        for (Class<?> holder : List.of(LivingComponents.class, LivingItemManager.class)) {
+        for (Class<?> holder : List.of(LivingComponents.class, LivingItemManager.class,
+                com.qiqi.li.living.domain.beacon.BeaconComponents.class)) {
             for (Field f : holder.getFields()) {
                 if (!Modifier.isStatic(f.getModifiers()) || f.getType() != DeferredHolder.class) {
                     continue;
@@ -180,13 +192,22 @@ class ComponentOwnershipTest {
             "同一 DataComponent 被多个 Function 声明归属，清理语义会互相踩：" + conflicts);
     }
 
-    @Test
-    @DisplayName("③ 取消活化时，自声明的组件会被自动清除（无需在核心类里登记）")
-    void declaredComponentsAreClearedOnDeactivation() {
+    /**
+     * 全类注册一次 —— ⚠️ 不能放在各个 @Test 里：{@code registerFunction} <b>不去重</b>
+     * （FUNCTIONS 直接 add），而自维持函数清单在注册期从 FUNCTIONS 算出 ⇒ 注册两遍会让
+     * 红石等自维持函数每 tick 跑两遍（2026-10-18 实测：火把环振荡失规、发电机锁相
+     * 2t 变 3t，WaxedGeneratorFeedChainTest 红）。本类只此一处注册。
+     */
+    @BeforeAll
+    static void registerAllFunctions() {
         for (LivingItemFunction f : allFunctions()) {
             LivingItemManager.registerFunction(f);
         }
+    }
 
+    @Test
+    @DisplayName("③ 取消活化时，自声明的组件会被自动清除（无需在核心类里登记）")
+    void declaredComponentsAreClearedOnDeactivation() {
         ItemStack stack = new ItemStack(Items.FURNACE);
         LivingItemManager.setLiving(stack, true);
         com.qiqi.li.living.domain.furnace.FurnaceComponents.setBurning(stack, true);
@@ -197,5 +218,28 @@ class ComponentOwnershipTest {
             "LIVING_FURNACE_BURNING 已由 LivingFurnaceFunction 声明，取消活化时应当被清除");
         assertFalse(stack.has(LivingComponents.IS_LIVING.value()),
             "IS_LIVING 属框架本身，取消活化时必须被清除");
+    }
+
+    @Test
+    @DisplayName("④ 信标效果配置（BEACON_CONFIG）取消活化即清（2026-10-18 用户实测 bug 的回归守卫）")
+    void beaconConfigClearedOnDeactivation() {
+        ItemStack stack = new ItemStack(Items.BEACON);
+        LivingItemManager.setLiving(stack, true);
+        // 喂两个槽（I 档铁 + II 档金），模拟 BeaconFeedHandler 写入后的状态
+        com.qiqi.li.living.domain.beacon.BeaconConfig.set(stack,
+            new com.qiqi.li.living.domain.beacon.BeaconConfig(List.of(
+                new com.qiqi.li.living.domain.beacon.BeaconConfig.Entry(
+                    com.qiqi.li.living.domain.beacon.OreType.IRON, false),
+                new com.qiqi.li.living.domain.beacon.BeaconConfig.Entry(
+                    com.qiqi.li.living.domain.beacon.OreType.GOLD, true))));
+        assertTrue(stack.has(com.qiqi.li.living.domain.beacon.BeaconComponents.BEACON_CONFIG.value()),
+            "前提：配置已写入组件");
+
+        LivingItemManager.setLiving(stack, false);
+
+        assertFalse(stack.has(com.qiqi.li.living.domain.beacon.BeaconComponents.BEACON_CONFIG.value()),
+            "BEACON_CONFIG 已由 BeaconFunction 声明归属，取消活化时必须被清除"
+            + "（设计稿 §2.5「取消活化清空」）；漏声明时它会变成孤儿数据，再次活化读到脏旧值");
+        assertFalse(stack.has(LivingComponents.IS_LIVING.value()));
     }
 }

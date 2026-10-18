@@ -1,6 +1,7 @@
 package com.qiqi.li.living.domain.beacon;
 
 import java.util.List;
+import java.util.Set;
 import java.util.function.Consumer;
 
 import com.qiqi.li.living.api.LivingItemFunction;
@@ -14,6 +15,7 @@ import com.qiqi.li.living.runtime.RuntimeSegments;
 import com.qiqi.li.living.transfer.SlotResolver;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.component.DataComponentType;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
@@ -48,6 +50,20 @@ public class BeaconFunction implements LivingItemFunction {
     @Override
     public String getFunctionId() {
         return ID;
+    }
+
+    /**
+     * 效果配置（5 矿石槽）归属本功能 —— 取消活化时由框架 {@code clearLivingData} 统一清除。
+     *
+     * <p>⚠️ 2026-10-18 修（用户实测「取消活化配置效果不会被清除」）：本域接入时漏了这份
+     * 自声明 ⇒ {@code BEACON_CONFIG} 成为孤儿数据（组件还在、无人认领）⇒ 取消活化后
+     * 配置原样幸存、再次活化读到脏旧值。设计稿 §2.5 定的「取消活化清空」自此才真正落地。
+     * 同族的 15 个域都声明了，唯信标漏了——{@code ComponentOwnershipTest} 已把本域纳入
+     * 守卫范围（名单 + 扫描两处盲区均补），漏声明会立刻红。</p>
+     */
+    @Override
+    public Set<DataComponentType<?>> getOwnedComponentTypes() {
+        return Set.of(BeaconComponents.BEACON_CONFIG.value());
     }
 
     @Override

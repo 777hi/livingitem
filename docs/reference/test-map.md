@@ -28,7 +28,7 @@ src/test/java/com/qiqi/li/
 │   ├── LivingItemTooltipTest.java             # 活物品段标题恒在（2026-10-07 定稿）·零内容行仍输出标题/不适用功能同样保留/真实活桶只有标题无内容行/有内容行则空行+标题+行/多功能标题只一次且行序保持（5 项）
 │   └── BeamColorSectionsTest.java             # 光束颜色分段（照原版扫描算法）·无玻璃单段白/玻璃紧邻纯色/隔空气白段先长高/同色累计/异色取平均/不透明截断/自定义默认色（9 项）
 ├── living/api/
-│   ├── ComponentOwnershipTest.java            # DataComponent 归属守卫·每组件必有主/不可重复归属/自声明会被清除（3 项）
+│   ├── ComponentOwnershipTest.java            # DataComponent 归属守卫·每组件必有主/不可重复归属/自声明会被清除/信标配置取消活化即清（4 项）
 │   ├── ActivationHookTest.java                # 活化时机钩子守卫·派发参数原样送达/顺序不变量(钩子内仍带 IS_LIVING)/未认领物品不派发/数据安全否决/箱子无玩家拒绝且内容保住/末影箱不绑定且照常解绑/owner 只由活工具钩子写（7 项）
 │   ├── LivingItemActivationTest.java          # 活化门面守卫·零配置全放行/显式开启才拒绝/取消总允许/探针不改原物品（5 项）
 │   ├── ActivationRuleConfigTest.java          # 活化规则 JSON 加载语义·via缺省=player/activate与deactivate独立/先命中先赢/白名单/坏值跳过（14 项，含指令侧增删改与持久化往返；tag 路径 @Disabled —— 单测环境不加载 item tags，已游戏内验证通过）

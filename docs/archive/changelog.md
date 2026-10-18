@@ -17,6 +17,22 @@
 
 ## 2026-10-18
 
+> 🐛 **修复：活信标取消活化不清效果配置**（用户实测）—— 设计稿 §2.5 定的「取消活化清空」
+> 一直没真正落地：`BeaconFunction` 漏了 `getOwnedComponentTypes()` 自声明 ⇒ 框架
+> `clearLivingData` 只清「IS_LIVING + 各功能声明过的类型」⇒ `BEACON_CONFIG` 无人认领、
+> 取消活化后原样幸存（再次活化读到脏旧值——正是 `LivingItemFunction` javadoc 警告的
+> 孤儿数据）。修：`BeaconFunction` 声明 `BeaconComponents.BEACON_CONFIG` 归属（方案 A：
+> 取消活化 = 白纸，和其余 15 个域一致；配置是 5~15 锭的投入，但「取消即清」心智最简）。
+> **守卫补齐**：`ComponentOwnershipTest` 此前有两个盲区让信标漏网——反射扫描只翻
+> `LivingComponents`/`LivingItemManager` 两个框架级 holder（`BeaconComponents` 在域级
+> 扫不到）、`allFunctions()` 硬编码名单没有 `BeaconFunction`（javadoc 写着「新增功能类
+> 同步此处」，信标接入时漏了）。两处都补上，先红后绿机械证明能抓。新增测试 ④
+> （活化→喂 2 槽→取消活化⇒配置不在），736 → 737 绿。
+> ⚠️ 顺带踩坑记录：`registerFunction` **不去重**（FUNCTIONS 直接 add），自维持函数清单
+> 注册期从 FUNCTIONS 算出 ⇒ 测试里注册两遍会让红石类每 tick 跑两遍（实测火把环振荡
+> 失规、发电机锁相 2t 变 3t）。ComponentOwnershipTest 的注册已收拢到 `@BeforeAll`
+> 全类一次——将来加测试方法别在每个 @Test 里注册。
+
 > 🐛 **修复：末影箱遥测包冲掉容器 GUI 数据（tooltip 文本行 + 信标 9 柱面板 + 发电机面板在容器里全丢）**
 > （用户实测「柱状图在背包里显示，容器里不显示；末影箱里有活信标就这样」）—— 根因三层叠加：
 > ① 末影箱容器**每 tick 被 tick**（不开 GUI 也跑）⇒ 有活物品即恒脏；② 其运行时包按 UUID
