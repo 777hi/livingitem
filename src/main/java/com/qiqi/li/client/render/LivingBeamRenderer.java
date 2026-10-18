@@ -38,7 +38,7 @@ import net.minecraft.world.phys.shapes.CollisionContext;
 import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
 
 /**
- * 活信标光束渲染（Phase 1/2）—— 设计稿 {@code docs/buffer/living-beacon-design.md}
+ * 活信标光束渲染（Phase 1/2）—— 设计稿 {@code docs/tech/living-beacon-tech.md}
  * §2.1 / §2.4 / §6。
  *
  * <p><b>两种宿主</b>（规则 1：仅玩家 / 箱子）：</p>

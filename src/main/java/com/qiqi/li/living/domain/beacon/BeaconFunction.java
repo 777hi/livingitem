@@ -32,7 +32,7 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
 /**
- * 活信标的功能实现（设计稿 {@code docs/buffer/living-beacon-design.md}）。
+ * 活信标的功能实现（设计稿 {@code docs/tech/living-beacon-tech.md}）。
  *
  * <p>Phase 2：tick 读下方一行 9 列底座柱高 → {@link BeaconPyramid} 判级 →
  * 遥测（{@link BeaconSegment}）发布；tooltip 显示等级 / 范围 / 金字塔账本。

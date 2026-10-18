@@ -3,7 +3,7 @@ package com.qiqi.li.living.domain.beacon;
 import javax.annotation.Nullable;
 
 /**
- * 下方一行 9 列的「1D 金字塔」判定器（设计稿 {@code docs/buffer/living-beacon-design.md} §2.4）。
+ * 下方一行 9 列的「1D 金字塔」判定器（设计稿 {@code docs/tech/living-beacon-tech.md} §2.4）。
  *
  * <p><b>模型</b>：活信标所在槽位正下方整整一行 9 个槽位 = 金字塔底座，
  * <b>以信标所在列为中心</b>（{@link #CENTER} = 信标本列，两侧各 4 列；越出容器边界的列视为 0）。
