@@ -146,7 +146,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 730 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
+**合计测试用例 732 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -171,6 +171,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-18 | 🆕 **活信标：接入铁箱子族宿主（IronChests 软依赖）** —— 用户实测「某些容器没光束」+ 提供模组源码：实证 `AbstractIronChestBlockEntity` 不继承 `ChestBlockEntity` ⇒ 原判据漏掉 14 种铁箱子方块。低成本接入：开盖协议与原版逐字同款（`triggerEvent(1,·)` + 同款 `ChestLidController`，未 override ⇒ 默认转发）⇒ `blockEvent` 开盖零改动；无大箱合并 ⇒ 天然单容器；不动 openersCounter ⇒ 陷阱箱变体不误触发。新 `compat/ironchest/IronChestCompat` 反射软依赖；边界记 §2.3（泥土箱死位/水晶箱半透明待实测/12 列自适应）。单测 +2（730 → 732 绿） | `docs/buffer/living-beacon-design.md` §2.3 · `living/compat/ironchest/IronChestCompat.java` · `living/domain/beacon/BeaconFunction.java`（宿主判据） |
 | 2026-10-16 | 🆕 **活信标：容器槽位玻璃参与光束染色** —— 容器 9 列网格里信标**同列向上**的槽位 = 原版「正上方起可叠玻璃」，新 `BeaconGlassColor`（16 色玻璃+玻璃板，DyeColor 口径）取色并**插在颜色扫描序列最前**，与世界玻璃按原版「第 1/2 块都新建段」规则合成 ⇒ **叠放关系不冲突**；容器色随两个宿主 S2C 包下发（客户端不开 GUI 看不到容器内容），世界玻璃仍本地读；非玻璃物品不遮挡。单测 +7（723 → 730 绿） | `docs/buffer/living-beacon-design.md` §2.2 · `living/domain/beacon/BeaconGlassColor.java` · `BeaconHostPacket` / `BeaconPlayerHostPacket`（glassColors 字段） |
 | 2026-10-16 | 🆕 **活信标 Phase 4：tooltip 重设计 + 9 柱小金字塔面板** —— 原则「图形已表达的文本不双写」：文本层删差额行 / 范围 / 未激活三行 + 休眠三因（`需 L{n}` / `信标不足`，旧只有「等级不足」一种）+ 空槽规则提示；满级效果行定 C 方案（用户否掉「免费/赠送」味）⇒ `再生 II（满级）`。图形层 160×76 **始终可见**（U22 升级）：实心柱 = 现状、**9 段阶梯刻度 = 各列自己的目标**（各列高度各异 ⇒ 无水平线，mockup 阶段发现并修正上轮表述）、横纹 = 待填、金帽 = 溢出、竖虚线 = 越界列；**数字从差额改目标值**（行动指令）+ 底部双读数（`to L3: 48 more` / `51/83` 含放错列的料）。**不可达兜底**：`columnExists` 位图 ⇒ 信标贴边缘时「宽度不足，信标内移」而非 deficit。几何走 `BeaconPanelGeometry` 纯函数单测；mockup 两份留 `tools/`。单测 +9（713 → 722 绿） | `docs/buffer/living-beacon-design.md` §2.6 · `living/domain/beacon/` · `client/render/LivingBeaconTooltipRenderer.java` · `tools/_mock_beacon_*.html` |
 | 2026-10-16 | 🆕 **活信标 Phase 3：效果配置 + 喂锭 + 范围 buff + tooltip + 联机可见** —— ① `OreType`（铁速度/金急迫 L1、下界合金抗性/绿宝石跳跃 L2、钻石力量 L3）+ `BeaconConfig`（5 槽组件，不可变、跟物品走、取消活化清空）+ `BeaconComponents`；② `BeaconFeedHandler`（消耗制；档位不足 / II 非满级 / 未激活全拒 ⇒ **不消耗**；等级从**菜单容器现读**——handler 拿不到 `ContainerContext`；规则走**通配 trigger + predicate**，因精确条目要求 trigger 也是活物品）；③ `BeaconEffects`（生效数 = `min(堆叠数, 档内槽数)` 取前 N；再生三档：有空槽→II / 满配全 I→I / 满配且加倍→无，**5 案例逐字**）；④ 每 80 刻施加 buff（范围 `等级×10+10` 球体撑到世界高、时长 `(9+等级×2)` 秒、ambient；宿主 = 背包主人 / 箱子中心，**末影箱等方块容器自然排除**）；⑤ tooltip 静态账本（5 槽 + 等级不足标注 + 空槽提示）+ 再生档行；⑥ **联机可见收尾**：玩家宿主 S2C（UUID + 等级，256 格定向去重）+ 客户端画其它玩家光束；⑦ **可见性对齐原版**：半径 256 + 水平判据、长度 1024、未加载区块不画、透明方块不截断；⑧ **光束颜色**（U3-A）：两宿主均扫世界方块（头颅顶面上方 / 箱口上方，原版分段+平均），无需同步；⑨ **起点/方向均随头转**（"像帽子"：起点 = 头颅顶面中心、方向 = 顶面法线）。单测 +40（673 → 713 绿） | `docs/buffer/living-beacon-design.md`（§2.5 / §2.6）· `living/domain/beacon/` · lang 双份 |

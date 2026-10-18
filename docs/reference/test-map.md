@@ -68,6 +68,8 @@ src/test/java/com/qiqi/li/
 │   └── WaxedCopperCouplingIT.java             # 耦合链集成：多跳中继+防回环（3 项）
 ├── living/domain/chest/
 │   └── LivingChestFunctionTest.java           # 取消活化堆叠倍数返还（6 项）
+├── living/compat/ironchest/
+│   └── IronChestCompatTest.java                # 软依赖防御·null⇒false/单测环境(无 ModList) vanilla 箱⇒false（2 项）
 ├── living/domain/beacon/
 │   ├── BeaconPyramidTest.java                 # 1D 金字塔判级·各级精确目标/全0/null不足长/差一块掉档/多堆不亏/嵌套单调/L3 缺一列仍 L2/边界钳制封顶/单列无法激活/距下一级差额/范围公式/合计 9·34·83·164（19 项）
 │   ├── BeaconColumnSlotsTest.java             # 下方 9 列槽位解析(纯数学)·居中/右边界钳制/左边界钳制/最底行全 -1/顶行居中/单行容器（6 项）

@@ -23,6 +23,8 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
+import com.qiqi.li.living.compat.ironchest.IronChestCompat;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.ChestBlockEntity;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
@@ -98,7 +100,7 @@ public class BeaconFunction implements LivingItemFunction {
                             BeaconGlassColor.scanColumn(slot, context.getSize(), context.getWidth(),
                                 context::getItem));
                     }
-                } else if (level.getBlockEntity(containerPos) instanceof ChestBlockEntity) {
+                } else if (isLiddedChest(level.getBlockEntity(containerPos))) {
                     List<BlockPos> lidPositions = context.getAssociatedBlockPositions();
                     // 光束起点 = 信标所在半箱（大箱按槽位落在前半/后半）
                     BlockPos beamPos = lidPositions.size() > 1
@@ -118,9 +120,10 @@ public class BeaconFunction implements LivingItemFunction {
      * 宿主位置（规则 1：仅玩家 / 箱子）—— 无效宿主返回 {@code null}。
      *
      * <ul>
-     *   <li><b>方块容器</b>（{@code getBlockPos() != null}）：只有 {@code ChestBlockEntity}
-     *       算宿主（普通箱 + 陷阱箱共用该 BE）；木桶 / 潜影盒 / <b>末影箱</b> / 漏斗
-     *       等一律不是 —— 注意末影箱虽然 {@code getOwnerPlayer()} 有值，但它锚在方块上，
+     *   <li><b>方块容器</b>（{@code getBlockPos() != null}）：只有<b>箱子</b>算宿主——
+     *       原版 {@code ChestBlockEntity} + 铁箱子族（{@link IronChestCompat}，2026-10-18 接入：
+     *       开盖协议同款 ⇒ 零成本）；木桶 / 潜影盒 / <b>末影箱</b> / 漏斗等一律不是——
+     *       注意末影箱虽然 {@code getOwnerPlayer()} 有值，但它锚在方块上，
      *       故先按方块容器判定 ⇒ 自然被排除。</li>
      *   <li><b>非方块容器</b>：玩家背包（含末影箱以外的玩家锚定容器）取主人位置；
      *       掉落物容器无主人 ⇒ null。</li>
@@ -129,11 +132,22 @@ public class BeaconFunction implements LivingItemFunction {
     private static Vec3 resolveHostPosition(ContainerContext context, Level level) {
         BlockPos containerPos = context.getBlockPos();
         if (containerPos != null) {
-            return level.getBlockEntity(containerPos) instanceof ChestBlockEntity
+            return isLiddedChest(level.getBlockEntity(containerPos))
                 ? Vec3.atCenterOf(containerPos) : null;
         }
         Player owner = context.getOwnerPlayer();
         return owner != null ? owner.position() : null;
+    }
+
+    /**
+     * 是否「有盖子的箱子」宿主 —— 原版箱子 + 铁箱子族（{@link IronChestCompat}）。
+     *
+     * <p>开盖保持对两者同协议：{@code blockEvent(pos, block, 1, 1)} ⇒ BE 的
+     * {@code triggerEvent(1, ·)} ⇒ {@code ChestLidController.shouldBeOpen}（原版与铁箱子
+     * 逐字同款，调研实证 2026-10-18）。</p>
+     */
+    private static boolean isLiddedChest(BlockEntity be) {
+        return be instanceof ChestBlockEntity || IronChestCompat.isIronChest(be);
     }
 
     /**
