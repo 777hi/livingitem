@@ -120,12 +120,18 @@ public class BeaconFunction implements LivingItemFunction {
      * 宿主位置（规则 1：仅玩家 / 箱子）—— 无效宿主返回 {@code null}。
      *
      * <ul>
-     *   <li><b>方块容器</b>（{@code getBlockPos() != null}）：只有<b>箱子</b>算宿主——
-     *       原版 {@code ChestBlockEntity} + 铁箱子族（{@link IronChestCompat}，2026-10-18 接入：
-     *       开盖协议同款 ⇒ 零成本）；木桶 / 潜影盒 / <b>末影箱</b> / 漏斗等一律不是——
-     *       注意末影箱虽然 {@code getOwnerPlayer()} 有值，但它锚在方块上，
-     *       故先按方块容器判定 ⇒ 自然被排除。</li>
-     *   <li><b>非方块容器</b>：玩家背包（含末影箱以外的玩家锚定容器）取主人位置；
+     *   <li><b>方块容器</b>（{@code getBlockPos() != null}）：只有<b>有盖子的箱子</b>算宿主——
+     *       判据 {@link #isLiddedChest}（协议级 {@code LidBlockEntity}，2026-10-18 升级）：
+     *       原版箱 / 陷阱箱 / 铁箱子全家自动覆盖；木桶 / 潜影盒 / 漏斗等不是。
+     *       ⚠️ <b>末影箱方块压根到不了这条判定</b>：它不暴露 {@code ItemHandler.BLOCK} 能力面
+     *       ⇒ 世界容器扫描（{@code processContainerAt}）发现不了它 ⇒ 其内容由
+     *       {@code processEnderChest} 按<b>玩家锚定容器</b> tick（{@code EnderChestContainerContext}，
+     *       键 {@code player_<uuid>_ender_chest}，positions 空）⇒ {@code getBlockPos()} 为 null
+     *       ⇒ 走下面那条玩家路径（2026-10-18 用户提问「末影箱的发光逻辑」后实证更正：
+     *       旧注释说它「锚在方块上被排除」是错的，真实机制是走玩家宿主）。</li>
+     *   <li><b>非方块容器</b>：玩家背包 / <b>末影箱</b>等玩家锚定容器取主人位置
+     *       （⇒ 末影箱里的信标 = 玩家宿主：光束从头颅顶面射出、buff 跟人走、联机广播，
+     *       与放背包里完全一样；末影箱方块本身不 tick / 不开盖 / 不发光）；
      *       掉落物容器无主人 ⇒ null。</li>
      * </ul>
      */
@@ -146,10 +152,15 @@ public class BeaconFunction implements LivingItemFunction {
      *
      * <p><b>覆盖矩阵</b>（2026-10-18 逐个核源码实证）：原版箱 / 陷阱箱 ✅、<b>铁箱子全家</b>
      * ✅（{@code AbstractIronChestBlockEntity implements LidBlockEntity}——原先为此写了反射
-     * compat，现由协议判据自动覆盖，compat 已删）、<b>末影箱</b> ✅（{@code EnderChestBlockEntity}
-     * 逐字同款 {@code triggerEvent(1,·)}）、木桶 ❌（{@code BarrelBlockEntity} 未实现该接口，
+     * compat，现由协议判据自动覆盖，compat 已删）、木桶 ❌（{@code BarrelBlockEntity} 未实现该接口，
      * 与设计稿旧结论一致）、潜影盒 ❌（自有动画）。⇒ 未来任何实现该协议的第三方容器
      * <b>自动纳入，零维护</b>。</p>
+     *
+     * <p>⚠️ <b>末影箱不在本判据的射程内</b>（2026-10-18 实证更正）：它虽是 {@code LidBlockEntity}，
+     * 但其容器上下文 {@code getBlockPos()} 恒为 null（末影箱方块无 {@code ItemHandler.BLOCK}
+     * 能力面，内容由 {@code processEnderChest} 按玩家锚定容器 tick）⇒ 永远走不到这里，
+     * 末影箱里的信标走<b>玩家宿主</b>（见 {@link #resolveHostPosition}）。故<b>不需要</b>为
+     * 排除末影箱加任何特判。</p>
      */
     static boolean isLiddedChest(BlockEntity be) {
         return be instanceof LidBlockEntity;

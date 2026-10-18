@@ -20,10 +20,13 @@ import org.junit.jupiter.api.Test;
 class BeaconFunctionTest {
 
     @Test
-    @DisplayName("原版箱子 / 末影箱 ⇒ 宿主（LidBlockEntity；陷阱箱共用 BE 类型但 block 不同，构造校验挡着，略）")
+    @DisplayName("原版箱子 / 末影箱 ⇒ 协议判据 true（末影箱虽 true 但实际到不了本判据——见下）")
     void liddedContainers() {
         assertTrue(BeaconFunction.isLiddedChest(
             new ChestBlockEntity(BlockPos.ZERO, Blocks.CHEST.defaultBlockState())));
+        // ⚠️ 末影箱虽是 LidBlockEntity，但其容器上下文 getBlockPos() 恒 null（方块无
+        // ItemHandler.BLOCK 能力面 ⇒ 不被世界扫描 ⇒ 走 processEnderChest 玩家锚定路径）
+        // ⇒ 永远到不了本判据；此断言仅守「协议包含关系」，不产生方块宿主，无需特判排除。
         assertTrue(BeaconFunction.isLiddedChest(
             new EnderChestBlockEntity(BlockPos.ZERO, Blocks.ENDER_CHEST.defaultBlockState())));
     }

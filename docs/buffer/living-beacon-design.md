@@ -25,8 +25,14 @@
 两种情况都：被方块挡住就**截断**、联机**所有人都能看到**、给**周围玩家加信标 buff**。
 
 **⚠️ 与其它活物品的根本差异（核心设计约束）**：活信标**只在两种宿主下生效** ——
-**玩家本人（背包 / 手持）** 或 **箱子（含陷阱箱）**。
-掉进其它容器（漏斗 / 木桶 / 潜影箱 / 末影箱…）或变成掉落物 ⇒ **不发光**。
+**玩家本人（背包 / 手持 / 末影箱）** 或 **箱子（含陷阱箱 / 铁箱子族）**。
+掉进其它容器（漏斗 / 木桶 / 潜影箱…）或变成掉落物 ⇒ **不发光**。
+⚠️ **末影箱归「玩家宿主」不归「方块宿主」**（2026-10-18 实证）：末影箱方块不暴露
+`ItemHandler.BLOCK` 能力面 ⇒ 世界容器扫描发现不了 ⇒ 内容由 `processEnderChest` 按
+玩家锚定容器 tick（键 `player_<uuid>_ender_chest`）⇒ 信标跟着玩家发光（光束从头颅顶面
+射出、buff 跟人走、联机广播），与放背包里完全一样；**末影箱方块本身不 tick / 不开盖 /
+不发光**。这符合原版 per-player 语义（末影箱是无线容器不是世界容器），且天然避开
+「一个方块对应 N 个玩家的内容，光束画谁的」这个无解问题。
 （其它活物品在任意容器里都跑；这是活信标唯一的"宿主限定"。）
 
 ---
@@ -187,7 +193,7 @@ public static void renderBeaconBeam(
 
 | 容器 | 机制 | 保持打开要动哪 |
 |---|---|---|
-| **箱子 / 陷阱箱 / 末影箱** | `LidBlockEntity` + `ChestLidController`；服务端 `level.blockEvent(pos, block, 1, count)` → 客户端 `triggerEvent` → `shouldBeOpen` → `tickLid` **平滑过渡** | 发 `blockEvent(1, 1)` |
+| **箱子 / 陷阱箱 / 铁箱子族** | `LidBlockEntity` + `ChestLidController`；服务端 `level.blockEvent(pos, block, 1, count)` → 客户端 `triggerEvent` → `shouldBeOpen` → `tickLid` **平滑过渡**（⚠️ 末影箱虽是 `LidBlockEntity` 但走不了这条路——方块无能力面不被 tick，见 §2.3 覆盖矩阵） | 发 `blockEvent(1, 1)` |
 | 木桶 | ⚠️ **不是 LidBlockEntity** —— 开盖 = **方块状态** `BarrelBlock.OPEN`（服务端 `setBlock`），**离散无平滑** | 服务端 `setBlock` |
 | 潜影箱 | 自有 `AnimationStatus` + `progress`；⚠️ **碰撞箱与 progress 耦合**（`ShulkerBoxBlock.getShape` → `getBoundingBox` → `getProgressAabb`）⇒ 只改客户端会穿模 | 两端一致改 |
 
@@ -207,7 +213,7 @@ public static void renderBeaconBeam(
 |---|---|---|
 | 原版箱 / 陷阱箱 | ✅ | 纳入（原有） |
 | 铁箱子全家 14 种 | ✅ | **纳入**（原需 compat，现协议自动覆盖） |
-| **末影箱** | ✅（`triggerEvent(1,·)` 逐字同款） | **新纳入**（原被排除只因不在旧白名单，非语义决定） |
+| **末影箱** | ✅（协议上含，但**到不了本判据**） | **不走方块宿主**：末影箱方块无 `ItemHandler.BLOCK` 能力面 ⇒ 世界扫描发现不了 ⇒ 内容由 `processEnderChest` 按玩家锚定容器 tick ⇒ `getBlockPos()` 为 null ⇒ **走玩家宿主**（等同背包，见 §2.2） |
 | 木桶 | ❌（未实现该接口，开盖走方块状态） | 不纳入（与 2026-10-14 旧结论一致） |
 | 潜影盒 | ❌（自有动画） | 不纳入 |
 | 未来第三方带盖容器 | 实现该协议即 ✅ | **自动纳入，零维护** |
