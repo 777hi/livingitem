@@ -17,6 +17,29 @@
 
 ## 2026-10-18
 
+> 🐛 **修复：末影箱遥测包冲掉容器 GUI 数据（tooltip 文本行 + 信标 9 柱面板 + 发电机面板在容器里全丢）**
+> （用户实测「柱状图在背包里显示，容器里不显示；末影箱里有活信标就这样」）—— 根因三层叠加：
+> ① 末影箱容器**每 tick 被 tick**（不开 GUI 也跑）⇒ 有活物品即恒脏；② 其运行时包按 UUID
+> **无条件每 tick 直发主人**（无 viewer 匹配、无内容去重）⇒ 20 包/秒恒流；③ 客户端通用缓存是
+> **单槽**（只存最近一个容器快照）且末影箱 kind 被路由进通用缓存（`handle` 只分 PLAYER_INV/其余
+> 两档）⇒ 恒流把「当前打开的世界容器」快照冲掉 ⇒ 悬停读到末影箱槽位（对不上）⇒ EMPTY。
+> **同族 bug 流体轨 2026-10-06 连修三次**（`FluidFlowServerSync`「第 ③ 次泄漏修复」原话：
+> 末影箱的水渲染到别的箱子界面上），本次照抄其答案：
+> - **服务端门控（根治）**：`LivingItemRuntimeSync.shouldSendToOwner`——末影箱包只有玩家真开着
+>   末影箱 GUI 才发（`ContainerContexts.isViewingEnderChest`，流体轨同款接线点）。一击两治：
+>   不再冲缓存 + 流量与世界容器一致（开着 GUI 才发，告别 24/7 恒流）。同连接 FIFO 保证无在途竞态；
+> - **读取端按悬停槽位的容器路由**：`LivingItemTooltip.resolveHoveredRuntimeData`（文本层/信标面板/
+>   发电机面板三处共用，消灭三份同款逻辑——修复要同步三处正是原放大因素）——背包槽
+>   （`slot.container == player.getInventory()`，任何 GUI 的背包分栏都算）读背包缓存，其余读通用
+>   缓存，替掉「按屏幕类型二分」（末影箱 GUI 里同时有末影箱槽与背包槽，旧逻辑把背包槽也送进
+>   通用缓存 ⇒ 容器界面里悬停自己背包的信标读到末影箱数据）；
+> - 末影箱 vs 普通箱子**故意不分辨**：门控后通用缓存里只有当前打开的那个非背包容器在写；且客户端
+>   本就分不清两者（末影箱 GUI = GENERIC_9x3 + SimpleContainer 替身，与单箱同形，
+>   `FluidFlowClientCache.RenderTarget` 注释实证——任何 `instanceof PlayerEnderChestContainer`
+>   的客户端判据都是死分支）。
+> 无包格式变更、域无感。新增 `shouldSendToOwner` 谓词测试 3 例（733 → 736 绿）。
+> 已知残留：开关 GUI 后第一个 tick 内通用缓存还是上一个容器的数据（≤50ms 瞬错，自愈）。
+
 > 🔍 **活信标：末影箱发光逻辑实证更正**（用户提问「末影箱的发光逻辑是怎样的呢」）——
 > 上一轮协议判据重构时我把末影箱标为「新纳入方块宿主」，**这是误读**。实证（`EnderChestBlock`
 > 无 capability 注册 + `EnderChestContainerContext` 空 positions + `processEnderChest` 链路）：

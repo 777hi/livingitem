@@ -122,4 +122,5 @@ src/test/java/com/qiqi/li/
 └── network/
     ├── GuiInteractionPacketTest.java          # 目标槽判据·空槽可解析（活桶汲/倒包的回归守卫）/活物品可解析/非活物品不可解析（3 项）
     └── LivingItemSyncPacketTest.java          # 运行时同步包编解码往返（档 2 安全网）·三组字段往返/空数据/多槽混合/两种键形态/容器种类 kind 往返(背包·末影箱·世界·掉落物)/子记录哨兵/未登记 id 报错（14 项）
+    └── LivingItemRuntimeSyncTest.java         # 末影箱 viewer 门控谓词·背包不门控/末影箱只有开着 GUI 才发/非玩家态恒 true 防御（3 项）
 ```

@@ -9,6 +9,7 @@ import com.qiqi.li.client.render.LivingBeaconTooltipRenderer;
 import com.qiqi.li.client.render.LivingToolModelRenderer;
 import com.qiqi.li.client.render.LivingToolRayRenderer;
 import com.qiqi.li.client.render.LivingWaxedCopperTooltipRenderer;
+import com.qiqi.li.client.render.LivingItemTooltip;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.components.OwnerNameResolver;
 import com.qiqi.li.living.domain.chest.LivingChestTooltipComponent;
@@ -18,11 +19,8 @@ import com.qiqi.li.living.domain.power.LivingWaxedCopperFunction;
 import com.qiqi.li.living.domain.power.LivingWaxedCopperTooltipComponent;
 import com.qiqi.li.living.domain.power.LivingWaxedGeneratorData;
 import com.qiqi.li.living.domain.power.GeneratorSegment;
-import com.qiqi.li.living.runtime.LivingItemClientCache;
 import com.qiqi.li.living.util.WaxedCopperFamily;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
-import net.minecraft.world.inventory.Slot;
 import net.minecraft.client.renderer.item.ItemProperties;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
@@ -155,38 +153,16 @@ public class LivingItemClient {
     }
 
     /**
-     * 活信标遥测：按悬停槽位定位，{@code null} = 无数据（调用方不挂面板）。
+     * 活信标遥测：{@code null} = 无数据（调用方不挂面板）。
      *
      * <p>⚠️ {@code GatherComponents} 触发时 {@code ItemTooltipEvent} 的 ThreadLocal 已被
-     * finally 清空（见 {@code tooltip-system.md} §7-2）⇒ 必须自行悬停定位，照抄
-     * {@link #generatorDataFor} 模式：容器 GUI 分 player / BE 双缓存，创造模式物品栏
-     * tab 等索引不对齐的 GUI 按物品引用在背包里兜底。</p>
+     * finally 清空（见 {@code tooltip-system.md} §7-2）⇒ 必须自行悬停定位。定位逻辑与
+     * 文本层 / 发电机面板共用 {@link LivingItemTooltip#resolveHoveredRuntimeData}
+     * （2026-10-18 起三处不再各写一份——那正是「末影箱包冲掉容器数据」bug 的放大因素：
+     * 修复要在三处同步才生效）。</p>
      */
     private static BeaconSegment.BeaconRuntime beaconRuntimeFor(ItemStack stack) {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.screen instanceof AbstractContainerScreen<?> containerScreen) {
-            Slot hoveredSlot = containerScreen.getSlotUnderMouse();
-            if (hoveredSlot != null && hoveredSlot.getItem() == stack) {
-                // 玩家背包 GUI 的遥测在独立 player 缓存（服务端背包包直发本人）
-                var runtimeData = mc.screen instanceof net.minecraft.client.gui.screens.inventory.InventoryScreen
-                    || mc.screen instanceof net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen
-                    ? LivingItemClientCache.getPlayer(hoveredSlot.getContainerSlot())
-                    : LivingItemClientCache.get(hoveredSlot.getContainerSlot());
-                var rt = runtimeData.get(BeaconSegment.INSTANCE);
-                if (rt != null) return rt;
-            }
-        }
-        // 兜底：特殊 GUI（创造模式物品栏 tab 等）槽位索引与 Inventory 不对齐时，
-        // 按物品引用在玩家背包中定位
-        if (mc.player != null) {
-            var inv = mc.player.getInventory();
-            for (int i = 0; i < inv.getContainerSize(); i++) {
-                if (inv.getItem(i) == stack) {
-                    return LivingItemClientCache.getPlayer(i).get(BeaconSegment.INSTANCE);
-                }
-            }
-        }
-        return null;
+        return LivingItemTooltip.resolveHoveredRuntimeData(stack).get(BeaconSegment.INSTANCE);
     }
 
     /**
@@ -220,32 +196,9 @@ public class LivingItemClient {
      * 发电机仪表盘数据：优先运行时缓存（按悬停槽位定位），回退 DataComponent 兜底。
      */
     private static LivingWaxedGeneratorData generatorDataFor(ItemStack stack) {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.screen instanceof AbstractContainerScreen<?> containerScreen) {
-            Slot hoveredSlot = containerScreen.getSlotUnderMouse();
-            if (hoveredSlot != null && hoveredSlot.getItem() == stack) {
-                // 玩家背包 GUI 的遥测在独立 player 缓存（服务端背包包直发本人）
-                var runtimeData = mc.screen instanceof net.minecraft.client.gui.screens.inventory.InventoryScreen
-                    || mc.screen instanceof net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen
-                    ? LivingItemClientCache.getPlayer(hoveredSlot.getContainerSlot())
-                    : LivingItemClientCache.get(hoveredSlot.getContainerSlot());
-                var gen = runtimeData.get(GeneratorSegment.INSTANCE);
-                if (gen != null) return gen;
-            }
-        }
-        // 兜底：特殊 GUI（创造模式物品栏 tab 等）槽位索引与 Inventory 不对齐时，
-        // 按物品引用在玩家背包中定位
-        if (mc.player != null) {
-            var inv = mc.player.getInventory();
-            for (int i = 0; i < inv.getContainerSize(); i++) {
-                if (inv.getItem(i) == stack) {
-                    var runtimeData = LivingItemClientCache.getPlayer(i);
-                    var gen = runtimeData.get(GeneratorSegment.INSTANCE);
-                    if (gen != null) return gen;
-                    break;
-                }
-            }
-        }
-        return LivingWaxedGeneratorData.of(stack);
+        // 悬停定位与文本层 / 信标面板共用（见 LivingItemTooltip.resolveHoveredRuntimeData）；
+        // 无遥测 ⇒ 回退 DataComponent 静态值
+        var gen = LivingItemTooltip.resolveHoveredRuntimeData(stack).get(GeneratorSegment.INSTANCE);
+        return gen != null ? gen : LivingWaxedGeneratorData.of(stack);
     }
 }

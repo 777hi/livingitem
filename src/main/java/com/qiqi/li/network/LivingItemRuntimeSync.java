@@ -1,5 +1,6 @@
 package com.qiqi.li.network;
 
+import com.qiqi.li.living.container.ContainerContexts;
 import com.qiqi.li.living.container.ContainerKeys;
 import com.qiqi.li.living.container.ContainerKind;
 import com.qiqi.li.living.runtime.ContainerRuntimeCache;
@@ -74,7 +75,7 @@ public final class LivingItemRuntimeSync {
             var packet = LivingItemSyncPacket.of(containerKey, entry.getValue());
 
             if (kind != null && kind.isOwnedByPlayer()) {
-                sendToOwner(players, containerKey, packet);
+                sendToOwner(players, containerKey, packet, kind);
             } else {
                 Collection<Container> instances = containerLookup.apply(containerKey);
                 if (instances == null || instances.isEmpty()) continue;
@@ -94,16 +95,45 @@ public final class LivingItemRuntimeSync {
      * 直发本人也避免与 BE 容器缓存在客户端互相覆盖。</p>
      *
      * <p>🔴 <b>只发本人</b>是隐私红线：背包内容属于玩家私密信息，改动时必须保持按 UUID 精确匹配。</p>
+     *
+     * <p>⚠️ 末影箱另加 viewer 门控（{@link #shouldSendToOwner}）——它每 tick 被 tick、
+     * 不开 GUI 也直发，曾把客户端通用缓存里「当前打开的世界容器」冲掉。</p>
      */
     private static void sendToOwner(Collection<ServerPlayer> players, String containerKey,
-                                    LivingItemSyncPacket packet) {
+                                    LivingItemSyncPacket packet, ContainerKind kind) {
         UUID uuid = ContainerKeys.ownerOf(containerKey);   // 已覆盖 _ender_chest 后缀
         if (uuid == null) return;   // 键形态异常（防御）⇒ 宁可不发
         for (ServerPlayer player : players) {
             if (!player.getUUID().equals(uuid)) continue;
+            if (!shouldSendToOwner(kind, ContainerContexts.isViewingEnderChest(player))) return;
             player.connection.send(packet);
             return;
         }
+    }
+
+    /**
+     * 玩家态容器是否该发给主人（包级私有供单测）—— 末影箱的 viewer 门控。
+     *
+     * <p>⚠️ <b>2026-10-18 修</b>，照抄 {@code FluidFlowServerSync.shouldDispatch} 的
+     * 2026-10-06「第 ③ 次泄漏修复」——那条轨连修三次的同族 bug（原话：末影箱的水渲染到
+     * 别的箱子界面上），本次是同一病因换了个轨重现：
+     * 末影箱容器<b>每 tick 被 tick</b>（不开 GUI 也跑，{@code processEnderChest}）⇒ 有活物品
+     * 即恒脏 ⇒ 包曾按 UUID <b>无条件每 tick 直发主人</b>（无 viewer 匹配、无内容去重）⇒
+     * 20 包/秒恒流进客户端<b>通用</b>缓存（末影箱 kind 不走背包缓存）⇒ 把「当前打开的
+     * 世界容器」快照冲掉 ⇒ 悬停取数读到末影箱槽位（对不上）⇒ EMPTY ⇒ 容器 GUI 里
+     * tooltip 的运行时层（文本行 + 信标 9 柱面板 + 发电机面板）<b>全部丢失</b>。
+     * 用户实测原话：「柱状图在玩家背包里显示，但是在容器里不显示；末影箱里有活信标
+     * 的时候，会这样」。</p>
+     *
+     * <p><b>为什么门控是根治</b>：门控后任意时刻「非背包组」只有当前打开的那个容器在发包
+     * ⇒ 客户端通用缓存的「单槽」假设重新成立；且同连接 FIFO 有序 ⇒ 关末影箱前发出的包
+     * 必然早于开箱子后的包落地，无在途竞态。流量也变得与世界容器一致：开着 GUI 才发。</p>
+     *
+     * <p>背包（PLAYER_INV）<b>不门控</b>：它写独立的背包缓存，不冲任何东西
+     * （流体轨同款不门控；且 v19.1 的教训正是「背包 GUI 状态守卫」把包拦掉了）。</p>
+     */
+    static boolean shouldSendToOwner(ContainerKind kind, boolean viewingEnderChest) {
+        return kind != ContainerKind.ENDER_CHEST || viewingEnderChest;
     }
 
     /**
