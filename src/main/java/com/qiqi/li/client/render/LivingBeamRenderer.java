@@ -306,8 +306,13 @@ public final class LivingBeamRenderer {
             if (!level.hasChunkAt(entry.pos())) {
                 continue;
             }
-            // 起点 = 箱口顶部中心（方块顶面；0.875 的盖面差在视觉上不可见）
-            Vec3 start = Vec3.atBottomCenterOf(entry.pos()).add(0.0, 1.0, 0.0);
+            // 起点 = 箱格底面中心（**对齐原版几何**：原版信标光束就从方块底面画起，靠模型自挡
+            // 实现「视觉从顶开始」；2026-10-18 用户提出「为什么不从底部画起」后改）。
+            // ⚠️ 曾选箱口顶面（y+1）是担心关盖时盖面（0.875~1 的不透明模型）把光束切一截
+            // ⇒「箱内一截+盖上断开+顶上继续」三段观感。但该顾虑多余：**光束只在已激活时画，
+            // 而激活时盖必是开的**（BeaconChestHost 的 blockEvent 开盖保持）⇒ 盖面立起不挡。
+            // 开盖时「光从箱口里长出」比「悬在盖子上方」贴原版；关盖态本就不画光束。
+            Vec3 start = Vec3.atBottomCenterOf(entry.pos());
             // 颜色：容器玻璃色（S2C 下发，等价「信标正上方起可叠玻璃」）接世界逐格扫描
             List<BeamColorSections.Observation> observations = new ArrayList<>();
             for (int color : entry.glassColors()) {
