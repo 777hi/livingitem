@@ -46,6 +46,51 @@ class ContainerCompatibilityConfigTest {
         }
     }
 
+    // ── Tier 2 兜底表 vs Tier 1 规则表：双源漂移守卫（2026-10-18）──────
+
+    /**
+     * 类型推断表（Tier 2）与 {@code container_rules.json}（Tier 1）**重叠的条目必须一致**。
+     *
+     * <p>为什么需要：规则优先于表 ⇒ 不一致不会当场报错，只会表现为「诊断命令显示的列数
+     * 与实际生效不同」（实录：漏斗在表里写 1、规则写 5，{@code /livingitem container}
+     * 因此显示 1）；规则文件加载失败时还会静默改变行为。</p>
+     */
+    @Test
+    @DisplayName("类型推断表与规则文件一致：箱 9 / 漏 5 / 发 3 / 投 3（双源漂移守卫）")
+    void typeTable_agreesWithRegisteredRules() {
+        assertTableAgreesWithRule(new net.minecraft.world.level.block.entity.ChestBlockEntity(
+            net.minecraft.core.BlockPos.ZERO,
+            net.minecraft.world.level.block.Blocks.CHEST.defaultBlockState()));
+        assertTableAgreesWithRule(new net.minecraft.world.level.block.entity.HopperBlockEntity(
+            net.minecraft.core.BlockPos.ZERO,
+            net.minecraft.world.level.block.Blocks.HOPPER.defaultBlockState()));
+        assertTableAgreesWithRule(new net.minecraft.world.level.block.entity.DispenserBlockEntity(
+            net.minecraft.core.BlockPos.ZERO,
+            net.minecraft.world.level.block.Blocks.DISPENSER.defaultBlockState()));
+        assertTableAgreesWithRule(new net.minecraft.world.level.block.entity.DropperBlockEntity(
+            net.minecraft.core.BlockPos.ZERO,
+            net.minecraft.world.level.block.Blocks.DROPPER.defaultBlockState()));
+
+        // 熔炉族 / 酿造台：规则文件未覆盖 ⇒ 表是唯一来源（宽度 1 = 竖直列）
+        assertEquals(1, ContainerCompatibilityConfig.resolveColumns(3,
+            new net.minecraft.world.level.block.entity.FurnaceBlockEntity(
+                net.minecraft.core.BlockPos.ZERO,
+                net.minecraft.world.level.block.Blocks.FURNACE.defaultBlockState())));
+    }
+
+    private static void assertTableAgreesWithRule(net.minecraft.world.level.block.entity.BlockEntity be) {
+        var container = (net.minecraft.world.Container) be;
+        int table = ContainerCompatibilityConfig.resolveColumns(
+            container.getContainerSize(), container);
+        var id = net.minecraft.core.registries.BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(be.getType());
+        int rule = ContainerCompatibilityConfig.findRule(id)
+            .map(ContainerCompatibilityConfig.ContainerRule::columns)
+            .orElse(-1);
+        assertEquals(rule, table,
+            "Tier 2 表与规则表不一致（" + id + "）：规则=" + rule + "，表=" + table
+            + " —— 规则优先，表值只会在规则缺失时生效，必须同步");
+    }
+
     @Test
     @DisplayName("大箱子 54 格：标准矩形布局，INVALIDATE 边界（配置文件自动生成）")
     void doubleChestRule_standardRectangularLayout() {

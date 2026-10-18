@@ -130,13 +130,23 @@ public final class ContainerCompatibilityConfig {
     }
 
     /**
-     * 根据原版容器类型推断列数。
+     * 根据原版容器类型推断列数（Tier 2 兜底表）。
+     *
+     * <p>⚠️ <b>契约：与 {@code container_rules.json}（Tier 1）重叠的条目必须一致</b>——
+     * 规则优先，表只在「规则未覆盖该容器」时生效。2026-10-18 审查实录：漏斗在本表写
+     * <b>1</b>、规则表写 <b>5</b> ⇒ 实际生效 5（规则优先），但
+     * {@code /livingitem container} 的诊断命令走本表显示 <b>1</b>（误导），
+     * 且规则加载失败时会静默变回 1。现已对齐为 5，并由
+     * {@code ContainerCompatibilityConfigTest#typeTable_agreesWithRegisteredRules} 守住。</p>
+     *
+     * <p>本表保留而非删除的原因：规则文件加载失败时它仍是原版容器的可靠兜底
+     * （启发式对发射器 9 槽会算成 9，而正确值是 3）。</p>
      *
      * @return 列数，未知类型返回 -1
      */
     private static int resolveColumnsFromContainer(Container container) {
         if (container instanceof ChestBlockEntity) return 9;
-        if (container instanceof HopperBlockEntity) return 1;
+        if (container instanceof HopperBlockEntity) return 5;   // GUI 为 5 槽一排（原写 1，与规则表冲突）
         if (container instanceof DispenserBlockEntity || container instanceof DropperBlockEntity) return 3;
         if (container instanceof FurnaceBlockEntity ||
             container instanceof BlastFurnaceBlockEntity ||

@@ -17,6 +17,15 @@
 
 ## 2026-10-18
 
+> 🐛 **修复：容器列宽的「双源漂移」（漏斗：代码表 1 vs 规则表 5）** —— 框架演进提案 C 的收尾
+> （用户「关于 C」）。全仓扫描确认：36 处 `instanceof` 里只剩 `resolveColumnsFromContainer`
+> 一处真白名单，而它**与 `container_rules.json` 打架**：Tier 1 规则说漏斗 5 列（GUI 5 槽一排），
+> Tier 2 表写 1 ⇒ 实际生效 5（规则优先）但 `/livingitem container` 的诊断命令走表显示 1（误导），
+> 规则加载失败时还会静默变回 1。修：表值 `1 → 5` + 表头补「与规则文件重叠的条目必须一致」契约。
+> 新增守卫 `typeTable_agreesWithRegisteredRules`：构造箱/漏斗/发射器/投掷器的 BE，
+> 断言 Tier 2 表 == Tier 1 规则（熔炉族/酿造台规则未覆盖，表是唯一来源，单独断言宽度 1）。
+> 至此 **C 完成**（宿主协议化 `LidBlockEntity` + 列宽双源对齐 + 守卫）。751 → 752 绿。
+
 > 🐛 **修复：喂锭判级的列宽与 tick 分叉（108 槽铁箱子 12 列）** —— 审查发现「柱高算法三处
 > 各写一遍」的第三处（喂锭 `readPyramidLevel`）把**列宽写死 9**，而 tick 用
 > `context.getWidth()`（`container_rules.json` 里铁箱子族 108 槽的钻石/水晶/黑曜石显式配置
