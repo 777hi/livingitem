@@ -125,7 +125,9 @@ public class BeaconFunction implements LivingItemFunction {
                     // 信标同列向上的容器玻璃色（客户端不开 GUI 读不到容器内容 ⇒ 随包下发）
                     List<Integer> glassColors = BeaconGlassColor.scanColumn(
                         slot, context.getSize(), context.getWidth(), context::getItem);
-                    BeaconChestHost.report(context.getCacheKey(), beamPos, lidPositions,
+                    // 每枚信标一条宿主（2026-10-18 用户定「同容器多枚每枚一条」）：
+                    // 键 = 容器 + 槽位 ⇒ 各自的等级 / 玻璃色 / 光束互不覆盖
+                    BeaconChestHost.report(context.getCacheKey(), slot, beamPos, lidPositions,
                         pyramidLevel, glassColors);
                 }
             }
