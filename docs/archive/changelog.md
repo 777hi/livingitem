@@ -34,17 +34,17 @@
 > 「光从箱口里长出」而非「悬在立起的盖子上方」。玩家宿主不动（「像帽子」语义 = 头顶面）。
 > §4 对齐清单该行翻案：箱子宿主从 ⚠️ 偏离变 ✅ 对齐。渲染路径无单测 ⇒ 游戏内实测。
 
-> 🆕 **接入铁箱子族宿主（IronChests 软依赖）**（用户「某些容器里没有光束」+ 提供
-> `libs/src/ironchest-1.21.x-neoforge` 源码）—— 调研实证：`AbstractIronChestBlockEntity`
-> **不继承 `ChestBlockEntity`**（`RandomizableContainerBlockEntity` + `LidBlockEntity`）⇒ 原判据
-> 漏掉整个铁箱子族（7 材质 × 普通/陷阱 = 14 方块）。但接入成本极低：① 开盖协议与原版逐字同款
-> （`triggerEvent(1,·)` + 同一个 `ChestLidController`，`AbstractIronChestBlock` 未 override
-> `triggerEvent` ⇒ 走 `BaseEntityBlock` 默认转发）⇒ `blockEvent(1,1)` 开盖保持零改动生效；
-> ② **没有大箱合并**（`getMenuProvider` 只返回单 BE）⇒ 天然单容器，大箱逻辑不误触发；
-> ③ 不动 openersCounter ⇒ 陷阱箱变体不误触发红石。新件 `living/compat/ironchest/IronChestCompat`
-> （软依赖反射，modid `ironchest`，不在/改名/单测环境降级 false），宿主判据扩为
-> `ChestBlockEntity || isIronChest`。已知边界记入设计稿 §2.3（泥土箱 1 槽死位 / 水晶箱半透明待实测 /
-> 12 列宽箱自适应）。单测 +2（防御性：null / 单测环境 vanilla 箱 false）。
+> 🆕 **宿主判据升级为协议级 `LidBlockEntity`（删 compat，零维护覆盖所有带盖容器）**
+> （用户「某些容器里没有光束」+ 提供 `libs/src/ironchest-1.21.x-neoforge` 源码 ⇒ 实证铁箱子
+> **不继承 `ChestBlockEntity`** 被白名单漏掉；随后用户「岂不是得专门兼容」一问促成重构）——
+> 逐个兼容不可扩展，而我们真正需要的（能开盖保持 + 标准开盖协议）正是原版接口
+> `LidBlockEntity`（`ChestLidController` + `triggerEvent(1,·)`）的**充要条件** ⇒ 判据
+> `be instanceof LidBlockEntity`（纯 vanilla 接口，零反射零软依赖，`IronChestCompat` 已删）。
+> **覆盖矩阵**（逐个核源码）：原版箱/陷阱箱 ✅ · 铁箱子全家 14 种 ✅（原需 compat，现自动）·
+> **末影箱 ✅ 新纳入**（`triggerEvent(1,·)` 逐字同款；原被排除只因不在旧白名单，非语义决定）·
+> 木桶 ❌（未实现该接口，与 2026-10-14 旧结论一致）· 潜影盒 ❌ · 未来第三方带盖容器
+> **自动纳入零维护**。守卫测试 `BeaconFunctionTest`（箱/末影箱 true、木桶/潜影盒 false、null 安全）。
+> 铁箱子边界记 §2.3（泥土箱 1 槽死位 / 水晶箱半透明待实测 / 12 列宽自适应）。
 
 ---
 

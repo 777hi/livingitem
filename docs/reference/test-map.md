@@ -68,9 +68,8 @@ src/test/java/com/qiqi/li/
 │   └── WaxedCopperCouplingIT.java             # 耦合链集成：多跳中继+防回环（3 项）
 ├── living/domain/chest/
 │   └── LivingChestFunctionTest.java           # 取消活化堆叠倍数返还（6 项）
-├── living/compat/ironchest/
-│   └── IronChestCompatTest.java                # 软依赖防御·null⇒false/单测环境(无 ModList) vanilla 箱⇒false（2 项）
 ├── living/domain/beacon/
+│   ├── BeaconFunctionTest.java                 # 宿主判据(协议级 LidBlockEntity)·原版箱/末影箱⇒true/木桶/潜影盒⇒false/null 安全（3 项）
 │   ├── BeaconPyramidTest.java                 # 1D 金字塔判级·各级精确目标/全0/null不足长/差一块掉档/多堆不亏/嵌套单调/L3 缺一列仍 L2/边界钳制封顶/单列无法激活/距下一级差额/范围公式/合计 9·34·83·164（19 项）
 │   ├── BeaconColumnSlotsTest.java             # 下方 9 列槽位解析(纯数学)·居中/右边界钳制/左边界钳制/最底行全 -1/顶行居中/单行容器（6 项）
 │   ├── BeaconSegmentTest.java                 # 遥测段编解码往返(等级+9柱高+列存在位图+再生档)/id=beacon 线格式契约/equals 按数组内容比(稳态不脏写前提,仅位图不同也判不等)/再生档越界回退（6 项）

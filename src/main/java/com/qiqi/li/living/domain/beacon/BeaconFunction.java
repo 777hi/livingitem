@@ -23,9 +23,9 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
-import com.qiqi.li.living.compat.ironchest.IronChestCompat;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.ChestBlockEntity;
+import net.minecraft.world.level.block.entity.LidBlockEntity;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
@@ -140,14 +140,19 @@ public class BeaconFunction implements LivingItemFunction {
     }
 
     /**
-     * 是否「有盖子的箱子」宿主 —— 原版箱子 + 铁箱子族（{@link IronChestCompat}）。
+     * 是否「有盖子的箱子」宿主 —— 判据是<b>协议</b>而非类型白名单：
+     * {@code instanceof LidBlockEntity}（原版接口：有 {@code ChestLidController} +
+     * 响应 {@code triggerEvent(1, ·)} 开盖协议 ⇒ 我们的 {@code blockEvent(1,1)} 开盖保持直接可用）。
      *
-     * <p>开盖保持对两者同协议：{@code blockEvent(pos, block, 1, 1)} ⇒ BE 的
-     * {@code triggerEvent(1, ·)} ⇒ {@code ChestLidController.shouldBeOpen}（原版与铁箱子
-     * 逐字同款，调研实证 2026-10-18）。</p>
+     * <p><b>覆盖矩阵</b>（2026-10-18 逐个核源码实证）：原版箱 / 陷阱箱 ✅、<b>铁箱子全家</b>
+     * ✅（{@code AbstractIronChestBlockEntity implements LidBlockEntity}——原先为此写了反射
+     * compat，现由协议判据自动覆盖，compat 已删）、<b>末影箱</b> ✅（{@code EnderChestBlockEntity}
+     * 逐字同款 {@code triggerEvent(1,·)}）、木桶 ❌（{@code BarrelBlockEntity} 未实现该接口，
+     * 与设计稿旧结论一致）、潜影盒 ❌（自有动画）。⇒ 未来任何实现该协议的第三方容器
+     * <b>自动纳入，零维护</b>。</p>
      */
-    private static boolean isLiddedChest(BlockEntity be) {
-        return be instanceof ChestBlockEntity || IronChestCompat.isIronChest(be);
+    static boolean isLiddedChest(BlockEntity be) {
+        return be instanceof LidBlockEntity;
     }
 
     /**

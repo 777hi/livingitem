@@ -193,21 +193,28 @@ public static void renderBeaconBeam(
 
 **本版只做箱子 / 陷阱箱**（用户 2026-10-14 定：其它容器不考虑）。
 
-**🆕 铁箱子族接入（IronChests，2026-10-18 用户实测「某些容器没光束」后调研适配）**：
-调研 `libs/src/ironchest-1.21.x-neoforge` 实证——`AbstractIronChestBlockEntity` **不继承**
-`ChestBlockEntity`（是 `RandomizableContainerBlockEntity` + `LidBlockEntity`）⇒ 原判据
-`instanceof ChestBlockEntity` 漏掉整个铁箱子族（铁/金/钻石/铜/水晶/黑曜石/泥土 × 普通+陷阱，
-14 种方块）。但接入成本极低，三条实证：
-① **开盖协议与原版逐字同款**（`triggerEvent(1,·)` ⇒ `ChestLidController.shouldBeOpen`，
-且 `AbstractIronChestBlock` 未 override `triggerEvent` ⇒ 走 `BaseEntityBlock` 默认转发）⇒
-我们的 `blockEvent(1,1)` 开盖保持**零改动生效**；
-② **没有大箱合并**（`getMenuProvider` 只返回单个 BE）⇒ 天然单容器，大箱双半箱逻辑不误触发；
-③ **不动 openersCounter** ⇒ 铁箱子的陷阱箱变体也不误触发红石（同原版纪律）。
-做法：`living/compat/ironchest/IronChestCompat` 软依赖反射判定（modid `ironchest`；不在/类改名/
-单测环境一律降级 false），宿主判据扩为 `ChestBlockEntity || IronChestCompat.isIronChest`。
-⚠️ 已知边界：泥土箱 1 槽 1 列 ⇒ 信标放进去即死位（无法激活，非 bug）；水晶箱半透明 ⇒ 光束从
-箱内画起或被子模型挡一截（待实测）；宽 12 列的 108 槽箱 ⇒ 底座 9 列网格用 `getWidth()` 自适应，
-天然成立。
+**🆕 宿主判据 = 协议级 `LidBlockEntity`（2026-10-18 重构，用户「岂不是得专门兼容」一问促成）**：
+用户实测「某些容器没光束」并提供 IronChests 源码 ⇒ 实证 `AbstractIronChestBlockEntity` **不继承**
+`ChestBlockEntity`（`RandomizableContainerBlockEntity` + `LidBlockEntity`）⇒ 原「类型白名单」
+判据漏掉整个铁箱子族（14 种方块）。最初写了反射 compat 类，随即意识到**逐个兼容不可扩展**——
+而我们真正需要的能力（能开盖保持 + 有标准开盖协议）正是原版接口 `LidBlockEntity`
+（`ChestLidController` + `triggerEvent(1, ·)`）的**充要条件** ⇒ 判据改为
+`be instanceof LidBlockEntity`（**纯 vanilla 接口，零反射零软依赖，compat 类已删**）。
+
+**覆盖矩阵**（2026-10-18 逐个核源码实证）：
+
+| 容器 | `LidBlockEntity` | 结果 |
+|---|---|---|
+| 原版箱 / 陷阱箱 | ✅ | 纳入（原有） |
+| 铁箱子全家 14 种 | ✅ | **纳入**（原需 compat，现协议自动覆盖） |
+| **末影箱** | ✅（`triggerEvent(1,·)` 逐字同款） | **新纳入**（原被排除只因不在旧白名单，非语义决定） |
+| 木桶 | ❌（未实现该接口，开盖走方块状态） | 不纳入（与 2026-10-14 旧结论一致） |
+| 潜影盒 | ❌（自有动画） | 不纳入 |
+| 未来第三方带盖容器 | 实现该协议即 ✅ | **自动纳入，零维护** |
+
+⚠️ 铁箱子族已知边界：泥土箱 1 槽 1 列 ⇒ 信标放进去即死位（无法激活，非 bug）；水晶箱半透明 ⇒
+光束从箱内画起或被半透明模型挡一截（待实测）；宽 12 列的 108 槽箱 ⇒ 底座 9 列网格用
+`getWidth()` 自适应，天然成立。守卫测试：`BeaconFunctionTest`（原版箱/末影箱 true、木桶/潜影盒 false）。
 
 **做法**：
 - **服务端**：容器 tick 检测箱内有活信标 ⇒ 发 `level.blockEvent(pos, block, 1, 1)`
