@@ -24,12 +24,13 @@ import net.minecraft.util.FastColor;
  * 渲染端"最后一段一直画到顶"（原版写死 1024），所以<b>感知上</b>就是"第一块玻璃决定整根颜色"。
  *
  * <h3>我们的对应</h3>
- * 活信标没有"信标自身那一格"，故以<b>白段起步、高度 1</b>（模拟原版第一段 = 信标自身格，
- * 原版该段就是 1 格高）：起点上方若是空气 ⇒ 白段加高（原版同款"白底"）；第一块玻璃 ⇒
- * 纯色新段；再往上同原版。
- * ⚠️ **白段高度不能为 0**：渲染循环（{@code LivingBeamRenderer.renderBeamAlong}）会把
- * 0 高段当终止条件 ⇒ 第一格就是染色玻璃时白段 0 高 ⇒ 一条不画（2026-10-16 用户实测
- * 「贴着箱口放玻璃光束消失、隔一格就正常」的根因）。
+ * 活信标<b>没有「信标自身那一格」</b>（光束起点就是箱口顶面 / 头颅顶面，那一格不是信标方块）
+ * ⇒ 白底段高度 **0**（不占格）：起点上方第一格就是玻璃 ⇒ 玻璃段从底部第一格起画。
+ * ⚠️ 原版该段是 1 格高（信标格自身 = 白）⇒ 原版「底部 1 格白」有实体依据，我们是
+ * **有意偏离**：2026-10-18 用户实测「改变光束颜色，第一格不变色」——那格白没有对应物，
+ * 第一格就该是玻璃色。
+ * ⚠️ **白段 0 高 ⇒ 渲染端必须跳过而非终止**（{@code LivingBeamRenderer.renderBeamAlong}
+ * 的 0 高段 continue + remain ≤ 0 才 break；2026-10-16 用户实测「贴着放玻璃整条消失」后定型）。
  */
 public final class BeamColorSections {
 
@@ -60,7 +61,7 @@ public final class BeamColorSections {
         }
 
         List<Section> sections = new ArrayList<>();
-        sections.add(new Section(defaultColor, 1));   // 白底段 = 信标自身那一格（高度 1，见类注释）
+        sections.add(new Section(defaultColor, 0));   // 白底段 0 高：活信标没有信标自身那一格（见类注释）
         int index = 0;
 
         for (Observation obs : upward) {

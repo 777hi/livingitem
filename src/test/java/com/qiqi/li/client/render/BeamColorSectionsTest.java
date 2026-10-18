@@ -50,23 +50,22 @@ class BeamColorSectionsTest {
     }
 
     @Test
-    @DisplayName("第一格就是玻璃 ⇒ 白段高度 1（信标自身格）+ 玻璃色段覆盖其余")
+    @DisplayName("第一格就是玻璃 ⇒ 白段 0 高（活信标没有信标自身格）⇒ 底部第一格即玻璃色")
     void glassAdjacent() {
         var sections = BeamColorSections.build(List.of(glass(RED), air(), air()), WHITE);
         assertEquals(2, sections.size());
-        // ⚠️ 契约：首段高度必须 ≥ 1 —— 渲染循环曾把 0 高段当终止条件 ⇒ 贴着放玻璃时一条不画
-        // （2026-10-16 用户实测「贴箱口放玻璃光束消失、隔一格正常」的根因）
-        assertTrue(sections.get(0).height() >= 1);
-        assertEquals(new BeamColorSections.Section(WHITE, 1), sections.get(0));
+        // ⚠️ 契约：白段 0 高是既定语义（2026-10-18 用户实测「改变颜色第一格不变色」的修复）⇒
+        // 渲染端必须跳过 0 高段而非终止（LivingBeamRenderer.renderBeamAlong 的 continue）
+        assertEquals(0, sections.get(0).height());
         assertEquals(new BeamColorSections.Section(RED, 3), sections.get(1));
     }
 
     @Test
-    @DisplayName("玻璃隔了几格空气 ⇒ 白段先长高，玻璃段从该格起")
+    @DisplayName("玻璃隔了几格空气 ⇒ 白段 = 空气格数，玻璃段从该格起")
     void glassNotAdjacent() {
         var sections = BeamColorSections.build(List.of(air(), air(), glass(RED), air()), WHITE);
         assertEquals(2, sections.size());
-        assertEquals(new BeamColorSections.Section(WHITE, 3), sections.get(0));
+        assertEquals(new BeamColorSections.Section(WHITE, 2), sections.get(0));
         assertEquals(new BeamColorSections.Section(RED, 2), sections.get(1));
     }
 
@@ -84,7 +83,7 @@ class BeamColorSectionsTest {
         var sections = BeamColorSections.build(
             List.of(glass(RED), glass(RED), glass(BLUE), air()), WHITE);
         assertEquals(3, sections.size());
-        assertEquals(new BeamColorSections.Section(WHITE, 1), sections.get(0));
+        assertEquals(new BeamColorSections.Section(WHITE, 0), sections.get(0));
         assertEquals(new BeamColorSections.Section(RED, 2), sections.get(1));
         assertEquals(new BeamColorSections.Section(FastColor.ARGB32.average(RED, BLUE), 2), sections.get(2));
     }
@@ -103,7 +102,7 @@ class BeamColorSectionsTest {
     void airThenGlass() {
         var sections = BeamColorSections.build(List.of(air(), glass(BLUE), air(), air()), WHITE);
         assertEquals(2, sections.size());
-        assertEquals(new BeamColorSections.Section(WHITE, 2), sections.get(0));
+        assertEquals(new BeamColorSections.Section(WHITE, 1), sections.get(0));
         assertEquals(new BeamColorSections.Section(BLUE, 3), sections.get(1));
     }
 
