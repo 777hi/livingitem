@@ -1,20 +1,32 @@
 package com.qiqi.li.living.container;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.withSettings;
 import static org.mockito.Mockito.when;
 
+import java.util.List;
 import java.util.Set;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import net.neoforged.neoforge.items.IItemHandler;
+import net.neoforged.neoforge.capabilities.Capabilities;
 
+import net.minecraft.world.inventory.MenuType;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.Container;
 import net.minecraft.world.CompoundContainer;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.entity.player.Player;
@@ -129,19 +141,102 @@ class ContainerContextsTest {
 
             assertNull(ContainerContexts.resolve(player, slot));
         }
-    }
 
-    @Nested
-    @DisplayName("isViewingEnderChest —— 第 ③ 次泄漏修复的 viewer 判据（2026-10-06）")
-    class IsViewingEnderChest {
+        // ── 模组容器分支（2026-10-19，I-C5 收尾）──────────────────
 
+        /** 菜单自报位置的模组容器替身（仿精妙背包 BackpackContainer#getBlockPosition）。 */
+        private static final BlockPos PACK_POS = new BlockPos(5, 70, -3);
+
+        private static class PositionAwareMenu extends AbstractContainerMenu {
+            PositionAwareMenu() {
+                super(MenuType.GENERIC_9x3, 0);
+            }
+
+            public BlockPos getBlockPosition() {
+                return PACK_POS;
+            }
+
+            /** addSlot 是 protected —— 子类内转发一下，供测试挂槽。 */
+            void append(Slot s) {
+                addSlot(s);
+            }
+
+            @Override
+            public ItemStack quickMoveStack(Player player, int index) {
+                return ItemStack.EMPTY;
+            }
+
+            @Override
+            public boolean stillValid(Player player) {
+                return true;
+            }
+        }
+
+        /**
+         * 模组容器菜单槽位 → 按位置解析出 BE 上下文。
+         *
+         * <p>守的是真机 bug：精妙背包方块不是原版 {@code Container}，旧实现这里返回 null
+         * ⇒ 在背包 GUI 里对背包槽位倒水<b>静默无效</b>；改点 GUI 下方的玩家物品栏槽位
+         * 倒是能成功，源就落进了玩家背包而不是背包里 —— 背包容器没源，也就不渲染流体。</p>
+         */
         @Test
-        @DisplayName("末影箱菜单 → true")
-        void enderChestMenu_true() {
-            ChestMenu menu = mock(ChestMenu.class);
-            when(menu.getContainer()).thenReturn(new PlayerEnderChestContainer());
+        @DisplayName("模组容器菜单槽位可解析：按菜单位置构造 BE 上下文（键与 tick 路径同源）")
+        void moddedContainer_resolvesByMenuPosition() {
+            ServerPlayer player = mock(ServerPlayer.class);
+            Level level = mock(Level.class);
+            when(player.level()).thenReturn(level);
+            when(level.getBlockEntity(PACK_POS))
+                .thenReturn(mock(BlockEntity.class, withSettings().extraInterfaces(Container.class)));
+            when(level.getCapability(eq(Capabilities.ItemHandler.BLOCK), eq(PACK_POS), any()))
+                .thenReturn(mock(IItemHandler.class));
 
-            assertTrue(ContainerContexts.isEnderChestMenu(menu));
+            PositionAwareMenu menu = new PositionAwareMenu();
+            // ⚠️ containerMenu 是 public 字段（不是方法）—— 直接赋值，别用 when()
+            player.containerMenu = menu;
+            // 槽位容器是每槽匿名对象（NeoForge SlotItemHandler 的形态）⇒ 走不通前四条分支
+            menu.append(new Slot(new SimpleContainer(9), 0, 0, 0));
+
+            TickableContainerContext ctx = ContainerContexts.resolve(player, menu.slots.get(0));
+
+            assertNotNull(ctx, "模组容器菜单槽位应能解析（此前恒 null ⇒ 汲/倒静默无效）");
+            assertEquals("chest_5_70_-3", ctx.getContainerKey(),
+                "容器键必须与 tick 路径的 chest_x_y_z 同源，否则读写两份数据");
+        }
+
+        /**
+         * 同一 GUI 里的<b>玩家物品栏</b>槽位不能被并进方块容器。
+         *
+         * <p> hazard 真实存在：{@link MenuSlotOwners} 的菜单级位置对<b>整份菜单</b>生效，
+         * 所以背包 GUI 下方的玩家背包槽位也解析得出背包方块的位置。
+         * 真正挡住误并的是<b>分支顺序</b>——{@code slot.container == player.getInventory()}
+         * 在新分支之前提前返回。</p>
+         *
+         * <p>单测里造不出带 player 的可用 {@code Inventory}（{@code player} 是 final 字段）
+         * ⇒ 这里断言「绝不会落进方块容器」，并顺带记录 hazard 本身，防将来有人调分支顺序。</p>
+         */
+        @Test
+        @DisplayName("同 GUI 的玩家背包槽位不落进方块容器（分支顺序守卫）")
+        void playerInventorySlot_neverResolvesToBlock() {
+            ServerPlayer player = mock(ServerPlayer.class);
+            Level level = mock(Level.class);
+            when(player.level()).thenReturn(level);
+
+            Inventory inventory = mock(Inventory.class);
+            when(player.getInventory()).thenReturn(inventory);
+
+            PositionAwareMenu menu = new PositionAwareMenu();
+            player.containerMenu = menu;   // containerMenu 是字段，直接赋值
+            menu.append(new Slot(inventory, 3, 0, 0));   // 玩家背包槽位
+
+            // hazard 存档：菜单级位置确实会把玩家背包槽也指到方块上
+            assertEquals(List.of(PACK_POS), MenuSlotOwners.resolve(menu, menu.slots.get(0)),
+                "hazard：菜单级位置对整份菜单生效 —— 挡住它的是分支顺序，不是解析");
+
+            TickableContainerContext ctx = ContainerContexts.resolve(player, menu.slots.get(0));
+            if (ctx != null) {
+                assertNotEquals("chest_5_70_-3", ctx.getContainerKey(),
+                    "玩家背包槽位不能被菜单位置误导进方块容器");
+            }
         }
 
         @Test

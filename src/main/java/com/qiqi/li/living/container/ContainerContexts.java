@@ -71,6 +71,10 @@ public final class ContainerContexts {
      *       —— 原版末影箱 GUI 的槽位容器<b>不是 BE</b>（这正是它原先走不进上面三分支的原因）
      *       ⇒ 构造 {@link EnderChestContainerContext}，键 = {@code player_<uuid>_ender_chest}，
      *       与 tick 路径 {@code processEnderChest} 同源</li>
+     *   <li><b>模组容器</b>（2026-10-19）：以上都不命中 ⇒ 问<b>菜单</b>自己是哪个方块
+     *       （{@link MenuSlotOwners}，与 viewer 匹配同一套）⇒ 按位置构造 BE 上下文。
+     *       ⚠️ 玩家背包槽位在分支 ① 已提前返回，所以模组 GUI 下方那条玩家物品栏
+     *       不会被误并进方块容器</li>
      * </ul>
      */
     public static TickableContainerContext resolve(ServerPlayer player, Slot slot) {
@@ -99,6 +103,18 @@ public final class ContainerContexts {
             PlayerEnderChestContainer enderChest = player.getEnderChestInventory();
             if (enderChest == null) return null;
             return new EnderChestContainerContext(new InvWrapper(enderChest), player, level);
+        }
+
+        // 模组容器（2026-10-19，I-C5 收尾）：槽位容器可能是 NeoForge SlotItemHandler 的
+        // 每槽匿名 Container ⇒ 上面四条全不命中。改问**菜单**自己是哪个方块——
+        // 与 MenuSlotOwners（viewer 匹配）同一套解析，避免「能 tick、不能交互」。
+        //
+        // ⚠️ 只在前面都不命中时才走：玩家背包槽位已在分支 ① 提前返回，
+        //    所以背包 GUI 下方的玩家物品栏区仍解析为玩家背包，不会被误并进方块容器。
+        for (BlockPos pos : MenuSlotOwners.resolve(player.containerMenu, slot)) {
+            if (level.getBlockEntity(pos) instanceof BlockEntity be) {
+                return beContext(level, List.of(pos), List.of(be));
+            }
         }
 
         return null;

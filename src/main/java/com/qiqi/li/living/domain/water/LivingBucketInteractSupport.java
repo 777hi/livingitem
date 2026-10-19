@@ -38,7 +38,16 @@ public final class LivingBucketInteractSupport {
 
     private LivingBucketInteractSupport() {}
 
-    /** 反查目标槽位所属容器的活流体数据；容器类型不支持（末影箱/模组非 BE 容器）返回 null。 */
+    /**
+     * 反查目标槽位所属容器的活流体数据；容器类型不支持时返回 {@code null}。
+     *
+     * <p>⚠️ 2026-10-19：原先「模组非 {@code Container} 容器」在这里必然返回 null
+     * ⇒ 在精妙背包 GUI 里对背包槽位倒水<b>静默无效</b>（桶不排空、不产源）。真机表现：
+     * 换成点背包界面下方的玩家物品栏槽位就能倒，源于是落在<b>玩家背包</b>而不是背包里，
+     * 且背包容器里没有源 ⇒ 打开背包界面自然也不渲染活流体。
+     * 现 {@link com.qiqi.li.living.container.ContainerContexts#resolve} 已支持按位置解析模组容器，
+     * 这类容器与其它容器同路。</p>
+     */
     public static ContainerFluidData resolveFluidData(ServerPlayer player, Slot slot) {
         ContainerContext ctx = resolveContext(player, slot);
         if (ctx == null) return null;
