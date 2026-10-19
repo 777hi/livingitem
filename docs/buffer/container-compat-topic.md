@@ -1,7 +1,8 @@
-# 容器兼容性专题（计划）
+# 容器兼容性专题（计划 / 实施记录）
 
-> **状态：探讨中（2026-10-18 立项）** —— 阶段与判据待用户拍板后进入实施。
-> 契约正文见 [system-design/container-boundary.md](../system-design/container-boundary.md)（不变量 I-C1~I-C7）。
+> **状态：实施中**（2026-10-18 立项，10-19 完成主体）—— S1~S4 + S3/S3b 已真机验收；
+> S5 未做（见 §2），故本文继续留在 buffer。
+> 契约正文见 [system-design/container-boundary.md](../system-design/container-boundary.md)（不变量 I-C1~I-C8）。
 > 本文只写**怎么做、做到什么算完**，不重复契约内容。
 
 ---
