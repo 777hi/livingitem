@@ -18,8 +18,6 @@ import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.domain.map.MapCoordHelper;
 import com.qiqi.li.living.domain.chest.LivingChestFunction;
 import com.qiqi.li.living.domain.map.LivingEnderPearlFunction;
-import com.qiqi.li.living.domain.water.FluidFlowBehaviors;
-import com.qiqi.li.living.domain.water.FluidFlowClientCache;
 import com.qiqi.li.network.LivingChestAccessPacket;
 import com.qiqi.li.network.LivingMapGuiTeleportPacket;
 import net.minecraft.client.Minecraft;
@@ -32,7 +30,6 @@ import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
-import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.client.resources.MapDecorationTextureManager;
 import net.minecraft.nbt.CompoundTag;
@@ -49,7 +46,6 @@ import net.minecraft.world.item.MapItem;
 import net.minecraft.world.level.saveddata.maps.MapDecoration;
 import net.minecraft.world.level.saveddata.maps.MapId;
 import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
-import net.neoforged.neoforge.fluids.FluidType;
 import net.neoforged.neoforge.network.PacketDistributor;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
@@ -527,193 +523,6 @@ public class AbstractContainerScreenMixin extends Screen {
         guiGraphics.renderTooltip(this.font, lines, java.util.Optional.empty(), mouseX, mouseY);
     }
 
-    @Inject(method = "render", at = @At("TAIL"))
-    private void living_item$renderWaterFlow(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick,
-                                              CallbackInfo ci) {
-        AbstractContainerScreen<?> self = (AbstractContainerScreen<?>) (Object) this;
-
-        // 容器级流体快照（FluidFlowSyncPacket），贴图/颜色按流体自适应 —— 纯源容器的水也能画。
-        // （旧桶轨已随桶源退役删除，2026-10-03 批次二）
-        List<FluidCellRender> cells = living_item$collectContainerFluidCells(self);
-        if (cells.isEmpty()) return;
-
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.setShader(GameRenderer::getPositionTexShader);
-        RenderSystem.setShaderTexture(0, TextureAtlas.LOCATION_BLOCKS);
-
-        for (FluidCellRender cell : cells) {
-            Slot slot = self.getMenu().getSlot(cell.menuIndex());
-            if (slot == null) continue;
-            FluidVisual visual = living_item$fluidVisual(cell.fluid());
-            living_item$drawFluidCell(guiGraphics, leftPos + slot.x, topPos + slot.y,
-                cell.level(), cell.direction(), visual);
-        }
-
-        RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
-        RenderSystem.disableBlend();
-    }
-
-    /** 单格流体绘制（容器轨）：源 = still 贴图，流动 = flow 贴图按方向旋转；颜色/alpha 按流体。 */
-    @Unique
-    private void living_item$drawFluidCell(GuiGraphics guiGraphics, int x, int y,
-                                           int level, int direction, FluidVisual visual) {
-        float maxLevel = visual.maxLevel() > 0 ? visual.maxLevel() : 7.0f;
-        float alpha = level == 0 ? 0.55f : 0.25f + (1.0f - Math.min(level, (int) maxLevel) / maxLevel) * 0.3f;
-        RenderSystem.setShaderColor(visual.r(), visual.g(), visual.b(), alpha);
-
-        TextureAtlasSprite still = living_item$blockSprite(visual.stillTexture());
-        TextureAtlasSprite flow = living_item$blockSprite(visual.flowTexture());
-
-        if (level == 0) {
-            guiGraphics.blit(x, y, 0, 16, 16, still);
-        } else {
-            float angleDeg = living_item$directionToRotation(direction);
-            PoseStack pose = guiGraphics.pose();
-            pose.pushPose();
-            pose.translate(x + 8, y + 8, 0);
-            pose.mulPose(new Quaternionf().rotateZ((float) Math.toRadians(angleDeg)));
-            pose.translate(-8, -8, 0);
-            guiGraphics.blit(0, 0, 0, 16, 16, flow);
-            pose.popPose();
-        }
-    }
-
-    /** 每流体的渲染参数（贴图位置 + 染色 + level 上限）。贴图 sprite 每帧取（资源重载安全）。 */
-    @Unique
-    private FluidVisual living_item$fluidVisual(FluidType type) {
-        FluidVisual cached = FLUID_VISUAL_CACHE.get(type);
-        if (cached != null) return cached;
-        if (FLUID_VISUAL_CACHE.containsKey(type)) return FLUID_VISUAL_CACHE.get(type);
-
-        net.neoforged.neoforge.client.extensions.common.IClientFluidTypeExtensions ext =
-            net.neoforged.neoforge.client.extensions.common.IClientFluidTypeExtensions.of(type);
-        ResourceLocation stillLoc = ext.getStillTexture();
-        ResourceLocation flowLoc = ext.getFlowingTexture();
-        if (stillLoc == null) stillLoc = flowLoc;
-        if (flowLoc == null) flowLoc = stillLoc;
-        if (stillLoc == null) {
-            // 极端防御（仅 Fluids.EMPTY 会这样）：回退水贴图 + 白色
-            stillLoc = flowLoc = ResourceLocation.withDefaultNamespace("block/water_still");
-        }
-        int tint = ext.getTintColor();
-        float r = 1.0f, g = 1.0f, b = 1.0f;
-        if (tint != -1) {
-            int a = (tint >>> 24) & 0xFF;
-            if (a == 0) a = 255;   // 部分模组染色不带 alpha 位
-            r = ((tint >> 16) & 0xFF) / 255.0f;
-            g = ((tint >> 8) & 0xFF) / 255.0f;
-            b = (tint & 0xFF) / 255.0f;
-        }
-        int maxLevel = FluidFlowBehaviors.of(type).maxLevel();
-        FluidVisual visual = new FluidVisual(stillLoc, flowLoc, r, g, b, maxLevel);
-        FLUID_VISUAL_CACHE.put(type, visual);
-        return visual;
-    }
-
-    @Unique
-    private static final Map<FluidType, FluidVisual> FLUID_VISUAL_CACHE = new HashMap<>();
-
-    @Unique
-    private TextureAtlasSprite living_item$blockSprite(ResourceLocation loc) {
-        return Minecraft.getInstance().getTextureAtlas(TextureAtlas.LOCATION_BLOCKS).apply(loc);
-    }
-
-    /**
-     * 容器轨取数：菜单槽位按 {@code slot.container} 分组，每组选快照
-     * （玩家背包 → {@link FluidFlowClientCache#getPlayer()}，其余 → {@link FluidFlowClientCache#getChestLike()}），
-     * handler 槽位经 {@link #living_item$resolveContainerSlot(Slot)} 映射回菜单槽位。
-     */
-    @Unique
-    private List<FluidCellRender> living_item$collectContainerFluidCells(AbstractContainerScreen<?> self) {
-        List<FluidCellRender> out = new ArrayList<>();
-        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
-        if (mc.player == null) return out;
-
-        Map<Container, Map<Integer, Integer>> groups = new LinkedHashMap<>();
-        for (int i = 0; i < self.getMenu().slots.size(); i++) {
-            Slot s = self.getMenu().slots.get(i);
-            groups.computeIfAbsent(s.container, k -> new HashMap<>())
-                  .put(living_item$resolveContainerSlot(s), i);
-        }
-
-        Inventory playerInv = mc.player.getInventory();
-        for (var group : groups.entrySet()) {
-            // 两分：玩家背包 → 背包快照；**其余一律非背包组** → 由服务端下发的 RenderTarget 决定
-            // （末影箱界面在客户端与普通 3 行箱子同形，靠 instanceof 判末影箱是死分支 —— 2026-10-06）
-            FluidFlowClientCache.FlowSnapshot snapshot;
-            if (group.getKey() == playerInv) {
-                snapshot = FluidFlowClientCache.getPlayer();
-            } else {
-                snapshot = FluidFlowClientCache.getChestLike();
-            }
-            if (snapshot.isEmpty()) continue;
-
-            int width = Math.max(1, snapshot.width());
-            for (var cellEntry : snapshot.cells().entrySet()) {
-                int handlerSlot = cellEntry.getKey();
-                int[] v = cellEntry.getValue();
-                Integer menuIndex = group.getValue().get(handlerSlot);
-                if (menuIndex == null) continue;
-
-                java.util.List<FluidType> palette = snapshot.fluids();
-                if (v[2] < 0 || v[2] >= palette.size()) continue;
-                FluidType type = palette.get(v[2]);
-                if (type == null) continue;
-
-                int level = v[0];
-                int fromSlot = v[1];
-                int direction;
-                if (level == 0 || fromSlot < 0) {
-                    direction = DIR_DOWN;
-                } else {
-                    int dx = (handlerSlot % width) - (fromSlot % width);
-                    int dy = (handlerSlot / width) - (fromSlot / width);
-                    direction = living_item$cardinalDirection(dx, dy);
-                }
-                out.add(new FluidCellRender(menuIndex, level, direction, type));
-            }
-        }
-        return out;
-    }
-
-    @Unique
-    private static float living_item$directionToRotation(int direction) {
-        return switch (direction) {
-            case DIR_DOWN -> 0.0f;
-            case DIR_RIGHT -> -90.0f;
-            case DIR_UP -> 180.0f;
-            case DIR_LEFT -> 90.0f;
-            default -> 0.0f;
-        };
-    }
-
-    /**
-     * 解析槽位的真实容器槽位索引（Q6 批次 C，2026-10-04）—— 实现已迁至
-     * {@link ClientSlotResolve#resolveContainerSlot}（客户端槽位解析共享工具），此处保留薄委托。
-     */
-    @Unique
-    private static int living_item$resolveContainerSlot(Slot s) {
-        return ClientSlotResolve.resolveContainerSlot(s);
-    }
-
-    @Unique
-    private static int living_item$cardinalDirection(int dx, int dy) {
-        if (Math.abs(dx) >= Math.abs(dy)) {
-            return dx >= 0 ? DIR_RIGHT : DIR_LEFT;
-        } else {
-            return dy >= 0 ? DIR_DOWN : DIR_UP;
-        }
-    }
-
-    /** 容器轨渲染格：菜单槽位索引 + level + 四方向 + 流体类型（贴图/颜色按流体自适应）。 */
-    @Unique
-    private record FluidCellRender(int menuIndex, int level, int direction, FluidType fluid) {}
-
-    /** 每流体渲染参数：贴图位置（sprite 每帧解析，资源重载安全）+ 染色 + level 上限。 */
-    @Unique
-    private record FluidVisual(ResourceLocation stillTexture, ResourceLocation flowTexture,
-                               float r, float g, float b, int maxLevel) {}
 
     // ==================== Farmland Crop Rendering ====================
 

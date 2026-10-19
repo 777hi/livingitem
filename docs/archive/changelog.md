@@ -57,6 +57,18 @@
 > 新增守卫 2 项（模组容器槽位 → `chest_x_y_z` 同源键 / 玩家背包槽位不落进方块容器）。
 > 单测 761 → 762。
 >
+> ✅ **活流体改挂 NeoForge 渲染事件（同日，真机驱动）** —— 真机「能倒进背包了，但不渲染」。
+> 根因不在数据在**挂点**：流体绘制原先注入 {@code AbstractContainerScreen.render} TAIL，
+> 而精妙的 {@code StorageScreenBase.render} <b>自己抄了一份 {@code super.render}
+> （{@code renderSuper}）且不调用父实现</b> ⇒ 父类里的注入字节码永远不执行。
+> 同类受害的还有任何「只在 render 里做事」的 Mixin —— tooltip 没事是因为它挂 {@code renderTooltip}
+> （精妙的 render 确实会调它）。
+> 修：抽出 {@code ContainerFluidOverlay} + 订阅 {@code ContainerScreenEvent.Render.Foreground}
+> —— 原版发、精妙照抄的那段也发，一个挂点通吃，不必给每个模组补 Mixin。
+> ⚠️ 坐标：事件在已按 (leftPos, topPos) 平移的位姿里触发 ⇒ 先 {@code pose.setIdentity()}
+> 再用 {@code getGuiLeft()/getGuiTop() + slot.x/y}，否则多乘一次偏移。
+> 单测不变（762）；`AbstractContainerScreenMixin` 瘦身约 190 行。
+>
 > ⚠️ **同日收紧：反射降为兜底（用户「反射的兼容性好像不佳来着」）** —— 把 `MenuSlotOwners`
 > 改成**三级**：① 结构化（原版 BE / 大箱子，无反射）→ ② **注册的 compat**
 > （`registerMenuResolver`，编译期安全）→ ③ 反射兜底。并收紧反射判据：**只认
