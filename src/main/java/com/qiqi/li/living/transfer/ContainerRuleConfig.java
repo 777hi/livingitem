@@ -27,7 +27,7 @@ import java.util.*;
  *
  * <h2>三层来源（优先级从高到低）</h2>
  * <ol>
- *   <li><b>玩家移除</b> — 玩家显式删除的内置规则，{@link #REMOVED_IDS}；
+ *   <li><b>玩家移除</b> — 玩家显式删除的内置规则（按档），{@link #REMOVED_KEYS}；
  *       即使内置资源里还有，也不会生效</li>
  *   <li><b>玩家规则</b> — {@link #USER_RULES}，玩家通过指令注册/覆盖的条目，
  *       持久化在 {@code config/living_item/container_rules.json}</li>
@@ -80,16 +80,34 @@ public final class ContainerRuleConfig {
 
     /**
      * 玩家规则（新增或对内置规则的覆盖）。
-     * <p>与 {@link ContainerCompatibilityConfig} 的注册表保持同步：启动时加载、
-     * 通过指令修改时更新、{@link #save()} 时写出。</p>
+     *
+     * <p>⚠️ <b>值是 List 而不是单条</b>（2026-10-19，口径与
+     * {@link ContainerCompatibilityConfig} 的注册表对齐）：同一个方块实体类型可以有
+     * <b>多档容量且列数不同</b>。典型是精妙背包 —— 六个方块共用一个 BE 类型
+     * {@code sophisticatedbackpacks:backpack}，27/45/54/81 是 9 列，108/120 是 12 列。</p>
+     *
+     * <p>旧实现 {@code Map<id, rule>} 下，玩家用指令校准第二个容量档会<b>覆盖</b>第一个，
+     * 且要到重启加载才暴露（内置规则从 JSON 逐条读所以不受影响 —— 只有玩家差异这一路曾是单键）。</p>
      */
-    private static final Map<ResourceLocation, ContainerRule> USER_RULES = new LinkedHashMap<>();
+    private static final Map<ResourceLocation, List<ContainerRule>> USER_RULES = new LinkedHashMap<>();
 
     /**
-     * 被玩家显式移除的内置规则 ID。
+     * 被玩家显式移除的<b>单档</b>规则，键形 {@code "<容器id>|<容量>"}。
+     *
      * <p>没有这个集合，玩家删掉的内置规则会在下次启动时被内置资源「复活」。</p>
+     *
+     * <p>⚠️ <b>为什么按 (id, 容量) 而不是按 id</b>：{@link #removeAndSave} 的语义是
+     * 「删掉这个容器的规则」（指令粒度就是一个 {@code containerId}），它会把该 id
+     * 当前所有档都标记移除；但 {@link #addAndSave} 是<b>单档</b>操作 —— 若移除记录是 id 级，
+     * 玩家删掉六档后再注册一档，会连带着把另外五档的移除记录一起清掉 ⇒ 内置规则复活。</p>
      */
-    private static final Set<ResourceLocation> REMOVED_IDS = new HashSet<>();
+    private static final Set<String> REMOVED_KEYS = new HashSet<>();
+
+    /**
+     * 旧配置里的 id 级移除记录（{@code "容器id"}，无 `|容量` 后缀）—— 兼容读旧存档，
+     * 语义为「该 id 的全部档位都移除」。
+     */
+    private static final Set<ResourceLocation> REMOVED_WILDCARD_IDS = new HashSet<>();
 
     /** 配置目录：config/living_item/ */
     private static Path configDir = null;
@@ -158,7 +176,7 @@ public final class ContainerRuleConfig {
 
         // 3. 汇总：便于作者/玩家一眼看出规则构成（社区贡献占比）
         LOGGER.info("Container rules ready: {} effective ({} bundled + {} community, {} bundled rule(s) removed)",
-            ContainerCompatibilityConfig.getAllRules().size(), countBundled(), countUser(), REMOVED_IDS.size());
+            ContainerCompatibilityConfig.getAllRules().size(), countBundled(), countUser(), REMOVED_KEYS.size() + REMOVED_WILDCARD_IDS.size());
     }
 
     /**
@@ -171,7 +189,8 @@ public final class ContainerRuleConfig {
         ContainerCompatibilityConfig.clearAllRules();
         BUNDLED_IDS.clear();
         USER_RULES.clear();
-        REMOVED_IDS.clear();
+        REMOVED_KEYS.clear();
+        REMOVED_WILDCARD_IDS.clear();
     }
 
     /** 把玩家配置数据应用到注册表（删除 + 覆盖/新增） */
@@ -182,15 +201,32 @@ public final class ContainerRuleConfig {
         int dupCount = 0;
 
         // 2a. 先应用删除：玩家显式移除了某条内置规则
+        //
+        // ⚠️ 移除记录按档（"<id>|<容量>"）。旧配置里可能是裸 id（无 |容量）——
+        // 那是 2026-10-19 之前的格式，语义为「该 id 全部档移除」，收进通配集合兼容。
         if (data.removed != null) {
             for (String raw : data.removed) {
                 if (raw == null || raw.isBlank()) continue;
-                ResourceLocation id = ResourceLocation.tryParse(raw);
-                if (id == null) continue;
-
-                ContainerCompatibilityConfig.remove(id);
-                REMOVED_IDS.add(id);
-                USER_RULES.remove(id);
+                int bar = raw.lastIndexOf('|');
+                if (bar > 0 && bar < raw.length() - 1) {
+                    // 新格式：<id>|<容量>
+                    ResourceLocation id = ResourceLocation.tryParse(raw.substring(0, bar));
+                    Integer size = parseIntOrNull(raw.substring(bar + 1));
+                    if (id == null || size == null) {
+                        LOGGER.warn("Ignoring malformed removal key: {}", raw);
+                        continue;
+                    }
+                    ContainerCompatibilityConfig.removeTier(id, size);
+                    REMOVED_KEYS.add(raw);
+                    removeUserRule(id, size);
+                } else {
+                    // 旧格式：裸 id ⇒ 全档移除
+                    ResourceLocation id = ResourceLocation.tryParse(raw);
+                    if (id == null) continue;
+                    ContainerCompatibilityConfig.remove(id);
+                    REMOVED_WILDCARD_IDS.add(id);
+                    USER_RULES.remove(id);
+                }
                 removedCount++;
             }
         }
@@ -205,26 +241,26 @@ public final class ContainerRuleConfig {
                     continue;
                 }
                 // 已被玩家移除的条目，以 removed 为准
-                if (REMOVED_IDS.contains(id)) continue;
+                if (isRemovedTier(id, entry.containerSize)) continue;
 
                 ContainerRule rule = buildRule(entry);
 
-                // 玩家规则内部重复定义：同一 ID 在同一文件里出现两次且数值不同 ⇒ 报 WARN
-                ContainerRule prev = USER_RULES.get(id);
+                // 玩家规则内部重复定义：**同 (id, 容量)** 数值不同才算冲突（旧实现只看 id ⇒ 误报：
+                // 同一 id 的不同容量档本来就是两档，不是重复定义）
+                ContainerRule prev = findUserRule(id, rule.containerSize());
                 if (prev != null && (prev.containerSize() != rule.containerSize()
                         || prev.columns() != rule.columns())) {
                     dupCount++;
-                    LOGGER.warn("User config defines '{}' twice with different values — "
-                            + "keeping later ({} slots, {} cols), was ({} slots, {} cols).",
-                        id, rule.containerSize(), rule.columns(),
-                        prev.containerSize(), prev.columns());
+                    LOGGER.warn("User config defines '{}' at {} slots twice with different values — "
+                            + "keeping later ({} cols), was ({} cols).",
+                        id, rule.containerSize(), rule.columns(), prev.columns());
                 }
 
                 // 覆盖内置是预期行为（玩家修正错误数据），只记数、不告警
                 if (isBundledRule(id) && prev == null) overrideCount++;
 
                 ContainerCompatibilityConfig.register(id, rule);
-                USER_RULES.put(id, rule);
+                addUserRule(id, rule);
                 ruleCount++;
             }
         }
@@ -333,9 +369,71 @@ public final class ContainerRuleConfig {
         return BUNDLED_IDS.contains(containerId);
     }
 
-    /** 该 ID 是否被玩家显式移除 */
+    /**
+     * 该 ID 是否有任**一档**被玩家显式移除（含旧格式的 id 级通配移除）。
+     *
+     * <p>⚠️ 判定粒度是单档：同一 id 可能 108 档被删、120 档没被删。</p>
+     */
     public static boolean isRemovedByUser(ResourceLocation containerId) {
-        return REMOVED_IDS.contains(containerId);
+        if (REMOVED_WILDCARD_IDS.contains(containerId)) return true;
+        String prefix = containerId + "|";
+        for (String key : REMOVED_KEYS) {
+            if (key.startsWith(prefix)) return true;
+        }
+        return false;
+    }
+
+    /** 该 (id, 容量) 单档是否被玩家移除。 */
+    public static boolean isRemovedByUser(ResourceLocation containerId, int containerSize) {
+        if (REMOVED_WILDCARD_IDS.contains(containerId)) return true;
+        return REMOVED_KEYS.contains(containerId + "|" + containerSize);
+    }
+
+    private static boolean isRemovedTier(ResourceLocation containerId, int containerSize) {
+        return isRemovedByUser(containerId, containerSize);
+    }
+
+    /** 移除记录的字符串键形（写盘用，与 {@link #REMOVED_KEYS} 一致）。 */
+    private static String removalKey(ResourceLocation containerId, int containerSize) {
+        return containerId + "|" + containerSize;
+    }
+
+    private static Integer parseIntOrNull(String raw) {
+        try {
+            return Integer.parseInt(raw.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /** 玩家规则里的 (id, 容量) 单档；没有返回 {@code null}。 */
+    private static ContainerRule findUserRule(ResourceLocation id, int containerSize) {
+        List<ContainerRule> list = USER_RULES.get(id);
+        if (list == null) return null;
+        for (ContainerRule rule : list) {
+            if (rule.containerSize() == containerSize) return rule;
+        }
+        return null;
+    }
+
+    /** 写入/覆盖玩家规则的单档（已存在同档则替换，否则追加）。 */
+    private static void addUserRule(ResourceLocation id, ContainerRule rule) {
+        List<ContainerRule> list = USER_RULES.computeIfAbsent(id, k -> new ArrayList<>());
+        for (int i = 0; i < list.size(); i++) {
+            if (list.get(i).containerSize() == rule.containerSize()) {
+                list.set(i, rule);
+                return;
+            }
+        }
+        list.add(rule);
+    }
+
+    /** 删除玩家规则的单档；该 id 再无档则把整个键一并清掉。 */
+    private static void removeUserRule(ResourceLocation id, int containerSize) {
+        List<ContainerRule> list = USER_RULES.get(id);
+        if (list == null) return;
+        list.removeIf(r -> r.containerSize() == containerSize);
+        if (list.isEmpty()) USER_RULES.remove(id);
     }
 
     /**
@@ -344,30 +442,38 @@ public final class ContainerRuleConfig {
      * @return {@code true} 表示玩家动过这条，应被持久化与导出
      */
     public static boolean isUserModified(ResourceLocation containerId) {
-        return USER_RULES.containsKey(containerId) || REMOVED_IDS.contains(containerId);
+        return USER_RULES.containsKey(containerId) || isRemovedByUser(containerId);
     }
 
     /**
-     * 获取玩家注册/覆盖的规则（不含删除记录）。
+     * 获取玩家注册/覆盖的规则（不含删除记录）—— <b>已按容量档摊平</b>，每条带自己的容器 id。
      *
-     * @return 规则映射（按 ID 排序，保证导出结果稳定可比对）
+     * <p>⚠️ 返回值带 id 而不是 {@code List<ContainerRule>}：{@link #save()} 与导出需要把它写回
+     * {@code containerId} 字段，摊平后丢失 id 就没法还原。</p>
+     *
+     * @return 规则条目（按 ID + 容量排序，保证导出结果稳定可比对）
      */
-    public static Map<ResourceLocation, ContainerRule> getUserRules() {
-        List<ResourceLocation> ids = new ArrayList<>(USER_RULES.keySet());
-        ids.sort(Comparator.comparing(ResourceLocation::toString));
-
-        Map<ResourceLocation, ContainerRule> result = new LinkedHashMap<>();
-        for (ResourceLocation id : ids) {
-            result.put(id, USER_RULES.get(id));
+    public static List<java.util.Map.Entry<ResourceLocation, ContainerRule>> getUserRules() {
+        List<java.util.Map.Entry<ResourceLocation, ContainerRule>> flat = new ArrayList<>();
+        for (var entry : USER_RULES.entrySet()) {
+            for (ContainerRule rule : entry.getValue()) {
+                flat.add(java.util.Map.entry(entry.getKey(), rule));
+            }
         }
-        return result;
+        flat.sort(java.util.Comparator
+            .comparing((java.util.Map.Entry<ResourceLocation, ContainerRule> e) -> e.getKey().toString())
+            .thenComparingInt(e -> e.getValue().containerSize()));
+        return flat;
     }
 
-    /** 获取被玩家显式移除的内置规则 ID（已排序） */
-    public static List<ResourceLocation> getRemovedIds() {
-        List<ResourceLocation> ids = new ArrayList<>(REMOVED_IDS);
-        ids.sort(Comparator.comparing(ResourceLocation::toString));
-        return ids;
+    /** 获取被玩家显式移除的规则键（{@code "<id>|<容量>"}，已排序） */
+    public static List<String> getRemovedIds() {
+        List<String> keys = new ArrayList<>(REMOVED_KEYS);
+        for (ResourceLocation id : REMOVED_WILDCARD_IDS) {
+            keys.add(id.toString());
+        }
+        keys.sort(Comparator.naturalOrder());
+        return keys;
     }
 
     /**
@@ -382,19 +488,17 @@ public final class ContainerRuleConfig {
         data.version = CONFIG_VERSION;
         data.rules = new ArrayList<>();
 
-        for (var entry : getUserRules().entrySet()) {
+        for (var entry : getUserRules()) {
+            ContainerRule rule = entry.getValue();
             RuleEntry re = new RuleEntry();
             re.containerId = entry.getKey().toString();
-            re.containerSize = entry.getValue().containerSize();
-            re.columns = entry.getValue().columns();
-            re.description = entry.getValue().description();
+            re.containerSize = rule.containerSize();
+            re.columns = rule.columns();
+            re.description = rule.description();
             data.rules.add(re);
         }
 
-        data.removed = new ArrayList<>();
-        for (ResourceLocation id : getRemovedIds()) {
-            data.removed.add(id.toString());
-        }
+        data.removed = new ArrayList<>(getRemovedIds());
 
         try (Writer writer = new OutputStreamWriter(
                 new FileOutputStream(file.toFile()), StandardCharsets.UTF_8)) {
@@ -503,8 +607,9 @@ public final class ContainerRuleConfig {
             .findRule(containerId, rule.containerSize()).isPresent();
 
         ContainerCompatibilityConfig.register(containerId, rule);
-        REMOVED_IDS.remove(containerId);
-        USER_RULES.put(containerId, rule);
+        // 只清本档的移除记录 —— id 级清空会让别的档「复活」
+        REMOVED_KEYS.remove(removalKey(containerId, rule.containerSize()));
+        addUserRule(containerId, rule);
         save();
 
         if (overwrite) {
@@ -518,25 +623,36 @@ public final class ContainerRuleConfig {
     }
 
     /**
-     * 移除一条容器规则并保存。
+     * 移除一个容器的规则并保存 —— <b>该 id 的全部容量档</b>。
      *
-     * <p>若该规则属于模组内置资源，会记入 {@code removed} 列表，
-     * 否则下次启动会被内置资源重新加载回来。</p>
+     * <p>指令粒度就是一个 {@code containerId}，所以语义是「这个容器的规则都不要了」。
+     * 内部对每一档单独记移除键：这样 {@link #addAndSave} 将来只加回其中一档时，
+     * 不会把其余档的移除记录一起清掉 ⇒ 内置规则复活。</p>
      *
      * @param containerId 容器 ID
      * @return 是否成功移除
      */
     public static boolean removeAndSave(ResourceLocation containerId) {
+        // 先快照该 id 当前所有档（remove 之后就查不到了）
+        List<Integer> sizes = new ArrayList<>();
+        for (var entry : ContainerCompatibilityConfig.getAllRules()) {
+            if (entry.getKey().equals(containerId)) {
+                sizes.add(entry.getValue().containerSize());
+            }
+        }
         boolean wasBundled = isBundledRule(containerId);
         boolean removed = ContainerCompatibilityConfig.remove(containerId);
         USER_RULES.remove(containerId);
 
-        // 内置规则必须留下删除记录，才能真正"删掉"
+        // 内置规则必须留下删除记录，才能真正"删掉"。
+        // ⚠️ 只对**内置**的记：玩家自建的规则没有「被内置资源复活」的风险，记了反而会让
+        //    isRemovedByUser 永远为真（id 级查询）。
         if (wasBundled) {
-            REMOVED_IDS.add(containerId);
-        } else {
-            REMOVED_IDS.remove(containerId);
+            for (int size : sizes) {
+                REMOVED_KEYS.add(removalKey(containerId, size));
+            }
         }
+        REMOVED_WILDCARD_IDS.remove(containerId);
 
         if (removed || wasBundled) {
             save();

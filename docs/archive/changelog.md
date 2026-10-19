@@ -40,6 +40,13 @@
 > `MenuSlotOwnersTest.resolve_doubleChest_returnsBothHalves`（改为按位置匹配）。
 > 单测 763 → 760（759 passed + 1 skipped，0 fail）。`Container` 剩余调用点全部是 I-C2 允许的原版语义用途。
 >
+> ✅ **玩家规则持久化也按档（同日）** —— S4 只改了内存注册表，玩家差异 `USER_RULES` 还是
+> `Map<id, rule>` ⇒ 用指令校准同一 BE 第二档容量会覆盖第一档，重启后才暴露。修：
+> `USER_RULES` → `Map<id, List<rule>>`，删除记录 `REMOVED_KEYS` → 按 `(id, 容量)` 单档
+> （旧配置裸 id 按「全档移除」兼容读）。⚠️ 删除记录必须按档：若仍是 id 级，
+> `addAndSave` 清移除记录时会把别的档一起复活。新增守卫 `multiTierUserRules_coexist`
+> （含「重启后两档都还在」）。单测 760 → 761。
+>
 > ⚠️ **同日收紧：反射降为兜底（用户「反射的兼容性好像不佳来着」）** —— 把 `MenuSlotOwners`
 > 改成**三级**：① 结构化（原版 BE / 大箱子，无反射）→ ② **注册的 compat**
 > （`registerMenuResolver`，编译期安全）→ ③ 反射兜底。并收紧反射判据：**只认

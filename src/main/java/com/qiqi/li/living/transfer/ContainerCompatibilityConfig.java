@@ -81,6 +81,20 @@ public final class ContainerCompatibilityConfig {
     }
 
     /**
+     * 只移除该 ID 的<b>某一档</b>容量 —— 玩家差异的删除是按档记的
+     * （见 {@code ContainerRuleConfig.REMOVED_KEYS}），加载时要能单独摘掉一档。
+     *
+     * @return 是否确实删掉了这一档
+     */
+    public static boolean removeTier(ResourceLocation containerId, int containerSize) {
+        List<ContainerRule> list = RULES.get(containerId);
+        if (list == null) return false;
+        boolean removed = list.removeIf(r -> r.containerSize() == containerSize);
+        if (list.isEmpty()) RULES.remove(containerId);
+        return removed;
+    }
+
+    /**
      * 按 ID 查规则 —— 返回该 ID 的<b>第一条</b>（档位顺序无关）。
      *
      * <p>⚠️ 凡是要拿「这个容器的列数」的地方都<b>必须</b>用

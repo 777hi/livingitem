@@ -87,9 +87,32 @@ class ContainerRuleConfigTest {
         assertTrue(ContainerRuleConfig.isUserModified(custom),
             "玩家动过 ⇒ 应被持久化与导出");
 
-        Map<ResourceLocation, ContainerRule> userRules = ContainerRuleConfig.getUserRules();
+        // getUserRules() 已按容量档摊平、每条带自己的容器 id（2026-10-19 多档改造）
+        var userRules = ContainerRuleConfig.getUserRules();
         assertEquals(1, userRules.size(), "应恰好只有这一条玩家规则");
-        assertEquals(12, userRules.get(custom).columns(), "列数应被保留");
+        assertEquals(custom, userRules.get(0).getKey(), "摊平条目应带上容器 id");
+        assertEquals(12, userRules.get(0).getValue().columns(), "列数应被保留");
+    }
+
+    @Test
+    @DisplayName("多档容量：同一 id 的两个容量档可同时进玩家差异（覆盖不再互相挤掉）")
+    void multiTierUserRules_coexist() {
+        // 精妙背包的真实形态：六档共用一个 BE id，27/81 是 9 列，108/120 是 12 列
+        ResourceLocation id =
+            ResourceLocation.fromNamespaceAndPath("sophisticatedbackpacks", "backpack");
+
+        ContainerRuleConfig.addAndSave(id, buildRule(108, 12));
+        ContainerRuleConfig.addAndSave(id, buildRule(120, 12));
+
+        var userRules = ContainerRuleConfig.getUserRules();
+        assertEquals(2, userRules.size(), "两档都必须留在玩家差异里（旧实现第二条会覆盖第一条）");
+
+        // 重启语义：重新 load() 后两档仍在生效注册表中
+        ContainerRuleConfig.load();
+        assertTrue(ContainerCompatibilityConfig.findRule(id, 108).isPresent(), "重启后 108 档仍在");
+        assertTrue(ContainerCompatibilityConfig.findRule(id, 120).isPresent(), "重启后 120 档仍在");
+        assertEquals(12, ContainerCompatibilityConfig.findRule(id, 108).orElseThrow().columns());
+        assertEquals(12, ContainerCompatibilityConfig.findRule(id, 120).orElseThrow().columns());
     }
 
     @Test
