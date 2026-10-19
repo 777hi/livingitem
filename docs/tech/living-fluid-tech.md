@@ -569,8 +569,19 @@ vanilla 双箱 = CompoundContainer 单容器天然一网；末影箱路由模式
 
 **容器轨（唯一轨道）**：`LivingFluidFunction.tickContainerData` 尾部 →
 `FluidFlowServerSync.flushAfterTick` → `FluidFlowSyncPacket`（**流体调色板** +
-slot/level/fromSlot）→ 客户端 `FluidFlowClientCache` → `AbstractContainerScreenMixin`
+slot/level/fromSlot）→ 客户端 `FluidFlowClientCache` → `ContainerFluidOverlay`
 自适应渲染（`IClientFluidTypeExtensions` 贴图/染色，alpha 按 `maxLevel` 归一；动画白拿）。
+
+> ⚠️ **2026-10-19 换挂点：挂在 `AbstractContainerScreen.render` 的 Mixin 对部分模组界面是死的**
+> （真机：精妙背包 GUI 死活不渲染，而数据/派发/缓存全部正常）。
+> 根因：那些模组的界面类**自己抄了一份 `super.render` 而不调用父实现**（精妙的
+> `StorageScreenBase.renderSuper` 就是一份 `super.render` 的副本）⇒ 注入在父类 `render`
+> 里的字节码永远不执行。同类受害的是**任何**「只在 `AbstractContainerScreen.render` 里做事」
+> 的 Mixin —— tooltip 类之所以没事，是因为它们挂 `renderTooltip`（精妙的 `render` 确实会调它）。
+> ⇒ 现在挂 **`ContainerScreenEvent.Render.Foreground`**：原版会发，抄 `render` 的模组那段也发，
+> 一个挂点通吃。⚠️ 该事件在**已按 `(leftPos, topPos)` 平移**的位姿里触发
+> ⇒ 绘制前先 `pose.setIdentity()`，再用 `getGuiLeft()/getGuiTop() + slot.x/y`
+> （`leftPos` 是 protected，外部类只能用 `getGuiLeft()`），否则多乘一次偏移。
 
 - **不依赖任何活桶物品**——纯源容器的水也能画；
 - **派发目标由服务端权威告知**（`FluidFlowSyncPacket.target`，2026-10-06 修正）：

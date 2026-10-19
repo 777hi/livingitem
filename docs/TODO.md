@@ -104,24 +104,23 @@
 3. ⏳ 铜块物品栏装饰器渲染（纯视觉）—— `living-copper-tech.md`
 4. 🔮 活潜影箱集成（信号穿透边界）—— 设计探讨见 `buffer/活潜影箱实现细节.md`
 
-## 容器边界（2026-10-10 记 · 2026-10-18 立项为专题）
+## 容器边界（2026-10-10 记 · 2026-10-18/19 立项并完成主体）
 
-> **契约**：[system-design/container-boundary.md](system-design/container-boundary.md)（不变量 I-C1~I-C7，已生效）
-> **实施计划**：[buffer/container-compat-topic.md](buffer/container-compat-topic.md)（S1~S5 + 验收判据）
+> **契约**：[system-design/container-boundary.md](system-design/container-boundary.md)（不变量 I-C1~I-C8，已生效）
+> **实施记录**：[buffer/container-compat-topic.md](buffer/container-compat-topic.md)
 >
 > 本条目只留「还没做完的」，不再承载设计正文。
 
-1. ✅ **「白/黑名单」已否**（`D-container-05`）—— 原待决「是否在扫描入口排除『有物品能力但非原版
-   `Container`』的模组容器」。结论：**排除 = 放弃兼容**，且黑名单是永久适配债 ⇒ 改为口径收敛
-   （`D-container-01` / `D-container-04`）。理由见契约 §0 / §2。
-   ⚠️ 不加名单意味着「非 `Container` 容器必须能 tick **且**能同步显示」——后半句当前未实现（I-C5 ⏳）。
-2. ⏳ **专题 S2~S5 未开始**（S1 契约 + 守卫测试已完成，守卫 3 项 `@Disabled` 待 S2 解除）。
+1. ✅ **「白/黑名单」已否**（`D-container-05`）—— 排除 = 放弃兼容且是永久适配债 ⇒ 改为口径收敛。
+2. ✅ **S1~S4 + S3/S3b 全部完成，真机全通过**（2026-10-19）：
+   tooltip 进度行 · 活熔炉图标实时 · 写回不错槽/不复制 · 列数 108/120 正确算 12 ·
+   背包槽位倒汲生效 · 背包 GUI 活流体渲染。
+3. ⏳ **S5（扫描展开深度 1）未做** —— 背包**物品形态**内的活物品仍不 tick。
+   卡在键形决定（路径键 vs 精妙 contents UUID）。**用户至今未报过这个问题**，按需再做。
    范围边界见契约 §4：扫描展开只做深度 1；活潜影箱的功能内部递归独立立项。
-3. ⏳ **真机基线待用户测**（用户 2026-10-18 自领）—— 清单见专题计划 §6；
-   当前预期 B1/B3/E 组为红（S2 未做），测完把观察填进专题 §5 台账。
 4. 🔮 **池端点（长期，未定案）** —— 给 `SlotAccessor` 加「物品池」实现（按类型 extract/insert），
    让活漏斗能对 AE2 ME 接口 / RS 网络推拉。**不做**池宿主（`D-container-07` / I-C8）。
-   前置：S3 的 Provider 注册机制落地后可复用同一套注册。
+   前置：复用 `MenuSlotOwners.registerResolver` 同一套注册。
 
 ## 活水车 · Create 接触面收窄（2026-10-19 记）
 
