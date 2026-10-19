@@ -609,6 +609,9 @@ public final class ContainerRuleConfig {
         ContainerCompatibilityConfig.register(containerId, rule);
         // 只清本档的移除记录 —— id 级清空会让别的档「复活」
         REMOVED_KEYS.remove(removalKey(containerId, rule.containerSize()));
+        // 旧格式的 id 级通配移除：玩家显式加回一档 ⇒ 该 id 要活着（其余档随之复活，
+        // 这是旧存档兼容路径的已知取舍，见 REMOVED_WILDCARD_IDS javadoc）
+        REMOVED_WILDCARD_IDS.remove(containerId);
         addUserRule(containerId, rule);
         save();
 
@@ -651,8 +654,10 @@ public final class ContainerRuleConfig {
             for (int size : sizes) {
                 REMOVED_KEYS.add(removalKey(containerId, size));
             }
+            // ⚠️ 不要在这里清 REMOVED_WILDCARD_IDS：玩家再次删除一个「旧格式已整体删除」的 id 时
+            //    sizes 为空（注册表里没有它的档）⇒ 既不补单档键又抹掉通配记录
+            //    ⇒ 删除记录丢失 ⇒ 重启后内置规则复活（2026-10-19 审查发现）。
         }
-        REMOVED_WILDCARD_IDS.remove(containerId);
 
         if (removed || wasBundled) {
             save();

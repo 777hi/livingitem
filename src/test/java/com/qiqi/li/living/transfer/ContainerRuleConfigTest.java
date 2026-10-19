@@ -153,6 +153,24 @@ class ContainerRuleConfigTest {
     }
 
     @Test
+    @DisplayName("旧格式 id 级删除记录：再 remove 一次不能把它抹掉（否则重启复活）")
+    void legacyWildcardRemoval_survivesSecondRemove() throws Exception {
+        java.nio.file.Files.writeString(
+            tempDir.resolve("living_item").resolve("container_rules.json"),
+            "{\"version\":1,\"removed\":[\"minecraft:chest\"]}");
+        ContainerRuleConfig.load();
+
+        assertTrue(ContainerRuleConfig.isRemovedByUser(BUNDLED_ID), "前置：旧格式删除已生效");
+
+        // 此时注册表里已没有该 id 的任何档 ⇒ sizes 为空；若实现顺手清掉通配记录，
+        // 删除记录就彻底丢了 ⇒ 重启后内置规则复活（2026-10-19 审查发现的真实 bug）
+        ContainerRuleConfig.removeAndSave(BUNDLED_ID);
+
+        assertTrue(ContainerRuleConfig.isRemovedByUser(BUNDLED_ID),
+            "删除记录不能被抹掉 —— 抹掉 ⇒ 重启后内置规则复活");
+    }
+
+    @Test
     @DisplayName("删除玩家自建规则：不留移除记录（它本就不在内置资源里）")
     void removingUserRule_doesNotLeaveRemovalRecord() {
         ResourceLocation custom =

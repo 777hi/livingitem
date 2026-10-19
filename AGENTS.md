@@ -146,7 +146,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 769 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
+**合计测试用例 772 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -171,7 +171,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
-| 2026-10-19 | 🧭 **核心不做第三方 API 猜测（`D-container-09`）** —— 用户定调：「精妙背包只是泛化容器兼容性的**一个例子**，不能把模组弄成精妙背包的模样；难兼容的部分要当作**联动模组**去做，就像活水车那样，而不是将就本模组的一致性」。据此把 `MenuSlotOwners` 里为精妙内置的 **`getBlockPosition` 反射兜底整体移除** ⇒ 核心只剩「结构化 + 注册口」两级；反射下沉到 `living/compat/sophisticated/`（`ModList` 门控 + **包名前缀**判据，反射不扩散）。另记 `D-container-08`：**容器内物品 tick 属活潜影箱专属**，S5 取消。单测 768 → 769 | `docs/system-design/container-boundary.md` I-C5 · `docs/decisions.md` · `living/compat/sophisticated/` |
+| 2026-10-19 | 🧭 **核心不做第三方 API 猜测（`D-container-09`）** —— 用户定调：「精妙背包只是泛化容器兼容性的**一个例子**，不能把模组弄成精妙背包的模样；难兼容的部分要当作**联动模组**去做，就像活水车那样，而不是将就本模组的一致性」。据此把 `MenuSlotOwners` 里为精妙内置的 **`getBlockPosition` 反射兜底整体移除** ⇒ 核心只剩「结构化 + 注册口」两级；反射下沉到 `living/compat/sophisticated/`（`ModList` 门控 + **包名前缀**判据，反射不扩散）。另记 `D-container-08`：**容器内物品 tick 属活潜影箱专属**，S5 取消。单测 768 → 772 | `docs/system-design/container-boundary.md` I-C5 · `docs/decisions.md` · `living/compat/sophisticated/` |
 | 2026-10-19 | 🔧 **容器级数据跨形态保全** —— 真机「背包变物体形态后活流体没了」。根因：数据挂 BE 附件，破坏即随 BE 消失；而背包/潜影盒的**物品内容**存在别处 ⇒ 内容在、流体丢。用户定案「**流体保持容器属性，不物品化**」⇒ 只换存储介质：新增 `CONTAINER_FLUID_DATA_ITEM` 组件，`BlockDropsEvent`（掉落物已定、未入世、BE 尚在）搬进掉落物，`EntityPlaceEvent` 搬回新 BE。⚠️ 双箱必须迁移后清两半附件，否则两次破坏各得一份 = 复制；⚠️ 放置侧要校验「手持物品 == 本次放置的方块」。单测 762 → 769 | `living/domain/water/ContainerDataMigration.java` · `docs/TODO.md` |
 | 2026-10-19 | 🔧 **容器兼容性专题收尾（真机驱动，4 连修）** —— ① `resolve` 也按位置解析模组容器：修「往背包倒水，源落进玩家物品栏 / 背包 GUI 不渲染流体」（`ContainerContexts.resolve` 只认 `Container` 实例，对精妙恒 null ⇒ 背包槽位汲倒静默无效，改点 GUI 下方玩家物品栏才成）；② 活流体绘制从 `AbstractContainerScreen.render` TAIL 迁到 `ContainerScreenEvent.Render.Foreground`——精妙的 `StorageScreenBase.render` **自己抄了一份 super.render 且不调父实现** ⇒ 父类注入永不执行（同类受害的还有任何只挂 render 的 Mixin；tooltip 没事因挂 `renderTooltip`）；③ `USER_RULES` 多档容量；④ 反射在 `MenuSlotOwners` 里降为兜底 + 注册口。tooltip / 图标 / 倒汲 / 流体渲染 / 列数**全部真机通过**。单测 761 → 768 | `docs/system-design/container-boundary.md` · `docs/buffer/container-compat-topic.md` · `living/container/ContainerContexts.java` · `client/render/ContainerFluidOverlay.java` |
 | 2026-10-19 | ✅ **S3：viewer 匹配改位置口径（I-C5）** —— 真机「活熔炉图标要重开 GUI」「tooltip 无进度信息」同因：非原版 `Container` 的方块实体在 viewer 匹配里恒为空 ⇒ 定向槽位同步与运行时遥测双双静默不发。新增 `MenuSlotOwners`（菜单槽→容器位置：原版 BE / 大箱子反射 / **模组菜单 `getBlockPosition()` 按类缓存反射**，精妙背包零编译依赖），`LivingItem.runtimeContainerPositions` 不再要求 `be instanceof Container`（口径翻转），`syncWorldContainer` + `LivingItemRuntimeSync` 切换；**S3b** 再让流体渲染 / 酿造台音效同源，并删掉随口径退场而死的 `isViewing`/`ownsContainer`/`findViewers`/`menuContains` 整条 ⇒ **`Container` 在 viewer 匹配里彻底退场**（余下全是 I-C2 允许的原版语义用途）。单测 762（761 passed + 1 skipped） | `docs/system-design/container-boundary.md` I-C5 · `docs/buffer/container-compat-topic.md` S3 · `living/container/MenuSlotOwners.java` |

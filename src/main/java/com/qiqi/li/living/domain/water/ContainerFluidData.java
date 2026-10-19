@@ -122,6 +122,37 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
         return flows;
     }
 
+    /**
+     * 只读**快照**（派生源的深拷贝）—— 把数据交给另一个载体时用。
+     *
+     * <p>⚠️ 为什么不能直接传 this：`ItemStack#set(component, value)` 存的是<b>对象引用</b>，
+     * 而容器级流体数据是<b>可变</b>的（每 tick 重算 flows）。直接传 this 会让掉落物组件与
+     * BE 附件共享同一个对象 ⇒ 之后任何一次 tick 的改动都会漏进物品里
+     * （2026-10-19 审查发现）。</p>
+     */
+    public ContainerFluidData snapshot() {
+        ContainerFluidData copy = new ContainerFluidData();
+        copy.generatedSources.putAll(generatedSources);
+        copy.flows.putAll(flows);
+        return copy;
+    }
+
+    /**
+     * 就地清空（迁移到物品之后调用）。
+     *
+     * <p>大箱子两半在 tick 期间共享<b>同一个</b> {@code ContainerFluidData} 实例
+     * （{@code ContainerFluidWriteback} 把同一对象写给所有关联 BE）⇒ 清对象本身
+     * 就能一次清掉两半，<b>不必再按位置去找另一半</b>。</p>
+     *
+     * <p>⚠️ 为什么这条很重要：`BlockDropsEvent` 触发时方块「可能已被移除、也可能还没」
+     * （NeoForge 文档明说时机不定）⇒ 用 {@code DoubleChestPositions.find} 按方块状态找
+     * 另一半会<b>时灵时不灵</b>，漏清 ⇒ 破坏另一半时再迁移一次 ⇒ <b>复制</b>。</p>
+     */
+    public void clearAll() {
+        generatedSources.clear();
+        flows.clear();
+    }
+
     public boolean isEmpty() {
         // ⚠️ 必须计入派生源：纯源容器（flows 尚空、仅 generatedSources 非空）不是空数据 ——
         // 否则驱动的 !isEmpty() 门会把它们永远挡在 tick 之外，BFS 无从启动、落盘也会漏。

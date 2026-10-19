@@ -81,6 +81,13 @@
 > ⇒ 模组改名时失效的只有该联动模块，核心与其它模组不受牵连。
 > 守卫：`MenuSlotOwnersTest.coreDoesNotReflectThirdPartyMethod`（菜单自带 `getBlockPosition` 核心也不认）+ `SophisticatedMenuResolverTest.ignoresForeignPackageWithSameMethod`（包名不匹配即不认）。替身 `FakeBackpackMenu` 故意放在对方包名下，才能测到正路。单测 768 → 769。
 >
+> 🔍 **当日改动全量自审（用户「今天改了这么多的地方，审查一遍吧」）** —— 审出 3 处真问题，全修：
+> ① **跨形态迁移存了活对象引用**：`ItemStack#set(component, value)` 存的是**对象引用**，而 `ContainerFluidData` 是可变对象（每 tick 重算 flows）⇒ 掉落物组件与 BE 附件共享同一实例，后续任何 tick 改动都会漏进物品里。修：`snapshot()` 深拷贝后再交给物品。
+> ② **双箱可能复制**：`BlockDropsEvent` 触发时方块「可能已被移除、也可能还没」（NeoForge 文档明说时机不定）⇒ 用 `DoubleChestPositions.find` 按方块状态找另一半会时灵时不灵，漏清 ⇒ 破坏另一半时再迁移一次 = 复制。修：改为 `data.clearAll()` 就地清**对象本身**（两半在 tick 期间共享同一实例）。
+> ③ **创造模式可复制**：放置不消耗物品 ⇒ 同一 ItemStack 连续放置会让多个 BE 共享同一份可变数据（水在几个背包里同时出现）。修：放置侧也走 `snapshot()`。
+> ④ 顺带修 `removeAndSave` 误清旧格式通配删除记录（`sizes` 为空时既不补单档键又抹掉通配记录 ⇒ 删除记录丢失 ⇒ 重启复活）。
+> 新增守卫 4 项（snapshot 独立 / clearAll 一次清干净 / 旧格式删除记录不被抹掉 / 已有守卫复核）。单测 769 → 772。
+>
 > ⚠️ **同日收紧：反射降为兜底（用户「反射的兼容性好像不佳来着」）** —— 把 `MenuSlotOwners`
 > 改成**三级**：① 结构化（原版 BE / 大箱子，无反射）→ ② **注册的 compat**
 > （`registerMenuResolver`，编译期安全）→ ③ 反射兜底。并收紧反射判据：**只认

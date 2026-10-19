@@ -1,7 +1,9 @@
 package com.qiqi.li.living.domain.water;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -91,6 +93,31 @@ class ContainerDataMigrationTest {
             "槽位集合必须一致");
         assertEquals(data.getGeneratedSources().get(3), decoded.getGeneratedSources().get(3),
             "流体类型必须一致（按注册 id 往返）");
+    }
+
+    @Test
+    @DisplayName("snapshot 是独立副本：改原件不影响快照（否则物品组件会被后续 tick 污染）")
+    void snapshot_isIndependent() {
+        ContainerFluidData data = new ContainerFluidData();
+        data.registerGeneratedSource(3, net.minecraft.world.level.material.Fluids.WATER.getFluidType());
+
+        ContainerFluidData snap = data.snapshot();
+        data.clearAll();
+
+        assertEquals(0, data.getGeneratedSources().size(), "原件应已清空");
+        assertEquals(1, snap.getGeneratedSources().size(), "快照必须保持原值 —— 它已经交给物品了");
+    }
+
+    @Test
+    @DisplayName("clearAll 一次清干净（大箱两半共享同一对象，靠它避免第二次破坏再迁移 = 复制）")
+    void clearAll_emptiesBothMaps() {
+        ContainerFluidData data = new ContainerFluidData();
+        data.registerGeneratedSource(1, net.minecraft.world.level.material.Fluids.WATER.getFluidType());
+
+        assertFalse(data.isEmpty(), "前置：有源");
+        data.clearAll();
+
+        assertTrue(data.isEmpty(), "清空后必须 isEmpty —— 否则另一半破坏时会再迁移一次");
     }
 
     @Test

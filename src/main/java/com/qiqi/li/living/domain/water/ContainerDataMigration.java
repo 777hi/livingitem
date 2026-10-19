@@ -17,7 +17,6 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.level.BlockDropsEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
 
-import com.qiqi.li.living.util.DoubleChestPositions;
 
 /**
  * 容器级数据的**形态迁移**：方块 ⇄ 物品（2026-10-19）。
@@ -70,10 +69,16 @@ public final class ContainerDataMigration {
         ItemEntity target = pickDrop(event.getDrops(), be);
         if (target == null) return;   // 没有可承载的物品（如被精准采集以外的破坏）⇒ 数据随 BE 消失
 
+        // ① 交给掉落物的必须是**快照**：组件存的是对象引用，而 data 是可变对象（每 tick 重算 flows）
+        //    ⇒ 直接传 this 会让物品与 BE 附件共享同一对象，后续 tick 的改动漏进物品里。
         ItemStack stack = target.getItem();
-        stack.set(WaterComponents.CONTAINER_FLUID_DATA_ITEM.get(), data);
+        stack.set(WaterComponents.CONTAINER_FLUID_DATA_ITEM.get(), data.snapshot());
 
-        clearAssociated(level, be.getBlockPos());
+        // ② 就地清空**对象本身**：大箱子两半在 tick 期间共享同一实例 ⇒ 一次清掉两半，
+        //    不必按位置去找另一半（BlockDropsEvent 触发时方块可能已被移除 ⇒ 按方块状态找会漏）。
+        //    漏清的后果是破坏另一半时再迁移一次 ⇒ 复制。
+        data.clearAll();
+        clearOne(level, be.getBlockPos());
     }
 
     /**
@@ -99,7 +104,9 @@ public final class ContainerDataMigration {
         ContainerFluidData data = fluidDataOfPlacedItem(player, event.getPlacedBlock().getBlock());
         if (data == null) return;
 
-        be.setData(WaterComponents.CONTAINER_FLUID_DATA.value(), data);
+        // ⚠️ 必须给**快照**而不是原对象：创造模式下放置不消耗物品，同一个 ItemStack 可以
+        //    连续放置多次 ⇒ 多个 BE 会共享同一份可变数据（水在几个背包里同时出现）。
+        be.setData(WaterComponents.CONTAINER_FLUID_DATA.value(), data.snapshot());
     }
 
     /**
@@ -140,20 +147,6 @@ public final class ContainerDataMigration {
             }
         }
         return drops.get(0);
-    }
-
-    /**
-     * 清空该容器（含大箱子两半）的 BE 附件 —— 迁移后必须清，否则双箱两次破坏会各得一份。
-     */
-    private static void clearAssociated(ServerLevel level, BlockPos pos) {
-        List<BlockPos> halves = DoubleChestPositions.find(level, pos);
-        if (halves.isEmpty()) {
-            clearOne(level, pos);
-            return;
-        }
-        for (BlockPos half : halves) {
-            clearOne(level, half);
-        }
     }
 
     private static void clearOne(ServerLevel level, BlockPos pos) {
