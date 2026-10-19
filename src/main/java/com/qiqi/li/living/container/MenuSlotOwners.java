@@ -1,11 +1,8 @@
 package com.qiqi.li.living.container;
 
-import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -28,31 +25,24 @@ import net.minecraft.world.level.block.entity.BlockEntity;
  * <h3>为什么需要</h3>
  * <p>契约 {@code container-boundary.md} 的 I-C5 要求：<b>viewer 匹配必须按位置键，不能按
  * {@code Container} 实例</b>。原因是「有物品能力但不是原版 {@code Container}」的模组方块实体
- * （精妙背包方块、ProjectE 炼金箱）会被正常 tick，却永远匹配不到 viewer ⇒
- * 运行时 tooltip 遥测、定向槽位同步全部静默不发。</p>
+ * 会被正常 tick，却永远匹配不到 viewer ⇒ 运行时 tooltip 遥测、定向槽位同步全部静默不发。</p>
  *
- * <h3>三级解析（可靠 → 脆弱），顺序即优先级</h3>
+ * <h3>⚠️ 核心不做第三方 API 猜测（2026-10-19，`D-container-09`）</h3>
+ * <p>本类<b>只提供机制</b>：结构化解析 + 注册口。<b>不内置任何「反射第三方方法名」的兜底</b> ——
+ * 那等于把核心绑在某个模组的 API 形状上（曾为精妙背包内置过 {@code getBlockPosition} 反射，已删除）。</p>
+ *
+ * <p>难兼容的模组走<b>联动模块</b>（{@code living/compat/<mod>/}），由模块自己
+ * {@link #registerMenuResolver 注册}，并受 {@code ModList.isLoaded} 门控 —— 与 Create / Sable
+ * 的软依赖同构。模组改 API 时只有该联动模块失效，核心与其它模组不受牵连。</p>
+ *
+ * <h3>两级解析（都是可靠来源）</h3>
  * <ol>
  *   <li><b>结构化</b>（{@link #resolveFromSlotContainer}）：{@code slot.container} 是
  *       {@link BlockEntity}（原版单箱）或 {@link CompoundContainer}（大箱子）。
  *       <b>无反射、零维护、永不失效</b>。</li>
- *   <li><b>注册的 compat</b>（{@link #registerResolver}）：模组自己（或我们的 compat 模块）注册
- *       精确解析器。这是<b>模组容器的正解</b> —— 编译期安全，改名会编译失败。</li>
- *   <li><b>反射兜底</b>（{@link #resolveFromMenuPosition}）：问菜单有没有
- *       {@code getBlockPosition()} / {@code getBlockPos()}。
- *       ⚠️ <b>这是最弱的一环</b>：改名即静默失效，且无法在编译期发现。
- *       因此它<b>只作兜底</b>，且失效会打 debug 日志（I-C6 可观测）。</li>
+ *   <li><b>注册的联动解析器</b>（{@link #registerMenuResolver} / {@link #registerResolver}）：
+ *       由联动模块提供，逻辑与该模组一起演化。</li>
  * </ol>
- *
- * <h3>⚠️ 反射兜底的已知风险（用户 2026-10-19 指出）</h3>
- * <ul>
- *   <li>模组改方法名 / 签名 ⇒ 静默降级为「能 tick、不能同步显示」（不损坏数据）；</li>
- *   <li>模块系统禁止 {@code setAccessible} ⇒ 同上（已 catch，不会崩）；</li>
- *   <li>泛名字误命中语义不同的方法 ⇒ <b>可能把包发给错的人</b>。
- *       ⇒ 因此<b>只认 {@code getBlockPosition} / {@code getBlockPos}</b>，
- *       不再认 {@code getPos}（太泛，风险高于收益）；且返回类型必须是
- *       {@link BlockPos} 或 {@code Optional<BlockPos>}。</li>
- * </ul>
  *
  * <p>⚠️ <b>本类只服务 viewer 匹配</b>（判断「这个玩家是不是在看这个容器」），
  * 不参与 tick 上下文构建 —— 后者仍以能力面 + 位置为唯一事实源。</p>
@@ -77,33 +67,26 @@ public final class MenuSlotOwners {
         BlockPos resolve(AbstractContainerMenu menu);
     }
 
-    /** 菜单级方法候选 —— ⚠️ 刻意不含 {@code getPos}（太泛，易误命中）。 */
-    private static final String[] MENU_POS_METHODS = {"getBlockPosition", "getBlockPos"};
-
-    /** 菜单类 → 位置方法（{@link Optional#empty()} = 该类没有可用方法，缓存负结果）。 */
-    private static final Map<Class<?>, Optional<Method>> MENU_POS_CACHE = new ConcurrentHashMap<>();
-
-    /** 已打过「无位置」日志的菜单类（每类只打一次，避免刷屏）。 */
+    /** 已打过「无解析器」日志的菜单类（每类只打一次，避免刷屏）。 */
     private static final Set<Class<?>> LOGGED_MISSES = ConcurrentHashMap.newKeySet();
 
-    /** 注册的菜单级解析器（compat 模块用；先注册先命中）。 */
+    /** 注册的菜单级解析器（联动模块用；先注册先命中）。 */
     private static final List<MenuPositionResolver> MENU_RESOLVERS = new CopyOnWriteArrayList<>();
 
-    /** 注册的逐槽解析器（compat 模块用；先注册先命中）。 */
+    /** 注册的逐槽解析器（联动模块用；先注册先命中）。 */
     private static final List<Resolver> SLOT_RESOLVERS = new CopyOnWriteArrayList<>();
 
     private MenuSlotOwners() {}
 
-    // ── 注册口（compat 模块 / 其它领域用）────────────────────────
+    // ── 注册口（联动模块用）────────────────────────────────────
 
     /**
-     * 注册一个<b>菜单级</b>位置解析器 —— 模组容器的推荐接法。
+     * 注册一个<b>菜单级</b>位置解析器 —— 联动模块的接法。
      *
-     * <p>比反射可靠：编译期绑定，模组改名会立刻编译失败，而不是静默降级。
-     * 例：{@code registerMenuResolver(menu -> menu instanceof BackpackContainer bc
-     * ? bc.getBlockPosition().orElse(null) : null)}。</p>
+     * <p>例（compileOnly 依赖）：{@code registerMenuResolver(menu -> menu instanceof BackpackContainer bc
+     * ? bc.getBlockPosition().orElse(null) : null)}；无依赖时由模块内部自行反射。</p>
      *
-     * <p>注册的解析器<b>优先于反射</b>，但<b>不优先于结构化解析</b>（原版 BE 位置永远最可信）。</p>
+     * <p>⚠️ 结构化解析<b>仍然先跑</b>（原版 BE 位置是最可信的事实）；解析器只在结构化拿不到时兜底。</p>
      */
     public static void registerMenuResolver(MenuPositionResolver resolver) {
         MENU_RESOLVERS.add(resolver);
@@ -119,10 +102,9 @@ public final class MenuSlotOwners {
     /**
      * 菜单级位置 —— 该菜单整体对应哪个方块位置。
      *
-     * <p>顺序：注册的解析器 → 反射兜底。对精妙背包这类「菜单知道自己是哪个方块」的容器
-     * 是 O(1) 快路径：一个菜单所有槽都属于同一个位置，不必逐槽解析。</p>
+     * <p>只问注册的联动解析器；<b>不猜</b>（见类注释）。</p>
      *
-     * @return 位置；菜单不暴露位置时返回 {@code null}
+     * @return 位置；无解析器认识该菜单时返回 {@code null}
      */
     @Nullable
     public static BlockPos menuPosition(AbstractContainerMenu menu) {
@@ -133,13 +115,14 @@ public final class MenuSlotOwners {
                 BlockPos pos = resolver.resolve(menu);
                 if (pos != null) return pos;
             } catch (RuntimeException e) {
-                // 第三方解析器抛异常不能拖垮 tick
+                // 联动解析器抛异常不能拖垮 tick
                 ModLog.CONTAINER.debug("菜单位置解析器 {} 抛异常：{}",
                     resolver.getClass().getName(), e.toString());
             }
         }
 
-        return reflectiveMenuPosition(menu);
+        logMissOnce(menu.getClass());
+        return null;
     }
 
     /**
@@ -154,7 +137,7 @@ public final class MenuSlotOwners {
         List<BlockPos> structured = resolveFromSlotContainer(container);
         if (!structured.isEmpty()) return structured;
 
-        // ② 注册的 compat（逐槽版）
+        // ② 注册的联动解析器（逐槽版）
         for (Resolver resolver : SLOT_RESOLVERS) {
             try {
                 List<BlockPos> out = resolver.resolve(menu, slot);
@@ -165,7 +148,7 @@ public final class MenuSlotOwners {
             }
         }
 
-        // ③ 菜单级（注册的 compat → 反射兜底）
+        // ③ 菜单级（联动模块注册的）
         BlockPos menuPos = menuPosition(menu);
         return menuPos == null ? List.of() : List.of(menuPos);
     }
@@ -174,7 +157,7 @@ public final class MenuSlotOwners {
     public static boolean isViewing(AbstractContainerMenu menu, List<BlockPos> positions) {
         if (menu == null || positions.isEmpty()) return false;
 
-        // 快路径：菜单整体就是一个方块（精妙背包 / 大多数模组容器）
+        // 快路径：菜单整体就是一个方块（联动模块注册过的容器）
         BlockPos menuPos = menuPosition(menu);
         if (menuPos != null) return positions.contains(menuPos);
 
@@ -202,72 +185,23 @@ public final class MenuSlotOwners {
         return List.of();
     }
 
-    // ── 反射兜底（最弱一环，带可观测）──────────────────────────
-
-    @Nullable
-    private static BlockPos reflectiveMenuPosition(AbstractContainerMenu menu) {
-        Optional<Method> cached = MENU_POS_CACHE.computeIfAbsent(menu.getClass(), MenuSlotOwners::findPosMethod);
-        if (cached.isEmpty()) {
-            logMissOnce(menu.getClass());
-            return null;
-        }
-        try {
-            Object value = cached.get().invoke(menu);
-            if (value instanceof BlockPos pos) return pos;
-            if (value instanceof Optional<?> opt) {
-                return opt.filter(BlockPos.class::isInstance).map(BlockPos.class::cast).orElse(null);
-            }
-        } catch (ReflectiveOperationException | RuntimeException e) {
-            // 模组菜单的方法可能抛异常（未初始化 / 客户端态）⇒ 当作「不认识」，不影响 tick
-            ModLog.CONTAINER.debug("菜单 {} 的 {} 调用失败：{}",
-                menu.getClass().getName(), cached.get().getName(), e.toString());
-        }
-        return null;
-    }
-
     /**
-     * 「这个菜单类无法解析位置」只记一次 —— 满足 I-C6（降级必须可观测），
-     * 又不至于每 tick 刷屏。想查「为什么这个容器的 tooltip 不刷新」时，
-     * 打开 {@code ModLog.CONTAINER} 的 debug 就能看到类名。
+     * 「这个菜单类没有解析器」只记一次 —— 满足 I-C6（降级必须可观测），又不至于每 tick 刷屏。
+     *
+     * <p>想查「为什么这个容器的 tooltip 不刷新」时，打开 {@code ModLog.CONTAINER} 的 debug
+     * 就能看到类名；要支持它就写一个联动模块调 {@link #registerMenuResolver}。</p>
      */
     private static void logMissOnce(Class<?> menuClass) {
         if (LOGGED_MISSES.add(menuClass)) {
             ModLog.CONTAINER.debug(
-                "菜单 {} 未暴露容器位置（无 getBlockPosition/getBlockPos）⇒ 该容器的运行时同步无法定向 viewer"
-                + "（I-C5 降级：功能正常、显示不刷新）。若需支持，注册 MenuSlotOwners.registerMenuResolver",
+                "菜单 {} 没有注册位置解析器 ⇒ 该容器的运行时同步无法定向 viewer"
+                + "（I-C5 降级：功能正常、显示不刷新）。若需支持，由联动模块调 MenuSlotOwners.registerMenuResolver",
                 menuClass.getName());
         }
     }
 
-    /** 反射查找位置方法（结果按类缓存，含负结果）。 */
-    private static Optional<Method> findPosMethod(Class<?> menuClass) {
-        for (String name : MENU_POS_METHODS) {
-            Method m;
-            try {
-                m = menuClass.getMethod(name);
-            } catch (NoSuchMethodException | RuntimeException e) {
-                continue;
-            }
-            if (Modifier.isStatic(m.getModifiers())) continue;
-            if (!isPositionType(m.getReturnType())) continue;
-            try {
-                m.setAccessible(true);
-            } catch (RuntimeException e) {
-                // 模块系统 / 安全策略禁止访问 ⇒ 当作没有这个方法（不能让它冒到 tick 里）
-                continue;
-            }
-            return Optional.of(m);
-        }
-        return Optional.empty();
-    }
-
-    private static boolean isPositionType(Class<?> type) {
-        return type == BlockPos.class || type == Optional.class;
-    }
-
     /** 供测试清理（生产不需要 —— 按类缓存不会泄漏，类数量有限）。 */
     static void clearCacheForTest() {
-        MENU_POS_CACHE.clear();
         LOGGED_MISSES.clear();
     }
 

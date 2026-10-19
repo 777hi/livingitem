@@ -96,10 +96,9 @@
 - **违反后果**：非 `Container` 容器永远匹配不到 viewer ⇒ 运行时 tooltip 遥测、活流体渲染、
   酿造台快照、活信标开盖**全部静默不发**（`LivingItemRuntimeSync` 对空集合直接 `continue`）。
 - **现状**：✅ 已满足（S3，2026-10-18/19）—— 新增 `MenuSlotOwners` 负责「菜单槽 → 容器位置」
-  解析，**三级**（可靠 → 脆弱）：
+  解析，**两级**（`D-container-09`，2026-10-19 起反射兜底已移除）：
   ① 结构化（`slot.container instanceof BlockEntity` / `CompoundContainer`，无反射、永不失效）→
-  ② 注册的 compat（`registerMenuResolver`，编译期安全，**模组容器的正解**）→
-  ③ 反射兜底（菜单的 `getBlockPosition()` / `getBlockPos()`，按类缓存）。
+  ② **联动模块注册**（`registerMenuResolver`）。
   `ContainerContexts.isViewingPositions` + `LivingItem.runtimeContainerPositions` 走位置口径；
   `SimpleContainerContext.syncWorldContainer`（图标刷新）与 `LivingItemRuntimeSync`（tooltip 遥测）
   已切换。
@@ -110,10 +109,12 @@
   （其中 `menuContains` 在 S3 后就已是死代码）。
 - ✅ **`Container` 的剩余用途全部落在 I-C2 允许的三类内**（`ContainerContext.getContainer` 的
   7 个调用点：槽位体系探针 / 跨容器传输 / 邻居交互），**不参与 viewer 匹配**。
-- ⚠️ **反射兜底的已知风险**（用户 2026-10-19 指出）：模组改名即**静默失效**；泛名字可能**误命中**
-  语义不同的方法（把包发错人）。缓解：① 只认 `getBlockPosition` / `getBlockPos`，**不认 `getPos`**；
-  ② 返回类型必须是 `BlockPos` / `Optional<BlockPos>`；③ 失效时打 `ModLog.CONTAINER` debug（每类一次，
-  满足 I-C6）。**但反射终究是兜底 —— 要长期可靠必须走 ② 的注册口。**
+- ✅ **反射已下沉到联动模块**（`D-container-09`）：核心不再猜第三方 API 形状。精妙背包的
+  `getBlockPosition()` 反射现在住在 `living/compat/sophisticated/SophisticatedMenuResolver`，
+  受 `ModList.isLoaded` 门控、**判据先卡包名前缀**（反射不扩散到任意第三方）。
+  ⇒ 模组改名时失效的只有该联动模块，核心与其它模组不受牵连（守卫：
+  `MenuSlotOwnersTest.coreDoesNotReflectThirdPartyMethod` +
+  `SophisticatedMenuResolverTest.ignoresForeignPackageWithSameMethod`）。
 - ⚠️ **不要试图用 handler 实例反查位置**：第三方容器的能力面 handler 与 GUI 槽的 handler
   可能隔了多层包装（精妙背包隔三层），而 NeoForge 的 `SlotItemHandler` 内部 `container`
   是**每槽一个匿名实例**，与任何东西都比不上。⇒ 必须走注册式解析器。
@@ -172,9 +173,23 @@
 | 谁发起 | 每 tick 的扫描器（`LivingItem.onServerTick`） | 某个功能的 `tick` 内部 |
 | 方向 | 外 → 内（在宿主容器里发现「本身是容器的物品」） | 内 → 更深（自己的虚拟存储里还有活物品） |
 | 例子 | 玩家背包里有一个精妙背包，背包里有活熔炉 | 活潜影箱内部有一个活潜影箱 |
-| 现状 | **深度 0**（完全不展开） | **不存在**：`ContainerLivingItemHandler.processContext` 在功能侧的唯一调用点是掉落物容器 |
-| 设计上限 | 1（专题内） | 活潜影箱设计稿写 4 层（见 [buffer/活潜影箱实现细节.md](../buffer/活潜影箱实现细节.md) §1.4 / §8.1） |
+| 现状 | **❌ 不做**（`D-container-08`，2026-10-19 定案） | 活潜影箱待实现 |
+| 设计上限 | —（不做） | 活潜影箱设计稿写 4 层（见 [buffer/活潜影箱实现细节.md](../buffer/活潜影箱实现细节.md) §1.4 / §8.1） |
 | 主要风险 | 键路径化、每 tick 遍历量、运行时数据作废语义 | 环、账本归属（电力/应力记哪一层）、性能 |
+
+### 3.0 为什么**不做**扫描展开（`D-container-08`）
+
+**容器内物品被 tick，是活潜影箱的专属逻辑，不是框架的通用能力。**
+
+- **性能**：通用扫描要遍历每个容器的每个物品查 `ItemHandler.ITEM`（108 格 × N 容器），
+  必须再加一层「物品类型筛」才敢上线；而活潜影箱自带「已被活化」这一门槛，展开范围天然有界。
+- **玩法**： 「物品内部自成世界」本就是活潜影箱的核心卖点（[设计稿 §0.1](../buffer/活潜影箱实现细节.md)）。
+  泛化到所有背包物品会把这个卖点稀释成"随手就有"。
+- **实现**：活潜影箱走功能内部递归（`LivingShulkerBoxFunction.tick` 里自建 innerCtx 再
+  `processContext`），**完全复用**现有 tick 管线，不新增一套枚举。
+
+⇒ 框架的职责边界收敛为：**tick「方块形态容器」+「玩家背包」**。物品形态容器内部要不要 tick，
+由该物品所属的功能自己决定。
 
 ### 3.1 深度预算是**一条**，不是两个上限
 
@@ -182,8 +197,9 @@
 消费**同一条**预算。
 
 - **为什么**：若扫描器给 1、封装给 4，两层上限各自正确，合起来是 5 层 ⇒ 总遍历量失控。
-- **推论**：活潜影箱的 4 层是「**没有外层扫描时**」的上限；若它本身是被扫描展开出来的（第 1 层），
-  内部只剩 3 层。这个减法必须由预算统一扣，不能各算各的。
+- **⚠️ 2026-10-19 修正（`D-container-08`）**：扫描展开已取消 ⇒ 目前**只有功能内部递归**这一条
+  消费方，预算是"功能自己声明 + 逐层递减"。上面「1+4=5」的叠加风险随之消失，
+  但**保留统一预算机制**——将来若真有第二个递归消费方，仍须共用同一条。
 
 ### 3.2 环检测依赖实例身份
 

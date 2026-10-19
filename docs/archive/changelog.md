@@ -75,6 +75,12 @@
 > ⚠️ 两个必须守的细节：① **双箱守恒**——迁移后清两半附件，否则两次破坏各得一份 = 复制；② **放置侧校验物品身份**——只按「手上有数据」匹配，会在手持带数据的背包去放置另一个有 BE 的方块时错塞。
 > 单测 762 → 768（新增 `ContainerDataMigrationTest` 6 项，含 CODEC 往返保住派生源）。
 >
+> 🧭 **核心不做第三方 API 猜测（同日，`D-container-09`）** —— 用户定调：「精妙背包只是我们泛化容器兼容性的**一个例子**，不能最后把模组弄成了精妙背包的模样。对于某些难以兼容的部分，要当作**联动模组**去做逻辑，就像活水车那样，而不是将就本模组的一致性。」
+> 据此把 `MenuSlotOwners` 里为精妙内置的 **`getBlockPosition` 反射兜底整体移除**：核心只剩「结构化（原版 BE / 大箱）+ 注册口」两级，**不再内置任何反射第三方方法名的兜底**。
+> 反射下沉到 `living/compat/sophisticated/`：`ModSophisticated`（`ModList` 门控，与 `ModCreate` / `ModSable` 同构）+ `SophisticatedMenuResolver`（**判据先卡包名前缀**，反射不扩散到任意第三方；只认 `getBlockPosition` 一个方法名、只认 `BlockPos`/`Optional<BlockPos>`）。
+> ⇒ 模组改名时失效的只有该联动模块，核心与其它模组不受牵连。
+> 守卫：`MenuSlotOwnersTest.coreDoesNotReflectThirdPartyMethod`（菜单自带 `getBlockPosition` 核心也不认）+ `SophisticatedMenuResolverTest.ignoresForeignPackageWithSameMethod`（包名不匹配即不认）。替身 `FakeBackpackMenu` 故意放在对方包名下，才能测到正路。单测 768 → 769。
+>
 > ⚠️ **同日收紧：反射降为兜底（用户「反射的兼容性好像不佳来着」）** —— 把 `MenuSlotOwners`
 > 改成**三级**：① 结构化（原版 BE / 大箱子，无反射）→ ② **注册的 compat**
 > （`registerMenuResolver`，编译期安全）→ ③ 反射兜底。并收紧反射判据：**只认

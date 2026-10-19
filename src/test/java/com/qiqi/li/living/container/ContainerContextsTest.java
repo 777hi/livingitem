@@ -147,6 +147,17 @@ class ContainerContextsTest {
         /** 菜单自报位置的模组容器替身（仿精妙背包 BackpackContainer#getBlockPosition）。 */
         private static final BlockPos PACK_POS = new BlockPos(5, 70, -3);
 
+        /**
+         * 核心不反射第三方方法（`D-container-09`）⇒ 测试自己扮演"联动模块"注册解析器。
+         *
+         * <p>⚠️ 注册表是全局静态的：重复注册只是多一条同样的解析器，结果不变。</p>
+         */
+        @org.junit.jupiter.api.BeforeEach
+        void registerLikeACompatModule() {
+            MenuSlotOwners.registerMenuResolver(
+                menu -> menu instanceof PositionAwareMenu m ? m.getBlockPosition() : null);
+        }
+
         private static class PositionAwareMenu extends AbstractContainerMenu {
             PositionAwareMenu() {
                 super(MenuType.GENERIC_9x3, 0);
