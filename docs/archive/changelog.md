@@ -69,6 +69,12 @@
 > 再用 {@code getGuiLeft()/getGuiTop() + slot.x/y}，否则多乘一次偏移。
 > 单测不变（762）；`AbstractContainerScreenMixin` 瘦身约 190 行。
 >
+> ✅ **容器级数据跨形态保全（同日，真机驱动）** —— 真机「背包里的活流体，在背包变成物体形态后就没有了」。根因：容器级流体数据挂在 **BE 附件**上，破坏方块时 BE 被移除 ⇒ 附件随之消失；而精妙背包 / 原版潜影盒的**物品内容**存在别处（contents UUID / `minecraft:container`）⇒ 保留 ⇒ 「内容还在，流体没了」。
+> 用户定案：**流体保持「容器属性」语义，不物品化**（不占槽位、不是 ItemStack）⇒ 要解决的不是「流体是什么」，而是「属性存在哪」。
+> 修：新增物品组件 `CONTAINER_FLUID_DATA_ITEM`（复用 `ContainerFluidData.CODEC`），`ContainerDataMigration` 订阅两个挂点 —— **破坏**用 `BlockDropsEvent`（掉落物已确定、**尚未入世**、BE 尚在，这是唯一能在数据还活着时交给掉落物的时机；`BreakEvent` 太早、没有掉落物）、**放置**用 `EntityPlaceEvent` 从手持搬回。
+> ⚠️ 两个必须守的细节：① **双箱守恒**——迁移后清两半附件，否则两次破坏各得一份 = 复制；② **放置侧校验物品身份**——只按「手上有数据」匹配，会在手持带数据的背包去放置另一个有 BE 的方块时错塞。
+> 单测 762 → 768（新增 `ContainerDataMigrationTest` 6 项，含 CODEC 往返保住派生源）。
+>
 > ⚠️ **同日收紧：反射降为兜底（用户「反射的兼容性好像不佳来着」）** —— 把 `MenuSlotOwners`
 > 改成**三级**：① 结构化（原版 BE / 大箱子，无反射）→ ② **注册的 compat**
 > （`registerMenuResolver`，编译期安全）→ ③ 反射兜底。并收紧反射判据：**只认

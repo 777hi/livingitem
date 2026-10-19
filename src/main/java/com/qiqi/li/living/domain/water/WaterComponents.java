@@ -59,5 +59,24 @@ public final class WaterComponents {
                 .serialize(ContainerFluidData.KEYED_CODEC)
                 .build());
 
+    /**
+     * 物品形态的容器级流体数据（2026-10-19）—— <b>方块 ↔ 物品 形态转换的数据载体</b>。
+     *
+     * <p>问题：容器级流体数据挂在 <b>BE 附件</b> {@link #CONTAINER_FLUID_DATA} 上，
+     * 破坏方块时 BE 被移除 ⇒ 附件随之消失；而精妙背包 / 原版潜影盒的<b>物品内容</b>存在别处
+     * （按 contents UUID / {@code minecraft:container}）⇒ 保留 ⇒ 真机表现「内容还在，流体没了」。</p>
+     *
+     * <p>修法（用户 2026-10-19 定案：<b>流体仍是容器属性，不物品化</b>）：属性不变，只换<b>存储介质</b>——
+     * 破坏时由 {@code BlockDropsEvent} 把 BE 附件搬进掉落物组件，放置时由
+     * {@code BlockEvent.EntityPlaceEvent} 搬回新 BE 附件。数据始终是「容器的」，只是跟着形态走。</p>
+     *
+     * <p>复用 {@link ContainerFluidData#CODEC}（只序列化派生源；流动表每 tick 由 BFS 重算）。</p>
+     */
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<ContainerFluidData>> CONTAINER_FLUID_DATA_ITEM =
+        REG.register("container_fluid_data_item", () ->
+            DataComponentType.<ContainerFluidData>builder()
+                .persistent(ContainerFluidData.CODEC)
+                .build());
+
     private WaterComponents() {}
 }
