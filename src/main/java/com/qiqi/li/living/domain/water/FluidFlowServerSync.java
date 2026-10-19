@@ -7,14 +7,13 @@ import java.util.Map;
 import java.util.Set;
 
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.Container;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.player.PlayerContainerEvent;
@@ -221,15 +220,15 @@ public final class FluidFlowServerSync {
             return out;
         }
 
-        // BE 容器：关联 BlockEntity 中的 Container 实例 ↔ 玩家菜单匹配
-        List<Container> containers = new ArrayList<>();
-        for (BlockEntity be : ctx.getAssociatedBlockEntities()) {
-            if (be instanceof Container c) containers.add(c);
-        }
-        if (containers.isEmpty()) return out;
+        // BE 容器：按**位置**匹配 viewer（I-C5）—— 不再要求 BE 是原版 Container，
+        // 否则精妙背包这类模组容器永远匹配不上 ⇒ 背包 GUI 里看不到水
+        List<BlockPos> positions = ctx.getAssociatedBlockPositions();
+        if (positions.isEmpty()) return out;
 
         for (ServerPlayer player : level.getServer().getPlayerList().getPlayers()) {
-            if (isViewingContainer(player, containers)) out.add(player);
+            if (com.qiqi.li.living.container.ContainerContexts.isViewingPositions(player, positions)) {
+                out.add(player);
+            }
         }
         return out;
     }
@@ -256,14 +255,4 @@ public final class FluidFlowServerSync {
         return true;   // 背包 / BE 容器走 dispatch 里各自的分支
     }
 
-    /**
-     * 判断玩家菜单里是否包含「该容器关联的 Container 实例」。
-     *
-     * <p>Q6 收编（2026-10-04）：与 {@code ContainerRuntimeCache.isViewingContainer} 的
-     * 同构实现已合并到 {@link com.qiqi.li.living.container.ContainerContexts#isViewing}，
-     * 此处保留薄委托。</p>
-     */
-    private static boolean isViewingContainer(ServerPlayer player, List<Container> containerInstances) {
-        return com.qiqi.li.living.container.ContainerContexts.isViewing(player, containerInstances);
-    }
 }

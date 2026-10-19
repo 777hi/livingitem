@@ -61,11 +61,11 @@ public final class LivingItemRuntimeSync {
      * 不再由本类自己拼前缀规则。</p>
      *
      * @param players            在线玩家
-     * @param containerLookup    容器键 → 该容器关联的 {@link Container} 实例集合
+     * @param containerLookup    容器键 → 该容器的**位置**集合
      *                           （用于 BE 容器的 viewer 匹配；玩家容器不需要）
      */
     public static void flush(Collection<ServerPlayer> players,
-                             java.util.function.Function<String, Collection<Container>> containerLookup) {
+                             java.util.function.Function<String, Collection<net.minecraft.core.BlockPos>> containerLookup) {
         Map<String, Map<Integer, RuntimeSegments>> dirty = ContainerRuntimeCache.drainDirty();
         if (dirty.isEmpty()) return;
 
@@ -77,9 +77,12 @@ public final class LivingItemRuntimeSync {
             if (kind != null && kind.isOwnedByPlayer()) {
                 sendToOwner(players, containerKey, packet, kind);
             } else {
-                Collection<Container> instances = containerLookup.apply(containerKey);
-                if (instances == null || instances.isEmpty()) continue;
-                List<ServerPlayer> viewers = ContainerRuntimeCache.findViewers(players, instances);
+                // ⚠️ 按**位置**匹配 viewer（I-C5）：非原版 Container 的模组容器
+                // （精妙背包方块等）也能匹配上，否则这条轨对它们永远不发包
+                // ⇒ 真机表现「tooltip 没有进度信息」。
+                Collection<net.minecraft.core.BlockPos> positions = containerLookup.apply(containerKey);
+                if (positions == null || positions.isEmpty()) continue;
+                List<ServerPlayer> viewers = ContainerRuntimeCache.findViewersByPositions(players, positions);
                 for (ServerPlayer viewer : viewers) {
                     viewer.connection.send(packet);
                 }

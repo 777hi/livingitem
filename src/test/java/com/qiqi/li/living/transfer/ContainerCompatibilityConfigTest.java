@@ -177,4 +177,35 @@ class ContainerCompatibilityConfigTest {
             .build();
         assertEquals(5, rule.validHostSlots().size());
     }
+
+    // ── 多档容量（S4，2026-10-18）────────────────────────────────
+
+    /**
+     * 同一个方块实体类型可以有多档容量，且<b>列数不同</b>。
+     *
+     * <p>精妙背包：27/45/54/81 是 9 列，108/120 是 <b>12 列</b>。
+     * 旧实现 {@code Map<id, rule>} 一个 ID 只能存一条 ⇒ 两档必然互相挤掉。
+     * 列数错的后果不是显示难看，而是<b>活熔炉燃料槽（{@code slot + width}）读错 ⇒ 不烧</b>；
+     * 而活漏斗只用 {@code slot ± 1} ⇒ 看起来正常 —— 这是最难自查的一类偏差。</p>
+     */
+    @Test
+    @DisplayName("精妙背包多档容量：27/81 为 9 列，108/120 为 12 列（可共存）")
+    void sophisticatedBackpack_multiTier_coexist() {
+        var id = net.minecraft.resources.ResourceLocation
+            .fromNamespaceAndPath("sophisticatedbackpacks", "backpack");
+
+        assertEquals(9, ContainerCompatibilityConfig.findRule(id, 27).orElseThrow().columns(),
+            "皮革 27 格 = 9 列");
+        assertEquals(9, ContainerCompatibilityConfig.findRule(id, 81).orElseThrow().columns(),
+            "金 81 格 = 9 列");
+        assertEquals(12, ContainerCompatibilityConfig.findRule(id, 108).orElseThrow().columns(),
+            "钻石 108 格 = 12 列");
+        assertEquals(12, ContainerCompatibilityConfig.findRule(id, 120).orElseThrow().columns(),
+            "下界合金 120 格 = 12 列");
+
+        // 两档必须同时存在 —— 旧实现下后注册的会挤掉先注册的
+        assertTrue(ContainerCompatibilityConfig.findRule(id, 108).isPresent()
+                && ContainerCompatibilityConfig.findRule(id, 120).isPresent(),
+            "同一 ID 的两档容量必须能共存");
+    }
 }

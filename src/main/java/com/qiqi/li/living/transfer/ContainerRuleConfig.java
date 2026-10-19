@@ -285,10 +285,12 @@ public final class ContainerRuleConfig {
                 continue;
             }
 
-            // 已存在（玩家规则同名）则不覆盖；BUNDLED_IDS 始终登记，
-            // 这样该 ID 的来源判定不会因玩家覆盖而漂移
+            // 已存在（同 ID **同容量**）则不覆盖；BUNDLED_IDS 始终登记，
+            // 这样该 ID 的来源判定不会因玩家覆盖而漂移。
+            // ⚠️ 必须带容量：同一 BE 类型可有多档容量（精妙背包 27/45/54/81/108/120），
+            // 只按 ID 去重会把后 5 档全部丢掉。
             BUNDLED_IDS.add(id);
-            var existing = ContainerCompatibilityConfig.findRule(id);
+            var existing = ContainerCompatibilityConfig.findRule(id, entry.containerSize);
             if (existing.isPresent()) {
                 // 重复定义：先到先得 + 警告（供作者发现合并冲突）
                 if (differs(existing.get(), entry)) {
@@ -431,21 +433,21 @@ public final class ContainerRuleConfig {
     public static int exportBundledFormat() {
         Path file = getExportFile();
 
-        // 导出全量生效规则：直接对注册表取快照，按 ID 排序保证结果稳定可比对
-        List<ResourceLocation> ids = new ArrayList<>();
-        for (var entry : ContainerCompatibilityConfig.getAllRules()) {
-            ids.add(entry.getKey());
-        }
-        ids.sort(Comparator.comparing(ResourceLocation::toString));
+        // 导出全量生效规则：直接对注册表取快照（**已按容量档位摊平**），
+        // 按「ID + 容量」排序保证结果稳定可比对
+        List<Map.Entry<ResourceLocation, ContainerRule>> entries =
+            new ArrayList<>(ContainerCompatibilityConfig.getAllRules());
+        entries.sort(Comparator
+            .comparing((Map.Entry<ResourceLocation, ContainerRule> e) -> e.getKey().toString())
+            .thenComparingInt(e -> e.getValue().containerSize()));
 
         ConfigData data = new ConfigData();
         data.version = 1;
         data.rules = new ArrayList<>();
-        for (ResourceLocation id : ids) {
-            ContainerRule rule = ContainerCompatibilityConfig.findRule(id).orElse(null);
-            if (rule == null) continue;
+        for (var entry : entries) {
+            ContainerRule rule = entry.getValue();
             RuleEntry re = new RuleEntry();
-            re.containerId = id.toString();
+            re.containerId = entry.getKey().toString();
             re.containerSize = rule.containerSize();
             re.columns = rule.columns();
             re.description = rule.description();
@@ -460,12 +462,12 @@ public final class ContainerRuleConfig {
                 GSON.toJson(data, writer);
             }
             LOGGER.info("Exported {} effective container rules ({} bundled, {} user) to {}",
-                ids.size(), countBundled(), countUser(), file);
+                entries.size(), countBundled(), countUser(), file);
         } catch (IOException e) {
             LOGGER.error("Failed to export container rules to {}", file, e);
             return -1;
         }
-        return ids.size();
+        return entries.size();
     }
 
     /** 当前生效规则里来自内置资源的条数（含被玩家覆盖的条目） */
@@ -497,7 +499,8 @@ public final class ContainerRuleConfig {
      * @return {@code true} 表示这是对已有规则的覆盖，{@code false} 表示新增
      */
     public static boolean addAndSave(ResourceLocation containerId, ContainerRule rule) {
-        boolean overwrite = ContainerCompatibilityConfig.findRule(containerId).isPresent();
+        boolean overwrite = ContainerCompatibilityConfig
+            .findRule(containerId, rule.containerSize()).isPresent();
 
         ContainerCompatibilityConfig.register(containerId, rule);
         REMOVED_IDS.remove(containerId);

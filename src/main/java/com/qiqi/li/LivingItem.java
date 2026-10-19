@@ -299,7 +299,7 @@ public class LivingItem {
 
         // 运行时数据下发（档 2：缓存在 L2 只攒脏，发包归 L4 本调用）——
         // 必须在【所有】容器处理之后，才能收齐本 tick 各容器的登记。
-        LivingItemRuntimeSync.flush(server.getPlayerList().getPlayers(), this::runtimeContainerInstances);
+        LivingItemRuntimeSync.flush(server.getPlayerList().getPlayers(), this::runtimeContainerPositions);
 
         // 待炸账本：按区块分帧推进爆炸破坏（已加载的按预算处理，未加载的等自然加载）
         ExplosionLedger.flushAll(server);
@@ -342,12 +342,13 @@ public class LivingItem {
     }
 
     /**
-     * 运行时数据下发时的「容器键 → 该容器的 {@link Container} 实例集合」查找（档 2）。
+     * 运行时数据下发时的「容器键 → 该容器的<b>位置</b>集合」查找（档 2）。
      *
-     * <p>用途：{@code LivingItemRuntimeSync.flush} 需要按容器键反查玩家菜单槽位的容器实例，
-     * 才能判断「谁正看着这个容器」。找 instances 的规则与 {@link ContainerContexts#isViewing}
-     * 的匹配规则同源：单 BE 容器 = BE 本身，大箱子 = 两半 BE 都放进去
-     * （{@code ownsContainer} 会用 {@code CompoundContainer.contains} 匹配它们）。</p>
+     * <p>用途：{@code LivingItemRuntimeSync.flush} 需要按容器键反查位置，才能判断
+     * 「谁正看着这个容器」。**位置**而非 {@code Container} 实例是契约 I-C5 的要求
+     * （2026-10-18，专题 S3）：有物品能力但不是原版 {@code Container} 的模组方块实体
+     * （精妙背包方块、ProjectE 炼金箱）会被正常 tick，却匹配不到任何 viewer
+     * ⇒ 运行时 tooltip 遥测静默不发（真机表现：「tooltip 没有进度信息」）。</p>
      *
      * <p>⚠️ <b>返回空集合 = 不发包</b>（见 {@code LivingItemRuntimeSync.flush}）——
      * 所以这里是安全的：键解析不出位置（异常形态）时宁可不发，也不发错人。</p>
@@ -357,20 +358,20 @@ public class LivingItem {
      * 坐标解析没跟着改 ⇒ {@code parsePosFromContainerKey} 对前缀键返回 null ⇒
      * **所有世界容器的 tooltip 遥测包停发**（功能逻辑不受影响——它读写同用一把键），
      * 表现为「进度不滚动、熔炼正常」。现在按「有前缀 ⇒ 定向该维度」处理，见
-     * {@link #runtimeContainerInstances(List, String)}。</p>
+     * {@link #runtimeContainerPositions(List, String)}。</p>
      */
-    private Collection<Container> runtimeContainerInstances(String containerKey) {
-        return runtimeContainerInstances(currentServerLevels(), containerKey);
+    private Collection<BlockPos> runtimeContainerPositions(String containerKey) {
+        return runtimeContainerPositions(currentServerLevels(), containerKey);
     }
 
     /**
-     * 按**缓存键**在候选世界列表里反查容器实例（包级私有，供单测；生产入口是上面的实例方法）。
+     * 按**缓存键**在候选世界列表里反查容器位置（包级私有，供单测；生产入口是上面的实例方法）。
      *
      * <p>三种键形：{@code <维度>|chest_x_y_z}（世界容器，定向该维度——维度即权威，
      * 跨维度同坐标不发错人）· 裸 {@code chest_x_y_z}（退化形态 / 测试替身，扫全部世界）·
      * {@code player_…}（背包类，{@code LivingItemRuntimeSync} 的独立分支处理，到这里返回空）。</p>
      */
-    static Collection<Container> runtimeContainerInstances(List<ServerLevel> levels, String containerKey) {
+    static Collection<BlockPos> runtimeContainerPositions(List<ServerLevel> levels, String containerKey) {
         BlockPos pos = parsePosFromContainerKey(containerKey);
         if (pos == null) return List.of();
 
@@ -380,8 +381,8 @@ public class LivingItem {
             // 绝不落到别的维度——那正是本次修复要防的「跨维度同坐标发错人」）
             for (ServerLevel level : levels) {
                 if (dim.equals(level.dimension().location().toString())) {
-                    Collection<Container> instances = runtimeContainerInstances(level, pos);
-                    return instances == null ? List.of() : instances;
+                    Collection<BlockPos> positions = runtimeContainerPositions(level, pos);
+                    return positions == null ? List.of() : positions;
                 }
             }
             return List.of();
@@ -391,44 +392,40 @@ public class LivingItem {
         for (var level : levels) {
             // null = 该世界此位置无方块实体，继续查下一个世界；
             // 非 null（可能为空集合）即代表命中，直接返回（见下方方法说明）。
-            Collection<Container> instances = runtimeContainerInstances(level, pos);
-            if (instances != null) return instances;
+            Collection<BlockPos> positions = runtimeContainerPositions(level, pos);
+            if (positions != null) return positions;
         }
         return List.of();
     }
 
     /**
-     * 单 level 的「容器键位置 → {@link Container} 实例集」查找（发包 viewer 匹配用，档 2）。
+     * 单 level 的「容器键位置 → 位置集」查找（发包 viewer 匹配用，档 2）。
      *
      * <p><b>返回值语义</b>：</p>
      * <ul>
      *   <li>{@code null} —— 该位置在此世界上<b>没有方块实体</b>（让调用方继续查下一个世界）；</li>
-     *   <li><b>空集合</b> —— 有方块实体，但<b>不是原版 {@link Container}</b>
-     *       （如 ProjectE 炼金箱 {@code AlchBlockEntityChest}：暴露 {@code IItemHandler} 能力、
-     *       被当作活物品容器 tick，却不实现 {@code Container}）⇒ 无法走 viewer 匹配 = 不发包；
-     *       历史上这里曾无条件 {@code (Container) be} 强转，对这类模组容器抛
-     *       {@code ClassCastException}（crash-2026-10-10）；</li>
-     *   <li><b>非空</b> —— 命中一个或多个 {@code Container} 实例（单 BE / 大箱两半）。</li>
+     *   <li><b>空集合</b> —— 有方块实体但解析不出位置（当前实现不会出现，保留语义以防将来收紧）；</li>
+     *   <li><b>非空</b> —— 命中一个或多个位置（单 BE / 大箱两半）。</li>
      * </ul>
+     *
+     * <p>⚠️ <b>2026-10-18（S3）口径翻转</b>：旧实现要求 BE 是原版 {@code Container} 才返回实例，
+     * 非 {@code Container} 返回<b>空集合 = 不发包</b>（曾为 crash-2026-10-10 的
+     * {@code ClassCastException} 兜底）。现在返回<b>位置</b>，非 {@code Container} 的模组容器
+     * 同样能匹配 viewer —— 这正是 I-C5 要修的东西。</p>
      *
      * <p>⚠️ 静态 + 包级私有：把原私有方法拆出单 level 分支，便于单测构造「非 Container 方块实体」
      * 场景而不用拉起整个 {@code ServerLifecycleHooks}；本方法不读任何实例状态。</p>
      */
-    static Collection<Container> runtimeContainerInstances(Level level, BlockPos pos) {
+    static Collection<BlockPos> runtimeContainerPositions(Level level, BlockPos pos) {
         BlockEntity be = level.getBlockEntity(pos);
         if (be == null) return null;
 
         List<BlockPos> halves = DoubleChestPositions.find(level, pos);
         if (halves.isEmpty()) {
-            return be instanceof Container c ? List.of(c) : List.of();
+            // ⚠️ 不判断 be instanceof Container —— 非 Container 容器也必须能匹配 viewer（I-C5）
+            return List.of(pos);
         }
-        List<Container> instances = new ArrayList<>(halves.size());
-        for (BlockPos half : halves) {
-            if (level.getBlockEntity(half) instanceof Container c) {
-                instances.add(c);
-            }
-        }
-        return instances;
+        return List.copyOf(halves);
     }
 
     /** 运行期可见的所有世界（发包查找用；找不到容器即视为「无人查看」）。 */

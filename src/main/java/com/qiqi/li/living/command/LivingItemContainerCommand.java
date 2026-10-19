@@ -22,7 +22,9 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import net.neoforged.neoforge.items.IItemHandler;
 
 /**
  * 容器注册指令 —— 让玩家在游戏中注册/管理容器布局规则。
@@ -44,6 +46,23 @@ public class LivingItemContainerCommand {
 
     private static final SimpleCommandExceptionType NOT_LOOKING_AT_CONTAINER =
         new SimpleCommandExceptionType(Component.translatable("command.livingitem.not_looking_at_container"));
+
+    /**
+     * 取指定位置的物品能力（{@code IItemHandler.BLOCK}）—— <b>与 tick 扫描口径同源</b>。
+     *
+     * <p>⚠️ 不能用 {@code be instanceof Container} 判定：tick 路径
+     * （{@code ContainerChunkCache} / {@code processContainerAt}）认的是<b>能力面</b>，
+     * 而原版 {@link Container} 只是其中一种实现。2026-10-18 前本指令用 {@code Container}
+     * 判定 ⇒ 对「有物品能力但不是 Container」的模组容器（精妙背包方块
+     * {@code BackpackBlockEntity}、ProjectE 炼金箱等）直接报
+     * {@code not_looking_at_container}，<b>玩家无法自助校准列数</b> ——
+     * 而这类容器恰恰是最需要校准的（启发式推断会算错 108/120 格背包的列数）。</p>
+     *
+     * @return 该位置的 IItemHandler；非容器返回 {@code null}
+     */
+    private static IItemHandler resolveItemHandler(Level level, BlockPos pos) {
+        return level.getCapability(Capabilities.ItemHandler.BLOCK, pos, null);
+    }
 
     @SubscribeEvent
     public static void onRegisterCommands(RegisterCommandsEvent event) {
@@ -114,19 +133,22 @@ public class LivingItemContainerCommand {
         BlockPos pos = hitResult.getBlockPos();
         Level level = source.getLevel();
         BlockEntity be = level.getBlockEntity(pos);
-
-        if (!(be instanceof Container container)) {
+        if (be == null) {
             throw NOT_LOOKING_AT_CONTAINER.create();
         }
 
-        // 确定槽位数：玩家手动指定 > 自动检测
+        IItemHandler handler = resolveItemHandler(level, pos);
+        if (handler == null) {
+            throw NOT_LOOKING_AT_CONTAINER.create();
+        }
+
+        // 确定槽位数：玩家手动指定 > 自动检测（能力面槽位数，与 tick 路径同源）
         int size;
         if (hasExplicitSize) {
             size = IntegerArgumentType.getInteger(ctx, "size");
         } else {
-            size = container.getContainerSize();
+            size = handler.getSlots();
         }
-
         // 容器 ID：手动指定 > 自动检测
         ResourceLocation containerId;
         if (hasExplicitId) {
@@ -166,12 +188,18 @@ public class LivingItemContainerCommand {
         Level level = source.getLevel();
         BlockEntity be = level.getBlockEntity(pos);
 
-        if (!(be instanceof Container container)) {
+        if (be == null) {
+            throw NOT_LOOKING_AT_CONTAINER.create();
+        }
+
+        IItemHandler handler = resolveItemHandler(level, pos);
+        if (handler == null) {
             throw NOT_LOOKING_AT_CONTAINER.create();
         }
 
         ResourceLocation containerId = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(be.getType());
-        int actualSize = container.getContainerSize();
+        // 槽位数取能力面（与 tick 路径同源）；Container 仅用于 Tier 2 类型表推断列数
+        int actualSize = handler.getSlots();
 
         source.sendSuccess(() -> Component.literal(
             String.format("§e%s§r", containerId)), false);
@@ -179,8 +207,8 @@ public class LivingItemContainerCommand {
         source.sendSuccess(() -> Component.literal(
             String.format("  §7槽位: §f%d§r", actualSize)), false);
 
-        // 查找已注册规则
-        var existingRule = ContainerCompatibilityConfig.findRule(containerId);
+        // 查找已注册规则（带容量 —— 同一 BE 类型可有多档，列数可能不同）
+        var existingRule = ContainerCompatibilityConfig.findRule(containerId, actualSize);
         if (existingRule.isPresent()) {
             var rule = existingRule.get();
             int rows = rule.containerSize() / rule.columns();
@@ -204,7 +232,8 @@ public class LivingItemContainerCommand {
                     "  §7备注: §c已被玩家从内置规则中移除§r"), false);
             }
 
-            // 显示自动推断的列数
+            // 显示自动推断的列数（Tier 2 类型表只在 BE 恰好是原版 Container 时可用）
+            Container container = be instanceof Container c ? c : null;
             int inferredColumns = ContainerCompatibilityConfig.resolveColumns(actualSize, container);
             source.sendSuccess(() -> Component.literal(
                 String.format("  §7推断列数: §f%d§r  §8(输入 /livingitem container register %d 注册)§r",

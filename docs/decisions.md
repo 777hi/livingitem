@@ -25,7 +25,8 @@
 ## 2. 体例
 
 **编号**：`D-<领域>-<两位序号>`。领域短码：`core` / `tnt` / `hopper` / `farmland` / `power` /
-`redstone` / `render` / `net` / `doc` / **`fluid`**（容器级活流体，2026-10-08 新增）。
+`redstone` / `render` / `net` / `doc` / **`fluid`**（容器级活流体，2026-10-08 新增）/
+**`container`**（容器边界：能力面、写回、身份、嵌套，2026-10-18 新增）。
 **序号一经分配永不复用**（删行也不回收）。
 
 **状态**：`生效` ｜ `已被取代`（有接替者）｜ `已废弃`（无接替者）
@@ -104,6 +105,13 @@
 | D-fluid-11 | 2026-10-03 | fluid | **不做「水流跨容器蔓延」**（物品过境、水不过境；跨容器需求由桶/漏斗/活塞覆盖） | 渲染割裂、复杂度爆炸 | 生效 | | `living-fluid-tech.md` §4 |
 | D-fluid-12 | 2026-10-07 | fluid | **活桶无 tooltip 内容行**；「--- 活物品 ---」是**「这是活物品」标记**，零内容行时**照旧输出** | 形态本身就是信息 | 生效 | ← D-fluid-13 | `living-fluid-tech.md` §5 |
 | D-fluid-13 | 2026-10-07 | fluid | ~~零内容行则整段不输出（惰性标题）~~ | 会把「是活物品」标记一起丢掉 | **已被取代** | → D-fluid-12 | 无（正文已删） |
+| D-container-01 | 2026-10-18 | container | **容器发现只认能力面**（`ItemHandler.BLOCK`）；`instanceof Container` 不作为「这里是不是容器」的判据 | 能力面才是扫描口径，两套口径必错位 | 生效 | | `container-boundary.md` I-C1 |
+| D-container-02 | 2026-10-18 | container | **写回 ≠ 插入**：改自己槽位的物品用 `setStackInSlot`；`insertItem` 只表达「放进这个容器」，不表达「放进这个槽位」 | 第三方容器的 insertItem 可忽略 slot | 生效 | | `container-boundary.md` I-C3 |
+| D-container-03 | 2026-10-18 | container | **模拟与真实写入必须同源**；模拟结果只是上界，不得当承诺 | 模拟认槽、真实整库 ⇒ 漏斗吞物品 | 生效 | | `container-boundary.md` I-C4 |
+| D-container-04 | 2026-10-18 | container | **容器身份与 viewer 匹配按位置键**，不按 `Container` 实例；不得用 handler 实例反查（多层包装 + 每槽匿名 container） | 非 Container 容器否则永远匹配不上 | 生效 | | `container-boundary.md` I-C5 |
+| D-container-05 | 2026-10-18 | container | **不采用「容器能力白/黑名单」排除非 `Container` 模组容器**；改为口径收敛（D-container-01/04） | 排除 = 放弃兼容 + 永久适配债 | 生效 | ← TODO 2026-10-10 待决项 | `container-boundary.md` §0 · `container-identity.md` §5 |
+| D-container-06 | 2026-10-18 | container | **「扫描展开」与「活物品内部递归」是两套机制，共用一条深度预算**；扫描展开上限 1，内部递归上限由功能声明（活潜影箱 4） | 两个独立上限会叠成 1+4=5 层 | 生效 | | `container-boundary.md` §3 |
+| D-container-07 | 2026-10-18 | container | **物品池（AE2 ME / RS 网络）不得作为 tick 宿主**，只能当传输端点（给 `SlotAccessor` 加池实现，不给 `ContainerContext` 加） | 池无槽位无几何，功能无从表达 | 生效 | | `container-boundary.md` I-C8 |
 
 ## 6. 边界（诚实说明）
 

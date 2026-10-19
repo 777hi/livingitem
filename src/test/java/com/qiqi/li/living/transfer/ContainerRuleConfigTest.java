@@ -47,6 +47,21 @@ class ContainerRuleConfigTest {
         ContainerRuleConfig.load();
     }
 
+    /**
+     * 收尾恢复全局注册表 —— 本类会**删除 / 覆盖内置规则**，而 {@code RULES} 是静态的、
+     * 跨测试类共享。
+     *
+     * <p>⚠️ 2026-10-18 实测：不加这一步时，本类若排在 {@code ContainerCompatibilityConfigTest}
+     * 之前执行，后者会看到「{@code minecraft:chest} 不见了」（{@code findRule} 返回 empty），
+     * 表现为<b>与代码无关的顺序性 flaky</b>。用<b>全新空目录</b>重新 {@code load()}：
+     * 空目录没有 removed 记录 ⇒ 内置规则被完整读回。</p>
+     */
+    @org.junit.jupiter.api.AfterEach
+    void restoreSharedRegistry() throws java.io.IOException {
+        ContainerRuleConfig.init(java.nio.file.Files.createTempDirectory("living-rules-reset"));
+        ContainerRuleConfig.load();
+    }
+
     @Test
     @DisplayName("内置规则加载后：被识别为内置，且未被玩家修改")
     void bundledRule_isMarkedAsBundledAndUnmodified() {
@@ -241,12 +256,13 @@ class ContainerRuleConfigTest {
      * 否则合并十几份玩家贡献会被「原版箱子 vs 标准箱子」这类假冲突淹没。</p>
      */
     @Test
-    @DisplayName("合并冲突：同 ID 不同数值先到先得；描述不同不算冲突")
+    @DisplayName("合并冲突：同 ID 同容量不同数值先到先得；不同容量是两档；描述不同不算冲突")
     void mergeConflict_keepsFirstAndWarns() throws Exception {
         String json = """
             {"version":1,"rules":[
-              {"containerId":"testmod:crate","containerSize":216,"columns":18,"description":"A 家玩家实测"},
-              {"containerId":"testmod:crate","containerSize":108,"columns":12,"description":"B 家玩家实测"},
+              {"containerId":"testmod:crate","containerSize":108,"columns":12,"description":"A 家玩家实测"},
+              {"containerId":"testmod:crate","containerSize":108,"columns":9,"description":"B 家玩家实测（同容量冲突）"},
+              {"containerId":"testmod:crate","containerSize":216,"columns":18,"description":"另一档容量，应共存"},
               {"containerId":"testmod:descr_only","containerSize":54,"columns":9,"description":"甲"},
               {"containerId":"testmod:descr_only","containerSize":54,"columns":9,"description":"乙（措辞不同）"}
             ]}""";
@@ -256,17 +272,22 @@ class ContainerRuleConfigTest {
             loaded = ContainerRuleConfig.loadRules(reader, "bundled", "<merge test>");
         }
 
-        // 两条唯一 ID 各注册一次（冲突的那条被丢弃）
-        assertEquals(2, loaded, "只有 2 个不同 ID 应被注册");
+        // 2026-10-18（S4）口径：规则键 = (ID, 容量)。crate 的两档容量各注册一次，
+        // 同容量下的重复定义被丢弃；descr_only 只有一条唯一 (ID, 容量)。
+        assertEquals(3, loaded, "crate 两档 + descr_only 一档 = 3 条");
 
         var crate = ContainerCompatibilityConfig.findRule(
-            ResourceLocation.fromNamespaceAndPath("testmod", "crate")).orElseThrow();
-        assertEquals(216, crate.containerSize(),
-            "同 ID 数值冲突时应保留先出现的一条（先到先得）");
-        assertEquals(18, crate.columns(), "列数同样取先出现的一条");
+            ResourceLocation.fromNamespaceAndPath("testmod", "crate"), 108).orElseThrow();
+        assertEquals(12, crate.columns(),
+            "同 ID **同容量** 数值冲突时保留先出现的一条（先到先得）");
+
+        var crateOtherTier = ContainerCompatibilityConfig.findRule(
+            ResourceLocation.fromNamespaceAndPath("testmod", "crate"), 216).orElseThrow();
+        assertEquals(18, crateOtherTier.columns(),
+            "同 ID **不同容量** 是两个档位，必须共存（旧实现会挤掉一条）");
 
         var descrOnly = ContainerCompatibilityConfig.findRule(
-            ResourceLocation.fromNamespaceAndPath("testmod", "descr_only")).orElseThrow();
+            ResourceLocation.fromNamespaceAndPath("testmod", "descr_only"), 54).orElseThrow();
         assertEquals(54, descrOnly.containerSize(),
             "仅描述不同 → 不算冲突，正常注册");
     }

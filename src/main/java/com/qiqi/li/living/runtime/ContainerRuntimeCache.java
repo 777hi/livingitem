@@ -133,57 +133,31 @@ public class ContainerRuntimeCache {
     }
 
     /**
-     * 找出「正打开该容器界面」的玩家（纯查询，不发包）。
+     * 按<b>位置</b>找 viewer —— 契约 I-C5 的正解（2026-10-18，专题 S3）。
      *
-     * <p><b>大箱子（v19.1 修复）</b>：原版大箱菜单的槽位容器是
-     * {@link net.minecraft.world.CompoundContainer CompoundContainer}(左半 BE, 右半 BE)，
-     * **不是 BE 本身**——旧逻辑 {@code containerInstances.contains(slot.container)}
-     * 对大箱永远不匹配 → 同步包从不发给打开大箱的玩家 → 客户端遥测缓存为空 →
-     * tooltip 永远显示 0/无数据（单箱菜单容器就是 BE 本体，故正常）。
-     * 用 CompoundContainer 自带的 {@code contains(Container)} 匹配关联 BE。</p>
-     *
-     * <p>Q6 收编（2026-10-04）：判定实现已迁至
-     * {@link com.qiqi.li.living.container.ContainerContexts#isViewing}。</p>
-     *
-     * @param players            候选玩家
-     * @param containerInstances 该容器关联的 {@link Container} 实例集合
-     * @return 正在查看其中任一实例的玩家
+     * <p>与 {@link #findViewers} 的区别：后者要求菜单槽的 {@code slot.container} 等于某个原版
+     * {@code Container} 实例，对精妙背包这类「有物品能力但不是 {@code Container}」的方块实体
+     * 永远返回空 ⇒ 运行时 tooltip 遥测静默不发（真机表现：「tooltip 没有进度信息」）。</p>
      */
-    public static List<net.minecraft.server.level.ServerPlayer> findViewers(
+    public static List<net.minecraft.server.level.ServerPlayer> findViewersByPositions(
             Collection<net.minecraft.server.level.ServerPlayer> players,
-            Collection<Container> containerInstances) {
+            Collection<net.minecraft.core.BlockPos> positions) {
         List<net.minecraft.server.level.ServerPlayer> viewers = new ArrayList<>();
         for (var player : players) {
-            if (ContainerContextsBridge.isViewing(player, containerInstances)) {
+            if (ContainerContextsBridge.isViewingPositions(player, positions)) {
                 viewers.add(player);
             }
         }
         return viewers;
     }
 
-    /**
-     * 直接判定「该玩家菜单里是否含该容器的实例」—— 供 L4 内联使用（避免重复建 list）。
-     */
-    public static boolean isViewing(net.minecraft.server.level.ServerPlayer player,
-                                    Collection<Container> containerInstances) {
-        return ContainerContextsBridge.isViewing(player, containerInstances);
-    }
-
     /** 薄桥：保持 runtime(L2) → container(L1) 的单向依赖，集中一处便于将来收编。 */
     private static final class ContainerContextsBridge {
         private ContainerContextsBridge() {}
 
-        static boolean isViewing(net.minecraft.server.level.ServerPlayer player,
-                                 Collection<Container> containerInstances) {
-            return com.qiqi.li.living.container.ContainerContexts.isViewing(player, containerInstances);
+        static boolean isViewingPositions(net.minecraft.server.level.ServerPlayer player,
+                                          Collection<net.minecraft.core.BlockPos> positions) {
+            return com.qiqi.li.living.container.ContainerContexts.isViewingPositions(player, positions);
         }
-    }
-
-    /** 供 `ContainerContexts` 反向使用（保留对称入口，避免 future 直接 import container）。 */
-    static boolean menuContains(AbstractContainerMenu menu, Collection<Container> containerInstances) {
-        for (Slot slot : menu.slots) {
-            if (containerInstances.contains(slot.container)) return true;
-        }
-        return false;
     }
 }

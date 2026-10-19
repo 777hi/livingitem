@@ -241,11 +241,11 @@ public class SimpleContainerContext implements TickableContainerContext {
             net.minecraft.resources.ResourceLocation id =
                 net.minecraft.core.registries.BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(be.getType());
             if (id != null) {
-                var rule = ContainerCompatibilityConfig.findRule(id);
-                if (rule.isPresent() && rule.get().containerSize() == getSize()) return rule;
-
-                rule = ContainerCompatibilityConfig.findRuleByNamespaceAndKeyword(
-                    id.getNamespace(), id.getPath());
+                // ⚠️ 必须带容量：同一 BE 类型可有多档容量且列数不同（精妙背包 108/120 是 12 列，
+                // 其余档位 9 列）。用单参数 findRule 会拿到别的档位 ⇒ 列数错 ⇒ 熔炉燃料槽读错。
+                var rule = ContainerCompatibilityConfig.findRule(id, getSize());
+                if (rule.isPresent()) return rule;
+                rule = ContainerCompatibilityConfig.findRuleByNamespaceAndKeyword(id.getNamespace(), id.getPath());
                 if (rule.isPresent() && rule.get().containerSize() == getSize()) return rule;
             }
         }
@@ -270,19 +270,106 @@ public class SimpleContainerContext implements TickableContainerContext {
         if (logicalSlot < 0 || logicalSlot >= handler.getSlots()) {
             return;
         }
-        ItemStack toInsert = stack.copy();
+        ItemStack target = clampToSlotLimit(logicalSlot, stack.copy());
 
-        handler.extractItem(logicalSlot, Integer.MAX_VALUE, false);
-        ItemStack remaining = handler.insertItem(logicalSlot, toInsert, false);
-        if (!remaining.isEmpty() && isArmorSlot(inventory, logicalSlot)) {
-            inventory.armor.set(logicalSlot - 36, toInsert);
-            syncSlotToClients(logicalSlot, toInsert);
-        } else if (!remaining.isEmpty()) {
-            LOGGER.warn("SimpleContainerContext.setItem: {} items of {} 未能插入槽位 {}",
-                remaining.getCount(), toInsert.getItem(), logicalSlot);
+        // I-C3（D-container-02）：写回 = **覆盖槽位**，不是插入。
+        // 第三方容器的 insertItem(slot, …) 可以忽略 slot（整库重定向）⇒ 绝不能拿它写回自己的槽位，
+        // 否则「改槽 17 的进度」会变成「把物品搬到编号最低的空槽」。详见 container-boundary.md。
+        if (!writeBackDirectly(logicalSlot, target)) {
+            writeBackViaExtractInsert(logicalSlot, target);
         }
+
         notifyBlockEntitiesChanged();
         ContainerLivingItemHandler.bumpContainerRevision(this);
+    }
+
+    /**
+     * 按<b>槽位上限</b>截断超量写入，并告警（I-C6：降级必须可观测）。
+     *
+     * <p>⚠️ <b>不能用 {@code stack.getMaxStackSize()} 当上限</b>：超大堆叠容器（精妙背包的
+     * 堆叠升级、抽屉）一个槽合法地放几百个，而物品自身的 {@code getMaxStackSize()} 仍是 64
+     * ⇒ 按物品上限截断会把超大堆叠砍回 64。槽位上限才是权威。</p>
+     *
+     * <p>截断而不是拒写：写入超量会让容器进入非法状态（GUI / 漏斗 / 比较器都假定
+     * {@code count <= getSlotLimit}），比丢几个物品更难排查。</p>
+     */
+    private ItemStack clampToSlotLimit(int slot, ItemStack stack) {
+        if (stack.isEmpty()) return stack;
+        int limit = handler.getSlotLimit(slot);
+        if (limit > 0 && stack.getCount() > limit) {
+            LOGGER.warn("SimpleContainerContext.setItem: 槽位 {} 上限 {}，写入 {} 个 {} 已截断",
+                slot, limit, stack.getCount(), stack.getItem());
+            return stack.copyWithCount(limit);
+        }
+        return stack;
+    }
+
+    /**
+     * 直接覆盖槽位 —— I-C3 的正解。返回 {@code false} 表示该 handler 不支持，调用方走回退路径。
+     *
+     * <p>为什么用 {@code setStackInSlot} 而不是「先抽再插」：前者是<b>单槽操作</b>，语义确定；
+     * 后者的 {@code insertItem(slot, …)} 在部分模组里是<b>整库操作</b>（slot 只作参考），
+     * 两者不是一回事。</p>
+     *
+     * <p>{@code UnsupportedOperationException} 是 {@code IItemHandlerModifiable} 的合法实现
+     * （NeoForge 的 {@code FilteredItemHandler} 就只在 {@code Modifiable} 子类里实现它）
+     * ⇒ 捕获后退回旧路径，而不是让整个 tick 抛异常。</p>
+     */
+    private boolean writeBackDirectly(int slot, ItemStack target) {
+        if (!(handler instanceof net.neoforged.neoforge.items.IItemHandlerModifiable modifiable)) {
+            return false;
+        }
+        try {
+            modifiable.setStackInSlot(slot, target);
+            return true;
+        } catch (UnsupportedOperationException e) {
+            return false;
+        }
+    }
+
+    /**
+     * 回退路径：handler 不支持 {@code setStackInSlot} 时，用「抽取 + 插入」模拟。
+     *
+     * <p>⚠️ <b>三条铁律</b>（对应 I-C7 写后校验）：</p>
+     * <ol>
+     *   <li><b>抽取必须真的发生</b> —— 带输出过滤器的容器会返回 {@code EMPTY}。
+     *       此时若继续插入，就是「旧的还在 + 新的也进」= <b>物品复制</b>。</li>
+     *   <li><b>部分抽取也算失败</b> —— 只抽走一部分就插入，同样会复制。</li>
+     *   <li><b>写后校验</b> —— 插入可能被整库重定向（落到别的槽），必须核对目标槽内容。</li>
+     * </ol>
+     *
+     * <p>失败时<b>只告警不静默</b>（I-C6）：回退路径本身就罕见，静默会让「物品去哪了」无法排查。</p>
+     */
+    private void writeBackViaExtractInsert(int slot, ItemStack target) {
+        ItemStack before = handler.getStackInSlot(slot);
+
+        // ① + ②：抽取必须是完整的一整份
+        ItemStack extracted = handler.extractItem(slot, before.getCount(), false);
+        if (!before.isEmpty() && extracted.getCount() != before.getCount()) {
+            if (!extracted.isEmpty()) {
+                handler.insertItem(slot, extracted, false);   // 尽量还原
+            }
+            LOGGER.warn("SimpleContainerContext.setItem: 槽位 {} 抽取不完整（{} / {}），放弃写入以免复制",
+                slot, extracted.getCount(), before.getCount());
+            return;
+        }
+
+        // ③ 插回
+        ItemStack remaining = handler.insertItem(slot, target, false);
+        if (!remaining.isEmpty() && isArmorSlot(inventory, slot)) {
+            inventory.armor.set(slot - 36, target);
+            syncSlotToClients(slot, target);
+        } else if (!remaining.isEmpty()) {
+            LOGGER.warn("SimpleContainerContext.setItem: {} 个 {} 未能写回槽位 {}（容器拒绝或重定向）",
+                remaining.getCount(), target.getItem(), slot);
+        }
+
+        // ④ 写后校验：目标槽必须就是期望内容（防整库重定向）
+        ItemStack after = handler.getStackInSlot(slot);
+        if (!ItemStack.matches(after, target)) {
+            LOGGER.warn("SimpleContainerContext.setItem: 写后校验失败 —— 槽位 {} 期望 {}×{}，实际 {}×{}",
+                slot, target.getItem(), target.getCount(), after.getItem(), after.getCount());
+        }
     }
 
     @Override
@@ -523,6 +610,17 @@ public class SimpleContainerContext implements TickableContainerContext {
             new ClientboundContainerSetSlotPacket(menu.containerId, stateId, slotIndex, stack.copy()));
     }
 
+    /**
+     * 把「就地修改过的 DataComponent」推给正在看这个容器的玩家。
+     *
+     * <p>⚠️ <b>2026-10-18（专题 S3）改口径：按<b>位置</b>匹配 viewer，不再要求
+     * {@code be instanceof Container}</b>。旧实现要求 BE 是原版 {@code Container} 才收集
+     * 「我的容器实例集合」，否则<b>直接 return</b> ⇒ 精妙背包方块里的活熔炉图标
+     * （{@code furnace_active} 布尔组件）永远不刷新，必须关掉 GUI 再打开才更新。</p>
+     *
+     * <p>位置解析见 {@link MenuSlotOwners}：原版 BE / 大箱子反射 / 模组菜单的
+     * {@code getBlockPosition()}。契约 I-C5。</p>
+     */
     private void syncWorldContainer(int logicalSlot, ItemStack stack) {
         Level level = null;
         for (BlockEntity be : associatedBlockEntities) {
@@ -533,45 +631,40 @@ public class SimpleContainerContext implements TickableContainerContext {
         }
         if (level == null || level.isClientSide) return;
 
-        // 收集本容器关联的 Container 实例，用于验证 slot.container 归属
-        java.util.HashSet<Container> myContainers = new java.util.HashSet<>();
-        for (BlockEntity be : associatedBlockEntities) {
-            if (be instanceof Container c) {
-                myContainers.add(c);
-            }
-        }
-        if (myContainers.isEmpty()) return;
+        List<BlockPos> myPositions = getAssociatedBlockPositions();
+        if (myPositions.isEmpty()) return;
 
         for (ServerPlayer serverPlayer : level.getServer().getPlayerList().getPlayers()) {
             AbstractContainerMenu menu = serverPlayer.containerMenu;
             if (menu == serverPlayer.inventoryMenu) continue;
 
+            // 快路径：整个菜单就是这一个方块（精妙背包等）⇒ 不必逐槽解析
+            BlockPos menuPos = MenuSlotOwners.menuPosition(menu);
+            boolean wholeMenuIsMine = menuPos != null && myPositions.contains(menuPos);
+
             for (int i = 0; i < menu.slots.size(); i++) {
                 Slot slot = menu.slots.get(i);
                 // 必须同时匹配：槽位索引 + 容器归属，防止跨容器虚影。
-                // 大箱子：菜单槽位容器是 CompoundContainer(左BE, 右BE) 包装对象而非
-                // BE 本体，实例 contains 永远不命中 → 组件同步包从不发给大箱查看者
-                // → 活水车动画/tooltip 停留在开箱快照（v19.1 修 ContainerRuntimeCache
-                // 时漏掉的平行断点，修法与其对齐：用 compound.contains(be) 匹配）
-                if (slot.getContainerSlot() == logicalSlot
-                    && slot.container != serverPlayer.getInventory()
-                    && slotBelongsTo(slot.container, myContainers)) {
-                    int stateId = menu.incrementStateId();
-                    menu.remoteSlots.set(i, stack.copy());
-                    serverPlayer.connection.send(
-                        new ClientboundContainerSetSlotPacket(menu.containerId, stateId, i, stack.copy()));
-                }
+                // 大箱子：菜单槽位容器是 CompoundContainer 包装对象而非 BE 本体，
+                // 实例比较永远不命中 ⇒ 走位置解析（与 tick 构建的容器键同源）。
+                if (slot.getContainerSlot() != logicalSlot) continue;
+                if (slot.container == serverPlayer.getInventory()) continue;
+                if (!wholeMenuIsMine && !slotBelongsToPositions(menu, slot, myPositions)) continue;
+
+                int stateId = menu.incrementStateId();
+                menu.remoteSlots.set(i, stack.copy());
+                serverPlayer.connection.send(
+                    new ClientboundContainerSetSlotPacket(menu.containerId, stateId, i, stack.copy()));
             }
         }
     }
 
-    /**
-     * 判断菜单槽位的容器是否属于本容器关联的 Container 实例集合。
-     *
-     * <p>Q6 批次 B（2026-10-04）：实现已迁至 {@link ContainerContexts#ownsContainer}
-     * （边界带共享内核），此处保留薄委托。</p>
-     */
-    private static boolean slotBelongsTo(Container menuContainer, java.util.Set<Container> myContainers) {
-        return ContainerContexts.ownsContainer(menuContainer, myContainers);
+    /** 该菜单槽是否属于 {@code positions} 中的任一位置（I-C5 的位置口径）。 */
+    private static boolean slotBelongsToPositions(AbstractContainerMenu menu, Slot slot,
+                                                  List<BlockPos> positions) {
+        for (BlockPos pos : MenuSlotOwners.resolve(menu, slot)) {
+            if (positions.contains(pos)) return true;
+        }
+        return false;
     }
 }

@@ -43,8 +43,8 @@ import com.qiqi.li.living.util.DoubleChestPositions;
  * <p>本类的每个方法都是<b>已验证的现成实现</b>的迁移（含各自的坑位注释），
  * 消费者改走本入口（或保留薄委托）。</p>
  *
- * <p>批次 A（2026-10-04）收编服务端 {@link #resolve} / {@link #isViewing}；
- * 批次 B（2026-10-04）补 {@link #ownsContainer}（归属匹配）与 {@link #isSameSlotSpace}（槽位体系探针）；
+ * <p>批次 A（2026-10-04）收编服务端 {@link #resolve}；
+ * 批次 B（2026-10-04）补 {@link #isSameSlotSpace}（槽位体系探针）；
  * 批次 C（2026-10-04）的客户端槽位解析因 {@code LivingItemSlotWrapperAccessor} 是<b>客户端 Mixin</b>
  * （common 引用会让专用服务端崩）⇒ <b>不能放本类</b>，实装为
  * {@code com.qiqi.li.client.util.ClientSlotResolve}（被迫分居两侧）。</p>
@@ -136,7 +136,7 @@ public final class ContainerContexts {
     }
 
     /** 反射取 {@code CompoundContainer} 的两个 {@code Container} 半箱字段（结果按类缓存）。 */
-    private static BlockEntity[] reflectHalves(Container container) {
+    static BlockEntity[] reflectHalves(Container container) {
         Field[] fields = COMPOUND_FIELDS.computeIfAbsent(CompoundContainer.class, clazz -> {
             List<Field> found = new ArrayList<>();
             for (Field f : clazz.getDeclaredFields()) {
@@ -160,32 +160,35 @@ public final class ContainerContexts {
         return null;
     }
 
-    // ── isViewing：玩家菜单里是否含该容器（合并 2 处重复）──────────
+    // ── isViewingPositions：按位置判断玩家是否正在看该容器（I-C5）───
 
     /**
-     * 判断玩家当前打开的菜单里是否包含「该容器关联的 Container 实例」。
+     * 按**位置**判断玩家是否正看着该容器 —— 契约 I-C5 的正解（2026-10-18，专题 S3）。
      *
-     * <p><b>大箱子（v19.1 修复）</b>：原版大箱菜单的槽位容器是 {@code CompoundContainer}，
-     * 与两半 BE 实例都不相等 ⇒ 必须额外用其 {@code contains(Container)} 匹配，
-     * 否则大箱子里看不到同步。</p>
+     * <p>为什么不按 {@code Container} 实例判：后者要求菜单槽的 {@code slot.container}
+     * <b>等于</b>某个原版 {@code Container} 实例，对「有物品能力但不是 {@code Container}」的
+     * 模组方块实体（精妙背包方块、ProjectE 炼金箱）永远返回 {@code false} ⇒
+     * 运行时 tooltip 遥测与定向槽位同步静默不发（真机表现：「tooltip 没有进度信息」）。</p>
      *
-     * <p>收编自 {@code ContainerRuntimeCache.isViewingContainer} 与
-     * {@code FluidFlowServerSync.isViewingContainer} 两份同构实现。</p>
+     * <p>本方法把匹配口径换成<b>位置</b>：菜单槽属于哪个位置由 {@link MenuSlotOwners} 解析
+     * （原版 BE / 大箱子反射 / 菜单级 {@code getBlockPosition()} 三条路）。</p>
+     *
+     * <p>⚠️ 位置是 tick 上下文、容器键（{@code chest_x_y_z}）、缓存键的共用事实源；
+     * {@code Container} 实例是第四套并行事实源，必然漂 —— 过去三次事故
+     * （大箱实例比不中 / ProjectE 强转崩 / 精妙背包匹配不上）都源于此。</p>
      */
-    public static boolean isViewing(ServerPlayer player, Collection<Container> containerInstances) {
+    public static boolean isViewingPositions(ServerPlayer player, Collection<BlockPos> positions) {
+        if (positions == null || positions.isEmpty()) return false;
         AbstractContainerMenu menu = player.containerMenu;
         if (menu == player.inventoryMenu) return false;
-        for (Slot slot : menu.slots) {
-            if (ownsContainer(slot.container, containerInstances)) return true;
-        }
-        return false;
+        return MenuSlotOwners.isViewing(menu, new ArrayList<>(positions));
     }
 
     /**
      * 玩家当前是否<b>正打开自己的末影箱界面</b>。
      *
      * <p><b>用途（2026-10-06 第 ③ 次泄漏修复）</b>：原版末影箱既不是 BE 也不在玩家
-     * {@code Inventory} 里 ⇒ 流体快照派发无法像BE 容器那样用 {@link #isViewing} 过滤
+     * {@code Inventory} 里 ⇒ 流体快照派发无法像 BE 容器那样按位置匹配 viewer
      * 「菜单槽位是否属于该容器」，只能问「这个菜单是不是末影箱」。此前该分支
      * <b>不判 viewer</b>、每 tick 直发主人 ⇒ 玩家关掉末影箱打开普通箱子后，包仍在来，
      * 客户端 {@code chestLikeTarget} 提示被翻成 {@code ENDER_CHEST} ⇒
@@ -202,28 +205,6 @@ public final class ContainerContexts {
     /** 包级私有（供单测构造菜单替身）：菜单是否为末影箱菜单。 */
     static boolean isEnderChestMenu(AbstractContainerMenu menu) {
         return menu instanceof ChestMenu chest && chest.getContainer() instanceof PlayerEnderChestContainer;
-    }
-
-    // ── ownsContainer：菜单槽位的容器实例是否属于给定集合 ──────────
-
-    /**
-     * 判断「某个菜单槽位的容器实例」是否属于给定容器实例集合。
-     *
-     * <p><b>大箱子</b>：菜单槽位的容器是 {@code CompoundContainer}(左半BE, 右半BE)
-     * 包装对象而非 BE 本体 ⇒ 单靠 {@code contains} 永远不命中，必须再用其自带的
-     * {@code contains(Container)} 逐个匹配关联 BE。</p>
-     *
-     * <p>收编自 {@code SimpleContainerContext.slotBelongsTo}（组件同步归属验证）；
-     * 与 {@link #isViewing} 逐槽判据同源 —— 后者即「菜单里任取一槽，是否属于该集合」。</p>
-     */
-    public static boolean ownsContainer(Container menuContainer, Collection<Container> containerInstances) {
-        if (containerInstances.contains(menuContainer)) return true;
-        if (menuContainer instanceof CompoundContainer compound) {
-            for (Container be : containerInstances) {
-                if (compound.contains(be)) return true;
-            }
-        }
-        return false;
     }
 
     // ── isSameSlotSpace：Container 与 handler 是否共用同一套槽位编号 ──

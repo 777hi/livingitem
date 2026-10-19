@@ -3,6 +3,7 @@ package com.qiqi.li.living.domain.ender;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.items.IItemHandler;
+import net.neoforged.neoforge.items.IItemHandlerModifiable;
 import net.neoforged.neoforge.items.wrapper.InvWrapper;
 
 import com.qiqi.li.living.domain.ender.LivingEnderChestFunction;
@@ -13,7 +14,7 @@ import com.qiqi.li.living.domain.ender.LivingEnderChestFunction;
  * <p>若活末影箱已绑定玩家，则把读写作代理到该玩家的末影箱背包（{@code IItemHandler}），
  * 供外部传输系统访问；未绑定或玩家离线时槽位为 0、读写无效。</p>
  */
-public class LivingEnderChestItemHandler implements IItemHandler {
+public class LivingEnderChestItemHandler implements IItemHandlerModifiable {
 
     private final ItemStack enderChestStack;
     private final Player boundPlayer;
@@ -62,6 +63,14 @@ public class LivingEnderChestItemHandler implements IItemHandler {
             return enderChestHandler.insertItem(slot, stack, simulate);
         }
         return stack;
+    }
+
+    /** 精确覆盖指定槽位（契约 I-C3）—— 委托给绑定的末影箱背包（{@code InvWrapper} 本身可修改）。 */
+    @Override
+    public void setStackInSlot(int slot, ItemStack stack) {
+        if (enderChestHandler instanceof IItemHandlerModifiable modifiable) {
+            modifiable.setStackInSlot(slot, stack);
+        }
     }
 
     @Override

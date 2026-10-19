@@ -15,6 +15,41 @@
 
 ---
 
+## 2026-10-19
+
+> ✅ **S3 落地：viewer 匹配改位置口径（2026-10-19，真机反馈驱动）** —— 真机报「活熔炉图标要重开
+> GUI 才正确」「tooltip 没有进度信息」。两者同因：非原版 `Container` 的方块实体（精妙背包方块）
+> 在 viewer 匹配里永远返回空 ⇒ `syncWorldContainer`（图标组件定向同步）与
+> `LivingItemRuntimeSync`（运行时遥测）双双静默不发。
+> 修：新增 `MenuSlotOwners` —— 「菜单槽 → 容器位置」解析（原版 BE 直取 / 大箱子反射复用
+> `ContainerContexts.reflectHalves` / **模组菜单 `getBlockPosition()` 按类缓存反射**，
+> 精妙背包无需 compileOnly 依赖）；`ContainerContexts.isViewingPositions`、
+> `ContainerRuntimeCache.findViewersByPositions`、`LivingItem.runtimeContainerPositions`
+> （取代 `runtimeContainerInstances`，**不再要求 `be instanceof Container`** —— 这是 I-C5 的口径翻转）、
+> `SimpleContainerContext.syncWorldContainer`、`LivingItemRuntimeSync.flush` 全部切到位置。
+> 单测 756 → 761（760 passed + 1 skipped，0 fail）；新增 `MenuSlotOwnersTest` 5 项，
+> 原 `LivingItemRuntimeContainerInstancesTest` 改名并翻转「非 Container → 返回位置」。
+> 遗留（S3b）：活流体渲染 / 酿造台快照仍走 `Container` 口径。
+>
+>
+> ✅ **S3b 同日收尾：`Container` 在 viewer 匹配里彻底退场** —— `FluidFlowServerSync`（活流体渲染）、
+> `LivingBrewingStandFunction`（酿造台音效目标）改按位置口径。随后删除随口径退场而死的代码：
+> `ContainerContexts.isViewing(Collection<Container>)`、`ownsContainer`、
+> `ContainerRuntimeCache.findViewers / isViewing / menuContains`（`menuContains` 在 S3 后已是死代码）。
+> 大箱子防虚影守卫从 `ContainerContextsTest.OwnsContainer` 迁到
+> `MenuSlotOwnersTest.resolve_doubleChest_returnsBothHalves`（改为按位置匹配）。
+> 单测 763 → 760（759 passed + 1 skipped，0 fail）。`Container` 剩余调用点全部是 I-C2 允许的原版语义用途。
+>
+> ⚠️ **同日收紧：反射降为兜底（用户「反射的兼容性好像不佳来着」）** —— 把 `MenuSlotOwners`
+> 改成**三级**：① 结构化（原版 BE / 大箱子，无反射）→ ② **注册的 compat**
+> （`registerMenuResolver`，编译期安全）→ ③ 反射兜底。并收紧反射判据：**只认
+> `getBlockPosition` / `getBlockPos`，刻意不认 `getPos`**（泛名字可能命中玩家/合成格坐标 ⇒
+> 把包发错人）；失效时打 `ModLog.CONTAINER` debug（每类一次，满足 I-C6）。
+> 风险定性：反射失败只退化为「能 tick、显示不刷新」，不损坏数据；但**长期可靠必须走 ②**。
+> 新增守卫 2 项（只暴露 `getPos` 不被采用 / 注册解析器优先于反射），单测 761 → 763。
+
+---
+
 ## 2026-10-18
 
 > 🐛 **修复：容器列宽的「双源漂移」（漏斗：代码表 1 vs 规则表 5）** —— 框架演进提案 C 的收尾
@@ -149,6 +184,53 @@
 > 木桶 ❌（未实现该接口，与 2026-10-14 旧结论一致）· 潜影盒 ❌ · 未来第三方带盖容器
 > **自动纳入零维护**。守卫测试 `BeaconFunctionTest`（箱/末影箱 true、木桶/潜影盒 false、null 安全）。
 > 铁箱子边界记 §2.3（泥土箱 1 槽死位 / 水晶箱半透明待实测 / 12 列宽自适应）。
+
+> 📐 **口径：容器边界契约立项（2026-10-18，用户提「框架层面的大内容，需要立文档」）**
+> —— 起因是精妙背包兼容性排查：`insertItem(slot, …)` 在第三方容器里**可以忽略 slot**（精妙
+> 核心 `InventoryHandlerSlotTracker` 的非 simulate 分支改走整库插入），而本模组把它当「写回指定
+> 槽位」用 ⇒ 写回错槽 / 吞物品 / 复制。这不是某模组的 bug，是本模组「槽位 = 精确地址」与
+> `IItemHandler` 契约「槽位 = 建议位置」两套模型的对撞。
+> 新增契约 [container-boundary.md](../system-design/container-boundary.md)：I-C1 能力面发现 ·
+> I-C2 `Container` 只用于原版语义 + 槽位体系探针 · I-C3 写回≠插入（`setStackInSlot`）·
+> I-C4 模拟与真实同源且模拟只是上界 · I-C5 身份/viewer 按位置键 · I-C6 降级可观测 ·
+> I-C7 写后校验。同时澄清「**扫描展开**（外→内）」与「**活物品内部递归**（内→更深）」是两套
+> 机制、共用一条**深度预算**（否则「扫描 1 层 + 活潜影箱 4 层」会叠成 5 层）。
+> 专题计划 [container-compat-topic.md](../buffer/container-compat-topic.md)：S1 契约+守卫（替身
+> `SlotIgnoringHandler` / `ExtractBlockedHandler`）→ S2 写回收敛 → S3 身份/viewer → S4 列数多容量
+> → S5 扫描展开深度 1。范围明确不做：扫描深度 ≥2、活物品内部容器通用递归、GUI 布局适配。
+> 同时修 `/livingitem container register` / `inspect` 的判定口径（`be instanceof Container` →
+> `ItemHandler.BLOCK` 能力面 + `handler.getSlots()`）——原先对精妙背包方块直接报
+> `not_looking_at_container`，**玩家连自助校准列数都做不到**。
+> 守卫 `ContainerBoundaryContractTest` 3 项（S2 前 `@Disabled`，实测解除后三条全红：
+> 写回错槽 / 物品复制 / 模拟真实不同源）。单测 751 → 755（751 passed + 4 skipped）。
+> 旧结论翻转：TODO 的「容器能力白/黑名单」**不采纳**（排除 = 放弃兼容 + 永久适配债）——
+> `D-container-05`。同日登记 `D-container-01..07`（能力面发现 / 写回≠插入 / 模拟真实同源 /
+> 身份按位置键 / 否黑名单 / 两种嵌套共用深度预算 / 池不作宿主）。
+>
+> ✅ **S2 落地：写回路径收敛（同日晚）** —— `SimpleContainerContext.setItem` 从
+> `extractItem + insertItem` 改为**优先 `setStackInSlot`**，不可修改的 handler 走回退路径
+> （校验抽取完整性 → 插入 → `ItemStack.matches` 写后校验，任一步不成立只告警不静默）。
+> 超量写入按**槽位上限**截断（**不按物品 `maxStackSize`** —— 否则会把精妙背包堆叠升级 /
+> 抽屉的合法超大堆叠砍回 64）。附带修同类「自己的代码」：`LivingChestItemHandler` 的
+> `insertItem` 真实写入走 `LivingChestFunction.insertItem`，**同样忽略 slot**（整库语义）⇒
+> 补 `setStackInSlot`；`LivingEnderChestItemHandler` 一并实现 `IItemHandlerModifiable`。
+> 3 项守卫由红转绿；单测 755（754 passed + 1 skipped，0 fail）。
+> ⚠️ 语义边界：`setItem` 现为**无条件精确写**（不再过 `isItemValid`），符合所有调用方意图
+> （写自己容器的确定槽位）；跨槽插入必须先 `simulateInsertItem` 把关。
+>
+> ✅ **S4 落地：列数规则支持多档容量（同日晚，真机反馈驱动）** —— 真机报「活熔炉不烧」，
+> 根因是**列数**：熔炉燃料槽在 `slot + width`（默认 DOWN），108 格精妙背包被启发式算成
+> **9 列**（实际 12）⇒ 燃料槽读 `slot+9` 而 GUI 燃料在 `slot+12` ⇒ 永远读不到燃料 ⇒ 不烧；
+> 活漏斗只用 `slot ± 1` ⇒ 看起来完全正常。修：规则键从 `ResourceLocation` 改为
+> **`(id, containerSize)`**（`RULES` 改 `Map<id, List<rule>>`，**JSON 格式不变** ——
+> `containerSize` 本来就是键的一部分）；`getWidth` 用 `findRule(id, getSize())` 精确匹配；
+> 内置规则补精妙背包六档（27/45/54/81 → 9 列，108/120 → 12 列）。
+> 顺带修一处**跨测试类共享静态状态**的顺序性 flaky（`ContainerRuleConfigTest` 删除内置规则后
+> 未恢复 ⇒ 若它先跑，后续类会看到 `minecraft:chest` 消失）：加 `@AfterEach` 用空目录重新 `load()`。
+> 单测 755 → 756（755 passed + 1 skipped，0 fail）。
+> 遗留：`USER_RULES` 仍是 `Map<id, rule>`，玩家侧无法同时保存同一 BE 的两档容量（内置不受影响）。
+>
+
 
 ---
 

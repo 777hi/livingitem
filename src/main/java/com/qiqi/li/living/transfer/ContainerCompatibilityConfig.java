@@ -40,32 +40,74 @@ import java.util.*;
  */
 public final class ContainerCompatibilityConfig {
 
-    /** 容器规则注册表（容器 ID → 规则） */
-    private static final Map<ResourceLocation, ContainerRule> RULES = new HashMap<>();
+    /**
+     * 容器规则注册表（容器 ID → 该 ID 的**全部容量档位**）。
+     *
+     * <p>⚠️ 为什么是 {@code List} 而不是单条（2026-10-18，专题 S4）：同一个方块实体类型
+     * 可以有多档容量，而<b>列数不同</b>。精妙背包就是典型：皮革 27 / 铜 45 / 铁 54 / 金 81
+     * 都是 9 列，但钻石 108 / 下界合金 120 是 <b>12 列</b>。旧实现 {@code Map<id, rule>}
+     * 一个 id 只能存一条 ⇒ 注册了 108 就把 120 挤掉，反之亦然。</p>
+     *
+     * <p>列数算错的后果不是「显示难看」而是<b>功能失效</b>：活熔炉的燃料槽在
+     * {@code slot + width}，宽度错 9 vs 12 ⇒ 永远读不到燃料 ⇒ 不烧；
+     * 而活漏斗只用 {@code slot ± 1} ⇒ 看起来正常。这条差异是最难自查的那类 bug。</p>
+     */
+    private static final Map<ResourceLocation, List<ContainerRule>> RULES = new HashMap<>();
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ContainerCompatibilityConfig.class);
 
     private ContainerCompatibilityConfig() {}
 
-    /** 注册容器规则 */
+    /**
+     * 注册容器规则。
+     *
+     * <p>同一 {@code (id, containerSize)} 已存在则<b>覆盖</b>（玩家修正内置数据是预期行为），
+     * 否则追加为新的容量档位。</p>
+     */
     public static void register(ResourceLocation containerId, ContainerRule rule) {
-        RULES.put(containerId, rule);
+        List<ContainerRule> list = RULES.computeIfAbsent(containerId, k -> new ArrayList<>());
+        for (int i = 0; i < list.size(); i++) {
+            if (list.get(i).containerSize() == rule.containerSize()) {
+                list.set(i, rule);
+                return;
+            }
+        }
+        list.add(rule);
     }
 
-    /** 移除容器规则 */
+    /** 移除该 ID 的<b>全部</b>容量档位。 */
     public static boolean remove(ResourceLocation containerId) {
         return RULES.remove(containerId) != null;
     }
 
-    /** 根据容器 ID 查找规则 */
+    /**
+     * 按 ID 查规则 —— 返回该 ID 的<b>第一条</b>（档位顺序无关）。
+     *
+     * <p>⚠️ 凡是要拿「这个容器的列数」的地方都<b>必须</b>用
+     * {@link #findRule(ResourceLocation, int)}：单参数版本对多档容器会拿到别的档位。
+     * 本重载只用于「这个 ID 有没有注册过」这类存在性判断与诊断展示。</p>
+     */
     public static Optional<ContainerRule> findRule(ResourceLocation containerId) {
-        return Optional.ofNullable(RULES.get(containerId));
+        List<ContainerRule> list = RULES.get(containerId);
+        return list == null || list.isEmpty() ? Optional.empty() : Optional.of(list.get(0));
+    }
+
+    /** 按 {@code (ID, 容量)} 精确查规则 —— 多档容器的正确入口。 */
+    public static Optional<ContainerRule> findRule(ResourceLocation containerId, int containerSize) {
+        List<ContainerRule> list = RULES.get(containerId);
+        if (list == null) return Optional.empty();
+        for (ContainerRule rule : list) {
+            if (rule.containerSize() == containerSize) return Optional.of(rule);
+        }
+        return Optional.empty();
     }
 
     public static Optional<ContainerRule> findRuleBySize(int containerSize) {
         for (var entry : RULES.entrySet()) {
-            if (entry.getValue().containerSize() == containerSize) {
-                return Optional.of(entry.getValue());
+            for (ContainerRule rule : entry.getValue()) {
+                if (rule.containerSize() == containerSize) {
+                    return Optional.of(rule);
+                }
             }
         }
         return Optional.empty();
@@ -180,7 +222,8 @@ public final class ContainerCompatibilityConfig {
                 for (String rulePart : ruleParts) {
                     for (String pathPart : pathParts) {
                         if (rulePart.equalsIgnoreCase(pathPart) && !rulePart.isEmpty()) {
-                            return Optional.of(entry.getValue());
+                            List<ContainerRule> list = entry.getValue();
+                            if (!list.isEmpty()) return Optional.of(list.get(0));
                         }
                     }
                 }
@@ -189,9 +232,19 @@ public final class ContainerCompatibilityConfig {
         return Optional.empty();
     }
 
-    /** 获取所有已注册规则（不可变视图） */
-    public static Set<Map.Entry<ResourceLocation, ContainerRule>> getAllRules() {
-        return Collections.unmodifiableSet(RULES.entrySet());
+    /**
+     * 获取所有已注册规则（不可变视图，<b>已按容量档位摊平</b>）。
+     *
+     * <p>同一个 ID 有多个容量档位时会返回多条 —— 调用方按 {@code entry.getKey()} 分组即可。</p>
+     */
+    public static List<Map.Entry<ResourceLocation, ContainerRule>> getAllRules() {
+        List<Map.Entry<ResourceLocation, ContainerRule>> flat = new ArrayList<>();
+        for (var entry : RULES.entrySet()) {
+            for (ContainerRule rule : entry.getValue()) {
+                flat.add(Map.entry(entry.getKey(), rule));
+            }
+        }
+        return Collections.unmodifiableList(flat);
     }
 
     /**

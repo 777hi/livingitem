@@ -410,6 +410,28 @@ if (stressData != null && context instanceof SimpleContainerContext simpleCtx) {
 
 这意味着活物品模组**不强制要求玩家安装 Create**，但安装后自动获得兼容功能。
 
+#### 5.1.1 为什么**不用反射**替代 compileOnly（2026-10-19 定，勿"优化"成反射）
+
+曾被提议「用反射去掉 Create 的编译依赖」。结论：**不采纳**，三条判据全部不满足：
+
+| 判据 | 活水车 | 结论 |
+|---|---|---|
+| **失败后果** | 拿不到应力 = **功能完全失效**（水车不转），不是显示降级 | ❌ |
+| **调用频率** | 应力注入是**每 tick × 每个水车**的热路径；反射 `invoke` + float 装箱是明确的性能退化 | ❌ |
+| **是否要改别人的类** | 需要 Mixin 注入 `KineticBlockEntity` —— **Mixin 必须编译期引用目标类**，反射替代不了 | ❌ |
+
+补充事实：
+
+- **编译成本已经付了**：`build.gradle` 里 Create 的 `compileOnly` + `runtimeOnly` 已存在；
+  改反射省不掉 `runtimeOnly`（开发时仍要 jar）。
+- **compileOnly 的价值正是「升级即编译失败」**：Create 6.0.x 改过包路径与方法签名，
+  反射会让这类破坏变成**运行期静默失效** —— 那正是 `MenuSlotOwners` 被降级为兜底的原因。
+- 本项目对第三方 API 的**反射用量为零**（`ModSable` 里那处 `Class.forName` 反射的是
+  **本项目自己的** `SableIntegration`，用于避免 `NoClassDefFoundError`，性质不同）。
+
+> ✅ **反射唯一合理的位置**：**版本探测**。若将来要同时支持 Create 两个大版本的某个方法差异，
+> 用一次性 `getMethod` 探测选分支（冷路径、可降级），**而不是把调用链整体反射化**。
+
 ### 5.2 软依赖实现架构
 
 ```

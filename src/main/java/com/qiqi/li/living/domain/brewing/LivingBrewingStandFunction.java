@@ -30,7 +30,6 @@ import net.minecraft.network.protocol.game.ClientboundSoundPacket;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
-import net.minecraft.world.Container;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -38,7 +37,6 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.alchemy.PotionBrewing;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.phys.Vec3;
 
 /**
@@ -240,17 +238,15 @@ public class LivingBrewingStandFunction implements LivingItemFunction, HasDirect
         // tick 路径传入的运行时类型必为 TickableContainerContext（processContext 的入口契约），
         // 但 tick() 的签名是 ContainerContext ⇒ 这里做带注释的收窄取关联 BE
         if (!(ctx instanceof TickableContainerContext tickable)) return List.of();
-        List<Container> instances = new ArrayList<>();
-        for (BlockEntity be : tickable.getAssociatedBlockEntities()) {
-            if (be instanceof Container c) instances.add(c);
-        }
-        if (instances.isEmpty()) return List.of();
+        // 按**位置**匹配 viewer（I-C5）—— 不再要求 BE 是原版 Container
+        List<BlockPos> positions = tickable.getAssociatedBlockPositions();
+        if (positions.isEmpty()) return List.of();
         var server = level.getServer();
         if (server == null) return List.of();
 
         List<ServerPlayer> out = new ArrayList<>();
         for (ServerPlayer p : server.getPlayerList().getPlayers()) {
-            if (p.connection != null && ContainerContexts.isViewing(p, instances)) {
+            if (p.connection != null && ContainerContexts.isViewingPositions(p, positions)) {
                 out.add(p);
             }
         }

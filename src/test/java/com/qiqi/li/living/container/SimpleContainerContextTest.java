@@ -278,15 +278,15 @@ class SimpleContainerContextTest {
         }
 
         @Test
-        @DisplayName("堆叠上限截断：超过 maxStack 时截断")
+        @DisplayName("槽位上限截断：超过 getSlotLimit 时截断（不按物品 maxStack）")
         void setItem_exceedsMaxStack_truncates() {
-            // Redstone 的 maxStackSize = 64
+            // Redstone 的 maxStackSize = 64，FakeHandler 的 getSlotLimit = 64
             var handler = new FakeHandler(27);
             var ctx = new SimpleContainerContext(handler);
-            // handler.getSlotLimit(0) = 64, 但 redstone maxStackSize = 64
             ctx.setItem(0, new ItemStack(Items.REDSTONE, 100));
-            // 实际 handler 按 maxStack 截断
-            assertTrue(handler.getStackInSlot(0).getCount() <= 64);
+            // ⚠️ 判据是**槽位上限**，不是物品的 getMaxStackSize —— 超大堆叠容器（精妙背包
+            // 堆叠升级、抽屉）一个槽可合法放几百个，按物品上限截断会把它们砍回 64。
+            assertEquals(64, handler.getStackInSlot(0).getCount());
         }
     }
 

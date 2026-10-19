@@ -92,7 +92,7 @@ SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 | 族 | 子系统（点击直达文档） |
 |----|----------------------|
 | **活物品功能（16）** | [活TNT](docs/tech/living-tnt-tech.md) · [活流体](docs/tech/living-fluid-tech.md) · [活熔炉](docs/tech/living-furnace-tech.md) · [活酿造台](docs/tech/living-brewing-stand-tech.md) · [活漏斗](docs/tech/living-hopper-tech.md) · [活箱子](docs/tech/living-chest-tech.md) · [活末影箱](docs/tech/living-ender-chest-tech.md) · [活水车](docs/tech/living-water-wheel-tech.md) · [活地图传送](docs/tech/living-map-ender-pearl-tech.md) · [活耕地](docs/tech/living-farmland-tech.md) · [活工具](docs/tech/living-tool-tech.md) · [活武器](docs/tech/living-weapon-tech.md) · [活红石](docs/tech/living-redstone-tech.md)（信号层含 [活铜](docs/tech/living-copper-tech.md)） · [活涂蜡铜块（红电发电）](docs/tech/living-power-tech.md) · [活打火石](docs/tech/living-flint-and-steel-tech.md) · [活信标](docs/tech/living-beacon-tech.md) |
-| **容器基础设施（4）** | [基础设施](docs/system-design/living-item-infrastructure.md) · [多方块容器身份解析](docs/system-design/container-identity.md) · [数据模型](docs/system-design/data-model.md) · [超大堆叠审计](docs/system-design/oversized-stack-audit.md) |
+| **容器基础设施（5）** | [基础设施](docs/system-design/living-item-infrastructure.md) · [多方块容器身份解析](docs/system-design/container-identity.md) · [容器边界口径](docs/system-design/container-boundary.md) · [数据模型](docs/system-design/data-model.md) · [超大堆叠审计](docs/system-design/oversized-stack-audit.md) |
 | **红电 · 电力（3）** | [红电架构演进](docs/buffer/redstone-evolution-roadmap.md) · [红电包收口方案](docs/buffer/power-refactoring-plan.md) · [红电不变量测试](docs/system-design/power-invariants.md) |
 | **跨域机制（3）** | [GUI交互](docs/system-design/gui-interaction-system.md) · [图标系统](docs/system-design/icon-system.md) · [Tooltip 系统](docs/system-design/tooltip-system.md) |
 | **工程实践（3）** | [单元测试](docs/guides/unit-testing.md) · [活TNT测试说明](docs/guides/living-tnt-testing.md) · [活物品设计模板](docs/guides/living-item-design-template.md) |
@@ -146,7 +146,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 752 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
+**合计测试用例 760 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -171,6 +171,8 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-19 | ✅ **S3：viewer 匹配改位置口径（I-C5）** —— 真机「活熔炉图标要重开 GUI」「tooltip 无进度信息」同因：非原版 `Container` 的方块实体在 viewer 匹配里恒为空 ⇒ 定向槽位同步与运行时遥测双双静默不发。新增 `MenuSlotOwners`（菜单槽→容器位置：原版 BE / 大箱子反射 / **模组菜单 `getBlockPosition()` 按类缓存反射**，精妙背包零编译依赖），`LivingItem.runtimeContainerPositions` 不再要求 `be instanceof Container`（口径翻转），`syncWorldContainer` + `LivingItemRuntimeSync` 切换；**S3b** 再让流体渲染 / 酿造台音效同源，并删掉随口径退场而死的 `isViewing`/`ownsContainer`/`findViewers`/`menuContains` 整条 ⇒ **`Container` 在 viewer 匹配里彻底退场**（余下全是 I-C2 允许的原版语义用途）。单测 760（759 passed + 1 skipped） | `docs/system-design/container-boundary.md` I-C5 · `docs/buffer/container-compat-topic.md` S3 · `living/container/MenuSlotOwners.java` |
+| 2026-10-18 | 📐 **容器边界：契约 + S1/S2 落地** —— 新增契约 I-C1~I-C8（能力面发现 / 写回≠插入 / 模拟真实同源 / 身份按位置键 / 降级可观测 / 写后校验 / 格容器 vs 物品池）+ 专题 S1~S5；澄清「扫描展开」与「活物品内部递归」是**两套机制**、共用一条深度预算。**S2**：`setItem` 改走 `setStackInSlot`（回退分支校验抽取完整性 + 写后校验；超量按槽位上限截断，不按物品 maxStack）⇒ 修掉「写回错槽 / 物品复制」；附带修活箱子 / 活末影箱 handler 的同类整库语义。`/livingitem container register` 改按能力面判定（原先对非 `Container` 模组容器直接报错）。守卫 3 项先红后绿。**S4**：规则键改 `(id, 容量)` ⇒ 精妙背包 108/120 正确算 12 列（原先 9/10）—— 这是「活熔炉不烧」的根因（燃料槽 `slot+width`，漏斗只用 `slot±1` 所以看不出）；顺带修跨测试类静态状态 flaky。**S3**：新增 `MenuSlotOwners`（菜单槽→容器位置，含模组菜单 `getBlockPosition` 反射）⇒ viewer 匹配改位置口径，修好「活熔炉图标要重开 GUI」与「tooltip 无进度信息」（非 `Container` 容器原先永远匹配不上）。单测 760（759 passed + 1 skipped） | `docs/system-design/container-boundary.md` · `docs/buffer/container-compat-topic.md` · `living/container/MenuSlotOwners.java` |
 | 2026-10-18 | 🔍 **活信标最终审查：修 1 个阻断 + 一致性清理** —— ① 阻断：玩家宿主登记表全服一张却在 `flush`（逐维度调用）末尾清空 ⇒ **多维度服上玩家宿主光束只在第一维度有效**；改 `beginTick()` 在 tick 开头清（新增 3 例跨维度守卫测试）。② 残留：删 `BeaconChestHost.active` 无用中间层、柱高/存在性共用一次槽位解析、tooltip 生效数算一次、面板缺口收敛到 `deficitsToNext`。③ 健壮性：`OreType.byId/byOrdinal` 回落（脏存档不抛）、宿主包解码容量钳制、死代码 `BeaconRuntime.EMPTY` 删除。④ 注释/§4 口径订正 7 处（R=32→256、offhand 行号、球体→AABB、白底段 +1→0 等）。⑤ 收尾补修：**喂锭列宽曾写死 9**，与 tick 的 `getWidth()`（108 槽铁箱子 = 12 列）分叉 ⇒ 改用 `ContainerContexts.resolve` 取同源上下文 + 解析失败回退旧 9 列；客户端那份只跑背包（恒 9）保持不动。单测 746 → 751 绿 | `docs/tech/living-beacon-tech.md` §4 · `living/domain/beacon/BeaconPlayerHostSync.java`（beginTick）· `BeaconFeedHandler.java`（columnSlotsFor） |
 | 2026-10-18 | ✅ **活信标收尾：迁入正式台账**（用户定「不专门测试、游玩时慢慢反馈」）—— 设计稿 `docs/buffer/` → `docs/tech/living-beacon-tech.md`（16 个活物品功能全部有 tech 台账）；状态行重写（746 绿）；§6.1 转「游玩对照表」，实测顺延挂 `docs/TODO.md`。 | `docs/tech/living-beacon-tech.md` · `docs/TODO.md` |
 | 2026-10-18 | 🆕 **活信标：同容器多枚信标每枚一条光束**（用户定案）—— 宿主键 `容器键#槽位`，各自的等级/玻璃色/光束互不覆盖（全同条目去重）；**开盖仍按容器**（取走一枚盖不关，整箱再无才关）。客户端与包格式零改动。 | `docs/tech/living-beacon-tech.md` §2.3 · `living/domain/beacon/BeaconChestHost.java` |
@@ -179,8 +181,6 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-10-18 | 🆕 **活信标：宿主判据升级为协议级 `LidBlockEntity`**（用户「岂不是得专门兼容」促成）—— 铁箱子 BE 不继承 `ChestBlockEntity` 被类型白名单漏掉；先写反射 compat 随即意识到逐个兼容不可扩展 ⇒ 改用原版接口判据（零反射零软依赖，compat 已删），未来第三方带盖容器自动纳入。 | `docs/tech/living-beacon-tech.md` §2.3 · `living/domain/beacon/BeaconFunction.java` |
 | 2026-10-16 | 🆕 **活信标：容器槽位玻璃参与光束染色** —— 信标**同列向上**的容器玻璃 = 原版「正上方起可叠玻璃」，新 `BeaconGlassColor` 取色并插在扫描序列最前，与世界玻璃按原版「第 1/2 块新建段」规则合成 ⇒ 叠放关系不冲突；容器色随宿主包下发（客户端不开 GUI 读不到容器内容）。 | `docs/tech/living-beacon-tech.md` §2.2 · `living/domain/beacon/BeaconGlassColor.java` |
 | 2026-10-16 | 🆕 **活信标 Phase 1~4 四段落地** —— ① 玩家宿主光束（像帽子随头转）+ 联机广播；② 9 列金字塔判级（合计 9/34/83/164 对齐原版）+ 箱子开盖保持 + 遥测；③ 5 矿石槽配置 + 右键喂锭（消耗制）+ 范围 buff + 满级再生三档；④ tooltip 重设计（压缩三态 + 休眠三因 + 生效数）+ 9 柱小金字塔面板（始终可见、目标值数字、不可达兜底）。 | `docs/tech/living-beacon-tech.md` §2 全量 · `living/domain/beacon/` |
-| 2026-10-13 | 🐛 **修复：容器键形反推的 3 处同源 bug**（背包/末影箱 tooltip 遥测从不刷新）—— 容器类型在产生处本明确、压扁成字符串 key 后各消费方各自反推 ⇒ `ContainerKind` 升为一等公民（随包下发 ordinal + 越界回退）+ `ContainerKeys` 解析收敛唯一入口 + `check_container_keys.py` 守卫。 | `docs/system-design/living-item-infrastructure.md` §2.5 · `living/container/ContainerKeys.java` |
-| 2026-10-13 | 🐛 **修复：龙息作材料时被整栈吃掉**（残留物处理写错）—— 照原版 `BrewingStandBlockEntity#doBrew`「先扣 1、再看残留物」语义改写 `consumeOne`；⭐ 教训：**「原版如此」也是需要实证的断言**（旧注释「都不带合成残留物」一条 `grep` 即可证伪）。 | `docs/tech/living-brewing-stand-tech.md` §9.3 · `LivingBrewingStandFunction.consumeOne` |
 
 ## 排查铁律：原版机制挡路时
 

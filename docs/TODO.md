@@ -104,18 +104,42 @@
 3. ⏳ 铜块物品栏装饰器渲染（纯视觉）—— `living-copper-tech.md`
 4. 🔮 活潜影箱集成（信号穿透边界）—— 设计探讨见 `buffer/活潜影箱实现细节.md`
 
-## 容器边界（2026-10-10 记）
+## 容器边界（2026-10-10 记 · 2026-10-18 立项为专题）
 
-> 扫描按 `IItemHandler.BLOCK` **能力面**把任何有物品能力的方块实体当成活物品容器；而运行时同步的
-> viewer 匹配依赖**原版 `Container` 实例**。两套口径不一致 ⇒ 详见
-> [container-identity.md §5](system-design/container-identity.md)。
+> **契约**：[system-design/container-boundary.md](system-design/container-boundary.md)（不变量 I-C1~I-C7，已生效）
+> **实施计划**：[buffer/container-compat-topic.md](buffer/container-compat-topic.md)（S1~S5 + 验收判据）
+>
+> 本条目只留「还没做完的」，不再承载设计正文。
 
-1. ⏳ **容器能力白/黑名单**（待拍板）—— 是否要在扫描入口（`processContainerAt` /
-   `ContainerChunkCache` 登记处）排除「有物品能力但非原版 `Container`」的模组容器
-   （如 ProjectE 炼金箱 `AlchBlockEntityChest`）？现状：这类容器**仍被 tick**（活物品照常运转），
-   但运行时 tooltip 同步不生效（viewer 匹配不上）。crash-2026-10-10 的 `ClassCastException`
-   已修（强转改 `instanceof` 守卫），但「该不该把这类容器纳入活物品体系」仍是未决设计。
-   ⚠️ 边界：不加名单 = 接受「能 tick、不能同步显示」；加名单 = 多一处类型过滤、需定义判定口径。
+1. ✅ **「白/黑名单」已否**（`D-container-05`）—— 原待决「是否在扫描入口排除『有物品能力但非原版
+   `Container`』的模组容器」。结论：**排除 = 放弃兼容**，且黑名单是永久适配债 ⇒ 改为口径收敛
+   （`D-container-01` / `D-container-04`）。理由见契约 §0 / §2。
+   ⚠️ 不加名单意味着「非 `Container` 容器必须能 tick **且**能同步显示」——后半句当前未实现（I-C5 ⏳）。
+2. ⏳ **专题 S2~S5 未开始**（S1 契约 + 守卫测试已完成，守卫 3 项 `@Disabled` 待 S2 解除）。
+   范围边界见契约 §4：扫描展开只做深度 1；活潜影箱的功能内部递归独立立项。
+3. ⏳ **真机基线待用户测**（用户 2026-10-18 自领）—— 清单见专题计划 §6；
+   当前预期 B1/B3/E 组为红（S2 未做），测完把观察填进专题 §5 台账。
+4. 🔮 **池端点（长期，未定案）** —— 给 `SlotAccessor` 加「物品池」实现（按类型 extract/insert），
+   让活漏斗能对 AE2 ME 接口 / RS 网络推拉。**不做**池宿主（`D-container-07` / I-C8）。
+   前置：S3 的 Provider 注册机制落地后可复用同一套注册。
+
+## 活水车 · Create 接触面收窄（2026-10-19 记）
+
+> 背景：`StressStateMachine` 的 javadoc 写着「纯逻辑类，可独立测试」，但**实际无法单测** ——
+> 它直接吃 `KineticBlockEntity` 类型，而 Create 只有 `compileOnly`（不在 test classpath 上），
+> 所以 `src/test` 里对它零覆盖。这是「编译依赖」真正的代价，比"要不要用反射"更值得处理。
+
+1. ⏳ **抽出 `KineticOps` 接口**（`livingItem$` 前缀，与 `LivingItemStressOutput` 同风格）：
+   `getLevel` / `hasNetwork` / `detachFromNetwork`（把 `getOrCreateNetwork().remove(self)` 收成一个操作）/
+   `setSpeed` / `setNetwork(null)` / `setChanged` / `sendData` / `getBlockPos`。
+   Mixin 侧实现它（那里本来就有 Create 类型），`StressStateMachine` 只依赖接口。
+2. ⏳ 收益：状态机变成**纯 Java**，可用 `FakeKineticOps` 单测覆盖
+   INACTIVE↔ACTIVE / 自过期 / 区块卸载清理 四条迁移；Create 引用面收敛到 Mixin 一处。
+3. ⚠️ **不采用反射**：理由见 [living-water-wheel-tech.md §5.1.1](tech/living-water-wheel-tech.md)。
+
+
+
+
 
 ## 活武器（2026-10-10 自 `living-weapon-tech.md` §0/§9 迁入，D-doc-06）
 

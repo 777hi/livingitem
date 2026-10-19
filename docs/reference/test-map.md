@@ -14,7 +14,7 @@
 
 ```
 src/test/java/com/qiqi/li/
-├── LivingItemRuntimeContainerInstancesTest.java  # 运行时同步容器实例反查·非 Container BE(ProjectE 炼金箱)返回空集合不抛异常/原版 Container BE 返回自身/无 BE 返回 null（3 项）+ 缓存键反查·带维度前缀定向该维度且不越维度找补/未知维度/裸键扫描兜底/背包坏键安全跳过/dimPrefixOf（6 项；2026-10-12「tooltip 遥测全停」回归）
+├── LivingItemRuntimeContainerPositionsTest.java  # 运行时遥测发包「容器键→位置」反查·非 Container BE(精妙背包/ProjectE)返回位置不抛异常(I-C5 翻转)/原版 Container BE/无 BE 返回 null（3 项）+ 缓存键反查·前缀定向该维度且不越维度找补/未知维度/裸键扫描兜底/背包坏键安全跳过/dimPrefixOf（6 项）
 ├── testutil/
 │   └── FakeContainerContext.java              # ContainerContext 测试替身（内存数组实现）
 ├── client/gui/
@@ -37,7 +37,9 @@ src/test/java/com/qiqi/li/
 │   └── ActivationTargetParsingTest.java       # 活化目标参数解析守卫·物品ID/标签/modid 回写契约 + 反向守卫「StringArgumentType 读不进 : # @」（4 项）
 ├── living/container/
 │   ├── SimpleContainerContextTest.java        # 容器上下文脏槽同步 + 末影箱稳定键构造器（4 项回归）+ 缓存键推导（世界容器带维度前缀/跨维度同坐标键不同/大箱子两段坐标/背包末影箱裸键/无维度退化）（35 项）
-│   ├── ContainerContextsTest.java             # 边界带共享内核·ownsContainer(单箱实例/大箱CompoundContainer/防跨容器虚影/空集) + isSameSlotSpace(槽位数不一致/越界/同空/同物品/一空一非空/异物品) + resolve 末影箱分支(F-1) + isViewingEnderChest 判据 6 项（18 项）
+│   ├── ContainerContextsTest.java             # 边界带共享内核·isSameSlotSpace(槽位数不一致/越界/同空/同物品/一空一非空/异物品) + resolve 末影箱分支(F-1) + isViewingEnderChest 判据 6 项（14 项；ownsContainer 守卫 2026-10-19 随 I-C5 收敛删除，虚影守卫迁 MenuSlotOwnersTest）
+│   ├── ContainerBoundaryContractTest.java     # 容器边界契约 I-C3/I-C4/I-C7 守卫：SlotIgnoringHandler(insertItem 丢 slot) + ExtractBlockedHandler(extract 被拦) ⇒ 写回落对槽/物品守恒/模拟真实同源（3 项，S2 后转绿）
+│   ├── MenuSlotOwnersTest.java                # I-C5 守卫：菜单槽→容器位置解析·三级(结构化/注册/反射)·菜单级 getBlockPosition 反射命中(精妙背包那条路)/只暴露 getPos 不被采用(防误命中)/注册解析器优先于反射/无位置方法返回 null/模组容器槽回落菜单位置/原版 BE 槽直取/大箱 CompoundContainer 两半位置(防跨容器虚影)/空位置集恒 false（8 项）
 │   ├── ContainerNeighborsTest.java            # 四邻取数·fillNeighbors 与 getNeighbors 逐格一致（含边界）/ 单行容器 / 复用缓冲不污染（3 项）
 │   ├── PlayerFluidDataPersistenceTest.java    # 玩家路径落盘（CONTAINER_FLUID_DATA_PLAYER）·背包与末影箱各有源写回 / 变空条目移除 / 重进不复活 / 两容器键互不干扰 / 重进从附件回填（4 项）
 │   ├── ContainerChunkCacheChunkLoadTest.java  # 区块加载守卫·事件不碰世界/延后重扫不丢/限量/不主动加载/只处理ticking区/可观测性（6 项）
@@ -118,7 +120,7 @@ src/test/java/com/qiqi/li/
 │   ├── InteractionRuleConfigTest.java         # 交互规则 JSON 加载语义·内置全有效/玩家覆盖与removed/坏值跳过/未知字段忽略/version守卫/reload幂等（9 项；自带 mock handler 不依赖测试执行顺序）
 │   └── TillToFarmlandCompatTest.java          # 活锄头跨模组兼容·模组锄头命中+处理器产物回归（8 项）
 ├── living/transfer/
-│   ├── ContainerCompatibilityConfigTest.java  # 容器布局推断 + 类型表与规则文件一致（双源漂移守卫；15 项）
+│   ├── ContainerCompatibilityConfigTest.java  # 容器布局推断 + 类型表与规则文件一致（双源漂移守卫）+ 多档容量共存（精妙背包 27/81=9 列、108/120=12 列）（16 项）
 │   ├── ContainerRuleConfigTest.java           # 玩家差异持久化·覆盖内置+删除不复活+导出全量快照+社区闭环（11 项）
 │   └── SlotInteractionCargoGateTest.java      # 槽位交互货物准入真值表·活骨粉不施肥（5 项）
 └── network/

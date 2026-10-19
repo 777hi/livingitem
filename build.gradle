@@ -221,6 +221,14 @@ dependencies {
         }
     }
 
+    // 容器兼容性专题（2026-10-18）：精妙背包 + 前置，**通配匹配**——文件名带版本号，
+    // 硬编码会每次升级都要改 build。fileTree 无匹配时返回空集合 ⇒ 与上面同理，缺失即静默跳过。
+    // 用法：把 sophisticatedbackpacks-*.jar / sophisticatedcore-*.jar 丢进 libs/，然后 runClient。
+    fileTree(dir: devModsDir, include: ['sophisticatedbackpacks-*.jar', 'sophisticatedcore-*.jar']).each { jar ->
+        logger.info("[deps] 容器兼容性专题：加载 ${jar.name}")
+        runtimeOnly files(jar)
+    }
+
     // ==================== Create 兼容（compileOnly 编译 + runtimeOnly 开发时加载，玩家可选安装） ====================
     // Create slim 运行时仍需 Flywheel、Ponder、Registrate 作为独立依赖
     compileOnly("com.simibubi.create:create-${minecraft_version}:6.0.10-280:slim") { transitive = false }
