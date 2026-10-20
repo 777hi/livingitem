@@ -125,6 +125,31 @@
 > 守卫 2 项：相位 CODEC 往返保住 (P, φ, d) / EMPTY 快照不进物品。
 > 单测 780 → 782（781 passed + 1 skipped，0 fail）；`doc_check` 全绿。
 
+> 🧹 **层纪律修复：`check_layers.py` 抓到我今天引入的 2 条违规（同日）** ——
+> 起因是用户让「顺便看看其它活物品的兼容性」，我顺手翻 `tools/` 时才发现这个工具会拦人。
+>
+> **① `living/domain/water → living/domain/power`（R3，真违规，我的锅）**
+> 相位迁移写在 `ContainerDataMigration` 里 ⇒ 它 import 了 power 域。修法不是加基线，
+> 而是**按层的语义拆开**：
+> - 共享判据 `pickDrop` / `placedItemInHand` 下沉到 **L1** `living/container/ContainerDrops`
+>   （这两个方法只碰原版 Item / ItemStack / BlockEntity，不碰任何领域类型）
+> - 相位迁移独立成 `living/domain/power/PhaseDataMigration`
+> ⇒ R3 从 12 条降到 **10 条**（净减 2）。流体类现在只管流体。
+>
+> **② `(root) → client/render` 4 → 7（RQ1，有意设计，显式接受）**
+> `LivingItemClient` 是客户端入口，必然引用具体渲染器 ⇒ 这是 NeoForge 惯例。
+> `--update-baseline` 接受，并在**基线文件里写了理由**：彻底消除要把入口移进 `client/` 包，
+> 那要动 mod 入口组织、只能真机验证 ⇒ 记 TODO 3.2。
+>
+> **③ 顺带发现一个我引入但未修的 bug**：**大箱子的相位可能各得一份**。
+> `ContainerPhaseWriteback` 每 tick 把**同一个** snapshot 写给所有关联 BE ⇒ 两半附件指向
+> 同一对象；破坏一半时拿不到另一半的 BE ⇒ 清不掉 ⇒ 破坏另一半时再搬一次。
+> 流体靠 `data.clearAll()` 就地清**内存共享对象**守恒，而 `PhaseSnapshot` 是
+> 不可变 record，没有这个载体。候选修法两个都写在 `PhaseDataMigration` javadoc 与
+> TODO 3.1，先记录（极端边缘场景：大箱子 + 多相电力 + 分两次破坏两半）。
+>
+> 单测维持 782（781 passed + 1 skipped，0 fail）；`check_layers.py` 通过；`doc_check` 全绿。
+
 ---
 
 ## 2026-10-19

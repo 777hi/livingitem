@@ -171,6 +171,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-20 | 🧹 **层纪律修复（check_layers 抓到今天引入的 2 条违规）** —— ① `water → power`：相位迁移写在 `ContainerDataMigration` 里 ⇒ import 了 power 域，触发 R3。拆成 `PhaseDataMigration`（power 域），共享判据 `pickDrop` / `placedItemInHand` 下沉到 L1 `ContainerDrops`（不碰领域类型）⇒ R3 从 12 条降到 10 条。② `(root) → client/render` 4→7：`LivingItemClient` 作为客户端入口必然引用具体渲染器，**有意设计** ⇒ `--update-baseline` 显式接受并在基线里写了理由（彻底消除要把入口移进 client/ 包，需真机验证）。另记 ① 大箱子相位可能各得一份（`PhaseSnapshot` 是 record，没有流体那样的内存共享对象可清）；② 客户端入口下沉。单测维持 782 | `docs/TODO.md` 3.1/3.2 · `living/container/ContainerDrops.java` · `living/domain/power/PhaseDataMigration.java` · `tools/layer_baseline.txt` |
 | 2026-10-20 | 🔋 **相位快照也跨形态保全（顺 I-C9）** —— 审计 24 个活物品的容器能力依赖后发现：BE 附件里只有流体和电力相位**带 `serialize`**（= 存档级持久），而 `ContainerDataMigration` 只搬了流体 ⇒ 精妙背包/潜影盒里调好的多路满相布局，方块→物品后<b>相对相位被洗牌</b>、要重调。新增 `CONTAINER_PHASE_SNAPSHOT_ITEM` 组件复用现成 `PhaseSnapshot.CODEC`，破坏/放置两侧各搬一次；**不需要 snapshot()**（record 不可变，与流体的可变对象相反）。契约 I-C9 从「流体」扩为「容器级持久数据」，并立下判据：<b>只有带 `serialize` 的才搬</b>（应力/红石是运行时数据，丢了下一 tick 自愈）。单测 780 → 782 | `docs/system-design/container-boundary.md` I-C9 · `living/domain/water/ContainerDataMigration.java` |
 | 2026-10-20 | 🧩 **跨形态保全收窄为「内容随物品走」的容器（I-C9）** —— 用户：「代价太重，原版潜影箱 / 模组背包这种撸掉后还保有物品的容器，才做流体保留才有意义」。新增 `container_rules.json` 的 `contentRetaining`（**id 级数据声明**，默认不迁移）：潜影盒 / 精妙背包 / 无尽箱子声明保留；原版箱子 / 铁箱子 / 炼金箱子破坏时流体随方块消失，与内容行为一致 —— **不再出现「空箱子但有水」**。不做自动判断：没有任何通用 API 能回答「内容是否随掉落物走」（四种容器各走各的组件），只能认组件 ⇒ 违反 I-C1。守卫 2 项（内置声明 / 玩家可追加但不可取消），先红后绿验证过。单测 778 → 780 | `docs/system-design/container-boundary.md` I-C9 · `living/domain/water/ContainerDataMigration.java` |
 | 2026-10-20 | 🔌 **联动无尽箱子（AvaritiaNeo）** —— 新增 `living/compat/avaritia/`（`ModAvaritia` 门控 + `AvaritiaMenuResolver`）：它的 `TileInfinityChest` 不实现 `Container`、菜单也**没有** `getBlockPosition()` ⇒ viewer 匹配三条路全断（图标/tooltip/流体不刷新、GUI 倒汲无效）。判据是「**返回 `BlockEntity` 的 getter**」（`getTile`/`getBlockEntity`），拿到 BE 后走公开 `getBlockPos()`；包名前缀 `net.byAqua3.avaritia.` 限定，反射不扩散。内置规则补 `avaritia:infinity_chest` 300 格 / **25 列**（启发式会算成 10，25 不在任何候选宽度里）。核心零改动。单测 773 → 778 | `living/compat/avaritia/` · `container_rules.json` · `guides/container-compatibility.md` |
@@ -180,7 +181,46 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-10-19 | 🔧 **容器兼容性专题收尾（真机驱动，4 连修）** —— ① `resolve` 也按位置解析模组容器：修「往背包倒水，源落进玩家物品栏 / 背包 GUI 不渲染流体」（`ContainerContexts.resolve` 只认 `Container` 实例，对精妙恒 null ⇒ 背包槽位汲倒静默无效，改点 GUI 下方玩家物品栏才成）；② 活流体绘制从 `AbstractContainerScreen.render` TAIL 迁到 `ContainerScreenEvent.Render.Foreground`——精妙的 `StorageScreenBase.render` **自己抄了一份 super.render 且不调父实现** ⇒ 父类注入永不执行（同类受害的还有任何只挂 render 的 Mixin；tooltip 没事因挂 `renderTooltip`）；③ `USER_RULES` 多档容量；④ 反射在 `MenuSlotOwners` 里降为兜底 + 注册口。tooltip / 图标 / 倒汲 / 流体渲染 / 列数**全部真机通过**。单测 761 → 768 | `docs/system-design/container-boundary.md` · `docs/buffer/container-compat-topic.md` · `living/container/ContainerContexts.java` · `client/render/ContainerFluidOverlay.java` |
 | 2026-10-19 | ✅ **S3：viewer 匹配改位置口径（I-C5）** —— 真机「活熔炉图标要重开 GUI」「tooltip 无进度信息」同因：非原版 `Container` 的方块实体在 viewer 匹配里恒为空 ⇒ 定向槽位同步与运行时遥测双双静默不发。新增 `MenuSlotOwners`（菜单槽→容器位置：原版 BE / 大箱子反射 / **模组菜单 `getBlockPosition()` 按类缓存反射**，精妙背包零编译依赖），`LivingItem.runtimeContainerPositions` 不再要求 `be instanceof Container`（口径翻转），`syncWorldContainer` + `LivingItemRuntimeSync` 切换；**S3b** 再让流体渲染 / 酿造台音效同源，并删掉随口径退场而死的 `isViewing`/`ownsContainer`/`findViewers`/`menuContains` 整条 ⇒ **`Container` 在 viewer 匹配里彻底退场**（余下全是 I-C2 允许的原版语义用途）。单测 762（761 passed + 1 skipped） | `docs/system-design/container-boundary.md` I-C5 · `docs/buffer/container-compat-topic.md` S3 · `living/container/MenuSlotOwners.java` |
 | 2026-10-18 | 📐 **容器边界：契约 + S1/S2 落地** —— 新增契约 I-C1~I-C8（能力面发现 / 写回≠插入 / 模拟真实同源 / 身份按位置键 / 降级可观测 / 写后校验 / 格容器 vs 物品池）+ 专题 S1~S5；澄清「扫描展开」与「活物品内部递归」是**两套机制**、共用一条深度预算。**S2**：`setItem` 改走 `setStackInSlot`（回退分支校验抽取完整性 + 写后校验；超量按槽位上限截断，不按物品 maxStack）⇒ 修掉「写回错槽 / 物品复制」；附带修活箱子 / 活末影箱 handler 的同类整库语义。`/livingitem container register` 改按能力面判定（原先对非 `Container` 模组容器直接报错）。守卫 3 项先红后绿。**S4**：规则键改 `(id, 容量)` ⇒ 精妙背包 108/120 正确算 12 列（原先 9/10）—— 这是「活熔炉不烧」的根因（燃料槽 `slot+width`，漏斗只用 `slot±1` 所以看不出）；顺带修跨测试类静态状态 flaky。**S3**：新增 `MenuSlotOwners`（菜单槽→容器位置，含模组菜单 `getBlockPosition` 反射）⇒ viewer 匹配改位置口径，修好「活熔炉图标要重开 GUI」与「tooltip 无进度信息」（非 `Container` 容器原先永远匹配不上）。单测 762（761 passed + 1 skipped） | `docs/system-design/container-boundary.md` · `docs/buffer/container-compat-topic.md` · `living/container/MenuSlotOwners.java` |
-| 2026-10-18 | 🔍 **活信标最终审查：修 1 个阻断 + 一致性清理** —— ① 阻断：玩家宿主登记表全服一张却在 `flush`（逐维度调用）末尾清空 ⇒ **多维度服上玩家宿主光束只在第一维度有效**；改 `beginTick()` 在 tick 开头清（新增 3 例跨维度守卫测试）。② 残留：删 `BeaconChestHost.active` 无用中间层、柱高/存在性共用一次槽位解析、tooltip 生效数算一次、面板缺口收敛到 `deficitsToNext`。③ 健壮性：`OreType.byId/byOrdinal` 回落（脏存档不抛）、宿主包解码容量钳制、死代码 `BeaconRuntime.EMPTY` 删除。④ 注释/§4 口径订正 7 处（R=32→256、offhand 行号、球体→AABB、白底段 +1→0 等）。⑤ 收尾补修：**喂锭列宽曾写死 9**，与 tick 的 `getWidth()`（108 槽铁箱子 = 12 列）分叉 ⇒ 改用 `ContainerContexts.resolve` 取同源上下文 + 解析失败回退旧 9 列；客户端那份只跑背包（恒 9）保持不动。单测 746 → 751 绿 | `docs/tech/living-beacon-tech.md` §4 · `living/domain/beacon/BeaconPlayerHostSync.java`（beginTick）· `BeaconFeedHandler.java`（columnSlotsFor） |
+
+## 提交前必跑（2026-10-20 定）
+
+```bash
+python tools/check_layers.py   # 层纪律：R1 依赖方向 / R2 Mixin 位置 / R3 领域互依赖 / R4 注册入口
+python tools/doc_check.py      # 文档一致性：进展滚动 / 指针 / 测试条数 / 入口体量 …
+```
+
+**任一为红就不要提交。** 两条都是**棘轮**机制（基线只允许收紧、不允许放松），
+所以「新引入的违规」一定会被看见。
+
+> ⚠️ 最常见的红法是 `doc_check` 报「测试条数不一致（声明 X / 实测 Y）」——
+> 那不是文档写错，是**改了代码但没跑测试**。先 `./gradlew test` 再提交。
+
+> 💡 **本机自动防护**：`.git/hooks/pre-commit` 会在 `git commit` 前自动跑上面两条
+> （红的直接拦住）。⚠️ 该目录**不被 git 跟踪** ⇒ 重装环境 / 换机器后要重写一遍。
+> 内容见本节末尾的「重建命令」。
+
+<details>
+<summary>重建本机 hook（重装环境后用）</summary>
+
+```bash
+cat > .git/hooks/pre-commit <<'HOOK'
+#!/bin/sh
+fail=0
+echo "[pre-commit] tools/check_layers.py（层纪律）"
+python tools/check_layers.py || fail=1
+echo "[pre-commit] tools/doc_check.py（文档一致性）"
+python tools/doc_check.py || fail=1
+if [ "$fail" != "0" ]; then
+  echo ""
+  echo "[pre-commit] 拦下了。若 doc_check 报「测试条数不一致」，先跑 ./gradlew test。"
+  exit 1
+fi
+echo "[pre-commit] 全部通过"
+HOOK
+chmod +x .git/hooks/pre-commit
+```
+
+</details>
 
 ## 排查铁律：原版机制挡路时
 

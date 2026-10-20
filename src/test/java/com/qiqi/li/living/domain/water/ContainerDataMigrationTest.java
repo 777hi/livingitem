@@ -10,6 +10,8 @@ import static org.mockito.Mockito.when;
 
 import java.util.List;
 
+import com.qiqi.li.living.container.ContainerDrops;
+
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -21,6 +23,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 
 /**
  * {@link ContainerDataMigration} 的纯逻辑守卫（2026-10-19）。
+ * <p>⚠️ {@code pickDrop} 的 4 项守卫测的是 {@link ContainerDrops}（2026-10-20 从迁移类下沉到 L1）。
  *
  * <p>守的是「破坏方块时把流体数据交给**正确的那件掉落物**」——交给错的那件，
  * 数据就跟着一个无关物品漂走，等于丢失。</p>
@@ -49,7 +52,7 @@ class ContainerDataMigrationTest {
         ItemEntity dirt = dropOf(Items.DIRT);      // 附加物排在前面
         ItemEntity chest = dropOf(Items.CHEST);
 
-        assertEquals(chest, ContainerDataMigration.pickDrop(List.of(dirt, chest), be),
+        assertEquals(chest, ContainerDrops.pickDrop(List.of(dirt, chest), be),
             "应命中与该方块对应的物品，而不是列表首项");
     }
 
@@ -59,7 +62,7 @@ class ContainerDataMigrationTest {
         BlockEntity be = beOf(Blocks.SHULKER_BOX);
         ItemEntity only = dropOf(Items.SHULKER_BOX);
 
-        assertEquals(only, ContainerDataMigration.pickDrop(List.of(only), be));
+        assertEquals(only, ContainerDrops.pickDrop(List.of(only), be));
     }
 
     @Test
@@ -68,13 +71,13 @@ class ContainerDataMigrationTest {
         BlockEntity be = beOf(Blocks.CHEST);
         ItemEntity other = dropOf(Items.DIRT);
 
-        assertEquals(other, ContainerDataMigration.pickDrop(List.of(other), be));
+        assertEquals(other, ContainerDrops.pickDrop(List.of(other), be));
     }
 
     @Test
     @DisplayName("没有掉落物 → null（数据随 BE 消失，不抛）")
     void pickDrop_empty_returnsNull() {
-        assertNull(ContainerDataMigration.pickDrop(List.of(), beOf(Blocks.CHEST)));
+        assertNull(ContainerDrops.pickDrop(List.of(), beOf(Blocks.CHEST)));
     }
 
     @Test

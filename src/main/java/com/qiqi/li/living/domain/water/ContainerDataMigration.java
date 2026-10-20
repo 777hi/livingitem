@@ -19,13 +19,18 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.level.BlockDropsEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
 
-import com.qiqi.li.living.domain.power.PhaseSnapshot;
-import com.qiqi.li.living.domain.power.PowerComponents;
+import com.qiqi.li.living.container.ContainerDrops;
 import com.qiqi.li.living.transfer.ContainerCompatibilityConfig;
 
 
 /**
- * 容器级数据的**形态迁移**：方块 ⇄ 物品（2026-10-19）。
+ * **流体**容器级数据的形态迁移：方块 ⇄ 物品（2026-10-19）。
+ *
+ * <p>⚠️ 2026-10-20 拆分：原本这个类同时搬流体与电力相位，结果 import 了 power 域，
+ * 触发 {@code check_layers.py} 的 R3「领域互依赖」违规。现在相位迁移独立成
+ * {@code living/domain/power/PhaseDataMigration}，共享的掉落物/手持物品判据
+ * 下沉到 {@link ContainerDrops}（L1，不碰任何领域类型）。
+ * ⇒ 每个领域只管自己的数据，领域之间不再互相认识。</p>
  *
  * <h3>解决什么</h3>
  * <p>真机：「背包里的活流体，在背包变成物体形态后就没有了」。</p>
@@ -85,7 +90,7 @@ public final class ContainerDataMigration {
             return;
         }
 
-        ItemEntity target = pickDrop(event.getDrops(), be);
+        ItemEntity target = ContainerDrops.pickDrop(event.getDrops(), be);
         if (target == null) return;   // 没有可承载的物品（如被精准采集以外的破坏）⇒ 数据随 BE 消失
 
         // ① 交给掉落物的必须是**快照**：组件存的是对象引用，而 data 是可变对象（每 tick 重算 flows）
@@ -99,16 +104,6 @@ public final class ContainerDataMigration {
         data.clearAll();
         clearOne(level, be.getBlockPos());
 
-        // ③ 相位快照同样要跟着走（2026-10-20）。它与流体是同一种病：账本是纯内存缓存 +
-        //    BE 附件，附件随 BE 消失 ⇒ 多路相对相位被「重载时刻」洗牌，
-        //    玩家调好的满相布局（n=P）失效。
-        //    ⚠️ 不需要 snapshot()：PhaseSnapshot 是 record，ContainerPhaseWriteback 每 tick
-        //    写入的是 capture() 产生的**新对象**，附件里的对象一旦放入就不再被改。
-        PhaseSnapshot phase = be.getData(PowerComponents.CONTAINER_PHASE_SNAPSHOT.value());
-        if (phase != null && !PhaseSnapshot.EMPTY.equals(phase)) {
-            stack.set(PowerComponents.CONTAINER_PHASE_SNAPSHOT_ITEM.get(), phase);
-            be.setData(PowerComponents.CONTAINER_PHASE_SNAPSHOT.value(), PhaseSnapshot.EMPTY);
-        }
     }
 
     /**
@@ -131,7 +126,7 @@ public final class ContainerDataMigration {
 
         // ⚠️ 必须校验「手持物品 == 这次放置的方块对应的物品」：否则玩家手持带数据的背包、
         // 却去放置另一个有 BE 的方块时，会把背包的流体塞进那个方块。
-        ItemStack source = placedItemInHand(player, event.getPlacedBlock().getBlock());
+        ItemStack source = ContainerDrops.placedItemInHand(player, event.getPlacedBlock().getBlock());
         if (source == null) return;
 
         // ① 流体：必须给**快照**而不是原对象 —— 创造模式下放置不消耗物品，同一个 ItemStack
@@ -141,54 +136,6 @@ public final class ContainerDataMigration {
             be.setData(WaterComponents.CONTAINER_FLUID_DATA.value(), fluid.snapshot());
         }
 
-        // ② 相位快照：PhaseSnapshot 是不可变 record ⇒ 直接搬，多个 BE 共享同一份也无害
-        //    （不会出现「一个变另一个跟着变」）。
-        PhaseSnapshot phase = source.get(PowerComponents.CONTAINER_PHASE_SNAPSHOT_ITEM.get());
-        if (phase != null && !PhaseSnapshot.EMPTY.equals(phase)) {
-            be.setData(PowerComponents.CONTAINER_PHASE_SNAPSHOT.value(), phase);
-        }
-    }
-
-    /**
-     * 放置者手上**确实是这次放置的那个方块**的物品（主手优先）。
-     *
-     * <p>校验物品身份是必须的：只按「手上有数据」匹配，会在玩家手持带数据的背包去放置
-     * 另一个有 BE 的方块时把数据错塞过去。</p>
-     *
-     * <p>返回的是<b>物品本身</b>（而不是其中的流体数据）—— 因为现在要搬两种数据
-     * （流体 + 相位快照），它们共用同一条「手持物品身份」判据。</p>
-     */
-    @Nullable
-    private static ItemStack placedItemInHand(Player player, net.minecraft.world.level.block.Block placedBlock) {
-        net.minecraft.world.item.Item placedItem = placedBlock.asItem();
-        if (placedItem == net.minecraft.world.item.Items.AIR) return null;
-        for (InteractionHand hand : InteractionHand.values()) {
-            ItemStack stack = player.getItemInHand(hand);
-            if (stack.isEmpty() || !stack.is(placedItem)) continue;
-            return stack;
-        }
-        return null;
-    }
-
-    /**
-     * 从掉落物里挑「代表这个方块本体」的那一件。
-     *
-     * <p>规则：优先选物品 id 与该方块对应 BlockItem 一致的那件；否则退回第一件。
-     * 破坏一个背包方块只会掉一个背包物品，所以绝大多数情况直接命中第一件；
-     * 这条判据是给「方块同时掉本体 + 附加物」的模组留的余地。</p>
-     */
-    @Nullable
-    static ItemEntity pickDrop(List<ItemEntity> drops, BlockEntity be) {
-        if (drops.isEmpty()) return null;
-        // 方块 → 它的 BlockItem 的 item（Block#asItem 对方块恒有返回值，无 BlockItem 时返回 air）
-        net.minecraft.world.item.Item blockItem = be.getBlockState().getBlock().asItem();
-        if (blockItem != net.minecraft.world.item.Items.AIR) {
-            for (ItemEntity drop : drops) {
-                ItemStack stack = drop.getItem();
-                if (!stack.isEmpty() && stack.is(blockItem)) return drop;
-            }
-        }
-        return drops.get(0);
     }
 
     private static void clearOne(ServerLevel level, BlockPos pos) {
