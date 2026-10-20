@@ -5,6 +5,8 @@ import java.util.List;
 import javax.annotation.Nullable;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
@@ -16,6 +18,8 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.level.BlockDropsEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
+
+import com.qiqi.li.living.transfer.ContainerCompatibilityConfig;
 
 
 /**
@@ -65,6 +69,19 @@ public final class ContainerDataMigration {
 
         ContainerFluidData data = be.getData(WaterComponents.CONTAINER_FLUID_DATA);
         if (data == null || data.isEmpty()) return;
+
+        // ⚠️ 只对「破坏后仍保有物品内容」的容器迁移（2026-10-20，用户定案）。
+        //
+        // 原版箱子 / 铁箱子 / 炼金箱子破坏后<b>内容本来就消失了</b>（它们不是潜影盒）；
+        // 若仍然把流体搬到掉落物上，重新放置就会得到「空箱子但有水」——
+        // 半保留状态比丢水更让人困惑。让流体和内容一起消失，语义才一致。
+        //
+        // 谁保留内容由规则数据声明（container_rules.json 的 contentRetaining），
+        // 因为没有任何通用 API 能回答这个问题（潜影盒 / 精妙 / 无尽箱子各走各的组件）。
+        ResourceLocation id = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(be.getType());
+        if (id == null || !ContainerCompatibilityConfig.retainsContentsOnBreak(id)) {
+            return;
+        }
 
         ItemEntity target = pickDrop(event.getDrops(), be);
         if (target == null) return;   // 没有可承载的物品（如被精准采集以外的破坏）⇒ 数据随 BE 消失

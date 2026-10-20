@@ -1,5 +1,10 @@
 {
   "version": 1,
+  "contentRetaining": [
+    "minecraft:shulker_box",
+    "sophisticatedbackpacks:backpack",
+    "avaritia:infinity_chest"
+  ],
   "rules": [
     {"containerId": "minecraft:chest", "containerSize": 27, "columns": 9, "description": "原版箱子"},
     {"containerId": "minecraft:double_chest", "containerSize": 54, "columns": 9, "description": "原版大箱子"},

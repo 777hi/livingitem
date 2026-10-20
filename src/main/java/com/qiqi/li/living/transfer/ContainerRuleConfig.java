@@ -200,6 +200,9 @@ public final class ContainerRuleConfig {
         int overrideCount = 0;
         int dupCount = 0;
 
+        // 2a-0. 玩家也可以声明「破坏后保留内容」的容器（与内置合并，只增不减）
+        registerContentRetaining(data.contentRetaining, "user config");
+
         // 2a. 先应用删除：玩家显式移除了某条内置规则
         //
         // ⚠️ 移除记录按档（"<id>|<容量>"）。旧配置里可能是裸 id（无 |容量）——
@@ -307,9 +310,37 @@ public final class ContainerRuleConfig {
      * @param label 日志中显示的文件标识
      * @return 本次成功注册的条数
      */
+    /**
+     * 注册一组「破坏后保留内容」的容器 ID。
+     *
+     * <p>只增不减（{@link ContainerCompatibilityConfig#CONTENT_RETAINING} 是 Set）——
+     * 内置与玩家声明取并集，玩家无法通过配置「取消」内置的声明。</p>
+     *
+     * @return 成功注册的条数
+     */
+    private static int registerContentRetaining(List<String> raw, String source) {
+        if (raw == null || raw.isEmpty()) return 0;
+        int count = 0;
+        for (String text : raw) {
+            if (text == null || text.isBlank()) continue;
+            ResourceLocation id = ResourceLocation.tryParse(text);
+            if (id == null) {
+                LOGGER.warn("[{}] Ignoring malformed content-retaining id: {}", source, text);
+                continue;
+            }
+            ContainerCompatibilityConfig.registerContentRetaining(id);
+            count++;
+        }
+        return count;
+    }
+
     static int loadRules(Reader reader, String source, String label) {
         ConfigData data = GSON.fromJson(reader, ConfigData.class);
-        if (data == null || data.rules == null) return 0;
+        if (data == null) return 0;
+
+        // 先处理「保留内容」声明 —— 允许一个只声明它、不带规则的文件
+        int retaining = registerContentRetaining(data.contentRetaining, source);
+        if (data.rules == null) return retaining;
 
         int loaded = 0;
         int conflicts = 0;
@@ -499,6 +530,13 @@ public final class ContainerRuleConfig {
         }
 
         data.removed = new ArrayList<>(getRemovedIds());
+
+        // 导出**全量**（内置 + 玩家）：这是「事实声明」，不是玩家差异。
+        // 玩家能直接看到/编辑它；加载时是 Set 合并，重复导出无害。
+        data.contentRetaining = new ArrayList<>();
+        for (ResourceLocation id : ContainerCompatibilityConfig.getContentRetaining()) {
+            data.contentRetaining.add(id.toString());
+        }
 
         try (Writer writer = new OutputStreamWriter(
                 new FileOutputStream(file.toFile()), StandardCharsets.UTF_8)) {
@@ -703,6 +741,13 @@ public final class ContainerRuleConfig {
         List<RuleEntry> rules = new ArrayList<>();
         /** 被玩家显式移除的容器 ID（v2 新增） */
         List<String> removed = new ArrayList<>();
+        /**
+         * 破坏后仍保有物品内容的容器 ID（v3 新增，2026-10-20）。
+         *
+         * <p>只对它们把流体数据迁到掉落物；其余容器破坏时流体随方块消失，
+         * 与它们的物品内容行为一致（避免「空箱子但有水」）。</p>
+         */
+        List<String> contentRetaining = new ArrayList<>();
     }
 
     /** 单条规则条目 */

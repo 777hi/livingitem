@@ -76,6 +76,36 @@
 > （删掉它 = 熔炉静默不烧）。
 > 单测 773 → 778（777 passed + 1 skipped，0 fail）；`doc_check` 全绿。
 
+> 🧩 **跨形态保全收窄：只对「内容随物品走」的容器（I-C9，同日）** —— 用户：
+> 「感觉代价太重了，而且没有意义。像原版潜影箱，模组背包这种，撸掉后还保有物品的容器，
+> 才做流体数据保留才有意义。」
+>
+> 原实现是**无条件迁移**：只要有流体数据 + 有掉落物，就写进物品组件。结果原版箱子 /
+> 铁箱子 / 炼金箱子破坏后得到「**空箱子但有水**」——内容（27 格物品）随方块消失了，
+> 水却跟着物品走。半保留状态比丢水更让人困惑。
+>
+> 改成**数据声明**：`container_rules.json` 新增 `contentRetaining`（id 级，默认**不**迁移）：
+> ```json
+> "contentRetaining": ["minecraft:shulker_box", "sophisticatedbackpacks:backpack",
+>                      "avaritia:infinity_chest"]
+> ```
+> - 在表里 ⇒ 流体跟着掉落物走（内容还在，水也在）
+> - 不在表里 ⇒ 流体随方块消失（与内容行为一致）
+>
+> **为什么不做自动判断**：没有任何通用 API 能回答「这个容器的内容会不会跟着掉落物走」——
+> 潜影盒用 `minecraft:container`、精妙用 SavedData（按 contents UUID）、无尽箱子用
+> `CLUSTER_CONTAINER` 隐式组件、原版箱子什么都不带。自动判断只能逐个认组件 ⇒
+> 那是 I-C1「只认能力面」的反面。做成数据后，玩家也能在配置里追加（只增不减）。
+>
+> 实现：`ContainerCompatibilityConfig.retainsContentsOnBreak(id)` +
+> `ContainerRuleConfig` 的 `contentRetaining` 读写（内置与玩家取并集）。
+> 放置侧**不判**：物品上已有数据就搬回 —— 旧存档里已带水的物品不会突然失效。
+>
+> 守卫 2 项，**先红后绿**验证过（清空 JSON 声明 ⇒ 两条同时红）：
+> `contentRetaining_bundledDeclarations`（潜影盒/精妙/无尽 true；原版箱子/炼金箱子 false）+
+> `contentRetaining_userConfigCanAdd`（玩家可追加、不能取消内置）。
+> 单测 778 → 780（779 passed + 1 skipped，0 fail）；`doc_check` 全绿。
+
 ---
 
 ## 2026-10-19

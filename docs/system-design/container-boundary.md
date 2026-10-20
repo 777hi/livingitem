@@ -160,6 +160,28 @@
   （按类型 extract/insert），**不是**给 `ContainerContext` 加池实现。
   后者等于给「没有几何的东西」编造几何——那正是 I-C7 说的「不得静默继续」的反面。
 
+### I-C9 跨形态数据保全，只对「内容随物品走」的容器
+
+- **要求**：容器级流体数据在「方块 → 物品 → 方块」的转换中迁移，**仅当**该容器破坏后
+  物品内容仍然保留。内容随方块消失的容器，流体也随方块消失。
+- **为什么**：否则会得到「**空箱子但有水**」——箱子的 27 格物品没了，水却还在。
+  半保留状态比丢水更让人困惑，而且它把「容器属性」和「容器内容」拆成了两套语义。
+- **判据（数据声明）**：`container_rules.json` 的 `contentRetaining` 列出「内容随物品走」的
+  容器 ID。**默认不在表里 ⇒ 不迁移**（保守：让流体跟内容一起消失）。
+- **为什么不做自动判断**：没有任何通用 API 能回答「这个容器的内容会不会跟着掉落物走」——
+
+  | 容器 | 内容怎么跟着物品走 |
+  |---|---|
+  | 潜影盒 | `minecraft:container` 组件 |
+  | 精妙背包 | 自己的 SavedData（按 contents UUID） |
+  | 无尽箱子 | `CLUSTER_CONTAINER` 隐式组件 |
+  | 原版箱子 / 铁箱子 / 炼金箱子 | **什么都不带** |
+
+  自动判断只能逐个认组件 ⇒ 那是 I-C1「只认能力面」的反面。所以做成**数据**，
+  与规则表同源，玩家也可在配置里追加。
+- **现状**：✅ 已实现（`ContainerDataMigration` 查 `ContainerCompatibilityConfig.retainsContentsOnBreak`）。
+  守卫：`ContainerRuleConfigTest.contentRetaining_bundledDeclarations`。
+
 
 ---
 

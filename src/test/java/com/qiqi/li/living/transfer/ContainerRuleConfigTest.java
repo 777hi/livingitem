@@ -157,6 +157,45 @@ class ContainerRuleConfigTest {
     }
 
     @Test
+    @DisplayName("contentRetaining：只对「破坏后内容还在」的容器迁移流体（内置声明）")
+    void contentRetaining_bundledDeclarations() {
+        // 撸掉后内容仍在物品里 ⇒ 流体跟着走，重新放置后内容 + 水都在
+        assertTrue(ContainerCompatibilityConfig.retainsContentsOnBreak(
+            ResourceLocation.fromNamespaceAndPath("minecraft", "shulker_box")),
+            "潜影盒：内容存在 minecraft:container 组件里，随物品走");
+        assertTrue(ContainerCompatibilityConfig.retainsContentsOnBreak(
+            ResourceLocation.fromNamespaceAndPath("sophisticatedbackpacks", "backpack")),
+            "精妙背包：内容存在自己的 SavedData（按 contents UUID）");
+        assertTrue(ContainerCompatibilityConfig.retainsContentsOnBreak(
+            ResourceLocation.fromNamespaceAndPath("avaritia", "infinity_chest")),
+            "无尽箱子：内容存在 CLUSTER_CONTAINER 隐式组件");
+
+        // 撸掉后内容消失 ⇒ 流体也跟着消失，否则会得到「空箱子但有水」
+        assertFalse(ContainerCompatibilityConfig.retainsContentsOnBreak(
+            ResourceLocation.fromNamespaceAndPath("minecraft", "chest")),
+            "原版箱子：不是潜影盒，内容随方块消失 ⇒ 流体也不该留");
+        assertFalse(ContainerCompatibilityConfig.retainsContentsOnBreak(
+            ResourceLocation.fromNamespaceAndPath("projecte", "alchemical_chest")),
+            "炼金箱子：内容随方块消失 ⇒ 流体也不该留");
+    }
+
+    @Test
+    @DisplayName("contentRetaining：玩家配置也能声明（只增不减，不能取消内置）")
+    void contentRetaining_userConfigCanAdd() throws Exception {
+        String json = "{\"version\":1,\"contentRetaining\":[\"testmod:magic_crate\"]}";
+        try (var reader = new java.io.StringReader(json)) {
+            ContainerRuleConfig.loadRules(reader, "user", "<content-retaining test>");
+        }
+
+        assertTrue(ContainerCompatibilityConfig.retainsContentsOnBreak(
+            ResourceLocation.fromNamespaceAndPath("testmod", "magic_crate")),
+            "玩家声明的新容器应生效");
+        assertTrue(ContainerCompatibilityConfig.retainsContentsOnBreak(
+            ResourceLocation.fromNamespaceAndPath("minecraft", "shulker_box")),
+            "内置声明不能被玩家配置取消（Set 取并集）");
+    }
+
+    @Test
     @DisplayName("内置规则含无尽箱子 300 格 / 25 列（AvaritiaNeo）")
     void bundledRules_containInfinityChest() {
         // 25 列不在启发式的任何候选宽度里（9/10/12/13/8/7/6…，300%9≠0、300%10=0 ⇒ 会算成 10）

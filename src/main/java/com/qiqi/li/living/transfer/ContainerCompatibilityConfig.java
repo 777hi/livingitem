@@ -49,10 +49,32 @@ public final class ContainerCompatibilityConfig {
      * 一个 id 只能存一条 ⇒ 注册了 108 就把 120 挤掉，反之亦然。</p>
      *
      * <p>列数算错的后果不是「显示难看」而是<b>功能失效</b>：活熔炉的燃料槽在
-     * {@code slot + width}，宽度错 9 vs 12 ⇒ 永远读不到燃料 ⇒ 不烧；
-     * 而活漏斗只用 {@code slot ± 1} ⇒ 看起来正常。这条差异是最难自查的那类 bug。</p>
+     * {@code slot + width}，宽度错 9 vs 12 ⇒ 永远读不到燃料 ⇒ 不烧。
+     * 活漏斗同样按方向偏移（默认 {@code UP → DOWN}，即 {@code slot ∓ width}），也会搬错格子——
+     * 但它<b>仍在搬</b>，所以「看起来正常」；熔炉读不到燃料则「明确不烧」。
+     * 同一个偏差，一个隐形、一个可见，所以后者才是最先被发现的。</p>
      */
     private static final Map<ResourceLocation, List<ContainerRule>> RULES = new HashMap<>();
+
+    /**
+     * <b>破坏后仍保有物品内容</b>的容器 ID（2026-10-20）。
+     *
+     * <p>只对它们做「流体数据跟着掉落物走」的迁移。理由是<b>语义一致</b>：</p>
+     * <ul>
+     *   <li><b>在集合里</b>（潜影盒 / 精妙背包 / 无尽箱子）：撸掉后内容还在物品里 ⇒
+     *       流体跟着走，重新放置后「内容 + 水」都还在；</li>
+     *   <li><b>不在集合里</b>（原版箱子 / 铁箱子 / 炼金箱子…）：撸掉后内容本来就消失了 ⇒
+     *       流体也跟着方块一起消失。<b>否则会得到「空箱子但有水」这种半保留状态</b>——
+     *       玩家看到的是「箱子空了，水却还在」，比丢水更让人困惑。</li>
+     * </ul>
+     *
+     * <p>⚠️ 为什么是<b>显式数据</b>而不是自动判断：没有任何通用 API 能回答「这个容器的内容
+     * 会不会跟着掉落物走」——潜影盒用 {@code minecraft:container} 组件、精妙用 SavedData
+     * 按 contents UUID、无尽箱子用 {@code CLUSTER_CONTAINER} 隐式组件，各走各的路。
+     * 自动判断只能逐个认组件，那就是 `D-container-09` 禁止的「猜第三方形状」。
+     * ⇒ 做成规则数据的一部分，由内置资源或玩家声明。</p>
+     */
+    private static final Set<ResourceLocation> CONTENT_RETAINING = new HashSet<>();
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ContainerCompatibilityConfig.class);
 
@@ -267,6 +289,33 @@ public final class ContainerCompatibilityConfig {
      */
     static void clearAllRules() {
         RULES.clear();
+        CONTENT_RETAINING.clear();
+    }
+
+    /**
+     * 登记「破坏后仍保有物品内容」的容器（流体数据会跟着掉落物走）。
+     *
+     * @param containerId 方块实体类型 ID（不是方块 ID）
+     */
+    public static void registerContentRetaining(ResourceLocation containerId) {
+        CONTENT_RETAINING.add(containerId);
+    }
+
+    /**
+     * 该容器破坏后是否仍保有物品内容 ⇒ 是否迁移流体数据。
+     *
+     * <p><b>默认 {@code false}</b>：未登记的容器按「内容随方块消失」处理，
+     * 流体也跟着消失——这与它的物品内容行为一致，不会留下「空箱子但有水」。</p>
+     */
+    public static boolean retainsContentsOnBreak(ResourceLocation containerId) {
+        return CONTENT_RETAINING.contains(containerId);
+    }
+
+    /** 已登记的「保留内容」容器 ID（导出用，已排序）。 */
+    public static List<ResourceLocation> getContentRetaining() {
+        List<ResourceLocation> ids = new ArrayList<>(CONTENT_RETAINING);
+        ids.sort(Comparator.comparing(ResourceLocation::toString));
+        return ids;
     }
 
     /** 从 JSON 配置文件加载规则 */
