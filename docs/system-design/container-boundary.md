@@ -160,12 +160,23 @@
   （按类型 extract/insert），**不是**给 `ContainerContext` 加池实现。
   后者等于给「没有几何的东西」编造几何——那正是 I-C7 说的「不得静默继续」的反面。
 
-### I-C9 跨形态数据保全，只对「内容随物品走」的容器
+### I-C9 容器级持久数据跨形态，只对「内容随物品走」的容器
 
-- **要求**：容器级流体数据在「方块 → 物品 → 方块」的转换中迁移，**仅当**该容器破坏后
-  物品内容仍然保留。内容随方块消失的容器，流体也随方块消失。
-- **为什么**：否则会得到「**空箱子但有水**」——箱子的 27 格物品没了，水却还在。
-  半保留状态比丢水更让人困惑，而且它把「容器属性」和「容器内容」拆成了两套语义。
+- **要求**：容器级**持久**数据在「方块 → 物品 → 方块」的转换中迁移，**仅当**该容器破坏后
+  物品内容仍然保留。内容随方块消失的容器，数据也随方块消失。
+- **为什么**：否则会得到「**空箱子但有水**」——箱子的 27 格物品没了，数据却还在。
+  半保留状态比丢数据更让人困惑，而且它把「容器属性」和「容器内容」拆成了两套语义。
+- **哪些数据算「持久」**：判据是**存档里有没有它**（附件带 `serialize`）。
+
+  | 容器级数据 | 附件 | 持久化 | 跨形态迁移 |
+  |---|---|---|---|
+  | 流体 `container_fluid_data` | BE 附件 | ✅ | ✅ |
+  | 电力相位 `container_phase_snapshot` | BE 附件 | ✅ | ✅ |
+  | 应力 `container_stress_data` | BE 附件 | ❌ 纯运行时 | 不适用（下一 tick 从容器重算） |
+  | 红石账本 `ContainerRedstoneData` | 内存表 | ❌ 注释明说「不落盘」 | 不适用（同上） |
+
+  ⇒ **只有「玩家下线重进还能续接」的那类才需要搬**；纯运行时数据丢了会自愈，
+  搬它反而可能把「磁盘账本说谎」面做大（与 `PhaseSnapshot` 只存慢变量同一个考量）。
 - **判据（数据声明）**：`container_rules.json` 的 `contentRetaining` 列出「内容随物品走」的
   容器 ID。**默认不在表里 ⇒ 不迁移**（保守：让流体跟内容一起消失）。
 - **为什么不做自动判断**：没有任何通用 API 能回答「这个容器的内容会不会跟着掉落物走」——
@@ -180,7 +191,12 @@
   自动判断只能逐个认组件 ⇒ 那是 I-C1「只认能力面」的反面。所以做成**数据**，
   与规则表同源，玩家也可在配置里追加。
 - **现状**：✅ 已实现（`ContainerDataMigration` 查 `ContainerCompatibilityConfig.retainsContentsOnBreak`）。
-  守卫：`ContainerRuleConfigTest.contentRetaining_bundledDeclarations`。
+  守卫：`ContainerRuleConfigTest.contentRetaining_bundledDeclarations`（谁该搬）、
+  `ContainerDataMigrationTest`（搬过去不能坏：流体 CODEC / snapshot 独立性、相位 CODEC / EMPTY 不搬）。
+- ⚠️ **两种数据的可变性不同，所以搬运方式不同**：`ContainerFluidData` 是**可变对象**
+  且与内存表共享引用 ⇒ 必须 `snapshot()` 深拷贝后再交给物品（否则后续 tick 的改动漏进物品）；
+  `PhaseSnapshot` 是不可变 record、`capture()` 每 tick 产新对象 ⇒ 直接搬，连创造模式
+  连续放置共享一份也无害。
 
 
 ---

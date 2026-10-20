@@ -96,6 +96,35 @@ class ContainerDataMigrationTest {
     }
 
     @Test
+    @DisplayName("相位快照 CODEC 往返：锁相状态能在「BE 附件 → 物品组件 → BE 附件」中存活")
+    void phaseSnapshot_codec_roundTrip_preservesLockState() {
+        // 边缘跟踪器的锁相三元组 (P, φ, d) + 幅度 —— 这正是跨形态要保住的东西
+        var edge = new com.qiqi.li.living.domain.power.PhaseSnapshot.EdgeEntry(
+            42L, 8, 3, 5, 2);
+        var snap = new com.qiqi.li.living.domain.power.PhaseSnapshot(1000L, List.of(edge));
+
+        var ops = net.minecraft.nbt.NbtOps.INSTANCE;
+        var encoded = com.qiqi.li.living.domain.power.PhaseSnapshot.CODEC
+            .encodeStart(ops, snap).getOrThrow();
+        var decoded = com.qiqi.li.living.domain.power.PhaseSnapshot.CODEC
+            .parse(ops, encoded).getOrThrow();
+
+        assertEquals(snap, decoded,
+            "锁相状态（周期 / 周期内偏移 / 距上次上升沿 / 幅度）必须逐字段存活 —— "
+                + "丢了它，多路振荡器重载后相对相位被洗牌，玩家调好的满相布局失效");
+    }
+
+    @Test
+    @DisplayName("EMPTY 快照不进物品（与流体同款：稳态零成本，不产无意义条目）")
+    void emptyPhaseSnapshot_isNotCarried() {
+        // 稳态无振荡器时 capture 产出 EMPTY ⇒ 不值得搬。
+        // 这是「有值才搬」约定的前提：EMPTY.equals 比较而非 ==
+        assertTrue(com.qiqi.li.living.domain.power.PhaseSnapshot.EMPTY
+            .equals(new com.qiqi.li.living.domain.power.PhaseSnapshot(0, List.of())),
+            "EMPTY 判据是 equals —— 否则回填出来的等值快照会被当成无数据跳过");
+    }
+
+    @Test
     @DisplayName("snapshot 是独立副本：改原件不影响快照（否则物品组件会被后续 tick 污染）")
     void snapshot_isIndependent() {
         ContainerFluidData data = new ContainerFluidData();

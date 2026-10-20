@@ -19,6 +19,8 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.level.BlockDropsEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
 
+import com.qiqi.li.living.domain.power.PhaseSnapshot;
+import com.qiqi.li.living.domain.power.PowerComponents;
 import com.qiqi.li.living.transfer.ContainerCompatibilityConfig;
 
 
@@ -96,6 +98,17 @@ public final class ContainerDataMigration {
         //    漏清的后果是破坏另一半时再迁移一次 ⇒ 复制。
         data.clearAll();
         clearOne(level, be.getBlockPos());
+
+        // ③ 相位快照同样要跟着走（2026-10-20）。它与流体是同一种病：账本是纯内存缓存 +
+        //    BE 附件，附件随 BE 消失 ⇒ 多路相对相位被「重载时刻」洗牌，
+        //    玩家调好的满相布局（n=P）失效。
+        //    ⚠️ 不需要 snapshot()：PhaseSnapshot 是 record，ContainerPhaseWriteback 每 tick
+        //    写入的是 capture() 产生的**新对象**，附件里的对象一旦放入就不再被改。
+        PhaseSnapshot phase = be.getData(PowerComponents.CONTAINER_PHASE_SNAPSHOT.value());
+        if (phase != null && !PhaseSnapshot.EMPTY.equals(phase)) {
+            stack.set(PowerComponents.CONTAINER_PHASE_SNAPSHOT_ITEM.get(), phase);
+            be.setData(PowerComponents.CONTAINER_PHASE_SNAPSHOT.value(), PhaseSnapshot.EMPTY);
+        }
     }
 
     /**
@@ -118,29 +131,41 @@ public final class ContainerDataMigration {
 
         // ⚠️ 必须校验「手持物品 == 这次放置的方块对应的物品」：否则玩家手持带数据的背包、
         // 却去放置另一个有 BE 的方块时，会把背包的流体塞进那个方块。
-        ContainerFluidData data = fluidDataOfPlacedItem(player, event.getPlacedBlock().getBlock());
-        if (data == null) return;
+        ItemStack source = placedItemInHand(player, event.getPlacedBlock().getBlock());
+        if (source == null) return;
 
-        // ⚠️ 必须给**快照**而不是原对象：创造模式下放置不消耗物品，同一个 ItemStack 可以
-        //    连续放置多次 ⇒ 多个 BE 会共享同一份可变数据（水在几个背包里同时出现）。
-        be.setData(WaterComponents.CONTAINER_FLUID_DATA.value(), data.snapshot());
+        // ① 流体：必须给**快照**而不是原对象 —— 创造模式下放置不消耗物品，同一个 ItemStack
+        //    可以连续放置多次 ⇒ 多个 BE 会共享同一份可变数据（水在几个背包里同时出现）。
+        ContainerFluidData fluid = source.get(WaterComponents.CONTAINER_FLUID_DATA_ITEM.get());
+        if (fluid != null && !fluid.isEmpty()) {
+            be.setData(WaterComponents.CONTAINER_FLUID_DATA.value(), fluid.snapshot());
+        }
+
+        // ② 相位快照：PhaseSnapshot 是不可变 record ⇒ 直接搬，多个 BE 共享同一份也无害
+        //    （不会出现「一个变另一个跟着变」）。
+        PhaseSnapshot phase = source.get(PowerComponents.CONTAINER_PHASE_SNAPSHOT_ITEM.get());
+        if (phase != null && !PhaseSnapshot.EMPTY.equals(phase)) {
+            be.setData(PowerComponents.CONTAINER_PHASE_SNAPSHOT.value(), phase);
+        }
     }
 
     /**
-     * 放置者手上**确实是这次放置的那个方块**、且带流体数据的物品（主手优先）。
+     * 放置者手上**确实是这次放置的那个方块**的物品（主手优先）。
      *
      * <p>校验物品身份是必须的：只按「手上有数据」匹配，会在玩家手持带数据的背包去放置
      * 另一个有 BE 的方块时把数据错塞过去。</p>
+     *
+     * <p>返回的是<b>物品本身</b>（而不是其中的流体数据）—— 因为现在要搬两种数据
+     * （流体 + 相位快照），它们共用同一条「手持物品身份」判据。</p>
      */
     @Nullable
-    private static ContainerFluidData fluidDataOfPlacedItem(Player player, net.minecraft.world.level.block.Block placedBlock) {
+    private static ItemStack placedItemInHand(Player player, net.minecraft.world.level.block.Block placedBlock) {
         net.minecraft.world.item.Item placedItem = placedBlock.asItem();
         if (placedItem == net.minecraft.world.item.Items.AIR) return null;
         for (InteractionHand hand : InteractionHand.values()) {
             ItemStack stack = player.getItemInHand(hand);
             if (stack.isEmpty() || !stack.is(placedItem)) continue;
-            ContainerFluidData data = stack.get(WaterComponents.CONTAINER_FLUID_DATA_ITEM.get());
-            if (data != null && !data.isEmpty()) return data;
+            return stack;
         }
         return null;
     }

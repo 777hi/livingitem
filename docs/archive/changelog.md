@@ -106,6 +106,25 @@
 > `contentRetaining_userConfigCanAdd`（玩家可追加、不能取消内置）。
 > 单测 778 → 780（779 passed + 1 skipped，0 fail）；`doc_check` 全绿。
 
+> 🔊 **电力相位快照也跨形态保全（同日）** —— 起因是审计 24 个活物品对容器能力的依赖：
+> BE 附件里只有流体与电力相位**带 `serialize`**（存档级持久），而 `ContainerDataMigration`
+> 只搬了流体 ⇒ 精妙背包 / 潜影盒里调好的多路满相布局（n=P），方块→物品后
+> **相对相位被「重载时刻」洗牌**，玩家要重调（`PhaseSnapshot` javadoc 原话：「肉鸽感只留给真正的重新搭建」）。
+>
+> 实现与流体同构，但**搬法相反**：
+> - `ContainerFluidData` 是**可变对象**且与内存表共享引用 ⇒ 必须 `snapshot()` 深拷贝后再交给物品
+>   （否则后续 tick 的改动漏进物品；创造模式连续放置还会让多个背包共享同一份水）
+> - `PhaseSnapshot` 是不可变 record，`ContainerPhaseWriteback` 每 tick 写入的是
+>   `capture()` 产生的**新对象** ⇒ 直接搬即可，创造模式连续放置共享一份也无害
+>
+> 顺手把 I-C9 从「流体」扩为「**容器级持久数据**」，并立下判据：
+> **只有附件带 `serialize` 的才搬** —— 应力（`container_stress_data` 无 serializer）与
+> 红石账本（内存表、注释明说「不落盘」）都是运行时数据，下一 tick 从容器里的活物品重算，
+> 搬它们只会把「磁盘账本说谎」面做大（与 `PhaseSnapshot` 只存 (P, φ, d) 慢变量同一个考量）。
+>
+> 守卫 2 项：相位 CODEC 往返保住 (P, φ, d) / EMPTY 快照不进物品。
+> 单测 780 → 782（781 passed + 1 skipped，0 fail）；`doc_check` 全绿。
+
 ---
 
 ## 2026-10-19
