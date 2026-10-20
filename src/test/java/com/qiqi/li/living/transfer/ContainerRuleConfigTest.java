@@ -36,6 +36,10 @@ class ContainerRuleConfigTest {
     private static final ResourceLocation BUNDLED_ID =
         ResourceLocation.fromNamespaceAndPath("minecraft", "chest");
 
+    /** 无尽箱子：300 格 / 25 列。启发式会算成 10 列（300%9≠0、300%10=0）⇒ 必须靠规则。 */
+    private static final ResourceLocation INFINITY_CHEST =
+        ResourceLocation.fromNamespaceAndPath("avaritia", "infinity_chest");
+
     @TempDir
     Path tempDir;
 
@@ -150,6 +154,18 @@ class ContainerRuleConfigTest {
 
         assertFalse(ContainerCompatibilityConfig.findRule(BUNDLED_ID).isPresent(),
             "重启后仍应保持删除状态（这条就是『复活』bug 的守卫）");
+    }
+
+    @Test
+    @DisplayName("内置规则含无尽箱子 300 格 / 25 列（AvaritiaNeo）")
+    void bundledRules_containInfinityChest() {
+        // 25 列不在启发式的任何候选宽度里（9/10/12/13/8/7/6…，300%9≠0、300%10=0 ⇒ 会算成 10）
+        // ⇒ 这条规则是「熔炉能烧、漏斗方向正确」的唯一依据，删掉它等于静默回归
+        var rule = ContainerCompatibilityConfig.findRule(INFINITY_CHEST, 300);
+
+        assertTrue(rule.isPresent(), "内置规则必须包含 avaritia:infinity_chest(300)");
+        assertEquals(25, rule.get().columns(),
+            "无尽箱子 GUI 是 25 列 × 12 行；列数错会让熔炉燃料槽 slot+width 读错");
     }
 
     @Test

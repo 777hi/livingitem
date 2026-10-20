@@ -48,6 +48,34 @@
 >
 > 单测 772 → 773（772 passed + 1 skipped，0 fail）；`doc_check` 全绿。
 
+> 🔌 **联动无尽箱子（AvaritiaNeo，同日）** —— 用户：「那就兼容一下这个无尽箱子吧」。
+> 先读源码判断（`libs/src/AvaritiaNeo-main`）：`TileInfinityChest extends BlockEntity`，
+> **不实现 `Container`**（内部 `SimpleContainer chest = new SimpleContainer(300)`）；
+> 菜单槽的 container 就是这个 `SimpleContainer`，且菜单**没有** `getBlockPosition()`。
+> ⇒ viewer 匹配三条路全断（图标 / tooltip / 流体渲染不刷新，GUI 倒汲静默无效），
+> 和精妙修之前一模一样。
+>
+> **能用的部分**（不需要改）：`WrapperInfinityChest` 的 `insertItem` **尊重 slot 参数**、
+> `setStackInSlot` 直接写槽、`getSlotLimit` = `Integer.MAX_VALUE` ⇒ S2 那批写回修复
+> 对它走快路径，不截断超大堆叠。
+>
+> **改了两处，核心零改动**：
+> 1. 内置规则补 `avaritia:infinity_chest` / 300 格 / **25 列**。启发式会算成 10
+>    （300%9≠0、300%10=0），而 25 不在任何候选宽度里 ⇒ 必须靠规则，否则熔炉燃料槽
+>    `slot + width` 读错（不烧）、漏斗 `slot ± width` 搬偏格子（看着像正常）。
+> 2. 新增 `living/compat/avaritia/`：`ModAvaritia`（`ModList` 门控）+ `AvaritiaMenuResolver`。
+>    判据是「**返回 `BlockEntity` 的 getter**」（`getTile` / `getBlockEntity`）——
+>    拿到 BE 后 `getBlockPos()` 是公开 API，不再反射一层；包名前缀
+>    `net.byAqua3.avaritia.` 限定，反射不扩散。
+>
+> 守卫 `AvaritiaMenuResolverTest` 4 项，其中「包名不匹配即不认」**先红后绿**验证过
+> （临时去掉包名判据 ⇒ `expected: <null> but was: <BlockPos{x=11, y=64, z=-7}>`）。
+> 替身 `FakeInfinityChestMenu` 故意放在 `net.byAqua3.avaritia.test` 包下，否则只能测到
+> 「不认」测不到「认得」。
+> 另加 `ContainerRuleConfigTest.bundledRules_containInfinityChest` 守住那条 25 列的规则
+> （删掉它 = 熔炉静默不烧）。
+> 单测 773 → 778（777 passed + 1 skipped，0 fail）；`doc_check` 全绿。
+
 ---
 
 ## 2026-10-19

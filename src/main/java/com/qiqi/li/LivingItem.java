@@ -204,6 +204,7 @@ public class LivingItem {
         ModCreate.init();
         // 联动模块（D-container-09）：难兼容的模组各自注册，核心不猜第三方 API。
         com.qiqi.li.living.compat.sophisticated.ModSophisticated.init();
+        com.qiqi.li.living.compat.avaritia.ModAvaritia.init();
 
         // ── 各领域自注册（A1，2026-09-27）──
         // 原先 22 个 Function / 21 条交互规则 / 9 个 handler / 3 个快照贡献者

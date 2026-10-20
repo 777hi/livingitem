@@ -30,6 +30,8 @@
     {"containerId": "sophisticatedbackpacks:backpack", "containerSize": 54, "columns": 9, "description": "精妙背包-铁"},
     {"containerId": "sophisticatedbackpacks:backpack", "containerSize": 81, "columns": 9, "description": "精妙背包-金"},
     {"containerId": "sophisticatedbackpacks:backpack", "containerSize": 108, "columns": 12, "description": "精妙背包-钻石"},
-    {"containerId": "sophisticatedbackpacks:backpack", "containerSize": 120, "columns": 12, "description": "精妙背包-下界合金"}
+    {"containerId": "sophisticatedbackpacks:backpack", "containerSize": 120, "columns": 12, "description": "精妙背包-下界合金"},
+
+    {"containerId": "avaritia:infinity_chest", "containerSize": 300, "columns": 25, "description": "无尽箱子（25×12）"}
   ]
 }
