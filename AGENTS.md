@@ -146,7 +146,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 772 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
+**合计测试用例 773 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -171,6 +171,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-20 | 🧭 **精妙形状复审（续 `D-container-09`）** —— 审计核心 7 类接触面，找到最后一处：`ContainerCompatibilityConfig.findRuleByNamespaceAndKeyword` 按 namespace + 分词模糊匹配规则（「猜这条规则大概适用于这个 BE」，且多档时只取第一档、行为取决于注册顺序）。**整体删除** ⇒ 规则查找只认精确 `(id, 容量)`；未注册类型走 Tier 2 原版类型表 / Tier 3 启发式，语义明确。其余接触面复核结论：核心精妙代码引用仅 `ModSophisticated.init()` 一处接线；规则表 27 条全是精确 id（数据不是形状，留）；Mixin 目标全是原版 + Create 联动；`ClientSlotResolve` 的类名反射针对**原版** `SlotWrapper`（不属第三方猜测，留）。守卫 `unregisteredType_doesNotBorrowRuleFromSiblingId` 先红（9 vs 3）后绿。单测 772 → 773 | `docs/decisions.md` D-container-09 · `living/transfer/ContainerCompatibilityConfig.java` |
 | 2026-10-19 | 🧭 **核心不做第三方 API 猜测（`D-container-09`）** —— 用户定调：「精妙背包只是泛化容器兼容性的**一个例子**，不能把模组弄成精妙背包的模样；难兼容的部分要当作**联动模组**去做，就像活水车那样，而不是将就本模组的一致性」。据此把 `MenuSlotOwners` 里为精妙内置的 **`getBlockPosition` 反射兜底整体移除** ⇒ 核心只剩「结构化 + 注册口」两级；反射下沉到 `living/compat/sophisticated/`（`ModList` 门控 + **包名前缀**判据，反射不扩散）。另记 `D-container-08`：**容器内物品 tick 属活潜影箱专属**，S5 取消。单测 768 → 772 | `docs/system-design/container-boundary.md` I-C5 · `docs/decisions.md` · `living/compat/sophisticated/` |
 | 2026-10-19 | 🔧 **容器级数据跨形态保全** —— 真机「背包变物体形态后活流体没了」。根因：数据挂 BE 附件，破坏即随 BE 消失；而背包/潜影盒的**物品内容**存在别处 ⇒ 内容在、流体丢。用户定案「**流体保持容器属性，不物品化**」⇒ 只换存储介质：新增 `CONTAINER_FLUID_DATA_ITEM` 组件，`BlockDropsEvent`（掉落物已定、未入世、BE 尚在）搬进掉落物，`EntityPlaceEvent` 搬回新 BE。⚠️ 双箱必须迁移后清两半附件，否则两次破坏各得一份 = 复制；⚠️ 放置侧要校验「手持物品 == 本次放置的方块」。单测 762 → 769 | `living/domain/water/ContainerDataMigration.java` · `docs/TODO.md` |
 | 2026-10-19 | 🔧 **容器兼容性专题收尾（真机驱动，4 连修）** —— ① `resolve` 也按位置解析模组容器：修「往背包倒水，源落进玩家物品栏 / 背包 GUI 不渲染流体」（`ContainerContexts.resolve` 只认 `Container` 实例，对精妙恒 null ⇒ 背包槽位汲倒静默无效，改点 GUI 下方玩家物品栏才成）；② 活流体绘制从 `AbstractContainerScreen.render` TAIL 迁到 `ContainerScreenEvent.Render.Foreground`——精妙的 `StorageScreenBase.render` **自己抄了一份 super.render 且不调父实现** ⇒ 父类注入永不执行（同类受害的还有任何只挂 render 的 Mixin；tooltip 没事因挂 `renderTooltip`）；③ `USER_RULES` 多档容量；④ 反射在 `MenuSlotOwners` 里降为兜底 + 注册口。tooltip / 图标 / 倒汲 / 流体渲染 / 列数**全部真机通过**。单测 761 → 768 | `docs/system-design/container-boundary.md` · `docs/buffer/container-compat-topic.md` · `living/container/ContainerContexts.java` · `client/render/ContainerFluidOverlay.java` |
@@ -180,7 +181,6 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-10-18 | ✅ **活信标收尾：迁入正式台账**（用户定「不专门测试、游玩时慢慢反馈」）—— 设计稿 `docs/buffer/` → `docs/tech/living-beacon-tech.md`（16 个活物品功能全部有 tech 台账）；状态行重写（746 绿）；§6.1 转「游玩对照表」，实测顺延挂 `docs/TODO.md`。 | `docs/tech/living-beacon-tech.md` · `docs/TODO.md` |
 | 2026-10-18 | 🆕 **活信标：同容器多枚信标每枚一条光束**（用户定案）—— 宿主键 `容器键#槽位`，各自的等级/玻璃色/光束互不覆盖（全同条目去重）；**开盖仍按容器**（取走一枚盖不关，整箱再无才关）。客户端与包格式零改动。 | `docs/tech/living-beacon-tech.md` §2.3 · `living/domain/beacon/BeaconChestHost.java` |
 | 2026-10-18 | 🐛 **框架：末影箱遥测包 viewer 门控**（根治「容器 GUI 里 tooltip 运行时行全丢」）—— 末影箱每 tick 直发主人（无门控无去重）⇒ 冲掉客户端单槽通用缓存；照流体轨 10-06 同款接线点加 `isViewingEnderChest` 门控（一击两治：止崩 + 流量回归「开着 GUI 才发」），读取端改按悬停槽位容器路由（三处消费方共用 helper）。 | `docs/tech/living-beacon-tech.md` §2.6 · `living/network/LivingItemRuntimeSync.java` |
-| 2026-10-18 | 🐛 **信标：取消活化不清效果配置** —— `BeaconFunction` 漏 `getOwnedComponentTypes` 自声明 ⇒ 组件成孤儿数据（框架 `clearLivingData` 清不到）；补声明 + `ComponentOwnershipTest` 补两个盲区（域级 holder 扫描范围 / 功能硬编码名单）⇒ 先红后绿机械证明守得住。 | `docs/tech/living-beacon-tech.md` §2.5 · `living/api/ComponentOwnershipTest.java` |
 
 ## 排查铁律：原版机制挡路时
 

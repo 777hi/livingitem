@@ -15,6 +15,41 @@
 
 ---
 
+## 2026-10-20
+
+> 🧭 **精妙形状复审（续 `D-container-09`）** —— 用户：「再检查一遍，还有哪些变得精妙形状了吧」。
+> 按「核心不该长成某一个模组的模样」逐类审核心，审计 7 类接触面，找到**最后一处**真问题。
+>
+> **删掉的：`ContainerCompatibilityConfig.findRuleByNamespaceAndKeyword`**
+> —— 按 `namespace` + **分词模糊匹配**查规则（拿规则 id 的任一词去比目标 BE id 的任一词，
+> 同 namespace 即命中）。三个问题：
+> ① 它在**猜**「这条规则大概适用于这个 BE」，与 `D-container-09` 同源冲突；
+> ② **多档时只取第一档**（`list.get(0)`）⇒ 同 id 六档（精妙背包）时永远拿到第一档，
+> 容量校验一挡就返回空，行为取决于「哪档先注册」；
+> ③ 不可观测——现有 27 条规则全是精确 id，删掉后所有已知容器的列数**不变**
+> （未注册类型走 Tier 2 原版类型表 / Tier 3 启发式，语义明确）。
+>
+> 守卫 `SimpleContainerContextTest.unregisteredType_doesNotBorrowRuleFromSiblingId`：
+> 把 `minecraft:chest` 临时改成 3 列，再看 `minecraft:ender_chest`（27 格、path 与 chest 共享
+> `chest` 词）的列数——**先红（9 vs 3）后绿**，精确复现了「借用」。
+>
+> **复核后判定「留」的六类**（都不是精妙形状）：
+> | 接触面 | 结论 |
+> |---|---|
+> | 核心里的精妙代码引用 | 只剩 `ModSophisticated.init()` 一处接线（`compat` 包 + `ModList` 门控） |
+> | `container_rules.json` 的精妙六档 | **数据不是形状**——规则表的设计目的就是收录已知容器（铁箱子、原版各一条），本身不猜 API |
+> | `resolveColumnsFromContainer` 类型表 | 全是**原版**类（chest/hopper/dispenser/furnace…） |
+> | Mixin 目标 | 全是原版类 + Create 联动（`mixin/create/`） |
+> | `ClientSlotResolve` 的 `getSimpleName().contains("SlotWrapper")` | 猜的是**原版**内部类，不是第三方；主路径已由 Mixin accessor 覆盖，反射只是兜底 |
+> | `LivingItemContainerCommand` 的 `be instanceof Container` | 只用于 Tier 2 推断（非 `Container` 传 null 走启发式），不参与身份判定 |
+>
+> 顺带修 `container-compat-topic.md` 三处过期表述：S3 仍写「三级含反射兜底」、仍写
+> 「精妙背包走菜单级反射」（已下沉到联动模块）、以及「⏳ S3b 未做」（实际已完成）。
+>
+> 单测 772 → 773（772 passed + 1 skipped，0 fail）；`doc_check` 全绿。
+
+---
+
 ## 2026-10-19
 
 > ✅ **S3 落地：viewer 匹配改位置口径（2026-10-19，真机反馈驱动）** —— 真机报「活熔炉图标要重开

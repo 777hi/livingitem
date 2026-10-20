@@ -71,21 +71,17 @@
 
 - [x] `MenuSlotOwners`：「菜单槽 → 容器位置」解析器，**三级**（可靠 → 脆弱）：
       ① 结构化（原版 BE 直取 / 大箱子复用 `ContainerContexts.reflectHalves`，无反射）→
-      ② **注册的 compat**（`registerMenuResolver`，编译期安全 —— **模组容器的正解**）→
-      ③ 反射兜底（菜单 `getBlockPosition` / `getBlockPos`，**刻意不认 `getPos`** 防误命中；
-         失效打 debug，每类一次）
+      ② **联动模块注册**（`registerMenuResolver`，编译期安全 —— **模组容器的正解**）
+      （⚠️ 原③「核心反射兜底」已按 `D-container-09` 删除：核心不猜第三方 API 形状）
 - [x] `ContainerContexts.isViewingPositions` + `ContainerRuntimeCache.findViewersByPositions`
 - [x] `LivingItem.runtimeContainerPositions` 取代 `runtimeContainerInstances`（返回位置，不再要求 `Container`）
 - [x] `LivingItemRuntimeSync.flush` 改位置口径（**tooltip 进度信息**）
 - [x] `SimpleContainerContext.syncWorldContainer` 改位置口径（**活熔炉图标刷新**）
-- [x] 精妙背包走菜单级反射（`BackpackContainer#getBlockPosition` 返回 `Optional<BlockPos>`），
-      **无需 compileOnly 依赖**
+- [x] 精妙背包的菜单位置由**联动模块**取（`living/compat/sophisticated/`，反射
+      `BackpackContainer#getBlockPosition`），核心不认识它；**无需 compileOnly 依赖**
 
 **判据**：非 `Container` 方块实体的替身场景下 `isViewingPositions` 为 true（`MenuSlotOwnersTest`）；
 原版大箱子 / 末影箱 / 玩家背包三条既有路径不变红。
-
-> ⏳ **S3b（未做，同款改法）**：活流体渲染（`FluidFlowServerSync`）、酿造台快照
-> （`LivingBrewingStandFunction`）仍直接构造 `List<Container>` ⇒ 非 `Container` 容器匹配不上。
 
 ### S3b 其余 viewer 轨 ✅ 2026-10-19
 

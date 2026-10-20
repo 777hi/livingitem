@@ -36,7 +36,7 @@ src/test/java/com/qiqi/li/
 ├── living/command/
 │   └── ActivationTargetParsingTest.java       # 活化目标参数解析守卫·物品ID/标签/modid 回写契约 + 反向守卫「StringArgumentType 读不进 : # @」（4 项）
 ├── living/container/
-│   ├── SimpleContainerContextTest.java        # 容器上下文脏槽同步 + 末影箱稳定键构造器（4 项回归）+ 缓存键推导（世界容器带维度前缀/跨维度同坐标键不同/大箱子两段坐标/背包末影箱裸键/无维度退化）（35 项）
+│   ├── SimpleContainerContextTest.java        # 容器上下文脏槽同步 + 末影箱稳定键构造器（4 项回归）+ 缓存键推导（世界容器带维度前缀/跨维度同坐标键不同/大箱子两段坐标/背包末影箱裸键/无维度退化）+ 列数推断（启发式/质数退化/未注册类型不借用同 namespace 规则）（36 项）
 │   ├── ContainerContextsTest.java             # 边界带共享内核·isSameSlotSpace(槽位数不一致/越界/同空/同物品/一空一非空/异物品) + resolve 末影箱分支(F-1) + isViewingEnderChest 判据 6 项（16 项）
 │   ├── ContainerBoundaryContractTest.java     # 容器边界契约 I-C3/I-C4/I-C7 守卫：SlotIgnoringHandler(insertItem 丢 slot) + ExtractBlockedHandler(extract 被拦) ⇒ 写回落对槽/物品守恒/模拟真实同源（3 项，S2 后转绿）
 │   ├── MenuSlotOwnersTest.java                # I-C5 守卫：菜单槽→容器位置解析·**核心不反射第三方方法**(菜单自带 getBlockPosition 也不认,D-container-09)/注册联动解析器后生效/无解析器返回 null/模组容器槽回落菜单位置/原版 BE 槽直取/大箱 CompoundContainer 两半位置(防跨容器虚影)/空位置集恒 false（6 项）

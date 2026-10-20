@@ -113,7 +113,7 @@
 | D-container-06 | 2026-10-18 | container | **「扫描展开」与「活物品内部递归」是两套机制，共用一条深度预算**；扫描展开上限 1，内部递归上限由功能声明（活潜影箱 4） | 两个独立上限会叠成 1+4=5 层 | 已被取代 | → D-container-08 | `container-boundary.md` §3 |
 | D-container-07 | 2026-10-18 | container | **物品池（AE2 ME / RS 网络）不得作为 tick 宿主**，只能当传输端点（给 `SlotAccessor` 加池实现，不给 `ContainerContext` 加） | 池无槽位无几何，功能无从表达 | 生效 | | `container-boundary.md` I-C8 |
 | D-container-08 | 2026-10-19 | container | **容器内物品被 tick 是活潜影箱的专属逻辑，容器边界不做通用「扫描展开」**——框架只 tick「方块形态容器」与「玩家背包」；物品形态容器内部的 tick 由活潜影箱功能自己驱动（功能内部递归） | 通用扫描展开要遍历每个容器的每个物品查 `ItemHandler.ITEM`（108 格 × N 容器），性能需额外筛选；而活潜影箱自带「已被活化」这一门槛，展开范围天然有界。且「物品内部自成世界」本就是活潜影箱的核心卖点，泛化到所有背包会稀释它 | 生效 | ← D-container-06 | `container-boundary.md` §3 · `buffer/活潜影箱实现细节.md` |
-| D-container-09 | 2026-10-19 | container | **核心不做第三方 API 猜测**：容器兼容只提供机制（结构化解析 + 注册口），**不内置任何「反射第三方方法名」的兜底**；难兼容的模组走**联动模块**（`living/compat/<mod>/` + `ModList` 门控 + 注册），与 Create / Sable 的软依赖同构 | 内置反射等于把核心绑在某个模组的 API 形状上（曾为精妙背包内置 `getBlockPosition` 反射）；模组一改名，失效的是**核心**。下沉到联动模块后，失效范围被关在模块内，核心与其它模组不受牵连。另：精妙背包只是**一个例子**，不该让本模组长成它的模样 | 生效 | | `container-boundary.md` I-C5 · `living/compat/sophisticated/` |
+| D-container-09 | 2026-10-19 | container | **核心不做第三方 API 猜测**：容器兼容只提供机制（结构化解析 + 注册口），**不内置任何「反射第三方方法名」的兜底**；难兼容的模组走**联动模块**（`living/compat/<mod>/` + `ModList` 门控 + 注册），与 Create / Sable 的软依赖同构 | 内置反射等于把核心绑在某个模组的 API 形状上（曾为精妙背包内置 `getBlockPosition` 反射）；模组一改名，失效的是**核心**。下沉到联动模块后，失效范围被关在模块内，核心与其它模组不受牵连。另：精妙背包只是**一个例子**，不该让本模组长成它的模样。**同一原则的第二面（2026-10-20）：规则查找也只按精确 `(id, 容量)`，不按 namespace + 分词模糊匹配**——模糊命中同样是「猜这条规则大概适用于这个 BE」，且多档时只取第一档 | 生效 | | `container-boundary.md` I-C5 · `living/compat/sophisticated/` · `living/transfer/ContainerCompatibilityConfig.java` |
 
 ## 6. 边界（诚实说明）
 

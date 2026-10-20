@@ -210,6 +210,39 @@ class SimpleContainerContextTest {
         }
 
         @Test
+        @DisplayName("未注册类型不借用「同 namespace 共享词」的规则（规则只按精确 id 匹配）")
+        void unregisteredType_doesNotBorrowRuleFromSiblingId() {
+            // 把内置的 minecraft:chest（27 格 9 列）临时改成 3 列 —— 这样「借用」与「启发式」
+            // 的结果可区分。原实现有一层 namespace + 分词模糊匹配，会拿 "chest" 这个词命中它。
+            net.minecraft.resources.ResourceLocation chestId =
+                net.minecraft.resources.ResourceLocation.withDefaultNamespace("chest");
+            com.qiqi.li.living.transfer.ContainerCompatibilityConfig.register(chestId,
+                com.qiqi.li.living.transfer.ContainerCompatibilityConfig.ContainerRule.builder()
+                    .containerSize(27).columns(3).description("test override").build());
+            try {
+                // minecraft:ender_chest 没有精确规则，但它的 path 与 chest 共享 "chest" 词
+                net.minecraft.world.level.block.entity.BlockEntity enderChest =
+                    mock(net.minecraft.world.level.block.entity.BlockEntity.class);
+                // doReturn 而非 when().thenReturn()：getType() 返回 BlockEntityType<?>，
+                // 带泛型的 thenReturn 会因 EnderChestBlockEntity 推断失败
+                org.mockito.Mockito.doReturn(net.minecraft.world.level.block.entity.BlockEntityType.ENDER_CHEST)
+                    .when(enderChest).getType();
+
+                var ctx = new SimpleContainerContext(
+                    new FakeHandler(27), List.of(BlockPos.ZERO), List.of(enderChest));
+
+                assertEquals(9, ctx.getWidth(),
+                    "未注册类型应走启发式（27→9），不能借用 minecraft:chest 的 3 列 —— "
+                        + "模糊匹配已按 D-container-09 删除");
+            } finally {
+                // 注册表是全局静态的，必须恢复内置值，否则污染同类其它用例
+                com.qiqi.li.living.transfer.ContainerCompatibilityConfig.register(chestId,
+                    com.qiqi.li.living.transfer.ContainerCompatibilityConfig.ContainerRule.builder()
+                        .containerSize(27).columns(9).description("chest").build());
+            }
+        }
+
+        @Test
         @DisplayName("质数尺寸退化为 1 列")
         void primeSize_degradesTo1() {
             assertWidth(17, 1);

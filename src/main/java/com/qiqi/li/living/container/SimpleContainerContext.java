@@ -243,10 +243,10 @@ public class SimpleContainerContext implements TickableContainerContext {
             if (id != null) {
                 // ⚠️ 必须带容量：同一 BE 类型可有多档容量且列数不同（精妙背包 108/120 是 12 列，
                 // 其余档位 9 列）。用单参数 findRule 会拿到别的档位 ⇒ 列数错 ⇒ 熔炉燃料槽读错。
+                // 只认精确 id + 容量：原先还有一层「namespace + 分词模糊匹配」的兜底，已按
+                // D-container-09 删除（它在猜「这条规则大概适用于这个 BE」，且多档时只取第一档）。
                 var rule = ContainerCompatibilityConfig.findRule(id, getSize());
                 if (rule.isPresent()) return rule;
-                rule = ContainerCompatibilityConfig.findRuleByNamespaceAndKeyword(id.getNamespace(), id.getPath());
-                if (rule.isPresent() && rule.get().containerSize() == getSize()) return rule;
             }
         }
 

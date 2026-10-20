@@ -226,25 +226,23 @@ public final class ContainerCompatibilityConfig {
         return 1;
     }
 
-    public static Optional<ContainerRule> findRuleByNamespaceAndKeyword(String namespace, String path) {
-        for (var entry : RULES.entrySet()) {
-            ResourceLocation key = entry.getKey();
-            if (key.getNamespace().equals(namespace)) {
-                String rulePath = key.getPath();
-                String[] ruleParts = rulePath.split("_|-");
-                String[] pathParts = path.split("_|-");
-                for (String rulePart : ruleParts) {
-                    for (String pathPart : pathParts) {
-                        if (rulePart.equalsIgnoreCase(pathPart) && !rulePart.isEmpty()) {
-                            List<ContainerRule> list = entry.getValue();
-                            if (!list.isEmpty()) return Optional.of(list.get(0));
-                        }
-                    }
-                }
-            }
-        }
-        return Optional.empty();
-    }
+    /**
+     * ⚠️ <b>已删除（2026-10-20）：按 namespace + 分词模糊匹配规则</b>。
+     *
+     * <p>原实现拿「规则 id 的任一词」去匹配「目标 BE id 的任一词」，同 namespace 即命中，
+     * 并返回该规则的第一档。三个问题：</p>
+     * <ul>
+     *   <li><b>它在猜</b>——「这条规则大概适用于这个 BE」不是数据，是推测。与
+     *       {@code D-container-09}「核心不做第三方形状猜测」同源冲突；</li>
+     *   <li><b>多档时只取第一档</b>：同 id 有六档（精妙背包）时，模糊命中永远拿到第一档，
+     *       容量校验一挡就返回空 ⇒ 行为取决于「哪档先注册」，不确定；</li>
+     *   <li><b>不可观测</b>：现有 27 条规则全是精确 id，删掉后所有已知容器的列数不变
+     *       （未注册类型走 Tier 2 原版类型表 / Tier 3 启发式，语义明确）。</li>
+     * </ul>
+     *
+     * <p>⇒ 规则查找只认<b>精确 id + 容量</b>。要支持新容器就登记一条规则，不要指望模糊命中。
+     * 守卫：{@code SimpleContainerContextTest.unregisteredType_doesNotBorrowRuleFromSiblingId}。</p>
+     */
 
     /**
      * 获取所有已注册规则（不可变视图，<b>已按容量档位摊平</b>）。
