@@ -61,7 +61,7 @@ public final class PowerComponents {
      * <p>问题：相位账本（{@link ContainerPowerData} / {@code SignalTracker}）是纯内存缓存，
      * 账本一死所有振荡器<b>从零重锁</b> ⇒ 多路之间的相对相位被「重载时刻」洗牌，
      * 玩家调好的满相布局（n=P）不再适配。BE 附件本来就解决「退出重进」这一种死法，
-     * 但<b>破坏方块时 BE 被移除 ⇒ 附件随之消失</b>——而精妙背包 / 潜影盒的物品内容
+     * 但<b>破坏方块时 BE 被移除 ⇒ 附件随之消失</b>——而某些容器（潜影盒等）的物品内容
      * 存在别处 ⇒ 内容保留、相位丢失。</p>
      *
      * <p>修法与流体数据（{@code WaterComponents#CONTAINER_FLUID_DATA_ITEM}）同构：

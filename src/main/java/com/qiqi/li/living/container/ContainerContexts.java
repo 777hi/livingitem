@@ -196,7 +196,7 @@ public final class ContainerContexts {
      *
      * <p>为什么不按 {@code Container} 实例判：后者要求菜单槽的 {@code slot.container}
      * <b>等于</b>某个原版 {@code Container} 实例，对「有物品能力但不是 {@code Container}」的
-     * 模组方块实体（精妙背包方块、ProjectE 炼金箱）永远返回 {@code false} ⇒
+     * 第三方方块实体永远返回 {@code false} ⇒
      * 运行时 tooltip 遥测与定向槽位同步静默不发（真机表现：「tooltip 没有进度信息」）。</p>
      *
      * <p>本方法把匹配口径换成<b>位置</b>：菜单槽属于哪个位置由 {@link MenuSlotOwners} 解析
@@ -204,7 +204,7 @@ public final class ContainerContexts {
      *
      * <p>⚠️ 位置是 tick 上下文、容器键（{@code chest_x_y_z}）、缓存键的共用事实源；
      * {@code Container} 实例是第四套并行事实源，必然漂 —— 过去三次事故
-     * （大箱实例比不中 / ProjectE 强转崩 / 精妙背包匹配不上）都源于此。</p>
+     * （大箱实例比不中 / 强转崩 / 匹配不上）都源于此。</p>
      */
     public static boolean isViewingPositions(ServerPlayer player, Collection<BlockPos> positions) {
         if (positions == null || positions.isEmpty()) return false;

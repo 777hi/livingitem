@@ -171,7 +171,7 @@ public class BeaconFunction implements LivingItemFunction {
      * 响应 {@code triggerEvent(1, ·)} 开盖协议 ⇒ 我们的 {@code blockEvent(1,1)} 开盖保持直接可用）。
      *
      * <p><b>覆盖矩阵</b>（2026-10-18 逐个核源码实证）：原版箱 / 陷阱箱 ✅、<b>铁箱子全家</b>
-     * ✅（{@code AbstractIronChestBlockEntity implements LidBlockEntity}——原先为此写了反射
+     * ✅（某些第三方方块实体也 implements LidBlockEntity——原先为此写了反射
      * compat，现由协议判据自动覆盖，compat 已删）、木桶 ❌（{@code BarrelBlockEntity} 未实现该接口，
      * 与设计稿旧结论一致）、潜影盒 ❌（自有动画）。⇒ 未来任何实现该协议的第三方容器
      * <b>自动纳入，零维护</b>。</p>

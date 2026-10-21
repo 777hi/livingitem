@@ -431,8 +431,8 @@ public class LivingItem {
      *
      * <p>用途：{@code LivingItemRuntimeSync.flush} 需要按容器键反查位置，才能判断
      * 「谁正看着这个容器」。**位置**而非 {@code Container} 实例是契约 I-C5 的要求
-     * （2026-10-18，专题 S3）：有物品能力但不是原版 {@code Container} 的模组方块实体
-     * （精妙背包方块、ProjectE 炼金箱）会被正常 tick，却匹配不到任何 viewer
+     * （2026-10-18，专题 S3）：有物品能力但不是原版 {@code Container} 的第三方方块实体
+     * 会被正常 tick，却匹配不到任何 viewer
      * ⇒ 运行时 tooltip 遥测静默不发（真机表现：「tooltip 没有进度信息」）。</p>
      *
      * <p>⚠️ <b>返回空集合 = 不发包</b>（见 {@code LivingItemRuntimeSync.flush}）——
@@ -745,7 +745,7 @@ public class LivingItem {
             Items.WAXED_WEATHERED_COPPER_BULB, Items.WAXED_OXIDIZED_COPPER_BULB);
 
         // ── 活水源对外流体接口（§10 管道抽取，2026-10-06）：宽注册 + 让位 ──
-        // 方言 = NeoForge IFluidHandler：Pipez / Mekanism / Create 6 通用（Create 也走这个）
+        // 方言 = NeoForge IFluidHandler（跨模组的通用流体接口）
         // 语义 = 抽取即消耗源、只出不进（fill 恒 0）⇒ 活桶仍是源的唯一种子工具
         net.neoforged.neoforge.capabilities.ICapabilityProvider<BlockEntity, Direction, net.neoforged.neoforge.fluids.capability.IFluidHandler> blockFluidProvider =
             (be, side) -> com.qiqi.li.living.domain.water.ContainerFluidHandler.resolveProvider(be, side);

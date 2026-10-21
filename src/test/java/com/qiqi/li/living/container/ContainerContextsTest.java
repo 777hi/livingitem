@@ -144,7 +144,7 @@ class ContainerContextsTest {
 
         // ── 模组容器分支（2026-10-19，I-C5 收尾）──────────────────
 
-        /** 菜单自报位置的模组容器替身（仿精妙背包 BackpackContainer#getBlockPosition）。 */
+        /** 菜单自报位置的第三方容器替身（仿 BackpackContainer#getBlockPosition）。 */
         private static final BlockPos PACK_POS = new BlockPos(5, 70, -3);
 
         /**
@@ -186,7 +186,7 @@ class ContainerContextsTest {
         /**
          * 模组容器菜单槽位 → 按位置解析出 BE 上下文。
          *
-         * <p>守的是真机 bug：精妙背包方块不是原版 {@code Container}，旧实现这里返回 null
+         * <p>守的是真机 bug：第三方方块实体不是原版 {@code Container}，旧实现这里返回 null
          * ⇒ 在背包 GUI 里对背包槽位倒水<b>静默无效</b>；改点 GUI 下方的玩家物品栏槽位
          * 倒是能成功，源就落进了玩家背包而不是背包里 —— 背包容器没源，也就不渲染流体。</p>
          */

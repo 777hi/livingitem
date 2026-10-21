@@ -101,7 +101,7 @@ class ContainerRuleConfigTest {
     @Test
     @DisplayName("多档容量：同一 id 的两个容量档可同时进玩家差异（覆盖不再互相挤掉）")
     void multiTierUserRules_coexist() {
-        // 精妙背包的真实形态：六档共用一个 BE id，27/81 是 9 列，108/120 是 12 列
+        // 真实形态：六档共用一个 BE id，27/81 是 9 列，108/120 是 12 列
         ResourceLocation id =
             ResourceLocation.fromNamespaceAndPath("sophisticatedbackpacks", "backpack");
 

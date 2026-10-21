@@ -27,13 +27,13 @@ import net.minecraft.world.level.block.state.BlockState;
  *
  * <p>演进（三次口径变化，别按旧结论读）：</p>
  * <ol>
- *   <li><b>crash-2026-10-10</b>：曾无条件 {@code (Container) be} 强转，对 ProjectE 炼金箱这类
+ *   <li><b>crash-2026-10-10</b>：曾无条件 {@code (Container) be} 强转，对某些第三方方块实体
  *       「有物品能力但不是原版 {@link Container}」的方块实体抛 {@code ClassCastException}。</li>
  *   <li><b>2026-10-12</b>：缓存键加维度前缀后坐标解析没跟着改 ⇒ 前缀键返回 null
  *       ⇒ <b>所有世界容器的 tooltip 遥测包停发</b>（功能正常、进度不滚动）。</li>
  *   <li><b>2026-10-18（专题 S3，契约 I-C5）</b>：改为返回<b>位置</b>而不是 {@code Container}
  *       实例，并且<b>不再要求 {@code be instanceof Container}</b> —— 非 {@code Container} 的
- *       模组容器也必须能匹配 viewer。真机表现：「精妙背包里的活熔炉 tooltip 没有进度信息」。</li>
+ *       容器也必须能匹配 viewer。真机表现：「第三方容器里的活熔炉 tooltip 没有进度信息」。</li>
  * </ol>
  *
  * <p>本测试直接驱动拆出的静态方法，避免拉起 {@code ServerLifecycleHooks}。</p>
@@ -59,7 +59,7 @@ class LivingItemRuntimeContainerPositionsTest {
     @DisplayName("非 Container 方块实体 → 返回位置（I-C5：不再返回空集合，否则 viewer 永远匹配不上）")
     void nonContainerBlockEntityReturnsPosition() {
         Level level = singleBeLevel();
-        // 纯 BlockEntity 替身，未实现 Container（正是精妙背包方块 / ProjectE 炼金箱的情形）
+        // 纯 BlockEntity 替身，未实现 Container（正是这类第三方方块实体的情形）
         BlockEntity be = Mockito.mock(BlockEntity.class);
         Mockito.when(level.getBlockEntity(POS)).thenReturn(be);
 

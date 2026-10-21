@@ -16,7 +16,7 @@ import com.qiqi.li.living.domain.chest.LivingChestFunction;
  * <p>⚠️ <b>为什么必须实现 {@link IItemHandlerModifiable}</b>
  * （2026-10-18，契约 I-C3）：本类的 {@link #insertItem(int, ItemStack, boolean)} 真实写入走
  * {@link LivingChestFunction#insertItem} —— 那是<b>整库插入</b>，<b>忽略 slot 参数</b>
- * （与精妙背包同语义）。若 {@code setItem} 用它写回，活箱子里的活物品就会「改槽 17」变成
+ * （与其它容器同语义）。若 {@code setItem} 用它写回，活箱子里的活物品就会「改槽 17」变成
  * 「搬到编号最低的空槽」。提供 {@link #setStackInSlot} 后写回走精确槽位，插入语义不受影响。</p>
  */
 public class LivingChestItemHandler implements IItemHandlerModifiable {

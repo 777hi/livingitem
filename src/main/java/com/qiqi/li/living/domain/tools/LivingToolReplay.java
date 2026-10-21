@@ -308,7 +308,7 @@ public final class LivingToolReplay {
             }
         } else {
             // ── 分支 B：右键【空气 / 物品】（原版 ServerPlayerGameMode#useItem）──
-            // ⭐ 铁魔法等模组的法杖挂在这一层（PlayerInteractEvent.RightClickItem）。
+            // ⭐ 其它模组的法杖类效果多挂在这一层（PlayerInteractEvent.RightClickItem）。
             //    原版流程：先 post 事件，未取消再 stack.use(...) —— 两步都补上（2026-09-22）。
             //    ⚠️ 这两个事件【互相独立】：右键方块走 A、右键空气走 B，原版就是这样二选一。
             InteractionResult cancelResult =

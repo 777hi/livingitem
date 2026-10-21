@@ -20,7 +20,7 @@ public interface SlotInfoProvider extends LivingContainer {
     /**
      * 获取指定槽位的最大堆叠上限。
      *
-     * <p>对于 IItemHandler 容器（抽屉、精妙背包等），返回 handler.getSlotLimit(slot)，
+     * <p>对于 IItemHandler 容器（抽屉一类的第三方容器），返回 handler.getSlotLimit(slot)，
      * 可能远超 64；对于传统 Container，回退到 {@link #getMaxStackSize()}。</p>
      *
      * @param slot 槽位索引

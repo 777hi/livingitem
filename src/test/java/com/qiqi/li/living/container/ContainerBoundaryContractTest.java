@@ -17,7 +17,7 @@ import net.neoforged.neoforge.items.IItemHandlerModifiable;
  *
  * <h3>为什么需要这两个替身</h3>
  * <p>本模组假设「槽位是精确地址」，而 {@code IItemHandler} 契约只承诺「物品被接受」。
- * 真实存在的第三方容器（精妙背包 SophisticatedCore）就是按后一种语义实现的：</p>
+ * 真实存在的第三方容器就是按后一种语义实现的：</p>
  * <ul>
  *   <li>{@link SlotIgnoringHandler} —— {@code insertItem(slot, …)} 在 {@code simulate=false} 时
  *       <b>丢弃 slot</b>，改走整库插入（同款部分满槽 → 编号最低的空槽）。
@@ -100,7 +100,7 @@ class ContainerBoundaryContractTest {
             return stack;
         }
 
-        /** 整库插入：先塞同款部分满槽，再塞编号最低的空槽 —— 与精妙背包同语义。 */
+        /** 整库插入：先塞同款部分满槽，再塞编号最低的空槽 —— 与其它容器同语义。 */
         private ItemStack insertIntoAnySlot(ItemStack stack) {
             ItemStack remaining = stack;
             for (int i = 0; i < slots.length && !remaining.isEmpty(); i++) {

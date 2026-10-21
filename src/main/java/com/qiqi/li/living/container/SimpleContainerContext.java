@@ -241,7 +241,7 @@ public class SimpleContainerContext implements TickableContainerContext {
             net.minecraft.resources.ResourceLocation id =
                 net.minecraft.core.registries.BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(be.getType());
             if (id != null) {
-                // ⚠️ 必须带容量：同一 BE 类型可有多档容量且列数不同（精妙背包 108/120 是 12 列，
+                // ⚠️ 必须带容量：同一 BE 类型可有多档容量且列数不同（某容器 108/120 是 12 列，
                 // 其余档位 9 列）。用单参数 findRule 会拿到别的档位 ⇒ 列数错 ⇒ 熔炉燃料槽读错。
                 // 只认精确 id + 容量：原先还有一层「namespace + 分词模糊匹配」的兜底，已按
                 // D-container-09 删除（它在猜「这条规则大概适用于这个 BE」，且多档时只取第一档）。
@@ -286,8 +286,8 @@ public class SimpleContainerContext implements TickableContainerContext {
     /**
      * 按<b>槽位上限</b>截断超量写入，并告警（I-C6：降级必须可观测）。
      *
-     * <p>⚠️ <b>不能用 {@code stack.getMaxStackSize()} 当上限</b>：超大堆叠容器（精妙背包的
-     * 堆叠升级、抽屉）一个槽合法地放几百个，而物品自身的 {@code getMaxStackSize()} 仍是 64
+     * <p>⚠️ <b>不能用 {@code stack.getMaxStackSize()} 当上限</b>：超大堆叠容器（堆叠升级、抽屉）
+     * 一个槽合法地放几百个，而物品自身的 {@code getMaxStackSize()} 仍是 64
      * ⇒ 按物品上限截断会把超大堆叠砍回 64。槽位上限才是权威。</p>
      *
      * <p>截断而不是拒写：写入超量会让容器进入非法状态（GUI / 漏斗 / 比较器都假定
@@ -626,7 +626,7 @@ public class SimpleContainerContext implements TickableContainerContext {
      *
      * <p>⚠️ <b>2026-10-18（专题 S3）改口径：按<b>位置</b>匹配 viewer，不再要求
      * {@code be instanceof Container}</b>。旧实现要求 BE 是原版 {@code Container} 才收集
-     * 「我的容器实例集合」，否则<b>直接 return</b> ⇒ 精妙背包方块里的活熔炉图标
+     * 「我的容器实例集合」，否则<b>直接 return</b> ⇒ 那类容器方块里的活熔炉图标
      * （{@code furnace_active} 布尔组件）永远不刷新，必须关掉 GUI 再打开才更新。</p>
      *
      * <p>位置解析见 {@link MenuSlotOwners}：原版 BE / 大箱子反射 / 模组菜单的
@@ -647,7 +647,7 @@ public class SimpleContainerContext implements TickableContainerContext {
             AbstractContainerMenu menu = serverPlayer.containerMenu;
             if (menu == serverPlayer.inventoryMenu) continue;
 
-            // 快路径：整个菜单就是这一个方块（精妙背包等）⇒ 不必逐槽解析
+            // 快路径：整个菜单就是这一个方块 ⇒ 不必逐槽解析
             BlockPos menuPos = MenuSlotOwners.menuPosition(menu);
             boolean wholeMenuIsMine = menuPos != null && myPositions.contains(menuPos);
 

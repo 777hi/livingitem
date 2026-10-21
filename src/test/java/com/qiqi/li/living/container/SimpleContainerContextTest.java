@@ -317,7 +317,7 @@ class SimpleContainerContextTest {
             var handler = new FakeHandler(27);
             var ctx = new SimpleContainerContext(handler);
             ctx.setItem(0, new ItemStack(Items.REDSTONE, 100));
-            // ⚠️ 判据是**槽位上限**，不是物品的 getMaxStackSize —— 超大堆叠容器（精妙背包
+            // ⚠️ 判据是**槽位上限**，不是物品的 getMaxStackSize —— 超大堆叠容器（堆叠升级类
             // 堆叠升级、抽屉）一个槽可合法放几百个，按物品上限截断会把它们砍回 64。
             assertEquals(64, handler.getStackInSlot(0).getCount());
         }

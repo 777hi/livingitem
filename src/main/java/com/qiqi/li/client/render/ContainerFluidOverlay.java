@@ -29,20 +29,20 @@ import com.qiqi.li.living.domain.water.FluidFlowClientCache;
  *
  * <h3>为什么不挂在 {@code render} TAIL 的 Mixin 上</h3>
  * <p>原先挂在 {@link AbstractContainerScreen#render} 的 TAIL：对原版界面没问题，
- * 但 **精妙背包完全不渲染活流体**。根因：它的 {@code StorageScreenBase.render} 把自己
+ * 但某些第三方容器界面完全不渲染活流体。根因：它的 {@code render} 把自己
  * <b>抄了一份 {@code super.render}（{@code renderSuper}）而不调用父实现</b>
  * ⇒ 我们注入在父类 {@code render} 里的字节码永远不执行。</p>
  *
  * <p>形似的问题不止流体：任何「只在 {@code AbstractContainerScreen.render} 里做事」的 Mixin
  * 对这类模组界面都是死的。tooltip 之所以没事，是因为它挂在 {@code renderTooltip}
- * ——精妙的 {@code render} 确实会调 {@code renderTooltip}。</p>
+ * —— 那些界面确实会调 {@code renderTooltip}。</p>
  *
  * <h3>现在的挂点：{@code ContainerScreenEvent.Render.Foreground}</h3>
- * <p>NeoForge 的容器界面渲染事件，原版与精妙（它照抄了这段）<b>都会发</b> ⇒ 一个挂点两边通吃，
+ * <p>NeoForge 的容器界面渲染事件，原版与这类第三方界面 <b>都会发</b> ⇒ 一个挂点两边通吃，
  * 也不再需要「为每个模组补一个 Mixin」。</p>
  *
  * <p>⚠️ **坐标**：该事件在<span>已按 (leftPos, topPos) 平移</span>的位姿里触发
- * （原版与精妙皆然）⇒ 这里<b>先把位姿重置为 identity</b>，再按
+ * （两类界面皆然）⇒ 这里<b>先把位姿重置为 identity</b>，再按
  * {@code leftPos + slot.x} / {@code topPos + slot.y} 画，与原先 render TAIL 的坐标空间完全一致。
  * 不这么做会多乘一次 leftPos/topPos。</p>
  */

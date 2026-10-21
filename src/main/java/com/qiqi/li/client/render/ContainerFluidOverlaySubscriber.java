@@ -11,10 +11,10 @@ import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
  *
  * <h3>为什么用事件而不是 {@code render} 的 Mixin</h3>
  * <p>原先挂在 {@link AbstractContainerScreen#render} TAIL。对原版没问题，
- * 精妙背包的 {@code StorageScreenBase.render} <b>抄了一份 {@code super.render}
- * 而不调用父实现</b> ⇒ 父类里的注入字节码永远不执行 ⇒ 背包 GUI 死活不渲染活流体。</p>
+ * 但某些第三方容器界面 <b>抄了一份 {@code super.render} 而不调用父实现</b>
+ * ⇒ 父类里的注入字节码永远不执行 ⇒ 那类 GUI 死活不渲染活流体。</p>
  *
- * <p>{@code Render.Foreground} 原版会发、精妙照抄的那段也会发 ⇒ 一个挂点通吃，
+ * <p>{@code Render.Foreground} 原版会发、照抄那段也会发 ⇒ 一个挂点通吃，
  * 不必给每个模组补 Mixin。实现见 {@link ContainerFluidOverlay}。</p>
  */
 @EventBusSubscriber

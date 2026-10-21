@@ -195,7 +195,7 @@ public final class LivingToolModelRenderer {
      *
      * <p>⚠️ 2026-09-24 结论（实测三轮）：本旧方案（配合 FIXED 自带的 Y180）对
      * 原版工具 / 守约定的模组<b>正确</b>；两次重构（「手持 transform + 运行时 rotationTo」）
-     * 都让原版物品平躺 —— 根因未查明（怀疑 sodium/iris 等渲染管线介入导致实际应用链
+     * 都让原版物品平躺 —— 根因未查明（怀疑其它渲染管线介入导致实际应用链
      * 与源码阅读不一致）⇒ <b>路线 B（普通模型物品）回退本方案</b>。</p>
      *
      * <p>不守约定的物品（BEWLR，如灾变）走路线 A（fixed 姿态 + thirdperson/fixed 缩放比），

@@ -77,8 +77,8 @@ public final class LivingItemRuntimeSync {
             if (kind != null && kind.isOwnedByPlayer()) {
                 sendToOwner(players, containerKey, packet, kind);
             } else {
-                // ⚠️ 按**位置**匹配 viewer（I-C5）：非原版 Container 的模组容器
-                // （精妙背包方块等）也能匹配上，否则这条轨对它们永远不发包
+                // ⚠️ 按**位置**匹配 viewer（I-C5）：非原版 Container 的第三方方块实体
+                // 也能匹配上，否则这条轨对它们永远不发包
                 // ⇒ 真机表现「tooltip 没有进度信息」。
                 Collection<net.minecraft.core.BlockPos> positions = containerLookup.apply(containerKey);
                 if (positions == null || positions.isEmpty()) continue;

@@ -221,7 +221,7 @@ public final class FluidFlowServerSync {
         }
 
         // BE 容器：按**位置**匹配 viewer（I-C5）—— 不再要求 BE 是原版 Container，
-        // 否则精妙背包这类模组容器永远匹配不上 ⇒ 背包 GUI 里看不到水
+        // 否则这类第三方容器永远匹配不上 ⇒ 其 GUI 里看不到水
         List<BlockPos> positions = ctx.getAssociatedBlockPositions();
         if (positions.isEmpty()) return out;
 

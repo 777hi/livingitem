@@ -28,8 +28,8 @@ import com.qiqi.li.living.container.TickableContainerContext;
  * 容器活水源的<b>对外流体能力</b>（技术文档 §10「管道抽取」，2026-10-06 实施）。
  *
  * <p><b>方言</b>：NeoForge {@code Capabilities.FluidHandler.BLOCK}（{@link IFluidHandler}）——
- * 管道模组的通用接口：Pipez / Mekanism 直接用它；<b>Create 6 也用它</b>（内部 tank 就是 NeoForge 的
- * {@code FluidTank} 模板，管道与机械泵按 {@code FluidHandler.BLOCK} 拉取邻居）⇒ <b>无需兼容代码</b>。</p>
+ * 管道模组的通用接口（各家管道模组都用它）；内部按 {@code FluidTank} 模板实现，
+ * 管道与机械泵按 {@code FluidHandler.BLOCK} 拉取邻居 ⇒ <b>无需兼容代码</b>。</p>
  *
  * <h3>语义（逐条对应 §10 定案）</h3>
  * <ul>

@@ -36,7 +36,7 @@ import com.qiqi.li.living.transfer.ContainerCompatibilityConfig;
  * <p>真机：「背包里的活流体，在背包变成物体形态后就没有了」。</p>
  *
  * <p>容器级流体数据挂在 <b>BE 附件</b> {@link WaterComponents#CONTAINER_FLUID_DATA} 上；
- * 破坏方块时 BE 被移除 ⇒ 附件随之消失。而精妙背包 / 原版潜影盒的<b>物品内容</b>存在别处
+ * 破坏方块时 BE 被移除 ⇒ 附件随之消失。而某些容器（潜影盒等）的<b>物品内容</b>存在别处
  * （按 contents UUID / {@code minecraft:container}）⇒ 内容保留、流体丢失。</p>
  *
  * <h3>为什么不物品化</h3>
@@ -84,7 +84,7 @@ public final class ContainerDataMigration {
         // 半保留状态比丢水更让人困惑。让流体和内容一起消失，语义才一致。
         //
         // 谁保留内容由规则数据声明（container_rules.json 的 contentRetaining），
-        // 因为没有任何通用 API 能回答这个问题（潜影盒 / 精妙 / 无尽箱子各走各的组件）。
+        // 因为没有任何通用 API 能回答这个问题（各容器各走各的组件）。
         ResourceLocation id = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(be.getType());
         if (id == null || !ContainerCompatibilityConfig.retainsContentsOnBreak(id)) {
             return;

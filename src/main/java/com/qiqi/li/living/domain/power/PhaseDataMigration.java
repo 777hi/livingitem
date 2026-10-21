@@ -23,7 +23,7 @@ import com.qiqi.li.living.transfer.ContainerCompatibilityConfig;
  * 账本一死所有振荡器<b>从零重锁</b> ⇒ 多路之间的相对相位被「重载时刻」洗牌，
  * 玩家调好的满相布局（n = P）失效。BE 附件 {@link PowerComponents#CONTAINER_PHASE_SNAPSHOT}
  * 本来就解决「退出重进」这一种死法，但破坏方块时 BE 被移除 ⇒ 附件随之消失，
- * 而精妙背包 / 潜影盒的物品内容存在别处 ⇒ 内容保留、相位丢失。</p>
+ * 而某些容器（潜影盒等）的物品内容存在别处 ⇒ 内容保留、相位丢失。</p>
  *
  * <h3>与流体迁移的关系</h3>
  * <p>同一个病、同两个挂点、同一条 {@code contentRetaining} 判据 —— 但<b>搬法相反</b>：

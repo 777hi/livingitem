@@ -83,8 +83,8 @@ public final class ContainerRuleConfig {
      *
      * <p>⚠️ <b>值是 List 而不是单条</b>（2026-10-19，口径与
      * {@link ContainerCompatibilityConfig} 的注册表对齐）：同一个方块实体类型可以有
-     * <b>多档容量且列数不同</b>。典型是精妙背包 —— 六个方块共用一个 BE 类型
-     * {@code sophisticatedbackpacks:backpack}，27/45/54/81 是 9 列，108/120 是 12 列。</p>
+     * <b>多档容量且列数不同</b>。同一 id 可以有多档，每档各有自己的列数（例：某容器 27/45/54/81
+     * 是 9 列，108/120 是 12 列）。</p>
      *
      * <p>旧实现 {@code Map<id, rule>} 下，玩家用指令校准第二个容量档会<b>覆盖</b>第一个，
      * 且要到重启加载才暴露（内置规则从 JSON 逐条读所以不受影响 —— 只有玩家差异这一路曾是单键）。</p>
@@ -354,7 +354,7 @@ public final class ContainerRuleConfig {
 
             // 已存在（同 ID **同容量**）则不覆盖；BUNDLED_IDS 始终登记，
             // 这样该 ID 的来源判定不会因玩家覆盖而漂移。
-            // ⚠️ 必须带容量：同一 BE 类型可有多档容量（精妙背包 27/45/54/81/108/120），
+            // ⚠️ 必须带容量：同一 BE 类型可有多档容量（27/45/54/81/108/120），
             // 只按 ID 去重会把后 5 档全部丢掉。
             BUNDLED_IDS.add(id);
             var existing = ContainerCompatibilityConfig.findRule(id, entry.containerSize);

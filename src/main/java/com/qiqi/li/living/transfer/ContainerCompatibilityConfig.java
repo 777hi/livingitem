@@ -44,8 +44,8 @@ public final class ContainerCompatibilityConfig {
      * 容器规则注册表（容器 ID → 该 ID 的**全部容量档位**）。
      *
      * <p>⚠️ 为什么是 {@code List} 而不是单条（2026-10-18，专题 S4）：同一个方块实体类型
-     * 可以有多档容量，而<b>列数不同</b>。精妙背包就是典型：皮革 27 / 铜 45 / 铁 54 / 金 81
-     * 都是 9 列，但钻石 108 / 下界合金 120 是 <b>12 列</b>。旧实现 {@code Map<id, rule>}
+     * 可以有多档容量，而<b>列数不同</b>。典型如：27 / 45 / 54 / 81
+     * 都是 9 列，但 108 / 120 是 <b>12 列</b>。旧实现 {@code Map<id, rule>}
      * 一个 id 只能存一条 ⇒ 注册了 108 就把 120 挤掉，反之亦然。</p>
      *
      * <p>列数算错的后果不是「显示难看」而是<b>功能失效</b>：活熔炉的燃料槽在
@@ -61,7 +61,7 @@ public final class ContainerCompatibilityConfig {
      *
      * <p>只对它们做「流体数据跟着掉落物走」的迁移。理由是<b>语义一致</b>：</p>
      * <ul>
-     *   <li><b>在集合里</b>（潜影盒 / 精妙背包 / 无尽箱子）：撸掉后内容还在物品里 ⇒
+     *   <li><b>在集合里</b>（潜影盒等）：撸掉后内容还在物品里 ⇒
      *       流体跟着走，重新放置后「内容 + 水」都还在；</li>
      *   <li><b>不在集合里</b>（原版箱子 / 铁箱子 / 炼金箱子…）：撸掉后内容本来就消失了 ⇒
      *       流体也跟着方块一起消失。<b>否则会得到「空箱子但有水」这种半保留状态</b>——
@@ -69,8 +69,8 @@ public final class ContainerCompatibilityConfig {
      * </ul>
      *
      * <p>⚠️ 为什么是<b>显式数据</b>而不是自动判断：没有任何通用 API 能回答「这个容器的内容
-     * 会不会跟着掉落物走」——潜影盒用 {@code minecraft:container} 组件、精妙用 SavedData
-     * 按 contents UUID、无尽箱子用 {@code CLUSTER_CONTAINER} 隐式组件，各走各的路。
+     * 会不会跟着掉落物走」——潜影盒用 {@code minecraft:container} 组件、有的用 SavedData
+     * 按 contents UUID、有的用 {@code CLUSTER_CONTAINER} 隐式组件，各走各的路。
      * 自动判断只能逐个认组件，那就是 `D-container-09` 禁止的「猜第三方形状」。
      * ⇒ 做成规则数据的一部分，由内置资源或玩家声明。</p>
      */
@@ -256,7 +256,7 @@ public final class ContainerCompatibilityConfig {
      * <ul>
      *   <li><b>它在猜</b>——「这条规则大概适用于这个 BE」不是数据，是推测。与
      *       {@code D-container-09}「核心不做第三方形状猜测」同源冲突；</li>
-     *   <li><b>多档时只取第一档</b>：同 id 有六档（精妙背包）时，模糊命中永远拿到第一档，
+     *   <li><b>多档时只取第一档</b>：同 id 有六档时，模糊命中永远拿到第一档，
      *       容量校验一挡就返回空 ⇒ 行为取决于「哪档先注册」，不确定；</li>
      *   <li><b>不可观测</b>：现有 27 条规则全是精确 id，删掉后所有已知容器的列数不变
      *       （未注册类型走 Tier 2 原版类型表 / Tier 3 启发式，语义明确）。</li>

@@ -35,8 +35,7 @@ import net.neoforged.neoforge.common.util.FakePlayer;
  *
  * <p>关键技巧 —— <b>过领地 / 保护插件</b>：
  * 覆写 {@code GameProfile#getId()} 与 {@code getUUID()} 返回<b>主人</b>的真实 UUID，
- * 保护插件按 UUID 判权限时会把它认成那个玩家（Create {@code DeployerGameProfile}、
- * Mekanism 同款做法）。</p>
+ * 保护插件按 UUID 判权限时会把它认成那个玩家（其它模组的假玩家实现同款做法）。</p>
  *
  * <p>⚠️ 继承 NeoForge 的 {@link FakePlayer}，它已阉割掉一批玩家能力（{@code L25 详解}）：
  * {@code tick()} 空实现、无敌、不收发网络包、不计统计进度、{@code isFakePlayer()==true}。
@@ -248,7 +247,7 @@ public class LivingToolFakePlayer extends FakePlayer {
      * 权限判定走这个，必须返回主人 UUID。
      *
      * <p>注意 {@code super.getUUID()}（实体 UUID）与 GameProfile 的 id 不是一回事，
-     * 所以这里必须显式覆写 —— Create 的 {@code DeployerFakePlayer} 同样如此。</p>
+     * 所以这里必须显式覆写 —— 其它模组的假玩家实现同样如此。</p>
      */
     @Override
     public UUID getUUID() {
@@ -367,7 +366,7 @@ public class LivingToolFakePlayer extends FakePlayer {
         }
 
         // GameProfile 的 equals/hashCode 基于 id+name，getId/getName 被覆写后必须同步覆写，
-        // 否则缓存 / 集合行为会不一致（Create 同样处理）。
+        // 否则缓存 / 集合行为会不一致（其它假玩家实现同样处理）。
         @Override
         public boolean equals(Object obj) {
             if (this == obj) {

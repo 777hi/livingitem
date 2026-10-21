@@ -15,7 +15,7 @@ import net.neoforged.neoforge.items.ItemHandlerHelper;
  *
  * <p>提取/插入后，{@link #sync()} 会调用邻居方块实体的 {@code setChanged()}，
  * 遵循 NeoForge 约定：修改 IItemHandler 后必须通知所属 BlockEntity，
- * 确保方块实体状态一致（如 Create 机械冲压机的工作槽位被清空后，
+ * 确保方块实体状态一致（如某模组机器的工作槽位被清空后，
  * 冲压机能感知到变化并正确同步给客户端）。</p>
  */
 public class NeighborSlotAccessor implements SlotAccessor {

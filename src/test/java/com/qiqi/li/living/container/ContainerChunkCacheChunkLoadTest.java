@@ -33,7 +33,7 @@ import net.neoforged.neoforge.items.IItemHandler;
  * （{@code ChunkStatusTasks.full()} → {@code EVENT_BUS.post(...)}）。在这个回调里做世界交互
  * （尤其是能力查询）会执行第三方能力提供者，其中有些会去查别的区块的方块实体 →
  * 触发同步区块加载 → {@code managedBlock} + {@code join} 等一个只能由主线程自己推进的
- * chunk future ⇒ 服务端线程自等自冻结。实测触发者：Create 6.0.10 的 {@code BeltBlockEntity}
+ * chunk future ⇒ 服务端线程自等自冻结。实测触发者：某模组的 {@code BeltBlockEntity}
  * （跨区块传送带必卡，同区块不卡 —— 原版 {@code ChunkHolder.currentlyLoading} 旁路只覆盖
  * "正在加载的那个区块本身"）。</p>
  *

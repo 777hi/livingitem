@@ -136,7 +136,7 @@ public class ContainerRuntimeCache {
      * 按<b>位置</b>找 viewer —— 契约 I-C5 的正解（2026-10-18，专题 S3）。
      *
      * <p>与 {@link #findViewers} 的区别：后者要求菜单槽的 {@code slot.container} 等于某个原版
-     * {@code Container} 实例，对精妙背包这类「有物品能力但不是 {@code Container}」的方块实体
+     * {@code Container} 实例，对「有物品能力但不是 {@code Container}」的第三方方块实体
      * 永远返回空 ⇒ 运行时 tooltip 遥测静默不发（真机表现：「tooltip 没有进度信息」）。</p>
      */
     public static List<net.minecraft.server.level.ServerPlayer> findViewersByPositions(

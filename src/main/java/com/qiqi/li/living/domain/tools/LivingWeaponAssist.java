@@ -32,7 +32,7 @@ import net.neoforged.neoforge.event.entity.living.LivingKnockBackEvent;
  *   LivingIncomingDamageEvent → container.setPostAttackInvulnerabilityTicks(0)
  * </pre>
  *
- * <p>⭐ <b>这是官方入口</b>（铁魔法 {@code DamageSources#preHitEffects} 同款），
+ * <p>⭐ <b>这是官方入口</b>（与其它模组的同类实现同款），
  * 不是改 {@code invulnerableTime} 字段 —— 见 {@code docs/tech/living-tool-tech.md} §13。</p>
  *
  * <h3>⚠️ 为什么只影响辅助攻击</h3>
@@ -145,7 +145,7 @@ public final class LivingWeaponAssist {
     /**
      * 仅辅助攻击期间：把无敌间隔压到 0 ⇒ **每一把的伤害与附魔都生效**。
      *
-     * <p>⭐ 官方入口，与铁魔法 {@code DamageSources#preHitEffects} 同款。</p>
+     * <p>⭐ 官方入口，与其它模组的同类实现同款。</p>
      */
     @SubscribeEvent
     public static void onIncomingDamage(LivingIncomingDamageEvent event) {
@@ -159,7 +159,7 @@ public final class LivingWeaponAssist {
      * 仅辅助攻击期间：取消击退。
      *
      * <p>⚠️ 否则 N 把武器各推一次 ⇒ <b>怪会被崩飞</b>，不像"围殴"。
-     * （铁魔法用 {@code LivingKnockBackEvent} 做同样的事。）</p>
+     * （其它模组用自有的击退事件做同样的事。）</p>
      */
     @SubscribeEvent
     public static void onKnockback(LivingKnockBackEvent event) {

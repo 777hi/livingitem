@@ -53,8 +53,7 @@ public class LivingItemContainerCommand {
      * <p>⚠️ 不能用 {@code be instanceof Container} 判定：tick 路径
      * （{@code ContainerChunkCache} / {@code processContainerAt}）认的是<b>能力面</b>，
      * 而原版 {@link Container} 只是其中一种实现。2026-10-18 前本指令用 {@code Container}
-     * 判定 ⇒ 对「有物品能力但不是 Container」的模组容器（精妙背包方块
-     * {@code BackpackBlockEntity}、ProjectE 炼金箱等）直接报
+     * 判定 ⇒ 对「有物品能力但不是 Container」的第三方方块实体直接报
      * {@code not_looking_at_container}，<b>玩家无法自助校准列数</b> ——
      * 而这类容器恰恰是最需要校准的（启发式推断会算错 108/120 格背包的列数）。</p>
      *

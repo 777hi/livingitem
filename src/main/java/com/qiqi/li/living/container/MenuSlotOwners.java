@@ -30,7 +30,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
  *
  * <h3>⚠️ 核心不做第三方 API 猜测（2026-10-19，`D-container-09`）</h3>
  * <p>本类<b>只提供机制</b>：结构化解析 + 注册口。<b>不内置任何「反射第三方方法名」的兜底</b> ——
- * 那等于把核心绑在某个模组的 API 形状上（曾为精妙背包内置过 {@code getBlockPosition} 反射，已删除）。</p>
+ * 那等于把核心绑在某个模组的 API 形状上（曾为某个第三方容器内置过 {@code getBlockPosition} 反射，已删除）。</p>
  *
  * <p>难兼容的模组走<b>联动模块</b>（{@code living/compat/<mod>/}），由模块自己
  * {@link #registerMenuResolver 注册}，并受 {@code ModList.isLoaded} 门控 —— 与 Create / Sable
