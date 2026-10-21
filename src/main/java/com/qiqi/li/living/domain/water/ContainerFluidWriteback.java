@@ -11,8 +11,11 @@ import com.qiqi.li.living.container.SimpleContainerContext;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.container.TickableContainerContext;
 
+import net.neoforged.neoforge.attachment.IAttachmentHolder;
+
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.level.block.entity.BlockEntity;
+
+import java.util.List;
 
 /**
  * 流体数据的写回钩子（水领域）—— 见 {@link ContainerTickHook}。
@@ -41,9 +44,12 @@ public final class ContainerFluidWriteback implements ContainerTickHook {
         ContainerFluidData fluidData = tick.data(ContainerFluidData.KEY);
         if (fluidData == null) return;
 
+        // 持久宿主（BE / 实体，2026-10-21 实体容器接入后统一）：大箱子两半、船/矿车/驴各自动。
+        // 领域侧不再 instanceof 具体 ctx —— 只遍历 getDataHosts()。
+        List<? extends IAttachmentHolder> hosts = ctx.getDataHosts();
         if (!fluidData.isEmpty()) {
-            for (BlockEntity be : ctx.getAssociatedBlockEntities()) {
-                be.setData(WaterComponents.CONTAINER_FLUID_DATA.value(), fluidData);
+            for (var host : hosts) {
+                host.setData(WaterComponents.CONTAINER_FLUID_DATA.value(), fluidData);
             }
         }
 
@@ -72,8 +78,8 @@ public final class ContainerFluidWriteback implements ContainerTickHook {
             // 非空期间最后一次写回会把源留在附件里 ⇒ 不清则重进存档从附件回填复活
             // （汲走的源跨存档残留，2026-10-04 游戏实测）。EMPTY 序列化为空表，
             // 加载端 !isEmpty() 守卫会跳过 ⇒ 不会复活。
-            for (BlockEntity be : ctx.getAssociatedBlockEntities()) {
-                be.setData(WaterComponents.CONTAINER_FLUID_DATA.value(), ContainerFluidData.EMPTY);
+            for (var host : hosts) {
+                host.setData(WaterComponents.CONTAINER_FLUID_DATA.value(), ContainerFluidData.EMPTY);
             }
             ContainerLivingItemHandler.removeContainerData(ctx, ContainerFluidData.KEY);
         }

@@ -195,10 +195,17 @@
 
    </details>
 
-4.1 🔴 **实体容器从未进门**（2026-10-21 立，设计稿见上）—— 箱子船 / 箱子矿车 /
-   漏斗矿车 / 驴骡带箱四类都有 `ItemHandler.ENTITY`，但扫描器只查 BE ⇒ 完全不 tick。
-   设计要点与踩坑判据（**NeoForge fallback 给所有 `LivingEntity` 注册能力 ⇒ 必须实体类型白名单**）
-   见设计稿 §1.4 / §2.2。
+4.1 ✅ **实体容器已入门**（2026-10-21 落地，设计稿见上）—— 箱子船 / 箱子矿车 /
+   漏斗矿车 / 带箱驴骡现在都 tick：键 `entity_<uuid>`（每 tick 从 `ServerLevel#getEntity`
+   反查**实时**位置 ⇒ GUI 开着船在漂也刷新）、容器级数据（流体/相位）挂实体附件
+   （NeoForge 附件持久化 ⇒ 区块卸载再回来数据还在）、白名单
+   `ContainerEntity` + `AbstractChestedHorse#hasChest()`。
+   ⚠️ **不走位置广播**：活信标光束在实体容器里本就不开光（`LidBlockEntity` 判据，
+   三实现全是 BE）⇒ 唯一候选需求证伪，设计稿 §0.1。
+   ⚠️ **无人区块停 tick 但不丢数据**：超出 simulation distance 停（与 BE 卸载 / 掉落物 /
+   玩家下线三条既有路径一致），回来接着烧。
+   ⚠️ 待真机验：驴的菜单解析走 `HorseInventoryMenuAccessor`（Mixin accessor，
+   单测应用不了 Mixin）；「普通马不当容器」在 accessor 分支已判 hasChest。
 
 5. 🔮 **池端点（长期，未定案）** —— 给 `SlotAccessor` 加「物品池」实现（按类型 extract/insert），
    让活漏斗能对 AE2 ME 接口 / RS 网络推拉。**不做**池宿主（`D-container-07` / I-C8）。

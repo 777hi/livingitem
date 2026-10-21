@@ -4,6 +4,10 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.Container;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
+import net.neoforged.neoforge.attachment.IAttachmentHolder;
+
+import javax.annotation.Nullable;
+import java.util.List;
 
 /**
  * 容器上下文 —— 活物品功能与容器之间的完整交互接口。
@@ -62,6 +66,27 @@ public interface ContainerContext extends SlotInfoProvider, ContainerSync, Conta
      */
     default Player getOwnerPlayer() {
         return null;
+    }
+
+    /**
+     * 容器级持久数据的**持久宿主**列表（{@code IAttachmentHolder}：方块实体或实体）。
+     *
+     * <p>2026-10-21 实体容器（船/矿车/带箱驴骡）立项时加：流体 / 电力相位等容器级数据
+     * 挂在附件上，而附件宿主原来只有 BE 一种。BE 与 Entity 在 NeoForge 里
+     * <b>同为 {@code IAttachmentHolder}</b>（{@code getData}/{@code setData} 同签名）
+     * ⇒ 领域侧的 writeback 只需问本方法要宿主列表，不必 {@code instanceof} 具体 ctx 类。</p>
+     *
+     * <p><b>为什么是列表</b>：大箱子的容器级数据每 tick 写给<b>两半</b> BE
+     * （{@code ContainerFluidWriteback} 原实现逐个写）⇒ 返回列表而不是单个宿主。</p>
+     *
+     * <p>默认<b>空列表</b> = 「无持久宿主」：掉落物容器（单栈、无容器级数据）、
+     * 测试替身之类。领域侧见空即跳过落盘。</p>
+     *
+     * <p>⚠️ 与 {@link #getOwnerPlayer()} 分工：后者答「数据归谁」（Player attachment
+     * 的宿主是人），本方法答「数据存哪」（附件宿主是 BE 或实体）。</p>
+     */
+    default List<? extends IAttachmentHolder> getDataHosts() {
+        return List.of();
     }
 
     /** 方向编码：与红电 EDGE_* 一致（0=上 1=下 2=左 3=右） */

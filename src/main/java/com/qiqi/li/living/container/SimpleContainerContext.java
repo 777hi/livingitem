@@ -475,6 +475,17 @@ public class SimpleContainerContext implements TickableContainerContext {
         return inventory;
     }
 
+    /**
+     * 容器级数据的持久宿主 = 全部关联 BE（大箱子两半都写，见 {@code ContainerFluidWriteback}）。
+     *
+     * <p>实体容器覆写为实体（{@code EntityContainerContext}）⇒ 领域侧不再关心
+     * 「宿主是 BE 还是实体」，只遍历本列表。</p>
+     */
+    @Override
+    public List<net.neoforged.neoforge.attachment.IAttachmentHolder> getDataHosts() {
+        return List.copyOf(associatedBlockEntities);
+    }
+
     @Override
     public List<BlockEntity> getAssociatedBlockEntities() {
         return associatedBlockEntities;
@@ -622,14 +633,12 @@ public class SimpleContainerContext implements TickableContainerContext {
      * {@code getBlockPosition()}。契约 I-C5。</p>
      */
     private void syncWorldContainer(int logicalSlot, ItemStack stack) {
-        Level level = null;
-        for (BlockEntity be : associatedBlockEntities) {
-            if (be.getLevel() != null) {
-                level = be.getLevel();
-                break;
-            }
-        }
-        if (level == null || level.isClientSide) return;
+        // ⚠️ 2026-10-21 实体容器接入：原来的「从 associatedBlockEntities 取 level」对
+        // 实体容器恒为空列表 ⇒ 直接 return ⇒ 船/驴里的图标永不刷新。改用 getLevel()
+        // （overrideLevel 优先，实体容器构造时传入）—— 对 BE 容器等价（那时 overrideLevel 为 null，
+        // getLevel 自己会回落到 BE 世界）。
+        Level level = getLevel();
+        if (level == null || level.isClientSide()) return;
 
         List<BlockPos> myPositions = getAssociatedBlockPositions();
         if (myPositions.isEmpty()) return;

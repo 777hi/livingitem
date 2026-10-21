@@ -34,7 +34,16 @@ public enum ContainerKind {
     WORLD_BLOCK,
 
     /** 掉落物容器：{@code item_entity_<entityUUID>}。 */
-    ITEM_ENTITY;
+    ITEM_ENTITY,
+
+    /**
+     * 实体容器：{@code entity_<entityUUID>}（2026-10-21）。
+     *
+     * <p>覆盖箱子船 / 箱子矿车 / 漏斗矿车 / 带箱驴骡（{@code ContainerEntity} 或
+     * {@code AbstractHorse.hasChest()}）。与 {@link #ITEM_ENTITY} 的区别：它有 GUI、
+     * 需要 viewer 匹配 ⇒ 同步轨必须支持；掉落物两者都不需要。</p>
+     */
+    ENTITY;
 
     /**
      * 是否「属于某个玩家本人」⇒ 分派时<b>直发主人</b>（背包 / 末影箱）。

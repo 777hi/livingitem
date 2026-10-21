@@ -7,6 +7,8 @@ import com.qiqi.li.living.components.LivingComponents;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.RandomizableContainer;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.animal.horse.AbstractChestedHorse;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.ChunkPos;
@@ -45,6 +47,7 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.UUID;
 import java.util.Set;
 import net.minecraft.world.Container;
 import net.minecraft.core.BlockPos;
@@ -55,6 +58,8 @@ import com.qiqi.li.living.container.ContainerChunkCache;
 import com.qiqi.li.living.container.ContainerLivingItemHandler;
 import com.qiqi.li.living.runtime.ContainerRuntimeCache;
 import com.qiqi.li.living.util.StaticCacheRegistry;
+import com.qiqi.li.living.container.EntityContainerContext;
+import com.qiqi.li.living.container.MenuSlotOwners;
 import com.qiqi.li.living.container.ItemEntityContainerContext;
 import com.qiqi.li.network.LivingTagPacket;
 import com.qiqi.li.network.HopperDirectionPacket;
@@ -183,6 +188,46 @@ public class LivingItem {
                 modContainer.getModInfo().getVersion(), commit, time);
     }
 
+    /**
+     * 驴/骡菜单 → 实体的解析器（2026-10-21 实体容器，入口层反射）。
+     *
+     * <p>⚠️ <b>为什么反射而不是 accessor</b>：Mixin 对自己包有隔离 —— mixin 包里的
+     * accessor 接口被包外类引用（{@code new} / {@code instanceof}）会被 FML 直接拒
+     * （"cannot be referenced directly"）。而消费方（{@code EntityContainers}）在
+     * container 包、注册点在本类（root 包），都在 mixin 包外 ⇒ accessor 实际不可用。</p>
+     *
+     * <p>反射目标：{@code HorseInventoryMenu.horse}（{@code private final AbstractHorse}，
+     * 无 getter）。<b>只此一处</b>，判据先卡 {@code instanceof HorseInventoryMenu}
+     * （原版共享类：马/驴/骡都用它）——「是不是容器实体」（hasChest）由
+     * {@code EntityContainers.isContainerEntity} 在注册表调用方统一判。</p>
+     *
+     * <p>失败方向：字段被改名（原版升级）⇒ 一条 debug + 实体容器显示不刷新
+     * （tick/传输不受影响，数据在实体附件上）。不会把包发给错的人。</p>
+     */
+    private static final MenuSlotOwners.EntityResolver HORSE_MENU_RESOLVER =
+        (menu, slot) -> {
+            if (!(menu instanceof net.minecraft.world.inventory.HorseInventoryMenu)) return null;
+            try {
+                return (net.minecraft.world.entity.Entity) horseField().get(menu);
+            } catch (ReflectiveOperationException | RuntimeException e) {
+                ModLog.CONTAINER.debug(
+                    "HorseInventoryMenu.horse 反射失败（原版升级改了字段名？）：{}", e.toString());
+                return null;
+            }
+        };
+
+    private static java.lang.reflect.Field horseField() throws NoSuchFieldException {
+        if (HORSE_FIELD == null) {
+            java.lang.reflect.Field f =
+                net.minecraft.world.inventory.HorseInventoryMenu.class.getDeclaredField("horse");
+            f.setAccessible(true);
+            HORSE_FIELD = f;
+        }
+        return HORSE_FIELD;
+    }
+
+    private static java.lang.reflect.Field HORSE_FIELD;
+
     private void commonSetup(FMLCommonSetupEvent event) {
         // 初始化容器规则配置目录
         ContainerRuleConfig.init(net.neoforged.fml.loading.FMLPaths.CONFIGDIR.get());
@@ -204,6 +249,15 @@ public class LivingItem {
         ModCreate.init();
         // 联动模块（D-container-09）：难兼容的模组各自注册，核心不猜第三方 API。
         com.qiqi.li.living.compat.sophisticated.ModSophisticated.init();
+        // 实体容器（2026-10-21）：驴/骡菜单 → 实体的解析器。
+        // ⚠️ 用反射而不是 Mixin accessor —— 试过 accessor，但 Mixin 对**自己的包有隔离**：
+        // 「class is in a defined mixin package ... cannot be referenced directly」——
+        // mixin 包里的 accessor 接口被包外任何类引用（new / instanceof）都会被 FML 拒。
+        // 驴的槽位 container 是 NeoForge 的匿名 InvWrapper，只能问菜单本身
+        // （HorseInventoryMenu.horse 是 private final 无 getter）⇒ 入口层就地反射一次。
+        // 这是【原版类】反射（不是第三方 API 猜测，不触 D-container-09），项目内有先例
+        // （client/util/ClientSlotResolve 反射原版 SlotWrapper）。失败方向=显示不刷新，已兜住。
+        MenuSlotOwners.registerEntityResolver(HORSE_MENU_RESOLVER);
         com.qiqi.li.living.compat.avaritia.ModAvaritia.init();
 
         // ── 各领域自注册（A1，2026-09-27）──
@@ -274,7 +328,7 @@ public class LivingItem {
 
         for (var level : server.getAllLevels()) {
             processLevelContainers(level);
-            processItemEntityContainers(level);
+            processEntityContainers(level);
             // K2：必须在容器处理【之后】flush，才能收齐本 tick 的登记
             LivingToolHostSync.flush(level);
         // 活信标：箱子宿主开盖（20 tick 重发）+ 近处位置同步（K2 同款模式）
@@ -314,7 +368,7 @@ public class LivingItem {
     }
 
     /**
-     * 掉落物形态（{@code L-f}）—— 遍历世界中「装着活工具」的掉落物并 tick。
+     * 掉落物形态（{@code L-f}）+ 实体容器（2026-10-21 起合并）—— 一次遍历两件事。
      *
      * <p>复用现成的容器 tick 管线（{@link ItemEntityContainerContext} 把掉落物包装成<b>单栈容器</b>），
      * 因此回放逻辑与容器形态<b>完全同源</b>，没有第二套平行实现。</p>
@@ -334,14 +388,42 @@ public class LivingItem {
      * 判据取 {@link LivingToolRecorder#isLivingToolOrWeapon}（与
      * {@code LivingToolFunction#canApply} 同一来源）。</p>
      */
-    private void processItemEntityContainers(ServerLevel level) {
+    private void processEntityContainers(ServerLevel level) {
+        // ⭐ 掉落物与实体容器**合并为一次遍历**（2026-10-21）：getAllEntities() 是
+        // O(实体数) 的浅扫，跑两遍是纯浪费。白名单判据都是 instanceof 短路。
         for (var entity : level.getAllEntities()) {
             if (entity instanceof ItemEntity itemEntity
                     && LivingToolRecorder.isLivingToolOrWeapon(itemEntity.getItem())) {
                 ContainerLivingItemHandler.processContext(
                     new ItemEntityContainerContext(itemEntity, level), level);
+            } else if (isContainerEntity(entity)) {
+                ContainerLivingItemHandler.processContext(
+                    new EntityContainerContext(entity, level), level);
             }
         }
+    }
+
+    /**
+     * 实体容器白名单（2026-10-21）—— 设计稿 {@code docs/buffer/container-menu-introspection-topic.md} §2.2。
+     *
+     * <p>覆盖四类：箱子船 / 箱子矿车 / 漏斗矿车（1.21 {@code ContainerEntity} 家族，
+     * NeoForge 显式注册三者的 {@code ItemHandler.ENTITY}）与带箱驴骡
+     * （{@link AbstractHorse#hasChest()}，走 NeoForge 的 LivingEntity fallback）。</p>
+     *
+     * <p>⚠️ <b>为什么必须白名单</b>：NeoForge 的 fallback 给<b>所有</b>实体注册了
+     * {@code ItemHandler.ENTITY}（LivingEntity = 主手 + 副手 + 盔甲）⇒ 「能力面存在」
+     * ≠ 「该当容器」（I-C1 的张力）。僵尸的盔甲槽不该 tick，无箱的马（2 格 = 鞍 + 盔甲）
+     * 也不该 —— 活马铠没有意义。</p>
+     *
+     * <p>⚠️ <b>不做「船永远 tick」</b>：本方法随 {@code getAllEntities()} 只覆盖已加载实体
+     * ⇒ 超出 simulation distance 停 tick，与 BE 卸载 / 掉落物路径 / 玩家下线三条既有
+     * 路径一致。停 tick ≠ 丢数据（进度在活物品组件，流体/相位在实体附件且持久化）。</p>
+     */
+    private static boolean isContainerEntity(Entity entity) {
+        if (entity instanceof AbstractChestedHorse horse) {
+            return horse.hasChest();   // 无箱驴/骡 inventory 只有 2 格（鞍 + 体甲），不当容器
+        }
+        return entity instanceof net.minecraft.world.entity.vehicle.ContainerEntity;
     }
 
     /**
@@ -375,6 +457,20 @@ public class LivingItem {
      * {@code player_…}（背包类，{@code LivingItemRuntimeSync} 的独立分支处理，到这里返回空）。</p>
      */
     static Collection<BlockPos> runtimeContainerPositions(List<ServerLevel> levels, String containerKey) {
+        // 实体容器（2026-10-21）：entity_<uuid> ⇒ 逐维 getEntity(uuid) ⇒ 实体的**当前**位置。
+        // ⚠️ 必须是实时位置而不是解析时快照：船在 GUI 开着的时候可能正在移动，位置口径的
+        // 正确性正体现在这里（固定容器的反查是常量，实体容器不是）。
+        // ⚠️ 键不带维度前缀（UUID 全局唯一，无跨维度撞键风险）⇒ 逐维找第一个命中；
+        //    找不到 = 实体已卸载/移除 ⇒ 空集合 = 不发包（与坐标路径同款失败方向）。
+        UUID entityId = com.qiqi.li.living.container.ContainerKeys.entityOf(containerKey);
+        if (entityId != null) {
+            for (ServerLevel level : levels) {
+                Entity found = level.getEntity(entityId);
+                if (found != null) return List.of(found.blockPosition());
+            }
+            return List.of();
+        }
+
         BlockPos pos = parsePosFromContainerKey(containerKey);
         if (pos == null) return List.of();
 

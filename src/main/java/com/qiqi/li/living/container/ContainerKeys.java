@@ -25,6 +25,7 @@ import java.util.UUID;
  *   chest_x_y_z                       世界方块容器（大箱 = chest_x1_y1_z1_x2_y2_z2）
  *   container_&lt;dim&gt;_x_y_z             世界实体容器
  *   item_entity_&lt;entityUUID&gt;          掉落物容器
+ *   entity_&lt;entityUUID&gt;                实体容器（船 / 矿车 / 带箱驴骡，2026-10-21）
  * </pre>
  * <p>⚠️ 缓存键（{@link ContainerIdentity#getCacheKey()}）在世界容器键前多一段 {@code <维度>|} 前缀
  * ⇒ 本类所有入口<b>先剥前缀</b>，故<b>裸键与缓存键都能吃</b>（裸键不含 {@code |} ⇒ 原样）。</p>
@@ -40,6 +41,7 @@ public final class ContainerKeys {
     private static final String CHEST_PREFIX = "chest_";
     private static final String CONTAINER_PREFIX = "container_";
     private static final String ITEM_ENTITY_PREFIX = "item_entity_";
+    private static final String ENTITY_PREFIX = "entity_";
 
     private ContainerKeys() {}
 
@@ -63,6 +65,7 @@ public final class ContainerKeys {
             return ContainerKind.WORLD_BLOCK;
         }
         if (key.startsWith(ITEM_ENTITY_PREFIX)) return ContainerKind.ITEM_ENTITY;
+        if (key.startsWith(ENTITY_PREFIX)) return ContainerKind.ENTITY;
         return null;
     }
 
@@ -161,6 +164,27 @@ public final class ContainerKeys {
         try {
             return new BlockPos(Integer.parseInt(x), Integer.parseInt(y), Integer.parseInt(z));
         } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+    // ============================================================
+    // 实体（容器实体的 UUID）
+    // ============================================================
+
+    /**
+     * 解析实体容器的实体 UUID（{@code entity_<uuid>}）；非实体容器或形态异常返回 {@code null}。
+     *
+     * <p>第二个 UUID 解析点（第一个是 {@link #ownerOf} 玩家容器）。设计稿
+     * {@code docs/buffer/container-menu-introspection-topic.md} §2.2：实体容器键只依赖 UUID
+     * ⇒ 实体移动不漂移（位置每 tick 从 {@code ServerLevel#getEntity(UUID)} 反查）。</p>
+     */
+    public static UUID entityOf(String containerKey) {
+        if (containerKey == null) return null;
+        String key = stripDimPrefix(containerKey);
+        if (!key.startsWith(ENTITY_PREFIX)) return null;
+        try {
+            return UUID.fromString(key.substring(ENTITY_PREFIX.length()));
+        } catch (IllegalArgumentException ignored) {
             return null;
         }
     }

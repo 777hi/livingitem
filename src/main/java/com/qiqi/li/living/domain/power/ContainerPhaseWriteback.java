@@ -5,8 +5,11 @@ import com.qiqi.li.living.container.ContainerTickHook;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.container.TickableContainerContext;
 
+import net.neoforged.neoforge.attachment.IAttachmentHolder;
+
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.entity.BlockEntity;
+
+import java.util.List;
 
 /**
  * 相位快照的写回钩子（电力领域）—— 见 {@link ContainerTickHook}。
@@ -24,19 +27,19 @@ public final class ContainerPhaseWriteback implements ContainerTickHook {
     @Override
     public void onWriteback(TickableContainerContext ctx, TickContext tick) {
         ContainerPowerData powerData = tick.data(ContainerPowerData.KEY);
-        if (powerData == null || ctx.getAssociatedBlockEntities().isEmpty()) return;
+        if (powerData == null) return;
+
+        // 持久宿主（BE / 实体附件，2026-10-21 实体容器接入）—— 空 = 无宿主可写（掉落物等）即返回
+        List<? extends IAttachmentHolder> hosts = ctx.getDataHosts();
+        if (hosts.isEmpty()) return;
 
         long clock = powerData.currentTick();   // 回退轴（无 Level / 测试环境）
-        for (BlockEntity be : ctx.getAssociatedBlockEntities()) {
-            Level beLevel = be.getLevel();
-            if (beLevel != null && !beLevel.isClientSide()) {
-                clock = beLevel.getGameTime();
-                break;
-            }
-        }
+        Level ctxLevel = ctx.getLevel();
+        if (ctxLevel != null && !ctxLevel.isClientSide()) clock = ctxLevel.getGameTime();
+
         PhaseSnapshot snapshot = PhaseSnapshot.capture(powerData, clock);
-        for (BlockEntity be : ctx.getAssociatedBlockEntities()) {
-            be.setData(PowerComponents.CONTAINER_PHASE_SNAPSHOT.value(), snapshot);
+        for (var host : hosts) {
+            host.setData(PowerComponents.CONTAINER_PHASE_SNAPSHOT.value(), snapshot);
         }
     }
 }

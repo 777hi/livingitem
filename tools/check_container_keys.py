@@ -41,7 +41,7 @@ PREFIX_ALLOW = {
 }
 
 UUID_RE = re.compile(r"UUID\.fromString\s*\(")
-PREFIX_RE = re.compile(r'startsWith\s*\(\s*"(?:player_|chest_|container_|item_entity_)')
+PREFIX_RE = re.compile(r'startsWith\s*\(\s*"(?:player_|chest_|container_|item_entity_|entity_)')
 
 
 def is_comment(line: str) -> bool:

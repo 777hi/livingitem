@@ -14,6 +14,7 @@ import com.qiqi.li.logging.ModLog;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.CompoundContainer;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.Container;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
@@ -67,11 +68,64 @@ public final class MenuSlotOwners {
         BlockPos resolve(AbstractContainerMenu menu);
     }
 
+    /**
+     * 实体容器解析器（2026-10-21）—— 「这份菜单属于哪个实体」的注册口。
+     *
+     * <p>核心（L1）不 import 任何 mixin 类 —— 方向由实现侧指向注册口（层校验允许的方向）。
+     * 当前唯一注册者是 {@code LivingItem} 的 {@code HORSE_MENU_RESOLVER}（反射
+     * {@code HorseInventoryMenu.horse}字段；accessor 方案被 Mixin 包隔离否掉，见其 javadoc）。</p>
+     */
+    public interface EntityResolver {
+        /**
+         * @param slot 逐槽调用时为当前槽；菜单级判定传 {@code null}（实现<b>不得</b>依赖它）
+         * @return 菜单关联的实体；不认领返回 {@code null}
+         */
+        @Nullable
+        Entity resolve(AbstractContainerMenu menu, @Nullable Slot slot);
+    }
+
     /** 已打过「无解析器」日志的菜单类（每类只打一次，避免刷屏）。 */
     private static final Set<Class<?>> LOGGED_MISSES = ConcurrentHashMap.newKeySet();
 
     /** 注册的菜单级解析器（联动模块用；先注册先命中）。 */
     private static final List<MenuPositionResolver> MENU_RESOLVERS = new CopyOnWriteArrayList<>();
+
+    /** 实体容器解析器（「这份菜单属于哪个实体」—— 如驴的 HorseInventoryMenu 反射）。 */
+    private static final List<EntityResolver> ENTITY_RESOLVERS = new CopyOnWriteArrayList<>();
+
+    /**
+     * 注册「菜单 → 容器实体」解析器（2026-10-21 实体容器）。
+     *
+     * <p>为什么要有注册表：{@code resolve} 的结构化分支只覆盖「slot.container 就是实体」的
+     * 情况（船/矿车）；驴的槽位 container 是 NeoForge 的匿名 {@code InvWrapper}，只能问菜单
+     * 本身（{@code HorseInventoryMenu.horse} 是 private final 无 getter ⇒ 只能反射）。
+     * 反射代码属于接线层，核心（L1）不 import 它 ⇒ 由入口层实现并注册到这里。</p>
+     *
+     * <p>返回的实体由 {@link EntityContainers#isContainerEntity} 统一过白名单。</p>
+     */
+    public static void registerEntityResolver(EntityResolver resolver) {
+        ENTITY_RESOLVERS.add(resolver);
+    }
+
+    /**
+     * 菜单 → 容器实体（注册的解析器逐个问；没人认领返回 {@code null}）。
+     *
+     * @param slot 逐槽调用时为当前槽；菜单级判定传 {@code null}（实现不得依赖它）
+     */
+    @Nullable
+    public static Entity resolveMenuEntity(AbstractContainerMenu menu, @Nullable Slot slot) {
+        for (EntityResolver resolver : ENTITY_RESOLVERS) {
+            try {
+                Entity entity = resolver.resolve(menu, slot);
+                if (entity != null) return entity;
+            } catch (RuntimeException e) {
+                // 解析器抛异常不能拖垮 tick（与位置解析器同款防线）
+                ModLog.CONTAINER.debug("实体容器解析器 {} 抛异常：{}",
+                    resolver.getClass().getName(), e.toString());
+            }
+        }
+        return null;
+    }
 
     /** 注册的逐槽解析器（联动模块用；先注册先命中）。 */
     private static final List<Resolver> SLOT_RESOLVERS = new CopyOnWriteArrayList<>();
@@ -109,6 +163,14 @@ public final class MenuSlotOwners {
     @Nullable
     public static BlockPos menuPosition(AbstractContainerMenu menu) {
         if (menu == null) return null;
+
+        // 实体容器（2026-10-21）：菜单级实体解析（注册的 resolver 提供，如驴的 accessor 实现）。
+        // ⚠️ 注册表而不是核心 instanceof 菜单类：那会把「认识某个具体菜单类」焊进核心，
+        //   正是 D-container-09 禁止的形状。实现在调用方侧注册。
+        Entity menuEntity = resolveMenuEntity(menu, null);
+        if (menuEntity != null && EntityContainers.isContainerEntity(menuEntity)) {
+            return menuEntity.blockPosition();
+        }
 
         for (MenuPositionResolver resolver : MENU_RESOLVERS) {
             try {
@@ -175,6 +237,12 @@ public final class MenuSlotOwners {
     private static List<BlockPos> resolveFromSlotContainer(Container container) {
         if (container instanceof BlockEntity be) {
             return List.of(be.getBlockPos());
+        }
+        // 实体容器（2026-10-21）：1.21 ContainerEntity extends Container ⇒ 船/矿车菜单槽的
+        // container 就是实体本身（ChestBoat#createMenu 传 this）。按 UUID 键 + 实时位置反查，
+        // GUI 开着时船在漂，每次解析拿到的都是当前位置 —— 位置口径在移动容器上才对。
+        if (container instanceof Entity e) {
+            return List.of(e.blockPosition());
         }
         if (container instanceof CompoundContainer) {
             BlockEntity[] halves = ContainerContexts.reflectHalves(container);

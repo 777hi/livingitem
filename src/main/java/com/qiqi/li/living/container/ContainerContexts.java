@@ -11,6 +11,8 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.CompoundContainer;
 import net.minecraft.world.Container;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ChestMenu;
@@ -103,6 +105,17 @@ public final class ContainerContexts {
             PlayerEnderChestContainer enderChest = player.getEnderChestInventory();
             if (enderChest == null) return null;
             return new EnderChestContainerContext(new InvWrapper(enderChest), player, level);
+        }
+
+        // 实体容器（2026-10-21）：船/矿车的槽位 container 就是实体本身（ContainerEntity
+        // extends Container ⇒ ChestBoat#createMenu 传 this）；驴/骡的菜单存 horse 字段
+        // （槽位 container 是 NeoForge 的匿名 InvWrapper ⇒ 走 accessor）。
+        // ⚠️ 不绕位置：GUI 开着的时候船可能正在移动，而位置快照只在 ctx 构造那一刻有效。
+        // ⚠️ 放在菜单位置分支【之前】：菜单位置分支按 getBlockEntity(pos) 反查，实体位置上
+        //    没有 BE ⇒ 对它恒 null，必须由本分支先接住。
+        Entity containerEntity = EntityContainers.resolveMenuEntity(player.containerMenu, slot);
+        if (containerEntity != null && containerEntity.level() == level) {
+            return new EntityContainerContext(containerEntity, (ServerLevel) level);
         }
 
         // 模组容器（2026-10-19，I-C5 收尾）：槽位容器可能是 NeoForge SlotItemHandler 的

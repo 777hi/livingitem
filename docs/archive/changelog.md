@@ -15,6 +15,70 @@
 
 ---
 
+## 2026-10-21
+
+> 🚢 **实体容器入门：箱子船 / 箱子矿车 / 漏斗矿车 / 带箱驴骡**（用户拍板 B+B，设计稿
+> `docs/buffer/container-menu-introspection-topic.md`）—— 用户诊断出根本问题「服务端对某些信息
+> 完全不知，客户端却又很清楚；从客户端获取则客户端不可预测」，查证后**推翻前提**：
+> `Slot` 的 `x/y` 是服务端就有的信息（`addSlot` 双端跑、坐标天然一致）⇒ 不必问客户端，
+> 信任问题从根上消失。记「客户端列数探测」作废。
+>
+> **① 位置广播证伪关闭**：唯一候选需求是「活信标光束要跟着船走」，但信标宿主判据
+> `LidBlockEntity` 的三个实现全是 BE（箱子/末影箱）——实体容器里的活信标本就**不开光**
+> ⇒ 没有要广播的东西。枚举位置相关视觉（信标光束/流体 GUI 轨/图标 tooltip）后确认
+> **无一需要广播**。顺带的认知收获：`LidBlockEntity` 判据其实是「容器有世界存在感」的
+> 代理指标——当初以为是偷懒，实际选对了。
+>
+> **② viewer 降级翻案为天然正确**：`ContainerEntity extends Container` ⇒ 船/矿车菜单槽的
+> `slot.container` 就是实体本身（`ChestBoat#createMenu` 传 `this`）⇒ 结构化分支加一条
+> `instanceof Entity` 即零反射；`MenuSlotOwners` 无缓存 + 键每 tick 从 `ServerLevel#getEntity(UUID)`
+> 反查**实时**位置 ⇒ 开着箱子船 GUI 时船在漂，图标/tooltip 跟真实位置刷新——**固定容器
+> 位置不变所以看不出，实体容器是位置口径的最佳展示**。所谓「漂走」是伪问题（只在解析结果
+> 被缓存时才存在）。
+>
+> **实现**：
+> - `ContainerKeys` 加 `entity_<uuid>` 键形 + `ContainerKind.ENTITY` + `entityOf` 解析
+>   （`tools/check_container_keys.py` 正则同步收紧）
+> - `EntityContainerContext`：继承 `SimpleContainerContext`（explicitKey 构造器）；三处不同：
+>   键、数据宿主（实体）、`getBlockPos()` 恒 **null**（防船停在箱子上方时被 `isLiddedChest`
+>   误判开光）；列数先按实体类型 id 查规则表
+> - 白名单 `EntityContainers`：`ContainerEntity` + `AbstractChestedHorse#hasChest()`
+>   （**必须白名单**——NeoForge fallback 给所有 LivingEntity 注册了能力 ⇒ 「能力面存在」
+>   ≠「该当容器」，I-C1 张力；无箱驴 2 格只是鞍+体甲）
+> - 容器级数据宿主抽象 `ContainerContext#getDataHosts()`（BE/Entity 同为 `IAttachmentHolder`）
+>   ⇒ 流体/相位 writeback 与回填改走宿主列表；实体附件持久化（"written, and read from disc"）
+>   ⇒ 区块卸载再回来数据还在
+> - `LivingItem#processEntityContainers`：与掉落物**合并**为一次 `getAllEntities()` 遍历
+> - 驴的菜单解析：**先试 Mixin accessor 被否，改入口层反射**（两连坑，都记）：
+>   ① accessor 的第一版返回类型写成 `AbstractChestedHorse` 被 Mixin 拒 —— accessor 类型必须匹配
+>   字段的**声明类型**（`AbstractHorse`）；
+>   ② 改对类型后撞上 **Mixin 包隔离**：「class is in a defined mixin package ... cannot be
+>   referenced directly」—— mixin 包里的 accessor 接口被包外任何类引用（new/instanceof）都被
+>   FML 拒，而消费方（container 包）与注册点（root 包）都在 mixin 包外 ⇒ accessor 实际不可用。
+>   终案：`LivingItem.HORSE_MENU_RESOLVER` 反射 `HorseInventoryMenu.horse`（private final 无
+>   getter），注册进 `MenuSlotOwners.registerEntityResolver`。反射只此一处、只对**原版类**
+>   （不触 D-container-09 的第三方猜测禁令；项目内有 `ClientSlotResolve` 反射原版 SlotWrapper
+>   先例），失败方向是显示不刷新。
+> - ⚠️ **层校验抓住两个当天引入的方向违规**（`check_layers.py` 棘轮生效）：
+>   `container → transfer`（EntityContainerContext 为查实体规则 import 了 transfer）与
+>   `container → mixin`（EntityContainers import accessor）。修法不是加基线而是**重构**：
+>   ① 放弃「实体类型规则查询」——没有消费方（register 只认方块容器），预留半截能力正是项目
+>   反复踩的坑；② 实体解析改成**注册表**（`MenuSlotOwners.registerEntityResolver`），核心
+>   （L1）不认识任何菜单类——反倒比 accessor 方案更贴 D-container-09。
+> - ⚠️ 修两个自己引入的问题：`syncWorldContainer` 原从 `associatedBlockEntities` 取 level
+>   （实体容器空列表 ⇒ 直接 return ⇒ 图标永不刷新）；`EntityContainers` 的 accessor 分支
+>   第一版没过白名单（HorseInventoryMenu 是马/驴/骡共用类 ⇒ 普通马会被当容器）
+>
+> **列数零规则**：四类实体的启发式全对（27→9、5→5、15→5，靠 `resolveColumns` 的候选宽度顺序）。
+>
+> **行为定案**：无人区块停 tick（与 BE 卸载/掉落物/玩家下线三条既有路径一致）但不丢数据。
+>
+> 单测 782 → 796（新增 `EntityContainersTest` 12 项 + 反查测试 2 项，795 passed + 1 skipped）；
+> `doc_check` / `check_layers` / `check_container_keys` 全绿。⚠️ 驴的 accessor 路径单测应用不了
+> Mixin ⇒「驴能解析/普通马不当容器」待真机。
+
+---
+
 ## 2026-10-20
 
 > 🧭 **精妙形状复审（续 `D-container-09`）** —— 用户：「再检查一遍，还有哪些变得精妙形状了吧」。

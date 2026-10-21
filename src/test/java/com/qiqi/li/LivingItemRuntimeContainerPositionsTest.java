@@ -6,12 +6,14 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import java.util.UUID;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.Container;
@@ -163,6 +165,32 @@ class LivingItemRuntimeContainerPositionsTest {
         assertTrue(LivingItem.runtimeContainerPositions(levels, "player_550e8400-e29b-41d4-a716-446655440000").isEmpty());
         assertTrue(LivingItem.runtimeContainerPositions(levels, "minecraft:overworld|not_a_chest_key").isEmpty());
         assertTrue(LivingItem.runtimeContainerPositions(levels, null).isEmpty());
+    }
+
+    @Test
+    @DisplayName("实体容器键 → 逐维 getEntity(uuid) 反查实体的【当前】位置（2026-10-21）")
+    void entityKey_resolvesToLivePosition() {
+        UUID id = UUID.fromString("0f1c3b8e-7a2d-4e5f-9c6b-1d2e3f4a5b6c");
+        Entity boat = Mockito.mock(Entity.class);
+        Mockito.when(boat.blockPosition()).thenReturn(new BlockPos(11, 64, -7));
+
+        ServerLevel level = Mockito.mock(ServerLevel.class);
+        Mockito.when(level.getEntity(id)).thenReturn(boat);
+
+        var result = LivingItem.runtimeContainerPositions(List.of(level), "entity_" + id);
+
+        assertEquals(List.of(new BlockPos(11, 64, -7)), List.copyOf(result),
+            "实体容器的 viewer 匹配必须拿【实时】位置 —— GUI 开着时船可能正在移动");
+    }
+
+    @Test
+    @DisplayName("实体容器键：实体不存在（已卸载/移除）→ 空集合 = 不发包")
+    void entityKey_unknownEntity_returnsEmpty() {
+        UUID id = UUID.fromString("0f1c3b8e-7a2d-4e5f-9c6b-1d2e3f4a5b6c");
+        ServerLevel level = Mockito.mock(ServerLevel.class);
+        Mockito.when(level.getEntity(id)).thenReturn(null);
+
+        assertTrue(LivingItem.runtimeContainerPositions(List.of(level), "entity_" + id).isEmpty());
     }
 
     @Test

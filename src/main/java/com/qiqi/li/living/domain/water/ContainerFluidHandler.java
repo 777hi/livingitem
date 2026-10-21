@@ -97,13 +97,13 @@ public final class ContainerFluidHandler implements IFluidHandler {
         ContainerFluidData existing = ctx.peekContainerData(ContainerFluidData.KEY);
         if (existing != null) return existing;
 
-        if (ctx instanceof SimpleContainerContext simpleCtx) {
-            for (BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {
-                ContainerFluidData persisted = be.getData(WaterComponents.CONTAINER_FLUID_DATA);
-                if (persisted != null && persisted != ContainerFluidData.EMPTY && !persisted.isEmpty()) {
-                    ContainerLivingItemHandler.putContainerData(ctx, ContainerFluidData.KEY, persisted);
-                    return persisted;
-                }
+        // 持久宿主回填（BE / 实体附件同路径，2026-10-21 统一到 getDataHosts）：
+        // 船的流体在实体附件上，区块卸载再回来靠它续接（NeoForge 附件持久化）。
+        for (var host : ctx.getDataHosts()) {
+            ContainerFluidData persisted = host.getData(WaterComponents.CONTAINER_FLUID_DATA);
+            if (persisted != null && persisted != ContainerFluidData.EMPTY && !persisted.isEmpty()) {
+                ContainerLivingItemHandler.putContainerData(ctx, ContainerFluidData.KEY, persisted);
+                return persisted;
             }
         }
 
