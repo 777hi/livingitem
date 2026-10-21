@@ -9,11 +9,17 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.attachment.IAttachmentHolder;
 import net.neoforged.neoforge.event.level.BlockDropsEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
 
+import javax.annotation.Nullable;
+
+import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.ContainerDrops;
+import com.qiqi.li.living.container.ContainerLivingItemHandler;
 import com.qiqi.li.living.transfer.ContainerCompatibilityConfig;
+import com.qiqi.li.logging.ModLog;
 
 /**
  * **电力相位**容器级数据的形态迁移：方块 ⇄ 物品（2026-10-20）。
@@ -56,20 +62,83 @@ public final class PhaseDataMigration {
         if (be == null) return;
         if (!(event.getLevel() instanceof ServerLevel level)) return;
 
+        // 稳态无振荡器时 capture 产 EMPTY ⇒ 这一层挡掉绝大多数方块破坏，零开销
         PhaseSnapshot phase = be.getData(PowerComponents.CONTAINER_PHASE_SNAPSHOT.value());
         if (phase == null || PhaseSnapshot.EMPTY.equals(phase)) return;
+        if (!retainsContents(be)) return;
 
-        ResourceLocation id = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(be.getType());
-        if (id == null || !ContainerCompatibilityConfig.retainsContentsOnBreak(id)) {
-            return;
-        }
-
-        // 稳态无振荡器时 capture 产 EMPTY ⇒ 这一层挡掉绝大多数方块破坏，零开销
         var target = ContainerDrops.pickDrop(event.getDrops(), be);
         if (target == null) return;
 
-        // 不可变 record ⇒ 直接搬，不需要 snapshot()
-        target.getItem().set(PowerComponents.CONTAINER_PHASE_SNAPSHOT_ITEM.get(), phase);
+        moveOut(be, target.getItem());
+    }
+
+    /**
+     * 把宿主上的相位快照搬到 {@code target} 物品上 —— <b>破坏路径与第三方交接路径共用</b>
+     * （2026-10-21，见 {@link com.qiqi.li.living.container.ContainerHandoff}）。
+     *
+     * <p>⚠️ 与流体相反：{@link PhaseSnapshot} 是不可变 record，{@code ContainerPhaseWriteback}
+     * 每 tick 写入的是 {@code capture()} 产生的新对象 ⇒ <b>直接搬，不需要 snapshot()</b>。</p>
+     *
+     * @return 是否真的搬了
+     */
+    public static boolean moveOut(IAttachmentHolder host, ItemStack target) {
+        if (target.isEmpty()) return false;
+        if (!retainsContents(host)) return false;
+
+        PhaseSnapshot phase = host.getData(PowerComponents.CONTAINER_PHASE_SNAPSHOT.value());
+        if (phase == null || PhaseSnapshot.EMPTY.equals(phase)) return false;
+
+        target.set(PowerComponents.CONTAINER_PHASE_SNAPSHOT_ITEM.get(), phase);
+        return true;
+    }
+
+    /** I-C9 判据：该容器破坏/被搬走后是否仍保有物品内容。 */
+    private static boolean retainsContents(IAttachmentHolder host) {
+        if (!(host instanceof BlockEntity be)) return false;
+        ResourceLocation id = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(be.getType());
+        return id != null && ContainerCompatibilityConfig.retainsContentsOnBreak(id);
+    }
+
+    /**
+     * 反方向：把物品上的相位快照恢复进 {@code host} —— <b>放置路径与第三方交接路径共用</b>。
+     *
+     * <p>{@link PhaseSnapshot} 是不可变 record ⇒ 直接搬，不需要 {@code snapshot()}。</p>
+     *
+     * <p>⚠️⚠️ <b>只写附件是无效的</b>（2026-10-21 真机日志定位，与流体同源）：
+     * 相位的**唯一真相源是内存账本** {@link ContainerPowerData}（{@code CONTAINER_DATA} 按 cacheKey），
+     * {@code ContainerPhaseWriteback} 每 tick 用 {@link PhaseSnapshot#capture} <b>重新生成</b>快照
+     * 覆盖附件 ⇒ 只写附件 = 下一 tick 被空账本盖掉。
+     * 所以必须先把快照<b>还原进账本</b>（{@link PhaseSnapshot#restoreInto}），附件只是持久化副本。</p>
+     */
+    public static void moveIn(IAttachmentHolder host, ItemStack source) {
+        if (!retainsContents(host)) return;
+
+        PhaseSnapshot phase = source.get(PowerComponents.CONTAINER_PHASE_SNAPSHOT_ITEM.get());
+        if (phase == null || PhaseSnapshot.EMPTY.equals(phase)) return;
+
+        ContainerContext ctx = resolveContextOf(host);
+        if (ctx != null) {
+            ContainerPowerData power = ContainerLivingItemHandler
+                .getOrCreateContainerData(ctx, ContainerPowerData.KEY);
+            long clock = host instanceof BlockEntity be && be.getLevel() instanceof ServerLevel level
+                ? level.getGameTime() : power.currentTick();
+            int restored = phase.restoreInto(power, clock);
+            ModLog.CONTAINER.info("[交接] 相位已还原进账本：entries={} clock={}", restored, clock);
+        } else {
+            ModLog.CONTAINER.warn("[交接] 相位恢复时拿不到容器上下文 ⇒ 只写附件，"
+                + "下一 tick 可能被空账本覆盖：{}", host.getClass().getSimpleName());
+        }
+
+        host.setData(PowerComponents.CONTAINER_PHASE_SNAPSHOT.value(), phase);
+    }
+
+    /** 从宿主反查与 tick 路径同源的容器上下文（拿不到返回 null）。 */
+    @Nullable
+    private static ContainerContext resolveContextOf(IAttachmentHolder host) {
+        if (!(host instanceof BlockEntity be)) return null;
+        if (!(be.getLevel() instanceof ServerLevel level)) return null;
+        return ContainerLivingItemHandler.resolveContextAt(level, be.getBlockPos(), null);
     }
 
     /** 放置方块：手持物品的组件 → 新 BE 附件。 */
@@ -85,9 +154,6 @@ public final class PhaseDataMigration {
         ItemStack source = ContainerDrops.placedItemInHand(player, event.getPlacedBlock().getBlock());
         if (source == null) return;
 
-        PhaseSnapshot phase = source.get(PowerComponents.CONTAINER_PHASE_SNAPSHOT_ITEM.get());
-        if (phase != null && !PhaseSnapshot.EMPTY.equals(phase)) {
-            be.setData(PowerComponents.CONTAINER_PHASE_SNAPSHOT.value(), phase);
-        }
+        moveIn(be, source);
     }
 }

@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
@@ -14,6 +15,7 @@ import com.qiqi.li.living.container.ContainerDrops;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
@@ -160,5 +162,120 @@ class ContainerDataMigrationTest {
         ContainerFluidData decoded = ContainerFluidData.CODEC.parse(ops, encoded).getOrThrow();
 
         assertEquals(0, decoded.getGeneratedSources().size());
+    }
+
+    // ── moveOut：破坏路径与「第三方交接」路径共用同一份实现（2026-10-21）─────────────
+    //
+    // 精妙背包蹲下右键拾取走 putInPlayersHandAndRemove，两个事件都不触发 ⇒ 由
+    // ContainerHandoff 在联动模块里补时机，搬的逻辑必须复用这里。下面三条钉住
+    // 「交接路径拿到的语义与破坏路径完全一致」。
+
+    private static BlockEntity beWithFluid(net.minecraft.world.level.block.entity.BlockEntityType<?> type,
+                                           ContainerFluidData data) {
+        BlockEntity be = mock(BlockEntity.class);
+        // doReturn 而非 when(...).thenReturn(...)：getType() 返回 BlockEntityType<?>，
+        // 通配符捕获会让 thenReturn 的泛型检查打架（CAP#1 vs CAP#2）
+        org.mockito.Mockito.doReturn(type).when(be).getType();
+        when(be.getData(WaterComponents.CONTAINER_FLUID_DATA)).thenReturn(data);
+        return be;
+    }
+
+    @Test
+    @DisplayName("moveOut：contentRetaining 容器 ⇒ 快照交给物品 + 就地清空宿主")
+    void moveOut_retainingContainer_movesSnapshotAndClears() {
+        ContainerFluidData data = new ContainerFluidData();
+        data.registerGeneratedSource(3, net.minecraft.world.level.material.Fluids.WATER.getFluidType());
+        BlockEntity be = beWithFluid(net.minecraft.world.level.block.entity.BlockEntityType.SHULKER_BOX, data);
+
+        // ⚠️ 用 mock 而非真 ItemStack：NeoForge 的数据组件校验要求组件值实现 equals/hashCode，
+        // 而 ContainerFluidData 是**可变对象**（`ItemStack.set` 会抛 IllegalArgumentException）。
+        // 生产环境该校验只在开发开关下启用 ⇒ 现在是「能跑但属于 UB」，已记 TODO。
+        ItemStack target = mock(ItemStack.class);
+        when(target.isEmpty()).thenReturn(false);
+
+        assertTrue(ContainerDataMigration.moveOut(be, target), "潜影盒声明了 contentRetaining ⇒ 应搬");
+        verify(target).set(Mockito.eq(WaterComponents.CONTAINER_FLUID_DATA_ITEM.get()), Mockito.any());
+        assertTrue(data.isEmpty(), "宿主必须就地清空 —— 否则另一半破坏时再搬一次 = 复制");
+    }
+
+    @Test
+    @DisplayName("moveOut：非 contentRetaining 容器 ⇒ 不搬（与破坏路径同一判据）")
+    void moveOut_nonRetainingContainer_doesNotMove() {
+        ContainerFluidData data = new ContainerFluidData();
+        data.registerGeneratedSource(3, net.minecraft.world.level.material.Fluids.WATER.getFluidType());
+        BlockEntity be = beWithFluid(net.minecraft.world.level.block.entity.BlockEntityType.CHEST, data);
+
+        ItemStack target = mock(ItemStack.class);
+        when(target.isEmpty()).thenReturn(false);
+
+        assertFalse(ContainerDataMigration.moveOut(be, target), "原版箱子内容随方块消失 ⇒ 流体也不搬");
+        // 首个参数给显式类型，避免 Mockito.any(), Mockito.any() 双无类型导致 set 重载歧义
+        verify(target, Mockito.never())
+            .set(Mockito.eq(WaterComponents.CONTAINER_FLUID_DATA_ITEM.get()), Mockito.any());
+        assertFalse(data.isEmpty(), "不该搬的容器：数据原样留着，不能被顺手清掉");
+    }
+
+    @Test
+    @DisplayName("moveOut：宿主不是方块实体 / 目标为空 ⇒ 安全返回 false，不抛")
+    void moveOut_degenerateInputs_returnFalse() {
+        assertFalse(ContainerDataMigration.moveOut(null, ItemStack.EMPTY));
+        assertFalse(ContainerDataMigration.moveOut(
+            mock(net.neoforged.neoforge.attachment.IAttachmentHolder.class),
+            new ItemStack(Items.SHULKER_BOX)));
+    }
+
+    // ── 端到端：moveOut → moveIn（2026-10-21 真机连续失败后，改在本地闭环验证）──────────
+    //
+    // 真机上「拾取/放置的 mixin 都执行了、日志说 restored=true，但水没了」⇒ 不能再靠真机试错定位。
+    // 这两条在单测里把「交出去」和「收回来」各跑一遍，看是哪个方向断了。
+
+    @Test
+    @DisplayName("端到端：moveOut 把流体写进物品组件（不是空快照）")
+    void roundTrip_moveOut_writesComponent() {
+        ContainerFluidData data = new ContainerFluidData();
+        data.registerGeneratedSource(3, net.minecraft.world.level.material.Fluids.WATER.getFluidType());
+        BlockEntity be = beWithFluid(net.minecraft.world.level.block.entity.BlockEntityType.SHULKER_BOX, data);
+
+        ItemStack item = mock(ItemStack.class);
+        when(item.isEmpty()).thenReturn(false);
+
+        // ⚠️ 先记下期望值：moveOut 会 clearAll() 清空宿主（守恒要求），事后读 data 只剩空表
+        var expectedKeys = java.util.Set.copyOf(data.getGeneratedSources().keySet());
+
+        assertTrue(ContainerDataMigration.moveOut(be, item), "潜影盒 + 有数据 ⇒ 应搬");
+
+        org.mockito.ArgumentCaptor<ContainerFluidData> captor =
+            org.mockito.ArgumentCaptor.forClass(ContainerFluidData.class);
+        verify(item).set(Mockito.eq(WaterComponents.CONTAINER_FLUID_DATA_ITEM.get()), captor.capture());
+
+        ContainerFluidData carried = captor.getValue();
+        assertNotNull(carried, "写进物品的不能是 null");
+        assertFalse(carried.isEmpty(), "写进物品的不能是空快照 —— 否则放置时无数据可恢复");
+        assertEquals(expectedKeys, carried.getGeneratedSources().keySet(),
+            "物品上带走的源槽位必须与容器一致");
+    }
+
+    @Test
+    @DisplayName("端到端：moveIn 把物品组件写回新宿主（附件）")
+    void roundTrip_moveIn_writesAttachment() {
+        ContainerFluidData carried = new ContainerFluidData();
+        carried.registerGeneratedSource(3, net.minecraft.world.level.material.Fluids.WATER.getFluidType());
+
+        ItemStack source = mock(ItemStack.class);
+        when(source.isEmpty()).thenReturn(false);
+        when(source.get(WaterComponents.CONTAINER_FLUID_DATA_ITEM.get())).thenReturn(carried);
+
+        BlockEntity newBe = mock(BlockEntity.class);
+        org.mockito.Mockito.doReturn(net.minecraft.world.level.block.entity.BlockEntityType.SHULKER_BOX)
+            .when(newBe).getType();
+        // 无 Level ⇒ 走「只写附件」的降级分支（真机上正常路径会额外写内存表）
+        when(newBe.getLevel()).thenReturn(null);
+
+        ContainerDataMigration.moveIn(newBe, source);
+
+        org.mockito.ArgumentCaptor<ContainerFluidData> captor =
+            org.mockito.ArgumentCaptor.forClass(ContainerFluidData.class);
+        verify(newBe).setData(Mockito.eq(WaterComponents.CONTAINER_FLUID_DATA.value()), captor.capture());
+        assertFalse(captor.getValue().isEmpty(), "写回附件的不能是空数据");
     }
 }

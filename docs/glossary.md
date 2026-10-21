@@ -17,6 +17,10 @@
 | **数据组件**（DataComponent） | 1.21 的物品数据载体；活物品的一切状态都存这里（`networkSynchronized` 的会随物品同步到客户端） | `living-item-infrastructure.md` |
 | **功能**（`LivingItemFunction`） | 活物品行为的实现：`canApply` + `tick(entries, ctx, tick, level)` + tooltip | 同上 |
 | **容器上下文**（`ContainerContext`） | 活物品 tick 时对所在容器的抽象读写入口（`getItem` / `setItem` / `syncSlotToClients`…） | 同上 |
+| **容器宿主**（host） | 容器依附的东西，四类：**方块** / **实体** / **掉落物** / **玩家背包**，各对应一个能力面（`ItemHandler.BLOCK` / `ENTITY` / `ITEM`） | `container-boundary.md` I-C1 |
+| **实体容器**（`EntityContainerContext`） | 装着物品的实体包装成的容器（箱子船 / 箱子矿车 / 漏斗矿车 / 带箱驴骡）；键 `entity_<uuid>`，`getBlockPos()` 恒 `null`，位置每 tick 现取 | `container-boundary.md` I-C5 · `D-container-10` |
+| **逻辑槽 / 物理槽** | **逻辑槽** = 对外口径，只数存储格（0 起连续）；**物理槽** = 宿主 handler 的真实编号，可能含**前置非存储槽**（马鞍）。二者靠 `toPhysicalSlot` / `toLogicalSlot` 一对互逆映射转换 | `container-boundary.md` I-C10 |
+| **数据宿主**（`getDataHosts()`） | 容器级持久附件挂在谁身上：方块容器 = BE（大箱两半各一），实体容器 = 实体本身 | `container-boundary.md` I-C9 |
 | **容器级数据**（`HasContainerData`） | 按**容器**算一次、被容器内多件活物品共享的数据（流体 / 红石 / 电力），带 priority 决定先后 | 同上 |
 | **稳态跳过** | 修订计数 + 外部输入签名 + 无在途定时器三者都不变时，复用上次结果、跳过整段重算 | `living-redstone-tech.md` §3.2 |
 | **软逻辑** | 用户定性：非必要功能 —— 能成就好，失败（含抛异常）**必须静默且不影响原版流程** | `living-farmland-tech.md` §3.5 |

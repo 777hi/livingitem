@@ -191,6 +191,12 @@ public interface ContainerIdentity {
 | 玩家末影箱 | `player_<uuid>_ender_chest` | `player_550e8400-..._ender_chest` |
 | 方块容器 | `chest_<x>_<y>_<z>` | `chest_0_64_0` |
 | 大箱子 | `chest_<x1>_<y1>_<z1>_<x2>_<y2>_<z2>` | `chest_0_64_0_1_64_0` |
+| **实体容器** | **`entity_<uuid>`** | `entity_550e8400-...`（船 / 矿车 / 带箱驴骡，2026-10-21）|
+| **掉落物** | `item_entity_<uuid>` | 地上那件装着物品的实体 |
+
+> ⚠️ **实体容器用 UUID 而不是位置**：实体每 tick 在动，位置键会漂 ⇒ 熔炉进度被洗掉。
+> 位置不进键、每 tick 现取（`runtimeContainerPositions` 从 `ServerLevel#getEntity` 反查）。
+> 见 [container-boundary.md](container-boundary.md) I-C5 / `D-container-10`。
 
 > ⚠️ 旧第三档 `container_<handlerHashCode>`（对象身份哈希）已删除（1a-2，2026-10-03）：
 > BE 重建后键漂移会让落盘的容器级数据静默丢失。现「无背包、无位置」的容器直接抛
@@ -198,6 +204,16 @@ public interface ContainerIdentity {
 > 自动生成 `test#N` 键）。
 
 `getStableKey` 用于生成槽位级别的稳定标识，格式为 `containerKey_slot_<N>_func_<functionId>`，用于缓存和状态关联。
+
+**`getDataHosts()` —— 容器级持久数据挂在哪**（2026-10-21，`ContainerContext` 的 default 方法）：
+
+| 宿主 | 返回 |
+|---|---|
+| 方块容器 | 关联的 `BlockEntity` 列表（大箱子两半各一）|
+| **实体容器** | **实体本身**（`IAttachmentHolder` 通用 ⇒ 附件跟实体走）|
+| 无宿主（测试替身）| 空列表 ⇒ 容器级数据落内存表 |
+
+读写与回填一律走这个列表，**不得假设「有 BE」**。契约见 [container-boundary.md](container-boundary.md) I-C9。
 
 **⭐ 缓存键 `getCacheKey()`（2026-10-12 新增）—— 容器级数据在静态表里的行号**：
 
@@ -1325,6 +1341,22 @@ new SimpleContainerContext(handler, inventory);
 // 方块容器模式
 new SimpleContainerContext(handler, positions, blockEntities);
 ```
+
+**实现家族**（`ContainerContext` 的全部实现，2026-10-21 补全）：
+
+| 实现 | 宿主 | 身份键 | 特化 |
+|---|---|---|---|
+| `SimpleContainerContext` | 方块容器 / 玩家背包 | `chest_x_y_z` / `container_<dim>_x_y_z` / `player_<uuid>` | 通用（列数三级解析、写回校验都在这） |
+| `EnderChestContainerContext` | 末影箱 | `player_<uuid>_ender_chest` | 键**覆写为玩家键**（末影箱数据跟玩家走，不跟方块走） |
+| `ItemEntityContainerContext` | 掉落物 | `item_entity_<uuid>` | 无位置（`getBlockPos()` 返回 null） |
+| `EntityContainerContext` | **实体容器**（船 / 矿车 / 带箱驴骡） | `entity_<uuid>` | 见下 |
+
+**`EntityContainerContext`（2026-10-21）** —— 继承 `SimpleContainerContext`，只改四处：
+键（`entity_<uuid>`）、持久宿主（`getDataHosts()` 返回**实体本身**而非 BE）、方块性
+（`getBlockPos()` 恒 `null`）、槽位偏移（马 / 驴 / 骡跳过索引 0 的马鞍槽）。
+列数：马 / 驴 / 骡问原版 `AbstractHorse#getInventoryColumns()`（= 5），其余走父类启发式。
+契约见 [container-boundary.md](container-boundary.md) I-C1 / I-C5 / I-C9 / I-C10，决策
+`D-container-10` / `D-container-11`；白名单在 `EntityContainers`（`ContainerEntity` + `hasChest()`）。
 
 ### 7.2 物品写入策略：统一走 IItemHandler（2026-08-17 起移除 Container 优先写入）
 

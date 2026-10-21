@@ -40,6 +40,7 @@ src/test/java/com/qiqi/li/
 │   ├── ContainerContextsTest.java             # 边界带共享内核·isSameSlotSpace(槽位数不一致/越界/同空/同物品/一空一非空/异物品) + resolve 末影箱分支(F-1) + isViewingEnderChest 判据 6 项（16 项）
 │   ├── EntityContainersTest.java                  # 实体容器（2026-10-21）·白名单(ContainerEntity/带箱驴骡,无箱马与普通实体排除)/键 entity_uuid/列数启发式 27→9·5→5·15→5/getBlockPos 恒 null(防船停箱子上信标误判)/数据宿主=实体/无能力面即抛/menuSlotOwners 位置解析/注册表+白名单过滤/horse 字段反射判据/**鞍槽排除与偏移映射**（16 槽→15 存储格、getItem(0)→handler 槽 1、写不碰鞍槽）/船无偏移直通/**逻辑↔物理映射互逆**/**遥测键用物理槽**（18 项；驴解析走入口层反射，单测只锁字段形状）
 │   ├── ContainerBoundaryContractTest.java     # 容器边界契约 I-C3/I-C4/I-C7 守卫：SlotIgnoringHandler(insertItem 丢 slot) + ExtractBlockedHandler(extract 被拦) ⇒ 写回落对槽/物品守恒/模拟真实同源（3 项，S2 后转绿）
+│   ├── ContainerHandoffTest.java              # I-C9 **第三挂点「双向交接」**（2026-10-21，D-container-12）·宿主→物品：捕获→交接搬到目标/无捕获 no-op/空栈不搬且丢捕获/capture(null) 清残留/一个 Mover 抛异常不连累其它/discard + **物品→宿主：暂存→恢复调 moveIn / 暂存是副本（源栈 shrink 后仍能恢复）/无暂存或宿主空 no-op/stageRestore(EMPTY) 清残留** + **反射守卫：Mover 不得有 default 方法**（真机三连失败的真凶）（11 项）
 │   ├── MenuSlotOwnersTest.java                # I-C5 守卫：菜单槽→容器位置解析·**核心不反射第三方方法**(菜单自带 getBlockPosition 也不认,D-container-09)/注册联动解析器后生效/无解析器返回 null/模组容器槽回落菜单位置/原版 BE 槽直取/大箱 CompoundContainer 两半位置(防跨容器虚影)/空位置集恒 false（6 项）
 │   ├── SophisticatedMenuResolverTest.java        # D-container-09 守卫：包名匹配+getBlockPosition → 解出位置；包名不匹配**即使有同名方法也不认**（反射不扩散）（2 项；替身 FakeBackpackMenu 故意放在对方包名下）
 │   ├── AvaritiaMenuResolverTest.java             # D-container-09 守卫（无尽箱子）：包名匹配+getTile()返回方块实体 → 解出位置；包名不匹配**即使有同名方法也不认**；返回类型非 BE 不认；无 getter 返回 null（4 项；替身 FakeInfinityChestMenu 放在对方包名下）
@@ -111,7 +112,7 @@ src/test/java/com/qiqi/li/
 ├── living/domain/water/
 │   ├── ContainerFluidDataTest.java            # 流体引擎行为快照·单源扩散/上限7/活物阻挡/非活物穿过/源移除/水流推动/二维扩散 + 行为接缝·按maxLevel/静止不扩散 + TickContext 建流体数据回归 + 通用驱动·自维持/驱动BFS + 源查询API + 派生源·独立存活/挤没/共存/同格无豁免/异种覆盖/EMPTY noop + 落盘CODEC往返 + 晋升接缝 + 转化接缝（26 项）
 │   ├── ContainerFluidHandlerTest.java          # 管道抽取能力（§10）·tank 枚举与稳定序 / SIMULATE 不消耗 vs EXECUTE 删源 / 源全有或全无 / 异种 EMPTY / fill 恒 0 + isFluidValid / 非容器无害 / provider 四段让位（6 项）
-│   ├── ContainerDataMigrationTest.java          # 形态迁移·破坏时数据交给「本体那件」掉落物(**守卫已下沉测 ContainerDrops**)/无本体退回首项/无掉落返回 null + 组件 CODEC 往返保住派生源/空数据不产条目 + snapshot 独立副本/clearAll 一次清干净 + **相位快照 CODEC 往返保住 (P,φ,d)/EMPTY 不进物品**（10 项）
+│   ├── ContainerDataMigrationTest.java          # 形态迁移·破坏时数据交给「本体那件」掉落物(**守卫已下沉测 ContainerDrops**)/无本体退回首项/无掉落返回 null + 组件 CODEC 往返保住派生源/空数据不产条目 + snapshot 独立副本/clearAll 一次清干净 + **相位快照 CODEC 往返保住 (P,φ,d)/EMPTY 不进物品** + **moveOut 共用入口**（contentRetaining 搬+清空 / 非 retaining 不搬 / 退化输入安全）+ **端到端 moveOut 写物品组件（非空快照）/ moveIn 写回宿主附件**（15 项）
 │   ├── ContainerFluidIntegrationTest.java     # 流体端到端（走真实 processContext）·预置派生源+驱动跑BFS / BE 写回 EMPTY / 驱动进自维持清单（3 项）
 │   ├── FluidTransformTableTest.java           # 流体转化表 JSON 语义·内置装载/玩家差异(覆盖/removed)/坏文件跳过/坏条目跳过/缩容等待/活物品过滤/output_potion（含 output 必须为药水类物品）（8 项）
 │   ├── FluidFlowClientCacheTest.java           # 客户端快照分桶不变量（2026-10-06 第 ③ 次泄漏修复）·ENDER/BLOCK 目标路由 / PLAYER_INV 不翻转非背包组提示 / clear() 三桶全空并复位（4 项）

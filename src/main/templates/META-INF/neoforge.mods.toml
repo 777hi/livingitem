@@ -59,6 +59,9 @@ config="${mod_id}.client.mixins.json"
 [[mixins]]
 config="${mod_id}.mixins-create.json"
 
+[[mixins]]
+config="${mod_id}.mixins-sophisticated.json"
+
 # The [[accessTransformers]] block allows you to declare where your AT file is.
 # If this block is omitted, a fallback attempt will be made to load an AT from META-INF/accesstransformer.cfg
 #[[accessTransformers]]

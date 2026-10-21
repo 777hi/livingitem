@@ -16,11 +16,15 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.attachment.IAttachmentHolder;
 import net.neoforged.neoforge.event.level.BlockDropsEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
 
+import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.ContainerDrops;
+import com.qiqi.li.living.container.ContainerLivingItemHandler;
 import com.qiqi.li.living.transfer.ContainerCompatibilityConfig;
+import com.qiqi.li.logging.ModLog;
 
 
 /**
@@ -73,37 +77,117 @@ public final class ContainerDataMigration {
         BlockEntity be = event.getBlockEntity();
         if (be == null) return;
         if (!(event.getLevel() instanceof ServerLevel level)) return;
-
-        ContainerFluidData data = be.getData(WaterComponents.CONTAINER_FLUID_DATA);
-        if (data == null || data.isEmpty()) return;
-
-        // ⚠️ 只对「破坏后仍保有物品内容」的容器迁移（2026-10-20，用户定案）。
-        //
-        // 原版箱子 / 铁箱子 / 炼金箱子破坏后<b>内容本来就消失了</b>（它们不是潜影盒）；
-        // 若仍然把流体搬到掉落物上，重新放置就会得到「空箱子但有水」——
-        // 半保留状态比丢水更让人困惑。让流体和内容一起消失，语义才一致。
-        //
-        // 谁保留内容由规则数据声明（container_rules.json 的 contentRetaining），
-        // 因为没有任何通用 API 能回答这个问题（各容器各走各的组件）。
-        ResourceLocation id = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(be.getType());
-        if (id == null || !ContainerCompatibilityConfig.retainsContentsOnBreak(id)) {
-            return;
-        }
+        if (!retainsContents(be)) return;   // 绝大多数方块破坏在这里零开销早退
 
         ItemEntity target = ContainerDrops.pickDrop(event.getDrops(), be);
         if (target == null) return;   // 没有可承载的物品（如被精准采集以外的破坏）⇒ 数据随 BE 消失
 
-        // ① 交给掉落物的必须是**快照**：组件存的是对象引用，而 data 是可变对象（每 tick 重算 flows）
+        if (!moveOut(be, target.getItem())) return;
+        clearOne(level, be.getBlockPos());
+    }
+
+    /**
+     * 把宿主上的容器级流体搬到 {@code target} 物品上 —— <b>破坏路径与第三方交接路径共用</b>
+     * （2026-10-21，见 {@link com.qiqi.li.living.container.ContainerHandoff}）。
+     *
+     * <p>⚠️ **两条路径必须走同一份实现**：语义一旦分叉，就会出现「破坏搬得对、拾取搬得歪」
+     * 这种最难查的 bug。</p>
+     *
+     * <p>⚠️ 只对「破坏后仍保有物品内容」的容器迁移（2026-10-20，用户定案）。
+     * 原版箱子 / 铁箱子 / 炼金箱子破坏后<b>内容本来就消失了</b>（它们不是潜影盒）；
+     * 若仍然把流体搬到掉落物上，重新放置就会得到「空箱子但有水」——
+     * 半保留状态比丢水更让人困惑。让流体和内容一起消失，语义才一致。
+     * 谁保留内容由规则数据声明（{@code container_rules.json} 的 {@code contentRetaining}），
+     * 因为没有任何通用 API 能回答这个问题（各容器各走各的组件）。</p>
+     *
+     * @return 是否真的搬了（无数据 / 不该搬 / 目标为空 ⇒ false）
+     */
+    public static boolean moveOut(IAttachmentHolder host, ItemStack target) {
+        if (target.isEmpty()) {
+            ModLog.CONTAINER.info("[交接] moveOut 早退：目标物品为空");
+            return false;
+        }
+        if (!retainsContents(host)) {
+            ModLog.CONTAINER.info("[交接] moveOut 早退：宿主未声明 contentRetaining（{}）",
+                host == null ? "null" : host.getClass().getSimpleName());
+            return false;
+        }
+
+        ContainerFluidData data = host.getData(WaterComponents.CONTAINER_FLUID_DATA);
+        if (data == null || data.isEmpty()) {
+            ModLog.CONTAINER.info("[交接] moveOut 早退：宿主无流体数据（{}）",
+                host.getClass().getSimpleName());
+            return false;
+        }
+
+        // ① 交给物品的必须是**快照**：组件存的是对象引用，而 data 是可变对象（每 tick 重算 flows）
         //    ⇒ 直接传 this 会让物品与 BE 附件共享同一对象，后续 tick 的改动漏进物品里。
-        ItemStack stack = target.getItem();
-        stack.set(WaterComponents.CONTAINER_FLUID_DATA_ITEM.get(), data.snapshot());
+        target.set(WaterComponents.CONTAINER_FLUID_DATA_ITEM.get(), data.snapshot());
 
         // ② 就地清空**对象本身**：大箱子两半在 tick 期间共享同一实例 ⇒ 一次清掉两半，
         //    不必按位置去找另一半（BlockDropsEvent 触发时方块可能已被移除 ⇒ 按方块状态找会漏）。
         //    漏清的后果是破坏另一半时再迁移一次 ⇒ 复制。
         data.clearAll();
-        clearOne(level, be.getBlockPos());
+        return true;
+    }
 
+    /** I-C9 判据：该容器破坏/被搬走后是否仍保有物品内容。 */
+    private static boolean retainsContents(IAttachmentHolder host) {
+        if (!(host instanceof BlockEntity be)) return false;
+        ResourceLocation id = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(be.getType());
+        return id != null && ContainerCompatibilityConfig.retainsContentsOnBreak(id);
+    }
+
+    /**
+     * 反方向：把物品上的流体组件恢复进 {@code host} —— <b>放置路径与第三方交接路径共用</b>。
+     *
+     * <p>⚠️ 必须给**快照**而不是原对象：创造模式下放置不消耗物品，同一个 {@link ItemStack}
+     * 可以连续放置多次 ⇒ 多个 BE 会共享同一份可变数据（水在几个背包里同时出现）。</p>
+     *
+     * <p>⚠️⚠️ <b>只写附件是无效的</b>（2026-10-21 真机日志定位）：容器级数据的**唯一真相源是内存表**
+     * （{@code CONTAINER_DATA}，按 cacheKey），{@code ContainerFluidWriteback} 每 tick 用内存表里的
+     * 对象<b>覆盖</b>附件。放置后内存表里往往已经有一个**空对象**（破坏时只 {@code clearAll}
+     * 清了内容、没删键 ⇒ {@code getOrCreateFluidData} 的「附件回填」分支根本不会走）
+     * ⇒ 只写附件 = 下一 tick 被空对象盖掉，水凭空消失。
+     * 所以必须<b>同一个对象同时放进内存表和附件</b>。</p>
+     */
+    public static void moveIn(IAttachmentHolder host, ItemStack source) {
+        if (!retainsContents(host)) {
+            ModLog.CONTAINER.info("[交接] moveIn 早退：宿主未声明 contentRetaining（{}）",
+                host == null ? "null" : host.getClass().getSimpleName());
+            return;
+        }
+
+        ContainerFluidData fluid = source.get(WaterComponents.CONTAINER_FLUID_DATA_ITEM.get());
+        if (fluid == null || fluid.isEmpty()) {
+            ModLog.CONTAINER.info("[交接] moveIn 早退：物品上没有流体组件（item={}）", source.getItem());
+            return;
+        }
+
+        ContainerFluidData restored = fluid.snapshot();
+
+        // ① 内存表：tick 路径的唯一数据源（writeback 每 tick 从这里写到附件）
+        ContainerContext ctx = resolveContextOf(host);
+        if (ctx != null) {
+            ContainerLivingItemHandler.putContainerData(ctx, ContainerFluidData.KEY, restored);
+        } else {
+            ModLog.CONTAINER.warn("[交接] 恢复时拿不到容器上下文（能力面未就绪）⇒ 只写附件，"
+                + "下一 tick 可能被内存表覆盖：{}", host.getClass().getSimpleName());
+        }
+
+        // ② 附件：存档级持久化（容器没被 tick 时也能留住）
+        host.setData(WaterComponents.CONTAINER_FLUID_DATA.value(), restored);
+
+        ModLog.CONTAINER.info("[交接] 流体已恢复：inMemory={} bytes-keys={}",
+            ctx != null, restored.getGeneratedSources().size());
+    }
+
+    /** 从宿主反查与 tick 路径同源的容器上下文（拿不到返回 null）。 */
+    @Nullable
+    private static ContainerContext resolveContextOf(IAttachmentHolder host) {
+        if (!(host instanceof BlockEntity be)) return null;
+        if (!(be.getLevel() instanceof ServerLevel level)) return null;
+        return ContainerLivingItemHandler.resolveContextAt(level, be.getBlockPos(), null);
     }
 
     /**
@@ -129,13 +213,8 @@ public final class ContainerDataMigration {
         ItemStack source = ContainerDrops.placedItemInHand(player, event.getPlacedBlock().getBlock());
         if (source == null) return;
 
-        // ① 流体：必须给**快照**而不是原对象 —— 创造模式下放置不消耗物品，同一个 ItemStack
-        //    可以连续放置多次 ⇒ 多个 BE 会共享同一份可变数据（水在几个背包里同时出现）。
-        ContainerFluidData fluid = source.get(WaterComponents.CONTAINER_FLUID_DATA_ITEM.get());
-        if (fluid != null && !fluid.isEmpty()) {
-            be.setData(WaterComponents.CONTAINER_FLUID_DATA.value(), fluid.snapshot());
-        }
-
+        // 与第三方交接路径共用同一份恢复逻辑（快照语义见 moveIn 的 javadoc）
+        moveIn(be, source);
     }
 
     private static void clearOne(ServerLevel level, BlockPos pos) {

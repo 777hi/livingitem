@@ -79,6 +79,16 @@ MOD版本和玩家配置文件的格式是相同的，可以直接复制内容�
 | 旅行者背包 | 背包 | 54 格 |
 | 无尽（AvaritiaNeo） | 无尽箱子 | 300 格×25 列 |
 
+**规则键是 `(容器 ID, 容量)` 两段，不是单 ID**（2026-10-19 起）：同一 ID 可以有多档
+（精妙背包六档 27/45/54/81/108/120 各一条）。查找顺序是 `findRule(id, size)` 精确命中，
+命中不到再 `findRule(id)` 取该 ID 的唯一档。⇒ **加多档容器时，每档都要单独登记**；
+只登记一档时另一档会落到启发式。
+
+**`contentRetaining`（内容随物品走的容器）**：独立的**声明集合**，不是 `ContainerRule` 的字段。
+列在这里的容器，破坏时容器级持久数据（流体 / 电力相位）会跟着掉落物搬走；**不在表里 ⇒ 不搬**
+（保守：让数据跟内容一起消失，避免「空箱子但有水」）。玩家可在 `config/living_item/container_rules.json`
+**追加**，但不能取消内置声明。契约见 [container-boundary.md](../system-design/container-boundary.md) I-C9。
+
 ### 自动推断兜底
 
 当容器未注册时，系统会按加权启发式自动推断列数：
@@ -88,6 +98,28 @@ MOD版本和玩家配置文件的格式是相同的，可以直接复制内容�
 例如：36 格 → 9 列（36%9=0，9 优先于 12）
       40 格 → 10 列（40%10=0，10 优先于 8）
 ```
+
+## 实体容器（船 / 矿车 / 带箱驴骡）
+
+实体宿主 2026-10-21 起是第四类 tick 宿主（见 [container-boundary.md](../system-design/container-boundary.md) I-C1）。
+它**不走**上面的规则表（`register` 只认方块容器 ID），列数来源有两条：
+
+| 实体 | 列数来源 |
+|---|---|
+| 马 / 驴 / 骡 | **原版 API** `AbstractHorse#getInventoryColumns()`（= 5）—— 原版给了权威答案就用它 |
+| 箱子船 / 箱子矿车 / 漏斗矿车 | 启发式（27 → 9 列、5 → 5 列，已实测） |
+
+两条要点：
+
+- **白名单门槛**：`ItemHandler.ENTITY` 对**所有** `LivingEntity` 都有 fallback ⇒ 能力面非空
+  **不是**「这是容器」的判据。实体容器必须过 `ContainerEntity` / `hasChest()` 白名单。
+- **前置马鞍槽**：马 / 驴 / 骡的 inventory 索引 0 是马鞍 ⇒ 逻辑槽 0 对应 handler 槽 1。
+  新增这类「前置非存储槽」时必须一次性枚举全部跨边界点（读写 / 同步包 / 缓存键 / GUI 反查），
+  否则表现为「东西都在、位置全错」——见 I-C10。
+
+> ⚠️ **指令目前只支持方块容器**（`register` / `inspect` 都按准心方块解析）。实体容器的列数
+> 校准是**未实现**的（启发式四类全对 ⇒ 暂不需要）；将来要支持，入口在
+> `EntityContainerContext.getWidth()` 的「先按实体类型 id 查规则表」分支。
 
 ## 游戏内指令
 
@@ -156,10 +188,15 @@ src/main/resources/assets/living_item/container_rules.json
 | 方法 | 说明 |
 |------|------|
 | `register(id, rule)` | 注册容器规则 |
-| `remove(id)` | 移除容器规则 |
-| `findRule(id)` | 按容器 ID 查找规则 |
+| `remove(id)` | 移除该 ID 的全部档 |
+| `removeTier(id, containerSize)` | 只移除某一档（多档容器用） |
+| `findRule(id)` | 按容器 ID 查找规则（该 ID 只有一档时用） |
+| `findRule(id, containerSize)` | 按 **(ID, 容量)** 精确查找 —— 多档容器的正确查法 |
+| `findRuleBySize(size)` | 按容量查找（跨 ID，给「只知道几格」的场景兜底） |
 | `findOrGenerateRule(size)` | 查找或自动生成规则 |
 | `getAllRules()` | 获取所有已注册规则 |
+| `registerContentRetaining(id)` | 声明「内容随物品走」（破坏时搬容器级持久数据，见 I-C9） |
+| `retainsContentsOnBreak(id)` | 查询该 ID 是否声明了 `contentRetaining` |
 
 ### ContainerRuleConfig
 

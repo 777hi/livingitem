@@ -3,6 +3,7 @@ package com.qiqi.li.living.domain.water;
 import java.util.Set;
 
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.container.ContainerHandoff;
 import com.qiqi.li.living.container.ContainerTickHooks;
 import com.qiqi.li.living.container.TickContext;
 
@@ -45,6 +46,22 @@ public final class WaterRegistration {
         // 流体数据落盘（BE / Player attachment）+ 应力写回（BE 附件 + Create 应力输出 / 玩家脚底）。
         ContainerTickHooks.register(new ContainerFluidWriteback());
         ContainerTickHooks.register(new ContainerStressWriteback());
+
+        // 容器级数据的第三方交接（2026-10-21）：破坏/放置之外，模组自己搬走容器时（如精妙蹲下拾取）
+        // 也要把流体搬过去 —— 与破坏路径共用 ContainerDataMigration.moveOut / moveIn 同一份实现。
+        // ⚠️ 必须写**匿名类**而不是方法引用：`ContainerDataMigration::moveOut` 只会覆盖 moveOut，
+        //    另一个方向会静默失效（2026-10-21 真机三连失败的真凶，见 Mover 的 javadoc）。
+        ContainerHandoff.registerMover(new ContainerHandoff.Mover() {
+            @Override
+            public void moveOut(net.neoforged.neoforge.attachment.IAttachmentHolder host, ItemStack target) {
+                ContainerDataMigration.moveOut(host, target);
+            }
+
+            @Override
+            public void moveIn(net.neoforged.neoforge.attachment.IAttachmentHolder host, ItemStack source) {
+                ContainerDataMigration.moveIn(host, source);
+            }
+        });
 
         // 容器级流体 tick 驱动（1b-2b，框架）：自维持 + HasContainerData prio 0
         LivingItemManager.registerFunction(new LivingFluidFunction());

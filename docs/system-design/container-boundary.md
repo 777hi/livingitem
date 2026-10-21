@@ -1,6 +1,7 @@
 # 容器边界 —— 能力面、写回与身份口径
 
-> **状态：生效（2026-10-18）** —— 不变量已登记 `docs/decisions.md` 的 `D-container-01..06`。
+> **状态：生效（2026-10-18；2026-10-21 扩到实体宿主并新增 I-C10）** —— 不变量已登记
+> `docs/decisions.md` 的 `D-container-01..11`。
 > ⚠️ **口径生效 ≠ 实现落地**：每条不变量下方都有「现状」标记，`⏳` 表示代码尚未满足
 > （实施顺序见 [buffer/container-compat-topic.md](../buffer/container-compat-topic.md) §2）。
 >
@@ -49,12 +50,27 @@
 
 ### I-C1 容器发现只认能力面
 
-容器 = 某位置能取到 `Capabilities.ItemHandler.BLOCK`。`instanceof Container` **不得**用作
-「这里是不是容器」的判据。
+容器 = 某**宿主**能取到物品能力面。`instanceof Container` **不得**用作「这里是不是容器」的判据。
+
+宿主有四类，各对应一个能力面与一套身份键（键形权威清单在 `ContainerKeys` 的类注释，别处不得再解析）：
+
+| 宿主 | 能力面 | 身份键 | 例 |
+|---|---|---|---|
+| **方块** | `Capabilities.ItemHandler.BLOCK` | `chest_x_y_z`（单块）/ `container_<dim>_x_y_z` | 箱子、精妙背包方块、ProjectE 炼金箱 |
+| **实体** | `Capabilities.ItemHandler.ENTITY` | `entity_<uuid>` | 箱子船 / 箱子矿车 / 漏斗矿车 / 带箱驴骡 |
+| **掉落物** | `Capabilities.ItemHandler.ITEM` | `item_entity_<uuid>` | 掉在地上的容器物品 |
+| **玩家** | `Capabilities.ItemHandler.ENTITY`（玩家也是 `LivingEntity`）| `player_<uuid>` / `player_<uuid>_ender_chest` | 玩家背包 / 末影箱 |
 
 - **违反后果**：有物品能力但不是原版 `Container` 的模组容器（精妙背包方块、ProjectE 炼金箱）
   被判定为「不是容器」，于是列数推断、指令校准、viewer 匹配全线失效。
-- **现状**：`LivingItemContainerCommand` 曾犯（2026-10-18 已改为能力面）；其余消费点见 I-C5。
+- ⚠️ **实体宿主的额外门槛：能力面非空不等于「这是容器」**。NeoForge 给**所有** `LivingEntity`
+  注册 `ItemHandler.ENTITY` fallback（主手 + 副手 + 盔甲）⇒ 能力面查得到是**常态**，不是判据。
+  实体宿主必须再过一道**白名单**（`ContainerEntity` 接口 + `AbstractChestedHorse#hasChest()`，
+  见 `EntityContainers`），否则每个僵尸都会被当容器 tick。这是「能力面原则」在实体上的**唯一**
+  例外，且方向是**收紧**（宁可漏判不可误判）——误判的代价是给生物的主手槽倒水。
+- **现状**：`LivingItemContainerCommand` 曾犯（2026-10-18 已改为能力面）；实体宿主 2026-10-21 落地
+  （`EntityContainerContext`，构造时查不到能力面**直接抛** —— 白名单与注册面不一致就是真 bug，
+  符合 I-C7「不得静默继续」）；其余消费点见 I-C5。
 - **判据**：全库 `grep "instanceof Container"`，每一处都必须能回答「我为什么需要原版语义」（见 I-C2）。
 
 ### I-C2 原版 `Container` 只用于原版语义
@@ -89,9 +105,13 @@
   ⚠️ 仅对**可修改** handler 成立；不可修改时回退路径仍受对方 `insertItem` 语义影响，
   靠 I-C7 的写后校验兜底。
 
-### I-C5 身份与 viewer 匹配按位置键，不按 `Container` 实例
+### I-C5 身份与 viewer 匹配按稳定键，不按 `Container` 实例
 
-- 容器身份 = `ContainerIdentity.getCacheKey()`；viewer 匹配 = 「这个菜单槽属于哪个**容器位置**」。
+- 容器身份 = `ContainerIdentity.getCacheKey()`（= 维度前缀 + **稳定键**）；viewer 匹配 =
+  「这个菜单槽属于哪个**容器**」。
+- **稳定键的选法**（`D-container-04` 的「位置键」只对方块宿主成立）：
+  **方块 → 位置**（`chest_x_y_z` / `container_<dim>_x_y_z`）；**实体 → UUID**（`entity_<uuid>`，
+  `D-container-10`）—— 位置对**会动**的宿主不稳定，见下方「实体宿主」条目。
 - **禁止**用「菜单槽的 `slot.container` 是否等于某个 `Container` 实例」来判断玩家是否在看该容器。
 - **违反后果**：非 `Container` 容器永远匹配不到 viewer ⇒ 运行时 tooltip 遥测、活流体渲染、
   酿造台快照、活信标开盖**全部静默不发**（`LivingItemRuntimeSync` 对空集合直接 `continue`）。
@@ -118,6 +138,17 @@
 - ⚠️ **不要试图用 handler 实例反查位置**：第三方容器的能力面 handler 与 GUI 槽的 handler
   可能隔了多层包装（精妙背包隔三层），而 NeoForge 的 `SlotItemHandler` 内部 `container`
   是**每槽一个匿名实例**，与任何东西都比不上。⇒ 必须走注册式解析器。
+- ✅ **实体宿主：键是 UUID，位置每 tick 现取**（`D-container-10`，2026-10-21）——
+  实体每 tick 在动 ⇒ 位置键会漂 ⇒ 熔炉进度被洗掉。位置不进键，而是每 tick 由快照提供
+  （实体 ctx **每 tick 新建**，与掉落物 ctx 同范式 ⇒ 快照即当前 tick，不存在陈旧）。
+  两处相关设计：
+  ① **`getBlockPos()` 对实体容器恒返回 `null`** —— 它不是方块容器；且这防了一个真 bug：
+  船恰好停在箱子上方时，`getBlockEntity(船位置)` 会拿到**地形里的箱子** ⇒ 活信标误判
+  「有盖容器宿主」而把光束漂在下面的箱子上（返回 null 后走「非方块宿主 ⇒ 实体无 owner ⇒
+  不开光」的空路径，与 `LidBlockEntity` 判据的本意一致）；
+  ② **实体宿主的菜单解析天然结构化** —— `ContainerEntity extends Container` ⇒ 菜单槽的
+  `slot.container` 就是船本身，`MenuSlotOwners` 第一级直接命中、**零反射**。所以「实体容器能不能
+  做 viewer 匹配」的答案是**能，且不需要任何降级**（曾经预设的「viewer 降级」方案随之作废）。
 
 ### I-C6 降级必须可观测
 
@@ -159,6 +190,11 @@
 - **推论（兼容方向）**：若将来要接 AE/RS，正确做法是给 `SlotAccessor` 加一个池实现
   （按类型 extract/insert），**不是**给 `ContainerContext` 加池实现。
   后者等于给「没有几何的东西」编造几何——那正是 I-C7 说的「不得静默继续」的反面。
+- ✅ **实体宿主是格容器**（2026-10-21）：船 / 矿车 / 驴骡的槽位有编号、有列，满足「能回答槽 i 的
+  右邻居是谁」。但「格」的**几何来源不同**：方块宿主靠坐标 + 规则表/启发式，实体宿主靠
+  **实体自己的布局 API**（马/驴/骡直接问原版 `getInventoryColumns()`）或启发式，**与
+  `getBlockPos()` 无关**（它恒 null，见 I-C5）。⇒ 新增实体宿主时，「列数从哪来」必须能回答，
+  答案不能是「它站的那一格」。
 
 ### I-C9 容器级持久数据跨形态，只对「内容随物品走」的容器
 
@@ -168,15 +204,19 @@
   半保留状态比丢数据更让人困惑，而且它把「容器属性」和「容器内容」拆成了两套语义。
 - **哪些数据算「持久」**：判据是**存档里有没有它**（附件带 `serialize`）。
 
-  | 容器级数据 | 附件 | 持久化 | 跨形态迁移 |
+  | 容器级数据 | 附件挂在 | 持久化 | 跨形态迁移 |
   |---|---|---|---|
-  | 流体 `container_fluid_data` | BE 附件 | ✅ | ✅ |
-  | 电力相位 `container_phase_snapshot` | BE 附件 | ✅ | ✅ |
-  | 应力 `container_stress_data` | BE 附件 | ❌ 纯运行时 | 不适用（下一 tick 从容器重算） |
+  | 流体 `container_fluid_data` | 数据宿主（见下）| ✅ | ✅ |
+  | 电力相位 `container_phase_snapshot` | 数据宿主（见下）| ✅ | ✅ |
+  | 应力 `container_stress_data` | 数据宿主（见下）| ❌ 纯运行时 | 不适用（下一 tick 从容器重算） |
   | 红石账本 `ContainerRedstoneData` | 内存表 | ❌ 注释明说「不落盘」 | 不适用（同上） |
 
   ⇒ **只有「玩家下线重进还能续接」的那类才需要搬**；纯运行时数据丢了会自愈，
   搬它反而可能把「磁盘账本说谎」面做大（与 `PhaseSnapshot` 只存慢变量同一个考量）。
+- ⚠️ **「数据宿主」不是一个固定对象，而是 `ContainerContext#getDataHosts()` 返回的列表**
+  （2026-10-21）—— 方块容器 = 它的 BE（大箱子两半各一）；**实体容器 = 实体本身**（NeoForge 附件
+  对 `IAttachmentHolder` 通用 ⇒ 船/矿车/驴的容器级数据跟实体走，区块卸载再回来还在）。
+  读写与回填一律走宿主列表，**不得**假设「有 BE」。这是 I-C9 从方块形态扩到实体形态的唯一改动点。
 - **判据（数据声明）**：`container_rules.json` 的 `contentRetaining` 列出「内容随物品走」的
   容器 ID。**默认不在表里 ⇒ 不迁移**（保守：让流体跟内容一起消失）。
 - **为什么不做自动判断**：没有任何通用 API 能回答「这个容器的内容会不会跟着掉落物走」——
@@ -193,10 +233,76 @@
 - **现状**：✅ 已实现（`ContainerDataMigration` 查 `ContainerCompatibilityConfig.retainsContentsOnBreak`）。
   守卫：`ContainerRuleConfigTest.contentRetaining_bundledDeclarations`（谁该搬）、
   `ContainerDataMigrationTest`（搬过去不能坏：流体 CODEC / snapshot 独立性、相位 CODEC / EMPTY 不搬）。
+- ⚠️ **事件挂点会「整对失效」，第三个挂点是双向交接**（2026-10-21，`D-container-12`）：
+  迁移原本只有「破坏 `BlockDropsEvent` / 放置 `EntityPlaceEvent`」两个**事件**挂点。
+  但有些模组**两个都不给** —— 真机实证（精妙背包）：
+
+  | 方向 | 为什么不触发事件 |
+  |---|---|
+  | 方块 → 物品（蹲下右键拾取）| `putInPlayersHandAndRemove` = `setItemInHand` + `removeBlock`，**不产生掉落物** ⇒ 无 `BlockDropsEvent` |
+  | 物品 → 方块（放置）| `BackpackItem extends ItemBase`（**不是 `BlockItem`**），放置走自己的 `tryPlace` + `level.setBlockAndUpdate`，**绕开 `BlockItem.place`** ⇒ 无 `EntityPlaceEvent`；且方块物品与 `diamond_backpack` 是两个不同 item，`asItem()` 也认不出 |
+
+  ⇒ 第三个挂点是**交接**（`ContainerHandoff`），**双向**：
+
+  ```
+  capture(host) → handoff(stack)    宿主 → 物品   （第三方把方块变物品）
+  stageRestore(stack) → restoreTo(host)   物品 → 宿主   （第三方把物品变方块）
+  ```
+
+  **搬运逻辑必须与事件路径共用同一份 `moveOut` / `moveIn`** —— 两条路径语义一旦分叉，
+  就会出现「破坏搬得对、拾取搬得歪」这种最难查的 bug。
+  发现时机住在**联动模块**（Mixin 挂具体调用点），核心只提供这两对方法 + `registerMover`。
+  ⚠️ **暂存必须 copy**：第三方常在放置末尾 `shrink(1)` **就地改**手持栈，存引用会在
+  RETURN 时读到空栈（`stageRestore` 内部已 copy）。
 - ⚠️ **两种数据的可变性不同，所以搬运方式不同**：`ContainerFluidData` 是**可变对象**
   且与内存表共享引用 ⇒ 必须 `snapshot()` 深拷贝后再交给物品（否则后续 tick 的改动漏进物品）；
   `PhaseSnapshot` 是不可变 record、`capture()` 每 tick 产新对象 ⇒ 直接搬，连创造模式
   连续放置共享一份也无害。
+- 🔴 **容器级数据有两个副本，内存表是唯一真相源**（2026-10-21 真机定位，比 mixin 更根本）：
+
+  | 副本 | 谁写 | 谁读 |
+  |---|---|---|
+  | 内存表 `CONTAINER_DATA`（按 cacheKey）| 功能 tick | 功能 tick（唯一真相源）|
+  | 宿主附件（BE / 实体 / Player）| `ContainerFluidWriteback` / `ContainerPhaseWriteback` **每 tick 从内存表覆盖** | 存档加载时的「附件回填」|
+
+  ⇒ **恢复数据（物品 → 方块）必须写内存表**，只写附件会被下一 tick 的 writeback 用空对象盖掉。
+  这条对**所有**放置路径成立（不只是第三方交接），`EntityPlaceEvent` 那条也一样。
+
+  ⚠️ 为什么以前「破坏再放回」偶尔能成：`getOrCreateFluidData` 在内存表**没有该键**时才走
+  「附件回填」。**换位置**放置 ⇒ 新 cacheKey 无残留 ⇒ 回填生效；**同位置**破坏再放置
+  ⇒ 内存表里还留着**空的旧对象**（破坏时只 `clearAll` 清了内容、没删键）⇒ 回填分支不走
+  ⇒ 水消失。真机复现的正是同位置场景。
+
+  ⇒ 实现要点：`moveIn` 必须「同一个对象同时放进内存表 + 附件」—— 只放一处，
+  要么被覆盖（只放附件），要么容器不 tick 时丢存档（只放内存表）。相位还要额外
+  `PhaseSnapshot.restoreInto(ContainerPowerData)` 把快照还原进账本（账本才是真相源）。
+
+### I-C10 逻辑槽 ≠ 物理槽，跨边界必须过映射
+
+- **要求**：`ContainerContext` 对外暴露的槽号是**逻辑槽**（只数「存储格」，0 起连续）；
+  宿主 handler 的槽号是**物理槽**（可能含**前置非存储槽**）。二者靠
+  `toPhysicalSlot` / `toLogicalSlot` 一对**互逆**映射转换，默认恒等。
+- **为什么**：`getItem` / `setItem` / `getSize` 加了偏移，只说明**读写**对了 ——
+  「对外身份」若仍用物理槽号，就是**五条通道各偏一格**。而「差一格」在 GUI 上表现为
+  「东西都在、位置全错」，比丢失更难反推（真机原话：「感觉渲染和逻辑差了一格」）。
+- **跨边界点清单（新增前置槽时必须逐条过一遍，缺一即偏一格）**：
+
+  | 通道 | 口径 | 典型位置 |
+  |---|---|---|
+  | 读写 / 容量 | 逻辑 → `toPhysicalSlot` | `getItem` / `setItem` / `getSize` |
+  | 槽位同步比对 | 逻辑 → `toPhysicalSlot` | `syncWorldContainer`（GUI 图标刷新）|
+  | 遥测 / 缓存键 | **物理**槽 | `ContainerRuntimeCache.update`（在方法内部映射，调用方不可能漏）|
+  | 作废键 | **物理**槽 | `trackLivingSlots` |
+  | 同步包 / 渲染包 | **物理**槽 | `FluidFlowServerSync.buildPacket` 的 cells 键与 `fromSlot` |
+  | GUI 反查 | 物理 → `toLogicalSlot` | 倒/汲、信标喂食（`slot.getContainerSlot()`）|
+
+- **为什么映射要下沉到方法内部**：`ContainerRuntimeCache.update` 收的是 `ContainerContext`
+  而不是「裸键 + 槽号」⇒ 调用方**拿不到**不映射的写法。参数形状本身就是守卫。
+- **现状**：✅ 已满足（2026-10-21）—— 唯一例子是马 / 驴 / 骡（`AbstractHorse` inventory 索引 0
+  是马鞍）。守卫：`toPhysicalSlot` / `toLogicalSlot` 互逆（驴 +1/−1、船恒等）、遥测键用物理槽
+  （驴的逻辑槽 0 落在 key 1、key 0 无数据）。
+- **判据**：`grep -n "getContainerSlot()"` + 所有构造「同步包 / 缓存键 / 作废键」的地方，
+  每一处都必须能回答「我这里数的是逻辑槽还是物理槽」。
 
 
 ---
@@ -226,8 +332,9 @@
 - **实现**：活潜影箱走功能内部递归（`LivingShulkerBoxFunction.tick` 里自建 innerCtx 再
   `processContext`），**完全复用**现有 tick 管线，不新增一套枚举。
 
-⇒ 框架的职责边界收敛为：**tick「方块形态容器」+「玩家背包」**。物品形态容器内部要不要 tick，
-由该物品所属的功能自己决定。
+⇒ 框架的职责边界收敛为：**tick「方块形态容器」+「实体形态容器」+「玩家背包」**
+（实体形态 = 船 / 矿车 / 带箱驴骡，2026-10-21 加入，见 I-C1 / `D-container-10`）。
+物品形态容器内部要不要 tick，由该物品所属的功能自己决定。
 
 ### 3.1 深度预算是**一条**，不是两个上限
 
@@ -270,9 +377,11 @@
 | 不变量 | 守卫方式 |
 |---|---|
 | I-C1 / I-C2 | `grep "instanceof Container"` 全库审计（人工，每次改容器层必跑） |
+| I-C1（实体宿主）| 守卫测试：`EntityContainersTest` —— 白名单（`ContainerEntity` / 带箱驴骡 **进**；无箱马、普通实体 **出**）+ 无能力面即抛 |
 | I-C3 / I-C4 / I-C7 | 守卫测试：`SlotIgnoringHandler`（`insertItem` 忽略 slot）+ `FilteredExtractHandler`（`extractItem` 被过滤器拦）—— 让「写回错槽」「吞物品」在单测里直接红 |
-| I-C5 | 守卫测试：非 `Container` 方块实体的 viewer 匹配（`ContainerContextsTest` 已有同类替身场景） |
+| I-C5 | 守卫测试：非 `Container` 方块实体的 viewer 匹配（`ContainerContextsTest` 已有同类替身场景）；实体宿主的 `getBlockPos()` 恒 null 与「键=UUID」在 `EntityContainersTest` |
 | I-C6 | 代码审查：`continue` 前必须有日志或调试计数 |
+| I-C10 | 守卫测试：`toPhysicalSlot` / `toLogicalSlot` 互逆 + 遥测键用物理槽（`EntityContainersTest`）；新增前置槽时人工过一遍跨边界点清单 |
 
 > ⚠️ **替身测试只能验证「我对第三方行为的理解」**。它的价值是**回归**，不是**证伪**。
 > 证伪只能靠真机（`runClient` + 真实模组 jar），且只需做一次——把观察结果记进专题文档当实证。

@@ -70,6 +70,7 @@ REGISTRY_METHODS = [
     "SlotInteractions.register",
     "SlotAccessorFactory.registerProvider",
     "ContainerSnapshot.registerProvider",
+    "ContainerHandoff.registerMover",
     "LivingIconRegistry.register",
 ]
 REGISTRY_RE = re.compile(

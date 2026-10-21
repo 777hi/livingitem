@@ -116,7 +116,8 @@
    tooltip 进度行 · 活熔炉图标实时 · 写回不错槽/不复制 · 列数 108/120 正确算 12 ·
    背包槽位倒汲生效 · 背包 GUI 活流体渲染。
 3. ✅ **S5 已取消（`D-container-08`）** —— 「容器内物品被 tick」是**活潜影箱的专属逻辑**，
-   不是框架的通用能力。框架职责收敛为：tick「方块形态容器」+「玩家背包」。
+   不是框架的通用能力。框架职责收敛为：tick「方块形态容器」+「实体形态容器」+「玩家背包」
+   （实体形态 2026-10-21 加入，见 `D-container-10`）。
    ⇒ 想做「物品形态容器内部运转」，去做 [活潜影箱](buffer/活潜影箱实现细节.md)，不在此专题。
 
    **已完成的相邻项（与本条无关，保留记录）**：
@@ -125,11 +126,35 @@
      放置时 `EntityPlaceEvent` 搬回新 BE。覆盖精妙背包 / 原版潜影盒。
      ⚠️ 双箱：迁移后必须清两半附件，否则两次破坏各得一份 = **复制**。
      ⚠️ 放置侧必须校验「手持物品 == 本次放置的方块」，否则手持带数据的背包去放别的方块会错塞。
-   - 🔴 **已知未覆盖：蹲下右键直接拾取**（精妙 `putInPlayersHandAndRemove` →
-     `setItemInHand` + `removeBlock`）—— 不产生掉落物，`BlockDropsEvent` / `BreakEvent`
-     **都不触发** ⇒ 数据丢。修法：`RightClickBlock` HEAD 暂存（此时「手是空的」是精妙的前置条件，
-     让后续认领精确）→ 同 tick 末检查「方块没了 + 手上出现同种物品」→ 写入。**必须一次性**，
-     否则下次手上出现同类物品会被误认领（错认领比丢失更难查）。
+   - ✅ **精妙的「拾取 + 放置」双向已修（2026-10-21，真机日志驱动）** —— 精妙**两个事件都不给**：
+     - 拾取 `putInPlayersHandAndRemove`（`setItemInHand` + `removeBlock`）不产生掉落物
+       ⇒ 无 `BlockDropsEvent`；
+     - 放置 `BackpackItem.tryPlace`（**不是 `BlockItem`**，自己 `setBlockAndUpdate`）
+       ⇒ 无 `EntityPlaceEvent`；且方块物品与 `diamond_backpack` 是两个不同 item，
+       `placedItemInHand` 的 `asItem()` 判据也认不出。
+     修法：**双向交接**（`ContainerHandoff`）+ 联动模块两个 Mixin
+     （`BackpackBlockMixin` 挂 `putInPlayersHandAndRemove`、`BackpackItemMixin` 挂 `tryPlace`，
+     各 HEAD/RETURN），搬运逻辑复用事件路径那份 `moveOut`/`moveIn`。
+     ⚠️ **暂存必须 copy**：`tryPlace` 末尾 `shrink(1)` 会就地改手持栈。
+     ⚠️ 原计划的「`RightClickBlock` HEAD 暂存 → 同 tick 末检查手上出现同类物品」**未采用**：
+     它需要「认领」判定，而错认领（手上本来就有同款背包）比丢失更难查；Mixin 直接落在
+     具体方法上，零认领。代价是软依赖第三方类（`require = 0` + 资源探测门控 +
+     方法缺失时 ERROR 日志，见 `D-container-12`）。
+     🔴 **真凶（第 4 轮才找到）**：注册写成 `registerMover(ContainerDataMigration::moveOut)`，
+     而 `Mover.moveIn` 是 **default 空实现** ⇒ 方法引用只覆盖 `moveOut`，**放置方向静默失效**。
+     修法：去掉 default（漏实现编译期报错）+ 反射守卫 `mover_hasNoDefaultMethods`。
+     **通用教训**：注册点用方法引用时，接口里不能留「可选实现」。
+     ✅ **真机通过（2026-10-21 深夜，用户）**：蹲下拾取 / 左键破坏成掉落物 / 放置 —— 三条路径流体都在。
+     ⚠️ **方法论教训**：`libs/` 里没有精妙 jar（只有 `libs/src` 源码快照）⇒ 注入点从未在
+     运行环境验证过；本次是靠真机日志（三处埋点）才定位到「放置侧不走标准路径」。
+     以后接第三方钩子，先要日志确认「注入成功 + 数据走到了哪一步」，再谈修法。
+   - ✅ **「只写附件无效」—— 容器级数据有两个副本（2026-10-21 真机定位，比 mixin 更根本）**：
+     内存表 `CONTAINER_DATA`（按 cacheKey）是**唯一真相源**，`ContainerFluidWriteback` /
+     `ContainerPhaseWriteback` **每 tick 用内存表覆盖附件** ⇒ 放置时只写附件 = 下一 tick 被空对象盖掉。
+     ⚠️ 以前「破坏再放回」偶尔能成，是因为 `getOrCreateFluidData` 只在内存表**没有该键**时才走
+     「附件回填」：换位置放置（新 cacheKey）能成，**同位置**破坏再放置（旧空对象还在）就丢。
+     **这个 bug 与精妙无关，是所有容器放置路径共有的**。
+     修法：`moveIn` 用**同一个对象**同时写内存表 + 附件；相位额外 `PhaseSnapshot.restoreInto` 还原进账本。
    - ❌ **已否：隐形占位物（让槽位不空）** —— 会砸掉转化机制：`transformSourceItems` 依赖
      「**源格 + 物品同格**」（水+某物品→产物），`incinerateFlowItems` 同理。槽被占住 ⇒
      转化 / 焚毁 / 源诞生全线失效。代码注释已明写「派生源与物品同格，供后续机制三转化」是刻意设计。
@@ -150,6 +175,17 @@
    彻底消除的办法是把入口类移进 `client/` 包（项目里 `client/` 下的
    `@EventBusSubscriber` 本就能被事件总线发现），但那要动 mod 入口组织、
    **只能真机验证** ⇒ 先记录。
+
+3.3 ⚠️ **`ContainerFluidData` 当数据组件值违反 NeoForge 约定**（2026-10-21 写单测时暴露）——
+   `ItemStack.set(CONTAINER_FLUID_DATA_ITEM, data)` 在 NeoForge 的数据组件校验下抛
+   `IllegalArgumentException: Data components must implement equals and hashCode`。
+   校验由 `CommonHooks.validateComponent` 执行、**只在开发开关下启用** ⇒ 生产环境「能跑」，
+   但属于**未定义行为**：组件被当作不可变值参与 `ItemStack.matches` / 网络同步 / 缓存判等，
+   而 `ContainerFluidData` 每 tick 重算 flows（可变对象）。
+   影响面：破坏/放置迁移、GUI 拖拽时的物品比较、创造模式连续放置。
+   修法方向：给组件值做**不可变快照类型**（与 `PhaseSnapshot` 同构的 record，CODEC 同源复用），
+   或把 `ContainerFluidData` 改成不可变 + 每 tick 换新对象（成本更高）。
+   ⇒ 未定案。真机尚未观察到异常（校验未开），但这是「不该存在的状态」。
 
 4. ♻️ **「客户端列数探测」前提已错，已被设计稿取代**（2026-10-21 更正）——
    见 [buffer/container-menu-introspection-topic.md](buffer/container-menu-introspection-topic.md) §1.1/1.2：
@@ -214,6 +250,8 @@
    ✅ **第二处真机修正**：加偏移后「渲染和逻辑差了一格」⇒ 引入 `toPhysicalSlot`/`toLogicalSlot`
    一对互逆映射，并在 5 条跨边界通道上强制过它（槽位同步 / 遥测键 / 作废键 / 流体渲染包 /
    GUI 倒汲与信标喂食）。**新增前置非存储槽时必须一次性枚举所有跨边界点**。
+   ✅ **真机复验闭环**（2026-10-21 晚）：驴 GUI 5×3 对齐、tooltip 逐格对应、倒水落进所点格子。
+   实体容器这条线（`entity_<uuid>` 键 → 菜单自省 → 鞍槽偏移 → 双口径贯通）不再有未验项。
 
 5. 🔮 **池端点（长期，未定案）** —— 给 `SlotAccessor` 加「物品池」实现（按类型 extract/insert），
    让活漏斗能对 AE2 ME 接口 / RS 网络推拉。**不做**池宿主（`D-container-07` / I-C8）。

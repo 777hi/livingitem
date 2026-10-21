@@ -15,6 +15,133 @@
 
 ---
 
+## 2026-10-21（夜）
+
+> 🔗 **蹲下右键拾取不再丢容器级数据 —— 「交接」成为数据迁移的第三个挂点**（`D-container-12`）
+>
+> 真机现象：精妙背包**蹲下右键直接拾进手里**，包里的水 / 电力相位全没。
+>
+> **根因**：精妙的 `putInPlayersHandAndRemove` = `setItemInHand` + `level.removeBlock` ——
+> 不产生掉落物、不走破坏流程 ⇒ `BlockDropsEvent` / `EntityPlaceEvent` 两个挂点**全落空**。
+> 这是「第三方自己搬走容器、两个事件都不给」的第一类问题。
+>
+> **原计划被否**：`RightClickBlock` HEAD 暂存 → 同 tick 末按「方块没了 + 手上出现同种物品」认领。
+> 否决理由：需要**认领判定**，而手上本来就有同款背包时会错认领 —— 错认领比丢失更难查。
+>
+> **采用**：联动模块 Mixin 挂在**唯一汇聚方法**上（精妙两条路 —— `useWithoutItem` 的蹲下分支与
+> `playerInteract` 的副手分支 —— 都走它），零认领：
+> - `HEAD`：`ContainerHandoff.capture(be)` —— 方块还在、附件还活着，**只记引用不读不写**
+>   （目标方法中途失败时数据仍留在方块上，玩家还能打开 GUI 取用）；
+> - `RETURN`：`ContainerHandoff.handoff(player.getItemInHand(hand))` —— 物品已在手里。
+>
+> **分层**（照 `D-container-09`，`check_layers.py` 全绿）：
+> - **L1** `container/ContainerHandoff`：`capture` / `handoff` / `registerMover` + ThreadLocal 暂存
+>   （两个时机同线程同栈帧 ⇒ 零分配；每次 capture 先清残留，上次 RETURN 没执行也不串味）；
+> - **L3** 领域：`ContainerDataMigration.moveOut` / `PhaseDataMigration.moveOut` ——
+>   **与破坏路径共用同一份搬运逻辑**（两条路径语义分叉 = 「破坏搬得对、拾取搬得歪」）；
+> - **L2** `compat/sophisticated/SophisticatedMixinPlugin`（资源探测门控，与 `CreateMixinPlugin` 同构）；
+> - **L4** `mixin/sophisticated/BackpackBlockMixin`（R2 要求 `@Mixin` 只能在 L4/L5）。
+>
+> **失效方向**：`@Inject(require = 0)` + `targets` 字符串（对精妙**无编译期依赖**）⇒ 改版改名
+> **不崩服**，退回「数据随方块消失」= 修复前现状；失效可见性由 plugin 的 `postApply`
+> 检查目标方法是否还在，缺失即 **ERROR** 日志（I-C6 降级可观测）。
+>
+> **守卫**：`ContainerHandoffTest` 6 项（捕获→交接 / 无捕获 no-op / 空栈不搬且丢捕获 /
+> `capture(null)` 清残留 / 一个 Mover 抛异常不连累其它 / `discard`）+ `ContainerDataMigrationTest`
+> 新增 3 项（contentRetaining 搬 + 清空、非 retaining 不搬、退化输入安全）。
+>
+> ⚠️ **顺带撞出一笔旧账**（写测试时暴露，未修）：`ItemStack.set(CONTAINER_FLUID_DATA_ITEM, …)`
+> 在 NeoForge 数据组件校验下抛 `Data components must implement equals and hashCode` ——
+> `ContainerFluidData` 是**可变对象**。校验只在开发开关下启用 ⇒ 生产「能跑」但属 UB。
+> 已记 `TODO.md` §3.3（修法方向：给组件值做不可变快照 record）。
+
+> 🔁 **真机复验失败 → 日志定位到「放置侧」**（同日第二段）
+>
+> 换 jar 实测：**水还是没了**。加三处埋点（plugin `shouldApplyMixin` / mixin HEAD+RETURN /
+> `ContainerHandoff.handoff`）后一次定位：
+>
+> ```
+> [SophisticatedMixinPlugin] 精妙背包探测（资源检查）: true
+> [SophisticatedMixinPlugin] 已注入 BackpackBlock#putInPlayersHandAndRemove
+> [精妙联动] HEAD 捕获：be=BackpackBlockEntity@493763f5
+> [ContainerHandoff] handoff: movers=2 host=BackpackBlockEntity target=sophisticatedbackpacks:diamond_backpack
+> [精妙联动] RETURN 交接：hand=MAIN_HAND moved=true
+> ```
+>
+> ⇒ **拾取侧完全正常**（数据确实写进了手里的钻石背包）。问题在**放置**：
+> - 精妙 `BackpackItem extends ItemBase`，**不是 `BlockItem`** ⇒ 放置走自己的
+>   `tryPlace` + `level.setBlockAndUpdate`，**绕开 `BlockItem.place`**
+>   ⇒ `BlockEvent.EntityPlaceEvent` **根本不触发**（我们唯一的放置挂点）；
+> - 即使触发，`ContainerDrops.placedItemInHand` 按 `placedBlock.asItem()` 也认不出：
+>   方块物品与 `diamond_backpack` 是**两个不同 item**。
+>
+> **修法：交接做成双向** —— `ContainerHandoff` 加 `stageRestore` / `restoreTo`，
+> `Mover` 加 `moveIn`（**默认空实现**，只搬出的领域不用改）；领域把 `onBlockPlace` 里的恢复
+> 逻辑提成 `moveIn`，事件路径与交接路径共用；新增 `BackpackItemMixin` 挂 `tryPlace` 的
+> HEAD（暂存手持栈**副本**）/ RETURN（成功才恢复，失败 `discard`）。
+>
+> ⚠️ **暂存必须 copy**：`tryPlace` 末尾 `getItemInHand().shrink(1)` 是**就地改**同一个栈对象，
+> 存引用会在 RETURN 时读到空栈 —— 守卫 `stageRestore_copiesStack_soShrinkDoesNotLoseData`。
+> ⚠️ 这条同时覆盖**发射器放置**（`ModItems` 以 `player = null` 调 `tryPlace`），比事件路径更全。
+>
+> **方法论教训**：`libs/` 里没有精妙 jar（只有 `libs/src` 源码快照）⇒ 注入点从未在运行环境
+> 验证过。接第三方钩子应先埋日志确认「注入成功 + 数据走到哪一步」，再谈修法 —— 否则会像本次
+> 一样，把「拾取侧已修好」误当成「整条链路修好」。单测 811 → 815。
+
+> 🔴 **真正的根因：容器级数据有两个副本，只写附件会被下一 tick 覆盖**（同日第三段）
+>
+> 第二轮真机日志：双向 Mixin 都执行了（`放置恢复 restored=true`、`handoff moved=true`），
+> 水还是没了。回头看写回钩子才明白 —— **内存表才是唯一真相源**：
+>
+> | 副本 | 谁写 | 谁读 |
+> |---|---|---|
+> | 内存表 `CONTAINER_DATA`（按 cacheKey）| 功能 tick | 功能 tick |
+> | 宿主附件 | `ContainerFluidWriteback` / `ContainerPhaseWriteback` **每 tick 从内存表覆盖** | 存档加载时的附件回填 |
+>
+> `moveIn` 只写附件 ⇒ 下一 tick 被内存表里的**空对象**盖掉。
+>
+> ⚠️ 为什么以前「破坏再放回」偶尔能成：`getOrCreateFluidData` 只在内存表**没有该键**时才走
+> 「附件回填」。**换位置**放置 ⇒ 新 cacheKey 无残留 ⇒ 回填生效；**同位置**破坏再放置 ⇒
+> 内存表里还留着**空的旧对象**（破坏时只 `clearAll` 清了内容、没删键）⇒ 回填分支不走 ⇒ 水消失。
+> 真机复现的正是同位置场景 —— 这个 bug **与精妙无关，是所有容器的放置路径共有的**。
+>
+> **修法**：`moveIn` 改成「**同一个对象**同时放进内存表 + 附件」（只放一处：放附件会被覆盖，
+> 放内存表则容器不 tick 时丢存档）；相位额外 `PhaseSnapshot.restoreInto(ContainerPowerData)`
+> 把快照还原进账本（账本才是真相源）。拿不到 ctx（能力面未就绪）时降级为只写附件并 **WARN**（I-C6）。
+>
+> 顺带修 plugin 误报：第一版对所有 Mixin 都检查 `putInPlayersHandAndRemove`，
+> `BackpackItemMixin`（目标是 `tryPlace`）每次启动都打一条假 ERROR ⇒ 改成按 Mixin 分别登记
+> 期望方法（`EXPECTED_METHODS`）。单测维持 815。
+
+> 🎯 **真凶：`default` 方法 + 方法引用 = 静默漏实现**（同日第四段，收尾）
+>
+> 诊断版日志说明一切：`handoff` 打了、`restoreTo` 打了，但**一条 `[交接]` 都没有**
+> ⇒ `moveIn` 从未被调用。根因就是注册那一行：
+>
+> ```java
+> ContainerHandoff.registerMover(ContainerDataMigration::moveOut);   // ← 只覆盖 moveOut
+> ```
+>
+> 当时 `Mover.moveIn` 是 `default` 空实现 ⇒ **方法引用只覆盖它指向的那个方法**，
+> 另一个方向静默失效：编译通过、启动正常、日志写着 `moved=true`，但放置方向永远什么都不做。
+> 拾取侧一直是对的（数据确实进了手里的背包）⇒ 现象正是「拾取后水还在，放回去就没了」。
+>
+> **修法**：
+> - `Mover.moveIn` **去掉 default** ⇒ 漏实现在**编译期**就报错（匿名类必须实现全部抽象方法）；
+> - 两个 `*Registration` 改成匿名类，显式转发两个方向；
+> - **反射守卫** `mover_hasNoDefaultMethods` —— 编译期挡不住「有人把 default 加回来」，用测试钉住。
+>
+> **通用教训（已审计全项目，其它注册口 `SlotAccessorFactory` / `ContainerLikeItems` 都没有这个问题）**：
+> > **注册点用方法引用时，接口里不能留「可选实现」。**
+> > 方法引用是「指向一个方法」而不是「实现这个接口」—— 接口里任何没被覆盖的抽象方法都会落到
+> > default，于是「少实现一个方向」从**编译错误**变成**运行期静默失效**。
+>
+> ✅ **真机验证通过（同日，用户）**：蹲下右键直接拿手上 / 左键撸掉成掉落物 / 放置后 —— **三条路径流体都在**。
+> 日志 `[交接] 流体已恢复：inMemory=true bytes-keys=3`（内存表与附件同写，3 个源槽位），
+> 且不同位置反复放置均正常。单测 815 → 816 → 818。
+
+---
+
 ## 2026-10-21
 
 > 🔻 **NeoForge 兼容下限 21.1.249 → 21.1.219，并撤回「编译版本 / 承诺下限」解耦**（用户报
@@ -106,7 +233,7 @@
 >
 > 单测 782 → 796（新增 `EntityContainersTest` 12 项 + 反查测试 2 项，795 passed + 1 skipped）；
 > `doc_check` / `check_layers` / `check_container_keys` 全绿。⚠️ 驴的 accessor 路径单测应用不了
-> Mixin ⇒「驴能解析/普通马不当容器」待真机。
+> Mixin ⇒「驴能解析/普通马不当容器」待真机。**（当晚已真机确认：驴能解析、普通马不当容器。）**
 
 ---
 
@@ -137,6 +264,9 @@
 >
 > 守卫 +2：`toPhysicalSlot`/`toLogicalSlot` 互逆（驴 +1/-1、船恒等）、
 > 遥测键用物理槽（驴的逻辑槽 0 落在 key 1、key 0 无数据）。单测 800 → 802。
+>
+> ✅ **真机复验通过**（当晚）：驴 GUI 5×3 对齐、tooltip 逐格对应、倒水落进所点格子。
+> 实体容器这条线（`entity_<uuid>` 键 → 菜单自省 → 鞍槽偏移 → 双口径贯通）到此闭环。
 
 ---
 

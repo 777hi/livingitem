@@ -1,0 +1,14 @@
+{
+  "required": false,
+  "package": "com.qiqi.li.living.mixin.sophisticated",
+  "compatibilityLevel": "JAVA_21",
+  "refmap": "living_item.mixins-sophisticated.refmap.json",
+  "plugin": "com.qiqi.li.living.compat.sophisticated.SophisticatedMixinPlugin",
+  "mixins": [
+    "BackpackBlockMixin",
+    "BackpackItemMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

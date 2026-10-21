@@ -6,8 +6,15 @@
 >
 > **状态**：批次 A（服务端 `resolve` / `isViewing`）、批次 B（`ownsContainer` + `isSameSlotSpace`）、
 > 批次 C（客户端槽位解析）**均已落地**。
+> **2026-10-19 / 10-21 演进（本文已按现状改写）**：
+> ① viewer 匹配从「`Container` 实例集合」整体切到**位置口径** ⇒ `isViewing(Collection<Container>)` /
+>    `ownsContainer` **已删除**，位置解析收敛到 `MenuSlotOwners`；
+> ② 解析入口从 `ContainerContexts` 迁到 **`MenuSlotOwners`**（两级：结构化 + 注册口）；
+> ③ 新增**实体宿主**（船 / 矿车 / 带箱驴骡）—— 身份是 **UUID** 不是位置，见 §2.1。
+>
 > 收编方案与拍板记录在
 > [archive/infrastructure-refactoring-plan.md §2.1-Q6](../archive/infrastructure-refactoring-plan.md)。
+> 契约口径以 [container-boundary.md](container-boundary.md) 的 I-C5 为准。
 
 ---
 
@@ -41,9 +48,9 @@
 
 | 方法 | 契约 | 底稿 |
 |---|---|---|
-| `resolve(ServerPlayer, Slot) → TickableContainerContext` | 菜单槽位 → tick 上下文（容器键与 `processContainerAt` 同源 ⇒ 同一容器同一键）| `LivingBucketInteractSupport.compoundContext` |
-| `isViewing(ServerPlayer, Collection<Container>)` | 玩家菜单里是否含该容器（大箱 `CompoundContainer.contains` 特判）| `ContainerRuntimeCache` / `FluidFlowServerSync` 两份同构 |
-| `ownsContainer(Container, Collection<Container>)` | 单个菜单槽位的容器是否属于给定实例集合（大箱特判）| `SimpleContainerContext.slotBelongsTo` |
+| `resolve(ServerPlayer, Slot) → TickableContainerContext` | 菜单槽位 → tick 上下文（容器键与 `processContainerAt` 同源 ⇒ 同一容器同一键）。**2026-10-19 起先按菜单解析位置、再按位置建上下文**（否则模组容器恒 null）| `LivingBucketInteractSupport.compoundContext` |
+| `isViewingPositions(ServerPlayer, Collection<BlockPos>)` | 玩家菜单里是否含这些**位置**（取代已删除的 `isViewing(Collection<Container>)`）| `ContainerRuntimeCache` / `FluidFlowServerSync` 两份同构 |
+| `isViewingEnderChest(Player)` | 玩家是否开着末影箱（末影箱容器键 = 玩家键，无位置）| 同上 |
 | `isSameSlotSpace(Container, IItemHandler, int)` | Container ↔ handler 是否共用同一套槽位编号（两级判据）| `SimpleContainerContext.isSameSlotSpaceAsHandler` |
 
 `resolve` 的分支（镜像 `ContainerLivingItemHandler.processContainerAt` 的构建规则）：
@@ -52,10 +59,25 @@
 - **单 BE 容器**：`slot.container instanceof BlockEntity`
 - **大箱子**：`CompoundContainer` → 反射掏两半 → `DoubleChestPositions.find` 规范化为 LEFT 在前 →
   与 tick 构建同源
+- **模组容器（无 BE 可达）**：**先走 `MenuSlotOwners.resolve` 拿位置**，再按位置建上下文
+  （2026-10-19 补；此前只认 `Container` 实例 ⇒ 精妙背包背包槽汲/倒静默无效）
+- ⚠️ **分支顺序是 hazard**：位置分支必须在 `instanceof BlockEntity` 之后、`CompoundContainer` 特判
+  之前落位，改顺序会让大箱子拿到单半箱。
+
+**菜单槽 → 容器** 的解析本体已迁到 `container/MenuSlotOwners.java`（`D-container-09`，两级）：
+
+| 级 | 判据 | 失效风险 |
+|---|---|---|
+| ① **结构化** | `slot.container instanceof BlockEntity` / `CompoundContainer` / `Entity`（`ContainerEntity` 等）| 永不失效（纯类型判据）|
+| ② **注册口** | `registerMenuResolver`（方块位置）/ `registerEntityResolver`（实体）—— 由**联动模块**注册 | 只在该模块内失效 |
+
+> ⚠️ **核心不含任何「反射第三方方法名」的兜底**：精妙背包的 `getBlockPosition()` 反射住在
+> `living/compat/sophisticated/SophisticatedMenuResolver`（`ModList` 门控 + 包名前缀判据）。
+> 核心 `MenuSlotOwners` 只有两级。
 
 **两条不变量（违反即 bug）**：
 
-1. **任何「玩家菜单 ↔ 容器实例」匹配必须兼容 `CompoundContainer.contains(be)`** ——
+1. **任何「玩家菜单 ↔ 容器」匹配必须兼容 `CompoundContainer.contains(be)`** ——
    否则大箱子永远匹配失败（v19.1 遥测链路、2026-09-09 组件同步链路**两次踩同一个坑**）。
 2. **`resolve` 的容器键必须与 `ContainerLivingItemHandler.processContainerAt` 的构建规则一致** ——
    否则拿到的不是 tick 循环里那份活实例，改副本会被下一 tick 重算覆盖。
@@ -68,22 +90,42 @@
 > `LivingItemSlotWrapperAccessor` 访问 —— 若 common 包的 `ContainerContexts` 引用它，**专用服务端**加载时会崩。
 > 故客户端解析被迫分居 `client/util/`，逻辑同属「槽位 ↔ 容器身份」收敛。
 
+### 2.1 实体宿主：身份是 UUID，菜单解析天然结构化
+
+方块容器的身份 = **位置**；实体容器的身份 = **`entity_<uuid>`**（`D-container-10`）。
+
+| | 方块宿主 | 实体宿主 |
+|---|---|---|
+| 身份键 | `chest_x_y_z` / `container_<dim>_x_y_z` | **`entity_<uuid>`** |
+| 为什么不能用位置 | 位置稳定 | **实体每 tick 在动** ⇒ 位置键会漂 ⇒ 进度被洗掉 |
+| 位置怎么来 | 键里带 | 每 tick 由快照**现取**（ctx 每 tick 新建 ⇒ 不存在陈旧）|
+| `getBlockPos()` | 真实坐标 | **恒 `null`**（不是方块容器；且防「船停在箱子上 ⇒ 信标把光束漂到下面的箱子」）|
+| 菜单解析 | ① 结构化 / ② 注册口 | **① 结构化直接命中**：`ContainerEntity extends Container` ⇒ `slot.container` 就是船本身，**零反射** |
+
+⇒ 实体容器**不需要**「viewer 降级」：曾预设的降级方案随之作废（`MenuSlotOwners` 无缓存 +
+每 tick 从 UUID 反查实时位置 ⇒ GUI 开着船在漂，tooltip 与流体渲染照样跟得上）。
+
+⚠️ **驴 / 骡的菜单类是共用的**（`HorseInventoryMenu` 同时服务马、驴、骡）⇒ 解析器必须再过一道
+`hasChest()` 白名单，否则**普通马**也会被当容器。这道白名单在 `EntityContainers`（不在菜单类上）。
+
 ---
 
-## 3. 消费者清单（6 + 客户端 1）
+## 3. 消费者清单（8 + 客户端 1）
 
 | # | 消费者 | 边界带需求 | 现状 |
 |---|---|---|---|
 | 1 | `DoubleChestPositions.java` | 位置级找伙伴（LEFT/RIGHT 规范序）| 保留（`resolve` 复用）|
-| 2 | `ContainerRuntimeCache.java` `isViewingContainer` | 查看者匹配（遥测）| ✅ 改薄委托 → `ContainerContexts.isViewing` |
-| 3 | `FluidFlowServerSync.java` `isViewingContainer` | 查看者匹配（流体渲染）| ✅ 改薄委托 → `ContainerContexts.isViewing` |
+| 2 | `ContainerRuntimeCache.java` `isViewingContainer` | 查看者匹配（遥测）| ✅ **位置口径** → `ContainerContexts.isViewingPositions` |
+| 3 | `FluidFlowServerSync.java` `isViewingContainer` | 查看者匹配（流体渲染）| ✅ **位置口径** → `ContainerContexts.isViewingPositions` |
 | 4 | `LivingBucketInteractSupport.java` `compoundContext` | 汲/倒反查活流体数据 | ✅ 改薄委托 → `ContainerContexts.resolve` |
-| 5 | `SimpleContainerContext.java` `slotBelongsTo` | 容器归属匹配（组件同步）| ✅ 改薄委托 → `ContainerContexts.ownsContainer` |
+| 5 | `SimpleContainerContext.java` `slotBelongsToPositions` | 容器归属匹配（槽位同步）| ✅ **位置口径**（私有，不再经 `ContainerContexts` —— `ownsContainer` 已随实例口径一并删除）|
 | 6 | `CrossContainerTransfer.java` `getBasePosCandidates` | 跨容器面选取（基准块候选）| 不迁移（非重复项，属传输面选取；通用教训见 §4）|
 | 7 | `SimpleContainerContext.java` `isSameSlotSpaceAsHandler` | 槽位体系一致性仲裁 | ✅ 改薄委托 → `ContainerContexts.isSameSlotSpace` |
+| 8 | `LivingItem.runtimeContainerPositions` | 运行时**容器键 → 位置**反查（tooltip / 流体渲染发包）| ✅ 支持 `entity_<uuid>`（每 tick 从 `ServerLevel#getEntity` 实时反查 ⇒ 实体移动也跟得上）|
 | C | `GuiInteractionHelper.java` + `AbstractContainerScreenMixin.java` | 客户端槽位 → 容器（创造模式 `SlotWrapper`）| ✅ 改薄委托 → `ClientSlotResolve.resolveContainerSlot`（`client/util/`）|
 
-> **判据（可复算）**：`grep -rn CompoundContainer src/main/java` 的**特判**应收敛到 `ContainerContexts` 一处。
+> **判据（可复算）**：`grep -rn CompoundContainer src/main/java` 的**特判代码**应收敛到两处 ——
+> `ContainerContexts`（建上下文）与 `MenuSlotOwners`（解析位置）；其余命中只能是注释。
 
 > ⚠️ **残留（2026-10-04 代码审查，未收编）**：`AbstractContainerScreenMixin.living_item$resolveServerSlotIndex`
 > 仍自己解包 `SlotWrapper`（取 **`.index`**）—— 与 Q6 的「→ 容器槽位」是**不同映射**，故不在本批范围。
@@ -113,6 +155,20 @@
 - **末影箱**：`EnderChestContainerContext` 把 containerKey 覆写为玩家键，
   `ContainerContexts.resolve` 解析不出 ⇒ 返回 `null`。按菜单槽位反查的功能（如汲/倒）
   对末影箱**静默无效**。
+
+- ✅ **精妙的「拾取 + 放置」双向都已修（2026-10-21，`D-container-12`，真机日志驱动）**：
+  精妙**两个事件都不给** —— 拾取走 `putInPlayersHandAndRemove`（`removeBlock`，无掉落物）、
+  放置走 `BackpackItem.tryPlace`（**不是 `BlockItem`**，自己 `setBlockAndUpdate`）。
+  修法 = **双向交接**（`ContainerHandoff`）：
+  `capture`/`handoff`（宿主 → 物品，Mixin 挂 `putInPlayersHandAndRemove` 的 HEAD/RETURN）+
+  `stageRestore`/`restoreTo`（物品 → 宿主，Mixin 挂 `tryPlace` 的 HEAD/RETURN）。
+  搬运逻辑复用事件路径那份 `moveOut`/`moveIn`。
+  ⚠️ 残留边界：其它模组若有**同样不给事件**的搬走/放置方式，仍会丢数据 —— 遇到时照此模式补一个联动模块。
+
+- ✅ **实体容器（2026-10-21 已实现，不再是缺口）** —— 三条**已知限制**（都是刻意的）：
+  ① 超出 simulation distance 停 tick（与 BE 卸载 / 掉落物 / 玩家下线三条既有路径一致），回来接着烧；
+  ② 不走位置广播（活信标在实体容器里本就不开光，`LidBlockEntity` 判据三实现全是 BE ⇒ 需求证伪）；
+  ③ 马 / 驴 / 骡有前置马鞍槽 ⇒ 逻辑槽与物理槽差 1，见 [container-boundary.md](container-boundary.md) I-C10。
 
 - **「有物品能力、但不是原版 `Container`」的模组方块实体**（2026-10-10 踩坑，crash + 修复）：
   扫描入口 `processContainerAt` 按 `IItemHandler.BLOCK` **能力面**把任何有物品能力的方块实体当成活物品容器
