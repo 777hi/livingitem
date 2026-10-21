@@ -5,6 +5,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.animal.horse.AbstractHorse;
 import net.minecraft.world.entity.vehicle.ContainerEntity;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.attachment.IAttachmentHolder;
 import net.neoforged.neoforge.capabilities.Capabilities;
@@ -51,7 +52,21 @@ import java.util.List;
  */
 public class EntityContainerContext extends SimpleContainerContext {
 
+    /**
+     * 马鞍槽偏移（2026-10-21 真机修正）—— {@code AbstractHorse} 的 inventory 布局是
+     * <b>鞍在最前</b>：索引 0 = 马鞍（装备槽），索引 {@code 1..} 才是箱子格
+     * （原版 {@code HorseInventoryMenu} 的 {@code new Slot(horseContainer, 0, …)} 是鞍槽，
+     * 箱子格 {@code 1 + l + k * columns}；常量 {@code AbstractHorse.INV_SLOT_SADDLE = 0}）。
+     *
+     * <p>⚠️ 不排除它的后果（真机实测「驴被识别成 8×2」的完整因果）：16 槽（15 箱 + 1 鞍）
+     * 直接喂启发式 ⇒ {@code 16 % 8 = 0} ⇒ 8 列；且槽 0（鞍）被当普通存储格 ⇒
+     * 往那格倒水会得到玩家取不出的幽灵物品（GUI 只渲染鞍）。</p>
+     */
+    private static final int SADDLE_OFFSET = 1;
+
     private final Entity entity;
+    /** 跳过前置装备槽后的“首个存储格”在 handler 里的索引（马 = 1，船/矿车 = 0）。 */
+    private final int storageOffset;
 
     public EntityContainerContext(Entity entity, ServerLevel level) {
         super(handlerOf(entity), null,
@@ -60,11 +75,39 @@ public class EntityContainerContext extends SimpleContainerContext {
             (Level) level,
             "entity_" + entity.getUUID());      // 显式稳定键（父类 buildContainerKey 三条都不满足）
         this.entity = entity;
+        this.storageOffset = entity instanceof AbstractHorse ? SADDLE_OFFSET : 0;
     }
 
     /** 被包装的实体（viewer 匹配 / 数据宿主 / 位置反查都用它）。 */
     public Entity getEntity() {
         return entity;
+    }
+
+    /**
+     * 容器口径的槽位数 —— <b>只数存储格</b>：带箱驴 16 槽去掉鞍槽 = 15（5×3）。
+     *
+     * <p>船/矿车无装备槽 ⇒ 等于 handler 槽位数（27 / 5）。</p>
+     */
+    @Override
+    public int getSize() {
+        return super.getSize() - storageOffset;
+    }
+
+    /**
+     * 读存储格（逻辑槽位 → handler 物理索引，跳过鞍槽）。
+     *
+     * <p>委托 {@code super} 而不是直接调 handler：父类的越界判据是
+     * {@code 0 <= slot < handler.getSlots()}，加偏移后天然落在存储区。</p>
+     */
+    @Override
+    public ItemStack getItem(int logicalSlot) {
+        return super.getItem(logicalSlot + storageOffset);
+    }
+
+    /** 写存储格（同 {@link #getItem} 的偏移；clamp/脏标记/同步全走父类既有路径）。 */
+    @Override
+    public void setItem(int logicalSlot, ItemStack stack) {
+        super.setItem(logicalSlot + storageOffset, stack);
     }
 
     /**
@@ -93,18 +136,18 @@ public class EntityContainerContext extends SimpleContainerContext {
     }
 
     /**
-     * 列数：直接走父类三级 —— Tier1（规则）对无 BE 的容器天然跳过、Tier2（原版类型表）
-     * 无方块可查也跳过 ⇒ 落到 <b>Tier3 启发式</b>，而四类实体的启发式实测全对
-     * （27→9、5→5、15→5，靠 {@code resolveColumns} 的候选宽度顺序）。
+     * 列数：马/驴/骡直接问原版（{@code getInventoryColumns()} = 5），其余走父类三级。
      *
-     * <p>⚠️ <b>刻意不加「按实体类型 id 查规则表」</b>（2026-10-21 评估后放弃）：
-     * ① 没有消费方 —— /livingitem container register 只认方块容器，玩家现在根本无法
-     * 校准实体容器；② 会让本类 import transfer 包，违反分层（L1→L2，棘轮 +1）；
-     * ③ 「预留半截能力」正是项目反复踩的坑（能力面存在 ≠ 该有）。
-     * 等 register 支持实体时再加，届时查询逻辑放 {@code SimpleContainerContext} 的既有钩子上。</p>
+     * <p>⭐ <b>这是「原版给了 API 就用」</b>，与曾放弃的「查规则表」是两回事：那次放弃是
+     * 因为规则表这条路没有消费方（register 不认实体容器）；而 {@code getInventoryColumns()}
+     * 是原版对“马格布局”的权威回答，比启发式硬。启发式拿 16 槽会算 8 列
+     * （{@code 16 % 8 = 0}）—— 真机实测的错。</p>
      */
     @Override
     public int getWidth() {
+        if (entity instanceof AbstractHorse horse) {
+            return horse.getInventoryColumns();
+        }
         return super.getWidth();
     }
 

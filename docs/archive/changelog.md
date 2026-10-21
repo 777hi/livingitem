@@ -110,6 +110,48 @@
 
 ---
 
+## 2026-10-21（下午）
+
+> 🐴 **驴/骡的槽位布局修正（真机驱动）** —— 用户实测：「驴的容器实际排列是 5×3，还有个马鞍槽位，
+> 被识别成了 8×2」。查原版源码后确认根因：`AbstractHorse` 的 inventory 是
+> **16 槽 = 索引 0 马鞍 + 索引 1..15 箱子格**（`INV_SLOT_SADDLE = 0`；
+> `HorseInventoryMenu` 的箱子格从 `1 + l + k * columns` 起）。我们把它整个当存储格：
+>
+> | 症状 | 因果 |
+> |---|---|
+> | **8×2** | 启发式拿 16 槽：`16 % 9 ≠ 0 … 16 % 8 = 0` ⇒ 8 列 |
+> | **幽灵物品**（未报但同源） | 鞍槽被当普通存储格 ⇒ 往那格倒水，玩家取不出（GUI 只渲染鞍） |
+>
+> 修法（`EntityContainerContext`）：
+> - `SADDLE_OFFSET`：马/驴/骡 = 1，船/矿车 = 0（无装备槽）
+> - `getSize()` = `super.getSize() - offset`（16 → **15**）
+> - `getItem` / `setItem` 逻辑槽 + offset（槽 0 → handler 槽 1），**鞍槽永远碰不到**
+> - `getWidth()`：马/驴/骡直接问原版 `getInventoryColumns()`（= **5**），其余走父类三级
+>
+> ⭐ `getWidth` 这条是「**原版给了 API 就用**」——与上午放弃的「查规则表」不同：那次放弃是因为
+> 没有消费方；`getInventoryColumns()` 是原版对马格布局的权威回答，比启发式硬。
+>
+> 守卫 +2：鞍槽排除与偏移映射（含「写不碰鞍槽」）、船无偏移直通。单测 798 → 800。
+
+> 🔧 **构建配置：`generateModMetadata` 缺 `filteringCharset`**（同日，被上午的 `clean` 暴露）——
+> 现象是测试/启动全崩在 FML 解析：
+> `ParsingException: Failed to parse data from Reader` / `Caused by: MalformedInputException: Input length = 2`。
+>
+> 根因：`src/main/templates/META-INF/neoforge.mods.toml` 含中文注释，而 `generateModMetadata`
+> 没声明 `filteringCharset` ⇒ Gradle 的 `expand` 跟随**平台默认编码**（Windows 中文 = GBK）读
+> UTF-8 模板 ⇒ 无法映射的字节被替换成 `?`（实测 `e7 94 bf` → `e7 94 3f`）⇒ 产物不是合法 UTF-8。
+>
+> **为什么一直没炸**：任务输出 up-to-date 时不重跑；只有 `clean` 或模板变更才重新渲染 ⇒
+> 这个坑潜伏到 2026-10-21 上午 `clean` 第一次触发。同文件里 `generateBuildProps` **有**这一行
+> （`80f71a4` 加构建指纹时加的），`generateModMetadata` 被漏掉。
+>
+> 修：补 `filteringCharset = 'UTF-8'` + 注释写明潜伏条件。
+>
+> 诊断方法（可复用）：扫全项目的 `.toml/.properties/.json` 严格 UTF-8 解码 + 查坏字节的 hex
+> （`e7 94 3f` 这种「UTF-8 首字节 + `3F`」是「按错误编码读过再写回」的指纹）。
+
+---
+
 ## 2026-10-20
 
 > 🧭 **精妙形状复审（续 `D-container-09`）** —— 用户：「再检查一遍，还有哪些变得精妙形状了吧」。

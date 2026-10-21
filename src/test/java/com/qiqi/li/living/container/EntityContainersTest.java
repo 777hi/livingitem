@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.entity.animal.horse.AbstractChestedHorse;
 import net.minecraft.world.entity.animal.horse.AbstractHorse;
 import net.minecraft.world.entity.vehicle.ContainerEntity;
@@ -58,6 +59,22 @@ class EntityContainersTest {
 
     private static EntityContainerContext boatContext(Entity boat) {
         return new EntityContainerContext(boat, mock(ServerLevel.class));
+    }
+
+    /**
+     * 带箱驴替身：handler 是 <b>16 槽</b>（原版布局：索引 0 = 马鞍、1..15 = 箱子格）。
+     *
+     * <p>⚠️ 真机因果链：16 槽不排除鞍 ⇒ 启发式 {@code 16 % 8 = 0 ⇒ 8 列}（实测「8×2」），
+     * 且鞍槽被当普通格 ⇒ 幽灵物品。见 {@code EntityContainerContext.SADDLE_OFFSET}。</p>
+     */
+    private static Entity donkeyEntity() {
+        AbstractHorse donkey = mock(AbstractChestedHorse.class);
+        when(donkey.getUUID()).thenReturn(ID);
+        when(donkey.blockPosition()).thenReturn(BOAT_POS);
+        when(donkey.getCapability(Capabilities.ItemHandler.ENTITY))
+            .thenReturn(new ItemStackHandler(16));
+        when(donkey.getInventoryColumns()).thenReturn(5);   // 原版权威：hasChest() ? 5 : 0
+        return donkey;
     }
 
     // ── 白名单 ──
@@ -112,8 +129,10 @@ class EntityContainersTest {
     void widthFromHeuristic_hopperAndDonkey() {
         assertEquals(5, boatContext(boatEntity(new ItemStackHandler(5))).getWidth(),
             "漏斗矿车 5 格：9/10/12/13/8/7/6/11 都试过，落到 5");
-        assertEquals(5, boatContext(boatEntity(new ItemStackHandler(15))).getWidth(),
-            "带箱驴 15 格：落到 5（原版 getInventoryColumns() = 5，一致）");
+        assertEquals(15, boatContext(donkeyEntity()).getSize(),
+            "带箱驴 16 槽去掉鞍槽 = 15 存储格（GUI 5×3）");
+        assertEquals(5, boatContext(donkeyEntity()).getWidth(),
+            "列数问原版 API（getInventoryColumns() = 5）—— 启发式对 16 槽会算 8（16%8=0），这是真机实测的错");
     }
 
     @Test
@@ -121,6 +140,40 @@ class EntityContainersTest {
     void blockPosIsNull() {
         assertNull(boatContext(boatEntity(new ItemStackHandler(27))).getBlockPos(),
             "返回船位置会让 isLiddedChest(getBlockEntity(pos)) 拿到地形里的箱子 ⇒ 光束漂错地方");
+    }
+
+    @Test
+    @DisplayName("鞍槽排除与偏移映射：getItem(0) 读 handler 槽 1，鞍槽（handler 槽 0）永不被当存储格")
+    void saddleSlotExcluded_andOffsetMapping() {
+        IItemHandler handler = new ItemStackHandler(16);
+        // ItemStackHandler 的 insertItem 尊重 slot 参数 ⇒ 用它精确预填
+        handler.insertItem(0, Items.SADDLE.getDefaultInstance(), false);   // 鞍
+        handler.insertItem(1, Items.APPLE.getDefaultInstance(), false);    // 第一个存储格
+        AbstractHorse donkey = mock(AbstractChestedHorse.class);
+        when(donkey.getUUID()).thenReturn(ID);
+        when(donkey.blockPosition()).thenReturn(BOAT_POS);
+        when(donkey.getCapability(Capabilities.ItemHandler.ENTITY)).thenReturn(handler);
+        when(donkey.getInventoryColumns()).thenReturn(5);
+
+        var ctx = boatContext(donkey);
+
+        assertEquals(Items.APPLE, ctx.getItem(0).getItem(),
+            "逻辑槽 0 必须映射到 handler 槽 1（鞍槽 +1 偏移），否则整个网格偏一位");
+        assertEquals(Items.SADDLE, handler.getStackInSlot(0).getItem(), "前置：handler 槽 0 是鞍");
+
+        // 写也不能落进鞍槽：写逻辑槽 0 ⇒ handler 槽 1 变、槽 0 还是鞍
+        ctx.setItem(0, Items.DIAMOND.getDefaultInstance());
+        assertEquals(Items.DIAMOND, handler.getStackInSlot(1).getItem());
+        assertEquals(Items.SADDLE, handler.getStackInSlot(0).getItem(),
+            "写存储绝不能碰鞍槽 —— 否则玩家得到取不出的幽灵物品（GUI 只渲染鞍）");
+    }
+
+    @Test
+    @DisplayName("船无装备槽：offset = 0，27 槽直通（不因驴的修复而变）")
+    void boatHasNoOffset() {
+        var ctx = boatContext(boatEntity(new ItemStackHandler(27)));
+        assertEquals(27, ctx.getSize());
+        assertEquals(9, ctx.getWidth(), "船仍走启发式（27 % 9 = 0）");
     }
 
     @Test

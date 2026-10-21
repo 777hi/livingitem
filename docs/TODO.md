@@ -204,8 +204,13 @@
    三实现全是 BE）⇒ 唯一候选需求证伪，设计稿 §0.1。
    ⚠️ **无人区块停 tick 但不丢数据**：超出 simulation distance 停（与 BE 卸载 / 掉落物 /
    玩家下线三条既有路径一致），回来接着烧。
-   ⚠️ 待真机验：驴的菜单解析走 `HorseInventoryMenuAccessor`（Mixin accessor，
-   单测应用不了 Mixin）；「普通马不当容器」在 accessor 分支已判 hasChest。
+   ✅ **真机已验证并修正驴的槽位布局**（2026-10-21 下午）：原版 `AbstractHorse` inventory 是
+   **16 槽 = 索引 0 马鞍 + 索引 1..15 箱子格（5×3）**（`INV_SLOT_SADDLE = 0`，
+   `HorseInventoryMenu` 的箱子格从 `1 + l + k*columns` 起）。不排除鞍槽的后果：
+   启发式 `16 % 8 = 0` ⇒ **8 列**（真机「8×2」）+ 往鞍槽倒水得到玩家取不出的幽灵物品。
+   修法：`EntityContainerContext` 的 `SADDLE_OFFSET`（size 减 1、getItem/setItem 加偏移、
+   `getWidth` 问原版 `getInventoryColumns()`）。船/矿车无装备槽 ⇒ offset 0 直通。
+   ⚠️ 驴的菜单解析最终走**入口层反射**（Mixin accessor 被包隔离否掉，见 changelog）。
 
 5. 🔮 **池端点（长期，未定案）** —— 给 `SlotAccessor` 加「物品池」实现（按类型 extract/insert），
    让活漏斗能对 AE2 ME 接口 / RS 网络推拉。**不做**池宿主（`D-container-07` / I-C8）。
