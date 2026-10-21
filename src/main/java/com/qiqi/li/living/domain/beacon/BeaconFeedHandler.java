@@ -83,7 +83,10 @@ public class BeaconFeedHandler implements InteractionHandler {
         TickableContainerContext ctx = ContainerContexts.resolve(player, slot);
         if (ctx != null) {
             return BeaconPyramid.resolveLevel(
-                BeaconFunction.heightsFrom(ctx, columnSlotsFor(ctx, slot.getContainerSlot())));
+                // ⚠️ GUI 给的是物理槽；列扫描走逻辑槽（getItem/width）⇒ 必须映射
+                // （下方 legacyReadPyramidLevel 是原版 Container 降级路径，物理=逻辑，不用映射）
+                BeaconFunction.heightsFrom(ctx, columnSlotsFor(ctx,
+                    ctx.toLogicalSlot(slot.getContainerSlot()))));
         }
         return legacyReadPyramidLevel(slot);
     }

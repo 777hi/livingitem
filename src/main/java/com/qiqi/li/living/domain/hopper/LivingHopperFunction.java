@@ -112,7 +112,7 @@ public class LivingHopperFunction implements LivingItemFunction {
             if (transfer.isOnCooldown()) {
                 transfer = transfer.tick();
                 // 只更新运行时缓存，不写入 DataComponent
-                ContainerRuntimeCache.update(cacheKey, slot,
+                ContainerRuntimeCache.update(context, slot,
                     RuntimeSegments.EMPTY.with(HopperSegment.INSTANCE,
                         new HopperRuntime(transfer.cooldown(), slotInfo)));
                 continue;
@@ -141,7 +141,7 @@ public class LivingHopperFunction implements LivingItemFunction {
 
             slotInfo = new ResolvedSlotData(slot, sourceSlot, targetSlot, containerSize, containerWidth);
             // 只更新运行时缓存（cooldown、slotInfo），不写入 DataComponent
-            ContainerRuntimeCache.update(cacheKey, slot,
+            ContainerRuntimeCache.update(context, slot,
                 RuntimeSegments.EMPTY.with(HopperSegment.INSTANCE,
                     new HopperRuntime(transfer.cooldown(), slotInfo)));
         }

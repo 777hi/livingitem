@@ -215,13 +215,15 @@ public class ContainerLivingItemHandler {
 
     /** 从扫描结果收集「本 tick 的活物品槽位 → 物品类型」（同槽位多功能 ⇒ 去重）。 */
     private static Map<Integer, Item> collectLivingSlots(
-            Map<LivingItemFunction, List<LivingItemFunction.SlotEntry>> grouped) {
+            Map<LivingItemFunction, List<LivingItemFunction.SlotEntry>> grouped,
+            ContainerContext ctx) {
         Map<Integer, Item> slots = new LinkedHashMap<>();
         for (var list : grouped.values()) {
             for (var slotEntry : list) {
                 ItemStack st = slotEntry.stack();
                 if (!st.isEmpty()) {
-                    slots.put(slotEntry.slotIndex(), st.getItem());
+                    // 键 = 物理槽（与 ContainerRuntimeCache.update 同口径）
+                    slots.put(ctx.toPhysicalSlot(slotEntry.slotIndex()), st.getItem());
                 }
             }
         }
@@ -480,7 +482,9 @@ public class ContainerLivingItemHandler {
         // ⚠️ 必须在下方早退分支之前 —— 「容器里已无活物品」正是最需要清理的场景。
         // 键用 getCacheKey()（世界容器带维度前缀）⇒ 与 ContainerRuntimeCache 的存储键、
         // removeDataByPos 的作废键三方同构（2026-10-12 修三处键不一致）。
-        trackLivingSlots(context.getCacheKey(), collectLivingSlots(grouped));
+        // ⚠️ 作废键必须与 ContainerRuntimeCache 的存储键同口径 = 【物理槽】
+        // （update 内部过 ctx.toPhysicalSlot；这里同样过一遍，否则作废打空）
+        trackLivingSlots(context.getCacheKey(), collectLivingSlots(grouped, context));
 
         // 自维持功能（如活水源）：即便容器内没有它自己的活物品，也要进入主流程参与 tick。
         // 遍历的是注册期算好的静态清单（通常 0~1 个），不逐函数判定，保证成千上万个容器

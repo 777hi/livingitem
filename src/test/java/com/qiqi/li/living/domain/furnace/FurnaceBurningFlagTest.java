@@ -62,7 +62,7 @@ class FurnaceBurningFlagTest {
         ctx.set(FURNACE_SLOT, livingFurnace());
         // 预置运行时缓存：燃烧中（burnTime > 0）。无输入物品 → pauseTick 分支
         // tick(1) 扣 1 点余热，仍 > 0，本 tick 结束时仍判定为燃烧中
-        ContainerRuntimeCache.update(ctx.getContainerKey(), FURNACE_SLOT,
+        ContainerRuntimeCache.update(ctx, FURNACE_SLOT,
             RuntimeSegments.EMPTY.with(FurnaceSegment.INSTANCE, new FurnaceRuntime(0, 200, 1600, null)));
 
         tickOnce(ctx, FURNACE_SLOT);
@@ -80,7 +80,7 @@ class FurnaceBurningFlagTest {
         FurnaceComponents.setBurning(furnace, true); // 模拟先前燃烧中
         ctx.set(FURNACE_SLOT, furnace);
         // 运行时缓存：burnTime=0（熄灭）
-        ContainerRuntimeCache.update(ctx.getContainerKey(), FURNACE_SLOT,
+        ContainerRuntimeCache.update(ctx, FURNACE_SLOT,
             RuntimeSegments.EMPTY.with(FurnaceSegment.INSTANCE, new FurnaceRuntime(0, 200, 0, null)));
 
         tickOnce(ctx, FURNACE_SLOT);

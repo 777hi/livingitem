@@ -57,8 +57,22 @@ public class ContainerRuntimeCache {
 
     // ── 更新 ────────────────────────────────────────────────
 
-    public static void update(String containerKey, int slot, RuntimeSegments data) {
-        store.computeIfAbsent(containerKey, k -> new ConcurrentHashMap<>()).put(slot, data);
+    /**
+     * 写入某槽位的运行时数据。
+     *
+     * <p>⚠️ <b>收 {@link ContainerContext} 而不是裸键 + 槽号</b>（2026-10-21）：本缓存是
+     * <b>对外</b>通道（客户端 tooltip 按 {@code Slot#getContainerSlot()} 查），所以键必须是
+     * <b>物理槽</b>；而领域侧手里的 {@code slot} 是<b>逻辑槽</b>。让本方法自己过
+     * {@link ContainerContext#toPhysicalSlot} ⇒ 调用方不可能漏映射（漏了就显示偏位）。</p>
+     */
+    public static void update(com.qiqi.li.living.container.ContainerContext ctx,
+                              int logicalSlot, RuntimeSegments data) {
+        if (ctx == null) return;
+        // cacheKey 正常 = 稳定键 + 维度前缀；测试替身没有维度 ⇒ 回落到稳定键
+        String containerKey = ctx.getCacheKey() != null ? ctx.getCacheKey() : ctx.getContainerKey();
+        if (containerKey == null) return;
+        int physicalSlot = ctx.toPhysicalSlot(logicalSlot);
+        store.computeIfAbsent(containerKey, k -> new ConcurrentHashMap<>()).put(physicalSlot, data);
         dirtyContainers.add(containerKey);
     }
 

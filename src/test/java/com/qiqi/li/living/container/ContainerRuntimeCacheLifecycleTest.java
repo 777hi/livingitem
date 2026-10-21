@@ -119,7 +119,7 @@ class ContainerRuntimeCacheLifecycleTest {
         assertEquals("minecraft:overworld|chest_64_70_-8", cacheKey);
 
         // 预置一条运行时数据（模拟箱子里有个烧着的活熔炉）
-        ContainerRuntimeCache.update(cacheKey, 3, RuntimeSegments.EMPTY);
+        ContainerRuntimeCache.update(ctx, 3, RuntimeSegments.EMPTY);
 
         // 建位置索引（与 tick 路径同源：容器级数据首次创建时 indexPositions）
         ContainerLivingItemHandler.getOrCreateContainerData(ctx, ContainerFluidData.KEY);

@@ -177,6 +177,39 @@ class EntityContainersTest {
     }
 
     @Test
+    @DisplayName("逻辑↔物理槽映射：驴 +1/-1 互逆；船恒等（真机「差一格」的根）")
+    void slotMapping_isInverse() {
+        var donkey = boatContext(donkeyEntity());
+        assertEquals(1, donkey.toPhysicalSlot(0), "逻辑槽 0 → handler 槽 1（跳过马鞍）");
+        assertEquals(0, donkey.toLogicalSlot(1), "物理槽 1 → 逻辑槽 0");
+        for (int i = 0; i < donkey.getSize(); i++) {
+            assertEquals(i, donkey.toLogicalSlot(donkey.toPhysicalSlot(i)),
+                "两个方向必须互逆（否则同步与交互各偏一次）");
+        }
+
+        var boat = boatContext(boatEntity(new ItemStackHandler(27)));
+        assertEquals(7, boat.toPhysicalSlot(7), "船无装备槽 ⇒ 恒等");
+        assertEquals(7, boat.toLogicalSlot(7));
+    }
+
+    @Test
+    @DisplayName("运行时遥测键用【物理槽】：驴的逻辑槽 0 写进 key 1（客户端按 getContainerSlot 查）")
+    void runtimeTelemetryKeyedByPhysicalSlot() {
+        var donkey = boatContext(donkeyEntity());
+        com.qiqi.li.living.runtime.ContainerRuntimeCache.clear();
+
+        com.qiqi.li.living.runtime.ContainerRuntimeCache.update(donkey, 0,
+            com.qiqi.li.living.runtime.RuntimeSegments.EMPTY);
+
+        String key = donkey.getCacheKey();
+        var snapshot = com.qiqi.li.living.runtime.ContainerRuntimeCache.getSnapshot(key);
+        assertTrue(snapshot.containsKey(1),
+            "客户端悬停 GUI 第一个箱子格时 getContainerSlot() = 1 ⇒ 键必须是 1");
+        assertFalse(snapshot.containsKey(0),
+            "键 0 是马鞍槽，不该有遥测数据（否则悬停马鞍会显示第一个箱子的 tooltip）");
+    }
+
+    @Test
     @DisplayName("数据宿主 = 实体本身（流体/相位附件挂实体，区块卸载再回来还在）")
     void dataHostIsEntity() {
         Entity boat = boatEntity(new ItemStackHandler(27));

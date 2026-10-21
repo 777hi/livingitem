@@ -111,6 +111,24 @@ public class EntityContainerContext extends SimpleContainerContext {
     }
 
     /**
+     * 逻辑槽 → 物理槽（+ 装备槽偏移）。
+     *
+     * <p>对外通道（GUI 槽号 / 槽位同步包 / 运行时遥测键 / 客户端 tooltip 的
+     * {@code getContainerSlot()}）全用物理槽；功能类内部用逻辑槽。
+     * 不过这一层的后果是**显示整体偏一格**（真机「渲染和逻辑差了一格」）。</p>
+     */
+    @Override
+    public int toPhysicalSlot(int logicalSlot) {
+        return logicalSlot + storageOffset;
+    }
+
+    /** 物理槽 → 逻辑槽（− 装备槽偏移）；GUI 交互（倒/汲水）靠它把槽号拉回存储格编号。 */
+    @Override
+    public int toLogicalSlot(int physicalSlot) {
+        return physicalSlot - storageOffset;
+    }
+
+    /**
      * 容器级持久数据的宿主 = <b>实体本身</b>（流体 / 电力相位附件）。
      *
      * <p>BE 与 Entity 同为 {@link IAttachmentHolder} ⇒ 领域侧 writeback 不问类型，

@@ -120,7 +120,8 @@ public final class FluidFlowServerSync {
     }
 
     /** 构建 flow 快照包；无流体数据时返回 null。流体按调色板去重（只用 Registry.getKey 接口）。 */
-    public static FluidFlowSyncPacket buildPacket(String containerKey, int width, ContainerFluidData fluidData,
+    public static FluidFlowSyncPacket buildPacket(com.qiqi.li.living.container.ContainerContext ctx,
+                                                  String containerKey, int width, ContainerFluidData fluidData,
                                                   com.qiqi.li.living.domain.water.FluidFlowClientCache.RenderTarget target) {
         var flows = fluidData.getFlows();
         if (flows.isEmpty()) return null;
@@ -139,7 +140,12 @@ public final class FluidFlowServerSync {
                 paletteIndex.put(fluid, idx);
                 palette.add(key.toString());
             }
-            cells.put(e.getKey(), new int[]{e.getValue().level(), e.getValue().fromSlot(), idx});
+            // ⚠️ 槽号口径：flows 的键是【逻辑槽】，而客户端按菜单槽的
+            // {@code getContainerSlot()}（物理）分组匹配 ⇒ 必须映射，否则整层水画偏一格
+            int physicalSlot = ctx.toPhysicalSlot(e.getKey());
+            int physicalFrom = e.getValue().fromSlot() < 0
+                ? -1 : ctx.toPhysicalSlot(e.getValue().fromSlot());
+            cells.put(physicalSlot, new int[]{e.getValue().level(), physicalFrom, idx});
         }
         if (cells.isEmpty()) return null;
         return new FluidFlowSyncPacket(containerKey, width, palette, cells, target);
@@ -182,7 +188,7 @@ public final class FluidFlowServerSync {
             return;
         }
 
-        CustomPacketPayload packet = buildPacket(key, ctx.getWidth(), fluidData, renderTargetOf(ctx));
+        CustomPacketPayload packet = buildPacket(ctx, key, ctx.getWidth(), fluidData, renderTargetOf(ctx));
         if (packet == null) return;
         markActiveAndCheckClear(key, true);
         for (ServerPlayer player : viewers) {

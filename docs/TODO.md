@@ -211,6 +211,9 @@
    修法：`EntityContainerContext` 的 `SADDLE_OFFSET`（size 减 1、getItem/setItem 加偏移、
    `getWidth` 问原版 `getInventoryColumns()`）。船/矿车无装备槽 ⇒ offset 0 直通。
    ⚠️ 驴的菜单解析最终走**入口层反射**（Mixin accessor 被包隔离否掉，见 changelog）。
+   ✅ **第二处真机修正**：加偏移后「渲染和逻辑差了一格」⇒ 引入 `toPhysicalSlot`/`toLogicalSlot`
+   一对互逆映射，并在 5 条跨边界通道上强制过它（槽位同步 / 遥测键 / 作废键 / 流体渲染包 /
+   GUI 倒汲与信标喂食）。**新增前置非存储槽时必须一次性枚举所有跨边界点**。
 
 5. 🔮 **池端点（长期，未定案）** —— 给 `SlotAccessor` 加「物品池」实现（按类型 extract/insert），
    让活漏斗能对 AE2 ME 接口 / RS 网络推拉。**不做**池宿主（`D-container-07` / I-C8）。

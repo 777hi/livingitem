@@ -656,7 +656,9 @@ public class SimpleContainerContext implements TickableContainerContext {
                 // 必须同时匹配：槽位索引 + 容器归属，防止跨容器虚影。
                 // 大箱子：菜单槽位容器是 CompoundContainer 包装对象而非 BE 本体，
                 // 实例比较永远不命中 ⇒ 走位置解析（与 tick 构建的容器键同源）。
-                if (slot.getContainerSlot() != logicalSlot) continue;
+                // ⚠️ 必须比【物理槽】：菜单/包的槽号是 handler 索引，而 logicalSlot 是容器存储格编号
+                // （马/驴/骡的索引 0 是马鞍 ⇒ 两者差 1；不过这一层就是「渲染和逻辑差一格」）
+                if (slot.getContainerSlot() != toPhysicalSlot(logicalSlot)) continue;
                 if (slot.container == serverPlayer.getInventory()) continue;
                 if (!wholeMenuIsMine && !slotBelongsToPositions(menu, slot, myPositions)) continue;
 

@@ -115,7 +115,7 @@ public class LivingFurnaceFunction implements LivingItemFunction, HasDirection {
             }
 
             // 写入运行时缓存（progress、fuel、transform），不写入 DataComponent
-            ContainerRuntimeCache.update(cacheKey, slot,
+            ContainerRuntimeCache.update(context, slot,
                 RuntimeSegments.EMPTY.with(FurnaceSegment.INSTANCE,
                     new FurnaceRuntime(
                         data.progress().progress(), data.progress().total(),

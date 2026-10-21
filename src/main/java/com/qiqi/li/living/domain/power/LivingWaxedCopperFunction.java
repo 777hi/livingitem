@@ -200,7 +200,7 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
             int ox = WaxedCopperFamily.getOxidationLevel(stack.getItem());
             var telemetry = PowerTelemetry.buildTelemetry(gen, stack.getCount(), cf, ox, powerData);
             // 缓存键（世界容器带维度前缀，见 ContainerIdentity.getCacheKey）
-            ContainerRuntimeCache.update(ctx.getCacheKey(), slot,
+            ContainerRuntimeCache.update(ctx, slot,
                 RuntimeSegments.EMPTY.with(GeneratorSegment.INSTANCE, telemetry));
         }
 

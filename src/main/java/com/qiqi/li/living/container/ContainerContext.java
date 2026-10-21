@@ -38,6 +38,33 @@ public interface ContainerContext extends SlotInfoProvider, ContainerSync, Conta
     }
 
     /**
+     * 逻辑槽位 → **物理槽位**（handler / 菜单 / 网络包用的索引）。默认恒等。
+     *
+     * <p>⭐ 为什么需要这一层（2026-10-21 真机「渲染和逻辑差了一格」）：
+     * 功能类（熔炉燃料 = {@code slot + width}、漏斗两端…）用的是<b>逻辑槽</b>
+     * （= 容器自己的存储格编号 0..size-1）；而 <b>GUI 槽号、{@code ClientboundContainerSetSlotPacket}、
+     * 客户端 tooltip 的 {@code Slot#getContainerSlot()}、运行时遥测包的键</b>都是<b>物理槽</b>
+     * （= handler 的真实索引，含前置装备槽）。两者只有在「容器有前置非存储槽」时才不同——
+     * 目前唯一例子是马/驴/骡（索引 0 = 马鞍，见 {@code EntityContainerContext.SADDLE_OFFSET}）。</p>
+     *
+     * <p>⚠️ 任何把逻辑槽交给<b>对外</b>通道的地方都必须过本方法，否则显示会整体偏位。</p>
+     */
+    default int toPhysicalSlot(int logicalSlot) {
+        return logicalSlot;
+    }
+
+    /**
+     * 物理槽位 → **逻辑槽位**（容器存储格编号）。默认恒等，与 {@link #toPhysicalSlot} 互为反函数。
+     *
+     * <p>用于<b>反向</b>边界：GUI 交互（倒/汲水、空槽点击）手里拿的是 {@code Slot#getContainerSlot()}
+     * （物理），而 {@code ContainerFluidData} 的源键、功能类的槽位计算都是逻辑槽
+     * ⇒ 不过本方法会把水倒进「上一格」（真机「差一格」的同源第二例）。</p>
+     */
+    default int toLogicalSlot(int physicalSlot) {
+        return physicalSlot;
+    }
+
+    /**
      * 查询容器级持久数据（不创建，不存在返回 {@code null}）。
      *
      * <p>默认返回 {@code null} —— 不支持容器级数据的实现（如掉落物容器）用

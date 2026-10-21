@@ -49,7 +49,11 @@ public final class LivingBucketInteractSupport {
      * 这类容器与其它容器同路。</p>
      */
     public static ContainerFluidData resolveFluidData(ServerPlayer player, Slot slot) {
-        ContainerContext ctx = resolveContext(player, slot);
+        return fluidDataOf(resolveContext(player, slot));
+    }
+
+    /** 从已解析的上下文取容器级流体数据（没有 / 空 ⇒ {@code null}）。 */
+    static ContainerFluidData fluidDataOf(ContainerContext ctx) {
         if (ctx == null) return null;
         ContainerFluidData fluidData = ContainerFluidHandler.getOrCreateFluidData(ctx);
         return fluidData == null || fluidData == ContainerFluidData.EMPTY ? null : fluidData;
@@ -81,10 +85,14 @@ public final class LivingBucketInteractSupport {
         Fluid fluid = LivingBucketFunction.getBucketFluid(carried);
         if (fluid == Fluids.EMPTY) return;
 
-        ContainerFluidData fluidData = resolveFluidData(player, slot);
+        ContainerContext ctx = resolveContext(player, slot);
+        ContainerFluidData fluidData = fluidDataOf(ctx);
         if (fluidData == null) return;
 
-        int containerSlot = slot.getContainerSlot();
+        // ⚠️ 槽号口径：GUI 给的是**物理槽**（{@code Slot#getContainerSlot()}），而源键 / BFS /
+        // 功能类全是**逻辑槽**（容器存储格编号）。马/驴/骡的索引 0 是马鞍 ⇒ 差 1
+        // ⇒ 不过 toLogicalSlot 会把水倒进上一格（真机「差了一格」的同源第二例）。
+        int containerSlot = ctx.toLogicalSlot(slot.getContainerSlot());
         FluidType incoming = fluid.getFluidType();
         FluidType resident = fluidData.sourceFluid(containerSlot);   // 实际层；非源格返回 null
         if (resident == null) {
@@ -115,10 +123,12 @@ public final class LivingBucketInteractSupport {
      * 前置校验由调用方完成（光标是空活桶 + 目标格 level 0）。
      */
     public static void scoop(ServerPlayer player, Slot slot, ItemStack carried) {
-        ContainerFluidData fluidData = resolveFluidData(player, slot);
+        ContainerContext ctx = resolveContext(player, slot);
+        ContainerFluidData fluidData = fluidDataOf(ctx);
         if (fluidData == null) return;
 
-        int containerSlot = slot.getContainerSlot();
+        // 同 pour：GUI 物理槽 → 逻辑槽（见上）
+        int containerSlot = ctx.toLogicalSlot(slot.getContainerSlot());
         FluidType fluid = fluidData.sourceFluid(containerSlot);
         if (fluid == null) return;
 

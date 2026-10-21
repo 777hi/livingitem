@@ -184,7 +184,7 @@ public class LivingBrewingStandFunction implements LivingItemFunction, HasDirect
             if (brewStart != data.brewStartTick()) dirty = true;
 
             // ── ④ 写运行时（瞬态，不进组件）──
-            ContainerRuntimeCache.update(cacheKey, slot, RuntimeSegments.EMPTY.with(
+            ContainerRuntimeCache.update(context, slot, RuntimeSegments.EMPTY.with(
                 BrewingStandSegment.INSTANCE, new BrewingRuntime(nextBrewTime, nextBatchIngredient)));
 
             // ── ⑤ 仅在持久数据变化时写组件（燃料 / 方向 / 批次标记）──

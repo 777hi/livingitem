@@ -94,7 +94,7 @@ public class BeaconFunction implements LivingItemFunction {
                 BeaconEffects.regenTier(pyramidLevel, stackCount, active);
 
             // 遥测发布（tooltip 实时行 + 9 柱小金字塔面板共用）；等级每 tick 现算，不进组件
-            ContainerRuntimeCache.update(context.getCacheKey(), slot,
+            ContainerRuntimeCache.update(context, slot,
                 RuntimeSegments.EMPTY.with(BeaconSegment.INSTANCE,
                     new BeaconSegment.BeaconRuntime(pyramidLevel, heights, exists, regenTier)));
 
