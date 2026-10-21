@@ -220,24 +220,22 @@ class SomeTest {
 - 结果文件数 ≠ 源文件数（`SimpleContainerContextTest` 有 `@Nested` 内部类 → 1 个源文件出多个结果文件）。
 - 跑完**核对文档里的测试条数**与实测一致（文档即规范，条数漂移会被当成陈旧信息）。
 
-## 兼容下限核验（compat-floor）
+## 兼容下限核验
 
-`gradle.properties` 里两个版本号刻意分开：`neo_version` 是编译/开发用（本文件的单测也跑它），
-`neo_min_version` 是写进 `neoforge.mods.toml` 的对外下限。CI 的 `compat-floor` 作业按后者
-编译 + 跑测试，编译不过即红——防止有人用上高于下限的 API，把承诺无声作废。
+`gradle.properties` 的 `neo_version` **同时**是编译版本与写进 `neoforge.mods.toml` 的对外下限
+（`versionRange="[${neo_version},)"`）—— 刻意只用这一个值。
 
-改下限（或怀疑承诺失真）时，本地跑同一条：
-
-```bash
-./gradlew test "-Pneo_version=<下限版本>" --rerun
-```
-
-- `--rerun` 不能省：本文件「全量测试与复核口径」说过，`UP-TO-DATE` / `FROM-CACHE` 是**假绿**。
-- ⚠️ **PowerShell 必须给参数加引号**：`-Pneo_version=21.1.219` 会被拆成两个参数，
-  报 `Task '.1.219' not found`（不是构建坏了）。
-- ⚠️ **测试环境自身的 loader 下限 ≈ 21.1.219**，由 `libs/` 下的开发辅助模组决定（它们是
-  `runtimeOnly`，会被测试 JVM 加载）。下限要定在 219 以下，得先把这些模组从测试类路径摘掉，
-  并单独验证 —— 别顺手改。
+- **为什么不合两个属性**：拆成「编译版本 / 承诺下限」后，两套版本共用同一份产物缓存，
+  缓存串了不会立刻炸，而是悄悄产出错产物 —— 本地假绿、CI 假红（2026-10-21 实测：
+  219 的 NeoForge jar 配上了缓存里 249 的 patched MC jar ⇒ 编译器报「找不到
+  `TooltipFlagExtension`」，而 219 根本没有这个类）。同源 ⇒ 结构上不可能「承诺 A、编在 B」。
+- **核验方式**：CI 的 `build` 作业编译的就是下限 ⇒ 每次 push 都在核验承诺，无需第二个作业。
+- **改下限的流程**：改 `neo_version` → 本地跑 `./gradlew build`（含全量测试）→ 提交。
+  ⚠️ 换版本后本地/CI 的产物缓存里还留着旧版本的 patched MC jar ⇒ CI 作业会
+  「版本变了就清一次产物缓存」自愈；本地若报莫名其妙的「找不到某个类」，先清
+  `~/.gradle/caches/neoformruntime/intermediate_results` 再重跑。
+- ⚠️ **能编译 ≠ 能跑**：下限能不能用，靠 `build` 作业真跑一遍来判，别靠推断
+  （`TooltipFlagExtension` 就是 21.1.249 才引入的，249 之前 `TooltipFlag` 是原版接口）。
 
 ## Mixin 接线与 mock Level
 

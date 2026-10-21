@@ -26,35 +26,24 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
+      # 换 NeoForge 版本时，缓存里还留着旧版本的 patched MC jar ⇒ 编译会拿旧产物配新 jar，
+      # 报出莫名其妙的「找不到某个类」（2026-10-21 实测：219 的 NeoForge jar 配上了缓存里
+      # 249 的 patched MC jar ⇒ 「找不到 TooltipFlagExtension」，而 219 根本没这个类）。
+      # 版本变了就清一次产物缓存自愈；版本没变则不动（保持增量快）。
+      - name: Drop stale build artifacts if NeoForge version changed
+        shell: bash
+        run: |
+          ver=$(grep -m1 '^neo_version=' gradle.properties | cut -d= -f2)
+          root="$HOME/.gradle/caches"
+          marker="$root/neoformruntime/.neo-version"
+          if [ ! -f "$marker" ] || [ "$(cat "$marker")" != "$ver" ]; then
+            echo "NeoForge $ver: dropping stale artifacts"
+            rm -rf "$root/neoformruntime/intermediate_results" "$root/build-cache-1"
+          fi
+          mkdir -p "$root/neoformruntime"
+          echo "$ver" > "$marker"
+
+      # 编译用的 NeoForge 版本 == 对外声明的最低版本（gradle.properties 的 neo_version，
+      # mods.toml 的 versionRange 也用它）⇒ 这一步跑通 = 兼容承诺成立。
       - name: Build with Gradle
         run: ./gradlew build
-
-  # 用 gradle.properties 声明的 NeoForge 下限编译 + 跑测试。
-  # ⚠️ 调 neo_min_version 前，先本地跑通 `./gradlew test -Pneo_version=<新值>`。
-  compat-floor:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup JDK 21
-        uses: actions/setup-java@v4
-        with:
-          java-version: '21'
-          distribution: 'temurin'
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Make Gradle wrapper executable
-        run: chmod +x ./gradlew
-
-      - name: Read declared NeoForge floor
-        id: floor
-        shell: bash
-        run: echo "version=$(grep -m1 '^neo_min_version=' gradle.properties | cut -d= -f2)" >> "$GITHUB_OUTPUT"
-
-      - name: Compile + test against declared NeoForge floor
-        # ⚠️ --rerun 不能省：setup-gradle 会缓存 ~/.gradle（含构建缓存），
-        #    命中 FROM-CACHE 时任务不真跑却报绿 ⇒ 核验作业就白设了。
-        run: ./gradlew test "-Pneo_version=${{ steps.floor.outputs.version }}" --rerun
