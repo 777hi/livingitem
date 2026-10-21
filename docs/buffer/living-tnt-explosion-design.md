@@ -225,8 +225,8 @@ W(区块) = 该区块 NBT 里的 1 个 long，0 = 无水印（旧存档 / 外部
 
 ### 7.1 已核实：水印落地方式 = NeoForge 官方 chunk 数据附件 API（2026-10-13）
 
-**结论：不需要 mixin。** NeoForge 21.1.249 的 `ChunkAccess` 直接实现 `IAttachmentHolder`
-（`libs/src/neoforge-21.1.249-merged/net/minecraft/world/level/chunk/ChunkAccess.java:60`），
+**结论：不需要 mixin。** NeoForge 21.1.219 的 `ChunkAccess` 直接实现 `IAttachmentHolder`
+（`libs/src/neoforge-21.1.219-merged/net/minecraft/world/level/chunk/ChunkAccess.java:60`），
 附件是**区块实例上的字段**（同文件 `:495`），序列化已接进原版 `ChunkSerializer`：
 
 | 事实 | 证据（可复算） |
@@ -264,7 +264,7 @@ chunk.setData(TNT_EPOCH.get(), Math.max(w != null ? w : 0L, entry.epoch()));
 **结论：`level.getEntities(null, 巨型AABB)` 的成本随盒宽线性增长（O(√N × log S)），不随体积立方增长。**
 此前本文预估的「≈10¹⁴ 次网格迭代、小时级冻结」**是错的**——那假设了 3D 全网格遍历。
 
-调用链（全部已读源码，`libs/src/neoforge-21.1.249-merged/`）：
+调用链（全部已读源码，`libs/src/neoforge-21.1.219-merged/`）：
 
 ```
 Level.getEntities            Level.java:903-906         （收集进 List）

@@ -23,7 +23,7 @@ import net.neoforged.neoforge.common.ItemAbilities;
  * 这是刻意的取舍：不做 {@code instanceof HoeItem} / 标签 / 配置兜底，宁缺毋滥。</p>
  *
  * <p><b>可耕映射</b>对齐原版 {@code IBlockExtension#getToolModifiedState} 的
- * HOE_TILL 分支（neoforge-21.1.249 源码摘录）：
+ * HOE_TILL 分支（neoforge-21.1.219 源码摘录）：
  * <pre>
  *   grass_block / dirt_path / dirt → farmland
  *   coarse_dirt / rooted_dirt      → dirt

@@ -5,7 +5,7 @@
 >   看到不对的，按 **§5** 反馈。**超级爆炸也能测**（用铁箱子塞满，见 §3）。
 > - **作者自测**：看 **§7 往后**（分帧账本 / 补炸 / 日志 / TPS / 跑图那种）。
 >
-> **版本**：`mod_version = 1.4.0` · Minecraft 1.21.1 + NeoForge 21.1.249
+> **版本**：Minecraft 1.21.1 + NeoForge 21.1.219（模组版本见 `gradle.properties` 的 `mod_version`）
 
 ---
 

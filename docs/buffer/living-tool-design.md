@@ -108,22 +108,22 @@
 
 | 目录 | 内容 |
 |---|---|
-| `libs/src/neoforge-21.1.249-merged/` | ⭐ **优先** —— MC + NeoForge 合并源码，版本与项目 `neo_version` 一致（2026-09-18 从 `build/moddev/artifacts/neoforge-21.1.249-sources.jar` 解压） |
-| `libs/src/neoforge-21.1.230-merged/` | 旧版备用（21.1.230，含 `.class`） |
+| `libs/src/neoforge-21.1.219-merged/` | ⭐ **优先** —— MC + NeoForge 合并源码，版本与项目 `neo_version` 一致（2026-10-21 从 `build/moddev/artifacts/neoforge-21.1.219-sources.jar` 解压） |
+| `libs/src/neoforge-21.1.230-merged/`、`libs/src/neoforge-21.1.249-merged/` | 旧版备用（21.1.230 / 21.1.249，含 `.class`） |
 | `libs/src/Documentation-main/` | NeoForge 官方文档（`docs/` 为 1.21.x） |
 | `libs/src/Create-mc1.21.1-6.0.10/`<br>`libs/src/sable-main/`<br>`libs/src/Mekanism-1.21.x/`<br>`libs/src/FarmersDelight-1.21/`<br>… | 第三方模组源码 —— **做兼容时直接查** |
 
 直接搜索即可，无需解压：
 
 ```
-search_content(path="libs/src/neoforge-21.1.249-merged/net/minecraft/...", pattern="...")
+search_content(path="libs/src/neoforge-21.1.219-merged/net/minecraft/...", pattern="...")
 ```
 
 重建方式（若目录缺失）：
 
 ```powershell
-mkdir "libs\src\neoforge-21.1.249-merged" 2>$null
-tar -xf "build\moddev\artifacts\neoforge-21.1.249-sources.jar" -C "libs\src\neoforge-21.1.249-merged"
+mkdir "libs\src\neoforge-21.1.219-merged" 2>$null
+tar -xf "build\moddev\artifacts\neoforge-21.1.219-sources.jar" -C "libs\src\neoforge-21.1.219-merged"
 ```
 
 > ⚠️ 搜项目代码时把 `path` 指定为 `src/`，否则 `libs/` 的上万文件会淹没结果。
@@ -893,9 +893,9 @@ if (!mc.getEntityRenderDispatcher().shouldRenderHitBoxes()) return;
 | L22 | P1 | 多把活工具**同时挖同一格** | a) 各算各的进度（先到先挖，后者进度作废）<br>b) 共享进度（叠加） | ✅ **a（各算各的）**（2026-09-18 用户采纳倾向）—— 契合 `C1=d`；代价：快挖完时可能浪费一点进度 | ✅ a |
 | L23 | P1 | 目标方块**中途变了**（被别人挖掉 / 被替换） | a) 进度重置 b) 保留进度继续挖新方块 | ✅ **a（重置）**（2026-09-18 用户采纳倾向）—— 与原版 `tick()` 语义一致（`isAir()` → 停）；新方块就该重挖 | ✅ a |
 
-### `L6` 实现参考 —— 原版方块破坏机制（源码逐行核对，neoforge-21.1.249）
+### `L6` 实现参考 —— 原版方块破坏机制（源码逐行核对，neoforge-21.1.219）
 
-> 来源：`net/minecraft/server/level/ServerPlayerGameMode.java`（从 `build/moddev/artifacts/neoforge-21.1.249-sources.jar` 提取）
+> 来源：`net/minecraft/server/level/ServerPlayerGameMode.java`（从 `build/moddev/artifacts/neoforge-21.1.219-sources.jar` 提取）
 
 **① 状态字段**（L39-46）
 
@@ -1077,7 +1077,7 @@ private static class DeployerGameProfile extends GameProfile {
 
 **⑤ `L25` 详解 —— FakePlayer 必须有 UUID 吗？它真是"完整玩家"吗？**
 
-> 源码：`libs/src/neoforge-21.1.249-merged/net/neoforged/neoforge/common/util/FakePlayer.java`
+> 源码：`libs/src/neoforge-21.1.219-merged/net/neoforged/neoforge/common/util/FakePlayer.java`
 
 **UUID：必须，但值可以随便给**
 

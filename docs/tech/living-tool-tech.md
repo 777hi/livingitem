@@ -2,7 +2,7 @@
 
 > **文档版本**: v0.1
 > **最后更新**: 2026-09-19
-> **适用版本**: Minecraft 1.21.1 + NeoForge 21.1.249
+> **适用版本**: Minecraft 1.21.1 + NeoForge 21.1.219
 > **状态**: **挖掘记忆回放 + 交互记忆回放 + 清除记忆已实现**（挖掘已通过实测）；掉落物形态 / 实体攻击 / 可视化待实现
 > **设计探讨记录**: `docs/buffer/living-tool-design.md` §3.12（L 组，问题池与定案索引，本文档只写结论）
 
@@ -299,7 +299,7 @@ public static boolean isLivingTool(ItemStack stack) {
 
 **症状**：活斧子右键石头等不可交互方块 ⇒ 交互记忆被录上（本该只录去皮等真实交互）。
 
-**因果链（源码实锤，`libs/src/neoforge-21.1.249-merged/`）**：
+**因果链（源码实锤，`libs/src/neoforge-21.1.219-merged/`）**：
 
 1. **事件在「判定之前」post** —— `AxeItem#evaluateNewBlockState`（94/99/105 行）对**任何方块**
    无条件连发三次 `state.getToolModifiedState(AXE_STRIP / AXE_SCRAPE / AXE_WAX_OFF)`；
@@ -1910,7 +1910,7 @@ if (changed) {
 
 ## 附：参考源码位置
 
-本地源码：`libs/src/neoforge-21.1.249-merged/`（解压自 `build/moddev/artifacts/neoforge-21.1.249-sources.jar`）
+本地源码：`libs/src/neoforge-21.1.219-merged/`（解压自 `build/moddev/artifacts/neoforge-21.1.219-sources.jar`）
 
 | 内容 | 路径 |
 |---|---|

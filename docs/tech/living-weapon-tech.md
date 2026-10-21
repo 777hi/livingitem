@@ -167,7 +167,7 @@ Vec3 hitLocation = eye.add(look.scale(Math.min(distance, MAX_RAY_LENGTH)));
 `LivingDamageEvent` 在 NeoForge 1.21 已拆成 `Pre` / `Post` 两个子类，**`getSource()` 只在子类上**。
 用 `Post`：伤害已结算 ⇒ 不会把「被格挡 / 被减免到 0」的攻击录进来。
 
-> 复算：`libs/src/neoforge-21.1.249-merged/net/neoforged/neoforge/event/entity/living/LivingDamageEvent.java`
+> 复算：`libs/src/neoforge-21.1.219-merged/net/neoforged/neoforge/event/entity/living/LivingDamageEvent.java`
 > 可见 `public abstract class LivingDamageEvent` 与 `static class Pre/Post`。
 
 ---
@@ -196,7 +196,7 @@ Vec3 hitLocation = eye.add(look.scale(Math.min(distance, MAX_RAY_LENGTH)));
 
 > 🔴 **`Entity#isAttackable()` 默认返回 `true`**（只有 `ItemEntity` 等极少数 override 成 `false`）
 > ⇒ **光靠它几乎挡不住任何东西**。少了上面几条，活剑会去砍**盔甲架和玩家的船**。
-> 复算：`libs/src/neoforge-21.1.249-merged/net/minecraft/world/entity/Entity.java`。
+> 复算：`libs/src/neoforge-21.1.219-merged/net/minecraft/world/entity/Entity.java`。
 
 **⚠️ 硬约束：活武器不支持 PVP** —— 所有玩家一律不打。要放开必须先定义"敌对关系"判据。
 

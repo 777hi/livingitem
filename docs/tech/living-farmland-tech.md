@@ -203,7 +203,7 @@ stack.canPerformAction(ItemAbilities.HOE_TILL)
 `instanceof HoeItem` / 标签 / 配置白名单兜底。
 
 **可耕映射**（`Tillables.TILLED_RESULTS`，对齐原版 `IBlockExtension#getToolModifiedState`
-的 HOE_TILL 分支，以 neoforge-21.1.249 源码为准）：
+的 HOE_TILL 分支，以 neoforge-21.1.219 源码为准）：
 
 | 目标（须为活物品） | 产物（保留活标记与堆叠数） |
 |---|---|
