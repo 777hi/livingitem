@@ -297,6 +297,12 @@ test {
 // This block of code expands all declared replace properties in the specified resource targets.
 // A missing property will result in an error. Properties are expanded using ${} Groovy notation.
 var generateModMetadata = tasks.register("generateModMetadata", ProcessResources) {
+    // ⚠️ 必须显式声明（2026-10-21 实测踩到）：模板 `src/main/templates/META-INF/neoforge.mods.toml`
+    // 含中文注释，不声明则 expand 跟随**平台默认编码**（Windows 中文 = GBK）读 UTF-8 模板
+    // ⇒ 无法映射的字节被替换成 '?'（如 `e7 94 bf` → `e7 94 3f`）⇒ 产物不是合法 UTF-8
+    // ⇒ FML 启动即崩：`ParsingException ... MalformedInputException: Input length = 2`。
+    // 潜伏条件：任务输出 up-to-date 时不重跑，只有 `clean` / 模板变更才暴露。
+    filteringCharset = 'UTF-8'
     var replaceProperties = [
             minecraft_version      : minecraft_version,
             minecraft_version_range: minecraft_version_range,
