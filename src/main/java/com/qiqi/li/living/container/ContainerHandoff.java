@@ -11,22 +11,29 @@ import net.neoforged.neoforge.attachment.IAttachmentHolder;
 import com.qiqi.li.logging.ModLog;
 
 /**
- * 容器级数据的「<b>第三方交接</b>」通道（2026-10-21）。
+ * 容器级数据的「<b>第三方交接</b>」通道（2026-10-21）—— **双向**。
  *
  * <h3>解决什么</h3>
  * <p>容器级持久数据（流体 / 电力相位）的迁移原本只有两个挂点：
  * {@code BlockDropsEvent}（破坏）与 {@code EntityPlaceEvent}（放置）。
- * 但有些模组<b>自己搬走容器</b>，两个事件都不给 —— 已知第一例是精妙背包的
- * <b>蹲下右键拾取</b>（{@code putInPlayersHandAndRemove}：直接把背包塞进手里 +
- * {@code level.removeBlock}，不产生掉落物、不走破坏流程）⇒ 数据随 BE 蒸发。</p>
+ * 但有些模组<b>自己搬走容器、自己放置容器</b>，两个事件都不给 —— 已知第一例是精妙背包：
+ * 拾取走 {@code putInPlayersHandAndRemove}（{@code setItemInHand} + {@code removeBlock}，
+ * 不产生掉落物）；放置走 {@code BackpackItem.tryPlace}（**不是 {@code BlockItem}**，
+ * 自己 {@code setBlockAndUpdate}，绕开 {@code BlockItem.place}）⇒ 数据随 BE 蒸发。</p>
  *
- * <p>⇒ 本类提供<b>第三个挂点</b>：让「发现时机」与「搬什么」解耦。</p>
+ * <p>⇒ 本类提供<b>第三个挂点</b>：让「发现时机」与「搬什么」解耦，且**两个方向对称**。</p>
  *
- * <h3>两个时机 + 一个注册口</h3>
+ * <h3>两对时机 + 一个注册口</h3>
  * <pre>{@code
- *   capture(host)  —— 时机：宿主还在、数据还活着（第三方移除方块之前）
- *   handoff(stack) —— 时机：目标物品已存在（第三方把物品塞进玩家手里之后）
- *   registerMover  —— 各领域声明「怎么搬」（流体搬流体、相位搬相位）
+ *   宿主 → 物品（第三方把方块变成物品）：
+ *     capture(host)      —— 宿主还在、数据还活着（第三方移除方块之前）
+ *     handoff(stack)     —— 目标物品已存在（第三方把物品塞进玩家手里之后）
+ *
+ *   物品 → 宿主（第三方把物品变成方块）：
+ *     stageRestore(stack) —— 物品即将被放置（**必须在它被 shrink 之前**）
+ *     restoreTo(host)     —— 方块已落地、BE 已创建
+ *
+ *   registerMover        —— 各领域声明「怎么搬」（两个方向都要实现，见 Mover 的 javadoc）
  * }</pre>
  *
  * <p>捕获到的是<b>宿主引用</b>而不是数据快照：宿主对象在第三方移除方块后仍然存活
@@ -37,15 +44,18 @@ import com.qiqi.li.logging.ModLog;
  * <h3>为什么用 ThreadLocal</h3>
  * <p>两个时机在<b>同一线程、同一调用栈</b>里（mixin 的 HEAD → 目标方法 → RETURN），
  * 中间不跨 tick、不跨线程 ⇒ ThreadLocal 是零分配的正确载体。
- * 每次 {@link #capture} 先清空 ⇒ 即使上一次的 RETURN 没执行（目标方法抛异常），也不会串味。</p>
+ * 每次 {@link #capture} / {@link #stageRestore} 先清空 ⇒ 即使上一次的 RETURN 没执行
+ * （目标方法抛异常），也不会串味。</p>
  *
  * <h3>⚠️ 边界</h3>
  * <ul>
- *   <li><b>不判断该不该搬</b>：{@code contentRetaining} 判据在各领域 Mover 内部（与破坏路径同一处），
+ *   <li><b>不判断该不该搬</b>：{@code contentRetaining} 判据在各领域 Mover 内部（与事件路径同一处），
  *       本类只负责「把时机接上」。</li>
  *   <li><b>不保证搬成功</b>：目标物品可能是空栈（第三方没给物品）⇒ 直接丢弃捕获，返回 false。</li>
  *   <li><b>单个 Mover 抛异常不影响其它 Mover</b>：逐个 try/catch 并记日志
  *       （I-C7「不得静默继续」——但也不能因为一个领域出错就让别的领域跟着丢数据）。</li>
+ *   <li><b>重复注册会重复调用</b>：按设计每个领域注册一次（在 {@code *Registration.java}，R4）；
+ *       没有按「领域身份」去重 —— 那是过度设计，重复注册的后果也只是第二个 Mover 读到已清空的数据。</li>
  * </ul>
  */
 public final class ContainerHandoff {
@@ -53,7 +63,7 @@ public final class ContainerHandoff {
     /**
      * 领域声明「怎么搬」。**两个方向都必须实现**。
      *
-     * <p>🔴 <b>这里曾经是 {@code default void moveIn(...) {}}</b>（2026-10-21 真机三连失败的真凶）：
+     * <p>🔴 <b>这里曾经是 {@code default void moveIn(...) {}}</b>（2026-10-21 真机四轮定位的真凶）：
      * 注册处写的是方法引用 {@code registerMover(ContainerDataMigration::moveOut)} ——
      * 方法引用<b>只覆盖它指向的那个方法</b>，另一个方法自动落到 default 空实现
      * ⇒ 编译通过、启动正常、`handoff` 打日志说 `moved=true`，但<b>放置方向永远什么都不做</b>。
@@ -131,7 +141,9 @@ public final class ContainerHandoff {
             return false;
         }
 
-        ModLog.CONTAINER.info("[ContainerHandoff] handoff: movers={} host={} target={}",
+        // 成功路径只打 DEBUG：正常游玩每次拾取/放置都会走到这里，INFO 会刷屏；
+        // 早退/失败走 INFO/WARN（罕见，必须看得见）。
+        ModLog.CONTAINER.debug("[ContainerHandoff] handoff: movers={} host={} target={}",
             MOVERS.size(), host.getClass().getSimpleName(), target.getItem());
 
         for (Mover mover : MOVERS) {
@@ -187,7 +199,7 @@ public final class ContainerHandoff {
             return false;
         }
 
-        ModLog.CONTAINER.info("[ContainerHandoff] restoreTo: movers={} host={} source={}",
+        ModLog.CONTAINER.debug("[ContainerHandoff] restoreTo: movers={} host={} source={}",
             MOVERS.size(), host.getClass().getSimpleName(), source.getItem());
 
         for (Mover mover : MOVERS) {

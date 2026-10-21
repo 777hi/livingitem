@@ -57,6 +57,7 @@ src/test/java/com/qiqi/li/
 │   ├── ContainerRedstoneDataTest.java         # 红石信号传播引擎·直接驱动 calculate（29 项）
 │   └── ContainerRedstoneIntegrationTest.java  # 红石**驱动链路**端到端（走真实 processContext）·自维持注册/守卫放行消费者/守卫拦截无关容器(零开销)/残留归零/prio 顺序（5 项）
 ├── living/domain/power/
+│   ├── PhaseDataMigrationTest.java            # 相位形态迁移（2026-10-21 补，此前零测试）·moveOut 只对 contentRetaining 搬/非 retaining 不搬/EMPTY 不搬 + moveIn 无组件 noop/**无 ctx 降级也写附件**（5 项）
 │   ├── PowerMathTest.java                     # 发电数学（8 项）
 │   ├── ContainerPowerDataTest.java            # 相位质量状态机（6 项）
 │   ├── AccountingGateTest.java                # 跳变门控记账（4 项：零产出/冻结/去重/中性化）

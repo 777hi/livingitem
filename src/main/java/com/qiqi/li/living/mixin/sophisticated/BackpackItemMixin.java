@@ -70,6 +70,6 @@ public abstract class BackpackItemMixin {
         BlockPos pos = ctx.getClickedPos();
         BlockEntity be = level.getBlockEntity(pos);
         boolean restored = ContainerHandoff.restoreTo(be);
-        ModLog.MIXIN.info("[精妙联动] 放置恢复：pos={} be={} restored={}", pos, be, restored);
+        ModLog.MIXIN.debug("[精妙联动] 放置恢复：pos={} be={} restored={}", pos, be, restored);
     }
 }

@@ -58,7 +58,7 @@ public abstract class BackpackBlockMixin {
                                                         Player player, InteractionHand hand, CallbackInfo ci) {
         if (level.isClientSide) return;
         net.minecraft.world.level.block.entity.BlockEntity be = level.getBlockEntity(pos);
-        ModLog.MIXIN.info("[精妙联动] HEAD 捕获：pos={} be={}", pos, be);
+        ModLog.MIXIN.debug("[精妙联动] HEAD 捕获：pos={} be={}", pos, be);
         ContainerHandoff.capture(be);
     }
 
@@ -74,6 +74,6 @@ public abstract class BackpackBlockMixin {
         if (level.isClientSide) return;
         ItemStack held = player.getItemInHand(hand);
         boolean moved = ContainerHandoff.handoff(held);
-        ModLog.MIXIN.info("[精妙联动] RETURN 交接：hand={} item={} moved={}", hand, held.getItem(), moved);
+        ModLog.MIXIN.debug("[精妙联动] RETURN 交接：hand={} item={} moved={}", hand, held.getItem(), moved);
     }
 }

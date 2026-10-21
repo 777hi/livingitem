@@ -230,7 +230,9 @@
 
   自动判断只能逐个认组件 ⇒ 那是 I-C1「只认能力面」的反面。所以做成**数据**，
   与规则表同源，玩家也可在配置里追加。
-- **现状**：✅ 已实现（`ContainerDataMigration` 查 `ContainerCompatibilityConfig.retainsContentsOnBreak`）。
+- **现状**：✅ 已实现，**三条挂点**（破坏 `BlockDropsEvent` / 放置 `EntityPlaceEvent` /
+  第三方交接 `ContainerHandoff`，最后一挂 2026-10-21 真机验证通过）。
+  判据统一查 `ContainerCompatibilityConfig.retainsContentsOnBreak`。
   守卫：`ContainerRuleConfigTest.contentRetaining_bundledDeclarations`（谁该搬）、
   `ContainerDataMigrationTest`（搬过去不能坏：流体 CODEC / snapshot 独立性、相位 CODEC / EMPTY 不搬）。
 - ⚠️ **事件挂点会「整对失效」，第三个挂点是双向交接**（2026-10-21，`D-container-12`）：
