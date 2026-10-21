@@ -55,4 +55,6 @@ jobs:
         run: echo "version=$(grep -m1 '^neo_min_version=' gradle.properties | cut -d= -f2)" >> "$GITHUB_OUTPUT"
 
       - name: Compile + test against declared NeoForge floor
-        run: ./gradlew test "-Pneo_version=${{ steps.floor.outputs.version }}"
+        # ⚠️ --rerun 不能省：setup-gradle 会缓存 ~/.gradle（含构建缓存），
+        #    命中 FROM-CACHE 时任务不真跑却报绿 ⇒ 核验作业就白设了。
+        run: ./gradlew test "-Pneo_version=${{ steps.floor.outputs.version }}" --rerun
