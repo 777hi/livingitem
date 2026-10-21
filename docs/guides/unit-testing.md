@@ -220,6 +220,25 @@ class SomeTest {
 - 结果文件数 ≠ 源文件数（`SimpleContainerContextTest` 有 `@Nested` 内部类 → 1 个源文件出多个结果文件）。
 - 跑完**核对文档里的测试条数**与实测一致（文档即规范，条数漂移会被当成陈旧信息）。
 
+## 兼容下限核验（compat-floor）
+
+`gradle.properties` 里两个版本号刻意分开：`neo_version` 是编译/开发用（本文件的单测也跑它），
+`neo_min_version` 是写进 `neoforge.mods.toml` 的对外下限。CI 的 `compat-floor` 作业按后者
+编译 + 跑测试，编译不过即红——防止有人用上高于下限的 API，把承诺无声作废。
+
+改下限（或怀疑承诺失真）时，本地跑同一条：
+
+```bash
+./gradlew test "-Pneo_version=<下限版本>" --rerun
+```
+
+- `--rerun` 不能省：本文件「全量测试与复核口径」说过，`UP-TO-DATE` / `FROM-CACHE` 是**假绿**。
+- ⚠️ **PowerShell 必须给参数加引号**：`-Pneo_version=21.1.219` 会被拆成两个参数，
+  报 `Task '.1.219' not found`（不是构建坏了）。
+- ⚠️ **测试环境自身的 loader 下限 ≈ 21.1.219**，由 `libs/` 下的开发辅助模组决定（它们是
+  `runtimeOnly`，会被测试 JVM 加载）。下限要定在 219 以下，得先把这些模组从测试类路径摘掉，
+  并单独验证 —— 别顺手改。
+
 ## Mixin 接线与 mock Level
 
 **单元测试 JVM 里 Mixin 是被应用的**（FML 测试环境；证据：栈里出现
