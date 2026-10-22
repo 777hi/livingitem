@@ -4,15 +4,12 @@
 # 格式：规则 <TAB> 源 <TAB> 目标 <TAB> 条数
 
 # R1 跨模块方向违规（下层依赖上层）
-# (root)→client/render：LivingItemClient 是客户端入口，必然引用具体渲染器实现。
-# 这是**有意设计**（NeoForge 惯例）。要彻底消除需把入口下沉进 client/ 包，
-# 但那要动 mod 入口组织、只能真机验证 ⇒ 记 TODO，先显式接受。
 module	(root)	client/render	7
 module	living/api	living/container	4
 module	living/container	living/transfer	3
+module	living/container	living/components	2
 module	(root)	client/icon	1
 module	living/api	living/components	1
-module	living/container	living/components	1
 module	living/container	living/debug	1
 
 # R2 Mixin 位置违规（只能声明在 L4 / L5）

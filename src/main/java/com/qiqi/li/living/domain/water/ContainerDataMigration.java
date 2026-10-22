@@ -1,6 +1,7 @@
 package com.qiqi.li.living.domain.water;
 
 import java.util.List;
+import java.util.UUID;
 
 import javax.annotation.Nullable;
 
@@ -23,6 +24,8 @@ import net.neoforged.neoforge.event.level.BlockEvent;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.ContainerDrops;
 import com.qiqi.li.living.container.ContainerLivingItemHandler;
+import com.qiqi.li.living.container.ContainerUuids;
+import com.qiqi.li.living.components.LivingComponents;
 import com.qiqi.li.living.transfer.ContainerCompatibilityConfig;
 import com.qiqi.li.logging.ModLog;
 
@@ -113,6 +116,17 @@ public final class ContainerDataMigration {
             return false;
         }
 
+        // ① 身份优先（2026-10-22，D-container-13）：有容器 UUID ⇒ 只搬身份，
+        //    数据留在 SavedData 按 UUID 存着，**零搬运**。这是活背包的常态路径。
+        UUID containerUuid = ContainerUuids.ofHost(host);
+        if (containerUuid != null) {
+            ContainerUuids.stripForCopy(target);   // 防目标已带旧身份（复制共享的坑）
+            target.set(LivingComponents.CONTAINER_UUID.get(), containerUuid);
+            ModLog.CONTAINER.info("[交接] 只搬容器 UUID：{}（数据留在 SavedData）", containerUuid);
+            return true;
+        }
+
+        // ② 兜底：没有身份（老存档 / 未活化）⇒ 搬数据快照，走组件过渡
         ContainerFluidData data = host.getData(WaterComponents.CONTAINER_FLUID_DATA);
         if (data == null || data.isEmpty()) {
             ModLog.CONTAINER.info("[交接] moveOut 早退：宿主无流体数据（{}）",
@@ -158,6 +172,17 @@ public final class ContainerDataMigration {
             return;
         }
 
+        // ① 身份优先（2026-10-22，D-container-13）：物品带容器 UUID ⇒ 写进宿主附件即可，
+        //    数据在 SavedData 按 UUID 存着，下一 tick 的 getOrCreateFluidData 会从那里回填
+        //    （它先问 ctx.getContainerUuid()）。**零数据搬运**。
+        UUID containerUuid = ContainerUuids.ofItem(source);
+        if (containerUuid != null) {
+            host.setData(LivingComponents.CONTAINER_UUID_ATTACHMENT.get(), containerUuid);
+            ModLog.CONTAINER.info("[交接] 恢复容器 UUID：{}（数据留在 SavedData）", containerUuid);
+            return;
+        }
+
+        // ② 兜底：没有身份 ⇒ 搬组件里的数据快照（老存档）
         ContainerFluidData fluid = source.get(WaterComponents.CONTAINER_FLUID_DATA_ITEM.get());
         if (fluid == null || fluid.isEmpty()) {
             ModLog.CONTAINER.info("[交接] moveIn 早退：物品上没有流体组件（item={}）", source.getItem());

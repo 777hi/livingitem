@@ -486,6 +486,24 @@ public class SimpleContainerContext implements TickableContainerContext {
         return List.copyOf(associatedBlockEntities);
     }
 
+    /**
+     * 容器 UUID = 第一个带身份的数据宿主（2026-10-22，活背包 / `D-container-13`）。
+     *
+     * <p>方块容器：BE 附件上存着（{@code ContainerUuids.getOrCreateHost} 懒创建）。
+     * 大箱子两半理论上各有一份，取第一份即可 —— 身份是**容器级**的，不该两半不同。</p>
+     *
+     * <p>⚠️ <b>物品形态容器覆写本方法</b>：它的 UUID 在物品组件上（{@code ContainerUuids.ofItem}），
+     * 而 {@code getDataHosts()} 为空（物品栈不是 {@code IAttachmentHolder}）。</p>
+     */
+    @Override
+    public java.util.UUID getContainerUuid() {
+        for (var host : getDataHosts()) {
+            java.util.UUID uuid = ContainerUuids.ofHost(host);
+            if (uuid != null) return uuid;
+        }
+        return null;
+    }
+
     @Override
     public List<BlockEntity> getAssociatedBlockEntities() {
         return associatedBlockEntities;

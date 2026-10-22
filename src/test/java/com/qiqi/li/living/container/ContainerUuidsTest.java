@@ -1,4 +1,4 @@
-package com.qiqi.li.living.components;
+package com.qiqi.li.living.container;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -11,8 +11,6 @@ import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import com.qiqi.li.living.container.ContainerKeys;
-import com.qiqi.li.living.container.ContainerKind;
 
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;

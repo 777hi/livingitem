@@ -1,4 +1,4 @@
-package com.qiqi.li.living.components;
+package com.qiqi.li.living.container;
 
 import java.util.UUID;
 
@@ -7,9 +7,7 @@ import javax.annotation.Nullable;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.attachment.IAttachmentHolder;
 
-import com.qiqi.li.living.container.ContainerDataSavedData;
-import com.qiqi.li.living.container.ContainerKeys;
-
+import com.qiqi.li.living.components.LivingComponents;
 
 /**
  * 容器 UUID 的<b>唯一读写入口</b>（2026-10-22，活背包 / `D-container-13`）。

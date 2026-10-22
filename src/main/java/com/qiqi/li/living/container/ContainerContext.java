@@ -117,6 +117,25 @@ public interface ContainerContext extends SlotInfoProvider, ContainerSync, Conta
     }
 
     /**
+     * 本容器的<b>跨形态身份</b>（2026-10-22，活背包 / `D-container-13`）。
+     *
+     * <p>容器级数据按它在 SavedData 里索引 ⇒ 形态变化时数据零搬运，只让 UUID 跟着走。
+     * 方块容器从 BE 附件读（{@code ContainerUuids.ofHost}），物品形态从物品组件读
+     * （{@code ContainerUuids.ofItem}）。</p>
+     *
+     * <p><b>默认 {@code null} = 没有身份</b>：掉落物容器、测试替身、还没懒创建过的容器。
+     * 领域侧见 null 就跳过 SavedData 路径（回落到附件 / 内存表）。</p>
+     *
+     * <p>⚠️ 与 {@link #getDataHosts()} 的分工：后者答「数据挂哪个附件」，
+     * 本方法答「数据叫什么名字」。物品形态容器<b>没有附件宿主</b>（物品栈不是
+     * {@code IAttachmentHolder}）却有 UUID ⇒ 两件事必须分开问。</p>
+     */
+    @Nullable
+    default java.util.UUID getContainerUuid() {
+        return null;
+    }
+
+    /**
      * 把某个容器级数据 key 的值<b>归档</b>到本宿主的持久层（`D-container-13`，2026-10-22）。
      *
      * <p>替代领域侧各自写 {@code for (host : getDataHosts()) host.setData(...)} ——

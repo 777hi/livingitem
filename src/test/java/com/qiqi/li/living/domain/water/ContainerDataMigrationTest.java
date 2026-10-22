@@ -257,8 +257,7 @@ class ContainerDataMigrationTest {
 
     @Test
     @DisplayName("端到端：moveIn 把物品组件写回新宿主（附件）")
-    void roundTrip_moveIn_writesAttachment() {
-        ContainerFluidData carried = new ContainerFluidData();
+    void roundTrip_moveIn_writesAttachment() {        ContainerFluidData carried = new ContainerFluidData();
         carried.registerGeneratedSource(3, net.minecraft.world.level.material.Fluids.WATER.getFluidType());
 
         ItemStack source = mock(ItemStack.class);
@@ -277,5 +276,55 @@ class ContainerDataMigrationTest {
             org.mockito.ArgumentCaptor.forClass(ContainerFluidData.class);
         verify(newBe).setData(Mockito.eq(WaterComponents.CONTAINER_FLUID_DATA.value()), captor.capture());
         assertFalse(captor.getValue().isEmpty(), "写回附件的不能是空数据");
+    }
+
+    // ── 身份优先路径（2026-10-22，D-container-13）：有 UUID 就只搬身份 ──────────────────
+    //
+    // 这是活背包的常态：数据在 SavedData 按 UUID 存着，形态变化时搬的只是那串 UUID。
+    // 兜底（搬数据快照）留给「没有身份」的老存档。
+
+    @Test
+    @DisplayName("moveOut：宿主有容器 UUID ⇒ 只搬身份，不搬数据")
+    void moveOut_withUuid_carriesIdentityOnly() {
+        java.util.UUID containerUuid = java.util.UUID.randomUUID();
+        ContainerFluidData data = new ContainerFluidData();
+        data.registerGeneratedSource(3, net.minecraft.world.level.material.Fluids.WATER.getFluidType());
+
+        BlockEntity be = beWithFluid(net.minecraft.world.level.block.entity.BlockEntityType.SHULKER_BOX, data);
+        when(be.getData(com.qiqi.li.living.components.LivingComponents.CONTAINER_UUID_ATTACHMENT.value()))
+            .thenReturn(containerUuid);
+
+        ItemStack target = mock(ItemStack.class);
+        when(target.isEmpty()).thenReturn(false);
+
+        assertTrue(ContainerDataMigration.moveOut(be, target));
+
+        verify(target).set(Mockito.eq(com.qiqi.li.living.components.LivingComponents.CONTAINER_UUID.get()),
+            Mockito.eq(containerUuid));
+        verify(target, Mockito.never())
+            .set(Mockito.eq(WaterComponents.CONTAINER_FLUID_DATA_ITEM.get()), Mockito.any());
+    }
+
+    @Test
+    @DisplayName("moveIn：物品带容器 UUID ⇒ 只写身份到宿主，不搬数据")
+    void moveIn_withUuid_writesIdentityOnly() {
+        java.util.UUID containerUuid = java.util.UUID.randomUUID();
+
+        ItemStack source = mock(ItemStack.class);
+        when(source.isEmpty()).thenReturn(false);
+        when(source.get(com.qiqi.li.living.components.LivingComponents.CONTAINER_UUID.get()))
+            .thenReturn(containerUuid);
+
+        BlockEntity host = mock(BlockEntity.class);
+        org.mockito.Mockito.doReturn(net.minecraft.world.level.block.entity.BlockEntityType.SHULKER_BOX)
+            .when(host).getType();
+
+        ContainerDataMigration.moveIn(host, source);
+
+        verify(host).setData(
+            Mockito.eq(com.qiqi.li.living.components.LivingComponents.CONTAINER_UUID_ATTACHMENT.get()),
+            Mockito.eq(containerUuid));
+        verify(host, Mockito.never())
+            .setData(Mockito.eq(WaterComponents.CONTAINER_FLUID_DATA.value()), Mockito.any());
     }
 }
