@@ -257,15 +257,19 @@
    让活漏斗能对 AE2 ME 接口 / RS 网络推拉。**不做**池宿主（`D-container-07` / I-C8）。
    前置：复用 `MenuSlotOwners.registerResolver` 同一套注册。
 
-6. 🔴 **物品形态容器不渲染 / 不 tick（2026-10-22 记，未定案）** —— 精妙背包拿在手上打开 GUI、
-   原版潜影盒打开 GUI，里面流体层都不出现。**根因不是数据丢失**（数据在物品组件上，双向交接已修好），
-   而是渲染轨整条依赖 tick 管线的 `ctx`，而物品形态容器**三者不属**（不是 BE / 不是实体 / 不是玩家背包）
-   ⇒ `ContainerContexts.resolve` 解析不出 ⇒ viewer 匹配失败、发包失败；tooltip 与 GUI 倒汲同路径一并失效。
-   **这不是精妙独有，是所有物品形态容器的共同缺口**（潜影盒 / 旅行者背包 / mod 背包）。
-   设计稿：[buffer/item-form-container-infrastructure.md](buffer/item-form-container-infrastructure.md)
-   —— 定位为**活潜影箱第一阶段（地基）**：容器 UUID 身份 + 按 UUID 索引 + Open/Close 生命周期
-   + viewer 驱动活跃期。**5 个未定案项**（UUID 生成时机 / 是否只给有数据的容器生成 /
-   活跃期 tick 范围 / 多人同看 / 键形前缀）见设计稿 §7，**拍板前不要动工**。
+6. 🔴 **活背包：精妙背包作为活物品功能（2026-10-22 记，第三轮定形）** ——
+   现象是「精妙背包打开 GUI 里面流体层不渲染」，但**根因不是数据丢失**（数据在物品组件上，
+   双向交接已修好），而是**这东西根本不活**：没人在 tick 它 ⇒ 没有 ctx、没有容器级数据、
+   渲染/tooltip/倒汲/演化全线无输入。这不是精妙独有（潜影盒 / mod 背包同缺）。
+   **正确定位**：活背包 = **一个活物品功能**（`LivingBackpackFunction`：`canApply` 精妙背包+IS_LIVING，
+   `tick` 里对每个背包构建内部 ctx 并 `processContext` 递归）⇒ **框架零改动**，
+   `scanAndGroupLivingItems` 已经会把它当活物品扫出来。活化门槛顺带解决性能与判定。
+   真正要做的三件：① 内容 handler 由联动模块提供（精妙的 `BackpackInventoryHandler` 是标准
+   `IItemHandler`，核心不碰精妙类型）；② UUID + SavedData 持久身份（懒创建 / 复制 remove /
+   空条目不写盘，已从精妙 `BackpackStorage` 定案）；③ viewer 匹配简化（从菜单反查 cuuid）。
+   设计稿：[buffer/living-backpack.md](buffer/living-backpack.md)（含四轮纠偏留档）。
+   **5 个未定案项**（嵌套是否现在做 / handler 成本 / linked storage 多人同看 /
+   键形前缀 / 关着 GUI 也 tick 的玩法口径）见设计稿 §6，**拍板前不要动工**。
 
 ## 活水车 · Create 接触面收窄（2026-10-19 记）
 
