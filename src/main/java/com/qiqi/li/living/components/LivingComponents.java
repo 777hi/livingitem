@@ -79,16 +79,31 @@ public final class LivingComponents {
                             .build());
 
     /**
+     * 「没有容器身份」的哨兵值 —— 全零 UUID。
+     *
+     * <p>附件必须给一个 codec 可编码的默认值（见 {@link #CONTAINER_UUID_ATTACHMENT}），
+     * 全零 UUID 在实际分配中不可能出现（{@code randomUUID} 的版本位固定非零）。
+     * 读取方一律用 {@code ContainerUuids.ofHost}，它会把哨兵翻译成 {@code null}。</p>
+     */
+    public static final UUID NO_CONTAINER_UUID = new UUID(0L, 0L);
+
+    /**
      * 容器 UUID 的 <b>BE / 实体附件</b>形态（2026-10-22）—— 与物品组件 {@link #CONTAINER_UUID}
      * 指向同一个 UUID，只是宿主不同。
      *
-     * <p>为什么不用 {@code serialize} 之外的 default：默认 {@code null} 表示「还没懒创建」，
-     * 读取方必须判空（{@code ContainerUuids.ofHost}）。用 {@code UUID.randomUUID()} 当默认
-     * 会让「读一次」变成「凭空生成一个身份」——那是写操作的语义。</p>
+     * <p>⚠️⚠️ <b>默认值不能是 {@code null}</b>（2026-10-22 真机日志实录）：
+     * {@code AttachmentType.builder(() -> null).serialize(codec)} 会让 NeoForge 认为
+     * 「每个宿主都有数据」，于是给<b>每一个挂过附件的 BE</b> 尝试把 {@code null} 编成 NBT
+     * ⇒ 每 tick 一条 {@code Failed to serialize data attachment ... Skipping}（实测刷了
+     * 22307 条、日志 37MB），且 UUID 存不进存档。</p>
+     *
+     * <p>⇒ 用 {@link #NO_CONTAINER_UUID}（全零 UUID）当「没有身份」的哨兵：
+     * codec 能正常编码，语义由 {@code ContainerUuids.ofHost} 统一翻译成 {@code null}。
+     * 代价是每个宿主多存 16 字节，可忽略。</p>
      */
     public static final DeferredHolder<AttachmentType<?>, AttachmentType<UUID>> CONTAINER_UUID_ATTACHMENT =
             ATTACHMENT_TYPES.register("container_uuid", () ->
-                    AttachmentType.<UUID>builder(() -> null)
+                    AttachmentType.<UUID>builder(() -> NO_CONTAINER_UUID)
                             .serialize(UUIDUtil.CODEC)
                             .build());
 

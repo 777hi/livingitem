@@ -48,7 +48,9 @@ public final class ContainerUuids {
     @Nullable
     public static UUID ofHost(@Nullable IAttachmentHolder host) {
         if (host == null) return null;
-        return host.getData(LivingComponents.CONTAINER_UUID_ATTACHMENT.get());
+        UUID uuid = host.getData(LivingComponents.CONTAINER_UUID_ATTACHMENT.get());
+        // 哨兵（全零）⇒ 没有身份。附件默认值不能是 null（见 CONTAINER_UUID_ATTACHMENT 的 javadoc）
+        return isAbsent(uuid) ? null : uuid;
     }
 
     // ============================================================
@@ -79,12 +81,17 @@ public final class ContainerUuids {
     @Nullable
     public static UUID getOrCreateHost(@Nullable IAttachmentHolder host) {
         if (host == null) return null;
-        UUID existing = host.getData(LivingComponents.CONTAINER_UUID_ATTACHMENT.get());
+        UUID existing = ofHost(host);
         if (existing != null) return existing;
 
         UUID created = UUID.randomUUID();
         host.setData(LivingComponents.CONTAINER_UUID_ATTACHMENT.get(), created);
         return created;
+    }
+
+    /** 「没有身份」的判据：null 或附件哨兵（全零 UUID）。 */
+    private static boolean isAbsent(@Nullable UUID uuid) {
+        return uuid == null || LivingComponents.NO_CONTAINER_UUID.equals(uuid);
     }
 
     // ============================================================

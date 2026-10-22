@@ -89,6 +89,40 @@ class ContainerUuidsTest {
     }
 
     @Test
+    @DisplayName("宿主侧：附件默认哨兵（全零 UUID）⇒ 视为没有身份")
+    void ofHost_sentinelMeansNoIdentity() {
+        net.neoforged.neoforge.attachment.IAttachmentHolder host =
+            org.mockito.Mockito.mock(net.neoforged.neoforge.attachment.IAttachmentHolder.class);
+        org.mockito.Mockito.when(host.getData(
+                com.qiqi.li.living.components.LivingComponents.CONTAINER_UUID_ATTACHMENT.value()))
+            .thenReturn(com.qiqi.li.living.components.LivingComponents.NO_CONTAINER_UUID);
+
+        assertNull(ContainerUuids.ofHost(host),
+            "哨兵必须翻译成 null —— 否则每个箱子都被当成「有身份」，会去 SavedData 找不存在的数据");
+    }
+
+    @Test
+    @DisplayName("宿主侧：懒创建写入的是真 UUID（不是哨兵），且可回读")
+    void getOrCreateHost_writesRealUuid() {
+        net.neoforged.neoforge.attachment.IAttachmentHolder host =
+            org.mockito.Mockito.mock(net.neoforged.neoforge.attachment.IAttachmentHolder.class);
+        var attachType = com.qiqi.li.living.components.LivingComponents.CONTAINER_UUID_ATTACHMENT.value();
+        // 模拟「初始为哨兵」的宿主
+        java.util.UUID[] slot = {com.qiqi.li.living.components.LivingComponents.NO_CONTAINER_UUID};
+        org.mockito.Mockito.when(host.getData(attachType)).thenAnswer(inv -> slot[0]);
+        org.mockito.Mockito.doAnswer(inv -> {
+            slot[0] = inv.getArgument(1);
+            return null;
+        }).when(host).setData(org.mockito.ArgumentMatchers.eq(attachType), org.mockito.ArgumentMatchers.any());
+
+        UUID created = ContainerUuids.getOrCreateHost(host);
+        assertNotNull(created);
+        assertNotEquals(com.qiqi.li.living.components.LivingComponents.NO_CONTAINER_UUID, created,
+            "生成的真身份不能等于哨兵");
+        assertEquals(created, ContainerUuids.ofHost(host), "写入后必须能读回");
+    }
+
+    @Test
     @DisplayName("discard（取消活化）：剥 UUID + 删数据，两半都做")
     void discard_removesUuidAndData() {
         ItemStack stack = shulker();
