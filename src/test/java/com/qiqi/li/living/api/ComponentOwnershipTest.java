@@ -72,13 +72,15 @@ class ComponentOwnershipTest {
     /**
      * <b>框架组件</b>：不属于任何功能，因此不要求 Function 声明归属。
      *
-     * <p>⚠️ 两者的<b>清除策略相反</b>，别合并成一个概念：</p>
      * <ul>
      *   <li>{@code IS_LIVING} —— 由 {@code clearLivingData} <b>显式清除</b>
      *       （它本身就是「是不是活物品」的标记，取消活化必须清）。</li>
-     *   <li>{@code CONTAINER_UUID}（2026-10-22）—— 框架<b>不清</b>。
-     *       它是容器级数据在 SavedData 里的索引键：清掉它，SavedData 里那份数据
-     *       就永远找不回来了。取消活化只该停 tick，不该销毁容器身份。</li>
+     *   <li>{@code CONTAINER_UUID}（2026-10-22）—— 由<b>拥有容器级数据的 Function 的
+     *       {@code onDeactivated}</b> 清（{@code ContainerUuids.discard}：先删 SavedData
+     *       那份数据、再剥 UUID），<b>不走 {@code clearLivingData}</b>：
+     *       后者在 api（L0），依赖 components（L2）会新增架构违规。
+     *       ⚠️ 不能只剥 UUID 不删数据 —— 那会把数据留成永远打不开的孤儿条目；
+     *       也不能让多个 Function 声明它（测试②禁止重复归属，而活背包 / 将来的活潜影箱都要用）。</li>
      * </ul>
      */
     private static final Set<String> FRAMEWORK_COMPONENTS = Set.of(

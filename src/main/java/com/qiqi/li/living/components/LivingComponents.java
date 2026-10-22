@@ -62,6 +62,14 @@ public final class LivingComponents {
      * <p>⚠️ <b>复制必须 remove</b>：任何「复制容器物品」的路径（功能内复制 / 模板发放）
      * 要先 remove 本组件再 copy，让复制品在下次懒创建时拿到**新 UUID、数据独立**。
      * 直接 copy 会让两个物品共享一份容器级数据，改一个另一个也变。</p>
+     *
+     * <p>⚠️⚠️ <b>取消活化时由 {@code ContainerUuids.discard} 清除</b>（用户 2026-10-22 定调：
+     * 「取消活化就是要清理干净」，活流体的容器级数据与熔炼进度同构）。
+     * 它必须<b>连 SavedData 里那份数据一起删</b> —— 只剥 UUID 会把数据留成孤儿条目
+     * （硬盘上还在，但没有物品指向它，永远打不开）。
+     * ⇒ 因此本组件<b>不由任何 {@code LivingItemFunction} 声明归属</b>
+     * （{@code clearLivingData} 只清被声明的；且两个容器功能都要用它，
+     * 声明会触发「一个组件不可被多个 Function 拥有」的守卫）。</p>
      */
     public static final DeferredHolder<DataComponentType<?>, DataComponentType<UUID>> CONTAINER_UUID =
             DATA_COMPONENT_TYPES.register("container_uuid", () ->

@@ -7,6 +7,7 @@ import javax.annotation.Nullable;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.attachment.IAttachmentHolder;
 
+import com.qiqi.li.living.container.ContainerDataSavedData;
 import com.qiqi.li.living.container.ContainerKeys;
 
 
@@ -101,6 +102,31 @@ public final class ContainerUuids {
         if (stack != null && !stack.isEmpty()) {
             stack.remove(LivingComponents.CONTAINER_UUID.get());
         }
+    }
+
+    /**
+     * <b>取消活化时的彻底清理</b>：先删 SavedData 里那份容器级数据，再剥 UUID。
+     *
+     * <p>⚠️ 顺序不能反、也不能只做一半：只剥 UUID 会把数据留成**孤儿条目**
+     * （数据还在硬盘上，但没有任何物品指向它 ⇒ 永远打不开、还占存档）；
+     * 只删数据不剥 UUID 则会让物品指向一个空身份（重新活化时被复用，看起来"数据凭空消失"）。</p>
+     *
+     * <p>语义依据（用户 2026-10-22 定调）：<b>取消活化就是要清理干净</b> ——
+     * 活流体的容器级数据也一并清，与活熔炉清熔炼进度同构。</p>
+     *
+     * <p><b>调用点</b>：由拥有容器级数据的 {@code LivingItemFunction#onDeactivated} 调用
+     * （活背包 / 将来的活潜影箱），<b>不放进 {@code clearLivingData}</b> ——
+     * 后者在 {@code api}（L0 契约层），依赖本类会给 L0 → L2 再加一条违规。
+     * 这条分工是安全的：UUID 只由 {@link #getOrCreateItem} 生成，而它只被活物品功能调用
+     * ⇒ <b>有 UUID 的物品必然有对应的 Function，{@code onDeactivated} 一定会跑</b>。</p>
+     */
+    public static void discard(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return;
+        UUID uuid = ofItem(stack);
+        if (uuid != null) {
+            ContainerDataSavedData.get().remove(uuid);
+        }
+        stripForCopy(stack);
     }
 
     // ============================================================

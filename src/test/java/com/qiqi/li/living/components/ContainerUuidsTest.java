@@ -91,6 +91,37 @@ class ContainerUuidsTest {
     }
 
     @Test
+    @DisplayName("discard（取消活化）：剥 UUID + 删数据，两半都做")
+    void discard_removesUuidAndData() {
+        ItemStack stack = shulker();
+        UUID uuid = ContainerUuids.getOrCreateItem(stack);
+
+        // 先塞一份数据进去，验证 discard 会把它删掉
+        com.qiqi.li.living.container.ContainerDataSavedData savedData =
+            com.qiqi.li.living.container.ContainerDataSavedData.get();
+        com.qiqi.li.living.domain.water.ContainerFluidData fluid =
+            new com.qiqi.li.living.domain.water.ContainerFluidData();
+        fluid.registerGeneratedSource(3, net.minecraft.world.level.material.Fluids.WATER.getFluidType());
+        savedData.put(uuid, com.qiqi.li.living.domain.water.ContainerFluidData.KEY, fluid);
+        assertNotNull(savedData.get(uuid, com.qiqi.li.living.domain.water.ContainerFluidData.KEY),
+            "前置：数据必须已写入");
+
+        ContainerUuids.discard(stack);
+
+        assertNull(ContainerUuids.ofItem(stack), "UUID 必须被剥掉");
+        assertNull(savedData.get(uuid, com.qiqi.li.living.domain.water.ContainerFluidData.KEY),
+            "数据必须一起删 —— 只剥 UUID 会留成孤儿条目");
+    }
+
+    @Test
+    @DisplayName("discard：没有 UUID / 空栈 / null 都不抛")
+    void discard_isSafe() {
+        ContainerUuids.discard(shulker());
+        ContainerUuids.discard(ItemStack.EMPTY);
+        ContainerUuids.discard(null);
+    }
+
+    @Test
     @DisplayName("键形：keyOf 与 containerUuidOf 互逆，且 kindOf 认作 ITEM_FORM")
     void keyRoundTrips() {
         UUID uuid = UUID.fromString("11111111-2222-3333-4444-555555555555");
