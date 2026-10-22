@@ -11,11 +11,7 @@ import com.qiqi.li.living.container.SimpleContainerContext;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.container.TickableContainerContext;
 
-import net.neoforged.neoforge.attachment.IAttachmentHolder;
-
 import net.minecraft.world.entity.player.Player;
-
-import java.util.List;
 
 /**
  * 流体数据的写回钩子（水领域）—— 见 {@link ContainerTickHook}。
@@ -46,11 +42,10 @@ public final class ContainerFluidWriteback implements ContainerTickHook {
 
         // 持久宿主（BE / 实体，2026-10-21 实体容器接入后统一）：大箱子两半、船/矿车/驴各自动。
         // 领域侧不再 instanceof 具体 ctx —— 只遍历 getDataHosts()。
-        List<? extends IAttachmentHolder> hosts = ctx.getDataHosts();
+        // ⚠️ 2026-10-22（D-container-13）起改走 ctx.persist：物品形态容器（活背包）没有
+        //    IAttachmentHolder，它的持久层是 SavedData（按容器 UUID）—— 由 ctx 自己声明。
         if (!fluidData.isEmpty()) {
-            for (var host : hosts) {
-                host.setData(WaterComponents.CONTAINER_FLUID_DATA.value(), fluidData);
-            }
+            ctx.persist(ContainerFluidData.KEY, fluidData);
         }
 
         // 玩家背包 / 末影箱（B.5 第三项）：无 BE 可挂 ⇒ 落到 Player attachment（按容器键）。
@@ -74,13 +69,12 @@ public final class ContainerFluidWriteback implements ContainerTickHook {
         }
 
         if (fluidData.isEmpty()) {
-            // ⚠️ BE 附件同样要清（对齐玩家路径的 persistedMap.remove）：
+            // ⚠️ 附件同样要清（对齐玩家路径的 persistedMap.remove）：
             // 非空期间最后一次写回会把源留在附件里 ⇒ 不清则重进存档从附件回填复活
             // （汲走的源跨存档残留，2026-10-04 游戏实测）。EMPTY 序列化为空表，
             // 加载端 !isEmpty() 守卫会跳过 ⇒ 不会复活。
-            for (var host : hosts) {
-                host.setData(WaterComponents.CONTAINER_FLUID_DATA.value(), ContainerFluidData.EMPTY);
-            }
+            // 2026-10-22（D-container-13）：改走 persist，物品形态的 SavedData 路径同样清。
+            ctx.persist(ContainerFluidData.KEY, ContainerFluidData.EMPTY);
             ContainerLivingItemHandler.removeContainerData(ctx, ContainerFluidData.KEY);
         }
     }

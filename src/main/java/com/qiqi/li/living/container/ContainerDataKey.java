@@ -7,6 +7,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
 import net.neoforged.neoforge.attachment.AttachmentType;
+import com.mojang.serialization.Codec;
 
 /**
  * 容器级数据的类型化 key。
@@ -36,23 +37,26 @@ public final class ContainerDataKey<T> {
     private final Supplier<T> factory;
     private final boolean persistent;
     private final Supplier<AttachmentType<T>> attachment;   // null ⇒ 不参与 attachment 写回
+    private final Supplier<Codec<T>> codec;                 // null ⇒ 不进 SavedData（2026-10-22）
 
-    private ContainerDataKey(String id, Supplier<T> factory, boolean persistent, Supplier<AttachmentType<T>> attachment) {
+    private ContainerDataKey(String id, Supplier<T> factory, boolean persistent,
+                             Supplier<AttachmentType<T>> attachment, Supplier<Codec<T>> codec) {
         this.id = id;
         this.factory = factory;
         this.persistent = persistent;
         this.attachment = attachment;
+        this.codec = codec;
         ALL.add(this);
     }
 
     /** tick 级 key：数据只活一个 tick，存 {@code TickContext}。 */
     public static <T> ContainerDataKey<T> of(String id, Supplier<T> factory) {
-        return new ContainerDataKey<>(id, factory, false, null);
+        return new ContainerDataKey<>(id, factory, false, null, null);
     }
 
     /** 容器级 key：数据跨 tick 持久，但不参与 attachment 写回。 */
     public static <T> ContainerDataKey<T> persistent(String id, Supplier<T> factory) {
-        return new ContainerDataKey<>(id, factory, true, null);
+        return new ContainerDataKey<>(id, factory, true, null, null);
     }
 
     /**
@@ -64,7 +68,23 @@ public final class ContainerDataKey<T> {
      */
     public static <T> ContainerDataKey<T> persistentWith(String id, Supplier<T> factory,
                                                          Supplier<AttachmentType<T>> attachment) {
-        return new ContainerDataKey<>(id, factory, true, attachment);
+        return new ContainerDataKey<>(id, factory, true, attachment, null);
+    }
+
+    /**
+     * 容器级 key：数据跨 tick 持久、落盘 BE attachment，**且可按 UUID 落进 SavedData**
+     * （2026-10-22，`D-container-13` / 活背包）。
+     *
+     * <p>与 {@link #persistentWith} 的差别只在多了 {@code codec}：它让
+     * {@link ContainerDataSavedData} 能把该 key 的值编进 NBT
+     * （物品形态容器没有 BE 可挂附件，持久层是 SavedData）。</p>
+     *
+     * <p>⚠️ codec 用 {@link Supplier} 延迟求值，理由同 attachment。</p>
+     */
+    public static <T> ContainerDataKey<T> savedWith(String id, Supplier<T> factory,
+                                                    Supplier<AttachmentType<T>> attachment,
+                                                    Supplier<Codec<T>> codec) {
+        return new ContainerDataKey<>(id, factory, true, attachment, codec);
     }
 
     /** 数组下标（由 {@link ContainerDataStore} 使用）。 */
@@ -80,6 +100,17 @@ public final class ContainerDataKey<T> {
 
     /** 落盘目标；仅容器级且声明了 attachment 的 key 有值（延迟求值，须在注册后调用）。 */
     public AttachmentType<T> attachment() { return attachment != null ? attachment.get() : null; }
+
+    /** SavedData 序列化格式；仅 {@link #savedWith} 声明的 key 有值（延迟求值，须在注册后调用）。 */
+    public Codec<T> codec() { return codec != null ? codec.get() : null; }
+
+    /**
+     * 是否该进 SavedData（按 UUID 持久）。
+     *
+     * <p>判据与 I-C9 同源：**attachment 与 codec 都声明了才算** ——
+     * 只声明 attachment 的是「BE 才能落盘」的老数据，物品形态不搬。</p>
+     */
+    public boolean isSaved() { return attachment != null && codec != null; }
 
     /** 所有已定义的 key（类加载顺序）。供写回遍历使用。 */
     public static List<ContainerDataKey<?>> all() {

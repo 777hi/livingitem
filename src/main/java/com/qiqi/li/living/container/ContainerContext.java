@@ -116,6 +116,37 @@ public interface ContainerContext extends SlotInfoProvider, ContainerSync, Conta
         return List.of();
     }
 
+    /**
+     * 把某个容器级数据 key 的值<b>归档</b>到本宿主的持久层（`D-container-13`，2026-10-22）。
+     *
+     * <p>替代领域侧各自写 {@code for (host : getDataHosts()) host.setData(...)} ——
+     * 「数据存哪」的知识从此收在 ctx 一处：</p>
+     *
+     * <table>
+     *   <caption>各宿主的归档目标</caption>
+     *   <tr><th>宿主</th><th>归档到</th></tr>
+     *   <tr><td>方块容器 / 实体容器 / 玩家背包</td><td>{@link #getDataHosts()} 的附件（本 default 实现）</td></tr>
+     *   <tr><td><b>物品形态容器</b>（活背包 / 将来的活潜影箱）</td><td><b>SavedData</b>（按容器 UUID 索引；ctx 覆写本方法）</td></tr>
+     * </table>
+     *
+     * <p>⚠️ <b>领域不得假设有 BE</b>：拿不到 {@link IAttachmentHolder} <b>不是异常</b>，
+     * 是一种正常宿主。判据是 {@code key.isSaved()}（attachment 与 codec 都声明了）——
+     * 与 I-C9「只有带 {@code serialize} 的才搬」同源；应力 / 红石这类运行时数据
+     * （{@code persistent} 无附件）在这里静默跳过。</p>
+     *
+     * <p>为什么不是 default 空实现：那样物品形态 ctx 忘了覆写就静默不落盘
+     * （2026-10-22 设计评审记下的失效模式，与 {@code ContainerHandoff.Mover} 的
+     * default 事故同族）⇒ 默认走附件路径，覆写是显意的。</p>
+     */
+    default <T> void persist(ContainerDataKey<T> key, T value) {
+        if (!key.isSaved()) return;
+        net.neoforged.neoforge.attachment.AttachmentType<T> att = key.attachment();
+        if (att == null) return;
+        for (var host : getDataHosts()) {
+            host.setData(att, value);
+        }
+    }
+
     /** 方向编码：与红电 EDGE_* 一致（0=上 1=下 2=左 3=右） */
     int E_UP = 0;
     int E_DOWN = 1;

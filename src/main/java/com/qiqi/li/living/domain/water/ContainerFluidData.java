@@ -57,14 +57,18 @@ import net.neoforged.neoforge.registries.NeoForgeRegistries;
 public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence {
 
     /**
-     * 容器级流体数据的 key（跨 tick 持久 + 落盘到 BE attachment）。
+     * 容器级流体数据的 key（跨 tick 持久 + 落盘到 BE attachment + **可按 UUID 进 SavedData**）。
      *
      * <p>key 归领域所有（计划 ⑤，2026-10-08）—— 原集中在 {@code container/ContainerDataKeys}，
      * 使 container 包被迫 import 本领域类。</p>
+     *
+     * <p>2026-10-22（`D-container-13`）升为 {@code savedWith}：多声明一个 CODEC，
+     * 让物品形态容器（活背包）没有 BE 可挂时，数据能按容器 UUID 落进 SavedData。</p>
      */
     public static final ContainerDataKey<ContainerFluidData> KEY =
-        ContainerDataKey.persistentWith("fluid", ContainerFluidData::new,
-            () -> WaterComponents.CONTAINER_FLUID_DATA.value());
+        ContainerDataKey.savedWith("fluid", ContainerFluidData::new,
+            () -> WaterComponents.CONTAINER_FLUID_DATA.value(),
+            () -> ContainerFluidData.CODEC);
 
     public static final ContainerFluidData EMPTY = new ContainerFluidData() {
         @Override

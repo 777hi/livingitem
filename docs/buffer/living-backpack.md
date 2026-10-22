@@ -165,14 +165,23 @@ B 是新增形态零框架改动（对扩展开放、对修改关闭）——用
 **SavedData 粒度**：按 UUID 一条**聚合记录**（`Map<UUID, ContainerDataSnapshot>`，
 snapshot 含所有非空 key 的值）—— 一个 UUID 一次序列化，与 `ContainerDataStore` 结构对应。
 
-⚠️ **两个待设计细节**（不动工前要定）：
-1. `ContainerDataKey` 当前**不带 CODEC 句柄** ⇒ 聚合 snapshot 无法把“任意 key 的值”编进 NBT，
-   需要给 key 加 CODEC 引用（或改用「每种数据一个 Map」的退化方案）。
-2. `persist` 是泛型 default 方法，`ContainerDataKey<T>` 的 `attachment()` 目前不存在
-   （现在是各领域硬编码 `WaterComponents.CONTAINER_FLUID_DATA`）⇒ 要把附件类型收进 key。
+⚠️ **两个待设计细节**（2026-10-22 晚查代码后**收窄为一个**）：
+1. ~~`ContainerDataKey` 不带 CODEC 句柄~~ ⇒ 聚合 snapshot 无法把“任意 key 的值”编进 NBT。
+   **要加，但与现有 `attachment` 完全同构**（新增 `savedWith` 工厂 + `codec()` getter）。
+2. ~~`attachment()` 不存在~~ ⇒ **已存在**。`ContainerDataKey.attachment()` 是现成 getter，
+   水领域已在用 `persistentWith("fluid", ..., CONTAINER_FLUID_DATA)` 声明附件。
+   ⇒ **BE 路径的 default 实现现在就能写，零额外框架改动**：
 
-⇒ **`persist` 落地会顺带把「key ↔ 附件类型 ↔ CODEC」三元组统一**，这是比活背包更大的收益，
-   也是它该在活潜影箱之前做的原因。
+   ```java
+   default <T> void persist(ContainerDataKey<T> key, T value) {
+       AttachmentType<T> att = key.attachment();
+       if (att == null) return;                       // 不落盘的 key（应力/红石）
+       for (var host : getDataHosts()) host.setData(att, value);
+   }
+   ```
+
+⇒ 语义天然对齐：`persistent`（无附件）= 不落盘、`persistentWith`（有附件）= 落盘
+⇒ SavedData 只收后者，与 I-C9「只有带 `serialize` 的才搬」同一条判据。
 
 **契约后果**（已写进 [container-boundary.md](../system-design/container-boundary.md) I-C9）：
 > 每种宿主的持久化方式由 ctx 自己声明，**领域不得假设有 BE**。
@@ -232,9 +241,10 @@ C 额外做边界交换与嵌套。
 
 **未定案（拍板前不要动工）**：
 
-1. **`ContainerDataKey` 的 CODEC / 附件类型句柄**（§3.4 的两个待设计细节）——
-   这决定 SavedData 聚合 snapshot 能不能序列化，是 persist 落地的前置。
-2. **嵌套上限放开时机**：现在写死 1，是否等活潜影箱立项一起放开（倾向是）。
+1. ~~**`ContainerDataKey` 的 CODEC / 附件类型句柄**~~ ⇒ **2026-10-22 晚查代码后降级为「落地步骤」**：
+   附件已有（`attachment()` getter + 水领域在用），只剩 CODEC，且与 attachment 同构
+   （`savedWith` 工厂 + `codec()` getter + 两个领域各声明一行）。见 §3.4。
+2. **嵌套上限放开时机**：现在写死 1，等活潜影箱立项一起放开（倾向是）。
 3. **handler 获取的真实开销**：要实测（`BackpackWrapper.fromStack` 每 tick 每背包一次）。
 
 ---

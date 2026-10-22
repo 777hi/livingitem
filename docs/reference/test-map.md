@@ -36,6 +36,7 @@ src/test/java/com/qiqi/li/
 ├── living/command/
 │   └── ActivationTargetParsingTest.java       # 活化目标参数解析守卫·物品ID/标签/modid 回写契约 + 反向守卫「StringArgumentType 读不进 : # @」（4 项）
 ├── living/container/
+│   ├── ContainerDataKeyTest.java               # 落盘判据 + persist 默认路径（2026-10-22，D-container-13）·savedWith 的 attachment+codec 都有⇒isSaved/persistent 无附件⇒不落盘/tick 级两者都不/persist 写所有宿主/非 isSaved 一个都不写/宿主空不抛（6 项）
 │   ├── SimpleContainerContextTest.java        # 容器上下文脏槽同步 + 末影箱稳定键构造器（4 项回归）+ 缓存键推导（世界容器带维度前缀/跨维度同坐标键不同/大箱子两段坐标/背包末影箱裸键/无维度退化）+ 列数推断（启发式/质数退化/未注册类型不借用同 namespace 规则）（36 项）
 │   ├── ContainerContextsTest.java             # 边界带共享内核·isSameSlotSpace(槽位数不一致/越界/同空/同物品/一空一非空/异物品) + resolve 末影箱分支(F-1) + isViewingEnderChest 判据 6 项（16 项）
 │   ├── EntityContainersTest.java                  # 实体容器（2026-10-21）·白名单(ContainerEntity/带箱驴骡,无箱马与普通实体排除)/键 entity_uuid/列数启发式 27→9·5→5·15→5/getBlockPos 恒 null(防船停箱子上信标误判)/数据宿主=实体/无能力面即抛/menuSlotOwners 位置解析/注册表+白名单过滤/horse 字段反射判据/**鞍槽排除与偏移映射**（16 槽→15 存储格、getItem(0)→handler 槽 1、写不碰鞍槽）/船无偏移直通/**逻辑↔物理映射互逆**/**遥测键用物理槽**（18 项；驴解析走入口层反射，单测只锁字段形状）
