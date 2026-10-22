@@ -208,6 +208,8 @@ snapshot 含所有非空 key 的值）—— 一个 UUID 一次序列化，与 `
 **两套映射**。tooltip 同链：`ContainerRuntimeCache` 按槽位找 ctx，找不到就没信息。
 
 **教训**：一个容器形态要接 **11 条线**才叫「正常工作」，不是「能 tick」就算完。
+⚠️ 活潜影箱会**少两条**（#6/#7）—— 因为它计划自建多窗口 GUI，锚点由自己创建，
+见 [活潜影箱实现细节 §7](活潜影箱实现细节.md)。
 清单见 [guides/container-compatibility.md](../guides/container-compatibility.md) §新容器形态接入清单，
 活背包当前勾选：✅1 ✅2 ⚠️3 ✅4 ✅5 **✅6 ✅7**（2026-10-22 补上）⚠️8 ✅9 ❌10 ✅11。
 
