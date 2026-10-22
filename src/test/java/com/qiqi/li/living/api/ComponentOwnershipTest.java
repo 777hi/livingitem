@@ -70,10 +70,20 @@ import net.neoforged.neoforge.registries.DeferredHolder;
 class ComponentOwnershipTest {
 
     /**
-     * {@code IS_LIVING} 属于框架本身，由 {@code clearLivingData} 单独清除；
-     * 任何功能都不应声明它（语义上它不是某个功能的数据）。
+     * <b>框架组件</b>：不属于任何功能，因此不要求 Function 声明归属。
+     *
+     * <p>⚠️ 两者的<b>清除策略相反</b>，别合并成一个概念：</p>
+     * <ul>
+     *   <li>{@code IS_LIVING} —— 由 {@code clearLivingData} <b>显式清除</b>
+     *       （它本身就是「是不是活物品」的标记，取消活化必须清）。</li>
+     *   <li>{@code CONTAINER_UUID}（2026-10-22）—— 框架<b>不清</b>。
+     *       它是容器级数据在 SavedData 里的索引键：清掉它，SavedData 里那份数据
+     *       就永远找不回来了。取消活化只该停 tick，不该销毁容器身份。</li>
+     * </ul>
      */
-    private static final String FRAMEWORK_COMPONENT = "IS_LIVING";
+    private static final Set<String> FRAMEWORK_COMPONENTS = Set.of(
+        "IS_LIVING",
+        "CONTAINER_UUID");
 
     /**
      * 全部 23 个 LivingItemFunction 实现。
@@ -156,7 +166,7 @@ class ComponentOwnershipTest {
 
         List<String> orphans = new ArrayList<>();
         for (Map.Entry<DataComponentType<?>, String> e : componentTypes().entrySet()) {
-            if (FRAMEWORK_COMPONENT.equals(e.getValue())) {
+            if (FRAMEWORK_COMPONENTS.contains(e.getValue())) {
                 continue;
             }
             if (!declared.contains(e.getKey())) {

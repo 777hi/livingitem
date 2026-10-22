@@ -18,7 +18,7 @@ import java.util.UUID;
  * 需要判断种类用 {@link #kindOf}，需要玩家用 {@link #ownerOf}，需要坐标用 {@link #positionsOf}。
  * 新增键形 ⇒ 只改本类。<b>检查脚本</b> {@code tools/check_container_keys.py} 会拦住散落的 UUID 解析。</p>
  *
- * <h3>键形全集（5 种，见 {@link ContainerKind}）</h3>
+ * <h3>键形全集（6 种，见 {@link ContainerKind}）</h3>
  * <pre>
  *   player_&lt;uuid&gt;                    玩家背包
  *   player_&lt;uuid&gt;_ender_chest         玩家末影箱
@@ -26,9 +26,14 @@ import java.util.UUID;
  *   container_&lt;dim&gt;_x_y_z             世界实体容器
  *   item_entity_&lt;entityUUID&gt;          掉落物容器
  *   entity_&lt;entityUUID&gt;                实体容器（船 / 矿车 / 带箱驴骡，2026-10-21）
+ *   cuuid_&lt;containerUUID&gt;             物品形态容器（活背包，2026-10-22）
  * </pre>
  * <p>⚠️ 缓存键（{@link ContainerIdentity#getCacheKey()}）在世界容器键前多一段 {@code <维度>|} 前缀
  * ⇒ 本类所有入口<b>先剥前缀</b>，故<b>裸键与缓存键都能吃</b>（裸键不含 {@code |} ⇒ 原样）。</p>
+ *
+ * <p>⚠️ {@code cuuid_} 与 {@code container_} <b>前缀不同形</b>（{@code cu} vs {@code co}）——
+ * 早先方案想用 {@code container_<uuid>}，会与 {@code container_<dim>_x_y_z} 撞
+ * {@link #kindOf} 的分支（同名不同义 ⇒ 解析必然出错）⇒ 换前缀。</p>
  */
 public final class ContainerKeys {
 
@@ -42,6 +47,12 @@ public final class ContainerKeys {
     private static final String CONTAINER_PREFIX = "container_";
     private static final String ITEM_ENTITY_PREFIX = "item_entity_";
     private static final String ENTITY_PREFIX = "entity_";
+
+    /**
+     * 物品形态容器前缀（2026-10-22，活背包）—— {@code cu} 而不是 {@code co}：
+     * 与 {@link #CONTAINER_PREFIX} 区分，避免 {@link #kindOf} 在两个分支间猜。
+     */
+    private static final String CUUID_PREFIX = "cuuid_";
 
     private ContainerKeys() {}
 
@@ -66,6 +77,7 @@ public final class ContainerKeys {
         }
         if (key.startsWith(ITEM_ENTITY_PREFIX)) return ContainerKind.ITEM_ENTITY;
         if (key.startsWith(ENTITY_PREFIX)) return ContainerKind.ENTITY;
+        if (key.startsWith(CUUID_PREFIX)) return ContainerKind.ITEM_FORM;
         return null;
     }
 
@@ -187,5 +199,32 @@ public final class ContainerKeys {
         } catch (IllegalArgumentException ignored) {
             return null;
         }
+    }
+
+    // ============================================================
+    // 容器 UUID（物品形态容器）
+    // ============================================================
+
+    /**
+     * 解析物品形态容器的容器 UUID（{@code cuuid_<uuid>}）；非物品形态或形态异常返回 {@code null}。
+     *
+     * <p>第三个 UUID 解析点（前两个是 {@link #ownerOf} 玩家、{@link #entityOf} 实体）。
+     * 2026-10-22 活背包：容器级数据按这个 UUID 存 SavedData ⇒ 形态变化时数据零搬运，
+     * 只需让 UUID 本身跟着走（{@code ContainerHandoff}）。</p>
+     */
+    public static UUID containerUuidOf(String containerKey) {
+        if (containerKey == null) return null;
+        String key = stripDimPrefix(containerKey);
+        if (!key.startsWith(CUUID_PREFIX)) return null;
+        try {
+            return UUID.fromString(key.substring(CUUID_PREFIX.length()));
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
+    }
+
+    /** 构造物品形态容器键（{@code cuuid_<uuid>}）。 */
+    public static String cuuidKey(UUID containerUuid) {
+        return CUUID_PREFIX + containerUuid;
     }
 }

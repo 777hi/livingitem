@@ -43,7 +43,17 @@ public enum ContainerKind {
      * {@code AbstractHorse.hasChest()}）。与 {@link #ITEM_ENTITY} 的区别：它有 GUI、
      * 需要 viewer 匹配 ⇒ 同步轨必须支持；掉落物两者都不需要。</p>
      */
-    ENTITY;
+    ENTITY,
+
+    /**
+     * 物品形态容器：{@code cuuid_<containerUUID>}（2026-10-22，活背包）。
+     *
+     * <p>覆盖精妙背包 / 潜影盒这类「本身是容器」的物品。与 {@link #ENTITY} 的共同点：
+     * 身份是 UUID 而非位置 ⇒ 形态变化不漂移。与它的区别：<b>没有世界位置</b>
+     * ⇒ {@code positionsOf} 为空、viewer 匹配走「玩家正看着的菜单」，
+     * 持久层是 SavedData（按容器 UUID）而不是 BE 附件。</p>
+     */
+    ITEM_FORM;
 
     /**
      * 是否「属于某个玩家本人」⇒ 分派时<b>直发主人</b>（背包 / 末影箱）。

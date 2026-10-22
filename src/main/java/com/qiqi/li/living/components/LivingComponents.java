@@ -46,6 +46,44 @@ public final class LivingComponents {
                             .networkSynchronized(ByteBufCodecs.BOOL)
                             .build());
 
+    /**
+     * 容器 UUID —— 容器级数据按 UUID 索引的**跨形态身份**（2026-10-22，活背包 / `D-container-13`）。
+     *
+     * <p>三种宿主各存一份，指向同一个 UUID：</p>
+     * <ul>
+     *   <li><b>方块容器</b>：BE 附件（{@code container/ContainerUuids} 读写）</li>
+     *   <li><b>物品形态容器</b>：本组件（潜影盒 / 精妙背包物品上）</li>
+     *   <li><b>容器级数据</b>：SavedData 按这个 UUID 索引</li>
+     * </ul>
+     *
+     * <p><b>懒创建</b>：第一次真正需要持久化时才生成并写入 —— 不给世界上从未跨形态的
+     * 空容器增加负担，老存档也不需要专门迁移命令。</p>
+     *
+     * <p>⚠️ <b>复制必须 remove</b>：任何「复制容器物品」的路径（功能内复制 / 模板发放）
+     * 要先 remove 本组件再 copy，让复制品在下次懒创建时拿到**新 UUID、数据独立**。
+     * 直接 copy 会让两个物品共享一份容器级数据，改一个另一个也变。</p>
+     */
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<UUID>> CONTAINER_UUID =
+            DATA_COMPONENT_TYPES.register("container_uuid", () ->
+                    DataComponentType.<UUID>builder()
+                            .persistent(UUIDUtil.CODEC)
+                            .networkSynchronized(UUIDUtil.STREAM_CODEC)
+                            .build());
+
+    /**
+     * 容器 UUID 的 <b>BE / 实体附件</b>形态（2026-10-22）—— 与物品组件 {@link #CONTAINER_UUID}
+     * 指向同一个 UUID，只是宿主不同。
+     *
+     * <p>为什么不用 {@code serialize} 之外的 default：默认 {@code null} 表示「还没懒创建」，
+     * 读取方必须判空（{@code ContainerUuids.ofHost}）。用 {@code UUID.randomUUID()} 当默认
+     * 会让「读一次」变成「凭空生成一个身份」——那是写操作的语义。</p>
+     */
+    public static final DeferredHolder<AttachmentType<?>, AttachmentType<UUID>> CONTAINER_UUID_ATTACHMENT =
+            ATTACHMENT_TYPES.register("container_uuid", () ->
+                    AttachmentType.<UUID>builder(() -> null)
+                            .serialize(UUIDUtil.CODEC)
+                            .build());
+
     public static final DeferredHolder<DataComponentType<?>, DataComponentType<UUID>> LIVING_TOOL_OWNER =
             DATA_COMPONENT_TYPES.register("living_tool_owner", () ->
                     DataComponentType.<UUID>builder()
