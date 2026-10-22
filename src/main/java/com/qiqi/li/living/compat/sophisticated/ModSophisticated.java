@@ -35,5 +35,10 @@ public final class ModSophisticated {
         if (!isLoaded()) return;
         MenuSlotOwners.registerMenuResolver(new SophisticatedMenuResolver());
         LOGGER.info("[ModSophisticated] 已注册菜单位置解析器（容器 GUI 的 tooltip / 流体渲染依赖它）");
+
+        // 活背包（2026-10-22）：把精妙背包登记为「物品形态容器」来源 ⇒
+        // 活化的背包会被 LivingBackpackFunction tick 内部。核心不认识精妙类型。
+        com.qiqi.li.living.container.ItemFormContainers.register(new SophisticatedBackpackSource());
+        LOGGER.info("[ModSophisticated] 已注册物品形态容器来源（活背包内部 tick 依赖它）");
     }
 }

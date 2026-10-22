@@ -15,6 +15,31 @@
 
 ---
 
+## 2026-10-22
+
+> 🎒 **活背包落地（2026-10-22，四步走完，待真机）**
+>
+> 由「物品形态的背包里流体不渲染」引出，用户连问四轮把方案推回原点：
+> **活背包就是一个活物品功能**（`LivingBackpackFunction`），框架零改动（除一处持久化钩子）。
+>
+> | 步 | 提交 | 交付 |
+> |---|---|---|
+> | ① | `d452997` | `ContainerContext.persist(key,value)` 钩子 + `ContainerDataKey.savedWith`（attachment+codec 双全才算可落盘） |
+> | ② | `7a3724d` | `CONTAINER_UUID` 组件/附件 + `cuuid_<uuid>` 键形 + `ContainerDataSavedData`（按 UUID 索引、Overworld 全局一份、空条目不写盘） |
+> | ③ | `38bb544` | **身份优先的形态迁移**（有 UUID 只搬 UUID，数据留在 SavedData）+ SavedData 回填 + `getContainerUuid()` |
+> | ④ | 本步 | `LivingBackpackFunction`（tick 里递归 `processContext`，depth 1 + UUID 环检测）+ `ItemFormContainers` 注册口 + `ItemFormContainerContext`（persist 覆写走 SavedData）+ 精妙联动（反射，不碰第三方类型） |
+>
+> **两个关键语义**（用户定调）：
+> - 取消活化 = **清理干净** ⇒ `ContainerUuids.discard` 先删 SavedData 数据再剥 UUID（只剥 UUID 会留孤儿条目）
+> - 容器身份**懒创建**（借精妙 `getOrCreateContentsUuid`），老存档无需迁移命令
+>
+> **一处架构决定**：`container → components` R1 从 1 增到 2，显式 `--update-baseline` 接受
+> （容器身份 API 必须访问组件/附件注册表，与既有 `ContainerLivingItemHandler` 同一条边）。
+>
+> 单测 823 → 859。**待真机**：活化精妙背包 → 里面放活熔炉/活桶 → 关着 GUI 也烧 → 打开看流体层。
+
+---
+
 ## 2026-10-21（夜）
 
 > 🔗 **蹲下右键拾取不再丢容器级数据 —— 「交接」成为数据迁移的第三个挂点**（`D-container-12`）

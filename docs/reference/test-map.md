@@ -38,6 +38,7 @@ src/test/java/com/qiqi/li/
 ├── living/components/
 │   └── ContainerUuidsTest.java                # 容器 UUID 读写门面（2026-10-22，活背包）·懒创建幂等（跨 GUI 开合进度不重置）/ofItem 无副作用/复制 remove 范式给副本新身份/strip 空栈与 null 安全/宿主侧 null 安全/keyOf 与 containerUuidOf 互逆且 kindOf=ITEM_FORM/cuuid_ 不被误认世界方块 + **discard 剥 UUID 且删数据/退化输入安全**（9 项）
 ├── living/container/
+│   ├── ItemFormContainerContextTest.java       # 物品形态容器地基（2026-10-22，活背包）·来源注册口（无来源不认领/注册后可认领/find 返回同一来源/空栈与普通物品不认领）+ ctx 身份（UUID 与 cuuid_ 键互逆/hosts 空/无世界位置）+ **persist 写 SavedData（不是空转的 default）/空值删条目/非 isSaved 不写**（6 项）
 │   ├── ContainerDataKeyTest.java               # 落盘判据 + persist 默认路径（2026-10-22，D-container-13）·savedWith 的 attachment+codec 都有⇒isSaved/persistent 无附件⇒不落盘/tick 级两者都不/persist 写所有宿主/非 isSaved 一个都不写/宿主空不抛（6 项）
 │   ├── ContainerDataSavedDataTest.java         # SavedData 持久层（2026-10-22，活背包）·put→get 往返/save→load 跨重启/空条目不写盘/isSaved=false 拒绝写入/remove(UUID) 只删一个/同 key 后写覆盖/未知 UUID 返回 null/组件注册（8 项）
 │   ├── SimpleContainerContextTest.java        # 容器上下文脏槽同步 + 末影箱稳定键构造器（4 项回归）+ 缓存键推导（世界容器带维度前缀/跨维度同坐标键不同/大箱子两段坐标/背包末影箱裸键/无维度退化）+ 列数推断（启发式/质数退化/未注册类型不借用同 namespace 规则）（36 项）
@@ -53,6 +54,8 @@ src/test/java/com/qiqi/li/
 │   ├── ContainerChunkCacheChunkLoadTest.java  # 区块加载守卫·事件不碰世界/延后重扫不丢/限量/不主动加载/只处理ticking区/可观测性（6 项）
 │   ├── ContainerKeysTest.java                 # 容器键解析唯一入口(2026-10-13)·5 种键形各自归位(背包/末影箱前缀相同必须按后缀分开)/缓存键剥维度前缀/未知形态返回 null 不抛异常/ownerOf 末影箱回归(旧实现抛异常被吞⇒从不发包)/isOwnedByPlayer(null 安全)/positionsOf(大箱两段·维度 id 含下划线取末三段)/维度前缀（7 项）
 │   └── ContainerRuntimeCacheLifecycleTest.java # 运行时缓存生命周期(方案A)·物品离开槽位/换物品⇒登记作废·同类持续⇒不作废·drain 取走即空·null 键忽略·整容器作废键==运行时存储键（6 项）
+├── living/domain/backpack/
+│   └── LivingBackpackFunctionTest.java        # 活背包（2026-10-22）·认领（无来源不认领=未装模组零影响/来源注册后只认它说是容器的物品）+ 功能 ID 稳定 + **取消活化连 SavedData 一起清**/无 UUID 不抛（5 项）
 ├── living/domain/tnt/
 │   ├── ExplosionParamsTest.java               # 爆炸参数·位图映射可逆/网格外返回-1/affects=区块AABB∩球体/边界回归(中心在半径外但边缘在球内)/球体全覆盖(半径内每方块所在区块必命中)/网格规模（7 项）
 │   ├── ExplosionLedgerTest.java               # 待炸账本·相交才进队列/不相交立即标记/未加载丢弃不轮询/自然加载补炸闭环/分帧预算/多场叠加不覆盖新登记/满额降级/存档往返（10 项）
