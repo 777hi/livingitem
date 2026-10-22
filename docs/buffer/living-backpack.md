@@ -209,11 +209,14 @@ snapshot 含所有非空 key 的值）—— 一个 UUID 一次序列化，与 `
 
 **教训**：一个容器形态要接 **11 条线**才叫「正常工作」，不是「能 tick」就算完。
 清单见 [guides/container-compatibility.md](../guides/container-compatibility.md) §新容器形态接入清单，
-活背包当前勾选：✅1 ✅2 ⚠️3 ✅4 ✅5 ❌6 ❌7 ⚠️8 ✅9 ❌10 ✅11。
+活背包当前勾选：✅1 ✅2 ⚠️3 ✅4 ✅5 **✅6 ✅7**（2026-10-22 补上）⚠️8 ✅9 ❌10 ✅11。
 
-**剩下的两条**：
-- **#6 菜单解析**（`ContainerContexts.resolve` 加物品形态分支）—— 修完 tooltip / 倒汲 / GUI 设置三条一起通
-- **#7 viewer 匹配**（依赖 #6）
+**#6 / #7 已补上**（同日）：
+- **#6 菜单解析**：`ItemFormContainers.Source.handleOfMenu` 默认实现 = 扫玩家物品栏找
+  「本来源认领且带 UUID」的物品，**唯一一件才认、多件返回 null**（菜单不告诉你对应第几件，
+  猜错会操作到另一个容器 ⇒ 宁可不认）。`ContainerContexts.resolve` 末尾加该分支。
+- **#7 viewer 匹配**：`FluidFlowServerSync.viewersOf` 加「按容器 UUID 反查在线玩家」分支
+  （物品形态没有位置，原按 positions 匹配会直接返回空）。
 
 **#10 世界语义明确不做**（用户 2026-10-22 定）：`getBlockPos()` 返回 null 是正确语义，
 活漏斗的方向传输属于**活潜影箱**的逻辑，活背包不背。

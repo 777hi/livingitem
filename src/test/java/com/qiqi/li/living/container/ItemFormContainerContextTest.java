@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import com.qiqi.li.living.domain.water.ContainerFluidData;
 import com.qiqi.li.living.domain.water.ContainerStressData;
 
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.material.Fluids;
@@ -145,5 +146,69 @@ class ItemFormContainerContextTest {
         ctx.persist(ContainerStressData.KEY, new ContainerStressData());
 
         assertEquals(0, ContainerDataSavedData.get().size(), "没有 CODEC 的 key 不该进 SavedData");
+    }
+
+    // ── 菜单反查（#6 菜单解析，2026-10-22）──────────────────────────────────
+    //
+    // tooltip / 倒汲 / GUI 槽位设置都走 ContainerContexts.resolve → handleOf。
+    // 核心策略：**多件不猜**（菜单不告诉你对应第几件，猜错会操作到别的容器）。
+
+    private static Player playerWith(ItemStack... items) {
+        Player player = org.mockito.Mockito.mock(Player.class);
+        net.minecraft.world.entity.player.Inventory inv =
+            org.mockito.Mockito.mock(net.minecraft.world.entity.player.Inventory.class);
+        org.mockito.Mockito.when(player.getInventory()).thenReturn(inv);
+        org.mockito.Mockito.when(inv.getContainerSize()).thenReturn(items.length);
+        for (int i = 0; i < items.length; i++) {
+            org.mockito.Mockito.when(inv.getItem(i)).thenReturn(items[i]);
+        }
+        return player;
+    }
+
+    private static net.minecraft.world.inventory.AbstractContainerMenu menu() {
+        return org.mockito.Mockito.mock(net.minecraft.world.inventory.AbstractContainerMenu.class);
+    }
+
+    private static ItemStack livingBackpack() {
+        ItemStack stack = new ItemStack(Items.SHULKER_BOX);
+        ContainerUuids.getOrCreateItem(stack);   // 只有活化的才有身份
+        return stack;
+    }
+
+    @Test
+    @DisplayName("菜单反查：物品栏没有活容器 ⇒ null")
+    void handleOf_noLivingContainer_returnsNull() {
+        ItemFormContainers.register(new FakeSource(handler));
+        Player player = playerWith(new ItemStack(Items.SHULKER_BOX), ItemStack.EMPTY);   // 有容器但没活化
+
+        assertNull(ItemFormContainers.handleOf(menu(), player));
+    }
+
+    @Test
+    @DisplayName("菜单反查：唯一一件 ⇒ 认它（这是常态路径）")
+    void handleOf_singleLivingContainer_returnsIt() {
+        ItemFormContainers.register(new FakeSource(handler));
+        ItemStack backpack = livingBackpack();
+        Player player = playerWith(backpack, ItemStack.EMPTY, ItemStack.EMPTY);
+
+        var handle = ItemFormContainers.handleOf(menu(), player);
+        assertNotNull(handle, "唯一一件必须认 —— 否则 tooltip / 倒汲全失效");
+        assertEquals(ContainerUuids.ofItem(backpack), handle.containerUuid());
+    }
+
+    @Test
+    @DisplayName("菜单反查：两件同类容器 ⇒ null（不猜，猜错会操作到另一个容器）")
+    void handleOf_multipleLivingContainers_refusesToGuess() {
+        ItemFormContainers.register(new FakeSource(handler));
+        Player player = playerWith(livingBackpack(), livingBackpack());
+
+        assertNull(ItemFormContainers.handleOf(menu(), player),
+            "菜单不告诉你对应第几件 ⇒ 必须返回 null 而不是随便挑一个");
+    }
+
+    @Test
+    @DisplayName("菜单反查：未注册来源 ⇒ null（未装模组零影响）")
+    void handleOf_withoutSource_returnsNull() {
+        assertNull(ItemFormContainers.handleOf(menu(), playerWith(livingBackpack())));
     }
 }

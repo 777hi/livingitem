@@ -1,10 +1,13 @@
 package com.qiqi.li.living.container;
 
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import javax.annotation.Nullable;
 
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.items.IItemHandler;
 
@@ -40,7 +43,40 @@ public final class ItemFormContainers {
          */
         @Nullable
         IItemHandler contentHandler(ItemStack stack);
+
+        /**
+         * 从打开的菜单反查「玩家正在看的是哪个容器」（tooltip / 倒汲 / GUI 槽位设置依赖它）。
+         *
+         * <p><b>默认实现</b>：扫玩家物品栏，找「本来源认领、且已带容器 UUID」的物品，
+         * <b>只有唯一一件时才认</b>；0 件或 ≥2 件返回 {@code null}。</p>
+         *
+         * <p>⚠️ 为什么「多件不猜」：菜单本身不告诉你它对应物品栏的第几件，而
+         * 「取手上那件」在玩家切换手持后就会错。猜错的后果是<b>操作到另一个容器</b>
+         * （比解析不出更糟）⇒ 宁可返回 null（`D-container-09` 的同一原则：
+         * 核心不做第三方形状猜测）。</p>
+         *
+         * <p>有更可靠来源的实现（比如能从自己的菜单对象直接拿到背包物品栈）应当覆写本方法。</p>
+         */
+        @Nullable
+        default Handle handleOfMenu(AbstractContainerMenu menu, Player player) {
+            Handle found = null;
+            var inventory = player.getInventory();
+            for (int i = 0; i < inventory.getContainerSize(); i++) {
+                ItemStack stack = inventory.getItem(i);
+                if (!isContainerItem(stack)) continue;
+                UUID uuid = ContainerUuids.ofItem(stack);   // 只有活化的才有身份
+                if (uuid == null) continue;
+                if (found != null) return null;             // 多件 ⇒ 不猜
+                IItemHandler handler = contentHandler(stack);
+                if (handler == null) continue;
+                found = new Handle(handler, uuid);
+            }
+            return found;
+        }
     }
+
+    /** 「玩家正在看的那个物品形态容器」：内容视图 + 身份。 */
+    public record Handle(IItemHandler handler, UUID containerUuid) {}
 
     private static final List<Source> SOURCES = new CopyOnWriteArrayList<>();
 
@@ -64,6 +100,21 @@ public final class ItemFormContainers {
     /** 这件物品是不是物品形态容器。 */
     public static boolean isContainerItem(ItemStack stack) {
         return find(stack) != null;
+    }
+
+    /**
+     * 从菜单反查「玩家正在看的物品形态容器」（tooltip / 倒汲 / GUI 槽位设置依赖它）。
+     *
+     * <p>按注册顺序问各来源，第一个给出答案的胜出。</p>
+     */
+    @Nullable
+    public static Handle handleOf(AbstractContainerMenu menu, Player player) {
+        if (menu == null || player == null) return null;
+        for (Source source : SOURCES) {
+            Handle handle = source.handleOfMenu(menu, player);
+            if (handle != null) return handle;
+        }
+        return null;
     }
 
     /**

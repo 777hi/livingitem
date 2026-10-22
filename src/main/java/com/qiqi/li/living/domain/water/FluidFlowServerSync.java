@@ -226,6 +226,22 @@ public final class FluidFlowServerSync {
             return out;
         }
 
+        // 物品形态容器（2026-10-22，活背包）：没有世界位置、也不是玩家背包 ⇒
+        // 前两条都命中不了，而下面按 positions 匹配会因为「位置为空」直接返回空列表。
+        // ⇒ 问「谁正开着它」：逐个在线玩家反查他菜单对应的容器 UUID（联动模块提供）。
+        // ⚠️ 成本 O(在线玩家数)：只有「有流体的容器」才会走到这里（上方 hasData 已短路）。
+        java.util.UUID containerUuid = ctx.getContainerUuid();
+        if (containerUuid != null) {
+            for (ServerPlayer player : level.getServer().getPlayerList().getPlayers()) {
+                com.qiqi.li.living.container.ItemFormContainers.Handle handle =
+                    com.qiqi.li.living.container.ItemFormContainers.handleOf(player.containerMenu, player);
+                if (handle != null && containerUuid.equals(handle.containerUuid())) {
+                    out.add(player);
+                }
+            }
+            return out;
+        }
+
         // BE 容器：按**位置**匹配 viewer（I-C5）—— 不再要求 BE 是原版 Container，
         // 否则这类第三方容器永远匹配不上 ⇒ 其 GUI 里看不到水
         List<BlockPos> positions = ctx.getAssociatedBlockPositions();

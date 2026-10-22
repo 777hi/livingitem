@@ -130,6 +130,18 @@ public final class ContainerContexts {
             }
         }
 
+        // 物品形态容器（2026-10-22，活背包）：精妙背包 GUI 的槽位容器是它自己的
+        // IItemHandler（既不是 BE、不是实体、也没有方块位置）⇒ 上面五条全不命中。
+        // 问各来源「这个菜单是不是你的」，拿到 (内容视图, 容器 UUID) 就建内部 ctx。
+        //
+        // ⚠️ 这条不接的后果（2026-10-22 真机实证）：tick 走 LivingBackpackFunction 自建 ctx
+        //    照常工作，但 tooltip / 倒汲 / GUI 槽位设置全部失效 —— 因为设置那一侧解析不出容器，
+        //    回落到默认槽 ⇒ 症状看起来像「槽位算错了」，实际是**两条路径用了两套 ctx**。
+        ItemFormContainers.Handle handle = ItemFormContainers.handleOf(player.containerMenu, player);
+        if (handle != null) {
+            return new ItemFormContainerContext(handle.handler(), handle.containerUuid(), level);
+        }
+
         return null;
     }
 
