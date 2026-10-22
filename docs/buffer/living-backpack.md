@@ -56,6 +56,12 @@ LivingBackpackFunction extends LivingItemFunction
 **框架零改动。** `scanAndGroupLivingItems` 已经把它当活物品扫出来、按功能分组、调 `tick`
 —— 和活熔炉、活漏斗走同一条路。不需要 tag 判定、不需要新扫描器、不需要生命周期登记。
 
+⚠️ **更正（2026-10-22 晚，用户拍板 B）**：上一轮说「框架零改动」**说漏了一处** ——
+容器级数据的**持久化路径**。物品形态 ctx 拿不到 `IAttachmentHolder`（物品栈不是附件持有者）
+⇒ `getDataHosts()` 为空 ⇒ `ContainerFluidWriteback` 的归档循环一次都不跑 ⇒ 数据只在内存表，
+LRU 一回收就丢，SavedData 永远空。修法见 §3.4。
+⇒ 准确表述：**tick 管线零改动，`ContainerContext` 增加一个持久化钩子。**
+
 **活化门槛顺手解决三件事**：
 
 | 原顾虑 | 怎么解决的 |
@@ -121,6 +127,57 @@ public interface BackpackContentAccess {
 - 联动模块从 `BackpackContainer` 反查（它持有 handler → UUID），注册进 `MenuSlotOwners`
 - 一次解析，**不需要** Open/Close 生命周期登记
 
+### 3.4 持久化路径：`ContainerContext` 加 `persist` 钩子（动框架，已拍板 B）
+
+**问题**：物品形态 ctx 没有 `IAttachmentHolder` ⇒ `getDataHosts()` 返回空 ⇒
+`ContainerFluidWriteback.onWriteback` 的归档循环不跑 ⇒ 数据只在内存表，LRU 回收即丢，
+SavedData 永远空。**UUID + SavedData 是档案柜，但没人往里放东西。**
+
+**方案 B（2026-10-22 用户拍板）**：把“数据存哪”收成 ctx 的职责。
+
+```java
+// L1 ContainerContext —— 与 getDataHosts() 并列的 default 方法
+/** 把某个容器级数据 key 的值归档到本宿主的持久层。 */
+default <T> void persist(ContainerDataKey<T> key, T value) {
+    for (var host : getDataHosts()) host.setData(key.attachment(), value);   // 现状：BE / Player 附件
+}
+
+// 物品形态 ctx 覆写
+@Override
+public <T> void persist(ContainerDataKey<T> key, T value) {
+    savedData.put(uuid, key, value);     // 空值 ⇒ remove
+}
+```
+
+**领域侧从 3 行循环变 1 行调用**：
+
+```java
+// 原来（水领域）
+for (var host : ctx.getDataHosts()) host.setData(FLUID_DATA.value(), fluidData);
+// 之后
+ctx.persist(ContainerFluidData.KEY, fluidData);
+```
+
+**为什么不是 A（每个领域各自判空 hosts）**：A 在活潜影箱立项时要再抄 N 遍
+（每个领域的 writeback 都判一次空 hosts），且“存哪”的知识泄漏进领域。
+B 是新增形态零框架改动（对扩展开放、对修改关闭）——用户 2026-10-22 拍板。
+
+**SavedData 粒度**：按 UUID 一条**聚合记录**（`Map<UUID, ContainerDataSnapshot>`，
+snapshot 含所有非空 key 的值）—— 一个 UUID 一次序列化，与 `ContainerDataStore` 结构对应。
+
+⚠️ **两个待设计细节**（不动工前要定）：
+1. `ContainerDataKey` 当前**不带 CODEC 句柄** ⇒ 聚合 snapshot 无法把“任意 key 的值”编进 NBT，
+   需要给 key 加 CODEC 引用（或改用「每种数据一个 Map」的退化方案）。
+2. `persist` 是泛型 default 方法，`ContainerDataKey<T>` 的 `attachment()` 目前不存在
+   （现在是各领域硬编码 `WaterComponents.CONTAINER_FLUID_DATA`）⇒ 要把附件类型收进 key。
+
+⇒ **`persist` 落地会顺带把「key ↔ 附件类型 ↔ CODEC」三元组统一**，这是比活背包更大的收益，
+   也是它该在活潜影箱之前做的原因。
+
+**契约后果**（已写进 [container-boundary.md](../system-design/container-boundary.md) I-C9）：
+> 每种宿主的持久化方式由 ctx 自己声明，**领域不得假设有 BE**。
+> 拿不到 `IAttachmentHolder` 不是异常，是一种正常宿主（物品形态，持久层是 SavedData）。
+
 ---
 
 ## 4. 与活潜影箱的关系
@@ -159,18 +216,26 @@ C 额外做边界交换与嵌套。
 
 ---
 
-## 6. 未定案（拍板前不要动工）
+## 6. 已定案 / 未定案
 
-1. **嵌套要不要现在做**：活背包里放一个活背包 ⇒ 两层递归。活潜影箱设计稿已定案
-   「功能内部递归 + 深度预算 + 环检测」，本文是它的单层特化。建议**现在就按可递归实现**
-   （`processContext` 天然支持），但深度上限先写死 1，等 C 立项再放开。
-2. **handler 获取成本**：`BackpackWrapper.fromStack` 每次调用的开销未实测；太贵就加弱缓存。
-3. **多人同看**：精妙 linked storage 让多个背包共享一份内容，但它们 UUID 不同 ⇒
-   容器级数据各算各的。建议接受并写进文档。
-4. **键形前缀**：`container_<uuid>` 会撞既有 `container_<dim>_x_y_z` 的
-   `ContainerKeys.kindOf` 分支 ⇒ 需换前缀（如 `cuuid_<uuid>`）。**必须先定再动工。**
-5. **关着 GUI 也 tick**（玩法口径）：扫描驱动的自然结果是「背包在玩家身上就烧」。
-   倾向「烧」（这才是活背包），但要你确认。
+**已定案（2026-10-22）**：
+
+| 项 | 结论 |
+|---|---|
+| 键形前缀 | `cuuid_<uuid>`（不撞 `container_<dim>_x_y_z`） |
+| 嵌套 | 现在就实现 depth + 环检测（UUID 栈），**上限写死 1**，等 C 立项只改值 |
+| linked storage 多人同看 | 接受并文档写清（识别它是精妙私有概念，核心不碰） |
+| 关着 GUI 也 tick | **烧**（活化门槛已限制数量） |
+| handler 成本 | 先不缓存，量了再决定（别预先优化） |
+| **持久化路径** | **方案 B**：`ContainerContext.persist(key, value)`，见 §3.4 |
+| 活化入口 | **现成可用**：活按钮取 `menu.getCarried()`（鼠标上那件）⇒ 拖出背包 + 开任意容器 GUI + 点按钮 |
+
+**未定案（拍板前不要动工）**：
+
+1. **`ContainerDataKey` 的 CODEC / 附件类型句柄**（§3.4 的两个待设计细节）——
+   这决定 SavedData 聚合 snapshot 能不能序列化，是 persist 落地的前置。
+2. **嵌套上限放开时机**：现在写死 1，是否等活潜影箱立项一起放开（倾向是）。
+3. **handler 获取的真实开销**：要实测（`BackpackWrapper.fromStack` 每 tick 每背包一次）。
 
 ---
 

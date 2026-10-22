@@ -278,6 +278,15 @@
   ⇒ 实现要点：`moveIn` 必须「同一个对象同时放进内存表 + 附件」—— 只放一处，
   要么被覆盖（只放附件），要么容器不 tick 时丢存档（只放内存表）。相位还要额外
   `PhaseSnapshot.restoreInto(ContainerPowerData)` 把快照还原进账本（账本才是真相源）。
+- 🔴 **持久化方式由 ctx 自己声明，领域不得假设有 BE**（`D-container-13`，2026-10-22 立项）：
+  `ContainerContext#persist(ContainerDataKey<T> key, T value)` —— default 走
+  `getDataHosts()` 写附件（BE / 实体 / Player，现状不变），**物品形态 ctx 覆写为写 SavedData**
+  （按容器 UUID 索引）。拿不到 `IAttachmentHolder` **不是异常，是一种正常宿主**。
+  ⇒ 领域侧从「遍历 hosts 逐个 setData」变成一次 `ctx.persist(...)` 调用，
+  “数据存哪”的知识从三个地方收成 ctx 的一个方法。
+  ⇒ 收益不只是活背包：新增任何容器形态（活潜影箱、将来的玩家 UUID 化）**零框架改动**；
+  且顺带把 `ContainerDataKey` ↔ 附件类型 ↔ CODEC 三元组统一（SavedData 聚合快照的前提）。
+  设计稿 [buffer/living-backpack.md](../buffer/living-backpack.md) §3.4。
 
 ### I-C10 逻辑槽 ≠ 物理槽，跨边界必须过映射
 

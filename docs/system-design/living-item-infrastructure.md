@@ -215,6 +215,20 @@ public interface ContainerIdentity {
 
 读写与回填一律走这个列表，**不得假设「有 BE」**。契约见 [container-boundary.md](container-boundary.md) I-C9。
 
+**`persist(key, value)` —— 容器级数据怎么归档**（`D-container-13`，2026-10-22 立项；`ContainerContext` 的 default 方法）：
+
+| 宿主 | 归档到 |
+|---|---|
+| 方块容器 / 实体容器 | `getDataHosts()` 的附件（default 实现，现状不变）|
+| 玩家背包 / 末影箱 | `Player` 附件（同上，经 `getDataHosts()`）|
+| **物品形态容器** | **SavedData**（按容器 UUID 索引；ctx 覆写 `persist`）|
+
+⇒ 领域侧从「遍历 hosts 逐个 `setData`」变成一次 `ctx.persist(key, value)`；
+「数据存哪」的知识从三个地方收成 ctx 的一个方法。**拿不到 `IAttachmentHolder` 不是异常，
+是一种正常宿主**（物品形态，持久层是 SavedData）。
+⇒ 设计稿 [buffer/living-backpack.md](../buffer/living-backpack.md) §3.4（活背包）；
+落地前置：`ContainerDataKey` 要带附件类型与 CODEC 句柄（SavedData 聚合快照的前提）。
+
 **⭐ 缓存键 `getCacheKey()`（2026-10-12 新增）—— 容器级数据在静态表里的行号**：
 
 | 容器类型 | 缓存键 | 为什么 |
