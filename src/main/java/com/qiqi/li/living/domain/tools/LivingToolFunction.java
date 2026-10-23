@@ -60,6 +60,12 @@ public class LivingToolFunction implements LivingItemFunction {
     }
 
     @Override
+    public boolean supportsDroppedItem() {
+        // resolveOrigin 早有 ItemEntityContainerContext 分支（L14=d：碰撞箱中心作射线起点）
+        return true;
+    }
+
+    @Override
     public String getFunctionId() {
         return ID;
     }

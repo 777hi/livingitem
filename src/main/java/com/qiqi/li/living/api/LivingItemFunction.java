@@ -165,6 +165,27 @@ public interface LivingItemFunction {
         return false;
     }
 
+    /**
+     * 是否支持<b>掉落物形态</b>的容器 —— 单栈、没有方块位置、没有玩家背包，
+     * 但<b>有实体锚点</b>（{@link com.qiqi.li.living.container.ContainerAnchor.AtEntity}）。
+     *
+     * <p>默认 {@code false}：绝大多数功能假定自己有方块坐标（从 {@code getBlockPos()} 取），
+     * 放进掉落物上下文只会拿到 {@code null}，然后静默什么都不做 —— 那种「看起来在跑、其实永远不生效」
+     * 的状态比不 tick 更难排查。</p>
+     *
+     * <p>⚠️ 本声明是<b>准入条件，不是调用保证</b>：返回 true 只表示「可以在这种形态下被 tick」，
+     * 具体要不要干活仍由 {@link #tick} 内部按容器状态判断。</p>
+     *
+     * <p>⚠️ 掉落物形态与「物品形态」（活背包）是两回事：活背包缺的是<b>宿主</b>，
+     * 掉落物自己就是实体 ⇒ 它有锚点。见 {@code docs/buffer/container-anchor-design.md} §1.1。</p>
+     *
+     * <p>新增一个支持掉落物的功能时：这里返回 true，并确认它在
+     * {@code getBlockPos() == null} 时走的是实体分支。</p>
+     */
+    default boolean supportsDroppedItem() {
+        return false;
+    }
+
     // ==================================================================
     // 活化时机钩子（2026-10-04 收编，见 docs/buffer/activation-hook-refactoring-plan.md §3）
     //

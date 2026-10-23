@@ -586,7 +586,12 @@ public class ContainerLivingItemHandler {
     private static void runFunctionTicks(
             Map<LivingItemFunction, List<LivingItemFunction.SlotEntry>> grouped,
             ContainerContext context, TickContext tick, Level level) {
+        // 掉落物形态：只跑**声明支持**的功能（LivingItemFunction#supportsDroppedItem）。
+        // 准入是按物品判的（有一个功能支持就建上下文），但同一物品可能挂着多个功能 ——
+        // 没声明支持的那些在这里被挡住，否则「声明了才准入」就成了空话。
+        boolean droppedItem = context instanceof ItemEntityContainerContext;
         for (var entry : grouped.entrySet()) {
+            if (droppedItem && !entry.getKey().supportsDroppedItem()) continue;
             entry.getKey().tick(entry.getValue(), context, tick, level);
         }
     }

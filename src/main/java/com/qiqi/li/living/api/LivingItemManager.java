@@ -119,6 +119,22 @@ public class LivingItemManager {
         return stack.is(Items.FILLED_MAP) && isLivingItem(stack);
     }
 
+    /**
+     * 这个物品<b>是否有任一功能声明支持掉落物形态</b>（{@link LivingItemFunction#supportsDroppedItem()}）。
+     *
+     * <p>掉落物 tick 的准入判据（{@code LivingItem#processEntityContainers}）：
+     * 通过才为它建容器上下文 —— 否则每个地上的活物品都要白建一次上下文再空跑一遍功能。</p>
+     *
+     * <p>⚠️ 判据<b>不能</b>写成「是活工具/活武器」那种物品白名单：那样每加一个支持新形态的功能
+     * 都要回来改这里，而漏改的表现是「点燃了但永远不炸」—— 2026-10-23 真机实录。</p>
+     */
+    public static boolean supportsDroppedItem(ItemStack stack) {
+        for (LivingItemFunction function : getApplicableFunctions(stack)) {
+            if (function.supportsDroppedItem()) return true;
+        }
+        return false;
+    }
+
     public static List<LivingItemFunction> getApplicableFunctions(ItemStack stack) {
         if (!isLivingItem(stack)) return List.of();
 

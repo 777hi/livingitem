@@ -34,6 +34,12 @@ public class LivingTntFunction implements LivingItemFunction {
     }
 
     @Override
+    public boolean supportsDroppedItem() {
+        // 爆炸点走 ContainerAnchor.AtEntity ⇒ 炸在原地（见 ExplosionComponent#ignite）
+        return true;
+    }
+
+    @Override
     public String getFunctionId() { return ID; }
 
     @Override

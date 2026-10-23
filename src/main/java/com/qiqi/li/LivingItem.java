@@ -379,22 +379,25 @@ public class LivingItem {
      * 维护索引的失效成本高于收益。{@code getAllEntities()} 是 O(实体数) 的浅遍历，
      * 绝大多数在 {@code instanceof} 处短路，开销可忽略。</p>
      *
-     * <p>⚠️ <b>只处理活工具 / 活武器</b>：其它活物品的功能类都假定自己有方块坐标
-     * （从 {@code getBlockPos()} 取），放进掉落物上下文会拿到 {@code null}。
-     * 要让更多活物品支持掉落物形态，得先给 {@code LivingItemFunction} 加宿主能力声明 ——
-     * 属于另一个话题，不在 {@code L-f} 范围内。</p>
+     * <p><b>准入判据</b>：{@link LivingItemManager#supportsDroppedItem} —— 物品的任一功能
+     * 声明了 {@link com.qiqi.li.living.api.LivingItemFunction#supportsDroppedItem()} 才为它建上下文。
+     * 掉落物形态没有方块位置、没有玩家背包，只有实体锚点；没声明的功能进来只会拿到
+     * {@code getBlockPos() == null} 然后静默什么都不做。</p>
      *
-     * <p>⭐ <b>判据必须带活武器</b>（2026-09-24 修复）：原先只写 {@code isLivingTool}
-     * ⇒ <b>活剑不在其中 ⇒ 整个被跳过 ⇒ 掉落物形态不 tick、不攻击</b>。
-     * 判据取 {@link LivingToolRecorder#isLivingToolOrWeapon}（与
-     * {@code LivingToolFunction#canApply} 同一来源）。</p>
+     * <p>⭐ <b>判据必须是「功能自声明」，不能是物品白名单</b>（2026-10-23 真机）：
+     * 原来是 {@code isLivingToolOrWeapon} 写死 —— 于是<b>活 TNT 掉在地上永远不 tick，
+     * 点燃了也不会炸</b>。更早（2026-09-24）同样的形状还漏过活剑。
+     * 物品白名单的漏改表现是「功能看起来在跑、其实永远不生效」，极难从现象反推。</p>
+     *
+     * <p>⚠️ 通过准入 ≠ 所有功能都会跑：{@code runFunctionTicks} 会按
+     * {@code supportsDroppedItem()} 逐功能过滤，未声明的功能即便同属这个物品也会被跳过。</p>
      */
     private void processEntityContainers(ServerLevel level) {
         // ⭐ 掉落物与实体容器**合并为一次遍历**（2026-10-21）：getAllEntities() 是
         // O(实体数) 的浅扫，跑两遍是纯浪费。白名单判据都是 instanceof 短路。
         for (var entity : level.getAllEntities()) {
             if (entity instanceof ItemEntity itemEntity
-                    && LivingToolRecorder.isLivingToolOrWeapon(itemEntity.getItem())) {
+                    && LivingItemManager.supportsDroppedItem(itemEntity.getItem())) {
                 ContainerLivingItemHandler.processContext(
                     new ItemEntityContainerContext(itemEntity, level), level);
             } else if (isContainerEntity(entity)) {

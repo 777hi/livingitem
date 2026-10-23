@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.lang.reflect.Field;
@@ -18,6 +19,7 @@ import org.junit.jupiter.api.Test;
 
 import com.qiqi.li.living.api.LivingItemFunction.SlotEntry;
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.container.ItemEntityContainerContext;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.testutil.FakeContainerContext;
 
@@ -25,7 +27,9 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.storage.DimensionDataStorage;
 
@@ -121,6 +125,22 @@ class LivingTntConsumeTest {
         assertTrue(ctx.getItem(3).isEmpty(), "引爆的那颗必须消失");
         assertTrue(ctx.getItem(5).isEmpty(),
             "ignite 一次消耗容器里**所有**活 TNT ⇒ 没轮到的那颗也不能被写回复活");
+    }
+
+    @Test
+    @DisplayName("掉落物形态：炸在原地并消耗（走 ContainerAnchor.AtEntity）")
+    void droppedTnt_explodesAndIsConsumed() {
+        ItemStack lit = livingTnt(new ExplosionData(true, 0), 1);
+
+        ItemEntity entity = mock(ItemEntity.class);
+        when(entity.getUUID()).thenReturn(UUID.randomUUID());
+        when(entity.getItem()).thenReturn(lit);
+        when(entity.position()).thenReturn(new Vec3(8.5, 64, 8.5));   // AtEntity ⇒ 爆炸中心取它
+        ItemEntityContainerContext ctx = new ItemEntityContainerContext(entity, explodingLevel());
+
+        new LivingTntFunction().tick(List.of(new SlotEntry(0, lit)), ctx, new TickContext(ctx), ctx.getLevel());
+
+        verify(entity).setItem(org.mockito.ArgumentMatchers.argThat(ItemStack::isEmpty));
     }
 
     // ---------- 2. 炸不了时不得重置 ----------

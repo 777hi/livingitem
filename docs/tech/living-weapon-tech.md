@@ -385,7 +385,7 @@ Caused by: NullPointerException: Cannot invoke "BlockPos.asLong()" because "p_32
 |---|---|---|
 | 容器（**普通方块容器**：箱子 / 末影箱等） | `ContainerLivingItemHandler#processContext` | 按 `canApply` 分组 ⇒ ✅ 自动覆盖 |
 | **玩家背包** | 同上 | ✅ 自动覆盖 |
-| **掉落物** | `LivingItem#processItemEntityContainers` | 🔴 **独立前置过滤** —— **不走** `canApply` 分组 |
+| **掉落物** | `LivingItem#processEntityContainers` | ⚠️ **独立前置准入**（`LivingItemManager#supportsDroppedItem`）+ 逐功能过滤 —— 不走 `canApply` 分组 |
 
 > ⚠️ **上表「容器」不含活箱子** —— 活箱子**不是宿主形态**，放进活箱子里的活物品
 > **不会被 tick**（不攻击、不挖掘），这是设计现状而非 bug。
@@ -393,11 +393,22 @@ Caused by: NullPointerException: Cannot invoke "BlockPos.asLong()" because "p_32
 
 > 🔴 **事故（2026-09-24）**：掉落物形态的过滤原先只写 `isLivingTool`
 > ⇒ **活剑被整个跳过 ⇒ 不 tick ⇒ 不攻击**。
-> ⇒ 该处必须用 `LivingToolRecorder#isLivingToolOrWeapon`（与 `canApply` **同一来源**）。
+> 当时的修法是用 `LivingToolRecorder#isLivingToolOrWeapon`（与 `canApply` 同一来源）。
 >
-> 📌 **教训**：凡是「**是否纳入某条处理管线**」的判据，都要收敛成**单一来源**；
-> 分散写就必然在扩展（新增物品类型）时漏改一处 ——
-> 环成员口径曾在 3 处重复（活剑"隐身"）已是前车之鉴。
+> 🔴 **同一处第二次（2026-10-23）**：那个修法仍是**物品白名单** ⇒ 活 TNT 掉在地上
+> **永远不 tick、点燃了也不炸**（爆炸点早已能走 `ContainerAnchor.AtEntity`）。
+> ⇒ 白名单本身就是错的形状：它按「物品是什么」判，而真正的问题是「功能能不能在这种形态下工作」。
+> 现在改为**功能自声明** {@code LivingItemFunction#supportsDroppedItem()}：
+> - 准入（要不要为这个掉落物建容器上下文）：`LivingItemManager#supportsDroppedItem(stack)` —— 任一功能声明即准入
+> - 分发（哪些功能真的跑）：`runFunctionTicks` 按同一声明**逐功能过滤**
+>   ⇒ 通过准入 ≠ 所有功能都跑
+>
+> 已声明支持：活工具/活武器（射线起点 = 碰撞箱中心）、活 TNT（炸在原地）。
+> 其余功能默认不支持 —— 它们从 `getBlockPos()` 取坐标，进来只会拿到 null 空转。
+>
+> 📌 **教训**：凡是「**是否纳入某条处理管线**」的判据，**不要按物品类型写白名单**，
+> 要按「这个功能能不能在这种形态下工作」自声明。白名单的漏改表现是
+> 「功能看起来在跑、其实永远不生效」，从现象极难反推（两次都是靠真机才发现）。
 
 ---
 

@@ -17,6 +17,32 @@
 
 ## 2026-10-23
 
+> 🧨 **修复：掉落物形态的活 TNT 不被 tick（同一处白名单第二次漏改）**
+>
+> 真机：把点燃的活 TNT 丢在地上，它**永远不爆炸** —— 不是「炸不了」，是**压根没被 tick**。
+>
+> 根因在 `LivingItem#processEntityContainers` 的准入判据：写死成
+> `LivingToolRecorder.isLivingToolOrWeapon(...)`，活 TNT 在 `instanceof` 处就被短路，
+> 连容器上下文都不会建。
+>
+> ⚠️ **这是同一处的第二次**：2026-09-24 同样的形状漏过**活剑**（当时只写了 `isLivingTool`），
+> 修法是把判据收敛成 `isLivingToolOrWeapon` —— 但那仍然是**物品白名单**。
+> ⇒ 白名单本身就是错的形状：它按「物品是什么」判，而真问题是「功能能不能在这种形态下工作」。
+>
+> 改成**功能自声明**：
+> - `LivingItemFunction#supportsDroppedItem()` 默认 false（绝大多数功能从 `getBlockPos()` 取坐标，
+>   进掉落物上下文只会拿到 null 空转）
+> - 准入：`LivingItemManager#supportsDroppedItem(stack)` —— 任一功能声明即建上下文
+> - 分发：`runFunctionTicks` 按同一声明**逐功能过滤** ⇒ 通过准入 ≠ 所有功能都跑
+> - 已声明：活工具/活武器（射线起点 = 碰撞箱中心）、活 TNT（炸在原地，走 `ContainerAnchor.AtEntity`）
+>
+> 测试 +5（`DroppedItemSupportTest` 4 项：活 TNT/活工具支持、活箱子未声明不支持、非活物品不支持；
+> `LivingTntConsumeTest` +1：掉落物形态炸在原地并消耗）。单测 892 → 897。
+>
+> 教训写进 `living-weapon-tech.md` 的事故段：**管线准入判据不要按物品类型写白名单** ——
+> 白名单的漏改表现是「功能看起来在跑、其实永远不生效」，两次都只能靠真机发现。
+
+
 > 💥 **修复：活 TNT 炸完不消耗（写回把 ignite 清掉的槽位填了回去）**
 >
 > 真机：宿主锚点接通后能爆炸了，但炸完 TNT 还在（而且是「未点燃」的新状态）。
