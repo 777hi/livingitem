@@ -100,6 +100,10 @@ public final class SophisticatedBackpackSource implements ItemFormContainers.Sou
     private static synchronized void resolve() {
         if (resolved) return;
         resolved = true;
+
+        // 第一组：内容读写（tick 依赖）。与第二组**独立失败** ——
+        // 精妙改版时若只炸了 GUI 类的名字，不该把 tick 也一起拖下水
+        // （那会让「能运转」退化成「完全不活」，比覆写前差）。
         try {
             backpackItemClass = Class.forName(BACKPACK_ITEM);
             backpackWrapperClass = Class.forName(BACKPACK_WRAPPER);
@@ -112,23 +116,30 @@ public final class SophisticatedBackpackSource implements ItemFormContainers.Sou
                 }
             }
             getInventoryHandler = backpackWrapperClass.getMethod("getInventoryHandler");
+        } catch (ReflectiveOperationException | LinkageError e) {
+            backpackItemClass = null;
+            backpackWrapperClass = null;
+            fromStack = null;
+            getInventoryHandler = null;
+            LOGGER.warn("[ModSophisticated] 精妙内容读写反射解析失败（{}），活背包整体不生效：{}",
+                e.getClass().getSimpleName(), e.getMessage());
+        }
 
+        // 第二组：菜单锚点（#6 菜单解析依赖）。失败只降级菜单反查，不影响上面那组。
+        try {
             backpackContainerClass = Class.forName(BACKPACK_CONTAINER);
             getBackpackContext = backpackContainerClass.getMethod("getBackpackContext");
             Class<?> contextClass = Class.forName(BACKPACK_CONTEXT);
             getBackpackWrapper = contextClass.getMethod("getBackpackWrapper", Player.class);
             getBackpack = Class.forName(BACKPACK_WRAPPER_IFACE).getMethod("getBackpack");
         } catch (ReflectiveOperationException | LinkageError e) {
-            LOGGER.warn("[ModSophisticated] 精妙类反射解析失败（{}），活背包的菜单反查 / 内容读写不可用：{}",
-                e.getClass().getSimpleName(), e.getMessage());
-            backpackItemClass = null;
-            backpackWrapperClass = null;
             backpackContainerClass = null;
-            fromStack = null;
-            getInventoryHandler = null;
             getBackpackContext = null;
             getBackpackWrapper = null;
             getBackpack = null;
+            LOGGER.warn("[ModSophisticated] 菜单锚点反射解析失败（{}），"
+                + "handleOfMenu 退回默认扫描（扫物品栏 + 唯一一件才认）：{}",
+                e.getClass().getSimpleName(), e.getMessage());
         }
     }
 
@@ -156,22 +167,41 @@ public final class SophisticatedBackpackSource implements ItemFormContainers.Sou
     /**
      * 从菜单反查「GUI 正在看的那一个背包」。
      *
-     * <p>精妙的菜单自带锚点，不需要默认实现那套「扫物品栏 + 唯一性」：
-     * {@code BackpackContainer#getBackpackContext() → getBackpackWrapper(player).getBackpack()}
-     * 就是正在显示的那个物品栈（子背包时是子背包的那一件）。</p>
-     *
-     * <p>返回 {@code null} 的情形（都让默认扫描兜底）：
-     * 不是背包菜单 / 反射拿不到 / 那个背包<b>未活化</b>（没有容器 UUID ⇒ 没有容器级数据，
-     * 解析出来也没有意义）/ 内容视图拿不到。</p>
+     * <h3>降级阶梯（覆写不能比覆写前更差）</h3>
+     * <ol>
+     *   <li><b>锚点可用 + 是背包菜单 + 读到了</b> ⇒ 用它（多背包 / 子背包都认得对）</li>
+     *   <li><b>锚点不可用</b>（精妙改版，第二组反射失败）⇒ 退回默认扫描。
+     *       否则一个方法改名会让「单背包」从能用变成不能用。</li>
+     *   <li><b>是背包菜单但读不到锚点</b>（空栈 / Noop 包装器 / 调用抛异常）
+     *       ⇒ 同样退回默认扫描，单背包场景至少不废。</li>
+     *   <li><b>不是背包菜单</b> ⇒ {@code null}。⚠️ 这里**不**扫物品栏：
+     *       否则玩家只带一个活背包时，会把别的模组菜单（AE2 / ProjectE 的槽位容器
+     *       既不是 BE 也不是玩家背包）误认成这个背包 —— 那是错认，比解析不出更糟。</li>
+     * </ol>
      */
     @Override
     @Nullable
     public ItemFormContainers.Handle handleOfMenu(AbstractContainerMenu menu, Player player) {
         if (menu == null || player == null) return null;
-        if (backpackContainerClass == null || getBackpackContext == null
-                || getBackpackWrapper == null || getBackpack == null) return null;
-        if (!backpackContainerClass.isInstance(menu)) return null;   // 不是背包 GUI ⇒ 交给默认扫描
 
+        boolean anchorReady = backpackContainerClass != null && getBackpackContext != null
+            && getBackpackWrapper != null && getBackpack != null;
+        if (!anchorReady) {
+            return ItemFormContainers.Source.super.handleOfMenu(menu, player);   // 降级 ②
+        }
+        if (!backpackContainerClass.isInstance(menu)) {
+            return null;                                                        // ④
+        }
+
+        ItemFormContainers.Handle anchored = anchorHandle(menu, player);
+        if (anchored != null) return anchored;                                  // ①
+
+        return ItemFormContainers.Source.super.handleOfMenu(menu, player);       // 降级 ③
+    }
+
+    /** 锚点链：{@code menu → BackpackContext → IBackpackWrapper → ItemStack}。任何一环断了返回 null。 */
+    @Nullable
+    private ItemFormContainers.Handle anchorHandle(AbstractContainerMenu menu, Player player) {
         try {
             Object context = getBackpackContext.invoke(menu);
             if (context == null) return null;
@@ -190,7 +220,8 @@ public final class SophisticatedBackpackSource implements ItemFormContainers.Sou
 
             return new ItemFormContainers.Handle(handler, containerUuid);
         } catch (ReflectiveOperationException | RuntimeException e) {
-            LOGGER.warn("[ModSophisticated] 菜单反查背包失败（{}）：{}", e.getClass().getSimpleName(), e.getMessage());
+            LOGGER.warn("[ModSophisticated] 菜单反查背包失败（{}）：{}",
+                e.getClass().getSimpleName(), e.getMessage());
             return null;
         }
     }

@@ -5,19 +5,22 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
 
+import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.neoforged.neoforge.items.IItemHandler;
-import net.p3pp3rf1y.sophisticatedbackpacks.backpack.wrapper.BackpackWrapper;
+import net.p3pp3rf1y.sophisticatedbackpacks.backpack.BackpackItem;
 import net.p3pp3rf1y.sophisticatedbackpacks.backpack.wrapper.IBackpackWrapper;
 import net.p3pp3rf1y.sophisticatedbackpacks.common.gui.BackpackContainer;
 import net.p3pp3rf1y.sophisticatedbackpacks.common.gui.BackpackContext;
@@ -27,7 +30,7 @@ import com.qiqi.li.living.container.ItemFormContainers;
 
 /**
  * 精妙背包来源的守卫（2026-10-23）—— 重点是 {@link SophisticatedBackpackSource#handleOfMenu}
- * 的<b>菜单锚定</b>覆写。
+ * 的<b>菜单锚定</b>覆写，以及它的<b>降级阶梯</b>。
  *
  * <h3>为什么必须有这个测试</h3>
  * <p>默认实现「扫玩家物品栏 + 唯一一件才认」在玩家带<b>两个</b>活背包时返回 null
@@ -40,9 +43,14 @@ import com.qiqi.li.living.container.ItemFormContainers;
  * （见 {@code net.p3pp3rf1y.sophisticatedbackpacks.*} 那几个类），否则只能测到「不认」。
  * 上游改 API 时这些替身不会自动发现 —— 那由运行期的 WARN 日志负责（I-C6）。</p>
  *
- * <p>⚠️ 「背包物品栈」用 {@link Items#SHULKER_BOX} 充当：{@code new Item()} 在测试里会撞
- * 「Registry is already frozen」，而这条反射链里<b>不含物品类型判断</b>
- * （{@code isContainerItem} 不参与菜单反查）⇒ 不需要真的 {@code BackpackItem}。</p>
+ * <h3>两个测试基建坑（都踩过）</h3>
+ * <ul>
+ *   <li><b>不能 {@code new BackpackItem()}</b>：{@code Item} 构造器要写注册表，测试里已冻结
+ *       （{@code Registry is already frozen}）⇒ 用 {@link mock(Class)} 无构造实例化
+ *       （Objenesis），再 {@code doReturn(item).when(item).asItem()} 才能包进 {@code ItemStack}。
+ *       少了 asItem 这步，{@code ItemStack} 里的 item 字段会是 null。</li>
+ *   <li><b>玩家必须带物品栏 mock</b>：降级阶梯会退回默认扫描，那里要 {@code getInventory()}</li>
+ * </ul>
  */
 class SophisticatedBackpackSourceTest {
 
@@ -60,7 +68,19 @@ class SophisticatedBackpackSourceTest {
     }
 
     private static Player player() {
-        return Mockito.mock(Player.class);
+        return playerWith();
+    }
+
+    /** 造一个带物品栏的玩家（默认扫描要扫它）。 */
+    private static Player playerWith(ItemStack... items) {
+        Player player = mock(Player.class);
+        Inventory inv = mock(Inventory.class);
+        when(player.getInventory()).thenReturn(inv);
+        when(inv.getContainerSize()).thenReturn(items.length);
+        for (int i = 0; i < items.length; i++) {
+            when(inv.getItem(i)).thenReturn(items[i]);
+        }
+        return player;
     }
 
     /** 造一个「锚定 {@code stack}」的背包菜单（GUI 正在看的就是它）。 */
@@ -74,8 +94,25 @@ class SophisticatedBackpackSourceTest {
         return new BackpackContainer(new BackpackContext(wrapper));
     }
 
+    /**
+     * 一个背包物品栈（{@code isContainerItem} 认它）。
+     *
+     * <p>⚠️ 三个桩都是必需的，少一个就 NPE / 认不出：</p>
+     * <ol>
+     *   <li>{@code mock(BackpackItem.class)} —— <b>不能 {@code new}</b>：{@code Item} 构造器
+     *       要写注册表，测试里已冻结（{@code Registry is already frozen}）。
+     *       Mockito 走 Objenesis 无构造实例化。</li>
+     *   <li>{@code asItem()} —— 不桩则 {@code ItemStack} 里的 item 字段是 null。</li>
+     *   <li>{@code components()} —— 不桩则 {@code ItemStack} 的原型图为 null，
+     *       一碰组件（{@code ContainerUuids} 读 UUID）就 NPE。
+     *       借个已注册物品的组件图即可，内容无关。</li>
+     * </ol>
+     */
     private static ItemStack backpack() {
-        return new ItemStack(Items.SHULKER_BOX);
+        BackpackItem item = mock(BackpackItem.class);
+        doReturn(item).when(item).asItem();
+        doReturn(Items.SHULKER_BOX.components()).when(item).components();
+        return new ItemStack(item, 1);
     }
 
     /** 活化过的背包（带容器 UUID ⇒ 有容器级数据）。 */
@@ -84,6 +121,8 @@ class SophisticatedBackpackSourceTest {
         ContainerUuids.getOrCreateItem(stack);
         return stack;
     }
+
+    // ── 锚点正路 ────────────────────────────────────────────────────────────
 
     @Test
     @DisplayName("两个活背包 ⇒ 认菜单锚定的那一个（本次修复的核心）")
@@ -101,19 +140,6 @@ class SophisticatedBackpackSourceTest {
     }
 
     @Test
-    @DisplayName("菜单锚定的背包未活化 ⇒ null（没有身份就没有容器级数据）")
-    void handleOf_anchoredBackpackNotActivated_returnsNull() {
-        assertNull(ItemFormContainers.handleOf(menuOf(backpack()), player()),
-            "未活化的背包不该被解析 —— 它没有 cuuid 键，解析出来也无处落数据");
-    }
-
-    @Test
-    @DisplayName("不是背包菜单 ⇒ null（交给默认扫描 / 其它来源）")
-    void handleOf_foreignMenu_returnsNull() {
-        assertNull(ItemFormContainers.handleOf(Mockito.mock(AbstractContainerMenu.class), player()));
-    }
-
-    @Test
     @DisplayName("反查拿到的内容视图与 tick 路径是同一个（两条路径一套映射）")
     void handleOf_resolvedHandlerMatchesTickPath() {
         ItemStack stack = livingBackpack();
@@ -124,5 +150,38 @@ class SophisticatedBackpackSourceTest {
         IItemHandler tickPath = source.contentHandler(stack);
         assertSame(tickPath, handle.handler(),
             "菜单反查与 tick 必须拿到同一个内容视图 —— 否则设置与运转读写的不是同一份内容");
+    }
+
+    @Test
+    @DisplayName("不是背包菜单 ⇒ null（不把别的模组菜单误认成这个背包）")
+    void handleOf_foreignMenu_returnsNull() {
+        assertNull(ItemFormContainers.handleOf(mock(AbstractContainerMenu.class), player()),
+            "非背包菜单不能扫物品栏猜 —— 玩家只带一个活背包时会把 AE2/ProjectE 的槽位错认成它");
+    }
+
+    // ── 降级阶梯：覆写不能比覆写前更差 ──────────────────────────────────────
+    //
+    // 精妙是 compileOnly + 反射依赖，改版是常态。锚点读不到时必须退回默认扫描，
+    // 否则一个方法改名会让「单背包」从能用变成不能用。
+
+    @Test
+    @DisplayName("背包菜单但锚点读不到（空栈）⇒ 退回默认扫描，单背包仍认得出")
+    void handleOf_anchorUnreadable_fallsBackToDefaultScan() {
+        ItemStack inInventory = livingBackpack();
+        BackpackContainer menu = menuOf(ItemStack.EMPTY);   // 锚点断在这一环
+
+        ItemFormContainers.Handle handle =
+            ItemFormContainers.handleOf(menu, playerWith(inInventory));
+
+        assertNotNull(handle, "锚点读不到必须退回默认扫描 —— 否则单背包场景会被自己的覆写弄废");
+        assertEquals(ContainerUuids.ofItem(inInventory), handle.containerUuid());
+    }
+
+    @Test
+    @DisplayName("锚定物未活化 + 物品栏里也没有 ⇒ null（不抛）")
+    void handleOf_anchoredBackpackNotActivated_returnsNull() {
+        ItemStack dormant = backpack();   // 有物品、没 UUID
+        assertNull(ItemFormContainers.handleOf(menuOf(dormant), playerWith(dormant)),
+            "未活化的背包没有 cuuid 键 ⇒ 解析出来也无处落数据；退回扫描后同样找不到");
     }
 }

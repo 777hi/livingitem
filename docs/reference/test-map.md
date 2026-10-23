@@ -48,7 +48,7 @@ src/test/java/com/qiqi/li/
 │   ├── ContainerHandoffTest.java              # I-C9 **第三挂点「双向交接」**（2026-10-21，D-container-12）·宿主→物品：捕获→交接搬到目标/无捕获 no-op/空栈不搬且丢捕获/capture(null) 清残留/一个 Mover 抛异常不连累其它/discard + **物品→宿主：暂存→恢复调 moveIn / 暂存是副本（源栈 shrink 后仍能恢复）/无暂存或宿主空 no-op/stageRestore(EMPTY) 清残留** + **反射守卫：Mover 不得有 default 方法**（真机三连失败的真凶）（11 项）
 │   ├── MenuSlotOwnersTest.java                # I-C5 守卫：菜单槽→容器位置解析·**核心不反射第三方方法**(菜单自带 getBlockPosition 也不认,D-container-09)/注册联动解析器后生效/无解析器返回 null/模组容器槽回落菜单位置/原版 BE 槽直取/大箱 CompoundContainer 两半位置(防跨容器虚影)/空位置集恒 false（6 项）
 │   ├── SophisticatedMenuResolverTest.java        # D-container-09 守卫：包名匹配+getBlockPosition → 解出位置；包名不匹配**即使有同名方法也不认**（反射不扩散）（2 项；替身 FakeBackpackMenu 故意放在对方包名下）
-│   ├── SophisticatedBackpackSourceTest.java      # 活背包 #6 菜单解析·**两个活背包也认菜单锚定的那个**（真机「倒不了」的回归）/锚定物未活化⇒null/非背包菜单⇒null/**反查与 tick 拿同一内容视图**（4 项；替身 BackpackContainer/BackpackContext/IBackpackWrapper/BackpackWrapper 均在对方包名下，⚠️ BackpackItem 只作 Class.forName 判据类、不可 new）
+│   ├── SophisticatedBackpackSourceTest.java      # 活背包 #6 菜单解析·**两个活背包也认菜单锚定的那个**（真机「倒不了」的回归）/锚定物未活化⇒null/非背包菜单⇒null/**锚点读不到⇒退回默认扫描（单背包仍认得出）**/反查与 tick 拿同一内容视图（5 项；替身 BackpackContainer/BackpackContext/IBackpackWrapper/BackpackWrapper 均在对方包名下，BackpackItem 用 mock 无构造实例化 + asItem/components 双桩）
 │   ├── AvaritiaMenuResolverTest.java             # D-container-09 守卫（无尽箱子）：包名匹配+getTile()返回方块实体 → 解出位置；包名不匹配**即使有同名方法也不认**；返回类型非 BE 不认；无 getter 返回 null（4 项；替身 FakeInfinityChestMenu 放在对方包名下）
 │   ├── ContainerNeighborsTest.java            # 四邻取数·fillNeighbors 与 getNeighbors 逐格一致（含边界）/ 单行容器 / 复用缓冲不污染（3 项）
 │   ├── PlayerFluidDataPersistenceTest.java    # 玩家路径落盘（CONTAINER_FLUID_DATA_PLAYER）·背包与末影箱各有源写回 / 变空条目移除 / 重进不复活 / 两容器键互不干扰 / 重进从附件回填（4 项）
