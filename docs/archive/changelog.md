@@ -17,6 +17,22 @@
 
 ## 2026-10-22
 
+> 🔧 **修复：两个活背包时活流体倒不了（#6 菜单解析的默认实现盲区）**（2026-10-23）
+>
+> 真机复现：带**两个**活背包 ⇒ 倒汲 / tooltip / 槽位设置全废。根因是
+> `ItemFormContainers.Source.handleOfMenu` 的默认实现「扫玩家物品栏 + 唯一一件才认」——
+> 多件必然返回 null ⇒ `ContainerContexts.resolve` 解析不出 ⇒ GUI 交互包被
+> `isAcceptable` 静默丢弃。
+>
+> 修法：精妙联动模块**覆写**该方法，用菜单自带的锚点
+> `BackpackContainer#getBackpackContext() → getBackpackWrapper(player).getBackpack()`
+> 直接定位「GUI 正在看的那一个」（带几个背包都认得对，子背包也覆盖）。
+> 内容视图仍走 `contentHandler(stack)` ⇒ 与 tick 路径同一份。
+> 反射链解析失败 / 调用异常各打一条 WARN（I-C6，此前完全静默）。
+>
+> 测试 +4（同形替身落在对方包名下）：两个活背包认锚定物 / 锚定物未活化⇒null /
+> 非背包菜单⇒null / 反查与 tick 同一内容视图。单测 865 → 869。
+
 > 🔌 **活背包补上 #6 菜单解析 + #7 viewer 匹配**（清单 11 条 → 9 条接通）
 >
 > 首测缺的两条线：

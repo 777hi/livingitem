@@ -217,6 +217,12 @@ snapshot 含所有非空 key 的值）—— 一个 UUID 一次序列化，与 `
 - **#6 菜单解析**：`ItemFormContainers.Source.handleOfMenu` 默认实现 = 扫玩家物品栏找
   「本来源认领且带 UUID」的物品，**唯一一件才认、多件返回 null**（菜单不告诉你对应第几件，
   猜错会操作到另一个容器 ⇒ 宁可不认）。`ContainerContexts.resolve` 末尾加该分支。
+  🔴 **默认实现的盲区当天就暴露了**（2026-10-23 真机）：玩家带**两个**活背包 ⇒ 返回 null
+  ⇒ 倒汲 / tooltip / 槽位设置全废（「活流体倒不了」）。⇒ 精妙联动模块**覆写**该方法：
+  `BackpackContainer#getBackpackContext() → getBackpackWrapper(player).getBackpack()`
+  直接给出「GUI 正在看的那一个」，带几个背包都认得对，子背包（背包里的背包）也一并覆盖。
+  教训写进 `guides/container-compatibility.md`：**默认实现只兜「无锚点」的常态，
+  模组菜单有锚点就必须覆写**。
 - **#7 viewer 匹配**：`FluidFlowServerSync.viewersOf` 加「按容器 UUID 反查在线玩家」分支
   （物品形态没有位置，原按 positions 匹配会直接返回空）。
 
