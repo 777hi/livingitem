@@ -14,6 +14,7 @@ import net.minecraft.core.Holder;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
@@ -21,6 +22,7 @@ import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.neoforged.neoforge.common.util.FakePlayer;
@@ -295,6 +297,118 @@ public class LivingToolFakePlayer extends FakePlayer {
     }
 
     private long lastDrivenTick = Long.MIN_VALUE;
+
+    // ── 受控 tick 的副作用边界（2026-10-23 群友实测两个 bug 的收口）───────────
+    //
+    // 假玩家由 driveWielderTick 驱动真链、坐标又始终贴在玩家身边（回放起点 = 玩家眼睛；
+    // 且 tick 先于 setPos 跑、用的是上一次的位置 —— 辅助挖掘算速度时还会把它摆在玩家脚上）
+    // ⇒ 真链里两条"与世界交互"的默认行为会反噬玩家，必须在这里收口：
+    //   ① aiStep 末尾的实体接触环：把身边的掉落物 / 经验球 / 箭吸进假玩家自己的背包
+    //      （假玩家不在世界里 ⇒ 那些物品对玩家即"凭空消失"，背包满不满毫无关系）
+    //   ② Player.attack 的横扫 / MaceItem 重锤冲击的 AoE：只豁免攻击者自己与目标，
+    //      【不豁免玩家】⇒ 贴着怪打会被自己的活武器横扫打死
+
+    /**
+     * 「无身体」占位包围盒 —— {@link #aiStep} 期间临时替换真包围盒用。
+     *
+     * <p>取世界底界之外的<b>退化点</b>（min == max）：任何实体都不可能与之相交
+     * （正常世界没有 y &lt; -64 的东西），{@code AABB#inflate} 之后依然在虚空里
+     * ⇒ 实体查询退化为一次空区段遍历
+     * （{@code EntitySectionStorage#forEachAccessibleNonEmptySection} 的区段范围计算）。</p>
+     */
+    private static final AABB NO_BODY = new AABB(0.0, -2048.0, 0.0, 0.0, -2048.0, 0.0);
+
+    /**
+     * 受控 tick 期间【屏蔽世界接触】—— 假玩家不得从世界里"收"任何东西。
+     *
+     * <h3>原版行为</h3>
+     * <p>{@code Player#aiStep} 末尾有一段「实体接触环」
+     * （行号见 {@code libs/src/neoforge-21.1.219-merged/.../Player.java:564-586}）：</p>
+     * <pre>
+     *   if (this.getHealth() &gt; 0.0F &amp;&amp; !this.isSpectator()) {
+     *       AABB aabb = this.getBoundingBox().inflate(1.0, 0.5, 1.0);
+     *       for (Entity entity : this.level().getEntities(this, aabb)) {
+     *           ... else this.touch(entity);        // → entity.playerTouch(this)
+     *       }
+     *   }
+     * </pre>
+     * <p>{@code playerTouch} 对掉落物 / 经验球 / 箭各有一条拾取路径
+     * （{@code ItemEntity#playerTouch} / {@code ExperienceOrb#playerTouch} /
+     * {@code AbstractArrow#playerTouch}），终点都是
+     * {@code player.getInventory().add(...)}，随后物品实体被 {@code discard()}。</p>
+     *
+     * <h3>症状（2026-10-23 群友实测）</h3>
+     * <p>假玩家坐标贴着玩家 ⇒ 玩家身边的掉落物被吸进这个【不可见的背包】再从世界抹除，
+     * 表现为「打怪时掉落物一下没了，背包里也没有，小地图上也不再显示」。
+     * 玩家自己背包满不满毫无关系（小偷是假玩家）。</p>
+     *
+     * <p>⭐ 只有活武器会触发：{@link #driveWielderTick} 全项目仅
+     * {@code LivingToolReplay#replayAttack} 一处调用（挖掘 / 交互路径不驱动 tick）
+     * ⇒ 群友的控制变量实验「只有用活剑才吸物品」正与此对应。</p>
+     *
+     * <h3>⭐ 为什么用「临时换空包围盒」而不是逐个事件拦</h3>
+     * <ul>
+     *   <li>掉落物 / 经验球有 NeoForge 事件（{@code ItemEntityPickupEvent.Pre} /
+     *       {@code PlayerXpEvent.PickupXp}），<b>箭没有</b>；模组实体还可能自己实现
+     *       {@code playerTouch} ⇒ 事件路线天然漏</li>
+     *   <li>接触环的入口判据只有包围盒一处 ⇒ 换盒一处收口，顺带还屏蔽了
+     *       {@code LivingEntity#pushEntities} 对玩家身边实体的推挤</li>
+     * </ul>
+     *
+     * <h3>为什么安全</h3>
+     * <p>本覆写只包住 {@code aiStep}：{@code baseTick}（{@code isInWall} 窒息 /
+     * 世界边界检查）在它之前跑、用的还是真盒子 ⇒ 与改动前逐位一致。</p>
+     *
+     * <p>{@code aiStep} 内部读包围盒的只有三处，读到空盒都无害：</p>
+     * <ul>
+     *   <li><b>travel</b> —— 零输入 + 归零 deltaMovement 下本就无动作
+     *       （见 {@link #driveWielderTick}）；其内的潜行防掉落
+     *       {@code maybeBackOffFromEdge} 门条件是 {@code isShiftKeyDown()}，
+     *       假玩家从不蹲 ⇒ 不进</li>
+     *   <li><b>pushEntities</b> —— 被屏蔽正是想要的（不让假玩家推玩家身边的实体）</li>
+     *   <li><b>接触环</b> —— 正是要屏蔽的</li>
+     * </ul>
+     * <p>{@code checkAutoSpinAttack} 也读盒子，但门条件是 {@code autoSpinAttackTicks > 0}
+     * （重锤旋击计数，假玩家恒 0）⇒ 不进。
+     * {@code try/finally} 保证任何异常路径都恢复真包围盒
+     * （其后的目标查找 / 攻击都要用它）。</p>
+     */
+    @Override
+    public void aiStep() {
+        AABB body = this.getBoundingBox();
+        this.setBoundingBox(NO_BODY);
+        try {
+            super.aiStep();
+        } finally {
+            this.setBoundingBox(body);
+        }
+    }
+
+    /**
+     * 假玩家与【所有玩家】结盟 ⇒ 原版 AoE 攻击放过全部玩家。
+     *
+     * <h3>症状（2026-10-23 群友实测）</h3>
+     * <p>原版 {@code Player#attack} 的横扫与 {@code MaceItem} 重锤冲击的 AoE
+     * 都按 {@code !attacker.isAlliedTo(victim)} 豁免"自己人"，
+     * 而结盟判定是<b>队伍制</b>（{@code Entity#isAlliedTo} → 比 scoreboard team）：
+     * 假玩家无队伍 ⇒ 一律不豁免。于是贴身在怪旁的玩家会被自己的活武器横扫打死，
+     * 死亡信息还显示成"自己打死自己"（FakePlayer 的 UUID / 名字就是主人的）。</p>
+     *
+     * <p>⭐ 选这里而不是拦伤害事件：横扫的伤害 / 击退 / 附魔后效（火焰附加点燃）
+     * 是同一个 if 块里的一个整体，拦伤害拦不住后两者；
+     * 而 AoE 的过滤条件只有 {@code isAlliedTo} 一个官方口子
+     * （{@code Player.java:1320} 与 {@code MaceItem.java:170} 同款）。</p>
+     *
+     * <p>口径与 {@code LivingToolReplay#isAttackableByLivingWeapon} 一致：
+     * <b>活武器不打任何玩家</b>（无 PVP），主人与其他玩家一视同仁。</p>
+     *
+     * <p>⚠️ 只放大「对玩家」一侧：对普通生物仍走 {@code super} 的队伍判定
+     * ⇒ 怪的横扫伤害 / 击退不受影响。</p>
+     */
+    @Override
+    public boolean isAlliedTo(Entity entity) {
+        return entity instanceof Player || super.isAlliedTo(entity);
+    }
 
     // ── 攻击缩放注入（per-weapon）────────────────────────────────────────
     // ⚠️ 为什么覆写 getAttackStrengthScale（2026-09-30 二次修正）：

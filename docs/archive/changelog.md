@@ -235,6 +235,46 @@
 > 测试基建：`new BackpackItem()` 撞注册表已冻结 ⇒ mock 无构造实例化 + `asItem()`/`components()` 双桩。
 
 
+> 🗡️ **活武器两个真 bug（群友实测）：打怪吸走掉落物 + 横扫把自己打死**
+>
+> 群友在刷塔下用活剑砍怪：女巫掉的水瓶 / 红石粉 / 萤石粉「一下就没了」—— 背包是满的、
+> 地上没有、小地图也不显示。控制变量定位：**背包满时只有用活剑才吸物品**。
+> 另一个方向又复现一个：**打怪时横扫会扇到自己**（有一次直接被自己打死，
+> 死亡信息显示"自己打死自己"；按着潜行可稳定复现）。
+>
+> **两个 bug 同一个根因家族：受控 tick 让假玩家"真的活"（2026-09-30 重构），
+> 而它的坐标始终贴在玩家身边** —— 真链里两条"与世界交互"的默认行为于是反噬玩家：
+>
+> ① **实体接触环**（`Player#aiStep:564-586`）：以包围盒 `inflate(1.0, 0.5, 1.0)` 为范围
+> `getEntities` → `playerTouch` —— 掉落物 / 经验球 / 箭各有一条拾取路径
+> （`ItemEntity` / `ExperienceOrb` / `AbstractArrow` 的 `playerTouch`），
+> 终点都是 `player.getInventory().add(...)` + 物品实体 `discard()`。
+> 假玩家不在世界里 ⇒ 物品被吸进这个**不可见的背包**后对玩家即"消失"，
+> **玩家自己背包满不满毫无关系**（小偷是假玩家）。
+> 坐标来源：回放起点 = 玩家眼睛；且 `driveWielderTick` **先于** `setPos` 跑、
+> 用的是**上一次**的位置（辅助挖掘算速度时还会把它摆在玩家**脚上** ⇒ 地面掉落物也够得着）。
+> ⭐ 只有活武器触发：`driveWielderTick` 全项目仅 `LivingToolReplay#replayAttack`
+> 一处调用（挖掘 / 交互路径不驱动 tick）⇒ 与群友「只有用活剑才吸物品」的控制变量结论精确对应。
+>
+> ② **横扫 AoE**（`Player#attack:1312-1334`；`MaceItem` 重锤冲击 `:161-194` 同款）：
+> 过滤条件是 `!attacker.isAlliedTo(victim)` —— 而 `Entity#isAlliedTo` 是**队伍制**
+> （比 scoreboard team），假玩家无队伍 ⇒ 一律不豁免 ⇒ 贴身在怪旁的玩家被横扫打死。
+> 死亡信息显示"自己打死自己"：FakePlayer 的 UUID / 名字就是主人的。
+>
+> **修法（都在 `LivingToolFakePlayer`，两个覆写）**：
+> - `aiStep()`：tick 期间把包围盒临时换成**世界底界之外的退化点**（`NO_BODY`）⇒
+>   接触环查不到任何实体，一处收口掉落物 / 经验球 / 箭 / 模组 `playerTouch` 全部路径，
+>   顺带屏蔽 `pushEntities` 对玩家身边实体的推挤；`try/finally` 恢复真盒。
+>   ⭐ 不用事件拦截：掉落物 / 经验球有 NeoForge 事件（`ItemEntityPickupEvent.Pre` /
+>   `PlayerXpEvent.PickupXp`），**箭没有**，模组还可能自己实现 `playerTouch` ⇒ 事件路线天然漏。
+> - `isAlliedTo(Entity)`：`entity instanceof Player || super.isAlliedTo(entity)`
+>   ⇒ 所有 AoE 过滤条件（横扫伤害 / 击退 / 火焰附加点燃）整体跳过玩家。
+>   ⭐ 不用伤害事件拦截：伤害 / 击退 / 附魔后效是同一个 if 块里的一个整体，拦伤害拦不住后两者。
+>
+> 与 `isAttackableByLivingWeapon`「活武器不打任何玩家（无 PVP）」同口径，主人与其他玩家一视同仁。
+> ⚠️ 本子系统**暂无独立测试类**（既有约定：以 tech 文档 §9 踩坑记录 + 游戏内手测为准）⇒ 待真机验收。
+
+
 ---
 
 ## 2026-10-22

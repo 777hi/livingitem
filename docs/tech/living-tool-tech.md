@@ -488,6 +488,21 @@ NeoForge 对此的防御是双层的：`FakePlayer.tick()` 与其连接器的 `t
 - **热身**：假玩家新建/换武器后 `attackStrengthTicker` 从 0 爬升 ⇒ 首刀前有
   一个冷却期 —— 与真玩家换武器后的原生行为一致
 
+**⚠️ 世界交互边界（2026-10-23 群友实测两个 bug 后收口，均在 `LivingToolFakePlayer`）**：
+假玩家坐标始终贴着玩家（回放起点 = 玩家眼睛；且 tick **先于** `setPos` 跑、用的是
+上一次的位置 —— 辅助挖掘算速度时还会把它摆在玩家**脚上**）⇒ 真链里两条
+「与世界交互」的默认行为会反噬玩家：
+
+| # | 原版默认行为（源码行号见 `libs/src/neoforge-21.1.219-merged/`） | 症状 | 收口 |
+|---|---|---|---|
+| ① | `Player#aiStep:564-586` 实体接触环：包围盒 `inflate(1.0, 0.5, 1.0)` 内 `getEntities` → `playerTouch`（掉落物 / 经验球 / 箭各一条拾取路径，终点 `getInventory().add` + 物品实体 discard） | 玩家身边的掉落物被吸进假玩家**不可见的背包** ⇒ 对玩家即"消失"；**玩家自己背包满不满毫无关系**（小偷是假玩家）。群友实测：刷塔打怪，女巫掉的水瓶/红石粉/萤石粉"一下就没了" | `aiStep()` 覆写：tick 期间临时换成**底界之外的退化包围盒**（`NO_BODY`）⇒ 接触环查不到任何实体，一处收口**全部** `playerTouch` 路径（掉落物/经验球有 NeoForge 事件，**箭没有**，模组还可能自己实现 ⇒ 事件路线天然漏），顺带屏蔽 `pushEntities` 对玩家身边实体的推挤 |
+| ② | `Player#attack:1312-1334` 横扫 / `MaceItem:161-194` 重锤冲击的 AoE 过滤 `!attacker.isAlliedTo(victim)` —— 而 `Entity#isAlliedTo` 是**队伍制**（比 scoreboard team），假玩家无队伍 ⇒ 一律不豁免 | 贴身在怪旁的玩家被自己的活武器横扫打死；死亡信息显示"自己打死自己"（FakePlayer 的 UUID/名字就是主人的） | `isAlliedTo(Entity)` 覆写：`entity instanceof Player \|\| super.isAlliedTo(entity)` ⇒ AoE 过滤整体跳过玩家（伤害/击退/火焰附加点燃是同一 if 块的整体，拦伤害事件拦不住后两者） |
+
+> ⭐ 与 `isAttackableByLivingWeapon`「活武器不打任何玩家（无 PVP）」同口径，主人与其他玩家一视同仁。
+> ⚠️ ① 只有活武器会触发：`driveWielderTick` 全项目仅 `replayAttack` 一处调用
+> （挖掘 / 交互路径不驱动 tick）⇒ 群友「只有用活剑才吸物品」的控制变量结论正对应此。
+> 复算：`Player.java:564-586`（接触环）/ `:1312-1334`（横扫）/ `MaceItem.java:161-194`（重锤）。
+
 ---
 
 ## 6. 三宿主
