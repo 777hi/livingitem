@@ -94,7 +94,7 @@ class ItemFormContainerContextTest {
     @DisplayName("ctx：容器 UUID 与 cuuid_ 键互逆")
     void context_exposesUuidAndKey() {
         UUID uuid = UUID.randomUUID();
-        ItemFormContainerContext ctx = new ItemFormContainerContext(handler, uuid, null, 0);
+        ItemFormContainerContext ctx = new ItemFormContainerContext(handler, uuid, null, 0, null);
 
         assertEquals(uuid, ctx.getContainerUuid());
         assertEquals(ContainerKeys.cuuidKey(uuid), ctx.getContainerKey());
@@ -109,7 +109,7 @@ class ItemFormContainerContextTest {
     @DisplayName("persist：写进 SavedData（不是空转的 default）")
     void persist_writesToSavedData() {
         UUID uuid = UUID.randomUUID();
-        ItemFormContainerContext ctx = new ItemFormContainerContext(handler, uuid, null, 0);
+        ItemFormContainerContext ctx = new ItemFormContainerContext(handler, uuid, null, 0, null);
 
         ContainerFluidData data = new ContainerFluidData();
         data.registerGeneratedSource(3, Fluids.WATER.getFluidType());
@@ -125,7 +125,7 @@ class ItemFormContainerContextTest {
     @DisplayName("persist：空值 ⇒ 删条目（不是写一条空数据）")
     void persist_emptyValue_removesEntry() {
         UUID uuid = UUID.randomUUID();
-        ItemFormContainerContext ctx = new ItemFormContainerContext(handler, uuid, null, 0);
+        ItemFormContainerContext ctx = new ItemFormContainerContext(handler, uuid, null, 0, null);
 
         ContainerFluidData data = new ContainerFluidData();
         data.registerGeneratedSource(3, Fluids.WATER.getFluidType());
@@ -141,7 +141,7 @@ class ItemFormContainerContextTest {
     @DisplayName("persist：非 isSaved 的 key ⇒ 不写（应力这类运行时数据）")
     void persist_unsavedKey_ignored() {
         UUID uuid = UUID.randomUUID();
-        ItemFormContainerContext ctx = new ItemFormContainerContext(handler, uuid, null, 0);
+        ItemFormContainerContext ctx = new ItemFormContainerContext(handler, uuid, null, 0, null);
 
         ctx.persist(ContainerStressData.KEY, new ContainerStressData());
 
@@ -182,7 +182,7 @@ class ItemFormContainerContextTest {
     void getWidth_prefersAuthoritativeColumns() {
         UUID uuid = UUID.randomUUID();
         // 9 槽的 handler，启发式会给 9；权威说 5（装了两个占列升级的形态）
-        ItemFormContainerContext ctx = new ItemFormContainerContext(handler, uuid, null, 5);
+        ItemFormContainerContext ctx = new ItemFormContainerContext(handler, uuid, null, 5, null);
 
         assertEquals(5, ctx.getWidth(), "权威列数必须赢 —— 启发式对非 9 倍数会猜错");
     }
@@ -191,7 +191,7 @@ class ItemFormContainerContextTest {
     @DisplayName("getWidth：来源不知道（0）⇒ 回落启发式，不比现在更差")
     void getWidth_fallsBackWhenUnknown() {
         UUID uuid = UUID.randomUUID();
-        ItemFormContainerContext ctx = new ItemFormContainerContext(handler, uuid, null, 0);
+        ItemFormContainerContext ctx = new ItemFormContainerContext(handler, uuid, null, 0, null);
 
         assertEquals(9, ctx.getWidth(), "9 槽 ⇒ 启发式 9，回落行为不变");
     }

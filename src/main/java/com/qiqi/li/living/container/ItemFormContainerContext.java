@@ -30,18 +30,38 @@ public final class ItemFormContainerContext extends SimpleContainerContext {
     /** 权威列数；{@code <= 0} = 来源不知道，回落 {@link #getWidth()} 的推断。 */
     private final int columns;
 
+    /** 宿主锚点（tick 路径由 {@code LivingBackpackFunction} 传入；GUI 反查路径为 null）。 */
+    @Nullable
+    private final ContainerAnchor hostAnchor;
+
+    /**
+     * 宿主锚点 —— 「物品在箱子里，就在箱子那里」。
+     *
+     * <p>⚠️ 与 {@link #getAnchor()} 分开是刻意的：{@code getAnchor()} 答「这个容器<b>自己</b>
+     * 在世界里的哪里」（物品形态恒 null），本方法答「它<b>借住</b>在世界的哪里」。
+     * 功能要用继承值必须显式选 —— 否则背包里的工具/水车/信标会悄悄变成加强玩法。</p>
+     */
+    @Nullable
+    @Override
+    public ContainerAnchor getHostAnchor() {
+        return hostAnchor;
+    }
+
     /**
      * @param handler     内容的活视图（由 {@link ItemFormContainers.Source#contentHandler} 提供）
      * @param containerUuid 容器身份（懒创建自物品组件）
      * @param level       世界（tick 用）
      * @param columns     权威列数；{@code <= 0} 表示来源不知道 ⇒ 回落到 {@link #getWidth()} 的推断
+     * @param hostAnchor  宿主继承来的锚点；{@code null} 表示没有宿主信息（GUI 反查路径）
      */
-    public ItemFormContainerContext(IItemHandler handler, UUID containerUuid, Level level, int columns) {
+    public ItemFormContainerContext(IItemHandler handler, UUID containerUuid, Level level, int columns,
+                                    @Nullable ContainerAnchor hostAnchor) {
         // 显式键：cuuid_<uuid>，与 ContainerKeys.containerUuidOf 互逆
         super(handler, null, java.util.List.of(), java.util.List.of(), level,
             ContainerKeys.cuuidKey(containerUuid));
         this.containerUuid = containerUuid;
         this.columns = columns;
+        this.hostAnchor = hostAnchor;
     }
 
     /**

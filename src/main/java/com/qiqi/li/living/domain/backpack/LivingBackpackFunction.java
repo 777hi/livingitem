@@ -92,8 +92,10 @@ public final class LivingBackpackFunction implements LivingItemFunction {
 
             DEPTH.set(DEPTH.get() + 1);
             try {
+                // 宿主锚点：「物品在箱子里，就在箱子那里」—— 传下去，但**用不用由功能决定**
+                // （目前只有活 TNT 的爆炸点用它；工具/水车/信标若直接用会变成加强玩法）
                 ItemFormContainerContext inner = new ItemFormContainerContext(
-                    handler, uuid, level, source.columns(stack));
+                    handler, uuid, level, source.columns(stack), container.getAnchor());
                 ContainerLivingItemHandler.processContext(inner, level);
             } catch (RuntimeException e) {
                 // 一个背包炸了不该让其它背包和宿主容器跟着停（I-C7：留痕但不静默）

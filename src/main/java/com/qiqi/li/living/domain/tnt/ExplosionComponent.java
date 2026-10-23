@@ -135,7 +135,13 @@ public class ExplosionComponent {
      */
     public static boolean ignite(ContainerContext containerCtx, Level level, float baseRadius, boolean vanillaDrops) {
         // 分类统一走 ContainerAnchor（2026-10-23 普查：此处原是与另外三处重复的一份三选一）
+        //
+        // ⭐ 取「自己的锚点，没有就用**宿主**的」—— 这是唯一启用宿主继承的功能。
+        // 为什么只有它：「物品在箱子里，就在箱子那里」是物理事实，而**爆炸点**用它是
+        // 修复（本来就该炸）；工具/水车/信标用它会变成加强玩法（自动挖矿 / 随身发电 / 随身光环），
+        // 那些必须逐个拍板，所以框架默认不把宿主锚点当自己的（见 ContainerContext#getHostAnchor）。
         com.qiqi.li.living.container.ContainerAnchor anchor = containerCtx.getAnchor();
+        if (anchor == null) anchor = containerCtx.getHostAnchor();
         Vec3 center;
 
         if (anchor instanceof com.qiqi.li.living.container.ContainerAnchor.AtBlock block) {
@@ -143,13 +149,12 @@ public class ExplosionComponent {
             center = new Vec3(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
         } else if (anchor instanceof com.qiqi.li.living.container.ContainerAnchor.AtPlayer at) {
             center = at.player().position();
+        } else if (anchor instanceof com.qiqi.li.living.container.ContainerAnchor.AtEntity entityAnchor) {
+            // 船 / 矿车 / 掉落物：炸在实体位置（"炸在原地"）。碰撞箱中心留待有需要时再细化。
+            center = entityAnchor.entity().position();
         } else {
-            // ⚠️ 两种情况都炸不了，且**故意**保持现状（不是遗漏）：
-            //   · AtEntity（船/矿车/掉落物）：爆炸中心取实体位置还是碰撞箱中心？「掉在地上的
-            //     活 TNT 被点燃就炸在原地」是否符合玩法？都未拍板。
-            //   · 无锚点（物品形态 / 活背包）：要先做宿主锚点继承（设计稿 §4）。
-            // 调用方（LivingTntFunction）已改为「失败就保持 ignited + 留痕一次」，
-            // 不会再出现「重置 → 重新点燃」的循环。
+            // 真没有锚点（物品形态且宿主未知 —— 只可能出现在 GUI 反查路径构造的 ctx，
+            // 它不进 tick）。返回 false，调用方保持 ignited + 留痕，不会循环。
             return false;
         }
 

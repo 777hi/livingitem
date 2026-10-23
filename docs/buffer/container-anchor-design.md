@@ -126,7 +126,7 @@ Vec3 center = switch (anchor) {
 
 ---
 
-## §4 提案二：物品形态继承宿主的锚点
+## §4 提案二：物品形态继承宿主的锚点（✅ 已实施，仅 TNT 启用）
 
 `LivingBackpackFunction.tick(entries, container, tick, level)` 手里就有**宿主 ctx**。
 把它的 `getAnchor()` 传给内层 `ItemFormContainerContext`，物品形态就有了锚点。
@@ -146,6 +146,28 @@ Vec3 center = switch (anchor) {
 
 **⚠️ 继承不能让框架一刀切**：TNT 继承后就是自爆。⇒ **「要不要用锚点」仍然是功能的决定**，
 框架只负责把宿主的事实递下去。
+
+### §4.1 落地形状（2026-10-23）
+
+两个访问器，**刻意分开**：
+
+| 方法 | 回答 | 物品形态 |
+|---|---|---|
+| `getAnchor()` | 这个容器**自己**在世界里的哪里 | 恒 `null` |
+| `getHostAnchor()` | 它**借住**在世界的哪里 | 宿主的值（tick 路径由 `LivingBackpackFunction` 传入） |
+
+为什么不合成一个：若 `getAnchor()` 直接返回继承值，**工具/水车/信标会在你不知情的情况下
+改变行为**。分开后，功能要用必须显式写 —— 这就是「需要的活物品直接申请」。
+
+**目前只有活 TNT 启用**（在 `ExplosionComponent.ignite` 里取「自己的锚点，没有就用宿主的」）。
+理由：爆炸点用继承值是**修复**（物品在箱子里就该炸在箱子处），
+而工具/水车/信标用继承值是**加强玩法**（自动挖矿 / 随身发电 / 随身光环），必须逐个拍板。
+
+### §4.2 为什么不是「无锚点就不 tick」
+
+曾考虑过给功能加 `requiresWorldAnchor()` 声明 + 框架闸门（无锚点则整个功能不 tick）。
+被否，理由：**那等于「把点着的炸弹塞进包里，引信就暂停」** —— 不诚实，而且可利用。
+宿主继承给出的是物理答案（炸在宿主处），也顺带消掉了「冻结 / 失败 / 循环」三个伪问题。
 
 ---
 
@@ -198,8 +220,8 @@ Vec3 center = switch (anchor) {
 | 2 | **TNT 修 B（写回）** —— `context.setItem(slot, stack)`，不再依赖"活引用" | ✅ 已完成 |
 | 3 | **TNT 修 A（显式失败）** —— `ignite` 返回 false 时保持 ignited + 留痕一次，不重置 | ✅ 已完成 |
 | 4 | **TNT 爆炸 + 信标光束** 改走 `getAnchor()`（行为不变） | ✅ 已完成 |
-| 5 | **水车 / 工具** 改走 `getAnchor()` | ⏳ 待做（见下） |
-| 6 | **继承宿主**（`ItemFormContainerContext` 接受 anchor 参数） | ⏳ 待做 |
+| 5 | **水车 / 工具** 改走 `getAnchor()` | ⏳ 待做（见 §7.1） |
+| 6 | **继承宿主**（`getHostAnchor()` + TNT 启用；AtEntity 爆炸点也补了） | ✅ 已完成（仅 TNT） |
 | 7 | **实体容器的水车缺口**（`ContainerStressWriteback` 的 `getAssociatedBlockEntities` → `getDataHosts`） | ⏳ 待做 |
 | 8 | **红石 9 件 / 活武器** | ⏳ 单独讨论 |
 

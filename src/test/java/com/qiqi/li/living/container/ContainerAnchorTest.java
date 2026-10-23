@@ -104,10 +104,37 @@ class ContainerAnchorTest {
     @DisplayName("物品形态（活背包）⇒ null —— 它自己不在世界里，要靠宿主告诉它")
     void itemForm_returnsNull() {
         ItemFormContainerContext ctx = new ItemFormContainerContext(
-            HANDLER, UUID.randomUUID(), mock(net.minecraft.world.level.Level.class), 9);
+            HANDLER, UUID.randomUUID(), mock(net.minecraft.world.level.Level.class), 9, null);
 
         assertNull(ctx.getAnchor(),
             "物品形态默认没有锚点是对的（继承宿主是后续独立步骤）");
+    }
+
+    @Test
+    @DisplayName("物品形态：getAnchor 恒 null，但 getHostAnchor 有值 —— 两者刻意分开")
+    void itemForm_hostAnchorSeparateFromOwn() {
+        Player player = mock(Player.class);
+        ContainerAnchor host = new ContainerAnchor.AtPlayer(player);
+
+        ItemFormContainerContext ctx = new ItemFormContainerContext(
+            HANDLER, UUID.randomUUID(), mock(net.minecraft.world.level.Level.class), 9, host);
+
+        assertNull(ctx.getAnchor(),
+            "getAnchor 答「容器自己在哪」—— 物品形态恒 null，这是刻意的");
+        assertEquals(host, ctx.getHostAnchor(),
+            "getHostAnchor 答「它借住在哪」—— 功能要用必须显式拿，否则会悄悄加强玩法");
+    }
+
+    @Test
+    @DisplayName("非物品形态：getHostAnchor 恒 null（宿主继承只对物品形态有意义）")
+    void nonItemForm_hostAnchorAlwaysNull() {
+        Player player = mock(Player.class);
+        SimpleContainerContext ctx = new SimpleContainerContext(
+            HANDLER, new Inventory(player), List.of(), List.of(),
+            mock(net.minecraft.world.level.Level.class), null);
+
+        assertNull(ctx.getHostAnchor());
+        assertInstanceOf(ContainerAnchor.AtPlayer.class, ctx.getAnchor());
     }
 
     @Test

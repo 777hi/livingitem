@@ -92,7 +92,7 @@ public final class FluidFlowServerSync {
         if (itemForm != null) {
             // 与 ContainerContexts.resolve 的物品形态分支同构（同一构造式 ⇒ 同一缓存键）
             TickableContainerContext ctx = new com.qiqi.li.living.container.ItemFormContainerContext(
-                itemForm.handler(), itemForm.containerUuid(), player.level(), itemForm.columns());
+                itemForm.handler(), itemForm.containerUuid(), player.level(), itemForm.columns(), null);
             String key = ctx.getCacheKey();
             if (key != null && CLIENT_ACTIVE.contains(key)) {
                 player.connection.send(new FluidFlowSyncPacket(

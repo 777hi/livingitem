@@ -139,8 +139,9 @@ public final class ContainerContexts {
         //    回落到默认槽 ⇒ 症状看起来像「槽位算错了」，实际是**两条路径用了两套 ctx**。
         ItemFormContainers.Handle handle = ItemFormContainers.handleOf(player.containerMenu, player);
         if (handle != null) {
+            // GUI 反查路径没有宿主 ctx ⇒ 宿主锚点未知（不影响 tick，tick 走 LivingBackpackFunction）
             return new ItemFormContainerContext(
-                handle.handler(), handle.containerUuid(), level, handle.columns());
+                handle.handler(), handle.containerUuid(), level, handle.columns(), null);
         }
 
         return null;

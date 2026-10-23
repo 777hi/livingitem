@@ -72,11 +72,11 @@ public class LivingTntFunction implements LivingItemFunction {
 
             if (explosion.isExploded()) {
                 if (!ExplosionComponent.ignite(context, level)) {
-                    // 🔴 炸不了（容器没有世界锚点：物品形态 / 未继承宿主）⇒ **不能重置**。
-                    // 2026-10-23 真机：活背包里的活 TNT 引信走到 0 → ignite 返回 false 被忽略 →
-                    // 无条件重置成「未点燃」→ 下一 tick 又从头倒计时 ⇒ 无限循环、永不爆炸。
-                    // 正确做法：保持 ignited（引信停在 0）+ 留痕一次，让"炸不了"可见而不是循环。
-                    warnNoAnchorOnce(context);
+                    // 兜底：真炸不了（容器里找不到活 TNT / 非服务端世界等病态情形）。
+                    // **绝不能重置** —— 无条件重置成「未点燃」正是真机「重复倒计时」的机制
+                    // （ignite 失败被忽略 → 下一 tick 又从头倒计时 ⇒ 无限循环）。
+                    // 保持 ignited（引信停在 0）+ 留痕一次，让失败可见而不是循环。
+                    warnCannotExplodeOnce(context);
                     continue;
                 }
                 LivingTntData.set(stack, LivingTntData.DEFAULT);
@@ -94,14 +94,13 @@ public class LivingTntFunction implements LivingItemFunction {
     }
 
     /** 「炸不了」只记一次（按容器键）—— 满足 I-C6（降级必须可观测），又不至于每 tick 刷屏。 */
-    private static final Set<String> WARNED_NO_ANCHOR = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private static final Set<String> WARNED_CANNOT_EXPLODE = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
-    private static void warnNoAnchorOnce(ContainerContext context) {
+    private static void warnCannotExplodeOnce(ContainerContext context) {
         String key = context.getCacheKey() != null ? context.getCacheKey() : context.getContainerKey();
-        if (key == null || !WARNED_NO_ANCHOR.add(key)) return;
+        if (key == null || !WARNED_CANNOT_EXPLODE.add(key)) return;
         com.qiqi.li.logging.ModLog.CONTAINER.warn(
-            "[活TNT] 引信已归零但容器没有世界锚点 ⇒ 无法爆炸（引信停在 0）。"
-            + "容器键={}，容器类={}。物品形态容器需要继承宿主锚点后才可引爆。",
+            "[活TNT] 引信已归零但无法引爆（引信停在 0）。容器键={}，容器类={}",
             key, context.getClass().getSimpleName());
     }
 

@@ -108,6 +108,23 @@ public interface ContainerContext extends SlotInfoProvider, ContainerSync, Conta
      * <p>⚠️ 本方法只回答「是谁/在哪」，<b>不回答「用哪个点」</b>—— 取点由调用方按用途决定
      * （射线要眼睛、应力要下方、爆炸要中心）。</p>
      */
+    /**
+     * <b>宿主</b>继承来的锚点 —— 只有物品形态容器有值，其余恒 {@code null}。
+     *
+     * <p>语义：「物品在箱子里，就在箱子那里」。这是<b>物理事实</b>，不是约定。</p>
+     *
+     * <p>⚠️ <b>默认不让功能用</b>：若 {@link #getAnchor()} 直接返回继承值，那么活工具会
+     * 开始在背包里替你挖矿、活水车会变成随身发电机、活信标会变成随身光环 ——
+     * 这些是**加强玩法**，不是修复，必须逐个拍板。</p>
+     *
+     * <p>⇒ 谁要用谁显式拿。目前只有<b>活 TNT 的爆炸点</b>用（
+     * {@code ExplosionComponent#ignite} 取「自己的锚点，没有就用宿主的」）。</p>
+     */
+    @Nullable
+    default ContainerAnchor getHostAnchor() {
+        return null;
+    }
+
     @Nullable
     default ContainerAnchor getAnchor() {
         BlockPos pos = getBlockPos();
