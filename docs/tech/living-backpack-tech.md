@@ -35,6 +35,10 @@
 ⇒ `scanAndGroupLivingItems` 扫出活背包 ⇒ `LivingBackpackFunction.tick` 为每个背包
 构建内部 ctx 并 `processContext` **递归** —— 与活熔炉、活漏斗走同一条 tick 管线。
 
+**真机验收**（2026-10-23 用户实测，四项全通）：带两个活背包的倒汲 / tooltip / 槽位设置 ·
+关界面不再刷第三方 ERROR · 储罐插件动态列数（各尺寸背包 + 方块形态）·
+活漏斗高级 tooltip 显示容器信息。
+
 **规则**（违反即 bug）：
 
 1. **框架零特殊化**。活背包不新增框架机制：tick 驱动 / ctx 身份 / 嵌套治理全部复用既有抽象。
