@@ -96,6 +96,28 @@ public interface ContainerContext extends SlotInfoProvider, ContainerSync, Conta
     }
 
     /**
+     * 本容器在世界里的<b>参考物</b>（{@link ContainerAnchor}）；没有则 {@code null}。
+     *
+     * <p>默认三选一：有方块位置 ⇒ {@code AtBlock}；有主人 ⇒ {@code AtPlayer}；否则 {@code null}。
+     * <b>实体容器与掉落物必须覆写</b>（它们的 {@code getBlockPos()} 刻意是 null，
+     * 且没有主人 —— 不覆写就会退化成「没有锚点」）。</p>
+     *
+     * <p>⚠️ 物品形态容器（活背包）默认 {@code null} 是<b>正确的</b>：它自己不在世界里，
+     * 要靠宿主告诉它。继承宿主的接线见 docs/buffer/container-anchor-design.md §4（未实施）。</p>
+     *
+     * <p>⚠️ 本方法只回答「是谁/在哪」，<b>不回答「用哪个点」</b>—— 取点由调用方按用途决定
+     * （射线要眼睛、应力要下方、爆炸要中心）。</p>
+     */
+    @Nullable
+    default ContainerAnchor getAnchor() {
+        BlockPos pos = getBlockPos();
+        if (pos != null) return new ContainerAnchor.AtBlock(pos);
+        Player owner = getOwnerPlayer();
+        if (owner != null) return new ContainerAnchor.AtPlayer(owner);
+        return null;
+    }
+
+    /**
      * 容器级持久数据的**持久宿主**列表（{@code IAttachmentHolder}：方块实体或实体）。
      *
      * <p>2026-10-21 实体容器（船/矿车/带箱驴骡）立项时加：流体 / 电力相位等容器级数据

@@ -71,14 +71,38 @@ public class LivingTntFunction implements LivingItemFunction {
             explosion = explosion.tick();
 
             if (explosion.isExploded()) {
-                ExplosionComponent.ignite(context, level);
+                if (!ExplosionComponent.ignite(context, level)) {
+                    // 🔴 炸不了（容器没有世界锚点：物品形态 / 未继承宿主）⇒ **不能重置**。
+                    // 2026-10-23 真机：活背包里的活 TNT 引信走到 0 → ignite 返回 false 被忽略 →
+                    // 无条件重置成「未点燃」→ 下一 tick 又从头倒计时 ⇒ 无限循环、永不爆炸。
+                    // 正确做法：保持 ignited（引信停在 0）+ 留痕一次，让"炸不了"可见而不是循环。
+                    warnNoAnchorOnce(context);
+                    continue;
+                }
                 LivingTntData.set(stack, LivingTntData.DEFAULT);
             } else {
                 LivingTntData.set(stack, data.withExplosion(explosion));
             }
 
+            // ⚠️ 必须**显式写回**，不能只靠「getItem 返回的栈是活引用」：
+            // NBT 背书的容器（精妙背包的 handler）里就地改组件不会触发它自己的保存钩子，
+            // 而本函数的修改（引信递减）是唯一的数据来源。工具类早已这么做（writeBack），
+            // TNT 此前漏了（2026-10-23 普查）。
+            context.setItem(slot, stack);
             context.syncSlotToClients(slot, stack);
         }
+    }
+
+    /** 「炸不了」只记一次（按容器键）—— 满足 I-C6（降级必须可观测），又不至于每 tick 刷屏。 */
+    private static final Set<String> WARNED_NO_ANCHOR = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    private static void warnNoAnchorOnce(ContainerContext context) {
+        String key = context.getCacheKey() != null ? context.getCacheKey() : context.getContainerKey();
+        if (key == null || !WARNED_NO_ANCHOR.add(key)) return;
+        com.qiqi.li.logging.ModLog.CONTAINER.warn(
+            "[活TNT] 引信已归零但容器没有世界锚点 ⇒ 无法爆炸（引信停在 0）。"
+            + "容器键={}，容器类={}。物品形态容器需要继承宿主锚点后才可引爆。",
+            key, context.getClass().getSimpleName());
     }
 
     @Override

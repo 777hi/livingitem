@@ -190,15 +190,32 @@ Vec3 center = switch (anchor) {
 
 ---
 
-## §7 建议实施顺序
+## §7 实施顺序与进度
 
-1. **`ContainerAnchor` + `getAnchor()`**（4 份解析收成 1 处）—— 机械改动，无行为变化
-2. **TNT 修 B（写回）** —— 独立于锚点，先让倒计时能真正推进
-3. **TNT 修 A（显式拒绝）** —— 无锚点时不再循环
-4. **水车 / 工具 / 信标** 改走 `getAnchor()`（行为不变，只是收编）
-5. **继承宿主**（`ItemFormContainerContext` 接受 anchor 参数）—— 逐个功能决定要不要用
-6. **实体容器的缺口**（水车 `getDataHosts()`）—— 独立小修
-7. **红石 9 件 / 活武器** —— 单独讨论，不在本轮
+| # | 步骤 | 状态 |
+|---|---|---|
+| 1 | **`ContainerAnchor` + `getAnchor()`**（含实体容器 / 掉落物两个必须的覆写） | ✅ 已完成 |
+| 2 | **TNT 修 B（写回）** —— `context.setItem(slot, stack)`，不再依赖"活引用" | ✅ 已完成 |
+| 3 | **TNT 修 A（显式失败）** —— `ignite` 返回 false 时保持 ignited + 留痕一次，不重置 | ✅ 已完成 |
+| 4 | **TNT 爆炸 + 信标光束** 改走 `getAnchor()`（行为不变） | ✅ 已完成 |
+| 5 | **水车 / 工具** 改走 `getAnchor()` | ⏳ 待做（见下） |
+| 6 | **继承宿主**（`ItemFormContainerContext` 接受 anchor 参数） | ⏳ 待做 |
+| 7 | **实体容器的水车缺口**（`ContainerStressWriteback` 的 `getAssociatedBlockEntities` → `getDataHosts`） | ⏳ 待做 |
+| 8 | **红石 9 件 / 活武器** | ⏳ 单独讨论 |
+
+### §7.1 为什么第 5 步没跟第 4 步一起做
+
+第 4 步的两个站点可以**行为完全不变**地迁移（`AtEntity` 本来就返回"不支持"）。
+第 5 步不行，各有一个待拍板点：
+
+- **工具**：`AtEntity` 现在只认 `ItemEntityContainerContext`（掉落物），**没有 `EntityContainerContext` 分支**。
+  迁移后要不要让船里的工具也能重放射线？（用实体位置当起点）
+- **水车**：输出目标是"每个数据宿主的下方"，是**多位置**语义（大箱子两半各有齿轮）
+  —— 它其实不是"一个锚点"，而是"每个 data host"。要单独设计，不能硬套。
+
+⚠️ 另外：`ContainerStressWriteback` 用 `getAssociatedBlockEntities()`（只覆盖 BE），
+而 10-21 已把写回口径统一到 `getDataHosts()`（BE 或 Entity）⇒ 船里的水车零输出。
+这是第 7 步，与锚点无关（是"per data host"而不是"one anchor"）。
 
 ---
 

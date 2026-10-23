@@ -156,13 +156,18 @@ public class BeaconFunction implements LivingItemFunction {
      * </ul>
      */
     private static Vec3 resolveHostPosition(ContainerContext context, Level level) {
-        BlockPos containerPos = context.getBlockPos();
-        if (containerPos != null) {
-            return isLiddedChest(level.getBlockEntity(containerPos))
-                ? Vec3.atCenterOf(containerPos) : null;
+        // 分类统一走 ContainerAnchor（2026-10-23 普查：此处原是与另外三处重复的一份三选一）
+        com.qiqi.li.living.container.ContainerAnchor anchor = context.getAnchor();
+        if (anchor instanceof com.qiqi.li.living.container.ContainerAnchor.AtBlock block) {
+            return isLiddedChest(level.getBlockEntity(block.pos()))
+                ? Vec3.atCenterOf(block.pos()) : null;
         }
-        Player owner = context.getOwnerPlayer();
-        return owner != null ? owner.position() : null;
+        if (anchor instanceof com.qiqi.li.living.container.ContainerAnchor.AtPlayer at) {
+            return at.player().position();
+        }
+        // AtEntity（船/矿车/掉落物）⇒ 不开光（既有语义，见本类 isLiddedChest 的注释）；
+        // 无锚点（物品形态）⇒ 同样不开光。
+        return null;
     }
 
     /**

@@ -163,4 +163,16 @@ public class ItemEntityContainerContext implements TickableContainerContext {
     public Inventory getInventory() {
         return null;        // 掉落物不属于任何玩家背包
     }
+
+    /**
+     * 锚点 = 掉落物实体本身。
+     *
+     * <p>⚠️ <b>必须覆写</b>：{@link #getBlockPos()} 为 null 且无主人 ⇒ 默认实现会返回
+     * 「没有锚点」。而掉落物<b>是有实体的</b>——「物品形态没有锚点」缺的是<b>宿主</b>，
+     * 不是实体（见 docs/buffer/container-anchor-design.md §1.1）。</p>
+     */
+    @Override
+    public com.qiqi.li.living.container.ContainerAnchor getAnchor() {
+        return new com.qiqi.li.living.container.ContainerAnchor.AtEntity(entity);
+    }
 }

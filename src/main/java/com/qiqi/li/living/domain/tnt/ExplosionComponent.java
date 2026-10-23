@@ -134,15 +134,22 @@ public class ExplosionComponent {
      * 方块破坏由 {@link ExplosionLedger} 按区块分帧推进（已加载的）或等区块自然加载（未加载的）。</p>
      */
     public static boolean ignite(ContainerContext containerCtx, Level level, float baseRadius, boolean vanillaDrops) {
-        BlockPos pos = containerCtx.getBlockPos();
+        // 分类统一走 ContainerAnchor（2026-10-23 普查：此处原是与另外三处重复的一份三选一）
+        com.qiqi.li.living.container.ContainerAnchor anchor = containerCtx.getAnchor();
         Vec3 center;
 
-        if (pos != null) {
+        if (anchor instanceof com.qiqi.li.living.container.ContainerAnchor.AtBlock block) {
+            BlockPos pos = block.pos();
             center = new Vec3(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
-        } else if (containerCtx instanceof SimpleContainerContext scc && scc.getInventory() != null) {
-            var player = scc.getInventory().player;
-            center = player.position();
+        } else if (anchor instanceof com.qiqi.li.living.container.ContainerAnchor.AtPlayer at) {
+            center = at.player().position();
         } else {
+            // ⚠️ 两种情况都炸不了，且**故意**保持现状（不是遗漏）：
+            //   · AtEntity（船/矿车/掉落物）：爆炸中心取实体位置还是碰撞箱中心？「掉在地上的
+            //     活 TNT 被点燃就炸在原地」是否符合玩法？都未拍板。
+            //   · 无锚点（物品形态 / 活背包）：要先做宿主锚点继承（设计稿 §4）。
+            // 调用方（LivingTntFunction）已改为「失败就保持 ignited + 留痕一次」，
+            // 不会再出现「重置 → 重新点燃」的循环。
             return false;
         }
 

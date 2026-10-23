@@ -141,6 +141,18 @@ public class EntityContainerContext extends SimpleContainerContext {
     }
 
     /**
+     * 锚点 = 实体本身（船 / 矿车）。
+     *
+     * <p>⚠️ <b>必须覆写</b>：本类 {@link #getBlockPos()} 刻意返回 null，且实体容器没有
+     * 「主人」⇒ 走默认实现会退化成「没有锚点」，让所有需要世界锚点的功能在船上静默失效
+     * （2026-10-23 普查发现的缺口）。</p>
+     */
+    @Override
+    public com.qiqi.li.living.container.ContainerAnchor getAnchor() {
+        return new com.qiqi.li.living.container.ContainerAnchor.AtEntity(entity);
+    }
+
+    /**
      * 恒为 {@code null} —— 实体容器<b>不是方块容器</b>（见类注释决策 ②：
      * 防船停箱子上被信标误判；语义与 {@link ItemEntityContainerContext} 的
      * 「{@code getBlockPos()} 默认返回 null」一致）。

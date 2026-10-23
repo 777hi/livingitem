@@ -17,6 +17,24 @@
 
 ## 2026-10-23
 
+> 🧭 **实施：容器世界锚点 `ContainerAnchor` + 修活 TNT 的无限倒计时**（`D-container-15`）
+>
+> 按设计稿 §7 走完前 4 步：
+> 1. **`ContainerAnchor`**（`AtBlock` / `AtPlayer` / `AtEntity` / null）+ `ContainerContext#getAnchor()`。
+>    ⚠️ 实体容器与掉落物**必须覆写**——它们的 `getBlockPos()` 刻意是 null、也没有主人，
+>    走默认实现会退化成「没有锚点」，让船上所有需要锚点的功能静默失效。
+> 2. **TNT 写回**：`context.setItem(slot, stack)` —— 不再依赖「getItem 返回的活引用」。
+>    工具类早有 `writeBack`，TNT 此前漏了。
+> 3. **TNT 显式失败**：`ignite` 返回 false 时**保持 ignited + 留痕一次**，不再无条件重置。
+>    这正是真机「重复倒计时」的机制：重置成未点燃 → 下一 tick 又从头倒计时。
+> 4. **TNT 爆炸 + 信标光束** 改走 `getAnchor()`（行为完全不变：`AtEntity` 仍返回"不支持"）。
+>
+> 新增 `ContainerAnchorTest` 7 项 —— 最关键的两条是「实体容器必须覆写」「掉落物有实体不是没锚点」，
+> 将来新增实体形态忘了覆写会立刻红。
+>
+> 单测 880 → 887。剩余步骤见设计稿 §7（水车/工具要拍板取点语义；继承宿主；实体容器水车缺口）。
+
+
 > 🔎 **普查：容器世界锚点（ContainerAnchor）—— 17 个功能逐个过了一遍**（未定案）
 >
 > 起因是真机「活背包里的活 TNT 点燃后重复倒计时、不爆炸」。追根因时发现不是孤例：
