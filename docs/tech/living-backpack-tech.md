@@ -133,9 +133,15 @@ ContainerFluidWriteback → ctx.persist(key, value) → ContainerDataSavedData�
   ⚠️ **不是背包菜单时坚决不扫物品栏** —— 否则只带一个活背包时会把 AE2 / ProjectE 的
   槽位错认成它（错认比解析不出更糟）。
 
-**viewer 匹配**（#7）：物品形态没有世界位置，原按 `positions` 匹配会直接返回空 ⇒ 永不发包。
+**viewer 匹配**（#7）：物品形态没有世界位置，按 `positions` 匹配会直接返回空 ⇒ 永不发包。
 改为「按容器 UUID 反查在线玩家」：`ctx.getContainerUuid()` 非空时逐个在线玩家问
 `handleOf(player.containerMenu, player)`，UUID 相同即为 viewer。
+
+⚠️ **这条轨有两条，别只修一条**（2026-10-23 真机实录）：
+| 轨 | 修没修 | 不修的表现 |
+|---|---|---|
+| `FluidFlowServerSync.viewersOf`（流体快照） | ✅ 10-22 修 | 流体层不渲染 |
+| `LivingItemRuntimeSync.flush`（运行时数据：冷却 / slotInfo / 过滤链） | ✅ 10-23 修 | **活漏斗高级 tooltip 不显示容器信息**（源槽/目标槽/容器尺寸）—— 服务端攒了脏数据，但按位置匹配 viewer 恒为空 ⇒ 永不发客户端 ⇒ tooltip 回落 DataComponent（那里只有 EMPTY） |
 
 ---
 

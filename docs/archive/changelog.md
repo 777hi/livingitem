@@ -42,6 +42,22 @@
 > 直接定位「GUI 正在看的那一个」（多背包 / 子背包都覆盖）。
 > 反射链解析失败 / 调用异常各打一条 WARN（I-C6，此前完全静默）。
 
+> 📡 **修复：活背包里活漏斗高级 tooltip 不显示容器信息（运行时同步缺物品形态分支）**（本次）
+>
+> 用户反馈：槽位解析全通（物品形态/方块形态/储罐插件动态列数/各尺寸），唯一残留是
+> 活漏斗的高级 tooltip 不显示活背包容器信息。
+>
+> 根因：**viewer 匹配这条轨有两条，上次只修了一条**。
+> `LivingItemRuntimeSync.flush` 按位置匹配 viewer —— 物品形态容器没有世界位置
+> ⇒ `containerLookup` 恒空 ⇒ **永不发包** ⇒ 客户端拿不到运行时数据（冷却/slotInfo/过滤链）
+> ⇒ tooltip 落回 DataComponent（那里只有 EMPTY）⇒ `slotInfo.isValid()` false ⇒ 容器信息不显示。
+>
+> 修法：加 `ContainerKind.ITEM_FORM` 分支，与 `FluidFlowServerSync.viewersOf` 的 #7 同款：
+> 问「谁正开着它」（联动模块从菜单反查到容器 UUID，相同即 viewer）。
+>
+> 测试 +1（mock 玩家锚定菜单 + captor 断言发的是这个容器的键）。单测 878 → 879。
+> 教训已写进 tech 文档：**这条轨有两条，别只修一条**。
+
 > 📐 **活背包列数改权威值（#3 槽位几何）**（本次）
 >
 > 物品形态容器 `getWidth()` 三层推断全不命中（没有 inventory / BE / 注册规则）

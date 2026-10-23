@@ -1,10 +1,27 @@
 package com.qiqi.li.network;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.qiqi.li.living.container.ContainerKeys;
 import com.qiqi.li.living.container.ContainerKind;
+import com.qiqi.li.living.container.ItemFormContainers;
+import com.qiqi.li.living.domain.hopper.HopperSegment;
+import com.qiqi.li.living.domain.hopper.HopperSegment.HopperRuntime;
+import com.qiqi.li.living.domain.hopper.ResolvedSlotData;
+import com.qiqi.li.living.runtime.ContainerRuntimeCache;
+import com.qiqi.li.living.runtime.RuntimeSegments;
+import com.qiqi.li.testutil.FakeContainerContext;
 
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import java.util.List;
+import java.util.UUID;
+
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -30,6 +47,59 @@ class LivingItemRuntimeSyncTest {
     void enderChest_gatedByViewing() {
         assertTrue(LivingItemRuntimeSync.shouldSendToOwner(ContainerKind.ENDER_CHEST, true));
         assertFalse(LivingItemRuntimeSync.shouldSendToOwner(ContainerKind.ENDER_CHEST, false));
+    }
+
+    @AfterEach
+    void tearDown() {
+        ContainerRuntimeCache.clear();
+        ItemFormContainers.clearForTest();
+    }
+
+    // ── 物品形态容器（活背包，2026-10-23 真机实录）────────────────────────────
+    //
+    // 现场：活漏斗的高级 tooltip 不显示容器信息（源槽/目标槽/容器尺寸）。
+    // 根因：物品形态容器没有世界位置 ⇒ flush 的「按 positions 匹配 viewer」恒为空
+    // ⇒ 运行时数据永不发客户端 ⇒ tooltip 回落 DataComponent（那里只有 EMPTY）。
+    // 与 FluidFlowServerSync.viewersOf 的 #7 同源，上次只修了流体那条轨。
+
+    @Test
+    @DisplayName("物品形态容器：按「谁正开着它」发包，不按位置（位置恒空）")
+    void itemForm_sendsToViewerByMenuAnchor() {
+        UUID uuid = UUID.randomUUID();
+        String key = ContainerKeys.cuuidKey(uuid);
+
+        // 服务端确实攒了脏数据（活漏斗每 tick 写 slotInfo）
+        FakeContainerContext ctx = new FakeContainerContext(27, 9, key);
+        ContainerRuntimeCache.update(ctx, 0, RuntimeSegments.EMPTY.with(
+            HopperSegment.INSTANCE,
+            new HopperRuntime(0,
+                new ResolvedSlotData(0, 1, 2, 27, 9))));
+
+        // 一个玩家，开着锚定该 uuid 的背包菜单
+        net.minecraft.server.level.ServerPlayer viewer = mock(net.minecraft.server.level.ServerPlayer.class);
+        net.minecraft.world.inventory.AbstractContainerMenu menu =
+            mock(net.minecraft.world.inventory.AbstractContainerMenu.class);
+        viewer.containerMenu = menu;   // public 字段（Player.containerMenu）
+        viewer.connection = mock(net.minecraft.server.network.ServerGamePacketListenerImpl.class);
+        ItemFormContainers.register(new ItemFormContainers.Source() {
+            @Override public boolean isContainerItem(net.minecraft.world.item.ItemStack stack) { return true; }
+            @Override public net.neoforged.neoforge.items.IItemHandler contentHandler(
+                    net.minecraft.world.item.ItemStack stack) { return new net.neoforged.neoforge.items.ItemStackHandler(9); }
+            @Override public ItemFormContainers.Handle handleOfMenu(
+                    net.minecraft.world.inventory.AbstractContainerMenu m,
+                    net.minecraft.world.entity.player.Player p) {
+                return new ItemFormContainers.Handle(
+                    new net.neoforged.neoforge.items.ItemStackHandler(9), uuid, 9);
+            }
+        });
+
+        LivingItemRuntimeSync.flush(List.of(viewer), k -> List.of());
+
+        org.mockito.ArgumentCaptor<LivingItemSyncPacket> captor =
+            org.mockito.ArgumentCaptor.forClass(LivingItemSyncPacket.class);
+        verify(viewer.connection).send(captor.capture());
+        assertEquals(key, captor.getValue().containerKey(),
+            "必须发这个物品形态容器的键 —— 发错键客户端会显示成别的容器的数据");
     }
 
     @Test

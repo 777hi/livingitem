@@ -76,6 +76,22 @@ public final class LivingItemRuntimeSync {
 
             if (kind != null && kind.isOwnedByPlayer()) {
                 sendToOwner(players, containerKey, packet, kind);
+            } else if (kind == ContainerKind.ITEM_FORM) {
+                // 物品形态容器（活背包，2026-10-23）：**没有世界位置** ⇒ 下面按 positions
+                // 匹配恒为空 ⇒ 永不发包 ⇒ tooltip 的容器信息（活漏斗的源槽/目标槽/容器尺寸）
+                // 永远不显示（真机实录）。与 FluidFlowServerSync.viewersOf 的 #7 同款修法：
+                // 问「谁正开着它」—— 联动模块从菜单反查到容器 UUID，相同即为 viewer。
+                java.util.UUID containerUuid =
+                    com.qiqi.li.living.container.ContainerKeys.containerUuidOf(containerKey);
+                if (containerUuid == null) continue;
+                for (ServerPlayer player : players) {
+                    com.qiqi.li.living.container.ItemFormContainers.Handle handle =
+                        com.qiqi.li.living.container.ItemFormContainers.handleOf(
+                            player.containerMenu, player);
+                    if (handle != null && containerUuid.equals(handle.containerUuid())) {
+                        player.connection.send(packet);
+                    }
+                }
             } else {
                 // ⚠️ 按**位置**匹配 viewer（I-C5）：非原版 Container 的第三方方块实体
                 // 也能匹配上，否则这条轨对它们永远不发包
