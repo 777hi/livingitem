@@ -57,6 +57,8 @@ src/test/java/com/qiqi/li/
 │   └── ContainerRuntimeCacheLifecycleTest.java # 运行时缓存生命周期(方案A)·物品离开槽位/换物品⇒登记作废·同类持续⇒不作废·drain 取走即空·null 键忽略·整容器作废键==运行时存储键（6 项）
 ├── living/domain/backpack/
 │   └── LivingBackpackFunctionTest.java        # 活背包（2026-10-22）·认领（无来源不认领=未装模组零影响/来源注册后只认它说是容器的物品）+ 功能 ID 稳定 + **取消活化连 SavedData 一起清**/无 UUID 不抛（5 项）
+├── living/domain/tools/
+│   └── LivingToolHostSyncMergeTest.java      # K2 去重记录合并不变量（2026-10-23）·**其它维度玩家的记录必须保留**（逐维度 flush 不能互清）/离线玩家淘汰/本维度新记录覆盖旧值（3 项；守「每 tick 重发空包」回归）
 ├── living/domain/tnt/
 │   ├── ExplosionParamsTest.java               # 爆炸参数·位图映射可逆/网格外返回-1/affects=区块AABB∩球体/边界回归(中心在半径外但边缘在球内)/球体全覆盖(半径内每方块所在区块必命中)/网格规模（7 项）
 │   ├── ExplosionLedgerTest.java               # 待炸账本·相交才进队列/不相交立即标记/未加载丢弃不轮询/自然加载补炸闭环/分帧预算/多场叠加不覆盖新登记/满额降级/存档往返（10 项）

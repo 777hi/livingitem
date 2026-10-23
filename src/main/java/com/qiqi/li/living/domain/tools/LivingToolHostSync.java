@@ -3,10 +3,12 @@ import com.qiqi.li.living.domain.tools.LivingToolMemory;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 import com.qiqi.li.living.api.LivingItemManager;
@@ -102,22 +104,46 @@ public final class LivingToolHostSync {
         ResourceLocation dimension = level.dimension().location();
 
         Map<UUID, List<LivingToolHostPacket.Entry>> next = new HashMap<>();
+        Set<UUID> online = new HashSet<>();
         for (ServerPlayer player : level.getServer().getPlayerList().getPlayers()) {
+            online.add(player.getUUID());
             if (player.level() != level) {
                 continue;   // 只处理本维度的玩家
             }
             List<LivingToolHostPacket.Entry> mine = filterInRange(all, player);
             if (!same(mine, lastSent.get(player.getUUID()))) {
                 player.connection.send(new LivingToolHostPacket(dimension, mine));
-                com.qiqi.li.logging.ModLog.CONTAINER.info("[K2] 发送 {}/{} 个宿主 给 {}（维度 {}）",
-                    mine.size(), all.size(), player.getName().getString(), dimension);
             }
             next.put(player.getUUID(), mine);
         }
 
-        // 整体替换 ⇒ 离线 / 换维度的玩家记录自动消失，无需额外的过期清理
+        // ⚠️ 不能整体 clear：本方法【逐维度】调用（server.getAllLevels() 恒有主世界/地狱/末地
+        // 三个），整体清会把**其它维度玩家**的记录也抹掉 ⇒ 他们下一 tick 的
+        // `lastSent.get(uuid)` 变 null ⇒ `same` 判「有变化」⇒ 每 tick 重发一个空包。
+        // 2026-10-23 日志实录：单条 INFO 刷了 3803 次（玩家只有一个，包却每 tick 都在发）。
+        // ⇒ 只淘汰离线玩家；换维度的记录由那一维度自己的 flush 覆盖（见 mergeRecords）。
+        Map<UUID, List<LivingToolHostPacket.Entry>> merged = mergeRecords(lastSent, next, online);
         lastSent.clear();
-        lastSent.putAll(next);
+        lastSent.putAll(merged);
+    }
+
+    /**
+     * 合并去重记录：本维度本 tick 的 {@code next} 覆盖旧值，<b>其它维度的记录原样保留</b>，
+     * 已离线的玩家记录淘汰。
+     *
+     * <p>抽成纯函数是为了钉住 {@link #flush} 里那条不变量 —— 「保留其它维度的记录」
+     * 长得像多余的谨慎，实际是「逐维度 flush」与「一张全服表」之间的必要粘合。
+     * 改回 {@code clear()} 不会报错、不会有测试失败（除非有本节测试），
+     * 只会让每个玩家每 tick 多收一个空包。</p>
+     */
+    static Map<UUID, List<LivingToolHostPacket.Entry>> mergeRecords(
+            Map<UUID, List<LivingToolHostPacket.Entry>> previous,
+            Map<UUID, List<LivingToolHostPacket.Entry>> next,
+            Set<UUID> online) {
+        Map<UUID, List<LivingToolHostPacket.Entry>> merged = new HashMap<>(previous);
+        merged.keySet().retainAll(online);   // 淘汰离线 / 离服玩家
+        merged.putAll(next);                 // 本维度本 tick 的结果覆盖旧值
+        return merged;
     }
 
     /** 清空全部状态（服务端关闭时调用，避免跨存档残留）。 */
