@@ -104,7 +104,7 @@ per-slot 的运行时快照 —— **不是**静态 record，而是一个「段�
 - **线上格式**：`segmentCount` + 每段 `id` + payload（由注册表驱动，`LivingItemSyncPacket` 不再认识任何具体字段）。
   ⚠️ **`id` 是线格式契约，发布后不可改名**。
 
-> 设计取舍与搬迁过程见 [runtime-mechanization-plan.md](../buffer/runtime-mechanization-plan.md) §7。
+> 设计取舍与搬迁过程见 [runtime-mechanization-plan.md](../archive/runtime-mechanization-plan.md) §7。
 > 收益：原本 `domain/runtime` 这个「假领域」被拆掉 —— 领域互依赖 R3 从 22 条降到 10 条。
 
 ---

@@ -156,7 +156,7 @@ public interface ContainerSync extends LivingContainer {
 | **运行时数据下发** | 另有通道 | 由 `LivingItemRuntimeSync.flush`（L4，`LivingItem.onServerTick` 收尾）负责，**不经** `syncSlotToClients` |
 
 > ✅ **「运行时数据下发」这一行是 2026-10-08 档 2 反转发包后的形态** —— 代码已通过单测/分层/文档三重校验，
-> 且**游戏内手测五项已通过**（2026-10-08 用户实测）⇒ 详见 [runtime-mechanization-plan.md](../buffer/runtime-mechanization-plan.md) 文件头。
+> 且**游戏内手测五项已通过**（2026-10-08 用户实测）⇒ 详见 [runtime-mechanization-plan.md](../archive/runtime-mechanization-plan.md) 文件头。
 
 > ⚠️ **`syncSlotToClients` 是解决实际问题的机制，不是冗余**（2026-10-08 用户明确）。
 > 它同时承担三件事：① 补原版对「只改自定义组件」的失效；② 触发 `bumpContainerRevision` 让缓存失效；
@@ -1533,7 +1533,7 @@ processContext(context, level)
 
 > 📌 **运行时数据下发已迁出本流程**（档 2，2026-10-08）：buff 缓存在 L2 只攒脏，发包由 L4 的
 > `LivingItemRuntimeSync.flush` 在 `LivingItem.onServerTick` 的**所有**容器处理之后统一收口
-> —— 见 [runtime-mechanization-plan.md](../buffer/runtime-mechanization-plan.md) §7。
+> —— 见 [runtime-mechanization-plan.md](../archive/runtime-mechanization-plan.md) §7。
 > 原「阶段 4.5」只是调用点，不是职责归属；反转发包后 L2 不再认识网络包（消 R1）。
 
 **阶段 1 — 扫描**：遍历容器中所有物品，将活物品按功能类型分组收集，同时校验内容签名以打破稳态跳过死锁。

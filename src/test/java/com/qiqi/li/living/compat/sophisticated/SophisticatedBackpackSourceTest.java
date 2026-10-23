@@ -43,14 +43,11 @@ import com.qiqi.li.living.container.ItemFormContainers;
  * （见 {@code net.p3pp3rf1y.sophisticatedbackpacks.*} 那几个类），否则只能测到「不认」。
  * 上游改 API 时这些替身不会自动发现 —— 那由运行期的 WARN 日志负责（I-C6）。</p>
  *
- * <h3>两个测试基建坑（都踩过）</h3>
- * <ul>
- *   <li><b>不能 {@code new BackpackItem()}</b>：{@code Item} 构造器要写注册表，测试里已冻结
- *       （{@code Registry is already frozen}）⇒ 用 {@link mock(Class)} 无构造实例化
- *       （Objenesis），再 {@code doReturn(item).when(item).asItem()} 才能包进 {@code ItemStack}。
- *       少了 asItem 这步，{@code ItemStack} 里的 item 字段会是 null。</li>
- *   <li><b>玩家必须带物品栏 mock</b>：降级阶梯会退回默认扫描，那里要 {@code getInventory()}</li>
- * </ul>
+ * <h3>一个测试基建坑（踩过）</h3>
+ * <p><b>不能 {@code new BackpackItem()}</b>：{@code Item} 构造器要写注册表，测试里已冻结
+ * （{@code Registry is already frozen}）⇒ 用 {@link mock(Class)} 无构造实例化（Objenesis），
+ * 再补两个桩：{@code asItem()}（否则 {@code ItemStack} 里的 item 字段是 null）、
+ * {@code components()}（否则原型图为 null，一碰组件就 NPE）。</p>
  */
 class SophisticatedBackpackSourceTest {
 
@@ -159,29 +156,12 @@ class SophisticatedBackpackSourceTest {
             "非背包菜单不能扫物品栏猜 —— 玩家只带一个活背包时会把 AE2/ProjectE 的槽位错认成它");
     }
 
-    // ── 降级阶梯：覆写不能比覆写前更差 ──────────────────────────────────────
-    //
-    // 精妙是 compileOnly + 反射依赖，改版是常态。锚点读不到时必须退回默认扫描，
-    // 否则一个方法改名会让「单背包」从能用变成不能用。
+    // ── 边界：认不出就是不认，不猜 ──────────────────────────────────────────
 
     @Test
-    @DisplayName("背包菜单但锚点读不到（空栈）⇒ 退回默认扫描，单背包仍认得出")
-    void handleOf_anchorUnreadable_fallsBackToDefaultScan() {
-        ItemStack inInventory = livingBackpack();
-        BackpackContainer menu = menuOf(ItemStack.EMPTY);   // 锚点断在这一环
-
-        ItemFormContainers.Handle handle =
-            ItemFormContainers.handleOf(menu, playerWith(inInventory));
-
-        assertNotNull(handle, "锚点读不到必须退回默认扫描 —— 否则单背包场景会被自己的覆写弄废");
-        assertEquals(ContainerUuids.ofItem(inInventory), handle.containerUuid());
-    }
-
-    @Test
-    @DisplayName("锚定物未活化 + 物品栏里也没有 ⇒ null（不抛）")
+    @DisplayName("锚定物未活化 ⇒ null（没有身份就没有容器级数据）")
     void handleOf_anchoredBackpackNotActivated_returnsNull() {
-        ItemStack dormant = backpack();   // 有物品、没 UUID
-        assertNull(ItemFormContainers.handleOf(menuOf(dormant), playerWith(dormant)),
-            "未活化的背包没有 cuuid 键 ⇒ 解析出来也无处落数据；退回扫描后同样找不到");
+        assertNull(ItemFormContainers.handleOf(menuOf(backpack()), playerWith()),
+            "未活化的背包没有 cuuid 键 ⇒ 解析出来也无处落数据");
     }
 }

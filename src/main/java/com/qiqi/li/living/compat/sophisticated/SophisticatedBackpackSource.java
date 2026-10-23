@@ -167,41 +167,25 @@ public final class SophisticatedBackpackSource implements ItemFormContainers.Sou
     /**
      * 从菜单反查「GUI 正在看的那一个背包」。
      *
-     * <h3>降级阶梯（覆写不能比覆写前更差）</h3>
-     * <ol>
-     *   <li><b>锚点可用 + 是背包菜单 + 读到了</b> ⇒ 用它（多背包 / 子背包都认得对）</li>
-     *   <li><b>锚点不可用</b>（精妙改版，第二组反射失败）⇒ 退回默认扫描。
-     *       否则一个方法改名会让「单背包」从能用变成不能用。</li>
-     *   <li><b>是背包菜单但读不到锚点</b>（空栈 / Noop 包装器 / 调用抛异常）
-     *       ⇒ 同样退回默认扫描，单背包场景至少不废。</li>
-     *   <li><b>不是背包菜单</b> ⇒ {@code null}。⚠️ 这里**不**扫物品栏：
-     *       否则玩家只带一个活背包时，会把别的模组菜单（AE2 / ProjectE 的槽位容器
-     *       既不是 BE 也不是玩家背包）误认成这个背包 —— 那是错认，比解析不出更糟。</li>
-     * </ol>
+     * <p>精妙的菜单自带锚点，不需要默认实现那套「扫物品栏 + 唯一性」：
+     * {@code BackpackContainer#getBackpackContext() → getBackpackWrapper(player).getBackpack()}
+     * 就是正在显示的那个物品栈（子背包时是子背包的那一件）。</p>
+     *
+     * <p>返回 {@code null} 的情形：不是背包菜单 / 反射链没解析出来 / 那个背包<b>未活化</b>
+     * （没有容器 UUID ⇒ 没有容器级数据，解析出来也没有意义）/ 内容视图拿不到。</p>
+     *
+     * <p>⚠️ <b>不是背包菜单时坚决不扫物品栏</b>：玩家只带一个活背包时，默认实现会把
+     * AE2 / ProjectE 的槽位（既不是 BE 也不是玩家背包）错认成这个背包 ——
+     * 错认比解析不出更糟。</p>
      */
     @Override
     @Nullable
     public ItemFormContainers.Handle handleOfMenu(AbstractContainerMenu menu, Player player) {
         if (menu == null || player == null) return null;
+        if (backpackContainerClass == null || getBackpackContext == null
+                || getBackpackWrapper == null || getBackpack == null) return null;
+        if (!backpackContainerClass.isInstance(menu)) return null;   // 不是背包 GUI ⇒ 不猜
 
-        boolean anchorReady = backpackContainerClass != null && getBackpackContext != null
-            && getBackpackWrapper != null && getBackpack != null;
-        if (!anchorReady) {
-            return ItemFormContainers.Source.super.handleOfMenu(menu, player);   // 降级 ②
-        }
-        if (!backpackContainerClass.isInstance(menu)) {
-            return null;                                                        // ④
-        }
-
-        ItemFormContainers.Handle anchored = anchorHandle(menu, player);
-        if (anchored != null) return anchored;                                  // ①
-
-        return ItemFormContainers.Source.super.handleOfMenu(menu, player);       // 降级 ③
-    }
-
-    /** 锚点链：{@code menu → BackpackContext → IBackpackWrapper → ItemStack}。任何一环断了返回 null。 */
-    @Nullable
-    private ItemFormContainers.Handle anchorHandle(AbstractContainerMenu menu, Player player) {
         try {
             Object context = getBackpackContext.invoke(menu);
             if (context == null) return null;

@@ -91,12 +91,12 @@ SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 
 | 族 | 子系统（点击直达文档） |
 |----|----------------------|
-| **活物品功能（16）** | [活TNT](docs/tech/living-tnt-tech.md) · [活流体](docs/tech/living-fluid-tech.md) · [活熔炉](docs/tech/living-furnace-tech.md) · [活酿造台](docs/tech/living-brewing-stand-tech.md) · [活漏斗](docs/tech/living-hopper-tech.md) · [活箱子](docs/tech/living-chest-tech.md) · [活末影箱](docs/tech/living-ender-chest-tech.md) · [活水车](docs/tech/living-water-wheel-tech.md) · [活地图传送](docs/tech/living-map-ender-pearl-tech.md) · [活耕地](docs/tech/living-farmland-tech.md) · [活工具](docs/tech/living-tool-tech.md) · [活武器](docs/tech/living-weapon-tech.md) · [活红石](docs/tech/living-redstone-tech.md)（信号层含 [活铜](docs/tech/living-copper-tech.md)） · [活涂蜡铜块（红电发电）](docs/tech/living-power-tech.md) · [活打火石](docs/tech/living-flint-and-steel-tech.md) · [活信标](docs/tech/living-beacon-tech.md) |
+| **活物品功能（17）** | [活TNT](docs/tech/living-tnt-tech.md) · [活流体](docs/tech/living-fluid-tech.md) · [活熔炉](docs/tech/living-furnace-tech.md) · [活酿造台](docs/tech/living-brewing-stand-tech.md) · [活漏斗](docs/tech/living-hopper-tech.md) · [活箱子](docs/tech/living-chest-tech.md) · [活末影箱](docs/tech/living-ender-chest-tech.md) · [活水车](docs/tech/living-water-wheel-tech.md) · [活地图传送](docs/tech/living-map-ender-pearl-tech.md) · [活耕地](docs/tech/living-farmland-tech.md) · [活工具](docs/tech/living-tool-tech.md) · [活武器](docs/tech/living-weapon-tech.md) · [活红石](docs/tech/living-redstone-tech.md)（信号层含 [活铜](docs/tech/living-copper-tech.md)） · [活涂蜡铜块（红电发电）](docs/tech/living-power-tech.md) · [活打火石](docs/tech/living-flint-and-steel-tech.md) · [活信标](docs/tech/living-beacon-tech.md) · [活背包](docs/tech/living-backpack-tech.md) |
 | **容器基础设施（5）** | [基础设施](docs/system-design/living-item-infrastructure.md) · [多方块容器身份解析](docs/system-design/container-identity.md) · [容器边界口径](docs/system-design/container-boundary.md) · [数据模型](docs/system-design/data-model.md) · [超大堆叠审计](docs/system-design/oversized-stack-audit.md) |
 | **红电 · 电力（3）** | [红电架构演进](docs/buffer/redstone-evolution-roadmap.md) · [红电包收口方案](docs/buffer/power-refactoring-plan.md) · [红电不变量测试](docs/system-design/power-invariants.md) |
 | **跨域机制（3）** | [GUI交互](docs/system-design/gui-interaction-system.md) · [图标系统](docs/system-design/icon-system.md) · [Tooltip 系统](docs/system-design/tooltip-system.md) |
-| **工程实践（3）** | [单元测试](docs/guides/unit-testing.md) · [活TNT测试说明](docs/guides/living-tnt-testing.md) · [活物品设计模板](docs/guides/living-item-design-template.md) |
-| **未定案（2）** | [框架层对标（未定案）](docs/buffer/framework-benchmark.md) · [分层优化计划（未定案）](docs/buffer/architecture-layering-plan.md) |
+| **工程实践（4）** | [单元测试](docs/guides/unit-testing.md) · [活TNT测试说明](docs/guides/living-tnt-testing.md) · [活物品设计模板](docs/guides/living-item-design-template.md) · [分层现状与检查工具](docs/archive/architecture-layering-plan.md) |
+| **未定案（1）** | [框架层对标（未定案）](docs/buffer/framework-benchmark.md) |
 
 ---
 
@@ -146,7 +146,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 873 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
+**合计测试用例 872 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -171,6 +171,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-23 | 🔧 **活背包收尾 + 两处真 bug** —— ① `[K2]` 调试日志删掉，顺带修掉它一直在报的真 bug：`flush` 逐维度调用却 `clear()` 全服去重表 ⇒ 每 tick 重发空包；② 两个活背包时倒沼/tooltip 全废 ⇒ 精巧联动覆写 `handleOfMenu` 用菜单自带锚点；③ 补 `living-backpack-tech.md`（16 个活物品功能都有 tech 文档，只它没有）。⚠️ 降级阶梯加了又删：为没发生的事铺路。单测 869 → 872 | `docs/tech/living-backpack-tech.md` |
 | 2026-10-22 | 🎒 **活背包（`D-container-13`）** —— 物品形态容器不渲染的根因是**这东西根本不活**（没 ctx 就没数据）。定位：**一个活物品功能**（`LivingBackpackFunction` 的 `tick` 里递归 `processContext`），框架零改动、活化门槛顺带解决性能与判定。地基：`persist` 钩子 + `CONTAINER_UUID` + `cuuid_` 键形 + `ContainerDataSavedData`；形态迁移**身份优先**（只搬 UUID，数据留在 SavedData）。⚠️ 取消活化清理干净（先删数据再剥 UUID，只剥会留孤儿）。单测 823 → 861 | `buffer/living-backpack.md` |
 | 2026-10-21 | 🔗 **精妙背包容器级数据的双向交接（`D-container-12`）** —— 真机日志证明精妙**两个事件都不给**：拾取走 `removeBlock`（无掉落物）、放置走 `BackpackItem.tryPlace`（**不是 `BlockItem`**，绕开 `BlockItem.place`）⇒ 新增**双向挂点**：L1 `ContainerHandoff`（`capture`/`handoff` 宿主→物品、`stageRestore`/`restoreTo` 物品→宿主；ThreadLocal 暂存且**必须 copy** —— 第三方会 `shrink` 就地改栈）+ 联动模块两个 Mixin（`putInPlayersHandAndRemove` / `tryPlace` 各 HEAD+RETURN），搬运复用事件路径同一份 `moveOut`/`moveIn`。原「按手上同种物品认领」方案**被否**（错认领比丢失更难查）。`require=0` + 方法缺失 ERROR ⇒ 失效不崩服且可见。⚠️ 顺带暴露 `ContainerFluidData` 当组件值违反 NeoForge 不可变约定（记 TODO §3.3）。🔴 **真凶是注册写成 `::moveOut` 方法引用而 `Mover.moveIn` 是 default 空实现 ⇒ 放置方向静默失效**；去掉 default + 反射守卫钉住「注册点用方法引用时接口不得留可选实现」。单测 802 → 823 | `container-boundary.md` I-C9 · `living/container/ContainerHandoff.java` · `living/mixin/sophisticated/` |
 | 2026-10-21 | 🔻 **NeoForge 兼容下限 21.1.249 → 21.1.219（撤回解耦）** —— 门槛**从来不是代码需要**（改到 21.1.1 实测编译全过）；⚠️ 但**拆两个版本号本身是错的**：编译版本与承诺下限共用产物缓存 ⇒ 串了不报错、只悄悄产出错产物（本地假绿 + CI 假红）⇒ **收口成一个 `neo_version`**（编译=下限=开发），CI 的 build 作业即核验承诺 +「版本变了清产物缓存」自愈 | `docs/guides/unit-testing.md`「兼容下限核验」 · `docs/archive/changelog.md` |

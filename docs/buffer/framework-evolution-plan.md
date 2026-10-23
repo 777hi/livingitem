@@ -203,7 +203,7 @@ record Host(
 
 ## §6 与现有计划的关系
 
-- **不与 [runtime-mechanization-plan.md](runtime-mechanization-plan.md) 冲突**：那是运行时缓存的机制收口，本文是「遥测要不要存在」的上游问题；
+- **不与 [runtime-mechanization-plan.md](../archive/runtime-mechanization-plan.md) 冲突**：那是运行时缓存的机制收口，本文是「遥测要不要存在」的上游问题；
 - **A 若落地，应先改 [living-item-infrastructure.md](../system-design/living-item-infrastructure.md) §2.5（契约清单）**，再改域；
 - **D 应立即进 [guides/living-item-design-template.md](../guides/living-item-design-template.md)** 的建模检查表；
 - 本文保持 buffer 状态直到**至少一条提案进入实现**；实现中的部分按惯例迁 `docs/tech/` / `docs/system-design/`。

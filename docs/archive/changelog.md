@@ -15,25 +15,51 @@
 
 ---
 
+## 2026-10-23
+
+> 🔧 **去掉 K2 调试日志，并修掉它一直在报的真 bug**（6bcd5a2）
+>
+> `[K2] 发送/收到` 两条 INFO 每 tick 每玩家各一条（9547 行日志里占 7605 行）。
+> 但删日志之前先查了为什么每 tick 都发 ——
+> `LivingToolHostSync.flush(level)` 是**逐维度**调用的（主世界/地狱/末地恒三个），而去重表
+> `lastSent` 是**全服一张**，原实现在每个维度 flush 末尾都 `lastSent.clear()`
+> ⇒ 其它维度玩家的记录被抹掉 ⇒ 他们下一 tick 判“有变化”⇒
+> **每 tick 重发一个空包**。⇒ 这是浪费带宽的真 bug，不只是嗑。
+>
+> 修法：`mergeRecords(previous, next, online)`（本维度覆盖 / 其它维度保留 / 离线淘汰），
+> 抽成纯函数错上这条不变量。两条 INFO **直接删**（不降 DEBUG）。
+> 测试 +3。单测 869 → 872。顺带补上 test-map 缺的 `living/domain/tools/` 整节。
+
+> 🔧 **修复：两个活背包时活流体倒不了（#6 菜单解析默认实现的盲区）**（86cf52e）
+>
+> 真机复现：带**两个**活背包 ⇒ 倒沼 / tooltip / GUI 槽位设置全废。根因是
+> `ItemFormContainers.Source.handleOfMenu` 默认实现「扫玩家物品栅 + 唯一一件才认」——
+> 多件必然返回 null ⇒ `ContainerContexts.resolve` 解析不出 ⇒ GUI 交互包被
+> `isAcceptable` 静默丢弃。单背包时默认实现足够，所以首测没暴露。
+>
+> 修法：精巧联动模块**覆写**该方法，用菜单自带的锚点
+> `BackpackContainer#getBackpackContext() → getBackpackWrapper(player).getBackpack()`
+> 直接定位「GUI 正在看的那一个」（多背包 / 子背包都覆盖）。
+> 反射链解析失败 / 调用异常各打一条 WARN（I-C6，此前完全静默）。
+
+> 🔒 **活背包兼容性：反射两组独立失败；降级阶梯加了又删**（bea8b3f）
+>
+> 「覆写会不会有兼容性问题」—— 查出一个真的：三个新查找（BackpackContainer /
+> BackpackContext / IBackpackWrapper）和两个旧查找在同一个 try 里
+> ⇒ 精巧只改 GUI 类名会把 `contentHandler` 也拖下水
+> ⇒ 「能运转」退化成「完全不活」。⇒ **拆成两组独立失败**。
+>
+> 同时**加过又删掉**一套「锚点读不到就退回默认扫描」的降级阶梯：它保护的
+> 「精巧改名后单背包场景」至今没发生过 ⇒ 属于为没发生的事铺路，违反「如无必要勿增逻辑」。
+> 只保留一条硬规则写进 javadoc：**不是背包菜单时坚决不扫物品栅**。
+> 测试基建：`new BackpackItem()` 撞注册表已冻结 ⇒ mock 无构造实例化 + `asItem()`/`components()` 双桩。
+
+
+---
+
 ## 2026-10-22
 
-> 🔧 **修复：两个活背包时活流体倒不了（#6 菜单解析的默认实现盲区）**（2026-10-23）
->
-> 真机复现：带**两个**活背包 ⇒ 倒汲 / tooltip / 槽位设置全废。根因是
-> `ItemFormContainers.Source.handleOfMenu` 的默认实现「扫玩家物品栏 + 唯一一件才认」——
-> 多件必然返回 null ⇒ `ContainerContexts.resolve` 解析不出 ⇒ GUI 交互包被
-> `isAcceptable` 静默丢弃。
->
-> 修法：精妙联动模块**覆写**该方法，用菜单自带的锚点
-> `BackpackContainer#getBackpackContext() → getBackpackWrapper(player).getBackpack()`
-> 直接定位「GUI 正在看的那一个」（带几个背包都认得对，子背包也覆盖）。
-> 内容视图仍走 `contentHandler(stack)` ⇒ 与 tick 路径同一份。
-> 反射链解析失败 / 调用异常各打一条 WARN（I-C6，此前完全静默）。
->
-> 测试 +4（同形替身落在对方包名下）：两个活背包认锚定物 / 锚定物未活化⇒null /
-> 非背包菜单⇒null / 反查与 tick 同一内容视图。单测 865 → 869。
-
-> 🔌 **活背包补上 #6 菜单解析 + #7 viewer 匹配**（清单 11 条 → 9 条接通）
+活背包补上 #6 菜单解析 + #7 viewer 匹配**（清单 11 条 → 9 条接通）
 >
 > 首测缺的两条线：
 > - **#6**：`ItemFormContainers.Source.handleOfMenu` 默认实现 —— 扫玩家物品栏找
