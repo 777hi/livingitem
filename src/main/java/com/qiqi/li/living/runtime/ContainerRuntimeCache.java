@@ -145,33 +145,4 @@ public class ContainerRuntimeCache {
         }
         return out;
     }
-
-    /**
-     * 按<b>位置</b>找 viewer —— 契约 I-C5 的正解（2026-10-18，专题 S3）。
-     *
-     * <p>与 {@link #findViewers} 的区别：后者要求菜单槽的 {@code slot.container} 等于某个原版
-     * {@code Container} 实例，对「有物品能力但不是 {@code Container}」的第三方方块实体
-     * 永远返回空 ⇒ 运行时 tooltip 遥测静默不发（真机表现：「tooltip 没有进度信息」）。</p>
-     */
-    public static List<net.minecraft.server.level.ServerPlayer> findViewersByPositions(
-            Collection<net.minecraft.server.level.ServerPlayer> players,
-            Collection<net.minecraft.core.BlockPos> positions) {
-        List<net.minecraft.server.level.ServerPlayer> viewers = new ArrayList<>();
-        for (var player : players) {
-            if (ContainerContextsBridge.isViewingPositions(player, positions)) {
-                viewers.add(player);
-            }
-        }
-        return viewers;
-    }
-
-    /** 薄桥：保持 runtime(L2) → container(L1) 的单向依赖，集中一处便于将来收编。 */
-    private static final class ContainerContextsBridge {
-        private ContainerContextsBridge() {}
-
-        static boolean isViewingPositions(net.minecraft.server.level.ServerPlayer player,
-                                          Collection<net.minecraft.core.BlockPos> positions) {
-            return com.qiqi.li.living.container.ContainerContexts.isViewingPositions(player, positions);
-        }
-    }
 }

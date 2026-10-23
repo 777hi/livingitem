@@ -141,11 +141,18 @@ ContainerFluidWriteback → ctx.persist(key, value) → ContainerDataSavedData�
 改为「按容器 UUID 反查在线玩家」：`ctx.getContainerUuid()` 非空时逐个在线玩家问
 `handleOf(player.containerMenu, player)`，UUID 相同即为 viewer。
 
-⚠️ **这条轨有两条，别只修一条**（2026-10-23 真机实录）：
-| 轨 | 修没修 | 不修的表现 |
-|---|---|---|
-| `FluidFlowServerSync.viewersOf`（流体快照） | ✅ 10-22 修 | 流体层不渲染 |
-| `LivingItemRuntimeSync.flush`（运行时数据：冷却 / slotInfo / 过滤链） | ✅ 10-23 修 | **活漏斗高级 tooltip 不显示容器信息**（源槽/目标槽/容器尺寸）—— 服务端攒了脏数据，但按位置匹配 viewer 恒为空 ⇒ 永不发客户端 ⇒ tooltip 回落 DataComponent（那里只有 EMPTY） |
+⚠️ **观众判定已收编成唯一入口**（2026-10-23，`D-container-14`）：
+`ContainerViewers.of(players, cacheKey, positions)` 按缓存键种类分派
+（玩家态 ⇒ 主人 + 末影箱门控 · 物品形态 ⇒ 菜单锚点 · 其余 ⇒ 位置）。
+两条数据轨都只调它，**新形态只要在它里面加一个分支，两条轨同时生效** ——
+「漏一条」这个错误类别在结构上消失。
+
+收编前的现场：这个判定散在两条轨里各一份 if-chain，10-23 一天内连踩两次
+（流体轨修了 #7、运行时轨没修 ⇒ 真机「流体正常但活漏斗 tooltip 不显示容器信息」）。
+
+⚠️ **还有一处同类未纳入**：`LivingBrewingStandFunction.brewSoundTargets`
+（酿造完成音效的目标选择）—— 它问的是同一个问题，但用途是**音效不是数据同步**，
+且改它会把末影箱音效也纳入 viewer 门控（行为变化）。**故意不动**，等真需要时再说。
 
 ---
 

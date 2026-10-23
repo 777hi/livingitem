@@ -20,6 +20,7 @@ import net.neoforged.neoforge.event.entity.player.PlayerContainerEvent;
 import net.neoforged.neoforge.fluids.FluidType;
 import net.neoforged.neoforge.registries.NeoForgeRegistries;
 
+import com.qiqi.li.living.container.ContainerViewers;
 import com.qiqi.li.living.container.TickableContainerContext;
 import com.qiqi.li.living.util.StaticCacheRegistry;
 
@@ -220,62 +221,21 @@ public final class FluidFlowServerSync {
     }
 
     /**
-     * 收集该容器的<b>查看者</b>（2026-10-07：从 {@code dispatch} 拆出，供"无 viewer 不建包"复用）。
+     * 收集该容器的<b>查看者</b> —— 薄委托到 {@link ContainerViewers}（唯一判定入口）。
      *
-     * <p>按容器归属：玩家背包 ⇒ 主人本人；末影箱 ⇒ 主人本人 <b>且必须正在看末影箱</b>；
-     * BE 容器 ⇒ 按菜单槽位匹配（大箱子 {@code CompoundContainer} 特判）。</p>
-     *
-     * <p>未打开容器菜单的玩家在 {@code ContainerContexts.isViewing} 首行 O(1) 短路 ⇒
-     * 百人服的实际开销只在"开着菜单的那几个人"身上。</p>
+     * <p>⚠️ 这里<b>不再自己按 kind 分发</b>：那条 if-chain 与
+     * {@code LivingItemRuntimeSync.flush} 各有一份，2026-10-23 因此漏修过一次
+     * （流体轨修了 #7、运行时轨没修 ⇒ tooltip 不显示容器信息）。
+     * 现在两条轨都调 {@link ContainerViewers#of}，新形态只要改一处。</p>
      */
     private static List<ServerPlayer> viewersOf(Level level, TickableContainerContext ctx) {
-        List<ServerPlayer> out = new ArrayList<>(2);
-
-        // 玩家背包：背包没有 BE 实例可匹配，直发主人本人（同 ContainerRuntimeCache 的玩家路径）
-        Inventory inv = ctx.getInventory();
-        if (inv != null && inv.player instanceof ServerPlayer owner) {
-            out.add(owner);
-            return out;
-        }
-
-        // 末影箱（F-1 配套，2026-10-05）：context 持有 player（inventory 为 null）。
-        // ⚠️ 2026-10-06 第 ③ 次泄漏修复：**必须判 viewer**。此前无条件每 tick 直发 ⇒
-        //   玩家关掉末影箱打开普通箱子后包仍在来 ⇒ 客户端 chestLikeTarget 提示被翻成
-        //   ENDER_CHEST ⇒ 末影箱的水渲染到别的箱子界面上。
-        //   末影箱无关联 BE ⇒ 必须 return，不能落到下面的 BE 匹配分支。
-        if (ctx instanceof com.qiqi.li.living.container.EnderChestContainerContext ender
-                && ender.getOwner() instanceof ServerPlayer owner) {
-            if (shouldDispatch(ender, owner)) out.add(owner);
-            return out;
-        }
-
-        // 物品形态容器（2026-10-22，活背包）：没有世界位置、也不是玩家背包 ⇒
-        // 前两条都命中不了，而下面按 positions 匹配会因为「位置为空」直接返回空列表。
-        // ⇒ 问「谁正开着它」：逐个在线玩家反查他菜单对应的容器 UUID（联动模块提供）。
-        // ⚠️ 成本 O(在线玩家数)：只有「有流体的容器」才会走到这里（上方 hasData 已短路）。
-        java.util.UUID containerUuid = ctx.getContainerUuid();
-        if (containerUuid != null) {
-            for (ServerPlayer player : level.getServer().getPlayerList().getPlayers()) {
-                com.qiqi.li.living.container.ItemFormContainers.Handle handle =
-                    com.qiqi.li.living.container.ItemFormContainers.handleOf(player.containerMenu, player);
-                if (handle != null && containerUuid.equals(handle.containerUuid())) {
-                    out.add(player);
-                }
-            }
-            return out;
-        }
-
-        // BE 容器：按**位置**匹配 viewer（I-C5）—— 不再要求 BE 是原版 Container，
-        // 否则这类第三方容器永远匹配不上 ⇒ 其 GUI 里看不到水
-        List<BlockPos> positions = ctx.getAssociatedBlockPositions();
-        if (positions.isEmpty()) return out;
-
-        for (ServerPlayer player : level.getServer().getPlayerList().getPlayers()) {
-            if (com.qiqi.li.living.container.ContainerContexts.isViewingPositions(player, positions)) {
-                out.add(player);
-            }
-        }
-        return out;
+        // ⚠️ getServer() 可能为 null（客户端 / 测试替身）⇒ 空玩家表而不是 NPE。
+        // 旧实现只在「需要遍历在线玩家」的分支里才调它，玩家态分支从 ctx 拿主人 ⇒ 对
+        // mock Level 不崩；统一入口需要玩家表，故在此兜住。
+        net.minecraft.server.MinecraftServer server = level.getServer();
+        List<ServerPlayer> players =
+            server == null ? List.of() : server.getPlayerList().getPlayers();
+        return ContainerViewers.of(players, ctx.getCacheKey(), ctx.getAssociatedBlockPositions());
     }
 
     /** 按容器归属派发（保留：关闭清理等单次场景用）。 */
@@ -284,20 +244,4 @@ public final class FluidFlowServerSync {
             player.connection.send(packet);
         }
     }
-
-    /**
-     * 末影箱快照是否应发给该玩家（包级私有，供单测）—— <b>必须判 viewer</b>。
-     *
-     * <p>2026-10-06 第 ③ 次泄漏修复的<b>接线点</b>：此前无条件每 tick 直发主人 ⇒
-     * 玩家关掉末影箱打开普通箱子后包仍在来 ⇒ 客户端 {@code chestLikeTarget} 提示被翻成
-     * {@code ENDER_CHEST} ⇒ 末影箱的水渲染到别的箱子界面上。判据见
-     * {@code ContainerContexts.isViewingEnderChest}（唯一实现点）。</p>
-     */
-    static boolean shouldDispatch(TickableContainerContext ctx, ServerPlayer player) {
-        if (ctx instanceof com.qiqi.li.living.container.EnderChestContainerContext) {
-            return com.qiqi.li.living.container.ContainerContexts.isViewingEnderChest(player);
-        }
-        return true;   // 背包 / BE 容器走 dispatch 里各自的分支
-    }
-
 }

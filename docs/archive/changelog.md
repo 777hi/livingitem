@@ -17,6 +17,31 @@
 
 ## 2026-10-23
 
+> 🧩 **「谁在看这个容器」收成唯一入口（`D-container-14`）**
+>
+> 用户提议：「活背包的联动、以及更多容器兼容专题，似乎可以总结抽象出一个东西来，
+> 免得每次都要接这么多根线」。查了成本分布后确认：**新 mod 的成本已经收敛到 3 个方法**
+> （`ItemFormContainers.Source` 的 columns / contentHandler / handleOfMenu，无尽箱子那种
+> 既有形态框架零改动）；**真正的剩点是「按种类分发」散在多个调用点** ——
+> 加一种新形态要各改一遍，漏一条就静默失效。
+>
+> 抽 `ContainerViewers.of(players, cacheKey, positions)`：按缓存键种类分派
+> （玩家态 ⇒ 主人 + 末影箱门控 · 物品形态 ⇒ 菜单锚点 · 其余 ⇒ 位置）。
+> `FluidFlowServerSync.viewersOf` 与 `LivingItemRuntimeSync.flush` 都改成只调它，
+> 各自那份 if-chain、`sendToOwner`、`shouldSendToOwner`、`shouldDispatch`
+> 以及 `ContainerRuntimeCache.findViewersByPositions`（含 L2→L1 桥）全部删除。
+>
+> **为什么按缓存键而不是 ctx 分派**：两条轨的输入原本不同（一条拿 ctx、一条拿 cacheKey），
+> 所以它们看起来毫不相干 —— 这正是能漏一条的原因。缓存键是两条轨共有的通货。
+>
+> 新增 `ContainerViewersTest` 6 项（末影箱门控两条用例从流体轨与运行时轨合并迁入，
+> 从此门控只有一处、只测一处）。单测 880。
+>
+> ⚠️ **故意不纳入**：`LivingBrewingStandFunction.brewSoundTargets` 问的是同一个问题，
+> 但用途是音效不是数据同步，改它会把末影箱音效也纳入门控（行为变化）⇒ 记在 tech 文档里，
+> 等真需要时再说。
+
+
 > ✅ **活背包真机验收通过（四项全通）**
 >
 > 用户实测：① 带两个活背包的倒汲 / tooltip / 槽位设置 ② 关界面不再刷第三方 ERROR

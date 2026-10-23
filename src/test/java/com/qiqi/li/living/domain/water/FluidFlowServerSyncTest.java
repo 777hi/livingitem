@@ -83,35 +83,6 @@ class FluidFlowServerSyncTest {
     }
 
     @Test
-    @DisplayName("末影箱派发**必须判 viewer**：玩家正在看普通箱子 ⇒ 不下发（否则串到别的界面）")
-    void enderDispatch_requiresViewer() {
-        ServerPlayer player = mock(ServerPlayer.class);
-        var ender = enderCtx(player);
-
-        // 玩家正在看自己的末影箱 ⇒ 发
-        ChestMenu enderMenu = mock(ChestMenu.class);
-        when(enderMenu.getContainer()).thenReturn(new PlayerEnderChestContainer());
-        player.containerMenu = enderMenu;
-        assertTrue(FluidFlowServerSync.shouldDispatch(ender, player), "看的是末影箱 ⇒ 下发");
-
-        // 玩家关掉末影箱、打开普通箱子 ⇒ 不发（第 ③ 次泄漏的根因就在这条）
-        ChestMenu chestMenu = mock(ChestMenu.class);
-        when(chestMenu.getContainer()).thenReturn(new SimpleContainer(27));
-        player.containerMenu = chestMenu;
-        assertFalse(FluidFlowServerSync.shouldDispatch(ender, player),
-            "看的是普通箱子 ⇒ **不**下发（否则末影箱的水渲染到箱子界面上）");
-    }
-
-    @Test
-    @DisplayName("非末影箱上下文不受 viewer 门影响（背包 / BE 走各自分支）")
-    void nonEnderDispatch_notGated() {
-        ServerPlayer player = mock(ServerPlayer.class);
-        player.containerMenu = mock(AbstractContainerMenu.class);
-        var ctx = new SimpleContainerContext(new net.neoforged.neoforge.items.ItemStackHandler(9));
-        assertTrue(FluidFlowServerSync.shouldDispatch(ctx, player), "BE/背包容器走 dispatch 自己的匹配");
-    }
-
-    @Test
     @DisplayName("renderTargetOf：末影箱 ⇒ ENDER_CHEST；BE 容器（无 inventory）⇒ BLOCK")
     void renderTargetOf_twoKinds() {
         ServerPlayer player = mock(ServerPlayer.class);
