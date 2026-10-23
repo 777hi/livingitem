@@ -257,19 +257,29 @@
    让活漏斗能对 AE2 ME 接口 / RS 网络推拉。**不做**池宿主（`D-container-07` / I-C8）。
    前置：复用 `MenuSlotOwners.registerResolver` 同一套注册。
 
-6. 🔴 **活背包：精妙背包作为活物品功能（2026-10-22 记，第三轮定形）** ——
+6. 🔴 **活背包：精妙背包作为活物品功能（2026-10-22 立项 → 10-23 代码完成，待真机终验）** ——
    现象是「精妙背包打开 GUI 里面流体层不渲染」，但**根因不是数据丢失**（数据在物品组件上，
    双向交接已修好），而是**这东西根本不活**：没人在 tick 它 ⇒ 没有 ctx、没有容器级数据、
    渲染/tooltip/倒汲/演化全线无输入。这不是精妙独有（潜影盒 / mod 背包同缺）。
    **正确定位**：活背包 = **一个活物品功能**（`LivingBackpackFunction`：`canApply` 精妙背包+IS_LIVING，
    `tick` 里对每个背包构建内部 ctx 并 `processContext` 递归）⇒ **框架零改动**，
    `scanAndGroupLivingItems` 已经会把它当活物品扫出来。活化门槛顺带解决性能与判定。
-   真正要做的三件：① 内容 handler 由联动模块提供（精妙的 `BackpackInventoryHandler` 是标准
-   `IItemHandler`，核心不碰精妙类型）；② UUID + SavedData 持久身份（懒创建 / 复制 remove /
-   空条目不写盘，已从精妙 `BackpackStorage` 定案）；③ viewer 匹配简化（从菜单反查 cuuid）。
    设计稿：[buffer/living-backpack.md](buffer/living-backpack.md)（含四轮纠偏留档）。
-   **5 个未定案项**（嵌套是否现在做 / handler 成本 / linked storage 多人同看 /
-   键形前缀 / 关着 GUI 也 tick 的玩法口径）见设计稿 §6，**拍板前不要动工**。
+
+   **已落地**（8 个 commit，`d452997` → `6bcd5a2`）：地基四步（`persist` 钩子 + key CODEC /
+   UUID 组件 + `cuuid_` 键形 + `ContainerDataSavedData` / 身份优先的形态迁移 /
+   `LivingBackpackFunction` + 物品形态 ctx + 精妙联动）+ #6 菜单解析 + #7 viewer 匹配。
+   接入清单 11 条线接通 9 条：✅1 ✅2 ⚠️3 ✅4 ✅5 ✅6 ✅7 ⚠️8 ✅9 ❌10 ✅11。
+
+   **⏳ 待真机终验**：`86cf52e`（两个活背包时倒汲/tooltip/槽位设置全废的修复）——
+   精妙联动模块已覆写 `handleOfMenu`，用菜单自带的锚点
+   `BackpackContainer#getBackpackContext() → getBackpackWrapper(player).getBackpack()`
+   定位「GUI 正在看的那一个」。**单背包场景首测已过，多背包场景未复验**。
+
+   **剩余缺口**：⚠️3 列数（`getWidth()` 走启发式，27/45/54 得 9 正确，含升级槽的 30 会得 10；
+   要彻底解决需让 `ItemFormContainers.Source` 提供权威列数）· ⚠️8 客户端同步（部分）·
+   ❌10 世界语义（已定不做，归活潜影箱）。
+   **未定案 2 项**：嵌套上限放开时机（写死 1，等活潜影箱立项）· handler 获取开销（要实测）。
 
 ## 活水车 · Create 接触面收窄（2026-10-19 记）
 
