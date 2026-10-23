@@ -62,8 +62,9 @@ public class LivingTntFunction implements LivingItemFunction {
                 if (signal > 0) {
                     explosion = explosion.ignite();
                     LivingTntData.set(stack, data.withExplosion(explosion));
+                    // 与引信递减走同一条「改了就写回」规则（见下方长注释）
+                    context.setItem(slot, stack);
                     context.syncSlotToClients(slot, stack);
-                    continue;
                 }
                 continue;
             }
@@ -79,10 +80,16 @@ public class LivingTntFunction implements LivingItemFunction {
                     warnCannotExplodeOnce(context);
                     continue;
                 }
-                LivingTntData.set(stack, LivingTntData.DEFAULT);
-            } else {
-                LivingTntData.set(stack, data.withExplosion(explosion));
+                // ⚠️ 消耗由 ignite 完成 —— 它把容器里**所有**活 TNT 槽位写成 EMPTY。
+                // 所以这里**必须直接结束**，绝不能往下走到写回：
+                //   · 写回 `stack` 会把刚清掉的槽位用本地栈填回去 ⇒ 「炸了但 TNT 还在」
+                //     （2026-10-23 真机实录）；
+                //   · 也不能只 continue 到下一个条目 —— `entries` 是 tick 前的快照，
+                //     其余条目的槽位同样已被 ignite 清空，写回会把它们一起复活。
+                return;
             }
+
+            LivingTntData.set(stack, data.withExplosion(explosion));
 
             // ⚠️ 必须**显式写回**，不能只靠「getItem 返回的栈是活引用」：
             // NBT 背书的容器（精妙背包的 handler）里就地改组件不会触发它自己的保存钩子，
