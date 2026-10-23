@@ -77,6 +77,29 @@ public final class FluidFlowServerSync {
     public static void onContainerClose(net.neoforged.neoforge.event.entity.player.PlayerContainerEvent.Close event) {
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
         AbstractContainerMenu menu = event.getContainer();
+
+        // 物品形态容器（活背包，#6 菜单解析）：解析结果**与具体槽位无关**（它是菜单级的）
+        // ⇒ 必须在循环外问一次。
+        //
+        // ⚠️ 2026-10-23 真机实录：这段原本放在下面的逐槽循环里 ⇒ 同一个菜单被问 N 遍
+        // （N = 菜单槽位数，实测 60 次）。每次都会调到精妙的
+        // `BackpackContext.Item#getBackpackWrapper`，而锚点失效时它**每次都打一条 ERROR**
+        // ⇒ 关一次界面刷 60 条别人家的错误日志。更糟的是那 60 次里没有一次能解析出容器
+        // （锚点失效 ⇒ 全部返回 null）⇒ 纯浪费。
+        com.qiqi.li.living.container.ItemFormContainers.Handle itemForm =
+            com.qiqi.li.living.container.ItemFormContainers.handleOf(menu, player);
+        if (itemForm != null) {
+            // 与 ContainerContexts.resolve 的物品形态分支同构（同一构造式 ⇒ 同一缓存键）
+            TickableContainerContext ctx = new com.qiqi.li.living.container.ItemFormContainerContext(
+                itemForm.handler(), itemForm.containerUuid(), player.level());
+            String key = ctx.getCacheKey();
+            if (key != null && CLIENT_ACTIVE.contains(key)) {
+                player.connection.send(new FluidFlowSyncPacket(
+                    key, Math.max(1, ctx.getWidth()), List.of(), Map.of(), renderTargetOf(ctx)));
+            }
+            return;   // 物品形态容器是菜单级的：问过一次就够了，别再逐槽问
+        }
+
         for (Slot slot : menu.slots) {
             if (slot.container == player.getInventory()) continue;
             TickableContainerContext ctx = com.qiqi.li.living.container.ContainerContexts.resolve(player, slot);

@@ -169,6 +169,29 @@ ContainerFluidWriteback → ctx.persist(key, value) → ContainerDataSavedData�
 **修法方向**：`ItemFormContainers.Source` 增加权威列数（精妙侧用反射读
 `getColumnsTaken()` + 物品总槽数自己算），tick 与 GUI 两侧同源。
 
+### ⚠️ 上游 bug：精妙背包在「背包物品离开原槽」时会崩客户端（2026-10-23 真机）
+
+精妙的 `BackpackWrapper`（**上游类，不在本仓库**）在 `cacheSlotNumbers()` 里有一句硬转型：
+
+```java
+BackpackItem backpackItem = (BackpackItem) backpackStack.getItem();   // 不判 instanceof
+```
+
+GUI 开着的时候那个槽里的背包变成空（air）⇒ 服务端同步一个空栈下来 ⇒
+`ClientboundContainerSetSlotPacket → BackpackContainer.onStorageItemStackChanged →
+setBackpackStack → cacheSlotNumbers` ⇒ **ClassCastException**。
+本次真机日志实录：先被包处理器捕获打成一条 ERROR，随后客户端 FATAL 崩溃。
+
+**不是我们的 bug**（我们没有、也无法改它的转型），但**我们放大过它**：
+`FluidFlowServerSync.onContainerClose` 原来在逐槽循环里问物品形态解析
+⇒ 同一个菜单被问 60 遍，每遍都调到精妙的 `getBackpackWrapper`，
+锚点失效时它每次都打一条 ERROR ⇒ 关一次界面刷 60 条。
+已修为**循环外问一次**（物品形态解析是菜单级的，与槽位无关），并有回归测试钉住。
+
+⚠️ **同类风险还在**：`FluidFlowServerSync.viewersOf` 每 tick 每个在线玩家问一次
+`handleOf`。锚点失效时它会持续每 tick 打一条精妙的 ERROR（约 20 条/秒）直到界面关闭。
+本次实录未见（那种状态下客户端已经崩了），**未预先优化** —— 真出现了再说。
+
 ### 未定案
 
 1. **嵌套上限放开时机**：现写死 `MAX_DEPTH = 1`，等活潜影箱立项一起放开。

@@ -42,6 +42,27 @@
 > 直接定位「GUI 正在看的那一个」（多背包 / 子背包都覆盖）。
 > 反射链解析失败 / 调用异常各打一条 WARN（I-C6，此前完全静默）。
 
+> 🐛 **修复：关界面时把同一个菜单问 60 遍（真机客户端崩溃的副产物）**（本次）
+>
+> 用户反馈「存档崩了」。实测后确认：**存档没崩**（日志里
+> `All dimensions are saved` + `Cleared living item caches on server stop` 都走完了），
+> 崩的是**客户端**。
+>
+> **崩溃根因是精巧背包自己的 bug**（非我们）：
+> `BackpackWrapper.cacheSlotNumbers()` 里 `(BackpackItem) backpackStack.getItem()`
+> 不判 instanceof —— GUI 开着时那个槽里的背包变空（air）
+> ⇒ 服务端同步空栈 ⇒ ClassCastException ⇒ 客户端 FATAL。
+>
+> **但我们放大了它**：`FluidFlowServerSync.onContainerClose` 原来在逐槽循环里问
+> 物品形态解析 ⇒ 同一个菜单被问 60 遍（60 = 菜单槽位数），每遍都调到精巧的
+> `getBackpackWrapper`，锚点失效时它每次都打一条 ERROR
+> ⇒ 关一次界面刷 60 条别人家的错误日志，而且那 60 次没有一次能解析出容器。
+>
+> 修法：物品形态解析提到循环外，**问一次就够**（它是菜单级的，与槽位无关）。
+> 回归测试双关断注：来源只被问一次 + 逐槽循环没走（mock 菜单的 slots 是 null，循环一走就 NPE）。
+>
+> 其它同类风险（`viewersOf` 每 tick 每玩家问一次）本次实测未见，**不预先优化**；真出现再说。
+
 > 🔒 **活背包兼容性：反射两组独立失败；降级阶梯加了又删**（bea8b3f）
 >
 > 「覆写会不会有兼容性问题」—— 查出一个真的：三个新查找（BackpackContainer /

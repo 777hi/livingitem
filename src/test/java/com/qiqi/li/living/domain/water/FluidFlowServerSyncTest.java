@@ -6,6 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.util.List;
+
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -18,6 +20,7 @@ import net.minecraft.world.inventory.PlayerEnderChestContainer;
 import net.minecraft.world.inventory.Slot;
 
 import com.qiqi.li.living.container.ContainerContexts;
+import com.qiqi.li.living.container.ItemFormContainers;
 import com.qiqi.li.living.container.SimpleContainerContext;
 import com.qiqi.li.living.container.TickableContainerContext;
 
@@ -120,5 +123,48 @@ class FluidFlowServerSyncTest {
         var beCtx = mock(TickableContainerContext.class);
         assertEquals(FluidFlowClientCache.RenderTarget.BLOCK,
             FluidFlowServerSync.renderTargetOf(beCtx), "BE 容器");
+    }
+
+    // ── 关界面清理：物品形态容器只能问一次（2026-10-23 真机实录）────────────────
+    //
+    // 现场：关背包界面时服务端刷了 60 条精妙的 "Error getting backpack wrapper -
+    // Stack isn't a backpack"。根因是物品形态分支当时在逐槽循环里 ⇒ 同一个菜单被问
+    // N 遍（N = 菜单槽位数），而锚点失效时精妙每次都打一条 ERROR。
+    // 修法：把物品形态解析提到循环外，问一次就够（它是菜单级的，与槽位无关）。
+    //
+    // 本测试的双关断言：① 来源只被问一次；② 逐槽循环没有跑 —— mock 菜单的 slots 字段
+    // 是 null，循环一旦跑起来就会 NPE。
+
+    @Test
+    @DisplayName("关界面：物品形态容器只问一次且不进逐槽循环（真机 60 条 ERROR 的回归）")
+    void onContainerClose_itemForm_asksOnceNotPerSlot() {
+        ItemFormContainers.clearForTest();
+        try {
+            java.util.concurrent.atomic.AtomicInteger asks = new java.util.concurrent.atomic.AtomicInteger();
+            ItemFormContainers.register(new ItemFormContainers.Source() {
+                @Override public boolean isContainerItem(net.minecraft.world.item.ItemStack stack) { return true; }
+                @Override public net.neoforged.neoforge.items.IItemHandler contentHandler(
+                        net.minecraft.world.item.ItemStack stack) { return new net.neoforged.neoforge.items.ItemStackHandler(9); }
+                @Override public ItemFormContainers.Handle handleOfMenu(
+                        AbstractContainerMenu menu, net.minecraft.world.entity.player.Player player) {
+                    asks.incrementAndGet();
+                    return new ItemFormContainers.Handle(
+                        new net.neoforged.neoforge.items.ItemStackHandler(9), java.util.UUID.randomUUID());
+                }
+            });
+
+            ServerPlayer player = mock(ServerPlayer.class);
+            when(player.level()).thenReturn(mock(net.minecraft.server.level.ServerLevel.class));
+
+            // slots 保持 null：逐槽循环一旦跑起来就 NPE ⇒ 测试直接失败
+            FluidFlowServerSync.onContainerClose(
+                new net.neoforged.neoforge.event.entity.player.PlayerContainerEvent.Close(
+                    player, mock(AbstractContainerMenu.class)));
+
+            assertEquals(1, asks.get(),
+                "物品形态解析是菜单级的 ⇒ 只能问一次；逐槽问会把同一个菜单问 N 遍");
+        } finally {
+            ItemFormContainers.clearForTest();
+        }
     }
 }
