@@ -45,6 +45,22 @@ public final class ItemFormContainers {
         IItemHandler contentHandler(ItemStack stack);
 
         /**
+         * **权威列数**（每行多少个存储格）；不知道返回 {@code 0}（⇒ ctx 回落到启发式）。
+         *
+         * <p>为什么需要它：物品形态容器没有 BE / 没有菜单 / 没注册规则 ⇒
+         * {@code SimpleContainerContext#getWidth()} 三层推断全不命中，只能靠
+         * {@code resolveColumns(slotCount)} 启发式猜。而那个启发式会猜错 ——
+         * 精妙背包装 2 个占列升级（电池 / 流体罐，各占 2 列）后存储槽变成
+         * {@code 行数 × (9 − 占列数)}，54 格背包是 30 格 ⇒ 启发式选 10，真值 5
+         * ⇒ 邻居判定 / 流体渲染 / 漏斗传输全线错位。</p>
+         *
+         * <p>⇒ 能给出权威值的来源就该给，别让核心猜。</p>
+         */
+        default int columns(ItemStack stack) {
+            return 0;
+        }
+
+        /**
          * 从打开的菜单反查「玩家正在看的是哪个容器」（tooltip / 倒汲 / GUI 槽位设置依赖它）。
          *
          * <p><b>默认实现</b>：扫玩家物品栏，找「本来源认领、且已带容器 UUID」的物品，
@@ -69,14 +85,14 @@ public final class ItemFormContainers {
                 if (found != null) return null;             // 多件 ⇒ 不猜
                 IItemHandler handler = contentHandler(stack);
                 if (handler == null) continue;
-                found = new Handle(handler, uuid);
+                found = new Handle(handler, uuid, columns(stack));
             }
             return found;
         }
     }
 
-    /** 「玩家正在看的那个物品形态容器」：内容视图 + 身份。 */
-    public record Handle(IItemHandler handler, UUID containerUuid) {}
+    /** 「玩家正在看的那个物品形态容器」：内容视图 + 身份 + 权威列数（0 = 不知道）。 */
+    public record Handle(IItemHandler handler, UUID containerUuid, int columns) {}
 
     private static final List<Source> SOURCES = new CopyOnWriteArrayList<>();
 

@@ -27,16 +27,33 @@ public final class ItemFormContainerContext extends SimpleContainerContext {
 
     private final UUID containerUuid;
 
+    /** 权威列数；{@code <= 0} = 来源不知道，回落 {@link #getWidth()} 的推断。 */
+    private final int columns;
+
     /**
      * @param handler     内容的活视图（由 {@link ItemFormContainers.Source#contentHandler} 提供）
      * @param containerUuid 容器身份（懒创建自物品组件）
      * @param level       世界（tick 用）
+     * @param columns     权威列数；{@code <= 0} 表示来源不知道 ⇒ 回落到 {@link #getWidth()} 的推断
      */
-    public ItemFormContainerContext(IItemHandler handler, UUID containerUuid, Level level) {
+    public ItemFormContainerContext(IItemHandler handler, UUID containerUuid, Level level, int columns) {
         // 显式键：cuuid_<uuid>，与 ContainerKeys.containerUuidOf 互逆
         super(handler, null, java.util.List.of(), java.util.List.of(), level,
             ContainerKeys.cuuidKey(containerUuid));
         this.containerUuid = containerUuid;
+        this.columns = columns;
+    }
+
+    /**
+     * 列数：来源给了权威值就用，否则回落到三层推断（物品形态只会落到启发式）。
+     *
+     * <p>⚠️ 为什么值得覆写：启发式对「槽数不是 9 的倍数」会猜错。精妙背包装 2 个
+     * 占列升级后存储槽 = {@code 行数 × (9 − 占列数)}，54 格背包是 30 格 ⇒ 启发式选 10、
+     * 真值 5 ⇒ 邻居判定 / 流体渲染 / 漏斗传输全线错位（2026-10-23 定位）。</p>
+     */
+    @Override
+    public int getWidth() {
+        return columns > 0 ? columns : super.getWidth();
     }
 
     @Override

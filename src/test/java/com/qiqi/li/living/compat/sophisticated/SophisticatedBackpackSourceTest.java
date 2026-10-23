@@ -21,6 +21,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.neoforged.neoforge.items.IItemHandler;
 import net.p3pp3rf1y.sophisticatedbackpacks.backpack.BackpackItem;
+import net.p3pp3rf1y.sophisticatedbackpacks.backpack.wrapper.BackpackWrapper;
 import net.p3pp3rf1y.sophisticatedbackpacks.backpack.wrapper.IBackpackWrapper;
 import net.p3pp3rf1y.sophisticatedbackpacks.common.gui.BackpackContainer;
 import net.p3pp3rf1y.sophisticatedbackpacks.common.gui.BackpackContext;
@@ -134,6 +135,42 @@ class SophisticatedBackpackSourceTest {
         assertEquals(ContainerUuids.ofItem(second), handle.containerUuid(),
             "必须是菜单锚定的那个容器，不是物品栏里碰巧找到的那个");
         assertNotEquals(ContainerUuids.ofItem(first), handle.containerUuid());
+    }
+
+    // ── 权威列数（#3 槽位几何，2026-10-23）─────────────────────────────────
+    //
+    // 启发式对「槽数不是 9 的倍数」会猜错：54 格背包装 2 个占列升级后是 30 槽
+    // ⇒ 启发式选 10，真值 5 ⇒ 邻居判定 / 流体渲染 / 漏斗传输全线错位。
+
+    @AfterEach
+    void resetStubSpec() {
+        BackpackWrapper.testSlots = 27;
+        BackpackWrapper.testRows = 3;
+    }
+
+    @Test
+    @DisplayName("权威列数：30 槽 ÷ 6 行 = 5（启发式会给 10，错）")
+    void columns_thirtySlotsSixRows_returnsFive() {
+        BackpackWrapper.testSlots = 30;
+        BackpackWrapper.testRows = 6;
+
+        assertEquals(5, source.columns(backpack()),
+            "54 格背包装 2 个占列升级 ⇒ 30 槽 / 6 行 = 5；启发式会选 10 ⇒ 邻居全错");
+    }
+
+    @Test
+    @DisplayName("权威列数：27 槽 ÷ 3 行 = 9（无升级的常态）")
+    void columns_standardBackpack_returnsNine() {
+        assertEquals(9, source.columns(backpack()));
+    }
+
+    @Test
+    @DisplayName("权威列数：除不尽 ⇒ 0（让调用方回落启发式，不比现在更差）")
+    void columns_indivisible_returnsZero() {
+        BackpackWrapper.testSlots = 20;
+        BackpackWrapper.testRows = 3;
+
+        assertEquals(0, source.columns(backpack()));
     }
 
     @Test

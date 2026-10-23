@@ -139,7 +139,8 @@ public final class ContainerContexts {
         //    回落到默认槽 ⇒ 症状看起来像「槽位算错了」，实际是**两条路径用了两套 ctx**。
         ItemFormContainers.Handle handle = ItemFormContainers.handleOf(player.containerMenu, player);
         if (handle != null) {
-            return new ItemFormContainerContext(handle.handler(), handle.containerUuid(), level);
+            return new ItemFormContainerContext(
+                handle.handler(), handle.containerUuid(), level, handle.columns());
         }
 
         return null;

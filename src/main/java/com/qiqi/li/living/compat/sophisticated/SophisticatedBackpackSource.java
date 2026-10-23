@@ -91,6 +91,10 @@ public final class SophisticatedBackpackSource implements ItemFormContainers.Sou
     @Nullable
     private static java.lang.reflect.Method getBackpack;
 
+    /** {@code BackpackWrapper#getNumberOfSlotRows()} —— 算权威列数要除它。 */
+    @Nullable
+    private static java.lang.reflect.Method getNumberOfSlotRows;
+
     private static boolean resolved;
 
     public SophisticatedBackpackSource() {
@@ -132,11 +136,13 @@ public final class SophisticatedBackpackSource implements ItemFormContainers.Sou
             Class<?> contextClass = Class.forName(BACKPACK_CONTEXT);
             getBackpackWrapper = contextClass.getMethod("getBackpackWrapper", Player.class);
             getBackpack = Class.forName(BACKPACK_WRAPPER_IFACE).getMethod("getBackpack");
+            getNumberOfSlotRows = backpackWrapperClass.getMethod("getNumberOfSlotRows");
         } catch (ReflectiveOperationException | LinkageError e) {
             backpackContainerClass = null;
             getBackpackContext = null;
             getBackpackWrapper = null;
             getBackpack = null;
+            getNumberOfSlotRows = null;
             LOGGER.warn("[ModSophisticated] 菜单锚点反射解析失败（{}），"
                 + "handleOfMenu 退回默认扫描（扫物品栏 + 唯一一件才认）：{}",
                 e.getClass().getSimpleName(), e.getMessage());
@@ -161,6 +167,33 @@ public final class SophisticatedBackpackSource implements ItemFormContainers.Sou
         } catch (ReflectiveOperationException | RuntimeException e) {
             // 精妙内部状态异常（未初始化 / 已失效）⇒ 本 tick 跳过，不崩
             return null;
+        }
+    }
+
+    /**
+     * 权威列数 = <b>存储槽数 ÷ 行数</b>。
+     *
+     * <p>精妙的 handler 大小就是 {@code 行数 × 每行格数}（构造式：
+     * {@code getNumberOfInventorySlots() - getNumberOfSlotRows() * getColumnsTaken()}），
+     * 所以除一下就是真值 —— <b>不需要复刻它的布局公式</b>（{@code slotsOnLine - columnsTaken}）。
+     * 装 2 个占列升级的 54 格背包：30 槽 ÷ 6 行 = <b>5</b>，而启发式会给 10。</p>
+     *
+     * <p>除不尽 / 拿不到 ⇒ 返回 0（⇒ 调用方回落到启发式，不比现在更差）。</p>
+     */
+    @Override
+    public int columns(ItemStack stack) {
+        if (fromStack == null || getNumberOfSlotRows == null) return 0;
+        try {
+            Object wrapper = fromStack.invoke(null, stack);
+            if (wrapper == null) return 0;
+            Object rowsObj = getNumberOfSlotRows.invoke(wrapper);
+            if (!(rowsObj instanceof Integer rows) || rows <= 0) return 0;
+
+            IItemHandler handler = contentHandler(stack);
+            int slots = handler == null ? 0 : handler.getSlots();
+            return slots > 0 && slots % rows == 0 ? slots / rows : 0;
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            return 0;
         }
     }
 
@@ -202,7 +235,7 @@ public final class SophisticatedBackpackSource implements ItemFormContainers.Sou
             IItemHandler handler = contentHandler(stack);
             if (handler == null) return null;
 
-            return new ItemFormContainers.Handle(handler, containerUuid);
+            return new ItemFormContainers.Handle(handler, containerUuid, columns(stack));
         } catch (ReflectiveOperationException | RuntimeException e) {
             LOGGER.warn("[ModSophisticated] 菜单反查背包失败（{}）：{}",
                 e.getClass().getSimpleName(), e.getMessage());

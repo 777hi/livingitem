@@ -149,7 +149,8 @@ class FluidFlowServerSyncTest {
                         AbstractContainerMenu menu, net.minecraft.world.entity.player.Player player) {
                     asks.incrementAndGet();
                     return new ItemFormContainers.Handle(
-                        new net.neoforged.neoforge.items.ItemStackHandler(9), java.util.UUID.randomUUID());
+                        new net.neoforged.neoforge.items.ItemStackHandler(9),
+                        java.util.UUID.randomUUID(), 0);
                 }
             });
 

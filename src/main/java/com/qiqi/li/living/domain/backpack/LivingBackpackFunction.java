@@ -92,7 +92,8 @@ public final class LivingBackpackFunction implements LivingItemFunction {
 
             DEPTH.set(DEPTH.get() + 1);
             try {
-                ItemFormContainerContext inner = new ItemFormContainerContext(handler, uuid, level);
+                ItemFormContainerContext inner = new ItemFormContainerContext(
+                    handler, uuid, level, source.columns(stack));
                 ContainerLivingItemHandler.processContext(inner, level);
             } catch (RuntimeException e) {
                 // 一个背包炸了不该让其它背包和宿主容器跟着停（I-C7：留痕但不静默）
