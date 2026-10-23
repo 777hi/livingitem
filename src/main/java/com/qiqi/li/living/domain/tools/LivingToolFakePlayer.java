@@ -359,18 +359,28 @@ public class LivingToolFakePlayer extends FakePlayer {
      * <p>本覆写只包住 {@code aiStep}：{@code baseTick}（{@code isInWall} 窒息 /
      * 世界边界检查）在它之前跑、用的还是真盒子 ⇒ 与改动前逐位一致。</p>
      *
-     * <p>{@code aiStep} 内部读包围盒的只有三处，读到空盒都无害：</p>
+     * <p>{@code aiStep} 内部读包围盒的调用点一共 7 个，按门条件分两类：</p>
      * <ul>
-     *   <li><b>travel</b> —— 零输入 + 归零 deltaMovement 下本就无动作
-     *       （见 {@link #driveWielderTick}）；其内的潜行防掉落
-     *       {@code maybeBackOffFromEdge} 门条件是 {@code isShiftKeyDown()}，
-     *       假玩家从不蹲 ⇒ 不进</li>
-     *   <li><b>pushEntities</b> —— 被屏蔽正是想要的（不让假玩家推玩家身边的实体）</li>
-     *   <li><b>接触环</b> —— 正是要屏蔽的</li>
+     *   <li><b>无门条件、每 tick 必执行</b>（3 个）：
+     *       <ul>
+     *         <li>travel → {@code move → collide} —— 零位移下 {@code collide} 对
+     *             零长矢量短路，且空盒在虚空 = 无碰撞，与真盒结局相同</li>
+     *         <li>pushEntities —— 被屏蔽正是想要的</li>
+     *         <li>接触环 —— 正是要屏蔽的</li>
+     *       </ul></li>
+     *   <li><b>有门条件、假玩家一辈子进不去</b>（4 个）：{@code maybeBackOffFromEdge}
+     *       （{@code isShiftKeyDown()}）、{@code checkAutoSpinAttack}
+     *       （{@code autoSpinAttackTicks > 0}）、{@code checkSupportingBlock}
+     *       （只在 onGround 分支读盒；零位移 ⇒ {@code verticalCollisionBelow=false}
+     *       ⇒ 走 else 分支）、{@code tryCheckInsideBlocks} 与灭火检查
+     *       （在 {@code Entity#move} 的「实际位移」段内，零位移 ⇒ 整段不进）</li>
      * </ul>
-     * <p>{@code checkAutoSpinAttack} 也读盒子，但门条件是 {@code autoSpinAttackTicks > 0}
-     * （重锤旋击计数，假玩家恒 0）⇒ 不进。
-     * {@code try/finally} 保证任何异常路径都恢复真包围盒
+     * <p>⭐ 基石是<b>零位移</b>：{@link #driveWielderTick} 每 tick 归零 deltaMovement，
+     * 且假玩家 noGravity（{@code Entity#getGravity()} 恒 0）⇒ travel 不加重力
+     * ⇒ {@code move} 拿到 (0,0,0) ⇒ 不 setPos、不产生任何碰撞标志
+     * ⇒ 所有挂在位移上的读盒逻辑全部短路。</p>
+     *
+     * <p>{@code try/finally} 保证任何异常路径都恢复真包围盒
      * （其后的目标查找 / 攻击都要用它）。</p>
      */
     @Override
