@@ -318,6 +318,22 @@
 
 ---
 
+### I-C11 几何量是除数：列数必须 ≥ 1，空容器必须被跳过
+
+`getWidth()` 不是装饰值 —— 红石网格、流体层、应力、信标列扫描都拿它做**除法或取模**。两条：
+
+1. **任何 `getWidth()` 实现都必须返回 ≥ 1。** 原版会答 0：`AbstractChestedHorse#getInventoryColumns()`
+   是 `hasChest() ? 5 : 0` ⇒ 无箱（或箱子刚被摘）时为 0。实现方拿不到权威值就回落到按槽数推。
+2. **容器可能在 tick 中途变空。** `processContext` 的阶段顺序是「函数 tick → 容器级数据」：
+   阶段 2 里活 TNT 炸死宿主 ⇒ `dropEquipment()` 摘掉箱子 ⇒ 到阶段 3 时存储格与列数**同时归零**。
+   下游必须把「空」当合法状态跳过（`ContainerStressData#calculate` 早有此守卫，
+   `ContainerRedstoneData#calculate` 2026-10-24 补上）。
+
+> 🔴 **2026-10-24 真机**：带箱驴里引爆活 TNT ⇒ 服务端 `ArithmeticException: / by zero` 崩服
+> （`(size + width - 1) / width`，width=0）。**「容器活着」不是处理期间的稳定前提。**
+
+---
+
 ## 3. 两种「嵌套」必须分开（2026-10-18 澄清）
 
 「嵌套」在本项目里指两件**机制完全不同**的事。混为一谈会得出「不做嵌套」或「必须支持任意深度」

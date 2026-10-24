@@ -288,6 +288,11 @@ public class ContainerRedstoneData implements RedstoneSensor, ContainerDataLifec
 
         int size = context.getSize();
         int width = context.getWidth();
+        // 空容器没有红石网格 —— 本 tick 直接不算（与 ContainerStressData#calculate 同款守卫）。
+        // 真机场景（2026-10-24 崩服）：带箱驴在**阶段 2（函数 tick）**被自己的活 TNT 炸死
+        // ⇒ dropEquipment() 摘掉箱子 ⇒ 到阶段 3（容器级数据）时存储格与列数同时归零
+        // ⇒ 下面拿 width 当除数直接 ArithmeticException，整个服务端崩。
+        if (size <= 0 || width <= 0) return;
         int height = (size + width - 1) / width;
 
         // 外部输入采样（faceInput 供定向元件读外部信号；必须在 reset() 的双缓冲交换之前完成）

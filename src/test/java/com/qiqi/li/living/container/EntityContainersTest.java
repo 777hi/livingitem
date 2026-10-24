@@ -136,6 +136,27 @@ class EntityContainersTest {
     }
 
     @Test
+    @DisplayName("列数：原版答 0（箱子被摘掉 / 无箱）⇒ 不得返回 0 —— 列数是除数，0 会崩服务端")
+    void width_neverZero_whenVanillaAnswersZero() {
+        // 2026-10-24 真机崩服现场：带箱驴在函数阶段被自己的活 TNT 炸死
+        // ⇒ dropEquipment() 摘掉箱子 ⇒ 原版 getInventoryColumns() 变 0
+        // ⇒ 阶段 3（容器级数据）拿它当除数 ⇒ ArithmeticException / by zero
+        AbstractHorse chestless = mock(AbstractChestedHorse.class);
+        when(chestless.getUUID()).thenReturn(ID);
+        when(chestless.blockPosition()).thenReturn(BOAT_POS);
+        when(chestless.getCapability(Capabilities.ItemHandler.ENTITY))
+            .thenReturn(new ItemStackHandler(1));      // 箱子没了，只剩鞍槽
+        when(chestless.getInventoryColumns()).thenReturn(0);
+
+        EntityContainerContext ctx = boatContext(chestless);
+
+        assertTrue(ctx.getWidth() >= 1,
+            "getWidth() 是网格除数（红石 / 流体 / 应力 / 信标列扫描都拿它做除法和取模）"
+            + " —— 返回 0 会让整个服务端 / by zero");
+        assertEquals(0, ctx.getSize(), "无箱时存储格为 0（1 槽 - 鞍槽偏移）");
+    }
+
+    @Test
     @DisplayName("getBlockPos() 恒 null：实体容器不是方块容器（防船停箱子上被信标误判）")
     void blockPosIsNull() {
         assertNull(boatContext(boatEntity(new ItemStackHandler(27))).getBlockPos(),

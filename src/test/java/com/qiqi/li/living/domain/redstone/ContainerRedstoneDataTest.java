@@ -5,6 +5,7 @@ import com.qiqi.li.living.domain.redstone.LivingRedstoneLampData;
 import com.qiqi.li.living.domain.redstone.LivingLeverData;
 import com.qiqi.li.living.domain.redstone.LivingComparatorData;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -43,6 +44,16 @@ class ContainerRedstoneDataTest {
         ItemStack stack = new ItemStack(item, count);
         LivingItemManager.setLiving(stack, true);
         return stack;
+    }
+
+    @Test
+    @DisplayName("空容器（存储格 0 / 列数 0）⇒ 直接跳过，不拿 0 当除数（2026-10-24 崩服回归）")
+    void emptyContainer_doesNotDivideByZero() {
+        // 现场：带箱驴在阶段 2 被自己的活 TNT 炸死 ⇒ dropEquipment() 摘掉箱子
+        // ⇒ 阶段 3 读到的 size 与 width 同时归零 ⇒ height = (0 + 0 - 1) / 0 ⇒ 服务端崩溃。
+        FakeContainerContext ctx = new FakeContainerContext(0, 0);
+
+        assertDoesNotThrow(() -> propagate(ctx, Map.of()));
     }
 
     /**

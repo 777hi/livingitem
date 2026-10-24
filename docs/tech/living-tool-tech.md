@@ -473,9 +473,12 @@ NeoForge 对此的防御是双层的：`FakePlayer.tick()` 与其连接器的 `t
 单 tick 迟滞（首次装备/换武器当 tick 立即生效），与原生刷新幂等不冲突。
 
 **范围与边界**：
-- 驱动点在三个回放方法内部 ⇒ **主动模式每 tick**；被动辅助攻击因复用
-  `replayAttack` 同样驱动（有 game time 去重，同 tick 不重复）；辅助挖掘
-  `digSpeed` 独立路径不驱动（瞬时路径，无 per-tick 语义可失真）
+- **驱动点唯一**：`replayAttack`（**武器路径**）—— `replayDig` / `replayUse`
+  不驱动（两者的「代持 tick」两行已退役；且它们不需要 per-tick 状态：
+  挖掘进度是纯函数每 tick 重算、装备属性靠 `equipTool` 摘旧装新）⇒
+  **主动模式每 tick**；被动辅助攻击因复用 `replayAttack` 同样驱动
+  （有 game time 去重，同 tick 不重复）；辅助挖掘 `digSpeed` 独立路径不驱动
+  （瞬时路径，无 per-tick 语义可失真）
 - 容器/掉落物形态照常生效（箱子/掉落物本就不 tick 物品 ⇒ 我们的驱动是唯一一次，
   纯收益）；**玩家形态双 tick**（真背包 selected=false + 假玩家 selected=true）——
   少数无检查的效果双倍计数，语义可辩护（假玩家是独立持有者），接受
@@ -502,6 +505,10 @@ NeoForge 对此的防御是双层的：`FakePlayer.tick()` 与其连接器的 `t
 > ⚠️ ① 只有活武器会触发：`driveWielderTick` 全项目仅 `replayAttack` 一处调用
 > （挖掘 / 交互路径不驱动 tick）⇒ 群友「只有用活剑才吸物品」的控制变量结论正对应此。
 > 复算：`Player.java:564-586`（接触环）/ `:1312-1334`（横扫）/ `MaceItem.java:161-194`（重锤）。
+> ⭐ **推论（武器有 / 工具没有的原因）**：两个覆写对**活工具是死代码** ——
+> 工具不驱动 tick（`aiStep` 不跑 ⇒ 接触环/pushEntities 无从触发）、不调 `attack`
+> （`isAlliedTo` 不被问）⇒ 挖掘 / 交互行为零变化。反过来也别给工具补真链：
+> 只会把副作用引进来而没有收益（挖掘该有的原版计算全走瞬时路径）。
 
 ---
 
@@ -523,7 +530,7 @@ NeoForge 对此的防御是双层的：`FakePlayer.tick()` 与其连接器的 `t
 |---|---|---|---|
 | 方块容器 | `processLevelContainers`（区块 → 方块实体） | `SimpleContainerContext` | `ClientboundContainerSetSlotPacket` |
 | 玩家背包 | `processContainer`（在线玩家） | `SimpleContainerContext` | 同上（`inventoryMenu`） |
-| 掉落物 | `processItemEntityContainers`（遍历实体） | `ItemEntityContainerContext` | `ClientboundSetEntityDataPacket` |
+| 掉落物 | `processEntityContainers`（遍历实体） | `ItemEntityContainerContext` | `ClientboundSetEntityDataPacket` |
 | —— | **客户端可见性** | —— | —— |
 | 方块容器 | ❌ 瞎（不开 GUI 拿不到）→ **`K2` 的 `LivingToolHostPacket`** | `LivingToolHostSync` → `LivingToolHostClientCache` | 见 §12 |
 
@@ -1118,7 +1125,7 @@ OUTLINE**，`tip ≈ origin` ⇒ **光带长度为 0**。
 LivingItem.onServerTick
   ├── processContainer(玩家背包)           → SimpleContainerContext
   ├── processLevelContainers(区块方块实体)  → SimpleContainerContext
-  └── processItemEntityContainers(实体)     → ItemEntityContainerContext（新）
+  └── processEntityContainers(实体)          → ItemEntityContainerContext（新）
                     ↓
         ContainerLivingItemHandler.processContext（同一条）
                     ↓

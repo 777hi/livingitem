@@ -282,7 +282,7 @@ LivingChestFunction.extractItem(chestStack, target, amount)
 
 ```bash
 # ① tick 管线入口只有三处（玩家背包 / 方块容器 / 掉落物），没有第四条通道：
-grep -n "processContainer\|processItemEntityContainers\|processContainerAt" src/main/java/com/qiqi/li/LivingItem.java
+grep -n "processContainer\|processEntityContainers\|processContainerAt" src/main/java/com/qiqi/li/LivingItem.java
 
 # ② 活箱子自己的 tick 是空实现：
 grep -n "public void tick" -A 3 src/main/java/com/qiqi/li/living/domain/chest/LivingChestFunction.java

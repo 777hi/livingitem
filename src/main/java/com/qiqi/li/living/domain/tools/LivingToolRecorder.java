@@ -116,7 +116,7 @@ public final class LivingToolRecorder {
      * 是否由 {@code LivingToolFunction} 驱动 —— 活【工具】<b>或</b>活【武器】。
      *
      * <p>⭐ <b>这是「谁来 tick」的单一判据来源</b>：{@code LivingToolFunction#canApply}、
-     * 掉落物形态的扫描入口（{@code LivingItem#processItemEntityContainers}）都用它。</p>
+     * 掉落物形态的扫描入口（{@code LivingItem#processEntityContainers}）都用它。</p>
      *
      * <p>🔴 <b>事故（2026-09-24）</b>：掉落物形态的入口原先只写 {@code isLivingTool}
      * ⇒ <b>活剑被整个跳过 ⇒ 不 tick ⇒ 不攻击</b>。

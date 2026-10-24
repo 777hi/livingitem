@@ -176,7 +176,14 @@ public class EntityContainerContext extends SimpleContainerContext {
     @Override
     public int getWidth() {
         if (entity instanceof AbstractHorse horse) {
-            return horse.getInventoryColumns();
+            int columns = horse.getInventoryColumns();
+            // ⚠️ 原版会答 **0**：{@code AbstractChestedHorse} 是 {@code hasChest() ? 5 : 0}。
+            // 而带箱驴可能在**函数阶段**被自己的活 TNT 炸死 ⇒ {@code dropEquipment()} 摘掉箱子
+            // ⇒ 同一 tick 的后续阶段（容器级数据）读到的列数就是 0。
+            // 列数是网格除数（{@code ContainerRedstoneData} / 流体 / 应力 / 信标列扫描都拿它做
+            // 除法或取模）⇒ 0 会直接 / by zero **崩服务端**（2026-10-24 真机实录）。
+            // ⇒ 原版答不出（无箱 / 刚掉箱）就按实际槽数推：箱子没了只剩鞍槽，存储格为 0，取 1 列。
+            if (columns > 0) return columns;
         }
         return super.getWidth();
     }

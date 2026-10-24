@@ -15,7 +15,33 @@
 
 ---
 
-## 2026-10-23
+## 2026-10-24
+
+> 💥 **修复：带箱驴里引爆活 TNT ⇒ 服务端 `/ by zero` 崩服**
+>
+> 崩溃点：`ContainerRedstoneData.calculate` 的 `(size + width - 1) / width`，`width == 0`。
+>
+> **完整因果链**（`processContext` 的阶段顺序是关键）：
+> 1. **阶段 2（函数 tick）**：驴胸前的活 TNT 引信归零 ⇒ 爆炸 ⇒ `applyExplosionDamage` 打死驴
+>    ⇒ `AbstractChestedHorse#dropEquipment()` 把箱子摘掉 ⇒ `setChest(false)`。
+> 2. **阶段 3（容器级数据）**：同一个 ctx 继续跑红石 ⇒ `getWidth()` 问原版
+>    ⇒ `getInventoryColumns()` 是 `hasChest() ? 5 : 0` ⇒ 答 **0** ⇒ 拿 0 当除数 ⇒ 崩服。
+>
+> ⇒ 一句话：**「容器活着」不是处理期间的稳定前提。**
+>
+> 修法两处（互相独立、都必要）：
+> - `EntityContainerContext#getWidth()`：原版答 0（无箱/刚掉箱）⇒ 回落到按槽数推，**绝不返回 0**。
+>   列数是红石/流体/应力/信标列扫描的除数与模数，0 会从任意一处炸开。
+> - `ContainerRedstoneData#calculate`：`size <= 0 || width <= 0` ⇒ 本 tick 不算
+>   （空容器没有红石网格）。与 `ContainerStressData#calculate` 早就有的同款守卫对齐 ——
+>   **应力域有，红石域漏了**。
+>
+> 测试 +2：`EntityContainersTest`（原版答 0 ⇒ 列数 ≥1）+ `ContainerRedstoneDataTest`
+> （空容器不除零）。单测 897 → 899。不变量写进 `container-boundary.md` **I-C11**。
+>
+> ⚠️ 顺带发现：`FluidFlowServerSync` 里两处 `Math.max(1, ctx.getWidth())` —— 同一个坑之前
+> 被就地绕过（而非修根因），所以只挡住了流体一条轨。现在根因修了，那两处可以退休（未动）。
+
 
 > 🧨 **修复：掉落物形态的活 TNT 不被 tick（同一处白名单第二次漏改）**
 >
