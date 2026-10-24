@@ -96,7 +96,7 @@ public final class FluidFlowServerSync {
             String key = ctx.getCacheKey();
             if (key != null && CLIENT_ACTIVE.contains(key)) {
                 player.connection.send(new FluidFlowSyncPacket(
-                    key, Math.max(1, ctx.getWidth()), List.of(), Map.of(), renderTargetOf(ctx)));
+                    key, ctx.getWidth(), List.of(), Map.of(), renderTargetOf(ctx)));
             }
             return;   // 物品形态容器是菜单级的：问过一次就够了，别再逐槽问
         }
@@ -112,7 +112,7 @@ public final class FluidFlowServerSync {
             if (key == null) continue;
             if (!CLIENT_ACTIVE.contains(key)) continue;   // 从未向其同步过 ⇒ 无残留可清
             player.connection.send(new FluidFlowSyncPacket(
-                key, Math.max(1, ctx.getWidth()), List.of(), Map.of(), renderTargetOf(ctx)));
+                key, ctx.getWidth(), List.of(), Map.of(), renderTargetOf(ctx)));
             return;   // 一个容器一条键，首个可解析槽位即定
         }
     }

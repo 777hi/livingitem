@@ -332,6 +332,11 @@
 > 🔴 **2026-10-24 真机**：带箱驴里引爆活 TNT ⇒ 服务端 `ArithmeticException: / by zero` 崩服
 > （`(size + width - 1) / width`，width=0）。**「容器活着」不是处理期间的稳定前提。**
 
+📌 **推论：调用点不再需要 `Math.max(1, ctx.getWidth())` 这类就地 clamp。** 那种写法只能挡住
+它所在的那一条路径（历史上确实有过：流体发包处 clamp 过，红石那条轨照样崩）。
+唯一保留 clamp 的地方是**使用点**：客户端渲染 `ContainerFluidOverlay` 在算格子前
+`Math.max(1, snapshot.width())` —— 那是消费网络数据的地方，属于正当的输入校验。
+
 ---
 
 ## 3. 两种「嵌套」必须分开（2026-10-18 澄清）
