@@ -189,6 +189,23 @@ Vec3 center = switch (anchor) {
 4. **活武器是另一条路**：`LivingWeaponAssist` 扫的是 `player.getInventory()`，
    与 `ContainerContext` 无关 ⇒ **活背包里的活武器不参与补刀**。
    这是「背包内容算不算装备」的独立玩法问题，**不在本设计射程内**。
+5. **只接了一半：下游还在问容器自己**（2026-10-24 实测定位，未修）——
+   `resolveOrigin` / `resolveHostPosition` 已改成问 anchor，但拿到值之后的**下游分派**
+   仍按容器自身身份判断，物品形态两个字段都是 null：
+   - 信标 `BeaconFunction.tick`：`getBlockPos()` / `getOwnerPlayer()` 双双 null
+     ⇒ 光束 / 开盖 / 玻璃色 / 联机广播全不执行（buff 生效，因为 `applyEffects`
+     是唯一直接用 hostPos 的）⇒ 「buff 有、光没有」。
+   - 工具 `LivingToolFunction.tick`：`hostBlocks`（「别挖自己容器」黑名单）取自
+     `getAssociatedBlockPositions()` + `getBlockPos()`，物品形态皆空 ⇒
+     箱子里射线起点在箱子方块中心，第一个穿到的格子就是那只箱子。
+   ⇒ 统一口径：**「宿主是谁」只问 anchor，别回头问容器自己**。
+   修法与边界（信标 `beamPos` 在物品形态会拿到 null，可能要 `getHostBlockPositions()`）
+   见 [TODO.md](../TODO.md) 活背包 6.2。
+6. **客户端没有「物品形态」数据源**（2026-10-24 实测，靠后）——
+   渲染器枚举的四条来源里没有背包，服务端也从未给物品形态发过对应的包；
+   且内层写回的组件变化传不出物品形态（`syncSlotToClients` no-op + 原版
+   `matches` 检测不到自定义组件变化）。分三件事补：脏消息递出 / 客户端第五条
+   数据源 / 远程 S2C（键用容器 UUID）。见 [TODO.md](../TODO.md) 活背包 6.1。
 
 ---
 
