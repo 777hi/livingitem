@@ -85,9 +85,16 @@ public class LivingTntFunction implements LivingItemFunction {
                     // 留着它就是一颗**只等容器获得位置的定时炸弹**（2026-10-24 实测：
                     // 背包放成方块 ⇒ 下一 tick 瞬爆，玩家早已忘了这回事）。
                     //
-                    // ⚠️ 熄灭依赖一个前提：**无锚点的容器收不到红石信号**（物品形态没有邻居
-                    // 方块 ⇒ maxSensedSignal 恒 0）⇒ 熄灭后不会被自动重新点燃。
-                    // 若将来出现"无锚点但能收到信号"的形态，这里会变成循环，必须先解决那个。
+                    // ⚠️ **熄灭后会被自动重新点燃吗？会** —— 容器的**内部红石**（背包里放个活拉杆）
+                    // 与位置无关：`sensedSignal` 读的是内部 `edgeGrid`，不是外部方块
+                    // （外部才走 injectExternalInputs，那部分才需要位置）。
+                    // ⇒ 所以"无锚点 ⇒ 收不到信号"是**错的**，别拿它当理由。
+                    //
+                    // 当前之所以安全：**无锚点在 tick 路径上不可达** —— 物品形态的宿主锚点由
+                    // LivingBackpackFunction 传下来（宿主是方块/玩家/船，恒非空）。
+                    // （GUI 反查路径确实传 null，但那条路只服务 tooltip / 倒汲 / 槽位设置，不 tick。）
+                    // ⚠️ 若将来允许关掉宿主锚点（配置化），**必须在点燃分支先判锚点**，
+                    // 否则这里会退化成「80 → 0 → 熄灭 → 立刻重新点燃 → 80」的无限循环。
                     LivingTntData.set(stack, LivingTntData.DEFAULT);
                     context.setItem(slot, stack);
                     context.syncSlotToClients(slot, stack);
