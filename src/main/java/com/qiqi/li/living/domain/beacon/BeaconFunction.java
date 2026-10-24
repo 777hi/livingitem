@@ -158,6 +158,10 @@ public class BeaconFunction implements LivingItemFunction {
     private static Vec3 resolveHostPosition(ContainerContext context, Level level) {
         // 分类统一走 ContainerAnchor（2026-10-23 普查：此处原是与另外三处重复的一份三选一）
         com.qiqi.li.living.container.ContainerAnchor anchor = context.getAnchor();
+        // 物品形态（活背包）借宿主锚点 —— 玩法开关，默认关
+        if (anchor == null && com.qiqi.li.living.config.GameplayConfig.beaconUsesHostAnchor()) {
+            anchor = context.getHostAnchor();
+        }
         if (anchor instanceof com.qiqi.li.living.container.ContainerAnchor.AtBlock block) {
             return isLiddedChest(level.getBlockEntity(block.pos()))
                 ? Vec3.atCenterOf(block.pos()) : null;

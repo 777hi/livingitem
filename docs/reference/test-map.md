@@ -46,6 +46,7 @@ src/test/java/com/qiqi/li/
 │   ├── ContainerContextsTest.java             # 边界带共享内核·isSameSlotSpace(槽位数不一致/越界/同空/同物品/一空一非空/异物品) + resolve 末影箱分支(F-1) + isViewingEnderChest 判据 6 项（16 项）
 │   ├── EntityContainersTest.java                  # 实体容器（2026-10-21）·白名单(ContainerEntity/带箱驴骡,无箱马与普通实体排除)/键 entity_uuid/列数启发式 27→9·5→5·15→5/getBlockPos 恒 null(防船停箱子上信标误判)/数据宿主=实体/无能力面即抛/menuSlotOwners 位置解析/注册表+白名单过滤/horse 字段反射判据/**鞍槽排除与偏移映射**（16 槽→15 存储格、getItem(0)→handler 槽 1、写不碰鞍槽）/船无偏移直通/**逻辑↔物理映射互逆**/**遥测键用物理槽**/**原版答 0（箱子被摘/无箱）⇒ 列数不得为 0**（列数是除数，2026-10-24 崩服回归）（19 项；驴解析走入口层反射，单测只锁字段形状）
 │   ├── ContainerBoundaryContractTest.java     # 容器边界契约 I-C3/I-C4/I-C7 守卫：SlotIgnoringHandler(insertItem 丢 slot) + ExtractBlockedHandler(extract 被拦) ⇒ 写回落对槽/物品守恒/模拟真实同源（3 项，S2 后转绿）
+│   ├── GameplayConfigTest.java                 # 玩法开关的默认值（2026-10-24）·spec 能构建/**四个宿主锚点开关默认全关**（哑弹/不发电/不挖矿/不开光）（2 项；⚠️ 只测未加载配置时的静态字段，不测 ModConfigSpec 本身）
 │   ├── ContainerAnchorTest.java                # 容器世界锚点（2026-10-23 收编 4 份重复解析）·方块⇒AtBlock/玩家⇒AtPlayer(靠 getOwnerPlayer)/**实体容器⇒AtEntity（必须覆写，否则退化成没锚点）**/**掉落物⇒AtEntity（有实体，不是没锚点）**/物品形态⇒null/**getHostAnchor 与 getAnchor 刻意分开（物品形态有宿主值、非物品形态恒 null）**/roughPosition 三分支/退化不抛（9 项）
 │   ├── ContainerViewersTest.java               # 「谁在看这个容器」唯一判定入口（2026-10-23 收编）·背包只发主人不门控(隐私红线)/末影箱开着 GUI 才发(第③次泄漏修复)/物品形态按菜单锚点认观众(开着别的容器不算)/位置为空⇒无观众/退化输入不抛（6 项；末影箱门控两条用例从流体轨与运行时轨合并迁入）
 │   ├── ContainerHandoffTest.java              # I-C9 **第三挂点「双向交接」**（2026-10-21，D-container-12）·宿主→物品：捕获→交接搬到目标/无捕获 no-op/空栈不搬且丢捕获/capture(null) 清残留/一个 Mover 抛异常不连累其它/discard + **物品→宿主：暂存→恢复调 moveIn / 暂存是副本（源栈 shrink 后仍能恢复）/无暂存或宿主空 no-op/stageRestore(EMPTY) 清残留** + **反射守卫：Mover 不得有 default 方法**（真机三连失败的真凶）（11 项）
@@ -64,7 +65,7 @@ src/test/java/com/qiqi/li/
 ├── living/domain/tools/
 │   └── LivingToolHostSyncMergeTest.java      # K2 去重记录合并不变量（2026-10-23）·**其它维度玩家的记录必须保留**（逐维度 flush 不能互清）/离线玩家淘汰/本维度新记录覆盖旧值（3 项；守「每 tick 重发空包」回归）
 ├── living/domain/tnt/
-│   ├── LivingTntConsumeTest.java              # 爆炸后**必须消耗**（真机「炸了但 TNT 还在」的回归）·单颗炸完槽位空/多颗一起炸全部消耗（ignite 一次清空，快照写回会复活没轮到的）/掉落物形态炸在原地并消耗（3 项；⚠️ ServerLevel 替身需反射注入 Level.random 字段，账本用真 ExplosionLedger）
+│   ├── LivingTntConsumeTest.java              # 爆炸后**必须消耗**（真机「炸了但 TNT 还在」的回归）·单颗炸完槽位空/多颗一起炸全部消耗（ignite 一次清空，快照写回会复活没轮到的）/掉落物形态炸在原地并消耗/**宿主锚点默认关⇒哑弹 / 打开⇒炸在宿主并消耗**（5 项；⚠️ ServerLevel 替身需反射注入 Level.random 字段，账本用真 ExplosionLedger）
 │   ├── ExplosionParamsTest.java               # 爆炸参数·位图映射可逆/网格外返回-1/affects=区块AABB∩球体/边界回归(中心在半径外但边缘在球内)/球体全覆盖(半径内每方块所在区块必命中)/网格规模（7 项）
 │   ├── ExplosionLedgerTest.java               # 待炸账本·相交才进队列/不相交立即标记/未加载丢弃不轮询/自然加载补炸闭环/分帧预算/多场叠加不覆盖新登记/满额降级/存档往返（10 项）
 │   └── ExplosionComponentLightTest.java       # 爆炸后光照刷新·四入口顺序/天光柱高图先于重算/section 空态/sectionY≠索引/发光方块减光（5 项）

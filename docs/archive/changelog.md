@@ -17,6 +17,38 @@
 
 ## 2026-10-24
 
+> ⚙️ **配置化：宿主锚点的四个玩法开关（`D-container-16`，SERVER 型，默认全关）**
+>
+> 「背包借宿主的位置干什么」是**玩法**不是修复 —— 炸弹、随身发电、自动挖矿、随身光环，
+> 默认生效等于替玩家做玩法决定。做成配置，**默认全关**（装了模组没动配置 = 行为与之前一致）。
+>
+> ```toml
+> [host_anchor]
+>     tnt = false              # 背包里的炸弹炸在宿主处（关闭 = 哑弹）
+>     water_wheel = false      # 水车向宿主位置注入应力
+>     tool_and_weapon = false  # 工具/武器用宿主位置作射线起点
+>     beacon = false           # 信标用宿主位置开光
+> ```
+>
+> **为什么 `SERVER` 型**：这些是服务端行为，客户端必须知道服务端的选择 —— SERVER 型自动同步，
+> 且可按存档覆盖。`COMMON` 不同步，联机时客户端不知道。
+>
+> **为什么缓存到静态字段**：`ConfigValue#get()` 在配置未加载时会抛异常，而这些值在 tick 路径上
+> 每容器每 tick 都读。加载/重载事件刷新字段，读路径只读字段（未加载 = 默认 `false`）。
+>
+> **四个消费方**：`ExplosionComponent`（爆炸点）/ `ContainerStressWriteback`（应力注入点）/
+> `LivingToolFunction.resolveOrigin`（射线起点，顺带从三条 instanceof 收成「锚点 → 取点」）/
+> `BeaconFunction.resolveHostPosition`（光束起点）。
+>
+> 游戏内可改：`LivingItemClient` 早就注册了 `IConfigScreenFactory`（NeoForge 自带配置界面），
+> 这次只是终于有了 spec。
+>
+> 测试 +4：`GameplayConfigTest`（spec 能构建 / 四个默认全关）+ `LivingTntConsumeTest`
+> （默认关 ⇒ 哑弹；打开 ⇒ 炸在宿主并消耗）。单测 900 → 904。
+>
+> ⚠️ `tool_and_weapon` 同时作用于工具与武器（共用一个 `LivingToolFunction`，做不到只开一半）。
+
+
 > 🧹 **删掉活 TNT 的「无锚点」处理（整段是死分支）**
 >
 > 前两个提交（`6f0a5a9` 停在 0 → `6182a3c` 熄灭 → `6facf89` 修错误前提）绕了三轮，

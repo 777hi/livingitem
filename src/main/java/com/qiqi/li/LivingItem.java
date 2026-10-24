@@ -132,6 +132,11 @@ public class LivingItem {
 
     public LivingItem(IEventBus modEventBus, ModContainer modContainer) {
         logBuildFingerprint(modContainer);
+        // 玩法开关（SERVER 型：自动同步客户端、可按存档覆盖，见 GameplayConfig 类注释）
+        modContainer.registerConfig(net.neoforged.fml.config.ModConfig.Type.SERVER,
+            com.qiqi.li.living.config.GameplayConfig.SPEC);
+        com.qiqi.li.living.config.GameplayConfig.attach(modEventBus);
+
         modEventBus.addListener(this::commonSetup);
         modEventBus.addListener(this::onRegisterCapabilities);
         ITEMS.register(modEventBus);

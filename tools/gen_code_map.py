@@ -76,7 +76,7 @@ LAYERS: list[tuple[int, str, str]] = [
 MODULE_LAYER: dict[str, int] = {"(external)": -1}
 for _m in ("living/api", "living/model"):
     MODULE_LAYER[_m] = 0
-for _m in ("living/container", "living/perf", "living/util", "logging"):
+for _m in ("living/container", "living/perf", "living/util", "logging", "living/config"):
     MODULE_LAYER[_m] = 1
 for _m in ("living/compat", "living/components", "living/debug", "living/function",
            "living/interaction", "living/runtime", "living/transfer"):

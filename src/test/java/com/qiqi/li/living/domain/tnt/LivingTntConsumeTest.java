@@ -19,19 +19,24 @@ import org.junit.jupiter.api.Test;
 
 import com.qiqi.li.living.api.LivingItemFunction.SlotEntry;
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.config.GameplayConfig;
+import com.qiqi.li.living.container.ContainerAnchor;
 import com.qiqi.li.living.container.ItemEntityContainerContext;
+import com.qiqi.li.living.container.ItemFormContainerContext;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.testutil.FakeContainerContext;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.RandomSource;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.storage.DimensionDataStorage;
+import net.neoforged.neoforge.items.ItemStackHandler;
 
 /**
  * 爆炸后**必须消耗**活 TNT（2026-10-23 真机实录）。
@@ -141,5 +146,59 @@ class LivingTntConsumeTest {
         new LivingTntFunction().tick(List.of(new SlotEntry(0, lit)), ctx, new TickContext(ctx), ctx.getLevel());
 
         verify(entity).setItem(org.mockito.ArgumentMatchers.argThat(ItemStack::isEmpty));
+    }
+    // ---------- 宿主锚点开关（GameplayConfig，默认关）----------
+
+    /** 反射改配置静态字段 —— 生产代码不留测试 seam（配置值本来就该由 NeoForge 装载）。 */
+    private static void setTntHostAnchor(boolean value) {
+        try {
+            Field field = GameplayConfig.class.getDeclaredField("tnt");
+            field.setAccessible(true);
+            field.set(null, value);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("无法设置 GameplayConfig.tnt", e);
+        }
+    }
+
+    /** 一个带宿主锚点的物品形态容器（= 活背包在玩家身上）。 */
+    private static ItemFormContainerContext itemFormOnPlayer(ItemStack stack, Player player) {
+        ItemStackHandler handler = new ItemStackHandler(1);
+        handler.setStackInSlot(0, stack);
+        return new ItemFormContainerContext(handler, UUID.randomUUID(), explodingLevel(), 9,
+            new ContainerAnchor.AtPlayer(player));
+    }
+
+    @Test
+    @DisplayName("宿主锚点默认关 ⇒ 背包里的活 TNT 不炸（哑弹：引信走完就停住，物品还在）")
+    void hostAnchorOffByDefault_isDud() {
+        ItemStack lit = livingTnt(new ExplosionData(true, 0), 1);
+        Player player = mock(Player.class);
+        ItemFormContainerContext ctx = itemFormOnPlayer(lit, player);
+
+        new LivingTntFunction().tick(List.of(new SlotEntry(0, lit)), ctx, new TickContext(ctx), ctx.getLevel());
+
+        assertFalse(ctx.getItem(0).isEmpty(),
+            "配置关 ⇒ 没有可炸的位置 ⇒ 哑弹。物品必须还在（不是消耗掉）");
+        assertTrue(LivingTntData.of(ctx.getItem(0)).explosion().ignited(),
+            "哑弹的语义是「引信走完就停住」—— 保持已点燃，不是重置");
+    }
+
+    @Test
+    @DisplayName("宿主锚点打开 ⇒ 背包里的活 TNT 炸在宿主处并消耗")
+    void hostAnchorOn_explodesAtHost() {
+        setTntHostAnchor(true);
+        try {
+            ItemStack lit = livingTnt(new ExplosionData(true, 0), 1);
+            Player player = mock(Player.class);
+            when(player.position()).thenReturn(new Vec3(1, 64, 2));   // 宿主 = 玩家脚下
+            ItemFormContainerContext ctx = itemFormOnPlayer(lit, player);
+
+            new LivingTntFunction().tick(List.of(new SlotEntry(0, lit)), ctx, new TickContext(ctx), ctx.getLevel());
+
+            assertTrue(ctx.getItem(0).isEmpty(),
+                "配置打开 ⇒ 有锚点 ⇒ 正常爆炸并消耗（消耗由 ignite 完成）");
+        } finally {
+            setTntHostAnchor(false);
+        }
     }
 }

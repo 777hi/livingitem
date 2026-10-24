@@ -348,18 +348,34 @@ public class LivingToolFunction implements LivingItemFunction {
      */
     @Nullable
     private static Vec3 resolveOrigin(ContainerContext context) {
-        BlockPos pos = context.getBlockPos();
-        if (pos != null) {
+        com.qiqi.li.living.container.ContainerAnchor anchor = context.getAnchor();
+        // 物品形态（活背包）借宿主锚点 —— 玩法开关，默认关
+        if (anchor == null && com.qiqi.li.living.config.GameplayConfig.toolAndWeaponUsesHostAnchor()) {
+            anchor = context.getHostAnchor();
+        }
+        return originOf(anchor);
+    }
+
+    /**
+     * 锚点 → 射线起点。
+     *
+     * <p>取点差异是<b>有意的</b>（见 {@code ContainerAnchor} 类注释）：方块取中心、
+     * 玩家取<b>眼睛</b>（与录制端一致）、掉落物取<b>碰撞箱中心</b>。</p>
+     */
+    private static Vec3 originOf(com.qiqi.li.living.container.ContainerAnchor anchor) {
+        if (anchor instanceof com.qiqi.li.living.container.ContainerAnchor.AtBlock block) {
             // L14 = a：容器方块中心
-            return Vec3.atCenterOf(pos);
+            return Vec3.atCenterOf(block.pos());
         }
-        if (context instanceof SimpleContainerContext simple && simple.getInventory() != null) {
+        if (anchor instanceof com.qiqi.li.living.container.ContainerAnchor.AtPlayer at) {
             // L3 = a：与录制端一致，用玩家眼睛位置
-            return simple.getInventory().player.getEyePosition();
+            return at.player().getEyePosition();
         }
-        if (context instanceof ItemEntityContainerContext itemCtx) {
-            // L14 = d：掉落物【碰撞箱中心】—— 用 position() 会落在脚下方块里（见 rayOrigin 说明）
-            return ItemEntityContainerContext.rayOrigin(itemCtx.getEntity());
+        if (anchor instanceof com.qiqi.li.living.container.ContainerAnchor.AtEntity entityAnchor) {
+            // L14 = d：掉落物【碰撞箱中心】—— 用 position() 会落在脚下方块里（见 rayOrigin 说明）。
+            // 船/矿车里的活工具本来就不重放 ⇒ 维持 null（不是遗漏）。
+            return entityAnchor.entity() instanceof net.minecraft.world.entity.item.ItemEntity item
+                ? ItemEntityContainerContext.rayOrigin(item) : null;
         }
         return null;
     }

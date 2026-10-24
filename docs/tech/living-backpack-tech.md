@@ -167,6 +167,36 @@ ContainerFluidWriteback → ctx.persist(key, value) → ContainerDataSavedData�
 
 ---
 
+## 5.5 宿主锚点的玩法开关（2026-10-24）
+
+活背包**没有自己的世界位置**，它借宿主的位置（`ContainerContext#getHostAnchor()`）。
+借来干什么属于**玩法**，所以全部做成了 `SERVER` 型配置（自动同步客户端、可按存档覆盖），
+**默认全关**：装了模组但没动配置的玩家，行为与之前完全一致。
+
+```toml
+# config/living_item-server.toml（或存档的 serverconfig/）
+[host_anchor]
+    tnt = false              # 背包里的炸弹炸在宿主处（背在身上 = 炸脚下）
+    water_wheel = false      # 水车向宿主位置注入应力（随身动力）
+    tool_and_weapon = false  # 工具/武器用宿主位置作射线起点（背包里也能按记忆挖矿）
+    beacon = false           # 信标用宿主位置开光（随身光环）
+```
+
+| 开关 | 关掉时的表现 |
+|---|---|
+| `tnt` | 引信走完就停住（**哑弹**），不爆炸、不消耗 |
+| `water_wheel` | 应力只显示在 tooltip（理论产能），不进入 Create 网络 |
+| `tool_and_weapon` | 背包里的工具不重放射线 |
+| `beacon` | 不开光 |
+
+⚠️ **`tool_and_weapon` 同时作用于工具和武器** —— 两者共用一个 `LivingToolFunction`，
+做不到只开一半（要那样得先拆功能）。
+
+⚠️ **配置值缓存在静态字段**（加载/重载事件刷新）：`ConfigValue#get()` 在配置未加载时会抛异常，
+而这些值在 tick 路径上每容器每 tick 都读。读路径只读字段，未加载时是默认值 `false`。
+
+---
+
 ## 6. 已知问题与未定案
 
 ### ✅ 列数已改权威值（#3，2026-10-23 修）

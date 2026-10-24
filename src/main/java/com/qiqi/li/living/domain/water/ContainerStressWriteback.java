@@ -34,6 +34,39 @@ public final class ContainerStressWriteback implements ContainerTickHook {
 
         if (ctx.getAssociatedBlockEntities().isEmpty() && ctx.getInventory() != null) {
             updatePlayerFeetStressOutput(ctx, stressData);
+            return;
+        }
+
+        // 物品形态（活背包）：没有 BE、也没有背包 ⇒ 借宿主锚点输出 —— **玩法开关，默认关**。
+        // 关掉时算出的应力只显示在 tooltip，不进入 Create 网络（tooltip 显示的是理论产能，
+        // 与「有没有接上网络」无关，所以这不矛盾）。
+        if (ctx.getAssociatedBlockEntities().isEmpty() && ctx.getInventory() == null
+                && com.qiqi.li.living.config.GameplayConfig.waterWheelUsesHostAnchor()) {
+            applyAtHostAnchor(ctx, stressData);
+        }
+    }
+
+    /**
+     * 宿主锚点 → 应力注入点。
+     *
+     * <p>{@code StressOutputManager#apply} 内部取 {@code pos.below()}，所以这里给的是
+     * <b>容器/宿主所在的位置</b>，不是齿轮本身：</p>
+     * <ul>
+     *   <li>方块宿主 ⇒ 宿主方块（注入到它下方那格）</li>
+     *   <li>玩家宿主 ⇒ {@code player.blockPosition()}（注入到脚下那格 —— 与背包形态一致）</li>
+     *   <li>实体宿主（船/矿车）⇒ 实体所在格下方（多数情况没东西，语义一致即可）</li>
+     * </ul>
+     */
+    private static void applyAtHostAnchor(TickableContainerContext ctx, ContainerStressData stressData) {
+        com.qiqi.li.living.container.ContainerAnchor anchor = ctx.getHostAnchor();
+        if (anchor == null) return;
+        if (anchor instanceof com.qiqi.li.living.container.ContainerAnchor.AtBlock block) {
+            StressOutputManager.apply(ctx.getLevel(), block.pos(), stressData);
+        } else if (anchor instanceof com.qiqi.li.living.container.ContainerAnchor.AtPlayer at) {
+            StressOutputManager.apply(at.player().level(), at.player().blockPosition(), stressData);
+        } else if (anchor instanceof com.qiqi.li.living.container.ContainerAnchor.AtEntity entityAnchor) {
+            var entity = entityAnchor.entity();
+            StressOutputManager.apply(entity.level(), entity.blockPosition(), stressData);
         }
     }
 
