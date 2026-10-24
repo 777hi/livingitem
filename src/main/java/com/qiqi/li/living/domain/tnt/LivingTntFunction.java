@@ -78,29 +78,7 @@ public class LivingTntFunction implements LivingItemFunction {
             explosion = explosion.tick();
 
             if (explosion.isExploded()) {
-                if (!ExplosionComponent.ignite(context, level)) {
-                    // 无处可炸（容器没有世界锚点）⇒ **熄灭**，不是"停在 0"。
-                    //
-                    // 为什么必须熄灭：「引信归零 + 没有爆炸对象」这个状态没有任何出口 ——
-                    // 留着它就是一颗**只等容器获得位置的定时炸弹**（2026-10-24 实测：
-                    // 背包放成方块 ⇒ 下一 tick 瞬爆，玩家早已忘了这回事）。
-                    //
-                    // ⚠️ **熄灭后会被自动重新点燃吗？会** —— 容器的**内部红石**（背包里放个活拉杆）
-                    // 与位置无关：`sensedSignal` 读的是内部 `edgeGrid`，不是外部方块
-                    // （外部才走 injectExternalInputs，那部分才需要位置）。
-                    // ⇒ 所以"无锚点 ⇒ 收不到信号"是**错的**，别拿它当理由。
-                    //
-                    // 当前之所以安全：**无锚点在 tick 路径上不可达** —— 物品形态的宿主锚点由
-                    // LivingBackpackFunction 传下来（宿主是方块/玩家/船，恒非空）。
-                    // （GUI 反查路径确实传 null，但那条路只服务 tooltip / 倒汲 / 槽位设置，不 tick。）
-                    // ⚠️ 若将来允许关掉宿主锚点（配置化），**必须在点燃分支先判锚点**，
-                    // 否则这里会退化成「80 → 0 → 熄灭 → 立刻重新点燃 → 80」的无限循环。
-                    LivingTntData.set(stack, LivingTntData.DEFAULT);
-                    context.setItem(slot, stack);
-                    context.syncSlotToClients(slot, stack);
-                    warnCannotExplodeOnce(context);
-                    continue;
-                }
+                ExplosionComponent.ignite(context, level);
                 // ⚠️ 消耗由 ignite 完成 —— 它把容器里**所有**活 TNT 槽位写成 EMPTY。
                 // 所以这里**必须直接结束**，绝不能往下走到写回：
                 //   · 写回 `stack` 会把刚清掉的槽位用本地栈填回去 ⇒ 「炸了但 TNT 还在」
@@ -119,17 +97,6 @@ public class LivingTntFunction implements LivingItemFunction {
             context.setItem(slot, stack);
             context.syncSlotToClients(slot, stack);
         }
-    }
-
-    /** 「炸不了」只记一次（按容器键）—— 满足 I-C6（降级必须可观测），又不至于每 tick 刷屏。 */
-    private static final Set<String> WARNED_CANNOT_EXPLODE = java.util.concurrent.ConcurrentHashMap.newKeySet();
-
-    private static void warnCannotExplodeOnce(ContainerContext context) {
-        String key = context.getCacheKey() != null ? context.getCacheKey() : context.getContainerKey();
-        if (key == null || !WARNED_CANNOT_EXPLODE.add(key)) return;
-        com.qiqi.li.logging.ModLog.CONTAINER.warn(
-            "[活TNT] 引信已归零但无法引爆（容器没有世界锚点）⇒ 已熄灭。容器键={}，容器类={}",
-            key, context.getClass().getSimpleName());
     }
 
     @Override

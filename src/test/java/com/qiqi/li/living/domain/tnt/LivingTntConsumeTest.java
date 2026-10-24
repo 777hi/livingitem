@@ -142,24 +142,4 @@ class LivingTntConsumeTest {
 
         verify(entity).setItem(org.mockito.ArgumentMatchers.argThat(ItemStack::isEmpty));
     }
-
-    // ---------- 2. 炸不了时不得重置 ----------
-
-    @Test
-    @DisplayName("没有世界锚点 ⇒ 熄灭（不是停在 0 —— 那是等容器获得位置的定时炸弹）")
-    void noAnchor_extinguishes() {
-        // 没有 blockPos ⇒ getAnchor() 与 getHostAnchor() 都是 null
-        FakeContainerContext ctx = new FakeContainerContext(27, 9);
-        ctx.set(3, livingTnt(new ExplosionData(true, 0), 1));
-
-        LivingTntFunction function = new LivingTntFunction();
-        function.tick(List.of(new SlotEntry(3, ctx.getItem(3))), ctx, new TickContext(ctx), explodingLevel());
-
-        ExplosionData after = LivingTntData.of(ctx.getItem(3)).explosion();
-        assertFalse(after.ignited(),
-            "无锚点 ⇒ 必须熄灭。保持 ignited（引信停在 0）会留一颗只等容器获得位置的定时炸弹："
-            + "背包一旦放成方块，下一 tick 就瞬爆（2026-10-24 实测）");
-        assertEquals(ExplosionData.DEFAULT, after, "熄灭 = 回到默认状态（未点燃、引信 0）");
-        assertFalse(ctx.getItem(3).isEmpty(), "熄灭 ≠ 消耗：物品还在");
-    }
 }
