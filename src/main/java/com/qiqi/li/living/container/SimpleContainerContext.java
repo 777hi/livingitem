@@ -213,6 +213,17 @@ public class SimpleContainerContext implements TickableContainerContext {
             return 9;
         }
 
+        // Tier 0: 联动来源给出的权威列数（放置态的活背包 / 潜影盒…）。
+        // 它从【活对象】算出来（如「存储槽数 ÷ 行数」）⇒ 不会像静态规则那样随模组改版过期，
+        // 故优先于 Tier 1 规则表：玩家为同一 BE 注册过规则时以来源为准（来源更权威）。
+        // 2026-10-24：精妙背包装储罐后 30 存储槽，启发式给 10 列、真值 5 ⇒ 补这一层。
+        for (BlockEntity be : associatedBlockEntities) {
+            int columns = ItemFormContainers.columnsOfBlockEntity(be);
+            if (columns > 0) {
+                return columns;
+            }
+        }
+
         // Tier 1: 已注册规则（按 BE 类型匹配）
         java.util.Optional<ContainerCompatibilityConfig.ContainerRule> rule =
             findContainerRule();

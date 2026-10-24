@@ -17,6 +17,26 @@
 
 ## 2026-10-24
 
+> 🧭 **放置态的精妙背包列数解析错误（`D-container-17`）**
+>
+> 用户实测：物品形态下储罐插件导致的槽位变化能正确解析，**放置状态下槽位解析错误**。
+>
+> **根因**：方块容器走 `SimpleContainerContext#getWidth()`，它的三层推断
+> （规则表 / 已知类型表 / 加权启发式）都不认识第三方 BE ⇒ 精妙背包装储罐后
+> 30 个存储槽被启发式猜成 **10 列**（真值 5）。物品形态有 `Source#columns(stack)`
+> 这条权威路（「存储槽数 ÷ 行数」），方块形态没有对应的一条。
+>
+> **修法**：`ItemFormContainers.Source` 新增 `columnsOfBlockEntity(BlockEntity)`
+> （放置态与物品形态同一套算法，wrapper 从 `BackpackBlockEntity#getBackpackWrapper()` 拿），
+> `SimpleContainerContext#getWidth()` 插入 **Tier 0** —— 来源从**活对象**算出的值优先于
+> 规则表（静态规则会随模组改版过期，活对象不会）。
+>
+> **为什么 Tier 0 在规则表之前**：来源值是 `handler.getSlots() ÷ getNumberOfSlotRows()`
+> 现算的，与升级状态同步；玩家为同一 BE 注册过的规则反而是猜的。
+>
+> 测试 +5（放置态同值 5 / 常态 9 / 别人的 BE 不认领 + Tier 0 赢启发式 / 不认领照旧回落），
+> 单测 904 → 909，`doc_check` 11 项全绿。
+
 > ⚙️ **配置化：宿主锚点的四个玩法开关（`D-container-16`，SERVER 型，默认全关）**
 >
 > 「背包借宿主的位置干什么」是**玩法**不是修复 —— 炸弹、随身发电、自动挖矿、随身光环，

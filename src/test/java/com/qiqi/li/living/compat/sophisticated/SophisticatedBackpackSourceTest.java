@@ -19,7 +19,9 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.neoforge.items.IItemHandler;
+import net.p3pp3rf1y.sophisticatedbackpacks.backpack.BackpackBlockEntity;
 import net.p3pp3rf1y.sophisticatedbackpacks.backpack.BackpackItem;
 import net.p3pp3rf1y.sophisticatedbackpacks.backpack.wrapper.BackpackWrapper;
 import net.p3pp3rf1y.sophisticatedbackpacks.backpack.wrapper.IBackpackWrapper;
@@ -171,6 +173,40 @@ class SophisticatedBackpackSourceTest {
         BackpackWrapper.testRows = 3;
 
         assertEquals(0, source.columns(backpack()));
+    }
+
+    // ── 放置形态的权威列数（2026-10-24 用户实测：物品形态对、放置态错）─────────
+    //
+    // 方块容器走 SimpleContainerContext，它的三层推断（规则表 / 已知类型表 / 启发式）
+    // 都不认识第三方 BE ⇒ 精妙背包装储罐后 30 存储槽被启发式猜成 10 列（真值 5）。
+    // ⇒ 来源必须也能答「这个 BE 是我的容器、几列」。
+
+    @Test
+    @DisplayName("放置态：30 槽 ÷ 6 行 = 5（与物品形态同一套算法）")
+    void columnsOfBlockEntity_thirtySlotsSixRows_returnsFive() {
+        BackpackWrapper.testSlots = 30;
+        BackpackWrapper.testRows = 6;
+
+        assertEquals(5, source.columnsOfBlockEntity(placedBackpack()),
+            "放置态与物品形态必须同值 —— 否则同一个背包装在手里对、放在地上错");
+    }
+
+    @Test
+    @DisplayName("放置态：27 槽 ÷ 3 行 = 9（无升级的常态）")
+    void columnsOfBlockEntity_standardBackpack_returnsNine() {
+        assertEquals(9, source.columnsOfBlockEntity(placedBackpack()));
+    }
+
+    @Test
+    @DisplayName("放置态：不是背包 BE ⇒ 0（不认领别人的方块实体）")
+    void columnsOfBlockEntity_foreignBe_returnsZero() {
+        assertEquals(0, source.columnsOfBlockEntity(mock(BlockEntity.class)),
+            "别的模组的 BE 必须让给别的来源 / 规则表，不能瞎认");
+    }
+
+    /** 造一个「放置态背包」BE —— wrapper 里裹着同一个物品栈。 */
+    private static BackpackBlockEntity placedBackpack() {
+        return new BackpackBlockEntity(BackpackWrapper.fromStack(backpack()));
     }
 
     @Test

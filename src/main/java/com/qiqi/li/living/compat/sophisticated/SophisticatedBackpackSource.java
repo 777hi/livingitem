@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.neoforge.items.IItemHandler;
 
 import com.qiqi.li.living.container.ContainerUuids;
@@ -60,6 +61,9 @@ public final class SophisticatedBackpackSource implements ItemFormContainers.Sou
     private static final String BACKPACK_CONTAINER = "net.p3pp3rf1y.sophisticatedbackpacks.common.gui.BackpackContainer";
     /** {@code net.p3pp3rf1y.sophisticatedbackpacks.common.gui.BackpackContext} */
     private static final String BACKPACK_CONTEXT = "net.p3pp3rf1y.sophisticatedbackpacks.common.gui.BackpackContext";
+    /** {@code net.p3pp3rf1y.sophisticatedbackpacks.backpack.BackpackBlockEntity} */
+    private static final String BACKPACK_BLOCK_ENTITY =
+        "net.p3pp3rf1y.sophisticatedbackpacks.backpack.BackpackBlockEntity";
 
     @Nullable
     private static Class<?> backpackItemClass;
@@ -94,6 +98,14 @@ public final class SophisticatedBackpackSource implements ItemFormContainers.Sou
     /** {@code BackpackWrapper#getNumberOfSlotRows()} —— 算权威列数要除它。 */
     @Nullable
     private static java.lang.reflect.Method getNumberOfSlotRows;
+
+    /** {@code BackpackBlockEntity} 类 —— 判「放置态是不是我的容器」。 */
+    @Nullable
+    private static Class<?> backpackBlockEntityClass;
+
+    /** {@code BackpackBlockEntity#getBackpackWrapper()} —— 放置态拿 wrapper 的唯一入口。 */
+    @Nullable
+    private static java.lang.reflect.Method getBackpackWrapperOfBe;
 
     private static boolean resolved;
 
@@ -147,6 +159,19 @@ public final class SophisticatedBackpackSource implements ItemFormContainers.Sou
                 + "handleOfMenu 退回默认扫描（扫物品栏 + 唯一一件才认）：{}",
                 e.getClass().getSimpleName(), e.getMessage());
         }
+
+        // 第三组：放置形态（背包放在地上 = BackpackBlockEntity）。失败只让放置态列数
+        // 掉到启发式，物品形态（tick / 菜单反查）与 GUI 反查都不受影响。
+        try {
+            backpackBlockEntityClass = Class.forName(BACKPACK_BLOCK_ENTITY);
+            getBackpackWrapperOfBe = backpackBlockEntityClass.getMethod("getBackpackWrapper");
+        } catch (ReflectiveOperationException | LinkageError e) {
+            backpackBlockEntityClass = null;
+            getBackpackWrapperOfBe = null;
+            LOGGER.warn("[ModSophisticated] 放置形态反射解析失败（{}），"
+                + "放置态背包的列数回落启发式（物品形态不受影响）：{}",
+                e.getClass().getSimpleName(), e.getMessage());
+        }
     }
 
     @Override
@@ -193,6 +218,45 @@ public final class SophisticatedBackpackSource implements ItemFormContainers.Sou
             int slots = handler == null ? 0 : handler.getSlots();
             return slots > 0 && slots % rows == 0 ? slots / rows : 0;
         } catch (ReflectiveOperationException | RuntimeException e) {
+            return 0;
+        }
+    }
+
+    /**
+     * <b>放置形态</b>的权威列数 —— 与 {@link #columns(ItemStack)} 同一套算法，
+     * 只是 wrapper 从方块实体上取（{@code BackpackBlockEntity#getBackpackWrapper()}）
+     * 而不是从物品栈构造。
+     *
+     * <p>为什么放置态需要单独一条：方块容器走 {@code SimpleContainerContext}，
+     * 它的列数推断三层（规则表 / 已知类型表 / 启发式）都不认识第三方 BE
+     * ⇒ 精妙背包装储罐后 30 存储槽被启发式猜成 10 列（真值 5）。
+     * 2026-10-24 用户实测：物品形态解析正确、放置态错误。</p>
+     *
+     * <p>⚠️ {@code getBackpackWrapper()} 返回 BE 上的<b>缓存字段</b>（真实实现就是
+     * {@code return backpackWrapper;}）⇒ 调用开销是一次字段读 + 两次反射 invoke，
+     * 不是构造 wrapper。真正的成本在 {@code getInventoryHandler()}（懒建，之后命中字段）。</p>
+     */
+    @Override
+    public int columnsOfBlockEntity(BlockEntity be) {
+        if (backpackBlockEntityClass == null || getBackpackWrapperOfBe == null
+                || getNumberOfSlotRows == null || getInventoryHandler == null) {
+            return 0;
+        }
+        if (!backpackBlockEntityClass.isInstance(be)) {
+            return 0;   // 不是我的容器（含别的模组的 BE）⇒ 让调用方继续问别的来源
+        }
+        try {
+            Object wrapper = getBackpackWrapperOfBe.invoke(be);
+            if (wrapper == null) return 0;
+            Object rowsObj = getNumberOfSlotRows.invoke(wrapper);
+            if (!(rowsObj instanceof Integer rows) || rows <= 0) return 0;
+
+            Object handler = getInventoryHandler.invoke(wrapper);
+            if (!(handler instanceof IItemHandler itemHandler)) return 0;
+            int slots = itemHandler.getSlots();
+            return slots > 0 && slots % rows == 0 ? slots / rows : 0;
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            // 精妙内部状态异常（未初始化 / 已失效）⇒ 本调用作废，回落启发式，不崩
             return 0;
         }
     }

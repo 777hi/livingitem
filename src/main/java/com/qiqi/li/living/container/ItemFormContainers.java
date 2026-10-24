@@ -9,6 +9,7 @@ import javax.annotation.Nullable;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.neoforge.items.IItemHandler;
 
 /**
@@ -57,6 +58,25 @@ public final class ItemFormContainers {
          * <p>⇒ 能给出权威值的来源就该给，别让核心猜。</p>
          */
         default int columns(ItemStack stack) {
+            return 0;
+        }
+
+        /**
+         * **放置形态**的权威列数 —— 这个方块实体是不是「本来源的容器被放在了地上」？
+         *
+         * <p>同一个物理容器有两种形态：<b>物品</b>（在某个槽位里）与<b>方块</b>（在地上）。
+         * {@link #columns(ItemStack)} 答前者，本方法答后者。列数同样随升级变化
+         * （储罐 / 电池各占 2 列），而方块形态拿不到 {@link #columns(ItemStack)} 这条路 ——
+         * {@code SimpleContainerContext#getWidth()} 的规则表 / 已知类型表 / 启发式三层
+         * 对第三方 BE 全不命中 ⇒ 放置态一律掉到启发式，精妙背包装储罐后 30 槽被猜成
+         * 10 列（真值 5）⇒ 邻居判定 / 流体渲染 / 漏斗传输全线错位。</p>
+         *
+         * <p>⇒ 与 {@link #columns(ItemStack)} 同一条原则：能给出权威值的来源就给，
+         * 别让核心猜。实现通常就是同一个 wrapper，同一套「存储槽数 ÷ 行数」。</p>
+         *
+         * @return 权威列数；{@code 0} = 不是我的 / 拿不到（调用方继续走规则表与启发式）
+         */
+        default int columnsOfBlockEntity(BlockEntity blockEntity) {
             return 0;
         }
 
@@ -116,6 +136,21 @@ public final class ItemFormContainers {
     /** 这件物品是不是物品形态容器。 */
     public static boolean isContainerItem(ItemStack stack) {
         return find(stack) != null;
+    }
+
+    /**
+     * 问全部来源「这个方块实体是谁的容器、几列」—— 第一个给出非 0 值的即权威值。
+     *
+     * <p>放置态列数的唯一入口（{@code SimpleContainerContext#getWidth()} 的 Tier 0）。
+     * 与 {@link #find(ItemStack)} 同构：按注册顺序问，来源自己判「是不是我的」。</p>
+     */
+    public static int columnsOfBlockEntity(BlockEntity blockEntity) {
+        if (blockEntity == null) return 0;
+        for (Source source : SOURCES) {
+            int columns = source.columnsOfBlockEntity(blockEntity);
+            if (columns > 0) return columns;
+        }
+        return 0;
     }
 
     /**

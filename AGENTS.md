@@ -146,7 +146,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 904 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
+**合计测试用例 909 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -171,6 +171,8 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-24 | 🧭 **放置态的精妙背包列数解析错误（`D-container-17`）** —— 用户实测：物品形态下储罐插件导致的槽位变化能正确解析，放置态错误。根因是方块容器的三层推断（规则表/已知类型表/启发式）都不认识第三方 BE ⇒ 30 存储槽被猜成 10 列（真值 5），而物品形态有 `Source#columns` 这条权威路。修法：`Source#columnsOfBlockEntity(BlockEntity)` + `getWidth()` 的 **Tier 0**（来源从活对象现算 ⇒ 优先于静态规则）。教训：**同一物理容器有两种形态，修了一边要主动想另一边**。单测 904 → 909 | `docs/tech/living-backpack-tech.md` §6 · `living/container/SimpleContainerContext.java` |
+| 2026-10-24 | ⚙️ **宿主锚点的四个玩法开关（`D-container-16`，SERVER 型，默认全关）** —— 「背包借宿主的位置干什么」是玩法不是修复（炸弹/随身发电/自动挖矿/随身光环），默认生效等于替玩家做玩法决定。`tnt` / `water_wheel` / `tool_and_weapon` / `beacon` 四个开关，SERVER 型（自动同步 + 可按存档覆盖），值缓存静态字段（`ConfigValue#get()` 未加载会抛，而它在 tick 路径上每容器每 tick 都读）。⚠️ 实测发现「只接了一半」：信标下游分派与工具黑名单还在问容器自己 ⇒ 已记 TODO 6.1/6.2。单测 900 → 904 | `living/config/GameplayConfig.java` · `living-backpack-tech.md` §5.5 |
 | 2026-10-24 | 💥 **带箱驴里引爆活 TNT ⇒ 服务端 `/ by zero` 崩服** —— 阶段 2 函数 tick 把驴炸死 ⇒ `dropEquipment()` 摘箱 ⇒ 阶段 3 红石拿 `getWidth()`=0 当除数。修 `EntityContainerContext#getWidth()`（原版 `hasChest()?5:0`，绝不返回 0）+ `ContainerRedstoneData` 空容器跳过（与应力域同款守卫）。单测 897 → 899 · 不变量 **I-C11** | `docs/system-design/container-boundary.md` |
 | 2026-10-23 | 🗡️ **活武器两个真 bug（群友实测）：打怪吸走掉落物 + 横扫把自己打死** —— 同一根因：受控 tick 让假玩家"真的活"而坐标贴着玩家 ⇒ 真链两条世界交互反噬。① `Player#aiStep` 实体接触环把身边掉落物/经验球/箭吸进假玩家**不可见的背包**（玩家背包满不满无关）；② 横扫 AoE 按 `isAlliedTo`（队伍制）豁免，假玩家无队伍 ⇒ 贴身玩家被自己武器横扫打死。修法两个覆写：`aiStep()` 期间换**底界之外的退化包围盒**（一处收口全部 `playerTouch` 路径；箭没有事件可拦）、`isAlliedTo()` 对所有玩家返回 true（AoE 整体跳过；伤害/击退/附魔后效是一个整体）。⚠️ 待真机验收 | `docs/tech/living-tool-tech.md` §5.7 · `living/domain/tools/LivingToolFakePlayer.java` |
 | 2026-10-23 | 🔧 **活背包收尾 + 两处真 bug** —— ① `[K2]` 调试日志删掉，顺带修掉它一直在报的真 bug：`flush` 逐维度调用却 `clear()` 全服去重表 ⇒ 每 tick 重发空包；② 两个活背包时倒沼/tooltip 全废 ⇒ 精巧联动覆写 `handleOfMenu` 用菜单自带锚点；③ 补 `living-backpack-tech.md`（16 个活物品功能都有 tech 文档，只它没有）。⚠️ 降级阶梯加了又删：为没发生的事铺路。单测 869 → 880 · **真机验收通过** | `docs/tech/living-backpack-tech.md` |
@@ -179,8 +181,6 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-10-21 | 🔻 **NeoForge 兼容下限 21.1.249 → 21.1.219（撤回解耦）** —— 门槛**从来不是代码需要**（改到 21.1.1 实测编译全过）；⚠️ 但**拆两个版本号本身是错的**：编译版本与承诺下限共用产物缓存 ⇒ 串了不报错、只悄悄产出错产物（本地假绿 + CI 假红）⇒ **收口成一个 `neo_version`**（编译=下限=开发），CI 的 build 作业即核验承诺 +「版本变了清产物缓存」自愈 | `docs/guides/unit-testing.md`「兼容下限核验」 · `docs/archive/changelog.md` |
 | 2026-10-21 | 🚢 **实体容器入门（船/矿车/带箱驴骡）** —— 用户拍板 B+B 后查证翻案：①「位置广播」证伪（活信标在实体容器不开光——`LidBlockEntity` 全是 BE）；②「viewer 降级」翻案为**天然正确**：`ContainerEntity extends Container` ⇒ 菜单槽 container 就是船本身（零反射），`MenuSlotOwners` 无缓存 + 每 tick 从 UUID 反查**实时**位置 ⇒ GUI 开着船在漂也刷新。落地：`entity_<uuid>` 键、`EntityContainerContext`（继承 SimpleContainerContext，getBlockPos 恒 null 防船停箱子上信标误判）、白名单 `ContainerEntity`+`AbstractChestedHorse#hasChest()`、容器级数据宿主抽象 `getDataHosts()`（BE/实体同接口 ⇒ 流体/相位附件跟实体走，区块卸载再回来还在）、掉落物与实体容器合并为一次 `getAllEntities()`。列数：船/矿车启发式（27→9、5→5）+ **驴问原版 `getInventoryColumns()`**。**真机修正**：驴 inventory 是 16 槽（索引 0 = 马鞍、1..15 = 箱子格）⇒ 不排除鞍会算成 8 列（16%8=0，实测「8×2」）、且往鞍槽倒水得到幽灵物品 ⇒ 新增鞍槽偏移映射（size 15 / 槽位 +1 / 列数问原版）。**真机再修正**：加偏移后「渲染和逻辑差一格」⇒ 补 `toPhysicalSlot`/`toLogicalSlot` 互逆映射贯通全部跨边界通道，`update` 改收 ctx 防漏。单测 782 → 802 | `docs/buffer/container-menu-introspection-topic.md` · `living/container/EntityContainerContext.java` · `living/container/EntityContainers.java` |
 | 2026-10-20 | 🔋 **相位快照也跨形态保全（顺 I-C9）** —— 审计 24 个活物品的容器能力依赖后发现：BE 附件里只有流体和电力相位**带 `serialize`**（= 存档级持久），而 `ContainerDataMigration` 只搬了流体 ⇒ 精妙背包/潜影盒里调好的多路满相布局，方块→物品后<b>相对相位被洗牌</b>、要重调。新增 `CONTAINER_PHASE_SNAPSHOT_ITEM` 组件复用现成 `PhaseSnapshot.CODEC`，破坏/放置两侧各搬一次；**不需要 snapshot()**（record 不可变，与流体的可变对象相反）。契约 I-C9 从「流体」扩为「容器级持久数据」，并立下判据：<b>只有带 `serialize` 的才搬</b>（应力/红石是运行时数据，丢了下一 tick 自愈）。单测 780 → 782 | `docs/system-design/container-boundary.md` I-C9 · `living/domain/water/ContainerDataMigration.java` |
-| 2026-10-20 | 🧩 **跨形态保全收窄为「内容随物品走」的容器（I-C9）** —— 用户：「代价太重，原版潜影箱 / 模组背包这种撸掉后还保有物品的容器，才做流体保留才有意义」。新增 `container_rules.json` 的 `contentRetaining`（**id 级数据声明**，默认不迁移）：潜影盒 / 精妙背包 / 无尽箱子声明保留；原版箱子 / 铁箱子 / 炼金箱子破坏时流体随方块消失，与内容行为一致 —— **不再出现「空箱子但有水」**。不做自动判断：没有任何通用 API 能回答「内容是否随掉落物走」（四种容器各走各的组件），只能认组件 ⇒ 违反 I-C1。守卫 2 项（内置声明 / 玩家可追加但不可取消），先红后绿验证过。单测 778 → 780 | `docs/system-design/container-boundary.md` I-C9 · `living/domain/water/ContainerDataMigration.java` |
-| 2026-10-20 | 🔌 **联动无尽箱子（AvaritiaNeo）** —— 新增 `living/compat/avaritia/`（`ModAvaritia` 门控 + `AvaritiaMenuResolver`）：它的 `TileInfinityChest` 不实现 `Container`、菜单也**没有** `getBlockPosition()` ⇒ viewer 匹配三条路全断（图标/tooltip/流体不刷新、GUI 倒汲无效）。判据是「**返回 `BlockEntity` 的 getter**」（`getTile`/`getBlockEntity`），拿到 BE 后走公开 `getBlockPos()`；包名前缀 `net.byAqua3.avaritia.` 限定，反射不扩散。内置规则补 `avaritia:infinity_chest` 300 格 / **25 列**（启发式会算成 10，25 不在任何候选宽度里）。核心零改动。单测 773 → 778 | `living/compat/avaritia/` · `container_rules.json` · `guides/container-compatibility.md` |
 
 ## 提交前必跑（2026-10-20 定）
 

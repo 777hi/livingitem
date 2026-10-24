@@ -22,8 +22,13 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.neoforge.items.IItemHandler;
 import net.neoforged.neoforge.items.IItemHandlerModifiable;
+import net.p3pp3rf1y.sophisticatedbackpacks.backpack.BackpackBlockEntity;
+import net.p3pp3rf1y.sophisticatedbackpacks.backpack.wrapper.BackpackWrapper;
+
+import com.qiqi.li.living.compat.sophisticated.SophisticatedBackpackSource;
 
 import java.util.List;
 
@@ -194,6 +199,45 @@ class SimpleContainerContextTest {
             var handler = new FakeHandler(41);
             var ctx = new SimpleContainerContext(handler);
             assertNotNull(ctx);
+        }
+
+        @Test
+        @DisplayName("Tier 0：联动来源给出权威列数 ⇒ 优先于启发式（放置态的精妙背包）")
+        void sourceAuthoritativeColumns_beatHeuristic() {
+            // 2026-10-24 用户实测：物品形态解析正确、放置态错误。精妙背包装储罐后
+            // 30 存储槽，启发式选 10 列（真值 5）⇒ 这一层就是修它的。
+            SophisticatedBackpackSource source = new SophisticatedBackpackSource();
+            ItemFormContainers.register(source);
+            try {
+                BackpackWrapper.testSlots = 30;
+                BackpackWrapper.testRows = 6;
+                BlockEntity be = new BackpackBlockEntity(
+                    BackpackWrapper.fromStack(new ItemStack(Items.SHULKER_BOX)));
+
+                var ctx = new SimpleContainerContext(new FakeHandler(30), List.of(BlockPos.ZERO), List.of(be));
+
+                assertEquals(5, ctx.getWidth(),
+                    "来源从活对象算出的 5 列必须赢过启发式的 10 列");
+            } finally {
+                BackpackWrapper.testSlots = 27;
+                BackpackWrapper.testRows = 3;
+                ItemFormContainers.clearForTest();
+            }
+        }
+
+        @Test
+        @DisplayName("Tier 0：来源不认这个 BE ⇒ 照旧走规则表 / 启发式")
+        void sourceDoesNotClaimBe_fallsThroughToHeuristic() {
+            ItemFormContainers.register(new SophisticatedBackpackSource());
+            try {
+                BlockEntity foreign = mock(BlockEntity.class);
+                var ctx = new SimpleContainerContext(new FakeHandler(30), List.of(BlockPos.ZERO), List.of(foreign));
+
+                assertEquals(10, ctx.getWidth(),
+                    "来源不认领时应原样回落启发式（30→10），不能被 Tier 0 挡住");
+            } finally {
+                ItemFormContainers.clearForTest();
+            }
         }
 
         @Test
