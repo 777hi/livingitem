@@ -154,7 +154,7 @@ public class ExplosionComponent {
             center = entityAnchor.entity().position();
         } else {
             // 真没有锚点（物品形态且宿主未知 —— 只可能出现在 GUI 反查路径构造的 ctx，
-            // 它不进 tick）。返回 false，调用方保持 ignited + 留痕，不会循环。
+            // 它不进 tick）。返回 false，调用方**熄灭**（引信归零却没有爆炸对象 = 没有出口的状态）。
             return false;
         }
 

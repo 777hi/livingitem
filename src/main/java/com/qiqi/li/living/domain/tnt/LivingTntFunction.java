@@ -79,10 +79,18 @@ public class LivingTntFunction implements LivingItemFunction {
 
             if (explosion.isExploded()) {
                 if (!ExplosionComponent.ignite(context, level)) {
-                    // 兜底：真炸不了（容器里找不到活 TNT / 非服务端世界等病态情形）。
-                    // **绝不能重置** —— 无条件重置成「未点燃」正是真机「重复倒计时」的机制
-                    // （ignite 失败被忽略 → 下一 tick 又从头倒计时 ⇒ 无限循环）。
-                    // 保持 ignited（引信停在 0）+ 留痕一次，让失败可见而不是循环。
+                    // 无处可炸（容器没有世界锚点）⇒ **熄灭**，不是"停在 0"。
+                    //
+                    // 为什么必须熄灭：「引信归零 + 没有爆炸对象」这个状态没有任何出口 ——
+                    // 留着它就是一颗**只等容器获得位置的定时炸弹**（2026-10-24 实测：
+                    // 背包放成方块 ⇒ 下一 tick 瞬爆，玩家早已忘了这回事）。
+                    //
+                    // ⚠️ 熄灭依赖一个前提：**无锚点的容器收不到红石信号**（物品形态没有邻居
+                    // 方块 ⇒ maxSensedSignal 恒 0）⇒ 熄灭后不会被自动重新点燃。
+                    // 若将来出现"无锚点但能收到信号"的形态，这里会变成循环，必须先解决那个。
+                    LivingTntData.set(stack, LivingTntData.DEFAULT);
+                    context.setItem(slot, stack);
+                    context.syncSlotToClients(slot, stack);
                     warnCannotExplodeOnce(context);
                     continue;
                 }
@@ -113,7 +121,7 @@ public class LivingTntFunction implements LivingItemFunction {
         String key = context.getCacheKey() != null ? context.getCacheKey() : context.getContainerKey();
         if (key == null || !WARNED_CANNOT_EXPLODE.add(key)) return;
         com.qiqi.li.logging.ModLog.CONTAINER.warn(
-            "[活TNT] 引信已归零但无法引爆（引信停在 0）。容器键={}，容器类={}",
+            "[活TNT] 引信已归零但无法引爆（容器没有世界锚点）⇒ 已熄灭。容器键={}，容器类={}",
             key, context.getClass().getSimpleName());
     }
 

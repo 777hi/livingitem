@@ -233,29 +233,64 @@ public class LivingTntFunction implements LivingItemFunction {   // ← 不再�
 ### 3.4 Tick 倒计时
 
 ```java
-@Override
-public void tick(List<SlotEntry> entries, ContainerContext context, TickContext tick, Level level) {
-    if (level.isClientSide) return;
+for (SlotEntry entry : entries) {
+    ItemStack stack = entry.stack();
+    ExplosionData explosion = LivingTntData.of(stack).explosion();
 
-    for (SlotEntry entry : entries) {
-        ItemStack stack = entry.stack();
-        LivingTntData data = LivingTntData.of(stack);
-        ExplosionData explosion = data.explosion();
-
-        if (!explosion.ignited()) continue;  // 未点燃，跳过
-
-        explosion = explosion.tick();  // fuseTimer - 1
-
-        if (explosion.isExploded()) {
-            // 引信归零 → 执行爆炸
-            ExplosionComponent.ignite(context, level);
-            LivingTntData.set(stack, LivingTntData.DEFAULT);  // 重置状态
-        } else {
-            LivingTntData.set(stack, data.withExplosion(explosion));
+    if (!explosion.ignited()) {
+        if (tick.getSensor(context).maxSensedSignal(slot) > 0) {
+            // 点燃 + 写回 + 同步
         }
+        continue;
     }
+
+    explosion = explosion.tick();               // fuseTimer - 1
+
+    if (explosion.isExploded()) {
+        if (!ExplosionComponent.ignite(context, level)) {
+            // 无处可炸 ⇒ 熄灭（见 §3.6）
+            LivingTntData.set(stack, LivingTntData.DEFAULT);
+            context.setItem(slot, stack);
+            context.syncSlotToClients(slot, stack);
+            continue;
+        }
+        return;                                 // ⚠️ 消耗由 ignite 完成，不能再写回
+    }
+
+    LivingTntData.set(stack, data.withExplosion(explosion));
+    context.setItem(slot, stack);               // ⚠️ 必须显式写回（见下方说明）
+    context.syncSlotToClients(slot, stack);
 }
 ```
+
+⚠️ 两个容易写错的地方，都是真机踩过的：
+
+- **`return` 而不是继续循环**：`ignite` 会把容器里**所有**活 TNT 写成 `EMPTY`，
+  之后任何写回都会把刚清掉的槽位填回去（「炸了但 TNT 还在」）。多颗时更糟 ——
+  `entries` 是 tick 前的快照，其余条目照样会各自写回（把没轮到的复活）。
+- **必须显式 `setItem`**：不能依赖「`getItem` 返回的活引用」。NBT 背书的容器
+  （精妙背包的 handler）里就地改组件不会触发它自己的保存钩子。
+
+### 3.6 无处可炸 ⇒ 熄灭（2026-10-24 定）
+
+**锚点从哪来**：`ctx.getAnchor()`（容器自己在哪）?? `ctx.getHostAnchor()`（物品形态借住在哪）。
+
+**没有锚点时**：引信照常走到 0，但 `ignite` 返回 false ⇒ **熄灭**（重置成未点燃）。
+
+为什么是熄灭，而不是"停在 0"：
+
+| 方案 | 后果 |
+|---|---|
+| 停在 0（2026-10-23 的做法） | 留下**没有出口的状态**：不炸、不消失、不熄灭 ⇒ 背包一旦放成方块，下一 tick 就**瞬爆** |
+| **熄灭（现行）** | 状态归零，没有残留 |
+| 无条件重置（最初的做法） | 有红石信号时会**无限循环**（80 → 0 → 重置 → 又 80） |
+
+⚠️ **熄灭依赖一个前提**：无锚点的容器**收不到红石信号**（物品形态没有邻居方块
+⇒ `maxSensedSignal` 恒 0）⇒ 熄灭后不会被自动重新点燃。若将来出现
+「无锚点但能收到信号」的形态，这里会退化成循环，必须先解决那个前提。
+
+⚠️ 这条只影响**物品形态容器（活背包）**：方块容器有 `AtBlock`、玩家背包有 `AtPlayer`、
+船/矿车有 `AtEntity` ⇒ 它们永远有锚点，与本节无关。
 
 ### 3.5 引信参数
 
