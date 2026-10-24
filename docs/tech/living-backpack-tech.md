@@ -207,8 +207,9 @@ setBackpackStack → cacheSlotNumbers` ⇒ **ClassCastException**。
 锚点失效时它每次都打一条 ERROR ⇒ 关一次界面刷 60 条。
 已修为**循环外问一次**（物品形态解析是菜单级的，与槽位无关），并有回归测试钉住。
 
-⚠️ **同类风险还在**：`FluidFlowServerSync.viewersOf` 每 tick 每个在线玩家问一次
-`handleOf`。锚点失效时它会持续每 tick 打一条精妙的 ERROR（约 20 条/秒）直到界面关闭。
+⚠️ **同类风险还在**：观众判定（现已收编到 `ContainerViewers.of` 的物品形态分支）
+每 tick 对**每个脏容器 × 每个在线玩家**问一次 `handleOf`，走的是精妙反射链。
+锚点失效时它会持续每 tick 打一条精妙的 ERROR（约 20 条/秒）直到界面关闭。
 本次实录未见（那种状态下客户端已经崩了），**未预先优化** —— 真出现了再说。
 
 ### 未定案

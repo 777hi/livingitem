@@ -1,7 +1,5 @@
 package com.qiqi.li.living.container;
 
-import javax.annotation.Nullable;
-
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
@@ -45,19 +43,4 @@ public sealed interface ContainerAnchor {
      * 才说明「锚点不该按容器形态定义」。</p>
      */
     record AtEntity(Entity entity) implements ContainerAnchor {}
-
-    /**
-     * 读成坐标的便捷方法 —— <b>只给不关心取点差异的调用方用</b>（如日志 / 粗判定）。
-     *
-     * <p>⚠️ 需要精确取点的功能（射线要眼睛、应力要下方）<b>不要用这个</b>，
-     * 应当自己 switch 到具体类型。</p>
-     */
-    @Nullable
-    default net.minecraft.world.phys.Vec3 roughPosition() {
-        return switch (this) {
-            case AtBlock b -> net.minecraft.world.phys.Vec3.atCenterOf(b.pos());
-            case AtPlayer p -> p.player().position();
-            case AtEntity e -> e.entity().position();
-        };
-    }
 }

@@ -10,7 +10,8 @@ package com.qiqi.li.living.container;
  * {@code substring} <b>反推</b>。反推规则各写各的 ⇒ 改键形、加键形、或某个消费方忘了跟，就漏。</p>
  *
  * <p>2026-10-13 一次性暴露 3 处（全部同源）：① {@code isJustInventoryMenu} 把「开着背包界面」
- * 误判为「没开界面」⇒ 背包 tooltip 不刷新；② {@code sendToOwner} 的 UUID 解析不剥
+ * 误判为「没开界面」⇒ 背包 tooltip 不刷新；② 玩家态直发主人那条路（现 {@code ContainerViewers}
+ * 的 {@code isOwnedByPlayer} 分支）的 UUID 解析不剥
  * {@code _ender_chest} 后缀 ⇒ 抛异常被吞 ⇒ 末影箱从不收包；③ 客户端按「是不是
  * InventoryScreen」推断容器类型 ⇒ 与键形判断不一致 ⇒ 读写分流错位。</p>
  *

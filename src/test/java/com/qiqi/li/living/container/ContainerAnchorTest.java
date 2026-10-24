@@ -136,27 +136,4 @@ class ContainerAnchorTest {
         assertNull(ctx.getHostAnchor());
         assertInstanceOf(ContainerAnchor.AtPlayer.class, ctx.getAnchor());
     }
-
-    @Test
-    @DisplayName("roughPosition：三种锚点都能读成坐标（只给不关心取点差异的调用方）")
-    void roughPosition_threeKinds() {
-        Player player = mock(Player.class);
-        when(player.position()).thenReturn(new net.minecraft.world.phys.Vec3(1, 2, 3));
-        assertEquals(new net.minecraft.world.phys.Vec3(1, 2, 3),
-            new ContainerAnchor.AtPlayer(player).roughPosition(), "玩家 ⇒ 就是 position()，不做取整");
-
-        assertEquals(new net.minecraft.world.phys.Vec3(0.5, 64.5, 0.5),
-            new ContainerAnchor.AtBlock(new BlockPos(0, 64, 0)).roughPosition(), "方块 ⇒ 中心");
-
-        Entity entity = mock(Entity.class);
-        when(entity.position()).thenReturn(new net.minecraft.world.phys.Vec3(9, 9, 9));
-        assertEquals(new net.minecraft.world.phys.Vec3(9, 9, 9),
-            new ContainerAnchor.AtEntity(entity).roughPosition(), "实体 ⇒ 位置");
-    }
-
-    @Test
-    @DisplayName("退化：既无位置又无主人 ⇒ null（不抛）")
-    void bareContext_returnsNull() {
-        assertNull(new SimpleContainerContext(HANDLER).getAnchor());
-    }
 }

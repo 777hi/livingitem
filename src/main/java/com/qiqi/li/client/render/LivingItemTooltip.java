@@ -55,7 +55,7 @@ public class LivingItemTooltip {
      * 分栏都算）读背包缓存，其余读通用缓存。</p>
      *
      * <p>末影箱 vs 普通箱子<b>不需要分辨</b>：① 服务端对末影箱包做了 viewer 门控
-     * （{@code LivingItemRuntimeSync.shouldSendToOwner}）⇒ 通用缓存里只有「当前打开的
+     * （{@code ContainerViewers.of} 的末影箱分支）⇒ 通用缓存里只有「当前打开的
      * 那个非背包容器」在写；② 客户端本就分不清两者——末影箱 GUI 在客户端就是
      * {@code GENERIC_9x3} + 27 格 {@code SimpleContainer} 替身，与单箱同形
      * （{@code FluidFlowClientCache.RenderTarget} 注释实证：任何

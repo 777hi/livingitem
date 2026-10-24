@@ -73,37 +73,49 @@ public final class LivingBackpackFunction implements LivingItemFunction {
         if (DEPTH.get() >= MAX_DEPTH) return;   // 闸一：嵌套上限
 
         for (SlotEntry entry : entries) {
-            ItemStack stack = entry.stack();
-            ItemFormContainers.Source source = ItemFormContainers.find(stack);
-            if (source == null) continue;
-
-            IItemHandler handler = source.contentHandler(stack);
-            if (handler == null) {
-                ModLog.CONTAINER.debug("[活背包] 拿不到内容视图，跳过：{}", stack.getItem());
-                continue;
-            }
-
-            UUID uuid = ContainerUuids.getOrCreateItem(stack);
-            if (uuid == null) continue;
-            if (!CHAIN.get().add(uuid)) {
-                ModLog.CONTAINER.warn("[活背包] 环检测命中，跳过：{}", uuid);
-                continue;   // 闸二：同一条链上重复出现
-            }
-
-            DEPTH.set(DEPTH.get() + 1);
+            // ⚠️ try 必须包住**整个条目**，不能只包 processContext：
+            // 联动模块的回调（find / contentHandler / columns）也可能抛，
+            // 那些在旧实现里在 try 之外 ⇒ 一个坏来源会带走同批其它背包，
+            // 再往上抛就是整个容器（乃至服务端 tick）停摆。2026-10-24 补测试时实测到。
             try {
-                // 宿主锚点：「物品在箱子里，就在箱子那里」—— 传下去，但**用不用由功能决定**
-                // （目前只有活 TNT 的爆炸点用它；工具/水车/信标若直接用会变成加强玩法）
-                ItemFormContainerContext inner = new ItemFormContainerContext(
-                    handler, uuid, level, source.columns(stack), container.getAnchor());
-                ContainerLivingItemHandler.processContext(inner, level);
+                tickOne(entry, container, level);
             } catch (RuntimeException e) {
-                // 一个背包炸了不该让其它背包和宿主容器跟着停（I-C7：留痕但不静默）
-                ModLog.CONTAINER.error("[活背包] 内部 tick 失败，uuid=" + uuid, e);
-            } finally {
-                DEPTH.set(DEPTH.get() - 1);
-                CHAIN.get().remove(uuid);
+                // 一个背包坏了不该让其它背包和宿主容器跟着停（I-C7：留痕但不静默）
+                ModLog.CONTAINER.error(
+                    "[活背包] 处理失败，跳过该背包：" + entry.stack().getItem(), e);
             }
+        }
+    }
+
+    /** 处理一个背包条目（异常由调用方按条目兜住）。 */
+    private static void tickOne(SlotEntry entry, ContainerContext container, Level level) {
+        ItemStack stack = entry.stack();
+        ItemFormContainers.Source source = ItemFormContainers.find(stack);
+        if (source == null) return;
+
+        IItemHandler handler = source.contentHandler(stack);
+        if (handler == null) {
+            ModLog.CONTAINER.debug("[活背包] 拿不到内容视图，跳过：{}", stack.getItem());
+            return;
+        }
+
+        UUID uuid = ContainerUuids.getOrCreateItem(stack);
+        if (uuid == null) return;
+        if (!CHAIN.get().add(uuid)) {
+            ModLog.CONTAINER.warn("[活背包] 环检测命中，跳过：{}", uuid);
+            return;   // 闸二：同一条链上重复出现
+        }
+
+        DEPTH.set(DEPTH.get() + 1);
+        try {
+            // 宿主锚点：「物品在箱子里，就在箱子那里」—— 传下去，但**用不用由功能决定**
+            // （目前只有活 TNT 的爆炸点用它；工具/水车/信标若直接用会变成加强玩法）
+            ItemFormContainerContext inner = new ItemFormContainerContext(
+                handler, uuid, level, source.columns(stack), container.getAnchor());
+            ContainerLivingItemHandler.processContext(inner, level);
+        } finally {
+            DEPTH.set(DEPTH.get() - 1);
+            CHAIN.get().remove(uuid);
         }
     }
 

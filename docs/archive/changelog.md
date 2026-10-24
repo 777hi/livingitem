@@ -17,6 +17,30 @@
 
 ## 2026-10-24
 
+> 🔍 **容器兼容专题终审：补 tick 测试时抓出一个真 bug（异常隔离范围写错了）**
+>
+> 审查发现四类问题，按建议顺序处理：
+>
+> 1. **接入清单同步**（最该修）：`docs/guides/container-compatibility.md` 的 11 条清单
+>    仍停在 10-22 —— 没写 `supportsDroppedItem`（#1）、`ContainerViewers.of`（#7）、
+>    `ContainerAnchor`/`getHostAnchor`（#10）。照旧清单接活潜影箱**一定会漏**，
+>    而这份清单当初就是因为「只接了 6 条线就以为做完了」才诞生的。
+>    顺带把 #3 的勾选状态从「⚠️ 靠启发式，未验证」改成「✅ 权威列数，真机验收」。
+> 2. **补 `LivingBackpackFunction.tick` 测试**（此前 tick 零测试，只测了认领/取消活化）：
+>    宿主锚点传递、深度闸、逐条目隔离。
+> 3. **⚠️ 补测试时抓出真 bug**：`try` 只包了 `processContext`，
+>    而 `find` / `contentHandler` / `columns`（联动模块的回调）在 try **之外**
+>    ⇒ 一个坏来源会带走同批其它背包，再往上抛就是整个容器乃至服务端 tick 停摆。
+>    注释早就写着「一个背包炸了不该让其它背包跟着停」，但作用域写错了 ⇒ 抽出 `tickOne` 按条目兜住。
+> 4. **删死 API / 修过期注释**：`ContainerAnchor#roughPosition()` 生产代码零使用（只有测试在测）；
+>    `LivingItemTooltip` / `ContainerKind` 两处 javadoc 仍指向已删的 `shouldSendToOwner` / `sendToOwner`。
+>
+> ⚠️ 顺带发现：**环检测在 `MAX_DEPTH = 1` 下不可达**（深度闸在它之前就返回了）。
+> 它是为「将来放开嵌套」准备的，所以保留但在测试里**明确标注不测** —— 不假装测到了。
+>
+> 单测 899 → 901（+4 新 -1 删）。doc_check 11 项全绿，check_layers 无新增违规。
+
+
 > 💥 **修复：带箱驴里引爆活 TNT ⇒ 服务端 `/ by zero` 崩服**
 >
 > 崩溃点：`ContainerRedstoneData.calculate` 的 `(size + width - 1) / width`，`width == 0`。
