@@ -5,6 +5,7 @@ import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
+import com.qiqi.li.living.container.ContainerLivingItemHandler;
 import com.qiqi.li.living.transfer.ContainerCompatibilityConfig;
 import com.qiqi.li.living.transfer.ContainerRuleConfig;
 import net.minecraft.commands.CommandSourceStack;
@@ -197,24 +198,32 @@ public class LivingItemContainerCommand {
         }
 
         ResourceLocation containerId = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(be.getType());
-        // 槽位数取能力面（与 tick 路径同源）；Container 仅用于 Tier 2 类型表推断列数
-        int actualSize = handler.getSlots();
-
         source.sendSuccess(() -> Component.literal(
             String.format("§e%s§r", containerId)), false);
 
+        var containerContext = ContainerLivingItemHandler.resolveContextAt(level, pos, handler);
+        if (containerContext == null) {
+            source.sendSuccess(() -> Component.literal(
+                "  §7状态: §e当前不处理（战利品尚未开启或无可用上下文）§r"), false);
+            return 1;
+        }
+        int actualSize = containerContext.getSize();
+        int columns = containerContext.getWidth();
+        long rows = ((long) actualSize + columns - 1) / columns;
         source.sendSuccess(() -> Component.literal(
             String.format("  §7槽位: §f%d§r", actualSize)), false);
+        source.sendSuccess(() -> Component.literal(
+            String.format("  §7生效列数: §f%d (%d行)§r", columns, rows)), false);
 
-        // 查找已注册规则（带容量 —— 同一 BE 类型可有多档，列数可能不同）
+        // 注册规则是配置值，不一定是生效值；联动来源可以优先于它。
         var existingRule = ContainerCompatibilityConfig.findRule(containerId, actualSize);
         if (existingRule.isPresent()) {
             var rule = existingRule.get();
-            int rows = rule.containerSize() / rule.columns();
+            long ruleRows = ((long) rule.containerSize() + rule.columns() - 1) / rule.columns();
             source.sendSuccess(() -> Component.literal(
-                String.format("  §7来源: §f%s§r", describeRuleSource(containerId))), false);
+                String.format("  §7规则来源: §f%s§r", describeRuleSource(containerId))), false);
             source.sendSuccess(() -> Component.literal(
-                String.format("  §7列数: §f%d (%d行)§r", rule.columns(), rows)), false);
+                String.format("  §7规则列数: §f%d (%d行)§r", rule.columns(), ruleRows)), false);
             source.sendSuccess(() -> Component.literal(
                 String.format("  §7布局: §f%s§r", rule.layoutType())), false);
             source.sendSuccess(() -> Component.literal(
@@ -225,18 +234,14 @@ public class LivingItemContainerCommand {
                 String.format("  §7描述: §f%s§r", rule.description())), false);
         } else {
             source.sendSuccess(() -> Component.literal(
-                "  §7状态: §c未注册§r"), false);
+                "  §7规则状态: §c未注册§r"), false);
             if (ContainerRuleConfig.isRemovedByUser(containerId)) {
                 source.sendSuccess(() -> Component.literal(
                     "  §7备注: §c已被玩家从内置规则中移除§r"), false);
             }
 
-            // 显示自动推断的列数（Tier 2 类型表只在 BE 恰好是原版 Container 时可用）
-            Container container = be instanceof Container c ? c : null;
-            int inferredColumns = ContainerCompatibilityConfig.resolveColumns(actualSize, container);
             source.sendSuccess(() -> Component.literal(
-                String.format("  §7推断列数: §f%d§r  §8(输入 /livingitem container register %d 注册)§r",
-                    inferredColumns, inferredColumns)), false);
+                String.format("  §8校准可用 /livingitem container register %d§r", columns)), false);
         }
         return 1;
     }

@@ -72,8 +72,8 @@ public final class ItemFormContainerContext extends SimpleContainerContext {
      * 真值 5 ⇒ 邻居判定 / 流体渲染 / 漏斗传输全线错位（2026-10-23 定位）。</p>
      */
     @Override
-    public int getWidth() {
-        return columns > 0 ? columns : super.getWidth();
+    public ContainerLayout getLayout() {
+        return columns > 0 ? layout(columns, ContainerLayout.Source.LIVE) : super.getLayout();
     }
 
     @Override

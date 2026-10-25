@@ -165,12 +165,14 @@ public final class ContainerLayoutLearner {
      * 断号说明菜单只暴露了容器的一部分（那种情况下"列数"也不是整份存储的列数）。</p>
      */
     static boolean indicesAreDense(List<Slot> containerSlots) {
+        int size = containerSlots.size();
+        if (size == 0) return false;
         java.util.Set<Integer> seen = new java.util.HashSet<>();
         for (Slot slot : containerSlots) {
-            if (!seen.add(slot.getContainerSlot())) return false;
+            int index = slot.getContainerSlot();
+            if (index < 0 || index >= size || !seen.add(index)) return false;
         }
-        return seen.size() == containerSlots.size()
-            && seen.contains(0) && seen.contains(seen.size() - 1);
+        return true;
     }
 
     /**

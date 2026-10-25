@@ -501,6 +501,12 @@ public class AbstractContainerScreenMixin extends Screen {
         java.util.List<net.minecraft.network.chat.Component> lines =
             com.qiqi.li.client.input.LivingItemInputHandler.getHudLines();
         if (lines == null || lines.isEmpty()) return;
+        for (GuiEventListener child : this.children()) {
+            if (child instanceof LivingButton button && button.isMouseOver(mouseX, mouseY)) {
+                lines.addAll(button.getContainerInfoLines());
+                break;
+            }
+        }
 
         // HUD = 常驻自定义 tooltip（2026-10-10，用户拍板「排队」方案）：
         // 背景/边框/文字整条走批量缓冲队列，按调用顺序排在所有物品图标之后 ⇒ 天然在其上，

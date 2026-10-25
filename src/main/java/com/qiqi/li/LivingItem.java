@@ -654,6 +654,12 @@ public class LivingItem {
         registrar.playToServer(HopperDirectionPacket.TYPE, HopperDirectionPacket.STREAM_CODEC, HopperDirectionPacket::handle);
         registrar.playToServer(SlotDirectionPacket.TYPE, SlotDirectionPacket.STREAM_CODEC, SlotDirectionPacket::handle);
         registrar.playToServer(GuiInteractionPacket.TYPE, GuiInteractionPacket.STREAM_CODEC, GuiInteractionPacket::handle);
+        registrar.playToServer(com.qiqi.li.network.ContainerMenuInfoRequestPacket.TYPE,
+            com.qiqi.li.network.ContainerMenuInfoRequestPacket.STREAM_CODEC,
+            com.qiqi.li.network.ContainerMenuInfoRequestPacket::handle);
+        registrar.playToClient(com.qiqi.li.network.ContainerMenuInfoPacket.TYPE,
+            com.qiqi.li.network.ContainerMenuInfoPacket.STREAM_CODEC,
+            com.qiqi.li.network.ContainerMenuInfoPacket::handle);
         registrar.playToClient(CarriedUpdatePacket.TYPE, CarriedUpdatePacket.STREAM_CODEC, CarriedUpdatePacket::handle);
         registrar.playToClient(EnderChannelSyncPacket.TYPE, EnderChannelSyncPacket.STREAM_CODEC, EnderChannelSyncPacket::handle);
         registrar.playToClient(LivingMapMetadataPacket.TYPE, LivingMapMetadataPacket.STREAM_CODEC, LivingMapMetadataPacket::handle);

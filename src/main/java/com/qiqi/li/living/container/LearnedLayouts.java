@@ -51,13 +51,7 @@ public final class LearnedLayouts {
     /** {@code "容器id|槽数" → 列数}。 */
     private static final Map<String, Integer> LEARNED = new ConcurrentHashMap<>();
 
-    /**
-     * 磁盘内容与内存不一致（上次 save 失败）⇒ 同值也要重试写。
-     *
-     * <p>2026-10-25 审查发现：原来"值没变就 return false"会让写失败后的自愈路径变成空的
-     * —— 内存已是新值、磁盘没有，此后每次同值学习都被短路，文件永远写不上。
-     * 一个布尔就够了：save 写的是整张表，不存在"部分写成功"。</p>
-     */
+    /** 上次写入失败时，同值与歧义拒绝分支也必须重试整表保存。 */
     private static boolean diskStale;
 
     /**
@@ -99,6 +93,7 @@ public final class LearnedLayouts {
                 }
                 if (store.ambiguous != null) {
                     AMBIGUOUS.addAll(store.ambiguous);
+                    LEARNED.keySet().removeAll(AMBIGUOUS);
                 }
             }
             diskStale = false;
@@ -130,7 +125,10 @@ public final class LearnedLayouts {
     public static boolean learn(ResourceLocation containerId, int size, int columns) {
         if (columns <= 0) return false;
         String key = key(containerId, size);
-        if (AMBIGUOUS.contains(key)) return false;
+        if (AMBIGUOUS.contains(key)) {
+            if (diskStale) save();
+            return false;
+        }
         Integer prev = LEARNED.get(key);
         // 值没变就不写盘 —— 但磁盘处于"没写成功"状态时必须重试，否则自愈路径是空的
         if (prev != null && prev == columns && !diskStale) return false;

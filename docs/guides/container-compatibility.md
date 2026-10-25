@@ -176,11 +176,16 @@ MOD版本和玩家配置文件的格式是相同的，可以直接复制内容�
 | `/livingitem container register <columns> <size>` | 手动指定槽位数（自动检测不准时纠错） |
 | `/livingitem container register <columns> <containerId>` | 手动指定容器 ID |
 | `/livingitem container register <columns> <size> <containerId>` | 全手动指定 |
-| `/livingitem container inspect` | 查看准心指向容器的规则（含**来源**：内置 / 玩家覆盖 / 玩家注册） |
+| `/livingitem container inspect` | 查看实际上下文的**生效列数**，并单独列出注册规则及其来源；未开战利品容器明确提示当前不处理 |
 | `/livingitem container list` | 列出所有已注册的规则（`+` = 玩家注册，`*` = 玩家覆盖内置） |
 | `/livingitem container remove <containerId>` | 移除指定规则（删内置规则会记入 `removed`，重启不复活） |
 | `/livingitem container reload` | 从配置文件重新加载（幂等，会重建全部状态） |
 | `/livingitem container export` | **开发期**：导出**全量生效规则快照**到 `config/living_item/exported_rules.json` |
+
+> **`inspect` 的生效值与规则值分开**：生效槽数/列数复用 tick 的上下文解析（包含联动来源、
+> 自动学习和大箱规范化）；规则行仅展示配置，不保证当前采用它。行数向上取整，末行不足也计一行。
+> 战利品未开启时不构造可处理上下文，明确提示，不另调启发式给出貌似生效的答案。
+> 自动学习的准入、持久化与兜底边界见 [基础设施 §6](../system-design/living-item-infrastructure.md#6-容器大小自动解析)。
 
 > ⚠️ **`register` 会覆盖已存在的规则**（2026-09-20 起）。此前重复注册会被拒绝，
 > 导致玩家发现内置数据有误时**无法修正**——而内置数据确实可能出错

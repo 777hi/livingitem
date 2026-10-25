@@ -1234,68 +1234,49 @@ if (hostContainer != null) {
 
 ### 6.1 列数推断
 
-容器列数（GUI 宽度）是活物品方向解析的基础。标准容器为 9 列，但模组容器可能有不同列数。
+容器列数是**逻辑存储网格**的宽度，不保证复刻 GUI（熔炉等有明确的家族逻辑投影）。
+`size + width` 默认按连续、行优先槽号计算邻接；逻辑槽/物理槽跨边界必须走 I-C10 的映射，
+几何量必须满足 I-C11（列数 ≥1，空容器跳过）。
 
-**推断策略**：从 `getSize()` 推断列数，尝试 9~13 列，找到能整除的列宽：
-
-```java
-// ContainerCompatibilityConfig.resolveColumns()
-private static int resolveColumns(int slotCount) {
-    for (int w = 9; w <= 13; w++) {
-        if (slotCount % w == 0) return w;
-    }
-    return 9;
-}
-```
-
-**推断示例**：
-
-| 槽位数 | 推断列数 | 说明 |
-|--------|---------|------|
-| 27 | 9 | 27 ÷ 9 = 3 |
-| 54 | 9 | 54 ÷ 9 = 6 |
-| 45 | 9 | 45 ÷ 9 = 5 |
-| 108 | 9 | 108 ÷ 9 = 12（优先 9，但 108 也是 12 的倍数） |
-| 108 | 12 | 如果注册了 12 列规则 |
-| 50 | 10 | 50 ÷ 10 = 5 |
-| 91 | 13 | 91 ÷ 13 = 7 |
-| 47 | 9 | 47 不能被 9~13 整除，默认 9 |
-| 120 | 10 | 120 ÷ 10 = 12（优先 10，但 120 也是 12 的倍数） |
-
-> **注意**：`resolveColumns()` 从 9 开始递增尝试，因此 108 格会优先推断为 9 列而非 12 列，120 格会优先推断为 10 列而非 12 列。对于 12 列的非标准矩形容器（如精妙背包、钻石箱子），**必须显式注册规则**，否则自动推断会得到错误的列数。
+纯启发式是最后一道兜底：按候选宽度 `9,10,12,13,8,7,6,11,5,4,3,2,1`，
+找首个不超过槽数且整除的值；不能命中则返回 1。它不是观测事实。例：40→10、
+108→9、120→10、47→1。实际解析还包含更高优先级来源，不能只凭启发式判断生效值。
 
 ### 6.2 SimpleContainerContext.getWidth() 的宽解析
 
-`SimpleContainerContext.getWidth()` 实现了完整的列数解析链：
+玩家背包固定 9 列；方块容器保持以下顺序，不因自动学习而重排：
 
-```java
-public int getWidth() {
-    // 1. 玩家背包 → 固定 9 列
-    if (inventory != null) return 9;
+1. **Tier 0 活对象来源**：联动来源现取列数，优先于静态规则（同类型、同容量可有不同布局）。
+2. **Tier 1 注册规则**：按 BE 类型 ID 与当前容量精确匹配，不模糊借用同 namespace 规则。
+3. **Tier 1.5 自动学习**：按 `(BE id, 存储槽数)` 查观察记录。
+4. **Tier 2 原版家族**：类型判定也覆盖第三方子类，不能以精确 ID 规则表替代。
+5. **Tier 3 启发式**：没有更可靠答案时继续可用，不把未知布局当作停工条件。
 
-    // 2. 查找已注册的 ContainerRule
-    Optional<ContainerRule> rule = findContainerRule();
-    if (rule.isPresent() && rule.get().columns() > 0) return rule.get().columns();
+**自动学习的准入边界**：只认菜单槽 `container` 本身是 BE 的情况；同一批槽必须属于
+同一个容器实例、唯一覆盖全部 `0..n-1` 槽号、槽数等于容器容量、槽号顺序符合 `(y,x)`
+排序，并通过等长行/正间距的形状检查。任一不符则不学，继续已有兜底。
+只有验证端点或总数量，不能证明槽号连续；重复、负数、越界、缺号都要拒绝。
 
-    // 3. 标准矩形（size % 9 == 0）→ 9 列
-    int size = getSize();
-    if (size > 0 && size % 9 != 0) {
-        return guessWidth(size);  // 4. 非标准矩形 → 尝试推断
-    }
+这套检查证明的是**服务端菜单的容器槽视图**。它不自动证明 `Container` 与能力 handler
+有同一槽位映射，也不能识别客户端 Screen 重排；不要把它扩写成通用布局发现能力。
+原版熔炉的槽号顺序是 input/fuel/output，按坐标却是 input/output/fuel ⇒ 拒绝学习，
+保留家族 1 列。`SlotItemHandler` 或包装容器拿不到 BE 身份时不学；注册 viewer 解析器
+本身不等于学习器已支持该类菜单。
 
-    return ContainerContext.super.getWidth();  // 默认 9
-}
-```
+**学习持久化**：与玩家规则分文件，`config/living_item/learned_layouts.json` 保存
+`layouts` 和 `ambiguous`。同键观察冲突则删除有效值并保存歧义状态；加载时歧义优先，
+不得从矛盾输入里返回同键布局。写盘失败不回退内存态，但记录未保存状态，后续同值学习
+和歧义拒绝分支均能重试整表；不增加停止时 flush 或批处理生命周期。
+玩家需重置学习时删除该文件并重启进程；内存状态不会因同 JVM 换存档自动清空。
 
-**规则查找中的容量校验**：
+**诊断同源**：`container inspect` 复用 `ContainerLivingItemHandler.resolveContextAt`
+的上下文，展示实际槽数与 `getWidth()` 的生效列数，注册规则另列。行数向上取整；未开
+战利品等没有可处理上下文时明确说明，不独立启发推断。用法见
+[容器兼容性指南](../guides/container-compatibility.md)。
 
-`findContainerRule()` 在通过方块实体 ID 或模糊匹配找到规则后，会额外校验 `rule.containerSize() == getSize()`。这是因为同一方块实体类型可能对应多种容量（如精妙背包的 120 格和 108 格），仅靠 ID 匹配可能返回错误容量的规则。加入容量校验后，不匹配的规则会被跳过，最终回退到 `findOrGenerateRule(getSize())` 按容量查找。
-
-```java
-// SimpleContainerContext.findContainerRule()
-var rule = ContainerCompatibilityConfig.findRule(id);
-if (rule.isPresent() && rule.get().containerSize() == getSize()) return rule;  // 容量匹配才返回
-```
+**验证入口**：`ContainerLayoutLearnerTest` 守菜单入口准入、冲突/重启、失败重试与
+优先级；`LivingItemContainerCommandTest` 守实际命令入口的学习值、来源覆盖规则、
+大箱规范化、末行与未开战利品。判据不能只靠测试名：移除某条门禁时对应用例必须 FAIL。
 
 ### 6.3 SlotResolver — 槽位方向解析
 

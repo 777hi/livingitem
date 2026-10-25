@@ -79,4 +79,9 @@ public interface SlotInfoProvider extends LivingContainer {
      * @return 容器的列数（≥ 1，**不得为 0** —— 它是除数）
      */
     int getWidth();
+
+    /** 未声明来源的实现仍保留其列数，但不得被 UI 当作已核验来源。 */
+    default ContainerLayout getLayout() {
+        return new ContainerLayout(getWidth(), ContainerLayout.Source.UNKNOWN);
+    }
 }

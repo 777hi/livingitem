@@ -222,7 +222,7 @@ public final class ContainerCompatibilityConfig {
      *
      * @return 列数，未知类型返回 -1
      */
-    private static int resolveColumnsFromContainer(Container container) {
+    public static int resolveColumnsFromContainer(Container container) {
         if (container instanceof ChestBlockEntity) return 9;
         if (container instanceof HopperBlockEntity) return 5;   // GUI 为 5 槽一排（原写 1，与规则表冲突）
         if (container instanceof DispenserBlockEntity || container instanceof DropperBlockEntity) return 3;

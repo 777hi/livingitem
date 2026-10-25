@@ -174,7 +174,7 @@ public class EntityContainerContext extends SimpleContainerContext {
      * （{@code 16 % 8 = 0}）—— 真机实测的错。</p>
      */
     @Override
-    public int getWidth() {
+    public ContainerLayout getLayout() {
         if (entity instanceof AbstractHorse horse) {
             int columns = horse.getInventoryColumns();
             // ⚠️ 原版会答 **0**：{@code AbstractChestedHorse} 是 {@code hasChest() ? 5 : 0}。
@@ -183,9 +183,9 @@ public class EntityContainerContext extends SimpleContainerContext {
             // 列数是网格除数（{@code ContainerRedstoneData} / 流体 / 应力 / 信标列扫描都拿它做
             // 除法或取模）⇒ 0 会直接 / by zero **崩服务端**（2026-10-24 真机实录）。
             // ⇒ 原版答不出（无箱 / 刚掉箱）就按实际槽数推：箱子没了只剩鞍槽，存储格为 0，取 1 列。
-            if (columns > 0) return columns;
+            if (columns > 0) return layout(columns, ContainerLayout.Source.LIVE);
         }
-        return super.getWidth();
+        return super.getLayout();
     }
 
     private static IItemHandler handlerOf(Entity entity) {

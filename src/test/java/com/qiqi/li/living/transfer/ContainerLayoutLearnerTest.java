@@ -11,6 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -51,10 +52,8 @@ import net.neoforged.neoforge.event.entity.player.PlayerContainerEvent;
  *
  * <h3>刻意不测的</h3>
  * <ul>
- *   <li><b>事件本身</b>（{@code PlayerContainerEvent.Open} 由 NeoForge 发）—— 测它等于测框架；
- *       入口方法 {@link ContainerLayoutLearner#onContainerOpen} 只做转调。</li>
- *   <li><b>{@code getWidth()} 的 Tier 1.5 接线</b> —— 需要真 BE + 能力面，
- *       由 {@code SimpleContainerContextTest} 的既有宽度用例覆盖链路，这里只验存储与判据。</li>
+ *   <li><b>事件的派发时机</b>由框架负责；本类直接驱动入口验证准入与学习结果。</li>
+ *   <li><b>客户端 Screen 重排</b>不在服务端学习器的能力范围内。</li>
  * </ul>
  */
 class ContainerLayoutLearnerTest {
@@ -95,6 +94,11 @@ class ContainerLayoutLearnerTest {
         when(player.getInventory()).thenReturn(inventory);
     }
 
+    @AfterEach
+    void tearDown() {
+        LearnedLayouts.clearForTest();
+    }
+
     private Slot containerSlot(Container container, int x, int y) {
         return new Slot(container, 0, x, y);
     }
@@ -107,10 +111,7 @@ class ContainerLayoutLearnerTest {
         return new ChestBlockEntity(BlockPos.ZERO, Blocks.CHEST.defaultBlockState());
     }
 
-    /**
-     * 熔炉 BE —— 选它因为<b>规则表里没有它</b>（只有 Tier 2 家族兜底），
-     * 所以能干净地验"没有规则 ⇒ 学"。它的三槽坐标也是安全阀的经典通过形状（3 行 × 1 列）。
-     */
+    /** 没有内置规则的熔炉，供家族兜底与不规则布局用例使用。 */
     private net.minecraft.world.level.block.entity.FurnaceBlockEntity furnace() {
         return new net.minecraft.world.level.block.entity.FurnaceBlockEntity(
             BlockPos.ZERO, Blocks.FURNACE.defaultBlockState());
@@ -122,9 +123,10 @@ class ContainerLayoutLearnerTest {
     /** 原版熔炉菜单的三个容器槽坐标（读 merged 源码核过）。 */
     private TestMenu furnaceMenu() {
         TestMenu menu = new TestMenu();
-        menu.add(containerSlot(furnace(), 56, 17));
-        menu.add(containerSlot(furnace(), 56, 53));
-        menu.add(containerSlot(furnace(), 116, 35));
+        var be = furnace();
+        menu.add(new Slot(be, 0, 56, 17));
+        menu.add(new Slot(be, 1, 56, 53));
+        menu.add(new Slot(be, 2, 116, 35));
         return menu;
     }
 
@@ -295,8 +297,15 @@ class ContainerLayoutLearnerTest {
     void furnace_rejectedByRowMajor() {
         ensureNoFurnaceRule();
 
+        TestMenu menu = furnaceMenu();
+        assertTrue(ContainerLayoutLearner.sameContainer(menu.slots));
+        assertTrue(ContainerLayoutLearner.indicesAreDense(menu.slots));
+        assertTrue(ContainerLayoutLearner.coversWholeContainer(menu.slots));
+        assertFalse(ContainerLayoutLearner.rowMajorOrder(menu.slots));
+        assertEquals(1, ContainerLayoutLearner.columnsFromSlots(menu.slots));
+
         ContainerLayoutLearner.onContainerOpen(
-            new PlayerContainerEvent.Open(player, furnaceMenu()));
+            new PlayerContainerEvent.Open(player, menu));
 
         assertEquals(0, LearnedLayouts.columnsOf(FURNACE_ID, 3),
             "熔炉按槽号是 input→fuel→output，按 (y,x) 是 input→output→fuel ⇒ 不是行优先网格，"
@@ -390,15 +399,160 @@ class ContainerLayoutLearnerTest {
     @DisplayName("Tier 1.5 接线：学到的值要能压过原版家族（Tier 2）")
     void tier15_wiring_beatsFamilyTable() {
         ensureNoFurnaceRule();
-        assertTrue(LearnedLayouts.learn(CRAFTER_ID, 9, 7), "先学一个人为的 7 列");
-
-        var be = crafter();
+        assertTrue(LearnedLayouts.learn(FURNACE_ID, 3, 3), "先写入与家族不同的列数");
+        var be = furnace();
+        var level = mock(net.minecraft.world.level.Level.class);
+        be.setLevel(level);
+        when(level.getBlockEntity(be.getBlockPos())).thenReturn(be);
         var ctx = new com.qiqi.li.living.container.SimpleContainerContext(
-            new net.neoforged.neoforge.items.ItemStackHandler(9),
-            java.util.List.of(be.getBlockPos()), java.util.List.of(be));
+            new net.neoforged.neoforge.items.ItemStackHandler(3),
+            List.of(be.getBlockPos()), List.of(be));
 
-        assertEquals(7, ctx.getWidth(),
-            "Tier 1.5 要真的接进 getWidth() —— 学到 7 就该答 7，而不是掉到启发式的 9");
+        assertEquals(3, ctx.getWidth(), "学习值优先于熔炉家族的 1 列");
+        LearnedLayouts.clearForTest();
+        assertEquals(1, ctx.getWidth(), "移除学习值后确实命中家族兜底");
+    }
+
+    @Test
+    @DisplayName("断号与越界槽不能冒充完整容器")
+    void gappedIndices_rejectedAtMenuEntry() {
+        ensureNoFurnaceRule();
+        var be = furnace();
+        var menu = new TestMenu();
+        menu.add(new Slot(be, 0, 0, 0));
+        menu.add(new Slot(be, 2, 18, 0));
+        menu.add(new Slot(be, 99, 36, 0));
+        assertTrue(ContainerLayoutLearner.sameContainer(menu.slots));
+        assertTrue(ContainerLayoutLearner.coversWholeContainer(menu.slots));
+        assertTrue(ContainerLayoutLearner.rowMajorOrder(menu.slots));
+        assertEquals(3, ContainerLayoutLearner.columnsFromSlots(menu.slots));
+
+        ContainerLayoutLearner.onContainerOpen(new PlayerContainerEvent.Open(player, menu));
+
+        assertEquals(0, LearnedLayouts.columnsOf(FURNACE_ID, 3), "断号槽位不应被学习");
+        assertFalse(ContainerLayoutLearner.indicesAreDense(menu.slots));
+    }
+
+    @Test
+    @DisplayName("不同容器的槽不能拼成一份布局")
+    void mixedOwners_rejectedAtMenuEntry() {
+        ensureNoFurnaceRule();
+        var menu = new TestMenu();
+        menu.add(new Slot(furnace(), 0, 0, 0));
+        menu.add(new Slot(furnace(), 1, 18, 0));
+        menu.add(new Slot(furnace(), 2, 36, 0));
+        assertTrue(ContainerLayoutLearner.indicesAreDense(menu.slots));
+        assertTrue(ContainerLayoutLearner.coversWholeContainer(menu.slots));
+        assertTrue(ContainerLayoutLearner.rowMajorOrder(menu.slots));
+
+        ContainerLayoutLearner.onContainerOpen(new PlayerContainerEvent.Open(player, menu));
+
+        assertEquals(0, LearnedLayouts.columnsOf(FURNACE_ID, 3));
+        assertFalse(ContainerLayoutLearner.sameContainer(menu.slots));
+    }
+
+    @Test
+    @DisplayName("局部菜单不能当作整个存储区")
+    void partialView_rejectedAtMenuEntry() {
+        ensureNoFurnaceRule();
+        var be = furnace();
+        var menu = new TestMenu();
+        menu.add(new Slot(be, 0, 0, 0));
+        menu.add(new Slot(be, 1, 18, 0));
+        assertTrue(ContainerLayoutLearner.sameContainer(menu.slots));
+        assertTrue(ContainerLayoutLearner.indicesAreDense(menu.slots));
+        assertTrue(ContainerLayoutLearner.rowMajorOrder(menu.slots));
+
+        ContainerLayoutLearner.onContainerOpen(new PlayerContainerEvent.Open(player, menu));
+
+        assertEquals(0, LearnedLayouts.columnsOf(FURNACE_ID, 2));
+        assertFalse(ContainerLayoutLearner.coversWholeContainer(menu.slots));
+    }
+
+    @Test
+    @DisplayName("槽号集合必须恰好为 0..n-1")
+    void denseIndices_checksEveryIndex() {
+        var be = furnace();
+        assertTrue(ContainerLayoutLearner.indicesAreDense(List.of(
+            new Slot(be, 2, 0, 0), new Slot(be, 0, 0, 0), new Slot(be, 1, 0, 0))));
+        for (int[] indices : List.of(new int[] {0, 0, 2}, new int[] {0, -1, 2},
+                new int[] {0, 2, 99}, new int[] {1, 2, 3})) {
+            List<Slot> slots = new java.util.ArrayList<>();
+            for (int index : indices) slots.add(new Slot(be, index, 0, 0));
+            assertFalse(ContainerLayoutLearner.indicesAreDense(slots),
+                "实际槽号=" + java.util.Arrays.toString(indices));
+        }
+        assertFalse(ContainerLayoutLearner.indicesAreDense(List.of()));
+    }
+
+    @Test
+    @DisplayName("菜单入口同键异布局：歧义落盘且重启后仍拒绝")
+    void conflictingMenus_persistAmbiguity() {
+        var first = crafterMenu();
+        var second = new TestMenu();
+        var be = crafter();
+        for (int i = 0; i < 9; i++) second.add(new Slot(be, i, i * 18, 0));
+        ContainerLayoutLearner.onContainerOpen(new PlayerContainerEvent.Open(player, first));
+        assertEquals(3, LearnedLayouts.columnsOf(CRAFTER_ID, 9));
+        ContainerLayoutLearner.onContainerOpen(new PlayerContainerEvent.Open(player, second));
+        assertEquals(0, LearnedLayouts.columnsOf(CRAFTER_ID, 9));
+        LearnedLayouts.clearForTest();
+        LearnedLayouts.init(tempDir);
+        LearnedLayouts.load();
+        ContainerLayoutLearner.onContainerOpen(new PlayerContainerEvent.Open(player, first));
+        assertEquals(0, LearnedLayouts.columnsOf(CRAFTER_ID, 9));
+    }
+
+    @Test
+    @DisplayName("歧义落盘失败后，重新打开歧义容器也能重试")
+    void failedAmbiguitySave_retriesAtMenuEntry() throws Exception {
+        ContainerLayoutLearner.onContainerOpen(new PlayerContainerEvent.Open(player, crafterMenu()));
+        Path file = tempDir.resolve("living_item/learned_layouts.json");
+        Files.delete(file);
+        Files.createDirectory(file);
+        var different = new TestMenu();
+        var be = crafter();
+        for (int i = 0; i < 9; i++) different.add(new Slot(be, i, i * 18, 0));
+        ContainerLayoutLearner.onContainerOpen(new PlayerContainerEvent.Open(player, different));
+        Files.delete(file);
+
+        ContainerLayoutLearner.onContainerOpen(new PlayerContainerEvent.Open(player, crafterMenu()));
+
+        assertTrue(Files.isRegularFile(file), "歧义键的拒绝分支也必须重试未保存状态");
+        LearnedLayouts.clearForTest();
+        LearnedLayouts.init(tempDir);
+        LearnedLayouts.load();
+        assertFalse(LearnedLayouts.learn(CRAFTER_ID, 9, 3));
+    }
+
+    @Test
+    @DisplayName("磁盘同键既有布局又有歧义：歧义优先失效")
+    void loadedAmbiguity_overridesLayout() throws Exception {
+        Path file = tempDir.resolve("living_item/learned_layouts.json");
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, "{\"layouts\":{\"minecraft:crafter|9\":3},"
+            + "\"ambiguous\":[\"minecraft:crafter|9\"]}");
+        LearnedLayouts.load();
+        assertEquals(0, LearnedLayouts.columnsOf(CRAFTER_ID, 9));
+        assertNull(LearnedLayouts.peek(CRAFTER_ID, 9));
+        assertFalse(LearnedLayouts.learn(CRAFTER_ID, 9, 3));
+    }
+
+    @Test
+    @DisplayName("Tier 1 规则仍优先于学习值")
+    void registeredRule_beatsLearnedWidth() {
+        ContainerCompatibilityConfig.register(CRAFTER_ID,
+            ContainerCompatibilityConfig.ContainerRule.builder().containerSize(9).columns(3).build());
+        try {
+            LearnedLayouts.learn(CRAFTER_ID, 9, 9);
+            var be = crafter();
+            var ctx = new com.qiqi.li.living.container.SimpleContainerContext(
+                new net.neoforged.neoforge.items.ItemStackHandler(9),
+                List.of(be.getBlockPos()), List.of(be));
+            assertEquals(3, ctx.getWidth());
+        } finally {
+            ContainerCompatibilityConfig.remove(CRAFTER_ID);
+        }
     }
 
     // ── 落盘往返 ──────────────────────────────────────────────────────────

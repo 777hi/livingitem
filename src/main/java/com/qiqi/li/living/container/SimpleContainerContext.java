@@ -48,6 +48,14 @@ public class SimpleContainerContext implements TickableContainerContext {
     private final Level overrideLevel;
 
     private TickContext currentTickContext;
+    private ContainerLayout lastLayout;
+
+    protected final ContainerLayout layout(int columns, ContainerLayout.Source source) {
+        if (lastLayout == null || lastLayout.columns() != columns || lastLayout.source() != source) {
+            lastLayout = new ContainerLayout(columns, source);
+        }
+        return lastLayout;
+    }
 
     @Override
     public void setTickContext(TickContext tick) {
@@ -209,8 +217,13 @@ public class SimpleContainerContext implements TickableContainerContext {
 
     @Override
     public int getWidth() {
+        return getLayout().columns();
+    }
+
+    @Override
+    public ContainerLayout getLayout() {
         if (inventory != null) {
-            return 9;
+            return layout(9, ContainerLayout.Source.FIXED);
         }
 
         // Tier 0: 联动来源给出的权威列数（放置态的活背包 / 潜影盒…）。
@@ -220,7 +233,7 @@ public class SimpleContainerContext implements TickableContainerContext {
         for (BlockEntity be : associatedBlockEntities) {
             int columns = ItemFormContainers.columnsOfBlockEntity(be);
             if (columns > 0) {
-                return columns;
+                return layout(columns, ContainerLayout.Source.LIVE);
             }
         }
 
@@ -228,7 +241,7 @@ public class SimpleContainerContext implements TickableContainerContext {
         java.util.Optional<ContainerCompatibilityConfig.ContainerRule> rule =
             findContainerRule();
         if (rule.isPresent()) {
-            return rule.get().columns();
+            return layout(rule.get().columns(), ContainerLayout.Source.RULE);
         }
 
         // Tier 1.5: 自动学到的布局（2026-10-25）—— 玩家开门时从菜单槽坐标读到的真实行列，
@@ -241,7 +254,7 @@ public class SimpleContainerContext implements TickableContainerContext {
             if (id == null) continue;
             int learned = LearnedLayouts.columnsOf(id, getSize());
             if (learned > 0) {
-                return learned;
+                return layout(learned, ContainerLayout.Source.LEARNED);
             }
         }
 
@@ -251,12 +264,13 @@ public class SimpleContainerContext implements TickableContainerContext {
             if (be.getLevel() == null) continue;
             Container container = ContainerContext.getContainer(be.getLevel(), be.getBlockPos());
             if (container == null) continue;
-            int cols = ContainerCompatibilityConfig.resolveColumns(size, container);
-            if (cols > 0) return cols;
+            int cols = ContainerCompatibilityConfig.resolveColumnsFromContainer(container);
+            if (cols > 0) return layout(cols, ContainerLayout.Source.FAMILY);
+            return layout(ContainerCompatibilityConfig.resolveColumns(size), ContainerLayout.Source.HEURISTIC);
         }
 
         // Tier 3: 加权启发式（回退）
-        return ContainerCompatibilityConfig.resolveColumns(size, null);
+        return layout(ContainerCompatibilityConfig.resolveColumns(size, null), ContainerLayout.Source.HEURISTIC);
     }
 
     private java.util.Optional<ContainerCompatibilityConfig.ContainerRule> findContainerRule() {

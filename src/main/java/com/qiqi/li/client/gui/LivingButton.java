@@ -48,6 +48,7 @@ public class LivingButton extends SpriteIconButton.CenteredIcon {
 
     private final AbstractContainerMenu menu;
     private final Slot slot;
+    private final ContainerInfoSession containerInfo;
 
     // ==================== 拖动改位置（2026-10-10，第二步） ====================
     // 规则：**光标空手**时按住左键拖动 ⇒ 移动按钮，松手写盘（按 Screen 类名分别记住）。
@@ -75,6 +76,7 @@ public class LivingButton extends SpriteIconButton.CenteredIcon {
         super(WIDTH, HEIGHT, ANNOTATION, SPRITE_WIDTH, SPRITE_HEIGHT, SPRITE, LivingButton::onPress, null);
         this.menu = menu;
         this.slot = slot;
+        this.containerInfo = new ContainerInfoSession(menu.containerId);
         // ⚠️ 应用保存的位置时**再夹一次**：拖动时的夹取只管当时那一次；
         // 之后缩小窗口 / 调大 GUI scale ⇒ 逻辑屏幕变小，而保存的偏移是相对 GUI 的
         // ⇒ 换算出的屏幕坐标可能落到屏外（按钮"消失"，2026-10-12 实测反馈）。
@@ -167,6 +169,8 @@ public class LivingButton extends SpriteIconButton.CenteredIcon {
      */
     @Override
     public void renderWidget(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
+        var request = containerInfo.request(net.minecraft.Util.getMillis(), this.isHovered());
+        if (request != null) PacketDistributor.sendToServer(request);
         ((MutableSpriteSpriteIconButton) this).setSprite(this.isHovered() ? HOVERED_SPRITE : SPRITE);
         // 方向配置 HUD 可见时 → 按钮 tooltip 让位（信息已在 HUD 里，两个 tooltip 会重叠）
         this.setTooltip(com.qiqi.li.client.input.LivingItemInputHandler.isDirectionHudVisible()
@@ -199,7 +203,17 @@ public class LivingButton extends SpriteIconButton.CenteredIcon {
                 tip.append("\n").append(Component.translatable("text.livingitem.living_button.hopper_hint"));
             }
         }
+        for (Component line : getContainerInfoLines()) tip.append("\n").append(line);
         return tip;
+    }
+
+    public void acceptContainerInfo(com.qiqi.li.network.ContainerMenuInfoPacket packet) {
+        containerInfo.accept(packet.menuId(), packet.requestId(), packet.info());
+    }
+
+    public java.util.List<Component> getContainerInfoLines() {
+        return ContainerInfoTooltip.lines(containerInfo.info(),
+            Minecraft.getInstance().options.advancedItemTooltips);
     }
 
     /**

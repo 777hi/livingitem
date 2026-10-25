@@ -18,6 +18,8 @@ src/test/java/com/qiqi/li/
 ├── testutil/
 │   └── FakeContainerContext.java              # ContainerContext 测试替身（内存数组实现）
 ├── client/gui/
+│   ├── ContainerInfoSessionTest.java           # 菜单信息会话·初次查询/悬停限频重试/菜单与请求双关联/晚包拒绝/ID复用新会话/未请求不接收（6 项）
+│   ├── ContainerInfoTooltipTest.java           # 容器提示·普通几何与末行/启发式普通警示/未知与非运行分开/高级来源和类型 ID（5 项）
 │   └── LivingButtonLayoutTest.java            # 活按钮位置布局·应用位置时的屏幕夹取（屏内不动/越界夹边缘/屏幕小于按钮取 max(0,…)）+ 默认位分流（背包=小人框底居中 42,70 / 其余容器=底部中央）+ 小人框矩形常量对齐原版 (26,8)-(75,78)（4 项）
 ├── client/input/
 │   └── FarmlandPlantHintTest.java             # 活耕地种植悬停提示·门槛与交互同源（非活种子/非活耕地/非耕地物品/不可种植/空栈→null）+ 四态文案键与参数（充足消耗数/创造免费/不足差额/已种植）（10 项）
@@ -35,10 +37,12 @@ src/test/java/com/qiqi/li/
 │   ├── ActivationRuleConfigTest.java          # 活化规则 JSON 加载语义·via缺省=player/activate与deactivate独立/先命中先赢/白名单/坏值跳过（14 项，含指令侧增删改与持久化往返；tag 路径 @Disabled —— 单测环境不加载 item tags，已游戏内验证通过）
 │   └── TickOrderTest.java                     # tick 顺序契约守卫·默认优先级全为0（零行为变化的证据）/稳定排序/优先级生效/冻结后不可变且非降序（4 项）
 ├── living/command/
-│   └── ActivationTargetParsingTest.java       # 活化目标参数解析守卫·物品ID/标签/modid 回写契约 + 反向守卫「StringArgumentType 读不进 : # @」（4 项）
+│   ├── ActivationTargetParsingTest.java       # 活化目标参数解析守卫·物品ID/标签/modid 回写契约 + 反向守卫「StringArgumentType 读不进 : # @」（4 项）
+│   └── LivingItemContainerCommandTest.java     # inspect 实际入口·学习值替代独立推断 / 活对象列数与注册规则分列 / 末行向上取整 / 未开战利品明确不处理 / 大箱另一半同源规范化（5 项）
 ├── living/components/
 │   └── ContainerUuidsTest.java                # 容器 UUID 读写门面（2026-10-22，活背包）·懒创建幂等（跨 GUI 开合进度不重置）/ofItem 无副作用/复制 remove 范式给副本新身份/strip 空栈与 null 安全/宿主侧 null 安全/keyOf 与 containerUuidOf 互逆且 kindOf=ITEM_FORM/cuuid_ 不被误认世界方块 + **discard 剥 UUID 且删数据/退化输入安全** + **哨兵（全零 UUID）翻译成 null/懒创建写真身份可回读**（11 项）
 ├── living/container/
+│   ├── ContainerMenuInfosTest.java             # 当前菜单宿主信息·空方块/背包/工具界面与未知分开/玩家槽不替代外部容器/异常降级/来源优先级与列数同源/物品与启发式来源（9 项）
 │   ├── ItemFormContainerContextTest.java       # 物品形态容器地基（2026-10-22，活背包）·来源注册口（无来源不认领/注册后可认领/find 返回同一来源/空栈与普通物品不认领）+ ctx 身份（UUID 与 cuuid_ 键互逆/hosts 空/无世界位置）+ **persist 写 SavedData（不是空转的 default）/空值删条目/非 isSaved 不写** + **菜单反查（无活容器 null/唯一一件认它/两件不猜/未注册 null）**（10 项）
 │   ├── ContainerDataKeyTest.java               # 落盘判据 + persist 默认路径（2026-10-22，D-container-13）·savedWith 的 attachment+codec 都有⇒isSaved/persistent 无附件⇒不落盘/tick 级两者都不/persist 写所有宿主/非 isSaved 一个都不写/宿主空不抛（6 项）
 │   ├── ContainerDataSavedDataTest.java         # SavedData 持久层（2026-10-22，活背包）·put→get 往返/save→load 跨重启/空条目不写盘/isSaved=false 拒绝写入/remove(UUID) 只删一个/同 key 后写覆盖/未知 UUID 返回 null/组件注册（8 项）
@@ -146,11 +150,12 @@ src/test/java/com/qiqi/li/
 │   └── TillToFarmlandCompatTest.java          # 活锄头跨模组兼容·模组锄头命中+处理器产物回归（8 项）
 ├── living/transfer/
 │   ├── ContainerCompatibilityConfigTest.java  # 容器布局推断 + 类型表与规则文件一致（双源漂移守卫）+ 多档容量共存（精妙背包 27/81=9 列、108/120=12 列）（16 项）
-│   ├── ContainerLayoutLearnerTest.java            # 容器布局自动学（Tier 1.5，2026-10-25）·安全阀形状（干净矩形收 / 单排 N 个⇒N 列 / 酿造台 2-2-1 拒 / 行内 x 不等距拒 / **同坐标多槽拒（间距必须 >0）** / 单槽仍合法）· **准入四条**（归属一致 / 槽号不重不漏 0..n-1 / 槽数完整=getContainerSize / **行优先：槽号序==(y,x)序**）· 容器身份只认「槽 container 是方块实体」·菜单里滤掉玩家自己的槽 / **规则答得上就不学（=注册规则即锁定，且菜单必须同 id 同容量才测得出来）** / 没有规则⇒学并落盘 / 值没变不重复写 / **写盘失败后同值也重试** / **歧义落盘、不跨重启复活** / 落盘往返 / 文件损坏按空表开始 / 自己背包菜单与拿不到身份的都不学 / **Tier 1.5 接线：getWidth() 答学到的值而非启发式** / **熔炉被行优先判据拒（收紧准入的预期后果）**（24 项；⚠️ 事件入口只认 ServerPlayer；⚠️ 内置规则表在测试 JVM 里可能已被别的测试加载 ⇒ 用规则表里没有的 minecraft:crafter 做“没有规则”用例，真 BE 而非 mock）
+│   ├── ContainerLayoutLearnerTest.java        # 布局学习形状/身份/玩家槽过滤 + 菜单入口四门禁独立守卫（归属混合、重复/负数/越界/断号、局部视图、真实熔炉非行优先）+ 规则阻止学习 + 菜单冲突/歧义跨重启 + 普通与歧义保存失败重试 + 矛盾磁盘输入以歧义为准 + 学习优先家族且规则仍优先学习（31 项；事件用 ServerPlayer，准入用真 BE，单测静态态清理）
 
 │   ├── ContainerRuleConfigTest.java           # 玩家差异持久化·覆盖内置+删除不复活+导出全量快照+社区闭环+多档共存/旧格式删除记录不被抹掉/内置规则含无尽箱子300格25列/contentRetaining 内置声明与玩家追加（17 项）
 │   └── SlotInteractionCargoGateTest.java      # 槽位交互货物准入真值表·活骨粉不施肥（5 项）
 └── network/
+    ├── ContainerMenuInfoPacketTest.java         # 菜单信息载荷·全形态/来源codec/状态独立/request关联/服务端限频/错菜单拒绝/实际回包/退出清理/几何有效性（8 项）
     ├── GuiInteractionPacketTest.java          # 目标槽判据·空槽可解析（活桶汲/倒包的回归守卫）/活物品可解析/非活物品不可解析（3 项）
     └── LivingItemSyncPacketTest.java          # 运行时同步包编解码往返（档 2 安全网）·三组字段往返/空数据/多槽混合/两种键形态/容器种类 kind 往返(背包·末影箱·世界·掉落物)/子记录哨兵/未登记 id 报错（14 项）
     └── LivingItemRuntimeSyncTest.java         # （门控判定已迁 ContainerViewersTest）+ **物品形态容器按菜单锚点发包（真机 tooltip 不显示容器信息的回归）**（4 项）
