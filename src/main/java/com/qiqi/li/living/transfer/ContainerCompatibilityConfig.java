@@ -3,16 +3,7 @@ package com.qiqi.li.living.transfer;
 import com.qiqi.li.living.model.Pos2D;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.Container;
-import net.minecraft.world.level.block.entity.BarrelBlockEntity;
-import net.minecraft.world.level.block.entity.BlastFurnaceBlockEntity;
-import net.minecraft.world.level.block.entity.BrewingStandBlockEntity;
-import net.minecraft.world.level.block.entity.ChestBlockEntity;
-import net.minecraft.world.level.block.entity.DispenserBlockEntity;
-import net.minecraft.world.level.block.entity.DropperBlockEntity;
-import net.minecraft.world.level.block.entity.FurnaceBlockEntity;
-import net.minecraft.world.level.block.entity.HopperBlockEntity;
-import net.minecraft.world.level.block.entity.ShulkerBoxBlockEntity;
-import net.minecraft.world.level.block.entity.SmokerBlockEntity;
+import com.qiqi.li.living.container.BuiltInContainerLayouts;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -223,16 +214,7 @@ public final class ContainerCompatibilityConfig {
      * @return 列数，未知类型返回 -1
      */
     public static int resolveColumnsFromContainer(Container container) {
-        if (container instanceof ChestBlockEntity) return 9;
-        if (container instanceof HopperBlockEntity) return 5;   // GUI 为 5 槽一排（原写 1，与规则表冲突）
-        if (container instanceof DispenserBlockEntity || container instanceof DropperBlockEntity) return 3;
-        if (container instanceof FurnaceBlockEntity ||
-            container instanceof BlastFurnaceBlockEntity ||
-            container instanceof SmokerBlockEntity) return 1;
-        if (container instanceof BrewingStandBlockEntity) return 1;
-        if (container instanceof ShulkerBoxBlockEntity) return 9;
-        if (container instanceof BarrelBlockEntity) return 9;
-        return -1; // 未知类型
+        return BuiltInContainerLayouts.columnsOf(container);
     }
 
     /** 加权启发式列数推断。</para>

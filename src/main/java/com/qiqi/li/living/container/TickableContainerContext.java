@@ -35,4 +35,15 @@ public interface TickableContainerContext extends ContainerContext {
 
     /** 本容器关联的玩家背包；方块容器 / 掉落物场景返回 <b>null</b>。 */
     Inventory getInventory();
+
+    /** 当前宿主实体；方块、玩家库存与物品内部容器没有这一事实。 */
+    @javax.annotation.Nullable
+    default net.minecraft.world.entity.Entity getEntity() {
+        return null;
+    }
+
+    /** 物品内容来源已提供的实例列数；0 表示没有实例答案。 */
+    default int getLiveColumns() {
+        return 0;
+    }
 }

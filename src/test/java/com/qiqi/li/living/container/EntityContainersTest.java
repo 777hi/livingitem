@@ -38,9 +38,7 @@ import net.neoforged.neoforge.items.ItemStackHandler;
  * 覆盖四类容器：箱子船、箱子矿车、漏斗矿车（{@link ContainerEntity}）与带箱驴骡
  * （{@link AbstractChestedHorse#hasChest()}）。</p>
  *
- * <p>⚠️ <b>测不了的部分</b>：{@code HorseInventoryMenuAccessor} 是 Mixin，单测环境不应用
- * Mixin ⇒ {@code menu instanceof HorseInventoryMenuAccessor} 恒 false ⇒ 驴的菜单解析
- * （accessor 路径）与「普通马不当容器」这条只能真机验证 —— 已在测试留言里标注。</p>
+ * <p>真实无类型马菜单的入口回归见 {@code ContainerMenuInfosTest}；实体反查复用入口层注册器。</p>
  */
 class EntityContainersTest {
 
@@ -153,6 +151,8 @@ class EntityContainersTest {
         assertTrue(ctx.getWidth() >= 1,
             "getWidth() 是网格除数（红石 / 流体 / 应力 / 信标列扫描都拿它做除法和取模）"
             + " —— 返回 0 会让整个服务端 / by zero");
+        assertEquals(new ContainerLayout(1, ContainerLayout.Source.FIXED), ctx.getLayout(),
+            "摘箱后空存储区退化为明确的单列，不需要猜布局");
         assertEquals(0, ctx.getSize(), "无箱时存储格为 0（1 槽 - 鞍槽偏移）");
     }
 
@@ -247,6 +247,51 @@ class EntityContainersTest {
             () -> boatContext(bare));
     }
 
+    @Test
+    @DisplayName("原版箱船和两种容器矿车具有明确固定布局")
+    void vanillaVehicles_useFixedLayouts() {
+        for (var type : List.of(net.minecraft.world.entity.EntityType.CHEST_BOAT,
+                net.minecraft.world.entity.EntityType.CHEST_MINECART,
+                net.minecraft.world.entity.EntityType.HOPPER_MINECART)) {
+            int columns = type == net.minecraft.world.entity.EntityType.HOPPER_MINECART ? 5 : 9;
+            int size = columns == 5 ? 5 : 27;
+            var entity = boatEntity(new ItemStackHandler(size));
+            org.mockito.Mockito.doReturn(type).when(entity).getType();
+            var ctx = boatContext(entity);
+            assertEquals(new ContainerLayout(columns, ContainerLayout.Source.FIXED), ctx.getLayout());
+            assertEquals(columns, ctx.getWidth());
+        }
+    }
+
+    @Test
+    @DisplayName("未知实体不因容量相同而获得原版固定布局")
+    void foreignVehicle_remainsHeuristic() {
+        var entity = boatEntity(new ItemStackHandler(27));
+        org.mockito.Mockito.doReturn(net.minecraft.world.entity.EntityType.BOAT).when(entity).getType();
+        assertEquals(new ContainerLayout(9, ContainerLayout.Source.HEURISTIC), boatContext(entity).getLayout());
+    }
+
+    @Test
+    @DisplayName("同一原版实体类型被改变容量时不套用固定形状")
+    void resizedVehicle_doesNotBorrowVanillaLayout() {
+        var entity = boatEntity(new ItemStackHandler(30));
+        org.mockito.Mockito.doReturn(net.minecraft.world.entity.EntityType.CHEST_MINECART).when(entity).getType();
+        assertEquals(new ContainerLayout(10, ContainerLayout.Source.HEURISTIC), boatContext(entity).getLayout());
+    }
+
+    @Test
+    @DisplayName("带箱羊驼的列数由强度API给出，不固定为5")
+    void llama_usesLiveColumns() {
+        var llama = mock(net.minecraft.world.entity.animal.horse.Llama.class);
+        when(llama.getUUID()).thenReturn(ID);
+        when(llama.blockPosition()).thenReturn(BOAT_POS);
+        when(llama.getInventoryColumns()).thenReturn(3);
+        when(llama.getCapability(Capabilities.ItemHandler.ENTITY)).thenReturn(new ItemStackHandler(10));
+        var ctx = boatContext(llama);
+        assertEquals(9, ctx.getSize());
+        assertEquals(new ContainerLayout(3, ContainerLayout.Source.LIVE), ctx.getLayout());
+    }
+
     // ── 菜单解析（逐槽） ──
 
     @Test
@@ -336,11 +381,4 @@ class EntityContainersTest {
             "字段类型决定调用方能否接住 —— 与 accessor 第一版返错类型同一坑");
     }
 
-    @Test
-    @DisplayName("hazard 存档：单测跑不了 accessor（Mixin 未应用）—— 驴的菜单解析靠真机")
-    void horseAccessor_notActiveInUnitTest() {
-        assertNotNull(EntityContainers.class, "占位：说明见类注释");
-        // menu instanceof HorseInventoryMenuAccessor 在单测恒 false（接口无运行时实现）
-        // ⇒「普通马不开箱也返回 null」这条单测天然通过但**没有证明力**，真机补验。
-    }
 }

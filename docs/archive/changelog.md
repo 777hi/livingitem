@@ -17,6 +17,10 @@
 
 ## 2026-10-26
 
+- 🧭 **共同布局链与内建来源收口**：`ContainerLayoutResolver` 统一各形态的答案顺序，原版固定值/方块家族收进内建层，子类只给事实；不扩规则目标、不重排优先级。新增8个回归（992→1000），内建提前返回的负向验证两条 FAIL；现状见 [基础设施 §6.2](../system-design/living-item-infrastructure.md#62-simplecontainercontextgetwidth-的宽解析)，过程见 [专题 §10.6](../buffer/container-layout-resolution.md#106-共同布局选择入口2026-10-26)。
+
+- 🔧 **原版容器布局与驴信息查询修正**：驴无 MenuType 不再提前退出；末影箱/原版箱船与两种矿车按类型和容量提供明确布局，马类读实例 API，不把原版固定值借给未知或扩容容器。9 个新回归取代1个恒真占位（984→992）；原实现四条负向 FAIL，**待真机复验**，依据见 [基础设施 §6.2](../system-design/living-item-infrastructure.md#62-simplecontainercontextgetwidth-的宽解析) 与 [GUI §6.2.2](../system-design/gui-interaction-system.md#622-活按钮当前容器基本信息2026-10-26)。
+
 - ℹ️ **活按钮补当前容器基本信息**：菜单级只读查询，不依赖活漏斗或容器 tick；列数与来源同源、启发式明确警示，非运行界面与暂不可用分开，回包双关联避免串界面。新增 28 个回归（956→984），不改解析/兼容资格；**待游戏验收**，现状见 [GUI 交互 §6.2.2](../system-design/gui-interaction-system.md#622-活按钮当前容器基本信息2026-10-26)。
 
 ## 2026-10-25

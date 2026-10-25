@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import com.qiqi.li.living.transfer.ContainerCompatibilityConfig;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket;
 import net.minecraft.server.level.ServerPlayer;
@@ -49,13 +48,6 @@ public class SimpleContainerContext implements TickableContainerContext {
 
     private TickContext currentTickContext;
     private ContainerLayout lastLayout;
-
-    protected final ContainerLayout layout(int columns, ContainerLayout.Source source) {
-        if (lastLayout == null || lastLayout.columns() != columns || lastLayout.source() != source) {
-            lastLayout = new ContainerLayout(columns, source);
-        }
-        return lastLayout;
-    }
 
     @Override
     public void setTickContext(TickContext tick) {
@@ -216,80 +208,14 @@ public class SimpleContainerContext implements TickableContainerContext {
     }
 
     @Override
-    public int getWidth() {
+    public final int getWidth() {
         return getLayout().columns();
     }
 
     @Override
-    public ContainerLayout getLayout() {
-        if (inventory != null) {
-            return layout(9, ContainerLayout.Source.FIXED);
-        }
-
-        // Tier 0: 联动来源给出的权威列数（放置态的活背包 / 潜影盒…）。
-        // 它从【活对象】算出来（如「存储槽数 ÷ 行数」）⇒ 不会像静态规则那样随模组改版过期，
-        // 故优先于 Tier 1 规则表：玩家为同一 BE 注册过规则时以来源为准（来源更权威）。
-        // 2026-10-24：精妙背包装储罐后 30 存储槽，启发式给 10 列、真值 5 ⇒ 补这一层。
-        for (BlockEntity be : associatedBlockEntities) {
-            int columns = ItemFormContainers.columnsOfBlockEntity(be);
-            if (columns > 0) {
-                return layout(columns, ContainerLayout.Source.LIVE);
-            }
-        }
-
-        // Tier 1: 已注册规则（按 BE 类型匹配）
-        java.util.Optional<ContainerCompatibilityConfig.ContainerRule> rule =
-            findContainerRule();
-        if (rule.isPresent()) {
-            return layout(rule.get().columns(), ContainerLayout.Source.RULE);
-        }
-
-        // Tier 1.5: 自动学到的布局（2026-10-25）—— 玩家开门时从菜单槽坐标读到的真实行列，
-        // 落盘在 config/living_item/learned_layouts.json（见 ContainerLayoutLearner）。
-        // 排在规则表之后、原版家族之前：规则是人验过的，不该被观察值静默压过；
-        // 而家族表答的是"这一类"，具体性低于"这个 (id, 槽数)"。
-        for (BlockEntity be : associatedBlockEntities) {
-            net.minecraft.resources.ResourceLocation id =
-                net.minecraft.core.registries.BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(be.getType());
-            if (id == null) continue;
-            int learned = LearnedLayouts.columnsOf(id, getSize());
-            if (learned > 0) {
-                return layout(learned, ContainerLayout.Source.LEARNED);
-            }
-        }
-
-        // Tier 2: 已知容器类型直接推断
-        int size = getSize();
-        for (BlockEntity be : associatedBlockEntities) {
-            if (be.getLevel() == null) continue;
-            Container container = ContainerContext.getContainer(be.getLevel(), be.getBlockPos());
-            if (container == null) continue;
-            int cols = ContainerCompatibilityConfig.resolveColumnsFromContainer(container);
-            if (cols > 0) return layout(cols, ContainerLayout.Source.FAMILY);
-            return layout(ContainerCompatibilityConfig.resolveColumns(size), ContainerLayout.Source.HEURISTIC);
-        }
-
-        // Tier 3: 加权启发式（回退）
-        return layout(ContainerCompatibilityConfig.resolveColumns(size, null), ContainerLayout.Source.HEURISTIC);
-    }
-
-    private java.util.Optional<ContainerCompatibilityConfig.ContainerRule> findContainerRule() {
-        if (associatedBlockEntities.isEmpty()) return java.util.Optional.empty();
-
-        for (BlockEntity be : associatedBlockEntities) {
-            net.minecraft.resources.ResourceLocation id =
-                net.minecraft.core.registries.BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(be.getType());
-            if (id != null) {
-                // ⚠️ 必须带容量：同一 BE 类型可有多档容量且列数不同（某容器 108/120 是 12 列，
-                // 其余档位 9 列）。用单参数 findRule 会拿到别的档位 ⇒ 列数错 ⇒ 熔炉燃料槽读错。
-                // 只认精确 id + 容量：原先还有一层「namespace + 分词模糊匹配」的兜底，已按
-                // D-container-09 删除（它在猜「这条规则大概适用于这个 BE」，且多档时只取第一档）。
-                var rule = ContainerCompatibilityConfig.findRule(id, getSize());
-                if (rule.isPresent()) return rule;
-            }
-        }
-
-        return java.util.Optional.empty();
+    public final ContainerLayout getLayout() {
+        lastLayout = ContainerLayoutResolver.resolve(this, lastLayout);
+        return lastLayout;
     }
 
     @Override

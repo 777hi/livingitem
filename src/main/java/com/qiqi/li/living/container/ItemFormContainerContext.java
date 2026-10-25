@@ -64,16 +64,10 @@ public final class ItemFormContainerContext extends SimpleContainerContext {
         this.hostAnchor = hostAnchor;
     }
 
-    /**
-     * 列数：来源给了权威值就用，否则回落到三层推断（物品形态只会落到启发式）。
-     *
-     * <p>⚠️ 为什么值得覆写：启发式对「槽数不是 9 的倍数」会猜错。精妙背包装 2 个
-     * 占列升级后存储槽 = {@code 行数 × (9 − 占列数)}，54 格背包是 30 格 ⇒ 启发式选 10、
-     * 真值 5 ⇒ 邻居判定 / 流体渲染 / 漏斗传输全线错位（2026-10-23 定位）。</p>
-     */
+    /** 内容来源提供的实例列数，选择顺序由共同解析器负责。 */
     @Override
-    public ContainerLayout getLayout() {
-        return columns > 0 ? layout(columns, ContainerLayout.Source.LIVE) : super.getLayout();
+    public int getLiveColumns() {
+        return columns;
     }
 
     @Override

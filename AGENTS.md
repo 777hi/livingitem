@@ -146,7 +146,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 984 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
+**合计测试用例 1000 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -171,7 +171,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
-| 2026-10-26 | ℹ️ **活按钮补容器基本信息**：只读当前菜单，不依附活漏斗遥测；显示上下文槽数、布局和启发式警示，未知/非运行界面分开，回包关联防串。28 个回归含负向验证；不改兼容资格，**待游戏验收** | `docs/system-design/gui-interaction-system.md` §6.2.2 |
+| 2026-10-26 | ℹ️ **容器布局共同链收口**：驴无 MenuType 查询修复；各形态统一实例/方块规则/学习/内建/启发式选择，原版默认不再游离于子类，来源与列数同源。原版修复与收口净增16个回归（984→1000）；方块规则范围不扩、不改玩法，**待真机复验** | `docs/system-design/living-item-infrastructure.md` §6.2 · `docs/buffer/container-layout-resolution.md` §10.6 |
 | 2026-10-25 | 🔧 **容器解析审查闭环**：补全连续槽号与歧义保存失败重试，诊断复用实际上下文、生效值与规则分列；13 个回归用例含门禁/诊断负向验证，不改解析优先级、不恢复收编线 | `docs/system-design/living-item-infrastructure.md` §6 · `docs/buffer/container-layout-resolution.md` §10.5 |
 | 2026-10-25 | 🧹 **S1a：删掉 `getWidth()` 的死默认** —— `SlotInfoProvider` 原默认答 9，而 9 是"看着对"的值：漏覆写不报错、只静默按 9 列解析。改抽象后**编译期立刻抓出一个真问题**：`ItemEntityContainerContext`（掉落物、单槽）一直在白嫖那个 9 —— 对 1 槽是错答案，只因单槽让行列退化才没暴露。已显式答 1 并由 I-C11 契约用例钉住（四种形态都 ≥ 1）。⚠️ 顺带查证并**推翻设计稿「S1 零行为变化」的说法**：Tier 2 是 instanceof，对第三方子类也生效（实例：`twilightforest:cinder_furnace` 靠它拿对 1 列），删表会让这类子类静默劣化 ⇒ S1b 要先拍"家族兜底要不要保留"。测试 919 → 920 | `docs/system-design/container-boundary.md` I-C11 · `docs/buffer/container-layout-resolution.md` §7 |
 | 2026-10-25 | 🔧 **宿主锚点「只接了一半」两处修完（TODO 6.2）** —— 真机「buff 生效但没光 / 工具挖不动」的真因是**下游分派还在问容器自己**：`resolveHostPosition` 已问锚点，但信标分派又按 `getBlockPos()/getOwnerPlayer()`（物品形态双 null ⇒ 光束/开盖/联机广播全不执行）、工具黑名单只取 `getAssociatedBlockPositions()`（物品形态恒空 ⇒ 射线第一个穿到的格子就是宿主箱子，记过类型就停住、没记就挖自己的箱子）。统一口径：**「宿主是谁」只问 anchor** ⇒ 两处同形 `effectiveAnchor`，取点与下游分派共用。⚠️ 遗留：锚点是单个 `BlockPos` ⇒ 大箱两半拿不全（要 `getHostBlockPositions()`）；背包在玩家身上时信标**背的人自己看不到**（客户端只扫玩家背包，归 6.1-b）。测试 909 → 919 | `docs/tech/living-backpack-tech.md` §6-4 · `docs/TODO.md` 活背包 6.2 |

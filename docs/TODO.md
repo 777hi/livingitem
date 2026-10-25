@@ -261,7 +261,9 @@
 
 5.2 ✅ ~~**容器布局解析审查交接**~~（2026-10-25 两轮已处理）—— 准入端点漏洞 / 歧义失败重试 / 矛盾输入失效、门禁独立回归与现有诊断同源均修复并负向验证；不恢复 S1b/S2、不引入完整 Layout。记录见 [专题 §10.5](buffer/container-layout-resolution.md#105-第二轮审查闭环2026-10-25用户批准实施)。
 
-5.3 ✅ ~~**活按钮显示当前容器基本信息**~~（2026-10-26 已实施，**待游戏验收**）—— 当前上下文槽数/布局/启发式警示，未知与已知非运行界面分开；不改兼容资格。现状与验收入口见 [GUI 交互 §6.2.2](system-design/gui-interaction-system.md#622-活按钮当前容器基本信息2026-10-26)，设计记录见 [living-button-container-info.md](buffer/living-button-container-info.md)。
+5.3 ✅ ~~**活按钮显示当前容器基本信息**~~（2026-10-26 已实施，**用户真机总体反馈良好**）—— 已定位并修驴无 MenuType 查询失败，原版末影箱/车船明确布局；本轮修复待复验，不把整体好评当所有场景全验。现状与验收入口见 [GUI 交互 §6.2.2](system-design/gui-interaction-system.md#622-活按钮当前容器基本信息2026-10-26)，设计记录见 [living-button-container-info.md](buffer/living-button-container-info.md)。
+
+5.4 ✅ ~~**布局选择共同入口与内建来源收口**~~（2026-10-26 已实施）—— 各形态通过同一实例/规则/学习/内建/启发式顺序，子类只给事实；方块规则范围不扩、家族语义保留，不恢复S1b/S2。现状见 [基础设施 §6.2](system-design/living-item-infrastructure.md#62-simplecontainercontextgetwidth-的宽解析)，过程见 [布局专题 §10.6](buffer/container-layout-resolution.md#106-共同布局选择入口2026-10-26)。
 
 6. ✅ **活背包：精妙背包作为活物品功能（2026-10-22 立项 → 10-23 实施并真机验收）** ——
    现象是「精妙背包打开 GUI 里面流体层不渲染」，但**根因不是数据丢失**（数据在物品组件上，

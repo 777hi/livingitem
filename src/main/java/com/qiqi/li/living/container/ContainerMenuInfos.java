@@ -14,7 +14,15 @@ public final class ContainerMenuInfos {
         AbstractContainerMenu menu = player.containerMenu;
         if (menu == null) return ContainerMenuInfo.UNAVAILABLE;
         try {
-            if (menu != player.inventoryMenu && isNonHost(menu.getType())) {
+            MenuType<?> type = null;
+            if (menu != player.inventoryMenu) {
+                try {
+                    type = menu.getType();
+                } catch (UnsupportedOperationException ignored) {
+                    // 无注册类型的菜单仍可有运行宿主，继续按槽位解析。
+                }
+            }
+            if (type != null && isNonHost(type)) {
                 return ContainerMenuInfo.NON_HOST;
             }
             for (var slot : menu.slots) {

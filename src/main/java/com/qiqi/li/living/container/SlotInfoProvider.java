@@ -72,9 +72,8 @@ public interface SlotInfoProvider extends LivingContainer {
      * —— 而列数错了的表现是“搬错格子但仍在搬”这类隐形错，极难查。
      * 改成抽象方法后，漏实现是<b>编译期错误</b>。</p>
      *
-     * <p>列数从哪来见 {@code SimpleContainerContext#getWidth()} 的四层
-     * （联动来源 / 规则表 / 原版家族 / 启发式），实现者应当委托过去，
-     * 而不是自己拍一个数。</p>
+     * <p>生产容器的布局选择见 {@link ContainerLayoutResolver}：实例来源、方块规则与学习、
+     * 内建约定、启发式；来源与列数由同一次解析产生。</p>
      *
      * @return 容器的列数（≥ 1，**不得为 0** —— 它是除数）
      */

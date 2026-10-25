@@ -607,3 +607,23 @@ Tier 2 是 `instanceof` 判据，**对第三方继承原版容器 BE 的子类�
 
 现状约束已沉淀 [基础设施 §6](../system-design/living-item-infrastructure.md#6-容器大小自动解析)，
 TODO 5.2 同步为本轮已处理；旧覆盖率、fxntstorage 视觉推论与灰炉补救宣称已就地标历史。
+
+### 10.6 共同布局选择入口（2026-10-26）
+
+**用户已定并实施**：原版末影箱/车船固定值写在具体 ctx 里提前返回，仍游离于原方块多层链；
+本轮收口选择过程，内建约定补足各形态，不是增加一个位于链外的原版特判。
+
+- 上下文给关联 BE、库存、宿主实体或内容来源列数；`ContainerLayoutResolver` 按
+  实例 → 方块规则 → 方块学习 → 内建约定 → 启发式统一选择。
+- `BuiltInContainerLayouts` 成为原版内建来源的归宿：保留方块家族对子类的 instanceof
+  行为、原版车船类型+容量、末影箱、玩家背包与退化单槽。FIXED/FAMILY 为来源细分，
+  都处于共同链的内建层，不再是子类提前返回。
+- 实体/末影箱/物品 ctx 不再覆写 getLayout/getWidth；Simple 的共同入口为 final。
+  掉落物同样委托公共选择器。内容来源列数与马类 API 保持实例优先，不静态固定羊驼。
+- **边界不扩大**：规则与学习只服务关联 BE，未新增实体/物品规则键或校准入口，不做
+  合表、provenance 重排、未知停工或完整几何映射。不因此恢复旧 S1b/S2。
+- **验证**：`ContainerLayoutResolverTest` 八条新增守卫；临时把内建层放链首，两条顺序
+  测试分别在实例答案与学习记录上 FAIL。解析器已逐字还原并全量复跑，数字只认 XML/doc_check。
+
+现状见 [基础设施 §6.2](../system-design/living-item-infrastructure.md#62-simplecontainercontextgetwidth-的宽解析)，
+原版同容量改布局仍需明确联动或未来规则支持，内建约定不是自动验证其它模组未改行为。

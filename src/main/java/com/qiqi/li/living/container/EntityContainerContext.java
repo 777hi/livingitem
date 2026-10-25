@@ -39,10 +39,8 @@ import java.util.List;
  *       活信标误判「有盖容器宿主」而把光束漂在下面的箱子上。返回 null 后信标走
  *       「非方块宿主 ⇒ 需玩家宿主 ⇒ 实体无 owner ⇒ 不开光」的空路径，与
  *       {@code LidBlockEntity} 判据的本意一致（GUI 外的世界存在感）。</li>
- *   <li><b>列数先按实体类型 id 查规则表</b>（与 BE 容器的 {@code findContainerRule} 同语义，
- *       将来玩家可用指令校准模组容器实体），查不到再走父类三级（Tier1 无 BE 跳过 /
- *       Tier2 无方块跳过 / <b>Tier3 启发式</b>）。
- *       四类实体容器的启发式已实测全对：27→9、5→5、15→5。</li>
+ *   <li><b>列数与来源同源</b>：上下文只提供宿主实体，实例 API 与原版内建约定由
+ *       {@link ContainerLayoutResolver} 按共同顺序选择。</li>
  * </ol>
  *
  * <p>⚠️ <b>能力面</b>：NeoForge 显式给 {@code CHEST_BOAT}/{@code CHEST_MINECART}/
@@ -79,6 +77,7 @@ public class EntityContainerContext extends SimpleContainerContext {
     }
 
     /** 被包装的实体（viewer 匹配 / 数据宿主 / 位置反查都用它）。 */
+    @Override
     public Entity getEntity() {
         return entity;
     }
@@ -163,29 +162,6 @@ public class EntityContainerContext extends SimpleContainerContext {
     @Override
     public BlockPos getBlockPos() {
         return null;
-    }
-
-    /**
-     * 列数：马/驴/骡直接问原版（{@code getInventoryColumns()} = 5），其余走父类三级。
-     *
-     * <p>⭐ <b>这是「原版给了 API 就用」</b>，与曾放弃的「查规则表」是两回事：那次放弃是
-     * 因为规则表这条路没有消费方（register 不认实体容器）；而 {@code getInventoryColumns()}
-     * 是原版对“马格布局”的权威回答，比启发式硬。启发式拿 16 槽会算 8 列
-     * （{@code 16 % 8 = 0}）—— 真机实测的错。</p>
-     */
-    @Override
-    public ContainerLayout getLayout() {
-        if (entity instanceof AbstractHorse horse) {
-            int columns = horse.getInventoryColumns();
-            // ⚠️ 原版会答 **0**：{@code AbstractChestedHorse} 是 {@code hasChest() ? 5 : 0}。
-            // 而带箱驴可能在**函数阶段**被自己的活 TNT 炸死 ⇒ {@code dropEquipment()} 摘掉箱子
-            // ⇒ 同一 tick 的后续阶段（容器级数据）读到的列数就是 0。
-            // 列数是网格除数（{@code ContainerRedstoneData} / 流体 / 应力 / 信标列扫描都拿它做
-            // 除法或取模）⇒ 0 会直接 / by zero **崩服务端**（2026-10-24 真机实录）。
-            // ⇒ 原版答不出（无箱 / 刚掉箱）就按实际槽数推：箱子没了只剩鞍槽，存储格为 0，取 1 列。
-            if (columns > 0) return layout(columns, ContainerLayout.Source.LIVE);
-        }
-        return super.getLayout();
     }
 
     private static IItemHandler handlerOf(Entity entity) {

@@ -1244,13 +1244,29 @@ if (hostContainer != null) {
 
 ### 6.2 SimpleContainerContext.getWidth() 的宽解析
 
-玩家背包固定 9 列；方块容器保持以下顺序，不因自动学习而重排：
+**所有生产容器共享选择顺序**：`ContainerLayoutResolver` 统一询问来源；上下文提供关联
+BE、玩家库存、宿主实体或内容来源的实例列数，不再在子类里提前返回整份布局。
+`SimpleContainerContext.getLayout()` 与 `getWidth()` 为 final，实体/末影箱/物品形态继承
+同一入口；不继承它的掉落物上下文也委托相同解析器。结果携带列数和来源，列数仍逐次现取，
+只复用值相同的不可变结果，不缓存过期的实例答案。
 
-1. **Tier 0 活对象来源**：联动来源现取列数，优先于静态规则（同类型、同容量可有不同布局）。
-2. **Tier 1 注册规则**：按 BE 类型 ID 与当前容量精确匹配，不模糊借用同 namespace 规则。
-3. **Tier 1.5 自动学习**：按 `(BE id, 存储槽数)` 查观察记录。
-4. **Tier 2 原版家族**：类型判定也覆盖第三方子类，不能以精确 ID 规则表替代。
-5. **Tier 3 启发式**：没有更可靠答案时继续可用，不把未知布局当作停工条件。
+1. **Tier 0 活对象来源**：物品内容来源列数、宿主实例 API、放置态联动来源；优先于静态规则。
+2. **Tier 1 注册规则**：目前仅关联 BE 类型 ID 与当前容量精确匹配，不借同 namespace 规则。
+3. **Tier 1.5 自动学习**：目前仅按关联 `(BE id, 存储槽数)` 查有效观察记录。
+4. **Tier 2 内建布局约定**：`BuiltInContainerLayouts` 收口方块家族、原版车船、玩家库存/
+   末影箱及退化单槽。方块保留 instanceof 家族语义，不以精确 ID 表替代对子类的支持。
+5. **Tier 3 启发式**：没有答案才推测，不把未知布局当作停工条件。
+
+**某层不适用就继续下一层**：规则与学习仍只有方块目标，实体/物品/末影箱没有因此获得
+可配置规则入口。内建约定的 FIXED 与 FAMILY 都属于 Tier 2，前者是具体约定、后者是
+方块家族约定；不是绕过共同链的最高优先级。原版默认也不能证明其它模组没改同容量布局，
+槽号映射与客户端重排仍是边界。方块现有优先级与首个可取得 Container 的家族回落语义不变。
+
+**原版非方块容器有明确布局，不靠容量猜测**：玩家末影箱 27 槽固定 9 列；原版箱船、
+箱子矿车在类型 ID 与 27 槽同时匹配时固定 9 列；原版漏斗矿车在类型 ID 与 5 槽匹配时
+固定 5 列。马类继续问 `getInventoryColumns()`（驴/骡 5，羊驼随强度），摘箱后空存储区
+退化为固定 1 列以满足 I-C11。类型不符或容量被改动时不得借原版固定布局，继续已有解析；
+没有因此扩大未知实体的兼容承诺。`ContainerMenuInfosTest` 与 `EntityContainersTest` 守来源和边界。
 
 **自动学习的准入边界**：只认菜单槽 `container` 本身是 BE 的情况；同一批槽必须属于
 同一个容器实例、唯一覆盖全部 `0..n-1` 槽号、槽数等于容器容量、槽号顺序符合 `(y,x)`
@@ -1274,9 +1290,10 @@ if (hostContainer != null) {
 战利品等没有可处理上下文时明确说明，不独立启发推断。用法见
 [容器兼容性指南](../guides/container-compatibility.md)。
 
-**验证入口**：`ContainerLayoutLearnerTest` 守菜单入口准入、冲突/重启、失败重试与
-优先级；`LivingItemContainerCommandTest` 守实际命令入口的学习值、来源覆盖规则、
-大箱规范化、末行与未开战利品。判据不能只靠测试名：移除某条门禁时对应用例必须 FAIL。
+**验证入口**：`ContainerLayoutResolverTest` 守共同顺序、子类禁止重排、来源现取/结果复用、
+首个 Container 的旧回落语义与家族子类；`ContainerLayoutLearnerTest` 守菜单入口准入、
+冲突/重启、失败重试与优先级；`LivingItemContainerCommandTest` 守实际命令入口的学习值、
+来源覆盖规则、大箱规范化、末行与未开战利品。判据不能只靠测试名：移除保护时对应用例必须 FAIL。
 
 ### 6.3 SlotResolver — 槽位方向解析
 
@@ -1349,7 +1366,8 @@ new SimpleContainerContext(handler, positions, blockEntities);
 **`EntityContainerContext`（2026-10-21）** —— 继承 `SimpleContainerContext`，只改四处：
 键（`entity_<uuid>`）、持久宿主（`getDataHosts()` 返回**实体本身**而非 BE）、方块性
 （`getBlockPos()` 恒 `null`）、槽位偏移（马 / 驴 / 骡跳过索引 0 的马鞍槽）。
-列数：马 / 驴 / 骡问原版 `AbstractHorse#getInventoryColumns()`（= 5），其余走父类启发式。
+列数：马类问原版 `AbstractHorse#getInventoryColumns()`（驴/骡=5、羊驼随强度）；原版车船类型
+与容量匹配时使用固定布局，其它情况保留父类解析，详见 §6.2。
 契约见 [container-boundary.md](container-boundary.md) I-C1 / I-C5 / I-C9 / I-C10，决策
 `D-container-10` / `D-container-11`；白名单在 `EntityContainers`（`ContainerEntity` + `hasChest()`）。
 

@@ -154,6 +154,66 @@ class ContainerMenuInfosTest {
         assertEquals(ctx.getWidth(), ctx.getLayout().columns());
     }
 
+    @Test void untypedBlockMenu_stillResolvesHost() {
+        var menu = new Menu(null, 1);
+        target(menu);
+        assertThrows(UnsupportedOperationException.class, menu::getType);
+        assertEquals(ContainerMenuInfo.Status.AVAILABLE, ContainerMenuInfos.resolve(player).status());
+    }
+
+    @Test void realDonkeyMenu_withoutMenuTypeResolvesStorage() throws Exception {
+        var serverLevel = mock(net.minecraft.server.level.ServerLevel.class);
+        when(player.level()).thenReturn(serverLevel);
+        var owner = Inventory.class.getDeclaredField("player");
+        owner.setAccessible(true);
+        owner.set(inventory, player);
+        var donkey = mock(net.minecraft.world.entity.animal.horse.Donkey.class);
+        when(donkey.hasChest()).thenReturn(true);
+        when(donkey.getInventoryColumns()).thenReturn(5);
+        when(donkey.getUUID()).thenReturn(java.util.UUID.randomUUID());
+        when(donkey.blockPosition()).thenReturn(BlockPos.ZERO);
+        when(donkey.level()).thenReturn(serverLevel);
+        doReturn(net.minecraft.world.entity.EntityType.DONKEY).when(donkey).getType();
+        when(donkey.getBodyArmorAccess()).thenReturn(new net.minecraft.world.SimpleContainer(1));
+        when(donkey.getCapability(Capabilities.ItemHandler.ENTITY)).thenReturn(new ItemStackHandler(16));
+        var menu = new net.minecraft.world.inventory.HorseInventoryMenu(1, inventory,
+            new net.minecraft.world.SimpleContainer(16), donkey, 5);
+        player.containerMenu = menu;
+        assertThrows(UnsupportedOperationException.class, menu::getType);
+
+        var info = ContainerMenuInfos.resolve(player);
+
+        assertEquals(ContainerMenuInfo.Status.AVAILABLE, info.status());
+        assertEquals(ContainerKind.ENTITY, info.kind());
+        assertEquals(15, info.size());
+        assertEquals(new ContainerLayout(5, ContainerLayout.Source.LIVE), info.layout());
+        assertEquals("minecraft:donkey", info.typeId());
+    }
+
+    @Test void untypedUnknownMenu_remainsUnavailable() {
+        var menu = new Menu(null, 1);
+        menu.add(new Slot(inventory, 0, 0, 0));
+        player.containerMenu = menu;
+        assertEquals(ContainerMenuInfo.UNAVAILABLE, ContainerMenuInfos.resolve(player));
+    }
+
+    @Test void enderChestMenu_usesFixedLayout() {
+        var ender = new net.minecraft.world.inventory.PlayerEnderChestContainer();
+        when(player.getEnderChestInventory()).thenReturn(ender);
+        player.containerMenu = net.minecraft.world.inventory.ChestMenu.threeRows(1, inventory, ender);
+
+        var info = ContainerMenuInfos.resolve(player);
+
+        assertEquals(ContainerKind.ENDER_CHEST, info.kind());
+        assertEquals(27, info.size());
+        assertEquals(new ContainerLayout(9, ContainerLayout.Source.FIXED), info.layout());
+    }
+
+    @Test void resizedEnderChest_doesNotAssumeVanillaCapacity() {
+        var ctx = new EnderChestContainerContext(new ItemStackHandler(30), player, level);
+        assertEquals(new ContainerLayout(10, ContainerLayout.Source.HEURISTIC), ctx.getLayout());
+    }
+
     @Test void heuristicAndItemFormSources_remainDistinct() {
         var ctx = new SimpleContainerContext(new ItemStackHandler(30));
         assertEquals(new ContainerLayout(10, ContainerLayout.Source.HEURISTIC), ctx.getLayout());

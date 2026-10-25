@@ -44,6 +44,7 @@ public class ItemEntityContainerContext implements TickableContainerContext {
     private final ItemEntity entity;
     private final ServerLevel level;
     private final String containerKey;
+    private ContainerLayout lastLayout;
 
     public ItemEntityContainerContext(ItemEntity entity, ServerLevel level) {
         this.entity = entity;
@@ -52,6 +53,7 @@ public class ItemEntityContainerContext implements TickableContainerContext {
     }
 
     /** 被包装的掉落物实体（回放侧据此取射线起点，{@code L14=d}）。 */
+    @Override
     public ItemEntity getEntity() {
         return entity;
     }
@@ -78,17 +80,16 @@ public class ItemEntityContainerContext implements TickableContainerContext {
         return 1;
     }
 
-    /**
-     * 列数 = <b>1</b> —— 掉落物形态只有一个槽（{@link #SINGLE_SLOT}），没有行列结构。
-     *
-     * <p>⭐ 2026-10-25：原来是**白嫖** {@code SlotInfoProvider#getWidth()} 的默认 9。
-     * 那个默认值已删（S1：9 是“看着对”的值，忘了覆写只会静默按 9 列解析），
-     * 这里显式答 1 —— 与加权启发式对 1 槽的答案一致，也是唯一自洽的答案
-     * （列数是除数，1 列 ⇒ 唯一的槽既是第 0 行第 0 列）。</p>
-     */
+    /** 单栈形态的布局也由共同链的内建约定产生。 */
     @Override
-    public int getWidth() {
-        return 1;
+    public final int getWidth() {
+        return getLayout().columns();
+    }
+
+    @Override
+    public final ContainerLayout getLayout() {
+        lastLayout = ContainerLayoutResolver.resolve(this, lastLayout);
+        return lastLayout;
     }
 
     @Override
