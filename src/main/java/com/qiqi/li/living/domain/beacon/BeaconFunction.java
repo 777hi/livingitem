@@ -4,8 +4,12 @@ import java.util.List;
 import java.util.Set;
 import java.util.function.Consumer;
 
+import javax.annotation.Nullable;
+
 import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.config.GameplayConfig;
+import com.qiqi.li.living.container.ContainerAnchor;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.model.Pos2D;
@@ -106,31 +110,49 @@ public class BeaconFunction implements LivingItemFunction {
                     applyEffects(level, hostPos, pyramidLevel, active, regenTier);
                 }
 
-                // 箱子宿主：开盖保持 + 近处同步
-                BlockPos containerPos = context.getBlockPos();
-                if (containerPos == null) {
+                // ⭐ 宿主分派按【锚点】判，不按容器自己的身份判（2026-10-25 修）：
+                //    旧写法问 context.getBlockPos() / getOwnerPlayer()，而物品形态这两个
+                //    恒为 null ⇒ 两条分支都进不去 ⇒ 光束 / 开盖 / 玻璃色 / 联机广播全部
+                //    不执行，只有 applyEffects 吃到了 hostPos —— 这就是真机「buff 生效
+                //    但没有光」的成因（锚点已经传下来了，下游却在问别人）。
+                //    「宿主是谁」只问一次，答完就用它。
+                ContainerAnchor anchor = effectiveAnchor(context);
+                if (anchor instanceof ContainerAnchor.AtBlock block) {
+                    // 箱子宿主：开盖保持 + 近处同步
+                    BlockPos hostBlockPos = block.pos();
+                    if (isLiddedChest(level.getBlockEntity(hostBlockPos))) {
+                        List<BlockPos> lidPositions = context.getAssociatedBlockPositions();
+                        if (lidPositions.isEmpty()) {
+                            // 物品形态没有自己的位置列表 ⇒ 用宿主那一格兜住。
+                            // ⚠️ 大箱两半时只取锚点那一格，算不出「信标在前半还是后半」
+                            //    （那需要宿主的完整位置列表 = getHostBlockPositions()，
+                            //    属新增 API，见设计稿 §6-4 与 TODO 6.2 的已知局限）。
+                            lidPositions = List.of(hostBlockPos);
+                        }
+                        // 光束起点 = 信标所在半箱（大箱按槽位落在前半/后半）
+                        BlockPos beamPos = lidPositions.size() > 1
+                            ? lidPositions.get((int) ((long) slot * lidPositions.size() / context.getSize()))
+                            : hostBlockPos;
+                        // 信标同列向上的容器玻璃色（客户端不开 GUI 读不到容器内容 ⇒ 随包下发）
+                        List<Integer> glassColors = BeaconGlassColor.scanColumn(
+                            slot, context.getSize(), context.getWidth(), context::getItem);
+                        // 每枚信标一条宿主（2026-10-18 用户定「同容器多枚每枚一条」）：
+                        // 键 = 容器 + 槽位 ⇒ 各自的等级 / 玻璃色 / 光束互不覆盖
+                        BeaconChestHost.report(context.getCacheKey(), slot, beamPos, lidPositions,
+                            pyramidLevel, glassColors);
+                    }
+                } else if (anchor instanceof ContainerAnchor.AtPlayer at) {
                     // 玩家宿主：联机广播（自己那份客户端本机渲染，不需要发包）
                     // 世界玻璃色不随包下发（U3 方案 A：客户端本地读世界方块即可，含别人的光束）；
                     // 容器玻璃色必须下发（客户端看不到别人背包内容）
-                    Player owner = context.getOwnerPlayer();
-                    if (owner != null) {
-                        BeaconPlayerHostSync.report(owner.getUUID(), pyramidLevel,
-                            BeaconGlassColor.scanColumn(slot, context.getSize(), context.getWidth(),
-                                context::getItem));
-                    }
-                } else if (isLiddedChest(level.getBlockEntity(containerPos))) {
-                    List<BlockPos> lidPositions = context.getAssociatedBlockPositions();
-                    // 光束起点 = 信标所在半箱（大箱按槽位落在前半/后半）
-                    BlockPos beamPos = lidPositions.size() > 1
-                        ? lidPositions.get((int) ((long) slot * lidPositions.size() / context.getSize()))
-                        : containerPos;
-                    // 信标同列向上的容器玻璃色（客户端不开 GUI 读不到容器内容 ⇒ 随包下发）
-                    List<Integer> glassColors = BeaconGlassColor.scanColumn(
-                        slot, context.getSize(), context.getWidth(), context::getItem);
-                    // 每枚信标一条宿主（2026-10-18 用户定「同容器多枚每枚一条」）：
-                    // 键 = 容器 + 槽位 ⇒ 各自的等级 / 玻璃色 / 光束互不覆盖
-                    BeaconChestHost.report(context.getCacheKey(), slot, beamPos, lidPositions,
-                        pyramidLevel, glassColors);
+                    //
+                    // ⚠️ 物品形态（活背包里的信标）走到这里时，**背的人自己看不到**：
+                    //     客户端本机渲染只扫 mc.player.getInventory()，扫不到背包内容
+                    //     ⇒ 只有身边的人看得见。补自己那条属于 TODO 6.1-b（客户端第五条
+                    //     数据源），本次只把服务端状态修对。
+                    BeaconPlayerHostSync.report(at.player().getUUID(), pyramidLevel,
+                        BeaconGlassColor.scanColumn(slot, context.getSize(), context.getWidth(),
+                            context::getItem));
                 }
             }
         }
@@ -155,22 +177,39 @@ public class BeaconFunction implements LivingItemFunction {
      *       掉落物容器无主人 ⇒ null。</li>
      * </ul>
      */
-    private static Vec3 resolveHostPosition(ContainerContext context, Level level) {
-        // 分类统一走 ContainerAnchor（2026-10-23 普查：此处原是与另外三处重复的一份三选一）
-        com.qiqi.li.living.container.ContainerAnchor anchor = context.getAnchor();
-        // 物品形态（活背包）借宿主锚点 —— 玩法开关，默认关
-        if (anchor == null && com.qiqi.li.living.config.GameplayConfig.beaconUsesHostAnchor()) {
+    /**
+     * 本次要用的锚点 —— <b>「宿主是谁」只问一次，取点与分派共用它</b>。
+     *
+     * <p>容器自己的锚点；物品形态自己没有 ⇒ 玩法开关打开时借宿主的
+     * （{@code GameplayConfig#beaconUsesHostAnchor()}，默认关）。</p>
+     *
+     * <p>⭐ 2026-10-25：抽出本方法是为了让 {@link #resolveHostPosition}（取点）与
+     * {@link #tick} 里的宿主分派用<b>同一个</b>锚点。此前分派绕回去问
+     * {@code getBlockPos()/getOwnerPlayer()}，物品形态两个都是 null
+     * ⇒ 光束 / 开盖 / 联机广播全不执行（buff 却生效）——「有 buff 没光」的真因。</p>
+     */
+    // 包级可见：供单测验「取点与宿主分派同源」（见 BeaconHostDispatchTest）。
+    @Nullable
+    static ContainerAnchor effectiveAnchor(ContainerContext context) {
+        ContainerAnchor anchor = context.getAnchor();
+        if (anchor == null && GameplayConfig.beaconUsesHostAnchor()) {
             anchor = context.getHostAnchor();
         }
-        if (anchor instanceof com.qiqi.li.living.container.ContainerAnchor.AtBlock block) {
+        return anchor;
+    }
+
+    private static Vec3 resolveHostPosition(ContainerContext context, Level level) {
+        // 分类统一走 ContainerAnchor（2026-10-23 普查：此处原是与另外三处重复的一份三选一）
+        ContainerAnchor anchor = effectiveAnchor(context);
+        if (anchor instanceof ContainerAnchor.AtBlock block) {
             return isLiddedChest(level.getBlockEntity(block.pos()))
                 ? Vec3.atCenterOf(block.pos()) : null;
         }
-        if (anchor instanceof com.qiqi.li.living.container.ContainerAnchor.AtPlayer at) {
+        if (anchor instanceof ContainerAnchor.AtPlayer at) {
             return at.player().position();
         }
         // AtEntity（船/矿车/掉落物）⇒ 不开光（既有语义，见本类 isLiddedChest 的注释）；
-        // 无锚点（物品形态）⇒ 同样不开光。
+        // 无锚点（物品形态且开关关闭）⇒ 同样不开光。
         return null;
     }
 

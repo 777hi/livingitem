@@ -292,10 +292,13 @@ setBackpackStack → cacheSlotNumbers` ⇒ **ClassCastException**。
    （工具模型与信标光束渲染器各只枚举四条数据源，物品形态不在其中）。
    完整定位与分档实施方案（脏消息递出 / 客户端第五条数据源 / 远程 S2C）见
    [TODO.md](../TODO.md) 活背包 **6.1**。
-4. 🔧 **宿主锚点只接了一半**（2026-10-24 定位）：信标的下游分派与工具的
-   「别挖自己容器」黑名单都还在问容器自己的身份，物品形态两者皆空。
+4. ✅ **宿主锚点只接了一半**（2026-10-25 已修）：信标的下游分派与工具的
+   「别挖自己容器」黑名单原来都在问容器自己的身份，物品形态两者皆空。修法统一为
+   「宿主是谁只问 anchor」：抽出 `effectiveAnchor(context)`，取点与下游分派共用。
+   ⚠️ 遗留：大箱两半拿不全（锚点是单个 `BlockPos`）；背包在玩家身上时信标
+   **背的人自己看不到**（客户端只扫玩家背包，归 6.1-b）。
    见 [TODO.md](../TODO.md) 活背包 **6.2** 与
-   [container-anchor-design.md](../buffer/container-anchor-design.md) §5。
+   [container-anchor-design.md](../buffer/container-anchor-design.md) §5-5。
 
 ### 相关
 

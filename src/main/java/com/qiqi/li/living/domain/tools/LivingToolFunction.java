@@ -18,6 +18,8 @@ import com.qiqi.li.living.api.LivingItemActivation;
 import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.components.OwnerNameResolver;
+import com.qiqi.li.living.config.GameplayConfig;
+import com.qiqi.li.living.container.ContainerAnchor;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.ItemEntityContainerContext;
 import com.qiqi.li.living.container.SimpleContainerContext;
@@ -121,12 +123,14 @@ public class LivingToolFunction implements LivingItemFunction {
             return;
         }
 
-        // 宿主自身的方块（大箱子两格）——射线检测前要先把起点移出去，否则会挖掉容器自己
-        Set<BlockPos> hostBlocks = new HashSet<>(context.getAssociatedBlockPositions());
-        BlockPos hostPos = context.getBlockPos();
-        if (hostPos != null) {
-            hostBlocks.add(hostPos);
-        }
+        // 宿主自身的方块（大箱子两格）——射线检测前要先把起点移出去，否则会挖掉容器自己。
+        // ⭐ 2026-10-25：黑名单从【本次实际用的锚点】派生，不再只从容器自己的位置列表拿。
+        //    物品形态（活背包）的位置列表恒空、getBlockPos() 恒 null，而射线起点恰恰是
+        //    宿主方块中心 ⇒ 不把那一格加进黑名单，扫描第一个穿到的格子就是宿主自己：
+        //    蹲着记过方块类型 ⇒ 类型不匹配直接停（完全没反应）；没记类型 ⇒ 挖自己所在的箱子。
+        //    方块容器本来就在列表里 ⇒ 对本类零副作用（同一格加两遍而已）。
+        //    AtPlayer / AtEntity 无方块可加（掉落物形态刻意不跳过起点所在格，见下方注释）。
+        Set<BlockPos> hostBlocks = hostBlocksOf(context);
         // 注：掉落物形态这里刻意【不】把"起点所在格"当宿主跳过 ——
         // 起点可能落在半砖 / 台阶这类非满高方块所在格的上半空气部分，
         // 那是"格子级"的误判，由 scanForTarget 的【形状求交】精确排除，
@@ -136,6 +140,10 @@ public class LivingToolFunction implements LivingItemFunction {
 
         // K2：登记「本容器有活工具」，供客户端同步（容器形态的射线可视化 / 未来的悬浮渲染）。
         // 只在【方块容器】形态上报 —— 玩家背包与掉落物客户端本来就知道，无需同步。
+        // ⚠️ 判据仍是容器自己的 getBlockPos()（不是锚点）：这条是"我是不是方块容器"的
+        //    身份问题，与"射线从哪射"是两个问题。物品形态没有方块位置 ⇒ 不上报，
+        //    它的客户端可视化归 TODO 6.1-b（第五条数据源）。
+        BlockPos hostPos = context.getBlockPos();
         if (hostPos != null) {
             List<LivingToolHostPacket.ToolRay> tools = new ArrayList<>(entries.size());
             for (SlotEntry entry : entries) {
@@ -343,17 +351,57 @@ public class LivingToolFunction implements LivingItemFunction {
      *
      * <p>记忆存的是"这条线本身"（完整偏移向量），换个起点重放，语义不变。</p>
      *
-     * <p>⚠️ {@code ContainerContext} 目前没有 {@code getOwnerPlayer()}（架构盘点 §2.2 ③），
-     * 故此处按既有惯例用 {@code instanceof} 判具体实现。</p>
+     * <p>⭐ 起点与黑名单<b>同源</b>（2026-10-25）：都用 {@link #effectiveAnchor}。
+     * 起点在宿主方块中心时，那一格就是"我住在这里"，必须进黑名单
+     * （见 {@link #hostBlocksOf}）。</p>
      */
     @Nullable
     private static Vec3 resolveOrigin(ContainerContext context) {
-        com.qiqi.li.living.container.ContainerAnchor anchor = context.getAnchor();
-        // 物品形态（活背包）借宿主锚点 —— 玩法开关，默认关
-        if (anchor == null && com.qiqi.li.living.config.GameplayConfig.toolAndWeaponUsesHostAnchor()) {
+        return originOf(effectiveAnchor(context));
+    }
+
+    /**
+     * 本次要用的锚点 —— 容器自己的；物品形态自己没有 ⇒ 玩法开关打开时借宿主的。
+     *
+     * <p>与 {@code BeaconFunction#effectiveAnchor} 同形：**「宿主是谁」只问一次**，
+     * 取点（{@link #resolveOrigin}）与黑名单（{@link #hostBlocksOf}）共用它。</p>
+     */
+    // 包级可见：供单测验「取点与黑名单同源」（见 LivingToolHostBlockTest）。
+    @Nullable
+    static ContainerAnchor effectiveAnchor(ContainerContext context) {
+        ContainerAnchor anchor = context.getAnchor();
+        if (anchor == null && GameplayConfig.toolAndWeaponUsesHostAnchor()) {
             anchor = context.getHostAnchor();
         }
-        return originOf(anchor);
+        return anchor;
+    }
+
+    /**
+     * “别挖自己容器”黑名单 —— 容器自己的位置列表（大箱两格）+ 【锚点】指向的那一格。
+     *
+     * <p>为什么要加锚点那一格：物品形态（活背包）没有自己的位置，但射线起点是
+     * <b>宿主方块中心</b>。不把它加进黑名单，{@code scanForTarget} 第一个穿到的格子
+     * 就是宿主 ⇒ 蹲着记过类型 ⇒ 类型不匹配直接停（完全没反应）；没记类型 ⇒ 挖自己的箱子。</p>
+     *
+     * <p>对既有形态零副作用：方块容器的锚点那一格本来就在 {@code getAssociatedBlockPositions()}
+     * 里（同一格加两遍而已）；玩家 / 实体锚点没有方块可加。</p>
+     *
+     * <p>⚠️ 大箱两半时只加锚点那一格（锚点是单个 {@code BlockPos}）⇒ 背包在大箱里时，
+     * 另一半不在黑名单内。要完整支持需要宿主的完整位置列表（{@code getHostBlockPositions()}，
+     * 新增 API，见设计稿 §6-4 与 TODO 6.2 已知局限）。</p>
+     */
+    // 包级可见：供单测直接验「黑名单含不含宿主那一格」（见 LivingToolHostBlockTest）。
+    static Set<BlockPos> hostBlocksOf(ContainerContext context) {
+        Set<BlockPos> blocks = new HashSet<>(context.getAssociatedBlockPositions());
+        BlockPos hostPos = context.getBlockPos();
+        if (hostPos != null) {
+            blocks.add(hostPos);
+        }
+        ContainerAnchor anchor = effectiveAnchor(context);
+        if (anchor instanceof ContainerAnchor.AtBlock block) {
+            blocks.add(block.pos());
+        }
+        return blocks;
     }
 
     /**
@@ -362,16 +410,16 @@ public class LivingToolFunction implements LivingItemFunction {
      * <p>取点差异是<b>有意的</b>（见 {@code ContainerAnchor} 类注释）：方块取中心、
      * 玩家取<b>眼睛</b>（与录制端一致）、掉落物取<b>碰撞箱中心</b>。</p>
      */
-    private static Vec3 originOf(com.qiqi.li.living.container.ContainerAnchor anchor) {
-        if (anchor instanceof com.qiqi.li.living.container.ContainerAnchor.AtBlock block) {
+    private static Vec3 originOf(ContainerAnchor anchor) {
+        if (anchor instanceof ContainerAnchor.AtBlock block) {
             // L14 = a：容器方块中心
             return Vec3.atCenterOf(block.pos());
         }
-        if (anchor instanceof com.qiqi.li.living.container.ContainerAnchor.AtPlayer at) {
+        if (anchor instanceof ContainerAnchor.AtPlayer at) {
             // L3 = a：与录制端一致，用玩家眼睛位置
             return at.player().getEyePosition();
         }
-        if (anchor instanceof com.qiqi.li.living.container.ContainerAnchor.AtEntity entityAnchor) {
+        if (anchor instanceof ContainerAnchor.AtEntity entityAnchor) {
             // L14 = d：掉落物【碰撞箱中心】—— 用 position() 会落在脚下方块里（见 rayOrigin 说明）。
             // 船/矿车里的活工具本来就不重放 ⇒ 维持 null（不是遗漏）。
             return entityAnchor.entity() instanceof net.minecraft.world.entity.item.ItemEntity item

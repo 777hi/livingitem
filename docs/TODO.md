@@ -334,23 +334,29 @@
    `LivingWeaponAssist`）都只扫 `player.getInventory()` ⇒ **无记忆（被动模式）的
    工具 / 武器在背包里注定什么都不做**。要不要让"背包内容算装备"是独立玩法问题。
 
-6.2 🔧 **宿主锚点只接了一半**（2026-10-24 定位，**小修，可先做**）——
-   `resolveOrigin` / `resolveHostPosition` 已改成问 anchor，但**下游还在问容器自己**：
-   - **信标**：`BeaconFunction.tick` 拿到 hostPos 后又按 `getBlockPos()` /
-     `getOwnerPlayer()` 分派 ⇒ 物品形态两个都 null ⇒ 光束 / 开盖 / 玻璃色 /
-     联机广播**全部不执行**（只有 `applyEffects` 吃到了 hostPos ——
-     这就是「buff 生效但没光」的原因）。
-     修法：那两条分派也改成按 anchor 分派 ——「宿主是谁」只问一次。
+6.2 ✅ **宿主锚点只接了一半**（2026-10-24 定位 → **10-25 已修**）——
+   两处下游都在问容器自己，物品形态两个字段都是 null：
+   - **信标**：`BeaconFunction.tick` 按 `getBlockPos()` / `getOwnerPlayer()` 分派 ⇒
+     光束 / 开盖 / 玻璃色 / 联机广播全部不执行（只有 `applyEffects` 吃到了 hostPos
+     ——「buff 生效但没光」的真因）。
    - **工具**：`hostBlocks`（「别挖自己容器」黑名单）取自
      `getAssociatedBlockPositions()` + `getBlockPos()`，物品形态两者皆空 ⇒
      在箱子里射线起点 = 箱子方块中心，第一个穿到的格子就是那只箱子：
-     蹲着记过方块类型 ⇒ 类型不匹配直接停（完全没反应）；没记类型 ⇒
-     **挖自己所在的那只箱子**。
-     修法：黑名单从 anchor 派生（`AtBlock` 时把那一格加进去；方块容器本来就在
-     列表里 ⇒ 对它零副作用）。这不是新规则，是把「我在哪一格」这个已知事实用上。
-   - ⚠️ 信标还有一处要一起定：物品形态 `getAssociatedBlockPositions()` 为空 ⇒
-     大箱那条 `beamPos` 计算会拿到 null。要修得让「宿主的位置」也能被问到
-     （可能要加 `getHostBlockPositions()`，属新增 API，先拍板再做）。
+     记过类型 ⇒ 停住（完全没反应）；没记类型 ⇒ **挖自己所在的箱子**。
+
+   **修法（同一原则）**：抽出 `effectiveAnchor(context)`（容器自己的锚点，物品形态
+   没有 ⇒ 开关打开时借宿主的），**取点与下游分派共用它** ——「宿主是谁」只问一次，
+   不许回头问容器自己的身份。信标分派改成 `anchor instanceof AtBlock/AtPlayer`；
+   工具黑名单加一条「`AtBlock` 时把那一格算进去」。
+
+   **已知局限（未修，需先拍板）**：锚点是单个 `BlockPos`，拿不到宿主的完整位置列表
+   ⇒ ① 大箱里背包的信标，`beamPos` 只能取锚点那一格，算不出「信标在前半还是后半」；
+   ② 大箱里背包的工具，另一半箱子不在黑名单内。要修得加
+   `ContainerContext#getHostBlockPositions()`（新增 API，见设计稿 §6-4）。
+
+   ⚠️ **信标在玩家身上的背包里**：修好后**背的人自己看不到光束** —— 客户端本机渲染
+   只扫 `mc.player.getInventory()`，扫不到背包内容；只有身边的人看得见（S2C 广播）。
+   补自己那条归 TODO 6.1-b。
 
 ## 活水车 · Create 接触面收窄（2026-10-19 记）
 
