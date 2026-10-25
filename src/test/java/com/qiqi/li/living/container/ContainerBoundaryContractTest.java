@@ -3,17 +3,27 @@ package com.qiqi.li.living.container;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+import java.lang.reflect.Field;
+import java.util.UUID;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.neoforged.neoforge.items.IItemHandlerModifiable;
 
 /**
  * 容器边界守卫测试 —— 把 [container-boundary.md](../../../../../../docs/system-design/container-boundary.md)
- * 的 I-C3 / I-C4 / I-C7 钉成可执行断言。
+ * 的 I-C3 / I-C4 / I-C7 / **I-C11** 钉成可执行断言。
  *
  * <h3>为什么需要这两个替身</h3>
  * <p>本模组假设「槽位是精确地址」，而 {@code IItemHandler} 契约只承诺「物品被接受」。
@@ -187,5 +197,44 @@ class ContainerBoundaryContractTest {
         assertEquals(simulated, handler.slots[4].getCount(),
             "模拟承诺的数量必须真的写进槽 4");
         assertSame(ItemStack.EMPTY, handler.slots[0], "槽 0 不得被整库重定向占用");
+    }
+
+    // ── I-C11：列数是除数，任何形态都不得答 0 / 负数 ──────────────────────────
+    //
+    // 2026-10-24 崩服实录：带箱驴被自己的活 TNT 炸死 ⇒ dropEquipment() 摘箱 ⇒
+    // 同一 tick 的红石阶段拿 getWidth()=0 当除数 ⇒ / by zero。
+    // ⇒ 不变量：**任何容器形态、任何时刻，getWidth() ≥ 1**。
+
+    @Test
+    @DisplayName("I-C11：四种容器形态都答 ≥ 1 列（掉落物形态 = 1）")
+    void everyFormAnswersPositiveWidth() {
+        // 掉落物：单槽容器。⭐ 它原来白嫖 SlotInfoProvider 的默认 9（2026-10-25 删默认时
+        // 编译期抓出来）—— 9 对 1 槽是错答案，只是单槽让行列退化、碰巧没造成可见问题。
+        ItemEntity dropped = mock(ItemEntity.class);
+        when(dropped.getUUID()).thenReturn(UUID.randomUUID());
+        assertEquals(1, new ItemEntityContainerContext(dropped, mock(ServerLevel.class)).getWidth(),
+            "掉落物只有一个槽 ⇒ 1 列（与启发式对 1 槽的答案一致）");
+
+        // 方块容器：27 槽 ⇒ 9
+        assertEquals(9, ctx(new SlotIgnoringHandler(27)).getWidth());
+
+        // 物品形态：来源给权威列数就用它
+        assertEquals(5, new ItemFormContainerContext(
+            new net.neoforged.neoforge.items.ItemStackHandler(30), UUID.randomUUID(),
+            mock(net.minecraft.world.level.Level.class), 5, null).getWidth(),
+            "物品形态用 Source#columns 给的权威值");
+
+        // 玩家背包：恒 9
+        Player player = mock(Player.class);
+        when(player.getUUID()).thenReturn(UUID.randomUUID());
+        Inventory inventory = mock(Inventory.class);
+        try {
+            Field f = Inventory.class.getDeclaredField("player");
+            f.setAccessible(true);
+            f.set(inventory, player);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("无法设置 Inventory.player", e);
+        }
+        assertEquals(9, new SimpleContainerContext(new SlotIgnoringHandler(41), inventory).getWidth());
     }
 }

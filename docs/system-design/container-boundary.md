@@ -324,6 +324,10 @@
 
 1. **任何 `getWidth()` 实现都必须返回 ≥ 1。** 原版会答 0：`AbstractChestedHorse#getInventoryColumns()`
    是 `hasChest() ? 5 : 0` ⇒ 无箱（或箱子刚被摘）时为 0。实现方拿不到权威值就回落到按槽数推。
+   ⚠️ **接口不给默认值**（2026-10-25，`SlotInfoProvider#getWidth()` 改为抽象）：原默认值是 `9`，
+   而 9 是"看着对"的值 —— 漏覆写不报错、只是静默按 9 列解析。它不是理论风险：
+   `ItemEntityContainerContext`（掉落物形态，单槽）**真的一直在白嫖那个 9**，
+   改抽象时被编译期抓出来，显式答 1。列数这种"错了也看不出来"的值，不能有默认答案。
 2. **容器可能在 tick 中途变空。** `processContext` 的阶段顺序是「函数 tick → 容器级数据」：
    阶段 2 里活 TNT 炸死宿主 ⇒ `dropEquipment()` 摘掉箱子 ⇒ 到阶段 3 时存储格与列数**同时归零**。
    下游必须把「空」当合法状态跳过（`ContainerStressData#calculate` 早有此守卫，
