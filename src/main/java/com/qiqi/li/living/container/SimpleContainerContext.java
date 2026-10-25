@@ -231,6 +231,20 @@ public class SimpleContainerContext implements TickableContainerContext {
             return rule.get().columns();
         }
 
+        // Tier 1.5: 自动学到的布局（2026-10-25）—— 玩家开门时从菜单槽坐标读到的真实行列，
+        // 落盘在 config/living_item/learned_layouts.json（见 ContainerLayoutLearner）。
+        // 排在规则表之后、原版家族之前：规则是人验过的，不该被观察值静默压过；
+        // 而家族表答的是"这一类"，具体性低于"这个 (id, 槽数)"。
+        for (BlockEntity be : associatedBlockEntities) {
+            net.minecraft.resources.ResourceLocation id =
+                net.minecraft.core.registries.BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(be.getType());
+            if (id == null) continue;
+            int learned = LearnedLayouts.columnsOf(id, getSize());
+            if (learned > 0) {
+                return learned;
+            }
+        }
+
         // Tier 2: 已知容器类型直接推断
         int size = getSize();
         for (BlockEntity be : associatedBlockEntities) {

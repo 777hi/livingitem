@@ -146,6 +146,8 @@ src/test/java/com/qiqi/li/
 │   └── TillToFarmlandCompatTest.java          # 活锄头跨模组兼容·模组锄头命中+处理器产物回归（8 项）
 ├── living/transfer/
 │   ├── ContainerCompatibilityConfigTest.java  # 容器布局推断 + 类型表与规则文件一致（双源漂移守卫）+ 多档容量共存（精妙背包 27/81=9 列、108/120=12 列）（16 项）
+│   ├── ContainerLayoutLearnerTest.java            # 容器布局自动学（Tier 1.5，2026-10-25）·安全阀形状（干净矩形收 / 单排 N 个⇒N 列 / 酿造台 2-2-1 拒 / 行内 x 不等距拒 / **同坐标多槽拒（间距必须 >0）** / 单槽仍合法）· **准入四条**（归属一致 / 槽号不重不漏 0..n-1 / 槽数完整=getContainerSize / **行优先：槽号序==(y,x)序**）· 容器身份只认「槽 container 是方块实体」·菜单里滤掉玩家自己的槽 / **规则答得上就不学（=注册规则即锁定，且菜单必须同 id 同容量才测得出来）** / 没有规则⇒学并落盘 / 值没变不重复写 / **写盘失败后同值也重试** / **歧义落盘、不跨重启复活** / 落盘往返 / 文件损坏按空表开始 / 自己背包菜单与拿不到身份的都不学 / **Tier 1.5 接线：getWidth() 答学到的值而非启发式** / **熔炉被行优先判据拒（收紧准入的预期后果）**（24 项；⚠️ 事件入口只认 ServerPlayer；⚠️ 内置规则表在测试 JVM 里可能已被别的测试加载 ⇒ 用规则表里没有的 minecraft:crafter 做“没有规则”用例，真 BE 而非 mock）
+
 │   ├── ContainerRuleConfigTest.java           # 玩家差异持久化·覆盖内置+删除不复活+导出全量快照+社区闭环+多档共存/旧格式删除记录不被抹掉/内置规则含无尽箱子300格25列/contentRetaining 内置声明与玩家追加（17 项）
 │   └── SlotInteractionCargoGateTest.java      # 槽位交互货物准入真值表·活骨粉不施肥（5 项）
 └── network/

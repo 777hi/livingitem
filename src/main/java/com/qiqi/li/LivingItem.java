@@ -23,6 +23,7 @@ import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.entity.player.PlayerContainerEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
 import net.neoforged.neoforge.event.server.ServerStoppedEvent;
@@ -239,6 +240,13 @@ public class LivingItem {
 
         // 加载容器规则：模组自带（项目级）→ 玩家本地（配置目录）
         ContainerRuleConfig.load();
+
+        // 自动学到的容器布局（Tier 1.5，2026-10-25）：与规则表同目录、独立文件。
+        // ⚠️ 它记的是"已装模组的容器布局"（与存档无关）⇒ 不登记 server-stop 清理，
+        //    理由见 LearnedLayouts 类注释。
+        com.qiqi.li.living.container.LearnedLayouts.init(
+            net.neoforged.fml.loading.FMLPaths.CONFIGDIR.get());
+        com.qiqi.li.living.container.LearnedLayouts.load();
 
         // 活化规则：允许配置者（服务器主 / 整合包作者）不写 Java 就控制哪些物品可被活化（D1）
         ActivationRuleConfig.init(net.neoforged.fml.loading.FMLPaths.CONFIGDIR.get());
@@ -673,6 +681,17 @@ public class LivingItem {
         // 联机可见性（最小版）：近处玩家背包里的无记忆活工具清单（UUID + ItemStack），
         // 供客户端给【其它玩家】画背后的待机环（自己那份不发 —— 本机渲染更实时，且能走挖掘环）
         registrar.playToClient(LivingToolPlayerPacket.TYPE, LivingToolPlayerPacket.STREAM_CODEC, LivingToolPlayerPacket::handle);
+    }
+
+    /**
+     * 玩家打开容器 GUI ⇒ 从菜单的容器槽坐标学这个容器的真实行列（Tier 1.5，2026-10-25）。
+     *
+     * <p>只在服务端、一次开门一次；安全阀与"规则表答得上就不学"等判据都在
+     * {@code ContainerLayoutLearner} 里。</p>
+     */
+    @SubscribeEvent
+    public void onContainerOpen(PlayerContainerEvent.Open event) {
+        com.qiqi.li.living.transfer.ContainerLayoutLearner.onContainerOpen(event);
     }
 
     @SubscribeEvent
