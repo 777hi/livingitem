@@ -17,6 +17,12 @@
 
 ## 2026-10-26
 
+- 🧹 **删掉两个零调用者方法**（上一条记的「去留待定」已定：删）：`LivingToolPlayerClientCache#snapshot` / `#toolsOf` 全库零调用；连带 `DimensionScopedCache#snapshot` 也失去唯一使用者，一并删掉（3 行，将来真要用再加）。
+
+  **未进 AGENTS 进展表**，这是刻意的：删死代码不是新能力，而那张表是 10 行滚动窗口 —— 不值得为它挤掉一条 10-24 的历史条目。正文在此，指针不需要。
+
+  1005 全绿；`check_layers` 无新增违规。
+
 - 🗂️ **四个客户端渲染缓存合一（`DimensionScopedCache<T>`）**：`LivingToolHostClientCache` / `LivingToolPlayerClientCache` / `BeaconHostClientCache` / `BeaconPlayerHostClientCache` 除了泛型参数**一字不差**（`volatile` 双字段 + 维度比对 + 整体替换 + `clear()`），而且注释已经开始漂移 —— 一份说"网络包在 Netty 线程解码"，另一份 2026-10-18 已更正为不成立。抽成 `living/util/DimensionScopedCache<T>`，四个门面只保留类型与 javadoc、不再各自持有字段；**调用点零改动**（`update` / `get` / `clear` 签名不变）。
 
   「换维度 / 换存档串台」这条不变量从四份收成一份 —— 2026-10-12 那类「`clear()` 零调用者 ⇒ 上个存档的活工具残留渲染」的坑，从此只有一个家。

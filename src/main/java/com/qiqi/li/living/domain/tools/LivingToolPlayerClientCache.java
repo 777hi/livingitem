@@ -1,13 +1,11 @@
 package com.qiqi.li.living.domain.tools;
 
 import java.util.List;
-import java.util.UUID;
 
 import com.qiqi.li.living.util.DimensionScopedCache;
 import com.qiqi.li.living.util.StaticCacheRegistry;
 
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.item.ItemStack;
 
 /**
  * 客户端「附近玩家背包里的活工具」缓存（联机可见性 · 最小版）。
@@ -44,21 +42,6 @@ public final class LivingToolPlayerClientCache {
      */
     public static List<LivingToolPlayerPacket.Entry> get(ResourceLocation currentDim) {
         return CACHE.get(currentDim);
-    }
-
-    /** 另取一份（渲染遍历时避免和 volatile 读交错）。 */
-    public static List<LivingToolPlayerPacket.Entry> snapshot() {
-        return CACHE.snapshot();
-    }
-
-    /** 按玩家查找；没有则返回 {@code null}。 */
-    public static List<ItemStack> toolsOf(UUID playerId) {
-        for (LivingToolPlayerPacket.Entry entry : CACHE.snapshot()) {
-            if (entry.playerId().equals(playerId)) {
-                return entry.tools();
-            }
-        }
-        return null;
     }
 
     /** 清空（客户端退出存档时调用，避免跨存档残留）。 */

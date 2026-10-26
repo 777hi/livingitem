@@ -42,11 +42,6 @@ public final class DimensionScopedCache<T> {
         return currentDim != null && currentDim.equals(dimension) ? entries : List.of();
     }
 
-    /** 另取一份（渲染遍历时避免和 volatile 读交错）。 */
-    public List<T> snapshot() {
-        return entries;
-    }
-
     /** 清空（客户端退出存档时调用，避免跨存档残留）。 */
     public void clear() {
         dimension = null;
