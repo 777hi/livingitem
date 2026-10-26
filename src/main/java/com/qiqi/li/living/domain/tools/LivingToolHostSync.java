@@ -7,7 +7,6 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
@@ -203,16 +202,15 @@ public final class LivingToolHostSync {
     }
 
     /**
-     * 两把工具是否「渲染等价」—— 只比 {@code LivingToolModelRenderer} 真正读的字段：
-     * <b>物品种类 + 记忆 + 动画状态</b>。
+     * 两把工具是否「渲染等价」—— 物品种类 + {@link ToolRenderState}（记忆 + 动画状态）。
      *
-     * <p>⚠️ 动画状态（{@code LIVING_TOOL_PROGRESS} / {@code LIVING_TOOL_LAST_ACTION} /
-     * {@code LIVING_TOOL_DIG_TICKS}）<b>必须</b>在这份键里：它们是「在挖哪 / 挖了多久 /
-     * 刚交互过」的全部来源，漏掉就等于容器形态的模型只画待机位、永不转圈
-     * （2026-10-26 真机：有模型、没动画）。</p>
+     * <p>⚠️ <b>渲染依赖的清单只有一份</b>，住在 {@code ToolRenderState}：客户端渲染从它取，
+     * 这里也从它取 ⇒ 加字段只改那一个文件。曾经这里手写一份清单、渲染器手写另一份，
+     * 漏改一边就是静默失效（2026-10-26 事故）。</p>
      *
-     * <p>耐久等与渲染无关的字段<b>仍然不比</b> —— 它们随每次破坏变化，比了就是无意义的重发。
-     * 即判据是「渲染依赖」而非「内容相等」，两边都要守住：多比一个会刷包，少比一个会没动画。</p>
+     * <p>耐久等与渲染无关的字段<b>不进</b> {@code ToolRenderState} —— 它们随每次破坏变化，
+     * 比了就是无意义的重发。即判据是「渲染依赖」而非「内容相等」，两边都要守住：
+     * 多比一个会刷包，少比一个会没动画。</p>
      */
     private static boolean sameTool(ItemStack a, ItemStack b) {
         if (a.isEmpty() || b.isEmpty()) {
@@ -221,9 +219,6 @@ public final class LivingToolHostSync {
         if (a.getItem() != b.getItem()) {
             return false;
         }
-        return Objects.equals(LivingToolMemory.of(a), LivingToolMemory.of(b))
-            && Objects.equals(LivingToolProgress.of(a), LivingToolProgress.of(b))
-            && Objects.equals(LivingToolAction.of(a), LivingToolAction.of(b))
-            && Objects.equals(ToolComponents.getDigTicks(a), ToolComponents.getDigTicks(b));
+        return ToolRenderState.of(a).equals(ToolRenderState.of(b));
     }
 }

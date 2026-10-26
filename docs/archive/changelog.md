@@ -17,6 +17,14 @@
 
 ## 2026-10-26
 
+- 🧩 **渲染依赖收成 `ToolRenderState`（零协议变更）**：活工具 / 活武器的"渲染依赖"原本有**两份手写清单** —— `LivingToolHostSync#sameTool` 一份（比较用）、`LivingToolModelRenderer` 散落五处（渲染用），分居两个文件、隔了三百行 ⇒ 加一个渲染依赖时漏改一边就是**静默失效**（上面那条「不转圈」正是这个形态）。现在两边都从 `ToolRenderState`（record，住 `domain/tools`）取：服务端比它，客户端五处散读收成一处。**加字段 = 改那一个文件**（字段定义 / `of()` / `equals` 在 20 行内相邻）。
+
+  **不进包**：这是"从 ItemStack 提取"的纯函数，服务端与客户端各自从手里的栈算 ⇒ **协议零变更**、联机无兼容问题。耐久仍不进（渲染不读它，进了白刷包）。
+
+  **不做的事**（留痕见 [设计稿](../buffer/render-state-broadcast.md) §7.1）：`TargetedBroadcast<T>` 服务端骨架（① 已拿走 merge 口径的价值，剩下四个 `flush` 循环差异大 —— 收集时机 / 排除自己 / 3D vs 水平半径 —— 硬抽会变成"三开关 + 四 lambda"的配置框架）、协议分段（本条已达成目的）、状态段保底覆盖（用户拍板不做）、`PlayerSync` 跟进（它只画待机环，不读动画字段）。
+
+  1005 全绿；`check_layers` 无新增违规。
+
 - 🧹 **三处「逐维度 flush 互清去重表」补齐**：`LivingToolPlayerSync` / `BeaconChestHost` / `BeaconPlayerHostSync` 仍照抄 2026-10-23 在 `LivingToolHostSync` 修掉的写法（`lastSent.clear(); putAll(next)`），而四者的 `flush` 都是 `for (level : getAllLevels())` **逐维度**调用的 ⇒ 第一个维度发完、后两个维度把表清空 ⇒ 下一 tick 所有玩家都判「有变化」⇒ **每玩家每 tick 收一个包**（单存档单人也中，三个同步器各一份）。那次只在 K2 修了并加了 `mergeRecords`，另三份是**拷贝**所以没跟上 —— 2026-10-26 审查才发现。
 
   **修法**：合并口径抽成 `living/util/BroadcastDedup#merge`（泛型，四个调用点共用），`lastSent` 由 `final` 改为可重赋值。测试从 `LivingToolHostSyncMergeTest` 迁到 `BroadcastDedupTest`，**只留一份** —— 正确性由「四个调用点调的是同一个函数」保证，复制三份测试是噪音。顺带把「覆盖」那条用例从恒真改成真测：旧版三个用例的值都是 `List.of()`、彼此全等，`assertEquals(newValue, merged.get(...))` 根本区分不出覆盖与否。

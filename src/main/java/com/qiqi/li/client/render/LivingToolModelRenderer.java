@@ -23,6 +23,7 @@ import com.qiqi.li.living.domain.tools.LivingToolPlayerClientCache;
 import com.qiqi.li.living.domain.tools.LivingToolProgress;
 import com.qiqi.li.living.domain.tools.LivingToolRecorder;
 import com.qiqi.li.living.domain.tools.LivingToolRayTuning;
+import com.qiqi.li.living.domain.tools.ToolRenderState;
 import com.qiqi.li.living.domain.tools.LivingToolHostPacket;
 import com.qiqi.li.living.domain.tools.LivingToolPlayerPacket;
 
@@ -633,7 +634,7 @@ public final class LivingToolModelRenderer {
         long latest = Long.MIN_VALUE;
         BlockPos target = null;
         for (ItemStack weapon : weapons) {
-            LivingToolAction action = LivingToolAction.of(weapon);
+            LivingToolAction action = ToolRenderState.of(weapon).action();
             long age = action == null || action.target() == null
                 ? Long.MAX_VALUE : now - action.tick();
             // age < 0：客户端时钟略慢于服务端写入时（差 1~2 tick）⇒ 视为未攻击
@@ -705,7 +706,7 @@ public final class LivingToolModelRenderer {
                     origin, owner, stack, "o" + playerId + "_" + i, seen);
                 continue;
             }
-            LivingToolAction action = LivingToolAction.of(stack);
+            LivingToolAction action = ToolRenderState.of(stack).action();
             if (action != null && action.target() != null
                 && now - action.tick() >= 0L && now - action.tick() < ATTACK_RING_TICKS) {
                 attacking.add(stack);
@@ -823,7 +824,9 @@ public final class LivingToolModelRenderer {
         if (stack.isEmpty() || !LivingItemManager.isLivingItem(stack)) {
             return;
         }
-        LivingToolMemory memory = LivingToolMemory.of(stack);
+        // ⭐ 渲染依赖的唯一提取点（服务端去重键读的是同一个 record ⇒ 加字段只改它一处）
+        ToolRenderState state = ToolRenderState.of(stack);
+        LivingToolMemory memory = state.memory();
         if (memory.isEmpty()) {
             return;
         }
@@ -871,8 +874,8 @@ public final class LivingToolModelRenderer {
         double idleDist = IDLE_MAX_OFFSET * length / (length + IDLE_HALF_SATURATION);
         Vec3 idlePos = origin.add(dir.scale(idleDist));
 
-        LivingToolProgress progress = LivingToolProgress.of(stack);
-        LivingToolAction action = LivingToolAction.of(stack);
+        LivingToolProgress progress = state.progress();
+        LivingToolAction action = state.action();
 
         Vec3 pos;
         float spinRad = 0.0F;
@@ -881,7 +884,7 @@ public final class LivingToolModelRenderer {
         if (progress != null) {
             // 挖掘中：瞬现到交互位 + 风车式转圈（转速由服务端给的预计 tick 决定）
             pos = surfacePoint(level, origin, progress.target());
-            int period = spinPeriod(com.qiqi.li.living.domain.tools.ToolComponents.getDigTicks(stack));
+            int period = spinPeriod(state.digTicks());
             spinRad = spinAngle(now, partialTick, period);
             remember(key, now, pos);
         } else if (action != null && action.target() != null
