@@ -138,11 +138,4 @@ public class LivingTntFunction implements LivingItemFunction {
         return e.ignited() ? e.fuseTimer() : -1;
     }
 
-    public static boolean startFuse(ItemStack tntStack) {
-        LivingTntData data = LivingTntData.of(tntStack);
-        if (data.explosion().ignited()) return false;
-        LivingTntData.set(tntStack, data.withExplosion(data.explosion().ignite(80)));
-        return true;
-    }
-
 }

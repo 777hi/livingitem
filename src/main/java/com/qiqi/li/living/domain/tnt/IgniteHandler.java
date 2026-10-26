@@ -31,6 +31,9 @@ public class IgniteHandler implements InteractionHandler {
         }
 
         ExplosionComponent.startFuseOnStack(targetSlot.getItem());
+        // ⚠️ 就地改写组件必须经槽位标脏（2026-10-27 审查 P3-4）：NBT 背书 handler 的
+        //    就地改不触发保存钩子，点燃与下一 tick 写回之间若恰好落盘会丢引信状态。
+        targetSlot.setChanged();
         player.containerMenu.broadcastChanges();
     }
 }

@@ -133,6 +133,30 @@ public class ExplosionComponent {
      * <p>本方法<b>不读任何方块</b> —— 爆炸范围可能跨未加载区块，读它会强制加载。
      * 方块破坏由 {@link ExplosionLedger} 按区块分帧推进（已加载的）或等区块自然加载（未加载的）。</p>
      */
+    /** 容器内活 TNT 总数（long：槽数 × maxCount 实际不可回绕；供单测钉溢出）。 */
+    static long countLivingTnt(ContainerContext containerCtx) {
+        long total = 0;
+        int containerSize = containerCtx.getSize();
+        for (int i = 0; i < containerSize; i++) {
+            ItemStack stack = containerCtx.getItem(i);
+            if (!stack.isEmpty() && stack.is(Items.TNT) && LivingItemManager.isLivingItem(stack)) {
+                total += stack.getCount();
+            }
+        }
+        return total;
+    }
+
+    /** 清空容器内全部活 TNT（计数成功后调用 —— 顺序不能反，见 ignite 内注释）。 */
+    static void clearLivingTnt(ContainerContext containerCtx) {
+        int containerSize = containerCtx.getSize();
+        for (int i = 0; i < containerSize; i++) {
+            ItemStack stack = containerCtx.getItem(i);
+            if (!stack.isEmpty() && stack.is(Items.TNT) && LivingItemManager.isLivingItem(stack)) {
+                containerCtx.setItem(i, ItemStack.EMPTY);
+            }
+        }
+    }
+
     public static boolean ignite(ContainerContext containerCtx, Level level, float baseRadius, boolean vanillaDrops) {
         // 分类统一走 ContainerAnchor（2026-10-23 普查：此处原是与另外三处重复的一份三选一）
         //
@@ -162,16 +186,16 @@ public class ExplosionComponent {
             return false;
         }
 
-        int totalTntCount = 0;
-        int containerSize = containerCtx.getSize();
-        for (int i = 0; i < containerSize; i++) {
-            ItemStack stack = containerCtx.getItem(i);
-            if (!stack.isEmpty() && stack.is(Items.TNT) && LivingItemManager.isLivingItem(stack)) {
-                totalTntCount += stack.getCount();
-                containerCtx.setItem(i, ItemStack.EMPTY);
-            }
+        // ⚠️ 先统计后清空（2026-10-27 审查 P2-1，TODO 挂账 S1）：计数与清空曾在同一循环，
+        // int 求和回绕成负 ⇒ 早退时物品已全部清空 ⇒ TNT 凭空消失、零爆炸、零日志（I-C6）。
+        // long 上限 = 槽数 × maxCount，实际不可回绕；<=0 哨兵留给防御路径并留痕。
+        long totalTntCount = countLivingTnt(containerCtx);
+        if (totalTntCount <= 0) {
+            com.qiqi.li.logging.ModLog.CONTAINER.warn(
+                "[活TNT] TNT 计数异常（应为正数），放弃爆炸且保留物品：count={}", totalTntCount);
+            return false;
         }
-        if (totalTntCount <= 0) return false;
+        clearLivingTnt(containerCtx);
         if (!(level instanceof ServerLevel serverLevel)) return false;
 
         double radius = baseRadius * Math.sqrt(totalTntCount);
@@ -262,12 +286,10 @@ public class ExplosionComponent {
             float damage = (float) ((impact * impact + impact) / 2.0 * 7.0 * range + 1.0);
 
             if (damage > 0 && entity instanceof LivingEntity living) {
-                DamageSource explosionSource;
-                if (entity instanceof ServerPlayer player) {
-                    explosionSource = level.damageSources().explosion(player, player);
-                } else {
-                    explosionSource = level.damageSources().explosion(entity, entity);
-                }
+                // ⚠️ 无归因爆炸（2026-10-27 审查 P3）：曾传 (entity, entity) —— causedBy 是
+                // 受害者本人 ⇒ 死亡消息 / killed_by_entity 类战利品条件把爆炸记在受害者头上。
+                // ignite 链路没有 igniter 概念，先传 null（原版语义允许）消除错误归因。
+                DamageSource explosionSource = level.damageSources().explosion(null, null);
                 living.hurt(explosionSource, damage);
             }
 

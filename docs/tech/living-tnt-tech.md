@@ -173,13 +173,9 @@ ItemStack
 点火由活漏斗的传输系统在检测到 source=活打火石、target=活TNT 时触发：
 
 ```java
-// LivingTntFunction.startFuse()
-public static boolean startFuse(ItemStack tntStack) {
-    LivingTntData data = LivingTntData.of(tntStack);
-    if (data.explosion().ignited()) return false;  // 已点燃，不重复点火
-    LivingTntData.set(tntStack, data.withExplosion(data.explosion().ignite(80)));
-    return true;
-}
+// ⚠️ 本节流程过时（冻结待仲裁，见 TODO）：点火方式已从活漏斗路径迁 GUI 交互
+// （interaction_rules.json 的 ignite 动作），实际点燃入口 = ExplosionComponent.startFuseOnStack。
+// 原样例（已删除的 LivingTntFunction.startFuse，引信 80 ticks）移除；现路径引信时长见 §3.4。
 ```
 
 ### 3.3 红石信号点火
@@ -633,7 +629,7 @@ public void addToTooltip(Item.TooltipContext context,
 
 活漏斗方向：source=左, target=右
 → 活漏斗检测到 source=活打火石, target=活TNT
-→ 调用 LivingTntFunction.startFuse() 点燃 TNT
+→ 点燃 TNT（曾为 LivingTntFunction.startFuse()，已移除；⚠️ 本节流程过时冻结待仲裁，实际为 GUI 交互点燃）
 → 80 ticks (4秒) 后爆炸
 → 容器中所有活TNT被清空
 → 爆炸半径 = 4.0 × √(TNT堆叠总数)

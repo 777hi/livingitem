@@ -77,6 +77,7 @@ src/test/java/com/qiqi/li/
 │   ├── LivingToolAssistTest.java             # 辅助挖掘**速度分层**（2026-10-27 用户定，真机翻车那层的回归）·顶层相加+背包只取最高（3+4+9=16，背包另一把 5 不加）/ 空列表⇒0 / 只有背包条目⇒取最高（含客户端 S2C 补的条目）（3 项）
 │   └── CarriedLivingItemsTest.java              # 「随身携带」判据（2026-10-27，物品形态）·顶层工具收（innerSlot=-1）/ 已活化容器展开一层（outerSlot=宿主格、innerSlot=内容格）/ **未活化容器不展开**（活化门槛即性能闸门）/ skipMainHand（主手工具不收）/**skipMainHand 仍展开主手背包内容**（原版计入的是手持工具不是手持容器的内容；连展开一起跳 ⇒ 手持背包两端不同源）/ **槽位顺序**（容器条目紧跟宿主槽位，E6 掉落归属取最靠前）/ **写回容器走 setStackInSlot**（否则背包里的工具白干活不掉耐久）/**客户端 S2C 补的条目仍算容器内**（否则两端分层不一致 ⇒ 方块破坏又恢复）/ 写回守卫（目标格被换走⇒放弃不覆盖 / 槽位越界⇒不抛）（10 项）
 ├── living/domain/tnt/
+│   ├── ExplosionComponentCountTest.java       # TNT 计数/清空守恒（2026-10-27 审查 P2-1，TODO 挂账 S1 的回归）·int 求和曾回绕成负 ⇒ 早退但物品已清空（TNT 凭空消失零爆炸零日志）/ 两满槽 int 极值 ⇒ long 求和不回绕且统计阶段不消耗 / 清空只清活 TNT（普通 TNT 与非 TNT 保留）/ 无活 TNT ⇒ 计数 0（3 项）
 │   ├── LivingTntConsumeTest.java              # 爆炸后**必须消耗**（真机「炸了但 TNT 还在」的回归）·单颗炸完槽位空/多颗一起炸全部消耗（ignite 一次清空，快照写回会复活没轮到的）/掉落物形态炸在原地并消耗/**宿主锚点默认关⇒哑弹 / 打开⇒炸在宿主并消耗**（5 项；⚠️ ServerLevel 替身需反射注入 Level.random 字段，账本用真 ExplosionLedger）
 │   ├── ExplosionParamsTest.java               # 爆炸参数·位图映射可逆/网格外返回-1/affects=区块AABB∩球体/边界回归(中心在半径外但边缘在球内)/球体全覆盖(半径内每方块所在区块必命中)/网格规模（7 项）
 │   ├── ExplosionLedgerTest.java               # 待炸账本·相交才进队列/不相交立即标记/未加载丢弃不轮询/自然加载补炸闭环/分帧预算/多场叠加不覆盖新登记/满额降级/存档往返（10 项）

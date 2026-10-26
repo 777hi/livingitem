@@ -83,7 +83,7 @@
 TransferPipeline.execute()
   │
   ├─ source 是活打火石 + target 是活 TNT
-  │   └─ LivingTntFunction.startFuse(tntStack)  ← 点燃引信
+  │   └─ ExplosionComponent.startFuseOnStack(tntStack)  ← 点燃引信（⚠️ 本节点火路径已过时：实际为 GUI 交互点燃，流程描述冻结待仲裁，见 TODO）
   │       └─ return true（视为传输成功，触发冷却）
   │
   └─ 其他情况 → 正常传输流程
@@ -168,7 +168,7 @@ public void addToTooltip(Item.TooltipContext context,
 
 活漏斗方向：source=左, target=右
 → 活漏斗检测到 source=活打火石, target=活TNT
-→ 调用 LivingTntFunction.startFuse() 点燃 TNT
+→ 点燃 TNT（曾为 LivingTntFunction.startFuse()，已移除；⚠️ 本节流程过时冻结待仲裁，实际为 GUI 交互点燃）
 → 80 ticks 后 TNT 爆炸
 ```
 

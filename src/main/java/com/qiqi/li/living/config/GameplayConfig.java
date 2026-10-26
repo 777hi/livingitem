@@ -49,7 +49,9 @@ public final class GameplayConfig {
 
         TNT = builder.comment(
                 "活背包里的活 TNT：开启后炸在宿主处（背在身上 = 炸在脚下）。",
-                "关闭时没有可炸的位置 ⇒ 引信走完就停住（哑弹），不会爆炸。")
+                "关闭时没有可炸的位置 ⇒ 引信走完就停住（哑弹），不会爆炸。",
+                "⚠️ 哑弹不是熄灭：引信保持点燃态，把这颗 TNT 挪进任何有位置的地方",
+                "（箱子 / 地面 / 掉出背包）⇒ 下一 tick 立即爆。设计收口见 TODO。")
             .define("tnt", false);
 
         WATER_WHEEL = builder.comment(

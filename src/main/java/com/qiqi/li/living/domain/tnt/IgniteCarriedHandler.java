@@ -36,6 +36,8 @@ public class IgniteCarriedHandler implements InteractionHandler {
                 || !LivingItemManager.isLivingItem(carried)) return;
 
             flintAndSteel.hurtAndBreak(1, player, net.minecraft.world.entity.EquipmentSlot.MAINHAND);
+            // ⚠️ 槽内就地扣耐久须标脏（同 IgniteHandler，2026-10-27 审查 P3-4）
+            targetSlot.setChanged();
         }
 
         ExplosionComponent.startFuseOnStack(carried);
