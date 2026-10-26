@@ -1,5 +1,6 @@
 package com.qiqi.li.network;
 
+import com.qiqi.li.living.interaction.InteractionEntry;
 import com.qiqi.li.living.interaction.InteractionHandler;
 import com.qiqi.li.living.interaction.InteractionRegistry;
 import net.minecraft.nbt.CompoundTag;
@@ -112,6 +113,14 @@ public record GuiInteractionPacket(
                 return;
             }
 
+            // 服务端复验目标身份（信任边界，2026-10-27 审查 P3-2）：客户端只在规则命中时发包，
+            // 但包可伪造 —— 不复验的话，改过的客户端可对任意活物品发 lever_toggle 等 actionId，
+            // 给非拉杆物品写入 LIVING_LEVER_DATA（数据污染）。空槽动作（活桶汲/倒等）跳过。
+            if (!targetIdentityAccepted(packet.actionId(), targetSlot.getItem())) {
+                if (carriedRestored) menu.setCarried(ItemStack.EMPTY);
+                return;
+            }
+
             handler.handle(player, targetSlot);
 
             if (carriedRestored) {
@@ -159,6 +168,23 @@ public record GuiInteractionPacket(
      * 后果是倒水<b>静默失败</b>（解析不出容器 ⇒ 无处注册源）。加上这道门后，索引直查被否决，
      * 自动回退到按 {@code containerSlot} 精确定位（客户端已解包 {@code SlotWrapper}）。</p>
      */
+    /**
+     * 服务端复验目标身份 —— 与规则 JSON 的 target <b>同源</b>（走同一份
+     * {@link InteractionEntry#matchesTarget}，规则改了它自动跟）。
+     *
+     * <p>包级可见供单测（{@code GuiInteractionTargetGuardTest}）。两个放行口：
+     * <b>空目标</b>（活桶汲/倒等动作的目标格本来就空，判据在各自 handler 里服务端权威重验）、
+     * <b>规则表外的 actionId</b>（守卫只管「声明了 target 的规则」，handler 缺失另有拦截）。</p>
+     */
+    static boolean targetIdentityAccepted(String actionId, ItemStack target) {
+        for (InteractionEntry e : InteractionRegistry.getEntries()) {
+            if (e.actionId().equals(actionId)) {
+                return target.isEmpty() || e.matchesTarget(target);
+            }
+        }
+        return true;
+    }
+
     private static boolean isAcceptable(ServerPlayer player, Slot slot) {
         if (!isValidTarget(slot.getItem())) return false;
         if (!slot.getItem().isEmpty()) return true;   // 活物品目标：老口径不变

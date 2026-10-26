@@ -169,4 +169,5 @@ src/test/java/com/qiqi/li/
     └── LivingItemSyncPacketTest.java          # 运行时同步包编解码往返（档 2 安全网）·三组字段往返/空数据/多槽混合/两种键形态/容器种类 kind 往返(背包·末影箱·世界·掉落物)/子记录哨兵/未登记 id 报错（14 项）
     └── LivingItemRuntimeSyncTest.java         # （门控判定已迁 ContainerViewersTest）+ **物品形态容器按菜单锚点发包（真机 tooltip 不显示容器信息的回归）**（4 项）
     └── ServerPacketHandlerInventorySafetyTest.java  # 满背包不丢物（2026-10-27 审查 P0）·配方书 Shift 取出活箱子物品曾直接丢栈 ⇒ 背包满时静默销毁 / 满 ⇒ 余量掉落（Player#drop 原版入口，落副本+清零）/ 空 ⇒ 全收不掉 / 部分空间 ⇒ 合并后余量掉落（3 项）
+    └── GuiInteractionTargetGuardTest.java      # GUI 交互包服务端目标身份复验（2026-10-27 审查 P3-2）·isAcceptable 只验「是活物品」⇒ 改过的客户端可对任意活物品发 lever_toggle 写 LIVING_LEVER_DATA / 守卫与规则 JSON 同源（走同一份 matchesTarget：条目说什么守卫放行什么）/ 未知 actionId 放行 / 空目标放行（活桶通道在各自 handler 重验）（5 项；⚠️ 判据用 item 型 target——tag 在单测环境不绑）
 ```

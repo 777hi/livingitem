@@ -77,7 +77,9 @@ public class LivingButtonFunction implements LivingItemFunction {
         tooltipAdder.accept(Component.literal("  ")
             .append(Component.translatable("tooltip.livingitem.button.type"))
             .append(Component.literal(": "))
-            .append(Component.translatable("tooltip.livingitem.button.type." + (data.isWood() ? "wood" : "stone")))
+            // ⚠️ 用物品直判（与 pressButton 同源），不读 data —— 未按过的按钮组件是
+            //    DEFAULT（isWood=false），读过组件会把木按钮显示成「石」（2026-10-27 审查）
+            .append(Component.translatable("tooltip.livingitem.button.type." + (isWoodButton(stack) ? "wood" : "stone")))
             .withStyle(ChatFormatting.GRAY));
 
         if (data.pressed()) {
