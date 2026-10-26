@@ -56,10 +56,17 @@ public final class TeleportHelper {
         int chunkZ = (int) worldZ >> 4;
         LevelChunk chunk = targetLevel.getChunk(chunkX, chunkZ);
         int safeY = chunk.getHeight(Heightmap.Types.MOTION_BLOCKING, (int) worldX, (int) worldZ);
-        if (safeY < targetLevel.getMinBuildHeight()) return false;
+        if (safeY < targetLevel.getMinBuildHeight()) {
+            // I-C6 留痕（2026-10-27 审查 P3-2）：目标高度低于世界下限 ⇒ 安全放弃（不扣珍珠）
+            ModLog.TELEPORT.warn("teleport abort: safeY below min build, pos=({},{}) safeY={}", worldX, worldZ, safeY);
+            return false;
+        }
 
         double destX = worldX + 0.5;
-        double destY = safeY;
+        // ⚠️ 必须 +1（2026-10-27 审查 P1-1，v50 简化时丢了 v39 的修复）：
+        //    ChunkAccess.getHeight 返回「最高阻挡方块自身的 Y」，原版 Level.getHeight 专门
+        //    +1 换算成站立 Y ⇒ 直接当脚坐标会把玩家嵌进地表方块 1 格（下界嵌基岩天花板）。
+        double destY = safeY + 1.0;
         double destZ = worldZ + 0.5;
 
         return executeTeleport(player, sourceLevel, targetLevel, destX, destY, destZ, pearlStack, unexplored);
@@ -98,6 +105,9 @@ public final class TeleportHelper {
                                             ItemStack pearlStack, boolean unexplored) {
         // 判断是否为跨维度传送
         boolean crossDim = player.level().dimension() != targetLevel.dimension();
+        // 源坐标先捕获（P3-4）：传送完成后 player.getX/Y/Z 已是目标坐标，
+        // 曾在传送后取「源位置」发粒子 ⇒ 粒子发在目标位置发了两遍
+        final double srcX = player.getX(), srcY = player.getY(), srcZ = player.getZ();
 
         ModLog.TELEPORT.info("Teleport start: player={} dim={} dest=({},{},{}) crossDim={} unexplored={}",
             player.getName().getString(), targetLevel.dimension().location(), destX, destY, destZ, crossDim, unexplored);
@@ -125,8 +135,11 @@ public final class TeleportHelper {
                     player.getYRot(), player.getXRot(), DimensionTransition.DO_NOTHING);
                 if (vehicle != null) {
                     vehicle.changeDimension(transition);
-                } else {
-                    player.changeDimension(transition);
+                } else if (player.changeDimension(transition) == null) {
+                    // ⚠️ 返回 null = 被取消（NeoForge EntityTravelToDimension 事件，维度锁类
+                    //    模组常见）⇒ 什么都没发生，必须放弃结算：否则玩家原地、珍珠照扣、
+                    //    白挨 5 点伤害（守恒违反，2026-10-27 审查 P2-4）
+                    return false;
                 }
             } else {
                 // === 同维度传送 ===
@@ -166,10 +179,10 @@ public final class TeleportHelper {
             destX, destY + 1, destZ,
             32, 0.5, 1.0, 0.5, 0.5);
 
-        // 跨维度时在源位置也生成粒子效果
+        // 跨维度时在源位置也生成粒子效果（用传送前捕获的源坐标，见方法开头）
         if (crossDim) {
             sourceLevel.sendParticles(ParticleTypes.PORTAL,
-                player.getX(), player.getY() + 1, player.getZ(),
+                srcX, srcY + 1, srcZ,
                 32, 0.5, 1.0, 0.5, 0.5);
         }
 
@@ -239,16 +252,7 @@ public final class TeleportHelper {
             true);
     }
 
-    /**
-     * 发送跨维度传送消息
-     */
-    public static void sendCrossDimensionMessage(ServerPlayer player, ResourceKey<Level> dimension) {
-        player.displayClientMessage(
-            Component.translatable("chat.livingitem.ender_pearl.cross_dimension",
-                Component.translatable("dimension." + dimension.location().getNamespace() + "." + dimension.location().getPath())),
-            true);
-    }
-
+    
     /**
      * 发送权限不足消息（子位面中无法跨维度传送时显示）
      */

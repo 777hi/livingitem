@@ -97,6 +97,12 @@ public record LivingMapGuiTeleportPacket(
 
             int mapX = MapCoordHelper.uvToMapX(u);
             int mapY = MapCoordHelper.uvToMapY(v);
+            // ⚠️ 与手持/展示框路径同口径（2026-10-27 审查 P3-1）：u=1.0 → mapX=128
+            //    会传到地图外一格，且 isExplored(128,…) 恒 false 按未探索扣 16 珍珠
+            if (mapX < 0 || mapX >= MapCoordHelper.MAP_SIZE
+                || mapY < 0 || mapY >= MapCoordHelper.MAP_SIZE) {
+                return;
+            }
 
             double[] preciseWorldPos = MapCoordHelper.uvToWorldPos(mapData, u, v);
 

@@ -43,11 +43,12 @@ public class SableIntegration {
     private static final double ROPE_PROXIMITY_MARGIN = 1.0;
 
     static boolean isPlayerOnSubLevel(ServerPlayer player) {
+        // ⚠️ 纯查询（2026-10-27 审查 P2-3）：曾对站立玩家顺手清 tracking —— 而
+        //    TeleportHelper 的拒绝路径（跨维度权能不足 / 软连接）也会调本方法 ⇒
+        //    玩家没被传送却先被清了 tracking ⇒ entities_stick_sublevels 不再带动
+        //    ⇒ 从飞艇脱离坠落。清理由 teleportSubLevel 在确认传送的时点负责。
         SubLevel subLevel = Sable.HELPER.getTrackingOrVehicleSubLevel(player);
-        if (!(subLevel instanceof ServerSubLevel)) return false;
-        if (player.getVehicle() != null) return true;
-        ((EntityMovementExtension) player).sable$setTrackingSubLevel(null);
-        return false;
+        return subLevel instanceof ServerSubLevel && player.getVehicle() != null;
     }
 
     /**

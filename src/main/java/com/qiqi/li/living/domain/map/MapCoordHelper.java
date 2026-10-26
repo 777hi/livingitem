@@ -204,6 +204,33 @@ public final class MapCoordHelper {
         return matchDecorationPath(decoration, TELEPORTABLE_DECORATION_PATHS::contains);
     }
 
+    /**
+     * 在组件装饰条目里找与命中装饰<b>同一处</b>的可传送条目。
+     *
+     * <p>比对口径：类型一致 + 把条目的 double 世界坐标换算成该地图的像素坐标后与
+     * 命中装饰的像素一致（±0.5 覆盖半像素取整）。换算是像素反推公式
+     * {@code world = center + (pixel - 64) * scale} 的逆。</p>
+     *
+     * @return 精确世界坐标 {x, z}；无匹配条目返回 {@code null}（调用方回退像素反推）
+     */
+    static double[] matchTeleportableEntry(MapDecorations mapDecorations, MapDecoration targetDecoration,
+                                           double centerX, double centerZ, int scale) {
+        float decoPixelX = targetDecoration.x() / 2.0F + 64.0F;
+        float decoPixelY = targetDecoration.y() / 2.0F + 64.0F;
+        for (MapDecorations.Entry entry : mapDecorations.decorations().values()) {
+            if (!isTeleportableEntry(entry) || !entry.type().equals(targetDecoration.type())) {
+                continue;
+            }
+            float entryPixelX = (float) ((entry.x() - centerX) / scale + 64.0);
+            float entryPixelY = (float) ((entry.z() - centerZ) / scale + 64.0);
+            if (Math.abs(entryPixelX - decoPixelX) <= 0.5F
+                && Math.abs(entryPixelY - decoPixelY) <= 0.5F) {
+                return new double[]{entry.x(), entry.z()};
+            }
+        }
+        return null;
+    }
+
     private static boolean matchDecorationPath(MapDecoration decoration, Predicate<String> predicate) {
         return decoration.type().unwrapKey()
             .map(key -> predicate.test(key.location().getPath()))
@@ -213,18 +240,14 @@ public final class MapCoordHelper {
     public static double[] getTargetPointWorldPos(@Nullable ItemStack mapStack, MapItemSavedData mapData, MapDecoration targetDecoration) {
         if (mapStack != null) {
             MapDecorations mapDecorations = mapStack.getOrDefault(DataComponents.MAP_DECORATIONS, MapDecorations.EMPTY);
-            for (MapDecorations.Entry entry : mapDecorations.decorations().values()) {
-                if (isTeleportableEntry(entry)
-                    && entry.type().equals(targetDecoration.type())
-                    && entry.x() == targetDecoration.x()
-                    && entry.z() == targetDecoration.y()) {
-                    return new double[]{entry.x(), entry.z()};
-                }
-            }
-            for (MapDecorations.Entry entry : mapDecorations.decorations().values()) {
-                if (isTeleportableEntry(entry)) {
-                    return new double[]{entry.x(), entry.z()};
-                }
+            // ⚠️ 只认「与命中装饰是同一处」的组件条目（2026-10-27 审查 P2-2）：
+            //    Entry.x() 是 double 世界坐标、Decoration.x() 是 byte 像素 —— 曾直接
+            //    相比恒 false（死代码），兜底退化成「组件里第一个可传送条目」⇒
+            //    多条目地图点哪个都被第一个劫持。现按类型 + 世界坐标换算像素比对。
+            double[] precise = matchTeleportableEntry(mapDecorations, targetDecoration,
+                mapData.centerX, mapData.centerZ, 1 << mapData.scale);
+            if (precise != null) {
+                return precise;
             }
         }
 

@@ -59,13 +59,9 @@ public final class MapTeleportExecutor {
             }
         }
 
-        boolean crossDim = false;
-        if (success && player.level().dimension() != targetLevel.dimension()) {
-            crossDim = true;
-            TeleportHelper.sendCrossDimensionMessage(player, targetLevel.dimension());
-        }
-
-        return new Result(success, crossDim);
+        // ⚠️ 跨维度提示分支曾永不可达（传送后 player.level() 已是 targetLevel ⇒ 恒 false），
+        //    2026-10-27 审查 P3-3 删除；正规修法（executeTeleport 带 crossDim 出参）挂 TODO。
+        return new Result(success, false);
     }
 
     private static double[] resolveTargetPointWorldPos(@Nullable ItemStack mapStack, MapItemSavedData mapData, MapDecoration targetPoint) {

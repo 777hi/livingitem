@@ -145,6 +145,8 @@ src/test/java/com/qiqi/li/
 │   ├── CrossContainerTransferFertilizeTest.java # 跨容器施肥·推送/拉取双入口+活骨粉三入口全拒（15 项）
 │   └── CrossContainerTransferFaceSelectionTest.java # 多方块容器跨容器面选取·候选排序+推送首选/回退（5 项）
 ├── living/domain/map/
+│   ├── TeleportHelperYTest.java               # 落点站立面语义（2026-10-27 审查 P1-1，v50 简化回归）·ChunkAccess.getHeight 返回最高阻挡方块自身 Y，destY 曾少 +1 ⇒ 玩家嵌进地表方块（下界嵌基岩天花板）/ 端到端 mock：teleportTo 捕获 (格中心, 71.0, 格中心)（1 项）
+│   ├── MapCoordHelperMatchTest.java           # 组件条目与命中装饰的同一处匹配（2026-10-27 审查 P2-2）·Entry.x() 是 double 世界坐标、Decoration.x() 是 byte 像素，曾直接相比恒 false ⇒ 兜底恒传组件里第一条（多条目地图点哪个都被劫持）/ 类型+换算像素一致才用精确值 / 无匹配回退像素反推 / 换算互逆（4 项）
 │   └── MapCoordHelperTest.java                # 地图坐标换算（29 项）
 ├── living/domain/water/
 │   ├── ContainerFluidDataTest.java            # 流体引擎行为快照·单源扩散/上限7/活物阻挡/非活物穿过/源移除/水流推动/二维扩散 + 行为接缝·按maxLevel/静止不扩散 + TickContext 建流体数据回归 + 通用驱动·自维持/驱动BFS + 源查询API + 派生源·独立存活/挤没/共存/同格无豁免/异种覆盖/EMPTY noop + 落盘CODEC往返 + 晋升接缝 + 转化接缝（26 项）
