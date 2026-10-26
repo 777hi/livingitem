@@ -46,8 +46,13 @@ public class DirectionalLivingModel implements BakedModel {
                 poseStack.mulPose(Axis.ZP.rotationDegrees(rotation));
             }
         }
-        inner.applyTransform(context, poseStack, applyLeftHandTransform);
-        return this;
+        BakedModel result = inner.applyTransform(context, poseStack, applyLeftHandTransform);
+        // ⚠️ 仅 GUI 返回 this（附加 GUI 缩放/旋转）；非 GUI 必须返回 inner 的结果 ——
+        //    NeoForge 的 handleCameraTransforms 用【返回模型】决定后续 quads/isCustomRenderer，
+        //    非 GUI 也 return this 会让掉落物/手持/展示框用变体 3D 方块几何
+        //    （中继器/比较器变体是 block/xxx 3D 模型，原版是 item/generated 平面 sprite）
+        //    ⇒ 外观与原版明显不同（2026-10-27 审查 P2-1，与 GenericContextAwareModel 对齐）。
+        return context == ItemDisplayContext.GUI ? this : result;
     }
 
     @Override

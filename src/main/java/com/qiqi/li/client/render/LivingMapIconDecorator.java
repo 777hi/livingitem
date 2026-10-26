@@ -45,6 +45,12 @@ public class LivingMapIconDecorator implements IItemDecorator {
 
     private static final Map<Integer, MapIconTexture> TEXTURE_CACHE = new HashMap<>();
 
+    static {
+        // ⚠️ 登记跨存档清理（2026-10-27 审查 P3-4）：同族缓存（BrewingStand/ItemClientCache）都登记了，
+        //    唯独这里没有 ⇒ DynamicTexture 与条目跨存档滞留只增不减
+        com.qiqi.li.living.util.StaticCacheRegistry.onClientLogout(TEXTURE_CACHE::clear);
+    }
+
     @Override
     public boolean render(GuiGraphics guiGraphics, Font font, ItemStack stack, int xOffset, int yOffset) {
         if (!isLivingMap(stack)) return false;

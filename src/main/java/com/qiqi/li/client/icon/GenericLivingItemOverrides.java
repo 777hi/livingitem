@@ -123,14 +123,20 @@ public class GenericLivingItemOverrides extends ItemOverrides {
      * @param variant 匹配的变体
      * @return 上下文感知模型
      */
+    private static String cacheKey(LivingIconSpec.Variant variant) {
+        return variant.getName() + "@" + variant.getModelPath();
+    }
+
     private GenericContextAwareModel getOrCreateContextModel(LivingIconSpec.Variant variant) {
-        return contextModelCache.computeIfAbsent(variant.getName(),
+        // ⚠️ 缓存键带模型路径（2026-10-27 审查 P3-2）：VariantModelStore 键 = name@path，
+        //    这里曾只按 name —— 同 spec 内两变体重名不同路径会静默串模型
+        return contextModelCache.computeIfAbsent(cacheKey(variant),
             name -> new GenericContextAwareModel(
                 resolveVariantModel(variant), vanillaModel, spec.getGuiScale()));
     }
 
     private DirectionalLivingModel getOrCreateDirectionalModel(LivingIconSpec.Variant variant) {
-        return directionalModelCache.computeIfAbsent(variant.getName(),
+        return directionalModelCache.computeIfAbsent(cacheKey(variant),
             name -> {
                 var ctxModel = new GenericContextAwareModel(
                     resolveVariantModel(variant), vanillaModel, 1.0f);

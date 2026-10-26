@@ -430,6 +430,9 @@ public final class LivingIconRegistry {
 
                 if (variantModel == null) {
                     LivingItem.LOGGER.warn("活物品 {} 变体 {} 的模型未找到", spec.getItem(), variant.getName());
+                    // ⚠️ 缺失 = 从 STORE 移除（2026-10-27 审查 P3-1）：曾 continue 留旧条目
+                    //    ⇒ 资源重载后 resolve 命中上一次的陈旧模型（其精灵已释放）⇒ 缺纹理
+                    VariantModelStore.remove(variant);
                     continue;
                 }
 
@@ -481,6 +484,11 @@ public final class LivingIconRegistry {
 
         public static BakedModel get(LivingIconSpec.Variant variant) {
             return STORE.get(variant.getName() + "@" + variant.getModelPath());
+        }
+
+        /** 资源重载后发现模型缺失时移除陈旧条目（否则 resolve 命中已释放精灵的旧模型）。 */
+        public static void remove(LivingIconSpec.Variant variant) {
+            STORE.remove(variant.getName() + "@" + variant.getModelPath());
         }
 
         public static void clear() {

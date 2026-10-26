@@ -8,7 +8,10 @@ import com.qiqi.li.living.util.StaticCacheRegistry;
  * 客户端活物品运行时缓存 —— 由 {@link com.qiqi.li.network.LivingItemSyncPacket} 更新。
  *
  * <p>玩家同一时间只能打开一个容器，因此缓存只保存最近一次收到的快照。
- * 容器关闭时通过 {@link #clear()} 清理。</p>
+ * 清理时机：仅客户端登出（{@link #clear()} 经 {@code StaticCacheRegistry.onClientLogout} 登记）。
+ * 容器切换不 clear —— 单键整表替换 + 服务端 viewer 门控使其 ≤1 tick 被新快照覆盖
+ * （换容器到首包之间的 1~2 帧可能读到上一容器同槽号的陈旧遥测，已知瞬时边界，
+ * 2026-10-27 审查 P3-3）。</p>
  *
  * <p>本类不依赖 {@link net.minecraft.client.Minecraft}，可在服务端安全加载。
  * 获取当前悬停槽位的功能由客户端辅助类 {@code LivingItemTooltipBridge} 提供。</p>
@@ -80,7 +83,7 @@ public class LivingItemClientCache {
     }
 
     /**
-     * 清理缓存（容器关闭时调用）。
+     * 清理缓存（客户端登出时经 StaticCacheRegistry 调用；容器关闭不调，见类注释）。
      */
     public static void clear() {
         currentContainerKey = "";
