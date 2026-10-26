@@ -1,4 +1,10 @@
-# 容器兼容性专题（计划 / 实施记录）
+# 容器兼容性专题 · 阶段实施记录（归档）
+
+> 🗄 **归档（2026-10-26 专题结项）**：这是 2026-10-18 ~ 10-24 的**阶段流水**（S1~S9 的判据、
+> 真机基线清单、逐阶段验收命令）。**现状不在这里** —— 七问视角的结项总览见
+> [system-design/container-overview.md](../system-design/container-overview.md)，
+> 不变量正文见 [system-design/container-boundary.md](../system-design/container-boundary.md)。
+> 保留本文的理由：每个阶段的验收判据是「可复算」的，翻旧账时需要逐字查（§5 台账已随总览保留）。
 
 > **状态：主体完成**（2026-10-18 立项 → 10-19 完成 S1~S4 + S3/S3b，10-21~10-24 续做 S6~S9）。
 > S5 已取消（`D-container-08`，见 §2）。
@@ -159,7 +165,7 @@
 物品形态另可**继承宿主锚点**（`getHostAnchor()`），但**默认谁都不用** ——
 用它会变成加强玩法（背包里的工具自动挖矿 / 水车随身发电 / 信标随身光环），必须逐个拍板。
 目前只有**活 TNT** 启用（爆炸点用继承值是修复，不是加强）。
-详见 [container-anchor-design.md](container-anchor-design.md)。
+详见 [container-anchor-design.md](../buffer/container-anchor-design.md)。
 
 ### S9 掉落物准入改成功能自声明 ✅ 2026-10-24
 

@@ -28,9 +28,10 @@
 | **Tooltip 系统** | 双层渲染架构 + 运行时缓存同步 + 显示口径（窗口均值/mFE） | [tooltip-system.md](../system-design/tooltip-system.md) |
 | **红电架构演进** | SensorPort 感知端口 + 事件流/元件接口化路线（信号层⇄电力层解耦） | [redstone-evolution-roadmap.md](../buffer/redstone-evolution-roadmap.md) |
 | **红电不变量测试** | 35 条可执行不变量（七组） + 四层测试方案（属性测试/场景生成/蜕变/运行时监控） | [power-invariants.md](../system-design/power-invariants.md) |
+| **容器七问总览** | 容器专题的**入口**：七问（谁是容器 / 什么形状 / 谁在看 / 在哪 / 怎么读写 / 数据存哪 / 套容器）各自的唯一入口、状态、踩过的坑 + 第三方行为台账；**改容器层前先读它定位问题属于哪一问** | [container-overview.md](../system-design/container-overview.md) |
 | **超大堆叠审计** | 模组容器堆叠上限 > 64 场景下全部活物品的表现评级（202 处调用点） | [oversized-stack-audit.md](../system-design/oversized-stack-audit.md) |
 | **基础设施** | 容器抽象 + 发现缓存 + SlotAccessor + 性能监控 | [living-item-infrastructure.md](../system-design/living-item-infrastructure.md) |
-| **容器边界（契约层）** | 对任意 `IItemHandler` 容器都必须成立的不变量 I-C1~I-C10：能力面 / 写回 ≠ 插入 / 模拟同源 / 稳定键身份 / 降级可观测 / 写后校验 / 格容器 vs 物品池 / 跨形态持久数据 / 逻辑槽 ≠ 物理槽；**四类宿主**（方块 / 实体 / 掉落物 / 玩家）；**改容器层前必读** | [container-boundary.md](../system-design/container-boundary.md) |
+| **容器边界（契约层）** | 对任意 `IItemHandler` 容器都必须成立的不变量 I-C1~I-C11：能力面 / 写回 ≠ 插入 / 模拟同源 / 稳定键身份 / 降级可观测 / 写后校验 / 格容器 vs 物品池 / 跨形态持久数据 / 逻辑槽 ≠ 物理槽 / 几何量是除数；**四类宿主**（方块 / 实体 / 掉落物 / 玩家）；**改容器层前必读** | [container-boundary.md](../system-design/container-boundary.md) |
 | **多方块容器身份解析** | 边界带「槽位↔容器」解析共享内核（`ContainerContexts`）+ 大箱 `CompoundContainer` 匹配不变量 + 两套槽位体系探针 | [container-identity.md](../system-design/container-identity.md) |
 | **数据模型** | DataComponent 体系 + 新旧架构对比 + 设计决策 | [data-model.md](../system-design/data-model.md) |
 | **单元测试** | FML 测试环境配置 + 测试替身 + 可测性边界 | [unit-testing.md](../guides/unit-testing.md) |

@@ -46,7 +46,7 @@ import net.neoforged.neoforge.items.IItemHandlerModifiable;
  *   simulateAndRealAgreeOnTargetSlot → 真实写入必须落槽 4  ==> expected: &lt;1&gt; but was: &lt;0&gt;
  * </pre>
  * <p>S2 改为 {@code setStackInSlot} 后三条转绿。若将来有人把 {@code setItem} 改回「先抽再插」，
- * 这里会立刻红 —— 这就是它守的东西。回归入口见 {@code docs/buffer/container-compat-topic.md} §2。</p>
+ * 这里会立刻红 —— 这就是它守的东西。回归入口见 {@code docs/archive/container-compat-stages.md} §2。</p>
  */
 class ContainerBoundaryContractTest {
 

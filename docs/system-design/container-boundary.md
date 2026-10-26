@@ -1,9 +1,10 @@
 # 容器边界 —— 能力面、写回与身份口径
 
-> **状态：生效（2026-10-18；2026-10-21 扩到实体宿主并新增 I-C10）** —— 不变量已登记
-> `docs/decisions.md` 的 `D-container-01..11`。
+> **状态：生效（2026-10-18 立；10-21 扩实体宿主 + 新增 I-C10；10-25 增 I-C11）** —— 不变量已登记
+> `docs/decisions.md` 的 `D-container-01..17`。
 > ⚠️ **口径生效 ≠ 实现落地**：每条不变量下方都有「现状」标记，`⏳` 表示代码尚未满足
-> （实施顺序见 [buffer/container-compat-topic.md](../buffer/container-compat-topic.md) §2）。
+> （阶段实施记录见 [archive/container-compat-stages.md](../archive/container-compat-stages.md)；
+> 七问视角的现状索引见 [container-overview.md](container-overview.md)）。
 >
 > **本文是契约层**：只写不变量与判据，不写实现清单、不写「哪些模组已适配」（那类清单必然漂，见
 > [docs/README.md](../README.md) 铁律 3）。
@@ -12,7 +13,7 @@
 > [container-identity.md](container-identity.md)（多方块容器的**身份句柄**）·
 > [living-item-infrastructure.md](living-item-infrastructure.md)（容器抽象层实现）·
 > [guides/container-compatibility.md](../guides/container-compatibility.md)（列数规则的**操作指南**）·
-> 专题计划 [buffer/container-compat-topic.md](../buffer/container-compat-topic.md)
+> 专题总览 [container-overview.md](container-overview.md)（七问）
 
 ---
 

@@ -4,7 +4,7 @@
 > **实体容器端到端已实施并真机验证通过**（§2.2 定案，§6 并为一段；含两处真机修正：
 > 驴的马鞍槽偏移、逻辑槽/物理槽双口径贯通）。**列数探测仍延后**（§0.2：四类实体容器启发式
 > 全对，且它是纯优化非缺口）—— 本文因此仍留在 buffer（唯一未落地项）。
-> 契约正文见 [system-design/container-boundary.md](../system-design/container-boundary.md)（I-C1~I-C10）。
+> 契约正文见 [system-design/container-boundary.md](../system-design/container-boundary.md)（I-C1~I-C11）。
 > 本文只写「做什么、怎么做、做到什么算完」。
 
 ---
