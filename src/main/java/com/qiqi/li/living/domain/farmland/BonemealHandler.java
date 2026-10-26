@@ -33,12 +33,14 @@ public class BonemealHandler implements InteractionHandler {
         Block cropBlock = CropClassifier.getBlockFromSeed(plant.cropSeed());
         if (cropBlock == null) return;
 
+        // ⚠️ 光标校验对创造模式同样生效（2026-10-27 审查 P3）：信任边界在 handler ——
+        //    targetIdentityAccepted 只复验目标，触发物全靠这里自查；曾创造模式连
+        //    「光标是不是活骨粉」都不验 ⇒ 改包客户端可空手刷生长。与同域
+        //    PlantCropHandler / TillToFarmlandHandler 的「照验免扣」口径对齐。
+        ItemStack carried = player.containerMenu.getCarried();
+        if (carried.isEmpty() || !carried.is(Items.BONE_MEAL)
+            || !LivingItemManager.isLivingItem(carried)) return;
         boolean creative = player.isCreative();
-        if (!creative) {
-            ItemStack carried = player.containerMenu.getCarried();
-            if (carried.isEmpty() || !carried.is(Items.BONE_MEAL)
-                || !LivingItemManager.isLivingItem(carried)) return;
-        }
 
         // 强制触发一次生长 tick（必定成功的概率判定体）——与容器 tick 概率成功后
         // 走的是同一段逻辑（LivingFarmlandFunction.forceGrowthTick）
@@ -50,7 +52,6 @@ public class BonemealHandler implements InteractionHandler {
         targetSlot.set(farmland);
 
         if (!creative) {
-            ItemStack carried = player.containerMenu.getCarried();
             carried.shrink(1);
             if (carried.isEmpty()) {
                 player.containerMenu.setCarried(ItemStack.EMPTY);

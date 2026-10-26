@@ -125,6 +125,7 @@ src/test/java/com/qiqi/li/
 │   ├── BeaconFeedHandlerTest.java             # 喂锭 handler 可测部分·规则谓词(5 矿石锭通过/非矿石拒绝)+OreType 映射与档位+槽位解析列宽取自 context(12 列≠9 列)/size 越界（5 项；⚠️ 柱高数值依赖 tag，单测环境不加载 ⇒ 游戏内验证）
 │   └── BeaconPlayerHostPacketTest.java        # 玩家宿主包往返(维度+UUID+等级+容器玻璃色列表)/空列表（2 项）
 ├── living/domain/farmland/
+│   ├── BonemealHandlerTest.java               # 活骨粉 GUI 交互信任边界（2026-10-27 审查 P3）·创造模式曾连「光标是不是活骨粉」都不验 ⇒ 改包客户端空手刷生长（同域口径=照验免扣）/ 创造+骨粉放行免扣 / 生存扣 1 / 普通骨粉拒绝（活化门槛）（4 项；pin 手法：未成熟植株 forceGrowthTick 不碰 level ⇒ age+1 即通过判据）
 │   ├── CropClassifierTest.java               # 作物分类器·火把花/瓶子草/柱状段回归（10 项）
 │   ├── LivingFarmlandFunctionTest.java      # 输出合并回归·部分合并丢物品守卫（5 项）
 │   ├── TillablesTest.java                   # 耕作知识表·锄头判定+可耕映射+真值表（8 项）
