@@ -27,9 +27,13 @@ public class ModSable {
                 Class.forName("com.qiqi.li.living.compat.sable.SableIntegration");
                 integrationAvailable = true;
                 LOGGER.info("[ModSable] SableIntegration class available");
-            } catch (ClassNotFoundException e) {
+            } catch (ClassNotFoundException | LinkageError e) {
+                // ⚠️ LinkageError 一并接（2026-10-27 审查 P3）：Sable 按 ModList 在、但
+                //    集成类链接失败的窄场景下，异常会穿透三个入口方法的 catch（它们只包
+                //    SableIntegration.* 调用，不包本方法）直达传送主流程
                 integrationAvailable = false;
-                LOGGER.warn("[ModSable] SableIntegration class NOT available, airship teleport disabled");
+                LOGGER.warn("[ModSable] SableIntegration class NOT available ({}), airship teleport disabled",
+                    e.getClass().getSimpleName());
             }
         }
         return integrationAvailable;

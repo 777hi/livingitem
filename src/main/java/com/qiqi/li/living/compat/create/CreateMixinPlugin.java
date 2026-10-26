@@ -27,10 +27,10 @@ public class CreateMixinPlugin implements IMixinConfigPlugin {
                 ClassLoader cl = CreateMixinPlugin.class.getClassLoader();
                 var url = cl.getResource("com/simibubi/create/content/kinetics/base/KineticBlockEntity.class");
                 createLoaded = url != null;
-                LOGGER.info("[CreateMixinPlugin] Create detection via resource check: {}", createLoaded);
+                LOGGER.debug("[CreateMixinPlugin] Create detection via resource check: {}", createLoaded);
             } catch (Exception e) {
                 createLoaded = false;
-                LOGGER.info("[CreateMixinPlugin] Create NOT detected (exception), Mixin will be skipped");
+                LOGGER.debug("[CreateMixinPlugin] Create NOT detected (exception), Mixin will be skipped");
             }
         }
         return createLoaded;
@@ -49,7 +49,7 @@ public class CreateMixinPlugin implements IMixinConfigPlugin {
     @Override
     public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
         boolean result = isCreateLoaded();
-        LOGGER.info("[CreateMixinPlugin] shouldApplyMixin: target={}, mixin={}, result={}",
+        LOGGER.debug("[CreateMixinPlugin] shouldApplyMixin: target={}, mixin={}, result={}",
             targetClassName, mixinClassName, result);
         return result;
     }
@@ -67,7 +67,7 @@ public class CreateMixinPlugin implements IMixinConfigPlugin {
 
     @Override
     public void postApply(String targetClassName, ClassNode targetClass, String mixinClassName, IMixinInfo mixinInfo) {
-        LOGGER.info("[CreateMixinPlugin] postApply: target={}, mixin={} - Mixin applied successfully",
+        LOGGER.debug("[CreateMixinPlugin] postApply: target={}, mixin={} - Mixin applied successfully",
             targetClassName, mixinClassName);
     }
 }

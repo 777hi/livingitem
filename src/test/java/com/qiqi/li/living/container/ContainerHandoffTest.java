@@ -60,6 +60,11 @@ class ContainerHandoffTest {
         };
     }
 
+    @AfterEach
+    void clearMovers() {
+        ContainerHandoff.clearMoversForTest();
+    }
+
     @Test
     @DisplayName("捕获宿主后交接：数据被搬到目标物品")
     void captureThenHandoff_movesDataToTarget() {

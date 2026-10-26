@@ -50,10 +50,10 @@ public class SophisticatedMixinPlugin implements IMixinConfigPlugin {
             try {
                 ClassLoader cl = SophisticatedMixinPlugin.class.getClassLoader();
                 loaded = cl.getResource(PROBE_RESOURCE) != null;
-                LOGGER.info("[SophisticatedMixinPlugin] 精妙背包探测（资源检查）: {}", loaded);
+                LOGGER.debug("[SophisticatedMixinPlugin] 精妙背包探测（资源检查）: {}", loaded);
             } catch (Exception e) {
                 loaded = false;
-                LOGGER.info("[SophisticatedMixinPlugin] 精妙背包未探测到（异常），Mixin 跳过");
+                LOGGER.debug("[SophisticatedMixinPlugin] 精妙背包未探测到（异常），Mixin 跳过");
             }
         }
         return loaded;
@@ -72,7 +72,7 @@ public class SophisticatedMixinPlugin implements IMixinConfigPlugin {
     @Override
     public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
         boolean result = isSophisticatedLoaded();
-        LOGGER.info("[SophisticatedMixinPlugin] shouldApplyMixin: target={} mixin={} result={}",
+        LOGGER.debug("[SophisticatedMixinPlugin] shouldApplyMixin: target={} mixin={} result={}",
             targetClassName, mixinClassName, result);
         return result;
     }
@@ -95,7 +95,7 @@ public class SophisticatedMixinPlugin implements IMixinConfigPlugin {
 
         boolean present = targetClass.methods.stream().anyMatch(m -> expected.equals(m.name));
         if (present) {
-            LOGGER.info("[SophisticatedMixinPlugin] 已注入 {}#{}", targetClassName, expected);
+            LOGGER.debug("[SophisticatedMixinPlugin] 已注入 {}#{}", targetClassName, expected);
         } else {
             LOGGER.error("[SophisticatedMixinPlugin] {} 里找不到 {} —— 精妙版本可能变了；"
                 + "该方向的容器级数据迁移会失效", targetClassName, expected);

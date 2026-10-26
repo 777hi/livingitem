@@ -92,6 +92,11 @@ public final class ContainerHandoff {
 
     private static final List<Mover> MOVERS = new CopyOnWriteArrayList<>();
 
+    /** 测试清理口：{@code ContainerHandoffTest} 的替身 Mover 注册进进程级静态表，用例间须清。 */
+    static void clearMoversForTest() {
+        MOVERS.clear();
+    }
+
     /** 待交接的宿主。{@code null} 与「没有捕获」同义（{@link ThreadLocal} 不允许存 null）。 */
     private static final ThreadLocal<IAttachmentHolder> PENDING = new ThreadLocal<>();
 
