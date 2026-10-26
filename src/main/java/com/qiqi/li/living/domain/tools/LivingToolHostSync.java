@@ -180,13 +180,18 @@ public final class LivingToolHostSync {
     /**
      * 逐项比较（位置 + 工具的<b>渲染等价性</b>）。条目是个位数，开销可忽略。
      *
-     * <p>⚠️ <b>为什么不用 {@code ItemStack.matches}</b>：本包<b>只为渲染服务</b>（画记忆射线），
-     * 但 {@code ItemStack.matches} 会比较<b>全部组件</b>，而容器里的活工具每 tick 都在被
-     * 写入 {@code LIVING_TOOL_PROGRESS}（挖掘进度）与耐久 ⇒ "内容永远在变"、去重彻底失效。
-     * 实测（2026-09-19 日志）确实退化为<b>每 tick 发一个包</b>。</p>
+     * <p>⚠️ <b>为什么不用 {@code ItemStack.matches}</b>：本包只为渲染服务，而
+     * {@code ItemStack.matches} 比<b>全部组件</b> —— 其中耐久随每次破坏变化，比它只会
+     * 带来无意义的重发（2026-09-19 实测：退化为每 tick 一个包）。</p>
+     *
+     * <p>⚠️ 但<b>不能因此把动画状态一起排除</b>：客户端渲染用的是<b>本包带来的</b> ItemStack
+     * 副本（{@code LivingToolHostClientCache}），不是容器槽位的实时内容 ⇒ 漏比一个字段，
+     * 客户端就永远收不到那个字段的变化。哪些字段算"渲染依赖"见 {@link #sameTool}。</p>
+     *
+     * <p>包内可见：{@code LivingToolHostSyncDedupTest} 直接钉这条口径。</p>
      */
-    private static boolean same(List<LivingToolHostPacket.Entry> a,
-                                List<LivingToolHostPacket.Entry> b) {
+    static boolean same(List<LivingToolHostPacket.Entry> a,
+                        List<LivingToolHostPacket.Entry> b) {
         if (b == null || a.size() != b.size()) {
             return false;
         }
@@ -218,9 +223,16 @@ public final class LivingToolHostSync {
     }
 
     /**
-     * 两把工具是否「渲染等价」—— 只比渲染真正用到的：<b>物品种类 + 记忆</b>。
+     * 两把工具是否「渲染等价」—— 只比 {@code LivingToolModelRenderer} 真正读的字段：
+     * <b>物品种类 + 记忆 + 动画状态</b>。
      *
-     * <p>耐久、挖掘进度等与渲染无关，比较它们只会带来无意义的重发（见 {@link #same}）。</p>
+     * <p>⚠️ 动画状态（{@code LIVING_TOOL_PROGRESS} / {@code LIVING_TOOL_LAST_ACTION} /
+     * {@code LIVING_TOOL_DIG_TICKS}）<b>必须</b>在这份键里：它们是「在挖哪 / 挖了多久 /
+     * 刚交互过」的全部来源，漏掉就等于容器形态的模型只画待机位、永不转圈
+     * （2026-10-26 真机：有模型、没动画）。</p>
+     *
+     * <p>耐久等与渲染无关的字段<b>仍然不比</b> —— 它们随每次破坏变化，比了就是无意义的重发。
+     * 即判据是「渲染依赖」而非「内容相等」，两边都要守住：多比一个会刷包，少比一个会没动画。</p>
      */
     private static boolean sameTool(ItemStack a, ItemStack b) {
         if (a.isEmpty() || b.isEmpty()) {
@@ -229,6 +241,9 @@ public final class LivingToolHostSync {
         if (a.getItem() != b.getItem()) {
             return false;
         }
-        return Objects.equals(LivingToolMemory.of(a), LivingToolMemory.of(b));
+        return Objects.equals(LivingToolMemory.of(a), LivingToolMemory.of(b))
+            && Objects.equals(LivingToolProgress.of(a), LivingToolProgress.of(b))
+            && Objects.equals(LivingToolAction.of(a), LivingToolAction.of(b))
+            && Objects.equals(ToolComponents.getDigTicks(a), ToolComponents.getDigTicks(b));
     }
 }

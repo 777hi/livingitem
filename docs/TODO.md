@@ -386,6 +386,24 @@
    早退 `return false`，而物品已在同一循环清空 ⇒ **TNT 凭空消失、零爆炸、零日志**。
    修法：求和改 long + 补「两满栈槽点火不丢物品」测试（详见设计稿 §1.4 / 修单 S1）
 
+## 渲染态广播（2026-10-26 记，未定案）
+
+> 「让客户端看见活物品在世界里的样子」现有 **4 条独立通道**（方块容器工具 / 背包工具 /
+> 箱子信标 / 玩家信标），各自抄了一遍「定向 + 去重 + 逐维度 flush + 客户端缓存」，
+> 且**去重口径四种**（手写白名单 / 全量组件 / `List.equals` / 判翻转）。
+> 形状提案与三步走见 [buffer/render-state-broadcast.md](buffer/render-state-broadcast.md)。
+
+1. 🔴 **三处 `lastSent.clear()` 未修（现成的真 bug）** —— `LivingToolPlayerSync` /
+   `BeaconChestHost` / `BeaconPlayerHostSync` 仍照抄 2026-10-23 在 `LivingToolHostSync`
+   修掉的那个写法（逐维度 flush 互清去重表 ⇒ 每玩家每 tick 一个包）。
+   修法照搬 `mergeRecords` + 各配一条「其它维度记录保留」用例。
+2. ⏳ **去重键口径没有单一来源** —— 渲染器加依赖时无人提醒改键（2026-10-26 事故根因）。
+   倾向在 `ToolComponents` 旁声明 `RENDER_STATE` 组件集合，去重键从声明生成
+   （**不能从 domain 反向引用 L5 客户端**，故声明不能住在渲染器里）。
+3. ⏳ **四通道收口** —— `TargetedBroadcast<T>`（服务端骨架）+ `DimensionScopedCache<T>`
+   （客户端缓存）+ 包内「结构段去重 / 状态段每 tick 覆盖」。
+   判据：第 5 个世界可见活物品不新增包类、不新增缓存类。
+
 ## 未来活物品（2026-10-04 用户提出，功能池）
 
 > ⭐ 三者**都不是**「新增一个功能」，而是**三台不同的机器**：

@@ -17,6 +17,12 @@
 
 ## 2026-10-26
 
+- 🎬 **活工具在方块容器里「有模型、不转圈」：`K2` 去重键漏了动画状态**（用户真机报）：客户端渲染读的是**本包带来的** ItemStack 副本（`LivingToolHostClientCache`），不是容器槽位的实时内容；而 `LivingToolHostSync#sameTool` 只比「物品种类 + 记忆」、`sameRay` 只加两个命中布尔 ⇒ `LIVING_TOOL_PROGRESS` / `LIVING_TOOL_LAST_ACTION` / `LIVING_TOOL_DIG_TICKS` 翻转**不触发重发** ⇒ 客户端那份永远停在"没在挖" ⇒ `LivingToolModelRenderer#renderOne` 走待机分支（待机位 + `spinRad=0`）⇒ 只画模型、不转圈。
+
+  **追溯：不是某次改坏，是两次相邻提交之间的口径漂移。** `a88c468`（09-19 23:46「更好的射线渲染」）为修 `L47`（容器形态射线起点在方块中心，`clip` 一出发就命中宿主自己的 OUTLINE ⇒ 光带长度为 0）改这个包，顺手把去重键从 `ItemStack.matches` 收窄成「物品种类 + 记忆」以止住每 tick 刷包 —— **当时正确**，模型和动画都还不存在；`028ffcb`（09-20「活工具模型渲染」）加动画时**没回头扩键**，并在同一份文档里写下「方块容器 | `K2` 每 tick 全量同步 | 看得到（侥幸）」，而 K2 前一天已有内容去重 ⇒ 这句当时就是错的。⇒ 容器形态**从模型上线第一天起**就没通过动画，不是后来坏的。
+
+  **修法**：`sameTool` 补上 progress / action / digTicks，耐久等易变字段**仍不比**。代价是「每挖一格约 2 个包」（进度只在 `replayDig` 的 `freshStart` 分支翻转，不是每 tick 写），不是「每 tick 一个包」。5 个回归（`LivingToolHostSyncDedupTest`）把两个方向都钉住：少比一个 ⇒ 没动画，多比一个 ⇒ 刷包。**待游戏验收** —— 现状见 [活工具 §11.5](../tech/living-tool-tech.md)，决策补正见 [§12.2](../tech/living-tool-tech.md)。
+
 - 🧭 **共同布局链与内建来源收口**：`ContainerLayoutResolver` 统一各形态的答案顺序，原版固定值/方块家族收进内建层，子类只给事实；不扩规则目标、不重排优先级。新增8个回归（992→1000），内建提前返回的负向验证两条 FAIL；现状见 [基础设施 §6.2](../system-design/living-item-infrastructure.md#62-simplecontainercontextgetwidth-的宽解析)，过程见 [专题 §10.6](../buffer/container-layout-resolution.md#106-共同布局选择入口2026-10-26)。
 
 - 🔧 **原版容器布局与驴信息查询修正**：驴无 MenuType 不再提前退出；末影箱/原版箱船与两种矿车按类型和容量提供明确布局，马类读实例 API，不把原版固定值借给未知或扩容容器。9 个新回归取代1个恒真占位（984→992）；原实现四条负向 FAIL，**待真机复验**，依据见 [基础设施 §6.2](../system-design/living-item-infrastructure.md#62-simplecontainercontextgetwidth-的宽解析) 与 [GUI §6.2.2](../system-design/gui-interaction-system.md#622-活按钮当前容器基本信息2026-10-26)。

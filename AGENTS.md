@@ -146,7 +146,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1000 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
+**合计测试用例 1005 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -171,6 +171,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-26 | 🎬 **活工具在方块容器里「有模型、不转圈」** —— `K2` 去重键只比「物品种类 + 记忆」，动画状态（进度 / 动作 / 总 tick）翻转不触发重发，而客户端画的是**本包带来的** ItemStack 副本 ⇒ 容器形态从模型上线（`028ffcb`）起就没通过动画。键补上三者、耐久仍不比；5 个回归把「少比一个 ⇒ 没动画 / 多比一个 ⇒ 刷包」两个方向都钉住，**待游戏验收** | `docs/tech/living-tool-tech.md` §11.5 · §12.2 |
 | 2026-10-26 | ℹ️ **容器布局共同链收口**：驴无 MenuType 查询修复；各形态统一实例/方块规则/学习/内建/启发式选择，原版默认不再游离于子类，来源与列数同源。原版修复与收口净增16个回归（984→1000）；方块规则范围不扩、不改玩法，**待真机复验** | `docs/system-design/living-item-infrastructure.md` §6.2 · `docs/buffer/container-layout-resolution.md` §10.6 |
 | 2026-10-25 | 🔧 **容器解析审查闭环**：补全连续槽号与歧义保存失败重试，诊断复用实际上下文、生效值与规则分列；13 个回归用例含门禁/诊断负向验证，不改解析优先级、不恢复收编线 | `docs/system-design/living-item-infrastructure.md` §6 · `docs/buffer/container-layout-resolution.md` §10.5 |
 | 2026-10-25 | 🧹 **S1a：删掉 `getWidth()` 的死默认** —— `SlotInfoProvider` 原默认答 9，而 9 是"看着对"的值：漏覆写不报错、只静默按 9 列解析。改抽象后**编译期立刻抓出一个真问题**：`ItemEntityContainerContext`（掉落物、单槽）一直在白嫖那个 9 —— 对 1 槽是错答案，只因单槽让行列退化才没暴露。已显式答 1 并由 I-C11 契约用例钉住（四种形态都 ≥ 1）。⚠️ 顺带查证并**推翻设计稿「S1 零行为变化」的说法**：Tier 2 是 instanceof，对第三方子类也生效（实例：`twilightforest:cinder_furnace` 靠它拿对 1 列），删表会让这类子类静默劣化 ⇒ S1b 要先拍"家族兜底要不要保留"。测试 919 → 920 | `docs/system-design/container-boundary.md` I-C11 · `docs/buffer/container-layout-resolution.md` §7 |
@@ -180,7 +181,6 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-10-24 | 💥 **带箱驴里引爆活 TNT ⇒ 服务端 `/ by zero` 崩服** —— 阶段 2 函数 tick 把驴炸死 ⇒ `dropEquipment()` 摘箱 ⇒ 阶段 3 红石拿 `getWidth()`=0 当除数。修 `EntityContainerContext#getWidth()`（原版 `hasChest()?5:0`，绝不返回 0）+ `ContainerRedstoneData` 空容器跳过（与应力域同款守卫）。单测 897 → 899 · 不变量 **I-C11** | `docs/system-design/container-boundary.md` |
 | 2026-10-23 | 🗡️ **活武器两个真 bug（群友实测）：打怪吸走掉落物 + 横扫把自己打死** —— 同一根因：受控 tick 让假玩家"真的活"而坐标贴着玩家 ⇒ 真链两条世界交互反噬。① `Player#aiStep` 实体接触环把身边掉落物/经验球/箭吸进假玩家**不可见的背包**（玩家背包满不满无关）；② 横扫 AoE 按 `isAlliedTo`（队伍制）豁免，假玩家无队伍 ⇒ 贴身玩家被自己武器横扫打死。修法两个覆写：`aiStep()` 期间换**底界之外的退化包围盒**（一处收口全部 `playerTouch` 路径；箭没有事件可拦）、`isAlliedTo()` 对所有玩家返回 true（AoE 整体跳过；伤害/击退/附魔后效是一个整体）。⚠️ 待真机验收 | `docs/tech/living-tool-tech.md` §5.7 · `living/domain/tools/LivingToolFakePlayer.java` |
 | 2026-10-23 | 🔧 **活背包收尾 + 两处真 bug** —— ① `[K2]` 调试日志删掉，顺带修掉它一直在报的真 bug：`flush` 逐维度调用却 `clear()` 全服去重表 ⇒ 每 tick 重发空包；② 两个活背包时倒沼/tooltip 全废 ⇒ 精巧联动覆写 `handleOfMenu` 用菜单自带锚点；③ 补 `living-backpack-tech.md`（16 个活物品功能都有 tech 文档，只它没有）。⚠️ 降级阶梯加了又删：为没发生的事铺路。单测 869 → 880 · **真机验收通过** | `docs/tech/living-backpack-tech.md` |
-| 2026-10-22 | 🎒 **活背包（`D-container-13`）** —— 物品形态容器不渲染的根因是**这东西根本不活**（没 ctx 就没数据）。定位：**一个活物品功能**（`LivingBackpackFunction` 的 `tick` 里递归 `processContext`），框架零改动、活化门槛顺带解决性能与判定。地基：`persist` 钩子 + `CONTAINER_UUID` + `cuuid_` 键形 + `ContainerDataSavedData`；形态迁移**身份优先**（只搬 UUID，数据留在 SavedData）。⚠️ 取消活化清理干净（先删数据再剥 UUID，只剥会留孤儿）。单测 823 → 861 | `buffer/living-backpack.md` |
 
 ## 提交前必跑（2026-10-20 定）
 

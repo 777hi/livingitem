@@ -70,7 +70,8 @@ src/test/java/com/qiqi/li/
 │   └── LivingBackpackTickTest.java            # 活背包 tick 的三道闸（2026-10-24 终审补，此前 tick 零测试）·**宿主锚点传进内层 ctx**（AtBlock 同坐标 / 宿主无锚点⇒null）/深度闸（背包里的背包不再处理）/**逐条目隔离**（一个背包的来源抛异常不带走同批）（4 项；⚠️ 环检测在 MAX_DEPTH=1 下不可达，故意不测；探针功能只认 SHULKER_SHELL，避免与既有「无功能」断言串味）
 ├── living/domain/tools/
 │   ├── LivingToolHostBlockTest.java              # 活工具「别挖自己容器」黑名单与射线起点**同源**（2026-10-25，TODO 6.2）·背包在箱子里+开关开⇒黑名单含宿主那一格（旧实现位置列表恒空⇒射线第一个穿到的格子就是那只箱子：记过类型⇒停住没反应 / 没记⇒挖自己的箱子）/ 开关关⇒不借锚点⇒黑名单空 / 方块容器保留自己的两格（回归）/ 玩家背包与背包在玩家身上⇒无方块可跳过 / 方块容器不受开关影响（5 项；⚠️ Inventory.player 是 public final 字段，Mockito 桩不了⇒反射设值，同 Level.random）
-│   └── LivingToolHostSyncMergeTest.java      # K2 去重记录合并不变量（2026-10-23）·**其它维度玩家的记录必须保留**（逐维度 flush 不能互清）/离线玩家淘汰/本维度新记录覆盖旧值（3 项；守「每 tick 重发空包」回归）
+│   ├── LivingToolHostSyncMergeTest.java      # K2 去重记录合并不变量（2026-10-23）·**其它维度玩家的记录必须保留**（逐维度 flush 不能互清）/离线玩家淘汰/本维度新记录覆盖旧值（3 项；守「每 tick 重发空包」回归）
+│   └── LivingToolHostSyncDedupTest.java      # K2 去重键口径（2026-10-26）·**动画状态必须算变化**（只有 progress / 只有 action / 只有 digTicks 不同 ⇒ 判有变化，否则方块容器「有模型、不转圈」）/ 内容全同⇒无变化 / **耐久不进键**（多比一个就刷包）（5 项；两个方向都钉）
 ├── living/domain/tnt/
 │   ├── LivingTntConsumeTest.java              # 爆炸后**必须消耗**（真机「炸了但 TNT 还在」的回归）·单颗炸完槽位空/多颗一起炸全部消耗（ignite 一次清空，快照写回会复活没轮到的）/掉落物形态炸在原地并消耗/**宿主锚点默认关⇒哑弹 / 打开⇒炸在宿主并消耗**（5 项；⚠️ ServerLevel 替身需反射注入 Level.random 字段，账本用真 ExplosionLedger）
 │   ├── ExplosionParamsTest.java               # 爆炸参数·位图映射可逆/网格外返回-1/affects=区块AABB∩球体/边界回归(中心在半径外但边缘在球内)/球体全覆盖(半径内每方块所在区块必命中)/网格规模（7 项）
