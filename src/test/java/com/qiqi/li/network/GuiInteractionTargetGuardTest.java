@@ -62,6 +62,24 @@ class GuiInteractionTargetGuardTest {
     }
 
     @Test
+    @DisplayName("同 actionId 多条目 ⇒ 任一命中即放行（till_to_farmland 5 条 target 的回归：曾首条 return 误杀其余 4 条）")
+    void multipleEntries_anyMatch() {
+        InteractionRegistry.register(new InteractionEntry(
+            Items.GRASS_BLOCK, null, null, null, 1, "till_multi", false, null));
+        InteractionRegistry.register(new InteractionEntry(
+            Items.DIRT, null, null, null, 1, "till_multi", false, null));
+
+        assertTrue(GuiInteractionPacket.targetIdentityAccepted(
+            "till_multi", new ItemStack(Items.DIRT)),
+            "第二条规则的目标（泥土）必须放行 —— 首条 return 把耕活泥土进阶链全断了");
+        assertTrue(GuiInteractionPacket.targetIdentityAccepted(
+            "till_multi", new ItemStack(Items.GRASS_BLOCK)));
+        assertFalse(GuiInteractionPacket.targetIdentityAccepted(
+            "till_multi", new ItemStack(Items.DIAMOND_PICKAXE)),
+            "两条规则都不认的目标仍拒绝");
+    }
+
+    @Test
     @DisplayName("同源判据：条目的 matchesTarget 说什么，守卫就放行什么（stone_button 条目只认石按钮）")
     void guardFollowsEntryPredicate() {
         registerItemTarget("buttons_press", Items.STONE_BUTTON);

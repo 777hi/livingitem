@@ -84,6 +84,7 @@ src/test/java/com/qiqi/li/
 │   ├── ExplosionLedgerTest.java               # 待炸账本·相交才进队列/不相交立即标记/未加载丢弃不轮询/自然加载补炸闭环/分帧预算/多场叠加不覆盖新登记/满额降级/存档往返（10 项）
 │   └── ExplosionComponentLightTest.java       # 爆炸后光照刷新·四入口顺序/天光柱高图先于重算/section 空态/sectionY≠索引/发光方块减光（5 项）
 ├── living/domain/redstone/
+│   ├── RedstoneHandlerSetChangedTest.java     # 交互 handler 就地改写标脏（2026-10-27 审查 P2，与 IgniteHandler P3-4 同类）·拉杆切换成功 ⇒ setChanged 被调，否则开关态在「改完→下次落盘」窗口丢失（1 项；四 handler 同构逐一接线）
 │   ├── ContainerRedstoneBoundaryTest.java     # 边界采样自反馈守卫（2026-10-27 审查 P1）·双箱两半共用账本 ⇒ 朝另一半查到 this 曾把自己对面 face 输出读回对侧输入（东边拉杆隔空压灭西边火把）/ 邻居是自己 ⇒ 保持世界信号 / 无账本·无朝向邻居 ⇒ 原样（3 项；mockStatic 邻居查询）
 │   ├── ContainerRedstoneDataTest.java         # 红石信号传播引擎·直接驱动 calculate/**空容器(存储格 0)⇒ 直接跳过，不拿 0 当除数**（30 项）
 │   └── ContainerRedstoneIntegrationTest.java  # 红石**驱动链路**端到端（走真实 processContext）·自维持注册/守卫放行消费者/守卫拦截无关容器(零开销)/残留归零/prio 顺序（5 项）
@@ -177,5 +178,5 @@ src/test/java/com/qiqi/li/
     └── LivingItemSyncPacketTest.java          # 运行时同步包编解码往返（档 2 安全网）·三组字段往返/空数据/多槽混合/两种键形态/容器种类 kind 往返(背包·末影箱·世界·掉落物)/子记录哨兵/未登记 id 报错（14 项）
     └── LivingItemRuntimeSyncTest.java         # （门控判定已迁 ContainerViewersTest）+ **物品形态容器按菜单锚点发包（真机 tooltip 不显示容器信息的回归）**（4 项）
     └── ServerPacketHandlerInventorySafetyTest.java  # 满背包不丢物（2026-10-27 审查 P0）·配方书 Shift 取出活箱子物品曾直接丢栈 ⇒ 背包满时静默销毁 / 满 ⇒ 余量掉落（Player#drop 原版入口，落副本+清零）/ 空 ⇒ 全收不掉 / 部分空间 ⇒ 合并后余量掉落（3 项）
-    └── GuiInteractionTargetGuardTest.java      # GUI 交互包服务端目标身份复验（2026-10-27 审查 P3-2）·isAcceptable 只验「是活物品」⇒ 改过的客户端可对任意活物品发 lever_toggle 写 LIVING_LEVER_DATA / 守卫与规则 JSON 同源（走同一份 matchesTarget：条目说什么守卫放行什么）/ 未知 actionId 放行 / 空目标放行（活桶通道在各自 handler 重验）（5 项；⚠️ 判据用 item 型 target——tag 在单测环境不绑）
+    └── GuiInteractionTargetGuardTest.java      # GUI 交互包服务端目标身份复验（2026-10-27 审查 P3-2）·isAcceptable 只验「是活物品」⇒ 改过的客户端可对任意活物品发 lever_toggle 写 LIVING_LEVER_DATA / 守卫与规则 JSON 同源（走同一份 matchesTarget：条目说什么守卫放行什么）/ 未知 actionId 放行 / 空目标放行（活桶通道在各自 handler 重验）（6 项；⚠️ 判据用 item 型 target——tag 在单测环境不绑）·**同 actionId 多条目=任一命中**（till_to_farmland 5 条 target：曾首条 return 误杀其余 4 条，耕活泥土进阶链断裂——本条是 2026-10-27 审查修复自身引入又当场修掉的回归）
 ```

@@ -177,12 +177,18 @@ public record GuiInteractionPacket(
      * <b>规则表外的 actionId</b>（守卫只管「声明了 target 的规则」，handler 缺失另有拦截）。</p>
      */
     static boolean targetIdentityAccepted(String actionId, ItemStack target) {
+        // ⚠️ 同 actionId 可挂多条规则（till_to_farmland 5 条 target：草方块/两泥/两土路径）
+        //    —— 曾在第一条命中处 return ⇒ 其余 4 条目标被误杀、整包丢弃（耕活泥土进阶链
+        //    断裂，2026-10-27 审查 P1）。语义 = 「该 actionId 的任一规则命中即放行」。
+        boolean found = false;
         for (InteractionEntry e : InteractionRegistry.getEntries()) {
-            if (e.actionId().equals(actionId)) {
-                return target.isEmpty() || e.matchesTarget(target);
+            if (!e.actionId().equals(actionId)) continue;
+            found = true;
+            if (target.isEmpty() || e.matchesTarget(target)) {
+                return true;
             }
         }
-        return true;
+        return !found;   // 规则表外的 actionId = 不在本守卫范围（原语义放行）
     }
 
     private static boolean isAcceptable(ServerPlayer player, Slot slot) {

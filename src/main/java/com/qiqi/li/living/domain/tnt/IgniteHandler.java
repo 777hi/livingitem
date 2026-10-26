@@ -21,12 +21,16 @@ public class IgniteHandler implements InteractionHandler {
 
     @Override
     public void handle(ServerPlayer player, Slot targetSlot) {
-        if (player.isCreative()) {
-            // 创造模式光标物品是纯客户端虚拟的，服务端无法验证，信任客户端
-        } else {
-            ItemStack carried = player.containerMenu.getCarried();
-            if (carried.isEmpty() || !carried.is(Items.FLINT_AND_STEEL)
-                || !LivingItemManager.isLivingItem(carried)) return;
+        // ⚠️ 创造分支改「验在即有」（2026-10-27 审查 P3）：「光标纯客户端虚拟」只对
+        //    创造背包页（ItemPickerMenu，carriedTag 回灌）成立；创造模式打开箱子等普通
+        //    容器时光标由服务端权威管理、可验。曾无条件跳过校验 ⇒ 改包客户端在创造模式
+        //    可空手点燃任意活 TNT（同域 IgniteCarriedHandler 本就照验，口径对齐）。
+        ItemStack carried = player.containerMenu.getCarried();
+        if (!carried.isEmpty() && (!carried.is(Items.FLINT_AND_STEEL)
+                || !LivingItemManager.isLivingItem(carried))) {
+            return;   // 光标「有但不是活打火石」＝ 拒绝（无论模式）
+        }
+        if (!player.isCreative()) {
             carried.hurtAndBreak(1, player, EquipmentSlot.MAINHAND);
         }
 

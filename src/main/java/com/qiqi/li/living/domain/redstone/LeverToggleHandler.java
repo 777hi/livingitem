@@ -19,6 +19,8 @@ public class LeverToggleHandler implements InteractionHandler {
         if (stack.isEmpty()) return;
 
         if (LivingLeverFunction.toggleLever(stack)) {
+            // ⚠️ 就地改组件必须经槽位标脏（同 IgniteHandler，2026-10-27 审查 P2）
+            targetSlot.setChanged();
             player.containerMenu.broadcastChanges();
         }
     }
