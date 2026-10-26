@@ -3,30 +3,25 @@ package com.qiqi.li.living.domain.tools;
 import java.util.List;
 import java.util.UUID;
 
+import com.qiqi.li.living.util.DimensionScopedCache;
+import com.qiqi.li.living.util.StaticCacheRegistry;
 
 import net.minecraft.resources.ResourceLocation;
-import com.qiqi.li.living.util.StaticCacheRegistry;
+import net.minecraft.world.item.ItemStack;
 
 /**
  * 客户端「附近玩家背包里的活工具」缓存（联机可见性 · 最小版）。
  *
- * <p>由 {@link LivingToolPlayerPacket#handle} 更新，供
- * {@code LivingToolModelRenderer} 给<b>其它玩家</b>画背后的待机环。</p>
+ * <p>由 {@link LivingToolPlayerPacket#handle} 更新，供 {@code LivingToolModelRenderer}
+ * 给<b>其它玩家</b>画背后的待机环 / 攻击环 / 主动工具体。</p>
  *
- * <h3>两个设计点（与 {@link LivingToolHostClientCache} 一致）</h3>
- * <ul>
- *   <li><b>整体替换</b>：每次收到包就整表替换 —— 不需要处理"移除"逻辑，
- *       工具被取走 / 玩家走远，都会因为"不再出现在包里"而自然消失。</li>
- *   <li><b>维度校验</b>：包里带维度，读取时若与当前维度不符则返回空。</li>
- * </ul>
- *
- * <p>⚠️ 网络包在 Netty 线程解码、渲染在主线程 —— 故字段用 {@code volatile}
- * 且写入不可变 {@code List}。</p>
+ * <p>「整体替换 + 维度校验」两条不变量见 {@link DimensionScopedCache} —— 本类只保留类型
+ * 与两个按玩家查找的便捷方法。</p>
  */
 public final class LivingToolPlayerClientCache {
 
-    private static volatile ResourceLocation dimension;
-    private static volatile List<LivingToolPlayerPacket.Entry> entries = List.of();
+    private static final DimensionScopedCache<LivingToolPlayerPacket.Entry> CACHE =
+        new DimensionScopedCache<>();
 
     static {
         // static 缓存清理：登记与 clear() 同文件（见 StaticCacheRegistry 类注释「登记位置」）
@@ -38,8 +33,7 @@ public final class LivingToolPlayerClientCache {
     }
 
     public static void update(ResourceLocation dim, List<LivingToolPlayerPacket.Entry> list) {
-        dimension = dim;
-        entries = List.copyOf(list);
+        CACHE.update(dim, list);
     }
 
     /**
@@ -49,17 +43,17 @@ public final class LivingToolPlayerClientCache {
      * @return 条目列表；维度不匹配时返回空列表
      */
     public static List<LivingToolPlayerPacket.Entry> get(ResourceLocation currentDim) {
-        return currentDim != null && currentDim.equals(dimension) ? entries : List.of();
+        return CACHE.get(currentDim);
     }
 
     /** 另取一份（渲染遍历时避免和 volatile 读交错）。 */
     public static List<LivingToolPlayerPacket.Entry> snapshot() {
-        return entries;
+        return CACHE.snapshot();
     }
 
     /** 按玩家查找；没有则返回 {@code null}。 */
-    public static List<net.minecraft.world.item.ItemStack> toolsOf(UUID playerId) {
-        for (LivingToolPlayerPacket.Entry entry : entries) {
+    public static List<ItemStack> toolsOf(UUID playerId) {
+        for (LivingToolPlayerPacket.Entry entry : CACHE.snapshot()) {
             if (entry.playerId().equals(playerId)) {
                 return entry.tools();
             }
@@ -69,7 +63,6 @@ public final class LivingToolPlayerClientCache {
 
     /** 清空（客户端退出存档时调用，避免跨存档残留）。 */
     public static void clear() {
-        dimension = null;
-        entries = List.of();
+        CACHE.clear();
     }
 }

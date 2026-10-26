@@ -17,6 +17,14 @@
 
 ## 2026-10-26
 
+- 🗂️ **四个客户端渲染缓存合一（`DimensionScopedCache<T>`）**：`LivingToolHostClientCache` / `LivingToolPlayerClientCache` / `BeaconHostClientCache` / `BeaconPlayerHostClientCache` 除了泛型参数**一字不差**（`volatile` 双字段 + 维度比对 + 整体替换 + `clear()`），而且注释已经开始漂移 —— 一份说"网络包在 Netty 线程解码"，另一份 2026-10-18 已更正为不成立。抽成 `living/util/DimensionScopedCache<T>`，四个门面只保留类型与 javadoc、不再各自持有字段；**调用点零改动**（`update` / `get` / `clear` 签名不变）。
+
+  「换维度 / 换存档串台」这条不变量从四份收成一份 —— 2026-10-12 那类「`clear()` 零调用者 ⇒ 上个存档的活工具残留渲染」的坑，从此只有一个家。
+
+  ⚠️ 顺带发现：`LivingToolPlayerClientCache#snapshot` / `toolsOf` **零调用者**（死代码，去留待定）。
+
+  1005 全绿；`check_layers` 无新增违规。
+
 - 🧩 **渲染依赖收成 `ToolRenderState`（零协议变更）**：活工具 / 活武器的"渲染依赖"原本有**两份手写清单** —— `LivingToolHostSync#sameTool` 一份（比较用）、`LivingToolModelRenderer` 散落五处（渲染用），分居两个文件、隔了三百行 ⇒ 加一个渲染依赖时漏改一边就是**静默失效**（上面那条「不转圈」正是这个形态）。现在两边都从 `ToolRenderState`（record，住 `domain/tools`）取：服务端比它，客户端五处散读收成一处。**加字段 = 改那一个文件**（字段定义 / `of()` / `equals` 在 20 行内相邻）。
 
   **不进包**：这是"从 ItemStack 提取"的纯函数，服务端与客户端各自从手里的栈算 ⇒ **协议零变更**、联机无兼容问题。耐久仍不进（渲染不读它，进了白刷包）。

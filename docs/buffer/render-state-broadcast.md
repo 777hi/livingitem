@@ -158,7 +158,7 @@ record Entry<S>(BlockPos pos, Structure structure, S state) {}
 |---|---|---|
 | **① 止血** | 合并口径抽成 `living/util/BroadcastDedup#merge`，四个同步器共用 | ✅ 已落地 |
 | **② 防复发** | `ToolRenderState` record 收口「渲染依赖」：服务端比较与客户端渲染同源 | ✅ 已落地（**零协议变更**） |
-| **③ 消重复** | `DimensionScopedCache<T>`：四个客户端缓存合一 | ⏳ 待做 |
+| **③ 消重复** | `DimensionScopedCache<T>`：四个客户端缓存合一 | ✅ 已落地（调用点零改动） |
 
 ### 7.1 明确不做的（附理由）
 
