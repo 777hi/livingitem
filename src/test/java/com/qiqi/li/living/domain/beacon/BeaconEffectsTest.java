@@ -127,6 +127,52 @@ class BeaconEffectsTest {
     }
 
     @Nested
+    @DisplayName("待喂入菜单（tooltip 引导：未配置矿石，枚举序 = 档位非降序）")
+    class FeedSuggestions {
+
+        @Test
+        @DisplayName("空配置 ⇒ 全部 5 种，按枚举序")
+        void emptyConfigListsAll() {
+            List<OreType> remaining = BeaconEffects.feedSuggestions(BeaconConfig.EMPTY);
+            assertEquals(List.of(OreType.IRON, OreType.GOLD, OreType.NETHERITE,
+                OreType.EMERALD, OreType.DIAMOND), remaining);
+        }
+
+        @Test
+        @DisplayName("已配铁+钻石 ⇒ 只列剩余三种，保持枚举序")
+        void configuredOresFiltered() {
+            var cfg = config(
+                new BeaconConfig.Entry(OreType.IRON, false),
+                new BeaconConfig.Entry(OreType.DIAMOND, false));
+            assertEquals(List.of(OreType.GOLD, OreType.NETHERITE, OreType.EMERALD),
+                BeaconEffects.feedSuggestions(cfg));
+        }
+
+        @Test
+        @DisplayName("5 槽全配 ⇒ 菜单为空（tooltip 引导行自然消失）")
+        void fullConfigEmpty() {
+            var full = config(
+                new BeaconConfig.Entry(OreType.IRON, false),
+                new BeaconConfig.Entry(OreType.GOLD, false),
+                new BeaconConfig.Entry(OreType.NETHERITE, false),
+                new BeaconConfig.Entry(OreType.EMERALD, false),
+                new BeaconConfig.Entry(OreType.DIAMOND, false));
+            assertTrue(BeaconEffects.feedSuggestions(full).isEmpty());
+        }
+
+        @Test
+        @DisplayName("契约：枚举序 = 解锁档位非降序 ⇒ 可喂的天然排在锁定前面")
+        void enumOrderIsTierNonDecreasing() {
+            int prev = Integer.MIN_VALUE;
+            for (OreType ore : OreType.values()) {
+                assertTrue(ore.unlockTier >= prev,
+                    "枚举序必须按解锁档位非降序（tooltip 待喂入菜单依赖此序）: " + ore);
+                prev = ore.unlockTier;
+            }
+        }
+    }
+
+    @Nested
     @DisplayName("生效效果（min(堆叠, 档内槽数) 取前 N）")
     class ActiveEntries {
 

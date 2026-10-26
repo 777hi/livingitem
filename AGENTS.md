@@ -146,7 +146,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1020 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
+**合计测试用例 1024 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -171,6 +171,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-27 | 📖 **活信标 tooltip 喂锭引导强化** —— 矿石→效果映射此前只能试出来，且唯一规则行喂出第一根锭后就消失。账本后新增**待喂入菜单**（未配置矿石 → 效果，颜色三态：可喂绿 / 锁定暗灰 `需 L{n}` / 遥测缺失灰 `L{n} 解锁` 不猜；5 槽全配自然消失）；满级未加倍条目追加**升 II 行动指令**（非满级不提示——不可操作的不显示）；`config_empty` 喂法动作提为金色。未激活折叠行不动（U17）。回归 +4（`FeedSuggestions` 含枚举序档位非降序契约） | `docs/tech/living-beacon-tech.md` §2.6.1 |
 | 2026-10-27 | 🧩 **「操作者是谁」判据收束** —— 物品形态的 `inventory` 恒 null，而「操作者」一直用它判断 ⇒ 射线微调不认配置、被动模式在背包里不辅助。改成「锚点是不是 `AtPlayer`」/ `HostRef.PLAYER`；「随身携带」收进 `CarriedLivingItems`（顶层 + 已活化容器内容一层，**带写回位置**）；**双端事件两端同源**（客户端从 K2 拿，不能自己读容器）；**合并规则**：速度=顶层相加+背包只取最高、掉落按最靠前、耐久各扣；分层判据用**显式 `fromContainer`**（客户端 S2C 条目没有槽位，从槽位推断会让两端速度差一倍）。回归 +6，**待真机复验** | `docs/system-design/container-overview.md` §0.1 · `docs/tech/living-backpack-tech.md` §5.8 |
 | 2026-10-26 | 🎒 **背包里的活工具开始"看得见"（活背包 6.1 工具通道）** —— 查证**推翻**原方案前提：精妙内容在服务端 `BackpackStorage`（SavedData），客户端只有按需填充的副本 ⇒ **没有"客户端自己算"这条路**，物品形态的实时视觉只能由我们下发。`K2` 宿主键从 `BlockPos` 扩成 `HostRef`（方块 / 玩家 / 实体，对应 `ContainerAnchor` 三种），**仍是一条通道**；客户端 `HostOrigin` 一处解析宿主坐标、两个渲染器共用；tooltip 加**容器 ID** 供玩家自查复制品；同一宿主多背包按**槽位**区分（原先会互相覆盖）；**渲染三件收束**（内容可见性规则表 / 取点带 `partialTick` / `HostRef` 上移公共类型），**信标已接**（`containerUuid` 决定"发不发自己"）。**待真机复验** | `docs/tech/living-backpack-tech.md` §6 · `docs/TODO.md` 活背包 6.1 |
 | 2026-10-26 | 🗂️ **四个客户端渲染缓存合一** —— `DimensionScopedCache<T>` 收掉四份「volatile + 维度比对 + 整体替换」，门面只留类型、**调用点零改动**；「换维度串台」不变量从四份收成一份 | `docs/buffer/render-state-broadcast.md` §7 |
@@ -180,8 +181,6 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-10-26 | ℹ️ **容器布局共同链收口**：驴无 MenuType 查询修复；各形态统一实例/方块规则/学习/内建/启发式选择，原版默认不再游离于子类，来源与列数同源。原版修复与收口净增16个回归（984→1000）；方块规则范围不扩、不改玩法，**待真机复验** | `docs/system-design/living-item-infrastructure.md` §6.2 · `docs/buffer/container-layout-resolution.md` §10.6 |
 | 2026-10-25 | 🔧 **容器解析审查闭环**：补全连续槽号与歧义保存失败重试，诊断复用实际上下文、生效值与规则分列；13 个回归用例含门禁/诊断负向验证，不改解析优先级、不恢复收编线 | `docs/system-design/living-item-infrastructure.md` §6 · `docs/buffer/container-layout-resolution.md` §10.5 |
 | 2026-10-25 | 🧹 **S1a：删掉 `getWidth()` 的死默认** —— `SlotInfoProvider` 原默认答 9，而 9 是"看着对"的值：漏覆写不报错、只静默按 9 列解析。改抽象后**编译期立刻抓出一个真问题**：`ItemEntityContainerContext`（掉落物、单槽）一直在白嫖那个 9 —— 对 1 槽是错答案，只因单槽让行列退化才没暴露。已显式答 1 并由 I-C11 契约用例钉住（四种形态都 ≥ 1）。⚠️ 顺带查证并**推翻设计稿「S1 零行为变化」的说法**：Tier 2 是 instanceof，对第三方子类也生效（实例：`twilightforest:cinder_furnace` 靠它拿对 1 列），删表会让这类子类静默劣化 ⇒ S1b 要先拍"家族兜底要不要保留"。测试 919 → 920 | `docs/system-design/container-boundary.md` I-C11 · `docs/buffer/container-layout-resolution.md` §7 |
-| 2026-10-25 | 🔧 **宿主锚点「只接了一半」两处修完（TODO 6.2）** —— 真机「buff 生效但没光 / 工具挖不动」的真因是**下游分派还在问容器自己**：`resolveHostPosition` 已问锚点，但信标分派又按 `getBlockPos()/getOwnerPlayer()`（物品形态双 null ⇒ 光束/开盖/联机广播全不执行）、工具黑名单只取 `getAssociatedBlockPositions()`（物品形态恒空 ⇒ 射线第一个穿到的格子就是宿主箱子，记过类型就停住、没记就挖自己的箱子）。统一口径：**「宿主是谁」只问 anchor** ⇒ 两处同形 `effectiveAnchor`，取点与下游分派共用。⚠️ 遗留：锚点是单个 `BlockPos` ⇒ 大箱两半拿不全（要 `getHostBlockPositions()`）；背包在玩家身上时信标**背的人自己看不到**（客户端只扫玩家背包，归 6.1-b）。测试 909 → 919 | `docs/tech/living-backpack-tech.md` §6-4 · `docs/TODO.md` 活背包 6.2 |
-
 ## 提交前必跑（2026-10-20 定）
 
 ```bash

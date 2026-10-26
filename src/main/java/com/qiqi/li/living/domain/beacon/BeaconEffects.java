@@ -48,6 +48,18 @@ public final class BeaconEffects {
     }
 
     /**
+     * 待喂入菜单 —— 尚未配置进 5 槽的矿石（tooltip 引导行用，§2.6.1）。
+     *
+     * <p>保持 {@link OreType} 枚举序：枚举序 = 解锁档位非降序（有契约测试钉住），
+     * 过滤后天然「当前可喂的排在前、锁定在后」，锁定行标「需 L{n}」即可读。</p>
+     */
+    public static List<OreType> feedSuggestions(BeaconConfig config) {
+        return java.util.Arrays.stream(OreType.values())
+            .filter(ore -> !config.contains(ore))
+            .toList();
+    }
+
+    /**
      * 生效矿石效果 —— {@code min(堆叠数, 已配且档位≤等级的槽数)}，按配置顺序取前 N。
      *
      * <p>高阶配置在等级不足时休眠（不施加），等级回升后自动恢复（配置留在组件里）。</p>

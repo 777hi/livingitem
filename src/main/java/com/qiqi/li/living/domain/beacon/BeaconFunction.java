@@ -321,6 +321,8 @@ public class BeaconFunction implements LivingItemFunction {
      *   <li><b>满级效果行</b>：{@code regenTier} 非满级恒 NONE ⇒ 只在满级出现，NONE 也明示原因；</li>
      *   <li><b>账本</b>：未激活 ⇒ 折叠成一行（U17「完全死物」）；否则逐行列
      *       <b>休眠三因</b>（档位不够 {@code 需 L{n}} / 堆叠数不够 {@code 信标不足}）；</li>
+     *   <li><b>待喂入菜单</b>：未配置矿石 → 效果映射（喂锭引导，颜色三态，见
+     *       {@link #appendFeedMenu}）；满级未加倍条目追加升 II 行动指令（不可操作的不显示）；</li>
      *   <li>底座几何与差额<b>不在文本层</b>（9 柱面板已表达，双写 = 双维护）。</li>
      * </ul>
      */
@@ -371,26 +373,64 @@ public class BeaconFunction implements LivingItemFunction {
         tooltipAdder.accept(Component.translatable("tooltip.livingitem.beacon.config_title"));
         if (config.size() == 0) {
             tooltipAdder.accept(Component.translatable("tooltip.livingitem.beacon.config_empty"));
+        } else {
+            int index = 1;
+            for (BeaconConfig.Entry entry : config.entries()) {
+                Component suffix = Component.empty();
+                if (rt != null && rt.level() > 0 && !active.contains(entry)) {
+                    suffix = entry.ore().unlockTier > rt.level()
+                        ? Component.translatable("tooltip.livingitem.beacon.sleep_level",
+                            entry.ore().unlockTier)
+                        : Component.translatable("tooltip.livingitem.beacon.sleep_ingot",
+                            requiredStacks(config, entry, rt.level()));
+                } else if (rt != null && rt.level() == BeaconPyramid.MAX_LEVEL && !entry.amplified()) {
+                    // 满级且未加倍 ⇒ 升 II 此刻可操作（行动指令；非满级不提示——不可操作的不显示）
+                    suffix = Component.translatable("tooltip.livingitem.beacon.upgrade_hint");
+                }
+                tooltipAdder.accept(Component.translatable(
+                    "tooltip.livingitem.beacon.config_entry",
+                    index++,
+                    Component.translatable(entry.ore().effectKey()),
+                    entry.amplified() ? "II" : "I",
+                    Component.translatable(entry.ore().ingot.getDescriptionId()),
+                    suffix));
+            }
+        }
+        appendFeedMenu(tooltipAdder, config, rt);
+    }
+
+    /**
+     * 待喂入菜单：未配置矿石 → 效果 的映射（喂锭引导，2026-10-27 用户定「加强引导」）。
+     *
+     * <ul>
+     *   <li>空配置不画小标题 —— 上方 {@code config_empty} 规则行（喂法 + 成本）就是菜单的引子；</li>
+     *   <li>颜色三态：当前可喂 = 绿（行动项）/ 档位锁定 = 暗（别试，需 L{n}）/ 遥测缺失
+     *       = 灰（只标静态属性「L{n} 解锁」，不猜当前可否——同「遥测缺失 ⇒ 不猜」口径）；</li>
+     *   <li>5 槽全配后菜单自然消失（5 矿石 = 5 槽，无剩余）。</li>
+     * </ul>
+     */
+    private static void appendFeedMenu(Consumer<Component> tooltipAdder,
+                                       BeaconConfig config, @Nullable BeaconSegment.BeaconRuntime rt) {
+        List<OreType> remaining = BeaconEffects.feedSuggestions(config);
+        if (remaining.isEmpty()) {
             return;
         }
-
-        int index = 1;
-        for (BeaconConfig.Entry entry : config.entries()) {
-            Component suffix = Component.empty();
-            if (rt != null && rt.level() > 0 && !active.contains(entry)) {
-                suffix = entry.ore().unlockTier > rt.level()
-                    ? Component.translatable("tooltip.livingitem.beacon.sleep_level",
-                        entry.ore().unlockTier)
-                    : Component.translatable("tooltip.livingitem.beacon.sleep_ingot",
-                        requiredStacks(config, entry, rt.level()));
+        if (config.size() > 0) {
+            tooltipAdder.accept(Component.translatable("tooltip.livingitem.beacon.feed_title"));
+        }
+        for (OreType ore : remaining) {
+            Component ingot = Component.translatable(ore.ingot.getDescriptionId());
+            Component effect = Component.translatable(ore.effectKey());
+            if (rt == null) {
+                tooltipAdder.accept(Component.translatable(
+                    "tooltip.livingitem.beacon.feed_entry_unknown", ingot, effect, ore.unlockTier));
+            } else if (ore.unlockTier > rt.level()) {
+                tooltipAdder.accept(Component.translatable(
+                    "tooltip.livingitem.beacon.feed_entry_locked", ingot, effect, ore.unlockTier));
+            } else {
+                tooltipAdder.accept(Component.translatable(
+                    "tooltip.livingitem.beacon.feed_entry", ingot, effect));
             }
-            tooltipAdder.accept(Component.translatable(
-                "tooltip.livingitem.beacon.config_entry",
-                index++,
-                Component.translatable(entry.ore().effectKey()),
-                entry.amplified() ? "II" : "I",
-                Component.translatable(entry.ore().ingot.getDescriptionId()),
-                suffix));
         }
     }
 
