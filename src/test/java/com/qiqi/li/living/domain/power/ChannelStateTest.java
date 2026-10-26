@@ -273,4 +273,54 @@ class ChannelStateTest {
             0, 0, 0, 0.0, List.of(), List.of());
         assertEquals(-1, none.minPhaseGap(), "无相位应返回 -1");
     }
+
+    // ════════════════════════════════════════
+    // 幅度棘轮（2026-10-27 审查 P1-1，I-E6 下行缩放）
+    // ════════════════════════════════════════
+
+    /** 定幅度驱动单个偏移。 */
+    private static void runDelta(ChannelState ch, int pref, int period,
+            int offset, long fromTick, long toTick, int delta) {
+        for (long t = fromTick; t <= toTick; t++) {
+            if (t % period == offset) {
+                ch.onPhaseEvent(new PhaseEvent(offset, period, offset, delta, t), pref);
+            }
+            ch.tickCleanup(t, pref);
+        }
+    }
+
+    @Test
+    @DisplayName("幅度下行回落：降堆叠后 effDeltaSum 回落到新幅度（棘轮曾冻结在历史峰值）")
+    void amplitudeDowngrade_propagatesToEffDeltaSum() {
+        ChannelState ch = new ChannelState();
+        int pref = 16;
+        int period = 20;
+
+        // 阶段一：高幅度（Δ=4096，模拟 64 叠源 cap=count²）跑 10 个周期
+        runDelta(ch, pref, period, 0, 0, 199, 4096);
+        assertEquals(64.0, ch.bestEffDeltaSum(pref), 0.001,
+            "前置：√4096 = 64 应计入 effDeltaSum");
+
+        // 阶段二：降为 1 叠（Δ=15），再跑 10 个周期
+        runDelta(ch, pref, period, 0, 200, 399, 15);
+
+        assertEquals(Math.sqrt(15), ch.bestEffDeltaSum(pref), 0.001,
+            "降堆叠后必须回落到新幅度 —— 棘轮曾冻结在 √4096 ⇒ 发电量长期虚高"
+            + "（I-E6 下行缩放失效，「一次高堆叠永久收割」套利）");
+    }
+
+    @Test
+    @DisplayName("同 tick 多事件仍取 max（I-B3 去重语义不变）")
+    void sameTickEvents_takeMax() {
+        ChannelState ch = new ChannelState();
+        int pref = 16;
+
+        ch.onPhaseEvent(new PhaseEvent(0, 20, 0, 15, 0), pref);
+        ch.onPhaseEvent(new PhaseEvent(0, 20, 0, 64, 0), pref);
+        assertEquals(8.0, ch.bestEffDeltaSum(pref), 0.001, "单偏移 effDeltaSum = √64");
+
+        ch.onPhaseEvent(new PhaseEvent(0, 20, 0, 15, 0), pref);
+        assertEquals(8.0, ch.bestEffDeltaSum(pref), 0.001,
+            "同 tick 的更低事件不回落（去重取 max，maxDelta 仍为 64）；跨 tick 回落由上一用例守");
+    }
 }

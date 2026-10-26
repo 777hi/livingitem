@@ -271,8 +271,16 @@ public class ChannelState {
             if (st == null) {
                 offsets.put(offset, new OffsetState(tick, delta));
             } else {
+                // ⚠️ 同 tick 多事件取 max（I-B3 去重）；跨 tick 改 latest 覆盖。
+                // 曾只升不降（棘轮）：先高堆叠后降堆叠时 maxDelta 冻结在历史峰值
+                // ⇒ 发电量长期虚高（I-E6 下行缩放失效，「一次高堆叠永久收割」套利）。
+                // 2026-10-27 审查 P1-1。
+                if (st.lastSeenTick == tick) {
+                    st.maxDelta = Math.max(st.maxDelta, delta);
+                } else {
+                    st.maxDelta = delta;
+                }
                 st.lastSeenTick = tick;
-                if (delta > st.maxDelta) st.maxDelta = delta;
             }
             if (tick != jumpTick) {
                 jumpedOffsets.clear();

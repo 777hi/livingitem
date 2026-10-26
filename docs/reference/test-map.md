@@ -87,6 +87,7 @@ src/test/java/com/qiqi/li/
 │   ├── ContainerRedstoneDataTest.java         # 红石信号传播引擎·直接驱动 calculate/**空容器(存储格 0)⇒ 直接跳过，不拿 0 当除数**（30 项）
 │   └── ContainerRedstoneIntegrationTest.java  # 红石**驱动链路**端到端（走真实 processContext）·自维持注册/守卫放行消费者/守卫拦截无关容器(零开销)/残留归零/prio 顺序（5 项）
 ├── living/domain/power/
+│   ├── ChannelStateAmplitudeRatchetTest 附录（在 ChannelStateTest 内）# 幅度棘轮（2026-10-27 审查 P1-1，I-E6 下行缩放）·maxDelta 曾只升不降 ⇒ 先高堆叠后降堆叠时冻结历史峰值、发电量长期虚高（「一次高堆叠永久收割」套利）/ 跨 tick 改 latest 覆盖：幅度下行 effDeltaSum 回落 / 同 tick 多事件仍取 max（I-B3 不变）（2 项）
 │   ├── PhaseDataMigrationTest.java            # 相位形态迁移（2026-10-21 补，此前零测试）·moveOut 只对 contentRetaining 搬/非 retaining 不搬/EMPTY 不搬 + moveIn 无组件 noop/**无 ctx 降级也写附件**（5 项）
 │   ├── PowerMathTest.java                     # 发电数学（8 项）
 │   ├── ContainerPowerDataTest.java            # 相位质量状态机（6 项）
