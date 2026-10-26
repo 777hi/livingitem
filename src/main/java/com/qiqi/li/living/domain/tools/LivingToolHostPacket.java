@@ -118,13 +118,29 @@ public record LivingToolHostPacket(
         }
     }
 
+    /** 解码容量上限（防御脏包：负数 / 超大 varint 不许直接进 ArrayList 构造 ⇒ 不许 OOM）。 */
+    private static final int MAX_ENTRIES = 4096;
+    private static final int MAX_TOOLS = 256;
+
+    private static int readClamped(FriendlyByteBuf buf, int max) {
+        int n = buf.readVarInt();
+        return n < 0 ? 0 : Math.min(n, max);
+    }
+
     private static LivingToolHostPacket decode(FriendlyByteBuf buf) {
         RegistryFriendlyByteBuf reg = (RegistryFriendlyByteBuf) buf;
         ResourceLocation dimension = buf.readResourceLocation();
-        int count = buf.readVarInt();
+        int count = readClamped(buf, MAX_ENTRIES);
         List<Entry> entries = new ArrayList<>(count);
         for (int i = 0; i < count; i++) {
-            HostRef.Kind kind = HostRef.Kind.values()[buf.readUnsignedByte()];
+            // 脏包的越界 kind 无法继续解析（后续字节的布局取决于 kind）⇒ 只能整体放弃，
+            // 返回空包让客户端整体替换缓存 —— 不许 AIOOBE 炸网络线程
+            int ordinal = buf.readUnsignedByte();
+            HostRef.Kind[] kinds = HostRef.Kind.values();
+            if (ordinal >= kinds.length) {
+                return new LivingToolHostPacket(dimension, List.of());
+            }
+            HostRef.Kind kind = kinds[ordinal];
             BlockPos pos = null;
             UUID entityId = null;
             switch (kind) {
@@ -132,7 +148,7 @@ public record LivingToolHostPacket(
                 case PLAYER, ENTITY -> entityId = buf.readUUID();
             }
             HostRef host = new HostRef(kind, pos, entityId, buf.readVarInt() - 1);
-            int toolCount = buf.readVarInt();
+            int toolCount = readClamped(buf, MAX_TOOLS);
             List<ToolRay> tools = new ArrayList<>(toolCount);
             for (int j = 0; j < toolCount; j++) {
                 ItemStack stack = ItemStack.STREAM_CODEC.decode(reg);

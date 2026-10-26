@@ -163,7 +163,9 @@ public class LivingToolFunction implements LivingItemFunction {
             //    · 物品形态容器背在身上：hostAnchor = AtPlayer ⇒ 微调 ✓
             //      （原来这里判 `instanceof SimpleContainerContext && getInventory() != null`，
             //       而物品形态的 inventory 恒 null ⇒ 背包里的工具永远从眼睛出、不认配置）
-            //    · 末影箱：锚点是 AtBlock ⇒ 不微调（工具不是从身体发射的）
+            //    · 末影箱：存放处，无锚点 ⇒ 不微调（工具不是从身体发射的；
+            //      2026-10-27 拍板，见 EnderChestContainerContext#getAnchor ——
+            //      此前默认退化成 AtPlayer，本条与「操作者判据」曾自相矛盾）
             //    · 方块 / 实体容器 ⇒ 不微调
             //    ⇒ 与 origin 同源（都读 effectiveAnchor），不会出现「起点在胸口、微调按脚下算」。
             Player bearer = effectiveAnchor(context) instanceof ContainerAnchor.AtPlayer at
@@ -390,7 +392,7 @@ public class LivingToolFunction implements LivingItemFunction {
                 && LivingToolReplay.resolveUseTarget(memory.use(), origin, hostBlocks, serverLevel) != null;
             tools.add(new LivingToolHostPacket.ToolRay(entry.stack(), digLanded, useLanded));
         }
-        LivingToolHostSync.report(host, tools);
+        LivingToolHostSync.report(host, serverLevel.dimension().location(), tools);
     }
 
     /**

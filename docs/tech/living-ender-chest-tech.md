@@ -1224,3 +1224,29 @@ v11 及之前 `clear()` / `removeChannel()` 全项目零调用者，缓存只增
 
 - [ ] boundPlayerUuid 以字符串形式序列化，运行时通过 getPlayerUuid() 转换
 - [ ] 解绑后 EnderChannelData 为 EMPTY，不残留旧数据
+---
+
+## 15. 容器宿主口径：存放处（2026-10-27 定案，`D-container-18`）
+
+**末影箱内容 = 货物，与箱子同权 —— 不随身、不开机。**
+
+`EnderChestContainerContext#getAnchor()` 显式覆写为 `null`（回归：`EnderChestContextTest`）。
+在此之前它**从未拍板过**：默认实现经 `getOwnerPlayer()` 退化成 `AtPlayer`，
+喂给了四个功能 —— 2026-10-27 全项目审查时发现其中两个是 bug 温床：
+
+| 功能 | 退化 AtPlayer 时的（错误）行为 | 定案后 |
+|---|---|---|
+| **背包里的活工具（K2 上报）** | 被当「玩家宿主」上报 ⇒ 客户端算进随身辅助、服务端 `CarriedLivingItems` 不展开末影箱 ⇒ **两端速度不同源**，「方块破坏又恢复」仍可达 | 不上报 ⇒ 与「背包在箱子里」同口径 |
+| **活工具主动模式 / 射线微调** | origin = 玩家眼睛，微调生效（注释却写着「锚点是 AtBlock ⇒ 不微调」——判据改动时依据的语义本身与末影箱不一致） | 无锚点 ⇒ 不开机、不微调 |
+| **活TNT** | 炸在玩家脚边 | 哑弹（引信走完熄灭，与物品形态且开关关同路） |
+| **活信标** | 玩家宿主光束（与「信标在玩家物品栏」同路） | 不开光（与船 / 掉落物同口径） |
+
+**为什么不反过来定「随身口袋」**：末影箱内容是**玩家的原版末影箱**
+（`PlayerEnderChestContainer`，按玩家寻址、不在物品栏里），
+服务端「随身展开」（`CarriedLivingItems`）与写回通道
+（`ItemFormContainers.Source#contentHandler(stack)` 纯函数模型）都够不着它，
+要支持就得新造「伪顶层展开 + 按玩家寻址的写回」两套机制 ——
+「放进去 = 收起来」复用现有「存放处」心智，零新机制。
+
+**不受影响**：活末影箱**本体**的路由功能（它走 `getOwnerPlayer()`，不走锚点）；
+信标在**玩家物品栏**里的玩家宿主光束（那是 `SimpleContainerContext`，不是本类）。

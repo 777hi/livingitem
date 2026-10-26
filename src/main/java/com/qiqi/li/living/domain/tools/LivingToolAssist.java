@@ -2,6 +2,7 @@ package com.qiqi.li.living.domain.tools;
 
 import java.util.List;
 import java.util.function.Predicate;
+import java.util.function.ToDoubleFunction;
 
 import javax.annotation.Nullable;
 
@@ -95,23 +96,8 @@ public final class LivingToolAssist {
 
         List<CarriedLivingItems.Carried> helpers =
             assistTools(player, s -> s.getDestroySpeed(state) > 1.0F);
-        // 速度分层（2026-10-27 用户定）：
-        //   · 物品栏顶层 ⇒ 全部相加（既有口径：多把工具叠加）
-        //   · 活背包里   ⇒ **只取最高一把**，不参与相加
-        // 理由：背包容量（27~120）远大于物品栏（36），若也相加就成"塞满铲子 = 倍速挂件"。
-        // ⇒ 背包是"便携工具架"，不是"物品栏扩容"。
         BlockPos targetPos = event.getPosition().orElse(null);
-        float bonus = 0.0F;
-        float bestInContainer = 0.0F;
-        for (CarriedLivingItems.Carried carried : helpers) {
-            float speed = digSpeed(player, carried.stack(), state, targetPos);
-            if (carried.inContainer()) {
-                bestInContainer = Math.max(bestInContainer, speed);
-            } else {
-                bonus += speed;
-            }
-        }
-        bonus += bestInContainer;
+        float bonus = assistBonus(helpers, s -> digSpeed(player, s, state, targetPos));
         if (bonus > 0.0F) {
             event.setNewSpeed(event.getNewSpeed() + bonus);
         }
@@ -285,6 +271,29 @@ public final class LivingToolAssist {
                                                                Predicate<ItemStack> accept) {
         return CarriedLivingItems.of(player,
             stack -> LivingToolRecorder.isAssistTool(stack) && accept.test(stack), true);
+    }
+
+    /**
+     * 速度分层（2026-10-27 用户定）：<b>物品栏顶层相加 + 背包里只取最高</b>。
+     *
+     * <p>理由：背包容量（27~120）远大于物品栏（36），若也相加就成"塞满铲子 = 倍速挂件"
+     * ⇒ 背包是"便携工具架"，不是"物品栏扩容"。</p>
+     *
+     * <p>包级可见供单测（分层口径是 2026-10-27 真机翻车的那一层，必须有回归钉住）。</p>
+     */
+    static float assistBonus(List<CarriedLivingItems.Carried> helpers,
+                             ToDoubleFunction<ItemStack> speedOf) {
+        float bonus = 0.0F;
+        float bestInContainer = 0.0F;
+        for (CarriedLivingItems.Carried carried : helpers) {
+            float speed = (float) speedOf.applyAsDouble(carried.stack());
+            if (carried.inContainer()) {
+                bestInContainer = Math.max(bestInContainer, speed);
+            } else {
+                bonus += speed;
+            }
+        }
+        return bonus + bestInContainer;
     }
 
     /**

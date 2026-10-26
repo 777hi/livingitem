@@ -38,6 +38,15 @@ import com.qiqi.li.living.util.StaticCacheRegistry;
  *       <b>没有节流</b>：内容（位置集合 / ItemStack）变化频率本来就极低
  *       （放置 / 取走 / 耐久），去重之后天然就是按需发送。</li>
  * </ul>
+ *
+ * <p>⚠️ <b>跨维度铁律（与 {@code BeaconPlayerHostSync} 同一条，2026-10-27 审查发现并修）</b>：
+ * 本类的登记表是<b>全服一张</b> —— PLAYER 宿主的上报来自 {@code onServerTick} 的<b>玩家循环</b>
+ * （在维度循环<b>之前</b>：玩家背包对所有维度统一处理），而 {@code flush} 是<b>逐维度</b>调用的
+ * ⇒ 登记表<b>绝不能在 flush 里清</b>。原先在 flush 里抽干，第一个维度（主世界恒先 flush）就把
+ * 全表抽走，其中非主世界玩家的 PLAYER 条目又被 {@code resolveHostPos} 按「owner 在本维度」过滤掉
+ * ⇒ <b>地狱 / 末地玩家的随身背包条目永远发不出去</b>（渲染失效 + 客户端辅助缺加成）。
+ * 清理由 {@link #beginTick()} 在 tick 开头统一做一次；每条登记自带<b>上报维度</b>，
+ * flush 只取本维度的条目（方块 / 实体宿主的跨维度隔离也从「抽干顺序」变成显式判定）。</p>
  */
 public final class LivingToolHostSync {
 
@@ -57,9 +66,14 @@ public final class LivingToolHostSync {
      */
     public static final double RADIUS = 32.0;
 
-    /** 本 tick 收集到的「有活工具的容器」；由 {@link #flush} 取走并清空。 */
-    private static final Map<HostRef, List<LivingToolHostPacket.ToolRay>> current =
-        new LinkedHashMap<>();
+    /** 一条登记 = 宿主的工具 + <b>上报时的维度</b>（flush 按维度取，见类注释「跨维度铁律」）。 */
+    private record Reported(ResourceLocation dimension, List<LivingToolHostPacket.ToolRay> tools) {}
+
+    /**
+     * 本 tick 收集到的「有活工具的容器」；由 {@link #beginTick} 在 tick 开头清空，
+     * {@link #flush} 只读不抽（跨维度铁律见类注释）。
+     */
+    private static final Map<HostRef, Reported> current = new LinkedHashMap<>();
 
     /** 每个玩家上次发出的条目（用于内容去重）。 */
     private static Map<UUID, List<LivingToolHostPacket.Entry>> lastSent = new HashMap<>();
@@ -82,9 +96,9 @@ public final class LivingToolHostSync {
      * <p>⚠️ 这里<b>必须 copy</b>：直接存引用会导致服务端后续修改它（如扣耐久）
      * 时，{@link #lastSent} 里那份也跟着变 ⇒ 去重比较失效、永远检测不到变化。</p>
      */
-    public static void report(HostRef host,
+    public static void report(HostRef host, ResourceLocation dimension,
                               List<LivingToolHostPacket.ToolRay> tools) {
-        if (host == null || tools == null || tools.isEmpty()) {
+        if (host == null || dimension == null || tools == null || tools.isEmpty()) {
             return;
         }
         List<LivingToolHostPacket.ToolRay> copy = new ArrayList<>(tools.size());
@@ -92,22 +106,34 @@ public final class LivingToolHostSync {
             copy.add(new LivingToolHostPacket.ToolRay(
                 tool.stack().copy(), tool.digLanded(), tool.useLanded()));
         }
-        current.put(host, copy);
+        current.put(host, new Reported(dimension, copy));
+    }
+
+    /**
+     * <b>每 tick 开头清空登记表</b>（由 {@code LivingItem#onServerTick} 在玩家循环之前调用）。
+     *
+     * <p>为什么不能放在 {@link #flush} 里：flush 是<b>逐维度</b>调的，而登记表是全服一张
+     * （PLAYER 宿主的上报来自玩家循环，在维度循环之前 —— 跨维度铁律见类注释）。
+     * 单测用两个 {@code ServerLevel} 替身驱动 flush（{@code LivingToolHostSyncDimensionTest}）。</p>
+     */
+    public static void beginTick() {
+        current.clear();
     }
 
     /**
      * 每 tick 末尾调用（在所有容器处理完之后）：按距离定向 + 内容去重后发送。
      *
      * <p>⚠️ 调用时机很重要 —— 必须在 {@code processLevelContainers} <b>之后</b>，
-     * 这样本 tick 的登记才都已收齐。</p>
+     * 这样本 tick 的登记才都已收齐；且<b>不在本方法清登记表</b>（跨维度铁律见类注释，
+     * 清理由 {@link #beginTick()} 负责）。</p>
      */
     public static void flush(ServerLevel level) {
         if (level == null || level.isClientSide) {
             return;
         }
 
-        List<LivingToolHostPacket.Entry> all = takeSnapshot();
         ResourceLocation dimension = level.dimension().location();
+        List<LivingToolHostPacket.Entry> all = entriesFor(dimension);
 
         Map<UUID, List<LivingToolHostPacket.Entry>> next = new HashMap<>();
         Set<UUID> online = new HashSet<>();
@@ -137,17 +163,18 @@ public final class LivingToolHostSync {
         lastSent.clear();
     }
 
-    private static List<LivingToolHostPacket.Entry> takeSnapshot() {
+    /** 本维度登记的条目 —— <b>只读</b>，不抽干（跨维度铁律见类注释）。 */
+    private static List<LivingToolHostPacket.Entry> entriesFor(ResourceLocation dimension) {
         if (current.isEmpty()) {
             return List.of();
         }
-        List<LivingToolHostPacket.Entry> snapshot = new ArrayList<>(current.size());
-        for (Map.Entry<HostRef, List<LivingToolHostPacket.ToolRay>> e
-                : current.entrySet()) {
-            snapshot.add(new LivingToolHostPacket.Entry(e.getKey(), e.getValue()));
+        List<LivingToolHostPacket.Entry> out = new ArrayList<>(current.size());
+        for (Map.Entry<HostRef, Reported> e : current.entrySet()) {
+            if (e.getValue().dimension().equals(dimension)) {
+                out.add(new LivingToolHostPacket.Entry(e.getKey(), e.getValue().tools()));
+            }
         }
-        current.clear();
-        return snapshot;
+        return out;
     }
 
     private static List<LivingToolHostPacket.Entry> filterInRange(

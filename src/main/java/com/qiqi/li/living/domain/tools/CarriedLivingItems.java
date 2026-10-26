@@ -9,6 +9,7 @@ import javax.annotation.Nullable;
 import com.qiqi.li.living.container.ContainerUuids;
 import com.qiqi.li.living.container.HostRef;
 import com.qiqi.li.living.container.ItemFormContainers;
+import com.qiqi.li.logging.ModLog;
 
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
@@ -79,20 +80,21 @@ public final class CarriedLivingItems {
 
     /**
      * @param accept       过滤（调用方自己组合「是不是活工具 / 活武器」等条件）
-     * @param skipMainHand 跳过主手那一格（原版已把主手计入，再算一次会翻倍）
+     * @param skipMainHand 主手那一格<b>不收工具本身</b>（原版已把手持工具计入，再算一次会翻倍）。
+     *                     <p>⚠️ 只跳「工具本身」，<b>不能跳容器展开</b>：手持的是活背包时，
+     *                     原版计入的是背包、不是背包里的工具。曾经连展开一起跳，而客户端的
+     *                     K2 条目没有「主手」概念、照算 ⇒ 手持背包挖矿时客户端偏快
+     *                     ⇒ 服务端拒绝破坏（2026-10-27 审查，与「方块破坏又恢复」同症状）。</p>
      */
     public static List<Carried> of(Player player, Predicate<ItemStack> accept, boolean skipMainHand) {
         Inventory inventory = player.getInventory();
         List<Carried> out = new ArrayList<>();
         for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
-            if (skipMainHand && slot == inventory.selected) {
-                continue;
-            }
             ItemStack stack = inventory.getItem(slot);
             if (stack.isEmpty()) {
                 continue;
             }
-            if (accept.test(stack)) {
+            if (!(skipMainHand && slot == inventory.selected) && accept.test(stack)) {
                 out.add(new Carried(stack, slot, -1, false));
             }
             if (!(player instanceof ServerPlayer)) {
@@ -140,8 +142,11 @@ public final class CarriedLivingItems {
      * 把改过的栈写回它原来的位置。
      *
      * <p>⚠️ 容器内容走 {@link IItemHandlerModifiable#setStackInSlot}（`I-C3`：写回 ≠ 插入）；
-     * handler 不支持精确写回时<b>放弃</b>并留痕 —— 不退回 {@code insertItem}，
-     * 那会把物品塞到别的格子里。</p>
+     * handler 不支持精确写回 / 目标格内容已变时<b>放弃并留痕</b>（I-C6：降级不静默）——
+     * 不退回 {@code insertItem}，那会把物品塞到别的格子里。</p>
+     *
+     * <p>⚠️ 写回前校验「目标格还是不是采集时的那件」：{@link LivingToolReplay} 的回放会跑
+     * 完整事件链，第三方回调若在此期间动过容器，盲写会错写别的格子。</p>
      */
     public static void writeBack(Player player, Carried carried, ItemStack updated) {
         if (!carried.canWriteBack()) {
@@ -154,12 +159,24 @@ public final class CarriedLivingItems {
         ItemStack container = player.getInventory().getItem(carried.outerSlot());
         ItemFormContainers.Source source = ItemFormContainers.find(container);
         if (source == null) {
+            ModLog.CONTAINER.warn("[辅助] 写回放弃：物品栏第 {} 格已不是容器（采集后被换走）",
+                carried.outerSlot());
             return;
         }
         IItemHandler handler = source.contentHandler(container);
-        if (handler instanceof IItemHandlerModifiable modifiable) {
-            modifiable.setStackInSlot(carried.innerSlot(), updated);
+        if (!(handler instanceof IItemHandlerModifiable modifiable)) {
+            ModLog.CONTAINER.warn("[辅助] 写回放弃：宿主容器不支持精确写回（outerSlot={}）",
+                carried.outerSlot());
+            return;
         }
+        if (carried.innerSlot() >= modifiable.getSlots()
+                || !ItemStack.isSameItemSameComponents(
+                    modifiable.getStackInSlot(carried.innerSlot()), carried.stack())) {
+            ModLog.CONTAINER.warn("[辅助] 写回放弃：容器第 {} 格内容已变（回放期间被改动，盲写会错格）",
+                carried.innerSlot());
+            return;
+        }
+        modifiable.setStackInSlot(carried.innerSlot(), updated);
     }
 
     /** 物品形态容器（活背包）里的一层内容；不是已活化的容器就什么都不做。 */

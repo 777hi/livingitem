@@ -50,4 +50,24 @@ public class EnderChestContainerContext extends SimpleContainerContext {
     public Player getOwnerPlayer() {
         return player;
     }
+
+    /**
+     * <b>存放处，无锚点</b>（2026-10-27 拍板）：末影箱内容 = 货物，与箱子同权 ——
+     * 不随身、不开机，语义与「背包在箱子里不辅助」同一条。
+     *
+     * <p>⚠️ <b>必须显式覆写成 {@code null}</b>：默认实现会经 {@link #getOwnerPlayer()}
+     * 退化成 {@code AtPlayer}（本类没有方块位置）⇒ 背包在末影箱里会被 K2 当「玩家宿主」上报
+     * ⇒ 客户端把它算进随身辅助、服务端却不展开末影箱 ⇒ 两端速度不同源，「方块破坏又恢复」
+     * 从这条路复发（2026-10-27 审查）。末影箱内容是<b>玩家的原版末影箱</b>（按玩家寻址，
+     * 不在物品栏里），服务端「随身展开」根本够不着它，两边永远收不拢 ⇒ 只能从上报侧收。</p>
+     *
+     * <p>连带行为（拍板内容）：末影箱里的活工具主动模式停（无锚点 ⇒ 无起点）、
+     * 活TNT 哑弹、活信标不开光（与船 / 掉落物同口径）。
+     * 活末影箱<b>本体</b>的路由功能不受影响 —— 它走 {@link #getOwnerPlayer()}，不走锚点。</p>
+     */
+    @Override
+    @javax.annotation.Nullable
+    public ContainerAnchor getAnchor() {
+        return null;
+    }
 }

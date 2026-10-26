@@ -328,10 +328,12 @@ public class LivingItem {
     public void onServerTick(ServerTickEvent.Pre event) {
         var server = event.getServer();
 
-        // 活信标玩家宿主登记表清零（⚠️ 必须在这里、玩家循环【之前】——登记表是全服一张，
-        // 而它的 flush 是逐维度调用的；清在 flush 里会让第一个维度抽干全表、其余维度恒空
-        // ⇒「多维度服上玩家宿主光束只在第一个维度有效」。2026-10-18 审查发现并修）
+        // 跨维度登记表清零（⚠️ 必须在这里、玩家循环【之前】——两张登记表都是全服一张
+        // （PLAYER 宿主的上报就来自下面的玩家循环），而它们的 flush 是逐维度调用的；
+        // 清在 flush 里会让第一个维度抽干全表、其余维度恒空。2026-10-18 审查发现并修信标，
+        // 2026-10-27 审查发现 K2（活工具宿主同步）也踩同一条铁律）
         com.qiqi.li.living.domain.beacon.BeaconPlayerHostSync.beginTick();
+        com.qiqi.li.living.domain.tools.LivingToolHostSync.beginTick();
 
         for (var player : server.getPlayerList().getPlayers()) {
             ContainerLivingItemHandler.processContainer(player.getInventory(), player.level());

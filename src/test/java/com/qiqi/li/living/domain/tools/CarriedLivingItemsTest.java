@@ -1,5 +1,6 @@
 package com.qiqi.li.living.domain.tools;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -136,6 +137,116 @@ class CarriedLivingItemsTest {
 
         assertTrue(CarriedLivingItems.of(player, s -> true, true).isEmpty());
         assertEquals(1, CarriedLivingItems.of(player, s -> true, false).size());
+    }
+
+    /**
+     * 主手是<b>活背包</b> ⇒ 背包本身不收，但**内容仍要展开**。
+     *
+     * <p>守的是 2026-10-27 审查抓到的两端不同源：原实现连容器展开一起跳，而客户端的
+     * K2 条目没有「主手」概念、照算 ⇒ 手持背包挖矿时客户端偏快 ⇒ 服务端拒绝破坏
+     * （「方块破坏又恢复」同症状）。原版计入的是手持工具，不是手持容器的内容。</p>
+     */
+    @Test
+    @DisplayName("skipMainHand + 主手是背包 ⇒ 只跳背包本身，内容仍展开（否则两端不同源）")
+    void skipMainHand_containerStillExpands() {
+        FakeSource source = new FakeSource();
+        ItemFormContainers.register(source);
+
+        Inventory inv = new Inventory(mock(Player.class));
+        inv.selected = 5;
+        ItemStack backpack = new ItemStack(Items.SHULKER_BOX);
+        ContainerUuids.getOrCreateItem(backpack);
+        source.handler.setStackInSlot(3, new ItemStack(Items.IRON_PICKAXE));
+        inv.setItem(5, backpack);
+        Player player = playerWith(inv);
+
+        List<CarriedLivingItems.Carried> got = CarriedLivingItems.of(player, s -> true, true);
+
+        assertEquals(1, got.size(), "只收背包里的工具，背包本身不收");
+        assertTrue(got.get(0).inContainer());
+        assertEquals(5, got.get(0).outerSlot(), "宿主槽位 = 主手那一格");
+        assertEquals(3, got.get(0).innerSlot());
+    }
+
+    /**
+     * 条目顺序 = 槽位号升序，容器条目紧跟其宿主槽位。
+     *
+     * <p>守的是 {@code E6}（掉落归属取 {@code helpers.get(0)} = "最靠前"的那把）：
+     * 顺序一乱，附魔就归到错误的手上。容器条目在宿主之后、下一个顶层槽位之前。</p>
+     */
+    @Test
+    @DisplayName("槽位顺序：容器条目紧跟宿主槽位，顶层按槽位号升序（E6 掉落归属取最靠前）")
+    void of_returnsEntriesInSlotOrder() {
+        FakeSource source = new FakeSource();
+        ItemFormContainers.register(source);
+
+        Inventory inv = new Inventory(mock(Player.class));
+        inv.setItem(3, new ItemStack(Items.IRON_PICKAXE));
+        ItemStack backpack = new ItemStack(Items.SHULKER_BOX);
+        ContainerUuids.getOrCreateItem(backpack);
+        source.handler.setStackInSlot(2, new ItemStack(Items.IRON_SHOVEL));
+        inv.setItem(10, backpack);
+        inv.setItem(20, new ItemStack(Items.IRON_AXE));
+        Player player = playerWith(inv);
+
+        List<CarriedLivingItems.Carried> got = CarriedLivingItems.of(player,
+            s -> !s.is(Items.SHULKER_BOX), false);
+
+        assertEquals(3, got.size());
+        assertEquals(3, got.get(0).outerSlot());
+        assertEquals(-1, got.get(0).innerSlot());
+        assertEquals(10, got.get(1).outerSlot(), "容器条目紧跟宿主槽位");
+        assertEquals(2, got.get(1).innerSlot());
+        assertEquals(20, got.get(2).outerSlot());
+        assertEquals(-1, got.get(2).innerSlot());
+    }
+
+    /**
+     * 写回前目标格内容已被换走 ⇒ 放弃（不得盲写）。
+     *
+     * <p>守的是 2026-10-27 审查指出的错格风险：回放（{@code LivingToolReplay}）会跑完整
+     * 事件链，第三方回调若在此期间动过容器，盲写 {@code setStackInSlot} 会覆盖别人的物品。
+     * 降级必须留痕（I-C6），但单测环境无日志断言，只钉「不覆盖 + 不抛」。</p>
+     */
+    @Test
+    @DisplayName("写回时目标格内容已被换走 ⇒ 放弃（盲写会错写别的格子）")
+    void writeBack_contentSwapped_givesUp() {
+        FakeSource source = new FakeSource();
+        ItemFormContainers.register(source);
+
+        Inventory inv = new Inventory(mock(Player.class));
+        ItemStack backpack = new ItemStack(Items.SHULKER_BOX);
+        ContainerUuids.getOrCreateItem(backpack);
+        source.handler.setStackInSlot(3, new ItemStack(Items.IRON_PICKAXE));
+        inv.setItem(10, backpack);
+        Player player = playerWith(inv);
+
+        CarriedLivingItems.Carried inner = CarriedLivingItems.of(player, s -> true, false).stream()
+            .filter(CarriedLivingItems.Carried::inContainer).findFirst().orElseThrow();
+        source.handler.setStackInSlot(3, new ItemStack(Items.DIRT));   // 回放期间被第三方换走
+
+        ItemStack damaged = new ItemStack(Items.IRON_PICKAXE);
+        damaged.setDamageValue(7);
+        CarriedLivingItems.writeBack(player, inner, damaged);
+
+        assertTrue(source.handler.getStackInSlot(3).is(Items.DIRT), "内容已变 ⇒ 不得覆盖");
+    }
+
+    @Test
+    @DisplayName("写回槽位越界 ⇒ 放弃且不抛（脏 Carried 不许炸辅助链）")
+    void writeBack_outOfBounds_givesUp() {
+        FakeSource source = new FakeSource();
+        ItemFormContainers.register(source);
+
+        Inventory inv = new Inventory(mock(Player.class));
+        inv.setItem(10, new ItemStack(Items.SHULKER_BOX));
+        Player player = playerWith(inv);
+
+        CarriedLivingItems.Carried bogus = new CarriedLivingItems.Carried(
+            new ItemStack(Items.IRON_PICKAXE), 10, 99, true);
+
+        assertDoesNotThrow(() -> CarriedLivingItems.writeBack(
+            player, bogus, new ItemStack(Items.IRON_PICKAXE)));
     }
 
     @Test
