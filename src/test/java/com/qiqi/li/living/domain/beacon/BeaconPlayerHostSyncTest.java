@@ -101,8 +101,8 @@ class BeaconPlayerHostSyncTest {
     @DisplayName("两个维度各一名信标主人 ⇒ 各自维度的观察者都能收到（登记表不得被首维度抽干）")
     void twoDimensions_bothReceive() {
         BeaconPlayerHostSync.beginTick();
-        BeaconPlayerHostSync.report(owOwner.getUUID(), 2, List.of());
-        BeaconPlayerHostSync.report(netherOwner.getUUID(), 3, List.of());
+        BeaconPlayerHostSync.report(owOwner.getUUID(), null, 2, List.of());
+        BeaconPlayerHostSync.report(netherOwner.getUUID(), null, 3, List.of());
 
         BeaconPlayerHostSync.flush(overworld);   // 首维度：不得把 nether 的登记一起吃掉
         BeaconPlayerHostSync.flush(nether);
@@ -115,7 +115,7 @@ class BeaconPlayerHostSyncTest {
     @DisplayName("beginTick 清表 ⇒ 上一 tick 的登记不会残留（主人离线/取走信标后光束消失）")
     void beginTick_clearsStaleEntries() {
         BeaconPlayerHostSync.beginTick();
-        BeaconPlayerHostSync.report(owOwner.getUUID(), 2, List.of());
+        BeaconPlayerHostSync.report(owOwner.getUUID(), null, 2, List.of());
         BeaconPlayerHostSync.flush(overworld);
         assertEquals(List.of(owOwner.getUUID()), sentOwners(owConn));
 
@@ -140,13 +140,32 @@ class BeaconPlayerHostSyncTest {
     @DisplayName("同维度观察者才收到；自己那份不发（本机渲染）")
     void onlySameDimensionViewers_excludingSelf() {
         BeaconPlayerHostSync.beginTick();
-        BeaconPlayerHostSync.report(owOwner.getUUID(), 2, List.of());
-        BeaconPlayerHostSync.report(owViewer.getUUID(), 1, List.of());   // 观察者本人也有信标
+        BeaconPlayerHostSync.report(owOwner.getUUID(), null, 2, List.of());
+        BeaconPlayerHostSync.report(owViewer.getUUID(), null, 1, List.of());   // 观察者本人也有信标
 
         BeaconPlayerHostSync.flush(overworld);
 
         List<UUID> owners = sentOwners(owConn);
         assertEquals(List.of(owOwner.getUUID()), owners, "自己的登记不下发（本机渲染），只发别人的");
         assertTrue(!owners.contains(owViewer.getUUID()));
+    }
+
+    /**
+     * 物品形态容器（活背包）里的信标：<b>连宿主自己也要发</b>。
+     *
+     * <p>守的是 2026-10-26 真机现象：背包背在身上时活信标**没有光束**，放箱子里却有。
+     * 根因是两处都假设「自己那份本机渲染会覆盖」—— 而物品形态的内容在服务端 SavedData，
+     * 客户端根本读不到，本机渲染扫不到背包里的信标 ⇒ 两条路都没画。</p>
+     */
+    @Test
+    @DisplayName("物品形态容器里的信标 ⇒ 也要发给宿主自己（客户端读不到背包内容）")
+    void itemFormBeacon_isSentToSelf() {
+        BeaconPlayerHostSync.beginTick();
+        BeaconPlayerHostSync.report(owViewer.getUUID(), UUID.randomUUID(), 2, List.of());
+
+        BeaconPlayerHostSync.flush(overworld);
+
+        assertEquals(List.of(owViewer.getUUID()), sentOwners(owConn),
+            "物品形态的内容客户端读不到 ⇒ 必须发给自己，否则背在身上没有光束");
     }
 }

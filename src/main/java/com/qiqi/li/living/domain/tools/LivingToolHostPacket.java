@@ -2,8 +2,10 @@ package com.qiqi.li.living.domain.tools;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 import com.qiqi.li.living.api.LivingMod;
+import com.qiqi.li.living.container.HostRef;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
@@ -26,12 +28,23 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
  *
  * <h3>同步什么</h3>
  * <ul>
- *   <li>{@code BlockPos} —— 容器位置（大箱子取 {@code getBlockPos()} 第一格）</li>
+ *   <li>{@link HostRef} —— 宿主<b>是谁 / 在哪</b>（方块容器 → 位置；物品形态容器 →
+ *       它借住的宿主：玩家 / 实体 / 方块）</li>
  *   <li>{@code ItemStack} —— 活工具本体。它<b>一次满足三个需求</b>：
  *       <br>① 画记忆射线（{@code LIVING_TOOL_MEMORY} 已 {@code networkSynchronized}）
  *       <br>② 渲染悬浮模型（物品本体）
  *       <br>③ 未来的动画状态（做成 network-only 组件同样随它走）</li>
  * </ul>
+ *
+ * <h3>为什么宿主键有三种（2026-10-26，活背包 6.1）</h3>
+ * <p>原来只有 {@code BlockPos} —— 物品形态容器（活背包）没有方块位置，于是整条通道
+ * 对它不可达，背包里的活工具在世界里<b>完全不可见</b>。而它的内容客户端也读不到：
+ * 精妙的内容在服务端 {@code BackpackStorage}（SavedData），客户端只有一份按需填充的副本
+ * ⇒ <b>没有"客户端自己算"这条路</b>，只能由服务端下发。</p>
+ *
+ * <p>⇒ 键扩成三种，位置由服务端给（物品形态的锚点来自
+ * {@code ContainerContext#getHostAnchor()}）。<b>仍然只有这一条通道</b> ——
+ * 另开一条"物品形态专用包"就是同一件事的两份答案。</p>
  *
  * <p><b>安全</b>：只同步 {@code LivingToolRecorder#isLivingTool} 筛过的活工具，
  * <b>不泄露容器内其它物品</b>。活工具 {@code maxStackSize = 1}（不堆叠）+ 只在近处
@@ -50,7 +63,7 @@ public record LivingToolHostPacket(
 ) implements CustomPacketPayload {
 
     /** 一个宿主容器 + 其中的活工具。 */
-    public record Entry(BlockPos pos, List<ToolRay> tools) {
+    public record Entry(HostRef host, List<ToolRay> tools) {
     }
 
     /**
@@ -88,7 +101,14 @@ public record LivingToolHostPacket(
         buf.writeResourceLocation(pkt.dimension);
         buf.writeVarInt(pkt.entries.size());
         for (Entry entry : pkt.entries) {
-            buf.writeBlockPos(entry.pos());
+            buf.writeByte(entry.host().kind().ordinal());
+            if (entry.host().kind() == HostRef.Kind.BLOCK) {
+                buf.writeBlockPos(entry.host().pos());
+            } else {
+                buf.writeUUID(entry.host().entityId());
+            }
+            // +1 是为了让 -1（方块 / 不知道）也能走 VarInt（负数 VarInt 要 5 字节）
+            buf.writeVarInt(entry.host().hostSlot() + 1);
             buf.writeVarInt(entry.tools().size());
             for (ToolRay tool : entry.tools()) {
                 ItemStack.STREAM_CODEC.encode((RegistryFriendlyByteBuf) buf, tool.stack());
@@ -104,14 +124,21 @@ public record LivingToolHostPacket(
         int count = buf.readVarInt();
         List<Entry> entries = new ArrayList<>(count);
         for (int i = 0; i < count; i++) {
-            BlockPos pos = buf.readBlockPos();
+            HostRef.Kind kind = HostRef.Kind.values()[buf.readUnsignedByte()];
+            BlockPos pos = null;
+            UUID entityId = null;
+            switch (kind) {
+                case BLOCK -> pos = buf.readBlockPos();
+                case PLAYER, ENTITY -> entityId = buf.readUUID();
+            }
+            HostRef host = new HostRef(kind, pos, entityId, buf.readVarInt() - 1);
             int toolCount = buf.readVarInt();
             List<ToolRay> tools = new ArrayList<>(toolCount);
             for (int j = 0; j < toolCount; j++) {
                 ItemStack stack = ItemStack.STREAM_CODEC.decode(reg);
                 tools.add(new ToolRay(stack, buf.readBoolean(), buf.readBoolean()));
             }
-            entries.add(new Entry(pos, tools));
+            entries.add(new Entry(host, tools));
         }
         return new LivingToolHostPacket(dimension, entries);
     }

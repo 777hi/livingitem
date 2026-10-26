@@ -9,6 +9,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+import javax.annotation.Nullable;
+
 import com.qiqi.li.living.util.BroadcastDedup;
 import com.qiqi.li.living.util.StaticCacheRegistry;
 
@@ -46,11 +48,17 @@ public final class BeaconPlayerHostSync {
      */
     public static final double RADIUS = 256.0;
 
-    /** 本 tick 登记的玩家宿主（UUID → 最高激活等级；由 {@code BeaconFunction#tick} 填入）。 */
-    private static final Map<UUID, Integer> current = new LinkedHashMap<>();
+    /**
+     * 本 tick 登记的玩家宿主 —— 键是<b>宿主玩家</b>（同一玩家多枚信标取最高等级，一人一条光束）。
+     *
+     * <p>{@code containerUuid} 只记录「最高那枚信标是不是在<b>物品形态容器</b>里」，
+     * 用于决定这条要不要<b>也发给他自己</b> —— 物品形态的内容在服务端 SavedData、
+     * 客户端读不到（见 {@code BeaconPlayerHostPacket.Entry}）。</p>
+     */
+    private record Host(int level, List<Integer> glassColors, @Nullable UUID containerUuid) {}
 
-    /** 本 tick 登记的玩家宿主容器玻璃色（UUID → 最高等级那枚信标的同列玻璃色）。 */
-    private static final Map<UUID, List<Integer>> currentGlass = new LinkedHashMap<>();
+    /** 本 tick 登记的玩家宿主（由 {@code BeaconFunction#tick} 填入）。 */
+    private static final Map<UUID, Host> current = new LinkedHashMap<>();
 
     /** 每个观察者上次收到的条目（内容去重）。 */
     private static Map<UUID, List<BeaconPlayerHostPacket.Entry>> lastSent = new HashMap<>();
@@ -69,15 +77,16 @@ public final class BeaconPlayerHostSync {
      * 客户端看不到别人背包内容（2026-10-16 用户需求「信标上方槽位的玻璃也影响颜色」联机侧）。
      * 多枚信标取最高的那枚的玻璃色（与等级同源，一人一条光束）。</p>
      */
-    public static void report(UUID playerId, int level, List<Integer> glassColors) {
+    public static void report(UUID playerId, @Nullable UUID containerUuid, int level,
+                              List<Integer> glassColors) {
         if (playerId == null || level < 1) {
             return;
         }
-        Integer prev = current.get(playerId);
-        if (prev == null || level >= prev) {
-            currentGlass.put(playerId, glassColors);
+        Host prev = current.get(playerId);
+        if (prev == null || level >= prev.level()) {
+            // 取最高等级那枚：等级、玻璃色、来源一并跟它走（同等级用后者，与原 merge 语义一致）
+            current.put(playerId, new Host(level, List.copyOf(glassColors), containerUuid));
         }
-        current.merge(playerId, level, Math::max);
     }
 
     /**
@@ -89,7 +98,6 @@ public final class BeaconPlayerHostSync {
      */
     public static void beginTick() {
         current.clear();
-        currentGlass.clear();
     }
 
     /** 每 tick 末尾调用（容器处理之后）：按距离定向 + 内容去重后发送。 */
@@ -107,9 +115,10 @@ public final class BeaconPlayerHostSync {
 
         // ① 全服登记（⚠️ 不在此清空——跨维度铁律见类注释，清理由 beginTick() 负责）
         List<BeaconPlayerHostPacket.Entry> all = new ArrayList<>(current.size());
-        for (Map.Entry<UUID, Integer> e : current.entrySet()) {
-            all.add(new BeaconPlayerHostPacket.Entry(e.getKey(), e.getValue(),
-                currentGlass.getOrDefault(e.getKey(), List.of())));
+        for (Map.Entry<UUID, Host> e : current.entrySet()) {
+            Host h = e.getValue();
+            all.add(new BeaconPlayerHostPacket.Entry(e.getKey(), h.level(), h.glassColors(),
+                h.containerUuid()));
         }
 
         // ② 逐个观察者：滤出"别人的、且在半径内的"，内容变了才发
@@ -121,8 +130,10 @@ public final class BeaconPlayerHostSync {
             }
             List<BeaconPlayerHostPacket.Entry> mine = new ArrayList<>();
             for (BeaconPlayerHostPacket.Entry entry : all) {
-                if (entry.playerId().equals(viewer.getUUID())) {
-                    continue;   // 自己那份走本机渲染
+                if (entry.playerId().equals(viewer.getUUID()) && !entry.fromItemForm()) {
+                    // 自己那份（可见形态）走本机渲染，更实时；
+                    // 但**物品形态容器的内容客户端读不到** ⇒ 那条也得发给自己（2026-10-26）
+                    continue;
                 }
                 ServerPlayer owner = playerList.getPlayer(entry.playerId());
                 if (owner != null && owner.level() == level && withinHorizontal(owner, viewer)) {
@@ -142,7 +153,6 @@ public final class BeaconPlayerHostSync {
     /** 清空全部状态（服务端关闭时调用，避免跨存档残留）。 */
     public static void clear() {
         current.clear();
-        currentGlass.clear();
         lastSent.clear();
     }
 

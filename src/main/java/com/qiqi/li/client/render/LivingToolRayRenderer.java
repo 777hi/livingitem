@@ -157,7 +157,7 @@ public final class LivingToolRayRenderer {
 
         if (debugHitBoxes) {
             drew |= renderItemEntityHosts(poseStack, ribbon, level, cameraPos, frustum);
-            drew |= renderContainerHosts(poseStack, ribbon, level, cameraPos, frustum);
+            drew |= renderContainerHosts(poseStack, ribbon, level, cameraPos, frustum, partialTick);
             drew |= renderRemotePlayerHosts(poseStack, ribbon, level, cameraPos, frustum, partialTick);
         }
 
@@ -179,7 +179,7 @@ public final class LivingToolRayRenderer {
     private static boolean renderPlayerHost(Minecraft mc, PoseStack poseStack, VertexConsumer ribbon,
                                             ClientLevel level, Vec3 cameraPos, Frustum frustum,
                                             float partialTick, boolean debugHitBoxes) {
-        Vec3 eye = mc.player.getEyePosition(partialTick);
+        Vec3 eye = HostOrigin.forPlayer(mc.player, partialTick);
         Inventory inventory = mc.player.getInventory();
 
         // 用【引用相等】判定手持：Player#getMainHandItem() 最终就是 Inventory#getItem(selected)，
@@ -225,14 +225,21 @@ public final class LivingToolRayRenderer {
      * <b>不开 GUI 时客户端拿不到箱子内容</b>，只能靠服务端同步。</p>
      */
     private static boolean renderContainerHosts(PoseStack poseStack, VertexConsumer ribbon,
-                                                ClientLevel level, Vec3 cameraPos, Frustum frustum) {
+                                                ClientLevel level, Vec3 cameraPos, Frustum frustum,
+                                                float partialTick) {
         boolean drew = false;
         List<LivingToolHostPacket.Entry> hosts =
             LivingToolHostClientCache.get(level.dimension().location());
         for (LivingToolHostPacket.Entry entry : hosts) {
-            Vec3 origin = Vec3.atCenterOf(entry.pos());
+            Vec3 origin = HostOrigin.of(level, entry.host(), partialTick);
+            if (origin == null) {
+                continue;   // 宿主此刻不可见（玩家不在本维度 / 实体已卸载）
+            }
+            // 操作者：玩家宿主才有（微调 / 朝向跟随要用），方块 / 实体宿主为 null
+            Player bearer = HostOrigin.playerOf(level, entry.host());
             for (LivingToolHostPacket.ToolRay tool : entry.tools()) {
-                drew |= renderStackFromTarget(poseStack, ribbon, cameraPos, frustum, origin, tool);
+                drew |= renderStackFromTarget(poseStack, ribbon, cameraPos, frustum, partialTick,
+                    origin, bearer, tool);
             }
         }
         return drew;
@@ -258,7 +265,7 @@ public final class LivingToolRayRenderer {
             if (owner == null || owner == Minecraft.getInstance().player) {
                 continue;
             }
-            Vec3 eye = owner.getEyePosition(partialTick);
+            Vec3 eye = HostOrigin.forPlayer(owner, partialTick);
             for (ItemStack stack : entry.tools()) {
                 if (LivingToolMemory.of(stack).isEmpty()) {
                     continue;
@@ -337,7 +344,9 @@ public final class LivingToolRayRenderer {
      * <p>命中与否只影响透明度，由服务端的布尔决定 —— 客户端不推演任何东西。</p>
      */
     private static boolean renderStackFromTarget(PoseStack poseStack, VertexConsumer ribbon,
-                                                 Vec3 cameraPos, Frustum frustum, Vec3 origin,
+                                                 Vec3 cameraPos, Frustum frustum, float partialTick,
+                                                 Vec3 defaultOrigin,
+                                                 @org.jetbrains.annotations.Nullable Player bearer,
                                                  LivingToolHostPacket.ToolRay tool) {
         ItemStack stack = tool.stack();
         if (stack.isEmpty() || !LivingItemManager.isLivingItem(stack)) {
@@ -347,6 +356,19 @@ public final class LivingToolRayRenderer {
         if (memory.isEmpty()) {
             return false;
         }
+
+        // ⭐ 射线微调：与玩家形态同一公式（2026-10-27）—— 物品形态容器**背在身上**时
+        //    bearer = 宿主玩家 ⇒ 配置生效；方块 / 实体宿主 bearer = null ⇒ 不生效。
+        Vec3 origin = defaultOrigin;
+        if (bearer != null) {
+            LivingToolRayTuning tuning = LivingToolRayTuning.of(stack);
+            Vec3 anchored = tuning.resolveAnchorOrigin(bearer, partialTick);
+            if (anchored != null) {
+                origin = anchored;
+            }
+            memory = tuning.transform(memory, bearer, partialTick);
+        }
+
         if (origin.distanceToSqr(cameraPos) > MAX_DISTANCE * MAX_DISTANCE) {
             return false;   // 距离裁剪
         }

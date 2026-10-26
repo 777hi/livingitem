@@ -92,7 +92,7 @@ SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 | 族 | 子系统（点击直达文档） |
 |----|----------------------|
 | **活物品功能（17）** | [活TNT](docs/tech/living-tnt-tech.md) · [活流体](docs/tech/living-fluid-tech.md) · [活熔炉](docs/tech/living-furnace-tech.md) · [活酿造台](docs/tech/living-brewing-stand-tech.md) · [活漏斗](docs/tech/living-hopper-tech.md) · [活箱子](docs/tech/living-chest-tech.md) · [活末影箱](docs/tech/living-ender-chest-tech.md) · [活水车](docs/tech/living-water-wheel-tech.md) · [活地图传送](docs/tech/living-map-ender-pearl-tech.md) · [活耕地](docs/tech/living-farmland-tech.md) · [活工具](docs/tech/living-tool-tech.md) · [活武器](docs/tech/living-weapon-tech.md) · [活红石](docs/tech/living-redstone-tech.md)（信号层含 [活铜](docs/tech/living-copper-tech.md)） · [活涂蜡铜块（红电发电）](docs/tech/living-power-tech.md) · [活打火石](docs/tech/living-flint-and-steel-tech.md) · [活信标](docs/tech/living-beacon-tech.md) · [活背包](docs/tech/living-backpack-tech.md) |
-| **容器基础设施（5）** | [基础设施](docs/system-design/living-item-infrastructure.md) · [多方块容器身份解析](docs/system-design/container-identity.md) · [容器边界口径](docs/system-design/container-boundary.md) · [数据模型](docs/system-design/data-model.md) · [超大堆叠审计](docs/system-design/oversized-stack-audit.md) |
+| **容器基础设施（6）** | [容器七问总览](docs/system-design/container-overview.md) · [基础设施](docs/system-design/living-item-infrastructure.md) · [多方块容器身份解析](docs/system-design/container-identity.md) · [容器边界口径](docs/system-design/container-boundary.md) · [数据模型](docs/system-design/data-model.md) · [超大堆叠审计](docs/system-design/oversized-stack-audit.md) |
 | **红电 · 电力（3）** | [红电架构演进](docs/buffer/redstone-evolution-roadmap.md) · [红电包收口方案](docs/buffer/power-refactoring-plan.md) · [红电不变量测试](docs/system-design/power-invariants.md) |
 | **跨域机制（3）** | [GUI交互](docs/system-design/gui-interaction-system.md) · [图标系统](docs/system-design/icon-system.md) · [Tooltip 系统](docs/system-design/tooltip-system.md) |
 | **工程实践（4）** | [单元测试](docs/guides/unit-testing.md) · [活TNT测试说明](docs/guides/living-tnt-testing.md) · [活物品设计模板](docs/guides/living-item-design-template.md) · [分层现状与检查工具](docs/archive/architecture-layering-plan.md) |
@@ -146,7 +146,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1005 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
+**合计测试用例 1020 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -171,6 +171,8 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-27 | 🧩 **「操作者是谁」判据收束** —— 物品形态的 `inventory` 恒 null，而「操作者」一直用它判断 ⇒ 射线微调不认配置、被动模式在背包里不辅助。改成「锚点是不是 `AtPlayer`」/ `HostRef.PLAYER`；「随身携带」收进 `CarriedLivingItems`（顶层 + 已活化容器内容一层，**带写回位置**）；**双端事件两端同源**（客户端从 K2 拿，不能自己读容器）；**合并规则**：速度=顶层相加+背包只取最高、掉落按最靠前、耐久各扣；分层判据用**显式 `fromContainer`**（客户端 S2C 条目没有槽位，从槽位推断会让两端速度差一倍）。回归 +6，**待真机复验** | `docs/system-design/container-overview.md` §0.1 · `docs/tech/living-backpack-tech.md` §5.8 |
+| 2026-10-26 | 🎒 **背包里的活工具开始"看得见"（活背包 6.1 工具通道）** —— 查证**推翻**原方案前提：精妙内容在服务端 `BackpackStorage`（SavedData），客户端只有按需填充的副本 ⇒ **没有"客户端自己算"这条路**，物品形态的实时视觉只能由我们下发。`K2` 宿主键从 `BlockPos` 扩成 `HostRef`（方块 / 玩家 / 实体，对应 `ContainerAnchor` 三种），**仍是一条通道**；客户端 `HostOrigin` 一处解析宿主坐标、两个渲染器共用；tooltip 加**容器 ID** 供玩家自查复制品；同一宿主多背包按**槽位**区分（原先会互相覆盖）；**渲染三件收束**（内容可见性规则表 / 取点带 `partialTick` / `HostRef` 上移公共类型），**信标已接**（`containerUuid` 决定"发不发自己"）。**待真机复验** | `docs/tech/living-backpack-tech.md` §6 · `docs/TODO.md` 活背包 6.1 |
 | 2026-10-26 | 🗂️ **四个客户端渲染缓存合一** —— `DimensionScopedCache<T>` 收掉四份「volatile + 维度比对 + 整体替换」，门面只留类型、**调用点零改动**；「换维度串台」不变量从四份收成一份 | `docs/buffer/render-state-broadcast.md` §7 |
 | 2026-10-26 | 🧩 **渲染依赖收成 `ToolRenderState`（零协议变更）** —— 「比较什么」与「渲染读什么」原是两份手写清单、分居两个文件 ⇒ 漏改一边即静默失效（今天那个「不转圈」的根因）。两边改从同一 record 取，客户端五处散读收成一处；不进包、耐久仍不进 | `docs/tech/living-tool-tech.md` §11.5 |
 | 2026-10-26 | 🧹 **三个同步器补齐「逐维度 flush 互清去重表」** —— `LivingToolPlayerSync` / `BeaconChestHost` / `BeaconPlayerHostSync` 仍在照抄 10-23 在 K2 修掉的写法 ⇒ **每玩家每 tick 一个包**（单人也中，三份拷贝各一份）。合并口径抽成 `BroadcastDedup#merge` 四调用点共用，测试只留一份并改成真测覆盖；协议零变化 | `docs/buffer/render-state-broadcast.md` §7 |
@@ -179,8 +181,6 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-10-25 | 🔧 **容器解析审查闭环**：补全连续槽号与歧义保存失败重试，诊断复用实际上下文、生效值与规则分列；13 个回归用例含门禁/诊断负向验证，不改解析优先级、不恢复收编线 | `docs/system-design/living-item-infrastructure.md` §6 · `docs/buffer/container-layout-resolution.md` §10.5 |
 | 2026-10-25 | 🧹 **S1a：删掉 `getWidth()` 的死默认** —— `SlotInfoProvider` 原默认答 9，而 9 是"看着对"的值：漏覆写不报错、只静默按 9 列解析。改抽象后**编译期立刻抓出一个真问题**：`ItemEntityContainerContext`（掉落物、单槽）一直在白嫖那个 9 —— 对 1 槽是错答案，只因单槽让行列退化才没暴露。已显式答 1 并由 I-C11 契约用例钉住（四种形态都 ≥ 1）。⚠️ 顺带查证并**推翻设计稿「S1 零行为变化」的说法**：Tier 2 是 instanceof，对第三方子类也生效（实例：`twilightforest:cinder_furnace` 靠它拿对 1 列），删表会让这类子类静默劣化 ⇒ S1b 要先拍"家族兜底要不要保留"。测试 919 → 920 | `docs/system-design/container-boundary.md` I-C11 · `docs/buffer/container-layout-resolution.md` §7 |
 | 2026-10-25 | 🔧 **宿主锚点「只接了一半」两处修完（TODO 6.2）** —— 真机「buff 生效但没光 / 工具挖不动」的真因是**下游分派还在问容器自己**：`resolveHostPosition` 已问锚点，但信标分派又按 `getBlockPos()/getOwnerPlayer()`（物品形态双 null ⇒ 光束/开盖/联机广播全不执行）、工具黑名单只取 `getAssociatedBlockPositions()`（物品形态恒空 ⇒ 射线第一个穿到的格子就是宿主箱子，记过类型就停住、没记就挖自己的箱子）。统一口径：**「宿主是谁」只问 anchor** ⇒ 两处同形 `effectiveAnchor`，取点与下游分派共用。⚠️ 遗留：锚点是单个 `BlockPos` ⇒ 大箱两半拿不全（要 `getHostBlockPositions()`）；背包在玩家身上时信标**背的人自己看不到**（客户端只扫玩家背包，归 6.1-b）。测试 909 → 919 | `docs/tech/living-backpack-tech.md` §6-4 · `docs/TODO.md` 活背包 6.2 |
-| 2026-10-24 | 🧭 **放置态的精妙背包列数解析错误（`D-container-17`）** —— 用户实测：物品形态下储罐插件导致的槽位变化能正确解析，放置态错误。根因是方块容器的三层推断（规则表/已知类型表/启发式）都不认识第三方 BE ⇒ 30 存储槽被猜成 10 列（真值 5），而物品形态有 `Source#columns` 这条权威路。修法：`Source#columnsOfBlockEntity(BlockEntity)` + `getWidth()` 的 **Tier 0**（来源从活对象现算 ⇒ 优先于静态规则）。教训：**同一物理容器有两种形态，修了一边要主动想另一边**。单测 904 → 909 | `docs/tech/living-backpack-tech.md` §6 · `living/container/SimpleContainerContext.java` |
-| 2026-10-24 | ⚙️ **宿主锚点的四个玩法开关（`D-container-16`，SERVER 型，默认全关）** —— 「背包借宿主的位置干什么」是玩法不是修复（炸弹/随身发电/自动挖矿/随身光环），默认生效等于替玩家做玩法决定。`tnt` / `water_wheel` / `tool_and_weapon` / `beacon` 四个开关，SERVER 型（自动同步 + 可按存档覆盖），值缓存静态字段（`ConfigValue#get()` 未加载会抛，而它在 tick 路径上每容器每 tick 都读）。⚠️ 实测发现「只接了一半」：信标下游分派与工具黑名单还在问容器自己 ⇒ 已记 TODO 6.1/6.2。单测 900 → 904 | `living/config/GameplayConfig.java` · `living-backpack-tech.md` §5.5 |
 
 ## 提交前必跑（2026-10-20 定）
 
@@ -323,10 +323,11 @@ viewer 驱动 / 框架扫描 / 框架判定才回到 `LivingItemFunction`）。
 | **查某子系统的待定计划 / 还欠什么** | [TODO.md](docs/TODO.md)（**全项目唯一需求池** —— 2026-10-10 起 tech §0 不再列未实现，D-doc-06） |
 | **查原版 / NeoForge / 第三方模组源码** | **直接搜 `libs/src/`，无需解压** —— `libs/src/neoforge-21.1.219-merged/` 是 ⭐ 首选（版本与 `neo_version` 一致）；第三方模组在 `libs/src/<ModName>/`。详见 [living-tool-design.md](docs/buffer/living-tool-design.md) §2.2.1 |
 | 查历史变更 | [changelog.md](docs/archive/changelog.md)（按日期倒序） |
+| **改容器层 / 排查容器相关 bug** | [container-overview.md](docs/system-design/container-overview.md)（**七问** —— 先定位问题属于哪一问，再只改那一问的唯一入口） |
 | 红电系统总体设计 | [红电系统.md](docs/system-design/红电系统.md) |
 | 活潜影箱独立设计 | [活潜影箱实现细节.md](docs/buffer/活潜影箱实现细节.md) |
 | **给第三方写扩展 / 查对外契约**（**违反即 bug**） | [api-contract.md](docs/system-design/api-contract.md)（对外开放计划与待决问题池见 [open-plan.md](docs/buffer/open-plan.md)） |
-| GUI 点击拦截 / 容器兼容 / 单元测试 / 活TNT测试 | `docs/guides/`（**做法**） |
+| GUI 点击拦截 / 单元测试 / 活TNT测试 | `docs/guides/`（**做法**） |
 | **配方书 / 拼音搜索**（跨活物品的共享技术） | `docs/tech/common/` |
 | **未定案的草稿**（设计稿 / 计划 / 路线图 / 探讨 / 待办） | `docs/buffer/`（**中间层 —— 不稳定，别当现状读**） |
 | 红电波形分析 / 方块朝向 / Sable 投影 | `docs/reference/`（**查表：快照 / 外部资料**） |

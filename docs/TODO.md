@@ -106,8 +106,9 @@
 
 ## 容器边界（2026-10-10 记 · 2026-10-18/19 立项并完成主体）
 
-> **契约**：[system-design/container-boundary.md](system-design/container-boundary.md)（不变量 I-C1~I-C8，已生效）
-> **实施记录**：[buffer/container-compat-topic.md](buffer/container-compat-topic.md)
+> **契约**：[system-design/container-boundary.md](system-design/container-boundary.md)（不变量 I-C1~I-C11，已生效）
+> **专题结项总览**：[system-design/container-overview.md](system-design/container-overview.md)（七问 + 还剩什么）
+> **阶段实施记录**：[archive/container-compat-stages.md](archive/container-compat-stages.md)（S1~S9 验收判据）
 >
 > 本条目只留「还没做完的」，不再承载设计正文。
 
@@ -187,6 +188,11 @@
    或把 `ContainerFluidData` 改成不可变 + 每 tick 换新对象（成本更高）。
    ⇒ 未定案。真机尚未观察到异常（校验未开），但这是「不该存在的状态」。
 
+3.4 🔮 **实体容器的列数校准入口没做**（2026-10-26 记）—— `/livingitem container register` 与
+   `inspect` 都按**准心方块**解析，船 / 矿车 / 带箱驴骡无法校准。原版四类已有明确布局
+   （`getInventoryColumns()` / 固定 9 列 / 5 列），**特殊第三方容器优先专门联动**，
+   不因界面有按钮就承诺支持。触发条件：出现「原版布局被模组改动、且启发式算错」的实体容器。
+
 4. ♻️ **「客户端列数探测」前提已错，已被设计稿取代**（2026-10-21 更正）——
    见 [buffer/container-menu-introspection-topic.md](buffer/container-menu-introspection-topic.md) §1.1/1.2：
    `Slot.x/y` 是**服务端就有**的信息（`addSlot` 双端跑，写进 `Slot` 对象），
@@ -265,6 +271,17 @@
 
 5.4 ✅ ~~**布局选择共同入口与内建来源收口**~~（2026-10-26 已实施）—— 各形态通过同一实例/规则/学习/内建/启发式顺序，子类只给事实；方块规则范围不扩、家族语义保留，不恢复S1b/S2。现状见 [基础设施 §6.2](system-design/living-item-infrastructure.md#62-simplecontainercontextgetwidth-的宽解析)，过程见 [布局专题 §10.6](buffer/container-layout-resolution.md#106-共同布局选择入口2026-10-26)。
 
+5.5 🔮 **自动学的两条硬局限**（2026-10-25 查证，2026-10-26 记入待办）—— ① 客户端 Screen 可任意重排
+   `Slot.x/y`（fxntstorage 服务端一横排 / 客户端 12 列 + 竖向滚动）⇒ 学到的未必是玩家所见；
+   ② 拿不到容器身份就学不了（NeoForge `SlotItemHandler` 的 `container` 是共享静态空容器）
+   ⇒ fxntstorage 全部 + twilightforest 三件（MasonJar / DryingRack / ChiseledCanopyBookshelf）
+   落在启发式。要治得逐模组注册菜单解析器（约 10 行/模组）。
+   触发条件：真机出现「规则表没收录 + 启发式算错」的具体容器。口径见 [容器七问 §2](system-design/container-overview.md)。
+
+5.6 ⚠️ **真机台账稀疏**（2026-10-26 记）—— 新形态接入清单 11 条的验收多数只有**替身测试**，
+   真机只覆盖了精妙背包一条线（方块 + 物品形态）。替身证明「我对第三方行为的**理解**被守住」，
+   真机才证明「理解**是否成立**」。触发条件：接入下一个新形态容器时，至少按清单跑一遍真机。
+
 6. ✅ **活背包：精妙背包作为活物品功能（2026-10-22 立项 → 10-23 实施并真机验收）** ——
    现象是「精妙背包打开 GUI 里面流体层不渲染」，但**根因不是数据丢失**（数据在物品组件上，
    双向交接已修好），而是**这东西根本不活**：没人在 tick 它 ⇒ 没有 ctx、没有容器级数据、
@@ -288,7 +305,7 @@
    仅 ❌10 世界语义明确不做（归活潜影箱）。
    **未定案 2 项**：嵌套上限放开时机（写死 1，等活潜影箱立项）· handler 获取开销（要实测）。
 
-6.1 🔴 **客户端渲染没有「物品形态」数据源**（2026-10-24 实测定位，**靠后**）——
+6.1 🟡 **客户端渲染没有「物品形态」数据源**（2026-10-24 定位 → **工具通道 2026-10-26 已实施，待真机复验**；信标光束仍未做）——
    四个宿主锚点开关全开后实测：活背包在玩家背包 / 箱子里，活 TNT ✅、活水车 ✅、
    工具主动模式 ✅、信标 buff ✅，但**活工具模型不显示、活信标没有光束**。
    根因是客户端压根不知道背包里有什么：
@@ -300,26 +317,44 @@
    - 服务端也**从没发过对应的包**：`LivingToolHostSync.report` 要 `hostPos != null`
      （方块容器），`BeaconPlayerHostSync.report` 要 `getOwnerPlayer() != null` ——
      物品形态这两个都是 null ⇒ 不是包发错了，是**这条通道整个不存在**。
-   - 更麻烦：**就算让客户端去扫背包，拿到的也是旧的**。背包内容确实存在物品组件里
-     （精妙 `BackpackWrapper.fromStack`），客户端本地读得到；但状态刷不进去：
-     ① 物品形态 ctx 的 `syncSlotToClients` 是 no-op（已知，见 tech §6-#8）；
-     ② 外层装着背包的那个槽位只能靠原版 `broadcastChanges()` 同步，而它用
-     `ItemStack.matches` 比对 —— **检测不到自定义组件变化**（项目已知坑，
-     `syncStateFlip` 的注释有记）⇒ 进度 / 动作组件永远刷不到客户端。
+   - 🔴 **更根本（2026-10-26 查证，推翻本条原判断）**：**客户端根本读不到背包内容**。
+     精妙的内容源是 `BackpackWrapper.BackpackStorageContentsSource` ⇒ `BackpackStorage
+     extends SavedData`（服务端全局，`Map<UUID, CompoundTag>`），物品上只存
+     `STORAGE_UUID` 组件；客户端只有一个 `clientStorageCopy`，由精妙自己的
+     `BackpackContentsPayload` 填充（开 GUI 时 `BackpackContainer` 发 / 悬停 tooltip 时
+     `RequestBackpackInventoryContentsPayload` 请求）。
+     ⇒ 原判断「背包内容存在物品组件里，客户端本地读得到」**是错的** ⇒ **b 档不成立**，
+     「自己看得见」也必须走 S2C。
+   - 原来记的第二个理由（槽位同步用 `ItemStack.matches`、检测不到组件变化）**仍然成立**，
+     但已不是主要障碍 —— 即使组件变化能被检测，背包物品栈本身也没变（内容不在它身上）。
      ⇒ tech §6-#8 的结论要补一条边界：「内容一定处在被同步的槽位里」仍成立，
      **「同步会及时发生」不成立**（组件级变化不触发比对）。
 
    **要补的是三件事，缺一不可**：
    - a. **脏消息要能递出物品形态**（地基）：内层 ctx 写回时把外层装背包的槽位标脏
      + bump 修订，否则客户端读到什么都是旧的。
-   - b. **客户端加第五条数据源**：扫本机背包里的容器物品
-     （`ItemFormContainers.isContainerItem`）本地读内容 —— **不需要发包**
-     （信标判级读背包内 9 列柱高、工具进度读组件，都能本地算）。
+   - b. ~~客户端扫本机背包、本地读内容~~ **不成立**（见上，内容在服务端 SavedData）。
+     客户端仍要加数据源，但数据只能来自 S2C；它**不需要扫背包** —— 包里带位置就够
+     （渲染器只需要「位置 + 渲染状态」，不需要背包物品本身）。
    - c. **远程可见性**：别人背包里的内容别的客户端无从得知 ⇒ 需要一条 S2C。
-     形状照抄 K2，但键用**容器 UUID**（客户端能从物品组件读到同一个 UUID，
-     `ContainerUuids.ofItem` 同源）而不是方块位置。
-   **分档**：第一档 = a + b（自己看得见；别人的背包里仍空，与现状持平、不算回退）；
-   第二档 = c（工作量集中在新通道 + 去重）。
+     形状照抄 K2，但键用**容器 UUID**（去重与身份），**位置取外层 anchor**
+     （`AtBlock` / `AtPlayer` / `AtEntity` —— 内层 ctx 的 `getHostAnchor()` 已经答了）。
+   **分档（2026-10-26 修正）**：原「a + b / 再 c」分档**作废**（b 不成立）。
+     ⇒ **a 与 c 是同一件事的两面**：a 是触发时机（内层写回标脏），c 是通道
+     （按容器 UUID 下发渲染数据）。最小版 = 工具 + 信标共用一条「位置 + 渲染状态」的
+     S2C，客户端按位置渲染、不依赖本地能否找到背包物品。
+
+   **✅ 进度（2026-10-26）**：**工具通道已实施** —— `K2` 宿主键 `BlockPos` → `HostRef`
+   （方块 / 玩家 / 实体），客户端 `HostOrigin` 一处解析宿主坐标；
+   **信标已接（同日）**：`containerUuid` 决定「发不发自己」。**待真机复验**。
+
+   ℹ️ **复制品不防、只给自查**（用户定）：中键复制会连 UUID 一起复制 ⇒ 两个背包共享数据。
+   活背包 tooltip 显示容器 ID 短码（高级提示给完整 UUID + 提示），两个 ID 相同就是复制品，
+   取消活化再重新活化即换新身份。见 [tech §5.6](tech/living-backpack-tech.md)。
+
+   ✅ **同一宿主多背包的覆盖已修（2026-10-26）**：`HostRef` 加 `hostSlot`，
+   来源 `ContainerContext#getHostSlot()`（tick 路径传 `entry.slotIndex()`）。
+   原来两个背包在同一宿主上会撞成一条、后写覆盖先写。见 [tech §5.7](tech/living-backpack-tech.md)。
    ⚠️ 同源缺口（不是 bug，是结构）：客户端辅助 / 可视化三条线
    （`LivingToolPlayerSync.collectAssistTools` / `LivingToolAssist.assistTools` /
    `LivingWeaponAssist`）都只扫 `player.getInventory()` ⇒ **无记忆（被动模式）的

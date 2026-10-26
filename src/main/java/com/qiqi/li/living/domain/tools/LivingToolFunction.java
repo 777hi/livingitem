@@ -1,4 +1,5 @@
 package com.qiqi.li.living.domain.tools;
+import com.qiqi.li.living.container.HostRef;
 import com.qiqi.li.living.components.LivingComponents;
 import com.qiqi.li.living.domain.tools.LivingToolProgress;
 import com.qiqi.li.living.domain.tools.LivingToolMemory;
@@ -119,6 +120,13 @@ public class LivingToolFunction implements LivingItemFunction {
         }
 
         Vec3 origin = resolveOrigin(context);
+
+        // ⚠️ K2 上报必须在 origin 判断【之前】（2026-10-27）：
+        //    客户端辅助挖掘需要知道「背包里有哪些工具」，而辅助**不受 `tool_and_weapon`
+        //    开关控制**（那个开关管的是"借宿主位置做射线起点"，与辅助挖矿是两件事）。
+        //    origin 为 null（开关关 / 无锚点）时命中布尔传 false —— 那两条射线本来也不显示。
+        reportHostTools(context, entries, origin, serverLevel);
+
         if (origin == null) {
             return;
         }
@@ -138,28 +146,6 @@ public class LivingToolFunction implements LivingItemFunction {
 
         long now = level.getGameTime();
 
-        // K2：登记「本容器有活工具」，供客户端同步（容器形态的射线可视化 / 未来的悬浮渲染）。
-        // 只在【方块容器】形态上报 —— 玩家背包与掉落物客户端本来就知道，无需同步。
-        // ⚠️ 判据仍是容器自己的 getBlockPos()（不是锚点）：这条是"我是不是方块容器"的
-        //    身份问题，与"射线从哪射"是两个问题。物品形态没有方块位置 ⇒ 不上报，
-        //    它的客户端可视化归 TODO 6.1-b（第五条数据源）。
-        BlockPos hostPos = context.getBlockPos();
-        if (hostPos != null) {
-            List<LivingToolHostPacket.ToolRay> tools = new ArrayList<>(entries.size());
-            for (SlotEntry entry : entries) {
-                // ⭐ 只同步「打没打中」这个布尔（L48）—— 目标坐标不传：客户端画的是
-                //    记忆射线本身（恒定），传坐标反而会让射线跟着目标跳。
-                //    下面 replayDig / replayUse 会再算一次：扫描很便宜（步进 0.1、几十次
-                //    getBlockState），换来的是回放 API 保持不变、且两侧判据只有一份实现。
-                LivingToolMemory memory = LivingToolMemory.of(entry.stack());
-                tools.add(new LivingToolHostPacket.ToolRay(
-                    entry.stack(),
-                    LivingToolReplay.resolveDigTarget(memory.dig(), origin, hostBlocks, serverLevel) != null,
-                    LivingToolReplay.resolveUseTarget(memory.use(), origin, hostBlocks, serverLevel) != null));
-            }
-            LivingToolHostSync.report(hostPos, tools);
-        }
-
         for (SlotEntry entry : entries) {
             ItemStack tool = entry.stack();
             LivingToolMemory memory = LivingToolMemory.of(tool);
@@ -167,11 +153,19 @@ public class LivingToolFunction implements LivingItemFunction {
                 continue;
             }
 
-            // ⭐ 射线微调（2026-09-30，仅玩家形态生效）：起点锚点 + 朝向跟随。
-            //    容器/掉落物形态 bearer == null ⇒ 配置不生效（origin / memory 原样）。
+            // ⭐ 射线微调（2026-09-30，仅「工具在玩家身上」时生效）：起点锚点 + 朝向跟随。
             //    memory 是【衍生副本】—— 原始记忆组件永不被修改（纯净射线 L15 不破坏）。
-            Player bearer = context instanceof SimpleContainerContext simple && simple.getInventory() != null
-                ? simple.getInventory().player
+            //
+            // ⚠️ 判据是「**锚点是不是玩家**」，不是「ctx 有没有 inventory」（2026-10-27 改）：
+            //    · 玩家背包：anchor = AtPlayer ⇒ 微调 ✓
+            //    · 物品形态容器背在身上：hostAnchor = AtPlayer ⇒ 微调 ✓
+            //      （原来这里判 `instanceof SimpleContainerContext && getInventory() != null`，
+            //       而物品形态的 inventory 恒 null ⇒ 背包里的工具永远从眼睛出、不认配置）
+            //    · 末影箱：锚点是 AtBlock ⇒ 不微调（工具不是从身体发射的）
+            //    · 方块 / 实体容器 ⇒ 不微调
+            //    ⇒ 与 origin 同源（都读 effectiveAnchor），不会出现「起点在胸口、微调按脚下算」。
+            Player bearer = effectiveAnchor(context) instanceof ContainerAnchor.AtPlayer at
+                ? at.player()
                 : null;
             Vec3 entryOrigin = origin;
             if (bearer != null) {
@@ -358,6 +352,69 @@ public class LivingToolFunction implements LivingItemFunction {
     @Nullable
     private static Vec3 resolveOrigin(ContainerContext context) {
         return originOf(effectiveAnchor(context));
+    }
+
+    /**
+     * K2 上报：登记「这个容器里有活工具」，供客户端渲染（射线 / 悬浮模型）与**辅助挖掘**用。
+     *
+     * <p>判据要分两问，别混（`D-container-15` 的同一教训）：</p>
+     * <ol>
+     *   <li><b>方块容器</b> ⇒ 用容器自己的位置（"我是不是方块容器"的身份问题）</li>
+     *   <li><b>物品形态容器</b>（活背包）⇒ 用**宿主锚点**。内容在服务端 SavedData、
+     *       客户端读不到 ⇒ 必须下发（TODO 6.1）</li>
+     * </ol>
+     * <p>玩家背包 / 掉落物不上报（客户端本来就知道内容）。</p>
+     *
+     * <p>⚠️ {@code origin} 为 {@code null} 时仍要上报（见调用点注释）：命中布尔给 {@code false}。</p>
+     */
+    private static void reportHostTools(ContainerContext context, List<SlotEntry> entries,
+                                        @Nullable Vec3 origin, ServerLevel serverLevel) {
+        BlockPos hostPos = context.getBlockPos();
+        HostRef host = hostPos != null
+            ? HostRef.ofBlock(hostPos)
+            : hostRefOf(context.getHostAnchor(), context.getHostSlot());
+        if (host == null) {
+            return;
+        }
+        Set<BlockPos> hostBlocks = origin != null ? hostBlocksOf(context) : Set.of();
+        List<LivingToolHostPacket.ToolRay> tools = new ArrayList<>(entries.size());
+        for (SlotEntry entry : entries) {
+            // ⭐ 只同步「打没打中」这个布尔（L48）—— 目标坐标不传：客户端画的是
+            //    记忆射线本身（恒定），传坐标反而会让射线跟着目标跳。
+            LivingToolMemory memory = LivingToolMemory.of(entry.stack());
+            boolean digLanded = origin != null
+                && LivingToolReplay.resolveDigTarget(memory.dig(), origin, hostBlocks, serverLevel) != null;
+            boolean useLanded = origin != null
+                && LivingToolReplay.resolveUseTarget(memory.use(), origin, hostBlocks, serverLevel) != null;
+            tools.add(new LivingToolHostPacket.ToolRay(entry.stack(), digLanded, useLanded));
+        }
+        LivingToolHostSync.report(host, tools);
+    }
+
+    /**
+     * 宿主锚点 → 同步包里的宿主引用；{@code null} = 没有可上报的宿主。
+     *
+     * <p>⚠️ 只给<b>物品形态容器</b>用（它的 {@code getBlockPos()} 恒 null）。方块容器走
+     * 自己的位置，<b>不经过这里</b> —— 两者回答的是不同问题：一个问「我是不是方块容器」，
+     * 一个问「我借住在谁那里」（`D-container-15` 的原话：参考物，不是坐标）。</p>
+     *
+     * <p>⚠️ {@code hostSlot} 必须带过去：一个宿主能装多个背包，只按宿主做键会撞
+     * ⇒ 后写覆盖先写 ⇒ 客户端只画一个（见 {@code ContainerContext#getHostSlot()}）。</p>
+     */
+    @Nullable
+    private static HostRef hostRefOf(@Nullable ContainerAnchor anchor, int hostSlot) {
+        if (anchor instanceof ContainerAnchor.AtBlock block) {
+            // ⚠️ 必须带 slot：背包放在**箱子里**时锚点是 AtBlock，同一个箱子装两个背包
+            //    仍然会撞（一个箱子一个 pos）⇒ 后写覆盖先写。
+            return HostRef.ofBlock(block.pos(), hostSlot);
+        }
+        if (anchor instanceof ContainerAnchor.AtPlayer playerAnchor) {
+            return HostRef.ofPlayer(playerAnchor.player().getUUID(), hostSlot);
+        }
+        if (anchor instanceof ContainerAnchor.AtEntity entityAnchor) {
+            return HostRef.ofEntity(entityAnchor.entity().getUUID(), hostSlot);
+        }
+        return null;
     }
 
     /**

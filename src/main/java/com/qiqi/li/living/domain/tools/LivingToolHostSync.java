@@ -1,4 +1,5 @@
 package com.qiqi.li.living.domain.tools;
+import com.qiqi.li.living.container.HostRef;
 import com.qiqi.li.living.domain.tools.LivingToolMemory;
 
 import java.util.ArrayList;
@@ -10,12 +11,14 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+import javax.annotation.Nullable;
+
 import com.qiqi.li.living.api.LivingItemManager;
 
-import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
 import com.qiqi.li.living.util.BroadcastDedup;
@@ -55,7 +58,8 @@ public final class LivingToolHostSync {
     public static final double RADIUS = 32.0;
 
     /** 本 tick 收集到的「有活工具的容器」；由 {@link #flush} 取走并清空。 */
-    private static final Map<BlockPos, List<LivingToolHostPacket.ToolRay>> current = new LinkedHashMap<>();
+    private static final Map<HostRef, List<LivingToolHostPacket.ToolRay>> current =
+        new LinkedHashMap<>();
 
     /** 每个玩家上次发出的条目（用于内容去重）。 */
     private static Map<UUID, List<LivingToolHostPacket.Entry>> lastSent = new HashMap<>();
@@ -71,14 +75,16 @@ public final class LivingToolHostSync {
     /**
      * 登记一个宿主容器（由 {@link LivingToolFunction#tick} 每 tick 调用）。
      *
-     * <p>⚠️ 只在<b>方块容器</b>形态上报 —— 玩家背包与掉落物客户端本来就知道，
-     * 不需要同步。</p>
+     * <p>⚠️ 只上报<b>客户端不知道内容</b>的宿主：方块容器、以及物品形态容器
+     * （它的内容在服务端 SavedData，客户端读不到）。玩家背包 / 掉落物里的活工具
+     * 客户端本来就知道，不需要同步。</p>
      *
      * <p>⚠️ 这里<b>必须 copy</b>：直接存引用会导致服务端后续修改它（如扣耐久）
      * 时，{@link #lastSent} 里那份也跟着变 ⇒ 去重比较失效、永远检测不到变化。</p>
      */
-    public static void report(BlockPos pos, List<LivingToolHostPacket.ToolRay> tools) {
-        if (pos == null || tools == null || tools.isEmpty()) {
+    public static void report(HostRef host,
+                              List<LivingToolHostPacket.ToolRay> tools) {
+        if (host == null || tools == null || tools.isEmpty()) {
             return;
         }
         List<LivingToolHostPacket.ToolRay> copy = new ArrayList<>(tools.size());
@@ -86,7 +92,7 @@ public final class LivingToolHostSync {
             copy.add(new LivingToolHostPacket.ToolRay(
                 tool.stack().copy(), tool.digLanded(), tool.useLanded()));
         }
-        current.put(pos.immutable(), copy);
+        current.put(host, copy);
     }
 
     /**
@@ -110,7 +116,7 @@ public final class LivingToolHostSync {
             if (player.level() != level) {
                 continue;   // 只处理本维度的玩家
             }
-            List<LivingToolHostPacket.Entry> mine = filterInRange(all, player);
+            List<LivingToolHostPacket.Entry> mine = filterInRange(level, all, player);
             if (!same(mine, lastSent.get(player.getUUID()))) {
                 player.connection.send(new LivingToolHostPacket(dimension, mine));
             }
@@ -136,7 +142,8 @@ public final class LivingToolHostSync {
             return List.of();
         }
         List<LivingToolHostPacket.Entry> snapshot = new ArrayList<>(current.size());
-        for (Map.Entry<BlockPos, List<LivingToolHostPacket.ToolRay>> e : current.entrySet()) {
+        for (Map.Entry<HostRef, List<LivingToolHostPacket.ToolRay>> e
+                : current.entrySet()) {
             snapshot.add(new LivingToolHostPacket.Entry(e.getKey(), e.getValue()));
         }
         current.clear();
@@ -144,16 +151,39 @@ public final class LivingToolHostSync {
     }
 
     private static List<LivingToolHostPacket.Entry> filterInRange(
-            List<LivingToolHostPacket.Entry> all, ServerPlayer player) {
+            ServerLevel level, List<LivingToolHostPacket.Entry> all, ServerPlayer player) {
         Vec3 at = player.position();
         double r2 = RADIUS * RADIUS;
         List<LivingToolHostPacket.Entry> out = new ArrayList<>();
         for (LivingToolHostPacket.Entry entry : all) {
-            if (Vec3.atCenterOf(entry.pos()).distanceToSqr(at) < r2) {
+            Vec3 pos = resolveHostPos(level, entry.host());
+            if (pos != null && pos.distanceToSqr(at) < r2) {
                 out.add(entry);
             }
         }
         return out;
+    }
+
+    /**
+     * 宿主当前的位置 —— 方块宿主取方块中心，玩家 / 实体宿主**实时查**（它们会动）。
+     *
+     * <p>返回 {@code null} = 这个宿主此刻不该发给任何人（玩家不在本维度 / 实体已卸载）。
+     * 物品形态容器的宿主锚点就是这三种之一（`D-container-15`），所以这条通道
+     * 天然支持「背包在谁身上就跟谁走」。</p>
+     */
+    @Nullable
+    private static Vec3 resolveHostPos(ServerLevel level, HostRef host) {
+        return switch (host.kind()) {
+            case BLOCK -> Vec3.atCenterOf(host.pos());
+            case PLAYER -> {
+                ServerPlayer owner = level.getServer().getPlayerList().getPlayer(host.entityId());
+                yield owner != null && owner.level() == level ? owner.position() : null;
+            }
+            case ENTITY -> {
+                Entity entity = level.getEntity(host.entityId());
+                yield entity != null ? entity.position() : null;
+            }
+        };
     }
 
     /**
@@ -177,7 +207,7 @@ public final class LivingToolHostSync {
         for (int i = 0; i < a.size(); i++) {
             LivingToolHostPacket.Entry x = a.get(i);
             LivingToolHostPacket.Entry y = b.get(i);
-            if (!x.pos().equals(y.pos())) {
+            if (!x.host().equals(y.host())) {
                 return false;
             }
             List<LivingToolHostPacket.ToolRay> xt = x.tools();

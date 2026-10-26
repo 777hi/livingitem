@@ -89,7 +89,6 @@ public final class LivingWeaponAssist {
             return;
         }
 
-        Inventory inventory = player.getInventory();
         ServerLevel level = player.serverLevel();
         Vec3 origin = player.getEyePosition();
         long now = level.getGameTime();
@@ -97,18 +96,15 @@ public final class LivingWeaponAssist {
         active = true;
         boolean any = false;
         try {
-            for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
-                if (slot == inventory.selected) {
-                    continue;   // 主手已由玩家自己挥出（同辅助挖掘的口径）
-                }
+            // 判据收在 CarriedLivingItems：「随身携带」= 物品栏顶层 + 已活化容器物品的内容
+            //（原来只遍历物品栏 ⇒ 背包里的武器不参与补刀，2026-10-27）
+            for (CarriedLivingItems.Carried carried : CarriedLivingItems.of(player,
+                    LivingToolRecorder::isAssistWeapon, true)) {
                 // ⭐ 怪中途死了就停 —— 否则后面的刀【不造成伤害、不触发附魔，却仍扣耐久】
                 if (target.isDeadOrDying()) {
                     break;
                 }
-                ItemStack weapon = inventory.getItem(slot);
-                if (!LivingToolRecorder.isAssistWeapon(weapon)) {
-                    continue;
-                }
+                ItemStack weapon = carried.stack();
 
                 // 临时构造一条「宿主 → 目标」的射线，复用回放（无记忆 ⇒ 现算）
                 LivingToolMemory.AttackMemory temp = LivingToolMemory.AttackMemory.record(
@@ -129,7 +125,8 @@ public final class LivingWeaponAssist {
                     weapon, temp, origin, Set.of(), level, now);
 
                 if (result.outcome() == LivingToolReplay.Outcome.ATTACKED) {
-                    inventory.setItem(slot, result.tool());   // 写回（可能扣了耐久 / 损坏）
+                    // 写回（可能扣了耐久 / 损坏）：容器里的武器要写回容器，不能写物品栏
+                    CarriedLivingItems.writeBack(player, carried, result.tool());
                     any = true;
                 }
             }

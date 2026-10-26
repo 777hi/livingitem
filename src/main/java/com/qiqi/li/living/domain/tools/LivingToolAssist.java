@@ -7,6 +7,7 @@ import java.util.function.Predicate;
 import javax.annotation.Nullable;
 
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.logging.ModLog;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
@@ -94,11 +95,25 @@ public final class LivingToolAssist {
         Player player = event.getEntity();
         BlockState state = event.getState();
 
-        List<ItemStack> helpers = assistTools(player, s -> s.getDestroySpeed(state) > 1.0F);
+        List<CarriedLivingItems.Carried> helpers =
+            assistTools(player, s -> s.getDestroySpeed(state) > 1.0F);
+        // 速度分层（2026-10-27 用户定）：
+        //   · 物品栏顶层 ⇒ 全部相加（既有口径：多把工具叠加）
+        //   · 活背包里   ⇒ **只取最高一把**，不参与相加
+        // 理由：背包容量（27~120）远大于物品栏（36），若也相加就成"塞满铲子 = 倍速挂件"。
+        // ⇒ 背包是"便携工具架"，不是"物品栏扩容"。
+        BlockPos targetPos = event.getPosition().orElse(null);
         float bonus = 0.0F;
-        for (ItemStack stack : helpers) {
-            bonus += digSpeed(player, stack, state, event.getPosition().orElse(null));
+        float bestInContainer = 0.0F;
+        for (CarriedLivingItems.Carried carried : helpers) {
+            float speed = digSpeed(player, carried.stack(), state, targetPos);
+            if (carried.inContainer()) {
+                bestInContainer = Math.max(bestInContainer, speed);
+            } else {
+                bonus += speed;
+            }
         }
+        bonus += bestInContainer;
         if (bonus > 0.0F) {
             event.setNewSpeed(event.getNewSpeed() + bonus);
         }
@@ -184,7 +199,8 @@ public final class LivingToolAssist {
             return;
         }
 
-        List<ItemStack> helpers = assistTools(player, s -> s.isCorrectToolForDrops(state));
+        List<CarriedLivingItems.Carried> helpers =
+            assistTools(player, s -> s.isCorrectToolForDrops(state));
         if (helpers.isEmpty()) {
             return;
         }
@@ -194,8 +210,19 @@ public final class LivingToolAssist {
         BlockEntity blockEntity = event.getBlockEntity();
 
         // 用槽位最靠前的那把重算掉落与经验（E6）
-        ItemStack owner = helpers.get(0);
+        ItemStack owner = helpers.get(0).stack();
         List<ItemStack> recalc = Block.getDrops(state, level, pos, blockEntity, player, owner);
+
+        // ⚠️ 重算为空 ⇒ **不动原掉落**并留痕（I-C6：降级不静默）。
+        //    曾经无条件 clear() ⇒ 一旦重算拿不到东西（工具在背包里时 owner 不是手持物品，
+        //    某些 loot 条件 / 模组钩子会判它不成立），方块就"挖了不掉落"（2026-10-27 真机，
+        //    多把铲子速度变快后更容易撞上）。空结果没有任何理由覆盖掉原版已经算好的掉落。
+        if (recalc.isEmpty()) {
+            ModLog.CONTAINER.warn("[辅助] 重算掉落为空，保留原掉落：state={} owner={} helpers={}",
+                state, owner.getItem(), helpers.size());
+            return;
+        }
+
         event.getDrops().clear();
         for (ItemStack drop : recalc) {
             event.getDrops().add(new ItemEntity(level,
@@ -214,8 +241,10 @@ public final class LivingToolAssist {
         //    ⚠️ 2026-09-21 修正：原来传的是空 lambda ⇒ 第 ③ 条被跳过，工具挖坏时没声音。
         //    📌 槽位取 MAINHAND：背包里的工具没有真正的装备位，主手是最接近的语义；
         //       且该回调只会广播实体事件（音效），不会误动属性 —— 已核源码，安全。
-        for (ItemStack helper : helpers) {
-            helper.hurtAndBreak(1, player, EquipmentSlot.MAINHAND);
+        for (CarriedLivingItems.Carried carried : helpers) {
+            carried.stack().hurtAndBreak(1, player, EquipmentSlot.MAINHAND);
+            // 容器里的工具拿到的是 handler 的栈，就地扣耐久不一定生效 ⇒ 必须写回
+            CarriedLivingItems.writeBack(player, carried, carried.stack());
         }
     }
 
@@ -242,26 +271,22 @@ public final class LivingToolAssist {
     }
 
     /**
-     * 遍历玩家背包，收集所有「可出力」的活工具（{@code A1}：仅玩家背包）。
+     * 收集玩家<b>随身携带</b>的、可出力的活工具。
+     *
+     * <p>判据收在 {@link CarriedLivingItems}：「随身携带」= 物品栏顶层
+     * <b>+ 已活化容器物品（活背包）的内容</b>。原来这里直接遍历物品栏 ⇒ 背包里的工具
+     * 不算"身上的工具"，被动模式在物品形态里完全不辅助（2026-10-27）。</p>
      *
      * <p>⚠️ <b>跳过主手那一格</b>：原版 {@code getDigSpeed} 已经把手持工具算进去了，
      * 再算一次会让"自己持有的活工具"速度翻倍。</p>
      *
-     * <p>按<b>槽位号升序</b>遍历（{@code E2}），故返回列表的第一项就是"最靠前"的那把。</p>
+     * <p>按<b>槽位号升序</b>遍历（{@code E2}），故返回列表的第一项就是"最靠前"的那把；
+     * 容器内容的条目紧跟在其宿主槽位之后。</p>
      */
-    private static List<ItemStack> assistTools(Player player, Predicate<ItemStack> accept) {
-        Inventory inventory = player.getInventory();
-        List<ItemStack> out = new ArrayList<>();
-        for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
-            if (slot == inventory.selected) {
-                continue;   // 主手已由原版计入
-            }
-            ItemStack stack = inventory.getItem(slot);
-            if (LivingToolRecorder.isAssistTool(stack) && accept.test(stack)) {
-                out.add(stack);
-            }
-        }
-        return out;
+    private static List<CarriedLivingItems.Carried> assistTools(Player player,
+                                                               Predicate<ItemStack> accept) {
+        return CarriedLivingItems.of(player,
+            stack -> LivingToolRecorder.isAssistTool(stack) && accept.test(stack), true);
     }
 
     /**

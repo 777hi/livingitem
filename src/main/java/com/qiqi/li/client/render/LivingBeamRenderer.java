@@ -282,7 +282,12 @@ public final class LivingBeamRenderer {
         boolean drew = false;
         for (BeaconPlayerHostPacket.Entry entry : hosts) {
             Player owner = level.getPlayerByUUID(entry.playerId());
-            if (owner == null || owner == mc.player || entry.level() < 1) {
+            if (owner == null || entry.level() < 1) {
+                continue;
+            }
+            // 自己那份：普通形态走本机渲染（更实时）；**物品形态容器的内容客户端读不到**
+            // ⇒ 那条必须照画（2026-10-26：背包背在身上时活信标没有光束）
+            if (owner == mc.player && !entry.fromItemForm()) {
                 continue;
             }
             // 颜色同样本地算世界部分（U3 方案 A）；容器玻璃色随玩家宿主包下发

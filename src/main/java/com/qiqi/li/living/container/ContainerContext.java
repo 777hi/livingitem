@@ -96,19 +96,6 @@ public interface ContainerContext extends SlotInfoProvider, ContainerSync, Conta
     }
 
     /**
-     * 本容器在世界里的<b>参考物</b>（{@link ContainerAnchor}）；没有则 {@code null}。
-     *
-     * <p>默认三选一：有方块位置 ⇒ {@code AtBlock}；有主人 ⇒ {@code AtPlayer}；否则 {@code null}。
-     * <b>实体容器与掉落物必须覆写</b>（它们的 {@code getBlockPos()} 刻意是 null，
-     * 且没有主人 —— 不覆写就会退化成「没有锚点」）。</p>
-     *
-     * <p>⚠️ 物品形态容器（活背包）默认 {@code null} 是<b>正确的</b>：它自己不在世界里，
-     * 要靠宿主告诉它。继承宿主的接线见 docs/buffer/container-anchor-design.md §4（未实施）。</p>
-     *
-     * <p>⚠️ 本方法只回答「是谁/在哪」，<b>不回答「用哪个点」</b>—— 取点由调用方按用途决定
-     * （射线要眼睛、应力要下方、爆炸要中心）。</p>
-     */
-    /**
      * <b>宿主</b>继承来的锚点 —— 只有物品形态容器有值，其余恒 {@code null}。
      *
      * <p>语义：「物品在箱子里，就在箱子那里」。这是<b>物理事实</b>，不是约定。</p>
@@ -125,6 +112,36 @@ public interface ContainerContext extends SlotInfoProvider, ContainerSync, Conta
         return null;
     }
 
+    /**
+     * 本容器住在<b>宿主的第几格</b> —— 只有物品形态容器有值，其余恒 {@code -1}。
+     *
+     * <p>语义：「我这个背包在玩家物品栏的第 10 格」。与 {@link #getHostAnchor()} 配套：
+     * 锚点答「宿主是谁」，本方法答「我在宿主的哪一格」。</p>
+     *
+     * <p>⚠️ <b>为什么需要它</b>：一个宿主能装<b>多个</b>容器（玩家身上放两个活背包）。
+     * 只按宿主做键，两个背包会撞成同一条记录、后写覆盖先写 ⇒ 客户端只渲染出一个
+     * （2026-10-26 发现的 K2 上报覆盖）。槽位是它们的唯一区分：<b>一个槽位只能放一件物品</b>。</p>
+     *
+     * <p>⚠️ 不能用容器 UUID 代替：创造模式中键复制的两个背包<b>共享同一个 UUID</b>
+     * （组件被一起复制），而它们必然在不同槽位。</p>
+     */
+    default int getHostSlot() {
+        return -1;
+    }
+
+    /**
+     * 本容器在世界里的<b>参考物</b>（{@link ContainerAnchor}）；没有则 {@code null}。
+     *
+     * <p>默认三选一：有方块位置 ⇒ {@code AtBlock}；有主人 ⇒ {@code AtPlayer}；否则 {@code null}。
+     * <b>实体容器与掉落物必须覆写</b>（它们的 {@code getBlockPos()} 刻意是 null，
+     * 且没有主人 —— 不覆写就会退化成「没有锚点」）。</p>
+     *
+     * <p>⚠️ 物品形态容器（活背包）默认 {@code null} 是<b>正确的</b>：它自己不在世界里，
+     * 要靠宿主告诉它（继承值见 {@link #getHostAnchor()}，已实施 `D-container-15`）。</p>
+     *
+     * <p>⚠️ 本方法只回答「是谁/在哪」，<b>不回答「用哪个点」</b>—— 取点由调用方按用途决定
+     * （射线要眼睛、应力要下方、爆炸要中心）。</p>
+     */
     @Nullable
     default ContainerAnchor getAnchor() {
         BlockPos pos = getBlockPos();

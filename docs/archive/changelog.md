@@ -15,7 +15,69 @@
 
 ---
 
+## 2026-10-27
+
+- 🧩 **「操作者是谁」判据收束（物品形态的第四个横切）** —— 用户实测：在物品栏调好射线微调后放进活背包，射线仍从眼睛出；被动模式在背包里也完全不辅助。查证发现两者同因：**「操作者」一直用「ctx 有没有 inventory」判断**，而物品形态的 inventory 恒 null（它靠 `IItemHandler` 包装），但背包背在身上时操作者就是那个玩家。
+
+  - **服务端**：`LivingToolFunction` 的 bearer 判据从 `instanceof SimpleContainerContext && getInventory() != null` 改成 **`effectiveAnchor(context) instanceof AtPlayer`** —— 与 origin 同源，不会出现「起点在胸口、微调按脚下算」。末影箱锚点是 `AtBlock` ⇒ 仍不微调（工具不是从身体发射的）。
+  - **客户端**：新增 `HostOrigin#playerOf(level, host)`（`HostRef.PLAYER` ⇒ 那个玩家），模型与射线两条渲染路径都把它当 bearer 传下去。原来容器条目的 `renderStackFromTarget` / `renderOne` 连 bearer 参数都没有。
+  - **被动模式**：`renderOne` 对无记忆的工具直接 `return` ⇒ 背包里的被动工具既不显示也不在环上。现在**自己**背包里的这类工具并入背后环（别人的背包仍不画，与现状持平）。
+  - **「随身携带」定义收成一处**：新增 `CarriedLivingItems` —— 物品栏顶层 + **已活化容器物品的内容（只展开一层）**，返回 `Carried(stack, outerSlot, innerSlot)`（写回需要位置）。`LivingToolAssist` 的辅助挖掘 / 材质门槛、`LivingWeaponAssist` 的补刀全部改用它。**未活化的容器不展开**（活化门槛即性能闸门）；**写回走 `setStackInSlot`**，否则背包里的工具白干活不掉耐久。
+
+  ⇒ 这是「物品形态容器」的**第四个横切**（前三个：内容可见性 / 宿主键 / 取点），已写进 `container-overview.md` §0.1 推论 4，作为以后新形态的参考。
+
+  回归 +5（`CarriedLivingItemsTest`：顶层收 / 展开一层 / 未活化不展开 / 主手跳过 / 写回容器）。1019 全绿；`check_layers` 无新增违规。
+
+- 🐛 **背包里的被动工具「挖得快但挖不下来」（2026-10-27，上一条改动的后遗症）** —— 辅助挖掘跑在 `BreakSpeed`（**双端事件**）：客户端算进度、服务端校验。上一条只把**服务端**的容器内容接上了，客户端还在自己读 `clientStorageCopy`（只在开过 GUI / 请求过 tooltip 后才有）⇒ **客户端不加成、服务端加成** ⇒ 客户端进度条慢、服务端又不会主动破坏 ⇒ 方块回弹。
+
+  - **客户端改从 K2 的 S2C 拿**（`CarriedLivingItems.collectFromHostCache`）：服务端已经把这些工具（含附魔）发过来了 ⇒ 两端同一份集合。客户端补的条目**不可写回**（`outerSlot = -1`，扣耐久只在服务端发生）。
+  - **K2 上报挪到 `origin == null` 判断之前**：辅助**不受** `tool_and_weapon` 开关控制（那开关管的是"借宿主位置做射线起点"）；若上报被开关挡住，开关一关又回到两端不一致。
+  - **多把工具的合并规则定案**（用户 2026-10-27）：速度 = 物品栏顶层**相加** + 背包里**只取最高一把**（背包容量远大于物品栏，全相加就成"倍速挂件"）；掉落按**最靠前**那把（位置优先、玩家可控 —— 用户否掉了"系统自动挑时运最好的那把"：玩家不是笨蛋）；耐久每把各扣。附魔没有"优先级"，只有**作用面**：效率→速度（仅基础速度 >1 时加）、时运/精准→掉落（只看被选中那把）、耐久→耐久。
+
+  1019 全绿；`check_layers` 无新增违规。
+
+- 🐛 **多把铲子时方块「破坏又恢复」（2026-10-27，诊断日志定位）** —— 5 秒限流的诊断日志显示：同一时刻两端 `helpers` 都是 2，但 **客户端 `bonus=16` / 服务端 `bonus=8`**。根因是分层判据写成了 `innerSlot >= 0`，而**客户端从 S2C 补的条目没有位置**（两个槽位都是 -1）⇒ 被判成"物品栏顶层"、参与相加；服务端展开的条目 `innerSlot ≥ 0` ⇒ 正确地"只取最高"。⇒ 客户端快一倍、服务端校验不够 ⇒ 拒绝破坏 ⇒ 方块回弹。
+
+  修法：`Carried` 加**显式** `fromContainer` 字段（**不从槽位推断**），客户端补的条目 `fromContainer=true` + `outerSlot=-1`（参与分层、不可写回）。回归 +1（`s2cEntry_isContainerButNotWritable`）。
+
+  ⚠️ 诊断日志已删。顺带保留一条**保底**：`onBlockDrops` 重算掉落为空时**不再清空原掉落**并打 WARN —— 重算失败没有任何理由毁掉原版已经算好的结果（I-C6 降级不静默）。
+
+  1020 全绿；`check_layers` 无新增违规。
+
 ## 2026-10-26
+
+- 🎒 **活背包 6.1：背包里的活工具开始「看得见」（工具通道先行）** —— 原计划是「a 脏消息 + b 客户端本地读」，**动手前查证发现 b 的前提是错的**：
+
+  精妙的内容源是 `BackpackWrapper.BackpackStorageContentsSource` ⇒ `BackpackStorage extends SavedData`（服务端全局 `Map<UUID, CompoundTag>`），物品栈上只存 `STORAGE_UUID` 组件；客户端只有一份 `clientStorageCopy`，由精妙自己的 `BackpackContentsPayload` 填充（开 GUI 时发 / 悬停 tooltip 时请求）。⇒ **「内容在物品组件里、客户端本地读得到」不成立**，物品形态的任何实时视觉都必须由我们下发 —— **a 与 c 不是两档，是同一件事的两面**（a 是触发时机、c 是通道）。
+
+  实现：把 `K2` 的宿主键从 `BlockPos` 扩成 `HostRef`（`BLOCK` / `PLAYER` / `ENTITY`，与 `ContainerAnchor` 的三种一一对应），**仍然只有这一条通道** —— 另开「物品形态专用包」就是同一件事的两份答案。
+
+  - `LivingToolFunction`：物品形态用**宿主锚点**上报（方块容器仍用自己的位置，两者回答的是不同问题）；新增 `hostRefOf(anchor)`。
+  - `LivingToolHostSync`：`current` 键改 `HostRef`；新增 `resolveHostPos` —— 方块取方块中心，玩家 / 实体**实时查**（会动，坐标一 tick 就过期），查不到就跳过（不发给任何人）。
+  - 客户端新增 `HostEntryOrigin`：一处把宿主解析成世界坐标，**两个渲染器共用**（悬浮模型 + 记忆射线）。返回 null 即跳过，不退化成画在原点。
+  - 回归 +1：宿主本身参与去重（内容一样但宿主从方块换成玩家 / 换了个玩家，必须重发）。
+
+  ⚠️ **信标光束未做** —— 它的等级要算「背包内 9 列柱高」，是另一套算法，单独一轮。**待真机复验**（本轮的验收点：背包里的活工具在世界里出现模型 / 记忆射线，且背包换宿主后位置跟着变）。
+
+  **配套：容器 ID 自查（用户定）** —— 创造模式中键复制会连 `CONTAINER_UUID` 一起复制 ⇒ 两个背包共享数据。拦截所有复制路径不可行，所以**不防、只给玩家可自查的线索**：活背包 tooltip 显示容器 ID 短码（UUID 前 8 位），高级提示（F3+H）给完整 UUID + 「渲染异常时取消活化再重新活化」。两个背包 ID 相同就是复制品。5 个回归钉住「短码固定 8 位（前导零不能丢，否则 substring 越界）/ 未活化不输出空 ID / 复制品短码必须相同 / 重新活化换新身份」。
+
+  **配套：同一宿主多背包不再互相覆盖** —— `K2` 的键原来只到「宿主」，而**一个宿主能装多个背包**（玩家物品栏放两个）⇒ 两次上报撞成一条 ⇒ 后写覆盖先写 ⇒ 客户端只画一个。根因是键的语义不一致：方块形态报「容器自己的位置」（两个箱子不撞），物品形态报「宿主」（两个背包撞）。`HostRef` 加 `hostSlot`（来源 `ContainerContext#getHostSlot()`，tick 路径传 `entry.slotIndex()`）。**不能用 UUID 代替**：中键复制的两个背包共享同一 UUID，而它们必然在不同槽位。回归 +1。
+
+  ⚠️ **审查补漏（同日）**：`hostRefOf` 的 `AtBlock` 分支一开始**把 slot 丢了** —— 玩家身上的两个背包（`AtPlayer`）修好了，但**放在箱子里的**两个背包仍然撞（一个箱子一个 pos）。补 `ofBlock(pos, slot)` 重载 + 回归 `sameBlockHostDifferentSlot_areDistinct`。顺带删掉单参 `ofPlayer` / `ofEntity`（留着就会被误用成 -1，正是会撞的写法）、渲染 key 从 `hashCode()` 改成 `renderKey()`（碰撞会让去重静默少画一个）。
+
+- 🔧 **渲染「宿主键 / 取点 / 可见性」三件收束（2026-10-26，真机反馈驱动）** —— 用户实测三条：模型射线**从脚部出**、移动**不平滑**、活背包在**自己身上**时活信标**没有光束**（放箱子里就有）。查证后是同一个病的三种表现：**每条渲染通道各自回答「宿主是谁 / 内容从哪来 / 画在哪」**，五套实现 × 五种容器形态，形态一多就各自漏。
+
+  1. **可见性规则**（`container-overview.md` §0.1，新增）：内容可见性**由容器形态决定，不由"是不是自己"决定**。物品形态容器的内容在服务端 SavedData ⇒ 一律 S2C、且不区分自己/别人。信标那个 `owner == mc.player → continue` 就是没加这个条件（本机扫描只认物品栏顶层，两条路都没画）。
+  2. **取点**（新增 `client/render/HostOrigin`）：玩家 → **眼睛**、方块 → 中心、实体 → 中心，**一律带 `partialTick`**。原来物品形态用 `Entity#position()` —— 那是**脚底**（AABB 最小角）且**每 tick 才更新** ⇒ 从脚踝出来 + 每 50ms 瞬移一次。本机 / 远程 / 物品形态三条路径现在同调一个函数。
+  3. **宿主键**（`HostRef` 上移到 `living/container/`）：从 `LivingToolHostPacket` 内部提出来，成为所有渲染通道可共用的公共类型（`Kind` + pos/entityId + `hostSlot` + `renderKey()`）。
+
+  ✅ **信标已接上（同日）**：`BeaconPlayerHostPacket.Entry` 加 `containerUuid`（`null` = 普通玩家背包）；`BeaconPlayerHostSync.report` 带上它，**`flush` 只在「普通形态」时跳过自己**（物品形态的内容客户端读不到，必须发给自己）；客户端 `renderRemotePlayerHosts` 的跳过条件同步改。回归 `itemFormBeacon_isSentToSelf`。
+
+  ⚠️ **已知边缘**：同一玩家**同时**有顶层信标和背包信标时，本机渲染画顶层那条、S2C 画背包那条 ⇒ 两条同起点同方向**重叠**（视觉叠加变亮）。与 `BeaconChestHost` 的"同箱两枚取最高"不同源，暂未特殊处理 —— 真机上不常见，等看到再说。
+
+  1014 全绿；`check_layers` 无新增违规。
+
+  1012 全绿；`check_layers` 无新增违规。
 
 - 🧹 **删掉两个零调用者方法**（上一条记的「去留待定」已定：删）：`LivingToolPlayerClientCache#snapshot` / `#toolsOf` 全库零调用；连带 `DimensionScopedCache#snapshot` 也失去唯一使用者，一并删掉（3 行，将来真要用再加）。
 

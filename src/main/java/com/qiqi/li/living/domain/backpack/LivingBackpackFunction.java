@@ -4,11 +4,14 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 import javax.annotation.Nullable;
 
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.items.IItemHandler;
 
@@ -67,6 +70,54 @@ public final class LivingBackpackFunction implements LivingItemFunction {
         return "living_backpack";
     }
 
+    /**
+     * 显示<b>容器 ID</b>（容器 UUID 的前 8 位）—— 让玩家能肉眼比对两个背包是不是同一份身份。
+     *
+     * <h3>为什么需要（2026-10-26，用户定）</h3>
+     * <p>创造模式中键复制会连 {@code CONTAINER_UUID} 组件一起复制 ⇒ 两个背包共享同一份
+     * 容器级数据与缓存键。这不是我们能拦的（原版复制路径不可枚举，精妙对它的背包
+     * 也没防），但玩家需要一条<b>可自查</b>的线索：两个背包 ID 相同 ⇒ 它们是复制品
+     * ⇒ 取消活化再重新活化即可拿到新身份。</p>
+     *
+     * <p>⚠️ 只显示身份，<b>不判断"这是不是复制品"</b> —— 那要遍历全服容器才知道，
+     * 成本高且不可靠。给玩家可比的数字，比给一个可能错的结论好。</p>
+     *
+     * <p>普通提示只显示短码（不占宽度）；完整 UUID 与提示行在<b>高级提示</b>
+     * （F3+H）里 —— 与项目其它高级提示同一条口径。</p>
+     */
+    @Override
+    public void addToTooltip(net.minecraft.world.item.Item.TooltipContext context,
+                             Consumer<Component> tooltipAdder,
+                             TooltipFlag flag,
+                             ItemStack stack) {
+        tooltipAdder.accept(Component.nullToEmpty(""));
+        tooltipAdder.accept(Component.translatable("tooltip.livingitem.backpack.status"));
+
+        UUID uuid = ContainerUuids.ofItem(stack);
+        if (uuid == null) {
+            // 刚活化、还没 tick 过 ⇒ 身份尚未懒创建。不显示 ID 行，免得给一个空值。
+            return;
+        }
+        tooltipAdder.accept(Component.translatable(
+            "tooltip.livingitem.backpack.container_id", shortId(uuid)));
+        if (flag.isAdvanced()) {
+            tooltipAdder.accept(Component.translatable(
+                "tooltip.livingitem.backpack.container_uuid", uuid.toString()));
+            tooltipAdder.accept(Component.translatable(
+                "tooltip.livingitem.backpack.uuid_hint"));
+        }
+    }
+
+    /**
+     * UUID 前 8 位十六进制 —— 够比对，又不占宽度。
+     *
+     * <p>⚠️ 用 {@code %016x} 而不是 {@code Long.toHexString}：后者丢前导零，
+     * 会让 {@code substring(0, 8)} 越界（UUID 高位恰好很小的概率不低）。</p>
+     */
+    private static String shortId(UUID uuid) {
+        return String.format("%016x", uuid.getMostSignificantBits()).substring(0, 8);
+    }
+
     @Override
     public void tick(List<SlotEntry> entries, ContainerContext container, TickContext tick, Level level) {
         if (level == null || level.isClientSide) return;
@@ -110,8 +161,10 @@ public final class LivingBackpackFunction implements LivingItemFunction {
         try {
             // 宿主锚点：「物品在箱子里，就在箱子那里」—— 传下去，但**用不用由功能决定**
             // （目前只有活 TNT 的爆炸点用它；工具/水车/信标若直接用会变成加强玩法）
+            // hostSlot：本背包在宿主容器的第几格 —— 同一宿主放两个背包时，渲染上报靠它区分
+            // （只按宿主做键会后写覆盖先写，见 ContainerContext#getHostSlot）。
             ItemFormContainerContext inner = new ItemFormContainerContext(
-                handler, uuid, level, source.columns(stack), container.getAnchor());
+                handler, uuid, level, source.columns(stack), container.getAnchor(), entry.slotIndex());
             ContainerLivingItemHandler.processContext(inner, level);
         } finally {
             DEPTH.set(DEPTH.get() - 1);

@@ -4,10 +4,12 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import java.util.UUID;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import com.qiqi.li.living.container.HostRef;
 import com.qiqi.li.living.domain.tools.LivingToolHostPacket.Entry;
 import com.qiqi.li.living.domain.tools.LivingToolHostPacket.ToolRay;
 
@@ -46,7 +48,77 @@ class LivingToolHostSyncDedupTest {
 
     /** 包住「一个宿主 + 一把工具」的条目；命中布尔固定，只让被测组件变化。 */
     private static List<Entry> one(ItemStack stack) {
-        return List.of(new Entry(HOST, List.of(new ToolRay(stack, true, false))));
+        return List.of(new Entry(
+            HostRef.ofBlock(HOST), List.of(new ToolRay(stack, true, false))));
+    }
+
+    /**
+     * 宿主本身必须参与去重 —— 内容一模一样、只是宿主换了，也要重发。
+     *
+     * <p>守的是物品形态容器（活背包）：背包从箱子挪到玩家身上（或换了个玩家），
+     * 工具内容没变，但<b>客户端要画的位置变了</b>。宿主不进键 ⇒ 客户端永远停在旧位置。</p>
+     */
+    /**
+     * 同一个箱子里的两个背包（{@code AtBlock} + 不同槽位）也必须是两条条目。
+     *
+     * <p>守的是 2026-10-26 审查抓到的漏：{@code hostRefOf} 的 {@code AtBlock} 分支一开始
+     * <b>把 slot 丢了</b> —— 玩家身上的两个背包（{@code AtPlayer}）修好了，但**放在箱子里的**
+     * 两个背包仍然撞（一个箱子一个 pos）⇒ 后写覆盖先写 ⇒ 只画一个。</p>
+     */
+    @Test
+    @DisplayName("同一个箱子里的两个背包（AtBlock + 不同槽位）⇒ 必须判为不同条目")
+    void sameBlockHostDifferentSlot_areDistinct() {
+        ItemStack stack = tool();
+        List<Entry> slot3 = List.of(new Entry(
+            HostRef.ofBlock(HOST, 3), List.of(new ToolRay(stack, true, false))));
+        List<Entry> slot7 = List.of(new Entry(
+            HostRef.ofBlock(HOST, 7), List.of(new ToolRay(stack, true, false))));
+
+        assertFalse(LivingToolHostSync.same(slot3, slot7),
+            "同一个箱子里两个背包撞成一条 ⇒ 只画一个（AtBlock 分支漏 slot 就是这个症状）");
+    }
+
+    /**
+     * 同一宿主的两个背包（不同槽位）必须是<b>两条</b>条目。
+     *
+     * <p>守的是 2026-10-26 发现的覆盖 bug：{@code current} 是 {@code Map<HostRef, …>}，
+     * 若键只到「宿主」，玩家身上两个活背包两次上报会撞成同一条 ⇒ 后写覆盖先写
+     * ⇒ 客户端只画一个。槽位是它们的唯一区分（一槽只能放一件物品）。</p>
+     *
+     * <p>⚠️ 不能用容器 UUID 区分：中键复制的两个背包共享同一个 UUID，而它们必然在不同槽位。</p>
+     */
+    @Test
+    @DisplayName("同一玩家的两个背包（不同槽位）⇒ 必须判为不同条目（否则只画一个）")
+    void sameHostDifferentSlot_areDistinct() {
+        ItemStack stack = tool();
+        UUID player = UUID.randomUUID();
+        List<Entry> slot10 = List.of(new Entry(
+            HostRef.ofPlayer(player, 10), List.of(new ToolRay(stack, true, false))));
+        List<Entry> slot20 = List.of(new Entry(
+            HostRef.ofPlayer(player, 20), List.of(new ToolRay(stack, true, false))));
+
+        assertFalse(LivingToolHostSync.same(slot10, slot20),
+            "同一宿主不同槽位被判为无变化 ⇒ 两个背包撞成一条 ⇒ 客户端只画一个");
+    }
+
+    @Test
+    @DisplayName("宿主不同（方块 → 玩家）⇒ 必须判为有变化（否则背包换了位置客户端不刷新）")
+    void hostKindChangeIsChange() {
+        ItemStack stack = tool();
+        List<Entry> blockHost = List.of(new Entry(
+            HostRef.ofBlock(HOST), List.of(new ToolRay(stack, true, false))));
+        List<Entry> playerHost = List.of(new Entry(
+            HostRef.ofPlayer(UUID.randomUUID(), 10),
+            List.of(new ToolRay(stack, true, false))));
+
+        assertFalse(LivingToolHostSync.same(blockHost, playerHost),
+            "宿主种类不同却被判为无变化 ⇒ 背包换宿主后客户端不刷新位置");
+
+        List<Entry> otherPlayer = List.of(new Entry(
+            HostRef.ofPlayer(UUID.randomUUID(), 10),
+            List.of(new ToolRay(stack, true, false))));
+        assertFalse(LivingToolHostSync.same(playerHost, otherPlayer),
+            "换了玩家却被判为无变化 ⇒ 两个背包的工具会画在同一个人身上");
     }
 
     @Test

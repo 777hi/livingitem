@@ -142,15 +142,16 @@ public class BeaconFunction implements LivingItemFunction {
                             pyramidLevel, glassColors);
                     }
                 } else if (anchor instanceof ContainerAnchor.AtPlayer at) {
-                    // 玩家宿主：联机广播（自己那份客户端本机渲染，不需要发包）
+                    // 玩家宿主：联机广播
                     // 世界玻璃色不随包下发（U3 方案 A：客户端本地读世界方块即可，含别人的光束）；
                     // 容器玻璃色必须下发（客户端看不到别人背包内容）
                     //
-                    // ⚠️ 物品形态（活背包里的信标）走到这里时，**背的人自己看不到**：
-                    //     客户端本机渲染只扫 mc.player.getInventory()，扫不到背包内容
-                    //     ⇒ 只有身边的人看得见。补自己那条属于 TODO 6.1-b（客户端第五条
-                    //     数据源），本次只把服务端状态修对。
-                    BeaconPlayerHostSync.report(at.player().getUUID(), pyramidLevel,
+                    // ⚠️ containerUuid 决定「这条要不要也发给他自己」：
+                    //     普通形态客户端读得到自己的物品栏（本机渲染更实时）⇒ 不发自己；
+                    //     **物品形态容器的内容在服务端 SavedData**，客户端读不到 ⇒ 必须发自己
+                    //     （2026-10-26 真机：背包背在身上时活信标没有光束，放箱子里却有）。
+                    BeaconPlayerHostSync.report(at.player().getUUID(), context.getContainerUuid(),
+                        pyramidLevel,
                         BeaconGlassColor.scanColumn(slot, context.getSize(), context.getWidth(),
                             context::getItem));
                 }

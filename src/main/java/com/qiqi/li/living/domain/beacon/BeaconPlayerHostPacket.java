@@ -4,6 +4,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+import javax.annotation.Nullable;
+
 import com.qiqi.li.living.api.LivingMod;
 
 import net.minecraft.network.FriendlyByteBuf;
@@ -35,12 +37,28 @@ public record BeaconPlayerHostPacket(
      * 光束）。但<b>容器槽位里的玻璃必须下发</b>——客户端不开别人的背包 GUI 就看不到内容
      * （2026-10-16 用户需求「信标上方槽位的玻璃也影响颜色」的联机侧）。</p>
      *
-     * @param glassColors 该玩家最高等级信标同列向上的玻璃色（自下而上；空 = 无）
+     * @param glassColors   该玩家最高等级信标同列向上的玻璃色（自下而上；空 = 无）
+     * @param containerUuid 这枚信标若在<b>物品形态容器</b>（活背包）里，则是那个容器的 UUID；
+     *                      {@code null} = 普通玩家背包（可见形态）。
+     *                      <p>⚠️ <b>它决定"自己那份要不要下发"</b>：普通形态客户端读得到自己的
+     *                      物品栏（本机渲染更实时）；物品形态的内容在服务端 SavedData，
+     *                      客户端读不到 ⇒ <b>连自己也得靠这个包</b>（2026-10-26 真机：
+     *                      背包背在身上时活信标没有光束）。</p>
      */
-    public record Entry(UUID playerId, int level, List<Integer> glassColors) {
+    public record Entry(UUID playerId, int level, List<Integer> glassColors,
+                        @Nullable UUID containerUuid) {
+
+        public Entry(UUID playerId, int level, List<Integer> glassColors) {
+            this(playerId, level, glassColors, null);
+        }
 
         public Entry(UUID playerId, int level) {
-            this(playerId, level, List.of());
+            this(playerId, level, List.of(), null);
+        }
+
+        /** 这条是否来自物品形态容器（背包里的信标）。 */
+        public boolean fromItemForm() {
+            return containerUuid != null;
         }
     }
 
@@ -64,6 +82,10 @@ public record BeaconPlayerHostPacket(
             buf.writeVarInt(entry.glassColors().size());
             for (int color : entry.glassColors()) {
                 buf.writeVarInt(color);
+            }
+            buf.writeBoolean(entry.containerUuid() != null);
+            if (entry.containerUuid() != null) {
+                buf.writeUUID(entry.containerUuid());
             }
         }
     }
@@ -89,7 +111,8 @@ public record BeaconPlayerHostPacket(
             for (int c = 0; c < colors; c++) {
                 glassColors.add(buf.readVarInt());
             }
-            entries.add(new Entry(playerId, level, glassColors));
+            UUID containerUuid = buf.readBoolean() ? buf.readUUID() : null;
+            entries.add(new Entry(playerId, level, glassColors, containerUuid));
         }
         return new BeaconPlayerHostPacket(dimension, entries);
     }

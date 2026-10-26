@@ -35,6 +35,15 @@ public final class ItemFormContainerContext extends SimpleContainerContext {
     private final ContainerAnchor hostAnchor;
 
     /**
+     * 本背包住在宿主的第几格（tick 路径由 {@code LivingBackpackFunction} 传入；
+     * GUI 反查路径为 {@code -1}）。
+     *
+     * <p>与 {@link #hostAnchor} 配套：锚点答「宿主是谁」，本字段答「我在宿主的哪一格」。
+     * 一个宿主能装多个背包，只按宿主做键会撞（见 {@code ContainerContext#getHostSlot()}）。</p>
+     */
+    private final int hostSlot;
+
+    /**
      * 宿主锚点 —— 「物品在箱子里，就在箱子那里」。
      *
      * <p>⚠️ 与 {@link #getAnchor()} 分开是刻意的：{@code getAnchor()} 答「这个容器<b>自己</b>
@@ -56,12 +65,28 @@ public final class ItemFormContainerContext extends SimpleContainerContext {
      */
     public ItemFormContainerContext(IItemHandler handler, UUID containerUuid, Level level, int columns,
                                     @Nullable ContainerAnchor hostAnchor) {
+        this(handler, containerUuid, level, columns, hostAnchor, -1);
+    }
+
+    /**
+     * @param hostSlot 本背包在<b>宿主容器的第几格</b>；{@code -1} = 不知道（GUI 反查路径）。
+     *                 tick 路径由 {@code LivingBackpackFunction} 传 {@code entry.slot()} ——
+     *                 一个宿主能装多个背包，槽位是它们的唯一区分。
+     */
+    public ItemFormContainerContext(IItemHandler handler, UUID containerUuid, Level level, int columns,
+                                    @Nullable ContainerAnchor hostAnchor, int hostSlot) {
         // 显式键：cuuid_<uuid>，与 ContainerKeys.containerUuidOf 互逆
         super(handler, null, java.util.List.of(), java.util.List.of(), level,
             ContainerKeys.cuuidKey(containerUuid));
         this.containerUuid = containerUuid;
         this.columns = columns;
         this.hostAnchor = hostAnchor;
+        this.hostSlot = hostSlot;
+    }
+
+    @Override
+    public int getHostSlot() {
+        return hostSlot;
     }
 
     /** 内容来源提供的实例列数，选择顺序由共同解析器负责。 */

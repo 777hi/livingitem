@@ -446,7 +446,7 @@ public final class LivingToolModelRenderer {
                 continue;
             }
             renderOne(mc, poseStack, buffers, level, cameraPos, partialTick, now,
-                mc.player.getEyePosition(partialTick), mc.player, stack, "p" + slot, seen);
+                HostOrigin.forPlayer(mc.player, partialTick), mc.player, stack, "p" + slot, seen);
         }
 
         // ② 掉落物
@@ -460,14 +460,29 @@ public final class LivingToolModelRenderer {
             }
         }
 
-        // ③ 方块容器（数据来自 K2 的 S2C 包）
+        // ③ 方块容器 + 物品形态容器（数据来自 K2 的 S2C 包；宿主可能是方块 / 玩家 / 实体）
         for (LivingToolHostPacket.Entry entry :
                 LivingToolHostClientCache.get(level.dimension().location())) {
-            Vec3 origin = Vec3.atCenterOf(entry.pos());
+            Vec3 origin = HostOrigin.of(level, entry.host(), partialTick);
+            if (origin == null) {
+                continue;   // 宿主此刻不可见（玩家不在本维度 / 实体已卸载）
+            }
+            // 操作者：玩家宿主才有（微调 / 朝向跟随要用），方块 / 实体宿主为 null
+            Player bearer = HostOrigin.playerOf(level, entry.host());
             var tools = entry.tools();
             for (int i = 0; i < tools.size(); i++) {
+                ItemStack stack = tools.get(i).stack();
+                // ⭐ 无记忆（被动模式）的工具没有射线，`renderOne` 会直接 return。
+                //   自己背包里的这类工具应当像"身上的工具"一样进【背后环】（2026-10-27）——
+                //   否则它们在物品形态里既没有射线、也不在环上 ⇒ 完全不显示。
+                //   ⚠️ 只收自己的（环是相对某个玩家排布的）；别人的背包仍不画，与现状持平。
+                if (bearer == mc.player && ToolRenderState.of(stack).memory().isEmpty()) {
+                    assistTools.add(stack);
+                    continue;
+                }
                 renderOne(mc, poseStack, buffers, level, cameraPos, partialTick, now,
-                    origin, null, tools.get(i).stack(), "b" + entry.pos().asLong() + "_" + i, seen);
+                    origin, bearer, stack,
+                    "h" + entry.host().renderKey() + "_" + i, seen);
             }
         }
 
@@ -693,7 +708,7 @@ public final class LivingToolModelRenderer {
                                                ClientLevel level, Vec3 cameraPos, float partialTick, long now,
                                                Player owner, UUID playerId, List<ItemStack> tools,
                                                Set<String> seen) {
-        Vec3 origin = owner.getEyePosition(partialTick);
+        Vec3 origin = HostOrigin.forPlayer(owner, partialTick);
         List<ItemStack> attacking = new ArrayList<>();
         List<ItemStack> idle = new ArrayList<>();
         long latest = Long.MIN_VALUE;
