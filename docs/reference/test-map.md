@@ -50,7 +50,7 @@ src/test/java/com/qiqi/li/
 │   ├── ContainerDataSavedDataTest.java         # SavedData 持久层（2026-10-22，活背包）·put→get 往返/save→load 跨重启/空条目不写盘/isSaved=false 拒绝写入/remove(UUID) 只删一个/同 key 后写覆盖/未知 UUID 返回 null/组件注册（8 项）
 │   ├── SimpleContainerContextTest.java        # 容器上下文脏槽同步 + 末影箱稳定键构造器（4 项回归）+ 缓存键推导（世界容器带维度前缀/跨维度同坐标键不同/大箱子两段坐标/背包末影箱裸键/无维度退化）+ 列数推断（启发式/质数退化/未注册类型不借用同 namespace 规则/**Tier 0 来源权威值赢启发式（放置态精妙背包 30 槽→5 列，2026-10-24）/来源不认领⇒照旧回落启发式**）（38 项）
 │   ├── ContainerContextsTest.java             # 边界带共享内核·isSameSlotSpace(槽位数不一致/越界/同空/同物品/一空一非空/异物品) + resolve 末影箱分支(F-1) + isViewingEnderChest 判据 6 项（16 项）
-│   ├── EntityContainersTest.java              # 实体宿主白名单/UUID身份/数据宿主/槽位与鞍偏移/遥测物理键/菜单实体反查/原版车船类型+容量固定布局/非原版或扩容不借固定值/羊驼实例列数/摘箱空存储固定1列（22 项；真实驴菜单入口另由 ContainerMenuInfosTest 守卫，移除旧accessor恒真占位）
+│   ├── EntityContainersTest.java              # 实体宿主白名单/UUID身份/数据宿主/槽位与鞍偏移/遥测物理键/菜单实体反查/原版车船类型+容量固定布局/非原版或扩容不借固定值/羊驼实例列数/摘箱空存储固定1列（24 项；真实驴菜单入口另由 ContainerMenuInfosTest 守卫，移除旧accessor恒真占位）·**三通道过槽位映射**（2026-10-27 审查 P2-1，I-C4/I-C10）：getSlotLimit/isItemValid/simulateInsertItem 曾直接当物理槽 ⇒ 鞍了鞍的驴第一箱格永远写不进（判别测试：鞍位禁插+首槽限流的自定义 handler）
 │   ├── ContainerBoundaryContractTest.java     # 容器边界契约 I-C3/I-C4/I-C7/**I-C11** 守卫：SlotIgnoringHandler(insertItem 丢 slot) + ExtractBlockedHandler(extract 被拦) ⇒ 写回落对槽/物品守恒/模拟真实同源（3 项，S2 后转绿 **+ I-C11：四种容器形态的列数都 ≥ 1（掉落物形态 = 1，它原先白嫖接口默认 9）**
 
 │   ├── GameplayConfigTest.java                 # 玩法开关的默认值（2026-10-24）·spec 能构建/**四个宿主锚点开关默认全关**（哑弹/不发电/不挖矿/不开光）（2 项；⚠️ 只测未加载配置时的静态字段，不测 ModConfigSpec 本身）

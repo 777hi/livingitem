@@ -127,6 +127,27 @@ public class EntityContainerContext extends SimpleContainerContext {
         return physicalSlot - storageOffset;
     }
 
+    // ── 容量/校验/模拟三通道过逻辑↔物理映射（2026-10-27 审查 P2-1，I-C4/I-C10）──
+    // 父类三查询把传入槽直接当 handler 物理槽索引用；马族 storageOffset=1 时逻辑 L
+    // 落在物理 L（= 逻辑 L-1，首格即马鞍）⇒ 鞍了鞍的带箱驴第 1 个箱子格永远无法被
+    // 活漏斗/活流体写入（simulate=0）、getSlotLimit/isItemValid 偏一格。
+    // 「新增前置槽必须一次性枚举全部跨边界点」——这三条是 I-C10 清单漏掉的通道。
+
+    @Override
+    public int getSlotLimit(int logicalSlot) {
+        return super.getSlotLimit(logicalSlot + storageOffset);
+    }
+
+    @Override
+    public boolean isItemValid(int logicalSlot, ItemStack stack) {
+        return super.isItemValid(logicalSlot + storageOffset, stack);
+    }
+
+    @Override
+    public int simulateInsertItem(int logicalSlot, ItemStack stack) {
+        return super.simulateInsertItem(logicalSlot + storageOffset, stack);
+    }
+
     /**
      * 容器级持久数据的宿主 = <b>实体本身</b>（流体 / 电力相位附件）。
      *

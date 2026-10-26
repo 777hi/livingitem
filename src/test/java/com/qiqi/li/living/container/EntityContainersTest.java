@@ -381,4 +381,58 @@ class EntityContainersTest {
             "字段类型决定调用方能否接住 —— 与 accessor 第一版返错类型同一坑");
     }
 
+
+    // ════════════════════════════════════════
+    // 容量/校验/模拟三通道过槽位映射（2026-10-27 审查 P2-1，I-C4/I-C10）
+    // ════════════════════════════════════════
+
+    /** 鞍槽禁插 + 首槽限流的自定义 handler —— 让「查物理 0」与「查物理 1」可判别。 */
+    private static net.neoforged.neoforge.items.IItemHandlerModifiable discriminatingHandler() {
+        return new net.neoforged.neoforge.items.ItemStackHandler(16) {
+            @Override
+            public boolean isItemValid(int slot, ItemStack stack) {
+                return slot != 0;   // 物理 0（马鞍）禁插
+            }
+
+            @Override
+            public int getSlotLimit(int slot) {
+                return slot == 0 ? 1 : 64;   // 物理 0 限 1
+            }
+        };
+    }
+
+    private static com.qiqi.li.living.container.EntityContainerContext donkeyCtx(
+            net.neoforged.neoforge.items.IItemHandlerModifiable handler) {
+        AbstractHorse donkey = mock(AbstractChestedHorse.class);
+        when(donkey.getUUID()).thenReturn(ID);
+        when(donkey.blockPosition()).thenReturn(BOAT_POS);
+        when(donkey.getCapability(net.neoforged.neoforge.capabilities.Capabilities.ItemHandler.ENTITY))
+            .thenReturn(handler);
+        when(donkey.getInventoryColumns()).thenReturn(5);
+        return new com.qiqi.li.living.container.EntityContainerContext(donkey, mock(ServerLevel.class));
+    }
+
+    @Test
+    @DisplayName("simulateInsert(逻辑0) ⇒ 必须查物理 1（旧实现查物理 0 ⇒ 鞍了鞍的驴第一箱格永远写不进）")
+    void simulateInsert_mapsLogicalToPhysical() {
+        var handler = discriminatingHandler();
+        handler.setStackInSlot(0, new ItemStack(Items.STONE, 1));   // 物理 0（鞍位）被占
+        var ctx = donkeyCtx(handler);
+
+        int space = ctx.simulateInsertItem(0, new ItemStack(Items.DIRT, 64));
+
+        assertEquals(64, space,
+            "逻辑 0（第一箱子格，物理 1 空）应可放 64 —— 查到物理 0 的石头会返回 0");
+    }
+
+    @Test
+    @DisplayName("isItemValid/getSlotLimit(逻辑0) ⇒ 过映射查物理 1（鞍位禁插/限流不得误伤第一箱格）")
+    void isItemValidAndSlotLimit_mapLogicalToPhysical() {
+        var ctx = donkeyCtx(discriminatingHandler());
+
+        org.junit.jupiter.api.Assertions.assertTrue(ctx.isItemValid(0, new ItemStack(Items.DIRT)),
+            "逻辑 0 → 物理 1 允许；查到物理 0 会因鞍位禁插而 false");
+        assertEquals(64, ctx.getSlotLimit(0),
+            "逻辑 0 → 物理 1 限 64；查到物理 0 会得到鞍位的 1");
+    }
 }

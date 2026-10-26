@@ -12,6 +12,8 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import com.qiqi.li.living.api.LivingItemManager;
+
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.inventory.PlayerEnderChestContainer;
 import net.minecraft.world.item.ItemStack;
@@ -217,6 +219,10 @@ public class LivingEnderChestAccessor implements SlotAccessor {
             int i = (nextExtractSlot + offset) % slots;
             ItemStack slotStack = cachedInvWrapper.getStackInSlot(i);
             if (slotStack.isEmpty()) continue;
+            // ⚠️ 活物品隔离终检（2026-10-27 审查 P1a）：原版末影箱 GUI 不受限，活物品
+            //    可被玩家放进去；末影箱内容是「货物、不开机」的存放处（§15 定案）——
+            //    直连提取曾照搬 ⇒ 拉取漏斗把它搬进任意容器并就地激活。跳过扫下一槽。
+            if (LivingItemManager.isLivingItem(slotStack)) continue;
 
             int toExtract = Math.min(amount, slotStack.getCount());
             return cachedInvWrapper.extractItem(i, toExtract, true);
@@ -270,6 +276,8 @@ public class LivingEnderChestAccessor implements SlotAccessor {
             int i = (nextExtractSlot + offset) % slots;
             ItemStack slotStack = cachedInvWrapper.getStackInSlot(i);
             if (slotStack.isEmpty()) continue;
+            // ⚠️ 活物品隔离终检（同 directSimulateExtract，2026-10-27 审查 P1a）
+            if (LivingItemManager.isLivingItem(slotStack)) continue;
 
             int toExtract = Math.min(amount, slotStack.getCount());
             ItemStack extracted = cachedInvWrapper.extractItem(i, toExtract, false);
@@ -362,6 +370,14 @@ public class LivingEnderChestAccessor implements SlotAccessor {
             if (!itemId.equals(entry.itemType())) {
                 LOGGER.debug("LivingEnderChestAccessor: extract type mismatch, key={}, expected={}, actual={}",
                     channelKey, entry.itemType(), itemId);
+                continue;
+            }
+            // ⚠️ 活物品隔离终检（2026-10-27 审查 P1b）：路由按注册名比对，同 ID 活物品
+            //    （活TNT vs 普通TNT）可对调源槽骗过类型校验 ⇒ 无线提取活物品。
+            //    拒绝本轮提取（条目留在队里由 validateRoutes/源失效自然收敛）。
+            if (LivingItemManager.isLivingItem(sourceStack)) {
+                LOGGER.debug("LivingEnderChestAccessor: extract skipped living item, key={}, slot={}",
+                    channelKey, entry.sourceSlot());
                 continue;
             }
 

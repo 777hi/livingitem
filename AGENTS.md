@@ -146,7 +146,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1072 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
+**合计测试用例 1074 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -171,6 +171,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-27 | 🛡️ **全项目审查收官：16 域并行深查，真 bug 22 个全修**（分诊口径：只修真 bug，文档↔代码冲突冻结待仲裁）——覆盖活箱子/红石×2/流体/TNT/红电/熔炉酿造/耕地/地图传送/图标/兼容层/工具背包；抓出跨维度抽干、读写槽位键不对称、红电棘轮、落点嵌地等系统性缺陷；审查自引入的守卫 P1 被后续域当场抓修。未修项全量登记 buffer 审查报告；测试 1024→1074 全绿，token ≈90M | `docs/buffer/2026-10-27-全项目审查报告.md` · `docs/TODO.md` 审查收口节 |
 | 2026-10-27 | 🛡️ **审查修复三连（同根：两端对「随身 / 上报」口径不一致）** —— K2 登记表被首维度 flush 抽干（PLAYER 宿主上报在玩家循环、维度循环之前 ⇒ 地狱/末地背包条目全丢；照 `beginTick` 铁律改：tick 开头清、flush 只读、**维度入条目**显式隔离）；**末影箱定案「存放处」**（`getAnchor` 显式 null，不再默认退化 AtPlayer；内容=货物不开机：工具停/TNT 哑弹/信标不开光，本体路由不受影响）；`skipMainHand` 只跳工具不跳容器展开（手持背包两端同源）。+写回守卫（I-C6 留痕）/ K2 解码 clamp。回归 +12（1036 全绿，速度分层 `assistBonus` 补上回归），**待真机复验** | `docs/tech/living-tool-tech.md` §12.6 · `docs/tech/living-ender-chest-tech.md` §15 · `docs/decisions.md` D-container-18 |
 | 2026-10-27 | 📖 **活信标 tooltip 喂锭引导强化** —— 矿石→效果映射此前只能试出来，且唯一规则行喂出第一根锭后就消失。账本后新增**待喂入菜单**（未配置矿石 → 效果，颜色三态：可喂绿 / 锁定暗灰 `需 L{n}` / 遥测缺失灰 `L{n} 解锁` 不猜；5 槽全配自然消失）；满级未加倍条目追加**升 II 行动指令**（非满级不提示——不可操作的不显示）；`config_empty` 喂法动作提为金色。未激活折叠行不动（U17）。回归 +4（`FeedSuggestions` 含枚举序档位非降序契约） | `docs/tech/living-beacon-tech.md` §2.6.1 |
 | 2026-10-27 | 🧩 **「操作者是谁」判据收束** —— 物品形态的 `inventory` 恒 null，而「操作者」一直用它判断 ⇒ 射线微调不认配置、被动模式在背包里不辅助。改成「锚点是不是 `AtPlayer`」/ `HostRef.PLAYER`；「随身携带」收进 `CarriedLivingItems`（顶层 + 已活化容器内容一层，**带写回位置**）；**双端事件两端同源**（客户端从 K2 拿，不能自己读容器）；**合并规则**：速度=顶层相加+背包只取最高、掉落按最靠前、耐久各扣；分层判据用**显式 `fromContainer`**（客户端 S2C 条目没有槽位，从槽位推断会让两端速度差一倍）。回归 +6，**待真机复验** | `docs/system-design/container-overview.md` §0.1 · `docs/tech/living-backpack-tech.md` §5.8 |
@@ -180,7 +181,6 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-10-26 | 🧹 **三个同步器补齐「逐维度 flush 互清去重表」** —— `LivingToolPlayerSync` / `BeaconChestHost` / `BeaconPlayerHostSync` 仍在照抄 10-23 在 K2 修掉的写法 ⇒ **每玩家每 tick 一个包**（单人也中，三份拷贝各一份）。合并口径抽成 `BroadcastDedup#merge` 四调用点共用，测试只留一份并改成真测覆盖；协议零变化 | `docs/buffer/render-state-broadcast.md` §7 |
 | 2026-10-26 | 🎬 **活工具在方块容器里「有模型、不转圈」** —— `K2` 去重键只比「物品种类 + 记忆」，动画状态（进度 / 动作 / 总 tick）翻转不触发重发，而客户端画的是**本包带来的** ItemStack 副本 ⇒ 容器形态从模型上线（`028ffcb`）起就没通过动画。键补上三者、耐久仍不比；5 个回归把「少比一个 ⇒ 没动画 / 多比一个 ⇒ 刷包」两个方向都钉住，**待游戏验收** | `docs/tech/living-tool-tech.md` §11.5 · §12.2 |
 | 2026-10-26 | ℹ️ **容器布局共同链收口**：驴无 MenuType 查询修复；各形态统一实例/方块规则/学习/内建/启发式选择，原版默认不再游离于子类，来源与列数同源。原版修复与收口净增16个回归（984→1000）；方块规则范围不扩、不改玩法，**待真机复验** | `docs/system-design/living-item-infrastructure.md` §6.2 · `docs/buffer/container-layout-resolution.md` §10.6 |
-| 2026-10-25 | 🔧 **容器解析审查闭环**：补全连续槽号与歧义保存失败重试，诊断复用实际上下文、生效值与规则分列；13 个回归用例含门禁/诊断负向验证，不改解析优先级、不恢复收编线 | `docs/system-design/living-item-infrastructure.md` §6 · `docs/buffer/container-layout-resolution.md` §10.5 |
 ## 提交前必跑（2026-10-20 定）
 
 ```bash
