@@ -102,7 +102,8 @@ src/test/java/com/qiqi/li/
 │   ├── WaxedCopperOscillatorIT.java           # 振荡器→发电全链路集成（5 项）
 │   └── WaxedCopperCouplingIT.java             # 耦合链集成：多跳中继+防回环（3 项）
 ├── living/domain/chest/
-│   └── LivingChestFunctionTest.java           # 取消活化堆叠倍数返还（6 项）
+│   ├── LivingChestFunctionTest.java           # 取消活化堆叠倍数返还（6 项）
+│   └── LivingChestInsertByteGateTest.java     # 16KB 字节上限插入点精确把关（2026-10-27 审查 P1）·三参 insert 曾直接丢弃 registries 转调估算（每槽 64B ⇒ 27 槽 1728B 永远够不到上限）⇒ 漏斗/能力面可无限塞高 NBT 物品 / 精确把关：20 本成书(≈1KB/本)+空槽 ⇒ 三参拒绝且内容不动 / 未超限正常收 / **估算路径缺口被钉住**（null registries 仍放行 —— 能力面拿不到 level 的已知残留，转红即已收口）（3 项）
 ├── living/domain/beacon/
 │   ├── BeaconFunctionTest.java                 # 宿主判据(协议级 LidBlockEntity)·原版箱/末影箱⇒true/木桶/潜影盒⇒false/null 安全（3 项）
 │   ├── BeaconPyramidTest.java                 # 1D 金字塔判级·各级精确目标/全0/null不足长/差一块掉档/多堆不亏/嵌套单调/L3 缺一列仍 L2/边界钳制封顶/单列无法激活/距下一级差额/范围公式/合计 9·34·83·164（19 项）
@@ -167,4 +168,5 @@ src/test/java/com/qiqi/li/
     ├── GuiInteractionPacketTest.java          # 目标槽判据·空槽可解析（活桶汲/倒包的回归守卫）/活物品可解析/非活物品不可解析（3 项）
     └── LivingItemSyncPacketTest.java          # 运行时同步包编解码往返（档 2 安全网）·三组字段往返/空数据/多槽混合/两种键形态/容器种类 kind 往返(背包·末影箱·世界·掉落物)/子记录哨兵/未登记 id 报错（14 项）
     └── LivingItemRuntimeSyncTest.java         # （门控判定已迁 ContainerViewersTest）+ **物品形态容器按菜单锚点发包（真机 tooltip 不显示容器信息的回归）**（4 项）
+    └── ServerPacketHandlerInventorySafetyTest.java  # 满背包不丢物（2026-10-27 审查 P0）·配方书 Shift 取出活箱子物品曾直接丢栈 ⇒ 背包满时静默销毁 / 满 ⇒ 余量掉落（Player#drop 原版入口，落副本+清零）/ 空 ⇒ 全收不掉 / 部分空间 ⇒ 合并后余量掉落（3 项）
 ```

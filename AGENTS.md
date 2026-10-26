@@ -21,7 +21,7 @@
 - **活物品隔离**：活物品不会被其他活物品当作普通物品处理（不传输、不熔炼、不作为燃料）
 - **GUI交互系统**：声明式规则 + 统一拦截 + 服务端处理
 - **活物品图标系统**：组件化声明式配置，新增活物品图标无需编写 Java 类
-- **活箱子**：堆叠数 × 27 槽虚拟箱子，UUID 映射 + LRU 缓存 + 磁盘持久化
+- **活箱子**：27 槽虚拟箱子（原版 `CONTAINER` 组件存储），16KB 字节上限（插入点精确把关），count>1 锁定存取
 - **活末影箱**：无线传输路由器，路由模式（共享黑板）+ 直连模式（绑定玩家末影箱）
 - **活水车**：应力产生类活物品，软依赖 Create，3D 旋转渲染
 - **活地图传送**：活末影珍珠 + 活地图，三种场景 + UV 精确传送 + 跨维度 + 载具 + Sable 飞艇兼容
@@ -49,7 +49,7 @@ LivingItemFunction.tick() (各功能类自行实现 tick 逻辑)
     ├── LivingHopperFunction     → TransferPipeline (统一传输入口)
     ├── LivingEnderChestFunction → LivingEnderChestData
     ├── LivingWaterWheelFunction → LivingWaterWheelData
-    ├── LivingChestFunction      → InternalStorageComponent (旧架构)
+    ├── LivingChestFunction      → 原版 CONTAINER 组件（27 槽 + 16KB 字节上限）
     ├── LivingEnderPearlFunction → (纯工具类，无 DataComponent)
     ├── LivingRedstoneFunction   → LivingRedstoneData
     ├── LivingRedstoneTorchFunction → LivingRedstoneTorchData
@@ -146,7 +146,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1036 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
+**合计测试用例 1042 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），

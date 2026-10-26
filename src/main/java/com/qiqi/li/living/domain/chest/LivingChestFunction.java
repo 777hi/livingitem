@@ -154,7 +154,16 @@ public class LivingChestFunction implements LivingItemFunction {
         return itemToInsert.isEmpty();
     }
 
+    /**
+     * 带注册表的插入 —— 字节上限用<b>精确 NBT 体积</b>把关。
+     *
+     * <p>⚠️ 估算路径(两参,{@code registries == null})每非空槽固定计 64B,
+     * 27 槽最多 1728B、永远碰不到 16KB 上限 ⇒ 传输路径曾被它放行任意高 NBT 物品
+     * (2026-10-27 审查 P1)。三参版曾被直接丢弃 registries 转调两参 —— 现在真正把关;
+     * {@code registries == null} 时退回估算路径(能力面 handler 拿不到 level 的已知缺口)。</p>
+     */
     public static boolean insertItem(ItemStack chestStack, ItemStack itemToInsert, net.minecraft.core.HolderLookup.Provider registries) {
+        if (registries != null && !canInsert(chestStack, itemToInsert, registries)) return false;
         return insertItem(chestStack, itemToInsert);
     }
 

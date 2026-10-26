@@ -256,8 +256,27 @@ public class ServerPacketHandler {
 
         if (extracted.isEmpty()) return;
 
-        player.getInventory().add(extracted);
+        addToInventoryOrDrop(player, extracted);
         player.containerMenu.broadcastChanges();
+    }
+
+    /**
+     * 收进玩家背包;放不下的余量<b>掉落在玩家脚边</b>。
+     *
+     * <p>⚠️ 原版 {@code Inventory#add} 的余量<b>留在传入栈里</b> —— 直接丢栈等于静默销毁
+     * (2026-10-27 审查 P0:配方书 Shift 取出 + 满背包即触发,恰是拿活箱子当仓库的典型场景)。
+     * 掉落走原版 {@code Player#drop}(死亡掉落同款官方入口)。包级可见供单测钉住「满背包不丢物」。</p>
+     */
+    static void addToInventoryOrDrop(ServerPlayer player, ItemStack stack) {
+        if (stack.isEmpty()) return;
+        player.getInventory().add(stack);
+        if (!stack.isEmpty()) {
+            // 原版 drop 只把栈<b>拷贝</b>进掉落实体、不消耗传入栈 ⇒ 落地后清零,
+            // 代表所有权移交完成(调用方不得再对余量做二次处理)。
+            // 传副本:drop 内部还会再拷一次,无害;但保证「掉出去的」与「调用方手里清零的」各是各的
+            player.drop(stack.copy(), false);
+            stack.setCount(0);
+        }
     }
 
     private static void handleDepositFromSlot(ServerPlayer player, LivingChestAccessPacket packet) {
@@ -297,7 +316,7 @@ public class ServerPacketHandler {
         }
 
         if (!inserted) {
-            player.getInventory().add(toInsert);
+            addToInventoryOrDrop(player, toInsert);
         }
 
         player.containerMenu.broadcastChanges();

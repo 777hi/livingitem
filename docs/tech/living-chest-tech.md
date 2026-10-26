@@ -54,10 +54,10 @@
 | 规则 / 能力 | 守卫 |
 |---|---|
 | 1 配置 / 衍生分离 | §2 存储系统 · §3 核心数据流 |
-| 2 27 槽 + 字节上限 | `LivingChestFunctionTest` · §附录「验证清单」基础存储节 |
+| 2 27 槽 + 字节上限 | `LivingChestInsertByteGateTest`（插入点精确把关 + 估算路径缺口钉住）· `ServerPacketHandlerInventorySafetyTest`（GUI 取出满背包不丢物，2026-10-27 审查补） |
 | 3 取消活化掉内容 | `ActivationHookTest`（钩子派发）· §8 修复记录 |
 | 4 堆叠守恒 | §8（「堆叠活箱子取消活化只返还一份内容」修复记录） |
-| 5 与漏斗过滤交互 | `HopperFilterSyncTest` · `CrossContainerTransfer*Test` |
+| 5 与漏斗过滤交互 | ⚠️ 无直接守卫（2026-10-27 审查列为测试缺口；cargo 隔离由 `SlotInteractionCargoGateTest` 钉住） |
 
 ---
 
@@ -186,6 +186,13 @@ public static int getCurrentByteUsage(ItemStack chestStack, HolderLookup.Provide
 }
 ```
 
+**把关点（2026-10-27 审查收口）**：字节门在**插入点**用精确体积把关 ——
+`insertItem(三参)` 用 `canInsert(…, registries)`（GUI 存入与漏斗 `SlotAccessor` 都传注册表）；
+`LivingChestAccessor.simulateInsert` 与 insert **同源**（曾用快照估算旗标，模拟说能收、真实拒绝，
+落到 rollback+WARN 兜底）。⚠️ **已知缺口**：无 registries 的估算路径每非空槽固定计 64B
+（27 槽最多 1728B，永远碰不到上限）——NeoForge 能力面 handler（第三方互操作）拿不到 level，
+只能走估算门；等能力面上下文可取时收口（`LivingChestInsertByteGateTest` 第三例钉住现状）。
+
 ---
 
 ## 3. 核心数据流
@@ -196,7 +203,7 @@ public static int getCurrentByteUsage(ItemStack chestStack, HolderLookup.Provide
 用户操作: 往活箱子放入钻石
        │
        ▼
-LivingChestFunction.insertItem(chestStack, diamondStack)
+LivingChestFunction.insertItem(chestStack, diamondStack, registries)
        │
        ├─ 1. 前置检查
        │     chestStack.getCount() > 1 → 拒绝（堆叠数 >1 不允许操作）
@@ -287,8 +294,10 @@ grep -n "processContainer\|processEntityContainers\|processContainerAt" src/main
 # ② 活箱子自己的 tick 是空实现：
 grep -n "public void tick" -A 3 src/main/java/com/qiqi/li/living/domain/chest/LivingChestFunction.java
 
-# ③ 唯一像"活箱子容器适配器"的 LivingChestItemHandler 是死代码（零构造点 = 无任何通道）：
-grep -rn "new LivingChestItemHandler" src/main   # 期望：无命中
+# ③ LivingChestItemHandler 是第三方互操作面（NeoForge ItemHandler 能力，2026-10-27 审查更正：
+#    它不是死代码 —— LivingItem#onRegisterCapabilities 把它注册到 Items.CHEST 的
+#    Capabilities.ItemHandler.ITEM 上）。⚠️ 该面拿不到 level ⇒ 字节门走估算路径（见 §2.3 已知缺口）：
+grep -rn "LivingChestItemHandler" src/main/java/com/qiqi/li/LivingItem.java   # 期望：能力注册命中
 ```
 
 ```java
@@ -546,7 +555,10 @@ new TickContext(context)
 
 **问题**：两个堆叠的活箱子可能因 `isSameItemSameComponents` 在不同 tick 中返回不同结果导致数据分裂。
 
-**修复**：活箱子在 `getIgnoredComponentTypes()` 中返回运行时组件类型，确保 `ItemStackMixin` 比较时忽略运行时差异。
+**修复（现行语义，2026-10-27 审查更正）**：`getIgnoredComponentTypes()` 返回 `Set.of()`（不忽略任何组件）
+—— 数据分裂由两条正交规则防住：**堆叠要求组件相同**（§0 规则 4，CONTAINER 不同的箱子本就不堆叠）+
+**count>1 锁定存取**（堆叠态只许取消活化返还 N 份，不许读写内容）。曾有「忽略运行时组件类型」的
+旧方案描述，与现实现不符。
 
 ### 8.2 配方书翻页时物品不更新
 

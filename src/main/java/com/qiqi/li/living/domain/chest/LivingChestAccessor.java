@@ -102,7 +102,16 @@ public class LivingChestAccessor implements SlotAccessor {
 
     @Override
     public int simulateInsert(ItemStack stack) {
-        if (chestSnap.isFull() || chestSnap.isByteFull()) {
+        if (chestSnap.isFull()) {
+            return 0;
+        }
+        // ⚠️ 字节门与 insert 同源(精确 NBT 体积)—— 快照里的 isByteFull 来自估算路径
+        //    (每槽固定 64B,恒 false),用它会让模拟说「能收」而真实拒绝,落到 rollback+WARN
+        //    兜底(2026-10-27 审查 P3-1)。registries 为 null 时退回快照旗标(能力面同款缺口)。
+        HolderLookup.Provider registries = getRegistries();
+        if (registries != null
+                ? !LivingChestFunction.canInsert(chestStack, stack, registries)
+                : chestSnap.isByteFull()) {
             return 0;
         }
 
