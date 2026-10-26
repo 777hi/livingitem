@@ -3,12 +3,15 @@ package com.qiqi.li.living.domain.beacon;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
+import com.qiqi.li.living.util.BroadcastDedup;
 import com.qiqi.li.living.util.StaticCacheRegistry;
 
 import net.minecraft.core.BlockPos;
@@ -80,7 +83,7 @@ public final class BeaconChestHost {
     private static final Map<String, List<BlockPos>> activeLids = new LinkedHashMap<>();
 
     /** 每个玩家上次发出的条目（内容去重）。 */
-    private static final Map<UUID, List<BeaconHostPacket.Entry>> lastSent = new HashMap<>();
+    private static Map<UUID, List<BeaconHostPacket.Entry>> lastSent = new HashMap<>();
 
     static {
         // static 缓存清理：登记与 clear() 同文件（见 StaticCacheRegistry 类注释「登记位置」）
@@ -180,7 +183,13 @@ public final class BeaconChestHost {
         current.clear();
         ResourceLocation dimension = level.dimension().location();
         Map<UUID, List<BeaconHostPacket.Entry>> next = new HashMap<>();
-        for (ServerPlayer player : level.getServer().getPlayerList().getPlayers()) {
+        // 全服在线玩家（⚠️ 不是本维度的：merge 用它淘汰离线记录，用本维度会误删其它维度玩家）
+        List<ServerPlayer> players = level.getServer().getPlayerList().getPlayers();
+        Set<UUID> online = new HashSet<>(players.size());
+        for (ServerPlayer p : players) {
+            online.add(p.getUUID());
+        }
+        for (ServerPlayer player : players) {
             if (player.level() != level) {
                 continue;   // 只处理本维度的玩家
             }
@@ -195,8 +204,8 @@ public final class BeaconChestHost {
             }
             next.put(player.getUUID(), mine);
         }
-        lastSent.clear();
-        lastSent.putAll(next);
+        // ⚠️ 逐维度调用 + 一张全服表 ⇒ 不能整体 clear（见 BroadcastDedup）
+        lastSent = BroadcastDedup.merge(lastSent, next, online);
     }
 
     /** 清空全部状态（服务端关闭时调用，避免跨存档残留）。 */

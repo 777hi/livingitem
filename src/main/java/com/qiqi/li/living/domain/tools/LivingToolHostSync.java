@@ -19,6 +19,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
+import com.qiqi.li.living.util.BroadcastDedup;
 import com.qiqi.li.living.util.StaticCacheRegistry;
 
 /**
@@ -58,7 +59,7 @@ public final class LivingToolHostSync {
     private static final Map<BlockPos, List<LivingToolHostPacket.ToolRay>> current = new LinkedHashMap<>();
 
     /** 每个玩家上次发出的条目（用于内容去重）。 */
-    private static final Map<UUID, List<LivingToolHostPacket.Entry>> lastSent = new HashMap<>();
+    private static Map<UUID, List<LivingToolHostPacket.Entry>> lastSent = new HashMap<>();
 
     static {
         // static 缓存清理：登记与 clear() 同文件（见 StaticCacheRegistry 类注释「登记位置」）
@@ -121,29 +122,8 @@ public final class LivingToolHostSync {
         // 三个），整体清会把**其它维度玩家**的记录也抹掉 ⇒ 他们下一 tick 的
         // `lastSent.get(uuid)` 变 null ⇒ `same` 判「有变化」⇒ 每 tick 重发一个空包。
         // 2026-10-23 日志实录：单条 INFO 刷了 3803 次（玩家只有一个，包却每 tick 都在发）。
-        // ⇒ 只淘汰离线玩家；换维度的记录由那一维度自己的 flush 覆盖（见 mergeRecords）。
-        Map<UUID, List<LivingToolHostPacket.Entry>> merged = mergeRecords(lastSent, next, online);
-        lastSent.clear();
-        lastSent.putAll(merged);
-    }
-
-    /**
-     * 合并去重记录：本维度本 tick 的 {@code next} 覆盖旧值，<b>其它维度的记录原样保留</b>，
-     * 已离线的玩家记录淘汰。
-     *
-     * <p>抽成纯函数是为了钉住 {@link #flush} 里那条不变量 —— 「保留其它维度的记录」
-     * 长得像多余的谨慎，实际是「逐维度 flush」与「一张全服表」之间的必要粘合。
-     * 改回 {@code clear()} 不会报错、不会有测试失败（除非有本节测试），
-     * 只会让每个玩家每 tick 多收一个空包。</p>
-     */
-    static Map<UUID, List<LivingToolHostPacket.Entry>> mergeRecords(
-            Map<UUID, List<LivingToolHostPacket.Entry>> previous,
-            Map<UUID, List<LivingToolHostPacket.Entry>> next,
-            Set<UUID> online) {
-        Map<UUID, List<LivingToolHostPacket.Entry>> merged = new HashMap<>(previous);
-        merged.keySet().retainAll(online);   // 淘汰离线 / 离服玩家
-        merged.putAll(next);                 // 本维度本 tick 的结果覆盖旧值
-        return merged;
+        // 合并口径抽在 BroadcastDedup（四个同步器共用一份 —— 抄四份就会只修一份）。
+        lastSent = BroadcastDedup.merge(lastSent, next, online);
     }
 
     /** 清空全部状态（服务端关闭时调用，避免跨存档残留）。 */

@@ -2,11 +2,14 @@ package com.qiqi.li.living.domain.beacon;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
+import com.qiqi.li.living.util.BroadcastDedup;
 import com.qiqi.li.living.util.StaticCacheRegistry;
 
 import net.minecraft.resources.ResourceLocation;
@@ -50,7 +53,7 @@ public final class BeaconPlayerHostSync {
     private static final Map<UUID, List<Integer>> currentGlass = new LinkedHashMap<>();
 
     /** 每个观察者上次收到的条目（内容去重）。 */
-    private static final Map<UUID, List<BeaconPlayerHostPacket.Entry>> lastSent = new HashMap<>();
+    private static Map<UUID, List<BeaconPlayerHostPacket.Entry>> lastSent = new HashMap<>();
 
     static {
         StaticCacheRegistry.onServerStop(s -> BeaconPlayerHostSync.clear());
@@ -96,6 +99,11 @@ public final class BeaconPlayerHostSync {
         }
         var playerList = level.getServer().getPlayerList();
         List<ServerPlayer> players = playerList.getPlayers();
+        // 全服在线玩家（⚠️ 不是本维度的：merge 用它淘汰离线记录，用本维度会误删其它维度玩家）
+        Set<UUID> online = new HashSet<>(players.size());
+        for (ServerPlayer p : players) {
+            online.add(p.getUUID());
+        }
 
         // ① 全服登记（⚠️ 不在此清空——跨维度铁律见类注释，清理由 beginTick() 负责）
         List<BeaconPlayerHostPacket.Entry> all = new ArrayList<>(current.size());
@@ -127,8 +135,8 @@ public final class BeaconPlayerHostSync {
             next.put(viewer.getUUID(), mine);
         }
 
-        lastSent.clear();
-        lastSent.putAll(next);
+        // ⚠️ 逐维度调用 + 一张全服表 ⇒ 不能整体 clear（见 BroadcastDedup）
+        lastSent = BroadcastDedup.merge(lastSent, next, online);
     }
 
     /** 清空全部状态（服务端关闭时调用，避免跨存档残留）。 */

@@ -3,11 +3,14 @@ import com.qiqi.li.living.domain.tools.LivingToolMemory;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.util.BroadcastDedup;
 
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -40,7 +43,7 @@ public final class LivingToolPlayerSync {
     public static final double RADIUS = 32.0;
 
     /** 每个观察者上次收到的条目（用于内容去重）。 */
-    private static final Map<UUID, List<LivingToolPlayerPacket.Entry>> lastSent = new HashMap<>();
+    private static Map<UUID, List<LivingToolPlayerPacket.Entry>> lastSent = new HashMap<>();
 
     private LivingToolPlayerSync() {
     }
@@ -56,6 +59,11 @@ public final class LivingToolPlayerSync {
         }
         var playerList = level.getServer().getPlayerList();
         List<ServerPlayer> players = playerList.getPlayers();
+        // 全服在线玩家（⚠️ 不是本维度的：merge 用它淘汰离线记录，用本维度会误删其它维度玩家）
+        Set<UUID> online = new HashSet<>(players.size());
+        for (ServerPlayer p : players) {
+            online.add(p.getUUID());
+        }
 
         // ① 本维度所有玩家的"工具清单"（内容为空的不进包）
         List<LivingToolPlayerPacket.Entry> all = new ArrayList<>();
@@ -93,8 +101,8 @@ public final class LivingToolPlayerSync {
             next.put(viewer.getUUID(), mine);
         }
 
-        lastSent.clear();
-        lastSent.putAll(next);
+        // ⚠️ 逐维度调用 + 一张全服表 ⇒ 不能整体 clear（见 BroadcastDedup）
+        lastSent = BroadcastDedup.merge(lastSent, next, online);
     }
 
     /** 清空全部状态（服务端关闭时调用，避免跨存档残留）。 */

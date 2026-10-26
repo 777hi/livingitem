@@ -17,6 +17,12 @@
 
 ## 2026-10-26
 
+- 🧹 **三处「逐维度 flush 互清去重表」补齐**：`LivingToolPlayerSync` / `BeaconChestHost` / `BeaconPlayerHostSync` 仍照抄 2026-10-23 在 `LivingToolHostSync` 修掉的写法（`lastSent.clear(); putAll(next)`），而四者的 `flush` 都是 `for (level : getAllLevels())` **逐维度**调用的 ⇒ 第一个维度发完、后两个维度把表清空 ⇒ 下一 tick 所有玩家都判「有变化」⇒ **每玩家每 tick 收一个包**（单存档单人也中，三个同步器各一份）。那次只在 K2 修了并加了 `mergeRecords`，另三份是**拷贝**所以没跟上 —— 2026-10-26 审查才发现。
+
+  **修法**：合并口径抽成 `living/util/BroadcastDedup#merge`（泛型，四个调用点共用），`lastSent` 由 `final` 改为可重赋值。测试从 `LivingToolHostSyncMergeTest` 迁到 `BroadcastDedupTest`，**只留一份** —— 正确性由「四个调用点调的是同一个函数」保证，复制三份测试是噪音。顺带把「覆盖」那条用例从恒真改成真测：旧版三个用例的值都是 `List.of()`、彼此全等，`assertEquals(newValue, merged.get(...))` 根本区分不出覆盖与否。
+
+  **判据**：`check_layers` 无新增违规（domain → `living/util` 与 `StaticCacheRegistry` 同一条既有路径）；**协议零变化**，纯服务端行为。剩余两步（去重键单一来源 / 四通道收口）见 [渲染态广播](../buffer/render-state-broadcast.md) §7。
+
 - 🎬 **活工具在方块容器里「有模型、不转圈」：`K2` 去重键漏了动画状态**（用户真机报）：客户端渲染读的是**本包带来的** ItemStack 副本（`LivingToolHostClientCache`），不是容器槽位的实时内容；而 `LivingToolHostSync#sameTool` 只比「物品种类 + 记忆」、`sameRay` 只加两个命中布尔 ⇒ `LIVING_TOOL_PROGRESS` / `LIVING_TOOL_LAST_ACTION` / `LIVING_TOOL_DIG_TICKS` 翻转**不触发重发** ⇒ 客户端那份永远停在"没在挖" ⇒ `LivingToolModelRenderer#renderOne` 走待机分支（待机位 + `spinRad=0`）⇒ 只画模型、不转圈。
 
   **追溯：不是某次改坏，是两次相邻提交之间的口径漂移。** `a88c468`（09-19 23:46「更好的射线渲染」）为修 `L47`（容器形态射线起点在方块中心，`clip` 一出发就命中宿主自己的 OUTLINE ⇒ 光带长度为 0）改这个包，顺手把去重键从 `ItemStack.matches` 收窄成「物品种类 + 记忆」以止住每 tick 刷包 —— **当时正确**，模型和动画都还不存在；`028ffcb`（09-20「活工具模型渲染」）加动画时**没回头扩键**，并在同一份文档里写下「方块容器 | `K2` 每 tick 全量同步 | 看得到（侥幸）」，而 K2 前一天已有内容去重 ⇒ 这句当时就是错的。⇒ 容器形态**从模型上线第一天起**就没通过动画，不是后来坏的。

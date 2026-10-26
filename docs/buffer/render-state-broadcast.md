@@ -153,11 +153,14 @@ record Entry<S>(BlockPos pos, Structure structure, S state) {}
 
 | 步骤 | 内容 | 判据（怎么算做完） |
 |---|---|---|
-| **① 止血** | 把 `mergeRecords` 搬到 `LivingToolPlayerSync` / `BeaconChestHost` / `BeaconPlayerHostSync` | 三个同步器都有"其它维度记录保留"的用例；真机日志不再每 tick 出包 |
+| **① 止血** ✅ | 合并口径抽成 `living/util/BroadcastDedup#merge`，四个同步器共用（2026-10-26 落地，见 changelog） | 一份「其它维度记录保留」用例覆盖四个调用点 |
 | **② 防复发** | `ToolComponents` 声明 `RENDER_STATE` 组件集合，去重键从声明生成（**不能从 domain 反向引用 L5 客户端**，故声明住组件旁） | 加一个渲染依赖字段时，只需改这一处 |
 | **③ 收口** | `TargetedBroadcast<T>` + `DimensionScopedCache<T>` + 结构/状态分段 | 第 5 个世界可见活物品**不新增包类**，也不新增缓存类 |
 
 ② 与 ③ 之间可以只做一半：先抽服务端 `TargetedBroadcast`，客户端缓存各自留到下次动它时再换。
+
+> ⚠️ **② 单独做的价值有限**：③ 之后只剩结构段（物品种类 + 记忆）需要比对，
+> 字段少且稳定。若 ③ 排得近，② 可以直接并入 ③，不必单独走一遍。
 
 ---
 
