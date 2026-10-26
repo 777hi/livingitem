@@ -73,7 +73,7 @@ public class LivingFurnaceFunction implements LivingItemFunction, HasDirection {
             String cacheKey = context.getCacheKey();
 
             // 从运行时缓存读取瞬态数据（不影响物品堆叠的 DataComponent）
-            RuntimeSegments cached = ContainerRuntimeCache.get(cacheKey, slot);
+            RuntimeSegments cached = ContainerRuntimeCache.get(context, slot);
             FurnaceRuntime fr = cached.get(FurnaceSegment.INSTANCE);
             if (fr != null) {
                 data = data.withProgress(new ProgressData(fr.progress(), data.progress().total()))
@@ -163,14 +163,32 @@ public class LivingFurnaceFunction implements LivingItemFunction, HasDirection {
         String outputItemId = data.transform().cachedOutput();
         if (!outputItemId.isEmpty()) {
             ItemStack outputStack = ctx.getItem(outputSlot);
-            String outputKey = outputStack.isEmpty() ? "" : BuiltInRegistries.ITEM.getKey(outputStack.getItem()).toString();
-            if (!data.transform().canAcceptOutput(outputKey, outputStack.getCount(),
-                ctx.getSlotLimit(outputSlot), outputStack.getMaxStackSize())) {
-                return false;
+            if (!outputStack.isEmpty()) {
+                String outputKey = BuiltInRegistries.ITEM.getKey(outputStack.getItem()).toString();
+                if (!outputItemId.equals(outputKey)) return false;
+                // ⚠️ 同物品还须组件级放行（2026-10-27 审查 P1-2）：写入走
+                // calculateOutputSpace 的 isSameItemSameComponents，预检曾只比物品 ID ⇒
+                // 输出槽放「同物品不同组件」（改名铁锭 / 活铁锭）时预检放行、完成写不进
+                // ⇒ 进度卡 isComplete 不复位、燃料无限烧、零产出（原版 canBurn 用组件级
+                // 判据，同等场景根本不点燃）。探针取真实配方产物，与写入判据同源；
+                // 代价：产出槽非空期间每 tick 一次配方查询（玩家量级可接受）。
+                ItemStack probe = recipeResultOf(level, inputStack);
+                if (probe == null) return false;
+                if (calculateOutputSpace(ctx, outputSlot, probe) <= 0) return false;
             }
         }
 
         return true;
+    }
+
+    /**
+     * 配方产物探针 —— 供输出槽预检做组件级空间判断（与写入判据同源）。无配方返回 {@code null}。
+     */
+    @javax.annotation.Nullable
+    private ItemStack recipeResultOf(Level level, ItemStack input) {
+        var holderOpt = level.getRecipeManager()
+            .getRecipeFor(RecipeType.SMELTING, new SingleRecipeInput(input), level);
+        return holderOpt.isEmpty() ? null : unwrapRecipe(holderOpt.get()).getResultItem(level.registryAccess());
     }
 
     private LivingFurnaceData tickFuel(ContainerContext ctx, LivingFurnaceData data, int fuelSlot, int stackCount) {
@@ -214,8 +232,11 @@ public class LivingFurnaceFunction implements LivingItemFunction, HasDirection {
         String inputKey = BuiltInRegistries.ITEM.getKey(inputStack.getItem()).toString();
         TransformData transform = data.transform();
 
-        if (inputKey.equals(transform.cachedInput()) && transform.cachedResult() == 1) {
-            if (transform.inputItem().isEmpty()) {
+        // 命中缓存（含「无配方」= 0，§8.5「相同输入只查一次」——2026-10-27 审查 P2-3：
+        // 曾只认 1 ⇒ 无配方物品每 tick 重查配方）
+        if (inputKey.equals(transform.cachedInput())
+                && (transform.cachedResult() == 1 || transform.cachedResult() == 0)) {
+            if (transform.cachedResult() == 1 && transform.inputItem().isEmpty()) {
                 transform = transform.withInputItem(inputKey);
                 data = data.withTransform(transform);
             }
@@ -235,11 +256,11 @@ public class LivingFurnaceFunction implements LivingItemFunction, HasDirection {
                 .withCache(inputKey, 1, outputKey, result.getCount(), cookingTime);
             data = data.withTransform(transform);
         } else {
-            if (!transform.inputItem().isEmpty()) {
-                transform = transform.withInputItem(inputKey).withOutputItem("");
-                transform = transform.withCache(inputKey, 0, "", 0, 0);
-                data = data.withTransform(transform);
-            }
+            // 无配方也进缓存（§8.5；2026-10-27 审查 P2-3：曾要求 inputItem 非空 ⇒
+            // 全新熔炉（TransformData.EMPTY）塞泥土永远写不进缓存，每 tick 重查）
+            transform = transform.withInputItem(inputKey).withOutputItem("");
+            transform = transform.withCache(inputKey, 0, "", 0, 0);
+            data = data.withTransform(transform);
         }
 
         return data;

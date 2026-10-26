@@ -74,7 +74,7 @@ public class LivingHopperFunction implements LivingItemFunction {
             String cacheKey = context.getCacheKey();
 
             // 从运行时缓存读取瞬态数据（不影响物品堆叠的 DataComponent）
-            RuntimeSegments cached = ContainerRuntimeCache.get(cacheKey, slot);
+            RuntimeSegments cached = ContainerRuntimeCache.get(context, slot);
             HopperRuntime hr = cached.get(HopperSegment.INSTANCE);
             int cooldown = hr != null ? hr.cooldown() : 0;
             ResolvedSlotData slotInfo = hr != null && hr.slotInfo() != null

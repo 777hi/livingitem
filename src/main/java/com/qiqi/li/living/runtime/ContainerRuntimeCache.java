@@ -104,6 +104,22 @@ public class ContainerRuntimeCache {
 
     // ── 读取 ────────────────────────────────────────────────
 
+    /**
+     * 读运行时（与 {@link #update} <b>对称</b>：内部过 {@link ContainerContext#toPhysicalSlot}）。
+     *
+     * <p>⚠️ 2026-10-27 审查 P1（熔炉/酿造台域）：读侧曾只有裸 {@code (containerKey, slot)} 版本，
+     * 而调用方手里是<b>逻辑槽</b>（{@code SlotEntry.slotIndex}）、写侧存的是<b>物理槽</b> ⇒
+     * 带 storageOffset 的容器（马/驴/骡 =1）读永远 miss ⇒ 熔炉每 tick 重新点燃燃料（每秒烧 20 个）、
+     * 酿造台每 tick 空耗烈焰粉，全部零产出且静默。cf411ef 只枚举了写方向 —— 「一次性枚举全部
+     * 跨边界点」的另一半：读方向也是跨边界点。</p>
+     */
+    public static RuntimeSegments get(com.qiqi.li.living.container.ContainerContext ctx, int logicalSlot) {
+        if (ctx == null) return RuntimeSegments.EMPTY;
+        String containerKey = ctx.getCacheKey() != null ? ctx.getCacheKey() : ctx.getContainerKey();
+        if (containerKey == null) return RuntimeSegments.EMPTY;
+        return get(containerKey, ctx.toPhysicalSlot(logicalSlot));
+    }
+
     public static RuntimeSegments get(String containerKey, int slot) {
         Map<Integer, RuntimeSegments> slots = store.get(containerKey);
         if (slots == null) return RuntimeSegments.EMPTY;

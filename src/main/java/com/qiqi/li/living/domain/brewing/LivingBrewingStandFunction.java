@@ -133,7 +133,7 @@ public class LivingBrewingStandFunction implements LivingItemFunction, HasDirect
             // 缓存键（世界容器带维度前缀，见 ContainerIdentity.getCacheKey）——
             // 传裸 getContainerKey() 会让主世界/下界同坐标的两个箱子串酿造进度（2026-10-12 修）
             String cacheKey = context.getCacheKey();
-            BrewingRuntime runtime = ContainerRuntimeCache.get(cacheKey, slot)
+            BrewingRuntime runtime = ContainerRuntimeCache.get(context, slot)
                 .get(BrewingStandSegment.INSTANCE);
             if (runtime == null) runtime = BrewingRuntime.EMPTY;
 

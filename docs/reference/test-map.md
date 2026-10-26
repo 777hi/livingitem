@@ -65,6 +65,7 @@ src/test/java/com/qiqi/li/
 │   ├── PlayerFluidDataPersistenceTest.java    # 玩家路径落盘（CONTAINER_FLUID_DATA_PLAYER）·背包与末影箱各有源写回 / 变空条目移除 / 重进不复活 / 两容器键互不干扰 / 重进从附件回填（4 项）
 │   ├── ContainerChunkCacheChunkLoadTest.java  # 区块加载守卫·事件不碰世界/延后重扫不丢/限量/不主动加载/只处理ticking区/可观测性（6 项）
 │   ├── ContainerKeysTest.java                 # 容器键解析唯一入口(2026-10-13)·5 种键形各自归位(背包/末影箱前缀相同必须按后缀分开)/缓存键剥维度前缀/未知形态返回 null 不抛异常/ownerOf 末影箱回归(旧实现抛异常被吞⇒从不发包)/isOwnedByPlayer(null 安全)/positionsOf(大箱两段·维度 id 含下划线取末三段)/维度前缀（7 项）
+│   ├── ContainerRuntimeCacheSlotMappingTest.java  # 读写槽位键对称（2026-10-27 审查 P1，熔炉/酿造台/漏斗域）·update 过 toPhysicalSlot、get 不过 ⇒ 马/驴容器（storageOffset=1）读永远 miss ⇒ 熔炉每 tick 烧 1 燃料零产出、酿造台每 tick 空耗烈焰粉 / get(ctx, logical) 对称重载：带偏移上下文读回自己写的值 / 裸 get(key,3) miss·物理槽 4 命中 / 恒等映射两版等价（3 项）
 │   └── ContainerRuntimeCacheLifecycleTest.java # 运行时缓存生命周期(方案A)·物品离开槽位/换物品⇒登记作废·同类持续⇒不作废·drain 取走即空·null 键忽略·整容器作废键==运行时存储键（6 项）
 ├── living/domain/backpack/
 │   ├── LivingBackpackFunctionTest.java        # 活背包（2026-10-22）·认领（无来源不认领=未装模组零影响/来源注册后只认它说是容器的物品）+ 功能 ID 稳定 + **取消活化连 SavedData 一起清**/无 UUID 不抛（5 项）
@@ -135,6 +136,7 @@ src/test/java/com/qiqi/li/
 │   ├── BrewingMaterialConsumeTest.java        # 材料消耗(consumeOne)·⭐龙息不整栈替换回归/空栈变玻璃瓶/并入未满堆/容器满丢弃/空槽 no-op（6 项）
 │   └── LivingBrewingStandDataTest.java        # 数据组件 codec·旧数据(只有direction)可解码/往返保留 fuel 与 brew_start_tick/withBrewStart 隔离改字段/默认即移除锚点（4 项）
 ├── living/domain/furnace/
+│   ├── FurnaceOutputGateTest.java             # 输出槽判据同源 + 配方缓存（2026-10-27 审查 P1-2/P2-3）·预检曾只比物品 ID、写入走 isSameItemSameComponents ⇒ 输出槽放改名铁锭/活铁锭时进度卡 isComplete、燃料无限烧零产出（原版 canBurn 组件级不点燃）/ 预置燃烧态端到端：组件不同 ⇒ 进度回退不混写；输出空 ⇒ 完成即产出 / 无配方也进缓存（曾只认 cachedResult==1 ⇒ 非熔炼物品每 tick 重查）（3 项；transform 真身=运行时缓存，别读组件）
 │   ├── LivingFurnaceFunctionTest.java         # 燃料消耗合成残留物语义（4 项）
 │   └── FurnaceBurningFlagTest.java            # 燃烧标志组件·图标切换回归（5 项）
 ├── living/domain/hopper/
