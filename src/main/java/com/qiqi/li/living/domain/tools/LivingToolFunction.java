@@ -121,16 +121,6 @@ public class LivingToolFunction implements LivingItemFunction {
 
         Vec3 origin = resolveOrigin(context);
 
-        // ⚠️ K2 上报必须在 origin 判断【之前】（2026-10-27）：
-        //    客户端辅助挖掘需要知道「背包里有哪些工具」，而辅助**不受 `tool_and_weapon`
-        //    开关控制**（那个开关管的是"借宿主位置做射线起点"，与辅助挖矿是两件事）。
-        //    origin 为 null（开关关 / 无锚点）时命中布尔传 false —— 那两条射线本来也不显示。
-        reportHostTools(context, entries, origin, serverLevel);
-
-        if (origin == null) {
-            return;
-        }
-
         // 宿主自身的方块（大箱子两格）——射线检测前要先把起点移出去，否则会挖掉容器自己。
         // ⭐ 2026-10-25：黑名单从【本次实际用的锚点】派生，不再只从容器自己的位置列表拿。
         //    物品形态（活背包）的位置列表恒空、getBlockPos() 恒 null，而射线起点恰恰是
@@ -138,7 +128,19 @@ public class LivingToolFunction implements LivingItemFunction {
         //    蹲着记过方块类型 ⇒ 类型不匹配直接停（完全没反应）；没记类型 ⇒ 挖自己所在的箱子。
         //    方块容器本来就在列表里 ⇒ 对本类零副作用（同一格加两遍而已）。
         //    AtPlayer / AtEntity 无方块可加（掉落物形态刻意不跳过起点所在格，见下方注释）。
-        Set<BlockPos> hostBlocks = hostBlocksOf(context);
+        // ⚠️ origin 为 null（开关关 / 无锚点）时不需要它 ⇒ 省一次遍历；上报那边复用同一份。
+        Set<BlockPos> hostBlocks = origin != null ? hostBlocksOf(context) : Set.of();
+
+        // ⚠️ K2 上报必须在 origin 判断【之前】（2026-10-27）：
+        //    客户端辅助挖掘需要知道「背包里有哪些工具」，而辅助**不受 `tool_and_weapon`
+        //    开关控制**（那个开关管的是"借宿主位置做射线起点"，与辅助挖矿是两件事）。
+        //    origin 为 null（开关关 / 无锚点）时命中布尔传 false —— 那两条射线本来也不显示。
+        reportHostTools(context, entries, origin, hostBlocks, serverLevel);
+
+        if (origin == null) {
+            return;
+        }
+
         // 注：掉落物形态这里刻意【不】把"起点所在格"当宿主跳过 ——
         // 起点可能落在半砖 / 台阶这类非满高方块所在格的上半空气部分，
         // 那是"格子级"的误判，由 scanForTarget 的【形状求交】精确排除，
@@ -368,7 +370,8 @@ public class LivingToolFunction implements LivingItemFunction {
      * <p>⚠️ {@code origin} 为 {@code null} 时仍要上报（见调用点注释）：命中布尔给 {@code false}。</p>
      */
     private static void reportHostTools(ContainerContext context, List<SlotEntry> entries,
-                                        @Nullable Vec3 origin, ServerLevel serverLevel) {
+                                        @Nullable Vec3 origin, Set<BlockPos> hostBlocks,
+                                        ServerLevel serverLevel) {
         BlockPos hostPos = context.getBlockPos();
         HostRef host = hostPos != null
             ? HostRef.ofBlock(hostPos)
@@ -376,7 +379,6 @@ public class LivingToolFunction implements LivingItemFunction {
         if (host == null) {
             return;
         }
-        Set<BlockPos> hostBlocks = origin != null ? hostBlocksOf(context) : Set.of();
         List<LivingToolHostPacket.ToolRay> tools = new ArrayList<>(entries.size());
         for (SlotEntry entry : entries) {
             // ⭐ 只同步「打没打中」这个布尔（L48）—— 目标坐标不传：客户端画的是
