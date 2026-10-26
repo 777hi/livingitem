@@ -46,7 +46,9 @@ public abstract class BlockStateBaseMixin {
         int boundarySignal = data.getBoundarySignal(internalDir);
         if (boundarySignal > 0) {
             int vanillaSignal = cir.getReturnValue();
-            cir.setReturnValue(Math.max(vanillaSignal, boundarySignal));
+            // ⚠️ 钳 15（2026-10-27 审查 P3）：原版 getBestNeighborSignal 对 >=15 有提前返回兜底，
+            // 但 DiodeBlock#getInputSignal 会把未钳值带进比较器减法运算
+            cir.setReturnValue(Math.max(vanillaSignal, Math.min(15, boundarySignal)));
         }
     }
 

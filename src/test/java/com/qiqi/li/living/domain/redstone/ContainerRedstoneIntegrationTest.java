@@ -103,8 +103,13 @@ class ContainerRedstoneIntegrationTest {
         var rd = ctx.peekContainerData(ContainerRedstoneData.KEY);
         assertNotNull(rd,
             "TNT 在 tick() 里调 getOrCreateRedstoneData ⇒ 账本必然被创建（守卫判据之一）");
+        assertFalse(rd.hasEdgeHistory(),
+            "首拍：历史未知（2026-09-09 根修契约 —— 电力层据此跳过边检测。"
+            + "曾因置位在 calculate 方法头而失效，2026-10-27 审查修）");
+        rd.resetProcessedFlag();   // 模拟下一个 server tick
+        ContainerLivingItemHandler.processContext(ctx, level);
         assertTrue(rd.hasEdgeHistory(),
-            "且必须真的跑过 calculate —— 守卫不能把消费者拦下（「守卫不漏消费者」的回归守卫）");
+            "第二拍起有历史 —— 同时证明守卫确实放行了消费者（calculate 真的跑过两拍）");
     }
 
     // ════════════════════════════════════════
@@ -139,8 +144,10 @@ class ContainerRedstoneIntegrationTest {
         var ctx = new SimpleContainerContext(new FakeHandler(slots), level);
 
         var rd = ctx.getOrCreateContainerData(ContainerRedstoneData.KEY);
-        assertFalse(rd.hasEdgeHistory(), "前置：本会话尚未 calculate 过");
+        assertFalse(rd.hasEdgeHistory(), "前置：本会话尚未 calculate 过（首拍恒 false，2026-10-27 审查修）");
 
+        ContainerLivingItemHandler.processContext(ctx, level);
+        rd.resetProcessedFlag();   // 模拟下一个 server tick
         ContainerLivingItemHandler.processContext(ctx, level);
 
         assertTrue(rd.hasEdgeHistory(),

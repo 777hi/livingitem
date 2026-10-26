@@ -94,6 +94,12 @@ public class ContainerRedstoneData implements RedstoneSensor, ContainerDataLifec
      */
     private boolean hasHistory;
 
+    /**
+     * 是否完成过一次<b>真实</b> calculate（{@code !hasAny} 归零出口与正常传播出口都算；
+     * 空容器早退不算 —— 网格尚未建立，历史仍未知）。{@link #hasHistory} 的来源标记。
+     */
+    private boolean everCalculated;
+
     /** 心跳时间戳（容器缓存 120s 过期清理用；每次 calculate 刷新） */
     private long lastTickTime = System.currentTimeMillis();
 
@@ -281,10 +287,13 @@ public class ContainerRedstoneData implements RedstoneSensor, ContainerDataLifec
         if (processedThisTick) return;
         processedThisTick = true;
         lastTickTime = System.currentTimeMillis();
-        // 首拍结束后 prevEdgeGrid 才携带真实历史（首拍内它全零 = 历史未知）
-        // 置位放在方法头：本 tick 电力层（priority 3，晚于本 calculate）读
-        // hasEdgeHistory() 拿到 false → 跳过边检测；下 tick 起为 true。
-        hasHistory = true;
+        // 首拍（首次真实 calculate）当 tick：prevEdgeGrid 全零 =「历史未知」而非「上一 tick 全 0」，
+        // 消费者（电力层 priority 3，晚于本 calculate）读 hasEdgeHistory() 必须拿到 false →
+        // 跳过边检测（2026-09-09 根修契约，见 RedstoneSensor#hasEdgeHistory）。
+        // ⚠️ 曾把置位放在方法头 ⇒ 电力层同 tick 读到 true ⇒ 稳态高电平边伪装成假上升沿，
+        // 覆盖回填的锁相负锚（2026-10-27 审查 P2-1，注释与代码自相矛盾）。修正：首拍内恒 false，
+        // hasHistory 只在「上一拍真实算过」（everCalculated，见两处出口置位）后的下一拍开头置 true。
+        hasHistory = everCalculated;
 
         int size = context.getSize();
         int width = context.getWidth();
@@ -324,6 +333,7 @@ public class ContainerRedstoneData implements RedstoneSensor, ContainerDataLifec
             if (edgeGrid != null) edgeGrid.zero();
             computeFaceOutput(width, height);
             notifyBoundaryChange(context, width, height);
+            everCalculated = true;
             return;
         }
 
@@ -352,6 +362,7 @@ public class ContainerRedstoneData implements RedstoneSensor, ContainerDataLifec
         prop.phase5UpdateDisplay(torchSlots, dustSlots, lampSlots, copperSlots);
         computeFaceOutput(width, height);
         notifyBoundaryChange(context, width, height);
+        everCalculated = true;
     }
 
     private void injectExternalInputs(ContainerContext context) {
@@ -374,18 +385,7 @@ public class ContainerRedstoneData implements RedstoneSensor, ContainerDataLifec
                 BlockPos neighborPos = pos.relative(worldDir);
                 int signal = level.getSignal(neighborPos, worldDir);
 
-                ContainerRedstoneData neighborData = ContainerLivingItemHandler.peekContainerDataByPos(level, neighborPos, KEY);
-                if (neighborData != null) {
-                    BlockState neighborState = level.getBlockState(neighborPos);
-                    Direction neighborFacing = GridDirections.getBlockFacing(neighborState);
-                    if (neighborFacing != null) {
-                        Pos2D neighborGridDir = GridDirections.worldToGrid(worldDir.getOpposite(), neighborFacing);
-                        if (neighborGridDir != null && !neighborGridDir.isNone()) {
-                            int neighborInternalDir = edgeIndex(neighborGridDir);
-                            signal = Math.max(signal, neighborData.getBoundarySignal(neighborInternalDir));
-                        }
-                    }
-                }
+                signal = withNeighborBoundary(level, neighborPos, worldDir, signal, this);
 
                 if (signal > 0) {
                     Pos2D gridDir = GridDirections.worldToGrid(worldDir, facing);
@@ -396,6 +396,31 @@ public class ContainerRedstoneData implements RedstoneSensor, ContainerDataLifec
                 }
             }
         }
+    }
+
+    /**
+     * 邻居容器的边界信号贡献（包级静态供单测钉自反馈）。
+     *
+     * <p>⚠️ <b>邻居是「自己」时必须跳过</b>（2026-10-27 审查 P1）：双箱（大箱两半）共用同一份
+     * 账本，朝另一半的方向会查到 {@code this} —— 把自己对面 face 的输出读回对侧 face 的输入
+     * ⇒ 信号隔空「穿越」容器（东边拉杆压灭西边火把）。邻居直读只对<b>别的容器</b>成立。</p>
+     */
+    static int withNeighborBoundary(Level level, BlockPos neighborPos, Direction worldDir,
+                                    int worldSignal, ContainerRedstoneData self) {
+        ContainerRedstoneData neighborData = ContainerLivingItemHandler.peekContainerDataByPos(level, neighborPos, KEY);
+        if (neighborData == null || neighborData == self) {
+            return worldSignal;
+        }
+        BlockState neighborState = level.getBlockState(neighborPos);
+        Direction neighborFacing = GridDirections.getBlockFacing(neighborState);
+        if (neighborFacing != null) {
+            Pos2D neighborGridDir = GridDirections.worldToGrid(worldDir.getOpposite(), neighborFacing);
+            if (neighborGridDir != null && !neighborGridDir.isNone()) {
+                int neighborInternalDir = edgeIndex(neighborGridDir);
+                return Math.max(worldSignal, neighborData.getBoundarySignal(neighborInternalDir));
+            }
+        }
+        return worldSignal;
     }
 
     private void notifyBoundaryChange(ContainerContext context, int width, int height) {
@@ -468,17 +493,6 @@ public class ContainerRedstoneData implements RedstoneSensor, ContainerDataLifec
      * <p>此方法仅用于非定向元件的输入查询（TNT 等），边界外返回 0。
      * 定向元件（中继器/比较器/火把）使用 {@link RedstonePropagation#getEffectiveInput} 读取外部信号。</p>
      */
-    private int inputAt(int slot, int dir, int size, int width) {
-        int neighbor = ContainerContext.resolveNeighbor(slot, dir, size, width);
-        if (neighbor < 0) return 0; // 边界：非定向元件不接收外部信号
-        return edgeGrid.get(neighbor, oppositeDir(dir));
-    }
-
-    private int maxInputOfSlot(int slot, int size, int width) {
-        int max = 0;
-        for (int dir = 0; dir < 4; dir++) max = Math.max(max, inputAt(slot, dir, size, width));
-        return max;
-    }
 
     private static int oppositeDir(int dir) {
         return switch (dir) {

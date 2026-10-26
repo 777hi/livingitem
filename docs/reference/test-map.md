@@ -82,6 +82,7 @@ src/test/java/com/qiqi/li/
 │   ├── ExplosionLedgerTest.java               # 待炸账本·相交才进队列/不相交立即标记/未加载丢弃不轮询/自然加载补炸闭环/分帧预算/多场叠加不覆盖新登记/满额降级/存档往返（10 项）
 │   └── ExplosionComponentLightTest.java       # 爆炸后光照刷新·四入口顺序/天光柱高图先于重算/section 空态/sectionY≠索引/发光方块减光（5 项）
 ├── living/domain/redstone/
+│   ├── ContainerRedstoneBoundaryTest.java     # 边界采样自反馈守卫（2026-10-27 审查 P1）·双箱两半共用账本 ⇒ 朝另一半查到 this 曾把自己对面 face 输出读回对侧输入（东边拉杆隔空压灭西边火把）/ 邻居是自己 ⇒ 保持世界信号 / 无账本·无朝向邻居 ⇒ 原样（3 项；mockStatic 邻居查询）
 │   ├── ContainerRedstoneDataTest.java         # 红石信号传播引擎·直接驱动 calculate/**空容器(存储格 0)⇒ 直接跳过，不拿 0 当除数**（30 项）
 │   └── ContainerRedstoneIntegrationTest.java  # 红石**驱动链路**端到端（走真实 processContext）·自维持注册/守卫放行消费者/守卫拦截无关容器(零开销)/残留归零/prio 顺序（5 项）
 ├── living/domain/power/

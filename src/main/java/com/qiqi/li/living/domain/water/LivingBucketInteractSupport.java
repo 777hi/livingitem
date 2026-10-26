@@ -93,6 +93,10 @@ public final class LivingBucketInteractSupport {
         // 功能类全是**逻辑槽**（容器存储格编号）。马/驴/骡的索引 0 是马鞍 ⇒ 差 1
         // ⇒ 不过 toLogicalSlot 会把水倒进上一格（真机「差了一格」的同源第二例）。
         int containerSlot = ctx.toLogicalSlot(slot.getContainerSlot());
+        // ⚠️ 非存储槽守卫（2026-10-27 审查 P1）：驴/马的鞍槽物理 0 → 逻辑 -1，曾无校验直接建源
+        //    ⇒ 下一 tick 越界清理把源删除 ⇒ 桶被排空、流体凭空消失（守恒律违反，且全程无日志）。
+        //    放弃且<b>不排桶</b>；客户端已同时排除非存储槽（matchBucketInteract），此处是服务端权威。
+        if (!ctx.isValidSlot(containerSlot)) return;
         FluidType incoming = fluid.getFluidType();
         FluidType resident = fluidData.sourceFluid(containerSlot);   // 实际层；非源格返回 null
         if (resident == null) {
@@ -127,8 +131,9 @@ public final class LivingBucketInteractSupport {
         ContainerFluidData fluidData = fluidDataOf(ctx);
         if (fluidData == null) return;
 
-        // 同 pour：GUI 物理槽 → 逻辑槽（见上）
+        // 同 pour：GUI 物理槽 → 逻辑槽（见上）+ 非存储槽守卫（鞍槽等直接放弃，不动桶）
         int containerSlot = ctx.toLogicalSlot(slot.getContainerSlot());
+        if (!ctx.isValidSlot(containerSlot)) return;
         FluidType fluid = fluidData.sourceFluid(containerSlot);
         if (fluid == null) return;
 

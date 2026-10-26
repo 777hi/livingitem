@@ -268,7 +268,14 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
         ContainerFluidData data = new ContainerFluidData();
         for (SourceEntry e : entries) {
             FluidType fluid = resolveFluidType(e.fluidId());
-            if (fluid != null) data.generatedSources.put(e.slot(), fluid);
+            if (fluid != null) {
+                data.generatedSources.put(e.slot(), fluid);
+            } else {
+                // ⚠️ 降级留痕（I-C6）：未知流体 id（典型 = 提供该流体的模组被移除后读旧档）。
+                //    静默丢弃 = 该源跨存档蒸发，玩家侧无从察觉（2026-10-27 审查）。
+                com.qiqi.li.logging.ModLog.CONTAINER.warn(
+                    "[流体] 落盘加载跳过未知流体 id：slot={} id={}", e.slot(), e.fluidId());
+            }
         }
         return data;
     }
