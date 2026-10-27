@@ -134,12 +134,12 @@ public class SableIntegration {
         double newAirshipX = destX - offsetX;
         double newAirshipZ = destZ - offsetZ;
 
-        // 水平面：让操作者到达地图目标 X/Z，并保持其艇内相对位置。
-        // 高度：目标 Y 表示飞艇底面高度，不表示飞艇原点或操作者脚底。
-        // boundingBox() 是 Sable 按当前 logicalPose 更新的世界投影包围盒，故 minY 是当前艇底；
-        // 只需用同一平移量移动飞艇原点，姿态与所有局部位置都保持不变。
-        double newAirshipY = SableTeleportMath.originYForBottom(
-            oldAirshipPos.y(), serverSubLevel.boundingBox().minY(), destY);
+        // 高度保持旧规则：只升不降（2026-10-28 实机回退）。
+        // A4 曾改为「艇底对齐目标 Y」（允许下降）——真机实测失败：飞艇被拽到地表后
+        // Rapier 物理与地形剧烈互穿，客户端 sublevel 姿态脱钩（方块破坏后复原、
+        // passengers for unknown entity），见 docs/buffer/code-doc-alignment.md A4。
+        // 「艇底贴地降落」需要与 Sable 物理专门集成（落地缓冲 / 区块预载），当前不做。
+        double newAirshipY = Math.max(oldAirshipPos.y(), destY);
 
         Quaterniondc orientation = oldPose.orientation();
         Vector3dc newPos = new Vector3d(newAirshipX, newAirshipY, newAirshipZ);

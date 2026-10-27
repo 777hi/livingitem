@@ -147,8 +147,6 @@ src/test/java/com/qiqi/li/
 │   ├── HopperFilterSyncTest.java              # 漏斗过滤链回写·黑白名单展示回归（5 项）
 │   ├── CrossContainerTransferFertilizeTest.java # 跨容器施肥·推送/拉取双入口+活骨粉三入口全拒（15 项）
 │   └── CrossContainerTransferFaceSelectionTest.java # 多方块容器跨容器面选取·候选排序+推送首选/回退（5 项）
-├── living/compat/sable/
-│   └── SableTeleportMathTest.java             # 飞艇艇底对齐目标Y（A4定案）·当前艇底在原点上/下两方向均可升降 / 平移后世界投影包围盒底面严格等于目标高度（3项；纯坐标函数，不依赖Sable运行环境）
 ├── living/domain/map/
 │   ├── TeleportHelperYTest.java               # 落点站立面语义 + 指哪传哪（2026-10-27 审查 P1-1 + A3 定案）·ChunkAccess.getHeight 返回最高阻挡方块自身 Y，destY 曾少 +1 ⇒ 玩家脚落进最高阻挡方块 / 端到端 mock：teleportTo 捕获 (格中心, 71.0, 格中心) / **虚空柱照传不拒**：全空柱高度图返回世界下限，脚下 = 下限+1，不因无地面拒绝（2 项）
 │   ├── MapCoordHelperMatchTest.java           # 组件条目与命中装饰的同一处匹配（2026-10-27 审查 P2-2）·Entry.x() 是 double 世界坐标、Decoration.x() 是 byte 像素，曾直接相比恒 false ⇒ 兜底恒传组件里第一条（多条目地图点哪个都被劫持）/ 类型+换算像素一致才用精确值 / 无匹配回退像素反推 / 换算互逆（4 项）

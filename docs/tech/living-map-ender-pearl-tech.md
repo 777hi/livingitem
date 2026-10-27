@@ -1018,11 +1018,10 @@ Sable 有三个关键的 Mixin 机制：
 9. updateLastPose() 同步上一 tick 姿态
 ```
 
-**偏移计算**（世界坐标，普通坐骑与飞艇分开）：
+**偏移计算**（世界坐标；普通坐骑与飞艇的高度语义不同）：
 
-- **普通马／船／矿车／骆驼**：把坐骑实体移到目标坐标，再由原版骑乘系统把玩家放回各自座位；目标是坐骑落点，不是玩家脚落点。
-- **Sable 飞艇 X/Z**：保持操作者相对飞艇原点的水平偏移，使操作者对齐地图目标 X/Z。
-- **Sable 飞艇 Y**：目标 Y 表示飞艇世界投影包围盒的底面高度，不表示飞艇原点或操作者脚底。
+- **普通马／船／矿车／骆驼**：把坐骑实体移到目标坐标，再由原版骑乘系统把玩家放回各自座位。
+- **Sable 飞艇**：X/Z 保持操作者相对飞艇原点的水平偏移，使操作者对齐地图目标 X/Z；**Y 只升不降**（`max(当前原点Y, 目标Y)`）。
 
 ```java
 double offsetX = player.getX() - airshipPos.x();
@@ -1030,12 +1029,10 @@ double offsetZ = player.getZ() - airshipPos.z();
 
 double newAirshipX = destX - offsetX;
 double newAirshipZ = destZ - offsetZ;
-double newAirshipY = airshipPos.y()
-    + destY
-    - serverSubLevel.boundingBox().minY();
+double newAirshipY = Math.max(airshipPos.y(), destY);
 ```
 
-`boundingBox()` 是 Sable 用当前 `logicalPose` 更新的世界投影包围盒，因此倾斜飞艇也按实际最低点对齐目标高度。这里只平移飞艇，保留姿态和玩家的局部位置；不自动扶正、不搜索安全地形，也不强制保留旧高度。
+⚠️ **2026-10-28 实机回退**：曾按 A4 试验「飞艇底面对齐目标 Y（允许下降）」——真机（超平坦 + Sable 2.0.3 + Create Aeronautics 1.3.0）实测失败：飞艇被拽到地表后 Rapier 物理与地形剧烈互穿（飞艇乱飞、方块破坏后随 sublevel 重同步复原）、客户端 sublevel 姿态脱钩（`passengers for unknown entity`）。已回退为只升不降；「艇底贴地降落」需要与 Sable 物理专门集成（落地缓冲 / 目的地区块预载 / 客户端 sublevel 同步保障），见 [口径台账](../buffer/code-doc-alignment.md) A4。
 
 **玩家位置同步**（局部坐标投影，适用于有旋转飞艇）：
 
