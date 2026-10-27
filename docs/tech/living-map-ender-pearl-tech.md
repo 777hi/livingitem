@@ -1014,7 +1014,7 @@ Sable 有三个关键的 Mixin 机制：
 5. 保存玩家局部坐标 playerLocal = oldPose.transformPositionInverse(playerPos)
 6. resetVelocity 归零刚体残速（对齐 Sable 原生 /sable sub_level teleport 官方流程）
 7. 直接设置 logicalPose（双保险）+ handle.teleport() 通知物理管线
-8. 操作者所骑载具随艇平移（同一位移）；甲板上其他生物不跟随（玩法取消，见下"操作者所骑载具"一节）
+8. 坐着的生物随艇：平移「机械动力坐垫 && 载着乘客 && 在艇包围盒内」的坐椅并把 tracking 指回本艇（见下"坐着的生物随艇"一节）；站甲板生物 / 空坐椅 / 其它载具不跟随
 9. 用新 logicalPose 把 playerLocal 投影回世界坐标，player.setPos + ClientboundPlayerPositionPacket
 10. updateLastPose() 同步上一 tick 姿态（实体网络化按 lastPose 反算 plot 局部坐标，必须同步）
 ```
@@ -1034,7 +1034,11 @@ double newAirshipY = airshipPos.y() + (destY - bounds.minY());
 ```
 
 ⚠️ **2026-10-28 误诊纠正（记录留痕）**：艇底对齐实施后真机报告"传送很奇怪、传送不了、飞艇变得很奇怪、方块破坏后会复原"，当时**误诊**为"Rapier 物理与地形剧烈互穿（飞艇乱飞）"并回退为只升不降——**"乱飞/互穿"从未被用户报告，属过度解读**。该三个症状后来被证实全部是 `lastNetworkedPose` 压制杀死客户端位姿同步的同一根因（见下"飞快移动"一节），与下降无关。已随根因修复**恢复艇底对齐**，并把目标点区块预载扩到 3×3（贴地降落时地形碰撞体必须传送瞬间就位）。见 [口径台账](../buffer/code-doc-alignment.md) A4。
-**操作者所骑载具随艇；甲板上其他生物不跟随（2026-10-28 用户定案）**：传送只平移**操作者本人**（局部坐标精确落位）与**其所骑的载具**（同一位移，下一 tick 骑乘系统把操作者放回座位）。曾按用户要求实施「艇上所有生物随艇」，两版判据（tracking 精确匹配 / 补几何包围盒）实测都不能稳定带走甲板生物，玩法撤销。技术结论留痕：自然携带是 delta 制（`SubLevelEntityCollision` 以 `subLevelPose × lastPose⁻¹ × 位置` 重锚定），而 `updateLastPose` 已把差值归零 ⇒ 传送永远轮不到自然携带，只能手工搬；而**贴近 plot 时 Sable 每 tick 末强制清 tracking**（`entity_sublevel_collision/EntityMixin#sable$tickInject`：「不能既 tracking 又在 plot 内」）⇒「是否在艇上」无法可靠判定——这是玩法不可行的根因，若重启需先在 Sable 侧解决实体锚定判据。
+**坐着的生物随艇（2026-10-28 用户定案）**：「坐着」= **坐在机械动力坐垫上的生物**。传送平移「坐垫实体 && 载着乘客 && 包围盒与艇的世界投影包围盒相交」的坐椅，乘客由骑乘系统放回座位；操作者本人走局部坐标精确落位（其所骑载具无论是不是坐垫都跟，否则会被拽回原地）。
+**不带**：站甲板上的生物、空坐椅、其它载具（马 / 船 / 载具叠载具）——「艇上所有生物随艇」（含站甲板）实测不可稳定实现，已撤销，站甲板不随艇是定案口径。
+
+⚠️ **v27 假设勘误**：版本沿革（v26→v27）曾以为"坐垫实体在 SubLevel 内、logicalPose 变化后自动更新，不需要额外代码"——**不成立**：自动携带是 delta 制（`SubLevelEntityCollision` 以 `subLevelPose × lastPose⁻¹ × 位置` 重锚定），而流程第 10 步 `updateLastPose` 已把 lastPose 归到新位姿 ⇒ 差值归零，传送轮不到自动携带；且贴近 plot 时 Sable 每 tick 末强制清 tracking（「不能既 tracking 又在 plot 内」）⇒「谁在艇上」只能按几何判定。因此坐垫**必须显式平移**。坐垫口径是「带乘客的载具」中可判定的子集——坐椅必然载着乘客，且"操作者的坐椅跟着走"在实机验收中工作正常。
+搬完把坐椅 / 载具的 tracking 指回本艇：网络化按 `lastPose` 反算成 plot 局部坐标、客户端 `plotLerpTo` 跟随（与正常飞行同源），并绕过客户端「world 坐标落在 plotgrid 内但不在任何 plot ⇒ 丢弃位置包」分支。
 
 **玩家位置同步**（局部坐标投影，适用于有旋转飞艇）：
 
@@ -1519,6 +1523,8 @@ static boolean isPlayerOnSubLevel(ServerPlayer player) {
 **修改**：删除 `SableIntegration.teleportSubLevel()` 中的 `otherPlayersLocal` 收集和同步逻辑（约 30 行），只保留传送者自身的同步。
 
 **骑乘者（坐垫上）怎么传送**：Sable 的坐垫实体在 SubLevel 内，`logicalPose` 变化后坐垫的世界位置自动更新，骑乘者通过原版骑行系统跟随，不需要额外代码。
+
+> ⚠️ **2026-10-28 勘误**：本条"自动更新，不需要额外代码"的假设不成立——自动携带是逐 tick 差值制，`updateLastPose` 归零差值后传送轮不到它；坐垫必须显式平移。现行口径与实现见 §11.2.1「坐着的生物随艇」。
 
 ### v27 → v28：传送逻辑全面修复
 
