@@ -166,11 +166,17 @@ public class SableIntegration {
         serverSubLevel.logicalPose().orientation().set(orientation);
         handle.teleport(newPos, orientation);
 
-        // ⚠️ 艇上所有生物一起传送（2026-10-28 用户定）：飞艇平移后，被 stick 系统携带的
-        //    生物（站在甲板上的玩家 / 生物 / 载具）的 tracking 仍指向本飞艇，必须套用
-        //    同一位移——否则 updateLastPose 归零差值后它们留在原地（空中则坠落）。
-        //    被破坏半……不对，此处是飞艇：判定用「tracking == 本飞艇」，仅路过艇边的
-        //    非携带实体不受影响。操作者本人走下方 playerLocal 精确落位，此处排除。
+        // ⚠️ 艇上所有生物一起传送（2026-10-28 用户定）：飞艇平移后，把同一位移应用到
+        //    「艇上」的实体。自然携带是 delta 制（subLevelPose × lastPose⁻¹ × 位置），
+        //    而 updateLastPose 已把 lastPose 归到新位姿 ⇒ 传送永远轮不到自然携带，只能在此搬。
+        //    选取判据（满足其一）：
+        //    ① tracking == 本艇 —— 远离 plot 的常规携带态；
+        //    ② 实体包围盒与艇的世界投影包围盒相交 —— 贴近 plot 时 Sable 每 tick 末强制清
+        //       tracking（「不能既 tracking 又在 plot 内」）⇒ 甲板生物只能按几何判定。
+        //    路过艇边、不在包围盒内的实体不受影响；操作者本人走下方 playerLocal 精确落位。
+        //    搬完把 tracking 指回本艇：此后网络化按 lastPose 反算成 plot 局部坐标，客户端走
+        //    plotLerpTo 跟随（与正常飞行同源），并绕过「world 坐标落在 plotgrid 内但不在
+        //    任何 plot ⇒ 丢弃位置包」的客户端分支。
         Vec3 teleportDelta = new Vec3(
             newPos.x() - oldAirshipPos.x(),
             newPos.y() - oldAirshipPos.y(),
@@ -178,25 +184,21 @@ public class SableIntegration {
         var region = new net.minecraft.world.phys.AABB(
             oldBounds.minX() - 2, oldBounds.minY() - 2, oldBounds.minZ() - 2,
             oldBounds.maxX() + 2, oldBounds.maxY() + 2, oldBounds.maxZ() + 2);
-        for (Entity carried : level.getEntities(player, region,
-                e -> ((EntityMovementExtension) e).sable$getTrackingSubLevel() == serverSubLevel)) {
+        var shipBox = new net.minecraft.world.phys.AABB(
+            oldBounds.minX(), oldBounds.minY(), oldBounds.minZ(),
+            oldBounds.maxX(), oldBounds.maxY(), oldBounds.maxZ());
+        var carriedEntities = level.getEntities(player, region,
+            e -> ((EntityMovementExtension) e).sable$getTrackingSubLevel() == serverSubLevel
+                || e.getBoundingBox().intersects(shipBox));
+        for (Entity carried : carriedEntities) {
             carried.setPos(
                 carried.getX() + teleportDelta.x,
                 carried.getY() + teleportDelta.y,
                 carried.getZ() + teleportDelta.z);
+            ((EntityMovementExtension) carried).sable$setTrackingSubLevel(serverSubLevel);
         }
-
-        // ⚠️ 根载具显式补搬：坐椅等非生物实体可能不走 Sable 碰撞携带路径（无 tracking），
-        //    留在原地则下一 tick 骑乘系统会把操作者拽回旧位置。已由循环搬走的
-        //    （tracking == 本飞艇）与「在 plot 内被 Sable 自带」的跳过，避免二次位移。
-        Entity root = player.getRootVehicle();
-        if (root != null && root != player
-                && ((EntityMovementExtension) root).sable$getTrackingSubLevel() != serverSubLevel
-                && Sable.HELPER.getContaining(root) == null) {
-            root.setPos(root.getX() + teleportDelta.x,
-                root.getY() + teleportDelta.y,
-                root.getZ() + teleportDelta.z);
-        }
+        org.slf4j.LoggerFactory.getLogger("living_item.teleport").info(
+            "[Teleport] carried entities: {}", carriedEntities.size());
 
         Vector3d newPlayerPos = serverSubLevel.logicalPose().transformPosition(playerLocal, new Vector3d());
         player.setPos(newPlayerPos.x(), newPlayerPos.y(), newPlayerPos.z());

@@ -1014,8 +1014,7 @@ Sable 有三个关键的 Mixin 机制：
 5. 保存玩家局部坐标 playerLocal = oldPose.transformPositionInverse(playerPos)
 6. resetVelocity 归零刚体残速（对齐 Sable 原生 /sable sub_level teleport 官方流程）
 7. 直接设置 logicalPose（双保险）+ handle.teleport() 通知物理管线
-8. 艇上实体随艇：对「tracking == 本艇」的实体套用同一位移；根载具（坐椅）若无
-   tracking 且不在 plot 内，显式补搬——否则下一 tick 骑乘系统把玩家拽回旧位置
+8. 艇上实体随艇：对「tracking == 本艇 或 包围盒与艇相交」的实体套用同一位移，并把 tracking 指回本艇（见下"随艇传送"一节）
 9. 用新 logicalPose 把 playerLocal 投影回世界坐标，player.setPos + ClientboundPlayerPositionPacket
 10. updateLastPose() 同步上一 tick 姿态（实体网络化按 lastPose 反算 plot 局部坐标，必须同步）
 ```
@@ -1035,7 +1034,14 @@ double newAirshipY = airshipPos.y() + (destY - bounds.minY());
 ```
 
 ⚠️ **2026-10-28 误诊纠正（记录留痕）**：艇底对齐实施后真机报告"传送很奇怪、传送不了、飞艇变得很奇怪、方块破坏后会复原"，当时**误诊**为"Rapier 物理与地形剧烈互穿（飞艇乱飞）"并回退为只升不降——**"乱飞/互穿"从未被用户报告，属过度解读**。该三个症状后来被证实全部是 `lastNetworkedPose` 压制杀死客户端位姿同步的同一根因（见下"飞快移动"一节），与下降无关。已随根因修复**恢复艇底对齐**，并把目标点区块预载扩到 3×3（贴地降落时地形碰撞体必须传送瞬间就位）。见 [口径台账](../buffer/code-doc-alignment.md) A4。
-**艇上所有生物随艇传送（2026-10-28 用户定）**：飞艇平移量算出后，对所有「tracking 指向本飞艇」的实体（`EntityMovementExtension.sable$getTrackingSubLevel() == 本艇`，即站在甲板上被 stick 系统携带的玩家 / 生物 / 载具）套用同一位移。此前只 `setPos` 操作者、`updateLastPose` 归零 stick 差值 ⇒ 其余站立生物留在原地（空中则坠落）。判定按 tracking 精确匹配：路过艇边的非携带实体不受影响；操作者本人走局部坐标精确落位。根载具（坐椅等非生物实体）可能不走碰撞携带路径（无 tracking），循环后对玩家根载具显式补搬——已在循环内（tracking == 本艇）或「在 plot 内被 Sable 自带」（`getContaining(root) != null`）的跳过，避免二次位移。服务端实体携带是**碰撞继承位移**（delta 制，`SubLevelEntityCollision`），手工循环先行落位后继承位移自然归零，不会二次位移。
+**艇上所有生物随艇传送（2026-10-28 用户定；同日两次修正）**：飞艇平移量算出后，把同一位移应用到「艇上」的实体。**传送必须手工搬运**：自然携带是 delta 制（`SubLevelEntityCollision` 以 `subLevelPose × lastPose⁻¹ × 位置` 重锚定实体），而流程第 10 步的 `updateLastPose` 已把 lastPose 归到新位姿 ⇒ 差值归零，传送这种「一次一大步」永远轮不到自然携带。选取判据（满足其一）：
+
+1. `tracking == 本艇`——远离 plot 的常规携带态；
+2. 实体包围盒与艇的世界投影包围盒相交——**贴近 plot 时 Sable 每 tick 末强制清 tracking**（`entity_sublevel_collision/EntityMixin#sable$tickInject`：「不能既 tracking 又在 plot 内」），甲板生物只能按几何判定。
+
+第一版只按判据 ① 选取 ⇒ 贴近 plot 的传送（超平坦短距实测的全部场景）一个都搬不到，实测"生物没跟着传送"。操作者本人走局部坐标精确落位，不进循环；路过艇边、不在包围盒内的实体不受影响。
+
+**搬完把 tracking 指回本艇**：此后这些实体的网络化按 `lastPose` 反算成 plot 局部坐标（`ServerEntityMixin#sable$pre`），客户端走 `plotLerpTo` 跟随（与正常飞行同源），并绕过客户端 `sable$lerp` 的「world 坐标落在 plotgrid 内但不在任何 plot ⇒ 丢弃位置包」分支。诊断日志 `[Teleport] carried entities: n`（logger `living_item.teleport`）用于复测时核对选取数量——n=0 而艇上确有生物 ⇒ 判据仍有漏。
 
 **玩家位置同步**（局部坐标投影，适用于有旋转飞艇）：
 
