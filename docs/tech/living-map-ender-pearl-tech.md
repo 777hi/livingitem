@@ -973,8 +973,8 @@ private static boolean handleLivingMapCreation(PlayerInteractEvent.RightClickIte
 | 同维度 + 无坐骑 | `ensureChunkLoaded` + `player.changeDimension(transition)`（同维度分支调用 `connection.teleport()` 同步客户端位置） |
 | 跨维度 + 有坐骑 | `vehicle.changeDimension(transition)`，原版内部自动处理乘客传送和重新骑乘 |
 | 跨维度 + 无坐骑 | `player.changeDimension(transition)` 跨维度传送 |
-| 同维度 + 骑乘飞艇坐垫 | `ensureChunkLoaded` + `ModSable.teleportSubLevel()` 传送整个飞艇，骑行系统自动同步位置 |
-| 同维度 + 站在飞艇上 | 只传送玩家，清除 tracking 后走普通路径 |
+| 同维度 + 骑乘飞艇坐垫 | `ensureChunkLoaded` + `ModSable.teleportSubLevel()` 传送整个飞艇 + **显式平移载客坐垫**与操作者所骑载具（自动跟随假设已勘误，见 §11.2.1） |
+| 同维度 + 站在飞艇上 | 只传送玩家，走普通路径；tracking 由 Sable 移动包 Mixin 在下一个移动包自动清除（本模组不代清，见 §11.2.1 P2-3 注） |
 
 **跨维度带坐骑的关键**：`Entity.changeDimension()` 内部已经处理了乘客的跨维度传送和重新骑乘（`unRide()` → 乘客递归 `changeDimension()` → 乘客 `startRiding(新载具)`），不需要外部手动管理。手动管理反而会导致乘客被 `changeDimension` 两次，产生重复实体。
 
