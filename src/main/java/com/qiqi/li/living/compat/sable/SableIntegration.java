@@ -125,12 +125,17 @@ public class SableIntegration {
         ServerLevel level = player.serverLevel();
         int chunkX = (int) destX >> 4;
         int chunkZ = (int) destZ >> 4;
-        level.getChunk(chunkX, chunkZ);
+        // 3×3 预载：艇底贴地降落时目标点紧贴地形，地形碰撞体必须在传送瞬间就位
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dz = -1; dz <= 1; dz++) {
+                level.getChunk(chunkX + dx, chunkZ + dz);
+            }
+        }
 
         Pose3dc oldPose = serverSubLevel.logicalPose();
         Vector3dc oldAirshipPos = oldPose.position();
 
-        // 传送前的世界包围盒（Sable 每 tick 按当前姿态更新）——艇上生物都在这个范围内
+        // 传送前的世界投影包围盒（Sable 每 tick 按当前姿态更新）——艇上生物与艇底都在这个范围内
         BoundingBox3dc oldBounds = serverSubLevel.boundingBox();
 
         double offsetX = player.getX() - oldAirshipPos.x();
@@ -139,12 +144,11 @@ public class SableIntegration {
         double newAirshipX = destX - offsetX;
         double newAirshipZ = destZ - offsetZ;
 
-        // 高度保持旧规则：只升不降（2026-10-28 实机回退）。
-        // A4 曾改为「艇底对齐目标 Y」（允许下降）——真机实测失败：飞艇被拽到地表后
-        // Rapier 物理与地形剧烈互穿，客户端 sublevel 姿态脱钩（方块破坏后复原、
-        // passengers for unknown entity），见 docs/buffer/code-doc-alignment.md A4。
-        // 「艇底贴地降落」需要与 Sable 物理专门集成（落地缓冲 / 区块预载），当前不做。
-        double newAirshipY = Math.max(oldAirshipPos.y(), destY);
+        // 艇底对齐目标 Y（A4，2026-10-28 恢复实施）。原「只升不降」是误诊回退：
+        // 当时的失败症状（传送不了 / 飞艇变得很奇怪 / 方块破坏后复原）实为下方
+        // lastNetworkedPose 压制杀死客户端位姿同步，并无「物理互穿 / 飞艇乱飞」
+        // 的实测证据（用户从未报过该现象），见 docs/buffer/code-doc-alignment.md A4。
+        double newAirshipY = oldAirshipPos.y() + (destY - oldBounds.minY());
 
         Quaterniondc orientation = oldPose.orientation();
         Vector3dc newPos = new Vector3d(newAirshipX, newAirshipY, newAirshipZ);

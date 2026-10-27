@@ -1008,9 +1008,9 @@ Sable 有三个关键的 Mixin 机制：
 
 ```
 1. 获取玩家所在的 SubLevel
-2. 预载目标中心区块
+2. 预载目标点 3×3 区块（贴地降落时地形碰撞体必须就位）
 3. 用世界坐标计算玩家相对飞艇原点的偏移 offset = playerPos - airshipPos
-4. 计算新飞艇位置 newAirshipPos = destPos - offset（Y 只升不降）
+4. 计算新飞艇位置 newAirshipPos = destPos - offset（Y 艇底对齐目标）
 5. 保存玩家局部坐标 playerLocal = oldPose.transformPositionInverse(playerPos)
 6. resetVelocity 归零刚体残速（对齐 Sable 原生 /sable sub_level teleport 官方流程）
 7. 直接设置 logicalPose（双保险）+ handle.teleport() 通知物理管线
@@ -1023,7 +1023,7 @@ Sable 有三个关键的 Mixin 机制：
 **偏移计算**（世界坐标；普通坐骑与飞艇的高度语义不同）：
 
 - **普通马／船／矿车／骆驼**：把坐骑实体移到目标坐标，再由原版骑乘系统把玩家放回各自座位。
-- **Sable 飞艇**：X/Z 保持操作者相对飞艇原点的水平偏移，使操作者对齐地图目标 X/Z；**Y 只升不降**（`max(当前原点Y, 目标Y)`）。
+- **Sable 飞艇**：X/Z 保持操作者相对飞艇原点的水平偏移，使操作者对齐地图目标 X/Z；**Y 艇底对齐目标**（`newAirshipY = 旧原点Y + (目标Y − 当前艇底Y)`，贴地降落，可升可降）。
 
 ```java
 double offsetX = player.getX() - airshipPos.x();
@@ -1031,10 +1031,10 @@ double offsetZ = player.getZ() - airshipPos.z();
 
 double newAirshipX = destX - offsetX;
 double newAirshipZ = destZ - offsetZ;
-double newAirshipY = Math.max(airshipPos.y(), destY);
+double newAirshipY = airshipPos.y() + (destY - bounds.minY());
 ```
 
-⚠️ **2026-10-28 实机回退**：曾按 A4 试验「飞艇底面对齐目标 Y（允许下降）」——真机（超平坦 + Sable 2.0.3 + Create Aeronautics 1.3.0）实测失败：飞艇被拽到地表后 Rapier 物理与地形剧烈互穿（飞艇乱飞、方块破坏后随 sublevel 重同步复原）、客户端 sublevel 姿态脱钩（`passengers for unknown entity`）。已回退为只升不降；「艇底贴地降落」需要与 Sable 物理专门集成（落地缓冲 / 目的地区块预载 / 客户端 sublevel 同步保障），见 [口径台账](../buffer/code-doc-alignment.md) A4。
+⚠️ **2026-10-28 误诊纠正（记录留痕）**：艇底对齐实施后真机报告"传送很奇怪、传送不了、飞艇变得很奇怪、方块破坏后会复原"，当时**误诊**为"Rapier 物理与地形剧烈互穿（飞艇乱飞）"并回退为只升不降——**"乱飞/互穿"从未被用户报告，属过度解读**。该三个症状后来被证实全部是 `lastNetworkedPose` 压制杀死客户端位姿同步的同一根因（见下"飞快移动"一节），与下降无关。已随根因修复**恢复艇底对齐**，并把目标点区块预载扩到 3×3（贴地降落时地形碰撞体必须传送瞬间就位）。见 [口径台账](../buffer/code-doc-alignment.md) A4。
 **艇上所有生物随艇传送（2026-10-28 用户定）**：飞艇平移量算出后，对所有「tracking 指向本飞艇」的实体（`EntityMovementExtension.sable$getTrackingSubLevel() == 本艇`，即站在甲板上被 stick 系统携带的玩家 / 生物 / 载具）套用同一位移。此前只 `setPos` 操作者、`updateLastPose` 归零 stick 差值 ⇒ 其余站立生物留在原地（空中则坠落）。判定按 tracking 精确匹配：路过艇边的非携带实体不受影响；操作者本人走局部坐标精确落位。根载具（坐椅等非生物实体）可能不走碰撞携带路径（无 tracking），循环后对玩家根载具显式补搬——已在循环内（tracking == 本艇）或「在 plot 内被 Sable 自带」（`getContaining(root) != null`）的跳过，避免二次位移。服务端实体携带是**碰撞继承位移**（delta 制，`SubLevelEntityCollision`），手工循环先行落位后继承位移自然归零，不会二次位移。
 
 **玩家位置同步**（局部坐标投影，适用于有旋转飞艇）：
