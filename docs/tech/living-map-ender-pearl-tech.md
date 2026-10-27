@@ -1033,6 +1033,7 @@ double newAirshipY = Math.max(airshipPos.y(), destY);
 ```
 
 ⚠️ **2026-10-28 实机回退**：曾按 A4 试验「飞艇底面对齐目标 Y（允许下降）」——真机（超平坦 + Sable 2.0.3 + Create Aeronautics 1.3.0）实测失败：飞艇被拽到地表后 Rapier 物理与地形剧烈互穿（飞艇乱飞、方块破坏后随 sublevel 重同步复原）、客户端 sublevel 姿态脱钩（`passengers for unknown entity`）。已回退为只升不降；「艇底贴地降落」需要与 Sable 物理专门集成（落地缓冲 / 目的地区块预载 / 客户端 sublevel 同步保障），见 [口径台账](../buffer/code-doc-alignment.md) A4。
+**艇上所有生物随艇传送（2026-10-28 用户定）**：飞艇平移量算出后，对所有「tracking 指向本飞艇」的实体（`EntityMovementExtension.sable$getTrackingSubLevel() == 本艇`，即站在甲板上被 stick 系统携带的玩家 / 生物 / 载具）套用同一位移。此前只 `setPos` 操作者、`updateLastPose` 归零 stick 差值 ⇒ 其余站立生物留在原地（空中则坠落）。判定按 tracking 精确匹配：路过艇边的非携带实体不受影响；操作者本人走局部坐标精确落位。
 
 **玩家位置同步**（局部坐标投影，适用于有旋转飞艇）：
 
