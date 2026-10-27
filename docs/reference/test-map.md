@@ -89,6 +89,8 @@ src/test/java/com/qiqi/li/
 │   ├── ContainerRedstoneDataTest.java         # 红石信号传播引擎·直接驱动 calculate/**空容器(存储格 0)⇒ 直接跳过，不拿 0 当除数**（30 项）
 │   └── ContainerRedstoneIntegrationTest.java  # 红石**驱动链路**端到端（走真实 processContext）·自维持注册/守卫放行消费者/守卫拦截无关容器(零开销)/残留归零/prio 顺序（5 项）
 ├── living/domain/power/
+│   ├── SignalTrackerRestartTest.java          # A5 停机重启语义（2026-10-28 定案）·上升沿间隔超失活窗口 ⇒ 旧周期作废、恢复沿只当新起点 / 第二个沿重新锁相 / 正常改频（未超窗口）EMA 照常跟随 / 快照回填续接不受误伤（4 项）
+│   ├── PhaseDataMigrationChestSplitTest.java  # A6 拆半清相位（2026-10-28 定案）·双箱拆半 ⇒ 存活半相位快照附件清为 EMPTY（旧锁相不得经回填复活）/ 单箱·非箱子不触发（2 项）
 │   ├── ChannelStateAmplitudeRatchetTest 附录（在 ChannelStateTest 内）# 幅度棘轮（2026-10-27 审查 P1-1，I-E6 下行缩放）·maxDelta 曾只升不降 ⇒ 先高堆叠后降堆叠时冻结历史峰值、发电量长期虚高（「一次高堆叠永久收割」套利）/ 跨 tick 改 latest 覆盖：幅度下行 effDeltaSum 回落 / 同 tick 多事件仍取 max（I-B3 不变）（2 项）
 │   ├── PhaseDataMigrationTest.java            # 相位形态迁移（2026-10-21 补，此前零测试）·moveOut 只对 contentRetaining 搬/非 retaining 不搬/EMPTY 不搬 + moveIn 无组件 noop/**无 ctx 降级也写附件**（5 项）
 │   ├── PowerMathTest.java                     # 发电数学（8 项）
@@ -152,6 +154,7 @@ src/test/java/com/qiqi/li/
 │   ├── MapCoordHelperMatchTest.java           # 组件条目与命中装饰的同一处匹配（2026-10-27 审查 P2-2）·Entry.x() 是 double 世界坐标、Decoration.x() 是 byte 像素，曾直接相比恒 false ⇒ 兜底恒传组件里第一条（多条目地图点哪个都被劫持）/ 类型+换算像素一致才用精确值 / 无匹配回退像素反推 / 换算互逆（4 项）
 │   └── MapCoordHelperTest.java                # 地图坐标换算（29 项）
 ├── living/domain/water/
+│   ├── ContainerDataMigrationChestSplitTest.java  # A6 拆半清流体源（2026-10-28 定案）·otherChestHalf 判定（左半⇒右半 / 单箱·非箱子 null）/ 拆半 ⇒ 存活半流体附件清为 EMPTY（旧源不得经附件回填复活）（3 项）
 │   ├── ContainerFluidDataTest.java            # 流体引擎行为快照·单源扩散/上限7/活物阻挡/非活物穿过/源移除/水流推动/二维扩散 + 行为接缝·按maxLevel/静止不扩散 + TickContext 建流体数据回归 + 通用驱动·自维持/驱动BFS + 源查询API + 派生源·独立存活/挤没/共存/同格无豁免/异种覆盖/EMPTY noop + 落盘CODEC往返 + 晋升接缝 + 转化接缝（26 项）
 │   ├── ContainerFluidHandlerTest.java          # 管道抽取能力（§10）·tank 枚举与稳定序 / SIMULATE 不消耗 vs EXECUTE 删源 / 源全有或全无 / 异种 EMPTY / fill 恒 0 + isFluidValid / 非容器无害 / provider 四段让位（6 项）
 │   ├── ContainerDataMigrationTest.java          # 形态迁移·破坏时数据交给「本体那件」掉落物(**守卫已下沉测 ContainerDrops**)/无本体退回首项/无掉落返回 null + 组件 CODEC 往返保住派生源/空数据不产条目 + snapshot 独立副本/clearAll 一次清干净 + **相位快照 CODEC 往返保住 (P,φ,d)/EMPTY 不进物品** + **moveOut 共用入口**（contentRetaining 搬+清空 / 非 retaining 不搬 / 退化输入安全）+ **端到端 moveOut 写物品组件（非空快照）/ moveIn 写回宿主附件** + **身份优先：有 UUID 只搬身份、不写数据组件（moveOut / moveIn 各一）**（17 项）

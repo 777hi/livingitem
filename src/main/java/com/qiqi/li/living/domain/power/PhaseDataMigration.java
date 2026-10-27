@@ -1,5 +1,6 @@
 package com.qiqi.li.living.domain.power;
 
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -41,14 +42,14 @@ import com.qiqi.li.logging.ModLog;
  * 触发 {@code check_layers.py} 的 R3「领域互依赖」违规 ⇒ 拆成两个类。
  * 共享的掉落物/手持物品判据在 {@link ContainerDrops}（L1，不碰领域类型）。</p>
  *
- * <h3>⚠️ 未解决：大箱子两半各得一份</h3>
+ * <h3>大箱子两半各得一份 —— 已由 A6 拆半清空消解（2026-10-27）</h3>
  * <p>{@code ContainerPhaseWriteback} 每 tick 把<b>同一个</b> snapshot 写给所有关联 BE ⇒
  * 两半附件指向同一对象。破坏一半时只能清掉「那一个 BE」的引用（拿不到另一半的 BE），
  * 于是破坏另一半时会再搬一次 ⇒ <b>两半各得一份</b>。</p>
  *
  * <p>流体那边靠 {@code data.clearAll()} 就地清<b>内存共享对象</b>守恒，相位没有这个载体
- * （record 不可变）。已知会，先去修：要么让两半只写一个 BE，要么在
- * {@code BlockDropsEvent} 时用「另一半是否还在」判先手（先破的搬、后破的不搬）。</p>
+ * （record 不可变）。A6 定案后：双箱拆半时 {@link #clearPhaseOnChestSplit} 显式清空两半
+ * 的相位附件 ⇒ 后破的另一半无旧快照可搬，问题消解。</p>
  */
 @EventBusSubscriber
 public final class PhaseDataMigration {
@@ -62,6 +63,10 @@ public final class PhaseDataMigration {
         if (be == null) return;
         if (!(event.getLevel() instanceof ServerLevel level)) return;
 
+        // A6（2026-10-27 定案）：双箱拆半 ⇒ 相位不分摊不复制，按新布局重新识别信号。
+        // 存活半的旧快照附件若不清，会经「回填」类路径把拆半前的锁相带回新结构。
+        clearPhaseOnChestSplit(level, be);
+
         // 稳态无振荡器时 capture 产 EMPTY ⇒ 这一层挡掉绝大多数方块破坏，零开销
         PhaseSnapshot phase = be.getData(PowerComponents.CONTAINER_PHASE_SNAPSHOT.value());
         if (phase == null || PhaseSnapshot.EMPTY.equals(phase)) return;
@@ -71,6 +76,19 @@ public final class PhaseDataMigration {
         if (target == null) return;
 
         moveOut(be, target.getItem());
+    }
+
+    /** 双箱拆半 ⇒ 清<b>存活半</b>的相位快照附件（A6：红电重新识别信号，不搬旧周期）。
+     *  被破坏半的 BE 随方块移除、附件随之消失，无需处理。 */
+    static void clearPhaseOnChestSplit(ServerLevel level, BlockEntity broken) {
+        BlockPos otherPos = ContainerDrops.otherChestHalf(broken);
+        if (otherPos == null) return;
+
+        BlockEntity other = level.getBlockEntity(otherPos);
+        if (other != null) {
+            other.setData(PowerComponents.CONTAINER_PHASE_SNAPSHOT.value(), PhaseSnapshot.EMPTY);
+        }
+        ModLog.CONTAINER.info("[相位] 双箱拆半：存活半相位快照已清空，按新布局重新锁相（other={})", otherPos);
     }
 
     /**

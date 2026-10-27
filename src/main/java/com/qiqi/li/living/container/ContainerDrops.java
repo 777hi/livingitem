@@ -4,6 +4,8 @@ import java.util.List;
 
 import javax.annotation.Nullable;
 
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.item.ItemEntity;
@@ -11,7 +13,10 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.ChestBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.ChestType;
 
 /**
  * 容器级数据跨形态迁移的<b>共享小工具</b>（2026-10-20 从 {@code ContainerDataMigration} 抽出）。
@@ -76,5 +81,21 @@ public final class ContainerDrops {
             return stack;
         }
         return null;
+    }
+
+    /**
+     * 双箱拆半判定：被破坏的这半是双箱之一 ⇒ 返回<b>存活另一半</b>的位置；单箱 / 非箱子返回 {@code null}。
+     *
+     * <p>供各领域的迁移类在 {@code BlockDropsEvent} 时清存活半的容器级状态
+     * （A6 定案 2026-10-27：拆合双箱，物品照原版分家，容器级状态不分摊不复制、重新开始）。
+     * 判定下沉到 L1，因为箱子是原版方块、不碰任何领域类型。</p>
+     */
+    @Nullable
+    public static BlockPos otherChestHalf(BlockEntity broken) {
+        BlockState state = broken.getBlockState();
+        if (!(state.getBlock() instanceof ChestBlock)) return null;
+        if (state.getValue(ChestBlock.TYPE) == ChestType.SINGLE) return null;
+        Direction connected = ChestBlock.getConnectedDirection(state);
+        return broken.getBlockPos().relative(connected);
     }
 }

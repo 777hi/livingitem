@@ -80,6 +80,12 @@ public final class ContainerDataMigration {
         BlockEntity be = event.getBlockEntity();
         if (be == null) return;
         if (!(event.getLevel() instanceof ServerLevel level)) return;
+
+        // A6（2026-10-27 定案）：双箱拆半 ⇒ 物品照原版分家，流体源不分摊不复制、重新开始。
+        // 原版箱子不是 contentRetaining ⇒ 下面的 moveOut 会早退，存活半的附件残留会被
+        // 新键的「附件回填」复活成旧源 ⇒ 拆半时清掉存活半（被破坏半随 BE 移除，无需处理）。
+        clearFluidOnChestSplit(level, be);
+
         if (!retainsContents(be)) return;   // 绝大多数方块破坏在这里零开销早退
 
         ItemEntity target = ContainerDrops.pickDrop(event.getDrops(), be);
@@ -87,6 +93,21 @@ public final class ContainerDataMigration {
 
         if (!moveOut(be, target.getItem())) return;
         clearOne(level, be.getBlockPos());
+    }
+
+    /**
+     * 双箱拆半 ⇒ 清<b>存活半</b>的流体附件（A6：源是容器级状态，不分摊不复制，重新倒水）。
+     * 被破坏半的 BE 随方块移除、附件随之消失，无需处理。单箱 / 非箱子零开销早退。
+     */
+    static void clearFluidOnChestSplit(ServerLevel level, BlockEntity broken) {
+        BlockPos otherPos = ContainerDrops.otherChestHalf(broken);
+        if (otherPos == null) return;
+
+        BlockEntity other = level.getBlockEntity(otherPos);
+        if (other != null) {
+            other.setData(WaterComponents.CONTAINER_FLUID_DATA.value(), ContainerFluidData.EMPTY);
+        }
+        ModLog.CONTAINER.info("[流体] 双箱拆半：存活半流体源已清空，按新布局重新开始（other={})", otherPos);
     }
 
     /**

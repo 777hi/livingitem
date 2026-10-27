@@ -87,11 +87,14 @@ class PhaseSnapshotWarmupTest {
         }
         long deadLastRise = power.currentTick() - 4;
         for (int i = 0; i < 70; i++) power.endTick();   // 停跳 70t > aliveWindow(4t)=64
-        // 活跃边最后再跳一次（保持在窗口内）
+        // 活跃边同样停了 70t（> 窗口 64）⇒ 按 A5，恢复沿重置锁相，需再跳一次重新锁相
+        locked.onRisingEdge(power.currentTick(), 4096);
+        for (int k = 0; k < 4; k++) power.endTick();
         locked.onRisingEdge(power.currentTick(), 4096);
 
         assertTrue(power.currentTick() - deadLastRise > PowerMath.aliveWindow(4),
             "前置：死边距上跳应超存活窗口");
+        // A5：恢复沿重置锁相后，第二个沿（间隔 4t）已重新锁相 ⇒ period()==4，能进快照
 
         PhaseSnapshot snap = PhaseSnapshot.capture(power, power.currentTick());
         List<Long> keys = snap.edges().stream().map(PhaseSnapshot.EdgeEntry::edgeKey).toList();

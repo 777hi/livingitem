@@ -146,7 +146,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1078 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
+**合计测试用例 1087 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -171,6 +171,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-27 | ⚡ **口径落地：A5 红电停机重启语义 + A6 双箱拆分重算** —— A5：上升沿间隔超失活窗口 ⇒ 旧周期作废、恢复沿只当新起点、不补发停机电量（`SignalTracker` 复用 `aliveWindow`，回归 4 项）；A6：双箱拆半物品照原版分家，流体源与红电相位清空重算（判定下沉 `ContainerDrops.otherChestHalf`，双域各自清存活半，回归 5 项）。台账 A1~A8 处理完毕。测试 1078→1087 全绿 | `docs/buffer/code-doc-alignment.md` · `docs/tech/living-power-tech.md` §6.5 |
 | 2026-10-27 | 📐 **口径收口：A1/A2/A3/A7 落地** —— TNT没锚点不炸（删虚构startFuse、点火统一GUI）；熔炉运行数据不随搬运保留（§8.9虚构SlotAccessor纠正）；地图移除无地面拒绝分支（虚空柱照传，回归+1）；红石Phase0/3伪代码对齐原版排定语义、灯不读外部信号、删未实现烧毁承诺。台账A1-A4/A7标记收口，A5/A6留建议。测试 1074→1078 | `docs/buffer/code-doc-alignment.md` · 各域 tech |
 | 2026-10-27 | 🚀 **Sable 飞艇高度收口：普通坐骑落载具，飞艇艇底对齐目标 Y** —— 对照原版马/船/矿车/骆驼后不混用玩家脚落点：普通坐骑行为不变；飞艇保持操作者艇内相对位置与姿态，X/Z 对齐地图目标，Y 以 Sable 世界投影包围盒 `minY` 平移艇底到目标高度；移除“只能升高不能降低”，不扶正、不找安全地形。回归 +3（1077） | `docs/tech/living-map-ender-pearl-tech.md` §11.2.1 · `docs/buffer/code-doc-alignment.md` A4 |
 | 2026-10-27 | 🛡️ **全项目审查收官：16 域并行深查，真 bug 22 个全修**（分诊口径：只修真 bug，文档↔代码冲突冻结待仲裁）——覆盖活箱子/红石×2/流体/TNT/红电/熔炉酿造/耕地/地图传送/图标/兼容层/工具背包；抓出跨维度抽干、读写槽位键不对称、红电棘轮、落点嵌地等系统性缺陷；审查自引入的守卫 P1 被后续域当场抓修。未修项全量登记 buffer 审查报告；测试 1024→1074 全绿，token ≈90M | `docs/buffer/2026-10-27-全项目审查报告.md` · `docs/TODO.md` 审查收口节 |
@@ -180,7 +181,6 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-10-26 | 🎒 **背包里的活工具开始"看得见"（活背包 6.1 工具通道）** —— 查证**推翻**原方案前提：精妙内容在服务端 `BackpackStorage`（SavedData），客户端只有按需填充的副本 ⇒ **没有"客户端自己算"这条路**，物品形态的实时视觉只能由我们下发。`K2` 宿主键从 `BlockPos` 扩成 `HostRef`（方块 / 玩家 / 实体，对应 `ContainerAnchor` 三种），**仍是一条通道**；客户端 `HostOrigin` 一处解析宿主坐标、两个渲染器共用；tooltip 加**容器 ID** 供玩家自查复制品；同一宿主多背包按**槽位**区分（原先会互相覆盖）；**渲染三件收束**（内容可见性规则表 / 取点带 `partialTick` / `HostRef` 上移公共类型），**信标已接**（`containerUuid` 决定"发不发自己"）。**待真机复验** | `docs/tech/living-backpack-tech.md` §6 · `docs/TODO.md` 活背包 6.1 |
 | 2026-10-26 | 🗂️ **四个客户端渲染缓存合一** —— `DimensionScopedCache<T>` 收掉四份「volatile + 维度比对 + 整体替换」，门面只留类型、**调用点零改动**；「换维度串台」不变量从四份收成一份 | `docs/buffer/render-state-broadcast.md` §7 |
 | 2026-10-26 | 🧩 **渲染依赖收成 `ToolRenderState`（零协议变更）** —— 「比较什么」与「渲染读什么」原是两份手写清单、分居两个文件 ⇒ 漏改一边即静默失效（今天那个「不转圈」的根因）。两边改从同一 record 取，客户端五处散读收成一处；不进包、耐久仍不进 | `docs/tech/living-tool-tech.md` §11.5 |
-| 2026-10-26 | 🧹 **三个同步器补齐「逐维度 flush 互清去重表」** —— `LivingToolPlayerSync` / `BeaconChestHost` / `BeaconPlayerHostSync` 仍在照抄 10-23 在 K2 修掉的写法 ⇒ **每玩家每 tick 一个包**（单人也中，三份拷贝各一份）。合并口径抽成 `BroadcastDedup#merge` 四调用点共用，测试只留一份并改成真测覆盖；协议零变化 | `docs/buffer/render-state-broadcast.md` §7 |
 ## 提交前必跑（2026-10-20 定）
 
 ```bash

@@ -32,6 +32,17 @@ public class SignalTracker {
         if (lastRisingTick >= 0) {
             long interval = tick - lastRisingTick;
             if (interval > 0) {
+                // A5（2026-10-27 定案）：停机不补电。间隔超过失活窗口 = 振荡器停过机，
+                // 旧周期作废：本次沿只当新起点，丢弃该间隔、重置锁相，下一个沿重新起算。
+                // 否则停机时长会被 EMA 当成一个超长周期，恢复瞬间按垃圾周期入账。
+                // 阈值复用失活判据 aliveWindow，不新增第二套停机计时。
+                if (PowerMath.aliveWindow(estimatedPeriodFloor()) < interval) {
+                    periodTicks = 0;
+                    intervalsSeen = 0;
+                    prevRisingTick = -1;
+                    lastRisingTick = tick;
+                    return;
+                }
                 periodTicks = intervalsSeen == 0
                     ? interval
                     : periodTicks + (interval - periodTicks) * 0.5;
@@ -40,6 +51,15 @@ public class SignalTracker {
             prevRisingTick = lastRisingTick;
         }
         lastRisingTick = tick;
+    }
+
+    /**
+     * 周期估计下限（失活判据用）：已锁相用当前估计，未锁相返回 0 ⇒ aliveWindow 落到
+     * 最小窗口 32。停机后的第一次恢复沿因「间隔 &gt; 窗口」作废旧周期，恢复后第二次沿
+     * 起重新锁相 —— 与「停机不补电、恢复重新计时」的玩法语义一致。
+     */
+    private int estimatedPeriodFloor() {
+        return intervalsSeen >= 1 && periodTicks >= 1.5 ? (int) Math.round(periodTicks) : 0;
     }
 
     /** 周期估计（tick）；少于 2 个间隔则 0 */
