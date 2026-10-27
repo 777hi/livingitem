@@ -17,6 +17,8 @@ import dev.ryanhcode.sable.sublevel.system.SubLevelPhysicsSystem;
 import net.minecraft.network.protocol.game.ClientboundPlayerPositionPacket;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.phys.Vec3;
 import org.joml.Quaterniondc;
 import org.joml.Vector3d;
 import org.joml.Vector3dc;
@@ -128,6 +130,9 @@ public class SableIntegration {
         Pose3dc oldPose = serverSubLevel.logicalPose();
         Vector3dc oldAirshipPos = oldPose.position();
 
+        // 传送前的世界包围盒（Sable 每 tick 按当前姿态更新）——艇上生物都在这个范围内
+        BoundingBox3dc oldBounds = serverSubLevel.boundingBox();
+
         double offsetX = player.getX() - oldAirshipPos.x();
         double offsetZ = player.getZ() - oldAirshipPos.z();
 
@@ -150,6 +155,26 @@ public class SableIntegration {
         serverSubLevel.logicalPose().position().set(newPos);
         serverSubLevel.logicalPose().orientation().set(orientation);
         handle.teleport(newPos, orientation);
+
+        // ⚠️ 艇上所有生物一起传送（2026-10-28 用户定）：飞艇平移后，被 stick 系统携带的
+        //    生物（站在甲板上的玩家 / 生物 / 载具）的 tracking 仍指向本飞艇，必须套用
+        //    同一位移——否则 updateLastPose 归零差值后它们留在原地（空中则坠落）。
+        //    被破坏半……不对，此处是飞艇：判定用「tracking == 本飞艇」，仅路过艇边的
+        //    非携带实体不受影响。操作者本人走下方 playerLocal 精确落位，此处排除。
+        Vec3 teleportDelta = new Vec3(
+            newPos.x() - oldAirshipPos.x(),
+            newPos.y() - oldAirshipPos.y(),
+            newPos.z() - oldAirshipPos.z());
+        var region = new net.minecraft.world.phys.AABB(
+            oldBounds.minX() - 2, oldBounds.minY() - 2, oldBounds.minZ() - 2,
+            oldBounds.maxX() + 2, oldBounds.maxY() + 2, oldBounds.maxZ() + 2);
+        for (Entity carried : level.getEntities(player, region,
+                e -> ((EntityMovementExtension) e).sable$getTrackingSubLevel() == serverSubLevel)) {
+            carried.setPos(
+                carried.getX() + teleportDelta.x,
+                carried.getY() + teleportDelta.y,
+                carried.getZ() + teleportDelta.z);
+        }
 
         Vector3d newPlayerPos = serverSubLevel.logicalPose().transformPosition(playerLocal, new Vector3d());
         player.setPos(newPlayerPos.x(), newPlayerPos.y(), newPlayerPos.z());
