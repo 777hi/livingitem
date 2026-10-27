@@ -1014,7 +1014,7 @@ Sable 有三个关键的 Mixin 机制：
 5. 保存玩家局部坐标 playerLocal = oldPose.transformPositionInverse(playerPos)
 6. resetVelocity 归零刚体残速（对齐 Sable 原生 /sable sub_level teleport 官方流程）
 7. 直接设置 logicalPose（双保险）+ handle.teleport() 通知物理管线
-8. 艇上实体随艇：对「tracking == 本艇 或 包围盒与艇相交」的实体套用同一位移，并把 tracking 指回本艇（见下"随艇传送"一节）
+8. 操作者所骑载具随艇平移（同一位移）；甲板上其他生物不跟随（玩法取消，见下"操作者所骑载具"一节）
 9. 用新 logicalPose 把 playerLocal 投影回世界坐标，player.setPos + ClientboundPlayerPositionPacket
 10. updateLastPose() 同步上一 tick 姿态（实体网络化按 lastPose 反算 plot 局部坐标，必须同步）
 ```
@@ -1034,14 +1034,7 @@ double newAirshipY = airshipPos.y() + (destY - bounds.minY());
 ```
 
 ⚠️ **2026-10-28 误诊纠正（记录留痕）**：艇底对齐实施后真机报告"传送很奇怪、传送不了、飞艇变得很奇怪、方块破坏后会复原"，当时**误诊**为"Rapier 物理与地形剧烈互穿（飞艇乱飞）"并回退为只升不降——**"乱飞/互穿"从未被用户报告，属过度解读**。该三个症状后来被证实全部是 `lastNetworkedPose` 压制杀死客户端位姿同步的同一根因（见下"飞快移动"一节），与下降无关。已随根因修复**恢复艇底对齐**，并把目标点区块预载扩到 3×3（贴地降落时地形碰撞体必须传送瞬间就位）。见 [口径台账](../buffer/code-doc-alignment.md) A4。
-**艇上所有生物随艇传送（2026-10-28 用户定；同日两次修正）**：飞艇平移量算出后，把同一位移应用到「艇上」的实体。**传送必须手工搬运**：自然携带是 delta 制（`SubLevelEntityCollision` 以 `subLevelPose × lastPose⁻¹ × 位置` 重锚定实体），而流程第 10 步的 `updateLastPose` 已把 lastPose 归到新位姿 ⇒ 差值归零，传送这种「一次一大步」永远轮不到自然携带。选取判据（满足其一）：
-
-1. `tracking == 本艇`——远离 plot 的常规携带态；
-2. 实体包围盒与艇的世界投影包围盒相交——**贴近 plot 时 Sable 每 tick 末强制清 tracking**（`entity_sublevel_collision/EntityMixin#sable$tickInject`：「不能既 tracking 又在 plot 内」），甲板生物只能按几何判定。
-
-第一版只按判据 ① 选取 ⇒ 贴近 plot 的传送（超平坦短距实测的全部场景）一个都搬不到，实测"生物没跟着传送"。操作者本人走局部坐标精确落位，不进循环；路过艇边、不在包围盒内的实体不受影响。
-
-**搬完把 tracking 指回本艇**：此后这些实体的网络化按 `lastPose` 反算成 plot 局部坐标（`ServerEntityMixin#sable$pre`），客户端走 `plotLerpTo` 跟随（与正常飞行同源），并绕过客户端 `sable$lerp` 的「world 坐标落在 plotgrid 内但不在任何 plot ⇒ 丢弃位置包」分支。诊断日志 `[Teleport] carried entities: n`（logger `living_item.teleport`）用于复测时核对选取数量——n=0 而艇上确有生物 ⇒ 判据仍有漏。
+**操作者所骑载具随艇；甲板上其他生物不跟随（2026-10-28 用户定案）**：传送只平移**操作者本人**（局部坐标精确落位）与**其所骑的载具**（同一位移，下一 tick 骑乘系统把操作者放回座位）。曾按用户要求实施「艇上所有生物随艇」，两版判据（tracking 精确匹配 / 补几何包围盒）实测都不能稳定带走甲板生物，玩法撤销。技术结论留痕：自然携带是 delta 制（`SubLevelEntityCollision` 以 `subLevelPose × lastPose⁻¹ × 位置` 重锚定），而 `updateLastPose` 已把差值归零 ⇒ 传送永远轮不到自然携带，只能手工搬；而**贴近 plot 时 Sable 每 tick 末强制清 tracking**（`entity_sublevel_collision/EntityMixin#sable$tickInject`：「不能既 tracking 又在 plot 内」）⇒「是否在艇上」无法可靠判定——这是玩法不可行的根因，若重启需先在 Sable 侧解决实体锚定判据。
 
 **玩家位置同步**（局部坐标投影，适用于有旋转飞艇）：
 

@@ -14,6 +14,8 @@ import javax.annotation.Nullable;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.config.GameplayConfig;
+import com.qiqi.li.living.container.HostRef;
 import com.qiqi.li.living.container.ItemEntityContainerContext;
 import com.qiqi.li.living.domain.tools.LivingToolAction;
 import com.qiqi.li.living.domain.tools.LivingToolAssistState;
@@ -463,6 +465,15 @@ public final class LivingToolModelRenderer {
         // ③ 方块容器 + 物品形态容器（数据来自 K2 的 S2C 包；宿主可能是方块 / 玩家 / 实体）
         for (LivingToolHostPacket.Entry entry :
                 LivingToolHostClientCache.get(level.dimension().location())) {
+            // ⚠️ 物品形态宿主（玩家 / 实体身上的活背包）受 tool_and_weapon 开关管：
+            //    开关关 ⇒ 背包工具不借宿主锚点（功能关闭）⇒ 外显（悬浮模型 / 背后环）一并
+            //    取消（2026-10-28 用户定，对齐活信标「关 ⇒ 光束消失」）。K2 上报不能关
+            //    （客户端算辅助挖掘速度要靠它），所以门在渲染这一侧。方块容器有自己的
+            //    锚点、不受此开关 ⇒ 照常渲染。
+            if (entry.host().kind() != HostRef.Kind.BLOCK
+                    && !GameplayConfig.toolAndWeaponUsesHostAnchor()) {
+                continue;
+            }
             Vec3 origin = HostOrigin.of(level, entry.host(), partialTick);
             if (origin == null) {
                 continue;   // 宿主此刻不可见（玩家不在本维度 / 实体已卸载）

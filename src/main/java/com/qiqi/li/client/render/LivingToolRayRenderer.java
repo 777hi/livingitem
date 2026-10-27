@@ -5,6 +5,8 @@ import java.util.List;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.config.GameplayConfig;
+import com.qiqi.li.living.container.HostRef;
 import com.qiqi.li.living.container.ItemEntityContainerContext;
 import com.qiqi.li.living.domain.tools.LivingToolHostClientCache;
 import com.qiqi.li.living.domain.tools.LivingToolMemory;
@@ -231,6 +233,13 @@ public final class LivingToolRayRenderer {
         List<LivingToolHostPacket.Entry> hosts =
             LivingToolHostClientCache.get(level.dimension().location());
         for (LivingToolHostPacket.Entry entry : hosts) {
+            // ⚠️ 物品形态宿主（玩家 / 实体身上的活背包）受 tool_and_weapon 开关管：
+            //    开关关 ⇒ 功能关闭 ⇒ 记忆射线一并取消（2026-10-28 用户定，对齐活信标
+            //    「关 ⇒ 光束消失」；否则只剩淡射线悬空）。方块容器有自己的锚点 ⇒ 照常画。
+            if (entry.host().kind() != HostRef.Kind.BLOCK
+                    && !GameplayConfig.toolAndWeaponUsesHostAnchor()) {
+                continue;
+            }
             Vec3 origin = HostOrigin.of(level, entry.host(), partialTick);
             if (origin == null) {
                 continue;   // 宿主此刻不可见（玩家不在本维度 / 实体已卸载）
