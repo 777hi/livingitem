@@ -152,6 +152,12 @@ public class SableIntegration {
         Vector3d playerLocal = oldPose.transformPositionInverse(
             new Vector3d(player.getX(), player.getY(), player.getZ()), new Vector3d());
 
+        // 对齐 Sable 原生 /sable sub_level teleport：先归零刚体速度再 teleport，
+        // 防止传送前的残余动量把飞艇在新位置继续拖走。
+        ServerSubLevelContainer container = SubLevelContainer.getContainer(level);
+        if (container != null) {
+            container.physicsSystem().getPipeline().resetVelocity(serverSubLevel);
+        }
         serverSubLevel.logicalPose().position().set(newPos);
         serverSubLevel.logicalPose().orientation().set(orientation);
         handle.teleport(newPos, orientation);
@@ -176,15 +182,31 @@ public class SableIntegration {
                 carried.getZ() + teleportDelta.z);
         }
 
+        // ⚠️ 根载具显式补搬：坐椅等非生物实体可能不走 Sable 碰撞携带路径（无 tracking），
+        //    留在原地则下一 tick 骑乘系统会把操作者拽回旧位置。已由循环搬走的
+        //    （tracking == 本飞艇）与「在 plot 内被 Sable 自带」的跳过，避免二次位移。
+        Entity root = player.getRootVehicle();
+        if (root != null && root != player
+                && ((EntityMovementExtension) root).sable$getTrackingSubLevel() != serverSubLevel
+                && Sable.HELPER.getContaining(root) == null) {
+            root.setPos(root.getX() + teleportDelta.x,
+                root.getY() + teleportDelta.y,
+                root.getZ() + teleportDelta.z);
+        }
+
         Vector3d newPlayerPos = serverSubLevel.logicalPose().transformPosition(playerLocal, new Vector3d());
         player.setPos(newPlayerPos.x(), newPlayerPos.y(), newPlayerPos.z());
 
         serverSubLevel.updateLastPose();
 
-        serverSubLevel.lastNetworkedPose().set(serverSubLevel.logicalPose());
+        // ⚠️ 不碰 lastNetworkedPose / lastNetworkedStopped（2026-10-28 全面审查根因）：
+        //    SubLevelTrackingSystem#sendMovementUpdates 只在「logicalPose 与 lastNetworkedPose
+        //    有差」时才向客户端发 MOVE 快照——手动把 lastNetworkedPose 设成新位姿恰好骗过
+        //    该判据，客户端永远收不到传送后的位姿，飞艇在客户端原地不动（服务端已到位），
+        //    即「传送不了」的根因。交由 Sable 正常发 MOVE；两个速度清零仅防物理暂停时
+        //    把传送前的残速发进快照导致客户端外插甩飞。
         serverSubLevel.latestLinearVelocity.zero();
         serverSubLevel.latestAngularVelocity.zero();
-        serverSubLevel.setLastNetworkedStopped(true);
 
         // 同步客户端位置：发送世界坐标（而非SubLevel局部坐标），因为传送后plot仍在旧位置，
         // getContaining(newPlayerPos)会返回null，玩家不在SubLevel内。

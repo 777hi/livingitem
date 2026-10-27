@@ -15,6 +15,17 @@
 
 ---
 
+## 2026-10-28
+
+- 🚀 **飞艇传送「传送不了」根因修复（第三次实机失败后全面对照 Sable 源码）** —— 用户在回退后构建（874266f）实测仍"传送不了"，日志却显示服务端 4 次传送全部 complete、无 SoftConnection 拦截、无 Sable 报错 ⇒ 问题必然在传送之后的世界状态。逐层通读 Sable（`SubLevelTrackingSystem` / `entities_stick_sublevels` / `entity_sublevel_collision` / `SableSubLevelCommands` 原生传送命令 / 1.21.1 `handleMovePlayer`），定位根因：
+
+  - **根因**：`teleportSubLevel` 手动 `lastNetworkedPose().set(新位姿)` + `setLastNetworkedStopped(true)`——而 `SubLevelTrackingSystem#sendMovementUpdates` 是客户端获知 sublevel 位姿的**唯一通道**，判据是「logicalPose 与 lastNetworkedPose 有差才发 MOVE 快照」。手动抹平差异恰好骗过判据 ⇒ **客户端永远收不到传送后的位姿**，飞艇在客户端原地不动（服务端已到位）＝「传送不了」。该压制当初为治「超远传送客户端缓动踢出」而加（§11.2.1），属杀鸡取卵：反作弊已由 `updateLastPose`（服务端差值归零）+ 手动 `ClientboundPlayerPositionPacket`（客户端瞬跳）两层兜住。
+  - **修复**：删两行压制，`lastNetworkedPose` / `lastNetworkedStopped` 留给 Sable 自行维护；保留两个速度清零（防物理暂停时残速进快照导致客户端外插）。补 `pipeline.resetVelocity`（对齐 Sable 原生 `/sable sub_level teleport` 官方两步流程：resetVelocity + teleport，防传送前残量动量把飞艇在新位置拖走）。
+  - **根载具补搬**：坐椅等非生物实体可能不走 Sable 碰撞携带路径（无 tracking），手工循环盖不到 ⇒ 留在原地则下一 tick 骑乘系统把玩家拽回旧位置。循环后对玩家根载具显式补搬，已在循环内（tracking == 本艇）或「plot 内被 Sable 自带」（`getContaining(root) != null`）的跳过。
+  - **顺带确认**（写进 tech §11.2.1）：服务端实体携带是**碰撞继承位移**（delta 制，`SubLevelEntityCollision`），手工循环先行落位后继承位移自然归零，不会二次位移；`updateLastPose` 是实体网络化按 `lastPose` 反算 plot 局部坐标的前提，必须保留。
+
+  文档：tech §11.2.1（传送流程 10 步 / 飞快移动一节重写 / 随艇段落补根载具与 delta 制说明）、台账 A4 根因留痕。**待真机复验**。另：Sable 新版 2.0.4~2.0.6 更新日志无传送相关修复，升级不解决本问题（2.0.6 修的是站在流体上的实体与网络 mixin 小调）。
+
 ## 2026-10-27
 
 - 🧩 **「操作者是谁」判据收束（物品形态的第四个横切）** —— 用户实测：在物品栏调好射线微调后放进活背包，射线仍从眼睛出；被动模式在背包里也完全不辅助。查证发现两者同因：**「操作者」一直用「ctx 有没有 inventory」判断**，而物品形态的 inventory 恒 null（它靠 `IItemHandler` 包装），但背包背在身上时操作者就是那个玩家。

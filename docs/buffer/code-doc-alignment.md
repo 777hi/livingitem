@@ -45,7 +45,8 @@
 
 - **已实施后又回退（2026-10-28）**：曾按批准实现「艇底对齐目标 Y（允许下降）」，真机（超平坦 + Sable 2.0.3 + Create Aeronautics 1.3.0）实测失败——飞艇被拽到地表后 Rapier 物理与地形剧烈互穿（飞艇乱飞）、客户端 sublevel 姿态脱钩（方块破坏后随重同步复原、`passengers for unknown entity`）。已回退为原「只升不降」（`max(当前原点Y, 目标Y)`），实机日志确认回退前服务端 6 次传送均执行、落点为地表高度。
 - **当前行为**：飞艇传送 = 水平跃迁（X/Z 对齐操作者选点，高度保持）；「艇底贴地降落」需要与 Sable 物理专门集成（落地缓冲 / 目的地区块预载 / 客户端 sublevel 同步保障），已登记待办，不再作为已交付能力。
-- **补充实施（2026-10-28 用户定）**：飞艇传送时**艇上所有生物一起走**——`teleportSubLevel` 把同样的平移量应用到所有「tracking 指向本飞艇」的实体（站在甲板上被 stick 系统携带的玩家 / 生物 / 载具）。此前只 setPos 操作者、`updateLastPose` 归零 stick 差值 ⇒ 其余站立生物留在原地（空中则坠落）。判定用 `EntityMovementExtension.sable$getTrackingSubLevel() == 本飞艇`，路过艇边的非携带实体不受影响。
+- **补充实施（2026-10-28 用户定）**：飞艇传送时**艇上所有生物一起走**——`teleportSubLevel` 把同样的平移量应用到所有「tracking 指向本飞艇」的实体（站在甲板上被 stick 系统携带的玩家 / 生物 / 载具）。此前只 setPos 操作者、`updateLastPose` 归零 stick 差值 ⇒ 其余站立生物留在原地（空中则坠落）。判定用 `EntityMovementExtension.sable$getTrackingSubLevel() == 本飞艇`，路过艇边的非携带实体不受影响。根载具（坐椅等非生物实体）可能不走碰撞携带路径（无 tracking），循环后对玩家根载具显式补搬（已在循环内或 plot 内自带的跳过）。
+- **「传送不了」根因定位（2026-10-28 全面审查，回退后第三次实机仍失败）**：实机日志显示服务端 4 次传送全部 complete、无 SoftConnection 拦截、无报错 ⇒ 问题在传送之后。全面对照 Sable 源码后定位：`teleportSubLevel` 手动 `lastNetworkedPose().set(新位姿)` + `setLastNetworkedStopped(true)`，恰好骗过 `SubLevelTrackingSystem#sendMovementUpdates` 的「logicalPose 与 lastNetworkedPose 有差才发 MOVE 快照」判据 ⇒ **客户端永远收不到传送后的位姿**，飞艇在客户端原地不动（服务端已到位）。该压制当初为治「超远传送客户端缓动踢出」而加（tech §11.2.1），属杀鸡取卵：反作弊由 `updateLastPose` + 手动 `ClientboundPlayerPositionPacket` 两层已兜住，位姿同步必须留给 Sable（其 MOVE 发出后自行置 stopped）。已删两行，并补 `pipeline.resetVelocity`（对齐 Sable 原生 `/sable sub_level teleport` 官方流程：resetVelocity + teleport 两句，其余全交给 Sable 系统自走）。
 - 保留的原版对照结论仍然有效：普通马／船／矿车／骆驼落载具 + 原版骑乘系统放回座位；`ServerPlayer` 同维度也走 `onTravelToDimension`（取消返回 null）；双人载具从根实体迁移整个乘客树。
 
 ### A5. 已定并实施：停机后重新计时，不补发停机期间的电

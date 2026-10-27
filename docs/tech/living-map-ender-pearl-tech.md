@@ -1008,14 +1008,16 @@ Sable 有三个关键的 Mixin 机制：
 
 ```
 1. 获取玩家所在的 SubLevel
-2. 用世界坐标计算玩家相对飞艇原点的偏移 offset = playerPos - airshipPos
-3. 计算新飞艇位置 newAirshipPos = destPos - offset
-4. 保存玩家在飞艇局部坐标系中的位置 playerLocal = oldPose.transformPositionInverse(playerPos)
-5. 直接设置 logicalPose（双保险，某些物理管线可能不会更新）
-6. handle.teleport() 通知物理管线
-7. 用新 logicalPose 把 playerLocal 投影回世界坐标 newPlayerPos = newPose.transformPosition(playerLocal)
-8. player.setPos(newPlayerPos) 同步玩家位置（绕过 Sable Mixin）
-9. updateLastPose() 同步上一 tick 姿态
+2. 预载目标中心区块
+3. 用世界坐标计算玩家相对飞艇原点的偏移 offset = playerPos - airshipPos
+4. 计算新飞艇位置 newAirshipPos = destPos - offset（Y 只升不降）
+5. 保存玩家局部坐标 playerLocal = oldPose.transformPositionInverse(playerPos)
+6. resetVelocity 归零刚体残速（对齐 Sable 原生 /sable sub_level teleport 官方流程）
+7. 直接设置 logicalPose（双保险）+ handle.teleport() 通知物理管线
+8. 艇上实体随艇：对「tracking == 本艇」的实体套用同一位移；根载具（坐椅）若无
+   tracking 且不在 plot 内，显式补搬——否则下一 tick 骑乘系统把玩家拽回旧位置
+9. 用新 logicalPose 把 playerLocal 投影回世界坐标，player.setPos + ClientboundPlayerPositionPacket
+10. updateLastPose() 同步上一 tick 姿态（实体网络化按 lastPose 反算 plot 局部坐标，必须同步）
 ```
 
 **偏移计算**（世界坐标；普通坐骑与飞艇的高度语义不同）：
@@ -1033,7 +1035,7 @@ double newAirshipY = Math.max(airshipPos.y(), destY);
 ```
 
 ⚠️ **2026-10-28 实机回退**：曾按 A4 试验「飞艇底面对齐目标 Y（允许下降）」——真机（超平坦 + Sable 2.0.3 + Create Aeronautics 1.3.0）实测失败：飞艇被拽到地表后 Rapier 物理与地形剧烈互穿（飞艇乱飞、方块破坏后随 sublevel 重同步复原）、客户端 sublevel 姿态脱钩（`passengers for unknown entity`）。已回退为只升不降；「艇底贴地降落」需要与 Sable 物理专门集成（落地缓冲 / 目的地区块预载 / 客户端 sublevel 同步保障），见 [口径台账](../buffer/code-doc-alignment.md) A4。
-**艇上所有生物随艇传送（2026-10-28 用户定）**：飞艇平移量算出后，对所有「tracking 指向本飞艇」的实体（`EntityMovementExtension.sable$getTrackingSubLevel() == 本艇`，即站在甲板上被 stick 系统携带的玩家 / 生物 / 载具）套用同一位移。此前只 `setPos` 操作者、`updateLastPose` 归零 stick 差值 ⇒ 其余站立生物留在原地（空中则坠落）。判定按 tracking 精确匹配：路过艇边的非携带实体不受影响；操作者本人走局部坐标精确落位。
+**艇上所有生物随艇传送（2026-10-28 用户定）**：飞艇平移量算出后，对所有「tracking 指向本飞艇」的实体（`EntityMovementExtension.sable$getTrackingSubLevel() == 本艇`，即站在甲板上被 stick 系统携带的玩家 / 生物 / 载具）套用同一位移。此前只 `setPos` 操作者、`updateLastPose` 归零 stick 差值 ⇒ 其余站立生物留在原地（空中则坠落）。判定按 tracking 精确匹配：路过艇边的非携带实体不受影响；操作者本人走局部坐标精确落位。根载具（坐椅等非生物实体）可能不走碰撞携带路径（无 tracking），循环后对玩家根载具显式补搬——已在循环内（tracking == 本艇）或「在 plot 内被 Sable 自带」（`getContaining(root) != null`）的跳过，避免二次位移。服务端实体携带是**碰撞继承位移**（delta 制，`SubLevelEntityCollision`），手工循环先行落位后继承位移自然归零，不会二次位移。
 
 **玩家位置同步**（局部坐标投影，适用于有旋转飞艇）：
 
@@ -1057,16 +1059,21 @@ player.setPos(newPlayerPos.x(), newPlayerPos.y(), newPlayerPos.z());
 | `player.teleportTo(double, double, double)` | WrapMethod 调用 `projectOutOfSubLevel()` 反投影 | 把世界坐标当投影坐标反算，玩家被传到几千万格外 |
 | `player.setPos(double, double, double)` | 无 Mixin 拦截，直接设置坐标 | ✅ 正确：绕过所有 Sable Mixin |
 
-**超远距离传送（>320格）"飞快移动"问题**：Sable 的 `entities_stick_sublevels` 系统根据 `logicalPose` 和 `lastPose` 的差值每 tick 平滑移动玩家。超远距离传送时，`logicalPose` 瞬间变化巨大，但 `lastPose` 仍是旧值，差值导致系统在接下来的 tick 中持续移动玩家，产生"缓动"效果。
+**超远距离传送（>320格）"飞快移动"问题**：传送后若客户端沿用旧坐标继续发移动包，会被原版反作弊踢出（moved too quickly）。
 
-**修复**：传送后同步网络姿态和速度，使网络系统认为飞艇已停止移动：
+**修复（两层）**：
 
-```java
-serverSubLevel.lastNetworkedPose().set(serverSubLevel.logicalPose());
-serverSubLevel.latestLinearVelocity.zero();
-serverSubLevel.latestAngularVelocity.zero();
-serverSubLevel.setLastNetworkedStopped(true);
-```
+1. `updateLastPose()` 把 `lastPose` 归到新位姿，服务端碰撞携带的 per-tick 差值归零，不再持续缓动实体；
+2. 传送后立即发送 `ClientboundPlayerPositionPacket`（见下），客户端瞬间跳到新坐标，后续移动包基于新坐标，与服务端一致。
+
+⚠️ **2026-10-28 全面审查纠正——「传送不了」的根因**：此前曾在此处额外手动
+`lastNetworkedPose().set(logicalPose)` + `setLastNetworkedStopped(true)`，意图"让网络系统认为飞艇已停止移动"。
+**这恰好把客户端位姿同步整个杀死**：`SubLevelTrackingSystem#sendMovementUpdates` 只在
+「logicalPose 与 lastNetworkedPose 有差」时才向客户端发 MOVE 位姿快照，手动抹平差异骗过了判据
+⇒ 客户端永远收不到传送后的位姿，飞艇在客户端原地不动（服务端已到位）。实测日志佐证：服务端
+4 次传送全部 complete、无拦截无报错，玩家仍报"传送不了"。
+`lastNetworkedPose` / `lastNetworkedStopped` 必须留给 Sable 自行维护（发送 MOVE 后它自己会置
+stopped）；两个 `latestLinear/AngularVelocity` 清零保留——防物理暂停时把传送前残速发进快照导致客户端外插甩飞。
 
 **站在飞艇上虚空掉落问题**：站在飞艇上（非骑乘坐垫）传送后，客户端仍发送传送前旧坐标的移动包。`ServerboundMovePlayerPacketMixin` 中 `Sable.HELPER.getContaining(level, oldX, oldZ)` 返回 null（飞艇已传送），Mixin 清除 `trackingSubLevel`，玩家脱离飞艇掉入虚空。
 
