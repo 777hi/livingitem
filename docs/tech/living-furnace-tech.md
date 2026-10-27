@@ -44,6 +44,7 @@
 | 5 | 进度 **`progress ≥ total`** 即完成，完成后**重置 0** | — |
 | 6 | **可暂停**：无法继续时回退进度 + 消耗余热 | 不「白烧」燃料 |
 | 7 | 燃烧标志**仅网络同步、不落盘**（派生数据） | 稳态零写入（与活耕地「世界轴节拍」同族） |
+| 8 | 运行时进度 / `burnTime` / 配方缓存只存 `ContainerRuntimeCache`，**不随熔炉物品搬运，不补偿余热** | DataComponent 不承载运行状态；不套用于活酿造台 |
 
 **能力清单**：✅ 熔炼（配方缓存匹配）· ✅ 燃料（含残留物）· ✅ 进度 / 暂停 / 余热
 · ✅ 物品转化 · ✅ 燃烧标志（图标 active/idle）· ✅ 堆叠加速
@@ -54,6 +55,7 @@
 |---|---|
 | 2 活物品不作燃料 · 3 残留物 · 4 堆叠加速 · 5 进度 | `LivingFurnaceFunctionTest` |
 | 7 燃烧标志（派生 / 不落盘） | `FurnaceBurningFlagTest` |
+| 8 运行状态不随物品搬运 / 不补偿余热 | `LivingFurnaceFunction.tick()` · `ContainerRuntimeCache` · 本文附录「数据持久化与运行时边界」 |
 
 ---
 
@@ -82,14 +84,14 @@
 │  │    ├─ YES → tickProgress() + tickFuel()                   │   │
 │  │    │       └─ progress完成? → executeTransform()          │   │
 │  │    └─ NO  → pauseTick() (回退进度 + 消耗余热)             │   │
-│  │ 5. 保存状态 + 同步客户端                                   │   │
+│  │ 5. 写运行时缓存；方向 / 燃烧标志变化时同步组件               │   │
 │  └──────────────────────────────────────────────────────────┘   │
 │                                                                  │
-│  数据通过 LivingItemManager 管理，使用 record 类序列化：          │
+│  运行状态由 ContainerRuntimeCache 按容器 / 槽位管理；不随物品搬运 │
 │  ┌─────────────┐  ┌──────────┐  ┌──────────┐  ┌─────────────┐  │
 │  │ FuelData     │  │ProgressData│ │TransformData│ │DirectionSlots│ │
-│  │ burnTime     │  │ progress  │  │ inputItem  │  │ directions  │  │
-│  │              │  │ total     │  │ outputItem │  │             │  │
+│  │ burnTime     │  │ progress  │  │ 配方缓存   │  │ directions  │  │
+│  │ runtime-only │  │ runtime-only│ │ runtime-only│ │ 物品组件    │  │
 │  └─────────────┘  └──────────┘  └──────────┘  └─────────────┘  │
 │                                                                  │
 │  ┌──────────────────────────────────────────────────┐           │
@@ -107,47 +109,54 @@
 | 类名 | 文件位置 | 职责 |
 |------|---------|------|
 | `LivingFurnaceFunction` | `domain/furnace/LivingFurnaceFunction.java` | 活熔炉功能入口，实现 `LivingItemFunction` 接口，所有熔炼逻辑集中在此 |
-| `LivingFurnaceData` | `domain/furnace/LivingFurnaceData.java` | 活熔炉数据容器 record：包含 FuelData、ProgressData、TransformData、DirectionSlotsData |
-| `FuelData` | `domain/furnace/FuelData.java` | 燃料状态 record：burnTime |
-| `ProgressData` | `domain/furnace/ProgressData.java` | 进度状态 record：progress + total |
-| `TransformData` | `domain/furnace/TransformData.java` | 转化状态 record：配方缓存、输入/输出物品 ID |
+| `LivingFurnaceData` | `domain/furnace/LivingFurnaceData.java` | 运算用 record；物品组件保留方向配置，fuel/progress/transform 字段不保存运行时快照 |
+| `FuelData` | `domain/furnace/FuelData.java` | 燃料状态 record：运行时 burnTime |
+| `ProgressData` | `domain/furnace/ProgressData.java` | 进度状态 record：progress + total，运行时进度不随物品搬运 |
+| `TransformData` | `domain/furnace/TransformData.java` | 转化状态 record：运行时配方缓存、输入/输出物品 ID |
+| `ContainerRuntimeCache` / `FurnaceSegment` | `runtime/` / `domain/furnace/` | 按容器 / 物理槽保存与回读 FurnaceRuntime，不落盘、不随熔炉物品搬运 |
 | `DirectionSlotsData` | `domain/furnace/DirectionSlotsData.java` | 方向配置 record：input/fuel/output 的 Pos2D 偏移 |
 | `SlotResolver` | `transfer/SlotResolver.java` | 相对方向→绝对槽位索引的数学计算 |
 
 ### 1.4 存储结构
 
-活熔炉的所有数据存储在 ItemStack 的 DataComponent 中，通过 `LivingFurnaceData` record 管理：
+活熔炉的**方向配置**由 ItemStack 的 `LivingFurnaceData` DataComponent 保存；
+运行时进度、`burnTime` 与配方缓存由 `ContainerRuntimeCache` 保存，不是物品上的持久化快照。
 
 ```
 ItemStack
-├── IS_LIVING: true                          ← 活物品标记
-├── LIVING_FURNACE_BURNING: Boolean          ← 燃烧标志（翻转时写，图标谓词读，堆叠比较忽略）
-└── LIVING_FURNACE_DATA: LivingFurnaceData   ← 功能状态（DataComponent）
-    ├─ direction: DirectionSlotsData          ← 方向配置
-    │   ├─ input: Pos2D
-    │   ├─ fuel: Pos2D
-    │   └─ output: Pos2D
-    ├─ fuel: FuelData                         ← 燃料状态（仅持久化快照；运行时值在 ContainerRuntimeCache）
-    │   └─ burnTime: int
-    ├─ progress: ProgressData                 ← 进度状态（同上，运行时值在 ContainerRuntimeCache）
-    │   ├─ progress: int
-    │   └─ total: int
-    └─ transform: TransformData               ← 转化状态（同上，运行时值在 ContainerRuntimeCache）
-        ├─ inputItem: String
-        ├─ outputItem: String
-        ├─ cachedInput: String
-        ├─ cachedResult: int
-        ├─ cachedOutput: String
-        ├─ cachedOutputCount: int
-        └─ cachedCookingTime: int
+├── IS_LIVING: true
+├── LIVING_FURNACE_BURNING: Boolean       ← 派生图标标志，仅同步、不落盘
+└── LIVING_FURNACE_DATA: LivingFurnaceData
+    ├─ direction: DirectionSlotsData     ← 持久配置：input / fuel / output
+    ├─ fuel: FuelData                    ← 组件字段保留默认值，不保存运行时 burnTime
+    ├─ progress: ProgressData            ← 组件字段保留默认值，不保存运行时进度
+    └─ transform: TransformData          ← 组件字段保留默认值，不保存运行时配方缓存
+
+ContainerRuntimeCache（容器缓存键 + 物理槽）
+└── FurnaceRuntime
+    ├─ progress / total                  ← 运行时进度 / 遥测
+    ├─ burnTime                          ← 运行时剩余燃烧时间
+    └─ transform: TransformData          ← 运行时输入 / 输出及配方缓存
 ```
 
-> **v4 变更**：存储从 `LIVING_FUNCTION_DATA: CompoundTag` 迁移到独立的 DataComponent（`LivingFurnaceData`），利用 Minecraft 内置的序列化和同步机制。
+| 数据 | 存储 / 约束 |
+|---|---|
+| 方向配置 | DataComponent 持久化，随物品搬运 |
+| 运行时进度 | `ContainerRuntimeCache`，不落盘、不随熔炉物品搬运 |
+| `burnTime` / 燃料余热 | `ContainerRuntimeCache`，不随熔炉物品搬运，已消耗的燃料不补偿 |
+| 配方缓存 | `ContainerRuntimeCache`，不随熔炉物品搬运；新运行上下文重新匹配 |
+| 燃烧标志 | 派生布尔组件，仅供图标同步，不承载 `burnTime` 或余热 |
+
+> **历史（v4）**：存储从 `LIVING_FUNCTION_DATA: CompoundTag` 迁移到独立的 DataComponent（`LivingFurnaceData`），利用 Minecraft 内置的序列化和同步机制。
 >
 > **运行时缓存分工**（b064865）：progress/fuel/transform 的每 tick 变化只写服务端
 > `ContainerRuntimeCache` 并经 `LivingItemSyncPacket` 下发给 tooltip，**不写 DataComponent**
 > （瞬态数据不影响物品堆叠）；`LIVING_FURNACE_BURNING` 是唯一例外——图标谓词在渲染线程
 > 只能读 ItemStack，故燃烧状态翻转时写这个轻量布尔组件（§8.11）。
+>
+> **运行时边界**：缓存按容器 / 槽位回读上一 tick 的状态，不提供随熔炉物品迁移的状态。
+> 搬走熔炉不保存进度、剩余燃烧时间或配方缓存，不返还已耗燃料、不补偿余热。
+> **本口径仅适用于活熔炉**；活酿造台燃料由自身组件保存，不按本表统一。
 
 ---
 
@@ -165,8 +174,8 @@ public void tick(List<SlotEntry> entries, ContainerContext context, TickContext 
         LivingFurnaceData data = LivingFurnaceData.of(stack);
 
         // 0. 从运行时缓存恢复瞬态数据（progress/fuel/transform 不再写 DataComponent）
-        // 键 = ctx.getCacheKey()（世界容器带维度前缀，跨维度同坐标不串燃料；见 infra §2.5）
-        RuntimeSegments cached = ContainerRuntimeCache.get(cacheKey, slot);
+        // 容器缓存键 + 物理槽映射由缓存入口处理
+        RuntimeSegments cached = ContainerRuntimeCache.get(context, slot);
         FurnaceRuntime fr = cached.get(FurnaceSegment.INSTANCE);
         if (fr != null) { data = data.withProgress(...).withFuel(...).withTransform(...); }
 
@@ -192,7 +201,7 @@ public void tick(List<SlotEntry> entries, ContainerContext context, TickContext 
         }
 
         // 4. 写运行时缓存（tooltip 数据源，不写 DataComponent）
-        ContainerRuntimeCache.update(cacheKey, slot, RuntimeSegments.EMPTY.with(FurnaceSegment.INSTANCE,
+        ContainerRuntimeCache.update(context, slot, RuntimeSegments.EMPTY.with(FurnaceSegment.INSTANCE,
             new FurnaceRuntime(data.progress().progress(), data.progress().total(),
                                data.fuel().burnTime(), data.transform())));
 
@@ -467,6 +476,8 @@ int outputSlot = SlotResolver.resolve(slot, dir.getDirection("output"), containe
 
 ## 8. 已知问题与修复记录
 
+> **历史修复记录（冻结）**：本节保留各次修复时的表述；当前运行状态存储与搬运约束以 §1.4 为准。
+
 ### 8.3 配方缓存未命中导致重复查询
 
 **问题**：输入物品变化时，缓存未及时更新，导致每 tick 都查询配方管理器。
@@ -567,13 +578,16 @@ data = data.withFuel(fuel.tick(Math.max(1, stackCount)));
 
 **效果**：`ProgressData` 和 `FuelData` 可被任何活物品以任意规则复用，不绑定"堆叠加速"这一特定游戏机制。
 
-### 8.9 SlotAccessor 统一 + 脏槽位批量同步 (NEW 2026-08-16)
+### 8.9 脏槽位批量同步 (2026-08-16)
 
-**背景**：重构后活熔炉的 `executeTransform` 改用 `SlotAccessor`，支持活箱子作为输入/输出。同步时机统一管理，消除散布各处的手动 `context.syncSlotToClients` 调用。
+**背景**：熔炉的输入消耗 / 输出生成**直接走 `ctx.setItem()`**（`executeTransform`），配合
+`SimpleContainerContext.syncSlotToClients()` 的脏槽位标记；曾有"改用 SlotAccessor"的设想
+**从未实现**（2026-10-27 审查纠正：旧文档把设想写成了现状）。
 
-**变化**：
+**实际机制**：
 
-1. **SlotAccessor 统一**：`executeTransform` 中输入消耗和输出生成通过 `SlotAccessor.extract()` / `SlotAccessor.insert()` 完成，而非直接 `ctx.setItem()`。这使活熔炉天然支持活箱子、活末影箱等虚拟存储作为输入/输出。
+1. **直接写容器**：`executeTransform` 通过 `ctx.setItem(inputSlot/outputSlot, …)` 完成输入
+   消耗与输出生成（`SimpleContainerContext.setItem` 自带截断校验与写后核对）。
 
 2. **脏槽位批量同步**：`SimpleContainerContext.syncSlotToClients()` 在 tick 内只标记脏槽位到 `TickContext.dirtySlots`，tick 结束时由 `ContainerLivingItemHandler` 统一调用 `flushDirtySlots()` 批量发送同步包。同一 tick 内同一槽位多次修改只发送一次同步包。
 
@@ -592,9 +606,9 @@ tick.release();
 ```
 
 **效果**：
-- 活熔炉支持活箱子作为输入/输出（通过 `LivingChestAccessor`）
-- 网络包发送减少（同一 tick 同一槽位只发一次）
+- 同一 tick 同一槽位多次修改只发一次同步包
 - 同步时机统一，不再有遗漏 `syncSlotToClients` 的风险
+- 活箱子作为熔炉的输入/输出，由物品自身作为容器被 tick（`ContainerLivingItemHandler` 统一处理），不需要熔炉侧走 SlotAccessor
 
 ### 8.10 岩浆桶整桶被吞 (FIXED 2026-09-07)
 
@@ -653,6 +667,8 @@ Tooltip 中显示：
 
 ## 附录：v4 变更记录 (2026-07-28)
 
+> **历史记录（冻结）**：本节保留当时表述，不作为当前运行状态持久化口径；现状见 §1.4。
+
 **变更1：DataComponent 迁移**
 
 存储从 `LIVING_FUNCTION_DATA: CompoundTag` 迁移到独立的 DataComponent（`LivingFurnaceData`），利用 Minecraft 内置的序列化和同步机制，无需手动管理 NBT 读写。
@@ -684,7 +700,7 @@ Tooltip 显示从硬编码字符串改为使用 `Component.translatable()` 国�
 
 - [ ] 燃料物品放入燃料槽后自动燃烧
 - [ ] 燃烧时间与原版燃料一致
-- [ ] 燃料耗尽后停止熔炼，进度保留
+- [ ] 燃料耗尽且无新燃料时停止推进，按 `pauseTick()` 回退进度，不承诺保留
 - [ ] 无燃料时不熔炼
 - [ ] 多个燃料物品顺序燃烧
 
@@ -709,9 +725,11 @@ Tooltip 显示从硬编码字符串改为使用 `Component.translatable()` 国�
 - [ ] Tooltip 国际化（Component.translatable）
 - [ ] 方向配置在 Tooltip 中显示
 
-### 数据持久化
+### 数据持久化与运行时边界
 
-- [ ] LivingFurnaceData 通过 DataComponent 持久化
-- [ ] 熔炼进度在物品离开容器后保留
-- [ ] 燃料剩余时间在物品离开容器后保留
-- [ ] 配方缓存（TransformData）在物品离开容器后保留
+- [ ] 方向配置通过 LivingFurnaceData DataComponent 持久化；组件不保存运行时进度 / burnTime / 配方缓存
+- [ ] 运行时进度、burnTime、TransformData 配方缓存只由 ContainerRuntimeCache 按容器 / 槽位回读
+- [ ] 熔炉物品跨槽位或跨容器搬运不携带运行时进度、剩余燃烧时间或配方缓存
+- [ ] 搬运不返还已消耗燃料、不补偿余热；新运行上下文重新匹配配方
+- [ ] 燃烧标志不承载余热，下一次 tick 按实际运行状态修正
+- [ ] 活酿造台的燃料持久化仍遵循其自身文档，不按活熔炉口径统一

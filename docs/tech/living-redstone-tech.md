@@ -228,7 +228,7 @@ public class ContainerRedstoneData {
 |------|------|------|
 | `edgeGrid` | EdgeGrid | 当前帧边信号网格，存储所有槽位间边的信号值（纯内部信号） |
 | `prevEdgeGrid` | EdgeGrid | 上一帧边信号，Phase 0 用于中继器断电检测 |
-| `faceInput[4]` | int[4] | 外部注入信号强度（4 方向），仅用于组件状态检测（火把烧毁/中继器输入/比较器等），不参与红石粉传播 |
+| `faceInput[4]` | int[4] | 外部注入信号强度（4 方向），仅用于定向元件的输入检测（中继器/比较器/边界火把反相），不参与红石粉传播 |
 | `faceOutput[4]` | int[4] | 内部信号在 4 个边界面的输出信号，扫描 edgeGrid 边界边得出，每 tick 更新 |
 | `prevFaceOutput[4]` | int[4] | 上一帧 faceOutput，用于变化检测避免不必要的方块更新 |
 | `slotMask` | int[] | 每槽位的元件类型位图（`BIT_DUST`/`BIT_TORCH`/…），每 tick 由 `buildSlotMask()` 重建。传播热路径的类型判定走 O(1) 数组访问，替代 `Set<Integer>.contains` 的装箱 + 哈希 |
@@ -489,25 +489,21 @@ calculate(context, tick):
 - 信号源**不入队**，直接写自己的出边；BFS 队列**仅包含红石粉**
 - 每个组件通过**写自己的出边 / 读邻居出边**实现方向性输入/输出
 
-**Phase 0 — 倒计时 + 断电检测**：
+**Phase 0 — 倒计时**（2026-10-27 定案：中继器逻辑对齐原版 `DiodeBlock`——已排定的状态按原样走完，输入消失不取消，短脉冲不过滤；输入恢复同样按原版语义处理）：
 ```
 遍历中继器：
+  if locked → skip
   if !powered → skip
-  if delayTimer == 0 → skip（无需倒计时）
-  inputDir = edgeIndex(data.direction().opposite())  // 输入方向边
-  hasInput = prevEdgeGrid.get(slot, inputDir) > 0     // 用上一帧内部边信号
-  // 当槽位在容器边界且输入方向指向该面时，额外检查 faceInput[dir]
-  if slot 在边界 && inputDir 指向该面 → hasInput |= faceInput[dir] > 0
+  if delayTimer == 0 → skip
 
   if delayTimer > 0（ON_DELAY，等待开启）：
-    if !hasInput → powered = false, delayTimer = 0（取消延迟）
-    else → delayTimer--（继续倒计时）
+    delayTimer--（继续倒计时；归零后由 Phase 3 依输入决定开启或转入 OFF_DELAY）
   else（delayTimer < 0，OFF_DELAY，等待关闭）：
     delayTimer++（向 0 递增）
     if delayTimer == 0 → powered = false（延迟结束，关闭）
 
 遍历按钮：
-  if pressed && pulseTimer > 0 → pulseTimer -= 2
+  if pressed && pulseTimer > 0 → pulseTimer -= 1
   if pulseTimer <= 0 → pressed = false
 ```
 
@@ -587,7 +583,7 @@ while queue not empty:
       if neighbor 是红石粉 → 邻居入队       // 仅红石粉入队继续传播
 ```
 
-> **设计变更（v12）**：Phase 2 中 `maxInput` 不再纳入 `faceInput`。外部信号仅通过 `getEffectiveInput()` 影响组件状态检测（火把烧毁、中继器输入、比较器输入等），不参与红石粉 BFS 传播。这从根本上打破了容器输出信号 → 外部世界 → 外部信号重新注入 → 内部传播的反馈回路。
+> **设计变更（v12）**：Phase 2 中 `maxInput` 不再纳入 `faceInput`。外部信号仅通过 `getEffectiveInput()` 影响定向元件的输入检测（中继器/比较器/边界火把反相），不参与红石粉 BFS 传播。这从根本上打破了容器输出信号 → 外部世界 → 外部信号重新注入 → 内部传播的反馈回路。
 
 **活漏斗红石信号控制**：
 活漏斗在 `LivingHopperFunction.tick()` 中通过 `ContainerRedstoneData.getSignal(slot)` 检测槽位 4 条边是否有信号。任意边信号 > 0 时，漏斗被禁用（跳过传输和冷却倒计时），tooltip 显示红色警告。信号消失后自动恢复传输。
@@ -601,11 +597,12 @@ while queue not empty:
 **Phase 3 — 重新检测输入**：
 ```
 遍历中继器：
-  if powered && delayTimer > 0 → 跳过（ON_DELAY 进行中，由 Phase 0 处理）
+  if locked → skip（锁定状态冻结，见 §5.5）
+  if powered && delayTimer > 0 → 跳过（ON_DELAY 进行中，由 Phase 0 倒计时）
   inputDir = edgeIndex(data.direction().opposite())
-  hasInput = edgeGrid.get(slot, inputDir) > 0  // 用当前帧边信号
+  hasInput = getEffectiveInput(slot, inputDir) > 0  // 内部边 + 边界 faceInput
 
-  // 四种过渡：
+  // 三种过渡（对齐原版：短脉冲保留、输入恢复不取消已排定的关闭）：
   if hasInput && !powered → powered = true, delayTimer = delay（OFF → ON_DELAY）
   if hasInput && powered && delayTimer < 0 → delayTimer = 0（OFF_DELAY → ON，输入恢复）
   if !hasInput && powered && delayTimer == 0 → delayTimer = -delay（ON → OFF_DELAY）
@@ -863,7 +860,7 @@ RedstonePropagation（v17 提取，用完即弃）
 | 数据 | 内容 | 用途 |
 |------|------|------|
 | `edgeGrid` | 纯内部信号 | 内部槽位间信号传播 |
-| `faceInput[4]` | 外部注入信号 | 组件状态检测（火把烧毁/中继器输入/比较器输入等） |
+| `faceInput[4]` | 外部注入信号 | 定向元件输入检测（中继器/比较器/边界火把反相） |
 | `faceOutput[4]` | 内部信号输出 | 对外暴露（getBoundarySignal），每 tick 更新 |
 
 #### 输入：外部信号注入（injectExternalInputs）
@@ -904,10 +901,10 @@ getEffectiveInput(slot, dir, width, height):
 |------|-------|------|
 | 中继器 | Phase 0 (倒计时) | 边界中继器检测输入是否持续 |
 | 中继器 | Phase 3 (重新检测) | 判断中继器是否被供电 |
-| 火把 | Phase 4 (充能导体) | 判断火把是否应该烧毁 |
+| 火把 | Phase 4 (充能导体) | 边界火把按外部输入反相亮灭（无烧毁机制，反相环永不冻结） |
 | 火把 | Phase 5 (更新显示) | 更新火把 lit 显示状态 |
 | 比较器 | computeComparatorOutput | 比较器主输入信号检测 |
-| 红石灯 | Phase 5 (更新显示) | 边界红石灯是否点亮 |
+| 红石灯 | Phase 5 (更新显示) | 信号消费者（不读取容器外部信号，2026-10-27 定案） |
 
 **关键**：`seedBoundaryDust` 方法已被移除。外部信号不再将边界红石粉加入 BFS 队列，从根本上切断了外部信号重新注入内部传播的路径。
 
@@ -1380,10 +1377,10 @@ for each torch slot:
 活中继器的处理分布在 Phase 0、Phase 1 和 Phase 3 中：
 
 ```
-Phase 0（倒计时 + 断电）：
-  1. 检测输入边（后方）prevEdgeGrid.get(slot, inputDir) > 0
-  2. hasInput → 继续倒计时
-  3. !hasInput → 立即断电（powered = false, delayTimer = 0）
+Phase 0（倒计时）：
+  1. locked → 跳过
+  2. delayTimer > 0（等待开启）→ delayTimer--
+  3. delayTimer < 0（等待关闭）→ delayTimer++，归零时关闭
 
 Phase 1（作为信号源输出）：
   1. powered && delayTimer == 0 → 向输出方向边写入信号
@@ -1391,10 +1388,10 @@ Phase 1（作为信号源输出）：
   3. 若输出方向邻居是红石粉 → 邻居入队
 
 Phase 3（重新检测输入）：
-  1. 已被 Phase 1 输出的中继器跳过
-  2. 其他中继器：检测 edgeGrid.get(slot, inputDir) > 0
-  3. hasInput && !powered → powered = true, delayTimer = delay
-  4. !hasInput && powered → powered = false, delayTimer = 0
+  1. locked → 跳过
+  2. hasInput && !powered → powered = true, delayTimer = delay
+  3. hasInput && powered && delayTimer < 0 → delayTimer = 0（输入恢复，取消关闭）
+  4. !hasInput && powered && delayTimer == 0 → delayTimer = -delay（安排关闭）
 ```
 
 **关键变化**：中继器不再参与 Phase 2 BFS 传播。它在 Phase 1 作为信号源直接向输出边写入信号，红石粉在 Phase 2 通过 BFS 传播该信号。这简化了中继器的处理逻辑，使其与火把、按钮、拉杆等信号源行为一致。

@@ -16,26 +16,26 @@
 ## §0 玩法定义
 
 > **实现入口**：`living/function/LivingFlintAndSteelFunction`（交互触发器，无 tick 逻辑）——
-> 点燃规则注册在 `living/domain/tnt/TntRegistration`，GUI 交互处理器在 `living/interaction/IgniteHandler`
+> GUI 规则在 `assets/living_item/interaction_rules.json`，处理器由 `living/domain/tnt/TntRegistration` 注册：
+> `IgniteHandler` / `IgniteCarriedHandler`。
 
 > **性质**：本节「规则」是**契约**（违反即 bug），不是实现细节 —— 它是本子系统
 > **功能需求的来源**与**行为对错的判据**。⚠️ **只写规则与语义**；数值与操作步骤归实现层。
 
-**语义**：**活打火石 = 触发类活物品**，自身**不执行任何 tick 逻辑** —— 它只提供
-「我是打火石」这个**标记**；实际点火由**活漏斗的传输系统**在检测到
-`source` = 活打火石、`target` = 活 TNT 时执行。
+**语义**：**活打火石 = 触发类活物品**，自身**不执行任何 tick 逻辑** —— 提供活化标记，
+实际点火由 **GUI 右键交互**执行，支持光标与槽位中的活打火石 / 活TNT互换。
 
 **获取**：原版打火石 + 活化。
 
-**核心循环**：活漏斗 `source` 指向活打火石、`target` 指向活 TNT ⇒ **点火**（而非传输物品）。
+**核心循环**：GUI 中光标活打火石右键槽位活TNT，或光标活TNT右键槽位活打火石 ⇒ **点火**。
 
 **规则**（违反即 bug）：
 
 | # | 规则 | 为什么 / 后果 |
 |---|---|---|
-| 1 | **自身不消耗耐久、也不被消耗** | 它只是「点火信号」的**标记** |
-| 2 | 点火由**活漏斗的传输系统**检测（`TransferPipeline.execute()`） | 活打火石**自己没有 tick 逻辑** |
-| 3 | 点火**视为传输成功**（触发漏斗冷却） | 与「传输」共用同一套节流 |
+| 1 | 生存模式点火交互**扣 1 点耐久**，创造模式不扣；耐久耗尽可损坏 | 由 GUI 处理器执行 |
+| 2 | 点火走 **GUI 交互**（`ignite` / `ignite_carried`），不走活漏斗传输 | 活打火石**自己没有 tick 逻辑** |
+| 3 | 点火**不触发活漏斗冷却**；已点燃 TNT 不重置引信 | 点火不是传输成功事件 |
 
 **能力清单**：✅ 点火标记 · ✅ Tooltip
 **验证入口**：§2.1「点火触发流程」· 活 TNT 侧见 [living-tnt-tech.md](living-tnt-tech.md) §3.2
@@ -46,30 +46,27 @@
 
 ### 1.1 什么是活打火石？
 
-活打火石是一种**触发类活物品**，自身不执行任何 tick 逻辑，仅作为"点火器"角色存在。它的核心作用是：当活打火石的 source 方向指向活 TNT 时，点燃活 TNT 的引信。
+活打火石是一种**触发类活物品**，自身不执行任何 tick 逻辑，仅作为 GUI 交互的点火器。其与活TNT在光标 / 槽位间右键交互时，点燃活TNT的引信，无方向配置或活漏斗要求。
 
 活打火石的宿主物品是 `minecraft:flint_and_steel`（打火石），必须同时具备活物品标记。
 
 ### 1.2 设计理念
 
-活打火石采用**极简设计**——它自己不干活，只提供"我是打火石"的标记。实际的点燃逻辑由**活漏斗的传输系统**处理：
+活打火石提供活化标记，自身无 tick 状态；点燃由 GUI 交互处理器执行：
 
 ```
-活漏斗                   活打火石(我)              活TNT
-┌──────┐              ┌──────────┐            ┌──────┐
-│source│──────────────│  (slot)  │────────────│target│
-│      │  source指向我 │          │  target指向 │      │
-└──────┘              └──────────┘            └──────┘
+光标活打火石 + 右键槽位活TNT → ignite → 点燃槽位中的 TNT
+光标活TNT + 右键槽位活打火石 → ignite_carried → 点燃光标上的 TNT
 ```
 
-当活漏斗的 source 是活打火石、target 是活 TNT 时，传输系统会检测到这种组合并触发点火操作。
+点火不依赖槽位邻接、方向配置或活漏斗，不执行物品传输。
 
 ### 1.3 关键类和职责
 
 | 类名 | 文件位置 | 职责 |
 |------|---------|------|
-| `LivingFlintAndSteelFunction` | `domain/tnt/LivingFlintAndSteelFunction.java` | 活打火石功能入口，空 tick，仅提供 Tooltip |
-| `LivingHopperFunction` | `domain/hopper/LivingHopperFunction.java` | 活漏斗传输引擎，在 `TransferPipeline.execute()` 中检测活打火石→活TNT 组合并触发点火 |
+| `LivingFlintAndSteelFunction` | `function/LivingFlintAndSteelFunction.java` | 活打火石功能入口，空 tick，仅提供 Tooltip |
+| `IgniteHandler` / `IgniteCarriedHandler` | `domain/tnt/` | GUI 双向点火处理器，扣耐久、点燃引信并同步菜单 |
 
 ---
 
@@ -77,19 +74,17 @@
 
 ### 2.1 点火触发流程
 
-点火由活漏斗的传输系统在 `TransferPipeline.execute()` 中检测。当活漏斗的 source 槽位是活打火石、target 槽位是活 TNT 时，传输系统不执行物品传输，而是触发点火操作：
+点火由 `interaction_rules.json` 中的 `ignite` / `ignite_carried` GUI 规则触发：
 
 ```
-TransferPipeline.execute()
-  │
-  ├─ source 是活打火石 + target 是活 TNT
-  │   └─ ExplosionComponent.startFuseOnStack(tntStack)  ← 点燃引信（⚠️ 本节点火路径已过时：实际为 GUI 交互点燃，流程描述冻结待仲裁，见 TODO）
-  │       └─ return true（视为传输成功，触发冷却）
-  │
-  └─ 其他情况 → 正常传输流程
+GUI 右键交互
+  ├─ 光标活打火石 + 槽位活TNT → IgniteHandler.handle() → 点燃槽位 TNT
+  └─ 光标活TNT + 槽位活打火石 → IgniteCarriedHandler.handle() → 点燃光标 TNT
+      └─ ExplosionComponent.startFuseOnStack() → 写引信组件 → 同步菜单
 ```
 
-**关键点**：活打火石本身不消耗耐久，也不被消耗。它只是一个"标记"角色，告诉活漏斗传输系统"这是一个点火信号"。
+**约束**：生存模式每次交互扣打火石 1 点耐久，创造模式不扣；已点燃 TNT 不重置引信。
+点火不执行活漏斗传输、不触发漏斗冷却。
 
 ### 2.2 函数实现
 
@@ -111,10 +106,9 @@ public class LivingFlintAndSteelFunction implements LivingItemFunction {
 }
 ```
 
-**极简设计的原因**：
-- 活打火石只是"标记"，不需要状态管理
-- 点火逻辑由活漏斗的传输引擎统一处理
-- 避免了在多个地方重复实现点火判断
+**职责边界**：
+- 活打火石只提供活化标记和 Tooltip，无自身运行状态。
+- 点火与耐久处理由 GUI 交互处理器承担。
 
 ---
 
@@ -155,26 +149,21 @@ public void addToTooltip(Item.TooltipContext context,
 
 ## 附录：与活 TNT 的协作
 
-活打火石必须与活漏斗和活 TNT 配合使用才能发挥作用：
+活打火石与活TNT通过 GUI 双向右键交互配合，无活漏斗要求：
 
 ```
-容器布局示例：
-┌───────┬───────┬───────┐
-│       │       │       │
-├───────┼───────┼───────┤
-│活打火石│活漏斗  │活TNT  │
-│(source)│(slot) │(target)│
-└───────┴───────┴───────┘
-
-活漏斗方向：source=左, target=右
-→ 活漏斗检测到 source=活打火石, target=活TNT
-→ 点燃 TNT（曾为 LivingTntFunction.startFuse()，已移除；⚠️ 本节流程过时冻结待仲裁，实际为 GUI 交互点燃）
-→ 80 ticks 后 TNT 爆炸
+光标活打火石 → 右键槽位活TNT → 点燃槽位 TNT
+光标活TNT → 右键槽位活打火石 → 点燃光标 TNT
+→ 生存模式扣打火石 1 点耐久；创造模式不扣
+→ 引信从 80 ticks 开始倒计时
+→ 有可用锚点时爆炸；无锚点不爆、不消耗 TNT，不重置引信
 ```
 
 ---
 
 ## 附录：v2 变更记录 (2026-07-28)
+
+> **历史记录（冻结）**：本节保留当时表述，不作为现状；当前 GUI 点火与耐久约束见 §2.1。
 
 **变更1：Tooltip 国际化**
 
@@ -192,16 +181,16 @@ Tooltip 显示从硬编码字符串改为使用 `Component.translatable()` 国�
 
 ### 基础点火
 
-- [ ] 活打火石作为活漏斗的 source 时，活漏斗识别为点火信号
-- [ ] 活漏斗 target 为活TNT时，触发点火流程
-- [ ] 点火后活TNT开始倒计时
-- [ ] 活打火石不消耗耐久、不被消耗
+- [ ] 光标活打火石右键槽位活TNT，点燃槽位 TNT
+- [ ] 光标活TNT右键槽位活打火石，点燃光标 TNT
+- [ ] 点火后活TNT开始倒计时；已点燃不重置引信
+- [ ] 生存模式每次交互扣打火石 1 点耐久，创造模式不扣
 
 ### 标记角色
 
-- [ ] 活打火石仅作为信号源，不参与实际物品传输
-- [ ] 活打火石在容器中持续存在，不被移走
-- [ ] 多个活打火石不影响点火逻辑（一个信号即可）
+- [ ] 点火不要求活漏斗、槽位邻接或方向配置
+- [ ] GUI 点火不执行物品传输，不触发活漏斗冷却
+- [ ] 活打火石自身 tick 不执行点火或耐久消耗
 
 ### Tooltip 与同步
 

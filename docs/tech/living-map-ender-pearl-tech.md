@@ -281,9 +281,13 @@ int chunkX = (int) worldX >> 4;
 int chunkZ = (int) worldZ >> 4;
 LevelChunk chunk = targetLevel.getChunk(chunkX, chunkZ);
 int safeY = chunk.getHeight(Heightmap.Types.MOTION_BLOCKING, (int) worldX, (int) worldZ);
+double destY = safeY + 1.0;
 ```
 
-使用原版 `getChunk()` + `getHeight()` 获取精确地形高度。已加载区块瞬间返回，未加载区块由原版 `POST_TELEPORT` ticket 机制异步加载（`changeDimension`/`teleportTo` 内部触发）。
+- `getHeight` 返回「最高阻挡方块自身的 Y」，**+1** 才是站立面（漏 +1 会把玩家脚嵌进方块）。
+- **不做地形安全检查**（A3 定案 2026-10-27）：指哪传哪，卡墙、岩浆、虚空由玩家自己选择；虚空柱（高度图返回世界下限）照传不拒。
+
+使用原版 `getChunk()` + `getHeight()` 获取地形高度。已加载区块瞬间返回，未加载区块由原版 `POST_TELEPORT` ticket 机制异步加载（`changeDimension`/`teleportTo` 内部触发）。
 
 ### 4.3 传送优先级
 
@@ -1014,17 +1018,24 @@ Sable 有三个关键的 Mixin 机制：
 9. updateLastPose() 同步上一 tick 姿态
 ```
 
-**偏移计算**（世界坐标，适用于无旋转飞艇）：
+**偏移计算**（世界坐标，普通坐骑与飞艇分开）：
+
+- **普通马／船／矿车／骆驼**：把坐骑实体移到目标坐标，再由原版骑乘系统把玩家放回各自座位；目标是坐骑落点，不是玩家脚落点。
+- **Sable 飞艇 X/Z**：保持操作者相对飞艇原点的水平偏移，使操作者对齐地图目标 X/Z。
+- **Sable 飞艇 Y**：目标 Y 表示飞艇世界投影包围盒的底面高度，不表示飞艇原点或操作者脚底。
 
 ```java
 double offsetX = player.getX() - airshipPos.x();
-double offsetY = player.getY() - airshipPos.y();
 double offsetZ = player.getZ() - airshipPos.z();
 
 double newAirshipX = destX - offsetX;
-double newAirshipY = destY - offsetY;
 double newAirshipZ = destZ - offsetZ;
+double newAirshipY = airshipPos.y()
+    + destY
+    - serverSubLevel.boundingBox().minY();
 ```
+
+`boundingBox()` 是 Sable 用当前 `logicalPose` 更新的世界投影包围盒，因此倾斜飞艇也按实际最低点对齐目标高度。这里只平移飞艇，保留姿态和玩家的局部位置；不自动扶正、不搜索安全地形，也不强制保留旧高度。
 
 **玩家位置同步**（局部坐标投影，适用于有旋转飞艇）：
 

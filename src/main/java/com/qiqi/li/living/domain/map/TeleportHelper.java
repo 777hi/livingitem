@@ -55,17 +55,14 @@ public final class TeleportHelper {
         int chunkX = (int) worldX >> 4;
         int chunkZ = (int) worldZ >> 4;
         LevelChunk chunk = targetLevel.getChunk(chunkX, chunkZ);
+        // 高度图 Y：MOTION_BLOCKING 顶面即落点（A3 指哪传哪，无地形拒绝分支；
+        // 目标柱全空时高度图返回 minBuildHeight-1，脚坐标落在虚空，属玩家自选结果）。
         int safeY = chunk.getHeight(Heightmap.Types.MOTION_BLOCKING, (int) worldX, (int) worldZ);
-        if (safeY < targetLevel.getMinBuildHeight()) {
-            // I-C6 留痕（2026-10-27 审查 P3-2）：目标高度低于世界下限 ⇒ 安全放弃（不扣珍珠）
-            ModLog.TELEPORT.warn("teleport abort: safeY below min build, pos=({},{}) safeY={}", worldX, worldZ, safeY);
-            return false;
-        }
 
         double destX = worldX + 0.5;
         // ⚠️ 必须 +1（2026-10-27 审查 P1-1，v50 简化时丢了 v39 的修复）：
         //    ChunkAccess.getHeight 返回「最高阻挡方块自身的 Y」，原版 Level.getHeight 专门
-        //    +1 换算成站立 Y ⇒ 直接当脚坐标会把玩家嵌进地表方块 1 格（下界嵌基岩天花板）。
+        //    +1 换算成站立 Y ⇒ 直接当脚坐标会把玩家嵌进地表方块 1 格。
         double destY = safeY + 1.0;
         double destZ = worldZ + 0.5;
 

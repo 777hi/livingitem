@@ -27,8 +27,8 @@
 > **性质**：本节「规则」是**契约**（违反即 bug），不是实现细节 —— 它是本子系统
 > **功能需求的来源**与**行为对错的判据**。⚠️ **只写规则与语义**；数值与操作步骤归实现层。
 
-**语义**：**活TNT = 容器内的爆炸物**。放在容器槽位里被**点燃**后，引信倒计时归零，
-在**容器所在位置**引发爆炸；**威力与容器中活TNT的总堆叠数成正比**。
+**语义**：**活TNT = 容器内的爆炸物**。点燃后引信倒计时归零，
+有可用锚点时在锚点位置引发爆炸；**威力与容器中活TNT的总堆叠数成正比**。无锚点不爆炸、不消耗 TNT。
 
 **获取**：原版 TNT + 活化。
 
@@ -38,9 +38,9 @@
 
 | # | 规则 | 为什么 / 后果 |
 |---|---|---|
-| 1 | **两种点火方式**：① 活打火石（活漏斗 `source`=打火石、`target`=TNT）② 红石信号（槽位信号 > 0） | 后者可与活红石系统联动 |
+| 1 | **两种点火方式**：① 活打火石 GUI 右键交互（支持光标与槽位互换）② 红石信号（槽位信号 > 0） | GUI 规则为 `ignite` / `ignite_carried`；后者可与活红石系统联动 |
 | 2 | **已点燃不重复点火** | `ignited()` 守卫 |
-| 3 | 引信归零 ⇒ **在容器所在位置**爆炸 | 容器位置即爆点 |
+| 3 | 引信归零且有可用锚点 ⇒ **在锚点位置**爆炸；无锚点不爆、不消耗 TNT，**不熄灭或重置引信，不新增待爆 / 储存爆炸状态** | 锚点只限制爆炸出口，不代表全部停止 tick |
 | 4 | **威力 ∝ 容器内活TNT总堆叠数** | 堆叠 = 当量 |
 | 5 | 爆炸**唯一入口** = `ExplosionComponent` | 未加载区块**丢弃**（等 Load 重登记）、预算用尽 **carryOver**（见 §4.3） |
 
@@ -57,7 +57,7 @@
 
 ### 1.1 什么是活TNT？
 
-活TNT是一种**爆炸类活物品**，放置在容器中可以被活打火石点燃，引信倒计时归零后在容器所在位置引发爆炸。爆炸威力与容器中活TNT的总堆叠数量成正比。
+活TNT是一种**爆炸类活物品**，放置在容器中可以被活打火石通过 GUI 交互点燃，引信倒计时归零且有可用锚点时在锚点位置引发爆炸。无锚点不爆、不消耗 TNT，不重置引信。爆炸威力与容器中活TNT的总堆叠数量成正比。
 
 活TNT的宿主物品是 `minecraft:tnt`（TNT），必须同时具备活物品标记。
 
@@ -69,7 +69,7 @@
 │                                                                  │
 │  ┌──────────────┐    点火        ┌──────────────────┐           │
 │  │ 活打火石      │ ────────→     │ 活TNT (引信点燃)  │           │
-│  │ (source)      │   (活漏斗)     │ fuseTimer = 80    │           │
+│  │ (光标/槽位)   │   (GUI右键)    │ fuseTimer = 80    │           │
 │  └──────────────┘               └────────┬─────────┘           │
 │                                          │ 每 tick              │
 │  ┌──────────────┐                        │                      │
@@ -79,7 +79,7 @@
 │                              ┌──────────────────┐              │
 │                              │ fuseTimer == 0?  │              │
 │                              └────────┬─────────┘              │
-│                                       │ YES                     │
+│                                       │ YES且有可用锚点          │
 │                                       ▼                         │
 │                              ┌──────────────────┐              │
 │                              │ ExplosionComponent│              │
@@ -109,13 +109,13 @@
 
 | 类名 | 文件位置 | 职责 |
 |------|---------|------|
-| `LivingTntFunction` | `domain/tnt/LivingTntFunction.java` | 活TNT功能入口，管理引信倒计时和爆炸触发，实现 `HasContainerData` 以支持红石信号点燃 |
+| `LivingTntFunction` | `domain/tnt/LivingTntFunction.java` | 活TNT功能入口，管理引信倒计时和爆炸触发，经感知端口读取红石信号点燃 |
 | `ExplosionData` | `domain/tnt/ExplosionData.java` | 引信状态 record：ignited + fuseTimer |
 | `LivingTntData` | `domain/tnt/LivingTntData.java` | 活TNT数据容器：包含 ExplosionData |
 | `ExplosionComponent` | `domain/tnt/ExplosionComponent.java` | 爆炸执行引擎：逐区块破坏 + 实体伤害 + 音效粒子 |
 | `ExplosionParams` | `domain/tnt/ExplosionParams.java` | 一次爆炸的参数 record（中心/半径/模式/掉落模式）+ **位图索引映射**（`bitIndex ↔ chunkAt` 互逆） |
 | `ExplosionLedger` | `domain/tnt/ExplosionLedger.java` | **待炸账本**：世界级 `SavedData`，承载"哪些区块还没炸"的位图；已加载的分帧应用，未加载的等自然加载 |
-| `LivingFlintAndSteelFunction` | `domain/tnt/LivingFlintAndSteelFunction.java` | 活打火石，提供点火触发标记 |
+| `LivingFlintAndSteelFunction` | `function/LivingFlintAndSteelFunction.java` | 活打火石，提供 GUI 点火触发标记，无自身 tick 逻辑 |
 | `ContainerRedstoneData` | `domain/redstone/ContainerRedstoneData.java` | 容器级红石数据；TNT 经 `RedstoneSensor` 端口读 `maxSensedSignal()` 检测信号 |
 
 ---
@@ -165,18 +165,17 @@ ItemStack
 
 | 方式 | 触发条件 | 说明 |
 |------|---------|------|
-| 活打火石 | 活漏斗 source=打火石, target=TNT | 传统点火路径 |
+| 活打火石 | GUI 中活打火石右键活TNT，或活TNT右键活打火石 | `ignite` / `ignite_carried` 交互，不走活漏斗 |
 | 红石信号 | 活TNT所在槽位收到红石信号（>0） | 可与活红石系统联动 |
 
 ### 3.2 打火石点火
 
-点火由活漏斗的传输系统在检测到 source=活打火石、target=活TNT 时触发：
+GUI 点火规则在 `assets/living_item/interaction_rules.json`，处理器由 `TntRegistration` 注册：
 
-```java
-// ⚠️ 本节流程过时（冻结待仲裁，见 TODO）：点火方式已从活漏斗路径迁 GUI 交互
-// （interaction_rules.json 的 ignite 动作），实际点燃入口 = ExplosionComponent.startFuseOnStack。
-// 原样例（已删除的 LivingTntFunction.startFuse，引信 80 ticks）移除；现路径引信时长见 §3.4。
-```
+- 光标活打火石右键槽位活TNT → `IgniteHandler` 点燃槽位中的 TNT。
+- 光标活TNT右键槽位活打火石 → `IgniteCarriedHandler` 点燃光标上的 TNT。
+- 两者均调用 `ExplosionComponent.startFuseOnStack()`；已点燃不重置引信。
+- 生存模式每次交互扣打火石 1 点耐久，创造模式不扣；不触发活漏斗传输或冷却。
 
 ### 3.3 红石信号点火
 
@@ -190,9 +189,8 @@ public class LivingTntFunction implements LivingItemFunction {   // ← 不再�
     public void tick(List<SlotEntry> entries, ContainerContext context, TickContext tick, Level level) {
         if (level.isClientSide) return;
 
-        // 确保红石账本存在 —— ⚠️ 不是冗余代码：红石层驱动守卫以「账本已存在」为放行判据之一，
-        // 容器里只有活 TNT 时正是靠这行让守卫放行。
-        tick.getOrCreateRedstoneData(context);
+        // 感知端口同时确保红石账本存在
+        tick.getSensor(context);
         int size = context.getSize();
 
         for (SlotEntry entry : entries) {
@@ -244,7 +242,7 @@ for (SlotEntry entry : entries) {
 
     if (explosion.isExploded()) {
         ExplosionComponent.ignite(context, level);
-        return;                                 // ⚠️ 消耗由 ignite 完成，不能再写回
+        return;                                 // 成功消耗后不能写回；无锚点失败也不重置引信
     }
 
     LivingTntData.set(stack, data.withExplosion(explosion));
@@ -274,34 +272,23 @@ for (SlotEntry entry : entries) {
 
 ### 4.1 爆炸触发
 
-`ExplosionComponent.ignite()` 在引信归零时被调用：
+`ExplosionComponent.ignite()` 在引信归零时被调用。爆炸中心必须先由可用锚点确定；
+无锚点返回 `false`，**不消耗 TNT，不熄灭或重置引信，也不新增待爆 / 储存爆炸状态**。
+引信仍使用 `LivingTntData` 中已有的 `ignited` / `fuseTimer`；移至有可用锚点处时，
+若已有引信满足爆炸条件，下一次 tick 即按正常入口爆炸。
 
-```java
-public static boolean ignite(ContainerContext containerCtx, Level level,
-                              float baseRadius, boolean vanillaDrops) {
-    // 1. 确定爆炸中心
-    BlockPos pos = containerCtx.getBlockPos();
-    Vec3 center = new Vec3(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
+| 锚点 / 容器形态 | 爆炸位置 / 约束 |
+|---|---|
+| `AtBlock` | 方块中心 |
+| `AtPlayer` | 玩家位置 |
+| `AtEntity`（船 / 矿车 / 掉落物） | 实体位置 |
+| 物品形态容器 | 自身无锚点；仅 `tntUsesHostAnchor()` 开启且宿主锚点可用时借宿主位置；否则不爆、不消耗 TNT、不重置引信 |
+| 原版 `CONTAINER` 内层 | 没有可用锚点时不爆、不消耗 TNT、不重置引信；不能由此推断其所有功能停止 tick |
+| 原版玩家末影箱内容 | 无锚点，不爆、不消耗 TNT、不重置引信；见活末影箱 §15 |
 
-    // 2. 统计容器中所有活TNT的总堆叠数
-    int totalTntCount = 0;
-    for (int i = 0; i < containerSize; i++) {
-        ItemStack stack = containerCtx.getItem(i);
-        if (isLivingTnt(stack)) totalTntCount += stack.getCount();
-    }
-
-    // 3. 计算爆炸半径
-    double radius = baseRadius * Math.sqrt(totalTntCount);
-
-    // 4. 清空所有活TNT物品
-    for (int i = 0; i < containerSize; i++) {
-        if (isLivingTnt(stack)) containerCtx.setItem(i, ItemStack.EMPTY);
-    }
-
-    // 5. 执行爆炸
-    executeExplosion(level, center, radius, totalTntCount, vanillaDrops);
-}
-```
+锚点判定**不等于停掉容器全部 tick**。有可用锚点后，先统计容器内全部活TNT的总数，
+计数有效才清空活TNT槽位；随后计算半径、执行声光与实体伤害，并登记方块破坏账本。
+现有 `ExplosionLedger` 承载的是**已触发爆炸的区块破坏**，不是无锚点 TNT 的待爆状态。
 
 ### 4.2 爆炸半径计算
 
@@ -619,25 +606,22 @@ public void addToTooltip(Item.TooltipContext context,
 ## 附录：使用示例
 
 ```
-容器布局：
-┌───────┬───────┬───────┐
-│       │       │       │
-├───────┼───────┼───────┤
-│活打火石│活漏斗  │活TNT  │
-│(source)│(slot) │(target)│
-└───────┴───────┴───────┘
-
-活漏斗方向：source=左, target=右
-→ 活漏斗检测到 source=活打火石, target=活TNT
-→ 点燃 TNT（曾为 LivingTntFunction.startFuse()，已移除；⚠️ 本节流程过时冻结待仲裁，实际为 GUI 交互点燃）
-→ 80 ticks (4秒) 后爆炸
+光标持有活打火石 → 右键容器槽位中的活TNT
+（或光标持有活TNT → 右键槽位中的活打火石）
+→ GUI 交互处理器点燃 TNT；生存模式扣打火石 1 点耐久
+→ 引信从 80 ticks (4秒) 开始倒计时
+→ 引信归零且有可用锚点时爆炸
 → 容器中所有活TNT被清空
 → 爆炸半径 = 4.0 × √(TNT堆叠总数)
+
+无可用锚点 → 不爆、不消耗 TNT，不熄灭或重置引信
 ```
 
 ---
 
 ## 附录：v2 变更记录 (2026-07-28)
+
+> **历史记录（冻结）**：保留当时表述。
 
 **变更1：DataComponent 迁移**
 
@@ -650,6 +634,8 @@ Tooltip 状态标题改为使用 `Component.translatable()` 国际化键，支�
 ---
 
 ## 附录：v3 变更记录 (2026-07-28)
+
+> **历史记录（冻结）**：保留当时表述。
 
 **变更：超级爆炸模式**
 
@@ -672,14 +658,17 @@ Tooltip 状态标题改为使用 `Component.translatable()` 国际化键，支�
 ### 基础爆炸
 
 - [ ] 活TNT被活打火石点燃后开始倒计时
-- [ ] 倒计时结束后爆炸，清空容器中所有活TNT
+- [ ] 倒计时结束且有可用锚点时爆炸，清空容器中所有活TNT
+- [ ] 无锚点（含原版 `CONTAINER` 内层无可用宿主锚点、原版玩家末影箱内容）不爆、不消耗 TNT，不熄灭或重置引信
+- [ ] 无锚点不新增待爆 / 储存爆炸状态；已有引信满足爆炸条件后移至有锚点处，下一次 tick 正常爆炸
 - [ ] 爆炸半径 = 4.0 × √(TNT堆叠总数)
 - [ ] 未点燃时不爆炸
 - [ ] 多个活TNT同时点燃时各自独立倒计时
 
 ### 点燃机制
 
-- [ ] 活打火石通过活漏斗点燃活TNT（活漏斗 source=打火石, target=TNT）
+- [ ] 活打火石通过 GUI 右键交互点燃活TNT（光标 / 槽位两种方向）
+- [ ] 生存模式交互扣打火石 1 点耐久，创造模式不扣；不触发活漏斗冷却
 - [ ] 点燃后 fuseTimer 从 80 开始倒计时
 - [ ] 已点燃的活TNT不能被重复点燃
 - [ ] 点燃后活TNT的 ignited 标志为 true
@@ -712,5 +701,5 @@ Tooltip 状态标题改为使用 `Component.translatable()` 国际化键，支�
 ### 数据持久化
 
 - [ ] LivingTntData 通过 DataComponent 持久化
-- [ ] fuseTimer 在物品离开容器后保留（可继续倒计时）
+- [ ] fuseTimer 在物品离开容器后保留；只有实际收到功能 tick 时推进，无锚点不重置引信
 - [ ] ignited 状态在物品离开容器后保留

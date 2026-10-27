@@ -73,4 +73,40 @@ class TeleportHelperYTest {
             "高度图 70 = 最高阻挡方块自身 Y ⇒ 站立面是 71（旧实现 70 = 嵌进方块）");
         assertEquals(20.8, zs.getValue(), 0.0001, "Z 取格中心");
     }
+
+    @Test
+    @DisplayName("目标柱全空（高度图低于世界下限）⇒ 照传不拒（A3 指哪传哪，落虚空属玩家自选）")
+    void voidColumn_teleportsInsteadOfRefusing() {
+        ServerPlayer player = mock(ServerPlayer.class);
+        ServerLevel sourceLevel = mock(ServerLevel.class);
+        ServerLevel targetLevel = mock(ServerLevel.class);
+        when(player.isCreative()).thenReturn(true);
+        when(player.getName()).thenReturn(
+            net.minecraft.network.chat.Component.literal("tester"));
+        when(player.level()).thenReturn(sourceLevel);
+        when(player.serverLevel()).thenReturn(sourceLevel);
+        net.minecraft.server.MinecraftServer server = org.mockito.Mockito.mock(net.minecraft.server.MinecraftServer.class);
+        org.mockito.Mockito.when(sourceLevel.getServer()).thenReturn(server);
+        org.mockito.Mockito.when(server.getTickCount()).thenReturn(1);
+        when(player.getVehicle()).thenReturn(null);
+        when(player.damageSources()).thenReturn(mock(DamageSources.class));
+        when(player.getCooldowns()).thenReturn(mock(ItemCooldowns.class));
+        when(sourceLevel.dimension()).thenReturn(Level.OVERWORLD);
+        when(targetLevel.dimension()).thenReturn(Level.OVERWORLD);
+        // 模拟虚空柱：高度图返回世界下限（原版对无方块柱的语义），脚下无方块
+        when(targetLevel.getMinBuildHeight()).thenReturn(-64);
+        LevelChunk chunk = mock(LevelChunk.class);
+        when(targetLevel.getChunk(anyInt(), anyInt())).thenReturn(chunk);
+        when(chunk.getHeight(Heightmap.Types.MOTION_BLOCKING, 10, 20)).thenReturn(-64);
+
+        boolean ok = TeleportHelper.teleportToMapPosition(
+            player, sourceLevel, targetLevel, 10.7, 20.3, ItemStack.EMPTY, false);
+
+        assertTrue(ok, "A3 指哪传哪：全空柱不得因「无地面」拒绝传送");
+        ArgumentCaptor<Double> ys = ArgumentCaptor.forClass(Double.class);
+        verify(player).teleportTo(org.mockito.ArgumentMatchers.anyDouble(), ys.capture(),
+            org.mockito.ArgumentMatchers.anyDouble());
+        assertEquals(-63.0, ys.getValue(), 0.0001,
+            "脚下 = minBuild + 1（虚空柱原版高度图语义），玩家自担后续下落");
+    }
 }
