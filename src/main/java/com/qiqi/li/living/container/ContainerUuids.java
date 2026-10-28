@@ -142,6 +142,9 @@ public final class ContainerUuids {
         UUID uuid = ofItem(stack);
         if (uuid != null) {
             ContainerDataSavedData.get().remove(uuid);
+            // ⚠️ 只删 SavedData 不够：内存层（容器级数据 + 槽位追踪 + 运行时缓存）按缓存键另存一份，
+            //    而物品形态没有位置可供 removeDataByPos 反查 ⇒ 必须按键作废（2026-10-28 修）。
+            ContainerLivingItemHandler.removeDataByKey(keyOf(uuid));
         }
         stripForCopy(stack);
     }

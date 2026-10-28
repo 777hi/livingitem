@@ -161,18 +161,31 @@ public class ContainerLivingItemHandler {
      * 清理指定位置容器的流体/红石/电力数据（容器方块被破坏时调用）。
      */
     public static void removeDataByPos(Level level, BlockPos pos) {
-        String key = POS_TO_CACHE_KEY.remove(new PosKey(level.dimension(), pos.immutable()));
-        if (key == null) return;
-        CONTAINER_DATA.remove(key);
-        POS_TO_CACHE_KEY.values().removeIf(key::equals);
+        String cacheKey = POS_TO_CACHE_KEY.get(new PosKey(level.dimension(), pos.immutable()));
+        if (cacheKey == null) return;
+        removeDataByKey(cacheKey);
+    }
+
+    /**
+     * 按<b>缓存键</b>作废一个容器的全部跨 tick 数据（物品形态容器的「容器消失」出口）。
+     *
+     * <p>⚠️ 物品形态容器（{@code cuuid_}）<b>没有位置</b> ⇒ {@link #removeDataByPos} 的反查
+     * 索引永远命中不了它。取消活化是它唯一的显式消失点（{@code ContainerUuids.discard}），
+     * 必须在这里按键作废，否则运行时缓存（熔炉进度 / 燃料）与槽位追踪会留到停服
+     * （{@code ContainerRuntimeCache} 没有 TTL）。</p>
+     */
+    public static void removeDataByKey(String cacheKey) {
+        if (cacheKey == null) return;
+        CONTAINER_DATA.remove(cacheKey);
+        POS_TO_CACHE_KEY.values().removeIf(cacheKey::equals);
         // 容器卸载 ⇒ 运行时缓存与追踪一并作废（方案 A，2026-10-11）。
         // ⚠️ key 与下方两行必须是<b>同一把缓存键</b>（ContainerIdentity.getCacheKey）：
         // 2026-10-12 修复前这里用 POS 索引取出的「维度前缀键」去删 LIVING_SLOT_ITEMS /
         // 登记作废，而 trackLivingSlots 与 ContainerRuntimeCache 用的是裸容器键
         // ⇒ 两条 remove 全部落空，「拆箱子 ⇒ 运行时缓存作废」从未真正生效
         // （拆掉原地放回 ⇒ 旧燃料/进度复活）。
-        LIVING_SLOT_ITEMS.remove(key);
-        PENDING_RUNTIME_INVALIDATIONS.add(new RuntimeCacheInvalidation(key, Set.of(), true));
+        LIVING_SLOT_ITEMS.remove(cacheKey);
+        PENDING_RUNTIME_INVALIDATIONS.add(new RuntimeCacheInvalidation(cacheKey, Set.of(), true));
     }
 
     // ==================== 运行时缓存生命周期（方案 A，2026-10-11） ====================

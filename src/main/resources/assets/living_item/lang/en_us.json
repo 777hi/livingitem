@@ -120,7 +120,7 @@
   "tooltip.livingitem.ender_chest.channel": "  §7Public channel: §e%d§r",
   "tooltip.livingitem.ender_chest.private_channel": "  §7Bound channel: §e%d§r",
   "tooltip.livingitem.ender_chest.routes": "  §7Routes: §e%d§r",
-  "tooltip.livingitem.ender_chest.item_form_limit": "  §8Note: items inside item-form containers can't be routed (pulling still works)",
+  "tooltip.livingitem.ender_chest.item_form_limit": "  §8Note: no routing from item-form containers; activating in a backpack won't bind",
   "tooltip.livingitem.beacon.status": "§bLiving Beacon§r",
   "tooltip.livingitem.beacon.level": "  §7Level: §a%d §7· Active: §a%d/%d slots§r",
   "tooltip.livingitem.beacon.regen": "  §7%s§r",
