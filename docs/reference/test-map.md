@@ -127,7 +127,8 @@ src/test/java/com/qiqi/li/
 ├── living/domain/chest/
 │   ├── LivingChestFunctionTest.java           # 取消活化堆叠倍数返还
 │   ├── LivingChestInsertByteGateTest.java     # 16KB 字节上限插入点精确把关（2026-10-27 审查 P1）·三参 insert 曾直接丢弃 registries 转调估算（每槽 64B ⇒ 27 槽 1728B 永远够不到上限）/ 精确把关：20 本成书(≈1KB/本)+空槽 ⇒ 三参拒绝且内容不动 / 未超限正常收 / **两参入口也精确**（RegistryAccess.EMPTY 回落 BuiltInRegistries ⇒ 超限拒绝，2026-10-29 收口）/ **回滚豁免**（insertItemUnchecked：撤销不是新插入）
-│   └── LivingChestItemHandlerTest.java        # 能力面接缝（2026-10-29）·全额插入余量为空且箱子只收 1 / 部分插入余量精确 / 字节超限 insert+simulate 同源拒绝 / 抽出不挡
+│   ├── LivingChestItemHandlerTest.java        # 能力面接缝（2026-10-29）·全额插入余量为空且箱子只收 1 / 部分插入余量精确 / 字节超限 insert+simulate 同源拒绝 / 抽出不挡
+│   └── LivingChestAccessorTest.java           # 访问器接缝（2026-10-29）·tryCreate 只认活箱子 / insert 未超限全额且改栈 / 字节超限 insert+simulate 同源 0 / 回滚豁免 / 抽取快照门 / markTransferred+sync 接线
 ├── living/domain/beacon/
 │   ├── BeaconFunctionTest.java                 # 宿主判据(协议级 LidBlockEntity)·原版箱/末影箱⇒true/木桶/潜影盒⇒false/null 安全
 │   ├── BeaconPyramidTest.java                 # 1D 金字塔判级·各级精确目标/全0/null不足长/差一块掉档/多堆不亏/嵌套单调/L3 缺一列仍 L2/边界钳制封顶/单列无法激活/距下一级差额/范围公式/合计 9·34·83·164

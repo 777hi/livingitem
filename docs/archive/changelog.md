@@ -25,6 +25,10 @@
   并补回滚豁免 1 项。测试 1137→1143。
   详情见 `docs/tech/living-chest-tech.md` §2.3。
 
+- 🧪 **活箱子访问器接缝测试（LivingChestAccessorTest，8 项）** —— `tryCreate` 只认活箱子 /
+  `insert` 未超限全额且改栈 / 字节超限 `insert`+`simulate` 同源 0 / 回滚豁免 /
+  抽取快照门 / `markTransferred`+`sync` 接线。测试 1143→1151。
+
 - 🐞 **容器级数据持久层二分：有身份只存 SavedData（活背包形态变换丢活流体）** —— 真机：活精妙背包里的活流体，蹲下拾取（方块→物品）后丢失，放回去也回不来。
 
   - **根因**：两个形态写**两个地方** —— 方块形态走 `ContainerContext.persist` 默认实现写 **BE 附件**，
