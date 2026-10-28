@@ -586,6 +586,10 @@ public class SimpleContainerContext implements TickableContainerContext {
         }
 
         if (!found) {
+            // 空栈没有身份：ItemStack.EMPTY 是单例，拿它做同一性比较会命中**任意**空槽
+            // ⇒ 回退分支只在源槽真有物品时才有意义（2026-10-28 审查补：这条曾让空栈
+            //    绕过 sendSlotSync 里的「锁住的槽不发」判据，从侧门再打进去）。
+            if (inv.getItem(logicalSlot).isEmpty()) return;
             for (int i = 0; i < menu.slots.size(); i++) {
                 Slot slot = menu.slots.get(i);
                 if (slot.container instanceof Inventory && slot.getItem() == inv.getItem(logicalSlot)) {
@@ -596,12 +600,43 @@ public class SimpleContainerContext implements TickableContainerContext {
         }
     }
 
+    /**
+     * 手发一条槽位包 —— <b>玩家物品栏槽同步的唯一发包点</b>。
+     *
+     * <p>判据放在这里而不是调用点：`syncInventoryMenuSlot` 有两条找槽的路（按
+     * {@code containerSlot} 精确匹配、按对象同一性回退），判据只盖住前一条的话，
+     * 后一条就是侧门（2026-10-28 审查实测到）。</p>
+     */
     private void sendSlotSync(ServerPlayer serverPlayer, AbstractContainerMenu menu,
                                int slotIndex, ItemStack stack) {
+        if (isSlotLockedByMenu(menu, menu.slots.get(slotIndex), serverPlayer)) return;
         int stateId = menu.incrementStateId();
         menu.remoteSlots.set(slotIndex, stack.copy());
         serverPlayer.connection.send(
             new ClientboundContainerSetSlotPacket(menu.containerId, stateId, slotIndex, stack.copy()));
+    }
+
+    /**
+     * 这个<b>玩家物品栏</b>槽是不是被菜单方锁住了（玩家拿不走它）。
+     *
+     * <p>原版玩家物品栏槽恒可拿；只有第三方菜单会给自己的「锚点物品」套一个
+     * {@code mayPickup → false} 的槽。精妙背包 GUI 的「背包本体」槽就是这种
+     * （{@code StorageContainerMenuBase#addStorageItemSafeSlot}）—— 那个槽在菜单里的
+     * 编号就是它的 {@code storageItemSlotNumber}。</p>
+     *
+     * <p><b>为什么锁住的槽不能由我们同步</b>：它的内容不归我们管（我们既改不动它，
+     * 也不该替菜单方宣布「它空了」）。2026-10-28 真机：背包本体离开物品栏时我们把
+     * 那个槽同步成空栈，精妙客户端 {@code BackpackWrapper.cacheSlotNumbers} 把
+     * {@code AirItem} 硬转成 {@code BackpackItem} ⇒ {@code ClassCastException} 断线
+     * （上游 bug，但空栈是我们发的）。菜单方自己的处理是<b>关界面</b>
+     * （{@code hasSomethingMessedWithStorage}），交给它，别抢。</p>
+     *
+     * <p>⚠️ 只跳「发槽位包」这一件事：{@link #syncPlayerInventory} 前面那条
+     * {@code containerId = -2} 的包已经把玩家物品栏本身改对了，而背包 GUI 下方的
+     * 物品栏槽是直接读 {@code Inventory} 的 ⇒ 界面照样刷新。</p>
+     */
+    private static boolean isSlotLockedByMenu(AbstractContainerMenu menu, Slot slot, Player player) {
+        return menu != player.inventoryMenu && !slot.mayPickup(player);
     }
 
     /**

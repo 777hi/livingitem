@@ -463,6 +463,82 @@ setBackpackStack → cacheSlotNumbers` ⇒ **ClassCastException**。
 锚点失效时它会持续每 tick 打一条精妙的 ERROR（约 20 条/秒）直到界面关闭。
 本次实录未见（那种状态下客户端已经崩了），**未预先优化** —— 真出现了再说。
 
+#### 2026-10-28 复发（活末影箱 + 活背包同测）：空栈是**我们发的**
+
+同一份 CCE 再现，这次拿到了能定性的证据。日志（`build/libs/latest.log`）同一毫秒内：
+
+```
+21:54:04.195 [Render thread] ClassCastException: AirItem → BackpackItem
+21:54:04.198~200 [Server thread] ×110 "Error getting backpack wrapper - Stack isn't a backpack"
+```
+
+110 条同 tick 的 `getBackpackWrapper` 报错 ⇒ 那一刻**背包已经不在菜单记录的
+`backpackSlotIndex` 格子里**（这就是上面预判的「锚点失效」，一次约 110 条/秒）。
+
+**由此可以把「谁发的空栈」定死**，不用再猜：
+
+1. 客户端 `StorageContainerMenuBase.setItem` 只在 `packet.containerId == 玩家当前菜单 id`
+   时被调用（`ClientPacketListener.handleContainerSetSlot` 的分支）⇒ 发件人必然带着
+   **背包菜单的 containerId**。
+2. 原版 `broadcastChanges()` **不可能**是发件人：它开头就是
+   `if (hasSomethingMessedWithStorage()) { player.closeContainer(); return; }`，
+   而 `storageItemHasChanged()` 正是「`backpackSlotIndex` 那格不再是背包」
+   ⇒ 背包一离开槽，原版路径只会**关界面**，不会下发空栈。
+3. ⇒ 只剩我们的手发包 `SimpleContainerContext#syncPlayerInventory`
+   （`containerId = -2` 那条无害；带上菜单 id 的是 `syncInventoryMenuSlot`）。
+   能命中 `storageItemSlotNumber` 说明 `logicalSlot` 恰好是背包本体在物品栏里的那一格，
+   而载荷是空栈说明**flush 那一刻那格已经是空的**。
+
+**修法分两档（都已落地）**：
+
+1. 🔴 **根治（补上游的判空）**：`BackpackContainerMixin` 注入
+   `BackpackContainer#onStorageItemStackChanged` 的 HEAD，栈**确定不是背包**时
+   `ci.cancel()` —— 不把它塞给 wrapper。选这个点而不是上游的转型点，是因为它
+   **是「背包本体槽变了」的唯一入口**（`setItem` 判完 `storageItemSlotNumber` 就调它），
+   且是 `void` 方法（不需要为 `setReturnValue` 去引用上游 `IBackpackWrapper` 返回类型），
+   也不用 `@Shadow` 上游私有成员（`@Shadow` 缺失是**应用期硬错误**，与「可降级」冲突）。
+   判据 `SophisticatedBackpackSource#isDefinitelyNotBackpack` **宁漏不误**：
+   空栈恒确定、类没解析出来时不动手（退回上游行为）—— 误拦会把正常刷新全拦掉，
+   背包 GUI 直接坏，比偶尔崩一次更糟。
+   ⇒ **任何来源**把空栈发到**那个槽**都不会再崩。
+2. ✅ **口径（别递刀）**：玩家物品栏槽的手发包唯一入口 `sendSlotSync` 跳过
+   **被菜单锁住的槽**（`menu != inventoryMenu && !slot.mayPickup(player)`）。
+   锁住的槽 = 菜单方的锚点物品槽（`addStorageItemSafeSlot` 的 `mayPickup → false`），
+   内容不归我们管，没资格替它宣布「它空了」；`-2` 那条包已经把玩家物品栏改对了，
+   界面照样刷新。
+
+   ⚠️ **判据必须放在唯一发包点，不能放在调用点**（2026-10-28 审查补）：
+   `syncInventoryMenuSlot` 有两条找槽的路 —— 按 `containerSlot` 精确匹配、
+   按对象同一性回退。判据只盖前一条时，后一条就是**侧门**：源槽为空时
+   `slot.getItem() == inv.getItem(k)` 拿 `ItemStack.EMPTY`（单例）去比，
+   会命中**任意**空槽。两条都已收口：判据进 `sendSlotSync`，回退分支在源槽为空时直接放弃。
+
+   ⚠️ **为什么问的不是「那格还是背包吗」**：那句问的是上游的私有状态
+   （`storageWrapper` 身份比对），只有它自己能问；核心也不知道「背包」是什么
+   （`D-container-09`：核心不做第三方形状猜测）。我们能问、且有权问的是
+   「**这个槽是不是菜单钉住的**」——`mayPickup == false` 就是它的通用形状。
+   ⚠️ **为什么不抢着 `closeContainer()`**：菜单方下一 tick 的 `broadcastChanges`
+   自己就会关（`hasSomethingMessedWithStorage`），抢着关只是多一条关界面路径。
+   ⚠️ **漏发不会留坑**：`-2` 已把客户端物品栏改对，而服务端 `lastSlots` 仍是旧的
+   ⇒ 原版下一 tick 的比对会把正确内容补发一次（自愈 ≤1 tick）。
+
+⚠️ **根因（谁把背包搬离了物品栏）仍未定性**：`SlotInteractions.isEligibleCargo` 放行
+「箱类物品」（`ContainerLikeItems.isContainerLike`），而**精妙背包也是箱类** ⇒ 活末影箱 /
+活漏斗可以把玩家物品栏里（或某个容器里）的背包当普通货物搬走。拾取路径已排除
+（上游只在 `isShiftKeyDown() && heldItem.isEmpty()` 时调 `putInPlayersHandAndRemove`）。
+**崩不崩已经不是问题了，玩家会不会丢背包才是。**
+
+#### 审查留档：一个既存缺陷（非本次引入，未修）
+
+`SimpleContainerContext#syncWorldContainer` 的**快路径**（`wholeMenuIsMine`）只比
+`slot.getContainerSlot() == toPhysicalSlot(logicalSlot)`，不看槽属于哪个容器。
+放置态背包菜单里**存储槽与升级槽的 `containerSlot` 从 0 各自起算** ⇒ 同步存储槽 0 时
+会连升级槽 0 一起发一份，客户端升级槽短暂显示存储槽的内容。
+`storageItemSlotNumber` 在放置态是 `-1`（`shouldLockBackpackSlot = false`）⇒ 不会崩；
+且我们没动 `remoteUpgradeSlots`，精妙下一次 `broadcastChangesIn` 比对就会纠正
+⇒ **≤1 tick 的视觉闪烁，自愈**。真要修，判据应是「这个槽的 `container` 是不是同一份
+存储 handler」，而不是槽号。
+
 ### 未定案
 
 1. **嵌套上限放开时机**：现写死 `MAX_DEPTH = 1`，等活潜影箱立项一起放开。

@@ -6,6 +6,7 @@
   "plugin": "com.qiqi.li.living.compat.sophisticated.SophisticatedMixinPlugin",
   "mixins": [
     "BackpackBlockMixin",
+    "BackpackContainerMixin",
     "BackpackItemMixin"
   ],
   "injectors": {

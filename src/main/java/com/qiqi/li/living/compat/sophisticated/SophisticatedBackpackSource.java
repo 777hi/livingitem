@@ -180,6 +180,31 @@ public final class SophisticatedBackpackSource implements ItemFormContainers.Sou
             && backpackItemClass.isInstance(stack.getItem());
     }
 
+    /**
+     * 「这件物品<b>确定</b>不是 {@code BackpackItem}」—— 给
+     * {@code BackpackContainerMixin} 在把栈交给上游之前判断用。
+     *
+     * <p>上游 {@code BackpackWrapper#cacheSlotNumbers} 不判 instanceof 就硬转，
+     * 空栈会直接 {@code ClassCastException} 崩客户端（2026-10-28 真机）。
+     * 补判空要能区分三种输入，判据必须<b>宁漏不误</b>：</p>
+     * <ul>
+     *   <li><b>空栈</b> ⇒ {@code true}（空气不可能是背包，确定）；</li>
+     *   <li><b>类已解析且不是</b> ⇒ {@code true}（确定）；</li>
+     *   <li><b>类没解析出来</b>（精妙改版/反射失败）⇒ {@code false} —— <b>不动手</b>，
+     *       退回上游行为。若这里返回 {@code true}，正常的内容刷新会被全拦掉，
+     *       背包 GUI 直接坏掉，比偶尔崩一次更糟。</li>
+     * </ul>
+     *
+     * <p>⚠️ 与 {@link #isContainerItem} 不是反义：后者要求「确定是」（类没解析出来时为
+     * {@code false}，功能不认领），本方法要求「确定不是」（类没解析出来时也为
+     * {@code false}，不拦）。两者的未知都落到「不做任何事」。</p>
+     */
+    public static boolean isDefinitelyNotBackpack(@Nullable ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return true;
+        resolve();   // 幂等；mixin 可能早于联动模块初始化先问到这里
+        return backpackItemClass != null && !backpackItemClass.isInstance(stack.getItem());
+    }
+
     @Override
     @Nullable
     public IItemHandler contentHandler(ItemStack stack) {

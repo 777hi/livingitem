@@ -38,6 +38,7 @@ public class SophisticatedMixinPlugin implements IMixinConfigPlugin {
      */
     private static final Map<String, String> EXPECTED_METHODS = Map.of(
         "BackpackBlockMixin", "putInPlayersHandAndRemove",
+        "BackpackContainerMixin", "onStorageItemStackChanged",
         "BackpackItemMixin", "tryPlace");
 
     private static final String PROBE_RESOURCE =
@@ -98,7 +99,7 @@ public class SophisticatedMixinPlugin implements IMixinConfigPlugin {
             LOGGER.debug("[SophisticatedMixinPlugin] 已注入 {}#{}", targetClassName, expected);
         } else {
             LOGGER.error("[SophisticatedMixinPlugin] {} 里找不到 {} —— 精妙版本可能变了；"
-                + "该方向的容器级数据迁移会失效", targetClassName, expected);
+                + "{} 负责的兼容行为会静默失效", targetClassName, expected, simpleName(mixinClassName));
         }
     }
 
