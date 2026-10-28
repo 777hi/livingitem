@@ -1248,6 +1248,14 @@ poseStack.mulPose(Axis.ZP.rotation(MODEL_UPRIGHT_FIX));  // 立正
 
 ⭐ **动画是纯表现层，零逻辑耦合**：所有"要不要干、挖哪、多快"都由服务端定（`L48`），本类只读结果。动画播错/漏播**不影响核心功能**。
 
+> ⚠️ **动画时钟约束（2026-10-29）**：转圈 / 脉冲 / 飞回一律用**客户端本地连续时钟**
+> （`Util.getMillis() / 50`，见 `localAnimTick`），**禁止锚 `level.getGameTime()`**——
+> 它每秒被服务器时间同步包硬覆盖（相位 / 进度跳变），且 float 大数吃掉 partialTick
+> （老存档转圈退化成 20 Hz 整 tick 步进）。动作脉冲（服务端写的 `LIVING_TOOL_LAST_ACTION`）
+> 在客户端**首见该戳时冻结起点**（按同步延迟折算、钳到窗口 ⇒ 陈旧动作不重播），
+> 之后逐帧只靠本地时钟推进。与活水车图标同款约束（`WaterWheelRenderState`）。
+> 门限类判定（AssistState 的 3t 窗口）仍用游戏时钟。回归：`LivingToolModelRendererAnimTest`。
+
 **覆盖范围**
 
 | 形态 | 是否画 | 说明 |

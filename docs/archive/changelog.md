@@ -15,6 +15,80 @@
 
 ---
 
+## 2026-10-29
+
+- 🐞 **活末影箱路由：源解析不到 ⇒ 条目丢弃（撤掉「暂时不可用」保留态）** —— 用户实测：在地上摆放的精妙背包里用活末影箱注册路由，蹲下右键把背包拾取成物品后，**路由仍指向原摆放位置**，且活末影箱基本功能失效。
+
+  - **根因一（清不掉）**：路由条目的身份锚是容器键，而方块↔物品切换会**换掉键的种类**
+    （`sourcePos` → `cuuid_<uuid>`）。`validateRoutes` 用**当前** ctx 的键查反向索引
+    （`posIndex[dim][pos]` / `keyIndex[key]`）⇒ 旧条目不在候选集里，永远清不掉；
+    注册时的 `removeByPositionAndSlotFromAllChannels` 同理只按新键清，顶不掉旧键。
+    `ContainerHandoff` 只有 water / power 两个 Mover，**ender 领域没注册** ⇒ 交接通道没通知路由表。
+  - **根因二（更狠）**：`routeExtract` 对「handler 拿不到」一律 `reoffer` 回队尾 + `return EMPTY`
+    （注释假设是「源**暂时**不可用」）。方块被搬走后 BE 永远不在 ⇒ 死条目**永远留在队里**，
+    每轮都在它身上失败一次；只有一条路由时该频道彻底不出货。
+  - **修法（删代码，不是加判据）**：失败分支不再 `reoffer`，直接丢弃 + 一条 debug。
+    **口径**：路由只有「注册 / 不注册」两态，没有中间态 —— 解析失败 ⟺ 源**不在跑**，
+    不在跑的源不产出，而它恢复跑的那一刻漏斗会再推一次（`resolveTarget`）⇒ 路由自己重新注册。
+    三种源（方块 / `player_` / `cuuid_`）都满足这条。
+    ⚠️ 2026-10-28 曾把 `continue` 改成 `reoffer`（怕「背包暂时不在 tick 变永久失效」），
+    那个担心不成立：恢复 tick 时漏斗会重新注册。规则 10 已反向修正。
+  - 测试 1125→1126（`EnderRouteExtractTest`：源解析不到 ⇒ 条目从队列消失、频道清空、下一轮不再空转；新增「方块被搬走」用例）。
+
+- 🐞 **精妙背包 GUI 空栈崩溃：补上游判空 + 不往菜单钉住的槽发包** —— 真机 2026-10-28：开着背包 GUI 时背包离开物品栏 ⇒ 客户端 `AirItem cannot be cast to BackpackItem` 断线。
+
+  - **链路**：手发 `container_set_slot`（背包本体槽 + 空栈）→ `StorageContainerMenuBase.setItem`
+    判 `storageItemSlotNumber` → `onStorageItemStackChanged` → `setBackpackStack` →
+    `cacheSlotNumbers` 里 `(BackpackItem) getItem()` 硬转型（上游不判 instanceof）。
+  - **为什么能定死是我们发的**：原版 `broadcastChanges` 开头就是
+    `hasSomethingMessedWithStorage()`（锚点那格不再是背包 ⇒ `closeContainer()` 后 return），
+    **结构上不可能**下发空栈 ⇒ 只剩我们的手发包。
+  - **两档修法**：① `BackpackContainerMixin` 注入 `onStorageItemStackChanged` 的 HEAD，
+    栈确定不是背包时 `ci.cancel()`（判据 `isDefinitelyNotBackpack` 宁漏不误：反射没解析出来时
+    不动手）⇒ 任何来源发空栈都不再崩，服务端同样覆盖；② `sendSlotSync`（玩家物品栏槽的**唯一**
+    发包点）跳过被菜单锁住的槽（`mayPickup == false` = 菜单方的锚点槽）。
+    ⚠️ 判据必须放唯一出口：该方法有两条找槽的路（精确匹配 + 对象同一性回退），放调用点等于
+    只盖第一条；回退分支另加「源槽为空则放弃」（`ItemStack.EMPTY` 是单例，会命中任意空槽）。
+  - 验证：真机复现不再崩溃。未修、已留档（`living-backpack-tech.md` §6）：谁把背包搬离物品栏
+    仍未定性；`syncWorldContainer` 快路径在放置态背包菜单里会多发一份到索引重叠的升级槽（≤1 tick 自愈）。
+
+- 🐞 **活水车图标旋转换时钟源：老存档一卡一卡的根因（gameTime 锚点 + float 精度台阶）** —— 用户实测新存档平滑、老存档卡顿。
+
+  - **根因两条**：① 角度锚 `level.getGameTime() + partialTick`，而客户端 gameTime 每秒被
+    `ClientboundSetTimePacket`（服务端 20 tick 一次）**硬覆盖**、原版无任何平滑 ⇒ 相位每秒跳
+    2~7°；② 公式全程 float，gameTime 数百万 tick（≈49 小时世界内时间）后 float 量子化追上
+    60fps 每帧步进量（0.8°），逐帧跳格，≈1670 万 tick 后 partial tick 被完全吸收退化成 20 Hz。
+    代码考古：两处旋转路径自 `b8fa2ed`（2026-07-30）出生即此写法，非中途改坏——
+    「之前平滑」是老世界当时还没跨过精度阈值。
+  - **修法**：新时钟 `WaterWheelRenderState.spinAngleDeg(rpm)`——`Util.getMillis()`
+    （nanoTime 单调钟）× 0.006°/ms/RPM，全程 double、模 360 回绕；速度沿用 Create 口径
+    1 RPM = 0.3°/tick = 6°/s（8 RPM = 48°/s，7.5 秒一圈）。`ItemRendererWaterWheelMixin`
+    与 `RotatingWaterWheelModel` 两条路径统一走它；顺带消掉 model 死路径里 `level == null`
+    的潜在 NPE 与写死的 `8f`，mixin 的 `mc.level == null` 守卫随之移除（新时钟不依赖世界，
+    创造栏未进世界也照转）。副产物：暂停（ESC）时图标继续转——纯装饰可接受，tech 文档已记约束。
+  - **酿造台白幕 decorator 同锚点但评估不改**：它的动画是差值（`now − start`），同步跳变只占
+    时长的 ≤0.75%、float 量化在差值里大部分相消 ⇒ 肉眼不可见，换钟反而引入跨钟迁移问题。
+  - 测试 1120→1125（`WaterWheelRenderStateTest` 5 项：速度/方向/rpm=0 恒 0/回绕连续/大时钟量级不退化）。
+
+- 🐞 **活工具动画同病三处一并换时钟源（挖掘转圈 / 交互攻击脉冲 / 飞回渐隐）** —— 水车修复后的全客户端审计命中。
+
+  - **审计结论**：客户端时间源全量过一遍 —— 信标光束（原版 `BeaconRenderer` 内部 long 域取模，
+    无病）/ 酿造白幕（差值动画，不可见）/ 活按钮（已用 millis）/**活工具渲染器三处命中**；
+    服务端 `getGameTime()` 全部是权威侧逻辑，无同步覆盖问题。
+  - **三处病根**：① 挖掘转圈 `spinAngle` 的 `(gameTime + partialTick)` 是 long+float —— 老
+    存档 partialTick 被 float 吸收 ⇒ 20 Hz 整 tick 步进（周期 4~20t ⇒ 每格 18°~90°，频闪）；
+    ② gameTime 每秒被同步包覆盖 ⇒ 转圈相位随机跳 1~2 tick（周期 4 时 = 90°）；③ 交互/攻击
+    脉冲每帧拿客户端 gameTime 减**服务端**写进组件的动作戳，6t 窗口里同步跳 1~2 tick =
+    进度跳 17~33%。
+  - **修法**：`localAnimTick()`（`Util.getMillis()/50`，本地连续 tick 时钟）统一驱动三处
+    动画；转圈保持无状态取模（挖掘期间周期恒定不跳变，换目标本就瞬现）；脉冲起点**首见
+    动作戳时冻结**（按同步延迟折算、钳到窗口 ⇒ 陈旧动作不重播，之后逐帧只靠本地时钟）；
+    飞回 / `WorkMemo` 改 double 时间戳。门限判定（AssistState 3t 窗口）留游戏时钟
+    （每 tick 刷新，抖动不可见）。变化：转圈/脉冲在单人暂停（ESC）时继续走（纯表现层可接受，
+    tech 文档已记约束）。
+  - 测试 1126→1132（`LivingToolModelRendererAnimTest` 6 项：转圈速度/回绕/大时钟量级不退化 +
+    脉冲首见冻结/延迟折算/陈旧过期 + 过窗剪枝；1125→1126 那一项是并行的末影箱路由口径变更）。
+
 ## 2026-10-28
 
 - 🧪 **耕地湿润 BFS / 生长冷却门补测试（审查测试缺口 #4，最后一个）** —— 4 项：

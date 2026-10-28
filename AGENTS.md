@@ -146,7 +146,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1120 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
+**合计测试用例 1132 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -171,16 +171,16 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-29 | 🐞 **活工具动画同病三处换时钟源** —— 全客户端时间源审计后命中 `LivingToolModelRenderer` 三处：挖掘转圈（`(gameTime+partialTick)` long+float ⇒ 老存档 partialTick 被吸收退化 20Hz 频闪 + 每秒同步覆盖相位跳）、交互/攻击脉冲（客户端钟减服务端动作戳，6t 窗口跳 17~33%）、飞回渐隐。统一换 `localAnimTick()` 本地连续钟 + 脉冲首见冻结起点；信标光束（原版 long 域取模）/酿造白幕（差值）/活按钮审计无恙。测试 1126→1132 | `docs/tech/living-tool-tech.md` · `docs/reference/test-map.md` |
+| 2026-10-29 | 🐞 **活末影箱路由：源解析不到 ⇒ 条目丢弃** —— 摆放态精妙背包里注册的路由，拾取后仍指向原位置（方块↔物品切换**换掉了身份键的种类** ⇒ `validateRoutes` 查不到、新注册也顶不掉）；且失败分支 `reoffer` 让死条目永远留在队里、每轮空转（只有一条路由时频道彻底不出货）。**口径**：路由只有「注册 / 不注册」两态，没有中间态（源不在跑就不产出，恢复跑时漏斗会再推一次 ⇒ 自己重新注册）。测试 1125→1126 | `docs/tech/living-ender-chest-tech.md` §0 规则 10 |
+| 2026-10-29 | 🐞 **精妙背包 GUI 空栈崩溃** —— 背包离开物品栏时我们的手发包把「背包本体槽 = 空栈」发给精妙，上游 `cacheSlotNumbers` 硬转型 CCE 断线（原版同步有守卫，**结构上发不出** ⇒ 定死是手发包）。修两档：mixin 补上游判空（任何来源都不崩、服务端同样覆盖）+ `sendSlotSync` 不往菜单锁住的槽发包（判据收口到唯一发包点） | `docs/tech/living-backpack-tech.md` §6 |
+| 2026-10-29 | 🐞 **活水车图标旋转换时钟源（老存档一卡一卡根因）** —— 角度锚 `gameTime` 每秒被时间同步包硬覆盖 + float 大数取模精度台阶，双因叠加；换 `Util.getMillis()` 单调钟全程 double（Create 口径 6°/s/RPM 不变），mixin / model 两路径统一收口 `WaterWheelRenderState.spinAngleDeg`；酿造台白幕同锚点但差值动画不可见、评估不改。测试 1120→1125 | `docs/tech/living-water-wheel-tech.md` §6.3 · `docs/reference/test-map.md` |
 | 2026-10-28 | 🧪 **耕地湿润 BFS / 生长冷却门补测试（缺口 #4，最后一个）** —— 4 项：4 级源→每跳 -1（0→9→18 湿、远处干）/ 普通耕地阻断传播 / 冷却门 <200t 不写 / ≥200t 推进时间戳且不改 age。`computeMoisture` 私有 ⇒ 完整 `tick()` + 假 `FluidPresence`。测试 1116→1120；审查「测试缺口」5 补 + 1 不补（应力按「联动活物品不写单测」跳过） | `docs/reference/test-map.md` |
 | 2026-10-28 | 🧪 **倒/汲真实原版菜单测试 + 菜单脚手架** —— 真实 `BrewingStandMenu` + BE 走完整 `ContainerContexts.resolve`（假菜单测不到这层）2 项：解析出容器 / 倒水排空 / 汲水装水且源消失。踩坑：倒水只写 `generatedSources`，`flows` 要等 BFS 播种。测试 1114→1116；联动活物品（Create 等）按用户决定不做单测、靠实机 | `docs/reference/test-map.md` |
 | 2026-10-28 | 🧪 **光标点燃补测试（缺口 #2 收尾）** —— `IgniteCarriedHandlerTest` 5 项（创造成功 + 广播 / 创造空光标 / 未活化 TNT / 生存未活化打火石 / 生存空光标）；拒绝分支用 `broadcastChanges` 未被调用兜住。测试 1109→1114 | `docs/reference/test-map.md` |
 | 2026-10-28 | 🧪 **TNT 点火链补测试（红石 + 打火石）+ 修「空手点燃」** —— `TntRedstoneIgniteTest` 2 项（信号 > 0 ⇒ 点燃，端口 mock；传播另有 30 项）/ `TntIgniteHandlerTest` 5 项；**抓出真 bug**：生存模式光标为空也会点燃 ⇒ 伪造包可空手点燃任意活 TNT，已改为「生存必须非空活打火石」。测试 1102→1109 | `docs/reference/test-map.md` · `living/domain/tnt/IgniteHandler.java` |
 | 2026-10-28 | 🧪 **活末影箱路由端到端测试 + 源不可用不丢条目** —— 补 4 条链路回归（方块位置 / 玩家背包 / 物品形态 cuuid / 活视图未登记）；`routeExtract` 在源暂时不可用（未加载 / 离线 / 视图过期）时 `reoffer` 而非丢弃（旧实现丢一次即**永久失效**）。测试 1098→1102 | `docs/tech/living-ender-chest-tech.md` §0 规则 10 · `docs/reference/test-map.md` |
 | 2026-10-28 | 📐 **口径落档：两层宿主语义（`D-container-19`）** —— 活背包是其中内容物的**主容器宿主**（身份 = `cuuid`），背包自己的宿主只提供锚点 / 上报位置、**不改身份** ⇒ 换宿主时运行数据保留并继续（放箱子里照常 tick）；A2「运行数据不随搬运保留」收窄为**仅方块容器**。⚙️ 顺带勘误「放箱子 = 暂停」的错误前提 | `docs/decisions.md` D-container-19 · `docs/tech/living-backpack-tech.md` §5.8 |
-| 2026-10-28 | 🔗 **物品形态容器支持按 UUID 寻址** —— 新增 `ItemFormLiveViews`（背包每 tick 登记「容器 UUID → 内容视图」，TTL 2s、停服清空），活末影箱路由的提取端接通 `cuuid_` 分支 ⇒ **背包里的货也能被路由**；条件：背包必须在 tick（不 tick 则取不到，属边界）。注册闸门改为「活视图存在才可作源」；tooltip 同步。回归 4 项，测试 1094→1098 | `docs/tech/living-ender-chest-tech.md` §0 规则 9 · `docs/system-design/container-boundary.md` I-C9 |
-| 2026-10-28 | 🐞 **物品形态容器排查：1 个真泄漏 + 边界明示** —— 判据只算「静默错误」。修 `ContainerUuids.discard` 不清内存层（`ContainerRuntimeCache` 无 TTL ⇒ 熔炉进度留到停服），新增 `removeDataByKey`；漏斗 / 红石 / 箱子 / 打火石 / 流体 / 水车 / 耕地 / 熔炉 / 酿造查后判正常。边界只明示：漏斗跨容器、嵌套不展开、末影箱路由收货 + 背包内活化不绑定。待拍板：容器暂停（卸区块 / 下线 / 掉地上）后进度接续（⚠️ 背包放进箱子仍会 tick，不是暂停）。回归 1 项，测试 1093→1094 | `docs/system-design/container-boundary.md` I-C9 · `docs/tech/living-ender-chest-tech.md` §0 规则 9 |
-| 2026-10-28 | 🧩 **活末影箱 × 物品形态容器：边界明示 + 注册端止血** —— 审查结论：直连模式正常；路由模式**取货正常**，但**背包里的货推不出去**（源只支持方块位置与 `player_`，`cuuid_` 无活视图反查；`poll` 先消费条目 ⇒ 注册即丢，静默循环）。加 `isRoutableSource` 判据 + 注册前拒绝 + tooltip 灰字说明（zh/en）；真修（容器 UUID → 活视图登记表）待拍板。回归 4 项，测试 1089→1093 | `docs/tech/living-ender-chest-tech.md` §0 规则 9 · `docs/tech/living-backpack-tech.md` §5.8 |
-| 2026-10-28 | 🛡️ **审查报告待拍板 10 项清零** —— #2 末影箱路由维度隔离（去重键 / 位置索引 / 按位置清理 / 区块卸载 / `validateRoutes` 五处补维度，回归 4 项）、#9 删水车死附件 `CONTAINER_STRESS_DATA`、#10 空值判定收编为 `ContainerDataKey#isEmpty` 谓词；#5 下界落点判为玩法决策（`D-map-01` 指哪传哪，不做地形避险）；#8 补流体拆半条款。剩余三块：文档冲突 ~50 处 / P3 ~40 项 / 测试缺口 6 项 ⇒ 报告不可归档。测试 1085→1089 | `docs/buffer/2026-10-27-全项目审查报告.md` · `docs/decisions.md` D-map-01 |
 ## 提交前必跑（2026-10-20 定）
 
 ```bash

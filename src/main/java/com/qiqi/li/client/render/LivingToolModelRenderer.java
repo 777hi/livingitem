@@ -28,7 +28,9 @@ import com.qiqi.li.living.domain.tools.LivingToolRayTuning;
 import com.qiqi.li.living.domain.tools.ToolRenderState;
 import com.qiqi.li.living.domain.tools.LivingToolHostPacket;
 import com.qiqi.li.living.domain.tools.LivingToolPlayerPacket;
+import com.qiqi.li.living.util.StaticCacheRegistry;
 
+import net.minecraft.Util;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -391,6 +393,24 @@ public final class LivingToolModelRenderer {
      */
     private static final Map<String, WorkMemo> WORK_MEMO = new HashMap<>();
 
+    /**
+     * 动作戳（服务端写入的 {@code LivingToolAction#tick}）→ 本地动画起点（见 {@link #pulseElapsed}）。
+     *
+     * <p>⚠️ 必须登记跨存档清理：条目按「本地时钟年龄」逐帧剪枝（{@link #prunePulseStarts}），
+     * 退出世界后第一帧就会全部过期清空 —— 登记.logout 只是双保险。</p>
+     */
+    private static final Map<Long, Double> PULSE_START = new HashMap<>();
+
+    static {
+        StaticCacheRegistry.onClientLogout(LivingToolModelRenderer::clearAnimationState);
+    }
+
+    /** 清空动画簿记（跨存档 / 退出世界时调用；单测 reset 也用它）。 */
+    static void clearAnimationState() {
+        WORK_MEMO.clear();
+        PULSE_START.clear();
+    }
+
 
     private LivingToolModelRenderer() {
     }
@@ -415,7 +435,8 @@ public final class LivingToolModelRenderer {
         Vec3 cameraPos = camera.getPosition();
         float partialTick = event.getPartialTick().getGameTimeDeltaPartialTick(false);
         MultiBufferSource buffers = mc.renderBuffers().bufferSource();
-        long now = level.getGameTime();
+        // ⭐ 动画时钟 = 客户端本地连续 tick（见 localAnimTick）—— 禁止换锚 level.getGameTime()
+        double now = localAnimTick();
 
         Set<String> seen = new HashSet<>();
         // ⭐ 无记忆的两类分开收集 —— 它们【去不同的环】：活工具 → 挖掘/背后环；活武器 → 攻击环。
@@ -537,6 +558,8 @@ public final class LivingToolModelRenderer {
         // 清理：本帧没见到的 key 直接丢（工具被取走 / 走出范围）。
         // 条目只在"工作过"时产生，且随帧清理，不会堆积。
         WORK_MEMO.keySet().removeIf(k -> !seen.contains(k));
+        // 动作起点簿记：过窗即清（它们的唯一用途是「还在脉冲窗口内」的判定）。
+        prunePulseStarts(now);
     }
 
 
@@ -572,7 +595,7 @@ public final class LivingToolModelRenderer {
      *         （2026-09-24 用户定：背后环不区分工具与武器）
      */
     private static List<ItemStack> renderAssistRing(Minecraft mc, PoseStack poseStack, MultiBufferSource buffers,
-                                                    ClientLevel level, Vec3 cameraPos, float partialTick, long now,
+                                                    ClientLevel level, Vec3 cameraPos, float partialTick, double now,
                                                     List<ItemStack> tools) {
         // ── 参考系：水平前方 + 世界竖直（环是"背在背上的竖直环"）────────────────
         Vec3 look = mc.player.getViewVector(partialTick);
@@ -590,8 +613,10 @@ public final class LivingToolModelRenderer {
         // 🔴 判据必须用 gameMode.isDestroying()（"确实按着左键"），**不能**用 BreakSpeed 事件 ——
         //    那个【只要准心对着方块就每 tick 触发】（不需要按住），会导致"指着哪就在哪转圈"
         //    （2026-09-20 用户报过的 bug）。
+        // ⚠️ 门限判定用【游戏时钟】—— AssistState 每 tick 刷新，±1~2 tick 的同步抖动
+        //    对 3t 窗口不可见；本地动画时钟（now）只管逐帧平滑，见 localAnimTick。
         BlockPos digTarget = mc.gameMode != null && mc.gameMode.isDestroying()
-            ? LivingToolAssistState.target(now) : null;
+            ? LivingToolAssistState.target(level.getGameTime()) : null;
         BlockState digState = digTarget != null ? level.getBlockState(digTarget) : null;
 
         List<ItemStack> working = new ArrayList<>();
@@ -612,7 +637,7 @@ public final class LivingToolModelRenderer {
             Vec3 normal = toPlayer.lengthSqr() < 1.0E-6 ? flat : toPlayer.normalize();
             // 风车自转：转速由"含辅助贡献的破坏速度"换算（复用射线模式那套换算）
             float speed = Math.max(LivingToolAssistState.digSpeed(), 1.0E-4F);
-            float spinRad = spinAngle(now, partialTick, spinPeriod((int) Math.ceil(1.0 / speed)));
+            float spinRad = spinAngle(now, spinPeriod((int) Math.ceil(1.0 / speed)));
             drawRing(mc, poseStack, buffers, level, cameraPos, center, normal, working, spinRad,
                 1.0F, false);
         }
@@ -646,7 +671,7 @@ public final class LivingToolModelRenderer {
      *         <b>合并成同一圈背后环</b>（2026-09-24 用户定：背后环不区分工具与武器）
      */
     private static List<ItemStack> renderAttackRing(Minecraft mc, PoseStack poseStack, MultiBufferSource buffers,
-                                                    ClientLevel level, Vec3 cameraPos, float partialTick, long now,
+                                                    ClientLevel level, Vec3 cameraPos, float partialTick, double now,
                                                     List<ItemStack> weapons) {
         // ── ① 按【每把武器自己】的 action 分组（2026-09-25 修正）──────────────────
         //    ⚠️ 曾是「组内有任意一把刚出手 ⇒ 全体飞过去」—— 而辅助攻击每把有<b>独立冷却</b>
@@ -661,10 +686,10 @@ public final class LivingToolModelRenderer {
         BlockPos target = null;
         for (ItemStack weapon : weapons) {
             LivingToolAction action = ToolRenderState.of(weapon).action();
-            long age = action == null || action.target() == null
-                ? Long.MAX_VALUE : now - action.tick();
-            // age < 0：客户端时钟略慢于服务端写入时（差 1~2 tick）⇒ 视为未攻击
-            if (age >= 0L && age < ATTACK_RING_TICKS) {
+            // 起点在首见该动作戳时冻结（见 pulseElapsed）⇒ gameTime 每秒的同步跳变不再撕扯窗口
+            double pulseAge = action == null || action.target() == null
+                ? Double.MAX_VALUE : pulseElapsed(action.tick(), now, level.getGameTime());
+            if (pulseAge < ATTACK_RING_TICKS) {
                 attacking.add(weapon);
                 if (action.tick() > latest) {
                     latest = action.tick();
@@ -689,9 +714,9 @@ public final class LivingToolModelRenderer {
         //    ⚠️ 冷却(~12 tick) &lt; 存活窗口(20 tick) ⇒ 连续攻击时环【留在原地反复脉冲】，
         //       不会"飞出去又收回"地闪。
         float scale = 1.0F;
-        float age = now - latest;
+        float age = (float) pulseElapsed(latest, now, level.getGameTime());
         if (age < PULSE_TICKS) {
-            float t = (float) (age + partialTick) / PULSE_TICKS;
+            float t = age / PULSE_TICKS;
             scale = 1.0F + PULSE_SCALE * (float) Math.sin(Math.PI * Mth.clamp(t, 0.0F, 1.0F));
         }
 
@@ -716,7 +741,7 @@ public final class LivingToolModelRenderer {
      * </ul>
      */
     private static void renderOtherPlayerItems(Minecraft mc, PoseStack poseStack, MultiBufferSource buffers,
-                                               ClientLevel level, Vec3 cameraPos, float partialTick, long now,
+                                               ClientLevel level, Vec3 cameraPos, float partialTick, double now,
                                                Player owner, UUID playerId, List<ItemStack> tools,
                                                Set<String> seen) {
         Vec3 origin = HostOrigin.forPlayer(owner, partialTick);
@@ -734,7 +759,7 @@ public final class LivingToolModelRenderer {
             }
             LivingToolAction action = ToolRenderState.of(stack).action();
             if (action != null && action.target() != null
-                && now - action.tick() >= 0L && now - action.tick() < ATTACK_RING_TICKS) {
+                && pulseElapsed(action.tick(), now, level.getGameTime()) < ATTACK_RING_TICKS) {
                 attacking.add(stack);
                 if (action.tick() > latest) {
                     latest = action.tick();
@@ -755,9 +780,9 @@ public final class LivingToolModelRenderer {
             Vec3 normal = toViewer.lengthSqr() < 1.0E-6 ? lastRingFlat : toViewer.normalize();
 
             float scale = 1.0F;
-            long age = now - latest;
+            float age = (float) pulseElapsed(latest, now, level.getGameTime());
             if (age < PULSE_TICKS) {
-                float t = (float) age / PULSE_TICKS;
+                float t = age / PULSE_TICKS;
                 scale = 1.0F + PULSE_SCALE * (float) Math.sin(Math.PI * Mth.clamp(t, 0.0F, 1.0F));
             }
             drawRing(mc, poseStack, buffers, level, cameraPos, center, normal, attacking,
@@ -844,7 +869,7 @@ public final class LivingToolModelRenderer {
 
     /** 渲染一个活工具的悬浮模型（含动画）。 */
     private static void renderOne(Minecraft mc, PoseStack poseStack, MultiBufferSource buffers,
-                                  ClientLevel level, Vec3 cameraPos, float partialTick, long now,
+                                  ClientLevel level, Vec3 cameraPos, float partialTick, double now,
                                   Vec3 defaultOrigin, @Nullable Player bearer, ItemStack stack,
                                   String key, Set<String> seen) {
         if (stack.isEmpty() || !LivingItemManager.isLivingItem(stack)) {
@@ -911,10 +936,10 @@ public final class LivingToolModelRenderer {
             // 挖掘中：瞬现到交互位 + 风车式转圈（转速由服务端给的预计 tick 决定）
             pos = surfacePoint(level, origin, progress.target());
             int period = spinPeriod(state.digTicks());
-            spinRad = spinAngle(now, partialTick, period);
+            spinRad = spinAngle(now, period);
             remember(key, now, pos);
         } else if (action != null && action.target() != null
-            && now - action.tick() < PULSE_TICKS) {
+            && pulseElapsed(action.tick(), now, level.getGameTime()) < PULSE_TICKS) {
             // 交互 / 攻击：瞬现到目标位 + 缩放脉冲（不转圈）。
             //   交互（右键）由 replayUse 写 target；活武器攻击由 replayAttack 写【生物所在格】
             //   —— 两者动画同款（用户 2026-09-24 定："有记忆的，像活工具的交互动画一样"）。
@@ -922,14 +947,14 @@ public final class LivingToolModelRenderer {
             // ⚠️ target == null（右键空气 / 物品施法）【不能走这条】⇒ 跳过脉冲，模型留在原位。
             //    （surfacePoint 本身永不返回 null —— clip 未命中就退回格心 ⇒ 空中目标也安全。）
             pos = surfacePoint(level, origin, action.target());
-            float t = (float) (now - action.tick() + partialTick) / PULSE_TICKS;
+            float t = (float) (pulseElapsed(action.tick(), now, level.getGameTime()) / PULSE_TICKS);
             scale = 1.0F + PULSE_SCALE * (float) Math.sin(Math.PI * Mth.clamp(t, 0.0F, 1.0F));
             remember(key, now, pos);
         } else {
             WorkMemo memo = WORK_MEMO.get(key);
             if (memo != null && now - memo.lastWorkTick < RETURN_TICKS) {
                 // 干完了，飞回待机位（缓出）
-                double t = (now - memo.lastWorkTick + partialTick) / RETURN_TICKS;
+                double t = (now - memo.lastWorkTick) / RETURN_TICKS;
                 pos = memo.workPos.lerp(idlePos, easeOut(t));
             } else {
                 pos = idlePos;   // 待机：不动
@@ -1043,12 +1068,46 @@ public final class LivingToolModelRenderer {
     /**
      * 风车式自转的角度。
      *
-     * <p><b>无状态</b>：直接由世界时间取模得出，不做累加 ——
+     * <p><b>无状态</b>：本地时钟取模得出，不做累加 ——
      * 挖掘期间周期恒定，故不会跳变；换目标时模型本来就是瞬现，跳变也看不出来。</p>
+     *
+     * <p>⚠️ 时间源必须走 {@link #localAnimTick()}，禁止锚 {@code level.getGameTime()}——
+     * 它每秒被服务器时间同步包硬覆盖（相位跳变），且 float 大数吃掉 partialTick
+     * （老存档逐帧跳格）。与 {@code WaterWheelRenderState#spinAngleDeg} 同款约束（2026-10-29）。</p>
      */
-    private static float spinAngle(long now, float partialTick, int period) {
-        double t = (now + partialTick) % period;
+    static float spinAngle(double now, int period) {
+        double t = now % period;
         return (float) (t / period * Math.PI * 2.0);
+    }
+
+    /**
+     * 客户端本地<b>连续动画时钟</b>（tick 单位，real-time：nanoTime / 50ms）。
+     *
+     * <p>逐帧平滑、单调不减、与网络时间同步解耦；代价是单人暂停（ESC）时动画继续走
+     * —— 纯表现层可接受（与活水车图标同款取舍）。门限类判定（如
+     * {@code LivingToolAssistState} 的 3t 窗口）仍用游戏时钟，见 renderAssistRing。</p>
+     */
+    private static double localAnimTick() {
+        return Util.getMillis() / 50.0;
+    }
+
+    /**
+     * 动作脉冲的已播时长（tick）。
+     *
+     * <p>起点在<b>首次见到该动作戳</b>时冻结：此刻用「客户端 gameTime − 动作戳」估计已播多久
+     * （钳到 [0, {@link #PULSE_TICKS}]，陈旧动作 ⇒ 直接判过期，不重播），之后逐帧只靠
+     * 本地时钟推进 ⇒ gameTime 每秒的同步跳变不再撕扯脉冲进度（老实现每帧都拿 gameTime
+     * 去减服务端戳，6t 窗口里跳 1~2 tick = 进度跳 17~33%）。</p>
+     */
+    static double pulseElapsed(long actionTick, double now, long gameTimeNow) {
+        double start = PULSE_START.computeIfAbsent(actionTick,
+            k -> now - Mth.clamp(gameTimeNow - (double) actionTick, 0.0, (double) PULSE_TICKS));
+        return now - start;
+    }
+
+    /** 过窗的动作起点簿记即无用（唯一用途是「还在脉冲窗口内」判定），逐帧剪枝。 */
+    static void prunePulseStarts(double now) {
+        PULSE_START.values().removeIf(start -> now - start > PULSE_TICKS);
     }
 
     /** 挖掘预计 tick → 转圈周期（挖得越快转得越快）。 */
@@ -1066,14 +1125,14 @@ public final class LivingToolModelRenderer {
         return 1.0 - (1.0 - c) * (1.0 - c);
     }
 
-    private static void remember(String key, long now, Vec3 workPos) {
+    private static void remember(String key, double now, Vec3 workPos) {
         WorkMemo memo = WORK_MEMO.computeIfAbsent(key, k -> new WorkMemo());
         memo.lastWorkTick = now;
         memo.workPos = workPos;
     }
 
     private static final class WorkMemo {
-        private long lastWorkTick;
+        private double lastWorkTick;
         private Vec3 workPos;
     }
 }
