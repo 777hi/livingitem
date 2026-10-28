@@ -67,6 +67,8 @@ src/test/java/com/qiqi/li/
 │   ├── ContainerKeysTest.java                 # 容器键解析唯一入口(2026-10-13)·5 种键形各自归位(背包/末影箱前缀相同必须按后缀分开)/缓存键剥维度前缀/未知形态返回 null 不抛异常/ownerOf 末影箱回归(旧实现抛异常被吞⇒从不发包)/isOwnedByPlayer(null 安全)/positionsOf(大箱两段·维度 id 含下划线取末三段)/维度前缀（7 项）
 │   ├── ContainerRuntimeCacheSlotMappingTest.java  # 读写槽位键对称（2026-10-27 审查 P1，熔炉/酿造台/漏斗域）·update 过 toPhysicalSlot、get 不过 ⇒ 马/驴容器（storageOffset=1）读永远 miss ⇒ 熔炉每 tick 烧 1 燃料零产出、酿造台每 tick 空耗烈焰粉 / get(ctx, logical) 对称重载：带偏移上下文读回自己写的值 / 裸 get(key,3) miss·物理槽 4 命中 / 恒等映射两版等价（3 项）
 │   └── ContainerRuntimeCacheLifecycleTest.java # 运行时缓存生命周期(方案A)·物品离开槽位/换物品⇒登记作废·同类持续⇒不作废·drain 取走即空·null 键忽略·整容器作废键==运行时存储键（6 项）
+├── living/domain/ender/
+│   └── EnderChannelRegistryDimTest.java        # 活末影箱路由表**维度隔离**（2026-10-27 审查待拍板 #2，2026-10-28 修）·跨维度同坐标同槽位都能注册（去重键含维度，旧实现误判重复 ⇒ 第二条注册不进去）/ 按位置+槽位清理只删指定维度 / 区块卸载不删另一维度同坐标路由 / `validateRoutes` 不误删另一维度同键路由（4 项）
 ├── living/domain/backpack/
 │   ├── LivingBackpackFunctionTest.java        # 活背包（2026-10-22）·认领（无来源不认领=未装模组零影响/来源注册后只认它说是容器的物品）+ 功能 ID 稳定 + **取消活化连 SavedData 一起清**/无 UUID 不抛（5 项）
 │   ├── LivingBackpackTickTest.java            # 活背包 tick 的三道闸（2026-10-24 终审补，此前 tick 零测试）·**宿主锚点传进内层 ctx**（AtBlock 同坐标 / 宿主无锚点⇒null）/深度闸（背包里的背包不再处理）/**逐条目隔离**（一个背包的来源抛异常不带走同批）（4 项；⚠️ 环检测在 MAX_DEPTH=1 下不可达，故意不测；探针功能只认 SHULKER_SHELL，避免与既有「无功能」断言串味）

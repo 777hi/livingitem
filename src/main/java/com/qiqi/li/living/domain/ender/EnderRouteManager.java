@@ -173,8 +173,9 @@ public final class EnderRouteManager {
         if (registry.contains(key, entry)) return;
 
         if (pos != null) {
-            registry.removeByPositionAndSlotFromAllChannels(pos, slot);
+            registry.removeByPositionAndSlotFromAllChannels(level.dimension(), pos, slot);
         } else {
+            // 玩家背包键跨维度同一身份 ⇒ 不按维度清理（切维度后旧路由要能被顶掉）
             registry.removeByPositionAndSlotFromAllChannels(containerKey, slot);
         }
         registry.offer(key, entry);
@@ -227,7 +228,7 @@ public final class EnderRouteManager {
                 return true;
             }
 
-            registry.removeByPositionAndSlotFromAllChannels(neighborPos, i);
+            registry.removeByPositionAndSlotFromAllChannels(level.dimension(), neighborPos, i);
             registry.offer(key, entry);
             return true;
         }

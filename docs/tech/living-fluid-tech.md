@@ -449,6 +449,8 @@ soul soil + blue ice ⇒ 玄武岩、反应音效（`fizz`）。
 **跨容器口径**：物品过境、水不过境。每容器封闭水盆；桶 = 源的手提箱；
 vanilla 双箱 = CompoundContainer 单容器天然一网；末影箱路由模式共享 containerKey ⇒ 共享水网。
 容器破坏 → `removeDataByPos` + BE 消亡 → 源湮灭。
+**拆半例外（双箱 → 两个半箱，2026-10-27 A6）**：存活半的源**清空重算**
+（`ContainerDataMigration.clearFluidOnChestSplit`）—— 拆完要重新倒水；不复制、不迁移。
 
 ---
 

@@ -93,7 +93,7 @@
 | `WaterWheelData` | `domain/waterwheel/WaterWheelData.java` | 水车应力 record：cwStress/ccwStress/netStress |
 | `LivingWaterWheelData` | `domain/waterwheel/LivingWaterWheelData.java` | 活水车数据容器：包含 WaterWheelData |
 | `ContainerStressData` | `container/ContainerStressData.java` | 容器级应力累加器，遍历所有活水车计算力矩 |
-| `CONTAINER_STRESS_DATA` | `api/LivingItemManager.java` | NeoForge `AttachmentType`，给 BlockEntity 附加 `ContainerStressData` 应力数据 |
+| ~~`CONTAINER_STRESS_DATA`~~ | ~~`api/LivingItemManager.java`~~ | **已删除（2026-10-28）**：无 serializer、无读取者的死附件；应力只走 tick 级 + Create 直传 |
 
 #### Create 兼容类（软依赖，无 Create 时不加载）
 
@@ -161,15 +161,8 @@ ItemStack
         └─ netStress: int   ← 净应力
 ```
 
-容器 BlockEntity 也通过 NeoForge `AttachmentType` 持有应力数据：
-
-```
-BlockEntity (via AttachmentType)
-└── CONTAINER_STRESS_DATA: ContainerStressData   ← 容器级应力
-    ├─ netCWStress: int
-    ├─ netCCWStress: int
-    └─ netStress: int
-```
+容器级应力**不挂 BE 附件**：它是 tick 级数据（`ContainerDataKey.of("stress")`），
+每 tick 重算、tick 末直传 Create（见 §4.3；`CONTAINER_STRESS_DATA` 附件已删）。
 
 ---
 
@@ -314,29 +307,14 @@ public void calculate(ContainerFluidData fluidData, ContainerContext ctx) {
   🔄×64 → 应力 × 64 → RPM 不变(8), SU 容量 × 64（驱动更多设备）
 ```
 
-### 4.3 BlockEntity 应力存储
+### 4.3 应力不落盘（2026-10-28 删死附件）
 
-通过 NeoForge `AttachmentType` 给所有 `BlockEntity` 附加 `ContainerStressData`：
+应力是 **tick 级数据**：每 tick 由 `ContainerStressData.calculate()` 重算，tick 末由
+`StressOutputManager.apply()` **直传 Create**（`ContainerStressWriteback`，`ContainerTickHook`）。
 
-```java
-// LivingItemManager.java
-public static final DeferredRegister<AttachmentType<?>> ATTACHMENT_TYPES =
-    DeferredRegister.create(NeoForgeRegistries.ATTACHMENT_TYPES, LivingItem.MOD_ID);
-
-public static final DeferredHolder<AttachmentType<?>, AttachmentType<ContainerStressData>> CONTAINER_STRESS_DATA =
-    ATTACHMENT_TYPES.register("container_stress_data", () ->
-        AttachmentType.builder(() -> ContainerStressData.EMPTY).build());
-```
-
-每个容器 tick 结束后，`ContainerLivingItemHandler.processContext()` 将应力数据写入关联的 BlockEntity：
-
-```java
-if (stressData != null && context instanceof SimpleContainerContext simpleCtx) {
-    for (BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {
-        be.setData(LivingComponents.CONTAINER_STRESS_DATA.value(), stressData);
-    }
-}
-```
+⚠️ 曾注册 `CONTAINER_STRESS_DATA` BE 附件并在写回时 `be.setData(...)` —— 但它
+**无 serializer（不落盘）且全库无读取者**，是旧架构残留，已删除（2026-10-28）。
+新增「跨 tick 的容器级状态」请走 `ContainerDataKey`，不要复活这个附件。
 
 ### 4.4 垂直传输设计
 
@@ -376,21 +354,25 @@ if (stressData != null && context instanceof SimpleContainerContext simpleCtx) {
   └─────────────┘
 ```
 
-**实现逻辑**（`ContainerLivingItemHandler.processContext()`）：
+**实现逻辑**（`ContainerStressWriteback.onWriteback`）：
 
 ```java
-if (stressData != null && context instanceof SimpleContainerContext simpleCtx) {
-    // 1. 容器场景：应力从容器底部输出
-    for (BlockEntity be : simpleCtx.getAssociatedBlockEntities()) {
-        be.setData(LivingComponents.CONTAINER_STRESS_DATA.value(), stressData);
-        updateStressOutput(simpleCtx, be, stressData);
-    }
+ContainerStressData stressData = tick.data(ContainerStressData.KEY);
+if (stressData == null) return;
 
-    // 2. 玩家背包场景：无关联 BlockEntity，从玩家脚底输出
-    if (simpleCtx.getAssociatedBlockEntities().isEmpty() && simpleCtx.getInventory() != null) {
-        updatePlayerFeetStressOutput(simpleCtx, stressData);
-    }
+// 1. 容器场景：应力从容器底部输出
+for (BlockEntity be : ctx.getAssociatedBlockEntities()) {
+    StressOutputManager.apply(be.getLevel(), be.getBlockPos(), stressData);
 }
+
+// 2. 玩家背包场景：无关联 BlockEntity，从玩家脚底输出
+if (ctx.getAssociatedBlockEntities().isEmpty() && ctx.getInventory() != null) {
+    updatePlayerFeetStressOutput(ctx, stressData);
+    return;
+}
+
+// 3. 物品形态（活背包）：开关开启时借宿主锚点（GameplayConfig.waterWheelUsesHostAnchor）
+```
 ```
 
 **判断条件**：当 `SimpleContainerContext` 的 `associatedBlockEntities` 为空且 `inventory` 不为空时，说明活物品在玩家背包中，使用 `player.blockPosition()` 作为应力输出位置。
@@ -1100,9 +1082,8 @@ CreateCompat.isLoaded()        ← Create 已安装
   ├── Tooltip 显示 CW/CCW 应力值
   └── 无需 Create 依赖
 
-第二步：容器 BlockEntity 存储应力  ✅
-  ├── NeoForge AttachmentType（CONTAINER_STRESS_DATA）
-  ├── 从 ContainerStressData 同步到 BlockEntity（be.setData）
+第二步：应力直传 Create（不再挂 BE 附件）  ✅
+  ├── StressOutputManager.apply（tick 末直传）
   └── 仍无需 Create 依赖
 
 第三步：Create 集成（软依赖）  ✅
@@ -1662,7 +1643,7 @@ ServerTickEvent.Pre → LivingItem.onServerTick()
             │           ├─ ContainerStressData.calculate() → 计算每个水车的力矩
             │           └─ postTickSync() → 同步应力到水车物品
             │
-            ├─ 5. 写入 BlockEntity 应力数据（Attachment 持久化）
+            ├─ 5. 应力不落盘（tick 级，直接交给 StressOutputManager）
             │
             ├─ 6. StressOutputManager.apply() → 容器底部/玩家脚底输出应力
             │     ├─ CreateCompat.isLoaded() → 检测 Create

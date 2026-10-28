@@ -11,7 +11,7 @@
 | 文件 | 状态 | 备注 |
 |---|---|---|
 | [code-doc-alignment.md](code-doc-alignment.md) | A1~A8 已收口（2026-10-27 审查台账） | 仍被 AGENTS / TODO / tech 指针引用；引用清零后可归档 |
-| [2026-10-27-全项目审查报告.md](2026-10-27-全项目审查报告.md) | 原摘要，已被上表台账取代 | 保留「当时结论」，不当现状读 |
+| [2026-10-27-全项目审查报告.md](2026-10-27-全项目审查报告.md) | 待拍板 10 项已全部处置（2026-10-28） | **不可归档**：仍有文档冲突 ~50 处 / P3 ~40 项 / 测试缺口 6 项未结 |
 | [container-layout-resolution.md](container-layout-resolution.md) | 编排部分暂停 / 自动学部分复活为独立一步 | 待做 |
 | [container-menu-introspection-topic.md](container-menu-introspection-topic.md) | 部分完成；列数探测未落地 | 唯一未落地项 |
 | [framework-benchmark.md](framework-benchmark.md) | 未定案（对标记录，不是排期） | 参考输入 |

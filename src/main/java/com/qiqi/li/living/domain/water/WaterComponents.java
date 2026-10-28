@@ -34,11 +34,6 @@ public final class WaterComponents {
                 .networkSynchronized(LivingWaterWheelData.STREAM_CODEC)
                 .build());
 
-    /** 容器应力（tick 级数据的落盘附件）。 */
-    public static final DeferredHolder<AttachmentType<?>, AttachmentType<ContainerStressData>> CONTAINER_STRESS_DATA =
-        ATTACH_REG.register("container_stress_data", () ->
-            AttachmentType.builder(() -> ContainerStressData.EMPTY).build());
-
     /** 容器级流体数据（BE 附件，跨存档持久）。 */
     public static final DeferredHolder<AttachmentType<?>, AttachmentType<ContainerFluidData>> CONTAINER_FLUID_DATA =
         ATTACH_REG.register("container_fluid_data", () ->

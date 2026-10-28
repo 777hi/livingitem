@@ -287,6 +287,10 @@
   “数据存哪”的知识从三个地方收成 ctx 的一个方法。
   ⇒ 收益不只是活背包：新增任何容器形态（活潜影箱、将来的玩家 UUID 化）**零框架改动**；
   且顺带把 `ContainerDataKey` ↔ 附件类型 ↔ CODEC 三元组统一（SavedData 聚合快照的前提）。
+  ⇒ **空值语义也归 key**：`ContainerDataKey#isEmpty(value)`（由 5 参 `savedWith` 声明谓词）。
+  SavedData 落盘前用它判断「这条等于没有」并移除；未声明谓词 ⇒ 一律当非空写入
+  （宁可多写一条，不误删数据）。⚠️ 旧实现在 `ItemFormContainerContext` 里反射调
+  `isEmpty()`，2026-10-28 收编 —— **容器层不猜领域语义**。
   设计稿 [archive/living-backpack.md](../archive/living-backpack.md) §3.4。
 
 ### I-C10 逻辑槽 ≠ 物理槽，跨边界必须过映射

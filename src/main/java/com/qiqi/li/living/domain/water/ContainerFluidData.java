@@ -68,7 +68,8 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
     public static final ContainerDataKey<ContainerFluidData> KEY =
         ContainerDataKey.savedWith("fluid", ContainerFluidData::new,
             () -> WaterComponents.CONTAINER_FLUID_DATA.value(),
-            () -> ContainerFluidData.CODEC);
+            () -> ContainerFluidData.CODEC,
+            ContainerFluidData::isEmpty);
 
     public static final ContainerFluidData EMPTY = new ContainerFluidData() {
         @Override

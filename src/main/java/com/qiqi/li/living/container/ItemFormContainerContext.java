@@ -110,29 +110,12 @@ public final class ItemFormContainerContext extends SimpleContainerContext {
     public <T> void persist(ContainerDataKey<T> key, T value) {
         if (!key.isSaved()) return;
         ContainerDataSavedData data = ContainerDataSavedData.get();
-        if (value == null || isEmptyValue(value)) {
+        // 空值语义由 key 声明（各领域 EMPTY 不同）；未声明谓词的 key 一律当非空写入
+        if (value == null || key.isEmpty(value)) {
             data.remove(containerUuid, key);
         } else {
             data.put(containerUuid, key, value);
         }
-    }
-
-    /**
-     * 判断「空值」—— 各领域的 EMPTY 语义不同（流体有 {@code isEmpty()}，相位是 record）。
-     *
-     * <p>⚠️ 用反射猜语义太脆；这里只处理已知的「有 {@code isEmpty()} 方法」的类型，
-     * 其余一律当作非空写入（宁可多写一条，也不要误删数据）。</p>
-     */
-    private static boolean isEmptyValue(Object value) {
-        try {
-            var m = value.getClass().getMethod("isEmpty");
-            if (m.getReturnType() == boolean.class) {
-                return (boolean) m.invoke(value);
-            }
-        } catch (ReflectiveOperationException ignored) {
-            // 没有 isEmpty ⇒ 当作非空
-        }
-        return false;
     }
 
     @Override

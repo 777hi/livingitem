@@ -28,7 +28,7 @@ public final class ContainerStressWriteback implements ContainerTickHook {
         if (stressData == null) return;
 
         for (BlockEntity be : ctx.getAssociatedBlockEntities()) {
-            be.setData(WaterComponents.CONTAINER_STRESS_DATA.value(), stressData);
+            // 只走 Create 直传：应力是 tick 级数据（每 tick 重算），没有也不该有落盘附件
             StressOutputManager.apply(be.getLevel(), be.getBlockPos(), stressData);
         }
 

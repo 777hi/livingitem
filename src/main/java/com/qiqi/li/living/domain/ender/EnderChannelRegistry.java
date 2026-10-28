@@ -80,10 +80,14 @@ public final class EnderChannelRegistry {
 
     /**
      * 路由键 —— 用于 O(1) 去重，不存储完整 entry 的所有字段。
+     *
+     * <p>⚠️ <b>必须含维度</b>：主世界与下界同坐标、同槽位的同类物品是两条不同的路由，
+     * 漏掉维度会让第二条被 {@code contains} 判成重复而<b>根本注册不进去</b>（2026-10-28 修）。</p>
      */
-    private record RouteKey(BlockPos sourcePos, int sourceSlot, String itemType, String containerKey) {
+    private record RouteKey(ResourceKey<Level> sourceDim, BlockPos sourcePos, int sourceSlot,
+                            String itemType, String containerKey) {
         static RouteKey of(EnderChannelEntry e) {
-            return new RouteKey(e.sourcePos(), e.sourceSlot(), e.itemType(), e.containerKey());
+            return new RouteKey(e.sourceDim(), e.sourcePos(), e.sourceSlot(), e.itemType(), e.containerKey());
         }
     }
 
@@ -94,8 +98,13 @@ public final class EnderChannelRegistry {
 
     private final Map<EnderChannelKey, ChannelData> channels = new HashMap<>();
 
-    /** 反向索引：方块位置 → 路由条目列表 */
-    private final Map<BlockPos, List<EnderChannelEntry>> posIndex = new HashMap<>();
+    /**
+     * 反向索引：维度 → 方块位置 → 路由条目列表。
+     *
+     * <p>⚠️ <b>外层维度不能省</b>：裸位置键会让主世界与下界同坐标的容器互相收集到对方的条目，
+     * 清理时误删（2026-10-28 修）。</p>
+     */
+    private final Map<ResourceKey<Level>, Map<BlockPos, List<EnderChannelEntry>>> posIndex = new HashMap<>();
 
     /** 反向索引：容器 key → 路由条目列表（按 sourcePos/containerKey 索引） */
     private final Map<String, List<EnderChannelEntry>> keyIndex = new HashMap<>();
@@ -376,8 +385,10 @@ public final class EnderChannelRegistry {
 
     private void addToIndex(EnderChannelEntry entry) {
         if (entry.sourcePos() != null) {
-            posIndex.computeIfAbsent(entry.sourcePos(), k -> new ArrayList<>()).add(entry);
+            posIndex.computeIfAbsent(entry.sourceDim(), k -> new HashMap<>())
+                .computeIfAbsent(entry.sourcePos(), k -> new ArrayList<>()).add(entry);
         } else if (entry.containerKey() != null) {
+            // 玩家背包键（player_<uuid>）本身跨维度唯一 ⇒ 不加维度，切维度后仍能按同一身份去重
             keyIndex.computeIfAbsent(entry.containerKey(), k -> new ArrayList<>()).add(entry);
         }
         if (entry.registrarContainerKey() != null) {
@@ -387,10 +398,14 @@ public final class EnderChannelRegistry {
 
     private void removeFromIndex(EnderChannelEntry entry) {
         if (entry.sourcePos() != null) {
-            List<EnderChannelEntry> list = posIndex.get(entry.sourcePos());
-            if (list != null) {
-                list.remove(entry);
-                if (list.isEmpty()) posIndex.remove(entry.sourcePos());
+            Map<BlockPos, List<EnderChannelEntry>> byPos = posIndex.get(entry.sourceDim());
+            if (byPos != null) {
+                List<EnderChannelEntry> list = byPos.get(entry.sourcePos());
+                if (list != null) {
+                    list.remove(entry);
+                    if (list.isEmpty()) byPos.remove(entry.sourcePos());
+                }
+                if (byPos.isEmpty()) posIndex.remove(entry.sourceDim());
             }
         } else if (entry.containerKey() != null) {
             List<EnderChannelEntry> list = keyIndex.get(entry.containerKey());
@@ -426,9 +441,16 @@ public final class EnderChannelRegistry {
             containerKey.equals(entry.containerKey()) && entry.sourceSlot() == sourceSlot);
     }
 
-    public void removeByPositionAndSlotFromAllChannels(BlockPos sourcePos, int sourceSlot) {
+    /**
+     * 按「维度 + 位置 + 槽位」清理所有频道的旧路由。
+     *
+     * <p>⚠️ <b>维度是判据的一部分</b>：主世界与下界同坐标的同一槽位是两个源，
+     * 缺维度会把另一个维度的路由一起删掉（2026-10-28 修）。</p>
+     */
+    public void removeByPositionAndSlotFromAllChannels(ResourceKey<Level> dim, BlockPos sourcePos, int sourceSlot) {
         removeStaleRoutesInternal(entry ->
-            Objects.equals(entry.sourcePos(), sourcePos) && entry.sourceSlot() == sourceSlot);
+            Objects.equals(entry.sourceDim(), dim)
+                && Objects.equals(entry.sourcePos(), sourcePos) && entry.sourceSlot() == sourceSlot);
     }
 
     public void removeByPositionAndSlotFromAllChannels(String containerKey, int sourceSlot) {
@@ -474,7 +496,8 @@ public final class EnderChannelRegistry {
         Set<EnderChannelEntry> candidates = new HashSet<>();
 
         if (pos != null) {
-            List<EnderChannelEntry> byPos = posIndex.get(pos);
+            Map<BlockPos, List<EnderChannelEntry>> byPosInDim = posIndex.get(dim);
+            List<EnderChannelEntry> byPos = byPosInDim == null ? null : byPosInDim.get(pos);
             if (byPos != null) candidates.addAll(byPos);
         }
         if (containerKey != null) {
@@ -517,7 +540,11 @@ public final class EnderChannelRegistry {
                                        String containerKey,
                                        @Nullable Set<Integer> activeRegistrarSlots,
                                        @Nullable Map<Integer, EnderChannelKey> targetKeysBySlot) {
-        boolean isRegistrar = containerKey != null && containerKey.equals(entry.registrarContainerKey());
+        // ⚠️ 容器键是裸稳定键（chest_x_y_z / player_<uuid>），跨维度可能同值 ⇒ 必须补维度守卫。
+        // 注册者与源由 EnderRouteManager 在同一 level 构造，故用 sourceDim 代表注册者维度。
+        boolean isRegistrar = containerKey != null
+            && containerKey.equals(entry.registrarContainerKey())
+            && Objects.equals(entry.sourceDim(), dim);
 
         if (isRegistrar && activeRegistrarSlots != null) {
             if (!activeRegistrarSlots.contains(entry.registrarSlot())) {
@@ -601,15 +628,13 @@ public final class EnderChannelRegistry {
         List<EnderChannelEntry> toRemove = new ArrayList<>();
         Set<EnderChannelKey> dirty = new HashSet<>();
 
-        for (var iter = posIndex.entrySet().iterator(); iter.hasNext(); ) {
-            var entry = iter.next();
-            BlockPos pos = entry.getKey();
-            if (pos.getX() >= chunkMinX && pos.getX() <= chunkMaxX
-                && pos.getZ() >= chunkMinZ && pos.getZ() <= chunkMaxZ) {
-                for (EnderChannelEntry route : entry.getValue()) {
-                    if (dim.equals(route.sourceDim())) {
-                        toRemove.add(route);
-                    }
+        Map<BlockPos, List<EnderChannelEntry>> byPosInDim = posIndex.get(dim);
+        if (byPosInDim != null) {
+            for (var entry : byPosInDim.entrySet()) {
+                BlockPos pos = entry.getKey();
+                if (pos.getX() >= chunkMinX && pos.getX() <= chunkMaxX
+                    && pos.getZ() >= chunkMinZ && pos.getZ() <= chunkMaxZ) {
+                    toRemove.addAll(entry.getValue());
                 }
             }
         }
@@ -618,6 +643,8 @@ public final class EnderChannelRegistry {
             for (EnderChannelEntry route : channelEntry.getValue().entries) {
                 String rck = route.registrarContainerKey();
                 if (rck == null) continue;
+                // 注册者坐标是从裸键解析的（chest_x_y_z），跨维度同坐标会误判 ⇒ 先按维度隔离
+                if (!Objects.equals(route.sourceDim(), dim)) continue;
                 if (route.sourcePos() != null && isInChunk(route.sourcePos(), chunkMinX, chunkMinZ, chunkMaxX, chunkMaxZ)) {
                     continue;
                 }

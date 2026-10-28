@@ -17,6 +17,28 @@
 
 ## 2026-10-28
 
+- 🛡️ **审查报告「待拍板」10 项全部处置（4 项实修 + 1 项玩法决策）** —— 用户裁定：
+  「#5 不当作 bug，已作为玩法决策，其它的可以处理」。
+
+  - **#2 末影箱路由维度盲（真缺陷）**：容器键是裸键（`chest_x_y_z`），跨维度同坐标同值 ⇒
+    去重、位置索引、按位置清理、区块卸载四处都会把「另一个维度的同一位置」当成自己。
+    修法五处：`RouteKey` 加 `sourceDim`；`posIndex` 改「维度 → 位置 → 条目」两级；
+    `removeByPositionAndSlotFromAllChannels` 增加维度参数（`EnderRouteManager` 两处调用同步）；
+    `validateRoutes` 的 `isRegistrar` 补维度守卫；`onChunkUnload` 两处补维度
+    （第二处按 `registrarContainerKey` 的裸坐标判断，同病，报告未点名）。
+    玩家背包键（`player_<uuid>`）本身跨维度唯一 ⇒ **不**加维度（切维度后旧路由要能被顶掉）。
+    回归 `EnderChannelRegistryDimTest` 4 项（跨维度都能注册 / 清理不误删 / 卸块不误删 / 校验不误删）。
+  - **#9 水车 `CONTAINER_STRESS_DATA` 死附件删除**：无 serializer（不落盘）、全库无读取者，
+    旧架构残留；应力是 tick 级数据，tick 末由 `StressOutputManager.apply` 直传 Create。
+  - **#10 `isEmptyValue` 反射收编**：`ContainerDataKey#isEmpty` 谓词（5 参 `savedWith` 声明），
+    `ItemFormContainerContext.persist` 直接问 key ⇒ 容器层不再反射猜领域语义。
+  - **#5 下界落点 = 玩法决策（不修）**：`D-map-01`「指哪传哪，不做地形避险」，
+    map tech §0 规则 7；同一坐标在不同地形下不得落到不同位置。
+  - **#8 文档缺口**：`living-fluid-tech` §4 补「拆半 = 源清空重算」条款（A6 落地但漏写）。
+  - **报告打标**：待拍板 10 项全绿 + 原始记录保留；剩余三块（文档冲突 ~50 处 / P3 ~40 项 /
+    测试缺口 6 项）明确标注「未结」⇒ 文件仍留 buffer，不可归档。
+  - 测试 1085 → 1089 全绿。
+
 - 🧹 **文档整理：主域负责制 + buffer 状态索引**（用户发起：「改了这么多处文档，看来文档需要整理下了」）
 
   - **触发**：上一轮 TNT 改熄灭，一条行为变动牵动 **9 份**文档，其中 4 份是内容副本。

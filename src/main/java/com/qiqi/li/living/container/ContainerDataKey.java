@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 import net.neoforged.neoforge.attachment.AttachmentType;
@@ -38,25 +39,28 @@ public final class ContainerDataKey<T> {
     private final boolean persistent;
     private final Supplier<AttachmentType<T>> attachment;   // null ⇒ 不参与 attachment 写回
     private final Supplier<Codec<T>> codec;                 // null ⇒ 不进 SavedData（2026-10-22）
+    private final Predicate<T> emptyTest;                   // null ⇒ 一律当非空（2026-10-28）
 
     private ContainerDataKey(String id, Supplier<T> factory, boolean persistent,
-                             Supplier<AttachmentType<T>> attachment, Supplier<Codec<T>> codec) {
+                             Supplier<AttachmentType<T>> attachment, Supplier<Codec<T>> codec,
+                             Predicate<T> emptyTest) {
         this.id = id;
         this.factory = factory;
         this.persistent = persistent;
         this.attachment = attachment;
         this.codec = codec;
+        this.emptyTest = emptyTest;
         ALL.add(this);
     }
 
     /** tick 级 key：数据只活一个 tick，存 {@code TickContext}。 */
     public static <T> ContainerDataKey<T> of(String id, Supplier<T> factory) {
-        return new ContainerDataKey<>(id, factory, false, null, null);
+        return new ContainerDataKey<>(id, factory, false, null, null, null);
     }
 
     /** 容器级 key：数据跨 tick 持久，但不参与 attachment 写回。 */
     public static <T> ContainerDataKey<T> persistent(String id, Supplier<T> factory) {
-        return new ContainerDataKey<>(id, factory, true, null, null);
+        return new ContainerDataKey<>(id, factory, true, null, null, null);
     }
 
     /**
@@ -68,7 +72,7 @@ public final class ContainerDataKey<T> {
      */
     public static <T> ContainerDataKey<T> persistentWith(String id, Supplier<T> factory,
                                                          Supplier<AttachmentType<T>> attachment) {
-        return new ContainerDataKey<>(id, factory, true, attachment, null);
+        return new ContainerDataKey<>(id, factory, true, attachment, null, null);
     }
 
     /**
@@ -84,7 +88,21 @@ public final class ContainerDataKey<T> {
     public static <T> ContainerDataKey<T> savedWith(String id, Supplier<T> factory,
                                                     Supplier<AttachmentType<T>> attachment,
                                                     Supplier<Codec<T>> codec) {
-        return new ContainerDataKey<>(id, factory, true, attachment, codec);
+        return new ContainerDataKey<>(id, factory, true, attachment, codec, null);
+    }
+
+    /**
+     * 同 {@link #savedWith(String, Supplier, Supplier, Supplier)}，额外声明**空值谓词**。
+     *
+     * <p>落 SavedData 前用它判断「这条数据等于没有」⇒ 直接移除该条，避免空壳数据越攒越多。
+     * 谓词归 key（领域）所有：各领域的 EMPTY 语义不同，容器层不该反射猜
+     * （旧实现在 {@code ItemFormContainerContext} 里试调 {@code isEmpty()}，2026-10-28 收编）。</p>
+     */
+    public static <T> ContainerDataKey<T> savedWith(String id, Supplier<T> factory,
+                                                    Supplier<AttachmentType<T>> attachment,
+                                                    Supplier<Codec<T>> codec,
+                                                    Predicate<T> emptyTest) {
+        return new ContainerDataKey<>(id, factory, true, attachment, codec, emptyTest);
     }
 
     /** 数组下标（由 {@link ContainerDataStore} 使用）。 */
@@ -111,6 +129,11 @@ public final class ContainerDataKey<T> {
      * 只声明 attachment 的是「BE 才能落盘」的老数据，物品形态不搬。</p>
      */
     public boolean isSaved() { return attachment != null && codec != null; }
+
+    /** 该值是否等于「空」—— 未声明谓词的 key 恒为 false（宁可多写一条，不误删数据）。 */
+    public boolean isEmpty(T value) {
+        return emptyTest != null && value != null && emptyTest.test(value);
+    }
 
     /** 所有已定义的 key（类加载顺序）。供写回遍历使用。 */
     public static List<ContainerDataKey<?>> all() {

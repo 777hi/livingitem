@@ -146,7 +146,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1085 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
+**合计测试用例 1089 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -171,6 +171,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-28 | 🛡️ **审查报告待拍板 10 项清零** —— #2 末影箱路由维度隔离（去重键 / 位置索引 / 按位置清理 / 区块卸载 / `validateRoutes` 五处补维度，回归 4 项）、#9 删水车死附件 `CONTAINER_STRESS_DATA`、#10 空值判定收编为 `ContainerDataKey#isEmpty` 谓词；#5 下界落点判为玩法决策（`D-map-01` 指哪传哪，不做地形避险）；#8 补流体拆半条款。剩余三块：文档冲突 ~50 处 / P3 ~40 项 / 测试缺口 6 项 ⇒ 报告不可归档。测试 1085→1089 | `docs/buffer/2026-10-27-全项目审查报告.md` · `docs/decisions.md` D-map-01 |
 | 2026-10-28 | 🧹 **文档整理：主域负责制 + buffer 状态索引** —— `docs/README.md` §3.1 定「跨域行为只写一次机制」：主域 tech 写完整机制，其它域只写「本域结论 + 指针」，判据=主域改机制时副本是否必须跟着改；TNT 三处副本（末影箱/背包/打火石）已收窄为指针。新建 `docs/buffer/README.md` 状态索引（15 未定案 + 3 已搬），已实施的 3 份设计稿 `git mv` 入 archive 并同步 9 处活跃指针。零代码改动 | `docs/README.md` §3.1 · `docs/buffer/README.md` |
 | 2026-10-28 | 🔥 **活 TNT 无锚点改熄灭（撤销「待爆哑弹」）** —— 引信归零引爆失败时写回 `ExplosionData.DEFAULT` 并同步，不再保留 `ignited=true/fuse=1` 的待爆态；熄灭后挪到有锚点处不会不点自爆；若红石信号仍在，下一 tick 重新点火（引信重头烧）。`GameplayConfig` 文案同步，回归 `LivingTntConsumeTest` 5→6 项，测试 1084→1085 | `docs/tech/living-tnt-tech.md` §4.1 · `docs/decisions.md` D-tnt-02 |
 | 2026-10-28 | ♻️ **恢复「坐垫生物随艇」+ 文档问责修正** —— 实测纠错：c26b5d0 实测坐垫生物是跟的（用户只报非坐下不跟），56dfc96 删循环连带删掉有效行为；恢复且判据收窄为「机械动力坐垫 && 载客 && 在艇包围盒内」，站甲板 / 空坐椅 / 其它载具维持不随艇。文档问责：§11.2.1 重写为唯一现状，v27 沿革"自动跟随"假设勘误留痕（口径原文此前只躺在沿革里、与规范节矛盾），台账/TODO 同步，**待实测** | `docs/tech/living-map-ender-pearl-tech.md` §11.2.1 · `docs/buffer/code-doc-alignment.md` A4 |
@@ -180,7 +181,6 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-10-27 | 📐 **口径收口：A1/A2/A3/A7 落地** —— TNT没锚点不炸（删虚构startFuse、点火统一GUI）；熔炉运行数据不随搬运保留（§8.9虚构SlotAccessor纠正）；地图移除无地面拒绝分支（虚空柱照传，回归+1）；红石Phase0/3伪代码对齐原版排定语义、灯不读外部信号、删未实现烧毁承诺。台账A1-A4/A7标记收口，A5/A6留建议。测试 1074→1078 | `docs/buffer/code-doc-alignment.md` · 各域 tech |
 | 2026-10-27 | 🚀 **Sable 飞艇高度收口：普通坐骑落载具，飞艇艇底对齐目标 Y** —— 对照原版马/船/矿车/骆驼后不混用玩家脚落点：普通坐骑行为不变；飞艇保持操作者艇内相对位置与姿态，X/Z 对齐地图目标，Y 以 Sable 世界投影包围盒 `minY` 平移艇底到目标高度；移除“只能升高不能降低”，不扶正、不找安全地形。回归 +3（1077） | `docs/tech/living-map-ender-pearl-tech.md` §11.2.1 · `docs/buffer/code-doc-alignment.md` A4 |
 | 2026-10-27 | 🛡️ **全项目审查收官：16 域并行深查，真 bug 22 个全修**（分诊口径：只修真 bug，文档↔代码冲突冻结待仲裁）——覆盖活箱子/红石×2/流体/TNT/红电/熔炉酿造/耕地/地图传送/图标/兼容层/工具背包；抓出跨维度抽干、读写槽位键不对称、红电棘轮、落点嵌地等系统性缺陷；审查自引入的守卫 P1 被后续域当场抓修。未修项全量登记 buffer 审查报告；测试 1024→1074 全绿，token ≈90M | `docs/buffer/2026-10-27-全项目审查报告.md` · `docs/TODO.md` 审查收口节 |
-| 2026-10-27 | 🛡️ **审查修复三连（同根：两端对「随身 / 上报」口径不一致）** —— K2 登记表被首维度 flush 抽干（PLAYER 宿主上报在玩家循环、维度循环之前 ⇒ 地狱/末地背包条目全丢；照 `beginTick` 铁律改：tick 开头清、flush 只读、**维度入条目**显式隔离）；**末影箱定案「存放处」**（`getAnchor` 显式 null，不再默认退化 AtPlayer；内容=货物不开机：工具停/TNT 哑弹/信标不开光，本体路由不受影响）；`skipMainHand` 只跳工具不跳容器展开（手持背包两端同源）。+写回守卫（I-C6 留痕）/ K2 解码 clamp。回归 +12（1036 全绿，速度分层 `assistBonus` 补上回归），**待真机复验** | `docs/tech/living-tool-tech.md` §12.6 · `docs/tech/living-ender-chest-tech.md` §15 · `docs/decisions.md` D-container-18 |
 ## 提交前必跑（2026-10-20 定）
 
 ```bash
