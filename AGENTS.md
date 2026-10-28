@@ -146,7 +146,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1182 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
+**合计测试用例 1186 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -171,6 +171,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-29 | 🧪 **容器 tick 钩子接缝测试** —— `ContainerTickHooks` 4 项：同类去重 / 两阶段按注册顺序 / ctx+tick 透传 / 默认空实现；补测试快照/恢复入口隔离静态表；测试 1182→1186 | `docs/reference/test-map.md` · `ContainerTickHooksTest` |
 | 2026-10-29 | 🧪 **末影箱访问器接缝测试** —— 直连模式 8 项：tryCreate 只认活末影箱 / 插入改栈 / 模拟不写 / 抽取后回滚回原槽 / 跳过活物品 / isEmpty+isFull / 离线降级 / 路由模式 insert 返回 0 + markTransferred 不登记；顺带修正 javadoc（路由注册在 EnderRouteManager）；测试 1174→1182 | `docs/reference/test-map.md` · `LivingEnderChestAccessorTest` |
 | 2026-10-29 | 🧪 **传输守恒不变量** —— `SlotAccessor.transfer` 7 项：诚实全额/部分 + 谎报部分/全拒 + 空源/满目标 + 300 组固定种子随机；断言源+目标总量守恒、无负数、不超堆叠。测试 1167→1174 | `docs/reference/test-map.md` · `SlotAccessorTransferConservationTest` |
 | 2026-10-29 | 🧪 **传输访问器接缝测试** —— `FilteredSlotAccessor` 8 项（黑名单抽取回滚、插入拒绝不达下层…）+ `NeighborSlotAccessor` 8 项（抽取/模拟/插入余量/回滚/isFull）；**抓出 `isFull` 用槽位上限(99)判满 ⇒ 64 钻石误判未满**，改为 min(槽位上限, 物品上限)；测试 1151→1167 | `docs/reference/test-map.md` · `FilteredSlotAccessorTest` / `NeighborSlotAccessorTest` |
@@ -180,7 +181,6 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-10-29 | 🐞 **活末影箱路由：同一容器 UUID 只允许一个活形态** —— 拾取/放置反复几次后**刷物品**：`ContainerHandoff` 只搬 UUID 不清旧形态的路由，而 pos/键会随形态换种类 ⇒ `validateRoutes` 看不见旧条目、旧条目又能解析 ⇒ `cuuid_` 与 `BlockPos` 两条抽同一份内容的两种视图。修：条目录 `sourceContainerUuid` + `uuidIndex` 补捞 + 「同 UUID 异形态 ⇒ 丢」，兼容「容器形态」而非某个背包。测试 1126→1128 | `docs/tech/living-ender-chest-tech.md` §0 规则 11 |
 | 2026-10-29 | 🐞 **活工具动画同病三处换时钟源** —— 全客户端时间源审计后命中 `LivingToolModelRenderer` 三处：挖掘转圈（`(gameTime+partialTick)` long+float ⇒ 老存档 partialTick 被吸收退化 20Hz 频闪 + 每秒同步覆盖相位跳）、交互/攻击脉冲（客户端钟减服务端动作戳，6t 窗口跳 17~33%）、飞回渐隐。统一换 `localAnimTick()` 本地连续钟 + 脉冲首见冻结起点；信标光束（原版 long 域取模）/酿造白幕（差值）/活按钮审计无恙。测试 1126→1132 | `docs/tech/living-tool-tech.md` · `docs/reference/test-map.md` |
 | 2026-10-29 | 🐞 **活末影箱路由：源解析不到 ⇒ 条目丢弃** —— 摆放态精妙背包里注册的路由，拾取后仍指向原位置（方块↔物品切换**换掉了身份键的种类** ⇒ `validateRoutes` 查不到、新注册也顶不掉）；且失败分支 `reoffer` 让死条目永远留在队里、每轮空转（只有一条路由时频道彻底不出货）。**口径**：路由只有「注册 / 不注册」两态，没有中间态（源不在跑就不产出，恢复跑时漏斗会再推一次 ⇒ 自己重新注册）。测试 1125→1126 | `docs/tech/living-ender-chest-tech.md` §0 规则 10 |
-| 2026-10-29 | 🐞 **精妙背包 GUI 空栈崩溃** —— 背包离开物品栏时我们的手发包把「背包本体槽 = 空栈」发给精妙，上游 `cacheSlotNumbers` 硬转型 CCE 断线（原版同步有守卫，**结构上发不出** ⇒ 定死是手发包）。修两档：mixin 补上游判空（任何来源都不崩、服务端同样覆盖）+ `sendSlotSync` 不往菜单锁住的槽发包（判据收口到唯一发包点） | `docs/tech/living-backpack-tech.md` §6 |
 ## 提交前必跑（2026-10-20 定）
 
 ```bash

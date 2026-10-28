@@ -36,4 +36,15 @@ public final class ContainerTickHooks {
             h.onWriteback(ctx, tick);
         }
     }
+
+    /** 测试专用：当前注册表快照（不改内容）。 */
+    static List<ContainerTickHook> snapshotForTest() {
+        return new ArrayList<>(HOOKS);
+    }
+
+    /** 测试专用：替换注册表内容（隔离 / 恢复，避免静态表跨测试污染）。 */
+    static void replaceForTest(List<ContainerTickHook> hooks) {
+        HOOKS.clear();
+        HOOKS.addAll(hooks);
+    }
 }

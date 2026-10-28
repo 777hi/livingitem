@@ -44,6 +44,10 @@
   路由模式 insert 返回 0 + markTransferred 不登记。顺带修正类 javadoc：
   路由注册在 EnderRouteManager，不在 accessor。测试 1174→1182。
 
+- 🧪 **容器 tick 钩子接缝测试（ContainerTickHooksTest，4 项）** ——
+  同类去重 / 两阶段按注册顺序 / ctx+tick 透传 / 默认空实现；
+  补 `snapshotForTest` / `replaceForTest` 隔离静态注册表。测试 1182→1186。
+
 - 🐞 **容器级数据持久层二分：有身份只存 SavedData（活背包形态变换丢活流体）** —— 真机：活精妙背包里的活流体，蹲下拾取（方块→物品）后丢失，放回去也回不来。
 
   - **根因**：两个形态写**两个地方** —— 方块形态走 `ContainerContext.persist` 默认实现写 **BE 附件**，
