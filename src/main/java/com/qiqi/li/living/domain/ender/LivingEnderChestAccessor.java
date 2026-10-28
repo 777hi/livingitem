@@ -96,7 +96,6 @@ public class LivingEnderChestAccessor implements SlotAccessor {
     private String preferredItemType;
 
     private ContainerContext sourceContainerCtx;
-    private int sourceSlot;
 
     private ResourceKey<Level> rollbackDim;
     private BlockPos rollbackPos;
@@ -571,11 +570,23 @@ public class LivingEnderChestAccessor implements SlotAccessor {
         return false;
     }
 
+    /**
+     * <b>空实现</b>：末影箱在任何模式下都不是「某个容器的落点」。
+     *
+     * <p>这个集合记的是「本 tick 已经作为落点的槽位」（防同 tick 多个搬运者对同一格反复搬运）。
+     * 活箱子要登记，是因为它的 27 格虚拟存储最终都写回宿主容器里<b>同一个槽位</b>；
+     * 末影箱没有这样的槽：</p>
+     * <ul>
+     *   <li><b>路由模式</b>：货物从路由源直接进漏斗的目标容器，末影箱自己那一格什么都不接；</li>
+     *   <li><b>直连模式</b>：落点在<b>玩家末影箱</b>里，那是另一个容器的槽位 —— 这个集合是
+     *       「当前容器」的槽号，跨容器登记只会撞号。</li>
+     * </ul>
+     *
+     * <p>⚠️ 2026-10-29 之前这里登记的是一个从未赋值的 {@code sourceSlot} 字段（恒 0），
+     * 等于每轮把一个不存在的落点写进记录 ⇒ 误挡「源槽为 0」的容器内传输。</p>
+     */
     @Override
     public void markTransferred() {
-        if (transferredTargetSlots != null) {
-            transferredTargetSlots.add(sourceSlot);
-        }
     }
 
     @Override
