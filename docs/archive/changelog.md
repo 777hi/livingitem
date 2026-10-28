@@ -17,6 +17,10 @@
 
 ## 2026-10-29
 
+- 🧪 **末影箱双形态不变量（EnderDualFormRouteTest，3 项）** —— 方块↔物品交替 20 次，
+  每步只剩当前形态一条路由；旧形态在别的频道也清；别的 UUID 合法条目不误删。
+  测试 1194→1197。
+
 - 🔧 **配方书活箱子标签页拆出 mixin（行为零变化重构）** —— `RecipeBookComponentMixin`
   1293 行，全项目唯一违反「mixin 薄、逻辑放普通类」惯例的文件（对照先例：
   `ContainerFluidOverlay` 2026-10-19 从 `AbstractContainerScreenMixin` 抽出）。
