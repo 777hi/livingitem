@@ -194,7 +194,8 @@ src/test/java/com/qiqi/li/
 │   ├── ContainerRuleConfigTest.java           # 玩家差异持久化·覆盖内置+删除不复活+导出全量快照+社区闭环+多档共存/旧格式删除记录不被抹掉/内置规则含无尽箱子300格25列/contentRetaining 内置声明与玩家追加
 │   ├── SlotInteractionCargoGateTest.java      # 槽位交互货物准入真值表·活骨粉不施肥
 │   ├── FilteredSlotAccessorTest.java          # 过滤装饰器接缝（2026-10-29）·黑名单抽取回滚 / 模拟不回滚 / 插入拒绝不达下层 / 放行透传 / unwrap / null+EMPTY 全放行
-│   └── NeighborSlotAccessorTest.java          # 邻居访问器接缝（2026-10-29）·抽取/模拟/插入改栈 / 堆叠部分插入余量 / 回滚同槽与异槽 / isFull 取 min(槽位上限,物品上限) / getter
+│   ├── NeighborSlotAccessorTest.java          # 邻居访问器接缝（2026-10-29）·抽取/模拟/插入改栈 / 堆叠部分插入余量 / 回滚同槽与异槽 / isFull 取 min(槽位上限,物品上限) / getter
+│   └── SlotAccessorTransferConservationTest.java # 传输守恒不变量（2026-10-29）·诚实全额/部分 + 谎报部分/全拒 + 空源/满目标 + 300 组固定种子随机；断言源+目标总量守恒、无负数、不超堆叠
 ├── living/util/
 │   └── BroadcastDedupTest.java                # 定向广播去重表的跨维度合并（2026-10-23 定，10-26 抽成共享工具）·**其它维度玩家的记录必须保留**（逐维度 flush 不能互清，旧写法每玩家每 tick 重发一包）/离线玩家淘汰/本维度新记录覆盖旧值（四个同步器共用一份实现，故只留这一份测试）
 └── network/
