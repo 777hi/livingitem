@@ -3,12 +3,12 @@ package com.qiqi.li.client.mixin;
 import com.mojang.blaze3d.platform.Lighting;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.qiqi.li.client.icon.WaterWheelRenderState;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.compat.create.CreateCompat;
 import com.qiqi.li.living.compat.create.ModCreate;
 import com.qiqi.li.living.domain.water.LivingWaterWheelData;
 import com.qiqi.li.living.domain.water.WaterWheelData;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.entity.ItemRenderer;
 import net.minecraft.client.resources.model.BakedModel;
@@ -84,14 +84,7 @@ public class ItemRendererWaterWheelMixin {
             }
 
             float rpm = Math.signum(netStress) * ModCreate.BASE_RPM;
-            Minecraft mc = Minecraft.getInstance();
-            if (mc.level == null) {
-                return model;
-            }
-
-            float time = mc.level.getGameTime()
-                + mc.getTimer().getGameTimeDeltaPartialTick(true);
-            float angle = (time * rpm * 3f / 10f) % 360f;
+            float angle = WaterWheelRenderState.spinAngleDeg(rpm);
             float radians = -angle / 180f * (float) Math.PI;
 
             poseStack.mulPose(new Quaternionf().rotateZ(radians));

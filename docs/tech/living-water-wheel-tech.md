@@ -924,17 +924,20 @@ PoseStack 变换链（从右到左应用）：
 
 ```java
 float rpm = Math.signum(netStress) * StressOutputManager.BASE_RPM;  // ±8
-float time = mc.level.getGameTime() + mc.getTimer().getGameTimeDeltaPartialTick(true);
-float angle = (time * rpm * 3f / 10f) % 360f;
+float angle = WaterWheelRenderState.spinAngleDeg(rpm);   // 客户端单调时钟，见下
 float radians = -angle / 180f * (float) Math.PI;          // 负号修正旋转方向
 ```
 
 | 参数 | 值 | 说明 |
 |------|-----|------|
 | `BASE_RPM` | 8.0 | 基础转速，与原版小水车一致 |
-| `time` | gameTick + partialTick | 连续时间，避免旋转卡顿 |
-| `3f / 10f` | 0.3 | 视觉旋转速度系数 |
+| `spinAngleDeg` | `Util.getMillis()` × 0.006°/ms/RPM | 客户端单调时钟（基于 nanoTime）+ 全程 double，模 360 回绕 |
 | 负号 | `-angle` | 修正旋转方向，使正应力对应顺时针 |
+
+> ⚠️ **时间源约束（2026-10-29）**：禁止改锚 `level.getGameTime()`——它每秒被服务器
+> 时间同步包（`ClientboundSetTimePacket`，20 tick 一次）硬覆盖且无客户端平滑，相位随之
+> 每秒跳变；float 大数取模另有精度台阶（gameTime 数百万 tick 后逐帧跳格）。两者叠加即
+> 「老存档图标一卡一卡、新存档平滑」的根因。回归：`WaterWheelRenderStateTest`。
 
 #### 无应力状态
 
