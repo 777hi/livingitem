@@ -366,7 +366,11 @@ public class LivingEnderChestAccessor implements SlotAccessor {
             // 获取 sourceHandler
             IItemHandler sourceHandler = resolveSourceHandler(entry, sourceLevel);
             if (sourceHandler == null) {
-                continue;
+                // ⚠️ 源**暂时**不可用（区块未加载 / 玩家离线 / 物品形态的活视图过期）⇒
+                //    放回队尾、本轮结束，下 tick 再试。直接丢弃会让「背包暂时不在 tick」
+                //    变成永久失效（2026-10-28）。
+                registry.reoffer(channelKey, entry);
+                return ItemStack.EMPTY;
             }
 
             ItemStack sourceStack = sourceHandler.getStackInSlot(entry.sourceSlot());
