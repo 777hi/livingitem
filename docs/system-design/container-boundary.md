@@ -287,7 +287,7 @@
   “数据存哪”的知识从三个地方收成 ctx 的一个方法。
   ⇒ 收益不只是活背包：新增任何容器形态（活潜影箱、将来的玩家 UUID 化）**零框架改动**；
   且顺带把 `ContainerDataKey` ↔ 附件类型 ↔ CODEC 三元组统一（SavedData 聚合快照的前提）。
-  设计稿 [buffer/living-backpack.md](../buffer/living-backpack.md) §3.4。
+  设计稿 [archive/living-backpack.md](../archive/living-backpack.md) §3.4。
 
 ### I-C10 逻辑槽 ≠ 物理槽，跨边界必须过映射
 

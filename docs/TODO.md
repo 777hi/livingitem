@@ -267,7 +267,7 @@
 
 5.2 ✅ ~~**容器布局解析审查交接**~~（2026-10-25 两轮已处理）—— 准入端点漏洞 / 歧义失败重试 / 矛盾输入失效、门禁独立回归与现有诊断同源均修复并负向验证；不恢复 S1b/S2、不引入完整 Layout。记录见 [专题 §10.5](buffer/container-layout-resolution.md#105-第二轮审查闭环2026-10-25用户批准实施)。
 
-5.3 ✅ ~~**活按钮显示当前容器基本信息**~~（2026-10-26 已实施，**用户真机总体反馈良好**）—— 已定位并修驴无 MenuType 查询失败，原版末影箱/车船明确布局；2026-10-28 全面实测通过。现状与验收入口见 [GUI 交互 §6.2.2](system-design/gui-interaction-system.md#622-活按钮当前容器基本信息2026-10-26)，设计记录见 [living-button-container-info.md](buffer/living-button-container-info.md)。
+5.3 ✅ ~~**活按钮显示当前容器基本信息**~~（2026-10-26 已实施，**用户真机总体反馈良好**）—— 已定位并修驴无 MenuType 查询失败，原版末影箱/车船明确布局；2026-10-28 全面实测通过。现状与验收入口见 [GUI 交互 §6.2.2](system-design/gui-interaction-system.md#622-活按钮当前容器基本信息2026-10-26)，设计记录见 [living-button-container-info.md](archive/living-button-container-info.md)。
 
 5.4 ✅ ~~**布局选择共同入口与内建来源收口**~~（2026-10-26 已实施）—— 各形态通过同一实例/规则/学习/内建/启发式顺序，子类只给事实；方块规则范围不扩、家族语义保留，不恢复S1b/S2。现状见 [基础设施 §6.2](system-design/living-item-infrastructure.md#62-simplecontainercontextgetwidth-的宽解析)，过程见 [布局专题 §10.6](buffer/container-layout-resolution.md#106-共同布局选择入口2026-10-26)。
 
@@ -289,7 +289,7 @@
    **正确定位**：活背包 = **一个活物品功能**（`LivingBackpackFunction`：`canApply` 精妙背包+IS_LIVING，
    `tick` 里对每个背包构建内部 ctx 并 `processContext` 递归）⇒ **框架零改动**，
    `scanAndGroupLivingItems` 已经会把它当活物品扫出来。活化门槛顺带解决性能与判定。
-   设计稿：[buffer/living-backpack.md](buffer/living-backpack.md)（含四轮纠偏留档）。
+   设计稿：[archive/living-backpack.md](archive/living-backpack.md)（含四轮纠偏留档）。
 
    **已落地**（8 个 commit，`d452997` → `6bcd5a2`）：地基四步（`persist` 钩子 + key CODEC /
    UUID 组件 + `cuuid_` 键形 + `ContainerDataSavedData` / 身份优先的形态迁移 /

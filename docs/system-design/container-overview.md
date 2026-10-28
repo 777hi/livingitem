@@ -28,7 +28,7 @@
 | 1 | **谁是容器** | `I-C1` 能力面 + 四类宿主 + 键形 `ContainerKeys`；实体侧白名单 `EntityContainers` | ✅ 生效 | 契约 I-C1 · infra §5 |
 | 2 | **容器是什么形状** | `ContainerLayoutResolver` 统一链（实例→方块规则→学习→内建→启发式）+ `I-C10`/`I-C11` | ✅ 生效（收编暂停） | infra §6.2 |
 | 3 | **谁在看这个容器** | `ContainerViewers.of(players, cacheKey, positions)` | ✅ 生效 | 契约 I-C5 · `D-container-14` |
-| 4 | **容器在世界里哪** | `ContainerAnchor`（参考物，不是坐标）+ 四个 `SERVER` 开关 | ✅ 生效 | [container-anchor-design.md](../buffer/container-anchor-design.md) · `D-container-15/16` |
+| 4 | **容器在世界里哪** | `ContainerAnchor`（参考物，不是坐标）+ 四个 `SERVER` 开关 | ✅ 生效 | [container-anchor-design.md](../archive/container-anchor-design.md) · `D-container-15/16` |
 | 5 | **怎么读写它的槽** | `I-C3` 写回≠插入 · `I-C4` 模拟同源 · `I-C7` 写后校验 | ✅ 生效 | 契约 I-C3/4/7 |
 | 6 | **容器级数据存哪** | `I-C9` + `ContainerContext#persist` + `ContainerDataMigration`/`ContainerHandoff` | ✅ 生效（2 项未修） | 契约 I-C9 · `D-container-12/13` |
 | 7 | **容器里套容器** | 不做通用扫描展开，归活潜影箱（功能内部递归） | ⏸ 明确不做 | `D-container-08` |
@@ -304,7 +304,7 @@ vs 全进规则表」的分叉上直接说「原点」，收编重构不做。
 | 列数规则怎么配、指令怎么用、新形态接入清单 11 条 | [guides/container-compatibility.md](../guides/container-compatibility.md) |
 | 超大堆叠的逐领域审计（09-07 定稿） | [oversized-stack-audit.md](oversized-stack-audit.md) |
 | 活背包（物品形态容器）的现状 | [tech/living-backpack-tech.md](../tech/living-backpack-tech.md) |
-| 锚点的普查过程与取舍 | [buffer/container-anchor-design.md](../buffer/container-anchor-design.md) |
+| 锚点的普查过程与取舍 | [archive/container-anchor-design.md](../archive/container-anchor-design.md) |
 | 服务端菜单自省（实体容器已落地 / 列数探测延后） | [buffer/container-menu-introspection-topic.md](../buffer/container-menu-introspection-topic.md) |
 | 列数收编的完整论证 + 两轮审查闭环 | [buffer/container-layout-resolution.md](../buffer/container-layout-resolution.md) |
 | 活潜影箱（嵌套容器，独立立项） | [buffer/活潜影箱实现细节.md](../buffer/活潜影箱实现细节.md) |

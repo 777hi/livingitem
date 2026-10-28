@@ -226,7 +226,7 @@ public interface ContainerIdentity {
 ⇒ 领域侧从「遍历 hosts 逐个 `setData`」变成一次 `ctx.persist(key, value)`；
 「数据存哪」的知识从三个地方收成 ctx 的一个方法。**拿不到 `IAttachmentHolder` 不是异常，
 是一种正常宿主**（物品形态，持久层是 SavedData）。
-⇒ 设计稿 [buffer/living-backpack.md](../buffer/living-backpack.md) §3.4（活背包）；
+⇒ 设计稿 [archive/living-backpack.md](../archive/living-backpack.md) §3.4（活背包）；
 落地前置：`ContainerDataKey` 要带附件类型与 CODEC 句柄（SavedData 聚合快照的前提）。
 
 **⭐ 缓存键 `getCacheKey()`（2026-10-12 新增）—— 容器级数据在静态表里的行号**：

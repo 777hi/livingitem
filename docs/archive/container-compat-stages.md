@@ -165,7 +165,7 @@
 物品形态另可**继承宿主锚点**（`getHostAnchor()`），但**默认谁都不用** ——
 用它会变成加强玩法（背包里的工具自动挖矿 / 水车随身发电 / 信标随身光环），必须逐个拍板。
 目前只有**活 TNT** 启用（爆炸点用继承值是修复，不是加强）。
-详见 [container-anchor-design.md](../buffer/container-anchor-design.md)。
+详见 [container-anchor-design.md](container-anchor-design.md)。
 
 ### S9 掉落物准入改成功能自声明 ✅ 2026-10-24
 

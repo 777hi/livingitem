@@ -43,7 +43,7 @@
 
 1. **框架零特殊化**。活背包不新增框架机制：tick 驱动 / ctx 身份 / 嵌套治理全部复用既有抽象。
    任何「为活背包加框架分支」的改动都先回到
-   [设计铁律：新增机制前先对应物](../buffer/living-backpack.md) §0 自查。
+   [设计铁律：新增机制前先对应物](../archive/living-backpack.md) §0 自查。
 2. **身份优先迁移**。形态变化（破坏 / 拾取 / 放置 / 第三方交接）只搬**容器 UUID**，
    容器级数据始终留在 SavedData 里，零搬运。
 3. **取消活化 = 清理干净**。`ContainerUuids.discard(stack)`：先删 SavedData 条目、再剥 UUID。
@@ -185,7 +185,7 @@ ContainerFluidWriteback → ctx.persist(key, value) → ContainerDataSavedData�
 
 | 开关 | 关掉时的表现 |
 |---|---|
-| `tnt` | 引信走完就**熄灭**（`ignited` / `fuseTimer` 归零），不爆炸、不消耗；挪到有锚点处不会自爆 |
+| `tnt` | 引信走完就**熄灭**，不爆炸、不消耗；挪到有锚点处不会自爆（机制见 [living-tnt-tech](living-tnt-tech.md) §4.1） |
 | `water_wheel` | 应力只显示在 tooltip（理论产能），不进入 Create 网络 |
 | `tool_and_weapon` | 背包里的工具不重放射线 |
 | `beacon` | 不开光 |
@@ -473,9 +473,9 @@ setBackpackStack → cacheSlotNumbers` ⇒ **ClassCastException**。
    ⚠️ 遗留：大箱两半拿不全（锚点是单个 `BlockPos`）；背包在玩家身上时信标
    **背的人自己看不到**（客户端只扫玩家背包，归 6.1-b）。
    见 [TODO.md](../TODO.md) 活背包 **6.2** 与
-   [container-anchor-design.md](../buffer/container-anchor-design.md) §5-5。
+   [container-anchor-design.md](../archive/container-anchor-design.md) §5-5。
 
 ### 相关
 
-- 设计稿与四轮纠偏留档：[buffer/living-backpack.md](../buffer/living-backpack.md)
+- 设计稿与四轮纠偏留档：[archive/living-backpack.md](../archive/living-backpack.md)
 - 活潜影箱（含自建多窗口 GUI 的锚点方案）：[buffer/活潜影箱实现细节.md](../buffer/活潜影箱实现细节.md)
