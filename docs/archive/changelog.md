@@ -17,6 +17,18 @@
 
 ## 2026-10-28
 
+- 🧪 **倒/汲的「真实原版菜单」测试 + 菜单脚手架** —— 审查测试缺口 #6。
+
+  - 此前 pour/scoop 的测试用 `mock(AbstractContainerMenu.class)`：假菜单没有真实槽位，
+    永远走「索引直查成功」，测不到「菜单 → 容器反查」与物理/逻辑槽映射（历史 bug 正在这层）。
+  - 新脚手架：真实 `BrewingStandMenu` + 真实 `BrewingStandBlockEntity`（`setLevel` + capability 替身），
+    走完整 `ContainerContexts.resolve` 链路。之后其它菜单相关测试可复用。
+  - `BucketInteractRealMenuTest`（2 项）：真实菜单能解析出容器 / 倒水后桶排空 /
+    汲水后桶装水且源消失（后者端到端证明源真的立起来了）。
+  - 踩坑：倒水只写 `generatedSources`，`flows`（实际层）要等容器 tick 的 BFS 播种 ⇒
+    立即断言 `sourceFluid` 必为 null（先写成那样红了一次）。
+  - 测试 1114→1116。联动活物品（Create 等）按用户决定**不做单测**，靠实机验收。
+
 - 🧪 **光标点燃（`IgniteCarriedHandler`）补测试** —— 审查测试缺口 #2 的另一半，5 项：
   创造活 TNT ⇒ 点燃 + 广播 / 创造空光标拒绝 / 创造未活化 TNT 拒绝 / 生存未活化打火石拒绝 /
   生存空光标拒绝。拒绝分支用 `broadcastChanges` **未被调用**兜住（否则「没抛异常」等于没测）。

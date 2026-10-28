@@ -146,7 +146,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1114 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
+**合计测试用例 1116 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -171,6 +171,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-28 | 🧪 **倒/汲真实原版菜单测试 + 菜单脚手架** —— 真实 `BrewingStandMenu` + BE 走完整 `ContainerContexts.resolve`（假菜单测不到这层）2 项：解析出容器 / 倒水排空 / 汲水装水且源消失。踩坑：倒水只写 `generatedSources`，`flows` 要等 BFS 播种。测试 1114→1116；联动活物品（Create 等）按用户决定不做单测、靠实机 | `docs/reference/test-map.md` |
 | 2026-10-28 | 🧪 **光标点燃补测试（缺口 #2 收尾）** —— `IgniteCarriedHandlerTest` 5 项（创造成功 + 广播 / 创造空光标 / 未活化 TNT / 生存未活化打火石 / 生存空光标）；拒绝分支用 `broadcastChanges` 未被调用兜住。测试 1109→1114 | `docs/reference/test-map.md` |
 | 2026-10-28 | 🧪 **TNT 点火链补测试（红石 + 打火石）+ 修「空手点燃」** —— `TntRedstoneIgniteTest` 2 项（信号 > 0 ⇒ 点燃，端口 mock；传播另有 30 项）/ `TntIgniteHandlerTest` 5 项；**抓出真 bug**：生存模式光标为空也会点燃 ⇒ 伪造包可空手点燃任意活 TNT，已改为「生存必须非空活打火石」。测试 1102→1109 | `docs/reference/test-map.md` · `living/domain/tnt/IgniteHandler.java` |
 | 2026-10-28 | 🧪 **活末影箱路由端到端测试 + 源不可用不丢条目** —— 补 4 条链路回归（方块位置 / 玩家背包 / 物品形态 cuuid / 活视图未登记）；`routeExtract` 在源暂时不可用（未加载 / 离线 / 视图过期）时 `reoffer` 而非丢弃（旧实现丢一次即**永久失效**）。测试 1098→1102 | `docs/tech/living-ender-chest-tech.md` §0 规则 10 · `docs/reference/test-map.md` |
@@ -180,7 +181,6 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-10-28 | 🧩 **活末影箱 × 物品形态容器：边界明示 + 注册端止血** —— 审查结论：直连模式正常；路由模式**取货正常**，但**背包里的货推不出去**（源只支持方块位置与 `player_`，`cuuid_` 无活视图反查；`poll` 先消费条目 ⇒ 注册即丢，静默循环）。加 `isRoutableSource` 判据 + 注册前拒绝 + tooltip 灰字说明（zh/en）；真修（容器 UUID → 活视图登记表）待拍板。回归 4 项，测试 1089→1093 | `docs/tech/living-ender-chest-tech.md` §0 规则 9 · `docs/tech/living-backpack-tech.md` §5.8 |
 | 2026-10-28 | 🛡️ **审查报告待拍板 10 项清零** —— #2 末影箱路由维度隔离（去重键 / 位置索引 / 按位置清理 / 区块卸载 / `validateRoutes` 五处补维度，回归 4 项）、#9 删水车死附件 `CONTAINER_STRESS_DATA`、#10 空值判定收编为 `ContainerDataKey#isEmpty` 谓词；#5 下界落点判为玩法决策（`D-map-01` 指哪传哪，不做地形避险）；#8 补流体拆半条款。剩余三块：文档冲突 ~50 处 / P3 ~40 项 / 测试缺口 6 项 ⇒ 报告不可归档。测试 1085→1089 | `docs/buffer/2026-10-27-全项目审查报告.md` · `docs/decisions.md` D-map-01 |
 | 2026-10-28 | 🧹 **文档整理：主域负责制 + buffer 状态索引** —— `docs/README.md` §3.1 定「跨域行为只写一次机制」：主域 tech 写完整机制，其它域只写「本域结论 + 指针」，判据=主域改机制时副本是否必须跟着改；TNT 三处副本（末影箱/背包/打火石）已收窄为指针。新建 `docs/buffer/README.md` 状态索引（15 未定案 + 3 已搬），已实施的 3 份设计稿 `git mv` 入 archive 并同步 9 处活跃指针。零代码改动 | `docs/README.md` §3.1 · `docs/buffer/README.md` |
-| 2026-10-28 | 🔥 **活 TNT 无锚点改熄灭（撤销「待爆哑弹」）** —— 引信归零引爆失败时写回 `ExplosionData.DEFAULT` 并同步，不再保留 `ignited=true/fuse=1` 的待爆态；熄灭后挪到有锚点处不会不点自爆；若红石信号仍在，下一 tick 重新点火（引信重头烧）。`GameplayConfig` 文案同步，回归 `LivingTntConsumeTest` 5→6 项，测试 1084→1085 | `docs/tech/living-tnt-tech.md` §4.1 · `docs/decisions.md` D-tnt-02 |
 ## 提交前必跑（2026-10-20 定）
 
 ```bash
