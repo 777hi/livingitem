@@ -82,7 +82,9 @@ public class NeighborSlotAccessor implements SlotAccessor {
     public boolean isFull() {
         ItemStack stack = handler.getStackInSlot(slot);
         if (stack.isEmpty()) return false;
-        return stack.getCount() >= handler.getSlotLimit(slot);
+        // 槽位极限可能大于物品最大堆叠（NeoForge 默认 99）⇒ 取两者较小值；
+        // 否则满 64 的钻石栈会被判“未满”，传输快速路径白试一次。
+        return stack.getCount() >= Math.min(handler.getSlotLimit(slot), stack.getMaxStackSize());
     }
 
     @Override

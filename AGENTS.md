@@ -146,7 +146,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1151 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
+**合计测试用例 1167 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -171,6 +171,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-29 | 🧪 **传输访问器接缝测试** —— `FilteredSlotAccessor` 8 项（黑名单抽取回滚、插入拒绝不达下层…）+ `NeighborSlotAccessor` 8 项（抽取/模拟/插入余量/回滚/isFull）；**抓出 `isFull` 用槽位上限(99)判满 ⇒ 64 钻石误判未满**，改为 min(槽位上限, 物品上限)；测试 1151→1167 | `docs/reference/test-map.md` · `FilteredSlotAccessorTest` / `NeighborSlotAccessorTest` |
 | 2026-10-29 | 🧪 **活箱子访问器接缝测试** —— `LivingChestAccessor` 长期 0 引用：8 项钉住 tryCreate 只认活箱子 / insert 未超限全额且改栈 / 字节超限 insert+simulate 同源 0 / 回滚豁免 / 抽取快照门 / markTransferred+sync 接线；测试 1143→1151 | `docs/reference/test-map.md` · `LivingChestAccessorTest` |
 | 2026-10-29 | 🐞 **活箱子能力面收口：插入余量复制 + 16KB 估算门失效** —— `LivingChestItemHandler.insertItem` 把副本交给整库插入、却用原栈算余量 ⇒ 箱子收一份、调用方拿回一份；能力面又只走 64B/槽估算 ⇒ 27 槽永远碰不到 16KB。修：余量读副本；两参字节门改 `RegistryAccess.EMPTY` 精确计量；回滚走 unchecked（撤销不是新插入）。接缝测试 5 项 + 回滚豁免 1 项；测试 1137→1143 | `docs/tech/living-chest-tech.md` §2.3 · `LivingChestItemHandlerTest` |
 | 2026-10-29 | 🐞 **容器级数据持久层二分：有身份只存 SavedData** —— 活背包拾取后活流体丢失：两个形态写两个地方（方块→BE 附件 / 物品→SavedData），而 `moveOut` 只搬 UUID ⇒ 方块形态期间的变化随方块蒸发。修：`persist` 有身份→SavedData（数据跟身份走，形态切换零搬运）、无身份→附件；流体回填改 SavedData 优先。已知边界：物品被销毁时条目残留，不做自动回收（同精妙） | `docs/archive/changelog.md` 2026-10-29 · `living/container/ContainerContext.java` |
@@ -180,7 +181,6 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-10-29 | 🐞 **精妙背包 GUI 空栈崩溃** —— 背包离开物品栏时我们的手发包把「背包本体槽 = 空栈」发给精妙，上游 `cacheSlotNumbers` 硬转型 CCE 断线（原版同步有守卫，**结构上发不出** ⇒ 定死是手发包）。修两档：mixin 补上游判空（任何来源都不崩、服务端同样覆盖）+ `sendSlotSync` 不往菜单锁住的槽发包（判据收口到唯一发包点） | `docs/tech/living-backpack-tech.md` §6 |
 | 2026-10-29 | 🐞 **活水车图标旋转换时钟源（老存档一卡一卡根因）** —— 角度锚 `gameTime` 每秒被时间同步包硬覆盖 + float 大数取模精度台阶，双因叠加；换 `Util.getMillis()` 单调钟全程 double（Create 口径 6°/s/RPM 不变），mixin / model 两路径统一收口 `WaterWheelRenderState.spinAngleDeg`；酿造台白幕同锚点但差值动画不可见、评估不改。测试 1120→1125 | `docs/tech/living-water-wheel-tech.md` §6.3 · `docs/reference/test-map.md` |
 | 2026-10-28 | 🧪 **耕地湿润 BFS / 生长冷却门补测试（缺口 #4，最后一个）** —— 4 项：4 级源→每跳 -1（0→9→18 湿、远处干）/ 普通耕地阻断传播 / 冷却门 <200t 不写 / ≥200t 推进时间戳且不改 age。`computeMoisture` 私有 ⇒ 完整 `tick()` + 假 `FluidPresence`。测试 1116→1120；审查「测试缺口」5 补 + 1 不补（应力按「联动活物品不写单测」跳过） | `docs/reference/test-map.md` |
-| 2026-10-28 | 🧪 **倒/汲真实原版菜单测试 + 菜单脚手架** —— 真实 `BrewingStandMenu` + BE 走完整 `ContainerContexts.resolve`（假菜单测不到这层）2 项：解析出容器 / 倒水排空 / 汲水装水且源消失。踩坑：倒水只写 `generatedSources`，`flows` 要等 BFS 播种。测试 1114→1116；联动活物品（Create 等）按用户决定不做单测、靠实机 | `docs/reference/test-map.md` |
 ## 提交前必跑（2026-10-20 定）
 
 ```bash

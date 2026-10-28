@@ -29,6 +29,12 @@
   `insert` 未超限全额且改栈 / 字节超限 `insert`+`simulate` 同源 0 / 回滚豁免 /
   抽取快照门 / `markTransferred`+`sync` 接线。测试 1143→1151。
 
+- 🧪 **传输访问器接缝测试（FilteredSlotAccessor 8 + NeighborSlotAccessor 8）** ——
+  过滤装饰器：黑名单抽取回滚 / 模拟不回滚 / 插入拒绝不达下层；邻居访问器：
+  抽取/模拟/插入余量/回滚/满槽判据。顺带修 `NeighborSlotAccessor.isFull`：
+  用槽位上限（NeoForge 默认 99）判满 ⇒ 满 64 钻石误判未满；改为 min(槽位上限, 物品上限)。
+  测试 1151→1167。
+
 - 🐞 **容器级数据持久层二分：有身份只存 SavedData（活背包形态变换丢活流体）** —— 真机：活精妙背包里的活流体，蹲下拾取（方块→物品）后丢失，放回去也回不来。
 
   - **根因**：两个形态写**两个地方** —— 方块形态走 `ContainerContext.persist` 默认实现写 **BE 附件**，
