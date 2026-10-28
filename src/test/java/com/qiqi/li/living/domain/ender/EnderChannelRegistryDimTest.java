@@ -51,7 +51,7 @@ class EnderChannelRegistryDimTest {
 
     /** 同坐标、同槽位、同物品、同容器键 —— 只有维度不同。 */
     private static EnderChannelEntry entry(ResourceKey<Level> dim) {
-        return new EnderChannelEntry("minecraft:diamond", dim, POS, 0, 1, KEY, 3, KEY);
+        return new EnderChannelEntry("minecraft:diamond", dim, POS, 0, 1, KEY, 3, KEY, null);
     }
 
     private static Level levelOf(ResourceKey<Level> dim) {
@@ -118,5 +118,47 @@ class EnderChannelRegistryDimTest {
 
         assertEquals(0, removed, "下界条目不应被主世界的校验删掉");
         assertTrue(registry.contains(CHANNEL, nether));
+    }
+
+    /** 同一个容器 UUID 的两种形态：方块（sourcePos）与物品形态（cuuid_ 键）。 */
+    private static EnderChannelEntry formEntry(ResourceKey<Level> dim, BlockPos pos, String key,
+                                               java.util.UUID uuid) {
+        return new EnderChannelEntry("minecraft:diamond", dim, pos, 0, 1, key, 3, key, uuid);
+    }
+
+    private static ContainerContext ctxOf(java.util.UUID uuid, BlockPos pos) {
+        // ⚠️ 必须先建好 level：mock 调用不能嵌在 thenReturn(...) 的参数里（UnfinishedStubbing）
+        Level level = levelOf(Level.OVERWORLD);
+        ContainerContext ctx = mock(ContainerContext.class);
+        when(ctx.getContainerUuid()).thenReturn(uuid);
+        when(ctx.getBlockPos()).thenReturn(pos);
+        when(ctx.getContainerKey()).thenReturn(pos == null ? "cuuid_" + uuid : KEY);
+        when(ctx.getLevel()).thenReturn(level);
+        return ctx;
+    }
+
+    @Test
+    @DisplayName("同身份异形态：物品形态的 ctx 会清掉旧方块形态的条目（2026-10-29 刷物品根因）")
+    void sameUuid_itemFormCtx_removesBlockFormEntry() {
+        java.util.UUID uuid = java.util.UUID.randomUUID();
+        EnderChannelEntry blockForm = formEntry(Level.OVERWORLD, POS, KEY, uuid);
+        registry.offer(CHANNEL, blockForm);
+
+        // 拾取后：背包变成物品形态 ⇒ pos 为 null、键是 cuuid_
+        assertEquals(1, registry.validateRoutes(ctxOf(uuid, null), null, null),
+            "旧方块形态的条目必须被清掉 —— 留着它会和新 cuuid 条目一起抽同一份内容（刷物品）");
+        assertFalse(registry.contains(CHANNEL, blockForm));
+    }
+
+    @Test
+    @DisplayName("同身份异形态：方块形态的 ctx 会清掉旧物品形态的条目")
+    void sameUuid_blockCtx_removesItemFormEntry() {
+        java.util.UUID uuid = java.util.UUID.randomUUID();
+        EnderChannelEntry itemForm = formEntry(Level.OVERWORLD, null, "cuuid_" + uuid, uuid);
+        registry.offer(CHANNEL, itemForm);
+
+        assertEquals(1, registry.validateRoutes(ctxOf(uuid, POS), null, null),
+            "放置后旧物品形态的条目必须被清掉");
+        assertFalse(registry.contains(CHANNEL, itemForm));
     }
 }

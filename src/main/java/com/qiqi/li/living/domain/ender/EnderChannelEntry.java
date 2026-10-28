@@ -34,5 +34,14 @@ public record EnderChannelEntry(
     int registrarSlot,
     String containerKey,
     int targetSlot,
-    String registrarContainerKey
+    String registrarContainerKey,
+    /**
+     * 源容器的<b>跨形态稳定身份</b>（容器 UUID）；{@code null} = 该容器没有身份。
+     *
+     * <p>方块形态从 BE 附件读、物品形态从物品组件读，两边是<b>同一个值</b>
+     * （{@code ContainerHandoff} 搬的就是它）⇒ 它是唯一能把「同一容器的两种形态」
+     * 关联起来的键。{@link EnderChannelRegistry#validateRoutes} 靠它看见
+     * 「按位置/按键都查不到」的旧形态条目（2026-10-29：两种形态并存 ⇒ 双抽 ⇒ 刷物品）。</p>
+     */
+    java.util.UUID sourceContainerUuid
 ) {}

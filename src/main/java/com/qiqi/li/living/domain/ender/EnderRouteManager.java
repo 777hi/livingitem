@@ -175,7 +175,8 @@ public final class EnderRouteManager {
 
         String itemType = BuiltInRegistries.ITEM.getKey(sourceStack.getItem()).toString();
         EnderChannelEntry entry = new EnderChannelEntry(
-            itemType, level.dimension(), pos, slot, registrarSlot, containerKey, targetSlot, containerKey);
+            itemType, level.dimension(), pos, slot, registrarSlot, containerKey, targetSlot, containerKey,
+            containerCtx.getContainerUuid());
 
         EnderChannelRegistry registry = EnderChannelRegistry.getInstance();
         if (registry.contains(key, entry)) return;
@@ -251,7 +252,7 @@ public final class EnderRouteManager {
             String itemType = BuiltInRegistries.ITEM.getKey(sourceStack.getItem()).toString();
             EnderChannelEntry entry = new EnderChannelEntry(
                 itemType, level.dimension(), neighborPos, i, hostSlot, null, targetSlot,
-                containerCtx.getContainerKey());
+                containerCtx.getContainerKey(), containerCtx.getContainerUuid());
 
             if (registry.contains(key, entry)) {
                 return true;

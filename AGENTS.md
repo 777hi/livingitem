@@ -146,7 +146,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1132 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
+**合计测试用例 1134 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -171,6 +171,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-29 | 🐞 **活末影箱路由：同一容器 UUID 只允许一个活形态** —— 拾取/放置反复几次后**刷物品**：`ContainerHandoff` 只搬 UUID 不清旧形态的路由，而 pos/键会随形态换种类 ⇒ `validateRoutes` 看不见旧条目、旧条目又能解析 ⇒ `cuuid_` 与 `BlockPos` 两条抽同一份内容的两种视图。修：条目录 `sourceContainerUuid` + `uuidIndex` 补捞 + 「同 UUID 异形态 ⇒ 丢」，兼容「容器形态」而非某个背包。测试 1126→1128 | `docs/tech/living-ender-chest-tech.md` §0 规则 11 |
 | 2026-10-29 | 🐞 **活工具动画同病三处换时钟源** —— 全客户端时间源审计后命中 `LivingToolModelRenderer` 三处：挖掘转圈（`(gameTime+partialTick)` long+float ⇒ 老存档 partialTick 被吸收退化 20Hz 频闪 + 每秒同步覆盖相位跳）、交互/攻击脉冲（客户端钟减服务端动作戳，6t 窗口跳 17~33%）、飞回渐隐。统一换 `localAnimTick()` 本地连续钟 + 脉冲首见冻结起点；信标光束（原版 long 域取模）/酿造白幕（差值）/活按钮审计无恙。测试 1126→1132 | `docs/tech/living-tool-tech.md` · `docs/reference/test-map.md` |
 | 2026-10-29 | 🐞 **活末影箱路由：源解析不到 ⇒ 条目丢弃** —— 摆放态精妙背包里注册的路由，拾取后仍指向原位置（方块↔物品切换**换掉了身份键的种类** ⇒ `validateRoutes` 查不到、新注册也顶不掉）；且失败分支 `reoffer` 让死条目永远留在队里、每轮空转（只有一条路由时频道彻底不出货）。**口径**：路由只有「注册 / 不注册」两态，没有中间态（源不在跑就不产出，恢复跑时漏斗会再推一次 ⇒ 自己重新注册）。测试 1125→1126 | `docs/tech/living-ender-chest-tech.md` §0 规则 10 |
 | 2026-10-29 | 🐞 **精妙背包 GUI 空栈崩溃** —— 背包离开物品栏时我们的手发包把「背包本体槽 = 空栈」发给精妙，上游 `cacheSlotNumbers` 硬转型 CCE 断线（原版同步有守卫，**结构上发不出** ⇒ 定死是手发包）。修两档：mixin 补上游判空（任何来源都不崩、服务端同样覆盖）+ `sendSlotSync` 不往菜单锁住的槽发包（判据收口到唯一发包点） | `docs/tech/living-backpack-tech.md` §6 |
@@ -180,7 +181,6 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-10-28 | 🧪 **光标点燃补测试（缺口 #2 收尾）** —— `IgniteCarriedHandlerTest` 5 项（创造成功 + 广播 / 创造空光标 / 未活化 TNT / 生存未活化打火石 / 生存空光标）；拒绝分支用 `broadcastChanges` 未被调用兜住。测试 1109→1114 | `docs/reference/test-map.md` |
 | 2026-10-28 | 🧪 **TNT 点火链补测试（红石 + 打火石）+ 修「空手点燃」** —— `TntRedstoneIgniteTest` 2 项（信号 > 0 ⇒ 点燃，端口 mock；传播另有 30 项）/ `TntIgniteHandlerTest` 5 项；**抓出真 bug**：生存模式光标为空也会点燃 ⇒ 伪造包可空手点燃任意活 TNT，已改为「生存必须非空活打火石」。测试 1102→1109 | `docs/reference/test-map.md` · `living/domain/tnt/IgniteHandler.java` |
 | 2026-10-28 | 🧪 **活末影箱路由端到端测试 + 源不可用不丢条目** —— 补 4 条链路回归（方块位置 / 玩家背包 / 物品形态 cuuid / 活视图未登记）；`routeExtract` 在源暂时不可用（未加载 / 离线 / 视图过期）时 `reoffer` 而非丢弃（旧实现丢一次即**永久失效**）。测试 1098→1102 | `docs/tech/living-ender-chest-tech.md` §0 规则 10 · `docs/reference/test-map.md` |
-| 2026-10-28 | 📐 **口径落档：两层宿主语义（`D-container-19`）** —— 活背包是其中内容物的**主容器宿主**（身份 = `cuuid`），背包自己的宿主只提供锚点 / 上报位置、**不改身份** ⇒ 换宿主时运行数据保留并继续（放箱子里照常 tick）；A2「运行数据不随搬运保留」收窄为**仅方块容器**。⚙️ 顺带勘误「放箱子 = 暂停」的错误前提 | `docs/decisions.md` D-container-19 · `docs/tech/living-backpack-tech.md` §5.8 |
 ## 提交前必跑（2026-10-20 定）
 
 ```bash

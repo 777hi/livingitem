@@ -1,6 +1,8 @@
 package com.qiqi.li.living.domain.ender;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
@@ -31,7 +33,10 @@ import net.neoforged.neoforge.items.ItemStackHandler;
  * 活末影箱路由的**端到端提取**（注册 → 提取 → 消耗）。
  *
  * <p>2026-10-28 路由改了三处（维度隔离 / 活视图寻址 / 注册闸门），但只有碎片测试。
- * 本类按「源形态」各钉一条主线：方块位置 / 玩家背包 / 物品形态（新能力）/ 源暂时不可用。</p>
+ * 本类按「源形态」各钉一条主线：方块位置 / 玩家背包 / 物品形态（新能力）/ 源不可用 ⇒ 丢弃。</p>
+ *
+ * <p>⚠️ 最后一条是 2026-10-29 的口径变更：源解析不到一律丢弃，<b>没有「暂时不可用」的
+ * 保留态</b>（源不在跑就不产出，恢复跑时漏斗会再推一次、路由自己重新注册）。</p>
  *
  * <p>⚠️ 全部走真实的 {@link EnderChannelRegistry} 与真实的 {@link LivingEnderChestAccessor}，
  * 只 mock 世界/玩家能力 —— 断言的是「物品真的从源移位到提取结果」。</p>
@@ -60,7 +65,7 @@ class EnderRouteExtractTest {
 
     private static EnderChannelEntry entry(net.minecraft.resources.ResourceKey<Level> dim,
                                            BlockPos pos, String containerKey, int slot) {
-        return new EnderChannelEntry(ITEM_ID, dim, pos, slot, 1, containerKey, 3, containerKey);
+        return new EnderChannelEntry(ITEM_ID, dim, pos, slot, 1, containerKey, 3, containerKey, null);
     }
 
     private LivingEnderChestAccessor accessor() {
@@ -129,8 +134,8 @@ class EnderRouteExtractTest {
     }
 
     @Test
-    @DisplayName("物品形态容器未登记（背包没在 tick）⇒ 不取，但条目不能丢（下次还能试）")
-    void extract_itemFormWithoutLiveView_keepsEntry() {
+    @DisplayName("源解析不到 ⇒ 条目丢弃（路由只有注册/不注册两态，2026-10-29 口径）")
+    void extract_itemFormWithoutLiveView_dropsEntry() {
         UUID containerUuid = UUID.randomUUID();
         EnderChannelEntry e = entry(Level.OVERWORLD, null, "cuuid_" + containerUuid, 0);
         registry.offer(CHANNEL, e);
@@ -138,7 +143,32 @@ class EnderRouteExtractTest {
         ItemStack got = accessor().extract(64, ItemStack.EMPTY);
 
         assertTrue(got.isEmpty(), "取不到货是预期（活视图过期）");
-        assertTrue(registry.contains(CHANNEL, e),
-            "条目必须留在频道里 —— 丢弃会让「背包暂时不在 tick」变成永久失效");
+        assertFalse(registry.contains(CHANNEL, e),
+            "条目必须被丢弃 —— 源不在跑就不产出，恢复跑时漏斗会再推一次、路由自己重新注册；"
+                + "留着它只会让队列每轮都在死条目上失败一次");
+        assertNull(registry.peek(CHANNEL), "频道应已清空，下一轮不再空转");
+    }
+
+    @Test
+    @DisplayName("方块被搬走（区块已加载但 BE 不在）⇒ 条目丢弃，不反复空转")
+    void extract_blockGone_dropsEntry() {
+        BlockPos pos = new BlockPos(5, 64, 5);
+        ServerLevel level = mock(ServerLevel.class);
+        when(level.dimension()).thenReturn(Level.OVERWORLD);
+        when(level.isLoaded(pos)).thenReturn(true);
+        // BE 已被搬走 ⇒ 方块位置拿不到物品能力
+        when(level.getCapability(Capabilities.ItemHandler.BLOCK, pos, null)).thenReturn(null);
+        when(server.getLevel(Level.OVERWORLD)).thenReturn(level);
+
+        EnderChannelEntry e = entry(Level.OVERWORLD, pos, "chest_5_64_5", 4);
+        registry.offer(CHANNEL, e);
+
+        LivingEnderChestAccessor accessor = accessor();
+        assertTrue(accessor.extract(64, ItemStack.EMPTY).isEmpty(), "源不在了，取不到货");
+        assertFalse(registry.contains(CHANNEL, e), "死条目必须被丢弃（旧实现 reoffer 会让它永远在队里）");
+
+        // 再抽一次：不该再在死条目上白跑一轮
+        assertTrue(accessor.extract(64, ItemStack.EMPTY).isEmpty());
+        assertNull(registry.peek(CHANNEL), "频道应已清空");
     }
 }

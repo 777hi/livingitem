@@ -110,6 +110,8 @@ public final class EnderChannelRegistry {
     private final Map<String, List<EnderChannelEntry>> keyIndex = new HashMap<>();
 
     /** 反向索引：注册者容器 key → 路由条目列表（按 registrarContainerKey 索引） */
+    /** 源容器 UUID → 条目。跨形态稳定的唯一索引（pos/键都会随形态换种类）。 */
+    private final Map<java.util.UUID, List<EnderChannelEntry>> uuidIndex = new HashMap<>();
     private final Map<String, List<EnderChannelEntry>> registrarKeyIndex = new HashMap<>();
 
     /** 条目→频道反向索引：用于 O(1) 查找条目所属频道 */
@@ -394,6 +396,9 @@ public final class EnderChannelRegistry {
         if (entry.registrarContainerKey() != null) {
             registrarKeyIndex.computeIfAbsent(entry.registrarContainerKey(), k -> new ArrayList<>()).add(entry);
         }
+        if (entry.sourceContainerUuid() != null) {
+            uuidIndex.computeIfAbsent(entry.sourceContainerUuid(), k -> new ArrayList<>()).add(entry);
+        }
     }
 
     private void removeFromIndex(EnderChannelEntry entry) {
@@ -419,6 +424,13 @@ public final class EnderChannelRegistry {
             if (list != null) {
                 list.remove(entry);
                 if (list.isEmpty()) registrarKeyIndex.remove(entry.registrarContainerKey());
+            }
+        }
+        if (entry.sourceContainerUuid() != null) {
+            List<EnderChannelEntry> list = uuidIndex.get(entry.sourceContainerUuid());
+            if (list != null) {
+                list.remove(entry);
+                if (list.isEmpty()) uuidIndex.remove(entry.sourceContainerUuid());
             }
         }
     }
@@ -506,6 +518,13 @@ public final class EnderChannelRegistry {
             List<EnderChannelEntry> byRegistrar = registrarKeyIndex.get(containerKey);
             if (byRegistrar != null) candidates.addAll(byRegistrar);
         }
+        // ⚠️ 按**跨形态身份**再捞一遍：方块↔物品切换会换掉 pos/键的种类，旧条目在
+        //    posIndex/keyIndex 里都查不到 ⇒ 只能靠 UUID 才「看得见」它（2026-10-29）。
+        java.util.UUID ctxUuid = context.getContainerUuid();
+        if (ctxUuid != null) {
+            List<EnderChannelEntry> byUuid = uuidIndex.get(ctxUuid);
+            if (byUuid != null) candidates.addAll(byUuid);
+        }
 
         if (candidates.isEmpty()) return 0;
 
@@ -558,6 +577,16 @@ public final class EnderChannelRegistry {
             if (currentKey == null || !currentKey.equals(entryToChannel.get(entry))) {
                 return true;
             }
+        }
+
+        // 同一容器 UUID 同一时刻只有一个「活形态」（方块 / 物品）。条目记的形态与当前 ctx
+        // 不符 ⇒ 它是旧形态的残留：两条路由会指向同一份内容的两种视图 ⇒ 双抽 = 刷物品
+        // （2026-10-29 真机：cuuid_ 与 BlockPos 两条同时在抽同一个槽）。
+        java.util.UUID entryUuid = entry.sourceContainerUuid();
+        if (entryUuid != null && entryUuid.equals(context.getContainerUuid())) {
+            boolean entryBlockForm = entry.sourcePos() != null;
+            boolean ctxBlockForm = pos != null;
+            if (entryBlockForm != ctxBlockForm) return true;
         }
 
         boolean isSource = (pos != null && pos.equals(entry.sourcePos()))
@@ -684,6 +713,7 @@ public final class EnderChannelRegistry {
         posIndex.clear();
         keyIndex.clear();
         registrarKeyIndex.clear();
+        uuidIndex.clear();
         entryToChannel.clear();
         dirtyChannels.clear();
     }

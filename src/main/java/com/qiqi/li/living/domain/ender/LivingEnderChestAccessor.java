@@ -366,10 +366,17 @@ public class LivingEnderChestAccessor implements SlotAccessor {
             // 获取 sourceHandler
             IItemHandler sourceHandler = resolveSourceHandler(entry, sourceLevel);
             if (sourceHandler == null) {
-                // ⚠️ 源**暂时**不可用（区块未加载 / 玩家离线 / 物品形态的活视图过期）⇒
-                //    放回队尾、本轮结束，下 tick 再试。直接丢弃会让「背包暂时不在 tick」
-                //    变成永久失效（2026-10-28）。
-                registry.reoffer(channelKey, entry);
+                // 源解析不到 ⇒ 它一定「不在跑」（区块没加载 / 玩家离线 / 物品形态活视图过期）。
+                // 「不在跑」的源不产出，而它恢复跑的那一刻漏斗会再推一次
+                // （EnderRouteManager#resolveTarget）⇒ 路由自己重新注册。
+                // ⇒ 这条路由已经没有意义，丢弃。**路由只有「注册 / 不注册」两态，
+                //    没有「暂时不可用」的保留态**（2026-10-29 口径）。
+                //
+                // ⚠️ 曾经这里 reoffer 把条目放回队尾。后果：方块被搬走后 BE 永远不在
+                //    ⇒ 条目永远留在队里，每轮都在它身上失败一次；只有一条路由时
+                //    该频道彻底不出货（2026-10-29 真机：精妙背包被拾取后活末影箱停摆）。
+                LOGGER.debug("LivingEnderChestAccessor: extract source gone, drop route key={}, pos={}, entryKey={}",
+                    channelKey, entry.sourcePos(), entry.containerKey());
                 return ItemStack.EMPTY;
             }
 
@@ -578,7 +585,11 @@ public class LivingEnderChestAccessor implements SlotAccessor {
     /**
      * 解析源 IItemHandler。
      *
-     * @return IItemHandler 实例，如果无法解析则返回 null（调用方负责清理路由）
+     * <p>{@code null} 的含义是「这个源现在不可用」，<b>不区分</b>原因（区块没加载 / 玩家离线 /
+     * 物品形态活视图过期 / 方块已被搬走）—— 调用方对这四种一视同仁：丢弃条目
+     * （见 {@link #routeExtract}，路由只有「注册 / 不注册」两态）。</p>
+     *
+     * @return IItemHandler 实例；无法解析返回 {@code null}
      */
     @Nullable
     private IItemHandler resolveSourceHandler(EnderChannelEntry entry, ServerLevel sourceLevel) {
