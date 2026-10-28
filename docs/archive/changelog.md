@@ -17,6 +17,14 @@
 
 ## 2026-10-29
 
+- 🐞 **活箱子能力面收口：插入余量复制 + 16KB 估算门失效** —— `LivingChestItemHandler.insertItem`
+  把副本交给整库插入、却用原栈算余量 ⇒ 箱子收一份、调用方拿回一份（复制）；能力面又只走
+  64B/槽估算 ⇒ 27 槽永远碰不到 16KB。修：余量从副本读；两参字节门改用 `RegistryAccess.EMPTY`
+  （NeoForge 回落 BuiltInRegistries）精确计量；回滚走 `insertItemUnchecked`（撤销不是新插入）。
+  新增 `LivingChestItemHandlerTest` 5 项；旧“估算路径放行”用例改为“无 registries 也拒绝”，
+  并补回滚豁免 1 项。测试 1137→1143。
+  详情见 `docs/tech/living-chest-tech.md` §2.3。
+
 - 🐞 **容器级数据持久层二分：有身份只存 SavedData（活背包形态变换丢活流体）** —— 真机：活精妙背包里的活流体，蹲下拾取（方块→物品）后丢失，放回去也回不来。
 
   - **根因**：两个形态写**两个地方** —— 方块形态走 `ContainerContext.persist` 默认实现写 **BE 附件**，

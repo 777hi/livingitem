@@ -176,12 +176,12 @@ def check_test_tree():
         return
     i = text.index(anchor)
     block = text[i:text.index("```", i)]
-    doc = set(re.findall(r"([A-Za-z0-9_]+Test)\.java", block))
+    doc = set(re.findall(r"([A-Za-z0-9_]+(?:Test|IT))\.java", block))
 
     real = set()
     for f in glob.glob(os.path.join(ROOT, "src", "test", "**", "*.java"), recursive=True):
         n = os.path.basename(f)[:-5]
-        if n.endswith("Test"):
+        if n.endswith("Test") or n.endswith("IT"):
             real.add(n)
 
     extra, missing = sorted(doc - real), sorted(real - doc)

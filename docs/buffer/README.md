@@ -12,6 +12,8 @@
 |---|---|---|
 | [code-doc-alignment.md](code-doc-alignment.md) | A1~A8 已收口（2026-10-27 审查台账） | 仍被 AGENTS / TODO / tech 指针引用；引用清零后可归档 |
 | [2026-10-27-全项目审查报告.md](2026-10-27-全项目审查报告.md) | 待拍板 10 项已全部处置（2026-10-28） | **不可归档**：仍有文档冲突 ~50 处 / P3 ~40 项 / 测试缺口 6 项未结 |
+| [2026-10-29-全项目审查整改计划.md](2026-10-29-全项目审查整改计划.md) | 进行中（批次 0 未开始） | 2026-10-29 审查问题台账 + 分批实施步骤；进度看 §8 |
+| [2026-10-29-测试域梳理.md](2026-10-29-测试域梳理.md) | 进行中（盘点完成，策略待拍板） | 测试分布 / 覆盖矩阵 / 接缝与不变量缺口；建议见 §6 |
 | [container-layout-resolution.md](container-layout-resolution.md) | 编排部分暂停 / 自动学部分复活为独立一步 | 待做 |
 | [container-menu-introspection-topic.md](container-menu-introspection-topic.md) | 部分完成；列数探测未落地 | 唯一未落地项 |
 | [framework-benchmark.md](framework-benchmark.md) | 未定案（对标记录，不是排期） | 参考输入 |

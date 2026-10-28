@@ -146,7 +146,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1137 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
+**合计测试用例 1143 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -171,6 +171,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-29 | 🐞 **活箱子能力面收口：插入余量复制 + 16KB 估算门失效** —— `LivingChestItemHandler.insertItem` 把副本交给整库插入、却用原栈算余量 ⇒ 箱子收一份、调用方拿回一份；能力面又只走 64B/槽估算 ⇒ 27 槽永远碰不到 16KB。修：余量读副本；两参字节门改 `RegistryAccess.EMPTY` 精确计量；回滚走 unchecked（撤销不是新插入）。接缝测试 5 项 + 回滚豁免 1 项；测试 1137→1143 | `docs/tech/living-chest-tech.md` §2.3 · `LivingChestItemHandlerTest` |
 | 2026-10-29 | 🐞 **容器级数据持久层二分：有身份只存 SavedData** —— 活背包拾取后活流体丢失：两个形态写两个地方（方块→BE 附件 / 物品→SavedData），而 `moveOut` 只搬 UUID ⇒ 方块形态期间的变化随方块蒸发。修：`persist` 有身份→SavedData（数据跟身份走，形态切换零搬运）、无身份→附件；流体回填改 SavedData 优先。已知边界：物品被销毁时条目残留，不做自动回收（同精妙） | `docs/archive/changelog.md` 2026-10-29 · `living/container/ContainerContext.java` |
 | 2026-10-29 | 🐞 **活末影箱路由：同一容器 UUID 只允许一个活形态** —— 拾取/放置反复几次后**刷物品**：`ContainerHandoff` 只搬 UUID 不清旧形态的路由，而 pos/键会随形态换种类 ⇒ `validateRoutes` 看不见旧条目、旧条目又能解析 ⇒ `cuuid_` 与 `BlockPos` 两条抽同一份内容的两种视图。修：条目录 `sourceContainerUuid` + `uuidIndex` 补捞 + 「同 UUID 异形态 ⇒ 丢」，兼容「容器形态」而非某个背包。测试 1126→1128 | `docs/tech/living-ender-chest-tech.md` §0 规则 11 |
 | 2026-10-29 | 🐞 **活工具动画同病三处换时钟源** —— 全客户端时间源审计后命中 `LivingToolModelRenderer` 三处：挖掘转圈（`(gameTime+partialTick)` long+float ⇒ 老存档 partialTick 被吸收退化 20Hz 频闪 + 每秒同步覆盖相位跳）、交互/攻击脉冲（客户端钟减服务端动作戳，6t 窗口跳 17~33%）、飞回渐隐。统一换 `localAnimTick()` 本地连续钟 + 脉冲首见冻结起点；信标光束（原版 long 域取模）/酿造白幕（差值）/活按钮审计无恙。测试 1126→1132 | `docs/tech/living-tool-tech.md` · `docs/reference/test-map.md` |
@@ -180,7 +181,6 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-10-28 | 🧪 **耕地湿润 BFS / 生长冷却门补测试（缺口 #4，最后一个）** —— 4 项：4 级源→每跳 -1（0→9→18 湿、远处干）/ 普通耕地阻断传播 / 冷却门 <200t 不写 / ≥200t 推进时间戳且不改 age。`computeMoisture` 私有 ⇒ 完整 `tick()` + 假 `FluidPresence`。测试 1116→1120；审查「测试缺口」5 补 + 1 不补（应力按「联动活物品不写单测」跳过） | `docs/reference/test-map.md` |
 | 2026-10-28 | 🧪 **倒/汲真实原版菜单测试 + 菜单脚手架** —— 真实 `BrewingStandMenu` + BE 走完整 `ContainerContexts.resolve`（假菜单测不到这层）2 项：解析出容器 / 倒水排空 / 汲水装水且源消失。踩坑：倒水只写 `generatedSources`，`flows` 要等 BFS 播种。测试 1114→1116；联动活物品（Create 等）按用户决定不做单测、靠实机 | `docs/reference/test-map.md` |
 | 2026-10-28 | 🧪 **光标点燃补测试（缺口 #2 收尾）** —— `IgniteCarriedHandlerTest` 5 项（创造成功 + 广播 / 创造空光标 / 未活化 TNT / 生存未活化打火石 / 生存空光标）；拒绝分支用 `broadcastChanges` 未被调用兜住。测试 1109→1114 | `docs/reference/test-map.md` |
-| 2026-10-28 | 🧪 **TNT 点火链补测试（红石 + 打火石）+ 修「空手点燃」** —— `TntRedstoneIgniteTest` 2 项（信号 > 0 ⇒ 点燃，端口 mock；传播另有 30 项）/ `TntIgniteHandlerTest` 5 项；**抓出真 bug**：生存模式光标为空也会点燃 ⇒ 伪造包可空手点燃任意活 TNT，已改为「生存必须非空活打火石」。测试 1102→1109 | `docs/reference/test-map.md` · `living/domain/tnt/IgniteHandler.java` |
 ## 提交前必跑（2026-10-20 定）
 
 ```bash
@@ -193,6 +193,8 @@ python tools/doc_check.py      # 文档一致性：进展滚动 / 指针 / 测�
 
 > ⚠️ 最常见的红法是 `doc_check` 报「测试条数不一致（声明 X / 实测 Y）」——
 > 那不是文档写错，是**改了代码但没跑测试**。先 `./gradlew test` 再提交。
+> ⚠️ 必须是**全量** `./gradlew test`：`--tests` 局部运行会覆盖 `build/test-results`，
+> `doc_check` 只看到局部条数（2026-10-29 实测：只跑 chest 包 ⇒ 报「声明 1143 / 实测 15」）。
 
 > 💡 **本机自动防护**：`.git/hooks/pre-commit` 会在 `git commit` 前自动跑上面两条
 > （红的直接拦住）。⚠️ 该目录**不被 git 跟踪** ⇒ 重装环境 / 换机器后要重写一遍。

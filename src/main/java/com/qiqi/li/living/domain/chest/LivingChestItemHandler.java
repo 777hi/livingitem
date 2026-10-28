@@ -58,12 +58,14 @@ public class LivingChestItemHandler implements IItemHandlerModifiable {
         }
 
         int originalCount = stack.getCount();
-        LivingChestFunction.insertItem(chestStack, stack.copy());
-        int inserted = originalCount - stack.getCount();
+        ItemStack toInsert = stack.copy();
+        LivingChestFunction.insertItem(chestStack, toInsert);
+        // ⚠️ 必须从副本读余量：整库插入会清空/削减传入栈；若从原 stack 算，
+        //    箱子收了一份、调用方又拿回一份 ⇒ 复制（2026-10-29 接缝测试抓出）。
+        int inserted = originalCount - toInsert.getCount();
         if (inserted <= 0) return stack.copy();
-        ItemStack remainder = stack.copy();
-        remainder.setCount(originalCount - inserted);
-        return remainder;
+        if (inserted >= originalCount) return ItemStack.EMPTY;
+        return stack.copyWithCount(originalCount - inserted);
     }
 
     private ItemStack simulateInsertInternal(int targetSlot, ItemStack stack) {

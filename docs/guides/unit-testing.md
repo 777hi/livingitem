@@ -1,11 +1,11 @@
 # 单元测试指南
 
-*最后更新: 2026-08-22*
+*最后更新: 2026-10-29*
 
 本项目的单元测试运行在 **FML 环境**中，可直接引用 Minecraft 类与本模组注册的 DataComponent。
 
 ```bash
-./gradlew test                              # 全部测试（约 20s，增量 <1s）
+./gradlew test                              # 全部测试（约 15s，增量 <1s）
 ./gradlew test --tests "*ContainerRedstoneDataTest"   # 单个测试类
 ```
 
@@ -133,13 +133,15 @@ tickOnce(data, ctx, Map.of(
 
 ## 现有测试
 
-> 全量清单（含每类用例数）以 [AGENTS.md](../../AGENTS.md) 的测试树为准，本节仅列可测性示范用的三类。
+> 用例数会随开发变化，**不在此维护**。全量数据由 `python tools/test_inventory.py` 生成
+> （`build/test-inventory.md`：类 / 用例数 / 断言 / Tag / Disabled / known-gap / 是否走 `processContext`）。
+> 本节只列可测性示范，不回答“有多少条”。
 
-| 测试类 | 数量 | 覆盖内容 |
+| 测试类 | 类型 | 覆盖内容 |
 |--------|------|----------|
-| [ContainerRedstoneDataTest](../../src/test/java/com/qiqi/li/living/domain/redstone/ContainerRedstoneDataTest.java) | 29 | 信号上限规则、红石块/拉杆信号源、链式衰减、红石灯点亮、堆叠数影响、信号归零、网格重建 |
-| [ContainerCompatibilityConfigTest](../../src/test/java/com/qiqi/li/living/transfer/ContainerCompatibilityConfigTest.java) | 14 | 列数推断、宿主槽位、方向偏移、Builder 校验 |
-| [MapCoordHelperTest](../../src/test/java/com/qiqi/li/living/domain/map/MapCoordHelperTest.java) | 29 | UV 换算、展示框朝向×旋转组合、地图中心网格对齐、边界射线距离 |
+| [ContainerRedstoneDataTest](../../src/test/java/com/qiqi/li/living/domain/redstone/ContainerRedstoneDataTest.java) | 领域状态机 | 信号上限规则、红石块/拉杆信号源、链式衰减、红石灯点亮、堆叠数影响、信号归零、网格重建 |
+| [ContainerCompatibilityConfigTest](../../src/test/java/com/qiqi/li/living/transfer/ContainerCompatibilityConfigTest.java) | 契约 / 配置 | 列数推断、宿主槽位、方向偏移、Builder 校验 |
+| [MapCoordHelperTest](../../src/test/java/com/qiqi/li/living/domain/map/MapCoordHelperTest.java) | 纯函数 / 数学 | UV 换算、展示框朝向×旋转组合、地图中心网格对齐、边界射线距离 |
 
 ### 被锁定的反直觉行为
 
@@ -152,6 +154,33 @@ tickOnce(data, ctx, Map.of(
   用的是 `Math.floor` 而非整数除法，负坐标向下取整。
 - **`getSignalCap(1)` → 15，`getSignalCap(2)` → 4**。
   1 个是特例，其余是堆叠数的平方，所以 2 个红石粉的上限反而低于 1 个。
+
+---
+
+## 测试台账与分层
+
+### 台账
+
+```bash
+python tools/test_inventory.py                    # 生成 build/test-inventory.md
+python tools/test_inventory.py --unreferenced     # 附带主类未引用清单（静态近似）
+```
+
+台账是只读的：用例数取 `build/test-results/test/*.xml`（含参数化展开与 `@Nested`），
+类型是按包名/类名的启发式归类；**不要手改生成的文件**。
+
+### 分层
+
+| 层 | 名称 | 放置 / 运行 |
+|---|---|---|
+| L1 | 纯函数 / 数学 | 现有 `*Test`，每次 `test` |
+| L2 | 领域状态机 | 现有 `*Test`，每次 `test` |
+| L3 | 接缝 / 契约（能力面、访问器、回滚） | 现有或新增 `*Test`，每次 `test` |
+| L4 | 集成 / 端到端（`processContext`、真实菜单） | `*IT` / `*IntegrationTest`，每次 `test` |
+| L5 | 游戏内验证（tag 依赖、渲染、手势） | 文档清单，发版前 |
+
+当前梳理（**未定案**）见 [测试域梳理](../buffer/2026-10-29-测试域梳理.md)；
+known-gap 必须带 ID 且不得绿色通过，口径同该文档 §5。
 
 ---
 

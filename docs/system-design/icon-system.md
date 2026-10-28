@@ -487,9 +487,18 @@ RenderSystem.disableBlend();
 1. **`chest_3d.json` / `ender_3d.json`**（新）：
    `parent: "builtin/entity"` + `display.gui { rotation [0,0,0], translation [0,1,0], scale [1,1,1] }`。
    bake 成 `BuiltInModel`（保留自定义 transforms，quads 为空，`isCustomRenderer()=true`）。
-2. **`LivingIconRegistry`**：两个 spec 指向 `item/chest_3d` / `item/ender_3d`，
-   并显式 `.decorator(DEFAULT_DECORATOR)` —— 专属 spec 会使物品进入 `dedicatedItems`
-   而失去默认标记，必须手动挂回。旧 `chest.png` / `ender.png` / 平面 JSON 已删。
+2. **`LivingIconRegistry`**：两个 spec 指向 `item/chest_3d` / `item/ender_3d`。
+   ⚠️ **勘误（2026-10-29，以代码为准）**：初版曾显式 `.decorator(DEFAULT_DECORATOR)`
+   挂回默认标记，**现已撤掉**——现行代码注释定稿「3D 箱子自身已足够辨识『活』，
+   无需额外标记」（正面视角 3D 与原版等距图标肉眼可辨）。
+   ⇒ **「专属 spec 必须挂回默认标记」不是通则**，实际代码里有**三种既有形态**：
+   **① 自辨型**（箱子 / 末影箱 / 活地图——无标记，外观本身与原版可辨）；
+   **② 原版同形 + 状态自证**（铜灯家族——无标记，靠「原版物品永远不会出现的纹理态」
+   自证：物品栏里的原版铜灯永远不亮，活铜灯会亮）；
+   **③ 原版同形 · 无状态相**（酿造台——layer1 烘进模型保留「活」识别度，2026-10-12 先例，
+   见 `LivingIconRegistry` 酿造台条目注释）。
+   选哪种看物品有没有可依赖的第二纹理态。
+   旧 `chest.png` / `ender.png` / 平面 JSON 已删。
 3. **无需改 `GenericContextAwareModel`**：其 `isCustomRenderer()` 委托 `livingModel`
    ⇒ BuiltInModel 时返回 true ⇒ ItemRenderer 走 BEWLR 而非 quads
    （⚠️ 走 quads 会画不出东西 —— BuiltInModel.getQuads() 为空）。

@@ -105,13 +105,9 @@ public class LivingChestAccessor implements SlotAccessor {
         if (chestSnap.isFull()) {
             return 0;
         }
-        // ⚠️ 字节门与 insert 同源(精确 NBT 体积)—— 快照里的 isByteFull 来自估算路径
-        //    (每槽固定 64B,恒 false),用它会让模拟说「能收」而真实拒绝,落到 rollback+WARN
-        //    兜底(2026-10-27 审查 P3-1)。registries 为 null 时退回快照旗标(能力面同款缺口)。
-        HolderLookup.Provider registries = getRegistries();
-        if (registries != null
-                ? !LivingChestFunction.canInsert(chestStack, stack, registries)
-                : chestSnap.isByteFull()) {
+        // 字节门与 insert 同源：3 参 canInsert 在 registries == null 时也走精确回退
+        // （LivingChestFunction 的 FALLBACK_REGISTRIES），不再用快照估算。
+        if (!LivingChestFunction.canInsert(chestStack, stack, getRegistries())) {
             return 0;
         }
 
@@ -140,7 +136,8 @@ public class LivingChestAccessor implements SlotAccessor {
 
     @Override
     public void rollback(ItemStack stack) {
-        LivingChestFunction.insertItem(chestStack, stack);
+        // 撤销不是新插入：不得被 16KB 禁止线挡住，否则失败传输的余量会丢
+        LivingChestFunction.insertItemUnchecked(chestStack, stack);
     }
 
     @Override

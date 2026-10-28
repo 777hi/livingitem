@@ -7,6 +7,7 @@ import java.util.function.Consumer;
 import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.NonNullList;
+import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.item.ItemEntity;
@@ -35,6 +36,13 @@ public class LivingChestFunction implements LivingItemFunction {
     public static final String ID = "living_chest";
     public static final int CHEST_SLOTS = 27;
     public static final int MAX_STORAGE_BYTES = 16384;
+
+    /**
+     * 能力面拿不到 registries 时的精确计量回退。
+     * NeoForge 给 {@link RegistryAccess#EMPTY} 打了「查不到就回落 BuiltInRegistries」的补丁，
+     * 因此它仍能序列化常见组件（见 {@code LivingChestInsertByteGateTest} 的 REGISTRIES）。
+     */
+    private static final net.minecraft.core.HolderLookup.Provider FALLBACK_REGISTRIES = RegistryAccess.EMPTY;
 
     @Override
     public boolean canApply(ItemStack stack) {
@@ -129,7 +137,21 @@ public class LivingChestFunction implements LivingItemFunction {
     public static boolean insertItem(ItemStack chestStack, ItemStack itemToInsert) {
         if (chestStack.getCount() > 1 || chestStack == itemToInsert) return false;
         if (!canInsert(chestStack, itemToInsert)) return false;
+        return insertItemInternal(chestStack, itemToInsert);
+    }
 
+    /**
+     * 回滚专用：跳过 16KB 禁止线。
+     *
+     * <p>回滚是**撤销**（把刚取出的物品放回去），不是新插入；被禁止线挡住会让失败传输的
+     * 余量凭空消失。只允许 {@code LivingChestAccessor.rollback} 调用。</p>
+     */
+    public static boolean insertItemUnchecked(ItemStack chestStack, ItemStack itemToInsert) {
+        if (chestStack.getCount() > 1 || chestStack == itemToInsert) return false;
+        return insertItemInternal(chestStack, itemToInsert);
+    }
+
+    private static boolean insertItemInternal(ItemStack chestStack, ItemStack itemToInsert) {
         List<ItemStack> items = getItems(chestStack);
         boolean modified = false;
 
@@ -157,10 +179,10 @@ public class LivingChestFunction implements LivingItemFunction {
     /**
      * 带注册表的插入 —— 字节上限用<b>精确 NBT 体积</b>把关。
      *
-     * <p>⚠️ 估算路径(两参,{@code registries == null})每非空槽固定计 64B,
-     * 27 槽最多 1728B、永远碰不到 16KB 上限 ⇒ 传输路径曾被它放行任意高 NBT 物品
-     * (2026-10-27 审查 P1)。三参版曾被直接丢弃 registries 转调两参 —— 现在真正把关;
-     * {@code registries == null} 时退回估算路径(能力面 handler 拿不到 level 的已知缺口)。</p>
+     * <p>两参入口现在也走精确计量（{@link RegistryAccess#EMPTY} 回落 BuiltInRegistries），
+     * 能力面（只拿得到 {@code ItemStack}）不再有 64B/槽的估算缺口（2026-10-29 收口）。
+     * 三参版用于调用方已有 {@code HolderLookup.Provider} 的场景；{@code registries == null}
+     * 时退回两参精确路径，而不是 64B 估算。</p>
      */
     public static boolean insertItem(ItemStack chestStack, ItemStack itemToInsert, net.minecraft.core.HolderLookup.Provider registries) {
         if (registries != null && !canInsert(chestStack, itemToInsert, registries)) return false;
@@ -253,11 +275,11 @@ public class LivingChestFunction implements LivingItemFunction {
     }
 
     public static int getCurrentByteUsage(ItemStack stack) {
-        return calculateExactByteUsage(stack, null);
+        return calculateExactByteUsage(stack, FALLBACK_REGISTRIES);
     }
 
     public static int getCurrentByteUsage(ItemStack stack, net.minecraft.core.HolderLookup.Provider registries) {
-        return calculateExactByteUsage(stack, registries);
+        return calculateExactByteUsage(stack, registries != null ? registries : FALLBACK_REGISTRIES);
     }
 
     private static int calculateExactByteUsage(ItemStack stack, net.minecraft.core.HolderLookup.Provider registries) {
@@ -277,9 +299,6 @@ public class LivingChestFunction implements LivingItemFunction {
     }
 
     private static int calculateItemByteUsage(ItemStack stack, net.minecraft.core.HolderLookup.Provider registries) {
-        if (registries == null) {
-            return 64;
-        }
         try {
             net.minecraft.nbt.CompoundTag tag = (net.minecraft.nbt.CompoundTag) stack.saveOptional(registries);
             java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();

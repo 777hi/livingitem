@@ -54,7 +54,7 @@
 | 规则 / 能力 | 守卫 |
 |---|---|
 | 1 配置 / 衍生分离 | §2 存储系统 · §3 核心数据流 |
-| 2 27 槽 + 字节上限 | `LivingChestInsertByteGateTest`（插入点精确把关 + 估算路径缺口钉住）· `ServerPacketHandlerInventorySafetyTest`（GUI 取出满背包不丢物，2026-10-27 审查补） |
+| 2 27 槽 + 字节上限 | `LivingChestInsertByteGateTest`（2/3 参插入点精确把关）· `LivingChestItemHandlerTest`（能力面：余量不复制 / 字节门同源 / 抽出不挡）· `ServerPacketHandlerInventorySafetyTest`（GUI 取出满背包不丢物，2026-10-27 审查补） |
 | 3 取消活化掉内容 | `ActivationHookTest`（钩子派发）· §8 修复记录 |
 | 4 堆叠守恒 | §8（「堆叠活箱子取消活化只返还一份内容」修复记录） |
 | 5 与漏斗过滤交互 | ⚠️ 无直接守卫（2026-10-27 审查列为测试缺口；cargo 隔离由 `SlotInteractionCargoGateTest` 钉住） |
@@ -186,12 +186,19 @@ public static int getCurrentByteUsage(ItemStack chestStack, HolderLookup.Provide
 }
 ```
 
-**把关点（2026-10-27 审查收口）**：字节门在**插入点**用精确体积把关 ——
+**把关点（2026-10-27 审查收口；2026-10-29 补能力面）**：字节门在**插入点**用精确体积把关 ——
 `insertItem(三参)` 用 `canInsert(…, registries)`（GUI 存入与漏斗 `SlotAccessor` 都传注册表）；
 `LivingChestAccessor.simulateInsert` 与 insert **同源**（曾用快照估算旗标，模拟说能收、真实拒绝，
-落到 rollback+WARN 兜底）。⚠️ **已知缺口**：无 registries 的估算路径每非空槽固定计 64B
-（27 槽最多 1728B，永远碰不到上限）——NeoForge 能力面 handler（第三方互操作）拿不到 level，
-只能走估算门；等能力面上下文可取时收口（`LivingChestInsertByteGateTest` 第三例钉住现状）。
+落到 rollback+WARN 兜底）。**两参入口**（能力面 / handler 只拿得到 `ItemStack`）改用
+`RegistryAccess.EMPTY`（NeoForge 回落 BuiltInRegistries）精确计量，不再有 64B/槽的估算缺口。
+`LivingChestItemHandlerTest` 直接守卫能力面：余量从副本读（防“箱子收一份、调用方拿回一份”的复制）、
+`insert` / `simulate` 同源拒绝、抽出不收字节门影响。
+
+**回滚豁免**：`LivingChestAccessor.rollback` 走 `insertItemUnchecked` —— 回滚是**撤销**，
+不是新插入；被 16KB 禁止线挡住会让失败传输的余量丢失。
+
+⚠️ 编码异常（动态注册表缺失等）时 `calculateItemByteUsage` 仍退回 64B 作为防御性兜底；
+这是异常路径，不改变常见物品的精确计量。
 
 ---
 
@@ -296,7 +303,7 @@ grep -n "public void tick" -A 3 src/main/java/com/qiqi/li/living/domain/chest/Li
 
 # ③ LivingChestItemHandler 是第三方互操作面（NeoForge ItemHandler 能力，2026-10-27 审查更正：
 #    它不是死代码 —— LivingItem#onRegisterCapabilities 把它注册到 Items.CHEST 的
-#    Capabilities.ItemHandler.ITEM 上）。⚠️ 该面拿不到 level ⇒ 字节门走估算路径（见 §2.3 已知缺口）：
+#    Capabilities.ItemHandler.ITEM 上）。该面拿不到 level ⇒ 字节门用 RegistryAccess.EMPTY 精确计量（§2.3）：
 grep -rn "LivingChestItemHandler" src/main/java/com/qiqi/li/LivingItem.java   # 期望：能力注册命中
 ```
 

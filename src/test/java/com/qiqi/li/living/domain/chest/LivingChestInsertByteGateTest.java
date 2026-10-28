@@ -21,13 +21,12 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.WritableBookContent;
 
 /**
- * 活箱子字节上限的<b>插入点精确把关</b>(2026-10-27 审查 P1)。
+ * 活箱子字节上限的<b>插入点精确把关</b>(2026-10-27 审查 P1；2026-10-29 收口估算路径)。
  *
- * <p><b>被守的行为</b>:估算路径({@code registries == null})每非空槽固定计 64B
- * ⇒ 27 槽最多 1728B,永远碰不到 16KB 上限;三参 {@code insertItem} 曾直接丢弃
- * registries 转调估算路径 ⇒ 漏斗/第三方能力面可无限塞高 NBT 物品。
- * 修复后三参版用精确 NBT 体积把关;估算路径是能力面 handler 拿不到 level 的
- * <b>已知残留缺口</b>(用例 3 钉住其现状,等 NeoForge 能力面能取到上下文再收)。</p>
+ * <p><b>被守的行为</b>:两参/三参入口都必须用精确 NBT 体积。旧两参路径每非空槽固定计 64B，
+ * 27 槽最多 1728B、永远碰不到 16KB ⇒ 能力面可无限塞高 NBT 物品。现在两参入口用
+ * {@link RegistryAccess#EMPTY}（NeoForge 回落 BuiltInRegistries）精确计量，
+ * 能力面 handler 由 {@link LivingChestItemHandlerTest} 直接守卫。</p>
  */
 class LivingChestInsertByteGateTest {
 
@@ -81,14 +80,28 @@ class LivingChestInsertByteGateTest {
     }
 
     @Test
-    @DisplayName("已知残留:估算路径(null registries)仍会放行超限物品 —— 能力面缺口被钉住")
-    void estimatePath_stillPermits_documentedGap() {
+    @DisplayName("无 registries 入口也走精确门:2 参/3 参 null 都在字节超限时拒绝")
+    void noRegistriesPath_alsoRefusesWhenByteFull() {
+        ItemStack chest = chestNearByteFull();
+        assertTrue(LivingChestFunction.getCurrentByteUsage(chest, null)
+            >= LivingChestFunction.MAX_STORAGE_BYTES, "3 参 null 也走精确回退");
+
+        ItemStack diamond = new ItemStack(Items.DIAMOND);
+        assertFalse(LivingChestFunction.insertItem(chest, diamond),
+            "2 参入口已用 RegistryAccess.EMPTY 精确计量 ⇒ 超限拒绝");
+        assertEquals(20, LivingChestFunction.countUsedSlots(chest), "拒绝 ⇒ 内容不变");
+        assertFalse(diamond.isEmpty(), "拒绝 ⇒ 来栈不销毁(交给调用方处理)");
+    }
+
+    @Test
+    @DisplayName("回滚豁免:字节超限时 unchecked 仍收下(撤销不是新插入)")
+    void rollbackPath_bypassesByteGate() {
         ItemStack chest = chestNearByteFull();
 
         ItemStack diamond = new ItemStack(Items.DIAMOND);
-        assertTrue(LivingChestFunction.insertItem(chest, diamond),
-            "估算(27×64B)永远够不到上限 ⇒ 估算路径放行 —— 这是文档明示的已知缺口,"
-                + "若此用例转红说明估算路径已被收口,请同步更新 living-chest-tech.md");
-        assertTrue(LivingChestFunction.countUsedSlots(chest) >= 20);
+        assertTrue(LivingChestFunction.insertItemUnchecked(chest, diamond),
+            "回滚是撤销 ⇒ 不得被 16KB 禁止线挡住");
+        assertEquals(21, LivingChestFunction.countUsedSlots(chest));
+        assertTrue(diamond.isEmpty(), "回滚全额收下");
     }
 }
