@@ -120,6 +120,7 @@
   "tooltip.livingitem.ender_chest.channel": "  §7公共频道: §e%d§r",
   "tooltip.livingitem.ender_chest.private_channel": "  §7绑定频道: §e%d§r",
   "tooltip.livingitem.ender_chest.routes": "  §7路由: §e%d§r",
+  "tooltip.livingitem.ender_chest.item_form_limit": "  §8注：物品容器（背包）里的货无法被路由，本箱取货不受影响",
   "tooltip.livingitem.beacon.status": "§b活信标§r",
   "tooltip.livingitem.beacon.level": "  §7等级: §a%d §7· 生效: §a%d/%d 槽§r",
   "tooltip.livingitem.beacon.regen": "  §7%s§r",

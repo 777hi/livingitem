@@ -17,6 +17,27 @@
 
 ## 2026-10-28
 
+- 🧩 **活末影箱 × 物品形态容器：能力边界明示 + 注册端止血**（用户提出「活末影箱在活背包里是否正常」）
+
+  - **审查结论**：分模式 —
+    ① **直连模式**（绑定玩家 + 堆叠 1）：**正常**，完全不碰锚点/路由表，只走 `ServerPlayer#getEnderChestInventory`；
+    ② **路由模式取货**（本箱从频道取货）：**正常**，源条目由别处注册（方块位置 / `player_` 键）；
+    ③ **路由模式收货**（同背包内的货推给它）：**断** —— 注册出 `sourcePos=null` + `containerKey=cuuid_…`，
+       而提取端只认 `player_` 前缀（`LivingEnderChestAccessor#routeExtract` / `#resolveSourceHandler`），
+       `continue` 静默跳过；更糟的是 `poll` 先消费条目 ⇒ 失败即销毁 ⇒ 「注册—丢弃」循环；
+    ④ **跨容器 push**（背包外漏斗推给它）：**不发生** —— `CrossContainerTransfer` 对
+       `getBlockPos()==null` 直接返回 false，物品形态容器没有跨容器传输。
+  - **根因**：路由条目只有两种寻址（`sourcePos` 世界方块 / `player_<uuid>` 玩家容器），
+    全库没有「按容器 UUID 找活视图」的入口。这是**设计缺口**，不是补一行。
+  - **止血**：新增 `EnderRouteManager#isRoutableSource`（方块 / `player_` 可，`cuuid_` 不可）+
+    注册前拒绝 + debug 日志；**tooltip 加一行灰字**（zh/en，路由模式显示）说明边界，
+    避免玩家以为是摆法问题。已存量条目仍会在提取时自清。
+  - **真修方向（待拍板）**：新增「容器 UUID → 活视图 handler」登记表（物品形态容器 tick 时登记、
+    服务器停清理），提取端加 `cuuid_` 分支。成立条件：背包必须在 tick（被携带 / 在已加载容器里），
+    放进不 tick 的容器后仍取不到 —— 这是「没有世界位置」的固有边界。
+  - **回归**：`EnderRouteManagerSourceTest` 4 项（方块恒可 / `player_` 可 / `cuuid_` 不可 / 未知键放行）；
+    test-map 增条目。测试 1089→1093。
+
 - 🛡️ **审查报告「待拍板」10 项全部处置（4 项实修 + 1 项玩法决策）** —— 用户裁定：
   「#5 不当作 bug，已作为玩法决策，其它的可以处理」。
 

@@ -318,6 +318,11 @@ ContainerFluidWriteback → ctx.persist(key, value) → ContainerDataSavedData�
 K2 把它当「玩家宿主」上报 ⇒ 客户端算随身、服务端不展开末影箱 ⇒ 两端不同源。
 详见 [living-ender-chest-tech.md](living-ender-chest-tech.md) §15。
 
+⚠️ **活末影箱在背包里**（2026-10-28 审查）：直连模式不受影响；路由模式下**取货**正常
+（与容器形态无关），但**背包里的货无法被路由出去** —— 路由条目的源只支持方块位置与
+玩家背包，物品形态容器（`cuuid_`）没有反查入口。口径见
+[living-ender-chest-tech.md](living-ender-chest-tech.md) §0 规则 9。
+
 ### 多把工具的合并规则（2026-10-27 用户定）
 
 | 维度 | 物品栏顶层 | 活背包里 |

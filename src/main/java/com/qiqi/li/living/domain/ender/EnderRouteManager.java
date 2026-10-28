@@ -165,6 +165,14 @@ public final class EnderRouteManager {
         if (level == null || level.isClientSide) return;
         if (pos == null && containerKey == null) return;
 
+        // ⚠️ 物品形态容器（活背包）的源没有世界位置，也没有可反查的活视图 ⇒ 提取端必然失败，
+        //    而 poll 会先消费条目 ⇒ 「注册—丢弃」循环。这里直接不注册（2026-10-28 止血）。
+        if (!isRoutableSource(containerCtx)) {
+            LOGGER.debug("EnderRouteManager: skip unroutable item-form source, key={}, slot={}",
+                containerKey, slot);
+            return;
+        }
+
         String itemType = BuiltInRegistries.ITEM.getKey(sourceStack.getItem()).toString();
         EnderChannelEntry entry = new EnderChannelEntry(
             itemType, level.dimension(), pos, slot, registrarSlot, containerKey, targetSlot, containerKey);
@@ -181,6 +189,21 @@ public final class EnderRouteManager {
         registry.offer(key, entry);
         LOGGER.debug("EnderRouteManager: registered route key={}, item={}, pos={}, slot={}",
             key, itemType, pos, slot);
+    }
+
+    /**
+     * 该容器能否作为路由条目的**源**（pull 端可寻址）。
+     *
+     * <p>路由条目只有两种寻址方式：{@code sourcePos}（方块）与 {@code player_<uuid>}（玩家背包 / 末影箱）。
+     * 物品形态容器（{@code cuuid_}）两者都没有 ⇒ 注册出的条目在提取端无法定位；
+     * 而 {@code poll} 会先把条目消费掉，失败即销毁 ⇒ 「注册—丢弃」循环（2026-10-28 加闸）。</p>
+     *
+     * <p>未知键形（{@code kindOf == null}）放行：保守方向是不多为难旧形态。</p>
+     */
+    static boolean isRoutableSource(ContainerContext containerCtx) {
+        if (containerCtx.getBlockPos() != null) return true;
+        return com.qiqi.li.living.container.ContainerKeys.kindOf(containerCtx.getContainerKey())
+            != com.qiqi.li.living.container.ContainerKind.ITEM_FORM;
     }
 
     /**

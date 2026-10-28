@@ -146,7 +146,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1089 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
+**合计测试用例 1093 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -171,6 +171,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-28 | 🧩 **活末影箱 × 物品形态容器：边界明示 + 注册端止血** —— 审查结论：直连模式正常；路由模式**取货正常**，但**背包里的货推不出去**（源只支持方块位置与 `player_`，`cuuid_` 无活视图反查；`poll` 先消费条目 ⇒ 注册即丢，静默循环）。加 `isRoutableSource` 判据 + 注册前拒绝 + tooltip 灰字说明（zh/en）；真修（容器 UUID → 活视图登记表）待拍板。回归 4 项，测试 1089→1093 | `docs/tech/living-ender-chest-tech.md` §0 规则 9 · `docs/tech/living-backpack-tech.md` §5.8 |
 | 2026-10-28 | 🛡️ **审查报告待拍板 10 项清零** —— #2 末影箱路由维度隔离（去重键 / 位置索引 / 按位置清理 / 区块卸载 / `validateRoutes` 五处补维度，回归 4 项）、#9 删水车死附件 `CONTAINER_STRESS_DATA`、#10 空值判定收编为 `ContainerDataKey#isEmpty` 谓词；#5 下界落点判为玩法决策（`D-map-01` 指哪传哪，不做地形避险）；#8 补流体拆半条款。剩余三块：文档冲突 ~50 处 / P3 ~40 项 / 测试缺口 6 项 ⇒ 报告不可归档。测试 1085→1089 | `docs/buffer/2026-10-27-全项目审查报告.md` · `docs/decisions.md` D-map-01 |
 | 2026-10-28 | 🧹 **文档整理：主域负责制 + buffer 状态索引** —— `docs/README.md` §3.1 定「跨域行为只写一次机制」：主域 tech 写完整机制，其它域只写「本域结论 + 指针」，判据=主域改机制时副本是否必须跟着改；TNT 三处副本（末影箱/背包/打火石）已收窄为指针。新建 `docs/buffer/README.md` 状态索引（15 未定案 + 3 已搬），已实施的 3 份设计稿 `git mv` 入 archive 并同步 9 处活跃指针。零代码改动 | `docs/README.md` §3.1 · `docs/buffer/README.md` |
 | 2026-10-28 | 🔥 **活 TNT 无锚点改熄灭（撤销「待爆哑弹」）** —— 引信归零引爆失败时写回 `ExplosionData.DEFAULT` 并同步，不再保留 `ignited=true/fuse=1` 的待爆态；熄灭后挪到有锚点处不会不点自爆；若红石信号仍在，下一 tick 重新点火（引信重头烧）。`GameplayConfig` 文案同步，回归 `LivingTntConsumeTest` 5→6 项，测试 1084→1085 | `docs/tech/living-tnt-tech.md` §4.1 · `docs/decisions.md` D-tnt-02 |
@@ -180,7 +181,6 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-10-27 | ⚡ **口径落地：A5 红电停机重启语义 + A6 双箱拆分重算** —— A5：上升沿间隔超失活窗口 ⇒ 旧周期作废、恢复沿只当新起点、不补发停机电量（`SignalTracker` 复用 `aliveWindow`，回归 4 项）；A6：双箱拆半物品照原版分家，流体源与红电相位清空重算（判定下沉 `ContainerDrops.otherChestHalf`，双域各自清存活半，回归 5 项）。台账 A1~A8 处理完毕。测试 1078→1087 全绿 | `docs/buffer/code-doc-alignment.md` · `docs/tech/living-power-tech.md` §6.5 |
 | 2026-10-27 | 📐 **口径收口：A1/A2/A3/A7 落地** —— TNT没锚点不炸（删虚构startFuse、点火统一GUI）；熔炉运行数据不随搬运保留（§8.9虚构SlotAccessor纠正）；地图移除无地面拒绝分支（虚空柱照传，回归+1）；红石Phase0/3伪代码对齐原版排定语义、灯不读外部信号、删未实现烧毁承诺。台账A1-A4/A7标记收口，A5/A6留建议。测试 1074→1078 | `docs/buffer/code-doc-alignment.md` · 各域 tech |
 | 2026-10-27 | 🚀 **Sable 飞艇高度收口：普通坐骑落载具，飞艇艇底对齐目标 Y** —— 对照原版马/船/矿车/骆驼后不混用玩家脚落点：普通坐骑行为不变；飞艇保持操作者艇内相对位置与姿态，X/Z 对齐地图目标，Y 以 Sable 世界投影包围盒 `minY` 平移艇底到目标高度；移除“只能升高不能降低”，不扶正、不找安全地形。回归 +3（1077） | `docs/tech/living-map-ender-pearl-tech.md` §11.2.1 · `docs/buffer/code-doc-alignment.md` A4 |
-| 2026-10-27 | 🛡️ **全项目审查收官：16 域并行深查，真 bug 22 个全修**（分诊口径：只修真 bug，文档↔代码冲突冻结待仲裁）——覆盖活箱子/红石×2/流体/TNT/红电/熔炉酿造/耕地/地图传送/图标/兼容层/工具背包；抓出跨维度抽干、读写槽位键不对称、红电棘轮、落点嵌地等系统性缺陷；审查自引入的守卫 P1 被后续域当场抓修。未修项全量登记 buffer 审查报告；测试 1024→1074 全绿，token ≈90M | `docs/buffer/2026-10-27-全项目审查报告.md` · `docs/TODO.md` 审查收口节 |
 ## 提交前必跑（2026-10-20 定）
 
 ```bash

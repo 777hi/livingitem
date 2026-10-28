@@ -144,6 +144,10 @@ public class LivingEnderChestFunction implements LivingItemFunction {
             "tooltip.livingitem.ender_chest.routes", snapshot.channelSize())
             .withStyle(style -> style.withColor(0xAA88FF)));
 
+        // ⚠️ 能力边界（2026-10-28）：路由条目的源只支持「方块位置」与「玩家背包」两种寻址，
+        //    物品形态容器（活背包内容）的源在提取端无法定位 ⇒ 明示，别让玩家以为是摆法问题。
+        tooltipAdder.accept(Component.translatable("tooltip.livingitem.ender_chest.item_form_limit"));
+
         if (snapshot.channelSize() > 0 && flag.isAdvanced()) {
             for (var entry : snapshot.entries()) {
                 String locStr;
