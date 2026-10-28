@@ -165,6 +165,9 @@ public final class LivingBackpackFunction implements LivingItemFunction {
             // （只按宿主做键会后写覆盖先写，见 ContainerContext#getHostSlot）。
             ItemFormContainerContext inner = new ItemFormContainerContext(
                 handler, uuid, level, source.columns(stack), container.getAnchor(), entry.slotIndex());
+            // 物品形态没有世界位置：按 UUID 登记本 tick 的活视图，供跨容器「按 UUID 寻址」
+            // （活末影箱路由的提取端；见 ItemFormLiveViews 的边界说明）
+            com.qiqi.li.living.container.ItemFormLiveViews.register(uuid, handler, level);
             ContainerLivingItemHandler.processContext(inner, level);
         } finally {
             DEPTH.set(DEPTH.get() - 1);

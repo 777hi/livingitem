@@ -287,6 +287,10 @@
   “数据存哪”的知识从三个地方收成 ctx 的一个方法。
   ⇒ 收益不只是活背包：新增任何容器形态（活潜影箱、将来的玩家 UUID 化）**零框架改动**；
   且顺带把 `ContainerDataKey` ↔ 附件类型 ↔ CODEC 三元组统一（SavedData 聚合快照的前提）。
+  ⇒ **物品形态容器的「按 UUID 寻址」**（2026-10-28）：`ItemFormLiveViews` 由
+  `LivingBackpackFunction` 每 tick 登记 `容器 UUID → 本 tick 的内容视图`（TTL 2s、停服清空），
+  供跨容器消费方（目前只有活末影箱路由的提取端）按 UUID 找到它。它只解决「找得到」，
+  **不改变「没有世界位置」**：背包不 tick ⇒ 登记过期 ⇒ 消费方取不到（明确的边界）。
   ⇒ **取消活化必须清内存层，不只是 SavedData**（2026-10-28 修）：物品形态没有位置，
   `removeDataByPos` 的位置反查永远命中不了 `cuuid_` 键 ⇒ `ContainerUuids.discard` 改调
   `ContainerLivingItemHandler.removeDataByKey(cacheKey)`，一并作废容器级数据 / 槽位追踪 /

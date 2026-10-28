@@ -7,21 +7,29 @@ import static org.mockito.Mockito.when;
 
 import java.util.UUID;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import com.qiqi.li.living.container.ContainerContext;
+import com.qiqi.li.living.container.ItemFormLiveViews;
 
 import net.minecraft.core.BlockPos;
+import net.neoforged.neoforge.items.ItemStackHandler;
 
 /**
- * 路由条目的「源是否可寻址」判据（2026-10-28，审查发现的「背包里的货推不出去」）。
+ * 路由条目的「源是否可寻址」判据（2026-10-28）。
  *
- * <p>路由条目只有两种寻址方式：{@code sourcePos}（方块）与 {@code player_<uuid>}（玩家背包 / 末影箱）。
- * 物品形态容器（{@code cuuid_}）两者都没有 ⇒ 提取端必然失败，而 {@code poll} 会先消费条目
- * ⇒ 「注册—丢弃」循环。判据抽成 {@link EnderRouteManager#isRoutableSource} 以便直接回归。</p>
+ * <p>寻址三种：方块位置 / 玩家容器（`player_`）/ 物品形态（`cuuid_`，靠
+ * {@link ItemFormLiveViews} 取本 tick 的活视图）。物品形态要求**注册时活视图存在** ——
+ * 注册发生在源容器自己的 tick 里，正常一定命中；命中不了说明背包没在 tick。</p>
  */
 class EnderRouteManagerSourceTest {
+
+    @AfterEach
+    void tearDown() {
+        ItemFormLiveViews.clear();
+    }
 
     private static ContainerContext ctxWith(BlockPos pos, String containerKey) {
         ContainerContext ctx = mock(ContainerContext.class);
@@ -45,8 +53,17 @@ class EnderRouteManagerSourceTest {
     }
 
     @Test
-    @DisplayName("物品形态容器（cuuid_ 键、无位置）：不可作源（提取端无法定位）")
-    void itemFormContainer_isNotRoutable() {
+    @DisplayName("物品形态容器：活视图已登记 ⇒ 可作源（提取端按容器 UUID 取视图）")
+    void itemFormContainer_withLiveView_isRoutable() {
+        UUID uuid = UUID.randomUUID();
+        ItemFormLiveViews.register(uuid, new ItemStackHandler(9), null);
+
+        assertTrue(EnderRouteManager.isRoutableSource(ctxWith(null, "cuuid_" + uuid)));
+    }
+
+    @Test
+    @DisplayName("物品形态容器：活视图未登记 ⇒ 不可作源（注册必丢，别制造循环）")
+    void itemFormContainer_withoutLiveView_isNotRoutable() {
         assertFalse(EnderRouteManager.isRoutableSource(
             ctxWith(null, "cuuid_" + UUID.randomUUID())));
     }

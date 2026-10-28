@@ -194,16 +194,22 @@ public final class EnderRouteManager {
     /**
      * 该容器能否作为路由条目的**源**（pull 端可寻址）。
      *
-     * <p>路由条目只有两种寻址方式：{@code sourcePos}（方块）与 {@code player_<uuid>}（玩家背包 / 末影箱）。
-     * 物品形态容器（{@code cuuid_}）两者都没有 ⇒ 注册出的条目在提取端无法定位；
-     * 而 {@code poll} 会先把条目消费掉，失败即销毁 ⇒ 「注册—丢弃」循环（2026-10-28 加闸）。</p>
+     * <p>三种寻址：{@code sourcePos}（方块）· {@code player_<uuid>}（玩家容器）·
+     * {@code cuuid_<uuid>}（物品形态，提取时按 UUID 取 {@code ItemFormLiveViews} 的活视图）。</p>
      *
-     * <p>未知键形（{@code kindOf == null}）放行：保守方向是不多为难旧形态。</p>
+     * <p>物品形态要求**注册时活视图确实存在** —— 注册发生在源容器自己的 tick 里，
+     * 正常情况一定命中；命中不了说明背包没在 tick（例如内容视图拿不到），
+     * 此时注册出的条目在提取端也取不到，直接不注册（2026-10-28）。</p>
      */
     static boolean isRoutableSource(ContainerContext containerCtx) {
         if (containerCtx.getBlockPos() != null) return true;
-        return com.qiqi.li.living.container.ContainerKeys.kindOf(containerCtx.getContainerKey())
-            != com.qiqi.li.living.container.ContainerKind.ITEM_FORM;
+        String key = containerCtx.getContainerKey();
+        if (com.qiqi.li.living.container.ContainerKeys.kindOf(key)
+                == com.qiqi.li.living.container.ContainerKind.ITEM_FORM) {
+            return com.qiqi.li.living.container.ItemFormLiveViews.isLive(
+                com.qiqi.li.living.container.ContainerKeys.containerUuidOf(key));
+        }
+        return true;
     }
 
     /**

@@ -17,6 +17,20 @@
 
 ## 2026-10-28
 
+- 🔗 **物品形态容器支持「按 UUID 寻址」：活末影箱路由收货打通**（用户定「能兼容尽量兼容」）
+
+  - **新增 `ItemFormLiveViews`**（container 包）：`容器 UUID → 本 tick 的内容视图`，
+    由 `LivingBackpackFunction` 每 tick 登记（TTL 2s、停服清空）。
+  - **提取端接通**：`LivingEnderChestAccessor` 的 `routeExtract` / `routeSimulateExtract` /
+    `resolveSourceHandler` 增加 `cuuid_` 分支 —— 无世界位置时按 UUID 取活视图。
+    `EnderRouteManager.isRoutableSource` 随之放宽：物品形态**要求注册时活视图存在**
+    （注册发生在源容器自己的 tick 里，正常一定命中；命中不了说明背包没在 tick）。
+  - **成立条件（写进技术文档，不是实现遗漏）**：背包必须在 tick —— 放进不 tick 的容器 /
+    玩家退出后登记过期 ⇒ 取不到货；不持久化（重启靠重新 tick）；创造模式复制的背包共享
+    UUID ⇒ 后写覆盖先写（用户裁定：与精妙背包自身行为同源，不额外防御）。
+  - **tooltip 同步**：灰字边界说明改为「背包需在运行才能提供货物；背包内活化不绑定玩家」。
+  - 回归：`ItemFormLiveViewsTest` 3 项 + `EnderRouteManagerSourceTest` 4→5 项；测试 1094→1098。
+
 - 🐞 **物品形态容器排查：1 个真泄漏修复 + 边界明示**（用户要求「先找真 bug，能修的就修」）
 
   - **判据**：只算**静默错误**（数据错 / 丢 / 串 / 死循环 / 崩溃）；「设计上不支持」一律算边界，只明示。

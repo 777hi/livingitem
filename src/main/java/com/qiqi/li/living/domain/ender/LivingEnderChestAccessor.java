@@ -244,12 +244,18 @@ public class LivingEnderChestAccessor implements SlotAccessor {
             if (!sourceLevel.isLoaded(sourcePos)) return ItemStack.EMPTY;
         } else {
             String containerKey = entry.containerKey();
-            UUID playerId = parsePlayerUuid(containerKey);
-            if (playerId == null) return ItemStack.EMPTY;
+            if (com.qiqi.li.living.container.ContainerKeys.kindOf(containerKey)
+                    == com.qiqi.li.living.container.ContainerKind.ITEM_FORM) {
+                // 物品形态容器：没有世界位置，交给 resolveSourceHandler 按 UUID 取活视图
+                sourceLevel = null;
+            } else {
+                UUID playerId = parsePlayerUuid(containerKey);
+                if (playerId == null) return ItemStack.EMPTY;
 
-            ServerPlayer player = server.getPlayerList().getPlayer(playerId);
-            if (player == null) return ItemStack.EMPTY;
-            sourceLevel = (ServerLevel) player.level();
+                ServerPlayer player = server.getPlayerList().getPlayer(playerId);
+                if (player == null) return ItemStack.EMPTY;
+                sourceLevel = (ServerLevel) player.level();
+            }
         }
 
         IItemHandler sourceHandler = resolveSourceHandler(entry, sourceLevel);
@@ -329,28 +335,32 @@ public class LivingEnderChestAccessor implements SlotAccessor {
                     continue;
                 }
             } else {
-                // 玩家背包/末影箱：从 containerKey 解析玩家 UUID，获取玩家所在世界
+                // 无世界位置：玩家容器按 UUID 找玩家；物品形态按容器 UUID 取活视图
                 String containerKey = entry.containerKey();
-                if (!com.qiqi.li.living.container.ContainerKeys.isOwnedByPlayer(containerKey)) {
+                if (com.qiqi.li.living.container.ContainerKeys.isOwnedByPlayer(containerKey)) {
+                    UUID playerId = parsePlayerUuid(containerKey);
+                    if (playerId == null) {
+                        LOGGER.debug("LivingEnderChestAccessor: extract invalid containerKey, key={}, entryKey={}",
+                            channelKey, containerKey);
+                        continue;
+                    }
+
+                    ServerPlayer player = server.getPlayerList().getPlayer(playerId);
+                    if (player == null) {
+                        LOGGER.debug("LivingEnderChestAccessor: extract player offline, key={}, uuid={}",
+                            channelKey, playerId);
+                        continue;
+                    }
+                    sourceLevel = (ServerLevel) player.level();
+                } else if (com.qiqi.li.living.container.ContainerKeys.kindOf(containerKey)
+                        == com.qiqi.li.living.container.ContainerKind.ITEM_FORM) {
+                    // 物品形态容器（活背包）：没有世界位置 ⇒ 由 resolveSourceHandler 按 UUID 取活视图
+                    sourceLevel = null;
+                } else {
                     LOGGER.debug("LivingEnderChestAccessor: extract invalid containerKey, key={}, key={}",
                         channelKey, containerKey);
                     continue;
                 }
-
-                UUID playerId = parsePlayerUuid(containerKey);
-                if (playerId == null) {
-                    LOGGER.debug("LivingEnderChestAccessor: extract invalid containerKey, key={}, entryKey={}",
-                        channelKey, containerKey);
-                    continue;
-                }
-
-                ServerPlayer player = server.getPlayerList().getPlayer(playerId);
-                if (player == null) {
-                    LOGGER.debug("LivingEnderChestAccessor: extract player offline, key={}, uuid={}",
-                        channelKey, playerId);
-                    continue;
-                }
-                sourceLevel = (ServerLevel) player.level();
             }
 
             // 获取 sourceHandler
@@ -587,6 +597,13 @@ public class LivingEnderChestAccessor implements SlotAccessor {
         } else {
             String containerKey = entry.containerKey();
             if (containerKey == null) return null;
+
+            // 物品形态容器：按容器 UUID 取「本 tick 的活视图」（没有世界位置可查）
+            if (com.qiqi.li.living.container.ContainerKeys.kindOf(containerKey)
+                    == com.qiqi.li.living.container.ContainerKind.ITEM_FORM) {
+                return com.qiqi.li.living.container.ItemFormLiveViews.find(
+                    com.qiqi.li.living.container.ContainerKeys.containerUuidOf(containerKey));
+            }
 
             UUID playerId = parsePlayerUuid(containerKey);
             if (playerId == null) {
