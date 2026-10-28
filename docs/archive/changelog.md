@@ -17,6 +17,23 @@
 
 ## 2026-10-28
 
+- 🔥 **活 TNT 无锚点改为熄灭（撤销「待爆哑弹」）** —— 用户追问「挪到别处立即炸是什么情况」后定案：引信归零且
+  `ExplosionComponent.ignite` 返回 `false`（无可用锚点）时，`LivingTntFunction` 写回
+  `ExplosionData.DEFAULT`（`ignited=false` / `fuseTimer=0`）并 `setItem` + `syncSlotToClients`，
+  不再停在 `ignited=true / fuse=1` 的待爆态。
+
+  - **为什么改**：待爆态的后果是 TNT 从背包 / 末影箱挪到有锚点处时**不点自爆** —— 玩家看到的是一颗
+    「没炸的哑弹」，实际是随时会炸的隐患，且无法从 tooltip 判断它是否还点着（恒显示 `Fuse: 1`）。
+    熄灭给出唯一可读状态：没炸就是没炸，要炸需重新点火。
+  - **边界（已入档）**：① 熄灭后若所在槽位仍有红石信号，下一 tick 按正常入口重新点火、引信重头烧
+    （接受该循环）；② 熄灭只写本槽位，成功爆炸仍由 `ignite` 一次清空全部槽位后 `return`；
+    ③ `ignite` 的其它早退路径若已清空槽位则不写回（防复活）。
+  - **文档**：`living-tnt-tech` §0/§1.1/§3.4/§4.1/附录（伪代码 + 验收清单）、`living-backpack-tech` 开关表、
+    `living-ender-chest-tech` §15 表、`living-flint-and-steel-tech` 流程、`decisions.md` D-tnt-02；
+    `docs/TODO.md` 末影箱验收第 2 条加后续修订、审查报告待拍板第 3 条标记闭环、
+    `code-doc-alignment` A1 加二次修订、`GameplayConfig` 配置文案同步。
+  - **回归**：`LivingTntConsumeTest` 5→6（新增「熄灭后挪进有锚点箱子不自爆」），测试 1084→1085 全绿。
+
 - 🚀 **飞艇传送「传送不了」根因修复（第三次实机失败后全面对照 Sable 源码）** —— 用户在回退后构建（874266f）实测仍"传送不了"，日志却显示服务端 4 次传送全部 complete、无 SoftConnection 拦截、无 Sable 报错 ⇒ 问题必然在传送之后的世界状态。逐层通读 Sable（`SubLevelTrackingSystem` / `entities_stick_sublevels` / `entity_sublevel_collision` / `SableSubLevelCommands` 原生传送命令 / 1.21.1 `handleMovePlayer`），定位根因：
 
   - **根因**：`teleportSubLevel` 手动 `lastNetworkedPose().set(新位姿)` + `setLastNetworkedStopped(true)`——而 `SubLevelTrackingSystem#sendMovementUpdates` 是客户端获知 sublevel 位姿的**唯一通道**，判据是「logicalPose 与 lastNetworkedPose 有差才发 MOVE 快照」。手动抹平差异恰好骗过判据 ⇒ **客户端永远收不到传送后的位姿**，飞艇在客户端原地不动（服务端已到位）＝「传送不了」。该压制当初为治「超远传送客户端缓动踢出」而加（§11.2.1），属杀鸡取卵：反作弊已由 `updateLastPose`（服务端差值归零）+ 手动 `ClientboundPlayerPositionPacket`（客户端瞬跳）两层兜住。

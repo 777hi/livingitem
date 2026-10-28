@@ -28,7 +28,8 @@
 > **功能需求的来源**与**行为对错的判据**。⚠️ **只写规则与语义**；数值与操作步骤归实现层。
 
 **语义**：**活TNT = 容器内的爆炸物**。点燃后引信倒计时归零，
-有可用锚点时在锚点位置引发爆炸；**威力与容器中活TNT的总堆叠数成正比**。无锚点不爆炸、不消耗 TNT。
+有可用锚点时在锚点位置引发爆炸；**威力与容器中活TNT的总堆叠数成正比**。
+无锚点时引信走完即**熄灭**（不爆炸、不消耗）。
 
 **获取**：原版 TNT + 活化。
 
@@ -40,7 +41,7 @@
 |---|---|---|
 | 1 | **两种点火方式**：① 活打火石 GUI 右键交互（支持光标与槽位互换）② 红石信号（槽位信号 > 0） | GUI 规则为 `ignite` / `ignite_carried`；后者可与活红石系统联动 |
 | 2 | **已点燃不重复点火** | `ignited()` 守卫 |
-| 3 | 引信归零且有可用锚点 ⇒ **在锚点位置**爆炸；无锚点不爆、不消耗 TNT，**不熄灭或重置引信，不新增待爆 / 储存爆炸状态** | 锚点只限制爆炸出口，不代表全部停止 tick |
+| 3 | 引信归零且有可用锚点 ⇒ **在锚点位置**爆炸；无锚点则**熄灭**（`ignited=false`、`fuseTimer=0`），不消耗 TNT、不留待爆态 | 待爆态会让 TNT 挪到有锚点处不点自爆，玩家无法判断它是否还点着；锚点只限制爆炸出口，不代表全部停止 tick |
 | 4 | **威力 ∝ 容器内活TNT总堆叠数** | 堆叠 = 当量 |
 | 5 | 爆炸**唯一入口** = `ExplosionComponent` | 未加载区块**丢弃**（等 Load 重登记）、预算用尽 **carryOver**（见 §4.3） |
 
@@ -57,7 +58,7 @@
 
 ### 1.1 什么是活TNT？
 
-活TNT是一种**爆炸类活物品**，放置在容器中可以被活打火石通过 GUI 交互点燃，引信倒计时归零且有可用锚点时在锚点位置引发爆炸。无锚点不爆、不消耗 TNT，不重置引信。爆炸威力与容器中活TNT的总堆叠数量成正比。
+活TNT是一种**爆炸类活物品**，放置在容器中可以被活打火石通过 GUI 交互点燃，引信倒计时归零且有可用锚点时在锚点位置引发爆炸。无锚点时引信走完即熄灭（不爆、不消耗、不留引信）。爆炸威力与容器中活TNT的总堆叠数量成正比。
 
 活TNT的宿主物品是 `minecraft:tnt`（TNT），必须同时具备活物品标记。
 
@@ -241,8 +242,14 @@ for (SlotEntry entry : entries) {
     explosion = explosion.tick();               // fuseTimer - 1
 
     if (explosion.isExploded()) {
-        ExplosionComponent.ignite(context, level);
-        return;                                 // 成功消耗后不能写回；无锚点失败也不重置引信
+        if (ExplosionComponent.ignite(context, level)) {
+            return;                             // 成功：ignite 已清空容器内全部活 TNT 槽位
+        }
+        // 无可用锚点 ⇒ 熄灭（清零 ignited / fuseTimer），写回 + 同步
+        LivingTntData.set(stack, data.withExplosion(ExplosionData.DEFAULT));
+        context.setItem(slot, stack);
+        context.syncSlotToClients(slot, stack);
+        continue;
     }
 
     LivingTntData.set(stack, data.withExplosion(explosion));
@@ -251,11 +258,13 @@ for (SlotEntry entry : entries) {
 }
 ```
 
-⚠️ 两个容易写错的地方，都是真机踩过的：
+⚠️ 三个容易写错的地方，都是真机踩过的：
 
-- **`return` 而不是继续循环**：`ignite` 会把容器里**所有**活 TNT 写成 `EMPTY`，
+- **成功要 `return` 而不是继续循环**：`ignite` 会把容器里**所有**活 TNT 写成 `EMPTY`，
   之后任何写回都会把刚清掉的槽位填回去（「炸了但 TNT 还在」）。多颗时更糟 ——
   `entries` 是 tick 前的快照，其余条目照样会各自写回（把没轮到的复活）。
+- **失败要熄灭**：无锚点时 `ignite` 返回 `false`。若直接 `return` 不写回，TNT 会停在
+  `ignited=true / fuse=1` 的待爆态，挪到有锚点处**不点自爆**（旧「哑弹」语义，2026-10-28 撤销）。
 - **必须显式 `setItem`**：不能依赖「`getItem` 返回的活引用」。NBT 背书的容器
   （精妙背包的 handler）里就地改组件不会触发它自己的保存钩子。
 
@@ -273,22 +282,22 @@ for (SlotEntry entry : entries) {
 ### 4.1 爆炸触发
 
 `ExplosionComponent.ignite()` 在引信归零时被调用。爆炸中心必须先由可用锚点确定；
-无锚点返回 `false`，**不消耗 TNT，不熄灭或重置引信，也不新增待爆 / 储存爆炸状态**。
-引信仍使用 `LivingTntData` 中已有的 `ignited` / `fuseTimer`；移至有可用锚点处时，
-若已有引信满足爆炸条件，下一次 tick 即按正常入口爆炸。
+无锚点返回 `false`，**不消耗 TNT**，调用方随即**熄灭**（`ignited=false`、`fuseTimer=0`），
+不留待爆态。熄灭后若槽位仍有红石信号，下一次 tick 会按正常入口重新点火（引信重头烧）；
+否则变回普通活 TNT，需要重新点火才会炸。
 
 | 锚点 / 容器形态 | 爆炸位置 / 约束 |
 |---|---|
 | `AtBlock` | 方块中心 |
 | `AtPlayer` | 玩家位置 |
 | `AtEntity`（船 / 矿车 / 掉落物） | 实体位置 |
-| 物品形态容器 | 自身无锚点；仅 `tntUsesHostAnchor()` 开启且宿主锚点可用时借宿主位置；否则不爆、不消耗 TNT、不重置引信 |
-| 原版 `CONTAINER` 内层 | 没有可用锚点时不爆、不消耗 TNT、不重置引信；不能由此推断其所有功能停止 tick |
-| 原版玩家末影箱内容 | 无锚点，不爆、不消耗 TNT、不重置引信；见活末影箱 §15 |
+| 物品形态容器 | 自身无锚点；仅 `tntUsesHostAnchor()` 开启且宿主锚点可用时借宿主位置；否则引爆失败 ⇒ 熄灭、不消耗 TNT |
+| 原版 `CONTAINER` 内层 | 没有可用锚点时不爆、不消耗 TNT、引信归零时熄灭；不能由此推断其所有功能停止 tick |
+| 原版玩家末影箱内容 | 无锚点，不爆、不消耗 TNT、引信归零时熄灭；见活末影箱 §15 |
 
 锚点判定**不等于停掉容器全部 tick**。有可用锚点后，先统计容器内全部活TNT的总数，
 计数有效才清空活TNT槽位；随后计算半径、执行声光与实体伤害，并登记方块破坏账本。
-现有 `ExplosionLedger` 承载的是**已触发爆炸的区块破坏**，不是无锚点 TNT 的待爆状态。
+现有 `ExplosionLedger` 承载的是**已触发爆炸的区块破坏**；无锚点的 TNT 在引信归零时熄灭，不进账本。
 
 ### 4.2 爆炸半径计算
 
@@ -614,7 +623,7 @@ public void addToTooltip(Item.TooltipContext context,
 → 容器中所有活TNT被清空
 → 爆炸半径 = 4.0 × √(TNT堆叠总数)
 
-无可用锚点 → 不爆、不消耗 TNT，不熄灭或重置引信
+无可用锚点 → 不爆、不消耗 TNT，熄灭引信（ignited / fuseTimer 归零）
 ```
 
 ---
@@ -659,8 +668,8 @@ Tooltip 状态标题改为使用 `Component.translatable()` 国际化键，支�
 
 - [ ] 活TNT被活打火石点燃后开始倒计时
 - [ ] 倒计时结束且有可用锚点时爆炸，清空容器中所有活TNT
-- [ ] 无锚点（含原版 `CONTAINER` 内层无可用宿主锚点、原版玩家末影箱内容）不爆、不消耗 TNT，不熄灭或重置引信
-- [ ] 无锚点不新增待爆 / 储存爆炸状态；已有引信满足爆炸条件后移至有锚点处，下一次 tick 正常爆炸
+- [ ] 无锚点（含原版 `CONTAINER` 内层无可用宿主锚点、原版玩家末影箱内容）不爆、不消耗 TNT，引信归零时熄灭（`ignited=false` / `fuseTimer=0`）
+- [ ] 无锚点不新增待爆 / 储存爆炸状态；**熄灭后移至有锚点处不会自爆**（需重新点火）；熄灭时若红石信号仍在，下一 tick 重新点火
 - [ ] 爆炸半径 = 4.0 × √(TNT堆叠总数)
 - [ ] 未点燃时不爆炸
 - [ ] 多个活TNT同时点燃时各自独立倒计时
@@ -701,5 +710,5 @@ Tooltip 状态标题改为使用 `Component.translatable()` 国际化键，支�
 ### 数据持久化
 
 - [ ] LivingTntData 通过 DataComponent 持久化
-- [ ] fuseTimer 在物品离开容器后保留；只有实际收到功能 tick 时推进，无锚点不重置引信
+- [ ] fuseTimer 在物品离开容器后保留；只有实际收到功能 tick 时推进；无锚点不重置引信，但归零引爆失败时熄灭
 - [ ] ignited 状态在物品离开容器后保留

@@ -185,7 +185,7 @@ ContainerFluidWriteback → ctx.persist(key, value) → ContainerDataSavedData�
 
 | 开关 | 关掉时的表现 |
 |---|---|
-| `tnt` | 引信走完就停住（**哑弹**），不爆炸、不消耗 |
+| `tnt` | 引信走完就**熄灭**（`ignited` / `fuseTimer` 归零），不爆炸、不消耗；挪到有锚点处不会自爆 |
 | `water_wheel` | 应力只显示在 tooltip（理论产能），不进入 Create 网络 |
 | `tool_and_weapon` | 背包里的工具不重放射线 |
 | `beacon` | 不开光 |

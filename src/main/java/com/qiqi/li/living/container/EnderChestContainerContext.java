@@ -62,7 +62,7 @@ public class EnderChestContainerContext extends SimpleContainerContext {
      * 不在物品栏里），服务端「随身展开」根本够不着它，两边永远收不拢 ⇒ 只能从上报侧收。</p>
      *
      * <p>连带行为（拍板内容）：末影箱里的活工具主动模式停（无锚点 ⇒ 无起点）、
-     * 活TNT 哑弹（⚠️ 哑弹 ≠ 熄灭：引信保持点燃态，挪进有锚点处会下一 tick 立即爆）、
+     * 活TNT 不炸（引信归零时熄灭，挪进有锚点处不会自爆，见 D-tnt-02）、
      * 活信标不开光（与船 / 掉落物同口径）。
      * 活末影箱<b>本体</b>的路由功能不受影响 —— 它走 {@link #getOwnerPlayer()}，不走锚点。</p>
      */

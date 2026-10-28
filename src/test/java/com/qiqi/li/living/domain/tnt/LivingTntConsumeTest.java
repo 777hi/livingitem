@@ -52,7 +52,8 @@ import net.neoforged.neoforge.items.ItemStackHandler;
  * <p>本用例钉住两件事：</p>
  * <ol>
  *   <li>炸完槽位必须是空的（单颗 / 多颗都一样）；</li>
- *   <li>炸不了时（没有世界锚点）**不得重置**引信 —— 那正是更早那个「无限倒计时」的机制。</li>
+ *   <li>炸不了时（没有世界锚点）**必须熄灭**，不许保留待爆态
+ *       （早先的「无限倒计时」与后来的「挪走即爆」都从这条口子进来过）。</li>
  * </ol>
  */
 class LivingTntConsumeTest {
@@ -169,8 +170,8 @@ class LivingTntConsumeTest {
     }
 
     @Test
-    @DisplayName("宿主锚点默认关 ⇒ 背包里的活 TNT 不炸（哑弹：引信走完就停住，物品还在）")
-    void hostAnchorOffByDefault_isDud() {
+    @DisplayName("宿主锚点默认关 ⇒ 背包里的活 TNT 熄灭（不留引信，挪走也不自爆）")
+    void hostAnchorOffByDefault_extinguishes() {
         ItemStack lit = livingTnt(new ExplosionData(true, 0), 1);
         Player player = mock(Player.class);
         ItemFormContainerContext ctx = itemFormOnPlayer(lit, player);
@@ -178,9 +179,30 @@ class LivingTntConsumeTest {
         new LivingTntFunction().tick(List.of(new SlotEntry(0, lit)), ctx, new TickContext(ctx), ctx.getLevel());
 
         assertFalse(ctx.getItem(0).isEmpty(),
-            "配置关 ⇒ 没有可炸的位置 ⇒ 哑弹。物品必须还在（不是消耗掉）");
-        assertTrue(LivingTntData.of(ctx.getItem(0)).explosion().ignited(),
-            "哑弹的语义是「引信走完就停住」—— 保持已点燃，不是重置");
+            "配置关 ⇒ 没有可炸的位置 ⇒ 不消耗物品（只是熄灭）");
+        ExplosionData after = LivingTntData.of(ctx.getItem(0)).explosion();
+        assertFalse(after.ignited(), "无锚点引爆 ⇒ 必须熄灭，不许留待爆态");
+        assertEquals(0, after.fuseTimer(), "熄灭 = ignited / fuseTimer 都归零");
+    }
+
+    @Test
+    @DisplayName("熄灭后挪进有锚点的箱子 ⇒ 不会不点自爆（旧「哑弹待爆」语义已撤销）")
+    void extinguishedTnt_doesNotExplodeWhenMovedToAnchor() {
+        ItemStack lit = livingTnt(new ExplosionData(true, 1), 1);
+        Player player = mock(Player.class);
+        ItemFormContainerContext bag = itemFormOnPlayer(lit, player);
+
+        new LivingTntFunction().tick(List.of(new SlotEntry(0, lit)), bag, new TickContext(bag), bag.getLevel());
+        assertFalse(LivingTntData.of(bag.getItem(0)).explosion().ignited(), "前置：背包里已熄灭");
+
+        FakeContainerContext chest = new FakeContainerContext(27, 9).withBlockPos(POS);
+        chest.set(3, bag.getItem(0));
+        new LivingTntFunction().tick(
+            List.of(new SlotEntry(3, chest.getItem(3))), chest, new TickContext(chest), explodingLevel());
+
+        assertFalse(chest.getItem(3).isEmpty(),
+            "熄灭后挪到有锚点处必须保持原样：不点燃、不爆炸（否则又回到「挪走即爆」）");
+        assertFalse(LivingTntData.of(chest.getItem(3)).explosion().ignited(), "仍必须保持未点燃");
     }
 
     @Test

@@ -165,7 +165,7 @@ public class ExplosionComponent {
         // 修复（本来就该炸）；工具/水车/信标用它会变成加强玩法（自动挖矿 / 随身发电 / 随身光环），
         // 那些必须逐个拍板，所以框架默认不把宿主锚点当自己的（见 ContainerContext#getHostAnchor）。
         // 自己的锚点优先；物品形态（活背包）借宿主锚点 —— **玩法开关，默认关**。
-        // 关掉时没有可炸的位置 ⇒ 返回 false ⇒ 引信走完就停住（哑弹，见 LivingTntFunction）。
+        // 关掉时没有可炸的位置 ⇒ 返回 false ⇒ 由调用方熄灭引信（见 LivingTntFunction）。
         com.qiqi.li.living.container.ContainerAnchor anchor = containerCtx.getAnchor();
         if (anchor == null && com.qiqi.li.living.config.GameplayConfig.tntUsesHostAnchor()) {
             anchor = containerCtx.getHostAnchor();
@@ -182,7 +182,7 @@ public class ExplosionComponent {
             center = entityAnchor.entity().position();
         } else {
             // 真没有锚点（物品形态且宿主未知 —— 只可能出现在 GUI 反查路径构造的 ctx，
-            // 它不进 tick）。返回 false，调用方**熄灭**（引信归零却没有爆炸对象 = 没有出口的状态）。
+            // 它不进 tick）。返回 false ⇒ 调用方**熄灭**引信（reset），不留待爆态。
             return false;
         }
 

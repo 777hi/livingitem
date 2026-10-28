@@ -146,7 +146,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1084 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
+**合计测试用例 1085 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -171,6 +171,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-28 | 🔥 **活 TNT 无锚点改熄灭（撤销「待爆哑弹」）** —— 引信归零引爆失败时写回 `ExplosionData.DEFAULT` 并同步，不再保留 `ignited=true/fuse=1` 的待爆态；熄灭后挪到有锚点处不会不点自爆；若红石信号仍在，下一 tick 重新点火（引信重头烧）。`GameplayConfig` 文案同步，回归 `LivingTntConsumeTest` 5→6 项，测试 1084→1085 | `docs/tech/living-tnt-tech.md` §4.1 · `docs/decisions.md` D-tnt-02 |
 | 2026-10-28 | ♻️ **恢复「坐垫生物随艇」+ 文档问责修正** —— 实测纠错：c26b5d0 实测坐垫生物是跟的（用户只报非坐下不跟），56dfc96 删循环连带删掉有效行为；恢复且判据收窄为「机械动力坐垫 && 载客 && 在艇包围盒内」，站甲板 / 空坐椅 / 其它载具维持不随艇。文档问责：§11.2.1 重写为唯一现状，v27 沿革"自动跟随"假设勘误留痕（口径原文此前只躺在沿革里、与规范节矛盾），台账/TODO 同步，**待实测** | `docs/tech/living-map-ender-pearl-tech.md` §11.2.1 · `docs/buffer/code-doc-alignment.md` A4 |
 | 2026-10-28 | 🧹 **甲板生物随艇玩法撤销 + 活工具配置关后外显渲染门** —— 用户全面实测通过、独甲板生物不跟随 ⇒ 撤销玩法（用户定）：传送只带操作者与其所骑载具，删实体携带循环；留痕＝自然携带 delta 制 + 贴近 plot 强制清 tracking ⇒「在艇上」不可判定（tech §11.2.1），A4 闭环。另修：`tool_and_weapon` 关时物品形态宿主的工具外显（模型/射线/背后环）一并取消、对齐活信标口径；K2 上报保留（辅助速度要算），背包进箱子的盲区登记 TODO P3 | `docs/tech/living-map-ender-pearl-tech.md` §11.2.1 · `docs/tech/living-tool-tech.md` §6.1 |
 | 2026-10-28 | 🚀 **飞艇传送「传送不了」根因修复 + A4 恢复** —— 第三次实机仍失败后全面对照 Sable 源码：服务端 4 次传送全 complete、无拦截无报错，而客户端飞艇不动。根因＝手动 `lastNetworkedPose().set()` + `setLastNetworkedStopped(true)` 恰好骗过 `SubLevelTrackingSystem` 的「位姿有差才发 MOVE 快照」判据，客户端永远收不到传送后位姿；删除压制、补 `resetVelocity`（对齐 Sable 原生 teleport 官方两步流程）+ 根载具（坐椅）显式补搬。**同步修正误诊**：「飞艇乱飞/物理互穿」从未被用户报告，当年回退 A4 的依据不成立——恢复**艇底对齐目标 Y**（贴地降落）+ 目标点 3×3 区块预载。**实机验收 ✓（传送正常 + 贴地降落正常）** | `docs/tech/living-map-ender-pearl-tech.md` §11.2.1 · `docs/buffer/code-doc-alignment.md` A4 |
@@ -180,7 +181,6 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-10-27 | 🛡️ **全项目审查收官：16 域并行深查，真 bug 22 个全修**（分诊口径：只修真 bug，文档↔代码冲突冻结待仲裁）——覆盖活箱子/红石×2/流体/TNT/红电/熔炉酿造/耕地/地图传送/图标/兼容层/工具背包；抓出跨维度抽干、读写槽位键不对称、红电棘轮、落点嵌地等系统性缺陷；审查自引入的守卫 P1 被后续域当场抓修。未修项全量登记 buffer 审查报告；测试 1024→1074 全绿，token ≈90M | `docs/buffer/2026-10-27-全项目审查报告.md` · `docs/TODO.md` 审查收口节 |
 | 2026-10-27 | 🛡️ **审查修复三连（同根：两端对「随身 / 上报」口径不一致）** —— K2 登记表被首维度 flush 抽干（PLAYER 宿主上报在玩家循环、维度循环之前 ⇒ 地狱/末地背包条目全丢；照 `beginTick` 铁律改：tick 开头清、flush 只读、**维度入条目**显式隔离）；**末影箱定案「存放处」**（`getAnchor` 显式 null，不再默认退化 AtPlayer；内容=货物不开机：工具停/TNT 哑弹/信标不开光，本体路由不受影响）；`skipMainHand` 只跳工具不跳容器展开（手持背包两端同源）。+写回守卫（I-C6 留痕）/ K2 解码 clamp。回归 +12（1036 全绿，速度分层 `assistBonus` 补上回归），**待真机复验** | `docs/tech/living-tool-tech.md` §12.6 · `docs/tech/living-ender-chest-tech.md` §15 · `docs/decisions.md` D-container-18 |
 | 2026-10-27 | 📖 **活信标 tooltip 喂锭引导强化** —— 矿石→效果映射此前只能试出来，且唯一规则行喂出第一根锭后就消失。账本后新增**待喂入菜单**（未配置矿石 → 效果，颜色三态：可喂绿 / 锁定暗灰 `需 L{n}` / 遥测缺失灰 `L{n} 解锁` 不猜；5 槽全配自然消失）；满级未加倍条目追加**升 II 行动指令**（非满级不提示——不可操作的不显示）；`config_empty` 喂法动作提为金色。未激活折叠行不动（U17）。回归 +4（`FeedSuggestions` 含枚举序档位非降序契约） | `docs/tech/living-beacon-tech.md` §2.6.1 |
-| 2026-10-27 | 🧩 **「操作者是谁」判据收束** —— 物品形态的 `inventory` 恒 null，而「操作者」一直用它判断 ⇒ 射线微调不认配置、被动模式在背包里不辅助。改成「锚点是不是 `AtPlayer`」/ `HostRef.PLAYER`；「随身携带」收进 `CarriedLivingItems`（顶层 + 已活化容器内容一层，**带写回位置**）；**双端事件两端同源**（客户端从 K2 拿，不能自己读容器）；**合并规则**：速度=顶层相加+背包只取最高、掉落按最靠前、耐久各扣；分层判据用**显式 `fromContainer`**（客户端 S2C 条目没有槽位，从槽位推断会让两端速度差一倍）。回归 +6，**待真机复验** | `docs/system-design/container-overview.md` §0.1 · `docs/tech/living-backpack-tech.md` §5.8 |
 ## 提交前必跑（2026-10-20 定）
 
 ```bash

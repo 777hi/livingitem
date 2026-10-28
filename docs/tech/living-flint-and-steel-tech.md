@@ -156,7 +156,7 @@ public void addToTooltip(Item.TooltipContext context,
 光标活TNT → 右键槽位活打火石 → 点燃光标 TNT
 → 生存模式扣打火石 1 点耐久；创造模式不扣
 → 引信从 80 ticks 开始倒计时
-→ 有可用锚点时爆炸；无锚点不爆、不消耗 TNT，不重置引信
+→ 有可用锚点时爆炸；无锚点不爆、不消耗 TNT，引信归零时熄灭
 ```
 
 ---

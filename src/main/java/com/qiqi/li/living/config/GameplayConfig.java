@@ -21,7 +21,7 @@ import net.neoforged.neoforge.common.ModConfigSpec;
  * <h3>这些开关控制什么</h3>
  * <p>物品形态容器（活背包）**没有自己的世界位置**，它借宿主的位置（`ContainerContext#getHostAnchor`）。
  * 借来干什么，是玩法：背包里的炸弹炸在宿主处、水车给宿主发电、工具用宿主的眼睛挖矿、
- * 信标给宿主开光环。全部**默认关闭** —— 关掉时那些功能在活背包里不工作（活 TNT 表现为哑弹）。</p>
+ * 信标给宿主开光环。全部**默认关闭** —— 关掉时那些功能在活背包里不工作（活 TNT 引信走完即熄灭）。</p>
  */
 public final class GameplayConfig {
 
@@ -42,30 +42,25 @@ public final class GameplayConfig {
         ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
 
         builder.comment(
-                "物品形态容器（活背包）里的活物品，能不能借用**宿主**的世界锚点。",
-                "「宿主」= 背包所在的地方：玩家身上 / 箱子 / 船。",
-                "全部默认关闭 —— 开启属于加强玩法，不是修复。")
+                "【玩法开关】活背包里的活物品能不能借用宿主的位置。",
+                "宿主 = 活背包所在的地方（玩家身上 / 箱子 / 实体容器）。",
+                "默认全关，开启属于加强玩法。")
             .push("host_anchor");
 
         TNT = builder.comment(
-                "活背包里的活 TNT：开启后炸在宿主处（背在身上 = 炸在脚下）。",
-                "关闭时没有可炸的位置 ⇒ 引信走完就停住（哑弹），不会爆炸。",
-                "⚠️ 哑弹不是熄灭：引信保持点燃态，把这颗 TNT 挪进任何有位置的地方",
-                "（箱子 / 地面 / 掉出背包）⇒ 下一 tick 立即爆。设计收口见 TODO。")
+                "活背包里的活 TNT：开启后炸在宿主处；关闭时引信走完熄灭，挪到别处也不会自爆。")
             .define("tnt", false);
 
         WATER_WHEEL = builder.comment(
-                "活背包里的活水车：开启后向宿主位置注入应力（背在身上 = 随身动力）。",
-                "关闭时算出的应力只显示在 tooltip，不进入 Create 网络。")
+                "活背包里的活水车：开启后向宿主位置输出应力。")
             .define("water_wheel", false);
 
         TOOL_AND_WEAPON = builder.comment(
-                "活背包里的活工具 / 活武器：开启后用宿主位置作射线起点（背包里也能按记忆挖矿）。",
-                "⚠️ 工具与武器共用一个功能 ⇒ 这个开关同时作用于两者。")
+                "活背包里的活工具 / 活武器：开启后用宿主位置干活。")
             .define("tool_and_weapon", false);
 
         BEACON = builder.comment(
-                "活背包里的活信标：开启后用宿主位置开光（背在身上 = 随身光环）。")
+                "活背包里的活信标：开启后用宿主位置开光。")
             .define("beacon", false);
 
         builder.pop();

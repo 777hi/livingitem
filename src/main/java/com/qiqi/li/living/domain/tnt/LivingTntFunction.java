@@ -78,14 +78,27 @@ public class LivingTntFunction implements LivingItemFunction {
             explosion = explosion.tick();
 
             if (explosion.isExploded()) {
-                ExplosionComponent.ignite(context, level);
-                // ⚠️ 消耗由 ignite 完成 —— 它把容器里**所有**活 TNT 槽位写成 EMPTY。
-                // 所以这里**必须直接结束**，绝不能往下走到写回：
-                //   · 写回 `stack` 会把刚清掉的槽位用本地栈填回去 ⇒ 「炸了但 TNT 还在」
-                //     （2026-10-23 真机实录）；
-                //   · 也不能只 continue 到下一个条目 —— `entries` 是 tick 前的快照，
-                //     其余条目的槽位同样已被 ignite 清空，写回会把它们一起复活。
-                return;
+                if (ExplosionComponent.ignite(context, level)) {
+                    // ⚠️ 消耗由 ignite 完成 —— 它把容器里**所有**活 TNT 槽位写成 EMPTY。
+                    // 所以这里**必须直接结束**，绝不能往下走到写回：
+                    //   · 写回 `stack` 会把刚清掉的槽位用本地栈填回去 ⇒ 「炸了但 TNT 还在」
+                    //     （2026-10-23 真机实录）；
+                    //   · 也不能只 continue 到下一个条目 —— `entries` 是 tick 前的快照，
+                    //     其余条目的槽位同样已被 ignite 清空，写回会把它们一起复活。
+                    return;
+                }
+                // 引爆不了（无可用锚点）⇒ **熄灭**：清零 ignited / fuseTimer，变回未点燃的活 TNT。
+                // 不保留「待爆」态 —— 否则挪到有锚点处会不点自爆（2026-10-28 用户定）。
+                // 熄灭后若所在槽位仍有红石信号，下一 tick 会按正常入口重新点火（引信重头烧）。
+                if (context.getItem(slot).isEmpty()) {
+                    // ignite 的另一条早退路径（计数异常）不会清空槽位；真被清空则说明物品已不在，
+                    // 任何写回都会把它复活 ⇒ 直接结束。
+                    return;
+                }
+                LivingTntData.set(stack, data.withExplosion(ExplosionData.DEFAULT));
+                context.setItem(slot, stack);
+                context.syncSlotToClients(slot, stack);
+                continue;
             }
 
             LivingTntData.set(stack, data.withExplosion(explosion));
