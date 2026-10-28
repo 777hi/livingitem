@@ -17,6 +17,30 @@
 
 ## 2026-10-29
 
+- 🐞 **容器级数据持久层二分：有身份只存 SavedData（活背包形态变换丢活流体）** —— 真机：活精妙背包里的活流体，蹲下拾取（方块→物品）后丢失，放回去也回不来。
+
+  - **根因**：两个形态写**两个地方** —— 方块形态走 `ContainerContext.persist` 默认实现写 **BE 附件**，
+    物品形态走 `ItemFormContainerContext.persist` 写 **SavedData（按 UUID）**。而
+    `ContainerDataMigration.moveOut` 的身份分支假设「数据都在 SavedData」⇒ 只搬 UUID。
+    于是方块形态期间的所有更新都留在附件里、随方块蒸发；变回物品后读到的是**上一次物品形态**的旧值。
+  - **修法（口径：持久层二选一）**：`ContainerContext.persist` 改成 —— **有身份 ⇒ 只写 SavedData**
+    （身份跨形态稳定，数据跟着身份走 ⇒ 形态切换**零搬运**，`ContainerHandoff` 只需搬 UUID）；
+    **无身份 ⇒ 写 BE 附件**（原版箱子等，附件是唯一副本）。流体回填顺序随之改成
+    **SavedData 优先、附件兜底**（否则先读附件 = 把「丢数据」换成「回滚数据」）。
+  - **回填收编（同批）**：回填从「各领域各写一份」上收到
+    `ContainerLivingItemHandler.getOrCreateContainerData`（内存 → SavedData（有身份）→ 宿主附件（无身份）→ 新建）。
+    ⚠️ 这一步是**必须的**，不是顺手重构：`persist` 二分之后，没有回填的领域会变成
+    「写了存档但永远读不回来」——红石账本 / 红电相位正是这种（它们从来只有内存、没有回填），
+    不收编就等于给它们白占存档。流体的 ①② 随之删掉，只留玩家附件那支（玩家容器没有 UUID）。
+  - 影响面：`persist` + 回填都是 fluid / redstone / power 共用的入口 ⇒ 三族一起修好。
+  - **回归测试（3 项，`ContainerPersistRoutingTest`）**：有身份⇒只写 SavedData（附件一次不写）/
+    无身份⇒只写附件（且不产生 SavedData 条目）/ 内存空 + 有身份 ⇒ 从 SavedData 回填。
+    测试 1134→1137。
+  - **已知边界（不做自动回收）**：身份随物品走，物品被**销毁**（掉虚空 / 烧掉 / `/clear`）时
+    SavedData 条目会残留；取消活化走 `ContainerUuids.discard` 正常清理。与精妙背包同构
+    （它也只有合成 / 去重 / 解绑三个清理点，没有任何自动 GC）。停服打一行
+    `[容器数据] SavedData 条目=N` 供观察，不做扫描回收（判错即误删玩家数据）。
+
 - 🐞 **活末影箱路由：同一容器 UUID 只允许一个活形态（刷物品根因）** —— 真机：地上摆放的精妙背包里用活末影箱注册路由，蹲下拾取/再放置反复几次后**物品变多**。
 
   - **根因**：`ContainerHandoff` 只搬容器 UUID，**不清另一形态的路由**。方块↔物品切换会换掉

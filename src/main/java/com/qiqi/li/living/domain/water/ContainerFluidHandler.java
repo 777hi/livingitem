@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 import javax.annotation.Nullable;
 
@@ -21,7 +20,6 @@ import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 
 import com.qiqi.li.living.components.LivingComponents;
 import com.qiqi.li.living.container.ContainerContext;
-import com.qiqi.li.living.container.ContainerDataSavedData;
 import com.qiqi.li.living.container.ContainerLivingItemHandler;
 import com.qiqi.li.living.container.SimpleContainerContext;
 import com.qiqi.li.living.container.TickableContainerContext;
@@ -99,28 +97,8 @@ public final class ContainerFluidHandler implements IFluidHandler {
         ContainerFluidData existing = ctx.peekContainerData(ContainerFluidData.KEY);
         if (existing != null) return existing;
 
-        // ① 持久宿主回填（BE / 实体附件同路径，2026-10-21 统一到 getDataHosts）：
-        // 船的流体在实体附件上，区块卸载再回来靠它续接（NeoForge 附件持久化）。
-        for (var host : ctx.getDataHosts()) {
-            ContainerFluidData persisted = host.getData(WaterComponents.CONTAINER_FLUID_DATA);
-            if (persisted != null && persisted != ContainerFluidData.EMPTY && !persisted.isEmpty()) {
-                ContainerLivingItemHandler.putContainerData(ctx, ContainerFluidData.KEY, persisted);
-                return persisted;
-            }
-        }
-
-        // ② SavedData 回填（2026-10-22，物品形态容器 / 活背包）：
-        // 这类容器**没有 IAttachmentHolder**（物品栈不是附件宿主）⇒ 数据在 SavedData
-        // 按容器 UUID 索引。必须排在新建之前，否则打开 GUI 永远是空的。
-        // ⚠️ 空数据不返回（EMPTY 序列化为空表，回来也没意义 ⇒ 落到新建，省一次 put）。
-        UUID containerUuid = ctx.getContainerUuid();
-        if (containerUuid != null) {
-            ContainerFluidData saved = ContainerDataSavedData.get().get(containerUuid, ContainerFluidData.KEY);
-            if (saved != null && !saved.isEmpty()) {
-                ContainerLivingItemHandler.putContainerData(ctx, ContainerFluidData.KEY, saved);
-                return saved;
-            }
-        }
+        // ①②（SavedData / 宿主附件回填）已收编进 getOrCreateContainerData（2026-10-29）——
+        // 那边按「有身份 → SavedData、无身份 → 附件」统一回答，这里不再各写一份。
 
         // ③ 玩家背包 / 末影箱（B.5 第三项）：无 BE 可挂 ⇒ 从 Player attachment 回填（按容器键）。
         // ⚠️ getData 可能返回 null（测试替身 / 附件未注册），必须判空。

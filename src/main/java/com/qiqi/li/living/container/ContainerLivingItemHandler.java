@@ -309,10 +309,46 @@ public class ContainerLivingItemHandler {
         return e == null ? null : e.store.peek(key);
     }
 
-    /** 泛型访问或创建容器级持久数据。见 {@link #peekContainerData(ContainerContext, ContainerDataKey)}。 */
+    /**
+     * 泛型访问或创建容器级持久数据。见 {@link #peekContainerData(ContainerContext, ContainerDataKey)}。
+     *
+     * <p><b>回填的唯一入口</b>（2026-10-29 收编）：内存 store 命中 ⇒ 直接返回；否则按
+     * 「有身份 → SavedData / 无身份 → 宿主附件」取回，最后才新建。</p>
+     *
+     * <p>⚠️ 为什么回填必须在这里：`persist` 已经二分（有身份只写 SavedData）⇒ 各领域自己写一份
+     * 回填等于「同一个问题两份答案」，而且漏写的领域会表现为「写了存档但永远读不回来」
+     * （红石账本 / 红电相位就是这样：它们从来只有内存，没有回填）。</p>
+     */
     public static <T> T getOrCreateContainerData(ContainerContext ctx, ContainerDataKey<T> key) {
         ContainerEntry e = entry(ctx);
-        return e == null ? key.create() : e.store.getOrCreate(key);
+        if (e == null) return key.create();
+
+        T existing = e.store.peek(key);
+        if (existing != null) return existing;
+
+        // ① 有身份：SavedData 是真身（跨形态稳定，方块↔物品切换零搬运）
+        java.util.UUID uuid = ctx.getContainerUuid();
+        if (uuid != null && key.isSaved()) {
+            T saved = ContainerDataSavedData.get().get(uuid, key);
+            if (saved != null && !key.isEmpty(saved)) {
+                e.store.put(key, saved);
+                return saved;
+            }
+        }
+
+        // ② 无身份：宿主附件是唯一副本（原版箱子 / 实体容器）
+        net.neoforged.neoforge.attachment.AttachmentType<T> att = key.attachment();
+        if (att != null) {
+            for (var host : ctx.getDataHosts()) {
+                T persisted = host.getData(att);
+                if (persisted != null && !key.isEmpty(persisted)) {
+                    e.store.put(key, persisted);
+                    return persisted;
+                }
+            }
+        }
+
+        return e.store.getOrCreate(key);
     }
 
     /**

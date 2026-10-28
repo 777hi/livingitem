@@ -215,6 +215,25 @@ public interface ContainerContext extends SlotInfoProvider, ContainerSync, Conta
      */
     default <T> void persist(ContainerDataKey<T> key, T value) {
         if (!key.isSaved()) return;
+
+        // ── 持久层二选一（2026-10-29 口径）──
+        // 有身份（容器 UUID）⇒ 真身只有一份，按 UUID 存 SavedData。
+        //   理由：身份是<b>跨形态稳定</b>的，方块↔物品切换时只有它跟得过去 ⇒ 数据跟着身份走，
+        //   形态切换零搬运（`ContainerHandoff` 只需搬 UUID，不必搬数据）。
+        //   ⚠️ 2026-10-29 之前这里只写附件，而物品形态写 SavedData ⇒ 方块形态期间的变化
+        //   全留在附件里、随方块蒸发（真机：活背包拾取后活流体丢失）。
+        // 无身份 ⇒ 只能跟方块走，写 BE 附件。
+        java.util.UUID uuid = getContainerUuid();
+        if (uuid != null) {
+            ContainerDataSavedData data = ContainerDataSavedData.get();
+            if (value == null || key.isEmpty(value)) {
+                data.remove(uuid, key);
+            } else {
+                data.put(uuid, key, value);
+            }
+            return;
+        }
+
         net.neoforged.neoforge.attachment.AttachmentType<T> att = key.attachment();
         if (att == null) return;
         for (var host : getDataHosts()) {

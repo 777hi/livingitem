@@ -720,6 +720,15 @@ public class LivingItem {
         // 清理项由各缓存类**自己在静态块**登记（2026-10-12 改，见 StaticCacheRegistry 类注释），
         // 此处只负责统一执行。
         // 🔴 新增 static 缓存 ⇒ 在**该缓存类自己的 `static {}`** 里登记（与 clear() 同文件），不要往这里加。
+        // 容器级数据的落盘规模（2026-10-29 口径：有身份的容器只存 SavedData，不跟区块走）。
+        // 一条日志，用来回答「存档为什么越来越大」——身份随物品走，物品被销毁（非取消活化）
+        // 时条目会残留，与精妙背包同构，我们不做自动回收（判错即误删玩家数据）。
+        try {
+            LOGGER.info("[容器数据] SavedData 条目={}（有身份容器的容器级数据；孤儿靠取消活化清）",
+                com.qiqi.li.living.container.ContainerDataSavedData.get().size());
+        } catch (RuntimeException e) {
+            LOGGER.warn("[容器数据] 统计失败：{}", e.toString());
+        }
         StaticCacheRegistry.runServer(event.getServer());
         LOGGER.info("Cleared living item caches on server stop");
     }

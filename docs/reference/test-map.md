@@ -71,6 +71,7 @@ src/test/java/com/qiqi/li/
 │   ├── ItemFormLiveViewsTest.java             # 物品形态容器的按 UUID 寻址（2026-10-28，活末影箱路由取货）·登记后可按 UUID 取同一活视图 / 未登记或清空后 null（停服清空、背包没在 tick）/ null 输入安全（3 项）
 │   ├── ContainerKeysTest.java                 # 容器键解析唯一入口(2026-10-13)·5 种键形各自归位(背包/末影箱前缀相同必须按后缀分开)/缓存键剥维度前缀/未知形态返回 null 不抛异常/ownerOf 末影箱回归(旧实现抛异常被吞⇒从不发包)/isOwnedByPlayer(null 安全)/positionsOf(大箱两段·维度 id 含下划线取末三段)/维度前缀（7 项）
 │   ├── ContainerRuntimeCacheSlotMappingTest.java  # 读写槽位键对称（2026-10-27 审查 P1，熔炉/酿造台/漏斗域）·update 过 toPhysicalSlot、get 不过 ⇒ 马/驴容器（storageOffset=1）读永远 miss ⇒ 熔炉每 tick 烧 1 燃料零产出、酿造台每 tick 空耗烈焰粉 / get(ctx, logical) 对称重载：带偏移上下文读回自己写的值 / 裸 get(key,3) miss·物理槽 4 命中 / 恒等映射两版等价（3 项）
+│   ├── ContainerPersistRoutingTest.java      # 容器级数据**持久层二分**（2026-10-29）·有身份⇒只写 SavedData（附件一次不写）/ 无身份⇒只写附件 / 回填优先级：内存空 + 有身份 ⇒ 从 SavedData 取回（3 项）
 │   └── ContainerRuntimeCacheLifecycleTest.java # 运行时缓存生命周期(方案A)·物品离开槽位/换物品⇒登记作废·同类持续⇒不作废·drain 取走即空·null 键忽略·整容器作废键==运行时存储键（6 项）
 ├── living/domain/ender/
 │   ├── EnderChannelRegistryDimTest.java        # 活末影箱路由表**维度隔离**（2026-10-27 审查待拍板 #2，2026-10-28 修）·跨维度同坐标同槽位都能注册（去重键含维度，旧实现误判重复 ⇒ 第二条注册不进去）/ 按位置+槽位清理只删指定维度 / 区块卸载不删另一维度同坐标路由 / `validateRoutes` 不误删另一维度同键路由（4 项）
