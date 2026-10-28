@@ -140,6 +140,7 @@ src/test/java/com/qiqi/li/
 │   ├── BonemealHandlerTest.java               # 活骨粉 GUI 交互信任边界（2026-10-27 审查 P3）·创造模式曾连「光标是不是活骨粉」都不验 ⇒ 改包客户端空手刷生长（同域口径=照验免扣）/ 创造+骨粉放行免扣 / 生存扣 1 / 普通骨粉拒绝（活化门槛）（4 项；pin 手法：未成熟植株 forceGrowthTick 不碰 level ⇒ age+1 即通过判据）
 │   ├── CropClassifierTest.java               # 作物分类器·火把花/瓶子草/柱状段回归（10 项）
 │   ├── LivingFarmlandFunctionTest.java      # 输出合并回归·部分合并丢物品守卫（5 项）
+│   ├── LivingFarmlandMoistureTest.java      # 湿润 BFS 与生长冷却门（2026-10-28，审查测试缺口 #4）·水源相邻 4 级→沿耕地每跳 -1（0→9→18 全湿、远处干燥）/ 普通耕地阻断传播 / 冷却门 <200t 不写时间戳 / ≥200t 推进时间戳且概率失败不改 age（4 项；`computeMoisture` 私有 ⇒ 走完整 tick + 假 FluidPresence）
 │   ├── TillablesTest.java                   # 耕作知识表·锄头判定+可耕映射+真值表（8 项）
 │   ├── FertilizeTransferTest.java           # 自动施肥·骨粉→活耕地零空转守卫（6 项）
 │   └── LivingFarmlandPlacementTest.java     # 放置回世界·落点/幼苗/客户端/异常不冒泡+端到端接线（5 项）
