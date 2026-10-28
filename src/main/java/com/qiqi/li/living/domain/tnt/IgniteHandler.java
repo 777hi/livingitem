@@ -31,6 +31,11 @@ public class IgniteHandler implements InteractionHandler {
             return;   // 光标「有但不是活打火石」＝ 拒绝（无论模式）
         }
         if (!player.isCreative()) {
+            // ⚠️ 生存模式光标为空必须拒绝（2026-10-28 补测试发现）：原实现只拦「有但不是打火石」，
+            //    空光标会一路放行 ⇒ 伪造包可空手点燃任意活 TNT（无消耗）。
+            //    创造模式仍放行：创造背包页（ItemPickerMenu）的 carried 是客户端虚拟的，
+            //    服务端读到的空栈代表「客户端声称持有」，属受控的信任客户端。
+            if (carried.isEmpty()) return;
             carried.hurtAndBreak(1, player, EquipmentSlot.MAINHAND);
         }
 
