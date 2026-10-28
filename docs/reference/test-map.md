@@ -86,6 +86,7 @@ src/test/java/com/qiqi/li/
 ├── living/domain/tnt/
 │   ├── ExplosionComponentCountTest.java       # TNT 计数/清空守恒（2026-10-27 审查 P2-1，TODO 挂账 S1 的回归）·int 求和曾回绕成负 ⇒ 早退但物品已清空（TNT 凭空消失零爆炸零日志）/ 两满槽 int 极值 ⇒ long 求和不回绕且统计阶段不消耗 / 清空只清活 TNT（普通 TNT 与非 TNT 保留）/ 无活 TNT ⇒ 计数 0（3 项）
 │   ├── TntRedstoneIgniteTest.java             # 红石信号 → 点燃（2026-10-28，审查测试缺口 #5）·信号 > 0 ⇒ 点燃并写回 / 无信号不点燃（2 项；只钉 TNT 侧分支，传播由 `ContainerRedstoneDataTest` 覆盖）
+│   ├── IgniteCarriedHandlerTest.java          # 光标持 TNT 右键打火石（2026-10-28，缺口 #2 另一半）·创造活 TNT ⇒ 点燃 + 广播 / 创造空光标拒绝 / 创造未活化 TNT 拒绝 / 生存未活化打火石拒绝 / 生存空光标拒绝（5 项；拒绝分支用 `broadcastChanges` 未被调用兜住）
 │   ├── TntIgniteHandlerTest.java              # 打火石点燃交互（2026-10-28，审查测试缺口 #2）·创造空光标信任客户端 / 创造活打火石 / 创造错物品拒绝 / **生存空光标拒绝（抓出「空手点燃」真 bug）** / 生存未活化打火石拒绝（5 项）
 │   ├── LivingTntConsumeTest.java              # 爆炸后**必须消耗**（真机「炸了但 TNT 还在」的回归）·单颗炸完槽位空/多颗一起炸全部消耗（ignite 一次清空，快照写回会复活没轮到的）/掉落物形态炸在原地并消耗/**宿主锚点默认关⇒熄灭（留 ignited/fuse 归零断言）/ 打开⇒炸在宿主并消耗/熄灭后挪进有锚点箱子不自爆**（6 项；⚠️ ServerLevel 替身需反射注入 Level.random 字段，账本用真 ExplosionLedger）
 │   ├── ExplosionParamsTest.java               # 爆炸参数·位图映射可逆/网格外返回-1/affects=区块AABB∩球体/边界回归(中心在半径外但边缘在球内)/球体全覆盖(半径内每方块所在区块必命中)/网格规模（7 项）
