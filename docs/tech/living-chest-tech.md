@@ -115,9 +115,11 @@
 | `LivingChestAccessPacket` | `network/LivingChestAccessPacket.java` | 存取请求包（客户端→服务端） |
 | `ServerPacketHandler` | `network/ServerPacketHandler.java` | 网络请求处理器 |
 | `ServerPlaceRecipeMixin` | `mixin/ServerPlaceRecipeMixin.java` | Mixin：拦截配方书合成，支持从活箱子提取材料 |
-| `RecipeBookComponentMixin` | `mixin/RecipeBookComponentMixin.java` | Mixin：配方书活箱子标签页（客户端） |
+| `RecipeBookComponentMixin` | `mixin/RecipeBookComponentMixin.java` | Mixin：配方书活箱子标签页（客户端，薄委托，逻辑在视图类） |
+| `LivingChestRecipeTab` | `gui/LivingChestRecipeTab.java` | 活箱子标签页视图：标签按钮 / 内容网格 / 分页 / 点击发包（2026-10-29 从 mixin 拆出） |
+| `LivingChestTabSearch` | `util/LivingChestTabSearch.java` | 标签页搜索过滤纯函数（名称 / 拼音 / ID 匹配） |
 | `PinyinHelper` | `util/PinyinHelper.java` | 拼音搜索工具类 |
-| `LivingChestTabState` | `gui/LivingChestTabState.java` | 活箱子标签页激活状态 |
+| `LivingChestTabState` | `util/LivingChestTabState.java` | 活箱子标签页激活状态（跨 mixin 共享的静态开关） |
 
 ---
 
@@ -455,11 +457,11 @@ public static List<ItemStack> collectDeactivationDrops(ItemStack chestStack) {
 
 ### 5.4 活箱子标签页
 
-`RecipeBookComponentMixin` 在配方书 GUI 中添加活箱子标签页：
-- 显示活箱子中所有物品的网格排列
-- 支持拼音搜索（全拼/首字母/混合匹配）
+`RecipeBookComponentMixin`（薄委托）+ `LivingChestRecipeTab`（视图）在配方书 GUI 中添加活箱子标签页：
+- 显示活箱子中所有物品的网格排列（5×4 分页）
+- 支持拼音搜索（全拼/首字母/混合匹配，过滤逻辑在 `LivingChestTabSearch`）
 - 支持翻页浏览
-- 点击物品执行存取操作
+- 点击物品执行存取操作（发包，映射表见 [recipe-book-tech.md](common/recipe-book-tech.md)）
 
 > 标签页的激活态（`LivingChestTabState`）在 `initVisuals` 时被重置为未激活，
 > 即打开配方书始终默认停留在原版标签页（合成/熔炉），这是**有意保持原版行为**。
@@ -571,7 +573,8 @@ new TickContext(context)
 
 **问题**：配方书标签页在翻页时显示的物品列表不刷新。
 
-**修复**：在 `RecipeBookComponentMixin` 中每次翻页时重新读取活箱子物品列表。
+**修复**：每次翻页（实为每帧渲染）时重新读取活箱子物品列表 —— 该逻辑现为
+`LivingChestRecipeTab.renderContents`（2026-10-29 前内联在 `RecipeBookComponentMixin`）。
 
 ---
 

@@ -15,13 +15,6 @@
    [2026-10-29-测试域梳理.md](buffer/2026-10-29-测试域梳理.md)。
    **测试相关的取舍以该文档 §8 为准**（test-map 计数、known-gap、IT 入口、tag 依赖、性能测试）。
 
-## 文档
-
-1. `docs/tech/common/recipe-book-tech.md` **需按现架构重写**（2026-10-03 发现）：
-   全文以**已删除**的 `LivingChestContentsCache`（全局缓存 + `dirty` 脏标记）为前提，
-   现为 `RecipeBookComponentMixin.collectLivingChestItems()` **每帧扫描玩家背包**。
-   已加勘误横幅，**正文未改写** —— 重写前需先完整梳理现实现。
-
 ## 框架演进（2026-10-18 提案，未定案）
 
 1. **遥测客户端推导 / 统一宿主模型 / 协议判据 / per-item 数据纪律** —— 正文
@@ -37,6 +30,17 @@
    **不设专门测试轮**。清单在 [living-beacon-tech.md](tech/living-beacon-tech.md) §6.1
    （19 条）；2026-10-18 当天已通过实测反馈修掉 11 项（见 changelog 2026-10-18 节），
    未勾项 = 游玩中尚未遇到或尚未反馈的。游玩中发现的问题按惯例落 changelog。
+
+## 配方书活箱子标签页 · 游玩实测（2026-10-29 重构收尾挂起）
+
+1. **拆出 mixin 后的游戏内烟测** —— 渲染 / 点击路径单测不可覆盖，重构虽为纯搬移
+   （行为零变化，三处历史怪癖原样保留），仍需过一遍：
+   打开配方书 → 切活箱子标签（默认仍停原版标签页）→ 网格显示与悬浮提示 →
+   搜索（拼音全拼 / 首字母缩写 / 英文 / 空）→ 翻页（页码与首末页禁用态）→
+   左键空手取出一组 / Shift 全部取出入背包 → 右键取半组 / Shift 取 1 →
+   手持物品左键全部存入 / 右键存 1 → 点击原版标签 / 搜索框外的原版区域自动退出 →
+   活箱子物品在合成表显示可制作（材料统计）。
+   架构与约束见 [recipe-book-tech.md](tech/common/recipe-book-tech.md)；发现问题按惯例落 changelog。
 
 ## 性能（2026-10-03 盘点）
 
@@ -63,6 +67,12 @@
 5. **（收益最大）合并两次全槽位遍历** —— `scanAndGroupLivingItems` 与
    `computeContentSignature` 各遍历一遍全部槽位 ⇒ 合并可**省 50% 扫描**。
    详见 [infrastructure-refactoring-plan.md](archive/infrastructure-refactoring-plan.md) §1.7 / §6.3-B。
+
+6. **配方书标签页每帧扫描玩家背包**（2026-10-03 起）——
+   `LivingChestRecipeTab.collectLivingChestItems()`（原 `RecipeBookComponentMixin` 内联）
+   在内容网格渲染帧与材料统计路径各扫一遍背包全部槽位。
+   只在标签激活时才渲染 ⇒ 未开标签零开销；激活时的量级 = 背包 36 槽 × 判活检查。
+   修法（若将来要省）：按内容签名缓存或仅背包变更时重扫。
 
 ## 活流体（流体侧挂起项 —— 原 idea.md 任务队列 2026-10-08 已蒸馏进 tech/archive，本节为现行台账）
 

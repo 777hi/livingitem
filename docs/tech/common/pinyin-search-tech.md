@@ -55,9 +55,10 @@
 ```
 src/main/java/com/qiqi/li/client/
 ├── util/
-│   └── PinyinHelper.java          ← 🔤 拼音转换工具类（新建）
-└── mixin/
-    └── RecipeBookComponentMixin.java ← 🎨 搜索逻辑集成（修改）
+│   ├── PinyinHelper.java          ← 🔤 拼音转换工具类
+│   └── LivingChestTabSearch.java  ← 🎨 搜索过滤纯函数（名称 / 拼音 / ID 匹配）
+└── gui/
+    └── LivingChestRecipeTab.java  ← 活箱子标签页视图（调用上面的过滤；逻辑 2026-10-29 从 mixin 拆出）
 ```
 
 ### **核心组件**
@@ -94,32 +95,26 @@ PINYIN_MAP.put('钻', "zuan");
 INITIALS_MAP.put('钻', "z");
 ```
 
-#### 2️⃣ [RecipeBookComponentMixin.java](src/main/java/com/qiqi/li/client/mixin/RecipeBookComponentMixin.java)
+#### 2️⃣ [LivingChestTabSearch.java](src/main/java/com/qiqi/li/client/util/LivingChestTabSearch.java)
 
-##### **修改点**
-在 `matchesSearchText()` 方法中集成拼音匹配：
+##### **集成点**
+活箱子标签页的搜索过滤（纯函数，2026-10-29 从 `RecipeBookComponentMixin` 拆出）。
+在 `matches()` 中集成拼音匹配：
 
 ```java
-@Unique
-private boolean matchesSearchText(ItemStack stack, String searchText) {
-    // 1. 物品名称 - 使用 PinyinHelper 智能匹配
-    if (hoverName != null) {
-        if (PinyinHelper.isPinyinMatch(name, searchText)) {  // 🆕
-            return true;
-        }
-    }
+public static boolean matches(ItemStack stack, String searchText) {
+    // 1. 物品显示名 - 先直接包含，再走 PinyinHelper 智能匹配
+    String name = stack.getHoverName().getString();
+    if (name.toLowerCase(Locale.ROOT).contains(searchText)) return true;
+    if (PinyinHelper.isPinyinMatch(name, searchText)) return true;
 
-    // 2. 物品 ID - 保持原有逻辑
-    // ...
-
-    // 3. Lore 描述 - 也支持拼音匹配
-    for (Component line : loreLines) {
-        if (PinyinHelper.isPinyinMatch(loreText, searchText)) {  // 🆕
-            return true;
-        }
-    }
+    // 2. 物品注册 ID - 兜底
+    return stack.getItem().toString().toLowerCase(Locale.ROOT).contains(searchText);
 }
 ```
+
+> 早期文档此处示例含 Lore 匹配 —— 现实现（拆出前后均）**没有** Lore 匹配，范围就是
+> 显示名 / 拼音 / 注册 ID 三项。
 
 ---
 
@@ -140,9 +135,8 @@ private boolean matchesSearchText(ItemStack stack, String searchText) {
 - **运行时开销**: 几乎为零（静态初始化）
 
 ### **优化策略**
-1. **缓存机制**: 利用现有的 `filteredContents` 缓存
-2. **变化检测**: 只在搜索词变化时重新过滤
-3. **短路返回**: 找到第一个匹配立即返回
+1. **变化检测**: 搜索词变化时重置到第 0 页（`lastSearchText` 比对；无结果缓存，实时过滤）
+2. **短路返回**: 找到第一个匹配立即返回
 
 ---
 

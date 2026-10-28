@@ -146,7 +146,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1186 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
+**合计测试用例 1194 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -171,6 +171,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-29 | 🔧 **配方书活箱子标签页拆出 mixin** —— `RecipeBookComponentMixin` 1293 行（全项目唯一违反「mixin 薄」惯例者）→ 薄委托 ~200 行 + `LivingChestRecipeTab`（视图：标签/网格/分页/点击发包）+ `LivingChestTabSearch`（纯过滤）；**行为零变化**：懒创建时序 / RETURN 自动退出判据（须 selectedTab!=null）/ 空物品+非空词⇒匹配怪癖均原样保留并钉进测试；顺手重写 2026-10-03 起整体过时的 recipe-book-tech.md（清 TODO 重写欠账）；测试 1186→1194 | `docs/tech/common/recipe-book-tech.md` · `LivingChestRecipeTab` / `LivingChestTabSearchTest` |
 | 2026-10-29 | 🧪 **容器 tick 钩子接缝测试** —— `ContainerTickHooks` 4 项：同类去重 / 两阶段按注册顺序 / ctx+tick 透传 / 默认空实现；补测试快照/恢复入口隔离静态表；测试 1182→1186 | `docs/reference/test-map.md` · `ContainerTickHooksTest` |
 | 2026-10-29 | 🧪 **末影箱访问器接缝测试** —— 直连模式 8 项：tryCreate 只认活末影箱 / 插入改栈 / 模拟不写 / 抽取后回滚回原槽 / 跳过活物品 / isEmpty+isFull / 离线降级 / 路由模式 insert 返回 0 + markTransferred 不登记；顺带修正 javadoc（路由注册在 EnderRouteManager）；测试 1174→1182 | `docs/reference/test-map.md` · `LivingEnderChestAccessorTest` |
 | 2026-10-29 | 🧪 **传输守恒不变量** —— `SlotAccessor.transfer` 7 项：诚实全额/部分 + 谎报部分/全拒 + 空源/满目标 + 300 组固定种子随机；断言源+目标总量守恒、无负数、不超堆叠。测试 1167→1174 | `docs/reference/test-map.md` · `SlotAccessorTransferConservationTest` |
@@ -180,7 +181,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-10-29 | 🐞 **容器级数据持久层二分：有身份只存 SavedData** —— 活背包拾取后活流体丢失：两个形态写两个地方（方块→BE 附件 / 物品→SavedData），而 `moveOut` 只搬 UUID ⇒ 方块形态期间的变化随方块蒸发。修：`persist` 有身份→SavedData（数据跟身份走，形态切换零搬运）、无身份→附件；流体回填改 SavedData 优先。已知边界：物品被销毁时条目残留，不做自动回收（同精妙） | `docs/archive/changelog.md` 2026-10-29 · `living/container/ContainerContext.java` |
 | 2026-10-29 | 🐞 **活末影箱路由：同一容器 UUID 只允许一个活形态** —— 拾取/放置反复几次后**刷物品**：`ContainerHandoff` 只搬 UUID 不清旧形态的路由，而 pos/键会随形态换种类 ⇒ `validateRoutes` 看不见旧条目、旧条目又能解析 ⇒ `cuuid_` 与 `BlockPos` 两条抽同一份内容的两种视图。修：条目录 `sourceContainerUuid` + `uuidIndex` 补捞 + 「同 UUID 异形态 ⇒ 丢」，兼容「容器形态」而非某个背包。测试 1126→1128 | `docs/tech/living-ender-chest-tech.md` §0 规则 11 |
 | 2026-10-29 | 🐞 **活工具动画同病三处换时钟源** —— 全客户端时间源审计后命中 `LivingToolModelRenderer` 三处：挖掘转圈（`(gameTime+partialTick)` long+float ⇒ 老存档 partialTick 被吸收退化 20Hz 频闪 + 每秒同步覆盖相位跳）、交互/攻击脉冲（客户端钟减服务端动作戳，6t 窗口跳 17~33%）、飞回渐隐。统一换 `localAnimTick()` 本地连续钟 + 脉冲首见冻结起点；信标光束（原版 long 域取模）/酿造白幕（差值）/活按钮审计无恙。测试 1126→1132 | `docs/tech/living-tool-tech.md` · `docs/reference/test-map.md` |
-| 2026-10-29 | 🐞 **活末影箱路由：源解析不到 ⇒ 条目丢弃** —— 摆放态精妙背包里注册的路由，拾取后仍指向原位置（方块↔物品切换**换掉了身份键的种类** ⇒ `validateRoutes` 查不到、新注册也顶不掉）；且失败分支 `reoffer` 让死条目永远留在队里、每轮空转（只有一条路由时频道彻底不出货）。**口径**：路由只有「注册 / 不注册」两态，没有中间态（源不在跑就不产出，恢复跑时漏斗会再推一次 ⇒ 自己重新注册）。测试 1125→1126 | `docs/tech/living-ender-chest-tech.md` §0 规则 10 |
+
 ## 提交前必跑（2026-10-20 定）
 
 ```bash

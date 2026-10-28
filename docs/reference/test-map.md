@@ -35,6 +35,8 @@ src/test/java/com/qiqi/li/
 │   ├── ProgressBarDecoratorTest.java          # 通用进度条·守卫(null/比例≤0 不画)+横竖几何(黑底/彩条·原版 Math.round)+燃料刻度(1 次=1px)+越界 clamp
 │   ├── LivingItemTooltipTest.java             # 活物品段标题恒在（2026-10-07 定稿）·零内容行仍输出标题/不适用功能同样保留/真实活桶只有标题无内容行/有内容行则空行+标题+行/多功能标题只一次且行序保持
 │   └── BeamColorSectionsTest.java             # 光束颜色分段（照原版扫描算法）·无玻璃单段白/玻璃紧邻纯色/隔空气白段先长高/同色累计/异色取平均/不透明截断/自定义默认色
+├── client/util/
+│   └── LivingChestTabSearchTest.java          # 活箱子标签页搜索过滤纯函数·空搜索词原样返回(不清空栈)/非空词剔除空栈不改入参/中文名直配/拼音(全拼·首字母·部分)/英文名大小写/注册ID兜底/空物品+非空词⇒匹配(原守卫分支语义·实际路径不可达,钉住防漂)
 ├── living/api/
 │   ├── ComponentOwnershipTest.java            # DataComponent 归属守卫·每组件必有主/不可重复归属/自声明会被清除/信标配置取消活化即清
 │   ├── ActivationHookTest.java                # 活化时机钩子守卫·派发参数原样送达/顺序不变量(钩子内仍带 IS_LIVING)/未认领物品不派发/数据安全否决/箱子无玩家拒绝且内容保住/末影箱不绑定且照常解绑/owner 只由活工具钩子写

@@ -17,6 +17,21 @@
 
 ## 2026-10-29
 
+- 🔧 **配方书活箱子标签页拆出 mixin（行为零变化重构）** —— `RecipeBookComponentMixin`
+  1293 行，全项目唯一违反「mixin 薄、逻辑放普通类」惯例的文件（对照先例：
+  `ContainerFluidOverlay` 2026-10-19 从 `AbstractContainerScreenMixin` 抽出）。
+  拆为三层：mixin 薄委托（@Shadow + 7 个注入点，~200 行）→
+  `client/gui/LivingChestRecipeTab`（有状态视图：标签按钮 / 内容网格 / 分页 / 点击发包）→
+  `client/util/LivingChestTabSearch`（纯函数过滤，配 `PinyinHelper`）。
+  行为零变化的三处刻意保留：①视图懒创建时序（首次 `initVisuals` 才建，创建前注入点早退）；
+  ②RETURN 自动退出须 `selectedTab != null` 的历史判据；③「空物品 + 非空搜索词 ⇒ 匹配」
+  的原守卫分支怪癖（实际路径由 `filter` 先剔空栈，不可达）—— 三者均由测试/文档钉住。
+  新增 `LivingChestTabSearchTest` 8 项（中英文名 / 拼音全拼·首字母·部分 / ID 兜底 /
+  空词原样返回 / 空栈剔除）。同日顺手重写 `docs/tech/common/recipe-book-tech.md`
+  （2026-10-03 起整体过时、描述已删除的 `LivingChestContentsCache` / `@Redirect`，
+  TODO 重写欠账清账；「每帧扫描背包」正式登记进 TODO 性能节）。
+  测试 1186→1194。
+
 - 🐞 **活箱子能力面收口：插入余量复制 + 16KB 估算门失效** —— `LivingChestItemHandler.insertItem`
   把副本交给整库插入、却用原栈算余量 ⇒ 箱子收一份、调用方拿回一份（复制）；能力面又只走
   64B/槽估算 ⇒ 27 槽永远碰不到 16KB。修：余量从副本读；两参字节门改用 `RegistryAccess.EMPTY`
