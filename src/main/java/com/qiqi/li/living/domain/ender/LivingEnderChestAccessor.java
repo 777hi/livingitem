@@ -49,7 +49,8 @@ import java.util.UUID;
  * <h3>路由模式（公共频道 / 专属频道）</h3>
  * 活末影箱不存储任何物品，只是一个路由器：
  * <ul>
- *   <li><strong>insert（Push）</strong>：不实际存储物品，只注册路由条目到全局路由表</li>
+ *   <li><strong>insert（Push）</strong>：本 accessor <b>不注册路由</b>（路由模式返回 0）；
+ *       条目由 {@link EnderRouteManager} 在漏斗决策时注册。只有直连模式的 insert 才真正写玩家末影箱。</li>
  *   <li><strong>extract（Pull）</strong>：查路由表 → 跳转到源容器 → 提取物品 → 返回</li>
  * </ul>
  *

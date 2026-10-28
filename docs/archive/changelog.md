@@ -39,6 +39,11 @@
   诚实全额/部分 + 谎报部分/全拒 + 空源/满目标 + 300 组固定种子随机；
   断言源+目标总量守恒、无负数、不超堆叠。测试 1167→1174。
 
+- 🧪 **末影箱访问器接缝测试（LivingEnderChestAccessorTest，8 项）** ——
+  直连模式插入/模拟/抽取后回滚/活物品隔离/isEmpty+isFull/离线降级；
+  路由模式 insert 返回 0 + markTransferred 不登记。顺带修正类 javadoc：
+  路由注册在 EnderRouteManager，不在 accessor。测试 1174→1182。
+
 - 🐞 **容器级数据持久层二分：有身份只存 SavedData（活背包形态变换丢活流体）** —— 真机：活精妙背包里的活流体，蹲下拾取（方块→物品）后丢失，放回去也回不来。
 
   - **根因**：两个形态写**两个地方** —— 方块形态走 `ContainerContext.persist` 默认实现写 **BE 附件**，
