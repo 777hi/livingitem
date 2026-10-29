@@ -17,6 +17,19 @@
 
 ## 2026-10-30
 
+- 🛡️ **服务端 tick 异常隔离：单个容器失败不再拖垮整 tick（R-01）** ——
+  此前任一容器抛 `RuntimeException` 会抛穿整个 `ServerTickEvent`：同 tick 的尾部同步 /
+  爆炸账本 / 末影 flush 全被跳过，实体容器能力缺失还会每 tick 崩一次。
+  修：`ContainerLivingItemHandler.processIsolated` 把隔离边界定在**一个容器上下文** ——
+  玩家背包 / 末影箱 / 方块容器 / 实体容器 / 掉落物五条路径全部走它；方块路径的能力查询与
+  上下文构建失败在 `processChunkContainers` 按「维度|坐标」接住并保留区块（无法判断它是不是
+  容器，不能误踢）。只接 `RuntimeException`，`Error`（OOM / 栈溢出）照常抛；实体容器缺能力
+  （I-C7）仍抛，由隔离层按实体类型限频。
+  新增 `FailureThrottle`：首次 ERROR + 完整栈；同 key 60s 内只计数；每 5 分钟汇总
+  「仍失败 key 数 + 抑制次数」；最多 256 个 key（LRU 淘汰）。排查期
+  `-Dliving_item.debug.isolation=false` 关闭隔离。补 8 项测试（限频 5 + 隔离 3）。
+  测试 1219→1227。
+
 - 🔧 **质量门禁上 CI + 修 Windows 崩溃（R-05）** —— CI 此前只跑 `./gradlew build`，
   四个 Python 门禁（`check_layers` / `check_mixins` / `check_container_keys` / `doc_check`）
   只在开发机的 `.git/hooks` 生效，CI 绿 ≠ 门禁绿。另外 `check_container_keys.py` 在

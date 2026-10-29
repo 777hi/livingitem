@@ -83,7 +83,8 @@ src/test/java/com/qiqi/li/
 │   ├── ContainerRuntimeCacheSlotMappingTest.java  # 读写槽位键对称（2026-10-27 审查 P1，熔炉/酿造台/漏斗域）·update 过 toPhysicalSlot、get 不过 ⇒ 马/驴容器（storageOffset=1）读永远 miss ⇒ 熔炉每 tick 烧 1 燃料零产出、酿造台每 tick 空耗烈焰粉 / get(ctx, logical) 对称重载：带偏移上下文读回自己写的值 / 裸 get(key,3) miss·物理槽 4 命中 / 恒等映射两版等价
 │   ├── ContainerPersistRoutingTest.java      # 容器级数据**持久层二分**（2026-10-29）·有身份⇒只写 SavedData（附件一次不写）/ 无身份⇒只写附件 / 回填优先级：内存空 + 有身份 ⇒ 从 SavedData 取回
 │   ├── ContainerRuntimeCacheLifecycleTest.java # 运行时缓存生命周期(方案A)·物品离开槽位/换物品⇒登记作废·同类持续⇒不作废·drain 取走即空·null 键忽略·整容器作废键==运行时存储键
-│   └── ContainerTickHooksTest.java            # tick 钩子注册表（2026-10-29）·同类去重 / 两阶段按注册顺序 / ctx+tick 透传 / 默认空实现
+│   ├── ContainerTickHooksTest.java            # tick 钩子注册表（2026-10-29）·同类去重 / 两阶段按注册顺序 / ctx+tick 透传 / 默认空实现
+│   └── ContainerTickIsolationTest.java        # tick 异常隔离（2026-10-30，R-01）·RuntimeException 不向外抛且可重复调用 / 取 key 本身抛异常仍隔离 / Error 不被吞
 ├── living/domain/ender/
 │   ├── EnderChannelRegistryDimTest.java        # 活末影箱路由表**维度隔离**（2026-10-27 审查待拍板 #2，2026-10-28 修）·跨维度同坐标同槽位都能注册（去重键含维度，旧实现误判重复 ⇒ 第二条注册不进去）/ 按位置+槽位清理只删指定维度 / 区块卸载不删另一维度同坐标路由 / `validateRoutes` 不误删另一维度同键路由
 │   ├── EnderRouteExtractTest.java              # 路由**端到端提取**（2026-10-28 链路回归；2026-10-29 口径改为「源解析不到 ⇒ 条目丢弃」）·方块容器按位置取能力并扣源 / 玩家背包按 UUID 找玩家 / **物品形态按容器 UUID 取活视图（新能力）** / 活视图未登记 ⇒ 不取且**条目丢弃**（路由只有注册/不注册两态）/ 方块被搬走 ⇒ 丢弃且频道清空 / **物品形态源 rollback 回活视图（持有提取时 handler，活视图清掉也能回滚）**
@@ -210,7 +211,8 @@ src/test/java/com/qiqi/li/
 │   ├── SlotAccessorTransferConservationTest.java # 传输守恒不变量（2026-10-29）·诚实全额/部分 + 谎报部分/全拒 + 空源/满目标 + 300 组固定种子随机；断言源+目标总量守恒、无负数、不超堆叠
 │   └── PlainSlotAccessorTest.java             # 普通槽回滚契约（2026-10-29）·空槽放回 / 同类合并 / 异物品或满槽只报日志，不写其它槽
 ├── living/util/
-│   └── BroadcastDedupTest.java                # 定向广播去重表的跨维度合并（2026-10-23 定，10-26 抽成共享工具）·**其它维度玩家的记录必须保留**（逐维度 flush 不能互清，旧写法每玩家每 tick 重发一包）/离线玩家淘汰/本维度新记录覆盖旧值（四个同步器共用一份实现，故只留这一份测试）
+│   ├── BroadcastDedupTest.java                # 定向广播去重表的跨维度合并（2026-10-23 定，10-26 抽成共享工具）·**其它维度玩家的记录必须保留**（逐维度 flush 不能互清，旧写法每玩家每 tick 重发一包）/离线玩家淘汰/本维度新记录覆盖旧值（四个同步器共用一份实现，故只留这一份测试）
+│   └── FailureThrottleTest.java               # tick 异常限频报告（2026-10-30，R-01）·同 key 窗口内只记一次其余计数 / 不同 key 各记一次 / 超窗口再报并重置计数 / key 上限 LRU 淘汰 / 汇总窗口推进
 └── network/
     ├── ContainerMenuInfoPacketTest.java         # 菜单信息载荷·全形态/来源codec/状态独立/request关联/服务端限频/错菜单拒绝/实际回包/退出清理/几何有效性
     ├── GuiInteractionPacketTest.java          # 目标槽判据·空槽可解析（活桶汲/倒包的回归守卫）/活物品可解析/非活物品不可解析

@@ -15,9 +15,11 @@ import java.util.concurrent.ConcurrentHashMap;
 import com.qiqi.li.living.api.ContainerDataLifecycle;
 import com.qiqi.li.living.api.HasContainerData;
 import com.qiqi.li.living.util.DoubleChestPositions;
+import com.qiqi.li.living.util.FailureThrottle;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.Container;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.PlayerEnderChestContainer;
@@ -51,6 +53,10 @@ import com.qiqi.li.living.util.StaticCacheRegistry;
  */
 public class ContainerLivingItemHandler {
     public static final Logger LOGGER = LogUtils.getLogger();
+
+    /** 排查开关：{@code -Dliving_item.debug.isolation=false} 让异常直接抛出（默认隔离）。 */
+    private static final boolean ISOLATION_ENABLED =
+        !"false".equalsIgnoreCase(System.getProperty("living_item.debug.isolation", "true"));
 
     /**
      * 单一容器数据条目 —— 合并原 6 张同键 Map（流体 / 红石 / 电力 / 修订计数 /
@@ -455,7 +461,7 @@ public class ContainerLivingItemHandler {
         IItemHandler handler = inventory.player.getCapability(Capabilities.ItemHandler.ENTITY);
         if (handler == null) return;
         TickableContainerContext context = buildContext(handler, inventory, level);
-        processContext(context, level);
+        processIsolated(context, level);
 
         processEnderChest(inventory.player, level);
     }
@@ -477,7 +483,7 @@ public class ContainerLivingItemHandler {
 
         IItemHandler handler = new InvWrapper(enderChest);
         TickableContainerContext context = new EnderChestContainerContext(handler, player, level);
-        processContext(context, level);
+        processIsolated(context, level);
     }
 
     /**
@@ -490,6 +496,39 @@ public class ContainerLivingItemHandler {
      */
     public static TickableContainerContext buildContext(IItemHandler handler, Inventory inventory, Level level) {
         return new SimpleContainerContext(handler, inventory, new ArrayList<>(), new ArrayList<>(), level);
+    }
+
+    /**
+     * 隔离执行单个容器上下文：{@link RuntimeException} 记一次并继续，{@link Error} 照常抛出。
+     *
+     * <p>边界是「一个容器」—— 同区块的其它容器、同一 tick 的收尾逻辑（同步 / 爆炸账本 /
+     * 末影 flush）都不受牵连。排查期可用 {@code -Dliving_item.debug.isolation=false}
+     * 关闭隔离，让异常直接暴露。</p>
+     */
+    public static void processIsolated(TickableContainerContext context, Level level) {
+        if (!ISOLATION_ENABLED) {
+            processContext(context, level);
+            return;
+        }
+        try {
+            processContext(context, level);
+        } catch (RuntimeException e) {
+            FailureThrottle.report(contextKey(context), e);
+        }
+    }
+
+    /** 隔离层的日志键：容器键 → 实体 UUID → 类型名；取键失败本身不能再炸 tick。 */
+    private static String contextKey(TickableContainerContext context) {
+        try {
+            String key = context.getContainerKey();
+            if (key != null && !key.isBlank()) return key;
+            Entity entity = context.getEntity();
+            if (entity != null) return "entity_" + entity.getUUID();
+            return "context_" + context.getClass().getSimpleName();
+        } catch (RuntimeException ignored) {
+            // 身份读取失败：退化为类型名，日志仍能指出是哪一类容器
+            return "context_" + context.getClass().getSimpleName();
+        }
     }
 
     /**
@@ -728,7 +767,7 @@ public class ContainerLivingItemHandler {
         if (context == null) return false;
         if (processedKeys != null && !processedKeys.add(context.getContainerKey())) return false;
 
-        processContext(context, level);
+        processIsolated(context, level);
         return true;
     }
 

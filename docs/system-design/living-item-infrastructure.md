@@ -334,6 +334,25 @@ ServerTickEvent.Pre
 
 这种设计避免了事件丢失的风险，同时通过 `ContainerChunkCache` 将扫描范围从"所有区块"缩小到"有容器的区块"。
 
+### 3.1.1 异常隔离（2026-10-30，R-01）
+
+单个容器抛 `RuntimeException` 时，**跳过它、记录一次、继续其余容器与收尾**（尾部同步 /
+爆炸账本 / 末影 flush 不再被一票否决）。隔离边界是**一个容器上下文**：
+
+- 玩家背包 + 末影箱：`processContainer` / `processEnderChest` 内部各自 `processIsolated`
+  （键 `player_<uuid>`）；
+- 方块容器：`processContainerAt` → `processIsolated`；能力查询 / 上下文构建失败在
+  `processChunkContainers` 按「维度|坐标」接住，并**保留区块**（无法判断它是不是容器，
+  不能误踢）；
+- 实体 / 掉落物容器：`processEntityContainers` 两条分支分别隔离（键 `entity_<uuid>`）。
+
+**只接 `RuntimeException`** —— `Error`（OOM / 栈溢出）照常抛。实体容器缺能力（I-C7）仍然抛，
+由隔离层接住并按实体类型限频，不静默。
+
+**日志口径**（`FailureThrottle`）：首次 ERROR + 完整栈；同 key 60s 内只计数；每 5 分钟汇总
+「仍失败 key 数 + 抑制次数」；最多跟踪 256 个 key（LRU 淘汰）。排查期用
+`-Dliving_item.debug.isolation=false` 关闭隔离，让异常直接暴露。
+
 ### 3.2 ContainerChunkCache — 容器区块缓存
 
 ContainerChunkCache.java 维护"包含容器方块实体的区块"列表，避免每 tick 全量扫描所有区块。

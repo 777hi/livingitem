@@ -55,6 +55,7 @@ import net.minecraft.world.Container;
 import net.minecraft.core.BlockPos;
 import com.qiqi.li.living.container.ContainerContexts;
 import com.qiqi.li.living.util.DoubleChestPositions;
+import com.qiqi.li.living.util.FailureThrottle;
 import com.qiqi.li.network.LivingItemRuntimeSync;
 import com.qiqi.li.living.container.ContainerChunkCache;
 import com.qiqi.li.living.container.ContainerLivingItemHandler;
@@ -337,7 +338,11 @@ public class LivingItem {
         com.qiqi.li.living.domain.tools.LivingToolHostSync.beginTick();
 
         for (var player : server.getPlayerList().getPlayers()) {
-            ContainerLivingItemHandler.processContainer(player.getInventory(), player.level());
+            try {
+                ContainerLivingItemHandler.processContainer(player.getInventory(), player.level());
+            } catch (RuntimeException e) {
+                FailureThrottle.report("player_" + player.getUUID(), e);
+            }
         }
 
         reusableHandlerMap.clear();
@@ -412,13 +417,18 @@ public class LivingItem {
         // ⭐ 掉落物与实体容器**合并为一次遍历**（2026-10-21）：getAllEntities() 是
         // O(实体数) 的浅扫，跑两遍是纯浪费。白名单判据都是 instanceof 短路。
         for (var entity : level.getAllEntities()) {
-            if (entity instanceof ItemEntity itemEntity
-                    && LivingItemManager.supportsDroppedItem(itemEntity.getItem())) {
-                ContainerLivingItemHandler.processContext(
-                    new ItemEntityContainerContext(itemEntity, level), level);
-            } else if (isContainerEntity(entity)) {
-                ContainerLivingItemHandler.processContext(
-                    new EntityContainerContext(entity, level), level);
+            try {
+                if (entity instanceof ItemEntity itemEntity
+                        && LivingItemManager.supportsDroppedItem(itemEntity.getItem())) {
+                    ContainerLivingItemHandler.processIsolated(
+                        new ItemEntityContainerContext(itemEntity, level), level);
+                } else if (isContainerEntity(entity)) {
+                    ContainerLivingItemHandler.processIsolated(
+                        new EntityContainerContext(entity, level), level);
+                }
+            } catch (RuntimeException e) {
+                // 构造上下文就失败（典型是白名单与能力注册面不一致）⇒ 按实体类型限频
+                FailureThrottle.report("entity_" + entity.getType(), e);
             }
         }
     }
@@ -656,19 +666,26 @@ public class LivingItem {
         for (var be : new ArrayList<>(chunk.getBlockEntities().values())) {
             var pos = be.getBlockPos();
 
-            if (be instanceof RandomizableContainer rc && rc.getLootTable() != null) {
+            try {
+                if (be instanceof RandomizableContainer rc && rc.getLootTable() != null) {
+                    hasContainer = true;
+                    continue;
+                }
+
+                IItemHandler handler = level.getCapability(
+                    Capabilities.ItemHandler.BLOCK, pos, null);
+                if (handler == null) continue;
+
                 hasContainer = true;
-                continue;
+                ContainerLivingItemHandler.processContainerAt(
+                    level, pos, handler, reusableHandlerMap, reusableKeySet);
+                processed++;
+            } catch (RuntimeException e) {
+                // 能力查询 / 上下文构建失败时无法判断它是不是容器 —— 保留区块，避免误踢
+                hasContainer = true;
+                FailureThrottle.report(
+                    level.dimension().location() + "|" + pos.toShortString(), e);
             }
-
-            IItemHandler handler = level.getCapability(
-                Capabilities.ItemHandler.BLOCK, pos, null);
-            if (handler == null) continue;
-
-            hasContainer = true;
-            ContainerLivingItemHandler.processContainerAt(
-                level, pos, handler, reusableHandlerMap, reusableKeySet);
-            processed++;
         }
 
         return hasContainer ? processed : -1;
