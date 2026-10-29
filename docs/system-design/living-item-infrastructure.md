@@ -452,6 +452,8 @@ tick N:
 
 **优化**（2026-08-19）：遍历世界容器时跳过未打开的战利品容器（`RandomizableContainer` 且 `lootTable != null`），避免 `getItem()` 内部 `unpackLootTable()` 触发战利品表生成。战利品表（如 `minecraft:chests/shipwreck_map`）中的 `ExplorationMapFunction` 搜索结构，在未探索区域耗时极高。
 
+**保留**（2026-10-30，R-04）：跳过处理时必须同时把区块判为「有容器」—— 否则区块被移出处理缓存，而开箱（`lootTable` 置 null）不触发重扫，之后放入的活物品永不 tick。代价是纯战利品箱子区块常驻缓存，每 tick 对每个战利品 BE 做一次 `getLootTable()` 检查（不读槽位、不生成战利品）。
+
 ### 3.2.1 强制加载入口清单（2026-09-18 全量排查）
 
 **判据**：`level.getBlockState(pos)` / `level.getBlockEntity(pos)` /

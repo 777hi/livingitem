@@ -7,6 +7,7 @@ import com.qiqi.li.living.components.LivingComponents;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.RandomizableContainer;
+import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.animal.horse.AbstractChestedHorse;
 import net.minecraft.world.entity.item.ItemEntity;
@@ -610,25 +611,12 @@ public class LivingItem {
                 continue;
             }
 
-            boolean hasContainer = false;
-            for (var be : new java.util.ArrayList<>(chunk.getBlockEntities().values())) {
-                var pos = be.getBlockPos();
-
-                if (be instanceof RandomizableContainer rc && rc.getLootTable() != null) {
-                    continue;
-                }
-
-                IItemHandler handler = level.getCapability(
-                    Capabilities.ItemHandler.BLOCK, pos, null);
-                if (handler == null) continue;
-
-                hasContainer = true;
-                ContainerLivingItemHandler.processContainerAt(
-                    level, pos, handler, reusableHandlerMap, reusableKeySet);
-                processedCount++;
-            }
-            if (!hasContainer) {
+            int chunkProcessed = processChunkContainers(
+                level, chunk, reusableHandlerMap, reusableKeySet);
+            if (chunkProcessed < 0) {
                 toRemove.add(chunkPos);
+            } else {
+                processedCount += chunkProcessed;
             }
         }
 
@@ -646,6 +634,44 @@ public class LivingItem {
             ModLog.PERF.debug("processLevelContainers dim={} chunks={} containers={} elapsed={}ms removed={}",
                 level.dimension(), chunkSet.size(), processedCount, elapsedMs, toRemove.size());
         }
+    }
+
+    /**
+     * 处理一个区块内的所有方块实体。
+     *
+     * <p>未开箱的战利品容器<b>不处理</b>（读槽位会触发战利品表生成，战利品表里的
+     * 结构搜索在未探索区域极慢），但它是容器 ⇒ 区块必须保留：开箱后 {@code lootTable}
+     * 变 null，下一 tick 自然按普通容器处理。若这里不置 {@code hasContainer}，区块会被
+     * 移出缓存，而开箱不触发重扫 ⇒ 之后放入的活物品永不 tick。</p>
+     *
+     * @return {@code -1} = 区块内没有容器（调用方应移出缓存）；否则为实际处理的容器数
+     *         （0 = 只有未开箱的战利品容器 —— 不处理但保留区块）
+     */
+    static int processChunkContainers(ServerLevel level, LevelChunk chunk,
+                                      IdentityHashMap<IItemHandler, Boolean> reusableHandlerMap,
+                                      Set<String> reusableKeySet) {
+        boolean hasContainer = false;
+        int processed = 0;
+
+        for (var be : new ArrayList<>(chunk.getBlockEntities().values())) {
+            var pos = be.getBlockPos();
+
+            if (be instanceof RandomizableContainer rc && rc.getLootTable() != null) {
+                hasContainer = true;
+                continue;
+            }
+
+            IItemHandler handler = level.getCapability(
+                Capabilities.ItemHandler.BLOCK, pos, null);
+            if (handler == null) continue;
+
+            hasContainer = true;
+            ContainerLivingItemHandler.processContainerAt(
+                level, pos, handler, reusableHandlerMap, reusableKeySet);
+            processed++;
+        }
+
+        return hasContainer ? processed : -1;
     }
 
     private void onRegisterPayloadHandler(RegisterPayloadHandlersEvent event) {

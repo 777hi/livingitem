@@ -17,6 +17,7 @@
 
 ```
 src/test/java/com/qiqi/li/
+├── LivingItemChunkContainerScanTest.java     # R-04 战利品容器保留区块·未开箱不处理不查能力但返回 0（保留）/开箱（lootTable=null）回到普通能力路径（2026-10-30）
 ├── LivingItemRuntimeContainerPositionsTest.java  # 运行时遥测发包「容器键→位置」反查·非 Container BE(精妙背包/ProjectE)返回位置不抛异常(I-C5 翻转)/原版 Container BE/无 BE 返回 null + 缓存键反查·前缀定向该维度且不越维度找补/未知维度/裸键扫描兜底/背包坏键安全跳过/dimPrefixOf + 实体容器键→实时位置/实体不存在→空（2026-10-21）
 ├── testutil/
 │   └── FakeContainerContext.java              # ContainerContext 测试替身（内存数组实现）

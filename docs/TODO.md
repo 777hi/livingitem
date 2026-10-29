@@ -47,16 +47,14 @@
 > 前提：设计目标是**大型整合包跑图** —— 容器数量按**上万**估算。
 > 「每 tick 每单位一次分配」这类开销在 100 容器时无所谓，在 10000 容器时会累积成主要开销。
 
-1. ⭐ **战利品箱子「半忽略」** ——
-   发现阶段（`ContainerChunkCache.scanChunkForContainers`）**不检查战利品表**，
-   处理阶段（`LivingItem.processLevelContainers`）才检查并跳过。
-   后果 1：纯战利品箱子区块会经历一次「进缓存 → 全 BE 能力扫描 → 移出」的往返
-   （处理阶段那个循环**没有 break**，要把所有 BlockEntity 查一遍 capability）；
-   后果 2（bug，R-04）：被跳过的箱子没有置 `hasContainer` ⇒ 区块被移出缓存，
-   开箱（`getLootTable()` 变 null）不触发重扫 ⇒ 之后放入的活物品永不 tick。
-   ⚠️ 不能靠「发现阶段加同一行检查」修：那样区块永远不进缓存，开箱后更收不回来。
-   正确修法：处理阶段把「未开箱的战利品容器」视为 `hasContainer = true`（保留区块），
-   开箱后自然按普通容器处理。见 [整改计划](buffer/2026-10-29-全项目审查整改计划.md) R-04。
+1. ~~**战利品箱子「半忽略」**~~ ✅ 已修 2026-10-30（R-04）——
+   发现阶段（`ContainerChunkCache.scanChunkForContainers`）不检查战利品表，
+   处理阶段（`LivingItem.processChunkContainers`）才检查。
+   现行行为：未开箱的战利品容器**不处理但保留区块**（`hasContainer = true`），
+   开箱后 `getLootTable()` 变 null ⇒ 下一 tick 自然按普通容器处理。
+   代价：纯战利品箱子区块常驻缓存，每 tick 每个战利品 BE 做一次 `getLootTable()` 检查。
+   ⚠️ 不能改回「发现阶段加同一行检查」：那样区块永远不进缓存，开箱后更收不回来。
+   剩余可选优化：开箱触发重扫（需新机制，未定案）。
 
 2. **`getProcessableChunks` 每 tick 新建 Set**（大小 = 缓存区块数）——
    10000 区块时每 tick 一个万级 `ObjectOpenHashSet`。修法：双缓冲或复用。

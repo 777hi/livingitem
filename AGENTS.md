@@ -146,7 +146,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1217 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
+**合计测试用例 1219 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -171,6 +171,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-30 | 🐞 **战利品箱子区块被移出缓存 → 放入的活物品永不 tick（R-04）** —— 处理阶段跳过未开箱的战利品容器时没置 `hasContainer`，区块被当成「无容器」移出缓存；开箱使 `lootTable` 变 null 却不触发重扫 ⇒ 区块再也不回来。修：跳过处理但保留区块（每 tick 只做一次 `getLootTable()` 检查）；抽 `LivingItem.processChunkContainers` 做行为测试（返回 -1 才移出缓存）；测试 1217→1219 | `docs/system-design/living-item-infrastructure.md` §3.2 · `LivingItemChunkContainerScanTest` |
 | 2026-10-30 | 🐞 **区块缓存的兜底清理被早退跳过** —— `processLevelContainers` 在无可处理区块时直接 `return`（如该维度只有已加载但不 tick 的区块），末尾每 5 分钟的 `cleanupStaleEntries` 永不执行 ⇒ 已卸载区块的缓存条目永久残留，且每 tick 仍被遍历。修：`ContainerChunkCache.maintain()`（重扫 + 清理）前置为每 tick 唯一维护入口，调用点必须在早退之前；补 2 项测试；测试 1215→1217 | `docs/system-design/living-item-infrastructure.md` §3.2 · `ContainerChunkCacheChunkLoadTest` |
 | 2026-10-30 | 🐞 **活信标光束开光影整根不可见** —— Iris 只给**方块实体渲染器**路径缓冲的几何打 `renderStage=BLOCK_ENTITIES` 标签（光影包据此认信标光束），我们挂 `RenderLevelStageEvent` 画的没有 ⇒ 按不明几何处理，判错即丢弃（原版有标签所以正常；挂 `AFTER_BLOCK_ENTITIES` 不解决——Iris 对 NeoForge 渲染事件零识别，更新 Iris 也无效）。修：`living/compat/iris/` 软依赖——`ModIris` 门面（探测 iris/oculus + 预链接自检，失败降级不崩帧）+ `IrisBeamTagging` 把光束 RenderType 包上 Iris 同款 `OuterWrappedRenderType`+BE shard，与原版同标签同批次；测试 1213→1215 | `docs/tech/living-beacon-tech.md` §2.1 · `ModIris` / `IrisBeamTagging` |
 | 2026-10-29 | 🐞 **邻居路由源 UUID 收口** —— `registerRouteFromNeighbor` 把 `sourceContainerUuid` 写成注册者（漏斗容器）UUID，而 `sourcePos` 指向邻居 ⇒ 双形态守卫盯着错误的容器，邻居方块↔物品切换时旧路由可能漏清。修：取邻居 BE 的 `ContainerUuids.ofHost`，无身份为 null；补 2 项测试；测试 1211→1213 | `docs/tech/living-ender-chest-tech.md` §0 规则 11 · `EnderRouteManagerNeighborUuidTest` |
@@ -180,7 +181,6 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-10-29 | 🐞 **精妙背包界面里活地图扩展显示不渲染** —— 渲染挂在 `AbstractContainerScreen.render` TAIL，而精妙 `StorageScreenBase.render` 抄了一份 `super.render`（`renderSuper`）不调父实现 ⇒ 注入字节码永不执行（同 2026-10-19 活流体那次的根因）。修：展开地图 / 方向 HUD / 种植提示 / 生长槽大图四项统一迁到 `ContainerScreenEvent.Render.Foreground`；布局缓存抽成 `LivingMapGroups` 让渲染与命中判定读同一份 | `docs/tech/living-map-ender-pearl-tech.md` §13 v57→v58 · `client/render/LivingContainerOverlay.java` |
 | 2026-10-29 | 🧪 **性能测试分离** —— `ContainerFluidPerfTest` 打 `@Tag("perf")`，默认 `./gradlew test` 排除（1200 项 / 14s）；`-Pperf` 才跑全量 1202；顺手修掉硬编码本机路径，改 `build/_perf.txt` | `docs/guides/unit-testing.md` · `build.gradle` |
 | 2026-10-29 | 🧪 **工具记忆接缝测试** —— 5 项：射线/攻击 offset 逐位保留 + 宿主起点回放 / EntityType 匹配 / with/without 只动目标字段 / Codec + StreamCodec 往返；测试 1197→1202 | `docs/reference/test-map.md` · `LivingToolMemoryTest` |
-| 2026-10-29 | 🧪 **末影箱双形态不变量** —— 方块↔物品交替 20 次：每步只剩当前形态一条路由；旧形态在别的频道也清；别的 UUID 合法条目不误删。测试 1194→1197 | `docs/reference/test-map.md` · `EnderDualFormRouteTest` |
 
 ## 提交前必跑（2026-10-20 定）
 

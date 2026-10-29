@@ -17,6 +17,16 @@
 
 ## 2026-10-30
 
+- 🐞 **战利品箱子区块被移出缓存 → 之后放入的活物品永不 tick（R-04）** ——
+  处理阶段跳过未开箱的战利品容器（`RandomizableContainer` 且 `lootTable != null`）时
+  直接 `continue`，没有置 `hasContainer` ⇒ 区块被判为「无容器」移出处理缓存。
+  开箱会让 `lootTable` 变 null，但开箱不触发区块重扫 ⇒ 该区块再也不进缓存，
+  之后放进去的活物品永远不 tick。修：跳过处理时同时把区块判为「有容器」并保留；
+  开箱后下一 tick 自然按普通容器处理。代价是纯战利品箱子区块常驻缓存，每 tick
+  对每个战利品 BE 做一次 `getLootTable()` 检查（不读槽位、不触发战利品生成）。
+  处理循环抽成 `LivingItem.processChunkContainers`（返回 -1 = 无容器、应移出缓存）
+  以便行为测试；补 2 项测试。测试 1217→1219。
+
 - 🐞 **容器区块缓存的兜底清理被早退跳过** —— `LivingItem.processLevelContainers` 在
   `getProcessableChunks` 为空时直接 `return`；而每 5 分钟的 `cleanupStaleEntries(level, 6000)`
   挂在方法末尾 ⇒ 这类维度（只有「已加载但不 tick」的区块、或压根没有容器区块）永远不会清理，
