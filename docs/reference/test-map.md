@@ -188,7 +188,7 @@ src/test/java/com/qiqi/li/
 │   ├── LivingBucketFunctionTest.java          # 活桶零私有状态·判定(BucketItem家族通吃)/内容=原版content/形态变换 getBucket 映射/同形态零新对象
 │   ├── LivingBucketInteractSupportTest.java   # 倒桶源格替换（A 档对齐原版）·契约 default false（未覆写流体保守拒绝）/ 水⇄岩浆对称替换 + 同种不构成 / 倒桶判定四例
 │   ├── BucketInteractRealMenuTest.java        # 倒/汲的**真实原版菜单**路径（2026-10-28，缺口 #6）·真实 `BrewingStandMenu` + 真实 BE 能解析出容器（假菜单测不到）/ 倒水后桶排空 / 汲水后桶装水且源消失（脚手架=真实菜单+BE+capability 替身）
-│   └── ContainerFluidPerfTest.java            # 性能量测（200 容器×54 格×200 拍，打印基线 + 病态回归宽松阈值 + 落盘 build/_perf.txt）·引擎 tick / 空容器
+│   └── ContainerFluidPerfTest.java            # 性能量测（@Tag("perf")，默认不跑；`-Pperf` 才计入。200 容器×54 格×200 拍，打印基线 + 病态回归宽松阈值 + 落盘 build/_perf.txt）·引擎 tick / 空容器
 ├── living/interaction/
 │   ├── InteractionRegistryTest.java           # 两趟优先级匹配·通配遮蔽+triggerFilter 回归守卫
 │   ├── InteractionRuleConfigTest.java         # 交互规则 JSON 加载语义·内置全有效/玩家覆盖与removed/坏值跳过/未知字段忽略/version守卫/reload幂等（自带 mock handler 不依赖测试执行顺序）

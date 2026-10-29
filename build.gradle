@@ -278,8 +278,14 @@ dependencies {
 }
 
 test {
-    // 使用 JUnit 5 平台
-    useJUnitPlatform()
+    // 使用 JUnit 5 平台；默认排除量测（@Tag("perf")），
+    // 需要跑量测时用 ./gradlew test -Pperf（或配合 --tests 只跑 perf 类）。
+    def includePerf = project.hasProperty('perf')
+    useJUnitPlatform {
+        if (!includePerf) {
+            excludeTags 'perf'
+        }
+    }
 
     // 显示测试输出（便于调试）
     testLogging {

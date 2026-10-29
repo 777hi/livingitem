@@ -5,8 +5,10 @@
 本项目的单元测试运行在 **FML 环境**中，可直接引用 Minecraft 类与本模组注册的 DataComponent。
 
 ```bash
-./gradlew test                              # 全部测试（约 15s，增量 <1s）
-./gradlew test --tests "*ContainerRedstoneDataTest"   # 单个测试类
+./gradlew test                              # 默认套件（约 14s，增量 <1s；排除 @Tag("perf")）
+./gradlew test -Pperf                       # 含性能量测（1202 项）
+./gradlew test -Pperf --tests "*ContainerFluidPerfTest"  # 只跑量测
+./gradlew test --tests "*ContainerRedstoneDataTest"      # 单个测试类
 ```
 
 ---

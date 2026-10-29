@@ -146,7 +146,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1202 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类）；
+**合计测试用例 1200 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -171,6 +171,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-29 | 🧪 **性能测试分离** —— `ContainerFluidPerfTest` 打 `@Tag("perf")`，默认 `./gradlew test` 排除（1200 项 / 14s）；`-Pperf` 才跑全量 1202；顺手修掉硬编码本机路径，改 `build/_perf.txt` | `docs/guides/unit-testing.md` · `build.gradle` |
 | 2026-10-29 | 🧪 **工具记忆接缝测试** —— 5 项：射线/攻击 offset 逐位保留 + 宿主起点回放 / EntityType 匹配 / with/without 只动目标字段 / Codec + StreamCodec 往返；测试 1197→1202 | `docs/reference/test-map.md` · `LivingToolMemoryTest` |
 | 2026-10-29 | 🧪 **末影箱双形态不变量** —— 方块↔物品交替 20 次：每步只剩当前形态一条路由；旧形态在别的频道也清；别的 UUID 合法条目不误删。测试 1194→1197 | `docs/reference/test-map.md` · `EnderDualFormRouteTest` |
 | 2026-10-29 | 🔧 **配方书活箱子标签页拆出 mixin** —— `RecipeBookComponentMixin` 1293 行（全项目唯一违反「mixin 薄」惯例者）→ 薄委托 ~200 行 + `LivingChestRecipeTab`（视图：标签/网格/分页/点击发包）+ `LivingChestTabSearch`（纯过滤）；**行为零变化**：懒创建时序 / RETURN 自动退出判据（须 selectedTab!=null）/ 空物品+非空词⇒匹配怪癖均原样保留并钉进测试；顺手重写 2026-10-03 起整体过时的 recipe-book-tech.md（清 TODO 重写欠账）；测试 1186→1194 | `docs/tech/common/recipe-book-tech.md` · `LivingChestRecipeTab` / `LivingChestTabSearchTest` |
@@ -180,7 +181,6 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-10-29 | 🧪 **传输访问器接缝测试** —— `FilteredSlotAccessor` 8 项（黑名单抽取回滚、插入拒绝不达下层…）+ `NeighborSlotAccessor` 8 项（抽取/模拟/插入余量/回滚/isFull）；**抓出 `isFull` 用槽位上限(99)判满 ⇒ 64 钻石误判未满**，改为 min(槽位上限, 物品上限)；测试 1151→1167 | `docs/reference/test-map.md` · `FilteredSlotAccessorTest` / `NeighborSlotAccessorTest` |
 | 2026-10-29 | 🧪 **活箱子访问器接缝测试** —— `LivingChestAccessor` 长期 0 引用：8 项钉住 tryCreate 只认活箱子 / insert 未超限全额且改栈 / 字节超限 insert+simulate 同源 0 / 回滚豁免 / 抽取快照门 / markTransferred+sync 接线；测试 1143→1151 | `docs/reference/test-map.md` · `LivingChestAccessorTest` |
 | 2026-10-29 | 🐞 **活箱子能力面收口：插入余量复制 + 16KB 估算门失效** —— `LivingChestItemHandler.insertItem` 把副本交给整库插入、却用原栈算余量 ⇒ 箱子收一份、调用方拿回一份；能力面又只走 64B/槽估算 ⇒ 27 槽永远碰不到 16KB。修：余量读副本；两参字节门改 `RegistryAccess.EMPTY` 精确计量；回滚走 unchecked（撤销不是新插入）。接缝测试 5 项 + 回滚豁免 1 项；测试 1137→1143 | `docs/tech/living-chest-tech.md` §2.3 · `LivingChestItemHandlerTest` |
-| 2026-10-29 | 🐞 **容器级数据持久层二分：有身份只存 SavedData** —— 活背包拾取后活流体丢失：两个形态写两个地方（方块→BE 附件 / 物品→SavedData），而 `moveOut` 只搬 UUID ⇒ 方块形态期间的变化随方块蒸发。修：`persist` 有身份→SavedData（数据跟身份走，形态切换零搬运）、无身份→附件；流体回填改 SavedData 优先。已知边界：物品被销毁时条目残留，不做自动回收（同精妙） | `docs/archive/changelog.md` 2026-10-29 · `living/container/ContainerContext.java` |
 
 ## 提交前必跑（2026-10-20 定）
 

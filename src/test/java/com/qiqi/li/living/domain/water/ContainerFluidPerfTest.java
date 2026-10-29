@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import net.minecraft.world.level.material.Fluids;
@@ -25,6 +26,7 @@ import com.qiqi.li.living.container.SimpleContainerContext;
  *
  * <p>断言只防<b>病态回归</b>（阈值取得很松），正常波动不会挂。</p>
  */
+@Tag("perf")
 class ContainerFluidPerfTest {
 
     private static final int CONTAINERS = 200;
@@ -47,8 +49,10 @@ class ContainerFluidPerfTest {
     /** 量测结果落盘（build/ 已 gitignore）—— Gradle 会吞掉 stdout，落盘才拿得到数。 */
     private static void write(String line) {
         try {
+            java.nio.file.Path path = java.nio.file.Path.of("build", "_perf.txt");
+            java.nio.file.Files.createDirectories(path.getParent());
             java.nio.file.Files.writeString(
-                java.nio.file.Path.of("g:/777hi/mc/mymods/livingitem-template-1.21.1/build/_perf.txt"),
+                path,
                 line,
                 java.nio.file.StandardOpenOption.CREATE,
                 java.nio.file.StandardOpenOption.APPEND);

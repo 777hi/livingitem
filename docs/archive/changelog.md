@@ -17,6 +17,10 @@
 
 ## 2026-10-29
 
+- 🧪 **性能测试分离（@Tag("perf") + -Pperf）** —— `ContainerFluidPerfTest` 默认不跑；
+  `./gradlew test` 1200 项 / 约 14s，`-Pperf` 才跑全量 1202。顺手修掉落盘的硬编码本机
+  绝对路径，改相对 `build/_perf.txt`。默认用例 1202→1200（另有 2 项量测）。
+
 - 🧪 **工具记忆接缝测试（LivingToolMemoryTest，5 项）** —— 射线/攻击 offset 逐位保留 +
   宿主起点回放 / EntityType 匹配 / with/without 只动目标字段 / Codec + StreamCodec 往返。
   测试 1197→1202。
