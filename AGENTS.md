@@ -146,7 +146,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1211 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
+**合计测试用例 1213 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -171,6 +171,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-29 | 🐞 **邻居路由源 UUID 收口** —— `registerRouteFromNeighbor` 把 `sourceContainerUuid` 写成注册者（漏斗容器）UUID，而 `sourcePos` 指向邻居 ⇒ 双形态守卫盯着错误的容器，邻居方块↔物品切换时旧路由可能漏清。修：取邻居 BE 的 `ContainerUuids.ofHost`，无身份为 null；补 2 项测试；测试 1211→1213 | `docs/tech/living-ender-chest-tech.md` §0 规则 11 · `EnderRouteManagerNeighborUuidTest` |
 | 2026-10-29 | 🐞 **手机端（触屏 / 软键盘）改不了活漏斗输入输出槽位** —— 方向解析只挂 `ScreenEvent.CharacterTyped.Pre`，该事件只由 GLFW **字符回调**驱动；触屏的屏幕按键只产生**按键回调** ⇒ key 到了、char 从没到，而 `KeyPressed` 只 cancel 不喂会话，整条链路静默无响应。修：主通道改按键（键码 → 方向字符），字符保留为兜底（全角归一化），同一次按键按 300ms 窗口去重；按住重复事件只屏蔽；测试 1202→1204 | `docs/system-design/gui-interaction-system.md` §6.1 · `LivingItemInputHandler` / `LivingItemInputKeyMapTest` |
 | 2026-10-29 | 🐞 **末影箱回滚收口：只回原槽 + 失败日志** —— 旧实现忽略 `insertItem` 返回值/无位置直接 `return`；此前补的多级 fallback（同库/活视图/玩家/落地）会把物品散到别处，用户定改为：只回提取时的原槽；装不下/被占/源失效 ⇒ ERROR 日志（物品/数量/源/槽），不落地、不找其它槽。四个 accessor 统一；测试 1204→1211 | `docs/tech/living-ender-chest-tech.md` §0 规则 12 · `LivingEnderChestAccessorTest` / `PlainSlotAccessorTest` |
 | 2026-10-29 | 🐞 **活背包里的活武器没有攻击环** —— 宿主容器收集时把「无记忆」的一律塞进 `assistTools`（2026-10-27 为修工具不显示），武器因此被 `renderAssistRing` 按「剑挖掘速度 1.0 / 1.5」分组 ⇒ 打怪时永不进攻击环、挖树叶作物时反被判成在挖。修：按 `isAssistTool` / `else if isAssistWeapon` 分流（活斧子算工具）。数据链路本来就通（action 随 K2 包的 ItemStack 走） | `docs/tech/living-weapon-tech.md` §7.1 · `LivingToolModelRenderer` |
@@ -180,7 +181,6 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-10-29 | 🧪 **末影箱双形态不变量** —— 方块↔物品交替 20 次：每步只剩当前形态一条路由；旧形态在别的频道也清；别的 UUID 合法条目不误删。测试 1194→1197 | `docs/reference/test-map.md` · `EnderDualFormRouteTest` |
 | 2026-10-29 | 🔧 **配方书活箱子标签页拆出 mixin** —— `RecipeBookComponentMixin` 1293 行（全项目唯一违反「mixin 薄」惯例者）→ 薄委托 ~200 行 + `LivingChestRecipeTab`（视图：标签/网格/分页/点击发包）+ `LivingChestTabSearch`（纯过滤）；**行为零变化**：懒创建时序 / RETURN 自动退出判据（须 selectedTab!=null）/ 空物品+非空词⇒匹配怪癖均原样保留并钉进测试；顺手重写 2026-10-03 起整体过时的 recipe-book-tech.md（清 TODO 重写欠账）；测试 1186→1194 | `docs/tech/common/recipe-book-tech.md` · `LivingChestRecipeTab` / `LivingChestTabSearchTest` |
 | 2026-10-29 | 🧪 **容器 tick 钩子接缝测试** —— `ContainerTickHooks` 4 项：同类去重 / 两阶段按注册顺序 / ctx+tick 透传 / 默认空实现；补测试快照/恢复入口隔离静态表；测试 1182→1186 | `docs/reference/test-map.md` · `ContainerTickHooksTest` |
-| 2026-10-29 | 🧪 **末影箱访问器接缝测试** —— 直连模式 8 项：tryCreate 只认活末影箱 / 插入改栈 / 模拟不写 / 抽取后回滚回原槽 / 跳过活物品 / isEmpty+isFull / 离线降级 / 路由模式 insert 返回 0 + markTransferred 不登记；顺带修正 javadoc（路由注册在 EnderRouteManager）；测试 1174→1182 | `docs/reference/test-map.md` · `LivingEnderChestAccessorTest` |
 
 ## 提交前必跑（2026-10-20 定）
 

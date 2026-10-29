@@ -233,7 +233,7 @@ public final class EnderRouteManager {
     /**
      * 从邻居容器注册路由到全局路由表（公共频道 / 玩家专属频道）。
      */
-    private static boolean registerRouteFromNeighbor(EnderChannelKey key,
+    static boolean registerRouteFromNeighbor(EnderChannelKey key,
                                                       net.neoforged.neoforge.items.IItemHandler neighborHandler,
                                                       BlockPos neighborPos,
                                                       Level level,
@@ -242,6 +242,9 @@ public final class EnderRouteManager {
                                                       com.qiqi.li.living.transfer.FilterData filterData,
                                                       int hostSlot) {
         EnderChannelRegistry registry = EnderChannelRegistry.getInstance();
+        // 源容器身份取邻居 BE，而不是注册者（漏斗容器）—— 否则双形态守卫会盯着错误的容器。
+        java.util.UUID sourceUuid = com.qiqi.li.living.container.ContainerUuids.ofHost(
+            level.getBlockEntity(neighborPos));
 
         for (int i = 0; i < neighborHandler.getSlots(); i++) {
             ItemStack sourceStack = neighborHandler.getStackInSlot(i);
@@ -252,7 +255,7 @@ public final class EnderRouteManager {
             String itemType = BuiltInRegistries.ITEM.getKey(sourceStack.getItem()).toString();
             EnderChannelEntry entry = new EnderChannelEntry(
                 itemType, level.dimension(), neighborPos, i, hostSlot, null, targetSlot,
-                containerCtx.getContainerKey(), containerCtx.getContainerUuid());
+                containerCtx.getContainerKey(), sourceUuid);
 
             if (registry.contains(key, entry)) {
                 return true;

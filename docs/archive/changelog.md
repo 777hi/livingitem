@@ -17,6 +17,10 @@
 
 ## 2026-10-29
 
+- 🐞 **邻居路由源 UUID 收口** —— `registerRouteFromNeighbor` 的 `sourceContainerUuid` 记成
+  注册者（漏斗容器）UUID，而 `sourcePos` 指向邻居 ⇒ 双形态守卫看不见邻居换形态。
+  修：取邻居 BE 的 `ContainerUuids.ofHost`，无身份为 null；补 2 项测试。测试 1211→1213。
+
 - 🔁 **回滚策略反转：只回原槽，失败只记日志** —— 此前 R-03 的「原槽 → 同库 → 活视图 →
   玩家 → 落地」链会把物品散到别处，用户定「静默消失也比乱塞好；必须有反馈」。改为：
   回滚只试提取时的原槽（持有 `sourceHandler` + slot）；装不下/被占/源失效 ⇒

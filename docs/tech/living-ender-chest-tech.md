@@ -62,7 +62,7 @@ pull 端（活末影箱→输出槽）从黑板**读**「有东西吗？有就�
 
 | 10 | **源解析不到 ⇒ 条目丢弃**。路由只有「注册 / 不注册」两态，**没有「暂时不可用」的保留态**（2026-10-29 口径，用户定） | 解析失败 ⟺ 源**不在跑**（区块没加载 / 玩家离线 / 活视图过期 / 方块被搬走），而不在跑的源不产出；它恢复跑的那一刻漏斗会再推一次（`EnderRouteManager#resolveTarget`）⇒ 路由自己重新注册。⚠️ 2026-10-28 曾改成 `reoffer` 保留，真机后果：方块被搬走后 BE 永远不在 ⇒ 条目永久留在队里、每轮失败一次，只有一条路由时**该频道彻底不出货**（回归 `EnderRouteExtractTest`） |
 
-| 11 | **同一容器 UUID 同一时刻只有一个「活形态」**：条目录下源的容器 UUID（`sourceContainerUuid`，方块从 BE 附件读、物品形态从物品组件读，同一个值）；`validateRoutes` 按 UUID 补捞候选，条目形态与当前 ctx 形态不符 ⇒ 丢弃 | 方块↔物品切换会换掉 pos/键的**种类**，旧条目在 `posIndex`/`keyIndex` 里都查不到 ⇒ 校验「看不见」它，而它又可能照样能解析（背包放回原位）⇒ 两条路由抽同一份内容的两种视图 ⇒ **刷物品**（2026-10-29 真机：`cuuid_` 与 `BlockPos` 两条同时在抽同一槽，源计数每次放置跳回满值）。回归 `EnderChannelRegistryDimTest` |
+| 11 | **同一容器 UUID 同一时刻只有一个「活形态」**：条目录下源的容器 UUID（`sourceContainerUuid`，方块从 BE 附件读、物品形态从物品组件读，同一个值）；`validateRoutes` 按 UUID 补捞候选，条目形态与当前 ctx 形态不符 ⇒ 丢弃 | 方块↔物品切换会换掉 pos/键的**种类**，旧条目在 `posIndex`/`keyIndex` 里都查不到 ⇒ 校验「看不见」它，而它又可能照样能解析（背包放回原位）⇒ 两条路由抽同一份内容的两种视图 ⇒ **刷物品**（2026-10-29 真机：`cuuid_` 与 `BlockPos` 两条同时在抽同一槽，源计数每次放置跳回满值）。回归 `EnderChannelRegistryDimTest`；邻居注册的 `sourceContainerUuid` 取源邻居 BE 的 `ContainerUuids.ofHost`，不是注册者；无身份为 null（2026-10-29 修，回归 `EnderRouteManagerNeighborUuidTest`） |
 
 | 12 | **回滚只回原槽；失败必须上报**：回滚只尝试提取时的原槽（持有 `sourceHandler` + slot）；装不下/被占/源失效 ⇒ `LOGGER.error` 记录物品、数量、源与槽位；**不落地、不找其它槽、不塞玩家背包** | 回滚是撤销，不是二次安置；把物品散到别处与丢失无异，且会掩盖真正的 simulate/real 不一致。日志是唯一反馈（用户定 2026-10-29） |
 
