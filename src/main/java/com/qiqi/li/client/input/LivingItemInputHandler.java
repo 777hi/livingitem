@@ -1,9 +1,12 @@
 package com.qiqi.li.client.input;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import net.minecraft.ChatFormatting;
+import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.events.GuiEventListener;
@@ -59,11 +62,17 @@ import org.lwjgl.glfw.GLFW;
  *
  * 输入会话机制（InputSession）：
  * - 每次输入创建一个会话，最多接受 2 个键
- * - 超时时间 2 秒，超时后会话自动失效
+ * - 不设超时：会话存活由「光标是否仍在活按钮上」决定
  * - 2 个键输入完成后立即处理并发送网络包
  *
+ * 输入通道（2026-10-29 起双通道）：
+ * - 主通道 {@link #onKeyPressed}：GLFW 键码 → 方向字符。触屏 / 软键盘的屏幕按键只产生按键回调，
+ *   字符回调不一定存在，故主通道必须走按键。
+ * - 兜底 {@link #onCharTyped}：输入法提交的字符（无对应键码时才有意义）。
+ *   同一次按键会先后到达两条通道，按 {@link #CHAR_DEDUPE_MS} 只消费一次。
+ *
  * 通信流程：
- *   WASD 键入 → onCharTyped() → InputSession 收集
+ *   按键 / 字符 → feedDirectionInput() → InputSession 收集
  * → processInput() → 解析方向 → sendDirectionPacket()
  * → HopperDirectionPacket → 服务端 ServerPacketHandler
  */
@@ -75,6 +84,19 @@ public class LivingItemInputHandler {
     /** 当前活跃的输入会话 */
     private static InputSession currentSession = null;
     private static DirectionSession directionSession = null;
+
+    /** 方向键码 → 上次按下时刻，用于屏蔽 GLFW 的自动重复（不依赖按键释放事件）。 */
+    private static final Map<Integer, Long> lastDirectionPressAt = new HashMap<>();
+
+    /** 按键通道刚消费的方向字符；字符通道据此跳过同一次按键。 */
+    private static char pendingCharKey;
+    private static long pendingCharAt;
+
+    /** 按键通道消费后，允许字符通道认定「同一次按键」的时间窗（毫秒）。 */
+    private static final long CHAR_DEDUPE_MS = 300L;
+
+    /** 同一方向键两次有效按下的最小间隔（毫秒）—— 低于此值视为自动重复。 */
+    private static final long KEY_REPEAT_MS = 250L;
 
     /**
      * 断开连接时清空活地图元数据缓存，避免切换存档/服务器后残留旧 mapId 的中心坐标。
@@ -122,51 +144,92 @@ public class LivingItemInputHandler {
     }
 
     /**
-     * 监听字符输入事件。
+     * 字符兜底通道：输入法提交的字符（没有对应键码时才有意义）。
      *
-     * 检查前置条件后，将有效的 WASD 键加入当前输入会话。
-     * 会话完成后（2 个键），解析方向并发送网络包。
+     * <p>与 {@link #onKeyPressed} 共用 {@link #shouldCaptureDirectionInput()} 判据；
+     * 同一次物理按键会先走按键通道，再到这里 —— 命中 {@link #pendingCharKey} 时只吞事件、不重复计数。</p>
      */
     @SubscribeEvent
     public static void onCharTyped(ScreenEvent.CharacterTyped.Pre event) {
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null) return;
+        if (!shouldCaptureDirectionInput()) return;
 
-        if (!(mc.screen instanceof AbstractContainerScreen)) return;
-
-        if (!isLivingButtonHovered()) return;
-
-        ItemStack carried = mc.player.containerMenu.getCarried();
-        if (carried.isEmpty()) return;
-
-        if (!LivingItemManager.isLivingItem(carried)) return;
-
-        char typedChar = event.getCodePoint();
-        char upperChar = Character.toUpperCase(typedChar);
+        char upperChar = Character.toUpperCase(normalizeChar(event.getCodePoint()));
 
         if (!isValidKey(upperChar)) return;
 
-        LivingItemFunction dirFunc = findDirectionFunction(carried);
-        if (dirFunc instanceof HasDirection dir) {
+        if (pendingCharKey == upperChar && Util.getMillis() - pendingCharAt <= CHAR_DEDUPE_MS) {
+            pendingCharKey = 0;
             event.setCanceled(true);
-            processDirectionInput(upperChar, dirFunc.getFunctionId(), dir);
             return;
         }
 
-        if (!isHopperItem(carried)) return;
+        ItemStack carried = Minecraft.getInstance().player.containerMenu.getCarried();
+        if (feedDirectionInput(upperChar, carried)) {
+            event.setCanceled(true);
+        }
+    }
+
+    // ==================== 按键屏蔽 + HUD（2026-10-10，九宫格方案） ====================
+
+    /**
+     * ⭐ 方向输入主通道：「光标持活物品 + 悬停活按钮」时，按键码 → 方向字符 → 会话。
+     *
+     * <p><b>为什么主通道是按键事件而不是字符事件</b>：{@code CharacterTyped} 只由 GLFW 的字符回调驱动，
+     * 触屏 / 软键盘的屏幕按键只产生按键回调 ⇒ 只挂字符事件时，这类设备上方向配置完全无响应。</p>
+     *
+     * <p>同时承担屏蔽职责：GLFW 的按键事件<b>先于</b>字符事件 —— 等字符事件到来时，
+     * Q 的丢弃 / E 的关界面已经发生。故在按键阶段直接 cancel，让这 8 个键在该场景下只服务于方向输入。</p>
+     */
+    @SubscribeEvent
+    public static void onKeyPressed(ScreenEvent.KeyPressed.Pre event) {
+        if (!shouldCaptureDirectionInput()) return;
+        int keyCode = event.getKeyCode();
+        char dirKey = directionCharForKeyCode(keyCode);
+        if (dirKey == 0) return;
+        // ⭐ 对角键只在目标功能声明支持时才屏蔽（supportsDiagonal 默认 false）——
+        // 否则会无谓地吃掉 Q（丢弃）/ E（关界面）：不支持对角的活物品上，这两键应保持原版行为
+        if (isDiagonalKeyCode(keyCode) && !targetSupportsDiagonal()) return;
+        event.setCanceled(true);
+
+        // 按住不放 ⇒ GLFW 持续发按下事件；间隔过短的只屏蔽、不重复计入会话。
+        // 不依赖按键释放事件：部分触屏启动器只合成按下。
+        long now = Util.getMillis();
+        Long last = lastDirectionPressAt.get(keyCode);
+        if (last != null && now - last < KEY_REPEAT_MS) return;
+        lastDirectionPressAt.put(keyCode, now);
+
+        ItemStack carried = Minecraft.getInstance().player.containerMenu.getCarried();
+        if (!feedDirectionInput(dirKey, carried)) return;
+
+        // 随后到达的同键字符事件由字符通道跳过（PC 上两条回调都触发）
+        pendingCharKey = dirKey;
+        pendingCharAt = now;
+    }
+
+    /**
+     * 把一次方向输入喂进当前会话（两条通道共用）。
+     *
+     * @return true = 已消费（调用方应 cancel 事件）；false = 该输入不适用于当前物品
+     */
+    private static boolean feedDirectionInput(char key, ItemStack carried) {
+        LivingItemFunction dirFunc = findDirectionFunction(carried);
+        if (dirFunc instanceof HasDirection dir) {
+            processDirectionInput(key, dirFunc.getFunctionId(), dir);
+            return true;
+        }
+
+        if (!isHopperItem(carried)) return false;
 
         // 漏斗不支持对角槽位：对角键直接忽略（不进入会话、不 cancel）
-        Pos2D hopperDir = keyToDirection(upperChar);
-        if (hopperDir != null && hopperDir.isDiagonal()) return;
-
-        event.setCanceled(true);
+        Pos2D hopperDir = keyToDirection(key);
+        if (hopperDir == null || hopperDir.isDiagonal()) return false;
 
         if (currentSession == null) {
             currentSession = new InputSession();
             beginHud(true);
         }
 
-        currentSession.appendKey(upperChar);
+        currentSession.appendKey(key);
         refreshHudTyped();
 
         if (currentSession.isComplete()) {
@@ -174,26 +237,7 @@ public class LivingItemInputHandler {
             currentSession = null;
             activeHud = null;
         }
-    }
-
-    // ==================== 按键屏蔽 + HUD（2026-10-10，九宫格方案） ====================
-
-    /**
-     * ⭐ 九宫格屏蔽：「光标持活物品 + 悬停活按钮」时拦截 8 个方向键的<b>按键事件</b>。
-     *
-     * <p>为什么必须拦在 KeyPressed 而不只是 CharacterTyped：GLFW 的按键事件<b>先于</b>字符事件 ——
-     * 等字符事件到来时，Q 的丢弃 / E 的关界面已经发生。故在按键阶段直接 cancel，
-     * 让这 8 个键在该场景下只服务于方向输入。</p>
-     */
-    @SubscribeEvent
-    public static void onKeyPressed(ScreenEvent.KeyPressed.Pre event) {
-        if (!shouldCaptureDirectionInput()) return;
-        int keyCode = event.getKeyCode();
-        if (!isDirectionKeyCode(keyCode)) return;
-        // ⭐ 对角键只在目标功能声明支持时才屏蔽（supportsDiagonal 默认 false）——
-        // 否则会无谓地吃掉 Q（丢弃）/ E（关界面）：不支持对角的活物品上，这两键应保持原版行为
-        if (isDiagonalKeyCode(keyCode) && !targetSupportsDiagonal()) return;
-        event.setCanceled(true);
+        return true;
     }
 
     /** 当前光标物品的方向功能是否声明支持对角槽位（漏斗不支持）。 */
@@ -242,6 +286,8 @@ public class LivingItemInputHandler {
         currentSession = null;
         directionSession = null;
         activeHud = null;
+        lastDirectionPressAt.clear();
+        pendingCharKey = 0;
     }
 
     /**
@@ -442,13 +488,30 @@ public class LivingItemInputHandler {
         };
     }
 
-    /** 九宫格 8 键对应的 GLFW 键码 —— 按键阶段拦截用（Q=丢弃 / E=关界面，必须赶在原版之前）。 */
-    private static boolean isDirectionKeyCode(int keyCode) {
+    /**
+     * 九宫格 8 键的 GLFW 键码 → 方向字符（0 = 非方向键）。
+     *
+     * <p>与 {@link #keyToDirection(char)} 一一对应；按键通道据此在不依赖字符回调的情况下解析方向。</p>
+     */
+    static char directionCharForKeyCode(int keyCode) {
         return switch (keyCode) {
-            case GLFW.GLFW_KEY_W, GLFW.GLFW_KEY_A, GLFW.GLFW_KEY_S, GLFW.GLFW_KEY_D,
-                 GLFW.GLFW_KEY_Q, GLFW.GLFW_KEY_E, GLFW.GLFW_KEY_Z, GLFW.GLFW_KEY_C -> true;
-            default -> false;
+            case GLFW.GLFW_KEY_W -> 'W';
+            case GLFW.GLFW_KEY_S -> 'S';
+            case GLFW.GLFW_KEY_A -> 'A';
+            case GLFW.GLFW_KEY_D -> 'D';
+            case GLFW.GLFW_KEY_Q -> 'Q';
+            case GLFW.GLFW_KEY_E -> 'E';
+            case GLFW.GLFW_KEY_Z -> 'Z';
+            case GLFW.GLFW_KEY_C -> 'C';
+            default -> 0;
         };
+    }
+
+    /** 全角字母（输入法提交态 U+FF21–FF3A / U+FF41–FF5A）归一化为半角 ASCII。 */
+    static char normalizeChar(char c) {
+        if (c >= '\uFF41' && c <= '\uFF5A') return (char) (c - 0xFF41 + 'a');
+        if (c >= '\uFF21' && c <= '\uFF3A') return (char) (c - 0xFF21 + 'A');
+        return c;
     }
 
     /** 4 个对角键（屏蔽需按能力放行，见 {@link #targetSupportsDiagonal()}）。 */

@@ -143,9 +143,15 @@ CropClassifier::isSeedPlantableOnFarmland)`）；**只有真·任意光标自交
 
 - 键位 = 键盘左上角物理布局：`Q W E / A S D / Z C`（`X` 弃用 —— 与 `S`=下的直觉冲突，用户拍板）。
   一个键对应一个方向（含 4 个对角），**零歧义**。
-- **拦截点必须在 `ScreenEvent.KeyPressed.Pre`**，不能只在 `CharacterTyped`：GLFW 按键事件**先于**
-  字符事件，等字符阶段 `Q`（丢弃）/ `E`（关界面）已经生效。两者共用同一判据
-  `LivingItemInputHandler#shouldCaptureDirectionInput`（含文本框焦点守卫，不影响铁砧重命名）。
+- **输入主通道 = `ScreenEvent.KeyPressed.Pre`（键码 → 方向字符），字符事件只是兜底**。
+  `CharacterTyped` 只由 GLFW 的**字符回调**驱动，触屏 / 软键盘的屏幕按键只产生**按键回调**
+  ⇒ 只挂字符事件时，这类设备上方向配置完全无响应（2026-10-29 真机反馈）。
+  按键阶段同时解决屏蔽时序：GLFW 按键事件**先于**字符事件，等字符阶段 `Q`（丢弃）/ `E`（关界面）已经生效。
+  两条通道共用同一判据 `LivingItemInputHandler#shouldCaptureDirectionInput`（含文本框焦点守卫，
+  不影响铁砧重命名），且**同一次按键只消费一次**（`CHAR_DEDUPE_MS` 时间窗）——
+  字符通道额外归一化全角字母（输入法提交的 `ｗ` / `Ｗ`）。
+- **按住不放的自动重复只屏蔽、不重复计入会话**：同一键码两次有效按下间隔 < 250ms 视为重复
+  （`KEY_REPEAT_MS`；不依赖按键释放事件 —— 部分触屏启动器只合成按下）。
 - **对角是声明式能力**：`HasDirection#supportsDiagonal` 默认 `false`，需要斜向布局的功能自行 override
   （活酿造台返回 `true`）。未声明者：对角键**既不屏蔽也不认**（`Q`/`E` 保持原版行为），
   HUD 与按钮提示只显示 `W A S D`。

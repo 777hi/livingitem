@@ -1298,7 +1298,10 @@ LivingItemInputHandler（客户端）→ InputSession 收集
 ```
 
 - ⚠️ **不支持组合键**：同时按两键配不出对角线方向（输入侧只暴露单键；`Pos2D` 本身支持 8 方向）
-- 未在超时内按满两键 ⇒ `InputSession.isTimedOut()` 在 `onLevelTick` 里丢弃本次输入
+- **两条输入通道**（2026-10-29）：按键事件为主（键码 → 方向字符），字符事件为兜底
+  （输入法提交、无键码的软键盘）；同一次按键只计一次，见
+  [gui-interaction-system.md §6.1](../system-design/gui-interaction-system.md)
+- **不设超时**：会话存活由「光标是否仍在活按钮上」决定（`LevelTickEvent.Post` 里重置）
 
 ---
 
