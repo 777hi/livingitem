@@ -17,6 +17,10 @@
 
 ## 2026-10-29
 
+- 🧪 **工具记忆接缝测试（LivingToolMemoryTest，5 项）** —— 射线/攻击 offset 逐位保留 +
+  宿主起点回放 / EntityType 匹配 / with/without 只动目标字段 / Codec + StreamCodec 往返。
+  测试 1197→1202。
+
 - 🧪 **末影箱双形态不变量（EnderDualFormRouteTest，3 项）** —— 方块↔物品交替 20 次，
   每步只剩当前形态一条路由；旧形态在别的频道也清；别的 UUID 合法条目不误删。
   测试 1194→1197。
