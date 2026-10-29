@@ -154,7 +154,8 @@ class LivingChestAccessorTest {
         accessor.rollback(extracted);
 
         assertEquals(21, LivingChestFunction.countUsedSlots(chest), "回滚必须收下");
-        assertTrue(extracted.isEmpty(), "回滚全额收下");
+        assertTrue(LivingChestFunction.getItems(chest).stream().anyMatch(s -> s.is(Items.DIAMOND)),
+            "回滚必须把钻石放回箱子");
     }
 
     @Test
@@ -176,6 +177,26 @@ class LivingChestAccessorTest {
         ItemStack extracted = accessor.extract(1, null);
         assertEquals(Items.WRITABLE_BOOK, extracted.getItem());
         assertEquals(1, LivingChestFunction.countUsedSlots(chest), "真实抽取后只剩钻石");
+    }
+
+    @Test
+    @DisplayName("回滚满箱子:只报告,不写其它槽/不落地")
+    void rollback_fullChest_reportsAndDoesNotWriteElsewhere() {
+        ItemStack chest = livingChest();
+        List<ItemStack> items = new ArrayList<>();
+        for (int i = 0; i < 27; i++) {
+            items.add(new ItemStack(Items.STONE, 64));
+        }
+        LivingChestFunction.setItems(chest, items);
+        FakeContainerContext ctx = new FakeContainerContext(27, 9);
+        ctx.set(SLOT, chest);
+        LivingChestAccessor accessor = accessor(ctx, chest, snap(27, true, false));
+
+        accessor.rollback(new ItemStack(Items.DIAMOND));
+
+        assertEquals(27, LivingChestFunction.countUsedSlots(chest));
+        assertTrue(LivingChestFunction.getItems(chest).stream().noneMatch(s -> s.is(Items.DIAMOND)),
+            "满箱子回滚失败 ⇒ 只记日志，不得塞到别处");
     }
 
     @Test

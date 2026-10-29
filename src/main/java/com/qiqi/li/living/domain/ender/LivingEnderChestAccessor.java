@@ -12,7 +12,6 @@ import com.qiqi.li.living.domain.ender.LivingEnderChestFunction;
 import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import com.qiqi.li.living.api.LivingItemManager;
@@ -21,7 +20,6 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.inventory.PlayerEnderChestContainer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.items.IItemHandler;
@@ -102,10 +100,11 @@ public class LivingEnderChestAccessor implements SlotAccessor {
 
     private ContainerContext sourceContainerCtx;
 
-    private ResourceKey<Level> rollbackDim;
-    private BlockPos rollbackPos;
+    @Nullable
+    private IItemHandler rollbackHandler;
     private int rollbackSlot;
-    private String rollbackContainerKey;
+    @Nullable
+    private String rollbackTargetLabel;
 
     private int directRollbackSlot = -1;
 
@@ -409,10 +408,9 @@ public class LivingEnderChestAccessor implements SlotAccessor {
             int toExtract = Math.min(amount, sourceStack.getCount());
             ItemStack extracted = sourceHandler.extractItem(entry.sourceSlot(), toExtract, false);
 
-            rollbackDim = entry.sourceDim();
-            rollbackPos = sourcePos;
+            rollbackHandler = sourceHandler;
             rollbackSlot = entry.sourceSlot();
-            rollbackContainerKey = entry.containerKey();
+            rollbackTargetLabel = sourcePos != null ? sourcePos.toString() : entry.containerKey();
 
             if (sourcePos != null) {
                 notifySourceChanged(sourceLevel, sourcePos);
@@ -472,134 +470,32 @@ public class LivingEnderChestAccessor implements SlotAccessor {
         if (directMode) {
             ItemStack remainder = stack.copy();
             if (directRollbackSlot >= 0 && cachedInvWrapper != null) {
-                remainder = insertInto(cachedInvWrapper, directRollbackSlot, remainder);
+                remainder = cachedInvWrapper.insertItem(directRollbackSlot, remainder, false);
             }
-            if (!remainder.isEmpty()) {
-                dropRemainder(remainder, null, null);
-            }
+            reportLost(remainder, "direct", directRollbackSlot);
             directRollbackSlot = -1;
             return;
         }
 
-        if (rollbackDim == null) {
-            LOGGER.warn("LivingEnderChestAccessor: rollback no saved dim, key={}", channelKey);
-            dropRemainder(stack.copy(), null, null);
-            clearRollbackTarget();
-            return;
-        }
-
-        ItemStack remainder = stack.copy();
-        if (rollbackPos != null) {
-            ServerLevel level = levelForRollback();
-            if (level == null) {
-                LOGGER.warn("LivingEnderChestAccessor: rollback invalid dim, key={}", channelKey);
-                dropRemainder(remainder, null, null);
-            } else if (!level.isLoaded(rollbackPos)) {
-                LOGGER.warn("LivingEnderChestAccessor: rollback target unloaded, key={}, pos={}",
-                    channelKey, rollbackPos);
-                dropRemainder(remainder, level, rollbackPos);
-            } else {
-                BlockEntity be = level.getBlockEntity(rollbackPos);
-                IItemHandler handler = getHandler(level, rollbackPos, be);
-                if (handler == null) {
-                    LOGGER.warn("LivingEnderChestAccessor: rollback target not container, key={}, pos={}",
-                        channelKey, rollbackPos);
-                    dropRemainder(remainder, level, rollbackPos);
-                } else {
-                    remainder = insertInto(handler, rollbackSlot, remainder);
-                    notifySourceChanged(level, rollbackPos);
-                    if (!remainder.isEmpty()) {
-                        dropRemainder(remainder, level, rollbackPos);
-                    }
-                }
-            }
-        } else if (rollbackContainerKey != null
-                && ContainerKeys.kindOf(rollbackContainerKey) == ContainerKind.ITEM_FORM) {
-            IItemHandler live = ItemFormLiveViews.find(ContainerKeys.containerUuidOf(rollbackContainerKey));
-            if (live != null) {
-                remainder = insertInto(live, rollbackSlot, remainder);
-            }
-            if (!remainder.isEmpty()) {
-                dropRemainder(remainder, levelForRollback(), null);
-            }
-        } else if (rollbackContainerKey != null && ContainerKeys.isOwnedByPlayer(rollbackContainerKey)) {
-            UUID playerId = parsePlayerUuid(rollbackContainerKey);
-            ServerPlayer player = playerId == null || server == null
-                ? null : server.getPlayerList().getPlayer(playerId);
-            if (player == null) {
-                LOGGER.warn("LivingEnderChestAccessor: rollback player offline, key={}, uuid={}",
-                    channelKey, playerId);
-                dropRemainder(remainder, levelForRollback(), null);
-            } else {
-                IItemHandler handler = rollbackContainerKey.endsWith("_ender_chest")
-                    ? new InvWrapper(player.getEnderChestInventory())
-                    : player.getCapability(Capabilities.ItemHandler.ENTITY);
-                if (handler != null) {
-                    remainder = insertInto(handler, rollbackSlot, remainder);
-                }
-                if (!remainder.isEmpty()) {
-                    dropRemainder(remainder, (ServerLevel) player.level(), player.blockPosition());
-                }
-            }
+        if (rollbackHandler != null) {
+            ItemStack remainder = rollbackHandler.insertItem(rollbackSlot, stack.copy(), false);
+            reportLost(remainder, rollbackTargetLabel, rollbackSlot);
         } else {
-            LOGGER.warn("LivingEnderChestAccessor: rollback no saved position or containerKey, key={}", channelKey);
-            dropRemainder(remainder, levelForRollback(), null);
+            reportLost(stack, "route (no source handler)", rollbackSlot);
         }
-
-        LOGGER.debug("LivingEnderChestAccessor: rollback key={}, item={}, count={}, pos={}, slot={}",
-            channelKey, stack.getHoverName().getString(), stack.getCount(), rollbackPos, rollbackSlot);
         clearRollbackTarget();
     }
 
-    @Nullable
-    private ServerLevel levelForRollback() {
-        return server != null && rollbackDim != null ? server.getLevel(rollbackDim) : null;
-    }
-
-    /** 先试原槽，再全库找空位；返回仍装不下的余量（调用方负责落地）。 */
-    private static ItemStack insertInto(IItemHandler handler, int slot, ItemStack stack) {
-        ItemStack remainder = handler.insertItem(slot, stack.copy(), false);
-        if (!remainder.isEmpty()) {
-            remainder = ItemHandlerHelper.insertItem(handler, remainder, false);
-        }
-        return remainder;
-    }
-
-    /**
-     * 回滚余量的最后保险：优先掉在主人/源容器附近，退到源维度出生点。
-     * 绝不静默丢弃 —— 回滚是撤销，物品必须有着落。
-     */
-    private void dropRemainder(ItemStack stack, @Nullable ServerLevel preferredLevel,
-                               @Nullable BlockPos preferredPos) {
-        if (stack.isEmpty()) return;
-        ServerLevel level = preferredLevel;
-        BlockPos pos = preferredPos;
-        if (pos == null && boundPlayerUuid != null && server != null) {
-            ServerPlayer player = server.getPlayerList().getPlayer(boundPlayerUuid);
-            if (player != null) {
-                level = (ServerLevel) player.level();
-                pos = player.blockPosition();
-            }
-        }
-        if (level == null && server != null) {
-            level = server.overworld();
-        }
-        if (level == null) {
-            LOGGER.error("LivingEnderChestAccessor: rollback remainder has no level, item lost: {}", stack);
-            return;
-        }
-        if (pos == null) {
-            pos = level.getSharedSpawnPos();
-        }
-        Block.popResource(level, pos, stack);
-        LOGGER.warn("LivingEnderChestAccessor: rollback remainder dropped at {}: {}", pos, stack);
+    private static void reportLost(ItemStack remainder, @Nullable String target, int slot) {
+        if (remainder.isEmpty()) return;
+        LOGGER.error("LivingItem rollback lost: {}x {} -> {} slot {} (exact-slot restore failed)",
+            remainder.getCount(), remainder.getHoverName().getString(), target, slot);
     }
 
     private void clearRollbackTarget() {
-        rollbackDim = null;
-        rollbackPos = null;
+        rollbackHandler = null;
+        rollbackTargetLabel = null;
         rollbackSlot = 0;
-        rollbackContainerKey = null;
     }
 
     @Override

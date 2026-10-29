@@ -65,11 +65,19 @@ public class NeighborSlotAccessor implements SlotAccessor {
 
     @Override
     public void rollback(ItemStack stack) {
+        if (stack.isEmpty()) return;
         ItemStack current = handler.getStackInSlot(slot);
-        if (current.isEmpty() || ItemStack.isSameItemSameComponents(current, stack)) {
-            handler.insertItem(slot, stack, false);
-        } else {
-            ItemHandlerHelper.insertItem(handler, stack, false);
+        if (!current.isEmpty() && !ItemStack.isSameItemSameComponents(current, stack)) {
+            SlotAccessor.ROLLBACK_LOGGER.error(
+                "LivingItem rollback lost: {}x {} -> neighbor {} slot {} (slot occupied by another item)",
+                stack.getCount(), stack.getHoverName().getString(), pos, slot);
+            return;
+        }
+        ItemStack remainder = handler.insertItem(slot, stack.copy(), false);
+        if (!remainder.isEmpty()) {
+            SlotAccessor.ROLLBACK_LOGGER.error(
+                "LivingItem rollback lost: {}x {} -> neighbor {} slot {} (no space)",
+                remainder.getCount(), remainder.getHoverName().getString(), pos, slot);
         }
     }
 

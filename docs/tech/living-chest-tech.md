@@ -197,7 +197,8 @@ public static int getCurrentByteUsage(ItemStack chestStack, HolderLookup.Provide
 `insert` / `simulate` 同源拒绝、抽出不收字节门影响。
 
 **回滚豁免**：`LivingChestAccessor.rollback` 走 `insertItemUnchecked` —— 回滚是**撤销**，
-不是新插入；被 16KB 禁止线挡住会让失败传输的余量丢失。
+不是新插入；被 16KB 禁止线挡住会让失败传输的余量丢失。失败（满槽/无法放回）只记
+`LOGGER.error`，不落地、不找其它槽（2026-10-29 策略）。
 
 ⚠️ 编码异常（动态注册表缺失等）时 `calculateItemByteUsage` 仍退回 64B 作为防御性兜底；
 这是异常路径，不改变常见物品的精确计量。

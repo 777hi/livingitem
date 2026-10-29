@@ -153,6 +153,25 @@ class EnderRouteExtractTest {
     }
 
     @Test
+    @DisplayName("路由回滚持有提取时的 handler:活视图登记清掉也不影响")
+    void rollback_usesHeldHandlerEvenIfLiveViewCleared() {
+        UUID containerUuid = UUID.randomUUID();
+        ItemStackHandler handler = new ItemStackHandler(27);
+        handler.setStackInSlot(0, new ItemStack(Items.DIAMOND, 3));
+        ItemFormLiveViews.register(containerUuid, handler, null);
+        registry.offer(CHANNEL, entry(Level.OVERWORLD, null, "cuuid_" + containerUuid, 0));
+
+        LivingEnderChestAccessor accessor = accessor();
+        ItemStack got = accessor.extract(2, ItemStack.EMPTY);
+        ItemFormLiveViews.clear();
+
+        accessor.rollback(got);
+
+        assertEquals(3, handler.getStackInSlot(0).getCount(),
+            "回滚用提取时持有的 handler，不重新查活视图");
+    }
+
+    @Test
     @DisplayName("源解析不到 ⇒ 条目丢弃（路由只有注册/不注册两态，2026-10-29 口径）")
     void extract_itemFormWithoutLiveView_dropsEntry() {
         UUID containerUuid = UUID.randomUUID();

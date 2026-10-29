@@ -136,8 +136,15 @@ public class LivingChestAccessor implements SlotAccessor {
 
     @Override
     public void rollback(ItemStack stack) {
-        // 撤销不是新插入：不得被 16KB 禁止线挡住，否则失败传输的余量会丢
-        LivingChestFunction.insertItemUnchecked(chestStack, stack);
+        if (stack.isEmpty()) return;
+        ItemStack toRestore = stack.copy();
+        LivingChestFunction.insertItemUnchecked(chestStack, toRestore);
+        if (!toRestore.isEmpty()) {
+            SlotAccessor.ROLLBACK_LOGGER.error(
+                "LivingItem rollback lost: {}x {} -> living chest container={} slot={} (exact-slot restore failed)",
+                toRestore.getCount(), toRestore.getHoverName().getString(),
+                identity.getContainerKey(), slot);
+        }
     }
 
     @Override

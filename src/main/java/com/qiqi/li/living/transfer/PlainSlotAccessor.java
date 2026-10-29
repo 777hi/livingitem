@@ -104,14 +104,29 @@ public class PlainSlotAccessor implements SlotAccessor {
 
     @Override
     public void rollback(ItemStack stack) {
+        if (stack.isEmpty()) return;
         ItemStack current = slotInfo.getItem(slot);
+        int slotLimit = slotInfo.getSlotLimit(slot);
+
         if (current.isEmpty()) {
-            slotInfo.setItem(slot, stack);
-        } else if (current.is(stack.getItem())) {
-            ItemStack grown = current.copy();
-            grown.grow(stack.getCount());
-            slotInfo.setItem(slot, grown);
+            int max = Math.min(slotLimit, stack.getMaxStackSize());
+            if (stack.getCount() <= max) {
+                slotInfo.setItem(slot, stack.copy());
+                return;
+            }
+        } else if (ItemStack.isSameItemSameComponents(current, stack)) {
+            int max = Math.min(slotLimit, current.getMaxStackSize());
+            if (current.getCount() + stack.getCount() <= max) {
+                ItemStack grown = current.copy();
+                grown.grow(stack.getCount());
+                slotInfo.setItem(slot, grown);
+                return;
+            }
         }
+
+        SlotAccessor.ROLLBACK_LOGGER.error(
+            "LivingItem rollback lost: {}x {} -> plain slot {} (occupied or no space; exact-slot restore failed)",
+            stack.getCount(), stack.getHoverName().getString(), slot);
     }
 
     @Override

@@ -134,8 +134,8 @@ class LivingEnderChestAccessorTest {
     }
 
     @Test
-    @DisplayName("直连回滚:原槽被异物品占据 ⇒ 回落到其它槽,不丢")
-    void directRollback_fallsBackToAnotherSlot() {
+    @DisplayName("直连回滚:原槽被异物品占据 ⇒ 只报告,不写其它槽")
+    void directRollback_slotOccupied_reportsAndDoesNotWriteElsewhere() {
         enderChest.setItem(0, new ItemStack(Items.DIAMOND, 2));
         LivingEnderChestAccessor accessor = direct();
         ItemStack extracted = accessor.extract(2, null);
@@ -145,7 +145,7 @@ class LivingEnderChestAccessorTest {
         accessor.rollback(extracted);
 
         assertEquals(1, enderChest.getItem(0).getCount(), "原槽的异物品不动");
-        assertEquals(2, enderChest.getItem(1).getCount(), "钻石必须回落到其它空槽");
+        assertTrue(enderChest.getItem(1).isEmpty(), "不得把物品塞进其它槽(只报告日志)");
     }
 
     @Test

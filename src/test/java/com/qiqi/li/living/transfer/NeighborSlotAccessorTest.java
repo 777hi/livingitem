@@ -103,8 +103,8 @@ class NeighborSlotAccessorTest {
     }
 
     @Test
-    @DisplayName("回滚异物品:放入其它空槽")
-    void rollback_differentItem_findsAnotherSlot() {
+    @DisplayName("回滚异物品:原槽被占 ⇒ 只报告,不写其它槽")
+    void rollback_differentItem_reportsAndDoesNotWriteElsewhere() {
         ItemStackHandler handler = new ItemStackHandler(2);
         handler.setStackInSlot(0, new ItemStack(Items.STONE, 1));
         NeighborSlotAccessor accessor = accessor(handler, 0);
@@ -112,7 +112,20 @@ class NeighborSlotAccessorTest {
         accessor.rollback(new ItemStack(Items.DIAMOND, 2));
 
         assertEquals(1, handler.getStackInSlot(0).getCount(), "原槽不动");
-        assertEquals(2, handler.getStackInSlot(1).getCount(), "异物品放入空槽");
+        assertTrue(handler.getStackInSlot(1).isEmpty(), "不得写入其它槽(只报告日志)");
+    }
+
+    @Test
+    @DisplayName("回滚满槽:只报告,不溢出到其它槽")
+    void rollback_fullSlot_reportsAndDoesNotOverflow() {
+        ItemStackHandler handler = new ItemStackHandler(2);
+        handler.setStackInSlot(0, new ItemStack(Items.DIAMOND, 64));
+        NeighborSlotAccessor accessor = accessor(handler, 0);
+
+        accessor.rollback(new ItemStack(Items.DIAMOND, 2));
+
+        assertEquals(64, handler.getStackInSlot(0).getCount());
+        assertTrue(handler.getStackInSlot(1).isEmpty(), "不得写入其它槽(只报告日志)");
     }
 
     @Test

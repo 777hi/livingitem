@@ -25,7 +25,8 @@ src/test/java/com/qiqi/li/
 │   ├── ContainerInfoTooltipTest.java           # 容器提示·普通几何与末行/启发式普通警示/未知与非运行分开/高级来源和类型 ID
 │   └── LivingButtonLayoutTest.java            # 活按钮位置布局·应用位置时的屏幕夹取（屏内不动/越界夹边缘/屏幕小于按钮取 max(0,…)）+ 默认位分流（背包=小人框底居中 42,70 / 其余容器=底部中央）+ 小人框矩形常量对齐原版 (26,8)-(75,78)
 ├── client/input/
-│   └── FarmlandPlantHintTest.java             # 活耕地种植悬停提示·门槛与交互同源（非活种子/非活耕地/非耕地物品/不可种植/空栈→null）+ 四态文案键与参数（充足消耗数/创造免费/不足差额/已种植）
+│   ├── FarmlandPlantHintTest.java             # 活耕地种植悬停提示·门槛与交互同源（非活种子/非活耕地/非耕地物品/不可种植/空栈→null）+ 四态文案键与参数（充足消耗数/创造免费/不足差额/已种植）
+│   └── LivingItemInputKeyMapTest.java         # 方向输入键码表·九宫格 8 键映射/未知键为 0/全角字母归一化与转大写链路（2026-10-29）
 ├── client/icon/
 │   └── WaterWheelRenderStateTest.java         # 水车图标旋转时钟·速度(Create口径 6°/s/RPM)/方向(符号随rpm)/rpm=0恒0/360°回绕连续/大时钟量级不退化(2026-10-29 换源回归)
 ├── client/render/
@@ -81,9 +82,9 @@ src/test/java/com/qiqi/li/
 │   └── ContainerTickHooksTest.java            # tick 钩子注册表（2026-10-29）·同类去重 / 两阶段按注册顺序 / ctx+tick 透传 / 默认空实现
 ├── living/domain/ender/
 │   ├── EnderChannelRegistryDimTest.java        # 活末影箱路由表**维度隔离**（2026-10-27 审查待拍板 #2，2026-10-28 修）·跨维度同坐标同槽位都能注册（去重键含维度，旧实现误判重复 ⇒ 第二条注册不进去）/ 按位置+槽位清理只删指定维度 / 区块卸载不删另一维度同坐标路由 / `validateRoutes` 不误删另一维度同键路由
-│   ├── EnderRouteExtractTest.java              # 路由**端到端提取**（2026-10-28 链路回归；2026-10-29 口径改为「源解析不到 ⇒ 条目丢弃」）·方块容器按位置取能力并扣源 / 玩家背包按 UUID 找玩家 / **物品形态按容器 UUID 取活视图（新能力）** / 活视图未登记 ⇒ 不取且**条目丢弃**（路由只有注册/不注册两态）/ 方块被搬走 ⇒ 丢弃且频道清空 / **物品形态源 rollback 回活视图**（2026-10-29 回滚收口）
+│   ├── EnderRouteExtractTest.java              # 路由**端到端提取**（2026-10-28 链路回归；2026-10-29 口径改为「源解析不到 ⇒ 条目丢弃」）·方块容器按位置取能力并扣源 / 玩家背包按 UUID 找玩家 / **物品形态按容器 UUID 取活视图（新能力）** / 活视图未登记 ⇒ 不取且**条目丢弃**（路由只有注册/不注册两态）/ 方块被搬走 ⇒ 丢弃且频道清空 / **物品形态源 rollback 回活视图（持有提取时 handler，活视图清掉也能回滚）**
 │   ├── EnderRouteManagerSourceTest.java        # 路由源可寻址判据（2026-10-28）·方块容器恒可 / 玩家背包（player_）可（提取端按 UUID 反查）/ 物品形态（cuuid_）**活视图已登记才可**（靠 `ItemFormLiveViews`，背包不 tick 时取不到）/ 未登记 ⇒ 不可（注册必丢）/ 未知键形放行（保守）
-│   ├── LivingEnderChestAccessorTest.java       # 直连模式接缝（2026-10-29）·tryCreate 只认活末影箱 / 插入改栈 / 模拟不写 / 抽取后回滚回原槽（原槽被异物品占据 ⇒ 回落其它槽）/ 跳过活物品 / isEmpty+isFull / 离线降级 / 路由模式 insert 返回 0 + markTransferred 不登记
+│   ├── LivingEnderChestAccessorTest.java       # 直连模式接缝（2026-10-29）·tryCreate 只认活末影箱 / 插入改栈 / 模拟不写 / 抽取后回滚回原槽（原槽被异物品占据 ⇒ 只报告，不写其它槽）/ 跳过活物品 / isEmpty+isFull / 离线降级 / 路由模式 insert 返回 0 + markTransferred 不登记
 │   └── EnderDualFormRouteTest.java             # 双形态不变量（2026-10-29）·方块↔物品交替 20 次每步只剩当前形态 / 旧形态在别的频道也清 / 别的 UUID 合法条目不误删
 ├── living/domain/backpack/
 │   ├── LivingBackpackFunctionTest.java        # 活背包（2026-10-22）·认领（无来源不认领=未装模组零影响/来源注册后只认它说是容器的物品）+ 功能 ID 稳定 + **取消活化连 SavedData 一起清**/无 UUID 不抛
@@ -134,7 +135,7 @@ src/test/java/com/qiqi/li/
 │   ├── LivingChestFunctionTest.java           # 取消活化堆叠倍数返还
 │   ├── LivingChestInsertByteGateTest.java     # 16KB 字节上限插入点精确把关（2026-10-27 审查 P1）·三参 insert 曾直接丢弃 registries 转调估算（每槽 64B ⇒ 27 槽 1728B 永远够不到上限）/ 精确把关：20 本成书(≈1KB/本)+空槽 ⇒ 三参拒绝且内容不动 / 未超限正常收 / **两参入口也精确**（RegistryAccess.EMPTY 回落 BuiltInRegistries ⇒ 超限拒绝，2026-10-29 收口）/ **回滚豁免**（insertItemUnchecked：撤销不是新插入）
 │   ├── LivingChestItemHandlerTest.java        # 能力面接缝（2026-10-29）·全额插入余量为空且箱子只收 1 / 部分插入余量精确 / 字节超限 insert+simulate 同源拒绝 / 抽出不挡
-│   └── LivingChestAccessorTest.java           # 访问器接缝（2026-10-29）·tryCreate 只认活箱子 / insert 未超限全额且改栈 / 字节超限 insert+simulate 同源 0 / 回滚豁免 / 抽取快照门 / markTransferred+sync 接线
+│   └── LivingChestAccessorTest.java           # 访问器接缝（2026-10-29）·tryCreate 只认活箱子 / insert 未超限全额且改栈 / 字节超限 insert+simulate 同源 0 / 回滚豁免 / 满箱子回滚失败只报日志 / 抽取快照门 / markTransferred+sync 接线
 ├── living/domain/beacon/
 │   ├── BeaconFunctionTest.java                 # 宿主判据(协议级 LidBlockEntity)·原版箱/末影箱⇒true/木桶/潜影盒⇒false/null 安全
 │   ├── BeaconPyramidTest.java                 # 1D 金字塔判级·各级精确目标/全0/null不足长/差一块掉档/多堆不亏/嵌套单调/L3 缺一列仍 L2/边界钳制封顶/单列无法激活/距下一级差额/范围公式/合计 9·34·83·164
@@ -200,8 +201,9 @@ src/test/java/com/qiqi/li/
 │   ├── ContainerRuleConfigTest.java           # 玩家差异持久化·覆盖内置+删除不复活+导出全量快照+社区闭环+多档共存/旧格式删除记录不被抹掉/内置规则含无尽箱子300格25列/contentRetaining 内置声明与玩家追加
 │   ├── SlotInteractionCargoGateTest.java      # 槽位交互货物准入真值表·活骨粉不施肥
 │   ├── FilteredSlotAccessorTest.java          # 过滤装饰器接缝（2026-10-29）·黑名单抽取回滚 / 模拟不回滚 / 插入拒绝不达下层 / 放行透传 / unwrap / null+EMPTY 全放行
-│   ├── NeighborSlotAccessorTest.java          # 邻居访问器接缝（2026-10-29）·抽取/模拟/插入改栈 / 堆叠部分插入余量 / 回滚同槽与异槽 / isFull 取 min(槽位上限,物品上限) / getter
-│   └── SlotAccessorTransferConservationTest.java # 传输守恒不变量（2026-10-29）·诚实全额/部分 + 谎报部分/全拒 + 空源/满目标 + 300 组固定种子随机；断言源+目标总量守恒、无负数、不超堆叠
+│   ├── NeighborSlotAccessorTest.java          # 邻居访问器接缝（2026-10-29）·抽取/模拟/插入改栈 / 堆叠部分插入余量 / 回滚只回原槽（异物品/满槽只报日志）/ isFull 取 min(槽位上限,物品上限) / getter
+│   ├── SlotAccessorTransferConservationTest.java # 传输守恒不变量（2026-10-29）·诚实全额/部分 + 谎报部分/全拒 + 空源/满目标 + 300 组固定种子随机；断言源+目标总量守恒、无负数、不超堆叠
+│   └── PlainSlotAccessorTest.java             # 普通槽回滚契约（2026-10-29）·空槽放回 / 同类合并 / 异物品或满槽只报日志，不写其它槽
 ├── living/util/
 │   └── BroadcastDedupTest.java                # 定向广播去重表的跨维度合并（2026-10-23 定，10-26 抽成共享工具）·**其它维度玩家的记录必须保留**（逐维度 flush 不能互清，旧写法每玩家每 tick 重发一包）/离线玩家淘汰/本维度新记录覆盖旧值（四个同步器共用一份实现，故只留这一份测试）
 └── network/

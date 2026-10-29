@@ -144,19 +144,21 @@ public interface SlotAccessor {
             return false;
         }
 
+        int before = extracted.getCount();
         int inserted = target.insert(extracted);
         if (inserted <= 0) {
             ROLLBACK_LOGGER.warn("SlotAccessor rollback: insert returned 0 after simulateInsert said {} (source={}, target={}, item={})",
                 canAccept, source.getClass().getSimpleName(), target.getClass().getSimpleName(),
                 extracted.getItem());
-            source.rollback(extracted);
+            source.rollback(extracted.copyWithCount(before));
             return false;
         }
 
-        if (extracted.getCount() > 0) {
-            ItemStack leftover = extracted.copy();
+        int remainderCount = Math.max(0, before - Math.min(inserted, before));
+        if (remainderCount > 0) {
+            ItemStack leftover = extracted.copyWithCount(remainderCount);
             ROLLBACK_LOGGER.warn("SlotAccessor rollback: partial insert simulated={} actual={} leftover={} (source={}, target={}, item={})",
-                canAccept, inserted, leftover.getCount(), source.getClass().getSimpleName(), target.getClass().getSimpleName(),
+                canAccept, inserted, remainderCount, source.getClass().getSimpleName(), target.getClass().getSimpleName(),
                 extracted.getItem());
             source.rollback(leftover);
         }
