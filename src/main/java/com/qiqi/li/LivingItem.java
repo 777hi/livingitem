@@ -582,11 +582,12 @@ public class LivingItem {
     private void processLevelContainers(ServerLevel level) {
         var cache = ContainerChunkCache.getInstance();
 
-        // 先消费上一 tick 累积的重扫请求，确保刚放置的容器（含延迟初始化的模组容器）
-        // 与新加载区块里的容器已入缓存。
+        // 每 tick 维护：消费上一 tick 累积的重扫请求（刚放置的容器 / 新加载区块），
+        // 并按间隔兜底清理已卸载的缓存条目。
+        // ⚠️ 必须在下面的早退之前 —— 清理不能依赖本维度是否有可处理区块。
         // ⚠️ 这里（ServerTickEvent.Pre）也是唯一允许做能力查询的重扫入口 ——
         // 区块加载事件里绝不能扫，见 ContainerChunkCache.onChunkLoad 的红线说明。
-        cache.flushPendingRescans(level);
+        cache.maintain(level);
 
         // ⚠️ getProcessableChunks（而非原始缓存）会过滤掉"已加载但不 tick"的最外一圈（33 圈）：
         // 各活物品逻辑会读相邻一格的方块（红石 getSignal / 活漏斗邻居容器 / 大箱子另一半 /
@@ -604,8 +605,8 @@ public class LivingItem {
         for (var chunkPos : chunkSet) {
             var chunk = level.getChunkSource().getChunkNow(chunkPos.x, chunkPos.z);
             if (chunk == null) {
-                // 不立即移除：区块可能正在加载中，FULL future 尚未完成
-                // 由 onChunkUnload 事件 + 定期清理负责移除
+                // 不立即移除：区块可能正在加载中，FULL future 尚未完成。
+                // 真正卸载的条目由 maintain → cleanupStaleEntries 兜底清理。
                 continue;
             }
 
@@ -645,9 +646,6 @@ public class LivingItem {
             ModLog.PERF.debug("processLevelContainers dim={} chunks={} containers={} elapsed={}ms removed={}",
                 level.dimension(), chunkSet.size(), processedCount, elapsedMs, toRemove.size());
         }
-
-        // 定期清理：每 6000 ticks（约 5 分钟）清理一次真正不再加载的区块
-        cache.cleanupStaleEntries(level, 6000);
     }
 
     private void onRegisterPayloadHandler(RegisterPayloadHandlersEvent event) {

@@ -17,6 +17,15 @@
 
 ## 2026-10-30
 
+- 🐞 **容器区块缓存的兜底清理被早退跳过** —— `LivingItem.processLevelContainers` 在
+  `getProcessableChunks` 为空时直接 `return`；而每 5 分钟的 `cleanupStaleEntries(level, 6000)`
+  挂在方法末尾 ⇒ 这类维度（只有「已加载但不 tick」的区块、或压根没有容器区块）永远不会清理，
+  已卸载区块的缓存条目与每 tick 遍历成本永久残留。修：`ContainerChunkCache.maintain(level)`
+  （延后重扫 + 按 `CLEANUP_INTERVAL_TICKS` 兜底清理）成为每 tick 唯一维护入口，在早退之前调用；
+  删掉末尾的清理调用。同时修正缓存类注释与基础设施文档里「`onChunkUnload` 会移除条目」的
+  错误说法（缓存侧卸载回调是空的，移除只靠兜底清理）。补 2 项测试（卸载后清理 /
+  无可处理区块时照常清理）。测试 1215→1217。
+
 - 🐞 **活信标光束开光影整根不可见：compat 给光束 RenderType 打 Iris「方块实体」标签** ——
   根因（Iris 1.8.12 源码实证）：光影包靠 `renderStage == MC_RENDER_STAGE_BLOCK_ENTITIES`
   认信标光束；Iris 只给**方块实体渲染器**路径缓冲的 RenderType 打这层标签

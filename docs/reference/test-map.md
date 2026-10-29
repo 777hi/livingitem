@@ -75,7 +75,7 @@ src/test/java/com/qiqi/li/
 │   ├── AvaritiaMenuResolverTest.java             # D-container-09 守卫（无尽箱子）：包名匹配+getTile()返回方块实体 → 解出位置；包名不匹配**即使有同名方法也不认**；返回类型非 BE 不认；无 getter 返回 null（替身 FakeInfinityChestMenu 放在对方包名下）
 │   ├── ContainerNeighborsTest.java            # 四邻取数·fillNeighbors 与 getNeighbors 逐格一致（含边界）/ 单行容器 / 复用缓冲不污染
 │   ├── PlayerFluidDataPersistenceTest.java    # 玩家路径落盘（CONTAINER_FLUID_DATA_PLAYER）·背包与末影箱各有源写回 / 变空条目移除 / 重进不复活 / 两容器键互不干扰 / 重进从附件回填
-│   ├── ContainerChunkCacheChunkLoadTest.java  # 区块加载守卫·事件不碰世界/延后重扫不丢/限量/不主动加载/只处理ticking区/可观测性
+│   ├── ContainerChunkCacheChunkLoadTest.java  # 区块加载守卫·事件不碰世界/延后重扫不丢/限量/不主动加载/只处理ticking区/可观测性/每tick维护清理不依赖可处理区块
 │   ├── ContainerUuidsDiscardTest.java         # 取消活化**彻底清理**（2026-10-28）·discard 必须清内存层容器数据（旧实现只删 SavedData ⇒ 物品形态无位置可反查 ⇒ 熔炉进度留到停服）/ UUID 被剥掉（重新活化拿新身份）
 │   ├── ItemFormLiveViewsTest.java             # 物品形态容器的按 UUID 寻址（2026-10-28，活末影箱路由取货）·登记后可按 UUID 取同一活视图 / 未登记或清空后 null（停服清空、背包没在 tick）/ null 输入安全
 │   ├── ContainerKeysTest.java                 # 容器键解析唯一入口(2026-10-13)·5 种键形各自归位(背包/末影箱前缀相同必须按后缀分开)/缓存键剥维度前缀/未知形态返回 null 不抛异常/ownerOf 末影箱回归(旧实现抛异常被吞⇒从不发包)/isOwnedByPlayer(null 安全)/positionsOf(大箱两段·维度 id 含下划线取末三段)/维度前缀

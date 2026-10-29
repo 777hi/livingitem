@@ -29,14 +29,14 @@ import com.qiqi.li.living.util.StaticCacheRegistry;
  *   如果每 tick 都扫描所有已加载区块的所有方块实体，性能开销极大。
  *   实际上大部分区块不包含任何容器，所以只需缓存"有容器的区块"即可。
  *
- * 缓存维护策略（事件驱动）：
+ * 缓存维护策略（事件驱动 + 每 tick 维护）：
  *   - 区块加载 → **只登记坐标**，下一 tick 扫描该区块，若有容器则加入缓存
- *   - 区块卸载 → 从缓存中移除
+ *   - 区块卸载 → **不立即移除**（与加载事件存在时序窗口），由 {@link #cleanupStaleEntries} 兜底
  *   - 方块放置/破坏 → 下一 tick 重新扫描该区块，更新缓存
  *
  * 使用方式：
- *   在 {@link com.qiqi.li.LivingItem#onServerTick} 中，
- *   通过 {@link #getProcessableChunks} 获取当前维度的可处理容器区块列表，
+ *   在 {@link com.qiqi.li.LivingItem#onServerTick} 中先调用 {@link #maintain}，
+ *   再通过 {@link #getProcessableChunks} 获取当前维度的可处理容器区块列表，
  *   只遍历这些区块中的方块实体。
  *
  * <p>⚠️ <b>本类最重要的红线</b>：{@link #onChunkLoad} 在区块加载任务内部被回调，
@@ -80,6 +80,9 @@ public class ContainerChunkCache {
      * <p>包级可见是为了让回归测试能引用它，而不必在断言里硬编码魔法数字。</p>
      */
     static final int MAX_RESCANS_PER_TICK = 64;
+
+    /** 兜底清理间隔（tick）：约 5 分钟 */
+    static final int CLEANUP_INTERVAL_TICKS = 6000;
 
     private ContainerChunkCache() {}
 
@@ -133,8 +136,8 @@ public class ContainerChunkCache {
      *   而 ChunkEvent.Load 在 ServerLevel.tick() 中触发（晚于 Pre）。
      *   如果卸载时移除，重新加载后 processLevelContainers 在同一个 tick 的 Pre 阶段
      *   找不到该区块，需要等到下一个 tick 才能处理。
-     *   保留在缓存中的区块会在 processLevelContainers 中通过 getChunkNow()
-     *   自行检测并移除，因此不需要在卸载事件中主动清理。
+     *   处理阶段发现 getChunkNow() == null 时只跳过本次处理，不移除缓存条目
+     *   （FULL future 可能尚未完成）。
      *
      * 兜底：cleanupStaleEntries 定期清理真正已卸载的区块。
      */
@@ -227,6 +230,20 @@ public class ContainerChunkCache {
             pendingRescans.computeIfAbsent(level.dimension(), k -> new ObjectOpenHashSet<>())
                           .addAll(carryOver);
         }
+    }
+
+    /**
+     * 每 tick 维护入口：先消费延后重扫，再按 {@value #CLEANUP_INTERVAL_TICKS} tick 的间隔做兜底清理。
+     *
+     * <p>⚠️ 必须在 tick 阶段调用（能力查询红线，见 {@link #flushPendingRescans}）。
+     * 调用点必须在任何"本维度无事可做"的早退<b>之前</b> —— 清理不能依赖
+     * {@link #getProcessableChunks} 是否为空。</p>
+     *
+     * @param level 服务端世界
+     */
+    public void maintain(ServerLevel level) {
+        flushPendingRescans(level);
+        cleanupStaleEntries(level, CLEANUP_INTERVAL_TICKS);
     }
 
     /**

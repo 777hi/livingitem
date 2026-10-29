@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -246,5 +247,63 @@ class ContainerChunkCacheChunkLoadTest {
 
         assertTrue(line.contains("loaded区块=631"), "必须输出 loaded 区块数，否则无法观测钉住/外扩：" + line);
         assertTrue(line.contains("基准625"), "视距 12 的基准 (2×12+1)² = 625，用于判断是否超出：" + line);
+    }
+
+    // ---------- 7. 每 tick 维护：兜底清理不依赖可处理区块 ----------
+
+    @Test
+    @DisplayName("维护：已卸载的缓存条目在下一次清理周期被移除")
+    void maintain_removesUnloadedChunks() {
+        ServerLevel level = mockLevel();
+        AtomicLong gameTime = mockGameTime(level);
+        ChunkPos pos = new ChunkPos(3, 7);
+
+        fireChunkLoad(level, pos);
+        Map<Long, LevelChunk> loaded = new HashMap<>();
+        loaded.put(pos.toLong(), containerChunk(level, pos));
+        mockChunkSource(level, loaded);
+
+        cache.maintain(level); // 首次维护：发现容器 + 初始化清理计时
+        assertEquals(1, cache.getCacheSize(Level.OVERWORLD));
+
+        loaded.clear(); // 模拟卸载：getChunkNow 返回 null
+        gameTime.set(ContainerChunkCache.CLEANUP_INTERVAL_TICKS);
+        cache.maintain(level);
+
+        assertEquals(0, cache.getCacheSize(Level.OVERWORLD),
+            "已卸载的区块必须被兜底清理，否则缓存与每 tick 遍历都会永久残留");
+    }
+
+    @Test
+    @DisplayName("维护：本维度没有可处理区块时，清理照常执行（不能依赖处理阶段的早退）")
+    void maintain_cleansEvenWhenNoProcessableChunks() {
+        ServerLevel level = mockLevel();
+        AtomicLong gameTime = mockGameTime(level);
+        ChunkPos pos = new ChunkPos(3, 7);
+
+        fireChunkLoad(level, pos);
+        Map<Long, LevelChunk> loaded = new HashMap<>();
+        loaded.put(pos.toLong(), containerChunk(level, pos));
+        ServerChunkCache source = mockChunkSource(level, loaded);
+        Mockito.when(source.isPositionTicking(pos.toLong())).thenReturn(false); // 已加载但不 tick
+
+        cache.maintain(level);
+        assertEquals(1, cache.getCacheSize(Level.OVERWORLD), "发现阶段不按 ticking 过滤");
+        assertTrue(cache.getProcessableChunks(level).isEmpty(),
+            "该维度没有任何可处理区块 —— 旧实现会在这里直接 return，连清理一起跳过");
+
+        loaded.clear();
+        gameTime.set(ContainerChunkCache.CLEANUP_INTERVAL_TICKS);
+        cache.maintain(level);
+
+        assertEquals(0, cache.getCacheSize(Level.OVERWORLD),
+            "清理必须在处理阶段的早退之前执行");
+    }
+
+    /** 可推进的 gameTime（清理按 gameTime 间隔触发） */
+    private static AtomicLong mockGameTime(ServerLevel level) {
+        AtomicLong gameTime = new AtomicLong();
+        Mockito.when(level.getGameTime()).thenAnswer(inv -> gameTime.get());
+        return gameTime;
     }
 }

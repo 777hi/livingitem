@@ -325,7 +325,7 @@ ServerTickEvent.Pre
     ↓
 1. 遍历所有在线玩家 → 处理玩家背包
     ↓
-2. 遍历所有维度 → flushPendingRescans() → ContainerChunkCache.getProcessableChunks(level)
+2. 遍历所有维度 → maintain()（重扫 + 兜底清理）→ ContainerChunkCache.getProcessableChunks(level)
     ↓
 3. 遍历每个含容器区块的方块实体
     ↓
@@ -342,14 +342,18 @@ ContainerChunkCache.java 维护"包含容器方块实体的区块"列表，避�
 
 如果每 tick 都扫描所有已加载区块的所有方块实体，性能开销极大。实际上大部分区块不包含任何容器（纯地形区块），所以只需缓存"有容器的区块"即可。
 
-**缓存维护策略（事件驱动）**：
+**缓存维护策略（事件驱动 + 每 tick 维护）**：
 
 ```
 区块加载   → 只登记坐标，下一 tick 扫描该区块，若有容器则加入缓存
-区块卸载   → 从缓存中移除（实际由 cleanupStaleEntries 兜底，见下）
+区块卸载   → 不立即移除（与加载事件存在时序窗口），由 cleanupStaleEntries 兜底
 方块放置   → 下一 tick 重新扫描该区块
 方块破坏   → 下一 tick 重新扫描该区块
 ```
+
+`ContainerChunkCache.maintain(level)` 是每 tick 唯一维护入口：先 `flushPendingRescans`，
+再按 `CLEANUP_INTERVAL_TICKS`（6000）调 `cleanupStaleEntries`。调用点必须在
+「本维度没有可处理区块就 return」**之前** —— 否则该维度的残留缓存永远不会被清理。
 
 **两条独立的判据**（别混）：**发现**（扫描）覆盖**所有已加载区块**（`getChunkNow`）；
 **处理**（读能力 / 读邻居）只针对 **ticking 区块**（`isPositionTicking`，见 §3.2.1）。
@@ -444,7 +448,7 @@ tick N:
     ↑ 若 future 尚未完成，返回 null → toRemove 移除缓存 ❌
 ```
 
-**修复**（2026-08-17）：`getChunkNow` 返回 null 时不再立即移除，只跳过本次处理。区块由 `onChunkUnload` 正常移除，`cleanupStaleEntries` 作为兜底定期清理残留。
+**修复**（2026-08-17）：`getChunkNow` 返回 null 时不再立即移除，只跳过本次处理。区块不会在卸载事件中移除（缓存侧 `onChunkUnload` 不删条目），由 `cleanupStaleEntries` 作为兜底定期清理残留。
 
 **优化**（2026-08-19）：遍历世界容器时跳过未打开的战利品容器（`RandomizableContainer` 且 `lootTable != null`），避免 `getItem()` 内部 `unpackLootTable()` 触发战利品表生成。战利品表（如 `minecraft:chests/shipwreck_map`）中的 `ExplorationMapFunction` 搜索结构，在未探索区域耗时极高。
 
