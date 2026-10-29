@@ -134,6 +134,21 @@ class LivingEnderChestAccessorTest {
     }
 
     @Test
+    @DisplayName("直连回滚:原槽被异物品占据 ⇒ 回落到其它槽,不丢")
+    void directRollback_fallsBackToAnotherSlot() {
+        enderChest.setItem(0, new ItemStack(Items.DIAMOND, 2));
+        LivingEnderChestAccessor accessor = direct();
+        ItemStack extracted = accessor.extract(2, null);
+        assertEquals(2, extracted.getCount());
+        enderChest.setItem(0, new ItemStack(Items.STONE));
+
+        accessor.rollback(extracted);
+
+        assertEquals(1, enderChest.getItem(0).getCount(), "原槽的异物品不动");
+        assertEquals(2, enderChest.getItem(1).getCount(), "钻石必须回落到其它空槽");
+    }
+
+    @Test
     @DisplayName("直连抽取:跳过玩家末影箱里的活物品")
     void directExtract_skipsLivingItems() {
         enderChest.setItem(0, livingDiamond());

@@ -81,9 +81,9 @@ src/test/java/com/qiqi/li/
 │   └── ContainerTickHooksTest.java            # tick 钩子注册表（2026-10-29）·同类去重 / 两阶段按注册顺序 / ctx+tick 透传 / 默认空实现
 ├── living/domain/ender/
 │   ├── EnderChannelRegistryDimTest.java        # 活末影箱路由表**维度隔离**（2026-10-27 审查待拍板 #2，2026-10-28 修）·跨维度同坐标同槽位都能注册（去重键含维度，旧实现误判重复 ⇒ 第二条注册不进去）/ 按位置+槽位清理只删指定维度 / 区块卸载不删另一维度同坐标路由 / `validateRoutes` 不误删另一维度同键路由
-│   ├── EnderRouteExtractTest.java              # 路由**端到端提取**（2026-10-28 链路回归；2026-10-29 口径改为「源解析不到 ⇒ 条目丢弃」）·方块容器按位置取能力并扣源 / 玩家背包按 UUID 找玩家 / **物品形态按容器 UUID 取活视图（新能力）** / 活视图未登记 ⇒ 不取且**条目丢弃**（路由只有注册/不注册两态）/ 方块被搬走 ⇒ 丢弃且频道清空
+│   ├── EnderRouteExtractTest.java              # 路由**端到端提取**（2026-10-28 链路回归；2026-10-29 口径改为「源解析不到 ⇒ 条目丢弃」）·方块容器按位置取能力并扣源 / 玩家背包按 UUID 找玩家 / **物品形态按容器 UUID 取活视图（新能力）** / 活视图未登记 ⇒ 不取且**条目丢弃**（路由只有注册/不注册两态）/ 方块被搬走 ⇒ 丢弃且频道清空 / **物品形态源 rollback 回活视图**（2026-10-29 回滚收口）
 │   ├── EnderRouteManagerSourceTest.java        # 路由源可寻址判据（2026-10-28）·方块容器恒可 / 玩家背包（player_）可（提取端按 UUID 反查）/ 物品形态（cuuid_）**活视图已登记才可**（靠 `ItemFormLiveViews`，背包不 tick 时取不到）/ 未登记 ⇒ 不可（注册必丢）/ 未知键形放行（保守）
-│   ├── LivingEnderChestAccessorTest.java       # 直连模式接缝（2026-10-29）·tryCreate 只认活末影箱 / 插入改栈 / 模拟不写 / 抽取后回滚回原槽 / 跳过活物品 / isEmpty+isFull / 离线降级 / 路由模式 insert 返回 0 + markTransferred 不登记
+│   ├── LivingEnderChestAccessorTest.java       # 直连模式接缝（2026-10-29）·tryCreate 只认活末影箱 / 插入改栈 / 模拟不写 / 抽取后回滚回原槽（原槽被异物品占据 ⇒ 回落其它槽）/ 跳过活物品 / isEmpty+isFull / 离线降级 / 路由模式 insert 返回 0 + markTransferred 不登记
 │   └── EnderDualFormRouteTest.java             # 双形态不变量（2026-10-29）·方块↔物品交替 20 次每步只剩当前形态 / 旧形态在别的频道也清 / 别的 UUID 合法条目不误删
 ├── living/domain/backpack/
 │   ├── LivingBackpackFunctionTest.java        # 活背包（2026-10-22）·认领（无来源不认领=未装模组零影响/来源注册后只认它说是容器的物品）+ 功能 ID 稳定 + **取消活化连 SavedData 一起清**/无 UUID 不抛

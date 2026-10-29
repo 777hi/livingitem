@@ -134,6 +134,25 @@ class EnderRouteExtractTest {
     }
 
     @Test
+    @DisplayName("物品形态源回滚：提取后 rollback 回到活视图（不丢物品）")
+    void rollback_toItemFormLiveView_restores() {
+        UUID containerUuid = UUID.randomUUID();
+        ItemStackHandler handler = new ItemStackHandler(27);
+        handler.setStackInSlot(0, new ItemStack(Items.DIAMOND, 3));
+        ItemFormLiveViews.register(containerUuid, handler, null);
+        registry.offer(CHANNEL, entry(Level.OVERWORLD, null, "cuuid_" + containerUuid, 0));
+
+        LivingEnderChestAccessor accessor = accessor();
+        ItemStack got = accessor.extract(2, ItemStack.EMPTY);
+        assertEquals(2, got.getCount());
+        assertEquals(1, handler.getStackInSlot(0).getCount());
+
+        accessor.rollback(got);
+
+        assertEquals(3, handler.getStackInSlot(0).getCount(), "回滚必须放回物品形态活视图");
+    }
+
+    @Test
     @DisplayName("源解析不到 ⇒ 条目丢弃（路由只有注册/不注册两态，2026-10-29 口径）")
     void extract_itemFormWithoutLiveView_dropsEntry() {
         UUID containerUuid = UUID.randomUUID();

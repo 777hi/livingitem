@@ -64,6 +64,8 @@ pull 端（活末影箱→输出槽）从黑板**读**「有东西吗？有就�
 
 | 11 | **同一容器 UUID 同一时刻只有一个「活形态」**：条目录下源的容器 UUID（`sourceContainerUuid`，方块从 BE 附件读、物品形态从物品组件读，同一个值）；`validateRoutes` 按 UUID 补捞候选，条目形态与当前 ctx 形态不符 ⇒ 丢弃 | 方块↔物品切换会换掉 pos/键的**种类**，旧条目在 `posIndex`/`keyIndex` 里都查不到 ⇒ 校验「看不见」它，而它又可能照样能解析（背包放回原位）⇒ 两条路由抽同一份内容的两种视图 ⇒ **刷物品**（2026-10-29 真机：`cuuid_` 与 `BlockPos` 两条同时在抽同一槽，源计数每次放置跳回满值）。回归 `EnderChannelRegistryDimTest` |
 
+| 12 | **回滚不得丢物品**：回滚依次尝试 原槽 → 同库其它槽 → 物品形态活视图 → 玩家容器 → 落地；装不下的余量必须 `Block.popResource`，不静默丢弃 | 回滚是撤销，不是新插入；旧实现忽略 `insertItem` 返回值、无位置/物品形态分支直接 `return` ⇒ 失败传输的余量蒸发（2026-10-29 修，回归 `LivingEnderChestAccessorTest` / `EnderRouteExtractTest`） |
+
 **能力清单**：✅ 三态机制 · ✅ 全局路由表（跨容器 / 跨维度）· ✅ 频道隔离
 · ✅ 轮询公平调度 · ✅ 路由清理 + 区块卸载处理 · ✅ 冷却 · ✅ Tooltip
 
