@@ -15,6 +15,25 @@
 
 ---
 
+## 2026-10-30
+
+- 🐞 **活信标光束开光影整根不可见：compat 给光束 RenderType 打 Iris「方块实体」标签** ——
+  根因（Iris 1.8.12 源码实证）：光影包靠 `renderStage == MC_RENDER_STAGE_BLOCK_ENTITIES`
+  认信标光束；Iris 只给**方块实体渲染器**路径缓冲的 RenderType 打这层标签
+  （`MixinBlockEntityRenderDispatcher` 给 BE 期间缓冲的每个 RenderType 包
+  `OuterWrappedRenderType` + BE shard，绘制时置位），我们的光束挂在
+  `RenderLevelStageEvent` 里画 ⇒ 无标签 ⇒ 按不明几何处理，判错即整根丢弃
+  （原版信标有标签所以正常）。**2026-10-16 的「挂 `AFTER_BLOCK_ENTITIES` 修光影暗淡」
+  不解决这条**——Iris 对 NeoForge 渲染事件零识别（最新 26.3 分支全库仅一处空引用），
+  更新 Iris 也无效。修：`living/compat/iris/`（仿 create/sable 软依赖惯例）——
+  `ModIris` 门面（ModList 探测 iris / oculus + `Class.forName` 预链接自检，
+  任何失败降级为无标签、不崩帧）+ `IrisBeamTagging`（把 `RenderType.beaconBeam`
+  两类型包上 Iris 同款 shard，与原版信标同标签同批次；memoized 缓存全帧共享一份包装）。
+  Iris 缺席时零参与（无光影路径行为不变）。顺带修正 `LivingBeamRenderer` /
+  beacon-tech 里「挂段位修光影」的过时说法（可见性靠标签不靠挂点）。
+  build.gradle 加 `compileOnly "maven.modrinth:iris:1.8.12+1.21.1-neoforge"`（transitive=false）。
+  补 2 项门面接缝测试。测试 1213→1215。
+
 ## 2026-10-29
 
 - 🐞 **邻居路由源 UUID 收口** —— `registerRouteFromNeighbor` 的 `sourceContainerUuid` 记成

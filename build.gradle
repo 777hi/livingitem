@@ -264,6 +264,13 @@ dependencies {
     }
     compileOnly files(configurations.sableArtifacts)
     compileOnly files(sableCompanionJar).builtBy(extractSableCompanion)
+
+    // ==================== Iris 兼容（compileOnly 编译，玩家可选安装） ====================
+    // 只用于给活信标光束 RenderType 打「方块实体」渲染段标签（见 living/compat/iris/ModIris），
+    // 不引用其余 Iris 能力。运行时由门面按 ModList 探测（iris / oculus），Iris 缺席时零参与；
+    // Oculus 是 Iris 的移植（同包名同类），编译只对 Iris 一份来源。
+    // 不设 runtimeOnly：开发环境不带光影，无标签路径即可验证。
+    compileOnly("maven.modrinth:iris:1.8.12+1.21.1-neoforge") { transitive = false }
     
     // ==================== 单元测试依赖 (Unit Test Dependencies) ====================
 

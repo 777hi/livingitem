@@ -6,6 +6,7 @@ import java.util.List;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.compat.iris.ModIris;
 import com.qiqi.li.living.domain.beacon.BeaconBaseBlocks;
 import com.qiqi.li.living.domain.beacon.BeaconGlassColor;
 import com.qiqi.li.living.domain.beacon.BeaconHostClientCache;
@@ -56,7 +57,10 @@ import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
  * {@code translate(0.5, 0, 0.5)}（给方块坐标补中心用）⇒ 调用前必须做 −0.5 XZ 预补偿，
  * 否则光束轴偏离起点（设计稿 §2.1 已知坑）。⚠️ 它内部画**两趟**（beam 不透明 + glow
  * 半透明外晕，两个 RenderType）⇒ 调用方必须**两趟都 flush**，只 flush 不透明那趟会让
- * 光晕残留在 Immediate 里被推迟提交（2026-10-16 修）。
+ * 光晕残留在 Immediate 里被推迟提交（2026-10-16 修）。⚠️ Iris（光影加载器）在装时
+ * 显式 {@code endBatch(RenderType)} 被其批处理系统禁用为空操作（几何由 Iris 在半透明
+ * 边界统一 flush）⇒ 两趟 flush 只服务无光影路径；光影路径靠 {@link ModIris#tagBeamSource}
+ * 打标签保可见。
  *
  * <h3>方向对齐</h3>
  * 通用公式与 {@link LivingToolModelRenderer#drawModel} 同款：
@@ -96,11 +100,11 @@ public final class LivingBeamRenderer {
     /**
      * 渲染入口 —— 由 {@code LivingItemClient} 转发 {@link RenderLevelStageEvent}。
      *
-     * <p>挂在 {@link RenderLevelStageEvent.Stage#AFTER_BLOCK_ENTITIES}：<b>与原版信标
-     * （BlockEntityRenderer）同段</b>。这是 2026-10-16 用户实测「开光影时原版光束发光亮亮、
-     * 我们的暗淡」的修法——光影（Oculus/BSL 类延迟渲染）按渲染段分派 G-buffer / emissive
-     * 通道，原版 BE 发光体所在段才会被 bloom 捕获；此前挂在 {@code AFTER_ENTITIES}（早一段）
-     * ⇒ 不进后处理 ⇒ 暗。深度双保险不变：BE 段时地形 / 实体 / BE 深度均已写入。</p>
+     * <p>挂在 {@link RenderLevelStageEvent.Stage#AFTER_BLOCK_ENTITIES}（原版信标
+     * BlockEntityRenderer 同段）：该点地形 / 实体 / BE 深度均已写入，光束本地截断正确。
+     * ⚠️ 光影下的可见性**不取决于挂点**（Iris 不认识 NeoForge 渲染事件，2026-10-30 实证
+     * Iris 1.8.12 源码），而取决于 {@link ModIris#tagBeamSource} 给几何打的「方块实体」
+     * 标签 —— 光影包按 {@code renderStage} 认信标光束，无标签即整根不可见。</p>
      */
     public static void render(RenderLevelStageEvent event) {
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_BLOCK_ENTITIES) {
@@ -392,6 +396,10 @@ public final class LivingBeamRenderer {
         // ⚠️ 预补偿 renderBeaconBeam 内部的 translate(0.5, 0, 0.5)（设计稿 §2.1 已知坑）
         poseStack.translate(-0.5F, 0.0F, -0.5F);
 
+        // 光影（Iris/Oculus）路径：给几何打「方块实体」标签，光影包才认这是信标光束；
+        // 无光影时原样返回。flush 仍走 buffers —— Iris 下显式 flush 是空操作，由 Iris 统一提交。
+        MultiBufferSource taggedBuffers = ModIris.tagBeamSource(buffers);
+
         int yOffset = 0;
         for (int i = 0; i < sections.size(); i++) {
             BeamColorSections.Section section = sections.get(i);
@@ -406,7 +414,7 @@ public final class LivingBeamRenderer {
                 continue;                    // 0 高段跳过（信标自身格等），不是终止条件
             }
             BeaconRenderer.renderBeaconBeam(
-                poseStack, buffers, BeaconRenderer.BEAM_LOCATION, partialTick, 1.0F,
+                poseStack, taggedBuffers, BeaconRenderer.BEAM_LOCATION, partialTick, 1.0F,
                 level.getGameTime(), yOffset, segHeight, section.color(), BEAM_RADIUS, GLOW_RADIUS);
             yOffset += segHeight;
         }

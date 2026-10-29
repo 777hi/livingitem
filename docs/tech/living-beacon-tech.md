@@ -136,13 +136,24 @@ public static void renderBeaconBeam(
 > （箱子宿主起点恰好是方块中心，天然对齐；玩家宿主需补偿。）
 
 **② 挂载点现成。**
-`RenderLevelStageEvent`（**`AFTER_BLOCK_ENTITIES` 阶段**——2026-10-16 用户实测「开光影原版亮我们暗」
-后从 `AFTER_ENTITIES` 改：必须与原版信标（BlockEntityRenderer）同段，光影才把我们当同一类发光体
-送进 bloom；深度双保险不变）—— `LivingItemClient.onRenderLevelStage`
+`RenderLevelStageEvent`（**`AFTER_BLOCK_ENTITIES` 阶段**——与原版信标
+（BlockEntityRenderer）同段：地形 / 实体 / BE 深度均已写入 ⇒ 光束本地截断正确；
+2026-10-30 实证：**光影下的可见性不取决于挂点**，见下方标签说明）
+—— `LivingItemClient.onRenderLevelStage`
 已转发给 `LivingToolRayRenderer` / `LivingToolModelRenderer`
 ⇒ 活信标光束挂**同一事件**，是第 3 个消费者，**零新增基础设施**。
 ⚠️ 直调 `renderBeaconBeam` 后必须**两趟 flush**（beam 不透明 + glow 半透明是两个 RenderType）——
 漏 glow 那趟 ⇒ 光晕被推迟提交 ⇒ 暗淡（不开光影也在）。
+⚠️ **光影（Iris / Oculus）下可见性靠标签，不靠挂点**（2026-10-30 实证 Iris 1.8.12 源码）：
+Iris 对 NeoForge 渲染事件**零识别**（全库对 `RenderLevelStageEvent` 仅一处空引用），
+只给**方块实体渲染器**路径缓冲的几何打 `renderStage = MC_RENDER_STAGE_BLOCK_ENTITIES`
+标签（`MixinBlockEntityRenderDispatcher` 给 BE 期间缓冲的每个 RenderType 包
+`OuterWrappedRenderType` + BE shard，绘制时置位）；光影包据此认信标光束并按全亮发光体处理，
+**无标签 ⇒ 按不明几何处理，判错即整根丢弃 = 不可见**（原版信标有标签所以正常）。
+修法：`living/compat/iris/ModIris`（软依赖 `maven.modrinth:iris`，探测 iris / oculus，
+预链接自检失败一律降级为无标签、不崩帧）→ `IrisBeamTagging` 把光束 RenderType 包上
+**同一个 shard**，与原版信标同标签同批次（Iris 在装时显式 `endBatch(RenderType)` 被其
+批处理禁用为空操作，几何由 Iris 在半透明边界统一 flush）。
 
 **③ 方向对齐写法可复用。**
 玩家宿主（顶面法线方向）用 `LivingToolModelRenderer.drawModel` 的
