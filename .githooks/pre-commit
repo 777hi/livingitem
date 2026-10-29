@@ -1,0 +1,24 @@
+#!/bin/sh
+# 仓库内 pre-commit 门禁（2026-10-30 起，R-05）。
+# 启用一次：sh tools/setup-dev.sh（等价于 git config core.hooksPath .githooks）
+set -u
+
+PY=python
+command -v "$PY" >/dev/null 2>&1 || PY=python3
+
+fail=0
+echo "[pre-commit] check_layers（层纪律）"
+"$PY" tools/check_layers.py || fail=1
+echo "[pre-commit] check_mixins（Mixin 前缀 / 成员 / 配置）"
+"$PY" tools/check_mixins.py || fail=1
+echo "[pre-commit] check_container_keys（容器键解析收敛）"
+"$PY" tools/check_container_keys.py || fail=1
+echo "[pre-commit] doc_check（文档一致性）"
+"$PY" tools/doc_check.py || fail=1
+
+if [ "$fail" != "0" ]; then
+  echo ""
+  echo "[pre-commit] 拦下了。若 doc_check 报「测试条数不一致」，先跑全量 ./gradlew test。"
+  exit 1
+fi
+echo "[pre-commit] 全部通过"

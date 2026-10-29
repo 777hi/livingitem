@@ -17,6 +17,16 @@
 
 ## 2026-10-30
 
+- 🔧 **质量门禁上 CI + 修 Windows 崩溃（R-05）** —— CI 此前只跑 `./gradlew build`，
+  四个 Python 门禁（`check_layers` / `check_mixins` / `check_container_keys` / `doc_check`）
+  只在开发机的 `.git/hooks` 生效，CI 绿 ≠ 门禁绿。另外 `check_container_keys.py` 在
+  Windows GBK 控制台打印 `✓` 时抛 `UnicodeEncodeError`（全绿也只剩 traceback）。
+  修：① `.github/workflows/build.yml` 在 build 之后增加 `Quality gates`，跑四件套；
+  ② `doc_check` 支持 `DOC_CHECK_STRICT=1`：无测试 XML 时 FAIL 而不是 SKIP（本地保持 SKIP，
+  改文档不必先跑全量测试）；③ 新增仓库内 `.githooks/pre-commit`（四件套，python/python3
+  自动探测）与 `tools/setup-dev.sh`（`core.hooksPath .githooks`），不再依赖不被跟踪的
+  `.git/hooks`；④ `check_container_keys.py` 补 UTF-8 stdout 重配置。测试 1219 不变。
+
 - 🐞 **战利品箱子区块被移出缓存 → 之后放入的活物品永不 tick（R-04）** ——
   处理阶段跳过未开箱的战利品容器（`RandomizableContainer` 且 `lootTable != null`）时
   直接 `continue`，没有置 `hasContainer` ⇒ 区块被判为「无容器」移出处理缓存。

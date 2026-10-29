@@ -28,6 +28,11 @@ import os
 import re
 import sys
 
+# Windows 默认控制台是 GBK，结论行里的 ✓ / ✗ 会抛 UnicodeEncodeError
+# （8 项全绿也打不出「通过」，只剩 traceback）。与 check_mixins.py 同款处理。
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "src", "main", "java")
 

@@ -1,3 +1,8 @@
 # 统一行尾：文本文件一律 LF 入库（规则属于仓库，不取决于每个人本机的 autocrlf 配置）。
 # git 自动检测二进制文件（png 等）不受影响。
 * text=auto
+
+# 可执行脚本必须按 LF 检出（CRLF 会破坏 shebang / 行尾）：Git Bash / Linux / CI 直接执行。
+*.sh text eol=lf
+.githooks/* text eol=lf
+gradlew text eol=lf

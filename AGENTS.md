@@ -171,6 +171,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-30 | 🔧 **质量门禁上 CI + 修 Windows 崩溃（R-05）** —— CI 此前只跑 `./gradlew build`，四个 Python 门禁仅在本机 `.git/hooks` 生效；`check_container_keys` 在 GBK 控制台直接 `UnicodeEncodeError`。修：CI 增加 `Quality gates` 四件套；`doc_check` 支持 `DOC_CHECK_STRICT=1`（CI 无 XML 直接红，本地仍 SKIP）；新增仓库内 `.githooks/pre-commit` + `tools/setup-dev.sh`；测试 1219 不变 | `AGENTS.md`「提交前必跑」 · `.github/workflows/build.yml` · `tools/setup-dev.sh` |
 | 2026-10-30 | 🐞 **战利品箱子区块被移出缓存 → 放入的活物品永不 tick（R-04）** —— 处理阶段跳过未开箱的战利品容器时没置 `hasContainer`，区块被当成「无容器」移出缓存；开箱使 `lootTable` 变 null 却不触发重扫 ⇒ 区块再也不回来。修：跳过处理但保留区块（每 tick 只做一次 `getLootTable()` 检查）；抽 `LivingItem.processChunkContainers` 做行为测试（返回 -1 才移出缓存）；测试 1217→1219 | `docs/system-design/living-item-infrastructure.md` §3.2 · `LivingItemChunkContainerScanTest` |
 | 2026-10-30 | 🐞 **区块缓存的兜底清理被早退跳过** —— `processLevelContainers` 在无可处理区块时直接 `return`（如该维度只有已加载但不 tick 的区块），末尾每 5 分钟的 `cleanupStaleEntries` 永不执行 ⇒ 已卸载区块的缓存条目永久残留，且每 tick 仍被遍历。修：`ContainerChunkCache.maintain()`（重扫 + 清理）前置为每 tick 唯一维护入口，调用点必须在早退之前；补 2 项测试；测试 1215→1217 | `docs/system-design/living-item-infrastructure.md` §3.2 · `ContainerChunkCacheChunkLoadTest` |
 | 2026-10-30 | 🐞 **活信标光束开光影整根不可见** —— Iris 只给**方块实体渲染器**路径缓冲的几何打 `renderStage=BLOCK_ENTITIES` 标签（光影包据此认信标光束），我们挂 `RenderLevelStageEvent` 画的没有 ⇒ 按不明几何处理，判错即丢弃（原版有标签所以正常；挂 `AFTER_BLOCK_ENTITIES` 不解决——Iris 对 NeoForge 渲染事件零识别，更新 Iris 也无效）。修：`living/compat/iris/` 软依赖——`ModIris` 门面（探测 iris/oculus + 预链接自检，失败降级不崩帧）+ `IrisBeamTagging` 把光束 RenderType 包上 Iris 同款 `OuterWrappedRenderType`+BE shard，与原版同标签同批次；测试 1213→1215 | `docs/tech/living-beacon-tech.md` §2.1 · `ModIris` / `IrisBeamTagging` |
@@ -180,16 +181,17 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-10-29 | 🐞 **活背包里的活武器没有攻击环** —— 宿主容器收集时把「无记忆」的一律塞进 `assistTools`（2026-10-27 为修工具不显示），武器因此被 `renderAssistRing` 按「剑挖掘速度 1.0 / 1.5」分组 ⇒ 打怪时永不进攻击环、挖树叶作物时反被判成在挖。修：按 `isAssistTool` / `else if isAssistWeapon` 分流（活斧子算工具）。数据链路本来就通（action 随 K2 包的 ItemStack 走） | `docs/tech/living-weapon-tech.md` §7.1 · `LivingToolModelRenderer` |
 | 2026-10-29 | 🐞 **精妙背包界面里活地图扩展显示不渲染** —— 渲染挂在 `AbstractContainerScreen.render` TAIL，而精妙 `StorageScreenBase.render` 抄了一份 `super.render`（`renderSuper`）不调父实现 ⇒ 注入字节码永不执行（同 2026-10-19 活流体那次的根因）。修：展开地图 / 方向 HUD / 种植提示 / 生长槽大图四项统一迁到 `ContainerScreenEvent.Render.Foreground`；布局缓存抽成 `LivingMapGroups` 让渲染与命中判定读同一份 | `docs/tech/living-map-ender-pearl-tech.md` §13 v57→v58 · `client/render/LivingContainerOverlay.java` |
 | 2026-10-29 | 🧪 **性能测试分离** —— `ContainerFluidPerfTest` 打 `@Tag("perf")`，默认 `./gradlew test` 排除（1200 项 / 14s）；`-Pperf` 才跑全量 1202；顺手修掉硬编码本机路径，改 `build/_perf.txt` | `docs/guides/unit-testing.md` · `build.gradle` |
-| 2026-10-29 | 🧪 **工具记忆接缝测试** —— 5 项：射线/攻击 offset 逐位保留 + 宿主起点回放 / EntityType 匹配 / with/without 只动目标字段 / Codec + StreamCodec 往返；测试 1197→1202 | `docs/reference/test-map.md` · `LivingToolMemoryTest` |
 
-## 提交前必跑（2026-10-20 定）
+## 提交前必跑（2026-10-30 更新）
 
 ```bash
-python tools/check_layers.py   # 层纪律：R1 依赖方向 / R2 Mixin 位置 / R3 领域互依赖 / R4 注册入口
-python tools/doc_check.py      # 文档一致性：进展滚动 / 指针 / 测试条数 / 入口体量 …
+python tools/check_layers.py          # 层纪律：R1 依赖方向 / R2 Mixin 位置 / R3 领域互依赖 / R4 注册入口
+python tools/check_mixins.py          # Mixin：R1 living_item$ 前缀 / R2 显式成员 / R3 配置 ↔ 源文件
+python tools/check_container_keys.py  # 容器键解析收敛（ContainerKeys 唯一入口）
+python tools/doc_check.py             # 文档一致性：进展滚动 / 指针 / 测试条数 / 入口体量 …
 ```
 
-**任一为红就不要提交。** 两条都是**棘轮**机制（基线只允许收紧、不允许放松），
+**任一为红就不要提交。** `check_layers` 是**棘轮**（基线只允许收紧），其余三条是零容忍门禁，
 所以「新引入的违规」一定会被看见。
 
 > ⚠️ 最常见的红法是 `doc_check` 报「测试条数不一致（声明 X / 实测 Y）」——
@@ -197,32 +199,14 @@ python tools/doc_check.py      # 文档一致性：进展滚动 / 指针 / 测�
 > ⚠️ 必须是**全量** `./gradlew test`：`--tests` 局部运行会覆盖 `build/test-results`，
 > `doc_check` 只看到局部条数（2026-10-29 实测：只跑 chest 包 ⇒ 报「声明 1143 / 实测 15」）。
 
-> 💡 **本机自动防护**：`.git/hooks/pre-commit` 会在 `git commit` 前自动跑上面两条
-> （红的直接拦住）。⚠️ 该目录**不被 git 跟踪** ⇒ 重装环境 / 换机器后要重写一遍。
-> 内容见本节末尾的「重建命令」。
+> 💡 **自动防护**：仓库内 `.githooks/pre-commit` 跑上面四条（红的直接拦住）。
+> 首次检出 / 换机器后执行一次 `sh tools/setup-dev.sh`
+> （等价于 `git config core.hooksPath .githooks`）。
+> ⚠️ 设置 hooksPath 后，本地 `.git/hooks/pre-commit` 不再执行 —— 以仓库内版本为准，
+> 两套不要同时维护。
 
-<details>
-<summary>重建本机 hook（重装环境后用）</summary>
-
-```bash
-cat > .git/hooks/pre-commit <<'HOOK'
-#!/bin/sh
-fail=0
-echo "[pre-commit] tools/check_layers.py（层纪律）"
-python tools/check_layers.py || fail=1
-echo "[pre-commit] tools/doc_check.py（文档一致性）"
-python tools/doc_check.py || fail=1
-if [ "$fail" != "0" ]; then
-  echo ""
-  echo "[pre-commit] 拦下了。若 doc_check 报「测试条数不一致」，先跑 ./gradlew test。"
-  exit 1
-fi
-echo "[pre-commit] 全部通过"
-HOOK
-chmod +x .git/hooks/pre-commit
-```
-
-</details>
+> 🤖 **CI 跑同样四条**（`.github/workflows/build.yml` 的 `Quality gates` 步骤），
+> 且 `doc_check` 用 `DOC_CHECK_STRICT=1`：CI 里没产出测试 XML 直接红，不再 SKIP。
 
 ## 排查铁律：原版机制挡路时
 

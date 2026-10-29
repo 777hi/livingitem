@@ -19,6 +19,7 @@ Checks 1-4 and 6-10 fail the run (exit 1). Checks 5 and 11 only warn: both are
 maintenance signals that need a human decision, not correctness errors.
 
 Usage: python tools/doc_check.py [-v]
+       DOC_CHECK_STRICT=1 python tools/doc_check.py   # 无测试 XML 时 FAIL（CI 用）
 """
 import os
 import re
@@ -28,6 +29,9 @@ import datetime
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VERBOSE = "-v" in sys.argv
+# CI 里没跑测试 / 测试没产出 XML 时必须红，不能静默 SKIP。
+# 本地开发保留 SKIP：改文档时不必先跑全量测试。
+STRICT = os.environ.get("DOC_CHECK_STRICT") == "1"
 
 ENTRY = os.path.join(ROOT, "AGENTS.md")
 CHANGELOG = os.path.join(ROOT, "docs", "archive", "changelog.md")
@@ -143,8 +147,12 @@ def check_test_count():
     failed, errored = sums["failures"], sums["errors"]
 
     if total == 0:
-        warnings.append("[条数] 没有测试结果 XML（先跑 ./gradlew test --rerun）—— 跳过条数核对")
-        print("2. 测试条数一致性  : SKIP（无 XML）")
+        if STRICT:
+            failures.append("[条数] 无测试结果 XML：严格模式下 CI 必须先跑 ./gradlew test")
+            print("2. 测试条数一致性  : FAIL（无 XML，严格模式）")
+        else:
+            warnings.append("[条数] 没有测试结果 XML（先跑 ./gradlew test --rerun）—— 跳过条数核对")
+            print("2. 测试条数一致性  : SKIP（无 XML）")
         return
     if declared != total:
         failures.append(f"[条数] AGENTS.md 声明 {declared}，实测 {total}")

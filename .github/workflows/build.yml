@@ -47,3 +47,13 @@ jobs:
       # mods.toml 的 versionRange 也用它）⇒ 这一步跑通 = 兼容承诺成立。
       - name: Build with Gradle
         run: ./gradlew build
+
+      # 质量门禁（2026-10-30，R-05）：CI 是门禁的事实来源，不再依赖某台机器的 .git/hooks。
+      # doc_check 必须在 build 之后（测试 XML 是它的输入），且用严格模式：
+      # 没产出 XML 时应该红，而不是像本地那样 SKIP。
+      - name: Quality gates
+        run: |
+          python3 tools/check_layers.py
+          python3 tools/check_mixins.py
+          python3 tools/check_container_keys.py
+          DOC_CHECK_STRICT=1 python3 tools/doc_check.py
