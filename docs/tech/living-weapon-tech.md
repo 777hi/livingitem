@@ -482,6 +482,28 @@ assistWeapons = isAssistWeapon → 攻击环
 **安全性**：`surfacePoint` 对 clip 未命中（目标在空中等）**退回格心** ⇒ 永不返回 null ⇒
 `renderOne` 的攻击分支与 `renderAttackRing` 都不会 NPE。
 
+#### ⚠️ 容器（活背包）里的武器：收集时必须与工具分流（2026-10-29 修）
+
+`LivingToolModelRenderer` 的 ③ 段（宿主容器里的活物品）**在 2026-10-27 只把「无记忆」的
+一律塞进 `assistTools`**（那是为挖掘/背后环写的，因为无记忆的工具没有射线、`renderOne`
+会直接 return）。武器因此被 `renderAssistRing` 按「对这方块有没有加成」分组 ——
+剑的 `TOOL` 组件默认挖掘速度 **1.0**，只有 `#minecraft:sword_efficient`（树叶 / 作物 / 竹子…）
+命中规则时是 **1.5** ⇒ 分组结果完全看玩家在挖什么：
+
+| 场景 | 修前 | 修后 |
+|---|---|---|
+| 打怪 | **没有攻击环**（`assistWeapons` 里根本没有它） | 正常飞到生物处脉冲 |
+| 挖普通方块 | 待在背后环（1.0 不算"在挖"） | 待在背后环 |
+| 挖树叶 / 作物等 `#sword_efficient` | 剑**飞到方块处转圈**（挖掘环姿态，1.5 > 1.0） | 待在背后环 |
+
+⇒ 修法：③ 段按上面「环成员拆分」的**同一条判据顺序**分流（工具 → `assistTools`，
+否则武器 → `assistWeapons`；活斧子照旧算工具，见那条 ⚠️）。
+
+📌 **数据链路本来就是通的**，不需要新增同步：辅助攻击走 `CarriedLivingItems`
+（含已活化容器内容，2026-10-27）⇒ 服务端 `replayAttack` 把 `LivingToolAction(now, 目标格)`
+写进容器里的武器栈 ⇒ `LivingToolHostSync` 的 `sameTool` 比的是 `ToolRenderState`
+（**含 action**）⇒ 动作一变就重发 ⇒ 客户端副本带得上目标坐标。缺的只是渲染端没把它分到攻击环。
+
 ### 7.2 模型姿态：全线统一「手持 display + 固定整体变换」（✅ 2026-09-30 定案）
 
 **核心思想**（用户的直觉：「明明在玩家手里姿态都是对的」⇒ 那就走手上那条路）：

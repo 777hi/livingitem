@@ -17,6 +17,21 @@
 
 ## 2026-10-29
 
+- 🐞 **活背包里的活武器没有攻击环（容器宿主收集时没分「工具 / 武器」）** —— 真机：辅助模式的活武器放进活背包后，打怪时武器不飞到目标处。
+
+  - **根因**：`LivingToolModelRenderer` ③ 段（宿主容器里的活物品）在 2026-10-27 为了修
+    「无记忆工具在物品形态里完全不显示」，把**所有无记忆活物品**都塞进了 `assistTools`
+    （挖掘/背后环）。武器因此落到 `renderAssistRing` 里按「对这方块有没有加成」分组 ——
+    剑的 `TOOL` 组件默认挖掘速度 1.0、`#minecraft:sword_efficient` 才是 1.5 ⇒
+    打怪时**永远不进攻击环**；挖树叶 / 作物时又被判成「在挖」⇒ 剑飞到方块处转圈（挖掘环姿态）。
+  - **修法**：③ 段按 ① 的同一条判据顺序分流 —— `isAssistTool` → 工具环；
+    `else if isAssistWeapon` → 攻击环（活斧子两者都满足 ⇒ 算工具，与 `LivingToolRecorder` 的约定一致）。
+  - 📌 **数据链路本来就是通的**（无需新增同步）：辅助攻击走 `CarriedLivingItems`（含已活化容器内容），
+    服务端 `replayAttack` 把 `LivingToolAction(now, 目标格)` 写进容器里的武器栈；
+    `LivingToolHostSync#sameTool` 比的是 `ToolRenderState`（含 action）⇒ 动作一变就重发。
+    缺的只是渲染端没把它分到攻击环。
+  - 无新增测试（渲染分组无单测）；全量测试全绿。
+
 - 🐞 **精妙背包界面里活地图扩展显示完全不渲染（渲染挂点：`render @TAIL` 对「照抄 super.render」的界面是死的）** —— 真机：2×2 摆法（已展开活地图 + 3 张空活地图）放进精妙背包，扩展显示一点不画；同样摆法在原版箱子 / 物品栏里正常。
 
   - **根因**：展开地图渲染注入在 `AbstractContainerScreen.render` 的 TAIL。精妙核心的

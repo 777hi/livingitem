@@ -171,6 +171,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-29 | 🐞 **活背包里的活武器没有攻击环** —— 宿主容器收集时把「无记忆」的一律塞进 `assistTools`（2026-10-27 为修工具不显示），武器因此被 `renderAssistRing` 按「剑挖掘速度 1.0 / 1.5」分组 ⇒ 打怪时永不进攻击环、挖树叶作物时反被判成在挖。修：按 `isAssistTool` / `else if isAssistWeapon` 分流（活斧子算工具）。数据链路本来就通（action 随 K2 包的 ItemStack 走） | `docs/tech/living-weapon-tech.md` §7.1 · `LivingToolModelRenderer` |
 | 2026-10-29 | 🐞 **精妙背包界面里活地图扩展显示不渲染** —— 渲染挂在 `AbstractContainerScreen.render` TAIL，而精妙 `StorageScreenBase.render` 抄了一份 `super.render`（`renderSuper`）不调父实现 ⇒ 注入字节码永不执行（同 2026-10-19 活流体那次的根因）。修：展开地图 / 方向 HUD / 种植提示 / 生长槽大图四项统一迁到 `ContainerScreenEvent.Render.Foreground`；布局缓存抽成 `LivingMapGroups` 让渲染与命中判定读同一份 | `docs/tech/living-map-ender-pearl-tech.md` §13 v57→v58 · `client/render/LivingContainerOverlay.java` |
 | 2026-10-29 | 🧪 **性能测试分离** —— `ContainerFluidPerfTest` 打 `@Tag("perf")`，默认 `./gradlew test` 排除（1200 项 / 14s）；`-Pperf` 才跑全量 1202；顺手修掉硬编码本机路径，改 `build/_perf.txt` | `docs/guides/unit-testing.md` · `build.gradle` |
 | 2026-10-29 | 🧪 **工具记忆接缝测试** —— 5 项：射线/攻击 offset 逐位保留 + 宿主起点回放 / EntityType 匹配 / with/without 只动目标字段 / Codec + StreamCodec 往返；测试 1197→1202 | `docs/reference/test-map.md` · `LivingToolMemoryTest` |
@@ -180,7 +181,6 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-10-29 | 🧪 **末影箱访问器接缝测试** —— 直连模式 8 项：tryCreate 只认活末影箱 / 插入改栈 / 模拟不写 / 抽取后回滚回原槽 / 跳过活物品 / isEmpty+isFull / 离线降级 / 路由模式 insert 返回 0 + markTransferred 不登记；顺带修正 javadoc（路由注册在 EnderRouteManager）；测试 1174→1182 | `docs/reference/test-map.md` · `LivingEnderChestAccessorTest` |
 | 2026-10-29 | 🧪 **传输守恒不变量** —— `SlotAccessor.transfer` 7 项：诚实全额/部分 + 谎报部分/全拒 + 空源/满目标 + 300 组固定种子随机；断言源+目标总量守恒、无负数、不超堆叠。测试 1167→1174 | `docs/reference/test-map.md` · `SlotAccessorTransferConservationTest` |
 | 2026-10-29 | 🧪 **传输访问器接缝测试** —— `FilteredSlotAccessor` 8 项（黑名单抽取回滚、插入拒绝不达下层…）+ `NeighborSlotAccessor` 8 项（抽取/模拟/插入余量/回滚/isFull）；**抓出 `isFull` 用槽位上限(99)判满 ⇒ 64 钻石误判未满**，改为 min(槽位上限, 物品上限)；测试 1151→1167 | `docs/reference/test-map.md` · `FilteredSlotAccessorTest` / `NeighborSlotAccessorTest` |
-| 2026-10-29 | 🧪 **活箱子访问器接缝测试** —— `LivingChestAccessor` 长期 0 引用：8 项钉住 tryCreate 只认活箱子 / insert 未超限全额且改栈 / 字节超限 insert+simulate 同源 0 / 回滚豁免 / 抽取快照门 / markTransferred+sync 接线；测试 1143→1151 | `docs/reference/test-map.md` · `LivingChestAccessorTest` |
 
 ## 提交前必跑（2026-10-20 定）
 

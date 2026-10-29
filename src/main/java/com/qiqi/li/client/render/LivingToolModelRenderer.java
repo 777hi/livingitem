@@ -509,7 +509,16 @@ public final class LivingToolModelRenderer {
                 //   否则它们在物品形态里既没有射线、也不在环上 ⇒ 完全不显示。
                 //   ⚠️ 只收自己的（环是相对某个玩家排布的）；别人的背包仍不画，与现状持平。
                 if (bearer == mc.player && ToolRenderState.of(stack).memory().isEmpty()) {
-                    assistTools.add(stack);
+                    // 🔴 工具 / 武器必须分流，判据顺序与 ① 相同（活斧子两者都满足 ⇒ 算工具）。
+                    //    全塞 assistTools 的话，武器会被 renderAssistRing 按「对这方块有没有加成」
+                    //    分组（剑默认挖掘速度 1.0 ⇒ 对绝大多数方块恒判待机；挖树叶 / 作物这类
+                    //    #sword_efficient 方块时又是 1.5 ⇒ 反而飞到方块处转圈）⇒
+                    //    打怪时**永远没有攻击环**（2026-10-29 真机：活背包里辅助模式的活武器不飞向目标）。
+                    if (LivingToolRecorder.isAssistTool(stack)) {
+                        assistTools.add(stack);
+                    } else if (LivingToolRecorder.isAssistWeapon(stack)) {
+                        assistWeapons.add(stack);
+                    }
                     continue;
                 }
                 renderOne(mc, poseStack, buffers, level, cameraPos, partialTick, now,
