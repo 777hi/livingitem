@@ -257,9 +257,11 @@ canPlantWith(trigger, target):
 （种子不足 / 已种植）也无从判断。`FarmlandPlantHint` 补这条反馈：门槛**复用
 `canPlantWith`**（不另写数量比较 —— 提示说「种得成」必须与真实门槛逐条一致），
 数量不足时给差额（需要 N / 持有 M）；已种植的耕地给「已种植」说明。
-渲染由 `AbstractContainerScreenMixin` 在 `render` TAIL 走 `renderTooltip` 批量队列
-（与方向配置 HUD 同款 ⇒ 天然压在物品图标上；又因原版 tooltip 被 carried 判据抑制
+渲染由 `LivingContainerOverlay`（挂 `ContainerScreenEvent.Render.Foreground`）走 `renderTooltip`
+批量队列（与方向配置 HUD 同款 ⇒ 天然压在物品图标上；又因原版 tooltip 被 carried 判据抑制
 ⇒ 两者永不重叠，无需抑制原版）。零发包、纯展示。
+⚠️ 2026-10-29 前它挂在 `AbstractContainerScreen.render` TAIL —— 对「照抄一份 `super.render`」
+的第三方界面（精妙背包）是死的，见 §8 的挂点说明。
 协议与可复用模式详见 [gui-interaction-system.md](../system-design/gui-interaction-system.md) §7。
 
 ### 3.3 骨粉催熟（精确触发器）
@@ -606,7 +608,9 @@ outputIndex ≥ pendingDrops.size() → 按回退点重置：
 
 ## 8. 客户端渲染（双槽 + 世界级管线直绘）
 
-注入点：`AbstractContainerScreenMixin.render @TAIL`（`living_item$renderFarmlandCrops`），
+注入点：`LivingContainerOverlay` → `LivingFarmlandOverlay`，挂
+`ContainerScreenEvent.Render.Foreground`（2026-10-29 从 `AbstractContainerScreen.render @TAIL` 迁出：
+照抄 `super.render` 的第三方界面不调用父实现 ⇒ 那种挂法在精妙背包里完全不渲染）。
 纯客户端读组件（`networkSynchronized` 随物品同步），无服务端参与。
 
 ### 8.1 通用机制：renderSingleBlock（世界级管线直绘，2026-09-13 定稿）
@@ -767,7 +771,8 @@ src/main/java/com/qiqi/li/
 ├── client/render/
 │   ├── CropTextureResolver.java         # blockstate→模型→粒子图标解析
 │   └── LivingFarmlandSeedDecorator.java # 耕地槽种子图标叠加（IItemDecorator，快捷栏也生效）
-└── client/mixin/AbstractContainerScreenMixin.java  # render @TAIL 生长槽大图渲染
+├── client/render/LivingFarmlandOverlay.java     # 生长槽大图渲染（挂 Render.Foreground）
+└── client/mixin/AbstractContainerScreenMixin.java  # 交互（右键 / tooltip 抑制 / 活按钮）
 ```
 
 ### 10.2 注册点

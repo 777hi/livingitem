@@ -17,6 +17,26 @@
 
 ## 2026-10-29
 
+- 🐞 **精妙背包界面里活地图扩展显示完全不渲染（渲染挂点：`render @TAIL` 对「照抄 super.render」的界面是死的）** —— 真机：2×2 摆法（已展开活地图 + 3 张空活地图）放进精妙背包，扩展显示一点不画；同样摆法在原版箱子 / 物品栏里正常。
+
+  - **根因**：展开地图渲染注入在 `AbstractContainerScreen.render` 的 TAIL。精妙核心的
+    `StorageScreenBase.render` 把 `super.render` **抄了一份**（`renderSuper`）而**从不调用父实现**
+    ⇒ 父类里的注入字节码永远不执行。**与 2026-10-19 活流体那次同一根因**（那次只修了流体，
+    并在 `living-fluid-tech.md` §7 写下「形似的问题不止流体」）—— 这次连坐的是
+    **展开地图 / 方向配置 HUD / 种植提示 / 生长槽大图**四项。
+  - **修法**：四项统一迁到 `ContainerScreenEvent.Render.Foreground`（原版会发，照抄型界面那段也发）。
+    新增 `LivingContainerOverlay`（入口）/ `LivingMapOverlay`（地图绘制 + 纹理缓存）/
+    `LivingMapGroups`（每界面布局组缓存）/ `LivingFarmlandOverlay`（生长槽大图）/
+    `LivingContainerOverlaySubscriber`（事件订阅）；`AbstractContainerScreenMixin` 瘦身成**纯交互**
+    （右键传送 / tooltip 抑制 / 活按钮 / 缓存生命周期）。
+  - **为什么把布局缓存抽出来**：渲染挪走后，「命中判定」（`mouseClicked` 右键传送、`renderTooltip`
+    抑制）仍留在 Mixin 里 ⇒ 两边必须读**同一份**布局，否则「看得见的地方点不中」。
+  - ⚠️ 该事件在**已按 `(leftPos, topPos)` 平移**的位姿里触发 ⇒ 入口 `pose.setIdentity()`，
+    之后一律 `getGuiLeft()/getGuiTop() + slot.x/y`（`leftPos` 是 protected，外部类只能走 getter）。
+  - **行为差异（已知并接受）**：叠加层现在画在「光标携带物」之前（原先之后）⇒ 拖着物品时图标
+    压在扩展地图上而不是被盖住；tooltip 顺序未变。
+  - 无新增测试（渲染挂点无法单测）；全量 1200 项全绿 · `check_layers` / `check_mixins` / `doc_check` 全绿。
+
 - 🧪 **性能测试分离（@Tag("perf") + -Pperf）** —— `ContainerFluidPerfTest` 默认不跑；
   `./gradlew test` 1200 项 / 约 14s，`-Pperf` 才跑全量 1202。顺手修掉落盘的硬编码本机
   绝对路径，改相对 `build/_perf.txt`。默认用例 1202→1200（另有 2 项量测）。

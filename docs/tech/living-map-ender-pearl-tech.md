@@ -1199,7 +1199,10 @@ compileOnly files("libs/sable-companion-common-1.21.1-1.6.0.jar")  // JarJar 嵌
 | `LivingMapLayout` | `client/render/LivingMapLayout.java` | 扩展地图布局：槽位扫描（`scan`）、MapGroup 数据结构、UV 坐标计算（`computeUV`/`computeSingleSlotUV`）、区域命中检测（`findGroupAt`）、单个活地图槽位判断（`isSingleLivingMapSlot`） |
 | `LivingMapGuiTeleportPacket` | `network/LivingMapGuiTeleportPacket.java` | GUI传送网络包：客户端→服务端传送请求，区分创造/生存模式处理光标物品同步 |
 | `CarriedUpdatePacket` | `network/CarriedUpdatePacket.java` | 光标同步网络包：服务端→客户端强制同步光标物品状态，绕过创造模式原版同步限制 |
-| `AbstractContainerScreenMixin` | `client/mixin/AbstractContainerScreenMixin.java` | 容器界面核心Mixin：扩展地图渲染（纹理+装饰）、光标物品隐藏（扩展地图+单个活地图）、交互拦截（右键+活末影珍珠→UV传送）、传送包发送、`findGroupBySlot` 备用查找 |
+| `AbstractContainerScreenMixin` | `client/mixin/AbstractContainerScreenMixin.java` | 容器界面**交互**Mixin：交互拦截（右键+活末影珍珠→UV传送）、传送包发送、tooltip 抑制、活按钮生命周期。⚠️ **渲染已于 2026-10-29 迁出**（见 `LivingContainerOverlay`） |
+| `LivingContainerOverlay` | `client/render/LivingContainerOverlay.java` | 容器界面**自绘叠加层**的统一入口：展开地图 / 方向配置 HUD / 种植提示 / 生长槽大图。挂 `ContainerScreenEvent.Render.Foreground`（原版与「照抄 `super.render`」的第三方界面都会发），先把位姿重置为 identity 再用绝对坐标 |
+| `LivingMapOverlay` | `client/render/LivingMapOverlay.java` | 扩展地图渲染本体（底图纹理 + 装饰图标 + 传送准心）与扩展纹理缓存的注册/释放；布局来源是 `LivingMapGroups` |
+| `LivingMapGroups` | `client/render/LivingMapGroups.java` | 每界面的地图组缓存（内容哈希失效、`WeakHashMap` 按界面实例持有）：渲染与命中判定（右键传送 / tooltip 抑制）**读同一份布局**，另含「客户端槽位 → 服务端槽号」换算 |
 
 ---
 
@@ -2791,3 +2794,28 @@ if (consumed < cost) {
 **验证**：将视距从 32 调低后，同样频繁传送不再卡死。
 
 **后续建议**：可考虑在传送时临时降低服务端视距（类似早期 v48 试验的 `ChunkMapMixin` 方案），但 v50 已回退此优化。当前推荐方案是用户自行控制视距设置。
+
+### v57 → v58：精妙背包界面里扩展地图完全不渲染（渲染挂点）
+
+**问题**：真机——把「已展开活地图 + 3 张空活地图」摆成 2×2 放进精妙背包，扩展显示**一点不画**；
+同一套摆法在原版箱子 / 玩家物品栏里正常。
+
+**根因**：`AbstractContainerScreenMixin` 把展开地图渲染注入在 `AbstractContainerScreen.render` 的 TAIL。
+精妙核心的 `StorageScreenBase.render` 把 `super.render` **抄了一份**（`renderSuper`）而**从不调用父实现**
+⇒ 父类里的注入字节码永远不执行 ⇒ 那类界面里所有 `render @TAIL` 的叠加层都是死的。
+**与 2026-10-19 活流体那次同一个根因**（当时只修了流体，见 `living-fluid-tech.md` §7 的⚠️）：
+那时就写下「形似的问题不止流体」，这次连坐的是**展开地图 / 方向配置 HUD / 种植提示 / 生长槽大图**四项。
+
+**修复**：四项统一迁到 `ContainerScreenEvent.Render.Foreground`（原版会发，照抄型界面那段也发）——
+`LivingContainerOverlay` 做入口，`LivingMapOverlay` / `LivingFarmlandOverlay` 做具体绘制；
+地图组布局抽到 `LivingMapGroups`，让「渲染」与「命中判定」（`mouseClicked` 右键传送、`renderTooltip` 抑制）
+读同一份缓存，避免「看得见的地方点不中」。
+⚠️ 该事件在**已按 `(leftPos, topPos)` 平移**的位姿里触发 ⇒ 入口处 `pose.setIdentity()`，
+之后一律用 `getGuiLeft()/getGuiTop() + slot.x/y`（`leftPos` 是 protected，外部类只能走 getter）。
+
+**行为差异（已知并接受）**：叠加层现在绘制于「光标携带物」之前（原先是之后）⇒ 拖着物品时
+图标压在扩展地图上，而不是被地图盖住 —— 更符合直觉，且 tooltip 顺序未变。
+
+**修改文件**：`LivingContainerOverlay`（新）、`LivingMapOverlay`（新）、`LivingMapGroups`（新）、
+`LivingContainerOverlaySubscriber`（新）、`LivingFarmlandOverlay`（新）、`AbstractContainerScreenMixin`（瘦身成纯交互）。
+

@@ -580,6 +580,8 @@ slot/level/fromSlot）→ 客户端 `FluidFlowClientCache` → `ContainerFluidOv
 > `StorageScreenBase.renderSuper` 就是一份 `super.render` 的副本）⇒ 注入在父类 `render`
 > 里的字节码永远不执行。同类受害的是**任何**「只在 `AbstractContainerScreen.render` 里做事」
 > 的 Mixin —— tooltip 类之所以没事，是因为它们挂 `renderTooltip`（精妙的 `render` 确实会调它）。
+> **2026-10-29 又踩一次**：展开地图 / 方向配置 HUD / 种植提示 / 生长槽大图（当时都还挂在 `render @TAIL`）
+> 在精妙背包里同样全灭，已一并迁到同一挂点（`LivingContainerOverlay`）。
 > ⇒ 现在挂 **`ContainerScreenEvent.Render.Foreground`**：原版会发，抄 `render` 的模组那段也发，
 > 一个挂点通吃。⚠️ 该事件在**已按 `(leftPos, topPos)` 平移**的位姿里触发
 > ⇒ 绘制前先 `pose.setIdentity()`，再用 `getGuiLeft()/getGuiTop() + slot.x/y`
