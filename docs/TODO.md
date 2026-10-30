@@ -117,6 +117,18 @@
    四条）—— 剩余 10 条（写入失败丢物品 / 合并上限 / 准入 / 源格不推 / 同拍互斥 /
    文档与测试债…），**逐条拍板后再动代码**：
    [buffer/living-fluid-review.md](buffer/living-fluid-review.md)。
+10. **流体推动 ×「本拍已写入槽」的互斥（C1，2026-10-31 记录，暂不实施）** ——
+    现状：`TickContext.transferredTargetSlots` 由漏斗 `markTransferred()` 写入，
+    **唯一消费者是漏斗自己**（`TransferPipeline` 跳过「本 tick 已被写入过」的来源槽，
+    防 A→B→C 同 tick 级联）；流体推动完全不看它 ⇒ 漏斗本拍落料，**同 tick 就被水冲走**。
+    接入方案：`ContainerFluidData.tick` 增加 `Set<Integer> frozenSlots` 参数，
+    `LivingFluidFunction` 传 `tick.transferredTargetSlots`；`pushFluidItems` 循环里
+    `if (frozen.contains(slot)) continue`（保留 `tick(ctx)` 重载给测试）。
+    已知边界：该集合是「本 tick 被写入过」而非「新物品」⇒ 漏斗**每 tick 连续供料**的槽
+    会**永远**被跳过（物品堆着不动）；若要「只保护第一拍」，需按槽记录上次写入 tick。
+    顺带：`TickContext.occupiedSlots` 全项目**零引用**（死字段，注释却写「防止多个活熔炉
+    处理同一输入槽位」），要么删、要么补使用。
+    判据：漏斗落料当拍不被水流移动；连续供料时行为需拍板。
 
 ## 活水车
 
@@ -130,11 +142,33 @@
 ## 活红石 / 活铜（2026-10-10 自 tech §0 迁入，D-doc-06）
 
 1. ⏳ **活活塞**（P3：推 / 拉相邻物品）—— `living-redstone-tech.md`；📄 设计稿（2026-10-31
-   立稿，探讨中）：[活活塞.md](buffer/活活塞.md)（头格纯视觉 / 推的距离 = 堆叠数 /
-   推拉永不合并 = 全系统唯一纯位移，待拍板 2 项）
+   v1.3）：[活活塞.md](buffer/活活塞.md)（头格纯视觉 / 推的距离 = 堆叠数 / 推拉永不合并 /
+   活物品可推 + 漏斗输入面穿管 + 跨容器推探讨中——本体定稿，跨容器待拍板 ⑥）
 2. ⏳ **活门**（P3：开 / 关可视化）—— `living-redstone-tech.md`
 3. ⏳ 铜块物品栏装饰器渲染（纯视觉）—— `living-copper-tech.md`
 4. 🔮 活潜影箱集成（信号穿透边界）—— 设计探讨见 `buffer/活潜影箱实现细节.md`
+
+## 物品传输（跨子系统，2026-10-31 记 · 未排期）
+
+1. **「移动 = 写目标 + 清源」没有事务语义** —— 同族表现：
+   **A1**（流体推动写入失败仍清源槽 ⇒ 物品消失）· **A2**（合并按物品上限而非槽位上限
+   ⇒ 丢数量）· **R-03**（末影箱回滚余量丢失，已修：只回原槽 + ERROR 日志）·
+   **R-13**（活箱子 `insertItem` 余量从原栈算 ⇒ 复制，已修）。
+   共同根因：**先写、再无条件扣源**；`ContainerContext.setItem` 是 void，
+   无法表达「写失败 / 部分写」。
+   根治三步：
+   ① **止血**：A1 写后**回读目标槽**（内容/数量不符 ⇒ 不清源槽 + WARN）；
+   A2 合并改用**槽位上限**（对齐 R-13 口径）。
+   ② **收敛**：抽唯一移动原语 `move(from, to, amount)` —— `insertActual` 取实际写入量，
+   **只扣实际写入量**；把流体推动 / 漏斗 / 末影箱 rollback / 活箱子 insert /
+   熔炉与酿造输入输出全部改为调它（约 8~12 处调用点）。
+   ③ **契约化**：给 `ContainerContext` 加 `ItemStack insertItem(slot, stack, simulate)`，
+   让「实际写入量」成为 API 契约，而不是靠回读猜。
+   判据：**守恒不变量** —— 任意移动前后 `源数量 + 目标数量` 不变；参数化覆盖
+   「目标空 / 满 / 同类 / 异类 / 拒绝写入」，跑所有容器实现。
+   边界：第三方容器违约（`insertItem` 撒谎、`getSlotLimit` 撒谎、`setStackInSlot`
+   静默失败）**无法根治** ⇒ 目标是「可控路径不丢 + 丢必留痕」，不是「永不丢」。
+   📄 待梳理条目：[buffer/living-fluid-review.md](buffer/living-fluid-review.md) A1/A2。
 
 ## 容器边界（2026-10-10 记 · 2026-10-18/19 立项并完成主体）
 

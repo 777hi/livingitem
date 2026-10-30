@@ -45,6 +45,8 @@ class ContainerFluidDataTest {
      */
     private static class FakeHandler implements IItemHandlerModifiable {
         final ItemStack[] slots;
+        /** 只出不进的槽（`isItemValid` 恒 false）—— 用于钉住 A3「推动不校验准入」的现状。 */
+        final java.util.Set<Integer> rejectSlots = new java.util.HashSet<>();
 
         FakeHandler(int size) {
             slots = new ItemStack[size];
@@ -90,7 +92,9 @@ class ContainerFluidDataTest {
         }
 
         @Override public int getSlotLimit(int slot) { return 64; }
-        @Override public boolean isItemValid(int slot, ItemStack stack) { return true; }
+        @Override public boolean isItemValid(int slot, ItemStack stack) {
+            return !rejectSlots.contains(slot);
+        }
     }
 
     private static ItemStack livingWaterBucket() {
@@ -1315,6 +1319,25 @@ class ContainerFluidDataTest {
         // 弯道之后：9×3 是宽容器 ⇒ 45° 平局按主轴取横向 ⇒ 回到直道（不需要「上次移动方向」的惯性）
         fluid.tick(ctx);
         assertEquals(Items.REDSTONE, ctx.getItem(11).getItem(), "宽容器 45° ⇒ 横向 ⇒ 回到直道");
+    }
+
+    @Test
+    @DisplayName("54 准入：推动不校验 isItemValid —— 只出不进的槽照样被水流推入（A3 已定案保持）")
+    void pushItems_ignoresSlotAdmission() {
+        FakeHandler h = new FakeHandler(9);
+        h.rejectSlots.add(4);   // 4 号槽「只出不进」：isItemValid 恒 false
+        var ctx = new SimpleContainerContext(h);
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
+        fluid.tick(ctx);        // 瞬时水：0..7
+
+        assertFalse(h.isItemValid(4, new ItemStack(Items.REDSTONE)), "前提：4 号槽拒绝任何物品");
+
+        ctx.setItem(3, new ItemStack(Items.REDSTONE, 1));
+        fluid.tick(ctx);
+
+        assertEquals(Items.REDSTONE, ctx.getItem(4).getItem(),
+            "A3 保持现状：推动是「水流搬运」不是「漏斗插入」，不看 isItemValid");
     }
 
     @Test

@@ -123,12 +123,22 @@ FlowEntry(level=1~N, isSource=false) = 流动流体方块
 
 ```
 tick(ctx)
-  ├─ recalculate：晋升收敛循环
-  │    ├─ spread()：播种 generatedSources（挤没判定在此：活物品进源格 ⇒ 永久销毁）
-  │    │            + BFS 扩散（活物品阻挡，行为分档：canFlow/maxLevel）
-  │    └─ tryPromote()：问行为 shouldPromote(slot, 邻源数)，真则写入派生源并重跑 BFS
-  ├─ transformSourceItems：每流体拍在源格问行为 transformItem（机制三）
-  └─ pushItems（该流体推进拍，水 5t / 岩浆 30t）：沿四邻力场推动物品（§3.3）
+  ├─ 1. 目标层（每 tick 全量重算）— spread()
+  │     ├─ 播种 generatedSources（挤没判定：活物品进源格 ⇒ 永久销毁）
+  │     └─ BFS / Dijkstra 扩散（活物品阻挡；行为分档 canFlow / maxLevel / perCellCost）
+  │        ⇒ targets: slot → (level, isSource, fromSlot, fluid)
+  ├─ 2. 实际层（跨 tick 持久，按流体节拍推进一格）
+  │     ├─ pruneActual(targets)        目标层没有的格当拍删除（移除 / 挤没 / 换流体即时）
+  │     ├─ ensureSourceCells(targets)  源格当拍写入（源即时）
+  │     ├─ advanceGrowth(targets)      元胞自动机：min(目标 level, 同流体邻居 + 1)
+  │     │                              ⇒ 回报本拍推进过的流体集合 advanced
+  │     └─ promoteInActualLayer(advanced)  2 邻源 ⇒ 升源（推进拍）
+  ├─ 3. 反应类（当拍生效，不随时钟）
+  │     ├─ transformSourceItems  源格 = 转化台（机制三）
+  │     ├─ reactFrontiers        熔岩前沿遇水 ⇒ 凝固产物（机制五）
+  │     └─ incinerateFlowItems   熔岩格焚毁 / 源诞生（机制一）
+  └─ 4. 物品推动（advanced 里的流体，**排在反应之后**）
+        └─ pushItems  四邻力场方向 + 次分量兜底；目标可为水格或无水格（§3.3）
 ```
 
 **生命周期要点**：数据由 `TickContext` 构造时经 `getFluidData(ctx)` 创建/回填
