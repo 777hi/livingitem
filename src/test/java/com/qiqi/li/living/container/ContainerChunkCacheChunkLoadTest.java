@@ -1,5 +1,6 @@
 package com.qiqi.li.living.container;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -431,6 +432,35 @@ class ContainerChunkCacheChunkLoadTest {
 
         assertEquals(0, cache.getCacheSize(Level.OVERWORLD),
             "清理必须在处理阶段的早退之前执行");
+    }
+
+    // ---------- 8. 重扫隔离：第三方能力查询失败不中断其余 pending ----------
+
+    @Test
+    @DisplayName("重扫隔离：能力查询抛异常 ⇒ 该区块保守保留，其余区块照常发现")
+    void flush_isolatesThrowingCapability() {
+        ServerLevel level = mockLevel();
+        ChunkPos bad = new ChunkPos(0, 0);
+        ChunkPos good = new ChunkPos(1, 0);
+        fireChunkLoad(level, bad);
+        fireChunkLoad(level, good);
+
+        BlockPos badPos = new BlockPos(bad.getMinBlockX(), 64, bad.getMinBlockZ());
+        BlockEntity badBe = Mockito.mock(BlockEntity.class);
+        Mockito.when(badBe.getBlockPos()).thenReturn(badPos);
+        LevelChunk badChunk = mockChunk(level, bad);
+        Mockito.when(badChunk.getBlockEntities()).thenReturn(Map.of(badPos, badBe));
+        Mockito.when(level.getCapability(Capabilities.ItemHandler.BLOCK, badPos, null))
+               .thenThrow(new RuntimeException("capability boom"));
+
+        LevelChunk goodChunk = containerChunk(level, good);
+        mockChunkSource(level, Map.of(bad.toLong(), badChunk, good.toLong(), goodChunk));
+
+        assertDoesNotThrow(() -> cache.flushPendingRescans(level));
+
+        var processable = cache.getProcessableChunks(level);
+        assertTrue(processable.contains(bad), "能力查询失败 ⇒ 无法判断，区块必须保守保留");
+        assertTrue(processable.contains(good), "一个区块失败不能中断其余 pending");
     }
 
     /** 可推进的 gameTime（清理按 gameTime 间隔触发） */

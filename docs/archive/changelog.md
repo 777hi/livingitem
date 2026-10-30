@@ -79,6 +79,17 @@
 
 ## 2026-10-30
 
+- 🛡️ **R-01 复查补漏：发现 / 重扫路径的第三方能力查询也隔离** ——
+  `ContainerChunkCache.scanChunkForContainers` 逐 BE 查 `ItemHandler.BLOCK`。NeoForge 不捕获
+  能力提供者的异常（`BlockCapability#getCapability` / `EntityCapability#getCapability` 直接调用
+  provider），因此这里同样是第三方代码，但此前不在 R-01 的隔离范围内：provider 抛异常会抛穿
+  `maintain` → `processLevelContainers` → 整个 tick；而且 `flushPendingRescans` 在扫描前已把
+  待扫集合从队列摘除 ⇒ 同批剩余区块（≤64）失去自动重扫（只有区块重新加载 / 放置 / 破坏才会
+  重新登记）。修：逐 BE try/catch，抛异常时无法判断它是不是容器 ⇒ 保守保留区块；代价是永久
+  抛异常的 BE 会让该区块常驻缓存、每 tick 重试一次（日志由 `FailureThrottle` 限频）。
+  复查中删掉了最初加的「逐区块兜底」——`getBlockEntities()` 等引擎调用是可信代码，没有证据
+  表明它们会抛，不为猜测加防御。补 1 项测试。测试 1258→1259。
+
 - 🐞 **修复区块未就绪时丢失容器重扫请求** —— 原版单箱「走远后流体不显示、重进恢复」排查中定位；改为限额队列重试、卸载撤销，不加渲染强刷。新增 12 项守卫，测试 1234→1246；受控回归已验证，用户现场待真机复测。→ [living-item-infrastructure.md](../system-design/living-item-infrastructure.md) §3.2 · [living-fluid-tech.md](../tech/living-fluid-tech.md) §7.1。
 
 - ✅ **物品被水流推出水流（末端不再停住）** —— 用户口径：「物品在水流里相当于受到一股推力，
