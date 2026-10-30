@@ -12,7 +12,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.Set;
-import java.util.function.IntUnaryOperator;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import com.qiqi.li.living.api.ContainerDataLifecycle;
@@ -87,13 +86,6 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
 
     public static final int SOURCE_LEVEL = 0;
     public static final int MAX_FLOW_LEVEL = 7;
-
-    /** 力场方向编码（{@link #flowDirection} 的返回值）：{@code -1} = 无方向（鞍部 / 水面平衡）。 */
-    public static final int FLOW_NONE = -1;
-    public static final int FLOW_RIGHT = 0;
-    public static final int FLOW_DOWN = 1;
-    public static final int FLOW_LEFT = 2;
-    public static final int FLOW_UP = 3;
 
     public static class FlowEntry {
         int level;
@@ -801,7 +793,7 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
      * 「A 流体的物品被 B 流体的力场推动」。水 5t / 岩浆 30t（黏性对上）。</p>
      *
      * <p><b>力场模型</b>（2026-10-31 用户拍板，替换此前的「流树 + 末端特判」）：
-     * 方向由 {@link #flowDirection} 从<b>四邻 level 差</b>算出（原版 {@code getFlow} 的离散版），
+     * 方向由 {@link FluidFlowVector#direction} 从<b>四邻 level 差</b>算出（原版 {@code getFlow} 的离散版），
      * 物品沿该方向移动一格，<b>目标可以是水格、也可以是无水格</b> ——
      * 于是「在水流里被推着走」与「被推出水流」是同一件事，不再有末端分支：
      * 目标无水 = 离开水流（之后不在 {@code flows} 里，自然失去推力）；
@@ -809,7 +801,7 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
      *
      * <p><b>没有动量</b>：原版是连续加速 + 离开水后惯性滑行，槽位模型没有半格位置 ⇒
      * 这里只有「每推进拍沿力场走一格」。<b>主分量被挡时试次分量</b>
-     * （{@link #flowCandidates}）—— 原版的力两个分量同时作用、碰撞只挡一个轴；
+     * （{@link FluidFlowVector#candidates}）—— 原版的力两个分量同时作用、碰撞只挡一个轴；
      * 只有两个分量都不可用（越界 / 源格 / 活物品 / 异类占位）才停。</p>
      *
      * <p><b>定序</b>：遍历序 = level 升序 + slot 升序兜底。不得依赖 {@code flows} 的迭代顺序
@@ -836,14 +828,14 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
             ItemStack item = ctx.getItem(slot);
             if (item.isEmpty() || LivingItemManager.isLivingItem(item)) continue;
 
-            int[] dirs = flowCandidates(slot, width, containerSize, nb -> {
+            int[] dirs = FluidFlowVector.candidates(slot, width, containerSize, nb -> {
                 if (nb < 0 || nb >= containerSize) return -1;
                 FlowEntry n = flows.get(nb);
                 return n != null && n.fluid() == fluid ? n.level() : -1;
             });
 
             for (int dir : dirs) {
-                int targetSlot = stepInDirection(slot, dir, width);
+                int targetSlot = FluidFlowVector.step(slot, dir, width);
                 if (targetSlot < 0 || targetSlot >= containerSize) continue;
 
                 FlowEntry targetFlow = flows.get(targetSlot);
@@ -852,107 +844,6 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
                 if (tryMoveInto(ctx, slot, item, targetSlot, moved)) break;
             }
         }
-    }
-
-    /**
-     * 局部力场：四邻 level 差矢量和（原版 {@code FlowingFluid#getFlow} 的离散版，2026-10-31）。
-     *
-     * <p>力场指向 level <b>增大</b>的方向（= 水位降低 = 远离源）：每个邻居贡献
-     * {@code (邻居 level − 本格 level) × 该邻居方向}，只算<b>有水</b>邻居。</p>
-     *
-     * <p><b>只采样四邻</b>（对齐原版 {@code Direction.Plane.HORIZONTAL}）：斜向由两个正交
-     * 分量合成，不需要角落格 —— 角落的 level 语义不同（可能来自另一条支路），加了只会带噪声。
-     * 取主分量落到四邻之一；{@code |fx| == |fy|} 的 45° 平局按<b>容器主轴</b>决定
-     * （宽 ⇒ 横向；正方 / 竖 ⇒ 纵向，见 {@link #flowCandidates}）。</p>
-     *
-     * <p>服务端（{@code flows}）与客户端（快照 cells）共用本方法 —— 两边只提供各自的
-     * {@code levelOf} 查询，方向算法<b>只有一份</b>（渲染流向与实际推动同源）。</p>
-     *
-     * @param levelOf 邻格 level 查询：<b>无水 / 非同流体 / 越界一律返回 -1</b>（不参与力场）
-     * @return {@link #FLOW_NONE} 或四方向之一
-     */
-    public static int flowDirection(int slot, int width, int containerSize, IntUnaryOperator levelOf) {
-        int[] dirs = flowCandidates(slot, width, containerSize, levelOf);
-        return dirs.length == 0 ? FLOW_NONE : dirs[0];
-    }
-
-    /** 无方向时的空候选（复用，避免每次分配）。 */
-    private static final int[] NO_DIRECTIONS = new int[0];
-
-    /**
-     * 力场候选方向，按优先级排序（**最多 2 个**）：
-     * <ol>
-     *   <li>主分量方向（|分量| 大的那个轴）；</li>
-     *   <li>次分量方向（另一个轴，分量非零时）。</li>
-     * </ol>
-     *
-     * <p>🔴 <b>为什么必须保留次分量（2026-10-31 真机「摆弯道物品一个弯都过不去」）</b>：
-     * 原版的力是<b>两个分量同时作用</b>，碰撞只挡一个轴，另一个轴的位移照常生效
-     * ⇒ 物品会「斜着擦过障碍、挪到直道上」。此前只取主分量、推不动就停，
-     * 在直角弯处主分量正好撞在活物品上 ⇒ 物品卡死。
-     * ⇒ 离散等价 = 主分量被挡时试次分量；两个都不可用才算真推不动。</p>
-     *
-     * <p>45° 等值（{@code |fx| == |fy|}）时按<b>容器主轴</b>决定先后（2026-10-31 用户拍板）：
-     * <b>宽容器</b>（列 &gt; 行）⇒ 横向优先；<b>竖容器与正方形</b> ⇒ <b>纵向优先</b>（兜底取上下）。
-     * 主轴只在这里生效 —— 非等值时永远按主分量。</p>
-     *
-     * <p>两个分量都指向「远离源」，所以兜底<b>不会</b>造成逆流或来回振荡。</p>
-     *
-     * @param levelOf 邻格 level 查询：<b>无水 / 非同流体 / 越界一律返回 -1</b>（不参与力场）
-     * @return 候选方向（0/1/2 个，按优先级）；空 = 力场平衡或无本格
-     */
-    public static int[] flowCandidates(int slot, int width, int containerSize, IntUnaryOperator levelOf) {
-        int my = levelOf.applyAsInt(slot);
-        if (my < 0) return NO_DIRECTIONS;
-
-        int fx = 0, fy = 0;
-        int col = slot % width;
-        if (col > 0) {
-            int nb = levelOf.applyAsInt(slot - 1);
-            if (nb >= 0) fx -= nb - my;          // 左邻 level 更大（水位更低）⇒ 指向左
-        }
-        if (col < width - 1) {
-            int nb = levelOf.applyAsInt(slot + 1);
-            if (nb >= 0) fx += nb - my;
-        }
-        int above = levelOf.applyAsInt(slot - width);
-        if (above >= 0) fy -= above - my;
-        int below = levelOf.applyAsInt(slot + width);
-        if (below >= 0) fy += below - my;
-
-        if (fx == 0 && fy == 0) return NO_DIRECTIONS;
-
-        int horizontal = fx == 0 ? FLOW_NONE : (fx > 0 ? FLOW_RIGHT : FLOW_LEFT);
-        int vertical = fy == 0 ? FLOW_NONE : (fy > 0 ? FLOW_DOWN : FLOW_UP);
-        if (horizontal == FLOW_NONE) return new int[] {vertical};
-        if (vertical == FLOW_NONE) return new int[] {horizontal};
-
-        boolean horizontalFirst;
-        if (Math.abs(fx) != Math.abs(fy)) {
-            horizontalFirst = Math.abs(fx) > Math.abs(fy);
-        } else {
-            // 45° 平局：宽容器横向（主道沿行），竖容器与正方形纵向（兜底取上下）
-            int rows = Math.max(1, (containerSize + width - 1) / width);
-            horizontalFirst = width > rows;
-        }
-        return horizontalFirst
-            ? new int[] {horizontal, vertical}
-            : new int[] {vertical, horizontal};
-    }
-
-    /**
-     * 力场方向的下一格；左右越行边界返回 -1。
-     * 上下越界由调用方按容器尺寸兜底（{@code slot - width < 0} / {@code slot + width >= size}）。
-     */
-    public static int stepInDirection(int slot, int dir, int width) {
-        int col = slot % width;
-        return switch (dir) {
-            case FLOW_RIGHT -> col < width - 1 ? slot + 1 : -1;
-            case FLOW_LEFT -> col > 0 ? slot - 1 : -1;
-            case FLOW_DOWN -> slot + width;
-            case FLOW_UP -> slot - width;
-            default -> -1;
-        };
     }
 
     /**

@@ -21,9 +21,9 @@ import net.neoforged.neoforge.client.extensions.common.IClientFluidTypeExtension
 import net.neoforged.neoforge.fluids.FluidType;
 
 import com.qiqi.li.client.util.ClientSlotResolve;
-import com.qiqi.li.living.domain.water.ContainerFluidData;
 import com.qiqi.li.living.domain.water.FluidFlowBehaviors;
 import com.qiqi.li.living.domain.water.FluidFlowClientCache;
+import com.qiqi.li.living.domain.water.FluidFlowVector;
 
 /**
  * 容器级活流体的**槽位覆盖渲染**（2026-10-19 从 {@code AbstractContainerScreenMixin} 抽出）。
@@ -136,14 +136,14 @@ public final class ContainerFluidOverlay {
                     direction = DIR_DOWN;   // 源格用 still 贴图，方向无意义
                 } else {
                     // 与服务端推动**同一个力场函数**（渲染流向 = 实际流向，2026-10-31）
-                    int dir = ContainerFluidData.flowDirection(handlerSlot, width, snapshot.size(), nb -> {
+                    int dir = FluidFlowVector.direction(handlerSlot, width, snapshot.size(), nb -> {
                         int[] c = snapshot.cells().get(nb);
                         return c != null && c[2] == v[2] ? c[0] : -1;
                     });
                     direction = switch (dir) {
-                        case ContainerFluidData.FLOW_RIGHT -> DIR_RIGHT;
-                        case ContainerFluidData.FLOW_LEFT -> DIR_LEFT;
-                        case ContainerFluidData.FLOW_UP -> DIR_UP;
+                        case FluidFlowVector.FLOW_RIGHT -> DIR_RIGHT;
+                        case FluidFlowVector.FLOW_LEFT -> DIR_LEFT;
+                        case FluidFlowVector.FLOW_UP -> DIR_UP;
                         default -> DIR_DOWN;   // FLOW_DOWN 或 FLOW_NONE（无力场 ⇒ 朝下兜底）
                     };
                 }

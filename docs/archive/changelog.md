@@ -17,6 +17,17 @@
 
 ## 2026-10-31
 
+- 🛡️ **流体方向收口为唯一来源；水车力矩可测**（架构加固）—— ① 方向算法从
+  `ContainerFluidData` 抽成 `FluidFlowVector`（`direction` / `candidates` / `step`），
+  推动 / 渲染 / 水车力矩三个消费者只调它；`tools/check_layers.py` 新增 **R5**
+  （water 包外禁止读 `FlowEntry.fromSlot()` 自算方向，**零容忍、不进基线**）。
+  ② 水车力矩抽成纯函数 `wheelTorque`（输入 level 表 → 输出 cw/ccw），不再受
+  「测试环境无 Create」限制 ⇒ 新增 `ContainerStressDataTest` 4 项；顺带修正
+  「岩浆也驱动水车」（只认 `Fluids.WATER`）。
+  ③ `FluidFlowSyncPacket` 的 channel 改为 `fluid_flow_sync_v2`：协议版本显式化，
+  旧客户端**不渲染**，而不是把 `size` 当 `paletteSize` 读（解码错位）。
+  测试 1257。→ [living-fluid-tech.md](../tech/living-fluid-tech.md) §3.3.1 · `tools/check_layers.py`。
+
 - 🐞 **活水车在活背包 GUI 里转向不再卡旧方向（物品形态容器补上槽位直发通道）** ——
   排查：水车在物品形态活背包里转向后，图标沿旧方向转，重开背包界面才正常。
   两段根因叠加：

@@ -3,13 +3,14 @@ package com.qiqi.li.living.domain.water;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.IntUnaryOperator;
 
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.ContainerDataKey;
 import com.qiqi.li.living.domain.water.LivingWaterWheelFunction;
 
 import net.minecraft.world.item.ItemStack;
-import net.neoforged.neoforge.fluids.FluidType;
+import net.minecraft.world.level.material.Fluids;
 
 /**
  * 容器级应力数据 —— 管理容器内所有活水车的应力累加。
@@ -70,48 +71,16 @@ public class ContainerStressData implements com.qiqi.li.living.api.StressSource 
             ItemStack stack = ctx.getItem(i);
             if (!LivingWaterWheelFunction.isLivingWaterWheel(stack)) continue;
 
-            int cwTorque = 0;
-            int ccwTorque = 0;
-            int stackSize = stack.getCount();
+            // 水车只吃水：岩浆/其它流体的 level 不参与力矩（既有缺陷，2026-10-31 一并修正）
+            int[] torque = wheelTorque(i, width, containerSize, nb -> {
+                ContainerFluidData.FlowEntry n = flows.get(nb);
+                return n != null && n.fluid() == Fluids.WATER.getFluidType() ? n.level() : -1;
+            }, stack.getCount());
 
-            int[] neighbors = ContainerContext.getNeighbors(i, containerSize, width);
-            for (int neighbor : neighbors) {
-                ContainerFluidData.FlowEntry fe = flows.get(neighbor);
-                if (fe == null) continue;
-
-                // 水流方向与推动 / 渲染同源（四邻力场，2026-10-31）；只认同流体邻居
-                FluidType fluid = fe.fluid();
-                int dir = ContainerFluidData.flowDirection(neighbor, width, containerSize, nb -> {
-                    if (nb < 0 || nb >= containerSize) return -1;
-                    ContainerFluidData.FlowEntry n = flows.get(nb);
-                    return n != null && n.fluid() == fluid ? n.level() : -1;
-                });
-                if (dir == ContainerFluidData.FLOW_NONE) continue;
-
-                int fdx = dir == ContainerFluidData.FLOW_RIGHT ? 1
-                    : dir == ContainerFluidData.FLOW_LEFT ? -1 : 0;
-                int fdy = dir == ContainerFluidData.FLOW_DOWN ? 1
-                    : dir == ContainerFluidData.FLOW_UP ? -1 : 0;
-
-                int px = (neighbor % width) - (i % width);
-                int py = (neighbor / width) - (i / width);
-
-                int torque = px * fdy - py * fdx;
-
-                float strength = (ContainerFluidData.MAX_FLOW_LEVEL - fe.level() + 1.0f)
-                                 / ContainerFluidData.MAX_FLOW_LEVEL;
-
-                int weightedTorque = Math.round(torque * strength * stackSize);
-
-                if (weightedTorque > 0) {
-                    cwTorque += weightedTorque;
-                } else if (weightedTorque < 0) {
-                    ccwTorque += -weightedTorque;
-                }
-            }
-
+            int cwTorque = torque[0];
+            int ccwTorque = torque[1];
             if (cwTorque > 0 || ccwTorque > 0) {
-                wheelTorques.put(i, new int[]{cwTorque, ccwTorque});
+                wheelTorques.put(i, new int[] {cwTorque, ccwTorque});
             }
 
             netCWStress += cwTorque;
@@ -119,5 +88,38 @@ public class ContainerStressData implements com.qiqi.li.living.api.StressSource 
         }
 
         netStress = netCWStress - netCCWStress;
+    }
+
+    /**
+     * 单个水车的力矩 —— <b>纯函数</b>（2026-10-31 抽出：不依赖 Create 物品，可直接单测）。
+     *
+     * <p>方向读 {@link FluidFlowVector#direction}（与推动 / 渲染同源）；
+     * 力矩 = 二维叉积（位置向量 × 水流方向），按离源距离加权，堆叠数量放大 SU 容量。</p>
+     *
+     * @param levelOf 邻格 level 查询：<b>只认水</b>（无水 / 非水 / 越界返回 -1）
+     * @param count   堆叠数量
+     * @return {@code {cw, ccw}}（均非负）
+     */
+    static int[] wheelTorque(int wheelSlot, int width, int containerSize,
+                             IntUnaryOperator levelOf, int count) {
+        int cw = 0, ccw = 0;
+        for (int neighbor : ContainerContext.getNeighbors(wheelSlot, containerSize, width)) {
+            int level = levelOf.applyAsInt(neighbor);
+            if (level < 0) continue;
+
+            int dir = FluidFlowVector.direction(neighbor, width, containerSize, levelOf);
+            if (dir == FluidFlowVector.FLOW_NONE) continue;
+
+            int px = (neighbor % width) - (wheelSlot % width);
+            int py = (neighbor / width) - (wheelSlot / width);
+            int torque = px * FluidFlowVector.dy(dir) - py * FluidFlowVector.dx(dir);
+
+            float strength = (ContainerFluidData.MAX_FLOW_LEVEL - level + 1.0f)
+                             / ContainerFluidData.MAX_FLOW_LEVEL;
+            int weighted = Math.round(torque * strength * count);
+            if (weighted > 0) cw += weighted;
+            else if (weighted < 0) ccw += -weighted;
+        }
+        return new int[] {cw, ccw};
     }
 }

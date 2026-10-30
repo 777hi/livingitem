@@ -183,7 +183,7 @@ torque = px * fdy - py * fdx
 ```
 
 > ⚠️ **水流方向与推动 / 渲染同源**（2026-10-31）：三者都读
-> `ContainerFluidData.flowDirection`。此前力矩读 `FlowEntry.fromSlot()`（BFS 父节点），
+> `FluidFlowVector#direction`（方向算法唯一来源类）。此前力矩读 `FlowEntry.fromSlot()`（BFS 父节点），
 > 源格 `fromSlot = -1` 会被跳过 ⇒ 源格旁的水车**白转**；分叉处也会与贴图/物品推动
 > 给出不同方向。
 

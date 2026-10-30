@@ -9,6 +9,8 @@
 R1  跨模块依赖只能「上层 → 下层」。**下层依赖上层 = 违规**。
 R2  `@Mixin` 只能声明在 L4 / L5 —— 挂原版钩子必须关在接线层。
 R3  领域（`living/domain/*`）之间应尽量不互相依赖。
+R5  流体方向只能来自 `FluidFlowVector` —— water 包之外**禁止**读 `FlowEntry.fromSlot()`
+    自算方向（推动 / 渲染 / 水车曾各算一套，方向不一致）。零容忍，不进基线。
 
 ⚠️ **棘轮机制（为什么现在就能用）**：项目当前已有违规，一次性修完不现实。
 所以基线文件 `tools/layer_baseline.txt` 记录**已存在的违规**：
@@ -37,15 +39,16 @@ import gen_code_map as G  # noqa: E402  —— 复用它的 LAYERS 表与解析�
 ROOT = G.ROOT
 BASELINE = os.path.join(ROOT, "tools", "layer_baseline.txt")
 
-R1, R2, R3, R4 = "module", "mixin", "domain", "registry"
+R1, R2, R3, R4, R5 = "module", "mixin", "domain", "registry", "flowdir"
 TITLES = {
     R1: "R1 跨模块方向违规（下层依赖上层）",
     R2: "R2 Mixin 位置违规（只能声明在 L4 / L5）",
     R3: "R3 领域互依赖（living/domain/* 之间）",
     R4: "R4 注册入口不唯一（注册调用散落在 *Registration.java 之外）",
+    R5: "R5 流体方向自算（water 包外读 fromSlot，应走 FluidFlowVector）",
 }
 # 规则顺序固定，便于基线文件 diff
-ORDER = (R1, R2, R3, R4)
+ORDER = (R1, R2, R3, R4, R5)
 
 # ---------------------------------------------------------------- R4 的注册方法清单
 #
@@ -116,6 +119,20 @@ def collect() -> tuple[dict[str, dict[tuple[str, str], int]], list[str]]:
                 continue
             key = (method, f["path"])
             out[R4][key] = out[R4].get(key, 0) + 1
+
+    # R5：流体方向只能来自 FluidFlowVector —— water 包之外禁止读 `FlowEntry.fromSlot()`
+    # 自算方向（`code` 已剥离注释与字符串，不会误伤文档性提及）。
+    # 为什么零容忍：2026-10-31 之前推动 / 渲染 / 水车各算一套，同一格水的方向不一致；
+    # 收口后这条规则防止下一个消费者（活海绵等）再自算一次。
+    for f in files:
+        if f["kind"] == "file":
+            continue
+        norm = f["path"].replace("\\", "/")
+        if "/living/domain/water/" in norm:
+            continue   # water 包内是唯一允许读写方向算法/上游数据的地方
+        n = len(re.findall(r"\.fromSlot\s*\(", f["code"]))
+        if n:
+            out[R5][(norm.split("/src/")[-1], "fromSlot")] = n
 
     stale = [m for m in REGISTRY_METHODS if m.split(".", 1)[0] not in decl]
     return out, stale

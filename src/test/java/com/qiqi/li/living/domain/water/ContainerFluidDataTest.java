@@ -1250,25 +1250,25 @@ class ContainerFluidDataTest {
     @DisplayName("51 力场①：只采样四邻 + 取主分量 + 45° 按容器主轴（同源函数，服务端与渲染共用）")
     void flowDirection_samplesFourNeighborsAndBreaksTiesByAxis() {
         // 单行：源在左 ⇒ 逐格向右
-        assertDir(new int[] {0, 1, 2, 3}, 4, 4, 1, ContainerFluidData.FLOW_RIGHT, "左低右高 ⇒ 右");
+        assertDir(new int[] {0, 1, 2, 3}, 4, 4, 1, FluidFlowVector.FLOW_RIGHT, "左低右高 ⇒ 右");
         // 单行：源在右 ⇒ 向左
-        assertDir(new int[] {3, 2, 1, 0}, 4, 4, 2, ContainerFluidData.FLOW_LEFT, "左高右低 ⇒ 左");
+        assertDir(new int[] {3, 2, 1, 0}, 4, 4, 2, FluidFlowVector.FLOW_LEFT, "左高右低 ⇒ 左");
         // 单列（width=1）：源在上 ⇒ 向下
-        assertDir(new int[] {0, 1, 2, 3}, 1, 4, 1, ContainerFluidData.FLOW_DOWN, "单列 ⇒ 向下");
+        assertDir(new int[] {0, 1, 2, 3}, 1, 4, 1, FluidFlowVector.FLOW_DOWN, "单列 ⇒ 向下");
         // 45°（|fx| == |fy|）：2×2 正方形 ⇒ 纵向兜底（上下）
-        assertDir(new int[] {0, 1, 1, 2}, 2, 4, 3, ContainerFluidData.FLOW_DOWN, "正方形 45° ⇒ 纵向兜底");
+        assertDir(new int[] {0, 1, 1, 2}, 2, 4, 3, FluidFlowVector.FLOW_DOWN, "正方形 45° ⇒ 纵向兜底");
         // 45° 且宽容器（3×2）⇒ 横向
-        assertDir(new int[] {0, 1, 2, 1, 2, 2}, 3, 6, 4, ContainerFluidData.FLOW_RIGHT, "宽容器 45° ⇒ 横向");
+        assertDir(new int[] {0, 1, 2, 1, 2, 2}, 3, 6, 4, FluidFlowVector.FLOW_RIGHT, "宽容器 45° ⇒ 横向");
         // 1×5 两源鞍部：左右都是 level 1（本格 2）⇒ 抵消 ⇒ 无方向
-        assertDir(new int[] {0, 1, 2, 1, 0}, 5, 5, 2, ContainerFluidData.FLOW_NONE, "鞍部 ⇒ 无方向");
+        assertDir(new int[] {0, 1, 2, 1, 0}, 5, 5, 2, FluidFlowVector.FLOW_NONE, "鞍部 ⇒ 无方向");
         // 无水邻居不参与（右侧 -1）
-        assertDir(new int[] {0, 1, -1}, 3, 3, 1, ContainerFluidData.FLOW_RIGHT, "无水邻居不参与力场");
+        assertDir(new int[] {0, 1, -1}, 3, 3, 1, FluidFlowVector.FLOW_RIGHT, "无水邻居不参与力场");
     }
 
     private static void assertDir(int[] levels, int width, int size, int slot, int expected, String msg) {
         java.util.function.IntUnaryOperator levelOf =
             s -> s >= 0 && s < levels.length ? levels[s] : -1;
-        assertEquals(expected, ContainerFluidData.flowDirection(slot, width, size, levelOf), msg);
+        assertEquals(expected, FluidFlowVector.direction(slot, width, size, levelOf), msg);
     }
 
     @Test

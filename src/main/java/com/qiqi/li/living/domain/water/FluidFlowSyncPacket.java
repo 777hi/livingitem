@@ -16,6 +16,10 @@ import net.neoforged.neoforge.registries.NeoForgeRegistries;
 /**
  * S2C 容器流体快照同步包（Q5 渲染轨，2026-10-03）。
  *
+ * <p><b>协议版本 v2</b>（2026-10-31 新增 {@code size} 字段）。channel 名带 {@code _v2}：
+ * 旧客户端收不到本包（显式不渲染），而不是把 {@code size} 当 {@code paletteSize} 读
+ * ⇒ 解码错位、乱渲染。alpha 阶段不保留旧协议。</p>
+ *
  * <p>下发容器级 flow 表到客户端水流渲染（{@code AbstractContainerScreenMixin}）。
  * 不依赖活水桶物品 —— 纯源容器（无任何活物品）的水也能渲染。</p>
  *
@@ -48,7 +52,7 @@ public record FluidFlowSyncPacket(
 ) implements CustomPacketPayload {
 
     public static final ResourceLocation ID =
-        ResourceLocation.fromNamespaceAndPath("living_item", "fluid_flow_sync");
+        ResourceLocation.fromNamespaceAndPath("living_item", "fluid_flow_sync_v2");
     public static final CustomPacketPayload.Type<FluidFlowSyncPacket> TYPE =
         new CustomPacketPayload.Type<>(ID);
 
