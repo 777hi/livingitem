@@ -431,6 +431,20 @@ Tier 3 启发式 `{9,10,12,13,8,7,6,11,5,4,3,2,1}` 找第一个能整除 `getSiz
 停在旧版本。这不影响上文三条场景的结论（那些是「物品进出」层面的同步），
 但**影响一切依赖实时组件状态的客户端渲染** —— 见 §6「未定案」第 3 条。
 
+✅ **「开着 GUI 的及时性」已补（2026-10-31，活水车转向不刷新的回归）**：
+上条的真正机理查清了 —— `ItemStack.copy()` 的组件表是
+`PatchedDataComponentMap.copy()`，**copy-on-write 共享 patch map**：就地 `set` 组件
+会连快照一起改掉 ⇒ `ItemStack.matches` 恒真 ⇒ 纯组件翻转永不触槽位包
+（物品 / 数量变化走「换对象」路径所以正常 —— 这就是 GUI 里其它内容都活着、
+唯独组件翻转卡住的分辨点；重开 GUI 走全量下发才恢复）。
+修法：`syncSlotToClients` 对物品形态不再是 no-op ——
+`SimpleContainerContext#syncWorldContainer` 空位置 + 有容器 UUID 时走
+`syncItemFormSlot`：观众按容器 UUID 反查（`ContainerViewers` ITEM_FORM 分支，
+隐私红线同口径），槽位按 **handler 实例 + 物理槽号** 匹配（存储槽 / 升级槽
+各挂各的 handler，按号会撞），直发槽位包并同步 `remoteSlots`。
+⇒ **背包 GUI 开着时，水车转向 / 熔炉燃烧态等组件翻转现在实时刷新**
+（守卫：`ItemFormSlotSyncTest`）。外层槽位那条（工具 / 信标渲染用的）仍归 TODO 6.1。
+
 🔴 **更根本的一条（2026-10-26 查证，推翻本小节的隐含前提）**：**客户端读不到背包内容**。
 精妙的内容源是 `BackpackWrapper.BackpackStorageContentsSource` ⇒
 `BackpackStorage extends SavedData`（服务端全局 `Map<UUID, CompoundTag>`），

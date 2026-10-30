@@ -3,6 +3,7 @@ package com.qiqi.li.living.container;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.UUID;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket;
@@ -16,6 +17,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.neoforge.items.IItemHandler;
+import net.neoforged.neoforge.items.SlotItemHandler;
 
 import com.mojang.logging.LogUtils;
 import org.slf4j.Logger;
@@ -659,7 +661,15 @@ public class SimpleContainerContext implements TickableContainerContext {
         if (level == null || level.isClientSide()) return;
 
         List<BlockPos> myPositions = getAssociatedBlockPositions();
-        if (myPositions.isEmpty()) return;
+        if (myPositions.isEmpty()) {
+            // 物品形态容器（活背包）：没有世界位置可按位置匹配 ⇒ 按容器 UUID 找正在开它
+            // GUI 的观众直发槽位包。不能指望原版 broadcastChanges 兜底：菜单槽快照是
+            // stack.copy()，而 PatchedDataComponentMap 是 copy-on-write 共享 patch map，
+            // 就地改组件会同时改到快照 ⇒ ItemStack.matches 恒真 ⇒ 纯组件翻转永不触发
+            // 槽位同步（2026-10-31：活水车在活背包 GUI 里转向不刷新的根因）。
+            syncItemFormSlot(level, logicalSlot, stack);
+            return;
+        }
 
         for (ServerPlayer serverPlayer : level.getServer().getPlayerList().getPlayers()) {
             AbstractContainerMenu menu = serverPlayer.containerMenu;
@@ -695,5 +705,45 @@ public class SimpleContainerContext implements TickableContainerContext {
             if (positions.contains(pos)) return true;
         }
         return false;
+    }
+
+    /**
+     * 物品形态容器（活背包）的槽位直发：把「就地改过的 DataComponent」推给正在开它 GUI 的观众。
+     *
+     * <p>观众判定走 {@link ContainerViewers} 的 ITEM_FORM 分支（按容器 UUID 反查菜单，
+     * 与流体快照轨同口径；隐私红线同样成立 —— 只发正在看这个容器的玩家）。
+     * 槽位按 <b>handler 实例</b>匹配而不是槽号：菜单里存储槽与升级槽各挂各的 handler，
+     * 槽号都从 0 起算，按号会撞；而 GUI 菜单的 handler 与本 ctx 的 handler 是同一实例
+     * （联动来源与菜单解析都走 {@code BackpackWrapper.fromStack(stack)} 的按实例缓存）。</p>
+     *
+     * <p>⚠️ 不做 {@code isSlotLockedByMenu} 跳过：那个守卫保护的是「菜单自有、内容不归我们管」
+     * 的锚点槽（背包本体槽，挂的是玩家物品栏，handler 实例匹配天然排除）；本 handler 的槽
+     * 内容归我们管，被槽位封锁升级挡住的存储槽也该照常刷新显示。</p>
+     */
+    private void syncItemFormSlot(Level level, int logicalSlot, ItemStack stack) {
+        UUID containerUuid = getContainerUuid();
+        if (containerUuid == null || handler == null) return;
+        var server = level.getServer();
+        if (server == null) return;   // mock / 测试替身没有服务器 ⇒ 无观众可发，宁可不发
+        int physicalSlot = toPhysicalSlot(logicalSlot);
+
+        List<ServerPlayer> viewers = ContainerViewers.of(
+            server.getPlayerList().getPlayers(), getCacheKey(), List.of());
+        for (ServerPlayer player : viewers) {
+            AbstractContainerMenu menu = player.containerMenu;
+            if (menu == player.inventoryMenu) continue;
+
+            for (int i = 0; i < menu.slots.size(); i++) {
+                Slot slot = menu.slots.get(i);
+                if (!(slot instanceof SlotItemHandler handlerSlot)) continue;
+                if (handlerSlot.getItemHandler() != handler) continue;
+                if (slot.getContainerSlot() != physicalSlot) continue;
+
+                int stateId = menu.incrementStateId();
+                menu.remoteSlots.set(i, stack.copy());
+                player.connection.send(
+                    new ClientboundContainerSetSlotPacket(menu.containerId, stateId, i, stack.copy()));
+            }
+        }
     }
 }

@@ -17,6 +17,32 @@
 
 ## 2026-10-31
 
+- 🐞 **活水车在活背包 GUI 里转向不再卡旧方向（物品形态容器补上槽位直发通道）** ——
+  排查：水车在物品形态活背包里转向后，图标沿旧方向转，重开背包界面才正常。
+  两段根因叠加：
+  ① `LivingWaterWheelFunction.postTickSync` 调的 `ctx.syncSlotToClients` 对物品形态
+  是 **no-op** —— `SimpleContainerContext#syncWorldContainer` 在
+  `getAssociatedBlockPositions()` 为空（物品形态恒空）时直接 return，显式同步通道
+  从未对背包内部生效过；
+  ② 兜底的原版 `broadcastChanges()` 也**检测不到**：菜单槽快照是 `stack.copy()`，
+  而 `PatchedDataComponentMap.copy()` 是 copy-on-write **共享 patch map** ——
+  就地改组件会连快照一起改掉 ⇒ `ItemStack.matches` 恒真 ⇒ 纯组件翻转永不触槽位包
+  （项目已知坑「`PatchedDataComponentMap.equals()` 检测不到自定义组件变化」的真正
+  机理，此前只记了现象）。物品 / 数量变化走「换对象」路径所以正常 —— 这就是
+  GUI 里其它内容都活着、唯独组件翻转卡住的分辨点；重开 GUI 走全量下发才恢复。
+  修：`syncWorldContainer` 空位置 + 有容器 UUID 时走新分支 `syncItemFormSlot` ——
+  观众判定走 `ContainerViewers` 的 ITEM_FORM 分支（按容器 UUID 反查菜单，隐私红线
+  同口径：只发正在看这个容器的玩家），槽位按 **handler 实例 + 物理槽号** 匹配
+  （菜单里存储槽与升级槽各挂各的 handler，槽号都从 0 起算，按号会撞），直发
+  槽位包并同步 `remoteSlots`。**一处修，全家受益**：活背包 GUI 里的水车转向、
+  熔炉燃烧态、酿造、工具动画翻转等所有「组件翻转」类显示一并修复。
+  ⚠️ 不做 `isSlotLockedByMenu` 跳过：那个守卫保护的是内容不归我们管的锚点槽
+  （背包本体槽挂玩家物品栏，handler 匹配天然排除）；本 handler 的槽（含被槽位
+  封锁升级挡住的）内容归我们管，照常刷新。
+  新增 4 项测试（观众收到 / 同号升级槽不冒领 / 开别的背包与 GUI 关着不收 / 无观众
+  不抛），测试 1249→1253。
+  📄 `docs/tech/living-backpack-tech.md` §6-#8 边界更新 · `ItemFormSlotSyncTest`
+
 - ♻️ **物品推动改为「四邻力场」模型（替换流树 + 末端特判）** —— 用户定：
   「物品远离源，这就是最简单的模型」+「原版的水流将物品推出是自然而然的」。
   此前方向 = BFS 父→子（`fromSlot`），末端另加一个「推出」分支 ⇒ 两段式补丁：

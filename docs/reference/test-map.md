@@ -59,6 +59,7 @@ src/test/java/com/qiqi/li/
 │   ├── ContainerLayoutResolverTest.java        # 共同布局链·子类禁止替换流程/实例先于内建/规则学习家族启发式顺序/多宿主规则优先/首容器回落/家族子类/现取与结果复用/掉落物同链
 │   ├── ContainerMenuInfosTest.java             # 当前菜单宿主信息·空容器/背包/状态分离/来源同源/真实无MenuType驴菜单反查/无类型方块与未知菜单分开/末影箱固定布局及改容量不误套
 │   ├── ItemFormContainerContextTest.java       # 物品形态容器地基（2026-10-22，活背包）·来源注册口（无来源不认领/注册后可认领/find 返回同一来源/空栈与普通物品不认领）+ ctx 身份（UUID 与 cuuid_ 键互逆/hosts 空/无世界位置）+ **persist 写 SavedData（不是空转的 default）/空值删条目/非 isSaved 不写** + **菜单反查（无活容器 null/唯一一件认它/两件不猜/未注册 null）**
+│   ├── ItemFormSlotSyncTest.java               # 物品形态槽位直发通道（2026-10-31，活水车在背包 GUI 转向不刷新的回归）·脏槽刷新发给开该 GUI 的观众（containerId/菜单槽号/组件值对）+ **同号槽挂别的 handler（升级槽替身）不冒领** + 观众快照 remoteSlots 同步跟上/开别的背包或 GUI 关着不收包/无观众不抛
 │   ├── ContainerDataKeyTest.java               # 落盘判据 + persist 默认路径（2026-10-22，D-container-13）·savedWith 的 attachment+codec 都有⇒isSaved/persistent 无附件⇒不落盘/tick 级两者都不/persist 写所有宿主/非 isSaved 一个都不写/宿主空不抛
 │   ├── ContainerDataSavedDataTest.java         # SavedData 持久层（2026-10-22，活背包）·put→get 往返/save→load 跨重启/空条目不写盘/isSaved=false 拒绝写入/remove(UUID) 只删一个/同 key 后写覆盖/未知 UUID 返回 null/组件注册
 │   ├── SimpleContainerContextTest.java        # 容器上下文脏槽同步 + 末影箱稳定键构造器（回归）+ 缓存键推导（世界容器带维度前缀/跨维度同坐标键不同/大箱子两段坐标/背包末影箱裸键/无维度退化）+ 列数推断（启发式/质数退化/未注册类型不借用同 namespace 规则/**Tier 0 来源权威值赢启发式（放置态精妙背包 30 槽→5 列，2026-10-24）/来源不认领⇒照旧回落启发式**）

@@ -146,7 +146,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1249 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
+**合计测试用例 1253 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -171,6 +171,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-31 | 🐞 **活水车在活背包 GUI 里转向不再卡旧方向（物品形态补上槽位直发通道）** —— `syncSlotToClients` 对物品形态原是 no-op（空 positions 早退），兜底的原版 `broadcastChanges` 又因 `PatchedDataComponentMap` copy-on-write 共享 patch map，检测不到就地组件翻转 ⇒ 只有重开 GUI 才刷新。修：`syncWorldContainer` 空位置 + 有容器 UUID ⇒ 按容器 UUID 找观众（ContainerViewers 同口径、只发正看着这个容器的玩家）+ handler 实例匹配槽位直发槽位包；背包 GUI 里所有「组件翻转」类显示（水车转向 / 熔炉燃烧 / 工具动画）一并修复；新增 4 项测试，测试 1249→1253 | `docs/tech/living-backpack-tech.md` §6-#8 · `SimpleContainerContext#syncItemFormSlot` · `ItemFormSlotSyncTest` |
 | 2026-10-31 | ♻️ **物品推动改为「四邻力场」模型（替换流树 + 末端特判）** —— 方向 = 四邻 level 差矢量和，**主分量优先 + 次分量兜底**（修真机「摆弯道一个弯都过不去」）；45° 平局按**容器主轴**（宽 ⇒ 横；竖/正方 ⇒ 纵，用户定兜底取上下）；`flow=0` 停；**目标可为无水格** ⇒ 推出是自然结果，末端分支删除。服务端与渲染共用 `flowDirection`（修「左两象限朝左」），同步包加 `size`；**水车力矩同步改读力场**（原先源格 `fromSlot=-1` ⇒ 旁侧水车白转）；删 `orderChildren`/`childRank`/`straightTarget`；新增 3 项测试，测试 1249 | `docs/tech/living-fluid-tech.md` §3.3 · §3.3.1 · `living-water-wheel-tech.md` §0 规则 7 · `ContainerFluidDataTest` 51~53 |
 | 2026-10-30 | 🐞 **区块未就绪不再丢容器重扫请求** —— 单箱「走远后流体不显示、重进恢复」排查；限额队列重试、卸载撤销，新增 12 项守卫，测试 1234→1246；受控回归通过，现场待真机复测 | `docs/system-design/living-item-infrastructure.md` §3.2 · `docs/tech/living-fluid-tech.md` §7.1 |
 | 2026-10-30 | ✅ **物品被水流推出水流（末端不再停住）** —— 用户口径「物品受一股推力，推出水流才对」。修：末端沿来水方向推出到无水格；直行仍有水 / 越界 / 活物品 / 被占 ⇒ 停在末端。🔴 顺带修顺序缺陷：`pushItems` 原排在焚毁/转化之前 ⇒ 推出让物品抢跑逃离熔岩格（焚毁 / 生源 / 防火 3 项测试同时红），现移到反应类之后；测试 1231→1234 | `docs/tech/living-fluid-tech.md` §0 规则 9 · §3.3 · §3.6 · `ContainerFluidDataTest` ㊽/㊾/㊿ |
@@ -180,7 +181,6 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-10-30 | 🐞 **战利品箱子区块被移出缓存 → 放入的活物品永不 tick（R-04）** —— 处理阶段跳过未开箱的战利品容器时没置 `hasContainer`，区块被当成「无容器」移出缓存；开箱使 `lootTable` 变 null 却不触发重扫 ⇒ 区块再也不回来。修：跳过处理但保留区块（每 tick 只做一次 `getLootTable()` 检查）；抽 `LivingItem.processChunkContainers` 做行为测试（返回 -1 才移出缓存）；测试 1217→1219 | `docs/system-design/living-item-infrastructure.md` §3.2 · `LivingItemChunkContainerScanTest` |
 | 2026-10-30 | 🐞 **区块缓存的兜底清理被早退跳过** —— `processLevelContainers` 在无可处理区块时直接 `return`（如该维度只有已加载但不 tick 的区块），末尾每 5 分钟的 `cleanupStaleEntries` 永不执行 ⇒ 已卸载区块的缓存条目永久残留，且每 tick 仍被遍历。修：`ContainerChunkCache.maintain()`（重扫 + 清理）前置为每 tick 唯一维护入口，调用点必须在早退之前；补 2 项测试；测试 1215→1217 | `docs/system-design/living-item-infrastructure.md` §3.2 · `ContainerChunkCacheChunkLoadTest` |
 | 2026-10-30 | 🐞 **白色信标光束 alpha 修正；撤回标签根因断言** —— 默认色 `0xFFFFFF` 是 alpha=0 的 ARGB，染色玻璃则有 alpha=255；改为 `0xFFFFFFFF`。实际原版顶点回归复现内芯全透明，修后守卫内芯=255 / 外晕=32。Iris 标签包装保留，其必要性未独立验证；测试 1227→1229，用户游戏内复测确认当前光影组合下恢复正常 | `docs/tech/living-beacon-tech.md` §2.1 · `BeamColorSectionsTest` |
-| 2026-10-29 | 🐞 **邻居路由源 UUID 收口** —— `registerRouteFromNeighbor` 把 `sourceContainerUuid` 写成注册者（漏斗容器）UUID，而 `sourcePos` 指向邻居 ⇒ 双形态守卫盯着错误的容器，邻居方块↔物品切换时旧路由可能漏清。修：取邻居 BE 的 `ContainerUuids.ofHost`，无身份为 null；补 2 项测试；测试 1211→1213 | `docs/tech/living-ender-chest-tech.md` §0 规则 11 · `EnderRouteManagerNeighborUuidTest` |
 
 ## 提交前必跑（2026-10-30 更新）
 
