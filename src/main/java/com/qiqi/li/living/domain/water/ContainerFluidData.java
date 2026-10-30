@@ -795,6 +795,10 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
      *
      * <p>只处理该流体的格：下游映射、level 升序遍历、{@code moved} 集合全部按流体切片，
      * 避免「A 流体的物品被 B 流体的树推动」。水 5t / 岩浆 30t（黏性对上）。</p>
+     *
+     * <p><b>定序契约</b>：遍历序 = level 升序 + slot 升序兜底；分叉序 = 直行优先 +
+     * 右/下/左/上回退（{@link #orderChildren}）。<b>不得</b>依赖 {@code flows} 的迭代顺序 ——
+     * 它是插入历史，会让同一局面下的路线随「被挡过 / 晚长出」漂移。</p>
      */
     private void pushFluidItems(ContainerContext ctx, int containerSize, int width, FluidType fluid) {
         Map<Integer, List<Integer>> downstream = new HashMap<>();
@@ -811,7 +815,12 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
         for (var entry : flows.entrySet()) {
             if (entry.getValue().fluid() == fluid) sorted.add(entry);
         }
-        sorted.sort((a, b) -> Integer.compare(a.getValue().level, b.getValue().level));
+        // 同 level 定序：否则同拍内「谁先占下游」取决于 flows 的插入历史（LinkedHashMap），
+        // 两个物品竞争同一格时谁先走不可复现（2026-10-30 分叉定序）。
+        sorted.sort((a, b) -> {
+            int byLevel = Integer.compare(a.getValue().level, b.getValue().level);
+            return byLevel != 0 ? byLevel : Integer.compare(a.getKey(), b.getKey());
+        });
 
         Set<Integer> moved = new HashSet<>();
 
@@ -826,6 +835,8 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
 
             List<Integer> children = downstream.get(slot);
             if (children == null || children.isEmpty()) continue;
+            // 分叉定序（2026-10-30）：不允许按 flows 的迭代顺序试 —— 那是插入历史。
+            orderChildren(slot, fe.fromSlot, children, width);
 
             for (int targetSlot : children) {
                 if (targetSlot < 0 || targetSlot >= containerSize) continue;
@@ -867,6 +878,52 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
                 }
             }
         }
+    }
+
+    /**
+     * 分叉定序：<b>直行优先</b>（沿「父格 → 本格」的水流方向继续），
+     * 直行不可用时按固定回退序 <b>右 → 下 → 左 → 上</b>。
+     *
+     * <p>🔴 <b>为什么必须定序（2026-10-30 真机反馈「物品走错分叉、路线随机」）</b>：
+     * 此前 children 直接按 {@code flows} 的迭代顺序试 —— {@code flows} 是
+     * {@link LinkedHashMap}，<b>条目顺序 = 插入历史</b>（生长顺序 / 挤没删除 /
+     * 重新长出的格会追加到末尾）⇒ 同一局面（同源、同物品位置）下，只要某条分支
+     * 曾被活物品挡过一拍、或在物品到达前晚长出一拍，分叉选择就会翻转。
+     * 定序后只依赖<b>当前局面</b>（流树 + 槽位几何），与生长历史、存档重进无关。</p>
+     *
+     * <p>为什么"直行"用几何方向而不是 level：{@code fromSlot → slot} 就是该格的实际来水
+     * 方向（BFS 父节点），与 level 差值无关（多源鞍部会出现 level 非单调的边）；
+     * 用它等于「水往哪流，物品就继续往哪走」，玩家可预期。</p>
+     *
+     * <p>就地排序（children 是本次调用新建的列表）。每个 rank 至多对应一个四邻方向
+     * ⇒ 结果唯一，不依赖排序稳定性。{@code fromSlot < 0}（源格，理论上不推）或
+     * 与 slot 不相邻时退化为纯回退序。</p>
+     */
+    private static void orderChildren(int slot, int fromSlot, List<Integer> children, int width) {
+        int sx = slot % width, sy = slot / width;
+        int straightDx = 0, straightDy = 0;
+        if (fromSlot >= 0) {
+            int dx = sx - fromSlot % width, dy = sy - fromSlot / width;
+            if (Math.abs(dx) + Math.abs(dy) == 1) {   // 仅四邻算「有来水方向」
+                straightDx = dx;
+                straightDy = dy;
+            }
+        }
+        final int fdx = straightDx, fdy = straightDy;
+        children.sort((a, b) -> Integer.compare(
+            childRank(sx, sy, a, width, fdx, fdy),
+            childRank(sx, sy, b, width, fdx, fdy)));
+    }
+
+    /** 分叉子节点优先级：0 = 直行，1 = 右，2 = 下，3 = 左，4 = 上，5 = 非四邻（兜底）。 */
+    private static int childRank(int sx, int sy, int child, int width, int straightDx, int straightDy) {
+        int dx = child % width - sx, dy = child / width - sy;
+        if ((straightDx != 0 || straightDy != 0) && dx == straightDx && dy == straightDy) return 0;
+        if (dx == 1 && dy == 0) return 1;
+        if (dx == 0 && dy == 1) return 2;
+        if (dx == -1 && dy == 0) return 3;
+        if (dx == 0 && dy == -1) return 4;
+        return 5;
     }
 
     // ⚠️ 2026-10-07 收尾审查：原 exportFlowData() 全仓库零调用 ⇒ 删除（不为假想需求留 API）。

@@ -1124,6 +1124,62 @@ class ContainerFluidDataTest {
         assertEquals(Items.NETHERITE_INGOT, ctx.getItem(2).getItem(), "推到下游 slot 2");
     }
 
+    // ── 分叉定序（2026-10-30 真机「物品走错分叉、路线随机」）─────────────
+
+    @Test
+    @DisplayName("㊻ 分叉定序①：直行优先（源 8、物品 17 ⇒ 沿来水方向继续向下到 26，而非 slot 更小的 16）")
+    void pushItems_prefersStraightBranch() {
+        FakeHandler h = new FakeHandler(27);   // 9×3
+        var ctx = new SimpleContainerContext(h);
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(8, Fluids.WATER.getFluidType());   // 第一行最右
+        for (int t = 0; t < 5; t++) fluid.tick(ctx);   // 瞬时水：铺满
+
+        assertEquals(8, fluid.getFlows().get(17).fromSlot(), "前提：17 的来水方向是 8（向下）");
+        h.slots[17] = new ItemStack(Items.REDSTONE, 1);
+        fluid.tick(ctx);
+
+        assertEquals(Items.REDSTONE, ctx.getItem(26).getItem(),
+            "直行：沿 8→17 的水流方向继续向下到 26");
+        assertTrue(ctx.getItem(16).isEmpty(), "不得被「编号更小」的左侧分支带偏");
+    }
+
+    @Test
+    @DisplayName("㊼ 分叉定序②：去向与生长历史无关（左侧分支先被挤占、后重生 ⇒ 仍直行）")
+    void pushBranch_isHistoryIndependent() {
+        assertEquals(26, branchPushOutcome(false), "基线：直行向下到 26");
+        assertEquals(26, branchPushOutcome(true),
+            "左侧分支 16 被挤占后重生（flows 插入顺序已变）⇒ 去向不得翻转");
+    }
+
+    /**
+     * 9×3 容器、源在 8、物品放在 17，跑一拍后返回物品落点。
+     *
+     * @param obscureLeftBranchFirst 先让活物品占住 16 若干拍（该格被 prune，重生长后
+     *                               在 {@code flows} 里排到末尾）—— 制造「插入历史不同、
+     *                               当前局面相同」的两组对照
+     */
+    private static int branchPushOutcome(boolean obscureLeftBranchFirst) {
+        FakeHandler h = new FakeHandler(27);
+        var ctx = new SimpleContainerContext(h);
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(8, Fluids.WATER.getFluidType());
+
+        if (obscureLeftBranchFirst) {
+            h.slots[16] = livingNonWater();
+            for (int t = 0; t < 5; t++) fluid.tick(ctx);
+            h.slots[16] = ItemStack.EMPTY;
+        }
+        for (int t = 0; t < 5; t++) fluid.tick(ctx);
+
+        h.slots[17] = new ItemStack(Items.REDSTONE, 1);
+        fluid.tick(ctx);
+        for (int i = 0; i < 27; i++) {
+            if (ctx.getItem(i).is(Items.REDSTONE)) return i;
+        }
+        return -1;
+    }
+
     @Test
     @DisplayName("㉓ 相邻两源不繁殖：slot 2 只有 1 个源邻居 ⇒ 不晋升（原版口径）")
     void adjacentSources_doNotPromote() {
