@@ -344,7 +344,10 @@ ServerTickEvent.Pre
 - 方块容器：`processContainerAt` → `processIsolated`；能力查询 / 上下文构建失败在
   `processChunkContainers` 按「维度|坐标」接住，并**保留区块**（无法判断它是不是容器，
   不能误踢）；
-- 实体 / 掉落物容器：`processEntityContainers` 两条分支分别隔离（键 `entity_<uuid>`）。
+- 实体 / 掉落物容器：`processEntityContainers` 两条分支分别隔离（键 `entity_<uuid>`）；
+- **发现 / 重扫**：`scanChunkForContainers` 的逐 BE 能力查询也隔离（NeoForge 不捕获
+  provider 异常）—— 抛异常时保守保留区块。代价：永久抛异常的 BE 会让该区块常驻缓存、
+  每 tick 重试一次。**不**对 `getBlockEntities()` 等引擎调用做逐区块兜底（可信代码不防）。
 
 **只接 `RuntimeException`** —— `Error`（OOM / 栈溢出）照常抛。实体容器缺能力（I-C7）仍然抛，
 由隔离层接住并按实体类型限频，不静默。

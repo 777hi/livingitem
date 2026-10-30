@@ -1,6 +1,7 @@
 package com.qiqi.li.living.container;
 
 import com.qiqi.li.living.perf.PerfMetrics;
+import com.qiqi.li.living.util.FailureThrottle;
 import com.qiqi.li.logging.ModLog;
 import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
@@ -263,8 +264,18 @@ public class ContainerChunkCache {
 
         boolean hasContainer = false;
         for (BlockEntity be : chunk.getBlockEntities().values()) {
-            if (level.getCapability(Capabilities.ItemHandler.BLOCK, be.getBlockPos(), null) != null) {
+            try {
+                if (level.getCapability(Capabilities.ItemHandler.BLOCK, be.getBlockPos(), null) != null) {
+                    hasContainer = true;
+                    break;
+                }
+            } catch (RuntimeException e) {
+                // NeoForge 不捕获能力提供者的异常（BlockCapability#getCapability 直接调用），
+                // 这里只隔离第三方代码。抛异常时无法判断它是不是容器 ⇒ 保守保留区块。
+                // 代价：永久抛异常的 BE 会让该区块常驻缓存、每 tick 重试一次（日志已限频）。
                 hasContainer = true;
+                FailureThrottle.report(
+                    dim.location() + "|" + be.getBlockPos().toShortString(), e);
                 break;
             }
         }
