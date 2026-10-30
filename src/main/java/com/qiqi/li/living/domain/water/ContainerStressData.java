@@ -3,6 +3,7 @@ package com.qiqi.li.living.domain.water;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.IntFunction;
 import java.util.function.IntUnaryOperator;
 
 import com.qiqi.li.living.container.ContainerContext;
@@ -10,7 +11,7 @@ import com.qiqi.li.living.container.ContainerDataKey;
 import com.qiqi.li.living.domain.water.LivingWaterWheelFunction;
 
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.material.Fluids;
+import net.neoforged.neoforge.fluids.FluidType;
 
 /**
  * 容器级应力数据 —— 管理容器内所有活水车的应力累加。
@@ -71,10 +72,16 @@ public class ContainerStressData implements com.qiqi.li.living.api.StressSource 
             ItemStack stack = ctx.getItem(i);
             if (!LivingWaterWheelFunction.isLivingWaterWheel(stack)) continue;
 
-            // 水车只吃水：岩浆/其它流体的 level 不参与力矩（既有缺陷，2026-10-31 一并修正）
+            // 任意流体都能驱动水车（Create 水车本来就可以由岩浆驱动）。
+            // 每个邻居按**它自己的流体**建力场表：水与岩浆同容器时互不污染。
             int[] torque = wheelTorque(i, width, containerSize, nb -> {
-                ContainerFluidData.FlowEntry n = flows.get(nb);
-                return n != null && n.fluid() == Fluids.WATER.getFluidType() ? n.level() : -1;
+                ContainerFluidData.FlowEntry fe = flows.get(nb);
+                if (fe == null) return s -> -1;
+                FluidType fluid = fe.fluid();
+                return s -> {
+                    ContainerFluidData.FlowEntry n = flows.get(s);
+                    return n != null && n.fluid() == fluid ? n.level() : -1;
+                };
             }, stack.getCount());
 
             int cwTorque = torque[0];
@@ -96,14 +103,18 @@ public class ContainerStressData implements com.qiqi.li.living.api.StressSource 
      * <p>方向读 {@link FluidFlowVector#direction}（与推动 / 渲染同源）；
      * 力矩 = 二维叉积（位置向量 × 水流方向），按离源距离加权，堆叠数量放大 SU 容量。</p>
      *
-     * @param levelOf 邻格 level 查询：<b>只认水</b>（无水 / 非水 / 越界返回 -1）
-     * @param count   堆叠数量
+     * <p><b>不按流体类型过滤</b>：任意流体都能驱动（Create 水车本来就可以由岩浆驱动，
+     * 2026-10-31 用户确认）。每个邻居用**它自己的流体**建力场表 ⇒ 水与岩浆同容器时互不污染。</p>
+     *
+     * @param levelOfFor 邻格 → 该邻居所属流体的 level 查询器（无水 / 越界返回 -1）
+     * @param count      堆叠数量
      * @return {@code {cw, ccw}}（均非负）
      */
     static int[] wheelTorque(int wheelSlot, int width, int containerSize,
-                             IntUnaryOperator levelOf, int count) {
+                             IntFunction<IntUnaryOperator> levelOfFor, int count) {
         int cw = 0, ccw = 0;
         for (int neighbor : ContainerContext.getNeighbors(wheelSlot, containerSize, width)) {
+            IntUnaryOperator levelOf = levelOfFor.apply(neighbor);
             int level = levelOf.applyAsInt(neighbor);
             if (level < 0) continue;
 

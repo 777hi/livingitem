@@ -2,6 +2,7 @@ package com.qiqi.li.living.domain.water;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import java.util.function.IntFunction;
 import java.util.function.IntUnaryOperator;
 
 import org.junit.jupiter.api.DisplayName;
@@ -16,9 +17,12 @@ import org.junit.jupiter.api.Test;
  */
 class ContainerStressDataTest {
 
-    /** level 表查询：越界 / 无水 = -1。 */
-    private static IntUnaryOperator levels(int... table) {
-        return s -> s >= 0 && s < table.length ? table[s] : -1;
+    /**
+     * 邻居 → level 查询器。测试里整容器只有一种流体 ⇒ 所有邻居共用同一张表。
+     * 越界 / 无水 = -1。
+     */
+    private static IntFunction<IntUnaryOperator> levels(int... table) {
+        return nb -> s -> s >= 0 && s < table.length ? table[s] : -1;
     }
 
     @Test

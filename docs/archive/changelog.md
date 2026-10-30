@@ -22,8 +22,8 @@
   推动 / 渲染 / 水车力矩三个消费者只调它；`tools/check_layers.py` 新增 **R5**
   （water 包外禁止读 `FlowEntry.fromSlot()` 自算方向，**零容忍、不进基线**）。
   ② 水车力矩抽成纯函数 `wheelTorque`（输入 level 表 → 输出 cw/ccw），不再受
-  「测试环境无 Create」限制 ⇒ 新增 `ContainerStressDataTest` 4 项；顺带修正
-  「岩浆也驱动水车」（只认 `Fluids.WATER`）。
+  「测试环境无 Create」限制 ⇒ 新增 `ContainerStressDataTest` 4 项。
+  **不按流体类型过滤**（Create 水车本来就可以由岩浆驱动；每个邻居按自己的流体建力场表）。
   ③ `FluidFlowSyncPacket` 的 channel 改为 `fluid_flow_sync_v2`：协议版本显式化，
   旧客户端**不渲染**，而不是把 `size` 当 `paletteSize` 读（解码错位）。
   测试 1257。→ [living-fluid-tech.md](../tech/living-fluid-tech.md) §3.3.1 · `tools/check_layers.py`。
