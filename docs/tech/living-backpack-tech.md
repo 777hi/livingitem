@@ -187,7 +187,7 @@ ContainerFluidWriteback → ctx.persist(key, value) → ContainerDataSavedData�
 |---|---|
 | `tnt` | 引信走完就**熄灭**，不爆炸、不消耗；挪到有锚点处不会自爆（机制见 [living-tnt-tech](living-tnt-tech.md) §4.1） |
 | `water_wheel` | 应力只显示在 tooltip（理论产能），不进入 Create 网络 |
-| `tool_and_weapon` | 背包里的工具不重放射线 |
+| `tool_and_weapon` | 主动模式（有记忆）不重放射线；外显（悬浮模型 / 记忆射线 / 背后环 / 攻击环）不画。⚠️ **被动辅助（挖掘 / 攻击）不受影响** —— 见 §6 的「开关关时的真实现状」 |
 | `beacon` | 不开光 |
 
 ⚠️ **`tool_and_weapon` 同时作用于工具和武器** —— 两者共用一个 `LivingToolFunction`，
@@ -303,9 +303,10 @@ ContainerFluidWriteback → ctx.persist(key, value) → ContainerDataSavedData�
 ⚠️ 因此 K2 的上报**不能受 `tool_and_weapon` 开关控制**（`LivingToolFunction` 里已把它挪到
 `origin == null` 判断之前）—— 那个开关管的是"借宿主位置做射线起点"，与辅助挖矿是两件事。
 
-⚠️ **已知副作用**：上报提前后，**开关关时背包里的活工具也会被渲染**（模型 / 记忆射线）。
-这是"辅助不受开关控制"的自然结果 —— 通道只有一条，渲染与辅助共用它。
-若要区分得给包加"仅辅助"标记，暂不做（"背包里有活工具就该看得见"本身也说得通）。
+⚠️ **开关关时的真实现状（2026-10-29 更正）**：渲染侧 2026-10-28 已加门，所以**外显不画了**；
+但**被动辅助（挖掘 / 攻击）照旧在跑** —— 背包里的活武器仍会补刀、活工具仍会加速挖掘，
+只是看不见。原因与「要真关得改哪两处」见
+[living-tool-tech](living-tool-tech.md) §6.1（辅助不用锚点 ⇒ 不归这个开关管）。
 
 ⚠️ **主手那一格只跳「工具本身」，不能跳容器展开**（2026-10-27 审查修）：
 `skipMainHand` 曾把选中槽整个 `continue`，而客户端的 K2 条目没有「主手」概念、照算
