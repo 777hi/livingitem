@@ -17,6 +17,8 @@
 
 ## 2026-10-30
 
+- 🐞 **白色信标光束透明度修正，撤回「缺 Iris 标签是确定根因」的断言** —— 用户提供染色正常 / 无染色消失或暗晕的对照；默认色改为完整 ARGB，实际原版顶点测试复现并守卫内芯透明度。标签包装保留、必要性未独立验证；用户游戏内复测确认当前光影组合下恢复正常；测试 1227→1229。→ [living-beacon-tech.md](../tech/living-beacon-tech.md) §2.1。
+
 - 🛡️ **服务端 tick 异常隔离：单个容器失败不再拖垮整 tick（R-01）** ——
   此前任一容器抛 `RuntimeException` 会抛穿整个 `ServerTickEvent`：同 tick 的尾部同步 /
   爆炸账本 / 末影 flush 全被跳过，实体容器能力缺失还会每 tick 崩一次。
@@ -60,6 +62,8 @@
   无可处理区块时照常清理）。测试 1215→1217。
 
 - 🐞 **活信标光束开光影整根不可见：compat 给光束 RenderType 打 Iris「方块实体」标签** ——
+  > ⚠️ 本条的根因推断与「更新 Iris 无效」结论已由同日 ARGB 透明度回归订正；下方仅保留当时的实施记录，不能当作已验证现状。见 [living-beacon-tech.md](../tech/living-beacon-tech.md) §2.1。
+
   根因（Iris 1.8.12 源码实证）：光影包靠 `renderStage == MC_RENDER_STAGE_BLOCK_ENTITIES`
   认信标光束；Iris 只给**方块实体渲染器**路径缓冲的 RenderType 打这层标签
   （`MixinBlockEntityRenderDispatcher` 给 BE 期间缓冲的每个 RenderType 包

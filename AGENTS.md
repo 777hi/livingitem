@@ -146,7 +146,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1227 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
+**合计测试用例 1229 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -175,7 +175,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-10-30 | 🔧 **质量门禁上 CI + 修 Windows 崩溃（R-05）** —— CI 此前只跑 `./gradlew build`，四个 Python 门禁仅在本机 `.git/hooks` 生效；`check_container_keys` 在 GBK 控制台直接 `UnicodeEncodeError`。修：CI 增加 `Quality gates` 四件套；`doc_check` 支持 `DOC_CHECK_STRICT=1`（CI 无 XML 直接红，本地仍 SKIP）；新增仓库内 `.githooks/pre-commit` + `tools/setup-dev.sh`；测试 1219 不变 | `AGENTS.md`「提交前必跑」 · `.github/workflows/build.yml` · `tools/setup-dev.sh` |
 | 2026-10-30 | 🐞 **战利品箱子区块被移出缓存 → 放入的活物品永不 tick（R-04）** —— 处理阶段跳过未开箱的战利品容器时没置 `hasContainer`，区块被当成「无容器」移出缓存；开箱使 `lootTable` 变 null 却不触发重扫 ⇒ 区块再也不回来。修：跳过处理但保留区块（每 tick 只做一次 `getLootTable()` 检查）；抽 `LivingItem.processChunkContainers` 做行为测试（返回 -1 才移出缓存）；测试 1217→1219 | `docs/system-design/living-item-infrastructure.md` §3.2 · `LivingItemChunkContainerScanTest` |
 | 2026-10-30 | 🐞 **区块缓存的兜底清理被早退跳过** —— `processLevelContainers` 在无可处理区块时直接 `return`（如该维度只有已加载但不 tick 的区块），末尾每 5 分钟的 `cleanupStaleEntries` 永不执行 ⇒ 已卸载区块的缓存条目永久残留，且每 tick 仍被遍历。修：`ContainerChunkCache.maintain()`（重扫 + 清理）前置为每 tick 唯一维护入口，调用点必须在早退之前；补 2 项测试；测试 1215→1217 | `docs/system-design/living-item-infrastructure.md` §3.2 · `ContainerChunkCacheChunkLoadTest` |
-| 2026-10-30 | 🐞 **活信标光束开光影整根不可见** —— Iris 只给**方块实体渲染器**路径缓冲的几何打 `renderStage=BLOCK_ENTITIES` 标签（光影包据此认信标光束），我们挂 `RenderLevelStageEvent` 画的没有 ⇒ 按不明几何处理，判错即丢弃（原版有标签所以正常；挂 `AFTER_BLOCK_ENTITIES` 不解决——Iris 对 NeoForge 渲染事件零识别，更新 Iris 也无效）。修：`living/compat/iris/` 软依赖——`ModIris` 门面（探测 iris/oculus + 预链接自检，失败降级不崩帧）+ `IrisBeamTagging` 把光束 RenderType 包上 Iris 同款 `OuterWrappedRenderType`+BE shard，与原版同标签同批次；测试 1213→1215 | `docs/tech/living-beacon-tech.md` §2.1 · `ModIris` / `IrisBeamTagging` |
+| 2026-10-30 | 🐞 **白色信标光束 alpha 修正；撤回标签根因断言** —— 默认色 `0xFFFFFF` 是 alpha=0 的 ARGB，染色玻璃则有 alpha=255；改为 `0xFFFFFFFF`。实际原版顶点回归复现内芯全透明，修后守卫内芯=255 / 外晕=32。Iris 标签包装保留，其必要性未独立验证；测试 1227→1229，用户游戏内复测确认当前光影组合下恢复正常 | `docs/tech/living-beacon-tech.md` §2.1 · `BeamColorSectionsTest` |
 | 2026-10-29 | 🐞 **邻居路由源 UUID 收口** —— `registerRouteFromNeighbor` 把 `sourceContainerUuid` 写成注册者（漏斗容器）UUID，而 `sourcePos` 指向邻居 ⇒ 双形态守卫盯着错误的容器，邻居方块↔物品切换时旧路由可能漏清。修：取邻居 BE 的 `ContainerUuids.ofHost`，无身份为 null；补 2 项测试；测试 1211→1213 | `docs/tech/living-ender-chest-tech.md` §0 规则 11 · `EnderRouteManagerNeighborUuidTest` |
 | 2026-10-29 | 🐞 **手机端（触屏 / 软键盘）改不了活漏斗输入输出槽位** —— 方向解析只挂 `ScreenEvent.CharacterTyped.Pre`，该事件只由 GLFW **字符回调**驱动；触屏的屏幕按键只产生**按键回调** ⇒ key 到了、char 从没到，而 `KeyPressed` 只 cancel 不喂会话，整条链路静默无响应。修：主通道改按键（键码 → 方向字符），字符保留为兜底（全角归一化），同一次按键按 300ms 窗口去重；按住重复事件只屏蔽；测试 1202→1204 | `docs/system-design/gui-interaction-system.md` §6.1 · `LivingItemInputHandler` / `LivingItemInputKeyMapTest` |
 | 2026-10-29 | 🐞 **末影箱回滚收口：只回原槽 + 失败日志** —— 旧实现忽略 `insertItem` 返回值/无位置直接 `return`；此前补的多级 fallback（同库/活视图/玩家/落地）会把物品散到别处，用户定改为：只回提取时的原槽；装不下/被占/源失效 ⇒ ERROR 日志（物品/数量/源/槽），不落地、不找其它槽。四个 accessor 统一；测试 1204→1211 | `docs/tech/living-ender-chest-tech.md` §0 规则 12 · `LivingEnderChestAccessorTest` / `PlainSlotAccessorTest` |

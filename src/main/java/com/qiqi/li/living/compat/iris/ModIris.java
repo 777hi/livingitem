@@ -7,18 +7,10 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.neoforged.fml.ModList;
 
 /**
- * 活物品与 Iris / Oculus（光影加载器）的集成门面。
+ * Iris 光束渲染源门面：可用时添加方块实体阶段标签，否则返回原源。
  *
- * <p>唯一能力：{@link #tagBeamSource} —— 给光束绘制源包一层「方块实体」渲染段标签。
- * 背景（2026-10-30 实证，Iris 1.8.12 源码）：光影包靠 {@code renderStage ==
- * MC_RENDER_STAGE_BLOCK_ENTITIES} 认信标光束（Iris 给<b>方块实体渲染器</b>路径缓冲的
- * 每个 RenderType 包 {@code OuterWrappedRenderType} + BE shard），我们的光束挂在
- * {@code RenderLevelStageEvent} 里画 ⇒ 无标签 ⇒ 光影包按不明几何处理，判错即丢弃
- * ⇒ 光束不可见（原版信标有标签所以正常）。包装后两条路径在光影眼里完全同类。</p>
- *
- * <p>Iris 未加载时一切原样返回，零参与；集成实现委托给 {@link IrisBeamTagging}
- * （只在 Iris 在装时被加载，直接引用 Iris 内部类）。加载失败一律降级为无标签，
- * 绝不让 {@link LinkageError} 穿透到渲染主循环。</p>
+ * <p>Iris 内部类引用仅限隔离实现 {@link IrisBeamTagging}；显式 flush 必须仍走原源。
+ * 标签包装不能修复颜色 alpha，也不保证光影包中的可见性。</p>
  */
 public final class ModIris {
 

@@ -136,24 +136,25 @@ public static void renderBeaconBeam(
 > （箱子宿主起点恰好是方块中心，天然对齐；玩家宿主需补偿。）
 
 **② 挂载点现成。**
-`RenderLevelStageEvent`（**`AFTER_BLOCK_ENTITIES` 阶段**——与原版信标
-（BlockEntityRenderer）同段：地形 / 实体 / BE 深度均已写入 ⇒ 光束本地截断正确；
-2026-10-30 实证：**光影下的可见性不取决于挂点**，见下方标签说明）
-—— `LivingItemClient.onRenderLevelStage`
-已转发给 `LivingToolRayRenderer` / `LivingToolModelRenderer`
-⇒ 活信标光束挂**同一事件**，是第 3 个消费者，**零新增基础设施**。
-⚠️ 直调 `renderBeaconBeam` 后必须**两趟 flush**（beam 不透明 + glow 半透明是两个 RenderType）——
-漏 glow 那趟 ⇒ 光晕被推迟提交 ⇒ 暗淡（不开光影也在）。
-⚠️ **光影（Iris / Oculus）下可见性靠标签，不靠挂点**（2026-10-30 实证 Iris 1.8.12 源码）：
-Iris 对 NeoForge 渲染事件**零识别**（全库对 `RenderLevelStageEvent` 仅一处空引用），
-只给**方块实体渲染器**路径缓冲的几何打 `renderStage = MC_RENDER_STAGE_BLOCK_ENTITIES`
-标签（`MixinBlockEntityRenderDispatcher` 给 BE 期间缓冲的每个 RenderType 包
-`OuterWrappedRenderType` + BE shard，绘制时置位）；光影包据此认信标光束并按全亮发光体处理，
-**无标签 ⇒ 按不明几何处理，判错即整根丢弃 = 不可见**（原版信标有标签所以正常）。
-修法：`living/compat/iris/ModIris`（软依赖 `maven.modrinth:iris`，探测 iris / oculus，
-预链接自检失败一律降级为无标签、不崩帧）→ `IrisBeamTagging` 把光束 RenderType 包上
-**同一个 shard**，与原版信标同标签同批次（Iris 在装时显式 `endBatch(RenderType)` 被其
-批处理禁用为空操作，几何由 Iris 在半透明边界统一 flush）。
+`LivingItemClient.onRenderLevelStage` 将 `RenderLevelStageEvent` 转发给光束渲染器，
+使用 `AFTER_BLOCK_ENTITIES`；无光影时在原源上分别 flush 内芯和外晕两个 RenderType。
+
+**颜色必须是完整 ARGB，不能以 RGB 白色代替。**
+2026-10-30 用户对照：染色玻璃光束正常，未染色光束在多数光影下消失、少数只剩暗晕。
+确认错误是默认色 `0xFFFFFF`（实际 `0x00FFFFFF`，alpha=0），不是白色 RGB 本身。
+`BeaconRenderer.renderBeaconBeam` 内芯直接使用输入颜色，外晕单独设置 alpha=32；
+因此错误默认色使内芯完全透明，光影包采用不同的混合 / 丢弃规则时，表现为不可见或仅剩暗晕。
+修为 `0xFFFFFFFF`；染色玻璃通过 `DyeColor.getTextureDiffuseColor()` 返回不透明 ARGB。
+`BeamColorSectionsTest` 捕获实际原版光束顶点，守卫无玻璃 / 红玻璃 / 白玻璃的
+内芯 alpha=255、外晕 alpha=32；该测试不启动 GPU 或光影包。
+2026-10-30 用户游戏内复测反馈「正常了」：修正 alpha 后，当前使用的光影组合中光束恢复正常。
+该验证保留了 Iris 标签包装，不能据此证明包装必要，也不能推广为所有光影包均通过。
+
+**Iris 阶段标签包装：已实现，效果未独立验证。**
+`ModIris` / `IrisBeamTagging` 给光束类型添加方块实体阶段标签；Iris 批处理会忽略
+显式 `endBatch(RenderType)`，在自身提交点绘制。标签包装不修改颜色 alpha。
+此前「缺标签就是消失根因」「更新 Iris 必定无效」没有光影包对照证据，不能当作已证实结论。
+本次只修颜色并保留包装，不同时改变两条路径；是否还需要包装应在相同光影包下开关它做对照。
 
 **③ 方向对齐写法可复用。**
 玩家宿主（顶面法线方向）用 `LivingToolModelRenderer.drawModel` 的

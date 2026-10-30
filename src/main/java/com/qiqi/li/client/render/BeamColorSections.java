@@ -38,8 +38,8 @@ import net.minecraft.util.FastColor;
  */
 public final class BeamColorSections {
 
-    /** 全程无染色方块时的颜色 —— 原版白光。 */
-    public static final int DEFAULT_COLOR = 0xFFFFFF;
+    /** 全程无染色方块时的颜色 —— 不透明 ARGB 白色，内芯顶点会直接读取 alpha。 */
+    public static final int DEFAULT_COLOR = 0xFFFFFFFF;
 
     /** 一段光束：颜色（ARGB）+ 该段高度（格）。 */
     public record Section(int color, int height) {

@@ -3,23 +3,25 @@ package com.qiqi.li.client.render;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import net.minecraft.client.renderer.blockentity.BeaconRenderer;
 import net.minecraft.util.FastColor;
+import net.minecraft.world.item.DyeColor;
 
 /**
- * BeamColorSections 纯逻辑测试（照原版 {@code BeaconBlockEntity} 扫描算法）。
- *
- * <p>判据来源：原版源码（2026-10-16 核）—— 首块染色方块纯色、第 2 块仍纯色、
- * 第 3 块起异色取平均；非染色方块加高；不透明停止。我们以"白段高度 1"起步
- * （= 原版信标自身那一格）。</p>
+ * 光束颜色分段与原版渲染顶点的 ARGB 契约守卫。
  */
 class BeamColorSectionsTest {
 
-    private static final int WHITE = 0xFFFFFF;
+    private static final int WHITE = 0xFFFFFFFF;
     private static final int RED = 0xFFFF0000;
     private static final int BLUE = 0xFF0000FF;
 
@@ -104,6 +106,70 @@ class BeamColorSectionsTest {
         assertEquals(2, sections.size());
         assertEquals(new BeamColorSections.Section(WHITE, 1), sections.get(0));
         assertEquals(new BeamColorSections.Section(BLUE, 3), sections.get(1));
+    }
+
+    @Test
+    @DisplayName("默认白色必须是完整 ARGB：RGB 白色且 alpha = 255，与原版染料色同透明度")
+    void defaultWhiteIsOpaque() {
+        assertEquals(0xFFFFFFFF, BeamColorSections.DEFAULT_COLOR);
+        assertEquals(FastColor.ARGB32.alpha(DyeColor.WHITE.getTextureDiffuseColor()),
+            FastColor.ARGB32.alpha(BeamColorSections.DEFAULT_COLOR));
+    }
+
+    @Test
+    @DisplayName("实际原版光束顶点：无玻璃/红玻璃/白玻璃的内芯 alpha = 255，外晕 alpha = 32")
+    void renderedBeamVertexAlpha() {
+        List<List<BeamColorSections.Observation>> observations = List.of(
+            List.of(), List.of(air()), List.of(glass(RED)),
+            List.of(glass(DyeColor.WHITE.getTextureDiffuseColor())));
+        for (var upward : observations) {
+            var sections = BeamColorSections.build(upward, BeamColorSections.DEFAULT_COLOR);
+            var section = sections.getLast();
+            var consumer = new ColorCapture();
+            BeaconRenderer.renderBeaconBeam(new PoseStack(), type -> consumer,
+                BeaconRenderer.BEAM_LOCATION, 0.0F, 1.0F, 0L, 0, 1, section.color(), 0.2F, 0.25F);
+
+            assertEquals(32, consumer.alphas.size());
+            assertEquals(Collections.nCopies(16, 255), consumer.alphas.subList(0, 16),
+                "内芯顶点不能因默认色丢失 alpha 而透明");
+            assertEquals(Collections.nCopies(16, 32), consumer.alphas.subList(16, 32),
+                "外晕透明度由原版渲染器设置");
+        }
+    }
+
+    private static final class ColorCapture implements VertexConsumer {
+        private final List<Integer> alphas = new ArrayList<>();
+
+        @Override
+        public VertexConsumer addVertex(float x, float y, float z) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setColor(int red, int green, int blue, int alpha) {
+            alphas.add(alpha);
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setUv(float u, float v) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setUv1(int u, int v) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setUv2(int u, int v) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setNormal(float x, float y, float z) {
+            return this;
+        }
     }
 
     @Test

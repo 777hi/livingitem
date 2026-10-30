@@ -59,8 +59,8 @@ import net.neoforged.neoforge.client.event.RenderLevelStageEvent;
  * 半透明外晕，两个 RenderType）⇒ 调用方必须**两趟都 flush**，只 flush 不透明那趟会让
  * 光晕残留在 Immediate 里被推迟提交（2026-10-16 修）。⚠️ Iris（光影加载器）在装时
  * 显式 {@code endBatch(RenderType)} 被其批处理系统禁用为空操作（几何由 Iris 在半透明
- * 边界统一 flush）⇒ 两趟 flush 只服务无光影路径；光影路径靠 {@link ModIris#tagBeamSource}
- * 打标签保可见。
+ * 边界统一 flush）⇒ 两趟 flush 只服务无光影路径；{@link ModIris#tagBeamSource}
+ * 仅补方块实体阶段标签。传入颜色必须是完整 ARGB，不能省略内芯 alpha。
  *
  * <h3>方向对齐</h3>
  * 通用公式与 {@link LivingToolModelRenderer#drawModel} 同款：
@@ -100,11 +100,8 @@ public final class LivingBeamRenderer {
     /**
      * 渲染入口 —— 由 {@code LivingItemClient} 转发 {@link RenderLevelStageEvent}。
      *
-     * <p>挂在 {@link RenderLevelStageEvent.Stage#AFTER_BLOCK_ENTITIES}（原版信标
-     * BlockEntityRenderer 同段）：该点地形 / 实体 / BE 深度均已写入，光束本地截断正确。
-     * ⚠️ 光影下的可见性**不取决于挂点**（Iris 不认识 NeoForge 渲染事件，2026-10-30 实证
-     * Iris 1.8.12 源码），而取决于 {@link ModIris#tagBeamSource} 给几何打的「方块实体」
-     * 标签 —— 光影包按 {@code renderStage} 认信标光束，无标签即整根不可见。</p>
+     * <p>仅处理 {@link RenderLevelStageEvent.Stage#AFTER_BLOCK_ENTITIES}；
+     * 光束颜色必须包含不透明 alpha，阶段标签不能替代顶点透明度。</p>
      */
     public static void render(RenderLevelStageEvent event) {
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_BLOCK_ENTITIES) {
@@ -396,8 +393,7 @@ public final class LivingBeamRenderer {
         // ⚠️ 预补偿 renderBeaconBeam 内部的 translate(0.5, 0, 0.5)（设计稿 §2.1 已知坑）
         poseStack.translate(-0.5F, 0.0F, -0.5F);
 
-        // 光影（Iris/Oculus）路径：给几何打「方块实体」标签，光影包才认这是信标光束；
-        // 无光影时原样返回。flush 仍走 buffers —— Iris 下显式 flush 是空操作，由 Iris 统一提交。
+        // 阶段标签仅用于 Iris 兼容；颜色与 alpha 仍由分段决定，flush 仍走原源。
         MultiBufferSource taggedBuffers = ModIris.tagBeamSource(buffers);
 
         int yOffset = 0;

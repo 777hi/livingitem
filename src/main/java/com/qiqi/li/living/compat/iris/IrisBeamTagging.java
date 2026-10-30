@@ -12,17 +12,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * 给光束 RenderType 打 Iris 的「方块实体」渲染段标签。
+ * 给光束 RenderType 添加 Iris 的方块实体阶段标签。
  *
- * <p>⚠️ 本类只在 Iris / Oculus 在装时经 {@link ModIris} 加载（直接引用
- * {@code net.irisshaders.iris.layer} 内部类，编译依赖 {@code maven.modrinth:iris}）；
- * 任何一步失败都降级为「返回原类型」，由门面兜底，绝不冒异常到渲染主循环。</p>
- *
- * <p>机制：Iris 的 {@code MixinBlockEntityRenderDispatcher} 会给<b>方块实体渲染期间</b>
- * 缓冲的每个 RenderType 包一层 {@code OuterWrappedRenderType}，其上的
- * {@link BlockEntityRenderStateShard} 在真正绘制时把 {@code renderStage} 统一值置为
- * {@code MC_RENDER_STAGE_BLOCK_ENTITIES} —— 光影包据此识别信标光束并按全亮发光体处理。
- * 本类给我们的光束 RenderType 包上<b>同一个 shard</b>，与原版信标同标签同批次。</p>
+ * <p>仅由 {@link ModIris} 在探测到加载器时使用；依赖 Iris 内部类，版本变化可能降级。
+ * 包装实例按原 RenderType 复用，标签不改变顶点颜色或 alpha。</p>
  */
 final class IrisBeamTagging {
 
