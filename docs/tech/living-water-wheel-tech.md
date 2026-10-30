@@ -44,6 +44,7 @@
 | 4 | 堆叠**放大 SU 容量**（64 个 = 64 倍），**转速不变** | 堆叠 = 并联，不是串联 |
 | 5 | 净应力**从容器底部垂直输出** | 输出面固定 |
 | 6 | 注入的转速必须**跨存档稳定**（rpm 落盘） | 否则重载后 Create 会**销毁**下游方块（2026-10-09 实测事故，见 §9.25） |
+| 7 | **水流方向与推动 / 渲染同源**（四邻力场主分量），不读 BFS 父节点 | 三者方向必须一致；源格 `fromSlot = -1` 曾让旁侧水车白转（2026-10-31） |
 
 **能力清单**：✅ 力矩计算（4 方向）· ✅ CW / CCW · ✅ 叠加 / 抵消 · ✅ SU 容量随堆叠放大
 · ✅ 容器底部输出 · ✅ rpm 落盘（抗重载）· ✅ 物品栏 3D 渲染 · ✅ Tooltip
@@ -176,10 +177,15 @@ ItemStack
 力矩 = 位置向量 × 水流方向向量（二维叉积）
 
 位置向量 P = (px, py) = (邻居槽位 - 水车槽位) 的坐标差
-水流方向 F = (fdx, fdy) = (邻居槽位 - 水流来源槽位) 的坐标差
+水流方向 F = (fdx, fdy) = 该水格的**四邻力场方向**（level 差矢量和的主分量）
 
 torque = px * fdy - py * fdx
 ```
+
+> ⚠️ **水流方向与推动 / 渲染同源**（2026-10-31）：三者都读
+> `ContainerFluidData.flowDirection`。此前力矩读 `FlowEntry.fromSlot()`（BFS 父节点），
+> 源格 `fromSlot = -1` 会被跳过 ⇒ 源格旁的水车**白转**；分叉处也会与贴图/物品推动
+> 给出不同方向。
 
 **叉积的几何意义**：力矩衡量水流"绕水车旋转"的分量。
 
@@ -1516,7 +1522,10 @@ if (prev != 0 && rpm == 0) {
 
 **现象**：活水桶被取走后，活水车依旧显示净应力（Tooltip 有值），且移动到不同槽位净应力还会变化，仿佛水流数据依旧存在。同时容器下方的齿轮可能不旋转，但旁边齿轮仍在转（且无应力）。
 
-**根因**：水流数据缓存在 `CONTAINER_DATA` 嵌套 `fluid` 字段中，清除的唯一入口是 `ContainerFluidData.recalculate()`，而 `recalculate()` 只在 `LivingWaterBucketFunction.tickContainerData()` 中被调用。当活水桶被取走：
+**根因（当时）**：水流数据缓存在 `CONTAINER_DATA` 嵌套 `fluid` 字段中，清除的唯一入口是
+`ContainerFluidData.recalculate()`（**该方法已删除**，2026-10-06 统一时钟重构，
+现状见下方「现状」注），而它只在 `LivingWaterBucketFunction.tickContainerData()` 中被调用。
+当活水桶被取走：
 
 ```
 processContext() 扫描容器
@@ -1552,6 +1561,12 @@ if (!hasWaterBucket && tick.fluidData != null && tick.fluidData != ContainerFlui
 **效果**：`LivingWaterWheelFunction.tickContainerData()` 计算时看到空水流 → 产出零应力 → `CreateIntegration.updateStressOutput()` 注入 `rpm=0` → 齿轮应力正确清零，Tooltip 显示无应力。
 
 **涉及文件**：`ContainerLivingItemHandler.java`
+
+> ⚠️ **现状（2026-10-08 起，本条结论已失效）**：流体驱动改为**自维持**的
+> `LivingFluidFunction.tickContainerData`（`shouldTickWithoutOwnItems` 恒真）——
+> 桶不在场，纯源容器照样 tick；「桶被取走 ⇒ 不再清理水流」这条链路**已不存在**，
+> 上面的 `hasWaterBucket` 兜底也随重构删除。
+> 保留本节作为「驱动权不能挂在物品上」的教训（见 `living-fluid-tech.md` §1）。
 
 ### 9.21 `deferredSync` 延迟同步导致客户端空状态（齿轮不转 + 应力网络无应力）
 

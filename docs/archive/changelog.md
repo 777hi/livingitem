@@ -30,6 +30,9 @@
   **目标可以是水格或无水格** ⇒「在水里被推」与「被推出水流」成为同一件事，末端分支删除。
   服务端 `pushFluidItems` 与客户端 `ContainerFluidOverlay` 调**同一个** `flowDirection`
   ⇒ 渲染流向 = 实际流向（此前客户端在 45° 取横，表现为「左两象限朝左、右两象限朝右」）。
+  🔗 **水车应力同步切到力场**：`ContainerStressData` 的力矩方向原先读 `FlowEntry.fromSlot()`，
+  源格（`-1`）会被跳过 ⇒ 源格旁的水车白转，分叉处也与推/渲染不一致；现改为同一个
+  `flowDirection` ⇒ **推动 / 渲染 / 水车力矩三方同源**。
   删除 `orderChildren` / `childRank` / `straightTarget`；新增 3 项测试
   （力场函数 / 鞍部 / 直角弯兜底），测试 1249。
   ⚠️ 客户端要算主轴 ⇒ `FluidFlowSyncPacket` 新增 `size` 字段（协议变更；alpha 阶段不兼容旧包）。

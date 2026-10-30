@@ -9,6 +9,7 @@ import com.qiqi.li.living.container.ContainerDataKey;
 import com.qiqi.li.living.domain.water.LivingWaterWheelFunction;
 
 import net.minecraft.world.item.ItemStack;
+import net.neoforged.neoforge.fluids.FluidType;
 
 /**
  * 容器级应力数据 —— 管理容器内所有活水车的应力累加。
@@ -20,8 +21,12 @@ import net.minecraft.world.item.ItemStack;
  * - 同方向应力叠加，反方向应力抵消
  * - 净应力 = CW应力 - CCW应力
  *
- * 应力计算在 ContainerFluidData.recalculate() 之后执行，
- * 读取 BFS 水流状态计算每个水车的力矩。
+ * 应力在 {@code LivingWaterWheelFunction}（prio 1）里执行，读<b>本拍最终</b>的
+ * {@link ContainerFluidData#getFlows()} 算每个水车的力矩。
+ *
+ * <p>⚠️ 水流方向读 {@link ContainerFluidData#flowDirection}（四邻力场）——
+ * 与物品推动、渲染<b>同源</b>（2026-10-31）。不再读 {@code FlowEntry.fromSlot()}：
+ * 源格 {@code fromSlot = -1} 会被跳过（源格旁的水车白转），分叉处也会与推/渲染给出不同方向。</p>
  */
 public class ContainerStressData implements com.qiqi.li.living.api.StressSource {
 
@@ -72,10 +77,21 @@ public class ContainerStressData implements com.qiqi.li.living.api.StressSource 
             int[] neighbors = ContainerContext.getNeighbors(i, containerSize, width);
             for (int neighbor : neighbors) {
                 ContainerFluidData.FlowEntry fe = flows.get(neighbor);
-                if (fe == null || fe.fromSlot() < 0) continue;
+                if (fe == null) continue;
 
-                int fdx = (neighbor % width) - (fe.fromSlot() % width);
-                int fdy = (neighbor / width) - (fe.fromSlot() / width);
+                // 水流方向与推动 / 渲染同源（四邻力场，2026-10-31）；只认同流体邻居
+                FluidType fluid = fe.fluid();
+                int dir = ContainerFluidData.flowDirection(neighbor, width, containerSize, nb -> {
+                    if (nb < 0 || nb >= containerSize) return -1;
+                    ContainerFluidData.FlowEntry n = flows.get(nb);
+                    return n != null && n.fluid() == fluid ? n.level() : -1;
+                });
+                if (dir == ContainerFluidData.FLOW_NONE) continue;
+
+                int fdx = dir == ContainerFluidData.FLOW_RIGHT ? 1
+                    : dir == ContainerFluidData.FLOW_LEFT ? -1 : 0;
+                int fdy = dir == ContainerFluidData.FLOW_DOWN ? 1
+                    : dir == ContainerFluidData.FLOW_UP ? -1 : 0;
 
                 int px = (neighbor % width) - (i % width);
                 int py = (neighbor / width) - (i / width);
