@@ -649,13 +649,29 @@ slot/level/fromSlot）→ 客户端 `FluidFlowClientCache` → `ContainerFluidOv
   `LoggingOut` 兜底清（`FluidClientCacheCleanup`——`removed()` 清缓存与服务端
   最后一拍发包有竞态窗口，残留会跨存档存活）。
 
+### 7.1 重载后不显示的判据（2026-10-30）
+
+**不显示 ≠ 源丢失。** 先确认容器重新进入 tick，再看源、发包与客户端快照：
+
+- 非空流体对当前查看者**每 tick 全量发送**；`CLIENT_ACTIVE` 只检测空数据边沿，不做非空快照去重。
+  正常关菜单清缓存、新 BE / 新菜单重开后应自然恢复；`FluidFlowServerSyncTest` 守实际 `send` 与查看者定向。
+- 单箱源附件经 NBT 读回后只有源表，必须经正常 tick 重建流动表才能发可渲染快照，不能用开菜单强刷代替恢复 tick。
+- 「首次重扫区块暂不可用」曾导致发现请求被丢弃；恢复链修复与时序证据见
+  [基础设施 §3.2](../system-design/living-item-infrastructure.md#32-containerchunkcache--容器区块缓存)。
+  `LivingItemChunkContainerScanTest` 以真实单箱附件、单次 Load、延迟可见、实际 tick / 发包守水与岩浆两条路径。
+- 空桶汲水的客户端准入同样依赖流体快照，**看不见且汲不到不是服务端无源的独立证据**。
+
+用户现场为「原版单箱，走远回来不显示，重进存档又出现」。上述重扫缺口已有受控回归；
+尚未完成该现场的游戏内复测，不宣称源曾永久删除，也不宣称所有渲染问题已排除。
+
 ---
 
 ## 8. 落盘
 
 | 容器 | 载体 | 内容 |
 |---|---|---|
-| BE 容器 | `CONTAINER_FLUID_DATA` attachment（`.serialize(CODEC)`） | 只存 `generatedSources`（流动每 tick 重算，不落） |
+| 无容器 UUID 的方块 / 实体容器 | `CONTAINER_FLUID_DATA` attachment（`.serialize(CODEC)`） | 只存 `generatedSources`（流动每 tick 重算，不落） |
+| 有容器 UUID 的方块 / 物品形态容器 | `ContainerDataSavedData`（按 UUID + `ContainerFluidData.KEY`） | 同上；持久层由 `ctx.persist` 选择 |
 | 玩家背包 / 末影箱 | **Player attachment** `CONTAINER_FLUID_DATA_PLAYER`（`KEYED_CODEC`，一个玩家两个容器键） | 同上 |
 
 **玩家路径守卫**（2026-10-07，`PlayerFluidDataPersistenceTest` 4 项）：happy path 已由用户实测确认
@@ -823,6 +839,7 @@ Create 6.0.10 的 `SmartFluidTank extends net.neoforged.neoforge.fluids.capabili
 - [ ] 汲走最后一个源 ⇒ 渲染当拍清除（边沿清屏）
 - [ ] 跨存档：换存档后首次打开不残留（LoggingOut 兜底）
 - [ ] 大箱子 / 背包 / 末影箱（除汲/倒缺口）渲染正常
+- [ ] 原版单箱倒入水 / 岩浆→关闭界面→走远到区块卸载→返回开箱：无需退存档，源恢复显示且继续蔓延（2026-10-30 现场待复测）
 
 ### 落盘
 - [ ] BE attachment 与 Player attachment 往返

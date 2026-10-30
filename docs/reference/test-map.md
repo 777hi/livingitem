@@ -17,7 +17,7 @@
 
 ```
 src/test/java/com/qiqi/li/
-├── LivingItemChunkContainerScanTest.java     # R-04 战利品容器保留区块·未开箱不处理不查能力但返回 0（保留）/开箱（lootTable=null）回到普通能力路径（2026-10-30）
+├── LivingItemChunkContainerScanTest.java     # 战利品容器不处理但保留区块 / 开箱回到能力路径；水·岩浆真实单箱附件 NBT→单次 Load 延迟可见→重新发现→实际 tick 发包 / 删末源保存重载不复活
 ├── LivingItemRuntimeContainerPositionsTest.java  # 运行时遥测发包「容器键→位置」反查·非 Container BE(精妙背包/ProjectE)返回位置不抛异常(I-C5 翻转)/原版 Container BE/无 BE 返回 null + 缓存键反查·前缀定向该维度且不越维度找补/未知维度/裸键扫描兜底/背包坏键安全跳过/dimPrefixOf + 实体容器键→实时位置/实体不存在→空（2026-10-21）
 ├── testutil/
 │   └── FakeContainerContext.java              # ContainerContext 测试替身（内存数组实现）
@@ -76,7 +76,7 @@ src/test/java/com/qiqi/li/
 │   ├── AvaritiaMenuResolverTest.java             # D-container-09 守卫（无尽箱子）：包名匹配+getTile()返回方块实体 → 解出位置；包名不匹配**即使有同名方法也不认**；返回类型非 BE 不认；无 getter 返回 null（替身 FakeInfinityChestMenu 放在对方包名下）
 │   ├── ContainerNeighborsTest.java            # 四邻取数·fillNeighbors 与 getNeighbors 逐格一致（含边界）/ 单行容器 / 复用缓冲不污染
 │   ├── PlayerFluidDataPersistenceTest.java    # 玩家路径落盘（CONTAINER_FLUID_DATA_PLAYER）·背包与末影箱各有源写回 / 变空条目移除 / 重进不复活 / 两容器键互不干扰 / 重进从附件回填
-│   ├── ContainerChunkCacheChunkLoadTest.java  # 区块加载守卫·事件不碰世界/延后重扫不丢/限量/不主动加载/只处理ticking区/可观测性/每tick维护清理不依赖可处理区块
+│   ├── ContainerChunkCacheChunkLoadTest.java  # 区块加载守卫·事件不碰世界/延后重扫不丢/限量/不主动加载/只处理ticking区/可观测性/每tick维护清理不依赖可处理区块；单次 Load 未就绪重试 / 队列公平性 / 卸载撤销与再加载 / 能力查询期间卸载重入
 │   ├── ContainerUuidsDiscardTest.java         # 取消活化**彻底清理**（2026-10-28）·discard 必须清内存层容器数据（旧实现只删 SavedData ⇒ 物品形态无位置可反查 ⇒ 熔炉进度留到停服）/ UUID 被剥掉（重新活化拿新身份）
 │   ├── ItemFormLiveViewsTest.java             # 物品形态容器的按 UUID 寻址（2026-10-28，活末影箱路由取货）·登记后可按 UUID 取同一活视图 / 未登记或清空后 null（停服清空、背包没在 tick）/ null 输入安全
 │   ├── ContainerKeysTest.java                 # 容器键解析唯一入口(2026-10-13)·5 种键形各自归位(背包/末影箱前缀相同必须按后缀分开)/缓存键剥维度前缀/未知形态返回 null 不抛异常/ownerOf 末影箱回归(旧实现抛异常被吞⇒从不发包)/isOwnedByPlayer(null 安全)/positionsOf(大箱两段·维度 id 含下划线取末三段)/维度前缀
@@ -191,7 +191,7 @@ src/test/java/com/qiqi/li/
 │   ├── ContainerFluidIntegrationTest.java     # 流体端到端（走真实 processContext）·预置派生源+驱动跑BFS / BE 写回 EMPTY / 驱动进自维持清单
 │   ├── FluidTransformTableTest.java           # 流体转化表 JSON 语义·内置装载/玩家差异(覆盖/removed)/坏文件跳过/坏条目跳过/缩容等待/活物品过滤/output_potion（含 output 必须为药水类物品）
 │   ├── FluidFlowClientCacheTest.java           # 客户端快照分桶不变量（2026-10-06 第 ③ 次泄漏修复）·ENDER/BLOCK 目标路由 / PLAYER_INV 不翻转非背包组提示 / clear() 三桶全空并复位
-│   ├── FluidFlowServerSyncTest.java           # 流体快照同步边沿·数据清空恰好一次清屏/从未激活不发/反复汲倒重新武装 + **关界面时物品形态容器只问一次、不进逐槽循环**（真机 60 条第三方 ERROR 的回归）
+│   ├── FluidFlowServerSyncTest.java           # 流体快照同步边沿·数据清空恰好一次清屏/从未激活不发/反复汲倒重新武装；真实单箱稳定每拍发送 / 关闭发空→同坐标新 BE 和新菜单恢复非空 / 无 viewer 后重开且不发给其它玩家；关界面物品形态只问一次、不进逐槽循环
 │   ├── LivingBucketFunctionTest.java          # 活桶零私有状态·判定(BucketItem家族通吃)/内容=原版content/形态变换 getBucket 映射/同形态零新对象
 │   ├── LivingBucketInteractSupportTest.java   # 倒桶源格替换（A 档对齐原版）·契约 default false（未覆写流体保守拒绝）/ 水⇄岩浆对称替换 + 同种不构成 / 倒桶判定四例
 │   ├── BucketInteractRealMenuTest.java        # 倒/汲的**真实原版菜单**路径（2026-10-28，缺口 #6）·真实 `BrewingStandMenu` + 真实 BE 能解析出容器（假菜单测不到）/ 倒水后桶排空 / 汲水后桶装水且源消失（脚手架=真实菜单+BE+capability 替身）

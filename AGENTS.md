@@ -146,7 +146,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1234 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
+**合计测试用例 1246 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -171,6 +171,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-30 | 🐞 **区块未就绪不再丢容器重扫请求** —— 单箱「走远后流体不显示、重进恢复」排查；限额队列重试、卸载撤销，新增 12 项守卫，测试 1234→1246；受控回归通过，现场待真机复测 | `docs/system-design/living-item-infrastructure.md` §3.2 · `docs/tech/living-fluid-tech.md` §7.1 |
 | 2026-10-30 | ✅ **物品被水流推出水流（末端不再停住）** —— 用户口径「物品受一股推力，推出水流才对」。修：末端沿来水方向推出到无水格；直行仍有水 / 越界 / 活物品 / 被占 ⇒ 停在末端。🔴 顺带修顺序缺陷：`pushItems` 原排在焚毁/转化之前 ⇒ 推出让物品抢跑逃离熔岩格（焚毁 / 生源 / 防火 3 项测试同时红），现移到反应类之后；测试 1231→1234 | `docs/tech/living-fluid-tech.md` §0 规则 9 · §3.3 · §3.6 · `ContainerFluidDataTest` ㊽/㊾/㊿ |
 | 2026-10-30 | 🐞 **水流推动分叉改为「直行优先 + 固定回退序」（修「物品走错分叉、路线随机」）** —— children 原先按 `flows`（LinkedHashMap）迭代顺序试，而该顺序 = 插入历史（被挤占删除后重生长会追加到末尾）⇒ 同一局面去向翻转；同 level 物品顺序同样继承历史。修：直行优先（`fromSlot → 本格`）+ 回退序 右/下/左/上 + 同层 slot 定序；补 2 项测试，测试 1229→1231 | `docs/tech/living-fluid-tech.md` §3.3.1 · `ContainerFluidDataTest` ㊻/㊼ |
 | 2026-10-30 | 🛡️ **单个容器异常不再拖垮整个服务端 tick（R-01）** —— 容器 tick 抛 `RuntimeException` 会抛穿 `ServerTickEvent`，尾部同步 / 爆炸账本 / 末影 flush 全跳过。修：`processIsolated` 以「一个容器上下文」为边界（玩家背包 / 末影箱 / 方块 / 实体 / 掉落物）；只接 `RuntimeException`，`Error` 照常抛；`FailureThrottle` 首次完整栈、同 key 60s 抑制、5 分钟汇总、256 key LRU；`-Dliving_item.debug.isolation=false` 可关闭；补 8 项测试；测试 1219→1227 | `docs/system-design/living-item-infrastructure.md` §3.1.1 · `FailureThrottle` / `ContainerTickIsolationTest` |
@@ -180,7 +181,6 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-10-30 | 🐞 **白色信标光束 alpha 修正；撤回标签根因断言** —— 默认色 `0xFFFFFF` 是 alpha=0 的 ARGB，染色玻璃则有 alpha=255；改为 `0xFFFFFFFF`。实际原版顶点回归复现内芯全透明，修后守卫内芯=255 / 外晕=32。Iris 标签包装保留，其必要性未独立验证；测试 1227→1229，用户游戏内复测确认当前光影组合下恢复正常 | `docs/tech/living-beacon-tech.md` §2.1 · `BeamColorSectionsTest` |
 | 2026-10-29 | 🐞 **邻居路由源 UUID 收口** —— `registerRouteFromNeighbor` 把 `sourceContainerUuid` 写成注册者（漏斗容器）UUID，而 `sourcePos` 指向邻居 ⇒ 双形态守卫盯着错误的容器，邻居方块↔物品切换时旧路由可能漏清。修：取邻居 BE 的 `ContainerUuids.ofHost`，无身份为 null；补 2 项测试；测试 1211→1213 | `docs/tech/living-ender-chest-tech.md` §0 规则 11 · `EnderRouteManagerNeighborUuidTest` |
 | 2026-10-29 | 🐞 **手机端（触屏 / 软键盘）改不了活漏斗输入输出槽位** —— 方向解析只挂 `ScreenEvent.CharacterTyped.Pre`，该事件只由 GLFW **字符回调**驱动；触屏的屏幕按键只产生**按键回调** ⇒ key 到了、char 从没到，而 `KeyPressed` 只 cancel 不喂会话，整条链路静默无响应。修：主通道改按键（键码 → 方向字符），字符保留为兜底（全角归一化），同一次按键按 300ms 窗口去重；按住重复事件只屏蔽；测试 1202→1204 | `docs/system-design/gui-interaction-system.md` §6.1 · `LivingItemInputHandler` / `LivingItemInputKeyMapTest` |
-| 2026-10-29 | 🐞 **末影箱回滚收口：只回原槽 + 失败日志** —— 旧实现忽略 `insertItem` 返回值/无位置直接 `return`；此前补的多级 fallback（同库/活视图/玩家/落地）会把物品散到别处，用户定改为：只回提取时的原槽；装不下/被占/源失效 ⇒ ERROR 日志（物品/数量/源/槽），不落地、不找其它槽。四个 accessor 统一；测试 1204→1211 | `docs/tech/living-ender-chest-tech.md` §0 规则 12 · `LivingEnderChestAccessorTest` / `PlainSlotAccessorTest` |
 
 ## 提交前必跑（2026-10-30 更新）
 

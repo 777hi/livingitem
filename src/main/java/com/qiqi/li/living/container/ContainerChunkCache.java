@@ -4,6 +4,7 @@ import com.qiqi.li.living.perf.PerfMetrics;
 import com.qiqi.li.living.util.FailureThrottle;
 import com.qiqi.li.logging.ModLog;
 import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
+import it.unimi.dsi.fastutil.objects.ObjectLinkedOpenHashSet;
 import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceKey;
@@ -63,17 +64,18 @@ public class ContainerChunkCache {
     private final Map<ResourceKey<Level>, Long> lastCleanupTick = new Object2ObjectOpenHashMap<>();
 
     /**
-     * 待重扫区块队列（按维度）。
+     * 待重扫区块队列（按维度，去重且保留入队顺序）。
      *
      * <p>方块放置/破坏事件触发时，目标位置的 BlockEntity 可能尚未完成初始化
      * （不少模组容器的 ItemHandler 依赖 BE 内部字段，在 {@code onLoad()} 或读 NBT 后才可用），
      * 此刻查询 capability 会返回 null，导致重扫扫不到刚放下的容器。
      * 因此把重扫推迟到下一 tick，由 {@link #flushPendingRescans} 执行。</p>
      *
-     * <p>区块加载事件走同一条队列 —— 原因不是"BE 没就绪"，而是<b>事件回调的时机不安全</b>，
-     * 见 {@link #onChunkLoad}。</p>
+     * <p>区块加载事件走同一条队列，事件回调里不得查询世界。
+     * 未就绪请求移到队尾重试；卸载事件只撤销待重扫，不改已发现的区块集合。</p>
      */
-    private final Map<ResourceKey<Level>, Set<ChunkPos>> pendingRescans = new Object2ObjectOpenHashMap<>();
+    private final Map<ResourceKey<Level>, ObjectLinkedOpenHashSet<ChunkPos>> pendingRescans =
+        new Object2ObjectOpenHashMap<>();
 
     /**
      * 单 tick 最多执行的延后重扫数（见 {@link #flushPendingRescans}）。
@@ -130,21 +132,15 @@ public class ContainerChunkCache {
     }
 
     /**
-     * 区块卸载事件 —— 不立即从缓存中移除。
-     *
-     * 为什么不在卸载时移除：
-     *   processLevelContainers 在 ServerTickEvent.Pre 中执行，
-     *   而 ChunkEvent.Load 在 ServerLevel.tick() 中触发（晚于 Pre）。
-     *   如果卸载时移除，重新加载后 processLevelContainers 在同一个 tick 的 Pre 阶段
-     *   找不到该区块，需要等到下一个 tick 才能处理。
-     *   处理阶段发现 getChunkNow() == null 时只跳过本次处理，不移除缓存条目
-     *   （FULL future 可能尚未完成）。
-     *
-     * 兜底：cleanupStaleEntries 定期清理真正已卸载的区块。
+     * 区块卸载：只撤销未完成的重扫，已发现区块仍由 {@link #cleanupStaleEntries} 兜底回收。
+     * 事件回调只改内存队列，不查询世界或能力。
      */
     @SubscribeEvent
     public void onChunkUnload(ChunkEvent.Unload event) {
-        // 不立即移除，由 cleanupStaleEntries 负责清理
+        if (event.getLevel() instanceof ServerLevel level) {
+            var pending = pendingRescans.get(level.dimension());
+            if (pending != null) pending.remove(event.getChunk().getPos());
+        }
     }
 
     /**
@@ -186,7 +182,7 @@ public class ContainerChunkCache {
      * 而那里处在区块加载任务内部（见 {@link #onChunkLoad} 的红线说明）。</p>
      */
     private void schedulePendingRescan(ServerLevel level, ChunkPos chunkPos) {
-        pendingRescans.computeIfAbsent(level.dimension(), k -> new ObjectOpenHashSet<>())
+        pendingRescans.computeIfAbsent(level.dimension(), k -> new ObjectLinkedOpenHashSet<>())
                       .add(chunkPos);
     }
 
@@ -197,40 +193,32 @@ public class ContainerChunkCache {
      * 主线程不在任何区块任务内部，因此即使某个模组的能力提供者触发同步区块加载也是合法的。
      * <b>不要把 {@link #scanChunkForContainers} 挪回事件回调里</b> —— 见 {@link #onChunkLoad} 的红线说明。</p>
      *
-     * <p>每 tick 限量 {@value #MAX_RESCANS_PER_TICK} 个：区块加载事件会成批涌入
-     * （视距 12 约 600 个区块，远距离传送 / 调大视距后更集中），一次性全扫会把能力查询
-     * 堆到同一 tick。剩余的留到下一 tick 继续，不会丢。</p>
+     * <p>每 tick 最多尝试 {@value #MAX_RESCANS_PER_TICK} 个请求；未就绪请求留到队尾，
+     * 不阻塞尚未尝试的请求。扫描期间新增/撤销的请求作用于同一队列，不迭代可变集合。</p>
      *
      * @param level 服务端世界
      */
     public void flushPendingRescans(ServerLevel level) {
-        Set<ChunkPos> pending = pendingRescans.remove(level.dimension());
+        ResourceKey<Level> dim = level.dimension();
+        var pending = pendingRescans.get(dim);
         if (pending == null || pending.isEmpty()) return;
 
-        Set<ChunkPos> carryOver = null;
-        int scanned = 0;
-
-        for (ChunkPos cPos : pending) {
-            if (scanned >= MAX_RESCANS_PER_TICK) {
-                if (carryOver == null) carryOver = new ObjectOpenHashSet<>();
-                carryOver.add(cPos);
+        int attempts = Math.min(pending.size(), MAX_RESCANS_PER_TICK);
+        var chunkSource = level.getChunkSource();
+        for (int i = 0; i < attempts && !pending.isEmpty(); i++) {
+            ChunkPos cPos = pending.first();
+            // 非阻塞：尚未可见不是再次触发 Load 的承诺，必须保留请求。
+            LevelChunk chunk = chunkSource.getChunkNow(cPos.x, cPos.z);
+            if (chunk == null) {
+                pending.removeFirst();
+                pending.add(cPos);
                 continue;
             }
-            scanned++;
 
-            // getChunkNow（非阻塞）：绝不在 tick 里主动加载区块
-            LevelChunk chunk = level.getChunkSource().getChunkNow(cPos.x, cPos.z);
-            if (chunk != null) {
-                scanChunkForContainers(level, chunk);
-            }
-            // chunk == null：区块还没到 FULL 或被卸载 —— 丢弃即可，不会漏：
-            // 它真正加载完成时会再触发一次 ChunkEvent.Load 重新登记。
+            pending.removeFirst();
+            scanChunkForContainers(level, chunk);
         }
-
-        if (carryOver != null) {
-            pendingRescans.computeIfAbsent(level.dimension(), k -> new ObjectOpenHashSet<>())
-                          .addAll(carryOver);
-        }
+        if (pending.isEmpty()) pendingRescans.remove(dim);
     }
 
     /**

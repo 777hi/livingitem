@@ -367,8 +367,8 @@ ContainerChunkCache.java 维护"包含容器方块实体的区块"列表，避�
 **缓存维护策略（事件驱动 + 每 tick 维护）**：
 
 ```
-区块加载   → 只登记坐标，下一 tick 扫描该区块，若有容器则加入缓存
-区块卸载   → 不立即移除（与加载事件存在时序窗口），由 cleanupStaleEntries 兜底
+区块加载   → 只登记坐标，tick 阶段重扫；暂未就绪则保留请求
+区块卸载   → 撤销待重扫；已发现区块不立即移除，由 cleanupStaleEntries 兜底
 方块放置   → 下一 tick 重新扫描该区块
 方块破坏   → 下一 tick 重新扫描该区块
 ```
@@ -407,11 +407,18 @@ ContainerChunkCache.java 维护"包含容器方块实体的区块"列表，避�
 > 主线程不在任何区块任务内部）。`scanChunkForContainers` 是唯一做能力查询的重扫入口，
 > **不要把它挪回事件回调里**。回归守卫：`ContainerChunkCacheChunkLoadTest`。
 
-**延后重扫队列**：`pendingRescans`（按维度）同时承接区块加载、方块放置、方块破坏三类事件。
-`flushPendingRescans` 每 tick 限量 `MAX_RESCANS_PER_TICK = 64` 个，剩余的留到下一 tick
-（区块加载会成批涌入，视距 12 约 600 个区块，避免能力查询峰值堆到同一 tick）。
-区块没到 FULL（`getChunkNow` 返回 null）就跳过 —— **绝不主动加载区块**；不会漏，
-它真正加载完成时会再触发一次 `ChunkEvent.Load` 重新登记。
+**延后重扫队列**：`pendingRescans`（按维度、入队顺序去重）同时承接区块加载、方块放置、方块破坏三类事件。
+`flushPendingRescans` 每 tick 最多尝试 `MAX_RESCANS_PER_TICK = 64` 个；暂未就绪
+（`getChunkNow` 返回 null）时请求移到队尾，不能丢弃，也不能反复抢占队首让其它区块饥饿。
+全程只用非阻塞查询，**绝不主动加载区块**；`onChunkUnload` 撤销待重扫，停服清空队列。
+能力查询可能触发事件重入，因此消费与登记/撤销必须操作同一队列，不能取走整份集合后覆盖新状态。
+
+**2026-10-30 重载恢复修复**：旧实现把 null 请求丢掉，并误认为「真正就绪时还会再来一次
+`ChunkEvent.Load`」。实际 `ChunkStatusTasks.full()` 在返回 FULL 结果前发布 Load，之后不保证重发；
+第一次检查落在不可见窗口时可能永久漏掉容器发现，流体存档尚在但箱子不再 tick，也不再发渲染快照。
+已移出发现缓存的旧区块同样必须能恢复。守卫：`ContainerChunkCacheChunkLoadTest` 的单 Load 延迟可见、
+限额公平性、卸载撤销与重入；`LivingItemChunkContainerScanTest` 的真实单箱附件往返→重新发现→tick→发包。
+测试复现的是受控时序；用户「走远回来不显示、重进恢复」现场仍需游戏内复测，不等同已证明唯一根因。
 
 > 📌 **同一机制的"温和版"（tick 阶段仍可能发生，不是死锁但代价高）**
 >
@@ -454,7 +461,7 @@ private static boolean hasContainerOrItemHandler(ServerLevel level, BlockPos pos
 
 | 层级 | 机制 | 触发时机 | 作用 |
 |------|------|---------|------|
-| 1 | `onChunkUnload` | 区块卸载时 | **不立即移除**（与 `ChunkEvent.Load` 的时序窗口，见下）；只清 `EnderChannelRegistry` 路由 |
+| 1 | `onChunkUnload` | 区块卸载时 | 撤销待重扫；**已发现区块不立即移除**（见下）；另清 `EnderChannelRegistry` 路由 |
 | 2 | `!hasContainer` 检查 | 每 tick 遍历 | 自清洁，容器消失时移除（如方块破坏） |
 | 3 | `cleanupStaleEntries` | 每 6000 ticks（约 5 分钟） | 兜底清理，移除已卸载但事件遗漏的区块 |
 

@@ -195,6 +195,139 @@ class ContainerChunkCacheChunkLoadTest {
                .getChunk(Mockito.anyInt(), Mockito.anyInt(), Mockito.any(), Mockito.anyBoolean());
     }
 
+    @Test
+    @DisplayName("重载：首次重扫未就绪，之后没有第二次 Load 事件也能发现容器")
+    void flush_retriesUnavailableChunkWithoutAnotherLoadEvent() {
+        ServerLevel level = mockLevel();
+        ChunkPos pos = new ChunkPos(3, 7);
+        Map<Long, LevelChunk> loaded = new HashMap<>();
+        ServerChunkCache source = mockChunkSource(level, loaded);
+        Mockito.when(source.isPositionTicking(pos.toLong())).thenReturn(true);
+
+        fireChunkLoad(level, pos);
+        cache.flushPendingRescans(level);
+        assertEquals(0, cache.getCacheSize(Level.OVERWORLD), "尚未就绪，不能提前判为容器");
+
+        loaded.put(pos.toLong(), containerChunk(level, pos));
+        cache.flushPendingRescans(level);
+
+        assertTrue(cache.getProcessableChunks(level).contains(pos),
+            "Load 只发生一次；未就绪不能丢弃请求，否则重载后容器永不 tick");
+        Mockito.verify(source, Mockito.never())
+               .getChunk(Mockito.anyInt(), Mockito.anyInt(), Mockito.any(), Mockito.anyBoolean());
+    }
+
+    @Test
+    @DisplayName("重试公平性：未就绪请求不能反复占满预算，后面的已就绪区块必须被扫描")
+    void flush_unavailableChunksDoNotStarveReadyChunks() {
+        ServerLevel level = mockLevel();
+        Map<Long, LevelChunk> loaded = new HashMap<>();
+        ServerChunkCache source = mockChunkSource(level, loaded);
+        java.util.List<ChunkPos> requested = new java.util.ArrayList<>();
+        int budget = ContainerChunkCache.MAX_RESCANS_PER_TICK;
+        for (int i = 0; i <= budget; i++) {
+            ChunkPos pos = new ChunkPos(i, 0);
+            requested.add(pos);
+            fireChunkLoad(level, pos);
+        }
+
+        // 首拍所有请求均未就绪；选实际未被尝试的那个区块在下一拍就绪。
+        cache.flushPendingRescans(level);
+        var xs = org.mockito.ArgumentCaptor.forClass(Integer.class);
+        var zs = org.mockito.ArgumentCaptor.forClass(Integer.class);
+        Mockito.verify(source, Mockito.times(budget)).getChunkNow(xs.capture(), zs.capture());
+        java.util.Set<ChunkPos> attempted = new java.util.HashSet<>();
+        for (int i = 0; i < xs.getAllValues().size(); i++) {
+            attempted.add(new ChunkPos(xs.getAllValues().get(i), zs.getAllValues().get(i)));
+        }
+        ChunkPos ready = requested.stream().filter(pos -> !attempted.contains(pos)).findFirst().orElseThrow();
+        loaded.put(ready.toLong(), containerChunk(level, ready));
+        Mockito.when(source.isPositionTicking(ready.toLong())).thenReturn(true);
+
+        cache.flushPendingRescans(level);
+        assertTrue(cache.getProcessableChunks(level).contains(ready),
+            "重试必须排到未尝试请求之后，不能让未就绪区块饿死后面的区块");
+
+        // 最初失败的请求同样必须保留，不得以丢弃它们换取公平性。
+        for (ChunkPos pos : requested) {
+            if (pos.equals(ready)) continue;
+            loaded.put(pos.toLong(), containerChunk(level, pos));
+            Mockito.when(source.isPositionTicking(pos.toLong())).thenReturn(true);
+        }
+        cache.flushPendingRescans(level);
+        assertEquals(requested.size(), cache.getCacheSize(Level.OVERWORLD),
+            "全部就绪后应发现全部容器，首拍失败的请求不能丢");
+    }
+
+    @Test
+    @DisplayName("卸载：撤销未完成重扫，不查询世界；之后重新加载可再次登记")
+    void chunkUnload_cancelsPendingRescanAndAllowsReload() {
+        ServerLevel level = mockLevel();
+        ChunkPos pos = new ChunkPos(3, 7);
+        Map<Long, LevelChunk> loaded = new HashMap<>();
+        loaded.put(pos.toLong(), containerChunk(level, pos));
+        ServerChunkCache source = mockChunkSource(level, loaded);
+
+        fireChunkLoad(level, pos);
+        Mockito.clearInvocations(level, source);
+        cache.onChunkUnload(new ChunkEvent.Unload(mockChunk(level, pos)));
+        Mockito.verify(level, Mockito.atMostOnce()).dimension();
+        Mockito.verifyNoMoreInteractions(level);
+        Mockito.verifyNoInteractions(source);
+
+        cache.flushPendingRescans(level);
+        Mockito.verifyNoInteractions(source);
+        assertEquals(0, cache.getCacheSize(Level.OVERWORLD), "已卸载请求必须撤销");
+
+        fireChunkLoad(level, pos);
+        cache.flushPendingRescans(level);
+        assertTrue(cache.getProcessableChunks(level).contains(pos), "重新加载不能被旧的撤销状态挡住");
+    }
+
+    @Test
+    @DisplayName("卸载：已经延期的重扫也必须撤销，之后不再查询该区块")
+    void chunkUnload_cancelsDeferredRetry() {
+        ServerLevel level = mockLevel();
+        ChunkPos pos = new ChunkPos(3, 7);
+        ServerChunkCache source = mockChunkSource(level, Map.of());
+
+        fireChunkLoad(level, pos);
+        cache.flushPendingRescans(level);
+        cache.onChunkUnload(new ChunkEvent.Unload(mockChunk(level, pos)));
+        Mockito.clearInvocations(source);
+
+        cache.flushPendingRescans(level);
+        Mockito.verifyNoInteractions(source);
+    }
+
+    @Test
+    @DisplayName("重扫重入：能力查询期间卸载另一个待扫区块，撤销立即生效且不破坏队列")
+    void flush_honorsUnloadDuringCapabilityQuery() {
+        ServerLevel level = mockLevel();
+        ChunkPos first = new ChunkPos(3, 7);
+        ChunkPos unloaded = new ChunkPos(4, 7);
+        Map<Long, LevelChunk> loaded = new HashMap<>();
+        loaded.put(first.toLong(), containerChunk(level, first));
+        loaded.put(unloaded.toLong(), containerChunk(level, unloaded));
+        ServerChunkCache source = mockChunkSource(level, loaded);
+        BlockPos firstBe = new BlockPos(first.getMinBlockX(), 64, first.getMinBlockZ());
+        IItemHandler handler = Mockito.mock(IItemHandler.class);
+        Mockito.when(level.getCapability(Capabilities.ItemHandler.BLOCK, firstBe, null))
+               .thenAnswer(inv -> {
+                   cache.onChunkUnload(new ChunkEvent.Unload(mockChunk(level, unloaded)));
+                   return handler;
+               });
+
+        fireChunkLoad(level, first);
+        fireChunkLoad(level, unloaded);
+        cache.flushPendingRescans(level);
+
+        assertTrue(cache.getProcessableChunks(level).contains(first));
+        assertFalse(cache.getProcessableChunks(level).contains(unloaded),
+            "能力查询可触发事件重入；卸载撤销必须作用于正在消费的队列");
+        Mockito.verify(source, Mockito.never()).getChunkNow(unloaded.x, unloaded.z);
+    }
+
     // ---------- 5. 只处理 ticking 区（防止跨区块强制加载） ----------
 
     @Test
