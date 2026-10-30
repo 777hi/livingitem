@@ -314,8 +314,6 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
         // ── 生长类逻辑：一律走**该流体自己的节拍**（2026-10-06 统一时钟）──
         // 晋升：实际层 + 该流体推进拍（升格当拍改写为源）
         promoteInActualLayer(advanced, containerSize, width);
-        // 推动：与该流体的蔓延同拍同频，排在蔓延之后（物品跟着刚长出的前沿走）
-        pushItems(ctx, containerSize, width, advanced);
 
         // ── 反应类逻辑：当拍生效（外部投放 / 异种流体接触）──
         // 机制三：源格 = 转化台（水的表条目转化；岩浆不转化）
@@ -324,6 +322,12 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
         reactFrontiers(ctx);
         // 机制一：熔岩格（含源格）非活物品焚毁/源诞生
         incinerateFlowItems(ctx);
+
+        // ── 推动：该流体推进拍，且排在**反应类之后**（2026-10-30 末端推出）──
+        // 顺序约束：反应类「当拍生效」必须优先。若推动在前，末端推出会让物品抢在焚毁/转化
+        // 之前离开熔岩格 ⇒ 焚毁、满组石头生源、防火存活三条既有语义全部被绕过。
+        // 放在这里还顺带让推动读「反应后的水流」（生源格变源 ⇒ 自然不被推）。
+        pushItems(ctx, containerSize, width, advanced);
     }
 
     /** 每流体推进节拍记忆（tickCounter）；跨存档不保留（重进流体重新生长，已拍板）。 */
@@ -799,6 +803,11 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
      * <p><b>定序契约</b>：遍历序 = level 升序 + slot 升序兜底；分叉序 = 直行优先 +
      * 右/下/左/上回退（{@link #orderChildren}）。<b>不得</b>依赖 {@code flows} 的迭代顺序 ——
      * 它是插入历史，会让同一局面下的路线随「被挡过 / 晚长出」漂移。</p>
+     *
+     * <p><b>末端推出</b>（2026-10-30）：物品在水流末端（没有下游水格）时，沿来水方向
+     * 被推出水流一格（{@link #straightTarget} + {@link #tryMoveInto}）—— 对齐原版
+     * 「物品受水流推力、离开水流即失去推力」的语义。目标必须是无水格；边界 / 活物品 / 占用
+     * ⇒ 推不出去，停在末端（下一拍水若追上来会继续推）。</p>
      */
     private void pushFluidItems(ContainerContext ctx, int containerSize, int width, FluidType fluid) {
         Map<Integer, List<Integer>> downstream = new HashMap<>();
@@ -834,7 +843,16 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
             if (item.isEmpty() || LivingItemManager.isLivingItem(item)) continue;
 
             List<Integer> children = downstream.get(slot);
-            if (children == null || children.isEmpty()) continue;
+            if (children == null || children.isEmpty()) {
+                // 水流末端：沿来水方向「推出水流」一格（2026-10-30 用户口径，对齐原版推力）。
+                // 目标必须是无水格 —— 直行方向若仍有水（含另一条流树的支路），说明还在水流内部，
+                // 不能穿过去；边界 / 容器外 / 活物品 / 占用由 tryMoveInto 与 straightTarget 挡住。
+                int outSlot = straightTarget(slot, fe.fromSlot, containerSize, width);
+                if (outSlot >= 0 && !flows.containsKey(outSlot)) {
+                    tryMoveInto(ctx, slot, item, outSlot, moved);
+                }
+                continue;
+            }
             // 分叉定序（2026-10-30）：不允许按 flows 的迭代顺序试 —— 那是插入历史。
             orderChildren(slot, fe.fromSlot, children, width);
 
@@ -844,40 +862,73 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
                 FlowEntry targetFlow = flows.get(targetSlot);
                 if (targetFlow != null && targetFlow.isSource) continue;
 
-                ItemStack targetItem = ctx.getItem(targetSlot);
-                if (LivingItemManager.isLivingItem(targetItem)) continue;
-
-                if (targetItem.isEmpty()) {
-                    ctx.setItem(targetSlot, item.copy());
-                    ctx.setItem(slot, ItemStack.EMPTY);
-                    ctx.syncSlotToClients(targetSlot, ctx.getItem(targetSlot));
-                    ctx.syncSlotToClients(slot, ItemStack.EMPTY);
-                    moved.add(targetSlot);
-                    break;
-                } else if (ItemStack.isSameItemSameComponents(item, targetItem)
-                           && targetItem.getCount() < targetItem.getMaxStackSize()) {
-                    int space = targetItem.getMaxStackSize() - targetItem.getCount();
-                    int toAdd = Math.min(item.getCount(), space);
-                    ItemStack newTarget = targetItem.copy();
-                    newTarget.grow(toAdd);
-                    ctx.setItem(targetSlot, newTarget);
-                    ctx.syncSlotToClients(targetSlot, newTarget);
-                    if (item.getCount() == toAdd) {
-                        ctx.setItem(slot, ItemStack.EMPTY);
-                        ctx.syncSlotToClients(slot, ItemStack.EMPTY);
-                        moved.add(targetSlot);
-                        break;
-                    } else {
-                        ItemStack remaining = item.copy();
-                        remaining.shrink(toAdd);
-                        ctx.setItem(slot, remaining);
-                        ctx.syncSlotToClients(slot, remaining);
-                        moved.add(targetSlot);
-                        break;
-                    }
-                }
+                if (tryMoveInto(ctx, slot, item, targetSlot, moved)) break;
             }
         }
+    }
+
+    /**
+     * 「直行」的下一格：沿 {@code fromSlot → slot} 的水流方向再走一格。
+     *
+     * <p>用于水流末端把物品推出水流（{@link #pushFluidItems}）。{@code fromSlot < 0}
+     * （源格）或与 slot 非四邻时返回 -1；越过容器左右边界 / 顶边 / 末行之外同样返回 -1
+     * —— 推不出容器就不推。</p>
+     */
+    private static int straightTarget(int slot, int fromSlot, int containerSize, int width) {
+        if (fromSlot < 0) return -1;
+        int sx = slot % width, sy = slot / width;
+        int dx = sx - fromSlot % width, dy = sy - fromSlot / width;
+        if (Math.abs(dx) + Math.abs(dy) != 1) return -1;   // 非四邻（历史残留）
+        int tx = sx + dx, ty = sy + dy;
+        if (tx < 0 || tx >= width || ty < 0) return -1;
+        int target = ty * width + tx;
+        return target < containerSize ? target : -1;
+    }
+
+    /**
+     * 把 {@code slot} 的物品移入 {@code targetSlot}（空槽写入 / 同类合并）。
+     *
+     * <p><b>唯一写入口</b> —— 下游推动与「末端推出水流」共用，保证两者在同步、
+     * {@code moved} 标记、合并口径上完全一致。</p>
+     *
+     * <p>⚠️ 合并容量目前取 {@link ItemStack#getMaxStackSize}，不是槽位上限
+     * （已知缺陷 A2，见 buffer/living-fluid-review.md，待拍板）。</p>
+     *
+     * @return true = 本拍已处理完（移动或部分合并），调用方不再试其它目标
+     */
+    private static boolean tryMoveInto(ContainerContext ctx, int slot, ItemStack item,
+                                       int targetSlot, Set<Integer> moved) {
+        ItemStack targetItem = ctx.getItem(targetSlot);
+        if (LivingItemManager.isLivingItem(targetItem)) return false;
+
+        if (targetItem.isEmpty()) {
+            ctx.setItem(targetSlot, item.copy());
+            ctx.setItem(slot, ItemStack.EMPTY);
+            ctx.syncSlotToClients(targetSlot, ctx.getItem(targetSlot));
+            ctx.syncSlotToClients(slot, ItemStack.EMPTY);
+            moved.add(targetSlot);
+            return true;
+        }
+        if (!ItemStack.isSameItemSameComponents(item, targetItem)
+            || targetItem.getCount() >= targetItem.getMaxStackSize()) {
+            return false;
+        }
+        int toAdd = Math.min(item.getCount(), targetItem.getMaxStackSize() - targetItem.getCount());
+        ItemStack newTarget = targetItem.copy();
+        newTarget.grow(toAdd);
+        ctx.setItem(targetSlot, newTarget);
+        ctx.syncSlotToClients(targetSlot, newTarget);
+        if (item.getCount() == toAdd) {
+            ctx.setItem(slot, ItemStack.EMPTY);
+            ctx.syncSlotToClients(slot, ItemStack.EMPTY);
+        } else {
+            ItemStack remaining = item.copy();
+            remaining.shrink(toAdd);
+            ctx.setItem(slot, remaining);
+            ctx.syncSlotToClients(slot, remaining);
+        }
+        moved.add(targetSlot);
+        return true;
     }
 
     /**

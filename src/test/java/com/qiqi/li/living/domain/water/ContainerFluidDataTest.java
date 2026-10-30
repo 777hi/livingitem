@@ -792,7 +792,7 @@ class ContainerFluidDataTest {
     }
 
     @Test
-    @DisplayName("㊱ 防火物品存活：FIRE_RESISTANT 组件物品在熔岩格共存不焚毁")
+    @DisplayName("㊱ 防火物品不焚毁：FIRE_RESISTANT 组件物品不被烧（仍受推力，被推出熔岩末端）")
     void incinerate_fireResistant_survives() {
         registerSlowLava();
         FakeHandler h = new FakeHandler(9);
@@ -805,7 +805,10 @@ class ContainerFluidDataTest {
 
         fluid.tick(ctx);
 
-        assertEquals(Items.NETHERITE_INGOT, ctx.getItem(1).getItem(), "防火物品存活");
+        // 反应类先跑（SURVIVE 存活），随后推动按 2026-10-30 口径把它推出熔岩末端
+        assertEquals(Items.NETHERITE_INGOT, ctx.getItem(2).getItem(),
+            "防火物品不焚毁 ✅；熔岩末端把它推出到无水格（推力，不是焚毁）");
+        assertTrue(ctx.getItem(1).isEmpty(), "末端格已空");
     }
 
     @Test
@@ -1111,17 +1114,24 @@ class ContainerFluidDataTest {
     @Test
     @DisplayName("㊺ 时钟③：物品推动按流体节拍（慢岩浆 flowSpeed=10 ⇒ 只在推进拍推，不做 4t 一次）")
     void pushItems_followsFluidClock() {
-        registerSlowLava();   // flowSpeed 10
-        var ctx = row(ItemStack.EMPTY, new ItemStack(Items.NETHERITE_INGOT));  // 防火物品：不被焚毁，只会被推
+        registerSlowLava();   // flowSpeed 10、maxLevel 3
+        var ctx = row(ItemStack.EMPTY, new ItemStack(Items.NETHERITE_INGOT));  // 防火物品：不被焚毁
         var fluid = new ContainerFluidData();
         fluid.registerGeneratedSource(0, Fluids.LAVA.getFluidType());
 
-        for (int t = 0; t < 10; t++) fluid.tick(ctx);
-        assertEquals(1, ctx.getItem(1).getCount(), "未到推进拍 ⇒ 物品不动（旧实现会每 4t 推一次）");
+        // 首拍 = 推进拍：岩浆长到 slot 1，物品在末端被推出到无水格 2（2026-10-30 末端推出）
+        fluid.tick(ctx);
+        assertEquals(Items.NETHERITE_INGOT, ctx.getItem(2).getItem(), "首拍：末端推出到 2");
+        assertTrue(ctx.getItem(1).isEmpty(), "末端槽清空");
 
-        fluid.tick(ctx);   // 下一个推进拍：岩浆长出下一格 ⇒ 同拍推动
-        assertTrue(ctx.getItem(1).isEmpty(), "推进拍上物品被推走");
-        assertEquals(Items.NETHERITE_INGOT, ctx.getItem(2).getItem(), "推到下游 slot 2");
+        // 之后 9 拍都不是推进拍 ⇒ 物品在无水格 2 上不再移动（旧实现会每 4t 推一次）
+        for (int t = 0; t < 9; t++) fluid.tick(ctx);
+        assertEquals(Items.NETHERITE_INGOT, ctx.getItem(2).getItem(), "非推进拍不推");
+
+        // 第 11 拍 = 下一个推进拍：岩浆长到 2 ⇒ 物品又在末端，被推到 3
+        fluid.tick(ctx);
+        assertEquals(Items.NETHERITE_INGOT, ctx.getItem(3).getItem(), "推进拍才继续推");
+        assertTrue(ctx.getItem(2).isEmpty(), "末端槽清空");
     }
 
     // ── 分叉定序（2026-10-30 真机「物品走错分叉、路线随机」）─────────────
@@ -1178,6 +1188,60 @@ class ContainerFluidDataTest {
             if (ctx.getItem(i).is(Items.REDSTONE)) return i;
         }
         return -1;
+    }
+
+    // ── 末端推出水流（2026-10-30 用户口径：物品受推力，被推出水流才对）─────
+
+    @Test
+    @DisplayName("㊽ 末端推出①：物品在水流末端被推出水流一格（离开水即失去推力）")
+    void pushItems_pushesOutOfFlowAtFrontier() {
+        var ctx = row();   // 1×9
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
+        fluid.tick(ctx);   // 瞬时水：覆盖 0..7（maxLevel 7）
+
+        assertTrue(fluid.getFlows().containsKey(7), "前提：末端是 slot 7");
+        assertFalse(fluid.getFlows().containsKey(8), "前提：slot 8 无水（maxLevel 之外）");
+
+        ctx.setItem(7, new ItemStack(Items.REDSTONE, 1));
+        fluid.tick(ctx);
+        assertEquals(Items.REDSTONE, ctx.getItem(8).getItem(),
+            "末端 7 ⇒ 沿来水方向被推出水流，落到无水格 8");
+        assertTrue(ctx.getItem(7).isEmpty(), "末端槽清空");
+
+        fluid.tick(ctx);
+        assertEquals(Items.REDSTONE, ctx.getItem(8).getItem(), "离开水流 ⇒ 失去推力，不再移动");
+    }
+
+    @Test
+    @DisplayName("㊾ 末端推出②：推出方向被活物品挡住 ⇒ 停在末端（不穿障碍）")
+    void pushItems_stopsWhenPushOutBlocked() {
+        var ctx = row();
+        ctx.setItem(8, livingNonWater());   // 活物品挡在推出方向
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
+        fluid.tick(ctx);
+
+        ctx.setItem(7, new ItemStack(Items.REDSTONE, 1));
+        fluid.tick(ctx);
+
+        assertEquals(Items.REDSTONE, ctx.getItem(7).getItem(), "推不出去 ⇒ 留在末端");
+        assertTrue(LivingItemManager.isLivingItem(ctx.getItem(8)), "活物品不被推动");
+    }
+
+    @Test
+    @DisplayName("㊿ 末端推出③：直行方向已出容器（末格）⇒ 推不出去，停在末端")
+    void pushItems_cannotPushOutBeyondContainer() {
+        registerWater(8);   // 水覆盖到末格 8（9 格全满）
+        var ctx = row();
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
+        fluid.tick(ctx);
+        assertEquals(9, fluid.getFlows().size(), "前提：水铺满 1×9");
+
+        ctx.setItem(8, new ItemStack(Items.REDSTONE, 1));
+        fluid.tick(ctx);
+        assertEquals(Items.REDSTONE, ctx.getItem(8).getItem(), "直行越界 ⇒ 不推");
     }
 
     @Test
