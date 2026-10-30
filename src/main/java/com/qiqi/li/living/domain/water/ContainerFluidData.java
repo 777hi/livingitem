@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.Set;
+import java.util.function.IntUnaryOperator;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import com.qiqi.li.living.api.ContainerDataLifecycle;
@@ -52,7 +53,7 @@ import net.neoforged.neoforge.registries.NeoForgeRegistries;
  * - 每个 tick 通过 BFS 从所有水源重算流动状态
  * - 水源移除后，不可达的流动立即消失（简单实现）
  * - 多水源时，每个槽位取最近水源的 level
- * - 流动水记录 fromSlot（BFS 父节点），物品沿水流方向推动
+ * - 流动水记录 `fromSlot`（BFS 父节点）—— 活水车应力方向读它；物品推动改为四邻力场（§3.3）
  */
 public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence {
 
@@ -86,6 +87,13 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
 
     public static final int SOURCE_LEVEL = 0;
     public static final int MAX_FLOW_LEVEL = 7;
+
+    /** 力场方向编码（{@link #flowDirection} 的返回值）：{@code -1} = 无方向（鞍部 / 水面平衡）。 */
+    public static final int FLOW_NONE = -1;
+    public static final int FLOW_RIGHT = 0;
+    public static final int FLOW_DOWN = 1;
+    public static final int FLOW_LEFT = 2;
+    public static final int FLOW_UP = 3;
 
     public static class FlowEntry {
         int level;
@@ -774,19 +782,11 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
     }
 
     /**
-     * 沿水流方向推动物品。
+     * 按流体分组推动物品（只处理本拍**推进过**的流体）。
      *
-     * 构建 BFS 水流树的下游映射（fromSlot → 子节点列表），
-     * 物品被推到其下游子节点，自然跟随水流的弯曲路径。
-     * 按 level 升序处理，离水源近的先推，物品沿水流方向逐层向外移动。
-     * 支持堆叠：目标槽位有同类物品时合并。
-     *
-     * 安全约束：
-     * - 不推入水源槽位（活水桶所在）
-     * - 不推入活物品槽位
-     * - 不推入已有非空非堆叠物品的槽位
-     * - 堆叠合并通过 ctx.setItem() 确保容器变更通知
-     * - 使用 moved 标记避免同一物品被级联推动两次
+     * <p>方向与写入全部下沉到 {@link #pushFluidItems}：四邻力场（§3.3）——
+     * 不再是「BFS 下游子节点」。安全约束：
+     * 不推入源格 / 不推活物品 / 目标异类占位不推 / {@code moved} 防同拍重复移动。</p>
      */
     private void pushItems(ContainerContext ctx, int containerSize, int width, Set<FluidType> advanced) {
         for (FluidType fluid : advanced) {
@@ -795,37 +795,31 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
     }
 
     /**
-     * 某一流体自己的流树推动（2026-10-06 统一时钟：<b>每流体节拍一次</b>，不再是全局 4t）。
+     * 某一流体自己的物品推动（2026-10-06 统一时钟：<b>每流体节拍一次</b>）。
      *
-     * <p>只处理该流体的格：下游映射、level 升序遍历、{@code moved} 集合全部按流体切片，
-     * 避免「A 流体的物品被 B 流体的树推动」。水 5t / 岩浆 30t（黏性对上）。</p>
+     * <p>只处理该流体：遍历序、{@code moved} 集合全部按流体切片，避免
+     * 「A 流体的物品被 B 流体的力场推动」。水 5t / 岩浆 30t（黏性对上）。</p>
      *
-     * <p><b>定序契约</b>：遍历序 = level 升序 + slot 升序兜底；分叉序 = 直行优先 +
-     * 右/下/左/上回退（{@link #orderChildren}）。<b>不得</b>依赖 {@code flows} 的迭代顺序 ——
-     * 它是插入历史，会让同一局面下的路线随「被挡过 / 晚长出」漂移。</p>
+     * <p><b>力场模型</b>（2026-10-31 用户拍板，替换此前的「流树 + 末端特判」）：
+     * 方向由 {@link #flowDirection} 从<b>四邻 level 差</b>算出（原版 {@code getFlow} 的离散版），
+     * 物品沿该方向移动一格，<b>目标可以是水格、也可以是无水格</b> ——
+     * 于是「在水流里被推着走」与「被推出水流」是同一件事，不再有末端分支：
+     * 目标无水 = 离开水流（之后不在 {@code flows} 里，自然失去推力）；
+     * 目标有水 = 继续跟着水走。</p>
      *
-     * <p><b>末端推出</b>（2026-10-30）：物品在水流末端（没有下游水格）时，沿来水方向
-     * 被推出水流一格（{@link #straightTarget} + {@link #tryMoveInto}）—— 对齐原版
-     * 「物品受水流推力、离开水流即失去推力」的语义。目标必须是无水格；边界 / 活物品 / 占用
-     * ⇒ 推不出去，停在末端（下一拍水若追上来会继续推）。</p>
+     * <p><b>没有动量</b>：原版是连续加速 + 离开水后惯性滑行，槽位模型没有半格位置 ⇒
+     * 这里只有「每推进拍沿力场走一格」。<b>主分量被挡时试次分量</b>
+     * （{@link #flowCandidates}）—— 原版的力两个分量同时作用、碰撞只挡一个轴；
+     * 只有两个分量都不可用（越界 / 源格 / 活物品 / 异类占位）才停。</p>
+     *
+     * <p><b>定序</b>：遍历序 = level 升序 + slot 升序兜底。不得依赖 {@code flows} 的迭代顺序
+     * —— 它是插入历史，会让同拍「谁先占格」随「被挡过 / 晚长出」漂移。</p>
      */
     private void pushFluidItems(ContainerContext ctx, int containerSize, int width, FluidType fluid) {
-        Map<Integer, List<Integer>> downstream = new HashMap<>();
-        for (var entry : flows.entrySet()) {
-            if (entry.getValue().fluid() != fluid) continue;
-            int slot = entry.getKey();
-            FlowEntry fe = entry.getValue();
-            if (fe.fromSlot >= 0) {
-                downstream.computeIfAbsent(fe.fromSlot, k -> new ArrayList<>()).add(slot);
-            }
-        }
-
         List<Map.Entry<Integer, FlowEntry>> sorted = new ArrayList<>();
         for (var entry : flows.entrySet()) {
             if (entry.getValue().fluid() == fluid) sorted.add(entry);
         }
-        // 同 level 定序：否则同拍内「谁先占下游」取决于 flows 的插入历史（LinkedHashMap），
-        // 两个物品竞争同一格时谁先走不可复现（2026-10-30 分叉定序）。
         sorted.sort((a, b) -> {
             int byLevel = Integer.compare(a.getValue().level, b.getValue().level);
             return byLevel != 0 ? byLevel : Integer.compare(a.getKey(), b.getKey());
@@ -842,25 +836,18 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
             ItemStack item = ctx.getItem(slot);
             if (item.isEmpty() || LivingItemManager.isLivingItem(item)) continue;
 
-            List<Integer> children = downstream.get(slot);
-            if (children == null || children.isEmpty()) {
-                // 水流末端：沿来水方向「推出水流」一格（2026-10-30 用户口径，对齐原版推力）。
-                // 目标必须是无水格 —— 直行方向若仍有水（含另一条流树的支路），说明还在水流内部，
-                // 不能穿过去；边界 / 容器外 / 活物品 / 占用由 tryMoveInto 与 straightTarget 挡住。
-                int outSlot = straightTarget(slot, fe.fromSlot, containerSize, width);
-                if (outSlot >= 0 && !flows.containsKey(outSlot)) {
-                    tryMoveInto(ctx, slot, item, outSlot, moved);
-                }
-                continue;
-            }
-            // 分叉定序（2026-10-30）：不允许按 flows 的迭代顺序试 —— 那是插入历史。
-            orderChildren(slot, fe.fromSlot, children, width);
+            int[] dirs = flowCandidates(slot, width, containerSize, nb -> {
+                if (nb < 0 || nb >= containerSize) return -1;
+                FlowEntry n = flows.get(nb);
+                return n != null && n.fluid() == fluid ? n.level() : -1;
+            });
 
-            for (int targetSlot : children) {
+            for (int dir : dirs) {
+                int targetSlot = stepInDirection(slot, dir, width);
                 if (targetSlot < 0 || targetSlot >= containerSize) continue;
 
                 FlowEntry targetFlow = flows.get(targetSlot);
-                if (targetFlow != null && targetFlow.isSource) continue;
+                if (targetFlow != null && targetFlow.isSource) continue;   // 源格只接受显式投放
 
                 if (tryMoveInto(ctx, slot, item, targetSlot, moved)) break;
             }
@@ -868,28 +855,111 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
     }
 
     /**
-     * 「直行」的下一格：沿 {@code fromSlot → slot} 的水流方向再走一格。
+     * 局部力场：四邻 level 差矢量和（原版 {@code FlowingFluid#getFlow} 的离散版，2026-10-31）。
      *
-     * <p>用于水流末端把物品推出水流（{@link #pushFluidItems}）。{@code fromSlot < 0}
-     * （源格）或与 slot 非四邻时返回 -1；越过容器左右边界 / 顶边 / 末行之外同样返回 -1
-     * —— 推不出容器就不推。</p>
+     * <p>力场指向 level <b>增大</b>的方向（= 水位降低 = 远离源）：每个邻居贡献
+     * {@code (邻居 level − 本格 level) × 该邻居方向}，只算<b>有水</b>邻居。</p>
+     *
+     * <p><b>只采样四邻</b>（对齐原版 {@code Direction.Plane.HORIZONTAL}）：斜向由两个正交
+     * 分量合成，不需要角落格 —— 角落的 level 语义不同（可能来自另一条支路），加了只会带噪声。
+     * 取主分量落到四邻之一；{@code |fx| == |fy|} 的 45° 平局按<b>容器主轴</b>决定
+     * （宽 ⇒ 横向；正方 / 竖 ⇒ 纵向，见 {@link #flowCandidates}）。</p>
+     *
+     * <p>服务端（{@code flows}）与客户端（快照 cells）共用本方法 —— 两边只提供各自的
+     * {@code levelOf} 查询，方向算法<b>只有一份</b>（渲染流向与实际推动同源）。</p>
+     *
+     * @param levelOf 邻格 level 查询：<b>无水 / 非同流体 / 越界一律返回 -1</b>（不参与力场）
+     * @return {@link #FLOW_NONE} 或四方向之一
      */
-    private static int straightTarget(int slot, int fromSlot, int containerSize, int width) {
-        if (fromSlot < 0) return -1;
-        int sx = slot % width, sy = slot / width;
-        int dx = sx - fromSlot % width, dy = sy - fromSlot / width;
-        if (Math.abs(dx) + Math.abs(dy) != 1) return -1;   // 非四邻（历史残留）
-        int tx = sx + dx, ty = sy + dy;
-        if (tx < 0 || tx >= width || ty < 0) return -1;
-        int target = ty * width + tx;
-        return target < containerSize ? target : -1;
+    public static int flowDirection(int slot, int width, int containerSize, IntUnaryOperator levelOf) {
+        int[] dirs = flowCandidates(slot, width, containerSize, levelOf);
+        return dirs.length == 0 ? FLOW_NONE : dirs[0];
+    }
+
+    /** 无方向时的空候选（复用，避免每次分配）。 */
+    private static final int[] NO_DIRECTIONS = new int[0];
+
+    /**
+     * 力场候选方向，按优先级排序（**最多 2 个**）：
+     * <ol>
+     *   <li>主分量方向（|分量| 大的那个轴）；</li>
+     *   <li>次分量方向（另一个轴，分量非零时）。</li>
+     * </ol>
+     *
+     * <p>🔴 <b>为什么必须保留次分量（2026-10-31 真机「摆弯道物品一个弯都过不去」）</b>：
+     * 原版的力是<b>两个分量同时作用</b>，碰撞只挡一个轴，另一个轴的位移照常生效
+     * ⇒ 物品会「斜着擦过障碍、挪到直道上」。此前只取主分量、推不动就停，
+     * 在直角弯处主分量正好撞在活物品上 ⇒ 物品卡死。
+     * ⇒ 离散等价 = 主分量被挡时试次分量；两个都不可用才算真推不动。</p>
+     *
+     * <p>45° 等值（{@code |fx| == |fy|}）时按<b>容器主轴</b>决定先后（2026-10-31 用户拍板）：
+     * <b>宽容器</b>（列 &gt; 行）⇒ 横向优先；<b>竖容器与正方形</b> ⇒ <b>纵向优先</b>（兜底取上下）。
+     * 主轴只在这里生效 —— 非等值时永远按主分量。</p>
+     *
+     * <p>两个分量都指向「远离源」，所以兜底<b>不会</b>造成逆流或来回振荡。</p>
+     *
+     * @param levelOf 邻格 level 查询：<b>无水 / 非同流体 / 越界一律返回 -1</b>（不参与力场）
+     * @return 候选方向（0/1/2 个，按优先级）；空 = 力场平衡或无本格
+     */
+    public static int[] flowCandidates(int slot, int width, int containerSize, IntUnaryOperator levelOf) {
+        int my = levelOf.applyAsInt(slot);
+        if (my < 0) return NO_DIRECTIONS;
+
+        int fx = 0, fy = 0;
+        int col = slot % width;
+        if (col > 0) {
+            int nb = levelOf.applyAsInt(slot - 1);
+            if (nb >= 0) fx -= nb - my;          // 左邻 level 更大（水位更低）⇒ 指向左
+        }
+        if (col < width - 1) {
+            int nb = levelOf.applyAsInt(slot + 1);
+            if (nb >= 0) fx += nb - my;
+        }
+        int above = levelOf.applyAsInt(slot - width);
+        if (above >= 0) fy -= above - my;
+        int below = levelOf.applyAsInt(slot + width);
+        if (below >= 0) fy += below - my;
+
+        if (fx == 0 && fy == 0) return NO_DIRECTIONS;
+
+        int horizontal = fx == 0 ? FLOW_NONE : (fx > 0 ? FLOW_RIGHT : FLOW_LEFT);
+        int vertical = fy == 0 ? FLOW_NONE : (fy > 0 ? FLOW_DOWN : FLOW_UP);
+        if (horizontal == FLOW_NONE) return new int[] {vertical};
+        if (vertical == FLOW_NONE) return new int[] {horizontal};
+
+        boolean horizontalFirst;
+        if (Math.abs(fx) != Math.abs(fy)) {
+            horizontalFirst = Math.abs(fx) > Math.abs(fy);
+        } else {
+            // 45° 平局：宽容器横向（主道沿行），竖容器与正方形纵向（兜底取上下）
+            int rows = Math.max(1, (containerSize + width - 1) / width);
+            horizontalFirst = width > rows;
+        }
+        return horizontalFirst
+            ? new int[] {horizontal, vertical}
+            : new int[] {vertical, horizontal};
+    }
+
+    /**
+     * 力场方向的下一格；左右越行边界返回 -1。
+     * 上下越界由调用方按容器尺寸兜底（{@code slot - width < 0} / {@code slot + width >= size}）。
+     */
+    public static int stepInDirection(int slot, int dir, int width) {
+        int col = slot % width;
+        return switch (dir) {
+            case FLOW_RIGHT -> col < width - 1 ? slot + 1 : -1;
+            case FLOW_LEFT -> col > 0 ? slot - 1 : -1;
+            case FLOW_DOWN -> slot + width;
+            case FLOW_UP -> slot - width;
+            default -> -1;
+        };
     }
 
     /**
      * 把 {@code slot} 的物品移入 {@code targetSlot}（空槽写入 / 同类合并）。
      *
-     * <p><b>唯一写入口</b> —— 下游推动与「末端推出水流」共用，保证两者在同步、
-     * {@code moved} 标记、合并口径上完全一致。</p>
+     * <p><b>唯一写入口</b> —— 力场推动只有这一条路径，同步 / {@code moved} 标记 / 合并口径
+     * 全部收在这里。目标可以是水格（继续跟水走）或无水格（离开水流，自然失去推力）。</p>
      *
      * <p>⚠️ 合并容量目前取 {@link ItemStack#getMaxStackSize}，不是槽位上限
      * （已知缺陷 A2，见 buffer/living-fluid-review.md，待拍板）。</p>
@@ -929,52 +999,6 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
         }
         moved.add(targetSlot);
         return true;
-    }
-
-    /**
-     * 分叉定序：<b>直行优先</b>（沿「父格 → 本格」的水流方向继续），
-     * 直行不可用时按固定回退序 <b>右 → 下 → 左 → 上</b>。
-     *
-     * <p>🔴 <b>为什么必须定序（2026-10-30 真机反馈「物品走错分叉、路线随机」）</b>：
-     * 此前 children 直接按 {@code flows} 的迭代顺序试 —— {@code flows} 是
-     * {@link LinkedHashMap}，<b>条目顺序 = 插入历史</b>（生长顺序 / 挤没删除 /
-     * 重新长出的格会追加到末尾）⇒ 同一局面（同源、同物品位置）下，只要某条分支
-     * 曾被活物品挡过一拍、或在物品到达前晚长出一拍，分叉选择就会翻转。
-     * 定序后只依赖<b>当前局面</b>（流树 + 槽位几何），与生长历史、存档重进无关。</p>
-     *
-     * <p>为什么"直行"用几何方向而不是 level：{@code fromSlot → slot} 就是该格的实际来水
-     * 方向（BFS 父节点），与 level 差值无关（多源鞍部会出现 level 非单调的边）；
-     * 用它等于「水往哪流，物品就继续往哪走」，玩家可预期。</p>
-     *
-     * <p>就地排序（children 是本次调用新建的列表）。每个 rank 至多对应一个四邻方向
-     * ⇒ 结果唯一，不依赖排序稳定性。{@code fromSlot < 0}（源格，理论上不推）或
-     * 与 slot 不相邻时退化为纯回退序。</p>
-     */
-    private static void orderChildren(int slot, int fromSlot, List<Integer> children, int width) {
-        int sx = slot % width, sy = slot / width;
-        int straightDx = 0, straightDy = 0;
-        if (fromSlot >= 0) {
-            int dx = sx - fromSlot % width, dy = sy - fromSlot / width;
-            if (Math.abs(dx) + Math.abs(dy) == 1) {   // 仅四邻算「有来水方向」
-                straightDx = dx;
-                straightDy = dy;
-            }
-        }
-        final int fdx = straightDx, fdy = straightDy;
-        children.sort((a, b) -> Integer.compare(
-            childRank(sx, sy, a, width, fdx, fdy),
-            childRank(sx, sy, b, width, fdx, fdy)));
-    }
-
-    /** 分叉子节点优先级：0 = 直行，1 = 右，2 = 下，3 = 左，4 = 上，5 = 非四邻（兜底）。 */
-    private static int childRank(int sx, int sy, int child, int width, int straightDx, int straightDy) {
-        int dx = child % width - sx, dy = child / width - sy;
-        if ((straightDx != 0 || straightDy != 0) && dx == straightDx && dy == straightDy) return 0;
-        if (dx == 1 && dy == 0) return 1;
-        if (dx == 0 && dy == 1) return 2;
-        if (dx == -1 && dy == 0) return 3;
-        if (dx == 0 && dy == -1) return 4;
-        return 5;
     }
 
     // ⚠️ 2026-10-07 收尾审查：原 exportFlowData() 全仓库零调用 ⇒ 删除（不为假想需求留 API）。

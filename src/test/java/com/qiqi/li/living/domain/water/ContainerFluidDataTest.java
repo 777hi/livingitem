@@ -1244,6 +1244,79 @@ class ContainerFluidDataTest {
         assertEquals(Items.REDSTONE, ctx.getItem(8).getItem(), "直行越界 ⇒ 不推");
     }
 
+    // ── 力场方向（2026-10-31：四邻 level 差，原版 getFlow 的离散版）─────────────
+
+    @Test
+    @DisplayName("51 力场①：只采样四邻 + 取主分量 + 45° 按容器主轴（同源函数，服务端与渲染共用）")
+    void flowDirection_samplesFourNeighborsAndBreaksTiesByAxis() {
+        // 单行：源在左 ⇒ 逐格向右
+        assertDir(new int[] {0, 1, 2, 3}, 4, 4, 1, ContainerFluidData.FLOW_RIGHT, "左低右高 ⇒ 右");
+        // 单行：源在右 ⇒ 向左
+        assertDir(new int[] {3, 2, 1, 0}, 4, 4, 2, ContainerFluidData.FLOW_LEFT, "左高右低 ⇒ 左");
+        // 单列（width=1）：源在上 ⇒ 向下
+        assertDir(new int[] {0, 1, 2, 3}, 1, 4, 1, ContainerFluidData.FLOW_DOWN, "单列 ⇒ 向下");
+        // 45°（|fx| == |fy|）：2×2 正方形 ⇒ 纵向兜底（上下）
+        assertDir(new int[] {0, 1, 1, 2}, 2, 4, 3, ContainerFluidData.FLOW_DOWN, "正方形 45° ⇒ 纵向兜底");
+        // 45° 且宽容器（3×2）⇒ 横向
+        assertDir(new int[] {0, 1, 2, 1, 2, 2}, 3, 6, 4, ContainerFluidData.FLOW_RIGHT, "宽容器 45° ⇒ 横向");
+        // 1×5 两源鞍部：左右都是 level 1（本格 2）⇒ 抵消 ⇒ 无方向
+        assertDir(new int[] {0, 1, 2, 1, 0}, 5, 5, 2, ContainerFluidData.FLOW_NONE, "鞍部 ⇒ 无方向");
+        // 无水邻居不参与（右侧 -1）
+        assertDir(new int[] {0, 1, -1}, 3, 3, 1, ContainerFluidData.FLOW_RIGHT, "无水邻居不参与力场");
+    }
+
+    private static void assertDir(int[] levels, int width, int size, int slot, int expected, String msg) {
+        java.util.function.IntUnaryOperator levelOf =
+            s -> s >= 0 && s < levels.length ? levels[s] : -1;
+        assertEquals(expected, ContainerFluidData.flowDirection(slot, width, size, levelOf), msg);
+    }
+
+    @Test
+    @DisplayName("52 力场②：多源鞍部 flow=0 ⇒ 物品停住（不逆流）")
+    void pushItems_stopsAtSaddleBetweenSources() {
+        // ⚠️ 必须用**有节拍**的水：瞬时（flowSpeed=0）下所有格 arrival 都是 0，
+        // BFS 退化成 slot 升序 ⇒ 左边的源会吞掉右半边，压根不存在「等距鞍部」。
+        FluidFlowBehaviors.register(Fluids.WATER.getFluidType(),
+            FluidFlowBehavior.flowing(ContainerFluidData.MAX_FLOW_LEVEL, 1));
+        var ctx = row();   // 1×9
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
+        fluid.registerGeneratedSource(8, Fluids.WATER.getFluidType());
+        for (int t = 0; t < 8; t++) fluid.tick(ctx);   // 1t/格，长满后两源各占半边
+
+        assertEquals(4, fluid.getFlows().get(4).level(), "前提：鞍部 slot 4 level 4（两源等距）");
+        assertEquals(3, fluid.getFlows().get(5).level(), "前提：slot 5 归属右源（level 3）");
+        ctx.setItem(4, new ItemStack(Items.REDSTONE, 1));
+        fluid.tick(ctx);
+
+        assertEquals(Items.REDSTONE, ctx.getItem(4).getItem(),
+            "两源等距 ⇒ 力场抵消，物品不动（旧树模型也会停，但凭的是「无下游」）");
+    }
+
+    @Test
+    @DisplayName("53 力场③：直角弯——主分量撞活物品，次分量兜底（原版斜向擦过障碍）")
+    void pushItems_takesSecondaryComponentAroundCorner() {
+        FakeHandler h = new FakeHandler(27);   // 9×3
+        var ctx = new SimpleContainerContext(h);
+        h.slots[2] = livingNonWater();         // 挡住 slot 1 的直行方向（右）
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(0, Fluids.WATER.getFluidType());
+        fluid.tick(ctx);                        // 瞬时水：绕过 2 铺到 10/11…
+
+        assertFalse(fluid.getFlows().containsKey(2), "前提：2 被活物品挡住，水里没有它");
+        assertTrue(fluid.getFlows().containsKey(10), "前提：水绕过障碍到 10");
+
+        h.slots[1] = new ItemStack(Items.REDSTONE, 1);
+        fluid.tick(ctx);
+
+        assertEquals(Items.REDSTONE, ctx.getItem(10).getItem(),
+            "主分量（右）撞障碍 ⇒ 次分量（下）兜底 ⇒ 过弯（旧实现只取主分量 ⇒ 卡死在 1）");
+
+        // 弯道之后：9×3 是宽容器 ⇒ 45° 平局按主轴取横向 ⇒ 回到直道（不需要「上次移动方向」的惯性）
+        fluid.tick(ctx);
+        assertEquals(Items.REDSTONE, ctx.getItem(11).getItem(), "宽容器 45° ⇒ 横向 ⇒ 回到直道");
+    }
+
     @Test
     @DisplayName("㉓ 相邻两源不繁殖：slot 2 只有 1 个源邻居 ⇒ 不晋升（原版口径）")
     void adjacentSources_doNotPromote() {

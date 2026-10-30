@@ -19,7 +19,7 @@
 | [framework-benchmark.md](framework-benchmark.md) | 未定案（对标记录，不是排期） | 参考输入 |
 | [framework-evolution-plan.md](framework-evolution-plan.md) | 未定案、未排期 | 提案层 |
 | [gui-interaction-redesign.md](gui-interaction-redesign.md) | 未定案、未实现 | 计划，勿当现状 |
-| [living-fluid-review.md](living-fluid-review.md) | 探讨中（2026-10-30 建） | 推动与细节问题池 12 条；逐条拍板后再动代码 |
+| [living-fluid-review.md](living-fluid-review.md) | 探讨中（2026-10-30 建；2026-10-31 力场模型已结 4 条） | 推动与细节问题池，剩余 10 条；逐条拍板后再动代码 |
 | [living-tnt-explosion-design.md](living-tnt-explosion-design.md) | 主设计定稿，**待拍板 3 项**（§7） | 代码未动 |
 | [living-tool-design.md](living-tool-design.md) | 设计已收敛、实施中（问题池） | 技术结论以 `tech/living-tool-tech.md` 为准 |
 | [living-weapon-design.md](living-weapon-design.md) | 设计池；蓄力型未定 | 近战核心链路已实现 |
@@ -27,7 +27,7 @@
 | [power-refactoring-plan.md](power-refactoring-plan.md) | 进行中（步骤 3 待做） | 红电包收口 |
 | [redstone-evolution-roadmap.md](redstone-evolution-roadmap.md) | 路线图（2026-09） | AGENTS 子系统索引指向它 |
 | [render-state-broadcast.md](render-state-broadcast.md) | 未定案（设计探讨） | 代码未动 |
-| [活物品大战僵尸.md](活物品大战僵尸.md) | 探讨中（主路线已共识，7 项分叉待拍板） | PvZ 式玩法；投影竞技场 + 桥实体；机制全部未实现 |
+| [活物品大战僵尸.md](活物品大战僵尸.md) | 探讨中（可行性审计完成 §10，MVP 口径已定 §8） | PvZ 式玩法；投影竞技场 + 桥实体；机制全部未实现 |
 | [活潜影箱实现细节.md](活潜影箱实现细节.md) | 探讨中 | 随活物品扩展而生长的文档 |
 
 ## 已搬 archive（2026-10-28 整理）

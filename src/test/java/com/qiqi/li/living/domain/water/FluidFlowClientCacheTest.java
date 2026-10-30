@@ -27,7 +27,7 @@ class FluidFlowClientCacheTest {
 
     /** 造一份带一个格子的快照（不依赖任何注册表内容）。 */
     private static FlowSnapshot snapshot(int level) {
-        return new FlowSnapshot(9, List.of(), Map.of(0, new int[]{level, -1, 0}));
+        return new FlowSnapshot(9, 9, List.of(), Map.of(0, new int[]{level, -1, 0}));
     }
 
     private static int levelOf(FlowSnapshot s) {

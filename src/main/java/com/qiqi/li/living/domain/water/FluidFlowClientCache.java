@@ -26,9 +26,14 @@ public final class FluidFlowClientCache {
         StaticCacheRegistry.onClientLogout(FluidFlowClientCache::clear);
     }
 
-    /** 一次容器流体快照：宽度 + 流体调色板 + 槽位 → [level, fromSlot, fluidIndex]。 */
-    public record FlowSnapshot(int width, List<FluidType> fluids, Map<Integer, int[]> cells) {
-        public static final FlowSnapshot EMPTY = new FlowSnapshot(9, List.of(), Map.of());
+    /**
+     * 一次容器流体快照：宽度 + **容器总槽位** + 流体调色板 + 槽位 → [level, fromSlot, fluidIndex]。
+     *
+     * <p>{@code size} 供客户端算<b>容器主轴</b>（列 &gt; 行 ⇒ 横向，否则纵向）——
+     * 力场 45° 平局的取向必须与服务端一致，不能靠 cells 的最大槽位猜。</p>
+     */
+    public record FlowSnapshot(int width, int size, List<FluidType> fluids, Map<Integer, int[]> cells) {
+        public static final FlowSnapshot EMPTY = new FlowSnapshot(9, 0, List.of(), Map.of());
         public boolean isEmpty() { return cells.isEmpty(); }
     }
 
@@ -93,7 +98,7 @@ public final class FluidFlowClientCache {
     }
 
     /** 便捷拷贝（网络包处理构造快照用）。 */
-    public static FlowSnapshot copyOf(int width, List<FluidType> fluids, Map<Integer, int[]> cells) {
-        return new FlowSnapshot(width, List.copyOf(fluids), new HashMap<>(cells));
+    public static FlowSnapshot copyOf(int width, int size, List<FluidType> fluids, Map<Integer, int[]> cells) {
+        return new FlowSnapshot(width, size, List.copyOf(fluids), new HashMap<>(cells));
     }
 }

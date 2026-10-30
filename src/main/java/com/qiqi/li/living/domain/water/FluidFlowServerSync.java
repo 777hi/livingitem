@@ -96,7 +96,7 @@ public final class FluidFlowServerSync {
             String key = ctx.getCacheKey();
             if (key != null && CLIENT_ACTIVE.contains(key)) {
                 player.connection.send(new FluidFlowSyncPacket(
-                    key, ctx.getWidth(), List.of(), Map.of(), renderTargetOf(ctx)));
+                    key, ctx.getWidth(), ctx.getSize(), List.of(), Map.of(), renderTargetOf(ctx)));
             }
             return;   // 物品形态容器是菜单级的：问过一次就够了，别再逐槽问
         }
@@ -112,7 +112,7 @@ public final class FluidFlowServerSync {
             if (key == null) continue;
             if (!CLIENT_ACTIVE.contains(key)) continue;   // 从未向其同步过 ⇒ 无残留可清
             player.connection.send(new FluidFlowSyncPacket(
-                key, ctx.getWidth(), List.of(), Map.of(), renderTargetOf(ctx)));
+                key, ctx.getWidth(), ctx.getSize(), List.of(), Map.of(), renderTargetOf(ctx)));
             return;   // 一个容器一条键，首个可解析槽位即定
         }
     }
@@ -172,7 +172,7 @@ public final class FluidFlowServerSync {
             cells.put(physicalSlot, new int[]{e.getValue().level(), physicalFrom, idx});
         }
         if (cells.isEmpty()) return null;
-        return new FluidFlowSyncPacket(containerKey, width, palette, cells, target);
+        return new FluidFlowSyncPacket(containerKey, width, ctx.getSize(), palette, cells, target);
     }
 
     /**
@@ -200,7 +200,7 @@ public final class FluidFlowServerSync {
             // 数据刚清空（最后一个源被汲走/挤没）⇒ 下发一次空快照，清掉客户端残留渲染
             if (markActiveAndCheckClear(key, false)) {
                 dispatch(level, ctx, new FluidFlowSyncPacket(
-                    key, ctx.getWidth(), List.of(), Map.of(), renderTargetOf(ctx)));
+                    key, ctx.getWidth(), ctx.getSize(), List.of(), Map.of(), renderTargetOf(ctx)));
             }
             return;
         }

@@ -27,6 +27,7 @@ import net.neoforged.neoforge.registries.NeoForgeRegistries;
  * <pre>
  *   containerKey (string)
  *   width (varint)          — 容器格子宽度，客户端算方向用
+ *   size (varint)           — 容器总槽位，客户端算**主轴**（列 > 行 ⇒ 横向，否则纵向）
  *   paletteSize (varint)
  *   palette: fluidType key (string) × paletteSize
  *   cellCount (varint)
@@ -40,6 +41,7 @@ import net.neoforged.neoforge.registries.NeoForgeRegistries;
 public record FluidFlowSyncPacket(
     String containerKey,
     int width,
+    int size,
     List<String> palette,
     Map<Integer, int[]> cells,
     FluidFlowClientCache.RenderTarget target
@@ -61,6 +63,7 @@ public record FluidFlowSyncPacket(
     private static void encode(FriendlyByteBuf buf, FluidFlowSyncPacket pkt) {
         buf.writeUtf(pkt.containerKey);
         buf.writeVarInt(pkt.width);
+        buf.writeVarInt(pkt.size);
         buf.writeVarInt(pkt.palette.size());
         for (String key : pkt.palette) {
             buf.writeUtf(key);
@@ -79,6 +82,7 @@ public record FluidFlowSyncPacket(
     private static FluidFlowSyncPacket decode(FriendlyByteBuf buf) {
         String containerKey = buf.readUtf();
         int width = buf.readVarInt();
+        int size = buf.readVarInt();
         int paletteSize = buf.readVarInt();
         List<String> palette = new ArrayList<>(paletteSize);
         for (int i = 0; i < paletteSize; i++) {
@@ -97,7 +101,7 @@ public record FluidFlowSyncPacket(
         int ordinal = buf.readVarInt();
         FluidFlowClientCache.RenderTarget target =
             ordinal >= 0 && ordinal < targets.length ? targets[ordinal] : FluidFlowClientCache.RenderTarget.BLOCK;
-        return new FluidFlowSyncPacket(containerKey, width, palette, cells, target);
+        return new FluidFlowSyncPacket(containerKey, width, size, palette, cells, target);
     }
 
     public static void handle(FluidFlowSyncPacket packet, IPayloadContext context) {
@@ -109,7 +113,7 @@ public record FluidFlowSyncPacket(
                 fluids.add(type);
             }
             FluidFlowClientCache.update(packet.target(),
-                FluidFlowClientCache.copyOf(packet.width(), fluids, packet.cells()));
+                FluidFlowClientCache.copyOf(packet.width(), packet.size(), fluids, packet.cells()));
         });
     }
 }

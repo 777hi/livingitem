@@ -21,6 +21,7 @@ import net.neoforged.neoforge.client.extensions.common.IClientFluidTypeExtension
 import net.neoforged.neoforge.fluids.FluidType;
 
 import com.qiqi.li.client.util.ClientSlotResolve;
+import com.qiqi.li.living.domain.water.ContainerFluidData;
 import com.qiqi.li.living.domain.water.FluidFlowBehaviors;
 import com.qiqi.li.living.domain.water.FluidFlowClientCache;
 
@@ -130,14 +131,21 @@ public final class ContainerFluidOverlay {
                 if (type == null) continue;
 
                 int level = v[0];
-                int fromSlot = v[1];
                 int direction;
-                if (level == 0 || fromSlot < 0) {
-                    direction = DIR_DOWN;
+                if (level == 0) {
+                    direction = DIR_DOWN;   // 源格用 still 贴图，方向无意义
                 } else {
-                    int dx = (handlerSlot % width) - (fromSlot % width);
-                    int dy = (handlerSlot / width) - (fromSlot / width);
-                    direction = cardinalDirection(dx, dy);
+                    // 与服务端推动**同一个力场函数**（渲染流向 = 实际流向，2026-10-31）
+                    int dir = ContainerFluidData.flowDirection(handlerSlot, width, snapshot.size(), nb -> {
+                        int[] c = snapshot.cells().get(nb);
+                        return c != null && c[2] == v[2] ? c[0] : -1;
+                    });
+                    direction = switch (dir) {
+                        case ContainerFluidData.FLOW_RIGHT -> DIR_RIGHT;
+                        case ContainerFluidData.FLOW_LEFT -> DIR_LEFT;
+                        case ContainerFluidData.FLOW_UP -> DIR_UP;
+                        default -> DIR_DOWN;   // FLOW_DOWN 或 FLOW_NONE（无力场 ⇒ 朝下兜底）
+                    };
                 }
                 out.add(new FluidCellRender(menuIndex, level, direction, type));
             }
@@ -209,13 +217,6 @@ public final class ContainerFluidOverlay {
             case DIR_LEFT -> 90.0f;
             default -> 0.0f;
         };
-    }
-
-    private static int cardinalDirection(int dx, int dy) {
-        if (Math.abs(dx) >= Math.abs(dy)) {
-            return dx >= 0 ? DIR_RIGHT : DIR_LEFT;
-        }
-        return dy >= 0 ? DIR_DOWN : DIR_UP;
     }
 
     private record FluidCellRender(int menuIndex, int level, int direction, FluidType fluid) {}
