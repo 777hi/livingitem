@@ -465,6 +465,11 @@ private static boolean hasContainerOrItemHandler(ServerLevel level, BlockPos pos
 | 2 | `!hasContainer` 检查 | 每 tick 遍历 | 自清洁，容器消失时移除（如方块破坏） |
 | 3 | `cleanupStaleEntries` | 每 6000 ticks（约 5 分钟） | 兜底清理，移除已卸载但事件遗漏的区块 |
 
+> ⚠️ **线程红线（2026-11-01 核对）**：`ChunkEvent.Unload` 由原版 `ChunkMap.scheduleUnload`
+> 的 `thenRunAsync` 触发，**不在 tick 线程**。事件处理器只能入队，**不得直接改**
+> `pendingRescans` / `EnderChannelRegistry` 等 tick 线程表。当前两处直接改表是已知缺陷；
+> 整改计划 R-06 改为“事件只入队、tick 线程 drain”。
+
 **兜底清理的必要性**：
 
 `processLevelContainers` 中曾使用 `getChunkNow()` 返回 null 时立即移除区块缓存。但 `getChunkNow()` 内部通过 `GenerationChunkHolder.getChunkIfPresent(ChunkStatus.FULL)` 检查状态，而 `FULL` 状态的 `CompletableFuture` 可能与 `ChunkEvent.Load` 存在时序窗口：
@@ -858,6 +863,14 @@ private final Set<String> reusableKeySet = new HashSet<>();
 
 > ⭐ **语义定案（用户 2026-10-11）**：**运行时数据属于「当前槽位里的那台机器」** ——
 > 机器换了，数据就该作废。
+
+> ⭐ **生命周期结论（用户 2026-11-01）**：运行时数据是**瞬态、可重建、可随时丢弃**的；
+> 需要跨区块卸载 / 重启保留的数据**不得**放在本表，必须走 `ContainerDataKey` /
+> DataComponent / 宿主附件。⇒ 回收可以激进，不需要落盘。
+>
+> ⚠️ **现状缺口（整改计划 R-06 待修）**：当前清理只覆盖「容器继续 tick / 玩家破坏且位置索引命中 /
+> 物品形态取消活化 / 停服」。区块卸载、玩家下线、实体消失、物品销毁、掉落物拾取、
+> 非玩家移除（爆炸 / 活塞 / `/setblock`）都会残留；设计为 `lastSeen` + 周期 sweep 统一覆盖。
 
 **实现（`ContainerLivingItemHandler` 登记 + `LivingItem` 执行）**：
 

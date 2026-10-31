@@ -33,6 +33,11 @@ import com.qiqi.li.living.util.StaticCacheRegistry;
  * <h3>⚠️ 服务端本地回读</h3>
  * <p>漏斗 / 熔炉用本缓存存放<b>跨 tick 的瞬态状态</b>（冷却、烧制进度）——
  * 不只是"给客户端看的"。⇒ {@link #get} 的语义必须保持「读回自己上一 tick 写下的值」。</p>
+ *
+ * <h3>生命周期契约（2026-11-01）</h3>
+ * <p>本表只存<b>瞬态、可重建</b>的运行状态，可随时丢弃；需要跨区块卸载 / 重启保留的数据
+ * <b>不得</b>放这里 —— 走 {@code ContainerDataKey} / DataComponent / 宿主附件。
+ * 回收机制见 {@code docs/system-design/living-item-infrastructure.md} §3.5。</p>
  */
 public class ContainerRuntimeCache {
 
