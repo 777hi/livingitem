@@ -171,6 +171,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-10-31 | 🔬 **A/B 代理实验 → 证伪一处「关键事实」→ 给参考层做减法** —— 同 6 题跑两组隔离代理：禁读文档组 38 文件 / ≈6900 行，文档优先组 10 文件 / ≈490 行 ⇒ 净减负成立，但**B 组错 2/6，两处都错在我写的行上**。🔴 `ChunkEvent.Unload` **实为服务器主线程**（`thenRunAsync` 的**第二参数是 executor**=`unloadQueue::add`，body 由 `ChunkMap.processUnloads` 主线程 drain）⇒ 卸载处理器不是竞态、R-06「事件只入队」项作废，红线改成「卸载中不查世界」（会**再入**）；另抓到 `ItemFormLiveViews`「每 tick 重建」是错行（实为只在 `find()` 惰性过期）。**减法**：三份索引里「成员×线程×建立×清理×持久化」七列手写复述**删掉**（复述会腐烂且腐烂无症状），名单改由 `tools/gen_rosters.py` 生成、**第 13/14 项由「名字出现即可」升级为「生成区与源码逐字一致」**（实测手删一行即红），判断收进「判断清单 J1~J11，每条带判据」+「已判过不是问题」节；`docs/README.md` 立 **20 文件判据**（可重推的别写、不可重推的必须写且必须带理由）。测试 1266 不变 | `docs/decisions.md` D-container-21→22 · `docs/README.md`「该不该写」 · `tools/gen_rosters.py` · `event-threading.md` §2 判据链 |
 | 2026-10-31 | 📋 **buffer 内容归位 + 文档系统机制升级（会话即维护）** —— 修 3 处「稳定层反话」（api-contract §2.2 / 设计模板列数 / tnt tech 头部）+ 29 条定案晋升（TNT tech 新 §4.6 规模化约束 / tool 5 条 / fluid §0 规则 10 / decisions D-open-01 / api-contract §1.6 jar 红线…）；buffer/README 状态表改**生成制**（状态单一来源 = 文档头部，`tools/gen_buffer_index.py`）+ doc_check 新增**第 12 项**（索引不一致即红）+ 链接口径改渲染器真相（根相对降警告）；设计模板新增 **§2.3 落地同步表**；§7.2 立「会话即维护」。纯文档，测试 1266 不变 | `docs/README.md` §7.1/§7.2 · `tools/gen_buffer_index.py` · `living-item-design-template.md` §2.3 |
 | 2026-10-31 | 🐞 **红电对外能量接口只在「真有活铜灯」时存在（补齐流体同款缺陷）** —— 线缆类模组按「能力是否非 null」判储能（Flux `hasCapability` / Mekanism acceptorCache）⇒ 无灯的箱子/机器全被认成储能（`canReceive=true` 恒收 0，每拍白跑一轮模拟）。修：provider 读电力账本通告标志（O(1)，不扫容器）+ 正边沿在电力 tick **所有早退之前**通告（纯电池容器无发电机）+ 负边沿（最后一盏灯被拿走后功能已不分组）由相位写回兜底（仅在通告中扫容器）；客户端恒不发；测试 1262→1266 | `docs/tech/living-power-tech.md` §4.1 · `ContainerEnergyStorage` / `ContainerPhaseWriteback` · `ContainerEnergyCapabilityTest` |
 | 2026-10-31 | 🐞 **机械动力流体管道恢复（能力只在该有资产时存在）** —— 宽注册给**所有** BE 发 `IFluidHandler` ⇒ Create 按「能力非 null」判储液，把相邻**管道自身**判成 `FlowSource.FluidHandler`（而非 `OtherPipe`）⇒ 每跳断在假 tank、水完全不流；且任意 BE 都长排液接口。修：provider 加「当前真有派生源」判据（客户端恒不发）+ 驱动侧存在性边沿 `invalidateCapabilities`；整源口径与退役计划不变；测试 1259→1262 | `docs/tech/living-fluid-tech.md` §10.4 · `ContainerFluidHandler` / `LivingFluidFunction` / `ContainerFluidHandlerTest` |
@@ -180,7 +181,6 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-10-30 | 🐞 **区块未就绪不再丢容器重扫请求** —— 单箱「走远后流体不显示、重进恢复」排查；限额队列重试、卸载撤销，新增 12 项守卫，测试 1234→1246；受控回归通过，现场待真机复测 | `docs/system-design/living-item-infrastructure.md` §3.2 · `docs/tech/living-fluid-tech.md` §7.1 |
 | 2026-10-30 | ✅ **物品被水流推出水流（末端不再停住）** —— 用户口径「物品受一股推力，推出水流才对」。修：末端沿来水方向推出到无水格；直行仍有水 / 越界 / 活物品 / 被占 ⇒ 停在末端。🔴 顺带修顺序缺陷：`pushItems` 原排在焚毁/转化之前 ⇒ 推出让物品抢跑逃离熔岩格（焚毁 / 生源 / 防火 3 项测试同时红），现移到反应类之后；测试 1231→1234 | `docs/tech/living-fluid-tech.md` §0 规则 9 · §3.3 · §3.6 · `ContainerFluidDataTest` ㊽/㊾/㊿ |
 | 2026-10-30 | 🐞 **水流推动分叉改为「直行优先 + 固定回退序」（修「物品走错分叉、路线随机」）** —— children 原先按 `flows`（LinkedHashMap）迭代顺序试，而该顺序 = 插入历史（被挤占删除后重生长会追加到末尾）⇒ 同一局面去向翻转；同 level 物品顺序同样继承历史。修：直行优先（`fromSlot → 本格`）+ 回退序 右/下/左/上 + 同层 slot 定序；补 2 项测试，测试 1229→1231 | `docs/tech/living-fluid-tech.md` §3.3.1 · `ContainerFluidDataTest` ㊻/㊼ |
-| 2026-10-30 | 🛡️ **单个容器异常不再拖垮整个服务端 tick（R-01）** —— 容器 tick 抛 `RuntimeException` 会抛穿 `ServerTickEvent`，尾部同步 / 爆炸账本 / 末影 flush 全跳过。修：`processIsolated` 以「一个容器上下文」为边界（玩家背包 / 末影箱 / 方块 / 实体 / 掉落物）；只接 `RuntimeException`，`Error` 照常抛；`FailureThrottle` 首次完整栈、同 key 60s 抑制、5 分钟汇总、256 key LRU；`-Dliving_item.debug.isolation=false` 可关闭；补 8 项测试；测试 1219→1227 | `docs/system-design/living-item-infrastructure.md` §3.1.1 · `FailureThrottle` / `ContainerTickIsolationTest` |
 
 ## 提交前必跑（2026-10-30 更新）
 
@@ -306,7 +306,7 @@ viewer 驱动 / 框架扫描 / 框架判定才回到 `LivingItemFunction`）。
 | 找某个源文件 | `find src/main -name "*.java"` 或 `python tools/gen_code_map.py --query <类名>`（人工文件树快照已删，2026-10-10） |
 | 查指令用法 / 加新指令 | [commands.md](docs/reference/commands.md)（指令清单，快照） |
 | **查某子系统的待定计划 / 还欠什么** | [TODO.md](docs/TODO.md)（**全项目唯一需求池** —— 2026-10-10 起 tech §0 不再列未实现，D-doc-06） |
-| **查原版 / NeoForge / 第三方模组源码** | **直接搜 `libs/src/`，无需解压** —— `libs/src/neoforge-21.1.219-merged/` 是 ⭐ 首选（版本与 `neo_version` 一致）；第三方模组在 `libs/src/<ModName>/`。详见 [living-tool-design.md](docs/buffer/living-tool-design.md) §2.2.1 |
+| **查原版 / NeoForge / 第三方模组源码** | **直接搜 `libs/src/`，无需解压** —— `libs/src/neoforge-21.1.219-merged/` 是 ⭐ 首选（版本与 `neo_version` 一致）；第三方模组在 `libs/src/<ModName>/`。详见 [living-tool-design.md](docs/archive/living-tool-design.md) §2.2.1 |
 | 查历史变更 | [changelog.md](docs/archive/changelog.md)（按日期倒序） |
 | **改容器层 / 排查容器相关 bug** | [container-overview.md](docs/system-design/container-overview.md)（**七问** —— 先定位问题属于哪一问，再只改那一问的唯一入口） |
 | 红电系统总体设计 | [红电系统.md](docs/system-design/红电系统.md) |
