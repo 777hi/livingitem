@@ -4,7 +4,7 @@
 > **最后更新**: 2026-09-19
 > **适用版本**: Minecraft 1.21.1 + NeoForge 21.1.219
 > **状态**: **挖掘记忆回放 + 交互记忆回放 + 清除记忆已实现**（挖掘已通过实测）；掉落物形态 / 实体攻击 / 可视化待实现
-> **设计探讨记录**: `docs/buffer/living-tool-design.md` §3.12（L 组，问题池与定案索引，本文档只写结论）
+> **设计探讨记录**: `docs/archive/living-tool-design.md` §3.12（L 组，问题池与定案索引，本文档只写结论）
 
 ## 目录
 
@@ -584,7 +584,7 @@ NeoForge 对此的防御是双层的：`FakePlayer.tick()` 与其连接器的 `t
 
 ## 7. 设计定案索引
 
-完整问题池与讨论过程见 `docs/buffer/living-tool-design.md` §3.12。核心定案：
+完整问题池与讨论过程见 `docs/archive/living-tool-design.md` §3.12。核心定案：
 
 | 编号 | 定案 |
 |---|---|

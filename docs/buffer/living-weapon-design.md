@@ -8,7 +8,7 @@
 > 铁魔法联动调研 / 未决问题池（守卫型、真蓄力节奏、盾牌等）。
 >
 > 📄 已定案内容（核心原则 / D 组拍板 / 探讨结论）已沉淀进 tech 文档与 changelog，原稿已清。
-> 📄 活工具设计池：[`living-tool-design.md`](living-tool-design.md)
+> 📄 活工具设计稿（已归档）：[`living-tool-design.md`](../archive/living-tool-design.md)
 
 ---
 

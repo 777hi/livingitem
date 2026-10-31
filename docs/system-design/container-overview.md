@@ -133,7 +133,7 @@
 ② 拿不到容器身份就学不了（NeoForge `SlotItemHandler` 把 `container` 设成共享静态空容器）。
 ⇒ 这类模组只能注册菜单解析器（逐模组约 10 行），或继续靠规则/启发式。
 
-**指针**：infra §6 / §6.2 · [container-layout-resolution.md](../buffer/container-layout-resolution.md) §10.6
+**指针**：infra §6 / §6.2 · [archive/container-layout-resolution.md](../archive/container-layout-resolution.md) §10.6
 
 ---
 
@@ -306,7 +306,7 @@ vs 全进规则表」的分叉上直接说「原点」，收编重构不做。
 | 活背包（物品形态容器）的现状 | [tech/living-backpack-tech.md](../tech/living-backpack-tech.md) |
 | 锚点的普查过程与取舍 | [archive/container-anchor-design.md](../archive/container-anchor-design.md) |
 | 服务端菜单自省（实体容器已落地 / 列数探测延后） | [buffer/container-menu-introspection-topic.md](../buffer/container-menu-introspection-topic.md) |
-| 列数收编的完整论证 + 两轮审查闭环 | [buffer/container-layout-resolution.md](../buffer/container-layout-resolution.md) |
+| 列数收编的完整论证 + 两轮审查闭环 | [archive/container-layout-resolution.md](../archive/container-layout-resolution.md)（2026-10-31 归档） |
 | 活潜影箱（嵌套容器，独立立项） | [buffer/活潜影箱实现细节.md](../buffer/活潜影箱实现细节.md) |
 | S1~S9 的验收判据与真机基线清单 | [archive/container-compat-stages.md](../archive/container-compat-stages.md) |
 | 每个决策的为什么 | [decisions.md](../decisions.md) `D-container-01..17` |

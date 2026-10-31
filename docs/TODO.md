@@ -120,7 +120,7 @@
 9. ~~**推动与细节待梳理清单**（2026-10-30 建）—— 剩余 10 条，逐条拍板后再动代码~~
    ✅ **2026-10-31 全部清零**：力场模型 4 条 + B5~B8 / C2 / D1 / D2 / E1~E4 已同步
    fluid tech §3.3 等处；A3 准入边界晋升 fluid tech §0 规则 10；A1 / A2 / C1 移交框架侧
-   （见本节第 10 条与「物品传输」节）。[buffer/living-fluid-review.md](buffer/living-fluid-review.md) 可归档。
+   （见本节第 10 条与「物品传输」节）。原稿归档 [archive/living-fluid-review.md](archive/living-fluid-review.md)。
 10. **流体推动 ×「本拍已写入槽」的互斥（C1，2026-10-31 记录，暂不实施）** ——
     现状：`TickContext.transferredTargetSlots` 由漏斗 `markTransferred()` 写入，
     **唯一消费者是漏斗自己**（`TransferPipeline` 跳过「本 tick 已被写入过」的来源槽，
@@ -177,7 +177,7 @@
    「目标空 / 满 / 同类 / 异类 / 拒绝写入」，跑所有容器实现。
    边界：第三方容器违约（`insertItem` 撒谎、`getSlotLimit` 撒谎、`setStackInSlot`
    静默失败）**无法根治** ⇒ 目标是「可控路径不丢 + 丢必留痕」，不是「永不丢」。
-   📄 待梳理条目：[buffer/living-fluid-review.md](buffer/living-fluid-review.md) A1/A2。
+   📄 来源：A1/A2 已并入本节上文（2026-10-31），原稿归档 `archive/living-fluid-review.md`。
 
 ## 容器边界（2026-10-10 记 · 2026-10-18/19 立项并完成主体）
 
@@ -338,13 +338,13 @@
    让活漏斗能对 AE2 ME 接口 / RS 网络推拉。**不做**池宿主（`D-container-07` / I-C8）。
    前置：复用 `MenuSlotOwners.registerResolver` 同一套注册。
 
-5.1 ⏸ **槽位解析收编（S1b/S2 暂缓，不做）** —— 自动学习已独立落地，不代表恢复合表或 provenance 重排；同键多布局仍单独讨论。历史方案见 [container-layout-resolution.md](buffer/container-layout-resolution.md)，现状口径见 [基础设施 §6](system-design/living-item-infrastructure.md#6-容器大小自动解析)。
+5.1 ⏸ **槽位解析收编（S1b/S2 暂缓，不做）** —— 自动学习已独立落地，不代表恢复合表或 provenance 重排；同键多布局仍单独讨论。历史方案见 [archive/container-layout-resolution.md](archive/container-layout-resolution.md)，现状口径见 [基础设施 §6](system-design/living-item-infrastructure.md#6-容器大小自动解析)。
 
-5.2 ✅ ~~**容器布局解析审查交接**~~（2026-10-25 两轮已处理）—— 准入端点漏洞 / 歧义失败重试 / 矛盾输入失效、门禁独立回归与现有诊断同源均修复并负向验证；不恢复 S1b/S2、不引入完整 Layout。记录见 [专题 §10.5](buffer/container-layout-resolution.md#105-第二轮审查闭环2026-10-25用户批准实施)。
+5.2 ✅ ~~**容器布局解析审查交接**~~（2026-10-25 两轮已处理）—— 准入端点漏洞 / 歧义失败重试 / 矛盾输入失效、门禁独立回归与现有诊断同源均修复并负向验证；不恢复 S1b/S2、不引入完整 Layout。记录见 [专题 §10.5](archive/container-layout-resolution.md#105-第二轮审查闭环2026-10-25用户批准实施)。
 
 5.3 ✅ ~~**活按钮显示当前容器基本信息**~~（2026-10-26 已实施，**用户真机总体反馈良好**）—— 已定位并修驴无 MenuType 查询失败，原版末影箱/车船明确布局；2026-10-28 全面实测通过。现状与验收入口见 [GUI 交互 §6.2.2](system-design/gui-interaction-system.md#622-活按钮当前容器基本信息2026-10-26)，设计记录见 [living-button-container-info.md](archive/living-button-container-info.md)。
 
-5.4 ✅ ~~**布局选择共同入口与内建来源收口**~~（2026-10-26 已实施）—— 各形态通过同一实例/规则/学习/内建/启发式顺序，子类只给事实；方块规则范围不扩、家族语义保留，不恢复S1b/S2。现状见 [基础设施 §6.2](system-design/living-item-infrastructure.md#62-simplecontainercontextgetwidth-的宽解析)，过程见 [布局专题 §10.6](buffer/container-layout-resolution.md#106-共同布局选择入口2026-10-26)。
+5.4 ✅ ~~**布局选择共同入口与内建来源收口**~~（2026-10-26 已实施）—— 各形态通过同一实例/规则/学习/内建/启发式顺序，子类只给事实；方块规则范围不扩、家族语义保留，不恢复S1b/S2。现状见 [基础设施 §6.2](system-design/living-item-infrastructure.md#62-simplecontainercontextgetwidth-的宽解析)，过程见 [布局专题 §10.6](archive/container-layout-resolution.md#106-共同布局选择入口2026-10-26)。
 
 5.5 🔮 **自动学的两条硬局限**（2026-10-25 查证，2026-10-26 记入待办）—— ① 客户端 Screen 可任意重排
    `Slot.x/y`（fxntstorage 服务端一横排 / 客户端 12 列 + 竖向滚动）⇒ 学到的未必是玩家所见；
@@ -564,6 +564,17 @@
    第二个沿起按新周期正常发电；正常运行与正常改频不受影响。
 6. ✅ **双箱拆分重算（A6）**（2026-10-28 实测通过） —— 拆半后余箱物品保留、流体源清空（重新倒水）、
    红电重新锁相；拆半前调好的相位布局不作数。
+
+## 活工具 · 系列扩展（2026-10-31 自 living-tool-design.md 清点登记，D-doc-06）
+
+> 设计稿本体已归档 [archive/living-tool-design.md](archive/living-tool-design.md)（回放链路**已实施**，
+> 现状见 [tech/living-tool-tech.md](tech/living-tool-tech.md)）；以下为其**未实现残留**（落地同步表口径）。
+
+1. ⏳ **容器内 GUI 三件套**（J 组，H3 已拍板「加」）—— 手持活斧子右键 = 原版**去皮 / 刮铜 / 脱蜡**、
+   活铲子右键 = **铺土径**（J3 定案 = 直接调原版方法，不写映射表）。定案与硬约束见 archive 稿 §3.10；
+   「通配条目吞右键 / 谓词自查 `isLivingItem`」两条红线已在 [farmland tech §3.1-3.2](tech/living-farmland-tech.md)。
+2. ⏳ **系列边界探讨**（H 组待定）—— 活锄头是否纳入统一框架（H1 倾向 a）/ 斧铲**世界层**辅助
+   做不做（H2 倾向先不做）/ 活剑、活剪刀等边界（H4）。探讨全文见 archive 稿 §3 H 组。
 
 ## 活工具 / 活背包 · 2026-10-27 全项目审查挂起项（P3，未定先后）
 
