@@ -465,10 +465,14 @@ private static boolean hasContainerOrItemHandler(ServerLevel level, BlockPos pos
 | 2 | `!hasContainer` 检查 | 每 tick 遍历 | 自清洁，容器消失时移除（如方块破坏） |
 | 3 | `cleanupStaleEntries` | 每 6000 ticks（约 5 分钟） | 兜底清理，移除已卸载但事件遗漏的区块 |
 
-> ⚠️ **线程红线（2026-11-01 核对）**：`ChunkEvent.Unload` 由原版 `ChunkMap.scheduleUnload`
-> 的 `thenRunAsync` 触发，**不在 tick 线程**。事件处理器只能入队，**不得直接改**
-> `pendingRescans` / `EnderChannelRegistry` 等 tick 线程表。当前两处直接改表是已知缺陷；
-> 整改计划 R-06 改为“事件只入队、tick 线程 drain”。
+> ⚠️ **卸载事件红线（2026-11-01 更正）**：`ChunkEvent.Unload` 在**服务器主线程**触发 ——
+> 原版 `ChunkMap.scheduleUnload` 的 `thenRunAsync(body, this.unloadQueue::add)` 里第二个参数是
+> **executor**（只是把 body 入队），body 由 `ChunkMap.tick` 在主线程 poll 后 `run()`。
+> 因此处理器**可以直接改** `pendingRescans` / `EnderChannelRegistry` 等 tick 线程表，**没有竞态**。
+> 真正的红线是**别在卸载事件里查世界 / 能力**：此刻区块已 `setLoaded(false)`、能力已失效，
+> 查询可能触发重新加载（**再入**）。
+> 🔴 曾按「Unload 是异步线程」立过决策并派生 R-06 的「事件只入队」改造项 —— **已作废**
+> （`D-container-21` → `D-container-22`，证据见 [event-threading.md](../reference/event-threading.md) §2）。
 
 **兜底清理的必要性**：
 

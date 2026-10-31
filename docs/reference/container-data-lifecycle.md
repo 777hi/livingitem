@@ -44,7 +44,7 @@
 | 触发 | 线程 | 对四张表的影响 |
 |---|---|---|
 | `ChunkEvent.Load` / 方块放置 / 玩家破坏 | 主线程 | 登记 pending rescan；破坏还会 `removeDataByPos` |
-| `ChunkEvent.Unload` | **异步保存线程**（`ChunkMap.scheduleUnload` 的 `thenRunAsync`） | 撤销 pending rescan；清 `EnderChannelRegistry` 路由；**不清**四张表 |
+| `ChunkEvent.Unload` | **主线程**（`ChunkMap.tick` drain `unloadQueue`；见 `D-container-22`） | 撤销 pending rescan；清 `EnderChannelRegistry` 路由；**不清**四张表 |
 | 容器继续 tick 且已无活物品 | 主线程 | 删 `LIVING_SLOT_ITEMS[cacheKey]`；作废该容器运行时槽位 |
 | 槽位活物品类型变化 | 主线程 | 作废该槽位运行时数据（`removeSlot`） |
 | 玩家破坏方块（位置索引命中） | 主线程 | `removeDataByKey`：四张表 + 整容器运行时作废 |
@@ -62,15 +62,20 @@
    **玩家破坏也清不掉**；这是“同类物品原地交换继承进度”的放大版。
 2. `LIVING_SLOT_ITEMS` / `ContainerRuntimeCache` 没有 TTL / 卸载路径；停止 tick 后残留到停服。
 3. `ContainerRuntimeCache.removeSlot` 删空内层槽位后不删外层键 ⇒ 空壳残留。
-4. `ChunkEvent.Unload` 的现有处理器在异步线程直接改 tick 线程表（`pendingRescans` /
-   `EnderChannelRegistry`）⇒ 竞态；必须改为“事件只入队、tick 线程 drain”。
+4. `ItemFormLiveViews#VIEWS` 只在**有人 `find()` 且发现过期**时才删（惰性过期，见
+   `ItemFormLiveViews#find`）⇒ 背包停止 tick **且再无人按该 UUID 取货**时条目常驻到停服，
+   并**强引用第三方 `IItemHandler`**。同类「惰性回收」缺陷，可并入 R-06 的 sweep。
+
+> ✅ **原缺口 4「Unload 处理器跨线程改表」已排除**（2026-11-01，`D-container-21` → `D-container-22`）：
+> `ChunkEvent.Unload` 实际在**主线程**触发，现有两处直接改表**不是竞态**，无需改成入队。
+> 该处仍受「卸载中不查世界」约束（再入风险），见 [event-threading.md](event-threading.md) §2。
 
 **设计（待实现，见整改计划 R-06）**：
 
-- `lastSeen` + 周期 sweep（tick 线程）覆盖所有形态的“停止 tick 后”回收；
+- `lastSeen` + 周期 sweep（tick 线程）覆盖所有形态的“停止 tick 后”回收（含 `ItemFormLiveViews`）；
 - `trackLivingSlots` 补 `indexPositions`；
 - `removeSlot` 删空外层键；
-- 异步卸载只入队（pending rescan / 末影路由）；运行时数据不依赖卸载事件；
+- 运行时数据**不依赖**卸载事件（sweep 覆盖），卸载处理器维持现状即可；
 - 双箱任一半/未被看到即清整个 key（数据可重建）。
 
 ---

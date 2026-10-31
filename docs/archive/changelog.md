@@ -128,6 +128,46 @@
   `docs/README.md` §7.2 立「**会话即维护**」规约。纯文档变更，测试 1266 不变。
   → `docs/README.md` §7.1/§7.2 · `tools/gen_buffer_index.py` · `living-item-design-template.md` §2.3
 
+- 🔬 **A/B 代理实验：三份参考索引到底是减负还是加负 —— 顺带抓到两处「绿灯的错行」**。
+  用同一组 6 个问题跑两个隔离代理：**A 组禁读** `shared-state.md` / `event-threading.md` /
+  `container-data-lifecycle.md`（只能读源码），**B 组优先读**这三份、只在必要处回源码。
+  **成本结论**：A 组 38 文件 / ≈6900 行 / ≈50 次工具调用；B 组 10 文件 / ≈490 行 / 26 次调用。
+  6 题里 B 组 **3 题纯靠文档答完**（Q1 线程 / Q2 六形态清理 / Q3 无停服清理的表），
+  2 题「文档说清了什么、没说为什么」（Q4 掉落物新键的成因与后果 / Q6 孤儿 SavedData），
+  1 题**文档完全没覆盖**（Q5 R-01 隔离边界 —— 三份索引里根本没有 R-01 这一行，只能回到
+  `living-item-infrastructure.md` §3.1.1 + 源码）。⇒ **净减负成立**，但前提是**按问题命中分区**
+  （如「卸载线程」这一问只需 445 字，而源码搜索空间是 60745 字的 `ChunkMap.java`），
+  全量通读三份（B 组实际读满 23818 字）会把收益吃掉 —— 这正是「何时读 / 何时不读」表头欠着的缘故。
+  🔴 **更重要的产出：实验证伪了文档里的一处「关键事实」。**
+  ① **`ChunkEvent.Unload` 不是异步线程，是服务器主线程**（A 组读原版源码得出，已在
+  `libs/src/neoforge-21.1.219-merged/` 复核）：`ChunkMap.scheduleUnload`（`:532-562`）写的是
+  `getSaveSyncFuture().thenRunAsync(body, this.unloadQueue::add)` —— **第二个参数是 executor**，
+  这里只是把 body **入队**；body 由 `ChunkMap.processUnloads`（`:517-519` `runnable.run()`）在
+  `ChunkMap.tick`（`:469`）里执行，而 `tick` 唯一调用方是 `ServerChunkCache.java:329`（主线程）。
+  全库另一处 post 是客户端 `ClientChunkCache.java:66`，也在主线程。
+  ⇒ `ContainerChunkCache#onChunkUnload` 改 `pendingRescans`、`LivingItem#onChunkUnload` 清
+  `EnderChannelRegistry` **都不是竞态**；由此派生的 R-06 改造项「事件只入队、tick 线程 drain」**作废**。
+  卸载事件真正的红线换成一条、且不是线程原因：**不得查世界 / 能力**（此刻已 `setLoaded(false)`、
+  能力已失效，而 `level.unload(chunk)` 与 BE 清空发生在 post **之后** ⇒ 查询会**再入**触发加载）。
+  ② **`ItemFormLiveViews#VIEWS` 不是「每 tick 重建」，是惰性过期**：条目只在 `find()` 命中
+  `TTL_MS` 时才 `remove` ⇒ 背包停止 tick 且**再无人按该 UUID 取货**时条目常驻到停服，
+  并强引用第三方 `IItemHandler`。B 组因为信了文档这一行，把「有没有泄漏」答反了。
+  **教训（比这两条本身长）**：第 13~15 项是**存在性**门禁（字段/处理器/形态有没有占一行），
+  **不校验行内容** ⇒ 错行必然绿灯。而「`thenRunAsync` 看着像异步」这种误读，一天之内就从
+  一处源码扩散到 **5 份文档 + 1 条决策 + 1 个设计项 + 我自己的记忆**。已按 §4 翻转流程处理：
+  **新增 `D-container-22`、`D-container-21` 标 `已被取代` 不删行**，并 grep 清掉全部旧说法
+  （`event-threading.md` 硬规则 2→3 条 + §2 整节重写并附原版证据、`container-data-lifecycle.md` §3 行
+  + §4 缺口重编号、`shared-state.md` 表行 + §5 排除记录、`living-item-infrastructure.md` §3.2 红线、
+  整改计划 §58 状态 / §6.2-#5 作废 / §6.3 测试项 / 批次表、`ContainerChunkCache#cleanupStaleEntries` javadoc
+  里「异步卸载时序」改成「卸载事件未覆盖的路径」并写明条件）。
+  **同时立门禁边界的诚实说明**：三份文档头部 + `docs/README.md` §7 都加了「13~15 只校验存在性、
+  不校验内容 ⇒ 引用线程/清理结论仍要按证据列回读源码」。缺口清单补第 4 项（`ItemFormLiveViews`），
+  并入 R-06 的同一个 sweep（不新建机制）。
+  📌 **补记**：上一批 `829aeea`（建立三份参考索引 + doc_check 13~15）**漏写 changelog 正文**，
+  只在 AGENTS 留了指针 —— 一并在此补齐。纯文档 + 1 处 javadoc，测试 1266 不变（全量绿，0 失败）。
+  → `docs/decisions.md` D-container-21/22 · `docs/reference/event-threading.md` §2 ·
+  `docs/README.md` §7（13~15 盲区）· `docs/buffer/2026-10-29-全项目审查整改计划.md` §6
+
 ## 2026-10-30
 
 - 🛡️ **R-01 复查补漏：发现 / 重扫路径的第三方能力查询也隔离** ——

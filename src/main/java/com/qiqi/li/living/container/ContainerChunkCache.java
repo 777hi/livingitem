@@ -338,7 +338,8 @@ public class ContainerChunkCache {
     /**
      * 定期清理缓存中已不再加载的区块。
      *
-     * 与 onChunkUnload 不同，此方法作为兜底机制，防止因异步卸载时序问题
+     * 与 onChunkUnload 不同，此方法作为兜底机制，防止卸载事件未覆盖的路径
+     * （`ChunkEvent.Unload` 只在 `pendingUnloads` 命中且区块是 `LevelChunk` 时发出）
      * 导致已卸载区块残留在缓存中。每隔 intervalTicks 执行一次清理。
      *
      * @param level         服务端世界

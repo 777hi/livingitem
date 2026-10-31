@@ -3,15 +3,24 @@
 > **性质**：参考层索引 —— 回答「每个 `@SubscribeEvent` 在哪个线程、能碰什么、碰了哪些共享状态」。
 > 语义真相仍在各 tech / decisions；本页只做横切视图 + 指针。
 > **最后核对**：2026-11-01（`doc_check` 第 14 项校验全部 `@SubscribeEvent` 覆盖）。
+> 🔴 **门禁的边界（必读）**：第 14 项只校验**处理器名是否出现在本页**，**不校验线程列**。
+> 线程是本页最容易写错、又不会变红的一列 —— `D-container-21` 就是这么错了一天。
+> ⇒ 涉及线程的结论，按 §2 的证据格式去 `libs/src/neoforge-21.1.219-merged/` 复核**调用方**，
+> 不要只看事件名或 javadoc（NeoForge 的 `ChunkEvent.Unload` javadoc 不提线程，且写错了触发点）。
 > **关联**：[shared-state.md](shared-state.md) ·
 > [living-item-infrastructure.md](../system-design/living-item-infrastructure.md) §3.1.1 / §3.2 ·
-> `D-container-21`。
+> `D-container-21`（**已作废** —— 该决策的前提是本页 §2 记载的经典误读）。
 
-> ⭐ **两条硬规则**
+> ⭐ **三条硬规则**
 > 1. **事件里不查世界**：`ChunkEvent.Load` 在区块 FULL 任务内部，查能力会自等自死锁
 >    （见 `ContainerChunkCache#onChunkLoad` 红线）。
-> 2. **卸载事件是异步的**：`ChunkEvent.Unload` 由原版 `ChunkMap.scheduleUnload` 的
->    `thenRunAsync` 触发，**不在 tick 线程**；处理器只能入队，不得直接改 tick 线程的表。
+> 2. **卸载事件不查世界，但线程是主线程**：`ChunkEvent.Unload` 在**服务端主线程**触发
+>    （证据见 §2）。它不能查世界/能力的原因是**区块正处于卸载中**（已 `setLoaded(false)`、
+>    能力已失效），不是为了线程安全。
+>    🔴 **别再写「Unload 是异步线程」** —— 这是 `thenRunAsync` 的第二个参数（**executor**，
+>    本例是 `unloadQueue::add`）造成的经典误读，2026-11-01 曾据此立过 `D-container-21`，已作废。
+> 3. **卸载事件要判侧**：客户端也有一处 post（`ClientChunkCache#drop`），两侧都在各自主线程，
+>    但只有服务端那处能拿到 `ServerLevel` ⇒ 用 `event.getLevel() instanceof ServerLevel` 分流。
 
 ---
 
@@ -57,15 +66,27 @@
 | `ContainerDataMigration#onBlockPlace` | `BlockEvent.EntityPlaceEvent` | 容器级数据迁移（放置） |
 | `FluidFlowServerSync#onContainerClose` | `PlayerContainerEvent.Close` | 流体快照停止；主线程 |
 
-## 2. 异步保存线程（⚠️ 只能入队）
+## 2. 区块卸载（`ChunkEvent.Unload`）—— ⚠️ 主线程，但正处于卸载过程中
 
 | 处理器 | 事件 | 约束 |
 |---|---|---|
-| `LivingItem#onChunkUnload` | `ChunkEvent.Unload` | 当前直接清 `EnderChannelRegistry` 路由（**已知竞态**）；R-06 改为只入队 |
-| `ContainerChunkCache#onChunkUnload` | `ChunkEvent.Unload` | 当前直接改 `pendingRescans`（**已知竞态**）；R-06 改为只入队 |
+| `LivingItem#onChunkUnload` | `ChunkEvent.Unload` | 直接清 `EnderChannelRegistry` 路由。**线程安全**（主线程），无需入队；但不得查世界 |
+| `ContainerChunkCache#onChunkUnload` | `ChunkEvent.Unload` | 直接改 `pendingRescans`。**线程安全**（主线程），无需入队；但不得查世界 |
 
-> 原版证据：`ChunkMap.scheduleUnload` → `chunkHolder.getSaveSyncFuture().thenRunAsync(...)`
-> → `NeoForge.EVENT_BUS.post(new ChunkEvent.Unload(...))`。`thenRunAsync` 走异步池，不在主线程。
+> **原版证据**（`libs/src/neoforge-21.1.219-merged/`，全库仅两处 post）：
+>
+> - 服务端 `ChunkMap.java:532-562` `scheduleUnload`：
+>   `chunkHolder.getSaveSyncFuture().thenRunAsync(body, this.unloadQueue::add)`。
+>   **第二个参数是 executor**，`unloadQueue::add` 只是把 body **入队**；
+>   body 由 `ChunkMap.tick(hasTimeLeft)` 在 `ChunkMap.java:517-519` 处 `poll()` 后
+>   直接 `runnable.run()` 执行，而 `tick` 的唯一调用方是 `ServerChunkCache.java:329`
+>   （`unloadQueue` 声明为 `Queue<Runnable>`，`ChunkMap.java:153`）。
+>   ⇒ `NeoForge.EVENT_BUS.post(new ChunkEvent.Unload(...))`（`ChunkMap.java:543`）**在主服务器线程**。
+> - 客户端 `ClientChunkCache.java:66`，在客户端主线程。
+>
+> **顺序事实（对写处理器有用）**：post 时区块已 `setLoaded(false)`、NeoForge 已失效其能力
+> （`CapabilityHooks`），但 `level.unload(chunk)` 与**方块实体的清空发生在 post 之后**
+> （`ChunkMap.java:547-549`）⇒ 卸载事件里 BE 仍在，但查能力可能触发重新加载（**再入**，不是竞态）。
 
 ## 3. 客户端（渲染 / 输入线程）
 

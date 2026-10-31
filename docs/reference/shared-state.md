@@ -3,6 +3,10 @@
 > **性质**：参考层索引 —— 回答「有哪些跨 tick 的 static 状态、谁写谁读、哪个线程、什么时候清」。
 > 语义真相仍在各 tech / decisions；本页只做横切视图 + 指针。
 > **最后核对**：2026-11-01（`doc_check` 第 13 项校验静态可变集合全覆盖）。
+> 🔴 **门禁的边界（必读）**：第 13 项只校验**行是否存在**（字段名出现在本文），
+> **不校验行内容**。所以「线程列 / 清理列」写错**不会变红** —— 2026-11-01 就同时漏过
+> 「Unload 是异步线程」与「`ItemFormLiveViews` 每 tick 重建」两处错行（后者实为惰性过期）。
+> ⇒ 引用本表结论时，凡涉及**线程**或**清理时机**，仍要按「证据」列去读一次源码。
 > **范围**：`living/` 与 `network/` 下**服务端**的跨 tick 可变 static 集合。
 > 配置/规则表、启动期注册表、反射缓存、纯客户端缓存、诊断指标不在本表（见 §4）。
 > **关联**：[event-threading.md](event-threading.md) ·
@@ -21,8 +25,8 @@
 | `ContainerLivingItemHandler#PENDING_RUNTIME_INVALIDATIONS` | 待作废记录（整容器 / 槽位） | 主线程 | `trackLivingSlots` / `removeDataByKey` | L4 `onServerTick` 每 tick drain | 无 | tick 内队列，不跨 tick |
 | `ContainerRuntimeCache#store` | `cacheKey` → 物理槽 → `RuntimeSegments` | 主线程 | 领域 `update` | `removeSlot` / `removeContainer`（作废队列） · 停服 | 无 | 瞬态、可丢；`removeSlot` 删空后外层键残留（R-06） |
 | `ContainerRuntimeCache#dirtyContainers` | `cacheKey` 集合 | 主线程 | `update` / `removeSlot` | `drainDirty` 每 tick | 无 | 驱动 tooltip 同步 |
-| `ContainerChunkCache#INSTANCE` | 维度 → 容器区块集合 / pending 重扫 / 清理计时 | 主线程 + **卸载异步** | 事件 / `maintain` | `cleanupStaleEntries` · `clear()` · 停服 | 无 | ⚠️ `ChunkEvent.Unload` 异步改 `pendingRescans` ⇒ 竞态（`D-container-21`） |
-| `ItemFormLiveViews#VIEWS` | 容器 UUID → 物品形态活视图 | 主线程 | 物品形态 tick 登记 | 每 tick 重建 / `clear()` · 停服 | 无 | 物品形态路由取货用 |
+| `ContainerChunkCache#INSTANCE` | 维度 → 容器区块集合 / pending 重扫 / 清理计时 | 主线程（含卸载事件，见 `D-container-22`） | 事件 / `maintain` | `cleanupStaleEntries` · `clear()` · 停服 | 无 | 卸载事件里**不得查世界**（区块正卸载 ⇒ 再入）；改表本身安全 |
+| `ItemFormLiveViews#VIEWS` | 容器 UUID → 物品形态活视图 | 主线程 | 物品形态 tick `register`（覆盖写） | ⚠️ **只在 `find()` 命中过期时删**（惰性） · 停服 `clear()` | 无 | 停止 tick **且再无人查询** ⇒ 条目常驻到停服（持第三方 `IItemHandler` 强引用）；与 R-06 同一族缺口 |
 | `LearnedLayouts#LEARNED` | 容器键 → 列数 | 主线程 | 学习 | `clearForTest`；落盘由 load/save 管 | 是（`config/living_item/…json`） | 跨存档共享的学习结果 |
 | `LearnedLayouts#AMBIGUOUS` | 歧义容器键集合 | 主线程 | 学习 | 同上 | 是（同上） | 与 `LEARNED` 同生命周期 |
 | `LivingItemManager#APPLICABLE_CACHE` | `Item` → 适用功能列表 | 主线程 | 首次查询 | 无显式清理（按物品类型有界） | 无 | 启动后基本只读 |
@@ -77,6 +81,8 @@
   ⇒ 单机退出存档再进另一个存档时，旧世界的失败 key / 玩家 UUID 节流记录仍在（内存小，但属残留）。
   `lastUpdateTick` 更实际的影响是**跨存档 tick 计数重置**：旧存档的 tick 值可能大于新存档当前
   tick，`currentTick - lastTick < 20` 会把新存档的地图更新误跳过，直到新 tick 追上旧值。
-- `ContainerChunkCache#INSTANCE` 的 `pendingRescans` 在 `ChunkEvent.Unload`（异步线程）直接删改
-  ⇒ 与主线程 `flushPendingRescans` 竞态（`D-container-21`，R-06 改为只入队）。
 - 容器形态特有的缺口见 [container-data-lifecycle.md](container-data-lifecycle.md) §4。
+
+> ✅ **排除记录（2026-11-01）**：本表曾把 `ContainerChunkCache#INSTANCE` 的 `pendingRescans`
+> 在 `ChunkEvent.Unload` 中直接删改列为「与主线程 `flushPendingRescans` 竞态」。
+> **不成立** —— Unload 在服务器主线程触发（`D-container-22`），无跨线程问题，也不是缺口。
