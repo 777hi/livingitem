@@ -1,11 +1,15 @@
 # 容器形态 × 数据生命周期（参考）
 
 > **性质**：参考层索引 —— 回答「六种容器形态下，四张表什么时候建、什么时候清、断了会怎样」。
-> 语义真相仍在各 tech / decisions；本页只做横切视图 + 指针。
-> **最后核对**：2026-11-01（`doc_check` 第 15 项校验 `*ContainerContext` 实现类全覆盖）。
+> **为什么这一张值得存在**：它的答案**不在任何单个文件里** —— 要同时看 `ContainerIdentity` 的键形、
+> 五个 ctx 的宿主与覆写、`trackLivingSlots` 与 `removeDataBy*` 的调用条件（跨 6 个类 ≈2000 行；
+> 2026-11-01 A/B 实验实测：禁读文档组为这一问题读了 16 文件 / ≈2100 行）。
+> 它做的是**任何一处都读不到的横切**，不是复述（口径见
+> [docs/README.md](../README.md)「该不该写：一条判据」）。
+> ⚠️ `doc_check` 第 15 项只校验形态名出现、**不校验单元格内容** ⇒ 引用清理结论按判据回读源码。
 > **关联**：[container-overview.md](../system-design/container-overview.md) §0 #9 ·
 > [living-item-infrastructure.md](../system-design/living-item-infrastructure.md) §3.2 / §3.5 ·
-> 整改计划 R-06 · `D-container-20/21`。
+> 整改计划 R-06 · `D-container-20`（瞬态可丢）· `D-container-22`（卸载在主线程）。
 
 ---
 
@@ -41,16 +45,20 @@
 
 ## 3. 触发 → 影响
 
-| 触发 | 线程 | 对四张表的影响 |
-|---|---|---|
-| `ChunkEvent.Load` / 方块放置 / 玩家破坏 | 主线程 | 登记 pending rescan；破坏还会 `removeDataByPos` |
-| `ChunkEvent.Unload` | **主线程**（`ChunkMap.tick` drain `unloadQueue`；见 `D-container-22`） | 撤销 pending rescan；清 `EnderChannelRegistry` 路由；**不清**四张表 |
-| 容器继续 tick 且已无活物品 | 主线程 | 删 `LIVING_SLOT_ITEMS[cacheKey]`；作废该容器运行时槽位 |
-| 槽位活物品类型变化 | 主线程 | 作废该槽位运行时数据（`removeSlot`） |
-| 玩家破坏方块（位置索引命中） | 主线程 | `removeDataByKey`：四张表 + 整容器运行时作废 |
-| 物品形态取消活化 | 主线程 | `removeDataByKey`（同上） |
-| 玩家下线 / 实体消失 / 物品销毁 / 掉落物拾取 / 爆炸 / 活塞 / `/setblock` | — | **四张表都不清**（R-06 缺口） |
-| 停服 / 切存档 | 主线程 | 各缓存类 `StaticCacheRegistry.onServerStop` → 全清 |
+> **线程只说一句**：下列触发**全部在服务器主线程**（含 `ChunkEvent.Unload`，判据见
+> [event-threading.md](event-threading.md) §2）。⇒ 四张表的清理**不存在并发问题**，
+> 不需要为它们设计锁或入队 —— 这条否定性结论比逐行标「主线程」有用。
+
+| 触发 | 对四张表的影响 |
+|---|---|
+| `ChunkEvent.Load` / 方块放置 / 玩家破坏 | 登记 pending rescan；破坏还会 `removeDataByPos` |
+| `ChunkEvent.Unload` | 撤销 pending rescan；清 `EnderChannelRegistry` 路由；**不清**四张表 |
+| 容器继续 tick 且已无活物品 | 删 `LIVING_SLOT_ITEMS[cacheKey]`；作废该容器运行时槽位 |
+| 槽位活物品类型变化 | 作废该槽位运行时数据（`removeSlot`） |
+| 玩家破坏方块（位置索引命中） | `removeDataByKey`：四张表 + 整容器运行时作废 |
+| 物品形态取消活化 | `removeDataByKey`（同上） |
+| 玩家下线 / 实体消失 / 物品销毁 / 掉落物拾取 / 爆炸 / 活塞 / `/setblock` | **四张表都不清**（R-06 缺口） |
+| 停服 / 切存档 | 各缓存类 `StaticCacheRegistry.onServerStop` → 全清 |
 
 ---
 
@@ -87,4 +95,4 @@
   `EntityContainerContext` / `ItemFormContainerContext` / `ItemEntityContainerContext`）。
 - 现有单测：`ContainerRuntimeCacheLifecycleTest`、`ContainerChunkCacheChunkLoadTest`、
   `EnderDualFormRouteTest`、`ItemFormLiveViewsTest`、`ContainerTickIsolationTest`。
-- R-06 将补：lastSeen sweep、位置索引、空壳、双箱、异步队列。
+- R-06 将补：lastSeen sweep、位置索引、空壳、双箱（原「异步队列」一项随 `D-container-22` 作废，不补）。

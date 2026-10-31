@@ -16,10 +16,11 @@ Verifies the invariants declared in docs/README.md §7 ("改完必查"):
  11. buffer 滞留       - 标着「已完成」却留在 buffer（不稳定层）的文档（soft warning）
  12. buffer 索引       - README 状态表与各文档头部「状态：」行一致
                          （表由 tools/gen_buffer_index.py 生成；不一致 = 改了头部没重跑生成器）
- 13. 共享状态覆盖      - living/ 与 network/ 的 static 可变集合必须在 shared-state.md
-                         登记（或在脚本里显式排除：配置/注册表/反射/客户端/诊断）
- 14. 事件线程覆盖      - 每个 @SubscribeEvent 必须在 event-threading.md 出现
+ 13. 共享状态名单      - shared-state.md 的名单区由 tools/gen_rosters.py 扫描源码生成，
+                         必须与源码逐字一致（2026-11-01 由「成员名出现即可」升级为生成制）
+ 14. 事件处理器名单    - event-threading.md 的 @SubscribeEvent 名单区同上
  15. 容器形态覆盖      - 每个具体 *ContainerContext 必须在 container-data-lifecycle.md 出现
+                         （仍是存在性判据：那张矩阵是跨类横切，只能人写 + 带判据）
 
 Checks 1-4, 6-10 and 12-15 fail the run (exit 1). Checks 5 and 11 only warn: both are
 maintenance signals that need a human decision, not correctness errors.
@@ -681,55 +682,46 @@ def _scan_shared_state_keys():
     return keys
 
 
-def check_shared_state_coverage():
-    if not os.path.exists(SHARED_STATE_DOC):
-        failures.append("[共享状态] 缺 docs/reference/shared-state.md")
-        print("13. 共享状态覆盖    : FAIL（缺总表）")
+def _check_roster(item_no, label, doc_path, builder_name, count_name):
+    """第 13 / 14 项的共同实现：文档的「名单生成区」必须与源码扫描结果逐字一致。
+
+    2026-11-01 改口径。旧版只要求每个成员名在文档里**出现过** —— 那是存在性判据：
+    手写表格能满足它，而表格里的**行内容**（线程 / 清理 / 持久化）写错时照样绿灯。
+    实测两处错行正是这样漏过的（Unload「异步线程」、ItemFormLiveViews「每 tick 重建」）。
+    ⇒ 名单交给 tools/gen_rosters.py 生成，本项改为校验「与源码一致」；
+      人手写的复述列从文档里删除，剩下的判断改由「判断清单」承载（要求带判据，不受本项校验）。
+    """
+    if not os.path.exists(doc_path):
+        failures.append("[参考层名单] 缺 %s" % os.path.relpath(doc_path, ROOT))
+        print("%s. %s    : FAIL（缺文档）" % (item_no, label))
         return
-    doc = read(SHARED_STATE_DOC)
-    missing = []
-    documented = 0
-    excluded = 0
-    for key in sorted(_scan_shared_state_keys()):
-        owner = key.split("#", 1)[0]
-        if key in doc:
-            documented += 1
-        elif owner in _SHARED_EXCLUDED_CLASSES or key in _SHARED_EXCLUDED_FIELDS:
-            excluded += 1
-        else:
-            missing.append(key)
-    if missing:
-        for key in missing:
-            failures.append(f"[共享状态] {key} 未登记到 shared-state.md，也未在 doc_check 里显式排除")
-        print(f"13. 共享状态覆盖    : FAIL（{len(missing)} 项未登记）")
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    try:
+        import gen_rosters as gr
+    except ImportError as e:  # 生成器缺失/语法错：直接红，别静默跳过
+        failures.append("[参考层名单] 无法导入 tools/gen_rosters.py（%s）" % e)
+        print("%s. %s    : FAIL（生成器不可用）" % (item_no, label))
+        return
+    state, why = gr.check_region(doc_path, getattr(gr, builder_name))
+    n = getattr(gr, count_name)()
+    if state == "ok":
+        print("%s. %s    : OK（%d 项 · 名单区由源码生成）" % (item_no, label, n))
+    elif state == "missing":
+        failures.append("[参考层名单] %s %s —— 需补 begin/end 生成区标记" % (label, why))
+        print("%s. %s    : FAIL（%s）" % (item_no, label, why))
     else:
-        print(f"13. 共享状态覆盖    : OK（登记 {documented} · 排除 {excluded}）")
+        failures.append("[参考层名单] %s 的名单区与源码不一致 —— 跑 python tools/gen_rosters.py" % label)
+        print("%s. %s    : FAIL（名单区过期，源码已变）" % (item_no, label))
+
+
+def check_shared_state_coverage():
+    _check_roster("13", "共享状态覆盖", SHARED_STATE_DOC,
+                  "build_shared_block", "shared_roster_count")
 
 
 def check_event_threading_coverage():
-    if not os.path.exists(EVENT_THREADING_DOC):
-        failures.append("[事件线程] 缺 docs/reference/event-threading.md")
-        print("14. 事件线程覆盖    : FAIL（缺清单）")
-        return
-    doc = read(EVENT_THREADING_DOC)
-    handlers = set()
-    pattern = re.compile(
-        r'@SubscribeEvent\s+(?:(?:public|private|protected|static|final)\s+)*void\s+([A-Za-z_]\w*)\s*\(')
-    for path in glob.glob(os.path.join(ROOT, "src/main/java", "**", "*.java"), recursive=True):
-        owner = os.path.splitext(os.path.basename(path))[0]
-        try:
-            src = read(path)
-        except OSError:
-            continue
-        for m in pattern.finditer(src):
-            handlers.add(f"{owner}#{m.group(1)}")
-    missing = sorted(k for k in handlers if k not in doc)
-    if missing:
-        for key in missing:
-            failures.append(f"[事件线程] {key} 未登记到 event-threading.md")
-        print(f"14. 事件线程覆盖    : FAIL（{len(missing)} 项未登记）")
-    else:
-        print(f"14. 事件线程覆盖    : OK（{len(handlers)} 项）")
+    _check_roster("14", "事件线程覆盖", EVENT_THREADING_DOC,
+                  "build_event_block", "event_roster_count")
 
 
 def check_container_form_coverage():
