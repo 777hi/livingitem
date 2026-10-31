@@ -117,7 +117,7 @@ Tier 2 内建约定 → Tier 3 启发式兜底。**要指定列数才录规则�
 
 ⚠️ **已有工具兜底、本表不用管的**（2026-10-20 复核过一遍）：
 依赖方向与域耦合（`check_layers.py` R1/R3 + 棘轮基线）· Mixin 位置（R2）·
-注册入口唯一（R4）· 文档一致性（`doc_check.py` 11 项）· 改动传导（`gen_code_map.py --query`）·
+注册入口唯一（R4）· 文档一致性（`doc_check.py` 15 项）· 改动传导（`gen_code_map.py --query`）·
 写回 ≠ 插入、模拟与真实同源（`ContainerBoundaryContractTest`）· 规则表 vs 类型表一致（单测）。
 ⇒ **第一段接入完成后立刻跑 `python tools/check_layers.py`**（见 §4）。
 

@@ -871,6 +871,9 @@ private final Set<String> reusableKeySet = new HashSet<>();
 > ⚠️ **现状缺口（整改计划 R-06 待修）**：当前清理只覆盖「容器继续 tick / 玩家破坏且位置索引命中 /
 > 物品形态取消活化 / 停服」。区块卸载、玩家下线、实体消失、物品销毁、掉落物拾取、
 > 非玩家移除（爆炸 / 活塞 / `/setblock`）都会残留；设计为 `lastSeen` + 周期 sweep 统一覆盖。
+>
+> 按**容器形态**拆开的完整表（身份键 / tick 停止条件 / 数据宿主 / 四张表的建立与清理 / 已知缺口）
+> 见 [reference/container-data-lifecycle.md](../reference/container-data-lifecycle.md)。
 
 **实现（`ContainerLivingItemHandler` 登记 + `LivingItem` 执行）**：
 

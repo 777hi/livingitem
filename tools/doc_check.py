@@ -16,8 +16,12 @@ Verifies the invariants declared in docs/README.md §7 ("改完必查"):
  11. buffer 滞留       - 标着「已完成」却留在 buffer（不稳定层）的文档（soft warning）
  12. buffer 索引       - README 状态表与各文档头部「状态：」行一致
                          （表由 tools/gen_buffer_index.py 生成；不一致 = 改了头部没重跑生成器）
+ 13. 共享状态覆盖      - living/ 与 network/ 的 static 可变集合必须在 shared-state.md
+                         登记（或在脚本里显式排除：配置/注册表/反射/客户端/诊断）
+ 14. 事件线程覆盖      - 每个 @SubscribeEvent 必须在 event-threading.md 出现
+ 15. 容器形态覆盖      - 每个具体 *ContainerContext 必须在 container-data-lifecycle.md 出现
 
-Checks 1-4, 6-10 and 12 fail the run (exit 1). Checks 5 and 11 only warn: both are
+Checks 1-4, 6-10 and 12-15 fail the run (exit 1). Checks 5 and 11 only warn: both are
 maintenance signals that need a human decision, not correctness errors.
 
 Usage: python tools/doc_check.py [-v]
@@ -618,6 +622,138 @@ def check_buffer_index():
         failures.append("[buffer 索引] README 生成区与各文档头部状态行不一致 —— 跑 python tools/gen_buffer_index.py")
 
 
+SHARED_STATE_DOC = os.path.join(ROOT, "docs", "reference", "shared-state.md")
+EVENT_THREADING_DOC = os.path.join(ROOT, "docs", "reference", "event-threading.md")
+CONTAINER_LIFECYCLE_DOC = os.path.join(ROOT, "docs", "reference", "container-data-lifecycle.md")
+
+# 共享状态扫描：与 docs/reference/shared-state.md 的范围一致。
+_STATIC_DECL = re.compile(
+    r'static\s+final\s+([A-Za-z_][\w.]*(?:\s*<[^;=]*?>)?)\s+([A-Za-z_]\w*)\s*=\s*([^;]+);',
+    re.S)
+_STATIC_IMMUTABLE = (
+    "Map.of", "List.of", "Set.of", "Collections.empty", "Collections.unmodifiable",
+    "TypeToken", "StreamCodec", "Codec.", "buildMap()", "new SlotMapping", "ThreadLocal",
+)
+_SHARED_EXCLUDED_CLASSES = {
+    # 配置 / 规则表（启动或 /reload 装载）
+    "ActivationRuleConfig", "InteractionRuleConfig", "InteractionRegistry",
+    "InteractionPredicates", "ContainerRuleConfig", "ContainerCompatibilityConfig",
+    "FluidTransformTable", "FluidFlowBehaviors", "CropClassifier",
+    # 启动期注册表
+    "ContainerDataKey", "RuntimeSegmentRegistry", "ContainerSnapshot", "ContainerTickHooks",
+    "ItemFormContainers", "ContainerHandoff", "ContainerLikeItems", "SlotAccessorFactory",
+    "SlotInteractions", "MenuSlotOwners",
+    # 反射 / 类型缓存（按类有界）
+    "ContainerContexts", "AvaritiaMenuResolver", "SophisticatedMenuResolver",
+    # 客户端缓存 / 渲染状态
+    "BeaconHostClientCache", "BeaconPlayerHostClientCache", "EnderChannelClientCache",
+    "LivingMapClientCache", "LivingToolHostClientCache", "LivingToolPlayerClientCache",
+    "IrisBeamTagging",
+    # 诊断 / 调试
+    "PerfMetrics", "ContainerMonitor",
+    # 不可变查找表
+    "ContainerFluidData",
+}
+_SHARED_EXCLUDED_FIELDS = {
+    "LivingItemManager#FUNCTIONS",  # 启动期注册表；同类的 APPLICABLE_CACHE 在总表内
+}
+
+
+def _scan_shared_state_keys():
+    keys = set()
+    for root in ("src/main/java/com/qiqi/li/living", "src/main/java/com/qiqi/li/network"):
+        for path in glob.glob(os.path.join(ROOT, root, "**", "*.java"), recursive=True):
+            owner = os.path.splitext(os.path.basename(path))[0]
+            try:
+                src = read(path)
+            except OSError:
+                continue
+            for m in _STATIC_DECL.finditer(src):
+                typ = m.group(1).strip()
+                base = typ.split("<")[0].split(".")[-1]
+                if base not in ("Map", "Set", "List", "Queue", "Deque", "ConcurrentHashMap") \
+                        and not base.endswith("Cache"):
+                    continue
+                init = m.group(3)
+                if any(marker in init for marker in _STATIC_IMMUTABLE):
+                    continue
+                keys.add(f"{owner}#{m.group(2)}")
+    return keys
+
+
+def check_shared_state_coverage():
+    if not os.path.exists(SHARED_STATE_DOC):
+        failures.append("[共享状态] 缺 docs/reference/shared-state.md")
+        print("13. 共享状态覆盖    : FAIL（缺总表）")
+        return
+    doc = read(SHARED_STATE_DOC)
+    missing = []
+    documented = 0
+    excluded = 0
+    for key in sorted(_scan_shared_state_keys()):
+        owner = key.split("#", 1)[0]
+        if key in doc:
+            documented += 1
+        elif owner in _SHARED_EXCLUDED_CLASSES or key in _SHARED_EXCLUDED_FIELDS:
+            excluded += 1
+        else:
+            missing.append(key)
+    if missing:
+        for key in missing:
+            failures.append(f"[共享状态] {key} 未登记到 shared-state.md，也未在 doc_check 里显式排除")
+        print(f"13. 共享状态覆盖    : FAIL（{len(missing)} 项未登记）")
+    else:
+        print(f"13. 共享状态覆盖    : OK（登记 {documented} · 排除 {excluded}）")
+
+
+def check_event_threading_coverage():
+    if not os.path.exists(EVENT_THREADING_DOC):
+        failures.append("[事件线程] 缺 docs/reference/event-threading.md")
+        print("14. 事件线程覆盖    : FAIL（缺清单）")
+        return
+    doc = read(EVENT_THREADING_DOC)
+    handlers = set()
+    pattern = re.compile(
+        r'@SubscribeEvent\s+(?:(?:public|private|protected|static|final)\s+)*void\s+([A-Za-z_]\w*)\s*\(')
+    for path in glob.glob(os.path.join(ROOT, "src/main/java", "**", "*.java"), recursive=True):
+        owner = os.path.splitext(os.path.basename(path))[0]
+        try:
+            src = read(path)
+        except OSError:
+            continue
+        for m in pattern.finditer(src):
+            handlers.add(f"{owner}#{m.group(1)}")
+    missing = sorted(k for k in handlers if k not in doc)
+    if missing:
+        for key in missing:
+            failures.append(f"[事件线程] {key} 未登记到 event-threading.md")
+        print(f"14. 事件线程覆盖    : FAIL（{len(missing)} 项未登记）")
+    else:
+        print(f"14. 事件线程覆盖    : OK（{len(handlers)} 项）")
+
+
+def check_container_form_coverage():
+    if not os.path.exists(CONTAINER_LIFECYCLE_DOC):
+        failures.append("[容器形态] 缺 docs/reference/container-data-lifecycle.md")
+        print("15. 容器形态覆盖    : FAIL（缺矩阵）")
+        return
+    doc = read(CONTAINER_LIFECYCLE_DOC)
+    forms = set()
+    for path in glob.glob(os.path.join(
+            ROOT, "src/main/java/com/qiqi/li/living", "**", "*ContainerContext.java"), recursive=True):
+        owner = os.path.splitext(os.path.basename(path))[0]
+        if owner in ("ContainerContext", "TickableContainerContext"):
+            continue
+        forms.add(owner)
+    missing = sorted(k for k in forms if k not in doc)
+    if missing:
+        for key in missing:
+            failures.append(f"[容器形态] {key} 未登记到 container-data-lifecycle.md")
+        print(f"15. 容器形态覆盖    : FAIL（{len(missing)} 类未登记）")
+    else:
+        print(f"15. 容器形态覆盖    : OK（{len(forms)} 类）")
+
+
 def main():
     print("=== 文档系统一致性检查（docs/README.md §7）===\n")
     check_paths()
@@ -632,6 +768,9 @@ def main():
     check_play_sections()
     check_buffer_staleness()
     check_buffer_index()
+    check_shared_state_coverage()
+    check_event_threading_coverage()
+    check_container_form_coverage()
 
     print()
     for w in warnings:

@@ -34,9 +34,11 @@
 | 7 | **容器里套容器** | 不做通用扫描展开，归活潜影箱（功能内部递归） | ⏸ 明确不做 | `D-container-08` |
 
 **两条不属于七问、但同样重要**：`#8 客户端同步` 与 `#9 激活与清理`（来自 11 条接入清单）。
-它们今天**没有唯一入口**，分散在各功能里 —— 这是本专题唯一没被收编的横切面，
-新形态接入时容易漏（见 [guides/container-compatibility.md](../guides/container-compatibility.md) 接入清单）。
-其中 `#8` 的规则已在 §0.1 定下来。
+`#8` 的规则已在 §0.1 定下来；`#9` 已收编到
+[reference/container-data-lifecycle.md](../reference/container-data-lifecycle.md)
+（六种形态 × 四张表的建立/清理/持久化；行集合由 `doc_check` 第 15 项校验）。
+新形态接入时**先填那张矩阵，再写代码**；接入清单见
+[guides/container-compatibility.md](../guides/container-compatibility.md)。
 
 ---
 
