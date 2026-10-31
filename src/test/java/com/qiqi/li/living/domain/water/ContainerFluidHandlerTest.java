@@ -94,7 +94,7 @@ class ContainerFluidHandlerTest {
 
     private IFluidHandler handlerFor(BlockEntity be) {
         IFluidHandler h = ContainerFluidHandler.resolveProvider(be, null);
-        assertNotNull(h, "普通容器 BE 应拿到能力实例（自适应，永不 null 切换）");
+        assertNotNull(h, "有派生源的容器应拿到能力实例");
         return h;
     }
     // MARK
@@ -199,15 +199,18 @@ class ContainerFluidHandlerTest {
     // MARK
 
     @Test
-    @DisplayName("㊿ 无 ItemHandler 的 BE（非容器）⇒ 0 tank、drain EMPTY，不抛异常")
-    void nonContainer_isHarmless() {
+    @DisplayName("㊿ 无 ItemHandler 的 BE（非容器）⇒ 不报名能力；实例本身 0 tank 且无害")
+    void nonContainer_isNotRegistered() {
         Level level = mock(Level.class);
         when(level.isClientSide()).thenReturn(false);
         doReturn(null).when(level).getCapability(eq(Capabilities.ItemHandler.BLOCK), any(), any());
         doReturn(null).when(level).getCapability(eq(Capabilities.FluidHandler.BLOCK), any(), any());
         BlockEntity be = mockBe(level);
 
-        IFluidHandler h = handlerFor(be);
+        assertNull(ContainerFluidHandler.resolveProvider(be, null),
+            "非容器没有派生源 ⇒ 不报名（否则管道会把任意 BE 当储液）");
+
+        IFluidHandler h = new ContainerFluidHandler(be);
         assertEquals(0, h.getTanks(), "非容器没有活数据");
         assertTrue(h.getFluidInTank(0).isEmpty(), "无 tank");
         assertTrue(h.drain(1000, IFluidHandler.FluidAction.EXECUTE).isEmpty(), "抽不出");
@@ -247,8 +250,37 @@ class ContainerFluidHandlerTest {
         Level ownedLevel = mockLevel(owned);
         when(owned.getBlockPos()).thenReturn(pos);
         when(owned.getLevel()).thenReturn(ownedLevel);
+        seed(ownedLevel, 0);   // 先有派生源（否则在「无源 ⇒ null」就早退了，测不到让位）
         doReturn(new ContainerFluidHandler(owned)).when(ownedLevel)
             .getCapability(eq(Capabilities.FluidHandler.BLOCK), any(), any());
         assertNull(ContainerFluidHandler.resolveProvider(owned, null), "已有主人 ⇒ 让位（不夺主）");
+    }
+
+    @Test
+    @DisplayName("㋁ 能力存在性跟着派生源走：无源 ⇒ null；有源 ⇒ 实例；最后一个源消失 ⇒ 回到 null")
+    void provider_presenceFollowsSources() {
+        Level level = mockLevel(mock(BlockEntity.class));
+        BlockEntity be = mockBe(level);
+
+        assertNull(ContainerFluidHandler.resolveProvider(be, null),
+            "空容器不报名（管道按「能力非 null」判邻居是不是储液）");
+
+        ContainerFluidData data = seed(level, 0);
+        assertNotNull(ContainerFluidHandler.resolveProvider(be, null), "有派生源 ⇒ 报名");
+
+        data.removeGeneratedSource(0);
+        assertNull(ContainerFluidHandler.resolveProvider(be, null), "最后一个源被抽走 ⇒ 撤回能力");
+    }
+
+    @Test
+    @DisplayName("㋂ 客户端恒不报名（容器级数据只存在服务端）")
+    void provider_neverRegistersOnClient() {
+        Level level = mockLevel(mock(BlockEntity.class));
+        BlockEntity be = mockBe(level);
+        seed(level, 0);
+        when(level.isClientSide()).thenReturn(true);
+
+        assertNull(ContainerFluidHandler.resolveProvider(be, null),
+            "客户端拿不到容器级数据 ⇒ 不报名（外观回落为普通接口，纯视觉）");
     }
 }

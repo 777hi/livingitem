@@ -17,6 +17,28 @@
 
 ## 2026-10-31
 
+- 🐞 **机械动力流体管道「水不流动 + 乱接非流体容器」**（群友实测）—— 现象两面：
+  ① Create 管道之间 / 管道与储罐之间**完全不走水**；② 管道对箱子、机器等**非流体容器**
+  长出排液接口（DRAIN 外观）。
+  **根因**：`ContainerFluidHandler.resolveProvider` 是「宽注册 + 永不 null 切换」——
+  给**所有** BE 都返回实例（无源时内部自适应成 0 tank）。而 Create 判「邻居是不是储液」
+  **只看能力是否非 null**（`FluidPropagator#hasFluidCapability`），非 null 才按 tank 抽；
+  更致命的是**管道自己也是 BE 且不注册流体能力** ⇒ `PipeConnection#determineSource`
+  把相邻管道判成 `FlowSource.FluidHandler`（= 外部储液）而不是 `OtherPipe` ⇒
+  网络的**每一跳**都断在一个假 tank 上，`FluidNetwork` 从假源 drain 恒空 ⇒ 水彻底不动。
+  **修**：provider 增加「**当前真有派生源**才发实例」判据（`peekFluidDataAt`：与 tick
+  同一反查链 —— ItemHandler 兼容面 + 双箱规范化 + 战利品跳过），客户端恒不发
+  （无容器级数据）；能力存在性随资产变化 ⇒ `LivingFluidFunction` 做边沿检测
+  （`ContainerFluidData#capabilityAdvertised`），一变就 `Level#invalidateCapabilities` 一次
+  （管道把结果缓进 `BlockCapabilityCache`，不通知永不重查 ⇒「先接管、后倒水」会永远
+  停在无能力分支）。
+  ⚠️ **代价（明确接受）**：客户端无容器级数据 ⇒ 活水源容器旁的接口外观回落为普通接口
+  （纯视觉，流动/逻辑仍由服务端决定）；「整源 1000mB」口径不变 ⇒ Create 的
+  `<1000mB/次` 抽取依旧抽不到（§10.3 既有代价，非本轮回归）；§10 的退役计划不变
+  （活海绵落地时删注册与类）。测试 1259→1262。
+  📄 [living-fluid-tech.md](../tech/living-fluid-tech.md) §10.4 · `ContainerFluidHandlerTest` ㊿/㋁/㋂ ·
+  `ContainerFluidIntegrationTest`
+
 - 🛡️ **流体方向收口为唯一来源；水车力矩可测**（架构加固）—— ① 方向算法从
   `ContainerFluidData` 抽成 `FluidFlowVector`（`direction` / `candidates` / `step`），
   推动 / 渲染 / 水车力矩三个消费者只调它；`tools/check_layers.py` 新增 **R5**

@@ -144,6 +144,39 @@ class ContainerFluidIntegrationTest {
     }
 
     @Test
+    @DisplayName("端到端：能力存在性边沿 ⇒ 精确失效一次（管道缓存才肯重查）")
+    void capabilityPresenceEdge_invalidatesExactlyOnce() {
+        Level level = mockServerLevel();
+        BlockPos pos = new BlockPos(90, 8, 90);
+        BlockEntity be = org.mockito.Mockito.mock(BlockEntity.class);
+        org.mockito.Mockito.when(be.getBlockPos()).thenReturn(pos);
+
+        var ctx = new SimpleContainerContext(new FakeHandler(new ItemStack[9]),
+            null, java.util.List.of(pos), java.util.List.of(be), level);
+
+        // ① 无源：能力不存在 ⇒ 无需通告
+        ContainerLivingItemHandler.processContext(ctx, level);
+        org.mockito.Mockito.verify(level, org.mockito.Mockito.never()).invalidateCapabilities(pos);
+
+        // ② 出现第一个源（= 先接管子、后倒水）：必须通告一次
+        // ⚠️ 每步重新取数据实例：空数据在写回阶段被 removeContainerData（ContainerFluidWriteback），
+        //    拿着旧引用改只会改到脱钩对象
+        ContainerFluidHandler.getOrCreateFluidData(ctx)
+            .registerGeneratedSource(0, Fluids.WATER.getFluidType());
+        ContainerLivingItemHandler.processContext(ctx, level);
+        org.mockito.Mockito.verify(level, org.mockito.Mockito.times(1)).invalidateCapabilities(pos);
+
+        // ③ 存在性没变 ⇒ 不重复通告（每 tick 无效失效会把管道缓存砸烂）
+        ContainerLivingItemHandler.processContext(ctx, level);
+        org.mockito.Mockito.verify(level, org.mockito.Mockito.times(1)).invalidateCapabilities(pos);
+
+        // ④ 源被抽干 ⇒ 能力撤回，也要通告
+        ContainerFluidHandler.getOrCreateFluidData(ctx).removeGeneratedSource(0);
+        ContainerLivingItemHandler.processContext(ctx, level);
+        org.mockito.Mockito.verify(level, org.mockito.Mockito.times(2)).invalidateCapabilities(pos);
+    }
+
+    @Test
     @DisplayName("端到端：LivingFluidFunction 已注册进自维持清单（纯源容器的基础）")
     void fluidDriver_isRegisteredSelfSustaining() {
         boolean found = LivingItemManager.getSelfSustainingFunctions().stream()

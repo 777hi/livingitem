@@ -106,6 +106,10 @@
    **收口到活海绵物品**（唯一能力面），容器水网不再暴露流体能力，模组管道改经
    「海绵 → 储罐 → 管道」取水；「整源单位」口径保留（网络源永远整源）。
    见 [活海绵.md §2.3](buffer/活海绵.md) · fluid tech §10 退役横幅。
+   🔴 **2026-10-31 勘误**：「Create 6 通用」当时只核了 API 方言，**没核 Create 的连接判定**
+   —— 宽注册让管道把相邻**管道自身**判成储液，整张网络断在假 tank 上（水完全不流，
+   且任意 BE 长排液接口）。现已改为「**能力存在性 = 派生源非空**」+ 驱动侧边沿失效
+   （fluid tech §10.4）；整源口径与退役计划不变。
 8. **专用流体活物品**（未来方向，用户 2026-10-06 拍板时的原话：「后面直接出专门的流体相关的
    活物品再说，就像活涂蜡铜灯存电一样的逻辑」）—— 需要"细水长流"的自动化时做**专用物品**：
    自带缓冲与规则，范本 = 红电 `ContainerEnergyStorage`（对外一个能力、内部一个池、
@@ -138,12 +142,18 @@
 
 1. ⏳ **活避雷针**（Step 13：**供需分配** —— 让雷电给容器充电；排期在阶段四后）
    —— 详见 `living-power-tech.md` §8。
+2. ⚠️ **对外能量能力同款「宽注册 + 恒发实例」（2026-10-31 记，未修）** ——
+   `ContainerEnergyStorage.resolveProvider` 给**所有** BE 返回实例（无灯 ⇒ 0 电量），
+   而线缆类模组按「能力是否非 null」判储能 ⇒ 会把箱子/机器都当储能接口
+   （本模组没有 Create 能量面，故无人报；流体那边是同款缺陷，已修）。
+   修法照抄 fluid tech §10.4：存在性 = 容器当前真有活铜灯（`BulbBank.isBulb`），
+   并在红电 tick 做存在性边沿 `invalidateCapabilities`。触发条件：出现线缆误连报告。
 
 ## 活红石 / 活铜（2026-10-10 自 tech §0 迁入，D-doc-06）
 
 1. ⏳ **活活塞**（P3：推 / 拉相邻物品）—— `living-redstone-tech.md`；📄 设计稿（2026-10-31
-   v1.3）：[活活塞.md](buffer/活活塞.md)（头格纯视觉 / 推的距离 = 堆叠数 / 推拉永不合并 /
-   活物品可推 + 漏斗输入面穿管 + 跨容器推探讨中——本体定稿，跨容器待拍板 ⑥）
+   v1.3）：[活活塞.md](buffer/活活塞.md)（头格纯视觉 / 推的距离 = 堆叠数 / 推拉永不合并 / 活物品可推 +
+   漏斗联动 = 涌现（隔离无例外） / 跨容器推 §2.7——v1 范围待拍板 ⑥）
 2. ⏳ **活门**（P3：开 / 关可视化）—— `living-redstone-tech.md`
 3. ⏳ 铜块物品栏装饰器渲染（纯视觉）—— `living-copper-tech.md`
 4. 🔮 活潜影箱集成（信号穿透边界）—— 设计探讨见 `buffer/活潜影箱实现细节.md`
@@ -486,10 +496,22 @@
    `chunkCount` int 溢出，阈值 N = 8,588,840,976）+ 求和溢出吞物品。定稿设计 = 惰性谓词 +
    纪元水印（每区块 1 个 long，多重爆炸用持久 epoch 区分，成本与 N 无关）。
    设计稿全文与修单顺序见 [buffer/living-tnt-explosion-design.md](buffer/living-tnt-explosion-design.md)
-2. 🔴 **求和溢出吞物品（今天的真 bug，建议先修）** —— `ExplosionComponent.ignite` 的
+2. ~~🔴 **求和溢出吞物品（今天的真 bug，建议先修）** —— `ExplosionComponent.ignite` 的
    `int totalTntCount`：容器内总和 > 2,147,483,647 即回绕；偶数个满栈槽回绕成负数 ⇒
    早退 `return false`，而物品已在同一循环清空 ⇒ **TNT 凭空消失、零爆炸、零日志**。
-   修法：求和改 long + 补「两满栈槽点火不丢物品」测试（详见设计稿 §1.4 / 修单 S1）
+   修法：求和改 long + 补「两满栈槽点火不丢物品」测试（详见设计稿 §1.4 / 修单 S1）~~
+   ✅ **2026-10-27 完成**（全项目审查修复轮）：`ExplosionComponent.java:192` 已改
+   `long totalTntCount` + 计数异常守卫；守卫测试 `ExplosionComponentCountTest`。
+   设计稿 §1.4 同步勘误（2026-10-31）。
+
+## GUI 交互（2026-10-31 自 gui-interaction-redesign.md 收口登记，D-doc-06）
+
+1. ⏳ **活指针模式**（步骤 3 = E2a 点击活化 + E2b 悬停配方向）—— 未实现；
+   设计与已定稿的 Q2/Q3/Q4/Q6 见 [buffer/gui-interaction-redesign.md](buffer/gui-interaction-redesign.md) §4 表 / §5。
+2. ⏳ **框选批量活化**（步骤 4 = E2c）—— 未实现；Q3/Q5 已定案（框选 = 只活化、矩形覆盖即选中），
+   见 [buffer/gui-interaction-redesign.md](buffer/gui-interaction-redesign.md) §4.2。
+3. ⏳ **E1 增强（可选）**：拖动 + 位置持久化已落地（2026-10-10，存 `config/living_item/button_layout.json`）；
+   TrashSlot 式**吸附 / 碰撞避让 / 显示开关**当轮明确不做，要做再按设计稿 §4.1。
 
 ## 渲染态广播（2026-10-26 记，未定案）
 

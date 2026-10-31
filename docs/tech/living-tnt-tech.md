@@ -49,8 +49,7 @@
 · ✅ 光照补偿 · ✅ 待炸账本（按区块分帧推进）· ✅ Tooltip
 
 **验证入口**：`ExplosionParamsTest`（参数）· `ExplosionLedgerTest`（待炸账本）·
-`ExplosionComponentLightTest`（光照补偿）· 发布前测试流程见
-[living-tnt-testing.md](../guides/living-tnt-testing.md)
+`ExplosionComponentLightTest`（光照补偿）
 
 ---
 
@@ -544,7 +543,6 @@ section"（无 27 倍放大），但半径 235 的爆炸要改**几千万个方�
 | `affects` 判据错（见 §4.3 前一节） | 方形区域**一直在**，有碰撞、挖下去有方块 | **bug**，服务端根本没处理那个区块 |
 
 **判据**：**会自己消失 = 正常；一直都在 = bug。**
-给测试者的同款说明见 [living-tnt-testing.md](../guides/living-tnt-testing.md) §5「看着像 bug 其实不是」。
 
 > 可选优化（**未做**）：爆炸边缘的区块往往只改动少量方块，
 > 对这类区块改发 `ClientboundSectionBlocksUpdatePacket` 可以避开 27 倍邻域放大。

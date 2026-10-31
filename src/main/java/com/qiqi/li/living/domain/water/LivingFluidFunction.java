@@ -79,5 +79,19 @@ public class LivingFluidFunction implements LivingItemFunction, HasContainerData
         if (ctx instanceof com.qiqi.li.living.container.TickableContainerContext tickable) {
             FluidFlowServerSync.flushAfterTick(tickable, fluidData);
         }
+
+        // 能力存在性边沿：对外 IFluidHandler 只在「真有派生源」时存在（ContainerFluidHandler
+        // #resolveProvider）。管道会把能力结果缓进 BlockCapabilityCache，不通知就不会重查 ⇒
+        // 「先接管、后倒水」永远停在无能力分支。存在性一变就失效一次（清空后由写回兜底）。
+        boolean exposed = fluidData.hasGeneratedSources();
+        if (exposed != fluidData.isCapabilityAdvertised()) {
+            fluidData.setCapabilityAdvertised(exposed);
+            Level level = ctx.getLevel();
+            if (level != null) {
+                for (var pos : ctx.getAssociatedBlockPositions()) {
+                    level.invalidateCapabilities(pos);
+                }
+            }
+        }
     }
 }

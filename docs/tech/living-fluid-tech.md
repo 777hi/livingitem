@@ -827,6 +827,40 @@ Create 6.0.10 的 `SmartFluidTank extends net.neoforged.neoforge.fluids.capabili
 守卫：`ContainerFluidHandlerTest` ㊼（拿不满不给 / 给满删源 / tank 恒 1000）/
 ㊾⁺（慢管道 20 次抽不到且源不丢、整源管道逐个抽不连带）。
 
+### 10.4 能力存在性 = 派生源非空（2026-10-31，机械动力冲突修正）
+
+> ⚠️ 本节是 §10 的**契约补充**，不改「整源单位」口径，也不改退役计划。
+
+**现象（群友实测，两面）**：① Create 管道彼此之间、管道与储罐之间**完全不走水**；
+② 管道对箱子 / 机器等**非流体容器**长出排液接口（DRAIN 外观）。
+
+**判据链（Create 6.0.10，`libs/src/Create`）**：
+`PipeConnection#determineSource` 先问 `FluidPropagator#isOpenEnd`，再问
+`hasFluidCapability` —— 后者**只看能力是否非 null**，非 null 就记为
+`FlowSource.FluidHandler`（外部储液，`isEndpoint() = true`）；
+只有 `null` 才回落到 `Blocked` / 由相邻管道行为接管。
+
+⇒ **「宽注册 + 永不 null 切换」在这里是致命的**：管道自身也是 `SmartBlockEntity`
+且**不注册** `FluidHandler.BLOCK`，于是被我们的 provider 认领成储液 ——
+相邻管道之间的每个 `PipeConnection` 都断在一个 0-tank 的假 tank 上，
+`FluidNetwork` 从假源 drain 恒空 ⇒ 水一步都走不动。同理任何 BE 都会长出排液接口。
+
+**规则（新增不变量）**：
+
+| 规则 | 说明 |
+|---|---|
+| 能力存在性 = **当前有派生源** | `resolveProvider` 先查 `peekFluidDataAt` → `hasGeneratedSources()`；无源 / 非容器 ⇒ **null**（不是 0-tank 实例） |
+| 反查链与 tick 同源 | ItemHandler 兼容面 + 双箱规范化 + 战利品跳过 ⇒ 不会「能 tick 却查不到」 |
+| 客户端恒 null | 容器级数据只在服务端 ⇒ 客户端不发实例（接口外观回落为普通接口，**纯视觉**） |
+| 出现/消失要**通告** | 管道把能力结果缓进 `BlockCapabilityCache`，只在 `Level#invalidateCapabilities` 后重查 ⇒ `LivingFluidFunction#tickContainerData` 做边沿检测（`ContainerFluidData#capabilityAdvertised`，不落盘），一变失效一次 |
+
+**守卫**：`ContainerFluidHandlerTest` ㊿（非容器不报名）/ ㋁（无源→有源→抽干三态）/
+㋂（客户端不报名）/ ㋀④（先有源再测让位）；`ContainerFluidIntegrationTest`
+「能力存在性边沿 ⇒ 精确失效一次」。
+
+**未变**：整源 1000mB 口径（§10.3）⇒ Create 的 `<1000mB/次` 抽取仍抽不到；
+§10 顶部的退役计划（活海绵落地时删注册与类）继续有效。
+
 ## 11. 性能基线（2026-10-07 量测）
 
 **口径：数字必须能复算**（`ContainerFluidPerfTest` 是量测探针，不是断言基线）。

@@ -95,7 +95,7 @@ SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 | **容器基础设施（6）** | [容器七问总览](docs/system-design/container-overview.md) · [基础设施](docs/system-design/living-item-infrastructure.md) · [多方块容器身份解析](docs/system-design/container-identity.md) · [容器边界口径](docs/system-design/container-boundary.md) · [数据模型](docs/system-design/data-model.md) · [超大堆叠审计](docs/system-design/oversized-stack-audit.md) |
 | **红电 · 电力（3）** | [红电架构演进](docs/buffer/redstone-evolution-roadmap.md) · [红电包收口方案](docs/buffer/power-refactoring-plan.md) · [红电不变量测试](docs/system-design/power-invariants.md) |
 | **跨域机制（3）** | [GUI交互](docs/system-design/gui-interaction-system.md) · [图标系统](docs/system-design/icon-system.md) · [Tooltip 系统](docs/system-design/tooltip-system.md) |
-| **工程实践（4）** | [单元测试](docs/guides/unit-testing.md) · [活TNT测试说明](docs/guides/living-tnt-testing.md) · [活物品设计模板](docs/guides/living-item-design-template.md) · [分层现状与检查工具](docs/archive/architecture-layering-plan.md) |
+| **工程实践（3）** | [单元测试](docs/guides/unit-testing.md) · [活物品设计模板](docs/guides/living-item-design-template.md) · [分层现状与检查工具](docs/archive/architecture-layering-plan.md) |
 | **未定案（1）** | [框架层对标（未定案）](docs/buffer/framework-benchmark.md) |
 
 ---
@@ -146,7 +146,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1259 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
+**合计测试用例 1262 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -171,7 +171,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
-| 2026-10-31 | 🛡️ **流体方向收口为唯一来源 + 水车力矩可测** —— 方向算法从 `ContainerFluidData` 抽成 `FluidFlowVector`（推动 / 渲染 / 水车共用）；`check_layers` 新增 **R5**（water 包外禁读 `fromSlot` 自算，零容忍不进基线）；力矩抽纯函数 + `ContainerStressDataTest` 4 项（不再依赖 Create 物品）；不按流体类型过滤（岩浆同样驱动）；同步包 channel 改 `_v2`；测试 1257 | `docs/tech/living-fluid-tech.md` §3.3.1 · `tools/check_layers.py` · `ContainerStressDataTest` |
+| 2026-10-31 | 🐞 **机械动力流体管道恢复（能力只在该有资产时存在）** —— 宽注册给**所有** BE 发 `IFluidHandler` ⇒ Create 按「能力非 null」判储液，把相邻**管道自身**判成 `FlowSource.FluidHandler`（而非 `OtherPipe`）⇒ 每跳断在假 tank、水完全不流；且任意 BE 都长排液接口。修：provider 加「当前真有派生源」判据（客户端恒不发）+ 驱动侧存在性边沿 `invalidateCapabilities`；整源口径与退役计划不变；测试 1259→1262 | `docs/tech/living-fluid-tech.md` §10.4 · `ContainerFluidHandler` / `LivingFluidFunction` · `ContainerFluidHandlerTest` |
 | 2026-10-31 | 🐞 **活水车在活背包 GUI 里转向不再卡旧方向（物品形态补上槽位直发通道）** —— `syncSlotToClients` 对物品形态原是 no-op（空 positions 早退），兜底的原版 `broadcastChanges` 又因 `PatchedDataComponentMap` copy-on-write 共享 patch map，检测不到就地组件翻转 ⇒ 只有重开 GUI 才刷新。修：`syncWorldContainer` 空位置 + 有容器 UUID ⇒ 按容器 UUID 找观众（ContainerViewers 同口径、只发正看着这个容器的玩家）+ handler 实例匹配槽位直发槽位包；背包 GUI 里所有「组件翻转」类显示（水车转向 / 熔炉燃烧 / 工具动画）一并修复；新增 4 项测试，测试 1249→1253 | `docs/tech/living-backpack-tech.md` §6-#8 · `SimpleContainerContext#syncItemFormSlot` · `ItemFormSlotSyncTest` |
 | 2026-10-31 | ♻️ **物品推动改为「四邻力场」模型（替换流树 + 末端特判）** —— 方向 = 四邻 level 差矢量和，**主分量优先 + 次分量兜底**（修真机「摆弯道一个弯都过不去」）；45° 平局按**容器主轴**（宽 ⇒ 横；竖/正方 ⇒ 纵，用户定兜底取上下）；`flow=0` 停；**目标可为无水格** ⇒ 推出是自然结果，末端分支删除。服务端与渲染共用 `FluidFlowVector#direction`（修「左两象限朝左」），同步包加 `size`（channel 改 `_v2`）；**水车力矩同步改读力场**（原先源格 `fromSlot=-1` ⇒ 旁侧水车白转）；删 `orderChildren`/`childRank`/`straightTarget`；新增 3 项测试，测试 1249 | `docs/tech/living-fluid-tech.md` §3.3 · §3.3.1 · `living-water-wheel-tech.md` §0 规则 7 · `ContainerFluidDataTest` 51~53 |
 | 2026-10-30 | 🛡️ **R-01 复查补漏：发现/重扫路径的第三方能力查询也隔离** —— NeoForge 不捕获 provider 异常（`BlockCapability#getCapability` 直接调用），而 `scanChunkForContainers` 逐 BE 查询此前不在隔离范围内：抛异常会抛穿 tick，且已从队列摘除的剩余 pending（≤64 区块）失去自动重扫。修：逐 BE try/catch，失败保守保留区块（代价：永久抛异常的 BE 会让区块常驻、每 tick 重试一次，日志限频）；删掉无证据的逐区块兜底（引擎调用视为可信）；补 1 项测试；测试 1258→1259 | `docs/system-design/living-item-infrastructure.md` §3.1.1 · `ContainerChunkCacheChunkLoadTest` |
@@ -180,7 +180,6 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-10-30 | 🐞 **水流推动分叉改为「直行优先 + 固定回退序」（修「物品走错分叉、路线随机」）** —— children 原先按 `flows`（LinkedHashMap）迭代顺序试，而该顺序 = 插入历史（被挤占删除后重生长会追加到末尾）⇒ 同一局面去向翻转；同 level 物品顺序同样继承历史。修：直行优先（`fromSlot → 本格`）+ 回退序 右/下/左/上 + 同层 slot 定序；补 2 项测试，测试 1229→1231 | `docs/tech/living-fluid-tech.md` §3.3.1 · `ContainerFluidDataTest` ㊻/㊼ |
 | 2026-10-30 | 🛡️ **单个容器异常不再拖垮整个服务端 tick（R-01）** —— 容器 tick 抛 `RuntimeException` 会抛穿 `ServerTickEvent`，尾部同步 / 爆炸账本 / 末影 flush 全跳过。修：`processIsolated` 以「一个容器上下文」为边界（玩家背包 / 末影箱 / 方块 / 实体 / 掉落物）；只接 `RuntimeException`，`Error` 照常抛；`FailureThrottle` 首次完整栈、同 key 60s 抑制、5 分钟汇总、256 key LRU；`-Dliving_item.debug.isolation=false` 可关闭；补 8 项测试；测试 1219→1227 | `docs/system-design/living-item-infrastructure.md` §3.1.1 · `FailureThrottle` / `ContainerTickIsolationTest` |
 | 2026-10-30 | 🔧 **质量门禁上 CI + 修 Windows 崩溃（R-05）** —— CI 此前只跑 `./gradlew build`，四个 Python 门禁仅在本机 `.git/hooks` 生效；`check_container_keys` 在 GBK 控制台直接 `UnicodeEncodeError`。修：CI 增加 `Quality gates` 四件套；`doc_check` 支持 `DOC_CHECK_STRICT=1`（CI 无 XML 直接红，本地仍 SKIP）；新增仓库内 `.githooks/pre-commit` + `tools/setup-dev.sh`；测试 1219 不变 | `AGENTS.md`「提交前必跑」 · `.github/workflows/build.yml` · `tools/setup-dev.sh` |
-| 2026-10-30 | 🐞 **战利品箱子区块被移出缓存 → 放入的活物品永不 tick（R-04）** —— 处理阶段跳过未开箱的战利品容器时没置 `hasContainer`，区块被当成「无容器」移出缓存；开箱使 `lootTable` 变 null 却不触发重扫 ⇒ 区块再也不回来。修：跳过处理但保留区块（每 tick 只做一次 `getLootTable()` 检查）；抽 `LivingItem.processChunkContainers` 做行为测试（返回 -1 才移出缓存）；测试 1217→1219 | `docs/system-design/living-item-infrastructure.md` §3.2 · `LivingItemChunkContainerScanTest` |
 
 ## 提交前必跑（2026-10-30 更新）
 
@@ -303,7 +302,6 @@ viewer 驱动 / 框架扫描 / 框架判定才回到 `LivingItemFunction`）。
 | **设计新活物品 / 写设计稿** | [living-item-design-template.md](docs/guides/living-item-design-template.md) —— **两张横切检查表**（生命周期 / 准入）+ 原版对齐清单 + 规则→验证入口对应表 |
 | 写测试 / 跑全量 / mock `Level` | [unit-testing.md](docs/guides/unit-testing.md) |
 | **梳理上下游 / 估改动爆炸半径 / 判断模块是否真解耦 / 查新增子系统的扩展点** | [code-map.md](docs/guides/code-map.md) —— 人看 HTML，**AI 直接调 `python tools/gen_code_map.py --query <类名>` / `--extend`**（文本输出、直接解析源码、**不会读到过期图**）；**改完代码跑 `python tools/check_layers.py`**（分层违规即退出 1，棘轮式「只减不增」） |
-| **发版本给群友测活TNT** | [living-tnt-testing.md](docs/guides/living-tnt-testing.md) §1~§6（**转发时只发这半段**） |
 | 找某个源文件 | `find src/main -name "*.java"` 或 `python tools/gen_code_map.py --query <类名>`（人工文件树快照已删，2026-10-10） |
 | 查指令用法 / 加新指令 | [commands.md](docs/reference/commands.md)（指令清单，快照） |
 | **查某子系统的待定计划 / 还欠什么** | [TODO.md](docs/TODO.md)（**全项目唯一需求池** —— 2026-10-10 起 tech §0 不再列未实现，D-doc-06） |

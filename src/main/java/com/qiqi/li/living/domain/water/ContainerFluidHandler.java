@@ -7,6 +7,7 @@ import java.util.Map;
 
 import javax.annotation.Nullable;
 
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.RandomizableContainer;
 import net.minecraft.world.entity.player.Player;
@@ -44,7 +45,11 @@ import com.qiqi.li.living.container.TickableContainerContext;
  *   <li><b>末影箱不做</b>：流体数据在玩家附件里，没有 BE 可挂 ⇒ 管道无归属语义。</li>
  * </ul>
  *
- * <p>与红电接口同构：宽注册 + provider 四段判定链；实例内部自适应（无源 ⇒ 0 tank，永不 null 切换）。</p>
+ * <p>与红电接口同构：宽注册 + provider 判定链；实例内部自适应（源被汲走 ⇒ tank 数当拍就掉到 0）。</p>
+ *
+ * <p>⚠️ <b>但能力的「有没有」必须跟着资产走</b>：无源 ⇒ provider 返回 null（详见
+ * {@link #resolveProvider}）—— 管道按「能力非 null」判断邻居是不是储液，
+ * 恒发实例会把管道判成储液（2026-10-31 机械动力「水不流动 / 乱接容器」的真因）。</p>
  */
 public final class ContainerFluidHandler implements IFluidHandler {
 
@@ -60,16 +65,28 @@ public final class ContainerFluidHandler implements IFluidHandler {
     // ── 能力注册侧（框架入口见 LivingItem#onRegisterCapabilities）────────
 
     /**
-     * 宽注册 provider 判定链（与红电 {@code ContainerEnergyStorage.resolveProvider} 同款四段）：
+     * 宽注册 provider 判定链（与红电 {@code ContainerEnergyStorage.resolveProvider} 同款）：
      * ① 随机战利品容器（未开箱）→ null；② 直接实现 {@link IFluidHandler} 的 BE → null（让位）；
-     * ③ {@code level == null} → null，重入保护下查 {@code FluidHandler.BLOCK}：已有主人 → null；
-     * ④ 返回实例（内部自适应 ⇒ 永不 null 切换，零失效隐患）。
+     * ③ 客户端 / {@code level == null} → null；④ <b>当前没有派生源 → null</b>；
+     * ⑤ 重入保护下查 {@code FluidHandler.BLOCK}：已有主人 → null；⑥ 返回实例。
+     *
+     * <p>🔴 <b>④ 是能力存在性的判据，不是优化</b>（2026-10-31 修机械动力冲突）：管道的
+     * 「邻居是不是储液」<b>只看能力是否非 null</b>（{@code FluidPropagator#hasFluidCapability}），
+     * 拿到实例后按 tank 抽。此前宽注册给<b>所有</b> BE 都发实例（含管道/泵自身，它们没注册
+     * 流体能力）⇒ 管道把相邻管道判成「外部储液」而不是「管道」，
+     * 整张网络的每一跳都断在假 tank 上（<b>水完全不流动</b>），且任何 BE 都长出排液接口。</p>
+     *
+     * <p>代价与配套：能力存在性随资产变化 ⇒ 出现/消失时由
+     * {@code LivingFluidFunction#tickContainerData} 做一次
+     * {@code Level#invalidateCapabilities}（管道把结果缓存在 {@code BlockCapabilityCache} 里，
+     * 不通知就不会重查）。客户端拿不到容器级数据 ⇒ 恒 null（管道排液外观回落为普通接口，纯视觉）。</p>
      */
     public static IFluidHandler resolveProvider(BlockEntity be, @Nullable Direction side) {
         if (be instanceof RandomizableContainer rc && rc.getLootTable() != null) return null;
         if (be instanceof IFluidHandler) return null;              // 直接实现者让位
         Level level = be.getLevel();
-        if (level == null) return null;
+        if (level == null || level.isClientSide()) return null;    // 客户端没有容器级数据
+        if (!hasExposedSource(level, be.getBlockPos())) return null;   // 无派生源 ⇒ 不报名
         if (DEFER_QUERY.get()) return null;                       // 重入保护：内层查询摘除自己
         DEFER_QUERY.set(true);
         try {
@@ -79,6 +96,27 @@ public final class ContainerFluidHandler implements IFluidHandler {
             DEFER_QUERY.set(false);
         }
         return new ContainerFluidHandler(be);
+    }
+
+    /**
+     * 该位置的容器当前是否<b>真的有派生源</b>（= 对外能力的唯一存在性判据）。
+     *
+     * <p>反查链与 tick 路径同源（{@code resolveContextAt}）：双箱规范化 / 战利品跳过 /
+     * 模组容器经 {@code ItemHandler.BLOCK} —— 与 {@link #peekFluidData()} 同键，
+     * 不会出现「能 tick 却查不到」的分裂。</p>
+     */
+    public static boolean hasExposedSource(Level level, BlockPos pos) {
+        ContainerFluidData data = peekFluidDataAt(level, pos);
+        return data != null && data.hasGeneratedSources();
+    }
+
+    @Nullable
+    private static ContainerFluidData peekFluidDataAt(Level level, BlockPos pos) {
+        TickableContainerContext ctx =
+            ContainerLivingItemHandler.resolveContextAt(level, pos, null);
+        if (ctx == null) return null;
+        ContainerFluidData data = ctx.peekContainerData(ContainerFluidData.KEY);
+        return (data == null || data == ContainerFluidData.EMPTY) ? null : data;
     }
 
     private static final ThreadLocal<Boolean> DEFER_QUERY = ThreadLocal.withInitial(() -> false);
@@ -134,11 +172,7 @@ public final class ContainerFluidHandler implements IFluidHandler {
     public ContainerFluidData peekFluidData() {
         Level level = be.getLevel();
         if (level == null || level.isClientSide()) return null;   // 客户端不参与（也不许改源）
-        TickableContainerContext ctx =
-            ContainerLivingItemHandler.resolveContextAt(level, be.getBlockPos(), null);
-        if (ctx == null) return null;
-        ContainerFluidData data = ctx.peekContainerData(ContainerFluidData.KEY);
-        return (data == null || data == ContainerFluidData.EMPTY) ? null : data;
+        return peekFluidDataAt(level, be.getBlockPos());
     }
 
     /** 源格快照（按槽位升序 ⇒ tank 序号稳定）。 */

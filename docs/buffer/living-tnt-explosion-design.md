@@ -1,7 +1,7 @@
 # 活TNT爆炸规模化设计（living tnt explosion scale design）
 
 *创建: 2026-10-13 · 状态: **未定案** —— 量化分析已完成 · 主设计已定稿（惰性谓词 + 纪元水印）·
-**待拍板 3 项见 §7** · 两项外部依赖已读源码核实（§7.1 水印 API / §7.2 W1 非墙）· 代码未动*
+**待拍板 3 项见 §7** · 两项外部依赖已读源码核实（§7.1 水印 API / §7.2 W1 非墙）· 除 S1 外代码未动（S1 求和溢出已于 2026-10-27 修，见 §1.4 勘误）*
 
 ---
 
@@ -62,6 +62,11 @@ chunkCount = 2,147,488,281 回绕为 −2,147,479,015）。若溢出不存在，
 fail-fast 秒崩比资源耗尽死得干净。
 
 ### 1.4 求和溢出：今天就中的真 bug（🔴 优先修）
+
+> ✅ **2026-10-31 勘误**：S1 已于 **2026-10-27**（全项目审查修复轮）落地 ——
+> `ExplosionComponent.java:192` 已改 `long totalTntCount` + 计数异常守卫日志，
+> 守卫测试 `ExplosionComponentCountTest`。「🔴 优先修」已解除，本节保留为分析记录；
+> 本稿剩余价值 = S2~S6 规模化主设计与 §7 待拍板 3 项。
 
 `ExplosionComponent.ignite`（`154:158`）：
 
@@ -168,7 +173,7 @@ W(区块) = 该区块 NBT 里的 1 个 long，0 = 无水印（旧存档 / 外部
 
 | # | 步骤 | 依赖 | 说明 |
 |---|---|---|---|
-| S1 | **求和 `int totalTntCount` → long** | 无 | 今天的真 bug（§1.4）；补「两满栈槽点火 ⇒ 物品不丢 + 爆炸按 long 求和发生」测试 |
+| S1 | **求和 `int totalTntCount` → long** | 无 | ✅ **已修（2026-10-27，审查修复轮）**——原「今天的真 bug（§1.4）」；守卫测试 `ExplosionComponentCountTest` |
 | S2 | **LoadedChunkRegistry**（load/unload 钩子，按维度；服务端停止清空） | 无 | D2 的地基 + D3 的数据源；项目已有 `StaticCacheRegistry` 登记模式与 `ExplosionLedger.onChunkLoaded` 钩子可挂 |
 | S3 | **SUPER 条目无状态化 + 双触发**（D1/D4） | S2 | 位图族路径一行不动；`schedule` 改 O(1) + 扫登记表 |
 | S4 | **实体伤害改登记表遍历**（D3，**可选**） | S2 | 语义等价论证见 §2.1-D3；伤害公式逐字不动。W1 核实为非墙 ⇒ 本步骤可延后或不做 |

@@ -164,6 +164,23 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
         return flows.isEmpty() && generatedSources.isEmpty();
     }
 
+    /**
+     * 对外流体能力上次<b>已通告</b>的存在性（{@code true} = 彼时容器里有派生源）。
+     *
+     * <p>唯一用途：在驱动 tick 里做<b>边沿检测</b> —— 能力存在性一变就
+     * {@code Level#invalidateCapabilities} 一次，让管道缓存的 {@code BlockCapabilityCache} 重查。
+     * <b>不落盘</b>（重载后默认 {@code false} ⇒ 首拍必然通告一次，正是需要的）。</p>
+     */
+    private boolean capabilityAdvertised;
+
+    public boolean isCapabilityAdvertised() {
+        return capabilityAdvertised;
+    }
+
+    public void setCapabilityAdvertised(boolean advertised) {
+        this.capabilityAdvertised = advertised;
+    }
+
     /** {@link FluidPresence} 实现：该槽位是否有流体（供跨领域消费者，如活耕地判湿）。 */
     @Override
     public boolean hasFluidAt(int slot) {

@@ -833,6 +833,9 @@ public class LivingItem {
         // ── 活水源对外流体接口（§10 管道抽取，2026-10-06）：宽注册 + 让位 ──
         // 方言 = NeoForge IFluidHandler（跨模组的通用流体接口）
         // 语义 = 抽取即消耗源、只出不进（fill 恒 0）⇒ 活桶仍是源的唯一种子工具
+        // ⚠️ 宽注册只是「谁都能被问到」，provider 内部按「当前真有派生源」发实例：
+        //    管道用「能力是否非 null」判邻居是不是储液，恒发实例会把管道本身判成储液
+        //    ⇒ 整张网络断在假 tank 上（2026-10-31 机械动力冲突，见 resolveProvider 注释）
         net.neoforged.neoforge.capabilities.ICapabilityProvider<BlockEntity, Direction, net.neoforged.neoforge.fluids.capability.IFluidHandler> blockFluidProvider =
             (be, side) -> com.qiqi.li.living.domain.water.ContainerFluidHandler.resolveProvider(be, side);
         for (var beType : BuiltInRegistries.BLOCK_ENTITY_TYPE) {

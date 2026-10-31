@@ -18,9 +18,9 @@
 | [container-menu-introspection-topic.md](container-menu-introspection-topic.md) | 部分完成；列数探测未落地 | 唯一未落地项 |
 | [framework-benchmark.md](framework-benchmark.md) | 未定案（对标记录，不是排期） | 参考输入 |
 | [framework-evolution-plan.md](framework-evolution-plan.md) | 未定案、未排期 | 提案层 |
-| [gui-interaction-redesign.md](gui-interaction-redesign.md) | 未定案、未实现 | 计划，勿当现状 |
+| [gui-interaction-redesign.md](gui-interaction-redesign.md) | 第一、二步已实施（2026-10-10）；余步骤 3/4 未实现（已登记 TODO） | 契约见 gui-interaction-system.md §6 |
 | [living-fluid-review.md](living-fluid-review.md) | 探讨中（2026-10-30 建；2026-10-31 力场模型已结 4 条） | 推动与细节问题池，剩余 10 条；逐条拍板后再动代码 |
-| [living-tnt-explosion-design.md](living-tnt-explosion-design.md) | 主设计定稿，**待拍板 3 项**（§7） | 代码未动 |
+| [living-tnt-explosion-design.md](living-tnt-explosion-design.md) | 主设计定稿，**待拍板 3 项**（§7） | S1 溢出已修（2026-10-27）；其余代码未动 |
 | [living-tool-design.md](living-tool-design.md) | 设计已收敛、实施中（问题池） | 技术结论以 `tech/living-tool-tech.md` 为准 |
 | [living-weapon-design.md](living-weapon-design.md) | 设计池；蓄力型未定 | 近战核心链路已实现 |
 | [open-plan.md](open-plan.md) | 部分落地（A3 / D1 / Q3~Q6 待办） | 对外开方计划 |
