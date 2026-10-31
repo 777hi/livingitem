@@ -3,32 +3,40 @@
 > **用途**：本目录 = **不稳定 / 未定案**（设计稿 · 计划 · 路线图 · 探讨）。
 > 定案后搬稳定层，**已实施搬 `archive/`**。新会话**先读本页**，不要逐个文件猜状态。
 >
-> ⚠️ 本表是**导航快照**，状态以各文件头部的「状态：」行为准（改状态时同步本表）。
+> ⚙️ 下方「未定案」表由 `tools/gen_buffer_index.py` **自动生成**——状态摘自各文档头部的
+> 「状态：」行（**单一来源**）。改状态 = 改文档头部 + 重跑生成器；`doc_check` 第 12 项盯不一致。
 > 判据见 [docs/README.md](../README.md) §1；`doc_check` 第 11 项盯「已实施却留在 buffer」。
+
+<!-- buffer-index:begin（本区由 tools/gen_buffer_index.py 生成；改状态请改各文档头部「状态：」行后重跑本脚本，勿手改本区） -->
 
 ## 未定案（保留）
 
-| 文件 | 状态 | 备注 |
+| 文件 | 状态（头部「状态：」行摘录） | 最后动过 |
 |---|---|---|
-| [code-doc-alignment.md](code-doc-alignment.md) | A1~A8 已收口（2026-10-27 审查台账） | 仍被 AGENTS / TODO / tech 指针引用；引用清零后可归档 |
-| [2026-10-27-全项目审查报告.md](2026-10-27-全项目审查报告.md) | 待拍板 10 项已全部处置（2026-10-28） | **不可归档**：仍有文档冲突 ~50 处 / P3 ~40 项 / 测试缺口 6 项未结 |
-| [2026-10-29-全项目审查整改计划.md](2026-10-29-全项目审查整改计划.md) | 进行中（批次 0 未开始） | 2026-10-29 审查问题台账 + 分批实施步骤；进度看 §8 |
-| [2026-10-29-测试域梳理.md](2026-10-29-测试域梳理.md) | 进行中（盘点完成，策略待拍板） | 测试分布 / 覆盖矩阵 / 接缝与不变量缺口；建议见 §6 |
-| [container-layout-resolution.md](container-layout-resolution.md) | 编排部分暂停 / 自动学部分复活为独立一步 | 待做 |
-| [container-menu-introspection-topic.md](container-menu-introspection-topic.md) | 部分完成；列数探测未落地 | 唯一未落地项 |
-| [framework-benchmark.md](framework-benchmark.md) | 未定案（对标记录，不是排期） | 参考输入 |
-| [framework-evolution-plan.md](framework-evolution-plan.md) | 未定案、未排期 | 提案层 |
-| [gui-interaction-redesign.md](gui-interaction-redesign.md) | 第一、二步已实施（2026-10-10）；余步骤 3/4 未实现（已登记 TODO） | 契约见 gui-interaction-system.md §6 |
-| [living-fluid-review.md](living-fluid-review.md) | 探讨中（2026-10-30 建；2026-10-31 力场模型已结 4 条） | 推动与细节问题池，剩余 10 条；逐条拍板后再动代码 |
-| [living-tnt-explosion-design.md](living-tnt-explosion-design.md) | 主设计定稿，**待拍板 3 项**（§7） | S1 溢出已修（2026-10-27）；其余代码未动 |
-| [living-tool-design.md](living-tool-design.md) | 设计已收敛、实施中（问题池） | 技术结论以 `tech/living-tool-tech.md` 为准 |
-| [living-weapon-design.md](living-weapon-design.md) | 设计池；蓄力型未定 | 近战核心链路已实现 |
-| [open-plan.md](open-plan.md) | 部分落地（A3 / D1 / Q3~Q6 待办） | 对外开方计划 |
-| [power-refactoring-plan.md](power-refactoring-plan.md) | 进行中（步骤 3 待做） | 红电包收口 |
-| [redstone-evolution-roadmap.md](redstone-evolution-roadmap.md) | 路线图（2026-09） | AGENTS 子系统索引指向它 |
-| [render-state-broadcast.md](render-state-broadcast.md) | 未定案（设计探讨） | 代码未动 |
-| [活物品大战僵尸.md](活物品大战僵尸.md) | 探讨中（可行性审计完成 §10，MVP 口径已定 §8） | PvZ 式玩法；投影竞技场 + 桥实体；机制全部未实现 |
-| [活潜影箱实现细节.md](活潜影箱实现细节.md) | 探讨中 | 随活物品扩展而生长的文档 |
+| [2026-10-27-全项目审查报告.md](2026-10-27-全项目审查报告.md) | 台账 —— 待拍板 10 项已全部处置（2026-10-28）；文档冲突 ~50 | 2026-10-28 |
+| [2026-10-29-全项目审查整改计划.md](2026-10-29-全项目审查整改计划.md) | 进行中（批次 0/1/2/4/5 已完成；批次 3 待开始）—— 本文是整改计划 | 2026-10-30 |
+| [2026-10-29-测试域梳理.md](2026-10-29-测试域梳理.md) | 进行中（盘点完成，策略待拍板）—— 本文是测试域的分析与建议，不是测试规范定案。 | 2026-10-30 |
+| [code-doc-alignment.md](code-doc-alignment.md) | A1~A8 已收口（2026-10-27 台账）；仍被 AGENTS / TOD | 2026-10-28 |
+| [container-layout-resolution.md](container-layout-resolution.md) | ✂ 一分为二（2026-10-25） | 2026-10-26 |
+| [container-menu-introspection-topic.md](container-menu-introspection-topic.md) | 部分完成（2026-10-21）** —— 用户拍板「B+B」：位置广播经查证证 | 2026-10-27 |
+| [framework-benchmark.md](framework-benchmark.md) | 未定案**，本文只是**对标记录**，不是执行排期 | 2026-10-08 |
+| [framework-evolution-plan.md](framework-evolution-plan.md) | 提案（buffer）——未定案、未排期，别当现状读**。 | 2026-10-23 |
+| [gui-interaction-redesign.md](gui-interaction-redesign.md) | 第一、二步已实施（2026-10-10，见 §6 表 ✅）；步骤 3/4（活指针 | 2026-10-31 |
+| [living-fluid-review.md](living-fluid-review.md) | 条目已全部清零（2026-10-31）—— 可归档；去向 = fluid tec | 2026-10-31 |
+| [living-tnt-explosion-design.md](living-tnt-explosion-design.md) | 未定案** —— 量化分析已完成 · 主设计已定稿（惰性谓词 + 纪元水印）· | 2026-10-31 |
+| [living-tool-design.md](living-tool-design.md) | 设计已收敛，实施中 —— 挖掘记忆回放已实装并通过实测。 | 2026-10-21 |
+| [living-weapon-design.md](living-weapon-design.md) | 设计探讨层（buffer）。⚠️ 描述的是**计划 / 未决**，不是现状。 | 2026-10-10 |
+| [open-plan.md](open-plan.md) | 部分落地** —— Q1/Q2 已拍板、A1/A2/D1/D2 已完成（D1 见 | 2026-10-09 |
+| [power-refactoring-plan.md](power-refactoring-plan.md) | 进行中** —— 步骤 1 ✅ · **步骤 4 第 1~5 刀 ✅** · | 2026-10-10 |
+| [redstone-evolution-roadmap.md](redstone-evolution-roadmap.md) | 路线图 —— §1 SensorPort 已完成；规划①③截至 2026-10- | 2026-10-08 |
+| [render-state-broadcast.md](render-state-broadcast.md) | 未定案**，本文只是形状提案，不是排期。 | 2026-10-26 |
+| [活活塞.md](活活塞.md) | 设计定稿**（跨容器推 §2.7 已设计——v1 范围待拍板 §5⑥） | 2026-10-31 |
+| [活海绵.md](活海绵.md) | 设计定稿**（2026-10-29 全部拍板完毕，待实施）；§5 为拍板留痕。 | 2026-10-29 |
+| [活滴水石锥.md](活滴水石锥.md) | 探讨中 —— 待拍板 7 项（§5）；本文是设计稿，不是现状。 | 2026-10-30 |
+| [活潜影箱实现细节.md](活潜影箱实现细节.md) | 探讨中 —— 活潜影箱**兼容所有活物品**（而非当前阶段已实现的活物品），本随 | 2026-10-28 |
+| [活物品大战僵尸.md](活物品大战僵尸.md) | 探讨中（2026-10-30 头脑风暴沉淀）。本文描述的全部机制均未实现，别当现 | 2026-10-31 |
+
+<!-- buffer-index:end -->
 
 ## 已搬 archive（2026-10-28 整理）
 

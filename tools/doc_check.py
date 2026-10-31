@@ -14,8 +14,10 @@ Verifies the invariants declared in docs/README.md §7 ("改完必查"):
   9. Method refs       - docs 里 ClassName.method(...) 的方法必须存在于源码
  10. §0 玩法定义        - 每份 docs/tech/living-*-tech.md 必含「§0 玩法定义」
  11. buffer 滞留       - 标着「已完成」却留在 buffer（不稳定层）的文档（soft warning）
+ 12. buffer 索引       - README 状态表与各文档头部「状态：」行一致
+                         （表由 tools/gen_buffer_index.py 生成；不一致 = 改了头部没重跑生成器）
 
-Checks 1-4 and 6-10 fail the run (exit 1). Checks 5 and 11 only warn: both are
+Checks 1-4, 6-10 and 12 fail the run (exit 1). Checks 5 and 11 only warn: both are
 maintenance signals that need a human decision, not correctness errors.
 
 Usage: python tools/doc_check.py [-v]
@@ -69,9 +71,14 @@ def doc_files():
 
 
 def resolves(base, t):
-    """链接目标可能相对「文件所在目录」写，也可能相对「仓库根」写（两种都存在）。"""
-    return (os.path.exists(os.path.normpath(os.path.join(base, t)))
-            or os.path.exists(os.path.normpath(os.path.join(ROOT, t))))
+    """渲染器口径：markdown 相对链接按「文件所在目录」解析——这里也只认这个。
+    仓库根相对写法（从别目录写 `docs/...`）目标也许真实存在，但**点击是 404**，
+    由 check_paths 降级为警告（2026-10-31 起；此前 ROOT 兜底曾掩盖 tech 层两条真断链）。"""
+    return os.path.exists(os.path.normpath(os.path.join(base, t)))
+
+
+def resolves_from_root(t):
+    return os.path.exists(os.path.normpath(os.path.join(ROOT, t)))
 
 
 # ---------------------------------------------------------------- 1. path reality
@@ -81,6 +88,7 @@ PLANNED_MARKERS = ("未建", "待建", "规划中", "已删除", "待补")
 
 def check_paths():
     bad = []
+    root_rel = []
     for f in doc_files():
         # buffer 层（设计稿 / 计划 / 路线图）整体豁免：它天然会描述**尚未创建**的文件路径，
         # 与第 7 项（Java 符号）、第 9 项（方法名）同一口径 —— 「设计稿可以引用未实现的东西」。
@@ -107,7 +115,10 @@ def check_paths():
                     if not os.path.exists(t[len("file:///"):]):
                         bad.append((rel(f), m.group(1), "file:// 链接"))
                 elif not resolves(base, t):
-                    bad.append((rel(f), t, "相对链接"))
+                    if resolves_from_root(t):
+                        root_rel.append((rel(f), t))
+                    else:
+                        bad.append((rel(f), t, "相对链接"))
 
             # repo-relative mentions of docs/... or src/...
             for m in re.finditer(r"(?<![\w/.-])((?:docs|src)/[\w\-/.]*[\w\-]\.(?:md|java))", line):
@@ -122,8 +133,16 @@ def check_paths():
                 continue
             seen.add((f, t))
             failures.append(f"[路径] {f} 提到的 {kind} 不存在: {t}")
+    if root_rel:
+        seen = set()
+        for f, t in root_rel:
+            if (f, t) in seen:
+                continue
+            seen.add((f, t))
+            warnings.append(f"[路径] {f} 的链接 {t} 按所在目录解析不到（仓库根相对写法，渲染器点击 404）——改成从文件出发的相对路径")
     print(f"1. 路径真实性      : {'FAIL' if bad else 'OK'}"
-          + (f"（{len(set((a, b) for a, b, _ in bad))} 处）" if bad else ""))
+          + (f"（{len(set((a, b) for a, b, _ in bad))} 处）" if bad else "")
+          + (f"（另 {len(set(root_rel))} 处根相对 → 警告）" if root_rel else ""))
 
 
 # ---------------------------------------------------------------- 2/3. AGENTS.md facts
@@ -582,6 +601,23 @@ def check_buffer_staleness():
         print("11. buffer 滞留      : OK")
 
 
+# ---------------------------------------------------------------- 12. buffer index
+
+def check_buffer_index():
+    """docs/buffer/README.md 的状态表由 tools/gen_buffer_index.py 从各文档头部
+    「状态：」行生成（2026-10-31 起，取代手工导航快照——手工快照实测必漂）。
+    不一致 = 有人改了头部没重跑生成器 ⇒ 跑 `python tools/gen_buffer_index.py`。"""
+    import subprocess
+    r = subprocess.run(
+        [sys.executable, os.path.join(ROOT, "tools", "gen_buffer_index.py"), "--check"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=ROOT,
+    )
+    out = (r.stdout or r.stderr or "").strip().splitlines()
+    print(out[-1] if out else "12. buffer 索引      : FAIL（生成器无输出）")
+    if r.returncode != 0:
+        failures.append("[buffer 索引] README 生成区与各文档头部状态行不一致 —— 跑 python tools/gen_buffer_index.py")
+
+
 def main():
     print("=== 文档系统一致性检查（docs/README.md §7）===\n")
     check_paths()
@@ -595,6 +631,7 @@ def main():
     check_method_refs()
     check_play_sections()
     check_buffer_staleness()
+    check_buffer_index()
 
     print()
     for w in warnings:

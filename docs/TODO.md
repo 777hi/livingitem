@@ -117,10 +117,10 @@
    📄 **设计稿（2026-10-29 立稿，探讨中）**：**活海绵**（流体存储，照抄灯泡存电模型）与
    **活滴水石锥**（流体运输，方向阀）——两个**独立**活物品（相互无搭配依赖），
    见 [活海绵.md](buffer/活海绵.md) / [活滴水石锥.md](buffer/活滴水石锥.md)。
-9. **推动与细节待梳理清单**（2026-10-30 建；2026-10-31 力场模型已消化「分叉 / 末端 / 鞍部」
-   四条）—— 剩余 10 条（写入失败丢物品 / 合并上限 / 准入 / 源格不推 / 同拍互斥 /
-   文档与测试债…），**逐条拍板后再动代码**：
-   [buffer/living-fluid-review.md](buffer/living-fluid-review.md)。
+9. ~~**推动与细节待梳理清单**（2026-10-30 建）—— 剩余 10 条，逐条拍板后再动代码~~
+   ✅ **2026-10-31 全部清零**：力场模型 4 条 + B5~B8 / C2 / D1 / D2 / E1~E4 已同步
+   fluid tech §3.3 等处；A3 准入边界晋升 fluid tech §0 规则 10；A1 / A2 / C1 移交框架侧
+   （见本节第 10 条与「物品传输」节）。[buffer/living-fluid-review.md](buffer/living-fluid-review.md) 可归档。
 10. **流体推动 ×「本拍已写入槽」的互斥（C1，2026-10-31 记录，暂不实施）** ——
     现状：`TickContext.transferredTargetSlots` 由漏斗 `markTransferred()` 写入，
     **唯一消费者是漏斗自己**（`TransferPipeline` 跳过「本 tick 已被写入过」的来源槽，
@@ -487,6 +487,8 @@
    设计稿全文见 `buffer/living-weapon-design.md`；**待拍板 4 项**（弹药经济学 /
    回充触发门槛 / 回充时长可配 / Crossbow 一期已定排除）见设计稿
 2. ⏳ **PVP** —— 需先定义「敌对关系」判据（现为硬排除所有 `Player`）—— `living-weapon-tech.md` §9
+3. ⏳ **R3「记仇」** —— 被某生物击杀 ⇒ 半径 32 内自动追踪攻击（D4 拍板**先不做**）；
+   配套 U3「记仇搜索降频」建议。规则本体见 [buffer/living-weapon-design.md](buffer/living-weapon-design.md) §1.5 / §2.7
 
 ## 活TNT（2026-10-13 记）
 
@@ -522,9 +524,11 @@
 1. ⏳ **去重键口径没有单一来源** —— 渲染器加依赖时无人提醒改键（2026-10-26 事故根因）。
    倾向在 `ToolComponents` 旁声明 `RENDER_STATE` 组件集合，去重键从声明生成
    （**不能从 domain 反向引用 L5 客户端**，故声明不能住在渲染器里）。
-2. ⏳ **四通道收口** —— `TargetedBroadcast<T>`（服务端骨架）+ `DimensionScopedCache<T>`
-   （客户端缓存）+ 包内「结构段去重 / 状态段每 tick 覆盖」。
-   判据：第 5 个世界可见活物品不新增包类、不新增缓存类。
+2. ⏳ **四通道收口** —— 状态（2026-10-31 更正）：`DimensionScopedCache`（客户端缓存）、
+   `BroadcastDedup#merge`（去重）、`ToolRenderState` 已落地（2026-10-26）；
+   `TargetedBroadcast<T>` 硬骨架与「结构段 / 状态段」协议分段**已否**（buffer §7.1）。
+   剩余：第 5 个世界可见活物品出现时验证「不新增包类 / 缓存类」判据；包体实测与
+   tooltip 通道是否纳入未定（buffer §9）。
 
 ## 2026-10-27 审查后续 · 代码与文档口径对齐
 

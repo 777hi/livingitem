@@ -82,7 +82,7 @@ javadoc 明写「新增 LivingItemFunction 必须回来手添」⇒ **第三方�
 |---|---|---|
 | `LivingItemManager.registerFunction` | `LivingItemManager.java` | ✅ 可用 |
 | **数据组件注册** `LivingComponents.*` | `components/LivingComponents.java`（A1 迁入 2026-09-28；**2026-10-08 ③ 从 transfer 迁出**） | ✅ 可用 —— 内容组件的常量与注册站；`LivingItemManager` 自此为纯框架类，不再牵出 domain 类型 |
-| `InteractionRegistry.register` / `registerHandler` | `LivingItem.java` | ✅ 声明式规则 + 谓词收窄（活耕地案例已证明无需枚举物品类） |
+| `InteractionRegistry.register` / `registerHandler` | `LivingItem.java` | ✅ 声明式规则 + 谓词收窄（活耕地案例已证明无需枚举物品类）；**规则数据已外置**（D2）：内置 `assets/living_item/interaction_rules.json`（13 条，兼格式示范）+ 玩家差异 `config/living_item/interaction_rules.json`，谓词 ID 化走 `InteractionPredicates`，配 `/livingitem interaction reload\|list` |
 | `ContainerSnapshot.registerProvider` | `LivingItem.java` | ✅ 注册驱动，已解除 container 包对 domain 类的依赖 |
 | 可选接口 `HasDirection` / `HasContainerData` | `living/api/` | ✅ 新增活物品无需改核心文件 |
 | `SlotInteractions.register` | `SlotInteractions.java` | ⚠️ public，但全仓仅 1 处调用（内置静态块）——**从未被外部验证** |
@@ -212,6 +212,14 @@ default boolean onDeactivated(ItemStack stack, Level level, @Nullable Player pla
 
 ---
 
+### 1.6 构建依赖契约（2026-10-08 生效）
+
+**第三方模组 jar 一律不进版本控制**——要么 Maven 坐标，要么运行时条件化；`libs/` 保持
+gitignore（第三方**源码**树 `libs/src/` 同样不入库，仅本机阅读用）。gradle wrapper 自身的
+jar 不在此限。引入例外只有一个前提：许可证允许再分发且体积可接受。
+复算：`git ls-files 'libs/*.jar'` → 0；`-Plivingitem.devModsDir=nonexistent_dir_ci_sim`
+本地复现「干净克隆」+ `--no-build-cache --rerun-tasks` 强制全量重编。
+
 ## 2. 待决 / 未生效（⛔ 不得当现状引用）
 
 > 以下均为**计划**，尚未实施。拍板后回来标日期并把正文并入 §1。
@@ -230,14 +238,15 @@ default boolean onDeactivated(ItemStack stack, Level level, @Nullable Player pla
 `target × trigger → handlerId` 本质是**四元组数据**，形态接近配方。
 项目已有规则外部化先例（`ContainerRuleConfig` 的「模组自带 → 玩家本地」两级加载）。
 
-| 步 | 内容 | 何时做 |
+| 步 | 内容 | 状态 |
 |---|---|---|
-| ① | 21 条规则 + 9 个 handler 随域下放 | **A1 内做** |
-| ② | 规则数据文件化；handler 仍为代码 | ⛔ **暂不做** |
+| ① | 21 条规则 + 9 个 handler 随域下放 | ✅ **已完成（A1）** |
+| ② | 规则数据文件化；handler 仍为代码 | ✅ **已完成（D2，2026-09-28）** —— 见 §1.2 交互规则行 |
 
-不现在做第②步的理由，是项目自己定的原则 —— 「从重复中提取，不从想象中设计」。
-且其实现有硬阻碍：规则里的谓词（`Tillables::canTillWith`）是 Java 方法引用，
-无法直接落成 JSON，需先把谓词 ID 化注册到 predicate registry。
+② 当初的硬阻碍（谓词 `Tillables::canTillWith` 是 Java 方法引用、无法落 JSON）已被
+**谓词 ID 化**（`InteractionPredicates`：can_till / can_plant）化解；配置者口径见
+[guides/interaction-rules.md](../guides/interaction-rules.md)，设计与论证见
+`docs/archive/interaction-rule-design.md`（已归档）。
 
 ### 2.3 主类保留形态
 

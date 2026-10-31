@@ -63,7 +63,7 @@ src/main/java/com/qiqi/li/client/
 
 ### **核心组件**
 
-#### 1️⃣ [PinyinHelper.java](src/main/java/com/qiqi/li/client/util/PinyinHelper.java)
+#### 1️⃣ [PinyinHelper.java](../../../src/main/java/com/qiqi/li/client/util/PinyinHelper.java)
 
 ##### **功能职责**
 - 中文字符 → 拼音转换
@@ -95,7 +95,7 @@ PINYIN_MAP.put('钻', "zuan");
 INITIALS_MAP.put('钻', "z");
 ```
 
-#### 2️⃣ [LivingChestTabSearch.java](src/main/java/com/qiqi/li/client/util/LivingChestTabSearch.java)
+#### 2️⃣ [LivingChestTabSearch.java](../../../src/main/java/com/qiqi/li/client/util/LivingChestTabSearch.java)
 
 ##### **集成点**
 活箱子标签页的搜索过滤（纯函数，2026-10-29 从 `RecipeBookComponentMixin` 拆出）。

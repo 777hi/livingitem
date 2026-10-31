@@ -1,12 +1,13 @@
 # Living TNT (活TNT) 技术文档
 
-> **文档版本**: 2026.08 v5  
-> **最后更新**: 2026-08-22  
+> **文档版本**: 2026.10 v6  
+> **最后更新**: 2026-10-31  
 > **适用版本**: Minecraft 1.21.1
 >
-> 📄 爆炸规模化的**未定案设计稿**（int 溢出阈值量化 / 求和溢出吞物品 / 惰性谓词 + 纪元水印重构）
-> 见 [../buffer/living-tnt-explosion-design.md](../buffer/living-tnt-explosion-design.md)（2026-10-13；
-> 代码未动，本文描述的位图账本仍是现状）。
+> 📄 爆炸规模化的**未定案设计稿**（四道墙量化 / 惰性谓词 + 纪元水印重构）见
+> [../buffer/living-tnt-explosion-design.md](../buffer/living-tnt-explosion-design.md)（2026-10-13）：
+> **除 S1 求和溢出已于 2026-10-27 修复（见 §4.6）外，重构本体未动**，位图账本仍是现状；
+> 现状约束已晋升本文 §4.6。
 
 ## 目录
 0. [玩法定义](#-0-玩法定义)
@@ -49,7 +50,7 @@
 · ✅ 光照补偿 · ✅ 待炸账本（按区块分帧推进）· ✅ Tooltip
 
 **验证入口**：`ExplosionParamsTest`（参数）· `ExplosionLedgerTest`（待炸账本）·
-`ExplosionComponentLightTest`（光照补偿）
+`ExplosionComponentLightTest`（光照补偿）· `ExplosionComponentCountTest`（堆叠求和与计数守卫）
 
 ---
 
@@ -577,6 +578,37 @@ section"（无 27 倍放大），但半径 235 的爆炸要改**几千万个方�
 - `ParticleTypes.EXPLOSION` — 爆炸粒子（边缘随机散布）
 
 ---
+
+### 4.6 规模化约束（现状可复算；晋升自 buffer 设计稿 §1，2026-10-31）
+
+**公式链**（`ExplosionComponent` / `ExplosionParams`）：
+
+```
+半径        r = 4.0 × √N
+chunkRadius = ⌈r / 16⌉
+side        = 2 × chunkRadius + 1
+chunkCount  = side²                     （位图长度；int 平方）
+圆内区块    ≈ π × chunkRadius²          （affects() 只判水平相交）
+破坏方块    = 圆内区块 × 98,304          （SUPER 整区块清空，区块 = 16×16×384）
+```
+
+**关键标度**：chunkCount ≈ N/4、圆内区块 ≈ 0.196N、位图 ≈ N/32 字节 —— 破坏链上每个
+结构都是 **O(N)**。四道墙（按点火流程顺序）：
+
+| # | 墙 | 标度 / 量级 |
+|---|---|---|
+| W1 | 实体查询 `getEntities(巨型 AABB)` | **非墙**——X 列 + 有序集区间查询，O(√N × log S)（原版源码已核实，2026-10-13） |
+| W2 | `ExplosionLedger.schedule` 把圆内**每个**区块塞进 pendingChecks | 常驻 ≈ 0.196N 个 `ChunkPos`；N=10¹⁰ ≈ 47 GB ⇒ OOM |
+| W3 | schedule 双循环逐 bit 分配 | ≈ N/2 次迭代；N=10¹⁰ ≈ 50 亿次分配 / 主线程冻结 1–2 分钟 |
+| W4 | `chunkCount = side²` int 溢出 | N > **8,588,840,976**（+1 即崩）⇒ 回绕成负 ⇒ `NegativeArraySizeException` |
+
+**极限工况**（N = 槽数 × 2,147,483,647，抽屉类多槽容器塞满是真实可达场景）：
+54 槽满栈 → 半径 ≈ 1,362 km / 圆内 227.7 亿区块；200 槽满栈 → 2,621 km / 843 亿区块。
+
+**已修的一道**：求和溢出（`ignite` 的 `int totalTntCount` 回绕 ⇒ 物品已清空却零爆炸、
+零日志）已于 2026-10-27 改 **long 求和 + 计数异常守卫**，守卫测试
+`ExplosionComponentCountTest`。W2~W4 未动 ⇒ 规模化重构（惰性谓词 + 纪元水印，buffer
+设计稿 §2）的动机仍在。
 
 ## 5. Tooltip 显示
 

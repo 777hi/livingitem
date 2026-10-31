@@ -48,8 +48,9 @@
 | 2 | **服务端管逻辑，客户端只管表现** | 客户端不参与任何判定，只是「照着画」 |
 | 3 | **两端独立算同一条射线** | 记忆同步后客户端本地 `clip` 即得同样结果 ⇒ **服务端无需同步「命中了什么」** |
 | 4 | **不替玩家兜底** | 射线落空 / 位置不对 ⇒ 用**可视化暴露**给玩家，玩家重录即可 |
-| 5 | 耐久走**原版管线** | 附魔 / 属性自动生效 |
+| 5 | 耐久走**原版管线** | 附魔 / 属性自动生效（三层管线见 §5.6） |
 | 6 | **只走官方入口**（NeoForge / 原版钩子） | 不识别具体模组 ⇒ 兼容是自然结果 |
+| 7 | **无记忆的活工具在容器里不做槽位影响**（明确不做） | 无记忆 ⇒ 没有可回放的行为，施加「槽位效果」无行为依据；辅助环只做世界侧交互。要槽位影响先有记忆语义（2026-09-18 定案） |
 
 **能力清单**：✅ 记忆录制 / 回放 · ✅ 三宿主（容器 / 背包 / 掉落物）· ✅ 挖掘 / 交互回放
 · ✅ 射线微调（起点锚点 + 朝向跟随）· ✅ 辅助 / 自主模式 · ✅ 记忆清除 · ✅ 悬浮模型渲染 · ✅ Tooltip
@@ -131,6 +132,10 @@ public record RayMemory(Vec3 offset, @Nullable Block block) { }
 > 实现提示：`BreakEvent` 只给 `BlockPos`、拿不到表面命中点，
 > 故录制时补一次 `level.clip()` 取 `getLocation()`（见 §4.2）。
 > `BlockToolModificationEvent` 则可直接用 `getContext().getClickLocation()`。
+
+**长度上限 = 32 格（双端护栏）**：录制侧截断（`LivingToolRecorder.MAX_RAY_LENGTH`）+
+回放侧兜底（`LivingToolReplay.MAX_SCAN_LENGTH`），与渲染剔除、`LivingToolHostSync.RADIUS`、
+`LivingToolPlayerSync.RADIUS` 对齐——超长射线会强制加载未加载区块（I/O 灾难）。
 
 ### 2.3 宿主（Host）
 
@@ -350,7 +355,9 @@ private static BlockPos scanForTarget(Vec3 origin, Vec3 end, Set<BlockPos> black
 clip 必然先命中宿主自己，于是要"移出宿主"等补丁 —— 且补丁容易失效（§9.2）。
 改成逐格扫描后天然支持黑名单、不受起点位置影响，且**仍然沿真实路径，不会隔空挖**。
 
-> 代价：0.1 格步进，精度略低于 clip（对"挖哪一格"完全够用）。
+> ⚠️ **2026-09-23 起实现已换**：上例是早期固定 0.1 步进的**示意**；现行实现走原版
+> `BlockGetter.traverseBlocks`（沿真实射线逐格遍历）+ `MAX_SCAN_LENGTH = 32` 截断（§2.2）。
+> 黑名单与「不隔空挖」语义不变；别照抄步进循环。
 
 ### 5.2 推进进度：原版**重算式**
 
@@ -371,6 +378,10 @@ float f = state.getDestroyProgress(this.player, this.player.level(), pos) * (flo
 
 **对比 Create 的累加式**（`DeployerHandler:260-265` 用 `progress += perTick * 16`）：
 ×16 是因为部署器**有冷却**、不是每 tick 动作。我们每 tick 推进，不需要补偿。
+
+**节奏口径（定案，不设节流）**：回放**每 tick 推进、不加节流**——FakePlayer 走原版破坏进度，
+本身天然限速；多把活工具同时挖**同一格**各算各的进度（不合并、不加速）；
+「容器 + 活镐」贴着刷石机 = 永动挖矿机是**用户明确接受的玩法**（2026-09 定案），不是 bug。
 
 ### 5.3 极短记忆：允许挖宿主（`L42`）
 
@@ -432,12 +443,24 @@ if (freshStart) {
 
 ⚠️ 只在**首次命中**触发一次 —— 每 tick 触发会让音效 / 粒子 / 模组回调疯狂调用（`L38`）。
 
+**右键回放的前置链路（与左键对称）**：右键方块 = `CommonHooks.onRightClickBlock` →
+`useOn`；右键空气 / 物品 = `onItemRightClick` → `use`。**两个右击事件完全独立**，按命中
+类型二选一（实现：`LivingToolReplay` 先 post `onRightClickBlock`，失败回退 `onItemRightClick`）。
+
+> 口诀：**凡原版由客户端发包触发的交互，服务端直调路径必须手动补 post**
+> （⚠️ 对攻击侧不适用——`attack()` 自带前置，见 `living-weapon-tech.md` §4.3）。
+
 ### 5.6 工具副本与写回
 
 破坏会扣耐久，甚至损坏为空（`F3`）。为了让容器触发**脏槽位同步**：
 
 1. 给 FakePlayer 一份 `tool.copy()`
 2. 破坏后由 `LivingToolFunction` 比对，变化才 `context.setItem()` + `syncSlotToClients()`
+
+**耐久的三层官方管线**（`ItemStack#hurtAndBreak` 内部）：① `damageItem`（NeoForge 钩子）
+→ ② `processDurabilityChange`（耐久附魔 / 修补）→ ③ `onEquippedItemBroken`（破毁回调）。
+只要走原版管线，模组的「不毁」类附魔**自动生效**——空 lambda 绕过管线会吞掉这些行为
+（2026-09-21 实测修过）。FakePlayer 的副本走的就是这条完整管线。
 
 ### 5.7 受控 tick 驱动：让假玩家"真的活"（2026-09-30 重构）
 

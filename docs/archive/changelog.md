@@ -113,6 +113,21 @@
   （`arrival` 全 0 ⇒ BFS 按 slot 升序 ⇒ 左边源吞掉右半边）。
   → [living-fluid-tech.md](../tech/living-fluid-tech.md) §3.3 · §3.3.1。
 
+- 📋 **buffer 内容归位 + 文档系统机制升级（「会话即维护」立约）** —— 全项目审查后的收口。
+  ① 修 3 处「稳定层反话」：`api-contract.md` §2.2 交互规则 JSON 化仍标 ⛔ 暂不做（D2 实际已完成，
+  补 §1.2 契约行）；设计模板「列数是客户端属性、只能人录」被证伪（Slot.x/y 两端同构 + Tier 1.5 自动学已落地，
+  改写为统一链口径）；`living-tnt-tech.md` 头部「代码未动」漏记 S1 求和溢出已修。
+  ② 29 条 buffer 定案缺口晋升稳定层：TNT 规模化约束成建制进 `living-tnt-tech.md` **§4.6**（公式链 / 四道墙 /
+  W4 阈值 / 极限工况 / W1 非墙）；tool tech 5 条（回放节奏不节流 / 无记忆容器边界 / 右键链路口诀 / 射线 32 格护栏 /
+  耐久三层管线 + 修 weapon tech 断链指针）；power tech 分配口径禁抹平；fluid tech §0 规则 10（推动不校验 isItemValid）；
+  container-identity 补 resolve 实体分支；unit-testing 3 条（三判据 / 改前取基线 / 断言物理结果 / 联动不做单测）；
+  decisions **D-open-01**（LGPL classpath 例外）；api-contract **§1.6 构建依赖契约**（第三方 jar 不进版本控制）。
+  ③ 机制：buffer/README 状态表改**生成制**（`tools/gen_buffer_index.py`，状态单一来源 = 各文档头部「状态：」行，
+  手工快照废除）+ `doc_check` 新增**第 12 项**（索引不一致即红）+ 第 1 项链接口径改**渲染器真相**
+  （根相对写法从静默兜底降为警告）；设计模板新增 **§2.3 落地同步表**（「已实施」= 表填完）；
+  `docs/README.md` §7.2 立「**会话即维护**」规约。纯文档变更，测试 1266 不变。
+  → `docs/README.md` §7.1/§7.2 · `tools/gen_buffer_index.py` · `living-item-design-template.md` §2.3
+
 ## 2026-10-30
 
 - 🛡️ **R-01 复查补漏：发现 / 重扫路径的第三方能力查询也隔离** ——

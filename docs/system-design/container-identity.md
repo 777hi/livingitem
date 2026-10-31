@@ -61,6 +61,8 @@
   与 tick 构建同源
 - **模组容器（无 BE 可达）**：**先走 `MenuSlotOwners.resolve` 拿位置**，再按位置建上下文
   （2026-10-19 补；此前只认 `Container` 实例 ⇒ 精妙背包背包槽汲/倒静默无效）
+- **实体容器**：GUI 槽直指实体（马 / 驴等）⇒ `ContainerContexts.resolve` **直达实体**构建、
+  不绕位置；实体分支在「菜单位置」分支**之前**（`ContainerContexts.java:110`）。已知限制见 §5
 - ⚠️ **分支顺序是 hazard**：位置分支必须在 `instanceof BlockEntity` 之后、`CompoundContainer` 特判
   之前落位，改顺序会让大箱子拿到单半箱。
 

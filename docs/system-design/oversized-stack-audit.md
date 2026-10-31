@@ -65,15 +65,15 @@
 找空位插入，只在 count==1 时整槽替换——这是对原版的**有意偏离**，理由是活熔炉的宿主
 容器可能是模组容器，原版语义在这里会造成真实物品损失。待用户决策。
 
-### 2.2 活TNT —— 🟠 int 累加溢出（理论）
+### 2.2 活TNT —— 🟠 int 累加溢出 → ✅ 已修（2026-10-27）
 
-- `ExplosionComponent.ignite`：`totalTntCount += stack.getCount()`（int），半径 = `baseRadius × √count`。
-- **溢出条件**：单容器活 TNT 总数 > ~21 亿。抽屉类容器理论上可达（但活 TNT 需逐个活化，
-  `/give` 超堆叠或模组管道批量活化才可能凑到）。
-- **表现**：溢出为负 → `totalTntCount <= 0` → 拒绝引爆（安全失败，不爆炸不崩）；
-  或绕过 `<=64`/`SUPER_EXPLOSION_THRESHOLD` 分层导致半径计算异常。
-- **评级 🟠 而非 🔴**：失败模式是「不炸」（fail-safe），不是刷物品或崩溃。
-- √缩放 + 64/大当量阈值：**设计内**。
+- 原审计：`ExplosionComponent.ignite` 的 `totalTntCount += stack.getCount()`（int），
+  总数 > ~21 亿回绕；曾评 🟠（「失败模式是不炸，fail-safe」）。
+- **2026-10-27 修复**：求和改 **`long`** + 计数异常守卫（非正数放弃爆炸且**保留物品**）；
+  守卫测试 `ExplosionComponentCountTest`。
+- **评级更正**：🟠 低估了——可复算的两条坏路径：偶数满栈槽回绕成负 ⇒ 早退但物品已清空
+  （**吞物品**）；奇数满栈回绕成巨正 ⇒ 半径按回绕值计算（巨型爆炸）。量化见
+  `living-tnt-tech.md` §4.6 / `buffer/living-tnt-explosion-design.md` §1.4（2026-10-31 勘误）。
 
 ### 2.3 活漏斗 —— ✅ 设计内（吞吐固定 64/t 次）
 
