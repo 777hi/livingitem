@@ -79,7 +79,8 @@ src/test/java/com/qiqi/li/
 │   ├── PlayerFluidDataPersistenceTest.java    # 玩家路径落盘（CONTAINER_FLUID_DATA_PLAYER）·背包与末影箱各有源写回 / 变空条目移除 / 重进不复活 / 两容器键互不干扰 / 重进从附件回填
 │   ├── ContainerChunkCacheChunkLoadTest.java  # 区块加载守卫·事件不碰世界/延后重扫不丢/限量/不主动加载/只处理ticking区/可观测性/每tick维护清理不依赖可处理区块/重扫隔离（能力查询抛异常保守保留，其余 pending 继续）；单次 Load 未就绪重试 / 队列公平性 / 卸载撤销与再加载 / 能力查询期间卸载重入
 │   ├── ContainerUuidsDiscardTest.java         # 取消活化**彻底清理**（2026-10-28）·discard 必须清内存层容器数据（旧实现只删 SavedData ⇒ 物品形态无位置可反查 ⇒ 熔炉进度留到停服）/ UUID 被剥掉（重新活化拿新身份）
-│   ├── ItemFormLiveViewsTest.java             # 物品形态容器的按 UUID 寻址（2026-10-28，活末影箱路由取货）·登记后可按 UUID 取同一活视图 / 未登记或清空后 null（停服清空、背包没在 tick）/ null 输入安全
+│   ├── ItemFormLiveViewsTest.java             # 物品形态容器的按 UUID 寻址（2026-10-28，活末影箱路由取货）·登记后可按 UUID 取同一活视图 / 未登记或清空后 null（停服清空、背包没在 tick）/ null 输入安全 / **无人查询也要能收：evictExpired 主动淘汰过期条目（2026-11-01 R-06，惰性 find 回收的补集）**
+│   ├── ContainerCacheSweepTest.java           # **跨 tick 缓存的统一回收口**（2026-11-01，R-06）·消失满阈值的容器被收（四张表 + 整容器作废，走 removeDataByKey 同一条入口）/ 阈值内回来不被动 / 每 tick 盖章 ⇒ 真实时钟下永不被误收 / **只装活物品（无容器级数据）的容器首现即建位置索引 ⇒ 破坏方块即刻清**（修「玩家破坏也清不掉」）/ 双箱任一半命中即清整键 / 无 ctx 也盖章也能收（兜底不依赖索引）/ removeSlot 删最后一个槽位连外层键一起删（空壳回归）/ 删中间槽位不误删外层键
 │   ├── ContainerKeysTest.java                 # 容器键解析唯一入口(2026-10-13)·5 种键形各自归位(背包/末影箱前缀相同必须按后缀分开)/缓存键剥维度前缀/未知形态返回 null 不抛异常/ownerOf 末影箱回归(旧实现抛异常被吞⇒从不发包)/isOwnedByPlayer(null 安全)/positionsOf(大箱两段·维度 id 含下划线取末三段)/维度前缀
 │   ├── ContainerRuntimeCacheSlotMappingTest.java  # 读写槽位键对称（2026-10-27 审查 P1，熔炉/酿造台/漏斗域）·update 过 toPhysicalSlot、get 不过 ⇒ 马/驴容器（storageOffset=1）读永远 miss ⇒ 熔炉每 tick 烧 1 燃料零产出、酿造台每 tick 空耗烈焰粉 / get(ctx, logical) 对称重载：带偏移上下文读回自己写的值 / 裸 get(key,3) miss·物理槽 4 命中 / 恒等映射两版等价
 │   ├── ContainerPersistRoutingTest.java      # 容器级数据**持久层二分**（2026-10-29）·有身份⇒只写 SavedData（附件一次不写）/ 无身份⇒只写附件 / 回填优先级：内存空 + 有身份 ⇒ 从 SavedData 取回

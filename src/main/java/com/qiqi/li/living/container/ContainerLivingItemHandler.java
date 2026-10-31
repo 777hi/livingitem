@@ -108,6 +108,27 @@ public class ContainerLivingItemHandler {
     private static final Map<String, Map<Integer, Item>> LIVING_SLOT_ITEMS = new ConcurrentHashMap<>();
 
     /**
+     * 缓存键 → 最后一次「被 tick 看到」的墙钟毫秒 —— <b>R-06 的统一回收口</b>（2026-11-01）。
+     *
+     * <p>为什么判「没再被看到」而不是给每种容器形态各挂一个事件：容器停止被处理的成因有六种
+     * （区块卸载 / 玩家下线 / 实体消失 / 物品销毁 / 掉落物被拾取 / 非玩家移除方块），
+     * 逐形态挂事件要六条路径、且必然漏掉某一条（这六条原先<b>一条都没挂</b>）。
+     * 「消失满阈值」是这些成因的<b>共同结果</b> ⇒ 一个判据覆盖全部六种形态，也不引入新事件。</p>
+     *
+     * <p>⚠️ 阈值不是数据保护：运行时数据按 {@code D-container-20} 可随时丢弃，
+     * 这里只给「走远又回来」留一段窗口，与 {@code ContainerChunkCache} 的兜底节拍同量级。</p>
+     */
+    private static final Map<String, Long> LAST_SEEN = new ConcurrentHashMap<>();
+
+    /** 消失多久算「容器没了」 —— 5 分钟。 */
+    static final long UNSEEN_TTL_MS = 5 * 60 * 1000L;
+
+    /** 全表扫描的节拍（表可达上万键，不能每 tick 扫）。 */
+    private static final long SWEEP_INTERVAL_MS = 60 * 1000L;
+
+    private static long lastSweepMs;
+
+    /**
      * 本 tick 攒下的「待清运行时缓存」项，由 L4（{@code LivingItem.onServerTick}）取走并执行
      * —— 让 L1 不直接依赖 L2 的 {@code ContainerRuntimeCache}（避免 R1 分层违规）。
      */
@@ -209,9 +230,18 @@ public class ContainerLivingItemHandler {
      *
      * <p>⚠️ 已知边界：<b>同类物品原地交换</b>（手持新熔炉直接点击旧熔炉）判据看不出变化 ⇒ 不清。
      * 要彻底解决需给物品加实例 id（会引入堆叠 / 拆堆语义问题）⇒ 当前接受。</p>
+     *
+     * <p>本方法同时是<b>「本 tick 还看到该容器」的盖章点</b>（{@link #LAST_SEEN}）：
+     * 它对每个进入 {@code processContext} 的容器都会调用（含活物品已清空的容器 ——
+     * 「没有活物品」不等于「消失了」），所以盖章必须在下面任何早退/清理分支<b>之前</b>。
+     * 回收侧见 {@link #sweepUnseenContainers()}。</p>
+     *
+     * @param ctx 容器上下文，仅用于首次出现时补位置反向索引；null（测试替身 / 无世界）时跳过索引
      */
-    static void trackLivingSlots(String cacheKey, Map<Integer, Item> currentSlots) {
+    static void trackLivingSlots(String cacheKey, Map<Integer, Item> currentSlots,
+                                 @javax.annotation.Nullable ContainerContext ctx) {
         if (cacheKey == null) return;
+        LAST_SEEN.put(cacheKey, System.currentTimeMillis());
         Map<Integer, Item> previous = LIVING_SLOT_ITEMS.get(cacheKey);
         if (previous != null) {
             Set<Integer> stale = null;
@@ -229,7 +259,77 @@ public class ContainerLivingItemHandler {
             LIVING_SLOT_ITEMS.remove(cacheKey);
         } else {
             LIVING_SLOT_ITEMS.put(cacheKey, new LinkedHashMap<>(currentSlots));
+            // R-06 缺口 1（2026-11-01）：位置索引原先只在 entry(ctx) 创建容器级数据时建 ⇒
+            // 只装活物品、没有流体/红石/电力数据的容器<b>永远没有索引</b>，玩家破坏也清不掉。
+            // 这里在「追踪条目首次出现」时补建：稳态零成本（不每 tick 重算位置），
+            // 而区块重新加载 / 清空后重新装入活物品都会再走一次 ⇒ 位置不会长期陈旧。
+            if (previous == null && ctx != null) {
+                indexPositions(ctx, cacheKey);
+            }
         }
+    }
+
+    /**
+     * 回收「不再被 tick 看到」的容器 —— L4 每 tick 调，内部按 {@link #SWEEP_INTERVAL_MS} 门控。
+     *
+     * <p>覆盖：区块卸载、玩家下线、实体消失 / 死亡、物品被销毁或丢失、掉落物被拾取、
+     * 爆炸 / 活塞 / {@code /setblock} 等非玩家移除。这六种成因都不再有显式事件可依，
+     * 但都会表现为「这个缓存键没再出现在 {@link #LAST_SEEN} 的更新里」。</p>
+     *
+     * <p>语义按 {@code D-container-20}：运行时数据瞬态可丢 ⇒ 这里走
+     * {@link #removeDataByKey}（与「玩家破坏方块」同一条作废入口，四张表 + 整容器运行时作废），
+     * 不新增第二套清理路径。</p>
+     *
+     * @return 本次回收的容器数（诊断 / 测试用）
+     */
+    public static int sweepUnseenContainers() {
+        long now = System.currentTimeMillis();
+        if (now - lastSweepMs < SWEEP_INTERVAL_MS) return 0;
+        lastSweepMs = now;
+        return sweepUnseenContainers(now, UNSEEN_TTL_MS);
+    }
+
+    /** 实际回收体（无门控，时刻与阈值可注入 —— 测试不必等 5 分钟）。 */
+    static int sweepUnseenContainers(long nowMs, long ttlMs) {
+        int removed = 0;
+        List<String> expired = null;
+        for (var en : LAST_SEEN.entrySet()) {
+            if (nowMs - en.getValue() >= ttlMs) {
+                if (expired == null) expired = new ArrayList<>();
+                expired.add(en.getKey());
+            }
+        }
+        if (expired != null) {
+            for (String cacheKey : expired) {
+                removeDataByKey(cacheKey);
+                LAST_SEEN.remove(cacheKey);
+                removed++;
+            }
+        }
+        // 物品形态的活视图是同一族缺陷（只在 find() 里惰性过期），并入同一节拍主动淘汰
+        ItemFormLiveViews.evictExpired(nowMs);
+        return removed;
+    }
+
+    /** 测试接缝：把某键的「最后被看到」时刻改到指定值，模拟容器停止 tick。 */
+    static void setLastSeenForTest(String cacheKey, long atMs) {
+        LAST_SEEN.put(cacheKey, atMs);
+    }
+
+    /** 当前被追踪（含活物品）的容器数 —— 诊断与测试用，不进入热路径。 */
+    public static int trackedContainerCount() {
+        return LIVING_SLOT_ITEMS.size();
+    }
+
+    /**
+     * 跨 tick 表的规模 —— 给 {@code /living_monitor cache} 打印，用来验证 sweep 真在回收：
+     * 玩家走远一圈再回来，{@code 盖章键} 应回落到稳态而不是单调上涨
+     * （整改计划 §6.3 实机第 3 条）。
+     */
+    public static String describeLifecycleStats() {
+        return String.format("追踪容器=%d 盖章键=%d 位置索引=%d 待作废=%d",
+            LIVING_SLOT_ITEMS.size(), LAST_SEEN.size(),
+            POS_TO_CACHE_KEY.size(), PENDING_RUNTIME_INVALIDATIONS.size());
     }
 
     /** 从扫描结果收集「本 tick 的活物品槽位 → 物品类型」（同槽位多功能 ⇒ 去重）。 */
@@ -446,6 +546,8 @@ public class ContainerLivingItemHandler {
         POS_TO_CACHE_KEY.clear();
         LIVING_SLOT_ITEMS.clear();
         PENDING_RUNTIME_INVALIDATIONS.clear();
+        LAST_SEEN.clear();
+        lastSweepMs = 0;
         cleanupCounter = 0;
     }
 
@@ -572,7 +674,7 @@ public class ContainerLivingItemHandler {
         // removeDataByPos 的作废键三方同构（2026-10-12 修三处键不一致）。
         // ⚠️ 作废键必须与 ContainerRuntimeCache 的存储键同口径 = 【物理槽】
         // （update 内部过 ctx.toPhysicalSlot；这里同样过一遍，否则作废打空）
-        trackLivingSlots(context.getCacheKey(), collectLivingSlots(grouped, context));
+        trackLivingSlots(context.getCacheKey(), collectLivingSlots(grouped, context), context);
 
         // 自维持功能（如活水源）：即便容器内没有它自己的活物品，也要进入主流程参与 tick。
         // 遍历的是注册期算好的静态清单（通常 0~1 个），不逐函数判定，保证成千上万个容器

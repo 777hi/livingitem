@@ -13,6 +13,7 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerChunkCache;
+import com.qiqi.li.living.container.ContainerLivingItemHandler;
 import com.qiqi.li.logging.ModLog;
 
 /**
@@ -83,6 +84,11 @@ public class ContainerMonitorCommand {
             ModLog.CONTAINER.info("[Cache] {}", line);
             ctx.getSource().sendSuccess(() -> Component.literal("[Cache] " + line), false);
         }
+        // 跨 tick 表的规模（全服一张，与维度无关 ⇒ 只打一次）。用法：走远一圈再回来反复采样，
+        // 「盖章键」应回落到稳态而不是单调上涨 ⇒ R-06 sweep 真在回收（整改计划 §6.3 实机第 3 条）。
+        String lifecycle = ContainerLivingItemHandler.describeLifecycleStats();
+        ModLog.CONTAINER.info("[Cache] 跨tick表 {}", lifecycle);
+        ctx.getSource().sendSuccess(() -> Component.literal("[Cache] 跨tick表 " + lifecycle), false);
         return 1;
     }
 

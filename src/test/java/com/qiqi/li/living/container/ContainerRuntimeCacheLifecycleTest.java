@@ -47,11 +47,11 @@ class ContainerRuntimeCacheLifecycleTest {
 
     @Test
     void itemLeavingSlot_isInvalidated() {
-        ContainerLivingItemHandler.trackLivingSlots("k", Map.of(3, Items.FURNACE));
+        ContainerLivingItemHandler.trackLivingSlots("k", Map.of(3, Items.FURNACE), null);
         assertTrue(ContainerLivingItemHandler.drainRuntimeCacheInvalidations().isEmpty(),
             "首次追踪（无历史）不该产生作废");
 
-        ContainerLivingItemHandler.trackLivingSlots("k", Map.<Integer, Item>of());
+        ContainerLivingItemHandler.trackLivingSlots("k", Map.<Integer, Item>of(), null);
         List<ContainerLivingItemHandler.RuntimeCacheInvalidation> inv =
             ContainerLivingItemHandler.drainRuntimeCacheInvalidations();
         assertEquals(1, inv.size(), "槽位空了 ⇒ 应登记 1 条作废");
@@ -62,10 +62,10 @@ class ContainerRuntimeCacheLifecycleTest {
 
     @Test
     void swappingItemType_isInvalidated() {
-        ContainerLivingItemHandler.trackLivingSlots("k", Map.of(3, Items.FURNACE));
+        ContainerLivingItemHandler.trackLivingSlots("k", Map.of(3, Items.FURNACE), null);
         ContainerLivingItemHandler.drainRuntimeCacheInvalidations();
 
-        ContainerLivingItemHandler.trackLivingSlots("k", Map.of(3, Items.HOPPER));
+        ContainerLivingItemHandler.trackLivingSlots("k", Map.of(3, Items.HOPPER), null);
         List<ContainerLivingItemHandler.RuntimeCacheInvalidation> inv =
             ContainerLivingItemHandler.drainRuntimeCacheInvalidations();
         assertEquals(1, inv.size(), "换成另一种活物品 ⇒ 应登记作废");
@@ -74,18 +74,18 @@ class ContainerRuntimeCacheLifecycleTest {
 
     @Test
     void sameItemPersisting_isNotInvalidated() {
-        ContainerLivingItemHandler.trackLivingSlots("k", Map.of(3, Items.FURNACE));
+        ContainerLivingItemHandler.trackLivingSlots("k", Map.of(3, Items.FURNACE), null);
         ContainerLivingItemHandler.drainRuntimeCacheInvalidations();
 
-        ContainerLivingItemHandler.trackLivingSlots("k", Map.of(3, Items.FURNACE));
+        ContainerLivingItemHandler.trackLivingSlots("k", Map.of(3, Items.FURNACE), null);
         assertTrue(ContainerLivingItemHandler.drainRuntimeCacheInvalidations().isEmpty(),
             "同类物品持续存在 ⇒ 不该作废（否则燃料/进度会被反复清零）");
     }
 
     @Test
     void drainIsDestructive_secondCallEmpty() {
-        ContainerLivingItemHandler.trackLivingSlots("k", Map.of(3, Items.FURNACE));
-        ContainerLivingItemHandler.trackLivingSlots("k", Map.<Integer, Item>of());
+        ContainerLivingItemHandler.trackLivingSlots("k", Map.of(3, Items.FURNACE), null);
+        ContainerLivingItemHandler.trackLivingSlots("k", Map.<Integer, Item>of(), null);
         assertEquals(1, ContainerLivingItemHandler.drainRuntimeCacheInvalidations().size());
         assertTrue(ContainerLivingItemHandler.drainRuntimeCacheInvalidations().isEmpty(),
             "取走即清空 ⇒ 第二次 drain 应为空");
@@ -93,7 +93,7 @@ class ContainerRuntimeCacheLifecycleTest {
 
     @Test
     void nullContainerKey_isIgnored() {
-        ContainerLivingItemHandler.trackLivingSlots(null, Map.of(3, Items.FURNACE));
+        ContainerLivingItemHandler.trackLivingSlots(null, Map.of(3, Items.FURNACE), null);
         assertTrue(ContainerLivingItemHandler.drainRuntimeCacheInvalidations().isEmpty());
     }
 

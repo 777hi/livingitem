@@ -1,5 +1,6 @@
 package com.qiqi.li.living.container;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
@@ -53,5 +54,36 @@ class ItemFormLiveViewsTest {
     void nullSafety() {
         ItemFormLiveViews.register(null, new ItemStackHandler(9), null);
         assertNull(ItemFormLiveViews.find(null));
+    }
+
+    /**
+     * 回归（2026-11-01，R-06 缺口 4）：惰性过期只在<b>有人查询</b>时回收。
+     * 背包停止 tick 且再无人按该 UUID 取货（物品被销毁 / 丢失 / 玩家下线）⇒ 永远没人查
+     * ⇒ 条目连同第三方 {@code IItemHandler} 的强引用一起常驻到停服。
+     * {@link ItemFormLiveViews#evictExpired} 由容器层 sweep 按周期主动淘汰，补掉这一族。
+     *
+     * <p>{@code register} 内部用真实钟盖章，所以用例分两次调用测两端：
+     * 用「判定时钟 = 现在」证明新鲜的不会被收，用「判定时钟推后 60s（&gt; TTL 2s）」证明过期的会被收。</p>
+     */
+    @Test
+    @DisplayName("无人查询也要能收：evictExpired 主动淘汰过期条目")
+    void evictExpired_removesStaleEntriesWithoutAnyQuery() {
+        UUID a = UUID.randomUUID();
+        UUID b = UUID.randomUUID();
+        ItemStackHandler ha = new ItemStackHandler(27);
+        ItemStackHandler hb = new ItemStackHandler(9);
+        long now = System.currentTimeMillis();
+
+        ItemFormLiveViews.register(a, ha, null);
+        ItemFormLiveViews.register(b, hb, null);
+
+        assertEquals(0, ItemFormLiveViews.evictExpired(now), "刚登记的（在 TTL 内）不该被淘汰");
+        assertSame(ha, ItemFormLiveViews.find(a));
+        assertSame(hb, ItemFormLiveViews.find(b));
+
+        assertEquals(2, ItemFormLiveViews.evictExpired(now + 60_000),
+            "越过 TTL 的两条应被主动淘汰（修复前：没人 find 就永远留在表里）");
+        assertNull(ItemFormLiveViews.find(a));
+        assertNull(ItemFormLiveViews.find(b));
     }
 }

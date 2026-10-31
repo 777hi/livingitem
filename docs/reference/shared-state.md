@@ -21,7 +21,7 @@
 | `BeaconChestHost` | 登记 | `activeLids` `current` `lidLastTick` |
 | `BeaconPlayerHostSync` | 登记 | `current` |
 | `ContainerChunkCache` | 登记 | `INSTANCE` |
-| `ContainerLivingItemHandler` | 登记 | `CONTAINER_DATA` `LIVING_SLOT_ITEMS` `PENDING_RUNTIME_INVALIDATIONS` `POS_TO_CACHE_KEY` |
+| `ContainerLivingItemHandler` | 登记 | `CONTAINER_DATA` `LAST_SEEN` `LIVING_SLOT_ITEMS` `PENDING_RUNTIME_INVALIDATIONS` `POS_TO_CACHE_KEY` |
 | `ContainerMenuInfoRequestPacket` | 登记 | `LAST_REQUEST` |
 | `ContainerRuntimeCache` | 登记 | `dirtyContainers` `store` |
 | `FailureThrottle` | ⚠️ 本类无清理入口 | `FAILURES` |
@@ -56,16 +56,18 @@
 | # | 判断 | 判据（出处） | 不知道会做错什么 |
 |---|---|---|---|
 | J1 | `CONTAINER_DATA` 的 TTL 节拍是**每 1200 次 `processContext`**，不是每 N tick、也不是按墙钟 | `ContainerLivingItemHandler.java:90`（`CLEANUP_INTERVAL = 1200`）· `:624`（每次容器处理计数）· `:690-693` | 按「每 5 分钟扫一次」估算回收延迟会错：容器越多、扫得越勤（10k 容器约每 7 秒一轮，单容器存档可能几小时一轮） |
-| J2 | `POS_TO_CACHE_KEY` 只在 `entry(ctx)` 里建 ⇒ **只装活物品、没有容器级数据的容器没有位置索引** | `indexPositions` 的唯一调用点在 `entry(ctx)` 内 | 以为「玩家破坏方块一定能清」；实际破坏路径覆盖不到这类容器 ⇒ 同物品原地交换会继承旧进度（R-06 缺口 1） |
+| J2 | 位置索引有**两个**建立点：`entry(ctx)`（容器级数据首建）与 `trackLivingSlots`（追踪条目首现，2026-11-01） ⇒ 只装活物品的容器玩家破坏也能清 | `ContainerLivingItemHandler#trackLivingSlots`（`previous == null` 分支）· 判据测试 `ContainerCacheSweepTest.livingOnlyContainer_...` | 修复前只装活物品、没有流体/红石/电力数据的容器**永远没索引** ⇒ 破坏也清不掉，同物品原地交换会继承旧进度。**残留限制**：位置只在「首现」时刷新 ⇒ 被活塞搬走的双箱可能留旧索引（与修复前同源，未新增风险） |
 | J3 | `LIVING_SLOT_ITEMS` 与 `ContainerRuntimeCache` 是**瞬态、可重建、可随时丢弃**的；要落盘的数据**不得**放这里 | `D-container-20` · `ContainerRuntimeCache` 类头「生命周期契约」 | 又去给这两张表设计持久化 / 长 TTL / 存档格式（该方案已被明确否决过一次，代价是整套 codec） |
-| J4 | `ContainerRuntimeCache.removeSlot` 删空内层槽位后**不删外层键** | `ContainerRuntimeCache#removeSlot`（无外层删除分支） | 以为作废即回收；空壳键会累积（R-06 缺口 3） |
-| J5 | `ItemFormLiveViews#VIEWS` 是**惰性过期**：条目只在 `find()` 命中过期时才删 | `ItemFormLiveViews#find`（先查 `TTL_MS` 再 `remove`） | 以为「每 tick 重建 ⇒ 不泄漏」；实际背包停 tick 且再无人按该 UUID 取货时条目常驻到停服，并强引用第三方 `IItemHandler`（R-06 缺口 4） |
+| J4 | `removeSlot` 删空内层后**连外层键一起删**（2026-11-01）；⚠️ 要断言这件事只能用 `holdsContainer(key)`，**不能用 `getSnapshot`** | `ContainerRuntimeCache#removeSlot`（空 ⇒ `store.remove`）· 判据测试 `ContainerCacheSweepTest.removeSlot_lastSlot_deletesOuterKey` | `getSnapshot` 对「无键」和「有键但空壳」都返回空 map ⇒ 用它断言等于没断言（这正是当初空壳能活下来的原因：没人看得见） |
+| J5 | `ItemFormLiveViews#VIEWS` 有**两条**回收路：`find()` 命中过期的惰性删 + 容器层 sweep 的 `evictExpired(nowMs)` 主动删（2026-11-01） | `ItemFormLiveViews#find` / `#evictExpired` · 判据测试 `ItemFormLiveViewsTest.evictExpired_removesStaleEntriesWithoutAnyQuery` | 以为惰性过期够用 ⇒ 背包停 tick 且再无人按该 UUID 取货时条目常驻到停服，并强引用第三方 `IItemHandler`（没人查询就没人回收的「惰性回收」陷阱） |
+| J6 | **卸载事件里不得查世界 / 能力，但可以直接改 tick 线程的表**（主线程） | `D-container-22` · 推导链见 [event-threading.md](event-threading.md) §2 | 两个方向都错过：① 把它当异步线程，去写「只入队 + drain」的无谓改造（已作废一次）；② 在卸载事件里查能力 ⇒ 再入触发区块加载 |
 | J6 | **卸载事件里不得查世界 / 能力，但可以直接改 tick 线程的表**（主线程） | `D-container-22` · 推导链见 [event-threading.md](event-threading.md) §2 | 两个方向都错过：① 把它当异步线程，去写「只入队 + drain」的无谓改造（已作废一次）；② 在卸载事件里查能力 ⇒ 再入触发区块加载 |
 | J7 | 跨维度广播表（`BeaconPlayerHostSync` / `BeaconChestHost` / `LivingToolHostSync`）的当 tick 快照**只能在 tick 头 `beginTick` 清，不能在逐维度 flush 里清** | flush 是 per-level 调用（`LivingItem#onServerTick` 各 flush 点）· `BroadcastDedup.java:41`「⚠️ 不是本维度的：用本维度会误删其它维度玩家的记录」 | 在第二个维度的 flush 里清空 ⇒ 第一个维度刚算出的记录被抹掉 ⇒ 联机玩家看不到对方 |
 | J8 | `LearnedLayouts` **落盘**（`config/living_item/…json`） | 该类 load/save 路径 | 以为清内存就清掉了学习结果；测试要调 `clearForTest`，否则单例污染下一个用例 |
 | J9 | 名单区显示「⚠️ 本类无清理入口」的**才算缺口**，目前三处：`FailureThrottle#FAILURES`、`MapUpdateSkipHelper#cooldowns` / `#lastUpdateTick` | 名单区「清理入口」列（机器推）+ 本类文件内无 `ServerStoppedEvent` 处理器 | 单机退出存档再进另一存档时旧记录仍在；`lastUpdateTick` 更实际：**tick 计数跨存档重置** ⇒ `current - last < 20` 会把新存档的地图更新误跳过，直到新 tick 追上旧值 |
 | J10 | 清理钩子必须登记在**缓存类自己的文件**里（`StaticCacheRegistry.onServerStop` 出现在该类 static 块） | `StaticCacheRegistry` 类头约定 · 名单区「清理入口」列之所以能机器推，靠的就是这条约定 | 登记写在别处 ⇒ 名单把它判成「无清理入口」，读该类的人也看不到「会不会被清」；新表漏登记的失败模式正是这套机制要防的（`LivingToolPlayerSync` 一例见 §3） |
 | J11 | `LivingItemManager#APPLICABLE_CACHE`、`LearnedLayouts#LEARNED/AMBIGUOUS` 显示「⚠️ 本类无清理入口」但**不是缺口** | 前者按 `Item` 类型有界且启动后基本只读（`LivingItemManager#APPLICABLE_CACHE` 声明处）；后者**故意落盘**（`config/living_item/…json`，见 J8） | 误当泄漏去加停服清理 ⇒ 反而把跨存档的学习结果清掉，或为一个不增长的缓存白加一层清理 |
+| J12 | `LAST_SEEN` 的**盖章点是 `trackLivingSlots`**（每个进 `processContext` 的容器都盖，含已无活物品的）；回收口是 `sweepUnseenContainers`，判据 = 「消失满 5 分钟」 | `ContainerLivingItemHandler#trackLivingSlots` 首行盖章 · `#sweepUnseenContainers` · `LivingItem#onServerTick` 的调用点 · 判据测试 `ContainerCacheSweepTest` | ① 把盖章挪进「有活物品」分支 ⇒ 空容器被误判成消失，走两步就丢进度；② 回到逐形态挂六种事件（区块卸载 / 下线 / 实体移除 / 销毁 / 拾取 / 非玩家移除）⇒ 六条路径必漏其一，而那正是原病根。**「没再被看到」是六种成因的共同结果**，一个判据全覆盖 |
 
 ---
 

@@ -15,6 +15,49 @@
 
 ---
 
+## 2026-11-01
+
+- ✅ **R-06 缓存生命周期实现：跨 tick 表有了统一回收口**（整改计划批次 6，接续当天的
+  A/B 实验与参考层减法）。
+  **病**：四张跨 tick 表原先只有四条清理路径（容器继续 tick 且已空 / 玩家破坏且位置索引命中 /
+  物品形态取消活化 / 停服），而容器**停止被处理**的成因有六种 —— 区块卸载、玩家下线、
+  实体消失 / 死亡、物品销毁或丢失、掉落物被拾取、非玩家移除（爆炸 / 活塞 / `/setblock`）。
+  六种全都不清，数据一路留到停服；其中掉落物形态还**每次掉落换新键**（`item_entity_<uuid>`
+  随 `ItemEntity` 的随机 UUID），等于每掉一次漏一份。
+  **为什么不逐形态挂事件**（这是本条的决策核心，`D-container-23`）：六条事件路径 ⇒ 必漏其一，
+  而且「实体消失」「物品被销毁」在原版根本没有可靠事件。反过来看，六种成因有一个
+  **共同结果**：这个 `cacheKey` 不再出现在 tick 里。⇒ 判「**消失满阈值**」，一个判据全覆盖。
+  **实现**：
+  ① `ContainerLivingItemHandler.LAST_SEEN`（`cacheKey → 盖章毫秒`），**盖章点 = `trackLivingSlots` 首行**
+  —— 它对每个进入 `processContext` 的容器都调用，⚠️ 必须盖在「有无活物品」判定**之外**
+  （空容器只是没有活物品，不是消失了；盖错位置会让常开但暂时清空的箱子被误回收）。
+  ② `sweepUnseenContainers()` 由 L4 `onServerTick` 每 tick 调、内部 **1 分钟节拍**门控，
+  过期键走 `removeDataByKey` —— 即**与「玩家破坏」同一条作废入口**（四张表 + 整容器运行时作废），
+  不新建第二套清理路径；阈值 `UNSEEN_TTL_MS = 5 分钟`，按 `D-container-20`（运行时数据可丢）可激进。
+  ③ 位置索引补建：`trackLivingSlots` 在**追踪条目首次出现**时调 `indexPositions(ctx, cacheKey)`
+  ⇒ 只装活物品、没有流体/红石/电力数据的容器不再「破坏也清不掉」；只在首现时建 ⇒ 稳态零成本
+  （每 tick 重算位置在 10k 容器下不可接受）。`ctx` 为 null（测试替身 / 无世界）时跳过索引但仍盖章，
+  兜底不依赖索引。
+  ④ `ContainerRuntimeCache.removeSlot` 删空内层后**连外层键一起删**（空壳残留）。
+  ⑤ `ItemFormLiveViews.evictExpired(nowMs)` 并入同一节拍 —— 它原先只在 `find()` 里惰性过期，
+  「没人查询就永不回收」，还会强引用第三方 `IItemHandler`（当天 A/B 实验抓到的第 4 个缺口）。
+  ⑥ **双箱确认无需代码**：两段坐标本来就映射到同一个 `cacheKey`，`removeDataByKey` / sweep
+  天然按整键收 ⇒ 原计划里「保留另一半还 tick」的逻辑根本不用写；补一条测试钉住这个键形。
+  **两处口径修正（写进计划，免得后人以为是实现缩水）**：
+  判据原写「时间/**游戏刻**」，实现取**墙钟** —— 判的是「多久没被看到」，而游戏刻在区块卸载与
+  跨维度下不可比，且这张表是全服一张；副作用只有「服务端卡顿时窗口变长」，数据本就可丢。
+  测试原计划「方块 / 玩家 / 实体 / 掉落物各一项」，实际只覆盖方块形态 + 一个裸键：
+  sweep 判的是 `cacheKey` 的出现与否，与键形无关，四种形态的差异全在「谁给它盖章」，
+  而那由 `trackLivingSlots` 统一承担 ⇒ 四类各写一条是同一个断言抄四遍（真机行为仍需实机验）。
+  **可复算的判据**：`ContainerCacheSweepTest` 10 项 + `ItemFormLiveViewsTest` 1 项 = 测试 1266→1277。
+  当天另有一个**新门禁立刻生效的实证**：新增 `LAST_SEEN` 后没重跑 `gen_rosters.py`，
+  `doc_check` 第 13 项当场 FAIL（「名单区过期，源码已变」）⇒ 上一提交建立的生成制在第一次
+  改动源码时就发挥作用了。
+  ⚠️ **实机三条待验**：走远超 5 分钟再回来进度归零但不报错；玩家下线再上线不继承上一世运行时状态；
+  `/livingitem debug cache` 新增的「跨tick表」行观察 `LAST_SEEN` 规模稳定不涨（`describeLifecycleStats`，另有两条单测钉住它的判据）。
+  → `docs/decisions.md` D-container-23 · `docs/reference/container-data-lifecycle.md` §2/§3/§4 ·
+  `living-item-infrastructure.md` §3.5 · `shared-state.md` J2/J4/J5/J12 · 整改计划 §6
+
 ## 2026-10-31
 
 - 🐞 **红电对外能量接口也改成「真有活铜灯才存在」**（流体 §10.4 的同款缺陷，主动补齐）——

@@ -146,7 +146,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1266 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
+**合计测试用例 1277 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -171,6 +171,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-11-01 | ✅ **R-06 落地：跨 tick 缓存有了统一回收口** —— 容器「停止被处理」的六种成因（区块卸载 / 下线 / 实体消失 / 物品销毁 / 掉落物拾取 / 非玩家移除）原先全不清，留到停服；掉落物还每次掉落换新键 ⇒ 逐形态挂事件要六条路径且必漏其一，改判**共同结果**：`trackLivingSlots` 每 tick 给 `cacheKey` 盖章进 `LAST_SEEN`，`sweepUnseenContainers`（L4 每 tick 调 / 1 分钟节拍）把消失满 5 分钟的键走 `removeDataByKey` 收掉（与「玩家破坏」**同一条入口**，不新建清理路径）。同批闭合四缺口：只装活物品的容器**首现即建位置索引**（修「玩家破坏也清不掉」）、`removeSlot` 删空后连外层键删、`ItemFormLiveViews` 惰性过期补成主动淘汰（持第三方 handler）、双箱**确认无需代码**（两段坐标本就同键）。测试 1266→1277；⚠️ 实机三条待验见计划 §6.3 | `docs/decisions.md` D-container-23 · `container-data-lifecycle.md` §4 · `ContainerCacheSweepTest` |
 | 2026-10-31 | 🔬 **A/B 代理实验 → 证伪一处「关键事实」→ 给参考层做减法** —— 同 6 题跑两组隔离代理：禁读文档组 38 文件 / ≈6900 行，文档优先组 10 文件 / ≈490 行 ⇒ 净减负成立，但**B 组错 2/6，两处都错在我写的行上**。🔴 `ChunkEvent.Unload` **实为服务器主线程**（`thenRunAsync` 的**第二参数是 executor**=`unloadQueue::add`，body 由 `ChunkMap.processUnloads` 主线程 drain）⇒ 卸载处理器不是竞态、R-06「事件只入队」项作废，红线改成「卸载中不查世界」（会**再入**）；另抓到 `ItemFormLiveViews`「每 tick 重建」是错行（实为只在 `find()` 惰性过期）。**减法**：三份索引里「成员×线程×建立×清理×持久化」七列手写复述**删掉**（复述会腐烂且腐烂无症状），名单改由 `tools/gen_rosters.py` 生成、**第 13/14 项由「名字出现即可」升级为「生成区与源码逐字一致」**（实测手删一行即红），判断收进「判断清单 J1~J11，每条带判据」+「已判过不是问题」节；`docs/README.md` 立 **20 文件判据**（可重推的别写、不可重推的必须写且必须带理由）。测试 1266 不变 | `docs/decisions.md` D-container-21→22 · `docs/README.md`「该不该写」 · `tools/gen_rosters.py` · `event-threading.md` §2 判据链 |
 | 2026-10-31 | 📋 **buffer 内容归位 + 文档系统机制升级（会话即维护）** —— 修 3 处「稳定层反话」（api-contract §2.2 / 设计模板列数 / tnt tech 头部）+ 29 条定案晋升（TNT tech 新 §4.6 规模化约束 / tool 5 条 / fluid §0 规则 10 / decisions D-open-01 / api-contract §1.6 jar 红线…）；buffer/README 状态表改**生成制**（状态单一来源 = 文档头部，`tools/gen_buffer_index.py`）+ doc_check 新增**第 12 项**（索引不一致即红）+ 链接口径改渲染器真相（根相对降警告）；设计模板新增 **§2.3 落地同步表**；§7.2 立「会话即维护」。纯文档，测试 1266 不变 | `docs/README.md` §7.1/§7.2 · `tools/gen_buffer_index.py` · `living-item-design-template.md` §2.3 |
 | 2026-10-31 | 🐞 **红电对外能量接口只在「真有活铜灯」时存在（补齐流体同款缺陷）** —— 线缆类模组按「能力是否非 null」判储能（Flux `hasCapability` / Mekanism acceptorCache）⇒ 无灯的箱子/机器全被认成储能（`canReceive=true` 恒收 0，每拍白跑一轮模拟）。修：provider 读电力账本通告标志（O(1)，不扫容器）+ 正边沿在电力 tick **所有早退之前**通告（纯电池容器无发电机）+ 负边沿（最后一盏灯被拿走后功能已不分组）由相位写回兜底（仅在通告中扫容器）；客户端恒不发；测试 1262→1266 | `docs/tech/living-power-tech.md` §4.1 · `ContainerEnergyStorage` / `ContainerPhaseWriteback` · `ContainerEnergyCapabilityTest` |
@@ -180,7 +181,6 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-10-30 | 🛡️ **R-01 复查补漏：发现/重扫路径的第三方能力查询也隔离** —— NeoForge 不捕获 provider 异常（`BlockCapability#getCapability` 直接调用），而 `scanChunkForContainers` 逐 BE 查询此前不在隔离范围内：抛异常会抛穿 tick，且已从队列摘除的剩余 pending（≤64 区块）失去自动重扫。修：逐 BE try/catch，失败保守保留区块（代价：永久抛异常的 BE 会让区块常驻、每 tick 重试一次，日志限频）；删掉无证据的逐区块兜底（引擎调用视为可信）；补 1 项测试；测试 1258→1259 | `docs/system-design/living-item-infrastructure.md` §3.1.1 · `ContainerChunkCacheChunkLoadTest` |
 | 2026-10-30 | 🐞 **区块未就绪不再丢容器重扫请求** —— 单箱「走远后流体不显示、重进恢复」排查；限额队列重试、卸载撤销，新增 12 项守卫，测试 1234→1246；受控回归通过，现场待真机复测 | `docs/system-design/living-item-infrastructure.md` §3.2 · `docs/tech/living-fluid-tech.md` §7.1 |
 | 2026-10-30 | ✅ **物品被水流推出水流（末端不再停住）** —— 用户口径「物品受一股推力，推出水流才对」。修：末端沿来水方向推出到无水格；直行仍有水 / 越界 / 活物品 / 被占 ⇒ 停在末端。🔴 顺带修顺序缺陷：`pushItems` 原排在焚毁/转化之前 ⇒ 推出让物品抢跑逃离熔岩格（焚毁 / 生源 / 防火 3 项测试同时红），现移到反应类之后；测试 1231→1234 | `docs/tech/living-fluid-tech.md` §0 规则 9 · §3.3 · §3.6 · `ContainerFluidDataTest` ㊽/㊾/㊿ |
-| 2026-10-30 | 🐞 **水流推动分叉改为「直行优先 + 固定回退序」（修「物品走错分叉、路线随机」）** —— children 原先按 `flows`（LinkedHashMap）迭代顺序试，而该顺序 = 插入历史（被挤占删除后重生长会追加到末尾）⇒ 同一局面去向翻转；同 level 物品顺序同样继承历史。修：直行优先（`fromSlot → 本格`）+ 回退序 右/下/左/上 + 同层 slot 定序；补 2 项测试，测试 1229→1231 | `docs/tech/living-fluid-tech.md` §3.3.1 · `ContainerFluidDataTest` ㊻/㊼ |
 
 ## 提交前必跑（2026-10-30 更新）
 

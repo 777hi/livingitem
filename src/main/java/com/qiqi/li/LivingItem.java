@@ -361,6 +361,12 @@ public class LivingItem {
             com.qiqi.li.living.domain.tools.LivingToolPlayerSync.flush(level);
         }
 
+        // R-06（2026-11-01）：回收「不再被 tick 看到」的容器 —— 区块卸载 / 玩家下线 / 实体消失 /
+        // 物品销毁 / 掉落物被拾取 / 非玩家移除，六种成因都收敛为「这个键没再出现」，
+        // 一个判据覆盖全部（内部按 5 分钟阈值 + 1 分钟节拍门控，不在热路径上全表扫）。
+        // ⚠️ 必须在下面 drain 之前：让同一 tick 就把整容器运行时数据清掉并下发。
+        ContainerLivingItemHandler.sweepUnseenContainers();
+
         // 运行时缓存生命周期（方案 A，2026-10-11）：物品离开槽位 / 换物品 / 容器卸载
         // ⇒ 作废该槽位（或整容器）的运行时数据。必须在下方 flush 之前 ——
         // 让「作废」也在本 tick 下发（removeSlot 会标脏），客户端 tooltip 随即回退到组件值。

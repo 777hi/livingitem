@@ -73,6 +73,21 @@ public final class ItemFormLiveViews {
         return find(containerUuid) != null;
     }
 
+    /**
+     * 主动淘汰过期条目，返回淘汰数 —— 由容器层的 R-06 周期清理调用（2026-11-01）。
+     *
+     * <p>为什么不能只靠 {@link #find} 的惰性过期：那只在<b>有人查询</b>时回收。背包停止 tick
+     * 且再无人按该 UUID 取货（物品被销毁 / 丢失 / 玩家下线）⇒ 永远没人查 ⇒ 条目连同
+     * 第三方 {@code IItemHandler} 的强引用一起常驻到停服。</p>
+     *
+     * @param nowMs 当前时刻（测试可注入，避免真实等待 TTL）
+     */
+    static int evictExpired(long nowMs) {
+        int before = VIEWS.size();
+        VIEWS.entrySet().removeIf(en -> nowMs - en.getValue().lastSeenMs() > TTL_MS);
+        return before - VIEWS.size();
+    }
+
     public static void clear() {
         VIEWS.clear();
     }

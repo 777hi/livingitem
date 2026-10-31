@@ -872,15 +872,21 @@ private final Set<String> reusableKeySet = new HashSet<>();
 > 需要跨区块卸载 / 重启保留的数据**不得**放在本表，必须走 `ContainerDataKey` /
 > DataComponent / 宿主附件。⇒ 回收可以激进，不需要落盘。
 >
-> ⚠️ **现状缺口（整改计划 R-06 待修）**：当前清理只覆盖「容器继续 tick / 玩家破坏且位置索引命中 /
-> 物品形态取消活化 / 停服」。区块卸载、玩家下线、实体消失、物品销毁、掉落物拾取、
-> 非玩家移除（爆炸 / 活塞 / `/setblock`）都会残留；设计为 `lastSeen` + 周期 sweep 统一覆盖。
+> ⚠️ **回收现状（整改计划 R-06，2026-11-01 已实现）**：清理覆盖「容器继续 tick / 玩家破坏且
+> 位置索引命中 / 物品形态取消活化 / **消失满阈值** / 停服」。最后一条是新增的统一回收口
+> `ContainerLivingItemHandler.sweepUnseenContainers()`（L4 每 tick 调，内部 1 分钟节拍）：
+> 区块卸载、玩家下线、实体消失、物品销毁、掉落物拾取、非玩家移除（爆炸 / 活塞 / `/setblock`）
+> 都不再残留。**判据是「这个缓存键没再出现在盖章里」，不是逐形态挂事件** ——
+> 六种成因要六条事件路径且必漏其一，而「没再被看到」是它们的共同结果（`D-container-23`）。
 >
-> 按**容器形态**拆开的完整表（身份键 / tick 停止条件 / 数据宿主 / 四张表的建立与清理 / 已知缺口）
+> 按**容器形态**拆开的完整表（身份键 / tick 停止条件 / 数据宿主 / 四张表的建立与清理 / 已闭合缺口）
 > 见 [reference/container-data-lifecycle.md](../reference/container-data-lifecycle.md)。
 
 **实现（`ContainerLivingItemHandler` 登记 + `LivingItem` 执行）**：
 
+- **盖章**：`trackLivingSlots` 首行把 `cacheKey → System.currentTimeMillis()` 写进 `LAST_SEEN`。
+  ⚠️ 盖章必须在「有无活物品」判定**之外** —— 空容器只是没有活物品，不是消失了；
+  把盖章写进有活物品的分支会让常开但暂时清空的箱子被误回收。
 - **L1 追踪**：`processContext` 每 tick 把「本容器活物品槽位 → 物品类型」与上次记录对比，
   失效的槽位登记进待清队列（`RuntimeCacheInvalidation`，放在**早退分支之前** ——
   「容器里已无活物品」正是要清理的场景）；容器卸载（`removeDataByPos`）登记**整容器**作废。

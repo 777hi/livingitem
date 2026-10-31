@@ -83,10 +83,12 @@ public class ContainerRuntimeCache {
 
     public static void removeSlot(String containerKey, int slot) {
         Map<Integer, RuntimeSegments> slots = store.get(containerKey);
-        if (slots != null) {
-            slots.remove(slot);
-            dirtyContainers.add(containerKey);
-        }
+        if (slots == null) return;
+        slots.remove(slot);
+        dirtyContainers.add(containerKey);
+        // ⚠️ 删空内层后要删外层键（R-06 缺口 3）：否则「最后一个槽位被作废」的容器
+        // 会在 store 里留下空壳键，只能等整容器作废或停服才消失。
+        if (slots.isEmpty()) store.remove(containerKey);
     }
 
     public static void removeContainer(String containerKey) {
@@ -140,6 +142,16 @@ public class ContainerRuntimeCache {
     /** 是否有尚未取走的脏容器（诊断 / 短路用）。 */
     public static boolean hasDirty() {
         return !dirtyContainers.isEmpty();
+    }
+
+    /**
+     * 本表是否为该容器持有<b>外层键</b>（哪怕内层槽位已空）。
+     *
+     * <p>与 {@link #getSnapshot} 的区别正是这里要测的：快照对「无键」和「有键但空壳」
+     * 都返回空 map，看不出空壳残留（R-06 缺口 3）。</p>
+     */
+    public static boolean holdsContainer(String cacheKey) {
+        return store.containsKey(cacheKey);
     }
 
     // ── 同步（发包职责在 L4）─────────────────────────────────
