@@ -133,6 +133,7 @@ src/test/java/com/qiqi/li/
 │   ├── NetworkTraversalTest.java              # 铜块网络遍历（含 E2E 真实传播）
 │   ├── WaxedCopperStorageTest.java            # 储能（含 telemetry）
 │   ├── BulbItemEnergyStorageTest.java         # 铜灯通用电池
+│   ├── ContainerEnergyCapabilityTest.java     # 对外能量能力存在性（§4.1）·无灯不报名 / 有灯报名 / 拿走最后一盏由写回兜底撤名 / 边沿精确失效一次 / 客户端不报名 / provider 让位四段
 │   ├── PhaseSnapshotWarmupTest.java           # 相位快照热身
 │   ├── RoundTripConservationIT.java           # Mekanism 往返守恒
 │   ├── WaxedGeneratorFeedChainTest.java      # 发电机喂链

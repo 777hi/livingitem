@@ -94,6 +94,12 @@ public class LivingWaxedCopperFunction implements LivingItemFunction, HasContain
         ContainerPowerData powerData = ContainerPowerAccess.getOrCreatePowerData(ctx);
         if (powerData == null) return;
 
+        // 对外能量能力的存在性边沿（§3.6 对外接口，2026-10-31）：只有容器里真有活铜灯
+        // 才对外报储能 —— 线缆按「能力非 null」判邻居是不是储能。放在所有早退之前：
+        // 纯电池容器（无发电机 ⇒ sensor/active 都会早退）也必须能报名。
+        ContainerEnergyStorage.announcePresence(ctx, powerData,
+            ContainerEnergyStorage.hasLivingBulb(entries));
+
         // 各锈蚟级本 tick 基础出力累加器（共振用，§3.7）。
         // 锈级共振单位是锈蚟级：同锈蚟级的多个连通块在此自然相加。
         final long[] baseReByOx = new long[PowerMath.OXIDATION_LEVELS];

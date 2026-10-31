@@ -146,7 +146,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1262 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
+**合计测试用例 1266 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -171,7 +171,8 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
-| 2026-10-31 | 🐞 **机械动力流体管道恢复（能力只在该有资产时存在）** —— 宽注册给**所有** BE 发 `IFluidHandler` ⇒ Create 按「能力非 null」判储液，把相邻**管道自身**判成 `FlowSource.FluidHandler`（而非 `OtherPipe`）⇒ 每跳断在假 tank、水完全不流；且任意 BE 都长排液接口。修：provider 加「当前真有派生源」判据（客户端恒不发）+ 驱动侧存在性边沿 `invalidateCapabilities`；整源口径与退役计划不变；测试 1259→1262 | `docs/tech/living-fluid-tech.md` §10.4 · `ContainerFluidHandler` / `LivingFluidFunction` · `ContainerFluidHandlerTest` |
+| 2026-10-31 | 🐞 **红电对外能量接口只在「真有活铜灯」时存在（补齐流体同款缺陷）** —— 线缆类模组按「能力是否非 null」判储能（Flux `hasCapability` / Mekanism acceptorCache）⇒ 无灯的箱子/机器全被认成储能（`canReceive=true` 恒收 0，每拍白跑一轮模拟）。修：provider 读电力账本通告标志（O(1)，不扫容器）+ 正边沿在电力 tick **所有早退之前**通告（纯电池容器无发电机）+ 负边沿（最后一盏灯被拿走后功能已不分组）由相位写回兜底（仅在通告中扫容器）；客户端恒不发；测试 1262→1266 | `docs/tech/living-power-tech.md` §4.1 · `ContainerEnergyStorage` / `ContainerPhaseWriteback` · `ContainerEnergyCapabilityTest` |
+| 2026-10-31 | 🐞 **机械动力流体管道恢复（能力只在该有资产时存在）** —— 宽注册给**所有** BE 发 `IFluidHandler` ⇒ Create 按「能力非 null」判储液，把相邻**管道自身**判成 `FlowSource.FluidHandler`（而非 `OtherPipe`）⇒ 每跳断在假 tank、水完全不流；且任意 BE 都长排液接口。修：provider 加「当前真有派生源」判据（客户端恒不发）+ 驱动侧存在性边沿 `invalidateCapabilities`；整源口径与退役计划不变；测试 1259→1262 | `docs/tech/living-fluid-tech.md` §10.4 · `ContainerFluidHandler` / `LivingFluidFunction` / `ContainerFluidHandlerTest` |
 | 2026-10-31 | 🐞 **活水车在活背包 GUI 里转向不再卡旧方向（物品形态补上槽位直发通道）** —— `syncSlotToClients` 对物品形态原是 no-op（空 positions 早退），兜底的原版 `broadcastChanges` 又因 `PatchedDataComponentMap` copy-on-write 共享 patch map，检测不到就地组件翻转 ⇒ 只有重开 GUI 才刷新。修：`syncWorldContainer` 空位置 + 有容器 UUID ⇒ 按容器 UUID 找观众（ContainerViewers 同口径、只发正看着这个容器的玩家）+ handler 实例匹配槽位直发槽位包；背包 GUI 里所有「组件翻转」类显示（水车转向 / 熔炉燃烧 / 工具动画）一并修复；新增 4 项测试，测试 1249→1253 | `docs/tech/living-backpack-tech.md` §6-#8 · `SimpleContainerContext#syncItemFormSlot` · `ItemFormSlotSyncTest` |
 | 2026-10-31 | ♻️ **物品推动改为「四邻力场」模型（替换流树 + 末端特判）** —— 方向 = 四邻 level 差矢量和，**主分量优先 + 次分量兜底**（修真机「摆弯道一个弯都过不去」）；45° 平局按**容器主轴**（宽 ⇒ 横；竖/正方 ⇒ 纵，用户定兜底取上下）；`flow=0` 停；**目标可为无水格** ⇒ 推出是自然结果，末端分支删除。服务端与渲染共用 `FluidFlowVector#direction`（修「左两象限朝左」），同步包加 `size`（channel 改 `_v2`）；**水车力矩同步改读力场**（原先源格 `fromSlot=-1` ⇒ 旁侧水车白转）；删 `orderChildren`/`childRank`/`straightTarget`；新增 3 项测试，测试 1249 | `docs/tech/living-fluid-tech.md` §3.3 · §3.3.1 · `living-water-wheel-tech.md` §0 规则 7 · `ContainerFluidDataTest` 51~53 |
 | 2026-10-30 | 🛡️ **R-01 复查补漏：发现/重扫路径的第三方能力查询也隔离** —— NeoForge 不捕获 provider 异常（`BlockCapability#getCapability` 直接调用），而 `scanChunkForContainers` 逐 BE 查询此前不在隔离范围内：抛异常会抛穿 tick，且已从队列摘除的剩余 pending（≤64 区块）失去自动重扫。修：逐 BE try/catch，失败保守保留区块（代价：永久抛异常的 BE 会让区块常驻、每 tick 重试一次，日志限频）；删掉无证据的逐区块兜底（引擎调用视为可信）；补 1 项测试；测试 1258→1259 | `docs/system-design/living-item-infrastructure.md` §3.1.1 · `ContainerChunkCacheChunkLoadTest` |

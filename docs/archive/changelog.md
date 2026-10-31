@@ -17,6 +17,20 @@
 
 ## 2026-10-31
 
+- 🐞 **红电对外能量接口也改成「真有活铜灯才存在」**（流体 §10.4 的同款缺陷，主动补齐）——
+  排查结论：`ContainerEnergyStorage.resolveProvider` 同为「宽注册 + 恒发实例」，而线缆类模组
+  判「邻居是不是储能」**只看能力是否非 null**（Flux `ForgeEnergyConnector#hasCapability`、
+  Mekanism `Transmitter#isValidAcceptor`/acceptorCache）⇒ 无灯的箱子 / 机器全被认成储能
+  （`canReceive=true` 但恒收 0），每拍白跑一轮存取模拟。本模组没有 Create 能量面，故无人报。
+  **修**：provider 加「当前真有活涂蜡铜灯」判据（读电力账本的通告标志，O(1)，不在能力查询里
+  扫容器）+ 客户端恒不发；存在性边沿两处：**正边沿**由 `LivingWaxedCopperFunction#tickContainerData`
+  在**所有早退之前**通告（纯电池容器无发电机，早退点很多）；**负边沿**（拿走最后一盏灯时
+  功能已不在 grouped、不再 tick）由 `ContainerPhaseWriteback#onWriteback` 兜底，且只在
+  「正在通告」时扫容器 ⇒ 稳态零成本。两处都走 `Level#invalidateCapabilities` 一次。
+  ⚠️ 客户端恒不发（连接外观由服务端同步的连接位决定，Mekanism/Flux 都不在客户端查能力）。
+  新增 4 项守卫（存在性三态 / 边沿精确一次 / 客户端 / 让位四段），测试 1262→1266。
+  📄 [living-power-tech.md](../tech/living-power-tech.md) §4.1 · `ContainerEnergyCapabilityTest`
+
 - 🐞 **机械动力流体管道「水不流动 + 乱接非流体容器」**（群友实测）—— 现象两面：
   ① Create 管道之间 / 管道与储罐之间**完全不走水**；② 管道对箱子、机器等**非流体容器**
   长出排液接口（DRAIN 外观）。

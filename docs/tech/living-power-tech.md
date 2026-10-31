@@ -73,6 +73,7 @@
 | 5 取消活化清电 | `LivingWaxedCopperFunction.getOwnedComponentTypes()`（**声明式**清理，漏列即孤儿数据） |
 | 8 无出身论 · 双向充放 | `BulbItemEnergyStorageTest` · `RoundTripConservationIT`（往返守恒） |
 | 相位快照跨会话续接 | `PhaseSnapshotWarmupTest`（8 例，含世界轴往返） |
+| 对外能力存在性 = 真有活铜灯（§4.1） | `ContainerEnergyCapabilityTest` |
 
 ---
 
@@ -653,6 +654,27 @@ fail-safe 不崩不刷（详见 oversized-stack-audit.md §2.8），long 内部�
 **离开系统即结算** —— 用户确认此为正常行为。
 ⇒ 因此未活化的涂蜡铜灯**恒为空**，且它不提供 `EnergyStorage.ITEM`
 （准入判据见 `BulbItemEnergyStorage.of`；另见 红电系统.md「活铜灯物品 = 通用电池」）。
+
+### 4.1 对外能量能力的存在性 = 真有活铜灯（2026-10-31）
+
+> 与 [流体 §10.4](living-fluid-tech.md) 同款约束：**能力的「有没有」必须跟着资产走**。
+
+- **判据**：`ContainerEnergyStorage.resolveProvider` 只在容器**当前有活涂蜡铜灯**时返回实例；
+  无灯 / 非容器 / 客户端 ⇒ `null`。它读电力账本的通告标志（O(1)），**不在能力查询里扫容器**
+  —— 能力查询是线缆的热路径。
+- **为什么**：线缆类模组判「邻居是不是储能」只看能力是否非 null ——
+  Flux `ForgeEnergyConnector#hasCapability`、Mekanism `Transmitter#isValidAcceptor`
+  /`acceptorCache`（`refreshConnections` 只在服务端跑，连接位同步到客户端）。
+  此前宽注册给**所有** BE 发实例（无灯 ⇒ 0 电量但 `canReceive = true`）⇒
+  任何箱子 / 机器都被认成储能，每拍白跑一轮存取模拟。
+- **边沿通告**：变化时 `Level#invalidateCapabilities` 一次（线缆缓存在
+  `BlockCapabilityCache`，不通知就不会重查）。
+  - **正边沿**（放进第一盏灯）：`LivingWaxedCopperFunction#tickContainerData` 在
+    **所有早退之前**通告 —— 纯电池容器（无发电机 ⇒ sensor/active 都会早退）也必须能报名。
+  - **负边沿**（拿走最后一盏灯）：此时功能已不在 grouped 里、不再 tick ⇒ 由
+    `ContainerPhaseWriteback#onWriteback` 兜底（只在「正在通告」时扫容器，稳态零成本）。
+- **客户端**：恒不报名（容器级数据只在服务端）；连接外观由服务端同步的连接位决定。
+- **守卫**：`ContainerEnergyCapabilityTest`（存在性三态 / 边沿精确一次 / 客户端 / 让位四段）。
 
 ---
 

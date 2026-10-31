@@ -142,12 +142,11 @@
 
 1. ⏳ **活避雷针**（Step 13：**供需分配** —— 让雷电给容器充电；排期在阶段四后）
    —— 详见 `living-power-tech.md` §8。
-2. ⚠️ **对外能量能力同款「宽注册 + 恒发实例」（2026-10-31 记，未修）** ——
-   `ContainerEnergyStorage.resolveProvider` 给**所有** BE 返回实例（无灯 ⇒ 0 电量），
-   而线缆类模组按「能力是否非 null」判储能 ⇒ 会把箱子/机器都当储能接口
-   （本模组没有 Create 能量面，故无人报；流体那边是同款缺陷，已修）。
-   修法照抄 fluid tech §10.4：存在性 = 容器当前真有活铜灯（`BulbBank.isBulb`），
-   并在红电 tick 做存在性边沿 `invalidateCapabilities`。触发条件：出现线缆误连报告。
+2. ~~**对外能量能力同款「宽注册 + 恒发实例」**~~ —— ✅ **2026-10-31 已修**（与流体 §10.4 同期）：
+   存在性 = 容器当前真有活涂蜡铜灯（读电力账本通告标志，O(1)）；正边沿在
+   `LivingWaxedCopperFunction#tickContainerData` **所有早退之前**通告（纯电池容器无发电机），
+   负边沿（最后一盏灯被拿走 ⇒ 功能已不分组）由 `ContainerPhaseWriteback` 兜底；客户端恒不发。
+   见 [power tech §4.1](tech/living-power-tech.md) · `ContainerEnergyCapabilityTest`。
 
 ## 活红石 / 活铜（2026-10-10 自 tech §0 迁入，D-doc-06）
 

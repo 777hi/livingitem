@@ -812,7 +812,10 @@ public class LivingItem {
         );
 
         // ── 红电对外能量接口（§3.6 v17.5）：宽注册 + 让位 + 铜灯通用电池 ──
-        // 宽注册：全部 BlockEntityType（provider 内部三层判定：非容器/直接实现者/已有主人 → 让位）
+        // 宽注册：全部 BlockEntityType（provider 内部判定：非容器/直接实现者/已有主人 → 让位）
+        // ⚠️ 与流体同款：provider 只在「容器当前真有活涂蜡铜灯」时发实例 ——
+        //    线缆按「能力非 null」判邻居是不是储能，恒发实例会把箱子/机器全认成储能
+        //    （2026-10-31，见 ContainerEnergyStorage#resolveProvider）
         net.neoforged.neoforge.capabilities.ICapabilityProvider<BlockEntity, Direction, IEnergyStorage> blockEnergyProvider =
             (be, side) -> com.qiqi.li.living.domain.power.ContainerEnergyStorage.resolveProvider(be, side);
         for (var beType : BuiltInRegistries.BLOCK_ENTITY_TYPE) {

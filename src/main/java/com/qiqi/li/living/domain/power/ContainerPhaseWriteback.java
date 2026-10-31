@@ -29,6 +29,13 @@ public final class ContainerPhaseWriteback implements ContainerTickHook {
         ContainerPowerData powerData = tick.data(ContainerPowerData.KEY);
         if (powerData == null) return;
 
+        // 能力存在性的**负边沿兜底**（2026-10-31）：容器里最后一个涂蜡铜块被拿走时
+        // LivingWaxedCopperFunction 已不在 grouped 里（不再 tick），没人看得到「灯没了」
+        // ⇒ 只能在这里撤名。只在「正在通告」时扫，稳态零成本。
+        if (powerData.isCapabilityAdvertised() && !ContainerEnergyStorage.hasLivingBulb(ctx)) {
+            ContainerEnergyStorage.announcePresence(ctx, powerData, false);
+        }
+
         // 持久宿主（BE / 实体附件，2026-10-21 实体容器接入）—— 空 = 无宿主可写（掉落物等）即返回
         List<? extends IAttachmentHolder> hosts = ctx.getDataHosts();
         if (hosts.isEmpty()) return;

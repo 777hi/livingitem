@@ -118,6 +118,25 @@ public class ContainerPowerData implements ContainerDataLifecycle {
      */
     private int warmupTicksRemaining;
 
+    /**
+     * 对外能量能力（{@code Capabilities.EnergyStorage.BLOCK}）上次<b>已通告</b>的存在性
+     * （{@code true} = 彼时容器里真有活涂蜡铜灯）。
+     *
+     * <p>唯一用途：边沿检测 —— 存在性一变就 {@code Level#invalidateCapabilities} 一次，
+     * 让线缆类模组缓存的 {@code BlockCapabilityCache} 重查。{@code ContainerEnergyStorage
+     * #resolveProvider} 直接读它（O(1)），<b>不</b>在能力查询里扫容器。
+     * <b>不落盘</b>（重载后默认 {@code false} ⇒ 有灯的容器首拍必然通告一次，正是需要的）。</p>
+     */
+    private boolean capabilityAdvertised;
+
+    public boolean isCapabilityAdvertised() {
+        return capabilityAdvertised;
+    }
+
+    public void setCapabilityAdvertised(boolean advertised) {
+        this.capabilityAdvertised = advertised;
+    }
+
     /** 采样起步期长度：覆盖最短锁相需求（2 次跳变间隔）+ 传播重建余量 */
     public static final int WARMUP_TICKS = 8;
 
