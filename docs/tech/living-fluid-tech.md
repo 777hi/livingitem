@@ -783,7 +783,7 @@ slot/level/fromSlot）→ 客户端 `FluidFlowClientCache` → `ContainerFluidOv
 
 > 🔴 **2026-11-02 退役已执行**（2026-10-29 拍板；**同日 ⑭ 接棒**：管道对容器的流体交互由
 > 「海绵垫起的容器级能力」重新提供——暴露的是**海绵存量**而非源网络，存在性 = 有活海绵（湿或干），
-> 见 [活海绵](../buffer/活海绵.md) §2.3 ⑭ / `SpongeContainerFluidHandler`）：`ContainerFluidHandler` 类与 BLOCK 注册
+> 见 [活海绵](living-sponge-tech.md) §2.3 ⑭ / `SpongeContainerFluidHandler`）：`ContainerFluidHandler` 类与 BLOCK 注册
 > 已删除，`ContainerFluidHandlerTest` 随之整档移除，能力存在性边沿机器（§10.4）一并拆除；
 > 流体能力**收口到活海绵物品** `SpongeItemFluidHandler`（唯一能力面，ITEM），模组管道改经
 > 「海绵 → 储罐 → 管道」取水（海绵 = 流体弹匣）。`getOrCreateFluidData` 迁入

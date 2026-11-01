@@ -123,7 +123,7 @@
   `LivingSpongeAbsorbTest` ⑩）。审查结论：守恒红线全绿、R3 零边、退役零残留引用；
   遗留体例债一项 = `docs/tech/living-sponge-tech.md` 未撰写（写完按模板 §2.3 搬
   设计稿入 archive）。测试 1339→1340。
-  → `docs/buffer/活海绵.md` §9.4 · `LivingSpongeAbsorbTest` ⑩
+  → `docs/archive/活海绵-design.md` §9.4 · `LivingSpongeAbsorbTest` ⑩
 
 ## 2026-11-01
 
@@ -324,7 +324,7 @@
   零头回收是**跨堆**机制 ⇒ 海绵侧恒走保守丢弃（§3 措辞照实）。
   **补模板必填表**（§9）：生命周期表 / 准入表（海绵无专属槽位）/ 1.4 横切（四邻不依赖
   列数链）/ 规则 → 守卫映射 15 条。§5 拍板留痕追加 ⑦~⑬，②/②b/③ 翻转留痕。
-  → `docs/buffer/活海绵.md` · fluid tech §10 退役横幅（不动）
+  → `docs/archive/活海绵-design.md` · fluid tech §10 退役横幅（不动）
 
 - ✅ **活海绵第一段落地：域骨架 + 组件 + 注册（设计稿 v1.6 §5 第一段）**。
   新域 `domain/sponge/` 四件套（PowerComponents / PowerRegistration 同款结构）：
@@ -343,7 +343,7 @@
   check_layers / check_mixins / check_container_keys 绿。
   **不做**（按 §5 分段）：吸收（第二段，先抽记账内核）· 物品能力（第三段，注册与实现同拍）·
   GUI 汲 / 退役执行（第三段）。落地同步表见设计稿 §11。
-  → `domain/sponge/` · `docs/buffer/活海绵.md` §11
+  → `domain/sponge/` · `docs/archive/活海绵-design.md` §11
 
 ## 2026-10-31
 
