@@ -66,6 +66,8 @@ public final class LivingMapEventHandler {
     @SubscribeEvent
     public static void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
         lastSentMetadata.remove(event.getEntity().getUUID());
+        // 节流表也按玩家 UUID 增长，且「再也不上线的人」没有自然过期路径 ⇒ 顺手一起丢
+        MapUpdateSkipHelper.onPlayerLoggedOut(event.getEntity().getUUID());
     }
 
     /**

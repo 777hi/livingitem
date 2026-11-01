@@ -24,7 +24,7 @@
 | `ContainerLivingItemHandler` | 登记 | `CONTAINER_DATA` `LAST_SEEN` `LIVING_SLOT_ITEMS` `PENDING_RUNTIME_INVALIDATIONS` `POS_TO_CACHE_KEY` |
 | `ContainerMenuInfoRequestPacket` | 登记 | `LAST_REQUEST` |
 | `ContainerRuntimeCache` | 登记 | `dirtyContainers` `store` |
-| `FailureThrottle` | ⚠️ 本类无清理入口 | `FAILURES` |
+| `FailureThrottle` | 登记 | `FAILURES` |
 | `FluidFlowServerSync` | 登记 | `CLIENT_ACTIVE` |
 | `ItemFormLiveViews` | 登记 | `VIEWS` |
 | `LearnedLayouts` | ⚠️ 本类无清理入口 | `AMBIGUOUS` `LEARNED` |
@@ -33,7 +33,7 @@
 | `LivingToolFakePlayerCache` | 登记 | `CACHE` |
 | `LivingToolHostSync` | 登记 | `current` |
 | `LivingToolRecorder` | 自带停服事件 | `LAST_RECORD_TICK` |
-| `MapUpdateSkipHelper` | ⚠️ 本类无清理入口 | `cooldowns` `lastUpdateTick` |
+| `MapUpdateSkipHelper` | 登记 | `cooldowns` `lastUpdateTick` |
 | `StaticCacheRegistry` | 登记 / 自带登出事件 | `CLIENT` `SERVER` |
 | `StructureMapDecorator` | ⚠️ 本类无清理入口 | `SCANNED_CHUNKS` |
 
@@ -64,7 +64,7 @@
 | J6 | **卸载事件里不得查世界 / 能力，但可以直接改 tick 线程的表**（主线程） | `D-container-22` · 推导链见 [event-threading.md](event-threading.md) §2 | 两个方向都错过：① 把它当异步线程，去写「只入队 + drain」的无谓改造（已作废一次）；② 在卸载事件里查能力 ⇒ 再入触发区块加载 |
 | J7 | 跨维度广播表（`BeaconPlayerHostSync` / `BeaconChestHost` / `LivingToolHostSync`）的当 tick 快照**只能在 tick 头 `beginTick` 清，不能在逐维度 flush 里清** | flush 是 per-level 调用（`LivingItem#onServerTick` 各 flush 点）· `BroadcastDedup.java:41`「⚠️ 不是本维度的：用本维度会误删其它维度玩家的记录」 | 在第二个维度的 flush 里清空 ⇒ 第一个维度刚算出的记录被抹掉 ⇒ 联机玩家看不到对方 |
 | J8 | `LearnedLayouts` **落盘**（`config/living_item/…json`） | 该类 load/save 路径 | 以为清内存就清掉了学习结果；测试要调 `clearForTest`，否则单例污染下一个用例 |
-| J9 | 名单区显示「⚠️ 本类无清理入口」的**才算缺口**，目前三处：`FailureThrottle#FAILURES`、`MapUpdateSkipHelper#cooldowns` / `#lastUpdateTick` | 名单区「清理入口」列（机器推）+ 本类文件内无 `ServerStoppedEvent` 处理器 | 单机退出存档再进另一存档时旧记录仍在；`lastUpdateTick` 更实际：**tick 计数跨存档重置** ⇒ `current - last < 20` 会把新存档的地图更新误跳过，直到新 tick 追上旧值 |
+| J9 | 「哪些表没有停服清理」目前的答案是 **0 项**：`FailureThrottle` 与 `MapUpdateSkipHelper` 已在 2026-11-01 补登记；名单区剩下的三个 ⚠️ 都不是缺口（见 §3） | 两个类的 `static { StaticCacheRegistry.onServerStop(...) }` · 判据测试 `FailureThrottleTest.serverStopCleanup_isRegistered` / `MapUpdateSkipHelperTest.serverStopCleanup_isRegistered` | 换存档时的**漏报**与**永久跳过刷新**（不是内存问题）：旧存档的失败 key 会吃掉新存档的首条完整栈；`getTickCount()` 从 0 重来，旧 `cooldowns` / `lastUpdateTick` 让 `currentTick - lastTick < 20` 恒真 ⇒ 新存档里活地图刷新被永久跳过且无报错 |
 | J10 | 清理钩子必须登记在**缓存类自己的文件**里（`StaticCacheRegistry.onServerStop` 出现在该类 static 块） | `StaticCacheRegistry` 类头约定 · 名单区「清理入口」列之所以能机器推，靠的就是这条约定 | 登记写在别处 ⇒ 名单把它判成「无清理入口」，读该类的人也看不到「会不会被清」；新表漏登记的失败模式正是这套机制要防的（`LivingToolPlayerSync` 一例见 §3） |
 | J11 | `LivingItemManager#APPLICABLE_CACHE`、`LearnedLayouts#LEARNED/AMBIGUOUS` 显示「⚠️ 本类无清理入口」但**不是缺口** | 前者按 `Item` 类型有界且启动后基本只读（`LivingItemManager#APPLICABLE_CACHE` 声明处）；后者**故意落盘**（`config/living_item/…json`，见 J8） | 误当泄漏去加停服清理 ⇒ 反而把跨存档的学习结果清掉，或为一个不增长的缓存白加一层清理 |
 | J12 | `LAST_SEEN` 的**盖章点是 `trackLivingSlots`**（每个进 `processContext` 的容器都盖，含已无活物品的）；回收口是 `sweepUnseenContainers`，判据 = 「消失满 5 分钟」 | `ContainerLivingItemHandler#trackLivingSlots` 首行盖章 · `#sweepUnseenContainers` · `LivingItem#onServerTick` 的调用点 · 判据测试 `ContainerCacheSweepTest` | ① 把盖章挪进「有活物品」分支 ⇒ 空容器被误判成消失，走两步就丢进度；② 回到逐形态挂六种事件（区块卸载 / 下线 / 实体移除 / 销毁 / 拾取 / 非玩家移除）⇒ 六条路径必漏其一，而那正是原病根。**「没再被看到」是六种成因的共同结果**，一个判据全覆盖 |
@@ -80,6 +80,11 @@
   它每 tick 经 `BroadcastDedup.merge(lastSent, next, online)` 重建，`merge` 里
   `merged.keySet().retainAll(online)` 已淘汰离线玩家（`BroadcastDedup.java:43-47`）。
   ⇒ 无残留，不需要停服清理。
+- **`StructureMapDecorator#SCANNED_CHUNKS` 显示「⚠️ 本类无清理入口」** —— 实际有清：
+  `LivingMapEventHandler.onServerStopped` 调 `StructureMapDecorator.reset()`，而 `reset()` 里
+  `SCANNED_CHUNKS.clear()`（两个文件都在 `domain/map/`）。
+  ⇒ **这是 J10 的盲区样本**：登记写在别的类，机器推出来的「清理入口」列就看不见它。
+  读到 ⚠️ 先 grep 一次类名 + `reset`/`clear`，再决定要不要动手（本条即为此留档）。
 - **「`ChunkEvent.Unload` 与 `flushPendingRescans` 存在跨线程竞态」** —— 不成立，
   Unload 在服务器主线程（`D-container-22`）。它曾是本表的一条「缺口」，2026-11-01 撤除。
 

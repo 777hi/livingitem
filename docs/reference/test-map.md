@@ -184,6 +184,7 @@ src/test/java/com/qiqi/li/
 │   └── CrossContainerTransferFaceSelectionTest.java # 多方块容器跨容器面选取·候选排序+推送首选/回退
 ├── living/domain/map/
 │   ├── TeleportHelperYTest.java               # 落点站立面语义 + 指哪传哪（2026-10-27 审查 P1-1 + A3 定案）·ChunkAccess.getHeight 返回最高阻挡方块自身 Y，destY 曾少 +1 ⇒ 玩家脚落进最高阻挡方块 / 端到端 mock：teleportTo 捕获 (格中心, 71.0, 格中心) / **虚空柱照传不拒**：全空柱高度图返回世界下限，脚下 = 下限+1，不因无地面拒绝
+│   ├── MapUpdateSkipHelperTest.java           # 地图刷新节流器的**跨存档**不变量（2026-11-01）·传送后 SKIP_TICKS 内跳过 / 窗口满自动放行并删记录 / **切存档后 tick 从 0 重来时不得把新存档永久锁死**（旧 `cooldowns=500040` vs 新 `currentTick=10` ⇒ `currentTick < expireTick` 恒真）/ 停服清理已登记（`StaticCacheRegistry.describe()` 可断言，防「写了 clear() 没人调」）/ 下线玩家记录被丢掉
 │   ├── MapCoordHelperMatchTest.java           # 组件条目与命中装饰的同一处匹配（2026-10-27 审查 P2-2）·Entry.x() 是 double 世界坐标、Decoration.x() 是 byte 像素，曾直接相比恒 false ⇒ 兜底恒传组件里第一条（多条目地图点哪个都被劫持）/ 类型+换算像素一致才用精确值 / 无匹配回退像素反推 / 换算互逆
 │   └── MapCoordHelperTest.java                # 地图坐标换算
 ├── living/domain/water/

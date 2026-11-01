@@ -28,7 +28,20 @@ public final class FailureThrottle {
     private static LongSupplier clock = System::currentTimeMillis;
     private static long lastSummaryAt = -1;
 
+    static {
+        // 与 clear() 同文件登记（StaticCacheRegistry 类注释的「登记位置」约定）。
+        // 不清的代价不是内存而是**漏报**：旧存档里某个 BE 的失败 key 会在新存档继续占着
+        // 「60s 内只计数」的窗口 ⇒ 新存档首条完整栈被抑制，排查时看不到根因。
+        StaticCacheRegistry.onServerStop(s -> clear());
+    }
+
     private FailureThrottle() {}
+
+    /** 停服 / 切存档时丢掉全部失败 key 与汇总节拍。 */
+    private static void clear() {
+        FAILURES.clear();
+        lastSummaryAt = -1;
+    }
 
     /** 记录一次被隔离的异常。{@code key} 为 null / 空时归入 {@code unknown}。 */
     public static void report(String key, RuntimeException failure) {

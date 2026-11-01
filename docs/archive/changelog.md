@@ -58,6 +58,32 @@
   → `docs/decisions.md` D-container-23 · `docs/reference/container-data-lifecycle.md` §2/§3/§4 ·
   `living-item-infrastructure.md` §3.5 · `shared-state.md` J2/J4/J5/J12 · 整改计划 §6
 
+- 🐞 **换存档后活地图不再刷新（跨存档 tick 计数）+ 两处限频表没登记停服清理**
+  —— 修 R-06 审计时顺手记进 `shared-state.md` J9 的那条缺口，本次落到实现。
+  **根因不是内存**：`MapUpdateSkipHelper` 两张表存的是 `MinecraftServer#getTickCount()`，
+  而它**从 0 起算**；单机「退出存档 → 进另一个存档」不重启 JVM ⇒ static 跨存档存活 ⇒
+  旧存档留下的 `lastUpdateTick = 500000` 与新存档 `currentTick = 10` 一比，
+  `currentTick - lastTick < 20` **恒真** ⇒ 新存档里活地图的刷新被**永久跳过**，且没有任何报错
+  （`cooldowns` 同形：`currentTick < expireTick` 对旧值恒真）。这不是「残留一点内存」，
+  是「一条静默的功能失效」—— 只有真机换档才会看见，所以长期没人报。
+  **修**：① 两类各加 `static { StaticCacheRegistry.onServerStop(...) }` + `clear()`
+  （按 2026-10-12 的「登记写在缓存类自己文件」约定，登记与 clear 隔几行 ⇒ 忘不了接线）；
+  ② `MapUpdateSkipHelper` 再加 `onPlayerLoggedOut(uuid)`，挂到**已有的**
+  `LivingMapEventHandler#onPlayerLoggedOut`（不新开事件）—— 两表按玩家 UUID 增长，
+  而「再也不上线的人」没有自然过期路径覆盖。
+  **`FailureThrottle` 那份的代价是漏报不是泄漏**：旧存档某个 BE 的失败 key 会在新存档继续占着
+  「同 key 60s 内只计数」的窗口 ⇒ 新存档里同一个 BE 再抛只涨计数不打栈，排查时看不到根因。
+  **顺带把 J9 的答案改成 0 项**，并留档一条**门禁盲区样本**：`StructureMapDecorator#SCANNED_CHUNKS`
+  显示「⚠️ 本类无清理入口」，其实由 `LivingMapEventHandler.onServerStopped → reset()` 清 ——
+  清理写在**别的类**里，机器推的那一列就看不见（正是 J10 那条约定的存在理由）。
+  ⇒ 读到 ⚠️ 先 grep 一次类名 + `reset`/`clear` 再动手，别照列表加清理。
+  **判据可复算**：`MapUpdateSkipHelperTest` 4 项（含「切存档后不得永久锁死」与
+  「已登记」可由 `StaticCacheRegistry.describe()` 断言）+ `FailureThrottleTest` 1 项 = 1277→1282。
+  ⚠️ **证明强度说清楚**：`crossSave_afterClear` 是直接调 `clear()` 的（证明判据算术与修复方向），
+  「接线真的会跑」由 `describe()` 那条断言钉；没在单测里调 `StaticCacheRegistry.runServer()`，
+  因为那会连带清掉其它注册表的缓存、把单测变成全局副作用现场。真机换档行为仍列在实机待验里。
+  → `MapUpdateSkipHelper` 类头 · `shared-state.md` J9/J10/§3 · `docs/reference/test-map.md`
+
 ## 2026-10-31
 
 - 🐞 **红电对外能量接口也改成「真有活铜灯才存在」**（流体 §10.4 的同款缺陷，主动补齐）——
