@@ -51,6 +51,25 @@ public class LivingSpongeFunction implements LivingItemFunction {
     }
 
     @Override
+    public void addToTooltip(net.minecraft.world.item.Item.TooltipContext context,
+                             java.util.function.Consumer<net.minecraft.network.chat.Component> tooltipAdder,
+                             net.minecraft.world.item.TooltipFlag flag,
+                             ItemStack stack) {
+        // 反馈三问 ①（设计稿 §7）：{fluid, 堆总量} 是决策量（汲不汲 / 灌不灌）⇒ 服务端权威组件；
+        // 干态与原版海绵静态同形（铜灯 unlit 同款代价）—— 干态不显示内容行
+        LivingSpongeData d = LivingSpongeData.of(stack);
+        if (!d.isWet()) return;
+        net.minecraft.network.chat.Component name = net.minecraft.network.chat.Component.translatable(
+            d.fluid().getDescriptionId());
+        tooltipAdder.accept(net.minecraft.network.chat.Component.nullToEmpty(""));
+        tooltipAdder.accept(net.minecraft.network.chat.Component.translatable(
+            "tooltip.livingitem.sponge.content",
+            name.getString(),
+            d.totalMmB(stack.getCount()) / 1000,
+            LivingSpongeData.MAX_MM_B / 1000));
+    }
+
+    @Override
     public void tick(List<SlotEntry> entries, ContainerContext container, TickContext tick, Level level) {
         // 节拍门：世界轴锁相心跳（gameTime 跟存档走，跨存档天然安全；每 5t 恰好触发一次）
         if (level.getGameTime() % WATER_BEAT_TICKS != 0) return;

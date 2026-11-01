@@ -30,7 +30,6 @@ import org.mockito.Mockito;
 import com.qiqi.li.living.container.ContainerChunkCache;
 import com.qiqi.li.living.container.ContainerLivingItemHandler;
 import com.qiqi.li.living.domain.water.ContainerFluidData;
-import com.qiqi.li.living.domain.water.ContainerFluidHandler;
 import com.qiqi.li.living.domain.water.FluidFlowBehavior;
 import com.qiqi.li.living.domain.water.FluidFlowBehaviors;
 import com.qiqi.li.living.domain.water.FluidFlowClientCache;
@@ -235,7 +234,7 @@ class LivingItemChunkContainerScanTest {
         assertEquals(27, context.getSize());
         assertEquals(9, context.getWidth());
         assertNull(context.getContainerUuid(), "原版箱子走 BE 附件，不走 UUID SavedData");
-        ContainerFluidData data = ContainerFluidHandler.getOrCreateFluidData(context);
+        ContainerFluidData data = ContainerFluidData.getOrCreate(context);
         data.registerGeneratedSource(SOURCE_SLOT, fluid);
         assertEquals(1, world.processChest());
         assertTrue(data.isSource(SOURCE_SLOT), "保存前必须已经由真实驱动建立源格");

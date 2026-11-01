@@ -36,6 +36,86 @@
   check_mixins / check_container_keys 绿；`ComponentOwnershipTest.allFunctions` 补海绵。
   → `living/util/PerItemLedger` · `living/api/FluidSourceLedger` · `domain/sponge/` · 设计稿 §11
 
+- ✅ **活海绵第三段落地：唯一能力面 + GUI 汲 + §10 退役执行（设计稿 v1.6 §5 第三段，活海绵三段全完）**。
+  **能力面**：`SpongeItemFluidHandler`（ITEM，`LivingItem` 注册判活化同款）——一堆一罐（⑩）：
+  `getTanks()=1`、tank 0 = 堆总量视图（floor 报量）、容量 64,000 × count；充 = 内核
+  `PerItemLedger.distribute`（均分 floor + 容量防御）、排 = 新内核 `withdraw`（floor），
+  **汲 = 新内核 `withdrawCeil`**（整单位交付：每枚 −⌈10⁶/count⌉，floor 版会让桶凭空得差额）；
+  **报账口径（规则 12）**：fill 返回 ≥ 实充 / drain 返回 ≤ 实扣，任何偏差只许损耗向。
+  `RepresentativeFluids`（FluidType→Fluid 映射）自 `ContainerFluidData` 上移 util ——
+  海绵要用但不能 import 水域（R3）。
+  **GUI 汲**：`living_sponge_draw`（`LivingSpongeInteractSupport/Handlers`，pour/scoop 同款
+  服务端权威重验；活桶保活标记、创造对齐原版）+ `GuiInteractionHelper` 海绵分支
+  （{fluid, mmB} 是 networkSynchronized 组件 ⇒ 客户端直接精确判定，无需流体快照）。
+  **退役执行（⑫）**：删 `ContainerFluidHandler` 类 + BLOCK 宽注册 + `ContainerFluidHandlerTest`
+  （9 项随 §10 整档移除）+ 能力存在性边沿机器（`LivingFluidFunction` 边沿块 +
+  `ContainerFluidData.capabilityAdvertised`；power 侧保留 —— 能量能力还活着）；
+  `getOrCreateFluidData` 迁入 `ContainerFluidData#getOrCreate`（汲/倒与测试仍用）；
+  fluid tech §10 横幅改「已执行」、TODO 活流体 #7 关账。
+  **守卫**：`SpongeFluidRoundTripTest` 9 项（§8.3 精神：净迁移无凭空产生 + 逐步损耗有界 +
+  拆分恒等式 + 往返 ×25 零漂移；测试自抓两处断言口径错 —— 忘乘 count / FluidStack 比较）。
+  测试 1326→1325（−9 退役测试 +9 守卫 −1 边沿用例）；check_layers / check_mixins /
+  check_container_keys 绿。图标双态变体（§7）与实机验证清单随下一批次。
+  → `domain/sponge/SpongeItemFluidHandler` · `living/util/PerItemLedger` · fluid tech §10
+
+- 🎨 **活海绵反馈层（§7）：双态变体 + 流体叠加 + tooltip（纯客户端，2026-11-02 同日批次）**。
+  双态 = 铜灯模式：`wet`（mmB > 0）/ `dry`（兜底）两个**三行 JSON** parent 到
+  `minecraft:block/wet_sponge` / `sponge` —— 不随包分发纹理、跟随玩家材质包（去原版化口径）；
+  进 spec 后不吃默认 living 标记（「活」的辨识靠状态发生的时刻，干态与原版静态同形 =
+  铜灯 unlit 同款代价，靠 tooltip 辨识）。流体叠加 = `LivingSpongeFluidDecorator`：
+  still 全幅 α0.55（源格同款，半透保留湿态底图）、染色取 `IClientFluidTypeExtensions`
+  （模组流体零特判）、**只表种类不编码量**、z 抬 200 返回 true 交还 NeoForge 重置。
+  tooltip = `LivingSpongeFunction.addToTooltip`（FluidType `descriptionId` 命名 +
+  堆总量 / 枚容量，§1.3 服务端权威组件）。签名实测纠正：`IItemDecorator.render` 返回
+  `boolean` 且带 `Font` 参数（初稿臆造了 `(guiGraphics, stack, x, y)` 签名与
+  `Fluid.getDescriptionId` —— 均以合并源为准）。
+  → `client/render/LivingSpongeFluidDecorator` · `client/icon/LivingIconRegistry` · 设计稿 §11
+
+- ✅ **⑭ 海绵垫起的容器级流体能力（2026-11-02 用户实测反馈拍板：旧活流体的管道角色由活海绵接棒）**。
+  管道指着**放了活海绵的容器**即可抽 / 灌：`SpongeContainerFluidHandler`（BLOCK 宽注册 +
+  「有活海绵才发实例」判据——§10.4 教训：恒发实例把管道自身判成储液）。**暴露的是海绵存量
+  （封闭缓冲），源网络仍不暴露（规则 7 不破）**——抽 / 灌全部委托 `SpongeItemFluidHandler`
+  （均分内核 + 报账口径单源复用）。罐模型 = 每个活海绵堆一罐（槽位序）；**干海绵 = 空罐**
+  （0 内容、容量在位 ⇒ 管道可灌装空弹匣；首测把存在性定为「有湿海绵」导致空弹匣灌不进，
+  对照真实储罐语义修正）。存在性翻转 = `EDGE` 标志（`ContainerDataKey.persistent`，
+  R-06 sweep 自动覆盖）+ `ContainerTickHooks` 边沿钩子 ⇒ `invalidateCapabilities` 精确一次。
+  测试 1325→1331（`SpongeContainerCapabilityTest` 6 项：存在性 / 罐映射 / 指名罐抽 /
+  跨堆续抽 / 多罐灌装 / 边沿精确一次——桩要求：`level.getCapability` + `getBlockState`
+  双打桩才能走通 `resolveContextAt`）。
+  → `domain/sponge/SpongeContainerFluidHandler` · fluid tech §10 横幅（⑭ 接棒注记）
+
+- 🐞 **⑭ 修复：floor 排出三连炸——7 堆存 1 桶后机械动力管道抽不出（2026-11-02 实测）**。
+  **病**：排出侧用 floor 均分 ⇒ ① 交付量随请求逐次缩水（999 请求实交 998、997…）；
+  ② SIMULATE ≠ EXECUTE（同请求两结果，§8.2#2 闭合被破）；③ 尾差沉成「罐显示 1mB 却
+  抽不出」的卡死尘，且 drainBy 在交付量取整为 0 时**先落账再返回 EMPTY**（一次白抽销毁
+  994mmB）。**修**：排出侧唯一口径 = **ceil**（`PerItemLedger.withdrawCeil`，GUI 汲同款；
+  floor 版 `withdraw` 删除）——交付 = 决定交付的整 mB 分毫不差，实扣 ≥ 交付（损耗向），
+  残余尘 <1mB 对 mB 世界隐身（罐报 0 = 管道干净停手）、留账继续累积。守卫：
+  `SpongeFluidRoundTripTest` +⑩（实测场景全生命周期：充 1000 → 存 999999 → 交付 999
+  分毫不差 → 尘 994 不销毁 → 再充回填）+⑪（simulate/execute 同请求必同结果 ×5 档）。
+  测试 1331→1333。
+  **充入侧对偶检查（用户同问）**：报账 ceil 封顶请求无缩水、per ≥ 15 无报 0 死区、
+  simulate/execute 同源——无同类 bug；唯一残留毛刺 = 存量带尘时 content 恒差 1 mB 到
+  capacity（定理固有），以 fill 返回值为准的管道不受影响。守卫 +⑫（fill 模拟/实做一致）
+  +⑬（count 1..64 × 请求量全扫描无死区）+⑭（尘区有限步收敛、恒不越上限）。测试 1333→1336。
+  → `PerItemLedger#withdrawCeil` · `SpongeItemFluidHandler#drainBy` · 设计稿 §8.2 防线 #8
+
+- 🐞 **电力层同类排查（用户要求顺查）：`BulbItemEnergyStorage.extractEnergy` 同患 floor 缩水 + 尘销毁，已修**。
+  **病**（与海绵流体 ⑩ 同族，单栈即可复现）：7 盏存 499,996 mFE（非整除总量），抽 499 FE
+  —— floor 均分实扣 498,995 ⇒ **实得 498**（缩水）；总量 <1000 mFE 分支 + 扣后 <1000 mFE
+  分支**双重销毁尘**（旧注释「避免取不干净」——floor 报量本就把尘对外藏住，销毁纯属白损）。
+  无卡死（floor 报量让尘隐身，与流体的「显示 1 抽不出」不同严重度）。
+  **修**：改 `PerItemLedger.withdrawCeil`（流体同款内核）——交付 = takeFe 整 FE 分毫不差、
+  每盏扣 ⌈takeFe×1000/count⌉、尘留账不销毁（对外视图 = 空灯，不卡管道）。
+  **排查但未修的**：① 容器级 `ContainerEnergyStorage.extract` **本来就是 ceil**（2026-09-09
+  守恒战争的「余数跨 FE 边界向上取整」，无需动）；② `receiveEnergy` 小请求死区（多堆
+  等余量时 share < count 全跳过）**仅理论存在**——ITEM 路径 `BulbBank.of(single)` 是单栈，
+  share 恒 = 全额，复现不了，ANY_MOVEMENT 保持不动。
+  守卫：`BulbItemEnergyStorageTest` +⑦（7 盏非整除全生命周期：499 得 499 / 尘 994 留账 /
+  再充回填）+⑧（simulate/execute 同请求必同结果）+⑨（尘保留，旧版直接清零）。
+  测试 1336→1339；`RoundTripConservationIT` 全量回归绿。
+  → `BulbItemEnergyStorage#extractEnergy` · `PerItemLedger#withdrawCeil`（两域同源复用）
+
 ## 2026-11-01
 
 - ♻️ **R3 领域互依赖清零：hopper↔ender/chest 10 条 → 0，传输核心不再认识具体领域**。

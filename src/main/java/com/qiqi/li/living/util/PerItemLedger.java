@@ -31,7 +31,7 @@ public final class PerItemLedger {
      * @param count      堆叠数（≤ 0 视为不动）
      * @param capPerItem 每枚容量上限
      * @param delta      本次充入总量（内部定点量子，如 mFE / mmB；非正视为不动）
-     * @return 均分结果；无可写入时 {@code accepted = 0} 且 {@code newQ} 原样返回
+     * @return 均分结果；无可写入时 {@code accepted} = 0 且 {@code newQ} 原样返回
      */
     public static Distribution distribute(long q, int count, long capPerItem, long delta) {
         if (count <= 0 || delta <= 0) return new Distribution(q, 0);
@@ -41,6 +41,24 @@ public final class PerItemLedger {
         if (per > room) per = room;                     // 容量防御（调用方已保证份额 ≤ 剩余时为 no-op）
         if (per <= 0) return new Distribution(q, 0);    // 已满 / 满溢防护
         return new Distribution(q + per, per * (long) count);  // 记账 = 写入 × count（同源）
+    }
+
+    /**
+     * 排出均分（<b>ceil 口径</b>，排出侧唯一口径 —— 2026-11-02 实测教训：floor 版会让
+     * 「交付量」随请求量逐次缩水（999 请求实交 998、997…），SIMULATE 与 EXECUTE 分叉
+     * （§8.2#2），尾差沉成「罐里显示却抽不出」的卡死尘）。
+     *
+     * <p>语义 = <b>整单位交付</b>：调用方决定交付 {@code delta}（内部量子），每枚扣
+     * ⌈delta / count⌉ ⇒ 实扣 ≥ 承诺，差额损耗向销毁（floor 版会让交付方「凭空」得到
+     * 差额，违反规则 12）。**同请求 simulate / execute 必同结果**（算术只依赖 delta 与
+     * 当前 q，§8.2#2 闭合）。调用方须先保证堆总量 ≥ delta。</p>
+     */
+    public static Distribution withdrawCeil(long q, int count, long delta) {
+        if (count <= 0 || delta <= 0) return new Distribution(q, 0);
+        long per = (delta + count - 1) / count;         // ceil —— 整单位交付语义
+        if (per > q) per = q;                           // 不透支防御（前置校验后不应触发）
+        if (per <= 0) return new Distribution(q, 0);
+        return new Distribution(q - per, per * (long) count);
     }
 
     private PerItemLedger() {}

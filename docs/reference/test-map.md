@@ -194,7 +194,6 @@ src/test/java/com/qiqi/li/
 │   ├── ContainerDataMigrationChestSplitTest.java  # A6 拆半清流体源（2026-10-28 定案）·otherChestHalf 判定（左半⇒右半 / 单箱·非箱子 null）/ 拆半 ⇒ 存活半流体附件清为 EMPTY（旧源不得经附件回填复活）
 │   ├── ContainerFluidConservationTest.java    # **流体搬运守恒**（2026-11-01）·空槽路径不丢溢出（抽屉 500 → 普通槽 64 ⇒ 只搬 64、源留 436）/ 合并按**槽位上限**而非物品上限（缺陷 A2：目标上限 16 已有 10 ⇒ 只进 6）/ 目标已满不搬 / 异类占位不覆盖；**不断言准入**（A3 由 ContainerFluidDataTest 钉）
 │   ├── ContainerFluidDataTest.java            # 流体引擎行为快照·单源扩散/上限7/活物阻挡/非活物穿过/源移除/水流推动/二维扩散 + 行为接缝·按maxLevel/静止不扩散 + TickContext 建流体数据回归 + 通用驱动·自维持/驱动BFS + 源查询API + 派生源·独立存活/挤没/共存/同格无豁免/异种覆盖/EMPTY noop + 落盘CODEC往返 + 晋升接缝 + 转化接缝
-│   ├── ContainerFluidHandlerTest.java          # 管道抽取能力（§10）·tank 枚举与稳定序 / SIMULATE 不消耗 vs EXECUTE 删源 / 源全有或全无 / 异种 EMPTY / fill 恒 0 + isFluidValid / 非容器不报名 / provider 让位 / **能力存在性=派生源非空（无源→有源→抽干三态）· 客户端恒不报名**
 │   ├── ContainerDataMigrationTest.java          # 形态迁移·破坏时数据交给「本体那件」掉落物(**守卫已下沉测 ContainerDrops**)/无本体退回首项/无掉落返回 null + 组件 CODEC 往返保住派生源/空数据不产条目 + snapshot 独立副本/clearAll 一次清干净 + **相位快照 CODEC 往返保住 (P,φ,d)/EMPTY 不进物品** + **moveOut 共用入口**（contentRetaining 搬+清空 / 非 retaining 不搬 / 退化输入安全）+ **端到端 moveOut 写物品组件（非空快照）/ moveIn 写回宿主附件** + **身份优先：有 UUID 只搬身份、不写数据组件（moveOut / moveIn 各一）**
 │   ├── ContainerFluidIntegrationTest.java     # 流体端到端（走真实 processContext）·预置派生源+驱动跑BFS / BE 写回 EMPTY / 驱动进自维持清单 / **能力存在性边沿·精确失效一次（无源不通知/出现源通知/不变不重复/抽干再通知）**
 │   ├── FluidTransformTableTest.java           # 流体转化表 JSON 语义·内置装载/玩家差异(覆盖/removed)/坏文件跳过/坏条目跳过/缩容等待/活物品过滤/output_potion（含 output 必须为药水类物品）
@@ -207,7 +206,9 @@ src/test/java/com/qiqi/li/
 │   └── ContainerFluidPerfTest.java            # 性能量测（@Tag("perf")，默认不跑；`-Pperf` 才计入。200 容器×54 格×200 拍，打印基线 + 病态回归宽松阈值 + 落盘 build/_perf.txt）·引擎 tick / 空容器
 ├── living/domain/sponge/
 │   ├── LivingSpongeDataTest.java              # 活海绵组件形状契约（2026-11-01 第一段）·干/湿不变量归一（无流体或非正存量 ⇒ 干态，幽灵湿海绵在类型层面不可能）/ 容量与总量 long 域（每枚 6.4e7 mmB，×count 线性）/ CODEC 湿·干·岩浆往返 / 未知流体 id 归干态（I-C6 同款宁损勿鬼）/ wither 不可变
-│   └── LivingSpongeAbsorbTest.java            # 吸收行为契约（2026-11-02 第二段，直接驱动 + processContext 冒烟）·一拍吸净可吸四邻（≤4 源）/ 节拍门 gameTime 锁相 / 异种邻居跳过不挡 / 空海绵方向序取首流体 / 快满停拍+腾出恢复 / count 均分损耗有界 / 同拍双海绵账本即时删不双吃 / 斜对角非邻居（27 槽 3 行）/ 首口定流体单次构造
+│   ├── LivingSpongeAbsorbTest.java            # 吸收行为契约（2026-11-02 第二段，直接驱动 + processContext 冒烟）·一拍吸净可吸四邻（≤4 源）/ 节拍门 gameTime 锁相 / 异种邻居跳过不挡 / 空海绵方向序取首流体 / 快满停拍+腾出恢复 / count 均分损耗有界 / 同拍双海绵账本即时删不双吃 / 斜对角非邻居（27 槽 3 行）/ 首口定流体单次构造
+│   └── SpongeFluidRoundTripTest.java          # **守恒主战场**（2026-11-02 第三段，规则 12 红线：不许为了让它过而改它）·附录算例（6mB×7 枚）/ 拆分守恒恒等式 / 整桶往返 ×25 零漂移 / 50 轮部分充排净迁移无凭空产生 / 溢出拒收不越上限 / 异种拒绝零副作用 / 零负请求 / 尘量取不出但可累积 / 一堆一罐语义
+│   └── SpongeContainerCapabilityTest.java     # 海绵垫起的容器级能力（2026-11-02 ⑭）·存在性 = 有活海绵（干 = 空罐、未活化不暴露）/ 罐映射槽位序（干 = 空罐占位）/ 指名罐抽不伤邻堆 / int 抽跨堆续抽 / 灌按槽序 + 空罐收异种 / 边沿失效精确一次（§10.4 同款）
 ├── living/interaction/
 │   ├── InteractionRegistryTest.java           # 两趟优先级匹配·通配遮蔽+triggerFilter 回归守卫
 │   ├── InteractionRuleConfigTest.java         # 交互规则 JSON 加载语义·内置全有效/玩家覆盖与removed/坏值跳过/未知字段忽略/version守卫/reload幂等（自带 mock handler 不依赖测试执行顺序）

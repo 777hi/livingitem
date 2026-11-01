@@ -842,16 +842,23 @@ public class LivingItem {
             Items.WAXED_COPPER_BULB, Items.WAXED_EXPOSED_COPPER_BULB,
             Items.WAXED_WEATHERED_COPPER_BULB, Items.WAXED_OXIDIZED_COPPER_BULB);
 
-        // ── 活水源对外流体接口（§10 管道抽取，2026-10-06）：宽注册 + 让位 ──
-        // 方言 = NeoForge IFluidHandler（跨模组的通用流体接口）
-        // 语义 = 抽取即消耗源、只出不进（fill 恒 0）⇒ 活桶仍是源的唯一种子工具
-        // ⚠️ 宽注册只是「谁都能被问到」，provider 内部按「当前真有派生源」发实例：
-        //    管道用「能力是否非 null」判邻居是不是储液，恒发实例会把管道本身判成储液
-        //    ⇒ 整张网络断在假 tank 上（2026-10-31 机械动力冲突，见 resolveProvider 注释）
-        net.neoforged.neoforge.capabilities.ICapabilityProvider<BlockEntity, Direction, net.neoforged.neoforge.fluids.capability.IFluidHandler> blockFluidProvider =
-            (be, side) -> com.qiqi.li.living.domain.water.ContainerFluidHandler.resolveProvider(be, side);
+        // ── 活海绵 = 流体容器物品（设计稿 §2.3：唯一能力面，一堆一罐）──
+        // ⚠️ 判活化同款（灯泡 2026-10-09 收紧）：capability 按原版物品注册 ⇒ 未活化海绵也会被
+        //    问到；不判则外部 mod 能给「原版海绵」充水，绕过活化门槛。准入在 SpongeItemFluidHandler.of()。
+        event.registerItem(net.neoforged.neoforge.capabilities.Capabilities.FluidHandler.ITEM,
+            (stack, context) -> com.qiqi.li.living.domain.sponge.SpongeItemFluidHandler.of(stack),
+            Items.SPONGE);
+
+        // ── 海绵垫起的容器级流体能力（⑭，2026-11-02）：管道指着放了湿活海绵的容器抽 / 灌 ──
+        // 暴露的是【海绵存量】（封闭缓冲），不是容器水网（规则 7 对源网络仍然成立）。
+        // ⚠️ 宽注册只是「谁都能被问到」，provider 按「有湿活海绵」发实例（§10.4 教训：
+        //    恒发实例会把管道自身判成储液 ⇒ 整张网络断在假 tank 上）；存在性翻转由
+        //    SpongeRegistration 注册的边沿钩子驱动 invalidateCapabilities。
+        net.neoforged.neoforge.capabilities.ICapabilityProvider<BlockEntity, Direction, net.neoforged.neoforge.fluids.capability.IFluidHandler> spongeBlockProvider =
+            (be, side) -> com.qiqi.li.living.domain.sponge.SpongeContainerFluidHandler.resolveProvider(be, side);
         for (var beType : BuiltInRegistries.BLOCK_ENTITY_TYPE) {
-            event.registerBlockEntity(Capabilities.FluidHandler.BLOCK, beType, blockFluidProvider);
+            event.registerBlockEntity(net.neoforged.neoforge.capabilities.Capabilities.FluidHandler.BLOCK,
+                beType, spongeBlockProvider);
         }
 
         LOGGER.info("Registered living item capabilities");

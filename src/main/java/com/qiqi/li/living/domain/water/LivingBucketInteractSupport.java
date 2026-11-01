@@ -55,7 +55,7 @@ public final class LivingBucketInteractSupport {
     /** 从已解析的上下文取容器级流体数据（没有 / 空 ⇒ {@code null}）。 */
     static ContainerFluidData fluidDataOf(ContainerContext ctx) {
         if (ctx == null) return null;
-        ContainerFluidData fluidData = ContainerFluidHandler.getOrCreateFluidData(ctx);
+        ContainerFluidData fluidData = ContainerFluidData.getOrCreate(ctx);
         return fluidData == null || fluidData == ContainerFluidData.EMPTY ? null : fluidData;
     }
 

@@ -4,6 +4,7 @@ import com.qiqi.li.living.domain.power.LivingWaxedBulbData;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.energy.IEnergyStorage;
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.util.PerItemLedger;
 
 /**
  * <b>活</b>涂蜡铜灯物品能量接口 —— 通用电池（双向，§3.6 v17.5）。
@@ -53,30 +54,21 @@ public class BulbItemEnergyStorage implements IEnergyStorage {
     @Override
     public int extractEnergy(int toExtract, boolean simulate) {
         if (toExtract <= 0) return 0;
-        long totalCharge = chargeMilliFe() * stack.getCount();
-        if (totalCharge <= 0) return 0;
+        int count = stack.getCount();
+        long availableFe = chargeMilliFe() * count / 1000L;   // floor：尘（<1FE）不参与交付
+        if (availableFe <= 0) return 0;
+        int takeFe = (int) Math.min(toExtract, availableFe);
+        if (takeFe <= 0) return 0;
 
-        // 不足 1 FE 的零头：清空，返回 0
-        if (totalCharge < 1000L) {
-            if (!simulate) {
-                setChargeMilliFe(0);
-            }
-            return 0;
-        }
-
-        long want = (long) toExtract * 1000L;
-        long take = Math.min(totalCharge, want);
-        long perLamp = take / stack.getCount();
-        if (perLamp <= 0) return 0;
+        // ceil 口径（2026-11-02 对齐流体排出侧实测教训）：交付 = takeFe 整 FE 分毫不差
+        // （floor 版随请求缩水：499 请求实得 498），每盏扣 ⌈takeFe×1000 / count⌉
+        // ⇒ 实扣 ≥ 交付（损耗向）。残余尘 <1FE 留在账上（不销毁）——
+        // getEnergyStored 报 floor ⇒ 外部视图一致（尘隐身），无卡死。
+        var wd = PerItemLedger.withdrawCeil(chargeMilliFe(), count, (long) takeFe * 1000L);
         if (!simulate) {
-            long newCharge = chargeMilliFe() - perLamp;
-            // 清空不足 1 FE 的零头，避免取不干净
-            if (newCharge * stack.getCount() < 1000L) {
-                newCharge = 0;
-            }
-            setChargeMilliFe(newCharge);
+            setChargeMilliFe(wd.newQ());   // newQ = 0 ⇒ 默认值移除 = 空灯
         }
-        return (int) (perLamp * stack.getCount() / 1000L);
+        return takeFe;
     }
 
     @Override

@@ -169,23 +169,6 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
         return flows.isEmpty() && generatedSources.isEmpty();
     }
 
-    /**
-     * 对外流体能力上次<b>已通告</b>的存在性（{@code true} = 彼时容器里有派生源）。
-     *
-     * <p>唯一用途：在驱动 tick 里做<b>边沿检测</b> —— 能力存在性一变就
-     * {@code Level#invalidateCapabilities} 一次，让管道缓存的 {@code BlockCapabilityCache} 重查。
-     * <b>不落盘</b>（重载后默认 {@code false} ⇒ 首拍必然通告一次，正是需要的）。</p>
-     */
-    private boolean capabilityAdvertised;
-
-    public boolean isCapabilityAdvertised() {
-        return capabilityAdvertised;
-    }
-
-    public void setCapabilityAdvertised(boolean advertised) {
-        this.capabilityAdvertised = advertised;
-    }
-
     /** {@link FluidPresence} 实现：该槽位是否有流体（供跨领域消费者，如活耕地判湿）。 */
     @Override
     public boolean hasFluidAt(int slot) {
@@ -266,6 +249,44 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
     @Override
     public void removeSource(int slot) {
         removeGeneratedSource(slot);
+    }
+
+    // ── 容器级流体数据的取用（原 ContainerLivingItemHandler#getFluidData → ContainerFluidHandler
+    //    #getOrCreateFluidData，2026-11-02 随 §10 退役迁入本类 —— 数据的取用归数据类）──
+
+    /**
+     * 取或创建容器级持久化流体数据（含 BE / Player 附件的<b>回填</b>）。
+     *
+     * <p>回填路径（LRU 驱逐 / 退出重进后首访）：① 先看 BE 附件的 {@code CONTAINER_FLUID_DATA}；
+     * ② 玩家背包 / 末影箱无 BE 可挂 ⇒ 看 Player 附件的按容器键映射。</p>
+     *
+     * @return 流体数据；容器不支持容器级数据（无稳定键）时返回 {@code null}
+     */
+    public static ContainerFluidData getOrCreate(ContainerContext ctx) {
+        ContainerFluidData existing = ctx.peekContainerData(KEY);
+        if (existing != null) return existing;
+
+        // ①②（SavedData / 宿主附件回填）已收编进 getOrCreateContainerData（2026-10-29）——
+        // 那边按「有身份 → SavedData、无身份 → 附件」统一回答，这里不再各写一份。
+
+        // ③ 玩家背包 / 末影箱（B.5 第三项）：无 BE 可挂 ⇒ 从 Player attachment 回填（按容器键）。
+        // ⚠️ getData 可能返回 null（测试替身 / 附件未注册），必须判空。
+        net.minecraft.world.entity.player.Player owner = ctx.getOwnerPlayer();
+        if (owner != null) {
+            String ownerKey = ctx.getContainerKey();
+            if (ownerKey != null) {
+                Map<String, ContainerFluidData> playerMap =
+                    owner.getData(WaterComponents.CONTAINER_FLUID_DATA_PLAYER);
+                ContainerFluidData persisted = playerMap == null ? null : playerMap.get(ownerKey);
+                if (persisted != null && persisted != EMPTY && !persisted.isEmpty()) {
+                    com.qiqi.li.living.container.ContainerLivingItemHandler
+                        .putContainerData(ctx, KEY, persisted);
+                    return persisted;
+                }
+            }
+        }
+
+        return ctx.getOrCreateContainerData(KEY);
     }
 
     /** 【查】派生源只读视图（供落盘 CODEC / 导出用；fluid 侧定义，框架接序列化）。 */
@@ -662,7 +683,6 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
     }
 
     /** FluidType → 代表 {@link net.minecraft.world.level.material.Fluid}（读原版参数用），缓存。 */
-    private static final Map<FluidType, net.minecraft.world.level.material.Fluid> REPRESENTATIVE = new HashMap<>();
 
     /**
      * {@link FluidType} → 代表 {@link net.minecraft.world.level.material.Fluid}（优先 still 态）。
@@ -671,18 +691,11 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
      * 未注册的模组流体返回 {@code null}（调用方按 EMPTY 处理）。</p>
      */
     public static net.minecraft.world.level.material.Fluid representativeFluidOf(FluidType type) {
-        return representativeFluid(type);
+        return com.qiqi.li.living.util.RepresentativeFluids.of(type);   // 2026-11-02 上移 util（海绵能力面同用）
     }
 
-    private static net.minecraft.world.level.material.Fluid representativeFluid(FluidType type) {        if (REPRESENTATIVE.containsKey(type)) return REPRESENTATIVE.get(type);
-        net.minecraft.world.level.material.Fluid found = null;
-        for (var f : net.minecraft.core.registries.BuiltInRegistries.FLUID) {
-            if (f.getFluidType() != type) continue;
-            if (found == null || f.defaultFluidState().isSource()) found = f;
-            if (found != null && found.defaultFluidState().isSource()) break;
-        }
-        REPRESENTATIVE.put(type, found);
-        return found;
+    private static net.minecraft.world.level.material.Fluid representativeFluid(FluidType type) {
+        return com.qiqi.li.living.util.RepresentativeFluids.of(type);
     }
 
     /**

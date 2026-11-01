@@ -67,6 +67,20 @@ public final class GuiInteractionHelper {
             }
         }
 
+        // 活海绵汲出（2026-11-02 第三段）：目标是「组件量 ≥ 一桶」—— {fluid, mmB} 是
+        // networkSynchronized 组件，客户端可直接精确判定（无需流体快照）；命中后同走
+        // GuiInteractionPacket 管道（actionId → SpongeRegistration 注册的处理器，服务端权威重验）。
+        if (button == 1 && !onRelease
+                && LivingBucketFunction.isLivingBucket(trigger)
+                && LivingBucketFunction.isEmptyBucket(trigger)
+                && com.qiqi.li.living.domain.sponge.LivingSpongeInteractSupport.drawable(target)) {
+            int containerSlot = resolveContainerSlot(hoveredSlot);
+            CompoundTag carriedTag = resolveCarriedTag(menu);
+            PacketDistributor.sendToServer(new GuiInteractionPacket(
+                hoveredSlot.index, containerSlot, "living_sponge_draw", carriedTag));
+            return true;
+        }
+
         InteractionEntry entry = InteractionRegistry.findInteraction(trigger, target, button, onRelease);
         if (entry == null) return false;
 

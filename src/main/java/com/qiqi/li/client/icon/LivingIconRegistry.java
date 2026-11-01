@@ -308,6 +308,18 @@ public final class LivingIconRegistry {
         registerWaxedCopperBulb(net.minecraft.world.item.Items.WAXED_EXPOSED_COPPER_BULB, "item/waxed_exposed_copper_bulb", "item/waxed_exposed_copper_bulb_lit");
         registerWaxedCopperBulb(net.minecraft.world.item.Items.WAXED_WEATHERED_COPPER_BULB, "item/waxed_weathered_copper_bulb", "item/waxed_weathered_copper_bulb_lit");
         registerWaxedCopperBulb(net.minecraft.world.item.Items.WAXED_OXIDIZED_COPPER_BULB, "item/waxed_oxidized_copper_bulb", "item/waxed_oxidized_copper_bulb_lit");
+
+        // 活海绵（设计稿 §7 铜灯模式，2026-11-02）：双态变体引用原版纹理（两个三行 JSON
+        // parent 到 minecraft:block/sponge / wet_sponge —— 不随包分发纹理、跟随玩家材质包）；
+        // 不叠任何标记层 —— 「活」的辨识靠状态发生的时刻（原版海绵永远不会在物品栏里自己变湿）；
+        // 干态与原版海绵静态同形（铜灯 unlit 同款代价），靠 tooltip 组件量辨识。
+        // 流体叠加只在湿态出现（全幅、只表种类，量在 tooltip）。
+        register(LivingIconSpec.builder(net.minecraft.world.item.Items.SPONGE)
+            .addVariant("wet", "item/sponge_living_wet",
+                stack -> com.qiqi.li.living.domain.sponge.LivingSpongeData.of(stack).isWet())
+            .addVariant("dry", "item/sponge_living_dry", stack -> true)
+            .decorator(new com.qiqi.li.client.render.LivingSpongeFluidDecorator())
+            .build());
     }
 
     private static void registerCopperBulb(Item item, String textureOff, String textureOn) {

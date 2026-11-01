@@ -34,6 +34,7 @@
 | `LivingToolHostSync` | 登记 | `current` |
 | `LivingToolRecorder` | 自带停服事件 | `LAST_RECORD_TICK` |
 | `MapUpdateSkipHelper` | 登记 | `cooldowns` `lastUpdateTick` |
+| `RepresentativeFluids` | ⚠️ 本类无清理入口 | `CACHE` |
 | `StaticCacheRegistry` | 登记 / 自带登出事件 | `CLIENT` `SERVER` |
 | `StructureMapDecorator` | ⚠️ 本类无清理入口 | `SCANNED_CHUNKS` |
 | `TransferTargetPolicies` | ⚠️ 本类无清理入口 | `POLICIES` |

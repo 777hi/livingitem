@@ -256,7 +256,7 @@ class FluidFlowServerSyncTest {
             viewer.containerMenu = menu;
             context = ContainerContexts.resolve(viewer, menu.slots.getFirst());
             assertNotNull(context, "真实单箱槽位必须能反查服务端容器上下文");
-            fluidData = ContainerFluidHandler.getOrCreateFluidData(context);
+            fluidData = ContainerFluidData.getOrCreate(context);
             assertNotNull(fluidData);
             return menu;
         }

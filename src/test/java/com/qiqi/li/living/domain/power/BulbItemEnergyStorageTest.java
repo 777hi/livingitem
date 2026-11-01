@@ -91,6 +91,52 @@ class BulbItemEnergyStorageTest {
     }
 
     @Test
+    @DisplayName("⑦ 盏非整除生命周期（2026-11-02 实测教训，流体 ⑩ 同款）：499 请求实得 499 分毫不差，尘不销毁")
+    void sevenBulbsUnderdivideLifecycle() {
+        ItemStack stack = bulb(7);
+        BulbItemEnergyStorage storage = new BulbItemEnergyStorage(stack);
+        assertEquals(500, storage.receiveEnergy(500, false));   // 存 499,996（floor 均分，损 4 mFE）
+        assertEquals(499_996L, LivingWaxedBulbData.of(stack).chargeMilliFe() * 7);
+        assertEquals(499, storage.getEnergyStored());
+
+        // 旧 floor 口径：perLamp = floor(499000/7) = 71285 ⇒ 实扣 498995 ⇒ 交付 498（缩水）
+        assertEquals(499, storage.extractEnergy(499, false), "交付分毫不差");
+        assertEquals(994L, LivingWaxedBulbData.of(stack).chargeMilliFe() * 7, "残余尘 994mFE 留账不销毁");
+        assertEquals(0, storage.getEnergyStored(), "尘对外隐身");
+        assertEquals(0, storage.extractEnergy(1, false), "尘抽不出也不动账");
+        assertEquals(994L, LivingWaxedBulbData.of(stack).chargeMilliFe() * 7);
+
+        // 再充：尘参与回填（不是死账）
+        assertEquals(500, storage.receiveEnergy(500, false));
+        assertEquals(500, storage.extractEnergy(500, false), "满额交付分毫不差");
+    }
+
+    @Test
+    @DisplayName("⑧ SIMULATE 与 EXECUTE 同请求必同结果（非整除总量下）")
+    void simulateMatchesExecute() {
+        ItemStack stack = bulb(7);
+        LivingWaxedBulbData.set(stack, new LivingWaxedBulbData(71_428));
+        BulbItemEnergyStorage storage = new BulbItemEnergyStorage(stack);
+
+        for (int request : new int[]{1, 100, 499, 500, 5000}) {
+            int sim = storage.extractEnergy(request, true);
+            int exec = storage.extractEnergy(request, false);
+            assertEquals(sim, exec, "请求 " + request + "：模拟 ≠ 实做");
+        }
+    }
+
+    @Test
+    @DisplayName("⑨ 尘保留：<1FE 残量不再被销毁（旧版 extract 直接清零）")
+    void dustPreserved() {
+        ItemStack stack = bulb(7);
+        LivingWaxedBulbData.set(stack, new LivingWaxedBulbData(142));   // 994 mFE 总量 < 1 FE
+        BulbItemEnergyStorage storage = new BulbItemEnergyStorage(stack);
+
+        assertEquals(0, storage.extractEnergy(1, false));
+        assertEquals(142L, LivingWaxedBulbData.of(stack).chargeMilliFe(), "尘留账（外部视图 = 空灯，不卡管道）");
+    }
+
+    @Test
     @DisplayName("拆分守恒：64×q 拆成 54+10 → 每盏仍 q，总电量不变")
     void split_conservesCharge() {
         ItemStack full = bulb(64);

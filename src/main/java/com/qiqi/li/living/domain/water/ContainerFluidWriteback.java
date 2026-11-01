@@ -31,7 +31,7 @@ public final class ContainerFluidWriteback implements ContainerTickHook {
     @Override
     public void onTickStart(ContainerContext ctx, TickContext tick) {
         if (ctx instanceof SimpleContainerContext) {
-            ContainerFluidHandler.getOrCreateFluidData(ctx);
+            ContainerFluidData.getOrCreate(ctx);
         }
     }
 

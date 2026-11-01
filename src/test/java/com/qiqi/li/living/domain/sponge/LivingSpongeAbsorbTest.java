@@ -19,7 +19,6 @@ import com.qiqi.li.living.container.ContainerLivingItemHandler;
 import com.qiqi.li.living.container.SimpleContainerContext;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.domain.water.ContainerFluidData;
-import com.qiqi.li.living.domain.water.ContainerFluidHandler;
 import com.qiqi.li.living.domain.water.FluidFlowBehavior;
 import com.qiqi.li.living.domain.water.FluidFlowBehaviors;
 
@@ -92,7 +91,7 @@ class LivingSpongeAbsorbTest {
             org.mockito.Mockito.when(level.isClientSide()).thenReturn(false);
             org.mockito.Mockito.when(level.getGameTime()).thenReturn(gameTime);
             SimpleContainerContext ctx = new SimpleContainerContext(handler, level);
-            return new Scene(handler, ctx, ContainerFluidHandler.getOrCreateFluidData(ctx));
+            return new Scene(handler, ctx, ContainerFluidData.getOrCreate(ctx));
         }
 
         void source(int slot, FluidType fluid) { fluidData.registerGeneratedSource(slot, fluid); }
