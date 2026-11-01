@@ -190,6 +190,7 @@ src/test/java/com/qiqi/li/
 │   └── MapCoordHelperTest.java                # 地图坐标换算
 ├── living/domain/water/
 │   ├── ContainerDataMigrationChestSplitTest.java  # A6 拆半清流体源（2026-10-28 定案）·otherChestHalf 判定（左半⇒右半 / 单箱·非箱子 null）/ 拆半 ⇒ 存活半流体附件清为 EMPTY（旧源不得经附件回填复活）
+│   ├── ContainerFluidConservationTest.java    # **流体搬运守恒**（2026-11-01）·空槽路径不丢溢出（抽屉 500 → 普通槽 64 ⇒ 只搬 64、源留 436）/ 合并按**槽位上限**而非物品上限（缺陷 A2：目标上限 16 已有 10 ⇒ 只进 6）/ 目标已满不搬 / 异类占位不覆盖；**不断言准入**（A3 由 ContainerFluidDataTest 钉）
 │   ├── ContainerFluidDataTest.java            # 流体引擎行为快照·单源扩散/上限7/活物阻挡/非活物穿过/源移除/水流推动/二维扩散 + 行为接缝·按maxLevel/静止不扩散 + TickContext 建流体数据回归 + 通用驱动·自维持/驱动BFS + 源查询API + 派生源·独立存活/挤没/共存/同格无豁免/异种覆盖/EMPTY noop + 落盘CODEC往返 + 晋升接缝 + 转化接缝
 │   ├── ContainerFluidHandlerTest.java          # 管道抽取能力（§10）·tank 枚举与稳定序 / SIMULATE 不消耗 vs EXECUTE 删源 / 源全有或全无 / 异种 EMPTY / fill 恒 0 + isFluidValid / 非容器不报名 / provider 让位 / **能力存在性=派生源非空（无源→有源→抽干三态）· 客户端恒不报名**
 │   ├── ContainerDataMigrationTest.java          # 形态迁移·破坏时数据交给「本体那件」掉落物(**守卫已下沉测 ContainerDrops**)/无本体退回首项/无掉落返回 null + 组件 CODEC 往返保住派生源/空数据不产条目 + snapshot 独立副本/clearAll 一次清干净 + **相位快照 CODEC 往返保住 (P,φ,d)/EMPTY 不进物品** + **moveOut 共用入口**（contentRetaining 搬+清空 / 非 retaining 不搬 / 退化输入安全）+ **端到端 moveOut 写物品组件（非空快照）/ moveIn 写回宿主附件** + **身份优先：有 UUID 只搬身份、不写数据组件（moveOut / moveIn 各一）**

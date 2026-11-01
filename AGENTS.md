@@ -146,7 +146,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1289 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
+**合计测试用例 1293 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -171,6 +171,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-11-01 | 🐞 **流体搬运丢物（A1 未登记 + A2 已知）** —— 空槽路径不查容量 ⇒ 抽屉 500 搬进上限 64 的槽**丢 436**；合并按物品上限而非槽位上限 ⇒ **丢 48**。修：容量按 `getSlotLimit`（**不碰 `isItemValid`**，A3 定案不动）+ 写后回读只扣实际量。测试 1289→1293；抽 `move` 原语收敛 8~12 处调用点仍待办 | `docs/tech/living-fluid-tech.md` §3.3.2 · `ContainerFluidConservationTest` · TODO 活流体 ②③ |
 | 2026-11-01 | 🐞 **批次 3：GUI 存放分支一次手势只产生一个效果** —— ① `tryInteract` 成功后只 `setReturnValue(true)` 没 `return` ⇒ 落到存放分支叠两个效果；② 存放分支漏置 `skipNextRelease` ⇒ 释放阶段被原版再执行一次。判据 + 序列化发包收进 `client/input/LivingChestDepositHelper`（原先两个 mixin 各写一份，连三行发包都是复制的）。⚠️ 新增「按压阶段拦截」的两条硬约束写进 chest tech §4.3。测试 1282→1289；待实机 M-1/M-2 | `docs/tech/living-chest-tech.md` §4.3 · `LivingChestDepositHelper` · 计划批次 3 |
 | 2026-11-01 | 🐞 **R-09 复查：4 条断言 → 2 真 bug 已修 / 1 前提弱 / 1 转性能批** —— 配方书**不可见页签仍吞点击**（原版 `mouseClicked` 整体包在 `isVisible() && !isSpectator()` 里，我们的注入是 HEAD ⇒ 跑在守卫前）；地图缩略图纹理**只 clear 不 release**（`DynamicTexture` 归 `TextureManager.byPath` 管 ⇒ 「写了清理钩子」≠「清理了资源」）。复查还废掉两条断言的前提 / 证据：原表行号 3 个里 2 个指错 ⇒ **行号不能当证据** | `docs/tech/common/recipe-book-tech.md` · `RecipeBookComponentMixin#onMouseClicked` · `LivingMapIconDecorator#releaseTextures` · 计划批次 8 + M-3/M-6/M-7 |
 | 2026-11-01 | 🐞 **换存档后活地图不再刷新** —— 节流表存 `getTickCount()`（从 0 起算），换存档不重启 JVM ⇒ 旧值让 `current - last < 20` 恒真 ⇒ 新存档刷新被**永久静默跳过**；补 `StaticCacheRegistry.onServerStop` 登记（`FailureThrottle` 那份的代价是**漏报**：旧 key 占着抑制窗口）。顺带留档门禁盲区：「本类无清理入口」≠ 没清理（可能写在别的类） | `MapUpdateSkipHelper` 类头 · `shared-state.md` J9/J10 · `MapUpdateSkipHelperTest` |
@@ -180,7 +181,6 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-10-31 | 🐞 **红电对外能量接口只在「真有活铜灯」时存在（补齐流体同款缺陷）** —— 线缆类模组按「能力是否非 null」判储能（Flux `hasCapability` / Mekanism acceptorCache）⇒ 无灯的箱子/机器全被认成储能（`canReceive=true` 恒收 0，每拍白跑一轮模拟）。修：provider 读电力账本通告标志（O(1)，不扫容器）+ 正边沿在电力 tick **所有早退之前**通告（纯电池容器无发电机）+ 负边沿（最后一盏灯被拿走后功能已不分组）由相位写回兜底（仅在通告中扫容器）；客户端恒不发；测试 1262→1266 | `docs/tech/living-power-tech.md` §4.1 · `ContainerEnergyStorage` / `ContainerPhaseWriteback` · `ContainerEnergyCapabilityTest` |
 | 2026-10-31 | 🐞 **机械动力流体管道恢复（能力只在该有资产时存在）** —— 宽注册给**所有** BE 发 `IFluidHandler` ⇒ Create 按「能力非 null」判储液，把相邻**管道自身**判成 `FlowSource.FluidHandler`（而非 `OtherPipe`）⇒ 每跳断在假 tank、水完全不流；且任意 BE 都长排液接口。修：provider 加「当前真有派生源」判据（客户端恒不发）+ 驱动侧存在性边沿 `invalidateCapabilities`；整源口径与退役计划不变；测试 1259→1262 | `docs/tech/living-fluid-tech.md` §10.4 · `ContainerFluidHandler` / `LivingFluidFunction` / `ContainerFluidHandlerTest` |
 | 2026-10-31 | 🐞 **活水车在活背包 GUI 里转向不再卡旧方向（物品形态补上槽位直发通道）** —— `syncSlotToClients` 对物品形态原是 no-op（空 positions 早退），兜底的原版 `broadcastChanges` 又因 `PatchedDataComponentMap` copy-on-write 共享 patch map，检测不到就地组件翻转 ⇒ 只有重开 GUI 才刷新。修：`syncWorldContainer` 空位置 + 有容器 UUID ⇒ 按容器 UUID 找观众（ContainerViewers 同口径、只发正看着这个容器的玩家）+ handler 实例匹配槽位直发槽位包；背包 GUI 里所有「组件翻转」类显示（水车转向 / 熔炉燃烧 / 工具动画）一并修复；新增 4 项测试，测试 1249→1253 | `docs/tech/living-backpack-tech.md` §6-#8 · `SimpleContainerContext#syncItemFormSlot` · `ItemFormSlotSyncTest` |
-| 2026-10-31 | ♻️ **物品推动改为「四邻力场」模型（替换流树 + 末端特判）** —— 方向 = 四邻 level 差矢量和，**主分量优先 + 次分量兜底**（修真机「摆弯道一个弯都过不去」）；45° 平局按**容器主轴**（宽 ⇒ 横；竖/正方 ⇒ 纵，用户定兜底取上下）；`flow=0` 停；**目标可为无水格** ⇒ 推出是自然结果，末端分支删除。服务端与渲染共用 `FluidFlowVector#direction`（修「左两象限朝左」），同步包加 `size`（channel 改 `_v2`）；**水车力矩同步改读力场**（原先源格 `fromSlot=-1` ⇒ 旁侧水车白转）；删 `orderChildren`/`childRank`/`straightTarget`；新增 3 项测试，测试 1249 | `docs/tech/living-fluid-tech.md` §3.3 · §3.3.1 · `living-water-wheel-tech.md` §0 规则 7 · `ContainerFluidDataTest` 51~53 |
 
 ## 提交前必跑（2026-10-30 更新）
 

@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.PriorityQueue;
 import java.util.Set;
+import com.mojang.logging.LogUtils;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import com.qiqi.li.living.api.ContainerDataLifecycle;
@@ -27,6 +28,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.material.Fluids;
 import net.neoforged.neoforge.fluids.FluidType;
 import net.neoforged.neoforge.registries.NeoForgeRegistries;
+import org.slf4j.Logger;
 
 /**
  * 容器级流体数据 —— 参照原版水流平地蔓延逻辑实现。
@@ -83,6 +85,8 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
         @Override
         public void tick(ContainerContext ctx) { }
     };
+
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     public static final int SOURCE_LEVEL = 0;
     public static final int MAX_FLOW_LEVEL = 7;
@@ -869,8 +873,25 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
      * <p><b>唯一写入口</b> —— 力场推动只有这一条路径，同步 / {@code moved} 标记 / 合并口径
      * 全部收在这里。目标可以是水格（继续跟水走）或无水格（离开水流，自然失去推力）。</p>
      *
-     * <p>⚠️ 合并容量目前取 {@link ItemStack#getMaxStackSize}，不是槽位上限
-     * （已知缺陷 A2，见 buffer/living-fluid-review.md，待拍板）。</p>
+     * <p>⭐ <b>容量必须先算再写</b>（2026-11-01 修，原为两处丢物缺陷）：</p>
+     * <ul>
+     *   <li><b>空槽路径原先不查容量</b>：直接写 {@code item.copy()} 再无条件清空源槽。
+     *       源是超大堆叠（抽屉 512）而目标是普通槽（64）时，{@code setItem} 内部
+     *       {@code clampToSlotLimit} 静默截断到 64，源却整份清空 ⇒ <b>丢 436 个</b>
+     *       （实测见 {@code ConservationProbeTest}）。</li>
+     *   <li><b>合并路径原按 {@code getMaxStackSize} 算空间</b>（缺陷 A2）：物品上限 64
+     *       而槽位上限 16 时，以为能进 54、实际只进 6 ⇒ <b>丢 48 个</b>。</li>
+     * </ul>
+     *
+     * <p>⚠️ <b>不能用 {@code simulateInsertItem} 代替</b>：它会校验 {@code isItemValid}，
+     * 而 A3 已定案「推动是水流搬运、不是漏斗插入，不看准入」（见
+     * {@code pushItems_ignoresSlotAdmission}）。此处只用 {@link ContainerContext#getSlotLimit}
+     * —— 纯容量，不含准入，与 {@code clampToSlotLimit} 同口径（槽位上限才是权威）。</p>
+     *
+     * <p>⭐ <b>写后回读</b>（TODO 活流体 A1 止血）：第三方容器可能
+     * {@code setStackInSlot} 静默失败、按自己口径再截断、或整库重定向
+     * ⇒ <b>只扣「真正进了目标槽」的数量，绝不按计划量扣源</b>。
+     * 回读失败时留 WARN（I-C6：降级必须可观测），源槽原样保留。</p>
      *
      * @return true = 本拍已处理完（移动或部分合并），调用方不再试其它目标
      */
@@ -878,33 +899,37 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
                                        int targetSlot, Set<Integer> moved) {
         ItemStack targetItem = ctx.getItem(targetSlot);
         if (LivingItemManager.isLivingItem(targetItem)) return false;
-
-        if (targetItem.isEmpty()) {
-            ctx.setItem(targetSlot, item.copy());
-            ctx.setItem(slot, ItemStack.EMPTY);
-            ctx.syncSlotToClients(targetSlot, ctx.getItem(targetSlot));
-            ctx.syncSlotToClients(slot, ItemStack.EMPTY);
-            moved.add(targetSlot);
-            return true;
-        }
-        if (!ItemStack.isSameItemSameComponents(item, targetItem)
-            || targetItem.getCount() >= targetItem.getMaxStackSize()) {
+        if (!targetItem.isEmpty() && !ItemStack.isSameItemSameComponents(item, targetItem)) {
             return false;
         }
-        int toAdd = Math.min(item.getCount(), targetItem.getMaxStackSize() - targetItem.getCount());
-        ItemStack newTarget = targetItem.copy();
-        newTarget.grow(toAdd);
+
+        int space = ctx.getSlotLimit(targetSlot) - targetItem.getCount();
+        if (space <= 0) return false;
+        int planned = Math.min(item.getCount(), space);
+
+        ItemStack newTarget = targetItem.isEmpty()
+            ? item.copyWithCount(planned)
+            : targetItem.copyWithCount(targetItem.getCount() + planned);
         ctx.setItem(targetSlot, newTarget);
-        ctx.syncSlotToClients(targetSlot, newTarget);
-        if (item.getCount() == toAdd) {
-            ctx.setItem(slot, ItemStack.EMPTY);
-            ctx.syncSlotToClients(slot, ItemStack.EMPTY);
-        } else {
-            ItemStack remaining = item.copy();
-            remaining.shrink(toAdd);
-            ctx.setItem(slot, remaining);
-            ctx.syncSlotToClients(slot, remaining);
+
+        // A1：写后回读 —— 只认目标槽里真实增加的数量
+        ItemStack after = ctx.getItem(targetSlot);
+        int actual = !after.isEmpty() && ItemStack.isSameItemSameComponents(after, item)
+            ? Math.max(0, after.getCount() - targetItem.getCount())
+            : 0;
+        if (actual < planned) {
+            LOGGER.warn("流体推动: 槽位 {} 计划写入 {}×{}，实际 {} —— 源槽只扣实际量",
+                targetSlot, planned, item.getItem(), actual);
         }
+        ctx.syncSlotToClients(targetSlot, after);
+        if (actual <= 0) return false;   // 一个都没进去 ⇒ 本方向不算成功
+
+        ItemStack remaining = actual >= item.getCount()
+            ? ItemStack.EMPTY
+            : item.copyWithCount(item.getCount() - actual);
+        ctx.setItem(slot, remaining);
+        ctx.syncSlotToClients(slot, remaining);
+
         moved.add(targetSlot);
         return true;
     }

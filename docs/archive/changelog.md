@@ -17,6 +17,21 @@
 
 ## 2026-11-01
 
+- 🐞 **流体搬运丢物：两条容量口径都错，且源槽无条件清空** —— 活流体 A1 止血 + A2 修复。
+  **病**：`tryMoveInto` 空槽路径直接写 `item.copy()` 再清源，目标槽装不下时
+  `setItem` 内部 `clampToSlotLimit` **静默截断** ⇒ 实测「抽屉 500 个 → 普通槽（上限 64）」
+  **丢 436 个**（此前无人知晓，未登记缺陷）；合并路径按 `ItemStack.getMaxStackSize` 算空间
+  （缺陷 A2），目标槽上限 16、已有 10 时以为能进 54、实际只进 6 ⇒ **丢 48 个**。
+  **取证**：`ContainerFluidConservationTest` —— per-slot 上限 handler 复现「抽屉 → 普通箱」
+  这种真实异构组合（统一上限的 handler 复现不出来：源槽也会被 clamp，掩盖「源被无条件清空」）。
+  **修法两处口径**：① 容量改按 `getSlotLimit` —— **纯容量，不碰 `isItemValid`**：
+  A3 已定案「推动是水流搬运不是漏斗插入，不看准入」（`pushItems_ignoresSlotAdmission` 钉住），
+  用 `simulateInsertItem` 会推翻它；② A1 加**写后回读**，只扣「真正进了目标槽」的数量，
+  不足时 WARN 留痕（第三方容器可能静默失败 / 再截断 / 整库重定向）。
+  测试 1289→1293。
+  **未做**（仍是 TODO 活流体 ②③）：抽唯一移动原语 `move(from, to, amount)` 收敛 8~12 处调用点、
+  给 `ContainerContext` 加 `insertItem(slot, stack, simulate)` 让「实际写入量」成为契约
+  —— 本次只做 ①止血，丢物风险在**本路径**已闭合，其他搬运点未审计。
 - ✅ **R-06 缓存生命周期实现：跨 tick 表有了统一回收口**（整改计划批次 6，接续当天的
   A/B 实验与参考层减法）。
   **病**：四张跨 tick 表原先只有四条清理路径（容器继续 tick 且已空 / 玩家破坏且位置索引命中 /
