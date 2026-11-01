@@ -2,13 +2,12 @@ package com.qiqi.li.client.mixin;
 
 import com.qiqi.li.client.gui.LivingButton;
 import com.qiqi.li.client.input.GuiInteractionHelper;
+import com.qiqi.li.client.input.LivingChestDepositHelper;
 import com.qiqi.li.client.render.LivingMapGroups;
 import com.qiqi.li.client.render.LivingMapLayout;
 import com.qiqi.li.client.render.LivingMapOverlay;
 import com.qiqi.li.client.util.LivingChestTabState;
-import com.qiqi.li.living.domain.chest.LivingChestFunction;
 import com.qiqi.li.living.domain.map.LivingEnderPearlFunction;
-import com.qiqi.li.network.LivingChestAccessPacket;
 import com.qiqi.li.network.LivingMapGuiTeleportPacket;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -17,13 +16,10 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
-import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
-import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.network.PacketDistributor;
-import org.lwjgl.glfw.GLFW;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -125,20 +121,17 @@ public class AbstractContainerScreenMixin extends Screen {
         if (GuiInteractionHelper.tryInteract(this.hoveredSlot, button, false, this.menu)) {
             this.skipNextRelease = true;   // 见字段 javadoc：防释放阶段原版 PICKUP 二次执行
             cir.setReturnValue(true);
+            // ⚠️ 必须 return（2026-11-01）：这里原先落到下面的存放分支 ⇒ 一次按压同时产生
+            // 「手持触发型交互」+「存放」两个效果（活锄点活箱子槽位时会既催熟又收纳）。
+            return;
         }
 
-        if (button == GLFW.GLFW_MOUSE_BUTTON_1 && hasShiftDown()
-            && LivingChestTabState.isActive()
-            && living_item$isRecipeBookVisible()
-            && this.hoveredSlot != null && this.hoveredSlot.hasItem()) {
-            ItemStack slotStack = this.hoveredSlot.getItem();
-            if (!LivingChestFunction.isLivingChest(slotStack)) {
-                CompoundTag itemTag = (CompoundTag) slotStack.saveOptional(
-                    Minecraft.getInstance().player.registryAccess());
-                PacketDistributor.sendToServer(new LivingChestAccessPacket(
-                    LivingChestAccessPacket.DEPOSIT_SLOT, itemTag, slotStack.getCount()));
-                cir.setReturnValue(true);
-            }
+        if (LivingChestDepositHelper.shouldDeposit(this.hoveredSlot, button, hasShiftDown(),
+                LivingChestTabState.isActive(), living_item$isRecipeBookVisible())) {
+            LivingChestDepositHelper.sendDeposit(this.hoveredSlot);
+            // 存放也是「按压阶段就完成」的拦截 ⇒ 同 tryInteract：不让释放阶段再补一次原版点击
+            this.skipNextRelease = true;
+            cir.setReturnValue(true);
         }
     }
 

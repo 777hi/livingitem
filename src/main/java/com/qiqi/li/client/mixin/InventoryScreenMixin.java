@@ -3,21 +3,16 @@ package com.qiqi.li.client.mixin;
 import com.qiqi.li.client.gui.LivingButton;
 import com.qiqi.li.client.gui.LivingButtonLayout;
 import com.qiqi.li.client.input.GuiInteractionHelper;
+import com.qiqi.li.client.input.LivingChestDepositHelper;
 import com.qiqi.li.client.input.ToolRayTuningClicks;
 import com.qiqi.li.client.util.LivingChestTabState;
-import com.qiqi.li.living.domain.chest.LivingChestFunction;
-import com.qiqi.li.network.LivingChestAccessPacket;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.gui.screens.inventory.EffectRenderingInventoryScreen;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.client.gui.screens.recipebook.RecipeBookComponent;
-import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.InventoryMenu;
-import net.minecraft.world.item.ItemStack;
-import net.neoforged.neoforge.network.PacketDistributor;
 import org.lwjgl.glfw.GLFW;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -53,6 +48,8 @@ public abstract class InventoryScreenMixin extends EffectRenderingInventoryScree
         if (GuiInteractionHelper.tryInteract(this.hoveredSlot, button, false, this.menu)) {
             ((AbstractContainerScreenAccessor) this).living_item$setSkipNextRelease(true);
             cir.setReturnValue(true);
+            // ⚠️ 必须 return（2026-11-01）：原先会继续落到下面的存放分支 ⇒ 一次按压两个效果
+            return;
         }
 
         // ⭐ 射线微调：点击玩家小人（左键=起点锚点/脑袋重置，右键=朝向跟随切换）。
@@ -75,18 +72,12 @@ public abstract class InventoryScreenMixin extends EffectRenderingInventoryScree
             return;
         }
 
-        if (button == GLFW.GLFW_MOUSE_BUTTON_1 && hasShiftDown()
-            && LivingChestTabState.isActive()
-            && this.recipeBookComponent.isVisible()
-            && this.hoveredSlot != null && this.hoveredSlot.hasItem()) {
-            ItemStack slotStack = this.hoveredSlot.getItem();
-            if (!LivingChestFunction.isLivingChest(slotStack)) {
-                CompoundTag itemTag = (CompoundTag) slotStack.saveOptional(
-                    Minecraft.getInstance().player.registryAccess());
-                PacketDistributor.sendToServer(new LivingChestAccessPacket(
-                    LivingChestAccessPacket.DEPOSIT_SLOT, itemTag, slotStack.getCount()));
-                cir.setReturnValue(true);
-            }
+        if (LivingChestDepositHelper.shouldDeposit(this.hoveredSlot, button, hasShiftDown(),
+                LivingChestTabState.isActive(), this.recipeBookComponent.isVisible())) {
+            LivingChestDepositHelper.sendDeposit(this.hoveredSlot);
+            // 存放完成于按压阶段 ⇒ 释放阶段不能被原版再执行一次（放/换会凭空多一次点击）
+            ((AbstractContainerScreenAccessor) this).living_item$setSkipNextRelease(true);
+            cir.setReturnValue(true);
         }
     }
 

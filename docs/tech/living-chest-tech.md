@@ -386,6 +386,28 @@ public static List<ItemStack> collectDeactivationDrops(ItemStack chestStack) {
 
 `ServerPacketHandler` 接收请求，调用 `LivingChestFunction` 的 API 执行操作，然后同步客户端。
 
+### 4.3 Shift+左键「收纳到活箱子」（`DEPOSIT_SLOT`）
+
+判据与动作收在 **`client/input/LivingChestDepositHelper`**（`shouldDeposit` / `sendDeposit`）——
+两个容器界面 mixin 只调它，**不要再各写一份**（原先各写一份时连序列化三行都是复制的，
+两份会各自漂移）。触发条件：左键 + Shift + 配方书「活箱子」标签激活 + 书面板可见 +
+槽位有物品且**不是活箱子本身**（活箱子是容器，不是待收纳的内容物）。
+
+🔴 **两条硬约束**（新增「按压阶段拦截」的分支时都适用）：
+
+1. **拦截成功必须 `return`**，不能只 `setReturnValue(true)` 继续往下落 ——
+   否则一次按压叠出两个效果（2026-11-01 实测：与手持触发型活物品的交互叠加，
+   活锄点槽位会既催熟又收纳）。
+2. **按压阶段完成的拦截必须置 `skipNextRelease = true`**：原版对「光标非空」的放置 / 交换
+   发生在**释放**阶段；不置位则释放阶段按原版逻辑再执行一次，客户端与服务端槽位会不一致
+   （`AbstractContainerScreenMixin#skipNextRelease` 字段 javadoc 是这条语义的原始出处）。
+
+验收：`LivingChestDepositHelperTest`（7 例，覆盖每条早退）+ 实机 M-1/M-2（背包 / 箱子界面
+各 4 组合，断言「只发生一次存放、释放不再拾取」）。
+
+> ⚠️ GLFW 鼠标键是 **0 基**的（`GLFW_MOUSE_BUTTON_1 == 0`）—— 判据里请用常量本身，
+> 别写数字（测试第一版写 `1/2` 导致正例假失败）。
+
 ---
 
 ## 5. 配方书集成

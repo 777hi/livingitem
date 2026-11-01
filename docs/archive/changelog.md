@@ -123,6 +123,29 @@
   `client/render/LivingMapIconDecorator#releaseTextures` ·
   `docs/tech/common/recipe-book-tech.md` 注入点表 · 整改计划批次 8 + §M-3/M-6/M-7
 
+- 🐞 **批次 3：GUI 活箱子存放分支——一次手势只产生一个效果**（2026-11-01 实现，待实机 M-1/M-2）。
+  两条前提回源码复查过，都成立：
+  ① `AbstractContainerScreenMixin` / `InventoryScreenMixin` 的 `tryInteract` 分支成功后只做了
+  `setReturnValue(true)`，**没有 `return`** ⇒ 控制流继续落到下面的存放分支 ⇒ 一次按压叠出两个效果
+  （手持触发型活物品 + 收纳：活锄点槽位会既催熟又存放）。
+  ② 存放分支不置 `skipNextRelease` ⇒ 释放阶段被原版的放置 / 交换逻辑再执行一次
+  （该字段语义在 `AbstractContainerScreenMixin#skipNextRelease` 的 javadoc 里早就写清了，
+  存放分支正是漏用它的那一处）。
+  **改动**：判据 + 「NBT 序列化 + 发包」收进新的 `client/input/LivingChestDepositHelper`
+  （`shouldDeposit` / `sendDeposit`），两个 mixin 只调它 —— 原先连序列化那三行都是复制的，
+  两份会各自漂移；同目录已有 `GuiInteractionHelper`，是同形态不是新机制。
+  两个 mixin 各补 `return`，存放成功后置 `skipNextRelease`。
+  **与计划的两处偏差（都有理由）**：`shouldDeposit` 多加一个 `button` 参数
+  —— 计划签名把左键判断留在调用方 ⇒「手势门禁」仍复制两份，收口不彻底；
+  测试从 4 例做成 7 例（补 null 槽位 / 非左键 / 未按 Shift 三条早退）。
+  **踩到的坑（值一条备注）**：GLFW 鼠标键是 **0 基**的（`GLFW_MOUSE_BUTTON_1 == 0`），
+  测试第一版按直觉写 `1/2` ⇒ 正例假失败；生产代码用常量所以没受影响。
+  定位手法：临时插一个打印各条件的 scratch 测试跑一次再删 —— 比猜快。
+  两条硬约束落进 `living-chest-tech.md` **§4.3**（按压阶段拦截：必须 `return`、必须置
+  `skipNextRelease`）—— 那是给下一个新增按压拦截的人看的，不是给这次改动的记录。
+  测试 1282→1289（`LivingChestDepositHelperTest` 7 项）；doc_check 15/15 绿。
+  → `client/input/LivingChestDepositHelper` · `docs/tech/living-chest-tech.md` §4.3 · 整改计划批次 3
+
 ## 2026-10-31
 
 - 🐞 **红电对外能量接口也改成「真有活铜灯才存在」**（流体 §10.4 的同款缺陷，主动补齐）——

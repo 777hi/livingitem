@@ -27,6 +27,7 @@ src/test/java/com/qiqi/li/
 │   └── LivingButtonLayoutTest.java            # 活按钮位置布局·应用位置时的屏幕夹取（屏内不动/越界夹边缘/屏幕小于按钮取 max(0,…)）+ 默认位分流（背包=小人框底居中 42,70 / 其余容器=底部中央）+ 小人框矩形常量对齐原版 (26,8)-(75,78)
 ├── client/input/
 │   ├── FarmlandPlantHintTest.java             # 活耕地种植悬停提示·门槛与交互同源（非活种子/非活耕地/非耕地物品/不可种植/空栈→null）+ 四态文案键与参数（充足消耗数/创造免费/不足差额/已种植）
+│   ├── LivingChestDepositHelperTest.java       # Shift+左键收纳判定（批次 3，2026-11-01）·正例（左键+Shift+页签激活+书可见+普通物品）/ 空槽 / 槽内是活箱子（它是容器不是内容物）/ 页签未激活 / 书面板不可见 / 未按 Shift / 非左键 / null 槽位不抛。⚠️ GLFW 鼠标键 0 基（MOUSE_BUTTON_1==0），判据用常量不用数字
 │   └── LivingItemInputKeyMapTest.java         # 方向输入键码表·九宫格 8 键映射/未知键为 0/全角字母归一化与转大写链路（2026-10-29）
 ├── client/icon/
 │   └── WaterWheelRenderStateTest.java         # 水车图标旋转时钟·速度(Create口径 6°/s/RPM)/方向(符号随rpm)/rpm=0恒0/360°回绕连续/大时钟量级不退化(2026-10-29 换源回归)
