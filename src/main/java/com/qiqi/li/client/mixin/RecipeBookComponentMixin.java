@@ -3,6 +3,7 @@ package com.qiqi.li.client.mixin;
 import com.qiqi.li.client.gui.LivingChestRecipeTab;
 import com.qiqi.li.client.util.LivingChestTabState;
 
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.recipebook.RecipeBookComponent;
@@ -71,6 +72,10 @@ public abstract class RecipeBookComponentMixin {
     @Shadow
     protected abstract boolean isVisible();
 
+    /** 原版用它取玩家做旁观者判定（{@code RecipeBookComponent#mouseClicked} 的守卫条件之一） */
+    @Shadow
+    protected Minecraft minecraft;
+
     // ==================== 委托视图 ====================
 
     /**
@@ -121,17 +126,27 @@ public abstract class RecipeBookComponentMixin {
     /**
      * HEAD 阶段拦截，优先级：活箱子标签 &gt; 翻页按钮 &gt; 内容槽位。
      * 命中即 {@code setReturnValue(true)} 短路原版处理。
+     *
+     * <p>🔴 <b>必须先复刻原版守卫</b>（{@code RecipeBookComponent#mouseClicked} 整个方法体包在
+     * {@code isVisible() && !player.isSpectator()} 里，见 {@code RecipeBookComponent.java:327}）：
+     * 本注入是 {@code HEAD}，跑在原版那个 if <b>之前</b>。不加同样的门时，
+     * 「配方书面板关着」或「旁观模式」下点击仍会命中标签按钮矩形并 {@code setReturnValue(true)}
+     * ⇒ 吞掉玩家那一下点击（而标签按钮此时由 {@link #onRenderTail} 的 {@code isVisible} 守卫
+     * 画都没画 ⇒ 点在一个看不见的位置上，什么都没发生，原版那格还被短路）。</p>
      */
     @Inject(method = "mouseClicked", at = @At("HEAD"), cancellable = true)
     private void onMouseClicked(double mouseX, double mouseY, int button, CallbackInfoReturnable<Boolean> cir) {
         if (this.livingChestTabView == null) return;
+        // 与原版同一条守卫（不另加判空：原版自己就是直接 this.minecraft.player.isSpectator()）
+        if (!this.isVisible() || this.minecraft.player.isSpectator()) return;
 
         if (this.livingChestTabView.onTabClicked(mouseX, mouseY, button, this.selectedTab)) {
             cir.setReturnValue(true);
             return;
         }
 
-        if (LivingChestTabState.isActive() && this.isVisible()) {
+        // 翻页 / 槽位只在「活箱子标签处于激活态」时接管（isVisible 已在上面统一挡过）
+        if (LivingChestTabState.isActive()) {
             if (this.livingChestTabView.onPageButtonClicked(mouseX, mouseY, button)) {
                 cir.setReturnValue(true);
                 return;

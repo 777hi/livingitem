@@ -32,7 +32,7 @@ client/mixin/RecipeBookComponentMixin.java   ← 薄委托：@Shadow 访问原�
 | `updateStackedContents` INVOKE `updateCollections` | 材料统计（见下） | 覆盖「背包变动 / 点槽位」路径 |
 | `render` INVOKE `popPose` | 标签激活时渲染内容网格（此时变换矩阵仍有效） | 网格主体 |
 | `render` TAIL | 渲染标签按钮 + 箱子图标（禁深度测试防遮挡） | 标签常显 |
-| `mouseClicked` HEAD (cancellable) | 优先级：标签按钮 > 翻页按钮 > 内容槽位；命中即短路原版 | 交互入口 |
+| `mouseClicked` HEAD (cancellable) | **先复刻原版守卫** `isVisible() && !player.isSpectator()`，再按优先级 标签按钮 > 翻页按钮 > 内容槽位；命中即短路原版 | 交互入口。🔴 原版 `mouseClicked` 的整个方法体包在那个 if 里（`RecipeBookComponent.java:327`），而本注入是 **HEAD ⇒ 跑在它之前** —— 不加同一道门就会在「面板关着 / 旁观模式」吞掉点击：标签按钮此时由 `render` TAIL 的 `isVisible` 守卫画都没画，玩家点在一个看不见的位置上，原版那格还被 `setReturnValue(true)` 短路（2026-11-01 修） |
 | `mouseClicked` RETURN | 原版处理了本次点击 ⇒ 自动退出活箱子标签（防误退：点在搜索框内不算） | 隐式退出 |
 
 > ⚠️ **两条材料统计路径缺一不可**（`initVisuals` + `updateStackedContents` 的

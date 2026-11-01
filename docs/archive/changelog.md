@@ -84,6 +84,45 @@
   因为那会连带清掉其它注册表的缓存、把单测变成全局副作用现场。真机换档行为仍列在实机待验里。
   → `MapUpdateSkipHelper` 类头 · `shared-state.md` J9/J10/§3 · `docs/reference/test-map.md`
 
+- 🐞 **R-09 客户端复查：4 条断言里 2 条是真 bug（已修）、1 条前提偏弱、1 条转性能批**（批次 8）。
+  **先说方法层的结果**：原表 3 个证据指针里 **2 个指错** ——
+  `RecipeBookComponentMixin.java:932-946`（该文件只有 210 行）、
+  「地图纹理未 release」指向 `RotatingWaterWheelModel`（真正持有纹理缓存的是
+  `client/render/LivingMapIconDecorator`）。⇒ **静态审查产出的行号不能当证据**；
+  引用要写「类#成员 + 判据表达式」，行号会因任何一次编辑失效
+  （`doc_check` 第 7 / 9 项校验的正是前者，不是行号 —— 这也是为什么门禁没拦住它）。
+  我自己也踩了一次**假阴性**：第一轮 grep 带 `head -12` 把输出截断，于是我判「地图纹理」
+  那条无对应物 —— **截断的输出等于没查**；继续查才发现它不但存在，而且 2026-10-27 就补过登记。
+  **修 ①（配方书不可见页签吞点击）**：原版 `RecipeBookComponent#mouseClicked` 的**整个方法体**
+  包在 `isVisible() && !player.isSpectator()` 里（`RecipeBookComponent.java:327`），
+  而我们的注入是 `@At("HEAD")` ⇒ 跑在那个 if **之前**。于是面板关着 / 旁观模式时，点击仍命中
+  标签按钮矩形并 `setReturnValue(true)` ⇒ 吞掉那一下点击；而标签按钮此时由 `render` TAIL 的
+  `isVisible` 守卫**画都没画** ⇒ 玩家点在一个看不见的位置上，什么都没发生，原版那格还被短路。
+  修：HEAD 里复刻同一条守卫（不另加判空 —— 原版自己就直接 `this.minecraft.player.isSpectator()`），
+  并删掉下面因此 redundant 的 `&& this.isVisible()`。
+  **修 ②（地图缩略图纹理只 clear 不 release）**：2026-10-27 审查 P3-4 补登记补的是
+  `onClientLogout(TEXTURE_CACHE::clear)` —— **登记了，但登记的是裸 clear**：
+  `DynamicTexture` 本体由 `TextureManager.byPath` 持有并占着 GPU 资源，只有 `release`/`close`
+  才回收（判据：`TextureManager#release` = `byPath.remove` + `safeClose`；`#register` 也靠
+  `safeClose` 淘汰同 location 的旧纹理 —— 本类 `isClosed()` 防的正是那条路径）。
+  裸 clear 只丢掉我们这边的引用，纹理永久滞留 ⇒ 反复登出 / 换存档就是稳定增长的显存。
+  修：照齐同族里**一直写对了**的 `LivingMapOverlay#releaseTextures`（逐个 release 再 clear）。
+  **这条的意义超出它本身**：「写了清理钩子」≠「清理了资源」—— 与今天 `lastUpdateTick`
+  那条同族（登记存在，但登记的动作不对 / 完全没有）。
+  **③ 水车 `@Redirect` 前提偏弱**：`CreateCompat.isLoaded()` 是缓存过的静态布尔
+  （`CreateCompat.java:15-17`），短路顺序也把廉价判据放前 ⇒ 每次物品渲染多出的成本是
+  「一次静态读 + 两个比较」，不构成可观测热点。**但这个 mixin 是否根本多余**只能实机 A/B
+  （临时注释掉对比旋转 / 光照 / 亮度）—— 读代码删不掉一个渲染钩子，保持待办（M-6 已改写成 A/B 步骤）。
+  **④ 配方书每帧分配 = 真问题**：`renderContents` 每帧调 `collectLivingChestItems()`
+  （扫 36 格 + 每个活箱子 `ItemContainerContents.copyInto(NonNullList<27>)` + `new ArrayList` +
+  搜索再建一个 list）⇒ 高帧率下每秒数千次栈复制。没顺手改的原因：任何缓存都要回答**失效条件**，
+  而客户端没有背包变动事件；两种记忆化都有行为可见性代价 ⇒ 转批次 7 与 R-08 一起拍板。
+  实机清单 M-3 / M-6 / M-7 已改写成「验哪一条 + 判据」，与本轮代码改动一一对应。
+  纯客户端，测试 1282 不变（全量绿）；doc_check 15/15 绿。
+  → `client/mixin/RecipeBookComponentMixin#onMouseClicked` ·
+  `client/render/LivingMapIconDecorator#releaseTextures` ·
+  `docs/tech/common/recipe-book-tech.md` 注入点表 · 整改计划批次 8 + §M-3/M-6/M-7
+
 ## 2026-10-31
 
 - 🐞 **红电对外能量接口也改成「真有活铜灯才存在」**（流体 §10.4 的同款缺陷，主动补齐）——

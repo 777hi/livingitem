@@ -2,6 +2,7 @@ package com.qiqi.li.client.render;
 
 import com.qiqi.li.LivingItem;
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.util.StaticCacheRegistry;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -48,7 +49,21 @@ public class LivingMapIconDecorator implements IItemDecorator {
     static {
         // ⚠️ 登记跨存档清理（2026-10-27 审查 P3-4）：同族缓存（BrewingStand/ItemClientCache）都登记了，
         //    唯独这里没有 ⇒ DynamicTexture 与条目跨存档滞留只增不减
-        com.qiqi.li.living.util.StaticCacheRegistry.onClientLogout(TEXTURE_CACHE::clear);
+        // 🔴 2026-11-01 补正：登记的必须是「先 release 再 clear」，裸 clear 只丢我们这边的引用 ——
+        //    纹理本体由 TextureManager.byPath 持有并占着 GPU 资源，只有 release/close 才真正回收
+        //    （判据：TextureManager#release 移除 byPath 后 safeClose；#register 也是靠 safeClose
+        //    淘汰同 location 的旧纹理，本类 isClosed() 防的就是那条路径）。
+        //    同族的 LivingMapOverlay#releaseTextures 一直是对的写法，这里照齐。
+        StaticCacheRegistry.onClientLogout(LivingMapIconDecorator::releaseTextures);
+    }
+
+    /** 释放全部缩略图纹理并清空缓存（登出 / 换存档时由 {@code StaticCacheRegistry} 调用）。 */
+    private static void releaseTextures() {
+        var textureManager = Minecraft.getInstance().getTextureManager();
+        for (MapIconTexture tex : TEXTURE_CACHE.values()) {
+            textureManager.release(tex.location);
+        }
+        TEXTURE_CACHE.clear();
     }
 
     @Override
