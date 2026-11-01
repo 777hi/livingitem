@@ -248,6 +248,26 @@ class LivingSpongeAbsorbTest {
     }
 
     @Test
+    @DisplayName("⑩ 反向守卫（⑬ 下界不自干）：ultraWarm 维度里湿海绵 tick 后组件不变——防将来误加自干")
+    void ultraWarmDoesNotDryStoredFluid() {
+        Scene scene = Scene.of(9);
+        // ultraWarm 维度 mock：dimensionType().ultraWarm() = true（若将来有人给 tick 加自干检查，
+        // 本测试的红就是第一道防线；⑬ 拍板：存储态不查维度，蒸发只属「放进世界」路径）
+        net.minecraft.world.level.dimension.DimensionType ultraWarm =
+            org.mockito.Mockito.mock(net.minecraft.world.level.dimension.DimensionType.class);
+        org.mockito.Mockito.when(ultraWarm.ultraWarm()).thenReturn(true);
+        org.mockito.Mockito.when(scene.level().dimensionType()).thenReturn(ultraWarm);
+
+        scene.source(3, WATER);
+        ItemStack sponge = scene.spongeAt(4, WATER, 2_000_000L);
+
+        fn.tick(List.of(new SlotEntry(4, sponge)), scene.ctx(), scene.tick(), scene.level());
+
+        assertFalse(scene.hasSource(3), "下界照常吸收（吸收规则不因维度改变）");
+        assertEquals(3_000_000L, LivingSpongeData.of(sponge).mmB(), "吸收所得完好 —— 存储态不自干（⑬）");
+    }
+
+    @Test
     @DisplayName("⑨ 端到端冒烟：processContext 真实分组驱动海绵吸收")
     void processContextDrivesAbsorption() {
         Scene scene = Scene.of(9);

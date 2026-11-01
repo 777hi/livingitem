@@ -687,7 +687,7 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
     /**
      * {@link FluidType} → 代表 {@link net.minecraft.world.level.material.Fluid}（优先 still 态）。
      *
-     * <p>**对外能力用**（{@link ContainerFluidHandler} 造 {@code FluidStack} 需要 vanilla Fluid）；
+     * <p>**对外能力用**（{@code SpongeItemFluidHandler} 造 {@code FluidStack} 需要 vanilla Fluid）；
      * 未注册的模组流体返回 {@code null}（调用方按 EMPTY 处理）。</p>
      */
     public static net.minecraft.world.level.material.Fluid representativeFluidOf(FluidType type) {

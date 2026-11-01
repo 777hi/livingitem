@@ -116,6 +116,15 @@
   测试 1336→1339；`RoundTripConservationIT` 全量回归绿。
   → `BulbItemEnergyStorage#extractEnergy` · `PerItemLedger#withdrawCeil`（两域同源复用）
 
+- 🔍 **活海绵收口终审（2026-11-02）**：① 悬空 javadoc 链接（`ContainerFluidData`
+  指向已删类）修正；② 子系统索引 17→18 补活海绵（tech 文档待升格，设计稿即现行文档）；
+  ③ 守卫账目对账——§9.4 规则 2「流动格不吸」改诚实描述（实现结构保证：账本契约只含源），
+  规则 11 补 **ultraWarm 反向守卫**（下界照常吸收且所存完好——防将来误加自干，
+  `LivingSpongeAbsorbTest` ⑩）。审查结论：守恒红线全绿、R3 零边、退役零残留引用；
+  遗留体例债一项 = `docs/tech/living-sponge-tech.md` 未撰写（写完按模板 §2.3 搬
+  设计稿入 archive）。测试 1339→1340。
+  → `docs/buffer/活海绵.md` §9.4 · `LivingSpongeAbsorbTest` ⑩
+
 ## 2026-11-01
 
 - ♻️ **R3 领域互依赖清零：hopper↔ender/chest 10 条 → 0，传输核心不再认识具体领域**。
