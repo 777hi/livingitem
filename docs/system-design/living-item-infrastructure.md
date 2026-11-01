@@ -40,7 +40,8 @@
 ┌──────────────────────────────────────────────────────────────────┐
 │  领域层：domain/hopper/, domain/chest/, domain/ender/, ...       │
 │  ─────────────────────────────────────────────────────────────── │
-│  API 层：LivingItemFunction, HasDirection, HasContainerData     │
+│  API 层：LivingItemFunction, HasDirection, HasContainerData,     │
+│          RouteRegistrar（路由注册方标记）                        │
 │  ─────────────────────────────────────────────────────────────── │
 │  传输层：SlotAccessor (Plain/LivingChest/EnderChest/Neighbor)    │
 │          + FilterData, FilteredSlotAccessor                      │
@@ -1953,6 +1954,22 @@ SlotInteractions.tryInteractFromNeighbor(handler, pos, targetStack, level, filte
 > 走的是 `mixin/BlockItemMixin` + `domain/farmland/LivingFarmlandPlacement`
 > （模拟玩家右键，见 [living-farmland-tech.md §3.5](../tech/living-farmland-tech.md)）。
 > 新增面向世界的物品能力时不要试图往传输层挂。
+
+### 9.7.1 TransferTargetPolicy — 注册式传输目标接管（2026-11-01）
+
+TransferTargetPolicy.java /
+TransferTargetPolicies.java
+把「目标槽有特殊语义时**替代通用传输**」抽象成可注册策略（首个 `matches` 者接管），
+与 {@code SlotInteractions} 同构，但**分发阶段不同、不可互换**：
+
+| 维度 | 说明 |
+|------|------|
+| 与 SlotInteractions 的分工 | 交互方程在货物准入/过滤门**之前**、裸 ItemStack（改目标内容，如施肥）；本接口在 canPlaceItem 模拟**之后**、收两侧 Accessor（换目的地，如末影箱路由） |
+| 分发入口 | `interceptInContainer`（容器内末段）· `interceptCrossContainerPull`（跨容器拉取目标分派，返回 null = 无接管回落通用）· `onProbingTarget`（源侧探测：目标无接管时触发，REJECT 不触发——对齐旧 resolveTarget 时序） |
+| Outcome | `CONTINUE`（回落通用传输）/ `REJECT` / `HANDLED` |
+| 现有实现 | `EnderTransferPolicy`（活末影箱路由，薄适配 `EnderRouteManager`，决策逻辑零改动） |
+| 扩展成本 | 新增策略 = 1 个实现类 + 1 行注册（领域 *Registration），传输调用点零改动 |
+| 由来 | 清零 hopper↔ender R3 互依赖（`layer_baseline` R3 三行 → 0）；守卫测试 `TransferTargetPolicyDispatchTest` |
 
 ### 9.8 Mixin 层约定
 

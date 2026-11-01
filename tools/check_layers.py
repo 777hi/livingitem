@@ -71,6 +71,8 @@ REGISTRY_METHODS = [
     "InteractionPredicates.register",
     "FluidFlowBehaviors.register",
     "SlotInteractions.register",
+    "TransferTargetPolicies.register",
+    "ContainerTickHooks.register",
     "SlotAccessorFactory.registerProvider",
     "ContainerSnapshot.registerProvider",
     "ContainerHandoff.registerMover",

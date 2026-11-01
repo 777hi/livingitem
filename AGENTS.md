@@ -91,6 +91,7 @@ SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 
 | 族 | 子系统（点击直达文档） |
 |----|----------------------|
+| 2026-11-01 | ♻️ **R3 领域互依赖清零（hopper↔ender/chest 10 条 → 0）** —— 传输核心不再认识具体领域：身份检查复用 `ContainerLikeItems`（现成谓词注册表）、末影箱路由决策走新扩展点 `TransferTargetPolicy`（living/transfer，形状对齐 SlotInteractions——Accessor 级末段分发，源侧偏好走 onProbingTarget 探测、REJECT 不触发）、路由 GC 收敛为 `ContainerTickHook` 写回单钩子（api 标记接口 `RouteRegistrar` 能力自查，漏斗/末影箱镜像双调用双删）；顺带删与通用路径逐行等价的活箱子拉取特支。基线 R3 三行清零（R1 不变）；测试 1293→1304；⚠️ 实机待验：漏斗×末影箱路由（公共/专属/直连）+ 拆合堆叠频道切换 | `docs/tech/living-ender-chest-tech.md` §9 · `EnderRouteMaintenanceTest` |
 | **活物品功能（17）** | [活TNT](docs/tech/living-tnt-tech.md) · [活流体](docs/tech/living-fluid-tech.md) · [活熔炉](docs/tech/living-furnace-tech.md) · [活酿造台](docs/tech/living-brewing-stand-tech.md) · [活漏斗](docs/tech/living-hopper-tech.md) · [活箱子](docs/tech/living-chest-tech.md) · [活末影箱](docs/tech/living-ender-chest-tech.md) · [活水车](docs/tech/living-water-wheel-tech.md) · [活地图传送](docs/tech/living-map-ender-pearl-tech.md) · [活耕地](docs/tech/living-farmland-tech.md) · [活工具](docs/tech/living-tool-tech.md) · [活武器](docs/tech/living-weapon-tech.md) · [活红石](docs/tech/living-redstone-tech.md)（信号层含 [活铜](docs/tech/living-copper-tech.md)） · [活涂蜡铜块（红电发电）](docs/tech/living-power-tech.md) · [活打火石](docs/tech/living-flint-and-steel-tech.md) · [活信标](docs/tech/living-beacon-tech.md) · [活背包](docs/tech/living-backpack-tech.md) |
 | **容器基础设施（6）** | [容器七问总览](docs/system-design/container-overview.md) · [基础设施](docs/system-design/living-item-infrastructure.md) · [多方块容器身份解析](docs/system-design/container-identity.md) · [容器边界口径](docs/system-design/container-boundary.md) · [数据模型](docs/system-design/data-model.md) · [超大堆叠审计](docs/system-design/oversized-stack-audit.md) |
 | **红电 · 电力（3）** | [红电架构演进](docs/buffer/redstone-evolution-roadmap.md) · [红电包收口方案](docs/buffer/power-refactoring-plan.md) · [红电不变量测试](docs/system-design/power-invariants.md) |
@@ -146,7 +147,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1293 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
+**合计测试用例 1304 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -171,6 +172,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-11-01 | 📋 **活海绵设计稿 v1.6：四邻制 + 形态定案** —— 吸收域从「BFS 一圈圈」改**上下左右四邻直吸**（逐格独立、异种邻居只跳过自己不挡其他邻居；无 BFS/深度/列数依赖；农场攻防变贴身战 ≥2 格）；**物品 id 不换**（湿/干 = 组件派生 + 图标变体，转化 = 写入边沿）、**熔炼配方不做**、放置不拦截；物品能力一堆一罐；快满逐源原子判定（装不下完整源即停拍）；`ContainerFluidHandler` 退役挪第三段（与能力注册同拍，免取水空窗）；补模板必填表 §9（生命周期/准入/横切/规则→守卫 15 条）。核对引擎两处事实（删源账本即时 / 零头回收是跨堆机制）。纯文档，未动代码与测试 | `docs/buffer/活海绵.md` §2.2/§5/§9 · fluid tech §10 |
 | 2026-11-01 | 🐞 **流体搬运丢物（A1 未登记 + A2 已知）** —— 空槽路径不查容量 ⇒ 抽屉 500 搬进上限 64 的槽**丢 436**；合并按物品上限而非槽位上限 ⇒ **丢 48**。修：容量按 `getSlotLimit`（**不碰 `isItemValid`**，A3 定案不动）+ 写后回读只扣实际量。测试 1289→1293；抽 `move` 原语收敛 8~12 处调用点仍待办 | `docs/tech/living-fluid-tech.md` §3.3.2 · `ContainerFluidConservationTest` · TODO 活流体 ②③ |
 | 2026-11-01 | 🐞 **批次 3：GUI 存放分支一次手势只产生一个效果** —— ① `tryInteract` 成功后只 `setReturnValue(true)` 没 `return` ⇒ 落到存放分支叠两个效果；② 存放分支漏置 `skipNextRelease` ⇒ 释放阶段被原版再执行一次。判据 + 序列化发包收进 `client/input/LivingChestDepositHelper`（原先两个 mixin 各写一份，连三行发包都是复制的）。⚠️ 新增「按压阶段拦截」的两条硬约束写进 chest tech §4.3。测试 1282→1289；待实机 M-1/M-2 | `docs/tech/living-chest-tech.md` §4.3 · `LivingChestDepositHelper` · 计划批次 3 |
 | 2026-11-01 | 🐞 **R-09 复查：4 条断言 → 2 真 bug 已修 / 1 前提弱 / 1 转性能批** —— 配方书**不可见页签仍吞点击**（原版 `mouseClicked` 整体包在 `isVisible() && !isSpectator()` 里，我们的注入是 HEAD ⇒ 跑在守卫前）；地图缩略图纹理**只 clear 不 release**（`DynamicTexture` 归 `TextureManager.byPath` 管 ⇒ 「写了清理钩子」≠「清理了资源」）。复查还废掉两条断言的前提 / 证据：原表行号 3 个里 2 个指错 ⇒ **行号不能当证据** | `docs/tech/common/recipe-book-tech.md` · `RecipeBookComponentMixin#onMouseClicked` · `LivingMapIconDecorator#releaseTextures` · 计划批次 8 + M-3/M-6/M-7 |
@@ -179,9 +181,6 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-10-31 | 🔬 **A/B 代理实验 → 证伪一处「关键事实」→ 给参考层做减法** —— 同 6 题跑两组隔离代理：禁读文档组 38 文件 / ≈6900 行，文档优先组 10 文件 / ≈490 行 ⇒ 净减负成立，但 **B 组错 2/6，两处都错在我写的行上**。🔴 `ChunkEvent.Unload` **实为主线程**（`thenRunAsync` 第二参数是 executor）⇒ R-06「事件只入队」作废，红线改成「卸载中不查世界」（会**再入**）；另抓到 `ItemFormLiveViews` 错行。**减法**：七列手写复述删掉 ⇒ 名单由 `tools/gen_rosters.py` 生成，第 13/14 项升级为「生成区逐字一致」；`docs/README.md` 立 **20 文件判据** | `docs/decisions.md` D-container-21→22 · `docs/README.md`「该不该写」 · `tools/gen_rosters.py` · `event-threading.md` §2 |
 | 2026-10-31 | 📋 **buffer 内容归位 + 文档系统机制升级（会话即维护）** —— 修 3 处「稳定层反话」（api-contract §2.2 / 设计模板列数 / tnt tech 头部）+ 29 条定案晋升（TNT tech 新 §4.6 规模化约束 / tool 5 条 / fluid §0 规则 10 / decisions D-open-01 / api-contract §1.6 jar 红线…）；buffer/README 状态表改**生成制**（状态单一来源 = 文档头部，`tools/gen_buffer_index.py`）+ doc_check 新增**第 12 项**（索引不一致即红）+ 链接口径改渲染器真相（根相对降警告）；设计模板新增 **§2.3 落地同步表**；§7.2 立「会话即维护」。纯文档，测试 1266 不变 | `docs/README.md` §7.1/§7.2 · `tools/gen_buffer_index.py` · `living-item-design-template.md` §2.3 |
 | 2026-10-31 | 🐞 **红电对外能量接口只在「真有活铜灯」时存在（补齐流体同款缺陷）** —— 线缆类模组按「能力是否非 null」判储能（Flux `hasCapability` / Mekanism acceptorCache）⇒ 无灯的箱子/机器全被认成储能（`canReceive=true` 恒收 0，每拍白跑一轮模拟）。修：provider 读电力账本通告标志（O(1)，不扫容器）+ 正边沿在电力 tick **所有早退之前**通告（纯电池容器无发电机）+ 负边沿（最后一盏灯被拿走后功能已不分组）由相位写回兜底（仅在通告中扫容器）；客户端恒不发；测试 1262→1266 | `docs/tech/living-power-tech.md` §4.1 · `ContainerEnergyStorage` / `ContainerPhaseWriteback` · `ContainerEnergyCapabilityTest` |
-| 2026-10-31 | 🐞 **机械动力流体管道恢复（能力只在该有资产时存在）** —— 宽注册给**所有** BE 发 `IFluidHandler` ⇒ Create 按「能力非 null」判储液，把相邻**管道自身**判成 `FlowSource.FluidHandler`（而非 `OtherPipe`）⇒ 每跳断在假 tank、水完全不流；且任意 BE 都长排液接口。修：provider 加「当前真有派生源」判据（客户端恒不发）+ 驱动侧存在性边沿 `invalidateCapabilities`；整源口径与退役计划不变；测试 1259→1262 | `docs/tech/living-fluid-tech.md` §10.4 · `ContainerFluidHandler` / `LivingFluidFunction` / `ContainerFluidHandlerTest` |
-| 2026-10-31 | 🐞 **活水车在活背包 GUI 里转向不再卡旧方向（物品形态补上槽位直发通道）** —— `syncSlotToClients` 对物品形态原是 no-op（空 positions 早退），兜底的原版 `broadcastChanges` 又因 `PatchedDataComponentMap` copy-on-write 共享 patch map，检测不到就地组件翻转 ⇒ 只有重开 GUI 才刷新。修：`syncWorldContainer` 空位置 + 有容器 UUID ⇒ 按容器 UUID 找观众（ContainerViewers 同口径、只发正看着这个容器的玩家）+ handler 实例匹配槽位直发槽位包；背包 GUI 里所有「组件翻转」类显示（水车转向 / 熔炉燃烧 / 工具动画）一并修复；新增 4 项测试，测试 1249→1253 | `docs/tech/living-backpack-tech.md` §6-#8 · `SimpleContainerContext#syncItemFormSlot` · `ItemFormSlotSyncTest` |
-
 ## 提交前必跑（2026-10-30 更新）
 
 ```bash

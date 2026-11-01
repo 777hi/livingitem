@@ -4,14 +4,16 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.Container;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
+import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
-import com.qiqi.li.living.domain.ender.EnderRouteManager;
-import com.qiqi.li.living.domain.ender.LivingEnderChestFunction;
+import com.qiqi.li.living.transfer.ContainerLikeItems;
 import com.qiqi.li.living.transfer.FilterData;
 import com.qiqi.li.living.transfer.SlotAccessor;
 import com.qiqi.li.living.transfer.SlotAccessorFactory;
 import com.qiqi.li.living.transfer.SlotInteractions;
+import com.qiqi.li.living.transfer.TransferTargetPolicies;
+import com.qiqi.li.living.transfer.TransferTargetPolicy;
 import com.qiqi.li.living.components.ItemFilterComponent;
 import com.qiqi.li.living.model.ResolvedSlots;
 
@@ -24,7 +26,7 @@ import com.qiqi.li.living.model.ResolvedSlots;
  * <ol>
  *   <li><b>路由分发</b> —— 容器内 vs 跨容器</li>
  *   <li><b>前置检查</b> —— 空栈、活物品、过滤、级联防护</li>
- *   <li><b>末影箱决策</b> —— 委托给 {@link EnderRouteManager}</li>
+ *   <li><b>目标策略接管</b> —— 委托给 {@link TransferTargetPolicies}（注册式，末影箱路由是一条策略）</li>
  *   <li><b>执行</b> —— {@link SlotAccessor#transfer}</li>
  * </ol>
  */
@@ -115,12 +117,15 @@ public final class TransferPipeline {
             }
         }
 
-        EnderRouteManager.Decision decision = EnderRouteManager.resolveTarget(
-            source, target, ctx, level, sourceSlot, targetSlot, hostSlot, stackSize, maxTransfer);
+        // 目标策略接管（注册式）：目标槽有特殊语义（如末影箱路由）时由策略替代通用传输；
+        // 无接管时源侧探测（偏好类型等伴随状态）后走通用传输。
+        TransferTargetPolicy.Outcome outcome = TransferTargetPolicies.interceptInContainer(
+            source, sourceStack, target, targetStack, ctx, level,
+            sourceSlot, targetSlot, hostSlot, stackSize, maxTransfer);
 
-        return switch (decision) {
-            case NOT_ENDER_CHEST -> SlotAccessor.transfer(source, target, transferAmount);
-            case REJECTED -> false;
+        return switch (outcome) {
+            case CONTINUE -> SlotAccessor.transfer(source, target, transferAmount);
+            case REJECT -> false;
             case HANDLED -> true;
         };
     }
@@ -135,9 +140,8 @@ public final class TransferPipeline {
         return SlotInteractions.isEligibleCargo(stack);
     }
 
-    /** 存储容器（活箱子/活末影箱）：其槽位可展开为虚拟存储，故上面那道隔离门放行。 */
+    /** 存储容器（容器类活物品）：其槽位可展开为虚拟存储，故上面那道隔离门放行。 */
     private static boolean isStorageContainer(ItemStack stack) {
-        return com.qiqi.li.living.domain.chest.LivingChestFunction.isLivingChest(stack)
-            || LivingEnderChestFunction.isLivingEnderChest(stack);
+        return LivingItemManager.isLivingItem(stack) && ContainerLikeItems.isContainerLike(stack);
     }
 }

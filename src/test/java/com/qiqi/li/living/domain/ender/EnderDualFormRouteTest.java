@@ -74,7 +74,16 @@ class EnderDualFormRouteTest {
         when(ctx.getContainerUuid()).thenReturn(uuid);
         when(ctx.getBlockPos()).thenReturn(blockForm ? POS : null);
         when(ctx.getContainerKey()).thenReturn(blockForm ? KEY : "cuuid_" + uuid);
-        when(ctx.getItem(anyInt())).thenReturn(new ItemStack(Items.DIAMOND));
+        when(ctx.getSize()).thenReturn(27);
+        // 槽位 0 是源（物品类型须与条目一致，isSource 检查比对面）；槽位 1 是注册方
+        // （真实世界里就是活漏斗 —— 注册方检查按 RouteRegistrar 能力发现）。
+        when(ctx.getItem(anyInt())).thenAnswer(inv -> {
+            int slot = inv.getArgument(0, Integer.class);
+            if (slot == 0) return new ItemStack(Items.DIAMOND);
+            ItemStack hopper = new ItemStack(Items.HOPPER);
+            com.qiqi.li.living.api.LivingItemManager.setLiving(hopper, true);
+            return hopper;
+        });
         return ctx;
     }
 
@@ -89,7 +98,7 @@ class EnderDualFormRouteTest {
             EnderChannelEntry current = blockForm ? blockForm(uuid) : itemForm(uuid);
             EnderChannelEntry stale = blockForm ? itemForm(uuid) : blockForm(uuid);
 
-            registry.validateRoutes(ctx(uuid, blockForm), null, null);
+            registry.validateRoutes(ctx(uuid, blockForm), null);
             registry.offer(CHANNEL, current);
 
             assertTrue(registry.contains(CHANNEL, current),
@@ -106,7 +115,7 @@ class EnderDualFormRouteTest {
         registry.offer(CHANNEL, blockForm(uuid));
         registry.offer(OTHER_CHANNEL, itemForm(uuid));
 
-        int removed = registry.validateRoutes(ctx(uuid, false), null, null);
+        int removed = registry.validateRoutes(ctx(uuid, false), null);
 
         assertEquals(1, removed, "旧方块条目被清；当前物品条目保留");
         assertFalse(registry.contains(CHANNEL, blockForm(uuid)));
@@ -123,7 +132,7 @@ class EnderDualFormRouteTest {
         registry.offer(CHANNEL, blockForm(mine));
         registry.offer(CHANNEL, blockFormAt(other, otherPos, otherKey));
 
-        registry.validateRoutes(ctx(mine, false), null, null);
+        registry.validateRoutes(ctx(mine, false), null);
 
         assertFalse(registry.contains(CHANNEL, blockForm(mine)));
         assertTrue(registry.contains(CHANNEL, blockFormAt(other, otherPos, otherKey)),

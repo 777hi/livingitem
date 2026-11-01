@@ -1,9 +1,7 @@
 package com.qiqi.li.living.domain.ender;
 import com.qiqi.li.living.components.LivingComponents;
 
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -23,16 +21,15 @@ import com.qiqi.li.living.components.OwnerNameResolver;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.domain.ender.EnderChannelClientCache;
-import com.qiqi.li.living.domain.ender.EnderChannelRegistry;
 import com.qiqi.li.living.domain.ender.EnderChannelData;
 import com.qiqi.li.living.domain.ender.LivingEnderChestData;
-import com.qiqi.li.living.domain.hopper.LivingHopperFunction;
 
 /**
  * 活末影箱的功能实现。
  *
- * <p>玩家在末影箱 GUI 内活化时绑定到该玩家（直连其末影箱背包），取消活化解绑；每 tick 通过
- * {@code EnderChannelRegistry} 维护与活漏斗之间的路由表。未绑定时落回「路由 / 公共频道」模式——这是其一等公民形态。</p>
+ * <p>玩家在末影箱 GUI 内活化时绑定到该玩家（直连其末影箱背包），取消活化解绑。
+ * 未绑定时落回「路由 / 公共频道」模式——这是其一等公民形态。路由表的校验回收
+ * 在写回钩子（{@code EnderRouteMaintenance}）统一做，功能 tick 不再参与。</p>
  */
 public class LivingEnderChestFunction implements LivingItemFunction {
 
@@ -83,21 +80,13 @@ public class LivingEnderChestFunction implements LivingItemFunction {
     public void tick(List<SlotEntry> entries, ContainerContext context, TickContext tick, Level level) {
         if (level.isClientSide) return;
 
-        Set<Integer> activeEnderChestSlots = new HashSet<>();
         for (SlotEntry entry : entries) {
-            activeEnderChestSlots.add(entry.slotIndex());
             // ⭐ 顺手刷新绑定玩家名的显示缓存（binding UUID 不动）：
             //    绑定玩家在线且同维度时，把「当前确认的名字」写回缓存 ——
             //    玩家改名必然发生在线上，下一次 tick 即跟上；名字没变时不写，无脏写开销。
             refreshBoundPlayerNameCache(entry, level);
         }
-
-        Set<Integer> activeHopperSlots = tick.getFunctionSlots(LivingHopperFunction.ID);
-
-        // 槽位 → 当前频道键。玩家拆分/合并堆叠会改变频道键甚至切换工作模式，
-        // validateRoutes 据此清理旧频道下的遗留路由，避免路由泄漏。
-        Map<Integer, EnderChannelKey> targetKeysBySlot = EnderChannelKey.ofSlots(context, activeEnderChestSlots);
-        EnderChannelRegistry.getInstance().validateRoutes(context, activeHopperSlots, targetKeysBySlot);
+        // 路由校验/回收已移至写回钩子（EnderRouteMaintenance），见类注释。
     }
 
     @Override

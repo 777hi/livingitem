@@ -686,8 +686,8 @@ LivingHopperFunction.tick()                                 [每 tick]
   │
   ├─ 保存数据 + 同步客户端
   │
-  └─ cleanupStaleRoutes()                                   [路由清理]
-      └─ 清理失效的活末影箱路由条目
+  └─ （路由清理已移出功能 tick —— 由末影域的 EnderRouteMaintenance 写回钩子统一做，
+      见 living-ender-chest-tech.md §9）
 ```
 
 **关键变化**（v8 → v9）：
@@ -1597,6 +1597,10 @@ LivingHopperData.set(stack, data);
 **相关提交**：2026-07-27
 
 ### 10.17 新增：cleanupStaleRoutes 路由清理机制 (NEW 2026-07-27)
+
+> ⚠️ **2026-11-01 起本机制已移除**：`cleanupStaleRoutes` 不再存在，路由清理收敛为
+> 末影域的 `EnderRouteMaintenance` 写回单钩子（`RouteRegistrar` 能力自查，漏斗域零 import），
+> 详见 `living-ender-chest-tech.md` §9。下文保留历史原貌。
 
 **背景**：活末影箱路由模式下，路由条目注册到全局路由表 `EnderChannelRegistry`。当容器被异常清除（如区块卸载、方块破坏）时，需要清理失效路由，避免路由表中积累无效条目。
 

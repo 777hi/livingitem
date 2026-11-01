@@ -597,22 +597,16 @@ public record EnderChannelKey(@Nullable UUID owner, int count) {
 
 ### 9.1 统一验证方法（v9 重构）
 
-路由清理统一通过 `EnderChannelRegistry.validateRoutes()` 完成，替代旧版 5 个独立清理方法：
+路由清理统一通过 `EnderChannelRegistry.validateRoutes()` 完成，替代旧版 5 个独立清理方法。
+**调用点只有一个**（2026-11-01 起）：`EnderRouteMaintenance.onWriteback()`（`ContainerTickHook` 写回钩子，
+由 `EnderRegistration` 注册，每容器 tick 一次）——旧版「漏斗 tick 与末影箱 tick 互传对方槽位数据」的
+镜像双调用已删（那是 hopper↔ender 领域互依赖的根源）：
 
 ```java
-// LivingEnderChestFunction.tick()
-Set<Integer> activeEnderChestSlots = new HashSet<>();
-for (SlotEntry entry : entries) {
-    activeEnderChestSlots.add(entry.slotIndex());
-}
-Set<Integer> activeHopperSlots = tick.getFunctionSlots(LivingHopperFunction.ID);
-Map<Integer, EnderChannelKey> targetKeysBySlot = EnderChannelKey.ofSlots(context, activeEnderChestSlots);
-registry.validateRoutes(context, activeHopperSlots, targetKeysBySlot);
-
-// LivingHopperFunction.cleanupStaleRoutes()
-Set<Integer> activeEnderChestSlots = tick.getFunctionSlots(LivingEnderChestFunction.ID);
-Map<Integer, EnderChannelKey> targetKeysBySlot = EnderChannelKey.ofSlots(context, activeEnderChestSlots);
-registry.validateRoutes(context, activeSlots, targetKeysBySlot);
+// EnderRouteMaintenance.onWriteback()（写回钩子）
+Set<Integer> enderSlots = tick.getFunctionSlots(LivingEnderChestFunction.ID);
+Map<Integer, EnderChannelKey> targetKeysBySlot = EnderChannelKey.ofSlots(ctx, enderSlots);
+registry.validateRoutes(ctx, targetKeysBySlot);
 ```
 
 **参数说明**：
@@ -620,8 +614,11 @@ registry.validateRoutes(context, activeSlots, targetKeysBySlot);
 | 参数 | 含义 | null 行为 |
 |------|------|----------|
 | `context` | 容器上下文，提供容器位置和物品读取 | 不可为 null |
-| `activeRegistrarSlots` | 当前容器中活漏斗所在槽位集合 | null = 跳过注册者检查 |
-| `targetKeysBySlot` | 活末影箱槽位 → **当前频道键** | null = 跳过目标检查 |
+| `targetKeysBySlot` | 活末影箱槽位 → **当前频道键**（由本领域自给，引自己的 ID） | null = 跳过目标检查 |
+
+**注册者检查不靠调用方传参**（2026-11-01 改）：`shouldRemoveRoute` 对每条注册条目自查
+`ctx.getItem(entry.registrarSlot())` 的适用函数里是否有 `RouteRegistrar` 实现者（当前为活漏斗；
+能力发现式，不 import 漏斗域）。槽位越界 / 物品为空 / 无实现者 ⇒ 注册方离场 ⇒ 清理。
 
 > **null 与空集语义不同**（由 `EnderChannelKey.ofSlots()` 严格区分）：
 > `slots == null` → 返回 `null`（调用方未提供信息，跳过检查）；
@@ -696,12 +693,13 @@ if (isRegistrar && targetKeysBySlot != null && entry.targetSlot() >= 0) {
 
 ### 9.2 清理场景
 
-| 场景 | 触发方 | activeRegistrarSlots | activeTargetSlots | 效果 |
-|------|--------|---------------------|-------------------|------|
-| 活漏斗被拿走 | `LivingEnderChestFunction.tick()` | 活漏斗槽位（可能为空集） | 活末影箱槽位 | 空集 → 所有路由的注册者不在 → 清理 |
-| 活末影箱被拿走 | `LivingHopperFunction.cleanupStaleRoutes()` | 活漏斗槽位 | 活末影箱槽位（可能为空集） | 空集 → 所有路由的目标不在 → 清理 |
-| 源物品消失 | 两者均可 | — | — | 检查3 → 源槽空或类型不匹配 → 清理 |
-| 区块卸载 | `onChunkUnload()` | — | — | 独立方法，不经过 validateRoutes |
+| 场景 | 触发方 | 判定 | 效果 |
+|------|--------|------|------|
+| 活漏斗被拿走 | `EnderRouteMaintenance`（写回钩子） | 注册方槽位无 `RouteRegistrar` 实现者 | 清理 |
+| 活末影箱被拿走 | `EnderRouteMaintenance`（写回钩子） | 键表空集（`ofSlots(ctx, 空集)`） | 清理 |
+| 末影箱堆叠拆/合（频道键变化） | `EnderRouteMaintenance`（写回钩子） | 检查2：键不匹配 → 清理 | 防遗留路由被继承 |
+| 源物品消失 | `EnderRouteMaintenance`（写回钩子） | 检查3 → 源槽空或类型不匹配 | 清理 |
+| 区块卸载 | `onChunkUnload()` | 独立方法 | 不经过 validateRoutes |
 
 ### 9.3 容器隔离清理
 

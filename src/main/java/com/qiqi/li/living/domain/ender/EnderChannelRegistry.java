@@ -14,6 +14,9 @@ import java.util.function.Predicate;
 
 import javax.annotation.Nullable;
 
+import com.qiqi.li.living.api.LivingItemFunction;
+import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.api.RouteRegistrar;
 import com.qiqi.li.living.transfer.FilterData;
 import com.qiqi.li.living.components.ItemFilterComponent;
 import com.qiqi.li.living.container.ContainerContext;
@@ -480,7 +483,8 @@ public final class EnderChannelRegistry {
      * <p>通过反向索引（posIndex/keyIndex/registrarKeyIndex）高效查找相关路由，
      * 一次遍历完成三项检查：</p>
      * <ol>
-     *   <li>注册者（活漏斗）是否仍在活跃槽位？</li>
+     *   <li>注册者槽位是否仍由路由注册方占据（{@link RouteRegistrar} 能力自查，
+     *       不依赖调用方传入其它领域的槽位集合）？</li>
      *   <li>目标（活末影箱）是否仍在活跃槽位，且<b>频道键未发生变化</b>？</li>
      *   <li>源物品是否仍然有效（非空且类型匹配）？</li>
      * </ol>
@@ -491,12 +495,10 @@ public final class EnderChannelRegistry {
      * 重新放置同堆叠数的活末影箱时，会意外继承这些遗留路由。</p>
      *
      * @param context           容器上下文，用于定位容器和检查源物品
-     * @param activeRegistrarSlots 活跃的活漏斗槽位集合，null 表示跳过注册者检查
      * @param targetKeysBySlot  活跃的活末影箱槽位 → 当前频道键，null 表示跳过目标检查
      * @return 被移除的路由数量
      */
     public int validateRoutes(ContainerContext context,
-                              @Nullable Set<Integer> activeRegistrarSlots,
                               @Nullable Map<Integer, EnderChannelKey> targetKeysBySlot) {
         Level level = context.getLevel();
         if (level == null || level.isClientSide) return 0;
@@ -530,8 +532,7 @@ public final class EnderChannelRegistry {
 
         List<EnderChannelEntry> toRemove = new ArrayList<>();
         for (EnderChannelEntry entry : candidates) {
-            if (shouldRemoveRoute(entry, context, dim, pos, containerKey,
-                    activeRegistrarSlots, targetKeysBySlot)) {
+            if (shouldRemoveRoute(entry, context, dim, pos, containerKey, targetKeysBySlot)) {
                 toRemove.add(entry);
             }
         }
@@ -557,7 +558,6 @@ public final class EnderChannelRegistry {
                                        ResourceKey<Level> dim,
                                        BlockPos pos,
                                        String containerKey,
-                                       @Nullable Set<Integer> activeRegistrarSlots,
                                        @Nullable Map<Integer, EnderChannelKey> targetKeysBySlot) {
         // ⚠️ 容器键是裸稳定键（chest_x_y_z / player_<uuid>），跨维度可能同值 ⇒ 必须补维度守卫。
         // 注册者与源由 EnderRouteManager 在同一 level 构造，故用 sourceDim 代表注册者维度。
@@ -565,10 +565,8 @@ public final class EnderChannelRegistry {
             && containerKey.equals(entry.registrarContainerKey())
             && Objects.equals(entry.sourceDim(), dim);
 
-        if (isRegistrar && activeRegistrarSlots != null) {
-            if (!activeRegistrarSlots.contains(entry.registrarSlot())) {
-                return true;
-            }
+        if (isRegistrar && !registrarStillActive(context, entry.registrarSlot())) {
+            return true;
         }
 
         if (isRegistrar && targetKeysBySlot != null && entry.targetSlot() >= 0) {
@@ -598,6 +596,20 @@ public final class EnderChannelRegistry {
             }
         }
 
+        return false;
+    }
+
+    /**
+     * 注册者槽位是否仍由路由注册方占据 —— 按槽位物品的适用函数做
+     * {@link RouteRegistrar} 能力发现，不 import 具体领域。
+     * 槽位越界 / 物品为空 / 无实现者 ⇒ 视为注册方离场。
+     */
+    private static boolean registrarStillActive(ContainerContext context, int registrarSlot) {
+        if (registrarSlot < 0 || registrarSlot >= context.getSize()) return false;
+        ItemStack stack = context.getItem(registrarSlot);
+        for (LivingItemFunction function : LivingItemManager.getApplicableFunctions(stack)) {
+            if (function instanceof RouteRegistrar) return true;
+        }
         return false;
     }
 

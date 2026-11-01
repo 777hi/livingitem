@@ -1,9 +1,7 @@
 package com.qiqi.li.living.domain.hopper;
 import com.qiqi.li.living.components.LivingComponents;
 
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 import net.minecraft.core.component.DataComponentType;
@@ -15,16 +13,14 @@ import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
 import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.api.RouteRegistrar;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.transfer.SlotResolver;
-import com.qiqi.li.living.domain.ender.EnderChannelKey;
-import com.qiqi.li.living.domain.ender.LivingEnderChestFunction;
 import com.qiqi.li.living.perf.PerfMetrics;
 import com.qiqi.li.living.model.Pos2D;
 import com.qiqi.li.living.model.ResolvedSlots;
 import com.qiqi.li.living.model.SlotMapping;
-import com.qiqi.li.living.domain.ender.EnderChannelRegistry;
 import com.qiqi.li.living.domain.hopper.DirectionTransferData;
 import com.qiqi.li.living.transfer.FilterData;
 import com.qiqi.li.living.domain.hopper.LivingHopperData;
@@ -42,9 +38,10 @@ import org.slf4j.Logger;
  *
  * <p>每 tick 依据方向解析出源 / 目标槽位，受红石信号可临时禁用，并按冷却节奏通过
  * {@code TransferPipeline} 执行传输（含跨容器与活箱子 / 活末影箱特殊路径）；瞬态冷却与槽位信息写入
- * <b>运行时缓存</b>，仅方向与过滤链等持久 / 同步状态写入 {@code DataComponent}。同时每 tick 维护与活末影箱之间的路由表。</p>
+ * <b>运行时缓存</b>，仅方向与过滤链等持久 / 同步状态写入 {@code DataComponent}。
+ * 跨容器路由的维护在末影领域的写回钩子里（本类只提供 {@link RouteRegistrar} 身份）。</p>
  */
-public class LivingHopperFunction implements LivingItemFunction {
+public class LivingHopperFunction implements LivingItemFunction, RouteRegistrar {
 
     public static final String ID = "living_hopper";
     private static final Logger LOGGER = LogUtils.getLogger();
@@ -145,8 +142,6 @@ public class LivingHopperFunction implements LivingItemFunction {
                 RuntimeSegments.EMPTY.with(HopperSegment.INSTANCE,
                     new HopperRuntime(transfer.cooldown(), slotInfo)));
         }
-
-        cleanupStaleRoutes(entries, context, tick);
     }
 
     private boolean executeTransfer(ContainerContext ctx, Level level, int hostSlot,
@@ -159,17 +154,6 @@ public class LivingHopperFunction implements LivingItemFunction {
             stackSize, DEFAULT_MAX_TRANSFER, filter,
             ResolvedSlots.ofTransfer(sourceSlot, targetSlot, dir.sourceOffset(), dir.targetOffset()),
             dir, tick);
-    }
-
-    private void cleanupStaleRoutes(List<SlotEntry> entries, ContainerContext context, TickContext tick) {
-        Set<Integer> activeSlots = new HashSet<>();
-        for (SlotEntry entry : entries) {
-            activeSlots.add(entry.slotIndex());
-        }
-        Set<Integer> activeEnderChestSlots = tick.getFunctionSlots(LivingEnderChestFunction.ID);
-        // 末影箱槽位 → 当前频道键，使 validateRoutes 能识别堆叠数变化导致的模式切换
-        Map<Integer, EnderChannelKey> targetKeysBySlot = EnderChannelKey.ofSlots(context, activeEnderChestSlots);
-        EnderChannelRegistry.getInstance().validateRoutes(context, activeSlots, targetKeysBySlot);
     }
 
     @Override

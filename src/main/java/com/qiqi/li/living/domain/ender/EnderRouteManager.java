@@ -15,8 +15,8 @@ import com.qiqi.li.living.transfer.SlotAccessor;
 /**
  * 活末影箱路由管理器 —— 统一所有末影箱路由决策逻辑。
  *
- * <p>将散布在 {@code TransferPipeline} 和 {@code CrossContainerTransfer} 中的
- * 末影箱决策逻辑提炼为统一入口：</p>
+ * <p>决策逻辑收敛于本类，经 {@code EnderTransferPolicy}（{@code TransferTargetPolicies}
+ * 注册式分发）接入传输管道 —— 调用点与具体领域解耦：</p>
  *
  * <ul>
  *   <li><b>同通道防护</b> —— 路由模式下同频道活末影箱之间禁止传输</li>
@@ -217,7 +217,8 @@ public final class EnderRouteManager {
      * 偏好类型设置：当源是路由模式末影箱且目标槽有物品时，
      * 设置源的偏好类型以实现贪心提取策略。
      */
-    private static void applySourceEnderChestPreference(SlotAccessor source,
+    /** 包级可见：{@code EnderTransferPolicy} 源侧探测也走这里。 */
+    static void applySourceEnderChestPreference(SlotAccessor source,
                                                          ContainerContext ctx,
                                                          int targetSlot) {
         if (!(source.unwrap() instanceof LivingEnderChestAccessor sourceEnder)) return;

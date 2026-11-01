@@ -36,6 +36,7 @@
 | `MapUpdateSkipHelper` | 登记 | `cooldowns` `lastUpdateTick` |
 | `StaticCacheRegistry` | 登记 / 自带登出事件 | `CLIENT` `SERVER` |
 | `StructureMapDecorator` | ⚠️ 本类无清理入口 | `SCANNED_CHUNKS` |
+| `TransferTargetPolicies` | ⚠️ 本类无清理入口 | `POLICIES` |
 
 **论域**（本表覆盖范围的完整定义，超出论域的问题本表**不回答**）：
 

@@ -16,9 +16,10 @@ module	living/container	living/debug	1
 #   （无）
 
 # R3 领域互依赖（living/domain/* 之间）
-domain	living/domain/hopper	living/domain/ender	7
-domain	living/domain/hopper	living/domain/chest	2
-domain	living/domain/ender	living/domain/hopper	1
+#   （无）
 
 # R4 注册入口不唯一（注册调用散落在 *Registration.java 之外）
+#   （无）
+
+# R5 流体方向自算（water 包外读 fromSlot，应走 FluidFlowVector）
 #   （无）

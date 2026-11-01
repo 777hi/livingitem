@@ -114,7 +114,7 @@ class EnderChannelRegistryDimTest {
         when(ctx.getContainerKey()).thenReturn(KEY);
         when(ctx.getItem(anyInt())).thenReturn(ItemStack.EMPTY);
 
-        int removed = registry.validateRoutes(ctx, null, null);
+        int removed = registry.validateRoutes(ctx, null);
 
         assertEquals(0, removed, "下界条目不应被主世界的校验删掉");
         assertTrue(registry.contains(CHANNEL, nether));
@@ -145,7 +145,7 @@ class EnderChannelRegistryDimTest {
         registry.offer(CHANNEL, blockForm);
 
         // 拾取后：背包变成物品形态 ⇒ pos 为 null、键是 cuuid_
-        assertEquals(1, registry.validateRoutes(ctxOf(uuid, null), null, null),
+        assertEquals(1, registry.validateRoutes(ctxOf(uuid, null), null),
             "旧方块形态的条目必须被清掉 —— 留着它会和新 cuuid 条目一起抽同一份内容（刷物品）");
         assertFalse(registry.contains(CHANNEL, blockForm));
     }
@@ -157,7 +157,7 @@ class EnderChannelRegistryDimTest {
         EnderChannelEntry itemForm = formEntry(Level.OVERWORLD, null, "cuuid_" + uuid, uuid);
         registry.offer(CHANNEL, itemForm);
 
-        assertEquals(1, registry.validateRoutes(ctxOf(uuid, POS), null, null),
+        assertEquals(1, registry.validateRoutes(ctxOf(uuid, POS), null),
             "放置后旧物品形态的条目必须被清掉");
         assertFalse(registry.contains(CHANNEL, itemForm));
     }

@@ -94,6 +94,7 @@ src/test/java/com/qiqi/li/
 │   ├── EnderRouteManagerSourceTest.java        # 路由源可寻址判据（2026-10-28）·方块容器恒可 / 玩家背包（player_）可（提取端按 UUID 反查）/ 物品形态（cuuid_）**活视图已登记才可**（靠 `ItemFormLiveViews`，背包不 tick 时取不到）/ 未登记 ⇒ 不可（注册必丢）/ 未知键形放行（保守）
 │   ├── LivingEnderChestAccessorTest.java       # 直连模式接缝（2026-10-29）·tryCreate 只认活末影箱 / 插入改栈 / 模拟不写 / 抽取后回滚回原槽（原槽被异物品占据 ⇒ 只报告，不写其它槽）/ 跳过活物品 / isEmpty+isFull / 离线降级 / 路由模式 insert 返回 0 + markTransferred 不登记
 │   ├── EnderDualFormRouteTest.java             # 双形态不变量（2026-10-29）·方块↔物品交替 20 次每步只剩当前形态 / 旧形态在别的频道也清 / 别的 UUID 合法条目不误删
+│   ├── EnderRouteMaintenanceTest.java          # 路由回收单钩子（2026-11-01）·注册方槽位按 RouteRegistrar 能力发现判离场（漏斗域零 import）/ 末影箱离场空键表清理 / 写回钩子从 TickContext 自取槽位端到端
 │   └── EnderRouteManagerNeighborUuidTest.java  # 邻居源 UUID（2026-10-29）·取邻居 BE 的 ContainerUuids.ofHost / 无身份为 null，不拿注册者顶替
 ├── living/domain/backpack/
 │   ├── LivingBackpackFunctionTest.java        # 活背包（2026-10-22）·认领（无来源不认领=未装模组零影响/来源注册后只认它说是容器的物品）+ 功能 ID 稳定 + **取消活化连 SavedData 一起清**/无 UUID 不抛
@@ -182,7 +183,8 @@ src/test/java/com/qiqi/li/
 ├── living/domain/hopper/
 │   ├── HopperFilterSyncTest.java              # 漏斗过滤链回写·黑白名单展示回归
 │   ├── CrossContainerTransferFertilizeTest.java # 跨容器施肥·推送/拉取双入口+活骨粉三入口全拒
-│   └── CrossContainerTransferFaceSelectionTest.java # 多方块容器跨容器面选取·候选排序+推送首选/回退
+│   ├── CrossContainerTransferFaceSelectionTest.java # 多方块容器跨容器面选取·候选排序+推送首选/回退
+│   └── CrossContainerTransferContainerLikeTest.java # 容器类活物品走通用跨容器路径（2026-11-01 删活箱子拉取特支）·拉取进 CONTAINER 组件箱子本体不动 / 推送隔离门 isEligibleCargo 唯一定义点：活骨粉拒、活箱子放行推内部
 ├── living/domain/map/
 │   ├── TeleportHelperYTest.java               # 落点站立面语义 + 指哪传哪（2026-10-27 审查 P1-1 + A3 定案）·ChunkAccess.getHeight 返回最高阻挡方块自身 Y，destY 曾少 +1 ⇒ 玩家脚落进最高阻挡方块 / 端到端 mock：teleportTo 捕获 (格中心, 71.0, 格中心) / **虚空柱照传不拒**：全空柱高度图返回世界下限，脚下 = 下限+1，不因无地面拒绝
 │   ├── MapUpdateSkipHelperTest.java           # 地图刷新节流器的**跨存档**不变量（2026-11-01）·传送后 SKIP_TICKS 内跳过 / 窗口满自动放行并删记录 / **切存档后 tick 从 0 重来时不得把新存档永久锁死**（旧 `cooldowns=500040` vs 新 `currentTick=10` ⇒ `currentTick < expireTick` 恒真）/ 停服清理已登记（`StaticCacheRegistry.describe()` 可断言，防「写了 clear() 没人调」）/ 下线玩家记录被丢掉
@@ -216,7 +218,8 @@ src/test/java/com/qiqi/li/
 │   ├── FilteredSlotAccessorTest.java          # 过滤装饰器接缝（2026-10-29）·黑名单抽取回滚 / 模拟不回滚 / 插入拒绝不达下层 / 放行透传 / unwrap / null+EMPTY 全放行
 │   ├── NeighborSlotAccessorTest.java          # 邻居访问器接缝（2026-10-29）·抽取/模拟/插入改栈 / 堆叠部分插入余量 / 回滚只回原槽（异物品/满槽只报日志）/ isFull 取 min(槽位上限,物品上限) / getter
 │   ├── SlotAccessorTransferConservationTest.java # 传输守恒不变量（2026-10-29）·诚实全额/部分 + 谎报部分/全拒 + 空源/满目标 + 300 组固定种子随机；断言源+目标总量守恒、无负数、不超堆叠
-│   └── PlainSlotAccessorTest.java             # 普通槽回滚契约（2026-10-29）·空槽放回 / 同类合并 / 异物品或满槽只报日志，不写其它槽
+│   ├── PlainSlotAccessorTest.java             # 普通槽回滚契约（2026-10-29）·空槽放回 / 同类合并 / 异物品或满槽只报日志，不写其它槽
+│   └── TransferTargetPolicyDispatchTest.java  # 传输目标策略分发（2026-11-01）·目标无接管 → 源侧探测+CONTINUE / REJECT 不触发探测（对齐旧 resolveTarget 时序）/ 接管路径不触发探测 / 跨容器 null=无接管回落
 ├── living/util/
 │   ├── BroadcastDedupTest.java                # 定向广播去重表的跨维度合并（2026-10-23 定，10-26 抽成共享工具）·**其它维度玩家的记录必须保留**（逐维度 flush 不能互清，旧写法每玩家每 tick 重发一包）/离线玩家淘汰/本维度新记录覆盖旧值（四个同步器共用一份实现，故只留这一份测试）
 │   └── FailureThrottleTest.java               # tick 异常限频报告（2026-10-30，R-01）·同 key 窗口内只记一次其余计数 / 不同 key 各记一次 / 超窗口再报并重置计数 / key 上限 LRU 淘汰 / 汇总窗口推进

@@ -17,6 +17,34 @@
 
 ## 2026-11-01
 
+- ♻️ **R3 领域互依赖清零：hopper↔ender/chest 10 条 → 0，传输核心不再认识具体领域**。
+  **病**：`TransferPipeline` / `CrossContainerTransfer`（统一传输入口）直接 import 末影 / 箱子域
+  ——末影箱路由决策硬编码在管道末段（`EnderRouteManager.resolveTarget` 直调）、身份检查直呼
+  `isLivingEnderChest / isLivingChest`、路由 GC 靠漏斗 tick 与末影箱 tick **互传对方槽位数据**
+  （镜像双调用，与 `LivingEnderChestFunction` import 漏斗 ID 构成双向环）。
+  **修法（全走现成扩展机制，只新增 1 个注册表）**：
+  ① 身份检查复用 `ContainerLikeItems`（2026-10-08 为同一问题建的谓词注册表，hopper 侧一直没用）：
+  `isStorageContainer` 改 `isLivingItem && isContainerLike`；推送隔离门三行收敛为
+  `SlotInteractions.isEligibleCargo` 一行（语义等价已核对：其否定 = 原「living 且非箱类」条件）；
+  ② 末影箱路由决策改走新扩展点 **`TransferTargetPolicy`**（living/transfer，形状对齐
+  `SlotInteractions`）：目标侧在 canPlaceItem 模拟**之后**分发、收两侧 Accessor——与交互方程
+  （过滤门前、裸 ItemStack）位置不可互换，故不并入；`EnderTransferPolicy` 薄适配，
+  `EnderRouteManager` 决策逻辑零改动；源侧伴随状态（偏好类型设置）走 `onProbingTarget`
+  探测回调，REJECT 不触发（对齐旧 `resolveTarget` 时序）；
+  ③ 路由 GC 收敛为 **`ContainerTickHook.onWriteback` 单钩子**（`EnderRouteMaintenance`，
+  power/water/redstone 同款注册中继）：注册方槽位由路由表按新 api 标记接口 **`RouteRegistrar`**
+  能力自查（活漏斗实现，漏斗域零 import），末影箱键表自给（引自己的 ID）——
+  `LivingHopperFunction.cleanupStaleRoutes` 与 `LivingEnderChestFunction.tick` 验证块双删，
+  两类失效（注册方离场 / 末影箱离场）一处全覆盖；
+  ④ 顺带删 `pullFromNeighborToLivingChest` 特支（与通用路径逐行等价：同为
+  `SlotAccessorFactory.create` + `tryPullFromNeighbor`），拉取回归钉住。
+  `layer_baseline.txt` R3 三行清零（R1 19 条不变，新接口未引入任何反向依赖）；
+  `check_layers` REGISTRY_METHODS 收进 `TransferTargetPolicies.register` / `ContainerTickHooks.register`
+  （现有调用点已核实全在 *Registration）。新测试 11 项（策略分发语义 4 + 路由回收 4 +
+  容器类路径 3），测试 1293→1304。
+  ⚠️ **实机待验**：活漏斗 × 活末影箱路由传输（公共频道 / 专属频道 / 直连）、末影箱拆合堆叠的
+  频道切换回收、跨容器拉取到活箱子。
+
 - 🐞 **流体搬运丢物：两条容量口径都错，且源槽无条件清空** —— 活流体 A1 止血 + A2 修复。
   **病**：`tryMoveInto` 空槽路径直接写 `item.copy()` 再清源，目标槽装不下时
   `setItem` 内部 `clampToSlotLimit` **静默截断** ⇒ 实测「抽屉 500 个 → 普通槽（上限 64）」
@@ -160,6 +188,26 @@
   `skipNextRelease`）—— 那是给下一个新增按压拦截的人看的，不是给这次改动的记录。
   测试 1282→1289（`LivingChestDepositHelperTest` 7 项）；doc_check 15/15 绿。
   → `client/input/LivingChestDepositHelper` · `docs/tech/living-chest-tech.md` §4.3 · 整改计划批次 3
+
+- 📋 **活海绵设计稿 v1.6：四邻制 + 形态定案（纯文档，未动代码与测试）**。
+  **⑦ 吸收域**：从「BFS 一圈圈」（2026-10-29 ②）改为**上下左右四邻直吸**——逐格独立判定
+  （异种 / 流动 / 干槽邻居只跳过自己，不挡其他邻居），空海绵按固定方向序取首个流体；
+  无 BFS、无深度、无列数依赖（横切 1.4① 红利）；农场攻防从距离战（>6 步）变贴身战（≥2 格）；
+  吞吐由「吸掉 → 回灌 → 晋升」水节拍循环决定（≈3 拍一轮、每轮 ≤4 源，64,000mB ≈12s 装满）。
+  **⑧ 形态定案**：**物品 id 不换**——湿/干 = 组件派生 + 图标变体，转化时机 = 写入边沿
+  （第一笔写入显湿、归零翻干，GUI 实时走 10-31 组件翻转同步通道）；**熔炼配方不做**。
+  **⑨ 放置不拦截**：放置活海绵 = 原版海绵方块，活标记 + 流体随 consume 消失不可恢复
+  （「数据没有了就没有了」）。**⑩ 一堆一罐**：`getTanks()=1`，tank 0 = 堆总量视图
+  （floor 报量）。**⑪ 快满逐源原子**：每枚剩余 ≥ floor(1000mB/count) 才吸，装不下完整源
+  即停拍——不吸半源、不丢大块（损耗界不破）。**⑫ 退役挪段**：`ContainerFluidHandler`
+  退役动作从第一段挪到第三段（与 `SpongeItemFluidHandler` 注册同拍），避免「直连已删、
+  海绵未就绪」取水空窗；第一段只挂横幅。
+  **核对两处引擎事实**：`removeGeneratedSource` 账本即时删（规则 10 措辞修正——
+  「下一拍生效」仅指 CA / 渲染可见层，同拍后 tick 海绵不双吃）；`BulbBank.deposit` 的
+  零头回收是**跨堆**机制 ⇒ 海绵侧恒走保守丢弃（§3 措辞照实）。
+  **补模板必填表**（§9）：生命周期表 / 准入表（海绵无专属槽位）/ 1.4 横切（四邻不依赖
+  列数链）/ 规则 → 守卫映射 15 条。§5 拍板留痕追加 ⑦~⑫，②/②b 翻转留痕。
+  → `docs/buffer/活海绵.md` · fluid tech §10 退役横幅（不动）
 
 ## 2026-10-31
 

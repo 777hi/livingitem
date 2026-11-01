@@ -5,7 +5,6 @@ import java.util.List;
 
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.TickContext;
-import com.qiqi.li.living.domain.chest.LivingChestFunction;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.Container;
@@ -17,11 +16,11 @@ import com.qiqi.li.living.model.GridDirections;
 import com.qiqi.li.living.transfer.SlotAccessor;
 import com.qiqi.li.living.transfer.SlotAccessorFactory;
 import com.qiqi.li.living.transfer.SlotInteractions;
+import com.qiqi.li.living.transfer.TransferTargetPolicies;
 import com.qiqi.li.living.model.Pos2D;
 import com.qiqi.li.living.util.DoubleChestPositions;
 import com.qiqi.li.living.model.ResolvedSlots;
 import com.qiqi.li.living.transfer.FilterData;
-import com.qiqi.li.living.domain.ender.LivingEnderChestFunction;
 import net.minecraft.server.MinecraftServer;
 import net.neoforged.neoforge.capabilities.Capabilities;
 import net.neoforged.neoforge.items.IItemHandler;
@@ -218,45 +217,17 @@ public final class CrossContainerTransfer {
             return true;   // 漏斗 tick 自然设冷却——一次交互 = 一次传输
         }
 
-        if (LivingChestFunction.isLivingChest(targetStack)) {
-            return pullFromNeighborToLivingChest(containerCtx, level, neighborHandler,
-                targetStack, targetSlot, stackSize, maxTransfer, filterData, tick, neighborPos);
-        }
-
-        if (LivingEnderChestFunction.isLivingEnderChest(targetStack)) {
-            return com.qiqi.li.living.domain.ender.EnderRouteManager.resolveCrossContainerTarget(
-                containerCtx, level, neighborHandler, neighborPos,
-                targetStack, targetSlot, stackSize, maxTransfer, filterData, hostSlot);
-        }
+        // 目标策略接管（注册式）：末影箱路由等策略接管的拉取（null = 无策略，走通用拉取）。
+        Boolean handled = TransferTargetPolicies.interceptCrossContainerPull(
+            containerCtx, level, neighborHandler, neighborPos,
+            targetStack, targetSlot, stackSize, maxTransfer, filterData, hostSlot);
+        if (handled != null) return handled;
 
         MinecraftServer server = level.getServer();
         if (server == null) return false;
 
         SlotAccessor target = SlotAccessorFactory.create(server, containerCtx, targetSlot, null,
             tick.transferredTargetSlots, tick.getSnapshot());
-        if (target == null || target.isFull()) return false;
-
-        return tryPullFromNeighbor(neighborHandler, neighborPos, level, filterData,
-            target, Math.min(stackSize, maxTransfer));
-    }
-
-    private static boolean pullFromNeighborToLivingChest(ContainerContext containerCtx,
-                                                          Level level,
-                                                          IItemHandler neighborHandler,
-                                                          ItemStack chestStack,
-                                                          int targetSlot,
-                                                          int stackSize,
-                                                          int maxTransfer,
-                                                          FilterData filterData,
-                                                          TickContext tick,
-                                                          BlockPos neighborPos) {
-        if (level.isClientSide()) return false;
-
-        var server = level.getServer();
-        if (server == null) return false;
-
-        SlotAccessor target = SlotAccessorFactory.create(server, containerCtx, targetSlot,
-            null, tick.transferredTargetSlots, tick.getSnapshot());
         if (target == null || target.isFull()) return false;
 
         return tryPullFromNeighbor(neighborHandler, neighborPos, level, filterData,
@@ -276,13 +247,10 @@ public final class CrossContainerTransfer {
         ItemStack sourceStack = containerCtx.getItem(sourceSlot);
         if (sourceStack.isEmpty()) return false;
 
-        boolean sourceIsChest = LivingChestFunction.isLivingChest(sourceStack);
-        boolean sourceIsEnderChest = LivingEnderChestFunction.isLivingEnderChest(sourceStack);
         // 活物品不作货物（隔离规则，唯一定义点 SlotInteractions.isEligibleCargo）：
-        // 活骨粉是活物品 ⇒ 不是合法货物 ⇒ 漏斗不给它施肥（施肥属传输语义，见
-        // SlotInteractions 的 isEligibleCargo javadoc）。活骨粉的手动用武之地在
-        // GUI 右键（那里本就要求活化）。
-        if (!sourceIsChest && !sourceIsEnderChest && LivingItemManager.isLivingItem(sourceStack)) return false;
+        // 活箱子/活末影箱是存储容器（槽位展开为虚拟存储）⇒ 放行；
+        // 其余活物品（如活骨粉）不是合法货物 ⇒ 拒绝（手动用武之地在 GUI 右键）。
+        if (!SlotInteractions.isEligibleCargo(sourceStack)) return false;
 
         Pos2D targetOffset = resolvedSlots.targetOffset();
         Direction targetWorldDir = GridDirections.gridToWorld(targetOffset, blockFacing);
