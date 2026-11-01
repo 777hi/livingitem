@@ -11,6 +11,7 @@ import net.neoforged.neoforge.items.IItemHandler;
 
 import com.qiqi.li.living.api.LivingItemFunction.SlotEntry;
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.util.PerItemLedger;
 import com.qiqi.li.living.util.WaxedCopperFamily;
 
 /**
@@ -236,15 +237,18 @@ final class BulbBank {
             // ≈ 1.17s/tick，与 spark 的 1094ms 慢 tick 吻合）。详见 PowerMath#mulDivFloor。
             long share = PowerMath.mulDivFloor(accept, remaining[i], totalRemaining);
             int count = stack.getCount();
-            long perLamp = share / count;
-            if (perLamp <= 0) continue;
+            // 均分与记账走共享内核（PerItemLedger，2026-11-01 自本处抽出供 power/sponge 两域同源）
+            // —— 「记账 = 写入 × count」由内核保证；本调用份额 ≤ 该堆剩余（mulDivFloor 已夹），
+            //    内核的容量防御在此恒为 no-op。
+            var d = PerItemLedger.distribute(LivingWaxedBulbData.of(stack).chargeMilliFe(),
+                count, PowerMath.BULB_UNIT_CAPACITY_MFE, share);
+            if (d.accepted() <= 0) continue;
             if (!simulate) {
-                LivingWaxedBulbData data = LivingWaxedBulbData.of(stack);
                 LivingWaxedBulbData.set(stack,
-                    data.withChargeMilliFe(data.chargeMilliFe() + perLamp));
+                    LivingWaxedBulbData.of(stack).withChargeMilliFe(d.newQ()));
                 dirty = true;
             }
-            lastDistributed += perLamp * count;
+            lastDistributed += d.accepted();
         }
 
         if (policy == FePolicy.FLOOR_WHOLE_FE) {

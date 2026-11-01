@@ -17,6 +17,7 @@ import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import com.qiqi.li.living.api.ContainerDataLifecycle;
 import com.qiqi.li.living.api.FluidPresence;
+import com.qiqi.li.living.api.FluidSourceLedger;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.components.LivingComponents;
 import com.qiqi.li.living.container.ContainerContext;
@@ -56,7 +57,7 @@ import org.slf4j.Logger;
  * - 多水源时，每个槽位取最近水源的 level
  * - 流动水记录 `fromSlot`（BFS 父节点）—— 活水车应力方向读它；物品推动改为四邻力场（§3.3）
  */
-public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence {
+public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence, FluidSourceLedger {
 
     /**
      * 容器级流体数据的 key（跨 tick 持久 + 落盘到 BE attachment + **可按 UUID 进 SavedData**）。
@@ -253,6 +254,18 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
     /** 【查】本容器是否存在任何派生源（廉价）。 */
     public boolean hasGeneratedSources() {
         return !generatedSources.isEmpty();
+    }
+
+    // ── FluidSourceLedger（契约层，跨领域消费者 = 活海绵；设计稿 docs/buffer/活海绵.md §2.2）──
+
+    @Override
+    public FluidType sourceAt(int slot) {
+        return generatedSources.get(slot);
+    }
+
+    @Override
+    public void removeSource(int slot) {
+        removeGeneratedSource(slot);
     }
 
     /** 【查】派生源只读视图（供落盘 CODEC / 导出用；fluid 侧定义，框架接序列化）。 */

@@ -7,6 +7,7 @@ import java.util.Set;
 import java.util.function.Function;
 
 import com.qiqi.li.living.api.FluidPresence;
+import com.qiqi.li.living.api.FluidSourceLedger;
 import com.qiqi.li.living.api.RedstoneSensor;
 
 /**
@@ -35,6 +36,9 @@ public class TickContext {
     /** 流体存在性视图解析器（由水领域注册）—— 本类只认契约层 {@link FluidPresence}。 */
     private static volatile Function<TickContext, FluidPresence> fluidPresenceResolver = t -> null;
 
+    /** 派生源账本解析器（由水领域注册）—— 本类只认契约层 {@link FluidSourceLedger}。 */
+    private static volatile Function<TickContext, FluidSourceLedger> sourceLedgerResolver = t -> null;
+
     /** 注册感知端口解析器（红石领域调用）。 */
     public static void registerSensorResolver(Function<ContainerContext, RedstoneSensor> resolver) {
         sensorResolver = resolver;
@@ -43,6 +47,11 @@ public class TickContext {
     /** 注册流体存在性视图解析器（水领域调用）。 */
     public static void registerFluidPresenceResolver(Function<TickContext, FluidPresence> resolver) {
         fluidPresenceResolver = resolver;
+    }
+
+    /** 注册派生源账本解析器（水领域调用）。 */
+    public static void registerSourceLedgerResolver(Function<TickContext, FluidSourceLedger> resolver) {
+        sourceLedgerResolver = resolver;
     }
 
     public final Set<String> occupiedSlots = new HashSet<>();
@@ -134,6 +143,16 @@ public class TickContext {
      */
     public FluidPresence getFluidPresence() {
         return fluidPresenceResolver.apply(this);
+    }
+
+    /**
+     * 获取派生源「账本」读写视图（供<b>跨领域</b>消费者，如活海绵吸收增删源）。
+     *
+     * <p>返回契约层 {@link FluidSourceLedger} 而非具体的流体数据实现 ⇒
+     * 消费者不必 import 水领域。实现由水领域注册；无流体数据的容器返回 {@code null}。</p>
+     */
+    public FluidSourceLedger getSourceLedger() {
+        return sourceLedgerResolver.apply(this);
     }
 
     /**

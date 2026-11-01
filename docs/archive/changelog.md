@@ -15,6 +15,27 @@
 
 ---
 
+## 2026-11-02
+
+- ✅ **活海绵第二段落地：记账内核抽出 + 四邻吸收（设计稿 v1.6 §5 第二段）**。
+  **内核**：`PerItemLedger`（`living/util` L1，`WaxedCopperFamily` 上移同款判据）——
+  「按枚定点均分记账」纯函数 `(q, count, cap, D) → (newQ, accepted)`：均分 floor + 容量防御 +
+  「记账 = 写入 × count」同源（灯泡 2026-09-09 零头记账教训沉淀为类型级契约）；
+  `BulbBank.deposit` 逐堆分配改调内核（行为等价，跨堆零头回收留在原处不搬——设计稿 §3 措辞）；
+  排出侧（ceil 口径）随第三段补。**吸收**：`LivingSpongeFunction.tick` 按 §2.2 实现——
+  节拍门 = gameTime 锁相心跳（5t，跨存档天然安全）；四邻 `ContainerContext.resolveNeighbor`
+  （活耕地湿润 BFS 同款算子）逐格独立判定；逐源原子（装不下完整源即本拍停）；删源走
+  **新契约 `FluidSourceLedger`**（`living/api` L0，`FluidPresence` 姊妹契约，水域
+  `WaterRegistration` 注册 resolver）——sponge 域不 import water 域，**R3 域间保持零边**。
+  **测试按住的真 bug（守恒事故）**：干海绵首口若走「`withFluid` → `withMmB`」两步 wither，
+  中间态 `(fluid, 0)` 会被干/湿不变量归一回干态 ⇒ **源被吃、一滴不存**；改为单次构造
+  （fluid 与新 mmB 同步到位），教训写进代码注释与设计稿 §11。
+  测试 1311→1326（`PerItemLedgerTest` 6 项 + `LivingSpongeAbsorbTest` 9 项：一拍净邻 /
+  节拍门锁相 / 异种跳过不挡 / 方向序取首流体 / 快满停拍恢复 / 均分损耗有界 /
+  账本即时删不双吃 / 斜对角非邻居 / processContext 冒烟）；check_layers（R3 零新增）/
+  check_mixins / check_container_keys 绿；`ComponentOwnershipTest.allFunctions` 补海绵。
+  → `living/util/PerItemLedger` · `living/api/FluidSourceLedger` · `domain/sponge/` · 设计稿 §11
+
 ## 2026-11-01
 
 - ♻️ **R3 领域互依赖清零：hopper↔ender/chest 10 条 → 0，传输核心不再认识具体领域**。
@@ -215,6 +236,25 @@
   **补模板必填表**（§9）：生命周期表 / 准入表（海绵无专属槽位）/ 1.4 横切（四邻不依赖
   列数链）/ 规则 → 守卫映射 15 条。§5 拍板留痕追加 ⑦~⑬，②/②b/③ 翻转留痕。
   → `docs/buffer/活海绵.md` · fluid tech §10 退役横幅（不动）
+
+- ✅ **活海绵第一段落地：域骨架 + 组件 + 注册（设计稿 v1.6 §5 第一段）**。
+  新域 `domain/sponge/` 四件套（PowerComponents / PowerRegistration 同款结构）：
+  ① `SpongeComponents` —— 组件总线（`DeferredRegister<DataComponentType<?>>`）；
+  ② `LivingSpongeData` —— {fluid, mmB} record：**干/湿不变量**用 record 紧凑构造器归一
+  （无流体或非正存量 ⇒ 干态，幽灵湿海绵在类型层面不可能）；CODEC 沿 `ContainerFluidData`
+  的 FluidType 注册 id 字符串先例，**未知流体 id 归干态**（I-C6 同款宁损勿鬼 + WARN 留痕）；
+  账本 long（6.4e7 mmB/枚 × count ≤ 4.1e9 > int，§6 溢出审计承接）；读写走
+  `LivingItemManager.getData/setData`（默认值移除 = 干海绵正常堆叠）；
+  ③ `LivingSpongeFunction` —— `canApply = isLivingItem ∧ sponge`，tick 空骨架（吸收随第二段），
+  `getOwnedComponentTypes()` 声明归属（规则 9：取消活化清空 {fluid, mmB}）；
+  ④ `SpongeRegistration` —— R4 唯一注册口。接线 `LivingItem`（组件总线注册 + register 调用）。
+  **物品 id 不换**（⑧）：原版 sponge + 组件，零物品注册。
+  测试 1304→1311（`LivingSpongeDataTest` 7 项：干/湿不变量 / 容量与总量 long 域 /
+  CODEC 湿·干·岩浆往返 / 未知流体降级 / wither 不可变）；
+  check_layers / check_mixins / check_container_keys 绿。
+  **不做**（按 §5 分段）：吸收（第二段，先抽记账内核）· 物品能力（第三段，注册与实现同拍）·
+  GUI 汲 / 退役执行（第三段）。落地同步表见设计稿 §11。
+  → `domain/sponge/` · `docs/buffer/活海绵.md` §11
 
 ## 2026-10-31
 

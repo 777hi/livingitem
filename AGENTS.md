@@ -147,7 +147,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1304 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
+**合计测试用例 1326 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -172,6 +172,8 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-11-02 | ✅ **活海绵第二段落地：记账内核抽出 + 四邻吸收（设计稿 v1.6 §5 第二段）** —— `PerItemLedger`（living/util L1）：「按枚定点均分记账」纯函数，`BulbBank.deposit` 改调（行为等价，跨堆零头回收不搬；`RoundTripConservationIT` 回归绿）；`LivingSpongeFunction.tick` 按 §2.2：节拍门 gameTime 锁相 5t + `resolveNeighbor` 四邻逐格独立 + 逐源原子停拍；删源走新契约 **`FluidSourceLedger`**（living/api L0，FluidPresence 姊妹契约）——sponge 不 import water，**R3 域间保持零边**。🔴 测试按住真 bug：干海绵首口「withFluid→withMmB」两步 wither 被不变量归一回干态 ⇒ **源被吃一滴不存**（守恒事故），改单次构造（fluid 与新 mmB 同步）。测试 1311→1326（内核 6 + 吸收 9） | `living/util/PerItemLedger` · `domain/sponge/` · `docs/buffer/活海绵.md` §11 |
+| 2026-11-01 | ✅ **活海绵第一段落地：域骨架 + 组件 + 注册（设计稿 v1.6 §5 第一段）** —— 新域 `domain/sponge/` 四件套：`SpongeComponents`（组件总线，PowerComponents 同款）+ `LivingSpongeData`（{fluid, mmB} record，干/湿不变量 record 紧凑构造器归一，CODEC 未知流体 id 归干态 = I-C6 同款宁损勿鬼，账本 long 容量 6.4e7 mmB/枚）+ `LivingSpongeFunction`（canApply = isLivingItem ∧ sponge；tick 空，吸收随第二段；`getOwnedComponentTypes` 声明归属 = 规则 9）+ `SpongeRegistration`；接线 `LivingItem`（组件总线 + 注册）。**不换物品 id**（原版 sponge + 组件）。测试 1304→1311（`LivingSpongeDataTest` 7 项：不变量 / 容量 long 域 / CODEC 湿·干·岩浆往返 / 未知流体降级 / wither 不可变）；check_layers / check_mixins / check_container_keys 绿 | `docs/buffer/活海绵.md` §11 落地同步表 · `domain/sponge/` |
 | 2026-11-01 | 📋 **活海绵设计稿 v1.6：四邻制 + 形态定案** —— 吸收域从「BFS 一圈圈」改**上下左右四邻直吸**（逐格独立、异种邻居只跳过自己不挡其他邻居；无 BFS/深度，列数走既有 resolveNeighbor 算子 + 统一链；农场攻防变贴身战 ≥2 格）；**物品 id 不换**（湿/干 = 组件派生 + 图标变体，转化 = 写入边沿）、**熔炼配方不做**、放置不拦截；物品能力一堆一罐；快满逐源原子判定（装不下完整源即停拍）；`ContainerFluidHandler` 退役挪第三段（与能力注册同拍，免取水空窗）；**下界存储态不自干**（原版蒸发只挂「放置成方块」，物品在容器里无暴露面；杀手提水箱/下界机器供水玩法；下界倒水成源不做 parity = 接受的新玩法，TODO 活流体 #11）；补模板必填表 §9（生命周期/准入/横切/规则→守卫 15 条）。核对引擎两处事实（删源账本即时 / 零头回收是跨堆机制）。纯文档，未动代码与测试 | `docs/buffer/活海绵.md` §2.2/§5/§9 · fluid tech §10 |
 | 2026-11-01 | 🐞 **流体搬运丢物（A1 未登记 + A2 已知）** —— 空槽路径不查容量 ⇒ 抽屉 500 搬进上限 64 的槽**丢 436**；合并按物品上限而非槽位上限 ⇒ **丢 48**。修：容量按 `getSlotLimit`（**不碰 `isItemValid`**，A3 定案不动）+ 写后回读只扣实际量。测试 1289→1293；抽 `move` 原语收敛 8~12 处调用点仍待办 | `docs/tech/living-fluid-tech.md` §3.3.2 · `ContainerFluidConservationTest` · TODO 活流体 ②③ |
 | 2026-11-01 | 🐞 **批次 3：GUI 存放分支一次手势只产生一个效果** —— ① `tryInteract` 成功后只 `setReturnValue(true)` 没 `return` ⇒ 落到存放分支叠两个效果；② 存放分支漏置 `skipNextRelease` ⇒ 释放阶段被原版再执行一次。判据 + 序列化发包收进 `client/input/LivingChestDepositHelper`（原先两个 mixin 各写一份，连三行发包都是复制的）。⚠️ 新增「按压阶段拦截」的两条硬约束写进 chest tech §4.3。测试 1282→1289；待实机 M-1/M-2 | `docs/tech/living-chest-tech.md` §4.3 · `LivingChestDepositHelper` · 计划批次 3 |
@@ -179,8 +181,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-11-01 | 🐞 **换存档后活地图不再刷新** —— 节流表存 `getTickCount()`（从 0 起算），换存档不重启 JVM ⇒ 旧值让 `current - last < 20` 恒真 ⇒ 新存档刷新被**永久静默跳过**；补 `StaticCacheRegistry.onServerStop` 登记（`FailureThrottle` 那份的代价是**漏报**：旧 key 占着抑制窗口）。顺带留档门禁盲区：「本类无清理入口」≠ 没清理（可能写在别的类） | `MapUpdateSkipHelper` 类头 · `shared-state.md` J9/J10 · `MapUpdateSkipHelperTest` |
 | 2026-11-01 | ✅ **R-06 落地：跨 tick 缓存有了统一回收口** —— 六种「容器停止被处理」的成因全不清 ⇒ 逐形态挂事件要六条路径且必漏其一，改判**共同结果**：`trackLivingSlots` 每 tick 盖章进 `LAST_SEEN`，`sweepUnseenContainers` 把消失满 5 分钟的键走 `removeDataByKey`（与玩家破坏**同一条入口**）。同批闭合位置索引 / 空壳 / `ItemFormLiveViews` 惰性过期；双箱确认无需代码 | `docs/decisions.md` D-container-23 · `container-data-lifecycle.md` §4 · `ContainerCacheSweepTest` |
 | 2026-10-31 | 🔬 **A/B 代理实验 → 证伪一处「关键事实」→ 给参考层做减法** —— 同 6 题跑两组隔离代理：禁读文档组 38 文件 / ≈6900 行，文档优先组 10 文件 / ≈490 行 ⇒ 净减负成立，但 **B 组错 2/6，两处都错在我写的行上**。🔴 `ChunkEvent.Unload` **实为主线程**（`thenRunAsync` 第二参数是 executor）⇒ R-06「事件只入队」作废，红线改成「卸载中不查世界」（会**再入**）；另抓到 `ItemFormLiveViews` 错行。**减法**：七列手写复述删掉 ⇒ 名单由 `tools/gen_rosters.py` 生成，第 13/14 项升级为「生成区逐字一致」；`docs/README.md` 立 **20 文件判据** | `docs/decisions.md` D-container-21→22 · `docs/README.md`「该不该写」 · `tools/gen_rosters.py` · `event-threading.md` §2 |
-| 2026-10-31 | 📋 **buffer 内容归位 + 文档系统机制升级（会话即维护）** —— 修 3 处「稳定层反话」（api-contract §2.2 / 设计模板列数 / tnt tech 头部）+ 29 条定案晋升（TNT tech 新 §4.6 规模化约束 / tool 5 条 / fluid §0 规则 10 / decisions D-open-01 / api-contract §1.6 jar 红线…）；buffer/README 状态表改**生成制**（状态单一来源 = 文档头部，`tools/gen_buffer_index.py`）+ doc_check 新增**第 12 项**（索引不一致即红）+ 链接口径改渲染器真相（根相对降警告）；设计模板新增 **§2.3 落地同步表**；§7.2 立「会话即维护」。纯文档，测试 1266 不变 | `docs/README.md` §7.1/§7.2 · `tools/gen_buffer_index.py` · `living-item-design-template.md` §2.3 |
-| 2026-10-31 | 🐞 **红电对外能量接口只在「真有活铜灯」时存在（补齐流体同款缺陷）** —— 线缆类模组按「能力是否非 null」判储能（Flux `hasCapability` / Mekanism acceptorCache）⇒ 无灯的箱子/机器全被认成储能（`canReceive=true` 恒收 0，每拍白跑一轮模拟）。修：provider 读电力账本通告标志（O(1)，不扫容器）+ 正边沿在电力 tick **所有早退之前**通告（纯电池容器无发电机）+ 负边沿（最后一盏灯被拿走后功能已不分组）由相位写回兜底（仅在通告中扫容器）；客户端恒不发；测试 1262→1266 | `docs/tech/living-power-tech.md` §4.1 · `ContainerEnergyStorage` / `ContainerPhaseWriteback` · `ContainerEnergyCapabilityTest` |
+
 ## 提交前必跑（2026-10-30 更新）
 
 ```bash

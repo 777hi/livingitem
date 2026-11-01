@@ -205,6 +205,9 @@ src/test/java/com/qiqi/li/
 │   ├── BucketInteractRealMenuTest.java        # 倒/汲的**真实原版菜单**路径（2026-10-28，缺口 #6）·真实 `BrewingStandMenu` + 真实 BE 能解析出容器（假菜单测不到）/ 倒水后桶排空 / 汲水后桶装水且源消失（脚手架=真实菜单+BE+capability 替身）
 │   ├── ContainerStressDataTest.java           # 水车力矩纯函数（2026-10-31）·直流水无力矩（叉积 0）/ 侧向水 CCW / 堆叠 × 数量 / 无水为 0 —— 抽成纯函数后不再依赖 create:water_wheel 物品
 │   └── ContainerFluidPerfTest.java            # 性能量测（@Tag("perf")，默认不跑；`-Pperf` 才计入。200 容器×54 格×200 拍，打印基线 + 病态回归宽松阈值 + 落盘 build/_perf.txt）·引擎 tick / 空容器
+├── living/domain/sponge/
+│   ├── LivingSpongeDataTest.java              # 活海绵组件形状契约（2026-11-01 第一段）·干/湿不变量归一（无流体或非正存量 ⇒ 干态，幽灵湿海绵在类型层面不可能）/ 容量与总量 long 域（每枚 6.4e7 mmB，×count 线性）/ CODEC 湿·干·岩浆往返 / 未知流体 id 归干态（I-C6 同款宁损勿鬼）/ wither 不可变
+│   └── LivingSpongeAbsorbTest.java            # 吸收行为契约（2026-11-02 第二段，直接驱动 + processContext 冒烟）·一拍吸净可吸四邻（≤4 源）/ 节拍门 gameTime 锁相 / 异种邻居跳过不挡 / 空海绵方向序取首流体 / 快满停拍+腾出恢复 / count 均分损耗有界 / 同拍双海绵账本即时删不双吃 / 斜对角非邻居（27 槽 3 行）/ 首口定流体单次构造
 ├── living/interaction/
 │   ├── InteractionRegistryTest.java           # 两趟优先级匹配·通配遮蔽+triggerFilter 回归守卫
 │   ├── InteractionRuleConfigTest.java         # 交互规则 JSON 加载语义·内置全有效/玩家覆盖与removed/坏值跳过/未知字段忽略/version守卫/reload幂等（自带 mock handler 不依赖测试执行顺序）
@@ -222,7 +225,8 @@ src/test/java/com/qiqi/li/
 │   └── TransferTargetPolicyDispatchTest.java  # 传输目标策略分发（2026-11-01）·目标无接管 → 源侧探测+CONTINUE / REJECT 不触发探测（对齐旧 resolveTarget 时序）/ 接管路径不触发探测 / 跨容器 null=无接管回落
 ├── living/util/
 │   ├── BroadcastDedupTest.java                # 定向广播去重表的跨维度合并（2026-10-23 定，10-26 抽成共享工具）·**其它维度玩家的记录必须保留**（逐维度 flush 不能互清，旧写法每玩家每 tick 重发一包）/离线玩家淘汰/本维度新记录覆盖旧值（四个同步器共用一份实现，故只留这一份测试）
-│   └── FailureThrottleTest.java               # tick 异常限频报告（2026-10-30，R-01）·同 key 窗口内只记一次其余计数 / 不同 key 各记一次 / 超窗口再报并重置计数 / key 上限 LRU 淘汰 / 汇总窗口推进
+│   ├── FailureThrottleTest.java               # tick 异常限频报告（2026-10-30，R-01）·同 key 窗口内只记一次其余计数 / 不同 key 各记一次 / 超窗口再报并重置计数 / key 上限 LRU 淘汰 / 汇总窗口推进
+│   └── PerItemLedgerTest.java                 # 均分记账内核（2026-11-02，power/sponge 两域共享）·floor 均分记账=写入×count（同源）/ 不足整步不写 / 容量防御截断 / 已满不动 / 退化输入 / 损耗 ≤ count−1（设计稿 §3.1；灯泡行为不变由 RoundTripConservationIT 全量回归守）
 └── network/
     ├── ContainerMenuInfoPacketTest.java         # 菜单信息载荷·全形态/来源codec/状态独立/request关联/服务端限频/错菜单拒绝/实际回包/退出清理/几何有效性
     ├── GuiInteractionPacketTest.java          # 目标槽判据·空槽可解析（活桶汲/倒包的回归守卫）/活物品可解析/非活物品不可解析

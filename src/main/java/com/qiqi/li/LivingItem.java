@@ -99,6 +99,7 @@ import com.qiqi.li.living.domain.hopper.HopperRegistration;
 import com.qiqi.li.living.domain.map.MapRegistration;
 import com.qiqi.li.living.domain.power.PowerRegistration;
 import com.qiqi.li.living.domain.redstone.RedstoneRegistration;
+import com.qiqi.li.living.domain.sponge.SpongeRegistration;
 import com.qiqi.li.living.domain.tnt.TntRegistration;
 import com.qiqi.li.living.domain.tools.ToolRegistration;
 import com.qiqi.li.living.domain.water.FluidTransformTable;
@@ -155,6 +156,7 @@ public class LivingItem {
         com.qiqi.li.living.domain.hopper.HopperComponents.REG.register(modEventBus);
         com.qiqi.li.living.domain.water.WaterComponents.REG.register(modEventBus);
         com.qiqi.li.living.domain.water.WaterComponents.ATTACH_REG.register(modEventBus);
+        com.qiqi.li.living.domain.sponge.SpongeComponents.REG.register(modEventBus);
         com.qiqi.li.living.domain.power.PowerComponents.REG.register(modEventBus);
         com.qiqi.li.living.domain.power.PowerComponents.ATTACH_REG.register(modEventBus);
         com.qiqi.li.living.domain.redstone.RedstoneComponents.REG.register(modEventBus);
@@ -288,6 +290,7 @@ public class LivingItem {
         ChestRegistration.register();
         EnderRegistration.register();
         WaterRegistration.register();
+        SpongeRegistration.register();     // 活海绵（第一段骨架：组件 + 注册，吸收随第二段）
         TntRegistration.register();        // 含活打火石（点燃规则的归属见该类注释）
         RedstoneRegistration.register();
         PowerRegistration.register();

@@ -37,6 +37,7 @@ import com.qiqi.li.living.domain.redstone.LivingRedstoneFunction;
 import com.qiqi.li.living.domain.redstone.LivingRedstoneLampFunction;
 import com.qiqi.li.living.domain.redstone.LivingRedstoneTorchFunction;
 import com.qiqi.li.living.domain.redstone.LivingRepeaterFunction;
+import com.qiqi.li.living.domain.sponge.LivingSpongeFunction;
 import com.qiqi.li.living.domain.tnt.LivingTntFunction;
 import com.qiqi.li.living.domain.tools.LivingToolFunction;
 import com.qiqi.li.living.domain.water.LivingBucketFunction;
@@ -121,6 +122,7 @@ class ComponentOwnershipTest {
             new LivingBucketFunction(),
             new LivingWaterWheelFunction(),
             new LivingFlintAndSteelFunction(),
+            new LivingSpongeFunction(),
             new com.qiqi.li.living.domain.beacon.BeaconFunction()
         );
     }
