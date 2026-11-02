@@ -142,15 +142,20 @@ class PistonActionsTest {
     }
 
     @Test
-    void undoFailureIsNotReportedAsRestoredAndStopsFurtherUndo() {
+    void undoFailureIsNotReportedAsRestoredAndStillAttemptsRemainingUndo() {
+        // 2026-11-03 改：原先「某一格撤销失败就停止」是 undo 还没有校验时的权宜之计。
+        // 现在 undo 自带「状态不符即拒绝、不覆盖」，继续尝试只会多恢复、不会多破坏 ⇒
+        // 必须尝试撤销**全部**已完成步骤，否则放弃本来能恢复的格，链定格在「半推」。
         var ctx = threeCargo();
         ctx.rejectedSource = 1;
         ctx.rejectUndo = true;
         var result = PistonActions.push(ctx, PistonChainResolver.resolve(ctx, 0, Pos2D.RIGHT, 3));
         assertEquals(PistonActions.Status.UNDO_FAILED, result.status());
         assertFalse(result.success());
-        assertEquals("undo:2:3", ctx.calls.getLast());
-        assertEquals(14, total(ctx));
+        assertEquals("undo:3:4", ctx.calls.getLast(), "应尝试到最外层步骤，而非第一格失败就停");
+        assertTrue(ctx.calls.contains("undo:2:3"), "内层也要尝试");
+        assertTrue(ctx.calls.contains("undo:3:4"), "外层也要尝试");
+        assertEquals(14, total(ctx), "撤销失败不改变总量（移动本身守恒）");
     }
 
     @Test

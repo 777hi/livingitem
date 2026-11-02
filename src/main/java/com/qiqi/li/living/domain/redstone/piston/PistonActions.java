@@ -48,15 +48,23 @@ public final class PistonActions {
             MoveResult move = ctx.moveStack(source, target);
             if (!(move instanceof MoveResult.Success success)) {
                 Result failure = failure(move);
+                // 逆序撤销全部已完成步骤 —— **不因某一格失败就停下**（2026-11-03 改）。
+                // 依据：`ContainerContext#undo` 自带「状态不符即拒绝、不覆盖」的校验，
+                // 所以继续调用只会多恢复、不会多破坏；停下则放弃本来能恢复的格，
+                // 让链定格在「半推」状态（更难排查，也更难让玩家理解）。
+                // ⚠️ 早期版本在此提前 return，那是 undo 还没有校验时的权宜之计。
+                int undoFailures = 0;
                 for (int j = completed.size() - 1; j >= 0; j--) {
                     UndoToken token = completed.get(j);
                     if (!ctx.undo(token)) {
-                        LOGGER.error("Living piston undo failed: container={}, from={}, to={}",
-                            ctx.getContainerKey(), token.from(), token.to());
-                        return new Result(Status.UNDO_FAILED, move);
+                        undoFailures++;
+                        // I-C6「丢必留痕」：数量与物品必须记，否则事后只能知道哪格没恢复
+                        LOGGER.error("Living piston undo failed: container={}, {}x{} from={} to={}",
+                            ctx.getContainerKey(), token.moved(),
+                            token.sourceBefore().getHoverName().getString(), token.from(), token.to());
                     }
                 }
-                return failure;
+                return undoFailures == 0 ? failure : new Result(Status.UNDO_FAILED, move);
             }
             completed.add(success.undo());
             target = source;
