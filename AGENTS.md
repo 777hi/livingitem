@@ -148,7 +148,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1450 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
+**合计测试用例 1465 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -173,6 +173,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-11-03 | 🎨 **活活塞渲染原型（阶段E）+15测试** —— 进度插值＋iso本体/头杆叠加层已落；数据源=客户端runtime（函数未注册⇒游戏内恒不显示）；iso/旋转常数为实机调校点 | [活活塞.md](docs/buffer/活活塞.md) §7.8.3 |
 | 2026-11-03 | ✅ **活活塞第二批适配 +46测试** —— 方向组件、runtime片段、真实函数tick与tooltip已测；未全局注册，WASD / 生命周期 / 压送 / 渲染未启用 | [活活塞.md](docs/buffer/活活塞.md) §7.8.2 |
 | 2026-11-03 | ✅ **活活塞首批独立逻辑：解析、推拉编排与状态迁移 +49测试** —— 只调用框架moveStack/undo；游戏tick、方向组件、压送及渲染尚未接入，不宣称可游戏使用 | [活活塞.md](docs/buffer/活活塞.md) §7.8.1 · [test-map.md](docs/reference/test-map.md) |
 | 2026-11-03 | 📋 **活活塞 v1.11：删除压送自动补位，未实现** —— 只交付原末端栈，送空留空、后方不动；补位预演 / 撤销 / 协调整套删除，普通推拉不变 | [活活塞.md](docs/buffer/活活塞.md) §2.6.3 / §7 |
@@ -180,7 +181,6 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-11-02 | 📋 **活活塞 v1.9：玩法收口，实施核验中** —— 伸出态运行时、方向配置随物品；复位不补拉，粘性争抢先成功者得整栈；未实现 | [活活塞.md](docs/buffer/活活塞.md) §6 / §7 |
 | 2026-11-02 | 📋 **活活塞 v1.8：接收端与补位边界定案，未实现** —— 数量定角色、名单等级自动化；末影只直连不路由；交付与补位独立，槽位拒收不撤销交付，流体准入另题 | [活活塞.md](docs/buffer/活活塞.md) §2.2 / §2.6 / §6 |
 | 2026-11-02 | 📋 **活活塞 v1.7：漏斗挤牙膏压送定案，未实现** —— 锁定只停主动取料、压送无视冷却；实际交付判成功，送空才补位；无线与多段边界待探讨 | [活活塞.md](docs/buffer/活活塞.md) §2.6 / §6 |
-| 2026-11-02 | 📋 **活活塞设计稿 v1.6：基础玩法收口** —— 堆叠数 = 最大链长、整链每次前移一格、仅同容器；失败可重试、拉失败也收回；三维伸缩与执行分离，生命周期仍待探讨，未实现 | [活活塞.md](docs/buffer/活活塞.md) §0 / §5 / §6 |
 | 2026-11-02 | ✅ **活海绵第三段落地：唯一能力面 + GUI 汲 + §10 退役执行（三段全完）** —— `SpongeItemFluidHandler`（ITEM 判活化）：一堆一罐、充 = 内核 distribute / 排 = withdraw / **汲 = withdrawCeil（整单位交付，floor 会让桶凭空得差额）**、报账口径规则 12；GUI 汲 `living_sponge_draw`（服务端权威重验 + 客户端组件直接判定）；**退役执行**：删 `ContainerFluidHandler` 类 / BLOCK 宽注册 / 其测试 9 项 / 能力存在性边沿机器（power 侧保留），`getOrCreate` 迁入 `ContainerFluidData`，fluid tech §10 改「已执行」、TODO #7 关账；`RepresentativeFluids` 上移 util（R3）。守卫 `SpongeFluidRoundTripTest` 9 项（净迁移无凭空产生 + 往返 ×25 零漂移）。测试 1326→1325（−9 +9 −1）；§7 反馈层同批（双态变体 JSON 引原版纹理 + 流体叠加装饰器 + tooltip） | `domain/sponge/SpongeItemFluidHandler` · `docs/tech/living-fluid-tech.md` §10 · `docs/tech/living-sponge-tech.md` §11 |
 ## 提交前必跑（2026-10-30 更新）
 

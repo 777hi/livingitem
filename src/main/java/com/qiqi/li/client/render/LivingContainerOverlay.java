@@ -44,6 +44,7 @@ public final class LivingContainerOverlay {
             renderDirectionHud(guiGraphics, screen, mouseX, mouseY);
             renderPlantHint(guiGraphics, screen, mouseX, mouseY);
             LivingFarmlandOverlay.render(guiGraphics, screen);
+            LivingPistonOverlay.render(guiGraphics, screen);
         } finally {
             pose.popPose();
         }
