@@ -169,7 +169,12 @@
 
 ## 物品传输（跨子系统，2026-10-31 记 · 未排期）
 
-1. **「移动 = 写目标 + 清源」没有事务语义** —— 同族表现：
+> **2026-11-03：本节的三类问题已提升为容器层不变量 `I-C12~14`**
+> （[container-boundary.md](system-design/container-boundary.md) §2）——
+> 位移守恒 / 变换单元与写回粒度 / 容量权威与饱和算术。
+> 契约是「口径」；本节是「存量还有哪些没做到」。
+
+1. **「移动 = 写目标 + 清源」没有事务语义**（= `I-C12`）—— 同族表现：
    **A1**（流体推动写入失败仍清源槽 ⇒ 物品消失）· **A2**（合并按物品上限而非槽位上限
    ⇒ 丢数量）· **R-03**（末影箱回滚余量丢失，已修：只回原槽 + ERROR 日志）·
    **R-13**（活箱子 `insertItem` 余量从原栈算 ⇒ 复制，已修）。
@@ -191,9 +196,34 @@
    静默失败）**无法根治** ⇒ 目标是「可控路径不丢 + 丢必留痕」，不是「永不丢」。
    📄 来源：A1/A2 已并入本节上文（2026-10-31），原稿归档 `archive/living-fluid-review.md`。
 
+2. **按 `I-C12~14` 自查存量**（2026-11-03 立契约后新增）—— 契约见
+   [container-boundary.md](system-design/container-boundary.md) §2。三类待办：
+
+   | 不变量 | 存量问题 | 规模 |
+   |---|---|---|
+   | **I-C12 源侧核验** | ⏳ 流体推动只回读**目标增量**，未核验**源扣减** ⇒ 源写回失败（第三方容器拒绝）时**复制**。2026-11-03 活塞侧审查发现，尚未修 | 1 处 + 其余搬运点未审计 |
+   | **I-C13 变换** | ✅ 酿造（`OPERABLE_BOTTLES = 1`，2026-11-03）；✅ 熔炉 / 耕地属「分批加工」已合规（只扣实际处理量）。⏳ 其余变换点未逐个声明「输入 / 产出 / 残留物」 | 已清主体 |
+   | **I-C14 容量** | ✅ 已修：熔炉 `calculateOutputSpace` / 耕地产出槽 / 酿造 `placeRemainder`。⏳ 待修：`PlainSlotAccessor`（5 处）、`NeighborSlotAccessor.isFull`、`ContainerFluidData` 转化产物（431） | ~8 处 |
+   | **I-C14 算术预算** | ⏳ 加法 11 处 + 乘法 2 处（见下）。⚠️ 必须按「**先 long 算预算 → 预算限制操作量 → 只扣实际量**」改，**不能用无条件饱和**（审查：目标 MAX-1 + 源 64 会静默丢 63） | ~13 处 |
+
+   **饱和算术清单**（2026-11-03 扫描，`int` 加法/乘法）：
+   加法 —— `LivingBrewingStandFunction:365` · `ContainerFluidData:432/912` ·
+   `PlainSlotAccessor:78/119/121` · `ServerPacketHandler:193/233` · `ServerPlaceRecipeMixin:75` ·
+   `LivingChestFunction:168/212/244` · `LivingFurnaceFunction:310`；
+   乘法 —— `LivingFarmlandFunction:225` · `LivingFurnaceFunction:310`。
+   ⚠️ **已有正确先例**（用 `long`）：`LivingChestFunction:373`、`BulbItemEnergyStorage` 全部、
+   `LivingWaxedCopperTooltip:219` —— 改的时候照它们写。
+   ⚠️ **不必改**：活箱子内部 7 处（27 格虚拟槽，64 是设计上限）、`ServerPacketHandler:215`
+   与 `LivingEnderChestAccessor:519`（玩家背包/末影箱，64 正确）、`FluidTransformTable:181`
+   与 `WaterRegistration:93`（规则判定不是容量）。
+
+   **落地顺序**（契约 → API → 门禁，不可反）：先按本节 2 修存量；
+   再给 `ContainerContext` 加 `transform(slot, maxUnit, fn)` / `produce(slot, stack, n)` /
+   `move(from, to, n)`；最后写 `check_stack_ops.py` 把存量违规冻结成棘轮基线。
+
 ## 容器边界（2026-10-10 记 · 2026-10-18/19 立项并完成主体）
 
-> **契约**：[system-design/container-boundary.md](system-design/container-boundary.md)（不变量 I-C1~I-C11，已生效）
+> **契约**：[system-design/container-boundary.md](system-design/container-boundary.md)（不变量 I-C1~I-C14，已生效）
 > **专题结项总览**：[system-design/container-overview.md](system-design/container-overview.md)（七问 + 还剩什么）
 > **阶段实施记录**：[archive/container-compat-stages.md](archive/container-compat-stages.md)（S1~S9 验收判据）
 >
