@@ -3,6 +3,7 @@ package com.qiqi.li.living.container;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.Container;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.attachment.IAttachmentHolder;
 
@@ -324,5 +325,116 @@ public interface ContainerContext extends SlotInfoProvider, ContainerSync, Conta
         if (pos == null) return null;
         if (level.getBlockEntity(pos) instanceof Container c) return c;
         return null;
+    }
+
+    // ==================== 一步整栈移动（I-C12，2026-11-03） ====================
+    //
+    // 三个方法构成「同容器精确位移」的最小能力。设计稿见 buffer/move-api-minimal.md。
+    // 与 SlotAccessor 的分工：**共享数量内核，不共享入口** —— SlotAccessor 服务传输引擎
+    // 的跨容器/过滤器场景，这里服务同容器精确位移（活塞）。不要为复用把后者拖进装饰器体系。
+
+    /**
+     * 预检查：目标槽能否<b>完整接收整栈</b>（准入 + 容量）。<b>不改任何状态</b>。
+     *
+     * <p>{@link #moveStack} 执行时仍会重新验证 —— 预检与执行之间容器可能已被改动。</p>
+     */
+    default boolean canAcceptAll(int to, ItemStack stack) {
+        if (!isValidSlot(to) || stack.isEmpty()) return false;
+        return simulateInsertItem(to, stack) >= stack.getCount();
+    }
+
+    /**
+     * 一步整栈移动：把 {@code from} 槽的全部物品移到 {@code to} 槽。
+     *
+     * <p><b>语义</b>：整栈、不拆数量、不合并（目标必须为空）。成功时
+     * {@code Success.moved} 恒等于操作开始时的源栈数量。</p>
+     *
+     * <p><b>不变量（I-C12）</b>：成功时两式同时成立 ——</p>
+     * <pre>
+     * after(from) == before(from) - moved
+     * after(to)   == before(to)   + moved
+     * </pre>
+     * <p>⇒ 写目标后<b>必须回读核验</b>，核验通过才清源；源清不掉则撤销目标（防复制）。
+     * 这不是防御性编程，是 `I-C12` 的判据：只核验目标增量不替代核验源扣减。</p>
+     *
+     * <p><b>不发布中间状态</b>：{@link ContainerSync#syncSlotToClients} 在 tick 内只登记脏槽，
+     * 真正发包在 tick 末的 {@code flushDirtySlots}（读最终值）⇒ 调用方在单 tick 内完成动作即可。</p>
+     *
+     * @param from 源槽（逻辑槽号）
+     * @param to   目标槽（逻辑槽号）
+     */
+    default MoveResult moveStack(int from, int to) {
+        if (!isValidSlot(from) || !isValidSlot(to) || from == to) {
+            return new MoveResult.Rejected(MoveResult.Reason.INVALID_ADDRESS);
+        }
+        ItemStack source = getItem(from);
+        if (source.isEmpty()) {
+            return new MoveResult.Rejected(MoveResult.Reason.SOURCE_EMPTY);
+        }
+        ItemStack target = getItem(to);
+        if (!target.isEmpty()) {
+            return new MoveResult.Rejected(MoveResult.Reason.TARGET_OCCUPIED);
+        }
+        int amount = source.getCount();
+        if (!canAcceptAll(to, source)) {
+            // 无法区分「准入拒绝」与「容量不足」时统一报这档，不猜（见 MoveResult.Reason）
+            return new MoveResult.Rejected(MoveResult.Reason.TARGET_INSUFFICIENT);
+        }
+
+        // ① 写目标（整栈覆盖，走 I-C3 的 setStackInSlot 路径，不被整库重定向挪槽）
+        setItem(to, source.copy());
+        ItemStack afterTarget = getItem(to);
+        if (!ItemStack.matches(afterTarget, source)) {
+            setItem(to, target);   // 目标恢复原状（通常是空）
+            return new MoveResult.BackendViolation(
+                "目标写入不符：期望 " + amount + "，实际 " + afterTarget.getCount());
+        }
+
+        // ② 核验通过后才清源；源清不掉 ⇒ 撤销目标，绝不留下「两份」
+        setItem(from, ItemStack.EMPTY);
+        ItemStack afterSource = getItem(from);
+        if (!afterSource.isEmpty()) {
+            setItem(to, target);
+            return new MoveResult.BackendViolation(
+                "源槽未能清空（残留 " + afterSource.getCount() + "）—— 已撤销目标写入");
+        }
+
+        syncSlotToClients(from, afterSource);
+        syncSlotToClients(to, afterTarget);
+        return new MoveResult.Success(amount, new UndoToken(from, to, source, target, amount));
+    }
+
+    /**
+     * 撤销一步移动（{@link #moveStack} 的逆操作）。
+     *
+     * <p><b>先校验、后恢复</b>：只有当两槽仍处于本步的<b>预期结果</b>时才执行，
+     * 否则返回 {@code false} 且<b>不覆盖</b>。</p>
+     *
+     * <p>⚠️ <b>不能假设「同 tick 内没人动过」</b>（2026-11-03 活塞侧指出）：setter 会同步触发
+     * 监听器，第三方逻辑可能响应并改变内容。校验不能省，也不能简化成「反正没人动」。</p>
+     *
+     * @return true = 已恢复到移动前状态；false = 未恢复（状态已被改动 / 地址失效 / 恢复后校验失败）
+     */
+    default boolean undo(UndoToken token) {
+        if (token == null) return false;
+        int from = token.from();
+        int to = token.to();
+        if (!isValidSlot(from) || !isValidSlot(to)) return false;
+
+        ItemStack expectedSource = token.expectedSourceAfter();
+        ItemStack expectedTarget = token.expectedTargetAfter();
+        if (!ItemStack.matches(getItem(from), expectedSource)
+                || !ItemStack.matches(getItem(to), expectedTarget)) {
+            return false;   // 已被第三方改动 ⇒ 不覆盖（覆盖等于第二次破坏）
+        }
+
+        setItem(from, token.sourceBefore().copy());
+        setItem(to, token.targetBefore().copy());
+
+        boolean restored = ItemStack.matches(getItem(from), token.sourceBefore())
+                        && ItemStack.matches(getItem(to), token.targetBefore());
+        syncSlotToClients(from, getItem(from));
+        syncSlotToClients(to, getItem(to));
+        return restored;
     }
 }
