@@ -160,6 +160,7 @@ public class LivingItem {
         com.qiqi.li.living.domain.power.PowerComponents.REG.register(modEventBus);
         com.qiqi.li.living.domain.power.PowerComponents.ATTACH_REG.register(modEventBus);
         com.qiqi.li.living.domain.redstone.RedstoneComponents.REG.register(modEventBus);
+        com.qiqi.li.living.domain.piston.PistonComponents.REG.register(modEventBus);
         com.qiqi.li.living.domain.tools.ToolComponents.REG.register(modEventBus);
         com.qiqi.li.living.domain.beacon.BeaconComponents.REG.register(modEventBus);
         NeoForge.EVENT_BUS.register(this);
@@ -293,6 +294,7 @@ public class LivingItem {
         SpongeRegistration.register();     // 活海绵（第一段骨架：组件 + 注册，吸收随第二段）
         TntRegistration.register();        // 含活打火石（点燃规则的归属见该类注释）
         RedstoneRegistration.register();
+        com.qiqi.li.living.domain.piston.PistonRegistration.register();   // 活活塞（仅片段线格式；功能未全局启用）
         PowerRegistration.register();
         FarmlandRegistration.register();
         ToolRegistration.register();

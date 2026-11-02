@@ -1,4 +1,4 @@
-package com.qiqi.li.living.domain.redstone.piston;
+package com.qiqi.li.living.domain.piston;
 
 import java.util.Objects;
 
