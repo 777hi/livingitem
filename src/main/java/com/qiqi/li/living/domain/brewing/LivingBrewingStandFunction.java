@@ -281,27 +281,55 @@ public class LivingBrewingStandFunction implements LivingItemFunction, HasDirect
             && BrewingRecipes.isIngredient(brewing, ingredient);
     }
 
-    /** 瓶子槽准入：非空 + **非活物品**（活物品作瓶子会被 {@code mix} 原地转化掉）。 */
+    /**
+     * I-C13：本功能的**操作单元** = 每槽 1 瓶。
+     *
+     * <p>原版酿造台的每个瓶子槽只放 1 瓶（药水 {@code stacksTo(1)}），而超大堆叠容器
+     * （抽屉 / 堆叠升级）能让一个槽放多瓶 —— 此时 {@code mix} 仍只返回 1 瓶，
+     * 若整槽覆盖就会把其余几瓶**静默吃掉**（实测：槽内 3 瓶 ⇒ 剩 1 瓶，丢 2 瓶）。</p>
+     *
+     * <p>⇒ 超出单元就<b>整槽不操作</b>，不做标准之外的事。常量而非推导值：
+     * 从容器推导会让行为随容器变化，而这是玩法口径。</p>
+     */
+    static final int OPERABLE_BOTTLES = 1;
+
+    /**
+     * 瓶子槽准入：非空 + **非活物品**（活物品作瓶子会被 {@code mix} 原地转化掉）
+     * + **堆叠数不超过操作单元**（I-C13）。
+     *
+     * <p>⚠️ 这一条同时是「启动判断」({@link #isBrewable}) 与「执行」({@link #doBrew})
+     * 的唯一准入 ⇒ 改这里两头一起生效：超标时既不启动（不烧燃料、不推进进度），
+     * 也不在完成时动那个槽。</p>
+     */
     static boolean isEligibleBottle(ItemStack bottle) {
-        return !bottle.isEmpty() && !LivingItemManager.isLivingItem(bottle);
+        return !bottle.isEmpty()
+            && !LivingItemManager.isLivingItem(bottle)
+            && bottle.getCount() <= OPERABLE_BOTTLES;
     }
 
     /**
      * 完成一个批次（照抄原版 {@code doBrew}）：转化最多 3 瓶 + 扣 1 份材料。
      *
      * <p>空瓶与无关物品都<b>安全</b> —— {@code mix} 对它们原样返回（见 {@link BrewingRecipes#brew}）。</p>
+     *
+     * <p>⭐ <b>没有产出就不扣材料</b>（I-C13）：准入与执行共用 {@link #isEligibleBottle}，
+     * 正常情况下不会出现「全部跳过」；但酿造进行中玩家往瓶子槽塞第 2 瓶，
+     * 会让原本可酿的槽在完成瞬间变得不合格 ⇒ 若仍无条件 {@code consumeOne}，
+     * 材料被扣而一瓶未成 = 「操作单元与写回粒度不一致」的另一种形态（白扣）。</p>
      */
     private static void doBrew(PotionBrewing brewing, ContainerContext context,
                                int[] bottleSlots, int ingredientSlot) {
         if (ingredientSlot < 0) return;
         ItemStack ingredient = context.getItem(ingredientSlot);
+        int brewed = 0;
         for (int bottleSlot : bottleSlots) {
             if (bottleSlot < 0) continue;
             ItemStack bottle = context.getItem(bottleSlot);
-            if (!isEligibleBottle(bottle)) continue;   // 空槽 / 活物品 ⇒ 不转化（活物品会被 mix 原地改掉）
+            if (!isEligibleBottle(bottle)) continue;   // 空槽 / 活物品 / 超堆叠 ⇒ 不转化
             context.setItem(bottleSlot, BrewingRecipes.brew(brewing, ingredient, bottle));
+            brewed++;
         }
-        consumeOne(context, ingredientSlot);
+        if (brewed > 0) consumeOne(context, ingredientSlot);
     }
 
     /**

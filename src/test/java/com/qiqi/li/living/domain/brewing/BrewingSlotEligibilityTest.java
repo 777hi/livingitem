@@ -9,6 +9,7 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -47,6 +48,30 @@ class BrewingSlotEligibilityTest {
         assertTrue(LivingBrewingStandFunction.isEligibleBottle(new ItemStack(Items.GLASS_BOTTLE)),
             "准入只判「非空 + 非活物品」；空玻璃瓶是否可酿由 hasMix 决定（原版语义）");
         assertFalse(LivingBrewingStandFunction.isEligibleBottle(ItemStack.EMPTY), "空槽不算瓶子");
+    }
+
+    // ── I-C13 操作单元（2026-11-03）────────────────────────────────
+
+    @Test
+    @DisplayName("I-C13 操作单元：槽内超过 1 瓶 ⇒ 整槽不操作（否则 mix 只返 1 瓶、整槽覆盖丢物）")
+    void stackedBottlesExceedOperableUnit() {
+        // 原版药水 stacksTo(1)，但超大堆叠容器（抽屉 / 堆叠升级）能让一槽放多瓶。
+        // mix 只返回 1 瓶 ⇒ 若整槽覆盖，槽内 3 瓶会变成 1 瓶，静默丢 2 瓶。
+        assertFalse(LivingBrewingStandFunction.isEligibleBottle(new ItemStack(Items.POTION, 2)),
+            "2 瓶超出操作单元（1 瓶/槽）⇒ 整槽不酿");
+        assertFalse(LivingBrewingStandFunction.isEligibleBottle(new ItemStack(Items.POTION, 3)),
+            "3 瓶同理（实测就是这一档丢 2 瓶）");
+        assertTrue(LivingBrewingStandFunction.isEligibleBottle(new ItemStack(Items.POTION, 1)),
+            "恰好 1 瓶仍在单元内 ⇒ 照常可酿（普通容器的常态，不得回归）");
+    }
+
+    @Test
+    @DisplayName("I-C13 单元是常量而非容器推导：与槽位上限无关")
+    void operableUnitIsConstant() {
+        // 即使某个容器报告 getSlotLimit = 512，也不代表「能一次酿 512 瓶」——
+        // 单元是玩法口径（原版酿造台每槽 1 瓶），不是容器容量。
+        assertEquals(1, LivingBrewingStandFunction.OPERABLE_BOTTLES,
+            "单元常量必须是 1；改成从容器推导会让行为随容器漂移");
     }
 
     @Test

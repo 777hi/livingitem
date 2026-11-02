@@ -173,7 +173,7 @@ src/test/java/com/qiqi/li/
 │   └── LivingFarmlandPlacementTest.java     # 放置回世界·落点/幼苗/客户端/异常不冒泡+端到端接线
 ├── living/domain/brewing/
 │   ├── BrewingBatchLogicTest.java             # 批次状态机·启动/完成/作废两判据/堆叠倍率/批次标记生命周期(Start 写·Continue 保持·Complete·Abort·**Idle 自愈**)
-│   ├── BrewingSlotEligibilityTest.java        # 槽位准入隔离规则·活物品不作瓶子/材料/燃料
+│   ├── BrewingSlotEligibilityTest.java        # 槽位准入隔离规则·活物品不作瓶子/材料/燃料 + **I-C13 操作单元**·槽内 >1 瓶整槽不酿 / 单元是常量非容器推导
 │   ├── BrewingMaterialConsumeTest.java        # 材料消耗(consumeOne)·⭐龙息不整栈替换回归/空栈变玻璃瓶/并入未满堆/容器满丢弃/空槽 no-op
 │   └── LivingBrewingStandDataTest.java        # 数据组件 codec·旧数据(只有direction)可解码/往返保留 fuel 与 brew_start_tick/withBrewStart 隔离改字段/默认即移除锚点
 ├── living/domain/furnace/
