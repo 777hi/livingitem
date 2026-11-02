@@ -42,6 +42,8 @@ class ContainerMoveStackTest {
         final ItemStack[] slots;
         final int[] limits;
         final boolean oversize;
+        /** 只出不进的槽（{@code extractItem} 恒 EMPTY）—— 用于钉住 I-C12 的「抽取权限」维度。 */
+        final java.util.Set<Integer> noExtractSlots = new java.util.HashSet<>();
 
         LimitedHandler(int... limits) {
             this(false, limits);
@@ -84,6 +86,7 @@ class ContainerMoveStackTest {
 
         @Override
         public ItemStack extractItem(int slot, int amount, boolean simulate) {
+            if (noExtractSlots.contains(slot)) return ItemStack.EMPTY;   // 只出不进的槽
             ItemStack existing = slots[slot];
             if (existing.isEmpty()) return ItemStack.EMPTY;
             int toExtract = Math.min(amount, existing.getCount());
@@ -96,6 +99,50 @@ class ContainerMoveStackTest {
             ItemStack remainder = stack.copy();
             remainder.shrink(inserted);
             return remainder.isEmpty() ? ItemStack.EMPTY : remainder;
+        }
+    }
+
+    /**
+     * 只实现 {@code IItemHandler}（<b>不</b>实现 {@code Modifiable}）—— 没有 {@code setStackInSlot}。
+     *
+     * <p>用于钉住 {@code Unsupported} 与 {@code BackendViolation} 的区分：
+     * 前者是「重试永远不会成功」，后者是「说能写却没写对」。混在一起会让排查走错方向。</p>
+     */
+    private static class PlainHandler implements net.neoforged.neoforge.items.IItemHandler {
+        final ItemStack[] slots;
+
+        PlainHandler(int size) {
+            this.slots = new ItemStack[size];
+            for (int i = 0; i < size; i++) slots[i] = ItemStack.EMPTY;
+        }
+
+        @Override public int getSlots() { return slots.length; }
+        @Override public ItemStack getStackInSlot(int slot) { return slots[slot]; }
+        @Override public int getSlotLimit(int slot) { return 64; }
+        @Override public boolean isItemValid(int slot, ItemStack stack) { return true; }
+
+        @Override
+        public ItemStack insertItem(int slot, ItemStack stack, boolean simulate) {
+            if (stack.isEmpty()) return ItemStack.EMPTY;
+            ItemStack existing = slots[slot];
+            if (existing.isEmpty()) {
+                int toInsert = Math.min(stack.getCount(), 64);
+                if (!simulate) slots[slot] = stack.copyWithCount(toInsert);
+                ItemStack rest = stack.copy();
+                rest.shrink(toInsert);
+                return rest.isEmpty() ? ItemStack.EMPTY : rest;
+            }
+            return stack;
+        }
+
+        @Override
+        public ItemStack extractItem(int slot, int amount, boolean simulate) {
+            ItemStack existing = slots[slot];
+            if (existing.isEmpty()) return ItemStack.EMPTY;
+            int toExtract = Math.min(amount, existing.getCount());
+            ItemStack result = existing.copyWithCount(toExtract);
+            if (!simulate) slots[slot].shrink(toExtract);
+            return result;
         }
     }
 
@@ -179,6 +226,38 @@ class ContainerMoveStackTest {
         assertEquals(500, ctx.getItem(0).getCount(), "一个都没搬走");
         assertTrue(ctx.getItem(1).isEmpty(), "目标没收到东西");
         assertEquals(500, total(ctx), "总量守恒");
+    }
+
+    @Test
+    @DisplayName("I-C12 抽取权限：源槽「只出不进」⇒ SOURCE_NOT_EXTRACTABLE（容量与准入都通过也不搬）")
+    void rejectsUnextractableSource() {
+        LimitedHandler h = new LimitedHandler(64, 64);
+        h.slots[0] = new ItemStack(Items.REDSTONE, 32);
+        h.noExtractSlots.add(0);          // 有货、装得下、准入通过 —— 但不允许抽取
+        SimpleContainerContext ctx = new SimpleContainerContext(h);
+
+        MoveResult result = ctx.moveStack(0, 1);
+
+        assertEquals(MoveResult.Reason.SOURCE_NOT_EXTRACTABLE,
+            assertInstanceOf(MoveResult.Rejected.class, result).reason(),
+            "只查容量与准入不够：抽取权限是第三维");
+        assertEquals(32, ctx.getItem(0).getCount(), "源槽一个都没少");
+        assertTrue(ctx.getItem(1).isEmpty(), "目标没收到东西");
+    }
+
+    @Test
+    @DisplayName("后端不支持精确写入 ⇒ Unsupported（不是 BackendViolation）")
+    void reportsUnsupportedWhenNoExactWrite() {
+        PlainHandler h = new PlainHandler(2);
+        h.slots[0] = new ItemStack(Items.REDSTONE, 32);
+        SimpleContainerContext ctx = new SimpleContainerContext(h);
+
+        MoveResult result = ctx.moveStack(0, 1);
+
+        assertEquals(MoveResult.Reason.EXACT_WRITE_UNSUPPORTED,
+            assertInstanceOf(MoveResult.Unsupported.class, result).reason(),
+            "无 setStackInSlot ⇒ 重试永远不会成功，不能说成「后端违约」");
+        assertEquals(32, ctx.getItem(0).getCount(), "状态未变");
     }
 
     @Test

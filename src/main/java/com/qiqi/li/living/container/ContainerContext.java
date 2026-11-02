@@ -334,6 +334,27 @@ public interface ContainerContext extends SlotInfoProvider, ContainerSync, Conta
     // 的跨容器/过滤器场景，这里服务同容器精确位移（活塞）。不要为复用把后者拖进装饰器体系。
 
     /**
+     * 移动成功后的通知钩子 —— 实现方据此把 {@code from} / {@code to} 登记进本 tick 的
+     * 「已移动槽」集合（见 {@code TickContext#movedSlots}）。
+     *
+     * <p>默认空实现：不参与 tick 编排的上下文（测试替身 / 无 TickContext）不需要登记。</p>
+     *
+     * <p>⭐ <b>为什么必须登记</b>：扫描阶段的槽→物品映射在移动之后已经过期。
+     * 不登记 ⇒ 同 tick 内后续功能仍按旧 entry 操作那个槽（对着空槽执行），
+     * 或读到属于上一台机器的运行时数据。</p>
+     */
+    default void onSlotsMoved(int from, int to) { }
+
+    /**
+     * 这个槽在本 tick 内是否被移动过 —— 用于让旧信息（SlotEntry / runtime）失效。
+     *
+     * <p>默认 {@code false}（没有 tick 概念的上下文永远「没被移动」）。</p>
+     */
+    default boolean isSlotMovedThisTick(int slot) {
+        return false;
+    }
+
+    /**
      * 预检查：目标槽能否<b>完整接收整栈</b>（准入 + 容量）。<b>不改任何状态</b>。
      *
      * <p>{@link #moveStack} 执行时仍会重新验证 —— 预检与执行之间容器可能已被改动。</p>
@@ -376,6 +397,16 @@ public interface ContainerContext extends SlotInfoProvider, ContainerSync, Conta
             return new MoveResult.Rejected(MoveResult.Reason.TARGET_OCCUPIED);
         }
         int amount = source.getCount();
+
+        // I-C12 三维度必须逐维回答：容量（canAcceptAll 内含准入）+ 抽取权限 + 写入能力。
+        // ⚠️ 漏掉抽取权限 = 把「只进不出」的槽（输出槽 / 过滤槽）里的货搬走；
+        //    漏掉写入能力判别 = 把「永远不可能成功」说成「后端违约」，排查方向全错。
+        if (!supportsExactWrite(from) || !supportsExactWrite(to)) {
+            return new MoveResult.Unsupported(MoveResult.Reason.EXACT_WRITE_UNSUPPORTED);
+        }
+        if (simulateExtractItem(from, amount) < amount) {
+            return new MoveResult.Rejected(MoveResult.Reason.SOURCE_NOT_EXTRACTABLE);
+        }
         if (!canAcceptAll(to, source)) {
             // 无法区分「准入拒绝」与「容量不足」时统一报这档，不猜（见 MoveResult.Reason）
             return new MoveResult.Rejected(MoveResult.Reason.TARGET_INSUFFICIENT);
@@ -401,6 +432,7 @@ public interface ContainerContext extends SlotInfoProvider, ContainerSync, Conta
 
         syncSlotToClients(from, afterSource);
         syncSlotToClients(to, afterTarget);
+        onSlotsMoved(from, to);
         return new MoveResult.Success(amount, new UndoToken(from, to, source, target, amount));
     }
 
@@ -435,6 +467,7 @@ public interface ContainerContext extends SlotInfoProvider, ContainerSync, Conta
                         && ItemStack.matches(getItem(to), token.targetBefore());
         syncSlotToClients(from, getItem(from));
         syncSlotToClients(to, getItem(to));
+        if (restored) onSlotsMoved(from, to);   // 撤销同样是移动 ⇒ 旧信息同样过期
         return restored;
     }
 }

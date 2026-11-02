@@ -399,6 +399,45 @@ public class SimpleContainerContext implements TickableContainerContext {
     }
 
     /**
+     * 抽取权限的权威判定：走 {@code extractItem(slot, n, true)}。
+     *
+     * <p>这是 `I-C12` 第三维（抽取权限）的唯一可靠来源 —— 输出槽 / 过滤槽的
+     * 「有货但不让拿」只有它知道；只看 {@code getItem().getCount()} 会把不该动的货搬走。</p>
+     */
+    @Override
+    public int simulateExtractItem(int slot, int amount) {
+        if (slot < 0 || slot >= handler.getSlots() || amount <= 0) return 0;
+        ItemStack existing = handler.getStackInSlot(slot);
+        if (existing.isEmpty()) return 0;
+        int want = Math.min(amount, existing.getCount());
+        return handler.extractItem(slot, want, true).getCount();
+    }
+
+    /**
+     * 精确写入能力：{@code setStackInSlot} 存在才算。
+     *
+     * <p>⚠️ 不能用「{@code writeBackViaExtractInsert} 也能写」当理由：那条回退路径
+     * 依赖第三方 {@code extractItem} / {@code insertItem} 的老实程度，成功率不由我们决定
+     * ⇒ 对「精确移动」语义而言等同于不支持（`I-C3` / `I-C7` 的立场）。</p>
+     */
+    @Override
+    public boolean supportsExactWrite(int slot) {
+        return handler instanceof net.neoforged.neoforge.items.IItemHandlerModifiable;
+    }
+
+    @Override
+    public void onSlotsMoved(int from, int to) {
+        if (currentTickContext == null) return;
+        currentTickContext.movedSlots.add(from);
+        currentTickContext.movedSlots.add(to);
+    }
+
+    @Override
+    public boolean isSlotMovedThisTick(int slot) {
+        return currentTickContext != null && currentTickContext.movedSlots.contains(slot);
+    }
+
+    /**
      * 槽位体系一致性探针（Q6 批次 B，2026-10-04）—— 两级判据已迁至
      * {@link ContainerContexts#isSameSlotSpace}（边界带共享内核），此处保留薄委托。
      *

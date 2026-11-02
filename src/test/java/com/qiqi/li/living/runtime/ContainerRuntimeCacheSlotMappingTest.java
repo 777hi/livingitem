@@ -2,6 +2,7 @@ package com.qiqi.li.living.runtime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -75,5 +76,22 @@ class ContainerRuntimeCacheSlotMappingTest {
 
         assertEquals(ContainerRuntimeCache.get(ctx.getContainerKey(), 2),
             ContainerRuntimeCache.get(ctx, 2));
+    }
+
+    @Test
+    @DisplayName("清空后 drainDirty 必须下发空快照 —— 否则客户端残留幽灵状态")
+    void drainDirtyEmitsEmptySnapshotAfterClear() {
+        FakeContainerContext ctx = new FakeContainerContext(9, 3);
+        ContainerRuntimeCache.update(ctx, 2, segments(100));
+        ContainerRuntimeCache.drainDirty();   // 先排空首次脏，模拟「客户端已收到数据」
+
+        // 最后一个槽位作废 ⇒ store 里连外层键都被删掉
+        ContainerRuntimeCache.removeSlot(ctx.getContainerKey(), 2);
+        var dirty = ContainerRuntimeCache.drainDirty();
+
+        assertTrue(dirty.containsKey(ctx.getContainerKey()),
+            "2026-11-03 修：原先 `if (snapshot.isEmpty()) continue` 跳过它 "
+                + "⇒ 客户端永远显示「容器里已经没有活物品了，但 tooltip 的运行数据还在」");
+        assertTrue(dirty.get(ctx.getContainerKey()).isEmpty(), "下发的是空快照（客户端据此清屏）");
     }
 }

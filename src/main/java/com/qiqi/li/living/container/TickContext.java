@@ -59,6 +59,25 @@ public class TickContext {
     public final Set<Integer> dirtySlots = new HashSet<>();
 
     /**
+     * 本 tick 内被<b>移动</b>过的槽（源与目标都算）—— 由 {@code moveStack} 登记。
+     *
+     * <p>用途两条，都关于「本 tick 剩余时间里这些槽的旧信息不可信」：</p>
+     * <ol>
+     *   <li><b>旧 {@code SlotEntry} 重验</b>：扫描阶段拿到的槽→物品映射，在活塞把设备
+     *       从 A 移到 B 之后已经过期。继续按旧 entry 操作 = <b>对着空槽执行</b>
+     *       （或对着别人的货执行）。被移动过的槽本 tick 直接跳过，下 tick 重新扫描。</li>
+     *   <li><b>runtime 失效消费前移</b>：{@code ContainerRuntimeCache} 的作废原先只在
+     *       tick 末尾由 {@code trackLivingSlots} 比对得出 ⇒ 同 tick 内后续功能读到的仍是
+     *       <b>上一台机器的</b>燃料 / 进度 / 机械态。读侧改查本集合 ⇒ 作废在<b>消费之前</b>生效。</li>
+     * </ol>
+     *
+     * <p>⚠️ 为什么不复用 {@link #transferredTargetSlots}：那个是传输引擎的<b>级联防护</b>标记
+     * （「这格已被搬过，别再搬回去」），语义是「别再动」；本集合的语义是「旧信息不可信，
+     * 但下 tick 照常」。混用会让级联防护误跳正常槽位。</p>
+     */
+    public final Set<Integer> movedSlots = new HashSet<>();
+
+    /**
      * tick 级数据的统一存储（1a-4）。
      * 容器级持久 key 的数据存在 {@code ContainerEntry.store}（跨 tick），
      * 这里只放 tick 级的（如应力）；读取统一走 {@link #data(ContainerDataKey)}。

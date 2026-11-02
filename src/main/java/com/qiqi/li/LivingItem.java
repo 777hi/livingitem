@@ -752,6 +752,37 @@ public class LivingItem {
     @SubscribeEvent
     public void onContainerOpen(PlayerContainerEvent.Open event) {
         com.qiqi.li.living.transfer.ContainerLayoutLearner.onContainerOpen(event);
+        sendRuntimeSnapshotOnOpen(event);
+    }
+
+    /**
+     * 首包：打开容器时<b>立即</b>下发该容器已有的运行时快照。
+     *
+     * <p><b>为什么需要</b>：运行时数据只在「变化」时进脏集合并发包
+     * （{@code drainDirty} → {@code LivingItemRuntimeSync.flush}）。对稳态容器
+     * （活塞缩回后不再动、熔炉烧完后停住）<b>不会再产生脏数据</b>
+     * ⇒ 玩家打开容器时客户端拿到的是空缓存，看不到已有状态
+     * —— 活塞的伸出态、熔炉的剩余燃料都会「打开界面才消失」。
+     * 这个入口原先存在但<b>无调用者</b>（{@code sendSnapshotToPlayer} 的注释写着
+     * 「保留给打开容器立即显示」），这里把它接上。</p>
+     *
+     * <p>⚠️ 空快照不发（{@code sendSnapshotToPlayer} 内的早退）：容器没有运行时数据时
+     * 客户端本来也没有；「曾经有、现在被清空」的清理由 {@code drainDirty} 负责
+     * （2026-11-03 修：那里原先跳过空快照 ⇒ 客户端残留幽灵状态）。</p>
+     */
+    private static void sendRuntimeSnapshotOnOpen(PlayerContainerEvent.Open event) {
+        if (!(event.getEntity() instanceof net.minecraft.server.level.ServerPlayer player)) return;
+        var menu = event.getContainer();
+        // 按 E 看自己背包时 menu == inventoryMenu（没有容器槽可言）
+        if (menu == null || menu == player.inventoryMenu) return;
+        for (var slot : menu.slots) {
+            var ctx = com.qiqi.li.living.container.ContainerContexts.resolve(player, slot);
+            if (ctx == null) continue;
+            String key = ctx.getCacheKey();
+            if (key == null) continue;
+            com.qiqi.li.network.LivingItemRuntimeSync.sendSnapshotToPlayer(key, player);
+            return;   // 一个菜单只对应一个容器，发一次即可
+        }
     }
 
     @SubscribeEvent

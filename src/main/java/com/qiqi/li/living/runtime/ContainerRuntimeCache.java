@@ -122,6 +122,14 @@ public class ContainerRuntimeCache {
      */
     public static RuntimeSegments get(com.qiqi.li.living.container.ContainerContext ctx, int logicalSlot) {
         if (ctx == null) return RuntimeSegments.EMPTY;
+
+        // ⭐ 作废在「消费之前」生效（2026-11-03，TickContext#movedSlots）：
+        // 原先作废只在 tick 末尾由 trackLivingSlots 比对槽位变化得出 ⇒ 活塞把设备从 A 移到 B
+        // 之后，**同 tick 内**后续功能读 B 时拿到的仍是「上一台机器」的燃料 / 进度 / 机械态
+        // ⇒ 新设备凭空继承旧状态（例如刚搬来的活熔炉直接带着别人的燃烧进度）。
+        // 读侧先查「本 tick 被移动过」⇒ 立刻返回空段，与 tick 末尾的作废殊途同归。
+        if (ctx.isSlotMovedThisTick(logicalSlot)) return RuntimeSegments.EMPTY;
+
         String containerKey = ctx.getCacheKey() != null ? ctx.getCacheKey() : ctx.getContainerKey();
         if (containerKey == null) return RuntimeSegments.EMPTY;
         return get(containerKey, ctx.toPhysicalSlot(logicalSlot));
@@ -172,9 +180,12 @@ public class ContainerRuntimeCache {
 
         Map<String, Map<Integer, RuntimeSegments>> out = new LinkedHashMap<>();
         for (String containerKey : flushed) {
-            Map<Integer, RuntimeSegments> snapshot = getSnapshot(containerKey);
-            if (snapshot.isEmpty()) continue;
-            out.put(containerKey, snapshot);
+            // ⚠️ **空快照必须下发**（2026-11-03 修）：容器被清空（最后一个槽位作废）时
+            // 客户端仍持有旧数据 —— 原先这里 `if (snapshot.isEmpty()) continue;` 直接跳过
+            // ⇒ 客户端永远显示幽灵状态（容器里已经没有活物品了，tooltip 的运行数据还在）。
+            // 只有「曾经有数据、现在被清空」的容器才会走到这里（removeSlot 会登记脏），
+            // 从未有过数据的容器不会进 dirtyContainers ⇒ 不会无谓发空包。
+            out.put(containerKey, getSnapshot(containerKey));
         }
         return out;
     }

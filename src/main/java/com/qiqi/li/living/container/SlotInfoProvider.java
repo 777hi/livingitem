@@ -60,6 +60,39 @@ public interface SlotInfoProvider extends LivingContainer {
     }
 
     /**
+     * 模拟从槽位<b>取出</b>：这个槽允不允许被拿走、最多能拿多少。<b>不改任何状态</b>。
+     *
+     * <p>⭐ 这是 `I-C12` 的<b>第三维「抽取权限」</b> —— 它与「容量」「准入」是三件不同的事：
+     * 一个「只进不出」的槽（输出槽 / 过滤槽）容量充足、准入通过，但<b>不允许抽取</b>。
+     * 只查前两维就搬 ⇒ 把不该动的货搬走。</p>
+     *
+     * <p>默认实现退化为「槽里有多少就能拿多少」—— 对没有抽取限制的实现是正确的；
+     * 有过滤 / 只进不出的实现（{@code IItemHandler}）必须覆写，走
+     * {@code handler.extractItem(slot, n, true)}。</p>
+     *
+     * @param slot   槽位索引
+     * @param amount 期望取出的最大数量
+     * @return 实际可取出数量（0 = 不允许抽取）
+     */
+    default int simulateExtractItem(int slot, int amount) {
+        return Math.min(amount, getItem(slot).getCount());
+    }
+
+    /**
+     * 这个槽是否支持<b>精确写入</b>（把指定内容写到指定槽，不被整库重定向）。
+     *
+     * <p>用于 {@code moveStack} 的 {@code Unsupported} 判别：后端不支持精确写入时，
+     * 移动<b>必然失败</b>，报 {@code Unsupported}（重试永远不会成功）而不是
+     * {@code BackendViolation}（那是「说能写却没写对」）。两者混在一起会让排查走错方向。</p>
+     *
+     * <p>默认 {@code true}（抽象层默认按精确写入对待）；{@code SimpleContainerContext}
+     * 覆写为「handler 是否实现 {@code IItemHandlerModifiable}」。</p>
+     */
+    default boolean supportsExactWrite(int slot) {
+        return true;
+    }
+
+    /**
      * 获取容器的列数（GUI 宽度）—— **没有默认值，必须由实现者回答**。
      *
      * <p>用于槽位解析时计算行列位置（邻居判定 / 流体 / 应力 / 红石 / 信标列扫描 /

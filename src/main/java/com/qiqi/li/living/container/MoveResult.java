@@ -56,6 +56,8 @@ public sealed interface MoveResult {
         /** 目标不能完整接收整栈；无法区分准入与容量时也报这档。 */
         TARGET_INSUFFICIENT,
         /** 越界 / 源目标相同 / 槽号非法。 */
-        INVALID_ADDRESS
+        INVALID_ADDRESS,
+        /** 后端不支持精确写入（无 {@code setStackInSlot}）—— 只用于 {@link Unsupported}。 */
+        EXACT_WRITE_UNSUPPORTED
     }
 }

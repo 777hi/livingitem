@@ -56,7 +56,7 @@ src/test/java/com/qiqi/li/
 ├── living/components/
 │   └── ContainerUuidsTest.java                # 容器 UUID 读写门面（2026-10-22，活背包）·懒创建幂等（跨 GUI 开合进度不重置）/ofItem 无副作用/复制 remove 范式给副本新身份/strip 空栈与 null 安全/宿主侧 null 安全/keyOf 与 containerUuidOf 互逆且 kindOf=ITEM_FORM/cuuid_ 不被误认世界方块 + **discard 剥 UUID 且删数据/退化输入安全** + **哨兵（全零 UUID）翻译成 null/懒创建写真身份可回读**
 ├── living/container/
-│   ├── ContainerMoveStackTest.java             # **I-C12 一步整栈移动 + 安全撤销**·整栈不拆/超大栈一次搬完（抽屉 512）/目标被占拒绝/整栈放不进拒绝（不搬一部分）/源空/地址非法 + **撤销两槽一起**（只恢复源会复制）/撤销前校验（第三方改动 ⇒ 不覆盖）/撤销后守恒 + canAcceptAll 纯预检
+│   ├── ContainerMoveStackTest.java             # **I-C12 一步整栈移动 + 安全撤销**·整栈不拆/超大栈一次搬完（抽屉 512）/目标被占拒绝/整栈放不进拒绝（不搬一部分）/源空/地址非法 + **抽取权限第三维**（只出不进的槽 ⇒ SOURCE_NOT_EXTRACTABLE）/后端无 setStackInSlot ⇒ Unsupported 非 BackendViolation + **撤销两槽一起**（只恢复源会复制）/撤销前校验（第三方改动 ⇒ 不覆盖）/撤销后守恒 + canAcceptAll 纯预检
 │   ├── EnderChestContextTest.java              # 末影箱锚点口径（2026-10-27 定案「存放处」D-container-18）·getAnchor 必须显式为 null（默认实现经 getOwnerPlayer 退化成 AtPlayer ⇒ K2 当玩家宿主上报 ⇒ 两端不同源）/ 非物品形态 ⇒ hostAnchor 恒 null、hostSlot=-1
 │   ├── ContainerLayoutResolverTest.java        # 共同布局链·子类禁止替换流程/实例先于内建/规则学习家族启发式顺序/多宿主规则优先/首容器回落/家族子类/现取与结果复用/掉落物同链
 │   ├── ContainerMenuInfosTest.java             # 当前菜单宿主信息·空容器/背包/状态分离/来源同源/真实无MenuType驴菜单反查/无类型方块与未知菜单分开/末影箱固定布局及改容量不误套

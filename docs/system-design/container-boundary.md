@@ -383,8 +383,11 @@
 - **禁止「先写目标、再无条件清源」**：目标写不进去时源已经清了。
   实测（2026-11-01）：抽屉 500 个 → 上限 64 的普通槽，源清空、目标只收 64 ⇒ **丢 436**。
 
-**现状**：⏳ 流体推动已做「目标侧回读 + 只扣实际量」（`ContainerFluidConservationTest`），
-**源侧核验未做**；其余搬运点（漏斗 / 末影箱 / 活箱子 insert）未按本判据审计。
+**现状**：✅ **`moveStack` 已三维度齐备**（2026-11-03）：容量 / 准入（`canAcceptAll`）、
+抽取权限（`simulateExtractItem`，权威走 `extractItem(…, true)`）、两侧回读核验；
+后端无 `setStackInSlot` ⇒ `Unsupported` 而非 `BackendViolation`。
+⏳ 流体推动只做了「目标侧回读 + 只扣实际量」（`ContainerFluidConservationTest`），
+**源侧核验与抽取权限未做**；其余搬运点（漏斗 / 末影箱 / 活箱子 insert）未按本判据审计。
 
 ---
 

@@ -782,7 +782,22 @@ public class ContainerLivingItemHandler {
         boolean droppedItem = context instanceof ItemEntityContainerContext;
         for (var entry : grouped.entrySet()) {
             if (droppedItem && !entry.getKey().supportsDroppedItem()) continue;
-            entry.getKey().tick(entry.getValue(), context, tick, level);
+
+            // ⭐ 旧 SlotEntry 执行前重验（2026-11-03，TickContext#movedSlots）：
+            // 扫描阶段拿到的「槽 → 物品」映射，在活塞把设备从 A 移到 B 之后已经过期。
+            // 继续按旧 entry 操作 = 对着空槽执行（或对着别人的货执行）——
+            // 前者白跑，后者更糟：会以「那台机器」的语义去改另一件物品的状态。
+            // 被移动过的槽本 tick 直接跳过，下 tick 重新扫描即可（1 tick 延迟，代价可忽略）。
+            List<LivingItemFunction.SlotEntry> entries = entry.getValue();
+            if (!tick.movedSlots.isEmpty()) {
+                List<LivingItemFunction.SlotEntry> effective = new ArrayList<>(entries.size());
+                for (LivingItemFunction.SlotEntry se : entries) {
+                    if (!tick.movedSlots.contains(se.slotIndex())) effective.add(se);
+                }
+                if (effective.isEmpty()) continue;
+                entries = effective;
+            }
+            entry.getKey().tick(entries, context, tick, level);
         }
     }
 
