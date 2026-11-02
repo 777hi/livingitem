@@ -86,9 +86,18 @@ public final class LivingItemRuntimeSync {
     }
 
     /**
-     * 向指定玩家直接发送某容器的运行时快照（初始打开容器时的补发入口）。
+     * 向指定玩家直接发送某容器的运行时快照 —— <b>打开容器时的首包</b>。
      *
-     * <p>当前<b>无调用者</b>：保留给「打开背包/容器立即显示」的即时性补发。</p>
+     * <p>调用点：{@code LivingItem#sendRuntimeSnapshotOnOpen}（{@code PlayerContainerEvent.Open}）。</p>
+     *
+     * <p>⭐ <b>2026-11-03 接线</b>：此前<b>无调用者</b>（注释写着「保留给打开容器立即显示」），
+     * 而运行时数据只在<b>变化</b>时进脏集合发包 ⇒ 稳态容器（活塞缩回后不再动、
+     * 熔炉烧完停住）不会再产生脏数据 ⇒ 玩家打开界面时客户端拿到的是空缓存，
+     * 看不到已有状态（「打开界面才消失」）。</p>
+     *
+     * <p>⚠️ 空快照不发（本方法内的早退）：容器没有运行时数据时客户端本来也没有；
+     * 「曾经有、现在被清空」的清理由 {@code ContainerRuntimeCache#drainDirty} 负责
+     * —— 那里 2026-11-03 才修掉「跳过空快照 ⇒ 客户端残留幽灵状态」。</p>
      */
     public static void sendSnapshotToPlayer(String containerKey, ServerPlayer player) {
         Map<Integer, RuntimeSegments> snapshot = ContainerRuntimeCache.getSnapshot(containerKey);

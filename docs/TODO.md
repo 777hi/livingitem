@@ -218,6 +218,13 @@
    与 `LivingEnderChestAccessor:519`（玩家背包/末影箱，64 正确）、`FluidTransformTable:181`
    与 `WaterRegistration:93`（规则判定不是容量）。
 
+3. **执行顺序与 API 契约 §1.3 不一致**（2026-11-03 活塞侧复查发现，**既有问题**）——
+   实际按**槽扫描遭遇序**执行功能，而契约写的是 **manager 序**（按 `getTickPriority` 排序）。
+   影响：新增功能时 tick 内的相对顺序无法从契约推断，只能从注册代码反推 ——
+   这正是「顺序需要显式声明」当初要解决的问题，现在只解决了一半（声明了，但没按它排）。
+   修法待定：要么改契约承认遭遇序，要么在扫描后按 priority 稳定排序。
+   ⚠️ 与活塞无关（活塞已声明 priority），属容器编排层的既有欠账。
+
    **落地顺序**（契约 → API → 门禁，不可反）：先按本节 2 修存量；
    再给 `ContainerContext` 加 `transform(slot, maxUnit, fn)` / `produce(slot, stack, n)` /
    `move(from, to, n)`；最后写 `check_stack_ops.py` 把存量违规冻结成棘轮基线。

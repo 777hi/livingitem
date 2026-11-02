@@ -1,11 +1,13 @@
 package com.qiqi.li.living.container;
 
+import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.Container;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.attachment.IAttachmentHolder;
+import org.slf4j.Logger;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -33,6 +35,15 @@ import java.util.List;
  * @see TickContext Tick 级临时状态
  */
 public interface ContainerContext extends SlotInfoProvider, ContainerSync, ContainerIdentity {
+
+    /**
+     * 回滚专用日志 —— 只在「恢复失败」时用。
+     *
+     * <p>回滚失败意味着<b>物品已经不一致</b>（通常表现为复制），必须留痕：
+     * {@code I-C6}「降级必须可观测」，{@code I-C7}「不得静默继续」。
+     * 与 {@code SlotAccessor.ROLLBACK_LOGGER} 同族，但入口不同（那边是传输引擎的兜底）。</p>
+     */
+    Logger ROLLBACK_LOGGER = LogUtils.getLogger();
 
     default boolean isValidSlot(int logicalSlot) {
         return logicalSlot >= 0 && logicalSlot < getSize();
@@ -327,6 +338,27 @@ public interface ContainerContext extends SlotInfoProvider, ContainerSync, Conta
         return null;
     }
 
+    /**
+     * 回滚一个槽到期望内容，并<b>校验回滚本身</b>。
+     *
+     * <p>⭐ 为什么回滚也要校验：后端在「写入」上违约时，<b>回滚同样是写入</b>
+     * ⇒ 它也可能失败。失败后槽里留着不该有的东西，表现通常是<b>物品复制</b>，
+     * 而且完全静默。{@code BackendViolation} 已经是"出了事"，但"出事之后连补救都没成"
+     * 必须升级为可见的 ERROR（`I-C6` / `I-C7`）。</p>
+     *
+     * <p>⚠️ 到这里已经无法自动恢复（后端不老实是外部原因）—— 目标是<b>丢必留痕</b>，
+     * 让排查者知道"哪一格、期望什么、实际什么"，而不是"物品莫名其妙多了"。</p>
+     */
+    static void rollbackSlot(ContainerContext ctx, int slot, ItemStack expected, String why) {
+        ctx.setItem(slot, expected);
+        ItemStack actual = ctx.getItem(slot);
+        if (!ItemStack.matches(actual, expected)) {
+            ROLLBACK_LOGGER.error(
+                "moveStack 回滚失败（{}）：槽位 {} 期望 {}，实际 {} —— 可能已复制，需人工核查",
+                why, slot, expected, actual);
+        }
+    }
+
     // ==================== 一步整栈移动（I-C12，2026-11-03） ====================
     //
     // 三个方法构成「同容器精确位移」的最小能力。设计稿见 buffer/move-api-minimal.md。
@@ -416,7 +448,8 @@ public interface ContainerContext extends SlotInfoProvider, ContainerSync, Conta
         setItem(to, source.copy());
         ItemStack afterTarget = getItem(to);
         if (!ItemStack.matches(afterTarget, source)) {
-            setItem(to, target);   // 目标恢复原状（通常是空）
+            rollbackSlot(this, to, target, "目标写入不符（期望 " + amount + "，实际 "
+                + afterTarget.getCount() + "）");
             return new MoveResult.BackendViolation(
                 "目标写入不符：期望 " + amount + "，实际 " + afterTarget.getCount());
         }
@@ -425,7 +458,7 @@ public interface ContainerContext extends SlotInfoProvider, ContainerSync, Conta
         setItem(from, ItemStack.EMPTY);
         ItemStack afterSource = getItem(from);
         if (!afterSource.isEmpty()) {
-            setItem(to, target);
+            rollbackSlot(this, to, target, "源槽未能清空（残留 " + afterSource.getCount() + "）");
             return new MoveResult.BackendViolation(
                 "源槽未能清空（残留 " + afterSource.getCount() + "）—— 已撤销目标写入");
         }
@@ -465,6 +498,13 @@ public interface ContainerContext extends SlotInfoProvider, ContainerSync, Conta
 
         boolean restored = ItemStack.matches(getItem(from), token.sourceBefore())
                         && ItemStack.matches(getItem(to), token.targetBefore());
+        if (!restored) {
+            // 回滚也是写入 ⇒ 它同样可能失败。失败 = 链没能恢复，必须留痕（I-C6 / I-C7）
+            ROLLBACK_LOGGER.error(
+                "undo 恢复失败：from={} 期望 {} 实际 {}；to={} 期望 {} 实际 {}",
+                from, token.sourceBefore(), getItem(from),
+                to, token.targetBefore(), getItem(to));
+        }
         syncSlotToClients(from, getItem(from));
         syncSlotToClients(to, getItem(to));
         if (restored) onSlotsMoved(from, to);   // 撤销同样是移动 ⇒ 旧信息同样过期

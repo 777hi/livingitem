@@ -88,7 +88,20 @@ public class TickContext {
 
     private final ContainerContext ctx;
     private ContainerSnapshot _snapshot = ContainerSnapshot.EMPTY;
-    private boolean snapshotBuilt = false;
+
+    /**
+     * 上次构建快照时的容器修订号 —— 与 {@link #_snapshot} 配对。
+     *
+     * <p>⚠️ 原先是 {@code boolean snapshotBuilt}：<b>首建后本拍再也不看修订号</b>
+     * ⇒ tick 内把红石元件推走之后，当拍的红石场 / 流体 / 应力仍按<b>旧布局</b>算一次。
+     * 下拍快照重建即自愈，所以只是一拍瞬态 —— 但压送落地后，stale 快照会让漏斗过滤
+     * 多旧一拍，欠账会滚进新玩法（活塞侧 2026-11-03 复查指出）。</p>
+     *
+     * <p>⚠️ 注意 {@code ContainerLivingItemHandler#getCachedSnapshot} <b>本来就按 revision
+     * 缓存</b>（{@code cachedSnapshotRevision == revision} 才复用）—— 这层 boolean 把
+     * 正确的重建逻辑遮住了。删掉它即恢复注释所述行为，不需要新增 refresh API。</p>
+     */
+    private long _snapshotRevision = Long.MIN_VALUE;
 
     public TickContext(ContainerContext ctx) {
         this.ctx = ctx;
@@ -132,10 +145,13 @@ public class TickContext {
      * 仅当容器修订计数相对上次构建变化时才重建，否则复用缓存的同一快照。
      */
     public ContainerSnapshot getSnapshot() {
-        if (!snapshotBuilt) {
-            long rev = ContainerLivingItemHandler.getContainerRevision(ctx);
+        // ⭐ 每拍都看修订号（2026-11-03 修缝 3）：tick 内移动 / 改槽会让 revision 变化
+        // ⇒ 必须重建，否则后续容器级计算按旧布局跑一拍。
+        // 稳态下 revision 不变 ⇒ 只多一次 O(1) 的读，不重建。
+        long rev = ContainerLivingItemHandler.getContainerRevision(ctx);
+        if (rev != _snapshotRevision) {
             _snapshot = ContainerLivingItemHandler.getCachedSnapshot(ctx, rev, this);
-            snapshotBuilt = true;
+            _snapshotRevision = rev;
         }
         return _snapshot;
     }

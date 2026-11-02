@@ -3,6 +3,8 @@ package com.qiqi.li.living.container;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.DisplayName;
@@ -318,6 +320,40 @@ class ContainerMoveStackTest {
         assertEquals(before, total(ctx), "移动后守恒");
         assertTrue(ctx.undo(success.undo()));
         assertEquals(before, total(ctx), "撤销后仍守恒");
+    }
+
+    // ── 缝 3：tick 内快照陈旧（2026-11-03）────────────────────────
+
+    @Test
+    @DisplayName("缝 3：本拍移动后快照必须重建（否则红石/流体/应力按旧布局跑一拍）")
+    void snapshotRebuiltAfterMoveInSameTick() {
+        LimitedHandler h = new LimitedHandler(64, 64);
+        h.slots[0] = new ItemStack(Items.REDSTONE, 1);
+        SimpleContainerContext ctx = new SimpleContainerContext(h);
+
+        TickContext tick = new TickContext(ctx);
+        ContainerSnapshot before = tick.getSnapshot();   // 首次：惰性建 entry，revision=0
+
+        assertInstanceOf(MoveResult.Success.class, ctx.moveStack(0, 1));
+
+        ContainerSnapshot after = tick.getSnapshot();
+        assertNotSame(before, after,
+            "移动后本拍必须重建 —— 原 snapshotBuilt 首建后不再看修订号，"
+                + "把 getCachedSnapshot 本就正确的按-revision 重建遮住了");
+    }
+
+    @Test
+    @DisplayName("缝 3 反面：无变化时复用同一实例（不是每拍重建，稳态零成本）")
+    void snapshotReusedWhenNothingChanged() {
+        LimitedHandler h = new LimitedHandler(64, 64);
+        h.slots[0] = new ItemStack(Items.REDSTONE, 1);
+        SimpleContainerContext ctx = new SimpleContainerContext(h);
+
+        TickContext tick = new TickContext(ctx);
+        ContainerSnapshot first = tick.getSnapshot();
+        ContainerSnapshot second = tick.getSnapshot();
+
+        assertSame(first, second, "修订号没变就不该重建");
     }
 
     // ── 预检 ────────────────────────────────────────────────────
