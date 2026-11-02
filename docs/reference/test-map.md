@@ -122,6 +122,10 @@ src/test/java/com/qiqi/li/
 │   ├── ContainerRedstoneBoundaryTest.java     # 边界采样自反馈守卫（2026-10-27 审查 P1）·双箱两半共用账本 ⇒ 朝另一半查到 this 曾把自己对面 face 输出读回对侧输入（东边拉杆隔空压灭西边火把）/ 邻居是自己 ⇒ 保持世界信号 / 无账本·无朝向邻居 ⇒ 原样（mockStatic 邻居查询）
 │   ├── ContainerRedstoneDataTest.java         # 红石信号传播引擎·直接驱动 calculate/**空容器(存储格 0)⇒ 直接跳过，不拿 0 当除数**
 │   └── ContainerRedstoneIntegrationTest.java  # 红石**驱动链路**端到端（走真实 processContext）·自维持注册/守卫放行消费者/守卫拦截无关容器(零开销)/残留归零/prio 顺序
+├── living/domain/redstone/piston/
+│   ├── PistonChainResolverTest.java             # 活塞只读有界解析·四方向值相等/N货物+N+1接收候选/漏斗本体不提前接管/空格截断/边缘与不完整末行/零宽拒绝/计划列表不可变
+│   ├── PistonActionsTest.java                   # 活塞调用真实moveStack/undo·整链一格/整栈组件与超大数量守恒/拒收后逆序撤销/违约与undo失败留痕/候选不假交付/粘性争同源或同目标先成功得整栈
+│   └── PistonControllerTest.java                # 活塞机械决策·成功保持/失败重试/普通断电收回/粘性拉失败仍收回/改向复位不补拉/方向按值比较/数量不参与运行态有效性/缓存丢失允许有电新周期
 ├── living/domain/power/
 │   ├── SignalTrackerRestartTest.java          # A5 停机重启语义（2026-10-28 定案）·上升沿间隔超失活窗口 ⇒ 旧周期作废、恢复沿只当新起点 / 第二个沿重新锁相 / 正常改频（未超窗口）EMA 照常跟随 / 快照回填续接不受误伤
 │   ├── PhaseDataMigrationChestSplitTest.java  # A6 拆半清相位（2026-10-28 定案）·双箱拆半 ⇒ 存活半相位快照附件清为 EMPTY（旧锁相不得经回填复活）/ 单箱·非箱子不触发

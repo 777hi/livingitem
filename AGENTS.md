@@ -147,7 +147,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1340 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
+**合计测试用例 1401 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -172,15 +172,15 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-11-03 | ✅ **活活塞首批独立逻辑：解析、推拉编排与状态迁移 +49测试** —— 只调用框架moveStack/undo；游戏tick、方向组件、压送及渲染尚未接入，不宣称可游戏使用 | [活活塞.md](docs/buffer/活活塞.md) §7.8.1 · [test-map.md](docs/reference/test-map.md) |
+| 2026-11-03 | 📋 **活活塞 v1.11：删除压送自动补位，未实现** —— 只交付原末端栈，送空留空、后方不动；补位预演 / 撤销 / 协调整套删除，普通推拉不变 | [活活塞.md](docs/buffer/活活塞.md) §2.6.3 / §7 |
+| 2026-11-03 | 📋 **活活塞 v1.10：实施前蓝图，未实现** —— 接线 / 新增 / 必改分开；精确移动、后端覆盖与新API仍待定，补阶段验收与落地同步表 | [活活塞.md](docs/buffer/活活塞.md) §7 |
+| 2026-11-02 | 📋 **活活塞 v1.9：玩法收口，实施核验中** —— 伸出态运行时、方向配置随物品；复位不补拉，粘性争抢先成功者得整栈；未实现 | [活活塞.md](docs/buffer/活活塞.md) §6 / §7 |
+| 2026-11-02 | 📋 **活活塞 v1.8：接收端与补位边界定案，未实现** —— 数量定角色、名单等级自动化；末影只直连不路由；交付与补位独立，槽位拒收不撤销交付，流体准入另题 | [活活塞.md](docs/buffer/活活塞.md) §2.2 / §2.6 / §6 |
+| 2026-11-02 | 📋 **活活塞 v1.7：漏斗挤牙膏压送定案，未实现** —— 锁定只停主动取料、压送无视冷却；实际交付判成功，送空才补位；无线与多段边界待探讨 | [活活塞.md](docs/buffer/活活塞.md) §2.6 / §6 |
+| 2026-11-02 | 📋 **活活塞设计稿 v1.6：基础玩法收口** —— 堆叠数 = 最大链长、整链每次前移一格、仅同容器；失败可重试、拉失败也收回；三维伸缩与执行分离，生命周期仍待探讨，未实现 | [活活塞.md](docs/buffer/活活塞.md) §0 / §5 / §6 |
 | 2026-11-02 | ✅ **活海绵第三段落地：唯一能力面 + GUI 汲 + §10 退役执行（三段全完）** —— `SpongeItemFluidHandler`（ITEM 判活化）：一堆一罐、充 = 内核 distribute / 排 = withdraw / **汲 = withdrawCeil（整单位交付，floor 会让桶凭空得差额）**、报账口径规则 12；GUI 汲 `living_sponge_draw`（服务端权威重验 + 客户端组件直接判定）；**退役执行**：删 `ContainerFluidHandler` 类 / BLOCK 宽注册 / 其测试 9 项 / 能力存在性边沿机器（power 侧保留），`getOrCreate` 迁入 `ContainerFluidData`，fluid tech §10 改「已执行」、TODO #7 关账；`RepresentativeFluids` 上移 util（R3）。守卫 `SpongeFluidRoundTripTest` 9 项（净迁移无凭空产生 + 往返 ×25 零漂移）。测试 1326→1325（−9 +9 −1）；§7 反馈层同批（双态变体 JSON 引原版纹理 + 流体叠加装饰器 + tooltip） | `domain/sponge/SpongeItemFluidHandler` · `docs/tech/living-fluid-tech.md` §10 · `docs/tech/living-sponge-tech.md` §11 |
 | 2026-11-02 | 🐞 **电力层同类排查：`BulbItemEnergyStorage.extractEnergy` 同患 floor 缩水 + 双重尘销毁，改 `withdrawCeil`（流体同款内核）** —— 7 盏非整除总量抽 499 实得 498；尘留账不销毁（对外视图 = 空灯）。排查未修：容器级 extract 本来就是 ceil（2026-09-09 战争产物）；receive 小请求死区仅理论存在（ITEM 路径单栈复现不了）。守卫 +⑦⑧⑨。测试 1336→1339 | `BulbItemEnergyStorage#extractEnergy` · `PerItemLedger#withdrawCeil` · `docs/tech/living-sponge-tech.md` §8.2 #8 |
-| 2026-11-02 | 🐞 **⑭ 修复：floor 排出三连炸（7 堆存 1 桶后机械动力管道抽不出）** —— ① 交付量随请求逐次缩水 ② SIMULATE ≠ EXECUTE ③ 尾差沉成「显示 1mB 抽不出」卡死尘 + 空返回销毁 994mmB。修：排出侧唯一口径 = **ceil**（`withdrawCeil`，GUI 汲同款；floor `withdraw` 删）——交付 = 决定交付的整 mB 分毫不差，实扣 ≥ 交付，残余尘 <1mB 隐身留账。守卫 +⑩ 实测场景 +⑪ 模拟/实做一致；充入侧对偶检查无同类 bug（+⑫⑬⑭：报账封顶 / 全域扫描无死区 / 尘区收敛）。测试 1331→1336 | `PerItemLedger#withdrawCeil` · `SpongeItemFluidHandler#drainBy` · `docs/tech/living-sponge-tech.md` §8.2 #8 |
-| 2026-11-02 | ✅ **⑭ 海绵垫起的容器级流体能力（用户实测反馈拍板：旧活流体管道角色由活海绵接棒）** —— 管道直连「放了活海绵的容器」抽 / 灌：BLOCK 宽注册 + 「有活海绵才发实例」（§10.4 判据）+ 边沿钩子（翻转 ⇒ invalidateCapabilities 精确一次）；**暴露的是海绵存量（封闭缓冲），源网络仍不暴露（规则 7 不破）**；抽灌全委托 `SpongeItemFluidHandler`（均分内核单源）；罐 = 每活海绵堆一罐，**干 = 空罐可灌装**（首测「有湿才暴露」灌不进空弹匣，对照真实储罐语义修正）。测试 1325→1331（容器能力 6 项） | `domain/sponge/SpongeContainerFluidHandler` · `docs/tech/living-sponge-tech.md` §2.3 ⑭ |
-| 2026-11-02 | ✅ **活海绵第二段落地：记账内核抽出 + 四邻吸收（设计稿 v1.6 §5 第二段）** —— `PerItemLedger`（living/util L1）：「按枚定点均分记账」纯函数，`BulbBank.deposit` 改调（行为等价，跨堆零头回收不搬；`RoundTripConservationIT` 回归绿）；`LivingSpongeFunction.tick` 按 §2.2：节拍门 gameTime 锁相 5t + `resolveNeighbor` 四邻逐格独立 + 逐源原子停拍；删源走新契约 **`FluidSourceLedger`**（living/api L0，FluidPresence 姊妹契约）——sponge 不 import water，**R3 域间保持零边**。🔴 测试按住真 bug：干海绵首口「withFluid→withMmB」两步 wither 被不变量归一回干态 ⇒ **源被吃一滴不存**（守恒事故），改单次构造（fluid 与新 mmB 同步）。测试 1311→1326（内核 6 + 吸收 9） | `living/util/PerItemLedger` · `domain/sponge/` · `docs/tech/living-sponge-tech.md` §11 |
-| 2026-11-01 | ✅ **活海绵第一段落地：域骨架 + 组件 + 注册（设计稿 v1.6 §5 第一段）** —— 新域 `domain/sponge/` 四件套：`SpongeComponents`（组件总线，PowerComponents 同款）+ `LivingSpongeData`（{fluid, mmB} record，干/湿不变量 record 紧凑构造器归一，CODEC 未知流体 id 归干态 = I-C6 同款宁损勿鬼，账本 long 容量 6.4e7 mmB/枚）+ `LivingSpongeFunction`（canApply = isLivingItem ∧ sponge；tick 空，吸收随第二段；`getOwnedComponentTypes` 声明归属 = 规则 9）+ `SpongeRegistration`；接线 `LivingItem`（组件总线 + 注册）。**不换物品 id**（原版 sponge + 组件）。测试 1304→1311（`LivingSpongeDataTest` 7 项：不变量 / 容量 long 域 / CODEC 湿·干·岩浆往返 / 未知流体降级 / wither 不可变）；check_layers / check_mixins / check_container_keys 绿 | `docs/tech/living-sponge-tech.md` §11 落地同步表 · `domain/sponge/` |
-| 2026-11-01 | 📋 **活海绵设计稿 v1.6：四邻制 + 形态定案** —— 吸收域从「BFS 一圈圈」改**上下左右四邻直吸**（逐格独立、异种邻居只跳过自己不挡其他邻居；无 BFS/深度，列数走既有 resolveNeighbor 算子 + 统一链；农场攻防变贴身战 ≥2 格）；**物品 id 不换**（湿/干 = 组件派生 + 图标变体，转化 = 写入边沿）、**熔炼配方不做**、放置不拦截；物品能力一堆一罐；快满逐源原子判定（装不下完整源即停拍）；`ContainerFluidHandler` 退役挪第三段（与能力注册同拍，免取水空窗）；**下界存储态不自干**（原版蒸发只挂「放置成方块」，物品在容器里无暴露面；杀手提水箱/下界机器供水玩法；下界倒水成源不做 parity = 接受的新玩法，TODO 活流体 #11）；补模板必填表 §9（生命周期/准入/横切/规则→守卫 15 条）。核对引擎两处事实（删源账本即时 / 零头回收是跨堆机制）。纯文档，未动代码与测试 | `docs/tech/living-sponge-tech.md` §2.2/§5/§9 · fluid tech §10 |
-| 2026-11-01 | 🐞 **流体搬运丢物（A1 未登记 + A2 已知）** —— 空槽路径不查容量 ⇒ 抽屉 500 搬进上限 64 的槽**丢 436**；合并按物品上限而非槽位上限 ⇒ **丢 48**。修：容量按 `getSlotLimit`（**不碰 `isItemValid`**，A3 定案不动）+ 写后回读只扣实际量。测试 1289→1293；抽 `move` 原语收敛 8~12 处调用点仍待办 | `docs/tech/living-fluid-tech.md` §3.3.2 · `ContainerFluidConservationTest` · TODO 活流体 ②③ |
-| 2026-11-01 | 🐞 **批次 3：GUI 存放分支一次手势只产生一个效果** —— ① `tryInteract` 成功后只 `setReturnValue(true)` 没 `return` ⇒ 落到存放分支叠两个效果；② 存放分支漏置 `skipNextRelease` ⇒ 释放阶段被原版再执行一次。判据 + 序列化发包收进 `client/input/LivingChestDepositHelper`（原先两个 mixin 各写一份，连三行发包都是复制的）。⚠️ 新增「按压阶段拦截」的两条硬约束写进 chest tech §4.3。测试 1282→1289；待实机 M-1/M-2 | `docs/tech/living-chest-tech.md` §4.3 · `LivingChestDepositHelper` · 计划批次 3 |
 ## 提交前必跑（2026-10-30 更新）
 
 ```bash

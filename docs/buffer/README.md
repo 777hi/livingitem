@@ -23,11 +23,12 @@
 | [gui-interaction-redesign.md](gui-interaction-redesign.md) | 第一、二步已实施（2026-10-10，见 §6 表 ✅）；步骤 3/4（活指针 | 2026-10-31 |
 | [living-tnt-explosion-design.md](living-tnt-explosion-design.md) | 未定案** —— 量化分析已完成 · 主设计已定稿（惰性谓词 + 纪元水印）· | 2026-10-31 |
 | [living-weapon-design.md](living-weapon-design.md) | 设计探讨层（buffer）。⚠️ 描述的是**计划 / 未决**，不是现状。 | 2026-10-31 |
+| [move-api-minimal.md](move-api-minimal.md) | 框架侧已实现（2026-11-03）**，等活塞接入验证后转稳定层。 | 2026-11-03 |
 | [open-plan.md](open-plan.md) | 部分落地** —— Q1/Q2 已拍板、A1/A2/D1/D2 已完成（D1 见 | 2026-10-31 |
 | [power-refactoring-plan.md](power-refactoring-plan.md) | 进行中** —— 步骤 1 ✅ · **步骤 4 第 1~5 刀 ✅** · | 2026-10-10 |
 | [redstone-evolution-roadmap.md](redstone-evolution-roadmap.md) | 路线图 —— §1 SensorPort 已完成；规划①③截至 2026-10- | 2026-10-31 |
 | [render-state-broadcast.md](render-state-broadcast.md) | 未定案**，本文只是形状提案，不是排期。 | 2026-10-26 |
-| [活活塞.md](活活塞.md) | 设计定稿**（跨容器推 §2.7 已设计——v1 范围待拍板 §5⑥） | 2026-10-31 |
+| [活活塞.md](活活塞.md) | 独立逻辑部分落地；游戏tick、压送与渲染未接入。 | 2026-10-31 |
 | [活滴水石锥.md](活滴水石锥.md) | 探讨中 —— 待拍板 7 项（§5）；本文是设计稿，不是现状。 | 2026-10-30 |
 | [活潜影箱实现细节.md](活潜影箱实现细节.md) | 探讨中 —— 活潜影箱**兼容所有活物品**（而非当前阶段已实现的活物品），本随 | 2026-10-28 |
 | [活物品大战僵尸.md](活物品大战僵尸.md) | 探讨中（2026-10-30 头脑风暴沉淀）。本文描述的全部机制均未实现，别当现 | 2026-10-31 |
