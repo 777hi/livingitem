@@ -71,7 +71,8 @@ public class PlainSlotAccessor implements SlotAccessor {
         }
 
         int maxStackSize = Math.min(slotLimit, targetStack.getMaxStackSize());
-        if (targetStack.is(stack.getItem()) && targetStack.getCount() < maxStackSize) {
+        if (ItemStack.isSameItemSameComponents(targetStack, stack)
+                && targetStack.getCount() < maxStackSize) {
             int space = maxStackSize - targetStack.getCount();
             int actual = Math.min(stack.getCount(), space);
             ItemStack grown = targetStack.copy();
@@ -94,7 +95,8 @@ public class PlainSlotAccessor implements SlotAccessor {
 
         int slotLimit = slotInfo.getSlotLimit(slot);
         int maxStackSize = Math.min(slotLimit, targetStack.getMaxStackSize());
-        if (targetStack.is(stack.getItem()) && targetStack.getCount() < maxStackSize) {
+        if (ItemStack.isSameItemSameComponents(targetStack, stack)
+                && targetStack.getCount() < maxStackSize) {
             int space = maxStackSize - targetStack.getCount();
             return Math.min(stack.getCount(), space);
         }

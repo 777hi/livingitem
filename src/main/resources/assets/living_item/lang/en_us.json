@@ -82,7 +82,6 @@
   "tooltip.livingitem.piston.force": "  §7Maximum chain: §e%d§7 slots§r",
   "tooltip.livingitem.piston.extended": "  §aExtended§r",
   "tooltip.livingitem.piston.retracted": "  §7Retracted§r",
-  "tooltip.livingitem.piston.integration_pending": "  §8In development: gameplay tick, pressure delivery and animation are not enabled§r",
   "tooltip.livingitem.repeater.title": "§6Living Repeater§r",
   "tooltip.livingitem.repeater.facing": "  §7Facing",
   "tooltip.livingitem.repeater.direction.up": "Up",

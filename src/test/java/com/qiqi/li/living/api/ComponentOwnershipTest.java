@@ -123,7 +123,8 @@ class ComponentOwnershipTest {
             new LivingWaterWheelFunction(),
             new LivingFlintAndSteelFunction(),
             new LivingSpongeFunction(),
-            new com.qiqi.li.living.domain.beacon.BeaconFunction()
+            new com.qiqi.li.living.domain.beacon.BeaconFunction(),
+            new com.qiqi.li.living.domain.piston.LivingPistonFunction()
         );
     }
 
@@ -142,7 +143,8 @@ class ComponentOwnershipTest {
     private static Map<DataComponentType<?>, String> componentTypes() {
         Map<DataComponentType<?>, String> out = new LinkedHashMap<>();
         for (Class<?> holder : List.of(LivingComponents.class, LivingItemManager.class,
-                com.qiqi.li.living.domain.beacon.BeaconComponents.class)) {
+                com.qiqi.li.living.domain.beacon.BeaconComponents.class,
+                com.qiqi.li.living.domain.piston.PistonComponents.class)) {
             for (Field f : holder.getFields()) {
                 if (!Modifier.isStatic(f.getModifiers()) || f.getType() != DeferredHolder.class) {
                     continue;

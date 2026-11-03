@@ -10,6 +10,8 @@ import org.junit.jupiter.api.Test;
 
 import com.qiqi.li.testutil.FakeContainerContext;
 
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
@@ -55,6 +57,24 @@ class PlainSlotAccessorTest {
         for (int i = 1; i < 9; i++) {
             assertTrue(ctx.getItem(i).isEmpty(), "不得把物品塞进其它槽(只报告日志)");
         }
+    }
+
+    @Test
+    @DisplayName("插入同物品不同组件:不得合并,模拟与真实均拒绝")
+    void insert_sameItemDifferentComponents_doesNotMerge() {
+        FakeContainerContext ctx = new FakeContainerContext(9, 9);
+        ItemStack existing = new ItemStack(Items.DIAMOND, 2);
+        existing.set(DataComponents.CUSTOM_NAME, Component.literal("kept apart"));
+        ctx.set(0, existing);
+        ItemStack incoming = new ItemStack(Items.DIAMOND, 3);
+        PlainSlotAccessor accessor = accessor(ctx);
+
+        assertEquals(0, accessor.simulateInsert(incoming));
+        assertEquals(0, accessor.insert(incoming));
+
+        assertEquals(2, ctx.getItem(0).getCount());
+        assertEquals("kept apart", ctx.getItem(0).get(DataComponents.CUSTOM_NAME).getString());
+        assertEquals(3, incoming.getCount(), "拒绝合并时来栈不得变化");
     }
 
     @Test

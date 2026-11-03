@@ -87,6 +87,7 @@ javadoc 明写「新增 LivingItemFunction 必须回来手添」⇒ **第三方�
 | 可选接口 `HasDirection` / `HasContainerData` | `living/api/` | ✅ 新增活物品无需改核心文件 |
 | 可选接口 `RouteRegistrar`（标记） | `living/api/` | ✅（2026-11-01）实现者的槽位可作跨容器路由注册方（当前活漏斗）；路由表按能力自查注册方是否离场，不 import 注册方域 |
 | `TransferTargetPolicies.register` | `living/transfer/` | ✅（2026-11-01）传输目标接管策略：目标槽在 canPlaceItem 模拟之后、Accessor 级分发的「改目的地」语义（形状对齐 `SlotInteractions`；两者分发阶段不可互换） |
+| `MechanicalReceivers.register` | `living/transfer/` | ✅（2026-11-03）机械施压接收端：共享层提供原始本体源 + 实际交付量 q，领域只认中立请求；首个 matches 独占（返回0也不回落）。当前实现者：活漏斗；common setup 注册，按类去重 |
 | `SlotInteractions.register` | `SlotInteractions.java` | ⚠️ public，但全仓仅 1 处调用（内置静态块）——**从未被外部验证** |
 | `LivingIconRegistry.register` | `LivingIconRegistry.java` | ⚠️ public，但内置调用时机在 mod 构造函数，无时序契约 |
 | 可选钩子 `onActivated` / `onDeactivated` | `living/api/LivingItemFunction.java` | ✅ default 空实现，契约见 §1.5（2026-10-04）—— ⚠️ 与其它钩子不同，它**有守卫测试**（`ActivationHookTest`） |
@@ -98,6 +99,7 @@ javadoc 明写「新增 LivingItemFunction 必须回来手添」⇒ **第三方�
 | 扩展点 | 实际时机 |
 |---|---|
 | `registerFunction` | `FMLCommonSetupEvent` |
+| `MechanicalReceivers.register` | `FMLCommonSetupEvent`（各领域 `*Registration.register`；按实现类去重） |
 | `SlotInteractions.register` | **静态块** |
 | `LivingIconRegistry.registerAll` | **mod 构造函数** |
 

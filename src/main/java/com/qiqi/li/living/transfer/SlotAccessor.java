@@ -108,6 +108,21 @@ public interface SlotAccessor {
     /**
      * 统一的传输执行逻辑：模拟优先模式。
      *
+     * <p>布尔入口保留给只关心“是否发生传输”的调用方；数量口径统一由
+     * {@link #transferAmount(SlotAccessor, SlotAccessor, int)} 提供。</p>
+     *
+     * @param source 源槽位访问器
+     * @param target 目标槽位访问器
+     * @param amount 最大传输数量
+     * @return 是否成功传输
+     */
+    static boolean transfer(SlotAccessor source, SlotAccessor target, int amount) {
+        return transferAmount(source, target, amount) > 0;
+    }
+
+    /**
+     * 统一的传输执行逻辑：模拟优先模式。
+     *
      * <p>流程：</p>
      * <ol>
      *   <li>模拟提取：检查源能提供多少物品（不实际移除）</li>
@@ -116,49 +131,60 @@ public interface SlotAccessor {
      *   <li>rollback 仅作为安全兜底</li>
      * </ol>
      *
-     * <p>适用于所有 SlotAccessor 组合（普通×普通、普通×活箱子、邻居×邻居等）。</p>
+     * <p>返回值只认目标 {@link #insert(ItemStack)} 报告的真实插入量；模拟容量只决定
+     * 本轮最多提取多少。目标少收时，未插入部分仍回滚到源槽。</p>
      *
      * @param source 源槽位访问器
      * @param target 目标槽位访问器
      * @param amount 最大传输数量
-     * @return 是否成功传输
+     * @return 目标实际插入数量（已限制在本轮真实提取量内）
      */
-    static boolean transfer(SlotAccessor source, SlotAccessor target, int amount) {
+    static int transferAmount(SlotAccessor source, SlotAccessor target, int amount) {
         if (source.isEmpty() || target.isFull()) {
-            return false;
+            return 0;
         }
 
         ItemStack simulated = source.simulateExtract(amount);
         if (simulated.isEmpty()) {
-            return false;
+            return 0;
         }
 
         int canAccept = target.simulateInsert(simulated);
         if (canAccept <= 0) {
-            return false;
+            return 0;
         }
 
         int toExtract = Math.min(canAccept, simulated.getCount());
         ItemStack extracted = source.extract(toExtract, null);
         if (extracted.isEmpty()) {
-            return false;
+            return 0;
         }
 
         int before = extracted.getCount();
-        int inserted = target.insert(extracted);
+        int remainingBefore = before;
+        int reportedInserted = target.insert(extracted);
+        int remainingAfter = Math.max(0, Math.min(extracted.getCount(), remainingBefore));
+        int actualInserted = remainingBefore - remainingAfter;
+        // 目标契约的权威事实是传入栈被改成余量；返回值只作违约诊断，不能拿谎报量扣源。
+        if (reportedInserted != actualInserted) {
+            ROLLBACK_LOGGER.warn("SlotAccessor insert report mismatch: reported={} actual={} (source={}, target={}, item={})",
+                reportedInserted, actualInserted, source.getClass().getSimpleName(), target.getClass().getSimpleName(),
+                extracted.getItem());
+        }
+        int inserted = actualInserted;
         if (inserted <= 0) {
-            ROLLBACK_LOGGER.warn("SlotAccessor rollback: insert returned 0 after simulateInsert said {} (source={}, target={}, item={})",
-                canAccept, source.getClass().getSimpleName(), target.getClass().getSimpleName(),
+            ROLLBACK_LOGGER.warn("SlotAccessor rollback: insert returned {} after simulateInsert said {} (source={}, target={}, item={})",
+                reportedInserted, canAccept, source.getClass().getSimpleName(), target.getClass().getSimpleName(),
                 extracted.getItem());
             source.rollback(extracted.copyWithCount(before));
-            return false;
+            return 0;
         }
 
-        int remainderCount = Math.max(0, before - Math.min(inserted, before));
+        int remainderCount = remainingAfter;
         if (remainderCount > 0) {
             ItemStack leftover = extracted.copyWithCount(remainderCount);
             ROLLBACK_LOGGER.warn("SlotAccessor rollback: partial insert simulated={} actual={} leftover={} (source={}, target={}, item={})",
-                canAccept, inserted, remainderCount, source.getClass().getSimpleName(), target.getClass().getSimpleName(),
+                canAccept, reportedInserted, remainderCount, source.getClass().getSimpleName(), target.getClass().getSimpleName(),
                 extracted.getItem());
             source.rollback(leftover);
         }
@@ -166,6 +192,6 @@ public interface SlotAccessor {
         target.markTransferred();
         source.sync();
         target.sync();
-        return true;
+        return inserted;
     }
 }

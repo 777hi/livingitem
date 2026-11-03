@@ -15,6 +15,7 @@ import com.qiqi.li.living.model.Pos2D;
 import com.qiqi.li.living.runtime.ContainerRuntimeCache;
 import com.qiqi.li.living.runtime.LivingItemClientCache;
 import com.qiqi.li.living.runtime.RuntimeSegments;
+import com.qiqi.li.living.transfer.MechanicalReceivers;
 
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.network.chat.Component;
@@ -24,7 +25,7 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
 
-/** 普通推拉的功能适配器；框架接缝验收前不加入全局功能注册。 */
+/** 活活塞功能适配器：同容器推拉，并通过机械接收端口交付链尾本体。 */
 public final class LivingPistonFunction implements LivingItemFunction, HasDirection {
 
     public static final String ID = "living_piston";
@@ -62,8 +63,7 @@ public final class LivingPistonFunction implements LivingItemFunction, HasDirect
 
             boolean success = switch (transition.action()) {
                 case NONE -> false;
-                case PUSH -> PistonActions.push(context,
-                    PistonChainResolver.resolve(context, slot, direction, stack.getCount())).success();
+                case PUSH -> executePush(context, tick, level, slot, direction, stack.getCount());
                 case PULL -> PistonActions.pull(context, slot, direction).success();
             };
             PistonRuntime next = PistonController.complete(transition, success);
@@ -71,6 +71,24 @@ public final class LivingPistonFunction implements LivingItemFunction, HasDirect
                 ContainerRuntimeCache.update(context, slot, segments.with(PistonSegment.INSTANCE, next));
             }
         }
+    }
+
+    private static boolean executePush(ContainerContext context, TickContext tick, Level level,
+                                       int pistonSlot, Pos2D direction, int force) {
+        PistonPlan plan = PistonChainResolver.resolve(context, pistonSlot, direction, force);
+        if (!(plan instanceof PistonPlan.Receiver receiver)) {
+            return PistonActions.push(context, plan).success();
+        }
+        if (receiver.cargoSlots().isEmpty()) return false;
+        int sourceSlot = receiver.cargoSlots().getLast();
+        int before = context.getItem(sourceSlot).getCount();
+        int delivered = MechanicalReceivers.receive(context, level, tick, sourceSlot,
+            receiver.receiverSlot(), direction);
+        if (delivered <= 0) return false;
+        if (before > 0 && context.getItem(sourceSlot).isEmpty()) {
+            tick.movedSlots.add(sourceSlot);   // 本体送空 ⇒ 旧设备条目/runtime 本拍立即失效
+        }
+        return true;
     }
 
     @Override
@@ -118,6 +136,5 @@ public final class LivingPistonFunction implements LivingItemFunction, HasDirect
             tooltipAdder.accept(Component.translatable(state.extended()
                 ? "tooltip.livingitem.piston.extended" : "tooltip.livingitem.piston.retracted"));
         }
-        tooltipAdder.accept(Component.translatable("tooltip.livingitem.piston.integration_pending"));
     }
 }

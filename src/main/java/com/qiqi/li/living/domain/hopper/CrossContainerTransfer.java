@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import com.qiqi.li.living.container.ContainerContext;
+import com.qiqi.li.living.container.ContainerContexts;
 import com.qiqi.li.living.container.TickContext;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -130,6 +131,46 @@ public final class CrossContainerTransfer {
         }
 
         return false;
+    }
+
+    /**
+     * 机械压送的世界邻居出口 —— 复用面候选与能力查询，但不经过主动货物隔离、施肥交互或路由策略。
+     *
+     * @return 邻居容器实际接收量；任一面成功即返回
+     */
+    static int pushMechanicalToNeighbor(ContainerContext containerCtx, Level level, int hostSlot,
+                                        Pos2D targetOffset, SlotAccessor bodySource,
+                                        int amount, TickContext tick) {
+        BlockPos containerPos = containerCtx.getBlockPos();
+        if (level == null || containerPos == null || amount <= 0) return 0;
+        BlockState blockState = level.getBlockState(containerPos);
+        Direction blockFacing = GridDirections.getBlockFacing(blockState);
+        if (blockFacing == null) return 0;
+        Direction targetWorldDir = GridDirections.gridToWorld(targetOffset, blockFacing);
+        if (targetWorldDir == null) return 0;
+
+        List<BlockPos> chestPositions = DoubleChestPositions.find(level, containerPos);
+        List<BlockPos> bases = getBasePosCandidates(containerPos, hostSlot, chestPositions,
+            containerCtx.getSize());
+        ItemStack cargo = bodySource.simulateExtract(amount);
+        if (cargo.isEmpty()) return 0;
+
+        for (BlockPos base : bases) {
+            IItemHandler neighbor = getNeighborHandler(level, base, targetWorldDir, chestPositions);
+            if (neighbor == null) continue;
+            BlockPos neighborPos = base.relative(targetWorldDir);
+            Container container = ContainerContext.getContainer(level, neighborPos);
+            for (int slot = 0; slot < neighbor.getSlots(); slot++) {
+                if (container != null
+                        && ContainerContexts.isSameSlotSpace(container, neighbor, slot)
+                        && !container.canPlaceItem(slot, cargo)) continue;
+                SlotAccessor target = SlotAccessorFactory.createForNeighbor(neighbor, slot, null,
+                    level, neighborPos);
+                int moved = SlotAccessor.transferAmount(bodySource, target, amount);
+                if (moved > 0) return moved;
+            }
+        }
+        return 0;
     }
 
     // ========== 邻居槽位遍历核心方法 ==========

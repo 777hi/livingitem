@@ -294,7 +294,7 @@ public class LivingItem {
         SpongeRegistration.register();     // 活海绵（第一段骨架：组件 + 注册，吸收随第二段）
         TntRegistration.register();        // 含活打火石（点燃规则的归属见该类注释）
         RedstoneRegistration.register();
-        com.qiqi.li.living.domain.piston.PistonRegistration.register();   // 活活塞（仅片段线格式；功能未全局启用）
+        com.qiqi.li.living.domain.piston.PistonRegistration.register();   // 活活塞（推 / 拉 / 机械压送）
         PowerRegistration.register();
         FarmlandRegistration.register();
         ToolRegistration.register();

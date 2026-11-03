@@ -28,6 +28,9 @@ class SlotAccessorTransferConservationTest {
         ItemStack slot;
         int simulateAccept = -1;
         int realAccept = -1;
+        int reportedInsert = -1;
+        int syncCalls;
+        int markCalls;
 
         FakeAccessor(ItemStack slot) {
             this.slot = slot.copy();
@@ -73,7 +76,7 @@ class SlotAccessorTransferConservationTest {
             }
             stack.shrink(actual);
             if (stack.isEmpty()) stack.setCount(0);
-            return actual;
+            return reportedInsert < 0 ? actual : reportedInsert;
         }
 
         @Override
@@ -98,10 +101,14 @@ class SlotAccessorTransferConservationTest {
         }
 
         @Override
-        public void markTransferred() {}
+        public void markTransferred() {
+            markCalls++;
+        }
 
         @Override
-        public void sync() {}
+        public void sync() {
+            syncCalls++;
+        }
     }
 
     private static FakeAccessor source(int count) {
@@ -202,6 +209,66 @@ class SlotAccessorTransferConservationTest {
         assertEquals(7, source.slot.getCount(), "只应抽 3");
         assertEquals(64, target.slot.getCount());
         assertEquals(71, total(source, target));
+    }
+
+    @Test
+    @DisplayName("数量入口:返回目标实际插入量,部分插入仍回滚余量并同步")
+    void transferAmount_returnsActualInsertedQuantity() {
+        FakeAccessor source = source(7);
+        FakeAccessor target = target(0);
+        target.simulateAccept = 7;
+        target.realAccept = 2;
+
+        int moved = SlotAccessor.transferAmount(source, target, 7);
+
+        assertEquals(2, moved);
+        assertEquals(5, source.slot.getCount());
+        assertEquals(2, target.slot.getCount());
+        assertEquals(1, source.syncCalls);
+        assertEquals(1, target.syncCalls);
+        assertEquals(1, target.markCalls);
+    }
+
+    @Test
+    @DisplayName("数量入口:目标少报时按传入栈余量确认实际量,不回滚已插入货物")
+    void transferAmount_underReportedInsert_usesMutatedRemainder() {
+        FakeAccessor source = source(7);
+        FakeAccessor target = target(0);
+        target.realAccept = 5;
+        target.reportedInsert = 2;
+
+        assertEquals(5, SlotAccessor.transferAmount(source, target, 7));
+        assertEquals(2, source.slot.getCount());
+        assertEquals(5, target.slot.getCount());
+        assertEquals(7, total(source, target));
+    }
+
+    @Test
+    @DisplayName("数量入口:目标谎报超过提取量时按 before 夹紧")
+    void transferAmount_clampsOverReportedInsert() {
+        FakeAccessor source = source(3);
+        FakeAccessor target = target(0);
+        target.reportedInsert = 99;
+
+        assertEquals(3, SlotAccessor.transferAmount(source, target, 3));
+        assertEquals(0, source.slot.getCount());
+        assertEquals(3, target.slot.getCount());
+    }
+
+    @Test
+    @DisplayName("数量入口:真实插入 0 时全量回滚且不标记/同步")
+    void transferAmount_zeroInsert_rollsBackWithoutSignals() {
+        FakeAccessor source = source(4);
+        FakeAccessor target = target(0);
+        target.simulateAccept = 4;
+        target.realAccept = 0;
+
+        assertEquals(0, SlotAccessor.transferAmount(source, target, 4));
+        assertEquals(4, source.slot.getCount());
+        assertEquals(0, target.slot.getCount());
+        assertEquals(0, source.syncCalls);
+        assertEquals(0, target.syncCalls);
+        assertEquals(0, target.markCalls);
     }
 
     @Test

@@ -26,6 +26,9 @@ public final class PistonRenderState {
     /** 伸缩动画时长：原版活塞 2 game tick。实机若觉太快可调。 */
     public static final long DURATION_MS = 100;
 
+    /** Rx(30°)·Ry(225°) 后模型 +X 在 GUI 屏面的投影角（右手系，屏幕 Y 正向向下）。 */
+    private static final float PROJECTED_EAST_ANGLE_DEGREES = -153.4349488f;
+
     private static final Map<String, Progression> PROGRESS = new HashMap<>();
 
     private record Progression(boolean target, float startProgress, long startMillis, Pos2D direction) {}
@@ -58,29 +61,26 @@ public final class PistonRenderState {
 
     /** 头模型 SHORT 档：头在基座半程内用短头（原版伸出侧 {@code progress <= 0.5} 同族）。 */
     public static boolean headShort(float progress) {
-        return progress < 0.5f;
+        return progress <= 0.5f;
     }
 
     /**
-     * 头位移（<b>[0,1] 方块单位</b>——{@code renderSingleBlock} 烘焙几何的坐标空间，
-     * {@code renderBlockIcon} 的 {@code scale(18,…)} 即按 1 单位=18px 换算）：
-     * 整槽行程 = 1，随进度线性。
+     * 头位移（<b>[0,1] 模型单位</b>）：整段机械行程 = 1，随进度线性。
+     * 屏面像素校正属于叠加层位姿，不能烘进此进度值。
      */
     public static float headOffsetUnits(float progress) {
         return progress;
     }
 
     /**
-     * 屏面 Z 旋转（度）：把装配的「模型 push 轴（+X）」转到对应 GUI 方向。
-     *
-     * <p>⚠️ <b>初值 pinned，实机调校点</b>：正负号取决于屏面 Y 向下的旋转观感，
-     * 若实机方向相反 / 带基础偏角，只改本表（一处常量），不动装配。</p>
+     * 屏面 Z 旋转（度）：配置方向的屏幕角减去 iso 位姿中模型 +X 的投影角。
+     * GUI 屏幕 Y 正向向下；此表与 {@code Rx(30°)·Ry(225°)} 必须成对调整。
      */
     public static float rotationDegrees(Pos2D direction) {
-        if (Pos2D.UP.equals(direction)) return -90f;
-        if (Pos2D.DOWN.equals(direction)) return 90f;
-        if (Pos2D.LEFT.equals(direction)) return 180f;
-        return 0f;   // RIGHT 与兜底
+        if (Pos2D.UP.equals(direction)) return -90f - PROJECTED_EAST_ANGLE_DEGREES;
+        if (Pos2D.DOWN.equals(direction)) return 90f - PROJECTED_EAST_ANGLE_DEGREES;
+        if (Pos2D.LEFT.equals(direction)) return 180f - PROJECTED_EAST_ANGLE_DEGREES;
+        return -PROJECTED_EAST_ANGLE_DEGREES;   // RIGHT 与兜底
     }
 
     /** 测试隔离。 */

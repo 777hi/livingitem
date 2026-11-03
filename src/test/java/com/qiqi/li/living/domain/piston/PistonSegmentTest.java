@@ -38,10 +38,11 @@ class PistonSegmentTest {
     }
 
     @Test
-    void typeIdIsStableButFunctionIsNotGloballyEnabled() {
+    void typeIdIsStableAndFunctionIsGloballyEnabled() {
         assertEquals("piston", PistonSegment.INSTANCE.id());
-        assertFalse(LivingItemManager.getAllFunctions().stream()
-            .anyMatch(function -> function.getFunctionId().equals(LivingPistonFunction.ID)));
+        assertTrue(LivingItemManager.getAllFunctions().stream()
+                .anyMatch(function -> function.getFunctionId().equals(LivingPistonFunction.ID)),
+            "2026-11-03 G3 收口后已全局启用（生产 commonSetup 在测试 JVM 同样生效）");
     }
 
     @Test

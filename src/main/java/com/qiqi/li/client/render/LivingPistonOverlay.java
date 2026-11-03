@@ -32,25 +32,32 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.PistonType;
 
 /**
- * 活活塞三维伸缩叠加层（渲染原型，阶段 E）——本体 + 头杆沿 GUI 方向伸到邻槽并插值缩回。
+ * 活活塞三维伸缩叠加层——本体 + 头杆沿 GUI 方向伸到邻槽并插值缩回。
  *
  * <h3>数据源</h3>
  * 朝向读物品组件 {@link LivingPistonData}（随同步包下发）；伸出态读
- * {@link LivingItemClientCache} 的 runtime 片段（{@link PistonSegment}）——
- * <b>函数尚未全局注册 ⇒ 服务端不下发 ⇒ 本叠加层当前在游戏内恒不显示</b>；
- * 全局启用批次落地后自动点亮。
+ * {@link LivingItemClientCache} 的 runtime 片段（{@link PistonSegment}）。
  *
- * <h3>位姿（实机调校点）</h3>
- * iso 采原版 gui block display 常数（rotX 30°、rotY 225°、scale 0.625 × 槽距换算），
- * push 轴 = 模型 +X；四向由 {@link PistonRenderState#rotationDegrees} 屏面 Z 旋转
- * （绕槽中心）映射——正负号 / 基础偏角若与实机不符，只改那张表。
+ * <h3>位姿</h3>
+ * iso 采原版 gui block display 旋转常数（rotX 30°、rotY 225°），push 轴 = 模型 +X；
+ * 四向由 {@link PistonRenderState#rotationDegrees} 抵消 +X 的 iso 投影偏角。
+ * Y/Z 保持 0.625 × 槽距，X 单独校正，使全伸头板中心恰好跨越一个槽距。
  *
  * <h3>已知原型风险（均留实机验证，不在本批修）</h3>
- * 叠加层晚于数量文字 ⇒ 计数可能被 3D 本体遮挡；第三方滚动容器的裁剪状态不可知；
- * 创造包装槽的 {@code getContainerSlot()} 可能返回菜单号（{@code ClientSlotResolve} 同族已知边界）；
- * HUD / 快捷栏不绘制（前景事件只覆盖容器界面）。
+ * 第三方滚动容器的裁剪状态不可知；创造包装槽的 {@code getContainerSlot()} 可能返回菜单号
+ * （{@code ClientSlotResolve} 同族已知边界）；HUD / 快捷栏不绘制（前景事件只覆盖容器界面）。
  */
 public final class LivingPistonOverlay {
+
+    /** 原物品 z=150、数量文字 z=200；活塞叠加层固定夹在二者之间。 */
+    private static final float OVERLAY_Z = 175f;
+
+    /** 原版 GUI iso 的 Y/Z 尺寸：0.625 个槽距。 */
+    private static final float SCALE_YZ = LivingIconRenderHelper.SLOT_PITCH * 0.625f;
+
+    /** iso 后 +X 屏面投影长度 sqrt(10)/4；含头板局部 3/8 后全伸中心跨 18px。 */
+    private static final float SCALE_X = (float) (LivingIconRenderHelper.SLOT_PITCH
+        / (Math.sqrt(10.0) / 4.0 * (1.0 + 3.0 / 8.0)));
 
     private LivingPistonOverlay() {}
 
@@ -94,18 +101,16 @@ public final class LivingPistonOverlay {
 
         float cx = leftPos + slot.x + 8f;
         float cy = topPos + slot.y + 8f;
-        // [0,1] 方块单位 ⇒ px：目标占槽 ~11.25px（原版 gui 缩放 0.625 × 槽距 18）
-        float scale = LivingIconRenderHelper.SLOT_PITCH * 0.625f;
 
         PoseStack pose = guiGraphics.pose();
         var buffer = Minecraft.getInstance().renderBuffers().bufferSource();
         pose.pushPose();
         try {
-            pose.translate(cx, cy, LivingIconRenderHelper.DEFAULT_Z);
+            pose.translate(cx, cy, OVERLAY_Z);
             pose.mulPose(Axis.ZP.rotationDegrees(PistonRenderState.rotationDegrees(direction)));
             pose.mulPose(Axis.XP.rotationDegrees(30f));
             pose.mulPose(Axis.YP.rotationDegrees(225f));
-            pose.scale(scale, scale, scale);
+            pose.scale(SCALE_X, SCALE_YZ, SCALE_YZ);
             pose.translate(-0.5f, -0.5f, -0.5f);   // 居中 [0,1] 立方
 
             LivingIconRenderHelper.renderBlockModel(base, pose, buffer);

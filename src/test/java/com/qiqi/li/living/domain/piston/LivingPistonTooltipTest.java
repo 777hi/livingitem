@@ -97,12 +97,11 @@ class LivingPistonTooltipTest {
     }
 
     @Test
-    void ordinaryTooltipShowsDefaultDirectionForceAndStageLimit() {
+    void ordinaryTooltipShowsDefaultDirectionForce() {
         var lines = tooltip(living(Items.PISTON, 3));
         translated(lines, "tooltip.livingitem.piston.title");
         assertArrayEquals(new Object[]{"↑"}, translated(lines, "tooltip.livingitem.piston.direction").getArgs());
         assertArrayEquals(new Object[]{3}, translated(lines, "tooltip.livingitem.piston.force").getArgs());
-        translated(lines, "tooltip.livingitem.piston.integration_pending");
         assertFalse(hasKey(lines, "tooltip.livingitem.piston.extended"));
         assertFalse(hasKey(lines, "tooltip.livingitem.piston.retracted"));
     }
@@ -138,7 +137,7 @@ class LivingPistonTooltipTest {
 
     @Test
     void pistonTooltipKeysExistInBothLanguages() throws IOException {
-        var keys = List.of("title", "sticky_title", "direction", "force", "extended", "retracted", "integration_pending");
+        var keys = List.of("title", "sticky_title", "direction", "force", "extended", "retracted");
         for (String language : List.of("zh_cn", "en_us")) {
             try (var stream = getClass().getResourceAsStream("/assets/living_item/lang/" + language + ".json")) {
                 assertNotNull(stream);

@@ -133,6 +133,68 @@ class CrossContainerTransferFaceSelectionTest {
             "首选面无容器 → 应退到 LEFT 半箱正面的容器");
     }
 
+    @Test
+    @DisplayName("机械压送：复用面候选且返回邻居实际接收量")
+    void mechanicalPush_usesFacesAndReturnsActualQuantity() {
+        IItemHandler frontOfLeft = new ItemStackHandler(1);
+        IItemHandler frontOfRight = new ItemStackHandler(1) {
+            @Override public int getSlotLimit(int slot) { return 2; }
+        };
+        ctx = new FakeContainerContext(54, 9).withBlockPos(LEFT_HALF);
+        Level level = mockChestLevel();
+        Direction approachSide = Direction.NORTH.getOpposite();
+        Mockito.<IItemHandler>when(level.getCapability(
+            eq(Capabilities.ItemHandler.BLOCK), eq(FRONT_OF_LEFT), eq(approachSide)))
+            .thenReturn(frontOfLeft);
+        Mockito.<IItemHandler>when(level.getCapability(
+            eq(Capabilities.ItemHandler.BLOCK), eq(FRONT_OF_RIGHT), eq(approachSide)))
+            .thenReturn(frontOfRight);
+        FakeSource source = new FakeSource(new ItemStack(Items.APPLE, 7));
+
+        assertEquals(2, CrossContainerTransfer.pushMechanicalToNeighbor(ctx, level, 49,
+            Pos2D.DOWN, source, 7, new TickContext(ctx)));
+        assertEquals(5, source.stack.getCount());
+        assertEquals(2, frontOfRight.getStackInSlot(0).getCount(), "后半箱首选面容量2 ⇒ q=2");
+        assertTrue(frontOfLeft.getStackInSlot(0).isEmpty(), "首选成功不写备选面");
+    }
+
+    @Test
+    @DisplayName("机械压送：宿主无 facing ⇒ 安全返回0，不抛NPE")
+    void mechanicalPush_withoutFacingReturnsZero() {
+        ctx = new FakeContainerContext(9, 9).withBlockPos(LEFT_HALF);
+        Level level = Mockito.mock(Level.class);
+        Mockito.when(level.getBlockState(LEFT_HALF)).thenReturn(Blocks.STONE.defaultBlockState());
+        FakeSource source = new FakeSource(new ItemStack(Items.APPLE, 3));
+
+        assertEquals(0, CrossContainerTransfer.pushMechanicalToNeighbor(ctx, level, 4,
+            Pos2D.RIGHT, source, 3, new TickContext(ctx)));
+        assertEquals(3, source.stack.getCount());
+    }
+
+    private static final class FakeSource implements com.qiqi.li.living.transfer.SlotAccessor {
+        ItemStack stack;
+        FakeSource(ItemStack stack) { this.stack = stack; }
+        @Override public ItemStack extract(int amount, ItemStack filterType) {
+            int n = Math.min(amount, stack.getCount());
+            ItemStack out = stack.copyWithCount(n);
+            stack.shrink(n);
+            if (stack.isEmpty()) stack = ItemStack.EMPTY;
+            return out;
+        }
+        @Override public int insert(ItemStack incoming) { return 0; }
+        @Override public ItemStack simulateExtract(int amount) {
+            return stack.isEmpty() ? ItemStack.EMPTY : stack.copyWithCount(Math.min(amount, stack.getCount()));
+        }
+        @Override public int simulateInsert(ItemStack incoming) { return 0; }
+        @Override public void rollback(ItemStack incoming) {
+            if (stack.isEmpty()) stack = incoming.copy(); else stack.grow(incoming.getCount());
+        }
+        @Override public boolean isEmpty() { return stack.isEmpty(); }
+        @Override public boolean isFull() { return false; }
+        @Override public void markTransferred() { }
+        @Override public void sync() { }
+    }
+
     /**
      * 驱动一次真实的跨容器推送：活漏斗在槽 49（后半箱），方向「上传下」
      * ⇒ 源槽 40（容器内，放 3 个苹果）、目标槽 58（越界 → 跨容器推送）。

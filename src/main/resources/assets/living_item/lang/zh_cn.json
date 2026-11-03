@@ -82,7 +82,6 @@
   "tooltip.livingitem.piston.force": "  §7最大链长: §e%d§7 格§r",
   "tooltip.livingitem.piston.extended": "  §a已伸出§r",
   "tooltip.livingitem.piston.retracted": "  §7已收回§r",
-  "tooltip.livingitem.piston.integration_pending": "  §8开发中：尚未启用游戏 tick、压送与伸缩渲染§r",
   "tooltip.livingitem.repeater.title": "§6活中继器§r",
   "tooltip.livingitem.repeater.facing": "  §7朝向",
   "tooltip.livingitem.repeater.direction.up": "上",

@@ -3,11 +3,9 @@ package com.qiqi.li.living.domain.piston;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.model.Pos2D;
-
-import net.minecraft.world.item.Items;
+import com.qiqi.li.living.transfer.MechanicalReceivers;
 
 /** 同容器有限链解析；范围内的漏斗始终是货物，不提前接管。 */
 public final class PistonChainResolver {
@@ -37,7 +35,7 @@ public final class PistonChainResolver {
         if (next < 0) return new PistonPlan.Blocked(PistonPlan.Reason.BOUNDARY);
         var stack = ctx.getItem(next);
         if (stack.isEmpty()) return new PistonPlan.Push(cargo, next);
-        if (stack.is(Items.HOPPER) && LivingItemManager.isLivingItem(stack)) {
+        if (MechanicalReceivers.matches(stack)) {
             return new PistonPlan.Receiver(cargo, next);
         }
         return new PistonPlan.Blocked(PistonPlan.Reason.CHAIN_TOO_LONG);

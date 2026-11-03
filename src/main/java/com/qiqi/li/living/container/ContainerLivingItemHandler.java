@@ -783,22 +783,41 @@ public class ContainerLivingItemHandler {
         for (var entry : grouped.entrySet()) {
             if (droppedItem && !entry.getKey().supportsDroppedItem()) continue;
 
-            // ⭐ 旧 SlotEntry 执行前重验（2026-11-03，TickContext#movedSlots）：
-            // 扫描阶段拿到的「槽 → 物品」映射，在活塞把设备从 A 移到 B 之后已经过期。
-            // 继续按旧 entry 操作 = 对着空槽执行（或对着别人的货执行）——
-            // 前者白跑，后者更糟：会以「那台机器」的语义去改另一件物品的状态。
-            // 被移动过的槽本 tick 直接跳过，下 tick 重新扫描即可（1 tick 延迟，代价可忽略）。
-            List<LivingItemFunction.SlotEntry> entries = entry.getValue();
-            if (!tick.movedSlots.isEmpty()) {
-                List<LivingItemFunction.SlotEntry> effective = new ArrayList<>(entries.size());
-                for (LivingItemFunction.SlotEntry se : entries) {
-                    if (!tick.movedSlots.contains(se.slotIndex())) effective.add(se);
-                }
-                if (effective.isEmpty()) continue;
-                entries = effective;
-            }
+            // ⭐ 执行前重验：扫描阶段拿到的「槽 → 物品」映射可能被前序功能改旧。
+            // 整栈位移过的槽本拍跳过；同槽部分传输则重读当前对象，保留该槽 runtime。
+            // 否则后续功能会拿旧 count / 组件执行，或把“只改数量”错当成机械位移。
+            List<LivingItemFunction.SlotEntry> scanned = entry.getValue();
+            List<LivingItemFunction.SlotEntry> entries = refreshEntries(
+                entry.getKey(), scanned, context, tick);
+            if (!scanned.isEmpty() && entries.isEmpty()
+                    && !LivingItemManager.getSelfSustainingFunctions().contains(entry.getKey())) continue;
             entry.getKey().tick(entries, context, tick, level);
         }
+    }
+
+    /**
+     * 把扫描期条目刷新为当前槽内容；被整栈移动的槽仍延迟到下一拍。
+     *
+     * <p>同槽部分传输会以新 {@link ItemStack} 替换旧对象，但不应作废该槽 runtime。
+     * 因此不能把它塞进 {@link TickContext#movedSlots}；逐函数调用前重读即可同时守住
+     * 「旧对象不再执行」与「只改数量不复位机械态」两条约束。</p>
+     */
+    private static List<LivingItemFunction.SlotEntry> refreshEntries(
+            LivingItemFunction function,
+            List<LivingItemFunction.SlotEntry> scanned,
+            ContainerContext context,
+            TickContext tick) {
+        if (scanned.isEmpty()) return scanned;
+        List<LivingItemFunction.SlotEntry> current = new ArrayList<>(scanned.size());
+        for (LivingItemFunction.SlotEntry entry : scanned) {
+            int slot = entry.slotIndex();
+            if (tick.movedSlots.contains(slot)) continue;
+            ItemStack stack = context.getItem(slot);
+            if (function.canApply(stack)) {
+                current.add(new LivingItemFunction.SlotEntry(slot, stack));
+            }
+        }
+        return current;
     }
 
     /**
@@ -852,7 +871,12 @@ public class ContainerLivingItemHandler {
         hcdEntries.sort(Comparator.comparingInt(e -> ((HasContainerData) e.getKey()).getPriority()));
 
         for (var entry : hcdEntries) {
-            ((HasContainerData) entry.getKey()).tickContainerData(entry.getValue(), context, tick);
+            List<LivingItemFunction.SlotEntry> scanned = entry.getValue();
+            List<LivingItemFunction.SlotEntry> current = refreshEntries(
+                entry.getKey(), scanned, context, tick);
+            if (!scanned.isEmpty() && current.isEmpty()
+                    && !LivingItemManager.getSelfSustainingFunctions().contains(entry.getKey())) continue;
+            ((HasContainerData) entry.getKey()).tickContainerData(current, context, tick);
         }
     }
 
