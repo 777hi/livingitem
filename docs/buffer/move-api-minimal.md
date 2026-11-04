@@ -5,7 +5,7 @@
 > 守卫测试 `ContainerMoveStackTest`（10 项）。
 > **范围**: 只收口「一步整栈移动 + 安全撤销」。**不含**链解析、状态机、渲染、压送。
 > **契约依据**: [container-boundary.md](../system-design/container-boundary.md) `I-C12` / `I-C13` / `I-C14`
-> **消费者**: [活活塞.md](活活塞.md) §7.4（精确本体移动）
+> **消费者**: [活活塞-design.md](../archive/活活塞-design.md) §7.4（精确本体移动）
 > **分工**: 共享 API 由框架侧实现；活塞侧并行做链解析 / 状态机 / 渲染，**不自行实现移动与回滚**。
 
 ---

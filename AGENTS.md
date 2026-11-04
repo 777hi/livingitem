@@ -92,7 +92,7 @@ SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 | 族 | 子系统（点击直达文档） |
 |----|----------------------|
 | 2026-11-01 | ♻️ **R3 领域互依赖清零（hopper↔ender/chest 10 条 → 0）** —— 传输核心不再认识具体领域：身份检查复用 `ContainerLikeItems`（现成谓词注册表）、末影箱路由决策走新扩展点 `TransferTargetPolicy`（living/transfer，形状对齐 SlotInteractions——Accessor 级末段分发，源侧偏好走 onProbingTarget 探测、REJECT 不触发）、路由 GC 收敛为 `ContainerTickHook` 写回单钩子（api 标记接口 `RouteRegistrar` 能力自查，漏斗/末影箱镜像双调用双删）；顺带删与通用路径逐行等价的活箱子拉取特支。基线 R3 三行清零（R1 不变）；测试 1293→1304；⚠️ 实机待验：漏斗×末影箱路由（公共/专属/直连）+ 拆合堆叠频道切换 | `docs/tech/living-ender-chest-tech.md` §9 · `EnderRouteMaintenanceTest` |
-| **活物品功能（18）** | [活TNT](docs/tech/living-tnt-tech.md) · [活流体](docs/tech/living-fluid-tech.md) · [活熔炉](docs/tech/living-furnace-tech.md) · [活酿造台](docs/tech/living-brewing-stand-tech.md) · [活漏斗](docs/tech/living-hopper-tech.md) · [活箱子](docs/tech/living-chest-tech.md) · [活末影箱](docs/tech/living-ender-chest-tech.md) · [活水车](docs/tech/living-water-wheel-tech.md) · [活地图传送](docs/tech/living-map-ender-pearl-tech.md) · [活耕地](docs/tech/living-farmland-tech.md) · [活工具](docs/tech/living-tool-tech.md) · [活武器](docs/tech/living-weapon-tech.md) · [活红石](docs/tech/living-redstone-tech.md)（信号层含 [活铜](docs/tech/living-copper-tech.md)） · [活涂蜡铜块（红电发电）](docs/tech/living-power-tech.md) · [活打火石](docs/tech/living-flint-and-steel-tech.md) · [活信标](docs/tech/living-beacon-tech.md) · [活背包](docs/tech/living-backpack-tech.md) · [活海绵](docs/tech/living-sponge-tech.md) |
+| **活物品功能（19）** | [活TNT](docs/tech/living-tnt-tech.md) · [活流体](docs/tech/living-fluid-tech.md) · [活熔炉](docs/tech/living-furnace-tech.md) · [活酿造台](docs/tech/living-brewing-stand-tech.md) · [活漏斗](docs/tech/living-hopper-tech.md) · [活箱子](docs/tech/living-chest-tech.md) · [活末影箱](docs/tech/living-ender-chest-tech.md) · [活水车](docs/tech/living-water-wheel-tech.md) · [活地图传送](docs/tech/living-map-ender-pearl-tech.md) · [活耕地](docs/tech/living-farmland-tech.md) · [活工具](docs/tech/living-tool-tech.md) · [活武器](docs/tech/living-weapon-tech.md) · [活红石](docs/tech/living-redstone-tech.md)（信号层含 [活铜](docs/tech/living-copper-tech.md)） · [活涂蜡铜块（红电发电）](docs/tech/living-power-tech.md) · [活打火石](docs/tech/living-flint-and-steel-tech.md) · [活信标](docs/tech/living-beacon-tech.md) · [活背包](docs/tech/living-backpack-tech.md) · [活海绵](docs/tech/living-sponge-tech.md) · [活活塞](docs/tech/living-piston-tech.md) |
 | **容器基础设施（6）** | [容器七问总览](docs/system-design/container-overview.md) · [基础设施](docs/system-design/living-item-infrastructure.md) · [多方块容器身份解析](docs/system-design/container-identity.md) · [容器边界口径](docs/system-design/container-boundary.md) · [数据模型](docs/system-design/data-model.md) · [超大堆叠审计](docs/system-design/oversized-stack-audit.md) |
 | **红电 · 电力（3）** | [红电架构演进](docs/buffer/redstone-evolution-roadmap.md) · [红电包收口方案](docs/buffer/power-refactoring-plan.md) · [红电不变量测试](docs/system-design/power-invariants.md) |
 | **跨域机制（3）** | [GUI交互](docs/system-design/gui-interaction-system.md) · [图标系统](docs/system-design/icon-system.md) · [Tooltip 系统](docs/system-design/tooltip-system.md) |
@@ -173,16 +173,15 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
-| 2026-11-05 | ✅ **活活塞图标全平面重建，真机验收通过** —— 机身剖面图标＋板/杆 2D blit（原版贴图零新资产、静止板贴前缘=朝向指示）；三轮真机修正：删 scale 1.125（16px）/ 板位 −8−t / 板 blit 锚点 x=−8 居中（「7」→「T」）；全量1514绿 | [活活塞.md](docs/buffer/活活塞.md) §7.8.6 |
-| 2026-11-04 | ✅ **活活塞压送真机验收通过（传输侧）** —— 传输逻辑与活漏斗联动实机正常；四向渲染贴图细节待复验 | [活活塞.md](docs/buffer/活活塞.md) §7.8.5 |
-| 2026-11-03 | ✅ **活活塞玩法代码全落 +39测试，真机待验** —— 机械压送q=min(C,M,A)、本体不展开、无视冷却/锁定、世界邻居/末影直连在线·离线·部分容量及路由零副作用；审查修复同拍旧条目、精确写恢复、接收端中立发现和半程头模型；渲染投影角与18px行程数学修正；全量1512绿 | [活活塞.md](docs/buffer/活活塞.md) §7.8.5 |
-| 2026-11-03 | ✅ **活活塞全局启用 +6测试** —— G3 四缝收口后注册函数；E2E 集成测试（processContext 驱动推/拉/持有/收回/双活塞/取消活化）全绿；真机待验 | [活活塞.md](docs/buffer/活活塞.md) §7.8.4 |
-| 2026-11-03 | 🎨 **活活塞渲染原型（阶段E）+15测试** —— 进度插值＋iso本体/头杆叠加层已落；数据源=客户端runtime；iso/旋转常数为实机调校点 | [活活塞.md](docs/buffer/活活塞.md) §7.8.3 |
-| 2026-11-03 | ✅ **活活塞第二批适配 +46测试** —— 方向组件、runtime片段、真实函数tick与tooltip已测；未全局注册，WASD / 生命周期 / 压送 / 渲染未启用 | [活活塞.md](docs/buffer/活活塞.md) §7.8.2 |
-| 2026-11-03 | ✅ **活活塞首批独立逻辑：解析、推拉编排与状态迁移 +49测试** —— 只调用框架moveStack/undo；游戏tick、方向组件、压送及渲染尚未接入，不宣称可游戏使用 | [活活塞.md](docs/buffer/活活塞.md) §7.8.1 · [test-map.md](docs/reference/test-map.md) |
-| 2026-11-03 | 📋 **活活塞 v1.11：删除压送自动补位，未实现** —— 只交付原末端栈，送空留空、后方不动；补位预演 / 撤销 / 协调整套删除，普通推拉不变 | [活活塞.md](docs/buffer/活活塞.md) §2.6.3 / §7 |
-| 2026-11-03 | 📋 **活活塞 v1.10：实施前蓝图，未实现** —— 接线 / 新增 / 必改分开；精确移动、后端覆盖与新API仍待定，补阶段验收与落地同步表 | [活活塞.md](docs/buffer/活活塞.md) §7 |
-| 2026-11-02 | 📋 **活活塞 v1.8：接收端与补位边界定案，未实现** —— 数量定角色、名单等级自动化；末影只直连不路由；交付与补位独立，槽位拒收不撤销交付，流体准入另题 | [活活塞.md](docs/buffer/活活塞.md) §2.2 / §2.6 / §6 |
+| 2026-11-05 | 📚 **活活塞升格 tech 文档** —— [living-piston-tech.md](docs/tech/living-piston-tech.md)（§0 契约 22 条 + 机制 / 压送 / 渲染 / 生命周期 / 守卫映射 / 测试地图 / 踩坑实录）；设计稿归档留痕（模板 §2.3 晋升流程），活指针全量切换 | [活活塞-design.md](docs/archive/活活塞-design.md) §7.8 |
+| 2026-11-05 | ✅ **活活塞图标全平面重建，真机验收通过** —— 机身剖面图标＋板/杆 2D blit（原版贴图零新资产、静止板贴前缘=朝向指示）；三轮真机修正：删 scale 1.125（16px）/ 板位 −8−t / 板 blit 锚点 x=−8 居中（「7」→「T」）；全量1514绿 | [活活塞-design.md](docs/archive/活活塞-design.md) §7.8.6 |
+| 2026-11-04 | ✅ **活活塞压送真机验收通过（传输侧）** —— 传输逻辑与活漏斗联动实机正常；四向渲染贴图细节待复验 | [活活塞-design.md](docs/archive/活活塞-design.md) §7.8.5 |
+| 2026-11-03 | ✅ **活活塞玩法代码全落 +39测试，真机待验** —— 机械压送q=min(C,M,A)、本体不展开、无视冷却/锁定、世界邻居/末影直连在线·离线·部分容量及路由零副作用；审查修复同拍旧条目、精确写恢复、接收端中立发现和半程头模型；渲染投影角与18px行程数学修正；全量1512绿 | [活活塞-design.md](docs/archive/活活塞-design.md) §7.8.5 |
+| 2026-11-03 | ✅ **活活塞全局启用 +6测试** —— G3 四缝收口后注册函数；E2E 集成测试（processContext 驱动推/拉/持有/收回/双活塞/取消活化）全绿；真机待验 | [活活塞-design.md](docs/archive/活活塞-design.md) §7.8.4 |
+| 2026-11-03 | 🎨 **活活塞渲染原型（阶段E）+15测试** —— 进度插值＋iso本体/头杆叠加层已落；数据源=客户端runtime；iso/旋转常数为实机调校点 | [活活塞-design.md](docs/archive/活活塞-design.md) §7.8.3 |
+| 2026-11-03 | ✅ **活活塞第二批适配 +46测试** —— 方向组件、runtime片段、真实函数tick与tooltip已测；未全局注册，WASD / 生命周期 / 压送 / 渲染未启用 | [活活塞-design.md](docs/archive/活活塞-design.md) §7.8.2 |
+| 2026-11-03 | ✅ **活活塞首批独立逻辑：解析、推拉编排与状态迁移 +49测试** —— 只调用框架moveStack/undo；游戏tick、方向组件、压送及渲染尚未接入，不宣称可游戏使用 | [活活塞-design.md](docs/archive/活活塞-design.md) §7.8.1 · [test-map.md](docs/reference/test-map.md) |
+| 2026-11-03 | 📋 **活活塞 v1.11：删除压送自动补位，未实现** —— 只交付原末端栈，送空留空、后方不动；补位预演 / 撤销 / 协调整套删除，普通推拉不变 | [活活塞-design.md](docs/archive/活活塞-design.md) §2.6.3 / §7 |
 ## 提交前必跑（2026-10-30 更新）
 
 ```bash

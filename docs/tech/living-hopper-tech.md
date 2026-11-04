@@ -27,7 +27,7 @@
 > `HopperFilterBuilder`（过滤链构建）· `HopperRegistration`（域注册 + 交互规则）
 
 > **机械压送（已实现，2026-11-03）**：入口面外力交付由活塞主域定义，见
-> [活活塞设计稿 §2.6](../buffer/活活塞.md)；本域通过 `HopperMechanicalReceiver` 接入中立
+> [living-piston-tech §3](living-piston-tech.md)；本域通过 `HopperMechanicalReceiver` 接入中立
 > `MechanicalReceivers` 端口：按本体过滤、漏斗数量限 q、无视且不改冷却 / 红石锁定，
 > 同容器 / 世界邻居输出复用既有端点；名单链仍传名单，不形成多段物品管道。主动传输规则不变。
 
