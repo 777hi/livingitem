@@ -121,6 +121,19 @@ Tier 2 内建约定 → Tier 3 启发式兜底。**要指定列数才录规则�
 写回 ≠ 插入、模拟与真实同源（`ContainerBoundaryContractTest`）· 规则表 vs 类型表一致（单测）。
 ⇒ **第一段接入完成后立刻跑 `python tools/check_layers.py`**（见 §4）。
 
+### 1.5 槽位操作选型表 —— 数量增减走四原语，不写裸 setItem
+
+> 判据：**这个功能要对槽位里的物品做数量增减吗？**（吃 / 放 / 搬 / 变身）
+> 守恒核验（写后回读、只扣实际量、违约撤销）在原语里自动继承；本表只选型。
+> 详见 [slot-ops.md](slot-ops.md)（选型指南）· 契约 [api-contract §1.7](../system-design/api-contract.md)。
+
+| # | 判据 | 要做 | 忘了会怎样（真实案例） |
+|---|---|---|---|
+| ① | 玩法语言是哪种：「搬 A 到 B」/「吃掉 n 件」/「生成 n 件放入」/「原地变身」？ | 分别用 `move` / `consume` / `produce` / `transform`；非 1:1 替换 = consume+produce（**consume 先行**——丢 ≤ 复制） | 裸 `setItem` 拼「先写再扣源」＝ A1 丢 436 / R-13 复制那一代 bug；现在门禁（`check_stack_ops.py`）直接拦红 |
+| ② | 一次操作吃几件（变换单元 U，I-C13）？ | 声明为功能常量（熔炉按配方 / 酿造一槽一瓶 / 耕地整份）；不可拆的写 `transform`，可拆的只扣实际量 | 超过操作单元静默丢 N-1（酿造 I-C13 整槽分支的由来） |
+| ③ | 活物品 count 怎么参与产量/速率？ | **先 long 算预算、再按预算消费**（I-C14②）；容量问 `simulateInsertItem`，**不自算** `min(slotLimit, 64)` 公式 | 乘法回绕吞物品（TNT 求和溢出 / NeoForge getSlotLimit=99 不是真容量） |
+| ④ | 搬运在玩法上是「物理力」还是「容器同意的转移」？ | 默认 `STANDARD`（查准入+抽取权限）；只有物理力（水流推动一类）才显式选 `PHYSICAL`（A3 特例，不照抄流体） | 把特例当通则（2026-11-03 审查：I-C12 初稿犯过） |
+
 ---
 
 ## 二、两张清单

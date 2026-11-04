@@ -326,8 +326,11 @@ public class LivingBrewingStandFunction implements LivingItemFunction, HasDirect
             if (bottleSlot < 0) continue;
             ItemStack bottle = context.getItem(bottleSlot);
             if (!isEligibleBottle(bottle)) continue;   // 空槽 / 活物品 / 超堆叠 ⇒ 不转化
-            context.setItem(bottleSlot, BrewingRecipes.brew(brewing, ingredient, bottle));
-            brewed++;
+            // transform = 不可拆整槽替换（I-C13）+ 写后回读：写失败（容器违约还原）
+            // 该瓶不算成 ⇒ brewed 为 0 时下面不扣材料，整批中止
+            if (context.transform(bottleSlot, b -> BrewingRecipes.brew(brewing, ingredient, b))) {
+                brewed++;
+            }
         }
         if (brewed > 0) consumeOne(context, ingredientSlot);
     }
@@ -352,17 +355,30 @@ public class LivingBrewingStandFunction implements LivingItemFunction, HasDirect
         ItemStack stack = context.getItem(slot);
         if (stack.isEmpty()) return;
 
+        // 扣 1 走 consume（抽取权限 + 写后回读）；扣不到（容器违约）⇒ 本拍不动，不碰残留物
+        if (context.consume(slot, 1) <= 0) return;
+
         ItemStack remainder = stack.hasCraftingRemainingItem()
             ? stack.getCraftingRemainingItem()
             : ItemStack.EMPTY;
+        if (remainder.isEmpty()) return;
 
-        stack.shrink(1);
-        if (stack.isEmpty()) {
-            context.setItem(slot, remainder);          // 原版同：扣完为空 ⇒ 槽位变残留物
+        // 原版语义（2026-10-13 修）：先扣 1、再看残留物 —— 扣完为空 ⇒ 槽位变残留物；
+        // 还有剩余 ⇒ 残留物「掉落」的活物品适配（D9）= 另寻归宿（不掉落）
+        if (stack.getCount() <= 1) {
+            // 同槽 1:1 替换用 transform（带回读；不走 produce 的准入——
+            // 原版材料槽拒收残留物如玻璃瓶，与原版无条件落残留物对齐）
+            if (!context.transform(slot, s -> remainder.copy())) {
+                placeRemainderOrDrop(context, slot, remainder);
+            }
             return;
         }
-        context.setItem(slot, stack.copy());           // 还有剩余 ⇒ 保留剩余（绝不整栈替换）
-        if (!remainder.isEmpty() && !placeRemainder(context, slot, remainder)) {
+        placeRemainderOrDrop(context, slot, remainder);
+    }
+
+    /** 残留物另寻归宿；容器满则丢弃（debug 留痕，D9 原语义）。 */
+    private static void placeRemainderOrDrop(ContainerContext context, int exclude, ItemStack remainder) {
+        if (!placeRemainder(context, exclude, remainder)) {
             LivingItemManager.LOGGER.debug(
                 "brewing: 合成残留物无处安放（容器满）⇒ 丢弃 item={}", remainder.getItem());
         }
@@ -381,17 +397,9 @@ public class LivingBrewingStandFunction implements LivingItemFunction, HasDirect
         int size = context.getSize();
         for (int i = 0; i < size; i++) {
             if (i == exclude) continue;
-            ItemStack s = context.getItem(i);
-            if (s.isEmpty()) {
-                context.setItem(i, remainder.copy());
-                return true;
-            }
-            if (ItemStack.isSameItemSameComponents(s, remainder)
-                    && context.simulateInsertItem(i, remainder) >= 1) {
-                // 容量问容器（I-C14 ①）：超堆叠槽的残留物不再被物品上限判满丢弃
-                context.setItem(i, s.copyWithCount(s.getCount() + 1));
-                return true;
-            }
+            // 容量问容器（I-C14 ①）：空槽与合并统一走 produce（simulateInsertItem 权威，
+            // 超堆叠槽的残留物不再被物品上限判满丢弃）
+            if (context.produce(i, remainder, 1) > 0) return true;
         }
         return false;
     }

@@ -1,0 +1,10 @@
+# 槽位裸写基线 —— domain/function 各文件 setItem( 的现存次数。**只允许减少，不允许增加。**
+# 由 tools/check_stack_ops.py 读写；除删行外请勿手改。
+# 新增调用想登记：确认不是「先写再扣源」后跑 python tools/check_stack_ops.py --update-baseline
+# 格式：文件路径 <TAB> 次数（路径相对 living/）
+
+domain/tnt/ExplosionComponent.java	1
+domain/tnt/LivingTntFunction.java	3
+domain/tools/CarriedLivingItems.java	1
+domain/tools/LivingToolFunction.java	2
+domain/water/ContainerFluidData.java	5

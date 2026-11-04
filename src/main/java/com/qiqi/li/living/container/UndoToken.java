@@ -36,7 +36,7 @@ public record UndoToken(int from, int to, ItemStack sourceBefore, ItemStack targ
         if (targetBefore.isEmpty()) {
             return sourceBefore.copyWithCount(moved);
         }
-        // sum 走 long：本分支当前不可达（moveStack 强制目标为空），防后来者照抄时溢出
+        // 合并路径（move 允许同类合并）此分支可达；sum 走 long 防溢出
         long sum = (long) targetBefore.getCount() + moved;
         return targetBefore.copyWithCount((int) sum);
     }

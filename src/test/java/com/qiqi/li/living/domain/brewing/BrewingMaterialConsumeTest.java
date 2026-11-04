@@ -144,4 +144,28 @@ class BrewingMaterialConsumeTest {
         }
         return n;
     }
+
+    /** 材料槽写回<b>静默丢弃</b> —— 复刻第三方 setStackInSlot 静默失败（消耗原语判据面）。 */
+    private static class SilentMaterialCtx extends FakeContainerContext {
+        SilentMaterialCtx() { super(27, 9); }
+
+        @Override
+        public void setItem(int slot, ItemStack stack) {
+            if (slot == MATERIAL) return;   // 一律静默丢弃
+            super.setItem(slot, stack);
+        }
+    }
+
+    @Test
+    @DisplayName("材料槽写回违约 ⇒ consume 返回 0：本拍不动，不扣材料、不落残留物（I-C12 只扣实际量）")
+    void silentWriteFailure_keepsMaterialUntouched() {
+        SilentMaterialCtx ctx = new SilentMaterialCtx();
+        ctx.set(MATERIAL, new ItemStack(Items.DRAGON_BREATH, 8));
+
+        LivingBrewingStandFunction.consumeOne(ctx, MATERIAL);
+
+        assertEquals(Items.DRAGON_BREATH, ctx.getItem(MATERIAL).getItem(), "扣减不成立 ⇒ 材料原样");
+        assertEquals(8, ctx.getItem(MATERIAL).getCount(), "一件没扣到");
+        assertEquals(0, countOf(ctx, Items.GLASS_BOTTLE), "残留物不落（材料没扣到就谈不上残留物）");
+    }
 }

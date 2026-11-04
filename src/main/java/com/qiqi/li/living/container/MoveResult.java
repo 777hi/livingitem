@@ -12,15 +12,17 @@ package com.qiqi.li.living.container;
  *       必须留痕（{@code I-C6}），不能与「正常拒绝」混为一谈。</li>
  * </ul>
  *
- * <p>⚠️ <b>不设「部分成功」态</b>：活塞的语义是整栈移动，要么全成要么不动（`I-C13` 原地整槽分支）。
- * 部分交付属于漏斗压送的「移动交付量」（`I-C12`），那是另一个入口，不往本接口加参数。</p>
+ * <p>⚠️ <b>部分交付只在 {@code move}（I-C12 移动交付量）与漏斗压送表达</b>：
+ * {@code moveStack} 本身仍是整栈语义（要么全成要么不动，`I-C13` 原地整槽分支）——
+ * 区别体现在 {@link Success#moved} 的取值范围，不在结果类型上。</p>
  */
 public sealed interface MoveResult {
 
     /**
      * 成功。
      *
-     * @param moved 实际移动数量 —— <b>恒等于操作开始时的源栈数量</b>
+     * @param moved 实际移动数量 —— {@code moveStack} 时<b>恒等于操作开始时的源栈数量</b>；
+     *              {@code move} 时 ≤ 请求量（部分交付），差额原样留在源槽
      * @param undo  本步的撤销凭据（只在本次 tick 内有效）
      */
     record Success(int moved, UndoToken undo) implements MoveResult {}

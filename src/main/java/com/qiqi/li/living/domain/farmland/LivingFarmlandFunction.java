@@ -226,22 +226,24 @@ public class LivingFarmlandFunction implements LivingItemFunction {
         if (outputCount <= 0) return plant;
 
         ItemStack grown = ctx.getItem(growthSlot);
-        boolean placed = false;
-        if (grown.isEmpty()) {
-            ctx.setItem(growthSlot, drop.copyWithCount(outputCount));
-            placed = true;
-        } else if (ItemStack.isSameItemSameComponents(grown, drop)) {
-            // 容量问容器（I-C14 ①）：超堆叠生长槽不再被物品上限判满停摆
-            int space = ctx.insertableSpace(growthSlot, drop);
-            // 合并仅当放得下整份产出（部分合并会静默丢弃 outputCount-toAdd 差额，
-            // 2026-09-14 终审实测修复）；放不下就本 tick 等待，与「不同种占据」同一语义
-            if (space >= outputCount) {
-                ctx.setItem(growthSlot, grown.copyWithCount(grown.getCount() + outputCount));
-                placed = true;
-            }
-        }
+        boolean fullFit = grown.isEmpty()
+            || (ItemStack.isSameItemSameComponents(grown, drop)
+                // 容量问容器（I-C14 ①）：超堆叠生长槽不再被物品上限判满停摆
+                && ctx.insertableSpace(growthSlot, drop) >= outputCount);
+        // 合并仅当放得下整份产出（部分合并会静默丢弃 outputCount-toAdd 差额，
+        // 2026-09-14 终审实测修复）；放不下就本 tick 等待，与「不同种占据」同一语义
+        if (!fullFit) return plant;
 
-        if (!placed) return plant;   // 不同种占据/同种已满 → 下个 tick 重试
+        // produce = 容量问容器 + 写后回读。空槽路径由此获得容量前置（原先 outputCount
+        // 超槽位上限时被 clampToSlotLimit 静默截断，差额凭空消失）
+        int actual = ctx.produce(growthSlot, drop, outputCount);
+        if (actual <= 0) return plant;   // 一份都没进去（容器违约）⇒ 下个 tick 重试
+        if (actual < outputCount) {
+            // 违约容器下的差额：produce 已留 WARN，这里记「按已交付记账、推进轮次」
+            // 的处置，避免排查时只看到「产量莫名变少」
+            LOGGER.warn("活耕地产出：槽位 {} 本轮计划 {}，实际放入 {} —— 按已交付记账推进",
+                growthSlot, outputCount, actual);
+        }
 
         return finishIfDone(plant.withOutput(i + 1, drops), cropBlock);
     }

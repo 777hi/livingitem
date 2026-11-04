@@ -136,4 +136,22 @@ class LivingFarmlandFunctionTest {
             "旧 getMaxStackSize()-count 口径下 100 ≥ 64 ⇒ 判满停摆（I-C14 ① 容量问容器）");
         assertEquals(1, out.outputIndex(), "索引正常推进");
     }
+
+    @Test
+    @DisplayName("小槽位上限：空槽产出 64 超上限 4 ⇒ 放 4 个 + 推进（WARN 留痕，不再靠 clamp 静默截断）")
+    void smallSlotLimit_placesWhatFitsAndAdvances() {
+        int[] limits = new int[27];
+        java.util.Arrays.fill(limits, 64);
+        limits[1] = 4;
+        FakeContainerContext ctx = boxCtx().withSlotLimits(limits);
+        ItemStack farmland = new ItemStack(Items.FARMLAND, 64);
+        FarmlandPlantComponent plant = pendingWheat(0);
+
+        FarmlandPlantComponent out = LivingFarmlandFunction.tryOutputOnce(ctx, 1, farmland, plant, Blocks.WHEAT);
+
+        assertEquals(4, ctx.getItem(1).getCount(),
+            "produce 以槽位上限为预算 —— 旧实现 setItem(64) 后被 clampToSlotLimit 静默截断");
+        assertEquals(1, out.outputIndex(),
+            "actual > 0 ⇒ 按已交付记账推进（差额有 WARN 留痕）");
+    }
 }

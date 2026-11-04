@@ -56,4 +56,5 @@ jobs:
           python3 tools/check_layers.py
           python3 tools/check_mixins.py
           python3 tools/check_container_keys.py
+          python3 tools/check_stack_ops.py
           DOC_CHECK_STRICT=1 python3 tools/doc_check.py

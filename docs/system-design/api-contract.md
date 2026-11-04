@@ -224,6 +224,27 @@ jar 不在此限。引入例外只有一个前提：许可证允许再分发且�
 复算：`git ls-files 'libs/*.jar'` → 0；`-Plivingitem.devModsDir=nonexistent_dir_ci_sim`
 本地复现「干净克隆」+ `--no-build-cache --rerun-tasks` 强制全量重编。
 
+### 1.7 槽位数量操作原语（2026-11-05 生效）
+
+`ContainerContext`（第三方 tick() 拿到的公开上下文）提供四个数量操作原语，
+**数量增减必须走原语**，不得用裸 `setItem` 拼「先写目标、再无条件扣源」
+（`setItem` 是覆盖语义，写失败无法表达——守恒不变量 `I-C12` 的根因）。
+棘轮门禁 `tools/check_stack_ops.py` 把 domain/function 的存量裸写冻结为只减不增。
+
+| 原语 | 签名 | 语义 / 契约 |
+|---|---|---|
+| `move` | `MoveResult move(from, to, amount[, MovePolicy])` | 槽→槽按数量搬运，**允许部分交付**（`Success.moved ≤ amount`）与同类合并；四态结果复用 `MoveResult`；`undo(token)` 可撤销。`STANDARD` 问容量+准入（`simulateInsertItem`）与抽取权限（`simulateExtractItem`）；`PHYSICAL` = A3 特例（流体推动）：容量只问 `getSlotLimit`，不问准入与抽取权限。**活物品隔离由调用方把关** |
+| `produce` | `int produce(slot, prototype, amount)` | 产物放置（虚拟源 → 槽）：预算 = `simulateInsertItem`（I-C14①），返回**实际放入量**；差额只 WARN 不回滚（无源槽 ⇒ 无复制面，已放入部分是真产物） |
+| `consume` | `int consume(slot, maxUnit)` | 输入消费（槽 → 虚空）：查抽取权限（I-C12 第三维），返回**实际扣减量**；写回不符恢复原状返回 0（调用方按 0 = 本拍不推进） |
+| `transform` | `boolean transform(slot, fn)` | 原地整槽替换（I-C13 不可拆）：fn 收**副本**、不得改活引用；写后回读不符则还原并返回 false |
+
+**变换顺序契约（熔炉型「输入→产物」功能）**：`consume` 先行、`produce` 后行，
+产物量 = 实际扣减量 × 每单位产出。反向（先写产物再扣输入）在产物写失败时会留下
+「扣了输入、产物凭空消失」；先写产物在 `actual` 非产出整数倍时会凭空多产物。
+**丢 ≤ 复制**，所以 consume 先行（`I-C12` 边界：丢必留痕）。
+
+守卫测试：`ContainerSlotOpsTest`（六场景 × 双容器实现 + 违约三态 + 负向验证）。
+
 ## 2. 待决 / 未生效（⛔ 不得当现状引用）
 
 > 以下均为**计划**，尚未实施。拍板后回来标日期并把正文并入 §1。

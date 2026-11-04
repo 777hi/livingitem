@@ -13,6 +13,8 @@ echo "[pre-commit] check_mixins（Mixin 前缀 / 成员 / 配置）"
 "$PY" tools/check_mixins.py || fail=1
 echo "[pre-commit] check_container_keys（容器键解析收敛）"
 "$PY" tools/check_container_keys.py || fail=1
+echo "[pre-commit] check_stack_ops（槽位裸写棘轮）"
+"$PY" tools/check_stack_ops.py || fail=1
 echo "[pre-commit] doc_check（文档一致性）"
 "$PY" tools/doc_check.py || fail=1
 

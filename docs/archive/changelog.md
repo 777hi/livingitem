@@ -17,6 +17,30 @@
 
 ## 2026-11-05
 
+- ✅ **槽位数量操作原语（TODO §物品传输 1-②③ 落地顺序收口）** ——
+  `ContainerContext` 四原语：`move(from, to, amount, MovePolicy)`（按数量搬运，允许部分交付与
+  合并；PHYSICAL = A3 口径：容量只问 `getSlotLimit`、不问准入与抽取权限，完整保留流体现行行为，
+  遗留②的拍板问题不受影响）/ `produce`（产物放置，预算 = `simulateInsertItem`，差额只 WARN
+  不回滚——无源槽无复制面）/ `consume`（输入消费，查抽取权限，写回不符按「没扣到」处理）/
+  `transform`（原地整槽替换，I-C13 不可拆）。原计划的 `transform(slot, maxUnit, fn)` 因熔炉
+  「消耗输入 + 产物另槽」与酿造「原地替换」签名不同拆为两原语；`insertItem(slot, stack, simulate)`
+  以「原语返回实际量」表达，不再单加方法。
+  **收编四域**：熔炉 `executeTransform` 改 **consume 先行 + produce**（丢产出 ≤ 复制产出，
+  所以不先写产物再扣输入——消除「输入已扣、产物写失败凭空消失」；`consumeFuel` 用
+  consume/transform，没扣到燃料不点燃）/ 酿造（瓶槽 transform、材料燃料 consume、残留物
+  produce——空槽路径由准入权威接管）/ 耕地（produce，空槽路径获得容量前置，超上限差额
+  WARN 留痕取代静默 clamp 截断）/ 流体推动（`tryMoveInto` 三重回读内核原样上移 `move(PHYSICAL)`，
+  编排留守；漏斗/末影箱/活箱子按「共享数量内核、不共享入口」分工不换入口）。
+  边际加固：move 对「目标写入被整库重定向」恢复目标槽（流体旧实现此场景留垃圾）。
+  **+35 测试全绿（1525→1560）**：`ContainerSlotOpsTest` 32 例（六场景 × 双容器实现 +
+  违约三态 + undo 合并路径；负向验证：摘源侧回读 / produce 按计划量返回 / consume 摘写回核验
+  各确认会红）+ 熔炉「输入扣减写回违约 ⇒ 不产出不推进」+ 耕地「小槽位上限显式留痕」+
+  酿造「材料槽违约本拍不动」。
+  **门禁**：`tools/check_stack_ops.py` 棘轮（domain/function 各文件 `setItem(` 现存 12 处
+  冻结为 `tools/stack_ops_baseline.txt`，只许减不许增；负向验证：手加一处裸写确认红），
+  挂 pre-commit / CI 第五条。文档：api-contract 新 §1.7、container-boundary I-C12 现状、
+  TODO 收口、move-api-minimal 横幅。
+
 - ✅ **传输守恒存量收口（I-C12 源侧核验 + I-C14 容量/算术，TODO §物品传输 1-①）** ——
   全项目审计（两路并行）核实 2026-11-03 台账后修复，+11 测试（1514 → 1525）全绿。
   **I-C12**：流体推动源侧回读（源写回失败 ⇒ 整拍撤销目标写入防复制；目标快照先于写入取副本

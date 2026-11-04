@@ -391,10 +391,16 @@
 ✅ `PlainSlotAccessor` extract / insert / rollback 写后回读（2026-11-05，与 `BodySlotAccessor`
 同形）：写回静默失败 ⇒ restore + 返回 EMPTY / 0，绝不把没离开源的货交给调用方；
 其余搬运点（漏斗 / 末影箱 / 活箱子 insert）已审计为原子或组件内写。
-⏳ 抽取权限维度未接入读取路径（`PlainSlotAccessor.simulateExtract` 未查 `simulateExtractItem`、
-流体推动不看抽取权限）——玩法口径需拍板（[TODO 物品传输](../TODO.md)）。
-⏳ 熔炉 / 酿造 / 耕地的域内 setItem 写回核验，留待「唯一移动原语」收编
-（[TODO 物品传输](../TODO.md) 1-②）。
+✅ **槽位数量操作原语落地（2026-11-05，收编域内写回）**：`ContainerContext` 四原语
+—— `move(from, to, amount, MovePolicy)`（按数量搬运，**允许部分交付与合并**；
+`PHYSICAL` = A3 口径：容量只问 `getSlotLimit`，不问准入与抽取权限）、`produce`
+（产物放置，预算 = `simulateInsertItem`，**差额只 WARN 不回滚**——无源槽无复制面，
+已放入部分是真产物）、`consume`（输入消费，查抽取权限，写回不符按「没扣到」处理）、
+`transform`（原地整槽替换，写失败还原 = I-C13 不可拆）。收编：熔炉（**consume 先行**
+—— 丢产出 ≤ 复制产出，所以不先写产物再扣输入）/ 酿造 / 耕地 / 流体推动（内核上移，
+编排留守）；守卫测试 `ContainerSlotOpsTest`。⏳ 抽取权限维度未接入读取路径
+（`PlainSlotAccessor.simulateExtract` 未查 `simulateExtractItem`、流体推动不看抽取权限）
+——玩法口径需拍板（[TODO 物品传输](../TODO.md)）。
 
 ---
 

@@ -3,6 +3,11 @@
 > **状态**: **框架侧已实现（2026-11-03）**，等活塞接入验证后转稳定层。
 > 实现：`ContainerContext#moveStack` / `#undo` / `#canAcceptAll` + `MoveResult` / `UndoToken`；
 > 守卫测试 `ContainerMoveStackTest`（10 项）。
+>
+> **后续（2026-11-05）**：姊妹原语 `move`（按数量、可合并、部分交付，PHYSICAL = A3）/
+> `produce` / `consume` / `transform` 已落同一接口——见 [api-contract §1.7](../system-design/api-contract.md)。
+> **本文的 `moveStack` 语义不变**（整栈、不拆、目标必须空）；部分交付语义已由 `move`
+> 表达，本文 §1 的「不设部分成功」改读为「moveStack 不设」。
 > **范围**: 只收口「一步整栈移动 + 安全撤销」。**不含**链解析、状态机、渲染、压送。
 > **契约依据**: [container-boundary.md](../system-design/container-boundary.md) `I-C12` / `I-C13` / `I-C14`
 > **消费者**: [活活塞-design.md](../archive/活活塞-design.md) §7.4（精确本体移动）

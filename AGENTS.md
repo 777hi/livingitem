@@ -96,7 +96,7 @@ SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 | **容器基础设施（6）** | [容器七问总览](docs/system-design/container-overview.md) · [基础设施](docs/system-design/living-item-infrastructure.md) · [多方块容器身份解析](docs/system-design/container-identity.md) · [容器边界口径](docs/system-design/container-boundary.md) · [数据模型](docs/system-design/data-model.md) · [超大堆叠审计](docs/system-design/oversized-stack-audit.md) |
 | **红电 · 电力（3）** | [红电架构演进](docs/buffer/redstone-evolution-roadmap.md) · [红电包收口方案](docs/buffer/power-refactoring-plan.md) · [红电不变量测试](docs/system-design/power-invariants.md) |
 | **跨域机制（3）** | [GUI交互](docs/system-design/gui-interaction-system.md) · [图标系统](docs/system-design/icon-system.md) · [Tooltip 系统](docs/system-design/tooltip-system.md) |
-| **工程实践（3）** | [单元测试](docs/guides/unit-testing.md) · [活物品设计模板](docs/guides/living-item-design-template.md) · [分层现状与检查工具](docs/archive/architecture-layering-plan.md) |
+| **工程实践（4）** | [单元测试](docs/guides/unit-testing.md) · [活物品设计模板](docs/guides/living-item-design-template.md) · [槽位操作选型](docs/guides/slot-ops.md) · [分层现状与检查工具](docs/archive/architecture-layering-plan.md) |
 | **未定案（1）** | [框架层对标（未定案）](docs/buffer/framework-benchmark.md) |
 
 ---
@@ -148,7 +148,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1525 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
+**合计测试用例 1560 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -173,6 +173,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-11-05 | ✅ **槽位数量操作原语（move/produce/consume/transform）** —— 熔炉 consume 先行 / 酿造 / 耕地 / 流体推动内核上移收编；PHYSICAL=A3 保留流体现行口径；+35 测试（含负向验证）；check_stack_ops 棘轮挂 pre-commit/CI 第五条 | [api-contract §1.7](docs/system-design/api-contract.md) · [TODO §物品传输](docs/TODO.md) |
 | 2026-11-05 | ✅ **传输守恒存量收口（I-C12/I-C14）** —— 流体推动源侧核验（写回失败整拍回退防复制）+ PlainSlotAccessor 写后回读；容量问容器（`simulateInsertItem` 权威，超堆叠停摆修复，isFull 三 Accessor 容器自答）；算术 long 化；+11 测试全绿 | [TODO §物品传输](docs/TODO.md) · [container-boundary §2](docs/system-design/container-boundary.md) |
 | 2026-11-05 | 📚 **活活塞升格 tech 文档** —— [living-piston-tech.md](docs/tech/living-piston-tech.md)（§0 契约 22 条 + 机制 / 压送 / 渲染 / 生命周期 / 守卫映射 / 测试地图 / 踩坑实录）；设计稿归档留痕（模板 §2.3 晋升流程），活指针全量切换 | [活活塞-design.md](docs/archive/活活塞-design.md) §7.8 |
 | 2026-11-05 | ✅ **活活塞图标全平面重建，真机验收通过** —— 机身剖面图标＋板/杆 2D blit（原版贴图零新资产、静止板贴前缘=朝向指示）；三轮真机修正：删 scale 1.125（16px）/ 板位 −8−t / 板 blit 锚点 x=−8 居中（「7」→「T」）；全量1514绿 | [活活塞-design.md](docs/archive/活活塞-design.md) §7.8.6 |
@@ -181,31 +182,31 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-11-03 | ✅ **活活塞全局启用 +6测试** —— G3 四缝收口后注册函数；E2E 集成测试（processContext 驱动推/拉/持有/收回/双活塞/取消活化）全绿；真机待验 | [活活塞-design.md](docs/archive/活活塞-design.md) §7.8.4 |
 | 2026-11-03 | 🎨 **活活塞渲染原型（阶段E）+15测试** —— 进度插值＋iso本体/头杆叠加层已落；数据源=客户端runtime；iso/旋转常数为实机调校点 | [活活塞-design.md](docs/archive/活活塞-design.md) §7.8.3 |
 | 2026-11-03 | ✅ **活活塞第二批适配 +46测试** —— 方向组件、runtime片段、真实函数tick与tooltip已测；未全局注册，WASD / 生命周期 / 压送 / 渲染未启用 | [活活塞-design.md](docs/archive/活活塞-design.md) §7.8.2 |
-| 2026-11-03 | ✅ **活活塞首批独立逻辑：解析、推拉编排与状态迁移 +49测试** —— 只调用框架moveStack/undo；游戏tick、方向组件、压送及渲染尚未接入，不宣称可游戏使用 | [活活塞-design.md](docs/archive/活活塞-design.md) §7.8.1 · [test-map.md](docs/reference/test-map.md) |
 ## 提交前必跑（2026-10-30 更新）
 
 ```bash
 python tools/check_layers.py          # 层纪律：R1 依赖方向 / R2 Mixin 位置 / R3 领域互依赖 / R4 注册入口
 python tools/check_mixins.py          # Mixin：R1 living_item$ 前缀 / R2 显式成员 / R3 配置 ↔ 源文件
 python tools/check_container_keys.py  # 容器键解析收敛（ContainerKeys 唯一入口）
+python tools/check_stack_ops.py       # 槽位裸写棘轮：domain/function 的 setItem( 只减不增（原语是唯一数量操作入口）
 python tools/doc_check.py             # 文档一致性：进展滚动 / 指针 / 测试条数 / 入口体量 …
 ```
 
-**任一为红就不要提交。** `check_layers` 是**棘轮**（基线只允许收紧），其余三条是零容忍门禁，
-所以「新引入的违规」一定会被看见。
+**任一为红就不要提交。** `check_layers` 与 `check_stack_ops` 是**棘轮**（基线只允许收紧），
+其余三条是零容忍门禁，所以「新引入的违规」一定会被看见。
 
 > ⚠️ 最常见的红法是 `doc_check` 报「测试条数不一致（声明 X / 实测 Y）」——
 > 那不是文档写错，是**改了代码但没跑测试**。先 `./gradlew test` 再提交。
 > ⚠️ 必须是**全量** `./gradlew test`：`--tests` 局部运行会覆盖 `build/test-results`，
 > `doc_check` 只看到局部条数（2026-10-29 实测：只跑 chest 包 ⇒ 报「声明 1143 / 实测 15」）。
 
-> 💡 **自动防护**：仓库内 `.githooks/pre-commit` 跑上面四条（红的直接拦住）。
+> 💡 **自动防护**：仓库内 `.githooks/pre-commit` 跑上面五条（红的直接拦住）。
 > 首次检出 / 换机器后执行一次 `sh tools/setup-dev.sh`
 > （等价于 `git config core.hooksPath .githooks`）。
 > ⚠️ 设置 hooksPath 后，本地 `.git/hooks/pre-commit` 不再执行 —— 以仓库内版本为准，
 > 两套不要同时维护。
 
-> 🤖 **CI 跑同样四条**（`.github/workflows/build.yml` 的 `Quality gates` 步骤），
+> 🤖 **CI 跑同样五条**（`.github/workflows/build.yml` 的 `Quality gates` 步骤），
 > 且 `doc_check` 用 `DOC_CHECK_STRICT=1`：CI 里没产出测试 XML 直接红，不再 SKIP。
 
 ## 排查铁律：原版机制挡路时
@@ -300,7 +301,8 @@ viewer 驱动 / 框架扫描 / 框架判定才回到 `LivingItemFunction`）。
 | **看不懂某个名词**（活物品 / 锈级 / 相位域 / 跳变 / 口径…） | [glossary.md](docs/glossary.md)（**术语表，先扫这一页**） |
 | **查「为什么这么定」/ 某口径是否已被取代** | [decisions.md](docs/decisions.md)（决策索引 + 翻转留痕） |
 | 改文档 / 归档 / 校验 | [docs/README.md](docs/README.md) + `python tools/doc_check.py` |
-| **设计新活物品 / 写设计稿** | [living-item-design-template.md](docs/guides/living-item-design-template.md) —— **两张横切检查表**（生命周期 / 准入）+ 原版对齐清单 + 规则→验证入口对应表 |
+| **设计新活物品 / 写设计稿** | [living-item-design-template.md](docs/guides/living-item-design-template.md) —— **五张横切检查表**（生命周期 / 准入 / 反馈 / 容器能力 / 槽位操作选型）+ 原版对齐清单 + 规则→验证入口对应表 |
+| **写槽位数量操作 / 选原语** | [slot-ops.md](docs/guides/slot-ops.md)（四原语选型指南）—— 契约签名见 [api-contract §1.7](docs/system-design/api-contract.md) |
 | 写测试 / 跑全量 / mock `Level` | [unit-testing.md](docs/guides/unit-testing.md) |
 | **梳理上下游 / 估改动爆炸半径 / 判断模块是否真解耦 / 查新增子系统的扩展点** | [code-map.md](docs/guides/code-map.md) —— 人看 HTML，**AI 直接调 `python tools/gen_code_map.py --query <类名>` / `--extend`**（文本输出、直接解析源码、**不会读到过期图**）；**改完代码跑 `python tools/check_layers.py`**（分层违规即退出 1，棘轮式「只减不增」） |
 | 找某个源文件 | `find src/main -name "*.java"` 或 `python tools/gen_code_map.py --query <类名>`（人工文件树快照已删，2026-10-10） |

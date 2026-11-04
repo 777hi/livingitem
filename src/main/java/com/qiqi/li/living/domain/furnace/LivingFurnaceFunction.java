@@ -201,7 +201,7 @@ public class LivingFurnaceFunction implements LivingItemFunction, HasDirection {
         ItemStack fuelStack = ctx.getItem(fuelSlot);
         int fuelValue = getFuelValue(fuelStack);
         if (fuelValue > 0 && !LivingItemManager.isLivingItem(fuelStack)) {
-            consumeFuel(ctx, fuelSlot, fuelStack);
+            if (!consumeFuel(ctx, fuelSlot, fuelStack)) return data;   // 没扣到燃料，本拍不点燃
             return data.withFuel(new FuelData(fuelValue));
         }
 
@@ -212,14 +212,18 @@ public class LivingFurnaceFunction implements LivingItemFunction, HasDirection {
      * 点燃燃料时消耗 1 个，对齐原版熔炉的合成残留物语义（AbstractFurnaceBlockEntity#serverTick）：
      * 燃料带合成残留物（岩浆桶）→ 槽位整体替换为残留物（空桶，整槽替换与原版一致）；
      * 普通燃料 → 扣 1 个，耗尽后槽位清空。
+     *
+     * <p>消耗走 {@link ContainerContext#consume}（抽取权限 + 写后回读，扣不到返回 0）；
+     * 残留物走 {@link ContainerContext#transform}（同槽 1:1 替换带回读——不走 produce 的
+     * 准入，燃料槽在原版语义下拒收空桶）。</p>
+     *
+     * @return true = 燃料确已扣减/替换；false = 一件没扣到（容器违约），调用方不得点燃
      */
-    static void consumeFuel(ContainerContext ctx, int fuelSlot, ItemStack fuelStack) {
+    static boolean consumeFuel(ContainerContext ctx, int fuelSlot, ItemStack fuelStack) {
         if (fuelStack.hasCraftingRemainingItem()) {
-            ctx.setItem(fuelSlot, fuelStack.getCraftingRemainingItem());
-            return;
+            return ctx.transform(fuelSlot, ItemStack::getCraftingRemainingItem);
         }
-        fuelStack.shrink(1);
-        ctx.setItem(fuelSlot, fuelStack.copy());
+        return ctx.consume(fuelSlot, 1) > 0;
     }
 
     private LivingFurnaceData tickTransform(ContainerContext ctx, LivingFurnaceData data, int inputSlot, Level level) {
@@ -298,20 +302,14 @@ public class LivingFurnaceFunction implements LivingItemFunction, HasDirection {
         int transformCount = Math.min(stackCount, Math.min(inputStack.getCount(), maxByOutput));
         if (transformCount <= 0) return false;
 
-        inputStack.shrink(transformCount);
-        ctx.setItem(inputSlot, inputStack.copy());
+        // consume 先行（I-C13 分批加工：只扣实际处理量，扣减经回读核验）；
+        // 产物按实际扣减量放置。若 produce 少交付（容器 simulate 撒谎），损失方向是
+        // 「少产出」且原语内部已 WARN —— 绝不反向多产出。丢 ≤ 复制，所以不先写产物再扣输入。
+        int consumed = ctx.consume(inputSlot, transformCount);
+        if (consumed <= 0) return false;
 
-        long produced = (long) transformCount * resultCount;
-        ItemStack outputStack = ctx.getItem(outputSlot);
-        if (outputStack.isEmpty()) {
-            ItemStack newOutput = result.copy();
-            newOutput.setCount((int) produced);
-            ctx.setItem(outputSlot, newOutput);
-        } else {
-            outputStack.grow((int) produced);
-            ctx.setItem(outputSlot, outputStack.copy());
-        }
-
+        long produced = (long) consumed * resultCount;
+        ctx.produce(outputSlot, result, (int) produced);
         return true;
     }
 

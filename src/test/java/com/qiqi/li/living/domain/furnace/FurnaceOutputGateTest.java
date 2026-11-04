@@ -198,4 +198,40 @@ class FurnaceOutputGateTest {
             "旧 min(slotLimit, maxStackSize)=64 口径下 100 ≥ 64 ⇒ 判满停摆");
         assertEquals(3, ctx.getItem(INPUT_SLOT).getCount(), "输入按实际处理量扣减");
     }
+
+    /**
+     * 输入槽写回<b>静默丢弃</b> —— 复刻第三方 {@code setStackInSlot} 静默失败。
+     * 消耗原语（{@code consume}）的判据面：扣减不成立 ⇒ 熔炉本拍不推进、不产出。
+     */
+    private static class SilentInputCtx extends FakeContainerContext {
+        SilentInputCtx() { super(27, 9); }
+
+        @Override
+        public void setItem(int slot, ItemStack stack) {
+            if (slot == INPUT_SLOT) return;   // 一律静默丢弃（含清空写）
+            super.setItem(slot, stack);
+        }
+    }
+
+    @Test
+    @DisplayName("输入扣减写回违约 ⇒ consume 返回 0：不产出、输入不扣、进度回退（I-C12 只扣实际量）")
+    void inputWriteFailure_noSmeltNoConsumption() {
+        SilentInputCtx ctx = new SilentInputCtx();
+        ctx.set(FURNACE_SLOT, livingFurnace());
+        ctx.set(INPUT_SLOT, new ItemStack(Items.RAW_IRON));
+        ctx.set(OUTPUT_SLOT, ItemStack.EMPTY);
+        ctx.set(FUEL_SLOT, new ItemStack(Items.COAL, 8));
+        ContainerRuntimeCache.update(ctx, FURNACE_SLOT,
+            RuntimeSegments.EMPTY.with(FurnaceSegment.INSTANCE,
+                new FurnaceRuntime(199, 200, 1600, null)));
+        Level level = levelWithRecipe(true);
+
+        tickOnce(ctx, level);
+
+        assertEquals(1, ctx.getItem(INPUT_SLOT).getCount(), "扣减不成立 ⇒ 输入原样");
+        assertTrue(ctx.getItem(OUTPUT_SLOT).isEmpty(), "输入没扣到就不产出");
+        FurnaceRuntime fr = ContainerRuntimeCache.get(ctx, FURNACE_SLOT).get(FurnaceSegment.INSTANCE);
+        assertEquals(200, fr.progress(),
+            "executeTransform 失败不 reset：进度停在完成态逐 tick 重试消耗（区别于预检拒绝的回退）");
+    }
 }

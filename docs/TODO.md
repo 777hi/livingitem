@@ -186,13 +186,20 @@
    A2 合并改用**槽位上限**（对齐 R-13 口径）；空槽路径同步补容量前置
    （原先完全不查，实测丢 436 —— 见 `ContainerFluidConservationTest`）。
    ⚠️ 容量**不能**改用 `simulateInsertItem`：它含准入校验，会推翻 A3 定案。
-   ② **收敛**：抽唯一移动原语 `move(from, to, amount)` —— `insertActual` 取实际写入量，
-   **只扣实际写入量**；把流体推动 / 漏斗 / 末影箱 rollback / 活箱子 insert /
-   熔炉与酿造输入输出全部改为调它（约 8~12 处调用点）。
-   ③ **契约化**：给 `ContainerContext` 加 `ItemStack insertItem(slot, stack, simulate)`，
-   让「实际写入量」成为 API 契约，而不是靠回读猜。
+   ② ~~**收敛**：抽唯一移动原语~~ ✅ **2026-11-05 完成**——四原语
+   `move(from, to, amount, MovePolicy)`（部分交付 + 合并，PHYSICAL = A3）/
+   `produce`（产物放置，返回实收量）/ `consume`（输入消费，查抽取权限）/
+   `transform`（原地整槽替换）落在 `ContainerContext`；熔炉（consume 先行）/ 酿造 /
+   耕地 / 流体推动四域收编，守卫测试 `ContainerSlotOpsTest`（32 例，含负向验证）。
+   ⚠️ 范围修正：漏斗 / 末影箱 rollback / 活箱子 **未换入口**——`ContainerContext`
+   「共享数量内核、不共享入口」的既定分工（SlotAccessor = 传输引擎专用、活箱子 = 组件
+   内存模型），2026-11-05 审计已判达标，不为统一而统一。
+   ③ ~~**契约化**：加 `insertItem(slot, stack, simulate)`~~ ✅ **同日完成**——API 形状调整为
+   四原语各答「实际量」（produce/consume 返回实收数、move 走 `MoveResult.Success.moved`），
+   「实际写入量」成为契约；`insertItem(slot, stack, simulate)` 不再单加方法。
    判据：**守恒不变量** —— 任意移动前后 `源数量 + 目标数量` 不变；参数化覆盖
-   「目标空 / 满 / 同类 / 异类 / 拒绝写入」，跑所有容器实现。
+   「目标空 / 满 / 同类 / 异类 / 拒绝写入」，跑所有容器实现（✅ 2026-11-05 落实：
+   `ContainerSlotOpsTest` 六场景 × SimpleContainerContext / FakeContainerContext 双实现）。
    边界：第三方容器违约（`insertItem` 撒谎、`getSlotLimit` 撒谎、`setStackInSlot`
    静默失败）**无法根治** ⇒ 目标是「可控路径不丢 + 丢必留痕」，不是「永不丢」。
    📄 来源：A1/A2 已并入本节上文（2026-10-31），原稿归档 `archive/living-fluid-review.md`。
@@ -210,11 +217,16 @@
    台账勘误（2026-11-05 审计）：行号漂移 3 处（brewing:365→391、fluid:432/912→466/938）；
    审计新发现同族位点已一并修：`BodySlotAccessor:99/103/156`（11-04 活活塞新文件）、
    `LivingFurnaceFunction:307`（漏列乘法）、`LivingFarmlandFunction:234`、`UndoToken:39`。
-   ⏳ **遗留两件，单列不静默**：① 熔炉输入扣减（`executeTransform:301-302`）/ 熔炉·酿造·耕地
-   setItem 的「先写无回读」—— 留待第 1-② 条「唯一移动原语」收编，不逐点补 8 处样板；
+   ~~⏳ **遗留两件，单列不静默**~~（2026-11-05 处置）：
+   ① ~~熔炉输入扣减 / 熔炉·酿造·耕地 setItem 的「先写无回读」~~ ✅ **已随四原语收编**
+   （熔炉 = consume 先行 + produce；酿造瓶槽 = transform、残留物 = produce；耕地 = produce，
+   空槽路径由此获得容量前置——原先 outputCount 超槽位上限被 clamp 静默截断）。
    ② **抽取权限维度未接入读取路径**（`PlainSlotAccessor.simulateExtract` 未查
    `simulateExtractItem`、流体推动不看抽取权限）—— 玩法口径需拍板：水流要不要尊重
    输出过滤器（`ContainerBoundaryContractTest` 的 `ExtractBlockedHandler` 只守了写回侧）。
+   ⚠️ `move(PHYSICAL)` 完整保留流体现行口径（不问准入与抽取权限），本项不受原语落地影响；
+   `consume`（熔炉/酿造输入）已接入抽取权限——若拍板「水流也尊重」，只需把 PHYSICAL
+   档的抽取分支改对齐 STANDARD。
 
 3. **执行顺序与 API 契约 §1.3 不一致**（2026-11-03 活塞侧复查发现，**既有问题**）——
    实际按**槽扫描遭遇序**执行功能，而契约写的是 **manager 序**（按 `getTickPriority` 排序）。
@@ -223,9 +235,11 @@
    修法待定：要么改契约承认遭遇序，要么在扫描后按 priority 稳定排序。
    ⚠️ 与活塞无关（活塞已声明 priority），属容器编排层的既有欠账。
 
-   **落地顺序**（契约 → API → 门禁，不可反）：先按本节 2 修存量；
-   再给 `ContainerContext` 加 `transform(slot, maxUnit, fn)` / `produce(slot, stack, n)` /
-   `move(from, to, n)`；最后写 `check_stack_ops.py` 把存量违规冻结成棘轮基线。
+   ✅ **落地顺序三步全收口（2026-11-05）**：①修存量（11-05 存量收口）→ ②原语
+   （`move`/`produce`/`consume`/`transform`——原计划的 `transform(slot, maxUnit, fn)` 因
+   熔炉「消耗输入 + 产物另槽」与酿造「原地替换」签名不同，拆为 consume 与 transform 两原语）
+   → ③ 门禁：`tools/check_stack_ops.py` 棘轮（domain/function 各文件 `setItem(` 现存
+   12 处冻结为 `tools/stack_ops_baseline.txt`，只许减不许增；已挂 pre-commit / CI 第五条）。
 
 ## 容器边界（2026-10-10 记 · 2026-10-18/19 立项并完成主体）
 

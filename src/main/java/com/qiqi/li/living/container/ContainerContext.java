@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 
 import javax.annotation.Nullable;
 import java.util.List;
+import java.util.function.UnaryOperator;
 
 /**
  * 容器上下文 —— 活物品功能与容器之间的完整交互接口。
@@ -44,6 +45,15 @@ public interface ContainerContext extends SlotInfoProvider, ContainerSync, Conta
      * 与 {@code SlotAccessor.ROLLBACK_LOGGER} 同族，但入口不同（那边是传输引擎的兜底）。</p>
      */
     Logger ROLLBACK_LOGGER = LogUtils.getLogger();
+
+    /**
+     * 数量操作原语（{@link #move} / {@link #produce} / {@link #consume} / {@link #transform}）
+     * 的降级日志 —— 只在「预算与实收不符」时用（WARN 级）。
+     *
+     * <p>与 {@link #ROLLBACK_LOGGER} 的分工：那边是「恢复失败 = 可能已复制」的 ERROR，
+     * 这边是「差额已被正确记账、无复制面」的可观测留痕（`I-C6`：降级必须可观测）。</p>
+     */
+    Logger SLOT_OPS_LOGGER = LogUtils.getLogger();
 
     default boolean isValidSlot(int logicalSlot) {
         return logicalSlot >= 0 && logicalSlot < getSize();
@@ -354,7 +364,7 @@ public interface ContainerContext extends SlotInfoProvider, ContainerSync, Conta
         ItemStack actual = ctx.getItem(slot);
         if (!ItemStack.matches(actual, expected)) {
             ROLLBACK_LOGGER.error(
-                "moveStack 回滚失败（{}）：槽位 {} 期望 {}，实际 {} —— 可能已复制，需人工核查",
+                "槽位回滚失败（{}）：槽位 {} 期望 {}，实际 {} —— 可能已复制，需人工核查",
                 why, slot, expected, actual);
         }
     }
@@ -509,5 +519,252 @@ public interface ContainerContext extends SlotInfoProvider, ContainerSync, Conta
         syncSlotToClients(to, getItem(to));
         if (restored) onSlotsMoved(from, to);   // 撤销同样是移动 ⇒ 旧信息同样过期
         return restored;
+    }
+
+    // ==================== 槽位数量操作原语（I-C12 契约化，2026-11-05） ====================
+    //
+    // 四个原语把「数量增减 = 先写、再无条件扣源」收编成唯一入口（TODO「物品传输」1-②③）：
+    //   move      槽→槽搬运（允许部分交付与合并，两槽守恒由内核强制）
+    //   produce   虚拟源→槽（产物放置：熔炉产出 / 耕地掉落 / 酿造残留物）
+    //   consume   槽→虚空（输入消费：熔炉 / 酿造的材料与燃料）
+    //   transform 槽内原地替换（酿造瓶槽一类「不可拆整槽变换」，I-C13）
+    //
+    // 与 {@link #moveStack} 的分工：moveStack 是活塞的「整栈纯位移」（不拆、不合并、
+    // 要求精确写）；move 是「按数量、可合并、允许部分交付」的通用搬运。
+    // 与 SlotAccessor 的分工不变（见上方「共享数量内核，不共享入口」）。
+
+    /**
+     * 按数量移动：把至多 {@code amount} 个物品从 {@code from} 搬到 {@code to}，
+     * 等价于 {@code move(from, to, amount, MovePolicy.STANDARD)}。
+     */
+    default MoveResult move(int from, int to, int amount) {
+        return move(from, to, amount, MovePolicy.STANDARD);
+    }
+
+    /**
+     * 按数量移动（指定口径）—— 允许<b>部分交付</b>（{@code Success.moved ≤ amount}）与
+     * <b>同类合并</b>（目标非空时必须与源同物品同组件）。
+     *
+     * <p><b>不变量（I-C12）</b>：成功时两式同时成立 ——</p>
+     * <pre>
+     * after(from) == before(from) - moved
+     * after(to)   == before(to)   + moved
+     * </pre>
+     * <p>⇒ 写目标后回读只认真实增量、<b>只扣实际进入量</b>；源扣减不成立 ⇒
+     * 整拍撤销目标写入（目标快照先于写入 —— {@code setItem} 覆盖语义会抽干活引用）。
+     * 目标写入被容器重定向成别的东西时同样恢复原状。</p>
+     *
+     * <p><b>与 {@link #moveStack} 的语义差异</b>：那边「要么全成要么不动」（{@code moved}
+     * 恒等于源栈数量、目标必须空）；这边差额方向只会是「少搬」（预算钳住上限），
+     * 少搬的部分原样留在源槽。不设 {@code EXACT_WRITE} 门：{@code setItem} 的回退路径
+     * + 回读核验足够，无精确写的后端照样能走通。</p>
+     *
+     * <p>活物品隔离由<b>调用方</b>把关（与 SlotAccessor 入口同责）：内核不认「活物品」概念。</p>
+     *
+     * @param amount 请求搬运量（≤0 按 {@code INVALID_ADDRESS} 拒绝）
+     * @param policy 容量/权限口径，见 {@link MovePolicy}
+     */
+    default MoveResult move(int from, int to, int amount, MovePolicy policy) {
+        if (!isValidSlot(from) || !isValidSlot(to) || from == to || amount <= 0) {
+            return new MoveResult.Rejected(MoveResult.Reason.INVALID_ADDRESS);
+        }
+        ItemStack source = getItem(from);
+        if (source.isEmpty()) {
+            return new MoveResult.Rejected(MoveResult.Reason.SOURCE_EMPTY);
+        }
+        ItemStack target = getItem(to);
+        if (!target.isEmpty() && !ItemStack.isSameItemSameComponents(source, target)) {
+            return new MoveResult.Rejected(MoveResult.Reason.TARGET_OCCUPIED);
+        }
+
+        // 抽取权限（STANDARD）：容器不让取的货不得搬走。PHYSICAL 不问（A3，遗留②未拍板）。
+        int extractable;
+        if (policy == MovePolicy.STANDARD) {
+            extractable = Math.min(amount, simulateExtractItem(from, amount));
+            if (extractable <= 0) {
+                return new MoveResult.Rejected(MoveResult.Reason.SOURCE_NOT_EXTRACTABLE);
+            }
+        } else {
+            extractable = Math.min(amount, source.getCount());
+        }
+
+        // 容量预算：STANDARD 问容器（I-C14①，含准入）；PHYSICAL 只问槽位上限（A3）。
+        int planned;
+        if (policy == MovePolicy.PHYSICAL) {
+            long space = (long) getSlotLimit(to) - target.getCount();
+            if (space <= 0) {
+                return new MoveResult.Rejected(MoveResult.Reason.TARGET_INSUFFICIENT);
+            }
+            planned = (int) Math.min(extractable, space);
+        } else {
+            int budget = simulateInsertItem(to, source.copyWithCount(extractable));
+            if (budget <= 0) {
+                // 异类占用已在上方挡掉 ⇒ 这里是准入拒绝或容量 0；统一报这档，不猜
+                return new MoveResult.Rejected(MoveResult.Reason.TARGET_INSUFFICIENT);
+            }
+            planned = Math.min(extractable, budget);
+        }
+
+        // 撤销快照：setItem 是覆盖语义，回退必须用副本
+        ItemStack targetSnapshot = target.copy();
+
+        // ① 写目标（空槽覆盖 / 同类合并）
+        ItemStack expectedTarget = target.isEmpty()
+            ? source.copyWithCount(planned)
+            : target.copyWithCount(target.getCount() + planned);
+        setItem(to, expectedTarget);
+        ItemStack afterTarget = getItem(to);
+        int actual;
+        if (ItemStack.matches(afterTarget, expectedTarget)) {
+            actual = planned;
+        } else if (!afterTarget.isEmpty() && ItemStack.isSameItemSameComponents(afterTarget, source)) {
+            // 少放不回滚：放入部分是真移动，只扣实际量（差额方向只会是少搬，无复制面）
+            actual = Math.max(0, afterTarget.getCount() - target.getCount());
+            if (actual < planned) {
+                SLOT_OPS_LOGGER.warn("move: 目标槽 {} 计划写入 {}，实际 {} —— 源槽只扣实际量",
+                    to, planned, actual);
+            }
+        } else {
+            rollbackSlot(this, to, targetSnapshot,
+                "目标写入被重定向（实际 " + afterTarget + "）");
+            syncSlotToClients(to, getItem(to));
+            return new MoveResult.BackendViolation("目标写入被重定向（槽位 " + to + "）");
+        }
+        if (actual <= 0) {
+            return new MoveResult.BackendViolation(
+                "目标写入零落（计划 " + planned + "，容器 simulate 与实写不符）");
+        }
+
+        // ② 源侧只扣实际进入量；扣减不成立 ⇒ 目标已增 + 源未减 = 复制 ⇒ 整拍撤销
+        ItemStack remaining = actual >= source.getCount()
+            ? ItemStack.EMPTY
+            : source.copyWithCount(source.getCount() - actual);
+        setItem(from, remaining);
+        ItemStack afterSource = getItem(from);
+        if (!ItemStack.matches(afterSource, remaining)) {
+            rollbackSlot(this, to, targetSnapshot,
+                "源槽 " + from + " 写回不符（期望余 " + remaining.getCount()
+                    + "，实际 " + afterSource.getCount() + "）");
+            syncSlotToClients(from, getItem(from));
+            syncSlotToClients(to, getItem(to));
+            return new MoveResult.BackendViolation(
+                "源槽写回不符（期望余 " + remaining.getCount() + "，实际 "
+                    + afterSource.getCount() + "）—— 已撤销目标写入");
+        }
+
+        syncSlotToClients(from, afterSource);
+        syncSlotToClients(to, afterTarget);
+        onSlotsMoved(from, to);
+        return new MoveResult.Success(actual, new UndoToken(from, to, source, target, actual));
+    }
+
+    /**
+     * 产物放置：把至多 {@code amount} 个 {@code prototype} 放入槽（空槽或同类合并），
+     * 返回<b>实际放入量</b>。来源是配方 / 掉落等虚拟源，没有源槽。
+     *
+     * <p><b>预算 = {@code simulateInsertItem}</b>（`I-C14①` 容量权威，含准入）——
+     * 调用方（熔炉 {@code calculateOutputSpace} / 耕地 / 酿造 {@code placeRemainder}）
+     * 的产量预算已经用同一口径，写入与预算从此一致。</p>
+     *
+     * <p><b>差额只 WARN 不回滚</b>：差额只可能来自容器 simulate 撒谎（说能收 N、实收 M&lt;N）；
+     * 已放入的 M 个是真产物，回滚反而销毁；无源槽 ⇒ 无复制面（差额方向只会是少产出，
+     * 预算钳住上限）。WARN = `I-C6` 丢必留痕。写入被重定向成别的东西时恢复原状按零处理。</p>
+     *
+     * @return 实际放入量（0 = 没放进去；余量归调用方处置）
+     */
+    default int produce(int slot, ItemStack prototype, int amount) {
+        if (!isValidSlot(slot) || prototype.isEmpty() || amount <= 0) return 0;
+        int budget = simulateInsertItem(slot, prototype.copyWithCount(amount));
+        if (budget <= 0) return 0;
+        int planned = Math.min(amount, budget);
+
+        ItemStack target = getItem(slot);
+        ItemStack expected = target.isEmpty()
+            ? prototype.copyWithCount(planned)
+            : target.copyWithCount(target.getCount() + planned);
+        setItem(slot, expected);
+        ItemStack after = getItem(slot);
+        int actual;
+        if (ItemStack.matches(after, expected)) {
+            actual = planned;
+        } else if (!after.isEmpty() && ItemStack.isSameItemSameComponents(after, prototype)) {
+            actual = Math.max(0, after.getCount() - target.getCount());
+            if (actual < planned) {
+                SLOT_OPS_LOGGER.warn("produce: 槽位 {} 计划放入 {}×{}，实际 {} —— 余量 {} 个未落地",
+                    slot, planned, prototype.getItem(), actual, planned - actual);
+            }
+        } else {
+            rollbackSlot(this, slot, target,
+                "produce 写入被重定向（实际 " + after + "）");
+            syncSlotToClients(slot, getItem(slot));
+            return 0;
+        }
+        syncSlotToClients(slot, after);
+        return actual;
+    }
+
+    /**
+     * 输入消费：从槽扣至多 {@code maxUnit} 个，返回<b>实际扣减量</b>。来源槽 → 虚空
+     * （被配方消耗），没有目标槽。
+     *
+     * <p><b>查抽取权限</b>（{@code simulateExtractItem}，`I-C12` 第三维）：容器不让取的货
+     * 功能不得私吞 —— 对齐 {@link #moveStack} 先例。</p>
+     *
+     * <p><b>写回不符 ⇒ 按「没扣到」处理</b>：恢复原状返回 0，调用方本拍不推进。
+     * consume 无目标槽，坏方向只有「少扣」，不存在复制面；恢复原状是为了不留下
+     * 「扣了一半」的中间态（`I-C13`：写回不得覆盖未参与本次操作的数量）。</p>
+     *
+     * @return 实际扣减量（0 = 一件没扣到，槽原样）
+     */
+    default int consume(int slot, int maxUnit) {
+        if (!isValidSlot(slot) || maxUnit <= 0) return 0;
+        ItemStack source = getItem(slot);
+        if (source.isEmpty()) return 0;
+        int planned = Math.min(maxUnit, source.getCount());
+        planned = Math.min(planned, simulateExtractItem(slot, planned));
+        if (planned <= 0) return 0;
+
+        int left = source.getCount() - planned;
+        ItemStack expected = left <= 0 ? ItemStack.EMPTY : source.copyWithCount(left);
+        setItem(slot, expected);
+        ItemStack after = getItem(slot);
+        if (!ItemStack.matches(after, expected)) {
+            SLOT_OPS_LOGGER.warn("consume: 槽位 {} 写回不符（期望余 {}，实际 {}）—— 按「没扣到」处理",
+                slot, left, after.getCount());
+            rollbackSlot(this, slot, source, "consume 写回不符");
+            syncSlotToClients(slot, getItem(slot));
+            return 0;
+        }
+        syncSlotToClients(slot, after);
+        return planned;
+    }
+
+    /**
+     * 原地整槽替换 —— 「不可拆整槽变换」（`I-C13`：一槽一瓶，要么整槽成要么不动）。
+     * 供酿造瓶槽一类「把 A 换成 B、数量不增减」的变换使用。
+     *
+     * <p>{@code fn} 收到的是<b>副本</b>，不得改活引用（{@code setItem} 覆盖语义会抽干
+     * 槽内活引用；变换结果必须来自 fn 的返回值而不是原地修改）。</p>
+     *
+     * <p>写后回读不符 ⇒ 还原并返回 {@code false}，调用方按「本槽没换成」处理
+     * （酿造 = 整批中止不扣材料）。</p>
+     *
+     * @return true = 已替换（或 fn 判定无需变化）；false = 未替换（槽原样）
+     */
+    default boolean transform(int slot, UnaryOperator<ItemStack> fn) {
+        if (!isValidSlot(slot)) return false;
+        ItemStack before = getItem(slot);
+        ItemStack expected = fn.apply(before.copy());
+        if (ItemStack.matches(expected, before)) return true;   // fn 判定无需变化
+        setItem(slot, expected);
+        ItemStack after = getItem(slot);
+        if (!ItemStack.matches(after, expected)) {
+            rollbackSlot(this, slot, before,
+                "transform 写入不符（期望 " + expected + "，实际 " + after + "）");
+            syncSlotToClients(slot, getItem(slot));
+            return false;
+        }
+        syncSlotToClients(slot, after);
+        return true;
     }
 }
