@@ -386,8 +386,15 @@
 **现状**：✅ **`moveStack` 已三维度齐备**（2026-11-03）：容量 / 准入（`canAcceptAll`）、
 抽取权限（`simulateExtractItem`，权威走 `extractItem(…, true)`）、两侧回读核验；
 后端无 `setStackInSlot` ⇒ `Unsupported` 而非 `BackendViolation`。
-⏳ 流体推动只做了「目标侧回读 + 只扣实际量」（`ContainerFluidConservationTest`），
-**源侧核验与抽取权限未做**；其余搬运点（漏斗 / 末影箱 / 活箱子 insert）未按本判据审计。
+✅ 流体推动源侧核验已补（2026-11-05）：源写回失败 ⇒ 整拍撤销目标写入
+（`ContainerFluidData.tryMoveInto`，目标快照先于写入 —— `setItem` 是覆盖语义会抽干活引用）。
+✅ `PlainSlotAccessor` extract / insert / rollback 写后回读（2026-11-05，与 `BodySlotAccessor`
+同形）：写回静默失败 ⇒ restore + 返回 EMPTY / 0，绝不把没离开源的货交给调用方；
+其余搬运点（漏斗 / 末影箱 / 活箱子 insert）已审计为原子或组件内写。
+⏳ 抽取权限维度未接入读取路径（`PlainSlotAccessor.simulateExtract` 未查 `simulateExtractItem`、
+流体推动不看抽取权限）——玩法口径需拍板（[TODO 物品传输](../TODO.md)）。
+⏳ 熔炉 / 酿造 / 耕地的域内 setItem 写回核验，留待「唯一移动原语」收编
+（[TODO 物品传输](../TODO.md) 1-②）。
 
 ---
 
@@ -433,6 +440,9 @@
   实测（2026-11-01 用户确认）：熔炉输出槽 / 耕地产出槽 / 传输合并路径均中招 ——
   目标槽超 64 后活物品不再工作，而**活物品自身堆叠不受影响**（两者别混）。
 - **也不得仅凭 `getSlotLimit` 强行写入**：它可能只是槽的一般上界，不代表接受这个物品。
+  实证（2026-11-05）：NeoForge 默认 `ItemStackHandler.getSlotLimit` 返回
+  `ABSOLUTE_MAX_STACK_SIZE`（99），不是真容量 —— 真容量只有 `insertItem(…, true)` 自己知道，
+  **「判满」（`isFull`）同样必须问它**（三个 Accessor 均为「容器自答还能不能塞进一个同类」）。
   ⚠️ 例外：**不能问准入的物理搬运**（流体，`A3`）只能用 `getSlotLimit` 作容量上界
   —— 这是特例，不是通则。
 
@@ -459,9 +469,15 @@ int  move  = (int) Math.min(amount, Math.max(0, space));      // 预算限制操
 > 与 I-C4 的关系：I-C4 说「模拟只是上界」，本条说「上界本身要算对」。
 > 与 I-C7 的关系：写后校验能发现"没写进去"，但**发现不了"写进去的是负数"** —— 那要靠本条。
 
-**现状**：✅ 熔炉 / 耕地 / 酿造的目标槽容量（2026-11-01/03）；
-⏳ `PlainSlotAccessor`（5 处）/ `NeighborSlotAccessor.isFull` / 流体转化产物未改；
-⏳ 饱和算术工具与 13 处调用点未改（清单见 [TODO 物品传输](../TODO.md) §2）。
+**现状**：✅ 容量问容器全面收口（2026-11-05）：传输层（`PlainSlotAccessor` insert/simulateInsert /
+`BodySlotAccessor.insertableCount` / 三 Accessor 的 `isFull`）与变换产物（熔炉
+`calculateOutputSpace` / 耕地 / 酿造 `placeRemainder`）一律以 `simulateInsertItem` 为容量权威
+（流体反应产物为 A3 特例只问 `getSlotLimit`）；`SlotInfoProvider` 默认实现已改为
+内容感知（异类 ⇒ 0、同类扣已有量 —— 否则内容盲的默认会害了合并路径）。
+✅ 算术预算 long 化（fluid `tryMoveInto` / 熔炉产出 / 耕地 / `UndoToken`）；其余台账点判定
+safe-by-construction 不改（逐条理由见 [TODO 物品传输](../TODO.md) §2）。
+⏳ 饱和算术**通用工具类不存在** —— 现各点已按三步纪律就地书写；是否抽公共工具
+等第二个需求出现再定。
 
 ---
 

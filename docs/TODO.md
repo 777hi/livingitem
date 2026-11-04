@@ -198,25 +198,23 @@
    📄 来源：A1/A2 已并入本节上文（2026-10-31），原稿归档 `archive/living-fluid-review.md`。
 
 2. **按 `I-C12~14` 自查存量**（2026-11-03 立契约后新增）—— 契约见
-   [container-boundary.md](system-design/container-boundary.md) §2。三类待办：
+   [container-boundary.md](system-design/container-boundary.md) §2。
+   ✅ **2026-11-05 存量收口完成**（全项目审计 + 修复，+11 测试）。三类结论：
 
-   | 不变量 | 存量问题 | 规模 |
-   |---|---|---|
-   | **I-C12 源侧核验** | ⏳ 流体推动只回读**目标增量**，未核验**源扣减** ⇒ 源写回失败（第三方容器拒绝）时**复制**。2026-11-03 活塞侧审查发现，尚未修 | 1 处 + 其余搬运点未审计 |
-   | **I-C13 变换** | ✅ 酿造（`OPERABLE_BOTTLES = 1`，2026-11-03）；✅ 熔炉 / 耕地属「分批加工」已合规（只扣实际处理量）。⏳ 其余变换点未逐个声明「输入 / 产出 / 残留物」 | 已清主体 |
-   | **I-C14 容量** | ✅ 已修：熔炉 `calculateOutputSpace` / 耕地产出槽 / 酿造 `placeRemainder`。⏳ 待修：`PlainSlotAccessor`（5 处）、`NeighborSlotAccessor.isFull`、`ContainerFluidData` 转化产物（431） | ~8 处 |
-   | **I-C14 算术预算** | ⏳ 加法 11 处 + 乘法 2 处（见下）。⚠️ 必须按「**先 long 算预算 → 预算限制操作量 → 只扣实际量**」改，**不能用无条件饱和**（审查：目标 MAX-1 + 源 64 会静默丢 63） | ~13 处 |
+   | 不变量 | 结论 |
+   |---|---|
+   | **I-C12 源侧核验** | ✅ 流体推动：源写回后回读，不成立 ⇒ 整拍撤销目标写入（目标快照先于写入——`setItem` 覆盖语义会抽干活引用）。✅ `PlainSlotAccessor` extract / insert / rollback 写后回读（照 `BodySlotAccessor` 形状）。✅ 其余搬运点审计完毕：漏斗 / 末影箱 / 活箱子均为原子或组件内写；`ServerPacketHandler` 存取为退款式 |
+   | **I-C14 容量** | ✅ 传输层（Plain / Body 的 insert 与 simulateInsert）与变换产物（熔炉 `calculateOutputSpace` / 耕地 / 酿造 `placeRemainder` / 流体反应产物）一律以 `simulateInsertItem` 为容量权威（流体为 A3 特例只问 `getSlotLimit`）；`SlotInfoProvider` 默认实现改内容感知（异类 ⇒ 0、同类扣已有量——内容盲默认会害合并路径）。✅ `isFull` 三 Accessor 统一为「容器自答还能不能塞进一个同类」——**NeoForge 默认 handler 的 `getSlotLimit` = `ABSOLUTE_MAX_STACK_SIZE`(99) 不是真容量**，任何公式都猜错一侧 |
+   | **I-C14 算术** | ✅ long 化：fluid `tryMoveInto` 预算、熔炉产出乘法（307/310）、耕地乘法（225）、`UndoToken:39`。✅ 判定 safe-by-construction 不改：`ServerPacketHandler:193/233`（退款 = 之前 split 的量）、`ServerPlaceRecipeMixin:75`（原版 `handleRecipeClicked` 把 maxAmount 钳到 `min(k, ingredient.maxStackSize)` 且 placeRecipe 前 `clearGrid` ⇒ grow 上界 ≤64）、`LivingChestFunction:168/212/244`（=「不必改」活箱子重叠项） |
 
-   **饱和算术清单**（2026-11-03 扫描，`int` 加法/乘法）：
-   加法 —— `LivingBrewingStandFunction:365` · `ContainerFluidData:432/912` ·
-   `PlainSlotAccessor:78/119/121` · `ServerPacketHandler:193/233` · `ServerPlaceRecipeMixin:75` ·
-   `LivingChestFunction:168/212/244` · `LivingFurnaceFunction:310`；
-   乘法 —— `LivingFarmlandFunction:225` · `LivingFurnaceFunction:310`。
-   ⚠️ **已有正确先例**（用 `long`）：`LivingChestFunction:373`、`BulbItemEnergyStorage` 全部、
-   `LivingWaxedCopperTooltip:219` —— 改的时候照它们写。
-   ⚠️ **不必改**：活箱子内部 7 处（27 格虚拟槽，64 是设计上限）、`ServerPacketHandler:215`
-   与 `LivingEnderChestAccessor:519`（玩家背包/末影箱，64 正确）、`FluidTransformTable:181`
-   与 `WaterRegistration:93`（规则判定不是容量）。
+   台账勘误（2026-11-05 审计）：行号漂移 3 处（brewing:365→391、fluid:432/912→466/938）；
+   审计新发现同族位点已一并修：`BodySlotAccessor:99/103/156`（11-04 活活塞新文件）、
+   `LivingFurnaceFunction:307`（漏列乘法）、`LivingFarmlandFunction:234`、`UndoToken:39`。
+   ⏳ **遗留两件，单列不静默**：① 熔炉输入扣减（`executeTransform:301-302`）/ 熔炉·酿造·耕地
+   setItem 的「先写无回读」—— 留待第 1-② 条「唯一移动原语」收编，不逐点补 8 处样板；
+   ② **抽取权限维度未接入读取路径**（`PlainSlotAccessor.simulateExtract` 未查
+   `simulateExtractItem`、流体推动不看抽取权限）—— 玩法口径需拍板：水流要不要尊重
+   输出过滤器（`ContainerBoundaryContractTest` 的 `ExtractBlockedHandler` 只守了写回侧）。
 
 3. **执行顺序与 API 契约 §1.3 不一致**（2026-11-03 活塞侧复查发现，**既有问题**）——
    实际按**槽扫描遭遇序**执行功能，而契约写的是 **manager 序**（按 `getTickPriority` 排序）。

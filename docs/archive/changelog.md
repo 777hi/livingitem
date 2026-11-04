@@ -17,6 +17,25 @@
 
 ## 2026-11-05
 
+- ✅ **传输守恒存量收口（I-C12 源侧核验 + I-C14 容量/算术，TODO §物品传输 1-①）** ——
+  全项目审计（两路并行）核实 2026-11-03 台账后修复，+11 测试（1514 → 1525）全绿。
+  **I-C12**：流体推动源侧回读（源写回失败 ⇒ 整拍撤销目标写入防复制；目标快照先于写入取副本
+  —— `setItem` 覆盖语义会抽干活引用）+ `PlainSlotAccessor` extract/insert/rollback 写后回读
+  （照 `BodySlotAccessor` 形状：写→回读→不符即 restore+ERROR）；其余搬运点审计完毕
+  （漏斗/末影箱/活箱子=原子或组件内写）。**I-C14 容量**：传输层与变换产物（熔炉
+  `calculateOutputSpace`/耕地/酿造 `placeRemainder`/流体反应产物）一律以 `simulateInsertItem`
+  为容量权威，超堆叠槽不再被物品上限判满停摆（酿造残留物丢弃是真丢物路径，已修）；
+  `SlotInfoProvider` 默认实现改内容感知；**`isFull` 三 Accessor 统一为容器自答**
+  （「还能不能塞进一个同类」的模拟探测——NeoForge 默认 `getSlotLimit` = `ABSOLUTE_MAX_STACK_SIZE`(99)
+  不是真容量，任何公式都猜错一侧）。**I-C14 算术**：fluid/熔炉（307/310）/耕地（225）/
+  `UndoToken:39` long 化。台账勘误 3 处行号漂移（brewing:365→391、fluid:432/912→466/938），
+  审计新发现同族位点一并修（BodySlotAccessor:99/103/156、furnace:307、farmland:234、UndoToken:39）。
+  判定 safe-by-construction 不改：`ServerPacketHandler:193/233`、`ServerPlaceRecipeMixin:75`
+  （原版 maxAmount 被 `min(k, ingredient.maxStackSize)` 钳制 + placeRecipe 前 `clearGrid`）、
+  活箱子内部重叠项。**遗留两件单列 TODO 不静默**：域内 setItem 回读等 ②「唯一移动原语」收编；
+  抽取权限维度接入读取路径需玩法拍板（水流要不要尊重输出过滤器）。
+  顺带：buffer 索引存量红（HEAD 即红，与本次无关）按门禁要求机械重生成（`gen_buffer_index` 产物）。
+  → [TODO §物品传输](../../TODO.md) · [container-boundary §2](../system-design/container-boundary.md) · fluid tech §3.3。
 - 📚 **活活塞升格 tech 文档——设计稿归档留痕（模板 §2.3 晋升流程）** —— 新增
   `docs/tech/living-piston-tech.md`（§0 玩法定义 22 条契约 + 原版事实存档 + 状态机 / 数量划范围 /
   粘性拉 + 机械压送（接收端定位 / 控制权对比 / 末端栈语义 / 末影直连出口）+ 渲染（2D blit 全平面
