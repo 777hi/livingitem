@@ -59,11 +59,6 @@ public final class PistonRenderState {
         PROGRESS.keySet().removeIf(k -> !activeKeys.contains(k));
     }
 
-    /** 头模型 SHORT 档：头在基座半程内用短头（原版伸出侧 {@code progress <= 0.5} 同族）。 */
-    public static boolean headShort(float progress) {
-        return progress <= 0.5f;
-    }
-
     /**
      * 头位移（<b>[0,1] 模型单位</b>）：整段机械行程 = 1，随进度线性。
      * 屏面像素校正属于叠加层位姿，不能烘进此进度值。

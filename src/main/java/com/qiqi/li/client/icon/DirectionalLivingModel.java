@@ -2,6 +2,7 @@ package com.qiqi.li.client.icon;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
+import com.qiqi.li.living.model.Pos2D;
 import net.minecraft.client.renderer.block.model.BakedQuad;
 import net.minecraft.client.renderer.block.model.ItemOverrides;
 import net.minecraft.client.renderer.block.model.ItemTransforms;
@@ -33,6 +34,19 @@ public class DirectionalLivingModel implements BakedModel {
     public DirectionalLivingModel(BakedModel inner, float guiScale) {
         this.inner = inner;
         this.guiScale = guiScale;
+    }
+
+    /**
+     * 家族 GUI 角度约定（火把 / 中继器 / 比较器 / 活塞同款）：配置方向 → 屏面视觉角。
+     * 基准 = 图标内容朝上（活塞板缘在上）；GUI 屏面 y 向下，正角为视觉顺时针。
+     * 叠加层（GuiGraphics 直绘，无翻转）直接使用；物品模型管线在 applyTransform 之后
+     * 含 y 翻转 ⇒ 那里必须施加<b>相反数</b>（见 GenericLivingItemOverrides#resolveDirectionRotation）。
+     */
+    public static int rotationOf(Pos2D direction) {
+        if (Pos2D.RIGHT.equals(direction)) return 90;
+        if (Pos2D.LEFT.equals(direction)) return -90;
+        if (Pos2D.DOWN.equals(direction)) return 180;
+        return 0;   // UP 与兜底（组件层已拦非四向，防御性归位）
     }
 
     @Override

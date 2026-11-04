@@ -31,7 +31,8 @@ src/test/java/com/qiqi/li/
 │   └── LivingItemInputKeyMapTest.java         # 方向输入键码表·九宫格 8 键映射/未知键为 0/全角字母归一化与转大写链路（2026-10-29）
 ├── client/icon/
 │   ├── WaterWheelRenderStateTest.java         # 水车图标旋转时钟·速度(Create口径 6°/s/RPM)/方向(符号随rpm)/rpm=0恒0/360°回绕连续/大时钟量级不退化(2026-10-29 换源回归)
-│   └── PistonRenderStateTest.java             # 活活塞伸缩进度时钟·伸出/收回插值与端点钳制/中途翻转从当前进度续接/方向变化吸附不滑动/键独立/活跃键剪枝/短头阈值/头位移线性([0,1]方块单位)/旋转表pinned(实机调校点)
+│   ├── DirectionalLivingModelTest.java        # 家族 GUI 角度约定·四向视觉角表pinned(实机调校点)/非四向兜底归位/物品管线相反数与火把家族实机验证值逐项一致
+│   └── PistonRenderStateTest.java             # 活活塞伸缩进度时钟·伸出/收回插值与端点钳制/中途翻转从当前进度续接/方向变化吸附不滑动/键独立/活跃键剪枝/头位移线性([0,1]方块单位)/旋转表pinned(实机调校点)
 ├── client/render/
 │   ├── LivingFarmlandSeedDecoratorTest.java   # 种子图标装饰器守卫·普通/未种植/已种植/非耕地
 │   ├── LivingPistonOverlayTest.java           # 活活塞叠加层准入与取数·仅活活塞/组件方向/背包槽按container身份判/缓存双路路由含miss/进度键前缀防同号互串（绘制本体不可单测，实机验收）

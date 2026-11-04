@@ -110,6 +110,21 @@ public final class LivingIconRegistry {
             .addVariant("idle", "item/tnt_idle", stack -> true)
             .build());
 
+        // 活活塞（2026-11-04 全平面定稿）：图标 = 纯机身剖面（16×12×16，UV [0,4,16,16] 1:1 无拉伸，
+        // 无 display 变换 ⇒ 16px 原版物品尺寸），板缘 4px 行不烘进贴图 —— 板 / 杆由
+        // LivingPistonOverlay 2D blit 原版 piston_side 贴图区域（零新资产）：
+        // 静止板贴机身前缘 = 朝向指示；滑出后原位只剩机身（推出残影根源已除）。
+        // directional() ⇒ GUI 内随 WASD 朝向旋转（火把家族同款角度约定 rotationOf）。
+        // 普通 / 粘性共用同一机身模型（侧视剖面同貌）；hand 持有仍是原版 3D（ContextAware）。
+        register(LivingIconSpec.builder(net.minecraft.world.item.Items.PISTON)
+            .addVariant("base", "item/living_piston", stack -> true)
+            .directional()
+            .build());
+        register(LivingIconSpec.builder(net.minecraft.world.item.Items.STICKY_PISTON)
+            .addVariant("base", "item/living_piston", stack -> true)
+            .directional()
+            .build());
+
         // ⚠️ 3D 方案（2026-09-22 定稿）：走原版 builtin/entity（ChestRenderer），
         //    GUI 下显示**正面视角**（rotation [0,0,0]）、scale 1.0（箱体本身 14 单位 = 14px）。
         //    依据：ChestRenderer 物品渲染分支强制 FACING=SOUTH（无 Y 旋转），锁扣在 +Z 面

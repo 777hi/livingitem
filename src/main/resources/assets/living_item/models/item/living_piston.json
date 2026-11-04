@@ -1,0 +1,14 @@
+{
+  "textures": { "particle": "minecraft:block/piston_side", "side": "minecraft:block/piston_side" },
+  "elements": [
+    { "from": [0, 0, 0], "to": [16, 12, 16],
+      "faces": {
+        "north": { "texture": "#side", "uv": [0, 4, 16, 16] },
+        "south": { "texture": "#side", "uv": [0, 4, 16, 16] },
+        "east":  { "texture": "#side", "uv": [0, 4, 16, 16] },
+        "west":  { "texture": "#side", "uv": [0, 4, 16, 16] },
+        "up":    { "texture": "#side", "uv": [0, 4, 16, 16] },
+        "down":  { "texture": "#side", "uv": [0, 4, 16, 16] }
+      } }
+  ]
+}

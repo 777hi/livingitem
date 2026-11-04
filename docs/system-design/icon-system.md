@@ -136,6 +136,7 @@ register(LivingIconSpec.builder(Items.REDSTONE_TORCH)
 | 活地图 | `base` | `living_map.png` | 地图缩略图装饰器 |
 | 活水车 | `base` | ⚠️ **无自有纹理** —— 变体路径 `item/water_wheel` 对应的模型文件**不存在**，实际复用 Create 的水车模型 | 3D 旋转动画（Create 兼容） |
 | 活耕地 | `moist` / `dry` | `item/farmland_living_moist` / `item/farmland_living`（复用原版耕地顶面纹理） | 湿润切换 + 种子图标装饰器（`LivingFarmlandSeedDecorator`，已种植时叠加所种作物的种子图标） |
+| 活活塞（普通/粘性） | `base` | `item/living_piston`（**纯机身剖面** 16×12×16，UV [0,4,16,16] 引原版 `piston_side`；无 display 变换 = **16px 原版物品尺寸**） | 方向旋转 + 板/杆伸缩叠加层（`LivingPistonOverlay`，2D blit 原版贴图区域，零新资产；静止板贴机身前缘 = 朝向指示） |
 
 > ⚠️ **表中「纹理」列若写 `.png` 但该文件已不存在，以代码为准。**
 > 2026-09-22 起，**与原版同源的纹理已改为直接引用 `minecraft:` 路径**（铜家族 · 熔炉 · 漏斗 ·

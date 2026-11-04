@@ -88,7 +88,10 @@ public class GenericLivingItemOverrides extends ItemOverrides {
 
     private int resolveDirectionRotation(ItemStack stack) {
         com.qiqi.li.living.model.Pos2D dir;
-        if (stack.is(net.minecraft.world.item.Items.REPEATER)) {
+        if (stack.is(net.minecraft.world.item.Items.PISTON)
+                || stack.is(net.minecraft.world.item.Items.STICKY_PISTON)) {
+            dir = com.qiqi.li.living.domain.piston.LivingPistonData.of(stack).direction();
+        } else if (stack.is(net.minecraft.world.item.Items.REPEATER)) {
             com.qiqi.li.living.domain.redstone.LivingRepeaterData data =
                 LivingRepeaterData.of(stack);
             dir = data.direction();
@@ -101,11 +104,9 @@ public class GenericLivingItemOverrides extends ItemOverrides {
                 LivingRedstoneTorchData.of(stack);
             dir = data.direction();
         }
-        if (dir.equals(com.qiqi.li.living.model.Pos2D.UP)) return 0;
-        if (dir.equals(com.qiqi.li.living.model.Pos2D.RIGHT)) return -90;
-        if (dir.equals(com.qiqi.li.living.model.Pos2D.DOWN)) return 180;
-        if (dir.equals(com.qiqi.li.living.model.Pos2D.LEFT)) return 90;
-        return 0;
+        // 物品渲染管线在 applyTransform 之后含 y 翻转 ⇒ 施加相反数（视觉角 = −施加角，
+        // 与既有火把家族实机验证值 UP=0/RIGHT=−90/DOWN=180/LEFT=90 逐项一致）。
+        return -DirectionalLivingModel.rotationOf(dir);
     }
 
     private RotatingWaterWheelModel getOrCreateRotatingModel(ItemStack stack) {

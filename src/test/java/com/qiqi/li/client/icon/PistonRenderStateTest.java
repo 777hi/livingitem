@@ -88,15 +88,6 @@ class PistonRenderStateTest {
     }
 
     @Test
-    void headShortFollowsHalfwayRule() {
-        assertTrue(PistonRenderState.headShort(0f));
-        assertTrue(PistonRenderState.headShort(0.499f));
-        assertTrue(PistonRenderState.headShort(0.5f));
-        assertFalse(PistonRenderState.headShort(0.501f));
-        assertFalse(PistonRenderState.headShort(1f));
-    }
-
-    @Test
     void headOffsetIsLinearOverFullSlotTravel() {
         assertEquals(0f, PistonRenderState.headOffsetUnits(0f), 1e-6);
         assertEquals(0.25f, PistonRenderState.headOffsetUnits(0.25f), 1e-6);
