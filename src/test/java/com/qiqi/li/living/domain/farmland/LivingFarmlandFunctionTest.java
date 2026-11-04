@@ -118,4 +118,22 @@ class LivingFarmlandFunctionTest {
         assertEquals(1, out.outputIndex());
         assertTrue(ctx.getItem(1).getCount() <= ctx.getItem(1).getMaxStackSize(), "不越堆叠上限");
     }
+
+    @Test
+    @DisplayName("超堆叠生长槽（上限 512，已有 100）⇒ 整份并入到 164，不再被物品上限判满停摆")
+    void superstackGrowthSlot_mergesBeyondItemMax() {
+        int[] limits = new int[27];
+        java.util.Arrays.fill(limits, 64);
+        limits[1] = 512;
+        FakeContainerContext ctx = boxCtx().withSlotLimits(limits);
+        ItemStack farmland = new ItemStack(Items.FARMLAND, 64);
+        ctx.set(1, new ItemStack(Items.WHEAT, 100));
+        FarmlandPlantComponent plant = pendingWheat(0);
+
+        FarmlandPlantComponent out = LivingFarmlandFunction.tryOutputOnce(ctx, 1, farmland, plant, Blocks.WHEAT);
+
+        assertEquals(164, ctx.getItem(1).getCount(),
+            "旧 getMaxStackSize()-count 口径下 100 ≥ 64 ⇒ 判满停摆（I-C14 ① 容量问容器）");
+        assertEquals(1, out.outputIndex(), "索引正常推进");
+    }
 }

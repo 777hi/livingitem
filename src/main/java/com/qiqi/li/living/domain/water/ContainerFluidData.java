@@ -461,12 +461,14 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
             ItemStack existing = ctx.getItem(r.slot());
             if (existing.isEmpty()) {
                 ctx.setItem(r.slot(), r.product());
-            } else if (ItemStack.isSameItemSameComponents(existing, r.product())
-                    && existing.getCount() < existing.getMaxStackSize()) {
+            } else if (ItemStack.isSameItemSameComponents(existing, r.product())) {
+                // 容量按槽位上限判（A3：流体不问准入，不能用 simulateInsertItem —— 见 tryMoveInto javadoc）
+                long space = (long) ctx.getSlotLimit(r.slot()) - existing.getCount();
+                if (space < 1) continue;   // 产物放不下（槽满）⇒ 本拍不反应，岩浆留在格内
                 existing.grow(1);
                 ctx.setItem(r.slot(), existing);
             } else {
-                continue;   // 产物放不下（满组 / 异种物品占据）⇒ 本拍不反应，岩浆留在格内
+                continue;   // 异种物品占据 ⇒ 本拍不反应，岩浆留在格内
             }
             if (r.wasSource()) {
                 removeGeneratedSource(r.slot());   // 岩浆源被反应湮灭（v1 给圆石；原版此处是黑曜石，未做）
@@ -919,6 +921,9 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
      * ⇒ <b>只扣「真正进了目标槽」的数量，绝不按计划量扣源</b>。
      * 回读失败时留 WARN（I-C6：降级必须可观测），源槽原样保留。</p>
      *
+     * <p>⭐ <b>源侧回读</b>（I-C12 位移守恒）：源槽写回后回读，不成立 ⇒ 整拍撤销目标写入
+     * —— 目标增量与源扣减两个判据都成立才算移动成功，否则复制。</p>
+     *
      * @return true = 本拍已处理完（移动或部分合并），调用方不再试其它目标
      */
     private static boolean tryMoveInto(ContainerContext ctx, int slot, ItemStack item,
@@ -929,9 +934,12 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
             return false;
         }
 
-        int space = ctx.getSlotLimit(targetSlot) - targetItem.getCount();
+        // 撤销用快照：setItem 是覆盖语义，会抽干活引用，回退必须用副本
+        ItemStack targetSnapshot = targetItem.copy();
+
+        long space = (long) ctx.getSlotLimit(targetSlot) - targetItem.getCount();
         if (space <= 0) return false;
-        int planned = Math.min(item.getCount(), space);
+        int planned = (int) Math.min(item.getCount(), space);
 
         ItemStack newTarget = targetItem.isEmpty()
             ? item.copyWithCount(planned)
@@ -955,6 +963,24 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
             : item.copyWithCount(item.getCount() - actual);
         ctx.setItem(slot, remaining);
         ctx.syncSlotToClients(slot, remaining);
+
+        // I-C12 源侧回读：目标增量已核验，源扣减不成立（setStackInSlot 静默失败 / 整库重定向）
+        // ⇒ 目标已增 + 源未减 = 复制。整拍撤销目标写入，恢复守恒。
+        ItemStack afterSource = ctx.getItem(slot);
+        if (!ItemStack.matches(afterSource, remaining)) {
+            LOGGER.error("流体推动: 源槽 {} 写回 {}×{} 失败（实际 {}×{}）—— 撤销目标槽 {} 写入以防复制",
+                slot, remaining.getCount(), item.getItem(),
+                afterSource.getCount(), afterSource.getItem(), targetSlot);
+            ctx.setItem(targetSlot, targetSnapshot);
+            ItemStack reverted = ctx.getItem(targetSlot);
+            if (!ItemStack.matches(reverted, targetSnapshot)) {
+                LOGGER.error("流体推动: 目标槽 {} 撤销写入也失败（实际 {}×{}）—— 物品可能复制，需人工核查",
+                    targetSlot, reverted.getCount(), reverted.getItem());
+            }
+            ctx.syncSlotToClients(slot, ctx.getItem(slot));
+            ctx.syncSlotToClients(targetSlot, reverted);
+            return false;
+        }
 
         moved.add(targetSlot);
         return true;

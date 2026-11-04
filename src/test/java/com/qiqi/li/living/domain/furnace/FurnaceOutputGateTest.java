@@ -180,4 +180,22 @@ class FurnaceOutputGateTest {
         assertEquals(0, tf.cachedResult(), "无配方应缓存为 0");
         assertEquals("minecraft:dirt", tf.cachedInput());
     }
+
+    @Test
+    @DisplayName("超堆叠输出槽（上限 512，已有 100 铁锭）⇒ 产出并入到 101，不再被物品上限判满停摆")
+    void superstackOutput_accumulatesBeyondItemMax() {
+        FakeContainerContext ctx = seededCtx(new ItemStack(Items.RAW_IRON, 4), ItemStack.EMPTY);
+        int[] limits = new int[27];
+        java.util.Arrays.fill(limits, 64);
+        limits[OUTPUT_SLOT] = 512;
+        ctx.withSlotLimits(limits);
+        ctx.set(OUTPUT_SLOT, new ItemStack(Items.IRON_INGOT, 100));
+        Level level = levelWithRecipe(true);
+
+        tickOnce(ctx, level);
+
+        assertEquals(101, ctx.getItem(OUTPUT_SLOT).getCount(),
+            "旧 min(slotLimit, maxStackSize)=64 口径下 100 ≥ 64 ⇒ 判满停摆");
+        assertEquals(3, ctx.getItem(INPUT_SLOT).getCount(), "输入按实际处理量扣减");
+    }
 }

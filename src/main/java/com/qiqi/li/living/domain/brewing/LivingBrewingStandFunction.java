@@ -387,7 +387,8 @@ public class LivingBrewingStandFunction implements LivingItemFunction, HasDirect
                 return true;
             }
             if (ItemStack.isSameItemSameComponents(s, remainder)
-                    && s.getCount() < Math.min(context.getSlotLimit(i), s.getMaxStackSize())) {
+                    && context.simulateInsertItem(i, remainder) >= 1) {
+                // 容量问容器（I-C14 ①）：超堆叠槽的残留物不再被物品上限判满丢弃
                 context.setItem(i, s.copyWithCount(s.getCount() + 1));
                 return true;
             }

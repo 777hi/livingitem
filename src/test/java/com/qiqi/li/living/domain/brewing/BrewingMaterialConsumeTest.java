@@ -100,6 +100,22 @@ class BrewingMaterialConsumeTest {
     }
 
     @Test
+    @DisplayName("超堆叠宿主残留物：64 瓶（上限 512）⇒ 仍并入到 65，不再被物品上限判满丢弃")
+    void dragonBreathSuperstackRemainderMerges() {
+        int[] limits = new int[27];
+        java.util.Arrays.fill(limits, 64);
+        limits[0] = 512;                                    // slot 0 是抽屉
+        FakeContainerContext ctx = container().withSlotLimits(limits);
+        ctx.set(MATERIAL, new ItemStack(Items.DRAGON_BREATH, 8));
+        ctx.set(0, new ItemStack(Items.GLASS_BOTTLE, 64));  // 旧 min(slotLimit, 64) 口径判满 ⇒ 丢弃
+
+        LivingBrewingStandFunction.consumeOne(ctx, MATERIAL);
+
+        assertEquals(65, ctx.getItem(0).getCount(), "残留物并入超堆叠瓶堆（I-C14 ① 容量问容器）");
+        assertEquals(7, ctx.getItem(MATERIAL).getCount(), "材料只扣 1 个");
+    }
+
+    @Test
     @DisplayName("空槽：无事发生")
     void emptySlotIsNoOp() {
         FakeContainerContext ctx = container();

@@ -34,6 +34,7 @@ public class FakeContainerContext implements ContainerContext {
     private final String containerKey;
     private Level level;
     private BlockPos blockPos;
+    private int[] slotLimits;   // null = 全部按 getMaxStackSize()
 
     /** 记录所有 syncSlotToClients 调用的槽位，供断言同步行为 */
     public final List<Integer> syncedSlots = new ArrayList<>();
@@ -131,6 +132,39 @@ public class FakeContainerContext implements ContainerContext {
     @Override
     public int getMaxStackSize() {
         return 64;
+    }
+
+    /**
+     * 设置 per-slot 槽位上限（抽屉类超堆叠宿主的最小模型）。
+     *
+     * <p>启用后 {@code getSlotLimit} 按槽返回，{@code simulateInsertItem} 按
+     * 「接受到槽位上限为止」作答（不限物品上限）—— 这是「容量问容器」（I-C14 ①）
+     * 口径下容器自己的回答。未启用时走接口默认（近似口径）。</p>
+     */
+    public FakeContainerContext withSlotLimits(int[] limits) {
+        if (limits.length != slots.length) {
+            throw new IllegalArgumentException("limits.length=" + limits.length + " != size=" + slots.length);
+        }
+        this.slotLimits = limits;
+        return this;
+    }
+
+    @Override
+    public int getSlotLimit(int slot) {
+        return slotLimits == null ? getMaxStackSize() : slotLimits[slot];
+    }
+
+    @Override
+    public int simulateInsertItem(int slot, ItemStack stack) {
+        if (slotLimits == null) {
+            return ContainerContext.super.simulateInsertItem(slot, stack);
+        }
+        ItemStack existing = getItem(slot);
+        if (existing.isEmpty()) return Math.min(stack.getCount(), slotLimits[slot]);
+        if (ItemStack.isSameItemSameComponents(existing, stack)) {
+            return Math.min(stack.getCount(), Math.max(0, slotLimits[slot] - existing.getCount()));
+        }
+        return 0;
     }
 
     @Override

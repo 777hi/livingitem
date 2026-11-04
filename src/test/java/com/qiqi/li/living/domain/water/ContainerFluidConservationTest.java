@@ -89,6 +89,27 @@ class ContainerFluidConservationTest {
     }
 
     /**
+     * 复刻「{@code setStackInSlot} 对指定槽静默失败」的容器：写入被无声丢弃，
+     * 读回永远是旧内容。守卫测试直接对接这类违约行为 —— 它是 I-C12 源侧核验
+     * 要对抗的三种第三方违约之一（{@code insertItem} 撒谎 / {@code getSlotLimit} 撒谎 /
+     * {@code setStackInSlot} 静默失败）。
+     */
+    private static class SourceWriteIgnoringHandler extends LimitedHandler {
+        final int ignoredSlot;
+
+        SourceWriteIgnoringHandler(int[] limits, int ignoredSlot) {
+            super(limits);
+            this.ignoredSlot = ignoredSlot;
+        }
+
+        @Override
+        public void setStackInSlot(int slot, ItemStack stack) {
+            if (slot == ignoredSlot) return;   // 静默违约：写入直接丢弃
+            super.setStackInSlot(slot, stack);
+        }
+    }
+
+    /**
      * 9 格（1×9 单行）：<b>slot 7 是抽屉</b>（512），其余普通槽（64）。
      *
      * <p>为什么把源放在 slot 7：水从 slot 0 扩散到 slot 7，物品从 slot 7 被推到
@@ -97,11 +118,15 @@ class ContainerFluidConservationTest {
      * 若把目标放在水流中段（如 slot 2），物品会被一拍一拍推到容器尽头，
      * 断言看到的就不是搬运结果而是「它跑哪去了」。</p>
      */
-    private static LimitedHandler drawerIntoBoxes() {
+    private static int[] drawerLimits() {
         int[] limits = new int[9];
         java.util.Arrays.fill(limits, 64);
         limits[7] = 512;
-        return new LimitedHandler(limits);
+        return limits;
+    }
+
+    private static LimitedHandler drawerIntoBoxes() {
+        return new LimitedHandler(drawerLimits());
     }
 
     private static int total(SimpleContainerContext ctx) {
@@ -182,5 +207,36 @@ class ContainerFluidConservationTest {
         assertEquals(Items.GOLD_INGOT, ctx.getItem(8).getItem(), "目标槽保持原物");
         assertEquals(3, ctx.getItem(8).getCount(), "目标槽数量不变");
         assertEquals(503, total(ctx), "总量守恒");
+    }
+
+    // ===== I-C12 源侧核验（2026-11-05）：源槽 setStackInSlot 静默失败 ⇒ 整拍撤销，不复制 =====
+
+    @Test
+    @DisplayName("源写回静默失败（合并目标）：目标撤销到 10、源保持 500，总量守恒")
+    void sourceWriteFails_mergeTarget_isFullyReverted() {
+        SourceWriteIgnoringHandler h = new SourceWriteIgnoringHandler(drawerLimits(), 7);
+        h.slots[7] = new ItemStack(Items.REDSTONE, 500);
+        h.slots[8] = new ItemStack(Items.REDSTONE, 10);
+        SimpleContainerContext ctx = new SimpleContainerContext(h);
+
+        waterFrom(0).tick(ctx);
+
+        assertEquals(10, ctx.getItem(8).getCount(), "目标槽撤销回移动前（不保留已推入的 54）");
+        assertEquals(500, ctx.getItem(7).getCount(), "源槽写回被静默丢弃 ⇒ 原样保留");
+        assertEquals(510, total(ctx), "总量守恒：目标已增 + 源未减 = 复制，必须整拍回退");
+    }
+
+    @Test
+    @DisplayName("源写回静默失败（空目标）：目标撤销为空、源保持 500，总量守恒")
+    void sourceWriteFails_emptyTarget_isFullyReverted() {
+        SourceWriteIgnoringHandler h = new SourceWriteIgnoringHandler(drawerLimits(), 7);
+        h.slots[7] = new ItemStack(Items.REDSTONE, 500);
+        SimpleContainerContext ctx = new SimpleContainerContext(h);
+
+        waterFrom(0).tick(ctx);
+
+        assertEquals(0, ctx.getItem(8).getCount(), "目标槽撤销为空");
+        assertEquals(500, ctx.getItem(7).getCount(), "源槽原样保留");
+        assertEquals(500, total(ctx), "总量守恒");
     }
 }

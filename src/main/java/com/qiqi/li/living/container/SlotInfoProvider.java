@@ -46,17 +46,41 @@ public interface SlotInfoProvider extends LivingContainer {
     /**
      * 模拟向指定槽位插入物品，返回实际可插入的数量。
      *
-     * <p>委托给 handler.insertItem(slot, stack, true)，比 isItemValid 更全面，
-     * 因为它会考虑槽位中已有物品的堆叠情况。</p>
+     * <p>默认实现是「近似回答」：按 {@code min(槽位上限, 物品上限)} 与槽内已有同类物品
+     * 算空间，异类占据返回 0，不含准入。有 handler 后端的实现
+     * （SimpleContainerContext / EntityContainerContext）覆写为
+     * {@code handler.insertItem(slot, stack, true)} —— 那才是容器自己的回答
+     * （含准入 / 升级 / 超堆叠口径，I-C14 ① 的权威）。</p>
      *
      * @param slot 槽位索引
      * @param stack 要插入的物品
      * @return 实际可插入的数量
      */
     default int simulateInsertItem(int slot, ItemStack stack) {
+        ItemStack existing = getItem(slot);
+        int maxStack = Math.min(getSlotLimit(slot), stack.getMaxStackSize());
+        if (existing.isEmpty()) {
+            return Math.min(stack.getCount(), maxStack);
+        }
+        if (ItemStack.isSameItemSameComponents(existing, stack)) {
+            return Math.min(stack.getCount(), Math.max(0, maxStack - existing.getCount()));
+        }
+        return 0;
+    }
+
+    /**
+     * 模拟向指定槽位插入「任意多」的 prototype，返回该槽对它的<b>总剩余容量</b>。
+     *
+     * <p>给批量变换算「还能产出多少」用（熔炉产出批量 / 耕地产出）：probe 取
+     * {@code slotLimit} 量级，大到足以测出全部剩余空间；容量权威仍是
+     * {@link #simulateInsertItem}（含准入、物品上限与超堆叠口径）。</p>
+     *
+     * @return 剩余可插入数量（0 = 放不下 / 槽位上限非法）
+     */
+    default int insertableSpace(int slot, ItemStack prototype) {
         int slotLimit = getSlotLimit(slot);
-        int maxStack = Math.min(slotLimit, stack.getMaxStackSize());
-        return Math.min(stack.getCount(), maxStack);
+        if (slotLimit <= 0) return 0;
+        return Math.max(0, simulateInsertItem(slot, prototype.copyWithCount(slotLimit)));
     }
 
     /**

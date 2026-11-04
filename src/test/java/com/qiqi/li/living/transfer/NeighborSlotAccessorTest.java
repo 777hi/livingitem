@@ -143,4 +143,39 @@ class NeighborSlotAccessorTest {
         assertFalse(accessor.isFull());
         assertTrue(accessor.isEmpty());
     }
+
+    @Test
+    @DisplayName("isFull 超堆叠槽:100 个(真抽屉,接受到 512)⇒ 未满,不再被物品上限判满停摆")
+    void isFull_superstackSlot_notFull() {
+        // ⚠️ 必须连 insertItem 一起覆写：原版 ItemStackHandler 的 insert 按
+        // min(slotLimit, itemMax) 钳，只改 getSlotLimit 造不出「真接受超堆叠」的容器
+        ItemStackHandler drawer = new ItemStackHandler(1) {
+            @Override
+            public int getSlotLimit(int slot) {
+                return 512;
+            }
+
+            @Override
+            public ItemStack insertItem(int slot, ItemStack stack, boolean simulate) {
+                ItemStack existing = getStackInSlot(slot);
+                if (!existing.isEmpty() && !ItemStack.isSameItemSameComponents(existing, stack)) {
+                    return stack;
+                }
+                int toInsert = Math.min(stack.getCount(), Math.max(0, 512 - existing.getCount()));
+                if (!simulate && toInsert > 0) {
+                    if (existing.isEmpty()) {
+                        setStackInSlot(slot, stack.copyWithCount(toInsert));
+                    } else {
+                        existing.grow(toInsert);
+                    }
+                }
+                ItemStack remainder = stack.copy();
+                remainder.shrink(toInsert);
+                return remainder.isEmpty() ? ItemStack.EMPTY : remainder;
+            }
+        };
+        drawer.setStackInSlot(0, new ItemStack(Items.DIAMOND, 100));
+
+        assertFalse(accessor(drawer, 0).isFull(), "旧 min(slotLimit, maxStackSize) 口径下这里误判满");
+    }
 }

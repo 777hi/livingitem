@@ -301,13 +301,14 @@ public class LivingFurnaceFunction implements LivingItemFunction, HasDirection {
         inputStack.shrink(transformCount);
         ctx.setItem(inputSlot, inputStack.copy());
 
+        long produced = (long) transformCount * resultCount;
         ItemStack outputStack = ctx.getItem(outputSlot);
         if (outputStack.isEmpty()) {
             ItemStack newOutput = result.copy();
-            newOutput.setCount(transformCount * resultCount);
+            newOutput.setCount((int) produced);
             ctx.setItem(outputSlot, newOutput);
         } else {
-            outputStack.grow(transformCount * resultCount);
+            outputStack.grow((int) produced);
             ctx.setItem(outputSlot, outputStack.copy());
         }
 
@@ -315,16 +316,8 @@ public class LivingFurnaceFunction implements LivingItemFunction, HasDirection {
     }
 
     private int calculateOutputSpace(ContainerContext ctx, int outputSlot, ItemStack result) {
-        ItemStack outputStack = ctx.getItem(outputSlot);
-        int slotLimit = ctx.getSlotLimit(outputSlot);
-        if (outputStack.isEmpty()) {
-            return Math.min(slotLimit, result.getMaxStackSize());
-        }
-        if (ItemStack.isSameItemSameComponents(outputStack, result)) {
-            int maxCount = Math.min(slotLimit, outputStack.getMaxStackSize());
-            return maxCount - outputStack.getCount();
-        }
-        return 0;
+        // 容量问容器（I-C14 ①）：超堆叠槽的产出批量不再被物品上限钳住
+        return ctx.insertableSpace(outputSlot, result);
     }
 
     private boolean hasMatchingRecipe(Level level, ItemStack input, TransformData transform) {

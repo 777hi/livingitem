@@ -222,7 +222,7 @@ public class LivingFarmlandFunction implements LivingItemFunction {
             return finishIfDone(plant.withOutput(i + 1, drops), cropBlock);
         }
 
-        int outputCount = Math.min(farmland.getCount() * drop.getCount(), drop.getMaxStackSize());
+        int outputCount = (int) Math.min((long) farmland.getCount() * drop.getCount(), drop.getMaxStackSize());
         if (outputCount <= 0) return plant;
 
         ItemStack grown = ctx.getItem(growthSlot);
@@ -231,7 +231,8 @@ public class LivingFarmlandFunction implements LivingItemFunction {
             ctx.setItem(growthSlot, drop.copyWithCount(outputCount));
             placed = true;
         } else if (ItemStack.isSameItemSameComponents(grown, drop)) {
-            int space = grown.getMaxStackSize() - grown.getCount();
+            // 容量问容器（I-C14 ①）：超堆叠生长槽不再被物品上限判满停摆
+            int space = ctx.insertableSpace(growthSlot, drop);
             // 合并仅当放得下整份产出（部分合并会静默丢弃 outputCount-toAdd 差额，
             // 2026-09-14 终审实测修复）；放不下就本 tick 等待，与「不同种占据」同一语义
             if (space >= outputCount) {

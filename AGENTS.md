@@ -148,7 +148,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1514 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
+**合计测试用例 1525 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -173,6 +173,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-11-05 | ✅ **传输守恒存量收口（I-C12/I-C14）** —— 流体推动源侧核验（写回失败整拍回退防复制）+ PlainSlotAccessor 写后回读；容量问容器（`simulateInsertItem` 权威，超堆叠停摆修复，isFull 三 Accessor 容器自答）；算术 long 化；+11 测试全绿 | [TODO §物品传输](docs/TODO.md) · [container-boundary §2](docs/system-design/container-boundary.md) |
 | 2026-11-05 | 📚 **活活塞升格 tech 文档** —— [living-piston-tech.md](docs/tech/living-piston-tech.md)（§0 契约 22 条 + 机制 / 压送 / 渲染 / 生命周期 / 守卫映射 / 测试地图 / 踩坑实录）；设计稿归档留痕（模板 §2.3 晋升流程），活指针全量切换 | [活活塞-design.md](docs/archive/活活塞-design.md) §7.8 |
 | 2026-11-05 | ✅ **活活塞图标全平面重建，真机验收通过** —— 机身剖面图标＋板/杆 2D blit（原版贴图零新资产、静止板贴前缘=朝向指示）；三轮真机修正：删 scale 1.125（16px）/ 板位 −8−t / 板 blit 锚点 x=−8 居中（「7」→「T」）；全量1514绿 | [活活塞-design.md](docs/archive/活活塞-design.md) §7.8.6 |
 | 2026-11-04 | ✅ **活活塞压送真机验收通过（传输侧）** —— 传输逻辑与活漏斗联动实机正常；四向渲染贴图细节待复验 | [活活塞-design.md](docs/archive/活活塞-design.md) §7.8.5 |
@@ -181,7 +182,6 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-11-03 | 🎨 **活活塞渲染原型（阶段E）+15测试** —— 进度插值＋iso本体/头杆叠加层已落；数据源=客户端runtime；iso/旋转常数为实机调校点 | [活活塞-design.md](docs/archive/活活塞-design.md) §7.8.3 |
 | 2026-11-03 | ✅ **活活塞第二批适配 +46测试** —— 方向组件、runtime片段、真实函数tick与tooltip已测；未全局注册，WASD / 生命周期 / 压送 / 渲染未启用 | [活活塞-design.md](docs/archive/活活塞-design.md) §7.8.2 |
 | 2026-11-03 | ✅ **活活塞首批独立逻辑：解析、推拉编排与状态迁移 +49测试** —— 只调用框架moveStack/undo；游戏tick、方向组件、压送及渲染尚未接入，不宣称可游戏使用 | [活活塞-design.md](docs/archive/活活塞-design.md) §7.8.1 · [test-map.md](docs/reference/test-map.md) |
-| 2026-11-03 | 📋 **活活塞 v1.11：删除压送自动补位，未实现** —— 只交付原末端栈，送空留空、后方不动；补位预演 / 撤销 / 协调整套删除，普通推拉不变 | [活活塞-design.md](docs/archive/活活塞-design.md) §2.6.3 / §7 |
 ## 提交前必跑（2026-10-30 更新）
 
 ```bash

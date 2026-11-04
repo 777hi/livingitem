@@ -41,7 +41,7 @@ final class BodySlotAccessor implements SlotAccessor {
     public int insert(ItemStack stack) {
         if (stack.isEmpty()) return 0;
         ItemStack current = context.getItem(slot).copy();
-        int accepted = insertableCount(current, stack);
+        int accepted = insertableCount(stack);
         if (accepted <= 0) return 0;
 
         ItemStack expected;
@@ -88,20 +88,13 @@ final class BodySlotAccessor implements SlotAccessor {
 
     @Override
     public int simulateInsert(ItemStack stack) {
-        return stack.isEmpty() ? 0 : insertableCount(context.getItem(slot), stack);
+        return stack.isEmpty() ? 0 : insertableCount(stack);
     }
 
-    private int insertableCount(ItemStack current, ItemStack stack) {
+    private int insertableCount(ItemStack stack) {
         if (!context.supportsExactWrite(slot)) return 0;
-        int slotLimit = context.getSlotLimit(slot);
-        if (current.isEmpty()) {
-            int admitted = Math.max(0, context.simulateInsertItem(slot, stack));
-            int max = Math.min(slotLimit, stack.getMaxStackSize());
-            return Math.min(stack.getCount(), Math.min(admitted, max));
-        }
-        if (!ItemStack.isSameItemSameComponents(current, stack)) return 0;
-        int max = Math.min(slotLimit, current.getMaxStackSize());
-        return Math.min(stack.getCount(), Math.max(0, max - current.getCount()));
+        // I-C14 ①：容量问容器（含准入 / 物品上限 / 超堆叠口径），空槽与合并同走一个权威
+        return Math.max(0, Math.min(stack.getCount(), context.simulateInsertItem(slot, stack)));
     }
 
     @Override
@@ -153,8 +146,8 @@ final class BodySlotAccessor implements SlotAccessor {
     public boolean isFull() {
         ItemStack stack = context.getItem(slot);
         if (stack.isEmpty()) return false;
-        int max = Math.min(context.getSlotLimit(slot), stack.getMaxStackSize());
-        return stack.getCount() >= max;
+        // 判满 = 容器自己答「还能不能塞进一个同类」（I-C14 ①），与 NeighborSlotAccessor.isFull 同口径
+        return context.simulateInsertItem(slot, stack.copyWithCount(1)) == 0;
     }
 
     @Override
