@@ -117,6 +117,12 @@ public final class ContainerContexts {
         if (containerEntity != null && containerEntity.level() == level) {
             return new EntityContainerContext(containerEntity, (ServerLevel) level);
         }
+        // ⚠️ 形状是实体容器、却被双闸（能力面）拦下 ⇒ 到此为止（2026-11-05）。
+        //    继续走下面的菜单位置分支会按 getBlockEntity(实体位置) 反查，矿车/船恰好停在
+        //    箱子上时就会误判成那个方块容器 —— 这条落点是准入修复后才第一次开放的。
+        if (container instanceof net.minecraft.world.entity.vehicle.ContainerEntity) {
+            return null;
+        }
 
         // 模组容器（2026-10-19，I-C5 收尾）：槽位容器可能是 NeoForge SlotItemHandler 的
         // 每槽匿名 Container ⇒ 上面四条全不命中。改问**菜单**自己是哪个方块——

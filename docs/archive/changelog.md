@@ -17,6 +17,41 @@
 
 ## 2026-11-05
 
+- 🐛 **修 1.7.0 处理 `lootr:lootr_minecart` 崩服（玩家反馈；+4 测试，1560→1564）** ——
+  **现象**：1.7.0 服务端 tick 遍历实体时碰到 `lootr:lootr_minecart`，抛
+  `IllegalStateException: 实体 ... 无 ItemHandler.ENTITY 能力` 并崩服；回退 1.6.2 正常。
+  **根因**（用 `neoforge-21.1.219-sources.jar` 里的 `CapabilityHooks` 核实）：
+  `registerVanillaProviders` 只按 `EntityType` 显式给 `CHEST_BOAT` / `CHEST_MINECART` /
+  `HOPPER_MINECART` 三个原版类型注册 `ItemHandler.ENTITY`；
+  `registerFallbackVanillaProviders` 虽遍历**所有** `EntityType`，但 provider 只对
+  `AbstractHorse` / `LivingEntity` 返回 handler，其余返回 `null`。而 1.7.0 新加的实体容器
+  白名单是纯结构化判据 `entity instanceof ContainerEntity`（外加 `hasChest()`）——
+  Lootr 的箱子矿车形状上实现该接口 ⇒ 过白名单，却查不到能力 ⇒
+  `EntityContainerContext.handlerOf` 构造即抛。1.7.0 发版（2026-10-21）时
+  `processEntityContainers` 还没有 `try/catch`，异常直接冒到 ServerTick 顶层；
+  异常隔离（`FailureThrottle`）是 2026-10-30 的 `133b278b` 才补的 ⇒
+  「1.7.0 崩、1.6.2 不崩」的时间线完全对得上（1.6.2 没有实体容器扫描）。
+  **修复**：准入判据收口到 `EntityContainers.isContainerEntity`，加第二道闸
+  `getCapability(Capabilities.ItemHandler.ENTITY) != null`；没能力面 = 本来就没法读写它的槽
+  （Lootr 还是每玩家独立战利品视图）⇒ 在准入层优雅跳过，与 `processContainer` 对
+  玩家背包 `handler == null` 同口径。`LivingItem` 里逐行重复的私有白名单删除，
+  tick 与 GUI 菜单解析（`EntityContainers.resolveMenuEntity` → `ContainerContexts.resolve`）
+  共用唯一判据 ⇒ 顺带堵住「打开 Lootr 矿车 GUI 时构造上下文抛异常」这条 1.7.1 仍存在的路径。
+  `EntityContainerContext.handlerOf` 的「查不到就抛」保留为绕过准入时的最后防线
+  （由隔离层限频留痕），不再是「白名单与注册面必然一致」的错误前提。
+  **顺带堵住一条新暴露的落点**：`ContainerContexts.resolve` 的实体分支原本假设
+  「实体位置上没有 BE ⇒ 菜单位置分支对它恒 null」；准入改成跳过之后，无能力面实体槽
+  会第一次落到该分支，矿车恰好停在箱子上时就会被误判成那个方块容器 ⇒ 加早退
+  （形状是 `ContainerEntity` 但双闸未放行 ⇒ 直接返回 null）。
+  **为什么不采纳「把 lootr_minecart 加进白名单」**：它正是因为已经是 `ContainerEntity`
+  才被扫到，再加白名单只会让它继续构造上下文、继续抛；而且它没有能力面，本来就不该被读写。
+  **测试**：`EntityContainersTest` +4（第三方 `ContainerEntity` 无能力 ⇒ 准入跳过 /
+  其菜单槽 ⇒ `resolveMenuEntity` 为 null / 有能力面的第三方实体仍照常纳入 /
+  `ContainerContexts.resolve` 不按实体位置反查成同坐标 BE），
+  既有「构造即抛」「带箱驴白名单」等替身补上能力面 stub；全量 1564 绿。
+  → [container-boundary I-C1](../system-design/container-boundary.md) ·
+  [container-compatibility](../guides/container-compatibility.md)。
+
 - ✅ **槽位数量操作原语（TODO §物品传输 1-②③ 落地顺序收口）** ——
   `ContainerContext` 四原语：`move(from, to, amount, MovePolicy)`（按数量搬运，允许部分交付与
   合并；PHYSICAL = A3 口径：容量只问 `getSlotLimit`、不问准入与抽取权限，完整保留流体现行行为，

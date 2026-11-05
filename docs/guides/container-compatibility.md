@@ -114,8 +114,12 @@ MOD版本和玩家配置文件的格式是相同的，可以直接复制内容�
 
 两条要点：
 
-- **白名单门槛**：`ItemHandler.ENTITY` 对**所有** `LivingEntity` 都有 fallback ⇒ 能力面非空
-  **不是**「这是容器」的判据。实体容器必须过 `ContainerEntity` / `hasChest()` 白名单。
+- **白名单门槛（双向）**：`ItemHandler.ENTITY` 的 fallback 对**所有** `LivingEntity` 都返回
+  handler ⇒ 能力面非空**不是**「这是容器」的判据，实体容器必须过 `ContainerEntity` /
+  `hasChest()` 形状白名单。反过来，过了形状白名单也**不代表有能力面**：NeoForge 只按
+  `EntityType` 给三个原版容器类型显式注册 `ENTITY`，第三方容器实体（如 Lootr
+  `lootr_minecart`）形状过关却查不到能力 ⇒ `EntityContainers.isContainerEntity` 还要再查
+  `getCapability(...) != null`，查不到就在准入层优雅跳过（2026-11-05 修 1.7.0 崩服）。
 - **前置马鞍槽**：马 / 驴 / 骡的 inventory 索引 0 是马鞍 ⇒ 逻辑槽 0 对应 handler 槽 1。
   新增这类「前置非存储槽」时必须一次性枚举全部跨边界点（读写 / 同步包 / 缓存键 / GUI 反查），
   否则表现为「东西都在、位置全错」——见 I-C10。

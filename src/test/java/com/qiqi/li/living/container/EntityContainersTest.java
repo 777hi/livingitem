@@ -1,5 +1,6 @@
 package com.qiqi.li.living.container;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -92,6 +93,8 @@ class EntityContainersTest {
     void whitelist_chestedHorseOnlyWhenHasChest() {
         AbstractChestedHorse donkey = mock(AbstractChestedHorse.class);
         when(donkey.hasChest()).thenReturn(true);
+        when(donkey.getCapability(Capabilities.ItemHandler.ENTITY))
+            .thenReturn(new ItemStackHandler(16));   // 真实带箱驴有 LivingEntity fallback
         assertTrue(EntityContainers.isContainerEntity(donkey));
 
         AbstractChestedHorse bare = mock(AbstractChestedHorse.class);
@@ -101,6 +104,78 @@ class EntityContainersTest {
 
         assertFalse(EntityContainers.isContainerEntity(mock(AbstractHorse.class)),
             "普通马不在 AbstractChestedHorse 家族，压根不进本判据");
+    }
+
+    // ── 回归：1.7.0 处理 lootr:lootr_minecart 崩服（2026-11-05 玩家反馈）──
+
+    /** 第三方容器实体替身：实现 {@link ContainerEntity}，但【没有】注册 ENTITY 能力。 */
+    private static Entity foreignContainerEntityWithoutCapability() {
+        Entity e = mock(Entity.class, org.mockito.Mockito.withSettings()
+            .extraInterfaces(ContainerEntity.class, net.minecraft.world.Container.class));
+        when(e.getUUID()).thenReturn(ID);
+        when(e.blockPosition()).thenReturn(BOAT_POS);
+        // getCapability 未 stub ⇒ null（与 NeoForge 真机行为一致）
+        return e;
+    }
+
+    @Test
+    @DisplayName("回归：第三方 ContainerEntity 无 ENTITY 能力 ⇒ 准入层跳过（1.7.0 崩服根因）")
+    void foreignContainerEntity_withoutCapability_isSkipped() {
+        assertFalse(EntityContainers.isContainerEntity(foreignContainerEntityWithoutCapability()),
+            "没有能力面就没法读写槽 ⇒ 不构造 EntityContainerContext，不抛异常、不拖垮 tick");
+    }
+
+    @Test
+    @DisplayName("回归：第三方 ContainerEntity 的菜单槽 → 解析为 null（打开 Lootr 矿车 GUI 不崩）")
+    void foreignContainerEntity_withoutCapability_menuSlotIsNull() {
+        Entity lootr = foreignContainerEntityWithoutCapability();
+        AbstractContainerMenu menu = new AbstractContainerMenu(MenuType.GENERIC_9x3, 0) {
+            @Override public ItemStack quickMoveStack(net.minecraft.world.entity.player.Player p, int i) { return ItemStack.EMPTY; }
+            @Override public boolean stillValid(net.minecraft.world.entity.player.Player p) { return true; }
+        };
+        Slot slot = new Slot((net.minecraft.world.Container) lootr, 3, 0, 0);
+        menu.slots.add(slot);
+
+        assertNull(EntityContainers.resolveMenuEntity(menu, slot),
+            "GUI 路径同样走双闸：解析不出实体 ⇒ ContainerContexts.resolve 不会构造上下文抛异常");
+    }
+
+    @Test
+    @DisplayName("正向：第三方 ContainerEntity 自己注册了 ENTITY 能力 ⇒ 仍照常纳入")
+    void foreignContainerEntity_withCapability_isAccepted() {
+        Entity modded = boatEntity(new ItemStackHandler(27));
+        assertTrue(EntityContainers.isContainerEntity(modded),
+            "修复只挡『查不到能力』，不把有能力面的模组容器一并关掉");
+        assertDoesNotThrow(() -> boatContext(modded));
+    }
+
+    @Test
+    @DisplayName("回归：无能力面的第三方实体槽 ⇒ ContainerContexts.resolve 返回 null（不落到位置分支误判）")
+    void foreignContainerEntity_withoutCapability_contextResolveIsNull() {
+        Entity lootr = foreignContainerEntityWithoutCapability();   // blockPosition = BOAT_POS
+        AbstractContainerMenu menu = new AbstractContainerMenu(MenuType.GENERIC_9x3, 0) {
+            @Override public ItemStack quickMoveStack(net.minecraft.world.entity.player.Player p, int i) { return ItemStack.EMPTY; }
+            @Override public boolean stillValid(net.minecraft.world.entity.player.Player p) { return true; }
+        };
+        menu.slots.add(new Slot((net.minecraft.world.Container) lootr, 0, 0, 0));
+
+        ServerLevel level = mock(ServerLevel.class);
+        // 故意让实体所在位置有一个方块实体容器、且 BLOCK 能力可查询：
+        // 没有早退时位置分支会【成功】构造 BE 上下文 ⇒ assertNull 变红（测试有判别力）
+        when(level.getBlockEntity(BOAT_POS))
+            .thenReturn(mock(net.minecraft.world.level.block.entity.BlockEntity.class));
+        when(level.getCapability(
+                org.mockito.ArgumentMatchers.eq(Capabilities.ItemHandler.BLOCK),
+                org.mockito.ArgumentMatchers.eq(BOAT_POS),
+                org.mockito.ArgumentMatchers.any()))
+            .thenReturn(new ItemStackHandler(27));
+        var player = mock(net.minecraft.server.level.ServerPlayer.class);
+        when(player.level()).thenReturn(level);
+        player.containerMenu = menu;   // public 字段，Mockito 不能 when()，直接赋值
+
+        assertNull(ContainerContexts.resolve(player, menu.slots.get(0)),
+            "双闸拦下的实体容器槽必须到此为止，不能按 blockPosition 反查同坐标方块容器");
+        org.mockito.Mockito.verify(level, org.mockito.Mockito.never()).getBlockEntity(BOAT_POS);
     }
 
     // ── 上下文 ──
@@ -348,6 +423,8 @@ class EntityContainersTest {
 
         AbstractChestedHorse donkey = mock(AbstractChestedHorse.class);
         when(donkey.hasChest()).thenReturn(true);
+        when(donkey.getCapability(Capabilities.ItemHandler.ENTITY))
+            .thenReturn(new ItemStackHandler(16));
         AbstractHorse plainHorse = mock(AbstractHorse.class);   // 无 hasChest ⇒ 不是容器实体
 
         MenuSlotOwners.registerEntityResolver(

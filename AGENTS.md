@@ -148,7 +148,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1560 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
+**合计测试用例 1564 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -173,6 +173,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-11-05 | 🐛 **修 1.7.0 处理 `lootr:lootr_minecart` 崩服** —— 实体容器准入改「白名单 + `ItemHandler.ENTITY` 能力面」双闸，第三方 `ContainerEntity` 无能力时在准入层优雅跳过；`LivingItem` 重复白名单收口到 `EntityContainers`；+4 回归测试（tick 跳过 / GUI 菜单解析不炸 / 有能力面不误伤 / GUI 上下文不误判同坐标方块），全量1564绿 | [container-boundary §I-C1](docs/system-design/container-boundary.md) · [changelog](docs/archive/changelog.md) |
 | 2026-11-05 | ✅ **槽位数量操作原语（move/produce/consume/transform）** —— 熔炉 consume 先行 / 酿造 / 耕地 / 流体推动内核上移收编；PHYSICAL=A3 保留流体现行口径；+35 测试（含负向验证）；check_stack_ops 棘轮挂 pre-commit/CI 第五条 | [api-contract §1.7](docs/system-design/api-contract.md) · [TODO §物品传输](docs/TODO.md) |
 | 2026-11-05 | ✅ **传输守恒存量收口（I-C12/I-C14）** —— 流体推动源侧核验（写回失败整拍回退防复制）+ PlainSlotAccessor 写后回读；容量问容器（`simulateInsertItem` 权威，超堆叠停摆修复，isFull 三 Accessor 容器自答）；算术 long 化；+11 测试全绿 | [TODO §物品传输](docs/TODO.md) · [container-boundary §2](docs/system-design/container-boundary.md) |
 | 2026-11-05 | 📚 **活活塞升格 tech 文档** —— [living-piston-tech.md](docs/tech/living-piston-tech.md)（§0 契约 22 条 + 机制 / 压送 / 渲染 / 生命周期 / 守卫映射 / 测试地图 / 踩坑实录）；设计稿归档留痕（模板 §2.3 晋升流程），活指针全量切换 | [活活塞-design.md](docs/archive/活活塞-design.md) §7.8 |
@@ -181,7 +182,6 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-11-03 | ✅ **活活塞玩法代码全落 +39测试，真机待验** —— 机械压送q=min(C,M,A)、本体不展开、无视冷却/锁定、世界邻居/末影直连在线·离线·部分容量及路由零副作用；审查修复同拍旧条目、精确写恢复、接收端中立发现和半程头模型；渲染投影角与18px行程数学修正；全量1512绿 | [活活塞-design.md](docs/archive/活活塞-design.md) §7.8.5 |
 | 2026-11-03 | ✅ **活活塞全局启用 +6测试** —— G3 四缝收口后注册函数；E2E 集成测试（processContext 驱动推/拉/持有/收回/双活塞/取消活化）全绿；真机待验 | [活活塞-design.md](docs/archive/活活塞-design.md) §7.8.4 |
 | 2026-11-03 | 🎨 **活活塞渲染原型（阶段E）+15测试** —— 进度插值＋iso本体/头杆叠加层已落；数据源=客户端runtime；iso/旋转常数为实机调校点 | [活活塞-design.md](docs/archive/活活塞-design.md) §7.8.3 |
-| 2026-11-03 | ✅ **活活塞第二批适配 +46测试** —— 方向组件、runtime片段、真实函数tick与tooltip已测；未全局注册，WASD / 生命周期 / 压送 / 渲染未启用 | [活活塞-design.md](docs/archive/活活塞-design.md) §7.8.2 |
 ## 提交前必跑（2026-10-30 更新）
 
 ```bash

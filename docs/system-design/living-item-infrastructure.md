@@ -350,8 +350,9 @@ ServerTickEvent.Pre
   provider 异常）—— 抛异常时保守保留区块。代价：永久抛异常的 BE 会让该区块常驻缓存、
   每 tick 重试一次。**不**对 `getBlockEntities()` 等引擎调用做逐区块兜底（可信代码不防）。
 
-**只接 `RuntimeException`** —— `Error`（OOM / 栈溢出）照常抛。实体容器缺能力（I-C7）仍然抛，
-由隔离层接住并按实体类型限频，不静默。
+**只接 `RuntimeException`** —— `Error`（OOM / 栈溢出）照常抛。实体容器「缺能力面」已在
+准入层（`EntityContainers.isContainerEntity` 双闸）优雅跳过，不再产生异常；若有人绕过准入
+直接构造 `EntityContainerContext`，查不到能力仍抛，由隔离层按实体类型限频留痕（I-C7 不静默）。
 
 **日志口径**（`FailureThrottle`）：首次 ERROR + 完整栈；同 key 60s 内只计数；每 5 分钟汇总
 「仍失败 key 数 + 抑制次数」；最多跟踪 256 个 key（LRU 淘汰）。排查期用

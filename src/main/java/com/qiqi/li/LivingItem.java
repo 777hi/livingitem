@@ -9,7 +9,6 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.RandomizableContainer;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.entity.Entity;
-import net.minecraft.world.entity.animal.horse.AbstractChestedHorse;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.ChunkPos;
@@ -62,6 +61,7 @@ import com.qiqi.li.living.container.ContainerLivingItemHandler;
 import com.qiqi.li.living.runtime.ContainerRuntimeCache;
 import com.qiqi.li.living.util.StaticCacheRegistry;
 import com.qiqi.li.living.container.EntityContainerContext;
+import com.qiqi.li.living.container.EntityContainers;
 import com.qiqi.li.living.container.MenuSlotOwners;
 import com.qiqi.li.living.container.ItemEntityContainerContext;
 import com.qiqi.li.network.LivingTagPacket;
@@ -423,6 +423,17 @@ public class LivingItem {
      *
      * <p>⚠️ 通过准入 ≠ 所有功能都会跑：{@code runFunctionTicks} 会按
      * {@code supportsDroppedItem()} 逐功能过滤，未声明的功能即便同属这个物品也会被跳过。</p>
+     *
+     * <p><b>实体容器准入的唯一定义点</b> = {@link EntityContainers#isContainerEntity}
+     * （2026-11-05 收口，原先这里有一份逐行重复的私有副本）。双闸 = 形状白名单 +
+     * {@code ItemHandler.ENTITY} 能力面：只判 {@code instanceof ContainerEntity} 会让
+     * 第三方容器实体（实测 Lootr {@code lootr_minecart}）过了白名单却查不到能力，
+     * {@link EntityContainerContext} 构造即抛 ⇒ 1.7.0 崩服。tick 与 GUI 菜单解析
+     * 共用同一判据，不会再漂。</p>
+     *
+     * <p>⚠️ <b>不做「船永远 tick」</b>：只覆盖 {@code getAllEntities()} 的已加载实体
+     * ⇒ 超出 simulation distance 停 tick，与 BE 卸载 / 掉落物路径 / 玩家下线三条既有
+     * 路径一致。停 tick ≠ 丢数据（进度在活物品组件，流体/相位在实体附件且持久化）。</p>
      */
     private void processEntityContainers(ServerLevel level) {
         // ⭐ 掉落物与实体容器**合并为一次遍历**（2026-10-21）：getAllEntities() 是
@@ -433,38 +444,16 @@ public class LivingItem {
                         && LivingItemManager.supportsDroppedItem(itemEntity.getItem())) {
                     ContainerLivingItemHandler.processIsolated(
                         new ItemEntityContainerContext(itemEntity, level), level);
-                } else if (isContainerEntity(entity)) {
+                } else if (EntityContainers.isContainerEntity(entity)) {
                     ContainerLivingItemHandler.processIsolated(
                         new EntityContainerContext(entity, level), level);
                 }
             } catch (RuntimeException e) {
-                // 构造上下文就失败（典型是白名单与能力注册面不一致）⇒ 按实体类型限频
+                // 准入层已挡住「无能力面」的实体，这里接的是领域内部异常；
+                // 构造即抛仍作为「有人绕过准入」的最后防线 ⇒ 按实体类型限频留痕
                 FailureThrottle.report("entity_" + entity.getType(), e);
             }
         }
-    }
-
-    /**
-     * 实体容器白名单（2026-10-21）—— 设计稿 {@code docs/buffer/container-menu-introspection-topic.md} §2.2。
-     *
-     * <p>覆盖四类：箱子船 / 箱子矿车 / 漏斗矿车（1.21 {@code ContainerEntity} 家族，
-     * NeoForge 显式注册三者的 {@code ItemHandler.ENTITY}）与带箱驴骡
-     * （{@link AbstractHorse#hasChest()}，走 NeoForge 的 LivingEntity fallback）。</p>
-     *
-     * <p>⚠️ <b>为什么必须白名单</b>：NeoForge 的 fallback 给<b>所有</b>实体注册了
-     * {@code ItemHandler.ENTITY}（LivingEntity = 主手 + 副手 + 盔甲）⇒ 「能力面存在」
-     * ≠ 「该当容器」（I-C1 的张力）。僵尸的盔甲槽不该 tick，无箱的马（2 格 = 鞍 + 盔甲）
-     * 也不该 —— 活马铠没有意义。</p>
-     *
-     * <p>⚠️ <b>不做「船永远 tick」</b>：本方法随 {@code getAllEntities()} 只覆盖已加载实体
-     * ⇒ 超出 simulation distance 停 tick，与 BE 卸载 / 掉落物路径 / 玩家下线三条既有
-     * 路径一致。停 tick ≠ 丢数据（进度在活物品组件，流体/相位在实体附件且持久化）。</p>
-     */
-    private static boolean isContainerEntity(Entity entity) {
-        if (entity instanceof AbstractChestedHorse horse) {
-            return horse.hasChest();   // 无箱驴/骡 inventory 只有 2 格（鞍 + 体甲），不当容器
-        }
-        return entity instanceof net.minecraft.world.entity.vehicle.ContainerEntity;
     }
 
     /**

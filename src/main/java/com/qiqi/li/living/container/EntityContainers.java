@@ -6,6 +6,7 @@ import net.minecraft.world.entity.vehicle.ContainerEntity;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.HorseInventoryMenu;
 import net.minecraft.world.inventory.Slot;
+import net.neoforged.neoforge.capabilities.Capabilities;
 
 import javax.annotation.Nullable;
 
@@ -22,10 +23,16 @@ import javax.annotation.Nullable;
  *       fallback。</li>
  * </ul>
  *
- * <p>⚠️ <b>为什么必须白名单</b>：NeoForge 的 fallback 给<b>所有</b>实体注册了
- * {@code ItemHandler.ENTITY}（LivingEntity = 主手 + 副手 + 盔甲）⇒
- * 「能力面存在」≠「该当容器」（契约 I-C1 的一处真实张力）。僵尸的盔甲槽不该 tick；
- * 无箱驴/骡的 inventory 只有 2 格（鞍 + 体甲）也不该 —— 活马铠没有意义。</p>
+ * <p>⚠️ <b>为什么必须白名单</b>：{@code ItemHandler.ENTITY} 的 fallback provider
+ * 覆盖注册表里的<b>所有</b> {@code EntityType}，对 {@code LivingEntity} 一律返回
+ * 「主手 + 副手 + 盔甲」的 handler ⇒ 「能力面存在」≠「该当容器」
+ * （契约 I-C1 的一处真实张力）。僵尸的盔甲槽不该 tick；无箱驴/骡的 inventory
+ * 只有 2 格（鞍 + 体甲）也不该 —— 活马铠没有意义。</p>
+ *
+ * <p>⚠️ <b>反向也要挡</b>（2026-11-05，1.7.0 崩服反馈）：过了白名单不代表有能力面，
+ * 判据见 {@link #isContainerEntity}。Lootr 的 {@code lootr_minecart} 实现了
+ * {@link ContainerEntity} 却没有 {@code ItemHandler.ENTITY} ⇒ 1.7.0 在构造
+ * {@code EntityContainerContext} 时抛异常，直接拖垮整个服务端 tick。</p>
  *
  * <h3>菜单解析（{@link #resolveMenuEntity}）</h3>
  * <p>两条路，按可靠性排序：</p>
@@ -42,12 +49,31 @@ public final class EntityContainers {
 
     private EntityContainers() {}
 
-    /** 是否「该被当容器 tick」的实体（白名单）。 */
+    /**
+     * 是否「该被当容器 tick」的实体 —— <b>白名单 + 能力面双闸</b>（2026-11-05）。
+     *
+     * <p>⚠️ <b>为什么还要查能力面</b>：{@link ContainerEntity} 只是「形状像容器」的结构化
+     * 判据，第三方实体完全可能实现它、却<b>没有</b> {@code ItemHandler.ENTITY}：NeoForge
+     * {@code CapabilityHooks#registerVanillaProviders} 只按 {@code EntityType} 显式注册
+     * {@code CHEST_BOAT}/{@code CHEST_MINECART}/{@code HOPPER_MINECART} 三个原版类型，
+     * 而 {@code registerFallbackVanillaProviders} 的兜底 provider 只对
+     * {@code AbstractHorse}/{@code LivingEntity} 返回 handler，其余返回 {@code null}。
+     * 模组自定义实体类型既不在三者名单里、也不是生物 ⇒ 能力面恒为 {@code null}。</p>
+     *
+     * <p>没能力面 = 我们本来就没法读写它的槽（Lootr 还是每玩家独立战利品视图）⇒
+     * 正确做法是<b>在准入层优雅跳过</b>，与
+     * {@code ContainerLivingItemHandler#processContainer} 对玩家背包
+     * {@code handler == null} 的处理同口径。「构造即抛」保留在
+     * {@code EntityContainerContext.handlerOf} 作为「有人绕过准入」的最后防线，
+     * 由 tick 的 {@code FailureThrottle} 限频留痕，不静默吞真 bug。</p>
+     */
     public static boolean isContainerEntity(Entity entity) {
         if (entity instanceof AbstractChestedHorse horse) {
-            return horse.hasChest();   // 无箱驴/骡 inventory 只有 2 格（鞍 + 体甲）
+            if (!horse.hasChest()) return false;   // 无箱驴/骡只有 2 格（鞍 + 体甲）
+        } else if (!(entity instanceof ContainerEntity)) {
+            return false;
         }
-        return entity instanceof ContainerEntity;
+        return entity.getCapability(Capabilities.ItemHandler.ENTITY) != null;
     }
 
     /**

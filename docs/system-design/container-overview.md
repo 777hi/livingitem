@@ -97,9 +97,11 @@
 ⇒ 非 `Container` 的模组容器（精妙背包方块、ProjectE 炼金箱）会被判成「不是容器」，
 于是列数推断、指令校准、viewer 匹配全线失效（`D-container-01`）。
 
-**唯一的收紧例外**：`ItemHandler.ENTITY` 对**所有** `LivingEntity` 都有 fallback
+**唯一的收紧例外**：`ItemHandler.ENTITY` 的 fallback 对**所有** `LivingEntity` 都返回 handler
 ⇒ 能力面非空是常态、不是判据。实体宿主必须再过白名单（`ContainerEntity` + `hasChest()`），
 方向是**宁可漏判不可误判** —— 误判的代价是给僵尸主手槽倒水。
+**2026-11-05 加第二道闸**：白名单之后还要查能力面非空（第三方 `ContainerEntity` 可能
+没有 `ENTITY` 能力 ⇒ 1.7.0 崩服），判据唯一实现点 `EntityContainers.isContainerEntity`。
 
 **踩坑**：`LivingItemContainerCommand` 曾用 `instanceof` 判容器（2026-10-18 改）。
 

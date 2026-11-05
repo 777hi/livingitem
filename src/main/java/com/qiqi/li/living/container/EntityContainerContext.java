@@ -16,7 +16,7 @@ import java.util.List;
 /**
  * 实体容器上下文 —— 把「装着物品的实体」包装成容器（2026-10-21）。
  *
- * <h3>覆盖对象（白名单见 {@code LivingItem#processEntityContainers}）</h3>
+ * <h3>覆盖对象（准入判据见 {@link EntityContainers#isContainerEntity}）</h3>
  * <ul>
  *   <li>箱子船 / 箱子矿车 / 漏斗矿车（{@link ContainerEntity}，1.21 接口 = {@code Container} + {@code MenuProvider}）</li>
  *   <li>带箱驴 / 骡（{@link AbstractHorse#hasChest()}）</li>
@@ -43,10 +43,13 @@ import java.util.List;
  *       {@link ContainerLayoutResolver} 按共同顺序选择。</li>
  * </ol>
  *
- * <p>⚠️ <b>能力面</b>：NeoForge 显式给 {@code CHEST_BOAT}/{@code CHEST_MINECART}/
- * {@code HOPPER_MINECART} 注册 {@code ItemHandler.ENTITY}（{@code CapabilityHooks}），
- * 驴靠 {@code AbstractHorse} 的 fallback ⇒ 四类全有。构造时查不到能力直接抛
- * （符合 I-C7「不得静默继续」——白名单与注册面应当一致，不一致就是真 bug）。</p>
+ * <p>⚠️ <b>能力面</b>：NeoForge 只按 {@code EntityType} 显式给 {@code CHEST_BOAT}/
+ * {@code CHEST_MINECART}/{@code HOPPER_MINECART} 注册 {@code ItemHandler.ENTITY}
+ * （{@code CapabilityHooks}），驴靠 {@code AbstractHorse} 的 fallback ⇒ 原版四类全有。
+ * <b>第三方 {@code ContainerEntity} 不在此列</b>（2026-11-05 Lootr 崩服）：它形状上
+ * 会过白名单，却没有 ENTITY 能力 ⇒ 准入判据 {@link EntityContainers#isContainerEntity}
+ * 已加「能力面双闸」，生产路径不会走到本构造。本方法保留「查不到就抛」作为
+ * 绕过准入时的最后防线（I-C7：留痕不静默），不再是「白名单与注册面必然一致」的假设。</p>
  */
 public class EntityContainerContext extends SimpleContainerContext {
 

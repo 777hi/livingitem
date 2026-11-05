@@ -70,9 +70,12 @@
   实体宿主必须再过一道**白名单**（`ContainerEntity` 接口 + `AbstractChestedHorse#hasChest()`，
   见 `EntityContainers`），否则每个僵尸都会被当容器 tick。这是「能力面原则」在实体上的**唯一**
   例外，且方向是**收紧**（宁可漏判不可误判）——误判的代价是给生物的主手槽倒水。
-- **现状**：`LivingItemContainerCommand` 曾犯（2026-10-18 已改为能力面）；实体宿主 2026-10-21 落地
-  （`EntityContainerContext`，构造时查不到能力面**直接抛** —— 白名单与注册面不一致就是真 bug，
-  符合 I-C7「不得静默继续」）；其余消费点见 I-C5。
+- **现状**：`LivingItemContainerCommand` 曾犯（2026-10-18 已改为能力面）；实体宿主 2026-10-21 落地，
+  2026-11-05 改**双闸**：`EntityContainers.isContainerEntity` = 形状白名单（唯一定义点）
+  **且** `getCapability(ItemHandler.ENTITY) != null`。原因是第三方 `ContainerEntity`
+  （实测 Lootr `lootr_minecart`）形状过关却没有能力面 ⇒ 1.7.0 构造 `EntityContainerContext`
+  即抛并崩服。没能力面就在准入层优雅跳过；「构造即抛」降为绕过准入时的最后防线
+  （I-C7 留痕不静默，由隔离层限频）。其余消费点见 I-C5。
 - **判据**：全库 `grep "instanceof Container"`，每一处都必须能回答「我为什么需要原版语义」（见 I-C2）。
 
 ### I-C2 原版 `Container` 只用于原版语义
@@ -557,7 +560,7 @@ safe-by-construction 不改（逐条理由见 [TODO 物品传输](../TODO.md) §
 | 不变量 | 守卫方式 |
 |---|---|
 | I-C1 / I-C2 | `grep "instanceof Container"` 全库审计（人工，每次改容器层必跑） |
-| I-C1（实体宿主）| 守卫测试：`EntityContainersTest` —— 白名单（`ContainerEntity` / 带箱驴骡 **进**；无箱马、普通实体 **出**）+ 无能力面即抛 |
+| I-C1（实体宿主）| 守卫测试：`EntityContainersTest` —— 双闸（形状白名单：`ContainerEntity` / 带箱驴骡 **进**；无箱马、普通实体 **出**；能力面：第三方 `ContainerEntity` 无能力 ⇒ **出**、有能力 ⇒ **进**、其菜单槽 ⇒ 解析 null）+ 构造即抛（最后防线） |
 | I-C3 / I-C4 / I-C7 | 守卫测试：`SlotIgnoringHandler`（`insertItem` 忽略 slot）+ `FilteredExtractHandler`（`extractItem` 被过滤器拦）—— 让「写回错槽」「吞物品」在单测里直接红 |
 | I-C5 | 守卫测试：非 `Container` 方块实体的 viewer 匹配（`ContainerContextsTest` 已有同类替身场景）；实体宿主的 `getBlockPos()` 恒 null 与「键=UUID」在 `EntityContainersTest` |
 | I-C6 | 代码审查：`continue` 前必须有日志或调试计数 |
