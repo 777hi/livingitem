@@ -115,7 +115,7 @@ per-item DataComponent `LivingSpongeData`（**record：`fluid: FluidType` + `mmB
 - `withdrawCeil(q, count, delta)` —— **排出（唯一口径）**：交付 = 决定交付的整单位，每枚扣
   ⌈delta / count⌉，实扣 ≥ 交付（损耗向）。⚠️ **floor 排出 = 三连炸**（2026-11-02 实测）：
   交付量随请求逐次缩水 + SIMULATE ≠ EXECUTE + 尾差沉成「显示 1 抽不出」的卡死尘
-  （详见 §12）；同请求 simulate / execute 必同结果（§8.2#2 闭合）；
+  （详见 §12）；内核同状态同请求的模拟 / 执行计算一致；BLOCK 的写入条件见 §4.2；
 - 残余尘（< 1 外部单位）**对 mB/FE 世界隐身、留账继续累积**——不是死账，永不超过 1 单位；
 - 灯泡的跨堆零头回收（回收优先 / `MAX_LEFTOVER_PASSES`）是「发电全局灌」特有机制，
   留在 `BulbBank`；单栈场景余量恒 < count ⇒ 恒走保守丢弃；
@@ -132,7 +132,8 @@ per-item DataComponent `LivingSpongeData`（**record：`fluid: FluidType` + `mmB
 - 充 = 内核 `distribute`；排 = `withdrawCeil`；报账口径规则 12；
 - **准入**：`of()` 判 `isLivingItem`——未活化返回 null（capability 按原版物品注册，不判则
   外部 mod 给原版海绵充水绕过活化门槛，灯泡 2026-10-09 收紧同款）；
-- `getContainer()` 返回活栈引用（provider 每次查询现建）——绝不 copy 副本改写（§8.2#1）；
+- `getContainer()` 返回 handler 持有的传入栈（provider 每次查询现建）；ITEM handler 仍只负责
+  修改这份栈，不负责找到外部槽并写回。BLOCK 调用方传副本时，写槽责任在 §4.2 的提交协议；
 - 注册：`LivingItem#onRegisterCapabilities` → `registerItem(Capabilities.FluidHandler.ITEM, …)`。
 
 ### 4.2 容器级能力（SpongeContainerFluidHandler，BLOCK，⑭）
@@ -140,9 +141,22 @@ per-item DataComponent `LivingSpongeData`（**record：`fluid: FluidType` + `mmB
 管道直连「放了活海绵的容器」抽 / 灌——旧活流体管道角色的接棒：
 
 - **暴露的是海绵存量（封闭缓冲），源网络仍不暴露**（规则 7 对 generatedSources 成立）；
-  抽 / 灌全委托 `SpongeItemFluidHandler`（均分内核 + 报账口径单源复用）；
-- **罐模型**：每个活海绵堆 = 一罐（槽位稳定序）；**干海绵 = 空罐**（0 内容、容量在位 ⇒
-  管道可灌装空弹匣）；每次操作**现扫容器**（不缓存罐列表，§8.2#1 同款）；
+  抽 / 灌的计算委托 `SpongeItemFluidHandler`（均分内核 + 报账口径单源复用），
+  **写槽与确认交付由 BLOCK 面负责**，不依赖 `getItem` 恰好返回活引用；
+- **罐模型**：每个活海绵堆 = 一罐（逻辑槽位稳定序）；**干海绵 = 空罐**（0 内容、容量在位 ⇒
+  管道可灌装空弹匣）。每次操作只扫描一次，得到「逻辑槽号 + 复制栈」列表；不缓存罐列表，
+  也不在同一操作内重复扫描或更换 handler；
+- **写入准入**：fill / drain 只处理 `supportsItemComponentWrite(slot)` 为 true 的槽；
+  不支持者在 **SIMULATE 也贡献 0**，但罐的存在性、展示及容量不因此消失。
+  null side 仍是原有无方向上下文，不新增方向限制；也不得借它绕过模组只读能力；
+- **复制 → 提交 → 报账**：SIMULATE 只在复制栈上计算，不写槽；EXECUTE 在复制栈上执行
+  ITEM handler 充放，再用扫描时的 `before` 与变更后的 `after` 调
+  `commitItemComponents`。**成功后**才累计该堆 fill 接收量 / drain 交付量；提交 false
+  即停，返回此前已提交的部分（首堆失败则 0 / EMPTY）。精确恢复的边界见
+  [api-contract §1.8](../system-design/api-contract.md#18-槽位物品组件提交2026-11-06-生效)；
+- **模拟与执行的边界**：同请求同结果只在**状态稳定且声明支持的直接写入器有效**时成立。
+  错误声明支持的 no-op / 只读写入器可能模拟出正量、执行却为 0；不把潜在可充放量当已交付量，
+  也不承诺违约后端普遍原子恢复；
 - **抽取聚合**：每堆只请求剩余量，交付合计不超请求；不指名抽取先模拟选定首个可抽流体，
   后续只抽同种，异种不扣也不阻断后面的同种罐；返回实际存量的代表流体，不复制请求身份。
 - **存在性 = 有活海绵（湿或干）**：无活海绵 ⇒ provider 返回 null（§10.4 教训：恒发实例
@@ -214,8 +228,8 @@ per-item DataComponent `LivingSpongeData`（**record：`fluid: FluidType` + `mmB
 
 | # | 陷阱 | 防线 |
 |---|---|---|
-| 1 | handler 缓存旧 ItemStack | 持活栈引用 + 每操作现解析；绝不 copy 副本改写 |
-| 2 | SIMULATE 与实做分叉 | 同一段代码路径跑两遍；**同请求必同结果**（守卫 ⑪） |
+| 1 | handler 缓存旧 ItemStack / 把读取当写回 | ITEM 只修改传入栈；BLOCK 每操作现扫复制栈，以组件提交确认写回（§4.2） |
+| 2 | SIMULATE 与实做分叉 | 内核同状态同请求计算一致；BLOCK 还要求有效的受支持写入器，提交失败不报交付（§4.2） |
 | 3 | 返回值 ≠ 实充/实扣 | fill 报 ≥ 实充；drain 交付整单位（实扣 ≥ 交付） |
 | 4 | count 乘法悄悄进公式 | 内核统一处理；手写 `* count` 即违规 |
 | 5 | 零 / 负请求 | 首行守卫返回 0 / EMPTY |
@@ -365,6 +379,29 @@ Create 管道可正常抽取；**2026-11-06 使用修复包、不放铜灯复测
 一次调用仅扫描一次容器；均分损耗仍由单堆内核处理，返回实际存量的代表流体。
 `SpongeContainerCapabilityTest` 守卫请求上限、混种不动、模拟不写、干罐/尘跳过与代表流体口径。
 与 §12.1 的能力通知问题独立；保存通知和 handler 生命周期待办未随本轮改变。
+
+### 12.3 容器读取不是写回：组件提交与恢复限度（2026-11-06）
+
+`ContainerContext.getItem` 可以返回副本；直接让 ITEM handler 改这份栈，随后报 fill / drain
+成功，会产生「槽内资产没变、对外已经报账」的守恒漏洞。反过来，依赖活引用会绕过明确的
+存储、标脏与同步入口。**两种读取形态都不应决定 BLOCK 面是否正确**。
+
+**本批修复范围**：共享组件提交协议 + 海绵 **BLOCK fill / drain**。每操作现扫一次逻辑槽与
+复制栈列表，只在副本计算；只有 `commitItemComponents` 确认成功才计该堆报账，失败即停并
+返回已提交的部分。Item、count、同流体、剩余请求及代表流体口径不变；ITEM handler 的传入栈
+责任不变。**铜灯、电力聚合、海绵吸收、GUI 汲及其它内部读引用路径未迁移**，不得据此宣称
+所有组件写入或所有容器形态都已修复。
+
+**写入器要求与回滚限度**：必须有声明支持的直接可修改精确写入面；不支持槽连模拟也返回 0。
+声明支持却只读 / no-op 的后端仍可能模拟出正量、执行返回 0；「模拟 = 执行」必须附带稳定状态
+和有效写入器条件。失败后部分改变的槽会尝试精确恢复；恢复失败记 ERROR，并走最终变化的
+标脏 / 同步通道，**不是普遍可保证的原子回滚**。不得用容量夹断、插入/抽取回退、null side
+绕过只读能力，或反复失效能力来遮掩写入问题；完整协议以
+[api-contract §1.8](../system-design/api-contract.md#18-槽位物品组件提交2026-11-06-生效) 为准。
+
+**能力与验收边界**：罐存在性及 handler 生命周期不改；不新增 handler 刷新或重复能力失效。
+这次玩家可见行为采用游戏内观察验收，不新增专门 GameTest；§12.1 已确认的停抽验收
+不等于本批组件提交的游戏内验收，也不代表违约后端已获原子性保证。
 
 ---
 

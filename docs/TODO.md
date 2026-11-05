@@ -153,13 +153,18 @@
 2. ~~**容器 drain 多堆聚合违反请求上限 / 异种不动原则**~~ ✅ **2026-11-06 修复，+7 回归通过** ——
    每堆只请求剩余量；首个可抽流体模拟选定，异种不扣且不挡后续同种罐；返回实际代表流体。
    根因与守卫见 [海绵踩坑 §12.2](tech/living-sponge-tech.md)。跨模组效果在实际游玩中观察，不安排专项测试（2026-11-06 用户定）。
-3. **外部抽灌的存量通知与 handler 生命周期待核查** —— 容器接口改海绵组件但不调用
-   `BlockEntity#setChanged`，并长期保留解析时的 `TickableContainerContext`（每次现扫槽，但不重取
-   底层 item handler）；铜灯的 `ContainerEnergyStorage` 每次重解析 handler，实际变更后标脏。
-   判据：SIMULATE 无副作用；EXECUTE 的存量能可靠落盘；容器更换 handler 后能力操作不改旧存储。
-   **不能把保存标脏、能力缓存失效、方块/邻居更新混为同一种通知**；缺少 `setChanged` 是否解释
-   Create 停抽仍需核查，不能推导成「每次抽灌都 invalidateCapabilities」。
-   入口：`SpongeContainerFluidHandler#resolveProvider/fill/drain` · `ContainerEnergyStorage`。
+3. ~~**海绵外部抽灌缺少正式槽位写回**~~ ✅ **2026-11-06 首批修复完成（共享22项＋海绵17项回归）** ——
+   原引用/副本读取不再决定是否保存：复制计算，经 `commitItemComponents` 写后回读确认才报账；
+   无精确writer返回0，拒写停止并只报先前提交量，不走抽插、不截断原数量。
+   正式setter内容回调、关联BE标脏及槽同步由共同入口承担；旧接口新增16项回归红。
+   契约与恢复边界见 [api-contract §1.8](system-design/api-contract.md) · [海绵 §12.3](tech/living-sponge-tech.md)。
+   跨模组效果随实际游玩观察，不安排专项测试。
+4. **其余 getter 活引用修改路径待分批迁移** —— 铜灯BLOCK充放、海绵自动吸收/GUI汲、
+   活箱子内部存取及部分红石/工具等组件更新尚未接入共同提交；需按各域业务结算顺序迁移，
+   不能用「同步时顺便写回」替代明确提交。铜灯副本后端已诊断复现，其他域为源码风险待守卫。
+   无通用setter的第三方容器不强转、不拆包装器绕过只读，具体适配需真实需求与官方入口。
+5. **海绵 handler 长期持有的上下文风险待核实** —— 本轮未改接口寿命；官方失效后正常重查
+   可以更新provider，没有具体第三方升级后仍指旧存储的实机证据。与已修写回及Create停抽分开。
 
 ## 活水车
 

@@ -739,6 +739,68 @@ public interface ContainerContext extends SlotInfoProvider, ContainerSync, Conta
         return planned;
     }
 
+    // ==================== 原数量组件提交 ====================
+
+    /** 组件写回能力，默认不支持；不沿用数量操作的抽插回退。 */
+    default boolean supportsItemComponentWrite(int slot) {
+        return false;
+    }
+
+    /** 直接覆盖接缝，仅供组件提交及恢复使用；不截断、不抽插、不发布同步。 */
+    default boolean trySetItemExact(int slot, ItemStack stack) {
+        return false;
+    }
+
+    /** 已观察到组件写入或恢复后的通知，发布最终槽状态。 */
+    default void onItemComponentsChanged(int slot, ItemStack stack) {
+        syncSlotToClients(slot, stack);
+    }
+
+    /**
+     * 原物品、原数量的组件提交：独立快照、旧值重验、精确写回与回读确认。
+     * 不支持或旧值已变时不写；部分写坏仅尝试精确恢复，恢复失败必须留痕。
+     * 返回 true 才可按新状态交付资源；本方法不修改调用方快照。
+     */
+    default boolean commitItemComponents(int slot, ItemStack before, ItemStack after) {
+        if (!isValidSlot(slot) || before == null || after == null
+                || !supportsItemComponentWrite(slot)) return false;
+        ItemStack original = before.copy();
+        ItemStack expected = after.copy();
+        if (original.isEmpty() || expected.isEmpty()
+                || original.getItem() != expected.getItem()
+                || original.getCount() != expected.getCount()) return false;
+        ItemStack current = getItem(slot).copy();
+        if (!ItemStack.matches(current, original)) return false;
+        if (ItemStack.matches(expected, original)) return true;
+
+        boolean written = attemptComponentWrite(slot, expected);
+        ItemStack actual = getItem(slot).copy();
+        if (written && ItemStack.matches(actual, expected)) {
+            onItemComponentsChanged(slot, actual);
+            return true;
+        }
+        SLOT_OPS_LOGGER.warn("组件提交失败：槽位 {}，未确认期望状态，停止结算", slot);
+        if (!ItemStack.matches(actual, original)) {
+            attemptComponentWrite(slot, original);
+            actual = getItem(slot).copy();
+            if (!ItemStack.matches(actual, original)) {
+                ROLLBACK_LOGGER.error("组件提交恢复失败：槽位 {} 期望 {}，实际 {} —— 需人工核查",
+                    slot, original, actual);
+            }
+            onItemComponentsChanged(slot, actual);
+        }
+        return false;
+    }
+
+    private boolean attemptComponentWrite(int slot, ItemStack expected) {
+        try {
+            return trySetItemExact(slot, expected.copy());
+        } catch (RuntimeException e) {
+            SLOT_OPS_LOGGER.warn("组件写入异常：槽位 {}，将核验实际内容", slot, e);
+            return false;
+        }
+    }
+
     /**
      * 原地整槽替换 —— 「不可拆整槽变换」（`I-C13`：一槽一瓶，要么整槽成要么不动）。
      * 供酿造瓶槽一类「把 A 换成 B、数量不增减」的变换使用。

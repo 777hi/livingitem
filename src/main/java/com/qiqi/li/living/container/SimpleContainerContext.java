@@ -426,6 +426,23 @@ public class SimpleContainerContext implements TickableContainerContext {
     }
 
     @Override
+    public boolean supportsItemComponentWrite(int slot) {
+        return isValidSlot(slot) && supportsExactWrite(slot);
+    }
+
+    @Override
+    public boolean trySetItemExact(int slot, ItemStack stack) {
+        if (slot < 0 || slot >= handler.getSlots()) return false;
+        return writeBackDirectly(slot, stack.copy());
+    }
+
+    @Override
+    public void onItemComponentsChanged(int slot, ItemStack stack) {
+        notifyBlockEntitiesChanged();
+        syncSlotToClients(slot, stack);
+    }
+
+    @Override
     public void onSlotsMoved(int from, int to) {
         if (currentTickContext == null) return;
         currentTickContext.movedSlots.add(from);

@@ -1,7 +1,8 @@
 # 槽位数量操作原语 —— 选型指南（新活物品怎么写槽位操作）
 
 > **本文管「怎么选、还要拍板什么」**。签名与规则（契约）在
-> [api-contract §1.7](../system-design/api-contract.md)；守恒不变量在
+> [api-contract §1.7](../system-design/api-contract.md)；**仅组件写入**见
+> [api-contract §1.8](../system-design/api-contract.md#18-槽位物品组件提交2026-11-06-生效)；守恒不变量在
 > [container-boundary I-C12~14](../system-design/container-boundary.md)；
 > 裸写门禁是 `tools/check_stack_ops.py`。本文不复制契约内容 —— 冲突时以契约为准。
 >
@@ -13,6 +14,7 @@
 
 **数量增减 = 四原语之一（或其组合），不写裸 `setItem`。**
 守恒（I-C12）的三维度核验与违约留痕全部在原语里；你只需要回答「源是什么、去哪里、吃几件」。
+**同 Item、同 count 的纯组件更新**另走 §2.1 的组件提交协议，不属于数量操作。
 
 ## 2. 四原语速览
 
@@ -24,6 +26,21 @@
 | `transform(slot, fn)` | 「把槽里的东西变身」—— 酿造瓶槽一类 I-C13 不可拆整槽变换 | 成败布尔 | 写入不符 ⇒ 还原返回 false |
 
 活物品隔离（`isLivingItem` 检查）**由调用方把关** —— 原语不认「活物品」概念（与 SlotAccessor 入口同责）。
+
+### 2.1 只改组件，不改物品与数量
+
+先问「**Item 或 count 会变吗？**」：会变 ⇒ 仍按四数量原语选型；不会变，且只是更新
+槽内物品携带的数据（如容器级海绵充放）⇒ 选 `commitItemComponents(slot, before, after)`，
+**不要借 `transform`、裸 `setItem` 或修改 `getItem` 返回值来隐式写回**。
+这不是第五种数量原语，也不改变整槽变换的现有契约。
+
+- 先查 `supportsItemComponentWrite(slot)`；不支持就不操作，不能用插入/抽取绕过只读后端。
+- 复制槽内栈作 `before`，再复制它得到 `after`；只在 `after` 上计算组件变化。
+  模拟只算副本、不提交；执行只有提交返回 true 才记交付量。
+- 批量执行遇到提交 false 即停，返回此前已成功提交的部分；不要把「在副本上算得出来」当作
+  「后端已经收下」。过期快照、no-op 写入与恢复失败的契约见 [api-contract §1.8](../system-design/api-contract.md#18-槽位物品组件提交2026-11-06-生效)。
+- 新容器的直接写入实现应遵循既有槽位映射、标脏与同步通道；**不新增扫描器、生命周期或通知机制**。
+  精确恢复是失败后的防护尝试，不是所有第三方后端都能原子回滚的承诺。
 
 ## 3. 为什么四种就到头（不要发明第五种）
 

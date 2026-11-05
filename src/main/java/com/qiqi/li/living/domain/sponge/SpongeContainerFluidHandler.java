@@ -125,16 +125,32 @@ public class SpongeContainerFluidHandler implements IFluidHandler {
         return itemHandler(stacks.get(tank)).isFluidValid(0, resource);
     }
 
+    private record SpongeSlot(int slot, ItemStack before) {}
+
+    /** 本次操作的槽位快照，工作副本提交前不得改读取结果。 */
+    private List<SpongeSlot> spongeSlots() {
+        List<SpongeSlot> out = new ArrayList<>();
+        for (int slot = 0; slot < ctx.getSize(); slot++) {
+            ItemStack stack = ctx.getItem(slot);
+            if (!stack.isEmpty() && stack.is(Items.SPONGE) && LivingItemManager.isLivingItem(stack)) {
+                out.add(new SpongeSlot(slot, stack.copy()));
+            }
+        }
+        return out;
+    }
+
     @Override
     public int fill(FluidStack resource, FluidAction action) {
         if (resource == null || resource.isEmpty() || resource.getAmount() <= 0) return 0;
-        // 按槽序依次充入：同一资源灌到灌不动为止（跨堆不走均分聚合 —— 各堆独立守恒）
         int remaining = resource.getAmount();
         int total = 0;
-        for (ItemStack stack : spongeStacks()) {
+        for (SpongeSlot entry : spongeSlots()) {
             if (remaining <= 0) break;
-            int filled = itemHandler(stack)
-                .fill(new FluidStack(resource.getFluid(), remaining), action);
+            if (!ctx.supportsItemComponentWrite(entry.slot())) continue;
+            ItemStack working = entry.before().copy();
+            int filled = itemHandler(working).fill(resource.copyWithAmount(remaining), action);
+            if (filled <= 0) continue;
+            if (action.execute() && !ctx.commitItemComponents(entry.slot(), entry.before(), working)) break;
             total += filled;
             remaining -= filled;
         }
@@ -146,11 +162,14 @@ public class SpongeContainerFluidHandler implements IFluidHandler {
         if (resource == null || resource.isEmpty() || resource.getAmount() <= 0) return FluidStack.EMPTY;
         int want = resource.getAmount();
         FluidStack result = FluidStack.EMPTY;
-        for (ItemStack stack : spongeStacks()) {
+        for (SpongeSlot entry : spongeSlots()) {
             int remaining = want - result.getAmount();
             if (remaining <= 0) break;
-            FluidStack out = itemHandler(stack).drain(resource.copyWithAmount(remaining), action);
+            if (!ctx.supportsItemComponentWrite(entry.slot())) continue;
+            ItemStack working = entry.before().copy();
+            FluidStack out = itemHandler(working).drain(resource.copyWithAmount(remaining), action);
             if (out.isEmpty()) continue;
+            if (action.execute() && !ctx.commitItemComponents(entry.slot(), entry.before(), working)) break;
             if (result.isEmpty()) result = out.copy();
             else result.grow(out.getAmount());
         }
@@ -160,12 +179,14 @@ public class SpongeContainerFluidHandler implements IFluidHandler {
     @Override
     public FluidStack drain(int maxDrain, FluidAction action) {
         if (maxDrain <= 0) return FluidStack.EMPTY;
-        // 首个可抽罐决定流体；后续只抽同种，异种不扣也不挡后面的罐。
+        // 首个成功抽取的罐决定流体；拒写停止结算，异种不扣也不挡后续同种罐。
         FluidStack result = FluidStack.EMPTY;
-        for (ItemStack stack : spongeStacks()) {
+        for (SpongeSlot entry : spongeSlots()) {
             int remaining = maxDrain - result.getAmount();
             if (remaining <= 0) break;
-            IFluidHandler handler = itemHandler(stack);
+            if (!ctx.supportsItemComponentWrite(entry.slot())) continue;
+            ItemStack working = entry.before().copy();
+            IFluidHandler handler = itemHandler(working);
             FluidStack out;
             if (result.isEmpty()) {
                 FluidStack probe = handler.drain(remaining, FluidAction.SIMULATE);
@@ -175,6 +196,7 @@ public class SpongeContainerFluidHandler implements IFluidHandler {
                 out = handler.drain(result.copyWithAmount(remaining), action);
             }
             if (out.isEmpty()) continue;
+            if (action.execute() && !ctx.commitItemComponents(entry.slot(), entry.before(), working)) break;
             if (result.isEmpty()) result = out.copy();
             else result.grow(out.getAmount());
         }

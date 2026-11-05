@@ -1,6 +1,8 @@
 package com.qiqi.li.living.domain.sponge;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -11,6 +13,9 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.ContainerLivingItemHandler;
@@ -18,6 +23,8 @@ import com.qiqi.li.living.container.SimpleContainerContext;
 import com.qiqi.li.living.domain.water.ContainerFluidData;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.players.PlayerList;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
@@ -142,8 +149,8 @@ class SpongeContainerCapabilityTest {
 
         FluidStack out = h.drain(new FluidStack(Fluids.WATER, 1000), FluidAction.EXECUTE);
         assertEquals(1000, out.getAmount());
-        assertEquals(2_000_000L, totalMmB(a), "罐 0（槽 1）被扣");
-        assertEquals(3_000_000L, totalMmB(b), "罐 1（槽 7）不动");
+        assertEquals(2_000_000L, totalMmB(scene.handler().getStackInSlot(1)), "罐0正式写回");
+        assertEquals(3_000_000L, totalMmB(scene.handler().getStackInSlot(7)), "罐1不动");
     }
 
     @Test
@@ -172,10 +179,10 @@ class SpongeContainerCapabilityTest {
 
         int paid = h.fill(new FluidStack(Fluids.WATER, 500), FluidAction.EXECUTE);
         assertEquals(500, paid, "count=1 全额收下（报账 = 实充）");
-        assertEquals(500_000L, totalMmB(a), "首堆收下（首口定流体）");
+        assertEquals(500_000L, totalMmB(scene.handler().getStackInSlot(1)), "首堆正式写回");
         // 首堆已定水 ⇒ 岩浆被拒（规则 5）；但第二罐还是空罐 ⇒ 合法收下（多罐储液标准语义）
         assertEquals(100, h.fill(new FluidStack(Fluids.LAVA, 100), FluidAction.EXECUTE));
-        assertEquals(500_000L, totalMmB(a), "水罐不被异种污染");
+        assertEquals(500_000L, totalMmB(scene.handler().getStackInSlot(1)), "水罐不被异种污染");
         ItemStack b = scene.handler().getStackInSlot(7);
         assertEquals(100_000L, totalMmB(b), "空罐收下岩浆");
     }
@@ -228,8 +235,8 @@ class SpongeContainerCapabilityTest {
         assertEquals(600_000L, totalMmB(a));
         assertEquals(600_000L, totalMmB(b));
         assertEquals(1000, h.drain(request, FluidAction.EXECUTE).getAmount());
-        assertEquals(0, totalMmB(a));
-        assertEquals(200_000L, totalMmB(b));
+        assertEquals(0, totalMmB(scene.handler().getStackInSlot(1)));
+        assertEquals(200_000L, totalMmB(scene.handler().getStackInSlot(7)));
         assertEquals(1000, request.getAmount());
     }
 
@@ -251,9 +258,9 @@ class SpongeContainerCapabilityTest {
         FluidStack out = h.drain(1000, FluidAction.EXECUTE);
         assertEquals(Fluids.WATER, out.getFluid());
         assertEquals(1000, out.getAmount());
-        assertEquals(0, totalMmB(a));
-        assertEquals(900_000L, totalMmB(lava));
-        assertEquals(200_000L, totalMmB(b));
+        assertEquals(0, totalMmB(scene.handler().getStackInSlot(1)));
+        assertEquals(900_000L, totalMmB(scene.handler().getStackInSlot(3)));
+        assertEquals(200_000L, totalMmB(scene.handler().getStackInSlot(7)));
     }
 
     @Test
@@ -271,10 +278,10 @@ class SpongeContainerCapabilityTest {
         FluidStack out = h.drain(1000, FluidAction.EXECUTE);
         assertEquals(Fluids.LAVA, out.getFluid());
         assertEquals(600, out.getAmount());
-        assertEquals(0, totalMmB(dry));
-        assertEquals(999L, totalMmB(dust));
-        assertEquals(0, totalMmB(lava));
-        assertEquals(900_000L, totalMmB(water));
+        assertEquals(0, totalMmB(scene.handler().getStackInSlot(0)));
+        assertEquals(999L, totalMmB(scene.handler().getStackInSlot(1)));
+        assertEquals(0, totalMmB(scene.handler().getStackInSlot(2)));
+        assertEquals(900_000L, totalMmB(scene.handler().getStackInSlot(3)));
     }
 
     @Test
@@ -290,9 +297,9 @@ class SpongeContainerCapabilityTest {
         assertNotNull(h);
 
         assertEquals(300, h.drain(new FluidStack(Fluids.WATER, 1000), FluidAction.EXECUTE).getAmount());
-        assertEquals(0, totalMmB(a));
-        assertEquals(0, totalMmB(b));
-        assertEquals(900_000L, totalMmB(lava));
+        assertEquals(0, totalMmB(scene.handler().getStackInSlot(0)));
+        assertEquals(0, totalMmB(scene.handler().getStackInSlot(2)));
+        assertEquals(900_000L, totalMmB(scene.handler().getStackInSlot(1)));
     }
 
     @Test
@@ -338,7 +345,206 @@ class SpongeContainerCapabilityTest {
         assertEquals(3, h.drain(new FluidStack(Fluids.WATER, 3), FluidAction.SIMULATE).getAmount());
         assertEquals(before, totalMmB(a));
         assertEquals(3, h.drain(new FluidStack(Fluids.WATER, 3), FluidAction.EXECUTE).getAmount());
-        assertEquals(3034L, before - totalMmB(a));
+        assertEquals(3034L, before - totalMmB(scene.handler().getStackInSlot(0)));
+    }
+
+    private enum WriteBehavior { NORMAL, NO_OP, UNSUPPORTED, REJECT_SECOND }
+
+    private static class CopyHandler extends FakeHandler {
+        final boolean copyReads;
+        final WriteBehavior behavior;
+        int writes;
+        int inserts;
+        int extracts;
+        int changes;
+
+        CopyHandler(boolean copyReads, WriteBehavior behavior) {
+            super(9);
+            this.copyReads = copyReads;
+            this.behavior = behavior;
+        }
+
+        ItemStack stored(int slot) { return super.getStackInSlot(slot); }
+        @Override public ItemStack getStackInSlot(int slot) {
+            ItemStack stack = stored(slot);
+            return copyReads ? stack.copy() : stack;
+        }
+        @Override public void setStackInSlot(int slot, ItemStack stack) {
+            writes++;
+            if (behavior == WriteBehavior.UNSUPPORTED) throw new UnsupportedOperationException();
+            if (behavior == WriteBehavior.NO_OP || behavior == WriteBehavior.REJECT_SECOND && slot == 1) return;
+            super.setStackInSlot(slot, stack.copy());
+            changes++;
+        }
+        @Override public ItemStack insertItem(int slot, ItemStack stack, boolean simulate) {
+            inserts++;
+            return stack;
+        }
+        @Override public ItemStack extractItem(int slot, int amount, boolean simulate) {
+            extracts++;
+            return ItemStack.EMPTY;
+        }
+    }
+
+    private record CopyScene(CopyHandler inventory, BlockEntity be, Level level,
+                             SpongeContainerFluidHandler fluid) {
+        static CopyScene of(boolean copies, WriteBehavior behavior, long... quantities) {
+            CopyHandler inventory = new CopyHandler(copies, behavior);
+            for (int slot = 0; slot < quantities.length; slot++) {
+                ItemStack stack = new ItemStack(Items.SPONGE);
+                LivingItemManager.setLiving(stack, true);
+                LivingSpongeData.set(stack, new LivingSpongeData(WATER, quantities[slot]));
+                inventory.put(slot, stack);
+            }
+            Level level = org.mockito.Mockito.mock(Level.class);
+            BlockEntity be = org.mockito.Mockito.mock(BlockEntity.class);
+            org.mockito.Mockito.when(be.getLevel()).thenReturn(level);
+            org.mockito.Mockito.when(be.getBlockPos()).thenReturn(BlockPos.ZERO);
+            org.mockito.Mockito.when(level.getBlockEntity(BlockPos.ZERO)).thenReturn(be);
+            org.mockito.Mockito.when(level.getBlockState(BlockPos.ZERO))
+                .thenReturn(net.minecraft.world.level.block.Blocks.STONE.defaultBlockState());
+            org.mockito.Mockito.when(level.getCapability(
+                net.neoforged.neoforge.capabilities.Capabilities.ItemHandler.BLOCK, BlockPos.ZERO, null))
+                .thenReturn(inventory);
+            MinecraftServer server = org.mockito.Mockito.mock(MinecraftServer.class);
+            PlayerList players = org.mockito.Mockito.mock(PlayerList.class);
+            org.mockito.Mockito.when(level.getServer()).thenReturn(server);
+            org.mockito.Mockito.when(server.getPlayerList()).thenReturn(players);
+            org.mockito.Mockito.when(players.getPlayers()).thenReturn(List.of());
+            var fluid = SpongeContainerFluidHandler.resolveProvider(be, null);
+            assertNotNull(fluid);
+            return new CopyScene(inventory, be, level, fluid);
+        }
+        long amount(int slot) { return totalMmB(inventory.stored(slot)); }
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    @DisplayName("原引用与副本后端：灌装正式写回，模拟无写与通知")
+    void fill_commitsToActualSlot(boolean copies) {
+        CopyScene scene = CopyScene.of(copies, WriteBehavior.NORMAL, 0);
+        assertEquals(500, scene.fluid.fill(new FluidStack(Fluids.WATER, 500), FluidAction.SIMULATE));
+        assertEquals(0, scene.inventory.writes);
+        assertEquals(0L, scene.amount(0));
+        org.mockito.Mockito.verify(scene.be, org.mockito.Mockito.never()).setChanged();
+        assertEquals(500, scene.fluid.fill(new FluidStack(Fluids.WATER, 500), FluidAction.EXECUTE));
+        assertEquals(500_000L, scene.amount(0));
+        assertEquals(1, scene.inventory.writes);
+        assertEquals(1, scene.inventory.changes);
+        org.mockito.Mockito.verify(scene.be).setChanged();
+        org.mockito.Mockito.verify(scene.level, org.mockito.Mockito.never()).invalidateCapabilities(BlockPos.ZERO);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"false,false", "false,true", "true,false", "true,true"})
+    @DisplayName("原引用与副本后端：两个抽取重载都实际扣库存")
+    void drain_commitsToActualSlot(boolean copies, boolean typed) {
+        CopyScene scene = CopyScene.of(copies, WriteBehavior.NORMAL, 2_000_000L);
+        FluidStack request = new FluidStack(Fluids.WATER, 1000);
+        FluidStack simulated = typed ? scene.fluid.drain(request, FluidAction.SIMULATE)
+            : scene.fluid.drain(1000, FluidAction.SIMULATE);
+        assertEquals(1000, simulated.getAmount());
+        assertEquals(0, scene.inventory.writes);
+        assertEquals(2_000_000L, scene.amount(0));
+        FluidStack out = typed ? scene.fluid.drain(request, FluidAction.EXECUTE)
+            : scene.fluid.drain(1000, FluidAction.EXECUTE);
+        assertEquals(1000, out.getAmount());
+        assertEquals(1_000_000L, scene.amount(0));
+        assertEquals(1, scene.inventory.changes);
+        assertEquals(1000, request.getAmount());
+        org.mockito.Mockito.verify(scene.be).setChanged();
+    }
+
+    @ParameterizedTest
+    @CsvSource({"NO_OP,fill", "NO_OP,typed", "NO_OP,int", "UNSUPPORTED,fill", "UNSUPPORTED,typed", "UNSUPPORTED,int"})
+    @DisplayName("空setter与拒写后端：不虚报成功，不走抽插回退")
+    void rejectedWrite_doesNotDeliver(WriteBehavior behavior, String operation) {
+        CopyScene scene = CopyScene.of(true, behavior, "fill".equals(operation) ? 0L : 2_000_000L);
+        long before = scene.amount(0);
+        int reported = switch (operation) {
+            case "fill" -> scene.fluid.fill(new FluidStack(Fluids.WATER, 500), FluidAction.EXECUTE);
+            case "typed" -> scene.fluid.drain(new FluidStack(Fluids.WATER, 500), FluidAction.EXECUTE).getAmount();
+            default -> scene.fluid.drain(500, FluidAction.EXECUTE).getAmount();
+        };
+        assertEquals(0, reported);
+        assertEquals(before, scene.amount(0));
+        assertEquals(1, scene.inventory.writes);
+        assertEquals(0, scene.inventory.inserts);
+        assertEquals(0, scene.inventory.extracts);
+        org.mockito.Mockito.verify(scene.be, org.mockito.Mockito.never()).setChanged();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"fill", "typed", "int"})
+    @DisplayName("第二槽拒写：只结算先前确认的部分，后槽不动")
+    void secondSlotRejected_returnsCommittedPart(String operation) {
+        CopyScene scene = CopyScene.of(true, WriteBehavior.REJECT_SECOND,
+            "fill".equals(operation) ? 63_900_000L : 600_000L,
+            "fill".equals(operation) ? 0L : 600_000L);
+        int reported = switch (operation) {
+            case "fill" -> scene.fluid.fill(new FluidStack(Fluids.WATER, 500), FluidAction.EXECUTE);
+            case "typed" -> scene.fluid.drain(new FluidStack(Fluids.WATER, 1000), FluidAction.EXECUTE).getAmount();
+            default -> scene.fluid.drain(1000, FluidAction.EXECUTE).getAmount();
+        };
+        assertEquals("fill".equals(operation) ? 100 : 600, reported);
+        assertEquals("fill".equals(operation) ? 64_000_000L : 0L, scene.amount(0));
+        assertEquals("fill".equals(operation) ? 0L : 600_000L, scene.amount(1));
+        assertEquals(2, scene.inventory.writes);
+        assertEquals(1, scene.inventory.changes);
+    }
+
+    @Test
+    @DisplayName("只读接口保留罐可见性，但模拟和执行均不抽插")
+    void readonlyInventory_doesNotMutate() {
+        CopyScene scene = CopyScene.of(true, WriteBehavior.NORMAL, 2_000_000L);
+        net.neoforged.neoforge.items.IItemHandler readonly = new net.neoforged.neoforge.items.IItemHandler() {
+            @Override public int getSlots() { return scene.inventory.getSlots(); }
+            @Override public ItemStack getStackInSlot(int slot) { return scene.inventory.getStackInSlot(slot); }
+            @Override public ItemStack insertItem(int slot, ItemStack stack, boolean sim) {
+                return scene.inventory.insertItem(slot, stack, sim);
+            }
+            @Override public ItemStack extractItem(int slot, int amount, boolean sim) {
+                return scene.inventory.extractItem(slot, amount, sim);
+            }
+            @Override public int getSlotLimit(int slot) { return 64; }
+            @Override public boolean isItemValid(int slot, ItemStack stack) { return true; }
+        };
+        org.mockito.Mockito.when(scene.level.getCapability(
+            net.neoforged.neoforge.capabilities.Capabilities.ItemHandler.BLOCK, BlockPos.ZERO, null))
+            .thenReturn(readonly);
+        var fluid = SpongeContainerFluidHandler.resolveProvider(scene.be, null);
+        assertNotNull(fluid);
+        assertEquals(1, fluid.getTanks());
+        assertEquals(2000, fluid.getFluidInTank(0).getAmount());
+        for (FluidAction action : FluidAction.values()) {
+            assertEquals(0, fluid.fill(new FluidStack(Fluids.WATER, 100), action));
+            assertTrue(fluid.drain(100, action).isEmpty());
+            assertTrue(fluid.drain(new FluidStack(Fluids.WATER, 100), action).isEmpty());
+        }
+        assertEquals(0, scene.inventory.writes);
+        assertEquals(0, scene.inventory.inserts);
+        assertEquals(0, scene.inventory.extracts);
+        assertEquals(2_000_000L, scene.amount(0));
+    }
+
+    @Test
+    @DisplayName("已有超大堆叠仅修改流体组件，不按较小slotLimit截断，保留无关组件")
+    void oversizedSponge_componentCommitPreservesCountAndName() {
+        CopyScene scene = CopyScene.of(true, WriteBehavior.NORMAL, 0L);
+        ItemStack stored = scene.inventory.stored(0);
+        stored.setCount(2048);
+        stored.set(net.minecraft.core.component.DataComponents.CUSTOM_NAME,
+            net.minecraft.network.chat.Component.literal("storage"));
+        assertEquals(500, scene.fluid.fill(new FluidStack(Fluids.WATER, 500), FluidAction.SIMULATE));
+        assertEquals(500, scene.fluid.fill(new FluidStack(Fluids.WATER, 500), FluidAction.EXECUTE));
+        ItemStack after = scene.inventory.stored(0);
+        assertEquals(2048, after.getCount());
+        assertEquals(net.minecraft.network.chat.Component.literal("storage"),
+            after.get(net.minecraft.core.component.DataComponents.CUSTOM_NAME));
+        assertEquals(0, scene.inventory.inserts);
+        assertEquals(0, scene.inventory.extracts);
+        assertTrue(scene.amount(0) <= 500_000L);
+        assertTrue(scene.amount(0) > 0);
     }
 
     /** BE 替身：level.getCapability 打桩返回场景 handler（resolveContextAt 的解析入口）。 */
@@ -354,6 +560,12 @@ class SpongeContainerCapabilityTest {
         BlockEntity be = org.mockito.Mockito.mock(BlockEntity.class);
         org.mockito.Mockito.when(be.getLevel()).thenReturn(level);
         org.mockito.Mockito.when(be.getBlockPos()).thenReturn(BlockPos.ZERO);
+        org.mockito.Mockito.when(level.getBlockEntity(BlockPos.ZERO)).thenReturn(be);
+        MinecraftServer server = org.mockito.Mockito.mock(MinecraftServer.class);
+        PlayerList players = org.mockito.Mockito.mock(PlayerList.class);
+        org.mockito.Mockito.when(level.getServer()).thenReturn(server);
+        org.mockito.Mockito.when(server.getPlayerList()).thenReturn(players);
+        org.mockito.Mockito.when(players.getPlayers()).thenReturn(List.of());
         return be;
     }
 }

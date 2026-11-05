@@ -112,6 +112,13 @@ public class EntityContainerContext extends SimpleContainerContext {
         super.setItem(logicalSlot + storageOffset, stack);
     }
 
+    /** 组件提交使用同一逻辑→物理槽映射，不写前置装备槽。 */
+    @Override
+    public boolean trySetItemExact(int logicalSlot, ItemStack stack) {
+        if (!isValidSlot(logicalSlot)) return false;
+        return super.trySetItemExact(logicalSlot + storageOffset, stack);
+    }
+
     /**
      * 逻辑槽 → 物理槽（+ 装备槽偏移）。
      *

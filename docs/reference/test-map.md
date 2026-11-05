@@ -59,6 +59,7 @@ src/test/java/com/qiqi/li/
 ├── living/components/
 │   └── ContainerUuidsTest.java                # 容器 UUID 读写门面（2026-10-22，活背包）·懒创建幂等（跨 GUI 开合进度不重置）/ofItem 无副作用/复制 remove 范式给副本新身份/strip 空栈与 null 安全/宿主侧 null 安全/keyOf 与 containerUuidOf 互逆且 kindOf=ITEM_FORM/cuuid_ 不被误认世界方块 + **discard 剥 UUID 且删数据/退化输入安全** + **哨兵（全零 UUID）翻译成 null/懒创建写真身份可回读**
 ├── living/container/
+│   ├── ContainerComponentCommitTest.java       # 原数量组件提交·原引用/副本/旧值重验/非空同物同量/无writer拒绝/无抽插截断/快照隔离/拒写与部分恢复/双BE通知/真实revision脏槽/实体前置槽映射
 │   ├── ContainerMoveStackTest.java             # **I-C12 一步整栈移动 + 安全撤销**·整栈不拆/超大栈一次搬完（抽屉 512）/目标被占拒绝/整栈放不进拒绝（不搬一部分）/源空/地址非法 + **抽取权限第三维**（只出不进的槽 ⇒ SOURCE_NOT_EXTRACTABLE）/后端无 setStackInSlot ⇒ Unsupported 非 BackendViolation + **撤销两槽一起**（只恢复源会复制）/撤销前校验（第三方改动 ⇒ 不覆盖）/撤销后守恒 + canAcceptAll 纯预检
 │   ├── ContainerSlotOpsTest.java              # **槽位数量操作原语**（2026-11-05，I-C12 契约化）·move 六场景 × 双容器实现（整栈守恒/同类合并/部分交付差额留源/异类 TARGET_OCCUPIED/满 TARGET_INSUFFICIENT/undo 恢复合并前）/PHYSICAL=A3（不问准入与抽取权限、容量只问槽位上限、500→64 搬 64 留 436）/违约三态（源写回静默失败 ⇒ 撤销目标防复制、重定向还原、无精确写回退路径可用）/produce 差额留痕不回滚 + 超槽位上限/consume 抽取权限 + 写回违约按「没扣到」/transform 失败还原 + 无变化不写（负向验证三例见类注释）
 │   ├── EnderChestContextTest.java              # 末影箱锚点口径（2026-10-27 定案「存放处」D-container-18）·getAnchor 必须显式为 null（默认实现经 getOwnerPlayer 退化成 AtPlayer ⇒ K2 当玩家宿主上报 ⇒ 两端不同源）/ 非物品形态 ⇒ hostAnchor 恒 null、hostSlot=-1
@@ -223,7 +224,7 @@ src/test/java/com/qiqi/li/
 │   ├── LivingSpongeDataTest.java              # 活海绵组件形状契约（2026-11-01 第一段）·干/湿不变量归一（无流体或非正存量 ⇒ 干态，幽灵湿海绵在类型层面不可能）/ 容量与总量 long 域（每枚 6.4e7 mmB，×count 线性）/ CODEC 湿·干·岩浆往返 / 未知流体 id 归干态（I-C6 同款宁损勿鬼）/ wither 不可变
 │   ├── LivingSpongeAbsorbTest.java            # 吸收行为契约（2026-11-02 第二段，直接驱动 + processContext 冒烟）·一拍吸净可吸四邻（≤4 源）/ 节拍门 gameTime 锁相 / 异种邻居跳过不挡 / 空海绵方向序取首流体 / 快满停拍+腾出恢复 / count 均分损耗有界 / 同拍双海绵账本即时删不双吃 / 斜对角非邻居（27 槽 3 行）/ 首口定流体单次构造
 │   └── SpongeFluidRoundTripTest.java          # **守恒主战场**（2026-11-02 第三段，规则 12 红线：不许为了让它过而改它）·附录算例（6mB×7 枚）/ 拆分守恒恒等式 / 整桶往返 ×25 零漂移 / 50 轮部分充排净迁移无凭空产生 / 溢出拒收不越上限 / 异种拒绝零副作用 / 零负请求 / 尘量取不出但可累积 / 一堆一罐语义
-│   └── SpongeContainerCapabilityTest.java     # 容器级能力·存在性/槽序罐/填充/边沿·多堆剩余预算与请求不变/水岩浆水混排异种不扣/前导干尘跳过/实际代表流体/模拟不写/交付精确与均分损耗
+│   └── SpongeContainerCapabilityTest.java     # 容器级能力·存在性/槽序罐/填充/边沿·多堆剩余预算与混种/代表流体/模拟·BLOCK副本计算与原槽提交/原引用和副本后端/拒写不报账/只读不抽插/第二槽失败报先前提交量/超大堆叠与无关组件保留
 ├── living/interaction/
 │   ├── InteractionRegistryTest.java           # 两趟优先级匹配·通配遮蔽+triggerFilter 回归守卫
 │   ├── InteractionRuleConfigTest.java         # 交互规则 JSON 加载语义·内置全有效/玩家覆盖与removed/坏值跳过/未知字段忽略/version守卫/reload幂等（自带 mock handler 不依赖测试执行顺序）
