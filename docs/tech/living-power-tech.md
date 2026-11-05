@@ -697,8 +697,8 @@ fail-safe 不崩不刷（详见 oversized-stack-audit.md §2.8），long 内部�
   「结果与上 tick 一致」），否则跳过 tick 会把陈旧 prev 误判为新上升沿、压碎周期估计；
 - 发电机按网络组件遍历只读边信号（锚点 BFS + 其余 copyFrom 共享），不写任何信号；
 - 遥测写回节流（量化降脏化）：仪表盘 `LivingWaxedGeneratorData` 写回前，对共振增益 `resonanceGain` / 平衡度 `resonanceBalance` / 域快照 `effDeltaSum` 三个 EMA 类 double 量化到 3 位有效数字（`PowerMath.quantize`）。稳态下这些读数被「钉」在固定值 → `equals` 变 true → 跳过脏写，复用现有 `dirtySlots` 批处理，不另造轮子。针对服务器场景（多发电容器同时被打开 × 多玩家）降低每 tick 同步量。
-- 容器级缓存完整镜像红石协议：`ContainerLivingItemHandler.CONTAINER_DATA`（`Map<String, ContainerEntry>`，嵌套 `power` 字段）+
-  过期清理（120s）+ `clearAllCaches`（ServerStoppedEvent）+ 位置反向索引。
+- 容器级缓存与红石共享整容器生命周期；回收与停服清理口径见
+  [container-data-lifecycle.md](../reference/container-data-lifecycle.md) §2/§3，不按电力数据年龄回收。
 
 ---
 
@@ -739,8 +739,9 @@ fail-safe 不崩不刷（详见 oversized-stack-audit.md §2.8），long 内部�
 
 ## 6.5 账本重生的相位连续性（warmup + PhaseSnapshot，2026-09-09）
 
-**问题**：相位账本（周期估计/φ/EMA/派生注册表）是纯内存缓存，账本死亡路径有三——
-LRU 120s 回收、退出重进（`clearAllCaches`）、跨存档搬运。死亡后两个伤害：
+**问题**：相位账本（周期估计/φ/EMA/派生注册表）是纯内存缓存，整体回收口径见
+[container-data-lifecycle.md](../reference/container-data-lifecycle.md) §2；停服与跨存档搬运也会重建账本。
+死亡后两个伤害：
 
 1. **假上升沿风暴**：重载首 tick `prevEdgeGrid` 为空 → 稳态电平全部伪装成
    「0→信号」的上升沿，多路相位被重载时刻的拓扑重新锚定（洗牌）；

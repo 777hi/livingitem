@@ -14,7 +14,6 @@ import java.util.PriorityQueue;
 import java.util.Set;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
-import com.qiqi.li.living.api.ContainerDataLifecycle;
 import com.qiqi.li.living.api.FluidPresence;
 import com.qiqi.li.living.api.FluidSourceLedger;
 import com.qiqi.li.living.api.LivingItemManager;
@@ -57,7 +56,7 @@ import net.neoforged.neoforge.registries.NeoForgeRegistries;
  * - 多水源时，每个槽位取最近水源的 level
  * - 流动水记录 `fromSlot`（BFS 父节点）—— 活水车应力方向读它；物品推动改为四邻力场（§3.3）
  */
-public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence, FluidSourceLedger {
+public class ContainerFluidData implements FluidPresence, FluidSourceLedger {
 
     /**
      * 容器级流体数据的 key（跨 tick 持久 + 落盘到 BE attachment + **可按 UUID 进 SavedData**）。
@@ -81,8 +80,6 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
         public void removeGeneratedSource(int slot) { }
         @Override
         public boolean hasGeneratedSources() { return false; }
-        @Override
-        public void setLastTickTime(long time) { }
         @Override
         public void tick(ContainerContext ctx) { }
     };
@@ -124,7 +121,6 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
      * {@code registerSource}/{@code isLivingBucketOf} 一并删除。</p>
      */
     private final Map<Integer, FluidType> generatedSources = new LinkedHashMap<>();
-    private long lastTickTime;
     private int tickCounter;
 
     public Map<Integer, FlowEntry> getFlows() {
@@ -172,14 +168,6 @@ public class ContainerFluidData implements ContainerDataLifecycle, FluidPresence
     @Override
     public boolean hasFluidAt(int slot) {
         return flows.containsKey(slot);
-    }
-
-    public long getLastTickTime() {
-        return lastTickTime;
-    }
-
-    public void setLastTickTime(long time) {
-        this.lastTickTime = time;
     }
 
     /**

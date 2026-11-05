@@ -70,7 +70,7 @@
 | J9 | 「哪些表没有停服清理」目前的答案是 **0 项**：`FailureThrottle` 与 `MapUpdateSkipHelper` 已在 2026-11-01 补登记；名单区剩下的三个 ⚠️ 都不是缺口（见 §3） | 两个类的 `static { StaticCacheRegistry.onServerStop(...) }` · 判据测试 `FailureThrottleTest.serverStopCleanup_isRegistered` / `MapUpdateSkipHelperTest.serverStopCleanup_isRegistered` | 换存档时的**漏报**与**永久跳过刷新**（不是内存问题）：旧存档的失败 key 会吃掉新存档的首条完整栈；`getTickCount()` 从 0 重来，旧 `cooldowns` / `lastUpdateTick` 让 `currentTick - lastTick < 20` 恒真 ⇒ 新存档里活地图刷新被永久跳过且无报错 |
 | J10 | 清理钩子必须登记在**缓存类自己的文件**里（`StaticCacheRegistry.onServerStop` 出现在该类 static 块） | `StaticCacheRegistry` 类头约定 · 名单区「清理入口」列之所以能机器推，靠的就是这条约定 | 登记写在别处 ⇒ 名单把它判成「无清理入口」，读该类的人也看不到「会不会被清」；新表漏登记的失败模式正是这套机制要防的（`LivingToolPlayerSync` 一例见 §3） |
 | J11 | `LivingItemManager#APPLICABLE_CACHE`、`LearnedLayouts#LEARNED/AMBIGUOUS` 显示「⚠️ 本类无清理入口」但**不是缺口** | 前者按 `Item` 类型有界且启动后基本只读（`LivingItemManager#APPLICABLE_CACHE` 声明处）；后者**故意落盘**（`config/living_item/…json`，见 J8） | 误当泄漏去加停服清理 ⇒ 反而把跨存档的学习结果清掉，或为一个不增长的缓存白加一层清理 |
-| J12 | `LAST_SEEN` 的**盖章点是 `trackLivingSlots`**（每个进 `processContext` 的容器都盖，含已无活物品的）；回收口是 `sweepUnseenContainers`，判据 = 「消失满 5 分钟」 | `ContainerLivingItemHandler#trackLivingSlots` 首行盖章 · `#sweepUnseenContainers` · `LivingItem#onServerTick` 的调用点 · 判据测试 `ContainerCacheSweepTest` | ① 把盖章挪进「有活物品」分支 ⇒ 空容器被误判成消失，走两步就丢进度；② 回到逐形态挂六种事件（区块卸载 / 下线 / 实体移除 / 销毁 / 拾取 / 非玩家移除）⇒ 六条路径必漏其一，而那正是原病根。**「没再被看到」是六种成因的共同结果**，一个判据全覆盖 |
+| J12 | `LAST_SEEN` 只由正常 tick 的 `trackLivingSlots` 续期；首次 `entry` 创建以 `putIfAbsent` 补登记，查询不续期；整键删除同步清时间记录。唯一过期回收口是 `sweepUnseenContainers` | `D-container-23` · [生命周期契约](container-data-lifecycle.md) §2 · 判据测试 `ContainerCacheSweepTest` | ① 按领域账本年龄删活跃条目 ⇒ 海绵能力假边沿；② 仅查询创建不登记 ⇒ 无人回收；③ 显式删除留下旧章 ⇒ 同键重建误收；④ 按空 store 删索引 ⇒ 活物品-only 容器破坏清理打空 |
 
 ---
 

@@ -871,27 +871,19 @@ private final Set<String> reusableKeySet = new HashSet<>();
 > 机器换了，数据就该作废。
 
 > ⭐ **生命周期结论（用户 2026-11-01）**：运行时数据是**瞬态、可重建、可随时丢弃**的；
-> 需要跨区块卸载 / 重启保留的数据**不得**放在本表，必须走 `ContainerDataKey` /
-> DataComponent / 宿主附件。⇒ 回收可以激进，不需要落盘。
+> 需要跨区块卸载 / 重启保留的数据**不得**放在本表，必须走带持久化声明的 `ContainerDataKey` /
+> DataComponent / 宿主附件。`persistent` 只表示跨 tick 内存态，不保证落盘。
 >
-> ⚠️ **回收现状（整改计划 R-06，2026-11-01 已实现）**：清理覆盖「容器继续 tick / 玩家破坏且
-> 位置索引命中 / 物品形态取消活化 / **消失满阈值** / 停服」。最后一条是新增的统一回收口
-> `ContainerLivingItemHandler.sweepUnseenContainers()`（L4 每 tick 调，内部 1 分钟节拍）：
-> 区块卸载、玩家下线、实体消失、物品销毁、掉落物拾取、非玩家移除（爆炸 / 活塞 / `/setblock`）
-> 都不再残留。**判据是「这个缓存键没再出现在盖章里」，不是逐形态挂事件** ——
-> 六种成因要六条事件路径且必漏其一，而「没再被看到」是它们的共同结果（`D-container-23`）。
->
-> 按**容器形态**拆开的完整表（身份键 / tick 停止条件 / 数据宿主 / 四张表的建立与清理 / 已闭合缺口）
-> 见 [reference/container-data-lifecycle.md](../reference/container-data-lifecycle.md)。
+> **统一回收契约唯一正文**见 [container-data-lifecycle.md](../reference/container-data-lifecycle.md) §2：
+> 新建聚合条目登记一次，正常容器 tick 续期，查询不续期；空 store 不能作为删容器 / 索引的判据。
+> 六种容器形态与显式删除 / 停止 tick 的分工也以该页为准（`D-container-23`）。
+> 2026-11-05 收口退役了旧类型心跳清理；验证状态见该页 §5，不据此宣称实机修复已验收。
 
-**实现（`ContainerLivingItemHandler` 登记 + `LivingItem` 执行）**：
+**运行时作废接线（`ContainerLivingItemHandler` 登记 + `LivingItem` 执行）**：
 
-- **盖章**：`trackLivingSlots` 首行把 `cacheKey → System.currentTimeMillis()` 写进 `LAST_SEEN`。
-  ⚠️ 盖章必须在「有无活物品」判定**之外** —— 空容器只是没有活物品，不是消失了；
-  把盖章写进有活物品的分支会让常开但暂时清空的箱子被误回收。
 - **L1 追踪**：`processContext` 每 tick 把「本容器活物品槽位 → 物品类型」与上次记录对比，
   失效的槽位登记进待清队列（`RuntimeCacheInvalidation`，放在**早退分支之前** ——
-  「容器里已无活物品」正是要清理的场景）；容器卸载（`removeDataByPos`）登记**整容器**作废。
+  「容器里已无活物品」正是要清理的场景）；整键删除（`removeDataByKey`，含破坏位置反查）登记**整容器**作废。
 - **L4 执行**：`LivingItem.onServerTick` 取走队列，调 `ContainerRuntimeCache.removeSlot` /
   `removeContainer` —— 位置在 `LivingItemRuntimeSync.flush` **之前** ⇒ 作废也在本 tick 下发
   （`removeSlot` 会标脏），客户端 tooltip 随即回退到组件值。
@@ -903,7 +895,8 @@ private final Set<String> reusableKeySet = new HashSet<>();
 
 1. **失效判据只看物品类型（`Item`），不看组件** —— 燃烧标志等组件会被 tick 改写，
    若纳入判据，**每次状态翻转都会误清缓存**（燃料 / 进度丢失）。
-2. **容器卸载必须作废整容器** —— 否则容器被破坏后运行时数据永久残留（`removeContainer` 此前零调用者）。
+2. **整键删除必须作废整容器运行时** —— 否则容器被破坏后运行时数据会残留。
+   区块卸载本身不立即删整键，停止 tick 的兜底按 [统一回收契约](../reference/container-data-lifecycle.md) §2。
    ⚠️ 2026-10-12 修：作废链三处键此前不一致（`removeDataByPos` 从 `POS_TO_CACHE_KEY`
    取维度前缀键、`trackLivingSlots` 与 `ContainerRuntimeCache` 用裸键）⇒ 整容器作废
    **登记即打空**。现已全部统一到 `getCacheKey()`，回归见
@@ -1582,9 +1575,8 @@ processContext(context, level)
   ├─ 阶段 4：容器级数据（runContainerDataTicks）
   │   └─ 收集 HasContainerData 实现者，按优先级排序后依次执行
   │
-  ├─ 阶段 5：写回 BlockEntity（writebackBlockEntities + incrementCleanup）
-  │   ├─ 应力与流体数据（按 ContainerDataKey 声明的 attachment）写回关联的 BlockEntity
-  │   └─ 达到清理间隔时执行过期数据清理
+  ├─ 阶段 5：写回 BlockEntity（writebackBlockEntities）
+  │   └─ 应力与流体数据（按 ContainerDataKey 声明的 attachment）写回关联的 BlockEntity
   │
   ├─ [残留红石归零（zeroResidualRedstone，1b-2c）]
   │   └─ 容器有 REDSTONE 数据但 grouped 里无 LivingRedstoneFunction ⇒ 主动归零
@@ -1647,8 +1639,10 @@ runContainerDataTicks(grouped, context, tick);
 
 ```java
 writebackBlockEntities(context, tick);
-incrementCleanup();
 ```
+
+容器完成写回不再触发全局计数式清理；自动回收由 L4 统一 sweep，见
+[container-data-lifecycle.md](../reference/container-data-lifecycle.md) §2。
 
 **残留红石归零**：`zeroResidualRedstone(grouped, ctx, tick)` 在容器有 REDSTONE 数据但
 `grouped` 里无 `LivingRedstoneFunction` 时主动归零 —— 判据与 grouped 是否为空无关

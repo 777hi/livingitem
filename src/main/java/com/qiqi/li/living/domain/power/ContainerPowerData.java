@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import com.qiqi.li.living.api.ContainerDataLifecycle;
 import com.qiqi.li.living.container.ContainerDataKey;
 
 /**
@@ -24,7 +23,7 @@ import com.qiqi.li.living.container.ContainerDataKey;
  *       电按锈级分账后容器级「总功率」没有消费方，读数口径 = 各锈级 EMA。</li>
  * </ul>
  */
-public class ContainerPowerData implements ContainerDataLifecycle {
+public class ContainerPowerData {
 
     /**
      * 容器红电账本的 key（跨 tick 持久；不落盘 attachment —— 相位快照走专用机制）。
@@ -101,7 +100,6 @@ public class ContainerPowerData implements ContainerDataLifecycle {
     private int displayWindowTicks;
 
     private long tickCounter;
-    private long lastTickTime = System.currentTimeMillis();
 
     /**
      * 采样起步期标志（2026-09-09 首拍无沿宽限）。
@@ -235,11 +233,10 @@ public class ContainerPowerData implements ContainerDataLifecycle {
         return tickCounter;
     }
 
-    /** 每 tick 末尾调用（glue 在分配入灯之后）：tick 计数推进 + 心跳时间戳 + 起步期推进 */
+    /** 每 tick 末尾调用（glue 在分配入灯之后）：tick 计数推进 + 起步期推进 */
     public void endTick() {
         tickCounter++;
         advanceWarmup();
-        lastTickTime = System.currentTimeMillis();
     }
 
     // ── 按锈级功率读数（v18，取代旧容器总账 EMA）──
@@ -359,10 +356,5 @@ public class ContainerPowerData implements ContainerDataLifecycle {
     /** 各锈蚟级基础出力 EMA 副本（测试 / 调试用） */
     public double[] getEmaPowerByOxidation() {
         return emaPowerByOxidation.clone();
-    }
-
-    /** 供过期清理使用（镜像 {@code ContainerRedstoneData.getLastTickTime}） */
-    public long getLastTickTime() {
-        return lastTickTime;
     }
 }

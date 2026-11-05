@@ -145,9 +145,11 @@ per-item DataComponent `LivingSpongeData`（**record：`fluid: FluidType` + `mmB
   管道可灌装空弹匣）；每次操作**现扫容器**（不缓存罐列表，§8.2#1 同款）；
 - **存在性 = 有活海绵（湿或干）**：无活海绵 ⇒ provider 返回 null（§10.4 教训：恒发实例
   把管道自身判成储液，整张网络断在假 tank 上）；未活化海绵不暴露（活化门槛）；
-- **存在性边沿**：`EDGE` 标志（`ContainerDataKey.persistent`，R-06 sweep 自动覆盖）+
-  `ContainerTickHooks` 钩子（`onTickStart` 扫描比对）⇒ 翻转时逐关联位置
-  `invalidateCapabilities`（管道缓存的 `BlockCapabilityCache` 才肯重查，精确一次）；
+- **存在性边沿**：`EDGE` 标志（`ContainerDataKey.persistent`，**跨 tick 内存态，不落盘**）+
+  `ContainerTickHooks` 钩子（`onTickStart` 扫描比对）⇒ 存在性翻转时逐关联位置
+  `invalidateCapabilities`，每个边沿只通知一次；**不因存量、fill / drain 或干湿变化通知**。
+  标志随容器而生灭，寿命以 [统一回收契约](../reference/container-data-lifecycle.md) §2 为准；
+  旧清理丢标志导致 Create 抽取停摆的源码推演与实机对照见 §12.1。
 - 注册：BLOCK 宽注册（全部 BE 类型），provider 内部按存在性发实例。
 
 ---
@@ -240,7 +242,8 @@ simulate/execute 同源确定。唯一残留毛刺：存量带尘时 content 恒
 | 吸收节拍 | **无存储**——每拍从 `gameTime` 现算边沿 | — | — | — | — |
 
 **1.1-b 状态粒度**：`{fluid, mmB}` = per-item；`generatedSources` = 容器级（fluid 域资产，
-海绵只是消费者）；⑭ `EDGE` 标志 = 容器级（sponge 域 `ContainerDataKey.persistent`）。
+海绵只是消费者）；⑭ `EDGE` 标志 = 容器级跨 tick 内存态，不落盘；其回收按
+[container-data-lifecycle.md](../reference/container-data-lifecycle.md) §2，不以海绵存量决定寿命。
 
 ### 9.2 准入表（模板 §1.2）
 
@@ -253,7 +256,7 @@ simulate/execute 同源确定。唯一残留毛刺：存量带尘时 content 恒
 | # | 判据 | 答 |
 |---|---|---|
 | ① | 要读相邻槽吗 | **是**（四邻）——走既有算子 `resolveNeighbor` + 统一链，无新增列数义务 |
-| ② | 有容器级持久数据吗 | 吸收侧无（组件 + fluid 域既有账本）；⑭ `EDGE` 标志 = sponge 域 `ContainerDataKey.persistent`（R-06 sweep 自动覆盖） |
+| ② | 有容器级持久数据吗 | 吸收侧无（组件 + fluid 域既有账本）；⑭ `EDGE` 只需跨 tick 内存态，不落盘；生命周期见 [统一回收契约](../reference/container-data-lifecycle.md) §2 |
 
 ### 9.4 规则 → 守卫映射
 
@@ -320,6 +323,36 @@ simulate/execute 同源确定。唯一残留毛刺：存量带尘时 content 恒
    （2026-09-09 守恒战争产物）——当时只修了「造电」方向，「缩水」方向漏掉了。
 4. **测试桩要求**：容器级能力的单测需 `level.getCapability` + `level.getBlockState`
    双打桩才能走通 `resolveContextAt`（石头 = 非双箱路径）。
+
+### 12.1 Create 抽取停摆：通告标志被旧清理误删（2026-11-05）
+
+**实机观测与推演分开记**：修复前用户确认，在出现抽取异常的海绵容器里加**活涂蜡铜灯**后，
+Create 管道可正常抽取；**2026-11-06 使用修复包、不放铜灯复测，用户确认停抽问题解决**。
+运行时的能力失效次数与 Create provider 内部引用没有被直接观测，下面内部链路仍属源码推演。
+
+- **本模组侧根因**：旧类型心跳清理只认 `ContainerDataLifecycle`；只剩 Boolean `EDGE` 的
+  活跃聚合条目也会被整条删掉。下次 `tickEdge` 读到 null，当成尚未通告的 false，
+  海绵仍在就再次触发能力失效。灯泡使电力账本持续更新，旧清理因此保留整条目，`EDGE` 也免遭误删；
+  **不能靠放灯泡作为修法**。统一修复约束见 [container-data-lifecycle.md](../reference/container-data-lifecycle.md) §2/§4。
+- **Create 6.0.10 源码链**：`FlowSource.FluidHandler.manageSource` 的失效回调清掉自身的 handler cache，
+  并使 `ICapabilityProvider.BlockCapabilityCacheProvider` 永久返回 null；下一轮源管理可建新 provider。
+  但 `FluidNetwork.tick` **只在 `source == null` 时取 supplier**，已持有的非 null 旧 provider
+  返回 null 时直接早退，不会因为另处建了新 provider 而自动换源。
+  ⇒ **推演**：伪边沿反复失效会令网络持有死亡源引用，抽取卡住；这不是海绵 drain 报账算法的结论。
+
+**修复边界**：只修本模组容器生命周期；保留「能力存在性翻转才通知」口径，不在每次 fill / drain
+失效能力，不加 Create Mixin、不改第三方源码。干海绵仍是可灌空罐，存量归零不等于能力消失。
+
+**验收范围（2026-11-06）**：
+
+| 场景 | 状态 |
+|---|---|
+| 使用修复包，不放铜灯，仅海绵持续抽取 | ✅ 用户复测确认停抽问题解决 |
+| 修复前加铜灯对照 | ✅ 用户确认加灯后正常，支持旧清理根因 |
+| 无领域账本保护，真实 `processContext` 连续 3600 次 | ✅ 回归通过：EDGE 保留，存在性通知不重复；移除后只通知一次 |
+| 海绵取出再放回、管道断开重连、重载及跨流体变化的组合 | 未专项穷举；本次持续抽取验收不等于修复 Create 所有缓存失效场景 |
+
+自动验证见 `ContainerCacheSweepTest`；全量状态以测试 XML 与 `doc_check` 为准。
 
 ---
 

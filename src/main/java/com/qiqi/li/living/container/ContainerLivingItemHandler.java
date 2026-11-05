@@ -12,7 +12,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
-import com.qiqi.li.living.api.ContainerDataLifecycle;
 import com.qiqi.li.living.api.HasContainerData;
 import com.qiqi.li.living.util.DoubleChestPositions;
 import com.qiqi.li.living.util.FailureThrottle;
@@ -59,10 +58,8 @@ public class ContainerLivingItemHandler {
         !"false".equalsIgnoreCase(System.getProperty("living_item.debug.isolation", "true"));
 
     /**
-     * 单一容器数据条目 —— 合并原 6 张同键 Map（流体 / 红石 / 电力 / 修订计数 /
-     * 内容签名 / 快照缓存）为一张 {@code Map<String, ContainerEntry>}，消除三套
-     * 几乎一字不差的 get-or-create 与 {@code cleanupStalePosIndex} 里重复 4 遍的
-     * 「无流体且无红石且无电力」判定。见 {@link #entry} 与 {@link #cleanupStaleData}。
+     * 容器聚合条目：领域数据、修订计数、内容签名与快照共享同一缓存键。
+     * 整体回收只走 {@link #removeDataByKey}，过期判据归 {@link #sweepUnseenContainers()}。
      */
     private static final Map<String, ContainerEntry> CONTAINER_DATA = new HashMap<>();
 
@@ -87,9 +84,6 @@ public class ContainerLivingItemHandler {
         ContainerSnapshot cachedSnapshot;
     }
 
-    private static final int CLEANUP_INTERVAL = 1200;
-    private static int cleanupCounter;
-
     static {
         // static 缓存清理：登记与 clearAllCaches() 同文件（见 StaticCacheRegistry 类注释「登记位置」）
         StaticCacheRegistry.onServerStop(s -> ContainerLivingItemHandler.clearAllCaches());
@@ -108,15 +102,13 @@ public class ContainerLivingItemHandler {
     private static final Map<String, Map<Integer, Item>> LIVING_SLOT_ITEMS = new ConcurrentHashMap<>();
 
     /**
-     * 缓存键 → 最后一次「被 tick 看到」的墙钟毫秒 —— <b>R-06 的统一回收口</b>（2026-11-01）。
+     * 缓存键 → 回收起点的墙钟毫秒；正常 tick 盖章，首次创建聚合条目补登记。
+     * 普通查询不续期，整容器过期仅由 {@link #sweepUnseenContainers()} 判断。
      *
-     * <p>为什么判「没再被看到」而不是给每种容器形态各挂一个事件：容器停止被处理的成因有六种
-     * （区块卸载 / 玩家下线 / 实体消失 / 物品销毁 / 掉落物被拾取 / 非玩家移除方块），
-     * 逐形态挂事件要六条路径、且必然漏掉某一条（这六条原先<b>一条都没挂</b>）。
-     * 「消失满阈值」是这些成因的<b>共同结果</b> ⇒ 一个判据覆盖全部六种形态，也不引入新事件。</p>
+     * <p>覆盖区块卸载、玩家下线、实体消失、物品销毁、掉落物拾取与非玩家移除方块。
+     * 仅查询创建、未进入 tick 的条目按首次创建时刻回收。</p>
      *
-     * <p>⚠️ 阈值不是数据保护：运行时数据按 {@code D-container-20} 可随时丢弃，
-     * 这里只给「走远又回来」留一段窗口，与 {@code ContainerChunkCache} 的兜底节拍同量级。</p>
+     * <p>⚠️ 阈值只保留瞬态缓存的返回窗口；必须跨卸载持久化的数据不得只存内存。</p>
      */
     private static final Map<String, Long> LAST_SEEN = new ConcurrentHashMap<>();
 
@@ -170,7 +162,7 @@ public class ContainerLivingItemHandler {
 
     /**
      * 获取或创建容器聚合条目（含惰性创建流体/红石/电力数据）。
-     * 首次创建时顺便建位置反向索引；context 无 containerKey 时返回 null。
+     * 首次创建时登记回收起点与位置反向索引，后续查询不续期；无 containerKey 时返回 null。
      */
     private static ContainerEntry entry(ContainerContext ctx) {
         String key = cacheKey(ctx);
@@ -179,6 +171,7 @@ public class ContainerLivingItemHandler {
         if (e == null) {
             e = new ContainerEntry();
             CONTAINER_DATA.put(key, e);
+            LAST_SEEN.putIfAbsent(key, System.currentTimeMillis());
             indexPositions(ctx, key);
         }
         return e;
@@ -204,6 +197,7 @@ public class ContainerLivingItemHandler {
     public static void removeDataByKey(String cacheKey) {
         if (cacheKey == null) return;
         CONTAINER_DATA.remove(cacheKey);
+        LAST_SEEN.remove(cacheKey);
         POS_TO_CACHE_KEY.values().removeIf(cacheKey::equals);
         // 容器卸载 ⇒ 运行时缓存与追踪一并作废（方案 A，2026-10-11）。
         // ⚠️ key 与下方两行必须是<b>同一把缓存键</b>（ContainerIdentity.getCacheKey）：
@@ -302,7 +296,6 @@ public class ContainerLivingItemHandler {
         if (expired != null) {
             for (String cacheKey : expired) {
                 removeDataByKey(cacheKey);
-                LAST_SEEN.remove(cacheKey);
                 removed++;
             }
         }
@@ -360,26 +353,6 @@ public class ContainerLivingItemHandler {
         return out;
     }
 
-    /**
-     * 清理过期的流体/红石/电力数据（超过 120s 未访问的整条容器条目回收）。
-     * 仅当条目内<b>所有存在的数据类型</b>都过期才回收，避免误丢仍活跃的单一类型数据。
-     */
-    private static void cleanupStaleData(long currentTimeMs) {
-        CONTAINER_DATA.entrySet().removeIf(en -> {
-            ContainerEntry e = en.getValue();
-            // 泛化（2026-10-08 计划 ⑤）：遍历已登记的 key，只问「实现了生命周期接口」的数据
-            // （跨 tick 持久那几种）；tick 级数据（如应力）每 tick 重建，不参与过期判定。
-            for (ContainerDataKey<?> key : ContainerDataKey.all()) {
-                Object v = e.store.peek(key);
-                if (v instanceof ContainerDataLifecycle lc
-                        && currentTimeMs - lc.getLastTickTime() <= 120_000) {
-                    return false;   // 有任一数据仍活跃 ⇒ 不回收整条
-                }
-            }
-            return true;
-        });
-    }
-
     /** 按位置 O(1) 查询容器级数据（泛化；供 mixin 热路径与领域侧调用）。 */
     public static <T> T peekContainerDataByPos(Level level, BlockPos pos, ContainerDataKey<T> key) {
         String cacheKey = POS_TO_CACHE_KEY.get(new PosKey(level.dimension(), pos));
@@ -407,7 +380,7 @@ public class ContainerLivingItemHandler {
     }
 
     /**
-     * 泛型访问容器级持久数据（不创建）。供 {@code SimpleContainerContext} 的
+     * 泛型访问容器级持久数据（不创建子数据；首次查询仍登记聚合条目）。供 {@code SimpleContainerContext} 的
      * {@code peekContainerData} 覆写委托 —— 按 key 走统一 store，无需按类型 switch。
      */
     public static <T> T peekContainerData(ContainerContext ctx, ContainerDataKey<T> key) {
@@ -527,19 +500,6 @@ public class ContainerLivingItemHandler {
         return snap;
     }
 
-    /**
-     * 清理已失去主缓存条目的位置索引。
-     * 仅当对应 cacheKey 在 {@link #CONTAINER_DATA} 中不存在或条目内已无任何子数据时，
-     * 才回收其位置反向索引（快照/修订计数/内容签名随条目一起被 {@link #cleanupStaleData} 回收）。
-     */
-    private static void cleanupStalePosIndex() {
-        POS_TO_CACHE_KEY.values().removeIf(
-            key -> {
-                ContainerEntry e = CONTAINER_DATA.get(key);
-                return e == null || e.store.isEmpty();
-            });
-    }
-
     /** 清空全部容器级缓存（服务端关闭时调用，避免跨存档残留） */
     public static void clearAllCaches() {
         CONTAINER_DATA.clear();
@@ -548,7 +508,6 @@ public class ContainerLivingItemHandler {
         PENDING_RUNTIME_INVALIDATIONS.clear();
         LAST_SEEN.clear();
         lastSweepMs = 0;
-        cleanupCounter = 0;
     }
 
 
@@ -721,9 +680,7 @@ public class ContainerLivingItemHandler {
             PerfMetrics.recordPhase("container_data", containerDataEndNanos - funcTickEndNanos);
 
             // 阶段 4：写回（应力 / 流体 / 相位快照 —— 由各领域注册的 ContainerTickHook 完成）
-            // 与过期清理。2026-10-08 计划 ⑤：原 writebackBlockEntities 的领域逻辑已移入各领域。
             ContainerTickHooks.fireWriteback(context, tick);
-            incrementCleanup();
 
             stressEndNanos = System.nanoTime();
             PerfMetrics.recordPhase("stress", stressEndNanos - containerDataEndNanos);
@@ -818,19 +775,6 @@ public class ContainerLivingItemHandler {
             }
         }
         return current;
-    }
-
-    /**
-     * 递增清理计数器，达到间隔时执行过期数据清理。
-     */
-    private static void incrementCleanup() {
-        cleanupCounter++;
-        if (cleanupCounter >= CLEANUP_INTERVAL) {
-            cleanupCounter = 0;
-            long currentTimeMs = System.currentTimeMillis();
-            cleanupStaleData(currentTimeMs);
-            cleanupStalePosIndex();
-        }
     }
 
     /**

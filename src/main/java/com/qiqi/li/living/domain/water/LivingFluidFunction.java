@@ -71,7 +71,6 @@ public class LivingFluidFunction implements LivingItemFunction, HasContainerData
         ContainerFluidData fluidData = tick.data(ContainerFluidData.KEY);
         if (fluidData == null || fluidData == ContainerFluidData.EMPTY) return;
         if (!fluidData.isEmpty()) {
-            fluidData.setLastTickTime(System.currentTimeMillis());
             fluidData.tick(ctx);
         }
         // flush 在 isEmpty 门之外：数据刚清空（最后一个源被汲走/挤没）时也要下发一次

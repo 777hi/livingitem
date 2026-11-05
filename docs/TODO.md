@@ -144,6 +144,26 @@
     仅当将来做「世界侧放置」parity 时才复用，倒水成源路径不查。引擎现状核对：全库
     `ultraWarm` / `isVaporizedOnPlacement` 零实现（2026-11-01 grep），无存量行为可破坏。
 
+## 活海绵（2026-11-05 游玩反馈与源码核查 · 修复与验收状态逐项标注）
+
+1. ~~**Create 管道持续抽取一段时间后停住**~~ ✅ **2026-11-06 用户实机复测通过** ——
+   不放活铜灯，仅活海绵使用修复包后抽取恢复正常；+14 回归与全量测试通过。
+   根因、修复前加铜灯对照与修复边界见 [海绵踩坑 §12.1](tech/living-sponge-tech.md)。
+   未追加逐次抽灌能力失效通知，未加 Create Mixin；真实重载/重连的所有场景不由本次验收代替。
+2. **容器 drain 多堆聚合违反请求上限 / 异种不动原则** —— 源码已定位，尚未补回归：
+   `SpongeContainerFluidHandler#drain(FluidStack, action)` 把原始全量请求传给每堆，
+   两堆各 600mB 水、请求 1000mB 可累计返回并扣除 1200mB；
+   `drain(int, action)` 在判流体是否匹配前已执行下一堆扣减，水后接岩浆可扣掉未交付的岩浆。
+   判据：每堆只抽剩余请求；选定流体后异种堆不扣；SIMULATE 不写且与 EXECUTE 同请求交付一致。
+   算术继续复用 `SpongeItemFluidHandler` / `PerItemLedger`，不是本次周期性停抽的已证根因。
+3. **外部抽灌的存量通知与 handler 生命周期待核查** —— 容器接口改海绵组件但不调用
+   `BlockEntity#setChanged`，并长期保留解析时的 `TickableContainerContext`（每次现扫槽，但不重取
+   底层 item handler）；铜灯的 `ContainerEnergyStorage` 每次重解析 handler，实际变更后标脏。
+   判据：SIMULATE 无副作用；EXECUTE 的存量能可靠落盘；容器更换 handler 后能力操作不改旧存储。
+   **不能把保存标脏、能力缓存失效、方块/邻居更新混为同一种通知**；缺少 `setChanged` 是否解释
+   Create 停抽仍需核查，不能推导成「每次抽灌都 invalidateCapabilities」。
+   入口：`SpongeContainerFluidHandler#resolveProvider/fill/drain` · `ContainerEnergyStorage`。
+
 ## 活水车
 
 1. 在航空学载具上，玩家应力无法传输到脚下。（2026-09-22 复核：**仍未解决**）
@@ -157,6 +177,12 @@
    `LivingWaxedCopperFunction#tickContainerData` **所有早退之前**通告（纯电池容器无发电机），
    负边沿（最后一盏灯被拿走 ⇒ 功能已不分组）由 `ContainerPhaseWriteback` 兜底；客户端恒不发。
    见 [power tech §4.1](tech/living-power-tech.md) · `ContainerEnergyCapabilityTest`。
+3. **容器取电在超大堆叠下可能交付超过请求量**（2026-11-05 源码核查，未修复 / 未测）——
+   `ContainerEnergyStorage#extractEnergy/extract` 将均分向上取整后的**实际扣量**转成 FE 返回；
+   反例：单堆 count=2048、每盏 q=1mFE，请求 1FE，实际扣 2048mFE，返回 2FE（SIMULATE 同样）。
+   普通堆叠的多扣不足 1FE，不能用该前提担保超大堆叠；`BulbItemEnergyStorage` 返回选定的
+   `takeFe`，不共享此问题。判据：交付 ≤ 请求，实扣 ≥ 交付，取整偏差只许损耗向；覆盖超大堆叠、
+   多堆剩余预算和 simulate/execute 一致性。与容器缓存清理 / Create 停抽分开处理。
 
 ## 活红石 / 活铜（2026-10-10 自 tech §0 迁入，D-doc-06）
 
@@ -329,6 +355,13 @@
    `inspect` 都按**准心方块**解析，船 / 矿车 / 带箱驴骡无法校准。原版四类已有明确布局
    （`getInventoryColumns()` / 固定 9 列 / 5 列），**特殊第三方容器优先专门联动**，
    不因界面有按钮就承诺支持。触发条件：出现「原版布局被模组改动、且启发式算错」的实体容器。
+
+3.5 ~~**旧清理绕过容器 lastSeen 生命周期，误删活跃条目 / 位置索引**~~
+   ✅ **2026-11-06 我方根因修复完成（+14 回归，全量通过）** —— 旧 1200 次计数清理与
+   领域墙钟心跳接口退役，统一按容器消失回收；查询创建补登记且不续期，显式销毁清时间记录，
+   空 store 不删活跃位置索引。旧代码回归11项红，修复后保留标志/索引、查询-only回收、
+   同键重建和反复删除不泄漏均通过。口径见 [生命周期契约 §2](reference/container-data-lifecycle.md)；
+   Create 无铜灯持续抽取实机验收已通过（见「活海绵」第1项），其他守恒/保存通知问题未顺带修复。
 
 4. ♻️ **「客户端列数探测」前提已错，已被设计稿取代**（2026-10-21 更正）——
    见 [buffer/container-menu-introspection-topic.md](buffer/container-menu-introspection-topic.md) §1.1/1.2：

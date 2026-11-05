@@ -83,7 +83,7 @@ ContainerFluidWriteback → ctx.persist(key, value) → ContainerDataSavedData�
 |---|---|---|---|
 | **身份** | `CONTAINER_UUID`（物品组件）/ `CONTAINER_UUID_ATTACHMENT`（BE 附件） | UUID | 懒创建；跨形态跟着搬 |
 | **数据** | `ContainerDataSavedData` | `Map<UUID, 按 key 编码的 NBT>` | 全局一份（Overworld DataStorage），`setDirty` 后随存档落盘 |
-| **缓存** | 内存表 `CONTAINER_DATA` | `cuuid_<uuid>` | LRU 120 秒可回收，回收不丢 SavedData |
+| **缓存** | 内存表 `CONTAINER_DATA` | `cuuid_<uuid>` | 按容器消失回收（见 [生命周期契约](../reference/container-data-lifecycle.md) §2），回收不丢 SavedData |
 
 - **谁能进 SavedData**：`ContainerDataKey.isSaved()`（attachment + codec 都声明）才收。
   应力 / 红石 / 电力是运行时数据，进不来（与 I-C9「只有带 serialize 的才搬」同源）。

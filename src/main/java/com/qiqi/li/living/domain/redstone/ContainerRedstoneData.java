@@ -11,7 +11,6 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.EmptyBlockGetter;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
-import com.qiqi.li.living.api.ContainerDataLifecycle;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.api.RedstoneSensor;
 import com.qiqi.li.living.container.ContainerContext;
@@ -30,7 +29,7 @@ import com.qiqi.li.living.util.WaxedCopperFamily;
  * <p>{@link #calculate} 是每 tick 的入口：从容器快照重建槽位位图，再经 {@link RedstonePropagation}
  * 完成「收集信号源 → 传播 → 充能导体 → 复检 → 更新显示」的传播节拍，最后结算边界输出并向世界通知邻居变化。</p>
  */
-public class ContainerRedstoneData implements RedstoneSensor, ContainerDataLifecycle {
+public class ContainerRedstoneData implements RedstoneSensor {
 
     /**
      * 容器红石账本的 key（跨 tick 持久；不落盘 attachment）。
@@ -100,15 +99,8 @@ public class ContainerRedstoneData implements RedstoneSensor, ContainerDataLifec
      */
     private boolean everCalculated;
 
-    /** 心跳时间戳（容器缓存 120s 过期清理用；每次 calculate 刷新） */
-    private long lastTickTime = System.currentTimeMillis();
-
     public ContainerRedstoneData() {
         this.processedThisTick = false;
-    }
-
-    public long getLastTickTime() {
-        return lastTickTime;
     }
 
     public void resetProcessedFlag() {
@@ -286,7 +278,6 @@ public class ContainerRedstoneData implements RedstoneSensor, ContainerDataLifec
     public void calculate(ContainerContext context, TickContext tick) {
         if (processedThisTick) return;
         processedThisTick = true;
-        lastTickTime = System.currentTimeMillis();
         // 首拍（首次真实 calculate）当 tick：prevEdgeGrid 全零 =「历史未知」而非「上一 tick 全 0」，
         // 消费者（电力层 priority 3，晚于本 calculate）读 hasEdgeHistory() 必须拿到 false →
         // 跳过边检测（2026-09-09 根修契约，见 RedstoneSensor#hasEdgeHistory）。
