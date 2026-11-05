@@ -173,6 +173,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-11-06 | 🐛 **辅助攻击直连目标，修坑边怪辅助不动** —— 旧方案把玩家这一刀包装成临时射线（眼→包围盒中心）喂 replayAttack，隔墙检测误判坑沿方块 ⇒ 怪只露头时辅助不动；拆 prepareWielder/strikeTarget 共用件＋直连入口 strikeKnownTarget（不造射线/不做隔墙检测，目标过滤与冷却保留，顺带修「射线撞更近的怪打到别人」怪癖）；辅助挖掘审查无同类问题（本就借玩家当前目标）；实机待验 | [武器 §9](docs/tech/living-weapon-tech.md) · [changelog](docs/archive/changelog.md) |
 | 2026-11-06 | 🐛 **海绵多堆抽取/铜灯精确交付** —— 海绵只续抽剩余请求、异种不扣；铜灯容器跨堆凑整、总量不足1FE不扣、均分差额只损耗；+17回归，旧代码13项红，全量1595项零失败；实机效果随游玩观察，不设专项测试 | [海绵 §12.2](docs/tech/living-sponge-tech.md) · [红电 §4.2](docs/tech/living-power-tech.md) |
 | 2026-11-06 | 🐛 **容器缓存统一回收，修活海绵 Create 停抽根因** —— 退役按领域心跳/1200 次整条清理，活跃容器标志与索引保留；查询创建补登记、销毁清时间记录；+14 回归，旧代码11项红；无铜灯持续抽取实机验收通过 | [生命周期契约 §2](docs/reference/container-data-lifecycle.md) · [海绵踩坑 §12.1](docs/tech/living-sponge-tech.md) |
 | 2026-11-05 | 🐛 **修 1.7.0 处理 `lootr:lootr_minecart` 崩服** —— 实体容器准入改「白名单 + `ItemHandler.ENTITY` 能力面」双闸，第三方 `ContainerEntity` 无能力时在准入层优雅跳过；`LivingItem` 重复白名单收口到 `EntityContainers`；+4 回归测试（tick 跳过 / GUI 菜单解析不炸 / 有能力面不误伤 / GUI 上下文不误判同坐标方块），全量1564绿 | [container-boundary §I-C1](docs/system-design/container-boundary.md) · [changelog](docs/archive/changelog.md) |
@@ -181,7 +182,6 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-11-05 | 📚 **活活塞升格 tech 文档** —— [living-piston-tech.md](docs/tech/living-piston-tech.md)（§0 契约 22 条 + 机制 / 压送 / 渲染 / 生命周期 / 守卫映射 / 测试地图 / 踩坑实录）；设计稿归档留痕（模板 §2.3 晋升流程），活指针全量切换 | [活活塞-design.md](docs/archive/活活塞-design.md) §7.8 |
 | 2026-11-05 | ✅ **活活塞图标全平面重建，真机验收通过** —— 机身剖面图标＋板/杆 2D blit（原版贴图零新资产、静止板贴前缘=朝向指示）；三轮真机修正：删 scale 1.125（16px）/ 板位 −8−t / 板 blit 锚点 x=−8 居中（「7」→「T」）；全量1514绿 | [活活塞-design.md](docs/archive/活活塞-design.md) §7.8.6 |
 | 2026-11-04 | ✅ **活活塞压送真机验收通过（传输侧）** —— 传输逻辑与活漏斗联动实机正常；四向渲染贴图细节待复验 | [活活塞-design.md](docs/archive/活活塞-design.md) §7.8.5 |
-| 2026-11-03 | ✅ **活活塞玩法代码全落 +39测试，真机待验** —— 机械压送q=min(C,M,A)、本体不展开、无视冷却/锁定、世界邻居/末影直连在线·离线·部分容量及路由零副作用；审查修复同拍旧条目、精确写恢复、接收端中立发现和半程头模型；渲染投影角与18px行程数学修正；全量1512绿 | [活活塞-design.md](docs/archive/活活塞-design.md) §7.8.5 |
 ## 提交前必跑（2026-10-30 更新）
 
 ```bash

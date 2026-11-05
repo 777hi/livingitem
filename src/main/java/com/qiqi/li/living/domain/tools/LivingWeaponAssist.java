@@ -1,7 +1,5 @@
 package com.qiqi.li.living.domain.tools;
 
-import java.util.Set;
-
 import com.qiqi.li.living.api.LivingMod;
 
 import net.minecraft.server.level.ServerLevel;
@@ -105,10 +103,6 @@ public final class LivingWeaponAssist {
                 }
                 ItemStack weapon = carried.stack();
 
-                // 临时构造一条「宿主 → 目标」的射线，复用回放（无记忆 ⇒ 现算）
-                LivingToolMemory.AttackMemory temp = LivingToolMemory.AttackMemory.record(
-                    origin, target.getBoundingBox().getCenter(), null);
-
                 // ⭐ 压制无敌帧，让【这一把】的伤害与附魔真正生效
                 //    （顺序：hurt 内 1153 post 事件 → 1190 免疫判断 → 1202 读 container）
                 //
@@ -120,8 +114,12 @@ public final class LivingWeaponAssist {
                     target.invulnerableTime = 10;   // 进 hurt 时会先 -1 ⇒ 9 ⇒ 跨过 `> 10` 的免疫阈值
                 }
 
-                LivingToolReplay.AttackResult result = LivingToolReplay.replayAttack(
-                    weapon, temp, origin, Set.of(), level, now);
+                // ⭐ 直连目标（2026-11-06）：可达性已由玩家这一刀证明 ⇒ 不造射线、不做隔墙检测
+                // —— 沿「眼睛 → 包围盒中心」造射线复查会在「怪掉坑里只露头」时误判隔墙
+                //    （中心在坑沿下，射线穿坑沿方块），表现为玩家打得到、辅助不动。
+                //    目标过滤与 per-weapon 冷却由 strikeKnownTarget 自己管。
+                LivingToolReplay.AttackResult result = LivingToolReplay.strikeKnownTarget(
+                    weapon, origin, target, level, now);
 
                 if (result.outcome() == LivingToolReplay.Outcome.ATTACKED) {
                     // 写回（可能扣了耐久 / 损坏）：容器里的武器要写回容器，不能写物品栏

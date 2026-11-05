@@ -5,6 +5,7 @@ import com.qiqi.li.living.domain.tools.LivingToolAction;
 import javax.annotation.Nullable;
 
 import java.util.Set;
+import java.util.UUID;
 
 import com.qiqi.li.living.api.LivingItemManager;
 
@@ -398,7 +399,48 @@ public final class LivingToolReplay {
         }
 
         Vec3 end = attack.endpointFrom(origin);
+        Wielder wielder = prepareWielder(weapon, origin, level);
+        // ⭐ 让 FakePlayer 看向目标 —— 与法杖/枪械同款需求，且影响击退方向
+        faceTarget(wielder.fake(), origin, end);
 
+        EntityHitResult hit = findAttackTarget(attack, origin, end, hostBlocks, wielder.fake(), level);
+        if (hit == null) {
+            return AttackResult.none(Outcome.NO_TARGET);   // 没怪 ⇒ 调度层可转去挖方块
+        }
+        return strikeTarget(wielder, weapon, hit.getEntity(), now);
+    }
+
+    /**
+     * <b>直连出手段</b> —— 目标已知时的出手入口（辅助攻击：玩家刚亲手打中那只怪）。
+     *
+     * <p>⭐ <b>不造射线、不做隔墙检测</b>：自主模式沿射线找目标是为了「发现」怪；
+     * 辅助模式的目标就是玩家那一刀打中的实体，可达性已被玩家亲手证明。
+     * 若再沿「眼睛 → 包围盒中心」造一条射线复查，会在「怪掉坑里只露头」这类场景
+     * 误判隔墙 —— 中心在坑沿之下，射线穿过坑沿方块 ⇒ 玩家打得到、辅助却不动
+     * （2026-11-06 修，见 tech 文档 §9）。顺带修掉旧射线方案的怪癖：
+     * 射线半路撞上更近的另一只怪时，会打到「射线上的怪」而非「玩家打中的怪」。</p>
+     *
+     * <p>仍保留 {@link #isAttackableByLivingWeapon} 过滤（玩家打自家宠物 / 盔甲架时辅助不上手）
+     * 与 per-weapon 冷却闸门（辅助不无视冷却连打）。</p>
+     *
+     * @param target 玩家那一刀命中的实体（调用方保证非玩家 —— 事件来源已过虑）
+     * @return 结果（含状态）；{@code outcome == ATTACKED} 时 {@code tool} 才是写回用的副本
+     */
+    public static AttackResult strikeKnownTarget(ItemStack weapon, Vec3 origin, Entity target,
+                                                 ServerLevel level, long now) {
+        if (!isAttackableByLivingWeapon(target, LivingItemManager.getToolOwner(weapon))) {
+            return AttackResult.none(Outcome.NO_TARGET);
+        }
+        Wielder wielder = prepareWielder(weapon, origin, level);
+        faceTarget(wielder.fake(), origin, target.getBoundingBox().getCenter());
+        return strikeTarget(wielder, weapon, target, now);
+    }
+
+    /** 出手前的假玩家架设 —— 回放与直连共用；{@code held} 是写回槽位用的副本（已装入假玩家主手）。 */
+    private record Wielder(LivingToolFakePlayer fake, ItemStack held) {
+    }
+
+    private static Wielder prepareWielder(ItemStack weapon, Vec3 origin, ServerLevel level) {
         LivingToolFakePlayer fake =
             LivingToolFakePlayerCache.get(level, LivingItemManager.getToolOwner(weapon));
         fake.driveWielderTick();   // 受控 tick：真链每 game tick 推进一次（按 game time 去重）
@@ -412,23 +454,25 @@ public final class LivingToolReplay {
         fake.equipTool(held);   // 装入假玩家主手（属性由真链的装备刷新原生应用）
         // ⭐（原「代持 tick」两行已退役 2026-09-30）：inventoryTick / 冷却推进 /
         //    药效衰减 / 装备属性刷新全部由真链原生承担，见 LivingToolFakePlayer#driveWielderTick。
-        // ⭐ 让 FakePlayer 看向目标 —— 与法杖/枪械同款需求，且影响击退方向
-        faceTarget(fake, origin, end);
+        return new Wielder(fake, held);
+    }
 
-        EntityHitResult hit = findAttackTarget(attack, origin, end, hostBlocks, fake, level);
-        if (hit == null) {
-            return AttackResult.none(Outcome.NO_TARGET);   // 没怪 ⇒ 调度层可转去挖方块
-        }
-
+    /**
+     * 出手段 —— 回放与直连共用的<b>唯一出手路径</b>：冷却闸门 → 写动画记录 → {@code fake.attack}。
+     *
+     * <p>调用方必须已完成：目标过滤（自主模式由 {@code findAttackTarget} 的谓词做，
+     * 直连入口自己判）与 {@link #faceTarget}。</p>
+     */
+    private static AttackResult strikeTarget(Wielder wielder, ItemStack weapon, Entity target, long now) {
         // ── 攻击冷却（per-weapon，2026-09-30 二次修正）────────────────────────
         //    节奏必须【每把武器一份】（按各自攻速独立出手），而原生 attackStrengthTicker
         //    长在共享假玩家身上（全体武器一个时钟）⇒ 门按【该武器自己】的上次攻击记录算，
         //    缩放经 setAttackStrengthScale 注入假玩家（见 LivingToolFakePlayer 的说明）。
         //    上次攻击记录写在 attack() 之前（见下），攻击分支必写回 ⇒ 记录不会丢。
-        float cooldown = fake.getAttackCooldownTicks();
+        float cooldown = wielder.fake().getAttackCooldownTicks();
         LivingToolAction last = LivingToolAction.of(weapon);
         float scale = last == null ? 1.0F : (float) (now - last.tick()) / cooldown;
-        fake.setAttackStrengthScale(scale);
+        wielder.fake().setAttackStrengthScale(scale);
         if (scale < 1.0F) {
             // 有目标但冷却未满 ⇒ 报告 COOLING：让调度层【等待】而不是转去挖方块
             return AttackResult.none(Outcome.COOLING);
@@ -452,13 +496,13 @@ public final class LivingToolReplay {
         //     大型生物会让环沉到脚底。
         // ⚠️ 两端都要写：weapon 是容器里的实时栈（就地生效），held 是写回槽位用的副本。
         LivingToolAction action =
-            new LivingToolAction(now, BlockPos.containing(hit.getEntity().getBoundingBox().getCenter()));
+            new LivingToolAction(now, BlockPos.containing(target.getBoundingBox().getCenter()));
         LivingToolAction.set(weapon, action);
-        LivingToolAction.set(held, action);
+        LivingToolAction.set(wielder.held(), action);
 
-        fake.attack(hit.getEntity());
+        wielder.fake().attack(target);
 
-        return new AttackResult(held, Outcome.ATTACKED);
+        return new AttackResult(wielder.held(), Outcome.ATTACKED);
     }
 
     /**
@@ -488,7 +532,7 @@ public final class LivingToolReplay {
             origin,
             to,
             fake.getBoundingBox().inflate(length),
-            e -> isAttackableByLivingWeapon(e, fake));
+            e -> isAttackableByLivingWeapon(e, fake.getUUID()));
 
         if (hit == null) {
             return null;
@@ -528,13 +572,17 @@ public final class LivingToolReplay {
      *
      * <p>⚠️ 由此可得一个<b>硬约束</b>：活武器<b>不支持 PVP</b> —— 所有玩家一律不打。
      * 将来要放开，必须先定义"敌对关系"判据（谁算敌人）。</p>
+     *
+     * @param ownerUuid 武器主人的 UUID（假玩家的 {@code getUUID()} 即主人）—— 宠物判据用它；
+     *                  {@code null} = 无主人，宠物判据自然不命中
      */
-    private static boolean isAttackableByLivingWeapon(Entity entity, LivingToolFakePlayer fake) {
+    private static boolean isAttackableByLivingWeapon(Entity entity, @Nullable UUID ownerUuid) {
         if (!(entity instanceof LivingEntity) || entity instanceof Player
             || entity instanceof ArmorStand) {
             return false;
         }
-        if (entity instanceof OwnableEntity owned && fake.getUUID().equals(owned.getOwnerUUID())) {
+        if (entity instanceof OwnableEntity owned && ownerUuid != null
+            && ownerUuid.equals(owned.getOwnerUUID())) {
             return false;   // 主人自己驯服的宠物
         }
         return entity.isAttackable();
