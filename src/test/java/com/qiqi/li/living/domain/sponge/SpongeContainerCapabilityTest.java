@@ -98,8 +98,8 @@ class SpongeContainerCapabilityTest {
     // ── 用例 ────────────────────────────────────────────────
 
     @Test
-    @DisplayName("① 存在性判据：无海绵 / 只有干海绵 ⇒ null（§10.4：非 null = 管道判储液）")
-    void exposureRequiresWetSponge() {
+    @DisplayName("① 存在性判据：无海绵不暴露，干活海绵为空罐可灌")
+    void exposureRequiresLivingSponge() {
         Scene empty = Scene.of(9);
         assertNull(SpongeContainerFluidHandler.resolveProvider(beOf(empty), null),
             "空容器不是储液");
@@ -157,11 +157,8 @@ class SpongeContainerCapabilityTest {
 
         FluidStack out = h.drain(1000, FluidAction.EXECUTE);
         assertEquals(1000, out.getAmount(), "600 + 400 跨堆凑满");
-        // 均分 floor 扣减：第一堆 per = 600,000 → 报 600？—— withdraw(600_000, 1, 1_000_000)
-        // per = min(1_000_000, q=600_000) = 600_000 → 报 floor(600_000/1000) = 600；
-        // 第二堆续 400 mB ⇒ 报 400。合计 1000 ✓
-        assertEquals(0, totalMmB(scene.handler().getStackInSlot(1)) % 1);
-        assertTrue(totalMmB(scene.handler().getStackInSlot(1)) < 600_000L, "第一堆已扣");
+        assertEquals(0L, totalMmB(scene.handler().getStackInSlot(1)), "首堆全部扣除");
+        assertEquals(200_000L, totalMmB(scene.handler().getStackInSlot(7)), "次堆只扣剩余400mB");
     }
 
     @Test
@@ -215,6 +212,133 @@ class SpongeContainerCapabilityTest {
         handler.put(4, ItemStack.EMPTY);
         ContainerLivingItemHandler.processContext(ctx, level);
         org.mockito.Mockito.verify(level, org.mockito.Mockito.times(2)).invalidateCapabilities(pos);
+    }
+
+    @Test
+    @DisplayName("指名抽取跨堆只用剩余请求，模拟不写且请求对象不变")
+    void typedDrain_usesRemainingRequest() {
+        Scene scene = Scene.of(9);
+        ItemStack a = scene.spongeAt(1, 600_000L);
+        ItemStack b = scene.spongeAt(7, 600_000L);
+        var h = SpongeContainerFluidHandler.resolveProvider(beOf(scene), null);
+        assertNotNull(h);
+        FluidStack request = new FluidStack(Fluids.WATER, 1000);
+
+        assertEquals(1000, h.drain(request, FluidAction.SIMULATE).getAmount());
+        assertEquals(600_000L, totalMmB(a));
+        assertEquals(600_000L, totalMmB(b));
+        assertEquals(1000, h.drain(request, FluidAction.EXECUTE).getAmount());
+        assertEquals(0, totalMmB(a));
+        assertEquals(200_000L, totalMmB(b));
+        assertEquals(1000, request.getAmount());
+    }
+
+    @Test
+    @DisplayName("不指名抽取：异种不扣，继续抽后面的同种堆")
+    void untypedDrain_skipsOtherFluidWithoutMutation() {
+        Scene scene = Scene.of(9);
+        ItemStack a = scene.spongeAt(1, 600_000L);
+        ItemStack lava = scene.spongeAt(3);
+        LivingSpongeData.set(lava, new LivingSpongeData(Fluids.LAVA.getFluidType(), 900_000L));
+        ItemStack b = scene.spongeAt(7, 600_000L);
+        var h = SpongeContainerFluidHandler.resolveProvider(beOf(scene), null);
+        assertNotNull(h);
+
+        assertEquals(1000, h.drain(1000, FluidAction.SIMULATE).getAmount());
+        assertEquals(600_000L, totalMmB(a));
+        assertEquals(900_000L, totalMmB(lava));
+        assertEquals(600_000L, totalMmB(b));
+        FluidStack out = h.drain(1000, FluidAction.EXECUTE);
+        assertEquals(Fluids.WATER, out.getFluid());
+        assertEquals(1000, out.getAmount());
+        assertEquals(0, totalMmB(a));
+        assertEquals(900_000L, totalMmB(lava));
+        assertEquals(200_000L, totalMmB(b));
+    }
+
+    @Test
+    @DisplayName("前导干罐与不足1mB的水不选定流体，由第一堆可抽岩浆选定")
+    void untypedDrain_selectsFirstDrainableFluid() {
+        Scene scene = Scene.of(9);
+        ItemStack dry = scene.spongeAt(0);
+        ItemStack dust = scene.spongeAt(1, 999L);
+        ItemStack lava = scene.spongeAt(2);
+        LivingSpongeData.set(lava, new LivingSpongeData(Fluids.LAVA.getFluidType(), 600_000L));
+        ItemStack water = scene.spongeAt(3, 900_000L);
+        var h = SpongeContainerFluidHandler.resolveProvider(beOf(scene), null);
+        assertNotNull(h);
+
+        FluidStack out = h.drain(1000, FluidAction.EXECUTE);
+        assertEquals(Fluids.LAVA, out.getFluid());
+        assertEquals(600, out.getAmount());
+        assertEquals(0, totalMmB(dry));
+        assertEquals(999L, totalMmB(dust));
+        assertEquals(0, totalMmB(lava));
+        assertEquals(900_000L, totalMmB(water));
+    }
+
+    @Test
+    @DisplayName("指名抽取库存不足只交付同种库存，异种和后续干罐不动")
+    void typedDrain_limitsToMatchingStock() {
+        Scene scene = Scene.of(9);
+        ItemStack a = scene.spongeAt(0, 100_000L);
+        ItemStack lava = scene.spongeAt(1);
+        LivingSpongeData.set(lava, new LivingSpongeData(Fluids.LAVA.getFluidType(), 900_000L));
+        ItemStack b = scene.spongeAt(2, 200_000L);
+        scene.spongeAt(3);
+        var h = SpongeContainerFluidHandler.resolveProvider(beOf(scene), null);
+        assertNotNull(h);
+
+        assertEquals(300, h.drain(new FluidStack(Fluids.WATER, 1000), FluidAction.EXECUTE).getAmount());
+        assertEquals(0, totalMmB(a));
+        assertEquals(0, totalMmB(b));
+        assertEquals(900_000L, totalMmB(lava));
+    }
+
+    @Test
+    @DisplayName("指名抽取返回实际存量的代表流体，不复制请求的流动身份")
+    void typedDrain_returnsActualFluidPrototype() {
+        Scene scene = Scene.of(9);
+        scene.spongeAt(0, 2_000_000L);
+        var h = SpongeContainerFluidHandler.resolveProvider(beOf(scene), null);
+        assertNotNull(h);
+        FluidStack request = new FluidStack(Fluids.FLOWING_WATER, 1000);
+
+        FluidStack out = h.drain(request, FluidAction.EXECUTE);
+        assertEquals(1000, out.getAmount());
+        assertEquals(Fluids.WATER, out.getFluid());
+        assertEquals(Fluids.FLOWING_WATER, request.getFluid());
+    }
+
+    @Test
+    @DisplayName("无效请求与异种拒绝不改存量")
+    void drain_invalidRequestsAreNoOp() {
+        Scene scene = Scene.of(9);
+        ItemStack a = scene.spongeAt(0, 2_000_000L);
+        var h = SpongeContainerFluidHandler.resolveProvider(beOf(scene), null);
+        assertNotNull(h);
+
+        assertTrue(h.drain(0, FluidAction.EXECUTE).isEmpty());
+        assertTrue(h.drain(-1, FluidAction.EXECUTE).isEmpty());
+        assertTrue(h.drain(FluidStack.EMPTY, FluidAction.EXECUTE).isEmpty());
+        assertTrue(h.drain(new FluidStack(Fluids.LAVA, 1000), FluidAction.EXECUTE).isEmpty());
+        assertEquals(2_000_000L, totalMmB(a));
+    }
+
+    @Test
+    @DisplayName("多枚海绵均分损耗只在实扣侧，交付精确不超请求")
+    void typedDrain_roundingLossIsNotDelivery() {
+        Scene scene = Scene.of(9);
+        ItemStack a = scene.spongeAt(0, 10_000L);
+        a.setCount(37);
+        var h = SpongeContainerFluidHandler.resolveProvider(beOf(scene), null);
+        assertNotNull(h);
+        long before = totalMmB(a);
+
+        assertEquals(3, h.drain(new FluidStack(Fluids.WATER, 3), FluidAction.SIMULATE).getAmount());
+        assertEquals(before, totalMmB(a));
+        assertEquals(3, h.drain(new FluidStack(Fluids.WATER, 3), FluidAction.EXECUTE).getAmount());
+        assertEquals(3034L, before - totalMmB(a));
     }
 
     /** BE 替身：level.getCapability 打桩返回场景 handler（resolveContextAt 的解析入口）。 */

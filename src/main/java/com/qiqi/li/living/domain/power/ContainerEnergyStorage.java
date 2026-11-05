@@ -2,7 +2,9 @@ package com.qiqi.li.living.domain.power;
 import com.qiqi.li.living.domain.power.LivingWaxedBulbData;
 import com.qiqi.li.living.util.WaxedCopperFamily;
 
+import java.util.ArrayList;
 import java.util.List;
+import com.qiqi.li.living.util.PerItemLedger;
 
 import javax.annotation.Nullable;
 
@@ -26,7 +28,7 @@ import com.qiqi.li.living.container.TickableContainerContext;
 /**
  * 容器红电对外能量接口（§3.6 v17.5）。
  *
- * <p>取电：直接从容器内的铜灯逐堆扣（每盏等量，向下取整）——
+ * <p>取电：从容器内的铜灯逐堆均分扣账，整 FE 精确交付，取整差额只作损耗——
  * 无容器池，铜灯是唯一储存。双向：外部电源也能对容器充电（{@link #canReceive()} = true，
  * 充入各铜灯堆）；发电仍是本系统唯一的<b>来源</b>，限流职责归用电侧。</p>
  *
@@ -239,43 +241,50 @@ public class ContainerEnergyStorage implements IEnergyStorage {
     // ── 取电核心（mFE）──
 
     /**
-     * 取电：逐堆扣铜灯（每盏等量，余数跨 FE 边界时向上取整以避免灯里有电但抽不出整 FE，
-     * 代价为每次取电最多多拿 {@code count−1} mFE）。
-     * 有实际扣减时回调 {@code onChanged}（落盘持久化）。
+     * 取电：容器合计选定整 FE 交付，逐堆均分扣账，取整差额只作损耗。
+     * 总量不足 1 FE 不扣；每槽仅取一次引用，存量够请求即停止扫描。
+     * 有实际扣减时回调 {@code onChanged} 一次（落盘持久化）。
      */
     static long extract(IItemHandler items,
                         long wantMilliFe, boolean simulate, @Nullable Runnable onChanged) {
-        long got = 0;
-        long remaining = wantMilliFe;
+        long request = wantMilliFe / 1000L * 1000L;
+        if (request <= 0) return 0;
 
-        boolean changed = false;
-        for (int i = 0; i < items.getSlots() && remaining > 0; i++) {
+        List<ItemStack> stacks = new ArrayList<>();
+        long available = 0;
+        int size = items.getSlots();
+        for (int i = 0; i < size && available < request; i++) {
             ItemStack stack = items.getStackInSlot(i);
             if (!BulbBank.isBulb(stack)) continue;
-            int count = stack.getCount();
-            long q = LivingWaxedBulbData.of(stack).chargeMilliFe();
-            long takeTotal = Math.min(q * count, remaining);
-            long perLamp = takeTotal / count;
-            // 余数跨 FE 边界时向上取整，避免灯里有电但外部抽不出整 FE
-            long remainder = takeTotal % count;
-            if (remainder != 0 && perLamp < q) {
-                long gotFloor = perLamp * count;
-                long gotCeil = (perLamp + 1) * count;
-                if (gotFloor / 1000 < gotCeil / 1000) {
-                    perLamp++;
-                }
-            }
-            if (perLamp <= 0) continue;
-            if (!simulate) {
-                LivingWaxedBulbData.set(stack,
-                    LivingWaxedBulbData.of(stack).withChargeMilliFe(q - perLamp));
-                changed = true;
-            }
-            got += perLamp * count;
-            remaining -= perLamp * count;
+            long total = availableCharge(stack);
+            if (total <= 0) continue;
+            stacks.add(stack);
+            available += Math.min(total, request - available);
         }
+        long delivery = available / 1000L * 1000L;
+        if (delivery <= 0) return 0;
 
-        if (changed && onChanged != null && !simulate) onChanged.run();
-        return got;
+        long remaining = delivery;
+        for (ItemStack stack : stacks) {
+            if (remaining <= 0) break;
+            long take = Math.min(availableCharge(stack), remaining);
+            if (take <= 0) continue;
+            LivingWaxedBulbData data = LivingWaxedBulbData.of(stack);
+            var withdrawal = PerItemLedger.withdrawCeil(data.chargeMilliFe(), stack.getCount(), take);
+            if (!simulate) {
+                LivingWaxedBulbData.set(stack, data.withChargeMilliFe(withdrawal.newQ()));
+            }
+            remaining -= take;
+        }
+        if (!simulate && onChanged != null) onChanged.run();
+        return delivery;
+    }
+
+    /** 正存量的饱和乘积；预算仍以调用方请求为上界。 */
+    private static long availableCharge(ItemStack stack) {
+        int count = stack.getCount();
+        long q = LivingWaxedBulbData.of(stack).chargeMilliFe();
+        if (count <= 0 || q <= 0) return 0;
+        return q > Long.MAX_VALUE / count ? Long.MAX_VALUE : q * count;
     }
 }

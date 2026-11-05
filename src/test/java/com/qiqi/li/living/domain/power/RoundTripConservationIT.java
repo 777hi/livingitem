@@ -267,7 +267,10 @@ class RoundTripConservationIT {
         System.out.println("[Minimal] simulated=" + simulated + "mFE, extracted=" + extracted
             + "mFE, lampPaid=" + lampPaid + "mFE, diff(灯实付-返回)=" + (lampPaid - extracted));
 
-        // 返回值应与灯实付一致（返回多少 = 扣多少——记账的基本契约）
-        assertEquals(lampPaid, extracted, "extract 返回值与灯实际扣减不一致：差额被凭空记到电缆账上");
+        assertEquals(1000L, simulated, "模拟承诺精确交付1FE");
+        assertEquals(simulated, extracted, "同请求模拟与执行交付一致");
+        assertEquals(1036L, lampPaid, "37盏均分实际扣ceil(1000/37)×37");
+        assertTrue(lampPaid >= extracted, "实扣不得小于交付");
+        assertTrue(lampPaid - extracted <= 36, "取整差额只算有界损耗");
     }
 }

@@ -14,7 +14,6 @@ import net.minecraft.core.Direction;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.neoforged.neoforge.fluids.FluidStack;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler;
@@ -146,31 +145,40 @@ public class SpongeContainerFluidHandler implements IFluidHandler {
     public FluidStack drain(FluidStack resource, FluidAction action) {
         if (resource == null || resource.isEmpty() || resource.getAmount() <= 0) return FluidStack.EMPTY;
         int want = resource.getAmount();
-        int collected = 0;
+        FluidStack result = FluidStack.EMPTY;
         for (ItemStack stack : spongeStacks()) {
-            if (collected >= want) break;
-            FluidStack out = itemHandler(stack).drain(resource, action);
+            int remaining = want - result.getAmount();
+            if (remaining <= 0) break;
+            FluidStack out = itemHandler(stack).drain(resource.copyWithAmount(remaining), action);
             if (out.isEmpty()) continue;
-            collected += out.getAmount();
+            if (result.isEmpty()) result = out.copy();
+            else result.grow(out.getAmount());
         }
-        return collected <= 0 ? FluidStack.EMPTY : new FluidStack(resource.getFluid(), collected);
+        return result;
     }
 
     @Override
     public FluidStack drain(int maxDrain, FluidAction action) {
         if (maxDrain <= 0) return FluidStack.EMPTY;
-        // 单一流体语义：从第一罐取定流体，只续抽同种（FluidStack 不能混装）
-        Fluid fluid = null;
-        int collected = 0;
+        // 首个可抽罐决定流体；后续只抽同种，异种不扣也不挡后面的罐。
+        FluidStack result = FluidStack.EMPTY;
         for (ItemStack stack : spongeStacks()) {
-            if (collected >= maxDrain) break;
-            FluidStack out = itemHandler(stack).drain(maxDrain - collected, action);
+            int remaining = maxDrain - result.getAmount();
+            if (remaining <= 0) break;
+            IFluidHandler handler = itemHandler(stack);
+            FluidStack out;
+            if (result.isEmpty()) {
+                FluidStack probe = handler.drain(remaining, FluidAction.SIMULATE);
+                if (probe.isEmpty()) continue;
+                out = action.execute() ? handler.drain(probe, action) : probe;
+            } else {
+                out = handler.drain(result.copyWithAmount(remaining), action);
+            }
             if (out.isEmpty()) continue;
-            if (fluid == null) fluid = out.getFluid();
-            else if (fluid != out.getFluid()) break;
-            collected += out.getAmount();
+            if (result.isEmpty()) result = out.copy();
+            else result.grow(out.getAmount());
         }
-        return collected <= 0 || fluid == null ? FluidStack.EMPTY : new FluidStack(fluid, collected);
+        return result;
     }
 
     private IFluidHandler itemHandler(ItemStack stack) {

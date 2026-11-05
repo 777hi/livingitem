@@ -148,11 +148,11 @@ src/test/java/com/qiqi/li/
 │   ├── CoilGroupingTest.java                  # 形态识别 + 单通道
 │   ├── NetworkResonanceTest.java              # 铜块网络共振
 │   ├── NetworkTraversalTest.java              # 铜块网络遍历（含 E2E 真实传播）
-│   ├── WaxedCopperStorageTest.java            # 储能（含 telemetry）
+│   ├── WaxedCopperStorageTest.java            # 储能（含telemetry）·容器整FE精确交付/超大堆叠/跨堆零头凑整/不足1FE不动/实扣损耗界/大额请求与单遍提前停止/回调一次
 │   ├── BulbItemEnergyStorageTest.java         # 铜灯通用电池
 │   ├── ContainerEnergyCapabilityTest.java     # 对外能量能力存在性（§4.1）·无灯不报名 / 有灯报名 / 拿走最后一盏由写回兜底撤名 / 边沿精确失效一次 / 客户端不报名 / provider 让位四段
 │   ├── PhaseSnapshotWarmupTest.java           # 相位快照热身
-│   ├── RoundTripConservationIT.java           # Mekanism 往返守恒
+│   ├── RoundTripConservationIT.java           # 往返守恒与拉/推侧账目·精确交付/实扣≥交付/均分损耗有界（对接面模拟，不替代跨模组实机）
 │   ├── WaxedGeneratorFeedChainTest.java      # 发电机喂链
 │   ├── WaxedCopperOscillatorIT.java           # 振荡器→发电全链路集成
 │   └── WaxedCopperCouplingIT.java             # 耦合链集成：多跳中继+防回环
@@ -223,7 +223,7 @@ src/test/java/com/qiqi/li/
 │   ├── LivingSpongeDataTest.java              # 活海绵组件形状契约（2026-11-01 第一段）·干/湿不变量归一（无流体或非正存量 ⇒ 干态，幽灵湿海绵在类型层面不可能）/ 容量与总量 long 域（每枚 6.4e7 mmB，×count 线性）/ CODEC 湿·干·岩浆往返 / 未知流体 id 归干态（I-C6 同款宁损勿鬼）/ wither 不可变
 │   ├── LivingSpongeAbsorbTest.java            # 吸收行为契约（2026-11-02 第二段，直接驱动 + processContext 冒烟）·一拍吸净可吸四邻（≤4 源）/ 节拍门 gameTime 锁相 / 异种邻居跳过不挡 / 空海绵方向序取首流体 / 快满停拍+腾出恢复 / count 均分损耗有界 / 同拍双海绵账本即时删不双吃 / 斜对角非邻居（27 槽 3 行）/ 首口定流体单次构造
 │   └── SpongeFluidRoundTripTest.java          # **守恒主战场**（2026-11-02 第三段，规则 12 红线：不许为了让它过而改它）·附录算例（6mB×7 枚）/ 拆分守恒恒等式 / 整桶往返 ×25 零漂移 / 50 轮部分充排净迁移无凭空产生 / 溢出拒收不越上限 / 异种拒绝零副作用 / 零负请求 / 尘量取不出但可累积 / 一堆一罐语义
-│   └── SpongeContainerCapabilityTest.java     # 海绵垫起的容器级能力（2026-11-02 ⑭）·存在性 = 有活海绵（干 = 空罐、未活化不暴露）/ 罐映射槽位序（干 = 空罐占位）/ 指名罐抽不伤邻堆 / int 抽跨堆续抽 / 灌按槽序 + 空罐收异种 / 边沿失效精确一次（§10.4 同款）
+│   └── SpongeContainerCapabilityTest.java     # 容器级能力·存在性/槽序罐/填充/边沿·多堆剩余预算与请求不变/水岩浆水混排异种不扣/前导干尘跳过/实际代表流体/模拟不写/交付精确与均分损耗
 ├── living/interaction/
 │   ├── InteractionRegistryTest.java           # 两趟优先级匹配·通配遮蔽+triggerFilter 回归守卫
 │   ├── InteractionRuleConfigTest.java         # 交互规则 JSON 加载语义·内置全有效/玩家覆盖与removed/坏值跳过/未知字段忽略/version守卫/reload幂等（自带 mock handler 不依赖测试执行顺序）

@@ -148,7 +148,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1578 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
+**合计测试用例 1595 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -173,6 +173,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-11-06 | 🐛 **海绵多堆抽取/铜灯精确交付** —— 海绵只续抽剩余请求、异种不扣；铜灯容器跨堆凑整、总量不足1FE不扣、均分差额只损耗；+17回归，旧代码13项红，全量1595项零失败；实机效果随游玩观察，不设专项测试 | [海绵 §12.2](docs/tech/living-sponge-tech.md) · [红电 §4.2](docs/tech/living-power-tech.md) |
 | 2026-11-06 | 🐛 **容器缓存统一回收，修活海绵 Create 停抽根因** —— 退役按领域心跳/1200 次整条清理，活跃容器标志与索引保留；查询创建补登记、销毁清时间记录；+14 回归，旧代码11项红；无铜灯持续抽取实机验收通过 | [生命周期契约 §2](docs/reference/container-data-lifecycle.md) · [海绵踩坑 §12.1](docs/tech/living-sponge-tech.md) |
 | 2026-11-05 | 🐛 **修 1.7.0 处理 `lootr:lootr_minecart` 崩服** —— 实体容器准入改「白名单 + `ItemHandler.ENTITY` 能力面」双闸，第三方 `ContainerEntity` 无能力时在准入层优雅跳过；`LivingItem` 重复白名单收口到 `EntityContainers`；+4 回归测试（tick 跳过 / GUI 菜单解析不炸 / 有能力面不误伤 / GUI 上下文不误判同坐标方块），全量1564绿 | [container-boundary §I-C1](docs/system-design/container-boundary.md) · [changelog](docs/archive/changelog.md) |
 | 2026-11-05 | ✅ **槽位数量操作原语（move/produce/consume/transform）** —— 熔炉 consume 先行 / 酿造 / 耕地 / 流体推动内核上移收编；PHYSICAL=A3 保留流体现行口径；+35 测试（含负向验证）；check_stack_ops 棘轮挂 pre-commit/CI 第五条 | [api-contract §1.7](docs/system-design/api-contract.md) · [TODO §物品传输](docs/TODO.md) |
@@ -181,7 +182,6 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-11-05 | ✅ **活活塞图标全平面重建，真机验收通过** —— 机身剖面图标＋板/杆 2D blit（原版贴图零新资产、静止板贴前缘=朝向指示）；三轮真机修正：删 scale 1.125（16px）/ 板位 −8−t / 板 blit 锚点 x=−8 居中（「7」→「T」）；全量1514绿 | [活活塞-design.md](docs/archive/活活塞-design.md) §7.8.6 |
 | 2026-11-04 | ✅ **活活塞压送真机验收通过（传输侧）** —— 传输逻辑与活漏斗联动实机正常；四向渲染贴图细节待复验 | [活活塞-design.md](docs/archive/活活塞-design.md) §7.8.5 |
 | 2026-11-03 | ✅ **活活塞玩法代码全落 +39测试，真机待验** —— 机械压送q=min(C,M,A)、本体不展开、无视冷却/锁定、世界邻居/末影直连在线·离线·部分容量及路由零副作用；审查修复同拍旧条目、精确写恢复、接收端中立发现和半程头模型；渲染投影角与18px行程数学修正；全量1512绿 | [活活塞-design.md](docs/archive/活活塞-design.md) §7.8.5 |
-| 2026-11-03 | ✅ **活活塞全局启用 +6测试** —— G3 四缝收口后注册函数；E2E 集成测试（processContext 驱动推/拉/持有/收回/双活塞/取消活化）全绿；真机待验 | [活活塞-design.md](docs/archive/活活塞-design.md) §7.8.4 |
 ## 提交前必跑（2026-10-30 更新）
 
 ```bash

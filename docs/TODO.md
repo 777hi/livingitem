@@ -150,12 +150,9 @@
    不放活铜灯，仅活海绵使用修复包后抽取恢复正常；+14 回归与全量测试通过。
    根因、修复前加铜灯对照与修复边界见 [海绵踩坑 §12.1](tech/living-sponge-tech.md)。
    未追加逐次抽灌能力失效通知，未加 Create Mixin；真实重载/重连的所有场景不由本次验收代替。
-2. **容器 drain 多堆聚合违反请求上限 / 异种不动原则** —— 源码已定位，尚未补回归：
-   `SpongeContainerFluidHandler#drain(FluidStack, action)` 把原始全量请求传给每堆，
-   两堆各 600mB 水、请求 1000mB 可累计返回并扣除 1200mB；
-   `drain(int, action)` 在判流体是否匹配前已执行下一堆扣减，水后接岩浆可扣掉未交付的岩浆。
-   判据：每堆只抽剩余请求；选定流体后异种堆不扣；SIMULATE 不写且与 EXECUTE 同请求交付一致。
-   算术继续复用 `SpongeItemFluidHandler` / `PerItemLedger`，不是本次周期性停抽的已证根因。
+2. ~~**容器 drain 多堆聚合违反请求上限 / 异种不动原则**~~ ✅ **2026-11-06 修复，+7 回归通过** ——
+   每堆只请求剩余量；首个可抽流体模拟选定，异种不扣且不挡后续同种罐；返回实际代表流体。
+   根因与守卫见 [海绵踩坑 §12.2](tech/living-sponge-tech.md)。跨模组效果在实际游玩中观察，不安排专项测试（2026-11-06 用户定）。
 3. **外部抽灌的存量通知与 handler 生命周期待核查** —— 容器接口改海绵组件但不调用
    `BlockEntity#setChanged`，并长期保留解析时的 `TickableContainerContext`（每次现扫槽，但不重取
    底层 item handler）；铜灯的 `ContainerEnergyStorage` 每次重解析 handler，实际变更后标脏。
@@ -177,12 +174,10 @@
    `LivingWaxedCopperFunction#tickContainerData` **所有早退之前**通告（纯电池容器无发电机），
    负边沿（最后一盏灯被拿走 ⇒ 功能已不分组）由 `ContainerPhaseWriteback` 兜底；客户端恒不发。
    见 [power tech §4.1](tech/living-power-tech.md) · `ContainerEnergyCapabilityTest`。
-3. **容器取电在超大堆叠下可能交付超过请求量**（2026-11-05 源码核查，未修复 / 未测）——
-   `ContainerEnergyStorage#extractEnergy/extract` 将均分向上取整后的**实际扣量**转成 FE 返回；
-   反例：单堆 count=2048、每盏 q=1mFE，请求 1FE，实际扣 2048mFE，返回 2FE（SIMULATE 同样）。
-   普通堆叠的多扣不足 1FE，不能用该前提担保超大堆叠；`BulbItemEnergyStorage` 返回选定的
-   `takeFe`，不共享此问题。判据：交付 ≤ 请求，实扣 ≥ 交付，取整偏差只许损耗向；覆盖超大堆叠、
-   多堆剩余预算和 simulate/execute 一致性。与容器缓存清理 / Create 停抽分开处理。
+3. ~~**容器取电在超大堆叠下可能交付超过请求量**~~ ✅ **2026-11-06 修复，+10 回归通过** ——
+   容器合计决定整 FE 交付，多堆仍可凑整；按盏 ceil 实扣，差额只损耗不交付；
+   总量不足1FE或不足整FE请求完全不动。请求上限、模拟/执行一致、大额预算与单遍提前停止均有守卫。
+   语义选择与反例见 [power tech §4.2](tech/living-power-tech.md)，跨模组效果在实际游玩中观察，不安排专项测试（2026-11-06 用户定）。
 
 ## 活红石 / 活铜（2026-10-10 自 tech §0 迁入，D-doc-06）
 
