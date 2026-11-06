@@ -34,7 +34,8 @@ import java.util.List;
 
 /**
  * 活物品容器界面的客户端<b>交互</b>增强：活地图右键传送、手持活末影珍珠的传送命中判定、
- * 活箱子标签页的收纳存取、活物品手持交互拦截，以及界面开关时的缓存生命周期管理。
+ * 活箱子标签页的收纳存取、活物品手持交互拦截、活按钮手持点击的释放阶段保护（防 GUI 外扔物），
+ * 以及界面开关时的缓存生命周期管理。
  *
  * <p>⚠️ <b>渲染不在这里</b>（2026-10-29 迁出）：展开地图 / 方向配置 HUD / 种植提示 / 生长槽大图
  * 原先都注入本类的 {@code render} TAIL，但「照抄一份 {@code super.render}」的第三方界面
@@ -133,6 +134,36 @@ public class AbstractContainerScreenMixin extends Screen {
             this.skipNextRelease = true;
             cir.setReturnValue(true);
         }
+
+        // 活按钮释放保护（2026-11-06）：按钮可被拖出 GUI 矩形 ⇒ 光标非空点按钮时，
+        // 释放阶段 hasClickedOutside 判真 ⇒ slotId=-999 = 原版「GUI 外点击扔出光标物品」。
+        // 按下被子控件消费拦不住释放阶段（同坑 10，见 skipNextRelease 字段 javadoc）⇒ 按下阶段预置置位。
+        // 左键只置位不取消：vanilla body 的 super 分发是 onPress（活化）唯一入口；
+        // 右键在按钮上无语义：取消按下（vanilla 不再设 isQuickCrafting）+ 置位 ⇒ 释放跳过且无残留。
+        if ((button == 0 || button == 1)
+                && !this.menu.getCarried().isEmpty()
+                && living_item$isOverLivingButton(mouseX, mouseY)) {
+            this.skipNextRelease = true;
+            if (button == 1) {
+                cir.setReturnValue(true);
+            }
+        }
+    }
+
+    /**
+     * 鼠标是否落在活按钮上。
+     *
+     * <p>判据与 {@code AbstractWidget.mouseClicked} 的消费条件一致（bounds + active + visible）：
+     * 该方法为真 ⇒ 原版 super 分发必然让按钮消费这次按下（左键）。</p>
+     */
+    @Unique
+    private boolean living_item$isOverLivingButton(double mouseX, double mouseY) {
+        for (GuiEventListener child : this.children()) {
+            if (child instanceof LivingButton button && button.isMouseOver(mouseX, mouseY)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Inject(method = "mouseReleased", at = @At("HEAD"), cancellable = true)
