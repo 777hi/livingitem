@@ -350,6 +350,7 @@ public class ContainerFluidData implements FluidPresence, FluidSourceLedger {
 
         // 实际层：flows 向目标推进（生长按流体节拍渐进，移除/源即时）
         pruneActual(targets);
+        demoteOrphanSources(targets);   // 源身份对账：账本已删的僵尸源 ⇒ 同拍降级（反应类之前）
         ensureSourceCells(targets);
         Set<FluidType> advanced = advanceGrowth(targets, containerSize, width, ctx);
 
@@ -458,7 +459,7 @@ public class ContainerFluidData implements FluidPresence, FluidSourceLedger {
                 continue;   // 异种物品占据 ⇒ 本拍不反应，岩浆留在格内
             }
             if (r.wasSource()) {
-                removeGeneratedSource(r.slot());   // 岩浆源被反应湮灭（v1 给圆石；原版此处是黑曜石，未做）
+                removeGeneratedSource(r.slot());   // 岩浆源被反应湮灭（源格产物 = 黑曜石，见 WaterRegistration）
             }
             flows.remove(r.slot());
             // 产物格不是墙：下一轮 BFS 照常把岩浆送回来 ⇒ 再反应 ⇒ 产物累加
@@ -535,6 +536,34 @@ public class ContainerFluidData implements FluidPresence, FluidSourceLedger {
             FlowEntry actual = flows.get(slot);
             return target == null || target.fluid() != actual.fluid();
         });
+    }
+
+    /**
+     * 源身份对账（2026-11-07）：实际层里 {@code isSource=true} 的格，必须在派生源账本里有登记。
+     *
+     * <p>删源路径（倒桶 / 汲走 / 挤没 / <b>活海绵吸收</b> / 反应湮灭）只改 {@code generatedSources}，
+     * 实际层原本靠下一拍被动收敛。孤立单源时 {@link #pruneActual} 当拍就删；但<b>源网络 + 慢流体</b>下，
+     * 邻近同流体源会把被删槽算成流动 target ⇒ prune 不删、{@link #advanceGrowth} 又被该流体节拍门挡住
+     * ⇒ 该格以「账本已删、实际层仍是源」的僵尸源继续渲染，而 {@link #reactFrontiers} 每拍读实际层
+     * ⇒ 遇水出黑曜石（2026-11-07 实测）。这里在反应类之前当拍撤掉源身份，
+     * 降级为目标层已经算好的流动格。</p>
+     *
+     * <p>合法的源（倒桶 / 晋升 / 焚毁生源 / 落盘回填）都同步写账本 ⇒ 不会被误伤；
+     * 降级而非删格，避免重演「接触前空一格」的视觉空档。</p>
+     */
+    private void demoteOrphanSources(Map<Integer, FlowEntry> targets) {
+        Map<Integer, FlowEntry> demotions = null;
+        for (var e : flows.entrySet()) {
+            FlowEntry fe = e.getValue();
+            if (!fe.isSource() || generatedSources.containsKey(e.getKey())) continue;
+            FlowEntry target = targets.get(e.getKey());
+            // target 为空 / 异种已由 pruneActual 删除；账本无该槽 ⇒ target 不可能是源格
+            if (target == null || target.isSource() || target.fluid() != fe.fluid()) continue;
+            if (demotions == null) demotions = new LinkedHashMap<>();
+            demotions.put(e.getKey(), new FlowEntry(
+                Math.max(1, target.level()), false, target.fromSlot(), fe.fluid()));
+        }
+        if (demotions != null) flows.putAll(demotions);
     }
 
     /**

@@ -14,6 +14,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import com.qiqi.li.living.api.FluidSourceLedger;
 import com.qiqi.li.living.api.LivingItemManager;
 import com.qiqi.li.living.container.SimpleContainerContext;
 import com.qiqi.li.living.container.TickContext;
@@ -113,6 +114,15 @@ class ContainerFluidDataTest {
         FakeHandler h = new FakeHandler(9);
         for (int i = 0; i < contents.length; i++) h.slots[i] = contents[i];
         return new SimpleContainerContext(h);
+    }
+
+    /** 3×3 网格：覆写实例列数，绕开启发式把 9 槽推断成 1×9 单行（跨行邻居才有意义）。 */
+    private SimpleContainerContext grid3(ItemStack... contents) {
+        FakeHandler h = new FakeHandler(9);
+        for (int i = 0; i < contents.length; i++) h.slots[i] = contents[i];
+        return new SimpleContainerContext(h) {
+            @Override public int getLiveColumns() { return 3; }
+        };
     }
 
     /**
@@ -862,6 +872,51 @@ class ContainerFluidDataTest {
         assertEquals(Items.OBSIDIAN, ctx.getItem(0).getItem(), "源格遇水 ⇒ 黑曜石（不是圆石）");
         assertFalse(fluid.isGeneratedSource(0), "源被反应湮灭");
         assertFalse(fluid.isSource(0), "该格不再是源");
+    }
+
+    @Test
+    @DisplayName("㊴b 孤儿源对账：源网络删一个岩浆源 ⇒ 同拍撤掉源身份（不留僵尸源）")
+    void orphanSourceInNetwork_demotedSameTick() {
+        registerSlowLava();
+        var ctx = row();
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(0, Fluids.LAVA.getFluidType());
+        fluid.registerGeneratedSource(2, Fluids.LAVA.getFluidType());
+        for (int t = 0; t < 25; t++) fluid.tick(ctx);
+        assertTrue(fluid.isSource(0) && fluid.isSource(2), "前置：两个岩浆源都在位");
+
+        // 模拟活海绵经 FluidSourceLedger 契约删源：只擦账本，不碰实际层
+        FluidSourceLedger ledger = fluid;
+        ledger.removeSource(0);
+        assertFalse(fluid.isGeneratedSource(0), "账本已删");
+        assertTrue(fluid.isSource(0), "前置：此刻实际层仍是源（正是 bug 现场）");
+
+        fluid.tick(ctx);   // 邻源把 slot 0 顶成流动 target ⇒ prune 不删；10t 节拍门又挡住降级
+
+        assertFalse(fluid.isSource(0), "对账守卫同拍撤掉源身份");
+        assertTrue(fluid.getFlows().containsKey(0), "降级为流动格，不制造空档");
+        assertTrue(fluid.isSource(2), "未删的合法源不受影响（反向守卫）");
+    }
+
+    @Test
+    @DisplayName("㊴c 僵尸源窗口：账本删源 + 水贴邻 ⇒ 不再产出黑曜石")
+    void orphanSourceWithAdjacentWater_noObsidian() {
+        registerSlowLava();
+        var ctx = grid3();
+        var fluid = new ContainerFluidData();
+        fluid.registerGeneratedSource(0, Fluids.LAVA.getFluidType());   // 行 0：0-1-2
+        fluid.registerGeneratedSource(2, Fluids.LAVA.getFluidType());   // 邻源维持 slot 0 的岩浆 target
+        for (int t = 0; t < 25; t++) fluid.tick(ctx);
+
+        FluidSourceLedger ledger = fluid;
+        ledger.removeSource(0);                                        // 活海绵吸走：只擦账本
+        fluid.registerGeneratedSource(3, Fluids.WATER.getFluidType());   // 行 1：水从 slot 0 正下方贴上来
+
+        fluid.tick(ctx);
+
+        assertFalse(fluid.isSource(0), "对账守卫先于反应类撤掉源身份");
+        assertFalse(ctx.getItem(0).is(Items.OBSIDIAN),
+            "被吸收的源不能再产出黑曜石（流动格遇水最多圆石）");
     }
 
     @Test

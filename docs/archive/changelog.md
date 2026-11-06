@@ -17,6 +17,24 @@
 
 ## 2026-11-07
 
+- 🐛 **修活海绵吸走岩浆源后残留「僵尸源」、遇水生黑曜石（+2 回归）** ——
+  **现象**（用户实测）：活海绵贴着活岩浆源，往里倒一桶活岩浆；吸收后 tooltip 立即变，
+  但该源还在容器 GUI 里渲染一小会，这期间碰到活水流会变黑曜石。
+  **根因**：`ContainerFluidData` 双层（派生源账本 `generatedSources` / 实际层 `flows`）里，
+  `FluidSourceLedger.removeSource` 只删账本；孤立单源靠下一拍 `pruneActual` 清掉，但源网络下
+  邻近同流体源会把被删槽算成流动 target ⇒ prune 不删、`advanceGrowth` 又被岩浆 30t 节拍门挡住
+  ⇒ 该格以 `isSource=true` 继续渲染；`reactFrontiers` 每拍读实际层、源格遇水走
+  `frontierSourceReaction` ⇒ 黑曜石。文档「差 1 tick，观感无差」只在孤立单源成立，且本节的
+  「三种改源路径」漏了 2026-11-01 新增的活海绵吸收。
+  **修法**：`demoteOrphanSources(targets)` 在 `pruneActual` 之后、`ensureSourceCells` 之前，
+  把「实际层是源但账本无登记」的格按本 tick 目标层当拍降级为流动格（不删格，避免接触前空档）；
+  阶段 2 功能 tick → 阶段 3 流体 tick 的顺序保证同一 tick 内抢在反应类之前生效。
+  不改 `FluidSourceLedger` 契约（R3 零依赖保持）、不动其它删源调用方；合法的源
+  （倒桶 / 晋升 / 焚毁生源 / 落盘回填）都同步写账本 ⇒ 零误伤。
+  **守卫**：`ContainerFluidDataTest` ㊴b（源网络删源同拍撤源身份 + 合法源反向守卫）、
+  ㊴c（3×3 网格水贴邻不出黑曜石）；**旧代码 2 项红**，其余 61 项流体既有测试绿。
+  → [流体 §2.2 / §3](../tech/living-fluid-tech.md) · [海绵 §12](../tech/living-sponge-tech.md)。
+
 - ✅ **活剑纳入工具判据，双身份同活斧子（+1 守卫测试，实机待验）** ——
   **背景**：活工具/活武器的判据本就不是物品类（工具认 `ItemAbility`、武器认 `WEAPON_ENCHANTABLE` 标签），
   但 `isLivingTool` 只列 PICKAXE/AXE/SHOVEL/HOE_DIG 四项 ⇒ 活剑录不了挖掘记忆、不参与辅助挖掘，

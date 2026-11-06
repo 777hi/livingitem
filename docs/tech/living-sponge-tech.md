@@ -53,7 +53,7 @@
 | 7 | **能力收口**：容器水网（generatedSources）**永不暴露能力**；流体能力的承载物 = 活海绵 | 分数源污染（挤没 / 晋升 / 刷石机）整类问题从根上消失 |
 | 8 | **均分充放**：对堆的任何 ±D 都按枚均分（floor），残余 ≤ (count−1) × 0.001mB 不可感知 | 同栈共享同一份组件 ⇒ 均分是算术必然（不是语义选择） |
 | 9 | **取消活化清空 {fluid, mmB}**（`getOwnedComponentTypes()` 声明） | 不存在「带流体的未活化海绵」——活化资产不外流 |
-| 10 | **删源账本即时**（吸收 / 泵）：`removeGeneratedSource` 即时移出账本（同拍后 tick 的海绵不再看见），世界侧（CA / 渲染）下一拍可见 | 账本延迟 = 同拍多枚海绵双吃同一源（守恒被破）；引擎实查即 `map.remove` |
+| 10 | **删源账本即时**（吸收 / 泵）：`removeGeneratedSource` 即时移出账本（同拍后 tick 的海绵不再看见）；实际层（CA / 渲染 / 反应）由流体域 `demoteOrphanSources` 在**同一 tick** 按目标层裁决（降级为流动格），不再是「下一拍」 | 账本延迟 = 同拍多枚海绵双吃同一源（守恒被破）；引擎实查即 `map.remove`；2026-11-07 修「源网络僵尸源 ⇒ 黑曜石」 |
 | 11 | **下界不自干**（⑬，反转 2026-10-29 拍板）：存储态不查 `ultraWarm`——蒸发只属「放进世界」的世界暴露事件（原版湿海绵放置 / 桶倒水，原生路径自处理）；**倒水成源也不做 parity**（TODO 活流体 #11） | 湿海绵**物品**在背包 / 箱子里过下界同样不自干（原版对照）；存储态自干杀玩法（手提水箱 / 下界机器供水 / 水·岩浆双向贸易） |
 | 12 | **报账红线**：fill 返回 ≥ 实充；drain / 汲**交付 = 决定交付的整单位，分毫不差且不超请求**（实扣 ≥ 交付）；多堆只续抽剩余请求，异种不扣；任何取整偏差只许**损耗向** | 支付方按返回值扣账——报账 < 实充 = 凭空造（灯泡 2026-09-09 教训）；floor 排出 = 三连炸（§12） |
 | 13 | **湿态可堆叠**：同 fluid 同 mmB 可合并 / 异则不合并；总量 = mmB × count，拆堆复制组件天然守恒 | 灯泡同款堆叠语义 |
@@ -194,7 +194,7 @@ per-item DataComponent `LivingSpongeData`（**record：`fluid: FluidType` + `mmB
 | 操作 | 归类 | 说明 |
 |---|---|---|
 | 吸收 | **生长类**（按水的节拍） | 吞吐由「吸掉 → 回灌 → 晋升」循环决定；节拍门 = gameTime 锁相 5t |
-| 删源生效 | 账本即时 / 世界下一拍 | 与汲走同层（规则 10） |
+| 删源生效 | 账本即时 / 实际层同拍对账 | 与汲走同层（规则 10）；流体域 `demoteOrphanSources` 同 tick 撤源身份，慢流体源网络不再留僵尸源 |
 | 物品能力充放 | **即时** | 玩家 / 设备显式操作不等节拍 |
 | GUI 汲 | **即时** | 显式操作 |
 
@@ -242,6 +242,7 @@ per-item DataComponent `LivingSpongeData`（**record：`fluid: FluidType` + `mmB
 | 8 | **floor 排出三连炸**（2026-11-02 实测）：交付随请求逐次缩水 + SIMULATE ≠ EXECUTE + 卡死尘销毁 | **排出侧唯一口径 = ceil**：交付整单位分毫不差、尘隐身留账；守卫 ⑩（实测场景全生命周期）+ ⑪（确定性） |
 | 9 | **tooltip 容量口径漂移**（2026-11-06 实测）：分子按堆总量 ×count、分母写死每枚 64,000 mB ⇒ count=2 装满显示「128000 / 64000」 | **分子分母同取堆口径**：分母一律走 `totalCapacityMmB(count)`，与能力面 `getTankCapacity` / 铜灯电量行同构；守卫 `LivingSpongeTooltipTest`（含逐字比对能力面） |
 | 10 | **Jade 客户端取数闸门被关死**（2026-11-06 实测）：10-31 能力存在性收口把 `level.isClientSide() → null` 写进 provider；Jade 客户端 `shouldRequestData` 判「无能力」⇒ 不发请求包 ⇒ 服务端读数再准也不显示 | 客户端只发**只读零值存在性探针**（海绵零罐 / 铜灯 0 FE 且不可充放），服务端 provider 仍是存在性与读数的唯一权威；守卫两域 `resolveProvider` 客户端测试 |
+| 11 | **源网络僵尸源**（2026-11-07 实测）：海绵吸走岩浆源后 tooltip 立即变，但该格仍以 `isSource=true` 渲染一小会，遇活水流出黑曜石 | 根因在流体域双层不闭环：`removeSource` 只删账本，`flows` 靠下一拍被动收敛，邻源 + 岩浆节拍门会把它顶成僵尸源；修法 = `demoteOrphanSources` 同拍按目标层降级。守卫 `ContainerFluidDataTest` ㊴b/㊴c（旧代码 2 项红） |
 
 **充入侧对偶检查（同日）**：报账 ceil 封顶请求 ⇒ 无缩水；count ≤ 64 ⇒ per ≥ 15 ⇒ 无报 0 死区；
 simulate/execute 同源确定。唯一残留毛刺：存量带尘时 content 恒差 1 mB 到 capacity
@@ -293,7 +294,7 @@ simulate/execute 同源确定。唯一残留毛刺：存量带尘时 content 恒
 | 7 能力收口 | `ContainerFluidHandlerTest` 已随退役删除；能力准入单测（未活化返回 null） |
 | 8 均分充放 | RoundTripTest 穿插拆堆 / 合并 |
 | 9 取消活化清空 | 框架 `clearLivingData` 守卫 + `ComponentOwnershipTest`（allFunctions 含海绵） |
-| 10 账本即时删 | 吸收单测：同拍双海绵不双吃 |
+| 10 账本即时删 | 吸收单测：同拍双海绵不双吃；`ContainerFluidDataTest` ㊴b/㊴c：源网络删源同拍撤源身份、水贴邻不出黑曜石 |
 | 11 下界不自干 | **反向守卫**：ultraWarm mock 下照常吸收且所存完好（AbsorbTest ⑩） |
 | 12 报账红线 | RoundTripTest 红线断言（净迁移无凭空产生）+ ⑪ 确定性 |
 | 13 湿态可堆叠 | RoundTripTest 堆叠 / 拆分守恒 + CODEC 往返 |
