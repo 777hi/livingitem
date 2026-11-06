@@ -30,6 +30,7 @@ import com.qiqi.li.living.domain.ender.LivingEnderChestData;
 import com.qiqi.li.living.domain.ender.LivingEnderChestFunction;
 import com.qiqi.li.living.domain.tools.LivingToolFunction;
 import com.qiqi.li.living.domain.tools.LivingToolOwnerName;
+import com.qiqi.li.living.domain.tools.LivingToolRecorder;
 
 /**
  * 活化时机钩子守卫 —— 锁住「各功能自声明活化/取消活化要挂什么」这条契约（2026-10-04）。
@@ -196,6 +197,25 @@ class ActivationHookTest {
             "骨头不属于活工具 ⇒ 不会派发给它 ⇒ 不可能写 owner");
         assertNull(LivingItemManager.getToolOwner(bone), "非工具物品不应携带 owner");
         assertNull(LivingToolOwnerName.of(bone), "非工具物品不应携带主人名字缓存");
+    }
+
+    @Test
+    @DisplayName("⑧ 活剑双身份：工具判据认领剑（D3 同斧子，2026-11-07）")
+    void livingSwordIsBothToolAndWeapon() {
+        ItemStack sword = new ItemStack(Items.DIAMOND_SWORD);
+        LivingItemActivation.apply(sword, level, null, LivingItemActivation.Via.PLAYER, true);
+        assertTrue(claimedBy(sword, LivingToolFunction.class),
+            "活剑必须被 living_tool 认领 —— 攻击与挖掘共用这一个 function");
+        // ⭐ D3 共存守卫：SWORD_DIG 纳入 isLivingTool 后活剑既是工具又是武器。
+        //    若有人把 SWORD_DIG 摘掉，剑会退回「只会攻击」—— 且挖掘记忆录制
+        //    （onBlockBreak 判 isLivingTool）会静默失效，这正是本断言要拦的。
+        assertTrue(LivingToolRecorder.isLivingTool(sword),
+            "SWORD_DIG 已纳入工具判据：活剑能录挖掘记忆、参与辅助挖掘（口径同斧子）");
+        // ⚠️ 武器侧（isLivingWeapon = WEAPON_ENCHANTABLE 标签）不在单测断言范围：
+        //    FML 单测不加载 item tags ⇒ 标签判据在本环境恒 false（环境性，见 AGENTS.md
+        //    「已知 @Disabled」说明）。武器判据代码本次未动，游戏内由原标签口径兜住。
+        // 剑的挖掘面弱（普通方块 1.0）：辅助出力谓词 getDestroySpeed > 1.0 会自动
+        // 把它收窄到 sword_efficient 方块 —— 那一半在 LivingToolAssist 侧，这里只钉判据。
     }
 
     // ---------------------------------------------------------------- 工具

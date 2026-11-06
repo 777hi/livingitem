@@ -80,6 +80,11 @@ public final class LivingToolRecorder {
      *
      * <p>沿用项目的语义判定惯例（参见 {@code Tillables#isHoeLike}）：<b>不枚举物品清单</b>，
      * 只认 {@code ItemAbility}，这样模组工具（含多工具合一型）自动兼容。</p>
+     *
+     * <p>⭐ 剑也在列（2026-11-07 用户拍板「口径同活斧子」）—— 活剑<b>双身份</b>（D3 共存）：
+     * 有怪打怪、没怪挖树叶。剑的挖掘面弱（普通方块 1.0 / {@code #minecraft:sword_efficient} 1.5），
+     * 辅助挖掘的出力谓词 {@code getDestroySpeed > 1.0}（{@code LivingToolAssist#onBreakSpeed}）
+     * 自动把无记忆活剑收窄成「只对树叶 / 作物 / 竹子等搭把手」—— 不会出现「背一叠剑 = 全方块小急迫」。</p>
      */
     public static boolean isLivingTool(ItemStack stack) {
         if (stack.isEmpty() || !LivingItemManager.isLivingItem(stack)) {
@@ -88,7 +93,8 @@ public final class LivingToolRecorder {
         return stack.canPerformAction(ItemAbilities.PICKAXE_DIG)
             || stack.canPerformAction(ItemAbilities.AXE_DIG)
             || stack.canPerformAction(ItemAbilities.SHOVEL_DIG)
-            || stack.canPerformAction(ItemAbilities.HOE_DIG);
+            || stack.canPerformAction(ItemAbilities.HOE_DIG)
+            || stack.canPerformAction(ItemAbilities.SWORD_DIG);
     }
 
     /**
@@ -103,7 +109,8 @@ public final class LivingToolRecorder {
      * 「开始 → 持续推进 → 释放」三步状态机，而 <b>FakePlayer 的 {@code tick()} 是空实现</b>
      * （{@code L27} 一脉）不会自动推进 ⇒ 留到那一期再开，否则会出现「只拉弓、射不出去」。</p>
      *
-     * <p>⚠️ 该标签<b>包含斧</b> ⇒ 活斧子<b>既是工具又是武器</b>，两条路都走（D3 共存）。</p>
+     * <p>⚠️ 该标签<b>包含斧与剑</b> ⇒ 活斧子 / 活剑<b>既是工具又是武器</b>，两条路都走（D3 共存；
+     * 剑的挖掘面由 {@code SWORD_DIG} 纳入工具判据承接，2026-11-07）。</p>
      */
     public static boolean isLivingWeapon(ItemStack stack) {
         if (stack.isEmpty() || !LivingItemManager.isLivingItem(stack)) {
@@ -151,9 +158,9 @@ public final class LivingToolRecorder {
      *
      * <p>与 {@link #isAssistItem}（环成员，工具 ∪ 武器）的差别：这里只要武器。</p>
      *
-     * <p>⚠️ <b>活斧子同时满足它与 {@link #isAssistTool}</b>（既是工具又是武器，D3 共存）
-     * ⇒ 调用端必须用 {@code if (isAssistTool) ... else if (isAssistWeapon) ...} 保证互斥，
-     * 否则一把斧子会在两个环上各画一次。</p>
+     * <p>⚠️ <b>活斧子 / 活剑同时满足它与 {@link #isAssistTool}</b>（既是工具又是武器，D3 共存；
+     * 剑 2026-11-07 纳入）⇒ 调用端必须用 {@code if (isAssistTool) ... else if (isAssistWeapon) ...}
+     * 保证互斥，否则一把会在两个环上各画一次。</p>
      */
     public static boolean isAssistWeapon(ItemStack stack) {
         return isLivingWeapon(stack)
@@ -161,10 +168,12 @@ public final class LivingToolRecorder {
     }
 
     /**
-     * 辅助<b>挖掘</b>成员：无记忆的【活工具】—— <b>武器不参与挖掘</b>。
+     * 辅助<b>挖掘</b>成员：无记忆的【活工具】—— 只看工具判据，武器身份本身不参与挖掘。
      *
-     * <p>与 {@link #isAssistItem} 的差别只在「要不要带武器」：
-     * 环是展示位（活剑也该看得见），挖掘是干活位（活剑挖不动方块）。</p>
+     * <p>与 {@link #isAssistItem} 的差别只在「要不要带武器」：环是展示位，挖掘是干活位。
+     * 活剑因 {@code SWORD_DIG} 纳入工具判据而在此列（2026-11-07）—— 但它的挖掘面弱
+     * （只有 {@code #minecraft:sword_efficient} 方块超过 1.0），出力范围由调用端的
+     * 速度谓词自动收窄，见 {@code LivingToolAssist#onBreakSpeed}。</p>
      */
     public static boolean isAssistTool(ItemStack stack) {
         return isLivingTool(stack)

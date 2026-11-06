@@ -148,7 +148,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1660 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
+**合计测试用例 1661 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -173,6 +173,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-11-07 | ✅ **活剑纳入工具判据，双身份同斧子** —— isLivingTool 增补 SWORD_DIG（口径同斧子）：录/清挖掘记忆、辅助挖掘、S2 双记忆调度全链自动贯通，下游零改动；辅助出力谓词 getDestroySpeed>1.0 现成收窄到 sword_efficient（树叶/作物/竹子），无「背一叠剑=全方块小急迫」噪音；+1 守卫测试（活剑双身份，ActivationHookTest ⑧）；TODO H4 活剑关账，剪刀/钓竿调研结论登记；实机待验 | [tool §4.1](docs/tech/living-tool-tech.md) · [weapon §1](docs/tech/living-weapon-tech.md) |
 | 2026-11-06 | 🐛 **修 Jade 不显示容器流体/电量（+1 回归）** —— 借用户提供的 Jade 源码定位：Jade 客户端 `shouldRequestData` 用「能力非 null」当请求闸门，10-31 起两个容器能力在客户端恒返回 null ⇒ 请求包压根不发、服务端 `appendServerData` 没机会下发读数；客户端改发只读零值存在性探针，服务端仍是存在性/读数唯一权威，全量1660项零失败 | [海绵 §4.2](docs/tech/living-sponge-tech.md) · [红电 §4.1](docs/tech/living-power-tech.md) |
 | 2026-11-06 | 🐛 **活海绵 tooltip 容量上限随堆叠放大** —— 分子×count、分母写死每枚 64,000mB ⇒ 堆显示「128000 / 64000」；对照铜灯电量行（q/cap 同乘 count），分母改走 `totalCapacityMmB(count)`，与能力面 `getTankCapacity` 归一；+4 回归（含逐字比对能力面） | [海绵 §7](docs/tech/living-sponge-tech.md) · [changelog](docs/archive/changelog.md) |
 | 2026-11-06 | 🐛 **铜灯外部充放正式写回** —— 复用组件提交，副本/只读后端不再虚报；保留比例充电与聚合取电，失败按已确认前缀结算；+21回归，全量1655项零失败，效果随游玩观察，不增抽屉适配 | [红电 §4.2](docs/tech/living-power-tech.md) · [TODO 红电](docs/TODO.md) |
@@ -181,7 +182,6 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-11-06 | 🐛 **海绵多堆抽取/铜灯精确交付** —— 海绵只续抽剩余请求、异种不扣；铜灯容器跨堆凑整、总量不足1FE不扣、均分差额只损耗；+17回归，旧代码13项红，全量1595项零失败；实机效果随游玩观察，不设专项测试 | [海绵 §12.2](docs/tech/living-sponge-tech.md) · [红电 §4.2](docs/tech/living-power-tech.md) |
 | 2026-11-06 | 🐛 **容器缓存统一回收，修活海绵 Create 停抽根因** —— 退役按领域心跳/1200 次整条清理，活跃容器标志与索引保留；查询创建补登记、销毁清时间记录；+14 回归，旧代码11项红；无铜灯持续抽取实机验收通过 | [生命周期契约 §2](docs/reference/container-data-lifecycle.md) · [海绵踩坑 §12.1](docs/tech/living-sponge-tech.md) |
 | 2026-11-05 | 🐛 **修 1.7.0 处理 `lootr:lootr_minecart` 崩服** —— 实体容器准入改「白名单 + `ItemHandler.ENTITY` 能力面」双闸，第三方 `ContainerEntity` 无能力时在准入层优雅跳过；`LivingItem` 重复白名单收口到 `EntityContainers`；+4 回归测试（tick 跳过 / GUI 菜单解析不炸 / 有能力面不误伤 / GUI 上下文不误判同坐标方块），全量1564绿 | [container-boundary §I-C1](docs/system-design/container-boundary.md) · [changelog](docs/archive/changelog.md) |
-| 2026-11-05 | ✅ **槽位数量操作原语（move/produce/consume/transform）** —— 熔炉 consume 先行 / 酿造 / 耕地 / 流体推动内核上移收编；PHYSICAL=A3 保留流体现行口径；+35 测试（含负向验证）；check_stack_ops 棘轮挂 pre-commit/CI 第五条 | [api-contract §1.7](docs/system-design/api-contract.md) · [TODO §物品传输](docs/TODO.md) |
 ## 提交前必跑（2026-10-30 更新）
 
 ```bash

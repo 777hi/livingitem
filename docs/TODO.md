@@ -686,7 +686,14 @@
    活铲子右键 = **铺土径**（J3 定案 = 直接调原版方法，不写映射表）。定案与硬约束见 archive 稿 §3.10；
    「通配条目吞右键 / 谓词自查 `isLivingItem`」两条红线已在 [farmland tech §3.1-3.2](tech/living-farmland-tech.md)。
 2. ⏳ **系列边界探讨**（H 组待定）—— 活锄头是否纳入统一框架（H1 倾向 a）/ 斧铲**世界层**辅助
-   做不做（H2 倾向先不做）/ 活剑、活剪刀等边界（H4）。探讨全文见 archive 稿 §3 H 组。
+   做不做（H2 倾向先不做）。**活剑已落地**（2026-11-07：`SWORD_DIG` 纳入工具判据，双身份同斧子，
+   见 [living-tool-tech.md](tech/living-tool-tech.md) §4.1）。**活剪刀**（2026-11-07 源码调研，待做）：
+   `SHEARS_DIG` 判据一行；挖掘（羊毛/蛛网/树叶）与剪植物顶端走现成链路；剪羊毛/蘑菇牛在实体侧
+   `mobInteract`（`Sheep.java:215` 硬编码 `Items.SHEARS`）⇒ 需新增「实体交互回放」分支
+   （官方入口 `fake.interactOn`）；剪蜂巢在 block 侧 `useItemOn`，L36 边界外不做。**活钓鱼竿**
+   （同日调研）：非射线族 —— `use()` 是抛/收切换 ⇒ 需 phase 状态机 + 咬钩探测（`nibble` 私有，
+   需 @Accessor）+ 战利品路由（掉落物飞向假玩家会被 `playerTouch` 吞），只做自主模式，另出设计稿。
+   探讨全文见 archive 稿 §3 H 组。
 
 ## 活工具 / 活背包 · 2026-10-27 全项目审查挂起项（P3，未定先后）
 

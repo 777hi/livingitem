@@ -15,6 +15,23 @@
 
 ---
 
+## 2026-11-07
+
+- ✅ **活剑纳入工具判据，双身份同活斧子（+1 守卫测试，实机待验）** ——
+  **背景**：活工具/活武器的判据本就不是物品类（工具认 `ItemAbility`、武器认 `WEAPON_ENCHANTABLE` 标签），
+  但 `isLivingTool` 只列 PICKAXE/AXE/SHOVEL/HOE_DIG 四项 ⇒ 活剑录不了挖掘记忆、不参与辅助挖掘，
+  原版剑自带的挖掘面（`#minecraft:sword_efficient` 1.5：树叶/作物/竹子）只有真人手持时有效
+  （`isAssistTool` javadoc「活剑挖不动方块」即这条边界的旧留痕）。
+  **改动**：`isLivingTool` 增补 `ItemAbilities.SWORD_DIG`（用户拍板「口径同斧子，这两差不多」）——
+  下游全自动贯通、零改动：挖掘记忆录制/清除（`onBlockBreak` / `LeftClickBlock` 判 `isLivingTool`）、
+  辅助挖掘（`isAssistTool`）、S2 双记忆调度（斧子先例）⇒ 剑「有怪打怪、没怪挖树叶」。
+  **噪音闸门现成**：辅助出力谓词 `getDestroySpeed > 1.0`（`LivingToolAssist#onBreakSpeed`）
+  自动把无记忆活剑收窄成「只对 sword_efficient 方块出力」，不会出现「背一叠剑 = 全方块小急迫」；
+  自主模式不蹲下录的记忆不限类型 ⇒ 剑会挖路径上任何方块（1.0 速度，与斧子行为一致）。
+  **守卫**：`ActivationHookTest#livingSwordIsBothToolAndWeapon`（⑧，活剑 isLivingTool &&
+  isLivingWeapon 同时成立 —— 防 SWORD_DIG 被摘掉后挖掘录制静默失效）。
+  → [tool §4.1](../tech/living-tool-tech.md) · [weapon §1/§6/§7.1](../tech/living-weapon-tech.md) · TODO「活工具·系列扩展」。
+
 ## 2026-11-06
 
 - 🐛 **修 Jade 不显示容器流体/电量：客户端取数闸门被「恒不报名」堵死（+1 回归）** —— 用户实测「装有活海绵和活涂蜡铜灯的容器，Jade 顶端不再显示流体和电量」，并提供了 Jade 1.21-neoforge 源码。链路实证：Jade 客户端 `WailaTickHandler` 每 tick 调 `BlockAccessorClientHandler.shouldRequestData` → `FluidStorageProvider/EnergyStorageProvider.shouldRequestData` → 默认扩展 `CommonProxy.hasDefault*Storage` → `accessor.getLevel().getCapability(FluidHandler/EnergyStorage.BLOCK, pos, state, be, null)`，**用「能力非 null」当闸门**；闸门不过就压根不发 `RequestBlockPacket`，服务端 `appendServerData`（`CommonProxy.wrap*Storage` 读 `getFluidInTank/getTankCapacity`、`getEnergyStored/getMaxEnergyStored`）根本没机会跑。而 10-31「对外能力只在该有活物时存在」（`ec823356` / `716746c1`）把 `level.isClientSide() → null` 一起写进了两个 provider，11-02 海绵容器能力延续同款 ⇒ 服务端口径一直是对的，客户端闸门却永久关掉（10-31 之前宽注册恒发实例所以能显示）。修法：客户端只发**只读零值存在性探针**（能量 `CLIENT_PROBE` 0/0 FE + 不可充放、流体复用零罐 `NO_OP`），服务端仍是存在性与读数的唯一权威；零容量避免客户端把任意方块认成储能/储液。`SpongeContainerFluidHandler.resolveProvider` 返回类型放宽为 `IFluidHandler`。回归：`ContainerEnergyCapabilityTest` 客户端断言改钉「探针只读且服务端口径不变」，`SpongeContainerCapabilityTest` 加零罐探针用例。→ [海绵 §4.2](../tech/living-sponge-tech.md) · [红电 §4.1](../tech/living-power-tech.md)。

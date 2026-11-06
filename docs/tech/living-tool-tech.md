@@ -274,11 +274,18 @@ public static boolean isLivingTool(ItemStack stack) {
     return stack.canPerformAction(ItemAbilities.PICKAXE_DIG)
         || stack.canPerformAction(ItemAbilities.AXE_DIG)
         || stack.canPerformAction(ItemAbilities.SHOVEL_DIG)
-        || stack.canPerformAction(ItemAbilities.HOE_DIG);
+        || stack.canPerformAction(ItemAbilities.HOE_DIG)
+        || stack.canPerformAction(ItemAbilities.SWORD_DIG);
 }
 ```
 
 沿用项目语义判定惯例（`Tillables#isHoeLike`）：**不枚举物品清单**，模组工具自动兼容。
+
+⭐ **剑在列（2026-11-07 用户拍板「口径同活斧子」）** —— 活剑双身份（D3 共存），
+[武器 tech §6](living-weapon-tech.md) 的双记忆调度直接生效（有怪打怪、没怪挖树叶）。
+剑的挖掘面弱（普通方块 1.0 / `#minecraft:sword_efficient` 1.5）⇒ 辅助挖掘出力谓词
+`getDestroySpeed > 1.0`（`LivingToolAssist#onBreakSpeed`）自动收窄成「只对树叶 / 作物 / 竹子等搭把手」，
+不会出现「背一叠剑 = 全方块小急迫」。守卫测试：`ActivationHookTest#livingSwordIsBothToolAndWeapon`。
 
 ### 4.2 通道一：挖掘记忆 → `BlockEvent.BreakEvent`
 
