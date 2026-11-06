@@ -17,6 +17,8 @@
 
 ## 2026-11-06
 
+- 🐛 **活海绵 tooltip 容量上限随堆叠放大（+4 回归）** —— 用户实测堆叠海绵的容量显示不对，对照涂蜡铜灯定位：tooltip 分子是「堆总量 × count」、分母却写死「每枚 64,000 mB」⇒ count=2 装满显示「128000 / 64000 mB」（分子超分母）。铜灯电量行是 q 与 `totalCapacityMilliFe(count)` 同乘 count；海绵的分母改走现成的 `LivingSpongeData.totalCapacityMmB(count)`，与能力面 `SpongeItemFluidHandler.getTankCapacity`（早就按堆算）口径归一。`LivingSpongeTooltipTest` 钉住单枚 / 2·7·64 堆 / 半满 / 干态，并逐字比对 `getFluidInTank` 与 `getTankCapacity`；§7 反馈表、§8.2 陷阱表同步改口径。→ [海绵 §7 / §8.2 / §10](../tech/living-sponge-tech.md)。
+
 - 🐛 **铜灯BLOCK外部充放接入组件提交（+21回归）** —— 用户实测旧版抽屉无限充放；副本规划、确认写回才报账，无writer安全返回0；保留充电比例/取电聚合，失败按确认前缀整FE结算并记录取电碎片损耗；全量1655项零失败，修后效果随游玩观察。→ [红电 §4.2](../tech/living-power-tech.md) · [I-D5](../system-design/power-invariants.md)。
 
 - 🐛 **共同组件提交＋海绵BLOCK首批接入（+39回归）** —— 副本计算/旧值重验/直接writer/回读确认后报账；无writer拒绝，不抽插、不截断原数量；失败精确恢复并留痕、全部关联BE标脏和同步；旧海绵接口16项红，修复后全量1634项零失败。铜灯/内部tick/GUI未迁移；用户抽屉旧新对照确认：旧版无限汲取/储存，新版已无此问题，抽屉安全不工作可接受，不新增专用适配需求。→ [api-contract §1.8](../system-design/api-contract.md) · [海绵 §12.3](../tech/living-sponge-tech.md)。

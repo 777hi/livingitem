@@ -224,7 +224,8 @@ src/test/java/com/qiqi/li/
 │   ├── LivingSpongeDataTest.java              # 活海绵组件形状契约（2026-11-01 第一段）·干/湿不变量归一（无流体或非正存量 ⇒ 干态，幽灵湿海绵在类型层面不可能）/ 容量与总量 long 域（每枚 6.4e7 mmB，×count 线性）/ CODEC 湿·干·岩浆往返 / 未知流体 id 归干态（I-C6 同款宁损勿鬼）/ wither 不可变
 │   ├── LivingSpongeAbsorbTest.java            # 吸收行为契约（2026-11-02 第二段，直接驱动 + processContext 冒烟）·一拍吸净可吸四邻（≤4 源）/ 节拍门 gameTime 锁相 / 异种邻居跳过不挡 / 空海绵方向序取首流体 / 快满停拍+腾出恢复 / count 均分损耗有界 / 同拍双海绵账本即时删不双吃 / 斜对角非邻居（27 槽 3 行）/ 首口定流体单次构造
 │   └── SpongeFluidRoundTripTest.java          # **守恒主战场**（2026-11-02 第三段，规则 12 红线：不许为了让它过而改它）·附录算例（6mB×7 枚）/ 拆分守恒恒等式 / 整桶往返 ×25 零漂移 / 50 轮部分充排净迁移无凭空产生 / 溢出拒收不越上限 / 异种拒绝零副作用 / 零负请求 / 尘量取不出但可累积 / 一堆一罐语义
-│   └── SpongeContainerCapabilityTest.java     # 容器级能力·存在性/槽序罐/填充/边沿·多堆剩余预算与混种/代表流体/模拟·BLOCK副本计算与原槽提交/原引用和副本后端/拒写不报账/只读不抽插/第二槽失败报先前提交量/超大堆叠与无关组件保留
+│   ├── SpongeContainerCapabilityTest.java     # 容器级能力·存在性/槽序罐/填充/边沿·多堆剩余预算与混种/代表流体/模拟·BLOCK副本计算与原槽提交/原引用和副本后端/拒写不报账/只读不抽插/第二槽失败报先前提交量/超大堆叠与无关组件保留
+│   └── LivingSpongeTooltipTest.java           # tooltip 堆口径（2026-11-06 回归）·分子分母同乘 count（旧实现分母写死枚容量 ⇒「128000 / 64000 mB」）/ 与 getFluidInTank·getTankCapacity 逐字一致 / 半满余量 / 干态无内容行
 ├── living/interaction/
 │   ├── InteractionRegistryTest.java           # 两趟优先级匹配·通配遮蔽+triggerFilter 回归守卫
 │   ├── InteractionRuleConfigTest.java         # 交互规则 JSON 加载语义·内置全有效/玩家覆盖与removed/坏值跳过/未知字段忽略/version守卫/reload幂等（自带 mock handler 不依赖测试执行顺序）

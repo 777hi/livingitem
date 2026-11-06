@@ -202,7 +202,7 @@ per-item DataComponent `LivingSpongeData`（**record：`fluid: FluidType` + `mmB
 |---|---|---|---|
 | 干 / 湿辨识 | `mmB > 0` | **模型变体**：`wet` / `dry` 两个三行 JSON parent 到 `minecraft:block/wet_sponge` / `sponge`——不随包分发纹理、跟随玩家材质包 | 全 GUI（含 JEI——模型层不受装饰器管线限制）；手持 / 掉落物回退原版外观 |
 | 所存流体种类 | 组件 `fluid` | **流体渲染叠加**（`LivingSpongeFluidDecorator`）：still 贴图全幅 α0.55（源格同款，半透保留湿态底图）、染色取 `IClientFluidTypeExtensions`（模组流体零特判）、**只表种类不编码量**、z 抬 200 返回 true 交还 NeoForge 重置 | 装饰器管线场景；JEI 不显示（干湿变体仍在） |
-| 量与容量 | 组件堆总量 | **tooltip**（`LivingSpongeFunction.addToTooltip`）：流体名（`FluidType.descriptionId`）× 堆总量 / 枚容量 64,000 mB | 全场景 |
+| 量与容量 | 组件堆总量 | **tooltip**（`LivingSpongeFunction.addToTooltip`）：流体名（`FluidType.descriptionId`）× 堆总量 / **堆容量 64,000 × count mB** —— 分子分母同取堆口径，与能力面 `getFluidInTank` / `getTankCapacity`、铜灯电量行一致 | 全场景 |
 
 - 「活」的辨识靠**状态发生的时刻**：原版海绵永远不会在物品栏里自己变湿，活海绵会
   （铜灯同款逻辑）；干的活海绵与原版海绵静态同形 = unlit 态代价，靠 tooltip 辨识；
@@ -236,6 +236,7 @@ per-item DataComponent `LivingSpongeData`（**record：`fluid: FluidType` + `mmB
 | 6 | FluidStack 附加组件丢失 | v1 已知限制（接受）：池 = 纯类型 + 量 |
 | 7 | 组件 equals / hashCode | record（FluidType 恒等比较）天然合规 |
 | 8 | **floor 排出三连炸**（2026-11-02 实测）：交付随请求逐次缩水 + SIMULATE ≠ EXECUTE + 卡死尘销毁 | **排出侧唯一口径 = ceil**：交付整单位分毫不差、尘隐身留账；守卫 ⑩（实测场景全生命周期）+ ⑪（确定性） |
+| 9 | **tooltip 容量口径漂移**（2026-11-06 实测）：分子按堆总量 ×count、分母写死每枚 64,000 mB ⇒ count=2 装满显示「128000 / 64000」 | **分子分母同取堆口径**：分母一律走 `totalCapacityMmB(count)`，与能力面 `getTankCapacity` / 铜灯电量行同构；守卫 `LivingSpongeTooltipTest`（含逐字比对能力面） |
 
 **充入侧对偶检查（同日）**：报账 ceil 封顶请求 ⇒ 无缩水；count ≤ 64 ⇒ per ≥ 15 ⇒ 无报 0 死区；
 simulate/execute 同源确定。唯一残留毛刺：存量带尘时 content 恒差 1 mB 到 capacity
@@ -305,6 +306,7 @@ simulate/execute 同源确定。唯一残留毛刺：存量带尘时 content 恒
 | `LivingSpongeAbsorbTest`（10 项） | 吸收行为：一拍净邻 / 节拍门锁相 / 异种跳过不挡 / 方向序取首流体 / 快满停拍恢复 / 均分损耗有界 / 账本即时删不双吃 / 斜对角非邻居 / ultraWarm 反向守卫 / processContext 冒烟 |
 | `SpongeFluidRoundTripTest`（12 项） | **守恒主战场**：附录算例 / 拆分恒等式 / 往返零漂移 / 净迁移无凭空产生 / 溢出拒收 / 异种拒绝 / 零负请求 / 尘量行为 / 一堆一罐 / 7 堆实测场景 / simulate=execute / fill 全域扫描与尘区收敛 |
 | `SpongeContainerCapabilityTest`（6 项） | 容器级能力：存在性（干 = 空罐）/ 罐映射槽位序 / 指名罐抽 / 跨堆续抽 / 多罐灌装 / 边沿精确一次 |
+| `LivingSpongeTooltipTest`（4 项，2026-11-06） | tooltip 堆口径：单枚 64000/64000 / 2·7·64 堆分子分母同乘 count 且与 `getFluidInTank`·`getTankCapacity` 逐字一致 / 半满余量 / 干态无内容行 |
 | `PerItemLedgerTest`（6 项，living/util） | 均分内核：floor 记账同源 / 整步保护 / 容量防御 / 满堆不动 / 退化输入 / 损耗 ≤ count−1 |
 
 ---

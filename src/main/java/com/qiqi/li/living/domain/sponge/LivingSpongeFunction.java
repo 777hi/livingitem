@@ -61,12 +61,16 @@ public class LivingSpongeFunction implements LivingItemFunction {
         if (!d.isWet()) return;
         net.minecraft.network.chat.Component name = net.minecraft.network.chat.Component.translatable(
             d.fluid().getDescriptionId());
+        // 量与容量同取「整堆」口径：与能力面（getFluidInTank / getTankCapacity）及
+        // 铜灯电量行一致，两者都随 count 线性放大 —— 写死每枚容量会让 count>1
+        // 显示成「128000 / 64000 mB」（分子超分母）。
+        int count = stack.getCount();
         tooltipAdder.accept(net.minecraft.network.chat.Component.nullToEmpty(""));
         tooltipAdder.accept(net.minecraft.network.chat.Component.translatable(
             "tooltip.livingitem.sponge.content",
             name.getString(),
-            d.totalMmB(stack.getCount()) / 1000,
-            LivingSpongeData.MAX_MM_B / 1000));
+            d.totalMmB(count) / 1000,
+            LivingSpongeData.totalCapacityMmB(count) / 1000));
     }
 
     @Override
