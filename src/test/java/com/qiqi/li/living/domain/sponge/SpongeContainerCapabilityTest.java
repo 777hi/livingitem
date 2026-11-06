@@ -31,6 +31,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.material.Fluids;
 import net.neoforged.neoforge.fluids.FluidStack;
+import net.neoforged.neoforge.fluids.capability.IFluidHandler;
 import net.neoforged.neoforge.fluids.capability.IFluidHandler.FluidAction;
 import net.neoforged.neoforge.items.IItemHandlerModifiable;
 
@@ -119,6 +120,26 @@ class SpongeContainerCapabilityTest {
         Scene wet = Scene.of(9);
         wet.spongeAt(4, 1_000_000L);
         assertNotNull(SpongeContainerFluidHandler.resolveProvider(beOf(wet), null));
+    }
+
+    @Test
+    @DisplayName("①b 客户端只读探针：Jade 取数闸门要过，但零罐且不可充放")
+    void clientProbe_isReadOnlyAndZeroTanks() {
+        Scene scene = Scene.of(9);
+        scene.spongeAt(4, 1_000_000L);
+        IFluidHandler server = SpongeContainerFluidHandler.resolveProvider(beOf(scene), null);
+        assertNotNull(server, "服务端已报名（前置）");
+        assertTrue(server.getTanks() > 0);
+
+        org.mockito.Mockito.when(scene.ctx().getLevel().isClientSide()).thenReturn(true);
+        IFluidHandler probe = SpongeContainerFluidHandler.resolveProvider(beOf(scene), null);
+        assertNotNull(probe, "Jade 客户端靠「能力非 null」决定是否发请求包，闸门必须过");
+        assertNotSame(server, probe, "客户端不得复用服务端实例");
+        assertEquals(0, probe.getTanks(), "零罐 ⇒ 客户端不会把任意方块认成储液");
+        assertTrue(probe.getFluidInTank(0).isEmpty());
+        assertEquals(0, probe.getTankCapacity(0));
+        assertEquals(0, probe.fill(new FluidStack(Fluids.WATER, 1000), FluidAction.EXECUTE));
+        assertTrue(probe.drain(1000, FluidAction.EXECUTE).isEmpty());
     }
 
     @Test
@@ -387,7 +408,7 @@ class SpongeContainerCapabilityTest {
     }
 
     private record CopyScene(CopyHandler inventory, BlockEntity be, Level level,
-                             SpongeContainerFluidHandler fluid) {
+                             IFluidHandler fluid) {
         static CopyScene of(boolean copies, WriteBehavior behavior, long... quantities) {
             CopyHandler inventory = new CopyHandler(copies, behavior);
             for (int slot = 0; slot < quantities.length; slot++) {

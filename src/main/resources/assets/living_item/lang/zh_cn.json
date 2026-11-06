@@ -155,6 +155,7 @@
   "slot.livingitem.bottle2": "瓶 2",
   "slot.livingitem.bottle3": "瓶 3",
   "slot.livingitem.material": "材料",
+  "slot.livingitem.direction": "朝向",
   "tooltip.livingitem.direction.slot": "  §7%s: %s§r",
   "tooltip.livingitem.brewing.status": "§6酿造台状态",
   "tooltip.livingitem.brewing.fuel": "  §7燃料: §f%s 次",

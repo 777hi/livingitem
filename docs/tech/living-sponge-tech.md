@@ -167,6 +167,10 @@ per-item DataComponent `LivingSpongeData`（**record：`fluid: FluidType` + `mmB
   标志随容器而生灭，寿命以 [统一回收契约](../reference/container-data-lifecycle.md) §2 为准；
   旧清理丢标志导致 Create 抽取停摆的源码推演与实机对照见 §12.1。
 - 注册：BLOCK 宽注册（全部 BE 类型），provider 内部按存在性发实例。
+- **客户端存在性探针**（2026-11-06）：客户端没有容器级数据，但 Jade 在客户端
+  `WailaTickHandler → shouldRequestData → CommonProxy.hasDefaultFluidStorage` 用「能力非 null」
+  决定是否发请求包 ⇒ 闸门不过时服务端 `appendServerData` 根本没机会下发真实罐内容。
+  客户端 provider 因此返回零罐只读 `NO_OP`；服务端仍是存在性与读数的唯一权威。
 
 ---
 
@@ -237,6 +241,7 @@ per-item DataComponent `LivingSpongeData`（**record：`fluid: FluidType` + `mmB
 | 7 | 组件 equals / hashCode | record（FluidType 恒等比较）天然合规 |
 | 8 | **floor 排出三连炸**（2026-11-02 实测）：交付随请求逐次缩水 + SIMULATE ≠ EXECUTE + 卡死尘销毁 | **排出侧唯一口径 = ceil**：交付整单位分毫不差、尘隐身留账；守卫 ⑩（实测场景全生命周期）+ ⑪（确定性） |
 | 9 | **tooltip 容量口径漂移**（2026-11-06 实测）：分子按堆总量 ×count、分母写死每枚 64,000 mB ⇒ count=2 装满显示「128000 / 64000」 | **分子分母同取堆口径**：分母一律走 `totalCapacityMmB(count)`，与能力面 `getTankCapacity` / 铜灯电量行同构；守卫 `LivingSpongeTooltipTest`（含逐字比对能力面） |
+| 10 | **Jade 客户端取数闸门被关死**（2026-11-06 实测）：10-31 能力存在性收口把 `level.isClientSide() → null` 写进 provider；Jade 客户端 `shouldRequestData` 判「无能力」⇒ 不发请求包 ⇒ 服务端读数再准也不显示 | 客户端只发**只读零值存在性探针**（海绵零罐 / 铜灯 0 FE 且不可充放），服务端 provider 仍是存在性与读数的唯一权威；守卫两域 `resolveProvider` 客户端测试 |
 
 **充入侧对偶检查（同日）**：报账 ceil 封顶请求 ⇒ 无缩水；count ≤ 64 ⇒ per ≥ 15 ⇒ 无报 0 死区；
 simulate/execute 同源确定。唯一残留毛刺：存量带尘时 content 恒差 1 mB 到 capacity

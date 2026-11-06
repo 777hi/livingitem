@@ -16,17 +16,19 @@ import net.minecraft.world.level.Level;
 import org.junit.jupiter.api.Test;
 
 /**
- * tick 顺序契约守卫（A1 配套，api-contract.md §2.4）。
+ * 功能列表顺序守卫（A1 配套，api-contract.md §1.3）。
  *
  * <p>⭐ <b>为什么需要</b>：A1 把注册按域下放成 11 个分散文件后，
- * tick 顺序变成「主类调用次序 × 各文件内部排列」—— 没有任何一处能读出完整顺序，
- * 也看不出哪些相邻是有意的、哪些只是巧合。
- * 本测试锁住的是：顺序从此由 {@code getTickPriority()} <b>声明</b>出来。</p>
+ * 列表顺序变成「主类调用次序 × 各文件内部排列」—— 没有任何一处能读出完整顺序。
+ * 本测试锁住的是：<b>列表顺序</b>由 {@code getTickPriority()} 声明出来。</p>
+ *
+ * <p>⚠️ <b>本测试不守容器内功能 {@code tick()} 的执行序</b>：那由槽位扫描中功能
+ * 首次出现的先后决定，只有同槽内的相对次序受本优先级影响（见 api-contract §1.3）。</p>
  *
  * <p>⚠️ <b>最关键的一条是 {@link #allFunctionsDefaultToPriorityZero}</b>：
- * 它证明「默认优先级全为 0 + 排序稳定 ⇒ 顺序与下放前完全一致」，
- * 即这次改造是<b>零行为变化</b>的。将来任何人给某个功能设了非零优先级，
- * 这条会失败 —— 那正是提醒他「你正在改变 tick 顺序，请确认这是有意的」。</p>
+ * 它证明「全库零覆写 + 排序稳定 ⇒ 列表顺序与下放前完全一致」，即这次改造零行为变化。
+ * 将来任何人给某个功能设了非零优先级，这条会失败 —— 那是在提醒他
+ * 「你正在改变列表顺序及同槽内的功能次序，请确认这是有意的」。</p>
  */
 class TickOrderTest {
 
@@ -37,7 +39,7 @@ class TickOrderTest {
         assertTrue(!all.isEmpty(), "测试环境应已注册功能");
         for (LivingItemFunction f : all) {
             assertEquals(0, f.getTickPriority(),
-                f.getFunctionId() + " 未声明优先级时应为 0 —— 非 0 意味着 tick 顺序被有意改动");
+                f.getFunctionId() + " 未声明优先级时应为 0 —— 非 0 意味着功能列表顺序被有意改动");
         }
     }
 
@@ -58,15 +60,15 @@ class TickOrderTest {
         assertEquals(List.of("b", "d", "a", "c"), idsOf(LivingItemManager.sortByPriority(input)));
     }
 
-    /** 对外列表只读（外部无法篡改 tick 顺序），且按优先级非降序。 */
+    /** 对外列表只读，且按优先级非降序（列表顺序，不是容器内 tick 顺序）。 */
     @Test
     void listIsReadOnlyAndOrdered() {
         List<LivingItemFunction> all = LivingItemManager.getAllFunctions();
         assertThrows(UnsupportedOperationException.class, () -> all.add(null),
-            "getAllFunctions() 必须返回只读视图 —— 外部不应能篡改 tick 顺序");
+            "getAllFunctions() 必须返回只读视图 —— 外部不应能篡改列表顺序");
         for (int i = 1; i < all.size(); i++) {
             assertTrue(all.get(i - 1).getTickPriority() <= all.get(i).getTickPriority(),
-                "tick 顺序必须按 getTickPriority 非降序");
+                "getAllFunctions() 列表必须按 getTickPriority 非降序");
         }
     }
 

@@ -660,7 +660,7 @@ public class ContainerLivingItemHandler {
 
         long stressEndNanos;
         try {
-            // 阶段 2：功能 tick（按优先级执行各功能的 tick 逻辑）
+            // 阶段 2：功能 tick（按扫描分组顺序，非优先级顺序）
             tickFunctionSlots(grouped, tick);
             runFunctionTicks(grouped, context, tick, level);
 
@@ -727,8 +727,10 @@ public class ContainerLivingItemHandler {
     }
 
     /**
-     * 执行各功能的 tick 逻辑（按优先级）。
-     * 每个功能只调用一次 tick，传入其管理的所有活物品槽位。
+     * 按扫描分组顺序执行各功能的 tick，每个功能只调用一次，传入其管理的所有活物品槽位。
+     *
+     * <p>⚠️ 顺序 = 功能在槽位扫描中首次出现的先后，不是优先级顺序；
+     * 容器级数据才按 {@link HasContainerData#getPriority()} 排序。见 api-contract §1.3。</p>
      */
     private static void runFunctionTicks(
             Map<LivingItemFunction, List<LivingItemFunction.SlotEntry>> grouped,

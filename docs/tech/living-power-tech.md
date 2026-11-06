@@ -666,8 +666,8 @@ fail-safe 不崩不刷（详见 oversized-stack-audit.md §2.8），long 内部�
 
 > 与 [流体 §10.4](living-fluid-tech.md) 同款约束：**能力的「有没有」必须跟着资产走**。
 
-- **判据**：`ContainerEnergyStorage.resolveProvider` 只在容器**当前有活涂蜡铜灯**时返回实例；
-  无灯 / 非容器 / 客户端 ⇒ `null`。它读电力账本的通告标志（O(1)），**不在能力查询里扫容器**
+- **判据**：`ContainerEnergyStorage.resolveProvider` 在**服务端**只在容器**当前有活涂蜡铜灯**时返回实例；
+  无灯 / 非容器 ⇒ `null`。它读电力账本的通告标志（O(1)），**不在能力查询里扫容器**
   —— 能力查询是线缆的热路径。
 - **为什么**：线缆类模组判「邻居是不是储能」只看能力是否非 null ——
   Flux `ForgeEnergyConnector#hasCapability`、Mekanism `Transmitter#isValidAcceptor`
@@ -680,8 +680,12 @@ fail-safe 不崩不刷（详见 oversized-stack-audit.md §2.8），long 内部�
     **所有早退之前**通告 —— 纯电池容器（无发电机 ⇒ sensor/active 都会早退）也必须能报名。
   - **负边沿**（拿走最后一盏灯）：此时功能已不在 grouped 里、不再 tick ⇒ 由
     `ContainerPhaseWriteback#onWriteback` 兜底（只在「正在通告」时扫容器，稳态零成本）。
-- **客户端**：恒不报名（容器级数据只在服务端）；连接外观由服务端同步的连接位决定。
-- **守卫**：`ContainerEnergyCapabilityTest`（存在性三态 / 边沿精确一次 / 客户端 / 让位四段）。
+- **客户端**：发**只读零容量探针**（`CLIENT_PROBE`：0/0 FE、`canReceive/canExtract = false`）。
+  Jade 在客户端 `WailaTickHandler → shouldRequestData → CommonProxy.hasDefaultEnergyStorage`
+  用「能力非 null」决定是否发请求包；闸门不过 ⇒ 服务端 `appendServerData` 没机会下发真实读数
+  （2026-11-06 实测「容器里的活铜灯在 Jade 不显示电量」的根因）。
+  探针不参与存在性判定与读写，服务端 provider 仍是唯一权威；连接外观由服务端同步的连接位决定。
+- **守卫**：`ContainerEnergyCapabilityTest`（存在性三态 / 边沿精确一次 / 客户端探针只读 / 让位四段）。
 
 ### 4.2 容器对外充放：副本规划、提交确认与整 FE 报账（2026-11-06 定案）
 

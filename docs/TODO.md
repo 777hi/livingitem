@@ -17,6 +17,10 @@
 
 ## 框架演进（2026-10-18 提案，未定案）
 
+> 📄 **总纲（2026-11-06）**：所有架构演进项的先后顺序 / 触发门 / 验收判据 / 明确不做
+> 统一见 [architecture-evolution-roadmap.md](buffer/architecture-evolution-roadmap.md)。
+> 本节只登记提案本身，不重复排期；本文仍是唯一需求池（D-doc-06）。
+
 1. **遥测客户端推导 / 统一宿主模型 / 协议判据 / per-item 数据纪律** —— 正文
    [framework-evolution-plan.md](buffer/framework-evolution-plan.md)。触发于活信标复盘。
    现状判断：**A（客户端推导）等「第二个内容派生型域」出现才值得做**（今天只有信标一个用户）；
@@ -264,11 +268,14 @@
    `consume`（熔炉/酿造输入）已接入抽取权限——若拍板「水流也尊重」，只需把 PHYSICAL
    档的抽取分支改对齐 STANDARD。
 
-3. **执行顺序与 API 契约 §1.3 不一致**（2026-11-03 活塞侧复查发现，**既有问题**）——
-   实际按**槽扫描遭遇序**执行功能，而契约写的是 **manager 序**（按 `getTickPriority` 排序）。
-   影响：新增功能时 tick 内的相对顺序无法从契约推断，只能从注册代码反推 ——
-   这正是「顺序需要显式声明」当初要解决的问题，现在只解决了一半（声明了，但没按它排）。
-   修法待定：要么改契约承认遭遇序，要么在扫描后按 priority 稳定排序。
+3. ~~**执行顺序与 API 契约 §1.3 不一致**（2026-11-03 活塞侧复查发现，**既有问题**）~~
+   ✅ **2026-11-06 定案并收口：改契约承认遭遇序，不改代码行为**。§1.3 改为描述真实的两阶段
+   （功能 tick = 槽扫描中首次出现序，同槽内才受 `getTickPriority()` 影响；容器级数据另按
+   `HasContainerData#getPriority()` 排序），同步校正 `runFunctionTicks` / `LivingItemManager` /
+   `LivingItemFunction` 的注释与 `TickOrderTest` 的声明。**不改扫描逻辑、不加排序、不加守卫**。
+   判据：`getTickPriority()` 全库 **0 个生产覆写**，而 `HasContainerData#getPriority()` 有 4 个
+   且带物理因果 ⇒ 为前者做行为变更是给不存在的风险付钱。见
+   [architecture-evolution-roadmap.md](buffer/architecture-evolution-roadmap.md) 阶段 0.2。
    ⚠️ 与活塞无关（活塞已声明 priority），属容器编排层的既有欠账。
 
    ✅ **落地顺序三步全收口（2026-11-05）**：①修存量（11-05 存量收口）→ ②原语

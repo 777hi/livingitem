@@ -128,7 +128,7 @@
 
 | # | 做什么 | 为什么两边都要 | 状态 |
 |---|---|---|---|
-| A1 | **拆 `commonSetup()`**：注册按领域下放，主类只做一行汇总调用 | fork ⇒ diff 落进第三方自己的新文件，不再抢同一行；addon ⇒ 才能给出确定的注册时序契约 | ✅ **2026-09-27 完成**（11 个 `XxxRegistration`，提交 `0bbf3cd`；活打火石并入 `TntRegistration`）；配套的 tick 顺序显式化 ✅ **2026-09-28**（`getTickPriority()` + 冻结，见 api-contract §1.3，含 `TickOrderTest` 4 项） |
+| A1 | **拆 `commonSetup()`**：注册按领域下放，主类只做一行汇总调用 | fork ⇒ diff 落进第三方自己的新文件，不再抢同一行；addon ⇒ 才能给出确定的注册时序契约 | ✅ **2026-09-27 完成**（11 个 `XxxRegistration`，提交 `0bbf3cd`；活打火石并入 `TntRegistration`）；配套的**功能列表顺序**显式化 ✅ **2026-09-28**（`getTickPriority()` + 曾计划冻结后放弃，见 api-contract §1.3，含 `TickOrderTest` 4 项）；⚠️ 2026-11-06 校正：它只作用于列表顺序，**不决定容器内功能 tick 序**（后者按槽扫描首次出现序） |
 | A2 | `clearLivingData` → 遍历各功能自声明的 `getOwnedComponentTypes()` | 消灭 ~~P0-1~~「必须改我源码」，**零 break** | ✅ **2026-09-27 完成**（含 `ComponentOwnershipTest` 3 项） |
 | A3 | 写清「**在哪注册**」的时序契约 | 今天三类扩展分别在 mod 构造函数 / 静态块 / `FMLCommonSetupEvent`，第三方在猜 | 未开工（建议排 A1 之后） |
 

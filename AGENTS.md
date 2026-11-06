@@ -148,7 +148,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1659 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
+**合计测试用例 1660 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -173,6 +173,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-11-06 | 🐛 **修 Jade 不显示容器流体/电量（+1 回归）** —— 借用户提供的 Jade 源码定位：Jade 客户端 `shouldRequestData` 用「能力非 null」当请求闸门，10-31 起两个容器能力在客户端恒返回 null ⇒ 请求包压根不发、服务端 `appendServerData` 没机会下发读数；客户端改发只读零值存在性探针，服务端仍是存在性/读数唯一权威，全量1660项零失败 | [海绵 §4.2](docs/tech/living-sponge-tech.md) · [红电 §4.1](docs/tech/living-power-tech.md) |
 | 2026-11-06 | 🐛 **活海绵 tooltip 容量上限随堆叠放大** —— 分子×count、分母写死每枚 64,000mB ⇒ 堆显示「128000 / 64000」；对照铜灯电量行（q/cap 同乘 count），分母改走 `totalCapacityMmB(count)`，与能力面 `getTankCapacity` 归一；+4 回归（含逐字比对能力面） | [海绵 §7](docs/tech/living-sponge-tech.md) · [changelog](docs/archive/changelog.md) |
 | 2026-11-06 | 🐛 **铜灯外部充放正式写回** —— 复用组件提交，副本/只读后端不再虚报；保留比例充电与聚合取电，失败按已确认前缀结算；+21回归，全量1655项零失败，效果随游玩观察，不增抽屉适配 | [红电 §4.2](docs/tech/living-power-tech.md) · [TODO 红电](docs/TODO.md) |
 | 2026-11-06 | 🐛 **共同组件提交＋海绵外部抽灌接入** —— 原数量副本写回、旧值重验、回读成功才报账；无writer拒绝、不抽插/截断；+39回归，全量1634项零失败；铜灯/内部tick留待后续；抽屉旧新对照确认无限抽灌已阻止，不扩为抽屉玩法支持 | [API §1.8](docs/system-design/api-contract.md) · [海绵 §12.3](docs/tech/living-sponge-tech.md) |
@@ -181,7 +182,6 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-11-06 | 🐛 **容器缓存统一回收，修活海绵 Create 停抽根因** —— 退役按领域心跳/1200 次整条清理，活跃容器标志与索引保留；查询创建补登记、销毁清时间记录；+14 回归，旧代码11项红；无铜灯持续抽取实机验收通过 | [生命周期契约 §2](docs/reference/container-data-lifecycle.md) · [海绵踩坑 §12.1](docs/tech/living-sponge-tech.md) |
 | 2026-11-05 | 🐛 **修 1.7.0 处理 `lootr:lootr_minecart` 崩服** —— 实体容器准入改「白名单 + `ItemHandler.ENTITY` 能力面」双闸，第三方 `ContainerEntity` 无能力时在准入层优雅跳过；`LivingItem` 重复白名单收口到 `EntityContainers`；+4 回归测试（tick 跳过 / GUI 菜单解析不炸 / 有能力面不误伤 / GUI 上下文不误判同坐标方块），全量1564绿 | [container-boundary §I-C1](docs/system-design/container-boundary.md) · [changelog](docs/archive/changelog.md) |
 | 2026-11-05 | ✅ **槽位数量操作原语（move/produce/consume/transform）** —— 熔炉 consume 先行 / 酿造 / 耕地 / 流体推动内核上移收编；PHYSICAL=A3 保留流体现行口径；+35 测试（含负向验证）；check_stack_ops 棘轮挂 pre-commit/CI 第五条 | [api-contract §1.7](docs/system-design/api-contract.md) · [TODO §物品传输](docs/TODO.md) |
-| 2026-11-05 | ✅ **传输守恒存量收口（I-C12/I-C14）** —— 流体推动源侧核验（写回失败整拍回退防复制）+ PlainSlotAccessor 写后回读；容量问容器（`simulateInsertItem` 权威，超堆叠停摆修复，isFull 三 Accessor 容器自答）；算术 long 化；+11 测试全绿 | [TODO §物品传输](docs/TODO.md) · [container-boundary §2](docs/system-design/container-boundary.md) |
 ## 提交前必跑（2026-10-30 更新）
 
 ```bash

@@ -75,7 +75,14 @@ public class ContainerEnergyStorage implements IEnergyStorage {
         if (be instanceof RandomizableContainer rc && rc.getLootTable() != null) return null;
         if (be instanceof IEnergyStorage) return null;            // 直接实现者让位
         Level level = be.getLevel();
-        if (level == null || level.isClientSide()) return null;   // 客户端没有容器级数据
+        if (level == null) return null;
+        if (level.isClientSide()) {
+            // Jade 在客户端用「能力非 null」当取数闸门（WailaTickHandler → shouldRequestData
+            // → CommonProxy.hasDefaultEnergyStorage）：闸门不过就压根不发请求包，
+            // 服务端 appendServerData 也就没机会下发真实读数。客户端没有容器级数据，
+            // 只发只读零容量探针让闸门通过；读写与存在性仍以服务端 provider 为唯一权威。
+            return CLIENT_PROBE;
+        }
         if (!hasExposedBattery(level, be.getBlockPos())) return null;   // 无活铜灯 ⇒ 不报名
         if (DEFER_QUERY.get()) return null;                       // 重入保护：内层查询摘除自己
         DEFER_QUERY.set(true);
@@ -90,6 +97,20 @@ public class ContainerEnergyStorage implements IEnergyStorage {
     }
 
     private static final ThreadLocal<Boolean> DEFER_QUERY = ThreadLocal.withInitial(() -> false);
+
+    /**
+     * 客户端存在性探针：TOP 类模组（Jade）在客户端只判「能力非 null」决定是否请求服务端数据。
+     * 零容量 + 不可充放 ⇒ 客户端不会把任意方块认成储能；真实读数一律由服务端 {@code appendServerData}
+     * 重新查询服务端 provider 得到（客户端不持有容器级数据）。
+     */
+    static final IEnergyStorage CLIENT_PROBE = new IEnergyStorage() {
+        @Override public int receiveEnergy(int toReceive, boolean simulate) { return 0; }
+        @Override public int extractEnergy(int toExtract, boolean simulate) { return 0; }
+        @Override public int getEnergyStored() { return 0; }
+        @Override public int getMaxEnergyStored() { return 0; }
+        @Override public boolean canExtract() { return false; }
+        @Override public boolean canReceive() { return false; }
+    };
 
     // ── 能力存在性（= 容器里真有活涂蜡铜灯）────────────────────
 

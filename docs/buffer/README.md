@@ -16,6 +16,7 @@
 | [2026-10-27-全项目审查报告.md](2026-10-27-全项目审查报告.md) | 台账 —— 待拍板 10 项已全部处置（2026-10-28）；文档冲突 ~50 | 2026-10-31 |
 | [2026-10-29-全项目审查整改计划.md](2026-10-29-全项目审查整改计划.md) | 进行中（0/1/2/4/5 完成 · 3 待复核 · 6 设计已定待实现）—— | 2026-11-01 |
 | [2026-10-29-测试域梳理.md](2026-10-29-测试域梳理.md) | 进行中（盘点完成，策略待拍板）—— 本文是测试域的分析与建议，不是测试规范定案。 | 2026-10-30 |
+| [architecture-evolution-roadmap.md](architecture-evolution-roadmap.md) | 未定案 —— 本文是演进编排与排期依据，不是现状描述，也不是已批准的执行计划 | 未跟踪 |
 | [code-doc-alignment.md](code-doc-alignment.md) | A1~A8 已收口（2026-10-27 台账）；仍被 AGENTS / TOD | 2026-10-31 |
 | [container-menu-introspection-topic.md](container-menu-introspection-topic.md) | 部分完成（2026-10-21）** —— 用户拍板「B+B」：位置广播经查证证 | 2026-10-27 |
 | [framework-benchmark.md](framework-benchmark.md) | 未定案**，本文只是**对标记录**，不是执行排期 | 2026-10-08 |

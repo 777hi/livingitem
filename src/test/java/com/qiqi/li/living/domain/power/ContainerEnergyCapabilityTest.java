@@ -2,8 +2,11 @@ package com.qiqi.li.living.domain.power;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -158,15 +161,24 @@ class ContainerEnergyCapabilityTest {
     }
 
     @Test
-    @DisplayName("客户端恒不报名（容器级数据只存在服务端）")
-    void provider_neverRegistersOnClient() {
+    @DisplayName("客户端只读探针：Jade 取数闸门要过，但读数与充放全归服务端")
+    void provider_offersReadOnlyProbeOnClient() {
         slots[0] = livingBulb(4);
         ContainerLivingItemHandler.processContext(ctx, level);
-        assertNotNull(ContainerEnergyStorage.resolveProvider(be, null), "服务端已报名（前置）");
+        IEnergyStorage server = ContainerEnergyStorage.resolveProvider(be, null);
+        assertNotNull(server, "服务端已报名（前置）");
 
         when(level.isClientSide()).thenReturn(true);
-        assertNull(ContainerEnergyStorage.resolveProvider(be, null),
-            "客户端拿不到容器级数据 ⇒ 不报名");
+        IEnergyStorage probe = ContainerEnergyStorage.resolveProvider(be, null);
+        assertNotNull(probe, "Jade 客户端靠「能力非 null」决定是否发请求包，闸门必须过");
+        assertNotSame(server, probe, "客户端不得复用服务端实例");
+        assertSame(ContainerEnergyStorage.CLIENT_PROBE, probe);
+        assertEquals(0, probe.getEnergyStored());
+        assertEquals(0, probe.getMaxEnergyStored(), "零容量 ⇒ 客户端不会把任意方块认成储能");
+        assertFalse(probe.canExtract());
+        assertFalse(probe.canReceive());
+        assertEquals(0, probe.receiveEnergy(1000, false));
+        assertEquals(0, probe.extractEnergy(1000, false));
     }
 
     @Test

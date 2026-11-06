@@ -80,11 +80,12 @@ public class LivingItemManager {
      * 按 {@link LivingItemFunction#getTickPriority()} <b>稳定排序</b>功能列表。
      * 由 {@code LivingItem#commonSetup} 在所有域注册完毕后调用（幂等）。
      *
-     * <p>⭐ tick 次序从此由 {@code getTickPriority()} <b>声明</b>，而不是散落在
-     * 11 个 Registration 文件里的书写顺序（A1 下放后没有任何一处能读出完整顺序）。</p>
+     * <p>⭐ 排的是<b>功能列表</b>（{@code getAllFunctions()} / {@code getApplicableFunctions()}
+     * 的返回顺序），不是容器内功能 {@code tick()} 的执行顺序 —— 后者按槽位扫描中
+     * 首次出现的先后，见 api-contract §1.3。</p>
      *
-     * <p>⚠️ 默认优先级全为 0 + 排序稳定 ⇒ <b>本方法不改变改造前的 tick 顺序</b>。
-     * 它是「把隐式契约显式化」，不是行为变更（由 {@code TickOrderTest} 断言）。</p>
+     * <p>⚠️ 默认优先级全为 0 + 排序稳定 ⇒ <b>本方法不改变改造前的列表顺序</b>。
+     * 它是「把列表顺序显式化」，不是行为变更（由 {@code TickOrderTest} 断言）。</p>
      *
      * <p><b>为什么只排序、不冻结注册</b>：曾计划同时「冻结列表、此后注册抛异常」，
      * 实测发现这会打断 {@code ComponentOwnershipTest} 等在测试中注册 mock 功能的既有模式 ——

@@ -49,7 +49,7 @@ src/test/java/com/qiqi/li/
 │   ├── DroppedItemSupportTest.java            # 掉落物形态准入判据（真机「丢在地上的活 TNT 不 tick、不炸」的回归）·活 TNT ⇒ 支持/活工具 ⇒ 支持（既有形态不能回退）/未声明功能（活箱子）⇒ 不支持/非活物品 ⇒ 不支持（⚠️ registerFunction 不去重，统一 @BeforeAll 注册）
 │   ├── LivingItemActivationTest.java          # 活化门面守卫·零配置全放行/显式开启才拒绝/取消总允许/探针不改原物品
 │   ├── ActivationRuleConfigTest.java          # 活化规则 JSON 加载语义·via缺省=player/activate与deactivate独立/先命中先赢/白名单/坏值跳过（含指令侧增删改与持久化往返；tag 路径 @Disabled —— 单测环境不加载 item tags，已游戏内验证通过）
-│   └── TickOrderTest.java                     # tick 顺序契约守卫·默认优先级全为0（零行为变化的证据）/稳定排序/优先级生效/冻结后不可变且非降序
+│   └── TickOrderTest.java                     # 功能列表顺序守卫·默认优先级全为0（零行为变化的证据）/稳定排序/优先级生效/只读且非降序（不守容器内功能执行序，见 api-contract §1.3）
 ├── living/command/
 │   ├── ActivationTargetParsingTest.java       # 活化目标参数解析守卫·物品ID/标签/modid 回写契约 + 反向守卫「StringArgumentType 读不进 : # @」
 │   └── LivingItemContainerCommandTest.java     # inspect 实际入口·学习值替代独立推断 / 活对象列数与注册规则分列 / 末行向上取整 / 未开战利品明确不处理 / 大箱另一半同源规范化
@@ -151,7 +151,7 @@ src/test/java/com/qiqi/li/
 │   ├── NetworkTraversalTest.java              # 铜块网络遍历（含 E2E 真实传播）
 │   ├── WaxedCopperStorageTest.java            # 储能（含telemetry）·整FE精确交付/超大堆叠/跨堆凑整/不足1FE不动/损耗界；一次规划扫描＋提交核验、抽够提前停；写回后实际槽与单次回调（含返回0的已扣前缀）
 │   ├── BulbItemEnergyStorageTest.java         # 铜灯通用电池
-│   ├── ContainerEnergyCapabilityTest.java     # 对外能量能力·存在性/边沿/让位/客户端；BLOCK原引用与副本写回/只读与拒写/模拟零副作用/比例充电/确认前缀ceil与floor报账及WARN/超大堆叠组件/双箱全部宿主标脏
+│   ├── ContainerEnergyCapabilityTest.java     # 对外能量能力·存在性/边沿/让位/客户端只读探针（Jade取数闸门，零容量且不可充放）；BLOCK原引用与副本写回/只读与拒写/模拟零副作用/比例充电/确认前缀ceil与floor报账及WARN/超大堆叠组件/双箱全部宿主标脏
 │   ├── PhaseSnapshotWarmupTest.java           # 相位快照热身
 │   ├── RoundTripConservationIT.java           # 往返守恒与拉/推侧账目·精确交付/实扣≥交付/均分损耗有界（对接面模拟，不替代跨模组实机）
 │   ├── WaxedGeneratorFeedChainTest.java      # 发电机喂链
@@ -224,7 +224,7 @@ src/test/java/com/qiqi/li/
 │   ├── LivingSpongeDataTest.java              # 活海绵组件形状契约（2026-11-01 第一段）·干/湿不变量归一（无流体或非正存量 ⇒ 干态，幽灵湿海绵在类型层面不可能）/ 容量与总量 long 域（每枚 6.4e7 mmB，×count 线性）/ CODEC 湿·干·岩浆往返 / 未知流体 id 归干态（I-C6 同款宁损勿鬼）/ wither 不可变
 │   ├── LivingSpongeAbsorbTest.java            # 吸收行为契约（2026-11-02 第二段，直接驱动 + processContext 冒烟）·一拍吸净可吸四邻（≤4 源）/ 节拍门 gameTime 锁相 / 异种邻居跳过不挡 / 空海绵方向序取首流体 / 快满停拍+腾出恢复 / count 均分损耗有界 / 同拍双海绵账本即时删不双吃 / 斜对角非邻居（27 槽 3 行）/ 首口定流体单次构造
 │   └── SpongeFluidRoundTripTest.java          # **守恒主战场**（2026-11-02 第三段，规则 12 红线：不许为了让它过而改它）·附录算例（6mB×7 枚）/ 拆分守恒恒等式 / 整桶往返 ×25 零漂移 / 50 轮部分充排净迁移无凭空产生 / 溢出拒收不越上限 / 异种拒绝零副作用 / 零负请求 / 尘量取不出但可累积 / 一堆一罐语义
-│   ├── SpongeContainerCapabilityTest.java     # 容器级能力·存在性/槽序罐/填充/边沿·多堆剩余预算与混种/代表流体/模拟·BLOCK副本计算与原槽提交/原引用和副本后端/拒写不报账/只读不抽插/第二槽失败报先前提交量/超大堆叠与无关组件保留
+│   ├── SpongeContainerCapabilityTest.java     # 容器级能力·存在性/客户端零罐只读探针（Jade取数闸门）/槽序罐/填充/边沿·多堆剩余预算与混种/代表流体/模拟·BLOCK副本计算与原槽提交/原引用和副本后端/拒写不报账/只读不抽插/第二槽失败报先前提交量/超大堆叠与无关组件保留
 │   └── LivingSpongeTooltipTest.java           # tooltip 堆口径（2026-11-06 回归）·分子分母同乘 count（旧实现分母写死枚容量 ⇒「128000 / 64000 mB」）/ 与 getFluidInTank·getTankCapacity 逐字一致 / 半满余量 / 干态无内容行
 ├── living/interaction/
 │   ├── InteractionRegistryTest.java           # 两趟优先级匹配·通配遮蔽+triggerFilter 回归守卫
