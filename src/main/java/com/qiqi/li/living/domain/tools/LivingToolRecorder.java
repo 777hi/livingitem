@@ -85,6 +85,12 @@ public final class LivingToolRecorder {
      * 有怪打怪、没怪挖树叶。剑的挖掘面弱（普通方块 1.0 / {@code #minecraft:sword_efficient} 1.5），
      * 辅助挖掘的出力谓词 {@code getDestroySpeed > 1.0}（{@code LivingToolAssist#onBreakSpeed}）
      * 自动把无记忆活剑收窄成「只对树叶 / 作物 / 竹子等搭把手」—— 不会出现「背一叠剑 = 全方块小急迫」。</p>
+     *
+     * <p>⭐ 剪刀也在列（2026-11-07 v1，用户定「不扩大」）—— 挖掘面：羊毛 5.0 / 蛛网 15（minesAndDrops）/
+     * 树叶 15 / 藤蔓·发光地衣 2.0；交互记忆走 {@code SHEARS_TRIM}（修剪植物顶端 —— 补丁后经
+     * {@code getToolModifiedState} 发 {@code BlockToolModificationEvent} ⇒ 录制端可录、回放分支 A 可用）。
+     * 🔴 <b>边界外不做</b>（残余登记 TODO）：剪蜂巢/南瓜雕刻在 block 侧 {@code useItemOn}（L36 边界），
+     * 剪羊在实体侧 {@code mobInteract} —— 两者都需要新回放分支。</p>
      */
     public static boolean isLivingTool(ItemStack stack) {
         if (stack.isEmpty() || !LivingItemManager.isLivingItem(stack)) {
@@ -94,7 +100,8 @@ public final class LivingToolRecorder {
             || stack.canPerformAction(ItemAbilities.AXE_DIG)
             || stack.canPerformAction(ItemAbilities.SHOVEL_DIG)
             || stack.canPerformAction(ItemAbilities.HOE_DIG)
-            || stack.canPerformAction(ItemAbilities.SWORD_DIG);
+            || stack.canPerformAction(ItemAbilities.SWORD_DIG)
+            || stack.canPerformAction(ItemAbilities.SHEARS_DIG);
     }
 
     /**

@@ -218,6 +218,19 @@ class ActivationHookTest {
         // 把它收窄到 sword_efficient 方块 —— 那一半在 LivingToolAssist 侧，这里只钉判据。
     }
 
+    @Test
+    @DisplayName("⑨ 活剪刀：工具判据认领（v1，2026-11-07）")
+    void livingShearsIsTool() {
+        ItemStack shears = new ItemStack(Items.SHEARS);
+        LivingItemActivation.apply(shears, level, null, LivingItemActivation.Via.PLAYER, true);
+        assertTrue(claimedBy(shears, LivingToolFunction.class),
+            "活剪刀必须被 living_tool 认领 —— v1 的挖掘与 SHEARS_TRIM 交互共用这一条链");
+        assertTrue(LivingToolRecorder.isLivingTool(shears),
+            "SHEARS_DIG 已纳入工具判据：活剪刀能录挖掘记忆、参与辅助挖掘");
+        // ⚠️ 剪刀不是武器（WEAPON_ENCHANTABLE 不含剪）—— 标签判据环境性不可单测（见 ⑧ 注）。
+        //    v1 边界：剪蜂巢/南瓜（block 侧 useItemOn）/ 剪羊（实体侧 mobInteract）不做，残余登记 TODO。
+    }
+
     // ---------------------------------------------------------------- 工具
 
     private static boolean claimedBy(ItemStack stack, Class<? extends LivingItemFunction> type) {

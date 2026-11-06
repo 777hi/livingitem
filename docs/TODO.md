@@ -204,7 +204,7 @@
 4. ~~**铜灯BLOCK外部充放未正式写回，副本后端虚报成功**~~ ✅ **2026-11-06 接入共同组件提交（+21回归）** ——
    用户已实机确认旧版抽屉有类似无限充放；本轮副本规划、确认写回后报账，无writer返回0，不做抽屉专用适配。
    充电保持比例分配，中断按确认实充向上整FE记账；取电按确认计划份额向下整FE交付，异常碎片损耗WARN。
-   全量1655项零失败，旧路径新增21项回归红；修后实机结果尚无反馈，随日常游玩观察。
+   全量1655项零失败，旧路径新增21项回归红；✅ **修后实机已验（2026-11-07 用户实测无问题）**。
    `EnergyStorage.ITEM`、发电与其它内部tick不在迁移范围。详见 [power tech §4.2](tech/living-power-tech.md)。
 
 ## 活红石 / 活铜（2026-10-10 自 tech §0 迁入，D-doc-06）
@@ -696,10 +696,12 @@
    「通配条目吞右键 / 谓词自查 `isLivingItem`」两条红线已在 [farmland tech §3.1-3.2](tech/living-farmland-tech.md)。
 2. ⏳ **系列边界探讨**（H 组待定）—— 活锄头是否纳入统一框架（H1 倾向 a）/ 斧铲**世界层**辅助
    做不做（H2 倾向先不做）。**活剑已落地**（2026-11-07：`SWORD_DIG` 纳入工具判据，双身份同斧子，
-   见 [living-tool-tech.md](tech/living-tool-tech.md) §4.1）。**活剪刀**（2026-11-07 源码调研，待做）：
-   `SHEARS_DIG` 判据一行；挖掘（羊毛/蛛网/树叶）与剪植物顶端走现成链路；剪羊毛/蘑菇牛在实体侧
-   `mobInteract`（`Sheep.java:215` 硬编码 `Items.SHEARS`）⇒ 需新增「实体交互回放」分支
-   （官方入口 `fake.interactOn`）；剪蜂巢在 block 侧 `useItemOn`，L36 边界外不做。**活钓鱼竿**
+   见 [living-tool-tech.md](tech/living-tool-tech.md) §4.1）。**活剪刀 v1 已落地**（同日，用户定不扩大：
+   `SHEARS_DIG` 判据；挖掘（羊毛/蛛网/树叶/藤蔓）与剪植物顶端（`SHEARS_TRIM`，补丁后经
+   `getToolModifiedState` 发事件 ⇒ 现有录制/回放链直接可用）全现成）。**剪刀残余待做**：
+   剪蜂巢/南瓜雕刻（block 侧 `useItemOn`，L36 边界，需能力面收窄分支）/ 剪羊毛等（实体侧
+   `mobInteract`，需新增「实体交互回放」分支 + 新记忆形态，官方入口 `fake.interactOn`）。
+   **活钓鱼竿**
    （同日调研）：非射线族 —— `use()` 是抛/收切换 ⇒ 需 phase 状态机 + 咬钩探测（`nibble` 私有，
    需 @Accessor）+ 战利品路由（掉落物飞向假玩家会被 `playerTouch` 吞），只做自主模式，另出设计稿。
    探讨全文见 archive 稿 §3 H 组。

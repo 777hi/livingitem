@@ -275,7 +275,8 @@ public static boolean isLivingTool(ItemStack stack) {
         || stack.canPerformAction(ItemAbilities.AXE_DIG)
         || stack.canPerformAction(ItemAbilities.SHOVEL_DIG)
         || stack.canPerformAction(ItemAbilities.HOE_DIG)
-        || stack.canPerformAction(ItemAbilities.SWORD_DIG);
+        || stack.canPerformAction(ItemAbilities.SWORD_DIG)
+        || stack.canPerformAction(ItemAbilities.SHEARS_DIG);
 }
 ```
 
@@ -286,6 +287,13 @@ public static boolean isLivingTool(ItemStack stack) {
 剑的挖掘面弱（普通方块 1.0 / `#minecraft:sword_efficient` 1.5）⇒ 辅助挖掘出力谓词
 `getDestroySpeed > 1.0`（`LivingToolAssist#onBreakSpeed`）自动收窄成「只对树叶 / 作物 / 竹子等搭把手」，
 不会出现「背一叠剑 = 全方块小急迫」。守卫测试：`ActivationHookTest#livingSwordIsBothToolAndWeapon`。
+
+⭐ **剪刀也在列（2026-11-07 v1，用户定「不扩大」）** —— 挖掘面：羊毛 5.0 / 蛛网 15（minesAndDrops）/
+树叶 15 / 藤蔓·发光地衣 2.0，辅助挖掘与辅助环全链现成；交互侧走 `SHEARS_TRIM`（修剪植物顶端 ——
+NeoForge 补丁后经 `getToolModifiedState` 发 `BlockToolModificationEvent` ⇒ 现有录制端可录、
+回放分支 A 可用，天然终止同去皮）。🔴 **边界外不做**（残余登记 [TODO](../TODO.md)）：
+剪蜂巢/南瓜雕刻在 block 侧 `useItemOn`（L36 边界），剪羊在实体侧 `mobInteract` —— 都需要新回放分支。
+守卫测试：`ActivationHookTest#livingShearsIsTool`。
 
 ### 4.2 通道一：挖掘记忆 → `BlockEvent.BreakEvent`
 

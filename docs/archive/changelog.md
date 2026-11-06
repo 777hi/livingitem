@@ -17,6 +17,15 @@
 
 ## 2026-11-07
 
+- ✅ **活剪刀纳入工具判据（v1，+1 守卫测试，实机待验）** —— 用户定「做到 v1 不扩大」：
+  `isLivingTool` 增补 `ItemAbilities.SHEARS_DIG`，挖掘（羊毛 5.0 / 蛛网 15 / 树叶 15 / 藤蔓 2.0）、
+  辅助挖掘与辅助环全链现成；交互侧走剪植物顶端（`SHEARS_TRIM`）—— 补丁后经 `getToolModifiedState`
+  发 `BlockToolModificationEvent` ⇒ 现有录制端可录、回放分支 A 可用（调研中曾有「不可录」误判，
+  系字节码检查前未解出目标 class 的假阴性，已显式解包复核推翻）。
+  **边界外不做**：剪蜂巢/南瓜雕刻（block 侧 `useItemOn`，L36）、剪羊/蘑菇牛（实体侧 `mobInteract`，
+  需新记忆形态 + 新回放分支）—— 残余登记 TODO。守卫：`ActivationHookTest#livingShearsIsTool`。
+  → [tool §4.1](../tech/living-tool-tech.md) · TODO「活工具·系列扩展」。
+
 - 🐛 **修活海绵吸走岩浆源后残留「僵尸源」、遇水生黑曜石（+2 回归）** ——
   **现象**（用户实测）：活海绵贴着活岩浆源，往里倒一桶活岩浆；吸收后 tooltip 立即变，
   但该源还在容器 GUI 里渲染一小会，这期间碰到活水流会变黑曜石。
