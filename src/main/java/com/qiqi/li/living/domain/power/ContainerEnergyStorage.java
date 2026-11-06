@@ -1,10 +1,12 @@
 package com.qiqi.li.living.domain.power;
-import com.qiqi.li.living.domain.power.LivingWaxedBulbData;
-import com.qiqi.li.living.util.WaxedCopperFamily;
 
 import java.util.ArrayList;
 import java.util.List;
+
+import com.mojang.logging.LogUtils;
+import com.qiqi.li.living.container.SimpleContainerContext;
 import com.qiqi.li.living.util.PerItemLedger;
+import org.slf4j.Logger;
 
 import javax.annotation.Nullable;
 
@@ -32,15 +34,15 @@ import com.qiqi.li.living.container.TickableContainerContext;
  * 无容器池，铜灯是唯一储存。双向：外部电源也能对容器充电（{@link #canReceive()} = true，
  * 充入各铜灯堆）；发电仍是本系统唯一的<b>来源</b>，限流职责归用电侧。</p>
  *
- * <p>物品访问统一走 {@code ItemHandler.BLOCK} 兼容面（原版容器由 NeoForge 自动注册、
- * 模组容器自行注册），与容器内 tick 机制同源——模组容器能发电的地方就能取电。
- * 随机战利品容器（未开箱）按 tick 机制同款规则跳过。</p>
+ * <p>物品访问走 {@code ItemHandler.BLOCK} 兼容面；外部充放要求槽位支持组件精确写回，
+ * 写回确认后才报账，不支持的槽只提供存量读数。随机战利品容器（未开箱）跳过。</p>
  *
  * <p>⚠️ <b>能力存在性 = 容器里真有活涂蜡铜灯</b>（{@link #resolveProvider}）：线缆类模组
  * 按「能力是否非 null」判邻居是不是储能，恒发实例会把任何 BE 认成储能。</p>
  */
 public class ContainerEnergyStorage implements IEnergyStorage {
 
+    private static final Logger LOGGER = LogUtils.getLogger();
 
     private final BlockEntity be;
 
@@ -160,22 +162,26 @@ public class ContainerEnergyStorage implements IEnergyStorage {
 
     // ── IEnergyStorage ──
 
+    @Nullable
+    private TickableContainerContext resolveContext() {
+        Level level = be.getLevel();
+        if (level == null || level.isClientSide()) return null;
+        IItemHandler items = resolveItems(level, be.getBlockPos(), null);
+        return items == null ? null : ContainerLivingItemHandler.resolveContextAt(level, be.getBlockPos(), items);
+    }
+
     @Override
     public int extractEnergy(int toExtract, boolean simulate) {
         if (toExtract <= 0) return 0;
-        IItemHandler items = resolveItems(be.getLevel(), be.getBlockPos(), null);
-        if (items == null) return 0;
-        return (int) (extract(items,
-            (long) toExtract * 1000L, simulate, be::setChanged) / 1000L);
+        ContainerContext ctx = resolveContext();
+        return ctx == null ? 0 : (int) (extract(ctx, (long) toExtract * 1000L, simulate, null) / 1000L);
     }
 
     @Override
     public int receiveEnergy(int toReceive, boolean simulate) {
         if (toReceive <= 0) return 0;
-        IItemHandler items = resolveItems(be.getLevel(), be.getBlockPos(), null);
-        if (items == null) return 0;
-        return (int) (receive(items,
-            (long) toReceive * 1000L, simulate, be::setChanged) / 1000L);
+        ContainerContext ctx = resolveContext();
+        return ctx == null ? 0 : (int) (receive(ctx, (long) toReceive * 1000L, simulate, null) / 1000L);
     }
 
     @Override
@@ -223,61 +229,97 @@ public class ContainerEnergyStorage implements IEnergyStorage {
     // ── 充电核心（mFE）──
 
 
-    /**
-     * 充电：委托 {@link BulbBank}（2026-10-09 power 收口 步骤 2 第 1 步）。
-     *
-     * <p>算法（按剩余容量比例分配 + 整 FE 量化 + 零头回收 + 完整步进保护）原样搬进
-     * {@link BulbBank#deposit}，本方法只做「扫描 → 充入 → 落盘回调」的编排。
-     * 性能契约（单遍 {@code getStackInSlot}）与语义红线（宁损勿造）见该类 javadoc。</p>
-     */
+    /** 无世界测试接缝，仍走与 BLOCK 相同的组件提交路径。 */
     static long receive(IItemHandler items,
                         long wantMilliFe, boolean simulate, @Nullable Runnable onChanged) {
-        BulbBank bank = BulbBank.scan(items, null);
-        long declared = bank.deposit(wantMilliFe, simulate, BulbBank.FePolicy.FLOOR_WHOLE_FE);
-        if (bank.isDirty() && onChanged != null && !simulate) onChanged.run();
-        return declared;
+        return receive(new SimpleContainerContext(items), wantMilliFe, simulate, onChanged);
+    }
+
+    private record BulbSlot(int slot, ItemStack before, ItemStack working) {}
+
+    /** 在副本上规划比例充电，提交确认后才报账；失败保留已确认前缀。 */
+    private static long receive(ContainerContext ctx,
+                                long wantMilliFe, boolean simulate, @Nullable Runnable onChanged) {
+        if (wantMilliFe < 1000L) return 0;
+        int size = ctx.getSize();
+        BulbSlot[] slots = new BulbSlot[size];
+        BulbBank bank = BulbBank.scan(size, slot -> {
+            if (!ctx.supportsItemComponentWrite(slot)) return ItemStack.EMPTY;
+            ItemStack before = ctx.getItem(slot).copy();
+            if (!BulbBank.isBulb(before)) return ItemStack.EMPTY;
+            ItemStack working = before.copy();
+            slots[slot] = new BulbSlot(slot, before, working);
+            return working;
+        });
+        long declared = bank.deposit(wantMilliFe, false, BulbBank.FePolicy.FLOOR_WHOLE_FE);
+        if (simulate || declared <= 0) return declared;
+
+        long confirmedCharge = 0;
+        boolean complete = true;
+        for (BulbSlot entry : slots) {
+            if (entry == null || ItemStack.matches(entry.before(), entry.working())) continue;
+            if (!ctx.commitItemComponents(entry.slot(), entry.before(), entry.working())) {
+                complete = false;
+                break;
+            }
+            long delta = LivingWaxedBulbData.of(entry.working()).chargeMilliFe()
+                - LivingWaxedBulbData.of(entry.before()).chargeMilliFe();
+            confirmedCharge += delta * entry.before().getCount();
+        }
+        if (confirmedCharge > 0 && onChanged != null) onChanged.run();
+        if (complete) return declared;
+        // 已确认实充向上量化，支付方不得少付已存入的电。
+        long rounded = (confirmedCharge / 1000L + (confirmedCharge % 1000L == 0 ? 0 : 1)) * 1000L;
+        return Math.min(declared, rounded);
     }
 
     // ── 取电核心（mFE）──
 
-    /**
-     * 取电：容器合计选定整 FE 交付，逐堆均分扣账，取整差额只作损耗。
-     * 总量不足 1 FE 不扣；每槽仅取一次引用，存量够请求即停止扫描。
-     * 有实际扣减时回调 {@code onChanged} 一次（落盘持久化）。
-     */
+    /** 无世界测试接缝，仍走与 BLOCK 相同的组件提交路径。 */
     static long extract(IItemHandler items,
                         long wantMilliFe, boolean simulate, @Nullable Runnable onChanged) {
+        return extract(new SimpleContainerContext(items), wantMilliFe, simulate, onChanged);
+    }
+
+    /** 聚合选定整 FE 交付，只有成功提交的计划份额才计入交付预算。 */
+    private static long extract(ContainerContext ctx,
+                                long wantMilliFe, boolean simulate, @Nullable Runnable onChanged) {
         long request = wantMilliFe / 1000L * 1000L;
         if (request <= 0) return 0;
 
-        List<ItemStack> stacks = new ArrayList<>();
+        List<BulbSlot> slots = new ArrayList<>();
         long available = 0;
-        int size = items.getSlots();
-        for (int i = 0; i < size && available < request; i++) {
-            ItemStack stack = items.getStackInSlot(i);
-            if (!BulbBank.isBulb(stack)) continue;
-            long total = availableCharge(stack);
+        int size = ctx.getSize();
+        for (int slot = 0; slot < size && available < request; slot++) {
+            if (!ctx.supportsItemComponentWrite(slot)) continue;
+            ItemStack before = ctx.getItem(slot).copy();
+            if (!BulbBank.isBulb(before)) continue;
+            long total = availableCharge(before);
             if (total <= 0) continue;
-            stacks.add(stack);
+            slots.add(new BulbSlot(slot, before, before.copy()));
             available += Math.min(total, request - available);
         }
         long delivery = available / 1000L * 1000L;
-        if (delivery <= 0) return 0;
+        if (simulate || delivery <= 0) return delivery;
 
-        long remaining = delivery;
-        for (ItemStack stack : stacks) {
+        long confirmed = 0;
+        for (BulbSlot entry : slots) {
+            long remaining = delivery - confirmed;
             if (remaining <= 0) break;
-            long take = Math.min(availableCharge(stack), remaining);
-            if (take <= 0) continue;
-            LivingWaxedBulbData data = LivingWaxedBulbData.of(stack);
-            var withdrawal = PerItemLedger.withdrawCeil(data.chargeMilliFe(), stack.getCount(), take);
-            if (!simulate) {
-                LivingWaxedBulbData.set(stack, data.withChargeMilliFe(withdrawal.newQ()));
-            }
-            remaining -= take;
+            long take = Math.min(availableCharge(entry.before()), remaining);
+            LivingWaxedBulbData data = LivingWaxedBulbData.of(entry.before());
+            var withdrawal = PerItemLedger.withdrawCeil(data.chargeMilliFe(), entry.before().getCount(), take);
+            LivingWaxedBulbData.set(entry.working(), data.withChargeMilliFe(withdrawal.newQ()));
+            if (!ctx.commitItemComponents(entry.slot(), entry.before(), entry.working())) break;
+            confirmed += take;
         }
-        if (!simulate && onChanged != null) onChanged.run();
-        return delivery;
+        if (confirmed > 0 && onChanged != null) onChanged.run();
+        long reported = confirmed / 1000L * 1000L;
+        if (reported != confirmed) {
+            LOGGER.warn("铜灯取电部分提交：已确认 {} mFE，仅交付 {} mFE，异常碎片损耗 {} mFE",
+                confirmed, reported, confirmed - reported);
+        }
+        return reported;
     }
 
     /** 正存量的饱和乘积；预算仍以调用方请求为上界。 */

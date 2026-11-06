@@ -149,9 +149,9 @@ src/test/java/com/qiqi/li/
 │   ├── CoilGroupingTest.java                  # 形态识别 + 单通道
 │   ├── NetworkResonanceTest.java              # 铜块网络共振
 │   ├── NetworkTraversalTest.java              # 铜块网络遍历（含 E2E 真实传播）
-│   ├── WaxedCopperStorageTest.java            # 储能（含telemetry）·容器整FE精确交付/超大堆叠/跨堆零头凑整/不足1FE不动/实扣损耗界/大额请求与单遍提前停止/回调一次
+│   ├── WaxedCopperStorageTest.java            # 储能（含telemetry）·整FE精确交付/超大堆叠/跨堆凑整/不足1FE不动/损耗界；一次规划扫描＋提交核验、抽够提前停；写回后实际槽与单次回调（含返回0的已扣前缀）
 │   ├── BulbItemEnergyStorageTest.java         # 铜灯通用电池
-│   ├── ContainerEnergyCapabilityTest.java     # 对外能量能力存在性（§4.1）·无灯不报名 / 有灯报名 / 拿走最后一盏由写回兜底撤名 / 边沿精确失效一次 / 客户端不报名 / provider 让位四段
+│   ├── ContainerEnergyCapabilityTest.java     # 对外能量能力·存在性/边沿/让位/客户端；BLOCK原引用与副本写回/只读与拒写/模拟零副作用/比例充电/确认前缀ceil与floor报账及WARN/超大堆叠组件/双箱全部宿主标脏
 │   ├── PhaseSnapshotWarmupTest.java           # 相位快照热身
 │   ├── RoundTripConservationIT.java           # 往返守恒与拉/推侧账目·精确交付/实扣≥交付/均分损耗有界（对接面模拟，不替代跨模组实机）
 │   ├── WaxedGeneratorFeedChainTest.java      # 发电机喂链

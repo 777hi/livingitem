@@ -106,6 +106,11 @@ final class BulbBank {
         return collect(items.getSlots(), items::getStackInSlot, itemFilter);
     }
 
+    /** 按槽号提供本次规划副本，不改变发电与 ITEM 入口的引用语义。 */
+    static BulbBank scan(int size, IntFunction<ItemStack> stackAt) {
+        return collect(size, stackAt, null);
+    }
+
     /**
      * 从活物品功能的槽位条目扫描 —— 发电直存入口。
      *

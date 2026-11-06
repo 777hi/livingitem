@@ -131,9 +131,13 @@ class RoundTripConservationIT {
         @Override public ItemStack getStackInSlot(int slot) {
             return slots[slot] != null ? slots[slot] : ItemStack.EMPTY;
         }
-        @Override public void setStackInSlot(int slot, ItemStack stack) { slots[slot] = stack; }
-        @Override public ItemStack insertItem(int slot, ItemStack stack, boolean simulate) { return stack; }
-        @Override public ItemStack extractItem(int slot, int amount, boolean simulate) { return ItemStack.EMPTY; }
+        @Override public void setStackInSlot(int slot, ItemStack stack) { slots[slot] = stack.copy(); }
+        @Override public ItemStack insertItem(int slot, ItemStack stack, boolean simulate) {
+            throw new AssertionError("组件充放电不得插入物品");
+        }
+        @Override public ItemStack extractItem(int slot, int amount, boolean simulate) {
+            throw new AssertionError("组件充放电不得抽取物品");
+        }
         @Override public int getSlotLimit(int slot) { return 64; }
         @Override public boolean isItemValid(int slot, ItemStack stack) { return true; }
     }

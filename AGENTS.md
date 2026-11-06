@@ -148,7 +148,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1634 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
+**合计测试用例 1655 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -173,7 +173,8 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
-| 2026-11-06 | 🐛 **共同组件提交＋海绵外部抽灌接入** —— 原数量副本写回、旧值重验、回读成功才报账；无writer拒绝、不抽插/截断；+39回归，全量1634项零失败；铜灯/内部tick留待后续，效果随游玩观察 | [API §1.8](docs/system-design/api-contract.md) · [海绵 §12.3](docs/tech/living-sponge-tech.md) |
+| 2026-11-06 | 🐛 **铜灯外部充放正式写回** —— 复用组件提交，副本/只读后端不再虚报；保留比例充电与聚合取电，失败按已确认前缀结算；+21回归，全量1655项零失败，效果随游玩观察，不增抽屉适配 | [红电 §4.2](docs/tech/living-power-tech.md) · [TODO 红电](docs/TODO.md) |
+| 2026-11-06 | 🐛 **共同组件提交＋海绵外部抽灌接入** —— 原数量副本写回、旧值重验、回读成功才报账；无writer拒绝、不抽插/截断；+39回归，全量1634项零失败；铜灯/内部tick留待后续；抽屉旧新对照确认无限抽灌已阻止，不扩为抽屉玩法支持 | [API §1.8](docs/system-design/api-contract.md) · [海绵 §12.3](docs/tech/living-sponge-tech.md) |
 | 2026-11-06 | 🐛 **辅助攻击直连目标，修坑边怪辅助不动** —— 旧方案把玩家这一刀包装成临时射线（眼→包围盒中心）喂 replayAttack，隔墙检测误判坑沿方块 ⇒ 怪只露头时辅助不动；拆 prepareWielder/strikeTarget 共用件＋直连入口 strikeKnownTarget（不造射线/不做隔墙检测，目标过滤与冷却保留，顺带修「射线撞更近的怪打到别人」怪癖）；辅助挖掘审查无同类问题（本就借玩家当前目标）；实机待验 | [武器 §9](docs/tech/living-weapon-tech.md) · [changelog](docs/archive/changelog.md) |
 | 2026-11-06 | 🐛 **海绵多堆抽取/铜灯精确交付** —— 海绵只续抽剩余请求、异种不扣；铜灯容器跨堆凑整、总量不足1FE不扣、均分差额只损耗；+17回归，旧代码13项红，全量1595项零失败；实机效果随游玩观察，不设专项测试 | [海绵 §12.2](docs/tech/living-sponge-tech.md) · [红电 §4.2](docs/tech/living-power-tech.md) |
 | 2026-11-06 | 🐛 **容器缓存统一回收，修活海绵 Create 停抽根因** —— 退役按领域心跳/1200 次整条清理，活跃容器标志与索引保留；查询创建补登记、销毁清时间记录；+14 回归，旧代码11项红；无铜灯持续抽取实机验收通过 | [生命周期契约 §2](docs/reference/container-data-lifecycle.md) · [海绵踩坑 §12.1](docs/tech/living-sponge-tech.md) |
@@ -181,7 +182,6 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-11-05 | ✅ **槽位数量操作原语（move/produce/consume/transform）** —— 熔炉 consume 先行 / 酿造 / 耕地 / 流体推动内核上移收编；PHYSICAL=A3 保留流体现行口径；+35 测试（含负向验证）；check_stack_ops 棘轮挂 pre-commit/CI 第五条 | [api-contract §1.7](docs/system-design/api-contract.md) · [TODO §物品传输](docs/TODO.md) |
 | 2026-11-05 | ✅ **传输守恒存量收口（I-C12/I-C14）** —— 流体推动源侧核验（写回失败整拍回退防复制）+ PlainSlotAccessor 写后回读；容量问容器（`simulateInsertItem` 权威，超堆叠停摆修复，isFull 三 Accessor 容器自答）；算术 long 化；+11 测试全绿 | [TODO §物品传输](docs/TODO.md) · [container-boundary §2](docs/system-design/container-boundary.md) |
 | 2026-11-05 | 📚 **活活塞升格 tech 文档** —— [living-piston-tech.md](docs/tech/living-piston-tech.md)（§0 契约 22 条 + 机制 / 压送 / 渲染 / 生命周期 / 守卫映射 / 测试地图 / 踩坑实录）；设计稿归档留痕（模板 §2.3 晋升流程），活指针全量切换 | [活活塞-design.md](docs/archive/活活塞-design.md) §7.8 |
-| 2026-11-05 | ✅ **活活塞图标全平面重建，真机验收通过** —— 机身剖面图标＋板/杆 2D blit（原版贴图零新资产、静止板贴前缘=朝向指示）；三轮真机修正：删 scale 1.125（16px）/ 板位 −8−t / 板 blit 锚点 x=−8 居中（「7」→「T」）；全量1514绿 | [活活塞-design.md](docs/archive/活活塞-design.md) §7.8.6 |
 ## 提交前必跑（2026-10-30 更新）
 
 ```bash
@@ -302,7 +302,7 @@ viewer 驱动 / 框架扫描 / 框架判定才回到 `LivingItemFunction`）。
 | **查「为什么这么定」/ 某口径是否已被取代** | [decisions.md](docs/decisions.md)（决策索引 + 翻转留痕） |
 | 改文档 / 归档 / 校验 | [docs/README.md](docs/README.md) + `python tools/doc_check.py` |
 | **设计新活物品 / 写设计稿** | [living-item-design-template.md](docs/guides/living-item-design-template.md) —— **五张横切检查表**（生命周期 / 准入 / 反馈 / 容器能力 / 槽位操作选型）+ 原版对齐清单 + 规则→验证入口对应表 |
-| **写槽位数量操作 / 选原语** | [slot-ops.md](docs/guides/slot-ops.md)（四原语选型指南）—— 契约签名见 [api-contract §1.7](docs/system-design/api-contract.md) |
+| **写槽位数量操作 / 更新槽内组件 / 对外报资源量** | [slot-ops.md](docs/guides/slot-ops.md)（数量原语与组件提交选型）—— 契约见 [api-contract §1.7/§1.8](docs/system-design/api-contract.md)；设计前过 [模板 §1.4/§2.2](docs/guides/living-item-design-template.md) 的报账与宿主写回检查 |
 | 写测试 / 跑全量 / mock `Level` | [unit-testing.md](docs/guides/unit-testing.md) |
 | **梳理上下游 / 估改动爆炸半径 / 判断模块是否真解耦 / 查新增子系统的扩展点** | [code-map.md](docs/guides/code-map.md) —— 人看 HTML，**AI 直接调 `python tools/gen_code_map.py --query <类名>` / `--extend`**（文本输出、直接解析源码、**不会读到过期图**）；**改完代码跑 `python tools/check_layers.py`**（分层违规即退出 1，棘轮式「只减不增」） |
 | 找某个源文件 | `find src/main -name "*.java"` 或 `python tools/gen_code_map.py --query <类名>`（人工文件树快照已删，2026-10-10） |

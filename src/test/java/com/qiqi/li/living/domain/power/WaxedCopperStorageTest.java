@@ -1,8 +1,7 @@
 package com.qiqi.li.living.domain.power;
-import com.qiqi.li.living.domain.power.LivingWaxedBulbData;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -28,9 +27,11 @@ import com.qiqi.li.living.api.LivingItemManager;
  */
 class WaxedCopperStorageTest {
 
-    /** 测试用物品访问器——模拟「只暴露 IItemHandler 的模组容器」（不实现 Container） */
+    /** 非Container后端；组件写回只允许直接setter，不允许数量抽插。 */
     private static class FakeHandler implements IItemHandlerModifiable {
         final ItemStack[] slots;
+        int writes;
+        int changes;
 
         FakeHandler(ItemStack... slots) {
             this.slots = slots;
@@ -48,17 +49,19 @@ class WaxedCopperStorageTest {
 
         @Override
         public void setStackInSlot(int slot, ItemStack stack) {
-            slots[slot] = stack;
+            writes++;
+            slots[slot] = stack.copy();
+            changes++;
         }
 
         @Override
         public ItemStack insertItem(int slot, ItemStack stack, boolean simulate) {
-            return stack;   // 不支持插入（测试不涉及）
+            throw new AssertionError("组件充放电不得插入物品");
         }
 
         @Override
         public ItemStack extractItem(int slot, int amount, boolean simulate) {
-            return ItemStack.EMPTY;
+            throw new AssertionError("组件充放电不得抽取物品");
         }
 
         @Override
@@ -96,10 +99,10 @@ class WaxedCopperStorageTest {
         int[] changed = {0};
 
         assertEquals(1000L, ContainerEnergyStorage.extract(handler, 1000, true, () -> changed[0]++));
-        assertEquals(2048L, charge(stack));
+        assertEquals(2048L, charge(handler.slots[0]));
         assertEquals(0, changed[0]);
         assertEquals(1000L, ContainerEnergyStorage.extract(handler, 1000, false, () -> changed[0]++));
-        assertEquals(0L, charge(stack));
+        assertEquals(0L, charge(handler.slots[0]));
         assertEquals(1, changed[0]);
     }
 
@@ -108,12 +111,12 @@ class WaxedCopperStorageTest {
     void extract_nonDivisibleChargeHasBoundedLoss() {
         ItemStack stack = chargedBulb(37, 12_345);
         FakeHandler handler = new FakeHandler(stack);
-        long before = charge(stack);
+        long before = charge(handler.slots[0]);
 
         assertEquals(3000L, ContainerEnergyStorage.extract(handler, 3000, true, null));
-        assertEquals(before, charge(stack));
+        assertEquals(before, charge(handler.slots[0]));
         assertEquals(3000L, ContainerEnergyStorage.extract(handler, 3000, false, null));
-        assertEquals(3034L, before - charge(stack));
+        assertEquals(3034L, before - charge(handler.slots[0]));
     }
 
     @Test
@@ -122,14 +125,14 @@ class WaxedCopperStorageTest {
         ItemStack a = chargedBulb(37, 28);
         ItemStack b = chargedBulb(37, 100);
         FakeHandler handler = new FakeHandler(a, b);
-        long before = charge(a) + charge(b);
+        long before = charge(handler.slots[0]) + charge(handler.slots[1]);
 
         assertEquals(2000L, ContainerEnergyStorage.extract(handler, 2000, true, null));
-        assertEquals(before, charge(a) + charge(b));
+        assertEquals(before, charge(handler.slots[0]) + charge(handler.slots[1]));
         assertEquals(2000L, ContainerEnergyStorage.extract(handler, 2000, false, null));
-        assertEquals(0L, charge(a));
-        assertEquals(37L * 73, charge(b));
-        assertEquals(2035L, before - charge(a) - charge(b));
+        assertEquals(0L, charge(handler.slots[0]));
+        assertEquals(37L * 73, charge(handler.slots[1]));
+        assertEquals(2035L, before - charge(handler.slots[0]) - charge(handler.slots[1]));
     }
 
     @Test
@@ -140,10 +143,10 @@ class WaxedCopperStorageTest {
         FakeHandler handler = new FakeHandler(stacks);
 
         assertEquals(1000L, ContainerEnergyStorage.extract(handler, 1000, true, null));
-        assertEquals(1024L, java.util.Arrays.stream(stacks).mapToLong(WaxedCopperStorageTest::charge).sum());
+        assertEquals(1024L, java.util.Arrays.stream(handler.slots).mapToLong(WaxedCopperStorageTest::charge).sum());
         assertEquals(1000L, ContainerEnergyStorage.extract(handler, 1000, false, null));
         // 最后一堆均分向上取整可能吞掉24mFE，不得算作交付。
-        assertEquals(0L, java.util.Arrays.stream(stacks).mapToLong(WaxedCopperStorageTest::charge).sum());
+        assertEquals(0L, java.util.Arrays.stream(handler.slots).mapToLong(WaxedCopperStorageTest::charge).sum());
     }
 
     @Test
@@ -155,8 +158,9 @@ class WaxedCopperStorageTest {
 
         assertEquals(0L, ContainerEnergyStorage.extract(handler, 1000, true, () -> changed[0]++));
         assertEquals(0L, ContainerEnergyStorage.extract(handler, 1000, false, () -> changed[0]++));
-        assertEquals(994L, charge(a));
+        assertEquals(994L, charge(handler.slots[0]));
         assertEquals(0, changed[0]);
+        assertEquals(0, handler.writes);
     }
 
     @Test
@@ -166,7 +170,7 @@ class WaxedCopperStorageTest {
         FakeHandler handler = new FakeHandler(a);
 
         assertEquals(1000L, ContainerEnergyStorage.extract(handler, 2000, false, null));
-        assertEquals(499L, charge(a));
+        assertEquals(499L, charge(handler.slots[0]));
     }
 
     @Test
@@ -178,12 +182,13 @@ class WaxedCopperStorageTest {
         for (long request : new long[] {-1, 0, 40, 999}) {
             assertEquals(0L, ContainerEnergyStorage.extract(handler, request, false, () -> changed[0]++));
         }
-        assertEquals(64_000L, charge(a));
+        assertEquals(64_000L, charge(handler.slots[0]));
         assertEquals(0, changed[0]);
+        assertEquals(0, handler.writes);
     }
 
     @Test
-    @DisplayName("大额请求与最大合法堆叠不回绕，取栈一次且抽够提前停止")
+    @DisplayName("大额请求不回绕：模拟读一次，执行只加提交重验与回读，首堆够即停")
     void extract_largeRequestScansOnlyRequiredSlots() {
         ItemStack a = chargedBulb(Integer.MAX_VALUE, PowerMath.BULB_UNIT_CAPACITY_MFE);
         ItemStack b = chargedBulb(1, 5000);
@@ -198,30 +203,40 @@ class WaxedCopperStorageTest {
         long request = (long) Integer.MAX_VALUE * 1000;
         assertEquals(request, ContainerEnergyStorage.extract(handler, request, true, null));
         assertEquals(1, reads[0]);
+        assertEquals(0, handler.writes);
         reads[0] = 0;
-        long beforeQ = LivingWaxedBulbData.of(a).chargeMilliFe();
+        long beforeQ = LivingWaxedBulbData.of(handler.slots[0]).chargeMilliFe();
         assertEquals(request, ContainerEnergyStorage.extract(handler, request, false, null));
-        assertEquals(1, reads[0]);
-        assertEquals(beforeQ - 1000, LivingWaxedBulbData.of(a).chargeMilliFe());
-        assertEquals(5000L, charge(b));
+        assertTrue(reads[0] >= 1 && reads[0] <= 3, "只允许规划N次 + 提交重验/回读2K次");
+        assertEquals(beforeQ - 1000, LivingWaxedBulbData.of(handler.slots[0]).chargeMilliFe());
+        assertEquals(5000L, charge(handler.slots[1]));
     }
 
     @Test
-    @DisplayName("跨堆均分只读每槽一次，实际变更只回调一次")
+    @DisplayName("跨堆均分：单遍规划加每提交槽两次核验，实际变更只回调一次")
     void extract_readsEachStackOnceAndChangesOnce() {
         ItemStack a = chargedBulb(1, 600);
         ItemStack b = chargedBulb(1, 600);
         int[] reads = new int[2];
         FakeHandler handler = new FakeHandler(a, b) {
             @Override public ItemStack getStackInSlot(int slot) {
-                assertEquals(0, reads[slot]++, "同一槽引用不得重复获取");
+                assertTrue(++reads[slot] <= 3, "每槽只允许规划、旧值重验、写后回读");
                 return super.getStackInSlot(slot);
             }
         };
         int[] changed = {0};
+        assertEquals(1000L, ContainerEnergyStorage.extract(handler, 1000, true, () -> changed[0]++));
+        assertEquals(1, reads[0]);
+        assertEquals(1, reads[1]);
+        assertEquals(0, handler.writes);
+        assertEquals(0, changed[0]);
+        assertEquals(600L, charge(handler.slots[0]));
+        assertEquals(600L, charge(handler.slots[1]));
+        java.util.Arrays.fill(reads, 0);
+
         assertEquals(1000L, ContainerEnergyStorage.extract(handler, 1000, false, () -> changed[0]++));
-        assertEquals(0L, charge(a));
-        assertEquals(200L, charge(b));
+        assertEquals(0L, charge(handler.slots[0]));
+        assertEquals(200L, charge(handler.slots[1]));
         assertEquals(1, changed[0]);
     }
 
@@ -232,8 +247,8 @@ class WaxedCopperStorageTest {
         ItemStack positive = chargedBulb(2, Long.MAX_VALUE);
         FakeHandler handler = new FakeHandler(negative, positive);
         assertEquals(1000L, ContainerEnergyStorage.extract(handler, 1000, false, null));
-        assertEquals(-1L, LivingWaxedBulbData.of(negative).chargeMilliFe());
-        assertEquals(Long.MAX_VALUE - 500, LivingWaxedBulbData.of(positive).chargeMilliFe());
+        assertEquals(-1L, LivingWaxedBulbData.of(handler.slots[0]).chargeMilliFe());
+        assertEquals(Long.MAX_VALUE - 500, LivingWaxedBulbData.of(handler.slots[1]).chargeMilliFe());
     }
 
     /** 氧化锈级的涂蜡铜灯（锈级 3）——锈级专属通道用例 */
@@ -343,25 +358,25 @@ class WaxedCopperStorageTest {
     }
 
     @Test
-    @DisplayName("取电（模组容器场景）：纯 IItemHandler 访问器，逐堆扣铜灯")
+    @DisplayName("取电（模组容器场景）：IItemHandlerModifiable逐堆写回扣账")
     void extract_moddedContainer_viaItemHandler() {
         ItemStack b1 = bulb(16);
         LivingWaxedBulbData.set(b1, new LivingWaxedBulbData(4_000));   // 堆总量 64000
         ItemStack b2 = bulb(8);
         LivingWaxedBulbData.set(b2, new LivingWaxedBulbData(1_000));   // 堆总量 8000
-        IItemHandler handler = new FakeHandler(generator(4), b1, b2);   // 非容器的模组容器
+        FakeHandler handler = new FakeHandler(generator(4), b1, b2);
 
         // 请求 30_000 mFE：堆1 顺序扣 30_000（每盏 1875）→ 恰好
         long got1 = ContainerEnergyStorage.extract(handler, 30_000, false, null);
         assertEquals(30_000, got1);
-        assertEquals(4_000 - 1_875, LivingWaxedBulbData.of(b1).chargeMilliFe());
-        assertEquals(1_000, LivingWaxedBulbData.of(b2).chargeMilliFe());
+        assertEquals(4_000 - 1_875, LivingWaxedBulbData.of(handler.slots[1]).chargeMilliFe());
+        assertEquals(1_000, LivingWaxedBulbData.of(handler.slots[2]).chargeMilliFe());
 
         // 请求50FE：首堆剩34FE，次堆8FE，共交付42FE。
         long got2 = ContainerEnergyStorage.extract(handler, 50_000, false, null);
         assertEquals(42_000L, got2);
-        assertEquals(0, LivingWaxedBulbData.of(b1).chargeMilliFe());
-        assertEquals(0, LivingWaxedBulbData.of(b2).chargeMilliFe());
+        assertEquals(0, LivingWaxedBulbData.of(handler.slots[1]).chargeMilliFe());
+        assertEquals(0, LivingWaxedBulbData.of(handler.slots[2]).chargeMilliFe());
         assertTrue(got2 <= 50_000);
     }
 
@@ -370,11 +385,11 @@ class WaxedCopperStorageTest {
     void extract_clampedToAvailable() {
         ItemStack b1 = bulb(8);
         LivingWaxedBulbData.set(b1, new LivingWaxedBulbData(2_000));   // 堆总量 16000
-        IItemHandler handler = new FakeHandler(b1);
+        FakeHandler handler = new FakeHandler(b1);
 
         long got = ContainerEnergyStorage.extract(handler, 100_000, false, null);
         assertEquals(16_000, got);
-        assertEquals(0, LivingWaxedBulbData.of(b1).chargeMilliFe());
+        assertEquals(0, LivingWaxedBulbData.of(handler.slots[0]).chargeMilliFe());
     }
 
     @Test
@@ -382,11 +397,12 @@ class WaxedCopperStorageTest {
     void extract_simulateLeavesStateIntact() {
         ItemStack b1 = bulb(16);
         LivingWaxedBulbData.set(b1, new LivingWaxedBulbData(4_000));
-        IItemHandler handler = new FakeHandler(b1);
+        FakeHandler handler = new FakeHandler(b1);
 
         long got = ContainerEnergyStorage.extract(handler, 60_000, true, null);
         assertEquals(60_000, got);   // 受请求上限约束（可用量 64_000 > 60_000）
-        assertEquals(4_000, LivingWaxedBulbData.of(b1).chargeMilliFe());
+        assertEquals(4_000, LivingWaxedBulbData.of(handler.slots[0]).chargeMilliFe());
+        assertEquals(0, handler.writes);
     }
 
     @Test
@@ -410,13 +426,13 @@ class WaxedCopperStorageTest {
         ItemStack b1 = bulb(16);   // 空，剩余 16_000_000_000
         ItemStack b2 = bulb(16);
         LivingWaxedBulbData.set(b2, new LivingWaxedBulbData(500_000_000));   // 半满，剩余 8_000_000_000
-        IItemHandler handler = new FakeHandler(b1, b2);
+        FakeHandler handler = new FakeHandler(b1, b2);
 
         // 剩余容量比例 b1:b2 = 2:1 → 30_000 mFE 中 b1 收 20_000（每盏 1250）、b2 收 10_000（每盏 625）
         long got = ContainerEnergyStorage.receive(handler, 30_000, false, null);
         assertEquals(30_000, got);
-        assertEquals(1_250, LivingWaxedBulbData.of(b1).chargeMilliFe());
-        assertEquals(500_000_000 + 625, LivingWaxedBulbData.of(b2).chargeMilliFe());
+        assertEquals(1_250, LivingWaxedBulbData.of(handler.slots[0]).chargeMilliFe());
+        assertEquals(500_000_000 + 625, LivingWaxedBulbData.of(handler.slots[1]).chargeMilliFe());
     }
 
     @Test
@@ -434,10 +450,11 @@ class WaxedCopperStorageTest {
     @DisplayName("充电 simulate：不改状态")
     void receive_simulateLeavesStateIntact() {
         ItemStack b1 = bulb(16);
-        IItemHandler handler = new FakeHandler(b1);
+        FakeHandler handler = new FakeHandler(b1);
 
         assertEquals(30_000, ContainerEnergyStorage.receive(handler, 30_000, true, null));
-        assertEquals(0, LivingWaxedBulbData.of(b1).chargeMilliFe());
+        assertEquals(0, LivingWaxedBulbData.of(handler.slots[0]).chargeMilliFe());
+        assertEquals(0, handler.writes);
     }
 
     @Test
@@ -447,11 +464,11 @@ class WaxedCopperStorageTest {
         // 每盏剩余 1 mFE → 总剩余 16 mFE < 1 FE → 整 FE 量化后接收 0
         LivingWaxedBulbData.set(b1,
             new LivingWaxedBulbData(PowerMath.BULB_UNIT_CAPACITY_MFE - 1));
-        IItemHandler handler = new FakeHandler(b1);
+        FakeHandler handler = new FakeHandler(b1);
 
         assertEquals(0, ContainerEnergyStorage.receive(handler, 1000_000, false, null));
         assertEquals(PowerMath.BULB_UNIT_CAPACITY_MFE - 1,
-            LivingWaxedBulbData.of(b1).chargeMilliFe());
+            LivingWaxedBulbData.of(handler.slots[0]).chargeMilliFe());
     }
 
     @Test
@@ -465,11 +482,11 @@ class WaxedCopperStorageTest {
         //    ⚠️ 原 DisplayName 写「电量保留但不进出」是误导 —— 取消活化【不】保留电量。
         ItemStack stack = new ItemStack(Items.WAXED_COPPER_BULB, 16);   // 未打 IS_LIVING
         LivingWaxedBulbData.set(stack, new LivingWaxedBulbData(4_000));
-        IItemHandler handler = new FakeHandler(stack);
+        FakeHandler handler = new FakeHandler(stack);
 
         long got = ContainerEnergyStorage.extract(handler, 100_000, false, null);
         assertEquals(0, got);
-        assertEquals(4_000, LivingWaxedBulbData.of(stack).chargeMilliFe());
+        assertEquals(4_000, LivingWaxedBulbData.of(handler.slots[0]).chargeMilliFe());
     }
 
     @Test
@@ -543,8 +560,11 @@ class WaxedCopperStorageTest {
         CountingHandler handler = new CountingHandler(slots);
         long capacity = PowerMath.BULB_UNIT_CAPACITY_MFE * 64L * 27L;
 
-        // 等价于 receiveEnergy(Integer.MAX_VALUE, ...)：Flux Networks 在「绕过限制」
-        // 模式下 getLimit() == Long.MAX_VALUE，onCycleStart 每 tick 都按这个量走一遍模拟。
+        assertEquals(capacity, ContainerEnergyStorage.receive(handler, Integer.MAX_VALUE * 1000L, true, null));
+        assertEquals(slots.length, handler.gets, "模拟只能规划扫描N次");
+        assertEquals(0, handler.writes);
+        assertEquals(0L, java.util.Arrays.stream(handler.slots).mapToLong(WaxedCopperStorageTest::charge).sum());
+        handler.gets = 0;
         long got = ContainerEnergyStorage.receive(handler, Integer.MAX_VALUE * 1000L, false, null);
 
         // 整 FE 量化：容器全空 → 应收满全部容量
@@ -552,13 +572,60 @@ class WaxedCopperStorageTest {
         // 每一盏都必须充满。修复前 accept×remaining 越过 Long.MAX → share 变乱值
         // → 本轮只分出去约 6e7 mFE（占比 0.003%），灯几乎没充上，
         // 而 leftover 被顶到 accept，零头回收循环每轮只扣 count mFE → ~10 亿轮。
-        for (ItemStack stack : slots) {
+        for (ItemStack stack : handler.slots) {
             assertEquals(PowerMath.BULB_UNIT_CAPACITY_MFE,
                 LivingWaxedBulbData.of(stack).chargeMilliFe());
         }
-        // 热路径：单遍扫描（27 次）之后不再碰容器，零头回收走 stacks[] 数组。
-        // 修复前的 3 遍扫描是 81 次，故上限取 64。
-        assertTrue(handler.gets <= 64, "取物品次数应为常数级（单遍扫描），实际 " + handler.gets);
+        // 单遍规划N次；每个组件提交只增加旧值重验与写后回读2K次。
+        assertTrue(handler.gets >= slots.length && handler.gets <= slots.length * 3,
+            "取物品次数不得超过N+2K，实际 " + handler.gets);
+    }
+
+    @Test
+    @DisplayName("静态充电核心多槽提交：模拟无写，成功只回调一次")
+    void receive_multipleCommitsNotifyOnce() {
+        FakeHandler handler = new FakeHandler(chargedBulb(1, 0), chargedBulb(1, 0));
+        int[] callbacks = {0};
+        assertEquals(3000L, ContainerEnergyStorage.receive(handler, 3000, true, () -> callbacks[0]++));
+        assertEquals(0L, charge(handler.slots[0]) + charge(handler.slots[1]));
+        assertEquals(0, handler.writes);
+        assertEquals(0, callbacks[0]);
+
+        assertEquals(3000L, ContainerEnergyStorage.receive(handler, 3000, false, () -> callbacks[0]++));
+        assertAll(
+            () -> assertEquals(1500L, charge(handler.slots[0])),
+            () -> assertEquals(1500L, charge(handler.slots[1])),
+            () -> assertEquals(2, handler.writes),
+            () -> assertEquals(2, handler.changes),
+            () -> assertEquals(1, callbacks[0]));
+    }
+
+    @Test
+    @DisplayName("静态取电核心前缀600mFE已扣但返回0FE，仍只回调一次")
+    void extract_zeroDeliveryAfterPartialCommitStillNotifiesOnce() {
+        FakeHandler handler = new FakeHandler(chargedBulb(1, 600), chargedBulb(1, 600)) {
+            @Override public ItemStack getStackInSlot(int slot) {
+                return super.getStackInSlot(slot).copy();
+            }
+            @Override public void setStackInSlot(int slot, ItemStack stack) {
+                if (slot == 1) writes++;
+                else super.setStackInSlot(slot, stack);
+            }
+        };
+        int[] callbacks = {0};
+        assertEquals(1000L, ContainerEnergyStorage.extract(handler, 1000, true, () -> callbacks[0]++));
+        assertEquals(1200L, charge(handler.slots[0]) + charge(handler.slots[1]));
+        assertEquals(0, handler.writes);
+        assertEquals(0, callbacks[0]);
+
+        long reported = ContainerEnergyStorage.extract(handler, 1000, false, () -> callbacks[0]++);
+        assertAll(
+            () -> assertEquals(0L, reported),
+            () -> assertEquals(0L, charge(handler.slots[0])),
+            () -> assertEquals(600L, charge(handler.slots[1])),
+            () -> assertEquals(2, handler.writes),
+            () -> assertEquals(1, handler.changes),
+            () -> assertEquals(1, callbacks[0]));
     }
 
     @Test
