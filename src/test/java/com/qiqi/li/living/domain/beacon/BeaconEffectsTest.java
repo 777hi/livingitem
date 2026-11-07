@@ -14,8 +14,12 @@ import org.junit.jupiter.api.Test;
 /**
  * BeaconEffects 纯逻辑测试（设计稿 §2.5）。
  *
- * <p>判据来源：用户 2026-10-15 定的 5 个验证案例（全部 4 级）+ 2026-10-16
- * 「II 升级仅 L4」+ 「参考原版」档位门控。</p>
+ * <p>判据来源：用户 2026-10-15 定的喂锭 / 生效数判据 + 2026-10-16「II 升级仅 L4」+
+ * 「参考原版」档位门控。案例里的「力量」矿石随 2026-11-07 钻石↔下界合金互换改用
+ * {@link OreType#NETHERITE}。</p>
+ *
+ * <p>⚠️ 原「再生三档（5 案例）」随 2026-11-08「满级无条件再生 II」整体删除 ——
+ * 再生不再是可算的档位，而是等级的直接函数（调用方判 {@code level >= MAX_LEVEL}）。</p>
  */
 class BeaconEffectsTest {
 
@@ -51,16 +55,18 @@ class BeaconEffectsTest {
         }
 
         @Test
-        @DisplayName("L1 喂钻石（档位 3）⇒ 拒绝（不消耗）")
+        @DisplayName("L1 喂钻石（档位 2）/ 下界合金（档位 3）⇒ 拒绝（不消耗）")
         void tierGateRejects() {
             assertNull(BeaconEffects.feed(BeaconConfig.EMPTY, OreType.DIAMOND, 1));
             assertNull(BeaconEffects.feed(BeaconConfig.EMPTY, OreType.NETHERITE, 1));
         }
 
         @Test
-        @DisplayName("L3 喂钻石 ⇒ 通过")
+        @DisplayName("L2 喂钻石 ⇒ 通过；下界合金需 L3（L2 拒、L3 通过）")
         void tierGatePasses() {
-            assertTrue(BeaconEffects.feed(BeaconConfig.EMPTY, OreType.DIAMOND, 3) != null);
+            assertTrue(BeaconEffects.feed(BeaconConfig.EMPTY, OreType.DIAMOND, 2) != null);
+            assertNull(BeaconEffects.feed(BeaconConfig.EMPTY, OreType.NETHERITE, 2));
+            assertTrue(BeaconEffects.feed(BeaconConfig.EMPTY, OreType.NETHERITE, 3) != null);
         }
 
         @Test
@@ -134,8 +140,8 @@ class BeaconEffectsTest {
         @DisplayName("空配置 ⇒ 全部 5 种，按枚举序")
         void emptyConfigListsAll() {
             List<OreType> remaining = BeaconEffects.feedSuggestions(BeaconConfig.EMPTY);
-            assertEquals(List.of(OreType.IRON, OreType.GOLD, OreType.NETHERITE,
-                OreType.EMERALD, OreType.DIAMOND), remaining);
+            assertEquals(List.of(OreType.IRON, OreType.GOLD, OreType.DIAMOND,
+                OreType.EMERALD, OreType.NETHERITE), remaining);
         }
 
         @Test
@@ -144,7 +150,7 @@ class BeaconEffectsTest {
             var cfg = config(
                 new BeaconConfig.Entry(OreType.IRON, false),
                 new BeaconConfig.Entry(OreType.DIAMOND, false));
-            assertEquals(List.of(OreType.GOLD, OreType.NETHERITE, OreType.EMERALD),
+            assertEquals(List.of(OreType.GOLD, OreType.EMERALD, OreType.NETHERITE),
                 BeaconEffects.feedSuggestions(cfg));
         }
 
@@ -177,19 +183,19 @@ class BeaconEffectsTest {
     class ActiveEntries {
 
         @Test
-        @DisplayName("案例 1：堆叠 1 + 钻石 I ⇒ [力量 I]")
+        @DisplayName("案例 1：堆叠 1 + 下界合金 I ⇒ [力量 I]")
         void case1() {
-            var active = BeaconEffects.activeEntries(4, 1, config(OreType.DIAMOND, false));
+            var active = BeaconEffects.activeEntries(4, 1, config(OreType.NETHERITE, false));
             assertEquals(1, active.size());
-            assertEquals(OreType.DIAMOND, active.get(0).ore());
+            assertEquals(OreType.NETHERITE, active.get(0).ore());
         }
 
         @Test
-        @DisplayName("案例 5：堆叠 2 + 绿宝石 I + 钻石 I ⇒ 2 个全生效")
+        @DisplayName("案例 5：堆叠 2 + 绿宝石 I + 下界合金 I ⇒ 2 个全生效")
         void case5() {
             var active = BeaconEffects.activeEntries(4, 2,
                 config(new BeaconConfig.Entry(OreType.EMERALD, false),
-                    new BeaconConfig.Entry(OreType.DIAMOND, false)));
+                    new BeaconConfig.Entry(OreType.NETHERITE, false)));
             assertEquals(2, active.size());
         }
 
@@ -218,55 +224,6 @@ class BeaconEffectsTest {
         @DisplayName("空配置 ⇒ 空生效")
         void emptyConfig() {
             assertTrue(BeaconEffects.activeEntries(4, 3, BeaconConfig.EMPTY).isEmpty());
-        }
-    }
-
-    @Nested
-    @DisplayName("再生三档（5 案例逐字验证）")
-    class RegenTier {
-
-        @Test
-        @DisplayName("案例 1：堆叠 1 + 力量 I、0 空槽 ⇒ I")
-        void case1() {
-            var active = BeaconEffects.activeEntries(4, 1, config(OreType.DIAMOND, false));
-            assertEquals(BeaconSegment.RegenTier.I, BeaconEffects.regenTier(4, 1, active));
-        }
-
-        @Test
-        @DisplayName("案例 2：堆叠 1 + 力量 II、0 空槽 ⇒ 无")
-        void case2() {
-            var active = BeaconEffects.activeEntries(4, 1, config(OreType.DIAMOND, true));
-            assertEquals(BeaconSegment.RegenTier.NONE, BeaconEffects.regenTier(4, 1, active));
-        }
-
-        @Test
-        @DisplayName("案例 3：堆叠 2 + 跳跃 I、1 空槽 ⇒ II")
-        void case3() {
-            var active = BeaconEffects.activeEntries(4, 2, config(OreType.EMERALD, false));
-            assertEquals(BeaconSegment.RegenTier.II, BeaconEffects.regenTier(4, 2, active));
-        }
-
-        @Test
-        @DisplayName("案例 4：堆叠 2 + 跳跃 II、1 空槽 ⇒ II（有空槽，加倍不消耗）")
-        void case4() {
-            var active = BeaconEffects.activeEntries(4, 2, config(OreType.EMERALD, true));
-            assertEquals(BeaconSegment.RegenTier.II, BeaconEffects.regenTier(4, 2, active));
-        }
-
-        @Test
-        @DisplayName("案例 5：堆叠 2 + 两个 I、0 空槽 ⇒ I")
-        void case5() {
-            var active = BeaconEffects.activeEntries(4, 2,
-                config(new BeaconConfig.Entry(OreType.EMERALD, false),
-                    new BeaconConfig.Entry(OreType.DIAMOND, false)));
-            assertEquals(BeaconSegment.RegenTier.I, BeaconEffects.regenTier(4, 2, active));
-        }
-
-        @Test
-        @DisplayName("非满级 ⇒ 无再生")
-        void belowL4() {
-            var active = BeaconEffects.activeEntries(3, 1, config(OreType.DIAMOND, false));
-            assertEquals(BeaconSegment.RegenTier.NONE, BeaconEffects.regenTier(3, 1, active));
         }
     }
 }

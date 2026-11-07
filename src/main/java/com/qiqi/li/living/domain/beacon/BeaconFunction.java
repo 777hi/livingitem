@@ -18,9 +18,11 @@ import com.qiqi.li.living.runtime.LivingItemClientCache;
 import com.qiqi.li.living.runtime.RuntimeSegments;
 import com.qiqi.li.living.transfer.SlotResolver;
 
+import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.player.Player;
@@ -89,25 +91,23 @@ public class BeaconFunction implements LivingItemFunction {
             boolean[] exists = columnExistsFrom(columnSlots);
             int pyramidLevel = BeaconPyramid.resolveLevel(heights);
 
-            // 效果计算（纯逻辑，BeaconEffects）：生效矿石效果 + 满级再生三档
+            // 效果计算（纯逻辑，BeaconEffects）：生效矿石效果；再生是等级的直接函数（见 applyEffects）
             BeaconConfig config = BeaconConfig.of(stack);
             int stackCount = stack.getCount();
             List<BeaconConfig.Entry> active =
                 BeaconEffects.activeEntries(pyramidLevel, stackCount, config);
-            BeaconSegment.RegenTier regenTier =
-                BeaconEffects.regenTier(pyramidLevel, stackCount, active);
 
             // 遥测发布（tooltip 实时行 + 9 柱小金字塔面板共用）；等级每 tick 现算，不进组件
             ContainerRuntimeCache.update(context, slot,
                 RuntimeSegments.EMPTY.with(BeaconSegment.INSTANCE,
-                    new BeaconSegment.BeaconRuntime(pyramidLevel, heights, exists, regenTier)));
+                    new BeaconSegment.BeaconRuntime(pyramidLevel, heights, exists)));
 
             // 宿主（规则 1：仅玩家 / 箱子）—— 未激活 = 完全死物 ⇒ 无 buff / 无光束 / 不开盖
             Vec3 hostPos = resolveHostPosition(context, level);
             if (pyramidLevel >= 1 && hostPos != null) {
                 // buff 施加：照原版 80 刻节奏（时长 (9+等级×2) 秒 ⇒ 范围内永不掉效）
                 if (level.getGameTime() % 80L == 0L) {
-                    applyEffects(level, hostPos, pyramidLevel, active, regenTier);
+                    applyEffects(level, hostPos, pyramidLevel, active);
                 }
 
                 // ⭐ 宿主分派按【锚点】判，不按容器自己的身份判（2026-10-25 修）：
@@ -238,11 +238,14 @@ public class BeaconFunction implements LivingItemFunction {
     /**
      * 施加 buff —— 照原版 {@code BeaconBlockEntity.applyEffects} 等价逻辑：
      * 范围 = {@code 等级×10+10} 的**立方体**（原版就是 inflate 出的 AABB 撑到世界高度，
-     * 不是球体——审查时订正措辞）；范围内所有玩家获得「生效矿石效果 + 满级再生」，
+     * 不是球体——审查时订正措辞）；范围内所有玩家获得「生效矿石效果 + 满级再生 II」，
      * 时长 {@code (9+等级×2)×20}、ambient + 显示粒子。
+     *
+     * <p>满级再生<b>无条件</b>（2026-11-08 用户拍板）：L4 恒给 II，与堆叠数 / 加倍 / 配置无关
+     * ——不再做原版「II 吃掉次槽」的类比（2026-10-15 的三档规则已删）。</p>
      */
     private static void applyEffects(Level level, Vec3 hostPos, int pyramidLevel,
-                                     List<BeaconConfig.Entry> active, BeaconSegment.RegenTier regenTier) {
+                                     List<BeaconConfig.Entry> active) {
         double range = BeaconPyramid.rangeBlocks(pyramidLevel);
         AABB area = new AABB(BlockPos.containing(hostPos)).inflate(range)
             .expandTowards(0.0, level.getHeight(), 0.0);
@@ -253,9 +256,9 @@ public class BeaconFunction implements LivingItemFunction {
                 player.addEffect(new MobEffectInstance(entry.ore().effect,
                     duration, BeaconEffects.amplifier(entry), true, true));
             }
-            if (regenTier != BeaconSegment.RegenTier.NONE) {
+            if (pyramidLevel >= BeaconPyramid.MAX_LEVEL) {
                 player.addEffect(new MobEffectInstance(MobEffects.REGENERATION,
-                    duration, regenTier == BeaconSegment.RegenTier.II ? 1 : 0, true, true));
+                    duration, 1, true, true));
             }
         }
     }
@@ -315,16 +318,24 @@ public class BeaconFunction implements LivingItemFunction {
      * 图形层管底座几何）。
      *
      * <ul>
-     *   <li><b>状态行</b>（遥测缺失 ⇒ 不猜，只有静态层）：等级 + 生效数
-     *       {@code min(堆叠数, 合格槽数)}——客户端本地算，与 buff 共用
-     *       {@link BeaconEffects#activeEntries} 单一事实源；</li>
-     *   <li><b>满级效果行</b>：{@code regenTier} 非满级恒 NONE ⇒ 只在满级出现，NONE 也明示原因；</li>
+     *   <li><b>状态行</b>（遥测缺失 ⇒ 不猜，只有静态层）：等级 + {@code 生效数/承载位}——
+     *       分子 {@code min(堆叠数, 合格槽数)} 与 buff 共用 {@link BeaconEffects#activeEntries}
+     *       单一事实源；分母 {@code min(堆叠数, MAX_SLOTS)} = 这摞能承载几个 buff（客户端本地算）；</li>
      *   <li><b>账本</b>：未激活 ⇒ 折叠成一行（U17「完全死物」）；否则逐行列
-     *       <b>休眠三因</b>（档位不够 {@code 需 L{n}} / 堆叠数不够 {@code 信标不足}）；</li>
+     *       <b>休眠三因</b>（档位不够 {@code 需 L{n}} / 堆叠数不够 {@code 信标不足}）。
+     *       条目配色三态同待喂入菜单：生效=青 / 休眠=暗灰 / 遥测缺失=中性（不猜）；</li>
+     *   <li><b>满级再生授予行</b>：账本末尾（{@link #appendRegenGrant}）——满级恒给 II，非满级不画；</li>
      *   <li><b>待喂入菜单</b>：未配置矿石 → 效果映射（喂锭引导，颜色三态，见
      *       {@link #appendFeedMenu}）；满级未加倍条目追加升 II 行动指令（不可操作的不显示）；</li>
      *   <li>底座几何与差额<b>不在文本层</b>（9 柱面板已表达，双写 = 双维护）。</li>
      * </ul>
+     *
+     * <p><b>配色落点（2026-11-08 实机踩坑）</b>：原版 {@code StringDecomposer} 逐<b>字面段</b>解析 §，
+     * § 状态<b>不跨</b> {@code %s}/{@code %d} 参数边界、也不带进下一段 ⇒ 模板里的 § 够不到参数文本
+     * （参数与后续段继承行的样式，默认白）。故<b>凡带占位符的行，颜色一律 {@code withStyle} 设在
+     * Component 上</b>（行级整行着色 / 参数级单独提亮），lang 模板不带 §；
+     * 无占位符的键（status / config_title / config_empty / feed_title）才保留 §。
+     * 守卫：{@code BeaconTooltipTest} 注入 Language 后渲染级逐字符取色。</p>
      */
     @Override
     public void addToTooltip(Item.TooltipContext context,
@@ -345,25 +356,22 @@ public class BeaconFunction implements LivingItemFunction {
 
         // ── 运行时层 ────────────────────────────────────────────────
         if (rt != null && rt.level() > 0) {
+            // 分母 = 这摞的「承载位」= min(堆叠数, 槽上限)：一个信标承载一个 buff。
+            // ⚠️ 不能用裸堆叠数（堆 10 配 5 会显示 5/10，虚报 5 个不存在的空位），
+            // 也不用 config.size()（提示不了「再加一个信标就能多上一个 buff」这个杠杆）。
+            // ⚠️ 颜色必须 withStyle 上 Component：原版 § 码不跨 %s 参数边界（见类下「配色落点」注）。
             tooltipAdder.accept(Component.translatable(
                 "tooltip.livingitem.beacon.level",
-                rt.level(), active.size(), config.size()));
-
-            if (rt.level() >= BeaconPyramid.MAX_LEVEL) {
-                tooltipAdder.accept(Component.translatable(
-                    "tooltip.livingitem.beacon.regen",
-                    Component.translatable(switch (rt.regenTier()) {
-                        case II -> "tooltip.livingitem.beacon.regen.ii";
-                        case I -> "tooltip.livingitem.beacon.regen.i";
-                        case NONE -> "tooltip.livingitem.beacon.regen.none";
-                    })));
-            }
+                greenNumber(rt.level()), greenNumber(active.size()),
+                greenNumber(Math.min(stack.getCount(), BeaconConfig.MAX_SLOTS)))
+                .withStyle(ChatFormatting.GRAY));
         }
 
         // ── 静态层：效果配置 ─────────────────────────────────────────
         if (inactive) {
             tooltipAdder.accept(Component.translatable(
-                "tooltip.livingitem.beacon.config_inactive", config.size()));
+                "tooltip.livingitem.beacon.config_inactive", config.size())
+                .withStyle(ChatFormatting.GRAY));
             if (config.size() == 0) {
                 tooltipAdder.accept(Component.translatable("tooltip.livingitem.beacon.config_empty"));
             }
@@ -378,25 +386,65 @@ public class BeaconFunction implements LivingItemFunction {
             for (BeaconConfig.Entry entry : config.entries()) {
                 Component suffix = Component.empty();
                 if (rt != null && rt.level() > 0 && !active.contains(entry)) {
-                    suffix = entry.ore().unlockTier > rt.level()
+                    suffix = (entry.ore().unlockTier > rt.level()
                         ? Component.translatable("tooltip.livingitem.beacon.sleep_level",
                             entry.ore().unlockTier)
                         : Component.translatable("tooltip.livingitem.beacon.sleep_ingot",
-                            requiredStacks(config, entry, rt.level()));
+                            requiredStacks(config, entry, rt.level())))
+                        .withStyle(ChatFormatting.RED);
                 } else if (rt != null && rt.level() == BeaconPyramid.MAX_LEVEL && !entry.amplified()) {
                     // 满级且未加倍 ⇒ 升 II 此刻可操作（行动指令；非满级不提示——不可操作的不显示）
-                    suffix = Component.translatable("tooltip.livingitem.beacon.upgrade_hint");
+                    suffix = Component.translatable("tooltip.livingitem.beacon.upgrade_hint")
+                        .withStyle(ChatFormatting.GREEN);
                 }
-                tooltipAdder.accept(Component.translatable(
+                // 三态配色（同待喂入菜单口径）：生效=青 / 休眠=暗灰 / 遥测缺失=中性不猜。
+                // 三态共用同一份模板 ⇒ 状态只体现在行色上（模板内容完全相同，不拆三个键）。
+                // 矿石名作为参数单独压成灰（元信息退后），休眠时与整行同色（不跳出来）。
+                boolean dormant = rt != null && !active.contains(entry);
+                ChatFormatting entryColor = rt == null ? null
+                    : dormant ? ChatFormatting.DARK_GRAY : ChatFormatting.AQUA;
+                MutableComponent entryLine = Component.translatable(
                     "tooltip.livingitem.beacon.config_entry",
                     index++,
                     Component.translatable(entry.ore().effectKey()),
                     entry.amplified() ? "II" : "I",
-                    Component.translatable(entry.ore().ingot.getDescriptionId()),
-                    suffix));
+                    Component.translatable(entry.ore().ingot.getDescriptionId())
+                        .withStyle(dormant ? ChatFormatting.DARK_GRAY : ChatFormatting.GRAY),
+                    suffix);
+                if (entryColor != null) {
+                    entryLine.withStyle(entryColor);
+                }
+                tooltipAdder.accept(entryLine);
             }
         }
+        appendRegenGrant(tooltipAdder, rt);
         appendFeedMenu(tooltipAdder, config, rt);
+    }
+
+    /**
+     * 满级再生授予行 —— 落在<b>账本末尾</b>（2026-11-08 用户定，取代原「等级行下方独立一行」）。
+     *
+     * <ul>
+     *   <li>再生也是身上的 buff ⇒ 与矿石条目同一列读完，不用跳两个区域；</li>
+     *   <li>用「＋」<b>不占编号</b> ⇒ 不冒充第 6 槽（固定 5 槽，见 {@link BeaconConfig#MAX_SLOTS}）；</li>
+     *   <li><b>满级无条件给 II</b>（同日用户拍板「就当满级奖励」）：与堆叠数 / 加倍 / 配置无关，
+     *       所以只有两种形态——有（青）/ 无（非满级或遥测缺失，整行不画）；</li>
+     *   <li>非满级不画；遥测缺失 ⇒ 不猜。</li>
+     * </ul>
+     */
+    private static void appendRegenGrant(Consumer<Component> tooltipAdder,
+                                         @Nullable BeaconSegment.BeaconRuntime rt) {
+        if (rt == null || rt.level() < BeaconPyramid.MAX_LEVEL) {
+            return;
+        }
+        tooltipAdder.accept(Component.translatable(
+                "tooltip.livingitem.beacon.regen.ii", MobEffects.REGENERATION.value().getDisplayName())
+            .withStyle(ChatFormatting.AQUA));
+    }
+
+    /** 等级行里的读数：绿色数字（行底灰，数字单独提亮）。 */
+    private static MutableComponent greenNumber(int value) {
+        return Component.literal(String.valueOf(value)).withStyle(ChatFormatting.GREEN);
     }
 
     /**
@@ -421,16 +469,20 @@ public class BeaconFunction implements LivingItemFunction {
         for (OreType ore : remaining) {
             Component ingot = Component.translatable(ore.ingot.getDescriptionId());
             Component effect = Component.translatable(ore.effectKey());
+            MutableComponent line;
             if (rt == null) {
-                tooltipAdder.accept(Component.translatable(
-                    "tooltip.livingitem.beacon.feed_entry_unknown", ingot, effect, ore.unlockTier));
+                line = Component.translatable(
+                    "tooltip.livingitem.beacon.feed_entry_unknown", ingot, effect, ore.unlockTier)
+                    .withStyle(ChatFormatting.GRAY);
             } else if (ore.unlockTier > rt.level()) {
-                tooltipAdder.accept(Component.translatable(
-                    "tooltip.livingitem.beacon.feed_entry_locked", ingot, effect, ore.unlockTier));
+                line = Component.translatable(
+                    "tooltip.livingitem.beacon.feed_entry_locked", ingot, effect, ore.unlockTier)
+                    .withStyle(ChatFormatting.DARK_GRAY);
             } else {
-                tooltipAdder.accept(Component.translatable(
-                    "tooltip.livingitem.beacon.feed_entry", ingot, effect));
+                line = Component.translatable("tooltip.livingitem.beacon.feed_entry", ingot, effect)
+                    .withStyle(ChatFormatting.GREEN);
             }
+            tooltipAdder.accept(line);
         }
     }
 

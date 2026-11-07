@@ -167,16 +167,17 @@ src/test/java/com/qiqi/li/
 │   ├── BeaconPyramidTest.java                 # 1D 金字塔判级·各级精确目标/全0/null不足长/差一块掉档/多堆不亏/嵌套单调/L3 缺一列仍 L2/边界钳制封顶/单列无法激活/距下一级差额/范围公式/合计 9·34·83·164
 │   ├── BeaconHostDispatchTest.java               # 信标宿主分派与取点**同源**（2026-10-25，TODO 6.2）·背包在箱子里+开关开⇒分派拿到宿主箱子锚点（旧写法问 getBlockPos/getOwnerPlayer 双 null⇒有 buff 没光）/ 背包在玩家身上⇒玩家锚点 / 开关关⇒无宿主 / 方块容器与玩家背包各用自己的锚点（回归）（⚠️ 只测 effectiveAnchor 决策点 —— tick 全链路的金字塔等级靠 BEACON_BASE_BLOCKS 标签，单测环境不加载⇒等级恒 0⇒宿主分支进不去，由 BeaconBaseBlocks 注释与游戏内验证兜住）
 │   ├── BeaconColumnSlotsTest.java             # 下方 9 列槽位解析(纯数学)·居中/右边界钳制/左边界钳制/最底行全 -1/顶行居中/单行容器
-│   ├── BeaconSegmentTest.java                 # 遥测段编解码往返(等级+9柱高+列存在位图+再生档)/id=beacon 线格式契约/equals 按数组内容比(稳态不脏写前提,仅位图不同也判不等)/再生档越界回退
+│   ├── BeaconSegmentTest.java                 # 遥测段编解码往返(等级+9柱高+列存在位图，⚠️再生不进遥测)/id=beacon 线格式契约/equals 按数组内容比(稳态不脏写前提,仅位图不同也判不等)
 │   ├── BeaconPanelGeometryTest.java           # 9 柱面板几何纯函数·满程 24=L4 中心契约/柱位 x/刻度 y 四档/柱顶钳位/缺口高度/数字取舍(目标值·达标不画·溢出绝对高)/reachable 可达性(含列存在)/columnExistsFrom
 │   ├── BeaconTooltipComponentTest.java        # 面板数据载体 from(BeaconRuntime) 字段直通+record equals
+│   ├── BeaconTooltipTest.java                 # tooltip 文本层（2026-11-08）·条目三态靠行色(生效整行青/休眠整行暗灰+红后缀含数字/遥测缺失不染色)+休眠两因是条目末位 arg+满级再生授予行落账本末尾且待喂入菜单之前(＋不占编号·效果名取原版键)+非满级不画/满级恒 II(加倍·满配都不影响)/L0 折叠/满级空配置照授予+状态行分母=承载位 min(堆叠数,5)(堆10配5⇒5/5·堆5配3⇒3/5·堆2配5⇒2/2·L1⇒2/5)+lang 双语键存在且占位符数==递归采样参数个数+渲染级逐字符取色(注入 Language，守「§ 不跨占位符」⇒颜色必须真落到参数文本)
 │   ├── BeaconHostPacketTest.java              # S2C 宿主包往返(维度+位置+等级+容器玻璃色列表)/空列表
 │   ├── BeaconChestHostTest.java               # 多枚每枚一条·键格式(容器#槽位)/全同条目去重/两枚开一次/取一枚不关盖/全走才关/20tick 节流/关后重开即发/S2C 每枚一条/内容不变不重发
 │   ├── BeaconPlayerHostSyncTest.java          # 跨维度回归·两维度各自只发本维度/beginTick 清残留/只发别人(自己本机渲染)
 │   ├── BeaconGlassColorTest.java             # 容器玻璃取色·16 色玻璃/玻璃板/DyeColor 口径/非玻璃与空⇒null/同列扫描(自下而上·非玻璃跳过·顶行越界)
-│   ├── BeaconEffectsTest.java                 # 效果纯逻辑·喂锭门控(档位/II 仅 L4/5 槽满/未激活全拒)+生效数 min(堆叠,档内槽数)取前 N+再生三档(5 案例逐字)+buff 时长(9+等级×2)×20
+│   ├── BeaconEffectsTest.java                 # 效果纯逻辑·喂锭门控(档位/II 仅 L4/5 槽满/未激活全拒)+生效数 min(堆叠,档内槽数)取前 N+buff 时长(9+等级×2)×20（⚠️原「再生三档 5 案例」随 2026-11-08 满级无条件再生 II 整体删除）
 │   ├── BeaconConfigTest.java                  # 配置组件·add/amplify 不可变+5 槽封顶+contains+编解码往返(含空配置)
-│   ├── BeaconFeedHandlerTest.java             # 喂锭 handler 可测部分·规则谓词(5 矿石锭通过/非矿石拒绝)+OreType 映射与档位+槽位解析列宽取自 context(12 列≠9 列)/size 越界（⚠️ 柱高数值依赖 tag，单测环境不加载 ⇒ 游戏内验证）
+│   ├── BeaconFeedHandlerTest.java             # 喂锭 handler 可测部分·规则谓词(5 矿石锭通过/非矿石拒绝)+OreType 映射(锭↔效果↔档位，2026-11-07 钻石=抗性 L2/下界合金=力量 L3)+槽位解析列宽取自 context(12 列≠9 列)/size 越界（⚠️ 柱高数值依赖 tag，单测环境不加载 ⇒ 游戏内验证）
 │   └── BeaconPlayerHostPacketTest.java        # 玩家宿主包往返(维度+UUID+等级+容器玻璃色列表)/空列表
 ├── living/domain/farmland/
 │   ├── BonemealHandlerTest.java               # 活骨粉 GUI 交互信任边界（2026-10-27 审查 P3）·创造模式曾连「光标是不是活骨粉」都不验 ⇒ 改包客户端空手刷生长（同域口径=照验免扣）/ 创造+骨粉放行免扣 / 生存扣 1 / 普通骨粉拒绝（活化门槛）（pin 手法：未成熟植株 forceGrowthTick 不碰 level ⇒ age+1 即通过判据）

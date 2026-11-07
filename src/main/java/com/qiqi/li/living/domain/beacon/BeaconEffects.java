@@ -3,11 +3,15 @@ package com.qiqi.li.living.domain.beacon;
 import java.util.List;
 
 /**
- * 活信标效果计算的纯逻辑（设计稿 §2.5「buff 数量 / 再生三档 / 档位门控」）。
+ * 活信标效果计算的纯逻辑（设计稿 §2.5「buff 数量 / 档位门控」）。
  *
- * <p>三个入口：{@link #feed}（喂锭：门控 + 加槽/升级）、{@link #activeEntries}
- * （生效矿石效果：{@code min(堆叠数, 已配且档位≤等级槽数)} 取前 N）、
- * {@link #regenTier}（满级免费再生三档）。全部无 MC 副作用 ⇒ 可全量单测。</p>
+ * <p>两个入口：{@link #feed}（喂锭：门控 + 加槽/升级）、{@link #activeEntries}
+ * （生效矿石效果：{@code min(堆叠数, 已配且档位≤等级槽数)} 取前 N）。
+ * 全部无 MC 副作用 ⇒ 可全量单测。</p>
+ *
+ * <p>满级再生<b>不在这里</b>：它是<b>等级的直接函数</b>（L4 ⇒ 再生 II，2026-11-08 用户拍板
+ * 「满级无条件奖励，不强迎合原版『II 吃掉次槽』」）⇒ 调用方直接判
+ * {@code level >= BeaconPyramid.MAX_LEVEL}，没有可算的档位。</p>
  */
 public final class BeaconEffects {
 
@@ -73,30 +77,6 @@ public final class BeaconEffects {
             .filter(e -> e.ore().unlockTier <= level)
             .limit(n)
             .toList();
-    }
-
-    /**
-     * 免费再生档位（满级白送的三档规则，5 案例验证）：
-     * <ul>
-     *   <li>有空槽（{@code 堆叠数 − 生效矿石数 > 0}）⇒ <b>II</b>；</li>
-     *   <li>无空槽且所有已配效果都是 I ⇒ <b>I</b>；</li>
-     *   <li>无空槽且至少一个效果被加倍到 II ⇒ <b>无</b>（免费再生被"加倍"消耗掉）。</li>
-     * </ul>
-     *
-     * <p>这正是"仿原版"的核心：原版 {@code 主效果==次级效果 → II} 会吃掉次级槽 ⇒
-     * II 级效果与再生互斥；活信标把免费再生当作那个次级槽。</p>
-     */
-    public static BeaconSegment.RegenTier regenTier(int level, int stackCount,
-                                                    List<BeaconConfig.Entry> active) {
-        if (level < 4) {
-            return BeaconSegment.RegenTier.NONE;
-        }
-        int emptySlots = stackCount - active.size();
-        if (emptySlots > 0) {
-            return BeaconSegment.RegenTier.II;
-        }
-        boolean anyDoubled = active.stream().anyMatch(BeaconConfig.Entry::amplified);
-        return anyDoubled ? BeaconSegment.RegenTier.NONE : BeaconSegment.RegenTier.I;
     }
 
     /** 效果放大器：II 级 = 1，I 级 = 0（与 {@code MobEffectInstance} 的 amplifier 语义一致）。 */

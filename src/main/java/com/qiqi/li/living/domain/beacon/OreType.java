@@ -13,11 +13,17 @@ import net.minecraft.world.item.Items;
  * 矿石锭 → 效果映射（设计稿 §2.5「矿石锭 → 效果映射」）。
  *
  * <p>一一对应原版 6 效果池里除再生外的 5 个（再生由满级白送接管）：
- * 铁=速度 / 金=急迫（index 0，L1 解锁）；下界合金=抗性提升 / 绿宝石=跳跃提升
- * （index 1，L2 解锁）；钻石=力量（index 2，L3 解锁）。</p>
+ * 铁=速度 / 金=急迫（index 0，L1 解锁）；钻石=抗性提升 / 绿宝石=跳跃提升
+ * （index 1，L2 解锁）；下界合金=力量（index 2，L3 解锁）。</p>
  *
  * <p>⚠️ 绿宝石映射到**跳跃提升**（而非再生）——再生被满级白送接管后，
  * 绿宝石槽空出来，补到池里唯一未分配的 JUMP（用户 2026-10-15 定）。</p>
+ *
+ * <p>⚠️ 钻石与下界合金的**效果 + 档位整体互换**（用户 2026-11-07 定，取代 10-15 的
+ * 「下界合金=抗性 L2 / 钻石=力量 L3」）——档位始终跟效果的原版 index 走，别只换效果。</p>
+ *
+ * <p>⚠️ 枚举序 = 解锁档位非降序（契约测试钉住，tooltip 待喂入菜单依赖此序），
+ * 且序就是网络 codec 的 ordinal 编码 ⇒ 调序必须同时满足档位非降序。</p>
  */
 public enum OreType {
 
@@ -27,14 +33,14 @@ public enum OreType {
     /** 金锭 → 急迫（档位 1）。 */
     GOLD("gold", Items.GOLD_INGOT, 1, MobEffects.DIG_SPEED),
 
-    /** 下界合金锭 → 抗性提升（档位 2）。 */
-    NETHERITE("netherite", Items.NETHERITE_INGOT, 2, MobEffects.DAMAGE_RESISTANCE),
+    /** 钻石 → 抗性提升（档位 2）。 */
+    DIAMOND("diamond", Items.DIAMOND, 2, MobEffects.DAMAGE_RESISTANCE),
 
     /** 绿宝石 → 跳跃提升（档位 2）。 */
     EMERALD("emerald", Items.EMERALD, 2, MobEffects.JUMP),
 
-    /** 钻石 → 力量（档位 3）。 */
-    DIAMOND("diamond", Items.DIAMOND, 3, MobEffects.DAMAGE_BOOST);
+    /** 下界合金锭 → 力量（档位 3）。 */
+    NETHERITE("netherite", Items.NETHERITE_INGOT, 3, MobEffects.DAMAGE_BOOST);
 
     /** 效果显示名（用于 tooltip，取原版效果的本地化键）。 */
     public final Holder<MobEffect> effect;
@@ -83,8 +89,7 @@ public enum OreType {
      *
      * <p>为什么必须回落而不是 {@code valueOf}：这是<b>存档解码</b>路径（组件的持久 Codec），
      * 手工改存档 / 跨版本删枚举项都会读到未知 id ⇒ 抛异常会让整个物品读不出来
-     * （2026-10-18 审查：原先 {@code valueOf(id.toUpperCase())} 直接抛）。
-     * 同类守卫见 {@link BeaconSegment.RegenTier#fromOrdinal}。</p>
+     * （2026-10-18 审查：原先 {@code valueOf(id.toUpperCase())} 直接抛）。</p>
      */
     public static OreType byId(String id) {
         for (OreType ore : values()) {

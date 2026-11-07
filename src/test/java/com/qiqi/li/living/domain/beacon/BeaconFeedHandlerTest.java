@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 
 import com.qiqi.li.living.container.ContainerContext;
 
+import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
@@ -88,8 +89,13 @@ class BeaconFeedHandlerTest {
         assertEquals(OreType.DIAMOND, OreType.fromIngot(new ItemStack(Items.DIAMOND)));
         assertEquals(1, OreType.IRON.unlockTier);
         assertEquals(1, OreType.GOLD.unlockTier);
-        assertEquals(2, OreType.NETHERITE.unlockTier);
+        assertEquals(2, OreType.DIAMOND.unlockTier);
         assertEquals(2, OreType.EMERALD.unlockTier);
-        assertEquals(3, OreType.DIAMOND.unlockTier);
+        assertEquals(3, OreType.NETHERITE.unlockTier);
+        assertEquals(MobEffects.MOVEMENT_SPEED, OreType.IRON.effect);
+        assertEquals(MobEffects.DIG_SPEED, OreType.GOLD.effect);
+        assertEquals(MobEffects.DAMAGE_RESISTANCE, OreType.DIAMOND.effect);
+        assertEquals(MobEffects.JUMP, OreType.EMERALD.effect);
+        assertEquals(MobEffects.DAMAGE_BOOST, OreType.NETHERITE.effect);
     }
 }

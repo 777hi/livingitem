@@ -148,7 +148,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1664 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
+**合计测试用例 1666 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -173,15 +173,15 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-11-08 | ♻️ **满级再生改「无条件 II」，删三档判据与 RegenTier（用户定，−8 测试）** —— 实机「有 II 就没再生」实为 10-15 三档规则在「承载位满」时的正常表现，用户判定过于复杂；改为满级恒给再生 II（满级奖励，不迎合原版「II 吃掉次槽」）：删 `BeaconEffects.regenTier` / `RegenTier` 枚举 / 遥测再生字段 / `regen.i`·`regen.none` 两键，buff 与 tooltip 都直接判 `level>=MAX_LEVEL` ⇒ 再生退回等级的直接函数，顺带消除「再生行取服务端遥测、分母取客户端」的不同步；+1 守卫测试（满配+加倍仍 II），全量1666项零失败；实机待验 | [beacon §2.5](docs/tech/living-beacon-tech.md) · [changelog](docs/archive/changelog.md) |
+| 2026-11-08 | 🐛 **修活信标 tooltip 配色不生效（§ 不跨占位符，+1 渲染级回归）** —— 实机反馈效果名/待喂入菜单没变色；根因：原版 StringDecomposer 逐字面段解析 §，§ 不跨 %s/%d 参数边界也不进下一段 ⇒ 模板 § 够不到参数文本（旧版「等级数字绿/可喂绿/休眠数字红」其实从未生效）；修法：带占位符的行颜色一律 withStyle 上 Component（行级整行 / 参数级单独），lang 去 §，三个 config_entry* 键合并回一个；守卫 renderedColorsReachArgumentText 注入 Language 后逐字符取色；全量1674项零失败；实机待验 | [beacon §2.6.1](docs/tech/living-beacon-tech.md) · [changelog](docs/archive/changelog.md) |
+| 2026-11-08 | 🔢 **活信标状态行分母改「承载位」= min(堆叠数, 槽上限)（用户定）** —— 原分母 `config.size()` 让「堆 5 配 3」显示 3/3 像满配、且提示不了杠杆；改后 N/N = 这摞承载位用满 ⇒ **想再多一个 buff 就往摞里再加一个信标**，与休眠后缀「信标不足（需 k 个）」同一件事；**不裸用堆叠数**（生效数恒 ≤ 已配槽数 ≤ 5，堆 10 配 5 会虚报 5/10）⇒ 与 `MAX_SLOTS` 取小，将来槽上限放开公式不用改；lang 模板不变；+1 测试（4 例），全量1673项零失败；实机待验 | [beacon §2.6.1](docs/tech/living-beacon-tech.md) · [changelog](docs/archive/changelog.md) |
+| 2026-11-08 | 🎨 **活信标 tooltip：条目三态配色 + 满级再生改「账本末尾授予行」（用户定）** —— 生效效果名青 / 休眠整行暗灰（红后缀不变）/ 遥测缺失中性不猜，**绿仍只表示可操作**（可喂·升 II）；再生从等级行下方移到 5 条矿石之后、待喂入菜单之前，文案「＋ 生命恢复 II（满级授予·不占槽）」，被占用时同一行位置变暗灰并明示原因；**＋不占编号** ⇒ 不冒充第 6 槽，效果名取原版显示名；lang 新增 config_entry_active/sleep、删 regen 包装键；+8 测试（BeaconTooltipTest 守选键/落位/双语占位符递归比对），全量1672项零失败；实机待验 | [beacon §2.6.1](docs/tech/living-beacon-tech.md) · [changelog](docs/archive/changelog.md) |
+| 2026-11-07 | 🔀 **活信标矿石锭映射：钻石 ↔ 下界合金锭互换（用户定）** —— 钻石=抗性提升（L2）/ 下界合金锭=力量（L3），**效果与档位一起换**（档位跟原版效果 index 走）；OreType 枚举序改为 铁/金/钻石/绿宝石/下界合金（序=档位非降序契约，tooltip 待喂入菜单依赖）；oreMapping 补效果断言（此前效果映射无测试）+ 门控/枚举序/再生 5 案例同步，方法数不变、全量1664项零失败；实机待验 | [beacon §2.5](docs/tech/living-beacon-tech.md) · [changelog](docs/archive/changelog.md) |
 | 2026-11-07 | ✅ **活剪刀纳入工具判据（v1）** —— isLivingTool 增补 SHEARS_DIG（用户定不扩大）：挖掘（羊毛/蛛网/树叶/藤蔓）+ 辅助挖掘 + 环可见全链现成；剪植物顶端（SHEARS_TRIM）补丁后发事件 ⇒ 交互记忆可录可回放；+1 守卫测试（ActivationHookTest ⑨）；边界外不做：蜂巢/南瓜（block 侧 L36）、剪羊（实体侧）—— 残余登记 TODO；实机待验 | [tool §4.1](docs/tech/living-tool-tech.md) · [changelog](docs/archive/changelog.md) |
 | 2026-11-07 | 🐛 **修活海绵吸源后的僵尸源 / 黑曜石（+2 回归）** —— 删源只擦 `generatedSources` 账本，实际层 `flows` 靠下一拍收敛；源网络 + 岩浆节拍门下邻源把被删槽顶成流动 target ⇒ prune 不删、渲染仍在、`reactFrontiers` 判「源格遇水」出黑曜石；`demoteOrphanSources` 在 prune 之后、反应类之前同拍降级为流动格（不删格免空档），阶段 2→3 顺序保证同 tick 生效；旧代码 2 项红，全量1663项零失败 | [流体 §2.2](docs/tech/living-fluid-tech.md) · [海绵 §12](docs/tech/living-sponge-tech.md) |
 | 2026-11-07 | ✅ **活剑纳入工具判据，双身份同斧子** —— isLivingTool 增补 SWORD_DIG（口径同斧子）：录/清挖掘记忆、辅助挖掘、S2 双记忆调度全链自动贯通，下游零改动；辅助出力谓词 getDestroySpeed>1.0 现成收窄到 sword_efficient（树叶/作物/竹子），无「背一叠剑=全方块小急迫」噪音；+1 守卫测试（活剑双身份，ActivationHookTest ⑧）；TODO H4 活剑关账，剪刀/钓竿调研结论登记；实机待验 | [tool §4.1](docs/tech/living-tool-tech.md) · [weapon §1](docs/tech/living-weapon-tech.md) |
 | 2026-11-06 | 🐛 **修 Jade 不显示容器流体/电量（+1 回归）** —— 借用户提供的 Jade 源码定位：Jade 客户端 `shouldRequestData` 用「能力非 null」当请求闸门，10-31 起两个容器能力在客户端恒返回 null ⇒ 请求包压根不发、服务端 `appendServerData` 没机会下发读数；客户端改发只读零值存在性探针，服务端仍是存在性/读数唯一权威，全量1660项零失败 | [海绵 §4.2](docs/tech/living-sponge-tech.md) · [红电 §4.1](docs/tech/living-power-tech.md) |
-| 2026-11-06 | 🐛 **活海绵 tooltip 容量上限随堆叠放大** —— 分子×count、分母写死每枚 64,000mB ⇒ 堆显示「128000 / 64000」；对照铜灯电量行（q/cap 同乘 count），分母改走 `totalCapacityMmB(count)`，与能力面 `getTankCapacity` 归一；+4 回归（含逐字比对能力面） | [海绵 §7](docs/tech/living-sponge-tech.md) · [changelog](docs/archive/changelog.md) |
-| 2026-11-06 | 🐛 **铜灯外部充放正式写回** —— 复用组件提交，副本/只读后端不再虚报；保留比例充电与聚合取电，失败按已确认前缀结算；+21回归，全量1655项零失败，效果随游玩观察，不增抽屉适配 | [红电 §4.2](docs/tech/living-power-tech.md) · [TODO 红电](docs/TODO.md) |
-| 2026-11-06 | 🐛 **共同组件提交＋海绵外部抽灌接入** —— 原数量副本写回、旧值重验、回读成功才报账；无writer拒绝、不抽插/截断；+39回归，全量1634项零失败；铜灯/内部tick留待后续；抽屉旧新对照确认无限抽灌已阻止，不扩为抽屉玩法支持 | [API §1.8](docs/system-design/api-contract.md) · [海绵 §12.3](docs/tech/living-sponge-tech.md) |
-| 2026-11-06 | 🐛 **辅助攻击直连目标，修坑边怪辅助不动** —— 旧方案把玩家这一刀包装成临时射线（眼→包围盒中心）喂 replayAttack，隔墙检测误判坑沿方块 ⇒ 怪只露头时辅助不动；拆 prepareWielder/strikeTarget 共用件＋直连入口 strikeKnownTarget（不造射线/不做隔墙检测，目标过滤与冷却保留，顺带修「射线撞更近的怪打到别人」怪癖）；辅助挖掘审查无同类问题（本就借玩家当前目标）；实机待验 | [武器 §9](docs/tech/living-weapon-tech.md) · [changelog](docs/archive/changelog.md) |
-| 2026-11-06 | 🐛 **海绵多堆抽取/铜灯精确交付** —— 海绵只续抽剩余请求、异种不扣；铜灯容器跨堆凑整、总量不足1FE不扣、均分差额只损耗；+17回归，旧代码13项红，全量1595项零失败；实机效果随游玩观察，不设专项测试 | [海绵 §12.2](docs/tech/living-sponge-tech.md) · [红电 §4.2](docs/tech/living-power-tech.md) |
 ## 提交前必跑（2026-10-30 更新）
 
 ```bash

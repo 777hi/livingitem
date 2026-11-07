@@ -16,8 +16,7 @@ class BeaconTooltipComponentTest {
     void fromRuntime() {
         var rt = new BeaconSegment.BeaconRuntime(2,
             new long[]{0, 0, 6, 8, 8, 8, 5, 0, 0},
-            new boolean[]{false, false, true, true, true, true, true, true, true},
-            BeaconSegment.RegenTier.NONE);
+            new boolean[]{false, false, true, true, true, true, true, true, true});
 
         var c = BeaconTooltipComponent.from(rt);
 
