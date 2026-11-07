@@ -9,9 +9,7 @@
 >
 > 📄 被编排的文档：[framework-benchmark](framework-benchmark.md) ·
 > [framework-evolution-plan](framework-evolution-plan.md) · [open-plan](open-plan.md) ·
-> [render-state-broadcast](render-state-broadcast.md) ·
 > [redstone-evolution-roadmap](redstone-evolution-roadmap.md) ·
-> [power-refactoring-plan](power-refactoring-plan.md) ·
 > [2026-10-29 整改计划](2026-10-29-全项目审查整改计划.md) ·
 > [TODO.md](../TODO.md)
 
@@ -57,10 +55,10 @@
 「替身测试证明『我对第三方行为的**理解**被守住』，真机才证明『理解**是否成立**』」
 —— [TODO 容器边界 5.6](../TODO.md) 自己的判据。当前欠账：
 
-- **R3 领域互依赖清零**（2026-11-01）实机待验：漏斗×末影箱路由（公共/专属/直连）+ 拆合堆叠频道切换
-  —— [AGENTS 进展首行](../../AGENTS.md) · [EnderChest §9](../tech/living-ender-chest-tech.md)
-- [整改计划 §6](2026-10-29-全项目审查整改计划.md)：M-1 / M-2（GUI 存放，实机未复现但代码已改）、
-  M-3 / M-5 / M-6 / M-7、M-9a/b/c（缓存 sweep 三条）均未闭环
+- ~~**R3 领域互依赖清零**（2026-11-01）实机待验：漏斗×末影箱路由（公共/专属/直连）+ 拆合堆叠频道切换~~
+  ✅ **已验 2026-11-07 用户实测** —— [AGENTS 子系统索引 R3 行](../../AGENTS.md) · [EnderChest §9](../tech/living-ender-chest-tech.md)
+- [整改计划 §6](2026-10-29-全项目审查整改计划.md)：M-3 / M-5 / M-6 / M-7、M-9a/b/c（缓存 sweep 三条）未闭环
+  （M-1 / M-2 GUI 存放已于 2026-11-07 用户实测通过关闭，R-02 触发前提确认不可复现、代码不动）
 - 批次 3 的教训已写在案：**静态推断的触发前提未确认就动了代码**
 
 ⇒ 大量重构「**门禁绿但未验真**」，这是当前最大的隐性风险，且它不会被任何一条自动门禁发现。
@@ -72,7 +70,7 @@
 | `framework-benchmark` §1：主源码 **290** / 测试 **55 文件 473 用例** | **453** / **210 文件 1659 用例** | 数字偏离 56% / 282% / 250% |
 | §3.1：`RecipeBookComponentMixin` **约 50 KB**、`AbstractContainerScreenMixin` 34 KB ⇒ 「**定稿：做，P0**」 | **225 行 / 271 行**（配方书逻辑已拆进 `LivingChestRecipeTab`） | **该 P0 项的前提已消失**，照做就是给不存在的病动刀 |
 | §3.13：「**4 处**扩展点各造一遍」 | 20+ 注册口，且形状已分化 | 「抽一个 `SimpleRegistry` 四处复用」的形状判断需要重做 |
-| `power-refactoring-plan` §1.1：主类 1174 行 | 主类已 476 行（步骤 4 第 1~5 刀完成） | 章节正文是**地层**，不是现状 |
+| 规划稿里的「主类 1174 行」快照 | 主类已 476 行（步骤 4 第 1~5 刀完成） | 章节正文是**地层**，不是现状 |
 
 > 📌 `docs/README.md` §7 已定：「**漂移 = 该归档的内容还留在活跃层**」。
 > 带「定稿：做」的条目若不复核前提，下个会话会照着过期结论动手 —— 这比没有规划更危险。
@@ -84,7 +82,7 @@
 | # | 原则 | 项目实证 |
 |---|---|---|
 | **P1** | **口径一次定对 > 加守卫。** 每条成本必须回答「买的是什么」：买「我改错时的安全垫」⇒ 不做；买「口径正确 / 不返工」⇒ 可做 | 被否：状态同步「每 N tick 保底覆盖」、写入处「旧值非空则拒写」；被采纳：条目身份用容器键字符串（[用户偏好 2026-10-22/26]） |
-| **P2** | **抽象必须有第二个真实用户**，不许为抽象而抽象 | [framework-evolution-plan §5](framework-evolution-plan.md)；[render-state-broadcast §7.1](render-state-broadcast.md) 已否 `TargetedBroadcast` 骨架与协议分段 |
+| **P2** | **抽象必须有第二个真实用户**，不许为抽象而抽象 | [framework-evolution-plan §5](framework-evolution-plan.md)；[D-render-01](../decisions.md) 已否 `TargetedBroadcast` 骨架与协议分段 |
 | **P3** | **不建「防我改错」的分支。** 落地的东西必须自身可解释（看代码就知道为什么） | 上下文压缩后临时补丁的动机会消失，只剩代码 |
 | **P4** | **纯重构 = 行为零变化 + 全量测试绿 + 棘轮数字只减不增**；每批一个可独立回滚的提交 | [整改计划 §2/§5](2026-10-29-全项目审查整改计划.md) |
 | **P5** | **规划文档的快照数字必须带复算命令 + 日期**，否则写成「当时的结论」而非现状 | 本文 §0；`docs/README.md` 铁律 4 |
@@ -144,7 +142,7 @@
 | 2.3 | 红电规划 ③ 信号层元件接口化 | **铜门 / 新信号元件真的立项**（同文档 §3.5） | 新元件只加类；phase1-5 行为等价性证明 |
 | 2.4 | 框架提案 **A** 客户端推导遥测 | 第二个「内容派生型」域开工前（[framework-evolution-plan §5](framework-evolution-plan.md)） | 推流回退保留；纯函数与面板同源 |
 | 2.5 | 框架提案 **B** 统一宿主模型 | 第 5 个「世界可见物」出现，或必须改动现有四套同步之一时，**动之前先抽内核**（用户 2026-10-18 定：暂缓） | `HostKey` 形状先定（per-item 数据 / per-container 副作用分离，见该文 §4）；热路径零每帧分配 |
-| 2.6 | 渲染态第 5 通道验证 + 包体实测 | 新增世界可见活物品时 | 不新增包类 / 缓存类（[render-state-broadcast §7](render-state-broadcast.md)）；tooltip 通道是否纳入另行拍板 |
+| 2.6 | 渲染态第 5 通道验证 + 包体实测 | 新增世界可见活物品时 | 不新增包类 / 缓存类（[渲染态定案](../tech/living-tool-tech.md) §11.5）；tooltip 通道是否纳入另行拍板 |
 
 ### 阶段 3 · 性能（触发门：有实测数据，且「大型整合包上万容器」目标仍成立）
 
@@ -181,9 +179,9 @@
 | Mixin 业务逻辑契约接口化（§3.1「定稿 P0」） | **前提已消失**：最大 mixin 271 行；原触发条件是「NeoForge 大版本升级时大面积报错」，届时重新评估 |
 | 全库 `package-info.java` Nullness（§3.6） | 现只有 5 个对外包且内容是契约说明；半套约定比没有更糟（项目铁律 6） |
 | gametest（§3.17） | 等出现「只能在真实游戏环境复现」的 bug；不为对齐大模组而做 |
-| power 单位值类型 `MilliFe` / `Re`（[power-refactoring-plan §4](power-refactoring-plan.md)） | 牵动 DataComponent 序列化；`mulDivFloor` 已收窄溢出面，边际收益不足 |
+| power 单位值类型 `MilliFe` / `Re` | 牵动 DataComponent 序列化；`mulDivFloor` 已收窄溢出面，边际收益不足 |
 | 自定义 datapack registry（§3.5）、网络包拆包器（§3.8） | 无真实需求 / 无症状；alpha 结构未定案，早做等于固化 |
-| `TargetedBroadcast<T>` 骨架 / 协议分段 / 状态段每 N tick 保底覆盖 | [render-state-broadcast §7.1](render-state-broadcast.md) 已否；「比较单位 = 发送单位」后保底是给不存在的风险付钱（P1） |
+| `TargetedBroadcast<T>` 骨架 / 协议分段 / 状态段每 N tick 保底覆盖 | [D-render-01](../decisions.md) 已否；「比较单位 = 发送单位」后保底是给不存在的风险付钱（P1） |
 | 因「写法相似」全库迁移组件写回 | 用户 2026-11-06 明确：按结算证据定向迁移（1.1） |
 | 恢复「容器扫描展开」通用能力 | [D-container-08](../decisions.md) 已定：那是活潜影箱专属逻辑 |
 

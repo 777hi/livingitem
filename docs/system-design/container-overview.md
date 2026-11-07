@@ -309,7 +309,7 @@ vs 全进规则表」的分叉上直接说「原点」，收编重构不做。
 | 超大堆叠的逐领域审计（09-07 定稿） | [oversized-stack-audit.md](oversized-stack-audit.md) |
 | 活背包（物品形态容器）的现状 | [tech/living-backpack-tech.md](../tech/living-backpack-tech.md) |
 | 锚点的普查过程与取舍 | [archive/container-anchor-design.md](../archive/container-anchor-design.md) |
-| 服务端菜单自省（实体容器已落地 / 列数探测延后） | [buffer/container-menu-introspection-topic.md](../buffer/container-menu-introspection-topic.md) |
+| 服务端菜单自省的设计论证与否决留痕（机制现状见 infrastructure §6；原有「列数探测延后」已失效） | [buffer/container-menu-introspection-topic.md](../buffer/container-menu-introspection-topic.md) |
 | 列数收编的完整论证 + 两轮审查闭环 | [archive/container-layout-resolution.md](../archive/container-layout-resolution.md)（2026-10-31 归档） |
 | 活潜影箱（嵌套容器，独立立项） | [buffer/活潜影箱实现细节.md](../buffer/活潜影箱实现细节.md) |
 | S1~S9 的验收判据与真机基线清单 | [archive/container-compat-stages.md](../archive/container-compat-stages.md) |

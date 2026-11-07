@@ -6,6 +6,11 @@
 > 未定案设计稿的**正文**放 `docs/buffer/`，这里只放一行 + 指针。
 > 上次复核：2026-10-10。
 
+## 女仆联动（设计中，2026-11-07）
+
+1. **女仆背包兼容＋活魂符** —— 所存容量C分钟均匀迈步H次（H为饱食度），0停、方向随机；玩法已定，接线/新增业务/现有入口改动的技术路线见设计稿§8；后续寻路未排期。
+   [活魂符-design.md](buffer/活魂符-design.md)；尚未实现，不按已实现子系统登记。
+
 ## 审查整改（2026-10-29）
 
 1. 全项目审查（四路代码审查 + 门禁/构建体检）的问题台账与分批实施步骤见
@@ -216,6 +221,9 @@
 2. ⏳ **活门**（P3：开 / 关可视化）—— `living-redstone-tech.md`
 3. ⏳ 铜块物品栏装饰器渲染（纯视觉）—— `living-copper-tech.md`
 4. 🔮 活潜影箱集成（信号穿透边界）—— 设计探讨见 `buffer/活潜影箱实现细节.md`
+5. 🔮 **活观测者**（容器内容变化 → 红石脉冲的事件型信号源，家族第 10 元件）——
+   设计稿探讨中，待拍板 4 项（检测口径 / 盲区合并 / 多枚语义 / 反馈范围），
+   见 [buffer/活观测者-design.md](buffer/活观测者-design.md)
 
 ## 物品传输（跨子系统，2026-10-31 记 · 未排期）
 
@@ -635,32 +643,49 @@
 3. ⏳ **E1 增强（可选）**：拖动 + 位置持久化已落地（2026-10-10，存 `config/living_item/button_layout.json`）；
    TrashSlot 式**吸附 / 碰撞避让 / 显示开关**当轮明确不做，要做再按设计稿 §4.1。
 
-## 渲染态广播（2026-10-26 记，未定案）
+## ~~渲染态广播（2026-10-26 记，未定案）~~ ✅ 已收口（2026-11-07）
 
-> 「让客户端看见活物品在世界里的样子」现有 **4 条独立通道**（方块容器工具 / 背包工具 /
-> 箱子信标 / 玩家信标），各自抄了一遍「定向 + 去重 + 逐维度 flush + 客户端缓存」，
-> 且**去重口径四种**（手写白名单 / 全量组件 / `List.equals` / 判翻转）。
-> 形状提案与三步走见 [buffer/render-state-broadcast.md](buffer/render-state-broadcast.md)。
+> 三步（`BroadcastDedup#merge` 去重 / `ToolRenderState` 渲染依赖 / `DimensionScopedCache` 客户端缓存）
+> 已全部落地；定案与被否方案见 [D-render-01](decisions.md) · [渲染态定案](tech/living-tool-tech.md)。
+> 原设计稿按「都不问 ⇒ 删」判据删除（git 保完整历史）。
 
-1. ⏳ **去重键口径没有单一来源** —— 渲染器加依赖时无人提醒改键（2026-10-26 事故根因）。
-   倾向在 `ToolComponents` 旁声明 `RENDER_STATE` 组件集合，去重键从声明生成
-   （**不能从 domain 反向引用 L5 客户端**，故声明不能住在渲染器里）。
-2. ⏳ **四通道收口** —— 状态（2026-10-31 更正）：`DimensionScopedCache`（客户端缓存）、
-   `BroadcastDedup#merge`（去重）、`ToolRenderState` 已落地（2026-10-26）；
-   `TargetedBroadcast<T>` 硬骨架与「结构段 / 状态段」协议分段**已否**（buffer §7.1）。
-   剩余：第 5 个世界可见活物品出现时验证「不新增包类 / 缓存类」判据；包体实测与
-   tooltip 通道是否纳入未定（buffer §9）。
+1. ~~**去重键口径没有单一来源**~~ ✅ **2026-10-26 已收口**：解法是 `ToolRenderState` record
+   （比较单位 = 发送单位），**不是**当初倾向的 `RENDER_STATE` 组件集合。
+2. ⏳ **第 5 个世界可见活物品**出现时验证「不新增包类 / 缓存类」判据；包体实测与
+   tooltip 通道是否纳入未定。触发门见
+   [architecture-evolution-roadmap.md](buffer/architecture-evolution-roadmap.md) 阶段 2.6。
 
 ## 2026-10-27 审查后续 · 代码与文档口径对齐
 
-> 当前处理入口：[代码与文档口径对齐台账](buffer/code-doc-alignment.md)。
-> 台账分开登记用户已明确边界、待决玩法、旧描述维护、待核验诊断与测试声明。
+> 原「代码与文档口径对齐台账」的 A1~A8 已全部收口，结论分别落入
+> `D-tnt-02` / `D-map-01` / `D-container-18`、各 tech 文档与 [三判据](guides/unit-testing.md)；
+> 2026-11-07 按「都不问 ⇒ 删」删除台账本体（git 保历史），**仅把尚未完成的 B1~B12 移交本页**。
 > 原始发现见 [审查摘要](buffer/2026-10-27-全项目审查报告.md)，其中完成范围、修复数量、
 > 已修项目与因果推断有误记，保留历史但不再作为验收依据。
 > 用户已明确：**TNT没锚点不炸；熔炉运行过程数据不随搬运保留；地图指哪传哪，不按地形替玩家避险；
 > 铜的红电信号不直接作世界红石输出，中继器逻辑对齐原版。** 不再将这些列为待选玩法。
-> 本轮只记录规则与意见、不改其他待决代码。A4飞艇传送已获用户同意并实施为“普通坐骑落载具、飞艇底面对齐目标Y”；
-> A5失活后重新计时／A6拆合重算／A8玩法核对见台账，其中A8建议尚未全部实施。
+> A4 飞艇传送（含误诊纠正）已落 [地图传送 §11.2.1](tech/living-map-ender-pearl-tech.md)；
+> A5 停机重启 / A6 拆合重算已实施；A8「双箱只按一个容器提供一份产能」仍是**建议、未实施**。
+
+### B1~B12 文档对齐项（2026-10-27 只登记、未改正文，尚未逐条复核）
+
+> 完成判据（台账 §7）：**规则明确 → 对应文档唯一现状 → 代码符合该规则 → 验证入口诚实**。
+> 复核时逐条对照代码，不要只凭文档互引。⚠️ 实证（2026-11-07）：B5 / B6 / B12 的旧表述仍挂在 tech 文档。
+
+| # | 待对齐文档 | 要点 |
+|---|---|---|
+| B1 | [红石 §3.2.1/§0](tech/living-redstone-tech.md) | 删除「边界红石灯读取外部信号」承诺（已裁定代码对） |
+| B2 | [红石](tech/living-redstone-tech.md) · [活铜](tech/living-copper-tech.md) | 倒计时单位 / Phase 顺序 / 字段名 / 对外输出范围；火把「暂时熄灭」不承诺未实现检测 |
+| B3 | [TNT](tech/living-tnt-tech.md) · [打火石](tech/living-flint-and-steel-tech.md) · [GUI交互](system-design/gui-interaction-system.md) | GUI 点火取代旧漏斗点火；`getSensor` 端口与注册位置 |
+| B4 | [红电](tech/living-power-tech.md) | 已删的稳态跳过 / 旧行号 / PhaseSnapshot 本地轴说明 |
+| B5 | [熔炉](tech/living-furnace-tech.md) · [酿造](tech/living-brewing-stand-tech.md) | 不存在的 SlotAccessor 产出示例、默认布局「首次落盘」；**实证仍在** `brewing-stand:375` |
+| B6 | [耕地](tech/living-farmland-tech.md) | cropSeed 是类型记录不是「不消耗」、湿润验证改倒水成源；**实证仍在** `farmland:134` |
+| B7 | [水车](tech/living-water-wheel-tech.md) | `domain/water` 路径 / 写回签名 / 渲染态存放 / 桶源退役旧示例标历史 |
+| B8 | [Tooltip](system-design/tooltip-system.md) · [图标](system-design/icon-system.md) | 面板常显与公式条件分开；ThreadLocal 真实 set/clear 生命周期 |
+| B9 | [末影箱路由](tech/living-ender-chest-tech.md) | 复合频道键替代 int 草图；simulate peek 非真实移除；flush 调用点 |
+| B10 | [容器边界 I-C10](system-design/container-boundary.md) · [超大堆叠审计](system-design/oversized-stack-audit.md) | 跨边界清单补容量/有效性/模拟三查询；实体缓存键判据 |
+| B11 | [API契约](system-design/api-contract.md) · AGENTS 模块路由 | 新注册口与 sophisticated / avaritia 路由；不重建人工文件树 |
+| B12 | [流体](tech/living-fluid-tech.md) | 旧收敛循环 / `flowSpeed`「预留」/ 最近水源距离；**实证仍在** `fluid:463` |
 
 ## 2026-10-27 审查修复 · 真机复验（2026-10-28 全部闭环）
 
@@ -705,6 +730,19 @@
    （同日调研）：非射线族 —— `use()` 是抛/收切换 ⇒ 需 phase 状态机 + 咬钩探测（`nibble` 私有，
    需 @Accessor）+ 战利品路由（掉落物飞向假玩家会被 `playerTouch` 吞），只做自主模式，另出设计稿。
    探讨全文见 archive 稿 §3 H 组。
+3. ⏳ **活剑 / 活剪刀 v1 / 辅助攻击直连的实机复验（2026-11-07 挂起，用户定「现在不测试」）** ——
+   三项均已提交、单测与五门禁全绿，只差游戏内验证：
+   ① **活剑双身份**（`6c040c98`）：无记忆活剑挖树叶/作物/竹子 → 辅助挖掘**出力** + 飞挖掘环，
+   挖普通方块**不出力**（出力谓词 `getDestroySpeed>1.0`）；双记忆剑有怪打怪、没怪挖树叶。
+   ② **活剪刀 v1**（`660d2498`）：无记忆剪挖羊毛/树叶/藤蔓/蛛网 → 同上（蛛网走掉落重算归属）；
+   录挖掘记忆后自主回放；右键剪植物顶端（海带/洞穴藤蔓尖）→ 录交互记忆 → 回放修剪，剪完天然停。
+   ③ **辅助攻击直连**（`528eb1ef`，11-06）：怪掉坑里只露头时辅助照样出手（旧射线方案在此误判隔墙）；
+   横扫多只时事件按受击怪逐个触发，但**每把无记忆活武器受冷却闸门约束，一拍内只对第一只（即主目标）补刀**
+   —— 后续怪只是空触发，别误判成「横扫没补满」的 bug；直连方案保证补的就是事件里那只
+   （旧射线方案会打到射线上更近的别的怪）；雪球/箭等「账算在玩家头上」的远程伤害**也触发**补刀，
+   用户拍板有意保留（口径见 [weapon §9](tech/living-weapon-tech.md)）；
+   自主模式回归 [武器 tech §10](tech/living-weapon-tech.md) 第 2-6 项。
+   判据与链路见 [tool §4.1](tech/living-tool-tech.md) · [weapon §9/§10](tech/living-weapon-tech.md)。
 
 ## 活工具 / 活背包 · 2026-10-27 全项目审查挂起项（P3，未定先后）
 

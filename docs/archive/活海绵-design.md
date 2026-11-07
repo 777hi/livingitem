@@ -645,11 +645,11 @@ long 溢出风险（`PowerMath.mulDivFloor` javadoc：1e9/盏 × 1e12/容器 ⇒
 | §3.1 | 记账内核从 `BulbBank` 抽共享（`PerItemLedger`，living/util L1；BulbBank 改调内核，行为等价） | `PerItemLedger` + `PerItemLedgerTest` | ✅ 2026-11-02 |
 | §2.2 | 吸收（四邻直吸 + 逐源原子 + 节拍门 gameTime 边沿）；**跨域取数走 L0 契约 `FluidSourceLedger`**（FluidPresence 姊妹契约，R3 域间保持零边）；**干海绵首口定流体必须单次构造**（两步 wither 会被不变量归一回干态 = 首口蒸发） | `LivingSpongeFunction.tick` + `LivingSpongeAbsorbTest` 9 项 | ✅ 2026-11-02 |
 | §2.3 | 物品流体能力（一堆一罐 ⑩ + 报账口径规则 12；充 = 内核 distribute / 排 = withdraw；汲 = withdrawCeil） | `SpongeItemFluidHandler` + `SpongeFluidRoundTripTest` 9 项 | ✅ 2026-11-02 |
-| §2.3 | GUI 汲（只做汲 ⑦ / 活桶保活标记） | `LivingSpongeInteractSupport/Handlers` + `living_sponge_draw` + `GuiInteractionHelper` 海绵分支 | ✅ 2026-11-02（实机待验） |
+| §2.3 | GUI 汲（只做汲 ⑦ / 活桶保活标记） | `LivingSpongeInteractSupport/Handlers` + `living_sponge_draw` + `GuiInteractionHelper` 海绵分支 | ✅ 2026-11-02（实机已验 2026-11-07 用户实测） |
 | §2.3 | `ContainerFluidHandler` 退役执行（⑫ 与能力注册同拍） | fluid tech §10 横幅已改「已执行」· TODO 活流体 #7 | ✅ 2026-11-02 |
-| §7 | 图标双态变体（两个三行 JSON parent 原版方块模型，纹理跟随材质包）+ 流体叠加装饰器（still 全幅 α0.55、只表种类）+ tooltip（FluidType descriptionId + 堆总量/枚容量） | `LivingIconRegistry` 海绵 spec + `LivingSpongeFluidDecorator` + `LivingSpongeFunction.addToTooltip` | ✅ 2026-11-02（渲染效果实机待验） |
+| §7 | 图标双态变体（两个三行 JSON parent 原版方块模型，纹理跟随材质包）+ 流体叠加装饰器（still 全幅 α0.55、只表种类）+ tooltip（FluidType descriptionId + 堆总量/枚容量） | `LivingIconRegistry` 海绵 spec + `LivingSpongeFluidDecorator` + `LivingSpongeFunction.addToTooltip` | ✅ 2026-11-02（渲染效果实机已验 2026-11-07） |
 | §8 | 守卫测试 `SpongeFluidRoundTripTest`（净迁移无凭空产生 + 有界损耗，规则 12 红线） | `SpongeFluidRoundTripTest` 9 项 | ✅ 2026-11-02 |
-| §2.3 ⑭ | 海绵垫起的容器级流体能力（BLOCK，管道直连容器；存在性 = 有活海绵，干 = 空罐；边沿失效同 §10.4） | `SpongeContainerFluidHandler` + `SpongeContainerCapabilityTest` 6 项 | ✅ 2026-11-02（实机待验：Create 管道直连容器） |
+| §2.3 ⑭ | 海绵垫起的容器级流体能力（BLOCK，管道直连容器；存在性 = 有活海绵，干 = 空罐；边沿失效同 §10.4） | `SpongeContainerFluidHandler` + `SpongeContainerCapabilityTest` 6 项 | ✅ 2026-11-02（Create 管道直连容器实机已验 2026-11-07） |
 
 ---
 

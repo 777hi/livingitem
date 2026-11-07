@@ -131,6 +131,7 @@
 | D-container-22 | 2026-11-01 | container | **`ChunkEvent.Unload` 在服务器主线程触发**（`thenRunAsync` 的第二参数是 **executor**，这里是 `unloadQueue::add` ⇒ 只是入队，body 由 `ChunkMap.tick` 主线程 poll 后 run）：卸载处理器**可以**直接改 tick 线程的表，但仍**不得查世界 / 能力**（区块正卸载 ⇒ 再入，不是竞态）；R-06 **取消**「事件只入队、tick 线程 drain」改造项 | 误读 CompletableFuture 异步形；风险是再入不是线程 | 生效 | ← D-container-21 | `event-threading.md` §2 · `living-item-infrastructure.md` §3.2 |
 | D-container-23 | 2026-11-01 | container | **跨 tick 缓存的回收判据 = 「容器消失满阈值」**，不给每种容器形态挂事件；**新建聚合条目登记一次**，正常续期只在 `trackLivingSlots`（含已无活物品的容器），查询不续期；回收走 `removeDataByKey` 同一条入口 | 六种停止被处理的成因挂六条事件必漏其一；「没再被看到」是共同结果。2026-11-05 补明新建登记：查询 / 修订独建条目也必须可回收，不另立类型心跳 TTL | 生效 | | `container-data-lifecycle.md` §2/§4 · `ContainerCacheSweepTest` |
 | D-open-01 | 2026-09-28 | open | **对外授权 = LGPL-3.0 附加 classpath 例外**（Q1 拍板）：例外文本在 `LICENSE.txt` 末尾（GNU LGPL v3 §7 additional permission）——依赖本库的 mod/addon **可任意授权（含闭源）**；修改库本体仍须 LGPL。SPDX 无此例外标准标识符，自动化工具仍用 `LGPL-3.0-or-later`（已注明，不编造） | 排除「addon 被迫整体 LGPL」的兼容门槛，又不放弃本体 copyleft；README 双语徽标 + 第三方须知已同步 | 生效 | | `open-plan.md` §3 Q1 · `LICENSE.txt` · `NOTICE.md` |
+| D-render-01 | 2026-10-26 | render | **状态段不设每 N tick 保底覆盖；广播条目身份用容器键，不用 `BlockPos`** | 比较单位 = 发送单位；容器形态无唯一坐标 | 生效 | | `living-tool-tech.md` §11.5 定案记录 |
 
 ## 6. 边界（诚实说明）
 

@@ -111,9 +111,8 @@
 
 | 目录 | 内容 |
 |---|---|
-| `libs/src/neoforge-21.1.219-merged/` | ⭐ **优先** —— MC + NeoForge 合并源码，版本与项目 `neo_version` 一致（2026-10-21 从 `build/moddev/artifacts/neoforge-21.1.219-sources.jar` 解压） |
-| `libs/src/neoforge-21.1.230-merged/`、`libs/src/neoforge-21.1.249-merged/` | 旧版备用（21.1.230 / 21.1.249，含 `.class`） |
-| `libs/src/Documentation-main/` | NeoForge 官方文档（`docs/` 为 1.21.x） |
+| `libs/src/neoforge-21.1.219-merged/` | ⭐ **优先** —— MC + NeoForge 合并源码，版本与项目 `neo_version` 一致（2026-11-07 从 `build/moddev/artifacts/neoforge-21.1.219-sources.jar` 解压） |
+| `libs/src/Documentation-main/` | NeoForge 官方文档 —— 查 1.21.1 读 **`versioned_docs/version-1.21.1/`**（63 篇）；根 `docs/` 是 main 分支，已滚到 1.21.11+，别拿它对 1.21.1 口径 |
 | `libs/src/Create-mc1.21.1-6.0.10/`<br>`libs/src/sable-main/`<br>`libs/src/Mekanism-1.21.x/`<br>`libs/src/FarmersDelight-1.21/`<br>… | 第三方模组源码 —— **做兼容时直接查** |
 
 直接搜索即可，无需解压：
@@ -127,6 +126,9 @@ search_content(path="libs/src/neoforge-21.1.219-merged/net/minecraft/...", patte
 ```powershell
 mkdir "libs\src\neoforge-21.1.219-merged" 2>$null
 tar -xf "build\moddev\artifacts\neoforge-21.1.219-sources.jar" -C "libs\src\neoforge-21.1.219-merged"
+# NeoForge 官方文档（zip 内自带 Documentation-main/ 顶层目录）
+curl -L -o "libs\src\Documentation-main.zip" https://github.com/neoforged/Documentation/archive/refs/heads/main.zip
+tar -xf "libs\src\Documentation-main.zip" -C "libs\src"
 ```
 
 > ⚠️ 搜项目代码时把 `path` 指定为 `src/`，否则 `libs/` 的上万文件会淹没结果。
