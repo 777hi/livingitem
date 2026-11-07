@@ -6,6 +6,10 @@ buffer 状态索引生成器 —— docs/buffer/README.md 的「未定案」表�
 状态单一来源 = 各 buffer 文档头部的「状态：」行（前 40 字，与 doc_check 第 11 项同口径）。
 改状态 = 改文档头部 + 重跑本脚本；本表没有手工「备注」列，细节写在各文档头部。
 
+⚠️ 本表不含「最后动过」日期列（2026-11-08 删）：该值取自 git 提交日期，而提交动作
+本身会改写它 ⇒ 提交完成瞬间生成区即过期，第 12 项必判红，又要重生成 + 再提交。
+想知道某份文档何时动过，直接 git log 该文件即可。
+
 用法：
   python tools/gen_buffer_index.py           # 重写 README 的生成区
   python tools/gen_buffer_index.py --check   # 只校验；不一致即退出码 1（doc_check 第 12 项调用）
@@ -14,7 +18,6 @@ import os
 import re
 import sys
 import glob
-import subprocess
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BUFFER = os.path.join(ROOT, "docs", "buffer")
@@ -24,8 +27,8 @@ BEGIN = ("<!-- buffer-index:begin（本区由 tools/gen_buffer_index.py 生成�
          "改状态请改各文档头部「状态：」行后重跑本脚本，勿手改本区） -->")
 END = "<!-- buffer-index:end -->"
 HEADING = "## 未定案（保留）"
-TABLE_HEAD = ("| 文件 | 状态（头部「状态：」行摘录） | 最后动过 |\n"
-              "|---|---|---|")
+TABLE_HEAD = ("| 文件 | 状态（头部「状态：」行摘录） |\n"
+              "|---|---|")
 
 
 def status_of(path):
@@ -41,25 +44,14 @@ def status_of(path):
     return "⚠️ 头部无「状态：」行"
 
 
-def last_commit(relpath):
-    try:
-        out = subprocess.run(
-            ["git", "log", "-1", "--format=%cs", "--", relpath],
-            cwd=ROOT, capture_output=True, text=True,
-        ).stdout.strip()
-        return out or "未跟踪"
-    except OSError:
-        return "?"
+def buffer_docs():
+    return [p for p in sorted(glob.glob(os.path.join(BUFFER, "*.md")))
+            if os.path.basename(p) != "README.md"]
 
 
 def build_block(nl):
-    rows = []
-    for p in sorted(glob.glob(os.path.join(BUFFER, "*.md"))):
-        name = os.path.basename(p)
-        if name == "README.md":
-            continue
-        date = last_commit("docs/buffer/" + name)
-        rows.append("| [%s](%s) | %s | %s |" % (name, name, status_of(p), date))
+    rows = ["| [%s](%s) | %s |" % (os.path.basename(p), os.path.basename(p), status_of(p))
+            for p in buffer_docs()]
     block = "\n".join([BEGIN, "", HEADING, "", TABLE_HEAD] + rows + ["", END])
     return block.replace("\n", nl)
 
@@ -84,13 +76,13 @@ def main():
     current = text[start:end + len(END)]
     if "--check" in sys.argv:
         if current == want:
-            print("12. buffer 索引      : OK（%d 份）" % (len(build_block(nl).splitlines()) - 6))
+            print("12. buffer 索引      : OK（%d 份）" % len(buffer_docs()))
             return 0
         print("12. buffer 索引      : FAIL（与各文档头部状态行不一致 —— 跑 python tools/gen_buffer_index.py）")
         return 1
     with open(README, "w", encoding="utf-8", newline="") as f:
         f.write(text[:start] + want + text[end + len(END):])
-    print("buffer 索引已重生成（%d 份）" % (len(build_block(nl).splitlines()) - 6))
+    print("buffer 索引已重生成（%d 份）" % len(buffer_docs()))
     return 0
 
 
