@@ -3,7 +3,7 @@
 # 红电架构演进路线（信号层 ⇄ 电力层解耦）
 
 > **文档版本**: 2026.09 v1
-> **状态**: 路线图 —— §1 SensorPort 已完成；规划①③截至 2026-10-31 未落地（AGENTS 红电族在路由本文）
+> **状态**: 路线图 —— 红电架构演进探讨稿，别当现状读。
 > **最后更新**: 2026-09-07
 > **适用版本**: Minecraft 1.21.1 + NeoForge 21.1.x
 > **关联文档**: [living-power-tech.md](../tech/living-power-tech.md)、[living-redstone-tech.md](../tech/living-redstone-tech.md)、[tooltip-system.md](../system-design/tooltip-system.md)

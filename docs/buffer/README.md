@@ -5,6 +5,7 @@
 >
 > ⚙️ 下方「未定案」表由 `tools/gen_buffer_index.py` **自动生成**——状态摘自各文档头部的
 > 「状态：」行（**单一来源**）。改状态 = 改文档头部 + 重跑生成器；`doc_check` 第 12 项盯不一致。
+> **状态行只写文档性质，不写进度**（口径见文末「状态行口径」）。
 > 判据见 [docs/README.md](../README.md) §1；`doc_check` 第 11 项盯「已实施却留在 buffer」。
 
 <!-- buffer-index:begin（本区由 tools/gen_buffer_index.py 生成；改状态请改各文档头部「状态：」行后重跑本脚本，勿手改本区） -->
@@ -13,23 +14,23 @@
 
 | 文件 | 状态（头部「状态：」行摘录） |
 |---|---|
-| [2026-10-27-全项目审查报告.md](2026-10-27-全项目审查报告.md) | 台账 —— 待拍板 10 项已全部处置（2026-10-28）；文档冲突 ~50 |
-| [2026-10-29-全项目审查整改计划.md](2026-10-29-全项目审查整改计划.md) | 进行中（0/1/2/4/5 完成 · 3 待复核 · 6 设计已定待实现）—— |
-| [2026-10-29-测试域梳理.md](2026-10-29-测试域梳理.md) | 进行中（盘点完成，策略待拍板）—— 本文是测试域的分析与建议，不是测试规范定案。 |
+| [2026-10-27-全项目审查报告.md](2026-10-27-全项目审查报告.md) | 原始台账（2026-10-27）—— 全项目审查的观察底稿，不是现状。 |
+| [2026-10-29-全项目审查整改计划.md](2026-10-29-全项目审查整改计划.md) | 整改计划（2026-10-29）—— 本文是计划文档，不是现状。 |
+| [2026-10-29-测试域梳理.md](2026-10-29-测试域梳理.md) | 分析探讨（2026-10-29）—— 本文是测试域的建议，不是测试规范定案。 |
 | [architecture-evolution-roadmap.md](architecture-evolution-roadmap.md) | 未定案 —— 本文是演进编排与排期依据，不是现状描述，也不是已批准的执行计划 |
 | [container-menu-introspection-topic.md](container-menu-introspection-topic.md) | 设计论证原稿（2026-11-07 复核）—— 无实施计划，保留查证、翻案与否决 |
 | [framework-benchmark.md](framework-benchmark.md) | 未定案**，本文只是**对标记录**，不是执行排期 |
 | [framework-evolution-plan.md](framework-evolution-plan.md) | 提案（buffer）——未定案、未排期，别当现状读**。 |
-| [gui-interaction-redesign.md](gui-interaction-redesign.md) | 第一、二步已实施（2026-10-10，见 §6 表 ✅）；步骤 3/4（活指针 |
-| [living-tnt-explosion-design.md](living-tnt-explosion-design.md) | 未定案** —— 量化分析已完成 · 主设计已定稿（惰性谓词 + 纪元水印）· |
+| [gui-interaction-redesign.md](gui-interaction-redesign.md) | 设计稿（已定案未实施）—— E2 交互设计，不是现状。 |
+| [living-tnt-explosion-design.md](living-tnt-explosion-design.md) | 未定案** —— TNT 爆炸规模化设计稿，别当现状读。 |
 | [living-weapon-design.md](living-weapon-design.md) | 设计探讨层（buffer）。⚠️ 描述的是**计划 / 未决**，不是现状。 |
-| [open-plan.md](open-plan.md) | 部分落地** —— Q1/Q2 已拍板、A1/A2/D1/D2 已完成（D1 见 |
-| [redstone-evolution-roadmap.md](redstone-evolution-roadmap.md) | 路线图 —— §1 SensorPort 已完成；规划①③截至 2026-10- |
-| [活滴水石锥.md](活滴水石锥.md) | 探讨中 —— 待拍板 7 项（§5）；本文是设计稿，不是现状。 |
+| [open-plan.md](open-plan.md) | 未定案** —— 对外开放计划探讨稿，别当现状读。 |
+| [redstone-evolution-roadmap.md](redstone-evolution-roadmap.md) | 路线图 —— 红电架构演进探讨稿，别当现状读。 |
+| [活滴水石锥.md](活滴水石锥.md) | 探讨中 —— 滴水石锥设计稿，不是现状。 |
 | [活潜影箱实现细节.md](活潜影箱实现细节.md) | 探讨中 —— 活潜影箱**兼容所有活物品**（而非当前阶段已实现的活物品），本随 |
 | [活物品大战僵尸.md](活物品大战僵尸.md) | 探讨中（2026-10-30 头脑风暴沉淀）。本文描述的全部机制均未实现，别当现 |
-| [活观测者-design.md](活观测者-design.md) | 探讨中 —— 待拍板 4 项（§6）；本文是设计稿，不是现状。 |
-| [活魂符-design.md](活魂符-design.md) | 设计细化中 —— 玩法已定；技术路线见§8，运行接缝待验证，未实现。 |
+| [活观测者-design.md](活观测者-design.md) | 探讨中 —— 活观测者设计稿，不是现状。 |
+| [活魂符-design.md](活魂符-design.md) | 设计稿（未定案）—— 车万女仆联动设计，别当现状读。 |
 
 <!-- buffer-index:end -->
 
@@ -70,7 +71,16 @@
 
 | 文件处于… | 动作 |
 |---|---|
-| 未定案、还在讨论 | 留 buffer，头部写「状态：未定案 / 探讨中」 |
+| 未定案、还在讨论 | 留 buffer；头部状态行按文末「状态行口径」只写文档性质 |
 | **已定案** | 结论搬稳定层（`tech/` / `system-design/` / `decisions.md`），本文件按总判据分流 |
 | **已实施** | 结论已在稳定层 ⇒ 原件**删**；仅「带日期的原始观测」留 `archive/`。同步改**活跃层**所有指针（第 1 项会兜底） |
 | 被别的文档取代 | 头部写「已被 X 取代」+ 链接；取代理由提炼进 `decisions.md` 后删原件 |
+
+## 状态行口径（2026-11-08 定）
+
+> ⭐ **这里不写会变的东西。** 状态行只写文档性质（未定案 / 探讨中 / 已定案未实施 /
+> 设计论证原稿）与「别当现状读」这类使用边界 —— 它们不随任何动作变化。
+>
+> 想查做到哪了，走 `TODO.md`（未做）/ `changelog.md`（已做）/ 代码与测试（生效与否），
+> **不靠文档自述**：自述的进度会随一次拍板或提交失效，比空白更糟 ——
+> 空白只是要你去查，过期断言会让你基于它做事。

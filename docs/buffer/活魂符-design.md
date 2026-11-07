@@ -3,7 +3,7 @@
 # 活魂符（Soul Spell）—— 车万女仆联动设计
 
 > **文档版本**: v1.6（2026-11-07，补接线/新增业务/现有入口改动的技术路线）
-> **状态**: 设计细化中 —— 玩法已定；技术路线见§8，运行接缝待验证，未实现。
+> **状态**: 设计稿（未定案）—— 车万女仆联动设计，别当现状读。
 > **范围**: 女仆实体背包接入现有容器体系；存有女仆的魂符活化后以女仆模型显示，并自行换槽。
 > **关联**: [设计模板](../guides/living-item-design-template.md) · [容器边界](../system-design/container-boundary.md) ·
 > [容器身份](../system-design/container-identity.md) · [槽位操作](../guides/slot-ops.md)。
