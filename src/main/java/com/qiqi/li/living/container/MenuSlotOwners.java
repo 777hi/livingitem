@@ -199,6 +199,13 @@ public final class MenuSlotOwners {
         List<BlockPos> structured = resolveFromSlotContainer(container);
         if (!structured.isEmpty()) return structured;
 
+        // 实体混合菜单的非存储槽不可回落到宿主位置。
+        Entity entity = EntityContainers.menuHostEntity(menu, slot);
+        if (entity != null) {
+            return EntityContainers.menuPhysicalSlot(entity, menu, slot) >= 0
+                ? List.of(entity.blockPosition()) : List.of();
+        }
+
         // ② 注册的联动解析器（逐槽版）
         for (Resolver resolver : SLOT_RESOLVERS) {
             try {
@@ -237,12 +244,6 @@ public final class MenuSlotOwners {
     private static List<BlockPos> resolveFromSlotContainer(Container container) {
         if (container instanceof BlockEntity be) {
             return List.of(be.getBlockPos());
-        }
-        // 实体容器（2026-10-21）：1.21 ContainerEntity extends Container ⇒ 船/矿车菜单槽的
-        // container 就是实体本身（ChestBoat#createMenu 传 this）。按 UUID 键 + 实时位置反查，
-        // GUI 开着时船在漂，每次解析拿到的都是当前位置 —— 位置口径在移动容器上才对。
-        if (container instanceof Entity e) {
-            return List.of(e.blockPosition());
         }
         if (container instanceof CompoundContainer) {
             BlockEntity[] halves = ContainerContexts.reflectHalves(container);

@@ -23,6 +23,7 @@
 | **活红石** | 红石信号传播 + BFS 算法 + 反相器 + 堆叠数影响；**驱动权已收归单点**（`LivingRedstoneFunction` 自维持 + 守卫，2026-10-08）。**信号层另含「活铜」** —— 铜块线缆 / 雕文二极管 / 切制立交桥 / 铜格栅加法器 / 铜灯信号记忆（2026-10-09 补登记） | [living-redstone-tech.md](../tech/living-redstone-tech.md) · [living-copper-tech.md](../tech/living-copper-tech.md) |
 | **活涂蜡铜块（红电发电）** | 双因子感应发电 + 事件驱动记账 + RE/FE 单位制；相位解读归 `PhaseInterpreter`，`SignalTracker` 顶层共用；记账 / 遥测分别归 `EnergyAccounting` / `PowerTelemetry`（2026-10-09 收口） | [living-power-tech.md](../tech/living-power-tech.md) |
 | **活打火石** | 交互触发器，无 tick 逻辑 | [living-flint-and-steel-tech.md](../tech/living-flint-and-steel-tech.md) |
+| **活魂符 / 女仆背包联动** | 原准入不变的女仆实体存储接入；活魂符读所存饱食度与背包容量均匀随机走位，原模型/动画/语音槽位接线；代码已接入、实机待验 | [living-maid-tech.md](../tech/living-maid-tech.md) |
 | **GUI交互** | 声明式规则 + 统一拦截 + 创造模式兼容 | [gui-interaction-system.md](../system-design/gui-interaction-system.md) |
 | **图标系统** | 三层架构 + 声明式配置 + 上下文切换 | [icon-system.md](../system-design/icon-system.md) |
 | **Tooltip 系统** | 双层渲染架构 + 运行时缓存同步 + 显示口径（窗口均值/mFE） | [tooltip-system.md](../system-design/tooltip-system.md) |

@@ -57,6 +57,7 @@
 | **玩家背包**（`SimpleContainerContext`） | `player_<uuid>` | 玩家在线，每 tick | 通用 `getDataHosts()` 为空；流体域另按容器键写 Player attachment（`ContainerFluidWriteback`） | `entry(ctx)` 建，无位置索引；统一回收 / 停服 | 空 tick 清槽位状态；下线后靠 sweep | 无（没有方块可破坏） | sweep 回收 |
 | **末影箱**（`EnderChestContainerContext`） | `player_<uuid>_ender_chest` | 玩家在线，每 tick | 同玩家背包，流体 attachment 以末影箱键区分 | 同玩家背包 | 空 tick 清槽位状态；下线后靠 sweep | 无 | sweep 回收 |
 | **实体容器**（`EntityContainerContext`） | `entity_<uuid>` | 实体已加载，每 tick；实体卸载/死亡/移除即停止 | 实体 attachment（`getDataHosts()` 覆写为实体） | `entry(ctx)` 建；上下文提供实体位置快照，现行索引入口会登记，非稳定方块位置；统一回收 / 停服 | 空 tick 清槽位状态；实体消失后靠 sweep | 无 | sweep 回收 |
+| **女仆实体背包**（`MaidContainerContext`） | `entity_<uuid>` | TLM Provider接入现有实体遍历，仅当前装备开放存储前缀；实体卸载/移除停tick | 复用实体attachment宿主；收存到魂符后的附件交接尚待实机核查 | 同EntityContainerContext，复用统一回收 | 按可用物理存储槽，不含装备/饰品；原准入不变 | 不新建女仆专用删除流程 | sweep回收 |
 | **物品形态**（`ItemFormContainerContext`） | `cuuid_<uuid>` | 物品在可 tick 的宿主里；物品被销毁/丢失即停止 | 无宿主；持久化走 `ContainerDataSavedData`（按容器 UUID，`savedWith`）；活视图另存 `ItemFormLiveViews` | `entry(ctx)` 建，无位置索引；统一回收 / 停服 | 空 tick 清槽位状态；取消活化 / sweep 作废整容器 | `ContainerUuids.discard` → `removeDataByKey` | sweep 回收（活视图同节拍主动淘汰） |
 | **掉落物**（`ItemEntityContainerContext`） | `item_entity_<uuid>`（**每次掉落新键**） | `ItemEntity` 已加载且功能声明 `supportsDroppedItem`（当前活工具 / 活 TNT）；拾取/消失即停止 | 无 | 查询 / 修订可由 `entry(ctx)` 建；统一回收 / 停服 | `trackLivingSlots` 会建；运行时片段当前不写 | 无 | sweep 回收 |
 

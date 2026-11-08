@@ -163,6 +163,7 @@ public class LivingItem {
         com.qiqi.li.living.domain.piston.PistonComponents.REG.register(modEventBus);
         com.qiqi.li.living.domain.tools.ToolComponents.REG.register(modEventBus);
         com.qiqi.li.living.domain.beacon.BeaconComponents.REG.register(modEventBus);
+        com.qiqi.li.living.domain.maid.MaidComponents.REG.register(modEventBus);
         NeoForge.EVENT_BUS.register(this);
         NeoForge.EVENT_BUS.register(ContainerChunkCache.getInstance());
         NeoForge.EVENT_BUS.register(LivingToolRecorder.class);
@@ -267,6 +268,7 @@ public class LivingItem {
         ModCreate.init();
         // 联动模块（D-container-09）：难兼容的模组各自注册，核心不猜第三方 API。
         com.qiqi.li.living.compat.sophisticated.ModSophisticated.init();
+        com.qiqi.li.living.compat.tlm.TlmContainerRegistration.register();
         // 实体容器（2026-10-21）：驴/骡菜单 → 实体的解析器。
         // ⚠️ 用反射而不是 Mixin accessor —— 试过 accessor，但 Mixin 对**自己的包有隔离**：
         // 「class is in a defined mixin package ... cannot be referenced directly」——
@@ -301,6 +303,7 @@ public class LivingItem {
         MapRegistration.register();
         BeaconRegistration.register();    // 活信标（Phase 1：仅功能骨架，光束为纯客户端渲染）
         com.qiqi.li.living.domain.backpack.BackpackRegistration.register();   // 活背包（物品形态容器内部 tick）
+        com.qiqi.li.living.domain.maid.MaidRegistration.register();
         // 注：原 RuntimeRegistration 已删（2026-10-12）—— 它只为「登记 runtime 包缓存清理」而存在，
         // 改由缓存类自己登记后即变空；且 runtime 是 L2 机制层，本就不该有「域注册入口」。
 
@@ -444,9 +447,9 @@ public class LivingItem {
                         && LivingItemManager.supportsDroppedItem(itemEntity.getItem())) {
                     ContainerLivingItemHandler.processIsolated(
                         new ItemEntityContainerContext(itemEntity, level), level);
-                } else if (EntityContainers.isContainerEntity(entity)) {
-                    ContainerLivingItemHandler.processIsolated(
-                        new EntityContainerContext(entity, level), level);
+                } else {
+                    var context = EntityContainers.createContext(entity, level);
+                    if (context != null) ContainerLivingItemHandler.processIsolated(context, level);
                 }
             } catch (RuntimeException e) {
                 // 准入层已挡住「无能力面」的实体，这里接的是领域内部异常；
@@ -764,14 +767,25 @@ public class LivingItem {
         var menu = event.getContainer();
         // 按 E 看自己背包时 menu == inventoryMenu（没有容器槽可言）
         if (menu == null || menu == player.inventoryMenu) return;
+        java.util.Set<String> sentKeys = new java.util.HashSet<>();
+        var menuEntity = MenuSlotOwners.resolveMenuEntity(menu, null);
         for (var slot : menu.slots) {
             var ctx = com.qiqi.li.living.container.ContainerContexts.resolve(player, slot);
             if (ctx == null) continue;
             String key = ctx.getCacheKey();
-            if (key == null) continue;
+            // 非玩家客户端遥测仍是单目标；实体菜单的附加库存不得覆盖主宿主首包。
+            if (!shouldSendMenuRuntime(menuEntity, ctx)) continue;
+            if (key == null || !sentKeys.add(key)) continue;
             com.qiqi.li.network.LivingItemRuntimeSync.sendSnapshotToPlayer(key, player);
-            return;   // 一个菜单只对应一个容器，发一次即可
         }
+    }
+
+    static boolean shouldSendMenuRuntime(net.minecraft.world.entity.Entity menuEntity,
+                                         com.qiqi.li.living.container.ContainerContext context) {
+        return menuEntity == null || context instanceof com.qiqi.li.living.container.TickableContainerContext tickable
+                    && tickable.getEntity() == menuEntity
+                || com.qiqi.li.living.container.ContainerKeys.kindOf(context.getCacheKey())
+                    == com.qiqi.li.living.container.ContainerKind.PLAYER_INV;
     }
 
     @SubscribeEvent

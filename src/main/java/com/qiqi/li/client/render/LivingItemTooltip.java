@@ -13,6 +13,7 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.event.entity.player.ItemTooltipEvent;
+import com.qiqi.li.client.util.ClientMenuSlotOwners;
 import com.qiqi.li.LivingItem;
 import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
@@ -66,9 +67,11 @@ public class LivingItemTooltip {
         if (mc.screen instanceof AbstractContainerScreen<?> containerScreen) {
             Slot hoveredSlot = containerScreen.getSlotUnderMouse();
             if (hoveredSlot != null && hoveredSlot.getItem() == stack) {
+                int physicalSlot = ClientMenuSlotOwners.resolveStorageSlot(containerScreen.getMenu(), hoveredSlot);
+                if (physicalSlot < 0) return RuntimeSegments.EMPTY;
                 return isBackpackSlot(mc, hoveredSlot)
-                    ? LivingItemClientCache.getPlayer(hoveredSlot.getContainerSlot())
-                    : LivingItemClientCache.get(hoveredSlot.getContainerSlot());
+                    ? LivingItemClientCache.getPlayer(physicalSlot)
+                    : LivingItemClientCache.get(physicalSlot);
             }
         }
         // 兜底：特殊 GUI（如创造模式物品栏 tab）的槽位索引与 Inventory 不对齐时，

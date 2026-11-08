@@ -113,9 +113,13 @@ public final class ContainerContexts {
         // ⚠️ 不绕位置：GUI 开着的时候船可能正在移动，而位置快照只在 ctx 构造那一刻有效。
         // ⚠️ 放在菜单位置分支【之前】：菜单位置分支按 getBlockEntity(pos) 反查，实体位置上
         //    没有 BE ⇒ 对它恒 null，必须由本分支先接住。
-        Entity containerEntity = EntityContainers.resolveMenuEntity(player.containerMenu, slot);
-        if (containerEntity != null && containerEntity.level() == level) {
-            return new EntityContainerContext(containerEntity, (ServerLevel) level);
+        Entity containerEntity = EntityContainers.menuHostEntity(player.containerMenu, slot);
+        if (containerEntity != null) {
+            if (containerEntity.level() != level || !(level instanceof ServerLevel serverLevel)
+                    || EntityContainers.menuPhysicalSlot(containerEntity, player.containerMenu, slot) < 0) {
+                return null;
+            }
+            return EntityContainers.createContext(containerEntity, serverLevel);
         }
         // ⚠️ 形状是实体容器、却被双闸（能力面）拦下 ⇒ 到此为止（2026-11-05）。
         //    继续走下面的菜单位置分支会按 getBlockEntity(实体位置) 反查，矿车/船恰好停在

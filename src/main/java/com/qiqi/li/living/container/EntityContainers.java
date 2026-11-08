@@ -1,5 +1,6 @@
 package com.qiqi.li.living.container;
 
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.animal.horse.AbstractChestedHorse;
 import net.minecraft.world.entity.vehicle.ContainerEntity;
@@ -9,6 +10,9 @@ import net.minecraft.world.inventory.Slot;
 import net.neoforged.neoforge.capabilities.Capabilities;
 
 import javax.annotation.Nullable;
+import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * 实体容器的白名单与菜单解析（2026-10-21）—— 设计稿
@@ -47,7 +51,64 @@ import javax.annotation.Nullable;
  */
 public final class EntityContainers {
 
+    /** 实体存储宿主；准入、factory 与菜单存储槽必须认领同一范围。 */
+    public interface Provider {
+        boolean supports(Entity entity);
+        EntityContainerContext createContext(Entity entity, ServerLevel level);
+        /** 返回上下文的物理槽；装备、隐藏槽及其他宿主返回 -1。双端可调用。 */
+        int menuPhysicalSlot(Entity entity, AbstractContainerMenu menu, Slot slot);
+    }
+
+    private static final List<Provider> PROVIDERS = new CopyOnWriteArrayList<>();
+
     private EntityContainers() {}
+
+    /** 由联动的 *Registration 登记；先登记先认领。 */
+    public static void registerProvider(Provider provider) {
+        PROVIDERS.add(Objects.requireNonNull(provider));
+    }
+
+    @Nullable
+    private static Provider providerOf(Entity entity) {
+        if (entity == null) return null;
+        for (Provider provider : PROVIDERS) {
+            if (provider.supports(entity)) return provider;
+        }
+        return null;
+    }
+
+    /** 未认领的实体返回 null；原版仍需同时通过白名单与能力面。 */
+    @Nullable
+    public static EntityContainerContext createContext(Entity entity, ServerLevel level) {
+        Provider provider = providerOf(entity);
+        if (provider != null) return provider.createContext(entity, level);
+        return isVanillaContainerEntity(entity) ? new EntityContainerContext(entity, level) : null;
+    }
+
+    /** 同一实体存储范围的菜单槽归属；非存储槽不得按实体位置回落。 */
+    public static int menuPhysicalSlot(Entity entity, AbstractContainerMenu menu, Slot slot) {
+        if (entity == null || menu == null || slot == null) return -1;
+        Provider provider = providerOf(entity);
+        if (provider != null) return Math.max(-1, provider.menuPhysicalSlot(entity, menu, slot));
+        if (!isVanillaContainerEntity(entity)) return -1;
+        int physical = slot.getContainerSlot();
+        int offset = entity instanceof net.minecraft.world.entity.animal.horse.AbstractHorse ? 1 : 0;
+        int size = entity.getCapability(Capabilities.ItemHandler.ENTITY).getSlots();
+        if (physical < offset || physical >= size) return -1;
+        if (slot.container == entity) return physical;
+        // 原版马菜单第 0/1 槽是鞍/体甲，第 2 槽起才是箱子格。
+        if (menu instanceof HorseInventoryMenu && menu.slots.indexOf(slot) >= 2
+                && menu.slots.indexOf(slot) < size + 1
+                && MenuSlotOwners.resolveMenuEntity(menu, slot) == entity) return physical;
+        return -1;
+    }
+
+    /** 原始宿主解析；即使未通过准入或此槽是装备也保留实体身份用于阻止位置回落。 */
+    @Nullable
+    public static Entity menuHostEntity(AbstractContainerMenu menu, Slot slot) {
+        if (slot != null && slot.container instanceof Entity entity) return entity;
+        return menu == null ? null : MenuSlotOwners.resolveMenuEntity(menu, slot);
+    }
 
     /**
      * 是否「该被当容器 tick」的实体 —— <b>白名单 + 能力面双闸</b>（2026-11-05）。
@@ -68,6 +129,10 @@ public final class EntityContainers {
      * 由 tick 的 {@code FailureThrottle} 限频留痕，不静默吞真 bug。</p>
      */
     public static boolean isContainerEntity(Entity entity) {
+        return providerOf(entity) != null || isVanillaContainerEntity(entity);
+    }
+
+    private static boolean isVanillaContainerEntity(Entity entity) {
         if (entity instanceof AbstractChestedHorse horse) {
             if (!horse.hasChest()) return false;   // 无箱驴/骡只有 2 格（鞍 + 体甲）
         } else if (!(entity instanceof ContainerEntity)) {
@@ -87,17 +152,8 @@ public final class EntityContainers {
      */
     @Nullable
     public static Entity resolveMenuEntity(AbstractContainerMenu menu, Slot slot) {
-        // ① 结构化：船 / 矿车的槽位 container 就是实体本身
-        if (slot.container instanceof Entity e && isContainerEntity(e)) {
-            return e;
-        }
-        // ② 注册的实体解析器（Mixin 侧实现 + 注册，核心不认识任何菜单类 —— D-container-09）：
-        //    驴/骡的菜单存着 horse 字段（private final、无 getter）⇒ 入口层反射该字段（见 LivingItem
-        //    的 HORSE_MENU_RESOLVER：Mixin 包隔离使 accessor 方案不可用，已实测）。
-        //    ⚠️ 白名单在下面统一判：HorseInventoryMenu 是【马/驴/骡】共用的菜单类，
-        //    不过 hasChest 就会把「打开马的 GUI」当成容器交互。
-        Entity registered = MenuSlotOwners.resolveMenuEntity(menu, slot);
-        return registered != null && isContainerEntity(registered) ? registered : null;
+        Entity entity = menuHostEntity(menu, slot);
+        return entity != null && menuPhysicalSlot(entity, menu, slot) >= 0 ? entity : null;
     }
 
 

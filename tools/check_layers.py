@@ -66,6 +66,7 @@ ORDER = (R1, R2, R3, R4, R5)
 # 第一次跑 R4 就是靠这个区分收窄的（见 docs/guides/code-map.md §6）。
 REGISTRY_METHODS = [
     "LivingItemManager.registerFunction",
+    "EntityContainers.registerProvider",
     "InteractionRegistry.register",
     "InteractionRegistry.registerHandler",
     "InteractionPredicates.register",

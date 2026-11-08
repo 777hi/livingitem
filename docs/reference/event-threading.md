@@ -59,8 +59,9 @@
 | `LivingContainerOverlaySubscriber` | `onRenderForeground`(`Foreground`) |
 | `LivingItemInputHandler` | `onCharTyped`(`Pre`) `onClientLoggingOut`(`LoggingOut`) `onKeyPressed`(`Pre`) `onLeftClickEmpty`(`LeftClickEmpty`) `onLevelTick`(`Post`) `onMouseDragged`(`Pre`) `onScreenClosing`(`Closing`) |
 | `LivingItemTooltip` | `onItemTooltip`(`ItemTooltipEvent`) |
+| `LivingSoulSlabSlotPreview` | `onClientSetup`(`FMLClientSetupEvent`) `onRegisterReloadListeners`(`RegisterClientReloadListenersEvent`) |
 
-**共 58 个处理器**。本名单不含线程判断 —— 想知道某个处理器在哪个线程、能不能碰共享状态，看上方三条硬规则与 §2 的例外清单；名单里查不到的约束就是**没写过的约束**，不等于「无约束」。
+**共 60 个处理器**。本名单不含线程判断 —— 想知道某个处理器在哪个线程、能不能碰共享状态，看上方三条硬规则与 §2 的例外清单；名单里查不到的约束就是**没写过的约束**，不等于「无约束」。
 <!-- rosters:end -->
 
 ---

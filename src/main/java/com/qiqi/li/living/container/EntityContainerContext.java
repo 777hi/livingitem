@@ -70,7 +70,12 @@ public class EntityContainerContext extends SimpleContainerContext {
     private final int storageOffset;
 
     public EntityContainerContext(Entity entity, ServerLevel level) {
-        super(handlerOf(entity), null,
+        this(entity, level, handlerOf(entity));
+    }
+
+    /** 已选定的实体存储视图；不得传入混合装备/饰品的整实体能力面。 */
+    public EntityContainerContext(Entity entity, ServerLevel level, IItemHandler handler) {
+        super(java.util.Objects.requireNonNull(handler), null,
             List.of(entity.blockPosition()),    // 位置快照：本 tick 的实时位置
             List.of(),                          // 无方块实体
             (Level) level,
@@ -92,24 +97,19 @@ public class EntityContainerContext extends SimpleContainerContext {
      */
     @Override
     public int getSize() {
-        return super.getSize() - storageOffset;
+        return Math.max(0, super.getSize() - storageOffset);
     }
 
-    /**
-     * 读存储格（逻辑槽位 → handler 物理索引，跳过鞍槽）。
-     *
-     * <p>委托 {@code super} 而不是直接调 handler：父类的越界判据是
-     * {@code 0 <= slot < handler.getSlots()}，加偏移后天然落在存储区。</p>
-     */
+    /** 逻辑槽先验界，再跨到 handler；负号不得经偏移落进装备槽。 */
     @Override
     public ItemStack getItem(int logicalSlot) {
-        return super.getItem(logicalSlot + storageOffset);
+        return isValidSlot(logicalSlot) ? super.getItem(logicalSlot + storageOffset) : ItemStack.EMPTY;
     }
 
     /** 写存储格（同 {@link #getItem} 的偏移；clamp/脏标记/同步全走父类既有路径）。 */
     @Override
     public void setItem(int logicalSlot, ItemStack stack) {
-        super.setItem(logicalSlot + storageOffset, stack);
+        if (isValidSlot(logicalSlot)) super.setItem(logicalSlot + storageOffset, stack);
     }
 
     /** 组件提交使用同一逻辑→物理槽映射，不写前置装备槽。 */
@@ -128,13 +128,14 @@ public class EntityContainerContext extends SimpleContainerContext {
      */
     @Override
     public int toPhysicalSlot(int logicalSlot) {
-        return logicalSlot + storageOffset;
+        return isValidSlot(logicalSlot) ? logicalSlot + storageOffset : -1;
     }
 
     /** 物理槽 → 逻辑槽（− 装备槽偏移）；GUI 交互（倒/汲水）靠它把槽号拉回存储格编号。 */
     @Override
     public int toLogicalSlot(int physicalSlot) {
-        return physicalSlot - storageOffset;
+        return physicalSlot >= storageOffset && physicalSlot < super.getSize()
+            ? physicalSlot - storageOffset : -1;
     }
 
     // ── 容量/校验/模拟三通道过逻辑↔物理映射（2026-10-27 审查 P2-1，I-C4/I-C10）──
@@ -145,17 +146,32 @@ public class EntityContainerContext extends SimpleContainerContext {
 
     @Override
     public int getSlotLimit(int logicalSlot) {
-        return super.getSlotLimit(logicalSlot + storageOffset);
+        return isValidSlot(logicalSlot) ? super.getSlotLimit(logicalSlot + storageOffset) : 0;
     }
 
     @Override
     public boolean isItemValid(int logicalSlot, ItemStack stack) {
-        return super.isItemValid(logicalSlot + storageOffset, stack);
+        return isValidSlot(logicalSlot) && super.isItemValid(logicalSlot + storageOffset, stack);
     }
 
     @Override
     public int simulateInsertItem(int logicalSlot, ItemStack stack) {
-        return super.simulateInsertItem(logicalSlot + storageOffset, stack);
+        return isValidSlot(logicalSlot) ? super.simulateInsertItem(logicalSlot + storageOffset, stack) : 0;
+    }
+
+    @Override
+    public int simulateExtractItem(int logicalSlot, int amount) {
+        return isValidSlot(logicalSlot) ? super.simulateExtractItem(logicalSlot + storageOffset, amount) : 0;
+    }
+
+    @Override
+    public boolean supportsExactWrite(int logicalSlot) {
+        return isValidSlot(logicalSlot) && super.supportsExactWrite(logicalSlot + storageOffset);
+    }
+
+    @Override
+    public void syncSlotToClients(int logicalSlot, ItemStack stack) {
+        if (isValidSlot(logicalSlot)) super.syncSlotToClients(logicalSlot, stack);
     }
 
     /**

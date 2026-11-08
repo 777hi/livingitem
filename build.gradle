@@ -272,6 +272,12 @@ dependencies {
     // 不设 runtimeOnly：开发环境不带光影，无标签路径即可验证。
     compileOnly("maven.modrinth:iris:1.8.12+1.21.1-neoforge") { transitive = false }
     
+    // ==================== 车万女仆兼容（编译期依赖，玩家可选安装） ====================
+    compileOnly("maven.modrinth:touhou-little-maid:1.5.3-neoforge+mc1.21.1") { transitive = false }
+    fileTree(dir: devModsDir, include: ['*touhoulittlemaid*.jar']).each { jar ->
+        runtimeOnly files(jar)
+    }
+
     // ==================== 单元测试依赖 (Unit Test Dependencies) ====================
 
     // JUnit 5 - 测试框架核心（junit-jupiter 聚合包含 api / params / engine）

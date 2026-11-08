@@ -1,26 +1,48 @@
 #!/bin/sh
 # 仓库内 pre-commit 门禁（2026-10-30 起，R-05）。
 # 启用一次：sh tools/setup-dev.sh（等价于 git config core.hooksPath .githooks）
+# 失败时逐项打印「下一步」；基线更新（--update-baseline）必须是有意识的架构决策。
 set -u
 
 PY=python
 command -v "$PY" >/dev/null 2>&1 || PY=python3
 
 fail=0
-echo "[pre-commit] check_layers（层纪律）"
-"$PY" tools/check_layers.py || fail=1
-echo "[pre-commit] check_mixins（Mixin 前缀 / 成员 / 配置）"
-"$PY" tools/check_mixins.py || fail=1
-echo "[pre-commit] check_container_keys（容器键解析收敛）"
-"$PY" tools/check_container_keys.py || fail=1
-echo "[pre-commit] check_stack_ops（槽位裸写棘轮）"
-"$PY" tools/check_stack_ops.py || fail=1
-echo "[pre-commit] doc_check（文档一致性）"
-"$PY" tools/doc_check.py || fail=1
+failed=""
+
+run_gate() {
+  label=$1
+  script=$2
+  hint=$3
+  echo "[pre-commit] $label"
+  if "$PY" "$script"; then
+    return 0
+  fi
+  fail=1
+  failed="$failed $label"
+  echo "  → 下一步：$hint"
+  echo ""
+  return 1
+}
+
+run_gate "check_layers（层纪律）" "tools/check_layers.py" \
+  '新增违规：先改代码（移动依赖 / 改接线）；确属有意的架构决策才用 --update-baseline 显式接受，既有基线债不要动。'
+
+run_gate "check_mixins（Mixin 前缀 / 成员 / 配置）" "tools/check_mixins.py" \
+  'R1/R2：方法名加 living_item$ 前缀，且 @Accessor("字段") / @Invoker("方法") 显式指定成员，两者必须成对；R3/R4：同步 src/main/resources/living_item*.mixins.json。'
+
+run_gate "check_container_keys（容器键解析收敛）" "tools/check_container_keys.py" \
+  '改用 ContainerKeys#kindOf / #ownerOf / #positionsOf / #isOwnedByPlayer；不要各自 startsWith / UUID.fromString 反推。'
+
+run_gate "check_stack_ops（槽位裸写棘轮）" "tools/check_stack_ops.py" \
+  '数量增减改走 move / produce / consume / transform；确认是状态写入等非数量场景，才用 --update-baseline 登记，不要用它掩盖真违规。'
+
+run_gate "doc_check（文档一致性）" "tools/doc_check.py" \
+  '测试条数不一致：先跑全量 ./gradlew test（不要 --tests 局部跑，会覆盖 build/test-results），再重跑本项；buffer 索引 / 名单区不一致按报告跑 gen_buffer_index.py / gen_rosters.py；其余按报告行号修文档。'
 
 if [ "$fail" != "0" ]; then
-  echo ""
-  echo "[pre-commit] 拦下了。若 doc_check 报「测试条数不一致」，先跑全量 ./gradlew test。"
+  failed="${failed# }"
+  echo "[pre-commit] 拦下了（$failed）。修复顺序：代码门禁 → 全量测试 → doc_check。"
   exit 1
 fi
 echo "[pre-commit] 全部通过"

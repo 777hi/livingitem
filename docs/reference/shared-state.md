@@ -24,6 +24,7 @@
 | `ContainerLivingItemHandler` | 登记 | `CONTAINER_DATA` `LAST_SEEN` `LIVING_SLOT_ITEMS` `PENDING_RUNTIME_INVALIDATIONS` `POS_TO_CACHE_KEY` |
 | `ContainerMenuInfoRequestPacket` | 登记 | `LAST_REQUEST` |
 | `ContainerRuntimeCache` | 登记 | `dirtyContainers` `store` |
+| `EntityContainers` | ⚠️ 本类无清理入口 | `PROVIDERS` |
 | `FailureThrottle` | 登记 | `FAILURES` |
 | `FluidFlowServerSync` | 登记 | `CLIENT_ACTIVE` |
 | `ItemFormLiveViews` | 登记 | `VIEWS` |

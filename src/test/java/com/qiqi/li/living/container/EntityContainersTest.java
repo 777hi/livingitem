@@ -430,11 +430,32 @@ class EntityContainersTest {
         MenuSlotOwners.registerEntityResolver(
             (m, s) -> m == donkeyMenu ? donkey : (m == horseMenu ? plainHorse : null));
 
-        assertEquals(donkey, EntityContainers.resolveMenuEntity(donkeyMenu, donkeyMenu.slots.get(0)),
-            "带箱驴骡：注册器认领 + 白名单放行");
+        assertEquals(donkey, EntityContainers.menuHostEntity(donkeyMenu, donkeyMenu.slots.get(0)),
+            "注册器保留原始实体身份，非存储槽据此阻止位置回落");
+        assertNull(EntityContainers.resolveMenuEntity(donkeyMenu, donkeyMenu.slots.get(0)),
+            "玩家 Inventory 槽不能因菜单关联驴就被当成箱子格");
         assertNull(EntityContainers.resolveMenuEntity(horseMenu, horseMenu.slots.get(0)),
             "普通马：注册器认领了，但白名单（hasChest）拦下 —— HorseInventoryMenu 是马/驴/骡共用类，"
                 + "不过这道判据就会把「开马的 GUI」当成容器交互");
+    }
+
+    @Test
+    void horseMenu_ownsOnlyActualStorageSlots() {
+        AbstractChestedHorse donkey = mock(AbstractChestedHorse.class);
+        when(donkey.hasChest()).thenReturn(true);
+        when(donkey.getBodyArmorAccess()).thenReturn(new net.minecraft.world.SimpleContainer(1));
+        when(donkey.getCapability(Capabilities.ItemHandler.ENTITY)).thenReturn(new ItemStackHandler(16));
+        var inventory = new Inventory(mock(net.minecraft.world.entity.player.Player.class));
+        var menu = new net.minecraft.world.inventory.HorseInventoryMenu(1, inventory,
+            new net.minecraft.world.SimpleContainer(16), donkey, 5);
+        MenuSlotOwners.registerEntityResolver((m, s) -> m == menu ? donkey : null);
+        for (int i = 2; i < 17; i++) {
+            assertEquals(donkey, EntityContainers.resolveMenuEntity(menu, menu.slots.get(i)));
+            assertEquals(i - 1, EntityContainers.menuPhysicalSlot(donkey, menu, menu.slots.get(i)));
+        }
+        assertNull(EntityContainers.resolveMenuEntity(menu, menu.slots.get(0)), "鞍槽");
+        assertNull(EntityContainers.resolveMenuEntity(menu, menu.slots.get(1)), "体甲槽");
+        assertNull(EntityContainers.resolveMenuEntity(menu, menu.slots.get(17)), "玩家物品栏");
     }
 
     /** 只挂一个玩家背包槽的裸菜单（实体挂在菜单上，不在槽位上）。 */
@@ -487,6 +508,30 @@ class EntityContainersTest {
             .thenReturn(handler);
         when(donkey.getInventoryColumns()).thenReturn(5);
         return new com.qiqi.li.living.container.EntityContainerContext(donkey, mock(ServerLevel.class));
+    }
+
+    @Test
+    void horseStorageRejectsNegativeSlotsAndExtractsThroughOffset() {
+        var handler = discriminatingHandler();
+        handler.setStackInSlot(0, new ItemStack(Items.SADDLE));
+        handler.setStackInSlot(1, new ItemStack(Items.APPLE, 3));
+        var ctx = donkeyCtx(handler);
+        assertEquals(3, ctx.simulateExtractItem(0, 64));
+        for (int slot : new int[]{-1, Integer.MIN_VALUE, 15, Integer.MAX_VALUE}) {
+            assertTrue(ctx.getItem(slot).isEmpty());
+            assertEquals(-1, ctx.toPhysicalSlot(slot));
+            assertEquals(0, ctx.getSlotLimit(slot));
+            assertFalse(ctx.isItemValid(slot, new ItemStack(Items.DIRT)));
+            assertEquals(0, ctx.simulateInsertItem(slot, new ItemStack(Items.DIRT)));
+            assertEquals(0, ctx.simulateExtractItem(slot, 64));
+            assertFalse(ctx.supportsExactWrite(slot));
+            assertFalse(ctx.trySetItemExact(slot, new ItemStack(Items.DIRT)));
+            ctx.setItem(slot, new ItemStack(Items.DIRT));
+        }
+        assertEquals(Items.SADDLE, handler.getStackInSlot(0).getItem());
+        assertEquals(Items.APPLE, handler.getStackInSlot(1).getItem());
+        assertEquals(-1, ctx.toLogicalSlot(0));
+        assertEquals(-1, ctx.toLogicalSlot(16));
     }
 
     @Test

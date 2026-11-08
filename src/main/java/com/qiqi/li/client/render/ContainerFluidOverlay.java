@@ -20,7 +20,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.neoforged.neoforge.client.extensions.common.IClientFluidTypeExtensions;
 import net.neoforged.neoforge.fluids.FluidType;
 
-import com.qiqi.li.client.util.ClientSlotResolve;
+import com.qiqi.li.client.util.ClientMenuSlotOwners;
 import com.qiqi.li.living.domain.water.FluidFlowBehaviors;
 import com.qiqi.li.living.domain.water.FluidFlowClientCache;
 import com.qiqi.li.living.domain.water.FluidFlowVector;
@@ -92,18 +92,22 @@ public final class ContainerFluidOverlay {
     /**
      * 容器轨取数：菜单槽位按 {@code slot.container} 分组，每组选快照
      * （玩家背包 → {@link FluidFlowClientCache#getPlayer()}，其余 → {@link FluidFlowClientCache#getChestLike()}），
-     * handler 槽位经 {@link ClientSlotResolve#resolveContainerSlot} 映射回菜单槽位。
+     * handler 槽位经 {@link ClientMenuSlotOwners#resolveStorageSlot} 映射回菜单槽位。
      */
     private static List<FluidCellRender> collect(AbstractContainerScreen<?> screen) {
         List<FluidCellRender> out = new ArrayList<>();
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return out;
 
-        Map<net.minecraft.world.Container, Map<Integer, Integer>> groups = new LinkedHashMap<>();
+        Map<Object, Map<Integer, Integer>> groups = new LinkedHashMap<>();
         for (int i = 0; i < screen.getMenu().slots.size(); i++) {
             net.minecraft.world.inventory.Slot s = screen.getMenu().slots.get(i);
-            groups.computeIfAbsent(s.container, k -> new java.util.HashMap<>())
-                  .put(ClientSlotResolve.resolveContainerSlot(s), i);
+            if (!s.isActive()) continue;
+            int physical = ClientMenuSlotOwners.resolveStorageSlot(screen.getMenu(), s);
+            if (physical < 0) continue;
+            var entity = com.qiqi.li.living.container.EntityContainers.menuHostEntity(screen.getMenu(), s);
+            Object owner = s.container == mc.player.getInventory() || entity == null ? s.container : entity;
+            groups.computeIfAbsent(owner, k -> new java.util.HashMap<>()).putIfAbsent(physical, i);
         }
 
         net.minecraft.world.entity.player.Inventory playerInv = mc.player.getInventory();

@@ -19,6 +19,7 @@
 src/test/java/com/qiqi/li/
 ├── LivingItemChunkContainerScanTest.java     # 战利品容器不处理但保留区块 / 开箱回到能力路径；水·岩浆真实单箱附件 NBT→单次 Load 延迟可见→重新发现→实际 tick 发包 / 删末源保存重载不复活
 ├── LivingItemRuntimeContainerPositionsTest.java  # 运行时遥测发包「容器键→位置」反查·非 Container BE(精妙背包/ProjectE)返回位置不抛异常(I-C5 翻转)/原版 Container BE/无 BE 返回 null + 缓存键反查·前缀定向该维度且不越维度找补/未知维度/裸键扫描兜底/背包坏键安全跳过/dimPrefixOf + 实体容器键→实时位置/实体不存在→空（2026-10-21）
+├── LivingItemMenuRuntimeTest.java            # 混合实体菜单首包·主实体与玩家保留、附加末影箱不得覆盖单非玩家缓存，普通菜单原路由不变
 ├── testutil/
 │   └── FakeContainerContext.java              # ContainerContext 测试替身（内存数组实现）
 ├── client/gui/
@@ -41,6 +42,8 @@ src/test/java/com/qiqi/li/
 │   ├── ProgressBarDecoratorTest.java          # 通用进度条·守卫(null/比例≤0 不画)+横竖几何(黑底/彩条·原版 Math.round)+燃料刻度(1 次=1px)+越界 clamp
 │   ├── LivingItemTooltipTest.java             # 活物品段标题恒在（2026-10-07 定稿）·零内容行仍输出标题/不适用功能同样保留/真实活桶只有标题无内容行/有内容行则空行+标题+行/多功能标题只一次且行序保持
 │   └── BeamColorSectionsTest.java             # 光束颜色分段·无玻璃单段白/玻璃纯色/空气加高/同色累计/异色平均/不透明截断/自定义默认色 + 默认白色完整 ARGB/实际原版内芯顶点 alpha=255、外晕=32（无观测/无玻璃/红玻璃/白玻璃）
+├── client/render/tlm/
+│   └── SoulSlabPreviewMovesTest.java          # 活魂符预览唯一相邻迁移·物理宿主/槽身份、clock排除、快照歧义不共享、多枚独立；不代替实际女仆渲染验收
 ├── client/util/
 │   └── LivingChestTabSearchTest.java          # 活箱子标签页搜索过滤纯函数·空搜索词原样返回(不清空栈)/非空词剔除空栈不改入参/中文名直配/拼音(全拼·首字母·部分)/英文名大小写/注册ID兜底/空物品+非空词⇒匹配(原守卫分支语义·实际路径不可达,钉住防漂)
 ├── living/api/
@@ -71,6 +74,7 @@ src/test/java/com/qiqi/li/
 │   ├── ContainerDataSavedDataTest.java         # SavedData 持久层（2026-10-22，活背包）·put→get 往返/save→load 跨重启/空条目不写盘/isSaved=false 拒绝写入/remove(UUID) 只删一个/同 key 后写覆盖/未知 UUID 返回 null/组件注册
 │   ├── SimpleContainerContextTest.java        # 容器上下文脏槽同步 + 末影箱稳定键构造器（回归）+ 缓存键推导（世界容器带维度前缀/跨维度同坐标键不同/大箱子两段坐标/背包末影箱裸键/无维度退化）+ 列数推断（启发式/质数退化/未注册类型不借用同 namespace 规则/**Tier 0 来源权威值赢启发式（放置态精妙背包 30 槽→5 列，2026-10-24）/来源不认领⇒照旧回落启发式**）
 │   ├── ContainerContextsTest.java             # 边界带共享内核·isSameSlotSpace(槽位数不一致/越界/同空/同物品/一空一非空/异物品) + resolve 末影箱分支(F-1) + isViewingEnderChest 判据
+│   ├── EntityContainerProviderTest.java       # 扩展实体宿主·factory与逐槽归属同源/可写范围/负号与隐藏槽/混合菜单只同步存储区与物理槽别名，保留原准入
 │   ├── EntityContainersTest.java              # 实体宿主白名单/UUID身份/数据宿主/槽位与鞍偏移/遥测物理键/菜单实体反查/原版车船类型+容量固定布局/非原版或扩容不借固定值/羊驼实例列数/摘箱空存储固定1列（真实驴菜单入口另由 ContainerMenuInfosTest 守卫，移除旧accessor恒真占位）·**三通道过槽位映射**（2026-10-27 审查 P2-1，I-C4/I-C10）：getSlotLimit/isItemValid/simulateInsertItem 曾直接当物理槽 ⇒ 鞍了鞍的驴第一箱格永远写不进（判别测试：鞍位禁插+首槽限流的自定义 handler）·**1.7.0 崩服回归**（2026-11-05）：实体容器准入改「形状白名单 + `ItemHandler.ENTITY` 能力面」双闸，第三方 `ContainerEntity` 无能力 ⇒ 准入跳过 / 其菜单槽 ⇒ `resolveMenuEntity` 为 null（打开 Lootr 矿车 GUI 不炸）/ 有能力面仍照常纳入 / `ContainerContexts.resolve` 不落到位置分支误判成同坐标 BE；构造即抛保留为最后防线
 │   ├── ContainerBoundaryContractTest.java     # 容器边界契约 I-C3/I-C4/I-C7/**I-C11** 守卫：SlotIgnoringHandler(insertItem 丢 slot) + ExtractBlockedHandler(extract 被拦) ⇒ 写回落对槽/物品守恒/模拟真实同源（S2 后转绿 **+ I-C11：四种容器形态的列数都 ≥ 1（掉落物形态 = 1，它原先白嫖接口默认 9）**
 
@@ -94,6 +98,9 @@ src/test/java/com/qiqi/li/
 │   ├── ContainerRuntimeCacheLifecycleTest.java # 运行时缓存生命周期(方案A)·物品离开槽位/换物品⇒登记作废·同类持续⇒不作废·drain 取走即空·null 键忽略·整容器作废键==运行时存储键
 │   ├── ContainerTickHooksTest.java            # tick 钩子注册表（2026-10-29）·同类去重 / 两阶段按注册顺序 / ctx+tick 透传 / 默认空实现
 │   └── ContainerTickIsolationTest.java        # tick 异常隔离（2026-10-30，R-01）·RuntimeException 不向外抛且可重复调用 / 取 key 本身抛异常仍隔离 / Error 不被吞
+├── living/domain/maid/
+│   ├── LivingSoulSlabClockTest.java           # 均匀迈步排期·H/C公式、7200tick20次、分数余量、0停、时间scope与过期不追补、极大输入钳制
+│   └── LivingSoulSlabFunctionTest.java        # 活魂符我方执行链·首次等待/到点移槽/受堵跳过/计时随槽/0停清clock/拒写不动/过期重排/超堆叠不拆/纯随机合法空邻与守恒
 ├── living/domain/ender/
 │   ├── EnderChannelRegistryDimTest.java        # 活末影箱路由表**维度隔离**（2026-10-27 审查待拍板 #2，2026-10-28 修）·跨维度同坐标同槽位都能注册（去重键含维度，旧实现误判重复 ⇒ 第二条注册不进去）/ 按位置+槽位清理只删指定维度 / 区块卸载不删另一维度同坐标路由 / `validateRoutes` 不误删另一维度同键路由
 │   ├── EnderRouteExtractTest.java              # 路由**端到端提取**（2026-10-28 链路回归；2026-10-29 口径改为「源解析不到 ⇒ 条目丢弃」）·方块容器按位置取能力并扣源 / 玩家背包按 UUID 找玩家 / **物品形态按容器 UUID 取活视图（新能力）** / 活视图未登记 ⇒ 不取且**条目丢弃**（路由只有注册/不注册两态）/ 方块被搬走 ⇒ 丢弃且频道清空 / **物品形态源 rollback 回活视图（持有提取时 handler，活视图清掉也能回滚）**

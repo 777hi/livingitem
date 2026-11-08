@@ -742,9 +742,15 @@ public class SimpleContainerContext implements TickableContainerContext {
                 // 实例比较永远不命中 ⇒ 走位置解析（与 tick 构建的容器键同源）。
                 // ⚠️ 必须比【物理槽】：菜单/包的槽号是 handler 索引，而 logicalSlot 是容器存储格编号
                 // （马/驴/骡的索引 0 是马鞍 ⇒ 两者差 1；不过这一层就是「渲染和逻辑差一格」）
-                if (slot.getContainerSlot() != toPhysicalSlot(logicalSlot)) continue;
                 if (slot.container == serverPlayer.getInventory()) continue;
-                if (!wholeMenuIsMine && !slotBelongsToPositions(menu, slot, myPositions)) continue;
+                if (getEntity() != null) {
+                    if (EntityContainers.menuHostEntity(menu, slot) != getEntity()
+                            || EntityContainers.menuPhysicalSlot(getEntity(), menu, slot)
+                                != toPhysicalSlot(logicalSlot)) continue;
+                } else {
+                    if (slot.getContainerSlot() != toPhysicalSlot(logicalSlot)) continue;
+                    if (!wholeMenuIsMine && !slotBelongsToPositions(menu, slot, myPositions)) continue;
+                }
 
                 int stateId = menu.incrementStateId();
                 menu.remoteSlots.set(i, stack.copy());

@@ -92,7 +92,7 @@ SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 | 族 | 子系统（点击直达文档） |
 |----|----------------------|
 | 2026-11-01 | ♻️ **R3 领域互依赖清零（hopper↔ender/chest 10 条 → 0）** —— 传输核心不再认识具体领域：身份检查复用 `ContainerLikeItems`（现成谓词注册表）、末影箱路由决策走新扩展点 `TransferTargetPolicy`（living/transfer，形状对齐 SlotInteractions——Accessor 级末段分发，源侧偏好走 onProbingTarget 探测、REJECT 不触发）、路由 GC 收敛为 `ContainerTickHook` 写回单钩子（api 标记接口 `RouteRegistrar` 能力自查，漏斗/末影箱镜像双调用双删）；顺带删与通用路径逐行等价的活箱子拉取特支。基线 R3 三行清零（R1 不变）；测试 1293→1304；✅ 实机已验 2026-11-07：漏斗×末影箱路由（公共/专属/直连）+ 拆合堆叠频道切换 | `docs/tech/living-ender-chest-tech.md` §9 · `EnderRouteMaintenanceTest` |
-| **活物品功能（19）** | [活TNT](docs/tech/living-tnt-tech.md) · [活流体](docs/tech/living-fluid-tech.md) · [活熔炉](docs/tech/living-furnace-tech.md) · [活酿造台](docs/tech/living-brewing-stand-tech.md) · [活漏斗](docs/tech/living-hopper-tech.md) · [活箱子](docs/tech/living-chest-tech.md) · [活末影箱](docs/tech/living-ender-chest-tech.md) · [活水车](docs/tech/living-water-wheel-tech.md) · [活地图传送](docs/tech/living-map-ender-pearl-tech.md) · [活耕地](docs/tech/living-farmland-tech.md) · [活工具](docs/tech/living-tool-tech.md) · [活武器](docs/tech/living-weapon-tech.md) · [活红石](docs/tech/living-redstone-tech.md)（信号层含 [活铜](docs/tech/living-copper-tech.md)） · [活涂蜡铜块（红电发电）](docs/tech/living-power-tech.md) · [活打火石](docs/tech/living-flint-and-steel-tech.md) · [活信标](docs/tech/living-beacon-tech.md) · [活背包](docs/tech/living-backpack-tech.md) · [活海绵](docs/tech/living-sponge-tech.md) · [活活塞](docs/tech/living-piston-tech.md) |
+| **活物品功能（20）** | [活TNT](docs/tech/living-tnt-tech.md) · [活流体](docs/tech/living-fluid-tech.md) · [活熔炉](docs/tech/living-furnace-tech.md) · [活酿造台](docs/tech/living-brewing-stand-tech.md) · [活漏斗](docs/tech/living-hopper-tech.md) · [活箱子](docs/tech/living-chest-tech.md) · [活末影箱](docs/tech/living-ender-chest-tech.md) · [活水车](docs/tech/living-water-wheel-tech.md) · [活地图传送](docs/tech/living-map-ender-pearl-tech.md) · [活耕地](docs/tech/living-farmland-tech.md) · [活工具](docs/tech/living-tool-tech.md) · [活武器](docs/tech/living-weapon-tech.md) · [活红石](docs/tech/living-redstone-tech.md)（信号层含 [活铜](docs/tech/living-copper-tech.md)） · [活涂蜡铜块（红电发电）](docs/tech/living-power-tech.md) · [活打火石](docs/tech/living-flint-and-steel-tech.md) · [活信标](docs/tech/living-beacon-tech.md) · [活背包](docs/tech/living-backpack-tech.md) · [活海绵](docs/tech/living-sponge-tech.md) · [活活塞](docs/tech/living-piston-tech.md) · [活魂符 / 女仆背包联动](docs/tech/living-maid-tech.md) |
 | **容器基础设施（6）** | [容器七问总览](docs/system-design/container-overview.md) · [基础设施](docs/system-design/living-item-infrastructure.md) · [多方块容器身份解析](docs/system-design/container-identity.md) · [容器边界口径](docs/system-design/container-boundary.md) · [数据模型](docs/system-design/data-model.md) · [超大堆叠审计](docs/system-design/oversized-stack-audit.md) |
 | **红电 · 电力（2）** | [红电架构演进](docs/buffer/redstone-evolution-roadmap.md) · [红电不变量测试](docs/system-design/power-invariants.md) |
 | **跨域机制（3）** | [GUI交互](docs/system-design/gui-interaction-system.md) · [图标系统](docs/system-design/icon-system.md) · [Tooltip 系统](docs/system-design/tooltip-system.md) |
@@ -148,7 +148,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1666 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
+**合计测试用例 1709 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -173,6 +173,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-11-08 | ✅ **活魂符 / 女仆背包联动代码接入** —— 原准入不变；所存饱食度H与背包容量C按C分钟H次均匀迈步、随机空邻；每枚模型/动画/语音接线与计时生命周期；+43我方守卫，全量1709项零失败，开发客户端TLM启动加载通过，玩法实机待验 | [女仆 §0/§4](docs/tech/living-maid-tech.md) · [changelog](docs/archive/changelog.md) |
 | 2026-11-08 | ♻️ **满级再生改「无条件 II」，删三档判据与 RegenTier（用户定，−8 测试）** —— 实机「有 II 就没再生」实为 10-15 三档规则在「承载位满」时的正常表现，用户判定过于复杂；改为满级恒给再生 II（满级奖励，不迎合原版「II 吃掉次槽」）：删 `BeaconEffects.regenTier` / `RegenTier` 枚举 / 遥测再生字段 / `regen.i`·`regen.none` 两键，buff 与 tooltip 都直接判 `level>=MAX_LEVEL` ⇒ 再生退回等级的直接函数，顺带消除「再生行取服务端遥测、分母取客户端」的不同步；+1 守卫测试（满配+加倍仍 II），全量1666项零失败；实机待验 | [beacon §2.5](docs/tech/living-beacon-tech.md) · [changelog](docs/archive/changelog.md) |
 | 2026-11-08 | 🐛 **修活信标 tooltip 配色不生效（§ 不跨占位符，+1 渲染级回归）** —— 实机反馈效果名/待喂入菜单没变色；根因：原版 StringDecomposer 逐字面段解析 §，§ 不跨 %s/%d 参数边界也不进下一段 ⇒ 模板 § 够不到参数文本（旧版「等级数字绿/可喂绿/休眠数字红」其实从未生效）；修法：带占位符的行颜色一律 withStyle 上 Component（行级整行 / 参数级单独），lang 去 §，三个 config_entry* 键合并回一个；守卫 renderedColorsReachArgumentText 注入 Language 后逐字符取色；全量1674项零失败；实机待验 | [beacon §2.6.1](docs/tech/living-beacon-tech.md) · [changelog](docs/archive/changelog.md) |
 | 2026-11-08 | 🔢 **活信标状态行分母改「承载位」= min(堆叠数, 槽上限)（用户定）** —— 原分母 `config.size()` 让「堆 5 配 3」显示 3/3 像满配、且提示不了杠杆；改后 N/N = 这摞承载位用满 ⇒ **想再多一个 buff 就往摞里再加一个信标**，与休眠后缀「信标不足（需 k 个）」同一件事；**不裸用堆叠数**（生效数恒 ≤ 已配槽数 ≤ 5，堆 10 配 5 会虚报 5/10）⇒ 与 `MAX_SLOTS` 取小，将来槽上限放开公式不用改；lang 模板不变；+1 测试（4 例），全量1673项零失败；实机待验 | [beacon §2.6.1](docs/tech/living-beacon-tech.md) · [changelog](docs/archive/changelog.md) |
@@ -181,7 +182,6 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-11-07 | ✅ **活剪刀纳入工具判据（v1）** —— isLivingTool 增补 SHEARS_DIG（用户定不扩大）：挖掘（羊毛/蛛网/树叶/藤蔓）+ 辅助挖掘 + 环可见全链现成；剪植物顶端（SHEARS_TRIM）补丁后发事件 ⇒ 交互记忆可录可回放；+1 守卫测试（ActivationHookTest ⑨）；边界外不做：蜂巢/南瓜（block 侧 L36）、剪羊（实体侧）—— 残余登记 TODO；实机待验 | [tool §4.1](docs/tech/living-tool-tech.md) · [changelog](docs/archive/changelog.md) |
 | 2026-11-07 | 🐛 **修活海绵吸源后的僵尸源 / 黑曜石（+2 回归）** —— 删源只擦 `generatedSources` 账本，实际层 `flows` 靠下一拍收敛；源网络 + 岩浆节拍门下邻源把被删槽顶成流动 target ⇒ prune 不删、渲染仍在、`reactFrontiers` 判「源格遇水」出黑曜石；`demoteOrphanSources` 在 prune 之后、反应类之前同拍降级为流动格（不删格免空档），阶段 2→3 顺序保证同 tick 生效；旧代码 2 项红，全量1663项零失败 | [流体 §2.2](docs/tech/living-fluid-tech.md) · [海绵 §12](docs/tech/living-sponge-tech.md) |
 | 2026-11-07 | ✅ **活剑纳入工具判据，双身份同斧子** —— isLivingTool 增补 SWORD_DIG（口径同斧子）：录/清挖掘记忆、辅助挖掘、S2 双记忆调度全链自动贯通，下游零改动；辅助出力谓词 getDestroySpeed>1.0 现成收窄到 sword_efficient（树叶/作物/竹子），无「背一叠剑=全方块小急迫」噪音；+1 守卫测试（活剑双身份，ActivationHookTest ⑧）；TODO H4 活剑关账，剪刀/钓竿调研结论登记；实机待验 | [tool §4.1](docs/tech/living-tool-tech.md) · [weapon §1](docs/tech/living-weapon-tech.md) |
-| 2026-11-06 | 🐛 **修 Jade 不显示容器流体/电量（+1 回归）** —— 借用户提供的 Jade 源码定位：Jade 客户端 `shouldRequestData` 用「能力非 null」当请求闸门，10-31 起两个容器能力在客户端恒返回 null ⇒ 请求包压根不发、服务端 `appendServerData` 没机会下发读数；客户端改发只读零值存在性探针，服务端仍是存在性/读数唯一权威，全量1660项零失败 | [海绵 §4.2](docs/tech/living-sponge-tech.md) · [红电 §4.1](docs/tech/living-power-tech.md) |
 ## 提交前必跑（2026-10-30 更新）
 
 ```bash
