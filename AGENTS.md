@@ -148,7 +148,7 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1709 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
+**合计测试用例 1723 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
 **全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
 passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
@@ -173,6 +173,7 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 
 | 日期 | 变更（一行结论） | 指针 |
 |---|---|---|
+| 2026-11-08 | 🎭 **活魂符无槽裁剪＋身体四向＋头部有限追光标** —— 初始正面、随迈步转身且停步保持；原动画/语音保留，服务端不变；+14角度守卫，全量1723项零失败，新增展示实机待验 | [女仆 §2.1/§4](docs/tech/living-maid-tech.md) · [changelog](docs/archive/changelog.md) |
 | 2026-11-08 | ✅ **活魂符 / 女仆背包联动代码接入** —— 原准入不变；所存饱食度H与背包容量C按C分钟H次均匀迈步、随机空邻；每枚模型/动画/语音接线与计时生命周期；+43我方守卫，全量1709项零失败，开发客户端TLM启动加载通过，玩法实机待验 | [女仆 §0/§4](docs/tech/living-maid-tech.md) · [changelog](docs/archive/changelog.md) |
 | 2026-11-08 | ♻️ **满级再生改「无条件 II」，删三档判据与 RegenTier（用户定，−8 测试）** —— 实机「有 II 就没再生」实为 10-15 三档规则在「承载位满」时的正常表现，用户判定过于复杂；改为满级恒给再生 II（满级奖励，不迎合原版「II 吃掉次槽」）：删 `BeaconEffects.regenTier` / `RegenTier` 枚举 / 遥测再生字段 / `regen.i`·`regen.none` 两键，buff 与 tooltip 都直接判 `level>=MAX_LEVEL` ⇒ 再生退回等级的直接函数，顺带消除「再生行取服务端遥测、分母取客户端」的不同步；+1 守卫测试（满配+加倍仍 II），全量1666项零失败；实机待验 | [beacon §2.5](docs/tech/living-beacon-tech.md) · [changelog](docs/archive/changelog.md) |
 | 2026-11-08 | 🐛 **修活信标 tooltip 配色不生效（§ 不跨占位符，+1 渲染级回归）** —— 实机反馈效果名/待喂入菜单没变色；根因：原版 StringDecomposer 逐字面段解析 §，§ 不跨 %s/%d 参数边界也不进下一段 ⇒ 模板 § 够不到参数文本（旧版「等级数字绿/可喂绿/休眠数字红」其实从未生效）；修法：带占位符的行颜色一律 withStyle 上 Component（行级整行 / 参数级单独），lang 去 §，三个 config_entry* 键合并回一个；守卫 renderedColorsReachArgumentText 注入 Language 后逐字符取色；全量1674项零失败；实机待验 | [beacon §2.6.1](docs/tech/living-beacon-tech.md) · [changelog](docs/archive/changelog.md) |
@@ -181,7 +182,6 @@ passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`�
 | 2026-11-07 | 🔀 **活信标矿石锭映射：钻石 ↔ 下界合金锭互换（用户定）** —— 钻石=抗性提升（L2）/ 下界合金锭=力量（L3），**效果与档位一起换**（档位跟原版效果 index 走）；OreType 枚举序改为 铁/金/钻石/绿宝石/下界合金（序=档位非降序契约，tooltip 待喂入菜单依赖）；oreMapping 补效果断言（此前效果映射无测试）+ 门控/枚举序/再生 5 案例同步，方法数不变、全量1664项零失败；实机待验 | [beacon §2.5](docs/tech/living-beacon-tech.md) · [changelog](docs/archive/changelog.md) |
 | 2026-11-07 | ✅ **活剪刀纳入工具判据（v1）** —— isLivingTool 增补 SHEARS_DIG（用户定不扩大）：挖掘（羊毛/蛛网/树叶/藤蔓）+ 辅助挖掘 + 环可见全链现成；剪植物顶端（SHEARS_TRIM）补丁后发事件 ⇒ 交互记忆可录可回放；+1 守卫测试（ActivationHookTest ⑨）；边界外不做：蜂巢/南瓜（block 侧 L36）、剪羊（实体侧）—— 残余登记 TODO；实机待验 | [tool §4.1](docs/tech/living-tool-tech.md) · [changelog](docs/archive/changelog.md) |
 | 2026-11-07 | 🐛 **修活海绵吸源后的僵尸源 / 黑曜石（+2 回归）** —— 删源只擦 `generatedSources` 账本，实际层 `flows` 靠下一拍收敛；源网络 + 岩浆节拍门下邻源把被删槽顶成流动 target ⇒ prune 不删、渲染仍在、`reactFrontiers` 判「源格遇水」出黑曜石；`demoteOrphanSources` 在 prune 之后、反应类之前同拍降级为流动格（不删格免空档），阶段 2→3 顺序保证同 tick 生效；旧代码 2 项红，全量1663项零失败 | [流体 §2.2](docs/tech/living-fluid-tech.md) · [海绵 §12](docs/tech/living-sponge-tech.md) |
-| 2026-11-07 | ✅ **活剑纳入工具判据，双身份同斧子** —— isLivingTool 增补 SWORD_DIG（口径同斧子）：录/清挖掘记忆、辅助挖掘、S2 双记忆调度全链自动贯通，下游零改动；辅助出力谓词 getDestroySpeed>1.0 现成收窄到 sword_efficient（树叶/作物/竹子），无「背一叠剑=全方块小急迫」噪音；+1 守卫测试（活剑双身份，ActivationHookTest ⑧）；TODO H4 活剑关账，剪刀/钓竿调研结论登记；实机待验 | [tool §4.1](docs/tech/living-tool-tech.md) · [weapon §1](docs/tech/living-weapon-tech.md) |
 ## 提交前必跑（2026-10-30 更新）
 
 ```bash

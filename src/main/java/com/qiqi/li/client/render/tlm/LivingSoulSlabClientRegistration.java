@@ -29,7 +29,7 @@ public final class LivingSoulSlabClientRegistration {
         NeoForge.EVENT_BUS.addListener((ContainerScreenEvent.Render.Background event) ->
                 cache.beginFrame(event.getContainerScreen(), event.getGuiGraphics()));
         NeoForge.EVENT_BUS.addListener((ContainerScreenEvent.Render.Foreground event) ->
-                cache.render(event.getContainerScreen(), event.getGuiGraphics()));
+                cache.render(event.getContainerScreen(), event.getGuiGraphics(), event.getMouseX(), event.getMouseY()));
         NeoForge.EVENT_BUS.addListener((ClientTickEvent.Post event) -> cache.tick());
         NeoForge.EVENT_BUS.addListener((ScreenEvent.Closing event) -> cache.clear());
         NeoForge.EVENT_BUS.addListener((ClientPlayerNetworkEvent.LoggingOut event) -> cache.clear());

@@ -11,7 +11,6 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.multiplayer.ClientLevel;
-import net.minecraft.util.Mth;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.neoforge.items.SlotItemHandler;
@@ -97,7 +96,7 @@ final class SoulSlabPreviewCache {
             target.preview = old.preview;
             target.attempted = old.attempted;
             target.seenTick = old.seenTick;
-            if (target.preview != null && !target.preview.disabled()) target.preview.move(old.slot.x, old.slot.y);
+            if (target.preview != null && !target.preview.disabled()) target.preview.move(old.slot.x, old.slot.y, target.slot.x, target.slot.y);
         });
         for (Snapshot source : removed) {
             if (!moves.containsValue(source.position())) {
@@ -153,13 +152,13 @@ final class SoulSlabPreviewCache {
         return true;
     }
 
-    void render(AbstractContainerScreen<?> current, GuiGraphics graphics) {
+    void render(AbstractContainerScreen<?> current, GuiGraphics graphics, int mouseX, int mouseY) {
         if (current != screen || graphics != frameGraphics) return;
         try {
             for (Drawing drawing : frame.values()) {
                 if (!ItemStack.matches(drawing.stack, drawing.entry.slot.getItem())) continue;
                 try {
-                    renderOne(graphics, drawing);
+                    renderOne(graphics, drawing, mouseX, mouseY);
                 } catch (RuntimeException | LinkageError failure) {
                     drawing.entry.preview.disable();
                     LOGGER.warn("Soul slab preview drawing failed at menu slot {}; restored original icon", drawing.entry.slot.index, failure);
@@ -172,7 +171,7 @@ final class SoulSlabPreviewCache {
         }
     }
 
-    private void renderOne(GuiGraphics graphics, Drawing drawing) {
+    private void renderOne(GuiGraphics graphics, Drawing drawing, int mouseX, int mouseY) {
         // Foreground 接缝的标准恢复基线是 3D item 光照；不改 dispatcher/options。
         boolean depth = GL11.glIsEnabled(GL11.GL_DEPTH_TEST);
         boolean depthMask = GL11.glGetBoolean(GL11.GL_DEPTH_WRITEMASK);
@@ -185,18 +184,10 @@ final class SoulSlabPreviewCache {
             GL11.glGetIntegerv(GL11.GL_SCISSOR_BOX, box);
             try {
                 graphics.flush();
-                float partial = Minecraft.getInstance().getTimer().getGameTimeDeltaPartialTick(false);
-                int px = Mth.floor(drawing.entry.preview.displayX(drawing.x, partial));
-                int py = Mth.floor(drawing.entry.preview.displayY(drawing.y, partial));
                 int height = drawing.stack.getCount() != 1 || drawing.countString != null ? 9
                         : drawing.stack.isBarVisible() ? 13 : 16;
-                graphics.enableScissor(screen.getGuiLeft() + px, screen.getGuiTop() + py,
-                        screen.getGuiLeft() + px + 16, screen.getGuiTop() + py + height);
-                try {
-                    drawing.entry.preview.render(graphics, drawing.origin, drawing.x, drawing.y, height);
-                } finally {
-                    graphics.disableScissor();
-                }
+                // 槽位只作站立锚点；保留界面已有裁剪，不限制模型伸到邻槽。
+                drawing.entry.preview.render(graphics, drawing.origin, drawing.x, drawing.y, height, mouseX, mouseY);
             } finally {
                 Lighting.setupFor3DItems();
                 RenderSystem.setShader(() -> shader);

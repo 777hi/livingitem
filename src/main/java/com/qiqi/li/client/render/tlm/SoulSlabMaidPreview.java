@@ -22,6 +22,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import org.joml.Quaternionf;
+import org.joml.Vector3f;
 
 import java.util.Objects;
 
@@ -31,6 +32,7 @@ import static com.github.tartaricacid.touhoulittlemaid.client.event.SpecialMaidR
 final class SoulSlabMaidPreview {
     private final EntityMaid maid;
     private final float scale;
+    private final SoulSlabPreviewFacing facing = new SoulSlabPreviewFacing();
     private MaidSoundInstance sound;
     private int soundDelay;
     private int walkTicks;
@@ -83,15 +85,17 @@ final class SoulSlabMaidPreview {
 
     boolean disabled() { return disabled; }
 
-    void move(int oldX, int oldY) {
+    void move(int oldX, int oldY, int x, int y) {
         fromX = oldX;
         fromY = oldY;
         walkTicks = 6;
+        facing.move(oldX, oldY, x, y);
     }
 
     void tick(boolean visible) {
         if (disabled) return;
         maid.tickCount++;
+        facing.tick();
         maid.walkAnimation.update(walkTicks > 0 ? 0.5f : 0, 0.4f);
         if (walkTicks > 0) walkTicks--;
         Minecraft mc = Minecraft.getInstance();
@@ -120,18 +124,22 @@ final class SoulSlabMaidPreview {
         return y + (fromY - y) * Math.max(0, walkTicks - partial) / 6;
     }
 
-    void render(GuiGraphics graphics, PoseStack origin, int x, int y, int height) {
+    void render(GuiGraphics graphics, PoseStack origin, int x, int y, int height, int mouseX, int mouseY) {
         Minecraft mc = Minecraft.getInstance();
         float partial = mc.getTimer().getGameTimeDeltaPartialTick(false);
         float px = displayX(x, partial);
         float py = displayY(y, partial);
+        float displayScale = scale * height / 16;
+        Vector3f head = origin.last().pose().transformPosition(
+                new Vector3f(px + 8, py + height - maid.getEyeHeight() * displayScale, -50));
+        facing.look(head.x(), head.y(), mouseX, mouseY, partial);
+        applyFacing();
         PoseStack pose = new PoseStack();
         pose.last().pose().set(origin.last().pose());
         pose.last().normal().set(origin.last().normal());
         pose.translate(px + 8, py + height, -50);
-        float displayScale = scale * height / 16;
         pose.scale(displayScale, displayScale, -displayScale);
-        pose.mulPose(new Quaternionf().rotateZ((float) Math.PI).rotateY(0.35f));
+        pose.mulPose(new Quaternionf().rotateZ((float) Math.PI));
 
         // 独立 buffer/pose 防止第三方绘制异常留下未完成的 GUI 批次。
         try (ByteBufferBuilder memory = new ByteBufferBuilder(262144)) {
@@ -147,6 +155,17 @@ final class SoulSlabMaidPreview {
             GlWrapper.clearPoseStack();
             Lighting.setupFor3DItems();
         }
+    }
+
+    private void applyFacing() {
+        maid.yBodyRotO = facing.body(0);
+        maid.yBodyRot = facing.body(1);
+        maid.yRotO = maid.yBodyRotO;
+        maid.setYRot(maid.yBodyRot);
+        maid.yHeadRotO = maid.yBodyRotO + facing.headYaw(0);
+        maid.yHeadRot = maid.yBodyRot + facing.headYaw(1);
+        maid.xRotO = facing.headPitch(0);
+        maid.setXRot(facing.headPitch(1));
     }
 
     void disable() {
