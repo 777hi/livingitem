@@ -54,7 +54,12 @@ ORDER = (R1, R2, R3, R4, R5)
 #
 # ⚠️ **这是显式清单，不是自动发现** —— 自动发现会把 `CropClassifier.registerManualSeed`、
 # `PerfMetrics.addLivingItem` 这类**内部装表方法**误判成注册表（实测 30 个候选里大半是误报）。
-# 新增注册表时在这里登记一行；**清单里写了但代码里没有 ⇒ 校验失败**（防清单过期）。
+# 分类永远由人在这里显式登记；下面的反向检查**不会自动把候选加进清单**，只报「缺了一行」。
+#
+# 双向校验（2026-11-09 补反向）：
+#   ① 清单里有、代码里找不到 ⇒ stale（原有）
+#   ② `*Registration.java` 里出现注册调用、却既不在清单也不在豁免 ⇒ unlisted
+# ② 防的是「新增注册方法没补清单 ⇒ R4 正则只认清单内方法 ⇒ 门禁照样通过」的静默漏检。
 #
 # 判据：**注册方法的调用点必须落在 `*Registration.java`，或该方法自己的声明文件里。**
 # 为什么这条重要：它让「注册表有哪些成员」=「有哪些 *Registration 文件」——
@@ -78,13 +83,37 @@ REGISTRY_METHODS = [
     "ContainerSnapshot.registerProvider",
     "ContainerHandoff.registerMover",
     "LivingIconRegistry.register",
+    # 2026-11-09 补齐：清单建立（10-06）后新增、一直没被 R4 扫到的 SPI 注册点
+    "MechanicalReceivers.register",
+    "ContainerLikeItems.register",
+    "RuntimeSegmentRegistry.register",
+    "TickContext.registerSensorResolver",
+    "TickContext.registerFluidPresenceResolver",
+    "TickContext.registerSourceLedgerResolver",
 ]
+
+# 已显式归类、但**不纳入 R4 正向扫描**的注册调用；反向检查见到它们算「已归类」。
+# 两类成员：
+#   ① 非 SPI：初始化 / 事件挂钩，不注册任何成员。
+#   ② 跨约定的 SPI：`MenuSlotOwners` 体系同时被 TLM 的 `*Registration`、各 compat 的
+#      `init()`、以及入口层兜底（`LivingItem.java` 的 HORSE_MENU_RESOLVER）调用，
+#      本就不在 A1「领域自注册」契约内；硬纳入 R4 会把合法的入口层兜底报成违规。
+# ⇒ 把「隐式漏检」变成「显式豁免」。新增这类调用也要在这里归类。
+R4_EXEMPT_CALLS = {
+    "Loaded.register",
+    "LivingMapEventHandler.register",
+    "ItemFrameMapTeleportHandler.register",
+    "MenuSlotOwners.registerEntityResolver",
+}
+
 REGISTRY_RE = re.compile(
     r"\b(" + "|".join(m.replace(".", r"\s*\.\s*") for m in REGISTRY_METHODS) + r")\s*\(")
+# 反向检查用：捕获 `Owner.registerXxx(` 的 owner + 方法名（全限定名取最后一段）。
+REGISTRATION_CALL_RE = re.compile(r"\b([A-Z]\w*)\.(register\w*)\s*\(")
 
 
-def collect() -> tuple[dict[str, dict[tuple[str, str], int]], list[str]]:
-    """返回 ({规则: {(源, 目标): 条数}}, 清单里已不存在的注册方法)。"""
+def collect() -> tuple[dict[str, dict[tuple[str, str], int]], list[str], dict[str, set[str]]]:
+    """返回 ({规则: {(源, 目标): 条数}}, 清单里已不存在的注册方法, 未归类的注册调用)。"""
     files = [G.parse_file(p) for p in G.collect_java()]
     graph = G.build_graph(files)
 
@@ -137,8 +166,22 @@ def collect() -> tuple[dict[str, dict[tuple[str, str], int]], list[str]]:
         if n:
             out[R5][(norm.split("/src/")[-1], "fromSlot")] = n
 
+    # R4 反向检查：Registration 文件里出现的注册调用，必须已归到清单或显式豁免。
+    # 只在「注册入口」范围内取候选，避开当年自动发现实测的大量内部装表方法误报
+    # （那些不在 `*Registration.java` 里被调用）。分类仍由人做，这里只报「缺了一行」。
+    listed = set(REGISTRY_METHODS)
+    unlisted: dict[str, set[str]] = {}
+    for f in files:
+        if f["kind"] == "file" or not f["path"].endswith("Registration.java"):
+            continue
+        for m in REGISTRATION_CALL_RE.finditer(f["code"]):
+            call = m.group(1) + "." + m.group(2)
+            if call in listed or call in R4_EXEMPT_CALLS:
+                continue
+            unlisted.setdefault(call, set()).add(f["path"])
+
     stale = [m for m in REGISTRY_METHODS if m.split(".", 1)[0] not in decl]
-    return out, stale
+    return out, stale, unlisted
 
 
 def read_baseline() -> dict[str, dict[tuple[str, str], int]]:
@@ -184,7 +227,7 @@ def main() -> int:
     show_only = "--show" in sys.argv
     update = "--update-baseline" in sys.argv
 
-    cur, stale = collect()
+    cur, stale, unlisted = collect()
     totals = {k: (sum(cur[k].values()), len(cur[k])) for k in ORDER}
 
     print("=== 架构分层校验（tools/check_layers.py）===\n")
@@ -196,7 +239,19 @@ def main() -> int:
         print("\n🔴 注册方法清单已过期（清单里有、代码里找不到）—— 检查会静默失效，必须修：")
         for m in stale:
             print("   %s" % m)
+    if unlisted:
+        print("\n🔴 注册调用未归类（清单里没有、也不是已知非 SPI 调用）—— R4 会静默漏检，必须归类：")
+        for call in sorted(unlisted):
+            where = ", ".join(sorted(os.path.relpath(p, ROOT).replace("\\", "/")
+                                     for p in unlisted[call]))
+            print("   %s   （%s）" % (call, where))
     print()
+
+    # 清单与代码不一致 ⇒ R4 结果本身不完整。此时无论校验还是更新基线都没有意义。
+    # `--show` 只用于查看现状，不阻断。
+    if (stale or unlisted) and not show_only:
+        print("✗ 失败：注册清单与代码不一致 —— 先修 `REGISTRY_METHODS` / `R4_EXEMPT_CALLS`。")
+        return 1
 
     if show_only or update:
         for k in ORDER:
@@ -254,9 +309,6 @@ def main() -> int:
     if added:
         print("\n✗ 失败：基线只允许减少，不允许增加。")
         print("  如果这是**有意的**架构决策，跑 `--update-baseline` 显式接受它。")
-        return 1
-    if stale:
-        print("\n✗ 失败：注册方法清单过期 —— 先修 `REGISTRY_METHODS`（清单失效 = 规则失效）。")
         return 1
     if shrunk:
         print("\n✓ 通过（有已消除项，记得收紧基线）")

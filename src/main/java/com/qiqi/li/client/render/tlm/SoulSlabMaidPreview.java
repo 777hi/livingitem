@@ -3,6 +3,8 @@ package com.qiqi.li.client.render.tlm;
 import com.github.tartaricacid.touhoulittlemaid.client.animation.script.GlWrapper;
 import com.github.tartaricacid.touhoulittlemaid.client.resource.CustomPackLoader;
 import com.github.tartaricacid.touhoulittlemaid.client.sound.data.MaidSoundInstance;
+import com.github.tartaricacid.touhoulittlemaid.config.subconfig.MaidConfig;
+import com.github.tartaricacid.touhoulittlemaid.entity.chatbubble.implement.EmojiChatBubbleData;
 import com.github.tartaricacid.touhoulittlemaid.compat.ysm.YsmCompat;
 import com.github.tartaricacid.touhoulittlemaid.entity.passive.EntityMaid;
 import com.github.tartaricacid.touhoulittlemaid.init.InitDataComponent;
@@ -70,6 +72,12 @@ final class SoulSlabMaidPreview {
                         Objects.requireNonNullElse(readName(tag, EntityMaid.YSM_MODEL_NAME_TAG, level), Component.empty()));
             }
             maid.setOnGround(true);
+            if (tag.contains("MaidSubConfig", Tag.TAG_COMPOUND)) {
+                CompoundTag config = tag.getCompound("MaidSubConfig");
+                if (config.contains("ChatBubbleShow", Tag.TAG_BYTE)) {
+                    maid.getConfigManager().setChatBubbleShow(config.getBoolean("ChatBubbleShow"));
+                }
+            }
             soundDelay = nextSoundDelay();
         } catch (RuntimeException | LinkageError failure) {
             maid.discard();
@@ -100,6 +108,7 @@ final class SoulSlabMaidPreview {
         if (walkTicks > 0) walkTicks--;
         Minecraft mc = Minecraft.getInstance();
         if (mc.player != null) maid.setPos(mc.player.getX(), mc.player.getY(), mc.player.getZ());
+        tickBubbles(visible);
         if (!visible) {
             stopSound();
             return;
@@ -111,6 +120,19 @@ final class SoulSlabMaidPreview {
                 sound = new MaidSoundInstance(InitSounds.MAID_IDLE.get(), maid.getSoundPackId(), maid);
                 mc.getSoundManager().play(sound);
             }
+        }
+    }
+
+    private void tickBubbles(boolean visible) {
+        var manager = maid.getChatBubbleManager();
+        var collection = manager.getChatBubbleDataCollection();
+        if (collection.update()) manager.forceUpdateChatBubble();
+        boolean enabled = MaidConfig.GLOBAL_MAID_SHOW_CHAT_BUBBLE.get()
+                && maid.getConfigManager().isChatBubbleShow() && MaidConfig.ENABLE_EMOJI.get();
+        if (SoulSlabPreviewBubbles.shouldGenerate(visible, enabled, collection.isEmpty(), maid.tickCount,
+                maid.getUUID().getLeastSignificantBits(), MaidConfig.EMOJI_CHECK_RATE.get(),
+                MaidConfig.IMAGE_EMOJI_WEIGHT.get(), MaidConfig.KAOMOJI_EMOJI_WEIGHT.get(), maid.getRandom())) {
+            manager.addChatBubble(EmojiChatBubbleData.create());
         }
     }
 
@@ -141,17 +163,21 @@ final class SoulSlabMaidPreview {
         pose.scale(displayScale, displayScale, -displayScale);
         pose.mulPose(new Quaternionf().rotateZ((float) Math.PI));
 
-        // 独立 buffer/pose 防止第三方绘制异常留下未完成的 GUI 批次。
+        // 气泡沿用原renderer的billboard；GUI方向与世界相机分离，结束必须还原。
+        var dispatcher = mc.getEntityRenderDispatcher();
+        Quaternionf previousCamera = new Quaternionf(dispatcher.cameraOrientation());
         try (ByteBufferBuilder memory = new ByteBufferBuilder(262144)) {
             MultiBufferSource.BufferSource buffer = MultiBufferSource.immediate(memory);
             Lighting.setupForEntityInInventory();
             RenderSystem.enableDepthTest();
-            var renderer = mc.getEntityRenderDispatcher().getRenderer(maid);
+            dispatcher.overrideCameraOrientation(new Quaternionf().rotateY((float) Math.PI));
+            var renderer = dispatcher.getRenderer(maid);
             if (renderer == null) throw new IllegalStateException("Missing maid renderer");
             // 复用 TLM 原 renderer 的 Bedrock/Gecko/YSM 分派，不调用世界影子/火焰/碰撞箱。
             renderer.render(maid, 0, partial, pose, buffer, 0xf000f0);
             buffer.endBatch();
         } finally {
+            dispatcher.overrideCameraOrientation(previousCamera);
             GlWrapper.clearPoseStack();
             Lighting.setupFor3DItems();
         }
@@ -175,6 +201,7 @@ final class SoulSlabMaidPreview {
 
     void dispose() {
         stopSound();
+        maid.getChatBubbleManager().getChatBubbleDataCollection().chatBubbles().clear();
         maid.discard();
     }
 

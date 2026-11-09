@@ -245,17 +245,22 @@ class SomeTest {
 
 - ⚠️ **`./gradlew test` 若显示 `FROM-CACHE` / `UP-TO-DATE`，就是没有真跑**（命中构建缓存），
   报 `BUILD SUCCESSFUL` 也是**假绿**。**复核必须加 `--rerun`。**
-- **数用例只认 `build/test-results/test/*.xml` 的 `tests=` 求和**：
+- **数用例只认 `build/test-results/test/*.xml` 的 `tests=` 求和**（脚本口径；也可看
+  `python tools/doc_check.py` 第 2 项输出或 `build/verification/full-test-summary.json`）：
 
   ```bash
   grep -ho 'tests="[0-9]*" skipped="[0-9]*" failures="[0-9]*" errors="[0-9]*"' \
     build/test-results/test/*.xml | awk -F'"' '{t+=$2;f+=$6;e+=$8} END {print t, f, e}'
   ```
 
+- **条数不写进任何文档**（2026-11-09 起，D-doc-08）：`gen_test_summary.py` 在提交前由
+  hook / CI 自动把**全量**结果写成独立快照；`--tests` 局部运行不覆盖它 ⇒ 改文档不必先跑全量。
+- ⚠️ **本地门禁只证明「最近一次全量测试全绿」，不证明「当前代码已测」** ——
+  改了代码要自己跑 `./gradlew test --rerun`；CI 的 `./gradlew build` 是当前代码的最终防线。
 - ⚠️ **别用 `grep -c "@Test"` 数方法数**：带 `@ParameterizedTest` 的类**方法数 ≠ 用例数**
   （本项目已有 3 个类差 5~13 项；按方法数加总会少 23）。参数化展开后的调用次数才是用例数。
-- 结果文件数 ≠ 源文件数（`SimpleContainerContextTest` 有 `@Nested` 内部类 → 1 个源文件出多个结果文件）。
-- 跑完**核对文档里的测试条数**与实测一致（文档即规范，条数漂移会被当成陈旧信息）。
+- 结果文件数 ≠ 源文件数（`SimpleContainerContextTest` 有 `@Nested` 内部类 → 1 个源文件出多个结果文件）；
+  全量判据用的是「结果文件数 ≥ 测试类数」，不是相等。
 - **三个判据互相独立**（2026-10-27 审查定案）：① 测试类**存在** ② 跑过且**全绿**
   ③ 这条规则**被某个用例覆盖**——有 ① 不等于有 ②③；判「守住了」必须三查。
 - **改前取基线**：重构 / 大改前先跑全量并留存失败清单；改后失败集合必须与基线**一致**

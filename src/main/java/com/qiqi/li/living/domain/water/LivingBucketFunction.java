@@ -22,7 +22,7 @@ import com.qiqi.li.living.container.TickContext;
  * （IS_LIVING）。内容状态<b>就是原版的 {@code BucketItem.content}</b>（public 字段）：
  * 活化的水桶天然装水、岩浆桶天然装岩浆、空桶为空 —— 不需要内容组件、不需要隐含推导。</p>
  *
- * <p><b>形态变换 = 原版桶心智</b>（用户拍板）：汲入流体 X → {@code X.getBucket()}
+ * <p><b>形态变换 = 原版桶心智</b>：汲入流体 X → {@code X.getBucket()}
  * （每个流体的注册桶物品）；排空 → {@code Items.BUCKET}。组件（活标记）在变换时全量保留。
  * 本类的逻辑量极少 —— <b>重量全在容器级活流体上</b>（{@link ContainerFluidData}）。</p>
  *

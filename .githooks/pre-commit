@@ -37,12 +37,15 @@ run_gate "check_container_keys（容器键解析收敛）" "tools/check_containe
 run_gate "check_stack_ops（槽位裸写棘轮）" "tools/check_stack_ops.py" \
   '数量增减改走 move / produce / consume / transform；确认是状态写入等非数量场景，才用 --update-baseline 登记，不要用它掩盖真违规。'
 
+run_gate "gen_test_summary（记录全量测试快照）" "tools/gen_test_summary.py" \
+  '快照缺失：跑一次 ./gradlew test --rerun；局部 --tests 不覆盖既有快照，无需重跑全量。'
+
 run_gate "doc_check（文档一致性）" "tools/doc_check.py" \
-  '测试条数不一致：先跑全量 ./gradlew test（不要 --tests 局部跑，会覆盖 build/test-results），再重跑本项；buffer 索引 / 名单区不一致按报告跑 gen_buffer_index.py / gen_rosters.py；其余按报告行号修文档。'
+  '无全量快照 / 快照非全绿：跑一次 ./gradlew test --rerun（局部 --tests 不覆盖快照）；buffer 索引 / 名单区不一致按报告跑 gen_buffer_index.py / gen_rosters.py；其余按报告行号修文档。'
 
 if [ "$fail" != "0" ]; then
   failed="${failed# }"
-  echo "[pre-commit] 拦下了（$failed）。修复顺序：代码门禁 → 全量测试 → doc_check。"
+  echo "[pre-commit] 拦下了（$failed）。修复顺序：代码门禁 → 全量测试（--rerun） → doc_check。"
   exit 1
 fi
 echo "[pre-commit] 全部通过"

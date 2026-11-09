@@ -13,7 +13,7 @@
 >
 > ⚠️ **并行会话冲突提示（2026-10-06）**：用户明确「另一个 AI 正在做架构方面的优化」。
 > 本文定位是**那份架构优化的参考输入**，不是与之竞争的第二份计划。
-> ⇒ **执行前必须先读一遍对方的改动**（`git status` / `AGENTS.md`「开发进展」），
+> ⇒ **执行前必须先读一遍对方的改动**（`git status` / `docs/archive/changelog.md` 顶部条目），
 > 逐条确认没有重叠（重叠项以对方为准，本文降级为"背景与理由"）。
 
 ---
@@ -525,7 +525,7 @@ DataComponentType.<Boolean>builder().persistent(Codec.BOOL)
 - [ ] 本文落成后跑 `python tools/doc_check.py`（第 1 项校验路径真实性）
 - [ ] 任一条落地时：**先更新本文的「定稿值」再动代码**（用户既定流程）
 - [ ] §3.9 拍板后：同步改 `docs/tech/living-fluid-tech.md` §2.2 的内置路径描述
-- [ ] 落地后按 [README.md](../README.md) §4 写 changelog 一行 + `AGENTS.md` 进展一行
+- [ ] 落地后按 [README.md](../README.md) §4 写 changelog 一行
 - [ ] 全部完成或决定放弃某条 ⇒ 本文从 `docs/buffer/` 搬 `docs/archive/`，并在 `docs/decisions.md` 留 supersedes 链
 - [ ] ⚠️ 若与并行会话的架构优化重叠 ⇒ **本文降级为背景与理由，正文迁对方文档**
 - [ ] §9.4 的可复现构建问题（compileOnly 的 jar 不在版本控制）⇒ **单独处理**，不属于框架层

@@ -218,7 +218,7 @@ W(区块) = 该区块 NBT 里的 1 个 long，0 = 无水印（旧存档 / 外部
 - [ ] `living-item-infrastructure.md` §3.2.2 补「惰性谓词 + 纪元水印」的推导（现文档只推到分帧账本）
 - [ ] `oversized-stack-audit.md` 新增活 TNT 求和溢出条目（🔴），修订「≤几万不会触发」前提
 - [ ] `ExplosionLedger.MAX_ENTRIES` 字段注释（「每条最大约 130 字节位图」的前提已变）
-- [ ] changelog + AGENTS 进展条目（**落地时**补，现在不补）
+- [ ] changelog 一行（**落地时**补，现在不补）
 - [ ] TODO.md「活TNT」节（已随本文建立）
 
 ## 7. 待拍板（3 项）

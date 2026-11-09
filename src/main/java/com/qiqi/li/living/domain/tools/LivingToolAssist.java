@@ -31,7 +31,7 @@ import net.neoforged.neoforge.event.level.BlockDropsEvent;
 /**
  * 活工具<b>辅助玩家挖掘</b>（{@code A3} 支线）—— 背包里的活工具给玩家的挖掘"搭把手"。
  *
- * <h3>边界：记忆是「分工开关」（用户定）</h3>
+ * <h3>边界：记忆是「分工开关」</h3>
  * <ul>
  *   <li><b>有记忆</b> → 它<b>自己</b>干活（{@code L} 组记忆回放），<b>不</b>帮忙</li>
  *   <li><b>没记忆</b> → 它<b>帮玩家</b>挖（本类）</li>

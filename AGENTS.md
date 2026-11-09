@@ -148,40 +148,16 @@ src/main/java/com/qiqi/li/
 └── network/                                 # 网络包
 ```
 
-**合计测试用例 1723 个**（含参数化展开与 `SimpleContainerContextTest` 的 `@Nested` 内部类；另有 2 项 `@Tag("perf")` 量测默认不跑，`./gradlew test -Pperf` 才计入）；
-**全绿 = `doc_check` 第 2 项机械核验**（XML 实测 failures/errors 恒 0）—— 取代手维护的
-passed 快照数（它随每次加测试必漂：2026-10-10 写下 `554 passed`，两天后实测已 588）。
+**测试全绿 = `doc_check` 第 2 项**：依据 `tools/gen_test_summary.py` 记录的最近一次**全量**
+测试快照（failures/errors 恒 0）。条数不进文档（随每次加测试必漂，可从脚本输出或
+`build/verification/full-test-summary.json` 读取）。局部 `--tests` 不覆盖快照 ⇒
+改文档无需跑全量；**当前代码是否全绿由 CI 的 `./gradlew build` 兜底**。
 已知 @Disabled 为环境性（FML 单测不加载 item tags，已游戏内验证兜住），
 说明与回归入口住 [test-map.md](docs/reference/test-map.md)。
-**逐次新增明细见 [changelog.md](docs/archive/changelog.md)。**
 
 > 📄 测试环境配置与编写约定见 [unit-testing.md](docs/guides/unit-testing.md)；
 > 测试文件树（每个测试类守什么）见 [test-map.md](docs/reference/test-map.md)。
 
-## 开发进展
-
-> 📄 **完整变更正文**：[changelog.md](docs/archive/changelog.md)（按日期倒序，含全部历史细节）
->
-> **条目体例（2026-09-22 修订）**：本表只放**最近 10 条**「一行结论 + 指针」——
-> **完整正文直接写 changelog**，不在此铺细节。超出 10 条时**删掉最底部一行**
-> （正文早已在 changelog ⇒ **无需迁移、不存在归档操作**）。
-> 能沉淀成**约束**的写进对应的 `docs/tech/*.md` / `docs/system-design/*.md`
-> （changelog 是流水，不是约束）。详见 [docs/README.md](docs/README.md) §4。
-> 判据可复算：`python tools/doc_check.py` 第 4 项（条数 ≤ 10，且最新日期与 changelog 顶部一致）。
-
-### 当前版本: 以 `gradle.properties` 的 `mod_version` 为准（**不放快照数字** —— 快照必漂，2026-10-11 实证漏同步一次；alpha 阶段不做旧存档兼容）
-
-| 日期 | 变更（一行结论） | 指针 |
-|---|---|---|
-| 2026-11-08 | 🎭 **活魂符无槽裁剪＋身体四向＋头部有限追光标** —— 初始正面、随迈步转身且停步保持；原动画/语音保留，服务端不变；+14角度守卫，全量1723项零失败，新增展示实机待验 | [女仆 §2.1/§4](docs/tech/living-maid-tech.md) · [changelog](docs/archive/changelog.md) |
-| 2026-11-08 | ✅ **活魂符 / 女仆背包联动代码接入** —— 原准入不变；所存饱食度H与背包容量C按C分钟H次均匀迈步、随机空邻；每枚模型/动画/语音接线与计时生命周期；+43我方守卫，全量1709项零失败，开发客户端TLM启动加载通过，玩法实机待验 | [女仆 §0/§4](docs/tech/living-maid-tech.md) · [changelog](docs/archive/changelog.md) |
-| 2026-11-08 | ♻️ **满级再生改「无条件 II」，删三档判据与 RegenTier（用户定，−8 测试）** —— 实机「有 II 就没再生」实为 10-15 三档规则在「承载位满」时的正常表现，用户判定过于复杂；改为满级恒给再生 II（满级奖励，不迎合原版「II 吃掉次槽」）：删 `BeaconEffects.regenTier` / `RegenTier` 枚举 / 遥测再生字段 / `regen.i`·`regen.none` 两键，buff 与 tooltip 都直接判 `level>=MAX_LEVEL` ⇒ 再生退回等级的直接函数，顺带消除「再生行取服务端遥测、分母取客户端」的不同步；+1 守卫测试（满配+加倍仍 II），全量1666项零失败；实机待验 | [beacon §2.5](docs/tech/living-beacon-tech.md) · [changelog](docs/archive/changelog.md) |
-| 2026-11-08 | 🐛 **修活信标 tooltip 配色不生效（§ 不跨占位符，+1 渲染级回归）** —— 实机反馈效果名/待喂入菜单没变色；根因：原版 StringDecomposer 逐字面段解析 §，§ 不跨 %s/%d 参数边界也不进下一段 ⇒ 模板 § 够不到参数文本（旧版「等级数字绿/可喂绿/休眠数字红」其实从未生效）；修法：带占位符的行颜色一律 withStyle 上 Component（行级整行 / 参数级单独），lang 去 §，三个 config_entry* 键合并回一个；守卫 renderedColorsReachArgumentText 注入 Language 后逐字符取色；全量1674项零失败；实机待验 | [beacon §2.6.1](docs/tech/living-beacon-tech.md) · [changelog](docs/archive/changelog.md) |
-| 2026-11-08 | 🔢 **活信标状态行分母改「承载位」= min(堆叠数, 槽上限)（用户定）** —— 原分母 `config.size()` 让「堆 5 配 3」显示 3/3 像满配、且提示不了杠杆；改后 N/N = 这摞承载位用满 ⇒ **想再多一个 buff 就往摞里再加一个信标**，与休眠后缀「信标不足（需 k 个）」同一件事；**不裸用堆叠数**（生效数恒 ≤ 已配槽数 ≤ 5，堆 10 配 5 会虚报 5/10）⇒ 与 `MAX_SLOTS` 取小，将来槽上限放开公式不用改；lang 模板不变；+1 测试（4 例），全量1673项零失败；实机待验 | [beacon §2.6.1](docs/tech/living-beacon-tech.md) · [changelog](docs/archive/changelog.md) |
-| 2026-11-08 | 🎨 **活信标 tooltip：条目三态配色 + 满级再生改「账本末尾授予行」（用户定）** —— 生效效果名青 / 休眠整行暗灰（红后缀不变）/ 遥测缺失中性不猜，**绿仍只表示可操作**（可喂·升 II）；再生从等级行下方移到 5 条矿石之后、待喂入菜单之前，文案「＋ 生命恢复 II（满级授予·不占槽）」，被占用时同一行位置变暗灰并明示原因；**＋不占编号** ⇒ 不冒充第 6 槽，效果名取原版显示名；lang 新增 config_entry_active/sleep、删 regen 包装键；+8 测试（BeaconTooltipTest 守选键/落位/双语占位符递归比对），全量1672项零失败；实机待验 | [beacon §2.6.1](docs/tech/living-beacon-tech.md) · [changelog](docs/archive/changelog.md) |
-| 2026-11-07 | 🔀 **活信标矿石锭映射：钻石 ↔ 下界合金锭互换（用户定）** —— 钻石=抗性提升（L2）/ 下界合金锭=力量（L3），**效果与档位一起换**（档位跟原版效果 index 走）；OreType 枚举序改为 铁/金/钻石/绿宝石/下界合金（序=档位非降序契约，tooltip 待喂入菜单依赖）；oreMapping 补效果断言（此前效果映射无测试）+ 门控/枚举序/再生 5 案例同步，方法数不变、全量1664项零失败；实机待验 | [beacon §2.5](docs/tech/living-beacon-tech.md) · [changelog](docs/archive/changelog.md) |
-| 2026-11-07 | ✅ **活剪刀纳入工具判据（v1）** —— isLivingTool 增补 SHEARS_DIG（用户定不扩大）：挖掘（羊毛/蛛网/树叶/藤蔓）+ 辅助挖掘 + 环可见全链现成；剪植物顶端（SHEARS_TRIM）补丁后发事件 ⇒ 交互记忆可录可回放；+1 守卫测试（ActivationHookTest ⑨）；边界外不做：蜂巢/南瓜（block 侧 L36）、剪羊（实体侧）—— 残余登记 TODO；实机待验 | [tool §4.1](docs/tech/living-tool-tech.md) · [changelog](docs/archive/changelog.md) |
-| 2026-11-07 | 🐛 **修活海绵吸源后的僵尸源 / 黑曜石（+2 回归）** —— 删源只擦 `generatedSources` 账本，实际层 `flows` 靠下一拍收敛；源网络 + 岩浆节拍门下邻源把被删槽顶成流动 target ⇒ prune 不删、渲染仍在、`reactFrontiers` 判「源格遇水」出黑曜石；`demoteOrphanSources` 在 prune 之后、反应类之前同拍降级为流动格（不删格免空档），阶段 2→3 顺序保证同 tick 生效；旧代码 2 项红，全量1663项零失败 | [流体 §2.2](docs/tech/living-fluid-tech.md) · [海绵 §12](docs/tech/living-sponge-tech.md) |
 ## 提交前必跑（2026-10-30 更新）
 
 ```bash
@@ -189,16 +165,15 @@ python tools/check_layers.py          # 层纪律：R1 依赖方向 / R2 Mixin �
 python tools/check_mixins.py          # Mixin：R1 living_item$ 前缀 / R2 显式成员 / R3 配置 ↔ 源文件
 python tools/check_container_keys.py  # 容器键解析收敛（ContainerKeys 唯一入口）
 python tools/check_stack_ops.py       # 槽位裸写棘轮：domain/function 的 setItem( 只减不增（原语是唯一数量操作入口）
-python tools/doc_check.py             # 文档一致性：进展滚动 / 指针 / 测试条数 / 入口体量 …
+python tools/doc_check.py             # 文档一致性：路径 / 测试全绿快照 / 入口体量 / 生成名单区 …
 ```
 
 **任一为红就不要提交。** `check_layers` 与 `check_stack_ops` 是**棘轮**（基线只允许收紧），
 其余三条是零容忍门禁，所以「新引入的违规」一定会被看见。
 
-> ⚠️ 最常见的红法是 `doc_check` 报「测试条数不一致（声明 X / 实测 Y）」——
-> 那不是文档写错，是**改了代码但没跑测试**。先 `./gradlew test` 再提交。
-> ⚠️ 必须是**全量** `./gradlew test`：`--tests` 局部运行会覆盖 `build/test-results`，
-> `doc_check` 只看到局部条数（2026-10-29 实测：只跑 chest 包 ⇒ 报「声明 1143 / 实测 15」）。
+> ⚠️ **全量复核必须加 `--rerun`**（`FROM-CACHE` / `UP-TO-DATE` 是假绿）；
+> 口径见 [unit-testing.md](docs/guides/unit-testing.md)。
+> 改文档不必先跑全量：局部 `--tests` 不覆盖全量快照，`gen_test_summary.py` 由 hook 自动调用。
 
 > 💡 **自动防护**：仓库内 `.githooks/pre-commit` 跑上面五条（红的直接拦住）。
 > 首次检出 / 换机器后执行一次 `sh tools/setup-dev.sh`
@@ -206,8 +181,8 @@ python tools/doc_check.py             # 文档一致性：进展滚动 / 指针 
 > ⚠️ 设置 hooksPath 后，本地 `.git/hooks/pre-commit` 不再执行 —— 以仓库内版本为准，
 > 两套不要同时维护。
 
-> 🤖 **CI 跑同样五条**（`.github/workflows/build.yml` 的 `Quality gates` 步骤），
-> 且 `doc_check` 用 `DOC_CHECK_STRICT=1`：CI 里没产出测试 XML 直接红，不再 SKIP。
+> 🤖 **CI 跑同样五条 + `gen_test_summary.py`**（`.github/workflows/build.yml` 的 `Quality gates`），
+> 且 `doc_check` 用 `DOC_CHECK_STRICT=1`：CI 里没产出全量测试快照直接红，不再 SKIP。
 
 ## 排查铁律：原版机制挡路时
 

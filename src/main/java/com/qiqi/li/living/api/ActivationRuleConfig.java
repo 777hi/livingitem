@@ -76,7 +76,7 @@ public final class ActivationRuleConfig {
     private static final List<RuleEntry> RULES = new ArrayList<>();
     private static Action defaultAction = Action.ALLOW;
     /**
-     * ⚠️ 默认 {@code false}（2026-09-27 用户定调）：<b>默认行为不可动</b> ——
+     * ⚠️ 默认 {@code false}：<b>默认行为不可动</b> ——
      * 原本任何物品都能被活化，这个拦截只能由配置者在 JSON 里显式开启，
      * 模组自己不得替用户决定拒绝。
      */

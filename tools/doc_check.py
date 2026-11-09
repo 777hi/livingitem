@@ -4,9 +4,10 @@ Documentation system consistency checker.
 Verifies the invariants declared in docs/README.md §7 ("改完必查"):
   1. Path reality      - every path mentioned in a doc (relative markdown links,
                          and repo-relative docs/... / src/... mentions) exists
-  2. Test count        - AGENTS.md's declared total matches build/test-results/test/*.xml
+  2. Test green        - 最近一次**全量**测试快照 failures/errors 恒 0，且当前 XML 无失败
+                         （快照由 tools/gen_test_summary.py 生成，局部 --tests 不覆盖它）
   3. Test tree         - the test file list in test-map.md matches src/test reality
-  4. Progress rolling  - AGENTS「开发进展」一行式条数 / 日期对齐 / 指针含 .md
+  4. Progress rolling  - RETIRED 2026-11-09：进展表取消，changelog 为唯一历史载体
   5. Entry size        - AGENTS.md stays under the entry budget (soft warning)
   6. Decisions         - decisions.md 的 supersedes 链双向一致
   7. Java symbols      - docs 提到的 Living*.java / *Mixin.java 必须存在
@@ -22,34 +23,36 @@ Verifies the invariants declared in docs/README.md §7 ("改完必查"):
  15. 容器形态覆盖      - 每个具体 *ContainerContext 必须在 container-data-lifecycle.md 出现
                          （仍是存在性判据：那张矩阵是跨类横切，只能人写 + 带判据）
 
-Checks 1-4, 6-10 and 12-15 fail the run (exit 1). Checks 5 and 11 only warn: both are
-maintenance signals that need a human decision, not correctness errors.
+Checks 1-3, 6-10 and 12-15 fail the run (exit 1); check 4 is retired (2026-11-09).
+Checks 5 and 11 only warn: both are maintenance signals that need a human decision,
+not correctness errors.
 
 Usage: python tools/doc_check.py [-v]
-       DOC_CHECK_STRICT=1 python tools/doc_check.py   # 无测试 XML 时 FAIL（CI 用）
+       DOC_CHECK_STRICT=1 python tools/doc_check.py   # 无全量测试快照时 FAIL（CI 用）
 """
 import os
 import re
 import sys
 import glob
+import json
 import datetime
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VERBOSE = "-v" in sys.argv
-# CI 里没跑测试 / 测试没产出 XML 时必须红，不能静默 SKIP。
+# CI 里没跑全量测试 / 没产出快照时必须红，不能静默 SKIP。
 # 本地开发保留 SKIP：改文档时不必先跑全量测试。
 STRICT = os.environ.get("DOC_CHECK_STRICT") == "1"
 
 ENTRY = os.path.join(ROOT, "AGENTS.md")
-CHANGELOG = os.path.join(ROOT, "docs", "archive", "changelog.md")
 RESULTS = os.path.join(ROOT, "build", "test-results", "test", "TEST-*.xml")
+# 与 tools/gen_test_summary.py 的 SNAPSHOT 保持一致：全量测试结果的独立落点。
+SNAPSHOT = os.path.join(ROOT, "build", "verification", "full-test-summary.json")
 BUFFER = os.path.join(ROOT, "docs", "buffer")
 
 # chars（不是磁盘字节）：这是 AI 的**加载预算**，而 AI 按 token 消耗上下文，
 # 与文件在磁盘上占多少字节无关（中文 UTF-8 一个字符 3 字节，差 1.5 倍）。
 # 曾写「≤20KB」⇒ 22,377 字节的 AGENTS.md 被判 OK，红线形同虚设（2026-10-10 修正）。
 ENTRY_BUDGET = 20000            # chars, see docs/README.md §1
-MAX_PROGRESS_ROWS = 10          # 「开发进展」一行式滚动清单上限；see docs/README.md §4
 
 failures = []
 warnings = []
@@ -152,44 +155,56 @@ def check_paths():
 
 # ---------------------------------------------------------------- 2/3. AGENTS.md facts
 
-def check_test_count():
-    declared = re.search(r"合计测试用例\s*\**\s*(\d+)\s*\**\s*个", read(ENTRY))
-    if not declared:
-        failures.append("[条数] AGENTS.md 找不到「合计测试用例 N 个」声明")
-        print("2. 测试条数一致性  : FAIL（无声明）")
-        return
-    declared = int(declared.group(1))
+def check_test_green():
+    """最近一次全量测试必须全绿（2026-11-09 改，D-doc-08）。
 
-    sums = {"tests": 0, "skipped": 0, "failures": 0, "errors": 0}
+    旧口径把 AGENTS.md 声明的条数与 `build/test-results/test/*.xml` 比对：该目录会被
+    `--tests` 局部运行覆盖 ⇒ 改一次文档也得先跑全量测试。现在改成：
+      - `gen_test_summary.py` 只把**全量**结果写进独立快照（局部运行不覆盖）
+      - 这里只校验快照 failures/errors == 0；条数不进任何文档（铁律 3）
+    当前 XML 若出现 failures/errors（哪怕局部跑挂了）也立即 FAIL。
+    无快照时本地 SKIP + 警告、CI 严格模式 FAIL。
+    ⚠️ 本地门禁只证明「最近一次全量全绿」，不证明「当前代码已测」——
+    后者由 CI 的 `./gradlew build` 兜底，见 AGENTS.md「提交前必跑」。
+    """
+    # 当前结果目录的失败信号：局部运行失败也要拦
+    cur_bad = {"failures": 0, "errors": 0}
     for f in glob.glob(RESULTS):
-        h = re.search(r"<testsuite[^>]*>", read(f)).group(0)
-        for key in sums:
-            m = re.search(r'%s="(\d+)"' % key, h)
+        h = re.search(r"<testsuite[^>]*>", read(f))
+        if not h:
+            continue
+        for k in cur_bad:
+            m = re.search(r'%s="(\d+)"' % k, h.group(0))
             if m:
-                sums[key] += int(m.group(1))
-    total, skipped = sums["tests"], sums["skipped"]
-    failed, errored = sums["failures"], sums["errors"]
+                cur_bad[k] += int(m.group(1))
+    if cur_bad["failures"] or cur_bad["errors"]:
+        failures.append(
+            f"[全绿] 当前测试 XML 有 failures={cur_bad['failures']} errors={cur_bad['errors']}")
+        print("2. 测试全绿（快照）: FAIL（当前测试 XML 有失败）")
+        return
 
-    if total == 0:
+    if not os.path.exists(SNAPSHOT):
         if STRICT:
-            failures.append("[条数] 无测试结果 XML：严格模式下 CI 必须先跑 ./gradlew test")
-            print("2. 测试条数一致性  : FAIL（无 XML，严格模式）")
+            failures.append("[全绿] 无全量测试快照：CI 必须先 ./gradlew build 并跑 gen_test_summary.py")
+            print("2. 测试全绿（快照）: FAIL（无快照，严格模式）")
         else:
-            warnings.append("[条数] 没有测试结果 XML（先跑 ./gradlew test --rerun）—— 跳过条数核对")
-            print("2. 测试条数一致性  : SKIP（无 XML）")
+            warnings.append("[全绿] 无全量测试快照 —— 跑一次 ./gradlew test --rerun 后由 hook 自动记录；改文档不受影响")
+            print("2. 测试全绿（快照）: SKIP（无快照）")
         return
-    if declared != total:
-        failures.append(f"[条数] AGENTS.md 声明 {declared}，实测 {total}")
-        print(f"2. 测试条数一致性  : FAIL（声明 {declared} / 实测 {total}）")
+
+    try:
+        snap = json.loads(read(SNAPSHOT))
+    except (ValueError, OSError) as e:
+        failures.append(f"[全绿] 快照损坏：{e}")
+        print("2. 测试全绿（快照）: FAIL（快照损坏）")
         return
-    # 全绿核验（2026-10-12）：把「全绿」从手维护快照数（passed N 随每次加测试必漂）
-    # 换成同一批 XML 上的机械断言。skipped 只报告不判定 —— 环境性 @Disabled 的
-    # 说明住 test-map 与测试注释，不在这里复述（入口只放路由，见 docs/README.md 铁律 1）。
-    if failed or errored:
-        failures.append(f"[全绿] XML 实测 failures={failed} errors={errored} —— 测试非全绿")
-        print(f"2. 测试条数一致性  : FAIL（条数 {total} 对，但 failures={failed} errors={errored}）")
+    bad_f, bad_e = snap.get("failures") or 0, snap.get("errors") or 0
+    if bad_f or bad_e:
+        failures.append(f"[全绿] 最近一次全量测试 failures={bad_f} errors={bad_e}")
+        print(f"2. 测试全绿（快照）: FAIL（快照 failures={bad_f} errors={bad_e}）")
         return
-    print(f"2. 测试条数一致性  : OK（{total} = {total - skipped} passed + {skipped} skipped，failures=0 errors=0）")
+    print(f"2. 测试全绿（快照）: OK（{snap.get('tests')} 条，failures=0 errors=0，"
+          f"记录于 {snap.get('recordedAt')}）")
 
 
 def check_test_tree():
@@ -227,56 +242,10 @@ def check_test_tree():
         print(f"3. 测试树一致性    : OK（{len(real)} 个测试类）")
 
 
-# ---------------------------------------------------------------- 4. progress rolling
-
-def check_progress_rolling():
-    """「开发进展」一行式滚动校验（2026-09-22 修订，取代原归档边界校验）。
-
-    规约（docs/README.md §4）：AGENTS「开发进展」只放**最近 MAX_PROGRESS_ROWS 条**
-    「一行结论 + 指针」，**完整正文直接写 changelog**；超出上限时删掉最底部一行
-    （正文早已在 changelog ⇒ 无迁移、无守恒校验、无边界判据）。
-
-    旧「批次制 + 定期归档」的两个毛病（实测）：
-      ① 归档是**有风险的手工操作**（连续迁出 + 守恒校验 + 同日批次合并坑），
-         漏做即**永久丢历史**（`2026-09-01~04` 断档）；
-      ② 实测条目平均 **705 字符**（规约要求「一行结论 + 指针」）⇒ 进展节占入口 **55%**。
-
-    三条判据（全部可复算）：
-      ① 条数 ≤ MAX_PROGRESS_ROWS（防入口膨胀）
-      ② 最新条目日期 == changelog 顶部日期（防「只加了 AGENTS、忘了写 changelog」）
-      ③ 每条都有指针（含 `.md`，防退化成「只有结论」的流水账）
-    """
-    cl = read(CHANGELOG)
-    ag = read(ENTRY)
-    rows = re.findall(r"^\| (\d{4}-\d{2}-\d{2}) \| (.+?) \| (.+?) \|$", ag, re.M)
-    if not rows:
-        failures.append("[进展] AGENTS 里找不到一行式清单（`| 日期 | 变更 | 指针 |`）")
-        print("4. 进展滚动        : FAIL（无条目）")
-        return
-
-    problems = []
-    if len(rows) > MAX_PROGRESS_ROWS:
-        problems.append("条数 %d > 上限 %d" % (len(rows), MAX_PROGRESS_ROWS))
-
-    no_ptr = [r[1][:20] for r in rows if ".md" not in r[2]]
-    if no_ptr:
-        problems.append("缺指针 %d 条（如：%s）" % (len(no_ptr), "；".join(no_ptr[:2])))
-
-    cl_dates = re.findall(r"^## (\d{4}-\d{2}-\d{2})$", cl, re.M)
-    if not cl_dates:
-        problems.append("changelog 里找不到日期段")
-    else:
-        ag_top = max(r[0] for r in rows)
-        if ag_top != cl_dates[0]:
-            problems.append(
-                "最新条目 %s ≠ changelog 顶部 %s —— 写完 changelog 正文了吗？" % (ag_top, cl_dates[0]))
-
-    if problems:
-        for x in problems:
-            failures.append("[进展] " + x)
-        print("4. 进展滚动        : FAIL（%s）" % "；".join(problems))
-    else:
-        print("4. 进展滚动        : OK（%d/%d 条，最新 %s）" % (len(rows), MAX_PROGRESS_ROWS, cl_dates[0]))
+# ---------------------------------------------------------------- 4. progress rolling (RETIRED)
+# 2026-11-09 (D-doc-07)：AGENTS.md 进展表取消，changelog 成为唯一历史载体。
+# 「两处维护」不再存在 ⇒ 条数 / 日期对齐 / 指针校验失去对象，按 §0 规约退出机制删除。
+# 编号保留为空位（main 里只打印一行 RETIRED），避免牵动 docs/README.md §7.1 的引用。
 
 
 # ---------------------------------------------------------------- 5. entry size
@@ -584,7 +553,7 @@ def check_buffer_staleness():
     「不稳定 / 未定案，别当现状读」，一份标着「✅ 已实现并验收」的文档待在那里，
     新 AI 会把它当成未定案的设计稿（或反过来，把未定案当现状）。
 
-    **只报警，不自动搬运**：AGENTS.md 的进展指针可能正指向它，
+    **只报警，不自动搬运**：其它活跃文档或 `buffer/README.md` 索引可能正指向它，
     搬走必然断链（第 1 项随后会报）⇒ 搬 / 改状态标注由人决定，脚本只负责提醒。
     """
     stale = []
@@ -749,9 +718,9 @@ def check_container_form_coverage():
 def main():
     print("=== 文档系统一致性检查（docs/README.md §7）===\n")
     check_paths()
-    check_test_count()
+    check_test_green()
     check_test_tree()
-    check_progress_rolling()
+    print("4. 进展滚动        : RETIRED（2026-11-09，见 docs/README.md §4）")
     check_entry_size()
     check_decisions()
     check_java_symbols()

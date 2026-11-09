@@ -90,9 +90,11 @@
 | D-doc-01 | 2026-09-16 | doc | 入口文档（`AGENTS.md`）**≤ 20,000 字符**，只放路由与不可违反的约束 | 新会话加载预算 | 生效 | | `docs/README.md` §1 |
 | D-doc-02 | 2026-09-16 | doc | ~~「开发进展」只保留最近 3 个批次，其余迁 `changelog.md`；先查冗余再动历史~~ | 历史是资产，冗余是负债 | **已被取代** | → D-doc-04 | `docs/README.md` §4 |
 | D-doc-03 | 2026-09-16 | doc | 搬运文档时**搬走不删掉**，且**守恒校验必须逐段判定**（不能只验第一块） | 曾误删整段 | 生效 | | `docs/README.md` §5 / §7.2 |
-| D-doc-04 | 2026-09-22 | doc | 「开发进展」改**一行式滚动**（最近 10 条「结论 + 指针」），**完整正文直接写 changelog**，**取消归档环节** | 条目均 705 字符占入口 55%；归档高风险手工操作 | 生效 | ← D-doc-02 | `docs/README.md` §4 |
+| D-doc-04 | 2026-09-22 | doc | ~~「开发进展」改**一行式滚动**（最近 10 条「结论 + 指针」）~~；完整正文直接写 changelog、取消归档环节仍生效 | 条目均 705 字符占入口 55%；归档高风险手工操作 | **已被取代** | ← D-doc-02 · → D-doc-07 | `docs/README.md` §4 |
 | D-doc-05 | 2026-10-10 | doc | **清单型内容退出文档**：删 `file-map.md` 主树与 `completed-features.md`（可从代码枚举 ⇒ `find` / `gen_code_map.py` 替代），关键类指针下沉各 tech §0「实现入口」，测试树拆 `test-map.md` 保留；被否方案：脚本生成（生成物无注释 = 纯骨架）、就近年清单（必漂无解） | 人工清单必漂（实证缺 112+，同文件测试树有校验则不漂） | 生效 | | `docs/README.md` 铁律 3 / `docs/reference/test-map.md` |
 | D-doc-06 | 2026-10-10 | doc | **需求池统一到 `TODO.md`**：tech §0 删「未实现 / 待定」字段（计划迁 TODO 并带 tech 指针；**「明确不做」的边界不随迁**，归位 §0 规则表 / 「边界与留痕」节）；被否方案：收敛到 §0（曾推荐，用户拍板反转 —— 统一一处好查，不翻 15 份） | 计划与契约混排，AI 易把 ⏳ 读成边界、⚠️ 读成计划 | 生效 | | `docs/TODO.md` 头部 / `docs/README.md` §1 §0 定义 |
+| D-doc-07 | 2026-11-09 | doc | **取消 `AGENTS.md` 进展表**（含 10 行滚动与 `doc_check` 第 4 项）；changelog 成为唯一历史载体，删表后「两处维护」不可能发生 ⇒ 该校验按退出机制一并退役 | 流水不进只写路由的入口；10 行过程态会误导零记忆 AI | 生效 | ← D-doc-04 | `docs/README.md` §4 |
+| D-doc-08 | 2026-11-09 | doc | **测试条数退出所有文档**：门禁依据从「AGENTS 声明条数 == XML」改为 `gen_test_summary.py` 记录的最近一次全量测试快照（failures/errors 恒 0）；局部 `--tests` 不覆盖快照，本地门禁不再强制「改文档先跑全量」 | 条数必漂且 XML 会被局部运行覆盖；当前代码全绿由 CI build 兜底 | 生效 | | `docs/README.md` §7.1 · `docs/guides/unit-testing.md` |
 | D-map-01 | 2026-10-28 | map | **落点不做地形避险**：按坐标传送，不找安全地形、不抬升避岩浆、不修正嵌基岩天花板；下界等维度的落点嵌地形属玩家选择 | 2026-10-27 审查曾把「下界落点嵌基岩 / 岩浆海」列为待修缺陷（v28→v29 的天花板扫描在 v50 简化时丢失）；用户 2026-10-28 明确「这个不当作 bug，已作为玩法决策」—— 替玩家避险会让同一坐标在不同地形下落到不同位置，破坏「指哪传哪」语义 | 生效 | | `living-map-ender-pearl-tech.md` §0 规则 7 |
 | D-fluid-01 | 2026-10-03 | fluid | **源只有一种（容器资产）**：取消「桶源」，水要么在桶里（`BucketItem.content`）要么在容器里（源），**互斥**，经倒/汲转换 | 桶源 = 重复计账 | 生效 | | `living-fluid-tech.md` §4 |
 | D-fluid-02 | 2026-10-04 | fluid | **桶 = 载体，零私有状态**：内容 = 原版 `BucketItem.content`，形态变换走 `Fluid.getBucket()` 注册映射 | 曾发明私有组件是负资产 | 生效 | | `living-fluid-tech.md` §5 |
@@ -130,6 +132,7 @@
 | D-container-21 | 2026-11-01 | container | ~~`ChunkEvent.Unload` 在异步线程触发（`ChunkMap.scheduleUnload` 的 `thenRunAsync`）；处理器只能入队，不得直接改 tick 线程的表~~ **前提错，见 D-container-22** | ~~跨线程改表会丢数据 / CME~~ | 已被取代 | → D-container-22 | | `living-item-infrastructure.md` §3.2 · R-06 计划 |
 | D-container-22 | 2026-11-01 | container | **`ChunkEvent.Unload` 在服务器主线程触发**（`thenRunAsync` 的第二参数是 **executor**，这里是 `unloadQueue::add` ⇒ 只是入队，body 由 `ChunkMap.tick` 主线程 poll 后 run）：卸载处理器**可以**直接改 tick 线程的表，但仍**不得查世界 / 能力**（区块正卸载 ⇒ 再入，不是竞态）；R-06 **取消**「事件只入队、tick 线程 drain」改造项 | 误读 CompletableFuture 异步形；风险是再入不是线程 | 生效 | ← D-container-21 | `event-threading.md` §2 · `living-item-infrastructure.md` §3.2 |
 | D-container-23 | 2026-11-01 | container | **跨 tick 缓存的回收判据 = 「容器消失满阈值」**，不给每种容器形态挂事件；**新建聚合条目登记一次**，正常续期只在 `trackLivingSlots`（含已无活物品的容器），查询不续期；回收走 `removeDataByKey` 同一条入口 | 六种停止被处理的成因挂六条事件必漏其一；「没再被看到」是共同结果。2026-11-05 补明新建登记：查询 / 修订独建条目也必须可回收，不另立类型心跳 TTL | 生效 | | `container-data-lifecycle.md` §2/§4 · `ContainerCacheSweepTest` |
+| D-container-24 | 2026-11-07 | container | **宿主运行兼容不改变原模组准入**：不为女仆背包放行活魂符；修改第三方机制须有独立用户需求 | 运行接入不等于准入放宽 | 生效 | | [女仆联动定案](tech/living-maid-tech.md#22-定案与否决留痕) |
 | D-open-01 | 2026-09-28 | open | **对外授权 = LGPL-3.0 附加 classpath 例外**（Q1 拍板）：例外文本在 `LICENSE.txt` 末尾（GNU LGPL v3 §7 additional permission）——依赖本库的 mod/addon **可任意授权（含闭源）**；修改库本体仍须 LGPL。SPDX 无此例外标准标识符，自动化工具仍用 `LGPL-3.0-or-later`（已注明，不编造） | 排除「addon 被迫整体 LGPL」的兼容门槛，又不放弃本体 copyleft；README 双语徽标 + 第三方须知已同步 | 生效 | | `open-plan.md` §3 Q1 · `LICENSE.txt` · `NOTICE.md` |
 | D-render-01 | 2026-10-26 | render | **状态段不设每 N tick 保底覆盖；广播条目身份用容器键，不用 `BlockPos`** | 比较单位 = 发送单位；容器形态无唯一坐标 | 生效 | | `living-tool-tech.md` §11.5 定案记录 |
 

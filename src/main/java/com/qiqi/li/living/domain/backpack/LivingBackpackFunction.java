@@ -176,7 +176,7 @@ public final class LivingBackpackFunction implements LivingItemFunction {
     }
 
     /**
-     * 取消活化：<b>清理干净</b>（用户 2026-10-22 定调）。
+     * 取消活化时把容器级数据与 UUID 一并清除。
      *
      * <p>{@link ContainerUuids#discard} 会先删 SavedData 那份容器级数据、再剥 UUID ——
      * 只剥 UUID 会把数据留成永远打不开的孤儿条目。</p>
