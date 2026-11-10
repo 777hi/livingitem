@@ -25,7 +25,6 @@ public final class LivingSoulSlabClientRegistration {
 
     public static void register() {
         SoulSlabPreviewCache cache = CACHE;
-        LivingSoulSlabSlotPreview.install(cache::prepare);
         NeoForge.EVENT_BUS.addListener((ContainerScreenEvent.Render.Background event) ->
                 cache.beginFrame(event.getContainerScreen(), event.getGuiGraphics()));
         NeoForge.EVENT_BUS.addListener((ContainerScreenEvent.Render.Foreground event) ->

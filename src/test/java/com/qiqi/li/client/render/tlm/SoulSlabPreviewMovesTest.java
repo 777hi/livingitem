@@ -82,9 +82,9 @@ class SoulSlabPreviewMovesTest {
     void onlyOwnClockIsIgnoredWithoutMutatingStacks() {
         var dimension = ResourceLocation.withDefaultNamespace("overworld");
         ItemStack before = new ItemStack(Items.PAPER);
-        before.set(MaidComponents.CLOCK.get(), LivingSoulSlabClock.start(dimension, 100, 20, 6));
+        before.set(MaidComponents.CLOCK.get(), LivingSoulSlabClock.initial());
         ItemStack after = before.copy();
-        after.set(MaidComponents.CLOCK.get(), LivingSoulSlabClock.start(dimension, 460, 20, 6));
+        after.set(MaidComponents.CLOCK.get(), LivingSoulSlabClock.initial().afterFailure());
         assertFalse(ItemStack.matches(before, after));
         assertTrue(ItemStack.matches(SoulSlabPreviewMoves.stable(before), SoulSlabPreviewMoves.stable(after)));
         assertTrue(before.has(MaidComponents.CLOCK.get()));

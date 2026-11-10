@@ -283,7 +283,7 @@ viewer 驱动 / 框架扫描 / 框架判定才回到 `LivingItemFunction`）。
 | 找某个源文件 | `find src/main -name "*.java"` 或 `python tools/gen_code_map.py --query <类名>`（人工文件树快照已删，2026-10-10） |
 | 查指令用法 / 加新指令 | [commands.md](docs/reference/commands.md)（指令清单，快照） |
 | **查某子系统的待定计划 / 还欠什么** | [TODO.md](docs/TODO.md)（**全项目唯一需求池** —— 2026-10-10 起 tech §0 不再列未实现，D-doc-06） |
-| **查原版 / NeoForge / 第三方模组源码** | **直接搜 `libs/src/`，无需解压** —— `libs/src/neoforge-21.1.219-merged/` 是 ⭐ 首选（版本与 `neo_version` 一致）；第三方模组在 `libs/src/<ModName>/`。详见 [living-tool-design.md](docs/archive/living-tool-design.md) §2.2.1 |
+| **查原版 / NeoForge / 第三方模组源码** | 本机 `libs/src/` 有已解压源码（不入库）；搜索须把 path 指到 `libs/src/` 内（`.gitignore` 忽略 `libs/`，从仓库根搜会 0 命中），首选 `neoforge-<neo_version>-merged/` |
 | 查历史变更 | [changelog.md](docs/archive/changelog.md)（按日期倒序） |
 | **改容器层 / 排查容器相关 bug** | [container-overview.md](docs/system-design/container-overview.md)（**七问** —— 先定位问题属于哪一问，再只改那一问的唯一入口） |
 | 红电系统总体设计 | [红电系统.md](docs/system-design/红电系统.md) |

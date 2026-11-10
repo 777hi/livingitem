@@ -43,9 +43,13 @@ src/test/java/com/qiqi/li/
 │   ├── LivingItemTooltipTest.java             # 活物品段标题恒在（2026-10-07 定稿）·零内容行仍输出标题/不适用功能同样保留/真实活桶只有标题无内容行/有内容行则空行+标题+行/多功能标题只一次且行序保持
 │   └── BeamColorSectionsTest.java             # 光束颜色分段·无玻璃单段白/玻璃纯色/空气加高/同色累计/异色平均/不透明截断/自定义默认色 + 默认白色完整 ARGB/实际原版内芯顶点 alpha=255、外晕=32（无观测/无玻璃/红玻璃/白玻璃）
 ├── client/render/tlm/
+│   ├── SoulSlabGuiModelWrapperTest.java       # 活魂符GUI模型握手·真实栈identity+槽位矩阵双匹配/同引用异位置不误隐藏/TLM原override先解析且null不篡改/仅GUI空模型+claim/非GUI与过期帧委托/多槽认领隔离
+│   ├── SoulSlabGuiPoseTest.java               # 活魂符GUI矩阵·复现容器槽guiLeft/guiTop+Z100及物品中心/Z150/16倍翻Y变换，辅助函数不污染Background pose
+│   ├── SoulSlabGuiSlotsTest.java              # 活魂符模型握手槽位准入·普通槽稳定引用/NeoForge StackCopySlot显式退化原图
 │   ├── SoulSlabPreviewBubblesTest.java        # 图片气泡判定·可见/开关/已有气泡/原检查间隔与UUID相位/图片权重/零总权重/颜文字分支跳过，真实原气泡绘制实机验收
 │   ├── SoulSlabPreviewFacingTest.java         # 活魂符展示角度·初始正面/四向身体/停步保朝向/最短跨界插值/头身独立与光标限幅/背侧投影/实例隔离
-│   └── SoulSlabPreviewMovesTest.java          # 活魂符预览唯一相邻迁移·物理宿主/槽身份、clock排除、快照歧义不共享、多枚独立；不代替实际女仆渲染验收
+│   ├── SoulSlabPreviewMovesTest.java          # 活魂符预览唯一相邻迁移·物理宿主/槽身份、clock排除、快照歧义不共享、多枚独立；不代替实际女仆渲染验收
+│   └── SoulSlabPreviewVisibilityTest.java     # 活魂符预览可见帧·未绘制哨兵不因int溢出误判/当前至前2tick可见/更旧与tick极值不可见
 ├── client/util/
 │   └── LivingChestTabSearchTest.java          # 活箱子标签页搜索过滤纯函数·空搜索词原样返回(不清空栈)/非空词剔除空栈不改入参/中文名直配/拼音(全拼·首字母·部分)/英文名大小写/注册ID兜底/空物品+非空词⇒匹配(原守卫分支语义·实际路径不可达,钉住防漂)
 ├── living/api/
@@ -101,8 +105,8 @@ src/test/java/com/qiqi/li/
 │   ├── ContainerTickHooksTest.java            # tick 钩子注册表（2026-10-29）·同类去重 / 两阶段按注册顺序 / ctx+tick 透传 / 默认空实现
 │   └── ContainerTickIsolationTest.java        # tick 异常隔离（2026-10-30，R-01）·RuntimeException 不向外抛且可重复调用 / 取 key 本身抛异常仍隔离 / Error 不被吞
 ├── living/domain/maid/
-│   ├── LivingSoulSlabClockTest.java           # 均匀迈步排期·H/C公式、7200tick20次、分数余量、0停、时间scope与过期不追补、极大输入钳制
-│   └── LivingSoulSlabFunctionTest.java        # 活魂符我方执行链·首次等待/到点移槽/受堵跳过/计时随槽/0停清clock/拒写不动/过期重排/超堆叠不拆/纯随机合法空邻与守恒
+│   ├── LivingSoulSlabClockTest.java           # 概率活跃度I·初始7/成功失败±1/1-49钳位/非法值
+│   └── LivingSoulSlabFunctionTest.java        # 每秒1/I判定·初始化不抽/非整秒与未命中零写/I=1必试/随机四向不重掷/成功失败技术中性/换槽保I/超堆叠不拆
 ├── living/domain/ender/
 │   ├── EnderChannelRegistryDimTest.java        # 活末影箱路由表**维度隔离**（2026-10-27 审查待拍板 #2，2026-10-28 修）·跨维度同坐标同槽位都能注册（去重键含维度，旧实现误判重复 ⇒ 第二条注册不进去）/ 按位置+槽位清理只删指定维度 / 区块卸载不删另一维度同坐标路由 / `validateRoutes` 不误删另一维度同键路由
 │   ├── EnderRouteExtractTest.java              # 路由**端到端提取**（2026-10-28 链路回归；2026-10-29 口径改为「源解析不到 ⇒ 条目丢弃」）·方块容器按位置取能力并扣源 / 玩家背包按 UUID 找玩家 / **物品形态按容器 UUID 取活视图（新能力）** / 活视图未登记 ⇒ 不取且**条目丢弃**（路由只有注册/不注册两态）/ 方块被搬走 ⇒ 丢弃且频道清空 / **物品形态源 rollback 回活视图（持有提取时 handler，活视图清掉也能回滚）**

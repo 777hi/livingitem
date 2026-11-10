@@ -408,6 +408,17 @@ public final class LivingIconRegistry {
         for (LivingIconSpec spec : SPECS) {
             injectModel(event, spec);
         }
+        if (net.neoforged.fml.ModList.get().isLoaded("touhou_little_maid")) {
+            ModelResourceLocation soulSlab = ModelResourceLocation.inventory(
+                ResourceLocation.fromNamespaceAndPath("touhou_little_maid", "smart_slab_has_maid"));
+            BakedModel model = event.getModels().get(soulSlab);
+            if (model != null) {
+                event.getModels().put(soulSlab,
+                    new com.qiqi.li.client.render.tlm.SoulSlabGuiModelWrapper(model));
+            } else {
+                LivingItem.LOGGER.warn("活魂符原模型未找到，GUI 透明模型接线已跳过");
+            }
+        }
     }
 
     /**

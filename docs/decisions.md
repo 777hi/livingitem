@@ -26,7 +26,8 @@
 
 **编号**：`D-<领域>-<两位序号>`。领域短码：`core` / `tnt` / `hopper` / `farmland` / `power` /
 `redstone` / `render` / `net` / `doc` / **`fluid`**（容器级活流体，2026-10-08 新增）/
-**`container`**（容器边界：能力面、写回、身份、嵌套，2026-10-18 新增）。
+**`container`**（容器边界：能力面、写回、身份、嵌套，2026-10-18 新增）/
+**`maid`**（活魂符 / 女仆联动）。
 **序号一经分配永不复用**（删行也不回收）。
 
 **状态**：`生效` ｜ `已被取代`（有接替者）｜ `已废弃`（无接替者）
@@ -133,6 +134,9 @@
 | D-container-22 | 2026-11-01 | container | **`ChunkEvent.Unload` 在服务器主线程触发**（`thenRunAsync` 的第二参数是 **executor**，这里是 `unloadQueue::add` ⇒ 只是入队，body 由 `ChunkMap.tick` 主线程 poll 后 run）：卸载处理器**可以**直接改 tick 线程的表，但仍**不得查世界 / 能力**（区块正卸载 ⇒ 再入，不是竞态）；R-06 **取消**「事件只入队、tick 线程 drain」改造项 | 误读 CompletableFuture 异步形；风险是再入不是线程 | 生效 | ← D-container-21 | `event-threading.md` §2 · `living-item-infrastructure.md` §3.2 |
 | D-container-23 | 2026-11-01 | container | **跨 tick 缓存的回收判据 = 「容器消失满阈值」**，不给每种容器形态挂事件；**新建聚合条目登记一次**，正常续期只在 `trackLivingSlots`（含已无活物品的容器），查询不续期；回收走 `removeDataByKey` 同一条入口 | 六种停止被处理的成因挂六条事件必漏其一；「没再被看到」是共同结果。2026-11-05 补明新建登记：查询 / 修订独建条目也必须可回收，不另立类型心跳 TTL | 生效 | | `container-data-lifecycle.md` §2/§4 · `ContainerCacheSweepTest` |
 | D-container-24 | 2026-11-07 | container | **宿主运行兼容不改变原模组准入**：不为女仆背包放行活魂符；修改第三方机制须有独立用户需求 | 运行接入不等于准入放宽 | 生效 | | [女仆联动定案](tech/living-maid-tech.md#22-定案与否决留痕) |
+| D-maid-01 | 2026-11-10 | maid | ~~基础走位等待I秒后必定尝试：初始7，成功−1、玩法失败+1，范围1～49~~ | 确定节奏不够随性 | 已被取代 | → D-maid-02 | [女仆联动 §2.2](tech/living-maid-tech.md#22-定案与否决留痕) |
+| D-maid-02 | 2026-11-10 | maid | **I表示平均等待秒数**：每秒以`1/I`概率尝试随机四向，成功−1、玩法失败+1，范围1～49 | 简化状态并保留随机节奏 | 生效 | ← D-maid-01 | [女仆联动 §0/§2.2](tech/living-maid-tech.md#22-定案与否决留痕) |
+| D-maid-03 | 2026-11-10 | maid | **活魂符原图抑制按当前容器帧真实栈identity + 原槽位GUI矩阵双匹配走模型层空模型；不按组件/内容签名隐藏副本，不逐第三方screen注入** | 覆盖正常物品模型链的第三方容器，同时让HUD、carried、配方、复制栈/复制槽及同引用异位置渲染天然退化原图；只按identity会误伤同帧其它GUI控件，稳定签名会误伤同内容的非槽位渲染 | 生效 | | [女仆联动 §2/§4](tech/living-maid-tech.md#2-宿主与客户端接缝) |
 | D-open-01 | 2026-09-28 | open | **对外授权 = LGPL-3.0 附加 classpath 例外**（Q1 拍板）：例外文本在 `LICENSE.txt` 末尾（GNU LGPL v3 §7 additional permission）——依赖本库的 mod/addon **可任意授权（含闭源）**；修改库本体仍须 LGPL。SPDX 无此例外标准标识符，自动化工具仍用 `LGPL-3.0-or-later`（已注明，不编造） | 排除「addon 被迫整体 LGPL」的兼容门槛，又不放弃本体 copyleft；README 双语徽标 + 第三方须知已同步 | 生效 | | `open-plan.md` §3 Q1 · `LICENSE.txt` · `NOTICE.md` |
 | D-render-01 | 2026-10-26 | render | **状态段不设每 N tick 保底覆盖；广播条目身份用容器键，不用 `BlockPos`** | 比较单位 = 发送单位；容器形态无唯一坐标 | 生效 | | `living-tool-tech.md` §11.5 定案记录 |
 

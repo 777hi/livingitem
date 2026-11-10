@@ -4,7 +4,7 @@
 > **最后更新**: 2026-09-19
 > **适用版本**: Minecraft 1.21.1 + NeoForge 21.1.219
 > **状态**: **挖掘记忆回放 + 交互记忆回放 + 清除记忆已实现**（挖掘已通过实测）；掉落物形态 / 实体攻击 / 可视化待实现
-> **设计探讨记录**: `docs/archive/living-tool-design.md` §3.12（L 组，问题池与定案索引，本文档只写结论）
+> **设计定案索引**: 本文 §7（代码注释中的 `L*` / `A3` 编号以此为准）
 
 ## 目录
 
@@ -599,7 +599,7 @@ NeoForge 对此的防御是双层的：`FakePlayer.tick()` 与其连接器的 `t
 
 ## 7. 设计定案索引
 
-完整问题池与讨论过程见 `docs/archive/living-tool-design.md` §3.12。核心定案：
+设计定案编号索引（代码注释中的 `L*` / `A3` 以此为准；含后续修订口径）：
 
 | 编号 | 定案 |
 |---|---|
@@ -624,6 +624,10 @@ NeoForge 对此的防御是双层的：`FakePlayer.tick()` 与其连接器的 `t
 | `L42` | 极短记忆允许挖宿主 |
 | `F3` | 损坏即消失（最原版） |
 | `K30` | 悬浮渲染**不用实体**，纯客户端 `RenderLevelStageEvent` |
+| `L19` | 射线**可视化**暴露偏差，不替玩家做浮点余量兜底（§0 规则 4） |
+| `L20` | **修订**：手持始终显示射线；非手持才受 F3+B；容器形态另受 `GameplayConfig.toolAndWeaponUsesHostAnchor()` 门（原「仅 F3+B」已过时，见 `LivingToolRayRenderer`） |
+| `L48` | **修订**：仅容器形态由服务端同步命中布尔、客户端不自算；玩家 / 掉落物形态仍本地 `clip` + `RayTuning.transform` |
+| `A3` | 无记忆活工具在背后环辅助挖掘 / 攻击；**后续修订**：已有 `PlayerAssistHarvestMixin`（非零 mixin）、活背包内容纳入、速度改「物品栏相加 + 背包取最高」 |
 
 ---
 
@@ -669,7 +673,7 @@ src/main/java/com/qiqi/li/network/
 | `LivingItemInputHandler`（客户端） | `onLeftClickEmpty` → 发 `ToolMemoryClearPacket` |
 | `ServerPacketHandler.handleToolMemoryClear` | 清记忆 + `broadcastChanges()` |
 | `network/ToolMemoryClearPacket.java` | 新增 C2S 包（`LeftClickEmpty` 单端，必须客户端发起） |
-| `LivingItemClient.onRenderLevelStage`（客户端） | `LivingToolRayRenderer.render(event)` —— 记忆射线可视化（`L19`，仅 F3+B） |
+| `LivingItemClient.onRenderLevelStage`（客户端） | `LivingToolRayRenderer.render(event)` —— 记忆射线可视化（`L19` / `L20`：手持始终显示，非手持受 F3+B） |
 
 ---
 

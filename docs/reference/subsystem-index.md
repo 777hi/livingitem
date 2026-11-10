@@ -18,12 +18,12 @@
 | **活水车** | 力矩计算 + 应力叠加/抵消 + Create 软依赖 | [living-water-wheel-tech.md](../tech/living-water-wheel-tech.md) |
 | **活地图传送** | 三种场景 + UV 精确传送 + 跨维度 + 载具 + Sable 飞艇 | [living-map-ender-pearl-tech.md](../tech/living-map-ender-pearl-tech.md) |
 | **活耕地** | GUI 交互获取/种植/骨粉 + **放置回世界模拟右键种植** + 世界轴节拍生长 + round-robin 逐项产出 + 双槽渲染 | [living-farmland-tech.md](../tech/living-farmland-tech.md) §3.5 / §8 |
-| **活工具**（镐/斧/铲/锄） | **记忆玩家操作行为**（左键挖掘 / 右键交互；**活斧子还含攻击记忆 —— 三类记忆齐全**）→ 以宿主为原点沿射线回放；FakePlayer 模拟完整操作 + 逐格扫描黑名单 | [living-tool-tech.md](../tech/living-tool-tech.md)（设计探讨归档见 [living-tool-design.md](../archive/living-tool-design.md) §3.12） |
+| **活工具**（镐/斧/铲/锄） | **记忆玩家操作行为**（左键挖掘 / 右键交互；**活斧子还含攻击记忆 —— 三类记忆齐全**）→ 以宿主为原点沿射线回放；FakePlayer 模拟完整操作 + 逐格扫描黑名单 | [living-tool-tech.md](../tech/living-tool-tech.md) |
 | **活武器**（剑/斧/重锤） | **不实现攻击逻辑，只「代玩家出手」**：攻击记忆（射线）+ `fake.attack()` 走原版管线；攻击缩放 per-weapon 注入（受控 tick 驱动）。**仅近战** | [living-weapon-tech.md](../tech/living-weapon-tech.md)（设计池见 [living-weapon-design.md](../buffer/living-weapon-design.md)，含蓄力型设计稿指引） |
 | **活红石** | 红石信号传播 + BFS 算法 + 反相器 + 堆叠数影响；**驱动权已收归单点**（`LivingRedstoneFunction` 自维持 + 守卫，2026-10-08）。**信号层另含「活铜」** —— 铜块线缆 / 雕文二极管 / 切制立交桥 / 铜格栅加法器 / 铜灯信号记忆（2026-10-09 补登记） | [living-redstone-tech.md](../tech/living-redstone-tech.md) · [living-copper-tech.md](../tech/living-copper-tech.md) |
 | **活涂蜡铜块（红电发电）** | 双因子感应发电 + 事件驱动记账 + RE/FE 单位制；相位解读归 `PhaseInterpreter`，`SignalTracker` 顶层共用；记账 / 遥测分别归 `EnergyAccounting` / `PowerTelemetry`（2026-10-09 收口） | [living-power-tech.md](../tech/living-power-tech.md) |
 | **活打火石** | 交互触发器，无 tick 逻辑 | [living-flint-and-steel-tech.md](../tech/living-flint-and-steel-tech.md) |
-| **活魂符 / 女仆背包联动** | 原准入不变的女仆实体存储接入；活魂符读所存饱食度与背包容量均匀随机走位，原模型/动画/语音槽位接线；代码已接入、实机待验 | [living-maid-tech.md](../tech/living-maid-tech.md) |
+| **活魂符 / 女仆背包联动** | 原准入不变的女仆实体存储接入；活魂符每秒以1/I概率尝试随机四向，成功加速/失败减速（I=1～49）；容器真实槽走identity+GUI矩阵限定的空模型握手，原模型/动画/语音/图片气泡演出 | [living-maid-tech.md](../tech/living-maid-tech.md) |
 | **GUI交互** | 声明式规则 + 统一拦截 + 创造模式兼容 | [gui-interaction-system.md](../system-design/gui-interaction-system.md) |
 | **图标系统** | 三层架构 + 声明式配置 + 上下文切换 | [icon-system.md](../system-design/icon-system.md) |
 | **Tooltip 系统** | 双层渲染架构 + 运行时缓存同步 + 显示口径（窗口均值/mFE） | [tooltip-system.md](../system-design/tooltip-system.md) |

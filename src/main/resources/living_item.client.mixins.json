@@ -6,7 +6,6 @@
   "client": [
     "AbstractContainerScreenAccessor",
     "AbstractContainerScreenMixin",
-    "LivingSoulSlabScreenMixin",
     "CreativeModeInventoryScreenMixin",
     "InventoryScreenMixin",
     "ItemInHandRendererMixin",

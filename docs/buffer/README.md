@@ -42,7 +42,6 @@
 | [living-button-container-info.md](../archive/living-button-container-info.md) | 已实施，现状已沉淀 | [system-design/gui-interaction-system.md](../system-design/gui-interaction-system.md) §6.2.2 |
 | [living-fluid-review.md](../archive/living-fluid-review.md) | 问题池条目全部清零（2026-10-31） | [tech/living-fluid-tech.md](../tech/living-fluid-tech.md) §3.3 / §0 规则 10 · [TODO 活流体 §9-10](../TODO.md) |
 | [container-layout-resolution.md](../archive/container-layout-resolution.md) | 自动学落地为 Tier 1.5；收编部分维持暂缓（2026-10-31） | [TODO §5](../TODO.md) · [infrastructure §6.2](../system-design/living-item-infrastructure.md) |
-| [living-tool-design.md](../archive/living-tool-design.md) | 回放链路已实施；残留 J/H 组登记 TODO（2026-10-31，首次按落地同步表流程清点） | [tech/living-tool-tech.md](../tech/living-tool-tech.md) · [TODO 活工具 · 系列扩展](../TODO.md) |
 
 ## 维护判据
 

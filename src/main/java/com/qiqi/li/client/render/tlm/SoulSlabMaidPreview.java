@@ -42,7 +42,7 @@ final class SoulSlabMaidPreview {
     private boolean disabled;
 
     SoulSlabMaidPreview(ItemStack stack, ClientLevel level) {
-        if (TlmSoulData.readInputs(stack).isEmpty()) throw new IllegalArgumentException("Invalid maid_info snapshot");
+        if (!TlmSoulData.hasStoredMaid(stack)) throw new IllegalArgumentException("Invalid maid_info snapshot");
         CompoundTag tag = Objects.requireNonNull(stack.get(InitDataComponent.MAID_INFO)).copyTag();
         if (!tag.contains(EntityMaid.MODEL_ID_TAG, Tag.TAG_STRING)) {
             throw new IllegalArgumentException("Missing maid model_id");

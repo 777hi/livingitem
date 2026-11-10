@@ -34,6 +34,7 @@ final class SoulSlabPreviewCache {
     private AbstractContainerScreen<?> screen;
     private ClientLevel level;
     private GuiGraphics frameGraphics;
+    private SoulSlabGuiFrame.Token frameToken;
     private Map<Position, Entry> entries = new HashMap<>();
     private final Map<Position, Drawing> frame = new LinkedHashMap<>();
     private int ticks;
@@ -46,12 +47,51 @@ final class SoulSlabPreviewCache {
         int seenTick = Integer.MIN_VALUE;
         Entry(Slot slot, ItemStack snapshot) { this.slot = slot; this.snapshot = snapshot; }
     }
-    private record Drawing(Entry entry, ItemStack stack, PoseStack origin, int x, int y, int seed, String countString) {}
+    private record Drawing(Entry entry, ItemStack source, ItemStack snapshot,
+                           PoseStack origin, PoseStack itemPose, int x, int y, int seed) {}
 
     void beginFrame(AbstractContainerScreen<?> current, GuiGraphics graphics) {
         reconcile(current);
         frame.clear();
         frameGraphics = graphics;
+        frameToken = SoulSlabGuiFrame.begin();
+        if (current == null || level == null) return;
+        Map<Position, Integer> displayCounts = new HashMap<>();
+        for (Slot slot : current.getMenu().slots) {
+            Slot physical = physicalSlot(slot);
+            if (!slot.isActive() || slot.isFake() || !SoulSlabGuiSlots.hasStableStackReference(slot, physical)) continue;
+            if (eligible(slot.getItem())) {
+                displayCounts.merge(position(slot), 1, Integer::sum);
+            }
+        }
+        PoseStack origin = SoulSlabGuiPose.slotOrigin(graphics.pose(), current.getGuiLeft(), current.getGuiTop());
+        for (var entry : entries.entrySet()) {
+            Slot slot = entry.getValue().slot;
+            Slot physical = physicalSlot(slot);
+            ItemStack stack = slot.getItem();
+            if (!slot.isActive() || slot.isFake() || !SoulSlabGuiSlots.hasStableStackReference(slot, physical) || !eligible(stack)
+                    || displayCounts.getOrDefault(entry.getKey(), 0) != 1) continue;
+            var mc = Minecraft.getInstance();
+            if (mc.player != null && mc.player.getCooldowns().getCooldownPercent(stack.getItem(),
+                    mc.getTimer().getGameTimeDeltaPartialTick(true)) > 0) continue;
+            if (!entry.getValue().attempted) {
+                entry.getValue().attempted = true;
+                try {
+                    entry.getValue().preview = new SoulSlabMaidPreview(stack, level);
+                } catch (RuntimeException | LinkageError failure) {
+                    LOGGER.warn("Soul slab preview preparation failed at menu slot {}; keeping original icon", slot.index, failure);
+                }
+            }
+            if (entry.getValue().preview == null || entry.getValue().preview.disabled()) continue;
+            PoseStack itemPose = SoulSlabGuiPose.itemModelPose(origin, slot.x, slot.y);
+            frame.put(entry.getKey(), new Drawing(entry.getValue(), stack, stack.copy(), copy(origin), itemPose,
+                    slot.x, slot.y, slot.x + slot.y * current.getXSize()));
+            SoulSlabGuiFrame.register(stack, frameToken, itemPose);
+        }
+    }
+
+    private static PoseStack copy(PoseStack source) {
+        return SoulSlabGuiPose.copy(source);
     }
 
     private void reconcile(AbstractContainerScreen<?> current) {
@@ -65,7 +105,8 @@ final class SoulSlabPreviewCache {
         Map<Position, Entry> next = new LinkedHashMap<>();
         List<Snapshot> added = new ArrayList<>(), removed = new ArrayList<>();
         for (Slot slot : current.getMenu().slots) {
-            if (!slot.isActive() || slot.isFake()) continue;
+            Slot physical = physicalSlot(slot);
+            if (!slot.isActive() || slot.isFake() || !SoulSlabGuiSlots.hasStableStackReference(slot, physical)) continue;
             ItemStack stack = slot.getItem();
             if (!eligible(stack)) continue;
             Position position = position(slot);
@@ -116,58 +157,48 @@ final class SoulSlabPreviewCache {
         return SoulSlabPreviewMoves.stable(stack);
     }
 
-    private static Position position(Slot slot) {
-        Slot physical = slot instanceof LivingItemSlotWrapperAccessor accessor
+    private static Slot physicalSlot(Slot slot) {
+        return slot instanceof LivingItemSlotWrapperAccessor accessor
                 ? accessor.living_item$getWrappedTarget() : slot;
+    }
+
+    private static Position position(Slot slot) {
+        Slot physical = physicalSlot(slot);
         Object owner = physical instanceof SlotItemHandler handler ? handler.getItemHandler() : physical.container;
         return new Position(owner, physical.getContainerSlot(), slot.x, slot.y);
     }
 
-    boolean prepare(AbstractContainerScreen<?> current, GuiGraphics graphics, ItemStack stack,
-                    Slot slot, int x, int y, int seed, String countString) {
-        if (screen != current || level != Minecraft.getInstance().level || frameGraphics != graphics
-                || slot.isFake() || !eligible(stack) || !ItemStack.matches(stack, slot.getItem())) return false;
-        var mc = Minecraft.getInstance();
-        if (mc.player != null && mc.player.getCooldowns().getCooldownPercent(stack.getItem(),
-                mc.getTimer().getGameTimeDeltaPartialTick(true)) > 0) return false;
-        Position position = position(slot);
-        Entry entry = entries.get(position);
-        if (entry == null || !ItemStack.matches(entry.snapshot, stable(stack))) return false;
-        Drawing previous = frame.get(position);
-        if (previous != null) return previous.x == x && previous.y == y;
-        if (!entry.attempted) {
-            entry.attempted = true;
-            try {
-                entry.preview = new SoulSlabMaidPreview(stack, level);
-            } catch (RuntimeException | LinkageError failure) {
-                LOGGER.warn("Soul slab preview preparation failed at menu slot {}; keeping original icon", slot.index, failure);
-            }
-        }
-        if (entry.preview == null || entry.preview.disabled()) return false;
-        PoseStack origin = new PoseStack();
-        origin.last().pose().set(graphics.pose().last().pose());
-        origin.last().normal().set(graphics.pose().last().normal());
-        frame.put(position, new Drawing(entry, stack.copy(), origin, x, y, seed, countString));
-        entry.seenTick = ticks;
-        return true;
-    }
-
     void render(AbstractContainerScreen<?> current, GuiGraphics graphics, int mouseX, int mouseY) {
-        if (current != screen || graphics != frameGraphics) return;
+        if (current != screen || graphics != frameGraphics) {
+            SoulSlabGuiFrame.clear();
+            frame.clear();
+            frameGraphics = null;
+            frameToken = null;
+            return;
+        }
         try {
             for (Drawing drawing : frame.values()) {
-                if (!ItemStack.matches(drawing.stack, drawing.entry.slot.getItem())) continue;
+                if (!SoulSlabGuiFrame.takeClaim(drawing.source, frameToken, drawing.itemPose)) continue;
+                if (drawing.source != drawing.entry.slot.getItem()
+                        || !ItemStack.matches(drawing.snapshot, drawing.source)) {
+                    fallback(graphics, drawing);
+                    continue;
+                }
                 try {
                     renderOne(graphics, drawing, mouseX, mouseY);
+                    drawing.entry.seenTick = ticks;
                 } catch (RuntimeException | LinkageError failure) {
                     drawing.entry.preview.disable();
-                    LOGGER.warn("Soul slab preview drawing failed at menu slot {}; restored original icon", drawing.entry.slot.index, failure);
+                    LOGGER.warn("Soul slab preview drawing failed at menu slot {}; restoring original icon",
+                            drawing.entry.slot.index, failure);
                     fallback(graphics, drawing);
                 }
             }
         } finally {
+            SoulSlabGuiFrame.clear();
             frame.clear();
             frameGraphics = null;
+            frameToken = null;
         }
     }
 
@@ -184,8 +215,8 @@ final class SoulSlabPreviewCache {
             GL11.glGetIntegerv(GL11.GL_SCISSOR_BOX, box);
             try {
                 graphics.flush();
-                int height = drawing.stack.getCount() != 1 || drawing.countString != null ? 9
-                        : drawing.stack.isBarVisible() ? 13 : 16;
+                int height = drawing.snapshot.getCount() != 1 ? 9
+                        : drawing.snapshot.isBarVisible() ? 13 : 16;
                 // 槽位只作站立锚点；保留界面已有裁剪，不限制模型伸到邻槽。
                 drawing.entry.preview.render(graphics, drawing.origin, drawing.x, drawing.y, height, mouseX, mouseY);
             } finally {
@@ -207,13 +238,7 @@ final class SoulSlabPreviewCache {
         try {
             graphics.pose().last().pose().set(drawing.origin.last().pose());
             graphics.pose().last().normal().set(drawing.origin.last().normal());
-            graphics.renderItem(drawing.stack, drawing.x, drawing.y, drawing.seed);
-            graphics.renderItemDecorations(Minecraft.getInstance().font, drawing.stack,
-                    drawing.x, drawing.y, drawing.countString);
-            Slot hovered = screen.getSlotUnderMouse();
-            if (hovered != null && hovered.isHighlightable() && position(hovered).equals(position(drawing.entry.slot))) {
-                AbstractContainerScreen.renderSlotHighlight(graphics, drawing.x, drawing.y, 0, screen.getSlotColor(hovered.index));
-            }
+            graphics.renderItem(drawing.snapshot, drawing.x, drawing.y, drawing.seed);
         } finally {
             graphics.pose().popPose();
             Lighting.setupFor3DItems();
@@ -229,7 +254,7 @@ final class SoulSlabPreviewCache {
         for (Entry entry : entries.values()) {
             if (entry.preview == null) continue;
             try {
-                entry.preview.tick(ticks - entry.seenTick <= 2);
+                entry.preview.tick(SoulSlabPreviewVisibility.recentlyDrawn(ticks, entry.seenTick));
             } catch (RuntimeException | LinkageError failure) {
                 entry.preview.disable();
                 LOGGER.warn("Soul slab preview animation/audio failed; keeping original icon", failure);
@@ -238,10 +263,12 @@ final class SoulSlabPreviewCache {
     }
 
     void clear() {
+        SoulSlabGuiFrame.clear();
         entries.values().forEach(entry -> { if (entry.preview != null) entry.preview.dispose(); });
         entries.clear();
         frame.clear();
         frameGraphics = null;
+        frameToken = null;
         screen = null;
         level = null;
         ticks = 0;
