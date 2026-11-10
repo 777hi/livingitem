@@ -7,7 +7,7 @@
 > 现状以 `docs/system-design/` 与代码为准；需求池唯一入口仍是 [TODO.md](../TODO.md)（D-doc-06），
 > 本文的条目表**不是第二份需求池**。
 >
-> 📄 被编排的文档：[framework-benchmark](framework-benchmark.md) ·
+> 📄 被编排的文档：
 > [framework-evolution-plan](framework-evolution-plan.md) · [open-plan](open-plan.md) ·
 > [redstone-evolution-roadmap](redstone-evolution-roadmap.md) ·
 > [2026-10-29 整改计划](2026-10-29-全项目审查整改计划.md) ·
@@ -44,7 +44,7 @@
 | ~~**tick 顺序**~~ ✅ **已收口（2026-11-06）** | 旧：`api-contract.md` §1.3 称「按 `getAllFunctions()` 的列表顺序分组调用 `tick()`」；`runFunctionTicks` javadoc 也写「按优先级」 | `scanAndGroupLivingItems` 用 `LinkedHashMap` 按**槽扫描遭遇序**插入，`runFunctionTicks` 直接遍历它 | [TODO §物品传输 3](../TODO.md) · `api-contract.md` §1.3（已校正） |
 | **两套优先级** | `LivingItemFunction#getTickPriority()`（manager 序，默认全 0） | `HasContainerData#getPriority()`（0~3，容器级数据专用） | 两套数字互不引用，`TickOrderTest` 只断言了 manager 列表顺序 |
 | **组件写回** | `api-contract.md` §1.8 已定共同入口 `commitItemComponents`（复制计算 → 写回 → 回读确认才报账） | 只有 `ContainerEnergyStorage` / `SpongeContainerFluidHandler` 接入；其余 getter 活引用修改路径仍走旧写法 | [TODO 活海绵 4](../TODO.md) · [海绵 §12.3](../tech/living-sponge-tech.md) |
-| **DataComponent 值** | `framework-benchmark` §3.16：组件须成对声明 `persistent` + `networkSynchronized`，缺则写明理由 | `WaterComponents.CONTAINER_FLUID_DATA_ITEM` 的值是**可变 class** `ContainerFluidData`（无 `equals`/`hashCode`），且只声明 `persistent` | [TODO 容器边界 3.3](../TODO.md) |
+| **DataComponent 值** | **派生数据可单边声明**（2026-11-10 按现状语义）：落盘数据成对声明 `persistent` + `networkSynchronized`，仅网络同步的派生数据只声明 `networkSynchronized` | `WaterComponents.CONTAINER_FLUID_DATA_ITEM` 的值是**可变 class** `ContainerFluidData`（无 `equals`/`hashCode`），且只声明 `persistent` | [TODO 容器边界 3.3](../TODO.md) |
 
 > 🔑 **四条的共同性质：正确入口已经存在，存量没走完。** 这是「**口径一次定对**」没走完，
 > 不是缺抽象。⇒ 修法优先是**对齐口径**，不是再建一层机制。
@@ -67,7 +67,7 @@
 
 | 文档写的「现状」 | 2026-11-06 实测 | 后果 |
 |---|---|---|
-| `framework-benchmark` §1：主源码 **290** / 测试 **55 文件 473 用例** | **453** / **210 文件 1659 用例** | 数字偏离 56% / 282% / 250% |
+| 旧对标稿：主源码 **290** / 测试 **55 文件 473 用例** | **453** / **210 文件 1659 用例** | 数字偏离 56% / 282% / 250% |
 | §3.1：`RecipeBookComponentMixin` **约 50 KB**、`AbstractContainerScreenMixin` 34 KB ⇒ 「**定稿：做，P0**」 | **225 行 / 271 行**（配方书逻辑已拆进 `LivingChestRecipeTab`） | **该 P0 项的前提已消失**，照做就是给不存在的病动刀 |
 | §3.13：「**4 处**扩展点各造一遍」 | 20+ 注册口，且形状已分化 | 「抽一个 `SimpleRegistry` 四处复用」的形状判断需要重做 |
 | 规划稿里的「主类 1174 行」快照 | 主类已 476 行（步骤 4 第 1~5 刀完成） | 章节正文是**地层**，不是现状 |
@@ -137,7 +137,7 @@
 
 | # | 项 | 触发条件 | 完成判据 |
 |---|---|---|---|
-| 2.1 | **扩展点先分类再抽原语**：按形状分 K→V 注册表 / resolver 注册 / hook 链三类，只对 **≥2 个真同构**的抽；不建统一大注册表 | 出现第 3 个同形状「注册 + 排序 + 兜底」扩展点（[framework-benchmark §6](framework-benchmark.md)） | 打乱注册顺序结果不变；新增第 3 个调用点**不改框架** |
+| 2.1 | **扩展点先分类再抽原语**：按形状分 K→V 注册表 / resolver 注册 / hook 链三类，只对 **≥2 个真同构**的抽；不建统一大注册表 | 出现第 3 个同形状「注册 + 排序 + 兜底」扩展点 | 打乱注册顺序结果不变；新增第 3 个调用点**不改框架** |
 | 2.2 | 红电规划 ① 跳变检测前移到写入点（事件流） | 下次电力层加新用电侧元件时**顺路**（[redstone-evolution-roadmap §2.5](redstone-evolution-roadmap.md)） | 先统一边写入口径；电源/记账不变量 [power-invariants](../system-design/power-invariants.md) 全绿 |
 | 2.3 | 红电规划 ③ 信号层元件接口化 | **铜门 / 新信号元件真的立项**（同文档 §3.5） | 新元件只加类；phase1-5 行为等价性证明 |
 | 2.4 | 框架提案 **A** 客户端推导遥测 | 第二个「内容派生型」域开工前（[framework-evolution-plan §5](framework-evolution-plan.md)） | 推流回退保留；纯函数与面板同源 |
@@ -162,8 +162,8 @@
 | 4.1 | [open-plan §4 A3](open-plan.md) 注册时序契约 | C 组挂起的前提；「在哪注册」今天第三方仍在猜 |
 | 4.2 | Q3 / Q4 / Q6 拍板（example-addon 形态、独立 SemVer、逻辑拆分） | 判据：**前置库先是契约，再是发布物，最后才是仓库**（open-plan §4.1） |
 | 4.3 | C1 / C3 / C4（maven 发布 / 兼容哨兵 / addon-guide） | 等第一个真实 addon 作者的问题清单来喂内容 |
-| 4.4 | 落盘结构留 `version` 字段（[framework-benchmark §3.7](framework-benchmark.md)） | **1.0 前必须在位**；定位是「给未来留挂载点」，**不是迁移逻辑** —— alpha 铁律 6 不做旧存档兼容 |
-| 4.5 | 规则 JSON 迁 `data/living_item/`（§3.9 / Q6~Q8） | 触发：整合包作者 / 服主提出覆盖需求；Q8 必须实机验证非标准 JSON 不被原版解析 |
+| 4.4 | 落盘结构留 `version` 字段 | **1.0 前必须在位**；定位是「给未来留挂载点」，**不是迁移逻辑** —— alpha 铁律 6 不做旧存档兼容 |
+| 4.5 | 规则 JSON 迁 `data/living_item/` | 触发：整合包作者 / 服主提出覆盖需求；「非标准 JSON 不被原版解析」必须实机验证。现状见 [TODO 框架层待办](../TODO.md) |
 
 > ⛔ **物理拆分前置库（Q6 第三步）不在本路线图内** —— 需真实 addon 数据点后另立，
 > 现在切 core/内容边界大概率切错，错了再改付双倍。
@@ -174,7 +174,7 @@
 
 | 不做 | 理由 / 出处 |
 |---|---|
-| 重写 / 分层重画 / 抽独立框架库 | §0 诊断：形状正确、底座健康；[framework-benchmark §9.1](framework-benchmark.md) 元判据「我们的复杂度是深的，不是宽的」 |
+| 重写 / 分层重画 / 抽独立框架库 | §0 诊断：形状正确、底座健康；[D-core-12](../decisions.md)「复杂度是深的，不是宽的」，正文见 `living-item-infrastructure.md` §1.4 |
 | 统一大注册表 `SimpleRegistry<K,V>` 直接套 20+ 注册口 | 形状已分化，先分类（2.1）；半套统一 = 两套口径 |
 | Mixin 业务逻辑契约接口化（§3.1「定稿 P0」） | **前提已消失**：最大 mixin 271 行；原触发条件是「NeoForge 大版本升级时大面积报错」，届时重新评估 |
 | 全库 `package-info.java` Nullness（§3.6） | 现只有 5 个对外包且内容是契约说明；半套约定比没有更糟（项目铁律 6） |

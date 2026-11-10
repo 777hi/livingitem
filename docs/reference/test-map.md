@@ -46,6 +46,8 @@ src/test/java/com/qiqi/li/
 │   ├── SoulSlabGuiModelWrapperTest.java       # 活魂符GUI模型握手·真实栈identity+槽位矩阵双匹配/同引用异位置不误隐藏/TLM原override先解析且null不篡改/仅GUI空模型+claim/非GUI与过期帧委托/多槽认领隔离
 │   ├── SoulSlabGuiPoseTest.java               # 活魂符GUI矩阵·复现容器槽guiLeft/guiTop+Z100及物品中心/Z150/16倍翻Y变换，辅助函数不污染Background pose
 │   ├── SoulSlabGuiSlotsTest.java              # 活魂符模型握手槽位准入·普通槽稳定引用/NeoForge StackCopySlot显式退化原图
+│   ├── SoulSlabFeedFeedbackTest.java          # 投喂反馈单调观察·首次只建基线/增长只触发一次/下降重置/非法负值归零
+│   ├── SoulSlabFeedPulseTest.java             # 投喂6tick缩放曲线·未激活为1/首尾归1/中点峰值1.12
 │   ├── SoulSlabPreviewBubblesTest.java        # 图片气泡判定·可见/开关/已有气泡/原检查间隔与UUID相位/图片权重/零总权重/颜文字分支跳过，真实原气泡绘制实机验收
 │   ├── SoulSlabPreviewFacingTest.java         # 活魂符展示角度·初始正面/四向身体/停步保朝向/最短跨界插值/头身独立与光标限幅/背侧投影/实例隔离
 │   ├── SoulSlabPreviewMovesTest.java          # 活魂符预览唯一相邻迁移·物理宿主/槽身份、clock排除、快照歧义不共享、多枚独立；不代替实际女仆渲染验收
@@ -63,6 +65,9 @@ src/test/java/com/qiqi/li/
 │   ├── ActivationTargetParsingTest.java       # 活化目标参数解析守卫·物品ID/标签/modid 回写契约 + 反向守卫「StringArgumentType 读不进 : # @」
 │   └── LivingItemContainerCommandTest.java     # inspect 实际入口·学习值替代独立推断 / 活对象列数与注册规则分列 / 末行向上取整 / 未开战利品明确不处理 / 大箱另一半同源规范化
 ├── living/compat/
+│   ├── tlm/
+│   │   ├── IdentityRedemptionQueueTest.java   # TLM好感兑换队列·对象identity而非equals/重复保留首条/drain先清再回调/停服清强引用
+│   │   └── PendingMaidFavorTest.java          # maid_info待兑现好感·严格TAG_Int/未知NBT保留/总上限384/长整型防溢出/一次性取出
 │   └── iris/
 │       └── ModIrisTest.java                   # Iris 光影门面守卫·无 Iris 时 tagBeamSource 原样返回同一实例（几何不经包装）/探测链路在有无 FML 的环境下都不抛异常（渲染主循环不容忍 LinkageError）
 ├── living/components/
@@ -106,7 +111,7 @@ src/test/java/com/qiqi/li/
 │   └── ContainerTickIsolationTest.java        # tick 异常隔离（2026-10-30，R-01）·RuntimeException 不向外抛且可重复调用 / 取 key 本身抛异常仍隔离 / Error 不被吞
 ├── living/domain/maid/
 │   ├── LivingSoulSlabClockTest.java           # 概率活跃度I·初始7/成功失败±1/1-49钳位/非法值
-│   └── LivingSoulSlabFunctionTest.java        # 每秒1/I判定·初始化不抽/非整秒与未命中零写/I=1必试/随机四向不重掷/成功失败技术中性/换槽保I/超堆叠不拆
+│   └── LivingSoulSlabFunctionTest.java        # 每秒1/I判定·随机四向不重掷/空槽移动/居家餐供品整件扣一+pending+I成功/活食物与满好感失败/消费失败补偿/技术中性/换槽保I/超堆叠不拆
 ├── living/domain/ender/
 │   ├── EnderChannelRegistryDimTest.java        # 活末影箱路由表**维度隔离**（2026-10-27 审查待拍板 #2，2026-10-28 修）·跨维度同坐标同槽位都能注册（去重键含维度，旧实现误判重复 ⇒ 第二条注册不进去）/ 按位置+槽位清理只删指定维度 / 区块卸载不删另一维度同坐标路由 / `validateRoutes` 不误删另一维度同键路由
 │   ├── EnderRouteExtractTest.java              # 路由**端到端提取**（2026-10-28 链路回归；2026-10-29 口径改为「源解析不到 ⇒ 条目丢弃」）·方块容器按位置取能力并扣源 / 玩家背包按 UUID 找玩家 / **物品形态按容器 UUID 取活视图（新能力）** / 活视图未登记 ⇒ 不取且**条目丢弃**（路由只有注册/不注册两态）/ 方块被搬走 ⇒ 丢弃且频道清空 / **物品形态源 rollback 回活视图（持有提取时 handler，活视图清掉也能回滚）**

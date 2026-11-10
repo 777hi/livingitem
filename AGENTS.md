@@ -97,7 +97,6 @@ SlotAccessor (模拟优先传输 + FilteredSlotAccessor 过滤)
 | **红电 · 电力（2）** | [红电架构演进](docs/buffer/redstone-evolution-roadmap.md) · [红电不变量测试](docs/system-design/power-invariants.md) |
 | **跨域机制（3）** | [GUI交互](docs/system-design/gui-interaction-system.md) · [图标系统](docs/system-design/icon-system.md) · [Tooltip 系统](docs/system-design/tooltip-system.md) |
 | **工程实践（4）** | [单元测试](docs/guides/unit-testing.md) · [活物品设计模板](docs/guides/living-item-design-template.md) · [槽位操作选型](docs/guides/slot-ops.md) · [分层现状与检查工具](docs/archive/architecture-layering-plan.md) |
-| **未定案（1）** | [框架层对标（未定案）](docs/buffer/framework-benchmark.md) |
 
 ---
 
@@ -283,7 +282,7 @@ viewer 驱动 / 框架扫描 / 框架判定才回到 `LivingItemFunction`）。
 | 找某个源文件 | `find src/main -name "*.java"` 或 `python tools/gen_code_map.py --query <类名>`（人工文件树快照已删，2026-10-10） |
 | 查指令用法 / 加新指令 | [commands.md](docs/reference/commands.md)（指令清单，快照） |
 | **查某子系统的待定计划 / 还欠什么** | [TODO.md](docs/TODO.md)（**全项目唯一需求池** —— 2026-10-10 起 tech §0 不再列未实现，D-doc-06） |
-| **查原版 / NeoForge / 第三方模组源码** | 本机 `libs/src/` 有已解压源码（不入库）；搜索须把 path 指到 `libs/src/` 内（`.gitignore` 忽略 `libs/`，从仓库根搜会 0 命中），首选 `neoforge-<neo_version>-merged/` |
+| **查原版 / NeoForge / 第三方模组源码** | 若本机存在 `libs/src/`（可选、不入库），可直接搜；该目录被 `.gitignore` 忽略，搜索需把 path 指进去。没有就按常规方式查证 |
 | 查历史变更 | [changelog.md](docs/archive/changelog.md)（按日期倒序） |
 | **改容器层 / 排查容器相关 bug** | [container-overview.md](docs/system-design/container-overview.md)（**七问** —— 先定位问题属于哪一问，再只改那一问的唯一入口） |
 | 红电系统总体设计 | [红电系统.md](docs/system-design/红电系统.md) |

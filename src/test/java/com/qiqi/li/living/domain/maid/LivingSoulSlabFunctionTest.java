@@ -14,6 +14,8 @@ import com.qiqi.li.living.container.MoveResult;
 import com.qiqi.li.living.container.SimpleContainerContext;
 import com.qiqi.li.living.container.TickContext;
 
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.item.ItemStack;
@@ -25,6 +27,7 @@ class LivingSoulSlabFunctionTest {
     private static class Context extends SimpleContainerContext {
         boolean writable = true;
         int commits;
+        int forcedConsume = -1;
 
         Context(ItemStackHandler handler) {
             super(handler, null, List.of(), List.of(), null, "maid_test");
@@ -35,6 +38,27 @@ class LivingSoulSlabFunctionTest {
             commits++;
             return writable && super.commitItemComponents(slot, before, after);
         }
+        @Override public int consume(int slot, int maxUnit) {
+            return forcedConsume >= 0 ? forcedConsume : super.consume(slot, maxUnit);
+        }
+    }
+
+    private static final String PENDING_KEY = "pending_favor";
+    private static final LivingSoulSlabFunction.FavorLedger FAVOR_LEDGER = new LivingSoulSlabFunction.FavorLedger() {
+        @Override public boolean canAdd(ItemStack stack) { return pending(stack) < 384; }
+        @Override public ItemStack add(ItemStack stack, int amount) {
+            ItemStack copy = stack.copy();
+            CompoundTag tag = copy.getOrDefault(DataComponents.CUSTOM_DATA,
+                    net.minecraft.world.item.component.CustomData.EMPTY).copyTag();
+            tag.putInt(PENDING_KEY, Math.min(384, pending(stack) + amount));
+            copy.set(DataComponents.CUSTOM_DATA, net.minecraft.world.item.component.CustomData.of(tag));
+            return copy;
+        }
+    };
+
+    private static int pending(ItemStack stack) {
+        return stack.getOrDefault(DataComponents.CUSTOM_DATA,
+                net.minecraft.world.item.component.CustomData.EMPTY).copyTag().getInt(PENDING_KEY);
     }
 
     private static ItemStack soul() {
@@ -44,7 +68,8 @@ class LivingSoulSlabFunctionTest {
     }
 
     private static LivingSoulSlabFunction function() {
-        return new LivingSoulSlabFunction(stack -> stack.is(Items.PAPER));
+        return new LivingSoulSlabFunction(stack -> stack.is(Items.PAPER),
+                stack -> stack.is(Items.APPLE), FAVOR_LEDGER);
     }
 
     private static ServerLevel level(long time, RandomSource random) {
@@ -125,6 +150,65 @@ class LivingSoulSlabFunctionTest {
         tick(context, 20, random(0, ContainerContext.E_RIGHT));
         assertTrue(context.getItem(4).isEmpty());
         assertInterval(context.getItem(5), 6);
+    }
+
+    @Test void eligibleFoodIsOfferedWithoutMovingSoul() {
+        ItemStackHandler handler = new ItemStackHandler(9);
+        ItemStack soul = soul();
+        soul.set(MaidComponents.CLOCK.get(), LivingSoulSlabClock.initial());
+        handler.setStackInSlot(4, soul);
+        handler.setStackInSlot(5, new ItemStack(Items.APPLE, 3));
+        Context context = new Context(handler);
+        tick(context, 20, random(0, ContainerContext.E_RIGHT));
+        assertTrue(context.getItem(4).is(Items.PAPER));
+        assertEquals(2, context.getItem(5).getCount());
+        assertEquals(1, pending(context.getItem(4)));
+        assertInterval(context.getItem(4), 6);
+    }
+
+    @Test void livingFoodIsObstacleAndIsNotConsumed() {
+        ItemStackHandler handler = new ItemStackHandler(9);
+        ItemStack soul = soul();
+        soul.set(MaidComponents.CLOCK.get(), LivingSoulSlabClock.initial());
+        ItemStack apple = new ItemStack(Items.APPLE, 2);
+        LivingItemManager.setLiving(apple, true);
+        handler.setStackInSlot(4, soul);
+        handler.setStackInSlot(5, apple);
+        Context context = new Context(handler);
+        tick(context, 20, random(0, ContainerContext.E_RIGHT));
+        assertEquals(2, context.getItem(5).getCount());
+        assertEquals(0, pending(context.getItem(4)));
+        assertInterval(context.getItem(4), 8);
+    }
+
+    @Test void fullFavorDoesNotConsumeFood() {
+        ItemStackHandler handler = new ItemStackHandler(9);
+        ItemStack soul = soul();
+        CompoundTag tag = new CompoundTag();
+        tag.putInt(PENDING_KEY, 384);
+        soul.set(DataComponents.CUSTOM_DATA, net.minecraft.world.item.component.CustomData.of(tag));
+        soul.set(MaidComponents.CLOCK.get(), LivingSoulSlabClock.initial());
+        handler.setStackInSlot(4, soul);
+        handler.setStackInSlot(5, new ItemStack(Items.APPLE));
+        Context context = new Context(handler);
+        tick(context, 20, random(0, ContainerContext.E_RIGHT));
+        assertTrue(context.getItem(5).is(Items.APPLE));
+        assertInterval(context.getItem(4), 8);
+    }
+
+    @Test void failedFoodConsumeRestoresFavorAndClock() {
+        ItemStackHandler handler = new ItemStackHandler(9);
+        ItemStack soul = soul();
+        soul.set(MaidComponents.CLOCK.get(), LivingSoulSlabClock.initial());
+        handler.setStackInSlot(4, soul);
+        handler.setStackInSlot(5, new ItemStack(Items.APPLE));
+        Context context = new Context(handler);
+        context.forcedConsume = 0;
+        tick(context, 20, random(0, ContainerContext.E_RIGHT));
+        assertTrue(context.getItem(5).is(Items.APPLE));
+        assertEquals(0, pending(context.getItem(4)));
+        assertInterval(context.getItem(4), 7);
+        assertEquals(2, context.commits);
     }
 
     @Test void blockedTargetIncreasesIntervalWithoutReroll() {

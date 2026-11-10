@@ -18,10 +18,13 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.resources.sounds.SoundInstance;
+import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.item.ItemStack;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
@@ -36,8 +39,11 @@ final class SoulSlabMaidPreview {
     private final float scale;
     private final SoulSlabPreviewFacing facing = new SoulSlabPreviewFacing();
     private MaidSoundInstance sound;
+    private SoundInstance feedSound;
     private int soundDelay;
     private int walkTicks;
+    private int feedTicks;
+    private boolean feedSoundPending;
     private float fromX, fromY;
     private boolean disabled;
 
@@ -100,18 +106,29 @@ final class SoulSlabMaidPreview {
         facing.move(oldX, oldY, x, y);
     }
 
+    void feed() {
+        feedTicks = SoulSlabFeedPulse.DURATION_TICKS;
+        feedSoundPending = true;
+    }
+
     void tick(boolean visible) {
         if (disabled) return;
         maid.tickCount++;
         facing.tick();
         maid.walkAnimation.update(walkTicks > 0 ? 0.5f : 0, 0.4f);
         if (walkTicks > 0) walkTicks--;
+        if (feedTicks > 0) feedTicks--;
         Minecraft mc = Minecraft.getInstance();
         if (mc.player != null) maid.setPos(mc.player.getX(), mc.player.getY(), mc.player.getZ());
         tickBubbles(visible);
         if (!visible) {
             stopSound();
             return;
+        }
+        if (feedSoundPending) {
+            feedSoundPending = false;
+            feedSound = SimpleSoundInstance.forUI(SoundEvents.GENERIC_EAT, 1);
+            mc.getSoundManager().play(feedSound);
         }
         if (sound != null && !mc.getSoundManager().isActive(sound)) sound = null;
         if (--soundDelay <= 0) {
@@ -146,12 +163,16 @@ final class SoulSlabMaidPreview {
         return y + (fromY - y) * Math.max(0, walkTicks - partial) / 6;
     }
 
+    private float feedScale(float partial) {
+        return SoulSlabFeedPulse.scale(feedTicks, partial);
+    }
+
     void render(GuiGraphics graphics, PoseStack origin, int x, int y, int height, int mouseX, int mouseY) {
         Minecraft mc = Minecraft.getInstance();
         float partial = mc.getTimer().getGameTimeDeltaPartialTick(false);
         float px = displayX(x, partial);
         float py = displayY(y, partial);
-        float displayScale = scale * height / 16;
+        float displayScale = scale * height / 16 * feedScale(partial);
         Vector3f head = origin.last().pose().transformPosition(
                 new Vector3f(px + 8, py + height - maid.getEyeHeight() * displayScale, -50));
         facing.look(head.x(), head.y(), mouseX, mouseY, partial);
@@ -206,9 +227,14 @@ final class SoulSlabMaidPreview {
     }
 
     private void stopSound() {
+        var manager = Minecraft.getInstance().getSoundManager();
         if (sound != null) {
-            Minecraft.getInstance().getSoundManager().stop(sound);
+            manager.stop(sound);
             sound = null;
+        }
+        if (feedSound != null) {
+            manager.stop(feedSound);
+            feedSound = null;
         }
     }
 }

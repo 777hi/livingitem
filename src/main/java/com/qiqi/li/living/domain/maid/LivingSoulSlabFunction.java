@@ -1,5 +1,8 @@
 package com.qiqi.li.living.domain.maid;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.List;
 import java.util.Set;
 import java.util.function.Predicate;
@@ -22,19 +25,44 @@ import net.minecraft.world.level.Level;
 /** 活魂符自适应走位：每秒按 1/I 抽签，成功加快、正常失败放慢。 */
 public final class LivingSoulSlabFunction implements LivingItemFunction {
     public static final String ID = "living_soul_slab";
+    private static final Logger LOGGER = LoggerFactory.getLogger("LivingItem/SoulSlab");
     private static final int TICKS_PER_SECOND = 20;
     private static final ResourceLocation SOUL_SLAB = ResourceLocation.fromNamespaceAndPath(ModTlm.MOD_ID, "smart_slab_has_maid");
 
     enum AttemptOutcome { SUCCESS, FAILURE, NEUTRAL }
 
+    interface FavorLedger {
+        boolean canAdd(ItemStack stack);
+        ItemStack add(ItemStack stack, int amount);
+    }
+
+    private static final FavorLedger TLM_FAVOR = new FavorLedger() {
+        @Override public boolean canAdd(ItemStack stack) { return TlmSoulData.canAddPendingFavor(stack); }
+        @Override public ItemStack add(ItemStack stack, int amount) { return TlmSoulData.withPendingFavor(stack, amount); }
+    };
+
     private final Predicate<ItemStack> itemPredicate;
+    private final Predicate<ItemStack> foodPredicate;
+    private final FavorLedger favorLedger;
 
     public LivingSoulSlabFunction() {
-        this(stack -> ModTlm.isLoaded() && BuiltInRegistries.ITEM.getKey(stack.getItem()).equals(SOUL_SLAB));
+        this(stack -> ModTlm.isLoaded() && BuiltInRegistries.ITEM.getKey(stack.getItem()).equals(SOUL_SLAB),
+                TlmSoulData::isHomeMeal, TLM_FAVOR);
     }
 
     LivingSoulSlabFunction(Predicate<ItemStack> itemPredicate) {
+        this(itemPredicate, TlmSoulData::isHomeMeal, TLM_FAVOR);
+    }
+
+    LivingSoulSlabFunction(Predicate<ItemStack> itemPredicate, Predicate<ItemStack> foodPredicate) {
+        this(itemPredicate, foodPredicate, TLM_FAVOR);
+    }
+
+    LivingSoulSlabFunction(Predicate<ItemStack> itemPredicate, Predicate<ItemStack> foodPredicate,
+                           FavorLedger favorLedger) {
         this.itemPredicate = itemPredicate;
+        this.foodPredicate = foodPredicate;
+        this.favorLedger = favorLedger;
     }
 
     @Override public boolean canApply(ItemStack stack) {
@@ -53,7 +81,7 @@ public final class LivingSoulSlabFunction implements LivingItemFunction {
         for (SlotEntry entry : entries) {
             int source = entry.slotIndex();
             if (tick.movedSlots.contains(source) || !container.isValidSlot(source)) continue;
-            ItemStack current = container.getItem(source);
+            ItemStack current = container.getItem(source).copy();
             if (!canApply(current) || current.getCount() != 1 || !ItemStack.matches(current, entry.stack())) continue;
             if (ModTlm.isLoaded() && !TlmSoulData.hasStoredMaid(current)) {
                 clearClock(container, source, current);
@@ -71,6 +99,17 @@ public final class LivingSoulSlabFunction implements LivingItemFunction {
 
             int direction = chooseDirection(random);
             int target = ContainerContext.resolveNeighbor(source, direction, container.getSize(), container.getWidth());
+            if (target < 0 || !container.isValidSlot(target)) {
+                adjustClock(container, source, false);
+                continue;
+            }
+            ItemStack targetStack = container.getItem(target).copy();
+            if (!targetStack.isEmpty()) {
+                AttemptOutcome feeding = tryFeed(container, source, target, current, targetStack, clock);
+                if (feeding == AttemptOutcome.FAILURE) adjustClock(container, source, false);
+                continue;
+            }
+
             AttemptOutcome precheck = precheck(container, source, target, current);
             if (precheck == AttemptOutcome.NEUTRAL) continue;
             if (precheck == AttemptOutcome.FAILURE) {
@@ -93,6 +132,59 @@ public final class LivingSoulSlabFunction implements LivingItemFunction {
         if (container.simulateExtractItem(source, 1) < 1) return AttemptOutcome.FAILURE;
         if (container.simulateInsertItem(target, stack) < 1) return AttemptOutcome.FAILURE;
         return AttemptOutcome.SUCCESS;
+    }
+
+    AttemptOutcome tryFeed(ContainerContext container, int source, int target,
+                           ItemStack soul, ItemStack food, LivingSoulSlabClock clock) {
+        if (LivingItemManager.isLivingItem(food) || !foodPredicate.test(food)
+                || !favorLedger.canAdd(soul)) return AttemptOutcome.FAILURE;
+        if (!container.supportsItemComponentWrite(source)) return AttemptOutcome.NEUTRAL;
+        if (container.simulateExtractItem(target, 1) < 1) return AttemptOutcome.FAILURE;
+        if (!ItemStack.matches(container.getItem(source), soul)
+                || !ItemStack.matches(container.getItem(target), food)) return AttemptOutcome.NEUTRAL;
+
+        ItemStack after = favorLedger.add(soul, 1);
+        if (after.isEmpty()) return AttemptOutcome.NEUTRAL;
+        after.set(MaidComponents.CLOCK.get(), clock.afterSuccess());
+        if (!container.commitItemComponents(source, soul, after)) return AttemptOutcome.NEUTRAL;
+        if (!ItemStack.matches(container.getItem(target), food)) {
+            compensateFeed(container, source, target, after, soul, "目标食物在源提交后变化");
+            return AttemptOutcome.NEUTRAL;
+        }
+        if (container.consume(target, 1) == 1) {
+            if (ItemStack.matches(container.getItem(source), after)) return AttemptOutcome.SUCCESS;
+            restoreConsumedFood(container, target, food);
+            LOGGER.error("投喂后魂符被同步监听改写：容器 {}，魂符槽 {}，食物槽 {}，实际魂符 {}",
+                    container.getCacheKey(), source, target, container.getItem(source));
+            return AttemptOutcome.NEUTRAL;
+        }
+
+        compensateFeed(container, source, target, after, soul, "食物扣除未确认");
+        return AttemptOutcome.NEUTRAL;
+    }
+
+    private static void restoreConsumedFood(ContainerContext container, int target, ItemStack before) {
+        ItemStack expected = before.getCount() == 1 ? ItemStack.EMPTY : before.copyWithCount(before.getCount() - 1);
+        ItemStack actual = container.getItem(target).copy();
+        if (!ItemStack.matches(actual, expected) || !container.trySetItemExact(target, before)) {
+            LOGGER.error("投喂食物恢复失败：容器 {}，食物槽 {}，期望原状 {}，实际 {}",
+                    container.getCacheKey(), target, before, container.getItem(target));
+            return;
+        }
+        ItemStack restored = container.getItem(target).copy();
+        container.syncSlotToClients(target, restored);
+        if (!ItemStack.matches(restored, before)) {
+            LOGGER.error("投喂食物恢复回读不符：容器 {}，食物槽 {}，期望 {}，实际 {}",
+                    container.getCacheKey(), target, before, restored);
+        }
+    }
+
+    private static void compensateFeed(ContainerContext container, int source, int target,
+                                       ItemStack after, ItemStack before, String reason) {
+        if (!container.commitItemComponents(source, after, before)) {
+            LOGGER.error("投喂补偿失败（{}）：容器 {}，魂符槽 {}，食物槽 {}，实际魂符 {}",
+                    reason, container.getCacheKey(), source, target, container.getItem(source));
+        }
     }
 
     static AttemptOutcome classify(MoveResult result) {

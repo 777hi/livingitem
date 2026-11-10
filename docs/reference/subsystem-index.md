@@ -23,7 +23,7 @@
 | **活红石** | 红石信号传播 + BFS 算法 + 反相器 + 堆叠数影响；**驱动权已收归单点**（`LivingRedstoneFunction` 自维持 + 守卫，2026-10-08）。**信号层另含「活铜」** —— 铜块线缆 / 雕文二极管 / 切制立交桥 / 铜格栅加法器 / 铜灯信号记忆（2026-10-09 补登记） | [living-redstone-tech.md](../tech/living-redstone-tech.md) · [living-copper-tech.md](../tech/living-copper-tech.md) |
 | **活涂蜡铜块（红电发电）** | 双因子感应发电 + 事件驱动记账 + RE/FE 单位制；相位解读归 `PhaseInterpreter`，`SignalTracker` 顶层共用；记账 / 遥测分别归 `EnergyAccounting` / `PowerTelemetry`（2026-10-09 收口） | [living-power-tech.md](../tech/living-power-tech.md) |
 | **活打火石** | 交互触发器，无 tick 逻辑 | [living-flint-and-steel-tech.md](../tech/living-flint-and-steel-tech.md) |
-| **活魂符 / 女仆背包联动** | 原准入不变的女仆实体存储接入；活魂符每秒以1/I概率尝试随机四向，成功加速/失败减速（I=1～49）；容器真实槽走identity+GUI矩阵限定的空模型握手，原模型/动画/语音/图片气泡演出 | [living-maid-tech.md](../tech/living-maid-tech.md) |
+| **活魂符 / 女仆背包联动** | 原准入不变的女仆实体存储接入；活魂符每秒以1/I概率尝试随机四向，空槽移动，居家餐供品整件扣一并累计待兑现好感（释放后TLM原生兑现）；容器真实槽走identity+GUI矩阵限定的空模型握手，原模型/动画/语音/图片气泡演出 | [living-maid-tech.md](../tech/living-maid-tech.md) |
 | **GUI交互** | 声明式规则 + 统一拦截 + 创造模式兼容 | [gui-interaction-system.md](../system-design/gui-interaction-system.md) |
 | **图标系统** | 三层架构 + 声明式配置 + 上下文切换 | [icon-system.md](../system-design/icon-system.md) |
 | **Tooltip 系统** | 双层渲染架构 + 运行时缓存同步 + 显示口径（窗口均值/mFE） | [tooltip-system.md](../system-design/tooltip-system.md) |
@@ -37,4 +37,3 @@
 | **数据模型** | DataComponent 体系 + 新旧架构对比 + 设计决策 | [data-model.md](../system-design/data-model.md) |
 | **单元测试** | FML 测试环境配置 + 测试替身 + 可测性边界 | [unit-testing.md](../guides/unit-testing.md) |
 | **框架重构** | HasDirection + HasContainerData 接口化设计 | [framework-refactoring.md](../archive/framework-refactoring.md) |
-| **框架层对标（未定案）** | 🆚 对标 AnvilCraft / Cataclysm / Create 的框架层：可学 6 条（Mixin 外移 / 统一注册表原语 / reload 钩子 / 确定性排序 / `api`+`impl` 分层 / nullness）+ 待拍板 1 条（规则 JSON 迁 `data/`）+ 明确不抄清单 + **元判据 §9.1（宽复杂度 vs 深复杂度）**。**动架构改向前先读它** | [framework-benchmark.md](../buffer/framework-benchmark.md) |

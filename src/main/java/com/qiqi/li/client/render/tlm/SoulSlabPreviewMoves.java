@@ -26,6 +26,7 @@ final class SoulSlabPreviewMoves {
         var clock = BuiltInRegistries.DATA_COMPONENT_TYPE.get(
                 ResourceLocation.fromNamespaceAndPath("living_item", "living_soul_slab_clock"));
         if (clock != null) copy.remove(clock);
+        com.qiqi.li.living.compat.tlm.TlmSoulData.stripPendingFavor(copy);
         return copy;
     }
 

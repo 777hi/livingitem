@@ -1478,12 +1478,6 @@ MC 的 `item/handheld` 贴图是**斜 45° 对角**画的（镐头在右上、�
 
 验算第 3 步：`x' = -cos(-45) − sin(-45) = 0`、`y' = -sin(-45) + cos(-45) = √2` ⇒ 头朝上、柄朝下。
 
-> 📌 **跨项目印证**：同工作区的「御剑」模组（`libs/src/YujianCraft-main`）用**完全相同的方案**
-> —— `ItemRenderer#renderStatic(stack, ItemDisplayContext.FIXED, …)` + 绕 Z 轴校正，
-> 并在 `ClientModEvents.java` L345 留了结论：
-> *"FIXED rotates the vanilla item 180 degrees around Y. -45 aligns the real blade axis."*
-> 那句话就是第 2 步的证据。我最初**漏了 FIXED 的 Y180**，于是把校正角写成了 `+45`（符号反）。
-
 都写在 `PoseStack` 最内层（= 最先作用于模型），常量偏差可直接调。
 
 **绕长轴的滚转：两条路径期望不同（`RAY_ROLL_FIX`）**
@@ -2094,19 +2088,3 @@ if (changed) {
 
 > ⚠️ **手上的物品必须每次更新**（攻击 / 挖掘会扣耐久）；只有属性与效果走 `changed` 分支。
 > ⚠️ 用 `isSameItem`（只比类型）而非 `matches` —— 后者会因耐久变化每 tick 判为"变了"。
-
-## 附：参考源码位置
-
-本地源码：`libs/src/neoforge-21.1.219-merged/`（解压自 `build/moddev/artifacts/neoforge-21.1.219-sources.jar`）
-
-| 内容 | 路径 |
-|---|---|
-| 破坏进度机制 | `net/minecraft/server/level/ServerPlayerGameMode.java:98-133, 138-289` |
-| 单 tick 进度公式 | `net/minecraft/world/level/block/state/BlockBehaviour.java:393` |
-| 工具动作映射 | `net/neoforged/neoforge/common/extensions/IBlockExtension.java:778-824` |
-| NeoForge FakePlayer | `net/neoforged/neoforge/common/util/FakePlayer.java` |
-| Create 部署器（模拟左键） | `libs/src/Create-mc1.21.1-6.0.10/.../deployer/DeployerHandler.java:242-284, 375+` |
-| Create 假玩家（主人 UUID） | `.../deployer/DeployerFakePlayer.java:165-204` |
-| 御剑阵型排布（渲染参考） | `libs/src/YujianCraft-main/.../formation/FormationGeometry.java` |
-| **世界空间渲染物品模型**（`K` 组直接用） | `libs/src/StarMeowCraft-master/.../client/renderer/ThrownSwordRenderer.java` |
-| **「吞噬 + 召唤」跨模组武器兼容** | `libs/src/StarMeowCraft-master/.../items/DevourSword.java`、`helper/EntityHelper.java` |

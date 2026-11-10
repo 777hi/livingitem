@@ -19,9 +19,9 @@
 | [2026-10-29-测试域梳理.md](2026-10-29-测试域梳理.md) | 分析探讨（2026-10-29）—— 本文是测试域的建议，不是测试规范定案。 |
 | [architecture-evolution-roadmap.md](architecture-evolution-roadmap.md) | 未定案 —— 本文是演进编排与排期依据，不是现状描述，也不是已批准的执行计划 |
 | [container-menu-introspection-topic.md](container-menu-introspection-topic.md) | 设计论证原稿（2026-11-07 复核）—— 无实施计划，保留查证、翻案与否决 |
-| [framework-benchmark.md](framework-benchmark.md) | 未定案**，本文只是**对标记录**，不是执行排期 |
 | [framework-evolution-plan.md](framework-evolution-plan.md) | 提案（buffer）——未定案、未排期，别当现状读**。 |
 | [gui-interaction-redesign.md](gui-interaction-redesign.md) | 设计稿（已定案未实施）—— E2 交互设计，不是现状。 |
+| [living-axe-strip-design.md](living-axe-strip-design.md) | 设计提案 —— 本文供审阅，不是已生效玩法或执行授权。 |
 | [living-tnt-explosion-design.md](living-tnt-explosion-design.md) | 未定案** —— TNT 爆炸规模化设计稿，别当现状读。 |
 | [living-weapon-design.md](living-weapon-design.md) | 设计探讨层（buffer）。⚠️ 描述的是**计划 / 未决**，不是现状。 |
 | [open-plan.md](open-plan.md) | 未定案** —— 对外开放计划探讨稿，别当现状读。 |

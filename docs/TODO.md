@@ -11,9 +11,9 @@
 1. **展示验收** —— ~~无槽裁剪、四向身体、有限头部追光标待验~~ ✅ 用户反馈效果都很好（2026-11-08），并接受预览重建回正；原生待机/走路/语音已确认。
    反馈范围及特殊模型、启动/生命周期组合核对入口见[living-maid-tech.md §4](tech/living-maid-tech.md#4-验证状态与已知边界)。
 2. **图片气泡验收** —— ~~最小图片气泡实机待验~~ ✅ 用户反馈“实测正常”（2026-11-09）。配置、PNG/GIF、清理及特殊模型未逐项确认的覆盖范围见[技术文档 §4](tech/living-maid-tech.md#4-验证状态与已知边界)。
-3. **后续互动** —— 基础走位已改为每秒`1/I`概率自适应，不再使用饱食度/背包容量或deadline；状态文字/颜文字/聊天内容、槽位物品寻路、好感互动、饱食度消耗/喂食及INIT原地生成均未实现、未排期。
+3. **后续互动** —— 基础走位已改为每秒`1/I`概率自适应；~~随机目标为非活化居家餐时投喂并永久增加好感~~ ✅ 已实现（2026-11-10：供品整件消失、pending随快照、释放后TLM原生兑现）。手持食物吸引/光标方向偏置、状态文字/颜文字/聊天内容、槽位物品寻路、饱食度消费、经验奖励及INIT原地生成仍未实现、未排期。
 4. **兼容专项边界** —— 末影背包多宿主反馈、第三方自绘界面及宿主附件收存交接仍按[技术文档 §4](tech/living-maid-tech.md#4-验证状态与已知边界)核对，不要求保留已兑现的设计稿。
-5. **模型层接缝烟测** —— 2026-11-10已从`renderSlotContents`窄Mixin迁到“真实栈identity+槽位GUI矩阵登记→空模型claim→Foreground女仆”；我方模型守卫已通过，但新接缝不继承旧实测，原版/第三方容器与HUD、carried、配方、复制槽、异常回退组合按[技术文档 §4](tech/living-maid-tech.md#4-验证状态与已知边界)逐项确认。
+5. **模型层接缝验收** —— ~~新接缝核心路线待验~~ ✅ 用户反馈“实测效果很好”，且原先不显示的容器现已能显示女仆（2026-11-10）；HUD、carried、配方、复制槽与异常/生命周期等未逐项反馈的组合继续按[技术文档 §4](tech/living-maid-tech.md#4-验证状态与已知边界)核对。
 
 ## 审查整改（2026-10-29）
 
@@ -36,6 +36,17 @@
    **B（统一宿主）⏸ 暂缓**（2026-10-18 用户定：等之后的新活物品需要时再做；届时先抽传输内核）；
    **C ✅ 已落地**（2026-10-18：宿主协议化 + 列宽双源对齐 + 守卫测试）；
    **D ✅ 已落地**（2026-10-18 写进设计模板 §1.1-b）。
+
+## 框架层待办（2026-11-10 按代码实测登记）
+
+> 原对标稿已删；以下条目**以当前代码为准**，不是旧稿「定稿值」的复述。排期与触发门仍以
+> [architecture-evolution-roadmap.md](buffer/architecture-evolution-roadmap.md) 为准（D-doc-06）。
+
+1. ⏳ **规则 JSON 挂原版 reload 钩子 / 迁 `data/living_item/`**：4 个规则 JSON 仍在 `assets/living_item/`，`data/living_item/` 不存在；`AddReloadListenerEvent` 全库 0 命中，现靠 `commonSetup` 装载 + 4 个命令 reload。触发门见路线图 §4.5；「非标准 JSON 不被原版解析」须实机验证。
+2. ⏳ **落盘结构留 `version` 字段**：4 个配置 JSON 已有；Codec / SavedData（`ContainerFluidData` / `FilterData` / `LearnedLayouts` / `ContainerDataSavedData`）无 version。1.0 前必须在位（路线图 §4.4），alpha 不做旧存档兼容。
+3. ⏳ **`SlotInteractions` 加确定性排序 + 未命中兜底**：当前仍是注册顺序 List、未命中静默返回 false；`LivingItemManager.sortFunctionsByPriority` + `TickOrderTest` 是现成参照。
+4. ⏳ **`GameplayConfig` 补一条守卫测试**：bake 已实现，`GameplayConfigTest` 只测 SPEC + 默认值，无热重载 / bake 守卫。
+5. ⏳ **Q12：分层违规报告是否接进 `doc_check.py`**：CI 现独立跑 `check_layers.py`（`build.yml:56`），`doc_check` 的检查项里没有分层。
 
 ## 活信标 · 游玩实测（2026-10-18 收尾时挂起）
 
@@ -645,7 +656,7 @@
 2. ⏳ **框选批量活化**（步骤 4 = E2c）—— 未实现；Q3/Q5 已定案（框选 = 只活化、矩形覆盖即选中），
    见 [buffer/gui-interaction-redesign.md](buffer/gui-interaction-redesign.md) §4.2。
 3. ⏳ **E1 增强（可选）**：拖动 + 位置持久化已落地（2026-10-10，存 `config/living_item/button_layout.json`）；
-   TrashSlot 式**吸附 / 碰撞避让 / 显示开关**当轮明确不做，要做再按设计稿 §4.1。
+   **吸附 / 碰撞避让 / 显示开关**当轮明确不做，要做再按设计稿 §4.1。
 
 ## ~~渲染态广播（2026-10-26 记，未定案）~~ ✅ 已收口（2026-11-07）
 
@@ -722,6 +733,7 @@
 1. ⏳ **容器内 GUI 三件套**（J 组，H3 已拍板「加」）—— 手持活斧子右键 = 原版**去皮 / 刮铜 / 脱蜡**、
    活铲子右键 = **铺土径**（J3 定案 = 直接调原版方法、不写映射表；⚠️ 尚未实施，现存活锄头 GUI 仍是 `Tillables.TILLED_RESULTS` 手写映射表）。
    「谓词自查 `isLivingItem`」仍是红线（[farmland tech §3.1-3.2](tech/living-farmland-tech.md)）；「通配条目吞右键」已由 `InteractionRegistry.findInteraction` 匹配阶段过滤消除。
+   去皮子项的审阅提案见 [活斧槽内去皮方案](buffer/living-axe-strip-design.md)（仅手动去皮，不代表其余交互一并实施）。
 2. ⏳ **系列边界探讨**（H 组待定）—— 活锄头判据层已纳入（`LivingToolRecorder.isLivingTool` 含 `HOE_DIG`），待定的是 GUI 层是否收编（H1）/ 斧铲**世界层**辅助
    做不做（H2 倾向先不做）。**活剑已落地**（2026-11-07：`SWORD_DIG` 纳入工具判据，双身份同斧子，
    见 [living-tool-tech.md](tech/living-tool-tech.md) §4.1）。**活剪刀 v1 已落地**（同日，用户定不扩大：

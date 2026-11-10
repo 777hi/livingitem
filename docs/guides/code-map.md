@@ -30,8 +30,8 @@ python tools/gen_code_map.py --json   # 同时落 build/code-map.json（供二�
 
 ```bash
 python tools/gen_code_map.py \
-  --src libs/src/Create-mc1.21.1-6.0.10/src/main/java \
-  --out build/create-map.html
+  --src /path/to/other-project/src/main/java \
+  --out build/source-map.html
 ```
 
 - `--base-pkg` 可显式指定（探测不对时）；`--title` 改页面标题

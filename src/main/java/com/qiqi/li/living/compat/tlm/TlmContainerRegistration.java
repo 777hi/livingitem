@@ -3,7 +3,9 @@ package com.qiqi.li.living.compat.tlm;
 import com.github.tartaricacid.touhoulittlemaid.inventory.container.AbstractMaidContainer;
 import com.qiqi.li.living.container.EntityContainers;
 import com.qiqi.li.living.container.MenuSlotOwners;
+import net.neoforged.bus.api.EventPriority;
 import net.neoforged.fml.ModList;
+import net.neoforged.neoforge.common.NeoForge;
 
 /** 双端宿主登记；无 TLM 时不链接适配实现。 */
 public final class TlmContainerRegistration {
@@ -22,6 +24,8 @@ public final class TlmContainerRegistration {
             EntityContainers.registerProvider(new MaidBackpackHost());
             MenuSlotOwners.registerEntityResolver((menu, slot) ->
                 menu instanceof AbstractMaidContainer maidMenu ? maidMenu.getMaid() : null);
+            NeoForge.EVENT_BUS.addListener(EventPriority.LOWEST, TlmFavorRedemption::onToMaid);
+            NeoForge.EVENT_BUS.addListener(TlmFavorRedemption::onServerTick);
         }
     }
 }

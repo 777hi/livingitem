@@ -7,6 +7,7 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.qiqi.li.client.mixin.LivingItemSlotWrapperAccessor;
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.compat.tlm.TlmSoulData;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
@@ -43,9 +44,18 @@ final class SoulSlabPreviewCache {
         final Slot slot;
         final ItemStack snapshot;
         SoulSlabMaidPreview preview;
+        SoulSlabFeedFeedback feedFeedback;
+        boolean feedPending;
         boolean attempted;
         int seenTick = Integer.MIN_VALUE;
-        Entry(Slot slot, ItemStack snapshot) { this.slot = slot; this.snapshot = snapshot; }
+        Entry(Slot slot, ItemStack snapshot) {
+            this(slot, snapshot, new SoulSlabFeedFeedback());
+        }
+        Entry(Slot slot, ItemStack snapshot, SoulSlabFeedFeedback feedFeedback) {
+            this.slot = slot;
+            this.snapshot = snapshot;
+            this.feedFeedback = feedFeedback;
+        }
     }
     private record Drawing(Entry entry, ItemStack source, ItemStack snapshot,
                            PoseStack origin, PoseStack itemPose, int x, int y, int seed) {}
@@ -83,6 +93,7 @@ final class SoulSlabPreviewCache {
                 }
             }
             if (entry.getValue().preview == null || entry.getValue().preview.disabled()) continue;
+            entry.getValue().feedPending |= entry.getValue().feedFeedback.observe(TlmSoulData.pendingFavor(stack));
             PoseStack itemPose = SoulSlabGuiPose.itemModelPose(origin, slot.x, slot.y);
             frame.put(entry.getKey(), new Drawing(entry.getValue(), stack, stack.copy(), copy(origin), itemPose,
                     slot.x, slot.y, slot.x + slot.y * current.getXSize()));
@@ -114,8 +125,9 @@ final class SoulSlabPreviewCache {
             ItemStack snapshot = stable(stack);
             Entry old = entries.get(position);
             if (old != null && ItemStack.matches(old.snapshot, snapshot)) {
-                Entry same = new Entry(slot, snapshot);
+                Entry same = new Entry(slot, snapshot, old.feedFeedback);
                 same.preview = old.preview;
+                same.feedPending = old.feedPending;
                 same.attempted = old.attempted;
                 same.seenTick = old.seenTick;
                 next.put(position, same);
@@ -135,6 +147,8 @@ final class SoulSlabPreviewCache {
         moves.forEach((destination, source) -> {
             Entry old = entries.get(source), target = next.get(destination);
             target.preview = old.preview;
+            target.feedFeedback = old.feedFeedback;
+            target.feedPending = old.feedPending;
             target.attempted = old.attempted;
             target.seenTick = old.seenTick;
             if (target.preview != null && !target.preview.disabled()) target.preview.move(old.slot.x, old.slot.y, target.slot.x, target.slot.y);
@@ -185,6 +199,10 @@ final class SoulSlabPreviewCache {
                     continue;
                 }
                 try {
+                    if (drawing.entry.feedPending) {
+                        drawing.entry.feedPending = false;
+                        drawing.entry.preview.feed();
+                    }
                     renderOne(graphics, drawing, mouseX, mouseY);
                     drawing.entry.seenTick = ticks;
                 } catch (RuntimeException | LinkageError failure) {

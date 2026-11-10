@@ -824,7 +824,7 @@ slot/level/fromSlot）→ 客户端 `FluidFlowClientCache` → `ContainerFluidOv
 | 活数据反查 | `ContainerLivingItemHandler.resolveContextAt`（**从 `processContainerAt` 抽出**：`ItemHandler.BLOCK` 兼容面 + `DoubleChestPositions` 双箱规范化 + 战利品跳过 ⇒ 与 tick 路径**同源同键**）→ `peekContainerData(ContainerDataKeys.FLUID)`（只读不创建） |
 | `FluidType → Fluid` | `ContainerFluidData.representativeFluidOf`（原私有方法对外开放，能力层造 `FluidStack` 需要 vanilla `Fluid`） |
 
-**Create 6 兼容性（已查证 `libs/src/Create`）**：**无需任何兼容代码** ——
+**Create 6 兼容性**：**无需任何兼容代码** ——
 Create 6.0.10 的 `SmartFluidTank extends net.neoforged.neoforge.fluids.capability.templates.FluidTank`，
 储液罐/锅炉/漏斗/物品漏斗都注册 `Capabilities.FluidHandler.BLOCK`；管道与机械泵通过
 `FlowSource` / `FluidPropagator.hasFluidCapability` **拉取**邻居的该能力。
@@ -884,7 +884,7 @@ Create 6.0.10 的 `SmartFluidTank extends net.neoforged.neoforge.fluids.capabili
 **现象（群友实测，两面）**：① Create 管道彼此之间、管道与储罐之间**完全不走水**；
 ② 管道对箱子 / 机器等**非流体容器**长出排液接口（DRAIN 外观）。
 
-**判据链（Create 6.0.10，`libs/src/Create`）**：
+**判据链（Create 6.0.10）**：
 `PipeConnection#determineSource` 先问 `FluidPropagator#isOpenEnd`，再问
 `hasFluidCapability` —— 后者**只看能力是否非 null**，非 null 就记为
 `FlowSource.FluidHandler`（外部储液，`isEndpoint() = true`）；

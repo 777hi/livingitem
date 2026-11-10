@@ -343,8 +343,6 @@ while (d12 <= 1.0 || d13 <= 1.0 || d14 <= 1.0) { /* 取最早到达的轴，只�
 
 ## §3 铁魔法（Irons Spells 'n Spellbooks）调研结论
 
-> 📁 `libs/src/irons-spells-n-spellbooks-1.21`（NeoForge 版，可直接参考）
-
 ### 3.1 类继承
 
 ```
