@@ -113,7 +113,8 @@ src/test/java/com/qiqi/li/
 │   └── ContainerTickIsolationTest.java        # tick 异常隔离（2026-10-30，R-01）·RuntimeException 不向外抛且可重复调用 / 取 key 本身抛异常仍隔离 / Error 不被吞
 ├── living/domain/maid/
 │   ├── LivingSoulSlabClockTest.java           # 概率活跃度I·初始7/成功失败±1/1-49钳位/非法值
-│   └── LivingSoulSlabFunctionTest.java        # 每秒1/I判定·随机四向不重掷/空槽移动/居家餐供品整件扣一+pending+I成功/活食物与满好感失败/消费失败补偿/技术中性/换槽保I/超堆叠不拆
+│   ├── LivingSoulSlabFunctionTest.java        # 每秒1/I判定·随机四向不重掷/空槽移动/居家餐供品整件扣一+pending+I成功/活食物与满好感失败/消费失败补偿/技术中性/换槽保I/超堆叠不拆
+│   └── LivingSoulSlabTooltipTest.java         # 活魂符tooltip·I=1/7/49与非法回退/1位小数/pending零隐藏与+N/非活或多件不显示/只读不改栈/双语措辞和占位符
 ├── living/domain/ender/
 │   ├── EnderChannelRegistryDimTest.java        # 活末影箱路由表**维度隔离**（2026-10-27 审查待拍板 #2，2026-10-28 修）·跨维度同坐标同槽位都能注册（去重键含维度，旧实现误判重复 ⇒ 第二条注册不进去）/ 按位置+槽位清理只删指定维度 / 区块卸载不删另一维度同坐标路由 / `validateRoutes` 不误删另一维度同键路由
 │   ├── EnderRouteExtractTest.java              # 路由**端到端提取**（2026-10-28 链路回归；2026-10-29 口径改为「源解析不到 ⇒ 条目丢弃」）·方块容器按位置取能力并扣源 / 玩家背包按 UUID 找玩家 / **物品形态按容器 UUID 取活视图（新能力）** / 活视图未登记 ⇒ 不取且**条目丢弃**（路由只有注册/不注册两态）/ 方块被搬走 ⇒ 丢弃且频道清空 / **物品形态源 rollback 回活视图（持有提取时 handler，活视图清掉也能回滚）**

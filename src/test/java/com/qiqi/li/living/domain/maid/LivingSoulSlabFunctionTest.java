@@ -54,6 +54,7 @@ class LivingSoulSlabFunctionTest {
             copy.set(DataComponents.CUSTOM_DATA, net.minecraft.world.item.component.CustomData.of(tag));
             return copy;
         }
+        @Override public int pending(ItemStack stack) { return LivingSoulSlabFunctionTest.pending(stack); }
     };
 
     private static int pending(ItemStack stack) {

@@ -4,7 +4,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.function.Predicate;
 
 import com.qiqi.li.living.api.LivingItemFunction;
@@ -15,11 +17,15 @@ import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.MoveResult;
 import com.qiqi.li.living.container.TickContext;
 
+import net.minecraft.ChatFormatting;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.RandomSource;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.level.Level;
 
 /** 活魂符自适应走位：每秒按 1/I 抽签，成功加快、正常失败放慢。 */
@@ -34,11 +40,13 @@ public final class LivingSoulSlabFunction implements LivingItemFunction {
     interface FavorLedger {
         boolean canAdd(ItemStack stack);
         ItemStack add(ItemStack stack, int amount);
+        int pending(ItemStack stack);
     }
 
     private static final FavorLedger TLM_FAVOR = new FavorLedger() {
         @Override public boolean canAdd(ItemStack stack) { return TlmSoulData.canAddPendingFavor(stack); }
         @Override public ItemStack add(ItemStack stack, int amount) { return TlmSoulData.withPendingFavor(stack, amount); }
+        @Override public int pending(ItemStack stack) { return TlmSoulData.pendingFavor(stack); }
     };
 
     private final Predicate<ItemStack> itemPredicate;
@@ -73,6 +81,31 @@ public final class LivingSoulSlabFunction implements LivingItemFunction {
 
     @Override public Set<DataComponentType<?>> getOwnedComponentTypes() {
         return Set.of(MaidComponents.CLOCK.get());
+    }
+
+    @Override
+    public void addToTooltip(Item.TooltipContext context, Consumer<Component> tooltipAdder,
+                             TooltipFlag flag, ItemStack stack) {
+        if (!canApply(stack) || stack.getCount() != 1) return;
+        LivingSoulSlabClock clock = stack.get(MaidComponents.CLOCK.get());
+        int interval = clock != null && clock.valid()
+                ? clock.intervalSeconds() : LivingSoulSlabClock.INITIAL_INTERVAL_SECONDS;
+        String percentage = String.format(Locale.ROOT, "%.1f", 100.0 / interval);
+
+        tooltipAdder.accept(Component.empty());
+        tooltipAdder.accept(Component.translatable("tooltip.livingitem.soul_slab.title")
+                .withStyle(ChatFormatting.LIGHT_PURPLE));
+        tooltipAdder.accept(Component.translatable("tooltip.livingitem.soul_slab.attempt_chance",
+                Component.literal("1/" + interval).withStyle(ChatFormatting.YELLOW),
+                Component.literal(percentage + "%").withStyle(ChatFormatting.AQUA),
+                Component.literal(Integer.toString(interval)).withStyle(ChatFormatting.YELLOW))
+                .withStyle(ChatFormatting.GRAY));
+        int pending = favorLedger.pending(stack);
+        if (pending > 0) {
+            tooltipAdder.accept(Component.translatable("tooltip.livingitem.soul_slab.pending_favor",
+                    Component.literal("+" + pending).withStyle(ChatFormatting.GREEN))
+                    .withStyle(ChatFormatting.GRAY));
+        }
     }
 
     @Override public void tick(List<SlotEntry> entries, ContainerContext container, TickContext tick, Level level) {
