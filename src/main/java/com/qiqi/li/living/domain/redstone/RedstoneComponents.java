@@ -106,7 +106,7 @@ public final class RedstoneComponents {
                 .networkSynchronized(LivingCopperSignalData.STREAM_CODEC)
                 .build());
 
-    /** 活观测者数据（容器内容变化 → 红石脉冲）。 */
+    /** 活侦测器数据（正面相邻槽公开状态变化 → 红石脉冲）。 */
     public static final DeferredHolder<DataComponentType<?>, DataComponentType<LivingObserverData>> LIVING_OBSERVER_DATA =
         REG.register("living_observer_data", () ->
             DataComponentType.<LivingObserverData>builder()

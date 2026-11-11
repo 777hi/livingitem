@@ -115,6 +115,27 @@ public class LivingCopperFunction implements LivingItemFunction, HasDirection {
     }
 
     @Override
+    public net.minecraft.nbt.CompoundTag getObservableState(
+            ItemStack stack, int slot, ContainerContext container) {
+        var tag = RedstoneObservableState.create(container, slot);
+        tag.putInt("signal", LivingCopperSignalData.of(stack).signalStrength());
+        if (isChiseled(stack.getItem())) {
+            LivingCutCopperData data = LivingCutCopperData.of(stack);
+            RedstoneObservableState.putDirection(tag, "input", data.inputDir());
+            RedstoneObservableState.putDirection(tag, "output", data.outputDir());
+        }
+        if (isGrate(stack.getItem())) {
+            tag.putInt("sum", LivingGrateData.of(stack).sumSignal());
+        }
+        if (isBulb(stack.getItem())) {
+            LivingCopperBulbData data = LivingCopperBulbData.of(stack);
+            tag.putInt("recorded", data.recordedSignal());
+            tag.putBoolean("lit", data.isLit());
+        }
+        return tag;
+    }
+
+    @Override
     public int getComparatorOutput(ItemStack stack) {
         if (isBulb(stack.getItem())) {
             LivingCopperBulbData data = LivingCopperBulbData.of(stack);

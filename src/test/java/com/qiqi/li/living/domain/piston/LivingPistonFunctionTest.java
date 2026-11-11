@@ -91,6 +91,26 @@ class LivingPistonFunctionTest {
     }
 
     @Test
+    void observableStateMatchesDirectionAndExtensionOnly() {
+        var ctx = context().set(0, piston(Items.PISTON, 1, Pos2D.RIGHT));
+
+        var retracted = function.getObservableState(ctx.getItem(0), 0, ctx);
+        assertEquals(1, retracted.getInt("direction_x"));
+        assertEquals(0, retracted.getInt("direction_y"));
+        assertFalse(retracted.getBoolean("extended"));
+        assertEquals(3, retracted.size(),
+            "公开状态只含方向与 extended，不暴露信号、动画或动作历史");
+
+        tick(ctx, 15, 0);
+        var extended = function.getObservableState(ctx.getItem(0), 0, ctx);
+        assertTrue(extended.getBoolean("extended"));
+
+        tick(ctx, 0, 0);
+        var retractedAgain = function.getObservableState(ctx.getItem(0), 0, ctx);
+        assertFalse(retractedAgain.getBoolean("extended"));
+    }
+
+    @Test
     void realFunctionPushesChainThenHoldsWithoutRewritingRuntime() {
         var ctx = context().set(0, piston(Items.PISTON, 2, Pos2D.RIGHT))
             .set(1, new ItemStack(Items.DIRT, 7)).set(2, new ItemStack(Items.GOLD_INGOT, 3));

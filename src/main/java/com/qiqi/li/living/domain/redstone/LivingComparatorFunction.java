@@ -91,6 +91,16 @@ public class LivingComparatorFunction implements LivingItemFunction, HasDirectio
             .withStyle(ChatFormatting.GRAY));
     }
 
+    @Override
+    public net.minecraft.nbt.CompoundTag getObservableState(
+            ItemStack stack, int slot, ContainerContext container) {
+        LivingComparatorData data = LivingComparatorData.of(stack);
+        var tag = RedstoneObservableState.create(container, slot);
+        RedstoneObservableState.putDirection(tag, "direction", data.direction());
+        tag.putBoolean("subtract", data.subtractMode());
+        return tag;
+    }
+
     private static String directionKey(Pos2D dir) {
         if (dir.equals(Pos2D.UP)) return "up";
         if (dir.equals(Pos2D.DOWN)) return "down";

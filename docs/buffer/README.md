@@ -41,7 +41,7 @@
 | [living-button-container-info.md](../archive/living-button-container-info.md) | 已实施，现状已沉淀 | [system-design/gui-interaction-system.md](../system-design/gui-interaction-system.md) §6.2.2 |
 | [living-fluid-review.md](../archive/living-fluid-review.md) | 问题池条目全部清零（2026-10-31） | [tech/living-fluid-tech.md](../tech/living-fluid-tech.md) §3.3 / §0 规则 10 · [TODO 活流体 §9-10](../TODO.md) |
 | [container-layout-resolution.md](../archive/container-layout-resolution.md) | 自动学落地为 Tier 1.5；收编部分维持暂缓（2026-10-31） | [TODO §5](../TODO.md) · [infrastructure §6.2](../system-design/living-item-infrastructure.md) |
-| [活观测者-design.md](../archive/活观测者-design.md) | 已实施（2026-11-11，规则 1-10 落地 + 13 回归；真机待验） | [tech/living-redstone-tech.md](../tech/living-redstone-tech.md) §0 规则 8-10 · [TODO 活红石 #5](../TODO.md) |
+| [活观测者-design.md](../archive/活观测者-design.md) | 旧「整容器内容签名」方案已被 D-redstone-01 取代（2026-11-11） | [tech/living-redstone-tech.md](../tech/living-redstone-tech.md) §0 规则 8-10 · [decisions D-redstone-01](../decisions.md) |
 
 ## 维护判据
 

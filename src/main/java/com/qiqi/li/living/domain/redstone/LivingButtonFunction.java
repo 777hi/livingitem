@@ -98,6 +98,14 @@ public class LivingButtonFunction implements LivingItemFunction {
             .withStyle(ChatFormatting.GRAY));
     }
 
+    @Override
+    public net.minecraft.nbt.CompoundTag getObservableState(
+            ItemStack stack, int slot, ContainerContext container) {
+        var tag = RedstoneObservableState.create(container, slot);
+        tag.putBoolean("pressed", LivingButtonData.of(stack).pressed());
+        return tag;
+    }
+
     public static boolean isWoodButton(ItemStack stack) {
         return WOOD_BUTTONS.contains(stack.getItem());
     }

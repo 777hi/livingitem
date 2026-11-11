@@ -17,7 +17,9 @@
 
 ## 2026-11-11
 
-- ✅ **活观测者落地（红石家族第 10 元件）** —— 容器内容签名 diff（复用 `computeContentSignature`，零新增扫描）→ 原版三重门受理（仅待机态；盲区变化合并为恢复后一次脉冲）→ 2gt 延迟 + 2gt 脉冲 → 朝向出边单边输出（cap 随堆叠）；只读零槽位写入，驱动权归 `LivingRedstoneFunction` 单点（`hasRedstoneElements` 纳入），无账本条目安全不工作；组件级变化不触发（切断「观测者→粉→观测者」反馈环）。设计稿 4/4 拍板落定后实施；实施勘误一处：同容器换槽（含观测者自身）按规则 1 触发（签名含排列），原稿「不触发」与规则 1 矛盾已改正。+13 回归（`LivingObserverTest`：时序逐拍 / 盲区合并 / 换容器 / 只读 / 面输出 / 安全不工作），全量 1788 零失败；游戏内验证清单（漏斗联动 / 世界红石面输出 / 活活塞联动 / 重进存档）待真机。→ [redstone tech §0 规则 8-10](../tech/living-redstone-tech.md) · [设计历程](活观测者-design.md)。
+- ♻️ **活侦测器 v2 回到局部原版语义（取代当日旧方案）+ 图标/活塞状态补齐** —— 旧版由「现成整容器签名易复用」反推玩法，造成全箱噪声、看不到红石状态、Phase 1 半结算采样、首拍误脉冲与忙碌期恢复补发；现改为只看输出反侧相邻槽，基础粒度 registry ID / 数量 / 活化身份，各 Function 显式公开语义，红石 Phase 5 后统一采样最终四向出边；2gt×2 单边脉冲，忙碌期严格丢弃，首次 / 改向 / 机械移动 / 拆合 / 账本重建只建基线，运行态不跟物品迁移。同拍 movedSlots 后增量刷新功能索引。同步修 `living_item:item/observer` 模型桥接缺失导致的黑紫方块、方向解析误落火把兜底及原版 3D 方块观感，最终采用 `item/generated` + 原版 `observer_top` 平面方向纹理；活塞本体经公开状态契约仅暴露 `direction + extended`，成功伸出与任何收回可被侦测，失败保持收回不触发。新增资源/方向/活塞本体端到端守卫。→ [D-redstone-01](../decisions.md) · [redstone tech §0 规则 8-10](../tech/living-redstone-tech.md) · [旧方案留痕](活观测者-design.md)。
+
+- ✅ **活观测者旧版落地（同日已被 D-redstone-01 取代）** —— 容器内容签名 diff（复用 `computeContentSignature`，零新增扫描）→ 原版三重门受理（仅待机态；盲区变化合并为恢复后一次脉冲）→ 2gt 延迟 + 2gt 脉冲 → 朝向出边单边输出（cap 随堆叠）；只读零槽位写入，驱动权归 `LivingRedstoneFunction` 单点（`hasRedstoneElements` 纳入），无账本条目安全不工作；组件级变化不触发（切断「观测者→粉→观测者」反馈环）。设计稿 4/4 拍板落定后实施；实施勘误一处：同容器换槽（含观测者自身）按规则 1 触发（签名含排列），原稿「不触发」与规则 1 矛盾已改正。+13 回归（`LivingObserverTest`：时序逐拍 / 盲区合并 / 换容器 / 只读 / 面输出 / 安全不工作），全量 1788 零失败；游戏内验证清单（漏斗联动 / 世界红石面输出 / 活活塞联动 / 重进存档）待真机。→ [redstone tech §0 规则 8-10](../tech/living-redstone-tech.md) · [设计历程](活观测者-design.md)。
 
 - 📚 **B5/B6/B12 文档旧结论对齐** —— 纠正酿造默认读值≠自动落盘、耕地种子记录≠免消耗及桶源退役后的判湿/注册路径、流体节拍与晋升/邻格供给解释；同步涉事 Java 注释，零运行逻辑变更，无新增实机验收。→ [酿造 §6.4](../tech/living-brewing-stand-tech.md) · [熔炉 §8.9](../tech/living-furnace-tech.md) · [耕地](../tech/living-farmland-tech.md) · [流体 §3.6](../tech/living-fluid-tech.md) · [对齐台账](../TODO.md)。
 

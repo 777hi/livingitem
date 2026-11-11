@@ -1,7 +1,10 @@
 package com.qiqi.li.living.domain.redstone;
 
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
 import net.minecraft.core.BlockPos;
@@ -11,7 +14,9 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.EmptyBlockGetter;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
+import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.api.ObservableStackState;
 import com.qiqi.li.living.api.RedstoneSensor;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.ContainerDataKey;
@@ -85,6 +90,33 @@ public class ContainerRedstoneData implements RedstoneSensor {
     private final int[] faceOutput = new int[4];
     private final int[] prevFaceOutput = new int[4];
 
+    private static final int OBSERVER_DELAY_TICKS = 2;
+    private static final int OBSERVER_PULSE_TICKS = 2;
+
+    /** 侦测器槽位运行态：跟容器槽位走，不跟物品迁移；账本丢失只重建基线。 */
+    private final Map<Integer, ObserverRuntime> observerRuntime = new HashMap<>();
+
+    private enum ObserverPhase { IDLE, DELAY, PULSE }
+
+    private record ObserverRuntime(
+        Pos2D direction,
+        int observerCount,
+        int targetSlot,
+        ObservableStackState baseline,
+        ObserverPhase phase,
+        int remaining
+    ) {
+        ObserverRuntime withBaseline(ObservableStackState value) {
+            return new ObserverRuntime(direction, observerCount, targetSlot,
+                value, phase, remaining);
+        }
+
+        ObserverRuntime withPhase(ObserverPhase value, int ticks) {
+            return new ObserverRuntime(direction, observerCount, targetSlot,
+                baseline, value, ticks);
+        }
+    }
+
     private boolean processedThisTick;
 
     /**
@@ -110,6 +142,107 @@ public class ContainerRedstoneData implements RedstoneSensor {
 
     public static int getSignalCap(int stackCount) {
         return stackCount == 1 ? 15 : stackCount * stackCount;
+    }
+
+    /** 读取该槽位本拍结算后的四向出边（防御性副本）。 */
+    int[] settledOutput(int slot) {
+        int[] output = new int[EDGE_COUNT];
+        if (edgeGrid == null) return output;
+        for (int dir = 0; dir < EDGE_COUNT; dir++) {
+            output[dir] = edgeGrid.get(slot, dir);
+        }
+        return output;
+    }
+
+    /** 测试 / 诊断专用：侦测器当前是否输出。 */
+    boolean observerPowered(int slot) {
+        ObserverRuntime runtime = observerRuntime.get(slot);
+        return runtime != null && runtime.phase() == ObserverPhase.PULSE;
+    }
+
+    private Set<Integer> poweredObserverSlots(Set<Integer> observerSlots) {
+        Set<Integer> powered = new HashSet<>();
+        for (int slot : observerSlots) {
+            if (observerPowered(slot)) powered.add(slot);
+        }
+        return powered;
+    }
+
+    private void prepareObservers(Set<Integer> observerSlots, ContainerContext context,
+            TickContext tick, int size, int width, Set<Integer> busyAtTickStart) {
+        observerRuntime.keySet().removeIf(slot -> !observerSlots.contains(slot));
+        for (int slot : observerSlots) {
+            if (slot < 0 || slot >= size) continue;
+            ItemStack stack = context.getItem(slot);
+            if (!LivingObserverFunction.matches(stack)) {
+                observerRuntime.remove(slot);
+                continue;
+            }
+            Pos2D direction = LivingObserverData.of(stack).direction();
+            int targetDir = edgeIndex(direction.opposite());
+            int targetSlot = ContainerContext.resolveNeighbor(slot, targetDir, size, width);
+            ObserverRuntime current = observerRuntime.get(slot);
+
+            if (current != null && current.phase() != ObserverPhase.IDLE) {
+                busyAtTickStart.add(slot);
+            }
+
+            // 新放入 / 机械移动 / 拆合堆叠 / 改向 / 目标改变：取消周期，结算后只建新基线。
+            if (tick.movedSlots.contains(slot) || current == null
+                    || current.observerCount() != stack.getCount()
+                    || !current.direction().equals(direction)
+                    || current.targetSlot() != targetSlot) {
+                observerRuntime.put(slot,
+                    new ObserverRuntime(direction, stack.getCount(), targetSlot,
+                        null, ObserverPhase.IDLE, 0));
+                busyAtTickStart.remove(slot);
+                continue;
+            }
+
+            if (current.phase() == ObserverPhase.IDLE) continue;
+            int next = current.remaining() - 1;
+            if (next > 0) {
+                observerRuntime.put(slot, current.withPhase(current.phase(), next));
+            } else if (current.phase() == ObserverPhase.DELAY) {
+                observerRuntime.put(slot, current.withPhase(
+                    ObserverPhase.PULSE, OBSERVER_PULSE_TICKS));
+            } else {
+                observerRuntime.put(slot, current.withPhase(ObserverPhase.IDLE, 0));
+            }
+        }
+    }
+
+    private void settleObservers(Set<Integer> observerSlots, ContainerContext context,
+            Set<Integer> busyAtTickStart) {
+        Map<Integer, ObservableStackState> captured = new HashMap<>();
+        for (int slot : observerSlots) {
+            ObserverRuntime runtime = observerRuntime.get(slot);
+            if (runtime == null) continue;
+            int target = runtime.targetSlot();
+            captured.put(slot, target < 0
+                ? ObservableStackState.EMPTY
+                : LivingItemFunction.captureObservableState(
+                    context.getItem(target), target, context));
+        }
+
+        // 先捕获全部，再统一写回：侦测器之间不会按槽位遍历顺序读到半更新状态。
+        for (int slot : observerSlots) {
+            ObserverRuntime runtime = observerRuntime.get(slot);
+            ObservableStackState observed = captured.get(slot);
+            if (runtime == null || observed == null) continue;
+
+            // 无正面槽 / 首次基线 / 忙碌窗口（含脉冲结束拍）只追平，不比较。
+            if (runtime.targetSlot() < 0 || runtime.baseline() == null
+                    || busyAtTickStart.contains(slot)) {
+                observerRuntime.put(slot, runtime.withBaseline(observed));
+                continue;
+            }
+            if (!runtime.baseline().equals(observed)) {
+                observerRuntime.put(slot,
+                    runtime.withBaseline(observed).withPhase(
+                        ObserverPhase.DELAY, OBSERVER_DELAY_TICKS));
+            }
+        }
     }
 
     /** 边方向数（电力层逐方向采样用，见 domain/power） */
@@ -324,6 +457,7 @@ public class ContainerRedstoneData implements RedstoneSensor {
         }
 
         if (!hasAny) {
+            observerRuntime.clear();
             if (edgeGrid != null) edgeGrid.zero();
             computeFaceOutput(width, height);
             notifyBoundaryChange(context, width, height);
@@ -339,22 +473,26 @@ public class ContainerRedstoneData implements RedstoneSensor {
         Set<Integer> bulbSlots = copperSubset(copperSlots, context, LivingCopperFunction::isBulb);
 
         buildSlotMask(tick.getSnapshot(), size);
+        Set<Integer> observersBusyAtTickStart = new HashSet<>();
+        prepareObservers(observerSlots, context, tick, size, width,
+            observersBusyAtTickStart);
 
         reset();
         // 外部输入已在方法开头（稳态判定前）采样，faceInput 此时已就绪，无需再调。
 
         RedstonePropagation prop = new RedstonePropagation(
-            edgeGrid, slotMask, faceInput, currentSnapshot, context, size, width,
-            ContainerLivingItemHandler.peekContentSignature(context));
+            edgeGrid, slotMask, faceInput, currentSnapshot, context, size, width);
 
-        prop.phase0CountdownDelays(repeaterSlots, buttonSlots, observerSlots);
+        prop.phase0CountdownDelays(repeaterSlots, buttonSlots);
         Queue<Integer> queue = prop.phase1CollectSources(torchSlots, buttonSlots, leverSlots,
-            repeaterSlots, comparatorSlots, dustSlots, redstoneBlockSlots, grateSlots, observerSlots);
+            repeaterSlots, comparatorSlots, dustSlots, redstoneBlockSlots, grateSlots,
+            poweredObserverSlots(observerSlots));
         prop.phase2Propagation(queue);
         prop.phase4PowerConductors(torchSlots, buttonSlots, leverSlots,
             repeaterSlots, comparatorSlots, dustSlots, redstoneBlockSlots, copperSlots);
         prop.phase3RecheckInputs(repeaterSlots, comparatorSlots, grateSlots, bulbSlots);
         prop.phase5UpdateDisplay(torchSlots, dustSlots, lampSlots, copperSlots);
+        settleObservers(observerSlots, context, observersBusyAtTickStart);
         computeFaceOutput(width, height);
         notifyBoundaryChange(context, width, height);
         everCalculated = true;

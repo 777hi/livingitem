@@ -57,5 +57,10 @@ public class LivingRedstoneBlockFunction implements LivingItemFunction {
             .append(Component.literal(": " + ContainerRedstoneData.getSignalCap(stack.getCount())))
             .withStyle(ChatFormatting.GRAY));
     }
+    @Override
+    public net.minecraft.nbt.CompoundTag getObservableState(
+            ItemStack stack, int slot, ContainerContext container) {
+        return RedstoneObservableState.create(container, slot);
+    }
 
 }

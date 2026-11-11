@@ -80,6 +80,16 @@ public class LivingRedstoneFunction implements LivingItemFunction, HasContainerD
             .withStyle(ChatFormatting.GRAY));
     }
 
+    @Override
+    public net.minecraft.nbt.CompoundTag getObservableState(
+            ItemStack stack, int slot, ContainerContext container) {
+        LivingRedstoneData data = LivingRedstoneData.of(stack);
+        var tag = RedstoneObservableState.create(container, slot);
+        tag.putInt("signal", data.signalStrength());
+        tag.putByte("connections", data.connections());
+        return tag;
+    }
+
     /**
      * <b>自维持</b>（2026-10-08）：红石层驱动权收归本类，对称流体侧 {@code LivingFluidFunction}。
      *

@@ -19,24 +19,28 @@ import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.model.Pos2D;
 
 /**
- * 活观测者的功能实现 —— 容器内容的「变化传感器」。
+ * 活侦测器的功能入口。
  *
- * <p>观测本容器的内容签名（物品 id + 数量 + 槽位排列），变化时沿朝向发出一次红石脉冲
- * （2 game tick 延迟 + 2 game tick 宽度，对齐原版观测者）。全部传播逻辑住在
- * {@link RedstonePropagation}（Phase 0 倒计时 / Phase 1 检测受理与输出），
- * 本类只承载注册、朝向配置（{@link HasDirection}）与 tooltip。</p>
+ * <p>侦测器只观察输出方向反侧的相邻槽：普通物品比较类型、数量与活化身份，活物品可经
+ * {@link LivingItemFunction#getObservableState} 追加公开语义状态。红石传播完成后统一采样，
+ * 检出变化则延迟 2 game tick、沿输出方向发出 2 game tick 脉冲。</p>
  *
- * <p>⚠️ 只读元件：不写任何槽位、不消耗物品；驱动权在 {@link LivingRedstoneFunction}
- * 单点（不实现 {@code HasContainerData}，同火把 / 拉杆）。</p>
+ * <p>本类只承载注册、持久方向配置（{@link HasDirection}）与 tooltip；观测基线、延迟与脉冲
+ * 属于 {@link ContainerRedstoneData} 的每槽运行态，不跟随物品迁移。</p>
  */
 public class LivingObserverFunction implements LivingItemFunction, HasDirection {
 
     public static final String ID = "living_observer";
     private static final String[] SLOT_NAMES = {"direction"};
 
+    public static boolean matches(ItemStack stack) {
+        return stack != null && stack.is(Items.OBSERVER)
+            && LivingItemManager.isLivingItem(stack);
+    }
+
     @Override
     public boolean canApply(ItemStack stack) {
-        return stack.is(Items.OBSERVER) && LivingItemManager.isLivingItem(stack);
+        return matches(stack);
     }
 
     @Override
@@ -79,6 +83,15 @@ public class LivingObserverFunction implements LivingItemFunction, HasDirection 
             .withStyle(ChatFormatting.GRAY));
     }
 
+    @Override
+    public net.minecraft.nbt.CompoundTag getObservableState(
+            ItemStack stack, int slot, ContainerContext container) {
+        var tag = RedstoneObservableState.create(container, slot);
+        RedstoneObservableState.putDirection(
+            tag, "direction", LivingObserverData.of(stack).direction());
+        return tag;
+    }
+
     private static String directionKey(Pos2D dir) {
         if (dir.equals(Pos2D.UP)) return "up";
         if (dir.equals(Pos2D.DOWN)) return "down";
@@ -99,9 +112,16 @@ public class LivingObserverFunction implements LivingItemFunction, HasDirection 
 
     @Override
     public boolean updateSlotDirection(ItemStack stack, String slotName, Pos2D direction) {
-        if (stack == null || stack.isEmpty() || direction == null) return false;
+        if (!matches(stack) || !SLOT_NAMES[0].equals(slotName)
+                || !isCardinal(direction)) return false;
         LivingObserverData data = LivingObserverData.of(stack);
+        if (data.direction().equals(direction)) return false;
         LivingObserverData.set(stack, data.withDirection(direction));
         return true;
+    }
+
+    private static boolean isCardinal(Pos2D direction) {
+        return direction != null && (Pos2D.UP.equals(direction) || Pos2D.DOWN.equals(direction)
+            || Pos2D.LEFT.equals(direction) || Pos2D.RIGHT.equals(direction));
     }
 }

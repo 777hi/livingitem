@@ -144,11 +144,11 @@ src/test/java/com/qiqi/li/
 │   ├── RedstoneHandlerSetChangedTest.java     # 交互 handler 就地改写标脏（2026-10-27 审查 P2，与 IgniteHandler P3-4 同类）·拉杆切换成功 ⇒ setChanged 被调，否则开关态在「改完→下次落盘」窗口丢失（四 handler 同构逐一接线）
 │   ├── ContainerRedstoneBoundaryTest.java     # 边界采样自反馈守卫（2026-10-27 审查 P1）·双箱两半共用账本 ⇒ 朝另一半查到 this 曾把自己对面 face 输出读回对侧输入（东边拉杆隔空压灭西边火把）/ 邻居是自己 ⇒ 保持世界信号 / 无账本·无朝向邻居 ⇒ 原样（mockStatic 邻居查询）
 │   ├── ContainerRedstoneDataTest.java         # 红石信号传播引擎·直接驱动 calculate/**空容器(存储格 0)⇒ 直接跳过，不拿 0 当除数**
-│   ├── LivingObserverTest.java                # 活观测者·生产路径驱动（syncContentRevision→calculate）·2gt×2 脉冲逐拍/内容变化重触发/组件变化不触发/盲区合并恢复后一次/槽间移动与换容器触发/cap 随堆叠/朝向单边/经粉到灯/边界面输出/纯观测者容器驱动守卫/无账本条目安全不工作/只读
+│   ├── LivingObserverTest.java                # 活侦测器v2·正面相邻槽/无关槽负向/registry ID+数量+活化身份/未知组件不触发/红石与活塞本体公开状态+最终出边/统一结算后采样/2gt×2/忙碌期严格丢弃/改向与拆合及账本重建只建基线/正面越界/多个侦测器顺序无关/movedSlots 功能索引刷新/公开标签深拷贝
 │   └── ContainerRedstoneIntegrationTest.java  # 红石**驱动链路**端到端（走真实 processContext）·自维持注册/守卫放行消费者/守卫拦截无关容器(零开销)/残留归零/prio 顺序
 ├── living/domain/piston/
 │   ├── LivingPistonDataTest.java                # 活塞方向组件·四向值相等/Codec与StreamCodec往返/无效方向拒绝/仅存方向/默认向上且写默认移组件/独立归属声明
-│   ├── LivingPistonFunctionTest.java            # 真实但未全局注册的活塞tick适配·信号推拉/状态保持重试/改向不补拉/当前方向数量重读/客户端跳过/runtime物理槽映射与保留其它片段/稳态不重复标脏/候选不假交付/双粘性争抢
+│   ├── LivingPistonFunctionTest.java            # 真实但未全局注册的活塞tick适配·信号推拉/状态保持重试/改向不补拉/当前方向数量重读/客户端跳过/runtime物理槽映射与保留其它片段/稳态不重复标脏/候选不假交付/双粘性争抢/侦测公开状态仅 direction+extended
 │   ├── LivingPistonTooltipTest.java             # 活塞HasDirection与tooltip·更新判变/无效输入零改动/方向名数组隔离/普通粘性标题与推力/按当前方向读取runtime/中英文键
 │   └── LivingPistonIntegrationTest.java         # 活活塞端到端（真实processContext）·普通推拉/持有收回/双活塞/取消活化/链长超限 + N+1活漏斗q=min(C,M,A)/q0重试/送空后方不动/路由末影拒绝不伸出且零登记/部分压送后后续功能与容器级阶段读当前栈且runtime不失效
 │   ├── PistonSegmentTest.java                  # 活塞runtime线格式·四向伸缩状态往返/既有同步包携带新片段/全局功能未启用守卫/注册表测试隔离恢复

@@ -3,6 +3,7 @@ import com.qiqi.li.living.domain.water.LivingWaterWheelData;
 import com.qiqi.li.living.domain.redstone.LivingRepeaterData;
 import com.qiqi.li.living.domain.redstone.LivingRedstoneTorchData;
 import com.qiqi.li.living.domain.redstone.LivingComparatorData;
+import com.qiqi.li.living.domain.redstone.LivingObserverData;
 
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.block.model.ItemOverrides;
@@ -86,7 +87,7 @@ public class GenericLivingItemOverrides extends ItemOverrides {
         return vanillaModel;
     }
 
-    private int resolveDirectionRotation(ItemStack stack) {
+    static int resolveDirectionRotation(ItemStack stack) {
         com.qiqi.li.living.model.Pos2D dir;
         if (stack.is(net.minecraft.world.item.Items.PISTON)
                 || stack.is(net.minecraft.world.item.Items.STICKY_PISTON)) {
@@ -99,6 +100,8 @@ public class GenericLivingItemOverrides extends ItemOverrides {
             com.qiqi.li.living.domain.redstone.LivingComparatorData data =
                 LivingComparatorData.of(stack);
             dir = data.direction();
+        } else if (stack.is(net.minecraft.world.item.Items.OBSERVER)) {
+            dir = LivingObserverData.of(stack).direction();
         } else {
             com.qiqi.li.living.domain.redstone.LivingRedstoneTorchData data =
                 LivingRedstoneTorchData.of(stack);

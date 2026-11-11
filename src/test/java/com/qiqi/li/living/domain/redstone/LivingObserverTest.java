@@ -2,6 +2,7 @@ package com.qiqi.li.living.domain.redstone;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Map;
@@ -11,470 +12,440 @@ import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import net.minecraft.world.item.Item;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-
 import com.qiqi.li.living.api.LivingItemManager;
-import com.qiqi.li.living.container.ContainerLivingItemHandler;
+import com.qiqi.li.living.api.ObservableStackState;
 import com.qiqi.li.living.container.TickContext;
 import com.qiqi.li.living.model.Pos2D;
 import com.qiqi.li.testutil.FakeContainerContext;
 
-/**
- * {@link LivingObserverFunction} 活观测者测试。
- *
- * <p>守卫内容对应设计稿 §5（docs/buffer/活观测者-design.md）：检测口径（内容签名 diff）、
- * 受理三重门（盲区合并）、2gt 延迟 + 2gt 脉冲时序、朝向单边输出 + cap、首次观测脉冲 /
- * 换容器触发、只读、驱动守卫与面输出。</p>
- *
- * <p>驱动方式走生产路径：每拍先 {@code syncContentRevision}（对应 processContext 阶段 1，
- * 观测者的 diff 基准在这里刷新），再 {@code calculate}（阶段 4）。</p>
- */
+/** 活侦测器最终玩法：正面相邻槽语义快照 + 结算后采样 + 原版忙碌窗口。 */
 class LivingObserverTest {
 
-    private static final int WIDTH = 9;
     private static final int SIZE = 27;
+    private static final int WIDTH = 9;
+    private static final int OBSERVER_SLOT = 10;
+    private static final int TARGET_SLOT = 9;   // 输出 RIGHT ⇒ 正面 = LEFT
+    private static final int OUTPUT_SLOT = 11;
 
-    /** 构造一个活物品（已打上 IS_LIVING 标记） */
     private static ItemStack living(net.minecraft.world.item.Item item, int count) {
         ItemStack stack = new ItemStack(item, count);
         LivingItemManager.setLiving(stack, true);
         return stack;
     }
 
-    /** 构造一枚朝右的活观测者 */
-    private static ItemStack observer(int count) {
+    private static ItemStack observer(int count, Pos2D outputDirection) {
         ItemStack stack = living(Items.OBSERVER, count);
-        LivingObserverData.set(stack, LivingObserverData.DEFAULT.withDirection(Pos2D.RIGHT));
+        LivingObserverData.set(stack, new LivingObserverData(outputDirection));
         return stack;
     }
 
-    /** 带唯一 containerKey 的测试容器（观测者 diff 依赖账本条目，必须可键控） */
-    private static FakeContainerContext keyedContext() {
+    private static FakeContainerContext context() {
         return new FakeContainerContext(SIZE, WIDTH, "observer_" + UUID.randomUUID());
     }
 
-    /** 生产路径驱动一拍：syncContentRevision（阶段 1）→ calculate（阶段 4） */
-    private static void tickOnce(ContainerRedstoneData data, FakeContainerContext ctx,
+    private static Map<String, Set<Integer>> slots(int observerSlot, Set<Integer> dustSlots) {
+        return Map.of(
+            LivingObserverFunction.ID, Set.of(observerSlot),
+            LivingRedstoneFunction.ID, dustSlots);
+    }
+
+    private static void tick(ContainerRedstoneData data, FakeContainerContext ctx,
             Map<String, Set<Integer>> functionSlots) {
-        ContainerLivingItemHandler.syncContentRevision(ctx);
         TickContext tick = new TickContext(ctx);
         tick.setFunctionSlots(functionSlots);
         data.resetProcessedFlag();
         data.calculate(ctx, tick);
     }
 
-    private static LivingObserverData stateOf(FakeContainerContext ctx, int slot) {
-        return LivingObserverData.of(ctx.getItem(slot));
-    }
-
-    // ════════════════════════════════════════
-    // 时序：受理 → 2gt 延迟 → 2gt 脉冲 → 回待机（对齐原版 scheduleTick(2) × 2）
-    // ════════════════════════════════════════
-
-    @Test
-    @DisplayName("首次观测必脉冲：2gt 延迟 + 2gt 宽度，逐拍断言状态与信号边沿")
-    void firstObservation_pulseTiming() {
-        var ctx = keyedContext();
-        ctx.set(10, observer(1));
-        ctx.set(11, living(Items.REDSTONE, 1));
-
-        var slots = Map.<String, Set<Integer>>of(
-            LivingObserverFunction.ID, Set.of(10),
-            LivingRedstoneFunction.ID, Set.of(11));
-
-        var data = new ContainerRedstoneData();
-
-        // t1 = 受理拍：进入开启延迟，尚无输出
-        tickOnce(data, ctx, slots);
-        assertFalse(stateOf(ctx, 10).powered(), "受理拍不应输出");
-        assertEquals(2, stateOf(ctx, 10).pendingTimer(), "受理后应进入 2gt 开启延迟");
-        assertEquals(0, data.getSignal(11), "延迟期间无信号");
-
-        // t2 = 延迟第 2 拍
-        tickOnce(data, ctx, slots);
-        assertFalse(stateOf(ctx, 10).powered(), "延迟期间不应输出");
-        assertEquals(1, stateOf(ctx, 10).pendingTimer(), "延迟倒计时应递减");
-        assertEquals(0, data.getSignal(11), "延迟期间无信号");
-
-        // t3 = 脉冲第 1 拍（受理 + 2gt 延迟后开始输出）
-        tickOnce(data, ctx, slots);
-        assertTrue(stateOf(ctx, 10).powered(), "2gt 延迟结束后应进入脉冲");
-        assertEquals(15, data.getSignal(11), "脉冲期下游粉应读到满信号（1 堆叠 cap=15）");
-
-        // t4 = 脉冲第 2 拍
-        tickOnce(data, ctx, slots);
-        assertTrue(stateOf(ctx, 10).powered(), "脉冲宽度应为 2gt（第 2 拍仍在输出）");
-        assertEquals(15, data.getSignal(11), "脉冲第 2 拍下游粉仍有信号");
-
-        // t5 = 归零拍：回待机，信号消失
-        tickOnce(data, ctx, slots);
-        assertFalse(stateOf(ctx, 10).powered(), "2gt 宽度结束后应回待机");
-        assertEquals(0, stateOf(ctx, 10).pendingTimer(), "待机态计时器应为 0");
-        assertEquals(0, data.getSignal(11), "脉冲结束后信号归零");
-
-        // t6 = 内容未变 ⇒ 不再受理
-        tickOnce(data, ctx, slots);
-        assertFalse(stateOf(ctx, 10).powered(), "内容未变不应再次触发");
-        assertEquals(0, data.getSignal(11), "内容未变无新脉冲");
+    private static void establishBaseline(ContainerRedstoneData data, FakeContainerContext ctx,
+            Map<String, Set<Integer>> functionSlots) {
+        tick(data, ctx, functionSlots);
+        assertFalse(data.observerPowered(OBSERVER_SLOT), "首次出现只建基线，不发脉冲");
     }
 
     @Test
-    @DisplayName("内容变化（新增物品）再次触发完整脉冲")
-    void contentChange_retriggers() {
-        var ctx = keyedContext();
-        ctx.set(10, observer(1));
-        ctx.set(11, living(Items.REDSTONE, 1));
+    @DisplayName("首次放入只建立正面槽基线，不产生脉冲")
+    void initialPlacement_establishesBaselineWithoutPulse() {
+        var ctx = context();
+        ctx.set(TARGET_SLOT, new ItemStack(Items.STONE, 1));
+        ctx.set(OBSERVER_SLOT, observer(1, Pos2D.RIGHT));
+        ctx.set(OUTPUT_SLOT, living(Items.REDSTONE, 1));
+        var functionSlots = slots(OBSERVER_SLOT, Set.of(OUTPUT_SLOT));
+        var data = com.qiqi.li.living.container.ContainerLivingItemHandler.getOrCreateContainerData(ctx, ContainerRedstoneData.KEY);
 
-        var slots = Map.<String, Set<Integer>>of(
-            LivingObserverFunction.ID, Set.of(10),
-            LivingRedstoneFunction.ID, Set.of(11));
+        tick(data, ctx, functionSlots);
+        assertFalse(data.observerPowered(OBSERVER_SLOT));
+        assertEquals(0, data.getSignal(OUTPUT_SLOT));
 
-        var data = new ContainerRedstoneData();
-        for (int t = 0; t < 5; t++) {
-            tickOnce(data, ctx, slots);
+        for (int i = 0; i < 5; i++) tick(data, ctx, functionSlots);
+        assertFalse(data.observerPowered(OBSERVER_SLOT), "静态目标不得在后续误触发");
+    }
+
+    @Test
+    @DisplayName("只观察输出反方向的相邻槽；容器其它槽变化不触发")
+    void observesOnlyOppositeAdjacentSlot() {
+        var ctx = context();
+        ctx.set(TARGET_SLOT, new ItemStack(Items.STONE, 1));
+        ctx.set(OBSERVER_SLOT, observer(1, Pos2D.RIGHT));
+        ctx.set(OUTPUT_SLOT, living(Items.REDSTONE, 1));
+        var functionSlots = slots(OBSERVER_SLOT, Set.of(OUTPUT_SLOT));
+        var data = com.qiqi.li.living.container.ContainerLivingItemHandler.getOrCreateContainerData(ctx, ContainerRedstoneData.KEY);
+        establishBaseline(data, ctx, functionSlots);
+
+        ctx.rawSet(20, new ItemStack(Items.DIRT, 4));
+        for (int i = 0; i < 6; i++) tick(data, ctx, functionSlots);
+        assertFalse(data.observerPowered(OBSERVER_SLOT), "非正面槽变化不得触发");
+        assertEquals(0, data.getSignal(OUTPUT_SLOT));
+
+        ctx.rawSet(TARGET_SLOT, new ItemStack(Items.STONE, 2));
+        tick(data, ctx, functionSlots);  // N：检出，安排 DELAY(2)
+        assertFalse(data.observerPowered(OBSERVER_SLOT));
+        tick(data, ctx, functionSlots);  // N+1：delay 1
+        assertFalse(data.observerPowered(OBSERVER_SLOT));
+        tick(data, ctx, functionSlots);  // N+2：pulse 1
+        assertTrue(data.observerPowered(OBSERVER_SLOT));
+        assertEquals(15, data.getSignal(OUTPUT_SLOT));
+        tick(data, ctx, functionSlots);  // N+3：pulse 2
+        assertTrue(data.observerPowered(OBSERVER_SLOT));
+        tick(data, ctx, functionSlots);  // N+4：idle
+        assertFalse(data.observerPowered(OBSERVER_SLOT));
+        assertEquals(0, data.getSignal(OUTPUT_SLOT));
+    }
+
+    @Test
+    @DisplayName("基础粒度：物品类型、数量、活化身份变化触发；未知组件变化不触发")
+    void genericObservableGranularity() {
+        var ctx = context();
+        ctx.set(TARGET_SLOT, new ItemStack(Items.STONE, 1));
+        ctx.set(OBSERVER_SLOT, observer(1, Pos2D.RIGHT));
+        ctx.set(OUTPUT_SLOT, living(Items.REDSTONE, 1));
+        var functionSlots = slots(OBSERVER_SLOT, Set.of(OUTPUT_SLOT));
+        var data = com.qiqi.li.living.container.ContainerLivingItemHandler.getOrCreateContainerData(ctx, ContainerRedstoneData.KEY);
+        establishBaseline(data, ctx, functionSlots);
+
+        // 未声明的组件（自定义名）不进入基础语义。
+        ctx.getItem(TARGET_SLOT).set(
+            net.minecraft.core.component.DataComponents.CUSTOM_NAME,
+            net.minecraft.network.chat.Component.literal("renamed"));
+        for (int i = 0; i < 5; i++) tick(data, ctx, functionSlots);
+        assertFalse(data.observerPowered(OBSERVER_SLOT));
+
+        // 类型改变触发。
+        ctx.rawSet(TARGET_SLOT, new ItemStack(Items.DIRT, 1));
+        assertPulse(data, ctx, functionSlots);
+
+        // 活化身份改变触发（同 item / count）。
+        ItemStack livingDirt = new ItemStack(Items.DIRT, 1);
+        LivingItemManager.setLiving(livingDirt, true);
+        ctx.rawSet(TARGET_SLOT, livingDirt);
+        assertPulse(data, ctx, functionSlots);
+    }
+
+    @Test
+    @DisplayName("忙碌窗口严格丢弃：延迟/脉冲变化只追平，恢复后不补发")
+    void busyWindowChangesAreDropped() {
+        var ctx = context();
+        ctx.set(TARGET_SLOT, new ItemStack(Items.STONE, 1));
+        ctx.set(OBSERVER_SLOT, observer(1, Pos2D.RIGHT));
+        ctx.set(OUTPUT_SLOT, living(Items.REDSTONE, 1));
+        var functionSlots = slots(OBSERVER_SLOT, Set.of(OUTPUT_SLOT));
+        var data = com.qiqi.li.living.container.ContainerLivingItemHandler.getOrCreateContainerData(ctx, ContainerRedstoneData.KEY);
+        establishBaseline(data, ctx, functionSlots);
+
+        ctx.rawSet(TARGET_SLOT, new ItemStack(Items.STONE, 2));
+        tick(data, ctx, functionSlots);     // 受理 DELAY(2)
+        ctx.rawSet(TARGET_SLOT, new ItemStack(Items.STONE, 3));
+        tick(data, ctx, functionSlots);     // 忙碌：丢弃并追平
+        ctx.rawSet(TARGET_SLOT, new ItemStack(Items.STONE, 4));
+        tick(data, ctx, functionSlots);     // PULSE 1，仍丢弃
+        ctx.rawSet(TARGET_SLOT, new ItemStack(Items.STONE, 5));
+        tick(data, ctx, functionSlots);     // PULSE 2，仍丢弃
+        tick(data, ctx, functionSlots);     // 结束拍也属忙碌，只追平
+        assertFalse(data.observerPowered(OBSERVER_SLOT));
+
+        for (int i = 0; i < 6; i++) {
+            tick(data, ctx, functionSlots);
+            assertFalse(data.observerPowered(OBSERVER_SLOT),
+                "忙碌期最终状态不得在恢复后补发（tick " + i + "）");
         }
-        assertFalse(stateOf(ctx, 10).powered(), "前置：首次脉冲应已结束");
 
-        // 原版途径放一组石头（远槽，不经 setItem 拦截路径）
-        ctx.rawSet(20, living(Items.STONE, 1));
-        tickOnce(data, ctx, slots);
-        assertEquals(2, stateOf(ctx, 10).pendingTimer(), "内容变化应再次受理");
-
-        tickOnce(data, ctx, slots);
-        tickOnce(data, ctx, slots);
-        assertTrue(stateOf(ctx, 10).powered(), "第二次脉冲应开始输出");
-        assertEquals(15, data.getSignal(11), "第二次脉冲下游粉应有信号");
-
-        tickOnce(data, ctx, slots);
-        tickOnce(data, ctx, slots);
-        assertFalse(stateOf(ctx, 10).powered(), "第二次脉冲结束后回待机");
-    }
-
-    // ════════════════════════════════════════
-    // 检测口径：组件级变化不触发（规则 2）
-    // ════════════════════════════════════════
-
-    @Test
-    @DisplayName("组件级变化（观测者自身朝向重配置）不触发 —— 签名只看 id+数量+排列")
-    void componentChange_doesNotTrigger() {
-        var ctx = keyedContext();
-        ItemStack obs = observer(1);
-        ctx.set(10, obs);
-        ctx.set(11, living(Items.REDSTONE, 1));
-
-        var slots = Map.<String, Set<Integer>>of(
-            LivingObserverFunction.ID, Set.of(10),
-            LivingRedstoneFunction.ID, Set.of(11));
-
-        var data = new ContainerRedstoneData();
-        for (int t = 0; t < 5; t++) {
-            tickOnce(data, ctx, slots);
-        }
-        assertFalse(stateOf(ctx, 10).powered(), "前置：首次脉冲应已结束");
-
-        // 组件级变化：观测者自身朝向改向下（count/id 不变 ⇒ 签名不变）
-        LivingObserverData.set(obs, LivingObserverData.of(obs).withDirection(Pos2D.DOWN));
-        for (int t = 0; t < 6; t++) {
-            tickOnce(data, ctx, slots);
-            assertFalse(stateOf(ctx, 10).powered(),
-                "组件变化不应触发脉冲（tick " + t + "）");
-            assertEquals(0, stateOf(ctx, 10).pendingTimer(),
-                "组件变化不应进入延迟（tick " + t + "）");
-        }
-    }
-
-    // ════════════════════════════════════════
-    // 受理三重门：盲区变化合并为恢复后一次脉冲（规则 3）
-    // ════════════════════════════════════════
-
-    @Test
-    @DisplayName("盲区合并：延迟/脉冲期间的多次内容变化合并为恢复后恰好一次脉冲")
-    void blindWindow_changesMergeIntoOneRecoveryPulse() {
-        var ctx = keyedContext();
-        ctx.set(10, observer(1));
-        ctx.set(11, living(Items.REDSTONE, 1));
-
-        var slots = Map.<String, Set<Integer>>of(
-            LivingObserverFunction.ID, Set.of(10),
-            LivingRedstoneFunction.ID, Set.of(11));
-
-        var data = new ContainerRedstoneData();
-
-        // t1 受理；盲区内连改三次内容（t1 后 / t2 后 / t3 后）
-        tickOnce(data, ctx, slots);
-        ctx.rawSet(20, living(Items.STONE, 1));
-        tickOnce(data, ctx, slots);
-        ctx.rawSet(21, living(Items.STONE, 1));
-        tickOnce(data, ctx, slots);
-        ctx.rawSet(22, living(Items.STONE, 1));
-
-        // t4 = 首脉冲第 2 拍：盲区内的变化不得插队
-        tickOnce(data, ctx, slots);
-        assertTrue(stateOf(ctx, 10).powered(), "首脉冲第 2 拍应正常输出");
-
-        // t5 = 恢复待机拍：脉冲结束，盲区内的全部变化合并为一次新受理
-        tickOnce(data, ctx, slots);
-        assertFalse(stateOf(ctx, 10).powered(), "恢复拍本身不应在输出");
-        assertEquals(2, stateOf(ctx, 10).pendingTimer(), "盲区变化应合并为恢复后一次受理");
-
-        // 恢复脉冲走完 2gt 延迟 + 2gt 宽度，然后不再触发
-        tickOnce(data, ctx, slots);
-        tickOnce(data, ctx, slots);
-        assertTrue(stateOf(ctx, 10).powered(), "恢复脉冲应输出");
-        tickOnce(data, ctx, slots);
-        assertTrue(stateOf(ctx, 10).powered(), "恢复脉冲第 2 拍仍输出");
-        tickOnce(data, ctx, slots);
-        assertFalse(stateOf(ctx, 10).powered(), "恢复脉冲结束");
-
-        // 内容此后未变 ⇒ 不再受理
-        tickOnce(data, ctx, slots);
-        assertEquals(0, stateOf(ctx, 10).pendingTimer(), "不应再有受理");
-        assertFalse(stateOf(ctx, 10).powered(), "不应再有输出");
-    }
-
-    // ════════════════════════════════════════
-    // 槽间移动算变化（规则 1：签名含槽位排列）＋ 换容器必触发（规则 7）
-    // ════════════════════════════════════════
-
-    @Test
-    @DisplayName("同容器槽间移动（原版途径）算内容变化，触发受理")
-    void slotMove_withinContainer_triggers() {
-        var ctx = keyedContext();
-        ctx.set(10, observer(1));
-        ctx.set(11, living(Items.REDSTONE, 1));
-        ctx.set(20, living(Items.STONE, 1));
-
-        var slots = Map.<String, Set<Integer>>of(
-            LivingObserverFunction.ID, Set.of(10),
-            LivingRedstoneFunction.ID, Set.of(11));
-
-        var data = new ContainerRedstoneData();
-        for (int t = 0; t < 5; t++) {
-            tickOnce(data, ctx, slots);
-        }
-        assertFalse(stateOf(ctx, 10).powered(), "前置：应已回待机");
-
-        // 原版途径把石头从槽 20 挪到槽 21（排列变化 ⇒ 签名变化）
-        ctx.rawSet(20, ItemStack.EMPTY);
-        ctx.rawSet(21, living(Items.STONE, 1));
-        tickOnce(data, ctx, slots);
-
-        assertEquals(2, stateOf(ctx, 10).pendingTimer(), "槽间移动应被观测为内容变化");
+        ctx.rawSet(TARGET_SLOT, new ItemStack(Items.STONE, 6));
+        assertPulse(data, ctx, functionSlots);
     }
 
     @Test
-    @DisplayName("换容器必触发：lastSeenSig 与新容器内容不符 ⇒ 首拍受理")
-    void movingToNewContainer_triggers() {
-        var ctxA = keyedContext();
-        ctxA.set(10, observer(1));
-        ctxA.set(11, living(Items.REDSTONE, 1));
-        var slotsA = Map.<String, Set<Integer>>of(
-            LivingObserverFunction.ID, Set.of(10),
-            LivingRedstoneFunction.ID, Set.of(11));
+    @DisplayName("改向只重建新目标基线，不把目标切换本身当变化")
+    void directionChangeRebaselinesWithoutPulse() {
+        var ctx = context();
+        ctx.set(9, new ItemStack(Items.STONE, 1));
+        ctx.set(OBSERVER_SLOT, observer(1, Pos2D.RIGHT));
+        ctx.set(1, new ItemStack(Items.DIRT, 8));   // 输出 DOWN 时正面 = UP
+        ctx.set(OUTPUT_SLOT, living(Items.REDSTONE, 1));
+        var functionSlots = slots(OBSERVER_SLOT, Set.of(OUTPUT_SLOT));
+        var data = com.qiqi.li.living.container.ContainerLivingItemHandler.getOrCreateContainerData(ctx, ContainerRedstoneData.KEY);
+        establishBaseline(data, ctx, functionSlots);
 
-        var dataA = new ContainerRedstoneData();
-        for (int t = 0; t < 5; t++) {
-            tickOnce(dataA, ctxA, slotsA);
-        }
-        assertFalse(stateOf(ctxA, 10).powered(), "前置：容器 A 内应已回待机");
+        LivingObserverData.set(ctx.getItem(OBSERVER_SLOT), new LivingObserverData(Pos2D.DOWN));
+        for (int i = 0; i < 5; i++) tick(data, ctx, functionSlots);
+        assertFalse(data.observerPowered(OBSERVER_SLOT), "改向只建新基线");
 
-        // 把观测者连组件一起搬到内容不同的容器 B
-        var ctxB = keyedContext();
-        ctxB.set(12, living(Items.STONE, 3));
-        ItemStack moved = observer(1);
-        LivingObserverData.set(moved, LivingObserverData.of(ctxA.getItem(10)));
-        ctxB.set(10, moved);
-        ctxB.set(11, living(Items.REDSTONE, 1));
-
-        var slotsB = Map.<String, Set<Integer>>of(
-            LivingObserverFunction.ID, Set.of(10),
-            LivingRedstoneFunction.ID, Set.of(11));
-
-        var dataB = new ContainerRedstoneData();
-        tickOnce(dataB, ctxB, slotsB);
-
-        assertEquals(2, stateOf(ctxB, 10).pendingTimer(),
-            "换容器 = 换观测对象，首拍应受理");
-    }
-
-    // ════════════════════════════════════════
-    // 输出形状：cap 随堆叠 / 仅朝向单边 / 经粉到灯 / 面输出
-    // ════════════════════════════════════════
-
-    @Test
-    @DisplayName("堆叠放大输出：4 连观测者 cap=16（n² 家族口径）")
-    void cap_scalesWithCount() {
-        var ctx = keyedContext();
-        ctx.set(10, observer(4));
-        ctx.set(11, living(Items.REDSTONE, 1));
-
-        var slots = Map.<String, Set<Integer>>of(
-            LivingObserverFunction.ID, Set.of(10),
-            LivingRedstoneFunction.ID, Set.of(11));
-
-        var data = new ContainerRedstoneData();
-        tickOnce(data, ctx, slots);
-        tickOnce(data, ctx, slots);
-        tickOnce(data, ctx, slots);
-
-        assertTrue(stateOf(ctx, 10).powered(), "应处于脉冲期");
-        assertEquals(16, data.getSignal(11), "4 连堆叠的信号上限 = 4² = 16");
+        ctx.rawSet(1, new ItemStack(Items.DIRT, 9));
+        tick(data, ctx, functionSlots);
+        tick(data, ctx, functionSlots);
+        tick(data, ctx, functionSlots);
+        assertTrue(data.observerPowered(OBSERVER_SLOT), "新正面槽变化应触发");
     }
 
     @Test
-    @DisplayName("仅朝向单边输出：朝右时下方邻槽不得收到信号")
-    void directionEdge_only() {
-        var ctx = keyedContext();
-        ctx.set(10, observer(1));
-        ctx.set(11, living(Items.REDSTONE, 1));   // 右邻（朝向方向）
-        ctx.set(19, living(Items.REDSTONE, 1));   // 下邻（非朝向方向）
+    @DisplayName("拆合堆叠只重建基线，不继承旧脉冲；堆叠仅影响输出 cap")
+    void splitMergeRebaselinesAndCountControlsCap() {
+        var ctx = context();
+        ctx.set(TARGET_SLOT, new ItemStack(Items.STONE, 1));
+        ctx.set(OBSERVER_SLOT, observer(1, Pos2D.RIGHT));
+        ctx.set(OUTPUT_SLOT, living(Items.REDSTONE, 64));
+        var functionSlots = slots(OBSERVER_SLOT, Set.of(OUTPUT_SLOT));
+        var data = com.qiqi.li.living.container.ContainerLivingItemHandler.getOrCreateContainerData(ctx, ContainerRedstoneData.KEY);
+        establishBaseline(data, ctx, functionSlots);
 
-        var slots = Map.<String, Set<Integer>>of(
-            LivingObserverFunction.ID, Set.of(10),
-            LivingRedstoneFunction.ID, Set.of(11, 19));
+        ctx.getItem(OBSERVER_SLOT).setCount(4);
+        for (int i = 0; i < 5; i++) tick(data, ctx, functionSlots);
+        assertFalse(data.observerPowered(OBSERVER_SLOT), "count 改变只重建基线");
 
-        var data = new ContainerRedstoneData();
-        tickOnce(data, ctx, slots);
-        tickOnce(data, ctx, slots);
-        tickOnce(data, ctx, slots);
-
-        assertTrue(stateOf(ctx, 10).powered(), "应处于脉冲期");
-        assertEquals(15, data.getSignal(11), "朝向方向应输出");
-        assertEquals(0, data.getSignal(19), "非朝向方向不得输出（单边，对齐中继器惯例）");
+        ctx.rawSet(TARGET_SLOT, new ItemStack(Items.STONE, 2));
+        tick(data, ctx, functionSlots);
+        tick(data, ctx, functionSlots);
+        tick(data, ctx, functionSlots);
+        assertTrue(data.observerPowered(OBSERVER_SLOT));
+        assertEquals(16, data.getSignal(OUTPUT_SLOT), "4 个侦测器 cap=4²=16");
     }
 
     @Test
-    @DisplayName("端到端：观测者 → 红石粉 → 红石灯，脉冲期点亮、结束后熄灭")
-    void observerThroughDust_lampLitDuringPulseOnly() {
-        var ctx = keyedContext();
-        ctx.set(10, observer(1));
-        ctx.set(11, living(Items.REDSTONE, 1));
-        ItemStack lamp = living(Items.REDSTONE_LAMP, 1);
-        ctx.set(12, lamp);
+    @DisplayName("红石公开状态可被侦测；按钮内部 pulseTimer 变化不制造额外事件")
+    void redstoneSemanticStateIsObservableButTimerIsNot() {
+        var ctx = context();
+        ItemStack button = living(Items.STONE_BUTTON, 1);
+        ctx.set(TARGET_SLOT, button);
+        ctx.set(OBSERVER_SLOT, observer(1, Pos2D.RIGHT));
+        ctx.set(OUTPUT_SLOT, living(Items.REDSTONE, 1));
+        var functionSlots = Map.<String, Set<Integer>>of(
+            LivingButtonFunction.ID, Set.of(TARGET_SLOT),
+            LivingObserverFunction.ID, Set.of(OBSERVER_SLOT),
+            LivingRedstoneFunction.ID, Set.of(OUTPUT_SLOT));
+        var data = com.qiqi.li.living.container.ContainerLivingItemHandler.getOrCreateContainerData(ctx, ContainerRedstoneData.KEY);
+        establishBaseline(data, ctx, functionSlots);
 
-        var slots = Map.<String, Set<Integer>>of(
-            LivingObserverFunction.ID, Set.of(10),
-            LivingRedstoneFunction.ID, Set.of(11),
-            LivingRedstoneLampFunction.ID, Set.of(12));
+        LivingButtonData.set(button, new LivingButtonData(true, 20, false));
+        assertPulse(data, ctx, functionSlots);  // pressed / settled output 变化
 
-        var data = new ContainerRedstoneData();
-        tickOnce(data, ctx, slots);
-        tickOnce(data, ctx, slots);
-        tickOnce(data, ctx, slots);
-        assertTrue(LivingRedstoneLampData.of(lamp).lit(), "脉冲期灯应点亮");
-
-        tickOnce(data, ctx, slots);
-        tickOnce(data, ctx, slots);
-        assertFalse(LivingRedstoneLampData.of(lamp).lit(), "脉冲结束后灯应熄灭");
+        // 脉冲结束后仍 pressed；只改内部 timer，公开状态不变，不触发。
+        LivingButtonData.set(button, new LivingButtonData(true, 19, false));
+        for (int i = 0; i < 6; i++) tick(data, ctx, functionSlots);
+        assertFalse(data.observerPowered(OBSERVER_SLOT));
     }
 
     @Test
-    @DisplayName("面输出：边界观测器的出边进入 faceOutput（跨容器/世界红石通路）")
-    void faceOutput_atBoundary() {
-        var ctx = keyedContext();
-        ItemStack obs = observer(1);
-        LivingObserverData.set(obs, LivingObserverData.DEFAULT.withDirection(Pos2D.UP));
-        ctx.set(0, obs);   // 槽 0 = 顶行左列 ⇒ UP 是边界方向
+    @DisplayName("正面越界安全不工作；随后改向有效目标只建基线")
+    void outOfBoundsTargetDoesNotPulse() {
+        var ctx = context();
+        ctx.set(0, observer(1, Pos2D.DOWN));  // 正面 = UP，越界
+        var functionSlots = Map.<String, Set<Integer>>of(
+            LivingObserverFunction.ID, Set.of(0));
+        var data = com.qiqi.li.living.container.ContainerLivingItemHandler.getOrCreateContainerData(ctx, ContainerRedstoneData.KEY);
 
-        var slots = Map.<String, Set<Integer>>of(LivingObserverFunction.ID, Set.of(0));
+        for (int i = 0; i < 8; i++) tick(data, ctx, functionSlots);
+        assertFalse(data.observerPowered(0));
 
-        var data = new ContainerRedstoneData();
-        tickOnce(data, ctx, slots);
-        tickOnce(data, ctx, slots);
-        tickOnce(data, ctx, slots);
-
-        assertTrue(stateOf(ctx, 0).powered(), "应处于脉冲期");
-        assertEquals(15, data.getBoundarySignal(ContainerRedstoneData.EDGE_UP),
-            "脉冲期顶面应输出 15（边界面输出通路）");
+        ctx.set(1, new ItemStack(Items.STONE, 1));
+        LivingObserverData.set(ctx.getItem(0), new LivingObserverData(Pos2D.LEFT));
+        for (int i = 0; i < 4; i++) tick(data, ctx, functionSlots);
+        assertFalse(data.observerPowered(0), "有效目标首次出现只建基线");
     }
-
-    // ════════════════════════════════════════
-    // 驱动守卫与安全不工作
-    // ════════════════════════════════════════
 
     @Test
-    @DisplayName("观测者是容器里唯一的红石元件时账本仍必跑（hasRedstoneElements 纳入）")
-    void observerOnlyContainer_stillDrives() {
-        var ctx = keyedContext();
-        ctx.set(10, observer(1));
+    @DisplayName("可观测值按功能 ID 稳定聚合并深拷贝标签")
+    void observableStateIsStableAndDefensivelyCopied() {
+        var ctx = context();
+        ItemStack lever = living(Items.LEVER, 1);
+        ctx.set(TARGET_SLOT, lever);
+        var data = com.qiqi.li.living.container.ContainerLivingItemHandler.getOrCreateContainerData(ctx, ContainerRedstoneData.KEY);
+        var slots = Map.<String, Set<Integer>>of(LivingLeverFunction.ID, Set.of(TARGET_SLOT));
+        tick(data, ctx, slots);
 
-        var slots = Map.<String, Set<Integer>>of(LivingObserverFunction.ID, Set.of(10));
+        ObservableStackState first = com.qiqi.li.living.api.LivingItemFunction.captureObservableState(
+            lever, TARGET_SLOT, ctx);
+        assertEquals(Items.LEVER.builtInRegistryHolder().key().location(), first.itemId());
+        assertTrue(first.living());
+        ObservableStackState.FunctionState leverState = first.functions().stream()
+            .filter(state -> LivingLeverFunction.ID.equals(state.functionId()))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("应包含 living_lever 公开状态"));
 
-        var data = new ContainerRedstoneData();
-        tickOnce(data, ctx, slots);
+        CompoundTag leaked = leverState.state();
+        leaked.putBoolean("powered", true);
+        ObservableStackState second = com.qiqi.li.living.api.LivingItemFunction.captureObservableState(
+            lever, TARGET_SLOT, ctx);
+        assertEquals(first, second, "取出的标签副本不得修改已捕获状态");
 
-        assertEquals(2, stateOf(ctx, 10).pendingTimer(),
-            "无粉尘无灯的纯观测者容器也要检测受理（否则无人驱动）");
-        assertTrue(ContainerRedstoneData.hasRedstoneElements(newTickContext(ctx, slots)),
-            "hasRedstoneElements 必须纳入观测者");
+        LivingLeverData.set(lever, new LivingLeverData(true));
+        ObservableStackState changed = com.qiqi.li.living.api.LivingItemFunction.captureObservableState(
+            lever, TARGET_SLOT, ctx);
+        assertNotEquals(first, changed, "公开 powered 状态变化必须可见");
     }
 
-    private static TickContext newTickContext(FakeContainerContext ctx, Map<String, Set<Integer>> slots) {
+    @Test
+    @DisplayName("结算后采样：同拍新产生的红石粉最终出边在下一拍触发侦测")
+    void samplesSettledRedstoneOutput() {
+        var ctx = context();
+        ItemStack targetDust = living(Items.REDSTONE, 1);
+        ctx.set(TARGET_SLOT, targetDust);
+        ctx.set(OBSERVER_SLOT, observer(1, Pos2D.RIGHT));
+        ctx.set(18, living(Items.LEVER, 1));
+        var functionSlots = Map.<String, Set<Integer>>of(
+            LivingLeverFunction.ID, Set.of(18),
+            LivingObserverFunction.ID, Set.of(OBSERVER_SLOT),
+            LivingRedstoneFunction.ID, Set.of(TARGET_SLOT));
+        var data = com.qiqi.li.living.container.ContainerLivingItemHandler.getOrCreateContainerData(ctx, ContainerRedstoneData.KEY);
+        establishBaseline(data, ctx, functionSlots);
+        ObservableStackState before = com.qiqi.li.living.api.LivingItemFunction.captureObservableState(
+            targetDust, TARGET_SLOT, ctx);
+
+        LivingLeverData.set(ctx.getItem(18), new LivingLeverData(true));
+        tick(data, ctx, functionSlots);  // 本拍先传播，再采到粉最终状态并安排延迟
+        ObservableStackState after = com.qiqi.li.living.api.LivingItemFunction.captureObservableState(
+            targetDust, TARGET_SLOT, ctx);
+        assertNotEquals(before, after,
+            "红石传播完成后，粉的 signal/connections/output 公开状态应改变");
+        assertFalse(data.observerPowered(OBSERVER_SLOT));
+        tick(data, ctx, functionSlots);
+        tick(data, ctx, functionSlots);
+        assertTrue(data.observerPowered(OBSERVER_SLOT),
+            "红石粉本拍结算后的 signal/connections/output 必须可被侦测");
+    }
+
+    @Test
+    @DisplayName("多个侦测器先统一采样再更新，槽位迭代顺序不改变结果")
+    void simultaneousObserversAreOrderIndependent() {
+        var ctx = context();
+        ctx.set(9, new ItemStack(Items.STONE, 1));
+        ctx.set(10, observer(1, Pos2D.RIGHT));   // 看 9
+        ctx.set(11, observer(1, Pos2D.RIGHT));   // 看 10（侦测器公开输出）
+        var functionSlots = Map.<String, Set<Integer>>of(
+            LivingObserverFunction.ID, Set.of(11, 10));
+        var data = com.qiqi.li.living.container.ContainerLivingItemHandler.getOrCreateContainerData(ctx, ContainerRedstoneData.KEY);
+        tick(data, ctx, functionSlots);
+
+        ctx.rawSet(9, new ItemStack(Items.STONE, 2));
+        tick(data, ctx, functionSlots);  // 10 安排延迟；11 采样时 10 尚未输出
+        tick(data, ctx, functionSlots);
+        tick(data, ctx, functionSlots);  // 10 开始输出；11 在结算后采到输出变化
+        assertTrue(data.observerPowered(10));
+        assertFalse(data.observerPowered(11));
+        tick(data, ctx, functionSlots);
+        tick(data, ctx, functionSlots);  // 11 到脉冲
+        assertTrue(data.observerPowered(11),
+            "下游侦测器应响应上游的已结算输出，而非同循环半更新状态");
+    }
+
+    @Test
+    @DisplayName("运行账本丢失只重建基线，不制造假脉冲")
+    void runtimeLossRebaselinesWithoutPulse() {
+        var ctx = context();
+        ctx.set(TARGET_SLOT, new ItemStack(Items.STONE, 1));
+        ctx.set(OBSERVER_SLOT, observer(1, Pos2D.RIGHT));
+        var functionSlots = Map.<String, Set<Integer>>of(
+            LivingObserverFunction.ID, Set.of(OBSERVER_SLOT));
+        var original = com.qiqi.li.living.container.ContainerLivingItemHandler.getOrCreateContainerData(ctx, ContainerRedstoneData.KEY);
+        establishBaseline(original, ctx, functionSlots);
+
+        var rebuilt = new ContainerRedstoneData();
+        for (int i = 0; i < 6; i++) tick(rebuilt, ctx, functionSlots);
+        assertFalse(rebuilt.observerPowered(OBSERVER_SLOT),
+            "区块卸载/缓存回收后的新账本只建立当前基线");
+    }
+
+    @Test
+    @DisplayName("movedSlots 增量刷新功能索引：旧槽删除、新槽按当前物品重建")
+    void movedSlotsRefreshFunctionIndex() {
+        var ctx = context();
+        ctx.set(10, observer(1, Pos2D.RIGHT));
         TickContext tick = new TickContext(ctx);
-        tick.setFunctionSlots(slots);
-        return tick;
+        tick.setFunctionSlots(Map.of(LivingObserverFunction.ID, Set.of(10)));
+
+        ctx.rawSet(10, ItemStack.EMPTY);
+        ctx.rawSet(12, observer(1, Pos2D.RIGHT));
+        tick.movedSlots.add(10);
+        tick.movedSlots.add(12);
+        tick.refreshMovedFunctionSlots(ctx);
+
+        assertEquals(Set.of(12), tick.getFunctionSlots(LivingObserverFunction.ID));
     }
 
     @Test
-    @DisplayName("无账本条目的上下文（containerKey=null）安全不工作：不受理、不脉冲")
-    void keylessContext_safeNoOp() {
-        // containerKey=null ⇒ entry 恒 null ⇒ 签名哨兵 ⇒ 观测者恒待机
-        var ctx = new FakeContainerContext(SIZE, WIDTH, null);
-        ctx.set(10, observer(1));
-        ctx.set(11, living(Items.REDSTONE, 1));
+    @DisplayName("活塞本体 extended 翻转可被侦测；动画/信号等内部状态不在公开快照")
+    void observesLivingPistonBodyState() {
+        var ctx = context();
+        ItemStack piston = living(Items.PISTON, 1);
+        com.qiqi.li.living.domain.piston.LivingPistonData.set(piston,
+            new com.qiqi.li.living.domain.piston.LivingPistonData(Pos2D.RIGHT));
+        ctx.set(TARGET_SLOT, piston);
+        ctx.set(OBSERVER_SLOT, observer(1, Pos2D.RIGHT));
+        ctx.set(OUTPUT_SLOT, living(Items.REDSTONE, 1));
+        var functionSlots = slots(OBSERVER_SLOT, Set.of(OUTPUT_SLOT));
+        var data = com.qiqi.li.living.container.ContainerLivingItemHandler
+            .getOrCreateContainerData(ctx, ContainerRedstoneData.KEY);
 
-        var slots = Map.<String, Set<Integer>>of(
-            LivingObserverFunction.ID, Set.of(10),
-            LivingRedstoneFunction.ID, Set.of(11));
+        try {
+            com.qiqi.li.living.runtime.ContainerRuntimeCache.update(ctx, TARGET_SLOT,
+                com.qiqi.li.living.runtime.RuntimeSegments.EMPTY.with(
+                    com.qiqi.li.living.domain.piston.PistonSegment.INSTANCE,
+                    com.qiqi.li.living.domain.piston.PistonRuntime.retracted(Pos2D.RIGHT)));
+            establishBaseline(data, ctx, functionSlots);
 
-        var data = new ContainerRedstoneData();
-        for (int t = 0; t < 6; t++) {
-            tickOnce(data, ctx, slots);
-            assertEquals(0, stateOf(ctx, 10).pendingTimer(), "无账本条目不应受理（tick " + t + "）");
-            assertFalse(stateOf(ctx, 10).powered(), "无账本条目不应输出（tick " + t + "）");
-            assertEquals(0, data.getSignal(11), "无账本条目不应有信号（tick " + t + "）");
+            com.qiqi.li.living.runtime.ContainerRuntimeCache.update(ctx, TARGET_SLOT,
+                com.qiqi.li.living.runtime.RuntimeSegments.EMPTY.with(
+                    com.qiqi.li.living.domain.piston.PistonSegment.INSTANCE,
+                    new com.qiqi.li.living.domain.piston.PistonRuntime(true, Pos2D.RIGHT)));
+            assertPulse(data, ctx, functionSlots);
+
+            com.qiqi.li.living.runtime.ContainerRuntimeCache.update(ctx, TARGET_SLOT,
+                com.qiqi.li.living.runtime.RuntimeSegments.EMPTY.with(
+                    com.qiqi.li.living.domain.piston.PistonSegment.INSTANCE,
+                    com.qiqi.li.living.domain.piston.PistonRuntime.retracted(Pos2D.RIGHT)));
+            assertPulse(data, ctx, functionSlots);
+        } finally {
+            com.qiqi.li.living.runtime.ContainerRuntimeCache.removeContainer(ctx.getCacheKey());
         }
     }
 
-    // ════════════════════════════════════════
-    // 只读（规则 8）：观测不改变任何槽位的物品身份与数量
-    // ════════════════════════════════════════
-
     @Test
-    @DisplayName("只读：一整个脉冲周期内，所有槽位的物品类型与数量不变（无消费/无产出）")
-    void observerNeverModifiesSlotContents() {
-        var ctx = keyedContext();
-        ctx.set(10, observer(1));
-        ctx.set(11, living(Items.REDSTONE, 1));
-        ctx.set(12, living(Items.STONE, 3));
+    @DisplayName("方向配置只接受 direction 四向且同值不写")
+    void directionConfigurationIsCardinalAndChangeAware() {
+        ItemStack stack = observer(1, Pos2D.UP);
+        LivingObserverFunction function = new LivingObserverFunction();
 
-        var slots = Map.<String, Set<Integer>>of(
-            LivingObserverFunction.ID, Set.of(10),
-            LivingRedstoneFunction.ID, Set.of(11));
+        assertFalse(function.updateSlotDirection(new ItemStack(Items.OBSERVER), "direction", Pos2D.RIGHT));
+        assertFalse(function.updateSlotDirection(stack, "unknown", Pos2D.RIGHT));
+        assertFalse(function.updateSlotDirection(stack, "direction", Pos2D.NONE));
+        assertFalse(function.updateSlotDirection(stack, "direction", Pos2D.UP_RIGHT));
+        assertFalse(function.updateSlotDirection(stack, "direction", Pos2D.UP));
+        assertTrue(function.updateSlotDirection(stack, "direction", Pos2D.RIGHT));
+        assertEquals(Pos2D.RIGHT, LivingObserverData.of(stack).direction());
+    }
 
-        record Snapshot(Item item, int count) {}
-        Snapshot[] before = new Snapshot[SIZE];
-        for (int i = 0; i < SIZE; i++) {
-            ItemStack s = ctx.getItem(i);
-            before[i] = s.isEmpty() ? new Snapshot(null, 0) : new Snapshot(s.getItem(), s.getCount());
-        }
-
-        var data = new ContainerRedstoneData();
-        for (int t = 0; t < 6; t++) {
-            tickOnce(data, ctx, slots);
-        }
-
-        for (int i = 0; i < SIZE; i++) {
-            ItemStack s = ctx.getItem(i);
-            if (before[i].item() == null) {
-                assertTrue(s.isEmpty(), "槽位 " + i + " 原本为空，不得被写入物品");
-            } else {
-                assertFalse(s.isEmpty(), "槽位 " + i + " 的物品不得消失");
-                assertEquals(before[i].item(), s.getItem(), "槽位 " + i + " 的物品类型不得改变");
-                assertEquals(before[i].count(), s.getCount(), "槽位 " + i + " 的数量不得改变");
-            }
-        }
+    private static void assertPulse(ContainerRedstoneData data, FakeContainerContext ctx,
+            Map<String, Set<Integer>> functionSlots) {
+        tick(data, ctx, functionSlots);  // N detect
+        assertFalse(data.observerPowered(OBSERVER_SLOT));
+        tick(data, ctx, functionSlots);  // N+1 delay
+        assertFalse(data.observerPowered(OBSERVER_SLOT));
+        tick(data, ctx, functionSlots);  // N+2 pulse
+        assertTrue(data.observerPowered(OBSERVER_SLOT));
+        tick(data, ctx, functionSlots);  // N+3 pulse
+        assertTrue(data.observerPowered(OBSERVER_SLOT));
+        tick(data, ctx, functionSlots);  // N+4 idle
+        assertFalse(data.observerPowered(OBSERVER_SLOT));
     }
 }

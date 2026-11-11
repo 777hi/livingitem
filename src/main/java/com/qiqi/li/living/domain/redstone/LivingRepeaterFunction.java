@@ -104,6 +104,17 @@ public class LivingRepeaterFunction implements LivingItemFunction, HasDirection 
             .withStyle(ChatFormatting.GRAY));
     }
 
+    @Override
+    public net.minecraft.nbt.CompoundTag getObservableState(
+            ItemStack stack, int slot, ContainerContext container) {
+        LivingRepeaterData data = LivingRepeaterData.of(stack);
+        var tag = RedstoneObservableState.create(container, slot);
+        RedstoneObservableState.putDirection(tag, "direction", data.direction());
+        tag.putInt("delay", data.delay());
+        tag.putBoolean("locked", data.locked());
+        return tag;
+    }
+
     private static String directionKey(Pos2D dir) {
         if (dir.equals(Pos2D.UP)) return "up";
         if (dir.equals(Pos2D.DOWN)) return "down";

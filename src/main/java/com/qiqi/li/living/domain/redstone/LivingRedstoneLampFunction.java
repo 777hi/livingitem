@@ -70,5 +70,12 @@ public class LivingRedstoneLampFunction implements LivingItemFunction {
                 .withStyle(ChatFormatting.DARK_GRAY));
         }
     }
+    @Override
+    public net.minecraft.nbt.CompoundTag getObservableState(
+            ItemStack stack, int slot, ContainerContext container) {
+        var tag = RedstoneObservableState.create(container, slot);
+        tag.putBoolean("lit", LivingRedstoneLampData.of(stack).lit());
+        return tag;
+    }
 
 }

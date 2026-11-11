@@ -209,4 +209,31 @@ public class TickContext {
     public void setFunctionSlots(Map<String, Set<Integer>> functionSlots) {
         this.functionSlots = functionSlots;
     }
+
+    /**
+     * 功能 tick 同拍移动设备后，增量刷新受影响槽位的功能索引。
+     *
+     * <p>只重查 {@link #movedSlots}，稳态零额外扫描；容器级快照 / 红石位图因此读取实际布局，
+     * 不会把已移动的设备留在旧槽一拍。</p>
+     */
+    public void refreshMovedFunctionSlots(ContainerContext context) {
+        if (movedSlots.isEmpty()) return;
+
+        Map<String, Set<Integer>> next = new java.util.LinkedHashMap<>();
+        for (var entry : functionSlots.entrySet()) {
+            Set<Integer> slots = new HashSet<>(entry.getValue());
+            slots.removeAll(movedSlots);
+            next.put(entry.getKey(), slots);
+        }
+
+        for (int slot : movedSlots) {
+            if (slot < 0 || slot >= context.getSize()) continue;
+            net.minecraft.world.item.ItemStack stack = context.getItem(slot);
+            if (!com.qiqi.li.living.api.LivingItemManager.isLivingItem(stack)) continue;
+            for (var function : com.qiqi.li.living.api.LivingItemManager.getApplicableFunctions(stack)) {
+                next.computeIfAbsent(function.getFunctionId(), k -> new HashSet<>()).add(slot);
+            }
+        }
+        this.functionSlots = next;
+    }
 }

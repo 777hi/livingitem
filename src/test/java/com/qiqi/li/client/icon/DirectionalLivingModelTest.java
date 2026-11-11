@@ -2,7 +2,13 @@ package com.qiqi.li.client.icon;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+
+import com.qiqi.li.living.domain.redstone.LivingObserverData;
 import com.qiqi.li.living.model.Pos2D;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import org.junit.jupiter.api.Test;
 
 class DirectionalLivingModelTest {
@@ -30,5 +36,28 @@ class DirectionalLivingModelTest {
         assertEquals(-90, -DirectionalLivingModel.rotationOf(Pos2D.RIGHT));
         assertEquals(180, Math.floorMod(-DirectionalLivingModel.rotationOf(Pos2D.DOWN), 360));
         assertEquals(90, -DirectionalLivingModel.rotationOf(Pos2D.LEFT));
+    }
+
+    @Test
+    void observerDirectionUsesObserverDataInsteadOfTorchFallback() {
+        ItemStack observer = new ItemStack(Items.OBSERVER);
+        LivingObserverData.set(observer, LivingObserverData.DEFAULT.withDirection(Pos2D.RIGHT));
+
+        assertEquals(-90, GenericLivingItemOverrides.resolveDirectionRotation(observer),
+            "活侦测器必须读取自己的方向组件；落入火把兜底会恒按默认 UP 渲染");
+    }
+
+    @Test
+    void observerVariantModelIsFlatAndUsesVanillaDirectionTexture() throws IOException {
+        String path = "assets/living_item/models/item/observer.json";
+        try (var stream = DirectionalLivingModelTest.class.getClassLoader().getResourceAsStream(path)) {
+            assertNotNull(stream,
+                "LivingIconSpec 的 item/observer 固定解析到 living_item 命名空间；缺文件会显示黑紫 missing model");
+            String json = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+            assertTrue(json.contains("\"parent\": \"minecraft:item/generated\""),
+                "活侦测器 GUI 图标应为平面 item/generated，不得继承原版 3D 方块模型");
+            assertTrue(json.contains("\"layer0\": \"minecraft:block/observer_top\""),
+                "平面图标应直接复用原版带方向箭头的 observer_top 纹理");
+        }
     }
 }

@@ -58,7 +58,7 @@
   "tooltip.livingitem.redstone_torch.unlit": "  §8UNLIT",
   "tooltip.livingitem.redstone_torch.max_signal": "  §7Max Signal",
   "tooltip.livingitem.observer.title": "§cLiving Observer§r",
-  "tooltip.livingitem.observer.facing": "  §7Facing",
+  "tooltip.livingitem.observer.facing": "  §7Output Direction",
   "tooltip.livingitem.observer.direction.up": "Up",
   "tooltip.livingitem.observer.direction.down": "Down",
   "tooltip.livingitem.observer.direction.left": "Left",

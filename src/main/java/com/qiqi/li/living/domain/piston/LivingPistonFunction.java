@@ -92,6 +92,22 @@ public final class LivingPistonFunction implements LivingItemFunction, HasDirect
     }
 
     @Override
+    public net.minecraft.nbt.CompoundTag getObservableState(
+            ItemStack stack, int slot, ContainerContext container) {
+        Pos2D direction = LivingPistonData.of(stack).direction();
+        PistonRuntime runtime = ContainerRuntimeCache.get(container, slot).get(PistonSegment.INSTANCE);
+        boolean extended = runtime != null
+            && runtime.direction().equals(direction)
+            && runtime.extended();
+
+        net.minecraft.nbt.CompoundTag tag = new net.minecraft.nbt.CompoundTag();
+        tag.putInt("direction_x", direction.x());
+        tag.putInt("direction_y", direction.y());
+        tag.putBoolean("extended", extended);
+        return tag;
+    }
+
+    @Override
     public Set<DataComponentType<?>> getOwnedComponentTypes() {
         return Set.of(PistonComponents.LIVING_PISTON_DATA.value());
     }

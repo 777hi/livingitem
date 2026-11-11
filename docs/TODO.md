@@ -236,10 +236,9 @@
 2. ⏳ **活门**（P3：开 / 关可视化）—— `living-redstone-tech.md`
 3. ⏳ 铜块物品栏装饰器渲染（纯视觉）—— `living-copper-tech.md`
 4. 🔮 活潜影箱集成（信号穿透边界）—— 设计探讨见 `buffer/活潜影箱实现细节.md`
-5. ~~🔮 **活观测者**~~ ✅ **已实施**（2026-11-11）—— 内容签名 diff → 原版三重门受理 → 2gt×2 脉冲，
-   家族第 10 元件；+13 回归（`LivingObserverTest`），全量 1788 零失败；**真机待验**
-   （漏斗联动 / 世界红石面输出 / 活活塞联动 / 重进存档，见设计稿 §5 游戏内清单）。
-   规约见 [living-redstone-tech.md](tech/living-redstone-tech.md) §0 规则 8-10；设计历程 = [archive/活观测者-design.md](archive/活观测者-design.md)
+5. ~~🔮 **活侦测器**~~ ✅ **v2 已实施**（2026-11-11，D-redstone-01）—— 只观察输出反侧相邻槽的公开语义状态；红石 Phase 5 后统一采样最终四向出边；2gt×2 单边脉冲、忙碌期严格丢弃；首次 / 改向 / 移动 / 拆合 / 账本重建只建基线。旧「整容器内容签名」方案已否。
+   图标 missing-model 与方向误读火把组件同轮修复；**真机待验**（图标四向 / 普通物品粒度 / 红石状态 / 侦测器互观时钟 / 世界面输出 / 活塞移动 / 重进无假脉冲）。
+   规约见 [living-redstone-tech.md](tech/living-redstone-tech.md) §0 规则 8-10；旧设计留痕 = [archive/活观测者-design.md](archive/活观测者-design.md)
 
 ## 物品传输（跨子系统，2026-10-31 记 · 未排期）
 

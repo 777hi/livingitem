@@ -141,6 +141,57 @@ public interface LivingItemFunction {
     }
 
     /**
+     * 【侦测公开状态】本功能希望活侦测器感知的语义状态（可选）。
+     *
+     * <p>{@code null} 表示本功能不追加公开状态；物品类型、数量与活化身份由框架统一提供。
+     * 返回标签只能包含稳定、玩家可见的玩法状态，不得包含倒计时、缓存历史、世界时刻或其它
+     * 每拍变化的内部字段。框架会复制并按 {@link #getFunctionId()} 排序后参与结构比较。</p>
+     *
+     * <p>红石元件的最终出边由红石账本在传播结算后补入，不应从组件布尔值猜测。</p>
+     *
+     * @param stack 被观察槽位当前物品
+     * @param slot 被观察槽位（逻辑槽）
+     * @param container 所在容器
+     * @return 新建的公开状态标签；null = 无功能特有状态
+     */
+    @Nullable
+    default net.minecraft.nbt.CompoundTag getObservableState(
+            ItemStack stack, int slot, ContainerContext container) {
+        return null;
+    }
+
+    /**
+     * 捕获一个槽位当前对活侦测器公开的语义状态。
+     *
+     * <p>聚合入口放在本接口而非 {@link LivingItemManager}：本接口的 tick 契约本就依赖
+     * {@link ContainerContext}，可避免 L0 api 新增第二个类对 L1 container 的依赖。</p>
+     */
+    static ObservableStackState captureObservableState(
+            ItemStack stack, int slot, ContainerContext container) {
+        if (stack == null || stack.isEmpty()) return ObservableStackState.EMPTY;
+
+        boolean living = LivingItemManager.isLivingItem(stack);
+        java.util.List<ObservableStackState.FunctionState> states = new java.util.ArrayList<>();
+        if (living) {
+            for (LivingItemFunction function : LivingItemManager.getApplicableFunctions(stack)) {
+                net.minecraft.nbt.CompoundTag state =
+                    function.getObservableState(stack, slot, container);
+                if (state != null && !state.isEmpty()) {
+                    states.add(new ObservableStackState.FunctionState(
+                        function.getFunctionId(), state));
+                }
+            }
+        }
+
+        return new ObservableStackState(
+            false,
+            net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem()),
+            stack.getCount(),
+            living,
+            states);
+    }
+
+    /**
      * 【自维持】本功能是否能在「容器内<b>没有它自己的活物品</b>」时仍然执行 tick。
      *
      * <p>默认 {@code false}：绝大多数功能需要容器里实际存在该活物品才 tick

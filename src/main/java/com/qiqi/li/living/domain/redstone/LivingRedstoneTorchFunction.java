@@ -93,6 +93,16 @@ public class LivingRedstoneTorchFunction implements LivingItemFunction, HasDirec
     }
 
     @Override
+    public net.minecraft.nbt.CompoundTag getObservableState(
+            ItemStack stack, int slot, ContainerContext container) {
+        LivingRedstoneTorchData data = LivingRedstoneTorchData.of(stack);
+        var tag = RedstoneObservableState.create(container, slot);
+        RedstoneObservableState.putDirection(tag, "direction", data.direction());
+        tag.putBoolean("lit", data.isLit());
+        return tag;
+    }
+
+    @Override
     public int getDirectionKeyCount() {
         return 1;
     }

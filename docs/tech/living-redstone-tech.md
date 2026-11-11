@@ -3,7 +3,7 @@
 # Living Redstone (活红石) 技术文档
 
 > **文档版本**: 2026.11 v20
-> **最后更新**: 2026-11-11（+活观测者）
+> **最后更新**: 2026-11-11（活侦测器 v2：正面相邻槽语义快照）
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -33,7 +33,7 @@
 采用**边信号模型**（每槽拥有朝 4 个方向发出的 4 条出边）。同层另有铜块元件
 （[活铜](living-copper-tech.md)）；与活涂蜡铜块**发电层**合称**红电**（[glossary.md](../glossary.md)）。
 
-**获取**：原版红石元件（粉 / 火把 / 按钮 / 拉杆 / 红石灯 / 中继器 / 比较器 / 红石块 / 观测者）+ 活化。
+**获取**：原版红石元件（粉 / 火把 / 按钮 / 拉杆 / 红石灯 / 中继器 / 比较器 / 红石块 / 侦测器）+ 活化。
 
 **核心循环**：信号源写边 → 红石粉衰减传播 → 各元件按自身规则处理 → 消费者（红石灯）响应；
 **与世界红石双向互通**（容器边界出边即面边界）。
@@ -49,11 +49,11 @@
 | 5 | 比较器 = 比较 / 减法 + **物品检测** + 边网格回退读取 | 链式依赖需迭代到稳定（≥4 级双向链） |
 | 6 | 红石灯 = **消费者**（`anyOfSlot` 亮 / 灭） | 不参与传播 |
 | 7 | **与世界红石双向互通** | 容器边界即面边界 |
-| 8 | **观测者观测口径 = 内容签名**（物品 id + 数量 + 槽位排列，复用 `computeContentSignature`）；**组件级状态不观测**（进度 / 亮灭 / 粉强度 / 方向重配置不触发） | 进出 / 增减 / 槽间移动都算变化；组件不进签名 ⇒ 切断「观测者→粉→观测者」反馈环（红石引擎逐 game tick 传播下，可见电路状态 = 脉冲风暴） |
-| 9 | **观测者受理三重门**（对齐原版 `ObserverBlock`）：仅待机态受理；延迟中 / 脉冲中变化**忽略**；受理即同步签名 ⇒ 盲区变化合并为恢复后一次脉冲；签名哨兵（无账本条目）⇒ 不受理（安全不工作） | 原版 `updateShape` 的 `!POWERED` 门 + `hasScheduledTick` 去重；受理即同步 ⇒ 无需挂起状态 |
-| 10 | **观测者输出 = 朝向出边单边**（中继器/比较器惯例），2gt 延迟 + 2gt 脉冲（原版 `scheduleTick(2)`×2）；**只读**（零槽位写入、不消耗物品）；首拍哨兵 diff 必受理（放置即脉冲）、换容器必触发、同容器槽间移动按规则 8 触发 | 朝向语义 = 输出向；被 Phase 4 充能跳过（火把/格栅同款，不可被强充能穿透） |
+| 8 | **活侦测器只观察输出反方向的相邻槽**：普通物品比较稳定 registry ID、精确数量与活化身份；活物品可由各 `LivingItemFunction` 显式公开语义状态；正面越界 = 无目标、不工作 | 局部布线对齐原版「看正面一格」；不扫描整个容器、不比较全部 DataComponent（耐久/名称/未知内部数据默认不触发） |
+| 9 | **侦测采样在红石 Phase 5 结算后统一执行**：全部侦测器先从同一最终边网格捕获，再统一比较；红石元件公开可见配置 + 四向最终出边，排除倒计时/历史字段 | 比较器/粉/切铜输出不能从组件猜；统一采样消除槽位遍历顺序和半结算状态；新受理最早下一拍参与传播 |
+| 10 | **活侦测器时序 = 2gt 延迟 + 2gt 单边脉冲**；延迟/脉冲（含结束拍）中的变化严格丢弃并追平基线；首次放入、改向、机械移动、拆合堆叠、运行账本重建只建立基线，不发脉冲；运行态不跟物品迁移 | 对齐原版忙碌窗口（不恢复后补发）；方向是输出向，正面 = 反方向；堆叠只改变 `getSignalCap(count)` |
 
-**能力清单**：✅ 9 种元件（粉 / 火把 / 按钮 / 拉杆 / 灯 / 中继器 / 比较器 / 红石块 / 观测者）
+**能力清单**：✅ 9 种元件（粉 / 火把 / 按钮 / 拉杆 / 灯 / 中继器 / 比较器 / 红石块 / 侦测器）
 · ✅ 边信号模型 + 六阶段 BFS + 面信号模型 · ✅ 僵尸数据清理
 · ✅ **驱动权已收归单点**（`LivingRedstoneFunction` 自维持 + 守卫，2026-10-08）
 
@@ -71,7 +71,7 @@
 | 5 比较器链 | `ContainerRedstoneDataTest`（比较器链 ≥4 级双向全亮） |
 | 6 红石灯 | `ContainerRedstoneDataTest`（被供电点亮 / 失去信号熄灭） |
 | 端到端 | `ContainerRedstoneIntegrationTest` |
-| 8-10 观测者（检测口径 / 三重门盲区合并 / 2gt×2 时序 / 单边输出 cap / 换容器触发 / 只读 / 面输出 / 安全不工作） | `LivingObserverTest` |
+| 8-10 活侦测器（相邻槽语义粒度 / 结算后统一采样 / 红石公开状态 / 严格忙碌窗口 / 2gt×2 / 改向移动拆合重建基线 / 单边 cap / 账本丢失无假脉冲 / movedSlots 索引刷新） | `LivingObserverTest` · `DirectionalLivingModelTest`（图标资源与方向组件） |
 
 ---
 
@@ -127,7 +127,7 @@
 | `LivingRedstoneLampFunction` | `domain/redstone/LivingRedstoneLampFunction.java` | 活红石灯功能，信号消费者 |
 | `LivingRepeaterFunction` | `domain/redstone/LivingRepeaterFunction.java` | 活中继器功能，延迟 + 单向 + 信号刷新 |
 | `LivingComparatorFunction` | `domain/redstone/LivingComparatorFunction.java` | 活比较器功能，比较/减法 + 物品检测 |
-| `LivingObserverFunction` | `domain/redstone/LivingObserverFunction.java` | 活观测者功能入口，实现 `HasDirection`（2026-11-11 新增；传播逻辑全在 Phase 0/1，本类零 tick 逻辑） |
+| `LivingObserverFunction` | `domain/redstone/LivingObserverFunction.java` | 活侦测器功能入口，实现 `HasDirection`；方向 = 输出向，公开状态由 Function 契约提供，运行态归容器红石账本 |
 | `ContainerRedstoneData` | `domain/redstone/ContainerRedstoneData.java` | 容器级红石信号数据，`calculate()` 编排 6 个 phase |
 | `RedstonePropagation` | `domain/redstone/RedstonePropagation.java` | 6 个 phase 方法与辅助方法（`propagateDir`/`computeDustConnections`/`computeComparatorOutput`/`checkRepeaterLocked` 等），持有共享 mutable 引用，用完即弃（v17 从 `ContainerRedstoneData` 提取） |
 | `EdgeGrid` | `domain/redstone/ContainerRedstoneData.java` | 每槽自有出边信号网格，内嵌类（v15 起 `edges[slot*4+dir]`，v17 改为包级可见供 `RedstonePropagation` 访问） |
@@ -138,7 +138,7 @@
 | `LivingRedstoneLampData` | `domain/redstone/LivingRedstoneLampData.java` | 活红石灯数据：是否点亮 |
 | `LivingRepeaterData` | `domain/redstone/LivingRepeaterData.java` | 活中继器数据：方向 + 延迟 + 供电 + 计时器 |
 | `LivingComparatorData` | `domain/redstone/LivingComparatorData.java` | 活比较器数据：方向 + 模式 + 供电 |
-| `LivingObserverData` | `domain/redstone/LivingObserverData.java` | 活观测者物品级数据：朝向 + 脉冲状态机 + lastSeenSig（2026-11-11 新增） |
+| `LivingObserverData` | `domain/redstone/LivingObserverData.java` | 活侦测器物品级数据：仅持久输出方向；观测基线 / 延迟 / 脉冲相位不跟物品走 |
 | `LivingRedstoneDecorator` | `client/render/LivingRedstoneDecorator.java` | 活红石粉物品栏图标装饰器，绘制连接纹理 + 动态着色 |
 
 ---
@@ -398,34 +398,25 @@ public record LivingComparatorData(
 | `subtractMode` | boolean | false | 比较模式（false）/ 减法模式（true） |
 | `powered` | boolean | false | 输入端是否有信号 |
 
-### 2.8.1 LivingObserverData — 活观测者物品数据（2026-11-11 新增）
+### 2.8.1 LivingObserverData — 活侦测器物品数据（2026-11-11 v2 收窄）
 
 ```java
-public record LivingObserverData(
-    Pos2D direction,     // 输出方向（WASD 配置）
-    boolean powered,     // 脉冲输出中
-    int pendingTimer,    // >0 且未 powered = 开启延迟中；>0 且 powered = 脉冲剩余宽度；0 = 待机
-    int lastSeenSig      // 上次受理时的容器内容签名
-) implements TooltipProvider {
-
-    public static final int UNSEEN_SIG = Integer.MIN_VALUE;  // 未观测哨兵（与 ContainerEntry.contentSig 初值同款）
-
-    public static final LivingObserverData DEFAULT =
-        new LivingObserverData(Pos2D.UP, false, 0, UNSEEN_SIG);
-
+public record LivingObserverData(Pos2D direction) {
+    public static final LivingObserverData DEFAULT = new LivingObserverData(Pos2D.UP);
     public LivingObserverData withDirection(Pos2D dir) { ... }
-    public LivingObserverData withPowered(boolean p) { ... }
-    public LivingObserverData withPendingTimer(int t) { ... }
-    public LivingObserverData withLastSeenSig(int sig) { ... }
 }
 ```
 
-| 字段 | 默认值 | 说明 |
-|------|--------|------|
-| `direction` | UP | 输出方向（单边，对齐中继器惯例） |
-| `powered` | false | 脉冲输出中（`getSignal` 语义对齐原版 `POWERED`） |
-| `pendingTimer` | 0 | 延迟与宽度共用倒计时；0 = 待机（仅待机态受理检测） |
-| `lastSeenSig` | `UNSEEN_SIG` | 受理即同步为当拍签名 ⇒ 盲区变化合并为恢复后一次脉冲；哨兵 ⇒ 活化后首拍必受理 |
+物品组件**只保存输出方向**。观测目标 = 输出方向反侧的相邻槽；基线、阶段（IDLE / DELAY / PULSE）
+与剩余时间属于 `ContainerRedstoneData` 的每槽运行态，换槽 / 机械移动 / 改向 / 拆合堆叠 / 账本重建时
+只建立当前基线，不跟随物品迁移，也不制造假脉冲。
+
+### 2.8.2 ObservableStackState — 公开语义快照
+
+框架基础字段 = 空态 / 稳定物品 registry ID / 精确数量 / 活化身份；活物品的全部适用功能可经
+`LivingItemFunction#getObservableState` 按唯一 `functionId` 追加语义标签，聚合入口为
+`LivingItemFunction.captureObservableState`。标签深拷贝并按功能 ID 排序；未知 DataComponent 默认不参与。
+红石元件统一追加 Phase 5 后的四向最终出边，明确排除倒计时与边沿历史。
 
 ### 2.9 存储结构
 
@@ -466,10 +457,7 @@ ItemStack (minecraft:comparator)
 ItemStack (minecraft:observer)
 ├── IS_LIVING: true
 └── LIVING_OBSERVER_DATA: LivingObserverData
-    ├─ direction: Pos2D                          ← 输出方向（单边）
-    ├─ powered: boolean                          ← 脉冲输出中
-    ├─ pendingTimer: int                         ← 延迟/宽度共用倒计时
-    └─ lastSeenSig: int                          ← 上次受理的内容签名
+    └─ direction: Pos2D                          ← 输出方向（运行态不进组件）
 ```
 
 ---
@@ -510,15 +498,18 @@ calculate(context, tick):
   4. 若全部为空 → edgeGrid.zero() → computeFaceOutput → notifyBoundaryChange → 返回
      （无红石物品时立即清零信号并通知邻居）
 
-  5. 重置：swap edgeGrid ↔ prevEdgeGrid，清零 edgeGrid
-  6. RedstonePropagation prop = new RedstonePropagation(edgeGrid, slotMask, faceInput, ...)
-  prop.phase0CountdownDelays()    — 倒计时 + 断电检测（用 prevEdgeGrid 的边）
-  prop.phase1CollectSources()     — 信号源直接写边，红石粉邻居入队
+  5. 侦测器运行态对齐：移走/改向/拆合/新账本只重建基线；既有 DELAY/PULSE 计时推进
+  6. 重置：swap edgeGrid ↔ prevEdgeGrid，清零 edgeGrid
+  7. RedstonePropagation prop = new RedstonePropagation(edgeGrid, slotMask, faceInput, ...)
+  prop.phase0CountdownDelays()    — 中继器/按钮倒计时 + 断电检测
+  prop.phase1CollectSources()     — 信号源（含既有 PULSE 侦测器）写边，红石粉邻居入队
   prop.phase2Propagation()        — BFS 传播（仅红石粉入队，faceInput 不再参与）
   prop.phase4PowerConductors()    — 信号源向导电活物品充能，触发第二波 BFS
   prop.phase3RecheckInputs()      — 重新检测级联输入（中继器/比较器），比较器写回边网格
   prop.phase5UpdateDisplay()      — 更新物品显示状态（火把/灯/红石粉）
 
+  capture all observer targets   — 全部从同一最终 edgeGrid 捕获正面槽公开状态
+  settle observer comparisons    — 捕获完再统一比较；新受理只安排未来脉冲
   computeFaceOutput(width, height)
   notifyBoundaryChange(context, ...)  （变化时才通知世界）
 
@@ -549,12 +540,6 @@ calculate(context, tick):
 遍历按钮：
   if pressed && pulseTimer > 0 → pulseTimer -= 1
   if pulseTimer <= 0 → pressed = false
-
-遍历观测者：
-  if pendingTimer == 0 → skip（待机；盲区 = pendingTimer > 0）
-  pendingTimer-- → 归零分流：
-    未 powered ⇒ 进入脉冲（powered = true，宽度 2gt 计时）
-    已 powered ⇒ 回待机（powered = false，pendingTimer = 0）
 ```
 
 **delayTimer 语义**：利用正负号区分两种延迟方向，无需修改数据记录结构：
@@ -610,17 +595,11 @@ calculate(context, tick):
       edgeGrid.set(slot, dir, cap)
       if 邻居是红石粉 → 邻居入队
 
-遍历观测者：
-  # 检测受理（原版三重门）：仅待机态受理；受理即同步签名 ⇒ 盲区变化合并为恢复后一次脉冲
-  if 签名为哨兵（无账本条目）→ skip（安全不工作）
-  if !powered && pendingTimer == 0 && lastSeenSig ≠ 容器内容签名：
-    pendingTimer = 2，lastSeenSig = 当拍签名
-  if !powered → skip
+遍历活侦测器（仅当前运行态为 PULSE 的槽）：
   cap = getSignalCap(count)
-  outDir = edgeIndex(data.direction())    // 仅输出方向（单边，中继器惯例）
-  if cap > edgeGrid.get(slot, outDir)：
-    edgeGrid.set(slot, outDir, cap)
-    if 邻居是红石粉 → 邻居入队
+  outDir = edgeIndex(direction)        // 输出方向单边
+  edgeGrid.set(slot, outDir, cap)
+  if 邻居是红石粉 → 邻居入队
 
 返回 BFS 队列（仅含红石粉）
 ```
@@ -732,7 +711,7 @@ phase4PowerConductors(torchSlots, buttonSlots, leverSlots,
   def powerConductiveNeighbor(slot, signal, dir, secondQueue):
     neighbor = resolveSlot(slot, dir)
     if neighbor < 0 → return
-    if neighbor 是火把/按钮/拉杆/中继器/比较器/红石块/观测者 → return
+    if neighbor 是火把/按钮/拉杆/中继器/比较器/红石块/侦测器 → return
     if neighbor 为空 → return
 
     # 红石粉：不是导电方块，只设输入边 + 入队让 phase2 算出边
@@ -799,7 +778,7 @@ private static boolean isConductiveBlock(ItemStack stack) {
 | 红石块 | 4 方向 | cap |
 | 中继器 | 朝向方向 | cap |
 | 比较器 | 朝向方向 | 计算结果 |
-| 观测者 | 朝向方向（脉冲期 2gt） | cap |
+| 侦测器 | 朝向方向（脉冲期 2gt） | cap |
 
 **充能示例**：
 
@@ -1308,7 +1287,7 @@ Phase 2 BFS：
 
 | 邻居类型 | 连接条件 |
 |---------|---------|
-| 活红石粉、活红石灯、活红石火把、活按钮、活拉杆、活红石块、活观测者 | 无条件连接 |
+| 活红石粉、活红石灯、活红石火把、活按钮、活拉杆、活红石块、活侦测器 | 无条件连接 |
 | 活中继器、活比较器 | 仅当红石粉方向与中继器/比较器的输出方向或输入方向（反方向）一致时连接 |
 
 **方向感知逻辑**（参照原版 `shouldConnectTo`）：
@@ -1808,7 +1787,7 @@ rev-bump 差一拍、修订计数停滞（原版直写绕过 bump，需内容签
 | 活比较器 | 比较/减法 + 物品检测 + 边网格回退读取 + Phase1/Phase3 写方向边 | `LivingComparatorFunction` + `ComparatorToggleHandler` |
 | 边信号模型 | EdgeGrid 每槽自有出边（v15）+ 边界出边即面边界 + 六阶段 BFS + 面信号模型 + 僵尸数据清理 | `ContainerRedstoneData` |
 | Phase 方法提取 | 6 个 phase 及辅助方法提取到 `RedstonePropagation`，`calculate()` 编排调用（v17） | `RedstonePropagation` |
-| 活观测者 | 内容签名 diff（复用 `computeContentSignature`）+ 原版三重门受理 + 2gt×2 脉冲 + 朝向单边输出 + 面输出通路（2026-11-11，`hasRedstoneElements` 纳入） | `LivingObserverFunction` / Phase 0 倒计时 / Phase 1 检测受理与输出 |
+| 活侦测器 | 正面相邻槽语义快照（registry ID / count / 活化身份 + 功能公开状态）+ Phase 5 后统一采样 + 原版忙碌窗口丢弃 + 2gt×2 单边脉冲 + 运行态随槽位生命周期 | `LivingObserverFunction` / `ObservableStackState` / `ContainerRedstoneData.ObserverRuntime` |
 
 ### 计划中（P3）
 
@@ -1899,3 +1878,18 @@ guiGraphics.setColor(1.0f, 1.0f, 1.0f, 1.0f);  // 恢复默认颜色
 
 **信号钳制**：`Mth.clamp(power, 0, 15)` 防止超范围值导致 `ArrayIndexOutOfBoundsException`（`getColorForPower` 内部直接 `COLORS[power]`，数组容量仅 16）。
 - **客户端渲染**：信号强度颜色渐变、火把朝向指示器、红石灯亮灭动画
+
+### 10.2 活侦测器图标（2026-11-11 修复）
+
+活侦测器在 `LivingIconRegistry` 中声明为 `item/observer` + `directional()`。图标变体路径固定解析到
+`living_item` 命名空间，因此必须存在 `assets/living_item/models/item/observer.json`。该模型走
+`minecraft:item/generated` 平面图标，`layer0` 直接引用原版带方向箭头的
+`minecraft:block/observer_top`；不复制原版资产，并随玩家材质包变化。GUI 图标按输出方向旋转；
+手持 / 掉落物 / 展示框仍由 `GenericContextAwareModel` 回退原版 3D 物品模型。
+
+此前先补了一层 `parent: minecraft:item/observer`：解决了黑紫 missing model，却仍继承完整方块模型，
+GUI 呈现立体方块；v2 改为上述平面模型。
+
+方向解析必须由 `GenericLivingItemOverrides` 显式读取 `LivingObserverData.direction()`；方向族的兜底分支
+是活红石火把组件，新增方向物品若未接入会静默按火把默认 UP 渲染。守卫见
+`DirectionalLivingModelTest`（平面模型资源/原版方向纹理 + 侦测器方向数据源）。

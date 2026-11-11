@@ -75,6 +75,14 @@ public class LivingLeverFunction implements LivingItemFunction {
             .withStyle(ChatFormatting.GRAY));
     }
 
+    @Override
+    public net.minecraft.nbt.CompoundTag getObservableState(
+            ItemStack stack, int slot, ContainerContext container) {
+        var tag = RedstoneObservableState.create(container, slot);
+        tag.putBoolean("powered", LivingLeverData.of(stack).powered());
+        return tag;
+    }
+
     public static boolean toggleLever(ItemStack stack) {
         if (stack == null || stack.isEmpty()) return false;
         LivingLeverData data = LivingLeverData.of(stack);
