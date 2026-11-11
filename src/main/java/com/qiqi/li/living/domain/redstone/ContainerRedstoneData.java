@@ -66,6 +66,7 @@ public class ContainerRedstoneData implements RedstoneSensor {
     static final int BIT_CUT = 1 << 10;
     static final int BIT_GRATE = 1 << 11;
     static final int BIT_BULB = 1 << 12;
+    static final int BIT_OBSERVER = 1 << 13;
 
     /** 所有红石元件（不含红石灯）——导电方块供电时需跳过这些槽位 */
     private static final int MASK_REDSTONE = BIT_DUST | BIT_TORCH | BIT_BUTTON
@@ -272,7 +273,8 @@ public class ContainerRedstoneData implements RedstoneSensor {
             || !tick.getFunctionSlots(LivingRepeaterFunction.ID).isEmpty()
             || !tick.getFunctionSlots(LivingComparatorFunction.ID).isEmpty()
             || !tick.getFunctionSlots(LivingRedstoneBlockFunction.ID).isEmpty()
-            || !tick.getFunctionSlots(LivingCopperFunction.ID).isEmpty();
+            || !tick.getFunctionSlots(LivingCopperFunction.ID).isEmpty()
+            || !tick.getFunctionSlots(LivingObserverFunction.ID).isEmpty();
     }
 
     public void calculate(ContainerContext context, TickContext tick) {
@@ -312,6 +314,7 @@ public class ContainerRedstoneData implements RedstoneSensor {
         Set<Integer> comparatorSlots = tick.getFunctionSlots(LivingComparatorFunction.ID);
         Set<Integer> redstoneBlockSlots = tick.getFunctionSlots(LivingRedstoneBlockFunction.ID);
         Set<Integer> copperSlots = tick.getFunctionSlots(LivingCopperFunction.ID);
+        Set<Integer> observerSlots = tick.getFunctionSlots(LivingObserverFunction.ID);
 
         // 判据抽到 hasRedstoneElements()（驱动守卫共用同一份清单，见该方法 javadoc）
         boolean hasAny = hasRedstoneElements(tick);
@@ -341,11 +344,12 @@ public class ContainerRedstoneData implements RedstoneSensor {
         // 外部输入已在方法开头（稳态判定前）采样，faceInput 此时已就绪，无需再调。
 
         RedstonePropagation prop = new RedstonePropagation(
-            edgeGrid, slotMask, faceInput, currentSnapshot, context, size, width);
+            edgeGrid, slotMask, faceInput, currentSnapshot, context, size, width,
+            ContainerLivingItemHandler.peekContentSignature(context));
 
-        prop.phase0CountdownDelays(repeaterSlots, buttonSlots);
+        prop.phase0CountdownDelays(repeaterSlots, buttonSlots, observerSlots);
         Queue<Integer> queue = prop.phase1CollectSources(torchSlots, buttonSlots, leverSlots,
-            repeaterSlots, comparatorSlots, dustSlots, redstoneBlockSlots, grateSlots);
+            repeaterSlots, comparatorSlots, dustSlots, redstoneBlockSlots, grateSlots, observerSlots);
         prop.phase2Propagation(queue);
         prop.phase4PowerConductors(torchSlots, buttonSlots, leverSlots,
             repeaterSlots, comparatorSlots, dustSlots, redstoneBlockSlots, copperSlots);

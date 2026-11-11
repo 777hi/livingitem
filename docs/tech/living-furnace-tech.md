@@ -1,7 +1,7 @@
 # Living Furnace (活熔炉) 技术文档
 
-> **文档版本**: 2026.08 v6  
-> **最后更新**: 2026-08-16  
+> **文档版本**: 2026.11 v1
+> **最后更新**: 2026-11-11
 > **适用版本**: Minecraft 1.21.1
 
 ## 目录
@@ -585,30 +585,20 @@ data = data.withFuel(fuel.tick(Math.max(1, stackCount)));
 
 ### 8.9 脏槽位批量同步 (2026-08-16)
 
-**背景**：熔炉的输入消耗 / 输出生成**直接走 `ctx.setItem()`**（`executeTransform`），配合
-`SimpleContainerContext.syncSlotToClients()` 的脏槽位标记；曾有"改用 SlotAccessor"的设想
-**从未实现**（2026-10-27 审查纠正：旧文档把设想写成了现状）。
+**背景**：旧文档曾把「改用 SlotAccessor」的设想写成现状，2026-10-27 已纠正。
+2026-11-05 数量操作收编后，熔炉的输入消耗 / 输出生成走 `ctx.consume()` / `ctx.produce()`
+（`executeTransform`），不在领域内直接调用 `setItem`，也不走传输专用的 SlotAccessor。
 
 **实际机制**：
 
-1. **直接写容器**：`executeTransform` 通过 `ctx.setItem(inputSlot/outputSlot, …)` 完成输入
-   消耗与输出生成（`SimpleContainerContext.setItem` 自带截断校验与写后核对）。
+1. **数量操作与写回**：`executeTransform` 先 `consume` 输入，再按实际扣减量 `produce` 产物。
+   槽位容量、写后核验及脏槽标记由容器数量原语承担，契约见
+   [槽位操作选型](../guides/slot-ops.md)。
 
 2. **脏槽位批量同步**：`SimpleContainerContext.syncSlotToClients()` 在 tick 内只标记脏槽位到 `TickContext.dirtySlots`，tick 结束时由 `ContainerLivingItemHandler` 统一调用 `flushDirtySlots()` 批量发送同步包。同一 tick 内同一槽位多次修改只发送一次同步包。
 
-```java
-// ContainerLivingItemHandler.tick() 中
-TickContext tick = new TickContext(context);
-if (context instanceof SimpleContainerContext simpleCtx) {
-    simpleCtx.setTickContext(tick);
-}
-// ... 各活物品 tick 处理 ...
-if (context instanceof SimpleContainerContext simpleCtx2) {
-    simpleCtx2.flushDirtySlots();   // 批量同步
-    simpleCtx2.setTickContext(null);
-}
-tick.release();
-```
+同步生命周期由 `ContainerLivingItemHandler.processContext` 统一管理：关联 TickContext、运行功能、
+最终 flush 脏槽并解除关联。不要在各域另设同步队列；实现以该共同入口为准。
 
 **效果**：
 - 同一 tick 同一槽位多次修改只发一次同步包

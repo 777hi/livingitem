@@ -100,13 +100,11 @@ public class LivingFarmlandFunction implements LivingItemFunction {
     }
 
     /**
-     * 湿润传播（2026-09-13 第五轮定稿，原版式水分扩散）：
-     * 与水流相邻（4 向，含水桶源槽位自身）的活耕地 = <b>源 4 级</b>，湿润沿相邻的
-     * 活耕地传播、每跳 -1（4→3→2→1），level ≥ 1 即湿润——一个水源可湿润 4 个直接
-     * 相邻耕地 + 间接扩散，大大节省容器槽位占用。参考活红石粉信号传播的 BFS 形态。
+     * 湿润传播：四向相邻存在容器流体的活耕地为 4 级，沿相邻活耕地每跳 -1。
+     * level ≥ 1 即湿润；普通物品和空槽不传递湿润。
      *
-     * <p>派生态：每 tick 从 fluidData 现算（fluidData 由活水桶 prio 0 容器级数据
-     * 先行算好），无需跨 tick 存储。只有活耕地是传播介质（普通物品/空槽不传）。</p>
+     * <p>经 FluidPresence 查询源格与流动格，每 tick 重算、不持久化。
+     * 流体数据由活流体 prio 0 先行计算，不依赖活水桶在场。</p>
      */
     private int[] computeMoisture(ContainerContext ctx, TickContext tick, int size, int width,
                                   List<SlotEntry> entries) {

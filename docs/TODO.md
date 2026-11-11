@@ -236,9 +236,10 @@
 2. ⏳ **活门**（P3：开 / 关可视化）—— `living-redstone-tech.md`
 3. ⏳ 铜块物品栏装饰器渲染（纯视觉）—— `living-copper-tech.md`
 4. 🔮 活潜影箱集成（信号穿透边界）—— 设计探讨见 `buffer/活潜影箱实现细节.md`
-5. 🔮 **活观测者**（容器内容变化 → 红石脉冲的事件型信号源，家族第 10 元件）——
-   设计稿探讨中，待拍板 4 项（检测口径 / 盲区合并 / 多枚语义 / 反馈范围），
-   见 [buffer/活观测者-design.md](buffer/活观测者-design.md)
+5. ~~🔮 **活观测者**~~ ✅ **已实施**（2026-11-11）—— 内容签名 diff → 原版三重门受理 → 2gt×2 脉冲，
+   家族第 10 元件；+13 回归（`LivingObserverTest`），全量 1788 零失败；**真机待验**
+   （漏斗联动 / 世界红石面输出 / 活活塞联动 / 重进存档，见设计稿 §5 游戏内清单）。
+   规约见 [living-redstone-tech.md](tech/living-redstone-tech.md) §0 规则 8-10；设计历程 = [archive/活观测者-design.md](archive/活观测者-design.md)
 
 ## 物品传输（跨子系统，2026-10-31 记 · 未排期）
 
@@ -682,10 +683,11 @@
 > A4 飞艇传送（含误诊纠正）已落 [地图传送 §11.2.1](tech/living-map-ender-pearl-tech.md)；
 > A5 停机重启 / A6 拆合重算已实施；A8「双箱只按一个容器提供一份产能」仍是**建议、未实施**。
 
-### B1~B12 文档对齐项（2026-10-27 只登记、未改正文，尚未逐条复核）
+### B1~B12 文档对齐项（2026-10-27 登记；2026-11-11 B5/B6/B12 已对齐）
 
 > 完成判据（台账 §7）：**规则明确 → 对应文档唯一现状 → 代码符合该规则 → 验证入口诚实**。
-> 复核时逐条对照代码，不要只凭文档互引。⚠️ 实证（2026-11-07）：B5 / B6 / B12 的旧表述仍挂在 tech 文档。
+> 复核时逐条对照代码，不要只凭文档互引。B5 / B6 / B12 在 2026-11-07 实证残留的表述已于
+> 2026-11-11 定向对齐（文档与注释，未改变玩法、未新增实机验收）；其余条目本轮未逐项复核。
 
 | # | 待对齐文档 | 要点 |
 |---|---|---|
@@ -693,14 +695,14 @@
 | B2 | [红石](tech/living-redstone-tech.md) · [活铜](tech/living-copper-tech.md) | 倒计时单位 / Phase 顺序 / 字段名 / 对外输出范围；火把「暂时熄灭」不承诺未实现检测 |
 | B3 | [TNT](tech/living-tnt-tech.md) · [打火石](tech/living-flint-and-steel-tech.md) · [GUI交互](system-design/gui-interaction-system.md) | GUI 点火取代旧漏斗点火；`getSensor` 端口与注册位置 |
 | B4 | [红电](tech/living-power-tech.md) | 已删的稳态跳过 / 旧行号 / PhaseSnapshot 本地轴说明 |
-| B5 | [熔炉](tech/living-furnace-tech.md) · [酿造](tech/living-brewing-stand-tech.md) | 不存在的 SlotAccessor 产出示例、默认布局「首次落盘」；**实证仍在** `brewing-stand:375` |
-| B6 | [耕地](tech/living-farmland-tech.md) | cropSeed 是类型记录不是「不消耗」、湿润验证改倒水成源；**实证仍在** `farmland:134` |
+| B5 ✅ | [熔炉](tech/living-furnace-tech.md) · [酿造](tech/living-brewing-stand-tech.md) | ~~不存在的 SlotAccessor 产出示例、默认布局「首次落盘」~~ **2026-11-11 已对齐**：熔炉数量操作为 consume/produce；酿造缺组件默认读值与整 record 保存分开（§6.4） |
+| B6 ✅ | [耕地](tech/living-farmland-tech.md) | ~~cropSeed 是类型记录不是「不消耗」、湿润验证改倒水成源~~ **2026-11-11 已对齐**：类型记录与种植消耗、采后回退、全字段比较、容器流体判湿与 4→3→2→1、JSON/领域注册；人工文件树改源码查询（§1/§2/§3/§5/§10/§12） |
 | B7 | [水车](tech/living-water-wheel-tech.md) | `domain/water` 路径 / 写回签名 / 渲染态存放 / 桶源退役旧示例标历史 |
 | B8 | [Tooltip](system-design/tooltip-system.md) · [图标](system-design/icon-system.md) | 面板常显与公式条件分开；ThreadLocal 真实 set/clear 生命周期 |
 | B9 | [末影箱路由](tech/living-ender-chest-tech.md) | 复合频道键替代 int 草图；simulate peek 非真实移除；flush 调用点 |
 | B10 | [容器边界 I-C10](system-design/container-boundary.md) · [超大堆叠审计](system-design/oversized-stack-audit.md) | 跨边界清单补容量/有效性/模拟三查询；实体缓存键判据 |
 | B11 | [API契约](system-design/api-contract.md) · AGENTS 模块路由 | 新注册口与 sophisticated / avaritia 路由；不重建人工文件树 |
-| B12 | [流体](tech/living-fluid-tech.md) | 旧收敛循环 / `flowSpeed`「预留」/ 最近水源距离；**实证仍在** `fluid:463` |
+| B12 ✅ | [流体](tech/living-fluid-tech.md) | ~~旧收敛循环 / `flowSpeed`「预留」/ 最近水源距离~~ **2026-11-11 已对齐**：flowSpeed 已消费、晋升按实际层单遍判定、邻格实际 level 供给与目标层到达时间分开；数量原语未做表述清除（§3.3/§3.6及接口注释） |
 
 ## 2026-10-27 审查修复 · 真机复验（2026-10-28 全部闭环）
 

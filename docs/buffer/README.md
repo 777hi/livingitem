@@ -29,11 +29,10 @@
 | [活滴水石锥.md](活滴水石锥.md) | 探讨中 —— 滴水石锥设计稿，不是现状。 |
 | [活潜影箱实现细节.md](活潜影箱实现细节.md) | 探讨中 —— 活潜影箱**兼容所有活物品**（而非当前阶段已实现的活物品），本随 |
 | [活物品大战僵尸.md](活物品大战僵尸.md) | 探讨中（2026-10-30 头脑风暴沉淀）。本文描述的全部机制均未实现，别当现 |
-| [活观测者-design.md](活观测者-design.md) | 探讨中 —— 活观测者设计稿，不是现状。 |
 
 <!-- buffer-index:end -->
 
-## 已搬 archive（2026-10-28 整理 · 2026-10-31 增补三行）
+## 已搬 archive（2026-10-28 整理 · 2026-10-31 / 2026-11-11 增补）
 
 | 文件 | 原因 | 现状去哪读 |
 |---|---|---|
@@ -42,6 +41,7 @@
 | [living-button-container-info.md](../archive/living-button-container-info.md) | 已实施，现状已沉淀 | [system-design/gui-interaction-system.md](../system-design/gui-interaction-system.md) §6.2.2 |
 | [living-fluid-review.md](../archive/living-fluid-review.md) | 问题池条目全部清零（2026-10-31） | [tech/living-fluid-tech.md](../tech/living-fluid-tech.md) §3.3 / §0 规则 10 · [TODO 活流体 §9-10](../TODO.md) |
 | [container-layout-resolution.md](../archive/container-layout-resolution.md) | 自动学落地为 Tier 1.5；收编部分维持暂缓（2026-10-31） | [TODO §5](../TODO.md) · [infrastructure §6.2](../system-design/living-item-infrastructure.md) |
+| [活观测者-design.md](../archive/活观测者-design.md) | 已实施（2026-11-11，规则 1-10 落地 + 13 回归；真机待验） | [tech/living-redstone-tech.md](../tech/living-redstone-tech.md) §0 规则 8-10 · [TODO 活红石 #5](../TODO.md) |
 
 ## 维护判据
 

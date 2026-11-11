@@ -149,6 +149,12 @@ public final class LivingIconRegistry {
             .directional()
             .build());
 
+        // 活观测者：原版观测者贴图 + directional()（GUI 内随 WASD 朝向旋转，火把家族同款角度约定）
+        register(LivingIconSpec.builder(net.minecraft.world.item.Items.OBSERVER)
+            .addVariant("base", "item/observer", stack -> true)
+            .directional()
+            .build());
+
         register(LivingIconSpec.builder(net.minecraft.world.item.Items.REPEATER)
             .addVariant("1tick", "item/repeater_1tick",
                 stack -> {

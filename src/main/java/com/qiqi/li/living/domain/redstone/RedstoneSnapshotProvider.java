@@ -35,6 +35,7 @@ public class RedstoneSnapshotProvider implements SnapshotProvider {
         Set<Integer> comparatorSlots = tick.getFunctionSlots(LivingComparatorFunction.ID);
         Set<Integer> redstoneBlockSlots = tick.getFunctionSlots(LivingRedstoneBlockFunction.ID);
         Set<Integer> copperSlots = tick.getFunctionSlots(LivingCopperFunction.ID);
+        Set<Integer> observerSlots = tick.getFunctionSlots(LivingObserverFunction.ID);
 
         Set<Integer> chiseledSlots = copperSubset(copperSlots, ctx, LivingCopperFunction::isChiseled);
         Set<Integer> cutSlots = copperSubset(copperSlots, ctx, LivingCopperFunction::isCut);
@@ -50,6 +51,7 @@ public class RedstoneSnapshotProvider implements SnapshotProvider {
         builder.markRedstone(comparatorSlots, ContainerRedstoneData.BIT_COMPARATOR);
         builder.markRedstone(redstoneBlockSlots, ContainerRedstoneData.BIT_BLOCK);
         builder.markRedstone(copperSlots, ContainerRedstoneData.BIT_COPPER);
+        builder.markRedstone(observerSlots, ContainerRedstoneData.BIT_OBSERVER);
         builder.markRedstone(chiseledSlots, ContainerRedstoneData.BIT_CHISELED);
         builder.markRedstone(cutSlots, ContainerRedstoneData.BIT_CUT);
         builder.markRedstone(grateSlots, ContainerRedstoneData.BIT_GRATE);

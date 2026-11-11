@@ -585,8 +585,7 @@ public class ContainerFluidData implements FluidPresence, FluidSourceLedger {
      * 相位三·生长：非源格按<b>流体节拍</b>向目标推进（元胞自动机，同步快照语义）。
      *
      * <p>单步：{@code 新实际 = min(目标, min同流体邻居实际 + 1)} ——
-     * {@code min 邻居} = 最近供给源胜出（对齐原版 getNewLiquid 的 max(amount)−dropOff
-     * 取最优供给），{@code min 目标} 兜住不越过 BFS 距离。
+     * 供给邻格取推进前快照中最小的实际 level；目标层归属按到达时间另行计算。
      * 无同流体实际邻居供给的格 = 前沿未到 ⇒ 不出现（保留已有实际不倒退）。</p>
      *
      * <p>节拍：{@code flowSpeed() < 0} = 派生自原版 {@code getTickDelay}

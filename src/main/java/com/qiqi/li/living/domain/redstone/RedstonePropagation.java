@@ -10,6 +10,7 @@ import com.qiqi.li.living.domain.redstone.LivingCopperSignalData;
 import com.qiqi.li.living.domain.redstone.LivingCopperBulbData;
 import com.qiqi.li.living.domain.redstone.LivingComparatorData;
 import com.qiqi.li.living.domain.redstone.LivingButtonData;
+import com.qiqi.li.living.domain.redstone.LivingObserverData;
 
 import java.util.ArrayDeque;
 import java.util.Queue;
@@ -30,6 +31,9 @@ import com.qiqi.li.living.model.Pos2D;
 class RedstonePropagation {
 
     private static final int TICKS_PER_REPEATER_STEP = 2;
+    // 观测者脉冲时序（原版 ObserverBlock：受理 → scheduleTick(2) → POWERED → scheduleTick(2) → 归零）
+    private static final int OBSERVER_PENDING_DELAY = 2;
+    private static final int OBSERVER_PULSE_WIDTH = 2;
     private static final int E_UP = ContainerRedstoneData.EDGE_UP;
     private static final int E_DOWN = ContainerRedstoneData.EDGE_DOWN;
     private static final int E_LEFT = ContainerRedstoneData.EDGE_LEFT;
@@ -47,6 +51,8 @@ class RedstonePropagation {
     private final int size;
     private final int width;
     private final int height;
+    /** 本 tick 的容器内容签名（{@code ContainerLivingItemHandler.peekContentSignature}，阶段 1 已刷新）——观测者检测受理的 diff 基准 */
+    private final int containerContentSig;
 
     RedstonePropagation(
             ContainerRedstoneData.EdgeGrid edgeGrid,
@@ -55,7 +61,8 @@ class RedstonePropagation {
             ContainerSnapshot currentSnapshot,
             ContainerContext context,
             int size,
-            int width) {
+            int width,
+            int containerContentSig) {
         this.edgeGrid = edgeGrid;
         this.slotMask = slotMask;
         this.faceInput = faceInput;
@@ -64,13 +71,15 @@ class RedstonePropagation {
         this.size = size;
         this.width = width;
         this.height = (size + width - 1) / width;
+        this.containerContentSig = containerContentSig;
     }
 
     // ═══════════════════════════════════════════════════════════════
     // Phase 入口（由 calculate() 按顺序调用）
     // ═══════════════════════════════════════════════════════════════
 
-    void phase0CountdownDelays(Set<Integer> repeaterSlots, Set<Integer> buttonSlots) {
+    void phase0CountdownDelays(Set<Integer> repeaterSlots, Set<Integer> buttonSlots,
+            Set<Integer> observerSlots) {
         for (int slot : repeaterSlots) {
             if (slot < 0 || slot >= size) continue;
             ItemStack stack = context.getItem(slot);
@@ -114,12 +123,35 @@ class RedstonePropagation {
                 }
             }
         }
+
+        for (int slot : observerSlots) {
+            if (slot < 0 || slot >= size) continue;
+            ItemStack stack = context.getItem(slot);
+            if (stack.isEmpty()) continue;
+
+            LivingObserverData data = LivingObserverData.of(stack);
+            if (data.pendingTimer() <= 0) continue;   // 待机（盲区 = pendingTimer>0）
+
+            int newTimer = data.pendingTimer() - 1;
+            if (newTimer > 0) {
+                LivingObserverData.set(stack, data.withPendingTimer(newTimer));
+                context.syncSlotToClients(slot, stack);
+                continue;
+            }
+            // 归零分流：开启延迟结束 → 进入脉冲（开始 2gt 宽度计时）；脉冲宽度结束 → 回待机
+            if (!data.powered()) {
+                LivingObserverData.set(stack, data.withPowered(true).withPendingTimer(OBSERVER_PULSE_WIDTH));
+            } else {
+                LivingObserverData.set(stack, data.withPowered(false).withPendingTimer(0));
+            }
+            context.syncSlotToClients(slot, stack);
+        }
     }
 
     Queue<Integer> phase1CollectSources(
             Set<Integer> torchSlots, Set<Integer> buttonSlots, Set<Integer> leverSlots,
             Set<Integer> repeaterSlots, Set<Integer> comparatorSlots, Set<Integer> dustSlots,
-            Set<Integer> redstoneBlockSlots, Set<Integer> grateSlots) {
+            Set<Integer> redstoneBlockSlots, Set<Integer> grateSlots, Set<Integer> observerSlots) {
         Queue<Integer> queue = new ArrayDeque<>();
 
         for (int slot : torchSlots) {
@@ -250,6 +282,37 @@ class RedstonePropagation {
 
                 if (data.sumSignal() > edgeGrid.get(slot, dir)) {
                     edgeGrid.set(slot, dir, data.sumSignal());
+                    queue.add(neighbor);
+                }
+            }
+        }
+
+        for (int slot : observerSlots) {
+            if (slot < 0 || slot >= size) continue;
+            ItemStack stack = context.getItem(slot);
+            if (stack.isEmpty()) continue;
+            LivingObserverData data = LivingObserverData.of(stack);
+
+            // ── 检测受理（原版三重门：仅待机态受理；受理即同步签名 ⇒ 盲区变化合并为恢复后一次脉冲）──
+            // 组件级变化只 bump revision、不进内容签名 ⇒ 电路自身活动（粉强度/火把翻转）不会
+            // 触发观测者 —— 这条同时切断「观测者→粉→观测者」反馈环。签名无观测数据（哨兵）时
+            // 不受理：无账本条目的上下文安全不工作。
+            if (containerContentSig != LivingObserverData.UNSEEN_SIG
+                    && !data.powered() && data.pendingTimer() == 0
+                    && data.lastSeenSig() != containerContentSig) {
+                LivingObserverData.set(stack, data.withPendingTimer(OBSERVER_PENDING_DELAY)
+                    .withLastSeenSig(containerContentSig));
+                context.syncSlotToClients(slot, stack);
+            }
+
+            // ── 输出：脉冲期间向朝向出边写信号（单边，对齐中继器「仅输出方向」）──
+            if (!data.powered()) continue;
+            int cap = getSignalCap(stack.getCount());
+            int outDir = edgeIndex(data.direction());
+            int neighbor = ContainerContext.resolveNeighbor(slot, outDir, size, width);
+            if (cap > edgeGrid.get(slot, outDir)) {
+                edgeGrid.set(slot, outDir, cap);
+                if (is(neighbor, ContainerRedstoneData.BIT_DUST | ContainerRedstoneData.BIT_COPPER)) {
                     queue.add(neighbor);
                 }
             }
@@ -681,7 +744,8 @@ class RedstonePropagation {
         if (neighbor < 0) return;
         if (is(neighbor, ContainerRedstoneData.BIT_TORCH | ContainerRedstoneData.BIT_BUTTON
                 | ContainerRedstoneData.BIT_LEVER | ContainerRedstoneData.BIT_REPEATER
-                | ContainerRedstoneData.BIT_COMPARATOR | ContainerRedstoneData.BIT_BLOCK)) return;
+                | ContainerRedstoneData.BIT_COMPARATOR | ContainerRedstoneData.BIT_BLOCK
+                | ContainerRedstoneData.BIT_OBSERVER)) return;
         ItemStack nStack = context.getItem(neighbor);
         if (nStack.isEmpty()) return;
 
@@ -772,6 +836,7 @@ class RedstonePropagation {
             } else if (is(neighbor, ContainerRedstoneData.BIT_BUTTON | ContainerRedstoneData.BIT_LEVER
                     | ContainerRedstoneData.BIT_TORCH | ContainerRedstoneData.BIT_DUST
                     | ContainerRedstoneData.BIT_LAMP | ContainerRedstoneData.BIT_BLOCK
+                    | ContainerRedstoneData.BIT_OBSERVER
                     | ContainerRedstoneData.BIT_COPPER)) {
                 conn |= (1 << dir);
             }

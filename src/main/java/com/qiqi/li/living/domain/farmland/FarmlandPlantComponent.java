@@ -20,9 +20,9 @@ import net.minecraft.world.item.component.TooltipProvider;
 /**
  * 活耕地种植数据 —— 作物生长状态 + round-robin 逐项产出的持久化数据源。
  *
- * <p>字段语义（详见 docs/idea.md 活耕地设计）：
+ * <p>字段语义：
  * <ul>
- *   <li>{@code cropSeed}：种植的作物种子，类型标记（V1 语义：种子不消耗，null = 未种植）</li>
+ *   <li>{@code cropSeed}：种子类型记录（null = 未种植），不存库存；生存模式种植时消耗等量种子</li>
  *   <li>{@code age}/{@code maxAge}：生长阶段；maxAge 种植时从作物方块读取并冻结</li>
  *   <li>{@code lastGrowthAttemptTick}：世界轴时间戳（level.getGameTime()），冷却周期判定用——
  *       稳态（未到冷却周期）零组件写入零同步，替代每 tick 累加计数器</li>
@@ -32,7 +32,7 @@ import net.minecraft.world.item.component.TooltipProvider;
  *
  * <p>注意：本组件<b>不可</b>加入 getIgnoredComponentTypes——age/pendingDrops 是客户端
  * 作物渲染的数据源，进忽略集合会导致组件变化不触发容器同步（大箱快照坑，见
- * tooltip-system.md 坑清单第 3 条）。代价是仅同作物同 age 才能堆叠（一堆 = 一片同步生长的田）。</p>
+ * tooltip-system.md 坑清单第 3 条）。代价是组件全字段相等才能堆叠（一堆 = 一片同步生长的田）。</p>
  */
 public record FarmlandPlantComponent(
     @Nullable Item cropSeed,

@@ -441,6 +441,20 @@ public class ContainerLivingItemHandler {
     }
 
     /**
+     * 读取容器当前内容签名（{@code syncContentRevision} 每 tick 在槽位扫描后维护）。
+     *
+     * <p>只读查询（不创建条目）：无 containerKey 或条目未建时返回
+     * {@code Integer.MIN_VALUE} 哨兵 —— 与 {@link ContainerEntry#contentSig} 的初值同款，
+     * 消费者（活观测者）以此为「无观测数据」⇒ 不受理（安全不工作）。</p>
+     */
+    public static int peekContentSignature(ContainerContext ctx) {
+        String key = cacheKey(ctx);
+        if (key == null) return Integer.MIN_VALUE;
+        ContainerEntry e = CONTAINER_DATA.get(key);
+        return e == null ? Integer.MIN_VALUE : e.contentSig;
+    }
+
+    /**
      * 自增容器修订计数。物品被 {@code setItem} 替换、或经 {@code syncSlotToClients}
      * 就地修改 DataComponent（方向配置、状态等）后调用，使快照缓存失效。
      */

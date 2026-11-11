@@ -114,7 +114,7 @@ public class LivingBrewingStandFunction implements LivingItemFunction, HasDirect
             boolean dirty = false;
             BrewingDirectionData dir = data.direction();
             if (dir.directions().isEmpty()) {
-                dir = DEFAULT_DIRECTION;          // 首次 tick：落盘默认布局（与活熔炉同款）
+                dir = DEFAULT_DIRECTION;          // 空方向归一化；组件缺失时 of() 已提供默认方向
                 data = data.withDirection(dir);
                 dirty = true;
             }

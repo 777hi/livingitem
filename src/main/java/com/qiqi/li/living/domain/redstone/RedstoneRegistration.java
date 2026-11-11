@@ -36,6 +36,7 @@ public final class RedstoneRegistration {
         LivingItemManager.registerFunction(new LivingComparatorFunction());
         LivingItemManager.registerFunction(new LivingRedstoneBlockFunction());
         LivingItemManager.registerFunction(new LivingCopperFunction());
+        LivingItemManager.registerFunction(new LivingObserverFunction());
 
         // ── 容器快照贡献者 ──
         ContainerSnapshot.registerProvider(new RedstoneSnapshotProvider());

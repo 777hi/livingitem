@@ -13,7 +13,7 @@ import net.neoforged.neoforge.fluids.FluidType;
  * <ul>
  *   <li>{@link #canFlow()} —— 会流动 / 静止。静止流体（很多模组流体）<b>只做源、不扩散</b>。</li>
  *   <li>{@link #maxLevel()} —— <b>level 上限 = 流动距离</b>（水 7 / 岩浆 3，各自不同）。</li>
- *   <li>{@link #flowSpeed()} —— 流速（扩散节拍）。⚠️ <b>预留字段</b>，当前用途不明，先加上。</li>
+ *   <li>{@link #flowSpeed()} —— 实际层的扩散节拍（原版派生 / 瞬时 / 固定 tick 间隔）。</li>
  * </ul>
  *
  * <p>⚠️ <b>归属</b>：本接口与 {@link FluidFlowBehaviors} 是<b>框架提供的契约</b>；
@@ -32,7 +32,7 @@ public interface FluidFlowBehavior {
      * 会流动的流体。
      *
      * @param maxLevel  level 上限（流动距离）
-     * @param flowSpeed 流速（预留；0 = 即时）
+     * @param flowSpeed 扩散节拍（-1 派生原版 / 0 瞬时 / N 每 N tick 一格，详见 {@link #flowSpeed()}）
      */
     static FluidFlowBehavior flowing(int maxLevel, int flowSpeed) {
         return new FluidFlowBehavior() {
@@ -61,14 +61,13 @@ public interface FluidFlowBehavior {
     // ── 引擎接缝（1b-2，默认 no-op；流体侧填行为）────────────────
 
     /**
-     * 晋升判定（引擎在 {@code recalculate} 的<b>收敛循环</b>里调用）：该格是否应<b>升格为源</b>。
+     * 晋升判定：仅对本拍推进过的流体，在实际层流动格上单遍判定。
      *
-     * <p>默认 {@code false}（不晋升）。框架负责算「该格四邻中已是源的个数」并反复收敛
-     * （升格后水网扩张会重跑 BFS，直到无新升格）；具体阈值由流体侧填
-     * （水：≥2 邻源；岩浆：永不）。升格写入容器的派生源集合，成为永久资产。</p>
+     * <p>默认 {@code false}（不晋升）。邻源计数只含四向同流体源；阈值由流体侧定义。
+     * 满足条件的候选统一写入派生源集合与实际层，扩张留给后续推进拍，不做同拍迭代收敛。</p>
      *
      * @param slot                候选格（当前是流动格，非源）
-     * @param sourceNeighborCount 该格四邻中已是源的个数
+     * @param sourceNeighborCount 该格四邻中同流体源的个数
      */
     default boolean shouldPromote(int slot, int sourceNeighborCount) {
         return false;

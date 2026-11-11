@@ -1,7 +1,7 @@
 # Living Brewing Stand (活酿造台) 技术文档
 
-> **文档版本**: 2026.10 v1
-> **最后更新**: 2026-10-11
+> **文档版本**: 2026.11 v1
+> **最后更新**: 2026-11-11
 > **适用版本**: Minecraft 1.21.1 + NeoForge 21.1.x
 > **实现入口**: `living/domain/brewing/`
 
@@ -150,7 +150,7 @@
 4. **推进状态机** —— `BrewingBatchLogic.advance(brewTime, batchIngredient, canBrew,
    currentIngredient, fuel, step)` 返回一个 `Step`，世界侧按类型落地（见 §3.1）。
 5. **写回** —— 运行时缓存（瞬态）每 tick 都写；DataComponent **仅当持久数据变化时**才写
-   （燃料变化 / 首次落盘默认布局）⇒ **稳态零写入**，不影响堆叠。
+   （燃料变化 / 批次标记 / 方向数据为空的归一化）⇒ **稳态零写入**，不影响堆叠。
 
 **关键常量**（`BrewingBatchLogic`）：
 
@@ -371,8 +371,11 @@ brewTime == 0（待机）：
 ### 6.4 未配置时的行为
 
 - `BrewingDirectionData.getDirection(未配置槽位)` 返回 `Pos2D.NONE`（显示为「·」）。
-- 但 `LivingBrewingStandData.of()` 在组件缺失时返回 `DEFAULT`（**已含完整默认布局**）
-  ⇒ 未配置的活酿造台**直接按默认布局工作**（首次 tick 会落盘默认布局）。
+- `LivingBrewingStandData.of()` 在组件缺失时返回 `DEFAULT`（**已含完整默认布局**）
+  ⇒ 未配置的活酿造台**直接按默认布局工作，不会仅因缺组件而在首次 tick 写入默认布局**。
+  燃料变化、批次标记变化或显式配置方向时仍会调用 `set()`：完整数据等于 `DEFAULT` 则移除
+  组件，否则保存整个 record（包括方向）。因此，采用默认方向的台子也可能有持久组件。
+  **默认读值、组件写入、持久化与客户端同步不能混为一谈**。
 - `updateSlotDirection` 首次配置时以默认布局为底（其余槽位保持默认）。
 
 ---
@@ -599,8 +602,9 @@ D7（消耗时机）/ D8（作废条件）/ D10（搬运丢进度留燃料）全
 
 ### 10.4 只写必要数据（稳态零写入）
 
-`tick` 里 DataComponent **仅当 `dirty`**（燃料变化 / 首次落盘默认布局）时才 `set` + `syncSlotToClients`
-⇒ 稳态零写入，避免每 tick 无谓同步。
+`tick` 里 DataComponent **仅当 `dirty`**（燃料变化 / 批次标记 / 方向数据为空的归一化）时才
+`set` + `syncSlotToClients` ⇒ 稳态零写入，避免每 tick 无谓同步。
+组件缺失时，`of()` 已提供非空默认方向；这件事本身不触发 `dirty`（保存边界见 §6.4）。
 
 ### 10.5 ⚠️ 隔离规则「文档写了、实现漏了」（2026-10-11 修复）
 

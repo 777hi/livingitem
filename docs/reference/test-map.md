@@ -144,6 +144,7 @@ src/test/java/com/qiqi/li/
 │   ├── RedstoneHandlerSetChangedTest.java     # 交互 handler 就地改写标脏（2026-10-27 审查 P2，与 IgniteHandler P3-4 同类）·拉杆切换成功 ⇒ setChanged 被调，否则开关态在「改完→下次落盘」窗口丢失（四 handler 同构逐一接线）
 │   ├── ContainerRedstoneBoundaryTest.java     # 边界采样自反馈守卫（2026-10-27 审查 P1）·双箱两半共用账本 ⇒ 朝另一半查到 this 曾把自己对面 face 输出读回对侧输入（东边拉杆隔空压灭西边火把）/ 邻居是自己 ⇒ 保持世界信号 / 无账本·无朝向邻居 ⇒ 原样（mockStatic 邻居查询）
 │   ├── ContainerRedstoneDataTest.java         # 红石信号传播引擎·直接驱动 calculate/**空容器(存储格 0)⇒ 直接跳过，不拿 0 当除数**
+│   ├── LivingObserverTest.java                # 活观测者·生产路径驱动（syncContentRevision→calculate）·2gt×2 脉冲逐拍/内容变化重触发/组件变化不触发/盲区合并恢复后一次/槽间移动与换容器触发/cap 随堆叠/朝向单边/经粉到灯/边界面输出/纯观测者容器驱动守卫/无账本条目安全不工作/只读
 │   └── ContainerRedstoneIntegrationTest.java  # 红石**驱动链路**端到端（走真实 processContext）·自维持注册/守卫放行消费者/守卫拦截无关容器(零开销)/残留归零/prio 顺序
 ├── living/domain/piston/
 │   ├── LivingPistonDataTest.java                # 活塞方向组件·四向值相等/Codec与StreamCodec往返/无效方向拒绝/仅存方向/默认向上且写默认移组件/独立归属声明

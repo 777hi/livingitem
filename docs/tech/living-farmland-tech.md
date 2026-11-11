@@ -1,7 +1,7 @@
 # Living Farmland (活耕地) 技术文档
 
-> **文档版本**: v1.12
-> **最后更新**: 2026-09-16
+> **文档版本**: v1.13
+> **最后更新**: 2026-11-11
 > **适用版本**: Minecraft 1.21.1
 > **状态**: 已实现，九轮实测全过 + 终审修复后；自动施肥已收编为注册式槽位交互（跨容器两方向统一，§11.15），2026-09-15 用户实测确认正常；放置回世界（§3.5）2026-09-16 新增；种子图标迁到装饰器路径（§8.2，快捷栏现在也渲染）2026-09-16；**锄头改为 HOE_TILL 能力判定（兼容模组锄头）+ 可耕土扩展（§3.1）** 2026-09-16
 
@@ -87,7 +87,7 @@
                                 │
   age = maxAge ──→ 概率 tick 成功时冻结战利品表 → 每 tick 逐项产出 ×堆叠数 → 生长槽
                                 │
-  全部产完 ──→ 标准模式回 GROWING / 浆果模式保留成熟继续产出
+  全部产完 ──→ 清空待输出；甜浆果 age 回 1，其余作物 age 回 0 重新生长
 ```
 
 ### 1.2 核心设计决策（定案记录）
@@ -131,7 +131,7 @@ LivingFarmlandFunction.tick（每容器 tick）
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `cropSeed` | `@Nullable Item` | 作物种子（类型标记，null = 未种植；**不消耗**） |
+| `cropSeed` | `@Nullable Item` | 种子类型记录（null = 未种植），不存库存；生存模式种植时消耗与耕地堆叠数等量的种子，创造模式免消耗（§3.2） |
 | `age` | `int` | 当前生长阶段（0 ~ maxAge） |
 | `maxAge` | `int` | 总生长阶段（种植时从作物方块读取并**冻结**——防模组更新后错位） |
 | `lastGrowthAttemptTick` | `long` | 上次生长/产出尝试的世界轴时间戳（冷却节拍基准） |
@@ -139,8 +139,9 @@ LivingFarmlandFunction.tick（每容器 tick）
 | `pendingDrops` | `List<ItemStack>` | 首次成熟时评估冻结的战利品列表（round-robin 数据源，Codec 用 `ItemStack.OPTIONAL_CODEC.listOf()`） |
 
 **不进 `getIgnoredComponentTypes()`**——age/pendingDrops 是客户端渲染数据源，进忽略
-集合会复现「大箱快照坑」（通用不变量见 [container-identity.md](../system-design/container-identity.md)）。代价：仅同作物同 age 同
-冷却戳才可堆叠（一堆 = 一片同步生长的田，语义合理）。
+集合会复现「大箱快照坑」（通用不变量见 [container-identity.md](../system-design/container-identity.md)）。代价：record **全字段相等**才可堆叠
+（作物类型 / age / maxAge / 冷却戳 / 产出索引 / 冻结产物）。`pendingDrops` 按列表自身的
+`equals` 比较，不能仅凭产物类型和数量一致就断言组件相等；其它物品组件也仍参与堆叠判定。
 
 **`setData` 移除语义安全**：`LivingItemManager.setData` 在组件等于 DEFAULT 时会 remove；
 已种植态 `cropSeed != null` 永不等 DEFAULT（`null,0,0,0L,-1,List.of()`），不受影响。
@@ -187,7 +188,7 @@ LivingFarmlandFunction.tick（每容器 tick）
 ## 3. 获取与种植交互
 
 三个交互全部走 GUI 交互系统（声明式规则 + 客户端统一拦截 + 服务端处理），注册点在
-`LivingItem.commonSetup`。
+`FarmlandRegistration`（`LivingItem.commonSetup` 调用；规则本体在 `interaction_rules.json`）。
 
 ### 3.1 活锄头耕活土 → 活耕地（物品转换型交互）
 
@@ -213,14 +214,11 @@ stack.canPerformAction(ItemAbilities.HOE_TILL)
 原版的两处世界副作用——「目标上方必须是空气」与「缠根泥土掉落垂根」——物品层 GUI 交互
 没有世界上下文，一律不做；`podzol`（灰化土）/ `mycelium`（菌丝）原版不可耕，不纳入。
 
-**注册形态**：一个条目只能表达一个 `targetItem`，故按可耕目标逐条注册**通配条目**，
-锄头侧交给谓词（与 §3.2 种植同构）：
+**注册形态**：规则已迁到 `interaction_rules.json`。一个条目对应一个 `target`，
+按可耕目标配置通配触发器，锄头能力由 `can_till` 谓词判定（`FarmlandRegistration` 注册）：
 
-```java
-for (Item tillable : Tillables.tillableTargets()) {
-    InteractionRegistry.register(new InteractionEntry(tillable, null, 1, "till_to_farmland",
-        false, Tillables::canTillWith));   // ← triggerFilter：活物品自查 + HOE_TILL + 可耕
-}
+```json
+{ "id": "till_dirt", "target": "minecraft:dirt", "button": "right", "action": "till_to_farmland", "predicate": "can_till" }
 ```
 
 ⚠️ 谓词内**必须**自查 `isLivingItem(trigger)`：`findInteraction` 的通配分支不校验
@@ -233,10 +231,12 @@ trigger 的活物品标记（只有精确分支校验），漏了会让非活锄
 
 ### 3.2 种植（通配条目 + triggerFilter 组合过滤 + 种子消耗）
 
-```java
-InteractionRegistry.register(new InteractionEntry(Items.FARMLAND, null, 1, "plant_crop",
-    false, PlantCropHandler::canPlantWith));   // ← triggerFilter：BiPredicate(trigger, target)
+```json
+{ "id": "farmland_plant", "target": "minecraft:farmland", "button": "right", "action": "plant_crop", "predicate": "can_plant" }
 ```
+
+规则不设 `trigger`，加载后对应 `triggerItem=null` 通配条目；`can_plant` 在
+`FarmlandRegistration` 绑定 `PlantCropHandler::canPlantWith`。
 
 `trigger=null` 是「任意光标」的通配条目，裸通配会拦截**所有**右键（含原版拿起/
 放置/分堆）——`triggerFilter` 把拦截面收窄到「种得成」的组合（canPlantWith 双端
@@ -266,8 +266,8 @@ canPlantWith(trigger, target):
 
 ### 3.3 骨粉催熟（精确触发器）
 
-```java
-InteractionRegistry.register(new InteractionEntry(Items.FARMLAND, Items.BONE_MEAL, 1, "bonemeal"));
+```json
+{ "id": "farmland_bonemeal", "target": "minecraft:farmland", "trigger": "minecraft:bone_meal", "button": "right", "action": "bonemeal" }
 ```
 
 精确条目与种植通配共用 target/button，靠 findInteraction **两趟优先级匹配**分流
@@ -407,22 +407,24 @@ plant = plant.withLastGrowthAttemptTick(now);
 
 ### 5.2 湿润传播（原版式水分扩散，2026-09-13 第五轮定稿）
 
-**湿润等级**：与水流相邻（4 向，含水桶源槽位）的活耕地 = **4 级**
-（`MAX_MOISTURE_LEVEL`）；湿润沿相邻的活耕地传播、每跳 -1（4→3→2→1）；
+**湿润等级**：与容器流体相邻（4 向，含源格与流动格）的活耕地 = **4 级**。
+**邻格仅放活水桶不算流体存在**；测试用活桶倒水成源，源生命周期见
+[活流体 §2.2](living-fluid-tech.md)。
+湿润等级上限为 `MAX_MOISTURE_LEVEL`；沿相邻的活耕地传播、每跳 -1（4→3→2→1）；
 **level ≥ 1 即湿润**（f=3.0），level 0 干燥（f=1.0）。对齐原版 4 格湿润半径：
 水源起 4 块耕地（第五轮实测修正——源 3 级只够蔓延 3 块）。
 
 ```java
 int[] moisture = computeMoisture(ctx, tick, size, width, entries);
-// 源：与水流相邻的活耕地 = 源 4 级 MAX_MOISTURE_LEVEL（tick.fluidData.getFlows() 键含邻居槽位）
+// 源：经 tick.getFluidPresence().hasFluidAt(邻居槽) 查询，与流体相邻的活耕地为 4 级
 // BFS：湿润沿相邻活耕地传播每跳 -1（参考活红石粉信号传播形态），
 //      只有活耕地是传播介质（普通物品/空槽不传）
 ```
 
-派生态：每 tick 从 fluidData 现算（活水桶 prio 0 容器级数据先行算好），无需跨 tick
-存储。概率公式不变：`nextInt((int)(25/f) + 1) == 0`——湿润 1/9 ≈ 11.1%、干燥
-1/26 ≈ 3.8%（7 级湿润 ~10.5 分钟 / 干燥 ~30.3 分钟）。「上」方向水源同样算相邻
-（水桶源槽位的 FlowEntry 键 = 水桶自身槽位）。
+派生态：每 tick 从 fluidData 现算（活流体 prio 0 容器级数据先行算好——与桶解耦），
+无需跨 tick 存储。概率公式不变：`nextInt((int)(25/f) + 1) == 0`——湿润 1/9 ≈ 11.1%、
+干燥 1/26 ≈ 3.8%（7 级湿润 ~10.5 分钟 / 干燥 ~30.3 分钟）。「上」方向水源同样算相邻
+（FlowEntry 键 = 流体格槽位号）。
 
 ### 5.2.1 湿润标志组件（图标 moist/dry 变体数据源）
 
@@ -550,8 +552,8 @@ outputIndex ≥ pendingDrops.size() → 按回退点重置：
 ### 7.1 自动施肥（活漏斗联动，2026-09-15 新增）
 
 **触发**：活漏斗按 WASD 方向传输时，货物是**骨粉**且目标槽位是**活耕地**——
-由注册式槽位交互 `FarmlandBonemealInteraction` 接管（`SlotInteractions` 内置条目，
-2026-09-15 收编：此前方程硬编码在三处传输分支，拉取方向漏写导致单方向失效，
+由注册式槽位交互 `FarmlandBonemealInteraction` 接管（由 `FarmlandRegistration` 登记——
+transfer 不认识领域，2026-10-08 迁；2026-09-15 收编：此前方程硬编码在三处传输分支，拉取方向漏写导致单方向失效，
 见 §11.15）。三处调用点统一走 `SlotInteractions` 分发器：
 容器内 `TransferPipeline.executeInContainer`、跨容器推送 `tryPushToNeighbor`、
 跨容器拉取 `tryInteractFromNeighbor`（流程图 [3.5]，详见
@@ -591,7 +593,7 @@ outputIndex ≥ pendingDrops.size() → 按回退点重置：
 自然短路，无报警无残留行为）。
 
 **跨容器（两个方向各有入口，语义同一）**：施肥方程已收编为注册式槽位交互
-`FarmlandBonemealInteraction`（`SlotInteractions` 内置条目）——三处调用点
+`FarmlandBonemealInteraction`（`FarmlandRegistration` 登记）——三处调用点
 （容器内 / 跨容器推送 / 跨容器拉取）都只调分发器，**方程本身零传输代码**。
 推送方向与邻居间直传共用 `tryPushToNeighbor` 的槽位循环；**拉取方向**（源在邻居、
 目标活耕地在本容器）走 `tryInteractFromNeighbor`——这条**必须前置**，因为通用拉取
@@ -748,42 +750,26 @@ UV 裁剪）等问题逐个暴露，最终被 renderSingleBlock 整体取代。�
 
 ## 10. 实现文件与注册点
 
-### 10.1 文件清单
+### 10.1 源码查询入口
 
+本域的种植、施肥与处理器均位于 `living/domain/farmland/`；不再维护人工文件树
+（维护规约见 [docs/README.md 铁律 3](../README.md)）。需要完整清单时在仓库根目录运行：
+
+```bash
+find src/main/java/com/qiqi/li/living/domain/farmland -name "*.java"
 ```
-src/main/java/com/qiqi/li/
-├── living/domain/farmland/
-│   ├── FarmlandPlantComponent.java     # 种植数据组件（Codec + StreamCodec）
-│   ├── CropClassifier.java             # 作物分类器（准入/maxAge/浆果判定/茎果实）
-│   ├── Tillables.java                  # 耕作知识表：锄头判定（HOE_TILL）+ 可耕映射（§3.1）
-│   ├── LivingFarmlandFunction.java     # tick 功能（生长/产出状态机 + tooltip）
-│   ├── FarmlandBonemealInteraction.java # 槽位交互：骨粉 → 活耕地 = 施肥（活漏斗自动施肥）
-│   └── LivingFarmlandPlacement.java    # 放置回世界：模拟玩家右键种一次（§3.5）
-├── living/transfer/
-│   ├── SlotInteraction.java            # 槽位交互接口（matches + interact + consumeAmount）
-│   └── SlotInteractions.java           # 槽位交互注册表 + 分发器（三处传输分支唯一入口）
-├── living/interaction/
-│   ├── TillToFarmlandHandler.java       # 活锄头耕活土 → 活耕地（查 Tillables 映射）
-│   ├── PlantCropHandler.java            # 种植（通配 + handler 校验）
-│   └── BonemealHandler.java             # 骨粉催熟（精确触发器）
-├── living/mixin/
-│   └── BlockItemMixin.java              # 放置活耕地后自动种下自带作物（consume 前注入，§3.5）
-├── client/render/
-│   ├── CropTextureResolver.java         # blockstate→模型→粒子图标解析
-│   └── LivingFarmlandSeedDecorator.java # 耕地槽种子图标叠加（IItemDecorator，快捷栏也生效）
-├── client/render/LivingFarmlandOverlay.java     # 生长槽大图渲染（挂 Render.Foreground）
-└── client/mixin/AbstractContainerScreenMixin.java  # 交互（右键 / tooltip 抑制 / 活按钮）
-```
+
+跨域注册职责见 §10.2；查询上下游使用 `python tools/gen_code_map.py --query LivingFarmlandFunction`。
 
 ### 10.2 注册点
 
 | 注册 | 位置 | 内容 |
 |------|------|------|
-| 组件 | `LivingItemManager` | `FARMLAND_PLANT` DeferredRegister + `get/setFarmlandPlant` |
-| 功能 | `LivingItem.commonSetup` | `registerFunction(new LivingFarmlandFunction())` |
-| 交互规则 | 同上 | 5 种可耕土 × 通配（till，谓词 = 活锄头 HOE_TILL）、FARMLAND+null（plant）、FARMLAND+BONE_MEAL（bonemeal） |
-| 交互处理器 | 同上 | `registerHandler` × 3（actionId 对应） |
-| 槽位交互（活漏斗自动施肥） | `SlotInteractions` 静态块 | `register(new FarmlandBonemealInteraction())`——内置条目，三处传输分支经分发器自动生效 |
+| 组件 | `FarmlandComponents` | 定义 `FARMLAND_PLANT` / 湿润标志并注册到 `DeferredRegister`（`LivingItem` 注册总线）；种植 Codec 与读取/写入入口为 `FarmlandPlantComponent.CODEC/STREAM_CODEC`、`of/set` |
+| 功能 | `FarmlandRegistration`（`LivingItem.commonSetup` 调用） | `LivingItemManager.registerFunction(new LivingFarmlandFunction())` |
+| 交互规则 | `interaction_rules.json`（D2 全迁） | 5 种可耕土 × 通配（till，谓词 = 活锄头 HOE_TILL）、FARMLAND+null（plant）、FARMLAND+BONE_MEAL（bonemeal）；谓词 ID（`can_till`/`can_plant`）注册在 `FarmlandRegistration` |
+| 交互处理器 | `FarmlandRegistration` | `InteractionRegistry.registerHandler` × 3（actionId 对应） |
+| 槽位交互（活漏斗自动施肥） | `FarmlandRegistration` | `SlotInteractions.register(new FarmlandBonemealInteraction())`——领域自行登记（transfer 不认识领域，2026-10-08），三处传输分支经分发器自动生效 |
 | Mixin（放置回世界） | `living_item.mixins.json` | `BlockItemMixin` —— `@Mixin(BlockItem.class)`，注入 `place` 的 `consume` **之前**（§11.16） |
 | 装饰器（耕地槽种子图标） | `LivingIconRegistry` FARMLAND spec | `.decorator(new LivingFarmlandSeedDecorator())`——`RegisterItemDecorationsEvent` 注册；走装饰器路径故快捷栏/容器/创造物品栏共用 |
 | AT | `accesstransformer.cfg` | `public net.minecraft.world.level.block.StemBlock fruit` |
@@ -1142,7 +1128,7 @@ DataComponent），不要枚举物品清单——清单每多一个模组就失�
 
 ### 12.2 生长与产出
 
-- [ ] 小麦（湿润：邻格放活水桶）：~10 分钟成熟
+- [ ] 小麦（湿润：邻格倒水成源）：~10 分钟成熟
 - [ ] 小麦（干燥）：~30 分钟成熟（或用骨粉验证概率外的路径）
 - [ ] 成熟后**不立即出产物**——等概率 tick 成功（湿润 ~90s 期望）才冻结战利品表，
       随后**连续几 tick 内全部进生长槽**（不再 10 秒一项）
@@ -1180,7 +1166,7 @@ DataComponent），不要枚举物品清单——清单每多一个模组就失�
       不入槽、不与普通骨粉堆合并（活物品不作货物）；活骨粉改到 GUI 右键用 → 正常催熟
 - [ ] **跨容器拉取施肥后 GUI 即时刷新**：方向 ② 下耕地 tooltip 的 age 立刻 +1
       （分支内主动 syncSlotToClients，不等 200t 冷却）
-- [ ] **湿润图标**：邻格放活水桶 → 耕地图标变深（farmland_moist）；收走变浅
+- [ ] **湿润图标**：邻格倒水成源 → 耕地图标变深（farmland_moist）；汲走/挤没后，周围流体退去且无其它湿润路径时变浅
 
 ### 12.3 渲染
 
@@ -1191,8 +1177,9 @@ DataComponent），不要枚举物品清单——清单每多一个模组就失�
 - [ ] **容器 GUI 无回归**：打开箱子时耕地槽仍显图标，计数数字角与图标边缘正常
 - [ ] 创造物品栏 / 副手槽的活耕地同样显图标；既有装饰器（活漏斗箭头等）不受影响
 - [ ] **上方空槽显示作物当前阶段贴图**（「土下苗上」）
-- [ ] **湿润图标切换 + 传播**：邻格放活水桶 → 直接相邻耕地变深（3 级），
-      相邻耕地的相邻耕地也变深（2→1 级传播）；收走水桶全部恢复浅色
+- [ ] **湿润图标切换 + 传播**：邻格倒水成源 → 直接相邻耕地变深（4 级），
+      相邻耕地的相邻耕地也变深（3→2→1 级传播）；汲走/挤没水源后，待周围流体退去，
+      无其它流体或湿润传播路径时全部恢复浅色
 - [ ] 传播只沿活耕地：中间隔普通物品/空槽则不传播
 - [ ] 生长槽被产出物占据时显示真实物品图标（作物贴图让位）
 - [ ] **同列两块耕地中间隔一个空行**：中间空槽只被其中一块认领为生长槽，

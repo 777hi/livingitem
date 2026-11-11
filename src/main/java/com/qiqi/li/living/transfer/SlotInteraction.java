@@ -29,9 +29,8 @@ import net.minecraft.world.item.ItemStack;
  *       不要做其它副作用（物品入槽、发网络包等由调用方负责）。</li>
  * </ol>
  *
- * <p>注册入口见 {@link SlotInteractions#register}；内置条目在
- * {@code SlotInteractions} 静态块中注册（参考 {@link SlotAccessorFactory}
- * 的 Provider 注册先例）。</p>
+ * <p>注册入口见 {@link SlotInteractions#register}——领域交互由各领域 Registration 自行
+ * 登记（transfer 不认识领域），不设内置条目。</p>
  */
 public interface SlotInteraction {
 
