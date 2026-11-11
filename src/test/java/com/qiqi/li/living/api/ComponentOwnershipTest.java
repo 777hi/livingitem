@@ -15,6 +15,8 @@ import java.util.Map;
 import java.util.Set;
 
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.parallel.Isolated;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -68,7 +70,15 @@ import net.neoforged.neoforge.registries.DeferredHolder;
  * 无需同步第二份清单（避免又一处“两处维护必然漂移”）。
  */
 @DisplayName("DataComponent 归属守卫 · 各功能自声明契约（A2）")
+@Isolated
 class ComponentOwnershipTest {
+
+    private static LivingItemRegistrationScope registration;
+
+    @AfterAll
+    static void restoreRegistration() {
+        if (registration != null) registration.close();
+    }
 
     /**
      * <b>框架组件</b>：不属于任何功能，因此不要求 Function 声明归属。
@@ -210,17 +220,10 @@ class ComponentOwnershipTest {
             "同一 DataComponent 被多个 Function 声明归属，清理语义会互相踩：" + conflicts);
     }
 
-    /**
-     * 全类注册一次 —— ⚠️ 不能放在各个 @Test 里：{@code registerFunction} <b>不去重</b>
-     * （FUNCTIONS 直接 add），而自维持函数清单在注册期从 FUNCTIONS 算出 ⇒ 注册两遍会让
-     * 红石等自维持函数每 tick 跑两遍（2026-10-18 实测：火把环振荡失规、发电机锁相
-     * 2t 变 3t，WaxedGeneratorFeedChainTest 红）。本类只此一处注册。
-     */
+    /** 归属测试使用独立夹具，不向正式全局表追加重复 Function。 */
     @BeforeAll
     static void registerAllFunctions() {
-        for (LivingItemFunction f : allFunctions()) {
-            LivingItemManager.registerFunction(f);
-        }
+        registration = LivingItemRegistrationScope.isolated(allFunctions());
     }
 
     @Test

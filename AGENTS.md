@@ -164,23 +164,24 @@ python tools/check_layers.py          # 层纪律：R1 依赖方向 / R2 Mixin �
 python tools/check_mixins.py          # Mixin：R1 living_item$ 前缀 / R2 显式成员 / R3 配置 ↔ 源文件
 python tools/check_container_keys.py  # 容器键解析收敛（ContainerKeys 唯一入口）
 python tools/check_stack_ops.py       # 槽位裸写棘轮：domain/function 的 setItem( 只减不增（原语是唯一数量操作入口）
+python tools/check_icon_resources.py  # 图标声明入口与本地模型/parent/texture（不替代实际烘焙）
 python tools/doc_check.py             # 文档一致性：路径 / 测试全绿快照 / 入口体量 / 生成名单区 …
 ```
 
 **任一为红就不要提交。** `check_layers` 与 `check_stack_ops` 是**棘轮**（基线只允许收紧），
-其余三条是零容忍门禁，所以「新引入的违规」一定会被看见。
+其余检查是零容忍门禁，所以「新引入的违规」一定会被看见。
 
 > ⚠️ **全量复核必须加 `--rerun`**（`FROM-CACHE` / `UP-TO-DATE` 是假绿）；
 > 口径见 [unit-testing.md](docs/guides/unit-testing.md)。
 > 改文档不必先跑全量：局部 `--tests` 不覆盖全量快照，`gen_test_summary.py` 由 hook 自动调用。
 
-> 💡 **自动防护**：仓库内 `.githooks/pre-commit` 跑上面五条（红的直接拦住）。
+> 💡 **自动防护**：仓库内 `.githooks/pre-commit` 跑上面各项（红的直接拦住）。
 > 首次检出 / 换机器后执行一次 `sh tools/setup-dev.sh`
 > （等价于 `git config core.hooksPath .githooks`）。
 > ⚠️ 设置 hooksPath 后，本地 `.git/hooks/pre-commit` 不再执行 —— 以仓库内版本为准，
 > 两套不要同时维护。
 
-> 🤖 **CI 跑同样五条 + `gen_test_summary.py`**（`.github/workflows/build.yml` 的 `Quality gates`），
+> 🤖 **CI 跑同样检查 + `gen_test_summary.py` + 图标门禁的临时夹具回归**（`.github/workflows/build.yml` 的 `Quality gates`），
 > 且 `doc_check` 用 `DOC_CHECK_STRICT=1`：CI 里没产出全量测试快照直接红，不再 SKIP。
 
 ## 排查铁律：原版机制挡路时
@@ -243,6 +244,9 @@ Mixin 的 `@Accessor` / `@Invoker` 会在**目标类上生成合成方法，名�
 > 违例即退出码 1（先例同 `check_layers.py`，可挂 CI / 提交前检查）。
 
 ## 设计铁律：新增机制前先找对应物
+
+**顺序不可倒置：先定作用对象和行为，再找对应抽象；现有接口不能反向定义玩法。**
+设计前填 [设计模板](docs/guides/living-item-design-template.md)「玩法原点」五问与正反例。
 
 方案里每出现一层**新机制**（扫描器 / 生命周期 / 新挂点 / 新键形），必须能回答
 「**现有抽象为什么不够**」。答不上来就退回上一步 —— 症状驱动 + 增量补丁会系统性地

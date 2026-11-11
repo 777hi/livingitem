@@ -10,12 +10,15 @@ import java.util.List;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.parallel.Isolated;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.api.LivingItemRegistrationScope;
 import com.qiqi.li.living.container.ContainerAnchor;
 import com.qiqi.li.living.container.ContainerContext;
 import com.qiqi.li.living.container.ItemFormContainers;
@@ -47,7 +50,15 @@ import net.neoforged.neoforge.items.ItemStackHandler;
  * <p>⚠️ <b>环检测目前不可达</b>：{@code MAX_DEPTH = 1} 的深度闸在环检测之前就返回了。
  * 它是为「将来放开嵌套」准备的（设计稿 §6），所以这里不测 —— 测不到，也不该假装测到了。</p>
  */
+@Isolated
 class LivingBackpackTickTest {
+
+    private static LivingItemRegistrationScope registration;
+
+    @AfterAll
+    static void restoreRegistration() {
+        if (registration != null) registration.close();
+    }
 
     /** 探针物品：没人认领、也不是容器，只在测试里当「背包内容物」。 */
     private static final ItemStack PROBE_ITEM = living(new ItemStack(Items.SHULKER_SHELL));
@@ -107,7 +118,7 @@ class LivingBackpackTickTest {
 
     @BeforeAll
     static void registerProbe() {
-        LivingItemManager.registerFunction(PROBE);
+        registration = LivingItemRegistrationScope.withAdditional(PROBE);
     }
 
     @BeforeEach

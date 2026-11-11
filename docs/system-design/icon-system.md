@@ -74,35 +74,35 @@
 ```java
 // 活熔炉：两种状态
 register(LivingIconSpec.builder(Items.FURNACE)
-    .addVariant("idle", "item/furnace_idle", stack -> !isBurning(stack))
-    .addVariant("active", "item/furnace_active", stack -> isBurning(stack))
+    .addLocalVariant("idle", "item/furnace_idle", stack -> !isBurning(stack))
+    .addLocalVariant("active", "item/furnace_active", stack -> isBurning(stack))
     .build());
 
 // 活TNT：闪烁动画（引信倒计时 % 10 == 0 时切换图标）
 register(LivingIconSpec.builder(Items.TNT)
-    .addVariant("lit", "item/tnt_lit", stack -> getFuseTimer(stack) > 0 && getFuseTimer(stack) % 10 == 0)
-    .addVariant("idle", "item/tnt_idle", stack -> true)  // 兜底
+    .addLocalVariant("lit", "item/tnt_lit", stack -> getFuseTimer(stack) > 0 && getFuseTimer(stack) % 10 == 0)
+    .addLocalVariant("idle", "item/tnt_idle", stack -> true)  // 兜底
     .build());
 
 // 活漏斗：基础图标 + 箭头叠加层
 register(LivingIconSpec.builder(Items.HOPPER)
-    .addVariant("base", "item/hopper_living", stack -> true)
+    .addLocalVariant("base", "item/hopper_living", stack -> true)
     .decorator(new LivingHopperDecorator())
     .build());
 
 // 活中继器：方向感知 + GUI 缩放
 register(LivingIconSpec.builder(Items.REPEATER)
-    .addVariant("1tick", "item/repeater_1tick", stack -> getDelay(stack) == 1 && !isPowered(stack))
+    .addLocalVariant("1tick", "item/repeater_1tick", stack -> getDelay(stack) == 1 && !isPowered(stack))
     // ... 更多变体
-    .directional()     // 根据物品方向数据旋转图标
+    .directional(stack -> LivingRepeaterData.of(stack).direction())
     .guiScale(1.0f)    // GUI 缩放比例（1.0 = 原始大小）
     .build());
 
 // 活红石火把：方向感知（默认大小）
 register(LivingIconSpec.builder(Items.REDSTONE_TORCH)
-    .addVariant("on", "item/redstone_torch", stack -> isLit(stack))
-    .addVariant("off", "item/redstone_torch_off", stack -> true)
-    .directional()
+    .addLocalVariant("on", "item/redstone_torch", stack -> isLit(stack))
+    .addLocalVariant("off", "item/redstone_torch_off", stack -> true)
+    .directional(stack -> LivingRedstoneTorchData.of(stack).direction())
     .build());
 ```
 
@@ -116,6 +116,14 @@ register(LivingIconSpec.builder(Items.REDSTONE_TORCH)
 2. 准备对应的纹理 PNG 和模型 JSON 文件
 
 无需编写任何 Java 类。
+
+**2026-11-11 接缝纪律**：方向读取属于 spec 自身，通用解析器不得按物品类型分支、不得把未知物品当火把；新增方向图标只填 getter，保留原有视觉角与 GUI 外原模型回退。无参 `directional()` 已删除，不提供隐藏默认数据源。
+
+模型声明显式分本地路径与完整 ID：`addLocalVariant("base", "item/observer", ...)` 对应本仓库资源；外部模型用 `addVariant("base", ResourceLocation.parse("minecraft:item/observer"), ...)`。两级模型缓存及 Additional 注册都保留完整 ID。
+
+**静态门禁**：`python tools/check_icon_resources.py` 从本仓库 builder / 铜家族帮助方法的声明检查本地模型、JSON、parent 链与直接本地纹理；未知声明形式报错，不静默漏检。`#texture` 是变量，外部 namespace 和 builtin parent 不查本地文件；rotating 不走变体烘焙，Create 水车的占位路径不用造 dummy 文件。临时夹具回归为 `python tools/test_check_icon_resources.py`。
+
+该门禁**不证明**实际烘焙、外部资源存在、材质包效果或视觉方向正确；仍需客户端资源重载/GUI 四向/非 GUI 回退/特殊箱子渲染/Create 水车烟测。模拟 BakedModel 测试只守接线与变换，不记成实机验收。
 
 ---
 
@@ -147,9 +155,10 @@ register(LivingIconSpec.builder(Items.REDSTONE_TORCH)
 
 | 方法 | 说明 | 默认值 |
 |------|------|--------|
-| `.addVariant(name, path, predicate)` | 添加图标变体（可多次调用） | 必选 |
+| `.addLocalVariant(name, path, predicate)` | 本地 living_item 模型路径，不接受 namespace | 必选（或显式 ID） |
+| `.addVariant(name, ResourceLocation modelId, predicate)` | 完整 namespaced 模型 ID，缓存不得丢 namespace | 必选（或本地路径） |
 | `.decorator(IItemDecorator)` | 追加物品栏叠加层装饰器（**可多次调用**，按调用顺序渲染；NeoForge 原生支持一物品多装饰器） | 无 |
-| `.directional()` | 启用方向感知旋转（根据物品数据旋转图标） | 关闭 |
+| `.directional(directionGetter)` | 声明时绑定方向读取函数，只对活物品调用；不得与 rotating 同时启用 | 关闭 |
 | `.guiScale(float)` | 设置 GUI 中的缩放比例 | 1.0 |
 | `.rotating()` | 启用 3D 旋转渲染（用于活水车等） | 关闭 |
 
@@ -193,7 +202,7 @@ register(LivingIconSpec.builder(Items.REDSTONE_TORCH)
 `item/potion`、`item/tipped_arrow` —— **已确认 `item/generated` 支持多层**。
 ⇒ 用「引用原版 layer0 + 自绘 layer1」可**既不再分发原版资源、又保留自定义外观**（涂蜡铜块即此方案）。
 
-直接引用原版方块模型，无需自绘纹理。缩放和方向旋转由 `guiScale()` 和 `directional()` 在代码层统一处理，不在 JSON 中硬编码。
+直接引用原版方块模型，无需自绘纹理。缩放和方向旋转由 `guiScale()` 和 `directional(directionGetter)` 在代码层统一处理，不在 JSON 中硬编码。
 
 > ⚠️ **层叠加只解决「静态叠加」**。需要**按物品数据旋转某一层**（如漏斗箭头）时，
 > 模型层做不到 —— 见「渲染上下文覆盖范围」的方案 B/C。

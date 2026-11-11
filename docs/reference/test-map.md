@@ -32,6 +32,7 @@ src/test/java/com/qiqi/li/
 │   └── LivingItemInputKeyMapTest.java         # 方向输入键码表·九宫格 8 键映射/未知键为 0/全角字母归一化与转大写链路（2026-10-29）
 ├── client/icon/
 │   ├── WaterWheelRenderStateTest.java         # 水车图标旋转时钟·速度(Create口径 6°/s/RPM)/方向(符号随rpm)/rpm=0恒0/360°回绕连续/大时钟量级不退化(2026-10-29 换源回归)
+│   ├── LivingIconSpecTest.java                # 方向getter自声明/内建四向读取/非活不读方向/null与旋转模式冲突/完整namespace缓存键/GUI与非GUI回退
 │   ├── DirectionalLivingModelTest.java        # 家族 GUI 角度约定·四向视觉角表pinned(实机调校点)/非四向兜底归位/物品管线相反数与火把家族实机验证值逐项一致
 │   └── PistonRenderStateTest.java             # 活活塞伸缩进度时钟·伸出/收回插值与端点钳制/中途翻转从当前进度续接/方向变化吸附不滑动/键独立/活跃键剪枝/头位移线性([0,1]方块单位)/旋转表pinned(实机调校点)
 ├── client/render/
@@ -55,9 +56,10 @@ src/test/java/com/qiqi/li/
 ├── client/util/
 │   └── LivingChestTabSearchTest.java          # 活箱子标签页搜索过滤纯函数·空搜索词原样返回(不清空栈)/非空词剔除空栈不改入参/中文名直配/拼音(全拼·首字母·部分)/英文名大小写/注册ID兜底/空物品+非空词⇒匹配(原守卫分支语义·实际路径不可达,钉住防漂)
 ├── living/api/
+│   ├── LivingItemRegistrationTest.java        # 重复ID先拒绝且零变更/合法注册失效缓存/异常与安装失败恢复原实例顺序及缓存视图
 │   ├── ComponentOwnershipTest.java            # DataComponent 归属守卫·每组件必有主/不可重复归属/自声明会被清除/信标配置取消活化即清
 │   ├── ActivationHookTest.java                # 活化时机钩子守卫·派发参数原样送达/顺序不变量(钩子内仍带 IS_LIVING)/未认领物品不派发/数据安全否决/箱子无玩家拒绝且内容保住/末影箱不绑定且照常解绑/owner 只由活工具钩子写
-│   ├── DroppedItemSupportTest.java            # 掉落物形态准入判据（真机「丢在地上的活 TNT 不 tick、不炸」的回归）·活 TNT ⇒ 支持/活工具 ⇒ 支持（既有形态不能回退）/未声明功能（活箱子）⇒ 不支持/非活物品 ⇒ 不支持（⚠️ registerFunction 不去重，统一 @BeforeAll 注册）
+│   ├── DroppedItemSupportTest.java            # 掉落物形态准入判据（真机「丢在地上的活 TNT 不 tick、不炸」的回归）·活 TNT ⇒ 支持/活工具 ⇒ 支持（既有形态不能回退）/未声明功能（活箱子）⇒ 不支持/非活物品 ⇒ 不支持（独立作用域夹具，结束恢复正式表）
 │   ├── LivingItemActivationTest.java          # 活化门面守卫·零配置全放行/显式开启才拒绝/取消总允许/探针不改原物品
 │   ├── ActivationRuleConfigTest.java          # 活化规则 JSON 加载语义·via缺省=player/activate与deactivate独立/先命中先赢/白名单/坏值跳过（含指令侧增删改与持久化往返；tag 路径 @Disabled —— 单测环境不加载 item tags，已游戏内验证通过）
 │   └── TickOrderTest.java                     # 功能列表顺序守卫·默认优先级全为0（零行为变化的证据）/稳定排序/优先级生效/只读且非降序（不守容器内功能执行序，见 api-contract §1.3）

@@ -43,7 +43,11 @@ class DirectionalLivingModelTest {
         ItemStack observer = new ItemStack(Items.OBSERVER);
         LivingObserverData.set(observer, LivingObserverData.DEFAULT.withDirection(Pos2D.RIGHT));
 
-        assertEquals(-90, GenericLivingItemOverrides.resolveDirectionRotation(observer),
+        LivingIconSpec spec = LivingIconRegistry.DirectionalSpecs.create().stream()
+            .filter(value -> value.getItem() == Items.OBSERVER).findFirst().orElseThrow();
+        var overrides = new GenericLivingItemOverrides(
+            org.mockito.Mockito.mock(net.minecraft.client.resources.model.BakedModel.class), spec);
+        assertEquals(-90, overrides.resolveDirectionRotation(observer),
             "活侦测器必须读取自己的方向组件；落入火把兜底会恒按默认 UP 渲染");
     }
 
@@ -53,10 +57,12 @@ class DirectionalLivingModelTest {
         try (var stream = DirectionalLivingModelTest.class.getClassLoader().getResourceAsStream(path)) {
             assertNotNull(stream,
                 "LivingIconSpec 的 item/observer 固定解析到 living_item 命名空间；缺文件会显示黑紫 missing model");
-            String json = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
-            assertTrue(json.contains("\"parent\": \"minecraft:item/generated\""),
+            var json = com.google.gson.JsonParser.parseString(
+                new String(stream.readAllBytes(), StandardCharsets.UTF_8)).getAsJsonObject();
+            assertEquals("minecraft:item/generated", json.get("parent").getAsString(),
                 "活侦测器 GUI 图标应为平面 item/generated，不得继承原版 3D 方块模型");
-            assertTrue(json.contains("\"layer0\": \"minecraft:block/observer_top\""),
+            assertEquals("minecraft:block/observer_top",
+                json.getAsJsonObject("textures").get("layer0").getAsString(),
                 "平面图标应直接复用原版带方向箭头的 observer_top 纹理");
         }
     }

@@ -1,9 +1,15 @@
 package com.qiqi.li.client.icon;
 
+import com.qiqi.li.LivingItem;
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.model.Pos2D;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
 
 import java.util.List;
+import java.util.Objects;
+import java.util.function.Function;
 import java.util.function.Predicate;
 
 /**
@@ -20,15 +26,15 @@ import java.util.function.Predicate;
  * <p>示例 - 活熔炉（两种状态）：
  * <pre>
  * LivingIconSpec.builder(Items.FURNACE)
- *     .addVariant("idle", "item/furnace_idle", stack -> !isBurning(stack))
- *     .addVariant("active", "item/furnace_active", stack -> isBurning(stack))
+ *     .addLocalVariant("idle", "item/furnace_idle", stack -> !isBurning(stack))
+ *     .addLocalVariant("active", "item/furnace_active", stack -> isBurning(stack))
  *     .build();
  * </pre>
  *
  * <p>示例 - 活漏斗（一种基础图标 + 箭头叠加）：
  * <pre>
  * LivingIconSpec.builder(Items.HOPPER)
- *     .addVariant("base", "item/hopper_living", stack -> true)
+ *     .addLocalVariant("base", "item/hopper_living", stack -> true)
  *     .decorator(new LivingHopperDecorator())
  *     .build();
  * </pre>
@@ -50,17 +56,17 @@ public class LivingIconSpec {
     private final List<net.neoforged.neoforge.client.IItemDecorator> decorators;
 
     private final boolean rotating;
-    private final boolean directional;
+    private final Function<ItemStack, Pos2D> directionGetter;
     private final float guiScale;
 
     private LivingIconSpec(Item item, List<Variant> variants,
                            List<net.neoforged.neoforge.client.IItemDecorator> decorators,
-                           boolean rotating, boolean directional, float guiScale) {
+                           boolean rotating, Function<ItemStack, Pos2D> directionGetter, float guiScale) {
         this.item = item;
         this.variants = variants;
         this.decorators = decorators;
         this.rotating = rotating;
-        this.directional = directional;
+        this.directionGetter = directionGetter;
         this.guiScale = guiScale;
     }
 
@@ -68,7 +74,9 @@ public class LivingIconSpec {
     public List<Variant> getVariants() { return variants; }
     public List<net.neoforged.neoforge.client.IItemDecorator> getDecorators() { return decorators; }
     public boolean isRotating() { return rotating; }
-    public boolean isDirectional() { return directional; }
+    public boolean isDirectional() { return directionGetter != null; }
+    /** 方向数据读取器；未启用方向旋转时为 null，只对活物品调用。 */
+    public Function<ItemStack, Pos2D> getDirectionGetter() { return directionGetter; }
     public float getGuiScale() { return guiScale; }
 
     /**
@@ -89,30 +97,21 @@ public class LivingIconSpec {
         return new Builder(item);
     }
 
-    /**
-     * 图标变体，描述一种图标状态。
-     *
-     * <p>每个变体包含：
-     * <ul>
-     *   <li>name - 变体名称，用于生成模型资源路径</li>
-     *   <li>modelPath - 模型 JSON 的资源路径（如 "item/furnace_idle"）</li>
-     *   <li>predicate - 判断当前 ItemStack 是否应使用此变体</li>
-     * </ul>
-     */
+    /** 图标变体：按注册顺序匹配，模型 ID 保留完整命名空间。 */
     public static class Variant {
         private final String name;
-        private final String modelPath;
-        private final Predicate<net.minecraft.world.item.ItemStack> predicate;
+        private final ResourceLocation modelId;
+        private final Predicate<ItemStack> predicate;
 
-        public Variant(String name, String modelPath, Predicate<net.minecraft.world.item.ItemStack> predicate) {
+        public Variant(String name, ResourceLocation modelId, Predicate<ItemStack> predicate) {
             this.name = name;
-            this.modelPath = modelPath;
+            this.modelId = Objects.requireNonNull(modelId, "modelId");
             this.predicate = predicate;
         }
 
         public String getName() { return name; }
-        public String getModelPath() { return modelPath; }
-        public Predicate<net.minecraft.world.item.ItemStack> getPredicate() { return predicate; }
+        public ResourceLocation getModelId() { return modelId; }
+        public Predicate<ItemStack> getPredicate() { return predicate; }
     }
 
     /**
@@ -124,28 +123,24 @@ public class LivingIconSpec {
         private final java.util.ArrayList<net.neoforged.neoforge.client.IItemDecorator> decorators =
             new java.util.ArrayList<>();
         private boolean rotating;
-        private boolean directional;
+        private Function<ItemStack, Pos2D> directionGetter;
         private float guiScale = 1.0f;
 
         private Builder(Item item) {
             this.item = item;
         }
 
-        /**
-         * 添加一个图标变体。
-         *
-         * <p>变体按添加顺序匹配，resolve 时使用第一个 predicate 返回 true 的变体。
-         * 因此通常把最常用的变体放在前面，或者把默认变体放在最后（predicate 为 stack -> true）。
-         *
-         * @param name      变体名称（如 "idle"、"active"）
-         * @param modelPath 模型 JSON 的资源路径（如 "item/furnace_idle"），
-         *                  对应 assets/living_item/models/item/furnace_idle.json
-         * @param predicate 判断当前 ItemStack 是否应使用此变体
-         * @return 此建造者
-         */
-        public Builder addVariant(String name, String modelPath,
-                                  Predicate<net.minecraft.world.item.ItemStack> predicate) {
-            variants.add(new Variant(name, modelPath, predicate));
+        /** 添加 living_item 命名空间的本地模型路径，不接受带命名空间的字符串。 */
+        public Builder addLocalVariant(String name, String localPath, Predicate<ItemStack> predicate) {
+            if (localPath.contains(":")) {
+                throw new IllegalArgumentException("Local model path must not include a namespace: " + localPath);
+            }
+            return addVariant(name, ResourceLocation.fromNamespaceAndPath(LivingItem.MOD_ID, localPath), predicate);
+        }
+
+        /** 添加完整模型 ID；变体按添加顺序匹配第一个 predicate 为 true 的项。 */
+        public Builder addVariant(String name, ResourceLocation modelId, Predicate<ItemStack> predicate) {
+            variants.add(new Variant(name, modelId, predicate));
             return this;
         }
 
@@ -170,8 +165,9 @@ public class LivingIconSpec {
             return this;
         }
 
-        public Builder directional() {
-            this.directional = true;
+        /** 启用 GUI 方向旋转；读取器只对活物品调用，不能与 rotating 同时启用。 */
+        public Builder directional(Function<ItemStack, Pos2D> directionGetter) {
+            this.directionGetter = Objects.requireNonNull(directionGetter, "directionGetter");
             return this;
         }
 
@@ -190,8 +186,11 @@ public class LivingIconSpec {
             if (variants.isEmpty()) {
                 throw new IllegalStateException("至少需要添加一个变体");
             }
+            if (rotating && directionGetter != null) {
+                throw new IllegalStateException("rotating 与 directional 不能同时启用");
+            }
             return new LivingIconSpec(item, List.copyOf(variants), List.copyOf(decorators),
-                rotating, directional, guiScale);
+                rotating, directionGetter, guiScale);
         }
     }
 }

@@ -71,7 +71,7 @@
 | 5 比较器链 | `ContainerRedstoneDataTest`（比较器链 ≥4 级双向全亮） |
 | 6 红石灯 | `ContainerRedstoneDataTest`（被供电点亮 / 失去信号熄灭） |
 | 端到端 | `ContainerRedstoneIntegrationTest` |
-| 8-10 活侦测器（相邻槽语义粒度 / 结算后统一采样 / 红石公开状态 / 严格忙碌窗口 / 2gt×2 / 改向移动拆合重建基线 / 单边 cap / 账本丢失无假脉冲 / movedSlots 索引刷新） | `LivingObserverTest` · `DirectionalLivingModelTest`（图标资源与方向组件） |
+| 8-10 活侦测器（相邻槽语义粒度 / 结算后统一采样 / 红石公开状态 / 严格忙碌窗口 / 2gt×2 / 改向移动拆合重建基线 / 单边 cap / 账本丢失无假脉冲 / movedSlots 索引刷新） | `LivingObserverTest` · `DirectionalLivingModelTest`（平面模型/方向组件）· ✅ 2026-11-11 用户真机验收：v2 功能、活塞本体侦测、平面图标与四向旋转正常 |
 
 ---
 
@@ -1881,7 +1881,7 @@ guiGraphics.setColor(1.0f, 1.0f, 1.0f, 1.0f);  // 恢复默认颜色
 
 ### 10.2 活侦测器图标（2026-11-11 修复）
 
-活侦测器在 `LivingIconRegistry` 中声明为 `item/observer` + `directional()`。图标变体路径固定解析到
+活侦测器在 `LivingIconRegistry` 中声明为 `addLocalVariant("base", "item/observer", ...)` + `directional(stack -> LivingObserverData.of(stack).direction())`。图标变体路径固定解析到
 `living_item` 命名空间，因此必须存在 `assets/living_item/models/item/observer.json`。该模型走
 `minecraft:item/generated` 平面图标，`layer0` 直接引用原版带方向箭头的
 `minecraft:block/observer_top`；不复制原版资产，并随玩家材质包变化。GUI 图标按输出方向旋转；
@@ -1890,6 +1890,5 @@ guiGraphics.setColor(1.0f, 1.0f, 1.0f, 1.0f);  // 恢复默认颜色
 此前先补了一层 `parent: minecraft:item/observer`：解决了黑紫 missing model，却仍继承完整方块模型，
 GUI 呈现立体方块；v2 改为上述平面模型。
 
-方向解析必须由 `GenericLivingItemOverrides` 显式读取 `LivingObserverData.direction()`；方向族的兜底分支
-是活红石火把组件，新增方向物品若未接入会静默按火把默认 UP 渲染。守卫见
+方向数据源现在由图标 spec 自声明；`GenericLivingItemOverrides` 只调用 getter，不再有物品 if-chain 或火把兜底。原来漏接侦测器分支会静默按 UP 渲染的风险已消除。守卫见
 `DirectionalLivingModelTest`（平面模型资源/原版方向纹理 + 侦测器方向数据源）。

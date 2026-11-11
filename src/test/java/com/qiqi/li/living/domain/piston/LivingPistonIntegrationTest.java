@@ -9,12 +9,15 @@ import java.util.List;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.parallel.Isolated;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import com.qiqi.li.living.api.HasContainerData;
 import com.qiqi.li.living.api.LivingItemFunction;
 import com.qiqi.li.living.api.LivingItemManager;
+import com.qiqi.li.living.api.LivingItemRegistrationScope;
 import com.qiqi.li.living.api.RedstoneSensor;
 import com.qiqi.li.living.container.ContainerLivingItemHandler;
 import com.qiqi.li.living.container.SimpleContainerContext;
@@ -49,7 +52,15 @@ import net.neoforged.neoforge.items.IItemHandlerModifiable;
  * <p>⚠️ {@link ContainerRuntimeCache} 是静态全局 —— @AfterEach 清空，
  * 否则前一个用例的 extended=true 会让下一个用例的活塞「以为自己在伸出」而不推。</p>
  */
+@Isolated
 class LivingPistonIntegrationTest {
+
+    private static LivingItemRegistrationScope registration;
+
+    @AfterAll
+    static void restoreRegistration() {
+        if (registration != null) registration.close();
+    }
 
     private static final int PISTON = 4, CARGO = 5, PAST = 6;
     private static final RuntimeSegmentType<Integer> CARGO_MARKER = new RuntimeSegmentType<>() {
@@ -62,7 +73,7 @@ class LivingPistonIntegrationTest {
 
     @BeforeAll
     static void registerCargoObserver() {
-        LivingItemManager.registerFunction(CARGO_OBSERVER);
+        registration = LivingItemRegistrationScope.withAdditional(CARGO_OBSERVER);
     }
 
     private static final class CargoObserver implements LivingItemFunction, HasContainerData {

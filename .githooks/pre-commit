@@ -37,6 +37,9 @@ run_gate "check_container_keys（容器键解析收敛）" "tools/check_containe
 run_gate "check_stack_ops（槽位裸写棘轮）" "tools/check_stack_ops.py" \
   '数量增减改走 move / produce / consume / transform；确认是状态写入等非数量场景，才用 --update-baseline 登记，不要用它掩盖真违规。'
 
+run_gate "check_icon_resources（图标声明 / 本地资源）" "tools/check_icon_resources.py" \
+  '按声明补本地模型/parent/texture；rotating 和外部资源按实际加载路径处理；新声明形状需同步检查器，不静默跳过。'
+
 run_gate "gen_test_summary（记录全量测试快照）" "tools/gen_test_summary.py" \
   '快照缺失：跑一次 ./gradlew test --rerun；局部 --tests 不覆盖既有快照，无需重跑全量。'
 

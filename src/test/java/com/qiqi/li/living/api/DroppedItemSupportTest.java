@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.parallel.Isolated;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -25,17 +27,21 @@ import net.minecraft.world.item.Items;
  * 而不是「物品白名单」—— 白名单每加一个支持的功能都要回来改，漏改的表现是
  * 「功能看起来在跑、其实永远不生效」。</p>
  */
+@Isolated
 class DroppedItemSupportTest {
 
-    /**
-     * ⚠️ {@code registerFunction} <b>不去重</b>（每 new 一个实例就多一条），
-     * 所以统一在 {@code @BeforeAll} 注册一次，别放进 {@code @Test}。
-     */
+    private static LivingItemRegistrationScope registration;
+
+    @AfterAll
+    static void restoreRegistration() {
+        if (registration != null) registration.close();
+    }
+
+    /** 独立夹具结束后恢复正式 Function 表。 */
     @BeforeAll
     static void registerFunctions() {
-        LivingItemManager.registerFunction(new LivingTntFunction());
-        LivingItemManager.registerFunction(new LivingToolFunction());
-        LivingItemManager.registerFunction(new LivingChestFunction());
+        registration = LivingItemRegistrationScope.isolated(java.util.List.of(
+            new LivingTntFunction(), new LivingToolFunction(), new LivingChestFunction()));
     }
 
     private static ItemStack living(ItemStack stack) {

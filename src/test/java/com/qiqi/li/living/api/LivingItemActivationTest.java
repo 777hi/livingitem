@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.parallel.Isolated;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -27,7 +29,15 @@ import net.minecraft.world.item.Items;
  * 而各 {@code canApply} 内部也都依赖 {@code isLivingItem}），见该方法 javadoc。
  */
 @DisplayName("活化门面 · 默认全放行，拦截只能显式开启（D1）")
+@Isolated
 class LivingItemActivationTest {
+
+    private static LivingItemRegistrationScope registration;
+
+    @AfterAll
+    static void restoreRegistration() {
+        if (registration != null) registration.close();
+    }
 
     @BeforeEach
     void resetRules() {
@@ -37,7 +47,7 @@ class LivingItemActivationTest {
 
     @BeforeAll
     static void registerFunctions() {
-        LivingItemManager.registerFunction(new LivingTntFunction());
+        registration = LivingItemRegistrationScope.isolated(java.util.List.of(new LivingTntFunction()));
     }
 
     @Test

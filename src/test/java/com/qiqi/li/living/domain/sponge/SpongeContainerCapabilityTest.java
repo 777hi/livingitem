@@ -47,10 +47,6 @@ class SpongeContainerCapabilityTest {
     @BeforeAll
     static void setup() {
         TickContextHolder.register();
-        if (LivingItemManager.getAllFunctions().stream()
-                .noneMatch(f -> "living_sponge".equals(f.getFunctionId()))) {
-            LivingItemManager.registerFunction(new LivingSpongeFunction());
-        }
     }
 
     /** 引用 LivingSpongeAbsorbTest 的 resolver 注册（静态，幂等）。 */

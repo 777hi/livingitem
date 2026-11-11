@@ -51,10 +51,44 @@ public class LivingItemManager {
     private static volatile List<LivingItemFunction> SELF_SUSTAINING_FUNCTIONS = List.of();
 
     public static void registerFunction(LivingItemFunction function) {
-        LOGGER.info("Registering living item function: {}", function.getFunctionId());
+        String id = function.getFunctionId();
+        for (LivingItemFunction existing : FUNCTIONS) {
+            if (Objects.equals(existing.getFunctionId(), id)) {
+                throw new IllegalStateException("Duplicate living function ID: " + id
+                    + " (existing " + existing.getClass().getName()
+                    + ", incoming " + function.getClass().getName() + ")");
+            }
+        }
+        LOGGER.info("Registering living item function: {}", id);
         FUNCTIONS.add(function);
         APPLICABLE_CACHE.clear();
         recomputeSelfSustaining();
+    }
+
+    /** 测试专用：保存原实例、顺序与派生缓存，不执行功能回调。 */
+    static RegistrationState snapshotForTest() {
+        return new RegistrationState(List.copyOf(FUNCTIONS), Map.copyOf(APPLICABLE_CACHE),
+            SELF_SUSTAINING_FUNCTIONS);
+    }
+
+    /** 测试专用：恢复原集合内容，保留 FUNCTIONS_VIEW 的活视图。 */
+    static void restoreForTest(RegistrationState state) {
+        FUNCTIONS.clear();
+        FUNCTIONS.addAll(state.functions());
+        APPLICABLE_CACHE.clear();
+        APPLICABLE_CACHE.putAll(state.applicable());
+        SELF_SUSTAINING_FUNCTIONS = state.selfSustaining();
+    }
+
+    record RegistrationState(List<LivingItemFunction> functions,
+                             Map<Item, List<LivingItemFunction>> applicable,
+                             List<LivingItemFunction> selfSustaining) {}
+
+    /** 测试专用：空夹具，后续安装仍走真实 registerFunction。 */
+    static void clearRegistrationForTest() {
+        FUNCTIONS.clear();
+        APPLICABLE_CACHE.clear();
+        SELF_SUSTAINING_FUNCTIONS = List.of();
     }
 
     /**

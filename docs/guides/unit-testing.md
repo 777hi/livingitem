@@ -320,3 +320,20 @@ mock 方法 ⇒ 单测里写字段式会让客户端守卫**永远不触发**（
    本项目的列数推断和信号上限都有特例。
 3. 断言失败信息里带上实际值（`"实际=" + actual`），否则中文测试名在 Windows 控制台会乱码，
    只能靠失败信息定位。
+
+
+## Function 注册夹具隔离（2026-11-11）
+
+FML 单测启动已注册正式功能；测试不得再次追加相同 ID，`registerFunction` 会在变更之前拒绝。只需查询正式功能的测试直接使用原基线；需要自定义夹具时使用**测试源** `LivingItemRegistrationScope`，不调用领域 Registration 重装 hooks/handlers。
+
+```java
+try (var scope = LivingItemRegistrationScope.isolated(List.of(testFunction))) {
+    // 真实注册与派发；结束（含异常）恢复原表
+}
+```
+
+集成测试要保留正式驱动时用 `withAdditional(uniqueProbe)`；不能只装 probe 而丢掉红石/流体自维持功能。类级夹具在 `@BeforeAll` 安装、`@AfterAll` 关闭，修改全局注册表的类加 `@Isolated`，避免外部开启 Jupiter 并行后撞到其它读取者。
+
+作用域保存原 Function 实例与顺序、适用缓存列表与自维持原视图；恢复回填原集合，不重注册、不排序、不重跑声明回调。夹具安装失败也恢复。它不清世界/路由/内容缓存，原测试的其他清理责任保持不变；不把持久注册表加入服务器退出清理。
+
+包内 snapshot/restore 接缝住 Manager，跨包访问仅由测试源桥接；无生产 public reset、无反射私有字段。异常恢复、重复注册前零变更与活视图保持由 `LivingItemRegistrationTest` 守卫。

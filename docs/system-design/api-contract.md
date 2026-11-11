@@ -92,6 +92,12 @@ javadoc 明写「新增 LivingItemFunction 必须回来手添」⇒ **第三方�
 | `LivingIconRegistry.register` | `LivingIconRegistry.java` | ⚠️ public，但内置调用时机在 mod 构造函数，无时序契约 |
 | 可选钩子 `onActivated` / `onDeactivated` | `living/api/LivingItemFunction.java` | ✅ default 空实现，契约见 §1.5（2026-10-04）—— ⚠️ 与其它钩子不同，它**有守卫测试**（`ActivationHookTest`） |
 
+#### Function ID 唯一性（2026-11-11）
+
+`LivingItemManager.registerFunction` 按 `getFunctionId()` 的字符串值拒绝重复（包括同一实例二次注册），在日志、追加、缓存失效和自维持回调之前抛 `IllegalStateException`，报告 ID 与双方实现类。相同类的不同 ID 可注册；不静默去重、不替换已注册功能。Function ID 暂不迁移为 ResourceLocation。
+
+合法注册仍按既有逻辑使适用缓存失效并重建自维持视图；没有新增注册冻结或注册回调的通用事务保证。守卫为 `LivingItemRegistrationTest`。测试隔离见 [unit-testing.md](../guides/unit-testing.md)「Function 注册夹具隔离」；测试接缝为包内方法，不增加对外 reset/unregister 能力。
+
 #### ⚠️ 已知缺口：注册时序是隐式的
 
 三类扩展的注册时机各不相同，且**未有任何文档声明**：

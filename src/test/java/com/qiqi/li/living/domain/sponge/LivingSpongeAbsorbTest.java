@@ -35,7 +35,7 @@ import net.neoforged.neoforge.items.IItemHandlerModifiable;
  *
  * <p>驱动方式：除 ⑨ 外全部<b>直接调用 {@code tick}</b>（不依赖跨测试类的注册顺序，
  * ContainerFluidDataTest 同款）；⑨ 为 processContext 端到端冒烟（分组路径真驱动，
- * 注册带守卫 —— {@code registerFunction} 不去重，双注册 = 双吸收）。</p>
+ * 使用 commonSetup 已注册的真实功能，不重复安装）。</p>
  */
 class LivingSpongeAbsorbTest {
 
@@ -49,11 +49,6 @@ class LivingSpongeAbsorbTest {
     static void setup() {
         // 源账本 resolver —— WaterRegistration 同款（测试自足，不拖整个 Registration 的副作用）
         TickContext.registerSourceLedgerResolver(t -> t.data(ContainerFluidData.KEY));
-        // 分组驱动需要功能在册；守卫防与 ComponentOwnershipTest 的全量注册撞车（不去重）
-        if (LivingItemManager.getAllFunctions().stream()
-                .noneMatch(f -> "living_sponge".equals(f.getFunctionId()))) {
-            LivingItemManager.registerFunction(new LivingSpongeFunction());
-        }
     }
 
     @BeforeEach

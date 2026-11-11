@@ -11,6 +11,8 @@ import java.util.List;
 import javax.annotation.Nullable;
 
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.parallel.Isolated;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -42,12 +44,8 @@ import com.qiqi.li.living.domain.tools.LivingToolRecorder;
  * <b>而系统不报错</b> —— 与 A2 的「忘了声明 owned component ⇒ 孤儿数据」是同一类静默失败。
  * 本测试把这个失败模式钉死。</p>
  *
- * <h3>为什么在 {@code @BeforeAll} 注册而不是每个用例一次</h3>
- * <p><b>踩过的坑</b>：功能注册表是<b>全局且只增不减</b>的（没有注销 API），
- * 而派发目标 {@code getApplicableFunctions} 读的就是它。
- * 若每个用例都 new 一个记账功能注册进去，早先用例留下的实例会继续参与派发 ——
- * 于是「④ 否决」用例里那个 {@code veto=true} 的旧实例会把「① 正常取消活化」也否掉。
- * ⇒ 记账功能<b>全局只注册一个</b>，否决开关做成静态字段由用例设置。</p>
+ * <p>本类在独立注册作用域安装夹具，结束后恢复正式表；记账器开关每用例重置，
+ * 不把否决态泄漏给其它测试。</p>
  *
  * <h3>可测性边界</h3>
  * <p>单测<b>造不出真实玩家</b>（{@code ServerPlayer} 需要服务器）⇒ 「有玩家」分支
@@ -57,21 +55,25 @@ import com.qiqi.li.living.domain.tools.LivingToolRecorder;
  * 本测试守的是<b>玩家缺席</b>那侧 —— 也就是本契约新增的部分。</p>
  */
 @DisplayName("活化时机钩子守卫 · 各功能自声明（A3 收编）")
+@Isolated
 class ActivationHookTest {
 
-    /** 全局唯一的记账功能（理由见类注释）。 */
+    private static LivingItemRegistrationScope registration;
+
+    @AfterAll
+    static void restoreRegistration() {
+        if (registration != null) registration.close();
+    }
+
+    /** 本类注册作用域中的记账器，每用例重置。 */
     private static final RecordingFunction RECORDER = new RecordingFunction();
 
     private Level level;
 
     @BeforeAll
     static void registerFunctions() {
-        // registerFunction 会清 APPLICABLE_CACHE，所以注册后再查询拿到的就是最新结果
-        // （api-contract §1.3）。
-        LivingItemManager.registerFunction(new LivingChestFunction());
-        LivingItemManager.registerFunction(new LivingEnderChestFunction());
-        LivingItemManager.registerFunction(new LivingToolFunction());
-        LivingItemManager.registerFunction(RECORDER);
+        registration = LivingItemRegistrationScope.isolated(List.of(
+            new LivingChestFunction(), new LivingEnderChestFunction(), new LivingToolFunction(), RECORDER));
     }
 
     @BeforeEach

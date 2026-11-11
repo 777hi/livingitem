@@ -1,9 +1,5 @@
 package com.qiqi.li.client.icon;
 import com.qiqi.li.living.domain.water.LivingWaterWheelData;
-import com.qiqi.li.living.domain.redstone.LivingRepeaterData;
-import com.qiqi.li.living.domain.redstone.LivingRedstoneTorchData;
-import com.qiqi.li.living.domain.redstone.LivingComparatorData;
-import com.qiqi.li.living.domain.redstone.LivingObserverData;
 
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.block.model.ItemOverrides;
@@ -87,29 +83,9 @@ public class GenericLivingItemOverrides extends ItemOverrides {
         return vanillaModel;
     }
 
-    static int resolveDirectionRotation(ItemStack stack) {
-        com.qiqi.li.living.model.Pos2D dir;
-        if (stack.is(net.minecraft.world.item.Items.PISTON)
-                || stack.is(net.minecraft.world.item.Items.STICKY_PISTON)) {
-            dir = com.qiqi.li.living.domain.piston.LivingPistonData.of(stack).direction();
-        } else if (stack.is(net.minecraft.world.item.Items.REPEATER)) {
-            com.qiqi.li.living.domain.redstone.LivingRepeaterData data =
-                LivingRepeaterData.of(stack);
-            dir = data.direction();
-        } else if (stack.is(net.minecraft.world.item.Items.COMPARATOR)) {
-            com.qiqi.li.living.domain.redstone.LivingComparatorData data =
-                LivingComparatorData.of(stack);
-            dir = data.direction();
-        } else if (stack.is(net.minecraft.world.item.Items.OBSERVER)) {
-            dir = LivingObserverData.of(stack).direction();
-        } else {
-            com.qiqi.li.living.domain.redstone.LivingRedstoneTorchData data =
-                LivingRedstoneTorchData.of(stack);
-            dir = data.direction();
-        }
-        // 物品渲染管线在 applyTransform 之后含 y 翻转 ⇒ 施加相反数（视觉角 = −施加角，
-        // 与既有火把家族实机验证值 UP=0/RIGHT=−90/DOWN=180/LEFT=90 逐项一致）。
-        return -DirectionalLivingModel.rotationOf(dir);
+    int resolveDirectionRotation(ItemStack stack) {
+        // 模型管线在 applyTransform 后翻转 y，施加视觉角的相反数。
+        return -DirectionalLivingModel.rotationOf(spec.getDirectionGetter().apply(stack));
     }
 
     private RotatingWaterWheelModel getOrCreateRotatingModel(ItemStack stack) {
@@ -128,7 +104,7 @@ public class GenericLivingItemOverrides extends ItemOverrides {
      * @return 上下文感知模型
      */
     private static String cacheKey(LivingIconSpec.Variant variant) {
-        return variant.getName() + "@" + variant.getModelPath();
+        return variant.getName() + "@" + variant.getModelId();
     }
 
     private GenericContextAwareModel getOrCreateContextModel(LivingIconSpec.Variant variant) {

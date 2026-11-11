@@ -4,6 +4,8 @@ import com.qiqi.li.living.domain.redstone.LivingRedstoneLampData;
 import com.qiqi.li.living.domain.redstone.LivingLeverData;
 import com.qiqi.li.living.domain.redstone.LivingCopperBulbData;
 import com.qiqi.li.living.domain.power.LivingWaxedBulbData;
+import com.qiqi.li.living.domain.piston.LivingPistonData;
+import com.qiqi.li.living.domain.redstone.LivingObserverData;
 
 import com.qiqi.li.LivingItem;
 import com.qiqi.li.client.render.LivingBrewingStandDecorator;
@@ -43,8 +45,8 @@ import java.util.Set;
  * <p>注册示例：
  * <pre>
  * register(LivingIconSpec.builder(Items.FURNACE)
- *     .addVariant("idle", "item/furnace_idle", stack -> !isBurning(stack))
- *     .addVariant("active", "item/furnace_active", stack -> isBurning(stack))
+ *     .addLocalVariant("idle", "item/furnace_idle", stack -> !isBurning(stack))
+ *     .addLocalVariant("active", "item/furnace_active", stack -> isBurning(stack))
  *     .build());
  * </pre>
  */
@@ -71,14 +73,14 @@ public final class LivingIconRegistry {
      */
     public static void registerAll() {
         register(LivingIconSpec.builder(net.minecraft.world.item.Items.HOPPER)
-            .addVariant("base", "item/hopper_living", stack -> true)
+            .addLocalVariant("base", "item/hopper_living", stack -> true)
             .decorator(new LivingHopperDecorator())
             .build());
 
         register(LivingIconSpec.builder(net.minecraft.world.item.Items.FURNACE)
-            .addVariant("idle", "item/furnace_idle",
+            .addLocalVariant("idle", "item/furnace_idle",
                 stack -> !com.qiqi.li.living.domain.furnace.LivingFurnaceFunction.isBurning(stack))
-            .addVariant("active", "item/furnace_active",
+            .addLocalVariant("active", "item/furnace_active",
                 stack -> com.qiqi.li.living.domain.furnace.LivingFurnaceFunction.isBurning(stack))
             .build());
 
@@ -89,7 +91,7 @@ public final class LivingIconRegistry {
         //   ② 白幕   —— 酿造中图标底部往上消退的纯白覆盖层，复刻原版物品冷却语言（末影珍珠同款）。
         // z 已分层（条 190 < 白幕 200）⇒ 播放中白幕盖在条上（白幕是「进行中」横幅）。
         register(LivingIconSpec.builder(net.minecraft.world.item.Items.BREWING_STAND)
-            .addVariant("base", "item/brewing_stand", stack -> true)
+            .addLocalVariant("base", "item/brewing_stand", stack -> true)
             .decorator(new com.qiqi.li.client.render.ProgressBarDecorator(stack -> {
                 if (!com.qiqi.li.living.api.LivingItemManager.isLivingItem(stack)) return null;
                 int fuel = com.qiqi.li.living.domain.brewing.LivingBrewingStandData.of(stack).fuel();
@@ -102,28 +104,15 @@ public final class LivingIconRegistry {
             .build());
 
         register(LivingIconSpec.builder(net.minecraft.world.item.Items.TNT)
-            .addVariant("lit", "item/tnt_lit",
+            .addLocalVariant("lit", "item/tnt_lit",
                 stack -> {
                     int timer = com.qiqi.li.living.domain.tnt.LivingTntFunction.getFuseTimer(stack);
                     return timer > 0 && timer % 10 == 0;
                 })
-            .addVariant("idle", "item/tnt_idle", stack -> true)
+            .addLocalVariant("idle", "item/tnt_idle", stack -> true)
             .build());
 
-        // 活活塞（2026-11-04 全平面定稿）：图标 = 纯机身剖面（16×12×16，UV [0,4,16,16] 1:1 无拉伸，
-        // 无 display 变换 ⇒ 16px 原版物品尺寸），板缘 4px 行不烘进贴图 —— 板 / 杆由
-        // LivingPistonOverlay 2D blit 原版 piston_side 贴图区域（零新资产）：
-        // 静止板贴机身前缘 = 朝向指示；滑出后原位只剩机身（推出残影根源已除）。
-        // directional() ⇒ GUI 内随 WASD 朝向旋转（火把家族同款角度约定 rotationOf）。
-        // 普通 / 粘性共用同一机身模型（侧视剖面同貌）；hand 持有仍是原版 3D（ContextAware）。
-        register(LivingIconSpec.builder(net.minecraft.world.item.Items.PISTON)
-            .addVariant("base", "item/living_piston", stack -> true)
-            .directional()
-            .build());
-        register(LivingIconSpec.builder(net.minecraft.world.item.Items.STICKY_PISTON)
-            .addVariant("base", "item/living_piston", stack -> true)
-            .directional()
-            .build());
+        DirectionalSpecs.create().forEach(LivingIconRegistry::register);
 
         // ⚠️ 3D 方案（2026-09-22 定稿）：走原版 builtin/entity（ChestRenderer），
         //    GUI 下显示**正面视角**（rotation [0,0,0]）、scale 1.0（箱体本身 14 单位 = 14px）。
@@ -133,102 +122,19 @@ public final class LivingIconRegistry {
         //    专属模型会使物品进入 dedicatedItems，本来就不会再挂默认活物品标记
         //    （`living.png` 叠加）—— 3D 箱子自身已足够辨识「活」，无需额外标记。
         register(LivingIconSpec.builder(net.minecraft.world.item.Items.CHEST)
-            .addVariant("base", "item/chest_3d", stack -> true)
+            .addLocalVariant("base", "item/chest_3d", stack -> true)
             .build());
 
         register(LivingIconSpec.builder(net.minecraft.world.item.Items.REDSTONE_LAMP)
-            .addVariant("on", "item/redstone_lamp_on",
+            .addLocalVariant("on", "item/redstone_lamp_on",
                 stack -> LivingRedstoneLampData.of(stack).lit())
-            .addVariant("off", "item/redstone_lamp", stack -> true)
-            .build());
-
-        register(LivingIconSpec.builder(net.minecraft.world.item.Items.REDSTONE_TORCH)
-            .addVariant("on", "item/redstone_torch",
-                stack -> LivingRedstoneTorchData.of(stack).isLit())
-            .addVariant("off", "item/redstone_torch_off", stack -> true)
-            .directional()
-            .build());
-
-        // 活侦测器：原版侦测器贴图 + directional()（GUI 内随 WASD 朝向旋转，火把家族同款角度约定）
-        register(LivingIconSpec.builder(net.minecraft.world.item.Items.OBSERVER)
-            .addVariant("base", "item/observer", stack -> true)
-            .directional()
-            .build());
-
-        register(LivingIconSpec.builder(net.minecraft.world.item.Items.REPEATER)
-            .addVariant("1tick", "item/repeater_1tick",
-                stack -> {
-                    LivingRepeaterData d = LivingRepeaterData.of(stack);
-                    return d.delay() == 1 && !d.powered();
-                })
-            .addVariant("1tick_on", "item/repeater_1tick_on",
-                stack -> {
-                    LivingRepeaterData d = LivingRepeaterData.of(stack);
-                    return d.delay() == 1 && d.powered();
-                })
-            .addVariant("2tick", "item/repeater_2tick",
-                stack -> {
-                    LivingRepeaterData d = LivingRepeaterData.of(stack);
-                    return d.delay() == 2 && !d.powered();
-                })
-            .addVariant("2tick_on", "item/repeater_2tick_on",
-                stack -> {
-                    LivingRepeaterData d = LivingRepeaterData.of(stack);
-                    return d.delay() == 2 && d.powered();
-                })
-            .addVariant("3tick", "item/repeater_3tick",
-                stack -> {
-                    LivingRepeaterData d = LivingRepeaterData.of(stack);
-                    return d.delay() == 3 && !d.powered();
-                })
-            .addVariant("3tick_on", "item/repeater_3tick_on",
-                stack -> {
-                    LivingRepeaterData d = LivingRepeaterData.of(stack);
-                    return d.delay() == 3 && d.powered();
-                })
-            .addVariant("4tick", "item/repeater_4tick",
-                stack -> {
-                    LivingRepeaterData d = LivingRepeaterData.of(stack);
-                    return d.delay() == 4 && !d.powered();
-                })
-            .addVariant("4tick_on", "item/repeater_4tick_on",
-                stack -> {
-                    LivingRepeaterData d = LivingRepeaterData.of(stack);
-                    return d.delay() == 4 && d.powered();
-                })
-            .directional()
-            .guiScale(1.0f)
-            .build());
-
-        register(LivingIconSpec.builder(net.minecraft.world.item.Items.COMPARATOR)
-            .addVariant("compare", "item/comparator_compare",
-                stack -> {
-                    LivingComparatorData d = LivingComparatorData.of(stack);
-                    return !d.subtractMode() && !d.powered();
-                })
-            .addVariant("compare_on", "item/comparator_compare_on",
-                stack -> {
-                    LivingComparatorData d = LivingComparatorData.of(stack);
-                    return !d.subtractMode() && d.powered();
-                })
-            .addVariant("subtract", "item/comparator_subtract",
-                stack -> {
-                    LivingComparatorData d = LivingComparatorData.of(stack);
-                    return d.subtractMode() && !d.powered();
-                })
-            .addVariant("subtract_on", "item/comparator_subtract_on",
-                stack -> {
-                    LivingComparatorData d = LivingComparatorData.of(stack);
-                    return d.subtractMode() && d.powered();
-                })
-            .directional()
-            .guiScale(1.0f)
+            .addLocalVariant("off", "item/redstone_lamp", stack -> true)
             .build());
 
         register(LivingIconSpec.builder(net.minecraft.world.item.Items.LEVER)
-            .addVariant("off", "item/lever",
+            .addLocalVariant("off", "item/lever",
                 stack -> !LivingLeverData.of(stack).powered())
-            .addVariant("on", "item/lever_on",
+            .addLocalVariant("on", "item/lever_on",
                 stack -> LivingLeverData.of(stack).powered())
             .build());
 
@@ -236,21 +142,21 @@ public final class LivingIconRegistry {
         //    复用 ChestRenderer；物品渲染（无 level）统一 FACING=SOUTH ⇒ 同为正面视角。
         //    3D 末影箱自身已足够辨识「活」，不再叠加默认标记。
         register(LivingIconSpec.builder(net.minecraft.world.item.Items.ENDER_CHEST)
-            .addVariant("base", "item/ender_3d", stack -> true)
+            .addLocalVariant("base", "item/ender_3d", stack -> true)
             .build());
 
         register(LivingIconSpec.builder(net.minecraft.world.item.Items.FILLED_MAP)
-            .addVariant("base", "item/living_map", stack -> true)
+            .addLocalVariant("base", "item/living_map", stack -> true)
             .decorator(new LivingMapIconDecorator())
             .build());
 
         register(LivingIconSpec.builder(net.minecraft.world.item.Items.REDSTONE)
-            .addVariant("base", "item/redstone_dust", stack -> true)
+            .addLocalVariant("base", "item/redstone_dust", stack -> true)
             .decorator(new LivingRedstoneDecorator())
             .build());
 
         register(LivingIconSpec.builder(net.minecraft.world.item.Items.REDSTONE_BLOCK)
-            .addVariant("base", "item/redstone_block", stack -> true)
+            .addLocalVariant("base", "item/redstone_block", stack -> true)
             .build());
 
         // 活耕地：复用原版耕地顶面纹理（干/湿两态——湿润变体引用原版 farmland_moist，
@@ -259,9 +165,9 @@ public final class LivingIconRegistry {
         // 走 IItemDecorator 而非容器 Mixin——装饰器在快捷栏/容器 GUI/创造物品栏都会被调用，
         // 一份代码全覆盖（2026-09-16 从 AbstractContainerScreenMixin 迁入）。
         register(LivingIconSpec.builder(net.minecraft.world.item.Items.FARMLAND)
-            .addVariant("moist", "item/farmland_living_moist",
+            .addLocalVariant("moist", "item/farmland_living_moist",
                 stack -> com.qiqi.li.living.domain.farmland.FarmlandComponents.isMoist(stack))
-            .addVariant("dry", "item/farmland_living", stack -> true)
+            .addLocalVariant("dry", "item/farmland_living", stack -> true)
             .decorator(new LivingFarmlandSeedDecorator())
             .build());
 
@@ -273,7 +179,7 @@ public final class LivingIconRegistry {
                     .get(net.minecraft.resources.ResourceLocation.fromNamespaceAndPath("create", "water_wheel"));
                 if (waterWheelItem != net.minecraft.world.item.Items.AIR) {
                     register(LivingIconSpec.builder(waterWheelItem)
-                        .addVariant("base", "item/water_wheel", stack -> true)
+                        .addLocalVariant("base", "item/water_wheel", stack -> true)
                         .rotating()
                         .build());
                     LivingItem.LOGGER.info("已注册活水车旋转图标");
@@ -281,6 +187,102 @@ public final class LivingIconRegistry {
             } catch (Exception e) {
                 LivingItem.LOGGER.warn("注册活水车图标失败: {}", e.getMessage());
             }
+        }
+    }
+
+    /** 纯方向配置；不初始化外层注册中心，不创建装饰器或查询可选模组。 */
+    static final class DirectionalSpecs {
+        private DirectionalSpecs() {}
+
+        static List<LivingIconSpec> create() {
+            return List.of(
+                // 普通/粘性活塞共用机身剖面；板/杆由 LivingPistonOverlay 绘制。
+                LivingIconSpec.builder(net.minecraft.world.item.Items.PISTON)
+                    .addLocalVariant("base", "item/living_piston", stack -> true)
+                    .directional(stack -> LivingPistonData.of(stack).direction())
+                    .build(),
+                LivingIconSpec.builder(net.minecraft.world.item.Items.STICKY_PISTON)
+                    .addLocalVariant("base", "item/living_piston", stack -> true)
+                    .directional(stack -> LivingPistonData.of(stack).direction())
+                    .build(),
+                LivingIconSpec.builder(net.minecraft.world.item.Items.REDSTONE_TORCH)
+                    .addLocalVariant("on", "item/redstone_torch",
+                        stack -> LivingRedstoneTorchData.of(stack).isLit())
+                    .addLocalVariant("off", "item/redstone_torch_off", stack -> true)
+                    .directional(stack -> LivingRedstoneTorchData.of(stack).direction())
+                    .build(),
+                LivingIconSpec.builder(net.minecraft.world.item.Items.OBSERVER)
+                    .addLocalVariant("base", "item/observer", stack -> true)
+                    .directional(stack -> LivingObserverData.of(stack).direction())
+                    .build(),
+                LivingIconSpec.builder(net.minecraft.world.item.Items.REPEATER)
+                    .addLocalVariant("1tick", "item/repeater_1tick",
+                        stack -> {
+                            LivingRepeaterData d = LivingRepeaterData.of(stack);
+                            return d.delay() == 1 && !d.powered();
+                        })
+                    .addLocalVariant("1tick_on", "item/repeater_1tick_on",
+                        stack -> {
+                            LivingRepeaterData d = LivingRepeaterData.of(stack);
+                            return d.delay() == 1 && d.powered();
+                        })
+                    .addLocalVariant("2tick", "item/repeater_2tick",
+                        stack -> {
+                            LivingRepeaterData d = LivingRepeaterData.of(stack);
+                            return d.delay() == 2 && !d.powered();
+                        })
+                    .addLocalVariant("2tick_on", "item/repeater_2tick_on",
+                        stack -> {
+                            LivingRepeaterData d = LivingRepeaterData.of(stack);
+                            return d.delay() == 2 && d.powered();
+                        })
+                    .addLocalVariant("3tick", "item/repeater_3tick",
+                        stack -> {
+                            LivingRepeaterData d = LivingRepeaterData.of(stack);
+                            return d.delay() == 3 && !d.powered();
+                        })
+                    .addLocalVariant("3tick_on", "item/repeater_3tick_on",
+                        stack -> {
+                            LivingRepeaterData d = LivingRepeaterData.of(stack);
+                            return d.delay() == 3 && d.powered();
+                        })
+                    .addLocalVariant("4tick", "item/repeater_4tick",
+                        stack -> {
+                            LivingRepeaterData d = LivingRepeaterData.of(stack);
+                            return d.delay() == 4 && !d.powered();
+                        })
+                    .addLocalVariant("4tick_on", "item/repeater_4tick_on",
+                        stack -> {
+                            LivingRepeaterData d = LivingRepeaterData.of(stack);
+                            return d.delay() == 4 && d.powered();
+                        })
+                    .directional(stack -> LivingRepeaterData.of(stack).direction())
+                    .guiScale(1.0f)
+                    .build(),
+                LivingIconSpec.builder(net.minecraft.world.item.Items.COMPARATOR)
+                    .addLocalVariant("compare", "item/comparator_compare",
+                        stack -> {
+                            LivingComparatorData d = LivingComparatorData.of(stack);
+                            return !d.subtractMode() && !d.powered();
+                        })
+                    .addLocalVariant("compare_on", "item/comparator_compare_on",
+                        stack -> {
+                            LivingComparatorData d = LivingComparatorData.of(stack);
+                            return !d.subtractMode() && d.powered();
+                        })
+                    .addLocalVariant("subtract", "item/comparator_subtract",
+                        stack -> {
+                            LivingComparatorData d = LivingComparatorData.of(stack);
+                            return d.subtractMode() && !d.powered();
+                        })
+                    .addLocalVariant("subtract_on", "item/comparator_subtract_on",
+                        stack -> {
+                            LivingComparatorData d = LivingComparatorData.of(stack);
+                            return d.subtractMode() && d.powered();
+                        })
+                    .directional(stack -> LivingComparatorData.of(stack).direction())
+                    .guiScale(1.0f)
+                    .build());
         }
     }
 
@@ -336,37 +338,37 @@ public final class LivingIconRegistry {
         // 干态与原版海绵静态同形（铜灯 unlit 同款代价），靠 tooltip 组件量辨识。
         // 流体叠加只在湿态出现（全幅、只表种类，量在 tooltip）。
         register(LivingIconSpec.builder(net.minecraft.world.item.Items.SPONGE)
-            .addVariant("wet", "item/sponge_living_wet",
+            .addLocalVariant("wet", "item/sponge_living_wet",
                 stack -> com.qiqi.li.living.domain.sponge.LivingSpongeData.of(stack).isWet())
-            .addVariant("dry", "item/sponge_living_dry", stack -> true)
+            .addLocalVariant("dry", "item/sponge_living_dry", stack -> true)
             .decorator(new com.qiqi.li.client.render.LivingSpongeFluidDecorator())
             .build());
     }
 
     private static void registerCopperBulb(Item item, String textureOff, String textureOn) {
         register(LivingIconSpec.builder(item)
-            .addVariant("lit", textureOn,
+            .addLocalVariant("lit", textureOn,
                 stack -> LivingCopperBulbData.of(stack).isLit())
-            .addVariant("unlit", textureOff, stack -> true)
+            .addLocalVariant("unlit", textureOff, stack -> true)
             .build());
     }
 
     /** 涂蜡铜灯（电力层）：有电量 → 点亮图标 */
     private static void registerWaxedCopperBulb(Item item, String textureOff, String textureOn) {
         register(LivingIconSpec.builder(item)
-            .addVariant("lit", textureOn,
+            .addLocalVariant("lit", textureOn,
                 stack -> LivingWaxedBulbData.of(stack).chargeMilliFe() > 0)
-            .addVariant("unlit", textureOff, stack -> true)
+            .addLocalVariant("unlit", textureOff, stack -> true)
             .build());
     }
 
     private static void registerCopperBlock(Item item, String texture) {
-        register(LivingIconSpec.builder(item).addVariant("base", texture, stack -> true).build());
+        register(LivingIconSpec.builder(item).addLocalVariant("base", texture, stack -> true).build());
     }
 
     private static void registerChiseledCopper(Item item, String texture) {
         register(LivingIconSpec.builder(item)
-            .addVariant("base", texture, stack -> true)
+            .addLocalVariant("base", texture, stack -> true)
             .decorator(new LivingChiseledCopperDecorator())
             .build());
     }
@@ -374,7 +376,7 @@ public final class LivingIconRegistry {
     /** 涂蜡雕文（电力层移相器）：叠加输入方向箭头（v19.1，只感应输入方向） */
     private static void registerWaxedChiseledCopper(Item item, String texture) {
         register(LivingIconSpec.builder(item)
-            .addVariant("base", texture, stack -> true)
+            .addLocalVariant("base", texture, stack -> true)
             .decorator(new com.qiqi.li.client.render.LivingWaxedChiseledDecorator())
             .build());
     }
@@ -498,13 +500,9 @@ public final class LivingIconRegistry {
         return ModelResourceLocation.inventory(itemId);
     }
 
-    /**
-     * 为变体创建 standalone 变体的模型定位器。
-     * 例如 ("item/furnace_idle") → living_item:item/furnace_idle#standalone
-     */
+    /** 完整模型 ID → standalone 定位器，保留其命名空间。 */
     private static ModelResourceLocation createVariantModelLocation(LivingIconSpec.Variant variant) {
-        return ModelResourceLocation.standalone(
-            ResourceLocation.fromNamespaceAndPath(LivingItem.MOD_ID, variant.getModelPath()));
+        return ModelResourceLocation.standalone(variant.getModelId());
     }
 
     /**
@@ -523,16 +521,16 @@ public final class LivingIconRegistry {
         private VariantModelStore() {}
 
         public static void put(LivingIconSpec.Variant variant, BakedModel model) {
-            STORE.put(variant.getName() + "@" + variant.getModelPath(), model);
+            STORE.put(variant.getName() + "@" + variant.getModelId(), model);
         }
 
         public static BakedModel get(LivingIconSpec.Variant variant) {
-            return STORE.get(variant.getName() + "@" + variant.getModelPath());
+            return STORE.get(variant.getName() + "@" + variant.getModelId());
         }
 
         /** 资源重载后发现模型缺失时移除陈旧条目（否则 resolve 命中已释放精灵的旧模型）。 */
         public static void remove(LivingIconSpec.Variant variant) {
-            STORE.remove(variant.getName() + "@" + variant.getModelPath());
+            STORE.remove(variant.getName() + "@" + variant.getModelId());
         }
 
         public static void clear() {
